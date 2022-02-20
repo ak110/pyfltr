@@ -1,0 +1,74 @@
+[tool.poetry]
+name = "pyfltr"
+version = "0.2.0"
+description = "pyfltr: Python Formatters, Linters, and Testers Runner."
+license = "MIT"
+authors = ["aki. <mark@aur.ll.to>"]
+readme = "README.md"
+homepage = "https://github.com/ak110/pyfltr"
+classifiers = [
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Software Development :: Quality Assurance",
+]
+
+[tool.poetry.dependencies]
+python = "^3.8"
+black = "*"
+flake8-bugbear = "*"
+isort = "*"
+joblib = "*"
+mypy = "*"
+pylint = "*"
+pyproject-flake8 = "*"
+pytest = "*"
+pyupgrade = "*"
+tomli = "*"
+
+[tool.poetry.dev-dependencies]
+pytest-mock = "*"
+
+[tool.poetry.scripts]
+pyfltr = "pyfltr.pyfltr:main"
+
+[build-system]
+requires = ["poetry>=0.12"]
+build-backend = "poetry.masonry.api"
+
+[tool.pyfltr]
+pyupgrade_args = ["--py38-plus"]
+pylint_args = ["--jobs=4"]
+
+[tool.isort]
+# https://black.readthedocs.io/en/stable/guides/using_black_with_other_tools.html#isort
+# https://pycqa.github.io/isort/docs/configuration/options.html
+profile = "black"
+
+[tool.black]
+# https://black.readthedocs.io/en/stable/usage_and_configuration/the_basics.html
+target-version = ['py38']
+skip-magic-trailing-comma = true
+
+[tool.flake8]
+# https://black.readthedocs.io/en/stable/guides/using_black_with_other_tools.html#flake8
+# https://flake8.pycqa.org/en/latest/user/configuration.html
+max-line-length = 88
+extend-ignore = "E203,"
+
+[tool.mypy]
+# https://mypy.readthedocs.io/en/stable/config_file.html
+allow_redefinition = true
+check_untyped_defs = true
+ignore_missing_imports = true
+strict_optional = true
+strict_equality = true
+warn_no_return = true
+warn_redundant_casts = true
+warn_unused_configs = true
+show_error_codes = true
+
+[tool.pytest.ini_options]
+# https://docs.pytest.org/en/latest/reference/reference.html#ini-options-ref
+addopts = "--showlocals -p no:cacheprovider"

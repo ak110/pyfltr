@@ -1,0 +1,5 @@
+[MESSAGES CONTROL]
+disable=fixme,logging-fstring-interpolation,logging-not-lazy
+
+[FORMAT]
+max-line-length=88
