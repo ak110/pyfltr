@@ -11,6 +11,7 @@ import shlex
 import subprocess
 import sys
 import threading
+import time
 import typing
 
 import joblib
@@ -164,7 +165,10 @@ def run(args: typing.Sequence[str] = None) -> int:
             status = "formatted"
         else:
             status = "failed"
-        logger.info(f"    {result.command:<16s} {status} ({result.files}files)")
+        logger.info(
+            f"    {result.command:<16s} {status}"
+            f" ({result.files}files in {result.elapsed:.1f}s)"
+        )
     logger.info("-" * 72)
 
     return 0 if all(result.returncode == 0 for result in results) else 1
@@ -177,6 +181,7 @@ class CommandResult:
     command: str
     returncode: int
     files: int
+    elapsed: float
 
 
 def run_command(command: str, args: argparse.Namespace) -> CommandResult:
@@ -191,6 +196,7 @@ def run_command(command: str, args: argparse.Namespace) -> CommandResult:
     check_args = ["--check"] if command in ("black", "isort") else []
 
     # 実行
+    start_time = time.perf_counter()
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
     proc = subprocess.run(
@@ -217,6 +223,7 @@ def run_command(command: str, args: argparse.Namespace) -> CommandResult:
             errors="backslashreplace",
         )
     output = proc.stdout.strip()  # 再実行時の出力を採用
+    elapsed = time.perf_counter() - start_time
 
     # 結果表示
     mark = "*" if returncode == 0 else "@"
@@ -231,7 +238,9 @@ def run_command(command: str, args: argparse.Namespace) -> CommandResult:
         logger.info(f"{mark} returncode: {returncode}")
         logger.info(mark * NCOLS)
 
-    return CommandResult(command=command, returncode=returncode, files=len(targets))
+    return CommandResult(
+        command=command, returncode=returncode, files=len(targets), elapsed=elapsed
+    )
 
 
 def _expand_globs(targets: list[pathlib.Path], globs: list[str]) -> list[pathlib.Path]:
