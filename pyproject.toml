@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pyfltr"
-version = "0.2.0"
+version = "0.0.0"  # using poetry-dynamic-versioning
 description = "pyfltr: Python Formatters, Linters, and Testers Runner."
 license = "MIT"
 authors = ["aki. <mark@aur.ll.to>"]
@@ -13,6 +13,10 @@ classifiers = [
     "Programming Language :: Python :: 3 :: Only",
     "Topic :: Software Development :: Quality Assurance",
 ]
+
+[tool.poetry-dynamic-versioning]
+enable = true
+style = "pep440"
 
 [tool.poetry.dependencies]
 python = "^3.8"
