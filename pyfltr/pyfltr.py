@@ -66,7 +66,15 @@ CONFIG: dict[str, typing.Any] = {
     "extend-exclude": [],
 }
 
-ALL_COMMANDS = ["pyupgrade", "isort", "black", "pflake8", "mypy", "pylint", "pytest"]
+ALL_COMMANDS = {
+    "pyupgrade": {"type": "formatter"},
+    "isort": {"type": "formatter"},
+    "black": {"type": "formatter"},
+    "pflake8": {"type": "linter"},
+    "mypy": {"type": "linter"},
+    "pylint": {"type": "linter"},
+    "pytest": {"type": "tester"},
+}
 
 NCOLS = 128
 
@@ -123,6 +131,11 @@ def run(args: typing.Sequence[str] = None) -> int:
             )
         )
         return 0
+    # check
+    commands = args.commands.split(",")
+    for command in commands:
+        if command not in CONFIG:
+            parser.error(f"command not found: {command}")
 
     # pyproject.toml
     pyproject_path = pathlib.Path("pyproject.toml").absolute()
@@ -147,31 +160,35 @@ def run(args: typing.Sequence[str] = None) -> int:
             CONFIG[key] = value
 
     # run
-    jobs: typing.Any = []
-    for command in args.commands.split(","):
-        if command not in CONFIG:
-            parser.error(f"command not found: {command}")
-        if CONFIG[command]:
-            jobs.append(joblib.delayed(run_command)(command, args))
-    with joblib.Parallel(n_jobs=len(jobs), backend="threading") as parallel:
-        results = parallel(jobs)
+    results = _run_commands(commands, args)
 
     # summary
     logger.info(f"{'-' * 10} summary {'-' * (72 - 10 - 9)}")
     for result in results:
-        if result.returncode == 0:
-            status = "succeeded"
-        elif result.command in ("pyupgrade", "isort", "black"):
-            status = "formatted"
-        else:
-            status = "failed"
-        logger.info(
-            f"    {result.command:<16s} {status}"
-            f" ({result.files}files in {result.elapsed:.1f}s)"
-        )
+        logger.info(f"    {result.command:<16s} {result.get_status_text()}")
     logger.info("-" * 72)
 
     return 0 if all(result.returncode == 0 for result in results) else 1
+
+
+def _run_commands(commands, args):
+    """コマンドの実行。"""
+    results: list[CommandResult] = []
+
+    # run formatters (serial)
+    for command in commands:
+        if CONFIG[command] and ALL_COMMANDS[command]["type"] == "formatter":
+            results.append(run_command(command, args))
+
+    # run linters/testers (parallel)
+    jobs: list[typing.Any] = []
+    for command in commands:
+        if CONFIG[command] and ALL_COMMANDS[command]["type"] != "formatter":
+            jobs.append(joblib.delayed(run_command)(command, args))
+    with joblib.Parallel(n_jobs=len(jobs), backend="threading") as parallel:
+        results = parallel(jobs)
+
+    return results
 
 
 @dataclasses.dataclass
@@ -182,6 +199,16 @@ class CommandResult:
     returncode: int
     files: int
     elapsed: float
+
+    def get_status_text(self):
+        """文字列化。"""
+        if self.returncode == 0:
+            status = "succeeded"
+        elif self.command in ("pyupgrade", "isort", "black"):
+            status = "formatted"
+        else:
+            status = "failed"
+        return f"{status} ({self.files}files in {self.elapsed:.1f}s)"
 
 
 def run_command(command: str, args: argparse.Namespace) -> CommandResult:
