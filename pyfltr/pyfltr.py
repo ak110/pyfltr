@@ -186,7 +186,7 @@ def _run_commands(commands, args):
         if CONFIG[command] and ALL_COMMANDS[command]["type"] != "formatter":
             jobs.append(joblib.delayed(run_command)(command, args))
     with joblib.Parallel(n_jobs=len(jobs), backend="threading") as parallel:
-        results = parallel(jobs)
+        results.extend(parallel(jobs))
 
     return results
 
