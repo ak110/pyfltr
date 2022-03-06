@@ -25,17 +25,23 @@ Pythonの各種ツールをまとめて呼び出すツール。
 - blackやisortはファイルを修正しつつエラーにもしたい (CIとかを想定) (pyupgradeはもともとそういう動作)
 - Q: pysenでいいのでは？ A: それはそう
 
+## インストール
+
+```shell
+$ pip install pyfltr
+```
+
 ## 主な使い方
 
 ### 通常
 
-```text
+```shell
 $ pyfltr [files and/or directories ...]
 ```
 
 対象を指定しなければカレントディレクトリを指定したのと同じ扱い。
 
-`*.*`などを指定した場合も、pytest以外は`*.py`のみ、pytestは`*_test.py`のみに対して実行される。
+指定したファイルやディレクトリの配下のうち、pytest以外は`*.py`のみ、pytestは`*_test.py`のみに対して実行される。
 
 終了コード:
 
@@ -44,7 +50,7 @@ $ pyfltr [files and/or directories ...]
 
 ### 特定のツールのみ実行
 
-```text
+```shell
 $ pyfltr --commands=pyupgrade,isort,black,pflake8,mypy,pylint,pytest [files and/or directories ...]
 ```
 
@@ -78,16 +84,12 @@ extend-exclude = ["foo", "bar.py"]
 ### pyproject.toml
 
 ```toml
-...
-
 [tool.poetry.dev-dependencies]
 pyfltr = "*"
 
 [tool.pyfltr]
 pyupgrade_args = ["--py38-plus"]
 pylint_args = ["--jobs=4"]
-
-...
 ```
 
 ### .pre-commit-config.yaml
