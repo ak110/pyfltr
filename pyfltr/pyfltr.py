@@ -303,9 +303,17 @@ def _expand_globs(targets: list[pathlib.Path], globs: list[str]) -> list[pathlib
 
 def _excluded(path: pathlib.Path):
     """無視パターンチェック。"""
-    for glob in CONFIG["exclude"] + CONFIG["extend-exclude"]:
-        if path.match(glob):
+    excludes = CONFIG["exclude"] + CONFIG["extend-exclude"]
+    # 対象パスに一致したらTrue
+    if any(path.match(glob) for glob in excludes):
+        return True
+    # 親に一致してもTrue
+    part = path.parent
+    for _ in range(len(path.parts) - 1):
+        if any(part.match(glob) for glob in excludes):
             return True
+        part = part.parent
+    # どれにも一致しなかったらFalse
     return False
 
 
