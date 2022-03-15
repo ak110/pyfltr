@@ -42,8 +42,8 @@ requires = ["poetry>=1.0.2", "poetry-dynamic-versioning"]
 build-backend = "poetry.masonry.api"
 
 [tool.pyfltr]
-pyupgrade_args = ["--py38-plus"]
-pylint_args = ["--jobs=4"]
+pyupgrade-args = ["--py38-plus"]
+pylint-args = ["--jobs=4"]
 
 [tool.isort]
 # https://black.readthedocs.io/en/stable/guides/using_black_with_other_tools.html#isort

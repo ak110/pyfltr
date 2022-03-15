@@ -20,26 +20,26 @@ import tomli
 CONFIG: dict[str, typing.Any] = {
     # コマンド毎に有効無効、パス、追加の引数、対象ファイルパターン
     "pyupgrade": True,
-    "pyupgrade_path": "pyupgrade",
-    "pyupgrade_args": [],
+    "pyupgrade-path": "pyupgrade",
+    "pyupgrade-args": [],
     "isort": True,
-    "isort_path": "isort",
-    "isort_args": [],
+    "isort-path": "isort",
+    "isort-args": [],
     "black": True,
-    "black_path": "black",
-    "black_args": [],
+    "black-path": "black",
+    "black-args": [],
     "pflake8": True,
-    "pflake8_path": "pflake8",
-    "pflake8_args": [],
+    "pflake8-path": "pflake8",
+    "pflake8-args": [],
     "mypy": True,
-    "mypy_path": "mypy",
-    "mypy_args": [],
+    "mypy-path": "mypy",
+    "mypy-args": [],
     "pylint": True,
-    "pylint_path": "pylint",
-    "pylint_args": [],
+    "pylint-path": "pylint",
+    "pylint-args": [],
     "pytest": True,
-    "pytest_path": "pytest",
-    "pytest_args": [],
+    "pytest-path": "pytest",
+    "pytest-args": [],
     # flake8風無視パターン。
     "exclude": [
         # ここの値はflake8やblackなどの既定値を元に適当に。
@@ -145,6 +145,7 @@ def run(args: typing.Sequence[str] = None) -> int:
             pyproject_path.read_text(encoding="utf-8", errors="backslashreplace")
         )
         for key, value in pyproject_data.get("tool", {}).get("pyfltr", {}).items():
+            key = key.replace("_", "-")  # 「_」区切りと「-」区切りのどちらもOK
             if key not in CONFIG:
                 logger.error(f"Invalid config key: {key}")
                 return 1
@@ -185,8 +186,9 @@ def _run_commands(commands, args):
     for command in commands:
         if CONFIG[command] and ALL_COMMANDS[command]["type"] != "formatter":
             jobs.append(joblib.delayed(run_command)(command, args))
-    with joblib.Parallel(n_jobs=len(jobs), backend="threading") as parallel:
-        results.extend(parallel(jobs))
+    if len(jobs) > 0:
+        with joblib.Parallel(n_jobs=len(jobs), backend="threading") as parallel:
+            results.extend(parallel(jobs))
 
     return results
 
@@ -213,8 +215,8 @@ class CommandResult:
 
 def run_command(command: str, args: argparse.Namespace) -> CommandResult:
     """コマンドの実行。"""
-    commandline = [CONFIG[f"{command}_path"]]
-    commandline.extend(CONFIG[f"{command}_args"])
+    commandline = [CONFIG[f"{command}-path"]]
+    commandline.extend(CONFIG[f"{command}-args"])
     globs = ["*_test.py"] if command == "pytest" else ["*.py"]
     targets = _expand_globs(args.targets, globs)
     commandline.extend(map(str, targets))
@@ -301,9 +303,17 @@ def _expand_globs(targets: list[pathlib.Path], globs: list[str]) -> list[pathlib
 
 def _excluded(path: pathlib.Path):
     """無視パターンチェック。"""
-    for glob in CONFIG["exclude"] + CONFIG["extend-exclude"]:
-        if path.match(glob):
+    excludes = CONFIG["exclude"] + CONFIG["extend-exclude"]
+    # 対象パスに一致したらTrue
+    if any(path.match(glob) for glob in excludes):
+        return True
+    # 親に一致してもTrue
+    part = path.parent
+    for _ in range(len(path.parts) - 1):
+        if any(part.match(glob) for glob in excludes):
             return True
+        part = part.parent
+    # どれにも一致しなかったらFalse
     return False
 
 
