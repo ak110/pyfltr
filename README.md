@@ -64,8 +64,8 @@ $ pyfltr --commands=pyupgrade,isort,black,pflake8,mypy,pylint,pytest [files and/
 
 ```toml
 [tool.pyfltr]
-pyupgrade_args = ["--py38-plus"]
-pylint_args = ["--jobs=4"]
+pyupgrade-args = ["--py38-plus"]
+pylint-args = ["--jobs=4"]
 extend-exclude = ["foo", "bar.py"]
 ```
 
@@ -74,8 +74,8 @@ extend-exclude = ["foo", "bar.py"]
 設定項目と既定値は`pyfltr --generate-config`で確認可能。
 
 - {command} : コマンドの有効/無効
-- {command}_path : 実行するコマンド
-- {command}_args : 追加のコマンドライン引数
+- {command}-path : 実行するコマンド
+- {command}-args : 追加のコマンドライン引数
 - exclude : 除外するファイル名パターン(既定値あり)
 - extend-exclude : 除外するファイル名パターン(既定値は空)
 
@@ -88,8 +88,8 @@ extend-exclude = ["foo", "bar.py"]
 pyfltr = "*"
 
 [tool.pyfltr]
-pyupgrade_args = ["--py38-plus"]
-pylint_args = ["--jobs=4"]
+pyupgrade-args = ["--py38-plus"]
+pylint-args = ["--jobs=4"]
 ```
 
 ### .pre-commit-config.yaml
