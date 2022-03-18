@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "pyfltr"
 version = "0.0.0"  # using poetry-dynamic-versioning
-description = "pyfltr: Python Formatters, Linters, and Testers Runner."
+description = "Python Formatters, Linters, and Testers Runner."
 license = "MIT"
 authors = ["aki. <mark@aur.ll.to>"]
 readme = "README.md"
@@ -22,7 +22,7 @@ style = "pep440"
 python = "^3.8"
 black = "*"
 flake8-bugbear = "*"
-isort = "*"
+isort = ">=5.0"
 joblib = "*"
 mypy = "*"
 pylint = ">=2.12"
