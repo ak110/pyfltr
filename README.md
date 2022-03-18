@@ -11,7 +11,7 @@ Pythonの各種ツールをまとめて呼び出すツール。
     - isort
     - black
 - Linters
-    - pflake8
+    - pflake8 + flake8-bugbear
     - mypy
     - pylint
 - Testers
@@ -76,8 +76,8 @@ extend-exclude = ["foo", "bar.py"]
 - {command} : コマンドの有効/無効
 - {command}-path : 実行するコマンド
 - {command}-args : 追加のコマンドライン引数
-- exclude : 除外するファイル名パターン(既定値あり)
-- extend-exclude : 除外するファイル名パターン(既定値は空)
+- exclude : 除外するファイル名/ディレクトリ名パターン(既定値あり)
+- extend-exclude : 追加で除外するファイル名/ディレクトリ名パターン(既定値は空)
 
 ## 各種設定例
 
@@ -90,6 +90,38 @@ pyfltr = "*"
 [tool.pyfltr]
 pyupgrade-args = ["--py38-plus"]
 pylint-args = ["--jobs=4"]
+
+[tool.isort]
+# https://black.readthedocs.io/en/stable/guides/using_black_with_other_tools.html#isort
+# https://pycqa.github.io/isort/docs/configuration/options.html
+profile = "black"
+
+[tool.black]
+# https://black.readthedocs.io/en/stable/usage_and_configuration/the_basics.html
+target-version = ['py38']
+skip-magic-trailing-comma = true
+
+[tool.flake8]
+# https://black.readthedocs.io/en/stable/guides/using_black_with_other_tools.html#flake8
+# https://flake8.pycqa.org/en/latest/user/configuration.html
+max-line-length = 88
+extend-ignore = "E203,"
+
+[tool.mypy]
+# https://mypy.readthedocs.io/en/stable/config_file.html
+allow_redefinition = true
+check_untyped_defs = true
+ignore_missing_imports = true
+strict_optional = true
+strict_equality = true
+warn_no_return = true
+warn_redundant_casts = true
+warn_unused_configs = true
+show_error_codes = true
+
+[tool.pytest.ini_options]
+# https://docs.pytest.org/en/latest/reference/reference.html#ini-options-ref
+addopts = "--showlocals -p no:cacheprovider"
 ```
 
 ### .pre-commit-config.yaml
@@ -105,7 +137,7 @@ pylint-args = ["--jobs=4"]
         language: system
 ```
 
-### CI例
+### CI
 
 ```yaml
   - poetry install --no-interaction
