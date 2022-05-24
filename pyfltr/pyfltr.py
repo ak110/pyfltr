@@ -198,13 +198,15 @@ class CommandResult:
     """コマンドの実行結果。"""
 
     command: str
-    returncode: int
+    returncode: int | None
     files: int
     elapsed: float
 
     def get_status_text(self):
         """文字列化。"""
-        if self.returncode == 0:
+        if self.returncode is None:
+            status = "skipped"
+        elif self.returncode == 0:
             status = "succeeded"
         elif self.command in ("pyupgrade", "isort", "black"):
             status = "formatted"
@@ -215,10 +217,13 @@ class CommandResult:
 
 def run_command(command: str, args: argparse.Namespace) -> CommandResult:
     """コマンドの実行。"""
-    commandline = [CONFIG[f"{command}-path"]]
-    commandline.extend(CONFIG[f"{command}-args"])
     globs = ["*_test.py"] if command == "pytest" else ["*.py"]
     targets = _expand_globs(args.targets, globs)
+    if len(targets) <= 0:
+        return CommandResult(command=command, returncode=None, files=0, elapsed=0)
+
+    commandline = [CONFIG[f"{command}-path"]]
+    commandline.extend(CONFIG[f"{command}-args"])
     commandline.extend(map(str, targets))
 
     # black/isortは--checkしてから変更がある場合は再実行する
