@@ -169,7 +169,7 @@ def run(args: typing.Sequence[str] = None) -> int:
         logger.info(f"    {result.command:<16s} {result.get_status_text()}")
     logger.info("-" * 72)
 
-    return 0 if all(result.returncode == 0 for result in results) else 1
+    return 1 if any(result.alerted for result in results) else 0
 
 
 def _run_commands(commands, args):
@@ -201,6 +201,11 @@ class CommandResult:
     returncode: int | None
     files: int
     elapsed: float
+
+    @property
+    def alerted(self):
+        """skipped/succeeded以外ならTrue"""
+        return self.returncode is not None and self.returncode != 0
 
     def get_status_text(self):
         """文字列化。"""
