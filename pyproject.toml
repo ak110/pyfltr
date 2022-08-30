@@ -21,6 +21,7 @@ style = "pep440"
 [tool.poetry.dependencies]
 python = "^3.8"
 black = "*"
+flake8 = "4.*"  # https://github.com/csachs/pyproject-flake8/issues/13
 flake8-bugbear = "*"
 isort = ">=5.0"
 joblib = "*"
