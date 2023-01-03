@@ -100,7 +100,7 @@ def run(args: typing.Sequence[str] = None) -> int:
     parser.add_argument(
         "--commands",
         default=",".join(ALL_COMMANDS),
-        help=f'comma separated list of commands. (default: {",".join(ALL_COMMANDS)})',
+        help="comma separated list of commands. (default: %(default)s)",
     )
     parser.add_argument(
         "--generate-config",
