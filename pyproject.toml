@@ -38,8 +38,8 @@ pytest-mock = "*"
 pyfltr = "pyfltr.pyfltr:main"
 
 [build-system]
-requires = ["poetry>=1.0.2", "poetry-dynamic-versioning"]
-build-backend = "poetry.masonry.api"
+requires = ["poetry-core>=1.0.0", "poetry-dynamic-versioning"]
+build-backend = "poetry_dynamic_versioning.backend"
 
 [tool.pyfltr]
 pyupgrade-args = ["--py38-plus"]
