@@ -91,7 +91,7 @@ def main() -> typing.NoReturn:
     sys.exit(returncode)
 
 
-def run(args: typing.Sequence[str] = None) -> int:
+def run(args: typing.Sequence[str] | None = None) -> int:
     """ツール本体。"""
     parser = argparse.ArgumentParser()
     parser.add_argument(

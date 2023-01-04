@@ -20,15 +20,15 @@ style = "pep440"
 
 [tool.poetry.dependencies]
 python = "^3.8"
-black = "*"
+black = ">=22.0"
 flake8-bugbear = "*"
 isort = ">=5.0"
 joblib = "*"
-mypy = "*"
+mypy = ">=0.971"
 pylint = ">=2.12"
 pyproject-flake8 = "*"
-pytest = "*"
-pyupgrade = "*"
+pytest = ">=7.0"
+pyupgrade = ">=3.0"
 tomli = "*"
 
 [tool.poetry.dev-dependencies]
