@@ -8,6 +8,7 @@ Pythonの各種ツールをまとめて呼び出すツール。
 
 - Formatters
     - pyupgrade
+    - autoflake
     - isort
     - black
 - Linters
@@ -51,7 +52,7 @@ $ pyfltr [files and/or directories ...]
 ### 特定のツールのみ実行
 
 ```shell
-$ pyfltr --commands=pyupgrade,isort,black,pflake8,mypy,pylint,pytest [files and/or directories ...]
+$ pyfltr --commands=pyupgrade,autoflake,isort,black,pflake8,mypy,pylint,pytest [files and/or directories ...]
 ```
 
 カンマ区切りで実行するツールだけ指定する。
@@ -131,7 +132,7 @@ addopts = "--showlocals -p no:cacheprovider"
     hooks:
       - id: system
         name: pyfltr
-        entry: poetry run pyfltr --commands=pyupgrade,isort,black,pflake8
+        entry: poetry run pyfltr --commands=pyupgrade,autoflake,isort,black,pflake8
         types: [python]
         require_serial: true
         language: system

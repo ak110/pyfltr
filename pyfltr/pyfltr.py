@@ -22,6 +22,15 @@ CONFIG: dict[str, typing.Any] = {
     "pyupgrade": True,
     "pyupgrade-path": "pyupgrade",
     "pyupgrade-args": [],
+    "autoflake": True,
+    "autoflake-path": "autoflake",
+    "autoflake-args": [
+        "--in-place",
+        "--remove-all-unused-imports",
+        "--ignore-init-module-imports",
+        "--remove-unused-variables",
+        "--verbose",
+    ],
     "isort": True,
     "isort-path": "isort",
     "isort-args": [],
@@ -68,6 +77,7 @@ CONFIG: dict[str, typing.Any] = {
 
 ALL_COMMANDS = {
     "pyupgrade": {"type": "formatter"},
+    "autoflake": {"type": "formatter"},
     "isort": {"type": "formatter"},
     "black": {"type": "formatter"},
     "pflake8": {"type": "linter"},
@@ -213,7 +223,7 @@ class CommandResult:
             status = "skipped"
         elif self.returncode == 0:
             status = "succeeded"
-        elif self.command in ("pyupgrade", "isort", "black"):
+        elif self.command in ("pyupgrade", "autoflake", "isort", "black"):
             status = "formatted"
         else:
             status = "failed"
@@ -241,8 +251,8 @@ def run_command(command: str, args: argparse.Namespace) -> CommandResult:
     commandline.extend(CONFIG[f"{command}-args"])
     commandline.extend(map(str, targets))
 
-    # black/isortは--checkしてから変更がある場合は再実行する
-    check_args = ["--check"] if command in ("black", "isort") else []
+    # autoflake/isort/blackは--checkしてから変更がある場合は再実行する
+    check_args = ["--check"] if command in ("autoflake", "isort", "black") else []
 
     # 実行
     start_time = time.perf_counter()
@@ -260,7 +270,7 @@ def run_command(command: str, args: argparse.Namespace) -> CommandResult:
     )
     returncode = proc.returncode  # --check時のreturncodeを採用
     # black/isortの再実行
-    if returncode != 0 and command in ("black", "isort"):
+    if returncode != 0 and command in ("autoflake", "isort", "black"):
         proc = subprocess.run(
             commandline,
             check=False,
