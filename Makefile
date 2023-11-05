@@ -8,4 +8,4 @@ update:
 
 test:
 	poetry install
-	poetry run pyfltr
+	poetry run pyfltr --exit-zero-even-if-formatted

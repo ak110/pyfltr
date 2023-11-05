@@ -108,6 +108,12 @@ def run(args: typing.Sequence[str] | None = None) -> int:
         "--verbose", default=False, action="store_true", help="shows verbose output."
     )
     parser.add_argument(
+        "--exit-zero-even-if-formatted",
+        default=False,
+        action="store_true",
+        help="exit 1 only if linters/testers has errors.",
+    )
+    parser.add_argument(
         "--commands",
         default=",".join(ALL_COMMANDS),
         help="comma separated list of commands. (default: %(default)s)",
@@ -142,7 +148,7 @@ def run(args: typing.Sequence[str] | None = None) -> int:
         )
         return 0
     # check
-    commands = args.commands.split(",")
+    commands: list[str] = args.commands.split(",")
     for command in commands:
         if command not in CONFIG:
             parser.error(f"command not found: {command}")
@@ -179,10 +185,18 @@ def run(args: typing.Sequence[str] | None = None) -> int:
         logger.info(f"    {result.command:<16s} {result.get_status_text()}")
     logger.info("-" * 72)
 
-    return 1 if any(result.alerted for result in results) else 0
+    # exit code
+    statuses = [result.status for result in results]
+    if any(status == "failed" for status in statuses):
+        return 1
+    if not args.exit_zero_even_if_formatted and any(
+        status == "formatted" for status in statuses
+    ):
+        return 1
+    return 0
 
 
-def _run_commands(commands, args):
+def _run_commands(commands: list[str], args: argparse.Namespace) -> list[CommandResult]:
     """コマンドの実行。"""
     results: list[CommandResult] = []
 
@@ -209,25 +223,36 @@ class CommandResult:
 
     command: str
     returncode: int | None
+    has_error: bool
     files: int
     elapsed: float
 
     @property
-    def alerted(self):
+    def command_type(self) -> str:
+        """コマンドの種類を返す。"""
+        return ALL_COMMANDS[self.command]["type"]
+
+    @property
+    def alerted(self) -> bool:
         """skipped/succeeded以外ならTrue"""
         return self.returncode is not None and self.returncode != 0
 
-    def get_status_text(self):
-        """文字列化。"""
+    @property
+    def status(self) -> str:
+        """ステータスの文字列を返す。"""
         if self.returncode is None:
             status = "skipped"
         elif self.returncode == 0:
             status = "succeeded"
-        elif self.command in ("pyupgrade", "autoflake", "isort", "black"):
+        elif self.command_type == "formatter" and not self.has_error:
             status = "formatted"
         else:
             status = "failed"
-        return f"{status} ({self.files}files in {self.elapsed:.1f}s)"
+        return status
+
+    def get_status_text(self) -> str:
+        """成型した文字列を返す。"""
+        return f"{self.status} ({self.files}files in {self.elapsed:.1f}s)"
 
 
 def run_command(command: str, args: argparse.Namespace) -> CommandResult:
@@ -235,7 +260,9 @@ def run_command(command: str, args: argparse.Namespace) -> CommandResult:
     globs = ["*_test.py"] if command == "pytest" else ["*.py"]
     targets = _expand_globs(args.targets, globs)
     if len(targets) <= 0:
-        return CommandResult(command=command, returncode=None, files=0, elapsed=0)
+        return CommandResult(
+            command=command, returncode=None, has_error=False, files=0, elapsed=0
+        )
 
     # isortのときはパスを浅い順にする。
     # → isortは複数の設定ファイルがあった場合に、最初に見つけたファイルを優先してしまうため。
@@ -255,6 +282,7 @@ def run_command(command: str, args: argparse.Namespace) -> CommandResult:
     check_args = ["--check"] if command in ("autoflake", "isort", "black") else []
 
     # 実行
+    has_error = False
     start_time = time.perf_counter()
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
@@ -269,7 +297,7 @@ def run_command(command: str, args: argparse.Namespace) -> CommandResult:
         errors="backslashreplace",
     )
     returncode = proc.returncode  # --check時のreturncodeを採用
-    # black/isortの再実行
+    # autoflake/isort/blackの再実行
     if returncode != 0 and command in ("autoflake", "isort", "black"):
         proc = subprocess.run(
             commandline,
@@ -281,6 +309,9 @@ def run_command(command: str, args: argparse.Namespace) -> CommandResult:
             encoding="utf-8",
             errors="backslashreplace",
         )
+        if proc.returncode != 0:
+            returncode = proc.returncode
+            has_error = True
     output = proc.stdout.strip()  # 再実行時の出力を採用
     elapsed = time.perf_counter() - start_time
 
@@ -298,7 +329,11 @@ def run_command(command: str, args: argparse.Namespace) -> CommandResult:
         logger.info(mark * NCOLS)
 
     return CommandResult(
-        command=command, returncode=returncode, files=len(targets), elapsed=elapsed
+        command=command,
+        returncode=returncode,
+        has_error=has_error,
+        files=len(targets),
+        elapsed=elapsed,
     )
 
 
@@ -331,7 +366,7 @@ def _expand_globs(targets: list[pathlib.Path], globs: list[str]) -> list[pathlib
     return expanded
 
 
-def _excluded(path: pathlib.Path):
+def _excluded(path: pathlib.Path) -> bool:
     """無視パターンチェック。"""
     excludes = CONFIG["exclude"] + CONFIG["extend-exclude"]
     # 対象パスに一致したらTrue

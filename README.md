@@ -49,6 +49,9 @@ $ pyfltr [files and/or directories ...]
 - 0: Formattersによるファイル変更無し、かつLinters/Testersでのエラー無し
 - 1: 上記以外
 
+`--exit-zero-even-if-formated`を指定すると、Formattersによるファイル変更があっても
+Linters/Testersでのエラー無しなら終了コードは0になる。
+
 ### 特定のツールのみ実行
 
 ```shell
