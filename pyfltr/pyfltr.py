@@ -73,6 +73,13 @@ CONFIG: dict[str, typing.Any] = {
         "venv",
     ],
     "extend-exclude": [],
+    # コマンド名のエイリアス
+    "aliases": {
+        "format": ["pyupgrade", "autoflake", "isort", "black"],
+        "lint": ["pflake8", "mypy", "pylint"],
+        "test": ["pytest"],
+        "fast": ["pyupgrade", "autoflake", "isort", "black", "pflake8"],
+    },
 }
 
 ALL_COMMANDS = {
@@ -148,7 +155,7 @@ def run(args: typing.Sequence[str] | None = None) -> int:
         )
         return 0
     # check
-    commands: list[str] = args.commands.split(",")
+    commands: list[str] = _resolve_aliases(args.commands.split(","))
     for command in commands:
         if command not in CONFIG:
             parser.error(f"command not found: {command}")
@@ -194,6 +201,28 @@ def run(args: typing.Sequence[str] | None = None) -> int:
     ):
         return 1
     return 0
+
+
+def _resolve_aliases(commands: list[str]) -> list[str]:
+    """エイリアスを展開。"""
+    # 最大10回まで再帰的に展開
+    for _ in range(10):
+        result: list[str] = []
+        resolved: bool = False
+        for command in commands:
+            command = command.strip()
+            if command in CONFIG["aliases"]:
+                for c in CONFIG["aliases"][command]:
+                    if c not in result:  # 順番は維持しつつ重複排除
+                        result.append(c)
+                resolved = True
+            else:
+                if command not in result:  # 順番は維持しつつ重複排除
+                    result.append(command)
+        if not resolved:
+            break
+        commands = result
+    return result
 
 
 def _run_commands(commands: list[str], args: argparse.Namespace) -> list[CommandResult]:

@@ -1,4 +1,4 @@
-# pyfltr: Python Formatters, Linters, and Testers Runner.
+# pyfltr: Python Formatters, Linters, and Testers Runner
 
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![Lint&Test](https://github.com/ak110/pyfltr/actions/workflows/python-app.yml/badge.svg)](https://github.com/ak110/pyfltr/actions/workflows/python-app.yml)
@@ -7,16 +7,16 @@
 Pythonの各種ツールをまとめて呼び出すツール。
 
 - Formatters
-    - pyupgrade
-    - autoflake
-    - isort
-    - black
+  - pyupgrade
+  - autoflake
+  - isort
+  - black
 - Linters
-    - pflake8 + flake8-bugbear
-    - mypy
-    - pylint
+  - pflake8 + flake8-bugbear
+  - mypy
+  - pylint
 - Testers
-    - pytest
+  - pytest
 
 ## コンセプト
 
@@ -29,7 +29,7 @@ Pythonの各種ツールをまとめて呼び出すツール。
 ## インストール
 
 ```shell
-$ pip install pyfltr
+pip install pyfltr
 ```
 
 ## 主な使い方
@@ -37,7 +37,7 @@ $ pip install pyfltr
 ### 通常
 
 ```shell
-$ pyfltr [files and/or directories ...]
+pyfltr [files and/or directories ...]
 ```
 
 対象を指定しなければカレントディレクトリを指定したのと同じ扱い。
@@ -55,10 +55,17 @@ Linters/Testersでのエラー無しなら終了コードは0になる。
 ### 特定のツールのみ実行
 
 ```shell
-$ pyfltr --commands=pyupgrade,autoflake,isort,black,pflake8,mypy,pylint,pytest [files and/or directories ...]
+pyfltr --commands=pyupgrade,autoflake,isort,black,pflake8,mypy,pylint,pytest [files and/or directories ...]
 ```
 
 カンマ区切りで実行するツールだけ指定する。
+
+以下のエイリアスも使用可能。(例: `--commands=fast`)
+
+- `format`: `pyupgrade`, `autoflake`, `isort`, `black`
+- `lint`: `pflake8`, `mypy`, `pylint`
+- `test`: `pytest`
+- `fast`: `pyupgrade`, `autoflake`, `isort`, `black`, `pflake8`
 
 ## 設定
 
@@ -135,7 +142,7 @@ addopts = "--showlocals -p no:cacheprovider"
     hooks:
       - id: system
         name: pyfltr
-        entry: poetry run pyfltr --commands=pyupgrade,autoflake,isort,black,pflake8
+        entry: poetry run pyfltr --commands=fast
         types: [python]
         require_serial: true
         language: system
