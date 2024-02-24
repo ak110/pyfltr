@@ -7,5 +7,5 @@ update:
 	$(MAKE) test
 
 test:
-	poetry install
+	poetry install --no-interaction
 	poetry run pyfltr --exit-zero-even-if-formatted

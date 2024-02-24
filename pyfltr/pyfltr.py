@@ -33,7 +33,7 @@ CONFIG: dict[str, typing.Any] = {
     ],
     "isort": True,
     "isort-path": "isort",
-    "isort-args": [],
+    "isort-args": ["--settings-path=./pyproject.toml"],
     "black": True,
     "black-path": "black",
     "black-args": [],
@@ -263,16 +263,6 @@ def run_command(command: str, args: argparse.Namespace) -> CommandResult:
         return CommandResult(
             command=command, returncode=None, has_error=False, files=0, elapsed=0
         )
-
-    # isortのときはパスを浅い順にする。
-    # → isortは複数の設定ファイルがあった場合に、最初に見つけたファイルを優先してしまうため。
-    #    例えば ./pyproject.toml と ./foo/pyproject.toml がある場合に、
-    #    isort foo/bar.py baz.py では src_paths が ./foo になって ./foo/pyproject.toml の設定に従う。
-    #    isort baz.py foo/bar.py では src_paths が . になって ./pyproject.toml の設定に従う。
-    #    後者のほうが望ましい場合が多いと思うので、浅い順にする。
-    #    ※ --config-root や --resolve-all-configs という設定もあるが、とりあえず。
-    if command == "isort":
-        targets = list(sorted(targets, key=lambda p: len(p.parts)))
 
     commandline = [CONFIG[f"{command}-path"]]
     commandline.extend(CONFIG[f"{command}-args"])
