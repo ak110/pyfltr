@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import importlib.metadata
 import logging
 import os
 import pathlib
@@ -137,12 +138,16 @@ def run(args: typing.Sequence[str] | None = None) -> int:
         type=pathlib.Path,
         help="target files and/or directories. (default: .)",
     )
+    parser.add_argument("--version", "-V", action="store_true", help="show version")
     args = parser.parse_args(args)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO, format="%(message)s"
     )
+    if args.version:
+        logger.info(f"pyfltr {importlib.metadata.version('translatedoc')}")
+        return 0
     if args.generate_config:
-        logging.info(
+        logger.info(
             "[tool.pyfltr]\n"
             + "\n".join(
                 f"{key} = "
