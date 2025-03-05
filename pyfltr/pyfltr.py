@@ -351,9 +351,7 @@ def run_command(command: str, args: argparse.Namespace) -> CommandResult:
     mark = "*" if returncode == 0 else "@"
     with lock:
         logger.info(f"{mark * 32} {command} {mark * (NCOLS - 34 - len(command))}")
-        logger.debug(
-            f"{mark} commandline: {' '.join(shlex.quote(a) for a in commandline)}"
-        )
+        logger.debug(f"{mark} commandline: {shlex.join(commandline)}")
         logger.info(mark)
         logger.info(output)
         logger.info(mark)

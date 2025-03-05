@@ -120,16 +120,16 @@ wheels = [
 
 [[package]]
 name = "flake8"
-version = "6.1.0"
+version = "7.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "mccabe" },
     { name = "pycodestyle" },
     { name = "pyflakes" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/cf/f8/bbe24f43695c0c480181e39ce910c2650c794831886ec46ddd7c40520e6a/flake8-6.1.0.tar.gz", hash = "sha256:d5b3857f07c030bdb5bf41c7f53799571d75c4491748a3adcd47de929e34cd23", size = 48767 }
+sdist = { url = "https://files.pythonhosted.org/packages/40/3c/3464b567aa367b221fa610bbbcce8015bf953977d21e52f2d711b526fb48/flake8-7.0.0.tar.gz", hash = "sha256:33f96621059e65eec474169085dc92bf26e7b2d47366b70be2f67ab80dc25132", size = 48219 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b0/24/bbf7175ffc47cb3d3e1eb523ddb23272968359dfcf2e1294707a2bf12fc4/flake8-6.1.0-py2.py3-none-any.whl", hash = "sha256:ffdfce58ea94c6580c77888a86506937f9a1a227dfcd15f245d694ae20a6b6e5", size = 58260 },
+    { url = "https://files.pythonhosted.org/packages/e3/01/cc8cdec7b61db0315c2ab62d80677a138ef06832ec17f04d87e6ef858f7f/flake8-7.0.0-py2.py3-none-any.whl", hash = "sha256:a6dfbb75e03252917f2473ea9653f7cd799c3064e54d4c8140044c5c065f53c3", size = 57570 },
 ]
 
 [[package]]
@@ -276,11 +276,11 @@ wheels = [
 
 [[package]]
 name = "pyflakes"
-version = "3.1.0"
+version = "3.2.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/8b/fb/7251eaec19a055ec6aafb3d1395db7622348130d1b9b763f78567b2aab32/pyflakes-3.1.0.tar.gz", hash = "sha256:a0aae034c444db0071aa077972ba4768d40c830d9539fd45bf4cd3f8f6992efc", size = 63636 }
+sdist = { url = "https://files.pythonhosted.org/packages/57/f9/669d8c9c86613c9d568757c7f5824bd3197d7b1c6c27553bc5618a27cce2/pyflakes-3.2.0.tar.gz", hash = "sha256:1c61603ff154621fb2a9172037d84dca3500def8c8b630657d1701f026f8af3f", size = 63788 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/00/e9/1e1fd7fae559bfd07704991e9a59dd1349b72423c904256c073ce88a9940/pyflakes-3.1.0-py2.py3-none-any.whl", hash = "sha256:4132f6d49cb4dae6819e5379898f2b8cce3c5f23994194c24b77d5da2e36f774", size = 62616 },
+    { url = "https://files.pythonhosted.org/packages/d4/d7/f1b7db88d8e4417c5d47adad627a93547f44bdc9028372dbd2313f34a855/pyflakes-3.2.0-py2.py3-none-any.whl", hash = "sha256:84b5be138a2dfbb40689ca07e2152deb896a65c3a3e24c251c5c62489568074a", size = 62725 },
 ]
 
 [[package]]
@@ -317,7 +317,7 @@ requires-dist = [
     { name = "joblib", specifier = ">=1.3" },
     { name = "mypy", specifier = ">=1.0" },
     { name = "pylint", specifier = ">=3.0" },
-    { name = "pyproject-flake8", specifier = ">=6.0" },
+    { name = "pyproject-flake8", specifier = ">=7.0" },
     { name = "pytest", specifier = ">=7.0" },
     { name = "pyupgrade", specifier = ">=3.0" },
     { name = "tomli", specifier = ">=2.0" },
@@ -348,15 +348,15 @@ wheels = [
 
 [[package]]
 name = "pyproject-flake8"
-version = "6.1.0"
+version = "7.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "flake8" },
     { name = "tomli", marker = "python_full_version < '3.11'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ff/7a/5451e27a0183ebb39fc456ea9b1ba9fcbed8f7afbd51c533340c12d9e864/pyproject_flake8-6.1.0.tar.gz", hash = "sha256:6da8e5a264395e0148bc11844c6fb50546f1fac83ac9210f7328664135f9e70f", size = 4470 }
+sdist = { url = "https://files.pythonhosted.org/packages/51/c3/619735aa5097b41e2af1a7e067e8859dea59689386b00c2efb7a8b7dc401/pyproject_flake8-7.0.0.tar.gz", hash = "sha256:5b953592336bc04d86e8942fdca1014256044a3445c8b6ca9467d08636749158", size = 4629 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/53/92/b338336874b8a1f0997ccbcdb437d01f9fc5fa9463ac1a2a976791be1a58/pyproject_flake8-6.1.0-py3-none-any.whl", hash = "sha256:86ea5559263c098e1aa4f866776aa2cf45362fd91a576b9fd8fbbbb55db12c4e", size = 5330 },
+    { url = "https://files.pythonhosted.org/packages/3a/49/34cb28f055739c442383cffe72f57d5eb924a9535ffc9c80edacff0f37f7/pyproject_flake8-7.0.0-py3-none-any.whl", hash = "sha256:611e91b49916e6d0685f88423ad4baff490888278a258975403c0dee6eb6072e", size = 5481 },
 ]
 
 [[package]]
