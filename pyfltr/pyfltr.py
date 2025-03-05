@@ -164,8 +164,13 @@ def run(args: typing.Sequence[str] | None = None) -> int:
         )
         return 0
 
-    # pythonの実行ファイルのパスを出力
-    logger.info(f"pyfltr: {sys.executable}")
+    # 実行環境の情報を出力
+    logger.info(f"{'-' * 10} pyfltr {'-' * (72 - 10 - 8)}")
+    logger.info(f"version:        {importlib.metadata.version('pyfltr')}")
+    logger.info(f"sys.executable: {sys.executable}")
+    logger.info(f"sys.version:    {sys.version}")
+    logger.info(f"cwd:            {os.getcwd()}")
+    logger.info("-" * 72)
 
     # check
     commands: list[str] = _resolve_aliases(args.commands.split(","))
