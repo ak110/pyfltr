@@ -3,9 +3,8 @@ help:
 	@cat Makefile
 
 update:
-	poetry update
+	uv sync --all-extras --dev
 	$(MAKE) test
 
 test:
-	poetry install --no-interaction
-	poetry run pyfltr --exit-zero-even-if-formatted
+	uv run pyfltr --exit-zero-even-if-formatted
