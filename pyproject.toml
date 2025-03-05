@@ -1,6 +1,6 @@
 [project]
 name = "pyfltr"
-version = "0.0.1"
+dynamic = ["version"]
 description = "Python Formatters, Linters, and Testers Runner."
 authors = [{ name = "aki.", email = "mark@aur.ll.to" }]
 requires-python = ">=3.8.1,<4.0"
