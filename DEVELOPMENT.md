@@ -14,6 +14,6 @@
 事前に`gh`コマンドをインストールし、`gh auth login`でログインしておく。
 
 1. 現在のバージョンの確認:
-   `git pull --tags && git tag --sort=version:refname | tail -n1`
+   `git fetch --tags && git tag --sort=version:refname | tail -n1`
 2. GitHubでリリースを作成する。
-   `gh release create v1.x.x --target=master --generate-notes`
+   `gh release create --target=master --generate-notes v1.x.x`
