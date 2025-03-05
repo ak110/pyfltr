@@ -144,7 +144,7 @@ def run(args: typing.Sequence[str] | None = None) -> int:
         level=logging.DEBUG if args.verbose else logging.INFO, format="%(message)s"
     )
     if args.version:
-        logger.info(f"pyfltr {importlib.metadata.version('translatedoc')}")
+        logger.info(f"pyfltr {importlib.metadata.version('pyfltr')}")
         return 0
     if args.generate_config:
         logger.info(
