@@ -143,9 +143,13 @@ def run(args: typing.Sequence[str] | None = None) -> int:
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO, format="%(message)s"
     )
+
+    # --version
     if args.version:
         logger.info(f"pyfltr {importlib.metadata.version('pyfltr')}")
         return 0
+
+    # --generate-config
     if args.generate_config:
         logger.info(
             "[tool.pyfltr]\n"
@@ -159,6 +163,10 @@ def run(args: typing.Sequence[str] | None = None) -> int:
             )
         )
         return 0
+
+    # pythonの実行ファイルのパスを出力
+    logger.info(f"pyfltr: {sys.executable}")
+
     # check
     commands: list[str] = _resolve_aliases(args.commands.split(","))
     for command in commands:
