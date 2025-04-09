@@ -11,3 +11,5 @@ format:
 
 test:
 	uv run pyfltr --exit-zero-even-if-formatted
+
+.PHONY: help update format test

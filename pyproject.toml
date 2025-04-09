@@ -3,7 +3,7 @@ name = "pyfltr"
 dynamic = ["version"]
 description = "Python Formatters, Linters, and Testers Runner."
 authors = [{ name = "aki.", email = "mark@aur.ll.to" }]
-requires-python = ">=3.8.1,<4.0"
+requires-python = ">=3.10,<4.0"
 readme = "README.md"
 license = {text = "MIT"}
 classifiers = [
@@ -45,7 +45,7 @@ build-backend = "hatchling.build"
 source = "vcs"
 
 [tool.pyfltr]
-pyupgrade-args = ["--py38-plus"]
+pyupgrade-args = ["--py310-plus"]
 pylint-args = ["--jobs=4"]
 
 [tool.isort]
@@ -55,7 +55,7 @@ profile = "black"
 
 [tool.black]
 # https://black.readthedocs.io/en/stable/usage_and_configuration/the_basics.html
-target-version = ['py38']
+target-version = ['py310']
 skip-magic-trailing-comma = true
 
 [tool.flake8]
