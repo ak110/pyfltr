@@ -1,140 +1,45 @@
-# 技術コンテキスト: pyfltr
+# 技術スタック
 
-## 技術スタック
-
-### 言語とバージョン
+## 主要な依存関係
 
 - Python 3.10以上
-- 型ヒントの活用
-- モダンなPython機能の使用
+- uv (パッケージ管理)
+- pre-commit (コミット時の自動チェック)
 
-### 主要な依存関係
+## 使用ツール
 
-```toml
-dependencies = [
-    "autoflake>=2.0",     # 未使用import/変数の削除
-    "black>=22.0",        # コードフォーマッター
-    "dill>=0.3",         # オブジェクトのシリアライズ
-    "flake8-bugbear>=23.0", # コード品質チェック
-    "isort>=5.0",        # import文の整理
-    "joblib>=1.3",       # 並列処理
-    "mypy>=1.0",         # 型チェック
-    "pylint>=3.0",       # コード分析
-    "pyproject-flake8>=7.0", # flake8の設定管理
-    "pytest>=7.0",       # テストフレームワーク
-    "pyupgrade>=3.0",    # Python構文の最新化
-    "tomli>=2.0",        # TOML設定ファイルの読み込み
-]
-```
+### Formatters
 
-### 開発ツール
+- pyupgrade: Pythonコードを新しい文法に更新
+- autoflake: 未使用のインポートと変数を削除
+- isort: インポート文のソート
+- black: コードフォーマッター
 
-- uv: パッケージ管理
-- pre-commit: コミット前チェック
-- GitHub Actions: CI/CD
-- hatchling: ビルドシステム
-- hatch-vcs: バージョン管理
+### Linters
+
+- pflake8 + flake8-bugbear: コードスタイルチェック
+- mypy: 型チェック
+- pylint: 静的解析
+
+### Testers
+
+- pytest: ユニットテスト
+- pytest-mock: テストモック
 
 ## 開発環境設定
 
-### パッケージ管理
+- pyproject.tomlでツールの設定を管理
+- Makefileで一般的なタスクを自動化
+- GitHub Actionsでの自動テスト
+- pre-commitフックでコミット時の品質チェック
 
-```bash
-# uvによるパッケージインストール
-uv pip install -e ".[dev]"
-```
+## パッケージング
 
-### pre-commit設定
+- hatchling + hatch-vcsによるビルドシステム
+- PyPIへの公開設定
 
-```yaml
-- repo: local
-  hooks:
-    - id: system
-      name: pyfltr
-      entry: poetry run pyfltr --commands=fast
-      types: [python]
-      require_serial: true
-      language: system
-```
+## 設定管理
 
-### プロジェクト設定
-
-- pyproject.tomlによる一元管理
-- 各ツールの設定統合
-- バージョン管理との連携
-
-## ビルドと配布
-
-### ビルドシステム
-
-- hatchlingをバックエンドとして使用
-- ソースからのバージョン生成
-- 依存関係の適切な管理
-
-### パッケージング
-
-- PyPIへの公開
-- wheel形式でのビルド
-- 依存関係の適切な指定
-
-## テスト環境
-
-### テストフレームワーク
-
-- pytestによるテスト実行
-- pytest-mockによるモック機能
-- キャッシュ無効化オプション
-
-### CI環境
-
-- GitHub Actionsでの自動化
-- 複数Pythonバージョンでのテスト
-- コードカバレッジの計測
-
-## 制約と要件
-
-### パフォーマンス要件
-
-- 効率的な並行処理
-- 最小限のメモリ使用
-- 高速な実行時間
-
-### 互換性要件
-
-- Python 3.10以上のサポート
-- 各OSでの動作保証
-- 依存パッケージの互換性維持
-
-### セキュリティ要件
-
-- 安全なファイル操作
-- 適切な権限管理
-- 依存関係の脆弱性チェック
-
-## 監視と計測
-
-### エラー監視
-
-- 明確なエラーメッセージ
-- スタックトレースの提供
-- 実行ステータスの追跡
-
-### パフォーマンス計測
-
-- 実行時間の計測
-- リソース使用量の監視
-- ボトルネックの特定
-
-## 今後の技術的課題
-
-### 最適化
-
-- 並行処理の改善
-- メモリ使用の最適化
-- 実行速度の向上
-
-### 拡張性
-
-- 新しいツールの追加
-- 設定オプションの拡充
-- インターフェースの改善
+- pyproject.tomlで一元管理
+- 各ツールの設定をプロジェクトに最適化
+- blackスタイルをベースにした一貫性のある整形ルール
