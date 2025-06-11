@@ -19,7 +19,7 @@ import joblib
 import tomli
 
 CONFIG: dict[str, typing.Any] = {
-    # コマンド毎に有効無効、パス、追加の引数、対象ファイルパターン
+    # コマンド毎に有効無効、パス、追加の引数を設定
     "pyupgrade": True,
     "pyupgrade-path": "pyupgrade",
     "pyupgrade-args": [],
@@ -50,6 +50,7 @@ CONFIG: dict[str, typing.Any] = {
     "pytest": True,
     "pytest-path": "pytest",
     "pytest-args": [],
+    "pytest-devmode": True,  # PYTHONDEVMODE=1をするか否か
     # flake8風無視パターン。
     "exclude": [
         # ここの値はflake8やblackなどの既定値を元に適当に。
@@ -323,6 +324,8 @@ def run_command(command: str, args: argparse.Namespace) -> CommandResult:
     start_time = time.perf_counter()
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
+    if CONFIG.get(f"{command}-devmode", False):
+        env["PYTHONDEVMODE"] = "1"
     proc = subprocess.run(
         commandline + check_args,
         check=False,
