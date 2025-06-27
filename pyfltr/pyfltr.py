@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """pyfltr。"""
-from __future__ import annotations
 
 import argparse
 import dataclasses
@@ -244,7 +243,9 @@ def _resolve_aliases(commands: list[str]) -> list[str]:
     return result
 
 
-def _run_commands(commands: list[str], args: argparse.Namespace) -> list[CommandResult]:
+def _run_commands(
+    commands: list[str], args: argparse.Namespace
+) -> "list[CommandResult]":
     """コマンドの実行。"""
     results: list[CommandResult] = []
 

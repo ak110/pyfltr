@@ -138,6 +138,18 @@ wheels = [
 ]
 
 [[package]]
+name = "flake8-tidy-imports"
+version = "4.11.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "flake8" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d7/03/9ea93e3ab6e26a6c5da23c95318101491b92f5a0777d1e80cf2e39d11d02/flake8_tidy_imports-4.11.0.tar.gz", hash = "sha256:fcd57e275a9f4f8163db2ecb17c9c942d311750e2315cf9ae931f22f7043d496", size = 13666 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/06/3b/d3c1b7f47a20c41b4811e15a783d29b1e83921422152a9770c66dea1017e/flake8_tidy_imports-4.11.0-py3-none-any.whl", hash = "sha256:607a76a7c2a9dec682e214f0692d4e7876862a618b766cef8f16979efac1ce22", size = 10013 },
+]
+
+[[package]]
 name = "iniconfig"
 version = "2.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -273,6 +285,7 @@ dependencies = [
     { name = "black" },
     { name = "dill" },
     { name = "flake8-bugbear" },
+    { name = "flake8-tidy-imports" },
     { name = "isort" },
     { name = "joblib" },
     { name = "mypy" },
@@ -294,6 +307,7 @@ requires-dist = [
     { name = "black", specifier = ">=22.0" },
     { name = "dill", specifier = ">=0.3" },
     { name = "flake8-bugbear", specifier = ">=23.0" },
+    { name = "flake8-tidy-imports", specifier = ">=4.11.0" },
     { name = "isort", specifier = ">=5.0" },
     { name = "joblib", specifier = ">=1.3" },
     { name = "mypy", specifier = ">=1.0" },

@@ -115,8 +115,10 @@ skip-magic-trailing-comma = true
 [tool.flake8]
 # https://black.readthedocs.io/en/stable/guides/using_black_with_other_tools.html#flake8
 # https://flake8.pycqa.org/en/latest/user/configuration.html
+# https://pypi.org/project/flake8-tidy-imports/
 max-line-length = 88
 extend-ignore = "E203,"
+ban-relative-imports = "parents"
 
 [tool.mypy]
 # https://mypy.readthedocs.io/en/stable/config_file.html
