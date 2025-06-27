@@ -3,13 +3,16 @@ help:
 	@cat Makefile
 
 update:
-	uv sync --all-extras --dev
+	uv sync --upgrade --all-extras --all-groups
+	uv run pre-commit autoupdate
 	$(MAKE) test
 
 format:
-	uv run pyfltr --exit-zero-even-if-formatted --commands=fast
+	-uv run pyfltr --exit-zero-even-if-formatted --commands=fast
+	-uv run ruff check --fix
 
 test:
+	uv run pre-commit run --all-files
 	uv run pyfltr --exit-zero-even-if-formatted
 
 .PHONY: help update format test

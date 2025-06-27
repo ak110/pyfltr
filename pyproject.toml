@@ -36,7 +36,11 @@ Homepage = "https://github.com/ak110/pyfltr"
 pyfltr = "pyfltr.pyfltr:main"
 
 [dependency-groups]
-dev = ["pytest-mock"]
+dev = [
+    "pre-commit>=4.2.0",
+    "pytest-mock",
+    "ruff>=0.12.1",
+]
 
 [build-system]
 requires = ["hatchling", "hatch-vcs"]
