@@ -200,7 +200,7 @@ class PyfltrApp(App):
         """ウィジェットの内容を更新する安全なヘルパー。"""
         try:
             widget = self.query_one(widget_id, Log)
-            widget.write(content, scroll_end=True)
+            widget.write(content, scroll_end=False)
             # 強制的に画面を更新
             self.refresh()
         except Exception as e:
