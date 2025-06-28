@@ -71,10 +71,10 @@ CONFIG: dict[str, typing.Any] = {
     "extend-exclude": [],
     # コマンド名のエイリアス
     "aliases": {
-        "format": ["pyupgrade", "autoflake", "isort", "black"],
+        "format": ["pyupgrade", "autoflake", "isort", "black", "ruff-format", "ruff-check"],
         "lint": ["pflake8", "mypy", "pylint"],
         "test": ["pytest"],
-        "fast": ["pyupgrade", "autoflake", "isort", "black", "pflake8"],
+        "fast": ["pyupgrade", "autoflake", "isort", "black", "pflake8", "ruff-format", "ruff-check"],
     },
 }
 

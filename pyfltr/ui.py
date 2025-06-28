@@ -62,7 +62,6 @@ class PyfltrApp(App):
         self.commands = commands
         self.args = args
         self.results: list[pyfltr.command.CommandResult] = []
-        self.command_outputs: dict[str, str] = {}
         self.command_status: dict[str, str] = {}
         self.fatal_error: str | None = None
 
@@ -105,12 +104,17 @@ class PyfltrApp(App):
                         f"#output-{command}",
                         f"Running {command}...\n\n",
                     )
-                    result = self._run_command_with_capture(command)
+                    result = self._execute_command(command)
                     self.results.append(result)
 
-                    status_line = f"Status: {result.status} ({result.files} files in {result.elapsed:.1f}s)\n\n"
-                    output = self.command_outputs.get(command, "")
-                    self.call_from_thread(self._update_widget, f"#output-{command}", status_line + output)
+                    status_lines = (
+                        f"Command: {shlex.join(result.commandline)}\n"
+                        f"Return code: {result.returncode}\n"
+                        f"Status: {result.status} "
+                        f"({result.files} files in {result.elapsed:.1f}s)\n"
+                        f"{'-' * 40}\n\n"
+                    )
+                    self.call_from_thread(self._update_widget, f"#output-{command}", status_lines + result.output)
 
                     # コマンド失敗時のタブタイトル更新
                     if result.status == "failed":
@@ -123,9 +127,9 @@ class PyfltrApp(App):
                     self.call_from_thread(
                         self._update_widget,
                         f"#output-{command}",
-                        f"Running {command}...\n\n",
+                        f"Running {command}...\n",
                     )
-                    jobs.append(joblib.delayed(self._run_command_with_capture)(command))
+                    jobs.append(joblib.delayed(self._execute_command)(command))
 
             if len(jobs) > 0:
                 with joblib.Parallel(n_jobs=len(jobs), backend="threading") as parallel:
@@ -139,11 +143,10 @@ class PyfltrApp(App):
                             f"({result.files} files in {result.elapsed:.1f}s)\n"
                             f"{'-' * 40}\n\n"
                         )
-                        output = self.command_outputs.get(result.command, "")
                         self.call_from_thread(
                             self._update_widget,
                             f"#output-{result.command}",
-                            status_lines + output,
+                            status_lines + result.output,
                         )
 
                         # コマンド失敗時のタブタイトル更新
@@ -168,10 +171,9 @@ class PyfltrApp(App):
                 logging.error(error_msg)
                 self.call_from_thread(self._handle_fatal_error)
 
-    def _run_command_with_capture(self, command: str) -> pyfltr.command.CommandResult:
+    def _execute_command(self, command: str) -> pyfltr.command.CommandResult:
         """outputをキャプチャしながらコマンド実行。"""
         result = pyfltr.command.execute_command(command, self.args)
-        self.command_outputs[command] = result.output
         return result
 
     def _update_summary(self) -> None:

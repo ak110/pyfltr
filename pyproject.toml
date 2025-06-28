@@ -63,8 +63,9 @@ pylint-args = ["--jobs=4"]
 line-length = 128
 
 [tool.ruff.lint]
-select = ["F", "E", "UP", "B"]
+select = ["F", "E", "B", "I", "UP", "SIM"]
 ignore = []
+unfixable = ["F401", "F841"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
