@@ -3,7 +3,7 @@ name = "pyfltr"
 dynamic = ["version"]
 description = "Python Formatters, Linters, and Testers Runner."
 authors = [{ name = "aki.", email = "mark@aur.ll.to" }]
-requires-python = ">=3.10,<4.0"
+requires-python = ">=3.11,<4.0"
 readme = "README.md"
 license = {text = "MIT"}
 classifiers = [
@@ -29,7 +29,6 @@ dependencies = [
     "pyupgrade>=3.0",
     "ruff>=0.12.1",
     "textual>=0.80.0",
-    "tomli>=2.0",
 ]
 
 [project.urls]

@@ -1,9 +1,8 @@
 """設定関連の処理。"""
 
 import pathlib
+import tomllib
 import typing
-
-import tomli
 
 # デフォルト設定
 CONFIG: dict[str, typing.Any] = {
@@ -98,7 +97,8 @@ def load_config() -> None:
     if not pyproject_path.exists():
         return
 
-    pyproject_data = tomli.loads(pyproject_path.read_text(encoding="utf-8", errors="backslashreplace"))
+    with pyproject_path.open("rb") as f:
+        pyproject_data = tomllib.load(f)
 
     for key, value in pyproject_data.get("tool", {}).get("pyfltr", {}).items():
         key = key.replace("_", "-")  # 「_」区切りと「-」区切りのどちらもOK
