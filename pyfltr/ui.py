@@ -153,8 +153,31 @@ class PyfltrApp(App):
                         if result.status == "failed":
                             self.call_from_thread(self._update_tab_title, result.command, True)
 
-            # summary更新
-            self._update_summary()
+            # summary更新と自動終了判定
+            summary_lines = ["Results summary:", "=" * 40]
+            for result in self.results:
+                summary_lines.append(f"{result.command:<16s} {result.get_status_text()}")
+
+            summary_lines.extend(["=" * 40])
+
+            # returncode情報と自動終了判定
+            statuses = [result.status for result in self.results]
+            overall_status: typing.Literal["SUCCESS", "FORMATTED", "FAILED"]
+            if any(status == "failed" for status in statuses):
+                overall_status = "FAILED"
+            elif any(status == "formatted" for status in statuses):
+                overall_status = "FORMATTED"
+            else:
+                overall_status = "SUCCESS"
+
+            summary_lines.append(f"Overall status: {overall_status}")
+            summary_lines.append("")
+            summary_lines.append("")
+            self.call_from_thread(self._update_widget, "#summary-content", "\n".join(summary_lines))
+
+            # FORMATTED/SUCCESSの場合は自動終了
+            if overall_status != "FAILED":
+                self.call_from_thread(self.exit)
 
         except Exception:
             # Textualエラー時の処理
@@ -175,28 +198,6 @@ class PyfltrApp(App):
         """outputをキャプチャしながらコマンド実行。"""
         result = pyfltr.command.execute_command(command, self.args)
         return result
-
-    def _update_summary(self) -> None:
-        """summary更新。"""
-        summary_lines = ["Results summary:", "=" * 40]
-        for result in self.results:
-            summary_lines.append(f"{result.command:<16s} {result.get_status_text()}")
-
-        summary_lines.extend(["=" * 40])
-
-        # returncode情報
-        statuses = [result.status for result in self.results]
-        if any(status == "failed" for status in statuses):
-            summary_lines.append("Overall status: FAILED")
-        elif any(status == "formatted" for status in statuses):
-            summary_lines.append("Overall status: FORMATTED")
-        else:
-            summary_lines.append("Overall status: SUCCESS")
-
-        summary_lines.append("")
-        summary_lines.append("")
-
-        self.call_from_thread(self._update_widget, "#summary-content", "\n".join(summary_lines))
 
     def _update_widget(self, widget_id: str, content: str) -> None:
         """ウィジェットの内容を更新する安全なヘルパー。"""
