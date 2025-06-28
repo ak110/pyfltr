@@ -64,6 +64,7 @@ class PyfltrApp(App):
         self.results: list[pyfltr.command.CommandResult] = []
         self.command_status: dict[str, str] = {}
         self.fatal_error: str | None = None
+        self.lock = threading.Lock()
 
     def compose(self) -> ComposeResult:
         """UIを構成。"""
@@ -99,62 +100,20 @@ class PyfltrApp(App):
             # formatters (serial)
             for command in self.commands:
                 if pyfltr.config.CONFIG[command] and pyfltr.config.ALL_COMMANDS[command]["type"] == "formatter":
-                    self.call_from_thread(
-                        self._update_widget,
-                        f"#output-{command}",
-                        f"Running {command}...\n\n",
-                    )
-                    result = self._execute_command(command)
-                    self.results.append(result)
-
-                    status_lines = (
-                        f"Command: {shlex.join(result.commandline)}\n"
-                        f"Return code: {result.returncode}\n"
-                        f"Status: {result.status} "
-                        f"({result.files} files in {result.elapsed:.1f}s)\n"
-                        f"{'-' * 40}\n\n"
-                    )
-                    self.call_from_thread(self._update_widget, f"#output-{command}", status_lines + result.output)
-
-                    # コマンド失敗時のタブタイトル更新
-                    if result.status == "failed":
-                        self.call_from_thread(self._update_tab_title, command, True)
+                    self.results.append(self._execute_command(command))
 
             # linters/testers (parallel)
             jobs: list[typing.Any] = []
             for command in self.commands:
                 if pyfltr.config.CONFIG[command] and pyfltr.config.ALL_COMMANDS[command]["type"] != "formatter":
-                    self.call_from_thread(
-                        self._update_widget,
-                        f"#output-{command}",
-                        f"Running {command}...\n",
-                    )
                     jobs.append(joblib.delayed(self._execute_command)(command))
 
             if len(jobs) > 0:
                 with joblib.Parallel(n_jobs=len(jobs), backend="threading") as parallel:
-                    parallel_results = parallel(jobs)
-                    self.results.extend(parallel_results)
-                    for result in parallel_results:
-                        status_lines = (
-                            f"Command: {shlex.join(result.commandline)}\n"
-                            f"Return code: {result.returncode}\n"
-                            f"Status: {result.status} "
-                            f"({result.files} files in {result.elapsed:.1f}s)\n"
-                            f"{'-' * 40}\n\n"
-                        )
-                        self.call_from_thread(
-                            self._update_widget,
-                            f"#output-{result.command}",
-                            status_lines + result.output,
-                        )
-
-                        # コマンド失敗時のタブタイトル更新
-                        if result.status == "failed":
-                            self.call_from_thread(self._update_tab_title, result.command, True)
+                    self.results.extend(parallel(jobs))
 
             # summary更新と自動終了判定
-            summary_lines = ["Results summary:", "=" * 40]
+            summary_lines = ["", "", "Results summary:", "=" * 40]
             for result in self.results:
                 summary_lines.append(f"{result.command:<16s} {result.get_status_text()}")
 
@@ -173,11 +132,12 @@ class PyfltrApp(App):
             summary_lines.append(f"Overall status: {overall_status}")
             summary_lines.append("")
             summary_lines.append("")
-            self.call_from_thread(self._update_widget, "#summary-content", "\n".join(summary_lines))
+            self.call_from_thread(self._update_widget, "#summary-content", "\n".join(summary_lines), scroll_end=True)
 
-            # FORMATTED/SUCCESSの場合は自動終了
+            # FORMATTED/SUCCESSの場合は1秒後に自動終了
             if overall_status != "FAILED":
-                self.call_from_thread(self.exit)
+                # self.call_from_thread(self.exit)
+                self.call_from_thread(self.set_timer, 1, self.exit)
 
         except Exception:
             # Textualエラー時の処理
@@ -188,6 +148,7 @@ class PyfltrApp(App):
                     self._update_widget,
                     "#summary-content",
                     f"FATAL ERROR:\n{error_msg}\n\nPress Ctrl+C to exit.",
+                    scroll_end=True,
                 )
             except Exception:
                 self.fatal_error = error_msg
@@ -196,14 +157,49 @@ class PyfltrApp(App):
 
     def _execute_command(self, command: str) -> pyfltr.command.CommandResult:
         """outputをキャプチャしながらコマンド実行。"""
+        # コマンドタブに開始メッセージを出力
+        self.call_from_thread(
+            self._update_widget,
+            f"#output-{command}",
+            f"Running {command}...\n",
+        )
+
         result = pyfltr.command.execute_command(command, self.args)
+
+        with self.lock:
+            # コマンド実行が完了した旨をサマリタブに出力
+            self.call_from_thread(
+                self._update_widget,
+                "#summary-content",
+                f"Command {command} completed. ({result.status})\n",
+                scroll_end=True,
+            )
+
+            # コマンド実行結果をコマンドタブに出力
+            command_tab_output = (
+                f"Command: {shlex.join(result.commandline)}\n"
+                f"{'-' * 40}\n"
+                f"{result.output.rstrip()}\n"
+                f"{'-' * 40}\n"
+                f"Return code: {result.returncode}\n"
+                f"Status: {result.get_status_text()}\n"
+            )
+            self.call_from_thread(
+                self._update_widget,
+                f"#output-{result.command}",
+                command_tab_output,
+            )
+            # コマンド失敗時のタブタイトル更新
+            if result.status == "failed":
+                self.call_from_thread(self._update_tab_title, result.command, True)
+
         return result
 
-    def _update_widget(self, widget_id: str, content: str) -> None:
+    def _update_widget(self, widget_id: str, content: str, scroll_end: bool = False) -> None:
         """ウィジェットの内容を更新する安全なヘルパー。"""
         try:
             widget = self.query_one(widget_id, Log)
-            widget.write(content, scroll_end=False)
+            widget.write(content, scroll_end=scroll_end)
             # 強制的に画面を更新
             self.refresh()
         except Exception as e:

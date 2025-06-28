@@ -83,7 +83,7 @@ ALL_COMMANDS = {
     "isort": {"type": "formatter"},
     "black": {"type": "formatter"},
     "ruff-format": {"type": "formatter"},
-    "ruff-check": {"type": "formatter"},
+    "ruff-check": {"type": "formatter"},  # ファイル変更を伴う可能性があるためformatter扱い
     "pflake8": {"type": "linter"},
     "mypy": {"type": "linter"},
     "pylint": {"type": "linter"},
