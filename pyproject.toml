@@ -26,6 +26,7 @@ dependencies = [
     "pyproject-flake8>=7.0", # https://github.com/csachs/pyproject-flake8/issues/30
     "pytest>=7.0",
     "pyupgrade>=3.0",
+    "textual>=0.80.0",
     "tomli>=2.0",
 ]
 
@@ -33,7 +34,7 @@ dependencies = [
 Homepage = "https://github.com/ak110/pyfltr"
 
 [project.scripts]
-pyfltr = "pyfltr.pyfltr:main"
+pyfltr = "pyfltr.main:main"
 
 [dependency-groups]
 dev = [

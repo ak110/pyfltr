@@ -6,16 +6,14 @@ import subprocess
 
 import pytest
 
-import pyfltr.pyfltr
+import pyfltr.main
 
 
 @pytest.mark.parametrize("mode", ["run", "ci", "pre-commit"])
 def test_success(mocker, mode):
     proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="test")
     mocker.patch("subprocess.run", return_value=proc)
-    returncode = pyfltr.pyfltr.run(
-        args=[mode, str(pathlib.Path(__file__).parent.parent)]
-    )
+    returncode = pyfltr.main.run([mode, str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 0
 
 
@@ -23,7 +21,5 @@ def test_success(mocker, mode):
 def test_fail(mocker, mode):
     proc = subprocess.CompletedProcess(["test"], returncode=-1, stdout="test")
     mocker.patch("subprocess.run", return_value=proc)
-    returncode = pyfltr.pyfltr.run(
-        args=[mode, str(pathlib.Path(__file__).parent.parent)]
-    )
+    returncode = pyfltr.main.run([mode, str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 1
