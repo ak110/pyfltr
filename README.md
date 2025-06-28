@@ -113,7 +113,21 @@ pylint-args = ["--jobs=4"]
 line-length = 128
 
 [tool.ruff.lint]
-select = ["F", "E", "UP", "B"]
+# https://docs.astral.sh/ruff/linter/#rule-selection
+select = [
+    # pycodestyle
+    "E",
+    # Pyflakes
+    "F",
+    # pyupgrade
+    "UP",
+    # flake8-bugbear
+    "B",
+    # flake8-simplify
+    "SIM",
+    # isort
+    "I",
+]
 ignore = []
 
 [tool.ruff.lint.pydocstyle]
@@ -126,7 +140,6 @@ profile = "black"
 
 [tool.black]
 # https://black.readthedocs.io/en/stable/usage_and_configuration/the_basics.html
-target-version = ['py310']
 skip-magic-trailing-comma = true
 
 [tool.flake8]
