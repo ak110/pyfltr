@@ -178,7 +178,7 @@ class PyfltrApp(App):
 
     def _update_summary(self) -> None:
         """summary更新。"""
-        summary_lines = ["Command Summary:", "=" * 40]
+        summary_lines = ["Results summary:", "=" * 40]
         for result in self.results:
             summary_lines.append(f"{result.command:<16s} {result.get_status_text()}")
 
