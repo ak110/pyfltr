@@ -5,6 +5,7 @@ import logging
 import shlex
 import sys
 import threading
+import time
 import traceback
 import typing
 
@@ -65,6 +66,8 @@ class PyfltrApp(App):
         self.command_status: dict[str, str] = {}
         self.fatal_error: str | None = None
         self.lock = threading.Lock()
+        self.last_ctrl_c_time: float = 0.0
+        self.ctrl_c_timeout: float = 1.0  # 1秒以内の連続押しで終了
 
     def compose(self) -> ComposeResult:
         """UIを構成。"""
@@ -81,14 +84,23 @@ class PyfltrApp(App):
     def on_ready(self) -> None:
         """mount時の処理。"""
         # 初期表示
-        self._update_widget("#summary-content", "Running commands... (Press Ctrl+C to exit)\n\n")
+        self._update_widget("#summary-content", "Running commands... (Press Ctrl+C twice to exit)\n\n")
         # コマンド実行をバックグラウンドで開始
         self.set_timer(0.1, self._run_commands)
 
     def on_key(self, event) -> None:
         """キー入力処理。"""
         if event.key == "ctrl+c":
-            self.exit()
+            current_time = time.time()
+
+            # 前回のCtrl+Cから1秒以内の場合は終了
+            if current_time - self.last_ctrl_c_time <= self.ctrl_c_timeout:
+                self.exit()
+            else:
+                # 初回またはタイムアウト後のCtrl+C
+                self.last_ctrl_c_time = current_time
+                # ユーザーに2回目を促すメッセージを表示
+                self._update_widget("#summary-content", "Press Ctrl+C again within 1 second to exit...\n", scroll_end=True)
 
     def _run_commands(self) -> None:
         """backgroundでコマンドを実行。"""
