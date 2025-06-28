@@ -164,7 +164,12 @@ show_error_codes = true
 
 [tool.pytest.ini_options]
 # https://docs.pytest.org/en/latest/reference/reference.html#ini-options-ref
-addopts = "--showlocals -p no:cacheprovider"
+addopts = "--showlocals -p no:cacheprovider --maxfail=5 --durations=30 --durations-min=0.5"
+log_level = "DEBUG"
+xfail_strict = true
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
 ```
 
 ### .pre-commit-config.yaml
