@@ -27,9 +27,7 @@ def main() -> typing.NoReturn:
 def run(sys_args: typing.Sequence[str] | None = None) -> int:
     """処理の実行。"""
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--verbose", default=False, action="store_true", help="shows verbose output."
-    )
+    parser.add_argument("--verbose", default=False, action="store_true", help="shows verbose output.")
     parser.add_argument(
         "--exit-zero-even-if-formatted",
         default=False,
@@ -47,12 +45,8 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
         action="store_true",
         help="generate a sample configuration. (part of pyproject.toml)",
     )
-    parser.add_argument(
-        "--ui", default=None, action="store_true", help="force enable textual UI"
-    )
-    parser.add_argument(
-        "--no-ui", default=None, action="store_true", help="force disable textual UI"
-    )
+    parser.add_argument("--ui", default=None, action="store_true", help="force enable textual UI")
+    parser.add_argument("--no-ui", default=None, action="store_true", help="force disable textual UI")
     parser.add_argument(
         "targets",
         nargs="*",
@@ -61,9 +55,7 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--version", "-V", action="store_true", help="show version")
     args = parser.parse_args(sys_args)
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO, format="%(message)s"
-    )
+    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, format="%(message)s")
 
     # --ui と --no-ui の競合チェック
     if args.ui and args.no_ui:
@@ -123,16 +115,12 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
     return returncode
 
 
-def calculate_returncode(
-    results: list[pyfltr.command.CommandResult], exit_zero_even_if_formatted: bool
-) -> int:
+def calculate_returncode(results: list[pyfltr.command.CommandResult], exit_zero_even_if_formatted: bool) -> int:
     """終了コードを計算。"""
     statuses = [result.status for result in results]
     if any(status == "failed" for status in statuses):
         return 1
-    if not exit_zero_even_if_formatted and any(
-        status == "formatted" for status in statuses
-    ):
+    if not exit_zero_even_if_formatted and any(status == "formatted" for status in statuses):
         return 1
     return 0
 

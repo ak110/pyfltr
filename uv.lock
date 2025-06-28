@@ -407,6 +407,7 @@ dependencies = [
     { name = "pyproject-flake8" },
     { name = "pytest" },
     { name = "pyupgrade" },
+    { name = "ruff" },
     { name = "textual" },
     { name = "tomli" },
 ]
@@ -415,7 +416,6 @@ dependencies = [
 dev = [
     { name = "pre-commit" },
     { name = "pytest-mock" },
-    { name = "ruff" },
 ]
 
 [package.metadata]
@@ -432,6 +432,7 @@ requires-dist = [
     { name = "pyproject-flake8", specifier = ">=7.0" },
     { name = "pytest", specifier = ">=7.0" },
     { name = "pyupgrade", specifier = ">=3.0" },
+    { name = "ruff", specifier = ">=0.12.1" },
     { name = "textual", specifier = ">=0.80.0" },
     { name = "tomli", specifier = ">=2.0" },
 ]
@@ -440,7 +441,6 @@ requires-dist = [
 dev = [
     { name = "pre-commit", specifier = ">=4.2.0" },
     { name = "pytest-mock" },
-    { name = "ruff", specifier = ">=0.12.1" },
 ]
 
 [[package]]

@@ -2,11 +2,9 @@
 disable=
     broad-exception-caught,
     fixme,
+    line-too-long,
     logging-fstring-interpolation,
     logging-not-lazy,
     too-many-branches,
     too-many-locals,
     too-many-return-statements,
-
-[FORMAT]
-max-line-length=88

@@ -9,7 +9,6 @@ update:
 
 format:
 	-uv run pyfltr --exit-zero-even-if-formatted --commands=fast
-	-uv run ruff check --fix
 
 test:
 	uv run pre-commit run --all-files

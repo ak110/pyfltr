@@ -81,7 +81,7 @@ def execute_command(command: str, args: argparse.Namespace) -> CommandResult:
             elapsed=0,
         )
 
-    check_args = ["--check"] if command in ("autoflake", "isort", "black") else []
+    check_args = ["--check"] if command in ("autoflake", "isort", "black", "ruff-format") else []
 
     has_error = False
     start_time = time.perf_counter()
@@ -102,8 +102,8 @@ def execute_command(command: str, args: argparse.Namespace) -> CommandResult:
     )
     returncode = proc.returncode
 
-    # autoflake/isort/blackの再実行
-    if returncode != 0 and command in ("autoflake", "isort", "black"):
+    # autoflake/isort/black/ruff-formatの再実行
+    if returncode != 0 and command in ("autoflake", "isort", "black", "ruff-format"):
         proc = subprocess.run(
             commandline,
             check=False,

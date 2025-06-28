@@ -11,10 +11,12 @@ Pythonの各種ツールをまとめて呼び出すツール。
   - autoflake
   - isort
   - black
+  - ruff format (disabled by default)
 - Linters
-  - pflake8 + flake8-bugbear
+  - pflake8 + flake8-bugbear + flake8-tidy-imports
   - mypy
   - pylint
+  - ruff check (disabled by default)
 - Testers
   - pytest
 
@@ -55,17 +57,17 @@ Linters/Testersでのエラー無しなら終了コードは0になる。
 ### 特定のツールのみ実行
 
 ```shell
-pyfltr --commands=pyupgrade,autoflake,isort,black,pflake8,mypy,pylint,pytest [files and/or directories ...]
+pyfltr --commands=pyupgrade,autoflake,isort,black,pflake8,mypy,pylint,pytest,ruff-format,ruff-check [files and/or directories ...]
 ```
 
 カンマ区切りで実行するツールだけ指定する。
 
 以下のエイリアスも使用可能。(例: `--commands=fast`)
 
-- `format`: `pyupgrade`, `autoflake`, `isort`, `black`
+- `format`: `pyupgrade`, `autoflake`, `isort`, `black`, `ruff-format`, `ruff-check`
 - `lint`: `pflake8`, `mypy`, `pylint`
 - `test`: `pytest`
-- `fast`: `pyupgrade`, `autoflake`, `isort`, `black`, `pflake8`
+- `fast`: `pyupgrade`, `autoflake`, `isort`, `black`, `pflake8`, `ruff-format`, `ruff-check`
 
 ## 設定
 
@@ -99,8 +101,23 @@ extend-exclude = ["foo", "bar.py"]
 pyfltr = "*"
 
 [tool.pyfltr]
-pyupgrade-args = ["--py38-plus"]
+isort = false  # ruffとの競合を避けるためfalse
+black = false  # ruffとの競合を避けるためfalse
+ruff-format = true  # ruffを使用する
+ruff-check = true  # ruffを使用する
+pyupgrade-args = ["--py310-plus"]
 pylint-args = ["--jobs=4"]
+
+[tool.ruff]
+# https://docs.astral.sh/ruff/configuration/
+line-length = 128
+
+[tool.ruff.lint]
+select = ["F", "E", "UP", "B"]
+ignore = []
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
 
 [tool.isort]
 # https://black.readthedocs.io/en/stable/guides/using_black_with_other_tools.html#isort
@@ -109,7 +126,7 @@ profile = "black"
 
 [tool.black]
 # https://black.readthedocs.io/en/stable/usage_and_configuration/the_basics.html
-target-version = ['py38']
+target-version = ['py310']
 skip-magic-trailing-comma = true
 
 [tool.flake8]
@@ -117,7 +134,7 @@ skip-magic-trailing-comma = true
 # https://flake8.pycqa.org/en/latest/user/configuration.html
 # https://pypi.org/project/flake8-tidy-imports/
 max-line-length = 88
-extend-ignore = "E203,"
+extend-ignore = "E203,E501"
 ban-relative-imports = "parents"
 
 [tool.mypy]

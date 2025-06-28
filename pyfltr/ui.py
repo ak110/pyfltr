@@ -22,9 +22,7 @@ def can_use_ui() -> bool:
     return sys.stdin.isatty() and sys.stdout.isatty()
 
 
-def run_commands_with_ui(
-    commands: list[str], args: argparse.Namespace
-) -> list[pyfltr.command.CommandResult]:
+def run_commands_with_ui(commands: list[str], args: argparse.Namespace) -> list[pyfltr.command.CommandResult]:
     """UI付きでコマンドを実行。"""
     app = PyfltrApp(commands, args)
     try:
@@ -75,9 +73,7 @@ class PyfltrApp(App):
                 yield VerticalScroll(Log(id="summary-content"), classes="output")
 
             # 有効なコマンドのみタブを作成
-            enabled_commands = [
-                cmd for cmd in self.commands if pyfltr.config.CONFIG[cmd]
-            ]
+            enabled_commands = [cmd for cmd in self.commands if pyfltr.config.CONFIG[cmd]]
             for command in enabled_commands:
                 with TabPane(command, id=f"tab-{command}"):
                     yield VerticalScroll(Log(id=f"output-{command}"), classes="output")
@@ -85,9 +81,7 @@ class PyfltrApp(App):
     def on_ready(self) -> None:
         """mount時の処理。"""
         # 初期表示
-        self._update_widget(
-            "#summary-content", "Running commands... (Press Ctrl+C to exit)\n\n"
-        )
+        self._update_widget("#summary-content", "Running commands... (Press Ctrl+C to exit)\n\n")
         # コマンド実行をバックグラウンドで開始
         self.set_timer(0.1, self._run_commands)
 
@@ -105,10 +99,7 @@ class PyfltrApp(App):
         try:
             # formatters (serial)
             for command in self.commands:
-                if (
-                    pyfltr.config.CONFIG[command]
-                    and pyfltr.config.ALL_COMMANDS[command]["type"] == "formatter"
-                ):
+                if pyfltr.config.CONFIG[command] and pyfltr.config.ALL_COMMANDS[command]["type"] == "formatter":
                     self.call_from_thread(
                         self._update_widget,
                         f"#output-{command}",
@@ -117,14 +108,9 @@ class PyfltrApp(App):
                     result = self._run_command_with_capture(command)
                     self.results.append(result)
 
-                    status_line = (
-                        f"Status: {result.status} "
-                        f"({result.files} files in {result.elapsed:.1f}s)\n\n"
-                    )
+                    status_line = f"Status: {result.status} ({result.files} files in {result.elapsed:.1f}s)\n\n"
                     output = self.command_outputs.get(command, "")
-                    self.call_from_thread(
-                        self._update_widget, f"#output-{command}", status_line + output
-                    )
+                    self.call_from_thread(self._update_widget, f"#output-{command}", status_line + output)
 
                     # コマンド失敗時のタブタイトル更新
                     if result.status == "failed":
@@ -133,10 +119,7 @@ class PyfltrApp(App):
             # linters/testers (parallel)
             jobs: list[typing.Any] = []
             for command in self.commands:
-                if (
-                    pyfltr.config.CONFIG[command]
-                    and pyfltr.config.ALL_COMMANDS[command]["type"] != "formatter"
-                ):
+                if pyfltr.config.CONFIG[command] and pyfltr.config.ALL_COMMANDS[command]["type"] != "formatter":
                     self.call_from_thread(
                         self._update_widget,
                         f"#output-{command}",
@@ -165,9 +148,7 @@ class PyfltrApp(App):
 
                         # コマンド失敗時のタブタイトル更新
                         if result.status == "failed":
-                            self.call_from_thread(
-                                self._update_tab_title, result.command, True
-                            )
+                            self.call_from_thread(self._update_tab_title, result.command, True)
 
             # summary更新
             self._update_summary()
@@ -213,9 +194,7 @@ class PyfltrApp(App):
         summary_lines.append("")
         summary_lines.append("")
 
-        self.call_from_thread(
-            self._update_widget, "#summary-content", "\n".join(summary_lines)
-        )
+        self.call_from_thread(self._update_widget, "#summary-content", "\n".join(summary_lines))
 
     def _update_widget(self, widget_id: str, content: str) -> None:
         """ウィジェットの内容を更新する安全なヘルパー。"""

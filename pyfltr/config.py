@@ -39,6 +39,12 @@ CONFIG: dict[str, typing.Any] = {
     "pytest-path": "pytest",
     "pytest-args": [],
     "pytest-devmode": True,  # PYTHONDEVMODE=1をするか否か
+    "ruff-format": False,
+    "ruff-format-path": "ruff",
+    "ruff-format-args": ["format"],
+    "ruff-check": False,
+    "ruff-check-path": "ruff",
+    "ruff-check-args": ["check", "--fix"],
     # flake8風無視パターン。
     "exclude": [
         # ここの値はflake8やblackなどの既定値を元に適当に。
@@ -77,6 +83,8 @@ ALL_COMMANDS = {
     "autoflake": {"type": "formatter"},
     "isort": {"type": "formatter"},
     "black": {"type": "formatter"},
+    "ruff-format": {"type": "formatter"},
+    "ruff-check": {"type": "formatter"},
     "pflake8": {"type": "linter"},
     "mypy": {"type": "linter"},
     "pylint": {"type": "linter"},
@@ -90,19 +98,14 @@ def load_config() -> None:
     if not pyproject_path.exists():
         return
 
-    pyproject_data = tomli.loads(
-        pyproject_path.read_text(encoding="utf-8", errors="backslashreplace")
-    )
+    pyproject_data = tomli.loads(pyproject_path.read_text(encoding="utf-8", errors="backslashreplace"))
 
     for key, value in pyproject_data.get("tool", {}).get("pyfltr", {}).items():
         key = key.replace("_", "-")  # 「_」区切りと「-」区切りのどちらもOK
         if key not in CONFIG:
             raise ValueError(f"Invalid config key: {key}")
         if not isinstance(value, type(CONFIG[key])):  # 簡易チェック
-            raise ValueError(
-                f"invalid config value: {key}={type(value)}, "
-                f"expected {type(CONFIG[key])}"
-            )
+            raise ValueError(f"invalid config value: {key}={type(value)}, expected {type(CONFIG[key])}")
         CONFIG[key] = value
 
 
@@ -131,10 +134,6 @@ def resolve_aliases(commands: list[str]) -> list[str]:
 def generate_config_text() -> str:
     """設定ファイルのサンプルテキストを生成。"""
     return "[tool.pyfltr]\n" + "\n".join(
-        f"{key} = "
-        + repr(value)
-        .replace("'", '"')
-        .replace("True", "true")
-        .replace("False", "false")
+        f"{key} = " + repr(value).replace("'", '"').replace("True", "true").replace("False", "false")
         for key, value in CONFIG.items()
     )
