@@ -23,13 +23,13 @@ def run_commands_with_cli(commands: list[str], args: argparse.Namespace) -> list
 
     # run formatters (serial)
     for command in commands:
-        if pyfltr.config.CONFIG[command] and pyfltr.config.ALL_COMMANDS[command]["type"] == "formatter":
+        if pyfltr.config.CONFIG[command] and pyfltr.config.ALL_COMMANDS[command].type == "formatter":
             results.append(run_command_for_cli(command, args))
 
     # run linters/testers (parallel)
     jobs: list[typing.Any] = []
     for command in commands:
-        if pyfltr.config.CONFIG[command] and pyfltr.config.ALL_COMMANDS[command]["type"] != "formatter":
+        if pyfltr.config.CONFIG[command] and pyfltr.config.ALL_COMMANDS[command].type != "formatter":
             jobs.append(joblib.delayed(run_command_for_cli)(command, args))
     if len(jobs) > 0:
         with joblib.Parallel(n_jobs=len(jobs), backend="threading") as parallel:

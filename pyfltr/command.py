@@ -28,7 +28,7 @@ class CommandResult:
     @property
     def command_type(self) -> str:
         """コマンドの種類を返す。"""
-        return pyfltr.config.ALL_COMMANDS[self.command]["type"]
+        return pyfltr.config.ALL_COMMANDS[self.command].type
 
     @property
     def alerted(self) -> bool:
@@ -81,7 +81,10 @@ def execute_command(command: str, args: argparse.Namespace) -> CommandResult:
             elapsed=0,
         )
 
-    check_args = ["--check"] if command in ("autoflake", "isort", "black", "ruff-format") else []
+    # --checkオプションを使わないとファイル変更があったかわからないコマンドは、
+    # 一度--checkオプションをつけて実行してから、
+    # 変更があった場合は再度--checkオプションなしで実行する。
+    check_args = ["--check"] if command in ("autoflake", "isort", "black") else []
 
     has_error = False
     start_time = time.perf_counter()
@@ -103,7 +106,7 @@ def execute_command(command: str, args: argparse.Namespace) -> CommandResult:
     returncode = proc.returncode
 
     # autoflake/isort/black/ruff-formatの再実行
-    if returncode != 0 and command in ("autoflake", "isort", "black", "ruff-format"):
+    if returncode != 0 and command in ("autoflake", "isort", "black"):
         proc = subprocess.run(
             commandline,
             check=False,

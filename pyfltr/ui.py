@@ -111,13 +111,13 @@ class PyfltrApp(App):
         try:
             # formatters (serial)
             for command in self.commands:
-                if pyfltr.config.CONFIG[command] and pyfltr.config.ALL_COMMANDS[command]["type"] == "formatter":
+                if pyfltr.config.CONFIG[command] and pyfltr.config.ALL_COMMANDS[command].type == "formatter":
                     self.results.append(self._execute_command(command))
 
             # linters/testers (parallel)
             jobs: list[typing.Any] = []
             for command in self.commands:
-                if pyfltr.config.CONFIG[command] and pyfltr.config.ALL_COMMANDS[command]["type"] != "formatter":
+                if pyfltr.config.CONFIG[command] and pyfltr.config.ALL_COMMANDS[command].type != "formatter":
                     jobs.append(joblib.delayed(self._execute_command)(command))
 
             if len(jobs) > 0:

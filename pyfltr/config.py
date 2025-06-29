@@ -1,10 +1,10 @@
 """設定関連の処理。"""
 
+import dataclasses
 import pathlib
 import tomllib
 import typing
 
-# デフォルト設定
 CONFIG: dict[str, typing.Any] = {
     # コマンド毎に有効無効、パス、追加の引数を設定
     "pyupgrade": True,
@@ -40,10 +40,10 @@ CONFIG: dict[str, typing.Any] = {
     "pytest-devmode": True,  # PYTHONDEVMODE=1をするか否か
     "ruff-format": False,
     "ruff-format-path": "ruff",
-    "ruff-format-args": ["format"],
+    "ruff-format-args": ["format", "--exit-non-zero-on-format"],
     "ruff-check": False,
     "ruff-check-path": "ruff",
-    "ruff-check-args": ["check", "--fix"],
+    "ruff-check-args": ["check", "--fix", "--exit-non-zero-on-fix"],
     # flake8風無視パターン。
     "exclude": [
         # ここの値はflake8やblackなどの既定値を元に適当に。
@@ -76,19 +76,33 @@ CONFIG: dict[str, typing.Any] = {
         "fast": ["pyupgrade", "autoflake", "isort", "black", "pflake8", "ruff-format", "ruff-check"],
     },
 }
+"""デフォルト設定。"""
 
-ALL_COMMANDS = {
-    "pyupgrade": {"type": "formatter"},
-    "autoflake": {"type": "formatter"},
-    "isort": {"type": "formatter"},
-    "black": {"type": "formatter"},
-    "ruff-format": {"type": "formatter"},
-    "ruff-check": {"type": "formatter"},  # ファイル変更を伴う可能性があるためformatter扱い
-    "pflake8": {"type": "linter"},
-    "mypy": {"type": "linter"},
-    "pylint": {"type": "linter"},
-    "pytest": {"type": "tester"},
+CommandType = typing.Literal["formatter", "linter", "tester"]
+"""コマンドの種類。"""
+
+
+@dataclasses.dataclass
+class CommandInfo:
+    """コマンドの情報を保持する辞書型。"""
+
+    type: CommandType
+    """コマンドの種類（formatter, linter, tester）"""
+
+
+ALL_COMMANDS: dict[str, CommandInfo] = {
+    "pyupgrade": CommandInfo(type="formatter"),
+    "autoflake": CommandInfo(type="formatter"),
+    "isort": CommandInfo(type="formatter"),
+    "black": CommandInfo(type="formatter"),
+    "ruff-format": CommandInfo(type="formatter"),
+    "ruff-check": CommandInfo(type="formatter"),  # ファイル変更を伴う可能性があるためformatter扱い
+    "pflake8": CommandInfo(type="linter"),
+    "mypy": CommandInfo(type="linter"),
+    "pylint": CommandInfo(type="linter"),
+    "pytest": CommandInfo(type="tester"),
 }
+"""全コマンドの情報。"""
 
 
 def load_config() -> None:
