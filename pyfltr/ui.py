@@ -25,7 +25,7 @@ def can_use_ui() -> bool:
 
 def run_commands_with_ui(commands: list[str], args: argparse.Namespace) -> list[pyfltr.command.CommandResult]:
     """UI付きでコマンドを実行。"""
-    app = PyfltrApp(commands, args)
+    app = UIApp(commands, args)
     try:
         app.run()
 
@@ -43,8 +43,8 @@ def run_commands_with_ui(commands: list[str], args: argparse.Namespace) -> list[
         sys.exit(1)
 
 
-class PyfltrApp(App):
-    """Pyfltr Textualアプリケーション。"""
+class UIApp(App):
+    """Textualアプリケーション。"""
 
     CSS = """
     TabPane {
@@ -63,7 +63,6 @@ class PyfltrApp(App):
         self.commands = commands
         self.args = args
         self.results: list[pyfltr.command.CommandResult] = []
-        self.command_status: dict[str, str] = {}
         self.fatal_error: str | None = None
         self.lock = threading.Lock()
         self.last_ctrl_c_time: float = 0.0
@@ -119,7 +118,6 @@ class PyfltrApp(App):
             for command in self.commands:
                 if pyfltr.config.CONFIG[command] and pyfltr.config.ALL_COMMANDS[command].type != "formatter":
                     jobs.append(joblib.delayed(self._execute_command)(command))
-
             if len(jobs) > 0:
                 with joblib.Parallel(n_jobs=len(jobs), backend="threading") as parallel:
                     self.results.extend(parallel(jobs))

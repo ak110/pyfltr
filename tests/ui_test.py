@@ -14,7 +14,7 @@ def test_ctrl_c_double_press_handling() -> None:
     args.verbose = False
 
     # PyfltrAppインスタンスを作成
-    app = pyfltr.ui.PyfltrApp(["black"], args)
+    app = pyfltr.ui.UIApp(["black"], args)
 
     # 初期状態のテスト
     assert app.last_ctrl_c_time == 0.0
@@ -50,7 +50,7 @@ def test_ctrl_c_timeout() -> None:
     args.targets = []
     args.verbose = False
 
-    app = pyfltr.ui.PyfltrApp(["black"], args)
+    app = pyfltr.ui.UIApp(["black"], args)
 
     mock_event = unittest.mock.MagicMock()
     mock_event.key = "ctrl+c"
