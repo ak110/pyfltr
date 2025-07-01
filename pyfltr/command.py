@@ -5,6 +5,7 @@ import dataclasses
 import logging
 import os
 import pathlib
+import shlex
 import subprocess
 import time
 
@@ -68,6 +69,13 @@ def execute_command(command: str, args: argparse.Namespace) -> CommandResult:
 
     commandline: list[str] = [pyfltr.config.CONFIG[f"{command}-path"]]
     commandline.extend(pyfltr.config.CONFIG[f"{command}-args"])
+
+    # 起動オプションからの追加引数を適用
+    additional_args_str = getattr(args, f"{command.replace('-', '_')}_args", "")
+    if additional_args_str:
+        additional_args = shlex.split(additional_args_str)
+        commandline.extend(additional_args)
+
     commandline.extend(map(str, targets))
 
     if len(targets) <= 0:

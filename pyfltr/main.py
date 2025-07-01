@@ -47,6 +47,15 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--ui", default=None, action="store_true", help="force enable textual UI")
     parser.add_argument("--no-ui", default=None, action="store_true", help="force disable textual UI")
+
+    # 各コマンド用の引数追加オプション
+    for command in pyfltr.config.ALL_COMMANDS:
+        parser.add_argument(
+            f"--{command}-args",
+            default="",
+            help=f"additional arguments for {command}",
+        )
+
     parser.add_argument(
         "targets",
         nargs="*",
