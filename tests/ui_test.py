@@ -25,7 +25,7 @@ def test_ctrl_c_double_press_handling() -> None:
     mock_event.key = "ctrl+c"
 
     # exitメソッドをモック
-    with unittest.mock.patch.object(app, "exit") as mock_exit, unittest.mock.patch.object(app, "_update_widget") as mock_update:
+    with unittest.mock.patch.object(app, "exit") as mock_exit, unittest.mock.patch.object(app, "_write_log") as mock_update:
         # 1回目のCtrl+C
         app.on_key(mock_event)
 
@@ -33,9 +33,7 @@ def test_ctrl_c_double_press_handling() -> None:
         mock_exit.assert_not_called()
 
         # メッセージが表示されることを確認
-        mock_update.assert_called_once_with(
-            "#summary-content", "Press Ctrl+C again within 1 second to exit...\n", scroll_end=True
-        )
+        mock_update.assert_called_once_with("#summary-content", "Press Ctrl+C again within 1 second to exit...\n")
 
         # 1秒以内の2回目のCtrl+C
         app.on_key(mock_event)
@@ -55,7 +53,7 @@ def test_ctrl_c_timeout() -> None:
     mock_event = unittest.mock.MagicMock()
     mock_event.key = "ctrl+c"
 
-    with unittest.mock.patch.object(app, "exit") as mock_exit, unittest.mock.patch.object(app, "_update_widget") as mock_update:
+    with unittest.mock.patch.object(app, "exit") as mock_exit, unittest.mock.patch.object(app, "_write_log") as mock_update:
         # 1回目のCtrl+C
         app.on_key(mock_event)
         mock_exit.assert_not_called()

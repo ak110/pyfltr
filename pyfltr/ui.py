@@ -83,7 +83,7 @@ class UIApp(App):
     def on_ready(self) -> None:
         """mount時の処理。"""
         # 初期表示
-        self._update_widget("#summary-content", "Running commands... (Press Ctrl+C twice to exit)\n\n")
+        self._write_log("#summary-content", "Running commands... (Press Ctrl+C twice to exit)\n\n")
         # コマンド実行をバックグラウンドで開始
         self.set_timer(0.1, self._run_commands)
 
@@ -99,7 +99,7 @@ class UIApp(App):
                 # 初回またはタイムアウト後のCtrl+C
                 self.last_ctrl_c_time = current_time
                 # ユーザーに2回目を促すメッセージを表示
-                self._update_widget("#summary-content", "Press Ctrl+C again within 1 second to exit...\n", scroll_end=True)
+                self._write_log("#summary-content", "Press Ctrl+C again within 1 second to exit...\n")
 
     def _run_commands(self) -> None:
         """backgroundでコマンドを実行。"""
@@ -142,7 +142,7 @@ class UIApp(App):
             summary_lines.append(f"Overall status: {overall_status}")
             summary_lines.append("")
             summary_lines.append("")
-            self.call_from_thread(self._update_widget, "#summary-content", "\n".join(summary_lines), scroll_end=True)
+            self.call_from_thread(self._write_log, "#summary-content", "\n".join(summary_lines))
 
             # FORMATTED/SUCCESSの場合は1秒後に自動終了
             if overall_status != "FAILED":
@@ -155,10 +155,9 @@ class UIApp(App):
             try:
                 # summaryタブにエラー表示
                 self.call_from_thread(
-                    self._update_widget,
+                    self._write_log,
                     "#summary-content",
                     f"FATAL ERROR:\n{error_msg}\n\nPress Ctrl+C to exit.",
-                    scroll_end=True,
                 )
             except Exception:
                 self.fatal_error = error_msg
@@ -169,7 +168,7 @@ class UIApp(App):
         """outputをキャプチャしながらコマンド実行。"""
         # コマンドタブに開始メッセージを出力
         self.call_from_thread(
-            self._update_widget,
+            self._write_log,
             f"#output-{command}",
             f"Running {command}...\n",
         )
@@ -179,10 +178,9 @@ class UIApp(App):
         with self.lock:
             # コマンド実行が完了した旨をサマリタブに出力
             self.call_from_thread(
-                self._update_widget,
+                self._write_log,
                 "#summary-content",
                 f"Command {command} completed. ({result.status})\n",
-                scroll_end=True,
             )
 
             # コマンド実行結果をコマンドタブに出力
@@ -195,7 +193,7 @@ class UIApp(App):
                 f"Status: {result.get_status_text()}\n"
             )
             self.call_from_thread(
-                self._update_widget,
+                self._write_log,
                 f"#output-{result.command}",
                 command_tab_output,
             )
@@ -205,11 +203,11 @@ class UIApp(App):
 
         return result
 
-    def _update_widget(self, widget_id: str, content: str, scroll_end: bool = False) -> None:
-        """ウィジェットの内容を更新する安全なヘルパー。"""
+    def _write_log(self, widget_id: str, content: str) -> None:
+        """ログの追記。"""
         try:
             widget = self.query_one(widget_id, Log)
-            widget.write(content, scroll_end=scroll_end)
+            widget.write(content)
             # 強制的に画面を更新
             self.refresh()
         except Exception as e:
@@ -226,6 +224,8 @@ class UIApp(App):
             tab = tc.get_tab(f"tab-{command}")
             if has_error:
                 tab.label = f"{command} *"  # type: ignore[assignment]
+                # エラーが発生したタブをアクティブにする
+                tc.active = f"tab-{command}"
             else:
                 tab.label = command  # type: ignore[assignment]
         except Exception:
