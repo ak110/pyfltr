@@ -38,12 +38,12 @@ CONFIG: dict[str, typing.Any] = {
     "pytest-path": "pytest",
     "pytest-args": [],
     "pytest-devmode": True,  # PYTHONDEVMODE=1をするか否か
-    "ruff-format": False,
-    "ruff-format-path": "ruff",
-    "ruff-format-args": ["format", "--exit-non-zero-on-format"],
     "ruff-check": False,
     "ruff-check-path": "ruff",
     "ruff-check-args": ["check", "--fix", "--exit-non-zero-on-fix"],
+    "ruff-format": False,
+    "ruff-format-path": "ruff",
+    "ruff-format-args": ["format", "--exit-non-zero-on-format"],
     # flake8風無視パターン。
     "exclude": [
         # ここの値はflake8やblackなどの既定値を元に適当に。
@@ -70,10 +70,10 @@ CONFIG: dict[str, typing.Any] = {
     "extend-exclude": [],
     # コマンド名のエイリアス
     "aliases": {
-        "format": ["pyupgrade", "autoflake", "isort", "black", "ruff-format", "ruff-check"],
+        "format": ["pyupgrade", "autoflake", "isort", "black", "ruff-check", "ruff-format"],
         "lint": ["pflake8", "mypy", "pylint"],
         "test": ["pytest"],
-        "fast": ["pyupgrade", "autoflake", "isort", "black", "pflake8", "ruff-format", "ruff-check"],
+        "fast": ["pyupgrade", "autoflake", "isort", "black", "pflake8", "ruff-check", "ruff-format"],
     },
 }
 """デフォルト設定。"""
@@ -95,8 +95,8 @@ ALL_COMMANDS: dict[str, CommandInfo] = {
     "autoflake": CommandInfo(type="formatter"),
     "isort": CommandInfo(type="formatter"),
     "black": CommandInfo(type="formatter"),
-    "ruff-format": CommandInfo(type="formatter"),
     "ruff-check": CommandInfo(type="formatter"),  # ファイル変更を伴う可能性があるためformatter扱い
+    "ruff-format": CommandInfo(type="formatter"),
     "pflake8": CommandInfo(type="linter"),
     "mypy": CommandInfo(type="linter"),
     "pylint": CommandInfo(type="linter"),
