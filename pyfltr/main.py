@@ -106,12 +106,13 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
 
     # run
     if use_ui:
-        results = pyfltr.ui.run_commands_with_ui(commands, args)
+        results, returncode = pyfltr.ui.run_commands_with_ui(commands, args)
         # UI終了後に通常のログを出力
         for result in results:
             pyfltr.cli.write_log(result)
     else:
         results = pyfltr.cli.run_commands_with_cli(commands, args)
+        returncode = 0
 
     # summary
     logger.info(f"{'-' * 10} summary {'-' * (72 - 10 - 9)}")
@@ -120,7 +121,8 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
     logger.info("-" * 72)
 
     # returncode
-    returncode = calculate_returncode(results, args.exit_zero_even_if_formatted)
+    if returncode == 0:
+        returncode = calculate_returncode(results, args.exit_zero_even_if_formatted)
     return returncode
 
 

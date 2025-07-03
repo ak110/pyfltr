@@ -23,18 +23,17 @@ def can_use_ui() -> bool:
     return sys.stdin.isatty() and sys.stdout.isatty()
 
 
-def run_commands_with_ui(commands: list[str], args: argparse.Namespace) -> list[pyfltr.command.CommandResult]:
+def run_commands_with_ui(commands: list[str], args: argparse.Namespace) -> tuple[list[pyfltr.command.CommandResult], int]:
     """UI付きでコマンドを実行。"""
     app = UIApp(commands, args)
     try:
-        app.run()
+        return_code = app.run()
+        if return_code is None:
+            return_code = 0
+        else:
+            assert isinstance(return_code, int)
 
-        # 致命的エラーがあった場合は異常終了
-        if app.fatal_error:
-            logging.error(f"Fatal error occurred: {app.fatal_error}")
-            sys.exit(1)
-
-        return app.results
+        return app.results, return_code
     except Exception:
         # Textualアプリケーション自体の例外処理
         error_msg = f"Failed to run UI application: {traceback.format_exc()}"
@@ -63,7 +62,6 @@ class UIApp(App):
         self.commands = commands
         self.args = args
         self.results: list[pyfltr.command.CommandResult] = []
-        self.fatal_error: str | None = None
         self.lock = threading.Lock()
         self.last_ctrl_c_time: float = 0.0
         self.ctrl_c_timeout: float = 1.0  # 1秒以内の連続押しで終了
@@ -94,7 +92,7 @@ class UIApp(App):
 
             # 前回のCtrl+Cから1秒以内の場合は終了
             if current_time - self.last_ctrl_c_time <= self.ctrl_c_timeout:
-                self.exit()
+                self.exit(return_code=130)  # 128+SIGINT(2)
             else:
                 # 初回またはタイムアウト後のCtrl+C
                 self.last_ctrl_c_time = current_time
@@ -160,9 +158,8 @@ class UIApp(App):
                     f"FATAL ERROR:\n{error_msg}\n\nPress Ctrl+C to exit.",
                 )
             except Exception:
-                self.fatal_error = error_msg
                 logging.error(error_msg)
-                self.call_from_thread(self._handle_fatal_error)
+                self.call_from_thread(self._handle_fatal_error, error_msg)
 
     def _execute_command(self, command: str) -> pyfltr.command.CommandResult:
         """outputをキャプチャしながらコマンド実行。"""
@@ -210,11 +207,8 @@ class UIApp(App):
             widget.write(content)
             # 強制的に画面を更新
             self.refresh()
-        except Exception as e:
-            # ウィジェット更新エラーをログに記録
+        except Exception:
             logging.error(f"UIエラー: {widget_id}", exc_info=True)
-            if self.fatal_error is None:
-                self.fatal_error = f"Widget update error: {e}"
 
     def _update_tab_title(self, command: str, has_error: bool) -> None:
         """タブタイトルを更新（エラー時に*を追加）。"""
@@ -231,8 +225,8 @@ class UIApp(App):
         except Exception:
             logging.warning(f"タブタイトル更新失敗: {command}", exc_info=True)
 
-    def _handle_fatal_error(self) -> None:
+    def _handle_fatal_error(self, msg: str) -> None:
         """致命的エラー時の処理。"""
-        logging.error("Handling fatal error - exiting application")
+        logging.error(f"Fatal error occurred: {msg}")
         # アプリケーションを終了
-        self.exit(1)
+        self.exit(return_code=1)
