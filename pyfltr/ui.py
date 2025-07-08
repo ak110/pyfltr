@@ -142,10 +142,10 @@ class UIApp(App):
             summary_lines.append("")
             self.call_from_thread(self._write_log, "#summary-content", "\n".join(summary_lines))
 
-            # FORMATTED/SUCCESSの場合は1秒後に自動終了
+            # FORMATTED/SUCCESSの場合は自動終了
             if overall_status != "FAILED":
-                # self.call_from_thread(self.exit)
-                self.call_from_thread(self.set_timer, 1, self.exit)
+                self.call_from_thread(self.exit)
+                # self.call_from_thread(self.set_timer, 1, self.exit)
 
         except Exception:
             # Textualエラー時の処理
