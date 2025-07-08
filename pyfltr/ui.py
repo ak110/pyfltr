@@ -92,7 +92,7 @@ class UIApp(App):
 
             # 前回のCtrl+Cから1秒以内の場合は終了
             if current_time - self.last_ctrl_c_time <= self.ctrl_c_timeout:
-                self.exit(return_code=130)  # 128+SIGINT(2)
+                self.exit()  # return_code=130 : 128+SIGINT(2) もありだが…
             else:
                 # 初回またはタイムアウト後のCtrl+C
                 self.last_ctrl_c_time = current_time
