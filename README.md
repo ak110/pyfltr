@@ -11,12 +11,12 @@ Pythonの各種ツールをまとめて呼び出すツール。
   - autoflake
   - isort
   - black
-  - ruff format (disabled by default)
+  - ruff format (既定では無効)
+  - ruff check --fix (既定では無効)
 - Linters
   - pflake8 + flake8-bugbear + flake8-tidy-imports
   - mypy
   - pylint
-  - ruff check (disabled by default)
 - Testers
   - pytest
 
@@ -86,26 +86,58 @@ extend-exclude = ["foo", "bar.py"]
 
 設定項目と既定値は`pyfltr --generate-config`で確認可能。
 
+- preset : プリセット設定（後述）
 - {command} : コマンドの有効/無効
 - {command}-path : 実行するコマンド
 - {command}-args : 追加のコマンドライン引数
 - exclude : 除外するファイル名/ディレクトリ名パターン(既定値あり)
 - extend-exclude : 追加で除外するファイル名/ディレクトリ名パターン(既定値は空)
 
+### プリセット設定
+
+`preset`を設定することで、一括して設定を変更できます。
+
+または
+
+```toml
+[tool.pyfltr]
+preset = "latest"
+```
+
+または
+
+```toml
+[tool.pyfltr]
+preset = "20250710"
+```
+
+これらのプリセットは、以下の設定を自動的に適用します：
+
+- `pyupgrade = false`
+- `autoflake = false`
+- `pflake8 = false`
+- `isort = false`
+- `black = false`
+- `ruff-format = true`
+- `ruff-check = true`
+
+`preset = "latest"`は予告なく動作を変更する可能性があります。
+
 ## 各種設定例
 
 ### pyproject.toml
 
 ```toml
-[tool.poetry.dev-dependencies]
-pyfltr = "*"
+[dependency-groups]
+dev = [
+    ...
+    "pyfltr",
+]
+
+...
 
 [tool.pyfltr]
-isort = false  # ruffとの競合を避けるためfalse
-black = false  # ruffとの競合を避けるためfalse
-ruff-format = true  # ruffを使用する
-ruff-check = true  # ruffを使用する
-pyupgrade-args = ["--py310-plus"]
+preset = "latest"
 pylint-args = ["--jobs=4"]
 
 [tool.ruff]
@@ -132,23 +164,6 @@ ignore = []
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
-
-[tool.isort]
-# https://black.readthedocs.io/en/stable/guides/using_black_with_other_tools.html#isort
-# https://pycqa.github.io/isort/docs/configuration/options.html
-profile = "black"
-
-[tool.black]
-# https://black.readthedocs.io/en/stable/usage_and_configuration/the_basics.html
-skip-magic-trailing-comma = true
-
-[tool.flake8]
-# https://black.readthedocs.io/en/stable/guides/using_black_with_other_tools.html#flake8
-# https://flake8.pycqa.org/en/latest/user/configuration.html
-# https://pypi.org/project/flake8-tidy-imports/
-max-line-length = 88
-extend-ignore = "E203,E501"
-ban-relative-imports = "parents"
 
 [tool.mypy]
 # https://mypy.readthedocs.io/en/stable/config_file.html
@@ -179,7 +194,7 @@ asyncio_default_test_loop_scope = "session"
     hooks:
       - id: system
         name: pyfltr
-        entry: poetry run pyfltr --commands=fast
+        entry: uv run pyfltr --commands=fast
         types: [python]
         require_serial: true
         language: system
@@ -188,6 +203,6 @@ asyncio_default_test_loop_scope = "session"
 ### CI
 
 ```yaml
-  - poetry install --no-interaction
-  - poetry run pyfltr
+  - uv install --no-interaction
+  - uv run pyfltr
 ```

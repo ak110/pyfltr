@@ -6,6 +6,8 @@ import tomllib
 import typing
 
 CONFIG: dict[str, typing.Any] = {
+    # プリセット
+    "preset": "",
     # コマンド毎に有効無効、パス、追加の引数を設定
     "pyupgrade": True,
     "pyupgrade-path": "pyupgrade",
@@ -114,7 +116,26 @@ def load_config() -> None:
     with pyproject_path.open("rb") as f:
         pyproject_data = tomllib.load(f)
 
-    for key, value in pyproject_data.get("tool", {}).get("pyfltr", {}).items():
+    tool_pyfltr = pyproject_data.get("tool", {}).get("pyfltr", {})
+
+    # プリセットの反映 (CONFIGに直接)
+    preset = str(tool_pyfltr.get("preset", ""))
+    if preset == "":
+        pass
+    elif preset in ("20250710", "latest"):
+        # ruff使用のプリセット
+        CONFIG["pyupgrade"] = False
+        CONFIG["autoflake"] = False
+        CONFIG["pflake8"] = False
+        CONFIG["isort"] = False
+        CONFIG["black"] = False
+        CONFIG["ruff-format"] = True
+        CONFIG["ruff-check"] = True
+    else:
+        raise ValueError(f"presetの設定値が不正です。{preset=}")
+
+    # プリセット以外の設定を適用 (プリセットと重複があれば上書き)
+    for key, value in tool_pyfltr.items():
         key = key.replace("_", "-")  # 「_」区切りと「-」区切りのどちらもOK
         if key not in CONFIG:
             raise ValueError(f"Invalid config key: {key}")

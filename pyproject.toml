@@ -51,11 +51,7 @@ build-backend = "hatchling.build"
 source = "vcs"
 
 [tool.pyfltr]
-isort = false  # ruffとの競合を避けるためfalse
-black = false  # ruffとの競合を避けるためfalse
-ruff-format = true  # ruffを使用する
-ruff-check = true  # ruffを使用する
-pyupgrade-args = ["--py310-plus"]
+preset = "latest"
 pylint-args = ["--jobs=4"]
 
 [tool.ruff]
