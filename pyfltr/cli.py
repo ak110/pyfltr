@@ -1,12 +1,10 @@
 """コマンドライン処理。"""
 
 import argparse
+import concurrent.futures
 import logging
 import shlex
 import threading
-import typing
-
-import joblib
 
 import pyfltr.command
 import pyfltr.config
@@ -27,13 +25,16 @@ def run_commands_with_cli(commands: list[str], args: argparse.Namespace) -> list
             results.append(run_command_for_cli(command, args))
 
     # run linters/testers (parallel)
-    jobs: list[typing.Any] = []
+    linter_commands = []
     for command in commands:
         if pyfltr.config.CONFIG[command] and pyfltr.config.ALL_COMMANDS[command].type != "formatter":
-            jobs.append(joblib.delayed(run_command_for_cli)(command, args))
-    if len(jobs) > 0:
-        with joblib.Parallel(n_jobs=len(jobs), backend="threading") as parallel:
-            results.extend(parallel(jobs))
+            linter_commands.append(command)
+
+    if len(linter_commands) > 0:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(linter_commands)) as executor:
+            future_to_command = {executor.submit(run_command_for_cli, command, args): command for command in linter_commands}
+            for future in concurrent.futures.as_completed(future_to_command):
+                results.append(future.result())
 
     return results
 

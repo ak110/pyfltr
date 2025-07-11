@@ -17,6 +17,7 @@ Pythonの各種ツールをまとめて呼び出すツール。
   - pflake8 + flake8-bugbear + flake8-tidy-imports
   - mypy
   - pylint
+  - pyright (既定では無効、`pip install pyfltr[pyright]`でインストール可能)
 - Testers
   - pytest
 
@@ -32,6 +33,7 @@ Pythonの各種ツールをまとめて呼び出すツール。
 
 ```shell
 pip install pyfltr
+# pip install pyfltr[pyright]  # pyrightを使う場合
 ```
 
 ## 主な使い方
@@ -57,7 +59,7 @@ Linters/Testersでのエラー無しなら終了コードは0になる。
 ### 特定のツールのみ実行
 
 ```shell
-pyfltr --commands=pyupgrade,autoflake,isort,black,pflake8,mypy,pylint,pytest,ruff-format,ruff-check [files and/or directories ...]
+pyfltr --commands=pyupgrade,autoflake,isort,black,ruff-format,ruff-check,pflake8,mypy,pylint,pyright,pytest [files and/or directories ...]
 ```
 
 カンマ区切りで実行するツールだけ指定する。
@@ -65,7 +67,7 @@ pyfltr --commands=pyupgrade,autoflake,isort,black,pflake8,mypy,pylint,pytest,ruf
 以下のエイリアスも使用可能。(例: `--commands=fast`)
 
 - `format`: `pyupgrade`, `autoflake`, `isort`, `black`, `ruff-format`, `ruff-check`
-- `lint`: `pflake8`, `mypy`, `pylint`
+- `lint`: `pflake8`, `mypy`, `pylint`, `pyright`
 - `test`: `pytest`
 - `fast`: `pyupgrade`, `autoflake`, `isort`, `black`, `pflake8`, `ruff-format`, `ruff-check`
 
@@ -138,6 +140,7 @@ dev = [
 
 [tool.pyfltr]
 preset = "latest"
+pyright = true
 pylint-args = ["--jobs=4"]
 
 [tool.ruff]

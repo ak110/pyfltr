@@ -36,6 +36,9 @@ CONFIG: dict[str, typing.Any] = {
     "pylint": True,
     "pylint-path": "pylint",
     "pylint-args": [],
+    "pyright": False,
+    "pyright-path": "pyright",
+    "pyright-args": [],
     "pytest": True,
     "pytest-path": "pytest",
     "pytest-args": [],
@@ -73,7 +76,7 @@ CONFIG: dict[str, typing.Any] = {
     # コマンド名のエイリアス
     "aliases": {
         "format": ["pyupgrade", "autoflake", "isort", "black", "ruff-check", "ruff-format"],
-        "lint": ["pflake8", "mypy", "pylint"],
+        "lint": ["pflake8", "mypy", "pylint", "pyright"],
         "test": ["pytest"],
         "fast": ["pyupgrade", "autoflake", "isort", "black", "pflake8", "ruff-check", "ruff-format"],
     },
@@ -102,6 +105,7 @@ ALL_COMMANDS: dict[str, CommandInfo] = {
     "pflake8": CommandInfo(type="linter"),
     "mypy": CommandInfo(type="linter"),
     "pylint": CommandInfo(type="linter"),
+    "pyright": CommandInfo(type="linter"),
     "pytest": CommandInfo(type="tester"),
 }
 """全コマンドの情報。"""
@@ -147,8 +151,9 @@ def load_config() -> None:
 def resolve_aliases(commands: list[str]) -> list[str]:
     """エイリアスを展開。"""
     # 最大10回まで再帰的に展開
+    result: list[str] = []
     for _ in range(10):
-        result: list[str] = []
+        result = []
         resolved: bool = False
         for command in commands:
             command = command.strip()

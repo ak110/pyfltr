@@ -20,7 +20,6 @@ dependencies = [
     "flake8-bugbear>=23.0",
     "flake8-tidy-imports>=4.11.0",
     "isort>=5.0",
-    "joblib>=1.3",
     "mypy>=1.0",
     "pylint>=3.0",
     "pyproject-flake8>=7.0", # https://github.com/csachs/pyproject-flake8/issues/30
@@ -29,6 +28,11 @@ dependencies = [
     "pyupgrade>=3.0",
     "ruff>=0.12.1",
     "textual>=0.80.0",
+]
+
+[project.optional-dependencies]
+pyright = [
+    "pyright[nodejs]>=1.1.403",
 ]
 
 [project.urls]
@@ -52,6 +56,7 @@ source = "vcs"
 
 [tool.pyfltr]
 preset = "latest"
+pyright = true
 pylint-args = ["--jobs=4"]
 
 [tool.ruff]

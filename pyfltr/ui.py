@@ -1,6 +1,7 @@
 """Textual UI関連の処理。"""
 
 import argparse
+import concurrent.futures
 import logging
 import shlex
 import sys
@@ -9,7 +10,6 @@ import time
 import traceback
 import typing
 
-import joblib
 from textual.app import App, ComposeResult
 from textual.containers import VerticalScroll
 from textual.widgets import Log, TabbedContent, TabPane
@@ -112,13 +112,18 @@ class UIApp(App):
                     self.results.append(self._execute_command(command))
 
             # linters/testers (parallel)
-            jobs: list[typing.Any] = []
+            linter_commands = []
             for command in self.commands:
                 if pyfltr.config.CONFIG[command] and pyfltr.config.ALL_COMMANDS[command].type != "formatter":
-                    jobs.append(joblib.delayed(self._execute_command)(command))
-            if len(jobs) > 0:
-                with joblib.Parallel(n_jobs=len(jobs), backend="threading") as parallel:
-                    self.results.extend(parallel(jobs))
+                    linter_commands.append(command)
+
+            if len(linter_commands) > 0:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=len(linter_commands)) as executor:
+                    future_to_command = {
+                        executor.submit(self._execute_command, command): command for command in linter_commands
+                    }
+                    for future in concurrent.futures.as_completed(future_to_command):
+                        self.results.append(future.result())
 
             # summary更新と自動終了判定
             summary_lines = ["", "", "Results summary:", "=" * 40]
