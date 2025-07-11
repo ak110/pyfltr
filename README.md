@@ -23,11 +23,11 @@ Pythonの各種ツールをまとめて呼び出すツール。
 
 ## コンセプト
 
-- 各種ツールをまとめて呼び出したい
+- 各種ツールをまとめて呼び出したい (時間節約のために並列で)
 - 各種ツールのバージョンにはできるだけ依存したくない (ので設定とかは面倒見ない)
 - exclude周りは各種ツールで設定方法がバラバラなのでできるだけまとめて解消したい (のでpyfltr側で解決してツールに渡す)
 - blackやisortはファイルを修正しつつエラーにもしたい (CIとかを想定) (pyupgradeはもともとそういう動作)
-- Q: pysenでいいのでは？ A: それはそう
+- 設定はできるだけ`pyproject.toml`にまとめる
 
 ## インストール
 
@@ -71,6 +71,8 @@ pyfltr --commands=pyupgrade,autoflake,isort,black,ruff-format,ruff-check,pflake8
 - `test`: `pytest`
 - `fast`: `pyupgrade`, `autoflake`, `isort`, `black`, `pflake8`, `ruff-format`, `ruff-check`
 
+※ 後述の`pyproject.toml`の`[tool.pyfltr]`で無効になっているコマンドは無視される。
+
 ## 設定
 
 `pyproject.toml`で設定する。
@@ -79,6 +81,7 @@ pyfltr --commands=pyupgrade,autoflake,isort,black,ruff-format,ruff-check,pflake8
 
 ```toml
 [tool.pyfltr]
+preset = "latest"
 pyupgrade-args = ["--py38-plus"]
 pylint-args = ["--jobs=4"]
 extend-exclude = ["foo", "bar.py"]
@@ -88,8 +91,8 @@ extend-exclude = ["foo", "bar.py"]
 
 設定項目と既定値は`pyfltr --generate-config`で確認可能。
 
-- preset : プリセット設定（後述）
-- {command} : コマンドの有効/無効
+- preset : プリセット設定(後述)
+- {command} : 各コマンドの有効/無効
 - {command}-path : 実行するコマンド
 - {command}-args : 追加のコマンドライン引数
 - exclude : 除外するファイル名/ディレクトリ名パターン(既定値あり)
@@ -97,7 +100,7 @@ extend-exclude = ["foo", "bar.py"]
 
 ### プリセット設定
 
-`preset`を設定することで、一括して設定を変更できます。
+`preset`を設定することで、一括して設定を変更できる。
 
 または
 
@@ -113,7 +116,7 @@ preset = "latest"
 preset = "20250710"
 ```
 
-これらのプリセットは、以下の設定を自動的に適用します：
+これらのプリセットは、以下の設定を自動的に適用する：
 
 - `pyupgrade = false`
 - `autoflake = false`
@@ -123,7 +126,7 @@ preset = "20250710"
 - `ruff-format = true`
 - `ruff-check = true`
 
-`preset = "latest"`は予告なく動作を変更する可能性があります。
+`preset = "latest"`は予告なく動作を変更する可能性あり。
 
 ## 各種設定例
 
