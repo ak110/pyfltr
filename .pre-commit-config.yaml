@@ -22,15 +22,15 @@ repos:
       - id: trailing-whitespace
 
   - repo: https://github.com/ninoseki/uv-sort
-    rev: v0.6.0
+    rev: v0.6.1
     hooks:
       - id: uv-sort
 
   - repo: local
     hooks:
-      - id: system
+      - id: pyfltr
         name: pyfltr
-        entry: uv run pyfltr --exit-zero-even-if-formatted --commands=fast
+        entry: pyfltr --exit-zero-even-if-formatted --commands=fast
         types: [python]
         require_serial: true
         language: system
