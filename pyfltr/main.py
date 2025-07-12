@@ -36,7 +36,7 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
     )
     parser.add_argument(
         "--commands",
-        default=",".join(pyfltr.config.ALL_COMMANDS),
+        default=",".join(pyfltr.config.ALL_COMMAND_NAMES),
         help="comma separated list of commands. (default: %(default)s)",
     )
     parser.add_argument(
@@ -115,8 +115,9 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
         returncode = 0
 
     # summary
+
     logger.info(f"{'-' * 10} summary {'-' * (72 - 10 - 9)}")
-    for result in results:
+    for result in sorted(results, key=lambda r: pyfltr.config.ALL_COMMAND_NAMES.index(r.command)):
         logger.info(f"    {result.command:<16s} {result.get_status_text()}")
     logger.info("-" * 72)
 

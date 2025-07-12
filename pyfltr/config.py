@@ -125,6 +125,9 @@ ALL_COMMANDS: dict[str, CommandInfo] = {
 }
 """全コマンドの情報。"""
 
+ALL_COMMAND_NAMES: list[str] = list(ALL_COMMANDS.keys())
+"""全コマンドの名前のリスト。"""
+
 
 def load_config() -> None:
     """pyproject.tomlから設定を読み込み。"""
