@@ -86,9 +86,6 @@ ignore = []
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
-[tool.ruff.lint.flake8-import-conventions]
-banned-from = ["*"]  # from xxx import yyyの禁止 (趣味)
-
 [tool.isort]
 # https://black.readthedocs.io/en/stable/guides/using_black_with_other_tools.html#isort
 # https://pycqa.github.io/isort/docs/configuration/options.html
