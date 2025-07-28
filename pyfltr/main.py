@@ -47,6 +47,8 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--ui", default=None, action="store_true", help="force enable textual UI")
     parser.add_argument("--no-ui", default=None, action="store_true", help="force disable textual UI")
+    parser.add_argument("--shuffle", default=False, action="store_true", help="shuffle file order")
+    parser.add_argument("--ci", default=False, action="store_true", help="CI mode (equivalent to --no-shuffle --no-ui)")
 
     # 各コマンド用の引数追加オプション
     for command in pyfltr.config.ALL_COMMANDS:
@@ -65,6 +67,11 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
     parser.add_argument("--version", "-V", action="store_true", help="show version")
     args = parser.parse_args(sys_args)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, format="%(message)s")
+
+    # --ciオプションの処理
+    if args.ci:
+        args.shuffle = False
+        args.no_ui = True
 
     # --ui と --no-ui の競合チェック
     if args.ui and args.no_ui:

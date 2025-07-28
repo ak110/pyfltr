@@ -5,9 +5,12 @@ import dataclasses
 import logging
 import os
 import pathlib
+import random
 import shlex
 import subprocess
 import time
+
+import natsort
 
 import pyfltr.config
 
@@ -66,6 +69,12 @@ def execute_command(command: str, args: argparse.Namespace) -> CommandResult:
     """
     globs = ["*_test.py"] if command == "pytest" else ["*.py"]
     targets = expand_globs(args.targets, globs)
+
+    # ファイルの順番をシャッフルまたはソート
+    if args.shuffle:
+        random.shuffle(targets)
+    else:
+        targets = natsort.natsorted(targets, key=str)
 
     commandline: list[str] = [pyfltr.config.CONFIG[f"{command}-path"]]
     commandline.extend(pyfltr.config.CONFIG[f"{command}-args"])

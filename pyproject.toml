@@ -21,6 +21,7 @@ dependencies = [
     "flake8-tidy-imports>=4.11.0",
     "isort>=5.0",
     "mypy>=1.0",
+    "natsort>=8.4.0",
     "pylint>=3.0",
     "pyproject-flake8>=7.0", # https://github.com/csachs/pyproject-flake8/issues/30
     "pytest-asyncio>=1.0.0",
