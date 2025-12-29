@@ -1,0 +1,127 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: バージョン番号の更新タイプ
+        required: true
+        type: choice
+        options:
+          - バグフィックス
+          - マイナーバージョンアップ
+          - メジャーバージョンアップ
+        default: バグフィックス
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Wait for tests to pass
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 直前のコミットのSHAを取得
+          commit_sha=$(git rev-parse HEAD)
+          echo "Checking test results for commit: $commit_sha"
+
+          # 最大待機時間(秒) - 30分
+          max_wait=1800
+          wait_interval=30
+          elapsed=0
+
+          while [ $elapsed -lt $max_wait ]; do
+            # test.ymlワークフローの最新の実行結果を取得
+            workflow_runs=$(gh api \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "/repos/${{ github.repository }}/actions/workflows/test.yml/runs?head_sha=$commit_sha&per_page=1")
+
+            # 実行結果が存在するか確認
+            total_count=$(echo "$workflow_runs" | jq -r '.total_count')
+            if [ "$total_count" = "0" ]; then
+              echo "No test workflow found for this commit. Waiting..."
+              sleep $wait_interval
+              elapsed=$((elapsed + wait_interval))
+              continue
+            fi
+
+            # 実行結果の確認
+            status=$(echo "$workflow_runs" | jq -r '.workflow_runs[0].status')
+            conclusion=$(echo "$workflow_runs" | jq -r '.workflow_runs[0].conclusion')
+
+            echo "Current status: $status, conclusion: $conclusion"
+
+            if [ "$status" = "completed" ]; then
+              if [ "$conclusion" = "success" ]; then
+                echo "Test workflow passed successfully"
+                exit 0
+              else
+                echo "Error: Test workflow did not succeed (conclusion: $conclusion)"
+                exit 1
+              fi
+            fi
+
+            echo "Test workflow is still running. Waiting ${wait_interval}s..."
+            sleep $wait_interval
+            elapsed=$((elapsed + wait_interval))
+          done
+
+          echo "Error: Timeout waiting for test workflow to complete"
+          exit 1
+
+      - name: Set up git
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+      - name: Get latest tag
+        id: current
+        run: |
+          git fetch --tags
+          latest=$(git tag --sort=version:refname | tail -n1)
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+
+      - name: Calculate next version
+        id: next
+        run: |
+          v=${{ steps.current.outputs.latest }}
+          v=${v#v}
+          major=$(echo "$v" | cut -d. -f1)
+          minor=$(echo "$v" | cut -d. -f2)
+          patch=$(echo "$v" | cut -d. -f3)
+          case "${{ github.event.inputs.bump }}" in
+            バグフィックス)
+              patch=$((patch + 1))
+              ;;
+            マイナーバージョンアップ)
+              minor=$((minor + 1))
+              patch=0
+              ;;
+            メジャーバージョンアップ)
+              major=$((major + 1))
+              minor=0
+              patch=0
+              ;;
+          esac
+          echo "next=v${major}.${minor}.${patch}" >> "$GITHUB_OUTPUT"
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.next.outputs.next }}" --target=master --generate-notes
+
+      - name: Run publish workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run publish.yml --ref=master

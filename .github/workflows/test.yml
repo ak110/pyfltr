@@ -1,4 +1,4 @@
-name: Lint&Test
+name: Test
 
 on:
   push:
@@ -7,12 +7,15 @@ on:
     branches:
       - "**"
 
+env:
+  PYTHONDEVMODE: "1"
+
 jobs:
   build:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v4
 

@@ -3,9 +3,10 @@ name: Publish
 on:
   release:
     types: [published]
+  workflow_dispatch: {}
 
 jobs:
-  deploy:
+  publish:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,7 +17,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
           enable-cache: true
 
       - name: Build and publish
