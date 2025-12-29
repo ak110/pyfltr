@@ -153,6 +153,8 @@ line-length = 128
 [tool.ruff.lint]
 # https://docs.astral.sh/ruff/linter/#rule-selection
 select = [
+    # pydocstyle
+    "D",
     # pycodestyle
     "E",
     # Pyflakes
@@ -163,13 +165,22 @@ select = [
     "B",
     # flake8-simplify
     "SIM",
+    # flake8-import-conventions
+    "ICN",
     # isort
     "I",
 ]
-ignore = []
+ignore = [
+    "D107", # Missing docstring in `__init__`
+    "D415", # First line should end with a period
+]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"**_test.py" = ["D"]
+"**/__init__.py" = ["D104"]  # Missing docstring in public package
 
 [tool.mypy]
 # https://mypy.readthedocs.io/en/stable/config_file.html
