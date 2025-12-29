@@ -66,10 +66,10 @@ pyfltr --commands=pyupgrade,autoflake,isort,black,ruff-format,ruff-check,pflake8
 
 以下のエイリアスも使用可能。(例: `--commands=fast`)
 
-- `format`: `pyupgrade`, `autoflake`, `isort`, `black`, `ruff-format`, `ruff-check`
-- `lint`: `pflake8`, `mypy`, `pylint`, `pyright`
+- `format`: `pyupgrade`, `autoflake`, `isort`, `black`, `ruff-format`
+- `lint`: `ruff-check`, `pflake8`, `mypy`, `pylint`, `pyright`
 - `test`: `pytest`
-- `fast`: `pyupgrade`, `autoflake`, `isort`, `black`, `pflake8`, `ruff-format`, `ruff-check`
+- `fast`: `pyupgrade`, `autoflake`, `isort`, `black`, `ruff-format`, `ruff-check`, `pflake8`
 
 ※ 後述の`pyproject.toml`の`[tool.pyfltr]`で無効になっているコマンドは無視される。
 
