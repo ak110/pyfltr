@@ -126,7 +126,10 @@ ALL_COMMANDS: dict[str, CommandInfo] = {
 """全コマンドの情報。"""
 
 ALL_COMMAND_NAMES: list[str] = list(ALL_COMMANDS.keys())
-"""全コマンドの名前のリスト。"""
+"""全コマンドの名前のリスト。
+
+タブなどの並び順はこのリストの順に従うことにする。
+"""
 
 
 def load_config() -> None:
@@ -186,6 +189,7 @@ def resolve_aliases(commands: list[str]) -> list[str]:
         if not resolved:
             break
         commands = result
+    result.sort(key=ALL_COMMAND_NAMES.index)  # リスト順にソート
     return result
 
 
