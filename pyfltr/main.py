@@ -48,6 +48,7 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
     parser.add_argument("--ui", default=None, action="store_true", help="force enable textual UI")
     parser.add_argument("--no-ui", default=None, action="store_true", help="force disable textual UI")
     parser.add_argument("--shuffle", default=False, action="store_true", help="shuffle file order")
+    parser.add_argument("--keep-ui", default=False, action="store_true", help="keep TUI open after successful completion")
     parser.add_argument("--ci", default=False, action="store_true", help="CI mode (equivalent to --no-shuffle --no-ui)")
 
     # 各コマンド用の引数追加オプション

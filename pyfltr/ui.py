@@ -11,7 +11,6 @@ import traceback
 import typing
 
 from textual.app import App, ComposeResult
-from textual.containers import VerticalScroll
 from textual.widgets import Log, TabbedContent, TabPane
 
 import pyfltr.command
@@ -50,9 +49,8 @@ class UIApp(App):
         height: 1fr;
     }
 
-    .output {
+    Log.output {
         height: 1fr;
-        overflow-y: scroll;
         scrollbar-gutter: stable;
     }
     """
@@ -70,16 +68,16 @@ class UIApp(App):
         """UIを構成。"""
         with TabbedContent(initial="summary"):
             with TabPane("Summary", id="summary"):
-                yield VerticalScroll(Log(id="summary-content"), classes="output")
+                yield Log(id="summary-content", classes="output")
 
             # 有効なコマンドのみタブを作成
             enabled_commands = [cmd for cmd in self.commands if pyfltr.config.CONFIG[cmd]]
             for command in enabled_commands:
                 with TabPane(command, id=f"tab-{command}"):
-                    yield VerticalScroll(Log(id=f"output-{command}"), classes="output")
+                    yield Log(id=f"output-{command}", classes="output")
 
     def on_ready(self) -> None:
-        """mount時の処理。"""
+        """ready時の処理。"""
         # 初期表示
         self._write_log("#summary-content", "Running commands... (Press Ctrl+C twice to exit)\n\n")
         # コマンド実行をバックグラウンドで開始
@@ -147,10 +145,9 @@ class UIApp(App):
             summary_lines.append("")
             self.call_from_thread(self._write_log, "#summary-content", "\n".join(summary_lines))
 
-            # FORMATTED/SUCCESSの場合は自動終了
-            if overall_status != "FAILED":
+            # FORMATTED/SUCCESSの場合は自動終了（--keep-ui時は終了しない）
+            if overall_status != "FAILED" and not self.args.keep_ui:
                 self.call_from_thread(self.exit)
-                # self.call_from_thread(self.set_timer, 1, self.exit)
 
         except Exception:
             # Textualエラー時の処理
