@@ -9,9 +9,10 @@ import threading
 import pyfltr.command
 import pyfltr.config
 
+NCOLS = 128
+
 logger = logging.getLogger(__name__)
 
-NCOLS = 128
 lock = threading.Lock()
 
 

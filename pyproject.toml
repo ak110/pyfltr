@@ -28,7 +28,7 @@ dependencies = [
     "pytest>=7.0",
     "pyupgrade>=3.0",
     "ruff>=0.12.1",
-    "textual>=0.80.0",
+    "textual>=8.0.0",
 ]
 
 [project.optional-dependencies]

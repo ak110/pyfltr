@@ -16,6 +16,10 @@ import pyfltr.ui
 
 logger = logging.getLogger(__name__)
 
+# 環境変数を打ち消してリサイズに対応する
+os.environ.pop("COLUMNS", None)
+os.environ.pop("LINES", None)
+
 
 def main() -> typing.NoReturn:
     """エントリポイント。"""

@@ -3,7 +3,6 @@
 import argparse
 import concurrent.futures
 import logging
-import shlex
 import sys
 import threading
 import time
@@ -11,7 +10,7 @@ import traceback
 import typing
 
 from textual.app import App, ComposeResult
-from textual.widgets import Log, TabbedContent, TabPane
+from textual.widgets import RichLog, TabbedContent, TabPane
 
 import pyfltr.command
 import pyfltr.config
@@ -45,12 +44,7 @@ class UIApp(App):
     """Textualアプリケーション。"""
 
     CSS = """
-    TabPane {
-        height: 1fr;
-    }
-
-    Log.output {
-        height: 1fr;
+    RichLog.output {
         scrollbar-gutter: stable;
     }
     """
@@ -68,18 +62,18 @@ class UIApp(App):
         """UIを構成。"""
         with TabbedContent(initial="summary"):
             with TabPane("Summary", id="summary"):
-                yield Log(id="summary-content", classes="output")
+                yield RichLog(id="summary-content", classes="output")
 
             # 有効なコマンドのみタブを作成
             enabled_commands = [cmd for cmd in self.commands if pyfltr.config.CONFIG[cmd]]
             for command in enabled_commands:
                 with TabPane(command, id=f"tab-{command}"):
-                    yield Log(id=f"output-{command}", classes="output")
+                    yield RichLog(id=f"output-{command}", classes="output")
 
     def on_ready(self) -> None:
         """ready時の処理。"""
         # 初期表示
-        self._write_log("#summary-content", "Running commands... (Press Ctrl+C twice to exit)\n\n")
+        self._write_log("#summary-content", "Running commands... (Press Ctrl+C twice to exit)\n")
         # コマンド実行をバックグラウンドで開始
         self.set_timer(0.1, self._run_commands)
 
@@ -95,7 +89,7 @@ class UIApp(App):
                 # 初回またはタイムアウト後のCtrl+C
                 self.last_ctrl_c_time = current_time
                 # ユーザーに2回目を促すメッセージを表示
-                self._write_log("#summary-content", "Press Ctrl+C again within 1 second to exit...\n")
+                self._write_log("#summary-content", "Press Ctrl+C again within 1 second to exit...")
 
     def _run_commands(self) -> None:
         """backgroundでコマンドを実行。"""
@@ -172,29 +166,26 @@ class UIApp(App):
             f"Running {command}...\n",
         )
 
-        result = pyfltr.command.execute_command(command, self.args)
+        def on_output(line: str) -> None:
+            """出力行をリアルタイムでUIに反映。"""
+            self.call_from_thread(self._write_log, f"#output-{command}", line.removesuffix("\n"))
+
+        result = pyfltr.command.execute_command(command, self.args, on_output=on_output)
 
         with self.lock:
             # コマンド実行が完了した旨をサマリタブに出力
             self.call_from_thread(
                 self._write_log,
                 "#summary-content",
-                f"Command {command} completed. ({result.status})\n",
+                f"Command {command} completed. ({result.status})",
             )
 
-            # コマンド実行結果をコマンドタブに出力
-            command_tab_output = (
-                f"Command: {shlex.join(result.commandline)}\n"
-                f"{'-' * 40}\n"
-                f"{result.output.rstrip()}\n"
-                f"{'-' * 40}\n"
-                f"Return code: {result.returncode}\n"
-                f"Status: {result.get_status_text()}\n"
-            )
+            # フッター情報のみ追記（本体はストリーミング済み）
+            footer = f"{'-' * 40}\nReturn code: {result.returncode}\nStatus: {result.get_status_text()}\n"
             self.call_from_thread(
                 self._write_log,
                 f"#output-{result.command}",
-                command_tab_output,
+                footer,
             )
             # コマンド失敗時のタブタイトル更新
             if result.status == "failed":
@@ -205,10 +196,8 @@ class UIApp(App):
     def _write_log(self, widget_id: str, content: str) -> None:
         """ログの追記。"""
         try:
-            widget = self.query_one(widget_id, Log)
+            widget = self.query_one(widget_id, RichLog)
             widget.write(content)
-            # 強制的に画面を更新
-            self.refresh()
         except Exception:
             logging.error(f"UIエラー: {widget_id}", exc_info=True)
 

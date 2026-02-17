@@ -1,20 +1,36 @@
 """コマンド実行関連の処理。"""
 
 import argparse
+import atexit
+import contextlib
 import dataclasses
 import logging
 import os
 import pathlib
 import random
 import shlex
+import shutil
 import subprocess
 import time
+import typing
 
 import natsort
 
 import pyfltr.config
 
 logger = logging.getLogger(__name__)
+
+_active_processes: list[subprocess.Popen] = []  # type: ignore[type-arg]
+
+
+def _cleanup_processes() -> None:
+    """プロセス終了時に実行中の子プロセスを終了。"""
+    for proc in _active_processes:
+        with contextlib.suppress(OSError):
+            proc.kill()
+
+
+atexit.register(_cleanup_processes)
 
 
 @dataclasses.dataclass
@@ -57,16 +73,55 @@ class CommandResult:
         return f"{self.status} ({self.files}files in {self.elapsed:.1f}s)"
 
 
-def execute_command(command: str, args: argparse.Namespace) -> CommandResult:
-    """コマンドの実行。
+def _run_subprocess(
+    commandline: list[str],
+    env: dict[str, str],
+    on_output: typing.Callable[[str], None] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    """サブプロセスの実行。"""
+    if on_output is None:
+        return subprocess.run(
+            commandline,
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            env=env,
+            text=True,
+            encoding="utf-8",
+            errors="backslashreplace",
+        )
+    with subprocess.Popen(
+        commandline,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        env=env,
+        text=True,
+        encoding="utf-8",
+        errors="backslashreplace",
+    ) as proc:
+        _active_processes.append(proc)
+        try:
+            output_lines: list[str] = []
+            assert proc.stdout is not None
+            for line in proc.stdout:
+                output_lines.append(line)
+                on_output(line)
+            proc.wait()
+            return subprocess.CompletedProcess(
+                args=commandline,
+                returncode=proc.returncode,
+                stdout="".join(output_lines),
+            )
+        finally:
+            _active_processes.remove(proc)
 
-    Args:
-        command: 実行するコマンド名
-        args: コマンドライン引数
 
-    Returns:
-        (CommandResult, output): 実行結果と出力文字列
-    """
+def execute_command(
+    command: str,
+    args: argparse.Namespace,
+    on_output: typing.Callable[[str], None] | None = None,
+) -> CommandResult:
+    """コマンドの実行。"""
     globs = ["*_test.py"] if command == "pytest" else ["*.py"]
     targets = expand_globs(args.targets, globs)
 
@@ -109,31 +164,16 @@ def execute_command(command: str, args: argparse.Namespace) -> CommandResult:
     env["PYTHONIOENCODING"] = "utf-8"
     if pyfltr.config.CONFIG.get(f"{command}-devmode", False):
         env["PYTHONDEVMODE"] = "1"
+    # 横幅はほどほどにしておく
+    # (pytestなどは一部の表示が右寄せになるのであまり大きいと見づらい)
+    env["COLUMNS"] = str(min(max(shutil.get_terminal_size().columns - 4, 80), 256))
 
-    proc = subprocess.run(
-        commandline + check_args,
-        check=False,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        env=env,
-        text=True,
-        encoding="utf-8",
-        errors="backslashreplace",
-    )
+    proc = _run_subprocess(commandline + check_args, env, on_output)
     returncode = proc.returncode
 
     # autoflake/isort/black/ruff-formatの再実行
     if returncode != 0 and command in ("autoflake", "isort", "black"):
-        proc = subprocess.run(
-            commandline,
-            check=False,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            env=env,
-            text=True,
-            encoding="utf-8",
-            errors="backslashreplace",
-        )
+        proc = _run_subprocess(commandline, env, on_output)
         if proc.returncode != 0:
             returncode = proc.returncode
             has_error = True
