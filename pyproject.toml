@@ -59,6 +59,7 @@ source = "vcs"
 preset = "latest"
 pyright = true
 pylint-args = ["--jobs=4"]
+mypy-args = ["--enable-error-code=unused-awaitable"]
 
 [tool.ruff]
 # https://docs.astral.sh/ruff/configuration/
@@ -95,23 +96,6 @@ convention = "google"
 [tool.ruff.lint.per-file-ignores]
 "**_test.py" = ["D"]
 "**/__init__.py" = ["D104"]  # Missing docstring in public package
-
-[tool.isort]
-# https://black.readthedocs.io/en/stable/guides/using_black_with_other_tools.html#isort
-# https://pycqa.github.io/isort/docs/configuration/options.html
-profile = "black"
-
-[tool.black]
-# https://black.readthedocs.io/en/stable/usage_and_configuration/the_basics.html
-skip-magic-trailing-comma = true
-
-[tool.flake8]
-# https://black.readthedocs.io/en/stable/guides/using_black_with_other_tools.html#flake8
-# https://flake8.pycqa.org/en/latest/user/configuration.html
-# https://pypi.org/project/flake8-tidy-imports/
-max-line-length = 88
-extend-ignore = "E203,E501"
-ban-relative-imports = "parents"
 
 [tool.mypy]
 # https://mypy.readthedocs.io/en/stable/config_file.html

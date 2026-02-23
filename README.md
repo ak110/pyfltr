@@ -145,6 +145,7 @@ dev = [
 preset = "latest"
 pyright = true
 pylint-args = ["--jobs=4"]
+mypy-args = ["--enable-error-code=unused-awaitable"]
 
 [tool.ruff]
 # https://docs.astral.sh/ruff/configuration/
