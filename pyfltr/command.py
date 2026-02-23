@@ -163,6 +163,7 @@ def execute_command(
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUNBUFFERED"] = "1"
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
     if pyfltr.config.CONFIG.get(f"{command}-devmode", False):
         env["PYTHONDEVMODE"] = "1"
     # 横幅はほどほどにしておく
