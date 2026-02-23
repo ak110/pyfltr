@@ -10,7 +10,7 @@ import traceback
 import typing
 
 from textual.app import App, ComposeResult
-from textual.widgets import RichLog, TabbedContent, TabPane
+from textual.widgets import Log, TabbedContent, TabPane
 
 import pyfltr.command
 import pyfltr.config
@@ -44,7 +44,7 @@ class UIApp(App):
     """Textualアプリケーション。"""
 
     CSS = """
-    RichLog.output {
+    Log.output {
         scrollbar-gutter: stable;
     }
     """
@@ -62,13 +62,13 @@ class UIApp(App):
         """UIを構成。"""
         with TabbedContent(initial="summary"):
             with TabPane("Summary", id="summary"):
-                yield RichLog(id="summary-content", classes="output")
+                yield Log(id="summary-content", classes="output")
 
             # 有効なコマンドのみタブを作成
             enabled_commands = [cmd for cmd in self.commands if pyfltr.config.CONFIG[cmd]]
             for command in enabled_commands:
                 with TabPane(command, id=f"tab-{command}"):
-                    yield RichLog(id=f"output-{command}", classes="output")
+                    yield Log(id=f"output-{command}", classes="output")
 
     def on_ready(self) -> None:
         """ready時の処理。"""
@@ -196,8 +196,8 @@ class UIApp(App):
     def _write_log(self, widget_id: str, content: str) -> None:
         """ログの追記。"""
         try:
-            widget = self.query_one(widget_id, RichLog)
-            widget.write(content)
+            widget = self.query_one(widget_id, Log)
+            widget.write_lines([(line if len(line) > 0 else " ") for line in (content + "\n").splitlines(keepends=True)])
         except Exception:
             logging.error(f"UIエラー: {widget_id}", exc_info=True)
 
