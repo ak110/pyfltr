@@ -167,7 +167,7 @@ def execute_command(
         env["PYTHONDEVMODE"] = "1"
     # 横幅はほどほどにしておく
     # (pytestなどは一部の表示が右寄せになるのであまり大きいと見づらい)
-    env["COLUMNS"] = str(min(max(shutil.get_terminal_size().columns - 4, 80), 256))
+    env["COLUMNS"] = str(min(max(shutil.get_terminal_size().columns - 4, 80), 128))
 
     proc = _run_subprocess(commandline + check_args, env, on_output)
     returncode = proc.returncode
