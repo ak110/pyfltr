@@ -197,7 +197,7 @@ class UIApp(App):
         """ログの追記。"""
         try:
             widget = self.query_one(widget_id, Log)
-            widget.write_lines([(line if len(line) > 0 else " ") for line in (content + "\n").splitlines(keepends=True)])
+            widget.write_lines([("\n" if len(line) == 0 else line) for line in (content + "\n").splitlines(keepends=True)])
         except Exception:
             logging.error(f"UIエラー: {widget_id}", exc_info=True)
 
