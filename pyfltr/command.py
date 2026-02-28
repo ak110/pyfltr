@@ -119,11 +119,12 @@ def _run_subprocess(
 def execute_command(
     command: str,
     args: argparse.Namespace,
+    config: pyfltr.config.Config,
     on_output: typing.Callable[[str], None] | None = None,
 ) -> CommandResult:
     """コマンドの実行。"""
     globs = ["*_test.py"] if command == "pytest" else ["*.py"]
-    targets = expand_globs(args.targets, globs)
+    targets = expand_globs(args.targets, globs, config)
 
     # ファイルの順番をシャッフルまたはソート
     if args.shuffle:
@@ -131,8 +132,8 @@ def execute_command(
     else:
         targets = natsort.natsorted(targets, key=str)
 
-    commandline: list[str] = [pyfltr.config.CONFIG[f"{command}-path"]]
-    commandline.extend(pyfltr.config.CONFIG[f"{command}-args"])
+    commandline: list[str] = [config[f"{command}-path"]]
+    commandline.extend(config[f"{command}-args"])
 
     # 起動オプションからの追加引数を適用
     additional_args_str = getattr(args, f"{command.replace('-', '_')}_args", "")
@@ -164,7 +165,7 @@ def execute_command(
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUNBUFFERED"] = "1"
     env["PYTHONDONTWRITEBYTECODE"] = "1"
-    if pyfltr.config.CONFIG.get(f"{command}-devmode", False):
+    if config.values.get(f"{command}-devmode", False):
         env["PYTHONDEVMODE"] = "1"
     # 横幅はほどほどにしておく
     # (pytestなどは一部の表示が右寄せになるのであまり大きいと見づらい)
@@ -194,7 +195,7 @@ def execute_command(
     )
 
 
-def expand_globs(targets: list[pathlib.Path], globs: list[str]) -> list[pathlib.Path]:
+def expand_globs(targets: list[pathlib.Path], globs: list[str], config: pyfltr.config.Config) -> list[pathlib.Path]:
     """対象ファイルのリストアップ。"""
     # 空ならカレントディレクトリを対象とする
     if len(targets) == 0:
@@ -204,7 +205,7 @@ def expand_globs(targets: list[pathlib.Path], globs: list[str]) -> list[pathlib.
 
     def _expand_target(target):
         try:
-            if excluded(target):
+            if excluded(target, config):
                 pass
             elif target.is_dir():
                 # ディレクトリの場合、再帰
@@ -223,9 +224,9 @@ def expand_globs(targets: list[pathlib.Path], globs: list[str]) -> list[pathlib.
     return expanded
 
 
-def excluded(path: pathlib.Path) -> bool:
+def excluded(path: pathlib.Path, config: pyfltr.config.Config) -> bool:
     """無視パターンチェック。"""
-    excludes = pyfltr.config.CONFIG["exclude"] + pyfltr.config.CONFIG["extend-exclude"]
+    excludes = config["exclude"] + config["extend-exclude"]
     # 対象パスに一致したらTrue
     if any(path.match(glob) for glob in excludes):
         return True

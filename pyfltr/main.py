@@ -29,8 +29,8 @@ def main() -> typing.NoReturn:
     sys.exit(exit_code)
 
 
-def run(sys_args: typing.Sequence[str] | None = None) -> int:
-    """処理の実行。"""
+def build_parser() -> argparse.ArgumentParser:
+    """引数パーサーを生成。"""
     parser = argparse.ArgumentParser()
     parser.add_argument("--verbose", default=False, action="store_true", help="shows verbose output.")
     parser.add_argument(
@@ -72,6 +72,12 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
         help="target files and/or directories. (default: .)",
     )
     parser.add_argument("--version", "-V", action="store_true", help="show version")
+    return parser
+
+
+def run(sys_args: typing.Sequence[str] | None = None) -> int:
+    """処理の実行。"""
+    parser = build_parser()
     args = parser.parse_args(sys_args)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, format="%(message)s")
 
@@ -94,6 +100,28 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
         logger.info(pyfltr.config.generate_config_text())
         return 0
 
+    # pyproject.toml
+    try:
+        config = pyfltr.config.load_config()
+    except (ValueError, OSError) as e:
+        logger.error(f"Config error: {e}")
+        return 1
+
+    commands: list[str] = pyfltr.config.resolve_aliases(args.commands.split(","), config)
+    for command in commands:
+        if command not in config.values:
+            parser.error(f"command not found: {command}")
+
+    return run_pipeline(parser, args, commands, config)
+
+
+def run_pipeline(
+    _parser: argparse.ArgumentParser,
+    args: argparse.Namespace,
+    commands: list[str],
+    config: pyfltr.config.Config,
+) -> int:
+    """実行パイプライン。"""
     # ターミナルをクリア
     if not args.no_clear:
         subprocess.run("cls" if os.name == "nt" else "clear", check=False)
@@ -106,30 +134,17 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
     logger.info(f"cwd:            {os.getcwd()}")
     logger.info("-" * 72)
 
-    # check
-    commands: list[str] = pyfltr.config.resolve_aliases(args.commands.split(","))
-    for command in commands:
-        if command not in pyfltr.config.CONFIG:
-            parser.error(f"command not found: {command}")
-
-    # pyproject.toml
-    try:
-        pyfltr.config.load_config()
-    except (ValueError, OSError) as e:
-        logger.error(f"Config error: {e}")
-        return 1
-
     # UIの判定
     use_ui = not args.no_ui and (args.ui or pyfltr.ui.can_use_ui())
 
     # run
     if use_ui:
-        results, returncode = pyfltr.ui.run_commands_with_ui(commands, args)
+        results, returncode = pyfltr.ui.run_commands_with_ui(commands, args, config)
         # UI終了後に通常のログを出力
         for result in results:
             pyfltr.cli.write_log(result)
     else:
-        results = pyfltr.cli.run_commands_with_cli(commands, args)
+        results = pyfltr.cli.run_commands_with_cli(commands, args, config)
         returncode = 0
 
     # summary

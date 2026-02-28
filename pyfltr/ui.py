@@ -14,6 +14,7 @@ from textual.widgets import Log, TabbedContent, TabPane
 
 import pyfltr.command
 import pyfltr.config
+import pyfltr.executor
 
 
 def can_use_ui() -> bool:
@@ -21,9 +22,13 @@ def can_use_ui() -> bool:
     return sys.stdin.isatty() and sys.stdout.isatty()
 
 
-def run_commands_with_ui(commands: list[str], args: argparse.Namespace) -> tuple[list[pyfltr.command.CommandResult], int]:
+def run_commands_with_ui(
+    commands: list[str],
+    args: argparse.Namespace,
+    config: pyfltr.config.Config,
+) -> tuple[list[pyfltr.command.CommandResult], int]:
     """UI付きでコマンドを実行。"""
-    app = UIApp(commands, args)
+    app = UIApp(commands, args, config)
     try:
         return_code = app.run()
         if return_code is None:
@@ -49,10 +54,11 @@ class UIApp(App):
     }
     """
 
-    def __init__(self, commands: list[str], args: argparse.Namespace) -> None:
+    def __init__(self, commands: list[str], args: argparse.Namespace, config: pyfltr.config.Config) -> None:
         super().__init__()
         self.commands = commands
         self.args = args
+        self.config = config
         self.results: list[pyfltr.command.CommandResult] = []
         self.lock = threading.Lock()
         self.last_ctrl_c_time: float = 0.0
@@ -65,7 +71,7 @@ class UIApp(App):
                 yield Log(id="summary-content", classes="output")
 
             # 有効なコマンドのみタブを作成
-            enabled_commands = [cmd for cmd in self.commands if pyfltr.config.CONFIG[cmd]]
+            enabled_commands = [cmd for cmd in self.commands if self.config[cmd]]
             for command in enabled_commands:
                 with TabPane(command, id=f"tab-{command}"):
                     yield Log(id=f"output-{command}", classes="output")
@@ -98,21 +104,17 @@ class UIApp(App):
     def _run_in_background(self):
         """バックグラウンド処理。"""
         try:
+            formatters, linters_and_testers = pyfltr.executor.split_commands_for_execution(self.commands, self.config)
+
             # formatters (serial)
-            for command in self.commands:
-                if pyfltr.config.CONFIG[command] and pyfltr.config.ALL_COMMANDS[command].type == "formatter":
-                    self.results.append(self._execute_command(command))
+            for command in formatters:
+                self.results.append(self._execute_command(command))
 
             # linters/testers (parallel)
-            linter_commands = []
-            for command in self.commands:
-                if pyfltr.config.CONFIG[command] and pyfltr.config.ALL_COMMANDS[command].type != "formatter":
-                    linter_commands.append(command)
-
-            if len(linter_commands) > 0:
-                with concurrent.futures.ThreadPoolExecutor(max_workers=len(linter_commands)) as executor:
+            if len(linters_and_testers) > 0:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=len(linters_and_testers)) as executor:
                     future_to_command = {
-                        executor.submit(self._execute_command, command): command for command in linter_commands
+                        executor.submit(self._execute_command, command): command for command in linters_and_testers
                     }
                     for future in concurrent.futures.as_completed(future_to_command):
                         self.results.append(future.result())
@@ -170,7 +172,7 @@ class UIApp(App):
             """出力行をリアルタイムでUIに反映。"""
             self.call_from_thread(self._write_log, f"#output-{command}", line.removesuffix("\n"))
 
-        result = pyfltr.command.execute_command(command, self.args, on_output=on_output)
+        result = pyfltr.command.execute_command(command, self.args, self.config, on_output=on_output)
 
         with self.lock:
             # コマンド実行が完了した旨をサマリタブに出力

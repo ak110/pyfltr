@@ -8,6 +8,7 @@ import threading
 
 import pyfltr.command
 import pyfltr.config
+import pyfltr.executor
 
 NCOLS = 128
 
@@ -16,33 +17,38 @@ logger = logging.getLogger(__name__)
 lock = threading.Lock()
 
 
-def run_commands_with_cli(commands: list[str], args: argparse.Namespace) -> list[pyfltr.command.CommandResult]:
+def run_commands_with_cli(
+    commands: list[str],
+    args: argparse.Namespace,
+    config: pyfltr.config.Config,
+) -> list[pyfltr.command.CommandResult]:
     """コマンドの実行。"""
     results: list[pyfltr.command.CommandResult] = []
+    formatters, linters_and_testers = pyfltr.executor.split_commands_for_execution(commands, config)
 
     # run formatters (serial)
-    for command in commands:
-        if pyfltr.config.CONFIG[command] and pyfltr.config.ALL_COMMANDS[command].type == "formatter":
-            results.append(run_command_for_cli(command, args))
+    for command in formatters:
+        results.append(run_command_for_cli(command, args, config))
 
     # run linters/testers (parallel)
-    linter_commands = []
-    for command in commands:
-        if pyfltr.config.CONFIG[command] and pyfltr.config.ALL_COMMANDS[command].type != "formatter":
-            linter_commands.append(command)
-
-    if len(linter_commands) > 0:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(linter_commands)) as executor:
-            future_to_command = {executor.submit(run_command_for_cli, command, args): command for command in linter_commands}
+    if len(linters_and_testers) > 0:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(linters_and_testers)) as executor:
+            future_to_command = {
+                executor.submit(run_command_for_cli, command, args, config): command for command in linters_and_testers
+            }
             for future in concurrent.futures.as_completed(future_to_command):
                 results.append(future.result())
 
     return results
 
 
-def run_command_for_cli(command: str, args: argparse.Namespace) -> pyfltr.command.CommandResult:
+def run_command_for_cli(
+    command: str,
+    args: argparse.Namespace,
+    config: pyfltr.config.Config,
+) -> pyfltr.command.CommandResult:
     """コマンドの実行（コンソール表示）。"""
-    result = pyfltr.command.execute_command(command, args)
+    result = pyfltr.command.execute_command(command, args, config)
     write_log(result)
     return result
 

@@ -1,11 +1,12 @@
 """設定関連の処理。"""
 
+import copy
 import dataclasses
 import pathlib
 import tomllib
 import typing
 
-CONFIG: dict[str, typing.Any] = {
+DEFAULT_CONFIG: dict[str, typing.Any] = {
     # プリセット
     "preset": "",
     # コマンド毎に有効無効、パス、追加の引数を設定
@@ -132,11 +133,28 @@ ALL_COMMAND_NAMES: list[str] = list(ALL_COMMANDS.keys())
 """
 
 
-def load_config() -> None:
+@dataclasses.dataclass(frozen=True)
+class Config:
+    """pyfltr設定。"""
+
+    values: dict[str, typing.Any]
+
+    def __getitem__(self, key: str) -> typing.Any:
+        """設定値を取得。"""
+        return self.values[key]
+
+
+def create_default_config() -> Config:
+    """デフォルト設定を生成。"""
+    return Config(values=copy.deepcopy(DEFAULT_CONFIG))
+
+
+def load_config() -> Config:
     """pyproject.tomlから設定を読み込み。"""
+    config = create_default_config()
     pyproject_path = pathlib.Path("pyproject.toml").absolute()
     if not pyproject_path.exists():
-        return
+        return config
 
     with pyproject_path.open("rb") as f:
         pyproject_data = tomllib.load(f)
@@ -149,27 +167,29 @@ def load_config() -> None:
         pass
     elif preset in ("20250710", "latest"):
         # ruff使用のプリセット
-        CONFIG["pyupgrade"] = False
-        CONFIG["autoflake"] = False
-        CONFIG["pflake8"] = False
-        CONFIG["isort"] = False
-        CONFIG["black"] = False
-        CONFIG["ruff-format"] = True
-        CONFIG["ruff-check"] = True
+        config.values["pyupgrade"] = False
+        config.values["autoflake"] = False
+        config.values["pflake8"] = False
+        config.values["isort"] = False
+        config.values["black"] = False
+        config.values["ruff-format"] = True
+        config.values["ruff-check"] = True
     else:
         raise ValueError(f"presetの設定値が不正です。{preset=}")
 
     # プリセット以外の設定を適用 (プリセットと重複があれば上書き)
     for key, value in tool_pyfltr.items():
         key = key.replace("_", "-")  # 「_」区切りと「-」区切りのどちらもOK
-        if key not in CONFIG:
+        if key not in config.values:
             raise ValueError(f"Invalid config key: {key}")
-        if not isinstance(value, type(CONFIG[key])):  # 簡易チェック
-            raise ValueError(f"invalid config value: {key}={type(value)}, expected {type(CONFIG[key])}")
-        CONFIG[key] = value
+        if not isinstance(value, type(config.values[key])):  # 簡易チェック
+            raise ValueError(f"invalid config value: {key}={type(value)}, expected {type(config.values[key])}")
+        config.values[key] = value
+
+    return config
 
 
-def resolve_aliases(commands: list[str]) -> list[str]:
+def resolve_aliases(commands: list[str], config: Config) -> list[str]:
     """エイリアスを展開。"""
     # 最大10回まで再帰的に展開
     result: list[str] = []
@@ -178,8 +198,8 @@ def resolve_aliases(commands: list[str]) -> list[str]:
         resolved: bool = False
         for command in commands:
             command = command.strip()
-            if command in CONFIG["aliases"]:
-                for c in CONFIG["aliases"][command]:
+            if command in config["aliases"]:
+                for c in config["aliases"][command]:
                     if c not in result:  # 順番は維持しつつ重複排除
                         result.append(c)
                 resolved = True
@@ -193,9 +213,11 @@ def resolve_aliases(commands: list[str]) -> list[str]:
     return result
 
 
-def generate_config_text() -> str:
+def generate_config_text(config: Config | None = None) -> str:
     """設定ファイルのサンプルテキストを生成。"""
+    if config is None:
+        config = create_default_config()
     return "[tool.pyfltr]\n" + "\n".join(
         f"{key} = " + repr(value).replace("'", '"').replace("True", "true").replace("False", "false")
-        for key, value in CONFIG.items()
+        for key, value in config.values.items()
     )

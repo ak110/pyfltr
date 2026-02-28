@@ -38,21 +38,14 @@ preset = "{preset}"
     try:
         os.chdir(tmp_path)
 
-        # 設定をリセット
-        pyfltr.config.CONFIG["preset"] = ""
-        pyfltr.config.CONFIG["isort"] = True
-        pyfltr.config.CONFIG["black"] = True
-        pyfltr.config.CONFIG["ruff-format"] = False
-        pyfltr.config.CONFIG["ruff-check"] = False
-
         # 設定を読み込み
-        pyfltr.config.load_config()
+        config = pyfltr.config.load_config()
 
         # 期待される設定値になっているか確認
-        assert pyfltr.config.CONFIG["isort"] == expected_isort
-        assert pyfltr.config.CONFIG["black"] == expected_black
-        assert pyfltr.config.CONFIG["ruff-format"] == expected_ruff_format
-        assert pyfltr.config.CONFIG["ruff-check"] == expected_ruff_check
+        assert config["isort"] == expected_isort
+        assert config["black"] == expected_black
+        assert config["ruff-format"] == expected_ruff_format
+        assert config["ruff-check"] == expected_ruff_check
 
     finally:
         os.chdir(original_cwd)
@@ -72,9 +65,6 @@ preset = "invalid"
     original_cwd = pathlib.Path.cwd()
     try:
         os.chdir(tmp_path)
-
-        # 設定をリセット
-        pyfltr.config.CONFIG["preset"] = ""
 
         # 不正なプリセットでValueErrorが発生することを確認
         with pytest.raises(ValueError, match="invalid"):
