@@ -26,8 +26,24 @@ repos:
     hooks:
       - id: uv-sort
 
+  - repo: https://github.com/DavidAnson/markdownlint-cli2
+    rev: v0.21.0
+    hooks:
+      - id: markdownlint-cli2
+
   - repo: local
     hooks:
+      - id: textlint
+        name: textlint
+        entry: textlint
+        language: node
+        files: \.(md|mdown|markdown)$
+        args: []
+        require_serial: false
+        additional_dependencies:
+          - textlint@15.5.1
+          - textlint-rule-preset-ja-technical-writing@12.0.2
+          - textlint-rule-preset-japanese@10.0.4
       - id: pyfltr
         name: pyfltr
         entry: pyfltr --exit-zero-even-if-formatted --commands=fast

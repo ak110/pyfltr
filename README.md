@@ -36,6 +36,10 @@ pip install pyfltr
 # pip install pyfltr[pyright]  # pyrightを使う場合
 ```
 
+## ドキュメント
+
+- [docs/README.md](./docs/README.md)
+
 ## 主な使い方
 
 ### 通常
@@ -48,7 +52,7 @@ pyfltr [files and/or directories ...]
 
 指定したファイルやディレクトリの配下のうち、pytest以外は`*.py`のみ、pytestは`*_test.py`のみに対して実行される。
 
-終了コード:
+終了コード。
 
 - 0: Formattersによるファイル変更無し、かつLinters/Testersでのエラー無し
 - 1: 上記以外
@@ -59,17 +63,20 @@ Linters/Testersでのエラー無しなら終了コードは0になる。
 ### 特定のツールのみ実行
 
 ```shell
-pyfltr --commands=pyupgrade,autoflake,isort,black,ruff-format,ruff-check,pflake8,mypy,pylint,pyright,pytest [files and/or directories ...]
+pyfltr \
+  --commands=pyupgrade,autoflake,isort,black,ruff-format,\
+ruff-check,pflake8,mypy,pylint,pyright,pytest \
+  [files and/or directories ...]
 ```
 
 カンマ区切りで実行するツールだけ指定する。
 
 以下のエイリアスも使用可能。(例: `--commands=fast`)
 
-- `format`: `pyupgrade`, `autoflake`, `isort`, `black`, `ruff-format`
-- `lint`: `ruff-check`, `pflake8`, `mypy`, `pylint`, `pyright`
+- `format`: `pyupgrade` `autoflake` `isort` `black` `ruff-format`
+- `lint`: `ruff-check` `pflake8` `mypy` `pylint` `pyright`
 - `test`: `pytest`
-- `fast`: `pyupgrade`, `autoflake`, `isort`, `black`, `ruff-format`, `ruff-check`, `pflake8`
+- `fast`: `pyupgrade` `autoflake` `isort` `black` `ruff-format` `ruff-check` `pflake8`
 
 ※ 後述の`pyproject.toml`の`[tool.pyfltr]`で無効になっているコマンドは無視される。
 
@@ -102,21 +109,21 @@ extend-exclude = ["foo", "bar.py"]
 
 `preset`を設定することで、一括して設定を変更できる。
 
-または
+または。
 
 ```toml
 [tool.pyfltr]
 preset = "latest"
 ```
 
-または
+または。
 
 ```toml
 [tool.pyfltr]
 preset = "20250710"
 ```
 
-これらのプリセットは、以下の設定を自動的に適用する：
+これらのプリセットは、以下の設定を自動的に適用する。
 
 - `pyupgrade = false`
 - `autoflake = false`
@@ -208,9 +215,28 @@ asyncio_default_test_loop_scope = "session"
 ### .pre-commit-config.yaml
 
 ```yaml
+  - repo: https://github.com/DavidAnson/markdownlint-cli2
+    rev: v0.21.0
+    hooks:
+      - id: markdownlint-cli2
+
   - repo: local
     hooks:
-      - id: system
+      - id: textlint
+        name: textlint
+        entry: textlint
+        language: node
+        files: \.(md|mdown|markdown)$
+        args: []
+        require_serial: false
+        additional_dependencies:
+          - textlint@15.5.1
+          - textlint-rule-preset-ja-technical-writing@12.0.2
+          - textlint-rule-preset-japanese@10.0.4
+
+  - repo: local
+    hooks:
+      - id: pyfltr
         name: pyfltr
         entry: uv run pyfltr --commands=fast
         types: [python]
