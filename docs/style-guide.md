@@ -61,5 +61,6 @@ def test_yyy(tmp_path: pathlib.Path, x: str, expected: str) -> None:
 - できるだけmarkdownlintが通るように書く
   - 特に注意するルール:
     - `MD040/fenced-code-language`: Fenced code blocks should have a language specified
+- 図はMermaid記法で書く
 - 別のMarkdownファイルへのリンクは、基本的に`[プロジェクトルートからのパス](記述個所からの相対パス)`で書く
 - lintの実行方法: `uv run pre-commit run --files <file>`

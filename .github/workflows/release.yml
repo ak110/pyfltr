@@ -97,23 +97,12 @@ jobs:
         id: next
         run: |
           v=${{ steps.current.outputs.latest }}
-          v=${v#v}
-          major=$(echo "$v" | cut -d. -f1)
-          minor=$(echo "$v" | cut -d. -f2)
-          patch=$(echo "$v" | cut -d. -f3)
-          case "${{ inputs.bump }}" in
-            バグフィックス)
-              patch=$((patch + 1))
-              ;;
-            マイナーバージョンアップ)
-              minor=$((minor + 1))
-              patch=0
-              ;;
-            メジャーバージョンアップ)
-              major=$((major + 1))
-              minor=0
-              patch=0
-              ;;
+          IFS='.' read -r major minor patch <<< "${v#v}"
+          case '${{ github.event.inputs.bump }}' in
+            'バグフィックス') ((++patch));;
+            'マイナーバージョンアップ') ((++minor)); patch=0;;
+            'メジャーバージョンアップ') ((++major)); minor=0; patch=0;;
+            *) echo "Unknown bump: '${{ github.event.inputs.bump }}'" >&2; exit 1;;
           esac
           echo "next=v${major}.${minor}.${patch}" >> "$GITHUB_OUTPUT"
 

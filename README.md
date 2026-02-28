@@ -1,6 +1,5 @@
 # pyfltr: Python Formatters, Linters, and Testers Runner
 
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![Lint&Test](https://github.com/ak110/pyfltr/actions/workflows/python-app.yml/badge.svg)](https://github.com/ak110/pyfltr/actions/workflows/python-app.yml)
 [![PyPI version](https://badge.fury.io/py/pyfltr.svg)](https://badge.fury.io/py/pyfltr)
 
@@ -57,7 +56,7 @@ pyfltr [files and/or directories ...]
 - 0: Formattersによるファイル変更無し、かつLinters/Testersでのエラー無し
 - 1: 上記以外
 
-`--exit-zero-even-if-formated`を指定すると、Formattersによるファイル変更があっても
+`--exit-zero-even-if-formatted`を指定すると、Formattersによるファイル変更があっても
 Linters/Testersでのエラー無しなら終了コードは0になる。
 
 ### 特定のツールのみ実行
@@ -79,6 +78,16 @@ ruff-check,pflake8,mypy,pylint,pyright,pytest \
 - `fast`: `pyupgrade` `autoflake` `isort` `black` `ruff-format` `ruff-check` `pflake8`
 
 ※ 後述の`pyproject.toml`の`[tool.pyfltr]`で無効になっているコマンドは無視される。
+
+### UI
+
+ターミナル上で実行すると、Textual ベースの TUI が自動的に有効になる。
+各コマンドの出力をタブで切り替えて確認できる。
+
+- `--no-ui`: UIを無効化し、出力を直接ターミナルに表示
+- `--ci`: CI環境向け (`--no-shuffle --no-ui` 相当)
+
+その他のオプションは `pyfltr --help` を参照。
 
 ## 設定
 
@@ -108,19 +117,11 @@ extend-exclude = ["foo", "bar.py"]
 ### プリセット設定
 
 `preset`を設定することで、一括して設定を変更できる。
-
-または。
+`"latest"` または日付指定 (`"20250710"`) が使用可能。
 
 ```toml
 [tool.pyfltr]
 preset = "latest"
-```
-
-または。
-
-```toml
-[tool.pyfltr]
-preset = "20250710"
 ```
 
 これらのプリセットは、以下の設定を自動的に適用する。
