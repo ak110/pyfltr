@@ -1,0 +1,10 @@
+rules:
+  preset-japanese:
+    no-doubled-joshi: false
+    sentence-length: false
+  preset-ja-technical-writing:
+    ja-no-mixed-period: false
+    ja-unnatural-alphabet: false
+    no-doubled-joshi: false
+    no-exclamation-question-mark: false
+    sentence-length: false
