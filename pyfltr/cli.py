@@ -48,13 +48,18 @@ def run_command_for_cli(
     config: pyfltr.config.Config,
 ) -> pyfltr.command.CommandResult:
     """コマンドの実行（コンソール表示）。"""
+    with lock:
+        logger.info(f"Running {command}...")
     result = pyfltr.command.execute_command(command, args, config)
     write_log(result)
     return result
 
 
 def write_log(result: pyfltr.command.CommandResult) -> None:
-    """ログファイルに書き込む。"""
+    """コマンド実行結果のログ出力。
+
+    run_command_for_cli()にそれぞれ呼ばれるのと、TUI時はUI終了後にまとめて呼ばれる。
+    """
     mark = "*" if result.returncode == 0 else "@"
     with lock:
         logger.info(f"{mark * 32} {result.command} {mark * (NCOLS - 34 - len(result.command))}")
