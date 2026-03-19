@@ -15,9 +15,9 @@
 事前に`gh`コマンドをインストールして`gh auth login`でログインしておき、以下のコマンドのいずれかを実行。
 
 ```bash
-gh workflow run release.yml --field="bump=バグフィックス"
-gh workflow run release.yml --field="bump=マイナーバージョンアップ"
-gh workflow run release.yml --field="bump=メジャーバージョンアップ"
+gh workflow run release.yaml --field="bump=バグフィックス"
+gh workflow run release.yaml --field="bump=マイナーバージョンアップ"
+gh workflow run release.yaml --field="bump=メジャーバージョンアップ"
 ```
 
 <https://github.com/ak110/pyfltr/actions> で状況を確認できる。
