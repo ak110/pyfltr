@@ -1,0 +1,4 @@
+# MkDocs Materialはネストリストに4スペースのインデントが必要
+config:
+  MD007:
+    indent: 4

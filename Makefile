@@ -27,4 +27,7 @@ test:
 	SKIP=pyfltr uv run pre-commit run --all-files
 	uv run pyfltr --exit-zero-even-if-formatted
 
-.PHONY: help clean-stale-dist-info update format test
+docs:
+	uv run mkdocs serve
+
+.PHONY: help clean-stale-dist-info update format test docs

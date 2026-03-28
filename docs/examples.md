@@ -1,62 +1,15 @@
-[project]
-name = "pyfltr"
-dynamic = ["version"]
-description = "Python Formatters, Linters, and Testers Runner."
-authors = [{ name = "aki.", email = "mark@aur.ll.to" }]
-requires-python = ">=3.11,<4.0"
-readme = "README.md"
-license = {text = "MIT"}
-classifiers = [
-    "Environment :: Console",
-    "Intended Audience :: Developers",
-    "Operating System :: OS Independent",
-    "Programming Language :: Python :: 3 :: Only",
-    "Topic :: Software Development :: Quality Assurance",
-]
-dependencies = [
-    "autoflake>=2.0",
-    "black>=22.0",
-    "dill>=0.3",
-    "flake8-bugbear>=23.0",
-    "flake8-tidy-imports>=4.11.0",
-    "isort>=5.0",
-    "mypy>=1.0",
-    "natsort>=8.4.0",
-    "pylint>=3.0",
-    "pyproject-flake8>=7.0", # https://github.com/csachs/pyproject-flake8/issues/30
-    "pytest-asyncio>=1.0.0",
-    "pytest>=7.0",
-    "pyupgrade>=3.0",
-    "ruff>=0.12.1",
-    "textual>=8.0.0",
-]
+# 設定例
 
-[project.optional-dependencies]
-pyright = [
-    "pyright[nodejs]>=1.1.403",
-]
+## pyproject.toml
 
-[project.urls]
-Homepage = "https://github.com/ak110/pyfltr"
-
-[project.scripts]
-pyfltr = "pyfltr.main:main"
-
+```toml
 [dependency-groups]
 dev = [
-    "mkdocs-llmstxt>=0.2",
-    "mkdocs-material>=9.6",
-    "mkdocs>=1.6",
-    "pre-commit>=4.2.0",
-    "pytest-mock",
+    ...
+    "pyfltr",
 ]
 
-[build-system]
-requires = ["hatchling", "hatch-vcs"]
-build-backend = "hatchling.build"
-
-[tool.hatch.version]
-source = "vcs"
+...
 
 [tool.pyfltr]
 preset = "latest"
@@ -120,3 +73,43 @@ xfail_strict = true
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
+```
+
+## .pre-commit-config.yaml
+
+```yaml
+  - repo: https://github.com/DavidAnson/markdownlint-cli2
+    rev: v0.21.0
+    hooks:
+      - id: markdownlint-cli2
+
+  - repo: local
+    hooks:
+      - id: textlint
+        name: textlint
+        entry: textlint
+        language: node
+        files: \.(md|mdown|markdown)$
+        args: []
+        require_serial: false
+        additional_dependencies:
+          - textlint@15.5.1
+          - textlint-rule-preset-ja-technical-writing@12.0.2
+          - textlint-rule-preset-japanese@10.0.4
+
+  - repo: local
+    hooks:
+      - id: pyfltr
+        name: pyfltr
+        entry: uv run pyfltr --commands=fast
+        types: [python]
+        require_serial: true
+        language: system
+```
+
+## CI
+
+```yaml
+  - uv install --no-interaction
+  - uv run pyfltr
+```

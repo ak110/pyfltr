@@ -5,7 +5,7 @@
 ## 関連ドキュメント
 
 - @README.md
-- @docs/README.md
+- @docs/index.md
 - @docs/development.md
 - @docs/style-guide.md
-- ドキュメント追加時は `docs/README.md` の更新要
+- ドキュメント追加時は `mkdocs.yml` の `nav` を更新要

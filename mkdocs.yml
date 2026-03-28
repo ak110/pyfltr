@@ -1,0 +1,57 @@
+site_name: pyfltr
+site_url: https://ak110.github.io/pyfltr/
+site_description: Python Formatters, Linters, and Testers Runner
+repo_url: https://github.com/ak110/pyfltr
+repo_name: ak110/pyfltr
+
+theme:
+  name: material
+  language: ja
+  palette:
+    - scheme: default
+      primary: indigo
+      toggle:
+        icon: material/brightness-7
+        name: ダークモードに切り替え
+    - scheme: slate
+      primary: indigo
+      toggle:
+        icon: material/brightness-4
+        name: ライトモードに切り替え
+  features:
+    - navigation.sections
+    - content.code.copy
+
+plugins:
+  - search
+  - llmstxt:
+      sections:
+        ホーム:
+          - index.md
+        使い方:
+          - usage.md
+        設定:
+          - configuration.md
+          - examples.md
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - admonition
+  - pymdownx.details
+  - toc:
+      permalink: true
+
+nav:
+  - ホーム: index.md
+  - 使い方: usage.md
+  - 設定: configuration.md
+  - 設定例: examples.md
+  - 開発者向け:
+      - 開発手順: development.md
+      - スタイルガイド: style-guide.md
