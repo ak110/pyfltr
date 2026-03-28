@@ -10,10 +10,11 @@ import traceback
 import typing
 
 from textual.app import App, ComposeResult
-from textual.widgets import Log, TabbedContent, TabPane
+from textual.widgets import DataTable, Log, TabbedContent, TabPane
 
 import pyfltr.command
 import pyfltr.config
+import pyfltr.error_parser
 import pyfltr.executor
 
 
@@ -45,10 +46,24 @@ def run_commands_with_ui(
         sys.exit(1)
 
 
+# ステータス表示用の定義
+_STATUS_DISPLAY: dict[str, str] = {
+    "waiting": "○ waiting",
+    "running": "● running",
+    "succeeded": "✓ done",
+    "failed": "⚠ failed",
+    "formatted": "△ formatted",
+    "skipped": "- skipped",
+}
+
+
 class UIApp(App):
     """Textualアプリケーション。"""
 
     CSS = """
+    #summary-table {
+        height: 1fr;
+    }
     Log.output {
         scrollbar-gutter: stable;
     }
@@ -63,14 +78,20 @@ class UIApp(App):
         self.lock = threading.Lock()
         self.last_ctrl_c_time: float = 0.0
         self.ctrl_c_timeout: float = 1.0  # 1秒以内の連続押しで終了
+        # 各コマンドの開始時刻（running中の経過時間表示用）
+        self._start_times: dict[str, float] = {}
+        # エラー蓄積用（Errorsタブの即時更新に使用）
+        self._all_errors: list[pyfltr.error_parser.ErrorLocation] = []
+        self._errors_tab_exists = False
 
     def compose(self) -> ComposeResult:
         """UIを構成。"""
         with TabbedContent(initial="summary"):
             with TabPane("Summary", id="summary"):
-                yield Log(id="summary-content", classes="output")
+                yield DataTable(id="summary-table")
 
             # 有効なコマンドのみタブを作成
+            # (Errorsタブはエラー発生時にsummaryの直後に動的追加)
             enabled_commands = [cmd for cmd in self.commands if self.config[cmd]]
             for command in enabled_commands:
                 with TabPane(command, id=f"tab-{command}"):
@@ -78,8 +99,26 @@ class UIApp(App):
 
     def on_ready(self) -> None:
         """ready時の処理。"""
-        # 初期表示
-        self._write_log("#summary-content", "Running commands... (Press Ctrl+C twice to exit)\n")
+        # Summaryテーブルの初期化
+        table = self.query_one("#summary-table", DataTable)
+        table.add_column("Command", key="command", width=20)
+        table.add_column("Status", key="status", width=16)
+        table.add_column("Errors", key="errors", width=8)
+        table.add_column("Time", key="time", width=10)
+
+        enabled_commands = [cmd for cmd in self.commands if self.config[cmd]]
+        for command in enabled_commands:
+            table.add_row(
+                command,
+                _STATUS_DISPLAY["waiting"],
+                "-",
+                "-",
+                key=command,
+            )
+
+        # 経過時間の定期更新
+        self.set_interval(1.0, self._update_elapsed_times)
+
         # コマンド実行をバックグラウンドで開始
         self.set_timer(0.1, self._run_commands)
 
@@ -95,7 +134,23 @@ class UIApp(App):
                 # 初回またはタイムアウト後のCtrl+C
                 self.last_ctrl_c_time = current_time
                 # ユーザーに2回目を促すメッセージを表示
-                self._write_log("#summary-content", "Press Ctrl+C again within 1 second to exit...")
+                self.notify("Press Ctrl+C again within 1 second to exit...")
+
+    def _update_elapsed_times(self) -> None:
+        """running中のコマンドの経過時間を更新。"""
+        table = self.query_one("#summary-table", DataTable)
+        for command, start_time in self._start_times.items():
+            elapsed = time.perf_counter() - start_time
+            table.update_cell(command, "time", f"{elapsed:.0f}s…")
+
+    def _update_summary(self, command: str, status: str, error_count: int | None = None, elapsed: float | None = None) -> None:
+        """Summaryテーブルの行を更新。"""
+        table = self.query_one("#summary-table", DataTable)
+        table.update_cell(command, "status", _STATUS_DISPLAY.get(status, status))
+        if error_count is not None:
+            table.update_cell(command, "errors", str(error_count))
+        if elapsed is not None:
+            table.update_cell(command, "time", f"{elapsed:.1f}s")
 
     def _run_commands(self) -> None:
         """backgroundでコマンドを実行。"""
@@ -119,14 +174,7 @@ class UIApp(App):
                     for future in concurrent.futures.as_completed(future_to_command):
                         self.results.append(future.result())
 
-            # summary更新と自動終了判定
-            summary_lines = ["", "", "Results summary:", "=" * 40]
-            for result in self.results:
-                summary_lines.append(f"{result.command:<16s} {result.get_status_text()}")
-
-            summary_lines.extend(["=" * 40])
-
-            # returncode情報と自動終了判定
+            # 自動終了判定
             statuses = [result.status for result in self.results]
             overall_status: typing.Literal["SUCCESS", "FORMATTED", "FAILED"]
             if any(status == "failed" for status in statuses):
@@ -136,11 +184,6 @@ class UIApp(App):
             else:
                 overall_status = "SUCCESS"
 
-            summary_lines.append(f"Overall status: {overall_status}")
-            summary_lines.append("")
-            summary_lines.append("")
-            self.call_from_thread(self._write_log, "#summary-content", "\n".join(summary_lines))
-
             # FORMATTED/SUCCESSの場合は自動終了（--keep-ui時は終了しない）
             if overall_status != "FAILED" and not self.args.keep_ui:
                 self.call_from_thread(self.exit)
@@ -149,18 +192,16 @@ class UIApp(App):
             # Textualエラー時の処理
             error_msg = f"Fatal error in UI processing:\n{traceback.format_exc()}"
             try:
-                # summaryタブにエラー表示
-                self.call_from_thread(
-                    self._write_log,
-                    "#summary-content",
-                    f"FATAL ERROR:\n{error_msg}\n\nPress Ctrl+C to exit.",
-                )
+                self.call_from_thread(self._handle_fatal_error, error_msg)
             except Exception:
                 logging.error(error_msg)
-                self.call_from_thread(self._handle_fatal_error, error_msg)
 
     def _execute_command(self, command: str) -> pyfltr.command.CommandResult:
         """outputをキャプチャしながらコマンド実行。"""
+        # Summaryを「running」に更新
+        self._start_times[command] = time.perf_counter()
+        self.call_from_thread(self._update_summary, command, "running")
+
         # コマンドタブに開始メッセージを出力
         self.call_from_thread(
             self._write_log,
@@ -175,11 +216,16 @@ class UIApp(App):
         result = pyfltr.command.execute_command(command, self.args, self.config, on_output=on_output)
 
         with self.lock:
-            # コマンド実行が完了した旨をサマリタブに出力
+            # running状態から解除
+            self._start_times.pop(command, None)
+
+            # Summaryを最終状態に更新
             self.call_from_thread(
-                self._write_log,
-                "#summary-content",
-                f"Command {command} completed. ({result.status})",
+                self._update_summary,
+                command,
+                result.status,
+                len(result.errors),
+                result.elapsed,
             )
 
             # フッター情報のみ追記（本体はストリーミング済み）
@@ -191,9 +237,37 @@ class UIApp(App):
             )
             # コマンド失敗時のタブタイトル更新
             if result.status == "failed":
-                self.call_from_thread(self._update_tab_title, result.command, True)
+                self.call_from_thread(self._update_tab_title, result.command)
+
+            # エラーがあればErrorsタブを即時追加/更新
+            if result.errors:
+                self._all_errors.extend(result.errors)
+                sorted_errors = pyfltr.error_parser.sort_errors(self._all_errors, self.config.command_names)
+                self.call_from_thread(self._update_errors_tab, sorted_errors)  # type: ignore[arg-type]
 
         return result
+
+    async def _update_errors_tab(self, errors: list[pyfltr.error_parser.ErrorLocation]) -> None:
+        """Errorsタブを追加または更新。初回のみアクティブに切り替え。"""
+        tc = self.query_one(TabbedContent)
+        lines = [pyfltr.error_parser.format_error(e) for e in errors]
+        content = "\n".join(lines)
+
+        if not self._errors_tab_exists:
+            # 初回: タブを追加してアクティブにする
+            errors_log = Log(id="errors-log", classes="output")
+            errors_pane = TabPane(f"Errors ({len(errors)})", errors_log, id="tab-errors")
+            await tc.add_pane(errors_pane, after="summary")
+            self._write_log("#errors-log", content)
+            self._errors_tab_exists = True
+            tc.active = "tab-errors"
+        else:
+            # 2回目以降: 内容を差し替え（タブ切り替えはしない）
+            errors_log = self.query_one("#errors-log", Log)
+            errors_log.clear()
+            self._write_log("#errors-log", content)
+            tab = tc.get_tab("tab-errors")
+            tab.label = f"Errors ({len(errors)})"  # type: ignore[assignment]
 
     def _write_log(self, widget_id: str, content: str) -> None:
         """ログの追記。"""
@@ -203,18 +277,12 @@ class UIApp(App):
         except Exception:
             logging.error(f"UIエラー: {widget_id}", exc_info=True)
 
-    def _update_tab_title(self, command: str, has_error: bool) -> None:
+    def _update_tab_title(self, command: str) -> None:
         """タブタイトルを更新（エラー時に*を追加）。"""
-        # pylint: disable=protected-access
         try:
             tc = self.query_one(TabbedContent)
             tab = tc.get_tab(f"tab-{command}")
-            if has_error:
-                tab.label = f"{command} *"  # type: ignore[assignment]
-                # エラーが発生したタブをアクティブにする
-                tc.active = f"tab-{command}"
-            else:
-                tab.label = command  # type: ignore[assignment]
+            tab.label = f"{command} *"  # type: ignore[assignment]
         except Exception:
             logging.warning(f"タブタイトル更新失敗: {command}", exc_info=True)
 

@@ -11,6 +11,7 @@ def test_write_log(caplog):
     """write_logの出力確認。"""
     result = pyfltr.command.CommandResult(
         command="pytest",
+        command_type="tester",
         commandline=["pytest", "test.py"],
         returncode=0,
         has_error=False,
@@ -29,6 +30,7 @@ def test_write_log_failed(caplog):
     """write_logの失敗時の出力確認。"""
     result = pyfltr.command.CommandResult(
         command="pytest",
+        command_type="tester",
         commandline=["pytest", "test.py"],
         returncode=1,
         has_error=True,
@@ -47,6 +49,7 @@ def test_run_command_for_cli_logs_start(mocker, caplog):
     """run_command_for_cliが開始/終了メッセージを出力すること。"""
     result = pyfltr.command.CommandResult(
         command="mypy",
+        command_type="linter",
         commandline=["mypy", "test.py"],
         returncode=0,
         has_error=False,

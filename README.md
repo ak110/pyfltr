@@ -82,9 +82,15 @@ ruff-check,pflake8,mypy,pylint,pyright,pytest \
 ### UI
 
 ターミナル上で実行すると、Textual ベースの TUI が自動的に有効になる。
-各コマンドの出力をタブで切り替えて確認できる。
 
-- `--no-ui`: UIを無効化し、出力を直接ターミナルに表示
+- Summaryタブ: 各コマンドのステータス・エラー数・経過時間をリアルタイム表示
+- Errorsタブ: エラー発生時のみ出現し、全コマンドのエラー箇所を`ファイル:行番号`形式で一覧表示
+- 各コマンドタブ: コマンドの出力をリアルタイム表示
+
+Errorsタブのエラー一覧は`ファイル:行番号: [コマンド名] メッセージ`形式で、
+VSCodeのターミナルからクリックして該当箇所にジャンプできる。
+
+- `--no-ui`: UIを無効化し、出力を直接ターミナルに表示（エラー一覧はサマリー後に表示）
 - `--ci`: CI環境向け (`--no-shuffle --no-ui` 相当)
 
 その他のオプションは `pyfltr --help` を参照。
@@ -135,6 +141,34 @@ preset = "latest"
 - `ruff-check = true`
 
 `preset = "latest"`は予告なく動作を変更する可能性あり。
+
+### カスタムコマンド
+
+`[tool.pyfltr.custom-commands]`で任意のツールを追加できる。
+
+```toml
+[tool.pyfltr.custom-commands.bandit]
+type = "linter"
+path = "bandit"
+args = ["-r", "-f", "custom"]
+targets = "*.py"
+error-pattern = '(?P<file>[^:]+):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>.+)'
+```
+
+設定項目。
+
+- `type` (必須): `"formatter"` / `"linter"` / `"tester"`
+  - formatterは直列実行、linter/testerは並列実行
+- `path`: 実行コマンド（省略時はコマンド名）
+- `args`: 追加引数（省略時は空）
+- `targets`: 対象ファイルパターン（省略時は`"*.py"`）
+- `error-pattern`: エラーパース用正規表現（省略可）
+  - `file`と`line`と`message`の名前付きグループが必須
+  - `col`は任意
+  - 指定するとErrorsタブやエラー一覧に表示される
+
+ビルトインコマンド（mypy等）は自動的にエラーパースされる。
+カスタムコマンドも`--{name}-args`やenable/disableが使用可能。
 
 ## 各種設定例
 

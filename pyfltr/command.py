@@ -17,6 +17,7 @@ import typing
 import natsort
 
 import pyfltr.config
+import pyfltr.error_parser
 
 logger = logging.getLogger(__name__)
 
@@ -38,17 +39,14 @@ class CommandResult:
     """コマンドの実行結果。"""
 
     command: str
+    command_type: str
     commandline: list[str]
     returncode: int | None
     has_error: bool
     files: int
     output: str
     elapsed: float
-
-    @property
-    def command_type(self) -> str:
-        """コマンドの種類を返す。"""
-        return pyfltr.config.ALL_COMMANDS[self.command].type
+    errors: list[pyfltr.error_parser.ErrorLocation] = dataclasses.field(default_factory=list)
 
     @property
     def alerted(self) -> bool:
@@ -123,7 +121,8 @@ def execute_command(
     on_output: typing.Callable[[str], None] | None = None,
 ) -> CommandResult:
     """コマンドの実行。"""
-    globs = ["*_test.py"] if command == "pytest" else ["*.py"]
+    command_info = config.commands[command]
+    globs = [command_info.targets]
     targets = expand_globs(args.targets, globs, config)
 
     # ファイルの順番をシャッフルまたはソート
@@ -146,6 +145,7 @@ def execute_command(
     if len(targets) <= 0:
         return CommandResult(
             command=command,
+            command_type=command_info.type,
             commandline=commandline,
             returncode=None,
             has_error=False,
@@ -184,14 +184,19 @@ def execute_command(
     output = proc.stdout.strip()
     elapsed = time.perf_counter() - start_time
 
+    # エラー箇所のパース
+    errors = pyfltr.error_parser.parse_errors(command, output, command_info.error_pattern)
+
     return CommandResult(
         command=command,
+        command_type=command_info.type,
         commandline=commandline,
         returncode=returncode,
         has_error=has_error,
         files=len(targets),
         output=output,
         elapsed=elapsed,
+        errors=errors,
     )
 
 

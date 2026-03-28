@@ -10,7 +10,7 @@ def split_commands_for_execution(commands: list[str], config: pyfltr.config.Conf
     for command in commands:
         if not config[command]:
             continue
-        if pyfltr.config.ALL_COMMANDS[command].type == "formatter":
+        if config.commands[command].type == "formatter":
             formatters.append(command)
         else:
             linters_and_testers.append(command)

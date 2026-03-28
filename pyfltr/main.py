@@ -13,6 +13,7 @@ import typing
 import pyfltr.cli
 import pyfltr.command
 import pyfltr.config
+import pyfltr.error_parser
 import pyfltr.ui
 
 logger = logging.getLogger(__name__)
@@ -41,7 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--commands",
-        default=",".join(pyfltr.config.ALL_COMMAND_NAMES),
+        default=",".join(pyfltr.config.BUILTIN_COMMAND_NAMES),
         help="comma separated list of commands. (default: %(default)s)",
     )
     parser.add_argument(
@@ -58,7 +59,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-clear", default=False, action="store_true", help="do not clear the terminal before running")
 
     # 各コマンド用の引数追加オプション
-    for command in pyfltr.config.ALL_COMMANDS:
+    for command in pyfltr.config.BUILTIN_COMMANDS:
         parser.add_argument(
             f"--{command}-args",
             default="",
@@ -107,6 +108,17 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
         logger.error(f"Config error: {e}")
         return 1
 
+    # カスタムコマンド用のCLI引数を動的追加して再パース
+    custom_commands = [name for name, info in config.commands.items() if not info.builtin]
+    if custom_commands:
+        for command in custom_commands:
+            parser.add_argument(
+                f"--{command}-args",
+                default="",
+                help=f"additional arguments for {command}",
+            )
+        args = parser.parse_args(sys_args)
+
     commands: list[str] = pyfltr.config.resolve_aliases(args.commands.split(","), config)
     for command in commands:
         if command not in config.values:
@@ -148,11 +160,21 @@ def run_pipeline(
         returncode = 0
 
     # summary
-
     logger.info(f"{'-' * 10} summary {'-' * (72 - 10 - 9)}")
-    for result in sorted(results, key=lambda r: pyfltr.config.ALL_COMMAND_NAMES.index(r.command)):
+    for result in sorted(results, key=lambda r: config.command_names.index(r.command)):
         logger.info(f"    {result.command:<16s} {result.get_status_text()}")
     logger.info("-" * 72)
+
+    # エラー箇所一覧
+    all_errors: list[pyfltr.error_parser.ErrorLocation] = []
+    for result in results:
+        all_errors.extend(result.errors)
+    if all_errors:
+        sorted_errors = pyfltr.error_parser.sort_errors(all_errors, config.command_names)
+        logger.info(f"{'-' * 10} errors ({len(sorted_errors)}) {'-' * (72 - 14 - len(str(len(sorted_errors))))}")
+        for error in sorted_errors:
+            logger.info(f"    {pyfltr.error_parser.format_error(error)}")
+        logger.info("-" * 72)
 
     # returncode
     if returncode == 0:

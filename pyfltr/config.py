@@ -3,8 +3,46 @@
 import copy
 import dataclasses
 import pathlib
+import re
 import tomllib
 import typing
+
+CommandType = typing.Literal["formatter", "linter", "tester"]
+"""コマンドの種類。"""
+
+
+@dataclasses.dataclass
+class CommandInfo:
+    """コマンドの情報。"""
+
+    type: CommandType
+    """コマンドの種類（formatter, linter, tester）"""
+    builtin: bool = True
+    """ビルトインコマンドか否か"""
+    targets: str = "*.py"
+    """対象ファイルパターン"""
+    error_pattern: str | None = None
+    """エラーパース用正規表現"""
+
+
+# ビルトインコマンド定義（順序が並び順を決める）
+BUILTIN_COMMANDS: dict[str, CommandInfo] = {
+    "pyupgrade": CommandInfo(type="formatter"),
+    "autoflake": CommandInfo(type="formatter"),
+    "isort": CommandInfo(type="formatter"),
+    "black": CommandInfo(type="formatter"),
+    "ruff-format": CommandInfo(type="formatter"),
+    "ruff-check": CommandInfo(type="linter"),
+    "pflake8": CommandInfo(type="linter"),
+    "mypy": CommandInfo(type="linter"),
+    "pylint": CommandInfo(type="linter"),
+    "pyright": CommandInfo(type="linter"),
+    "pytest": CommandInfo(type="tester", targets="*_test.py"),
+}
+
+BUILTIN_COMMAND_NAMES: list[str] = list(BUILTIN_COMMANDS.keys())
+"""ビルトインコマンドの名前リスト。"""
+
 
 DEFAULT_CONFIG: dict[str, typing.Any] = {
     # プリセット
@@ -99,45 +137,16 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
 }
 """デフォルト設定。"""
 
-CommandType = typing.Literal["formatter", "linter", "tester"]
-"""コマンドの種類。"""
-
-
-@dataclasses.dataclass
-class CommandInfo:
-    """コマンドの情報を保持する辞書型。"""
-
-    type: CommandType
-    """コマンドの種類（formatter, linter, tester）"""
-
-
-ALL_COMMANDS: dict[str, CommandInfo] = {
-    "pyupgrade": CommandInfo(type="formatter"),
-    "autoflake": CommandInfo(type="formatter"),
-    "isort": CommandInfo(type="formatter"),
-    "black": CommandInfo(type="formatter"),
-    "ruff-format": CommandInfo(type="formatter"),
-    "ruff-check": CommandInfo(type="linter"),
-    "pflake8": CommandInfo(type="linter"),
-    "mypy": CommandInfo(type="linter"),
-    "pylint": CommandInfo(type="linter"),
-    "pyright": CommandInfo(type="linter"),
-    "pytest": CommandInfo(type="tester"),
-}
-"""全コマンドの情報。"""
-
-ALL_COMMAND_NAMES: list[str] = list(ALL_COMMANDS.keys())
-"""全コマンドの名前のリスト。
-
-タブなどの並び順はこのリストの順に従うことにする。
-"""
-
 
 @dataclasses.dataclass(frozen=True)
 class Config:
     """pyfltr設定。"""
 
     values: dict[str, typing.Any]
+    commands: dict[str, CommandInfo]
+    """ビルトイン + カスタムの統合コマンドレジストリ"""
+    command_names: list[str]
+    """コマンドの並び順リスト（ビルトイン順 → カスタムコマンド順）"""
 
     def __getitem__(self, key: str) -> typing.Any:
         """設定値を取得。"""
@@ -146,7 +155,11 @@ class Config:
 
 def create_default_config() -> Config:
     """デフォルト設定を生成。"""
-    return Config(values=copy.deepcopy(DEFAULT_CONFIG))
+    return Config(
+        values=copy.deepcopy(DEFAULT_CONFIG),
+        commands=dict(BUILTIN_COMMANDS),
+        command_names=list(BUILTIN_COMMAND_NAMES),
+    )
 
 
 def load_config() -> Config:
@@ -177,9 +190,19 @@ def load_config() -> Config:
     else:
         raise ValueError(f"presetの設定値が不正です。{preset=}")
 
+    # カスタムコマンドの読み込み
+    custom_commands = tool_pyfltr.get("custom-commands", tool_pyfltr.get("custom_commands", {}))
+    if not isinstance(custom_commands, dict):
+        raise ValueError("custom-commandsはテーブルで指定してください")
+    for name, definition in custom_commands.items():
+        name = name.replace("_", "-")
+        _register_custom_command(config, name, definition)
+
     # プリセット以外の設定を適用 (プリセットと重複があれば上書き)
     for key, value in tool_pyfltr.items():
         key = key.replace("_", "-")  # 「_」区切りと「-」区切りのどちらもOK
+        if key in ("custom-commands",):
+            continue  # カスタムコマンドは別途処理済み
         if key not in config.values:
             raise ValueError(f"Invalid config key: {key}")
         if not isinstance(value, type(config.values[key])):  # 簡易チェック
@@ -187,6 +210,67 @@ def load_config() -> Config:
         config.values[key] = value
 
     return config
+
+
+def _register_custom_command(config: Config, name: str, definition: dict[str, typing.Any]) -> None:
+    """カスタムコマンドをConfigに登録。"""
+    # 名前衝突チェック
+    if name in BUILTIN_COMMANDS:
+        raise ValueError(f"カスタムコマンド名がビルトインコマンドと衝突しています: {name}")
+
+    # type (必須)
+    cmd_type = definition.get("type")
+    if cmd_type not in ("formatter", "linter", "tester"):
+        raise ValueError(f"カスタムコマンド {name} のtypeが不正です: {cmd_type}")
+
+    # path (省略時はコマンド名)
+    path = definition.get("path", name)
+    if not isinstance(path, str):
+        raise ValueError(f"カスタムコマンド {name} のpathは文字列で指定してください")
+
+    # args (省略時は空リスト)
+    args = definition.get("args", [])
+    if not isinstance(args, list):
+        raise ValueError(f"カスタムコマンド {name} のargsはリストで指定してください")
+
+    # targets (省略時は "*.py")
+    targets = definition.get("targets", "*.py")
+    if not isinstance(targets, str):
+        raise ValueError(f"カスタムコマンド {name} のtargetsは文字列で指定してください")
+
+    # error-pattern (省略可)
+    error_pattern = definition.get("error-pattern", definition.get("error_pattern"))
+    if error_pattern is not None:
+        _validate_error_pattern(name, error_pattern)
+
+    # CommandInfoを登録
+    config.commands[name] = CommandInfo(
+        type=cmd_type,
+        builtin=False,
+        targets=targets,
+        error_pattern=error_pattern,
+    )
+    config.command_names.append(name)
+
+    # values辞書にデフォルト設定を追加
+    config.values[name] = True
+    config.values[f"{name}-path"] = path
+    config.values[f"{name}-args"] = args
+
+
+def _validate_error_pattern(name: str, pattern: str) -> None:
+    """error-patternのバリデーション。"""
+    if not isinstance(pattern, str):
+        raise ValueError(f"カスタムコマンド {name} のerror-patternは文字列で指定してください")
+    try:
+        compiled = re.compile(pattern)
+    except re.error as e:
+        raise ValueError(f"カスタムコマンド {name} のerror-patternが不正な正規表現です: {e}") from e
+    # 必須グループの確認
+    groups = compiled.groupindex
+    for required in ("file", "line", "message"):
+        if required not in groups:
+            raise ValueError(f"カスタムコマンド {name} のerror-patternに{required}グループが必要です")
 
 
 def resolve_aliases(commands: list[str], config: Config) -> list[str]:
@@ -209,7 +293,7 @@ def resolve_aliases(commands: list[str], config: Config) -> list[str]:
         if not resolved:
             break
         commands = result
-    result.sort(key=ALL_COMMAND_NAMES.index)  # リスト順にソート
+    result.sort(key=config.command_names.index)  # リスト順にソート
     return result
 
 
