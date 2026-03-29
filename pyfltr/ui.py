@@ -167,7 +167,7 @@ class UIApp(App):
 
             # linters/testers (parallel)
             if len(linters_and_testers) > 0:
-                with concurrent.futures.ThreadPoolExecutor(max_workers=len(linters_and_testers)) as executor:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=self.config["jobs"]) as executor:
                     future_to_command = {
                         executor.submit(self._execute_command, command): command for command in linters_and_testers
                     }

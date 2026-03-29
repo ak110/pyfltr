@@ -32,7 +32,7 @@ def run_commands_with_cli(
 
     # run linters/testers (parallel)
     if len(linters_and_testers) > 0:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(linters_and_testers)) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=config["jobs"]) as executor:
             future_to_command = {
                 executor.submit(run_command_for_cli, command, args, config): command for command in linters_and_testers
             }
@@ -60,7 +60,7 @@ def write_log(result: pyfltr.command.CommandResult) -> None:
 
     run_command_for_cli()にそれぞれ呼ばれるのと、TUI時はUI終了後にまとめて呼ばれる。
     """
-    mark = "*" if result.returncode == 0 else "@"
+    mark = "@" if result.alerted else "*"
     with lock:
         logger.info(f"{mark * 32} {result.command} {mark * (NCOLS - 34 - len(result.command))}")
         logger.debug(f"{mark} commandline: {shlex.join(result.commandline)}")

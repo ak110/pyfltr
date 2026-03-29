@@ -57,6 +57,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--keep-ui", default=False, action="store_true", help="keep TUI open after successful completion")
     parser.add_argument("--ci", default=False, action="store_true", help="CI mode (equivalent to --no-shuffle --no-ui)")
     parser.add_argument("--no-clear", default=False, action="store_true", help="do not clear the terminal before running")
+    parser.add_argument(
+        "-j",
+        "--jobs",
+        type=int,
+        default=None,
+        help="max parallel jobs for linters/testers (default: 4, configurable in pyproject.toml)",
+    )
 
     # 各コマンド用の引数追加オプション
     for command in pyfltr.config.BUILTIN_COMMANDS:
@@ -118,6 +125,10 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
                 help=f"additional arguments for {command}",
             )
         args = parser.parse_args(sys_args)
+
+    # CLIの--jobsオプションでconfigを上書き
+    if args.jobs is not None:
+        config.values["jobs"] = args.jobs
 
     commands: list[str] = pyfltr.config.resolve_aliases(args.commands.split(","), config)
     for command in commands:

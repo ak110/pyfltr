@@ -117,6 +117,8 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "ruff-check-path": "ruff",
     "ruff-check-args": ["check"],
     "ruff-check-fast": True,
+    # 最大並列数（linters/testersの並列実行数の上限）
+    "jobs": 4,
     # flake8風無視パターン。
     "exclude": [
         # ここの値はflake8やblackなどの既定値を元に適当に。

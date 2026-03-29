@@ -20,6 +20,7 @@ extend-exclude = ["foo", "bar.py"]
 - {command}-path : 実行するコマンド
 - {command}-args : 追加のコマンドライン引数
 - {command}-fast : `--commands=fast`に含めるか否か(後述)
+- jobs : linters/testersの最大並列数(既定値: 4、CLIの`-j`オプションでも指定可能)
 - exclude : 除外するファイル名/ディレクトリ名パターン(既定値あり)
 - extend-exclude : 追加で除外するファイル名/ディレクトリ名パターン(既定値は空)
 
@@ -57,6 +58,20 @@ preset = "latest"
 - `ruff-check = true`
 
 `preset = "latest"`は予告なく動作を変更する可能性あり。
+
+## 並列実行
+
+linters/testersはデフォルトで最大4並列で実行される。
+`jobs`で変更可能。
+
+```toml
+[tool.pyfltr]
+jobs = 8
+```
+
+CLIオプション`-j`でも指定でき、`pyproject.toml`より優先される。
+
+実行順は`fast`フラグに基づいて最適化され、`fast = false`のツール（mypy, pylint, pytest等）が先に開始される。
 
 ## fastエイリアス
 
