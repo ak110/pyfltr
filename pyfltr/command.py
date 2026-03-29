@@ -171,11 +171,16 @@ def execute_command(
     # (pytestなどは一部の表示が右寄せになるのであまり大きいと見づらい)
     env["COLUMNS"] = str(min(max(shutil.get_terminal_size().columns - 4, 80), 128))
 
+    # verbose時はコマンドラインをon_output経由で出力
+    if args.verbose and on_output is not None:
+        on_output(f"commandline: {shlex.join(commandline + check_args)}\n")
     proc = _run_subprocess(commandline + check_args, env, on_output)
     returncode = proc.returncode
 
     # autoflake/isort/black/ruff-formatの再実行
     if returncode != 0 and command in ("autoflake", "isort", "black"):
+        if args.verbose and on_output is not None:
+            on_output(f"commandline: {shlex.join(commandline)}\n")
         proc = _run_subprocess(commandline, env, on_output)
         if proc.returncode != 0:
             returncode = proc.returncode
@@ -224,7 +229,11 @@ def expand_globs(targets: list[pathlib.Path], globs: list[str], config: pyfltr.c
             logger.warning(f"I/O Error: {target}", exc_info=True)
 
     for target in targets:
-        _expand_target(target.absolute())
+        # 絶対パスの場合はcwd基準の相対パスに変換
+        if target.is_absolute():
+            with contextlib.suppress(ValueError):
+                target = target.relative_to(pathlib.Path.cwd())
+        _expand_target(target)
 
     return expanded
 
