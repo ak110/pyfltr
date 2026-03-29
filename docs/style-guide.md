@@ -7,11 +7,11 @@
 ## Python実装
 
 - importについて
-  - 可能な限り`import xxx`形式で書く (`from xxx import yyy`ではなく)
-  - 可能な限りトップレベルでimportする (循環参照や初期化順による問題を避ける場合に限りブロック内も可)
+    - 可能な限り`import xxx`形式で書く (`from xxx import yyy`ではなく)
+    - 可能な限りトップレベルでimportする (循環参照や初期化順による問題を避ける場合に限りブロック内も可)
 - タイプヒントは可能な限り書く
-  - `typing.List`ではなく`list`を使用する。`dict`やその他も同様。
-  - `typing.Optional`ではなく`| None`を使用する。
+    - `typing.List`ではなく`list`を使用する。`dict`やその他も同様。
+    - `typing.Optional`ではなく`| None`を使用する。
 - docstringは基本的には概要のみ書く
 - ログは`logging`を使う
 - 日付関連の処理は`datetime`を使う
@@ -25,16 +25,16 @@
 - `typing.Literal`の分岐は`typing.assert_never`で網羅性を担保（`else: typing.assert_never(x)`）
 - 単なる長い名前の別名でしかないローカル変数は作らない。例えば `x = cls.foo` と書いて `x` を使うより `cls.foo` を直接使う。
 - Lintエラーの対策は、可能な限り`assert`や`del`などの通常の構文を使用する
-  - Linter側のバグなどでどうしても回避が難しい、あるいは必要以上に複雑になってしまう場合に限り`# type: ignore[xxx]`などを使用する
-    (ただし、`mypy`、`pyright`, `pylint`などが重複して検出しちゃうケースも多く、そうなると無視コメントが入り乱れるためあくまでも最終手段)
+    - Linter側のバグなどでどうしても回避が難しい、あるいは必要以上に複雑になってしまう場合に限り`# type: ignore[xxx]`などを使用する
+      (ただし、`mypy`、`pyright`, `pylint`などが重複して検出しちゃうケースも多く、そうなると無視コメントが入り乱れるためあくまでも最終手段)
 
 ## テスト
 
 - テストコードは`pytest`で書く
 - テストコードは`pyfltr/xxx_.py`に対して`tests/xxx_test.py`として配置する
 - テストコードは速度と簡潔さを重視する
-  - テスト関数を細かく分けず、一連の流れをまとめて1つの関数にする
-  - 網羅性のため、必要に応じて`pytest.mark.parametrize`を使用する
+    - テスト関数を細かく分けず、一連の流れをまとめて1つの関数にする
+    - 網羅性のため、必要に応じて`pytest.mark.parametrize`を使用する
 - テストコードを書いたら`uv run pytest`でテストを実行する
 
 テストコードの例。
@@ -62,15 +62,15 @@ def test_yyy(tmp_path: pathlib.Path, x: str, expected: str) -> None:
 ```
 
 - テストコードの実行は `uv run pyfltr <path>` を使う (pytestを直接呼び出さない)
-  - `-vv`などが必要な場合に限り `uv run pyfltr -vv <path>` のようにする
+    - `-vv`などが必要な場合に限り `uv run pyfltr -vv <path>` のようにする
 
 ## Markdown記述スタイル
 
 - `**`は強調したい箇所のみに使い、箇条書きの見出し用途では使わない
-  - NG例: `1. **xx機能**: xxをyyする`
+    - NG例: `1. **xx機能**: xxをyyする`
 - できるだけmarkdownlintが通るように書く
-  - 特に注意するルール:
-    - `MD040/fenced-code-language`: Fenced code blocks should have a language specified
+    - 特に注意するルール:
+        - `MD040/fenced-code-language`: Fenced code blocks should have a language specified
 - 図はMermaid記法で書く
 - 別のMarkdownファイルへのリンクは、基本的に`[プロジェクトルートからのパス](記述個所からの相対パス)`で書く
 - format/lintの実行方法: `uv run pre-commit run --files <file>`

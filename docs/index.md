@@ -21,6 +21,8 @@ Pythonの各種ツールをまとめて呼び出すツール。
     - mypy
     - pylint
     - pyright (既定では無効、`pip install pyfltr[pyright]`でインストール可能)
+    - markdownlint-cli2 (既定では無効、pnpx経由で実行)
+    - textlint (既定では無効、pnpx経由で実行)
 - Testers
     - pytest
 

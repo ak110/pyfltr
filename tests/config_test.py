@@ -9,44 +9,77 @@ import pyfltr.config
 
 
 @pytest.mark.parametrize(
-    "preset,expected_isort,expected_black,expected_ruff_format,expected_ruff_check",
+    "preset,expected",
     [
-        ("", True, True, False, False),  # presetが空の場合はデフォルト
-        ("20250710", False, False, True, True),  # 20250710プリセット
-        ("latest", False, False, True, True),  # latestプリセット
+        # presetが空の場合はデフォルト
+        (
+            "",
+            {
+                "isort": True,
+                "black": True,
+                "ruff-format": False,
+                "ruff-check": False,
+                "pyright": False,
+                "textlint": False,
+                "markdownlint": False,
+            },
+        ),
+        # 20250710プリセット（互換性維持）
+        (
+            "20250710",
+            {
+                "isort": False,
+                "black": False,
+                "ruff-format": True,
+                "ruff-check": True,
+                "pyright": False,
+                "textlint": False,
+                "markdownlint": False,
+            },
+        ),
+        # 20260330プリセット
+        (
+            "20260330",
+            {
+                "isort": False,
+                "black": False,
+                "ruff-format": True,
+                "ruff-check": True,
+                "pyright": True,
+                "textlint": True,
+                "markdownlint": True,
+            },
+        ),
+        # latestプリセット（= 20260330）
+        (
+            "latest",
+            {
+                "isort": False,
+                "black": False,
+                "ruff-format": True,
+                "ruff-check": True,
+                "pyright": True,
+                "textlint": True,
+                "markdownlint": True,
+            },
+        ),
     ],
 )
 def test_apply_preset(
     tmp_path: pathlib.Path,
     preset: str,
-    expected_isort: bool,
-    expected_black: bool,
-    expected_ruff_format: bool,
-    expected_ruff_check: bool,
+    expected: dict[str, bool],
 ) -> None:
     """presetのテスト。"""
-    # pyproject.tomlを作成
-    pyproject_content = f"""
-[tool.pyfltr]
-preset = "{preset}"
-"""
     pyproject_path = tmp_path / "pyproject.toml"
-    pyproject_path.write_text(pyproject_content)
+    pyproject_path.write_text(f'[tool.pyfltr]\npreset = "{preset}"\n')
 
-    # カレントディレクトリを一時的に変更
     original_cwd = pathlib.Path.cwd()
     try:
         os.chdir(tmp_path)
-
-        # 設定を読み込み
         config = pyfltr.config.load_config()
-
-        # 期待される設定値になっているか確認
-        assert config["isort"] == expected_isort
-        assert config["black"] == expected_black
-        assert config["ruff-format"] == expected_ruff_format
-        assert config["ruff-check"] == expected_ruff_check
-
+        for key, value in expected.items():
+            assert config[key] == value, f"{key}: expected {value}, got {config[key]}"
     finally:
         os.chdir(original_cwd)
 
@@ -63,6 +96,7 @@ path = "bandit"
 args = ["-r"]
 targets = "*.py"
 error-pattern = '(?P<file>[^:]+):(?P<line>\\d+):(?P<col>\\d+):\\s*(?P<message>.+)'
+fast = true
 """
     (tmp_path / "pyproject.toml").write_text(pyproject_content)
     original_cwd = pathlib.Path.cwd()
@@ -81,12 +115,16 @@ error-pattern = '(?P<file>[^:]+):(?P<line>\\d+):(?P<col>\\d+):\\s*(?P<message>.+
         assert config["bandit"] is True
         assert config["bandit-path"] == "bandit"
         assert config["bandit-args"] == ["-r"]
+        assert config["bandit-fast"] is True
 
         # command_namesの末尾に追加されている
         assert config.command_names[-1] == "bandit"
 
         # ビルトインコマンドも正常
         assert config["ruff-format"] is True  # presetによる設定
+
+        # fastエイリアスにカスタムコマンドが含まれている
+        assert "bandit" in config["aliases"]["fast"]
     finally:
         os.chdir(original_cwd)
 
@@ -137,6 +175,39 @@ error-pattern = '(?P<file>[^:]+):(?P<line>\\d+)'
         os.chdir(tmp_path)
         with pytest.raises(ValueError, match="message"):
             pyfltr.config.load_config()
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_fast_alias_dynamic(tmp_path: pathlib.Path) -> None:
+    """fastエイリアスがper-command fastフラグから動的計算されることのテスト。"""
+    # デフォルト設定でfastエイリアスが正しく構築される
+    config = pyfltr.config.create_default_config()
+    fast = config["aliases"]["fast"]
+    # デフォルトでfastに含まれるコマンド
+    assert "pyupgrade" in fast
+    assert "ruff-format" in fast
+    assert "markdownlint" in fast
+    assert "textlint" in fast
+    # デフォルトでfastに含まれないコマンド
+    assert "mypy" not in fast
+    assert "pylint" not in fast
+    assert "pytest" not in fast
+
+    # pyproject.tomlでfastフラグを変更
+    pyproject_content = """
+[tool.pyfltr]
+mypy-fast = true
+pyupgrade-fast = false
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        config = pyfltr.config.load_config()
+        fast = config["aliases"]["fast"]
+        assert "mypy" in fast
+        assert "pyupgrade" not in fast
     finally:
         os.chdir(original_cwd)
 

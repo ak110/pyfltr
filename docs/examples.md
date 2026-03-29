@@ -13,7 +13,6 @@ dev = [
 
 [tool.pyfltr]
 preset = "latest"
-pyright = true
 pylint-args = ["--jobs=4"]
 mypy-args = ["--enable-error-code=unused-awaitable"]
 
@@ -78,38 +77,60 @@ asyncio_default_test_loop_scope = "session"
 ## .pre-commit-config.yaml
 
 ```yaml
-  - repo: https://github.com/DavidAnson/markdownlint-cli2
-    rev: v0.21.0
-    hooks:
-      - id: markdownlint-cli2
-
-  - repo: local
-    hooks:
-      - id: textlint
-        name: textlint
-        entry: textlint
-        language: node
-        files: \.(md|mdown|markdown)$
-        args: []
-        require_serial: false
-        additional_dependencies:
-          - textlint@15.5.1
-          - textlint-rule-preset-ja-technical-writing@12.0.2
-          - textlint-rule-preset-japanese@10.0.4
-
   - repo: local
     hooks:
       - id: pyfltr
         name: pyfltr
         entry: uv run pyfltr --commands=fast
-        types: [python]
+        types_or: [python, markdown]
         require_serial: true
         language: system
+```
+
+## .markdownlint-cli2.yaml
+
+```yaml
+config:
+  line-length: false
+```
+
+## .textlintrc.yaml
+
+```yaml
+rules:
+  preset-ja-technical-writing:
+    ja-no-mixed-period: false
+    sentence-length: false
+```
+
+## textlint-argsのカスタマイズ
+
+追加のtextlintプリセットを使う場合は`textlint-args`をオーバーライドする。
+
+```toml
+[tool.pyfltr]
+textlint-args = [
+    "--package", "textlint",
+    "--package", "textlint-rule-preset-ja-technical-writing",
+    "--package", "textlint-rule-preset-japanese",
+    "textlint", "--format", "compact",
+]
 ```
 
 ## CI
 
 ```yaml
-  - uv install --no-interaction
-  - uv run pyfltr
+- name: Setup Node.js
+  uses: actions/setup-node@v6
+  with:
+    node-version: "lts/*"
+
+- name: Setup pnpm
+  uses: pnpm/action-setup@v5
+
+- name: Install dependencies
+  run: uv sync --all-extras --dev
+
+- name: Test with pyfltr
+  run: uv run pyfltr
 ```

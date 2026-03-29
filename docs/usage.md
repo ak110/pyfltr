@@ -8,7 +8,11 @@ pyfltr [files and/or directories ...]
 
 対象を指定しなければカレントディレクトリを指定したのと同じ扱い。
 
-指定したファイルやディレクトリの配下のうち、pytest以外は`*.py`のみ、pytestは`*_test.py`のみに対して実行される。
+指定したファイルやディレクトリの配下のうち、各コマンドのtargetsパターンに一致するファイルのみ処理される。
+
+- Python系ツール: `*.py`
+- markdownlint / textlint: `*.md`
+- pytest: `*_test.py`
 
 終了コード。
 
@@ -23,7 +27,7 @@ Linters/Testersでのエラー無しなら終了コードは0になる。
 ```shell
 pyfltr \
   --commands=pyupgrade,autoflake,isort,black,ruff-format,\
-ruff-check,pflake8,mypy,pylint,pyright,pytest \
+ruff-check,pflake8,mypy,pylint,pyright,markdownlint,textlint,pytest \
   [files and/or directories ...]
 ```
 
@@ -32,9 +36,9 @@ ruff-check,pflake8,mypy,pylint,pyright,pytest \
 以下のエイリアスも使用可能。(例: `--commands=fast`)
 
 - `format`: `pyupgrade` `autoflake` `isort` `black` `ruff-format`
-- `lint`: `ruff-check` `pflake8` `mypy` `pylint` `pyright`
+- `lint`: `ruff-check` `pflake8` `mypy` `pylint` `pyright` `markdownlint` `textlint`
 - `test`: `pytest`
-- `fast`: `pyupgrade` `autoflake` `isort` `black` `ruff-format` `ruff-check` `pflake8`
+- `fast`: per-commandの`{cmd}-fast`フラグがtrueのコマンド（デフォルト: `pyupgrade` `autoflake` `isort` `black` `ruff-format` `ruff-check` `pflake8` `markdownlint` `textlint`）
 
 ※ `pyproject.toml`の`[tool.pyfltr]`で無効になっているコマンドは無視される。
 

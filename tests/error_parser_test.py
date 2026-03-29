@@ -42,6 +42,22 @@ import pyfltr.error_parser
             "src/foo.py",
             10,
         ),
+        # markdownlint-cli2
+        (
+            "markdownlint",
+            "docs/index.md:3 MD001/heading-increment Heading levels should only increment by one level at a time",
+            1,
+            "docs/index.md",
+            3,
+        ),
+        # textlint --format compact
+        (
+            "textlint",
+            "docs/index.md: line 5, col 1, Error - sentence error (ja-technical-writing/ja-no-mixed-period)",
+            1,
+            "docs/index.md",
+            5,
+        ),
         # pytest
         (
             "pytest",

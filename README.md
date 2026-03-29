@@ -10,7 +10,7 @@ Pythonの各種ツールをまとめて呼び出すツール。
 ## 対応ツール
 
 - Formatters: pyupgrade / autoflake / isort / black / ruff format / ruff check --fix
-- Linters: pflake8 / mypy / pylint / pyright
+- Linters: pflake8 / mypy / pylint / pyright / markdownlint-cli2 / textlint
 - Testers: pytest
 
 ## インストール

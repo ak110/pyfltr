@@ -7,7 +7,6 @@
 ```toml
 [tool.pyfltr]
 preset = "latest"
-pyupgrade-args = ["--py38-plus"]
 pylint-args = ["--jobs=4"]
 extend-exclude = ["foo", "bar.py"]
 ```
@@ -20,20 +19,34 @@ extend-exclude = ["foo", "bar.py"]
 - {command} : 各コマンドの有効/無効
 - {command}-path : 実行するコマンド
 - {command}-args : 追加のコマンドライン引数
+- {command}-fast : `--commands=fast`に含めるか否か(後述)
 - exclude : 除外するファイル名/ディレクトリ名パターン(既定値あり)
 - extend-exclude : 追加で除外するファイル名/ディレクトリ名パターン(既定値は空)
 
 ## プリセット設定
 
 `preset`を設定することで、一括して設定を変更できる。
-`"latest"` または日付指定 (`"20250710"`) が使用可能。
+`"latest"` または日付指定 (`"20260330"`, `"20250710"`) が使用可能。
 
 ```toml
 [tool.pyfltr]
 preset = "latest"
 ```
 
-これらのプリセットは、以下の設定を自動的に適用する。
+### preset "20260330" / "latest"
+
+- `pyupgrade = false`
+- `autoflake = false`
+- `pflake8 = false`
+- `isort = false`
+- `black = false`
+- `ruff-format = true`
+- `ruff-check = true`
+- `pyright = true`
+- `textlint = true`
+- `markdownlint = true`
+
+### preset "20250710"
 
 - `pyupgrade = false`
 - `autoflake = false`
@@ -44,6 +57,47 @@ preset = "latest"
 - `ruff-check = true`
 
 `preset = "latest"`は予告なく動作を変更する可能性あり。
+
+## fastエイリアス
+
+`--commands=fast`で実行されるコマンドは、各コマンドの`{command}-fast`設定で制御される。
+
+```toml
+[tool.pyfltr]
+# mypyをfastに追加
+mypy-fast = true
+# pflake8をfastから除外
+pflake8-fast = false
+```
+
+カスタムコマンドも`fast = true`でfastエイリアスに参加可能（後述）。
+
+## npm系ツール (markdownlint / textlint)
+
+markdownlint-cli2とtextlintはpnpx経由で実行される。
+依存パッケージはpnpxの`--package`フラグで`{command}-args`に指定する。
+
+```toml
+[tool.pyfltr]
+# npxを使う場合
+markdownlint-path = "npx"
+# グローバルインストール済みのtextlintを直接使う場合
+textlint-path = "textlint"
+textlint-args = ["--format", "compact"]
+```
+
+textlintのデフォルトでは`textlint-rule-preset-ja-technical-writing`が含まれる。
+追加のプリセットが必要な場合は`textlint-args`をオーバーライドする。
+
+```toml
+[tool.pyfltr]
+textlint-args = [
+    "--package", "textlint",
+    "--package", "textlint-rule-preset-ja-technical-writing",
+    "--package", "textlint-rule-preset-japanese",
+    "textlint", "--format", "compact",
+]
+```
 
 ## カスタムコマンド
 
@@ -56,6 +110,7 @@ path = "bandit"
 args = ["-r", "-f", "custom"]
 targets = "*.py"
 error-pattern = '(?P<file>[^:]+):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>.+)'
+fast = true
 ```
 
 設定項目。
@@ -69,6 +124,7 @@ error-pattern = '(?P<file>[^:]+):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>.+)'
     - `file`と`line`と`message`の名前付きグループが必須
     - `col`は任意
     - 指定するとErrorsタブやエラー一覧に表示される
+- `fast`: `--commands=fast`に含めるか（省略時は`false`）
 
 ビルトインコマンド（mypy等）は自動的にエラーパースされる。
 カスタムコマンドも`--{name}-args`やenable/disableが使用可能。

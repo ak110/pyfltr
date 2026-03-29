@@ -37,6 +37,8 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
     "mypy": CommandInfo(type="linter"),
     "pylint": CommandInfo(type="linter"),
     "pyright": CommandInfo(type="linter"),
+    "markdownlint": CommandInfo(type="linter", targets="*.md"),
+    "textlint": CommandInfo(type="linter", targets="*.md"),
     "pytest": CommandInfo(type="tester", targets="*_test.py"),
 }
 
@@ -51,6 +53,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "pyupgrade": True,
     "pyupgrade-path": "pyupgrade",
     "pyupgrade-args": [],
+    "pyupgrade-fast": True,
     "autoflake": True,
     "autoflake-path": "autoflake",
     "autoflake-args": [
@@ -60,34 +63,60 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
         "--remove-unused-variables",
         "--verbose",
     ],
+    "autoflake-fast": True,
     "isort": True,
     "isort-path": "isort",
     "isort-args": ["--settings-path=./pyproject.toml"],
+    "isort-fast": True,
     "black": True,
     "black-path": "black",
     "black-args": [],
+    "black-fast": True,
     "pflake8": True,
     "pflake8-path": "pflake8",
     "pflake8-args": [],
+    "pflake8-fast": True,
     "mypy": True,
     "mypy-path": "mypy",
     "mypy-args": [],
+    "mypy-fast": False,
     "pylint": True,
     "pylint-path": "pylint",
     "pylint-args": [],
+    "pylint-fast": False,
     "pyright": False,
     "pyright-path": "pyright",
     "pyright-args": [],
+    "pyright-fast": False,
+    "markdownlint": False,
+    "markdownlint-path": "pnpx",
+    "markdownlint-args": ["markdownlint-cli2"],
+    "markdownlint-fast": True,
+    "textlint": False,
+    "textlint-path": "pnpx",
+    "textlint-args": [
+        "--package",
+        "textlint",
+        "--package",
+        "textlint-rule-preset-ja-technical-writing",
+        "textlint",
+        "--format",
+        "compact",
+    ],
+    "textlint-fast": True,
     "pytest": True,
     "pytest-path": "pytest",
     "pytest-args": [],
     "pytest-devmode": True,  # PYTHONDEVMODE=1をするか否か
+    "pytest-fast": False,
     "ruff-format": False,
     "ruff-format-path": "ruff",
     "ruff-format-args": ["format", "--exit-non-zero-on-format"],
+    "ruff-format-fast": True,
     "ruff-check": False,
     "ruff-check-path": "ruff",
     "ruff-check-args": ["check"],
+    "ruff-check-fast": True,
     # flake8風無視パターン。
     "exclude": [
         # ここの値はflake8やblackなどの既定値を元に適当に。
@@ -124,15 +153,15 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
         "build",
         "dist",
         "node_modules",
+        "site",
         "venv",
     ],
     "extend-exclude": [],
     # コマンド名のエイリアス
     "aliases": {
         "format": ["pyupgrade", "autoflake", "isort", "black", "ruff-format"],
-        "lint": ["ruff-check", "pflake8", "mypy", "pylint", "pyright"],
+        "lint": ["ruff-check", "pflake8", "mypy", "pylint", "pyright", "markdownlint", "textlint"],
         "test": ["pytest"],
-        "fast": ["pyupgrade", "autoflake", "isort", "black", "ruff-format", "ruff-check", "pflake8"],
     },
 }
 """デフォルト設定。"""
@@ -155,11 +184,13 @@ class Config:
 
 def create_default_config() -> Config:
     """デフォルト設定を生成。"""
-    return Config(
+    config = Config(
         values=copy.deepcopy(DEFAULT_CONFIG),
         commands=dict(BUILTIN_COMMANDS),
         command_names=list(BUILTIN_COMMAND_NAMES),
     )
+    config.values["aliases"]["fast"] = _build_fast_alias(config)
+    return config
 
 
 def load_config() -> Config:
@@ -178,8 +209,20 @@ def load_config() -> Config:
     preset = str(tool_pyfltr.get("preset", ""))
     if preset == "":
         pass
-    elif preset in ("20250710", "latest"):
-        # ruff使用のプリセット
+    elif preset in ("20260330", "latest"):
+        # ruff + pyright + textlint + markdownlint使用のプリセット
+        config.values["pyupgrade"] = False
+        config.values["autoflake"] = False
+        config.values["pflake8"] = False
+        config.values["isort"] = False
+        config.values["black"] = False
+        config.values["ruff-format"] = True
+        config.values["ruff-check"] = True
+        config.values["pyright"] = True
+        config.values["textlint"] = True
+        config.values["markdownlint"] = True
+    elif preset == "20250710":
+        # 旧プリセット（互換性維持）
         config.values["pyupgrade"] = False
         config.values["autoflake"] = False
         config.values["pflake8"] = False
@@ -208,6 +251,9 @@ def load_config() -> Config:
         if not isinstance(value, type(config.values[key])):  # 簡易チェック
             raise ValueError(f"invalid config value: {key}={type(value)}, expected {type(config.values[key])}")
         config.values[key] = value
+
+    # per-command fastフラグからfastエイリアスを再計算
+    config.values["aliases"]["fast"] = _build_fast_alias(config)
 
     return config
 
@@ -252,10 +298,21 @@ def _register_custom_command(config: Config, name: str, definition: dict[str, ty
     )
     config.command_names.append(name)
 
+    # fast (省略時はFalse)
+    fast = definition.get("fast", False)
+    if not isinstance(fast, bool):
+        raise ValueError(f"カスタムコマンド {name} のfastはboolで指定してください")
+
     # values辞書にデフォルト設定を追加
     config.values[name] = True
     config.values[f"{name}-path"] = path
     config.values[f"{name}-args"] = args
+    config.values[f"{name}-fast"] = fast
+
+
+def _build_fast_alias(config: Config) -> list[str]:
+    """per-command fastフラグからfastエイリアスを動的構築。"""
+    return [name for name in config.command_names if config.values.get(f"{name}-fast", False)]
 
 
 def _validate_error_pattern(name: str, pattern: str) -> None:

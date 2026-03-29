@@ -62,6 +62,10 @@ _BUILTIN_PATTERNS: dict[str, str] = {
     "ruff-check": r"(?P<file>[^\s:]+):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>[A-Z]+\d+\s+.+)",
     # pyright出力例: src/foo.py:10:5 - error: xxx
     "pyright": r"(?P<file>[^\s:]+):(?P<line>\d+):(?P<col>\d+)\s*-\s*error:\s*(?P<message>.+)",
+    # markdownlint-cli2出力例: file.md:3 MD001/heading-increment Heading levels ...
+    "markdownlint": r"(?P<file>[^\s:]+):(?P<line>\d+)\s+(?P<message>MD\d+\S*\s+.+)",
+    # textlint --format compact出力例: /path/file.md: line 1, col 1, Error - message (rule)
+    "textlint": r"(?P<file>[^\s:]+):\s*line\s+(?P<line>\d+),\s*col\s+(?P<col>\d+),\s*\w+\s*-\s*(?P<message>.+)",
     # pytest出力例: FAILED tests/xxx_test.py::test_yyy - AssertionError
     "pytest": r"FAILED\s+(?P<file>[^\s:]+)::(?P<message>\S+)",
 }
