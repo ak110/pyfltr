@@ -63,6 +63,7 @@ source = "vcs"
 
 [tool.pyfltr]
 preset = "latest"
+ty = true
 pylint-args = ["--jobs=4"]
 mypy-args = ["--enable-error-code=unused-awaitable"]
 

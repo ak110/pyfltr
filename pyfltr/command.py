@@ -140,7 +140,7 @@ def execute_command(
         additional_args = shlex.split(additional_args_str)
         commandline.extend(additional_args)
 
-    commandline.extend(map(str, targets))
+    commandline.extend(str(t) for t in targets)
 
     if len(targets) <= 0:
         return CommandResult(

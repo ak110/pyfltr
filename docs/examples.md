@@ -81,7 +81,7 @@ asyncio_default_test_loop_scope = "session"
     hooks:
       - id: pyfltr
         name: pyfltr
-        entry: uv run pyfltr --commands=fast
+        entry: uv run pyfltr --exit-zero-even-if-formatted --commands=fast
         types_or: [python, markdown]
         require_serial: true
         language: system
