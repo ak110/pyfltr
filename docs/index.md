@@ -20,7 +20,8 @@ Pythonの各種ツールをまとめて呼び出すツール。
     - pflake8 + flake8-bugbear + flake8-tidy-imports
     - mypy
     - pylint
-    - pyright (既定では無効、`pip install pyfltr[pyright]`でインストール可能)
+    - pyright (既定では無効)
+    - ty (既定では無効)
     - markdownlint-cli2 (既定では無効、pnpx経由で実行)
     - textlint (既定では無効、pnpx経由で実行)
 - Testers
@@ -38,5 +39,4 @@ Pythonの各種ツールをまとめて呼び出すツール。
 
 ```shell
 pip install pyfltr
-# pip install pyfltr[pyright]  # pyrightを使う場合
 ```

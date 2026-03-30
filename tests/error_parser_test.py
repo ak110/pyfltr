@@ -58,6 +58,22 @@ import pyfltr.error_parser
             "docs/index.md",
             5,
         ),
+        # ty check --output-format concise (error)
+        (
+            "ty",
+            "src/foo.py:10:5: error[invalid-argument-type] Argument is incorrect",
+            1,
+            "src/foo.py",
+            10,
+        ),
+        # ty check --output-format concise (warning)
+        (
+            "ty",
+            "src/foo.py:3:1: warning[unused-variable] Variable `x` is unused",
+            1,
+            "src/foo.py",
+            3,
+        ),
         # pytest
         (
             "pytest",

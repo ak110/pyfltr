@@ -37,6 +37,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
     "mypy": CommandInfo(type="linter"),
     "pylint": CommandInfo(type="linter"),
     "pyright": CommandInfo(type="linter"),
+    "ty": CommandInfo(type="linter"),
     "markdownlint": CommandInfo(type="linter", targets="*.md"),
     "textlint": CommandInfo(type="linter", targets="*.md"),
     "pytest": CommandInfo(type="tester", targets="*_test.py"),
@@ -88,6 +89,10 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "pyright-path": "pyright",
     "pyright-args": [],
     "pyright-fast": False,
+    "ty": False,
+    "ty-path": "ty",
+    "ty-args": ["check", "--output-format", "concise", "--error-on-warning"],
+    "ty-fast": True,
     "markdownlint": False,
     "markdownlint-path": "pnpx",
     "markdownlint-args": ["markdownlint-cli2"],
@@ -162,7 +167,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # コマンド名のエイリアス
     "aliases": {
         "format": ["pyupgrade", "autoflake", "isort", "black", "ruff-format"],
-        "lint": ["ruff-check", "pflake8", "mypy", "pylint", "pyright", "markdownlint", "textlint"],
+        "lint": ["ruff-check", "pflake8", "mypy", "pylint", "pyright", "ty", "markdownlint", "textlint"],
         "test": ["pytest"],
     },
 }

@@ -62,6 +62,8 @@ _BUILTIN_PATTERNS: dict[str, str] = {
     "ruff-check": r"(?P<file>[^\s:]+):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>[A-Z]+\d+\s+.+)",
     # pyright出力例: src/foo.py:10:5 - error: xxx
     "pyright": r"(?P<file>[^\s:]+):(?P<line>\d+):(?P<col>\d+)\s*-\s*error:\s*(?P<message>.+)",
+    # ty check --output-format concise 出力例: src/foo.py:10:5: error[rule-name] Message text
+    "ty": r"(?P<file>[^\s:]+):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>(?:error|warning)\[.+?\]\s+.+)",
     # markdownlint-cli2出力例: file.md:3 MD001/heading-increment Heading levels ...
     "markdownlint": r"(?P<file>[^\s:]+):(?P<line>\d+)\s+(?P<message>MD\d+\S*\s+.+)",
     # textlint --format compact出力例: /path/file.md: line 1, col 1, Error - message (rule)

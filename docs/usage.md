@@ -27,7 +27,7 @@ Linters/Testersでのエラー無しなら終了コードは0になる。
 ```shell
 pyfltr \
   --commands=pyupgrade,autoflake,isort,black,ruff-format,\
-ruff-check,pflake8,mypy,pylint,pyright,markdownlint,textlint,pytest \
+ruff-check,pflake8,mypy,pylint,pyright,ty,markdownlint,textlint,pytest \
   [files and/or directories ...]
 ```
 
@@ -36,9 +36,9 @@ ruff-check,pflake8,mypy,pylint,pyright,markdownlint,textlint,pytest \
 以下のエイリアスも使用可能。(例: `--commands=fast`)
 
 - `format`: `pyupgrade` `autoflake` `isort` `black` `ruff-format`
-- `lint`: `ruff-check` `pflake8` `mypy` `pylint` `pyright` `markdownlint` `textlint`
+- `lint`: `ruff-check` `pflake8` `mypy` `pylint` `pyright` `ty` `markdownlint` `textlint`
 - `test`: `pytest`
-- `fast`: per-commandの`{cmd}-fast`フラグがtrueのコマンド（デフォルト: `pyupgrade` `autoflake` `isort` `black` `ruff-format` `ruff-check` `pflake8` `markdownlint` `textlint`）
+- `fast`: per-commandの`{cmd}-fast`フラグがtrueのコマンド（デフォルト: `pyupgrade` `autoflake` `isort` `black` `ruff-format` `ruff-check` `pflake8` `ty` `markdownlint` `textlint`）
 
 ※ `pyproject.toml`の`[tool.pyfltr]`で無効になっているコマンドは無視される。
 

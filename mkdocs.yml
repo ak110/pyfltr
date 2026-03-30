@@ -25,14 +25,17 @@ theme:
 plugins:
   - search
   - llmstxt:
+      full_output: llms-full.txt
       sections:
         ホーム:
-          - index.md
+          - index.md: 概要・対応ツール・インストール方法
         使い方:
-          - usage.md
+          - usage.md: CLI使い方・オプション・UI説明
         設定:
-          - configuration.md
-          - examples.md
+          - configuration.md: pyproject.tomlでの設定項目リファレンス
+          - examples.md: pyproject.toml・設定ファイル・CI設定の実例
+        開発者向け:
+          - development.md: 開発環境構築・ドキュメント・リリース手順
 
 markdown_extensions:
   - pymdownx.highlight:

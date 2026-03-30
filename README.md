@@ -10,14 +10,13 @@ Pythonの各種ツールをまとめて呼び出すツール。
 ## 対応ツール
 
 - Formatters: pyupgrade / autoflake / isort / black / ruff format / ruff check --fix
-- Linters: pflake8 / mypy / pylint / pyright / markdownlint-cli2 / textlint
+- Linters: pflake8 / mypy / pylint / pyright / ty / markdownlint-cli2 / textlint
 - Testers: pytest
 
 ## インストール
 
 ```shell
 pip install pyfltr
-# pip install pyfltr[pyright]  # pyrightを使う場合
 ```
 
 ## 基本的な使い方
