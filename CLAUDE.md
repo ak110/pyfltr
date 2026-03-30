@@ -4,6 +4,15 @@
   - 手動編集は `uv` コマンドでは対応できない箇所に限る
 - コマンドラインを記述するときは可読性のため極力 `--foo` のようなロング形式のオプションを使用する
 
+## 開発手順
+
+- .venvの更新には`make update`を使う
+- コードを書いた後は必ず`make test`する。コードフォーマット、mypy、pytestなどがまとめて実行される
+- テストコードは`pyfltr/xxx_.py`に対して`tests/xxx_test.py`として配置する
+- テストコードの実行は `uv run pyfltr <path>` を使う (pytestを直接呼び出さない)
+  - `-vv`などが必要な場合に限り `uv run pyfltr -vv <path>` のようにする
+- Markdownファイルのformat/lintの実行方法: `uv run pre-commit run --files <file>`
+
 ## 関連ドキュメント
 
 - @README.md
