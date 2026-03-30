@@ -17,7 +17,7 @@ paths:
   - 自明なArgs, Returns, Raisesは省略する
 - ログは`logging`を使う
   - `logger = logging.getLogger(__name__)`でモジュールごとに取得
-  - `exc_info=True`指定時は例外をメッセージに含めず簡潔に（例: `logger.error("〇〇処理エラー", exc_info=True)`）
+  - `exc_info=True`指定時は例外をメッセージへ含めず簡潔に（例: `logger.error("〇〇処理エラー", exc_info=True)`）
     - 頻出する例外に限り `logger.warning(f"〇〇失敗: {e}")` のように文字列化して出力する
   - 一度のエラーで複数回ログが出力されたり、逆に一度もログが出なかったりすることが無いよう注意する
 - 日付関連の処理は`datetime`を使う
@@ -29,5 +29,5 @@ paths:
 - 単なる長い名前の別名でしかないローカル変数は作らない。例えば `x = cls.foo` と書いて `x` を使うより `cls.foo` を直接使う。
 - SQLAlchemyのNULLチェックは`.is_(None)`を使用
 - Lintエラーの対策は、可能な限り`assert`や`del`などの通常の構文を使用する
-  - Linter側のバグなどでどうしても回避が難しい、あるいは必要以上に複雑になってしまう場合に限り`# type: ignore[xxx]`などを使用する
-    (ただし、`mypy`、`pyright`, `pylint`などが重複して検出してしまうケースも多く、そうなると無視コメントが入り乱れるためあくまでも最終手段)
+  - Linter側のバグなどで回避が難しい、あるいは必要以上の複雑さを招く場合のみ`# type: ignore[xxx]`などを使用する。
+    `mypy`・`pyright`・`pylint`などが重複検出するケースも多く、無視コメントが入り乱れるためあくまで最終手段とする
