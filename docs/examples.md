@@ -13,7 +13,7 @@ dev = [
 
 [tool.pyfltr]
 preset = "latest"
-pylint-args = ["--jobs=4"]
+pylint-args = ["--jobs=4", "--load-plugins=pylint_pydantic"]
 mypy-args = ["--enable-error-code=unused-awaitable"]
 
 [tool.ruff]
@@ -120,17 +120,37 @@ textlint-args = [
 ## CI
 
 ```yaml
-- name: Setup Node.js
-  uses: actions/setup-node@v6
-  with:
-    node-version: "lts/*"
+jobs:
+    test:
+        runs-on: ubuntu-latest
+        strategy:
+            matrix:
+                python-version: ["3.11", "3.12", "3.13", "3.14"]
+        steps:
+            - uses: actions/checkout@v6
 
-- name: Setup pnpm
-  uses: pnpm/action-setup@v5
+            - name: Install uv
+                uses: astral-sh/setup-uv@v7
+                with:
+                    python-version: ${{ matrix.python-version }}
+                    enable-cache: true
 
-- name: Install dependencies
-  run: uv sync --all-extras --dev
+            - name: Setup Node.js
+                uses: actions/setup-node@v6
+                with:
+                    node-version: "lts/*"
 
-- name: Test with pyfltr
-  run: uv run pyfltr
+            - name: Setup pnpm
+                uses: pnpm/action-setup@v5
+                with:
+                    version: latest
+
+            - name: Install dependencies
+                run: uv sync --all-extras --all-groups
+
+            - name: Test with pyfltr
+                run: uv run pyfltr
+
+            - name: Prune uv cache for CI
+                run: uv cache prune --ci
 ```

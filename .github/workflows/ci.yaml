@@ -43,7 +43,7 @@ jobs:
           version: latest
 
       - name: Install dependencies
-        run: uv sync --all-extras --dev
+        run: uv sync --all-extras --all-groups
 
       - name: Test with pyfltr
         run: uv run pyfltr
