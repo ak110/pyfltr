@@ -141,7 +141,7 @@ class UIApp(App):
         table = self.query_one("#summary-table", DataTable)
         for command, start_time in self._start_times.items():
             elapsed = time.perf_counter() - start_time
-            table.update_cell(command, "time", f"{elapsed:.0f}s…")
+            table.update_cell(command, "time", f"{elapsed:.1f}s…")
 
     def _update_summary(self, command: str, status: str, error_count: int | None = None, elapsed: float | None = None) -> None:
         """Summaryテーブルの行を更新。"""
