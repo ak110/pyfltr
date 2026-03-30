@@ -14,7 +14,7 @@ paths:
 
 ## ディレクトリ構造
 
-```
+```text
 .claude/skills/<skill-name>/
 ├── SKILL.md           # メイン指示 (必須、500行以下を目安)
 ├── references/        # 詳細なリファレンス (必要時に読み込み)
@@ -38,7 +38,7 @@ SKILL.md からは「いつ・何を読むか」のポインタだけ残す。
 
 ドメインが複数ある場合はリファレンスを分離する:
 
-```
+```text
 cloud-deploy/
 ├── SKILL.md          # ワークフローと選択ロジック
 └── references/
