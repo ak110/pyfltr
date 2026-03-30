@@ -24,8 +24,6 @@ paths:
 - ファイル関連の処理は`pathlib`を使う (`open`関数や`os`モジュールは使わない)
 - テーブルデータの処理には`polars`を使う (`pandas`は使わない)
 - パッケージ管理には`uv`を使う
-- .venvの更新には`make update`を使う
-- コードを書いた後は必ず`make test`する。コードフォーマット、mypy、pytestなどがまとめて実行される
 - インターフェースの都合上未使用の引数がある場合は、関数先頭で`del xxx # noqa`のように書く(lint対策)
 - `typing.Literal`の分岐は`typing.assert_never`で網羅性を担保（`else: typing.assert_never(x)`）
 - 単なる長い名前の別名でしかないローカル変数は作らない。例えば `x = cls.foo` と書いて `x` を使うより `cls.foo` を直接使う。
@@ -33,3 +31,5 @@ paths:
 - Lintエラーの対策は、可能な限り`assert`や`del`などの通常の構文を使用する
   - Linter側のバグなどでどうしても回避が難しい、あるいは必要以上に複雑になってしまう場合に限り`# type: ignore[xxx]`などを使用する
     (ただし、`mypy`、`pyright`, `pylint`などが重複して検出してしまうケースも多く、そうなると無視コメントが入り乱れるためあくまでも最終手段)
+- .venvの更新には`make update`を使う
+- コードを書いた後は必ず`make test`する。コードフォーマット、mypy、pytestなどがまとめて実行される

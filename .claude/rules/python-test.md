@@ -9,9 +9,11 @@ paths:
 - テストコードは`pytest`で書く
 - テストコードは`pyfltr/xxx_.py`に対して`tests/xxx_test.py`として配置する
 - 網羅性のため、必要に応じて`@pytest.mark.parametrize`を使用する
-- テスト関数内で使用しない fixture（副作用のみが必要な場合）は `@pytest.mark.usefixtures("fixture_name")` を使用する
+- テスト関数内で使用しないfixture（副作用のみが必要な場合）は
+  `@pytest.mark.usefixtures("fixture_name")` を使用する
   - `@pytest.mark.parametrize(..., indirect=True)` との併用も可
-  - デコレーター順序: `@pytest.mark.parametrize` → `@pytest.mark.asyncio` → `@pytest.mark.usefixtures(...)` （外側から内側）
+  - デコレーター順序（外側から内側）:
+    `parametrize` → `asyncio` → `usefixtures`
 
 ## Fixture のコーディングルール
 

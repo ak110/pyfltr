@@ -1,6 +1,7 @@
 ---
 paths:
   - "**/*.md"
+  - "**/*.mdx"
 ---
 
 # Markdown記述スタイル
@@ -9,6 +10,7 @@ paths:
   - NG例: `1. **xx機能**: xxをyyする`
 - できるだけmarkdownlintが通るように書く
   - 特に注意するルール:
+    - MD013 - Line length (80文字以内)
     - MD022 - Headings should be surrounded by blank lines
     - MD031 - Fenced code blocks should be surrounded by blank lines
     - MD040 - Fenced code blocks should have a language specified
