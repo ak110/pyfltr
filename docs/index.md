@@ -7,6 +7,10 @@ Python Formatters, Linters, and Testers Runner
 
 Pythonの各種ツールをまとめて呼び出すツール。
 
+ドキュメント: <https://ak110.github.io/pyfltr/>
+
+llms.txt: <https://ak110.github.io/pyfltr/llms.txt>
+
 ## 対応ツール
 
 - Formatters

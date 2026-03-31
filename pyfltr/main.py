@@ -33,7 +33,8 @@ def main() -> typing.NoReturn:
 def build_parser() -> argparse.ArgumentParser:
     """引数パーサーを生成。"""
     parser = argparse.ArgumentParser(
-        epilog="ドキュメント: https://ak110.github.io/pyfltr/  LLMs: https://ak110.github.io/pyfltr/llms.txt",
+        epilog="ドキュメント: https://ak110.github.io/pyfltr/\nllms.txt: https://ak110.github.io/pyfltr/llms.txt",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--verbose", default=False, action="store_true", help="shows verbose output.")
     parser.add_argument(
