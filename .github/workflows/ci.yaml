@@ -42,6 +42,9 @@ jobs:
         with:
           version: latest
 
+      - name: Configure pnpm security
+        run: pnpm config set minimum-release-age 1440 --global
+
       - name: Install dependencies
         run: uv sync --all-extras --all-groups
 

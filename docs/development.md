@@ -10,7 +10,14 @@
     uv run pre-commit install
     ```
 
-## ドキュメントサイト
+4. サプライチェーン攻撃対策として、`uvx`/`pnpx`用のグローバル設定をする。
+
+    ```bash
+    mkdir -p ~/.config/uv && echo 'exclude-newer = "1 day"' >> ~/.config/uv/uv.toml
+    pnpm config set minimum-release-age 1440 --global
+    ```
+
+## ドキュメント
 
 ドキュメントはMkDocsで管理し、GitHub Pagesでホスティングしている。
 

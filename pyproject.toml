@@ -61,6 +61,9 @@ build-backend = "hatchling.build"
 [tool.hatch.version]
 source = "vcs"
 
+[tool.uv]
+exclude-newer = "1 day"
+
 [tool.pyfltr]
 preset = "latest"
 ty = true
