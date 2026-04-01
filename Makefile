@@ -15,7 +15,13 @@ update:
 	$(MAKE) clean-stale-dist-info
 	uv sync --upgrade --all-extras --all-groups
 	uv run pre-commit autoupdate
+	$(MAKE) update-actions
 	$(MAKE) test
+
+# GitHub Actionsのアクションをハッシュピンで最新化（mise未導入時はスキップ）
+update-actions:
+	@command -v mise >/dev/null 2>&1 || { echo "mise未検出、スキップ"; exit 0; }; \
+	GITHUB_TOKEN=$$(gh auth token) mise exec -- pinact run --update --min-age 1
 
 format:
 	$(MAKE) clean-stale-dist-info
@@ -30,4 +36,4 @@ test:
 docs:
 	uv run mkdocs serve
 
-.PHONY: help clean-stale-dist-info update format test docs
+.PHONY: help clean-stale-dist-info update update-actions format test docs
