@@ -6,7 +6,8 @@
 
 ## 開発手順
 
-- .venvの更新には`make update`を使う
+- .venvの更新には`make update`を使う (pinactによるアクション更新含む)
+  - `make update-actions`: GitHub Actionsのハッシュピン更新のみ（mise経由でpinact実行）
 - コードを書いた後は必ず`make test`する。コードフォーマット、mypy、pytestなどがまとめて実行される
 - テストコードは`pyfltr/xxx_.py`に対して`tests/xxx_test.py`として配置する
 - テストコードの実行は `uv run pyfltr <path>` を使う (pytestを直接呼び出さない)
