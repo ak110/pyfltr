@@ -31,3 +31,4 @@ paths:
 - Lintエラーの対策は、可能な限り`assert`や`del`などの通常の構文を使用する
   - Linter側のバグなどで回避が難しい、あるいは必要以上の複雑さを招く場合のみ`# type: ignore[xxx]`などを使用する。
     `mypy`・`pyright`・`pylint`などが重複検出するケースも多く、無視コメントが入り乱れるためあくまで最終手段とする
+- Python 3.14以降: PEP 758により`except ValueError, TypeError:`のようにかっこなしで複数例外を書ける（フォーマッターが自動整形する場合あり）
