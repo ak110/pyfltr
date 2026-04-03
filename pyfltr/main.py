@@ -61,6 +61,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ci", default=False, action="store_true", help="CI mode (equivalent to --no-shuffle --no-ui)")
     parser.add_argument("--no-clear", default=False, action="store_true", help="do not clear the terminal before running")
     parser.add_argument(
+        "--work-dir",
+        type=pathlib.Path,
+        default=None,
+        help="change working directory before execution (default: current directory)",
+    )
+    parser.add_argument(
         "-j",
         "--jobs",
         type=int,
@@ -92,6 +98,27 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
     args = parser.parse_args(sys_args)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, format="%(message)s")
 
+    # --work-dir: ターゲットパスを絶対パスに変換してからcwd変更
+    original_cwd: str | None = None
+    resolved_targets: list[pathlib.Path] | None = None
+    if args.work_dir is not None:
+        resolved_targets = [t.absolute() for t in args.targets]
+        original_cwd = os.getcwd()
+        os.chdir(args.work_dir)
+    try:
+        return _run_impl(parser, args, sys_args, resolved_targets)
+    finally:
+        if original_cwd is not None:
+            os.chdir(original_cwd)
+
+
+def _run_impl(
+    parser: argparse.ArgumentParser,
+    args: argparse.Namespace,
+    sys_args: typing.Sequence[str] | None,
+    resolved_targets: list[pathlib.Path] | None,
+) -> int:
+    """run()の内部実装。"""
     # --ciオプションの処理
     if args.ci:
         args.shuffle = False
@@ -128,6 +155,10 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
                 help=f"additional arguments for {command}",
             )
         args = parser.parse_args(sys_args)
+
+    # --work-dir指定時、再パースで上書きされたtargetsを絶対パスで復元
+    if resolved_targets is not None:
+        args.targets = resolved_targets
 
     # CLIの--jobsオプションでconfigを上書き
     if args.jobs is not None:

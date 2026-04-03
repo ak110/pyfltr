@@ -25,6 +25,18 @@ def test_fail(mocker, mode):
     assert returncode == 1
 
 
+def test_work_dir(mocker, tmp_path):
+    """--work-dirオプションのテスト。"""
+    (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latest"\n')
+    proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="test")
+    mocker.patch("subprocess.run", return_value=proc)
+    original_cwd = pathlib.Path.cwd()
+    returncode = pyfltr.main.run(["--work-dir", str(tmp_path), "--commands=pytest", str(pathlib.Path(__file__).parent.parent)])
+    assert returncode == 0
+    # cwdが復元されていることを確認
+    assert pathlib.Path.cwd() == original_cwd
+
+
 def test_additional_args(mocker):
     """追加引数のテスト。"""
     proc = subprocess.CompletedProcess(["pytest"], returncode=0, stdout="test")
