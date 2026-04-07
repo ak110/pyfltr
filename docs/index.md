@@ -18,9 +18,9 @@ llms.txt: <https://ak110.github.io/pyfltr/llms.txt>
     - autoflake
     - isort
     - black
-    - ruff format (既定では無効)
-    - ruff check --fix (既定では無効)
+    - ruff format (既定では無効。有効時は `ruff check --fix --unsafe-fixes` を併走する、`ruff-format-by-check`でOFF可)
 - Linters
+    - ruff check (既定では無効)
     - pflake8 + flake8-bugbear + flake8-tidy-imports
     - mypy
     - pylint

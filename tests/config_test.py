@@ -216,6 +216,33 @@ pyupgrade-fast = false
         os.chdir(original_cwd)
 
 
+def test_ruff_format_by_check_default() -> None:
+    """ruff-format-by-check のデフォルト値テスト。"""
+    config = pyfltr.config.create_default_config()
+    # デフォルトで有効
+    assert config["ruff-format-by-check"] is True
+    # デフォルトの check 用引数は ruff check --fix --unsafe-fixes
+    assert config["ruff-format-check-args"] == ["check", "--fix", "--unsafe-fixes"]
+
+
+def test_ruff_format_by_check_overridable(tmp_path: pathlib.Path) -> None:
+    """pyproject.toml で ruff-format-by-check を上書きできることのテスト。"""
+    pyproject_content = """
+[tool.pyfltr]
+ruff-format-by-check = false
+ruff-format-check-args = ["check", "--fix"]
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        config = pyfltr.config.load_config()
+        assert config["ruff-format-by-check"] is False
+        assert config["ruff-format-check-args"] == ["check", "--fix"]
+    finally:
+        os.chdir(original_cwd)
+
+
 def test_invalid_preset(tmp_path: pathlib.Path) -> None:
     """不正なpresetのテスト。"""
     # pyproject.tomlを作成

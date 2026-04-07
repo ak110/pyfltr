@@ -118,6 +118,13 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "ruff-format-path": "ruff",
     "ruff-format-args": ["format", "--exit-non-zero-on-format"],
     "ruff-format-fast": True,
+    # ruff-format 実行時に ruff check --fix --unsafe-fixes を先に走らせるか。
+    # 既定では有効とし、未整形の import ソートや安全に自動修正できる lint 違反を
+    # フォーマットと一緒に片付ける (ruff 公式推奨ワークフローの発展形)。
+    # lint エラーは別途 ruff-check で検出される前提のため、ステップ 1 の
+    # lint violation (exit 1) は ruff-format 側では失敗扱いしない。
+    "ruff-format-by-check": True,
+    "ruff-format-check-args": ["check", "--fix", "--unsafe-fixes"],
     "ruff-check": False,
     "ruff-check-path": "ruff",
     "ruff-check-args": ["check"],

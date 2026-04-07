@@ -11,8 +11,8 @@ llms.txt: <https://ak110.github.io/pyfltr/llms.txt>
 
 ## 対応ツール
 
-- Formatters: pyupgrade / autoflake / isort / black / ruff format / ruff check --fix
-- Linters: pflake8 / mypy / pylint / pyright / ty / markdownlint-cli2 / textlint
+- Formatters: pyupgrade / autoflake / isort / black / ruff format (+ ruff check --fix --unsafe-fixes)
+- Linters: ruff check / pflake8 / mypy / pylint / pyright / ty / markdownlint-cli2 / textlint
 - Testers: pytest
 
 ## インストール

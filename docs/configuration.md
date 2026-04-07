@@ -59,6 +59,22 @@ preset = "latest"
 
 `preset = "latest"`は予告なく動作を変更する可能性あり。
 
+## ruff-format の 2 段階実行
+
+`ruff-format` は既定で `ruff check --fix --unsafe-fixes` と `ruff format` の 2 ステップを連続実行する。
+import ソートや自動修正可能な lint 違反を整形と同時に片付けるための挙動。
+
+ステップ 1 の lint 違反 (ruff check の exit 1) は無視され、別途 `ruff-check` コマンドで検出される想定。
+設定ミス等による ruff の異常終了 (exit 2 以上) は失敗として扱われる。
+
+```toml
+[tool.pyfltr]
+# ステップ 1 をスキップしたい場合 (既定は true)
+ruff-format-by-check = false
+# ステップ 1 の引数を差し替えたい場合 (既定は ["check", "--fix", "--unsafe-fixes"])
+ruff-format-check-args = ["check", "--fix"]
+```
+
 ## 並列実行
 
 linters/testersはデフォルトで最大4並列で実行される。

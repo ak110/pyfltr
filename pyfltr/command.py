@@ -123,13 +123,14 @@ def execute_command(
     """コマンドの実行。"""
     command_info = config.commands[command]
     globs = [command_info.targets]
-    targets = expand_globs(args.targets, globs, config)
+    targets: list[pathlib.Path] = expand_globs(args.targets, globs, config)
 
     # ファイルの順番をシャッフルまたはソート
     if args.shuffle:
         random.shuffle(targets)
     else:
-        targets = natsort.natsorted(targets, key=str)
+        # natsort.natsortedの型ヒントがゆるく ty が union 型に落とすので cast で明示。
+        targets = typing.cast("list[pathlib.Path]", natsort.natsorted(targets, key=str))
 
     commandline: list[str] = [config[f"{command}-path"]]
     commandline.extend(config[f"{command}-args"])
@@ -154,22 +155,25 @@ def execute_command(
             elapsed=0,
         )
 
+    start_time = time.perf_counter()
+    env = _build_subprocess_env(config, command)
+
+    # ruff-formatで ruff-format-by-check が有効な場合は、
+    # 先に ruff check --fix --unsafe-fixes を走らせてから ruff format を実行する。
+    # ステップ1(check)の lint violation (exit 1) は無視する (lint は ruff-check で検出)。
+    # ただし exit >= 2 (設定エラー等) は失敗扱いする。
+    if command == "ruff-format" and config["ruff-format-by-check"]:
+        result = _execute_ruff_format_two_step(
+            command, command_info, commandline, targets, config, args, env, on_output, start_time
+        )
+        return result
+
     # --checkオプションを使わないとファイル変更があったかわからないコマンドは、
     # 一度--checkオプションをつけて実行してから、
     # 変更があった場合は再度--checkオプションなしで実行する。
     check_args = ["--check"] if command in ("autoflake", "isort", "black") else []
 
     has_error = False
-    start_time = time.perf_counter()
-    env = os.environ.copy()
-    env["PYTHONIOENCODING"] = "utf-8"
-    env["PYTHONUNBUFFERED"] = "1"
-    env["PYTHONDONTWRITEBYTECODE"] = "1"
-    if config.values.get(f"{command}-devmode", False):
-        env["PYTHONDEVMODE"] = "1"
-    # 横幅はほどほどにしておく
-    # (pytestなどは一部の表示が右寄せになるのであまり大きいと見づらい)
-    env["COLUMNS"] = str(min(max(shutil.get_terminal_size().columns - 4, 80), 128))
 
     # verbose時はコマンドラインをon_output経由で出力
     if args.verbose and on_output is not None:
@@ -177,7 +181,7 @@ def execute_command(
     proc = _run_subprocess(commandline + check_args, env, on_output)
     returncode = proc.returncode
 
-    # autoflake/isort/black/ruff-formatの再実行
+    # autoflake/isort/blackの再実行
     if returncode != 0 and command in ("autoflake", "isort", "black"):
         if args.verbose and on_output is not None:
             on_output(f"commandline: {shlex.join(commandline)}\n")
@@ -203,6 +207,106 @@ def execute_command(
         elapsed=elapsed,
         errors=errors,
     )
+
+
+def _build_subprocess_env(config: pyfltr.config.Config, command: str) -> dict[str, str]:
+    """サブプロセス実行用の環境変数を構築。"""
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUNBUFFERED"] = "1"
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    if config.values.get(f"{command}-devmode", False):
+        env["PYTHONDEVMODE"] = "1"
+    # 横幅はほどほどにしておく
+    # (pytestなどは一部の表示が右寄せになるのであまり大きいと見づらい)
+    env["COLUMNS"] = str(min(max(shutil.get_terminal_size().columns - 4, 80), 128))
+    return env
+
+
+def _execute_ruff_format_two_step(
+    command: str,
+    command_info: pyfltr.config.CommandInfo,
+    format_commandline: list[str],
+    targets: list[pathlib.Path],
+    config: pyfltr.config.Config,
+    args: argparse.Namespace,
+    env: dict[str, str],
+    on_output: typing.Callable[[str], None] | None,
+    start_time: float,
+) -> CommandResult:
+    """ruff-format の 2 段階実行 (ruff check --fix → ruff format)。
+
+    ステップ1 (ruff check --fix --unsafe-fixes) の未修正 lint violation は無視する。
+    別途 ruff-check コマンドで検出される前提。ただし exit >= 2 (設定ミス等) は failed 扱い。
+    ステップ1 の成否にかかわらずステップ2 (ruff format) は実行する
+    (対象ファイル全体の format 適用を止めないため)。
+    """
+    # ステップ1のコマンドライン組立
+    check_commandline: list[str] = [config["ruff-format-path"]]
+    check_commandline.extend(config["ruff-format-check-args"])
+    check_commandline.extend(str(t) for t in targets)
+
+    # ステップ1実行前の mtime を記録 (修正適用検知用)
+    mtimes_before = _snapshot_mtimes(targets)
+
+    # ステップ1実行
+    if args.verbose and on_output is not None:
+        on_output(f"commandline: {shlex.join(check_commandline)}\n")
+    step1_proc = _run_subprocess(check_commandline, env, on_output)
+    step1_rc = step1_proc.returncode
+    step1_failed = step1_rc >= 2  # exit 0/1 は無視、2 以上 (abrupt termination) のみ失敗扱い
+    step1_changed = _snapshot_mtimes(targets) != mtimes_before
+
+    # ステップ2実行 (常に実行)
+    if args.verbose and on_output is not None:
+        on_output(f"commandline: {shlex.join(format_commandline)}\n")
+    step2_proc = _run_subprocess(format_commandline, env, on_output)
+    step2_rc = step2_proc.returncode
+    step2_formatted = step2_rc == 1
+    step2_failed = step2_rc >= 2
+
+    # 出力の合成
+    output = (step1_proc.stdout + step2_proc.stdout).strip()
+    elapsed = time.perf_counter() - start_time
+
+    # 最終判定
+    has_error = step1_failed or step2_failed
+    if has_error:
+        returncode = step1_rc if step1_failed else step2_rc
+    elif step1_changed or step2_formatted:
+        returncode = 1
+    else:
+        returncode = 0
+
+    errors = pyfltr.error_parser.parse_errors(command, output, command_info.error_pattern)
+
+    # commandline は代表として「最後に実行したステップ」(= ruff format) を格納。
+    # 両ステップ分の commandline は verbose 出力で確認可能。
+    return CommandResult(
+        command=command,
+        command_type=command_info.type,
+        commandline=format_commandline,
+        returncode=returncode,
+        has_error=has_error,
+        files=len(targets),
+        output=output,
+        elapsed=elapsed,
+        errors=errors,
+    )
+
+
+def _snapshot_mtimes(targets: list[pathlib.Path]) -> dict[pathlib.Path, int]:
+    """対象ファイルの mtime (ns) スナップショットを取得。
+
+    ファイルが存在しない場合は -1 を入れて「無」として扱う (比較で差分検知できる)。
+    """
+    result: dict[pathlib.Path, int] = {}
+    for target in targets:
+        try:
+            result[target] = target.stat().st_mtime_ns
+        except OSError:
+            result[target] = -1
+    return result
 
 
 def expand_globs(targets: list[pathlib.Path], globs: list[str], config: pyfltr.config.Config) -> list[pathlib.Path]:

@@ -26,14 +26,12 @@ update-actions:
 # フォーマット + 軽量lint（開発時の手動実行用。自動修正あり）
 format:
 	$(MAKE) clean-stale-dist-info
-	uv run ruff check --fix --unsafe-fixes
 	SKIP=pyfltr uv run pre-commit run --all-files
 	-uv run pyfltr --exit-zero-even-if-formatted --commands=fast
 
 # 全チェック実行（これが通ればコミットしてOK）
 test:
 	$(MAKE) clean-stale-dist-info
-	uv run ruff check --fix --unsafe-fixes
 	SKIP=pyfltr uv run pre-commit run --all-files
 	uv run pyfltr --exit-zero-even-if-formatted
 
