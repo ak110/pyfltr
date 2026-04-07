@@ -1,0 +1,36 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // empty' | grep -qE '(^|/)(uv\\.lock|\\.venv/)' && { echo 'uv.lock / .venv/ の直接編集は禁止です。依存追加は `uv add`、削除は `uv remove` を使用してください。' >&2; exit 2; } || exit 0"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // empty' | grep -qE '\\.py$' && mkdir -p \"$CLAUDE_PROJECT_DIR/.claude\" && touch \"$CLAUDE_PROJECT_DIR/.claude/.pyfltr-dirty\"; exit 0"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "MARKER=\"$CLAUDE_PROJECT_DIR/.claude/.pyfltr-dirty\"; [ -f \"$MARKER\" ] && { (cd \"$CLAUDE_PROJECT_DIR\" && uv run pyfltr --exit-zero-even-if-formatted --commands=fast pyfltr tests) >&2; rm -f \"$MARKER\"; }; exit 0"
+          }
+        ]
+      }
+    ]
+  }
+}
