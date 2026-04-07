@@ -6,7 +6,7 @@ pyfltr 本体の設定 (`[tool.pyfltr]`) と、呼び出される各ツール (r
 
 - `preset = "latest"`: ruff-format / ruff-check / pyright / markdownlint / textlint を有効化するプリセット。詳細は[設定](configuration.md)を参照。
 - `pylint-args` / `mypy-args`: 各ツールに追加で渡す引数。プラグイン読み込みや error-code 有効化の典型例を示している。
-- ruff の `per-file-ignores`: テストコード (`**_test.py`) と package init (`__init__.py`) の docstring 要求を緩める実用的な調整。
+- ruff の `per-file-ignores`: テストコード (`**_test.py`) と package init (`__init__.py`) の docstring 要求を除外する実用的な調整。
 
 ```toml
 [dependency-groups]
@@ -129,7 +129,6 @@ rules:
 textlint-args = [
     "--package", "textlint",
     "--package", "textlint-rule-preset-ja-technical-writing",
-    "--package", "textlint-rule-preset-japanese",
     "textlint", "--format", "compact",
 ]
 ```
@@ -139,27 +138,41 @@ textlint-args = [
 [Claude Code](https://docs.claude.com/en/docs/claude-code/overview) で開発する場合、
 編集ターン終了時に pyfltr の `--commands=fast` を自動実行する hook を設定すると便利。
 
-ポイントは2つ。
+設計上のポイントは次の通り。
 
-- **PostToolUse で即整形しない**: Claude が import を追加→次の編集で使用、という段階的な
+- PostToolUse で即整形しない: Claude が import を追加→次の編集で使用、という段階的な
   編集の途中で `ruff check --fix` が未使用 import を消してしまう問題を避けるため、
   整形は Stop hook (応答完了時) に集約する。
-- **マーカーファイルで Claude 編集ターンに限定**: ユーザーが手で編集中の Python ファイルが
-  ある状態で、Claude に質問しただけでも整形が走るのを避けるため、PostToolUse で
-  マーカーを置き、Stop hook はそのマーカーがあるときだけ pyfltr を実行する。
+- マーカーファイルで編集対象を限定: ユーザーが手で編集中の Python ファイルが
+  ある状態で、Claude に質問しただけでも整形が実行されるのを避けるため、PostToolUse で
+  編集されたファイルパスをマーカーファイルに追記し、Stop hook はそのマーカーに
+  記録されたファイルに対してのみ pyfltr を実行する。
+- SessionStart でマーカーをクリア: 前回セッションで異常終了した場合の残骸を除去する。
+- Stop では存在確認と重複排除: マーカー内のファイルパスは重複や削除済みの可能性が
+  あるため、`sort -u` と `[ -e ]` で整理してから実行する。
 
-`.claude/settings.json` の例 (プロジェクトルート直下のディレクトリ名は適宜調整):
+`.claude/settings.json` の例:
 
 ```json
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "rm -f \"$CLAUDE_PROJECT_DIR/.claude/.format-dirty\"; exit 0"
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Edit|Write|MultiEdit",
         "hooks": [
           {
             "type": "command",
-            "command": "jq -r '.tool_input.file_path // empty' | grep -qE '\\.py$' && mkdir -p \"$CLAUDE_PROJECT_DIR/.claude\" && touch \"$CLAUDE_PROJECT_DIR/.claude/.pyfltr-dirty\"; exit 0"
+            "command": "f=$(jq -r '.tool_input.file_path // empty'); case \"$f\" in *.py) mkdir -p \"$CLAUDE_PROJECT_DIR/.claude\" && printf '%s\\n' \"$f\" >> \"$CLAUDE_PROJECT_DIR/.claude/.format-dirty\" ;; esac; exit 0"
           }
         ]
       }
@@ -169,7 +182,7 @@ textlint-args = [
         "hooks": [
           {
             "type": "command",
-            "command": "MARKER=\"$CLAUDE_PROJECT_DIR/.claude/.pyfltr-dirty\"; [ -f \"$MARKER\" ] && { (cd \"$CLAUDE_PROJECT_DIR\" && uv run pyfltr --exit-zero-even-if-formatted --commands=fast <ソースディレクトリ> tests) >&2; rm -f \"$MARKER\"; }; exit 0"
+            "command": "M=\"$CLAUDE_PROJECT_DIR/.claude/.format-dirty\"; [ -s \"$M\" ] || { rm -f \"$M\"; exit 0; }; cd \"$CLAUDE_PROJECT_DIR\" || exit 0; sort -u \"$M\" -o \"$M\"; awk 'NF' \"$M\" | while IFS= read -r f; do [ -e \"$f\" ] && printf '%s\\n' \"$f\"; done > \"$M.tmp\" && mv \"$M.tmp\" \"$M\"; [ -s \"$M\" ] || { rm -f \"$M\"; exit 0; }; xargs -a \"$M\" -d '\\n' uv run pyfltr --exit-zero-even-if-formatted --commands=fast >&2; rm -f \"$M\"; exit 0"
           }
         ]
       }
@@ -182,12 +195,12 @@ textlint-args = [
 
 ```text
 .claude/settings.local.json
-.claude/.pyfltr-dirty
+.claude/.format-dirty
 ```
 
 ## CI
 
-GitHub Actions で pyfltr を Python バージョンの matrix で実行する最小構成の例。
+GitHub Actions で pyfltr を Python バージョンの matrix で実行する構成の例。
 
 ```yaml
 jobs:

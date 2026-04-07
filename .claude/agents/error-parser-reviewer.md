@@ -28,7 +28,7 @@ tools: Read, Grep, Glob, Bash
    - `Bash` で `git diff HEAD pyfltr/error_parser.py` を実行
    - 影響を受けるツール (regex を変えたツール) を特定
 
-2. **対象ツール全てに検体を流す**
+2. **対象ツール全てに検体を渡す**
    - 影響範囲が局所的でも、念のため全ツールを対象とする (退行検知)
    - 各ツールについて、わざとエラーを出す `.py` / `.md` ファイルを `/tmp` に作成
    - `uv run <tool> /tmp/<file>` 等で実行し、stdout/stderr を取得

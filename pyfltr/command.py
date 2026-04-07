@@ -129,7 +129,7 @@ def execute_command(
     if args.shuffle:
         random.shuffle(targets)
     else:
-        # natsort.natsortedの型ヒントがゆるく ty が union 型に落とすので cast で明示。
+        # natsort.natsorted の型ヒントが不十分で ty が union 型へ縮めるため cast で明示。
         targets = typing.cast("list[pathlib.Path]", natsort.natsorted(targets, key=str))
 
     commandline: list[str] = [config[f"{command}-path"]]
@@ -159,7 +159,7 @@ def execute_command(
     env = _build_subprocess_env(config, command)
 
     # ruff-formatで ruff-format-by-check が有効な場合は、
-    # 先に ruff check --fix --unsafe-fixes を走らせてから ruff format を実行する。
+    # 先に ruff check --fix --unsafe-fixes を実行してから ruff format を実行する。
     # ステップ1(check)の lint violation (exit 1) は無視する (lint は ruff-check で検出)。
     # ただし exit >= 2 (設定エラー等) は失敗扱いする。
     if command == "ruff-format" and config["ruff-format-by-check"]:

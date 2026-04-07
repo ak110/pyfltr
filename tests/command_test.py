@@ -15,7 +15,7 @@ def _make_args(targets: list[pathlib.Path]) -> argparse.Namespace:
 
 
 def test_ruff_format_two_step_runs_check_and_format(mocker, tmp_path: pathlib.Path) -> None:
-    """ruff-format-by-check=true のとき ruff check と ruff format の両方が走る。"""
+    """ruff-format-by-check=true のとき ruff check と ruff format の両方が実行される。"""
     target = tmp_path / "sample.py"
     target.write_text("x = 1\n")
 
@@ -40,7 +40,7 @@ def test_ruff_format_two_step_runs_check_and_format(mocker, tmp_path: pathlib.Pa
 
 
 def test_ruff_format_by_check_false_skips_check_step(mocker, tmp_path: pathlib.Path) -> None:
-    """ruff-format-by-check=false のとき ruff format のみが走る。"""
+    """ruff-format-by-check=false のとき ruff format のみが実行される。"""
     target = tmp_path / "sample.py"
     target.write_text("x = 1\n")
 
