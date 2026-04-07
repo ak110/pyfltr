@@ -185,26 +185,6 @@ textlint-args = [
 .claude/.pyfltr-dirty
 ```
 
-依存関係の安全性を高めたい場合、`uv.lock` の直接編集を禁止する PreToolUse hook も併用できる:
-
-```json
-{
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Edit|Write|MultiEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "jq -r '.tool_input.file_path // empty' | grep -qE '(^|/)(uv\\.lock|\\.venv/)' && { echo 'uv.lock / .venv/ の直接編集は禁止です。`uv add` / `uv remove` を使用してください。' >&2; exit 2; } || exit 0"
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
 ## CI
 
 GitHub Actions で pyfltr を Python バージョンの matrix で実行する最小構成の例。
