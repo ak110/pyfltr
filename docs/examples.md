@@ -2,6 +2,12 @@
 
 ## pyproject.toml
 
+pyfltr 本体の設定 (`[tool.pyfltr]`) と、呼び出される各ツール (ruff / mypy / pytest) の設定を1つの`pyproject.toml`にまとめた例。
+
+- `preset = "latest"`: ruff-format / ruff-check / pyright / markdownlint / textlint を有効化するプリセット。詳細は[設定](configuration.md)を参照。
+- `pylint-args` / `mypy-args`: 各ツールに追加で渡す引数。プラグイン読み込みや error-code 有効化の典型例を示している。
+- ruff の `per-file-ignores`: テストコード (`**_test.py`) と package init (`__init__.py`) の docstring 要求を緩める実用的な調整。
+
 ```toml
 [dependency-groups]
 dev = [
@@ -87,7 +93,16 @@ asyncio_default_test_loop_scope = "session"
         language: system
 ```
 
+ポイント:
+
+- `--exit-zero-even-if-formatted`: Formatter がファイルを修正しただけではフックを失敗扱いにしないためのオプション。pre-commit の通常運用 (修正→再ステージ→再実行) を壊さずに済む。
+- `--commands=fast`: mypy / pylint / pytest など重いコマンドを除外した高速サブセット。pre-commit は対話的フックなので速度を優先する。
+- `types_or: [python, markdown]`: Python だけでなく Markdown 変更時もフックを起動し、markdownlint / textlint をかける。
+- `require_serial: true`: pyfltr 自身が内部で並列化するため、pre-commit 側での多重起動を避ける。
+
 ## .markdownlint-cli2.yaml
+
+markdownlint-cli2 が読み込む設定ファイル。日本語ドキュメントでは行長制限が実用的でないため、`line-length` チェックのみ無効化している。
 
 ```yaml
 config:
@@ -95,6 +110,8 @@ config:
 ```
 
 ## .textlintrc.yaml
+
+textlint の `preset-ja-technical-writing` を有効化しつつ、実運用で引っかかりがちな `ja-no-mixed-period` (句読点の混在) と `sentence-length` (1文の長さ) を無効化する例。
 
 ```yaml
 rules:
@@ -190,6 +207,8 @@ textlint-args = [
 
 ## CI
 
+GitHub Actions で pyfltr を Python バージョンの matrix で実行する最小構成の例。
+
 ```yaml
 jobs:
     test:
@@ -225,3 +244,9 @@ jobs:
             - name: Prune uv cache for CI
                 run: uv cache prune --ci
 ```
+
+ポイント:
+
+- `actions/setup-node` + `pnpm/action-setup`: `markdownlint-cli2` と `textlint` を pnpx 経由で呼び出すため、Python だけでなく Node.js 環境も必要になる。
+- `uv sync --all-extras --all-groups`: pyfltr を含む dev 依存をすべて同期し、`uv run pyfltr` から対応ツール群を解決できるようにする。
+- `uv cache prune --ci`: CI キャッシュを軽量化するための後処理。
