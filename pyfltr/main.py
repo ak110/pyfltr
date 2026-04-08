@@ -169,11 +169,10 @@ def _run_impl(
         if command not in config.values:
             parser.error(f"コマンドが見つかりません: {command}")
 
-    return run_pipeline(parser, args, commands, config)
+    return run_pipeline(args, commands, config)
 
 
 def run_pipeline(
-    _parser: argparse.ArgumentParser,
     args: argparse.Namespace,
     commands: list[str],
     config: pyfltr.config.Config,

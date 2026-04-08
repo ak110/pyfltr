@@ -298,6 +298,8 @@ def _register_custom_command(config: Config, name: str, definition: dict[str, ty
     # error-pattern (省略可)
     error_pattern = definition.get("error-pattern", definition.get("error_pattern"))
     if error_pattern is not None:
+        if not isinstance(error_pattern, str):
+            raise ValueError(f"カスタムコマンド {name} のerror-patternは文字列で指定してください")
         _validate_error_pattern(name, error_pattern)
 
     # CommandInfoを登録
@@ -328,8 +330,6 @@ def _build_fast_alias(config: Config) -> list[str]:
 
 def _validate_error_pattern(name: str, pattern: str) -> None:
     """error-patternのバリデーション。"""
-    if not isinstance(pattern, str):
-        raise ValueError(f"カスタムコマンド {name} のerror-patternは文字列で指定してください")
     try:
         compiled = re.compile(pattern)
     except re.error as e:
