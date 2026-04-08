@@ -242,7 +242,7 @@ def load_config() -> Config:
         config.values["ruff-format"] = True
         config.values["ruff-check"] = True
     else:
-        raise ValueError(f"presetの設定値が不正です。{preset=}")
+        raise ValueError(f"preset の設定値が正しくありません。{preset=}")
 
     # カスタムコマンドの読み込み
     custom_commands = tool_pyfltr.get("custom-commands", tool_pyfltr.get("custom_commands", {}))
@@ -258,9 +258,9 @@ def load_config() -> Config:
         if key in ("custom-commands",):
             continue  # カスタムコマンドは別途処理済み
         if key not in config.values:
-            raise ValueError(f"Invalid config key: {key}")
+            raise ValueError(f"設定キーが不正です: {key}")
         if not isinstance(value, type(config.values[key])):  # 簡易チェック
-            raise ValueError(f"invalid config value: {key}={type(value)}, expected {type(config.values[key])}")
+            raise ValueError(f"設定値が不正です: {key}={type(value)}, expected {type(config.values[key])}")
         config.values[key] = value
 
     # per-command fastフラグからfastエイリアスを再計算

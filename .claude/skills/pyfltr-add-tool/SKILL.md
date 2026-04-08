@@ -7,7 +7,7 @@ disable-model-invocation: true
 # pyfltr 新ツール追加チェックリスト
 
 pyfltr に新しい formatter / linter / tester を追加するときの作業項目を、変更箇所が漏れないように列挙する。
-更新箇所は最低 6 か所に分散しているため、以下を上から順に潰していくこと。
+更新箇所は最低 6 か所に分散しているため、以下を上から順に対応すること。
 
 ## 0. 前提情報の整理
 
@@ -51,7 +51,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
 
 ## 2. `pyfltr/command.py`
 
-新ツール用の実行ロジックを追加する。既存ツールの `_run_xxx` を雛形にコピペするのが早い。
+新ツール用の実行ロジックを追加する。既存ツールの `_run_xxx` を雛形として複製するのが効率的。
 共通化されている部分 (`_run_command` 等) があればそれを使い、新規に車輪の再発明をしない。
 
 確認ポイント:
@@ -98,7 +98,7 @@ uv add --optional <extra> <new-tool-package>
 make test
 ```
 
-これが通ればコミット可。
+このテストが成功すればコミット可能。
 
 ## 参照する既存実装
 

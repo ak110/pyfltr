@@ -95,9 +95,9 @@ asyncio_default_test_loop_scope = "session"
 
 ポイント:
 
-- `--exit-zero-even-if-formatted`: Formatter がファイルを修正しただけではフックを失敗扱いにしないためのオプション。pre-commit の通常運用 (修正→再ステージ→再実行) を壊さずに済む。
-- `--commands=fast`: mypy / pylint / pytest など重いコマンドを除外した高速サブセット。pre-commit は対話的フックなので速度を優先する。
-- `types_or: [python, markdown]`: Python だけでなく Markdown 変更時もフックを起動し、markdownlint / textlint をかける。
+- `--exit-zero-even-if-formatted`: Formatter がファイルを修正しただけではフックを失敗と判定しないためのオプション。pre-commit の通常運用 (修正→再ステージ→再実行) を阻害せずに済む。
+- `--commands=fast`: mypy / pylint / pytest など重いコマンドを除外した高速サブセット。pre-commit は対話的フックのため速度を優先する。
+- `types_or: [python, markdown]`: Python だけでなく Markdown 変更時もフックを起動し、markdownlint / textlint を実行する。
 - `require_serial: true`: pyfltr 自身が内部で並列化するため、pre-commit 側での多重起動を避ける。
 
 ## .markdownlint-cli2.yaml
@@ -136,18 +136,18 @@ textlint-args = [
 ## Claude Code Hook
 
 [Claude Code](https://docs.claude.com/en/docs/claude-code/overview) で開発する場合、
-編集ターン終了時に pyfltr の `--commands=fast` を自動実行する hook を設定すると便利。
+編集ターン終了時に pyfltr の `--commands=fast` を自動実行する hook を設定するとよい。
 
 設計上のポイントは次の通り。
 
-- PostToolUse で即整形しない: Claude が import を追加→次の編集で使用、という段階的な
-  編集の途中で `ruff check --fix` が未使用 import を消してしまう問題を避けるため、
+- PostToolUse で即整形しない: Claude が import を追加し次の編集で使用する、という段階的な
+  編集の途中で `ruff check --fix` が未使用 import を削除してしまう問題を避けるため、
   整形は Stop hook (応答完了時) に集約する。
-- マーカーファイルで編集対象を限定: ユーザーが手で編集中の Python ファイルが
+- マーカーファイルで編集対象を限定: ユーザーが手動で編集中の Python ファイルが
   ある状態で、Claude に質問しただけでも整形が実行されるのを避けるため、PostToolUse で
   編集されたファイルパスをマーカーファイルに追記し、Stop hook はそのマーカーに
   記録されたファイルに対してのみ pyfltr を実行する。
-- SessionStart でマーカーをクリア: 前回セッションで異常終了した場合の残骸を除去する。
+- SessionStart でマーカーをクリア: 前回セッションで異常終了した場合の残存ファイルを除去する。
 - Stop では存在確認と重複排除: マーカー内のファイルパスは重複や削除済みの可能性が
   あるため、`sort -u` と `[ -e ]` で整理してから実行する。
 

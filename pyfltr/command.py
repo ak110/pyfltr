@@ -150,7 +150,7 @@ def execute_command(
             commandline=commandline,
             returncode=None,
             has_error=False,
-            output="No target files found.",
+            output="対象ファイルが見つかりません。",
             files=0,
             elapsed=0,
         )
@@ -217,7 +217,7 @@ def _build_subprocess_env(config: pyfltr.config.Config, command: str) -> dict[st
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     if config.values.get(f"{command}-devmode", False):
         env["PYTHONDEVMODE"] = "1"
-    # 横幅はほどほどにしておく
+    # 表示幅を適切な範囲に制限する
     # (pytestなどは一部の表示が右寄せになるのであまり大きいと見づらい)
     env["COLUMNS"] = str(min(max(shutil.get_terminal_size().columns - 4, 80), 128))
     return env
@@ -298,7 +298,7 @@ def _execute_ruff_format_two_step(
 def _snapshot_mtimes(targets: list[pathlib.Path]) -> dict[pathlib.Path, int]:
     """対象ファイルの mtime (ns) スナップショットを取得。
 
-    ファイルが存在しない場合は -1 を入れて「無」として扱う (比較で差分検知できる)。
+    ファイルが存在しない場合は -1 を設定し、存在しないものとして扱う (比較で差分検知できる)。
     """
     result: dict[pathlib.Path, int] = {}
     for target in targets:

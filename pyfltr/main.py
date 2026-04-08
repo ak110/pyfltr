@@ -36,42 +36,42 @@ def build_parser() -> argparse.ArgumentParser:
         epilog="ドキュメント: https://ak110.github.io/pyfltr/\nllms.txt: https://ak110.github.io/pyfltr/llms.txt",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--verbose", default=False, action="store_true", help="shows verbose output.")
+    parser.add_argument("--verbose", default=False, action="store_true", help="詳細な出力を表示します。")
     parser.add_argument(
         "--exit-zero-even-if-formatted",
         default=False,
         action="store_true",
-        help="exit 1 only if linters/testers has errors.",
+        help="linters/testers にエラーがある場合のみ exit 1 とします。",
     )
     parser.add_argument(
         "--commands",
         default=",".join(pyfltr.config.BUILTIN_COMMAND_NAMES),
-        help="comma separated list of commands. (default: %(default)s)",
+        help="カンマ区切りのコマンド一覧を指定します。(既定: %(default)s)",
     )
     parser.add_argument(
         "--generate-config",
         default=False,
         action="store_true",
-        help="generate a sample configuration. (part of pyproject.toml)",
+        help="設定ファイルのサンプルを生成します(pyproject.toml の一部)。",
     )
-    parser.add_argument("--ui", default=None, action="store_true", help="force enable textual UI")
-    parser.add_argument("--no-ui", default=None, action="store_true", help="force disable textual UI")
-    parser.add_argument("--shuffle", default=False, action="store_true", help="shuffle file order")
-    parser.add_argument("--keep-ui", default=False, action="store_true", help="keep TUI open after successful completion")
-    parser.add_argument("--ci", default=False, action="store_true", help="CI mode (equivalent to --no-shuffle --no-ui)")
-    parser.add_argument("--no-clear", default=False, action="store_true", help="do not clear the terminal before running")
+    parser.add_argument("--ui", default=None, action="store_true", help="Textual UI を強制的に有効化します。")
+    parser.add_argument("--no-ui", default=None, action="store_true", help="Textual UI を強制的に無効化します。")
+    parser.add_argument("--shuffle", default=False, action="store_true", help="ファイル順をシャッフルします。")
+    parser.add_argument("--keep-ui", default=False, action="store_true", help="正常終了後も TUI を閉じずに維持します。")
+    parser.add_argument("--ci", default=False, action="store_true", help="CI モードで動作します(--no-shuffle --no-ui 相当)。")
+    parser.add_argument("--no-clear", default=False, action="store_true", help="実行前にターミナルをクリアしません。")
     parser.add_argument(
         "--work-dir",
         type=pathlib.Path,
         default=None,
-        help="change working directory before execution (default: current directory)",
+        help="実行前に作業ディレクトリを変更します(既定: カレントディレクトリ)。",
     )
     parser.add_argument(
         "-j",
         "--jobs",
         type=int,
         default=None,
-        help="max parallel jobs for linters/testers (default: 4, configurable in pyproject.toml)",
+        help="linters/testers の最大並列数を指定します(既定: 4、pyproject.toml でも設定可能です)。",
     )
 
     # 各コマンド用の引数追加オプション
@@ -79,16 +79,16 @@ def build_parser() -> argparse.ArgumentParser:
         parser.add_argument(
             f"--{command}-args",
             default="",
-            help=f"additional arguments for {command}",
+            help=f"{command} への追加引数を指定します。",
         )
 
     parser.add_argument(
         "targets",
         nargs="*",
         type=pathlib.Path,
-        help="target files and/or directories. (default: .)",
+        help="対象のファイルまたはディレクトリを指定します(既定: カレントディレクトリ)。",
     )
-    parser.add_argument("--version", "-V", action="store_true", help="show version")
+    parser.add_argument("--version", "-V", action="store_true", help="バージョンを表示します。")
     return parser
 
 
@@ -126,7 +126,7 @@ def _run_impl(
 
     # --ui と --no-ui の競合チェック
     if args.ui and args.no_ui:
-        parser.error("--ui and --no-ui cannot be used together")
+        parser.error("--ui と --no-ui は同時に指定できません。")
 
     # --version
     if args.version:
@@ -142,7 +142,7 @@ def _run_impl(
     try:
         config = pyfltr.config.load_config()
     except (ValueError, OSError) as e:
-        logger.error(f"Config error: {e}")
+        logger.error(f"設定エラー: {e}")
         return 1
 
     # カスタムコマンド用のCLI引数を動的追加して再パース
@@ -152,7 +152,7 @@ def _run_impl(
             parser.add_argument(
                 f"--{command}-args",
                 default="",
-                help=f"additional arguments for {command}",
+                help=f"{command} への追加引数を指定します。",
             )
         args = parser.parse_args(sys_args)
 
@@ -167,7 +167,7 @@ def _run_impl(
     commands: list[str] = pyfltr.config.resolve_aliases(args.commands.split(","), config)
     for command in commands:
         if command not in config.values:
-            parser.error(f"command not found: {command}")
+            parser.error(f"コマンドが見つかりません: {command}")
 
     return run_pipeline(parser, args, commands, config)
 

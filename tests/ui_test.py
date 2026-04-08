@@ -34,7 +34,7 @@ def test_ctrl_c_double_press_handling() -> None:
         mock_exit.assert_not_called()
 
         # 通知が表示されることを確認
-        mock_notify.assert_called_once_with("Press Ctrl+C again within 1 second to exit...")
+        mock_notify.assert_called_once_with("終了するには 1 秒以内にもう一度 Ctrl+C を押してください。")
 
         # 1秒以内の2回目のCtrl+C
         app.on_key(mock_event)

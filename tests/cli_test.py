@@ -64,6 +64,6 @@ def test_run_command_for_cli_logs_start(mocker, caplog):
     with caplog.at_level(logging.INFO):
         pyfltr.cli.run_command_for_cli("mypy", mock_args, mock_config)
 
-    assert "Running mypy..." in caplog.text
+    assert "mypy を実行中です..." in caplog.text
     assert "ok" in caplog.text
     assert "* returncode: 0" in caplog.text

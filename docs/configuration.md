@@ -20,7 +20,7 @@ extend-exclude = ["foo", "bar.py"]
 - {command}-path : 実行するコマンド
 - {command}-args : 追加のコマンドライン引数
 - {command}-fast : `--commands=fast`に含めるか否か(後述)
-- jobs : linters/testersの最大並列数(既定値: 4、CLIの`-j`オプションでも指定可能)
+- jobs : linters/testersの最大並列数(既定値: 4。CLIの`-j`オプションでも指定可能)
 - exclude : 除外するファイル名/ディレクトリ名パターン(既定値あり)
 - extend-exclude : 追加で除外するファイル名/ディレクトリ名パターン(既定値は空)
 
@@ -57,15 +57,15 @@ preset = "latest"
 - `ruff-format = true`
 - `ruff-check = true`
 
-`preset = "latest"`は予告なく動作を変更する可能性あり。
+`preset = "latest"`は予告なく動作を変更する可能性がある。
 
 ## ruff-format の 2 段階実行
 
 `ruff-format` は既定で `ruff check --fix --unsafe-fixes` と `ruff format` の 2 ステップを連続実行する。
-import ソートや自動修正可能な lint 違反を整形と同時に片付けるための挙動。
+import ソートや自動修正可能な lint 違反を整形と同時に処理するための挙動。
 
 ステップ 1 の lint 違反 (ruff check の exit 1) は無視され、別途 `ruff-check` コマンドで検出される想定。
-設定ミス等による ruff の異常終了 (exit 2 以上) は失敗として扱われる。
+設定ミス等による ruff の異常終了 (exit 2 以上) は失敗と判定する。
 
 ```toml
 [tool.pyfltr]
@@ -77,7 +77,7 @@ ruff-format-check-args = ["check", "--fix"]
 
 ## 並列実行
 
-linters/testersはデフォルトで最大4並列で実行される。
+linters/testersは既定で最大4並列で実行される。
 `jobs`で変更可能。
 
 ```toml
@@ -87,7 +87,7 @@ jobs = 8
 
 CLIオプション`-j`でも指定でき、`pyproject.toml`より優先される。
 
-実行順は`fast`フラグに基づいて最適化され、`fast = false`のツール（mypy, pylint, pytest等）が先に開始される。
+実行順は`fast`フラグに基づいて最適化され、`fast = false`のツール（mypy、pylint、pytest等）が先に開始される。
 
 ## fastエイリアス
 
@@ -101,7 +101,7 @@ mypy-fast = true
 pflake8-fast = false
 ```
 
-カスタムコマンドも`fast = true`でfastエイリアスに参加可能（後述）。
+カスタムコマンドも`fast = true`でfastエイリアスに追加できる（後述）。
 
 ## npm系ツール (markdownlint / textlint)
 
@@ -117,7 +117,7 @@ textlint-path = "textlint"
 textlint-args = ["--format", "compact"]
 ```
 
-textlintのデフォルトでは`textlint-rule-preset-ja-technical-writing`が含まれる。
+textlintの既定では`textlint-rule-preset-ja-technical-writing`が含まれる。
 追加のプリセットが必要な場合は`textlint-args`をオーバーライドする。
 
 ```toml
@@ -155,7 +155,7 @@ fast = true
     - `file`と`line`と`message`の名前付きグループが必須
     - `col`は任意
     - 指定するとErrorsタブやエラー一覧に表示される
-- `fast`: `--commands=fast`に含めるか（省略時は`false`）
+- `fast`: `--commands=fast`に含めるか否か（省略時は`false`）
 
 ビルトインコマンド（mypy等）は自動的にエラーパースされる。
-カスタムコマンドも`--{name}-args`やenable/disableが使用可能。
+カスタムコマンドに対しても`--{name}-args`やenable/disableを使用できる。

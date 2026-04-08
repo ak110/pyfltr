@@ -18,18 +18,18 @@ update:
 	$(MAKE) update-actions
 	$(MAKE) test
 
-# GitHub Actionsのアクションをハッシュピンで最新化（mise未導入時はスキップ）
+# GitHub Actions のアクションをハッシュピンで最新化 (mise 未導入時はスキップ)
 update-actions:
-	@command -v mise >/dev/null 2>&1 || { echo "mise未検出、スキップ"; exit 0; }; \
+	@command -v mise >/dev/null 2>&1 || { echo "mise が見つかりません。スキップします。"; exit 0; }; \
 	GITHUB_TOKEN=$$(gh auth token) mise exec -- pinact run --update --min-age 1
 
-# フォーマット + 軽量lint（開発時の手動実行用。自動修正あり）
+# フォーマット + 軽量 lint (開発時の手動実行用。自動修正あり)
 format:
 	$(MAKE) clean-stale-dist-info
 	SKIP=pyfltr uv run pre-commit run --all-files
 	-uv run pyfltr --exit-zero-even-if-formatted --commands=fast
 
-# 全チェック実行（これが通ればコミットしてOK）
+# 全チェック実行 (このタスクが成功したらコミット可能)
 test:
 	$(MAKE) clean-stale-dist-info
 	SKIP=pyfltr uv run pre-commit run --all-files

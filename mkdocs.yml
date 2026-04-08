@@ -12,12 +12,12 @@ theme:
       primary: indigo
       toggle:
         icon: material/brightness-7
-        name: ダークモードに切り替え
+        name: ダークモードに切り替える
     - scheme: slate
       primary: indigo
       toggle:
         icon: material/brightness-4
-        name: ライトモードに切り替え
+        name: ライトモードに切り替える
   features:
     - navigation.sections
     - content.code.copy

@@ -40,9 +40,9 @@ def run_commands_with_ui(
         return app.results, return_code
     except Exception:
         # Textualアプリケーション自体の例外処理
-        error_msg = f"Failed to run UI application: {traceback.format_exc()}"
+        error_msg = f"UI アプリケーションの実行に失敗しました: {traceback.format_exc()}"
         logging.error(error_msg)
-        print(f"ERROR: {error_msg}", file=sys.stderr)
+        print(f"エラー: {error_msg}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -134,7 +134,7 @@ class UIApp(App):
                 # 初回またはタイムアウト後のCtrl+C
                 self.last_ctrl_c_time = current_time
                 # ユーザーに2回目を促すメッセージを表示
-                self.notify("Press Ctrl+C again within 1 second to exit...")
+                self.notify("終了するには 1 秒以内にもう一度 Ctrl+C を押してください。")
 
     def _update_elapsed_times(self) -> None:
         """running中のコマンドの経過時間を更新。"""
@@ -153,7 +153,7 @@ class UIApp(App):
             table.update_cell(command, "time", f"{elapsed:.1f}s")
 
     def _run_commands(self) -> None:
-        """backgroundでコマンドを実行。"""
+        """バックグラウンドでコマンドを実行。"""
         threading.Thread(target=self._run_in_background, daemon=True).start()
 
     def _run_in_background(self):
@@ -190,14 +190,14 @@ class UIApp(App):
 
         except Exception:
             # Textualエラー時の処理
-            error_msg = f"Fatal error in UI processing:\n{traceback.format_exc()}"
+            error_msg = f"UI 処理中に致命的エラーが発生しました:\n{traceback.format_exc()}"
             try:
                 self.call_from_thread(self._handle_fatal_error, error_msg)
             except Exception:
                 logging.error(error_msg)
 
     def _execute_command(self, command: str) -> pyfltr.command.CommandResult:
-        """outputをキャプチャしながらコマンド実行。"""
+        """出力をキャプチャしながらコマンド実行。"""
         # Summaryを「running」に更新
         self._start_times[command] = time.perf_counter()
         self.call_from_thread(self._update_summary, command, "running")
@@ -206,7 +206,7 @@ class UIApp(App):
         self.call_from_thread(
             self._write_log,
             f"#output-{command}",
-            f"Running {command}...\n",
+            f"{command} を実行中です...\n",
         )
 
         def on_output(line: str) -> None:
@@ -229,7 +229,7 @@ class UIApp(App):
             )
 
             # フッター情報のみ追記（本体はストリーミング済み）
-            footer = f"{'-' * 40}\nReturn code: {result.returncode}\nStatus: {result.get_status_text()}\n"
+            footer = f"{'-' * 40}\n終了コード: {result.returncode}\nステータス: {result.get_status_text()}\n"
             self.call_from_thread(
                 self._write_log,
                 f"#output-{result.command}",
@@ -288,6 +288,6 @@ class UIApp(App):
 
     def _handle_fatal_error(self, msg: str) -> None:
         """致命的エラー時の処理。"""
-        logging.error(f"Fatal error occurred: {msg}")
+        logging.error(f"致命的エラーが発生しました: {msg}")
         # アプリケーションを終了
         self.exit(return_code=1)

@@ -26,11 +26,11 @@ def run_commands_with_cli(
     results: list[pyfltr.command.CommandResult] = []
     formatters, linters_and_testers = pyfltr.executor.split_commands_for_execution(commands, config)
 
-    # run formatters (serial)
+    # formatters を順序実行
     for command in formatters:
         results.append(run_command_for_cli(command, args, config))
 
-    # run linters/testers (parallel)
+    # linters/testers を並列実行
     if len(linters_and_testers) > 0:
         with concurrent.futures.ThreadPoolExecutor(max_workers=config["jobs"]) as executor:
             future_to_command = {
@@ -49,7 +49,7 @@ def run_command_for_cli(
 ) -> pyfltr.command.CommandResult:
     """コマンドの実行（コンソール表示）。"""
     with lock:
-        logger.info(f"Running {command}...")
+        logger.info(f"{command} を実行中です...")
     result = pyfltr.command.execute_command(command, args, config)
     write_log(result)
     return result
