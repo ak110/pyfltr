@@ -17,6 +17,8 @@
     pnpm config set minimum-release-age 1440 --global
     ```
 
+    なお pyfltr はサブプロセス実行時に `UV_EXCLUDE_NEWER` / `NPM_CONFIG_MINIMUM_RELEASE_AGE` が未設定であれば既定値 (1 日 / 1440 分) を自動的に注入する。上記のグローバル設定は他のプロジェクトでも同様の対策を効かせるためのもの。
+
 ## ドキュメント
 
 ドキュメントはMkDocsで管理し、GitHub Pagesでホスティングしている。

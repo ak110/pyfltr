@@ -1,9 +1,14 @@
 """command.py のテスト。"""
 
+# pylint: disable=protected-access
+
 import argparse
 import os
 import pathlib
+import shutil
 import subprocess
+
+import pytest
 
 import pyfltr.command
 import pyfltr.config
@@ -150,3 +155,58 @@ def test_ruff_format_step1_mtime_change_marks_formatted(mocker, tmp_path: pathli
     # mtime が変化したので formatted
     assert result.status == "formatted"
     assert result.has_error is False
+
+
+def test_build_subprocess_env_sets_supply_chain_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    """サプライチェーン対策用の環境変数が既定値で注入される。"""
+    monkeypatch.delenv("UV_EXCLUDE_NEWER", raising=False)
+    monkeypatch.delenv("NPM_CONFIG_MINIMUM_RELEASE_AGE", raising=False)
+
+    config = pyfltr.config.create_default_config()
+    env = pyfltr.command._build_subprocess_env(config, "pytest")
+
+    assert env["UV_EXCLUDE_NEWER"] == "1 day"
+    assert env["NPM_CONFIG_MINIMUM_RELEASE_AGE"] == "1440"
+
+
+def test_build_subprocess_env_preserves_existing_supply_chain_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ユーザーが既に環境変数を設定している場合は既存値を尊重する。"""
+    monkeypatch.setenv("UV_EXCLUDE_NEWER", "1 week")
+    monkeypatch.setenv("NPM_CONFIG_MINIMUM_RELEASE_AGE", "10080")
+
+    config = pyfltr.config.create_default_config()
+    env = pyfltr.command._build_subprocess_env(config, "pytest")
+
+    assert env["UV_EXCLUDE_NEWER"] == "1 week"
+    assert env["NPM_CONFIG_MINIMUM_RELEASE_AGE"] == "10080"
+
+
+@pytest.mark.skipif(shutil.which("pnpm") is None, reason="pnpm が PATH に無い")
+def test_build_subprocess_env_npm_config_actually_effective(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """注入した NPM_CONFIG_MINIMUM_RELEASE_AGE が実際に pnpm に反映されることを確認する。
+
+    環境変数名が typo したり、pnpm の仕様変更で効かなくなったりした場合に検知する。
+    既定値 (1440) は実行環境のグローバル pnpm 設定と区別できないため、
+    ユーザー既定値優先 (setdefault) の動作を利用して非標準値 4321 を注入し検証する。
+    """
+    # pnpm の設定ファイル読込を避けるため、隔離した HOME を用意する。
+    monkeypatch.setenv("HOME", str(tmp_path))
+    # corepack のダウンロードプロンプトを抑止する (環境によっては存在する)。
+    monkeypatch.setenv("COREPACK_ENABLE_DOWNLOAD_PROMPT", "0")
+    # 非標準値を設定し、_build_subprocess_env がそのまま通すことを利用する。
+    monkeypatch.setenv("NPM_CONFIG_MINIMUM_RELEASE_AGE", "4321")
+
+    config = pyfltr.config.create_default_config()
+    env = pyfltr.command._build_subprocess_env(config, "markdownlint")
+    assert env["NPM_CONFIG_MINIMUM_RELEASE_AGE"] == "4321"
+
+    proc = subprocess.run(
+        ["pnpm", "config", "get", "minimumReleaseAge"],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert proc.stdout.strip() == "4321"

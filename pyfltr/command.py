@@ -212,6 +212,11 @@ def execute_command(
 def _build_subprocess_env(config: pyfltr.config.Config, command: str) -> dict[str, str]:
     """サブプロセス実行用の環境変数を構築。"""
     env = os.environ.copy()
+    # サプライチェーン攻撃対策: パッケージ取得系ツールの最小待機期間を既定で設定する。
+    # ユーザーが既に設定している場合はその値を尊重する。
+    # pnpm は npm 互換の config 環境変数方式 (NPM_CONFIG_<SNAKE_CASE>) を採る。
+    env.setdefault("UV_EXCLUDE_NEWER", "1 day")
+    env.setdefault("NPM_CONFIG_MINIMUM_RELEASE_AGE", "1440")
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUNBUFFERED"] = "1"
     env["PYTHONDONTWRITEBYTECODE"] = "1"
