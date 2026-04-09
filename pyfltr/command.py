@@ -4,6 +4,7 @@ import argparse
 import atexit
 import contextlib
 import dataclasses
+import hashlib
 import logging
 import os
 import pathlib
@@ -378,9 +379,9 @@ def _execute_linter_fix(
     """Fix モードでの linter 実行 (fix-args を適用して単発実行)。
 
     ステータス判定:
-    - returncode != 0 → failed (mtime に関係なく、エラーを握りつぶさない)
-    - returncode == 0 かつ mtime 変化あり → formatted (command_type を "formatter" に
-      差し替えて既存の status プロパティに委ねる)
+    - returncode != 0 → failed (ファイル変化に関係なく、エラーを握りつぶさない)
+    - returncode == 0 かつ内容ハッシュに変化あり → formatted (command_type を
+      "formatter" に差し替えて既存の status プロパティに委ねる)
     - returncode == 0 かつ変化なし → succeeded
 
     ruff-check は残存違反があると rc=1 を返すが、この設計では failed として扱う。
@@ -388,7 +389,7 @@ def _execute_linter_fix(
     """
     del command_info  # noqa  # 呼び出し側との引数形式揃え用 (使用しない)
 
-    mtimes_before = _snapshot_mtimes(targets)
+    digests_before = _snapshot_file_digests(targets)
 
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(commandline)}\n")
@@ -397,7 +398,7 @@ def _execute_linter_fix(
     output = proc.stdout.strip()
     elapsed = time.perf_counter() - start_time
 
-    changed = _snapshot_mtimes(targets) != mtimes_before
+    changed = _snapshot_file_digests(targets) != digests_before
 
     has_error = returncode != 0
     if not has_error and changed:
@@ -455,8 +456,12 @@ def _execute_textlint_fix(
     ステータス判定:
     - いずれかのステップが rc>=2 (致命的エラー) → failed
     - Step2 rc != 0 (残存違反あり) → failed (Errors タブに反映される)
-    - Step2 rc == 0 かつ Step1 で mtime 変化あり → formatted
+    - Step2 rc == 0 かつ Step1 で内容ハッシュに変化あり → formatted
     - Step2 rc == 0 かつ変化なし → succeeded
+
+    textlint --fix は残存違反がなくても対象ファイルを書き戻すことがあり、
+    mtime ベースの比較では偽陽性になる。このため内容ハッシュ
+    (`_snapshot_file_digests`) で比較している。
     """
     common_args: list[str] = list(config[f"{command}-args"])
     lint_args: list[str] = list(config.values.get(f"{command}-lint-args", []))
@@ -473,7 +478,7 @@ def _execute_textlint_fix(
         *target_strs,
     ]
 
-    mtimes_before = _snapshot_mtimes(targets)
+    digests_before = _snapshot_file_digests(targets)
 
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(step1_commandline)}\n")
@@ -481,7 +486,7 @@ def _execute_textlint_fix(
     step1_rc = step1_proc.returncode
     # rc=0 (違反なし) / rc=1 (違反残存) は通常終了、rc>=2 は致命的エラー扱い
     step1_fatal = step1_rc >= 2
-    step1_changed = _snapshot_mtimes(targets) != mtimes_before
+    step1_changed = _snapshot_file_digests(targets) != digests_before
 
     # Step2: 通常 lint 実行 (compact フォーマッタで残存違反を取得)
     step2_commandline: list[str] = [
@@ -582,8 +587,8 @@ def _execute_ruff_format_two_step(
     check_commandline.extend(config["ruff-format-check-args"])
     check_commandline.extend(str(t) for t in targets)
 
-    # ステップ1実行前の mtime を記録 (修正適用検知用)
-    mtimes_before = _snapshot_mtimes(targets)
+    # ステップ1実行前の内容ハッシュを記録 (修正適用検知用)
+    digests_before = _snapshot_file_digests(targets)
 
     # ステップ1実行
     if args.verbose and on_output is not None:
@@ -591,7 +596,7 @@ def _execute_ruff_format_two_step(
     step1_proc = _run_subprocess(check_commandline, env, on_output)
     step1_rc = step1_proc.returncode
     step1_failed = step1_rc >= 2  # exit 0/1 は無視、2 以上 (abrupt termination) のみ失敗扱い
-    step1_changed = _snapshot_mtimes(targets) != mtimes_before
+    step1_changed = _snapshot_file_digests(targets) != digests_before
 
     # ステップ2実行 (常に実行)
     if args.verbose and on_output is not None:
@@ -631,17 +636,20 @@ def _execute_ruff_format_two_step(
     )
 
 
-def _snapshot_mtimes(targets: list[pathlib.Path]) -> dict[pathlib.Path, int]:
-    """対象ファイルの mtime (ns) スナップショットを取得。
+def _snapshot_file_digests(targets: list[pathlib.Path]) -> dict[pathlib.Path, bytes]:
+    """対象ファイルの内容ハッシュ (BLAKE2b) スナップショットを取得。
 
-    ファイルが存在しない場合は -1 を設定し、存在しないものとして扱う (比較で差分検知できる)。
+    mtime ベースの比較は textlint --fix のように「残存違反がなくても
+    ファイルを書き戻す」ツールで偽陽性を起こすため、内容ハッシュで比較する。
+    ファイルが存在しない場合は空 bytes を設定する (比較で差分検知できる)。
     """
-    result: dict[pathlib.Path, int] = {}
+    result: dict[pathlib.Path, bytes] = {}
     for target in targets:
         try:
-            result[target] = target.stat().st_mtime_ns
+            with target.open("rb") as f:
+                result[target] = hashlib.file_digest(f, "blake2b").digest()
         except OSError:
-            result[target] = -1
+            result[target] = b""
     return result
 
 

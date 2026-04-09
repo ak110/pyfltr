@@ -291,8 +291,38 @@ def test_textlint_fix_mode_preserves_non_format_user_args(mocker, tmp_path: path
     assert "--quiet" in step2_cmdline
 
 
+def test_textlint_fix_mode_touch_without_content_change_marks_succeeded(mocker, tmp_path: pathlib.Path) -> None:
+    """textlint が内容を変えずにファイルを書き戻した場合は succeeded 扱いになる。
+
+    textlint --fix は残存違反がなくても対象ファイルを touch することがあり、
+    mtime ベースで検知すると偽陽性 (formatted) になってしまう。内容ハッシュで
+    比較することで、真の修正がない限り succeeded が維持されることを担保する。
+    """
+    target = tmp_path / "sample.md"
+    target.write_text("# title\n")
+    os.utime(target, (1000000000, 1000000000))
+
+    def fake_run(cmdline, env, on_output):
+        del env, on_output  # noqa
+        if "--fix" in cmdline:
+            # step1: 内容は変えず mtime だけ更新 (textlint の touch 挙動を模擬)
+            os.utime(target, (2000000000, 2000000000))
+            return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
+        # step2: 残存違反なし
+        return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
+
+    mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
+
+    config = pyfltr.config.create_default_config()
+    config.values["textlint"] = True
+    result = pyfltr.command.execute_command("textlint", _make_args([target], fix=True), config)
+
+    assert result.status == "succeeded"
+    assert result.has_error is False
+
+
 def test_textlint_fix_mode_all_fixed_marks_formatted(mocker, tmp_path: pathlib.Path) -> None:
-    """fix モードで全件修正され残存違反なしなら formatted (mtime 変化あり)。"""
+    """fix モードで全件修正され残存違反なしなら formatted (内容ハッシュに変化あり)。"""
     target = tmp_path / "sample.md"
     target.write_text("# title\n")
     os.utime(target, (1000000000, 1000000000))
