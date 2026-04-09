@@ -132,8 +132,19 @@ def execute_command(
         # natsort.natsorted の型ヒントが不十分で ty が union 型へ縮めるため cast で明示。
         targets = typing.cast("list[pathlib.Path]", natsort.natsorted(targets, key=str))
 
+    # fix モード判定: `pyfltr --fix` かつ当該コマンドに fix-args が定義されている場合は、
+    # linter 向けの単発 fix 実行経路を使う。fix-args 未定義の formatter は通常経路を通る
+    # (通常実行そのものがファイルを修正するため fix モードでも挙動は変わらない)。
+    fix_mode = bool(getattr(args, "fix", False))
+    fix_args: list[str] | None = None
+    if fix_mode:
+        fix_args = config.values.get(f"{command}-fix-args")
+
     commandline: list[str] = [config[f"{command}-path"]]
     commandline.extend(config[f"{command}-args"])
+    # fix モード時は通常 args の後に fix-args を追加する (置換ではなく追加)
+    if fix_args is not None:
+        commandline.extend(fix_args)
 
     # 起動オプションからの追加引数を適用
     additional_args_str = getattr(args, f"{command.replace('-', '_')}_args", "")
@@ -157,6 +168,11 @@ def execute_command(
 
     start_time = time.perf_counter()
     env = _build_subprocess_env(config, command)
+
+    # fix モードで linter に fix-args を適用する経路。
+    # mtime 変化で formatted 判定を行い、rc != 0 はそのまま failed 扱いとする。
+    if fix_args is not None and command_info.type != "formatter":
+        return _execute_linter_fix(command, command_info, commandline, targets, env, on_output, start_time, args)
 
     # ruff-formatで ruff-format-by-check が有効な場合は、
     # 先に ruff check --fix --unsafe-fixes を実行してから ruff format を実行する。
@@ -226,6 +242,63 @@ def _build_subprocess_env(config: pyfltr.config.Config, command: str) -> dict[st
     # (pytestなどは一部の表示が右寄せになるのであまり大きいと見づらい)
     env["COLUMNS"] = str(min(max(shutil.get_terminal_size().columns - 4, 80), 128))
     return env
+
+
+def _execute_linter_fix(
+    command: str,
+    command_info: pyfltr.config.CommandInfo,
+    commandline: list[str],
+    targets: list[pathlib.Path],
+    env: dict[str, str],
+    on_output: typing.Callable[[str], None] | None,
+    start_time: float,
+    args: argparse.Namespace,
+) -> CommandResult:
+    """Fix モードでの linter 実行 (fix-args を適用して単発実行)。
+
+    ステータス判定:
+    - returncode != 0 → failed (mtime に関係なく、エラーを握りつぶさない)
+    - returncode == 0 かつ mtime 変化あり → formatted (command_type を "formatter" に
+      差し替えて既存の status プロパティに委ねる)
+    - returncode == 0 かつ変化なし → succeeded
+
+    ruff-check は残存違反があると rc=1 を返すが、この設計では failed として扱う。
+    未修正の違反はユーザーが後段で認識すべき情報であり、成功に寄せない方針。
+    """
+    del command_info  # noqa: 呼び出し側との引数形式揃え用 (使用しない)
+
+    mtimes_before = _snapshot_mtimes(targets)
+
+    if args.verbose and on_output is not None:
+        on_output(f"commandline: {shlex.join(commandline)}\n")
+    proc = _run_subprocess(commandline, env, on_output)
+    returncode = proc.returncode
+    output = proc.stdout.strip()
+    elapsed = time.perf_counter() - start_time
+
+    changed = _snapshot_mtimes(targets) != mtimes_before
+
+    has_error = returncode != 0
+    if not has_error and changed:
+        # fix が適用されたので formatter 扱いで formatted にする
+        result_command_type: str = "formatter"
+        returncode = 1
+    else:
+        result_command_type = "linter"
+
+    errors = pyfltr.error_parser.parse_errors(command, output, None)
+
+    return CommandResult(
+        command=command,
+        command_type=result_command_type,
+        commandline=commandline,
+        returncode=returncode,
+        has_error=has_error,
+        files=len(targets),
+        output=output,
+        elapsed=elapsed,
+        errors=errors,
+    )
 
 
 def _execute_ruff_format_two_step(

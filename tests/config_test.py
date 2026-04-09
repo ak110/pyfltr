@@ -243,6 +243,116 @@ ruff-format-check-args = ["check", "--fix"]
         os.chdir(original_cwd)
 
 
+def test_fix_args_defaults() -> None:
+    """fix-args の既定値テスト。"""
+    config = pyfltr.config.create_default_config()
+    # fix 対応ビルトインは fix-args が定義されている
+    assert config["textlint-fix-args"] == ["--fix"]
+    assert config["markdownlint-fix-args"] == ["--fix"]
+    assert config["ruff-check-fix-args"] == ["--fix", "--unsafe-fixes"]
+    # fix 非対応ビルトインは fix-args キーが存在しない
+    assert "mypy-fix-args" not in config.values
+    assert "pytest-fix-args" not in config.values
+    assert "black-fix-args" not in config.values
+
+
+def test_filter_fix_commands_defaults() -> None:
+    """filter_fix_commands の基本動作テスト。"""
+    config = pyfltr.config.create_default_config()
+    # 既定では textlint/markdownlint/ruff-check は disabled、formatter は enabled
+    commands = ["pyupgrade", "black", "mypy", "textlint", "markdownlint", "ruff-check"]
+    result = pyfltr.config.filter_fix_commands(commands, config)
+    # enabled な formatter (pyupgrade, black) だけが残る
+    # mypy は fix-args 未定義、textlint/markdownlint/ruff-check は disabled
+    assert "pyupgrade" in result
+    assert "black" in result
+    assert "mypy" not in result
+    assert "textlint" not in result
+    assert "markdownlint" not in result
+    assert "ruff-check" not in result
+
+
+def test_filter_fix_commands_enabled_linter(tmp_path: pathlib.Path) -> None:
+    """enabled にした fix 対応 linter が filter_fix_commands に含まれることのテスト。"""
+    pyproject_content = """
+[tool.pyfltr]
+textlint = true
+markdownlint = true
+ruff-check = true
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        config = pyfltr.config.load_config()
+        commands = ["textlint", "markdownlint", "ruff-check", "mypy"]
+        result = pyfltr.config.filter_fix_commands(commands, config)
+        assert "textlint" in result
+        assert "markdownlint" in result
+        assert "ruff-check" in result
+        assert "mypy" not in result  # fix-args 未定義
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_custom_command_fix_args(tmp_path: pathlib.Path) -> None:
+    """カスタムコマンドの fix-args 登録テスト。"""
+    pyproject_content = """
+[tool.pyfltr.custom-commands.my-linter]
+type = "linter"
+path = "my-linter"
+args = ["--check"]
+fix-args = ["--fix", "--verbose"]
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        config = pyfltr.config.load_config()
+        assert config["my-linter-fix-args"] == ["--fix", "--verbose"]
+        # filter_fix_commands にも含まれる
+        result = pyfltr.config.filter_fix_commands(["my-linter"], config)
+        assert result == ["my-linter"]
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_custom_command_without_fix_args(tmp_path: pathlib.Path) -> None:
+    """fix-args を省略したカスタム linter は fix 対象外になる。"""
+    pyproject_content = """
+[tool.pyfltr.custom-commands.plain-linter]
+type = "linter"
+path = "plain-linter"
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        config = pyfltr.config.load_config()
+        assert "plain-linter-fix-args" not in config.values
+        result = pyfltr.config.filter_fix_commands(["plain-linter"], config)
+        assert not result
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_custom_command_fix_args_invalid(tmp_path: pathlib.Path) -> None:
+    """fix-args が文字列などの場合はエラーになる。"""
+    pyproject_content = """
+[tool.pyfltr.custom-commands.bad-linter]
+type = "linter"
+fix-args = "--fix"
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        with pytest.raises(ValueError, match="fix-args"):
+            pyfltr.config.load_config()
+    finally:
+        os.chdir(original_cwd)
+
+
 def test_invalid_preset(tmp_path: pathlib.Path) -> None:
     """不正なpresetのテスト。"""
     # pyproject.tomlを作成

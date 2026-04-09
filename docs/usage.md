@@ -42,6 +42,32 @@ ruff-check,pflake8,mypy,pylint,pyright,ty,markdownlint,textlint,pytest \
 
 ※ `pyproject.toml`の`[tool.pyfltr]`で無効になっているコマンドは無視される。
 
+## fix モード (手動実行)
+
+```shell
+pyfltr --fix [files and/or directories ...]
+```
+
+`--fix` を指定すると、通常のチェックとは別に「修正モード」で起動する。linter の中でも autofix 機能を持つ textlint / markdownlint / ruff-check などに、内部で `--fix` 相当の引数を追加して実行する。
+
+fix モードの対象は次の和集合となる。
+
+- 有効化された formatter 全て（通常実行そのものがファイルを修正する）
+- 有効化されており、かつ `{command}-fix-args` が定義された linter (ビルトインでは textlint / markdownlint / ruff-check が既定で対応)
+
+fix モードの挙動。
+
+- 全対象コマンドを順次実行する（同一ファイルへの書き込み競合を避けるため並列化しない）
+- `--shuffle` は無効化される
+- 対象が 0 件の場合はエラー終了する
+- `--commands` と併用可能。併用時は展開後の結果に対して上記フィルタを適用する
+- linter の fix 実行後、ファイル mtime の変化があれば `formatted`、変化が無ければ `succeeded`、終了コードが 0 以外なら `failed` となる
+    - 特に ruff-check は未修正の違反が残ると終了コード 1 を返すため、`failed` 扱いとなる。通常モードの `ruff-check` で残存違反を別途確認すること
+
+カスタムコマンドでも `pyproject.toml` の `[tool.pyfltr.custom-commands.<name>]` に `fix-args = [...]` を定義すれば fix モードの対象にできる。
+
+fix モードは手動実行専用で、通常実行（`pyfltr`）では起動しない。textlint / markdownlint を fix モードで使う場合は、`pyproject.toml` で該当コマンドを有効化しておく必要がある。
+
 ## UI
 
 ターミナル上で実行すると、Textual ベースの TUI が自動的に有効になる。

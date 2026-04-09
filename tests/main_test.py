@@ -37,6 +37,27 @@ def test_work_dir(mocker, tmp_path):
     assert pathlib.Path.cwd() == original_cwd
 
 
+def test_fix_mode_with_no_eligible_commands(mocker, caplog):
+    """fix モードで対象コマンドが 0 件なら exit 1 にする。"""
+    # formatter を全部 disabled にすれば fix 対象なしになる
+    proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="")
+    mocker.patch("subprocess.run", return_value=proc)
+    returncode = pyfltr.main.run(["--fix", "--commands=mypy,pylint", str(pathlib.Path(__file__).parent.parent)])
+    # mypy/pylint は fix-args 未定義なので 0 件
+    assert returncode == 1
+    assert "--fix で実行可能なコマンドがありません" in caplog.text
+
+
+def test_fix_mode_disables_shuffle(mocker, caplog):
+    """--fix と --shuffle を同時指定した場合、shuffle が無効化される。"""
+    proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="")
+    mocker.patch("subprocess.run", return_value=proc)
+    # ruff-format は pyfltr 自身の preset=latest で有効化されている
+    returncode = pyfltr.main.run(["--fix", "--shuffle", "--commands=ruff-format", str(pathlib.Path(__file__).parent.parent)])
+    assert returncode == 0
+    assert "--shuffle を無効化" in caplog.text
+
+
 def test_additional_args(mocker):
     """追加引数のテスト。"""
     proc = subprocess.CompletedProcess(["pytest"], returncode=0, stdout="test")

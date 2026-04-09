@@ -159,7 +159,9 @@ class UIApp(App):
     def _run_in_background(self):
         """バックグラウンド処理。"""
         try:
-            formatters, linters_and_testers = pyfltr.executor.split_commands_for_execution(self.commands, self.config)
+            formatters, linters_and_testers = pyfltr.executor.split_commands_for_execution(
+                self.commands, self.config, fix_mode=bool(getattr(self.args, "fix", False))
+            )
 
             # formatters (serial)
             for command in formatters:

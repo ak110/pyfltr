@@ -24,7 +24,9 @@ def run_commands_with_cli(
 ) -> list[pyfltr.command.CommandResult]:
     """コマンドの実行。"""
     results: list[pyfltr.command.CommandResult] = []
-    formatters, linters_and_testers = pyfltr.executor.split_commands_for_execution(commands, config)
+    formatters, linters_and_testers = pyfltr.executor.split_commands_for_execution(
+        commands, config, fix_mode=bool(getattr(args, "fix", False))
+    )
 
     # formatters を順序実行
     for command in formatters:

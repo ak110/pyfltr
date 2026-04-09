@@ -20,6 +20,7 @@ extend-exclude = ["foo", "bar.py"]
 - {command}-path : 実行するコマンド
 - {command}-args : 追加のコマンドライン引数
 - {command}-fast : `--commands=fast`に含めるか否か(後述)
+- {command}-fix-args : `--fix`時に`{command}-args`の後に追加する引数(既定値は textlint / markdownlint / ruff-check のみ定義)
 - jobs : linters/testersの最大並列数(既定値: 4。CLIの`-j`オプションでも指定可能)
 - exclude : 除外するファイル名/ディレクトリ名パターン(既定値あり)
 - extend-exclude : 追加で除外するファイル名/ディレクトリ名パターン(既定値は空)
@@ -156,6 +157,21 @@ fast = true
     - `col`は任意
     - 指定するとErrorsタブやエラー一覧に表示される
 - `fast`: `--commands=fast`に含めるか否か（省略時は`false`）
+- `fix-args`: `pyfltr --fix`時に`args`の後ろへ追加する引数（省略時は fix モード対象外）
 
 ビルトインコマンド（mypy等）は自動的にエラーパースされる。
 カスタムコマンドに対しても`--{name}-args`やenable/disableを使用できる。
+
+### カスタムコマンドでの fix モード対応
+
+autofix 機能を持つツールをカスタムコマンドとして登録する場合は、`fix-args`を定義しておくと`pyfltr --fix`の対象に含まれる。
+
+```toml
+[tool.pyfltr.custom-commands.my-linter]
+type = "linter"
+path = "my-linter"
+args = ["--check"]
+fix-args = ["--fix"]
+```
+
+fix モードでは`args`の後に`fix-args`が追加され、`my-linter --check --fix <files>`として実行される。

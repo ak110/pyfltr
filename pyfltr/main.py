@@ -56,6 +56,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--ui", default=None, action="store_true", help="Textual UI を強制的に有効化します。")
     parser.add_argument("--no-ui", default=None, action="store_true", help="Textual UI を強制的に無効化します。")
+    parser.add_argument(
+        "--fix",
+        default=False,
+        action="store_true",
+        help="fix モードで実行します(対応ツールに --fix 相当の引数を追加し、順次実行します)。",
+    )
     parser.add_argument("--shuffle", default=False, action="store_true", help="ファイル順をシャッフルします。")
     parser.add_argument("--keep-ui", default=False, action="store_true", help="正常終了後も TUI を閉じずに維持します。")
     parser.add_argument("--ci", default=False, action="store_true", help="CI モードで動作します(--no-shuffle --no-ui 相当)。")
@@ -168,6 +174,20 @@ def _run_impl(
     for command in commands:
         if command not in config.values:
             parser.error(f"コマンドが見つかりません: {command}")
+
+    # fix モードの前処理
+    if args.fix:
+        if args.shuffle:
+            # fix モードは修正の再現性を重視するためシャッフルを無効化
+            logger.warning("--fix 指定時は --shuffle を無効化します。")
+            args.shuffle = False
+        commands = pyfltr.config.filter_fix_commands(commands, config)
+        if not commands:
+            logger.error(
+                "--fix で実行可能なコマンドがありません"
+                "(有効化された formatter もしくは fix-args 定義済み linter を指定してください)。"
+            )
+            return 1
 
     return run_pipeline(args, commands, config)
 

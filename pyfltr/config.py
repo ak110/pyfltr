@@ -97,6 +97,9 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "markdownlint-path": "pnpx",
     "markdownlint-args": ["markdownlint-cli2"],
     "markdownlint-fast": True,
+    # fix モード (pyfltr --fix) 時に通常 args の後に追加する引数。
+    # markdownlint-cli2 は --fix でファイルを in-place 修正する。
+    "markdownlint-fix-args": ["--fix"],
     "textlint": False,
     "textlint-path": "pnpx",
     "textlint-args": [
@@ -109,6 +112,9 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
         "compact",
     ],
     "textlint-fast": True,
+    # fix モード時に通常 args の後に追加する引数。
+    # textlint は --fix で autofix 可能なルールを in-place 修正する。
+    "textlint-fix-args": ["--fix"],
     "pytest": True,
     "pytest-path": "pytest",
     "pytest-args": [],
@@ -129,6 +135,10 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "ruff-check-path": "ruff",
     "ruff-check-args": ["check"],
     "ruff-check-fast": True,
+    # fix モード時に通常 args の後に追加する引数。
+    # `ruff check --fix --unsafe-fixes` で autofix 可能な違反を修正する。
+    # (通常モードの ruff-format-by-check とは別経路で動作する)
+    "ruff-check-fix-args": ["--fix", "--unsafe-fixes"],
     # 最大並列数（linters/testersの並列実行数の上限）
     "jobs": 4,
     # flake8風無視パターン。
@@ -290,6 +300,11 @@ def _register_custom_command(config: Config, name: str, definition: dict[str, ty
     if not isinstance(args, list):
         raise ValueError(f"カスタムコマンド {name} のargsはリストで指定してください")
 
+    # fix-args (省略可、省略時は fix モード非対応として扱う)
+    fix_args = definition.get("fix-args", definition.get("fix_args"))
+    if fix_args is not None and not isinstance(fix_args, list):
+        raise ValueError(f"カスタムコマンド {name} のfix-argsはリストで指定してください")
+
     # targets (省略時は "*.py")
     targets = definition.get("targets", "*.py")
     if not isinstance(targets, str):
@@ -321,6 +336,9 @@ def _register_custom_command(config: Config, name: str, definition: dict[str, ty
     config.values[f"{name}-path"] = path
     config.values[f"{name}-args"] = args
     config.values[f"{name}-fast"] = fast
+    # fix-args は定義されている場合のみ登録する (キーの有無で fix 対応可否を判別)
+    if fix_args is not None:
+        config.values[f"{name}-fix-args"] = fix_args
 
 
 def _build_fast_alias(config: Config) -> list[str]:
@@ -339,6 +357,23 @@ def _validate_error_pattern(name: str, pattern: str) -> None:
     for required in ("file", "line", "message"):
         if required not in groups:
             raise ValueError(f"カスタムコマンド {name} のerror-patternに{required}グループが必要です")
+
+
+def filter_fix_commands(commands: list[str], config: Config) -> list[str]:
+    """Fix モードで実行すべきコマンドに絞り込む。
+
+    enabled かつ次のいずれかを満たすコマンドを返す。
+    - formatter (通常実行そのものがファイルを修正するため)
+    - fix-args が定義されている linter/tester (fix-args 付きで起動すると修正される)
+    """
+    result: list[str] = []
+    for command in commands:
+        if not config[command]:
+            continue
+        command_info = config.commands[command]
+        if command_info.type == "formatter" or f"{command}-fix-args" in config.values:
+            result.append(command)
+    return result
 
 
 def resolve_aliases(commands: list[str], config: Config) -> list[str]:
