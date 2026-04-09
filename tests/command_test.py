@@ -295,6 +295,130 @@ def test_build_subprocess_env_preserves_existing_supply_chain_values(
     assert env["NPM_CONFIG_MINIMUM_RELEASE_AGE"] == "10080"
 
 
+def test_resolve_js_commandline_pnpx_with_textlint_packages() -> None:
+    """pnpx runner では textlint-packages が --package で展開される。"""
+    config = pyfltr.config.create_default_config()
+    config.values["js-runner"] = "pnpx"
+    config.values["textlint-packages"] = ["textlint-rule-preset-ja-technical-writing", "textlint-rule-ja-no-abusage"]
+
+    path, prefix = pyfltr.command._resolve_js_commandline("textlint", config)
+
+    assert path == "pnpx"
+    assert prefix == [
+        "--package",
+        "textlint",
+        "--package",
+        "textlint-rule-preset-ja-technical-writing",
+        "--package",
+        "textlint-rule-ja-no-abusage",
+        "textlint",
+    ]
+
+
+def test_resolve_js_commandline_pnpm_ignores_packages() -> None:
+    """pnpm runner では textlint-packages は無視される (package.json 側で管理前提)。"""
+    config = pyfltr.config.create_default_config()
+    config.values["js-runner"] = "pnpm"
+    config.values["textlint-packages"] = ["textlint-rule-preset-ja-technical-writing"]
+
+    path, prefix = pyfltr.command._resolve_js_commandline("textlint", config)
+
+    assert path == "pnpm"
+    assert prefix == ["exec", "textlint"]
+
+
+def test_resolve_js_commandline_markdownlint_uses_cli2_binary() -> None:
+    """markdownlint コマンドの実体は markdownlint-cli2。"""
+    config = pyfltr.config.create_default_config()
+    config.values["js-runner"] = "pnpm"
+
+    path, prefix = pyfltr.command._resolve_js_commandline("markdownlint", config)
+
+    assert path == "pnpm"
+    assert prefix == ["exec", "markdownlint-cli2"]
+
+
+def test_resolve_js_commandline_npx() -> None:
+    """npx runner では -p でパッケージを指定する。"""
+    config = pyfltr.config.create_default_config()
+    config.values["js-runner"] = "npx"
+    config.values["textlint-packages"] = ["textlint-rule-preset-ja-technical-writing"]
+
+    path, prefix = pyfltr.command._resolve_js_commandline("textlint", config)
+
+    assert path == "npx"
+    assert prefix == [
+        "--no-install",
+        "-p",
+        "textlint-rule-preset-ja-technical-writing",
+        "--",
+        "textlint",
+    ]
+
+
+def test_resolve_js_commandline_direct_missing_raises(tmp_path: pathlib.Path) -> None:
+    """direct runner で node_modules/.bin/<cmd> が無ければ FileNotFoundError。"""
+    config = pyfltr.config.create_default_config()
+    config.values["js-runner"] = "direct"
+
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        with pytest.raises(FileNotFoundError):
+            pyfltr.command._resolve_js_commandline("textlint", config)
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_resolve_js_commandline_direct_found(tmp_path: pathlib.Path) -> None:
+    """direct runner で node_modules/.bin/<cmd> があれば path を返す。"""
+    bin_dir = tmp_path / "node_modules" / ".bin"
+    bin_dir.mkdir(parents=True)
+    (bin_dir / "textlint").write_text("#!/bin/sh\necho stub\n")
+
+    config = pyfltr.config.create_default_config()
+    config.values["js-runner"] = "direct"
+
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        path, prefix = pyfltr.command._resolve_js_commandline("textlint", config)
+        assert path.endswith("textlint")
+        assert not prefix
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_execute_command_direct_missing_returns_failed_result(tmp_path: pathlib.Path) -> None:
+    """js-runner=direct で実行ファイル不在時、例外でなく failed CommandResult を返す。"""
+    target = tmp_path / "sample.md"
+    target.write_text("# title\n")
+
+    config = pyfltr.config.create_default_config()
+    config.values["js-runner"] = "direct"
+    config.values["textlint"] = True
+
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        result = pyfltr.command.execute_command("textlint", _make_args([target]), config)
+        assert result.status == "failed"
+        assert result.has_error is True
+        assert "node_modules" in result.output
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_run_subprocess_file_not_found_returns_127() -> None:
+    """存在しない実行ファイルを指定しても例外を送出せず rc=127 を返す。"""
+    result = pyfltr.command._run_subprocess(
+        ["this-command-definitely-does-not-exist-xyz-1234"],
+        env={"PATH": "/nonexistent"},
+    )
+    assert result.returncode == 127
+    assert "見つかりません" in result.stdout
+
+
 @pytest.mark.skipif(shutil.which("pnpm") is None, reason="pnpm が PATH に無い")
 def test_build_subprocess_env_npm_config_actually_effective(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """注入した NPM_CONFIG_MINIMUM_RELEASE_AGE が実際に pnpm に反映されることを確認する。

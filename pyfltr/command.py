@@ -24,6 +24,14 @@ logger = logging.getLogger(__name__)
 _active_processes: list[subprocess.Popen] = []  # type: ignore[type-arg]
 
 
+# pyfltr のコマンド名 -> 実際に起動するパッケージの bin 名の対応表。
+# markdownlint コマンドは実体が markdownlint-cli2 である点に注意。
+_JS_TOOL_BIN: dict[str, str] = {
+    "textlint": "textlint",
+    "markdownlint": "markdownlint-cli2",
+}
+
+
 def _cleanup_processes() -> None:
     """プロセス終了時に実行中の子プロセスを終了。"""
     for proc in _active_processes:
@@ -71,47 +79,132 @@ class CommandResult:
         return f"{self.status} ({self.files}files in {self.elapsed:.1f}s)"
 
 
+def _resolve_js_commandline(
+    command: str,
+    config: pyfltr.config.Config,
+) -> tuple[str, list[str]]:
+    """JS ツール (textlint / markdownlint) の実行ファイルと引数 prefix を決定する。
+
+    `{command}-path` が空のときに呼び出され、`js-runner` 設定に基づいて
+    起動コマンドを組み立てる。`direct` モードで `node_modules/.bin/<cmd>` が
+    存在しない場合は `FileNotFoundError` を送出する。
+    """
+    bin_name = _JS_TOOL_BIN[command]
+    runner = config["js-runner"]
+    packages: list[str] = list(config.values.get("textlint-packages", [])) if command == "textlint" else []
+
+    if runner == "pnpx":
+        prefix: list[str] = ["--package", bin_name]
+        for pkg in packages:
+            prefix.extend(["--package", pkg])
+        prefix.append(bin_name)
+        return "pnpx", prefix
+    if runner == "pnpm":
+        return "pnpm", ["exec", bin_name]
+    if runner == "npm":
+        return "npm", ["exec", "--no", "--", bin_name]
+    if runner == "npx":
+        prefix = ["--no-install"]
+        for pkg in packages:
+            prefix.extend(["-p", pkg])
+        prefix.extend(["--", bin_name])
+        return "npx", prefix
+    if runner == "yarn":
+        return "yarn", ["run", bin_name]
+    if runner == "direct":
+        bin_dir = pathlib.Path("node_modules") / ".bin"
+        # Windows では `.cmd` 付きのラッパーを優先する。pyright の静的評価では
+        # Linux 上だと `sys.platform == "win32"` 側の分岐を unreachable とみなすため、
+        # `os.name` を経由して静的分岐とみなされないようにする。
+        candidates: list[pathlib.Path] = []
+        if os.name == "nt":
+            candidates.append(bin_dir / f"{bin_name}.cmd")
+        candidates.append(bin_dir / bin_name)
+        for candidate in candidates:
+            if candidate.is_file():
+                return str(candidate), []
+        raise FileNotFoundError(str(candidates[0]))
+    raise ValueError(f"js-runnerの設定値が正しくありません: {runner=}")
+
+
+def _failed_js_resolution_result(
+    command: str,
+    command_info: pyfltr.config.CommandInfo,
+    error: FileNotFoundError,
+) -> "CommandResult":
+    """Js ツールの解決失敗時の `CommandResult` を組み立てる。"""
+    message = (
+        f"js-runner=direct 指定ですが実行ファイルが見つかりません: {error}. "
+        "package.jsonで対象パッケージをインストールしてください。"
+    )
+    return CommandResult(
+        command=command,
+        command_type=command_info.type,
+        commandline=[],
+        returncode=1,
+        has_error=True,
+        files=0,
+        output=message,
+        elapsed=0.0,
+    )
+
+
 def _run_subprocess(
     commandline: list[str],
     env: dict[str, str],
     on_output: typing.Callable[[str], None] | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    """サブプロセスの実行。"""
-    if on_output is None:
-        return subprocess.run(
+    """サブプロセスの実行。
+
+    実行ファイルが見つからない場合は `FileNotFoundError` を握りつぶし、
+    rc=127 の `CompletedProcess` として返す。これにより並列実行下の他コマンドを
+    巻き込まずに、呼び出し側で通常の失敗として扱える。
+    """
+    try:
+        if on_output is None:
+            return subprocess.run(
+                commandline,
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                env=env,
+                text=True,
+                encoding="utf-8",
+                errors="backslashreplace",
+            )
+        with subprocess.Popen(
             commandline,
-            check=False,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             env=env,
             text=True,
             encoding="utf-8",
             errors="backslashreplace",
+        ) as proc:
+            _active_processes.append(proc)
+            try:
+                output_lines: list[str] = []
+                assert proc.stdout is not None
+                for line in proc.stdout:
+                    output_lines.append(line)
+                    on_output(line)
+                proc.wait()
+                return subprocess.CompletedProcess(
+                    args=commandline,
+                    returncode=proc.returncode,
+                    stdout="".join(output_lines),
+                )
+            finally:
+                _active_processes.remove(proc)
+    except FileNotFoundError as e:
+        message = f"実行ファイルが見つかりません: {commandline[0]} ({e})\n"
+        if on_output is not None:
+            on_output(message)
+        return subprocess.CompletedProcess(
+            args=commandline,
+            returncode=127,
+            stdout=message,
         )
-    with subprocess.Popen(
-        commandline,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        env=env,
-        text=True,
-        encoding="utf-8",
-        errors="backslashreplace",
-    ) as proc:
-        _active_processes.append(proc)
-        try:
-            output_lines: list[str] = []
-            assert proc.stdout is not None
-            for line in proc.stdout:
-                output_lines.append(line)
-                on_output(line)
-            proc.wait()
-            return subprocess.CompletedProcess(
-                args=commandline,
-                returncode=proc.returncode,
-                stdout="".join(output_lines),
-            )
-        finally:
-            _active_processes.remove(proc)
 
 
 def execute_command(
@@ -140,7 +233,15 @@ def execute_command(
     if fix_mode:
         fix_args = config.values.get(f"{command}-fix-args")
 
-    commandline: list[str] = [config[f"{command}-path"]]
+    # textlint / markdownlint は path が空の場合、js-runner 設定から解決する。
+    if command in _JS_TOOL_BIN and config[f"{command}-path"] == "":
+        try:
+            resolved_path, prefix = _resolve_js_commandline(command, config)
+        except FileNotFoundError as e:
+            return _failed_js_resolution_result(command, command_info, e)
+        commandline: list[str] = [resolved_path, *prefix]
+    else:
+        commandline = [config[f"{command}-path"]]
     commandline.extend(config[f"{command}-args"])
     # fix モード時は通常 args の後に fix-args を追加する (置換ではなく追加)
     if fix_args is not None:
@@ -265,7 +366,7 @@ def _execute_linter_fix(
     ruff-check は残存違反があると rc=1 を返すが、この設計では failed として扱う。
     未修正の違反はユーザーが後段で認識すべき情報であり、成功に寄せない方針。
     """
-    del command_info  # noqa: 呼び出し側との引数形式揃え用 (使用しない)
+    del command_info  # noqa  # 呼び出し側との引数形式揃え用 (使用しない)
 
     mtimes_before = _snapshot_mtimes(targets)
 

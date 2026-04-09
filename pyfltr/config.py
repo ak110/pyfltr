@@ -47,9 +47,23 @@ BUILTIN_COMMAND_NAMES: list[str] = list(BUILTIN_COMMANDS.keys())
 """ビルトインコマンドの名前リスト。"""
 
 
+JS_RUNNERS: tuple[str, ...] = ("pnpx", "pnpm", "npm", "npx", "yarn", "direct")
+"""textlint / markdownlint の起動方式として指定できる値。"""
+
+
 DEFAULT_CONFIG: dict[str, typing.Any] = {
     # プリセット
     "preset": "",
+    # textlint / markdownlint の起動方式。
+    # textlint-path / markdownlint-path が空のときに、以下の値に従って
+    # 実際の起動コマンドを組み立てる。
+    # - pnpx: グローバル / キャッシュから実行 (既定。従来互換)
+    # - pnpm: pnpm exec <cmd> (プロジェクトの node_modules を利用)
+    # - npm:  npm exec --no -- <cmd>
+    # - npx:  npx --no-install -- <cmd>
+    # - yarn: yarn run <cmd>
+    # - direct: node_modules/.bin/<cmd> を直接起動
+    "js-runner": "pnpx",
     # コマンド毎に有効無効、パス、追加の引数を設定
     "pyupgrade": True,
     "pyupgrade-path": "pyupgrade",
@@ -94,23 +108,22 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "ty-args": ["check", "--output-format", "concise", "--error-on-warning"],
     "ty-fast": True,
     "markdownlint": False,
-    "markdownlint-path": "pnpx",
-    "markdownlint-args": ["markdownlint-cli2"],
+    # path が空文字の場合は js-runner 設定に基づいて自動解決する。
+    # ユーザーが明示的に path を設定した場合はその値をそのまま使い、args 先頭に自動 prefix を追加しない。
+    "markdownlint-path": "",
+    "markdownlint-args": [],
     "markdownlint-fast": True,
     # fix モード (pyfltr --fix) 時に通常 args の後に追加する引数。
     # markdownlint-cli2 は --fix でファイルを in-place 修正する。
     "markdownlint-fix-args": ["--fix"],
     "textlint": False,
-    "textlint-path": "pnpx",
-    "textlint-args": [
-        "--package",
-        "textlint",
-        "--package",
-        "textlint-rule-preset-ja-technical-writing",
-        "textlint",
-        "--format",
-        "compact",
-    ],
+    # path が空文字の場合は js-runner 設定に基づいて自動解決する。
+    "textlint-path": "",
+    "textlint-args": ["--format", "compact"],
+    # textlint 向けルール / プリセットパッケージの列挙。pnpx / npx モードでは
+    # --package / -p 展開される。pnpm / npm / yarn / direct モードでは
+    # package.json 側で管理する前提のため無視される。
+    "textlint-packages": ["textlint-rule-preset-ja-technical-writing"],
     "textlint-fast": True,
     # fix モード時に通常 args の後に追加する引数。
     # textlint は --fix で autofix 可能なルールを in-place 修正する。
@@ -272,6 +285,11 @@ def load_config() -> Config:
         if not isinstance(value, type(config.values[key])):  # 簡易チェック
             raise ValueError(f"設定値が不正です: {key}={type(value)}, expected {type(config.values[key])}")
         config.values[key] = value
+
+    # js-runner の値バリデーション
+    js_runner = config.values["js-runner"]
+    if js_runner not in JS_RUNNERS:
+        raise ValueError(f"js-runnerの設定値が正しくありません。{js_runner=} (許容値: {', '.join(JS_RUNNERS)})")
 
     # per-command fastフラグからfastエイリアスを再計算
     config.values["aliases"]["fast"] = _build_fast_alias(config)

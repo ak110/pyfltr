@@ -26,8 +26,8 @@ llms.txt: <https://ak110.github.io/pyfltr/llms.txt>
     - pylint
     - pyright (既定では無効)
     - ty (既定では無効)
-    - markdownlint-cli2 (既定では無効、pnpx経由で実行)
-    - textlint (既定では無効、pnpx経由で実行)
+    - markdownlint-cli2 (既定では無効、`js-runner`設定で起動方式を切替可能。既定は`pnpx`)
+    - textlint (既定では無効、`js-runner`設定で起動方式を切替可能。`textlint-packages`でプリセット/ルール指定)
 - Testers
     - pytest
 

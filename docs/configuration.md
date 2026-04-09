@@ -106,30 +106,51 @@ pflake8-fast = false
 
 ## npm系ツール (markdownlint / textlint)
 
-markdownlint-cli2とtextlintはpnpx経由で実行される。
-依存パッケージはpnpxの`--package`フラグで`{command}-args`に指定する。
+markdownlint-cli2とtextlintは`js-runner`設定で起動方式を切り替える。既定は`pnpx`で、グローバル/キャッシュから都度取得する従来互換の挙動となる。プロジェクトの`package.json`で既にtextlint / markdownlint-cli2をインストールしている場合は、`js-runner`を`pnpm` / `npm` / `npx` / `yarn` / `direct`のいずれかに切り替えるとCIなどでの再ダウンロードを避けられる。
 
 ```toml
 [tool.pyfltr]
-# npxを使う場合
-markdownlint-path = "npx"
-# グローバルインストール済みのtextlintを直接使う場合
+# プロジェクトの node_modules を使う (pnpm exec 経由)
+js-runner = "pnpm"
+```
+
+| `js-runner` | 挙動 |
+| --- | --- |
+| `pnpx` | `pnpx`経由で起動する (既定)。`textlint-packages`は`--package`で展開される |
+| `pnpm` | `pnpm exec`経由で起動する。パッケージは`package.json`側で管理する |
+| `npm` | `npm exec --no --`経由で起動する |
+| `npx` | `npx --no-install`経由で起動する。`textlint-packages`は`-p`で展開される |
+| `yarn` | `yarn run`経由で起動する |
+| `direct` | `node_modules/.bin/`配下の実行ファイルを直接起動する |
+
+`{command}-path`を明示的に設定した場合はその値が優先され、自動解決は無効化される。グローバルインストール済みのtextlintを直接使いたい場合などに利用する。
+
+```toml
+[tool.pyfltr]
 textlint-path = "textlint"
 textlint-args = ["--format", "compact"]
 ```
 
-textlintの既定では`textlint-rule-preset-ja-technical-writing`が含まれる。
-追加のプリセットが必要な場合は`textlint-args`をオーバーライドする。
+### textlintのプリセット/ルール指定
+
+textlintで利用するルール/プリセットパッケージは`textlint-packages`に列挙する。既定では`textlint-rule-preset-ja-technical-writing`が含まれる。
 
 ```toml
 [tool.pyfltr]
-textlint-args = [
-    "--package", "textlint",
-    "--package", "textlint-rule-preset-ja-technical-writing",
-    "--package", "textlint-rule-preset-japanese",
-    "textlint", "--format", "compact",
+textlint-packages = [
+    "textlint-rule-preset-ja-technical-writing",
+    "textlint-rule-preset-japanese",
+    "textlint-rule-ja-no-abusage",
 ]
 ```
+
+`textlint-packages`は`pnpx` / `npx`モード時に`--package` / `-p`展開される。`pnpm` / `npm` / `yarn` / `direct`モードでは`package.json`側でインストールする前提のため無視される。
+
+## 出力順序
+
+非TUIモード (`--no-ui`、`--ci`、または非対話端末) では、既定で全コマンドの完了後に`summary` → 成功コマンド詳細 → 失敗コマンド詳細の順でまとめて出力する。`pyfltr ... | tail -N`のようにパイプで末尾だけ切り出しても、エラー情報が末尾に残る設計となっている。
+
+従来の「各コマンドの完了時に即座に詳細ログを出す」挙動を使いたい場合は`--stream`を指定する。
 
 ## カスタムコマンド
 

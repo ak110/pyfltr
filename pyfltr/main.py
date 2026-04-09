@@ -13,7 +13,6 @@ import typing
 import pyfltr.cli
 import pyfltr.command
 import pyfltr.config
-import pyfltr.error_parser
 import pyfltr.ui
 
 logger = logging.getLogger(__name__)
@@ -61,6 +60,13 @@ def build_parser() -> argparse.ArgumentParser:
         default=False,
         action="store_true",
         help="fix モードで実行します(対応ツールに --fix 相当の引数を追加し、順次実行します)。",
+    )
+    parser.add_argument(
+        "--stream",
+        default=False,
+        action="store_true",
+        help="各コマンドの完了時に即座に詳細ログを表示します (非 TUI モードでのみ有効)。"
+        "既定ではすべてのコマンド完了後にまとめて表示します。",
     )
     parser.add_argument("--shuffle", default=False, action="store_true", help="ファイル順をシャッフルします。")
     parser.add_argument("--keep-ui", default=False, action="store_true", help="正常終了後も TUI を閉じずに維持します。")
@@ -216,29 +222,15 @@ def run_pipeline(
     # run
     if use_ui:
         results, returncode = pyfltr.ui.run_commands_with_ui(commands, args, config)
-        # UI終了後に通常のログを出力
-        for result in results:
-            pyfltr.cli.write_log(result)
+        # UI 終了後はすべての詳細ログと summary をまとめて出力する
+        pyfltr.cli.render_results(results, config, include_details=True)
     else:
-        results = pyfltr.cli.run_commands_with_cli(commands, args, config)
+        # 非 TUI モード: 既定はバッファリング (最後にまとめて出力)、`--stream` で従来の即時出力。
+        per_command_log = bool(args.stream)
+        results = pyfltr.cli.run_commands_with_cli(commands, args, config, per_command_log=per_command_log)
         returncode = 0
-
-    # summary
-    logger.info(f"{'-' * 10} summary {'-' * (72 - 10 - 9)}")
-    for result in sorted(results, key=lambda r: config.command_names.index(r.command)):
-        logger.info(f"    {result.command:<16s} {result.get_status_text()}")
-    logger.info("-" * 72)
-
-    # エラー箇所一覧
-    all_errors: list[pyfltr.error_parser.ErrorLocation] = []
-    for result in results:
-        all_errors.extend(result.errors)
-    if all_errors:
-        sorted_errors = pyfltr.error_parser.sort_errors(all_errors, config.command_names)
-        logger.info(f"{'-' * 10} errors ({len(sorted_errors)}) {'-' * (72 - 14 - len(str(len(sorted_errors))))}")
-        for error in sorted_errors:
-            logger.info(f"    {pyfltr.error_parser.format_error(error)}")
-        logger.info("-" * 72)
+        # `--stream` のときは詳細ログは既に出力済み。summary のみ表示する。
+        pyfltr.cli.render_results(results, config, include_details=not per_command_log)
 
     # returncode
     if returncode == 0:

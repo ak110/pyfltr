@@ -58,6 +58,33 @@ def test_fix_mode_disables_shuffle(mocker, caplog):
     assert "--shuffle を無効化" in caplog.text
 
 
+def test_stream_mode_writes_detail_log_during_run(mocker, caplog):
+    """--stream 指定時はコマンド完了時に詳細ログが出力される。"""
+    proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy-detail")
+    mocker.patch("subprocess.run", return_value=proc)
+
+    returncode = pyfltr.main.run(["--no-ui", "--stream", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    assert returncode == 0
+    # 詳細ログに含まれる returncode 行が出力される
+    assert "returncode: 0" in caplog.text
+    # summary セクションも引き続き出力される
+    assert "summary" in caplog.text
+
+
+def test_buffered_mode_is_default(mocker, caplog):
+    """既定では summary → 成功コマンド詳細の順でまとめて出力される。"""
+    proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy-detail")
+    mocker.patch("subprocess.run", return_value=proc)
+
+    returncode = pyfltr.main.run(["--no-ui", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    assert returncode == 0
+    text = caplog.text
+    # summary セクションが詳細ログより先に来る
+    assert "summary" in text
+    assert "returncode: 0" in text
+    assert text.index("summary") < text.index("returncode: 0")
+
+
 def test_additional_args(mocker):
     """追加引数のテスト。"""
     proc = subprocess.CompletedProcess(["pytest"], returncode=0, stdout="test")

@@ -353,6 +353,58 @@ fix-args = "--fix"
         os.chdir(original_cwd)
 
 
+def test_js_runner_default() -> None:
+    """js-runner の既定値は pnpx (従来互換)。"""
+    config = pyfltr.config.create_default_config()
+    assert config["js-runner"] == "pnpx"
+
+
+def test_js_runner_override(tmp_path: pathlib.Path) -> None:
+    """pyproject.toml で js-runner を上書きできる。"""
+    pyproject_content = """
+[tool.pyfltr]
+js-runner = "pnpm"
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        config = pyfltr.config.load_config()
+        assert config["js-runner"] == "pnpm"
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_js_runner_invalid_rejected(tmp_path: pathlib.Path) -> None:
+    """js-runner に未知の値を指定するとエラーになる。"""
+    pyproject_content = """
+[tool.pyfltr]
+js-runner = "bogus"
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        with pytest.raises(ValueError, match="js-runner"):
+            pyfltr.config.load_config()
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_textlint_packages_default() -> None:
+    """textlint-packages のデフォルトにプリセットが含まれる。"""
+    config = pyfltr.config.create_default_config()
+    assert config["textlint-packages"] == ["textlint-rule-preset-ja-technical-writing"]
+
+
+def test_textlint_markdownlint_path_default_empty() -> None:
+    """textlint-path / markdownlint-path の既定値は空文字 (runner 自動解決)。"""
+    config = pyfltr.config.create_default_config()
+    assert config["textlint-path"] == ""
+    assert config["markdownlint-path"] == ""
+    assert config["markdownlint-args"] == []
+
+
 def test_invalid_preset(tmp_path: pathlib.Path) -> None:
     """不正なpresetのテスト。"""
     # pyproject.tomlを作成
