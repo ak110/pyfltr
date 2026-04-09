@@ -15,16 +15,16 @@ extend-exclude = ["foo", "bar.py"]
 
 設定項目と既定値は`pyfltr --generate-config`で確認可能。
 
-- preset : プリセット設定(後述)
+- preset : プリセット設定（後述）
 - {command} : 各コマンドの有効/無効
 - {command}-path : 実行するコマンド
-- {command}-args : 追加のコマンドライン引数 (lint/fix 両モードで常に付与)
-- {command}-lint-args : 非 fix モード (および textlint fix 後段の lint チェック) でのみ付与する引数 (既定値は textlint のみ `["--format", "compact"]` を定義)
-- {command}-fast : `--commands=fast`に含めるか否か(後述)
-- {command}-fix-args : `--fix`時に`{command}-args`の後に追加する引数(既定値は textlint / markdownlint / ruff-check のみ定義)
-- jobs : linters/testersの最大並列数(既定値: 4。CLIの`-j`オプションでも指定可能)
-- exclude : 除外するファイル名/ディレクトリ名パターン(既定値あり)
-- extend-exclude : 追加で除外するファイル名/ディレクトリ名パターン(既定値は空)
+- {command}-args : 追加のコマンドライン引数（lint/fix両モードで常に付与）
+- {command}-lint-args : 非fixモード（およびtextlint fix後段のlintチェック) でのみ付与する引数（既定値はtextlintのみ `["--format", "compact"]` を定義）
+- {command}-fast : `--commands=fast`に含めるか否か（後述）
+- {command}-fix-args : `--fix`時に`{command}-args`の後に追加する引数（既定値はtextlint / markdownlint / ruff-checkのみ定義）
+- jobs : linters/testersの最大並列数（既定値： 4。CLIの`-j`オプションでも指定可能）
+- exclude : 除外するファイル名/ディレクトリ名パターン（既定値あり）
+- extend-exclude : 追加で除外するファイル名/ディレクトリ名パターン（既定値は空）
 
 ## プリセット設定
 
@@ -63,11 +63,11 @@ preset = "latest"
 
 ## ruff-format の 2 段階実行
 
-`ruff-format` は既定で `ruff check --fix --unsafe-fixes` と `ruff format` の 2 ステップを連続実行する。
-import ソートや自動修正可能な lint 違反を整形と同時に処理するための挙動。
+`ruff-format` は既定で `ruff check --fix --unsafe-fixes` と `ruff format` の2ステップを連続実行する。
+importソートや自動修正可能なlint違反を整形と同時に処理するための挙動。
 
-ステップ 1 の lint 違反 (ruff check の exit 1) は無視され、別途 `ruff-check` コマンドで検出される想定。
-設定ミス等による ruff の異常終了 (exit 2 以上) は失敗と判定する。
+ステップ1のlint違反（ruff checkのexit 1）は無視され、別途 `ruff-check` コマンドで検出される想定。
+設定ミス等によるruffの異常終了（exit 2以上）は失敗と判定する。
 
 ```toml
 [tool.pyfltr]
@@ -135,9 +135,9 @@ textlint-args = []
 textlint-lint-args = ["--format", "compact"]
 ```
 
-textlint の fix 実行 (`textlint --fix`) では `@textlint/fixer-formatter` が使われ、`compact` フォーマッタを解決できない。このため `--format compact` は `textlint-args` (共通) ではなく `textlint-lint-args` (lint モード専用) に分離している。
+textlintのfix実行 (`textlint --fix`) では `@textlint/fixer-formatter` が使われ、`compact` フォーマッタを解決できない。このため `--format compact` は `textlint-args`（共通）ではなく `textlint-lint-args`（lintモード専用）に分離している。
 
-`pyfltr --fix` 実行時、pyfltr は textlint を 2 段階で実行する (fix 適用 → lint チェック) ため、残存違反は compact 形式で正しく取得される。旧版から `textlint-args = ["--format", "compact", ...]` の設定を引き継いでいる場合でも、pyfltr は fix ステップの起動コマンドから `--format` ペアを自動的に除去するためクラッシュしない。新規設定では `textlint-lint-args` に書くことを推奨する。
+`pyfltr --fix` 実行時、pyfltrはtextlintを2段階で実行する（fix適用 → lintチェック）ため、残存違反はcompact形式で正しく取得される。旧版から `textlint-args = ["--format", "compact", ...]` の設定を引き継いでいる場合でも、pyfltrはfixステップの起動コマンドから `--format` ペアを自動的に除去するためクラッシュしない。新規設定では `textlint-lint-args` に書くことを推奨する。
 
 ### textlintのプリセット/ルール指定
 
@@ -147,7 +147,7 @@ textlintで利用するルール/プリセットパッケージは`textlint-pack
 [tool.pyfltr]
 textlint-packages = [
     "textlint-rule-preset-ja-technical-writing",
-    "textlint-rule-preset-japanese",
+    "textlint-rule-preset-jtf-style",
     "textlint-rule-ja-no-abusage",
 ]
 ```
@@ -176,7 +176,7 @@ fast = true
 
 設定項目。
 
-- `type` (必須): `"formatter"` / `"linter"` / `"tester"`
+- `type`（必須）: `"formatter"` / `"linter"` / `"tester"`
     - formatterは直列実行、linter/testerは並列実行
 - `path`: 実行コマンド（省略時はコマンド名）
 - `args`: 追加引数（省略時は空）
@@ -186,14 +186,14 @@ fast = true
     - `col`は任意
     - 指定するとErrorsタブやエラー一覧に表示される
 - `fast`: `--commands=fast`に含めるか否か（省略時は`false`）
-- `fix-args`: `pyfltr --fix`時に`args`の後ろへ追加する引数（省略時は fix モード対象外）
+- `fix-args`: `pyfltr --fix`時に`args`の後ろへ追加する引数（省略時はfixモード対象外）
 
 ビルトインコマンド（mypy等）は自動的にエラーパースされる。
 カスタムコマンドに対しても`--{name}-args`やenable/disableを使用できる。
 
 ### カスタムコマンドでの fix モード対応
 
-autofix 機能を持つツールをカスタムコマンドとして登録する場合は、`fix-args`を定義しておくと`pyfltr --fix`の対象に含まれる。
+autofix機能を持つツールをカスタムコマンドとして登録する場合は、`fix-args`を定義しておくと`pyfltr --fix`の対象に含まれる。
 
 ```toml
 [tool.pyfltr.custom-commands.my-linter]
@@ -203,4 +203,4 @@ args = ["--check"]
 fix-args = ["--fix"]
 ```
 
-fix モードでは`args`の後に`fix-args`が追加され、`my-linter --check --fix <files>`として実行される。
+fixモードでは`args`の後に`fix-args`が追加され、`my-linter --check --fix <files>`として実行される。

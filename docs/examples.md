@@ -2,11 +2,11 @@
 
 ## pyproject.toml
 
-pyfltr 本体の設定 (`[tool.pyfltr]`) と、呼び出される各ツール (ruff / mypy / pytest) の設定を1つの`pyproject.toml`にまとめた例。
+pyfltr本体の設定（`[tool.pyfltr]`）と、呼び出される各ツール（ruff / mypy / pytest）の設定を1つの`pyproject.toml`にまとめた例。
 
-- `preset = "latest"`: ruff-format / ruff-check / pyright / markdownlint / textlint を有効化するプリセット。詳細は[設定](configuration.md)を参照。
-- `pylint-args` / `mypy-args`: 各ツールに追加で渡す引数。プラグイン読み込みや error-code 有効化の典型例を示している。
-- ruff の `per-file-ignores`: テストコード (`**_test.py`) と package init (`__init__.py`) の docstring 要求を除外する実用的な調整。
+- `preset = "latest"`: ruff-format / ruff-check / pyright / markdownlint / textlintを有効化するプリセット。詳細は[設定](configuration.md)を参照。
+- `pylint-args` / `mypy-args`: 各ツールに追加で渡す引数。プラグイン読み込みやerror-code有効化の典型例を示している。
+- ruffの `per-file-ignores`: テストコード（`**_test.py`）とpackage init（`__init__.py`）のdocstring要求を除外する実用的な調整。
 
 ```toml
 [dependency-groups]
@@ -95,14 +95,14 @@ asyncio_default_test_loop_scope = "session"
 
 ポイント:
 
-- `--exit-zero-even-if-formatted`: Formatter がファイルを修正しただけではフックを失敗と判定しないためのオプション。pre-commit の通常運用 (修正→再ステージ→再実行) を阻害せずに済む。
-- `--commands=fast`: mypy / pylint / pytest など重いコマンドを除外した高速サブセット。pre-commit は対話的フックのため速度を優先する。
-- `types_or: [python, markdown]`: Python だけでなく Markdown 変更時もフックを起動し、markdownlint / textlint を実行する。
-- `require_serial: true`: pyfltr 自身が内部で並列化するため、pre-commit 側での多重起動を避ける。
+- `--exit-zero-even-if-formatted`: Formatterがファイルを修正しただけではフックを失敗と判定しないためのオプション。pre-commitの通常運用（修正→再ステージ→再実行）を阻害せずに済む。
+- `--commands=fast`: mypy / pylint / pytestなど重いコマンドを除外した高速サブセット。pre-commitは対話的フックのため速度を優先する。
+- `types_or: [python, markdown]`: PythonだけでなくMarkdown変更時もフックを起動し、markdownlint / textlintを実行する。
+- `require_serial: true`: pyfltr自身が内部で並列化するため、pre-commit側での多重起動を避ける。
 
 ## .markdownlint-cli2.yaml
 
-markdownlint-cli2 が読み込む設定ファイル。日本語ドキュメントでは行長制限が実用的でないため、`line-length` チェックのみ無効化している。
+markdownlint-cli2が読み込む設定ファイル。日本語ドキュメントでは行長制限が実用的でないため、`line-length` チェックのみ無効化している。
 
 ```yaml
 config:
@@ -111,28 +111,43 @@ config:
 
 ## .textlintrc.yaml
 
-textlint の `preset-ja-technical-writing` を有効化しつつ、実運用で引っかかりがちな `ja-no-mixed-period` (句読点の混在) と `sentence-length` (1文の長さ) を無効化する例。
+textlintで技術文書向けの複数プリセットと誤用語チェックを併用する例。`preset-ja-technical-writing`・`preset-jtf-style`・`ja-no-abusage` を組み合わせ、実運用で誤検出や方針不一致となりがちなルールのみ個別に無効化している。
+
+- `preset-ja-technical-writing`のうち、句読点混在（`ja-no-mixed-period`）・重複助詞（`no-doubled-joshi`）・感嘆符/疑問符（`no-exclamation-question-mark`）・文長制限（`sentence-length`）は技術文書の都合で無効化する。
+- `preset-jtf-style`のうち、箇条書き末尾の句点強制（`1.1.3.箇条書き`）・山かっこの禁止（`4.3.7.山かっこ<>`、「Settings > Pages」等の誤検出対策）・コロン表記の制約（`4.2.7.コロン(：)`、「例: ...」記法を多用するため）は無効化する。
+- `ja-no-abusage`は語の誤用検出のために有効化する。
+
+対応する`textlint-packages`の設定例は[textlint-argsのカスタマイズ](#textlint-argsのカスタマイズ)を参照。
 
 ```yaml
 rules:
   preset-ja-technical-writing:
     ja-no-mixed-period: false
+    no-doubled-joshi: false
+    no-exclamation-question-mark: false
     sentence-length: false
+  preset-jtf-style:
+    "1.1.3.箇条書き":
+      shouldUsePoint: false # 箇条書きは「。」をつけない
+    "4.3.7.山かっこ<>": false # 「Settings > Pages」などの誤検出対策
+    "4.2.7.コロン(：)": false # "例: ..." 記法を多用するため
+  ja-no-abusage: true
 ```
 
 ## textlint-argsのカスタマイズ
 
-追加の textlint プリセットを使う場合は `textlint-packages` にパッケージ名を列挙する (pnpx / npx 起動時に `--package` / `-p` として展開される)。
+追加のtextlintプリセットを使う場合は `textlint-packages` にパッケージ名を列挙する（pnpx / npx起動時に `--package` / `-p` として展開される）。
 
 ```toml
 [tool.pyfltr]
 textlint-packages = [
     "textlint-rule-preset-ja-technical-writing",
-    "textlint-rule-preset-japanese",
+    "textlint-rule-preset-jtf-style",
+    "textlint-rule-ja-no-abusage",
 ]
 ```
 
-共通のコマンドライン引数を追加したい場合は `textlint-args` を使う。lint 専用のオプション (`--format compact` など) は `textlint-lint-args` に分離する。
+共通のコマンドライン引数を追加したい場合は `textlint-args` を使う。lint専用のオプション（`--format compact` など）は `textlint-lint-args` に分離する。
 
 ```toml
 [tool.pyfltr]
@@ -140,24 +155,24 @@ textlint-args = []
 textlint-lint-args = ["--format", "compact"]
 ```
 
-`textlint-args` に `--format compact` を書いた旧版の設定をそのまま引き継いでも、pyfltr は `pyfltr --fix` 実行時に fix 段階の起動コマンドから `--format` ペアを自動除去するためクラッシュしない。ただし新規設定では `textlint-lint-args` に書くことを推奨する。
+`textlint-args` に `--format compact` を書いた旧版の設定をそのまま引き継いでも、pyfltrは `pyfltr --fix` 実行時にfix段階の起動コマンドから `--format` ペアを自動除去するためクラッシュしない。ただし新規設定では `textlint-lint-args` に書くことを推奨する。
 
 ## Claude Code Hook
 
-[Claude Code](https://docs.claude.com/en/docs/claude-code/overview) で開発する場合、
-編集ターン終了時に pyfltr の `--commands=fast` を自動実行する hook を設定するとよい。
+[Claude Code](https://docs.claude.com/en/docs/claude-code/overview)で開発する場合、
+編集ターン終了時にpyfltrの `--commands=fast` を自動実行するhookを設定するとよい。
 
 設計上のポイントは次の通り。
 
-- PostToolUse で即整形しない: Claude が import を追加し次の編集で使用する、という段階的な
-  編集の途中で `ruff check --fix` が未使用 import を削除してしまう問題を避けるため、
-  整形は Stop hook (応答完了時) に集約する。
-- マーカーファイルで編集対象を限定: ユーザーが手動で編集中の Python ファイルが
-  ある状態で、Claude に質問しただけでも整形が実行されるのを避けるため、PostToolUse で
-  編集されたファイルパスをマーカーファイルに追記し、Stop hook はそのマーカーに
-  記録されたファイルに対してのみ pyfltr を実行する。
-- SessionStart でマーカーをクリア: 前回セッションで異常終了した場合の残存ファイルを除去する。
-- Stop では存在確認と重複排除: マーカー内のファイルパスは重複や削除済みの可能性が
+- PostToolUseで即整形しない: Claudeがimportを追加し次の編集で使用する、という段階的な
+  編集の途中で `ruff check --fix` が未使用importを削除してしまう問題を避けるため、
+  整形はStop hook（応答完了時）に集約する。
+- マーカーファイルで編集対象を限定: ユーザーが手動で編集中のPythonファイルが
+  ある状態で、Claudeに質問しただけでも整形が実行されるのを避けるため、PostToolUseで
+  編集されたファイルパスをマーカーファイルに追記し、Stop hookはそのマーカーに
+  記録されたファイルに対してのみpyfltrを実行する。
+- SessionStartでマーカーをクリア: 前回セッションで異常終了した場合の残存ファイルを除去する。
+- Stopでは存在確認と重複排除: マーカー内のファイルパスは重複や削除済みの可能性が
   あるため、`sort -u` と `[ -e ]` で整理してから実行する。
 
 `.claude/settings.json` の例:
@@ -209,7 +224,7 @@ textlint-lint-args = ["--format", "compact"]
 
 ## CI
 
-GitHub Actions で pyfltr を Python バージョンの matrix で実行する構成の例。
+GitHub ActionsでpyfltrをPythonバージョンのmatrixで実行する構成の例。
 
 ```yaml
 jobs:
@@ -249,6 +264,6 @@ jobs:
 
 ポイント:
 
-- `actions/setup-node` + `pnpm/action-setup`: `markdownlint-cli2` と `textlint` を pnpx 経由で呼び出すため、Python だけでなく Node.js 環境も必要になる。
-- `uv sync --all-extras --all-groups`: pyfltr を含む dev 依存をすべて同期し、`uv run pyfltr` から対応ツール群を解決できるようにする。
-- `uv cache prune --ci`: CI キャッシュを軽量化するための後処理。
+- `actions/setup-node` + `pnpm/action-setup`: `markdownlint-cli2` と `textlint` をpnpx経由で呼び出すため、PythonだけでなくNode.js環境も必要になる。
+- `uv sync --all-extras --all-groups`: pyfltrを含むdev依存をすべて同期し、`uv run pyfltr` から対応ツール群を解決できるようにする。
+- `uv cache prune --ci`: CIキャッシュを軽量化するための後処理。

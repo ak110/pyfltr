@@ -10,7 +10,7 @@ pyfltr [files and/or directories ...]
 
 指定したファイルやディレクトリの配下のうち、各コマンドのtargetsパターンに一致するファイルのみ処理される。
 
-- Python系ツール: `*.py`
+- Python系ツール： `*.py`
 - markdownlint / textlint: `*.md`
 - pytest: `*_test.py`
 
@@ -33,12 +33,12 @@ ruff-check,pflake8,mypy,pylint,pyright,ty,markdownlint,textlint,pytest \
 
 カンマ区切りで実行するツールだけ指定する。
 
-以下のエイリアスも使用可能。(例: `--commands=fast`)
+以下のエイリアスも使用可能。(例： `--commands=fast`)
 
 - `format`: `pyupgrade` `autoflake` `isort` `black` `ruff-format`
 - `lint`: `ruff-check` `pflake8` `mypy` `pylint` `pyright` `ty` `markdownlint` `textlint`
 - `test`: `pytest`
-- `fast`: per-commandの`{cmd}-fast`フラグがtrueのコマンド（既定: `pyupgrade` `autoflake` `isort` `black` `ruff-format` `ruff-check` `pflake8` `ty` `markdownlint` `textlint`）
+- `fast`: per-commandの`{cmd}-fast`フラグがtrueのコマンド（既定： `pyupgrade` `autoflake` `isort` `black` `ruff-format` `ruff-check` `pflake8` `ty` `markdownlint` `textlint`）
 
 ※ `pyproject.toml`の`[tool.pyfltr]`で無効になっているコマンドは無視される。
 
@@ -48,39 +48,39 @@ ruff-check,pflake8,mypy,pylint,pyright,ty,markdownlint,textlint,pytest \
 pyfltr --fix [files and/or directories ...]
 ```
 
-`--fix` を指定すると、通常のチェックとは別に「修正モード」で起動する。linter の中でも autofix 機能を持つ textlint / markdownlint / ruff-check などに、内部で `--fix` 相当の引数を追加して実行する。
+`--fix` を指定すると、通常のチェックとは別に「修正モード」で起動する。linterの中でもautofix機能を持つtextlint / markdownlint / ruff-checkなどに、内部で `--fix` 相当の引数を追加して実行する。
 
-fix モードの対象は次の和集合となる。
+fixモードの対象は次の和集合となる。
 
-- 有効化された formatter 全て（通常実行そのものがファイルを修正する）
-- 有効化されており、かつ `{command}-fix-args` が定義された linter (ビルトインでは textlint / markdownlint / ruff-check が既定で対応)
+- 有効化されたformatter全て（通常実行そのものがファイルを修正する）
+- 有効化されており、かつ `{command}-fix-args` が定義されたlinter（ビルトインではtextlint / markdownlint / ruff-checkが既定で対応）
 
-fix モードの挙動。
+fixモードの挙動。
 
 - 全対象コマンドを順次実行する（同一ファイルへの書き込み競合を避けるため並列化しない）
 - `--shuffle` は無効化される
-- 対象が 0 件の場合はエラー終了する
+- 対象が0件の場合はエラー終了する
 - `--commands` と併用可能。併用時は展開後の結果に対して上記フィルタを適用する
-- linter の fix 実行後、ファイル mtime の変化があれば `formatted`、変化が無ければ `succeeded`、終了コードが 0 以外なら `failed` となる
-    - 特に ruff-check は未修正の違反が残ると終了コード 1 を返すため、`failed` 扱いとなる。通常モードの `ruff-check` で残存違反を別途確認すること
+- linterのfix実行後、ファイルmtimeの変化があれば `formatted`、変化が無ければ `succeeded`、終了コードが0以外なら `failed` となる
+    - 特にruff-checkは未修正の違反が残ると終了コード1を返すため、`failed` 扱いとなる。通常モードの `ruff-check` で残存違反を別途確認すること
 
-カスタムコマンドでも `pyproject.toml` の `[tool.pyfltr.custom-commands.<name>]` に `fix-args = [...]` を定義すれば fix モードの対象にできる。
+カスタムコマンドでも `pyproject.toml` の `[tool.pyfltr.custom-commands.<name>]` に `fix-args = [...]` を定義すればfixモードの対象にできる。
 
-fix モードは手動実行専用で、通常実行（`pyfltr`）では起動しない。textlint / markdownlint を fix モードで使う場合は、`pyproject.toml` で該当コマンドを有効化しておく必要がある。
+fixモードは手動実行専用で、通常実行（`pyfltr`）では起動しない。textlint / markdownlintをfixモードで使う場合は、`pyproject.toml` で該当コマンドを有効化しておく必要がある。
 
 ## UI
 
-ターミナル上で実行すると、Textual ベースの TUI が自動的に有効になる。
+ターミナル上で実行すると、TextualベースのTUIが自動的に有効になる。
 
-- Summaryタブ: 各コマンドのステータス・エラー数・経過時間をリアルタイム表示
-- Errorsタブ: エラー発生時のみ出現し、全コマンドのエラー箇所を`ファイル:行番号`形式で一覧表示
-- 各コマンドタブ: コマンドの出力をリアルタイム表示
+- Summaryタブ： 各コマンドのステータス・エラー数・経過時間をリアルタイム表示
+- Errorsタブ： エラー発生時のみ出現し、全コマンドのエラー箇所を`ファイル:行番号`形式で一覧表示
+- 各コマンドタブ： コマンドの出力をリアルタイム表示
 
 Errorsタブのエラー一覧は`ファイル:行番号: [コマンド名] メッセージ`形式で、
 VSCodeのターミナルからクリックして該当箇所にジャンプできる。
 
 - `--no-ui`: UIを無効化し、出力を直接ターミナルに表示（エラー一覧はサマリー後に表示）
-- `--ci`: CI環境向け (`--no-shuffle --no-ui` 相当)
-- `-j N` / `--jobs N`: linters/testersの最大並列数を指定（既定: 4、`pyproject.toml`でも設定可能）
+- `--ci`: CI環境向け（`--no-shuffle --no-ui` 相当）
+- `-j N` / `--jobs N`: linters/testersの最大並列数を指定（既定： 4、`pyproject.toml`でも設定可能）
 
 その他のオプションは `pyfltr --help` を参照。

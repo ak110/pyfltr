@@ -2,22 +2,20 @@
 
 ## 開発環境の構築手順
 
-1. 本リポジトリをcloneする。
-2. [uvをインストール](https://docs.astral.sh/uv/getting-started/installation/)する。
-3. [pre-commit](https://pre-commit.com/)フックをインストールする。
+1. 本リポジトリをcloneする
+2. [uvをインストール](https://docs.astral.sh/uv/getting-started/installation/)する
+3. [pre-commit](https://pre-commit.com/)フックをインストールする
 
     ```bash
     uv run pre-commit install
     ```
 
-4. サプライチェーン攻撃対策として、`uvx`/`pnpx`用のグローバル設定をする。
+4. サプライチェーン攻撃対策として`uvx`/`pnpx`用のグローバル設定をする
 
     ```bash
     mkdir -p ~/.config/uv && echo 'exclude-newer = "1 day"' >> ~/.config/uv/uv.toml
     pnpm config set minimum-release-age 1440 --global
     ```
-
-    なお pyfltr はサブプロセス実行時に `UV_EXCLUDE_NEWER` / `NPM_CONFIG_MINIMUM_RELEASE_AGE` が未設定であれば既定値 (1 日 / 1440 分) を自動的に注入する。上記のグローバル設定は他のプロジェクトでも同様の対策を効かせるためのもの。
 
 ## ドキュメント
 
@@ -35,9 +33,9 @@ uv run mkdocs serve
 
 初回のみリポジトリの設定が必要。
 
-1. GitHubのリポジトリ設定ページを開く。
-2. Settings > Pages に移動する。
-3. Source を「GitHub Actions」に設定する。
+1. GitHubのリポジトリ設定ページを開く
+2. Settings > Pagesに移動する
+3. Sourceを「GitHub Actions」に設定する
 
 masterブランチへのpush時にdocs/配下やmkdocs.ymlの変更があると自動デプロイされる。
 

@@ -6,23 +6,23 @@ disable-model-invocation: true
 
 # pyfltr 新ツール追加チェックリスト
 
-pyfltr に新しい formatter / linter / tester を追加するときの作業項目を、変更箇所が漏れないように列挙する。
-更新箇所は最低 6 か所に分散しているため、以下を上から順に対応すること。
+pyfltrに新しいformatter / linter / testerを追加するときの作業項目を、変更箇所が漏れないように列挙する。
+更新箇所は最低6か所に分散しているため、以下を上から順に対応すること。
 
 ## 0. 前提情報の整理
 
 新ツールについて以下を決める。
 
-- **ツール名** (`pyproject.toml` に書く識別子。`-` 区切り推奨。例: `ruff-format`)
+- **ツール名**（`pyproject.toml` に書く識別子。`-` 区切り推奨。例: `ruff-format`）
 - **type**: `formatter` / `linter` / `tester` のいずれか
-- **対象拡張子**: `*.py` か、`*.md` のような別の glob か
-- **fast 該当か**: `--commands=fast` (= `make format`) で実行する軽量ツールか
-- **コマンドラインの形** (`{path} {args} {files}` 形式が基本)
-- **出力フォーマット** (`error_parser.py` で必要なグループ: `file` / `line` / `message`)
+- **対象拡張子**: `*.py` か、`*.md` のような別のglobか
+- **fast 該当か**: `--commands=fast`（= `make format`）で実行する軽量ツールか
+- **コマンドラインの形**（`{path} {args} {files}` 形式が基本）
+- **出力フォーマット**（`error_parser.py` で必要なグループ: `file` / `line` / `message`）
 
 ## 1. `pyfltr/config.py`
 
-### 1-1. `BUILTIN_COMMANDS` 辞書 (順序が出力順を決める)
+### 1-1. `BUILTIN_COMMANDS` 辞書（順序が出力順を決める）
 
 ```python
 BUILTIN_COMMANDS: dict[str, CommandInfo] = {
@@ -32,11 +32,11 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
 }
 ```
 
-`targets` がデフォルト (`*.py`) と異なる場合のみ明示。挿入位置は他ツールとの実行順を意識。
+`targets` がデフォルト（`*.py`）と異なる場合のみ明示。挿入位置は他ツールとの実行順を意識。
 
 ### 1-2. `DEFAULT_CONFIG` 辞書
 
-各ツールにつき 4 つのキーを追加する:
+各ツールにつき4つのキーを追加する:
 
 ```python
 "<new-tool>": True,                  # 既定で有効か
@@ -45,20 +45,20 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
 "<new-tool>-fast": True,             # fast 実行対象か
 ```
 
-### 1-3. プリセット (`load_config` 内)
+### 1-3. プリセット（`load_config` 内）
 
-`preset = "latest"` 等で既定挙動を変えたい場合、`config.values["<new-tool>"]` を明示的に on/off する。
+`preset = "latest"` 等で既定挙動を変えたい場合、`config.values["<new-tool>"]` を明示的にon/offする。
 
 ## 2. `pyfltr/command.py`
 
 新ツール用の実行ロジックを追加する。既存ツールの `_run_xxx` を雛形として複製するのが効率的。
-共通化されている部分 (`_run_command` 等) があればそれを使い、新規に車輪の再発明をしない。
+共通化されている部分（`_run_command` 等）があればそれを使い、新規に車輪の再発明をしない。
 
 確認ポイント:
 
-- exit code の解釈 (formatter は「整形あり」を 1 などで返すケースがある)
-- 出力ストリーム (stdout / stderr の混在)
-- ファイル数 0 件のスキップ条件
+- exit codeの解釈（formatterは「整形あり」を1などで返すケースがある）
+- 出力ストリーム（stdout / stderrの混在）
+- ファイル数0件のスキップ条件
 
 ## 3. `pyfltr/error_parser.py`
 
@@ -75,22 +75,22 @@ uv add <new-tool-package>
 uv add --optional <extra> <new-tool-package>
 ```
 
-`uv.lock` を直接編集しない (PreToolUse hook でブロックされる)。
+`uv.lock` を直接編集しない（PreToolUse hookでブロックされる）。
 
-## 5. テスト追加 (`tests/`)
+## 5. テスト追加（`tests/`）
 
 最低限以下を追加:
 
 - `tests/config_test.py`: `DEFAULT_CONFIG` キーの存在と型を確認
-- `tests/command_test.py`: ダミー入力で実行できることを確認 (実コマンドが重い場合は最小ケース)
+- `tests/command_test.py`: ダミー入力で実行できることを確認（実コマンドが重い場合は最小ケース）
 - `tests/error_parser_test.py`: 想定エラー出力をパースできることを確認
 
-## 6. ドキュメント (両方更新)
+## 6. ドキュメント（両方更新）
 
 - `README.md` の「対応ツール」一覧
 - `docs/index.md` の「対応ツール」一覧
 
-両方に追記すること。片方だけだと SSOT 違反として CI / レビューで指摘される。
+両方に追記すること。片方だけだとSSOT違反としてCI / レビューで指摘される。
 
 ## 7. 検証
 
@@ -104,6 +104,6 @@ make test
 
 雛形にすべき既存ツールは `pyfltr/command.py` と `pyfltr/error_parser.py` を参照:
 
-- formatter の例: `ruff-format` / `black`
-- linter の例: `ruff-check` / `mypy`
-- tester の例: `pytest` (ほぼ唯一なので新規 tester は要相談)
+- formatterの例: `ruff-format` / `black`
+- linterの例: `ruff-check` / `mypy`
+- testerの例: `pytest`（ほぼ唯一なので新規testerは要相談）
