@@ -32,6 +32,14 @@ _JS_TOOL_BIN: dict[str, str] = {
     "markdownlint": "markdownlint-cli2",
 }
 
+# pnpx 経由で解決するときに `--package` に渡す spec。
+# 通常は bin 名をそのまま渡すだけだが、上流の既知バグで動かないバージョンを
+# 除外したい場合にここで差し替える。
+# textlint 15.5.3 には起動不能のバグがあるため除外している (15.5.4 で修正済み)。
+_JS_TOOL_PNPX_PACKAGE_SPEC: dict[str, str] = {
+    "textlint": "textlint@<15.5.3 || >15.5.3",
+}
+
 
 def _cleanup_processes() -> None:
     """プロセス終了時に実行中の子プロセスを終了。"""
@@ -95,7 +103,8 @@ def _resolve_js_commandline(
     packages: list[str] = list(config.values.get("textlint-packages", [])) if command == "textlint" else []
 
     if runner == "pnpx":
-        prefix: list[str] = ["--package", bin_name]
+        main_spec = _JS_TOOL_PNPX_PACKAGE_SPEC.get(command, bin_name)
+        prefix: list[str] = ["--package", main_spec]
         for pkg in packages:
             prefix.extend(["--package", pkg])
         prefix.append(bin_name)

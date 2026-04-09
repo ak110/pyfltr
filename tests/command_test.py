@@ -493,7 +493,11 @@ def test_build_subprocess_env_preserves_existing_supply_chain_values(
 
 
 def test_resolve_js_commandline_pnpx_with_textlint_packages() -> None:
-    """pnpx runner では textlint-packages が --package で展開される。"""
+    """pnpx runner では textlint-packages が --package で展開される。
+
+    textlint 本体の spec は `_JS_TOOL_PNPX_PACKAGE_SPEC` によって
+    既知バグのあるバージョンを除外した形で指定される。
+    """
     config = pyfltr.config.create_default_config()
     config.values["js-runner"] = "pnpx"
     config.values["textlint-packages"] = ["textlint-rule-preset-ja-technical-writing", "textlint-rule-ja-no-abusage"]
@@ -503,13 +507,41 @@ def test_resolve_js_commandline_pnpx_with_textlint_packages() -> None:
     assert path == "pnpx"
     assert prefix == [
         "--package",
-        "textlint",
+        "textlint@<15.5.3 || >15.5.3",
         "--package",
         "textlint-rule-preset-ja-technical-writing",
         "--package",
         "textlint-rule-ja-no-abusage",
         "textlint",
     ]
+
+
+def test_resolve_js_commandline_pnpx_textlint_default_excludes_buggy_version() -> None:
+    """pnpx runner の既定状態でも textlint 15.5.3 が除外 spec で指定される。"""
+    config = pyfltr.config.create_default_config()
+    config.values["js-runner"] = "pnpx"
+
+    path, prefix = pyfltr.command._resolve_js_commandline("textlint", config)
+
+    assert path == "pnpx"
+    assert prefix == [
+        "--package",
+        "textlint@<15.5.3 || >15.5.3",
+        "--package",
+        "textlint-rule-preset-ja-technical-writing",
+        "textlint",
+    ]
+
+
+def test_resolve_js_commandline_pnpx_markdownlint_unchanged() -> None:
+    """markdownlint は除外対象外で、従来どおり bin 名がそのまま渡される。"""
+    config = pyfltr.config.create_default_config()
+    config.values["js-runner"] = "pnpx"
+
+    path, prefix = pyfltr.command._resolve_js_commandline("markdownlint", config)
+
+    assert path == "pnpx"
+    assert prefix == ["--package", "markdownlint-cli2", "markdownlint-cli2"]
 
 
 def test_resolve_js_commandline_pnpm_ignores_packages() -> None:
