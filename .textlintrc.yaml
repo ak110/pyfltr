@@ -1,13 +1,18 @@
 rules:
   preset-ja-technical-writing:
+    # ラベル型見出し ("ポイント:", "例:" など) が多用されるため、文末句点の強制を無効化する
     ja-no-mixed-period: false
-    ja-unnatural-alphabet: false
+    # 技術文書における自然な助詞連結 (「〜かどうかを検討するか」など) が頻出するため無効化する
     no-doubled-joshi: false
-    no-exclamation-question-mark: false
-    sentence-length: false
+    # 引用文や詳細な技術説明で100文字超過が避けられないため緩和する
+    sentence-length:
+      max: 120
   preset-jtf-style:
-    "1.1.3.箇条書き":
-      shouldUsePoint: false # 箇条書きは「。」をつけない
-    "4.3.7.山かっこ<>": false # 「Settings > Pages」などの誤検出対策
-    "4.2.7.コロン(：)": false # "例: ..." 記法を多用するため
+    # preset-jtf-style は辞書ルール以外ほぼ全て true が既定。
+    # 誤検知・実務支障のあるルールのみ無効化する。
+    "3.2.カタカナ語間のスペースの有無": false
+    "3.3.かっこ類と隣接する文字の間のスペースの有無": false
+    "4.2.4.中黒(・)": false
+    "4.2.6.ハイフン(-)": false
+    "4.2.7.コロン(：)": false
   ja-no-abusage: true

@@ -111,30 +111,36 @@ config:
 
 ## .textlintrc.yaml
 
-textlintで技術文書向けの複数プリセットと誤用語チェックを併用する例。`preset-ja-technical-writing`・`preset-jtf-style`・`ja-no-abusage` を組み合わせ、実運用で誤検出や方針不一致となりがちなルールのみ個別に無効化している。
+textlintで技術文書向けの複数プリセットと誤用語チェックを併用する例。
+`preset-ja-technical-writing` / `preset-jtf-style` / `ja-no-abusage` を組み合わせる。
+原則はデフォルトルールに従い、誤検出や技術文書に合わないルールのみ個別に無効化する。
 
-- `preset-ja-technical-writing`のうち、句読点混在（`ja-no-mixed-period`）・重複助詞（`no-doubled-joshi`）・感嘆符/疑問符（`no-exclamation-question-mark`）・文長制限（`sentence-length`）は技術文書の都合で無効化する。
-- `preset-jtf-style`のうち、箇条書き末尾の句点強制（`1.1.3.箇条書き`）・山かっこの禁止（`4.3.7.山かっこ<>`、「Settings > Pages」等の誤検出対策）・コロン表記の制約（`4.2.7.コロン(：)`、「例: ...」記法を多用するため）は無効化する。
-- `ja-no-abusage`は語の誤用検出のために有効化する。
+無効化しているルールと理由は以下の通り。
 
-対応する`textlint-packages`の設定例は[textlint-argsのカスタマイズ](#textlint-argsのカスタマイズ)を参照。
+- `ja-no-mixed-period`: 「ポイント:」「例:」などのラベル型見出しが多いため。
+- `no-doubled-joshi`: 技術文書で避けられない自然な助詞連結が頻出するため。
+- `sentence-length`: 既定の100文字制限を120文字へ緩和する（完全無効化はしない）。
+- preset-jtf-styleの空白・中黒・ハイフン・コロン関連: 誤検出が多いため。
+
+対応する`textlint-packages`の設定例は[textlint-packagesのカスタマイズ](#textlint-packagesのカスタマイズ)を参照。
 
 ```yaml
 rules:
   preset-ja-technical-writing:
     ja-no-mixed-period: false
     no-doubled-joshi: false
-    no-exclamation-question-mark: false
-    sentence-length: false
+    sentence-length:
+      max: 120
   preset-jtf-style:
-    "1.1.3.箇条書き":
-      shouldUsePoint: false # 箇条書きは「。」をつけない
-    "4.3.7.山かっこ<>": false # 「Settings > Pages」などの誤検出対策
-    "4.2.7.コロン(：)": false # "例: ..." 記法を多用するため
+    "3.2.カタカナ語間のスペースの有無": false
+    "3.3.かっこ類と隣接する文字の間のスペースの有無": false
+    "4.2.4.中黒(・)": false
+    "4.2.6.ハイフン(-)": false
+    "4.2.7.コロン(：)": false
   ja-no-abusage: true
 ```
 
-## textlint-argsのカスタマイズ
+## textlint-packagesのカスタマイズ
 
 追加のtextlintプリセットを使う場合は `textlint-packages` にパッケージ名を列挙する（pnpx / npx起動時に `--package` / `-p` として展開される）。
 
@@ -147,7 +153,8 @@ textlint-packages = [
 ]
 ```
 
-共通のコマンドライン引数を追加したい場合は `textlint-args` を使う。lint専用のオプション（`--format compact` など）は `textlint-lint-args` に分離する。
+共通のコマンドライン引数を追加したい場合は `textlint-args` を使う。
+lint専用のオプション（`--format compact` など）は `textlint-lint-args` に分離する。
 
 ```toml
 [tool.pyfltr]
@@ -155,7 +162,9 @@ textlint-args = []
 textlint-lint-args = ["--format", "compact"]
 ```
 
-`textlint-args` に `--format compact` を書いた旧版の設定をそのまま引き継いでも、pyfltrは `pyfltr --fix` 実行時にfix段階の起動コマンドから `--format` ペアを自動除去するためクラッシュしない。ただし新規設定では `textlint-lint-args` に書くことを推奨する。
+旧版の`textlint-args = ["--format", "compact", ...]`をそのまま引き継いでもクラッシュしない。
+pyfltrは`--fix`実行時にfix段階の起動コマンドから`--format`ペアを自動除去するため。
+ただし新規設定では`textlint-lint-args`に書くことを推奨する。
 
 ## Claude Code Hook
 
@@ -164,13 +173,14 @@ textlint-lint-args = ["--format", "compact"]
 
 設計上のポイントは次の通り。
 
-- PostToolUseで即整形しない: Claudeがimportを追加し次の編集で使用する、という段階的な
-  編集の途中で `ruff check --fix` が未使用importを削除してしまう問題を避けるため、
-  整形はStop hook（応答完了時）に集約する。
-- マーカーファイルで編集対象を限定: ユーザーが手動で編集中のPythonファイルが
-  ある状態で、Claudeに質問しただけでも整形が実行されるのを避けるため、PostToolUseで
-  編集されたファイルパスをマーカーファイルに追記し、Stop hookはそのマーカーに
-  記録されたファイルに対してのみpyfltrを実行する。
+- PostToolUseで即整形しない: 整形はStop hook（応答完了時）に集約する。
+  Claudeがimportを追加して次の編集で使用する段階的な編集の途中で、
+  `ruff check --fix` が未使用importとして削除してしまう問題を避けるため。
+- マーカーファイルで編集対象を限定: PostToolUseで編集されたファイルパスを
+  マーカーファイルに追記し、Stop hookはそのマーカーに記録されたファイルに対してのみ
+  pyfltrを実行する。
+  これにより、ユーザーが手動で編集中のPythonファイルがある状態で
+  Claudeに質問しただけでも整形が実行されるのを避ける。
 - SessionStartでマーカーをクリア: 前回セッションで異常終了した場合の残存ファイルを除去する。
 - Stopでは存在確認と重複排除: マーカー内のファイルパスは重複や削除済みの可能性が
   あるため、`sort -u` と `[ -e ]` で整理してから実行する。

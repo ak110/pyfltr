@@ -38,7 +38,8 @@ ruff-check,pflake8,mypy,pylint,pyright,ty,markdownlint,textlint,pytest \
 - `format`: `pyupgrade` `autoflake` `isort` `black` `ruff-format`
 - `lint`: `ruff-check` `pflake8` `mypy` `pylint` `pyright` `ty` `markdownlint` `textlint`
 - `test`: `pytest`
-- `fast`: per-commandの`{cmd}-fast`フラグがtrueのコマンド（既定： `pyupgrade` `autoflake` `isort` `black` `ruff-format` `ruff-check` `pflake8` `ty` `markdownlint` `textlint`）
+- `fast`: per-commandの`{cmd}-fast`フラグがtrueのコマンド
+    - 既定: `pyupgrade` `autoflake` `isort` `black` `ruff-format` `ruff-check` `pflake8` `ty` `markdownlint` `textlint`
 
 ※ `pyproject.toml`の`[tool.pyfltr]`で無効になっているコマンドは無視される。
 

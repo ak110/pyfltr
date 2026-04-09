@@ -34,7 +34,7 @@ uv run mkdocs serve
 初回のみリポジトリの設定が必要。
 
 1. GitHubのリポジトリ設定ページを開く
-2. Settings > Pagesに移動する
+2. `Settings` → `Pages` に移動する
 3. Sourceを「GitHub Actions」に設定する
 
 masterブランチへのpush時にdocs/配下やmkdocs.ymlの変更があると自動デプロイされる。

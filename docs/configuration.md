@@ -107,7 +107,11 @@ pflake8-fast = false
 
 ## npm系ツール (markdownlint / textlint)
 
-markdownlint-cli2とtextlintは`js-runner`設定で起動方式を切り替える。既定は`pnpx`で、グローバル/キャッシュから都度取得する従来互換の挙動となる。プロジェクトの`package.json`で既にtextlint / markdownlint-cli2をインストールしている場合は、`js-runner`を`pnpm` / `npm` / `npx` / `yarn` / `direct`のいずれかに切り替えるとCIなどでの再ダウンロードを避けられる。
+markdownlint-cli2とtextlintは`js-runner`設定で起動方式を切り替える。
+既定は`pnpx`で、グローバル/キャッシュから都度取得する従来互換の挙動となる。
+プロジェクトの`package.json`で既にtextlint / markdownlint-cli2をインストール済みの場合は、
+`js-runner`を`pnpm` / `npm` / `npx` / `yarn` / `direct`に切り替えるとよい。
+これによりCIなどでの再ダウンロードを避けられる。
 
 ```toml
 [tool.pyfltr]
@@ -137,7 +141,11 @@ textlint-lint-args = ["--format", "compact"]
 
 textlintのfix実行 (`textlint --fix`) では `@textlint/fixer-formatter` が使われ、`compact` フォーマッタを解決できない。このため `--format compact` は `textlint-args`（共通）ではなく `textlint-lint-args`（lintモード専用）に分離している。
 
-`pyfltr --fix` 実行時、pyfltrはtextlintを2段階で実行する（fix適用 → lintチェック）ため、残存違反はcompact形式で正しく取得される。旧版から `textlint-args = ["--format", "compact", ...]` の設定を引き継いでいる場合でも、pyfltrはfixステップの起動コマンドから `--format` ペアを自動的に除去するためクラッシュしない。新規設定では `textlint-lint-args` に書くことを推奨する。
+`pyfltr --fix` 実行時、pyfltrはtextlintを2段階で実行する（fix適用 → lintチェック）ため、
+残存違反はcompact形式で正しく取得される。
+旧版から `textlint-args = ["--format", "compact", ...]` の設定を引き継いでいる場合でも、
+pyfltrはfixステップの起動コマンドから `--format` ペアを自動除去するためクラッシュしない。
+新規設定では `textlint-lint-args` に書くことを推奨する。
 
 ### textlintのプリセット/ルール指定
 
