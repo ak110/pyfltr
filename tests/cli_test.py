@@ -99,8 +99,8 @@ def test_run_one_command_buffer_mode_shows_only_progress(mocker, caplog):
     assert "returncode: 0" not in caplog.text
 
 
-def test_render_results_orders_summary_success_failed(caplog):
-    """summary → 成功コマンド → 失敗コマンドの順で出力されること。"""
+def test_render_results_orders_success_failed_summary(caplog):
+    """成功コマンド → 失敗コマンド → summary の順で出力されること。"""
     config = pyfltr.config.create_default_config()
     results = [
         _make_result("mypy", returncode=1, output="MYPY_ERROR"),
@@ -112,18 +112,17 @@ def test_render_results_orders_summary_success_failed(caplog):
         pyfltr.cli.render_results(results, config, include_details=True)
 
     text = caplog.text
-    # summary が最初に来る
-    summary_pos = text.index("summary")
-    # 成功コマンドの出力が summary の後
+    # 成功コマンドの出力が最初に来る
     black_pos = text.index("BLACK_OK")
     pylint_pos = text.index("PYLINT_OK")
-    # 失敗コマンドの出力が最後に来る
+    # 失敗コマンドの出力がその後
     mypy_pos = text.index("MYPY_ERROR")
+    # summary が末尾に来る
+    summary_pos = text.index("summary")
 
-    assert summary_pos < black_pos
-    assert summary_pos < pylint_pos
     assert black_pos < mypy_pos
     assert pylint_pos < mypy_pos
+    assert mypy_pos < summary_pos
 
 
 def test_render_results_include_details_false_writes_only_summary(caplog):

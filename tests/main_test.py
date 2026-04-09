@@ -72,17 +72,17 @@ def test_stream_mode_writes_detail_log_during_run(mocker, caplog):
 
 
 def test_buffered_mode_is_default(mocker, caplog):
-    """既定では summary → 成功コマンド詳細の順でまとめて出力される。"""
+    """既定では 成功コマンド詳細 → summary の順でまとめて出力される。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy-detail")
     mocker.patch("subprocess.run", return_value=proc)
 
     returncode = pyfltr.main.run(["--no-ui", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 0
     text = caplog.text
-    # summary セクションが詳細ログより先に来る
+    # 詳細ログが summary より先に来る (summary は末尾)
     assert "summary" in text
     assert "returncode: 0" in text
-    assert text.index("summary") < text.index("returncode: 0")
+    assert text.index("returncode: 0") < text.index("summary")
 
 
 def test_additional_args(mocker):

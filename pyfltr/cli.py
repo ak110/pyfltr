@@ -95,28 +95,30 @@ def render_results(
     *,
     include_details: bool,
 ) -> None:
-    """実行結果を `summary → 成功コマンド → 失敗コマンド` の順でまとめて出力する。
+    """実行結果を `成功コマンド → 失敗コマンド → summary` の順でまとめて出力する。
+
+    summary を末尾に出力することで、`tail -N` で末尾だけ読み取るツール
+    (Claude Code など) でも summary が確実に見えるようにする。失敗コマンド詳細も
+    summary の直前に置くため、`tail -N` でエラー情報も捕捉しやすい。
 
     `include_details=False` のときは、詳細ログは既に出力済みとみなし summary のみ表示する
     (`--stream` モード向け)。
     """
     ordered = sorted(results, key=lambda r: config.command_names.index(r.command))
 
-    # 1. summary
+    if include_details:
+        # 1. 成功コマンドの詳細ログ
+        for result in ordered:
+            if not result.alerted:
+                write_log(result)
+
+        # 2. 失敗コマンドの詳細ログ (summary の直前に配置し tail -N でも拾えるようにする)
+        for result in ordered:
+            if result.alerted:
+                write_log(result)
+
+    # 3. summary (末尾に出力することで tail -N で必ず見えるようにする)
     _write_summary(ordered)
-
-    if not include_details:
-        return
-
-    # 2. 成功コマンドの詳細ログ
-    for result in ordered:
-        if not result.alerted:
-            write_log(result)
-
-    # 3. 失敗コマンドの詳細ログ (末尾に残すことで tail -N 時にエラーが見切れにくくする)
-    for result in ordered:
-        if result.alerted:
-            write_log(result)
 
 
 def _write_summary(ordered_results: list[pyfltr.command.CommandResult]) -> None:
