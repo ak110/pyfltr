@@ -30,14 +30,19 @@ _active_processes: list[subprocess.Popen] = []  # type: ignore[type-arg]
 _JS_TOOL_BIN: dict[str, str] = {
     "textlint": "textlint",
     "markdownlint": "markdownlint-cli2",
+    "eslint": "eslint",
+    "prettier": "prettier",
+    "biome": "biome",
 }
 
 # pnpx 経由で解決するときに `--package` に渡す spec。
 # 通常は bin 名をそのまま渡すだけだが、上流の既知バグで動かないバージョンを
-# 除外したい場合にここで差し替える。
-# textlint 15.5.3 には起動不能のバグがあるため除外している (15.5.4 で修正済み)。
+# 除外したい場合やスコープ付きパッケージの場合にここで差し替える。
+# - textlint 15.5.3 には起動不能のバグがあるため除外している (15.5.4 で修正済み)。
+# - biome は bin 名が "biome" だが npm パッケージは "@biomejs/biome" (スコープ付き)。
 _JS_TOOL_PNPX_PACKAGE_SPEC: dict[str, str] = {
     "textlint": "textlint@<15.5.3 || >15.5.3",
+    "biome": "@biomejs/biome",
 }
 
 
@@ -100,7 +105,9 @@ def _resolve_js_commandline(
     """
     bin_name = _JS_TOOL_BIN[command]
     runner = config["js-runner"]
-    packages: list[str] = list(config.values.get("textlint-packages", [])) if command == "textlint" else []
+    # 汎用化: `{command}-packages` キーを参照することで任意の JS ツールで
+    # `--package` / `-p` 展開を利用可能にする。未定義キーは空リスト扱い。
+    packages: list[str] = list(config.values.get(f"{command}-packages", []))
 
     if runner == "pnpx":
         main_spec = _JS_TOOL_PNPX_PACKAGE_SPEC.get(command, bin_name)
@@ -225,7 +232,7 @@ def execute_command(
 ) -> CommandResult:
     """コマンドの実行。"""
     command_info = config.commands[command]
-    globs = [command_info.targets]
+    globs = command_info.target_globs()
     targets: list[pathlib.Path] = expand_globs(args.targets, globs, config)
 
     # ファイルの順番をシャッフルまたはソート
@@ -314,6 +321,25 @@ def execute_command(
             command, command_info, commandline, targets, config, args, env, on_output, start_time
         )
         return result
+
+    # prettier は --check (read-only) と --write (書き込み) が排他のため 2 段階実行する。
+    # ruff-format と同じ位置・スタイルで分岐する。
+    # prettier には {cmd}-fix-args を定義していないため fix 判定は args.fix 由来の
+    # fix_mode 変数を使う (filter_fix_commands では formatter として常に fix 対象となる)。
+    if command == "prettier":
+        return _execute_prettier_two_step(
+            command,
+            command_info,
+            commandline_prefix,
+            config,
+            targets,
+            additional_args,
+            fix_mode=fix_mode,
+            env=env,
+            on_output=on_output,
+            start_time=start_time,
+            args=args,
+        )
 
     # --checkオプションを使わないとファイル変更があったかわからないコマンドは、
     # 一度--checkオプションをつけて実行してから、
@@ -636,6 +662,168 @@ def _execute_ruff_format_two_step(
         command=command,
         command_type=command_info.type,
         commandline=format_commandline,
+        returncode=returncode,
+        has_error=has_error,
+        files=len(targets),
+        output=output,
+        elapsed=elapsed,
+        errors=errors,
+    )
+
+
+def _execute_prettier_two_step(
+    command: str,
+    command_info: pyfltr.config.CommandInfo,
+    commandline_prefix: list[str],
+    config: pyfltr.config.Config,
+    targets: list[pathlib.Path],
+    additional_args: list[str],
+    *,
+    fix_mode: bool,
+    env: dict[str, str],
+    on_output: typing.Callable[[str], None] | None,
+    start_time: float,
+    args: argparse.Namespace,
+) -> CommandResult:
+    """Prettier の 2 段階実行 (prettier --check → prettier --write)。
+
+    `prettier --check` (read-only) と `prettier --write` (書き込み) は排他のため、
+    既存の autoflake/isort/black の「同じ引数に --check を付与する」ダンスは使えない。
+    本ヘルパーでは以下のとおり実行する。
+
+    通常モード (fix_mode=False):
+
+    - Step1: `prefix + args + check-args + additional + targets` を実行
+    - Step1 rc == 0 → succeeded (書き込み不要)
+    - Step1 rc == 1 → Step2 `prefix + args + write-args + additional + targets` を実行
+      - Step2 rc == 0 → formatted (書き込み成功)
+      - Step2 rc != 0 → failed
+    - Step1 rc >= 2 → failed (設定ミス等)
+
+    fix モード (fix_mode=True):
+
+    - Step1 はスキップし、直接 `prefix + args + write-args + additional + targets` を実行
+    - 書き込み検知には内容ハッシュスナップショットを使う
+    - rc != 0 → failed
+    - rc == 0 かつハッシュ変化あり → formatted
+    - rc == 0 かつ変化なし → succeeded
+    """
+    common_args: list[str] = list(config[f"{command}-args"])
+    check_args: list[str] = list(config[f"{command}-check-args"])
+    write_args: list[str] = list(config[f"{command}-write-args"])
+    target_strs = [str(t) for t in targets]
+
+    write_commandline: list[str] = [
+        *commandline_prefix,
+        *common_args,
+        *write_args,
+        *additional_args,
+        *target_strs,
+    ]
+
+    if fix_mode:
+        digests_before = _snapshot_file_digests(targets)
+        if args.verbose and on_output is not None:
+            on_output(f"commandline: {shlex.join(write_commandline)}\n")
+        write_proc = _run_subprocess(write_commandline, env, on_output)
+        write_rc = write_proc.returncode
+        output = write_proc.stdout.strip()
+        elapsed = time.perf_counter() - start_time
+        changed = _snapshot_file_digests(targets) != digests_before
+
+        if write_rc != 0:
+            has_error = True
+            returncode: int = write_rc
+            result_command_type: str = command_info.type
+        elif changed:
+            has_error = False
+            returncode = 1
+            result_command_type = "formatter"
+        else:
+            has_error = False
+            returncode = 0
+            result_command_type = command_info.type
+
+        errors = pyfltr.error_parser.parse_errors(command, output, command_info.error_pattern)
+        return CommandResult(
+            command=command,
+            command_type=result_command_type,
+            commandline=write_commandline,
+            returncode=returncode,
+            has_error=has_error,
+            files=len(targets),
+            output=output,
+            elapsed=elapsed,
+            errors=errors,
+        )
+
+    # 通常モード: Step1 (check) → 必要なら Step2 (write)
+    check_commandline: list[str] = [
+        *commandline_prefix,
+        *common_args,
+        *check_args,
+        *additional_args,
+        *target_strs,
+    ]
+
+    if args.verbose and on_output is not None:
+        on_output(f"commandline: {shlex.join(check_commandline)}\n")
+    step1_proc = _run_subprocess(check_commandline, env, on_output)
+    step1_rc = step1_proc.returncode
+
+    if step1_rc == 0:
+        output = step1_proc.stdout.strip()
+        elapsed = time.perf_counter() - start_time
+        errors = pyfltr.error_parser.parse_errors(command, output, command_info.error_pattern)
+        return CommandResult(
+            command=command,
+            command_type=command_info.type,
+            commandline=check_commandline,
+            returncode=0,
+            has_error=False,
+            files=len(targets),
+            output=output,
+            elapsed=elapsed,
+            errors=errors,
+        )
+
+    if step1_rc >= 2:
+        # 設定ミス等の致命的エラー。Step2 は実行しない。
+        output = step1_proc.stdout.strip()
+        elapsed = time.perf_counter() - start_time
+        errors = pyfltr.error_parser.parse_errors(command, output, command_info.error_pattern)
+        return CommandResult(
+            command=command,
+            command_type=command_info.type,
+            commandline=check_commandline,
+            returncode=step1_rc,
+            has_error=True,
+            files=len(targets),
+            output=output,
+            elapsed=elapsed,
+            errors=errors,
+        )
+
+    # Step1 rc == 1 → Step2 実行 (書き込み)
+    if args.verbose and on_output is not None:
+        on_output(f"commandline: {shlex.join(write_commandline)}\n")
+    step2_proc = _run_subprocess(write_commandline, env, on_output)
+    step2_rc = step2_proc.returncode
+    output = (step1_proc.stdout + step2_proc.stdout).strip()
+    elapsed = time.perf_counter() - start_time
+
+    if step2_rc == 0:
+        has_error = False
+        returncode = 1  # formatted 扱い
+    else:
+        has_error = True
+        returncode = step2_rc
+
+    errors = pyfltr.error_parser.parse_errors(command, output, command_info.error_pattern)
+    return CommandResult(
+        command=command,
+        command_type=command_info.type,
+        commandline=write_commandline,
         returncode=returncode,
         has_error=has_error,
         files=len(targets),

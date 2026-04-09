@@ -466,6 +466,221 @@ def test_fix_mode_formatter_uses_normal_path(mocker, tmp_path: pathlib.Path) -> 
     assert result.status == "succeeded"
 
 
+def test_prettier_two_step_check_clean(mocker, tmp_path: pathlib.Path) -> None:
+    """Step1 (prettier --check) rc=0 → succeeded。Step2 (--write) は実行されない。"""
+    target = tmp_path / "sample.js"
+    target.write_text("x = 1;\n")
+
+    proc = subprocess.CompletedProcess(["prettier"], returncode=0, stdout="")
+    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+
+    config = pyfltr.config.create_default_config()
+    config.values["prettier"] = True
+    result = pyfltr.command.execute_command("prettier", _make_args([target]), config)
+
+    assert mock_run.call_count == 1
+    cmdline = mock_run.call_args_list[0][0][0]
+    assert "--check" in cmdline
+    assert "--write" not in cmdline
+    assert result.status == "succeeded"
+    assert result.has_error is False
+
+
+def test_prettier_two_step_check_needs_write(mocker, tmp_path: pathlib.Path) -> None:
+    """Step1 rc=1 → Step2 (--write) を実行。rc=0 なら formatted。"""
+    target = tmp_path / "sample.js"
+    target.write_text("x=1;\n")
+
+    def fake_run(cmdline, env, on_output):
+        del env, on_output  # noqa
+        if "--check" in cmdline:
+            return subprocess.CompletedProcess(cmdline, returncode=1, stdout="[warn] sample.js")
+        # --write step
+        return subprocess.CompletedProcess(cmdline, returncode=0, stdout="sample.js")
+
+    mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
+
+    config = pyfltr.config.create_default_config()
+    config.values["prettier"] = True
+    result = pyfltr.command.execute_command("prettier", _make_args([target]), config)
+
+    assert result.status == "formatted"
+    assert result.has_error is False
+
+
+def test_prettier_two_step_check_rc2_fails_without_write(mocker, tmp_path: pathlib.Path) -> None:
+    """Step1 rc>=2 (致命的エラー) → failed、Step2 は実行しない。"""
+    target = tmp_path / "sample.js"
+    target.write_text("x = 1;\n")
+
+    calls: list[list[str]] = []
+
+    def fake_run(cmdline, env, on_output):
+        del env, on_output  # noqa
+        calls.append(cmdline)
+        return subprocess.CompletedProcess(cmdline, returncode=2, stdout="SyntaxError")
+
+    mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
+
+    config = pyfltr.config.create_default_config()
+    config.values["prettier"] = True
+    result = pyfltr.command.execute_command("prettier", _make_args([target]), config)
+
+    assert result.status == "failed"
+    assert result.has_error is True
+    # Step2 は実行されない
+    assert len(calls) == 1
+    assert "--check" in calls[0]
+
+
+def test_prettier_two_step_step2_failure_marks_failed(mocker, tmp_path: pathlib.Path) -> None:
+    """Step1 rc=1 でも Step2 の rc>=2 なら failed。"""
+    target = tmp_path / "sample.js"
+    target.write_text("x=1;\n")
+
+    def fake_run(cmdline, env, on_output):
+        del env, on_output  # noqa
+        if "--check" in cmdline:
+            return subprocess.CompletedProcess(cmdline, returncode=1, stdout="")
+        return subprocess.CompletedProcess(cmdline, returncode=2, stdout="write failed")
+
+    mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
+
+    config = pyfltr.config.create_default_config()
+    config.values["prettier"] = True
+    result = pyfltr.command.execute_command("prettier", _make_args([target]), config)
+
+    assert result.status == "failed"
+    assert result.has_error is True
+
+
+def test_prettier_fix_mode_skips_check_step(mocker, tmp_path: pathlib.Path) -> None:
+    """`--fix` モードでは Step1 (--check) をスキップし直接 --write を実行する。"""
+    target = tmp_path / "sample.js"
+    target.write_text("x=1;\n")
+    os.utime(target, (1000000000, 1000000000))
+
+    def fake_run(cmdline, env, on_output):
+        del env, on_output  # noqa
+        # --write 実行時にファイルを書き換えたことをシミュレート
+        target.write_text("x = 1;\n")
+        os.utime(target, (2000000000, 2000000000))
+        return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
+
+    mock_run = mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
+
+    config = pyfltr.config.create_default_config()
+    config.values["prettier"] = True
+    result = pyfltr.command.execute_command("prettier", _make_args([target], fix=True), config)
+
+    # 1 回だけ呼ばれる (Step1 スキップ)
+    assert mock_run.call_count == 1
+    cmdline = mock_run.call_args_list[0][0][0]
+    assert "--write" in cmdline
+    assert "--check" not in cmdline
+    # ハッシュ変化ありなので formatted
+    assert result.status == "formatted"
+
+
+def test_prettier_fix_mode_no_change_succeeds(mocker, tmp_path: pathlib.Path) -> None:
+    """`--fix` モードで --write が走ってもハッシュ変化が無ければ succeeded。"""
+    target = tmp_path / "sample.js"
+    target.write_text("x = 1;\n")
+
+    proc = subprocess.CompletedProcess(["prettier"], returncode=0, stdout="")
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+
+    config = pyfltr.config.create_default_config()
+    config.values["prettier"] = True
+    result = pyfltr.command.execute_command("prettier", _make_args([target], fix=True), config)
+
+    assert result.status == "succeeded"
+
+
+def test_eslint_lint_mode_uses_json_format(mocker, tmp_path: pathlib.Path) -> None:
+    """eslint の通常実行で `--format json` (共通 args) が commandline に含まれる。"""
+    target = tmp_path / "sample.js"
+    target.write_text("var x = 1;\n")
+
+    proc = subprocess.CompletedProcess(["eslint"], returncode=0, stdout="[]")
+    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+
+    config = pyfltr.config.create_default_config()
+    config.values["eslint"] = True
+    pyfltr.command.execute_command("eslint", _make_args([target]), config)
+
+    assert mock_run.call_count == 1
+    cmdline = mock_run.call_args_list[0][0][0]
+    assert "--format" in cmdline
+    assert "json" in cmdline
+    fmt_idx = cmdline.index("--format")
+    assert cmdline[fmt_idx + 1] == "json"
+    # lint モードでは --fix は付かない
+    assert "--fix" not in cmdline
+
+
+def test_eslint_fix_mode_appends_fix_and_keeps_json(mocker, tmp_path: pathlib.Path) -> None:
+    """eslint の fix モードで `--fix` が付いても `--format json` は維持される (共通 args 経由)。"""
+    target = tmp_path / "sample.js"
+    target.write_text("var x = 1;\n")
+
+    proc = subprocess.CompletedProcess(["eslint"], returncode=0, stdout="[]")
+    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+
+    config = pyfltr.config.create_default_config()
+    config.values["eslint"] = True
+    pyfltr.command.execute_command("eslint", _make_args([target], fix=True), config)
+
+    assert mock_run.call_count == 1
+    cmdline = mock_run.call_args_list[0][0][0]
+    assert "--format" in cmdline
+    assert "json" in cmdline
+    assert "--fix" in cmdline
+    # --format json が --fix より前 (共通 args 先行)
+    assert cmdline.index("--format") < cmdline.index("--fix")
+
+
+def test_biome_lint_mode_uses_check_and_github_reporter(mocker, tmp_path: pathlib.Path) -> None:
+    """biome の通常実行で `check` サブコマンドと `--reporter=github` が含まれる。"""
+    target = tmp_path / "sample.ts"
+    target.write_text("const x = 1;\n")
+
+    proc = subprocess.CompletedProcess(["biome"], returncode=0, stdout="")
+    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+
+    config = pyfltr.config.create_default_config()
+    config.values["biome"] = True
+    pyfltr.command.execute_command("biome", _make_args([target]), config)
+
+    assert mock_run.call_count == 1
+    cmdline = mock_run.call_args_list[0][0][0]
+    assert "check" in cmdline
+    assert "--reporter=github" in cmdline
+    assert "--write" not in cmdline
+
+
+def test_biome_fix_mode_appends_write_and_keeps_reporter(mocker, tmp_path: pathlib.Path) -> None:
+    """biome の fix モードで `--write` が付いても `--reporter=github` は維持される。"""
+    target = tmp_path / "sample.ts"
+    target.write_text("const x = 1;\n")
+
+    proc = subprocess.CompletedProcess(["biome"], returncode=0, stdout="")
+    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+
+    config = pyfltr.config.create_default_config()
+    config.values["biome"] = True
+    pyfltr.command.execute_command("biome", _make_args([target], fix=True), config)
+
+    assert mock_run.call_count == 1
+    cmdline = mock_run.call_args_list[0][0][0]
+    assert "check" in cmdline
+    assert "--reporter=github" in cmdline
+    assert "--write" in cmdline
+    # check と --reporter=github は共通 args なので --write より前
+    assert cmdline.index("check") < cmdline.index("--write")
+    assert cmdline.index("--reporter=github") < cmdline.index("--write")
+
+
 def test_build_subprocess_env_sets_supply_chain_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     """サプライチェーン対策用の環境変数が既定値で注入される。"""
     monkeypatch.delenv("UV_EXCLUDE_NEWER", raising=False)
@@ -565,6 +780,62 @@ def test_resolve_js_commandline_markdownlint_uses_cli2_binary() -> None:
 
     assert path == "pnpm"
     assert prefix == ["exec", "markdownlint-cli2"]
+
+
+def test_resolve_js_commandline_pnpx_eslint() -> None:
+    """pnpx runner で eslint が通常通り (bin 名 = パッケージ名) 解決される。"""
+    config = pyfltr.config.create_default_config()
+    config.values["js-runner"] = "pnpx"
+
+    path, prefix = pyfltr.command._resolve_js_commandline("eslint", config)
+
+    assert path == "pnpx"
+    assert prefix == ["--package", "eslint", "eslint"]
+
+
+def test_resolve_js_commandline_pnpx_prettier() -> None:
+    """pnpx runner で prettier が通常通り解決される。"""
+    config = pyfltr.config.create_default_config()
+    config.values["js-runner"] = "pnpx"
+
+    path, prefix = pyfltr.command._resolve_js_commandline("prettier", config)
+
+    assert path == "pnpx"
+    assert prefix == ["--package", "prettier", "prettier"]
+
+
+def test_resolve_js_commandline_pnpx_biome_uses_scoped_package() -> None:
+    """pnpx runner で biome はスコープ付きパッケージ @biomejs/biome で解決される。"""
+    config = pyfltr.config.create_default_config()
+    config.values["js-runner"] = "pnpx"
+
+    path, prefix = pyfltr.command._resolve_js_commandline("biome", config)
+
+    assert path == "pnpx"
+    # --package には @biomejs/biome、bin 名は biome
+    assert prefix == ["--package", "@biomejs/biome", "biome"]
+
+
+def test_resolve_js_commandline_pnpm_prettier() -> None:
+    """pnpm runner で prettier が pnpm exec prettier になる。"""
+    config = pyfltr.config.create_default_config()
+    config.values["js-runner"] = "pnpm"
+
+    path, prefix = pyfltr.command._resolve_js_commandline("prettier", config)
+
+    assert path == "pnpm"
+    assert prefix == ["exec", "prettier"]
+
+
+def test_resolve_js_commandline_pnpm_biome() -> None:
+    """pnpm runner で biome が pnpm exec biome になる (スコープ無効)。"""
+    config = pyfltr.config.create_default_config()
+    config.values["js-runner"] = "pnpm"
+
+    path, prefix = pyfltr.command._resolve_js_commandline("biome", config)
+
+    assert path == "pnpm"
+    assert prefix == ["exec", "biome"]
 
 
 def test_resolve_js_commandline_npx() -> None:

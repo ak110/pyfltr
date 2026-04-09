@@ -21,7 +21,8 @@ extend-exclude = ["foo", "bar.py"]
 - {command}-args : 追加のコマンドライン引数（lint/fix両モードで常に付与）
 - {command}-lint-args : 非fixモード（およびtextlint fix後段のlintチェック) でのみ付与する引数（既定値はtextlintのみ `["--format", "compact"]` を定義）
 - {command}-fast : `--commands=fast`に含めるか否か（後述）
-- {command}-fix-args : `--fix`時に`{command}-args`の後に追加する引数（既定値はtextlint / markdownlint / ruff-checkのみ定義）
+- {command}-fix-args : `--fix`時に`{command}-args`の後に追加する引数（既定値はtextlint / markdownlint / ruff-check / eslint / biomeのみ定義）
+- prettier-check-args / prettier-write-args : prettierの2段階実行で使う引数（詳細は後述）
 - jobs : linters/testersの最大並列数（既定値： 4。CLIの`-j`オプションでも指定可能）
 - exclude : 除外するファイル名/ディレクトリ名パターン（既定値あり）
 - extend-exclude : 追加で除外するファイル名/ディレクトリ名パターン（既定値は空）
@@ -77,6 +78,25 @@ ruff-format-by-check = false
 ruff-format-check-args = ["check", "--fix"]
 ```
 
+## prettier の 2 段階実行
+
+`prettier`は`--check`（読み取り専用）と`--write`（書き込み）が排他のため、pyfltrは2段階で実行する。
+
+- 通常モード: まず`prettier --check`を実行する
+    - `rc == 0` → `succeeded`（整形済み）
+    - `rc == 1` → 続けて`prettier --write`を実行し、`rc == 0`なら`formatted`、それ以外は`failed`
+    - `rc >= 2` → `failed`（設定ミス等の致命的エラー、`--write`は実行しない）
+- `--fix`モード: ステップ1（`--check`）をスキップし、直接`prettier --write`を実行する。ファイル内容ハッシュの変化で`formatted` / `succeeded`を判定する
+
+引数は`prettier-check-args` / `prettier-write-args`で個別に上書きできる（既定はそれぞれ`["--check"]` / `["--write"]`）。共通引数`prettier-args`は両ステップの先頭に付与される。
+
+```toml
+[tool.pyfltr]
+prettier = true
+# キャッシュ等の共通引数
+prettier-args = ["--cache"]
+```
+
 ## 並列実行
 
 linters/testersは既定で最大4並列で実行される。
@@ -105,13 +125,15 @@ pflake8-fast = false
 
 カスタムコマンドも`fast = true`でfastエイリアスに追加できる（後述）。
 
-## npm系ツール (markdownlint / textlint)
+## npm系ツール (markdownlint / textlint / eslint / prettier / biome)
 
-markdownlint-cli2とtextlintは`js-runner`設定で起動方式を切り替える。
+markdownlint-cli2・textlint・eslint・prettier・biomeは`js-runner`設定で起動方式を切り替える。
 既定は`pnpx`で、グローバル/キャッシュから都度取得する従来互換の挙動となる。
-プロジェクトの`package.json`で既にtextlint / markdownlint-cli2をインストール済みの場合は、
+プロジェクトの`package.json`で既にこれらのツールをインストール済みの場合は、
 `js-runner`を`pnpm` / `npm` / `npx` / `yarn` / `direct`に切り替えるとよい。
 これによりCIなどでの再ダウンロードを避けられる。
+eslint / prettier / biomeはプラグイン（`typescript-eslint`・`prettier-plugin-svelte`等）を`package.json`で管理するのが一般的。
+これらのツールを使うプロジェクトでは`js-runner = "pnpm"`（もしくは`npm` / `yarn` / `direct`）を推奨する。
 
 ```toml
 [tool.pyfltr]
@@ -161,6 +183,38 @@ textlint-packages = [
 ```
 
 `textlint-packages`は`pnpx` / `npx`モード時に`--package` / `-p`展開される。`pnpm` / `npm` / `yarn` / `direct`モードでは`package.json`側でインストールする前提のため無視される。
+
+### eslint / prettier / biomeの設定
+
+eslint / prettier / biomeはすべて既定で無効。
+有効化には`pyproject.toml`で切り替える。
+プラグインは`package.json`管理が前提のため、通常は`js-runner = "pnpm"`と併用する。
+
+```toml
+[tool.pyfltr]
+js-runner = "pnpm"
+eslint = true
+prettier = true
+biome = true
+```
+
+既定の引数は以下のとおり。
+必要に応じて上書きできる。
+
+- eslint:
+    - `eslint-args = ["--format", "json"]`（lint / fix両モードで有効にするため共通argsに配置）
+    - `eslint-fix-args = ["--fix"]`
+    - 注: ESLint 9系以降で`compact` / `unix` / `tap`等のコアフォーマッタは除去されたため、コア標準の`json`を採用している
+    - `eslint-args`を上書きする際は非コアフォーマッタを使わないこと
+- prettier:
+    - `prettier-check-args = ["--check"]` / `prettier-write-args = ["--write"]`
+    - 2段階実行の詳細は「prettierの2段階実行」を参照
+- biome:
+    - `biome-args = ["check", "--reporter=github"]`（`check`サブコマンドと機械可読出力を共通argsで常時適用）
+    - `biome-fix-args = ["--write"]`（safe fixのみ。unsafe fixを使う場合は`["--write", "--unsafe"]`に上書き）
+    - 注: `biome-args`の先頭からサブコマンド（`check` / `lint` / `format`）を外すとbiomeがhelp表示で失敗する。必ずサブコマンド名を残すこと
+
+プリセット（`preset = "latest"`）にはeslint / prettier / biomeは含まれない（opt-in）。
 
 ## 出力順序
 

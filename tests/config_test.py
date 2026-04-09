@@ -405,6 +405,58 @@ def test_textlint_markdownlint_path_default_empty() -> None:
     assert config["markdownlint-args"] == []
 
 
+def test_command_info_target_globs_str() -> None:
+    """CommandInfo.target_globs() は str targets を単一要素リストに正規化する。"""
+    info = pyfltr.config.CommandInfo(type="linter", targets="*.py")
+    assert info.target_globs() == ["*.py"]
+
+
+def test_command_info_target_globs_list() -> None:
+    """CommandInfo.target_globs() は list targets をそのままコピーして返す。"""
+    info = pyfltr.config.CommandInfo(type="linter", targets=["*.ts", "*.tsx"])
+    result = info.target_globs()
+    assert result == ["*.ts", "*.tsx"]
+    # 元リストと切り離されている
+    result.append("*.js")
+    assert info.targets == ["*.ts", "*.tsx"]
+
+
+def test_custom_command_targets_list(tmp_path: pathlib.Path) -> None:
+    """カスタムコマンドの targets に list を指定できる。"""
+    pyproject_content = """
+[tool.pyfltr.custom-commands.multi]
+type = "linter"
+path = "multi"
+targets = ["*.ts", "*.tsx"]
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        config = pyfltr.config.load_config()
+        assert config.commands["multi"].targets == ["*.ts", "*.tsx"]
+        assert config.commands["multi"].target_globs() == ["*.ts", "*.tsx"]
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_custom_command_targets_invalid_type(tmp_path: pathlib.Path) -> None:
+    """カスタムコマンドの targets に不正な型を指定するとエラーになる。"""
+    pyproject_content = """
+[tool.pyfltr.custom-commands.bad]
+type = "linter"
+targets = 42
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        with pytest.raises(ValueError, match="targets"):
+            pyfltr.config.load_config()
+    finally:
+        os.chdir(original_cwd)
+
+
 def test_invalid_preset(tmp_path: pathlib.Path) -> None:
     """不正なpresetのテスト。"""
     # pyproject.tomlを作成

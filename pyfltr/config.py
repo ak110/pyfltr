@@ -19,19 +19,56 @@ class CommandInfo:
     """コマンドの種類（formatter, linter, tester）"""
     builtin: bool = True
     """ビルトインコマンドか否か"""
-    targets: str = "*.py"
-    """対象ファイルパターン"""
+    targets: str | list[str] = "*.py"
+    """対象ファイルパターン。単一の glob 文字列または glob のリスト。"""
     error_pattern: str | None = None
     """エラーパース用正規表現"""
 
+    def target_globs(self) -> list[str]:
+        """対象ファイルパターンをリスト形式で返す。"""
+        if isinstance(self.targets, str):
+            return [self.targets]
+        return list(self.targets)
+
 
 # ビルトインコマンド定義（順序が並び順を決める）
+# JS ツール系の対象拡張子は主要なもののみ列挙。プロジェクト個別の拡張子は
+# 呼び出し時のターゲット指定やユーザーのシェル glob で吸収する想定。
+_JS_COMMON_TARGETS: list[str] = [
+    "*.js",
+    "*.jsx",
+    "*.mjs",
+    "*.cjs",
+    "*.ts",
+    "*.tsx",
+    "*.mts",
+    "*.cts",
+]
+
 BUILTIN_COMMANDS: dict[str, CommandInfo] = {
     "pyupgrade": CommandInfo(type="formatter"),
     "autoflake": CommandInfo(type="formatter"),
     "isort": CommandInfo(type="formatter"),
     "black": CommandInfo(type="formatter"),
     "ruff-format": CommandInfo(type="formatter"),
+    "prettier": CommandInfo(
+        type="formatter",
+        targets=[
+            *_JS_COMMON_TARGETS,
+            "*.vue",
+            "*.svelte",
+            "*.json",
+            "*.jsonc",
+            "*.yaml",
+            "*.yml",
+            "*.md",
+            "*.mdx",
+            "*.css",
+            "*.scss",
+            "*.less",
+            "*.html",
+        ],
+    ),
     "ruff-check": CommandInfo(type="linter"),
     "pflake8": CommandInfo(type="linter"),
     "mypy": CommandInfo(type="linter"),
@@ -40,6 +77,14 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
     "ty": CommandInfo(type="linter"),
     "markdownlint": CommandInfo(type="linter", targets="*.md"),
     "textlint": CommandInfo(type="linter", targets="*.md"),
+    "eslint": CommandInfo(
+        type="linter",
+        targets=[*_JS_COMMON_TARGETS, "*.vue", "*.svelte"],
+    ),
+    "biome": CommandInfo(
+        type="linter",
+        targets=[*_JS_COMMON_TARGETS, "*.json", "*.jsonc", "*.css"],
+    ),
     "pytest": CommandInfo(type="tester", targets="*_test.py"),
 }
 
@@ -134,6 +179,34 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # fix モード時に通常 args の後に追加する引数。
     # textlint は --fix で autofix 可能なルールを in-place 修正する。
     "textlint-fix-args": ["--fix"],
+    "eslint": False,
+    # path が空文字の場合は js-runner 設定に基づいて自動解決する。
+    "eslint-path": "",
+    # --format json は lint / fix 両モードで有効にする必要があるため共通 args に置く。
+    # ESLint 9 系以降で compact / unix / tap などのコアフォーマッタが除去されたため、
+    # 残っているコアフォーマッタのうち機械可読な json を採用している。
+    "eslint-args": ["--format", "json"],
+    "eslint-fast": False,
+    # fix モード時に通常 args の後に追加する引数。eslint は --fix で autofix する。
+    "eslint-fix-args": ["--fix"],
+    "prettier": False,
+    "prettier-path": "",
+    "prettier-args": [],
+    # prettier は --check (read-only) と --write (書き込み) が排他のため、
+    # pyfltr は 2 段階で実行する。詳細は command.py の _execute_prettier_two_step を参照。
+    "prettier-check-args": ["--check"],
+    "prettier-write-args": ["--write"],
+    "prettier-fast": True,
+    "biome": False,
+    "biome-path": "",
+    # "check" サブコマンドと --reporter=github は lint / fix 両モードで有効にする
+    # 必要があるため共通 args に置く。builtin パーサが GitHub workflow annotation
+    # 形式を前提にしているため reporter の切り替えは注意が必要。
+    "biome-args": ["check", "--reporter=github"],
+    "biome-fast": True,
+    # fix モード時に通常 args の後に追加する引数。
+    # `biome check --write` で safe fix のみ適用する (--unsafe は含めない)。
+    "biome-fix-args": ["--write"],
     "pytest": True,
     "pytest-path": "pytest",
     "pytest-args": [],
@@ -199,8 +272,19 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "extend-exclude": [],
     # コマンド名のエイリアス
     "aliases": {
-        "format": ["pyupgrade", "autoflake", "isort", "black", "ruff-format"],
-        "lint": ["ruff-check", "pflake8", "mypy", "pylint", "pyright", "ty", "markdownlint", "textlint"],
+        "format": ["pyupgrade", "autoflake", "isort", "black", "ruff-format", "prettier"],
+        "lint": [
+            "ruff-check",
+            "pflake8",
+            "mypy",
+            "pylint",
+            "pyright",
+            "ty",
+            "markdownlint",
+            "textlint",
+            "eslint",
+            "biome",
+        ],
         "test": ["pytest"],
     },
 }
@@ -329,10 +413,18 @@ def _register_custom_command(config: Config, name: str, definition: dict[str, ty
     if fix_args is not None and not isinstance(fix_args, list):
         raise ValueError(f"カスタムコマンド {name} のfix-argsはリストで指定してください")
 
-    # targets (省略時は "*.py")
-    targets = definition.get("targets", "*.py")
-    if not isinstance(targets, str):
-        raise ValueError(f"カスタムコマンド {name} のtargetsは文字列で指定してください")
+    # targets (省略時は "*.py"、str または list[str])
+    raw_targets: typing.Any = definition.get("targets", "*.py")
+    targets: str | list[str]
+    if isinstance(raw_targets, str):
+        targets = raw_targets
+    elif isinstance(raw_targets, list) and all(isinstance(item, str) for item in raw_targets):
+        # raw_targets は typing.Any 経由のため list(raw_targets) の要素型が縮まらない。
+        # 上記 isinstance で要素が str であることを検証済みなので、明示的に str 化して
+        # list[str] を構築する。
+        targets = [str(item) for item in raw_targets]
+    else:
+        raise ValueError(f"カスタムコマンド {name} のtargetsは文字列または文字列のリストで指定してください")
 
     # error-pattern (省略可)
     error_pattern = definition.get("error-pattern", definition.get("error_pattern"))

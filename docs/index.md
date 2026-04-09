@@ -19,6 +19,7 @@ llms.txt: <https://ak110.github.io/pyfltr/llms.txt>
     - isort
     - black
     - ruff format（既定では無効。有効時は `ruff check --fix --unsafe-fixes` を併走する、`ruff-format-by-check`でOFF可）
+    - prettier（既定では無効、`js-runner`設定で起動方式を切替可能。`--check`と`--write`の2段階実行）
 - Linters
     - ruff check（既定では無効）
     - pflake8 + flake8-bugbear + flake8-tidy-imports
@@ -28,6 +29,8 @@ llms.txt: <https://ak110.github.io/pyfltr/llms.txt>
     - ty（既定では無効）
     - markdownlint-cli2（既定では無効、`js-runner`設定で起動方式を切替可能。既定は`pnpx`）
     - textlint（既定では無効、`js-runner`設定で起動方式を切替可能。`textlint-packages`でプリセット/ルール指定）
+    - eslint（既定では無効、`js-runner`設定で起動方式を切替可能。`--format json`で機械可読出力を取得）
+    - biome（既定では無効、`js-runner`設定で起動方式を切替可能。`biome check`サブコマンドと`--reporter=github`を使用）
 - Testers
     - pytest
 

@@ -1,5 +1,6 @@
 """error_parserのテストコード。"""
 
+import json
 import pathlib
 
 import pytest
@@ -82,6 +83,23 @@ import pyfltr.error_parser
             "tests/foo_test.py",
             0,  # pytestはline情報なし
         ),
+        # biome --reporter=github (line と col の間に endLine が挟まる)
+        (
+            "biome",
+            "::error title=lint/suspicious/noDoubleEquals,file=src/foo.ts,"
+            "line=1,endLine=1,col=7,endColumn=9::Use === instead of ==",
+            1,
+            "src/foo.ts",
+            1,
+        ),
+        # biome --reporter=github (warning)
+        (
+            "biome",
+            "::warning title=lint/style/useConst,file=src/bar.ts,line=5,endLine=5,col=3,endColumn=6::Use const instead of let",
+            1,
+            "src/bar.ts",
+            5,
+        ),
         # パースできないコマンド
         (
             "unknown",
@@ -106,6 +124,86 @@ def test_parse_errors(
         assert errors[0].file == expected_first_file
         assert errors[0].line == expected_first_line
         assert errors[0].command == command
+
+
+def test_parse_errors_eslint_json() -> None:
+    """ESLint --format json 出力のパース。"""
+    output = json.dumps(
+        [
+            {
+                "filePath": str(pathlib.Path.cwd() / "src" / "foo.js"),
+                "messages": [
+                    {
+                        "line": 10,
+                        "column": 5,
+                        "message": "'x' is defined but never used.",
+                        "ruleId": "no-unused-vars",
+                        "severity": 2,
+                    },
+                    {
+                        "line": 20,
+                        "column": 1,
+                        "message": "Missing semicolon.",
+                        "ruleId": "semi",
+                        "severity": 2,
+                    },
+                ],
+            },
+            {
+                "filePath": str(pathlib.Path.cwd() / "src" / "bar.js"),
+                "messages": [],
+            },
+        ]
+    )
+    errors = pyfltr.error_parser.parse_errors("eslint", output)
+    assert len(errors) == 2
+    assert errors[0].file == "src/foo.js"  # cwd 配下は相対パスに正規化される
+    assert errors[0].line == 10
+    assert errors[0].col == 5
+    assert "no-unused-vars" in errors[0].message
+    assert errors[0].command == "eslint"
+    assert errors[1].line == 20
+
+
+def test_parse_errors_eslint_json_empty_array() -> None:
+    """空配列 `[]` は空リストを返す。"""
+    errors = pyfltr.error_parser.parse_errors("eslint", "[]")
+    assert errors == []
+
+
+def test_parse_errors_eslint_json_empty_string() -> None:
+    """空文字列は空リストを返す (例外なし)。"""
+    errors = pyfltr.error_parser.parse_errors("eslint", "")
+    assert errors == []
+
+
+def test_parse_errors_eslint_json_invalid() -> None:
+    """不正な JSON (stderr 混入等) は空リストを返す。"""
+    errors = pyfltr.error_parser.parse_errors("eslint", "Warning: something\n[not json]")
+    assert errors == []
+
+
+def test_parse_errors_eslint_json_no_rule_id() -> None:
+    """ruleId が null の場合でも message のみ格納する。"""
+    output = json.dumps(
+        [
+            {
+                "filePath": "/abs/src/foo.js",
+                "messages": [
+                    {
+                        "line": 1,
+                        "column": 1,
+                        "message": "Parsing error",
+                        "ruleId": None,
+                        "severity": 2,
+                    },
+                ],
+            }
+        ]
+    )
+    errors = pyfltr.error_parser.parse_errors("eslint", output)
+    assert len(errors) == 1
+    assert errors[0].message == "Parsing error"
 
 
 def test_parse_errors_custom_pattern() -> None:
