@@ -180,7 +180,33 @@ def test_fix_mode_appends_fix_args_for_linter(mocker, tmp_path: pathlib.Path) ->
 
 
 def test_fix_mode_preserves_custom_args(mocker, tmp_path: pathlib.Path) -> None:
-    """プロジェクトが上書きした {command}-args が fix モードでも保持される (置換されない)。"""
+    """プロジェクトが上書きした {command}-args が fix モードでも保持される (置換されない)。
+
+    markdownlint は単発 fix 経路を通るため、通常 args の後に fix-args が append される。
+    """
+    target = tmp_path / "sample.md"
+    target.write_text("# title\n")
+
+    proc = subprocess.CompletedProcess(["markdownlint-cli2"], returncode=0, stdout="")
+    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+
+    config = pyfltr.config.create_default_config()
+    config.values["markdownlint"] = True
+    config.values["markdownlint-args"] = ["--config", "custom.yaml"]
+    pyfltr.command.execute_command("markdownlint", _make_args([target], fix=True), config)
+
+    cmdline = mock_run.call_args_list[0][0][0]
+    # 通常 args が残っている
+    assert "--config" in cmdline
+    assert "custom.yaml" in cmdline
+    # fix-args も追加されている
+    assert "--fix" in cmdline
+    # 順序: 通常 args は --fix より前
+    assert cmdline.index("custom.yaml") < cmdline.index("--fix")
+
+
+def test_textlint_lint_mode_adds_lint_args(mocker, tmp_path: pathlib.Path) -> None:
+    """非 fix モードで textlint-lint-args (既定は --format compact) が commandline に追加される。"""
     target = tmp_path / "sample.md"
     target.write_text("# title\n")
 
@@ -189,19 +215,160 @@ def test_fix_mode_preserves_custom_args(mocker, tmp_path: pathlib.Path) -> None:
 
     config = pyfltr.config.create_default_config()
     config.values["textlint"] = True
-    config.values["textlint-args"] = ["--package", "my-package", "textlint", "--format", "json"]
+    pyfltr.command.execute_command("textlint", _make_args([target]), config)
+
+    assert mock_run.call_count == 1
+    cmdline = mock_run.call_args_list[0][0][0]
+    assert "--format" in cmdline
+    assert "compact" in cmdline
+    fmt_idx = cmdline.index("--format")
+    assert cmdline[fmt_idx + 1] == "compact"
+
+
+def test_textlint_fix_mode_two_step_execution(mocker, tmp_path: pathlib.Path) -> None:
+    """fix モードで textlint は 2 段階実行される (step1: fix → step2: lint check)。"""
+    target = tmp_path / "sample.md"
+    target.write_text("# title\n")
+
+    proc = subprocess.CompletedProcess(["textlint"], returncode=0, stdout="")
+    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+
+    config = pyfltr.config.create_default_config()
+    config.values["textlint"] = True
     pyfltr.command.execute_command("textlint", _make_args([target], fix=True), config)
 
-    cmdline = mock_run.call_args_list[0][0][0]
-    # 通常 args が残っている
-    assert "--package" in cmdline
-    assert "my-package" in cmdline
-    assert "--format" in cmdline
-    assert "json" in cmdline
-    # fix-args も追加されている
-    assert "--fix" in cmdline
-    # 順序: --format json は --fix より前
-    assert cmdline.index("json") < cmdline.index("--fix")
+    assert mock_run.call_count == 2
+    step1_cmdline = mock_run.call_args_list[0][0][0]
+    step2_cmdline = mock_run.call_args_list[1][0][0]
+
+    # step1: fix-args (--fix) あり、--format なし (fixer-formatter は compact をサポートしないため)
+    assert "--fix" in step1_cmdline
+    assert "--format" not in step1_cmdline
+    # step2: lint-args (--format compact) あり、--fix なし
+    assert "--fix" not in step2_cmdline
+    assert "--format" in step2_cmdline
+    assert "compact" in step2_cmdline
+
+
+def test_textlint_fix_mode_strips_user_format_from_step1(mocker, tmp_path: pathlib.Path) -> None:
+    """ユーザーが textlint-args に --format を設定していても step1 では除去される (下位互換)。"""
+    target = tmp_path / "sample.md"
+    target.write_text("# title\n")
+
+    proc = subprocess.CompletedProcess(["textlint"], returncode=0, stdout="")
+    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+
+    config = pyfltr.config.create_default_config()
+    config.values["textlint"] = True
+    # 旧 docs で推奨されていた設定: textlint-args に --format compact を含む
+    config.values["textlint-args"] = ["--format", "compact"]
+    pyfltr.command.execute_command("textlint", _make_args([target], fix=True), config)
+
+    assert mock_run.call_count == 2
+    step1_cmdline = mock_run.call_args_list[0][0][0]
+    # step1: --format / compact が物理的に除去されている (fixer-formatter 互換性のため)
+    assert "--format" not in step1_cmdline
+    assert "compact" not in step1_cmdline
+    assert "--fix" in step1_cmdline
+
+
+def test_textlint_fix_mode_preserves_non_format_user_args(mocker, tmp_path: pathlib.Path) -> None:
+    """ユーザーが textlint-args に追加した --format 以外のオプションは両ステップで保持される。"""
+    target = tmp_path / "sample.md"
+    target.write_text("# title\n")
+
+    proc = subprocess.CompletedProcess(["textlint"], returncode=0, stdout="")
+    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+
+    config = pyfltr.config.create_default_config()
+    config.values["textlint"] = True
+    config.values["textlint-args"] = ["--quiet"]
+    pyfltr.command.execute_command("textlint", _make_args([target], fix=True), config)
+
+    step1_cmdline = mock_run.call_args_list[0][0][0]
+    step2_cmdline = mock_run.call_args_list[1][0][0]
+    assert "--quiet" in step1_cmdline
+    assert "--quiet" in step2_cmdline
+
+
+def test_textlint_fix_mode_all_fixed_marks_formatted(mocker, tmp_path: pathlib.Path) -> None:
+    """fix モードで全件修正され残存違反なしなら formatted (mtime 変化あり)。"""
+    target = tmp_path / "sample.md"
+    target.write_text("# title\n")
+    os.utime(target, (1000000000, 1000000000))
+
+    call_count = [0]
+
+    def fake_run(cmdline, env, on_output):
+        del env, on_output  # noqa
+        call_count[0] += 1
+        if call_count[0] == 1:
+            # step1: fix 適用 (mtime 更新)
+            target.write_text("# Title\n")
+            os.utime(target, (2000000000, 2000000000))
+            return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
+        # step2: 残存違反なし
+        return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
+
+    mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
+
+    config = pyfltr.config.create_default_config()
+    config.values["textlint"] = True
+    result = pyfltr.command.execute_command("textlint", _make_args([target], fix=True), config)
+
+    assert result.status == "formatted"
+    assert result.has_error is False
+
+
+def test_textlint_fix_mode_residual_violations_mark_failed(mocker, tmp_path: pathlib.Path) -> None:
+    """fix モードで残存違反がある場合は failed、errors が compact 形式でパースされる。"""
+    target = tmp_path / "sample.md"
+    target.write_text("# title\n")
+
+    violation_file = str(target)
+    violation_output = f"{violation_file}: line 3, col 5, Error - No mixed period (ja-no-mixed-period)"
+
+    def fake_run(cmdline, env, on_output):
+        del env, on_output  # noqa
+        if "--fix" in cmdline:
+            # step1: fix 適用したが違反が残る (textlint は rc=1 を返すことがある)
+            return subprocess.CompletedProcess(cmdline, returncode=1, stdout="")
+        # step2: compact 形式で違反出力
+        return subprocess.CompletedProcess(cmdline, returncode=1, stdout=violation_output)
+
+    mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
+
+    config = pyfltr.config.create_default_config()
+    config.values["textlint"] = True
+    result = pyfltr.command.execute_command("textlint", _make_args([target], fix=True), config)
+
+    assert result.status == "failed"
+    assert result.has_error is True
+    assert len(result.errors) == 1
+    assert result.errors[0].line == 3
+    assert result.errors[0].col == 5
+    assert "ja-no-mixed-period" in result.errors[0].message
+
+
+def test_textlint_fix_mode_step1_fatal_error_fails(mocker, tmp_path: pathlib.Path) -> None:
+    """step1 の rc >= 2 (致命的エラー) は step2 の結果にかかわらず failed 扱い。"""
+    target = tmp_path / "sample.md"
+    target.write_text("# title\n")
+
+    def fake_run(cmdline, env, on_output):
+        del env, on_output  # noqa
+        if "--fix" in cmdline:
+            return subprocess.CompletedProcess(cmdline, returncode=2, stdout="fatal error")
+        return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
+
+    mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
+
+    config = pyfltr.config.create_default_config()
+    config.values["textlint"] = True
+    result = pyfltr.command.execute_command("textlint", _make_args([target], fix=True), config)
+
+    assert result.status == "failed"
+    assert result.has_error is True
 
 
 def test_fix_mode_mtime_change_marks_formatted(mocker, tmp_path: pathlib.Path) -> None:

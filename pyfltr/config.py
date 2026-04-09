@@ -119,7 +119,13 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "textlint": False,
     # path が空文字の場合は js-runner 設定に基づいて自動解決する。
     "textlint-path": "",
-    "textlint-args": ["--format", "compact"],
+    # lint / fix 共通で常に付与される引数。lint 専用オプション (--format など) はここではなく
+    # textlint-lint-args に書くこと。fix 時は @textlint/fixer-formatter が使用されるが
+    # compact フォーマッタが存在しないため、--format compact を共通 args に含めると fix が失敗する。
+    "textlint-args": [],
+    # 非 fix モード (および fix モードの後段 lint チェック) でのみ付与する引数。
+    # 既定は compact フォーマッタ指定 (builtin パーサが compact 出力をパースする前提のため)。
+    "textlint-lint-args": ["--format", "compact"],
     # textlint 向けルール / プリセットパッケージの列挙。pnpx / npx モードでは
     # --package / -p 展開される。pnpm / npm / yarn / direct モードでは
     # package.json 側で管理する前提のため無視される。

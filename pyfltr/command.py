@@ -239,20 +239,23 @@ def execute_command(
             resolved_path, prefix = _resolve_js_commandline(command, config)
         except FileNotFoundError as e:
             return _failed_js_resolution_result(command, command_info, e)
-        commandline: list[str] = [resolved_path, *prefix]
+        commandline_prefix: list[str] = [resolved_path, *prefix]
     else:
-        commandline = [config[f"{command}-path"]]
-    commandline.extend(config[f"{command}-args"])
-    # fix モード時は通常 args の後に fix-args を追加する (置換ではなく追加)
+        commandline_prefix = [config[f"{command}-path"]]
+
+    # 起動オプションからの追加引数 (--textlint-args など) を shlex 分割しておく
+    additional_args_str = getattr(args, f"{command.replace('-', '_')}_args", "")
+    additional_args = shlex.split(additional_args_str) if additional_args_str else []
+
+    # commandline を組み立てる: [prefix] + args + (lint-args or fix-args) + additional_args + targets
+    # lint-args (非 fix モードでのみ付与される引数) は textlint の --format compact のように、
+    # lint 実行時にのみ必要なオプションを分離するためのキー。
+    commandline: list[str] = [*commandline_prefix, *config[f"{command}-args"]]
     if fix_args is not None:
         commandline.extend(fix_args)
-
-    # 起動オプションからの追加引数を適用
-    additional_args_str = getattr(args, f"{command.replace('-', '_')}_args", "")
-    if additional_args_str:
-        additional_args = shlex.split(additional_args_str)
-        commandline.extend(additional_args)
-
+    else:
+        commandline.extend(config.values.get(f"{command}-lint-args", []))
+    commandline.extend(additional_args)
     commandline.extend(str(t) for t in targets)
 
     if len(targets) <= 0:
@@ -269,6 +272,23 @@ def execute_command(
 
     start_time = time.perf_counter()
     env = _build_subprocess_env(config, command)
+
+    # textlint の fix モードは 2 段階実行 (fix 適用 + lint チェック)。
+    # fixer-formatter が compact をサポートしない問題と、残存違反を compact で取得する
+    # 要件を両立させるため、他の linter とは別経路で実行する。
+    if fix_args is not None and command == "textlint":
+        return _execute_textlint_fix(
+            command,
+            command_info,
+            commandline_prefix,
+            config,
+            targets,
+            additional_args,
+            env,
+            on_output,
+            start_time,
+            args,
+        )
 
     # fix モードで linter に fix-args を適用する経路。
     # mtime 変化で formatted 判定を行い、rc != 0 はそのまま failed 扱いとする。
@@ -400,6 +420,143 @@ def _execute_linter_fix(
         elapsed=elapsed,
         errors=errors,
     )
+
+
+def _execute_textlint_fix(
+    command: str,
+    command_info: pyfltr.config.CommandInfo,
+    commandline_prefix: list[str],
+    config: pyfltr.config.Config,
+    targets: list[pathlib.Path],
+    additional_args: list[str],
+    env: dict[str, str],
+    on_output: typing.Callable[[str], None] | None,
+    start_time: float,
+    args: argparse.Namespace,
+) -> CommandResult:
+    """Textlint fix モードの 2 段階実行 (fix 適用 → lint チェック)。
+
+    textlint は lint 実行と fix 実行でフォーマッタ解決に使うパッケージが異なり
+    (`@textlint/linter-formatter` と `@textlint/fixer-formatter`)、fixer 側は
+    `compact` フォーマッタをサポートしない。このため `textlint --format compact --fix`
+    がクラッシュする。また `textlint --fix` の既定出力 (stylish) は本ツールの
+    builtin パーサ (compact 前提) で解析できないため、残存違反を取得するには
+    別途 lint 実行を行う必要がある。
+
+    上記を両立させるため本関数では次の 2 段階を直列実行する。
+
+    Step1: fix 適用
+        commandline_prefix + (textlint-args から --format ペアを除去) + fix-args
+        + additional_args + targets
+
+    Step2: lint チェック (残存違反を compact 形式で取得)
+        commandline_prefix + textlint-args + textlint-lint-args + additional_args + targets
+
+    ステータス判定:
+    - いずれかのステップが rc>=2 (致命的エラー) → failed
+    - Step2 rc != 0 (残存違反あり) → failed (Errors タブに反映される)
+    - Step2 rc == 0 かつ Step1 で mtime 変化あり → formatted
+    - Step2 rc == 0 かつ変化なし → succeeded
+    """
+    common_args: list[str] = list(config[f"{command}-args"])
+    lint_args: list[str] = list(config.values.get(f"{command}-lint-args", []))
+    fix_args: list[str] = list(config.values.get(f"{command}-fix-args", []))
+    target_strs = [str(t) for t in targets]
+
+    # Step1: --format X ペアを除去した共通 args + fix-args で fix 適用
+    step1_common_args = _strip_format_option(common_args)
+    step1_commandline: list[str] = [
+        *commandline_prefix,
+        *step1_common_args,
+        *fix_args,
+        *additional_args,
+        *target_strs,
+    ]
+
+    mtimes_before = _snapshot_mtimes(targets)
+
+    if args.verbose and on_output is not None:
+        on_output(f"commandline: {shlex.join(step1_commandline)}\n")
+    step1_proc = _run_subprocess(step1_commandline, env, on_output)
+    step1_rc = step1_proc.returncode
+    # rc=0 (違反なし) / rc=1 (違反残存) は通常終了、rc>=2 は致命的エラー扱い
+    step1_fatal = step1_rc >= 2
+    step1_changed = _snapshot_mtimes(targets) != mtimes_before
+
+    # Step2: 通常 lint 実行 (compact フォーマッタで残存違反を取得)
+    step2_commandline: list[str] = [
+        *commandline_prefix,
+        *common_args,
+        *lint_args,
+        *additional_args,
+        *target_strs,
+    ]
+
+    if args.verbose and on_output is not None:
+        on_output(f"commandline: {shlex.join(step2_commandline)}\n")
+    step2_proc = _run_subprocess(step2_commandline, env, on_output)
+    step2_rc = step2_proc.returncode
+    step2_fatal = step2_rc >= 2
+
+    output = (step1_proc.stdout + step2_proc.stdout).strip()
+    elapsed = time.perf_counter() - start_time
+
+    # Step2 出力 (compact 形式) から残存違反をパースする
+    errors = pyfltr.error_parser.parse_errors(command, output, command_info.error_pattern)
+
+    # ステータス判定
+    if step1_fatal or step2_fatal:
+        has_error = True
+        returncode: int = step1_rc if step1_fatal else step2_rc
+        result_command_type: str = "linter"
+    elif step2_rc != 0:
+        has_error = True
+        returncode = step2_rc
+        result_command_type = "linter"
+    elif step1_changed:
+        # fix 適用済み、残存違反なし → formatted 扱いにする
+        has_error = False
+        returncode = 1
+        result_command_type = "formatter"
+    else:
+        has_error = False
+        returncode = 0
+        result_command_type = "linter"
+
+    return CommandResult(
+        command=command,
+        command_type=result_command_type,
+        commandline=step2_commandline,
+        returncode=returncode,
+        has_error=has_error,
+        files=len(targets),
+        output=output,
+        elapsed=elapsed,
+        errors=errors,
+    )
+
+
+def _strip_format_option(args: list[str]) -> list[str]:
+    """引数列から `--format X` / `-f X` / `--format=X` を除去する (順序は保持)。
+
+    textlint の fix 実行時に使用する。`@textlint/fixer-formatter` はリンター側と
+    異なるフォーマッタセットを持つため、ユーザーが共通 args に `--format compact` 等を
+    指定していてもクラッシュしないように一律で除去する。compact 文字列を特別扱いしないのは、
+    `--format json` などの組み合わせに対しても安全に振る舞うため。
+    """
+    result: list[str] = []
+    skip_next = False
+    for arg in args:
+        if skip_next:
+            skip_next = False
+            continue
+        if arg in ("--format", "-f"):
+            skip_next = True
+            continue
+        if arg.startswith("--format="):
+            continue
+        result.append(arg)
+    return result
 
 
 def _execute_ruff_format_two_step(

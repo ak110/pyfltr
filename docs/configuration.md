@@ -18,7 +18,8 @@ extend-exclude = ["foo", "bar.py"]
 - preset : プリセット設定(後述)
 - {command} : 各コマンドの有効/無効
 - {command}-path : 実行するコマンド
-- {command}-args : 追加のコマンドライン引数
+- {command}-args : 追加のコマンドライン引数 (lint/fix 両モードで常に付与)
+- {command}-lint-args : 非 fix モード (および textlint fix 後段の lint チェック) でのみ付与する引数 (既定値は textlint のみ `["--format", "compact"]` を定義)
 - {command}-fast : `--commands=fast`に含めるか否か(後述)
 - {command}-fix-args : `--fix`時に`{command}-args`の後に追加する引数(既定値は textlint / markdownlint / ruff-check のみ定義)
 - jobs : linters/testersの最大並列数(既定値: 4。CLIの`-j`オプションでも指定可能)
@@ -128,8 +129,15 @@ js-runner = "pnpm"
 ```toml
 [tool.pyfltr]
 textlint-path = "textlint"
-textlint-args = ["--format", "compact"]
+# 共通引数 (lint/fix 両モードで付与)
+textlint-args = []
+# lint モード専用の引数 (既定で --format compact。builtin パーサが compact 出力を想定している)
+textlint-lint-args = ["--format", "compact"]
 ```
+
+textlint の fix 実行 (`textlint --fix`) では `@textlint/fixer-formatter` が使われ、`compact` フォーマッタを解決できない。このため `--format compact` は `textlint-args` (共通) ではなく `textlint-lint-args` (lint モード専用) に分離している。
+
+`pyfltr --fix` 実行時、pyfltr は textlint を 2 段階で実行する (fix 適用 → lint チェック) ため、残存違反は compact 形式で正しく取得される。旧版から `textlint-args = ["--format", "compact", ...]` の設定を引き継いでいる場合でも、pyfltr は fix ステップの起動コマンドから `--format` ペアを自動的に除去するためクラッシュしない。新規設定では `textlint-lint-args` に書くことを推奨する。
 
 ### textlintのプリセット/ルール指定
 

@@ -122,16 +122,25 @@ rules:
 
 ## textlint-argsのカスタマイズ
 
-追加のtextlintプリセットを使う場合は`textlint-args`をオーバーライドする。
+追加の textlint プリセットを使う場合は `textlint-packages` にパッケージ名を列挙する (pnpx / npx 起動時に `--package` / `-p` として展開される)。
 
 ```toml
 [tool.pyfltr]
-textlint-args = [
-    "--package", "textlint",
-    "--package", "textlint-rule-preset-ja-technical-writing",
-    "textlint", "--format", "compact",
+textlint-packages = [
+    "textlint-rule-preset-ja-technical-writing",
+    "textlint-rule-preset-japanese",
 ]
 ```
+
+共通のコマンドライン引数を追加したい場合は `textlint-args` を使う。lint 専用のオプション (`--format compact` など) は `textlint-lint-args` に分離する。
+
+```toml
+[tool.pyfltr]
+textlint-args = []
+textlint-lint-args = ["--format", "compact"]
+```
+
+`textlint-args` に `--format compact` を書いた旧版の設定をそのまま引き継いでも、pyfltr は `pyfltr --fix` 実行時に fix 段階の起動コマンドから `--format` ペアを自動除去するためクラッシュしない。ただし新規設定では `textlint-lint-args` に書くことを推奨する。
 
 ## Claude Code Hook
 
