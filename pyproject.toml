@@ -74,9 +74,8 @@ textlint-packages = [
     "textlint-rule-preset-jtf-style",
     "textlint-rule-ja-no-abusage",
 ]
-# CLAUDE.local.md は dotfiles へのシンボリックリンクでリポジトリ管理対象外。
-# tool-compat-checker.md はツール出力を貼り付ける用途で文体ルールを適用しない。
-extend-exclude = ["CLAUDE.local.md", ".claude/agents/tool-compat-checker.md"]
+# ツール出力を貼り付ける用途で文体ルールを適用しないファイル
+extend-exclude = [".claude/agents/tool-compat-checker.md"]
 
 [tool.ruff]
 # https://docs.astral.sh/ruff/configuration/

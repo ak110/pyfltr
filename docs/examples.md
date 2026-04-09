@@ -117,10 +117,11 @@ textlintで技術文書向けの複数プリセットと誤用語チェックを
 
 無効化しているルールと理由は以下の通り。
 
-- `ja-no-mixed-period`: 「ポイント:」「例:」などのラベル型見出しが多いため。
-- `no-doubled-joshi`: 技術文書で避けられない自然な助詞連結が頻出するため。
-- `sentence-length`: 既定の100文字制限を120文字へ緩和する（完全無効化はしない）。
-- preset-jtf-styleの空白・中黒・ハイフン・コロン関連: 誤検出が多いため。
+- `ja-no-mixed-period`: ラベル型見出し（「ポイント」「例」など）が多用されるため
+- `no-doubled-joshi`: 技術文書で避けられない自然な助詞連結が頻出するため
+- `sentence-length`: 既定の100文字制限を120文字へ緩和する（完全無効化はしない）
+- `1.1.3.箇条書き`: 箇条書きに句点を付けない方針のため
+- `4.2.7.コロン(：)`: コロン終端のラベル記法を多用するため
 
 対応する`textlint-packages`の設定例は[textlint-packagesのカスタマイズ](#textlint-packagesのカスタマイズ)を参照。
 
@@ -132,10 +133,8 @@ rules:
     sentence-length:
       max: 120
   preset-jtf-style:
-    "3.2.カタカナ語間のスペースの有無": false
-    "3.3.かっこ類と隣接する文字の間のスペースの有無": false
-    "4.2.4.中黒(・)": false
-    "4.2.6.ハイフン(-)": false
+    "1.1.3.箇条書き":
+      shouldUsePoint: false
     "4.2.7.コロン(：)": false
   ja-no-abusage: true
 ```
