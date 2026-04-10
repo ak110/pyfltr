@@ -1,35 +1,13 @@
 {
-  "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "uv run pyfltr dirty init; exit 0"
-          }
-        ]
+  "extraKnownMarketplaces": {
+    "ak110-dotfiles": {
+      "source": {
+        "source": "github",
+        "repo": "ak110/dotfiles"
       }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Edit|Write|MultiEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "uv run pyfltr dirty add; exit 0"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "uv run pyfltr dirty run >&2; exit 0"
-          }
-        ]
-      }
-    ]
+    }
+  },
+  "enabledPlugins": {
+    "agent-toolkit@ak110-dotfiles": true
   }
 }
