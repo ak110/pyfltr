@@ -946,3 +946,29 @@ def test_build_subprocess_env_npm_config_actually_effective(monkeypatch: pytest.
         check=True,
     )
     assert proc.stdout.strip() == "4321"
+
+
+def test_excluded_default_patterns() -> None:
+    """DEFAULT_CONFIG["exclude"] が主要パターンに対して正しく動作することを確認する。"""
+    config = pyfltr.config.create_default_config()
+
+    # 直接マッチ （ディレクトリ名）
+    assert pyfltr.command.excluded(pathlib.Path(".serena"), config)
+    assert pyfltr.command.excluded(pathlib.Path(".cursor"), config)
+    assert pyfltr.command.excluded(pathlib.Path(".idea"), config)
+    assert pyfltr.command.excluded(pathlib.Path(".venv"), config)
+    assert pyfltr.command.excluded(pathlib.Path("node_modules"), config)
+
+    # 親ディレクトリマッチ （配下ファイル）
+    assert pyfltr.command.excluded(pathlib.Path(".serena/memories/foo.md"), config)
+    assert pyfltr.command.excluded(pathlib.Path(".cursor/rules/bar.mdc"), config)
+    assert pyfltr.command.excluded(pathlib.Path(".idea/workspace.xml"), config)
+
+    # ワイルドカードパターン （.aider*）
+    assert pyfltr.command.excluded(pathlib.Path(".aider.conf.yml"), config)
+    assert pyfltr.command.excluded(pathlib.Path(".aider.chat.history.md"), config)
+
+    # 無関係なパスは除外されないこと
+    assert not pyfltr.command.excluded(pathlib.Path("pyfltr/config.py"), config)
+    assert not pyfltr.command.excluded(pathlib.Path("tests/command_test.py"), config)
+    assert not pyfltr.command.excluded(pathlib.Path("README.md"), config)
