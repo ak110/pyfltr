@@ -61,7 +61,13 @@ class BinToolSpec:
 
 # bin-runner で解決するネイティブバイナリツールの定義。
 # path 設定が空のとき、bin-runner 設定に基づいてコマンドを組み立てる。
-_BIN_TOOL_SPEC: dict[str, BinToolSpec] = {}
+_BIN_TOOL_SPEC: dict[str, BinToolSpec] = {
+    "editorconfig-checker": BinToolSpec(bin_name="editorconfig-checker"),
+    "shellcheck": BinToolSpec(bin_name="shellcheck"),
+    "shfmt": BinToolSpec(bin_name="shfmt"),
+    "typos": BinToolSpec(bin_name="typos"),
+    "actionlint": BinToolSpec(bin_name="actionlint"),
+}
 
 
 def _resolve_bin_commandline(
@@ -408,6 +414,22 @@ def execute_command(
             command, command_info, commandline, targets, config, args, env, on_output, start_time
         )
         return result
+
+    # shfmt は -l (確認) と -w (書き込み) が排他のため prettier 同様の 2 段階実行。
+    if command == "shfmt":
+        return _execute_shfmt_two_step(
+            command,
+            command_info,
+            commandline_prefix,
+            config,
+            targets,
+            additional_args,
+            fix_mode=fix_mode,
+            env=env,
+            on_output=on_output,
+            start_time=start_time,
+            args=args,
+        )
 
     # prettier は --check (read-only) と --write (書き込み) が排他のため 2 段階実行する。
     # ruff-format と同じ位置・スタイルで分岐する。
@@ -775,6 +797,140 @@ def _execute_ruff_format_two_step(
         output=output,
         elapsed=elapsed,
         errors=errors,
+    )
+
+
+def _execute_shfmt_two_step(
+    command: str,
+    command_info: pyfltr.config.CommandInfo,
+    commandline_prefix: list[str],
+    config: pyfltr.config.Config,
+    targets: list[pathlib.Path],
+    additional_args: list[str],
+    *,
+    fix_mode: bool,
+    env: dict[str, str],
+    on_output: typing.Callable[[str], None] | None,
+    start_time: float,
+    args: argparse.Namespace,
+) -> CommandResult:
+    """Shfmt の 2 段階実行 (shfmt -l → shfmt -w)。
+
+    prettier と同様、確認用引数 (-l) と書き込み用引数 (-w) が排他のため専用経路で処理する。
+
+    通常モード (fix_mode=False):
+
+    - Step1: `prefix + args + check-args + additional + targets` を実行
+    - Step1 rc == 0 → succeeded (整形不要)
+    - Step1 rc != 0 → Step2 `prefix + args + write-args + additional + targets` を実行
+      - Step2 rc == 0 → formatted (整形成功)
+      - Step2 rc != 0 → failed
+
+    fix モード (fix_mode=True):
+
+    - Step1 をスキップし、直接 write-args 付きで実行
+    - 内容ハッシュスナップショットで書き込みを検知
+    """
+    common_args: list[str] = list(config[f"{command}-args"])
+    check_args: list[str] = list(config[f"{command}-check-args"])
+    write_args: list[str] = list(config[f"{command}-write-args"])
+    target_strs = [str(t) for t in targets]
+
+    write_commandline: list[str] = [
+        *commandline_prefix,
+        *common_args,
+        *write_args,
+        *additional_args,
+        *target_strs,
+    ]
+
+    if fix_mode:
+        digests_before = _snapshot_file_digests(targets)
+        if args.verbose and on_output is not None:
+            on_output(f"commandline: {shlex.join(write_commandline)}\n")
+        write_proc = _run_subprocess(write_commandline, env, on_output)
+        write_rc = write_proc.returncode
+        output = write_proc.stdout.strip()
+        elapsed = time.perf_counter() - start_time
+        changed = _snapshot_file_digests(targets) != digests_before
+
+        if write_rc != 0:
+            has_error = True
+            returncode: int = write_rc
+        elif changed:
+            has_error = False
+            returncode = 1
+        else:
+            has_error = False
+            returncode = 0
+
+        return CommandResult(
+            command=command,
+            command_type=command_info.type,
+            commandline=write_commandline,
+            returncode=returncode,
+            has_error=has_error,
+            files=len(targets),
+            output=output,
+            elapsed=elapsed,
+        )
+
+    # 通常モード: Step1 (check) → Step2 (write)
+    check_commandline: list[str] = [
+        *commandline_prefix,
+        *common_args,
+        *check_args,
+        *additional_args,
+        *target_strs,
+    ]
+    if args.verbose and on_output is not None:
+        on_output(f"commandline: {shlex.join(check_commandline)}\n")
+    check_proc = _run_subprocess(check_commandline, env, on_output)
+    check_rc = check_proc.returncode
+
+    if check_rc == 0:
+        # 整形不要
+        output = check_proc.stdout.strip()
+        elapsed = time.perf_counter() - start_time
+        return CommandResult(
+            command=command,
+            command_type=command_info.type,
+            commandline=check_commandline,
+            returncode=0,
+            has_error=False,
+            files=len(targets),
+            output=output,
+            elapsed=elapsed,
+        )
+
+    # Step2: 書き込み
+    if args.verbose and on_output is not None:
+        on_output(f"commandline: {shlex.join(write_commandline)}\n")
+    write_proc = _run_subprocess(write_commandline, env, on_output)
+    output = write_proc.stdout.strip()
+    elapsed = time.perf_counter() - start_time
+
+    if write_proc.returncode != 0:
+        return CommandResult(
+            command=command,
+            command_type=command_info.type,
+            commandline=write_commandline,
+            returncode=write_proc.returncode,
+            has_error=True,
+            files=len(targets),
+            output=output,
+            elapsed=elapsed,
+        )
+
+    return CommandResult(
+        command=command,
+        command_type=command_info.type,
+        commandline=write_commandline,
+        returncode=1,
+        has_error=False,
+        files=len(targets),
+        output=check_proc.stdout.strip(),
+        elapsed=elapsed,
     )
 
 
