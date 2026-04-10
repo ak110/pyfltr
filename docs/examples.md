@@ -80,6 +80,22 @@ asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
 ```
 
+### JS/TSプロジェクトでの推奨設定
+
+JS/TSを併用するプロジェクトでは、`js-runner`をプロジェクトのパッケージマネージャーに合わせることを推奨する。
+既定の`pnpx`はツールを都度取得するため、CIで毎回ダウンロードが発生する。
+`pnpm`や`npm`など、プロジェクトで使用しているパッケージマネージャーを指定すれば、`package.json`で管理済みのパッケージを再利用できる。
+
+```toml
+[tool.pyfltr]
+js-runner = "pnpm"
+```
+
+`pnpm` / `npm` / `yarn` / `direct`では`textlint-packages`は無視される（`package.json`側でインストールする前提のため）。
+textlintのプリセットやルールも`package.json`の`devDependencies`で管理すること。
+
+詳細は[docs/configuration.md](configuration.md)の「npm系ツール」を参照。
+
 ## .pre-commit-config.yaml
 
 ```yaml
