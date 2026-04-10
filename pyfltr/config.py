@@ -482,8 +482,24 @@ def load_config() -> Config:
     preset = str(tool_pyfltr.get("preset", ""))
     if preset == "":
         pass
-    elif preset in ("20260330", "latest"):
-        # ruff + pyright + textlint + markdownlint使用のプリセット
+    elif preset in ("20260411", "latest"):
+        # ruff + pyright + textlint + markdownlint + bin系ツール + uv-sort
+        config.values["pyupgrade"] = False
+        config.values["autoflake"] = False
+        config.values["pflake8"] = False
+        config.values["isort"] = False
+        config.values["black"] = False
+        config.values["ruff-format"] = True
+        config.values["ruff-check"] = True
+        config.values["pyright"] = True
+        config.values["textlint"] = True
+        config.values["markdownlint"] = True
+        config.values["editorconfig-checker"] = True
+        config.values["actionlint"] = True
+        config.values["typos"] = True
+        config.values["uv-sort"] = True
+    elif preset == "20260330":
+        # 旧プリセット（互換性維持）
         config.values["pyupgrade"] = False
         config.values["autoflake"] = False
         config.values["pflake8"] = False
