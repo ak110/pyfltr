@@ -5,7 +5,7 @@
 pyfltr本体の設定（`[tool.pyfltr]`）と、呼び出される各ツール（ruff / mypy / pytest）の設定を1つの`pyproject.toml`にまとめた例。
 
 - `preset = "latest"`: ruff-format / ruff-check / pyright / markdownlint / textlintを有効化するプリセット。詳細は[設定](configuration.md)を参照。
-- `pylint-args` / `mypy-args`: 各ツールに追加で渡す引数。プラグイン読み込みやerror-code有効化の典型例を示している。
+- `pylint-args`: pylintに追加で渡す引数。`--load-plugins=pylint_pydantic`と`--enable-error-code=unused-awaitable`（mypy）は自動オプションで既定有効のため個別指定不要。
 - ruffの `per-file-ignores`: テストコード（`**_test.py`）とpackage init（`__init__.py`）のdocstring要求を除外する実用的な調整。
 
 ```toml
@@ -19,8 +19,7 @@ dev = [
 
 [tool.pyfltr]
 preset = "latest"
-pylint-args = ["--jobs=4", "--load-plugins=pylint_pydantic"]
-mypy-args = ["--enable-error-code=unused-awaitable"]
+pylint-args = ["--jobs=4"]
 
 [tool.ruff]
 # https://docs.astral.sh/ruff/configuration/

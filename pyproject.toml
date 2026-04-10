@@ -68,12 +68,6 @@ exclude-newer = "1 day"
 preset = "latest"
 ty = true
 pylint-args = ["--jobs=4"]
-mypy-args = ["--enable-error-code=unused-awaitable"]
-textlint-packages = [
-    "textlint-rule-preset-ja-technical-writing",
-    "textlint-rule-preset-jtf-style",
-    "textlint-rule-ja-no-abusage",
-]
 
 [tool.ruff]
 # https://docs.astral.sh/ruff/configuration/

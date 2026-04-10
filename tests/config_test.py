@@ -392,9 +392,13 @@ js-runner = "bogus"
 
 
 def test_textlint_packages_default() -> None:
-    """textlint-packages のデフォルトにプリセットが含まれる。"""
+    """textlint-packages のデフォルトに3パッケージが含まれる。"""
     config = pyfltr.config.create_default_config()
-    assert config["textlint-packages"] == ["textlint-rule-preset-ja-technical-writing"]
+    assert config["textlint-packages"] == [
+        "textlint-rule-preset-ja-technical-writing",
+        "textlint-rule-preset-jtf-style",
+        "textlint-rule-ja-no-abusage",
+    ]
 
 
 def test_textlint_markdownlint_path_default_empty() -> None:
@@ -483,3 +487,98 @@ def test_respect_gitignore_default() -> None:
     """respect-gitignore の既定値が True であることを確認する。"""
     config = pyfltr.config.create_default_config()
     assert config["respect-gitignore"] is True
+
+
+def test_auto_option_defaults() -> None:
+    """自動オプションの既定値テスト。"""
+    config = pyfltr.config.create_default_config()
+    assert config["pylint-pydantic"] is True
+    assert config["mypy-unused-awaitable"] is True
+
+
+def test_auto_option_disable(tmp_path: pathlib.Path) -> None:
+    """自動オプションを False に設定できる。"""
+    pyproject_content = """
+[tool.pyfltr]
+pylint-pydantic = false
+mypy-unused-awaitable = false
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        config = pyfltr.config.load_config()
+        assert config["pylint-pydantic"] is False
+        assert config["mypy-unused-awaitable"] is False
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_python_false_disables_python_tools(tmp_path: pathlib.Path) -> None:
+    """python = false で Python 系ツールが一括無効化される。"""
+    pyproject_content = """
+[tool.pyfltr]
+python = false
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        config = pyfltr.config.load_config()
+        for cmd in pyfltr.config.PYTHON_COMMANDS:
+            assert config[cmd] is False, f"{cmd} は python=false で無効化されるべき"
+        # JS/共通系は影響を受けない
+        assert config["markdownlint"] is False  # デフォルト無効のまま
+        assert config["textlint"] is False  # デフォルト無効のまま
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_python_false_with_preset(tmp_path: pathlib.Path) -> None:
+    """preset と python = false の組み合わせ。preset で有効化されたツールも無効化される。"""
+    pyproject_content = """
+[tool.pyfltr]
+preset = "latest"
+python = false
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        config = pyfltr.config.load_config()
+        # preset が有効化した pyright も python=false で無効化
+        assert config["pyright"] is False
+        assert config["ruff-format"] is False
+        assert config["ruff-check"] is False
+        # preset が有効化した JS 系ツールは無効化されない
+        assert config["textlint"] is True
+        assert config["markdownlint"] is True
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_python_false_with_individual_override(tmp_path: pathlib.Path) -> None:
+    """python = false でも個別設定で上書きできる。"""
+    pyproject_content = """
+[tool.pyfltr]
+python = false
+mypy = true
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        config = pyfltr.config.load_config()
+        # mypy だけ個別に有効化
+        assert config["mypy"] is True
+        # 他の Python ツールは無効
+        assert config["pylint"] is False
+        assert config["pytest"] is False
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_python_default() -> None:
+    """python の既定値は True。"""
+    config = pyfltr.config.create_default_config()
+    assert config["python"] is True

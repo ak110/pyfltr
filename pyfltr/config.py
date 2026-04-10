@@ -95,10 +95,48 @@ BUILTIN_COMMAND_NAMES: list[str] = list(BUILTIN_COMMANDS.keys())
 JS_RUNNERS: tuple[str, ...] = ("pnpx", "pnpm", "npm", "npx", "yarn", "direct")
 """textlint / markdownlint の起動方式として指定できる値。"""
 
+PYTHON_COMMANDS: tuple[str, ...] = (
+    "pyupgrade",
+    "autoflake",
+    "isort",
+    "black",
+    "ruff-format",
+    "ruff-check",
+    "pflake8",
+    "mypy",
+    "pylint",
+    "pyright",
+    "ty",
+    "pytest",
+)
+"""python = false で一括無効化されるコマンドの一覧。"""
+
+AUTO_ARGS: dict[str, list[tuple[str, list[str]]]] = {
+    "pylint": [
+        ("pylint-pydantic", ["--load-plugins=pylint_pydantic"]),
+    ],
+    "mypy": [
+        ("mypy-unused-awaitable", ["--enable-error-code=unused-awaitable"]),
+    ],
+}
+"""コマンドごとの自動引数マッピング。
+
+各タプルは (設定キー, 引数リスト) の対。設定キーが True の場合、
+引数リストをコマンドライン先頭に自動挿入する。ユーザーの *-args と
+重複する場合はスキップする。
+"""
+
 
 DEFAULT_CONFIG: dict[str, typing.Any] = {
     # プリセット
     "preset": "",
+    # Python 系ツールの一括有効/無効。False にすると PYTHON_COMMANDS に
+    # 列挙されたコマンドをすべて無効化する。個別設定で上書き可能。
+    "python": True,
+    # 自動オプション: 各ツールの望ましい引数を自動挿入する。
+    # *-args とは独立して動作し、重複排除される。False で無効化可能。
+    "pylint-pydantic": True,
+    "mypy-unused-awaitable": True,
     # textlint / markdownlint の起動方式。
     # textlint-path / markdownlint-path が空のときに、以下の値に従って
     # 実際の起動コマンドを組み立てる。
@@ -174,7 +212,11 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # textlint 向けルール / プリセットパッケージの列挙。pnpx / npx モードでは
     # --package / -p 展開される。pnpm / npm / yarn / direct モードでは
     # package.json 側で管理する前提のため無視される。
-    "textlint-packages": ["textlint-rule-preset-ja-technical-writing"],
+    "textlint-packages": [
+        "textlint-rule-preset-ja-technical-writing",
+        "textlint-rule-preset-jtf-style",
+        "textlint-rule-ja-no-abusage",
+    ],
     "textlint-fast": True,
     # fix モード時に通常 args の後に追加する引数。
     # textlint は --fix で autofix 可能なルールを in-place 修正する。
@@ -371,11 +413,20 @@ def load_config() -> Config:
         name = name.replace("_", "-")
         _register_custom_command(config, name, definition)
 
-    # プリセット以外の設定を適用 (プリセットと重複があれば上書き)
+    # python 設定の適用 (preset < python < 個別設定)
+    # python = false なら PYTHON_COMMANDS を一括無効化する。
+    # 後続の個別設定ループで mypy = true 等の上書きが可能。
+    python_flag = tool_pyfltr.get("python", True)
+    if not python_flag:
+        for cmd in PYTHON_COMMANDS:
+            config.values[cmd] = False
+
+    # プリセット・python 以外の設定を適用 (プリセットと重複があれば上書き)
+    skip_keys = ("custom-commands", "python")
     for key, value in tool_pyfltr.items():
         key = key.replace("_", "-")  # 「_」区切りと「-」区切りのどちらもOK
-        if key in ("custom-commands",):
-            continue  # カスタムコマンドは別途処理済み
+        if key in skip_keys:
+            continue  # 別途処理済み
         if key not in config.values:
             raise ValueError(f"設定キーが不正です: {key}")
         if not isinstance(value, type(config.values[key])):  # 簡易チェック

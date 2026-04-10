@@ -744,6 +744,10 @@ def test_resolve_js_commandline_pnpx_textlint_default_excludes_buggy_version() -
         "textlint@<15.5.3 || >15.5.3",
         "--package",
         "textlint-rule-preset-ja-technical-writing",
+        "--package",
+        "textlint-rule-preset-jtf-style",
+        "--package",
+        "textlint-rule-ja-no-abusage",
         "textlint",
     ]
 
@@ -1027,3 +1031,55 @@ def test_expand_globs_no_git_repo(tmp_path: pathlib.Path) -> None:
         assert "main.py" in names
     finally:
         os.chdir(original_cwd)
+
+
+def test_build_auto_args_pylint_pydantic() -> None:
+    """pylint-pydantic=true の場合に自動引数が挿入される。"""
+    config = pyfltr.config.create_default_config()
+    result = pyfltr.command._build_auto_args("pylint", config, [])
+    assert "--load-plugins=pylint_pydantic" in result
+
+
+def test_build_auto_args_mypy_unused_awaitable() -> None:
+    """mypy-unused-awaitable=true の場合に自動引数が挿入される。"""
+    config = pyfltr.config.create_default_config()
+    result = pyfltr.command._build_auto_args("mypy", config, [])
+    assert "--enable-error-code=unused-awaitable" in result
+
+
+def test_build_auto_args_disabled() -> None:
+    """自動オプションを false にすると引数が挿入されない。"""
+    config = pyfltr.config.create_default_config()
+    config.values["pylint-pydantic"] = False
+    result = pyfltr.command._build_auto_args("pylint", config, [])
+    assert "--load-plugins=pylint_pydantic" not in result
+
+
+def test_build_auto_args_dedup_with_user_args() -> None:
+    """ユーザーが既に同じ引数を指定している場合はスキップする。"""
+    config = pyfltr.config.create_default_config()
+    user_args = ["--load-plugins=pylint_pydantic", "--jobs=4"]
+    result = pyfltr.command._build_auto_args("pylint", config, user_args)
+    assert "--load-plugins=pylint_pydantic" not in result
+
+
+def test_build_auto_args_no_match() -> None:
+    """AUTO_ARGS に定義されていないコマンドは空リストを返す。"""
+    config = pyfltr.config.create_default_config()
+    result = pyfltr.command._build_auto_args("ruff-check", config, [])
+    assert not result
+
+
+def test_auto_args_included_in_commandline(mocker, tmp_path: pathlib.Path) -> None:
+    """execute_command の結果コマンドラインに自動引数が含まれる。"""
+    target = tmp_path / "sample.py"
+    target.write_text("x = 1\n")
+
+    proc = subprocess.CompletedProcess(["pylint"], returncode=0, stdout="")
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+
+    config = pyfltr.config.create_default_config()
+    config.values["pylint"] = True
+    args = _make_args([target])
+    result = pyfltr.command.execute_command("pylint", args, config)
+    assert "--load-plugins=pylint_pydantic" in result.commandline

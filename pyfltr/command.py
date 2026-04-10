@@ -264,10 +264,14 @@ def execute_command(
     additional_args_str = getattr(args, f"{command.replace('-', '_')}_args", "")
     additional_args = shlex.split(additional_args_str) if additional_args_str else []
 
-    # commandline を組み立てる: [prefix] + args + (lint-args or fix-args) + additional_args + targets
+    # commandline を組み立てる:
+    #   [prefix] + [auto-args] + args + (lint-args or fix-args) + additional_args + targets
+    # auto-args: AUTO_ARGS で定義された自動引数（フラグが True かつ重複なしの場合に挿入）
     # lint-args (非 fix モードでのみ付与される引数) は textlint の --format compact のように、
     # lint 実行時にのみ必要なオプションを分離するためのキー。
-    commandline: list[str] = [*commandline_prefix, *config[f"{command}-args"]]
+    user_args: list[str] = config[f"{command}-args"]
+    auto_args = _build_auto_args(command, config, user_args + additional_args)
+    commandline: list[str] = [*commandline_prefix, *auto_args, *user_args]
     if fix_args is not None:
         commandline.extend(fix_args)
     else:
@@ -380,6 +384,26 @@ def execute_command(
         elapsed=elapsed,
         errors=errors,
     )
+
+
+def _build_auto_args(command: str, config: pyfltr.config.Config, user_args: list[str]) -> list[str]:
+    """自動引数を構築する。
+
+    AUTO_ARGS で定義されたフラグが True の場合、対応する引数を返す。
+    ユーザーが *-args や CLI 引数で既に同じ文字列を指定している場合はスキップする。
+    """
+    auto_entries = pyfltr.config.AUTO_ARGS.get(command, [])
+    if not auto_entries:
+        return []
+    user_args_joined = " ".join(user_args)
+    result: list[str] = []
+    for flag_key, args in auto_entries:
+        if not config.values.get(flag_key, False):
+            continue
+        for arg in args:
+            if arg not in user_args_joined:
+                result.append(arg)
+    return result
 
 
 def _build_subprocess_env(config: pyfltr.config.Config, command: str) -> dict[str, str]:
