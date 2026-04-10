@@ -74,8 +74,6 @@ textlint-packages = [
     "textlint-rule-preset-jtf-style",
     "textlint-rule-ja-no-abusage",
 ]
-# ツール出力を貼り付ける用途で文体ルールを適用しないファイル
-extend-exclude = [".claude/agents/tool-compat-checker.md"]
 
 [tool.ruff]
 # https://docs.astral.sh/ruff/configuration/
