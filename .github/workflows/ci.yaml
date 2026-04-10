@@ -54,6 +54,9 @@ jobs:
       - name: Configure pnpm security
         run: pnpm config set minimum-release-age 1440 --global
 
+      - name: Setup mise
+        uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+
       - name: Install dependencies
         run: uv sync --all-extras --all-groups
 
