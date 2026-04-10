@@ -136,6 +136,12 @@ jobs:
         env:
           OUTPUT: CHANGES.md
 
+      - name: Append changelog link
+        run: |
+          prev_tag="$(git tag --sort=version:refname | grep -E '^v[0-9]' | tail -2 | head -1)"
+          printf '\n**Full Changelog**: https://github.com/%s/compare/%s...%s\n' \
+            "${{ github.repository }}" "${prev_tag}" "${{ steps.next.outputs.next }}" >> CHANGES.md
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -143,7 +149,8 @@ jobs:
           if gh release view "${{ steps.next.outputs.next }}" >/dev/null 2>&1; then
             echo "Release ${{ steps.next.outputs.next }} already exists, skipping"
           else
-            gh release create "${{ steps.next.outputs.next }}" --notes-file CHANGES.md
+            gh release create "${{ steps.next.outputs.next }}" \
+              --title "${{ steps.next.outputs.next }}" --notes-file CHANGES.md
           fi
 
       - name: Prune uv cache for CI
