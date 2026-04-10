@@ -540,15 +540,42 @@ def load_config() -> Config:
 
     # プリセット・python 以外の設定を適用 (プリセットと重複があれば上書き)
     skip_keys = ("custom-commands", "python")
+    targets_overrides: dict[str, str | list[str]] = {}
+    extend_targets_map: dict[str, str | list[str]] = {}
     for key, value in tool_pyfltr.items():
         key = key.replace("_", "-")  # 「_」区切りと「-」区切りのどちらもOK
         if key in skip_keys:
             continue  # 別途処理済み
+        # {command}-extend-targets の検出（長いサフィックスを先に判定）
+        if key.endswith("-extend-targets"):
+            cmd_name = key.removesuffix("-extend-targets")
+            if cmd_name in config.commands:
+                extend_targets_map[cmd_name] = _validate_targets_value(key, value)
+                continue
+        # {command}-targets の検出
+        if key.endswith("-targets"):
+            cmd_name = key.removesuffix("-targets")
+            if cmd_name in config.commands:
+                targets_overrides[cmd_name] = _validate_targets_value(key, value)
+                continue
         if key not in config.values:
             raise ValueError(f"設定キーが不正です: {key}")
         if not isinstance(value, type(config.values[key])):  # 簡易チェック
             raise ValueError(f"設定値が不正です: {key}={type(value)}, expected {type(config.values[key])}")
         config.values[key] = value
+
+    # targets の完全上書き
+    for cmd_name, new_targets in targets_overrides.items():
+        config.commands[cmd_name] = dataclasses.replace(config.commands[cmd_name], targets=new_targets)
+
+    # extend-targets の追加（targets上書き後に適用）
+    for cmd_name, extra in extend_targets_map.items():
+        existing = config.commands[cmd_name].target_globs()
+        if isinstance(extra, str):
+            existing.append(extra)
+        else:
+            existing.extend(extra)
+        config.commands[cmd_name] = dataclasses.replace(config.commands[cmd_name], targets=existing)
 
     # js-runner の値バリデーション
     js_runner = config.values["js-runner"]
@@ -658,6 +685,15 @@ def _validate_error_pattern(name: str, pattern: str) -> None:
     for required in ("file", "line", "message"):
         if required not in groups:
             raise ValueError(f"カスタムコマンド {name} のerror-patternに{required}グループが必要です")
+
+
+def _validate_targets_value(key: str, value: typing.Any) -> str | list[str]:
+    """Targets / extend-targets の値をバリデーション。"""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list) and all(isinstance(item, str) for item in value):
+        return [str(item) for item in value]
+    raise ValueError(f"{key}は文字列または文字列のリストで指定してください")
 
 
 def filter_fix_commands(commands: list[str], config: Config) -> list[str]:

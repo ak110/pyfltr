@@ -23,6 +23,8 @@ extend-exclude = ["foo", "bar.py"]
 - {command}-lint-args : 非fixモード（およびtextlint fix後段のlintチェック) でのみ付与する引数（既定値はtextlintのみ `["--format", "compact"]` を定義）
 - {command}-fast : `fast`サブコマンドに含めるか否か（後述）
 - {command}-fix-args : `fix`サブコマンド時に`{command}-args`の後に追加する引数（既定値はtextlint / markdownlint / ruff-check / eslint / biomeのみ定義）
+- {command}-targets : 対象ファイルパターンの完全上書き（後述）
+- {command}-extend-targets : 対象ファイルパターンへの追加（後述）
 - {command}-pass-filenames : ファイル引数をコマンドに渡すか否か（既定: `true`。後述）
 - {command}-version : bin-runner対応ツールのバージョン指定（既定: `"latest"`。後述）
 - prettier-check-args / prettier-write-args : prettierの2段階実行で使う引数（詳細は後述）
@@ -178,6 +180,29 @@ prettier-args = ["--cache"]
 shfmt = true
 shfmt-args = ["-i", "2"]
 ```
+
+## 対象ファイルパターンのカスタマイズ
+
+各コマンドが処理する対象ファイルパターンを変更できる。
+
+`{command}-targets`でパターンを完全に上書きする。
+
+```toml
+[tool.pyfltr]
+# shfmtの対象を *.bash のみに変更（既定の *.sh は対象外になる）
+shfmt-targets = ["*.bash"]
+```
+
+`{command}-extend-targets`で既存パターンに追加する。
+
+```toml
+[tool.pyfltr]
+# shfmtの対象に *.sh.tmpl と dot_bashrc を追加（既定の *.sh も維持）
+shfmt-extend-targets = ["*.sh.tmpl", "dot_bashrc"]
+shellcheck-extend-targets = ["*.sh.tmpl", "dot_bashrc"]
+```
+
+両方を指定した場合、`targets`で上書きした後に`extend-targets`で追加する。
 
 ## pass-filenames設定
 

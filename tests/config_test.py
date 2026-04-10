@@ -760,3 +760,111 @@ def test_bin_runners_tuple() -> None:
     """BIN_RUNNERS に direct と mise が含まれる。"""
     assert "direct" in pyfltr.config.BIN_RUNNERS
     assert "mise" in pyfltr.config.BIN_RUNNERS
+
+
+def test_builtin_targets_override_str(tmp_path: pathlib.Path) -> None:
+    """ビルトインコマンドの targets を文字列で完全上書きできる。"""
+    (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\nshfmt-targets = "*.bash"\n')
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        config = pyfltr.config.load_config()
+        assert config.commands["shfmt"].targets == "*.bash"
+        assert config.commands["shfmt"].target_globs() == ["*.bash"]
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_builtin_targets_override_list(tmp_path: pathlib.Path) -> None:
+    """ビルトインコマンドの targets をリストで完全上書きできる。"""
+    (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\nshfmt-targets = ["*.sh", "*.bash"]\n')
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        config = pyfltr.config.load_config()
+        assert config.commands["shfmt"].targets == ["*.sh", "*.bash"]
+        assert config.commands["shfmt"].target_globs() == ["*.sh", "*.bash"]
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_builtin_extend_targets_str(tmp_path: pathlib.Path) -> None:
+    """ビルトインコマンドの targets に文字列で追加できる。"""
+    (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\nshfmt-extend-targets = "*.bash"\n')
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        config = pyfltr.config.load_config()
+        # デフォルトの "*.sh" に "*.bash" が追加される
+        assert config.commands["shfmt"].target_globs() == ["*.sh", "*.bash"]
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_builtin_extend_targets_list(tmp_path: pathlib.Path) -> None:
+    """ビルトインコマンドの targets にリストで追加できる。"""
+    (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\nshfmt-extend-targets = ["*.bash", "dot_bashrc"]\n')
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        config = pyfltr.config.load_config()
+        assert config.commands["shfmt"].target_globs() == [
+            "*.sh",
+            "*.bash",
+            "dot_bashrc",
+        ]
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_builtin_targets_and_extend_targets(tmp_path: pathlib.Path) -> None:
+    """targets で上書き後に extend-targets で追加される。"""
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.pyfltr]\nshfmt-targets = ["*.bash"]\nshfmt-extend-targets = ["dot_bashrc"]\n'
+    )
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        config = pyfltr.config.load_config()
+        assert config.commands["shfmt"].target_globs() == ["*.bash", "dot_bashrc"]
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_builtin_targets_invalid_type(tmp_path: pathlib.Path) -> None:
+    """ビルトインコマンドの targets に不正な型を指定するとエラーになる。"""
+    (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\nshfmt-targets = 42\n")
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        with pytest.raises(ValueError, match="targets"):
+            pyfltr.config.load_config()
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_builtin_targets_unknown_command(tmp_path: pathlib.Path) -> None:
+    """未知のコマンド名の targets 指定はエラーになる。"""
+    (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\nunknown-targets = "*.py"\n')
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        with pytest.raises(ValueError, match="設定キーが不正です"):
+            pyfltr.config.load_config()
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_builtin_targets_no_mutation_of_builtins(tmp_path: pathlib.Path) -> None:
+    """targets 上書きで BUILTIN_COMMANDS が汚染されない。"""
+    original_targets = pyfltr.config.BUILTIN_COMMANDS["shfmt"].targets
+    (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\nshfmt-targets = "*.bash"\n')
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        config = pyfltr.config.load_config()
+        assert config.commands["shfmt"].targets == "*.bash"
+        # BUILTIN_COMMANDS 側は元のまま
+        assert pyfltr.config.BUILTIN_COMMANDS["shfmt"].targets == original_targets
+    finally:
+        os.chdir(original_cwd)
