@@ -23,7 +23,10 @@ extend-exclude = ["foo", "bar.py"]
 - {command}-lint-args : 非fixモード（およびtextlint fix後段のlintチェック) でのみ付与する引数（既定値はtextlintのみ `["--format", "compact"]` を定義）
 - {command}-fast : `fast`サブコマンドに含めるか否か（後述）
 - {command}-fix-args : `fix`サブコマンド時に`{command}-args`の後に追加する引数（既定値はtextlint / markdownlint / ruff-check / eslint / biomeのみ定義）
+- {command}-pass-filenames : ファイル引数をコマンドに渡すか否か（既定: `true`。後述）
+- {command}-version : bin-runner対応ツールのバージョン指定（既定: `"latest"`。後述）
 - prettier-check-args / prettier-write-args : prettierの2段階実行で使う引数（詳細は後述）
+- shfmt-check-args / shfmt-write-args : shfmtの2段階実行で使う引数（詳細は後述）
 - pylint-pydantic : pylint実行時に`--load-plugins=pylint_pydantic`を自動追加するか（既定: `true`、後述）
 - mypy-unused-awaitable : mypy実行時に`--enable-error-code=unused-awaitable`を自動追加するか（既定: `true`、後述）
 - jobs : linters/testersの最大並列数（既定値： 4。CLIの`-j`オプションでも指定可能）
@@ -34,14 +37,31 @@ extend-exclude = ["foo", "bar.py"]
 ## プリセット設定
 
 `preset`を設定することで、一括して設定を変更できる。
-`"latest"` または日付指定 (`"20260330"`, `"20250710"`) が使用可能。
+`"latest"` または日付指定 (`"20260411"`, `"20260330"`, `"20250710"`) が使用可能。
 
 ```toml
 [tool.pyfltr]
 preset = "latest"
 ```
 
-### preset "20260330" / "latest"
+### preset "20260411" / "latest"
+
+- `pyupgrade = false`
+- `autoflake = false`
+- `pflake8 = false`
+- `isort = false`
+- `black = false`
+- `ruff-format = true`
+- `ruff-check = true`
+- `pyright = true`
+- `textlint = true`
+- `markdownlint = true`
+- `editorconfig-checker = true`
+- `actionlint = true`
+- `typos = true`
+- `uv-sort = true`
+
+### preset "20260330"
 
 - `pyupgrade = false`
 - `autoflake = false`
@@ -68,9 +88,12 @@ preset = "latest"
 
 ## Python系ツールの一括無効化
 
-`python = false`を設定すると、Python系のツールを一括で無効化する。
-対象はpyupgrade / autoflake / isort / black / ruff-format / ruff-check / pflake8 / mypy / pylint / pyright / ty / pytest。
-JS/TS専用プロジェクトで設定を簡潔にする場合に使う。
+`python = false`を設定すると、Python系のツールを一括で無効化する。JS/TS専用プロジェクトで設定を簡潔にする場合に使う。
+
+対象ツール:
+
+- pyupgrade / autoflake / isort / black / ruff-format / ruff-check
+- pflake8 / mypy / pylint / pyright / ty / pytest / uv-sort
 
 ```toml
 [tool.pyfltr]
@@ -80,7 +103,10 @@ eslint = true
 prettier = true
 ```
 
-markdownlint / textlint / eslint / prettier / biomeは`python`設定の影響を受けない。
+以下のツールは`python`設定の影響を受けない。
+
+- npm系ツール: markdownlint / textlint / eslint / prettier / biome / oxlint / tsc / vitest
+- bin-runner対応ツール: editorconfig-checker / shellcheck / shfmt / typos / actionlint
 
 適用優先度は `preset < python < 個別設定`。`python = false`でも`mypy = true`のように個別に有効化できる。
 
@@ -136,6 +162,125 @@ prettier = true
 prettier-args = ["--cache"]
 ```
 
+## shfmtの2段階実行
+
+`shfmt`はprettierと同様に2段階で実行する。
+
+- 通常モード: まず`shfmt -l`（チェックのみ）を実行する
+    - `rc == 0` → `succeeded`（整形済み）
+    - `rc != 0` → 続けて`shfmt -w`（書き込み）を実行する
+- `--fix`モード: ステップ1（`-l`）をスキップし、直接`shfmt -w`を実行する
+
+引数は`shfmt-check-args` / `shfmt-write-args`で個別に上書きできる（既定はそれぞれ`["-l"]` / `["-w"]`）。共通引数`shfmt-args`は両ステップの先頭に付与される。
+
+```toml
+[tool.pyfltr]
+shfmt = true
+shfmt-args = ["-i", "2"]
+```
+
+## pass-filenames設定
+
+`{command}-pass-filenames = false`を設定すると、コマンド実行時にファイル引数を渡さない。
+プロジェクト全体を一括チェックするツール（`tsc`など）で使用する。
+
+ビルトインでは`tsc`が`pass-filenames = false`に設定されている。
+カスタムコマンドでも同様に設定可能。
+
+```toml
+[tool.pyfltr]
+tsc = true
+# tsc は既定で pass-filenames = false のため明示不要
+
+[tool.pyfltr.custom-commands.commitlint]
+type = "linter"
+path = "commitlint"
+args = ["--from=HEAD~1"]
+pass-filenames = false
+```
+
+## ネイティブバイナリツール (bin-runner)
+
+editorconfig-checker / shellcheck / shfmt / typos / actionlintはネイティブバイナリ（Go/Rust/Haskell製等）で、`bin-runner`設定で起動方式を切り替える。
+既定は`mise`で、[mise](https://mise.jdx.dev/)によるバージョン管理付きの実行となる。
+
+```toml
+[tool.pyfltr]
+# mise経由で実行する（既定）
+bin-runner = "mise"
+```
+
+| `bin-runner` | 挙動 |
+| --- | --- |
+| `mise` | `mise exec <tool>@<version> -- <command>`で起動する（既定）。ツールの自動インストールにも対応 |
+| `direct` | PATH上のバイナリを直接実行する |
+
+ツールがインストールされていない場合はskip扱いとなり、警告を出力して続行する。
+
+### バージョン指定
+
+`{command}-version`でbin-runner対応ツールのバージョンを指定できる。既定は`"latest"`。
+
+```toml
+[tool.pyfltr]
+shellcheck-version = "0.10.0"
+shfmt-version = "3.10.0"
+```
+
+miseモードでは`mise exec <tool>@<version> -- <command>`として展開される。directモードではバージョン指定は無視される。
+
+### bin-runner対応ツールの設定
+
+各ツールはすべて既定で無効。有効化には`pyproject.toml`で切り替える。
+
+```toml
+[tool.pyfltr]
+editorconfig-checker = true
+shellcheck = true
+shfmt = true
+typos = true
+actionlint = true
+```
+
+既定の引数は以下のとおり。必要に応じて上書きできる。
+
+- editorconfig-checker: `editorconfig-checker-args = ["-format", "gcc", "-no-color"]`
+- shellcheck: `shellcheck-args = ["-f", "gcc"]`
+- shfmt: `shfmt-check-args = ["-l"]` / `shfmt-write-args = ["-w"]`（2段階実行。共通引数は`shfmt-args`で指定）
+- typos: `typos-args = ["--format", "brief"]`
+- actionlint: `actionlint-args = []`
+
+`{command}-path`を明示的に設定した場合はその値が優先され、bin-runnerによる自動解決は無効化される。
+
+## JS/TS追加ツール (oxlint / tsc / vitest)
+
+oxlint / tsc / vitestはjs-runner対応のツール。すべて既定で無効。
+
+```toml
+[tool.pyfltr]
+js-runner = "pnpm"
+oxlint = true
+tsc = true
+vitest = true
+```
+
+既定の引数は以下のとおり。
+
+- oxlint: `oxlint-args = []`
+- tsc: `tsc-args = ["--noEmit"]`、`tsc-pass-filenames = false`（プロジェクト全体をチェックするためファイル引数を渡さない）
+- vitest: `vitest-args = ["run"]`（`run`サブコマンドが必須）
+
+## uv-sort
+
+`uv-sort`は`pyproject.toml`の依存定義をソートするformatter。既定で無効。
+
+```toml
+[tool.pyfltr]
+uv-sort = true
+```
+
+Python系ツールとして扱われ、`python = false`で一括無効化の対象となる。
+
 ## 並列実行
 
 linters/testersは既定で最大4並列で実行される。
@@ -164,9 +309,9 @@ pflake8-fast = false
 
 カスタムコマンドも`fast = true`でfastエイリアスに追加できる（後述）。
 
-## npm系ツール (markdownlint / textlint / eslint / prettier / biome)
+## npm系ツール (markdownlint / textlint / eslint / prettier / biome / oxlint / tsc / vitest)
 
-markdownlint-cli2・textlint・eslint・prettier・biomeは`js-runner`設定で起動方式を切り替える。
+markdownlint-cli2・textlint・eslint・prettier・biome・oxlint・tsc・vitestは`js-runner`設定で起動方式を切り替える。
 既定は`pnpx`で、グローバル/キャッシュから都度取得する従来互換の挙動となる。
 プロジェクトの`package.json`で既にこれらのツールをインストール済みの場合は、
 `js-runner`を`pnpm` / `npm` / `npx` / `yarn` / `direct`に切り替えるとよい。
@@ -253,7 +398,7 @@ biome = true
     - `biome-fix-args = ["--write"]`（safe fixのみ。unsafe fixを使う場合は`["--write", "--unsafe"]`に上書き）
     - 注: `biome-args`の先頭からサブコマンド（`check` / `lint` / `format`）を外すとbiomeがhelp表示で失敗する。必ずサブコマンド名を残すこと
 
-プリセット（`preset = "latest"`）にはeslint / prettier / biomeは含まれない（opt-in）。
+プリセット（`preset = "latest"`）にはeslint / prettier / biome / oxlint / tsc / vitestは含まれない（opt-in）。
 
 ## 出力順序
 
@@ -288,6 +433,7 @@ fast = true
     - 指定するとErrorsタブやエラー一覧に表示される
 - `fast`: `fast`サブコマンドに含めるか否か（省略時は`false`）
 - `fix-args`: `pyfltr fix`時に`args`の後ろへ追加する引数（省略時はfixモード対象外）
+- `pass-filenames`: ファイル引数をコマンドに渡すか否か（省略時は`true`）。プロジェクト全体を一括チェックするツールでは`false`に設定する
 
 ビルトインコマンド（mypy等）は自動的にエラーパースされる。
 カスタムコマンドに対しても`--{name}-args`やenable/disableを使用できる。

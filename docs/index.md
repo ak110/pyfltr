@@ -20,6 +20,8 @@ llms.txt: <https://ak110.github.io/pyfltr/llms.txt>
     - black
     - ruff format（既定では無効。有効時は `ruff check --fix --unsafe-fixes` を併走する、`ruff-format-by-check`でOFF可）
     - prettier（既定では無効、`js-runner`設定で起動方式を切替可能。`--check`と`--write`の2段階実行）
+    - uv-sort（既定では無効、`pyproject.toml`の依存ソート）
+    - shfmt（既定では無効、`bin-runner`設定で起動方式を切替可能。prettierと同様の2段階実行）
 - Linters
     - ruff check（既定では無効）
     - pflake8 + flake8-bugbear + flake8-tidy-imports
@@ -27,12 +29,19 @@ llms.txt: <https://ak110.github.io/pyfltr/llms.txt>
     - pylint
     - pyright（既定では無効）
     - ty（既定では無効）
+    - editorconfig-checker（既定では無効、`bin-runner`設定で起動方式を切替可能）
+    - shellcheck（既定では無効、`bin-runner`設定で起動方式を切替可能）
+    - typos（既定では無効、`bin-runner`設定で起動方式を切替可能）
+    - actionlint（既定では無効、`bin-runner`設定で起動方式を切替可能）
     - markdownlint-cli2（既定では無効、`js-runner`設定で起動方式を切替可能。既定は`pnpx`）
     - textlint（既定では無効、`js-runner`設定で起動方式を切替可能。`textlint-packages`でプリセット/ルール指定）
     - eslint（既定では無効、`js-runner`設定で起動方式を切替可能。`--format json`で機械可読出力を取得）
     - biome（既定では無効、`js-runner`設定で起動方式を切替可能。`biome check`サブコマンドと`--reporter=github`を使用）
+    - oxlint（既定では無効、`js-runner`設定で起動方式を切替可能）
+    - tsc（既定では無効、`js-runner`設定で起動方式を切替可能。`--noEmit`で型チェックのみ実行）
 - Testers
     - pytest
+    - vitest（既定では無効、`js-runner`設定で起動方式を切替可能。`run`サブコマンドで実行）
 
 ## コンセプト
 

@@ -1,0 +1,118 @@
+# カスタムコマンド例
+
+`[tool.pyfltr.custom-commands]`で任意のツールを追加できる。
+ここでは実用的な設定例を紹介する。
+カスタムコマンドの仕様は[設定](configuration.md)の「カスタムコマンド」セクションを参照。
+
+## Pythonセキュリティ・品質ツール
+
+### bandit（セキュリティチェック）
+
+```toml
+[tool.pyfltr.custom-commands.bandit]
+type = "linter"
+path = "bandit"
+args = ["-r", "-f", "custom"]
+targets = "*.py"
+error-pattern = '(?P<file>[^:]+):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>.+)'
+fast = true
+```
+
+### deptry（未使用・不足依存の検出）
+
+```toml
+[tool.pyfltr.custom-commands.deptry]
+type = "linter"
+path = "deptry"
+args = ["."]
+targets = "*.py"
+pass-filenames = false
+```
+
+### vulture（未使用コードの検出）
+
+```toml
+[tool.pyfltr.custom-commands.vulture]
+type = "linter"
+path = "vulture"
+args = []
+targets = "*.py"
+error-pattern = '(?P<file>[^:]+):(?P<line>\d+):\s*(?P<message>.+)'
+fast = true
+```
+
+### detect-secrets（シークレット検出）
+
+```toml
+[tool.pyfltr.custom-commands.detect-secrets]
+type = "linter"
+path = "detect-secrets"
+args = ["scan", "--list-all-plugins"]
+targets = "*.py"
+pass-filenames = false
+```
+
+## 汎用ツール
+
+### yamllint（YAML構文チェック）
+
+```toml
+[tool.pyfltr.custom-commands.yamllint]
+type = "linter"
+path = "yamllint"
+args = ["--format", "parsable"]
+targets = ["*.yaml", "*.yml"]
+error-pattern = '(?P<file>[^:]+):(?P<line>\d+):(?P<col>\d+):\s*\[(?:error|warning)\]\s*(?P<message>.+)'
+fast = true
+```
+
+### codespell（スペルチェック）
+
+```toml
+[tool.pyfltr.custom-commands.codespell]
+type = "linter"
+path = "codespell"
+args = []
+targets = ["*.py", "*.md", "*.rst", "*.txt"]
+fast = true
+```
+
+### cspell（スペルチェック、npm系）
+
+js-runner対応のスペルチェッカー。`package.json`でインストールする前提で、`js-runner = "pnpm"`と併用する。
+
+```toml
+[tool.pyfltr]
+js-runner = "pnpm"
+
+[tool.pyfltr.custom-commands.cspell]
+type = "linter"
+path = "cspell"
+args = ["lint", "--no-progress", "--no-summary"]
+targets = ["*.py", "*.md", "*.ts", "*.js"]
+error-pattern = '(?P<file>[^:]+):(?P<line>\d+):(?P<col>\d+)\s*-\s*(?P<message>.+)'
+fast = true
+```
+
+## JS/TSプロジェクト向け
+
+### svelte-check（Svelteの型チェック）
+
+```toml
+[tool.pyfltr.custom-commands.svelte-check]
+type = "linter"
+path = "svelte-check"
+args = ["--tsconfig", "./tsconfig.json"]
+targets = "*.svelte"
+pass-filenames = false
+```
+
+### commitlint（コミットメッセージチェック）
+
+```toml
+[tool.pyfltr.custom-commands.commitlint]
+type = "linter"
+path = "commitlint"
+args = ["--from=HEAD~1"]
+pass-filenames = false
+```
