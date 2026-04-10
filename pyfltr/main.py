@@ -59,7 +59,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--fix",
         default=False,
         action="store_true",
-        help="fix モードで実行します(対応ツールに --fix 相当の引数を追加し、順次実行します)。",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--stream",
@@ -104,10 +104,49 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+# サブコマンドとして認識する予約語
+_SUBCOMMANDS: frozenset[str] = frozenset({"ci", "run", "fast", "fix", "dirty"})
+
+
+def _parse_subcommand(sys_args: typing.Sequence[str]) -> tuple[str, list[str]]:
+    """第一引数からサブコマンドを判定し、(subcommand, remaining_args)を返す。
+
+    第一引数が予約済みサブコマンド名でなければ "ci" として扱う（後方互換性維持）。
+    """
+    if sys_args and sys_args[0] in _SUBCOMMANDS:
+        return sys_args[0], list(sys_args[1:])
+    return "ci", list(sys_args)
+
+
+def _build_effective_args(subcommand: str, args: list[str]) -> list[str]:
+    """サブコマンドに応じた暗黙的オプションを先頭に挿入。"""
+    if subcommand == "run":
+        return ["--exit-zero-even-if-formatted", *args]
+    if subcommand == "fast":
+        return ["--exit-zero-even-if-formatted", "--commands=fast", *args]
+    if subcommand == "fix":
+        return ["--fix", *args]
+    # ci: 変更なし
+    return list(args)
+
+
 def run(sys_args: typing.Sequence[str] | None = None) -> int:
     """処理の実行。"""
+    if sys_args is None:
+        sys_args = sys.argv[1:]
+
+    subcommand, remaining_args = _parse_subcommand(sys_args)
+
+    # dirtyサブコマンドは別モジュールに委託（循環import回避のため遅延import）
+    if subcommand == "dirty":
+        import pyfltr.dirty  # pylint: disable=import-outside-toplevel,redefined-outer-name
+
+        return pyfltr.dirty.run_dirty(remaining_args)
+
+    effective_args = _build_effective_args(subcommand, remaining_args)
+
     parser = build_parser()
-    args = parser.parse_args(sys_args)
+    args = parser.parse_args(effective_args)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, format="%(message)s")
 
     # --work-dir: ターゲットパスを絶対パスに変換してからcwd変更
@@ -118,7 +157,7 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
         original_cwd = os.getcwd()
         os.chdir(args.work_dir)
     try:
-        return _run_impl(parser, args, sys_args, resolved_targets)
+        return _run_impl(parser, args, effective_args, resolved_targets)
     finally:
         if original_cwd is not None:
             os.chdir(original_cwd)
@@ -127,7 +166,7 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
 def _run_impl(
     parser: argparse.ArgumentParser,
     args: argparse.Namespace,
-    sys_args: typing.Sequence[str] | None,
+    effective_args: typing.Sequence[str],
     resolved_targets: list[pathlib.Path] | None,
 ) -> int:
     """run()の内部実装。"""
@@ -166,7 +205,7 @@ def _run_impl(
                 default="",
                 help=f"{command} への追加引数を指定します。",
             )
-        args = parser.parse_args(sys_args)
+        args = parser.parse_args(effective_args)
 
     # --work-dir指定時、再パースで上書きされたtargetsを絶対パスで復元
     if resolved_targets is not None:

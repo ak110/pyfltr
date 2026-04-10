@@ -2,7 +2,6 @@
 
 - `pyproject.toml` の編集は極力 `uv` コマンドを使う（`uv add`, `uv remove` など）
   - 手動編集は `uv` コマンドでは対応できない箇所に限る
-- コマンドラインは極力 `--foo` のようなロング形式のオプションを使用する（可読性のため）
 
 ## 開発手順
 
@@ -22,14 +21,6 @@
   - 開発者のシェルでは`UV_FROZEN`を設定しない前提のため、依存の追加・更新は通常どおり`uv add`/`uv remove`/`uv lock --upgrade-package`を使えばよい
   - `make update`も内部で自動的にUV_FROZENを外すため、そのまま実行してよい
   - 詳細な運用方針は`docs/development.md`の「UV_FROZENによるlockfile尊重」セクションを参照
-
-## 外部ツール仕様の確認
-
-- ruff / mypy / pytest / pylint / pyright / tyなど対応ツールの最新仕様を参照する際は、
-  `context7` MCP（`mcp__plugin_context7_context7__resolve-library-id` →
-  `mcp__plugin_context7_context7__query-docs`）を優先する
-- pyfltrは対応ツールのバージョン追従が宿命のため、知識のスナップショットではなく
-  最新ドキュメントを確認する
 
 ## 関連ドキュメント
 

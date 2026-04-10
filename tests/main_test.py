@@ -1,5 +1,6 @@
 # pylint: disable=missing-module-docstring
 # pylint: disable=missing-function-docstring
+# pylint: disable=protected-access
 
 import pathlib
 import subprocess
@@ -42,7 +43,7 @@ def test_fix_mode_with_no_eligible_commands(mocker, caplog):
     # formatter を全部 disabled にすれば fix 対象なしになる
     proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="")
     mocker.patch("subprocess.run", return_value=proc)
-    returncode = pyfltr.main.run(["--fix", "--commands=mypy,pylint", str(pathlib.Path(__file__).parent.parent)])
+    returncode = pyfltr.main.run(["fix", "--commands=mypy,pylint", str(pathlib.Path(__file__).parent.parent)])
     # mypy/pylint は fix-args 未定義なので 0 件
     assert returncode == 1
     assert "--fix で実行可能なコマンドがありません" in caplog.text
@@ -53,7 +54,7 @@ def test_fix_mode_disables_shuffle(mocker, caplog):
     proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="")
     mocker.patch("subprocess.run", return_value=proc)
     # ruff-format は pyfltr 自身の preset=latest で有効化されている
-    returncode = pyfltr.main.run(["--fix", "--shuffle", "--commands=ruff-format", str(pathlib.Path(__file__).parent.parent)])
+    returncode = pyfltr.main.run(["fix", "--shuffle", "--commands=ruff-format", str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 0
     assert "--shuffle を無効化" in caplog.text
 
@@ -100,3 +101,88 @@ def test_additional_args(mocker):
     called_args = mock_run.call_args[0][0]  # 最初の引数（コマンドライン）
     assert "--maxfail=5" in called_args
     assert "-v" in called_args
+
+
+class TestParseSubcommand:
+    """_parse_subcommandのテスト。"""
+
+    def test_explicit_ci(self):
+        sub, remaining = pyfltr.main._parse_subcommand(["ci", "src/"])
+        assert sub == "ci"
+        assert remaining == ["src/"]
+
+    def test_implicit_ci(self):
+        """予約語以外の第一引数はciとして扱う。"""
+        sub, remaining = pyfltr.main._parse_subcommand(["--verbose", "src/"])
+        assert sub == "ci"
+        assert remaining == ["--verbose", "src/"]
+
+    def test_run_subcommand(self):
+        sub, remaining = pyfltr.main._parse_subcommand(["run", "src/"])
+        assert sub == "run"
+        assert remaining == ["src/"]
+
+    def test_fast_subcommand(self):
+        sub, remaining = pyfltr.main._parse_subcommand(["fast", "src/"])
+        assert sub == "fast"
+        assert remaining == ["src/"]
+
+    def test_fix_subcommand(self):
+        sub, remaining = pyfltr.main._parse_subcommand(["fix", "src/"])
+        assert sub == "fix"
+        assert remaining == ["src/"]
+
+    def test_dirty_subcommand(self):
+        sub, remaining = pyfltr.main._parse_subcommand(["dirty", "init"])
+        assert sub == "dirty"
+        assert remaining == ["init"]
+
+    def test_empty_args(self):
+        sub, remaining = pyfltr.main._parse_subcommand([])
+        assert sub == "ci"
+        assert not remaining
+
+
+class TestBuildEffectiveArgs:
+    """_build_effective_argsのテスト。"""
+
+    def test_ci(self):
+        result = pyfltr.main._build_effective_args("ci", ["src/"])
+        assert result == ["src/"]
+
+    def test_run(self):
+        result = pyfltr.main._build_effective_args("run", ["src/"])
+        assert result == ["--exit-zero-even-if-formatted", "src/"]
+
+    def test_fast(self):
+        result = pyfltr.main._build_effective_args("fast", ["src/"])
+        assert result == ["--exit-zero-even-if-formatted", "--commands=fast", "src/"]
+
+    def test_fix(self):
+        result = pyfltr.main._build_effective_args("fix", ["src/"])
+        assert result == ["--fix", "src/"]
+
+
+class TestSubcommandIntegration:
+    """サブコマンドの統合テスト。"""
+
+    def test_run_subcommand(self, mocker):
+        """runサブコマンドで--exit-zero-even-if-formattedが暗黙的に有効化される。"""
+        proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="test")
+        mocker.patch("subprocess.run", return_value=proc)
+        returncode = pyfltr.main.run(["run", str(pathlib.Path(__file__).parent.parent)])
+        assert returncode == 0
+
+    def test_fast_subcommand(self, mocker):
+        """fastサブコマンドで--exit-zero-even-if-formattedと--commands=fastが暗黙的に有効化される。"""
+        proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="test")
+        mocker.patch("subprocess.run", return_value=proc)
+        returncode = pyfltr.main.run(["fast", str(pathlib.Path(__file__).parent.parent)])
+        assert returncode == 0
+
+    def test_ci_explicit(self, mocker):
+        """明示的なciサブコマンド。"""
+        proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="test")
+        mocker.patch("subprocess.run", return_value=proc)
+        returncode = pyfltr.main.run(["ci", str(pathlib.Path(__file__).parent.parent)])
+        assert returncode == 0

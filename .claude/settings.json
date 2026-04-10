@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "rm -f \"$CLAUDE_PROJECT_DIR/.claude/.format-dirty\"; exit 0"
+            "command": "uv run pyfltr dirty init; exit 0"
           }
         ]
       }
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "f=$(jq -r '.tool_input.file_path // empty'); case \"$f\" in *.py) mkdir -p \"$CLAUDE_PROJECT_DIR/.claude\" && printf '%s\\n' \"$f\" >> \"$CLAUDE_PROJECT_DIR/.claude/.format-dirty\" ;; esac; exit 0"
+            "command": "uv run pyfltr dirty add; exit 0"
           }
         ]
       }
@@ -26,7 +26,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "M=\"$CLAUDE_PROJECT_DIR/.claude/.format-dirty\"; [ -s \"$M\" ] || { rm -f \"$M\"; exit 0; }; cd \"$CLAUDE_PROJECT_DIR\" || exit 0; sort -u \"$M\" -o \"$M\"; awk 'NF' \"$M\" | while IFS= read -r f; do [ -e \"$f\" ] && printf '%s\\n' \"$f\"; done > \"$M.tmp\" && mv \"$M.tmp\" \"$M\"; [ -s \"$M\" ] || { rm -f \"$M\"; exit 0; }; xargs -a \"$M\" -d '\\n' uv run pyfltr --exit-zero-even-if-formatted --commands=fast >&2; rm -f \"$M\"; exit 0"
+            "command": "uv run pyfltr dirty run >&2; exit 0"
           }
         ]
       }
