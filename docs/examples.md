@@ -87,7 +87,7 @@ asyncio_default_test_loop_scope = "session"
     hooks:
       - id: pyfltr
         name: pyfltr
-        entry: uv run pyfltr --exit-zero-even-if-formatted --commands=fast
+        entry: uv run --frozen pyfltr --exit-zero-even-if-formatted --commands=fast
         types_or: [python, markdown]
         require_serial: true
         language: system
@@ -95,6 +95,7 @@ asyncio_default_test_loop_scope = "session"
 
 ポイント:
 
+- `--frozen`: `uv run`が依存解決を再実行せず`uv.lock`をそのまま使うようにする。サプライチェーン攻撃対策として、`git commit`の起動経路がシェル環境変数（`UV_FROZEN`）に依存しなくても確実にfrozen動作させるための保険。
 - `--exit-zero-even-if-formatted`: Formatterがファイルを修正しただけではフックを失敗と判定しないためのオプション。pre-commitの通常運用（修正→再ステージ→再実行）を阻害せずに済む。
 - `--commands=fast`: mypy / pylint / pytestなど重いコマンドを除外した高速サブセット。pre-commitは対話的フックのため速度を優先する。
 - `types_or: [python, markdown]`: PythonだけでなくMarkdown変更時もフックを起動し、markdownlint / textlintを実行する。
@@ -236,6 +237,10 @@ pyfltrは`--fix`実行時にfix段階の起動コマンドから`--format`ペア
 GitHub ActionsでpyfltrをPythonバージョンのmatrixで実行する構成の例。
 
 ```yaml
+env:
+    # サプライチェーン攻撃対策: uvがlockfileを常に尊重し、意図しない再resolveを防ぐ
+    UV_FROZEN: "1"
+
 jobs:
     test:
         runs-on: ubuntu-latest
@@ -273,6 +278,7 @@ jobs:
 
 ポイント:
 
+- `env.UV_FROZEN: "1"`: サプライチェーン攻撃対策として、ワークフロー全体で`uv sync`/`uv run`が`uv.lock`を尊重するよう強制する。意図しない再resolveでロックファイルが書き換わるリスクを抑える。
 - `actions/setup-node` + `pnpm/action-setup`: `markdownlint-cli2` と `textlint` をpnpx経由で呼び出すため、PythonだけでなくNode.js環境も必要になる。
-- `uv sync --all-extras --all-groups`: pyfltrを含むdev依存をすべて同期し、`uv run pyfltr` から対応ツール群を解決できるようにする。
+- `uv sync --all-extras --all-groups`: pyfltrを含むdev依存をすべて同期し、`uv run pyfltr` から対応ツール群を解決できるようにする。`UV_FROZEN=1`下でも`uv.lock`をそのまま使うため問題なく動作する。
 - `uv cache prune --ci`: CIキャッシュを軽量化するための後処理。

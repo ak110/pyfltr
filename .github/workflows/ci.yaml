@@ -16,6 +16,8 @@ concurrency:
 
 env:
   PYTHONDEVMODE: "1"
+  # サプライチェーン攻撃対策: uvがlockfileを常に尊重する
+  UV_FROZEN: "1"
 
 jobs:
   test:

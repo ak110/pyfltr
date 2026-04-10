@@ -1,3 +1,8 @@
+# サプライチェーン攻撃対策としてlockfileを常に尊重する。依存を更新する場合のみ
+# `env -u UV_FROZEN` で一時的に無効化する（`UV_FROZEN=` の空文字代入はuvがエラー扱い）。
+export UV_FROZEN := 1
+
+UV_RUN := uv run --all-extras --all-groups
 
 help:
 	@cat Makefile
@@ -13,8 +18,8 @@ clean-stale-dist-info:
 
 update:
 	$(MAKE) clean-stale-dist-info
-	uv sync --upgrade --all-extras --all-groups
-	uv run pre-commit autoupdate
+	env -u UV_FROZEN uv sync --upgrade --all-extras --all-groups
+	$(UV_RUN) pre-commit autoupdate
 	$(MAKE) update-actions
 	$(MAKE) test
 
@@ -26,16 +31,16 @@ update-actions:
 # フォーマット + 軽量 lint (開発時の手動実行用。自動修正あり)
 format:
 	$(MAKE) clean-stale-dist-info
-	SKIP=pyfltr uv run pre-commit run --all-files
-	-uv run pyfltr --exit-zero-even-if-formatted --commands=fast
+	SKIP=pyfltr $(UV_RUN) pre-commit run --all-files
+	-$(UV_RUN) pyfltr --exit-zero-even-if-formatted --commands=fast
 
 # 全チェック実行 (このタスクが成功したらコミット可能)
 test:
 	$(MAKE) clean-stale-dist-info
-	SKIP=pyfltr uv run pre-commit run --all-files
-	uv run pyfltr --exit-zero-even-if-formatted
+	SKIP=pyfltr $(UV_RUN) pre-commit run --all-files
+	$(UV_RUN) pyfltr --exit-zero-even-if-formatted
 
 docs:
-	uv run mkdocs serve
+	$(UV_RUN) mkdocs serve
 
 .PHONY: help clean-stale-dist-info update update-actions format test docs
