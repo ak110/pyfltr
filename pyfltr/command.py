@@ -34,6 +34,9 @@ _JS_TOOL_BIN: dict[str, str] = {
     "eslint": "eslint",
     "prettier": "prettier",
     "biome": "biome",
+    "vitest": "vitest",
+    "oxlint": "oxlint",
+    "tsc": "tsc",
 }
 
 # pnpx 経由で解決するときに `--package` に渡す spec。
@@ -44,6 +47,8 @@ _JS_TOOL_BIN: dict[str, str] = {
 _JS_TOOL_PNPX_PACKAGE_SPEC: dict[str, str] = {
     "textlint": "textlint@<15.5.3 || >15.5.3",
     "biome": "@biomejs/biome",
+    "oxlint": "oxlint",
+    "tsc": "typescript",  # tsc コマンドは typescript パッケージに含まれる
 }
 
 
@@ -366,7 +371,9 @@ def execute_command(
     else:
         commandline.extend(config.values.get(f"{command}-lint-args", []))
     commandline.extend(additional_args)
-    commandline.extend(str(t) for t in targets)
+    # pass-filenames = false のツールはファイル引数を渡さない（tsc 等）
+    if config.values.get(f"{command}-pass-filenames", True):
+        commandline.extend(str(t) for t in targets)
 
     if len(targets) <= 0:
         return CommandResult(

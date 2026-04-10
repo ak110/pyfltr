@@ -94,7 +94,37 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         type="linter",
         targets=[*_JS_COMMON_TARGETS, "*.json", "*.jsonc", "*.css"],
     ),
+    "oxlint": CommandInfo(
+        type="linter",
+        targets=[*_JS_COMMON_TARGETS, "*.vue", "*.svelte"],
+    ),
+    "tsc": CommandInfo(
+        type="linter",
+        targets=["*.ts", "*.tsx", "*.mts", "*.cts"],
+    ),
     "pytest": CommandInfo(type="tester", targets="*_test.py"),
+    # vitest のテストファイルパターン（pytest の *_test.py と同じ考え方）
+    "vitest": CommandInfo(
+        type="tester",
+        targets=[
+            "*.test.js",
+            "*.test.jsx",
+            "*.test.ts",
+            "*.test.tsx",
+            "*.spec.js",
+            "*.spec.jsx",
+            "*.spec.ts",
+            "*.spec.tsx",
+            "*.test.mjs",
+            "*.test.mts",
+            "*.test.cjs",
+            "*.test.cts",
+            "*.spec.mjs",
+            "*.spec.mts",
+            "*.spec.cjs",
+            "*.spec.cts",
+        ],
+    ),
 }
 
 BUILTIN_COMMAND_NAMES: list[str] = list(BUILTIN_COMMANDS.keys())
@@ -265,6 +295,16 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # fix モード時に通常 args の後に追加する引数。
     # `biome check --write` で safe fix のみ適用する (--unsafe は含めない)。
     "biome-fix-args": ["--write"],
+    # -- js-runner対応ツール（追加分） --
+    "oxlint": False,
+    "oxlint-path": "",
+    "oxlint-args": [],
+    "oxlint-fast": True,
+    "tsc": False,
+    "tsc-path": "",
+    "tsc-args": ["--noEmit"],
+    "tsc-pass-filenames": False,
+    "tsc-fast": False,
     # -- bin-runner対応ツール --
     "shfmt": False,
     "shfmt-path": "",
@@ -299,6 +339,10 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "pytest-args": [],
     "pytest-devmode": True,  # PYTHONDEVMODE=1をするか否か
     "pytest-fast": False,
+    "vitest": False,
+    "vitest-path": "",
+    "vitest-args": ["run"],  # vitest は run サブコマンドが必須
+    "vitest-fast": False,
     "ruff-format": False,
     "ruff-format-path": "ruff",
     "ruff-format-args": ["format", "--exit-non-zero-on-format"],
@@ -381,8 +425,10 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
             "shellcheck",
             "typos",
             "actionlint",
+            "oxlint",
+            "tsc",
         ],
-        "test": ["pytest"],
+        "test": ["pytest", "vitest"],
     },
 }
 """デフォルト設定。"""
@@ -558,11 +604,17 @@ def _register_custom_command(config: Config, name: str, definition: dict[str, ty
     if not isinstance(fast, bool):
         raise ValueError(f"カスタムコマンド {name} のfastはboolで指定してください")
 
+    # pass-filenames (省略時はTrue)
+    pass_filenames = definition.get("pass-filenames", definition.get("pass_filenames", True))
+    if not isinstance(pass_filenames, bool):
+        raise ValueError(f"カスタムコマンド {name} のpass-filenamesはboolで指定してください")
+
     # values辞書にデフォルト設定を追加
     config.values[name] = True
     config.values[f"{name}-path"] = path
     config.values[f"{name}-args"] = args
     config.values[f"{name}-fast"] = fast
+    config.values[f"{name}-pass-filenames"] = pass_filenames
     # fix-args は定義されている場合のみ登録する (キーの有無で fix 対応可否を判別)
     if fix_args is not None:
         config.values[f"{name}-fix-args"] = fix_args
