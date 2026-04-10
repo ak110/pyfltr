@@ -32,6 +32,7 @@ dependencies = [
     "ruff>=0.12.1",
     "textual>=8.0.0",
     "ty>=0.0.26",
+    "uv-sort>=0.5",
 ]
 
 [project.optional-dependencies]

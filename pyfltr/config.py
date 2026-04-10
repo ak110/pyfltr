@@ -69,6 +69,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
             "*.html",
         ],
     ),
+    "uv-sort": CommandInfo(type="formatter", targets="pyproject.toml"),
     # bin-runner対応ツール（formatter → linterの順）
     "shfmt": CommandInfo(type="formatter", targets="*.sh"),
     "editorconfig-checker": CommandInfo(type="linter", targets="*"),
@@ -150,6 +151,7 @@ PYTHON_COMMANDS: tuple[str, ...] = (
     "pyright",
     "ty",
     "pytest",
+    "uv-sort",
 )
 """python = false で一括無効化されるコマンドの一覧。"""
 
@@ -285,6 +287,10 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "prettier-check-args": ["--check"],
     "prettier-write-args": ["--write"],
     "prettier-fast": True,
+    "uv-sort": False,
+    "uv-sort-path": "uv-sort",
+    "uv-sort-args": [],
+    "uv-sort-fast": True,
     "biome": False,
     "biome-path": "",
     # "check" サブコマンドと --reporter=github は lint / fix 両モードで有効にする
@@ -409,7 +415,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "respect-gitignore": True,
     # コマンド名のエイリアス
     "aliases": {
-        "format": ["pyupgrade", "autoflake", "isort", "black", "ruff-format", "prettier", "shfmt"],
+        "format": ["pyupgrade", "autoflake", "isort", "black", "ruff-format", "prettier", "uv-sort", "shfmt"],
         "lint": [
             "ruff-check",
             "pflake8",
