@@ -239,7 +239,19 @@ bin-runner = "mise"
 | `mise` | `mise exec <tool>@<version> -- <command>`で起動する（既定）。ツールの自動インストールにも対応 |
 | `direct` | PATH上のバイナリを直接実行する |
 
-ツールがインストールされていない場合はエラー扱いとなる。
+ツールが見つからない場合はエラー扱い（`failed`）となる。
+`mise`モードの場合、実行環境にmiseがインストールされている必要がある。
+
+### CIでの設定
+
+GitHub ActionsでCIを実行する場合は[jdx/mise-action](https://github.com/jdx/mise-action)でmiseをセットアップする。
+
+```yaml
+- name: Setup mise
+  uses: jdx/mise-action@v4
+```
+
+miseを使わず、PATH上のバイナリを直接使う場合は`bin-runner = "direct"`を設定する。
 
 ### バージョン指定
 
