@@ -137,6 +137,7 @@ textlintで技術文書向けの複数プリセットと誤用語チェックを
 - `ja-no-mixed-period`: ラベル型見出し（「ポイント」「例」など）が多用されるため
 - `no-doubled-joshi`: 技術文書で避けられない自然な助詞連結が頻出するため
 - `sentence-length`: 既定の100文字制限を120文字へ緩和する（完全無効化はしない）
+- `no-mix-dearu-desumasu`: 本文・リストを常体（である調）に固定する（プリセット既定は本文が敬体）
 - `1.1.3.箇条書き`: 箇条書きに句点を付けない方針のため
 - `4.2.7.コロン(：)`: コロン終端のラベル記法を多用するため
 
@@ -149,6 +150,11 @@ rules:
     no-doubled-joshi: false
     sentence-length:
       max: 120
+    no-mix-dearu-desumasu:
+      preferInHeader: ""
+      preferInBody: "である"
+      preferInList: "である"
+      strict: false
   preset-jtf-style:
     "1.1.3.箇条書き":
       shouldUsePoint: false

@@ -7,6 +7,12 @@ rules:
     # 引用文や詳細な技術説明で100文字超過が避けられないため緩和する
     sentence-length:
       max: 120
+    # agent.mdの「ドキュメントは常体」方針と整合させる
+    no-mix-dearu-desumasu:
+      preferInHeader: ""
+      preferInBody: "である"
+      preferInList: "である"
+      strict: false
   preset-jtf-style:
     "1.1.3.箇条書き":
       shouldUsePoint: false # 箇条書きは「。」をつけない
