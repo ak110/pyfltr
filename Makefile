@@ -1,5 +1,5 @@
 # サプライチェーン攻撃対策としてlockfileを常に尊重する。依存を更新する場合のみ
-# `env -u UV_FROZEN` で一時的に無効化する（`UV_FROZEN=` の空文字代入はuvがエラー扱い）。
+# `env --unset UV_FROZEN` で一時的に無効化する（`UV_FROZEN=` の空文字代入はuvがエラー扱い）。
 export UV_FROZEN := 1
 
 UV_RUN := uv run --all-extras --all-groups
@@ -18,7 +18,7 @@ clean-stale-dist-info:
 
 update:
 	$(MAKE) clean-stale-dist-info
-	env -u UV_FROZEN uv sync --upgrade --all-extras --all-groups
+	env --unset UV_FROZEN uv sync --upgrade --all-extras --all-groups
 	$(UV_RUN) pre-commit autoupdate
 	$(MAKE) update-actions
 	$(MAKE) test

@@ -22,16 +22,11 @@ repos:
       - id: name-tests-test
       - id: trailing-whitespace
 
-  - repo: https://github.com/ninoseki/uv-sort
-    rev: v0.7.0
-    hooks:
-      - id: uv-sort
-
   - repo: local
     hooks:
       - id: pyfltr
         name: pyfltr
         entry: uv run --frozen pyfltr fast
-        types_or: [python, markdown]
+        types_or: [python, markdown, toml]
         require_serial: true
         language: system
