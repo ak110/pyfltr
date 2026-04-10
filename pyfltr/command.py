@@ -67,7 +67,7 @@ class BinToolSpec:
 # bin-runner で解決するネイティブバイナリツールの定義。
 # path 設定が空のとき、bin-runner 設定に基づいてコマンドを組み立てる。
 _BIN_TOOL_SPEC: dict[str, BinToolSpec] = {
-    "editorconfig-checker": BinToolSpec(bin_name="editorconfig-checker"),
+    "ec": BinToolSpec(bin_name="ec", mise_backend="editorconfig-checker"),
     "shellcheck": BinToolSpec(bin_name="shellcheck"),
     "shfmt": BinToolSpec(bin_name="shfmt"),
     "typos": BinToolSpec(bin_name="typos"),
@@ -113,20 +113,20 @@ def _resolve_bin_commandline(
     raise ValueError(f"bin-runnerの設定値が正しくありません: {runner=}")
 
 
-def _skipped_bin_resolution_result(
+def _failed_bin_resolution_result(
     command: str,
     command_info: pyfltr.config.CommandInfo,
     error: FileNotFoundError,
 ) -> "CommandResult":
-    """Bin ツールの解決失敗時のスキップ用 `CommandResult` を組み立てる。"""
-    message = f"ツールが見つかりません（スキップ）: {error}"
+    """Bin ツールの解決失敗時の `CommandResult` を組み立てる。"""
+    message = f"ツールが見つかりません: {error}"
     logger.warning("%s: %s", command, message)
     return CommandResult(
         command=command,
         command_type=command_info.type,
         commandline=[],
-        returncode=None,
-        has_error=False,
+        returncode=1,
+        has_error=True,
         files=0,
         output=message,
         elapsed=0.0,
@@ -338,7 +338,7 @@ def execute_command(
         fix_args = config.values.get(f"{command}-fix-args")
 
     # textlint / markdownlint は path が空の場合、js-runner 設定から解決する。
-    # editorconfig-checker 等は bin-runner 設定から解決する。
+    # ec 等は bin-runner 設定から解決する。
     if command in _JS_TOOL_BIN and config[f"{command}-path"] == "":
         try:
             resolved_path, prefix = _resolve_js_commandline(command, config)
@@ -349,7 +349,7 @@ def execute_command(
         try:
             resolved_path, prefix = _resolve_bin_commandline(command, config)
         except FileNotFoundError as e:
-            return _skipped_bin_resolution_result(command, command_info, e)
+            return _failed_bin_resolution_result(command, command_info, e)
         commandline_prefix = [resolved_path, *prefix]
     else:
         commandline_prefix = [config[f"{command}-path"]]

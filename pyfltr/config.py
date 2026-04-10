@@ -72,7 +72,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
     "uv-sort": CommandInfo(type="formatter", targets="pyproject.toml"),
     # bin-runner対応ツール（formatter → linterの順）
     "shfmt": CommandInfo(type="formatter", targets="*.sh"),
-    "editorconfig-checker": CommandInfo(type="linter", targets="*"),
+    "ec": CommandInfo(type="linter", targets="*"),
     "shellcheck": CommandInfo(type="linter", targets="*.sh"),
     "typos": CommandInfo(type="linter", targets="*"),
     "actionlint": CommandInfo(
@@ -136,7 +136,7 @@ JS_RUNNERS: tuple[str, ...] = ("pnpx", "pnpm", "npm", "npx", "yarn", "direct")
 """textlint / markdownlint の起動方式として指定できる値。"""
 
 BIN_RUNNERS: tuple[str, ...] = ("direct", "mise")
-"""editorconfig-checker / shellcheck 等のネイティブバイナリツールの起動方式として指定できる値。"""
+"""ec / shellcheck 等のネイティブバイナリツールの起動方式として指定できる値。"""
 
 PYTHON_COMMANDS: tuple[str, ...] = (
     "pyupgrade",
@@ -320,11 +320,11 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "shfmt-write-args": ["-w"],
     "shfmt-version": "latest",
     "shfmt-fast": True,
-    "editorconfig-checker": False,
-    "editorconfig-checker-path": "",
-    "editorconfig-checker-args": ["-format", "gcc", "-no-color"],
-    "editorconfig-checker-version": "latest",
-    "editorconfig-checker-fast": True,
+    "ec": False,
+    "ec-path": "",
+    "ec-args": ["-format", "gcc", "-no-color"],
+    "ec-version": "latest",
+    "ec-fast": True,
     "shellcheck": False,
     "shellcheck-path": "",
     "shellcheck-args": ["-f", "gcc"],
@@ -427,7 +427,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
             "textlint",
             "eslint",
             "biome",
-            "editorconfig-checker",
+            "ec",
             "shellcheck",
             "typos",
             "actionlint",
@@ -494,7 +494,6 @@ def load_config() -> Config:
         config.values["pyright"] = True
         config.values["textlint"] = True
         config.values["markdownlint"] = True
-        config.values["editorconfig-checker"] = True
         config.values["actionlint"] = True
         config.values["typos"] = True
         config.values["uv-sort"] = True

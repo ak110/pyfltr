@@ -29,7 +29,7 @@ llms.txt: <https://ak110.github.io/pyfltr/llms.txt>
     - pylint
     - pyright（既定では無効）
     - ty（既定では無効）
-    - editorconfig-checker（既定では無効、`bin-runner`設定で起動方式を切替可能）
+    - ec（editorconfig-checker。既定では無効、`bin-runner`設定で起動方式を切替可能）
     - shellcheck（既定では無効、`bin-runner`設定で起動方式を切替可能）
     - typos（既定では無効、`bin-runner`設定で起動方式を切替可能）
     - actionlint（既定では無効、`bin-runner`設定で起動方式を切替可能）

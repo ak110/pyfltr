@@ -1185,19 +1185,19 @@ def test_resolve_bin_commandline_mise_tool_not_installed(mocker) -> None:
     config.values["bin-runner"] = "mise"
 
     with pytest.raises(FileNotFoundError, match="mise exec"):
-        pyfltr.command._resolve_bin_commandline("editorconfig-checker", config)
+        pyfltr.command._resolve_bin_commandline("ec", config)
 
 
-def test_skipped_bin_resolution_result() -> None:
-    """_skipped_bin_resolution_resultがskip用のCommandResultを返す。"""
+def test_failed_bin_resolution_result() -> None:
+    """_failed_bin_resolution_resultが失敗用のCommandResultを返す。"""
     command_info = pyfltr.config.CommandInfo(type="linter")
     error = FileNotFoundError("shellcheck")
 
-    result = pyfltr.command._skipped_bin_resolution_result("shellcheck", command_info, error)
+    result = pyfltr.command._failed_bin_resolution_result("shellcheck", command_info, error)
 
-    assert result.returncode is None
-    assert result.has_error is False
-    assert result.status == "skipped"
+    assert result.returncode == 1
+    assert result.has_error is True
+    assert result.status == "failed"
     assert "shellcheck" in result.output
     assert result.command == "shellcheck"
     assert result.elapsed == 0.0
@@ -1246,14 +1246,15 @@ def test_pass_filenames_true_includes_targets(mocker, tmp_path: pathlib.Path) ->
 
 def test_bin_tool_spec_all_tools_defined() -> None:
     """_BIN_TOOL_SPECに全bin系ツールが定義されている。"""
-    expected_tools = {"editorconfig-checker", "shellcheck", "shfmt", "typos", "actionlint"}
+    expected_tools = {"ec", "shellcheck", "shfmt", "typos", "actionlint"}
     assert set(pyfltr.command._BIN_TOOL_SPEC.keys()) == expected_tools
 
 
 def test_bin_tool_spec_structure() -> None:
     """BinToolSpecのフィールドが正しく設定されている。"""
-    spec = pyfltr.command._BIN_TOOL_SPEC["editorconfig-checker"]
-    assert spec.bin_name == "editorconfig-checker"
+    spec = pyfltr.command._BIN_TOOL_SPEC["ec"]
+    assert spec.bin_name == "ec"
+    assert spec.mise_backend == "editorconfig-checker"
     assert spec.default_version == "latest"
 
     spec = pyfltr.command._BIN_TOOL_SPEC["shellcheck"]

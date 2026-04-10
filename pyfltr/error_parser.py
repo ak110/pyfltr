@@ -87,8 +87,8 @@ _BUILTIN_PATTERNS: dict[str, str] = {
         r"[^:]*?col=(?P<col>\d+)"
         r"[^:]*?::(?P<message>.+)"
     ),
-    # editorconfig-checker -format gcc 出力例: src/foo.py:10:0: error: xxx
-    "editorconfig-checker": r"(?P<file>[^\s:]+):(?P<line>\d+):(?P<col>\d+):\s*\w+:\s*(?P<message>.+)",
+    # ec (editorconfig-checker) -format gcc 出力例: src/foo.py:10:0: error: xxx
+    "ec": r"(?P<file>[^\s:]+):(?P<line>\d+):(?P<col>\d+):\s*\w+:\s*(?P<message>.+)",
     # shellcheck -f gcc 出力例: src/foo.sh:10:5: warning: xxx [SC2086]
     "shellcheck": r"(?P<file>[^\s:]+):(?P<line>\d+):(?P<col>\d+):\s*\w+:\s*(?P<message>.+)",
     # typos --format brief 出力例: src/foo.py:10:5: `typo` -> `correction`

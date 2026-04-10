@@ -65,7 +65,6 @@ import pyfltr.config
                 "ty": False,
                 "textlint": True,
                 "markdownlint": True,
-                "editorconfig-checker": True,
                 "actionlint": True,
                 "typos": True,
                 "uv-sort": True,
@@ -83,7 +82,6 @@ import pyfltr.config
                 "ty": False,
                 "textlint": True,
                 "markdownlint": True,
-                "editorconfig-checker": True,
                 "actionlint": True,
                 "typos": True,
                 "uv-sort": True,
@@ -656,7 +654,7 @@ preset = "20260330"
         os.chdir(tmp_path)
         config = pyfltr.config.load_config()
         # 20260330ではbin系ツールは有効化されない
-        assert config["editorconfig-checker"] is False
+        assert config["ec"] is False
         assert config["actionlint"] is False
         assert config["typos"] is False
         assert config["uv-sort"] is False
@@ -682,7 +680,6 @@ preset = "20260411"
         os.chdir(tmp_path)
         config = pyfltr.config.load_config()
         # 20260411で新たに有効化されるツール
-        assert config["editorconfig-checker"] is True
         assert config["actionlint"] is True
         assert config["typos"] is True
         assert config["uv-sort"] is True
@@ -735,7 +732,7 @@ def test_bin_tool_default_config_values() -> None:
     """bin-runner対応ツールのデフォルト設定値が正しく定義されている。"""
     config = pyfltr.config.create_default_config()
     # 全bin系ツールの有効/無効とバージョン設定を確認
-    bin_tools = ["editorconfig-checker", "shellcheck", "shfmt", "typos", "actionlint"]
+    bin_tools = ["ec", "shellcheck", "shfmt", "typos", "actionlint"]
     for tool in bin_tools:
         assert config[tool] is False, f"{tool}は既定で無効"
         assert config[f"{tool}-path"] == "", f"{tool}-pathは空文字"
