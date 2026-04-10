@@ -477,3 +477,9 @@ preset = "invalid"
             pyfltr.config.load_config()
     finally:
         os.chdir(original_cwd)
+
+
+def test_respect_gitignore_default() -> None:
+    """respect-gitignore の既定値が True であることを確認する。"""
+    config = pyfltr.config.create_default_config()
+    assert config["respect-gitignore"] is True

@@ -880,7 +880,40 @@ def expand_globs(targets: list[pathlib.Path], globs: list[str], config: pyfltr.c
                 target = target.relative_to(pathlib.Path.cwd())
         _expand_target(target)
 
+    # .gitignore フィルタリング
+    if config["respect-gitignore"]:
+        expanded = _filter_by_gitignore(expanded)
+
     return expanded
+
+
+def _filter_by_gitignore(paths: list[pathlib.Path]) -> list[pathlib.Path]:
+    """Git check-ignore で .gitignore に該当するファイルを除外する。"""
+    if not paths:
+        return paths
+    try:
+        result = subprocess.run(
+            ["git", "check-ignore", "--stdin", "-z"],
+            input="\0".join(str(p) for p in paths),
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except FileNotFoundError:
+        logger.warning("git が見つからないため respect-gitignore をスキップする")
+        return paths
+    except subprocess.TimeoutExpired:
+        logger.warning("git check-ignore がタイムアウトしたためスキップする")
+        return paths
+    if result.returncode not in (0, 1):
+        # 0: 1つ以上 ignored, 1: 全て not ignored, 128: fatal error（リポジトリ外等）
+        logger.debug("git check-ignore が終了コード %d を返した", result.returncode)
+        return paths
+    ignored_set: set[str] = set()
+    if result.stdout:
+        ignored_set = {s for s in result.stdout.split("\0") if s}
+    return [p for p in paths if str(p) not in ignored_set]
 
 
 def excluded(path: pathlib.Path, config: pyfltr.config.Config) -> bool:

@@ -1,6 +1,6 @@
 """command.py のテスト。"""
 
-# pylint: disable=protected-access
+# pylint: disable=protected-access,too-many-lines
 
 import argparse
 import os
@@ -972,3 +972,58 @@ def test_excluded_default_patterns() -> None:
     assert not pyfltr.command.excluded(pathlib.Path("pyfltr/config.py"), config)
     assert not pyfltr.command.excluded(pathlib.Path("tests/command_test.py"), config)
     assert not pyfltr.command.excluded(pathlib.Path("README.md"), config)
+
+
+def test_expand_globs_respects_gitignore(tmp_path: pathlib.Path) -> None:
+    """.gitignore に記載されたファイルが expand_globs から除外される。"""
+    # git リポジトリを初期化
+    subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True, check=True)
+    (tmp_path / "main.py").write_text("x = 1\n")
+    (tmp_path / "ignored.py").write_text("x = 2\n")
+    (tmp_path / ".gitignore").write_text("ignored.py\n")
+
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        config = pyfltr.config.create_default_config()
+        result = pyfltr.command.expand_globs([], ["*.py"], config)
+        names = {p.name for p in result}
+        assert "main.py" in names
+        assert "ignored.py" not in names
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_expand_globs_gitignore_disabled(tmp_path: pathlib.Path) -> None:
+    """respect-gitignore = false の場合、.gitignore によるフィルタリングが無効になる。"""
+    subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True, check=True)
+    (tmp_path / "main.py").write_text("x = 1\n")
+    (tmp_path / "ignored.py").write_text("x = 2\n")
+    (tmp_path / ".gitignore").write_text("ignored.py\n")
+
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        config = pyfltr.config.create_default_config()
+        config.values["respect-gitignore"] = False
+        result = pyfltr.command.expand_globs([], ["*.py"], config)
+        names = {p.name for p in result}
+        assert "main.py" in names
+        assert "ignored.py" in names
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_expand_globs_no_git_repo(tmp_path: pathlib.Path) -> None:
+    """git リポジトリ外でも正常に動作する。"""
+    (tmp_path / "main.py").write_text("x = 1\n")
+
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        config = pyfltr.config.create_default_config()
+        result = pyfltr.command.expand_globs([], ["*.py"], config)
+        names = {p.name for p in result}
+        assert "main.py" in names
+    finally:
+        os.chdir(original_cwd)

@@ -274,6 +274,8 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
         "venv",
     ],
     "extend-exclude": [],
+    # .gitignore に記載されたファイルを除外するか否か（git check-ignore を使用）
+    "respect-gitignore": True,
     # コマンド名のエイリアス
     "aliases": {
         "format": ["pyupgrade", "autoflake", "isort", "black", "ruff-format", "prettier"],
