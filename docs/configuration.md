@@ -21,8 +21,8 @@ extend-exclude = ["foo", "bar.py"]
 - {command}-path : 実行するコマンド
 - {command}-args : 追加のコマンドライン引数（lint/fix両モードで常に付与）
 - {command}-lint-args : 非fixモード（およびtextlint fix後段のlintチェック) でのみ付与する引数（既定値はtextlintのみ `["--format", "compact"]` を定義）
-- {command}-fast : `--commands=fast`に含めるか否か（後述）
-- {command}-fix-args : `--fix`時に`{command}-args`の後に追加する引数（既定値はtextlint / markdownlint / ruff-check / eslint / biomeのみ定義）
+- {command}-fast : `fast`サブコマンドに含めるか否か（後述）
+- {command}-fix-args : `fix`サブコマンド時に`{command}-args`の後に追加する引数（既定値はtextlint / markdownlint / ruff-check / eslint / biomeのみ定義）
 - prettier-check-args / prettier-write-args : prettierの2段階実行で使う引数（詳細は後述）
 - pylint-pydantic : pylint実行時に`--load-plugins=pylint_pydantic`を自動追加するか（既定: `true`、後述）
 - mypy-unused-awaitable : mypy実行時に`--enable-error-code=unused-awaitable`を自動追加するか（既定: `true`、後述）
@@ -152,7 +152,7 @@ CLIオプション`-j`でも指定でき、`pyproject.toml`より優先される
 
 ## fastエイリアス
 
-`--commands=fast`で実行されるコマンドは、各コマンドの`{command}-fast`設定で制御される。
+`fast`サブコマンドで実行されるコマンドは、各コマンドの`{command}-fast`設定で制御される。
 
 ```toml
 [tool.pyfltr]
@@ -202,7 +202,7 @@ textlint-lint-args = ["--format", "compact"]
 
 textlintのfix実行 (`textlint --fix`) では `@textlint/fixer-formatter` が使われ、`compact` フォーマッタを解決できない。このため `--format compact` は `textlint-args`（共通）ではなく `textlint-lint-args`（lintモード専用）に分離している。
 
-`pyfltr --fix` 実行時、pyfltrはtextlintを2段階で実行する（fix適用 → lintチェック）ため、
+`pyfltr fix` 実行時、pyfltrはtextlintを2段階で実行する（fix適用 → lintチェック）ため、
 残存違反はcompact形式で正しく取得される。
 旧版から `textlint-args = ["--format", "compact", ...]` の設定を引き継いでいる場合でも、
 pyfltrはfixステップの起動コマンドから `--format` ペアを自動除去するためクラッシュしない。
@@ -286,15 +286,15 @@ fast = true
     - `file`と`line`と`message`の名前付きグループが必須
     - `col`は任意
     - 指定するとErrorsタブやエラー一覧に表示される
-- `fast`: `--commands=fast`に含めるか否か（省略時は`false`）
-- `fix-args`: `pyfltr --fix`時に`args`の後ろへ追加する引数（省略時はfixモード対象外）
+- `fast`: `fast`サブコマンドに含めるか否か（省略時は`false`）
+- `fix-args`: `pyfltr fix`時に`args`の後ろへ追加する引数（省略時はfixモード対象外）
 
 ビルトインコマンド（mypy等）は自動的にエラーパースされる。
 カスタムコマンドに対しても`--{name}-args`やenable/disableを使用できる。
 
 ### カスタムコマンドでの fix モード対応
 
-autofix機能を持つツールをカスタムコマンドとして登録する場合は、`fix-args`を定義しておくと`pyfltr --fix`の対象に含まれる。
+autofix機能を持つツールをカスタムコマンドとして登録する場合は、`fix-args`を定義しておくと`pyfltr fix`の対象に含まれる。
 
 ```toml
 [tool.pyfltr.custom-commands.my-linter]

@@ -1,60 +1,67 @@
 # 使い方
 
-## 通常
+## サブコマンド
+
+pyfltrはサブコマンドで動作モードを指定する。
 
 ```shell
-pyfltr [files and/or directories ...]
+pyfltr <subcommand> [files and/or directories ...]
 ```
 
 対象を指定しなかった場合は、カレントディレクトリを指定した場合と同じ扱いとなる。
 
 指定したファイルやディレクトリの配下のうち、各コマンドのtargetsパターンに一致するファイルのみ処理される。
 
-- Python系ツール： `*.py`
+- Python系ツール: `*.py`
 - markdownlint / textlint: `*.md`
 - pytest: `*_test.py`
 
-終了コード。
+### ci（既定）
+
+```shell
+pyfltr ci [files and/or directories ...]
+pyfltr [files and/or directories ...]  # ciは省略可能
+```
+
+全チェック実行。CI環境やコミット前の検証に適する。
+
+終了コード:
 
 - 0: Formattersによるファイル変更が無く、かつLinters/Testersでのエラーも無い場合
 - 1: 上記以外の場合
 
-`--exit-zero-even-if-formatted`を指定すると、Formattersによるファイル変更があっても
-Linters/Testersでのエラー無しなら終了コードは0になる。
-
-## 特定のツールのみ実行
+### run
 
 ```shell
-pyfltr \
-  --commands=pyupgrade,autoflake,isort,black,ruff-format,\
-ruff-check,pflake8,mypy,pylint,pyright,ty,markdownlint,textlint,pytest \
-  [files and/or directories ...]
+pyfltr run [files and/or directories ...]
 ```
 
-カンマ区切りで実行するツールだけ指定する。
+全チェック実行。Formattersによるファイル変更があってもLinters/Testersでのエラー無しなら終了コードは0になる。ローカルでの全チェック実行に適する。
 
-以下のエイリアスも使用可能。(例： `--commands=fast`)
-
-- `format`: `pyupgrade` `autoflake` `isort` `black` `ruff-format`
-- `lint`: `ruff-check` `pflake8` `mypy` `pylint` `pyright` `ty` `markdownlint` `textlint`
-- `test`: `pytest`
-- `fast`: per-commandの`{cmd}-fast`フラグがtrueのコマンド
-    - 既定: `pyupgrade` `autoflake` `isort` `black` `ruff-format` `ruff-check` `pflake8` `ty` `markdownlint` `textlint`
-
-※ `pyproject.toml`の`[tool.pyfltr]`で無効になっているコマンドは無視される。
-
-## fix モード (手動実行)
+### fast
 
 ```shell
-pyfltr --fix [files and/or directories ...]
+pyfltr fast [files and/or directories ...]
 ```
 
-`--fix` を指定すると、通常のチェックとは別に「修正モード」で起動する。linterの中でもautofix機能を持つtextlint / markdownlint / ruff-checkなどに、内部で `--fix` 相当の引数を追加して実行する。
+mypy / pylint / pytestなど重いコマンドを除外した軽量チェック。Formattersによるファイル変更があっても終了コードは0になる。pre-commitフックなど速度を優先する場面に適する。
+
+既定で含まれるコマンド: `pyupgrade` `autoflake` `isort` `black` `ruff-format` `ruff-check` `pflake8` `ty` `markdownlint` `textlint`
+
+含まれるコマンドは各コマンドの`{command}-fast`設定で制御できる（[設定](configuration.md)を参照）。
+
+### fix
+
+```shell
+pyfltr fix [files and/or directories ...]
+```
+
+修正モード。linterの中でもautofix機能を持つtextlint / markdownlint / ruff-checkなどに、内部で `--fix` 相当の引数を追加して実行する。手動実行専用。
 
 fixモードの対象は次の和集合となる。
 
 - 有効化されたformatter全て（通常実行そのものがファイルを修正する）
-- 有効化されており、かつ `{command}-fix-args` が定義されたlinter（ビルトインではtextlint / markdownlint / ruff-checkが既定で対応）
+- 有効化されており、かつ `{command}-fix-args` が定義されたlinter（ビルトインではtextlint / markdownlint / ruff-check / eslint / biomeが既定で対応）
 
 fixモードの挙動。
 
@@ -67,21 +74,39 @@ fixモードの挙動。
 
 カスタムコマンドでも `pyproject.toml` の `[tool.pyfltr.custom-commands.<name>]` に `fix-args = [...]` を定義すればfixモードの対象にできる。
 
-fixモードは手動実行専用で、通常実行（`pyfltr`）では起動しない。textlint / markdownlintをfixモードで使う場合は、`pyproject.toml` で該当コマンドを有効化しておく必要がある。
+## 特定のツールのみ実行
+
+```shell
+pyfltr ci \
+  --commands=pyupgrade,autoflake,isort,black,ruff-format,\
+ruff-check,pflake8,mypy,pylint,pyright,ty,markdownlint,textlint,pytest \
+  [files and/or directories ...]
+```
+
+カンマ区切りで実行するツールだけ指定する。全サブコマンドで使用可能。
+
+以下のエイリアスも使用可能。(例: `--commands=format`)
+
+- `format`: `pyupgrade` `autoflake` `isort` `black` `ruff-format`
+- `lint`: `ruff-check` `pflake8` `mypy` `pylint` `pyright` `ty` `markdownlint` `textlint`
+- `test`: `pytest`
+- `fast`: per-commandの`{cmd}-fast`フラグがtrueのコマンド
+
+※ `pyproject.toml`の`[tool.pyfltr]`で無効になっているコマンドは無視される。
 
 ## UI
 
 ターミナル上で実行すると、TextualベースのTUIが自動的に有効になる。
 
-- Summaryタブ： 各コマンドのステータス・エラー数・経過時間をリアルタイム表示
-- Errorsタブ： エラー発生時のみ出現し、全コマンドのエラー箇所を`ファイル:行番号`形式で一覧表示
-- 各コマンドタブ： コマンドの出力をリアルタイム表示
+- Summaryタブ: 各コマンドのステータス・エラー数・経過時間をリアルタイム表示
+- Errorsタブ: エラー発生時のみ出現し、全コマンドのエラー箇所を`ファイル:行番号`形式で一覧表示
+- 各コマンドタブ: コマンドの出力をリアルタイム表示
 
 Errorsタブのエラー一覧は`ファイル:行番号: [コマンド名] メッセージ`形式で、
 VSCodeのターミナルからクリックして該当箇所にジャンプできる。
 
 - `--no-ui`: UIを無効化し、出力を直接ターミナルに表示（エラー一覧の後にサマリーを表示）
 - `--ci`: CI環境向け（`--no-shuffle --no-ui` 相当）
-- `-j N` / `--jobs N`: linters/testersの最大並列数を指定（既定： 4、`pyproject.toml`でも設定可能）
+- `-j N` / `--jobs N`: linters/testersの最大並列数を指定（既定: 4、`pyproject.toml`でも設定可能）
 
 その他のオプションは `pyfltr --help` を参照。

@@ -32,13 +32,13 @@ update-actions:
 format:
 	$(MAKE) clean-stale-dist-info
 	SKIP=pyfltr $(UV_RUN) pre-commit run --all-files
-	-$(UV_RUN) pyfltr --exit-zero-even-if-formatted --commands=fast
+	-$(UV_RUN) pyfltr fast
 
 # 全チェック実行 (このタスクが成功したらコミット可能)
 test:
 	$(MAKE) clean-stale-dist-info
 	SKIP=pyfltr $(UV_RUN) pre-commit run --all-files
-	$(UV_RUN) pyfltr --exit-zero-even-if-formatted
+	$(UV_RUN) pyfltr run
 
 docs:
 	$(UV_RUN) mkdocs serve

@@ -57,7 +57,7 @@ jobs:
         run: uv sync --all-extras --all-groups
 
       - name: Test with pyfltr
-        run: uv run pyfltr
+        run: uv run pyfltr ci
 
       - name: Prune uv cache for CI
         run: uv cache prune --ci

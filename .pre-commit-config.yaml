@@ -31,7 +31,7 @@ repos:
     hooks:
       - id: pyfltr
         name: pyfltr
-        entry: uv run --frozen pyfltr --exit-zero-even-if-formatted --commands=fast
+        entry: uv run --frozen pyfltr fast
         types_or: [python, markdown]
         require_serial: true
         language: system
