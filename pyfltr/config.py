@@ -95,6 +95,9 @@ BUILTIN_COMMAND_NAMES: list[str] = list(BUILTIN_COMMANDS.keys())
 JS_RUNNERS: tuple[str, ...] = ("pnpx", "pnpm", "npm", "npx", "yarn", "direct")
 """textlint / markdownlint の起動方式として指定できる値。"""
 
+BIN_RUNNERS: tuple[str, ...] = ("direct", "mise")
+"""editorconfig-checker / shellcheck 等のネイティブバイナリツールの起動方式として指定できる値。"""
+
 PYTHON_COMMANDS: tuple[str, ...] = (
     "pyupgrade",
     "autoflake",
@@ -147,6 +150,10 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # - yarn: yarn run <cmd>
     # - direct: node_modules/.bin/<cmd> を直接起動
     "js-runner": "pnpx",
+    # ネイティブバイナリツール (Go/Rust/Haskell 製等) の起動方式:
+    # - mise: mise exec <tool>@<version> -- <cmd>（既定）
+    # - direct: PATH 上のバイナリを直接実行
+    "bin-runner": "mise",
     # コマンド毎に有効無効、パス、追加の引数を設定
     "pyupgrade": True,
     "pyupgrade-path": "pyupgrade",
@@ -437,6 +444,11 @@ def load_config() -> Config:
     js_runner = config.values["js-runner"]
     if js_runner not in JS_RUNNERS:
         raise ValueError(f"js-runnerの設定値が正しくありません。{js_runner=} (許容値: {', '.join(JS_RUNNERS)})")
+
+    # bin-runner の値バリデーション
+    bin_runner = config.values["bin-runner"]
+    if bin_runner not in BIN_RUNNERS:
+        raise ValueError(f"bin-runnerの設定値が正しくありません。{bin_runner=} (許容値: {', '.join(BIN_RUNNERS)})")
 
     # per-command fastフラグからfastエイリアスを再計算
     config.values["aliases"]["fast"] = _build_fast_alias(config)

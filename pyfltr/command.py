@@ -1,4 +1,5 @@
 """コマンド実行関連の処理。"""
+# pylint: disable=too-many-lines
 
 import argparse
 import atexit
@@ -44,6 +45,81 @@ _JS_TOOL_PNPX_PACKAGE_SPEC: dict[str, str] = {
     "textlint": "textlint@<15.5.3 || >15.5.3",
     "biome": "@biomejs/biome",
 }
+
+
+@dataclasses.dataclass(frozen=True)
+class BinToolSpec:
+    """bin-runner対応ツールの解決情報。"""
+
+    bin_name: str
+    """実行ファイル名"""
+    mise_backend: str | None = None
+    """mise exec用のbackend指定（省略時はbin_name）"""
+    default_version: str = "latest"
+    """既定バージョン"""
+
+
+# bin-runner で解決するネイティブバイナリツールの定義。
+# path 設定が空のとき、bin-runner 設定に基づいてコマンドを組み立てる。
+_BIN_TOOL_SPEC: dict[str, BinToolSpec] = {}
+
+
+def _resolve_bin_commandline(
+    command: str,
+    config: pyfltr.config.Config,
+) -> tuple[str, list[str]]:
+    """ネイティブバイナリツールの実行ファイルと引数 prefix を決定する。
+
+    `{command}-path` が空のときに呼び出され、`bin-runner` 設定に基づいて
+    起動コマンドを組み立てる。ツールが利用できない場合は `FileNotFoundError` を送出する。
+    """
+    spec = _BIN_TOOL_SPEC[command]
+    runner = config["bin-runner"]
+    version = config.values.get(f"{command}-version", spec.default_version)
+
+    if runner == "direct":
+        resolved = shutil.which(spec.bin_name)
+        if resolved is None:
+            raise FileNotFoundError(spec.bin_name)
+        return resolved, []
+
+    if runner == "mise":
+        if shutil.which("mise") is None:
+            raise FileNotFoundError("mise")
+        tool_name = spec.mise_backend or spec.bin_name
+        tool_spec = f"{tool_name}@{version}"
+        # バージョン指定込みでツールの利用可否を事前チェック
+        check = subprocess.run(
+            ["mise", "exec", tool_spec, "--", spec.bin_name, "--version"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if check.returncode != 0:
+            raise FileNotFoundError(f"mise exec {tool_spec} -- {spec.bin_name}")
+        return "mise", ["exec", tool_spec, "--", spec.bin_name]
+
+    raise ValueError(f"bin-runnerの設定値が正しくありません: {runner=}")
+
+
+def _skipped_bin_resolution_result(
+    command: str,
+    command_info: pyfltr.config.CommandInfo,
+    error: FileNotFoundError,
+) -> "CommandResult":
+    """Bin ツールの解決失敗時のスキップ用 `CommandResult` を組み立てる。"""
+    message = f"ツールが見つかりません（スキップ）: {error}"
+    logger.warning("%s: %s", command, message)
+    return CommandResult(
+        command=command,
+        command_type=command_info.type,
+        commandline=[],
+        returncode=None,
+        has_error=False,
+        files=0,
+        output=message,
+        elapsed=0.0,
+    )
 
 
 def _cleanup_processes() -> None:
@@ -251,12 +327,19 @@ def execute_command(
         fix_args = config.values.get(f"{command}-fix-args")
 
     # textlint / markdownlint は path が空の場合、js-runner 設定から解決する。
+    # editorconfig-checker 等は bin-runner 設定から解決する。
     if command in _JS_TOOL_BIN and config[f"{command}-path"] == "":
         try:
             resolved_path, prefix = _resolve_js_commandline(command, config)
         except FileNotFoundError as e:
             return _failed_js_resolution_result(command, command_info, e)
         commandline_prefix: list[str] = [resolved_path, *prefix]
+    elif command in _BIN_TOOL_SPEC and config[f"{command}-path"] == "":
+        try:
+            resolved_path, prefix = _resolve_bin_commandline(command, config)
+        except FileNotFoundError as e:
+            return _skipped_bin_resolution_result(command, command_info, e)
+        commandline_prefix = [resolved_path, *prefix]
     else:
         commandline_prefix = [config[f"{command}-path"]]
 
