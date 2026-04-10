@@ -129,6 +129,13 @@ jobs:
           uv build
           uv publish --check-url https://pypi.org/simple/
 
+      - name: Generate release notes
+        uses: orhun/git-cliff-action@e16f179f0be49ecdfe63753837f20b9531642772 # v4.7.0
+        with:
+          args: --latest --strip header
+        env:
+          OUTPUT: CHANGES.md
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -136,7 +143,7 @@ jobs:
           if gh release view "${{ steps.next.outputs.next }}" >/dev/null 2>&1; then
             echo "Release ${{ steps.next.outputs.next }} already exists, skipping"
           else
-            gh release create "${{ steps.next.outputs.next }}" --generate-notes
+            gh release create "${{ steps.next.outputs.next }}" --notes-file CHANGES.md
           fi
 
       - name: Prune uv cache for CI
