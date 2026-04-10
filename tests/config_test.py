@@ -53,7 +53,25 @@ import pyfltr.config
                 "markdownlint": True,
             },
         ),
-        # latestプリセット（= 20260330）
+        # 20260411プリセット
+        (
+            "20260411",
+            {
+                "isort": False,
+                "black": False,
+                "ruff-format": True,
+                "ruff-check": True,
+                "pyright": True,
+                "ty": False,
+                "textlint": True,
+                "markdownlint": True,
+                "editorconfig-checker": True,
+                "actionlint": True,
+                "typos": True,
+                "uv-sort": True,
+            },
+        ),
+        # latestプリセット（= 20260411）
         (
             "latest",
             {
@@ -65,6 +83,10 @@ import pyfltr.config
                 "ty": False,
                 "textlint": True,
                 "markdownlint": True,
+                "editorconfig-checker": True,
+                "actionlint": True,
+                "typos": True,
+                "uv-sort": True,
             },
         ),
     ],
@@ -582,3 +604,159 @@ def test_python_default() -> None:
     """python の既定値は True。"""
     config = pyfltr.config.create_default_config()
     assert config["python"] is True
+
+
+def test_bin_runner_default() -> None:
+    """bin-runner の既定値は mise。"""
+    config = pyfltr.config.create_default_config()
+    assert config["bin-runner"] == "mise"
+
+
+def test_bin_runner_override(tmp_path: pathlib.Path) -> None:
+    """pyproject.toml で bin-runner を上書きできる。"""
+    pyproject_content = """
+[tool.pyfltr]
+bin-runner = "direct"
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        config = pyfltr.config.load_config()
+        assert config["bin-runner"] == "direct"
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_bin_runner_invalid_rejected(tmp_path: pathlib.Path) -> None:
+    """bin-runner に未知の値を指定するとエラーになる。"""
+    pyproject_content = """
+[tool.pyfltr]
+bin-runner = "bogus"
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        with pytest.raises(ValueError, match="bin-runner"):
+            pyfltr.config.load_config()
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_preset_20260330_compatibility(tmp_path: pathlib.Path) -> None:
+    """20260330プリセットがbin系ツールを有効化しないことの互換性テスト。"""
+    pyproject_content = """
+[tool.pyfltr]
+preset = "20260330"
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        config = pyfltr.config.load_config()
+        # 20260330ではbin系ツールは有効化されない
+        assert config["editorconfig-checker"] is False
+        assert config["actionlint"] is False
+        assert config["typos"] is False
+        assert config["uv-sort"] is False
+        # 20260330で有効化されるツール
+        assert config["ruff-format"] is True
+        assert config["ruff-check"] is True
+        assert config["pyright"] is True
+        assert config["textlint"] is True
+        assert config["markdownlint"] is True
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_preset_20260411_enables_bin_tools(tmp_path: pathlib.Path) -> None:
+    """20260411プリセットがbin系ツールとuv-sortを有効化することのテスト。"""
+    pyproject_content = """
+[tool.pyfltr]
+preset = "20260411"
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        config = pyfltr.config.load_config()
+        # 20260411で新たに有効化されるツール
+        assert config["editorconfig-checker"] is True
+        assert config["actionlint"] is True
+        assert config["typos"] is True
+        assert config["uv-sort"] is True
+        # 20260330から引き続き有効なツール
+        assert config["ruff-format"] is True
+        assert config["ruff-check"] is True
+        assert config["pyright"] is True
+        assert config["textlint"] is True
+        assert config["markdownlint"] is True
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_custom_command_pass_filenames(tmp_path: pathlib.Path) -> None:
+    """カスタムコマンドのpass-filenames設定が登録される。"""
+    pyproject_content = """
+[tool.pyfltr.custom-commands.my-checker]
+type = "linter"
+path = "my-checker"
+pass-filenames = false
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        config = pyfltr.config.load_config()
+        assert config["my-checker-pass-filenames"] is False
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_custom_command_pass_filenames_default(tmp_path: pathlib.Path) -> None:
+    """カスタムコマンドのpass-filenamesの既定値はTrue。"""
+    pyproject_content = """
+[tool.pyfltr.custom-commands.my-checker]
+type = "linter"
+path = "my-checker"
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        config = pyfltr.config.load_config()
+        assert config["my-checker-pass-filenames"] is True
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_bin_tool_default_config_values() -> None:
+    """bin-runner対応ツールのデフォルト設定値が正しく定義されている。"""
+    config = pyfltr.config.create_default_config()
+    # 全bin系ツールの有効/無効とバージョン設定を確認
+    bin_tools = ["editorconfig-checker", "shellcheck", "shfmt", "typos", "actionlint"]
+    for tool in bin_tools:
+        assert config[tool] is False, f"{tool}は既定で無効"
+        assert config[f"{tool}-path"] == "", f"{tool}-pathは空文字"
+        assert config[f"{tool}-version"] == "latest", f"{tool}-versionはlatest"
+        assert config[f"{tool}-fast"] is True, f"{tool}-fastはTrue"
+
+    # uv-sortの既定値
+    assert config["uv-sort"] is False
+    assert config["uv-sort-path"] == "uv-sort"
+    assert config["uv-sort-fast"] is True
+
+    # tscのpass-filenames
+    assert config["tsc-pass-filenames"] is False
+
+
+def test_uv_sort_in_python_commands() -> None:
+    """uv-sortがPYTHON_COMMANDSに含まれる。"""
+    assert "uv-sort" in pyfltr.config.PYTHON_COMMANDS
+
+
+def test_bin_runners_tuple() -> None:
+    """BIN_RUNNERS に direct と mise が含まれる。"""
+    assert "direct" in pyfltr.config.BIN_RUNNERS
+    assert "mise" in pyfltr.config.BIN_RUNNERS

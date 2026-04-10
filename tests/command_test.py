@@ -1083,3 +1083,178 @@ def test_auto_args_included_in_commandline(mocker, tmp_path: pathlib.Path) -> No
     args = _make_args([target])
     result = pyfltr.command.execute_command("pylint", args, config)
     assert "--load-plugins=pylint_pydantic" in result.commandline
+
+
+# --- bin-runner テスト ---
+
+
+def test_resolve_bin_commandline_direct_found(mocker) -> None:
+    """directモードでwhichが成功した場合、解決されたパスを返す。"""
+    mocker.patch("shutil.which", return_value="/usr/local/bin/shellcheck")
+
+    config = pyfltr.config.create_default_config()
+    config.values["bin-runner"] = "direct"
+
+    path, prefix = pyfltr.command._resolve_bin_commandline("shellcheck", config)
+
+    assert path == "/usr/local/bin/shellcheck"
+    assert not prefix
+
+
+def test_resolve_bin_commandline_direct_not_found(mocker) -> None:
+    """directモードでwhichが失敗した場合、FileNotFoundErrorを送出する。"""
+    mocker.patch("shutil.which", return_value=None)
+
+    config = pyfltr.config.create_default_config()
+    config.values["bin-runner"] = "direct"
+
+    with pytest.raises(FileNotFoundError, match="shellcheck"):
+        pyfltr.command._resolve_bin_commandline("shellcheck", config)
+
+
+def test_resolve_bin_commandline_mise_success(mocker) -> None:
+    """miseモードでツールが利用可能な場合、mise exec形式のコマンドラインを返す。"""
+    mocker.patch("shutil.which", return_value="/usr/local/bin/mise")
+    mocker.patch(
+        "subprocess.run",
+        return_value=subprocess.CompletedProcess(
+            ["mise", "exec", "typos@latest", "--", "typos", "--version"],
+            returncode=0,
+            stdout="typos 1.0.0",
+            stderr="",
+        ),
+    )
+
+    config = pyfltr.config.create_default_config()
+    config.values["bin-runner"] = "mise"
+
+    path, prefix = pyfltr.command._resolve_bin_commandline("typos", config)
+
+    assert path == "mise"
+    assert prefix == ["exec", "typos@latest", "--", "typos"]
+
+
+def test_resolve_bin_commandline_mise_custom_version(mocker) -> None:
+    """miseモードでカスタムバージョンが指定された場合のテスト。"""
+    mocker.patch("shutil.which", return_value="/usr/local/bin/mise")
+    mocker.patch(
+        "subprocess.run",
+        return_value=subprocess.CompletedProcess(
+            ["mise"],
+            returncode=0,
+            stdout="",
+            stderr="",
+        ),
+    )
+
+    config = pyfltr.config.create_default_config()
+    config.values["bin-runner"] = "mise"
+    config.values["shellcheck-version"] = "0.9.0"
+
+    path, prefix = pyfltr.command._resolve_bin_commandline("shellcheck", config)
+
+    assert path == "mise"
+    assert prefix == ["exec", "shellcheck@0.9.0", "--", "shellcheck"]
+
+
+def test_resolve_bin_commandline_mise_not_installed(mocker) -> None:
+    """miseモードでmiseがPATHに無い場合、FileNotFoundErrorを送出する。"""
+    mocker.patch("shutil.which", return_value=None)
+
+    config = pyfltr.config.create_default_config()
+    config.values["bin-runner"] = "mise"
+
+    with pytest.raises(FileNotFoundError, match="mise"):
+        pyfltr.command._resolve_bin_commandline("actionlint", config)
+
+
+def test_resolve_bin_commandline_mise_tool_not_installed(mocker) -> None:
+    """miseモードでツールが未インストールの場合、FileNotFoundErrorを送出する。"""
+    mocker.patch("shutil.which", return_value="/usr/local/bin/mise")
+    mocker.patch(
+        "subprocess.run",
+        return_value=subprocess.CompletedProcess(
+            ["mise"],
+            returncode=1,
+            stdout="",
+            stderr="tool not found",
+        ),
+    )
+
+    config = pyfltr.config.create_default_config()
+    config.values["bin-runner"] = "mise"
+
+    with pytest.raises(FileNotFoundError, match="mise exec"):
+        pyfltr.command._resolve_bin_commandline("editorconfig-checker", config)
+
+
+def test_skipped_bin_resolution_result() -> None:
+    """_skipped_bin_resolution_resultがskip用のCommandResultを返す。"""
+    command_info = pyfltr.config.CommandInfo(type="linter")
+    error = FileNotFoundError("shellcheck")
+
+    result = pyfltr.command._skipped_bin_resolution_result("shellcheck", command_info, error)
+
+    assert result.returncode is None
+    assert result.has_error is False
+    assert result.status == "skipped"
+    assert "shellcheck" in result.output
+    assert result.command == "shellcheck"
+    assert result.elapsed == 0.0
+
+
+def test_pass_filenames_false_omits_targets(mocker, tmp_path: pathlib.Path) -> None:
+    """pass-filenames=falseの場合、コマンドラインにファイル引数が含まれない。"""
+    target = tmp_path / "sample.ts"
+    target.write_text("const x = 1;\n")
+
+    proc = subprocess.CompletedProcess(["tsc"], returncode=0, stdout="")
+    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+
+    config = pyfltr.config.create_default_config()
+    config.values["tsc"] = True
+    # tscはデフォルトでpass-filenames=false
+    assert config["tsc-pass-filenames"] is False
+
+    result = pyfltr.command.execute_command("tsc", _make_args([target]), config)
+
+    assert mock_run.call_count == 1
+    cmdline = mock_run.call_args_list[0][0][0]
+    # ファイルパスがコマンドラインに含まれないことを確認
+    assert str(target) not in cmdline
+    assert result.status == "succeeded"
+
+
+def test_pass_filenames_true_includes_targets(mocker, tmp_path: pathlib.Path) -> None:
+    """pass-filenames=true（既定）の場合、コマンドラインにファイル引数が含まれる。"""
+    target = tmp_path / "sample.py"
+    target.write_text("x = 1\n")
+
+    proc = subprocess.CompletedProcess(["ruff"], returncode=0, stdout="")
+    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+
+    config = pyfltr.config.create_default_config()
+    config.values["ruff-check"] = True
+    result = pyfltr.command.execute_command("ruff-check", _make_args([target]), config)
+
+    assert mock_run.call_count == 1
+    cmdline = mock_run.call_args_list[0][0][0]
+    # ファイルパスがコマンドラインに含まれることを確認
+    assert str(target) in cmdline
+    assert result.status == "succeeded"
+
+
+def test_bin_tool_spec_all_tools_defined() -> None:
+    """_BIN_TOOL_SPECに全bin系ツールが定義されている。"""
+    expected_tools = {"editorconfig-checker", "shellcheck", "shfmt", "typos", "actionlint"}
+    assert set(pyfltr.command._BIN_TOOL_SPEC.keys()) == expected_tools
+
+
+def test_bin_tool_spec_structure() -> None:
+    """BinToolSpecのフィールドが正しく設定されている。"""
+    spec = pyfltr.command._BIN_TOOL_SPEC["editorconfig-checker"]
+    assert spec.bin_name == "editorconfig-checker"
+    assert spec.default_version == "latest"
+
+    spec = pyfltr.command._BIN_TOOL_SPEC["shellcheck"]
+    assert spec.bin_name == "shellcheck"
