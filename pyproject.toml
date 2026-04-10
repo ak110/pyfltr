@@ -36,9 +36,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-pyright = [
-    "pyright[nodejs]>=1.1.403",
-]
+pyright = []
 
 [project.urls]
 Homepage = "https://github.com/ak110/pyfltr"

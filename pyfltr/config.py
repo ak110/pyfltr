@@ -466,10 +466,39 @@ def create_default_config() -> Config:
     return config
 
 
-def load_config() -> Config:
+# 全プリセットの基盤: 旧ツール無効化 + ruff有効化
+_PRESET_BASE: dict[str, bool] = {
+    "pyupgrade": False,
+    "autoflake": False,
+    "pflake8": False,
+    "isort": False,
+    "black": False,
+    "ruff-format": True,
+    "ruff-check": True,
+}
+
+# プリセット定義。新しいプリセットほど有効化ツールが増える増分構造。
+_PRESETS: dict[str, dict[str, bool]] = {
+    "20250710": _PRESET_BASE,
+    "20260330": {**_PRESET_BASE, "pyright": True, "textlint": True, "markdownlint": True},
+    "20260411": {
+        **_PRESET_BASE,
+        "pyright": True,
+        "textlint": True,
+        "markdownlint": True,
+        "actionlint": True,
+        "typos": True,
+        "uv-sort": True,
+    },
+}
+_PRESETS["latest"] = _PRESETS["20260411"]
+
+
+def load_config(config_dir: pathlib.Path | None = None) -> Config:
     """pyproject.tomlから設定を読み込み。"""
     config = create_default_config()
-    pyproject_path = pathlib.Path("pyproject.toml").absolute()
+    base = config_dir or pathlib.Path.cwd()
+    pyproject_path = (base / "pyproject.toml").absolute()
     if not pyproject_path.exists():
         return config
 
@@ -478,46 +507,12 @@ def load_config() -> Config:
 
     tool_pyfltr = pyproject_data.get("tool", {}).get("pyfltr", {})
 
-    # プリセットの反映 (CONFIGに直接)
+    # プリセットの反映
     preset = str(tool_pyfltr.get("preset", ""))
     if preset == "":
         pass
-    elif preset in ("20260411", "latest"):
-        # ruff + pyright + textlint + markdownlint + bin系ツール + uv-sort
-        config.values["pyupgrade"] = False
-        config.values["autoflake"] = False
-        config.values["pflake8"] = False
-        config.values["isort"] = False
-        config.values["black"] = False
-        config.values["ruff-format"] = True
-        config.values["ruff-check"] = True
-        config.values["pyright"] = True
-        config.values["textlint"] = True
-        config.values["markdownlint"] = True
-        config.values["actionlint"] = True
-        config.values["typos"] = True
-        config.values["uv-sort"] = True
-    elif preset == "20260330":
-        # 旧プリセット（互換性維持）
-        config.values["pyupgrade"] = False
-        config.values["autoflake"] = False
-        config.values["pflake8"] = False
-        config.values["isort"] = False
-        config.values["black"] = False
-        config.values["ruff-format"] = True
-        config.values["ruff-check"] = True
-        config.values["pyright"] = True
-        config.values["textlint"] = True
-        config.values["markdownlint"] = True
-    elif preset == "20250710":
-        # 旧プリセット（互換性維持）
-        config.values["pyupgrade"] = False
-        config.values["autoflake"] = False
-        config.values["pflake8"] = False
-        config.values["isort"] = False
-        config.values["black"] = False
-        config.values["ruff-format"] = True
-        config.values["ruff-check"] = True
+    elif preset in _PRESETS:
+        config.values.update(_PRESETS[preset])
     else:
         raise ValueError(f"preset の設定値が正しくありません。{preset=}")
 

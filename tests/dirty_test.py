@@ -6,35 +6,32 @@ import json
 import pyfltr.dirty
 
 
-def test_dirty_init(tmp_path, monkeypatch):
+def test_dirty_init(tmp_path):
     """initで.format-dirtyが削除されることを確認。"""
-    monkeypatch.chdir(tmp_path)
     dirty_dir = tmp_path / ".claude"
     dirty_dir.mkdir()
     dirty_file = dirty_dir / ".format-dirty"
     dirty_file.write_text("src/foo.py\n")
 
-    result = pyfltr.dirty.run_dirty(["init"])
+    result = pyfltr.dirty.run_dirty(["init"], base_dir=tmp_path)
     assert result == 0
     assert not dirty_file.exists()
 
 
-def test_dirty_init_missing_file(tmp_path, monkeypatch):
+def test_dirty_init_missing_file(tmp_path):
     """initで.format-dirtyが存在しなくてもエラーにならない。"""
-    monkeypatch.chdir(tmp_path)
-    result = pyfltr.dirty.run_dirty(["init"])
+    result = pyfltr.dirty.run_dirty(["init"], base_dir=tmp_path)
     assert result == 0
 
 
 def test_dirty_add(tmp_path, monkeypatch):
     """stdinからのJSON読み取りとファイル追記を確認。"""
-    monkeypatch.chdir(tmp_path)
     (tmp_path / ".claude").mkdir()
 
     hook_json = json.dumps({"tool_input": {"file_path": "src/foo.py"}})
     monkeypatch.setattr("sys.stdin", __import__("io").StringIO(hook_json))
 
-    result = pyfltr.dirty.run_dirty(["add"])
+    result = pyfltr.dirty.run_dirty(["add"], base_dir=tmp_path)
     assert result == 0
 
     dirty_file = tmp_path / ".claude" / ".format-dirty"
@@ -44,13 +41,12 @@ def test_dirty_add(tmp_path, monkeypatch):
 
 def test_dirty_add_non_py(tmp_path, monkeypatch):
     """.py以外のファイルも追記されることを確認。"""
-    monkeypatch.chdir(tmp_path)
     (tmp_path / ".claude").mkdir()
 
     hook_json = json.dumps({"tool_input": {"file_path": "src/foo.ts"}})
     monkeypatch.setattr("sys.stdin", __import__("io").StringIO(hook_json))
 
-    result = pyfltr.dirty.run_dirty(["add"])
+    result = pyfltr.dirty.run_dirty(["add"], base_dir=tmp_path)
     assert result == 0
 
     dirty_file = tmp_path / ".claude" / ".format-dirty"
@@ -60,7 +56,6 @@ def test_dirty_add_non_py(tmp_path, monkeypatch):
 
 def test_dirty_add_duplicate(tmp_path, monkeypatch):
     """重複パスが追記されないことを確認。"""
-    monkeypatch.chdir(tmp_path)
     dirty_dir = tmp_path / ".claude"
     dirty_dir.mkdir()
     dirty_file = dirty_dir / ".format-dirty"
@@ -69,16 +64,15 @@ def test_dirty_add_duplicate(tmp_path, monkeypatch):
     hook_json = json.dumps({"tool_input": {"file_path": "src/foo.py"}})
     monkeypatch.setattr("sys.stdin", __import__("io").StringIO(hook_json))
 
-    result = pyfltr.dirty.run_dirty(["add"])
+    result = pyfltr.dirty.run_dirty(["add"], base_dir=tmp_path)
     assert result == 0
 
     lines = [line for line in dirty_file.read_text().splitlines() if line]
     assert lines.count("src/foo.py") == 1
 
 
-def test_dirty_run(tmp_path, monkeypatch, mocker):
+def test_dirty_run(tmp_path, mocker):
     """蓄積ファイルの整形と.format-dirty削除を確認。"""
-    monkeypatch.chdir(tmp_path)
     dirty_dir = tmp_path / ".claude"
     dirty_dir.mkdir()
     dirty_file = dirty_dir / ".format-dirty"
@@ -91,7 +85,7 @@ def test_dirty_run(tmp_path, monkeypatch, mocker):
 
     mock_run = mocker.patch("pyfltr.main.run", return_value=0)
 
-    result = pyfltr.dirty.run_dirty(["run"])
+    result = pyfltr.dirty.run_dirty(["run"], base_dir=tmp_path)
     assert result == 0
     assert not dirty_file.exists()
 
@@ -103,9 +97,8 @@ def test_dirty_run(tmp_path, monkeypatch, mocker):
     assert "--no-ui" in call_args
 
 
-def test_dirty_run_nonexistent_files(tmp_path, monkeypatch, mocker):
+def test_dirty_run_nonexistent_files(tmp_path, mocker):
     """存在しないファイルはフィルタされることを確認。"""
-    monkeypatch.chdir(tmp_path)
     dirty_dir = tmp_path / ".claude"
     dirty_dir.mkdir()
     dirty_file = dirty_dir / ".format-dirty"
@@ -113,17 +106,16 @@ def test_dirty_run_nonexistent_files(tmp_path, monkeypatch, mocker):
 
     mock_run = mocker.patch("pyfltr.main.run", return_value=0)
 
-    result = pyfltr.dirty.run_dirty(["run"])
+    result = pyfltr.dirty.run_dirty(["run"], base_dir=tmp_path)
     assert result == 0
     assert not dirty_file.exists()
     # 存在するファイルがないため、pyfltr.main.runは呼ばれない
     mock_run.assert_not_called()
 
 
-def test_dirty_run_no_dirty_file(tmp_path, monkeypatch):
+def test_dirty_run_no_dirty_file(tmp_path):
     """.format-dirtyが存在しない場合はスキップ。"""
-    monkeypatch.chdir(tmp_path)
-    result = pyfltr.dirty.run_dirty(["run"])
+    result = pyfltr.dirty.run_dirty(["run"], base_dir=tmp_path)
     assert result == 0
 
 

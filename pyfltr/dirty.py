@@ -10,10 +10,8 @@ import sys
 
 logger = logging.getLogger(__name__)
 
-_DIRTY_FILE = pathlib.Path(".claude/.format-dirty")
 
-
-def run_dirty(args: list[str]) -> int:
+def run_dirty(args: list[str], *, base_dir: pathlib.Path | None = None) -> int:
     """dirtyサブコマンドのエントリポイント。
 
     常にexit 0を返す（フック失敗でセッションを止めない）。
@@ -23,13 +21,14 @@ def run_dirty(args: list[str]) -> int:
             logger.error("dirtyサブコマンドにはinit/add/runのいずれかを指定してください。")
             return 0
 
+        dirty_file = (base_dir or pathlib.Path.cwd()) / ".claude" / ".format-dirty"
         sub = args[0]
         if sub == "init":
-            _init()
+            _init(dirty_file)
         elif sub == "add":
-            _add()
+            _add(dirty_file)
         elif sub == "run":
-            _run()
+            _run(dirty_file)
         else:
             logger.error(f"不明なdirtyサブコマンド: {sub}")
     except Exception:
@@ -37,13 +36,13 @@ def run_dirty(args: list[str]) -> int:
     return 0
 
 
-def _init() -> None:
+def _init(dirty_file: pathlib.Path) -> None:
     """.claude/.format-dirtyを削除する。"""
-    _DIRTY_FILE.unlink(missing_ok=True)
-    logger.debug("dirty file を初期化しました。")
+    dirty_file.unlink(missing_ok=True)
+    logger.debug("dirty fileを初期化しました。")
 
 
-def _add() -> None:
+def _add(dirty_file: pathlib.Path) -> None:
     """stdinからClaude Code hook JSONを読み、編集ファイルを.format-dirtyに追記する。"""
     data = json.load(sys.stdin)
     tool_input = data.get("tool_input", {})
@@ -53,25 +52,25 @@ def _add() -> None:
 
     # 重複チェック
     existing: set[str] = set()
-    if _DIRTY_FILE.exists():
-        existing = set(_DIRTY_FILE.read_text(encoding="utf-8").splitlines())
+    if dirty_file.exists():
+        existing = set(dirty_file.read_text(encoding="utf-8").splitlines())
 
     if file_path in existing:
         return
 
-    _DIRTY_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with _DIRTY_FILE.open("a", encoding="utf-8") as f:
+    dirty_file.parent.mkdir(parents=True, exist_ok=True)
+    with dirty_file.open("a", encoding="utf-8") as f:
         f.write(file_path + "\n")
     logger.debug(f"dirty fileに追加: {file_path}")
 
 
-def _run() -> None:
+def _run(dirty_file: pathlib.Path) -> None:
     """.format-dirtyのファイルリストをfast相当で整形し、.format-dirtyを削除する。"""
-    if not _DIRTY_FILE.exists():
+    if not dirty_file.exists():
         logger.debug("dirty fileが存在しないためスキップします。")
         return
 
-    lines = _DIRTY_FILE.read_text(encoding="utf-8").splitlines()
+    lines = dirty_file.read_text(encoding="utf-8").splitlines()
     # 存在するファイルのみフィルタ
     files = [f for f in lines if f and pathlib.Path(f).exists()]
 
@@ -80,5 +79,5 @@ def _run() -> None:
 
         pyfltr_run(["fast", "--no-clear", "--no-ui", *files])
 
-    _DIRTY_FILE.unlink(missing_ok=True)
+    dirty_file.unlink(missing_ok=True)
     logger.debug("dirty fileを整形して削除しました。")

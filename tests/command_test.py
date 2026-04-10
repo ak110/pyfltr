@@ -1188,12 +1188,11 @@ def test_resolve_bin_commandline_mise_tool_not_installed(mocker) -> None:
         pyfltr.command._resolve_bin_commandline("ec", config)
 
 
-def test_failed_bin_resolution_result() -> None:
-    """_failed_bin_resolution_resultが失敗用のCommandResultを返す。"""
+def test_failed_resolution_result() -> None:
+    """_failed_resolution_resultが失敗用のCommandResultを返す。"""
     command_info = pyfltr.config.CommandInfo(type="linter")
-    error = FileNotFoundError("shellcheck")
 
-    result = pyfltr.command._failed_bin_resolution_result("shellcheck", command_info, error)
+    result = pyfltr.command._failed_resolution_result("shellcheck", command_info, "ツールが見つかりません: shellcheck")
 
     assert result.returncode == 1
     assert result.has_error is True

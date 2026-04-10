@@ -7,7 +7,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-04-09T15:57:34.897481752Z"
+exclude-newer = "2026-04-09T19:16:30.485528586Z"
 exclude-newer-span = "P1D"
 
 [options.exclude-newer-package]
@@ -1043,11 +1043,6 @@ dependencies = [
     { name = "uv-sort" },
 ]
 
-[package.optional-dependencies]
-pyright = [
-    { name = "pyright", extra = ["nodejs"] },
-]
-
 [package.dev-dependencies]
 dev = [
     { name = "mkdocs" },
@@ -1071,7 +1066,6 @@ requires-dist = [
     { name = "pylint-pydantic", specifier = ">=0.4.1" },
     { name = "pyproject-flake8", specifier = ">=7.0" },
     { name = "pyright", extras = ["nodejs"], specifier = ">=1.1.403" },
-    { name = "pyright", extras = ["nodejs"], marker = "extra == 'pyright'", specifier = ">=1.1.403" },
     { name = "pytest", specifier = ">=7.0" },
     { name = "pytest-asyncio", specifier = ">=1.0.0" },
     { name = "pyupgrade", specifier = ">=3.0" },

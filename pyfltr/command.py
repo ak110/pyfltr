@@ -113,13 +113,12 @@ def _resolve_bin_commandline(
     raise ValueError(f"bin-runnerの設定値が正しくありません: {runner=}")
 
 
-def _failed_bin_resolution_result(
+def _failed_resolution_result(
     command: str,
     command_info: pyfltr.config.CommandInfo,
-    error: FileNotFoundError,
+    message: str,
 ) -> "CommandResult":
-    """Bin ツールの解決失敗時の `CommandResult` を組み立てる。"""
-    message = f"ツールが見つかりません: {error}"
+    """ツール解決失敗時の `CommandResult` を組み立てる。"""
     logger.warning("%s: %s", command, message)
     return CommandResult(
         command=command,
@@ -231,28 +230,6 @@ def _resolve_js_commandline(
     raise ValueError(f"js-runnerの設定値が正しくありません: {runner=}")
 
 
-def _failed_js_resolution_result(
-    command: str,
-    command_info: pyfltr.config.CommandInfo,
-    error: FileNotFoundError,
-) -> "CommandResult":
-    """Js ツールの解決失敗時の `CommandResult` を組み立てる。"""
-    message = (
-        f"js-runner=direct 指定ですが実行ファイルが見つかりません: {error}. "
-        "package.jsonで対象パッケージをインストールしてください。"
-    )
-    return CommandResult(
-        command=command,
-        command_type=command_info.type,
-        commandline=[],
-        returncode=1,
-        has_error=True,
-        files=0,
-        output=message,
-        elapsed=0.0,
-    )
-
-
 def _run_subprocess(
     commandline: list[str],
     env: dict[str, str],
@@ -343,13 +320,18 @@ def execute_command(
         try:
             resolved_path, prefix = _resolve_js_commandline(command, config)
         except FileNotFoundError as e:
-            return _failed_js_resolution_result(command, command_info, e)
+            return _failed_resolution_result(
+                command,
+                command_info,
+                f"js-runner=direct 指定ですが実行ファイルが見つかりません: {e}. "
+                "package.jsonで対象パッケージをインストールしてください。",
+            )
         commandline_prefix: list[str] = [resolved_path, *prefix]
     elif command in _BIN_TOOL_SPEC and config[f"{command}-path"] == "":
         try:
             resolved_path, prefix = _resolve_bin_commandline(command, config)
         except FileNotFoundError as e:
-            return _failed_bin_resolution_result(command, command_info, e)
+            return _failed_resolution_result(command, command_info, f"ツールが見つかりません: {e}")
         commandline_prefix = [resolved_path, *prefix]
     else:
         commandline_prefix = [config[f"{command}-path"]]
