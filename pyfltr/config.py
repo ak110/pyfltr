@@ -368,6 +368,10 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # `ruff check --fix --unsafe-fixes` で autofix 可能な違反を修正する。
     # (通常モードの ruff-format-by-check とは別経路で動作する)
     "ruff-check-fix-args": ["--fix", "--unsafe-fixes"],
+    # 出力形式 ("text" / "jsonl")。jsonl は LLM 向け JSON Lines 出力。
+    "output-format": "text",
+    # --output-format の出力先ファイルパス。空文字のとき stdout。
+    "output-file": "",
     # 最大並列数（linters/testersの並列実行数の上限）
     "jobs": 4,
     # flake8風無視パターン。
@@ -580,6 +584,11 @@ def load_config(config_dir: pathlib.Path | None = None) -> Config:
     bin_runner = config.values["bin-runner"]
     if bin_runner not in BIN_RUNNERS:
         raise ValueError(f"bin-runnerの設定値が正しくありません。{bin_runner=} (許容値: {', '.join(BIN_RUNNERS)})")
+
+    # output-format の値バリデーション
+    output_format = config.values["output-format"]
+    if output_format not in ("text", "jsonl"):
+        raise ValueError(f"output-formatの設定値が正しくありません。{output_format=} (許容値: text, jsonl)")
 
     # per-command fastフラグからfastエイリアスを再計算
     config.values["aliases"]["fast"] = _build_fast_alias(config)

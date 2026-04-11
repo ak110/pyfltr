@@ -3,12 +3,14 @@
 import argparse
 import concurrent.futures
 import logging
+import pathlib
 import shlex
 import threading
 
 import pyfltr.command
 import pyfltr.config
 import pyfltr.executor
+import pyfltr.llm_output
 
 NCOLS = 128
 
@@ -94,6 +96,9 @@ def render_results(
     config: pyfltr.config.Config,
     *,
     include_details: bool,
+    output_format: str = "text",
+    output_file: pathlib.Path | None = None,
+    exit_code: int = 0,
 ) -> None:
     """実行結果を `成功コマンド → 失敗コマンド → summary` の順でまとめて出力する。
 
@@ -103,8 +108,18 @@ def render_results(
 
     `include_details=False` のときは、詳細ログは既に出力済みとみなし summary のみ表示する
     (`--stream` モード向け)。
+
+    `output_format="jsonl"` のときは `pyfltr.llm_output.write_jsonl()` に委譲する。
+    `output_file` が None なら stdout に書き、text 経路は通らない
+    (呼び出し元で logging が抑止されている前提)。`output_file` が指定されている場合は
+    そのファイルに JSONL を書いたうえで、stdout には従来の text 出力も継続する。
     """
     ordered = sorted(results, key=lambda r: config.command_names.index(r.command))
+
+    if output_format == "jsonl":
+        pyfltr.llm_output.write_jsonl(ordered, config, exit_code=exit_code, destination=output_file)
+        if output_file is None:
+            return
 
     if include_details:
         # 1. 成功コマンドの詳細ログ

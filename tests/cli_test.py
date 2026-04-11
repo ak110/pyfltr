@@ -7,26 +7,7 @@ import logging
 import pyfltr.cli
 import pyfltr.command
 import pyfltr.config
-
-
-def _make_result(
-    command: str,
-    *,
-    returncode: int,
-    output: str = "",
-    command_type: str = "linter",
-) -> pyfltr.command.CommandResult:
-    """テスト用の CommandResult を生成。"""
-    return pyfltr.command.CommandResult(
-        command=command,
-        command_type=command_type,
-        commandline=[command],
-        returncode=returncode,
-        has_error=returncode != 0,
-        files=1,
-        output=output,
-        elapsed=0.1,
-    )
+from tests.conftest import make_command_result as _make_result
 
 
 def test_write_log(caplog):
