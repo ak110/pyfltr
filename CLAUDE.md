@@ -14,6 +14,8 @@
 - テストコードの実行は `uv run pyfltr <path>` を使う（pytestを直接呼び出さない）
   - `-vv`などが必要な場合に限り `uv run pyfltr -vv <path>` のようにする
 - Markdownファイルのformat/lintの実行方法： `uv run pre-commit run --files <file>`
+- ドキュメントのみの変更（`*.md`や`docs/**`の更新）をコミットする場合、事前の手動`make test`は省略してよい。`git commit`時点で`pre-commit`の`pyfltr fast`フックが`markdownlint-fast`と`textlint-fast`を自動実行するため、Markdownの検証はそこで担保される
+- コードやテストに手を入れた変更では従来どおり`make test`を通してからコミットする
 
 ## 依存関係の方針
 
