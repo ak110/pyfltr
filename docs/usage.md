@@ -46,7 +46,10 @@ pyfltr fast [files and/or directories ...]
 
 mypy / pylint / pytestなど重いコマンドを除外した軽量チェック。Formattersによるファイル変更があっても終了コードは0になる。pre-commitフックなど速度を優先する場面に適する。
 
-既定で含まれるコマンド: `pyupgrade` `autoflake` `isort` `black` `ruff-format` `ruff-check` `pflake8` `ty` `markdownlint` `textlint`
+既定で含まれるコマンドは以下。
+
+- Formatters: `pyupgrade` `autoflake` `isort` `black` `ruff-format` `prettier` `uv-sort` `shfmt`
+- Linters: `ec` `shellcheck` `typos` `actionlint` `ruff-check` `pflake8` `ty` `markdownlint` `textlint` `biome` `oxlint`
 
 含まれるコマンドは各コマンドの`{command}-fast`設定で制御できる（[設定](configuration.md)を参照）。
 
@@ -87,9 +90,13 @@ ruff-check,pflake8,mypy,pylint,pyright,ty,markdownlint,textlint,pytest \
 
 以下のエイリアスも使用可能。(例: `--commands=format`)
 
-- `format`: `pyupgrade` `autoflake` `isort` `black` `ruff-format`
-- `lint`: `ruff-check` `pflake8` `mypy` `pylint` `pyright` `ty` `markdownlint` `textlint`
-- `test`: `pytest`
+- `format`: `pyupgrade` `autoflake` `isort` `black` `ruff-format` `prettier` `uv-sort` `shfmt`
+- `lint`:
+    - Python系: `ruff-check` `pflake8` `mypy` `pylint` `pyright` `ty`
+    - Markdown系: `markdownlint` `textlint`
+    - JS/TS系: `eslint` `biome` `oxlint` `tsc`
+    - その他: `ec` `shellcheck` `typos` `actionlint`
+- `test`: `pytest` `vitest`
 - `fast`: per-commandの`{cmd}-fast`フラグがtrueのコマンド
 
 ※ `pyproject.toml`の`[tool.pyfltr]`で無効になっているコマンドは無視される。
