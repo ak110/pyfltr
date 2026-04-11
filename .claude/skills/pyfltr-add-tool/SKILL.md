@@ -1,6 +1,6 @@
 ---
 name: pyfltr-add-tool
-description: pyfltr に新しい formatter / linter / tester を追加する際の定型手順チェックリスト。config.py / command.py / error_parser.py / README.md / docs/index.md / tests を一貫して更新する。
+description: pyfltr に新しい formatter / linter / tester を追加する際の定型手順チェックリスト。config.py / command.py / error_parser.py / docs/index.md / tests を一貫して更新する。
 disable-model-invocation: true
 ---
 
@@ -85,12 +85,11 @@ uv add --optional <extra> <new-tool-package>
 - `tests/command_test.py`: ダミー入力で実行できることを確認（実コマンドが重い場合は最小ケース）
 - `tests/error_parser_test.py`: 想定エラー出力をパースできることを確認
 
-## 6. ドキュメント（両方更新）
+## 6. ドキュメント
 
-- `README.md` の「対応ツール」一覧
-- `docs/index.md` の「対応ツール」一覧
+- `docs/index.md` の「対応ツール」一覧に追記する
 
-両方に追記すること。片方だけだとSSOT違反としてCI / レビューで指摘される。
+対応ツール一覧は`docs/index.md`に一元化されている。`README.md`には書かない。
 
 ## 7. 検証
 

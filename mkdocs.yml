@@ -30,13 +30,13 @@ plugins:
         ホーム:
           - index.md: 概要・対応ツール・インストール方法
         使い方:
-          - usage.md: CLI使い方・オプション・UI説明
+          - guide/usage.md: CLI使い方・オプション・UI説明
         設定:
-          - configuration.md: pyproject.tomlでの設定項目リファレンス
-          - examples.md: pyproject.toml・設定ファイル・CI設定の実例
-          - custom-commands.md: カスタムコマンドの設定例集
+          - guide/configuration.md: pyproject.tomlでの設定項目リファレンス
+          - guide/examples.md: pyproject.toml・設定ファイル・CI設定の実例
+          - guide/custom-commands.md: カスタムコマンドの設定例集
         開発者向け:
-          - development.md: 開発環境構築・ドキュメント・リリース手順
+          - development/development.md: 開発環境構築・ドキュメント・リリース手順
 
 markdown_extensions:
   - pymdownx.highlight:
@@ -53,9 +53,12 @@ markdown_extensions:
 
 nav:
   - ホーム: index.md
-  - 使い方: usage.md
-  - 設定: configuration.md
-  - 設定例: examples.md
-  - カスタムコマンド例: custom-commands.md
+  - 使い方:
+      - 概要: guide/index.md
+      - CLI使い方: guide/usage.md
+      - 設定: guide/configuration.md
+      - 設定例: guide/examples.md
+      - カスタムコマンド例: guide/custom-commands.md
   - 開発者向け:
-      - 開発手順: development.md
+      - 概要: development/index.md
+      - 開発手順: development/development.md

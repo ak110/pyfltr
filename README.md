@@ -3,19 +3,7 @@
 [![CI](https://github.com/ak110/pyfltr/actions/workflows/ci.yaml/badge.svg)](https://github.com/ak110/pyfltr/actions/workflows/ci.yaml)
 [![PyPI version](https://badge.fury.io/py/pyfltr.svg)](https://badge.fury.io/py/pyfltr)
 
-Pythonの各種ツールをまとめて呼び出すツール。
-
-ドキュメント： <https://ak110.github.io/pyfltr/>
-
-llms.txt: <https://ak110.github.io/pyfltr/llms.txt>
-
-## 対応ツール
-
-- Formatters: pyupgrade / autoflake / isort / black / ruff format / prettier / uv-sort / shfmt
-- Linters: ruff check / pflake8 / mypy / pylint / pyright / ty / markdownlint-cli2 / textlintなど多数
-- Testers: pytest / vitest
-
-全ツール一覧は[ドキュメント](https://ak110.github.io/pyfltr/)を参照。
+Pythonの各種formatter / linter / testerをまとめて並列実行するツール。
 
 ## インストール
 
@@ -23,10 +11,7 @@ llms.txt: <https://ak110.github.io/pyfltr/llms.txt>
 pip install pyfltr
 ```
 
-## 基本的な使い方
+## ドキュメント
 
-```shell
-pyfltr [files and/or directories ...]
-```
-
-詳細は[ドキュメント](https://ak110.github.io/pyfltr/)を参照。
+- <https://ak110.github.io/pyfltr/> — 対応ツール一覧・使い方・設定リファレンス
+- [llms.txt](https://ak110.github.io/pyfltr/llms.txt) / [llms-full.txt](https://ak110.github.io/pyfltr/llms-full.txt)
