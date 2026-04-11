@@ -186,3 +186,41 @@ class TestSubcommandIntegration:
         mocker.patch("subprocess.run", return_value=proc)
         returncode = pyfltr.main.run(["ci", str(pathlib.Path(__file__).parent.parent)])
         assert returncode == 0
+
+    def test_run_includes_custom_commands_by_default(self, mocker, tmp_path):
+        """`run` サブコマンドのデフォルトで custom-commands も実行される。"""
+        pyproject = """
+[tool.pyfltr]
+python = false
+eslint = false
+prettier = false
+markdownlint = false
+textlint = false
+biome = false
+oxlint = false
+tsc = false
+vitest = false
+ec = false
+shellcheck = false
+typos = false
+actionlint = false
+
+[tool.pyfltr.custom-commands.my-linter]
+type = "linter"
+path = "my-linter-exe"
+targets = ["*.py"]
+pass-filenames = false
+"""
+        (tmp_path / "pyproject.toml").write_text(pyproject)
+        (tmp_path / "sample.py").write_text("x = 1\n")
+
+        proc = subprocess.CompletedProcess(["my-linter-exe"], returncode=0, stdout="")
+        mock_run = mocker.patch("subprocess.run", return_value=proc)
+
+        returncode = pyfltr.main.run(["run", "--work-dir", str(tmp_path), str(tmp_path)])
+        assert returncode == 0
+
+        invoked_binaries = {
+            call.args[0][0] for call in mock_run.call_args_list if call.args and isinstance(call.args[0], list) and call.args[0]
+        }
+        assert "my-linter-exe" in invoked_binaries

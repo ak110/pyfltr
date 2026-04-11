@@ -44,8 +44,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--commands",
-        default=",".join(pyfltr.config.BUILTIN_COMMAND_NAMES),
-        help="カンマ区切りのコマンド一覧を指定します。(既定: %(default)s)",
+        default=None,
+        help="カンマ区切りのコマンド一覧を指定します。"
+        "(既定: ビルトイン + カスタムコマンドを含む、pyproject.toml で有効な全コマンド)",
     )
     parser.add_argument(
         "--generate-config",
@@ -297,7 +298,13 @@ def _run_impl(
         if args.jobs is not None:
             config.values["jobs"] = args.jobs
 
-        commands: list[str] = pyfltr.config.resolve_aliases(args.commands.split(","), config)
+        # --commands 未指定時はカスタムコマンドを含む全登録コマンドを対象にする。
+        # argparse のデフォルト評価時点では pyproject.toml を読み込んでいないため、
+        # ビルトインのみの default を返すと custom-commands が常にスキップされる。
+        # load_config 後に実体を決定することで、ユーザーが登録した custom-commands
+        # (例: svelte-check) も `run` / `ci` サブコマンドのデフォルト動作で走るようにする。
+        commands_arg: str = args.commands if args.commands is not None else ",".join(config.command_names)
+        commands: list[str] = pyfltr.config.resolve_aliases(commands_arg.split(","), config)
         for command in commands:
             if command not in config.values:
                 parser.error(f"コマンドが見つかりません: {command}")
