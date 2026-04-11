@@ -15,6 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  # 開発モード: DeprecationWarningなどの隠れた問題を早期検出する
   PYTHONDEVMODE: "1"
   # サプライチェーン攻撃対策: uvがlockfileを常に尊重する
   UV_FROZEN: "1"
