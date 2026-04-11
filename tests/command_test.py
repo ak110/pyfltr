@@ -932,6 +932,13 @@ def test_build_subprocess_env_npm_config_actually_effective(monkeypatch: pytest.
     ユーザー既定値優先 (setdefault) の動作を利用して非標準値 4321 を注入し検証する。
     """
     # pnpm の設定ファイル読込を避けるため、隔離した HOME を用意する。
+    # 併せて、pnpm が mise の shim 経由で呼ばれる環境では HOME 切り替えにより
+    # 既存の trust 情報が見えなくなり、グローバル mise config の読込が
+    # 「trusted でない」として失敗する。切り替え前の HOME 配下の config を
+    # 明示的に信頼させて回避する。
+    original_home = pathlib.Path(os.environ["HOME"])
+    mise_config = original_home / ".config" / "mise" / "config.toml"
+    monkeypatch.setenv("MISE_TRUSTED_CONFIG_PATHS", str(mise_config))
     monkeypatch.setenv("HOME", str(tmp_path))
     # corepack のダウンロードプロンプトを抑止する (環境によっては存在する)。
     monkeypatch.setenv("COREPACK_ENABLE_DOWNLOAD_PROMPT", "0")
