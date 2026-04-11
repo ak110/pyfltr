@@ -805,16 +805,18 @@ def _validate_targets_value(key: str, value: typing.Any) -> str | list[str]:
 def filter_fix_commands(commands: list[str], config: Config) -> list[str]:
     """Fix モードで実行すべきコマンドに絞り込む。
 
-    enabled かつ次のいずれかを満たすコマンドを返す。
-    - formatter (通常実行そのものがファイルを修正するため)
-    - fix-args が定義されている linter/tester (fix-args 付きで起動すると修正される)
+    `pyfltr fix` は linter の autofix 機能 (`{command}-fix-args`) を呼び出すための
+    サブコマンドであり、formatter は対象外とする。formatter 本体は通常実行
+    (`pyfltr run` など) で常に書き込みモードで動くため、fix モードで重複して
+    走らせる必要は無い。
+
+    enabled かつ `{command}-fix-args` が定義されている linter/tester を返す。
     """
     result: list[str] = []
     for command in commands:
         if not config[command]:
             continue
-        command_info = config.commands[command]
-        if command_info.type == "formatter" or f"{command}-fix-args" in config.values:
+        if f"{command}-fix-args" in config.values:
             result.append(command)
     return result
 

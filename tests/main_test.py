@@ -40,23 +40,39 @@ def test_work_dir(mocker, tmp_path):
 
 def test_fix_mode_with_no_eligible_commands(mocker, caplog):
     """fix モードで対象コマンドが 0 件なら exit 1 にする。"""
-    # formatter を全部 disabled にすれば fix 対象なしになる
+    # formatter だけ指定しても fix 対象は 0 件になる (formatter は対象外)
     proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="")
     mocker.patch("subprocess.run", return_value=proc)
-    returncode = pyfltr.main.run(["fix", "--commands=mypy,pylint", str(pathlib.Path(__file__).parent.parent)])
-    # mypy/pylint は fix-args 未定義なので 0 件
+    returncode = pyfltr.main.run(["fix", "--commands=black,ruff-format", str(pathlib.Path(__file__).parent.parent)])
+    # black/ruff-format は formatter のため 0 件
     assert returncode == 1
-    assert "--fix で実行可能なコマンドがありません" in caplog.text
+    assert "fix モードで実行可能なコマンドがありません" in caplog.text
 
 
 def test_fix_mode_disables_shuffle(mocker, caplog):
-    """--fix と --shuffle を同時指定した場合、shuffle が無効化される。"""
+    """fix モードと --shuffle を同時指定した場合、shuffle が無効化される。"""
     proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="")
     mocker.patch("subprocess.run", return_value=proc)
-    # ruff-format は pyfltr 自身の preset=latest で有効化されている
-    returncode = pyfltr.main.run(["fix", "--shuffle", "--commands=ruff-format", str(pathlib.Path(__file__).parent.parent)])
+    # ruff-check は fix-args 定義済みかつ preset=latest で有効化されている
+    returncode = pyfltr.main.run(["fix", "--shuffle", "--commands=ruff-check", str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 0
     assert "--shuffle を無効化" in caplog.text
+
+
+def test_explicit_fix_flag_emits_deprecation_warning(mocker, caplog):
+    """`--fix` を明示指定すると非推奨警告が出力される。"""
+    proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="")
+    mocker.patch("subprocess.run", return_value=proc)
+    pyfltr.main.run(["--fix", "--commands=ruff-check", str(pathlib.Path(__file__).parent.parent)])
+    assert "--fix は非推奨です" in caplog.text
+
+
+def test_fix_subcommand_does_not_emit_deprecation_warning(mocker, caplog):
+    """`pyfltr fix` サブコマンド経由では非推奨警告は出力されない。"""
+    proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="")
+    mocker.patch("subprocess.run", return_value=proc)
+    pyfltr.main.run(["fix", "--commands=ruff-check", str(pathlib.Path(__file__).parent.parent)])
+    assert "--fix は非推奨です" not in caplog.text
 
 
 def test_stream_mode_writes_detail_log_during_run(mocker, caplog):

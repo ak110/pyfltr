@@ -247,14 +247,9 @@ def test_filter_fix_commands_defaults() -> None:
     # 既定では textlint/markdownlint/ruff-check は disabled、formatter は enabled
     commands = ["pyupgrade", "black", "mypy", "textlint", "markdownlint", "ruff-check"]
     result = pyfltr.config.filter_fix_commands(commands, config)
-    # enabled な formatter (pyupgrade, black) だけが残る
-    # mypy は fix-args 未定義、textlint/markdownlint/ruff-check は disabled
-    assert "pyupgrade" in result
-    assert "black" in result
-    assert "mypy" not in result
-    assert "textlint" not in result
-    assert "markdownlint" not in result
-    assert "ruff-check" not in result
+    # formatter (pyupgrade, black) は fix モード対象外、
+    # mypy は fix-args 未定義、textlint/markdownlint/ruff-check は disabled のため全て除外
+    assert not result
 
 
 def test_filter_fix_commands_enabled_linter(tmp_path: pathlib.Path) -> None:

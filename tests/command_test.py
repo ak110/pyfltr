@@ -450,21 +450,14 @@ def test_fix_mode_non_zero_rc_is_failed(mocker, tmp_path: pathlib.Path) -> None:
     assert result.has_error is True
 
 
-def test_fix_mode_formatter_uses_normal_path(mocker, tmp_path: pathlib.Path) -> None:
-    """fix モードでも formatter (fix-args 未定義) は既存経路を通る。"""
-    target = tmp_path / "sample.py"
-    target.write_text("x = 1\n")
-
-    proc = subprocess.CompletedProcess(["ruff"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
-
+def test_fix_mode_formatter_is_not_filtered_in(tmp_path: pathlib.Path) -> None:
+    """filter_fix_commands は formatter を fix モードの対象から除外する。"""
+    del tmp_path  # noqa  # fixture互換のためだけに受け取る
     config = pyfltr.config.create_default_config()
     config.values["ruff-format"] = True
-    result = pyfltr.command.execute_command("ruff-format", _make_args([target], fix=True), config)
-
-    # ruff-format は 2 段階実行 (ruff-format-by-check が既定で有効)
-    assert mock_run.call_count == 2
-    assert result.status == "succeeded"
+    # ruff-format は formatter のため fix モードの対象外となる (fix-args 未定義)
+    result = pyfltr.config.filter_fix_commands(["ruff-format"], config)
+    assert not result
 
 
 def test_prettier_two_step_check_clean(mocker, tmp_path: pathlib.Path) -> None:

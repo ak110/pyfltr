@@ -158,11 +158,18 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
 
         return pyfltr.dirty.run_dirty(remaining_args)
 
+    # `--fix` は非推奨。`pyfltr fix` サブコマンドで暗黙的に付与する経路と区別するため、
+    # ユーザーが明示的に指定したかどうかは effective_args 組み立て前の remaining_args で判定する。
+    explicit_fix_flag = "--fix" in remaining_args
+
     effective_args = _build_effective_args(subcommand, remaining_args)
 
     parser = build_parser()
     args = parser.parse_args(effective_args)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, format="%(message)s")
+
+    if explicit_fix_flag:
+        logger.warning("--fix は非推奨です。代わりに `pyfltr fix` サブコマンドを使用してください。")
 
     # --work-dir: ターゲットパスを絶対パスに変換してからcwd変更
     original_cwd: str | None = None
@@ -318,8 +325,7 @@ def _run_impl(
             commands = pyfltr.config.filter_fix_commands(commands, config)
             if not commands:
                 logger.error(
-                    "--fix で実行可能なコマンドがありません"
-                    "(有効化された formatter もしくは fix-args 定義済み linter を指定してください)。"
+                    "fix モードで実行可能なコマンドがありません(有効化された fix-args 定義済み linter を指定してください)。"
                 )
                 return 1
 
