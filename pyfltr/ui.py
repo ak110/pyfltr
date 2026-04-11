@@ -200,22 +200,26 @@ class UIApp(App):
 
     def _execute_command(self, command: str) -> pyfltr.command.CommandResult:
         """出力をキャプチャしながらコマンド実行。"""
-        # Summaryを「running」に更新
-        self._start_times[command] = time.perf_counter()
-        self.call_from_thread(self._update_summary, command, "running")
+        # serial_group を持つコマンドは同一グループ内で排他実行される (cargo / dotnet 等)。
+        # ロック取得前は「待機中」の表示に留め、running 表示はロック取得後に切り替える。
+        with pyfltr.executor.serial_group_lock(self.config.commands[command].serial_group):
+            # Summaryを「running」に更新
+            self._start_times[command] = time.perf_counter()
+            self.call_from_thread(self._update_summary, command, "running")
 
-        # コマンドタブに開始メッセージを出力
-        self.call_from_thread(
-            self._write_log,
-            f"#output-{command}",
-            f"{command} を実行中です...\n",
-        )
+            # コマンドタブに開始メッセージを出力
+            self.call_from_thread(
+                self._write_log,
+                f"#output-{command}",
+                f"{command} を実行中です...\n",
+            )
 
-        def on_output(line: str) -> None:
-            """出力行をリアルタイムでUIに反映。"""
-            self.call_from_thread(self._write_log, f"#output-{command}", line.removesuffix("\n"))
+            def on_output(line: str) -> None:
+                """出力行をリアルタイムでUIに反映。"""
+                self.call_from_thread(self._write_log, f"#output-{command}", line.removesuffix("\n"))
 
-        result = pyfltr.command.execute_command(command, self.args, self.config, on_output=on_output)
+            result = pyfltr.command.execute_command(command, self.args, self.config, on_output=on_output)
+        # ここ以降は結果の UI 反映のみなので serial_group ロックの外で行う。
 
         with self.lock:
             # running状態から解除

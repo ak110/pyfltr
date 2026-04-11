@@ -1,5 +1,9 @@
 """テストコード。"""
 
+import concurrent.futures
+import threading
+import time
+
 import pyfltr.config
 import pyfltr.executor
 
@@ -27,3 +31,75 @@ def test_split_commands_fix_mode_puts_all_in_serial_bucket() -> None:
     assert not linters_and_testers
     # 全ての enabled コマンドが formatters (= 順次実行) バケツに積まれる
     assert set(formatters) == {"black", "mypy", "markdownlint"}
+
+
+def test_serial_group_lock_noop_for_none() -> None:
+    """serial_group=None は no-op として動作する (他スレッドも即座に進める)。"""
+    started = threading.Event()
+    finished = threading.Event()
+
+    def _worker() -> None:
+        with pyfltr.executor.serial_group_lock(None):
+            started.set()
+            finished.wait(timeout=1.0)
+
+    thread = threading.Thread(target=_worker)
+    thread.start()
+    assert started.wait(timeout=1.0), "serial_group=None のロックで待たされてはいけない"
+    finished.set()
+    thread.join(timeout=1.0)
+    assert not thread.is_alive()
+
+
+def test_serial_group_lock_mutual_exclusion() -> None:
+    """同一 serial_group のコマンドは並列実行されても 1 件ずつしか走らない。"""
+    # テスト間でグローバル辞書の状態が残らないよう固有のグループ名を使う
+    group = "test-mutex"
+    concurrent_count = 0
+    max_concurrent = 0
+    state_lock = threading.Lock()
+
+    def _worker(index: int) -> int:
+        nonlocal concurrent_count, max_concurrent
+        del index
+        with pyfltr.executor.serial_group_lock(group):
+            with state_lock:
+                concurrent_count += 1
+                max_concurrent = max(max_concurrent, concurrent_count)
+            # 並列実行が起きていれば max_concurrent が 2 以上になる
+            time.sleep(0.05)
+            with state_lock:
+                concurrent_count -= 1
+        return max_concurrent
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        list(executor.map(_worker, range(4)))
+
+    # 同一 group なので最大同時実行数は 1 で固定される
+    assert max_concurrent == 1, f"serial_group={group!r} で同一グループが並列実行された (max_concurrent={max_concurrent})"
+
+
+def test_serial_group_lock_independent_groups() -> None:
+    """異なる serial_group は互いに独立して並列実行できる。"""
+    group_a_running = threading.Event()
+    group_b_can_finish = threading.Event()
+
+    def _worker_a() -> None:
+        with pyfltr.executor.serial_group_lock("test-group-a"):
+            group_a_running.set()
+            group_b_can_finish.wait(timeout=1.0)
+
+    def _worker_b() -> None:
+        # group_a がロック取得済みの状態で実行されても group_b は即座に進める
+        assert group_a_running.wait(timeout=1.0)
+        with pyfltr.executor.serial_group_lock("test-group-b"):
+            group_b_can_finish.set()
+
+    t_a = threading.Thread(target=_worker_a)
+    t_b = threading.Thread(target=_worker_b)
+    t_a.start()
+    t_b.start()
+    t_a.join(timeout=2.0)
+    t_b.join(timeout=2.0)
+    assert not t_a.is_alive()
+    assert not t_b.is_alive()

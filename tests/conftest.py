@@ -9,6 +9,21 @@ pre-commit の name-tests-test フックから除外されるため。
 import pyfltr.command
 import pyfltr.error_parser
 
+# Rust / .NET 言語ツールの既定値定数。config_test / command_test の両方が
+# cargo-clippy の args / fix-args を参照するため、ここで一元管理する。
+CARGO_CLIPPY_ARGS: list[str] = ["clippy", "--all-targets"]
+CARGO_CLIPPY_LINT_ARGS: list[str] = ["--", "-D", "warnings"]
+CARGO_CLIPPY_FIX_ARGS: list[str] = [
+    "--fix",
+    "--allow-staged",
+    "--allow-dirty",
+    "--",
+    "-D",
+    "warnings",
+]
+CARGO_CLIPPY_LINT_CMDLINE: list[str] = ["cargo", *CARGO_CLIPPY_ARGS, *CARGO_CLIPPY_LINT_ARGS]
+CARGO_CLIPPY_FIX_CMDLINE: list[str] = ["cargo", *CARGO_CLIPPY_ARGS, *CARGO_CLIPPY_FIX_ARGS]
+
 
 def make_command_result(
     command: str,

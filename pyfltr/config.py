@@ -23,6 +23,13 @@ class CommandInfo:
     """対象ファイルパターン。単一の glob 文字列または glob のリスト。"""
     error_pattern: str | None = None
     """エラーパース用正規表現"""
+    serial_group: str | None = None
+    """直列実行グループ名。
+
+    同一グループ名のコマンドは linters/testers の並列実行でも同時に走らないよう
+    pyfltr 側で排他する。cargo 系は ``"cargo"``、dotnet 系は ``"dotnet"`` を指定し、
+    ``target`` ディレクトリなどの内部ロック競合を避ける。
+    """
 
     def target_globs(self) -> list[str]:
         """対象ファイルパターンをリスト形式で返す。"""
@@ -72,6 +79,15 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
     "uv-sort": CommandInfo(type="formatter", targets="pyproject.toml"),
     # bin-runner対応ツール（formatter → linterの順）
     "shfmt": CommandInfo(type="formatter", targets="*.sh"),
+    # Rust / .NET 言語ツール (formatter)。いずれも pass-filenames=False でcrate/solution
+    # 全体を対象とする project-level 実行で動作する。serial_group により同一ツールチェイン
+    # (cargo / dotnet) のコマンドは直列実行され、target ディレクトリ等のロック競合を回避する。
+    "cargo-fmt": CommandInfo(type="formatter", targets="*.rs", serial_group="cargo"),
+    "dotnet-format": CommandInfo(
+        type="formatter",
+        targets=["*.cs", "*.csproj", "*.sln", "Directory.Build.props", ".editorconfig"],
+        serial_group="dotnet",
+    ),
     "ec": CommandInfo(type="linter", targets="*"),
     "shellcheck": CommandInfo(type="linter", targets="*.sh"),
     "typos": CommandInfo(type="linter", targets="*"),
@@ -103,6 +119,19 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         type="linter",
         targets=["*.ts", "*.tsx", "*.mts", "*.cts"],
     ),
+    # Rust / .NET 言語ツール (linter)。pass-filenames=False で crate / solution 全体を対象とする。
+    "cargo-clippy": CommandInfo(type="linter", targets=["*.rs", "Cargo.toml"], serial_group="cargo"),
+    "cargo-check": CommandInfo(type="linter", targets=["*.rs", "Cargo.toml"], serial_group="cargo"),
+    "cargo-deny": CommandInfo(
+        type="linter",
+        targets=["Cargo.toml", "Cargo.lock", "deny.toml"],
+        serial_group="cargo",
+    ),
+    "dotnet-build": CommandInfo(
+        type="linter",
+        targets=["*.cs", "*.csproj", "*.sln", "Directory.Build.props"],
+        serial_group="dotnet",
+    ),
     "pytest": CommandInfo(type="tester", targets="*_test.py"),
     # vitest のテストファイルパターン（pytest の *_test.py と同じ考え方）
     "vitest": CommandInfo(
@@ -125,6 +154,13 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
             "*.spec.cjs",
             "*.spec.cts",
         ],
+    ),
+    # Rust / .NET 言語ツール (tester)。pass-filenames=False で crate / solution 全体を対象とする。
+    "cargo-test": CommandInfo(type="tester", targets=["*.rs", "Cargo.toml"], serial_group="cargo"),
+    "dotnet-test": CommandInfo(
+        type="tester",
+        targets=["*.cs", "*.csproj", "*.sln", "Directory.Build.props"],
+        serial_group="dotnet",
     ),
 }
 
@@ -311,6 +347,58 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "tsc-args": ["--noEmit"],
     "tsc-pass-filenames": False,
     "tsc-fast": False,
+    # -- Rust 言語ツール --
+    # いずれも pass-filenames=False で crate 全体を対象とする project-level 実行。
+    # cargo は version pin ではなく mise shim 経由で PATH に入る前提のため、
+    # 専用 runner は使わず path に直接 "cargo" を指定する。
+    "cargo-fmt": False,
+    "cargo-fmt-path": "cargo",
+    # 常時書き込みモード。pyfltr 規約により formatter は --fix 無しでも強制修正する。
+    "cargo-fmt-args": ["fmt"],
+    "cargo-fmt-pass-filenames": False,
+    "cargo-fmt-fast": True,
+    "cargo-clippy": False,
+    "cargo-clippy-path": "cargo",
+    # args は lint / fix 両モードで共通の前半部分。trailing flag (-- -D warnings)
+    # は lint-args / fix-args の双方に重複して置き、--fix 時には `--fix` を
+    # 中間に挿入できるよう分離している。
+    "cargo-clippy-args": ["clippy", "--all-targets"],
+    "cargo-clippy-lint-args": ["--", "-D", "warnings"],
+    "cargo-clippy-fix-args": ["--fix", "--allow-staged", "--allow-dirty", "--", "-D", "warnings"],
+    "cargo-clippy-pass-filenames": False,
+    "cargo-clippy-fast": True,
+    "cargo-check": False,
+    "cargo-check-path": "cargo",
+    "cargo-check-args": ["check", "--all-targets"],
+    "cargo-check-pass-filenames": False,
+    "cargo-check-fast": False,
+    "cargo-test": False,
+    "cargo-test-path": "cargo",
+    "cargo-test-args": ["test"],
+    "cargo-test-pass-filenames": False,
+    "cargo-test-fast": False,
+    "cargo-deny": False,
+    "cargo-deny-path": "cargo-deny",
+    "cargo-deny-args": ["check"],
+    "cargo-deny-pass-filenames": False,
+    "cargo-deny-fast": False,
+    # -- .NET 言語ツール --
+    "dotnet-format": False,
+    "dotnet-format-path": "dotnet",
+    # 常時書き込みモード。pyfltr 規約により formatter は --fix 無しでも強制修正する。
+    "dotnet-format-args": ["format"],
+    "dotnet-format-pass-filenames": False,
+    "dotnet-format-fast": True,
+    "dotnet-build": False,
+    "dotnet-build-path": "dotnet",
+    "dotnet-build-args": ["build", "--nologo"],
+    "dotnet-build-pass-filenames": False,
+    "dotnet-build-fast": False,
+    "dotnet-test": False,
+    "dotnet-test-path": "dotnet",
+    "dotnet-test-args": ["test", "--nologo"],
+    "dotnet-test-pass-filenames": False,
+    "dotnet-test-fast": False,
     # -- bin-runner対応ツール --
     "shfmt": False,
     "shfmt-path": "",
@@ -419,7 +507,18 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "respect-gitignore": True,
     # コマンド名のエイリアス
     "aliases": {
-        "format": ["pyupgrade", "autoflake", "isort", "black", "ruff-format", "prettier", "uv-sort", "shfmt"],
+        "format": [
+            "pyupgrade",
+            "autoflake",
+            "isort",
+            "black",
+            "ruff-format",
+            "prettier",
+            "uv-sort",
+            "shfmt",
+            "cargo-fmt",
+            "dotnet-format",
+        ],
         "lint": [
             "ruff-check",
             "pflake8",
@@ -437,8 +536,12 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
             "actionlint",
             "oxlint",
             "tsc",
+            "cargo-clippy",
+            "cargo-check",
+            "cargo-deny",
+            "dotnet-build",
         ],
-        "test": ["pytest", "vitest"],
+        "test": ["pytest", "vitest", "cargo-test", "dotnet-test"],
     },
 }
 """デフォルト設定。"""

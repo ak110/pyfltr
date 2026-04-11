@@ -1,6 +1,38 @@
 """コマンド実行順の制御。"""
 
+import collections.abc
+import contextlib
+import threading
+
 import pyfltr.config
+
+_serial_group_locks: dict[str, threading.Lock] = {}
+"""serial_group 名をキーにした排他ロック辞書。"""
+
+_serial_group_locks_registry_lock = threading.Lock()
+"""``_serial_group_locks`` 自体の生成を直列化するためのメタロック。"""
+
+
+@contextlib.contextmanager
+def serial_group_lock(group: str | None) -> collections.abc.Iterator[None]:
+    """指定された serial_group の排他ロックを取得するコンテキストマネージャー。
+
+    ``group`` が ``None`` のときは no-op として振る舞い、呼び出し側は常に
+    ``with`` 文で包めるようにする。これにより、cargo 系や dotnet 系の
+    ``CommandInfo.serial_group`` が設定されたコマンドは並列実行されても
+    同一グループ内では 1 件ずつ順に走り、``target`` ディレクトリなどの
+    内部ロック競合を回避できる。
+    """
+    if group is None:
+        yield
+        return
+    with _serial_group_locks_registry_lock:
+        lock = _serial_group_locks.get(group)
+        if lock is None:
+            lock = threading.Lock()
+            _serial_group_locks[group] = lock
+    with lock:
+        yield
 
 
 def split_commands_for_execution(

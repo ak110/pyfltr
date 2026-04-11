@@ -284,3 +284,91 @@ jobs:
 - `pnpm config set minimum-release-age 1440`: サプライチェーン攻撃対策として、公開から24時間（1440分）未満のパッケージのインストールを拒否する。
 - `uv sync --all-extras --all-groups`: pyfltrを含むdev依存をすべて同期し、`uv run pyfltr`から対応ツール群を解決できるようにする。`UV_FROZEN=1`下でも`uv.lock`をそのまま使うため問題なく動作する。
 - `uv cache prune --ci`: CIキャッシュを軽量化するための後処理。
+
+## Rustプロジェクト
+
+`cargo fmt` / `cargo clippy` / `cargo test` / `cargo deny` と、ドキュメント系lint（`textlint` / `markdownlint-cli2` / `prettier`）をpyfltrに一元化する例。Python非依存プロジェクトのため`python = false`でPython系ツールを一括無効化する。
+
+`pyproject.toml`:
+
+```toml
+[tool.pyfltr]
+python = false
+
+# ドキュメント系lint
+markdownlint = true
+textlint = true
+prettier = true
+
+# Rust言語ツール
+cargo-fmt = true
+cargo-clippy = true
+cargo-check = true
+cargo-test = true
+cargo-deny = true
+```
+
+`.pre-commit-config.yaml`（`uvx pyfltr fast`をlocal hookで呼ぶ構成）:
+
+```yaml
+repos:
+  - repo: local
+    hooks:
+      - id: pyfltr-fast
+        name: pyfltr fast
+        language: system
+        entry: uvx pyfltr fast
+        pass_filenames: true
+        require_serial: true
+        types: [file]
+```
+
+`mise.toml`（`uv`追加例）:
+
+```toml
+[tools]
+rust = "stable"
+node = "lts"
+pnpm = "latest"
+uv = "latest"
+
+[tasks.setup]
+run = [
+  "uvx pre-commit install",
+]
+```
+
+cargo系ツール（`cargo-fmt`/`cargo-clippy`/`cargo-check`/`cargo-test`/`cargo-deny`）はpyfltr内部で同一`serial_group`として扱われる。
+linters/testersを並列実行するスケジューラでも自動的に直列化されるため、`target`ディレクトリのロック競合を気にする必要はない。
+dotnet系（`dotnet-format`/`dotnet-build`/`dotnet-test`）も同様に自動直列化される。
+
+## .NETプロジェクト
+
+`dotnet format` / `dotnet build` / `dotnet test` と、ドキュメント系lintをpyfltrに一元化する例。
+
+`pyproject.toml`:
+
+```toml
+[tool.pyfltr]
+python = false
+
+# ドキュメント系lint
+markdownlint = true
+textlint = true
+prettier = true
+
+# .NET言語ツール
+dotnet-format = true
+dotnet-build = true
+dotnet-test = true
+```
+
+`.pre-commit-config.yaml`はRust版と同じく`uvx pyfltr fast`をlocal hookで呼び出す形にし、`mise.toml`には`dotnet`と`uv`を揃えて定義する。
+
+```toml
+[tools]
+dotnet = "latest"
+node = "lts"
+pnpm = "latest"
+uv = "latest"
+```

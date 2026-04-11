@@ -5,6 +5,7 @@ import pathlib
 import pytest
 
 import pyfltr.config
+from tests import conftest as _testconf
 
 
 @pytest.mark.parametrize(
@@ -691,3 +692,135 @@ def test_builtin_targets_no_mutation_of_builtins(tmp_path: pathlib.Path) -> None
     assert config.commands["shfmt"].targets == "*.bash"
     # BUILTIN_COMMANDS 側は元のまま
     assert pyfltr.config.BUILTIN_COMMANDS["shfmt"].targets == original_targets
+
+
+# Rust / .NET 言語ツール向けのテスト群。
+# 全ツール既定 False、pass-filenames=False、formatter は常時書き込みモード、
+# cargo-clippy のみ lint-args / fix-args を持つ。
+_NATIVE_LANG_TOOLS: tuple[str, ...] = (
+    "cargo-fmt",
+    "cargo-clippy",
+    "cargo-check",
+    "cargo-test",
+    "cargo-deny",
+    "dotnet-format",
+    "dotnet-build",
+    "dotnet-test",
+)
+
+
+def test_native_lang_tools_registered() -> None:
+    """Rust / .NET 言語ツールが BUILTIN_COMMANDS と DEFAULT_CONFIG に登録されている。"""
+    config = pyfltr.config.create_default_config()
+    for tool in _NATIVE_LANG_TOOLS:
+        assert tool in pyfltr.config.BUILTIN_COMMANDS, f"{tool} が BUILTIN_COMMANDS に未登録"
+        assert config[tool] is False, f"{tool} の既定値は False であるべき"
+        assert config[f"{tool}-path"], f"{tool}-path が設定されていない"
+
+
+def test_native_lang_tools_pass_filenames_false() -> None:
+    """Rust / .NET 言語ツールは全て pass-filenames=False (crate / solution 全体を対象)。"""
+    config = pyfltr.config.create_default_config()
+    for tool in _NATIVE_LANG_TOOLS:
+        assert config[f"{tool}-pass-filenames"] is False, f"{tool}-pass-filenames は False であるべき"
+
+
+def test_native_lang_tools_command_types() -> None:
+    """Rust / .NET 言語ツールの type 分類。"""
+    expected = {
+        "cargo-fmt": "formatter",
+        "cargo-clippy": "linter",
+        "cargo-check": "linter",
+        "cargo-test": "tester",
+        "cargo-deny": "linter",
+        "dotnet-format": "formatter",
+        "dotnet-build": "linter",
+        "dotnet-test": "tester",
+    }
+    for tool, expected_type in expected.items():
+        assert pyfltr.config.BUILTIN_COMMANDS[tool].type == expected_type
+
+
+def test_native_formatters_write_by_default() -> None:
+    """cargo-fmt / dotnet-format は既定で書き込みモード (--check 等を含まない)。"""
+    config = pyfltr.config.create_default_config()
+    assert config["cargo-fmt-args"] == ["fmt"]
+    assert config["dotnet-format-args"] == ["format"]
+    # pyfltr 規約: formatter には fix-args を定義しない
+    assert "cargo-fmt-fix-args" not in config.values
+    assert "dotnet-format-fix-args" not in config.values
+
+
+def test_cargo_clippy_args_separation() -> None:
+    """cargo-clippy は args / lint-args / fix-args を分離し、trailing `-- -D warnings` を双方に持つ。"""
+    config = pyfltr.config.create_default_config()
+    assert config["cargo-clippy-args"] == _testconf.CARGO_CLIPPY_ARGS
+    assert config["cargo-clippy-lint-args"] == _testconf.CARGO_CLIPPY_LINT_ARGS
+    assert config["cargo-clippy-fix-args"] == _testconf.CARGO_CLIPPY_FIX_ARGS
+
+
+def test_native_lang_tools_fast_defaults() -> None:
+    """fast 既定値は cargo-fmt / cargo-clippy / dotnet-format のみ True。"""
+    config = pyfltr.config.create_default_config()
+    assert config["cargo-fmt-fast"] is True
+    assert config["cargo-clippy-fast"] is True
+    assert config["dotnet-format-fast"] is True
+    for tool in ("cargo-check", "cargo-test", "cargo-deny", "dotnet-build", "dotnet-test"):
+        assert config[f"{tool}-fast"] is False, f"{tool}-fast は既定 False であるべき"
+
+
+def test_native_lang_tools_not_affected_by_python_false(tmp_path: pathlib.Path) -> None:
+    """python = false は Rust / .NET 言語ツールの設定を変更しない。"""
+    pyproject_content = """
+[tool.pyfltr]
+python = false
+cargo-fmt = true
+cargo-clippy = true
+dotnet-format = true
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    config = pyfltr.config.load_config(config_dir=tmp_path)
+    assert config["cargo-fmt"] is True
+    assert config["cargo-clippy"] is True
+    assert config["dotnet-format"] is True
+    # python 系ツールは無効化されている
+    assert config["mypy"] is False
+    assert config["pytest"] is False
+
+
+def test_native_lang_tools_serial_group() -> None:
+    """cargo 系は serial_group=cargo、dotnet 系は serial_group=dotnet に設定される。"""
+    expected = {
+        "cargo-fmt": "cargo",
+        "cargo-clippy": "cargo",
+        "cargo-check": "cargo",
+        "cargo-test": "cargo",
+        "cargo-deny": "cargo",
+        "dotnet-format": "dotnet",
+        "dotnet-build": "dotnet",
+        "dotnet-test": "dotnet",
+    }
+    for tool, group in expected.items():
+        assert pyfltr.config.BUILTIN_COMMANDS[tool].serial_group == group, f"{tool}.serial_group は {group!r} であるべき"
+
+
+def test_existing_tools_have_no_serial_group() -> None:
+    """既存ツールは serial_group 未設定 (後方互換)。"""
+    for name, info in pyfltr.config.BUILTIN_COMMANDS.items():
+        if name.startswith(("cargo-", "dotnet-")):
+            continue
+        assert info.serial_group is None, f"{name}.serial_group は None であるべき"
+
+
+def test_native_lang_tools_in_aliases() -> None:
+    """Rust / .NET 言語ツールが format / lint / test の各エイリアスに含まれる。"""
+    config = pyfltr.config.create_default_config()
+    aliases = config["aliases"]
+    assert "cargo-fmt" in aliases["format"]
+    assert "dotnet-format" in aliases["format"]
+    assert "cargo-clippy" in aliases["lint"]
+    assert "cargo-check" in aliases["lint"]
+    assert "cargo-deny" in aliases["lint"]
+    assert "dotnet-build" in aliases["lint"]
+    assert "cargo-test" in aliases["test"]
+    assert "dotnet-test" in aliases["test"]

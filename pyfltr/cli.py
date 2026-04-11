@@ -67,15 +67,17 @@ def _run_one_command(
     `per_command_log=True` ならば完了直後に詳細ログを `write_log()` で出す。
     それ以外は開始/完了の 1 行進捗のみ出力する。
     """
-    with lock:
-        logger.info(f"{command} 実行中です...")
-    result = pyfltr.command.execute_command(command, args, config)
-    if per_command_log:
-        write_log(result)
-    else:
+    # serial_group を持つコマンドは同一グループ内で排他実行される (cargo / dotnet 等)
+    with pyfltr.executor.serial_group_lock(config.commands[command].serial_group):
         with lock:
-            logger.info(f"{command} 完了 ({result.get_status_text()})")
-    return result
+            logger.info(f"{command} 実行中です...")
+        result = pyfltr.command.execute_command(command, args, config)
+        if per_command_log:
+            write_log(result)
+        else:
+            with lock:
+                logger.info(f"{command} 完了 ({result.get_status_text()})")
+        return result
 
 
 def write_log(result: pyfltr.command.CommandResult) -> None:

@@ -12,6 +12,7 @@ import pytest
 
 import pyfltr.command
 import pyfltr.config
+from tests import conftest as _testconf
 
 
 def _make_args(targets: list[pathlib.Path], *, fix: bool = False) -> argparse.Namespace:
@@ -1265,3 +1266,107 @@ def test_bin_tool_spec_structure() -> None:
 
     spec = pyfltr.command._BIN_TOOL_SPEC["shellcheck"]
     assert spec.bin_name == "shellcheck"
+
+
+# Rust / .NET 言語ツールの実行テスト。
+# pass-filenames=False により crate / solution 全体を対象とし、
+# ファイル引数がコマンドラインに渡らないことを検証する。
+
+
+def test_cargo_fmt_runs_without_file_args(mocker, tmp_path: pathlib.Path) -> None:
+    """cargo-fmt は pass-filenames=False のためファイル引数を渡さず、既定で書き込みモード。"""
+    target = tmp_path / "sample.rs"
+    target.write_text("fn main() {}\n")
+
+    proc = subprocess.CompletedProcess(["cargo"], returncode=0, stdout="")
+    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+
+    config = pyfltr.config.create_default_config()
+    config.values["cargo-fmt"] = True
+    pyfltr.command.execute_command("cargo-fmt", _make_args([target]), config)
+
+    assert mock_run.call_count == 1
+    cmdline = mock_run.call_args_list[0][0][0]
+    assert cmdline == ["cargo", "fmt"]
+    assert str(target) not in cmdline
+
+
+def test_cargo_fmt_fix_mode_unchanged(mocker, tmp_path: pathlib.Path) -> None:
+    """cargo-fmt は formatter なので --fix 指定でもコマンドラインが変わらない。"""
+    target = tmp_path / "sample.rs"
+    target.write_text("fn main() {}\n")
+
+    proc = subprocess.CompletedProcess(["cargo"], returncode=0, stdout="")
+    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+
+    config = pyfltr.config.create_default_config()
+    config.values["cargo-fmt"] = True
+    pyfltr.command.execute_command("cargo-fmt", _make_args([target], fix=True), config)
+
+    cmdline = mock_run.call_args_list[0][0][0]
+    assert cmdline == ["cargo", "fmt"]
+
+
+def test_cargo_clippy_normal_mode_cmdline(mocker, tmp_path: pathlib.Path) -> None:
+    """cargo-clippy の非 fix モードは args + lint-args で組み立てられる。"""
+    target = tmp_path / "sample.rs"
+    target.write_text("fn main() {}\n")
+
+    proc = subprocess.CompletedProcess(["cargo"], returncode=0, stdout="")
+    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+
+    config = pyfltr.config.create_default_config()
+    config.values["cargo-clippy"] = True
+    pyfltr.command.execute_command("cargo-clippy", _make_args([target]), config)
+
+    cmdline = mock_run.call_args_list[0][0][0]
+    assert cmdline == _testconf.CARGO_CLIPPY_LINT_CMDLINE
+    assert str(target) not in cmdline
+
+
+def test_cargo_clippy_fix_mode_cmdline(mocker, tmp_path: pathlib.Path) -> None:
+    """cargo-clippy の --fix モードは args + fix-args で組み立てられる。"""
+    target = tmp_path / "sample.rs"
+    target.write_text("fn main() {}\n")
+
+    proc = subprocess.CompletedProcess(["cargo"], returncode=0, stdout="")
+    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+
+    config = pyfltr.config.create_default_config()
+    config.values["cargo-clippy"] = True
+    pyfltr.command.execute_command("cargo-clippy", _make_args([target], fix=True), config)
+
+    cmdline = mock_run.call_args_list[0][0][0]
+    assert cmdline == _testconf.CARGO_CLIPPY_FIX_CMDLINE
+    assert str(target) not in cmdline
+
+
+def test_dotnet_format_runs_without_file_args(mocker, tmp_path: pathlib.Path) -> None:
+    """dotnet-format は pass-filenames=False で solution 全体を対象とする。"""
+    target = tmp_path / "Sample.cs"
+    target.write_text("class Sample {}\n")
+
+    proc = subprocess.CompletedProcess(["dotnet"], returncode=0, stdout="")
+    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+
+    config = pyfltr.config.create_default_config()
+    config.values["dotnet-format"] = True
+    pyfltr.command.execute_command("dotnet-format", _make_args([target]), config)
+
+    cmdline = mock_run.call_args_list[0][0][0]
+    assert cmdline == ["dotnet", "format"]
+    assert str(target) not in cmdline
+
+
+def test_cargo_test_skipped_when_no_rs_files(mocker, tmp_path: pathlib.Path) -> None:
+    """.rs ファイルが対象に無いとき cargo-test はスキップされる (既存 pass-filenames=False 分岐)。"""
+    # ディレクトリ自体は空にして `.rs` ファイルを用意しない
+    mock_run = mocker.patch("pyfltr.command._run_subprocess")
+
+    config = pyfltr.config.create_default_config()
+    config.values["cargo-test"] = True
+    result = pyfltr.command.execute_command("cargo-test", _make_args([tmp_path]), config)
+
+    assert mock_run.call_count == 0
+    assert result.returncode is None
+    assert result.files == 0
