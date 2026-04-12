@@ -343,7 +343,7 @@ def run_pipeline(
     """実行パイプライン。"""
     # ターミナルをクリア
     if not args.no_clear:
-        subprocess.run("cls" if os.name == "nt" else "clear", check=False)
+        subprocess.run("cls" if os.name == "nt" else "clear", check=False, shell=True)
 
     # 実行環境の情報を出力
     logger.info(f"{'-' * 10} pyfltr {'-' * (72 - 10 - 8)}")
