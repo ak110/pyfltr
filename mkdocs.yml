@@ -30,7 +30,7 @@ plugins:
         ホーム:
           - index.md: 概要・対応ツール・インストール方法
         使い方:
-          - guide/usage.md: CLI使い方・オプション・UI説明
+          - guide/usage.md: CLI使い方・オプション・UI説明・LLM連携
         設定:
           - guide/configuration.md: pyproject.tomlでの設定項目リファレンス
           - guide/examples.md: pyproject.toml・設定ファイル・CI設定の実例

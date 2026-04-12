@@ -178,6 +178,31 @@ pyfltr ci --output-format=jsonl --exit-zero-even-if-formatted --output-file=.cla
 
 ファイル末尾の`summary`行を読めば全体像が掴めて、必要に応じて`diag`行を参照することでトークン消費を抑えられる。
 
+LLMエージェントがpyfltrを活用する基本的な流れ:
+
+1. 全体実行でsummaryを確認する
+
+    ```shell
+    pyfltr run --output-format=jsonl
+    ```
+
+    末尾のsummary行（`"kind":"summary"`）で`failed`の有無と`diags`数を確認し、問題がなければ完了する。
+
+2. 問題があるツールだけ個別に再実行する
+
+    ```shell
+    pyfltr run --commands=mypy --output-format=jsonl
+    ```
+
+    `--commands`で特定ツールに絞ることで出力量を抑えつつ、`diag`行から修正対象のファイル・行番号・メッセージを取得する。
+
+pyfltrを頻繁に呼び出すプロジェクトでは、`pyproject.toml`に既定値を設定するとCLIオプションの指定を省略できる。
+
+```toml
+[tool.pyfltr]
+output-format = "jsonl"
+```
+
 ## pre-commit frameworkとの統合
 
 pyfltrは`.pre-commit-hooks.yaml`を同梱していない。
