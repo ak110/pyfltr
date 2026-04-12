@@ -48,31 +48,18 @@ extend-exclude = ["foo", "bar.py"]
 preset = "latest"
 ```
 
+`preset = "latest"`は予告なく動作を変更する可能性がある。
+
 ### preset "20260411" / "latest"
 
-- `pyupgrade = false`
-- `autoflake = false`
-- `pflake8 = false`
-- `isort = false`
-- `black = false`
-- `ruff-format = true`
-- `ruff-check = true`
-- `pyright = true`
-- `textlint = true`
-- `markdownlint = true`
+- preset "20260330"に加えて以下の設定が行われる
 - `actionlint = true`
 - `typos = true`
 - `uv-sort = true`
 
 ### preset "20260330"
 
-- `pyupgrade = false`
-- `autoflake = false`
-- `pflake8 = false`
-- `isort = false`
-- `black = false`
-- `ruff-format = true`
-- `ruff-check = true`
+- preset "20250710"に加えて以下の設定が行われる
 - `pyright = true`
 - `textlint = true`
 - `markdownlint = true`
@@ -86,8 +73,6 @@ preset = "latest"
 - `black = false`
 - `ruff-format = true`
 - `ruff-check = true`
-
-`preset = "latest"`は予告なく動作を変更する可能性がある。
 
 ## Python系ツールの一括無効化
 

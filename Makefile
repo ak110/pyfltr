@@ -14,16 +14,16 @@ clean-stale-dist-info:
 		fi; \
 	done
 
-# 開発環境セットアップ
+# 開発環境のセットアップ
 setup:
 	$(MAKE) clean-stale-dist-info
-	env --unset UV_FROZEN uv sync --all-extras --all-groups
+	uv sync --all-groups --all-extras
 	uv run pre-commit install
 
 # 依存パッケージをアップグレードし全テスト実行
 update:
 	$(MAKE) clean-stale-dist-info
-	env --unset UV_FROZEN uv sync --upgrade --all-extras --all-groups
+	env --unset UV_FROZEN uv sync --upgrade --all-groups --all-extras
 	uv run pre-commit autoupdate
 	$(MAKE) update-actions
 	$(MAKE) test
@@ -33,14 +33,14 @@ update-actions:
 	@command -v mise >/dev/null 2>&1 || { echo "mise が見つかりません。スキップします。"; exit 0; }; \
 	GITHUB_TOKEN=$$(gh auth token) mise exec -- pinact run --update --min-age 1
 
-# フォーマット + 軽量 lint (開発時の手動実行用。自動修正あり)
+# フォーマット + 軽量lint（開発時の手動実行用。自動修正あり）
 format:
 	$(MAKE) clean-stale-dist-info
 	SKIP=pyfltr uv run pre-commit run --all-files
 	-uv run pyfltr fix
 	-uv run pyfltr fast
 
-# 全チェック実行 (このタスクが成功したらコミット可能)
+# 全チェック実行（これを通過すればコミット可能）
 test:
 	$(MAKE) clean-stale-dist-info
 	SKIP=pyfltr uv run pre-commit run --all-files
