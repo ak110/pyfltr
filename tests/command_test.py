@@ -917,25 +917,26 @@ def test_run_subprocess_file_not_found_returns_127() -> None:
     assert "見つかりません" in result.stdout
 
 
-@pytest.mark.skipif(shutil.which("pnpm") is None, reason="pnpm が PATH に無い")
+@pytest.mark.skipif(shutil.which("npm") is None, reason="npm が PATH に無い")
 def test_build_subprocess_env_npm_config_actually_effective(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """注入した NPM_CONFIG_MINIMUM_RELEASE_AGE が実際に pnpm に反映されることを確認する。
+    """注入した NPM_CONFIG_MINIMUM_RELEASE_AGE が実際に npm 互換ツールに反映されることを確認する。
 
-    環境変数名が typo したり、pnpm の仕様変更で効かなくなったりした場合に検知する。
-    既定値 (1440) は実行環境のグローバル pnpm 設定と区別できないため、
+    環境変数名が typo したり、仕様変更で効かなくなったりした場合に検知する。
+    既定値 (1440) は実行環境のグローバル設定と区別できないため、
     ユーザー既定値優先 (setdefault) の動作を利用して非標準値 4321 を注入し検証する。
+
+    検証には npm を使用する。pnpm はインストール方法やバージョンにより
+    NPM_CONFIG_* 環境変数の読み取り動作が不安定なため（pnpm config get が
+    env var を無視するケースがある）、npm の config get で代替する。
+    npm は NPM_CONFIG_* 規約の本家であり、動作が安定している。
     """
-    # pnpm の設定ファイル読込を避けるため、隔離した HOME を用意する。
-    # 併せて、pnpm が mise の shim 経由で呼ばれる環境では HOME 切り替えにより
-    # 既存の trust 情報が見えなくなり、グローバル mise config の読込が
-    # 「trusted でない」として失敗する。切り替え前の HOME 配下の config を
-    # 明示的に信頼させて回避する。
+    # npm の設定ファイル読込を避けるため、隔離した HOME を用意する。
+    # XDG_CONFIG_HOME も明示的に隔離してグローバル設定の干渉を排除する。
     original_home = pathlib.Path(os.environ["HOME"])
     mise_config = original_home / ".config" / "mise" / "config.toml"
     monkeypatch.setenv("MISE_TRUSTED_CONFIG_PATHS", str(mise_config))
     monkeypatch.setenv("HOME", str(tmp_path))
-    # corepack のダウンロードプロンプトを抑止する (環境によっては存在する)。
-    monkeypatch.setenv("COREPACK_ENABLE_DOWNLOAD_PROMPT", "0")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / ".config"))
     # 非標準値を設定し、_build_subprocess_env がそのまま通すことを利用する。
     monkeypatch.setenv("NPM_CONFIG_MINIMUM_RELEASE_AGE", "4321")
 
@@ -944,7 +945,7 @@ def test_build_subprocess_env_npm_config_actually_effective(monkeypatch: pytest.
     assert env["NPM_CONFIG_MINIMUM_RELEASE_AGE"] == "4321"
 
     proc = subprocess.run(
-        ["pnpm", "config", "get", "minimumReleaseAge"],
+        ["npm", "config", "get", "minimum-release-age"],
         env=env,
         capture_output=True,
         text=True,
