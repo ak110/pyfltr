@@ -1,6 +1,6 @@
 site_name: pyfltr
 site_url: https://ak110.github.io/pyfltr/
-site_description: Python Formatters, Linters, and Testers Runner
+site_description: Formatters, Linters, and Testers Runner
 repo_url: https://github.com/ak110/pyfltr
 repo_name: ak110/pyfltr
 
@@ -26,14 +26,57 @@ plugins:
   - search
   - llmstxt:
       full_output: llms-full.txt
+      markdown_description: |
+        各種formatter / linter / testerをまとめて並列実行するCLIツール。
+
+        ## サブコマンド
+
+        - `pyfltr ci`: 全チェック。formatterによる変更も失敗と判定する（CI向け）
+        - `pyfltr run`: 全チェック。formatterによる変更は成功扱い（ローカル向け）
+        - `pyfltr fast`: 軽量チェック。重いツール（mypy/pylint/pytest等）を除外（pre-commit向け）
+        - `pyfltr fix`: linterのautofix専用
+
+        ## 対応ツール
+
+        Python: pyupgrade / autoflake / isort / black / ruff format / ruff check / pflake8 / mypy / pylint / pyright / ty / pytest / uv-sort
+        Rust: cargo fmt / cargo clippy / cargo check / cargo deny / cargo test
+        .NET: dotnet format / dotnet build / dotnet test
+        JS/TS: eslint / prettier / biome / oxlint / tsc / vitest
+        ドキュメント: markdownlint-cli2 / textlint
+        その他: ec / shellcheck / shfmt / typos / actionlint
+
+        `preset = "latest"` で主要ツールを一括有効化できる。
+
+        ## 設定の基本
+
+        `pyproject.toml` の `[tool.pyfltr]` で設定する。
+
+        ```toml
+        [tool.pyfltr]
+        preset = "latest"
+        pylint-args = ["--jobs=4"]
+        ```
+
+        非Pythonプロジェクトでは `python = false` でPython系ツールを無効化し、対象言語のツールを個別に有効化する。
+
+        ## LLMエージェント向け出力
+
+        `--output-format=jsonl` でJSON Lines形式の構造化出力を生成する。
+
+        ```shell
+        pyfltr run --output-format=jsonl
+        ```
       sections:
         ホーム:
-          - index.md: 概要・対応ツール・インストール方法
+          - index.md: ドキュメント入口
         使い方:
+          - guide/index.md: 対応ツール一覧・コンセプト・インストール
           - guide/usage.md: CLI使い方・オプション・UI説明・LLM連携
         設定:
-          - guide/configuration.md: pyproject.tomlでの設定項目リファレンス
-          - guide/examples.md: pyproject.toml・設定ファイル・CI設定の実例
+          - guide/configuration.md: 基本設定・プリセット・並列実行など
+          - guide/configuration-tools.md: ツール別設定（2段階実行・bin-runner・npm系・カスタムコマンド）
+          - guide/recommended.md: Pythonプロジェクトの推奨設定・タスクランナー・CI設定
+          - guide/recommended-nonpython.md: TypeScript/JS・Rust・.NETプロジェクトの推奨設定
           - guide/custom-commands.md: カスタムコマンドの設定例集
         開発者向け:
           - development/development.md: 開発環境構築・ドキュメント・リリース手順
@@ -57,7 +100,9 @@ nav:
       - 概要: guide/index.md
       - CLI使い方: guide/usage.md
       - 設定: guide/configuration.md
-      - 設定例: guide/examples.md
+      - ツール別設定: guide/configuration-tools.md
+      - 推奨設定: guide/recommended.md
+      - 非Python推奨設定: guide/recommended-nonpython.md
       - カスタムコマンド例: guide/custom-commands.md
   - 開発者向け:
       - 概要: development/index.md
