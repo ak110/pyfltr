@@ -33,7 +33,7 @@ jobs:
 
       - name: Wait for CI to pass
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
@@ -144,7 +144,7 @@ jobs:
 
       - name: Create GitHub Release
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view "${{ steps.next.outputs.next }}" >/dev/null 2>&1; then
             echo "Release ${{ steps.next.outputs.next }} already exists, skipping"

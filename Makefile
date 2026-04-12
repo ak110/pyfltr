@@ -28,9 +28,9 @@ update:
 	$(MAKE) update-actions
 	$(MAKE) test
 
-# GitHub Actions のアクションをハッシュピンで最新化 (mise 未導入時はスキップ)
+# GitHub Actionsのアクションをハッシュピンで最新化（mise未導入時はスキップ）
 update-actions:
-	@command -v mise >/dev/null 2>&1 || { echo "mise が見つかりません。スキップします。"; exit 0; }; \
+	@command -v mise >/dev/null 2>&1 || { echo "mise未検出、スキップ"; exit 0; }; \
 	GITHUB_TOKEN=$$(gh auth token) mise exec -- pinact run --update --min-age 1
 
 # フォーマット + 軽量lint（開発時の手動実行用。自動修正あり）
