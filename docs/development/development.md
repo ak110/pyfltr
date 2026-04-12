@@ -4,11 +4,13 @@
 
 1. 本リポジトリをcloneする
 2. [uvをインストール](https://docs.astral.sh/uv/getting-started/installation/)する
-3. [pre-commit](https://pre-commit.com/)フックをインストールする
+3. 初回セットアップを実行する
 
     ```bash
-    uv run pre-commit install
+    make setup
     ```
+
+    依存のインストールとpre-commitフックの登録をまとめて行う
 
 4. サプライチェーン攻撃対策として`uvx`/`pnpx`用のグローバル設定をする
 

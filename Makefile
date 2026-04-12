@@ -2,8 +2,6 @@
 # `env --unset UV_FROZEN` で一時的に無効化する（`UV_FROZEN=` の空文字代入はuvがエラー扱い）。
 export UV_FROZEN := 1
 
-UV_RUN := uv run --all-extras --all-groups
-
 help:
 	@cat Makefile
 
@@ -16,10 +14,17 @@ clean-stale-dist-info:
 		fi; \
 	done
 
+# 開発環境セットアップ
+setup:
+	$(MAKE) clean-stale-dist-info
+	env --unset UV_FROZEN uv sync --all-extras --all-groups
+	uv run pre-commit install
+
+# 依存パッケージをアップグレードし全テスト実行
 update:
 	$(MAKE) clean-stale-dist-info
 	env --unset UV_FROZEN uv sync --upgrade --all-extras --all-groups
-	$(UV_RUN) pre-commit autoupdate
+	uv run pre-commit autoupdate
 	$(MAKE) update-actions
 	$(MAKE) test
 
@@ -31,16 +36,17 @@ update-actions:
 # フォーマット + 軽量 lint (開発時の手動実行用。自動修正あり)
 format:
 	$(MAKE) clean-stale-dist-info
-	SKIP=pyfltr $(UV_RUN) pre-commit run --all-files
-	-$(UV_RUN) pyfltr fast
+	SKIP=pyfltr uv run pre-commit run --all-files
+	-uv run pyfltr fix
+	-uv run pyfltr fast
 
 # 全チェック実行 (このタスクが成功したらコミット可能)
 test:
 	$(MAKE) clean-stale-dist-info
-	SKIP=pyfltr $(UV_RUN) pre-commit run --all-files
-	$(UV_RUN) pyfltr run
+	SKIP=pyfltr uv run pre-commit run --all-files
+	uv run pyfltr run
 
 docs:
-	$(UV_RUN) mkdocs serve
+	uv run mkdocs serve
 
-.PHONY: help clean-stale-dist-info update update-actions format test docs
+.PHONY: help clean-stale-dist-info setup update update-actions format test docs
