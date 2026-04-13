@@ -1233,6 +1233,7 @@ def _filter_by_gitignore(paths: list[pathlib.Path]) -> list[pathlib.Path]:
             input="\0".join(str(p) for p in paths),
             capture_output=True,
             text=True,
+            encoding="utf-8",
             timeout=30,
             check=False,
         )
