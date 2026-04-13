@@ -917,7 +917,6 @@ def test_run_subprocess_file_not_found_returns_127() -> None:
     assert "見つかりません" in result.stdout
 
 
-@pytest.mark.skipif(shutil.which("npm") is None, reason="npm が PATH に無い")
 def test_build_subprocess_env_npm_config_actually_effective(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """注入した NPM_CONFIG_MINIMUM_RELEASE_AGE が実際に npm 互換ツールに反映されることを確認する。
 
@@ -944,8 +943,11 @@ def test_build_subprocess_env_npm_config_actually_effective(monkeypatch: pytest.
     env = pyfltr.command._build_subprocess_env(config, "markdownlint")
     assert env["NPM_CONFIG_MINIMUM_RELEASE_AGE"] == "4321"
 
+    # Windows では npm が npm.cmd として提供されるため、shutil.which で完全パスを取得する
+    npm_path = shutil.which("npm")
+    assert npm_path is not None
     proc = subprocess.run(
-        ["npm", "config", "get", "minimum-release-age"],
+        [npm_path, "config", "get", "minimum-release-age"],
         env=env,
         capture_output=True,
         text=True,

@@ -61,23 +61,25 @@ def format_error(error: ErrorLocation) -> str:
 
 # ビルトインパーサー用の正規表現パターン
 # 各パターンはfile, line, messageの名前付きグループが必須。colは任意。
+# ファイルパスのパターンは (?:[A-Za-z]:)? でWindowsドライブレターに対応する。
+_FILE = r"(?:[A-Za-z]:)?[^\s:]+"
 _BUILTIN_PATTERNS: dict[str, str] = {
     # mypy出力例: src/foo.py:10: error: xxx [error-code]
-    "mypy": r"(?P<file>[^\s:]+):(?P<line>\d+):\s*error:\s*(?P<message>.+)",
+    "mypy": rf"(?P<file>{_FILE}):(?P<line>\d+):\s*error:\s*(?P<message>.+)",
     # pylint出力例: src/foo.py:10:5: C0114: xxx
-    "pylint": r"(?P<file>[^\s:]+):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>[CRWEF]\d+:.+)",
+    "pylint": rf"(?P<file>{_FILE}):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>[CRWEF]\d+:.+)",
     # ruff check出力例: src/foo.py:10:5: E001 xxx
-    "ruff-check": r"(?P<file>[^\s:]+):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>[A-Z]+\d+\s+.+)",
+    "ruff-check": rf"(?P<file>{_FILE}):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>[A-Z]+\d+\s+.+)",
     # pyright出力例: src/foo.py:10:5 - error: xxx
-    "pyright": r"(?P<file>[^\s:]+):(?P<line>\d+):(?P<col>\d+)\s*-\s*error:\s*(?P<message>.+)",
+    "pyright": rf"(?P<file>{_FILE}):(?P<line>\d+):(?P<col>\d+)\s*-\s*error:\s*(?P<message>.+)",
     # ty check --output-format concise 出力例: src/foo.py:10:5: error[rule-name] Message text
-    "ty": r"(?P<file>[^\s:]+):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>(?:error|warning)\[.+?\]\s+.+)",
+    "ty": rf"(?P<file>{_FILE}):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>(?:error|warning)\[.+?\]\s+.+)",
     # markdownlint-cli2出力例: file.md:3 MD001/heading-increment Heading levels ...
-    "markdownlint": r"(?P<file>[^\s:]+):(?P<line>\d+)\s+(?P<message>MD\d+\S*\s+.+)",
+    "markdownlint": rf"(?P<file>{_FILE}):(?P<line>\d+)\s+(?P<message>MD\d+\S*\s+.+)",
     # textlint --format compact出力例: /path/file.md: line 1, col 1, Error - message (rule)
-    "textlint": r"(?P<file>[^\s:]+):\s*line\s+(?P<line>\d+),\s*col\s+(?P<col>\d+),\s*\w+\s*-\s*(?P<message>.+)",
+    "textlint": rf"(?P<file>{_FILE}):\s*line\s+(?P<line>\d+),\s*col\s+(?P<col>\d+),\s*\w+\s*-\s*(?P<message>.+)",
     # pytest出力例: FAILED tests/xxx_test.py::test_yyy - AssertionError
-    "pytest": r"FAILED\s+(?P<file>[^\s:]+)::(?P<message>\S+)",
+    "pytest": rf"FAILED\s+(?P<file>{_FILE})::(?P<message>\S+)",
     # biome --reporter=github 出力例 (実機確認済み、line と col の間に endLine が挟まる):
     # ::error title=lint/suspicious/noDoubleEquals,file=src/foo.ts,line=1,endLine=1,col=7,endColumn=9::Use === instead of ==
     # [^:]*? で順序非依存かつ `::` 終端を跨がないようマッチする。
