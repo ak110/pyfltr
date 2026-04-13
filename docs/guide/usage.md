@@ -44,7 +44,7 @@ pyfltr run [files and/or directories ...]
 pyfltr fast [files and/or directories ...]
 ```
 
-mypy / pylint / pytestなど重いコマンドを除外した軽量チェック。Formattersによるファイル変更があっても終了コードは0になる。pre-commitフックなど速度を優先する場面に適する。
+pre-commitフックなどで実行しても作業に支障が出にくい高速なコマンドだけを実行する軽量チェック。mypy / pylint / pytestなど起動やファイルあたりの処理に時間がかかるコマンドは除外される。Formattersによるファイル変更があっても終了コードは0になる。
 
 既定で含まれるコマンドは以下。
 
