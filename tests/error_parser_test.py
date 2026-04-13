@@ -476,3 +476,98 @@ def test_get_custom_parser_commands() -> None:
     assert "ruff-check" in commands
     assert "pytest" in commands
     assert "mypy" not in commands
+
+
+def test_parse_summary_pyright_json() -> None:
+    """pyright: JSON出力のsummaryフィールドからサマリーを抽出する。"""
+    output = json.dumps(
+        {
+            "version": "1.1.300",
+            "generalDiagnostics": [],
+            "summary": {
+                "filesAnalyzed": 50,
+                "errorCount": 0,
+                "warningCount": 2,
+                "informationCount": 0,
+                "timeInSec": 1.5,
+            },
+        }
+    )
+    result = pyfltr.error_parser.parse_summary("pyright", output)
+    assert result == "50 files analyzed, 0 errors, 2 warnings"
+
+
+def test_parse_summary_pyright_json_no_summary() -> None:
+    """pyright: summaryフィールドがない場合はNone。"""
+    output = json.dumps({"generalDiagnostics": []})
+    assert pyfltr.error_parser.parse_summary("pyright", output) is None
+
+
+def test_parse_summary_pylint_json() -> None:
+    """pylint: JSON出力のstatisticsフィールドからサマリーを抽出する。"""
+    output = json.dumps(
+        {
+            "messages": [],
+            "statistics": {
+                "modulesLinted": 42,
+                "score": 10.0,
+                "messageTypeCount": {},
+            },
+        }
+    )
+    result = pyfltr.error_parser.parse_summary("pylint", output)
+    assert result == "42 modules linted, score: 10.0"
+
+
+def test_parse_summary_pylint_json_no_score() -> None:
+    """pylint: scoreがない場合はモジュール数のみ。"""
+    output = json.dumps({"messages": [], "statistics": {"modulesLinted": 10}})
+    result = pyfltr.error_parser.parse_summary("pylint", output)
+    assert result == "10 modules linted"
+
+
+def test_parse_summary_pytest() -> None:
+    """pytest: 末尾のサマリー行から=パディングを除去して抽出する。"""
+    output = (
+        "============================= test session starts ==============================\n"
+        "collected 25 items\n"
+        "\n"
+        "tests/foo_test.py .........................                                [100%]\n"
+        "\n"
+        "============================== 25 passed in 1.23s ==============================\n"
+    )
+    result = pyfltr.error_parser.parse_summary("pytest", output)
+    assert result == "25 passed in 1.23s"
+
+
+def test_parse_summary_pytest_long_duration() -> None:
+    """pytest: 長時間実行時の (H:MM:SS) 形式も正しく抽出する。"""
+    output = "============================== 25 passed in 60.00s (0:01:00) ==============================\n"
+    result = pyfltr.error_parser.parse_summary("pytest", output)
+    assert result == "25 passed in 60.00s (0:01:00)"
+
+
+def test_parse_summary_mypy_via_fallback() -> None:
+    """mypy: 汎用フォールバックでSuccess行を抽出する。"""
+    output = "Success: no issues found in 42 source files\n"
+    result = pyfltr.error_parser.parse_summary("mypy", output)
+    assert result == "Success: no issues found in 42 source files"
+
+
+def test_parse_summary_json_output_returns_none() -> None:
+    """JSON出力（[]等）は汎用フォールバックでNoneを返す。"""
+    assert pyfltr.error_parser.parse_summary("ruff-check", "[]") is None
+    assert pyfltr.error_parser.parse_summary("shellcheck", "[]") is None
+
+
+def test_parse_summary_empty_output() -> None:
+    """空出力はNoneを返す。"""
+    assert pyfltr.error_parser.parse_summary("mypy", "") is None
+    assert pyfltr.error_parser.parse_summary("mypy", "  \n  ") is None
+
+
+def test_extract_last_line_skips_separators() -> None:
+    """区切り線のみの行をスキップして意味のある行を返す。"""
+    output = "Some useful info\n===========================\n"
+    result = pyfltr.error_parser.parse_summary("unknown-tool", output)
+    assert result == "Some useful info"

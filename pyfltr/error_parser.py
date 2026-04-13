@@ -71,6 +71,18 @@ def format_error(error: ErrorLocation) -> str:
     return f"{error.file}:{error.line}{col_str}: [{tag}] {error.message}"
 
 
+def parse_summary(command: str, output: str) -> str | None:
+    """コマンド出力からサマリー文字列を抽出する。
+
+    カスタムサマリーパーサーがあればそれを使い、なければテキスト出力の
+    末尾行をフォールバックで抽出する。JSON出力はフォールバック対象外。
+    """
+    parser = _SUMMARY_PARSERS.get(command)
+    if parser is not None:
+        return parser(output)
+    return _extract_last_line(output)
+
+
 # ビルトインパーサー用の正規表現パターン
 # 各パターンはfile, line, messageの名前付きグループが必須。colは任意。
 # ファイルパスのパターンは (?:[A-Za-z]:)? でWindowsドライブレターに対応する。
@@ -454,6 +466,57 @@ _CUSTOM_PARSERS: dict[str, typing.Callable[[str], list[ErrorLocation]]] = {
 }
 
 
+def _summarize_pyright_json(output: str) -> str | None:
+    """Pyright --outputjson 出力から summary フィールドを抽出する。"""
+    data = _try_json_loads(output)
+    if not isinstance(data, dict):
+        return None
+    summary = data.get("summary")
+    if not isinstance(summary, dict):
+        return None
+    files_analyzed = summary.get("filesAnalyzed")
+    error_count = summary.get("errorCount", 0)
+    warning_count = summary.get("warningCount", 0)
+    if not isinstance(files_analyzed, int):
+        return None
+    return f"{files_analyzed} files analyzed, {error_count} errors, {warning_count} warnings"
+
+
+def _summarize_pylint_json(output: str) -> str | None:
+    """Pylint --output-format=json2 出力から statistics フィールドを抽出する。"""
+    data = _try_json_loads(output)
+    if not isinstance(data, dict):
+        return None
+    statistics = data.get("statistics")
+    if not isinstance(statistics, dict):
+        return None
+    modules = statistics.get("modulesLinted")
+    score = statistics.get("score")
+    if not isinstance(modules, int):
+        return None
+    if isinstance(score, int | float):
+        return f"{modules} modules linted, score: {score:.1f}"
+    return f"{modules} modules linted"
+
+
+def _summarize_pytest(output: str) -> str | None:
+    """Pytest 出力末尾のサマリー行から = パディングを除去して抽出する。"""
+    match = re.search(r"=+ (.+?) =+\s*$", output)
+    if match is None:
+        return None
+    return match.group(1)
+
+
+# コマンド名 -> サマリーパーサー。JSON 出力にサマリーフィールドを持つツールや、
+# テキスト出力の整形が必要なツール向け。未登録のテキスト出力ツールは
+# _extract_last_line() でフォールバックする。
+_SUMMARY_PARSERS: dict[str, typing.Callable[[str], str | None]] = {
+    "pyright": _summarize_pyright_json,
+    "pylint": _summarize_pylint_json,
+    "pytest": _summarize_pytest,
+}
+
+
 def _parse_with_pattern(command: str, output: str, pattern: str) -> list[ErrorLocation]:
     """正規表現パターンでエラー箇所をパースする。"""
     compiled = re.compile(pattern)
@@ -485,6 +548,21 @@ def _parse_with_pattern(command: str, output: str, pattern: str) -> list[ErrorLo
             )
         )
     return results
+
+
+def _extract_last_line(output: str) -> str | None:
+    """テキスト出力の末尾から意味のある行を抽出する。
+
+    JSON出力（先頭が [ または {）は対象外。区切り線のみの行はスキップする。
+    """
+    stripped = output.strip()
+    if not stripped or stripped[0] in ("[", "{"):
+        return None
+    for line in reversed(stripped.splitlines()):
+        line = line.strip()
+        if line and not re.fullmatch(r"[=\-*#]+", line):
+            return line
+    return None
 
 
 def _normalize_path(file_path: str) -> str:

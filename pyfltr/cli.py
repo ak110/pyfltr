@@ -99,6 +99,10 @@ def write_log(result: pyfltr.command.CommandResult) -> None:
                 logger.info(pyfltr.error_parser.format_error(error))
         elif result.alerted:
             logger.info(result.output)
+        else:
+            summary = pyfltr.error_parser.parse_summary(result.command, result.output)
+            if summary:
+                logger.info(f"{mark} {summary}")
         logger.info(mark)
         logger.info(f"{mark} returncode: {result.returncode}")
         logger.info(mark * NCOLS)

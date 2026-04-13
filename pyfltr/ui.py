@@ -260,6 +260,10 @@ class UIApp(App):
                     self.call_from_thread(self._write_log, f"#output-{command}", "\n".join(lines))
                 elif result.alerted:
                     self.call_from_thread(self._write_log, f"#output-{command}", result.output)
+                else:
+                    summary = pyfltr.error_parser.parse_summary(command, result.output)
+                    if summary:
+                        self.call_from_thread(self._write_log, f"#output-{command}", summary)
 
             # フッター情報を追記
             footer = f"{'-' * 40}\n終了コード: {result.returncode}\nステータス: {result.get_status_text()}\n"
