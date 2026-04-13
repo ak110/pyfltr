@@ -55,6 +55,16 @@ jobs:
       - name: Configure pnpm security
         run: pnpm config set minimum-release-age 1440 --global
 
+      - name: Get pnpm store path
+        id: pnpm-store
+        run: echo "STORE_PATH=$(pnpm store path)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: ${{ steps.pnpm-store.outputs.STORE_PATH }}
+          key: pnpm-store-${{ runner.os }}
+          restore-keys: pnpm-store-${{ runner.os }}
+
       - name: Setup mise
         uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
 
@@ -90,6 +100,17 @@ jobs:
 
       - name: Configure pnpm security
         run: pnpm config set minimum-release-age 1440 --global
+
+      - name: Get pnpm store path
+        id: pnpm-store-win
+        shell: bash
+        run: echo "STORE_PATH=$(pnpm store path)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: ${{ steps.pnpm-store-win.outputs.STORE_PATH }}
+          key: pnpm-store-${{ runner.os }}
+          restore-keys: pnpm-store-${{ runner.os }}
 
       - name: Setup mise
         uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
