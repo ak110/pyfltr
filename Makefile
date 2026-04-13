@@ -37,7 +37,7 @@ update-actions:
 format:
 	$(MAKE) clean-stale-dist-info
 	-uv run pyfltr fix
-	uv run pre-commit run --all-files
+	uv run pre-commit run --all-files || uv run pre-commit run --all-files
 
 # 全チェック実行（これを通過すればコミット可能）
 test:

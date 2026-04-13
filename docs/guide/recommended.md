@@ -199,7 +199,7 @@ update:
 # フォーマット + 軽量lint（開発時の手動実行用。自動修正あり）
 format:
 	-uv run pyfltr fix
-	uv run pre-commit run --all-files
+	uv run pre-commit run --all-files || uv run pre-commit run --all-files
 
 # 全チェック実行（これを通過すればコミット可能）
 test:
@@ -216,7 +216,7 @@ test:
 # フォーマット + 軽量lint（開発時の手動実行用。自動修正あり）
 format:
 	-uvx pyfltr fix
-	uvx pre-commit run --all-files
+	uvx pre-commit run --all-files || uvx pre-commit run --all-files
 
 # 全チェック実行（これを通過すればコミット可能）
 test:
@@ -243,7 +243,7 @@ run = [
 description = "フォーマット + 軽量lint（開発時の手動実行用。自動修正あり）"
 run = [
   "uvx pyfltr fix || true",
-  "uvx pre-commit run --all-files",
+  "uvx pre-commit run --all-files || uvx pre-commit run --all-files",
 ]
 
 [tasks.test]
