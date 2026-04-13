@@ -369,17 +369,21 @@ def run_pipeline(
     logger.info(f"cwd:            {os.getcwd()}")
     logger.info("-" * 72)
 
+    # 対象ファイルを一括展開（ディレクトリ走査・exclude・gitignoreフィルタリングを1回だけ実行）
+    # TUI起動前に実行することで、除外警告がログに表示される
+    all_files = pyfltr.command.expand_all_files(args.targets, config)
+
     # UIの判定
     use_ui = not args.no_ui and (args.ui or pyfltr.ui.can_use_ui())
 
     # run
     if use_ui:
-        results, returncode = pyfltr.ui.run_commands_with_ui(commands, args, config)
+        results, returncode = pyfltr.ui.run_commands_with_ui(commands, args, config, all_files)
         include_details = True
     else:
         # 非 TUI モード: 既定はバッファリング (最後にまとめて出力)、`--stream` で従来の即時出力。
         per_command_log = bool(args.stream)
-        results = pyfltr.cli.run_commands_with_cli(commands, args, config, per_command_log=per_command_log)
+        results = pyfltr.cli.run_commands_with_cli(commands, args, config, all_files, per_command_log=per_command_log)
         returncode = 0
         # `--stream` のときは詳細ログは既に出力済み。summary のみ表示する。
         include_details = not per_command_log

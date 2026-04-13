@@ -303,12 +303,13 @@ def execute_command(
     command: str,
     args: argparse.Namespace,
     config: pyfltr.config.Config,
+    all_files: list[pathlib.Path],
     on_output: typing.Callable[[str], None] | None = None,
 ) -> CommandResult:
     """コマンドの実行。"""
     command_info = config.commands[command]
     globs = command_info.target_globs()
-    targets: list[pathlib.Path] = expand_globs(args.targets, globs, config)
+    targets: list[pathlib.Path] = filter_by_globs(all_files, globs)
 
     # ファイルの順番をシャッフルまたはソート
     if args.shuffle:
@@ -1196,41 +1197,59 @@ def _snapshot_file_digests(targets: list[pathlib.Path]) -> dict[pathlib.Path, by
     return result
 
 
-def expand_globs(targets: list[pathlib.Path], globs: list[str], config: pyfltr.config.Config) -> list[pathlib.Path]:
-    """対象ファイルのリストアップ。"""
+def expand_all_files(targets: list[pathlib.Path], config: pyfltr.config.Config) -> list[pathlib.Path]:
+    """対象ファイルの一括展開。
+
+    ディレクトリ走査・excludeチェック・gitignoreフィルタリングを1回だけ実行し、
+    全ファイルのリストを返す。コマンドごとのglobフィルタリングはfilter_by_globsで行う。
+    """
     # 空ならカレントディレクトリを対象とする
     if len(targets) == 0:
         targets = [pathlib.Path(".")]
 
+    # コマンドラインで直接指定されたファイル（ディレクトリでないもの）を記録
+    directly_specified: set[pathlib.Path] = set()
     expanded: list[pathlib.Path] = []
 
-    def _expand_target(target):
+    def _expand_target(target: pathlib.Path, *, is_direct: bool) -> None:
         try:
             if excluded(target, config):
-                pass
-            elif target.is_dir():
-                # ディレクトリの場合、再帰
+                if is_direct:
+                    logger.warning("指定されたファイルが除外設定により無視されました: %s", target)
+                return
+            if target.is_dir():
                 for child in target.iterdir():
-                    _expand_target(child)
+                    _expand_target(child, is_direct=False)
             else:
-                # ファイルの場合、globsのいずれかに一致するなら追加
-                if any(target.match(glob) for glob in globs):
-                    expanded.append(target)
+                expanded.append(target)
+                if is_direct:
+                    directly_specified.add(target)
         except OSError:
-            logger.warning(f"I/O Error: {target}", exc_info=True)
+            logger.warning("I/O Error: %s", target, exc_info=True)
 
     for target in targets:
         # 絶対パスの場合はcwd基準の相対パスに変換
         if target.is_absolute():
             with contextlib.suppress(ValueError):
                 target = target.relative_to(pathlib.Path.cwd())
-        _expand_target(target)
+        is_direct = not target.is_dir()
+        _expand_target(target, is_direct=is_direct)
 
     # .gitignore フィルタリング
     if config["respect-gitignore"]:
+        before_gitignore = set(expanded)
         expanded = _filter_by_gitignore(expanded)
+        # 直接指定されたファイルがgitignoreで除外された場合に警告
+        for target in directly_specified:
+            if target in before_gitignore and target not in set(expanded):
+                logger.warning("指定されたファイルが .gitignore により無視されました: %s", target)
 
     return expanded
+
+
+def filter_by_globs(all_files: list[pathlib.Path], globs: list[str]) -> list[pathlib.Path]:
+    """ファイルリストをglobパターンでフィルタリングする。"""
+    return [f for f in all_files if any(f.match(glob) for glob in globs)]
 
 
 def _filter_by_gitignore(paths: list[pathlib.Path]) -> list[pathlib.Path]:

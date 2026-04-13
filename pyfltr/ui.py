@@ -3,6 +3,7 @@
 import argparse
 import concurrent.futures
 import logging
+import pathlib
 import sys
 import threading
 import time
@@ -27,9 +28,10 @@ def run_commands_with_ui(
     commands: list[str],
     args: argparse.Namespace,
     config: pyfltr.config.Config,
+    all_files: list[pathlib.Path],
 ) -> tuple[list[pyfltr.command.CommandResult], int]:
     """UI付きでコマンドを実行。"""
-    app = UIApp(commands, args, config)
+    app = UIApp(commands, args, config, all_files)
     try:
         return_code = app.run()
         if return_code is None:
@@ -69,11 +71,18 @@ class UIApp(App):
     }
     """
 
-    def __init__(self, commands: list[str], args: argparse.Namespace, config: pyfltr.config.Config) -> None:
+    def __init__(
+        self,
+        commands: list[str],
+        args: argparse.Namespace,
+        config: pyfltr.config.Config,
+        all_files: list[pathlib.Path],
+    ) -> None:
         super().__init__()
         self.commands = commands
         self.args = args
         self.config = config
+        self._all_files = all_files
         self.results: list[pyfltr.command.CommandResult] = []
         self.lock = threading.Lock()
         self.last_ctrl_c_time: float = 0.0
@@ -218,7 +227,7 @@ class UIApp(App):
                 """出力行をリアルタイムでUIに反映。"""
                 self.call_from_thread(self._write_log, f"#output-{command}", line.removesuffix("\n"))
 
-            result = pyfltr.command.execute_command(command, self.args, self.config, on_output=on_output)
+            result = pyfltr.command.execute_command(command, self.args, self.config, self._all_files, on_output=on_output)
         # ここ以降は結果の UI 反映のみなので serial_group ロックの外で行う。
 
         with self.lock:

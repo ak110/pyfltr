@@ -23,6 +23,7 @@ def run_commands_with_cli(
     commands: list[str],
     args: argparse.Namespace,
     config: pyfltr.config.Config,
+    all_files: list[pathlib.Path],
     *,
     per_command_log: bool,
 ) -> list[pyfltr.command.CommandResult]:
@@ -40,13 +41,13 @@ def run_commands_with_cli(
 
     # formatters を順序実行
     for command in formatters:
-        results.append(_run_one_command(command, args, config, per_command_log=per_command_log))
+        results.append(_run_one_command(command, args, config, all_files, per_command_log=per_command_log))
 
     # linters/testers を並列実行
     if len(linters_and_testers) > 0:
         with concurrent.futures.ThreadPoolExecutor(max_workers=config["jobs"]) as executor:
             future_to_command = {
-                executor.submit(_run_one_command, command, args, config, per_command_log=per_command_log): command
+                executor.submit(_run_one_command, command, args, config, all_files, per_command_log=per_command_log): command
                 for command in linters_and_testers
             }
             for future in concurrent.futures.as_completed(future_to_command):
@@ -59,6 +60,7 @@ def _run_one_command(
     command: str,
     args: argparse.Namespace,
     config: pyfltr.config.Config,
+    all_files: list[pathlib.Path],
     *,
     per_command_log: bool,
 ) -> pyfltr.command.CommandResult:
@@ -71,7 +73,7 @@ def _run_one_command(
     with pyfltr.executor.serial_group_lock(config.commands[command].serial_group):
         with lock:
             logger.info(f"{command} 実行中です...")
-        result = pyfltr.command.execute_command(command, args, config)
+        result = pyfltr.command.execute_command(command, args, config, all_files)
         if per_command_log:
             write_log(result)
         else:

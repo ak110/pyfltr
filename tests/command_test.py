@@ -3,6 +3,7 @@
 # pylint: disable=protected-access,too-many-lines
 
 import argparse
+import logging
 import os
 import pathlib
 import shutil
@@ -15,9 +16,9 @@ import pyfltr.config
 from tests import conftest as _testconf
 
 
-def _make_args(targets: list[pathlib.Path], *, fix: bool = False) -> argparse.Namespace:
+def _make_args(*, fix: bool = False) -> argparse.Namespace:
     """execute_command に渡す argparse.Namespace を作成。"""
-    return argparse.Namespace(targets=targets, shuffle=False, verbose=False, fix=fix)
+    return argparse.Namespace(shuffle=False, verbose=False, fix=fix)
 
 
 def test_ruff_format_two_step_runs_check_and_format(mocker, tmp_path: pathlib.Path) -> None:
@@ -30,7 +31,7 @@ def test_ruff_format_two_step_runs_check_and_format(mocker, tmp_path: pathlib.Pa
 
     config = pyfltr.config.create_default_config()
     config.values["ruff-format"] = True
-    result = pyfltr.command.execute_command("ruff-format", _make_args([target]), config)
+    result = pyfltr.command.execute_command("ruff-format", _make_args(), config, [target])
 
     # subprocess は 2 回呼ばれる (check ステップ + format ステップ)
     assert mock_run.call_count == 2
@@ -56,7 +57,7 @@ def test_ruff_format_by_check_false_skips_check_step(mocker, tmp_path: pathlib.P
     config = pyfltr.config.create_default_config()
     config.values["ruff-format"] = True
     config.values["ruff-format-by-check"] = False
-    result = pyfltr.command.execute_command("ruff-format", _make_args([target]), config)
+    result = pyfltr.command.execute_command("ruff-format", _make_args(), config, [target])
 
     # subprocess は 1 回のみ (format ステップのみ)
     assert mock_run.call_count == 1
@@ -81,7 +82,7 @@ def test_ruff_format_step1_lint_violation_ignored(mocker, tmp_path: pathlib.Path
 
     config = pyfltr.config.create_default_config()
     config.values["ruff-format"] = True
-    result = pyfltr.command.execute_command("ruff-format", _make_args([target]), config)
+    result = pyfltr.command.execute_command("ruff-format", _make_args(), config, [target])
 
     # ステップ1の exit 1 は無視され、ステップ2の exit 0 が反映されて succeeded
     assert result.status == "succeeded"
@@ -103,7 +104,7 @@ def test_ruff_format_step1_internal_error_fails(mocker, tmp_path: pathlib.Path) 
 
     config = pyfltr.config.create_default_config()
     config.values["ruff-format"] = True
-    result = pyfltr.command.execute_command("ruff-format", _make_args([target]), config)
+    result = pyfltr.command.execute_command("ruff-format", _make_args(), config, [target])
 
     assert result.status == "failed"
     assert result.has_error is True
@@ -124,7 +125,7 @@ def test_ruff_format_step2_internal_error_fails(mocker, tmp_path: pathlib.Path) 
 
     config = pyfltr.config.create_default_config()
     config.values["ruff-format"] = True
-    result = pyfltr.command.execute_command("ruff-format", _make_args([target]), config)
+    result = pyfltr.command.execute_command("ruff-format", _make_args(), config, [target])
 
     assert result.status == "failed"
     assert result.has_error is True
@@ -151,7 +152,7 @@ def test_ruff_format_step1_mtime_change_marks_formatted(mocker, tmp_path: pathli
 
     config = pyfltr.config.create_default_config()
     config.values["ruff-format"] = True
-    result = pyfltr.command.execute_command("ruff-format", _make_args([target]), config)
+    result = pyfltr.command.execute_command("ruff-format", _make_args(), config, [target])
 
     # mtime が変化したので formatted
     assert result.status == "formatted"
@@ -168,7 +169,7 @@ def test_fix_mode_appends_fix_args_for_linter(mocker, tmp_path: pathlib.Path) ->
 
     config = pyfltr.config.create_default_config()
     config.values["markdownlint"] = True
-    result = pyfltr.command.execute_command("markdownlint", _make_args([target], fix=True), config)
+    result = pyfltr.command.execute_command("markdownlint", _make_args(fix=True), config, [target])
 
     assert mock_run.call_count == 1
     cmdline = mock_run.call_args_list[0][0][0]
@@ -194,7 +195,7 @@ def test_fix_mode_preserves_custom_args(mocker, tmp_path: pathlib.Path) -> None:
     config = pyfltr.config.create_default_config()
     config.values["markdownlint"] = True
     config.values["markdownlint-args"] = ["--config", "custom.yaml"]
-    pyfltr.command.execute_command("markdownlint", _make_args([target], fix=True), config)
+    pyfltr.command.execute_command("markdownlint", _make_args(fix=True), config, [target])
 
     cmdline = mock_run.call_args_list[0][0][0]
     # 通常 args が残っている
@@ -216,7 +217,7 @@ def test_textlint_lint_mode_adds_lint_args(mocker, tmp_path: pathlib.Path) -> No
 
     config = pyfltr.config.create_default_config()
     config.values["textlint"] = True
-    pyfltr.command.execute_command("textlint", _make_args([target]), config)
+    pyfltr.command.execute_command("textlint", _make_args(), config, [target])
 
     assert mock_run.call_count == 1
     cmdline = mock_run.call_args_list[0][0][0]
@@ -236,7 +237,7 @@ def test_textlint_fix_mode_two_step_execution(mocker, tmp_path: pathlib.Path) ->
 
     config = pyfltr.config.create_default_config()
     config.values["textlint"] = True
-    pyfltr.command.execute_command("textlint", _make_args([target], fix=True), config)
+    pyfltr.command.execute_command("textlint", _make_args(fix=True), config, [target])
 
     assert mock_run.call_count == 2
     step1_cmdline = mock_run.call_args_list[0][0][0]
@@ -263,7 +264,7 @@ def test_textlint_fix_mode_strips_user_format_from_step1(mocker, tmp_path: pathl
     config.values["textlint"] = True
     # 旧 docs で推奨されていた設定: textlint-args に --format compact を含む
     config.values["textlint-args"] = ["--format", "compact"]
-    pyfltr.command.execute_command("textlint", _make_args([target], fix=True), config)
+    pyfltr.command.execute_command("textlint", _make_args(fix=True), config, [target])
 
     assert mock_run.call_count == 2
     step1_cmdline = mock_run.call_args_list[0][0][0]
@@ -284,7 +285,7 @@ def test_textlint_fix_mode_preserves_non_format_user_args(mocker, tmp_path: path
     config = pyfltr.config.create_default_config()
     config.values["textlint"] = True
     config.values["textlint-args"] = ["--quiet"]
-    pyfltr.command.execute_command("textlint", _make_args([target], fix=True), config)
+    pyfltr.command.execute_command("textlint", _make_args(fix=True), config, [target])
 
     step1_cmdline = mock_run.call_args_list[0][0][0]
     step2_cmdline = mock_run.call_args_list[1][0][0]
@@ -316,7 +317,7 @@ def test_textlint_fix_mode_touch_without_content_change_marks_succeeded(mocker, 
 
     config = pyfltr.config.create_default_config()
     config.values["textlint"] = True
-    result = pyfltr.command.execute_command("textlint", _make_args([target], fix=True), config)
+    result = pyfltr.command.execute_command("textlint", _make_args(fix=True), config, [target])
 
     assert result.status == "succeeded"
     assert result.has_error is False
@@ -345,7 +346,7 @@ def test_textlint_fix_mode_all_fixed_marks_formatted(mocker, tmp_path: pathlib.P
 
     config = pyfltr.config.create_default_config()
     config.values["textlint"] = True
-    result = pyfltr.command.execute_command("textlint", _make_args([target], fix=True), config)
+    result = pyfltr.command.execute_command("textlint", _make_args(fix=True), config, [target])
 
     assert result.status == "formatted"
     assert result.has_error is False
@@ -371,7 +372,7 @@ def test_textlint_fix_mode_residual_violations_mark_failed(mocker, tmp_path: pat
 
     config = pyfltr.config.create_default_config()
     config.values["textlint"] = True
-    result = pyfltr.command.execute_command("textlint", _make_args([target], fix=True), config)
+    result = pyfltr.command.execute_command("textlint", _make_args(fix=True), config, [target])
 
     assert result.status == "failed"
     assert result.has_error is True
@@ -396,7 +397,7 @@ def test_textlint_fix_mode_step1_fatal_error_fails(mocker, tmp_path: pathlib.Pat
 
     config = pyfltr.config.create_default_config()
     config.values["textlint"] = True
-    result = pyfltr.command.execute_command("textlint", _make_args([target], fix=True), config)
+    result = pyfltr.command.execute_command("textlint", _make_args(fix=True), config, [target])
 
     assert result.status == "failed"
     assert result.has_error is True
@@ -419,7 +420,7 @@ def test_fix_mode_mtime_change_marks_formatted(mocker, tmp_path: pathlib.Path) -
 
     config = pyfltr.config.create_default_config()
     config.values["markdownlint"] = True
-    result = pyfltr.command.execute_command("markdownlint", _make_args([target], fix=True), config)
+    result = pyfltr.command.execute_command("markdownlint", _make_args(fix=True), config, [target])
 
     assert result.status == "formatted"
     assert result.has_error is False
@@ -443,7 +444,7 @@ def test_fix_mode_non_zero_rc_is_failed(mocker, tmp_path: pathlib.Path) -> None:
 
     config = pyfltr.config.create_default_config()
     config.values["ruff-check"] = True
-    result = pyfltr.command.execute_command("ruff-check", _make_args([target], fix=True), config)
+    result = pyfltr.command.execute_command("ruff-check", _make_args(fix=True), config, [target])
 
     # rc != 0 なので mtime 変化があっても failed
     assert result.status == "failed"
@@ -470,7 +471,7 @@ def test_prettier_two_step_check_clean(mocker, tmp_path: pathlib.Path) -> None:
 
     config = pyfltr.config.create_default_config()
     config.values["prettier"] = True
-    result = pyfltr.command.execute_command("prettier", _make_args([target]), config)
+    result = pyfltr.command.execute_command("prettier", _make_args(), config, [target])
 
     assert mock_run.call_count == 1
     cmdline = mock_run.call_args_list[0][0][0]
@@ -496,7 +497,7 @@ def test_prettier_two_step_check_needs_write(mocker, tmp_path: pathlib.Path) -> 
 
     config = pyfltr.config.create_default_config()
     config.values["prettier"] = True
-    result = pyfltr.command.execute_command("prettier", _make_args([target]), config)
+    result = pyfltr.command.execute_command("prettier", _make_args(), config, [target])
 
     assert result.status == "formatted"
     assert result.has_error is False
@@ -518,7 +519,7 @@ def test_prettier_two_step_check_rc2_fails_without_write(mocker, tmp_path: pathl
 
     config = pyfltr.config.create_default_config()
     config.values["prettier"] = True
-    result = pyfltr.command.execute_command("prettier", _make_args([target]), config)
+    result = pyfltr.command.execute_command("prettier", _make_args(), config, [target])
 
     assert result.status == "failed"
     assert result.has_error is True
@@ -542,7 +543,7 @@ def test_prettier_two_step_step2_failure_marks_failed(mocker, tmp_path: pathlib.
 
     config = pyfltr.config.create_default_config()
     config.values["prettier"] = True
-    result = pyfltr.command.execute_command("prettier", _make_args([target]), config)
+    result = pyfltr.command.execute_command("prettier", _make_args(), config, [target])
 
     assert result.status == "failed"
     assert result.has_error is True
@@ -565,7 +566,7 @@ def test_prettier_fix_mode_skips_check_step(mocker, tmp_path: pathlib.Path) -> N
 
     config = pyfltr.config.create_default_config()
     config.values["prettier"] = True
-    result = pyfltr.command.execute_command("prettier", _make_args([target], fix=True), config)
+    result = pyfltr.command.execute_command("prettier", _make_args(fix=True), config, [target])
 
     # 1 回だけ呼ばれる (Step1 スキップ)
     assert mock_run.call_count == 1
@@ -586,7 +587,7 @@ def test_prettier_fix_mode_no_change_succeeds(mocker, tmp_path: pathlib.Path) ->
 
     config = pyfltr.config.create_default_config()
     config.values["prettier"] = True
-    result = pyfltr.command.execute_command("prettier", _make_args([target], fix=True), config)
+    result = pyfltr.command.execute_command("prettier", _make_args(fix=True), config, [target])
 
     assert result.status == "succeeded"
 
@@ -601,7 +602,7 @@ def test_eslint_lint_mode_uses_json_format(mocker, tmp_path: pathlib.Path) -> No
 
     config = pyfltr.config.create_default_config()
     config.values["eslint"] = True
-    pyfltr.command.execute_command("eslint", _make_args([target]), config)
+    pyfltr.command.execute_command("eslint", _make_args(), config, [target])
 
     assert mock_run.call_count == 1
     cmdline = mock_run.call_args_list[0][0][0]
@@ -623,7 +624,7 @@ def test_eslint_fix_mode_appends_fix_and_keeps_json(mocker, tmp_path: pathlib.Pa
 
     config = pyfltr.config.create_default_config()
     config.values["eslint"] = True
-    pyfltr.command.execute_command("eslint", _make_args([target], fix=True), config)
+    pyfltr.command.execute_command("eslint", _make_args(fix=True), config, [target])
 
     assert mock_run.call_count == 1
     cmdline = mock_run.call_args_list[0][0][0]
@@ -644,7 +645,7 @@ def test_biome_lint_mode_uses_check_and_github_reporter(mocker, tmp_path: pathli
 
     config = pyfltr.config.create_default_config()
     config.values["biome"] = True
-    pyfltr.command.execute_command("biome", _make_args([target]), config)
+    pyfltr.command.execute_command("biome", _make_args(), config, [target])
 
     assert mock_run.call_count == 1
     cmdline = mock_run.call_args_list[0][0][0]
@@ -663,7 +664,7 @@ def test_biome_fix_mode_appends_write_and_keeps_reporter(mocker, tmp_path: pathl
 
     config = pyfltr.config.create_default_config()
     config.values["biome"] = True
-    pyfltr.command.execute_command("biome", _make_args([target], fix=True), config)
+    pyfltr.command.execute_command("biome", _make_args(fix=True), config, [target])
 
     assert mock_run.call_count == 1
     cmdline = mock_run.call_args_list[0][0][0]
@@ -899,7 +900,7 @@ def test_execute_command_direct_missing_returns_failed_result(tmp_path: pathlib.
     original_cwd = pathlib.Path.cwd()
     try:
         os.chdir(tmp_path)
-        result = pyfltr.command.execute_command("textlint", _make_args([target]), config)
+        result = pyfltr.command.execute_command("textlint", _make_args(), config, [target])
         assert result.status == "failed"
         assert result.has_error is True
         assert "node_modules" in result.output
@@ -994,9 +995,8 @@ def test_excluded_disabled_by_empty_config() -> None:
     assert not pyfltr.command.excluded(pathlib.Path(".serena/memories/foo.md"), config)
 
 
-def test_expand_globs_respects_gitignore(tmp_path: pathlib.Path) -> None:
-    """.gitignore に記載されたファイルが expand_globs から除外される。"""
-    # git リポジトリを初期化
+def test_expand_all_files_respects_gitignore(tmp_path: pathlib.Path) -> None:
+    """.gitignore に記載されたファイルが expand_all_files から除外される。"""
     subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True, check=True)
     (tmp_path / "main.py").write_text("x = 1\n")
     (tmp_path / "ignored.py").write_text("x = 2\n")
@@ -1006,7 +1006,8 @@ def test_expand_globs_respects_gitignore(tmp_path: pathlib.Path) -> None:
     try:
         os.chdir(tmp_path)
         config = pyfltr.config.create_default_config()
-        result = pyfltr.command.expand_globs([], ["*.py"], config)
+        all_files = pyfltr.command.expand_all_files([], config)
+        result = pyfltr.command.filter_by_globs(all_files, ["*.py"])
         names = {p.name for p in result}
         assert "main.py" in names
         assert "ignored.py" not in names
@@ -1014,7 +1015,7 @@ def test_expand_globs_respects_gitignore(tmp_path: pathlib.Path) -> None:
         os.chdir(original_cwd)
 
 
-def test_expand_globs_gitignore_disabled(tmp_path: pathlib.Path) -> None:
+def test_expand_all_files_gitignore_disabled(tmp_path: pathlib.Path) -> None:
     """respect-gitignore = false の場合、.gitignore によるフィルタリングが無効になる。"""
     subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True, check=True)
     (tmp_path / "main.py").write_text("x = 1\n")
@@ -1026,7 +1027,8 @@ def test_expand_globs_gitignore_disabled(tmp_path: pathlib.Path) -> None:
         os.chdir(tmp_path)
         config = pyfltr.config.create_default_config()
         config.values["respect-gitignore"] = False
-        result = pyfltr.command.expand_globs([], ["*.py"], config)
+        all_files = pyfltr.command.expand_all_files([], config)
+        result = pyfltr.command.filter_by_globs(all_files, ["*.py"])
         names = {p.name for p in result}
         assert "main.py" in names
         assert "ignored.py" in names
@@ -1034,7 +1036,7 @@ def test_expand_globs_gitignore_disabled(tmp_path: pathlib.Path) -> None:
         os.chdir(original_cwd)
 
 
-def test_expand_globs_no_git_repo(tmp_path: pathlib.Path) -> None:
+def test_expand_all_files_no_git_repo(tmp_path: pathlib.Path) -> None:
     """git リポジトリ外でも正常に動作する。"""
     (tmp_path / "main.py").write_text("x = 1\n")
 
@@ -1042,11 +1044,68 @@ def test_expand_globs_no_git_repo(tmp_path: pathlib.Path) -> None:
     try:
         os.chdir(tmp_path)
         config = pyfltr.config.create_default_config()
-        result = pyfltr.command.expand_globs([], ["*.py"], config)
+        all_files = pyfltr.command.expand_all_files([], config)
+        result = pyfltr.command.filter_by_globs(all_files, ["*.py"])
         names = {p.name for p in result}
         assert "main.py" in names
     finally:
         os.chdir(original_cwd)
+
+
+def test_expand_all_files_warns_excluded_file(tmp_path: pathlib.Path, caplog) -> None:
+    """直接指定されたファイルがexclude設定で除外された場合に警告が出る。"""
+    target = tmp_path / "sample.py"
+    target.write_text("x = 1\n")
+
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        config = pyfltr.config.create_default_config()
+        config.values["extend-exclude"] = ["sample.py"]
+        with caplog.at_level(logging.WARNING):
+            result = pyfltr.command.expand_all_files([target], config)
+        assert len(result) == 0
+        assert "除外設定により無視されました" in caplog.text
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_expand_all_files_warns_gitignored_file(tmp_path: pathlib.Path, caplog) -> None:
+    """直接指定されたファイルが .gitignore で除外された場合に警告が出る。"""
+    subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True, check=True)
+    target = tmp_path / "ignored.py"
+    target.write_text("x = 1\n")
+    (tmp_path / ".gitignore").write_text("ignored.py\n")
+
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        config = pyfltr.config.create_default_config()
+        with caplog.at_level(logging.WARNING):
+            result = pyfltr.command.expand_all_files([target], config)
+        assert len(result) == 0
+        assert ".gitignore により無視されました" in caplog.text
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_filter_by_globs() -> None:
+    """filter_by_globs が正しくフィルタリングする。"""
+    files = [
+        pathlib.Path("main.py"),
+        pathlib.Path("test_main.py"),
+        pathlib.Path("README.md"),
+        pathlib.Path("style.css"),
+    ]
+    assert pyfltr.command.filter_by_globs(files, ["*.py"]) == [
+        pathlib.Path("main.py"),
+        pathlib.Path("test_main.py"),
+    ]
+    assert pyfltr.command.filter_by_globs(files, ["*.md", "*.css"]) == [
+        pathlib.Path("README.md"),
+        pathlib.Path("style.css"),
+    ]
+    assert pyfltr.command.filter_by_globs(files, ["*.rs"]) == []
 
 
 def test_build_auto_args_pylint_pydantic() -> None:
@@ -1096,8 +1155,8 @@ def test_auto_args_included_in_commandline(mocker, tmp_path: pathlib.Path) -> No
 
     config = pyfltr.config.create_default_config()
     config.values["pylint"] = True
-    args = _make_args([target])
-    result = pyfltr.command.execute_command("pylint", args, config)
+    args = _make_args()
+    result = pyfltr.command.execute_command("pylint", args, config, [target])
     assert "--load-plugins=pylint_pydantic" in result.commandline
 
 
@@ -1231,7 +1290,7 @@ def test_pass_filenames_false_omits_targets(mocker, tmp_path: pathlib.Path) -> N
     # tscはデフォルトでpass-filenames=false
     assert config["tsc-pass-filenames"] is False
 
-    result = pyfltr.command.execute_command("tsc", _make_args([target]), config)
+    result = pyfltr.command.execute_command("tsc", _make_args(), config, [target])
 
     assert mock_run.call_count == 1
     cmdline = mock_run.call_args_list[0][0][0]
@@ -1250,7 +1309,7 @@ def test_pass_filenames_true_includes_targets(mocker, tmp_path: pathlib.Path) ->
 
     config = pyfltr.config.create_default_config()
     config.values["ruff-check"] = True
-    result = pyfltr.command.execute_command("ruff-check", _make_args([target]), config)
+    result = pyfltr.command.execute_command("ruff-check", _make_args(), config, [target])
 
     assert mock_run.call_count == 1
     cmdline = mock_run.call_args_list[0][0][0]
@@ -1291,7 +1350,7 @@ def test_cargo_fmt_runs_without_file_args(mocker, tmp_path: pathlib.Path) -> Non
 
     config = pyfltr.config.create_default_config()
     config.values["cargo-fmt"] = True
-    pyfltr.command.execute_command("cargo-fmt", _make_args([target]), config)
+    pyfltr.command.execute_command("cargo-fmt", _make_args(), config, [target])
 
     assert mock_run.call_count == 1
     cmdline = mock_run.call_args_list[0][0][0]
@@ -1309,7 +1368,7 @@ def test_cargo_fmt_fix_mode_unchanged(mocker, tmp_path: pathlib.Path) -> None:
 
     config = pyfltr.config.create_default_config()
     config.values["cargo-fmt"] = True
-    pyfltr.command.execute_command("cargo-fmt", _make_args([target], fix=True), config)
+    pyfltr.command.execute_command("cargo-fmt", _make_args(fix=True), config, [target])
 
     cmdline = mock_run.call_args_list[0][0][0]
     assert cmdline == ["cargo", "fmt"]
@@ -1325,7 +1384,7 @@ def test_cargo_clippy_normal_mode_cmdline(mocker, tmp_path: pathlib.Path) -> Non
 
     config = pyfltr.config.create_default_config()
     config.values["cargo-clippy"] = True
-    pyfltr.command.execute_command("cargo-clippy", _make_args([target]), config)
+    pyfltr.command.execute_command("cargo-clippy", _make_args(), config, [target])
 
     cmdline = mock_run.call_args_list[0][0][0]
     assert cmdline == _testconf.CARGO_CLIPPY_LINT_CMDLINE
@@ -1342,7 +1401,7 @@ def test_cargo_clippy_fix_mode_cmdline(mocker, tmp_path: pathlib.Path) -> None:
 
     config = pyfltr.config.create_default_config()
     config.values["cargo-clippy"] = True
-    pyfltr.command.execute_command("cargo-clippy", _make_args([target], fix=True), config)
+    pyfltr.command.execute_command("cargo-clippy", _make_args(fix=True), config, [target])
 
     cmdline = mock_run.call_args_list[0][0][0]
     assert cmdline == _testconf.CARGO_CLIPPY_FIX_CMDLINE
@@ -1359,21 +1418,20 @@ def test_dotnet_format_runs_without_file_args(mocker, tmp_path: pathlib.Path) ->
 
     config = pyfltr.config.create_default_config()
     config.values["dotnet-format"] = True
-    pyfltr.command.execute_command("dotnet-format", _make_args([target]), config)
+    pyfltr.command.execute_command("dotnet-format", _make_args(), config, [target])
 
     cmdline = mock_run.call_args_list[0][0][0]
     assert cmdline == ["dotnet", "format"]
     assert str(target) not in cmdline
 
 
-def test_cargo_test_skipped_when_no_rs_files(mocker, tmp_path: pathlib.Path) -> None:
+def test_cargo_test_skipped_when_no_rs_files(mocker) -> None:
     """.rs ファイルが対象に無いとき cargo-test はスキップされる (既存 pass-filenames=False 分岐)。"""
-    # ディレクトリ自体は空にして `.rs` ファイルを用意しない
     mock_run = mocker.patch("pyfltr.command._run_subprocess")
 
     config = pyfltr.config.create_default_config()
     config.values["cargo-test"] = True
-    result = pyfltr.command.execute_command("cargo-test", _make_args([tmp_path]), config)
+    result = pyfltr.command.execute_command("cargo-test", _make_args(), config, [])
 
     assert mock_run.call_count == 0
     assert result.returncode is None

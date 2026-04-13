@@ -56,7 +56,7 @@ def test_run_one_command_stream_mode_writes_detail_log(mocker, caplog):
     mock_config = mocker.MagicMock()
 
     with caplog.at_level(logging.INFO):
-        pyfltr.cli._run_one_command("mypy", mock_args, mock_config, per_command_log=True)
+        pyfltr.cli._run_one_command("mypy", mock_args, mock_config, [], per_command_log=True)
 
     assert "mypy 実行中です..." in caplog.text
     assert "ok" in caplog.text
@@ -71,7 +71,7 @@ def test_run_one_command_buffer_mode_shows_only_progress(mocker, caplog):
     mock_config = mocker.MagicMock()
 
     with caplog.at_level(logging.INFO):
-        pyfltr.cli._run_one_command("mypy", mock_args, mock_config, per_command_log=False)
+        pyfltr.cli._run_one_command("mypy", mock_args, mock_config, [], per_command_log=False)
 
     assert "mypy 実行中です..." in caplog.text
     assert "mypy 完了" in caplog.text

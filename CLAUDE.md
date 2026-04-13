@@ -11,6 +11,7 @@
   - `make update-actions`: GitHub Actionsのハッシュピン更新のみ（mise経由でpinact実行）
 - `make docs`: ドキュメントのローカルプレビュー
 - テストコードは`pyfltr/xxx_.py`に対して`tests/xxx_test.py`として配置する
+- 実行パイプラインの構造: `run_pipeline`（main.py）がTUI/非TUI分岐の最上位関数。パイプライン共通の前処理（ファイル展開など）はこの関数内でTUI起動前に実行する
 - テストコードの実行は `uv run pyfltr <path>` を使う（pytestを直接呼び出さない）
   - `-vv`などが必要な場合に限り `uv run pyfltr -vv <path>` のようにする
 - Markdownファイルのformat/lintの実行方法: `uv run pre-commit run --files <file>`
