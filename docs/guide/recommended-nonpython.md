@@ -84,6 +84,8 @@ extend-exclude = [
 ]
 ```
 
+プロジェクト固有の許可語がある場合は`[tool.typos]`セクションも追記する（詳細は[docs/guide/recommended.md](recommended.md)の「typosの許可語設定」を参照）。
+
 `.pre-commit-config.yaml`（ローカルフックで`uvx pyfltr fast`を呼ぶ）:
 
 ```yaml
