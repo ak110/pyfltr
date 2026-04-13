@@ -53,6 +53,7 @@ _JS_COMMON_TARGETS: list[str] = [
 ]
 
 BUILTIN_COMMANDS: dict[str, CommandInfo] = {
+    "pre-commit": CommandInfo(type="formatter", targets="*"),
     "pyupgrade": CommandInfo(type="formatter"),
     "autoflake": CommandInfo(type="formatter"),
     "isort": CommandInfo(type="formatter"),
@@ -213,6 +214,19 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # Python 系ツールの一括有効/無効。False にすると PYTHON_COMMANDS に
     # 列挙されたコマンドをすべて無効化する。個別設定で上書き可能。
     "python": True,
+    # pre-commit 統合。有効にすると pyfltr run/ci 実行時に
+    # pre-commit run --all-files を内部で呼び出す。
+    # pre-commit-fast = False（既定）のため pyfltr fast には含まれず、
+    # git commit 時の二重実行を防ぐ。
+    "pre-commit": False,
+    "pre-commit-path": "pre-commit",
+    "pre-commit-args": ["run", "--all-files"],
+    "pre-commit-pass-filenames": False,
+    "pre-commit-fast": False,
+    # .pre-commit-config.yaml から pyfltr 関連 hook を自動検出して SKIP する
+    "pre-commit-auto-skip": True,
+    # SKIP 環境変数に渡す hook ID の手動指定リスト（auto-skip と併用可能）
+    "pre-commit-skip": [],
     # 自動オプション: 各ツールの望ましい引数を自動挿入する。
     # *-args とは独立して動作し、重複排除される。False で無効化可能。
     "pylint-pydantic": True,
@@ -508,6 +522,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # コマンド名のエイリアス
     "aliases": {
         "format": [
+            "pre-commit",
             "pyupgrade",
             "autoflake",
             "isort",
@@ -597,8 +612,18 @@ _PRESETS: dict[str, dict[str, bool]] = {
         "typos": True,
         "uv-sort": True,
     },
+    "20260413": {
+        **_PRESET_BASE,
+        "pyright": True,
+        "textlint": True,
+        "markdownlint": True,
+        "actionlint": True,
+        "typos": True,
+        "uv-sort": True,
+        "pre-commit": True,
+    },
 }
-_PRESETS["latest"] = _PRESETS["20260411"]
+_PRESETS["latest"] = _PRESETS["20260413"]
 
 
 def load_config(config_dir: pathlib.Path | None = None) -> Config:

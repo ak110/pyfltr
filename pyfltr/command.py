@@ -20,6 +20,7 @@ import natsort
 
 import pyfltr.config
 import pyfltr.error_parser
+import pyfltr.precommit
 
 logger = logging.getLogger(__name__)
 
@@ -372,6 +373,13 @@ def execute_command(
     start_time = time.perf_counter()
     env = _build_subprocess_env(config, command)
 
+    # pre-commit は .pre-commit-config.yaml を参照して SKIP 環境変数を構築し、
+    # pyfltr 関連 hook を除外したうえで 2 段階実行する。
+    # stage 1 でファイル修正のみ (fixer 系) なら "formatted"、
+    # checker 系 hook が残存エラーを報告すれば "failed" となる。
+    if command == "pre-commit":
+        return _execute_pre_commit(command, command_info, commandline, targets, config, args, env, on_output, start_time)
+
     # textlint の fix モードは 2 段階実行 (fix 適用 + lint チェック)。
     # fixer-formatter が compact をサポートしない問題と、残存違反を compact で取得する
     # 要件を両立させるため、他の linter とは別経路で実行する。
@@ -517,6 +525,82 @@ def _build_subprocess_env(config: pyfltr.config.Config, command: str) -> dict[st
     # (pytestなどは一部の表示が右寄せになるのであまり大きいと見づらい)
     env["COLUMNS"] = str(min(max(shutil.get_terminal_size().columns - 4, 80), 128))
     return env
+
+
+def _execute_pre_commit(
+    command: str,
+    command_info: pyfltr.config.CommandInfo,
+    commandline: list[str],
+    targets: list[pathlib.Path],
+    config: pyfltr.config.Config,
+    args: argparse.Namespace,
+    env: dict[str, str] | None,
+    on_output: typing.Callable[[str], None] | None,
+    start_time: float,
+) -> CommandResult:
+    """pre-commit の 2 段階実行。
+
+    stage 1 で pre-commit run --all-files を実行し、fixer 系 hook がファイルを
+    修正しただけなら再実行で成功する（"formatted"）。checker 系 hook のエラーが
+    残る場合は "failed"（has_error=True）として返す。
+    """
+    # .pre-commit-config.yaml が存在しなければスキップ
+    config_dir = pathlib.Path.cwd()
+    config_path = config_dir / ".pre-commit-config.yaml"
+    if not config_path.exists():
+        return CommandResult(
+            command=command,
+            command_type=command_info.type,
+            commandline=commandline,
+            returncode=None,
+            has_error=False,
+            output=".pre-commit-config.yaml が見つかりません。",
+            files=len(targets),
+            elapsed=time.perf_counter() - start_time,
+        )
+
+    # SKIP 環境変数を構築（pyfltr 関連 hook を除外して再帰を防止）
+    skip_value = pyfltr.precommit.build_skip_value(config, config_dir)
+    pre_commit_env = dict(env) if env is not None else dict(os.environ)
+    if skip_value:
+        existing_skip = pre_commit_env.get("SKIP", "")
+        if existing_skip:
+            pre_commit_env["SKIP"] = f"{existing_skip},{skip_value}"
+        else:
+            pre_commit_env["SKIP"] = skip_value
+
+    if args.verbose and on_output is not None:
+        on_output(f"commandline: {shlex.join(commandline)}\n")
+        if skip_value:
+            on_output(f"SKIP={pre_commit_env.get('SKIP', '')}\n")
+
+    # stage 1: 実行
+    proc = _run_subprocess(commandline, pre_commit_env, on_output)
+    returncode = proc.returncode
+    has_error = False
+
+    # stage 2: 失敗時は再実行（fixer が修正しただけなら 2 回目で成功する）
+    if returncode != 0:
+        if args.verbose and on_output is not None:
+            on_output("pre-commit: stage 2 再実行\n")
+        proc = _run_subprocess(commandline, pre_commit_env, on_output)
+        if proc.returncode != 0:
+            returncode = proc.returncode
+            has_error = True
+
+    output = proc.stdout.strip()
+    elapsed = time.perf_counter() - start_time
+
+    return CommandResult(
+        command=command,
+        command_type=command_info.type,
+        commandline=commandline,
+        returncode=returncode,
+        has_error=has_error,
+        files=len(targets),
+        output=output,
+        elapsed=elapsed,
+    )
 
 
 def _execute_linter_fix(

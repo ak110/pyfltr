@@ -17,6 +17,7 @@ exclude-newer = "1 day"
 
 [tool.pyfltr]
 python = false
+pre-commit = true
 js-runner = "pnpm"
 eslint = true
 prettier = true
@@ -67,6 +68,7 @@ exclude-newer = "1 day"
 
 [tool.pyfltr]
 python = false
+pre-commit = true
 js-runner = "pnpm"
 bin-runner = "mise"
 cargo-fmt = true
@@ -120,6 +122,7 @@ exclude-newer = "1 day"
 
 [tool.pyfltr]
 python = false
+pre-commit = true
 js-runner = "pnpm"
 bin-runner = "mise"
 dotnet-format = true

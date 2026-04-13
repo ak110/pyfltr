@@ -36,14 +36,12 @@ update-actions:
 # フォーマット + 軽量lint（開発時の手動実行用。自動修正あり）
 format:
 	$(MAKE) clean-stale-dist-info
-	SKIP=pyfltr uv run pre-commit run --all-files
 	-uv run pyfltr fix
-	-uv run pyfltr fast
+	uv run pre-commit run --all-files
 
 # 全チェック実行（これを通過すればコミット可能）
 test:
 	$(MAKE) clean-stale-dist-info
-	SKIP=pyfltr uv run pre-commit run --all-files
 	uv run pyfltr run
 
 docs:

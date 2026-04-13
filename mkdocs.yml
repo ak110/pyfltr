@@ -43,7 +43,7 @@ plugins:
         .NET: dotnet format / dotnet build / dotnet test
         JS/TS: eslint / prettier / biome / oxlint / tsc / vitest
         ドキュメント: markdownlint-cli2 / textlint
-        その他: ec / shellcheck / shfmt / typos / actionlint
+        その他: ec / shellcheck / shfmt / typos / actionlint / pre-commit
 
         `preset = "latest"` で主要ツールを一括有効化できる。
 

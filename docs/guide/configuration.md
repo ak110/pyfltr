@@ -37,11 +37,13 @@ extend-exclude = ["foo", "bar.py"]
 - exclude : 除外するファイル名/ディレクトリ名パターン（既定値あり）
 - extend-exclude : 追加で除外するファイル名/ディレクトリ名パターン（既定値は空）
 - respect-gitignore : `.gitignore`に記載されたファイルを除外するか否か（既定: `true`）。gitのルートおよびネストした`.gitignore`、グローバルgitignore、`.git/info/exclude`を全て考慮する。`git`コマンドが必要
+- pre-commit-auto-skip : `.pre-commit-config.yaml`からpyfltr関連hookを自動検出してSKIP環境変数に追加するか（既定: `true`）
+- pre-commit-skip : SKIP環境変数に渡すhook IDの手動指定リスト（`pre-commit-auto-skip`と併用可能）
 
 ## プリセット設定
 
 `preset`を設定することで、一括して設定を変更できる。
-`"latest"` または日付指定 (`"20260411"`, `"20260330"`, `"20250710"`) が使用可能。
+`"latest"` または日付指定 (`"20260413"`, `"20260411"`, `"20260330"`, `"20250710"`) が使用可能。
 
 ```toml
 [tool.pyfltr]
@@ -50,7 +52,12 @@ preset = "latest"
 
 `preset = "latest"`は予告なく動作を変更する可能性がある。
 
-### preset "20260411" / "latest"
+### preset "20260413" / "latest"
+
+- preset "20260411"に加えて以下の設定が行われる
+- `pre-commit = true`
+
+### preset "20260411"
 
 - preset "20260330"に加えて以下の設定が行われる
 - `actionlint = true`
