@@ -196,12 +196,13 @@ def _parse_with_pattern(command: str, output: str, pattern: str) -> list[ErrorLo
 
 
 def _normalize_path(file_path: str) -> str:
-    """パスをcwd基準の相対パスに正規化する。"""
+    """パスをcwd基準の相対パスに正規化する。区切り文字はスラッシュに統一する。"""
     path = pathlib.Path(file_path)
     if path.is_absolute():
         try:
-            return str(path.relative_to(pathlib.Path.cwd()))
+            result = str(path.relative_to(pathlib.Path.cwd()))
         except ValueError:
             # cwdの配下でない場合はそのまま返す
             return file_path
-    return file_path
+        return result.replace("\\", "/")
+    return file_path.replace("\\", "/")

@@ -932,7 +932,7 @@ def test_build_subprocess_env_npm_config_actually_effective(monkeypatch: pytest.
     """
     # npm の設定ファイル読込を避けるため、隔離した HOME を用意する。
     # XDG_CONFIG_HOME も明示的に隔離してグローバル設定の干渉を排除する。
-    original_home = pathlib.Path(os.environ["HOME"])
+    original_home = pathlib.Path(os.environ.get("HOME") or os.environ["USERPROFILE"])
     mise_config = original_home / ".config" / "mise" / "config.toml"
     monkeypatch.setenv("MISE_TRUSTED_CONFIG_PATHS", str(mise_config))
     monkeypatch.setenv("HOME", str(tmp_path))
