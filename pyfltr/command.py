@@ -180,6 +180,16 @@ class CommandResult:
         return f"{self.status} ({self.files}files in {self.elapsed:.1f}s)"
 
 
+def _resolve_runner(name: str) -> str:
+    """コマンド名をフルパスに解決する。
+
+    Windowsでは.cmd/.bat等の拡張子付きで実行ファイルを検索する必要がある。
+    見つからない場合は元の名前をそのまま返す（subprocess側でFileNotFoundErrorになる）。
+    """
+    resolved = shutil.which(name)
+    return resolved if resolved is not None else name
+
+
 def _resolve_js_commandline(
     command: str,
     config: pyfltr.config.Config,
@@ -202,19 +212,19 @@ def _resolve_js_commandline(
         for pkg in packages:
             prefix.extend(["--package", pkg])
         prefix.append(bin_name)
-        return "pnpx", prefix
+        return _resolve_runner("pnpx"), prefix
     if runner == "pnpm":
-        return "pnpm", ["exec", bin_name]
+        return _resolve_runner("pnpm"), ["exec", bin_name]
     if runner == "npm":
-        return "npm", ["exec", "--no", "--", bin_name]
+        return _resolve_runner("npm"), ["exec", "--no", "--", bin_name]
     if runner == "npx":
         prefix = ["--no-install"]
         for pkg in packages:
             prefix.extend(["-p", pkg])
         prefix.extend(["--", bin_name])
-        return "npx", prefix
+        return _resolve_runner("npx"), prefix
     if runner == "yarn":
-        return "yarn", ["run", bin_name]
+        return _resolve_runner("yarn"), ["run", bin_name]
     if runner == "direct":
         bin_dir = pathlib.Path("node_modules") / ".bin"
         # Windows では `.cmd` 付きのラッパーを優先する。pyright の静的評価では

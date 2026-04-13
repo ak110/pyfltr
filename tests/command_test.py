@@ -713,7 +713,7 @@ def test_resolve_js_commandline_pnpx_with_textlint_packages() -> None:
 
     path, prefix = pyfltr.command._resolve_js_commandline("textlint", config)
 
-    assert path == "pnpx"
+    assert pathlib.PurePath(path).stem == "pnpx"
     assert prefix == [
         "--package",
         "textlint@<15.5.3 || >15.5.3",
@@ -732,7 +732,7 @@ def test_resolve_js_commandline_pnpx_textlint_default_excludes_buggy_version() -
 
     path, prefix = pyfltr.command._resolve_js_commandline("textlint", config)
 
-    assert path == "pnpx"
+    assert pathlib.PurePath(path).stem == "pnpx"
     assert prefix == [
         "--package",
         "textlint@<15.5.3 || >15.5.3",
@@ -753,7 +753,7 @@ def test_resolve_js_commandline_pnpx_markdownlint_unchanged() -> None:
 
     path, prefix = pyfltr.command._resolve_js_commandline("markdownlint", config)
 
-    assert path == "pnpx"
+    assert pathlib.PurePath(path).stem == "pnpx"
     assert prefix == ["--package", "markdownlint-cli2", "markdownlint-cli2"]
 
 
@@ -765,7 +765,7 @@ def test_resolve_js_commandline_pnpm_ignores_packages() -> None:
 
     path, prefix = pyfltr.command._resolve_js_commandline("textlint", config)
 
-    assert path == "pnpm"
+    assert pathlib.PurePath(path).stem == "pnpm"
     assert prefix == ["exec", "textlint"]
 
 
@@ -776,7 +776,7 @@ def test_resolve_js_commandline_markdownlint_uses_cli2_binary() -> None:
 
     path, prefix = pyfltr.command._resolve_js_commandline("markdownlint", config)
 
-    assert path == "pnpm"
+    assert pathlib.PurePath(path).stem == "pnpm"
     assert prefix == ["exec", "markdownlint-cli2"]
 
 
@@ -787,7 +787,7 @@ def test_resolve_js_commandline_pnpx_eslint() -> None:
 
     path, prefix = pyfltr.command._resolve_js_commandline("eslint", config)
 
-    assert path == "pnpx"
+    assert pathlib.PurePath(path).stem == "pnpx"
     assert prefix == ["--package", "eslint", "eslint"]
 
 
@@ -798,7 +798,7 @@ def test_resolve_js_commandline_pnpx_prettier() -> None:
 
     path, prefix = pyfltr.command._resolve_js_commandline("prettier", config)
 
-    assert path == "pnpx"
+    assert pathlib.PurePath(path).stem == "pnpx"
     assert prefix == ["--package", "prettier", "prettier"]
 
 
@@ -809,7 +809,7 @@ def test_resolve_js_commandline_pnpx_biome_uses_scoped_package() -> None:
 
     path, prefix = pyfltr.command._resolve_js_commandline("biome", config)
 
-    assert path == "pnpx"
+    assert pathlib.PurePath(path).stem == "pnpx"
     # --package には @biomejs/biome、bin 名は biome
     assert prefix == ["--package", "@biomejs/biome", "biome"]
 
@@ -821,7 +821,7 @@ def test_resolve_js_commandline_pnpm_prettier() -> None:
 
     path, prefix = pyfltr.command._resolve_js_commandline("prettier", config)
 
-    assert path == "pnpm"
+    assert pathlib.PurePath(path).stem == "pnpm"
     assert prefix == ["exec", "prettier"]
 
 
@@ -832,7 +832,7 @@ def test_resolve_js_commandline_pnpm_biome() -> None:
 
     path, prefix = pyfltr.command._resolve_js_commandline("biome", config)
 
-    assert path == "pnpm"
+    assert pathlib.PurePath(path).stem == "pnpm"
     assert prefix == ["exec", "biome"]
 
 
@@ -844,7 +844,7 @@ def test_resolve_js_commandline_npx() -> None:
 
     path, prefix = pyfltr.command._resolve_js_commandline("textlint", config)
 
-    assert path == "npx"
+    assert pathlib.PurePath(path).stem == "npx"
     assert prefix == [
         "--no-install",
         "-p",
