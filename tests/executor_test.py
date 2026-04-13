@@ -1,6 +1,7 @@
 """テストコード。"""
 
 import concurrent.futures
+import pathlib
 import threading
 import time
 
@@ -8,16 +9,39 @@ import pyfltr.config
 import pyfltr.executor
 
 
-def test_split_commands_fast_order() -> None:
-    """fastでないコマンド（重いツール）が先に並ぶことのテスト。"""
+def test_split_commands_estimated_time_order() -> None:
+    """推定実行時間の降順（重いツール先頭）でソートされることのテスト。"""
     config = pyfltr.config.create_default_config()
-    # pflake8とmypy/pylint/pytestはデフォルトで有効
+    # pflake8（コスト0）とmypy/pylint/pytest（コスト非0）はデフォルトで有効
     commands = ["pflake8", "mypy", "pylint", "pytest"]
-    _, linters_and_testers = pyfltr.executor.split_commands_for_execution(commands, config)
+    # Pythonファイルを含むファイルリストを渡す
+    all_files = [pathlib.Path("test.py")]
+    _, linters_and_testers = pyfltr.executor.split_commands_for_execution(commands, config, all_files)
 
-    # fastでないもの（mypy, pylint, pytest）が先、fastなもの（pflake8）が後
-    fast_flags = [config.values.get(f"{c}-fast", False) for c in linters_and_testers]
-    assert fast_flags == [False, False, False, True]
+    # 推定時間の降順: pytest(3.0), pylint(1.75+0.3), pyright相当なし, mypy(0.2+0.12), pflake8(0.0)
+    assert linters_and_testers[0] == "pytest"
+    assert linters_and_testers[1] == "pylint"
+    assert linters_and_testers[-1] == "pflake8"
+
+
+def test_split_commands_estimated_time_scales_with_files() -> None:
+    """対象ファイル数に応じて推定時間が変化し、ソート順が変わることのテスト。"""
+    config = pyfltr.config.create_default_config()
+    config.values["textlint"] = True
+    # mypy: fixed=0.2, per_file=0.12 → 1ファイルで 0.32
+    # textlint: fixed=2.3, per_file=0.4 → mdファイルが対象
+    commands = ["mypy", "textlint"]
+
+    # mdファイルなし → textlintの対象は0ファイル（固定コスト2.3のみ）
+    # mypy対象は1ファイル（0.2+0.12=0.32）
+    all_files = [pathlib.Path("test.py")]
+    _, linters = pyfltr.executor.split_commands_for_execution(commands, config, all_files)
+    assert linters[0] == "textlint"  # 2.3 > 0.32
+
+    # pyファイル100個 → mypy: 0.2+0.12*100=12.2, textlint: 2.3（mdなし）
+    all_files = [pathlib.Path(f"file{i}.py") for i in range(100)]
+    _, linters = pyfltr.executor.split_commands_for_execution(commands, config, all_files)
+    assert linters[0] == "mypy"  # 12.2 > 2.3
 
 
 def test_split_commands_fix_mode_puts_all_in_serial_bucket() -> None:
@@ -25,7 +49,8 @@ def test_split_commands_fix_mode_puts_all_in_serial_bucket() -> None:
     config = pyfltr.config.create_default_config()
     config.values["markdownlint"] = True
     commands = ["black", "mypy", "markdownlint"]
-    formatters, linters_and_testers = pyfltr.executor.split_commands_for_execution(commands, config, fix_mode=True)
+    all_files: list[pathlib.Path] = []
+    formatters, linters_and_testers = pyfltr.executor.split_commands_for_execution(commands, config, all_files, fix_mode=True)
 
     # fix モードでは linter/tester バケツは空
     assert not linters_and_testers

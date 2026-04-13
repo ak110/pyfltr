@@ -37,7 +37,7 @@ def run_commands_with_cli(
     """
     results: list[pyfltr.command.CommandResult] = []
     formatters, linters_and_testers = pyfltr.executor.split_commands_for_execution(
-        commands, config, fix_mode=bool(getattr(args, "fix", False))
+        commands, config, all_files, fix_mode=bool(getattr(args, "fix", False))
     )
 
     # formatters を順序実行

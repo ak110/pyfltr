@@ -146,6 +146,20 @@ _STRUCTURED_OUTPUT_SPECS: dict[str, tuple[str, _StructuredOutputSpec]] = {
             conflicts=["--format"],
         ),
     ),
+    "eslint-json": (
+        "eslint",
+        _StructuredOutputSpec(
+            inject=["--format", "json"],
+            conflicts=["--format"],
+        ),
+    ),
+    "biome-json": (
+        "biome",
+        _StructuredOutputSpec(
+            inject=["--reporter=github"],
+            conflicts=["--reporter"],
+        ),
+    ),
 }
 
 

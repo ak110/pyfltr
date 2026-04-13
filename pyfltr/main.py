@@ -35,7 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
         epilog="ドキュメント: https://ak110.github.io/pyfltr/\nllms.txt: https://ak110.github.io/pyfltr/llms.txt",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--verbose", default=False, action="store_true", help="詳細な出力を表示します。")
+    parser.add_argument("-v", "--verbose", default=False, action="store_true", help="詳細な出力を表示します。")
     parser.add_argument(
         "--exit-zero-even-if-formatted",
         default=False,
@@ -86,6 +86,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="--output-format の出力先ファイル。未指定時は stdout に出力します。"
         "jsonl 併用時、ファイルには JSONL・stdout には従来の text 出力が並行して出ます。",
     )
+    parser.add_argument(
+        "--human-readable",
+        default=False,
+        action="store_true",
+        help="ツールの構造化出力（JSON等）を無効化し、人間向けの元のテキスト出力を使用します。",
+    )
     parser.add_argument("--no-clear", default=False, action="store_true", help="実行前にターミナルをクリアしません。")
     parser.add_argument(
         "--no-exclude",
@@ -127,7 +133,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=pathlib.Path,
         help="対象のファイルまたはディレクトリを指定します(既定: カレントディレクトリ)。",
     )
-    parser.add_argument("--version", "-V", action="store_true", help="バージョンを表示します。")
+    parser.add_argument("-V", "--version", action="store_true", help="バージョンを表示します。")
     return parser
 
 
@@ -320,6 +326,10 @@ def _run_impl(
             config.values["extend-exclude"] = []
         if args.no_gitignore:
             config.values["respect-gitignore"] = False
+        if args.human_readable:
+            for key in list(config.values):
+                if key.endswith("-json") or key == "pytest-tb-line":
+                    config.values[key] = False
 
         # --commands 未指定時はカスタムコマンドを含む全登録コマンドを対象にする。
         # argparse のデフォルト評価時点では pyproject.toml を読み込んでいないため、

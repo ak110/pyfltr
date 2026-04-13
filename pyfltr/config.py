@@ -30,6 +30,10 @@ class CommandInfo:
     pyfltr 側で排他する。cargo 系は ``"cargo"``、dotnet 系は ``"dotnet"`` を指定し、
     ``target`` ディレクトリなどの内部ロック競合を避ける。
     """
+    fixed_cost: float = 0.0
+    """推定固定コスト（秒）。並列実行のスケジューリングに使用する。"""
+    per_file_cost: float = 0.0
+    """推定ファイルあたりコスト（秒/file）。並列実行のスケジューリングに使用する。"""
 
     def target_globs(self) -> list[str]:
         """対象ファイルパターンをリスト形式で返す。"""
@@ -58,9 +62,11 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
     "autoflake": CommandInfo(type="formatter"),
     "isort": CommandInfo(type="formatter"),
     "black": CommandInfo(type="formatter"),
-    "ruff-format": CommandInfo(type="formatter"),
+    "ruff-format": CommandInfo(type="formatter", fixed_cost=0.02),
     "prettier": CommandInfo(
         type="formatter",
+        fixed_cost=1.5,
+        per_file_cost=0.02,
         targets=[
             *_JS_COMMON_TARGETS,
             "*.vue",
@@ -77,36 +83,40 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
             "*.html",
         ],
     ),
-    "uv-sort": CommandInfo(type="formatter", targets="pyproject.toml"),
+    "uv-sort": CommandInfo(type="formatter", targets="pyproject.toml", fixed_cost=0.2),
     # bin-runner対応ツール（formatter → linterの順）
     "shfmt": CommandInfo(type="formatter", targets="*.sh"),
     # Rust / .NET 言語ツール (formatter)。いずれも pass-filenames=False でcrate/solution
     # 全体を対象とする project-level 実行で動作する。serial_group により同一ツールチェイン
     # (cargo / dotnet) のコマンドは直列実行され、target ディレクトリ等のロック競合を回避する。
-    "cargo-fmt": CommandInfo(type="formatter", targets="*.rs", serial_group="cargo"),
+    "cargo-fmt": CommandInfo(type="formatter", targets="*.rs", serial_group="cargo", fixed_cost=1.0),
     "dotnet-format": CommandInfo(
         type="formatter",
         targets=["*.cs", "*.csproj", "*.sln", "Directory.Build.props", ".editorconfig"],
         serial_group="dotnet",
+        fixed_cost=2.0,
     ),
     "ec": CommandInfo(type="linter", targets="*"),
-    "shellcheck": CommandInfo(type="linter", targets="*.sh"),
-    "typos": CommandInfo(type="linter", targets="*"),
+    "shellcheck": CommandInfo(type="linter", targets="*.sh", per_file_cost=0.03),
+    "typos": CommandInfo(type="linter", targets="*", fixed_cost=0.04, per_file_cost=0.007),
     "actionlint": CommandInfo(
         type="linter",
         targets=[".github/workflows/*.yaml", ".github/workflows/*.yml"],
+        fixed_cost=0.2,
     ),
-    "ruff-check": CommandInfo(type="linter"),
+    "ruff-check": CommandInfo(type="linter", fixed_cost=0.01),
     "pflake8": CommandInfo(type="linter"),
-    "mypy": CommandInfo(type="linter"),
-    "pylint": CommandInfo(type="linter"),
-    "pyright": CommandInfo(type="linter"),
-    "ty": CommandInfo(type="linter"),
-    "markdownlint": CommandInfo(type="linter", targets="*.md"),
-    "textlint": CommandInfo(type="linter", targets="*.md"),
+    "mypy": CommandInfo(type="linter", fixed_cost=0.2, per_file_cost=0.12),
+    "pylint": CommandInfo(type="linter", fixed_cost=1.75, per_file_cost=0.3),
+    "pyright": CommandInfo(type="linter", fixed_cost=0.8, per_file_cost=0.155),
+    "ty": CommandInfo(type="linter", fixed_cost=0.05, per_file_cost=0.01),
+    "markdownlint": CommandInfo(type="linter", targets="*.md", fixed_cost=0.9, per_file_cost=0.035),
+    "textlint": CommandInfo(type="linter", targets="*.md", fixed_cost=2.3, per_file_cost=0.4),
     "eslint": CommandInfo(
         type="linter",
         targets=[*_JS_COMMON_TARGETS, "*.vue", "*.svelte"],
+        fixed_cost=2.3,
+        per_file_cost=0.05,
     ),
     "biome": CommandInfo(
         type="linter",
@@ -115,28 +125,32 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
     "oxlint": CommandInfo(
         type="linter",
         targets=[*_JS_COMMON_TARGETS, "*.vue", "*.svelte"],
+        fixed_cost=0.7,
     ),
     "tsc": CommandInfo(
         type="linter",
         targets=["*.ts", "*.tsx", "*.mts", "*.cts"],
     ),
     # Rust / .NET 言語ツール (linter)。pass-filenames=False で crate / solution 全体を対象とする。
-    "cargo-clippy": CommandInfo(type="linter", targets=["*.rs", "Cargo.toml"], serial_group="cargo"),
-    "cargo-check": CommandInfo(type="linter", targets=["*.rs", "Cargo.toml"], serial_group="cargo"),
+    "cargo-clippy": CommandInfo(type="linter", targets=["*.rs", "Cargo.toml"], serial_group="cargo", fixed_cost=3.0),
+    "cargo-check": CommandInfo(type="linter", targets=["*.rs", "Cargo.toml"], serial_group="cargo", fixed_cost=2.0),
     "cargo-deny": CommandInfo(
         type="linter",
         targets=["Cargo.toml", "Cargo.lock", "deny.toml"],
         serial_group="cargo",
+        fixed_cost=1.0,
     ),
     "dotnet-build": CommandInfo(
         type="linter",
         targets=["*.cs", "*.csproj", "*.sln", "Directory.Build.props"],
         serial_group="dotnet",
+        fixed_cost=5.0,
     ),
-    "pytest": CommandInfo(type="tester", targets="*_test.py"),
+    "pytest": CommandInfo(type="tester", targets="*_test.py", fixed_cost=3.0),
     # vitest のテストファイルパターン（pytest の *_test.py と同じ考え方）
     "vitest": CommandInfo(
         type="tester",
+        fixed_cost=3.0,
         targets=[
             "*.test.js",
             "*.test.jsx",
@@ -157,11 +171,12 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         ],
     ),
     # Rust / .NET 言語ツール (tester)。pass-filenames=False で crate / solution 全体を対象とする。
-    "cargo-test": CommandInfo(type="tester", targets=["*.rs", "Cargo.toml"], serial_group="cargo"),
+    "cargo-test": CommandInfo(type="tester", targets=["*.rs", "Cargo.toml"], serial_group="cargo", fixed_cost=3.0),
     "dotnet-test": CommandInfo(
         type="tester",
         targets=["*.cs", "*.csproj", "*.sln", "Directory.Build.props"],
         serial_group="dotnet",
+        fixed_cost=5.0,
     ),
 }
 
@@ -241,6 +256,8 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "shellcheck-json": True,
     "textlint-json": True,
     "typos-json": True,
+    "eslint-json": True,
+    "biome-json": True,
     # textlint / markdownlint の起動方式。
     # textlint-path / markdownlint-path が空のときに、以下の値に従って
     # 実際の起動コマンドを組み立てる。
@@ -332,10 +349,9 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "eslint": False,
     # path が空文字の場合は js-runner 設定に基づいて自動解決する。
     "eslint-path": "",
-    # --format json は lint / fix 両モードで有効にする必要があるため共通 args に置く。
     # ESLint 9 系以降で compact / unix / tap などのコアフォーマッタが除去されたため、
-    # 残っているコアフォーマッタのうち機械可読な json を採用している。
-    "eslint-args": ["--format", "json"],
+    # 構造化出力は eslint-json 設定により _STRUCTURED_OUTPUT_SPECS 経由で注入する。
+    "eslint-args": [],
     "eslint-fast": False,
     # fix モード時に通常 args の後に追加する引数。eslint は --fix で autofix する。
     "eslint-fix-args": ["--fix"],
@@ -353,10 +369,9 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "uv-sort-fast": True,
     "biome": False,
     "biome-path": "",
-    # "check" サブコマンドと --reporter=github は lint / fix 両モードで有効にする
-    # 必要があるため共通 args に置く。builtin パーサが GitHub workflow annotation
-    # 形式を前提にしているため reporter の切り替えは注意が必要。
-    "biome-args": ["check", "--reporter=github"],
+    # "check" サブコマンドは共通 args に置く。--reporter=github は biome-json 設定
+    # により _STRUCTURED_OUTPUT_SPECS 経由で注入する。
+    "biome-args": ["check"],
     "biome-fast": True,
     # fix モード時に通常 args の後に追加する引数。
     # `biome check --write` で safe fix のみ適用する (--unsafe は含めない)。

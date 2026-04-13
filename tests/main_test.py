@@ -239,3 +239,18 @@ pass-filenames = false
             call.args[0][0] for call in mock_run.call_args_list if call.args and isinstance(call.args[0], list) and call.args[0]
         }
         assert "my-linter-exe" in invoked_binaries
+
+
+def test_human_readable_disables_structured_output(mocker):
+    """--human-readable で構造化出力の引数が注入されない。"""
+    proc = subprocess.CompletedProcess(["ruff"], returncode=0, stdout="")
+    mock_run = mocker.patch("subprocess.run", return_value=proc)
+
+    pyfltr.main.run(["run", "--human-readable", "--commands=ruff-check", str(pathlib.Path(__file__).parent.parent)])
+
+    # ruff-check の実行コマンドラインに --output-format=json が含まれないことを確認
+    for call in mock_run.call_args_list:
+        if call.args and isinstance(call.args[0], list) and "check" in call.args[0]:
+            commandline = call.args[0]
+            assert "--output-format=json" not in commandline
+            break

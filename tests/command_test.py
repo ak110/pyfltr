@@ -616,7 +616,7 @@ def test_eslint_lint_mode_uses_json_format(mocker, tmp_path: pathlib.Path) -> No
 
 
 def test_eslint_fix_mode_appends_fix_and_keeps_json(mocker, tmp_path: pathlib.Path) -> None:
-    """eslint の fix モードで `--fix` が付いても `--format json` は維持される (共通 args 経由)。"""
+    """eslint の fix モードで `--fix` が付いても `--format json` は維持される。"""
     target = tmp_path / "sample.js"
     target.write_text("var x = 1;\n")
 
@@ -632,8 +632,6 @@ def test_eslint_fix_mode_appends_fix_and_keeps_json(mocker, tmp_path: pathlib.Pa
     assert "--format" in cmdline
     assert "json" in cmdline
     assert "--fix" in cmdline
-    # --format json が --fix より前 (共通 args 先行)
-    assert cmdline.index("--format") < cmdline.index("--fix")
 
 
 def test_biome_lint_mode_uses_check_and_github_reporter(mocker, tmp_path: pathlib.Path) -> None:
@@ -672,9 +670,8 @@ def test_biome_fix_mode_appends_write_and_keeps_reporter(mocker, tmp_path: pathl
     assert "check" in cmdline
     assert "--reporter=github" in cmdline
     assert "--write" in cmdline
-    # check と --reporter=github は共通 args なので --write より前
+    # check は共通 args なので --write より前
     assert cmdline.index("check") < cmdline.index("--write")
-    assert cmdline.index("--reporter=github") < cmdline.index("--write")
 
 
 def test_build_subprocess_env_sets_supply_chain_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
