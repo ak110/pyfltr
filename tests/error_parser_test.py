@@ -257,3 +257,222 @@ def test_format_error() -> None:
         file="src/foo.py", line=10, col=None, command="ruff-check", message="another error"
     )
     assert pyfltr.error_parser.format_error(error_no_col) == "src/foo.py:10: [ruff-check] another error"
+
+    # ruleあり
+    error_with_rule = pyfltr.error_parser.ErrorLocation(
+        file="src/foo.py", line=10, col=5, command="ruff-check", message="`os` imported but unused", rule="F401"
+    )
+    assert pyfltr.error_parser.format_error(error_with_rule) == "src/foo.py:10:5: [ruff-check:F401] `os` imported but unused"
+
+
+def test_parse_ruff_check_json() -> None:
+    """ruff check --output-format=json 出力のパース。"""
+    output = json.dumps(
+        [
+            {
+                "code": "F401",
+                "message": "`os` imported but unused",
+                "filename": "src/foo.py",
+                "location": {"row": 1, "column": 8},
+                "end_location": {"row": 1, "column": 10},
+                "severity": "error",
+                "fix": {"applicability": "safe", "edits": []},
+            },
+        ]
+    )
+    errors = pyfltr.error_parser.parse_errors("ruff-check", output)
+    assert len(errors) == 1
+    assert errors[0].file == "src/foo.py"
+    assert errors[0].line == 1
+    assert errors[0].col == 8
+    assert errors[0].rule == "F401"
+    assert errors[0].severity == "error"
+    assert errors[0].fix == "safe"
+    assert errors[0].message == "`os` imported but unused"
+
+
+def test_parse_ruff_check_json_fallback() -> None:
+    """ruff-check: JSON でない出力は regex にフォールバックする。"""
+    output = "src/foo.py:10:5: F401 `os` imported but unused"
+    errors = pyfltr.error_parser.parse_errors("ruff-check", output)
+    assert len(errors) == 1
+    assert errors[0].file == "src/foo.py"
+    assert errors[0].line == 10
+
+
+def test_parse_pylint_json() -> None:
+    """pylint --output-format=json2 出力のパース。"""
+    output = json.dumps(
+        {
+            "messages": [
+                {
+                    "messageId": "C0114",
+                    "symbol": "missing-module-docstring",
+                    "message": "Missing module docstring",
+                    "path": "src/foo.py",
+                    "line": 1,
+                    "column": 0,
+                    "type": "convention",
+                },
+            ],
+            "statistics": {},
+        }
+    )
+    errors = pyfltr.error_parser.parse_errors("pylint", output)
+    assert len(errors) == 1
+    assert errors[0].rule == "C0114"
+    assert errors[0].severity == "warning"
+    assert errors[0].message == "Missing module docstring"
+
+
+def test_parse_pylint_json_fallback() -> None:
+    """pylint: JSON でない出力は regex にフォールバックする。"""
+    output = "src/foo.py:10:5: C0114: Missing module docstring (missing-module-docstring)"
+    errors = pyfltr.error_parser.parse_errors("pylint", output)
+    assert len(errors) == 1
+    assert errors[0].line == 10
+
+
+def test_parse_pyright_json() -> None:
+    """pyright --outputjson 出力のパース。"""
+    output = json.dumps(
+        {
+            "version": "1.1.400",
+            "generalDiagnostics": [
+                {
+                    "file": "src/foo.py",
+                    "range": {"start": {"line": 9, "character": 4}, "end": {"line": 9, "character": 10}},
+                    "severity": "error",
+                    "rule": "reportAssignmentType",
+                    "message": "Type mismatch",
+                },
+            ],
+            "summary": {"errorCount": 1},
+        }
+    )
+    errors = pyfltr.error_parser.parse_errors("pyright", output)
+    assert len(errors) == 1
+    assert errors[0].line == 10  # 0-based → 1-based
+    assert errors[0].col == 5  # 0-based → 1-based
+    assert errors[0].rule == "reportAssignmentType"
+    assert errors[0].severity == "error"
+
+
+def test_parse_pyright_json_fallback() -> None:
+    """pyright: JSON でない出力は regex にフォールバックする。"""
+    output = '  src/foo.py:10:5 - error: Type "int" is not assignable'
+    errors = pyfltr.error_parser.parse_errors("pyright", output)
+    assert len(errors) == 1
+    assert errors[0].line == 10
+
+
+def test_parse_shellcheck_json() -> None:
+    """shellcheck -f json 出力のパース。"""
+    output = json.dumps(
+        [
+            {
+                "file": "src/foo.sh",
+                "line": 10,
+                "column": 5,
+                "level": "warning",
+                "code": 2086,
+                "message": "Double quote to prevent globbing",
+            },
+        ]
+    )
+    errors = pyfltr.error_parser.parse_errors("shellcheck", output)
+    assert len(errors) == 1
+    assert errors[0].rule == "SC2086"
+    assert errors[0].severity == "warning"
+    assert errors[0].message == "Double quote to prevent globbing"
+
+
+def test_parse_textlint_json() -> None:
+    """textlint --format json 出力のパース。"""
+    output = json.dumps(
+        [
+            {
+                "filePath": "docs/index.md",
+                "messages": [
+                    {
+                        "line": 5,
+                        "column": 1,
+                        "message": "文末が不統一です。",
+                        "ruleId": "ja-technical-writing/ja-no-mixed-period",
+                        "severity": 2,
+                        "fix": {"range": [10, 11], "text": "。"},
+                    },
+                ],
+            }
+        ]
+    )
+    errors = pyfltr.error_parser.parse_errors("textlint", output)
+    assert len(errors) == 1
+    assert errors[0].rule == "ja-technical-writing/ja-no-mixed-period"
+    assert errors[0].severity == "error"
+    assert errors[0].fix == "safe"
+
+
+def test_parse_typos_jsonl() -> None:
+    """typos --format=json 出力（JSON Lines）のパース。"""
+    output = (
+        '{"path":"src/foo.py","line_num":3,"byte_offset":15,"typo":"teh","corrections":["the"],"type":"typo"}\n'
+        '{"path":"src/bar.py","line_num":7,"byte_offset":20,"typo":"hte","corrections":["the","he"],"type":"typo"}\n'
+    )
+    errors = pyfltr.error_parser.parse_errors("typos", output)
+    assert len(errors) == 2
+    assert errors[0].file == "src/foo.py"
+    assert errors[0].line == 3
+    assert errors[0].message == "`teh` -> `the`"
+    assert errors[0].severity == "warning"
+    assert errors[0].fix == "safe"
+    assert errors[1].message == "`hte` -> `the, he`"
+
+
+def test_parse_typos_jsonl_fallback() -> None:
+    """typos: JSON Lines でない出力は regex にフォールバックする。"""
+    output = "src/foo.py:3:15: `teh` -> `the`"
+    errors = pyfltr.error_parser.parse_errors("typos", output)
+    assert len(errors) == 1
+    assert errors[0].line == 3
+
+
+def test_parse_pytest_tb_line() -> None:
+    """pytest --tb=line 出力からの行番号取得。"""
+    output = (
+        "============================= test session starts ==============================\n"
+        "collected 3 items\n"
+        "\n"
+        "tests/foo_test.py F..                                                    [100%]\n"
+        "\n"
+        "================================= FAILURES =================================\n"
+        "/abs/path/tests/foo_test.py:42: assert 1 == 2\n"
+        "========================= short test summary info ==========================\n"
+        "FAILED tests/foo_test.py::test_bar - assert 1 == 2\n"
+        "========================= 1 failed, 2 passed in 0.5s =========================\n"
+    )
+    errors = pyfltr.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 1
+    assert errors[0].line == 42
+    assert "assert 1 == 2" in errors[0].message
+
+
+def test_parse_pytest_fallback() -> None:
+    """pytest: --tb=line 形式がなければ FAILED 行にフォールバック（line=0）。"""
+    output = (
+        "FAILED tests/foo_test.py::test_bar - AssertionError: xxx\n"
+        "========================= 1 failed in 0.5s =========================\n"
+    )
+    errors = pyfltr.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 1
+    assert errors[0].file == "tests/foo_test.py"
+    assert errors[0].line == 0
+
+
+def test_get_custom_parser_commands() -> None:
+    """カスタムパーサー登録コマンド一覧の取得。"""
+    commands = pyfltr.error_parser.get_custom_parser_commands()
+    assert "eslint" in commands
+    assert "ruff-check" in commands
+    assert "pytest" in commands
+    assert "mypy" not in commands

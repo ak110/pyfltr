@@ -231,6 +231,16 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # *-args とは独立して動作し、重複排除される。False で無効化可能。
     "pylint-pydantic": True,
     "mypy-unused-awaitable": True,
+    # 構造化出力: 対応ツールの出力形式を JSON 等に切り替え、パーサーで
+    # ルールコード・severity・fix 情報を構造化して取得する。
+    # *-args とは独立した経路で注入されるため pyproject.toml の上書きに影響されない。
+    "ruff-check-json": True,
+    "pylint-json": True,
+    "pyright-json": True,
+    "pytest-tb-line": True,
+    "shellcheck-json": True,
+    "textlint-json": True,
+    "typos-json": True,
     # textlint / markdownlint の起動方式。
     # textlint-path / markdownlint-path が空のときに、以下の値に従って
     # 実際の起動コマンドを組み立てる。

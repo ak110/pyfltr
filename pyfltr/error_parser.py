@@ -21,6 +21,12 @@ class ErrorLocation:
     col: int | None
     command: str
     message: str
+    rule: str | None = None
+    """ルールコード (F401, C0114, SC2086等)"""
+    severity: str | None = None
+    """診断の重要度 ("error" | "warning" | "info")"""
+    fix: str | None = None
+    """自動修正の適用可能性 ("safe" | "unsafe" | "suggested")"""
 
 
 def parse_errors(command: str, output: str, error_pattern: str | None = None) -> list[ErrorLocation]:
@@ -53,10 +59,16 @@ def sort_errors(errors: list[ErrorLocation], command_names: list[str]) -> list[E
     return sorted(errors, key=sort_key)
 
 
+def get_custom_parser_commands() -> set[str]:
+    """カスタムパーサーが登録されているコマンド名の集合を返す。"""
+    return set(_CUSTOM_PARSERS.keys())
+
+
 def format_error(error: ErrorLocation) -> str:
     """エラー箇所を表示用文字列にフォーマットする。"""
     col_str = f":{error.col}" if error.col else ""
-    return f"{error.file}:{error.line}{col_str}: [{error.command}] {error.message}"
+    tag = f"{error.command}:{error.rule}" if error.rule else error.command
+    return f"{error.file}:{error.line}{col_str}: [{tag}] {error.message}"
 
 
 # ビルトインパーサー用の正規表現パターン
@@ -100,6 +112,26 @@ _BUILTIN_PATTERNS: dict[str, str] = {
 }
 
 
+def _try_json_loads(output: str) -> typing.Any:
+    """JSON パースを試みる。失敗時は None を返す。"""
+    output = output.strip()
+    if not output:
+        return None
+    try:
+        return json.loads(output)
+    except json.JSONDecodeError:
+        return None
+
+
+def _eslint_severity(value: typing.Any) -> str | None:
+    """ESLint/textlint の severity 数値を文字列に変換する。"""
+    if value == 2:
+        return "error"
+    if value == 1:
+        return "warning"
+    return None
+
+
 def _parse_eslint_json(output: str) -> list[ErrorLocation]:
     """ESLint --format json 出力をパース。
 
@@ -118,13 +150,7 @@ def _parse_eslint_json(output: str) -> list[ErrorLocation]:
     stderr 混入等でパースに失敗した場合は空リストを返す (regex パーサーが
     マッチしない時の挙動と揃える)。
     """
-    output = output.strip()
-    if not output:
-        return []
-    try:
-        data = json.loads(output)
-    except json.JSONDecodeError:
-        return []
+    data = _try_json_loads(output)
     if not isinstance(data, list):
         return []
     results: list[ErrorLocation] = []
@@ -145,22 +171,286 @@ def _parse_eslint_json(output: str) -> list[ErrorLocation]:
             col = raw_col if isinstance(raw_col, int) else None
             rule_id = str(msg.get("ruleId") or "")
             text = str(msg.get("message", ""))
-            full_message = f"{text} ({rule_id})" if rule_id else text
+            message = f"{text} ({rule_id})" if rule_id else text
+            fix_value = "safe" if msg.get("fix") else None
             results.append(
                 ErrorLocation(
                     file=_normalize_path(file_path),
                     line=line,
                     col=col,
                     command="eslint",
-                    message=full_message.strip(),
+                    message=message.strip(),
+                    rule=rule_id or None,
+                    severity=_eslint_severity(msg.get("severity")),
+                    fix=fix_value,
                 )
             )
     return results
 
 
+def _parse_ruff_check_json(output: str) -> list[ErrorLocation]:
+    """Ruff check --output-format=json 出力をパース。JSON 解析失敗時は regex にフォールバック。"""
+    data = _try_json_loads(output)
+    if not isinstance(data, list):
+        return _parse_with_pattern("ruff-check", output, _BUILTIN_PATTERNS["ruff-check"])
+    results: list[ErrorLocation] = []
+    for entry in data:
+        if not isinstance(entry, dict):
+            continue
+        loc = entry.get("location", {})
+        if not isinstance(loc, dict):
+            continue
+        line = loc.get("row")
+        if not isinstance(line, int):
+            continue
+        raw_col = loc.get("column")
+        col = raw_col if isinstance(raw_col, int) else None
+        fix_obj = entry.get("fix")
+        fix_value: str | None = None
+        if isinstance(fix_obj, dict):
+            fix_value = str(fix_obj.get("applicability", "safe"))
+        results.append(
+            ErrorLocation(
+                file=_normalize_path(str(entry.get("filename", ""))),
+                line=line,
+                col=col,
+                command="ruff-check",
+                message=str(entry.get("message", "")),
+                rule=str(entry.get("code", "")) or None,
+                severity=str(entry.get("severity", "error")).lower() or None,
+                fix=fix_value,
+            )
+        )
+    return results
+
+
+def _parse_pylint_json(output: str) -> list[ErrorLocation]:
+    """Pylint --output-format=json2 出力をパース。JSON 解析失敗時は regex にフォールバック。"""
+    data = _try_json_loads(output)
+    if not isinstance(data, dict) or "messages" not in data:
+        return _parse_with_pattern("pylint", output, _BUILTIN_PATTERNS["pylint"])
+    messages = data.get("messages", [])
+    if not isinstance(messages, list):
+        return _parse_with_pattern("pylint", output, _BUILTIN_PATTERNS["pylint"])
+    results: list[ErrorLocation] = []
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        line = msg.get("line")
+        if not isinstance(line, int):
+            continue
+        raw_col = msg.get("column")
+        col = raw_col if isinstance(raw_col, int) else None
+        msg_type = str(msg.get("type", "")).lower()
+        severity = "error" if msg_type in ("error", "fatal") else "warning"
+        results.append(
+            ErrorLocation(
+                file=_normalize_path(str(msg.get("path", ""))),
+                line=line,
+                col=col,
+                command="pylint",
+                message=str(msg.get("message", "")),
+                rule=str(msg.get("messageId", "")) or None,
+                severity=severity,
+            )
+        )
+    return results
+
+
+def _parse_pyright_json(output: str) -> list[ErrorLocation]:
+    """Pyright --outputjson 出力をパース。JSON 解析失敗時は regex にフォールバック。"""
+    data = _try_json_loads(output)
+    if not isinstance(data, dict) or "generalDiagnostics" not in data:
+        return _parse_with_pattern("pyright", output, _BUILTIN_PATTERNS["pyright"])
+    diags = data.get("generalDiagnostics", [])
+    if not isinstance(diags, list):
+        return _parse_with_pattern("pyright", output, _BUILTIN_PATTERNS["pyright"])
+    results: list[ErrorLocation] = []
+    for diag in diags:
+        if not isinstance(diag, dict):
+            continue
+        range_obj = diag.get("range", {})
+        if not isinstance(range_obj, dict):
+            continue
+        start = range_obj.get("start", {})
+        if not isinstance(start, dict):
+            continue
+        # pyright の line/character は 0-based
+        line = start.get("line")
+        if not isinstance(line, int):
+            continue
+        raw_char = start.get("character")
+        col = (raw_char + 1) if isinstance(raw_char, int) else None
+        results.append(
+            ErrorLocation(
+                file=_normalize_path(str(diag.get("file", ""))),
+                line=line + 1,
+                col=col,
+                command="pyright",
+                message=str(diag.get("message", "")),
+                rule=str(diag.get("rule", "")) or None,
+                severity=str(diag.get("severity", "")).lower() or None,
+            )
+        )
+    return results
+
+
+def _parse_shellcheck_json(output: str) -> list[ErrorLocation]:
+    """Shellcheck -f json 出力をパース。JSON 解析失敗時は regex にフォールバック。"""
+    data = _try_json_loads(output)
+    if not isinstance(data, list):
+        return _parse_with_pattern("shellcheck", output, _BUILTIN_PATTERNS["shellcheck"])
+    results: list[ErrorLocation] = []
+    for entry in data:
+        if not isinstance(entry, dict):
+            continue
+        line = entry.get("line")
+        if not isinstance(line, int):
+            continue
+        raw_col = entry.get("column")
+        col = raw_col if isinstance(raw_col, int) else None
+        code = entry.get("code")
+        rule = f"SC{code}" if isinstance(code, int) else None
+        fix_value = "safe" if entry.get("fix") else None
+        results.append(
+            ErrorLocation(
+                file=_normalize_path(str(entry.get("file", ""))),
+                line=line,
+                col=col,
+                command="shellcheck",
+                message=str(entry.get("message", "")),
+                rule=rule,
+                severity=str(entry.get("level", "")).lower() or None,
+                fix=fix_value,
+            )
+        )
+    return results
+
+
+def _parse_textlint_json(output: str) -> list[ErrorLocation]:
+    """Textlint --format json 出力をパース。JSON 解析失敗時は regex にフォールバック。
+
+    出力構造は ESLint と同じ filePath + messages 配列形式。
+    """
+    data = _try_json_loads(output)
+    if not isinstance(data, list):
+        return _parse_with_pattern("textlint", output, _BUILTIN_PATTERNS["textlint"])
+    results: list[ErrorLocation] = []
+    for entry in data:
+        if not isinstance(entry, dict):
+            continue
+        file_path = str(entry.get("filePath", ""))
+        messages = entry.get("messages", [])
+        if not isinstance(messages, list):
+            continue
+        for msg in messages:
+            if not isinstance(msg, dict):
+                continue
+            line = msg.get("line")
+            if not isinstance(line, int):
+                continue
+            raw_col = msg.get("column")
+            col = raw_col if isinstance(raw_col, int) else None
+            rule_id = str(msg.get("ruleId") or "")
+            fix_value = "safe" if msg.get("fix") else None
+            results.append(
+                ErrorLocation(
+                    file=_normalize_path(file_path),
+                    line=line,
+                    col=col,
+                    command="textlint",
+                    message=str(msg.get("message", "")).strip(),
+                    rule=rule_id or None,
+                    severity=_eslint_severity(msg.get("severity")),
+                    fix=fix_value,
+                )
+            )
+    return results
+
+
+def _parse_typos_jsonl(output: str) -> list[ErrorLocation]:
+    """Typos --format=json 出力をパース（JSON Lines 形式）。解析失敗時は regex にフォールバック。"""
+    results: list[ErrorLocation] = []
+    any_parsed = False
+    for line in output.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(entry, dict):
+            continue
+        # typos の JSON エントリには type フィールドがある。typo 以外（binary等）はスキップ
+        if entry.get("type") not in ("typo", None):
+            continue
+        any_parsed = True
+        line_num = entry.get("line_num")
+        if not isinstance(line_num, int):
+            continue
+        typo = str(entry.get("typo", ""))
+        corrections = entry.get("corrections", [])
+        if isinstance(corrections, list) and corrections:
+            correction_str = ", ".join(str(c) for c in corrections)
+            message = f"`{typo}` -> `{correction_str}`"
+            fix_value: str | None = "safe"
+        else:
+            message = f"`{typo}`"
+            fix_value = None
+        results.append(
+            ErrorLocation(
+                file=_normalize_path(str(entry.get("path", ""))),
+                line=line_num,
+                col=None,
+                command="typos",
+                message=message,
+                severity="warning",
+                fix=fix_value,
+            )
+        )
+    if not any_parsed and output.strip():
+        return _parse_with_pattern("typos", output, _BUILTIN_PATTERNS["typos"])
+    return results
+
+
+def _parse_pytest(output: str) -> list[ErrorLocation]:
+    """Pytest 出力をパース。--tb=line 形式の行番号付き出力を優先的に抽出する。"""
+    # --tb=line 出力行を探す: /path/to/test.py:42: assert message
+    tb_line_re = re.compile(rf"^(?P<file>{_FILE}):(?P<line>\d+):\s+(?P<message>.+)$", re.MULTILINE)
+    # FAILURES セクション内の --tb=line 出力のみを対象にする
+    failures_start = output.find("= FAILURES =")
+    summary_start = output.find("short test summary info")
+    if failures_start >= 0:
+        end = summary_start if summary_start > failures_start else len(output)
+        failures_section = output[failures_start:end]
+        tb_results: list[ErrorLocation] = []
+        for match in tb_line_re.finditer(failures_section):
+            tb_results.append(
+                ErrorLocation(
+                    file=_normalize_path(match.group("file")),
+                    line=int(match.group("line")),
+                    col=None,
+                    command="pytest",
+                    message=match.group("message").strip(),
+                )
+            )
+        if tb_results:
+            return tb_results
+    # フォールバック: FAILED file::test_name パターン（line=0）
+    return _parse_with_pattern("pytest", output, _BUILTIN_PATTERNS["pytest"])
+
+
 # コマンド名 -> 関数ベースパーサー。regex で扱いにくい出力 (JSON など) に使う。
 _CUSTOM_PARSERS: dict[str, typing.Callable[[str], list[ErrorLocation]]] = {
     "eslint": _parse_eslint_json,
+    "ruff-check": _parse_ruff_check_json,
+    "pylint": _parse_pylint_json,
+    "pyright": _parse_pyright_json,
+    "shellcheck": _parse_shellcheck_json,
+    "textlint": _parse_textlint_json,
+    "typos": _parse_typos_jsonl,
+    "pytest": _parse_pytest,
 }
 
 

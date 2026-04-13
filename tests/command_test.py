@@ -222,9 +222,10 @@ def test_textlint_lint_mode_adds_lint_args(mocker, tmp_path: pathlib.Path) -> No
     assert mock_run.call_count == 1
     cmdline = mock_run.call_args_list[0][0][0]
     assert "--format" in cmdline
-    assert "compact" in cmdline
+    # textlint-json=True（既定）により、lint-args の compact が json に置換される
+    assert "json" in cmdline
     fmt_idx = cmdline.index("--format")
-    assert cmdline[fmt_idx + 1] == "compact"
+    assert cmdline[fmt_idx + 1] == "json"
 
 
 def test_textlint_fix_mode_two_step_execution(mocker, tmp_path: pathlib.Path) -> None:
@@ -246,10 +247,10 @@ def test_textlint_fix_mode_two_step_execution(mocker, tmp_path: pathlib.Path) ->
     # step1: fix-args (--fix) あり、--format なし (fixer-formatter は compact をサポートしないため)
     assert "--fix" in step1_cmdline
     assert "--format" not in step1_cmdline
-    # step2: lint-args (--format compact) あり、--fix なし
+    # step2: 構造化出力注入により --format json あり、--fix なし
     assert "--fix" not in step2_cmdline
     assert "--format" in step2_cmdline
-    assert "compact" in step2_cmdline
+    assert "json" in step2_cmdline
 
 
 def test_textlint_fix_mode_strips_user_format_from_step1(mocker, tmp_path: pathlib.Path) -> None:

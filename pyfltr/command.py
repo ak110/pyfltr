@@ -76,6 +76,114 @@ _BIN_TOOL_SPEC: dict[str, BinToolSpec] = {
 }
 
 
+@dataclasses.dataclass(frozen=True)
+class _StructuredOutputSpec:
+    """構造化出力用の引数注入仕様。
+
+    `-args` とは独立した経路で出力形式引数を強制注入する。
+    注入時は commandline から conflicts に一致する既存引数を除去したうえで
+    inject を追加する（ruff/typos は重複指定でエラーになるため）。
+    """
+
+    inject: list[str]
+    """注入する引数"""
+    conflicts: list[str]
+    """commandline から除去する引数プレフィクス"""
+    lint_only: bool = False
+    """True のとき fix モードでは注入しない"""
+
+
+# 各ツールの構造化出力用引数。設定キー → 注入仕様のマッピング。
+# 設定キー（例: "ruff-check-json"）が True のとき有効になる。
+_STRUCTURED_OUTPUT_SPECS: dict[str, tuple[str, _StructuredOutputSpec]] = {
+    "ruff-check-json": (
+        "ruff-check",
+        _StructuredOutputSpec(
+            inject=["--output-format=json"],
+            conflicts=["--output-format"],
+        ),
+    ),
+    "pylint-json": (
+        "pylint",
+        _StructuredOutputSpec(
+            inject=["--output-format=json2"],
+            conflicts=["--output-format"],
+        ),
+    ),
+    "pyright-json": (
+        "pyright",
+        _StructuredOutputSpec(
+            inject=["--outputjson"],
+            conflicts=["--outputjson"],
+        ),
+    ),
+    "pytest-tb-line": (
+        "pytest",
+        _StructuredOutputSpec(
+            inject=["--tb=line"],
+            conflicts=["--tb"],
+        ),
+    ),
+    "shellcheck-json": (
+        "shellcheck",
+        _StructuredOutputSpec(
+            inject=["-f", "json"],
+            conflicts=["-f"],
+        ),
+    ),
+    "textlint-json": (
+        "textlint",
+        _StructuredOutputSpec(
+            inject=["--format", "json"],
+            conflicts=["--format"],
+            lint_only=True,
+        ),
+    ),
+    "typos-json": (
+        "typos",
+        _StructuredOutputSpec(
+            inject=["--format=json"],
+            conflicts=["--format"],
+        ),
+    ),
+}
+
+
+def _get_structured_output_spec(command: str, config: pyfltr.config.Config) -> _StructuredOutputSpec | None:
+    """コマンドに対応する構造化出力仕様を返す。無効化されていれば None。"""
+    for config_key, entry in _STRUCTURED_OUTPUT_SPECS.items():
+        cmd = entry[0]
+        spec = entry[1]
+        if cmd == command and config.values.get(config_key, False):
+            return spec
+    return None
+
+
+def _apply_structured_output(commandline: list[str], spec: _StructuredOutputSpec) -> list[str]:
+    """Commandline から衝突する引数を除去し、構造化出力引数を注入する。"""
+    filtered: list[str] = []
+    skip_next = False
+    for i, arg in enumerate(commandline):
+        if skip_next:
+            skip_next = False
+            continue
+        matched = False
+        for prefix in spec.conflicts:
+            if arg == prefix:
+                # "-f gcc" 形式: 次の引数もスキップ
+                if i + 1 < len(commandline) and not commandline[i + 1].startswith("-"):
+                    skip_next = True
+                matched = True
+                break
+            if arg.startswith(f"{prefix}=") or (arg.startswith(prefix) and arg != prefix):
+                # "--format=json" 形式 / "--outputjson" 形式
+                matched = True
+                break
+        if not matched:
+            filtered.append(arg)
+    return [*filtered, *spec.inject]
+
+
 def _resolve_bin_commandline(
     command: str,
     config: pyfltr.config.Config,
@@ -365,6 +473,10 @@ def execute_command(
     else:
         commandline.extend(config.values.get(f"{command}-lint-args", []))
     commandline.extend(additional_args)
+    # 構造化出力引数の注入（-args とは独立した経路で出力形式を強制する）
+    structured_spec = _get_structured_output_spec(command, config)
+    if structured_spec is not None and not (structured_spec.lint_only and fix_args is not None):
+        commandline = _apply_structured_output(commandline, structured_spec)
     # pass-filenames = false のツールはファイル引数を渡さない（tsc 等）
     if config.values.get(f"{command}-pass-filenames", True):
         commandline.extend(str(t) for t in targets)
@@ -736,14 +848,18 @@ def _execute_textlint_fix(
     step1_fatal = step1_rc >= 2
     step1_changed = _snapshot_file_digests(targets) != digests_before
 
-    # Step2: 通常 lint 実行 (compact フォーマッタで残存違反を取得)
+    # Step2: 通常 lint 実行 (残存違反を取得)
     step2_commandline: list[str] = [
         *commandline_prefix,
         *common_args,
         *lint_args,
         *additional_args,
-        *target_strs,
     ]
+    # 構造化出力引数の注入（Step2 は lint フェーズなので lint_only でも適用する）
+    structured_spec = _get_structured_output_spec(command, config)
+    if structured_spec is not None:
+        step2_commandline = _apply_structured_output(step2_commandline, structured_spec)
+    step2_commandline.extend(target_strs)
 
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(step2_commandline)}\n")

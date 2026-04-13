@@ -223,11 +223,19 @@ class UIApp(App):
                 f"{command} を実行中です...\n",
             )
 
-            def on_output(line: str) -> None:
-                """出力行をリアルタイムでUIに反映。"""
-                self.call_from_thread(self._write_log, f"#output-{command}", line.removesuffix("\n"))
+            # JSON パーサー対応ツールではストリーミング出力を抑制し、
+            # 完了後に ErrorLocation ベースの表示に切り替える。
+            has_custom_parser = command in pyfltr.error_parser.get_custom_parser_commands()
+            callback: typing.Callable[[str], None] | None = None
+            if not has_custom_parser:
 
-            result = pyfltr.command.execute_command(command, self.args, self.config, self._all_files, on_output=on_output)
+                def _on_output(line: str) -> None:
+                    """出力行をリアルタイムでUIに反映。"""
+                    self.call_from_thread(self._write_log, f"#output-{command}", line.removesuffix("\n"))
+
+                callback = _on_output
+
+            result = pyfltr.command.execute_command(command, self.args, self.config, self._all_files, on_output=callback)
         # ここ以降は結果の UI 反映のみなので serial_group ロックの外で行う。
 
         with self.lock:
@@ -243,7 +251,17 @@ class UIApp(App):
                 result.elapsed,
             )
 
-            # フッター情報のみ追記（本体はストリーミング済み）
+            # JSON パーサー対応ツールはストリーミングしていないため、
+            # ErrorLocation ベースの表示または生出力フォールバックを書き出す。
+            if has_custom_parser:
+                self.call_from_thread(self._clear_log, f"#output-{command}")
+                if result.errors:
+                    lines = [pyfltr.error_parser.format_error(e) for e in result.errors]
+                    self.call_from_thread(self._write_log, f"#output-{command}", "\n".join(lines))
+                elif result.alerted:
+                    self.call_from_thread(self._write_log, f"#output-{command}", result.output)
+
+            # フッター情報を追記
             footer = f"{'-' * 40}\n終了コード: {result.returncode}\nステータス: {result.get_status_text()}\n"
             self.call_from_thread(
                 self._write_log,
@@ -283,6 +301,14 @@ class UIApp(App):
             self._write_log("#errors-log", content)
             tab = tc.get_tab("tab-errors")
             tab.label = f"Errors ({len(errors)})"  # type: ignore[assignment]
+
+    def _clear_log(self, widget_id: str) -> None:
+        """ログをクリアする。"""
+        try:
+            widget = self.query_one(widget_id, Log)
+            widget.clear()
+        except Exception:
+            logging.error(f"UIエラー: {widget_id}", exc_info=True)
 
     def _write_log(self, widget_id: str, content: str) -> None:
         """ログの追記。"""

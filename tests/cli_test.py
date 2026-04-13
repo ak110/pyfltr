@@ -59,7 +59,7 @@ def test_run_one_command_stream_mode_writes_detail_log(mocker, caplog):
         pyfltr.cli._run_one_command("mypy", mock_args, mock_config, [], per_command_log=True)
 
     assert "mypy 実行中です..." in caplog.text
-    assert "ok" in caplog.text
+    # 成功時はエラーなし・生出力なしのため output は表示されない
     assert "* returncode: 0" in caplog.text
 
 
@@ -83,20 +83,21 @@ def test_run_one_command_buffer_mode_shows_only_progress(mocker, caplog):
 def test_render_results_orders_success_failed_summary(caplog):
     """成功コマンド → 失敗コマンド → summary の順で出力されること。"""
     config = pyfltr.config.create_default_config()
+    # 失敗コマンドはerrorsが空のため生出力がフォールバック表示される
     results = [
         _make_result("mypy", returncode=1, output="MYPY_ERROR"),
-        _make_result("black", returncode=0, output="BLACK_OK", command_type="formatter"),
-        _make_result("pylint", returncode=0, output="PYLINT_OK"),
+        _make_result("black", returncode=0, command_type="formatter"),
+        _make_result("pylint", returncode=0),
     ]
 
     with caplog.at_level(logging.INFO):
         pyfltr.cli.render_results(results, config, include_details=True)
 
     text = caplog.text
-    # 成功コマンドの出力が最初に来る
-    black_pos = text.index("BLACK_OK")
-    pylint_pos = text.index("PYLINT_OK")
-    # 失敗コマンドの出力がその後
+    # 成功コマンドのヘッダーが最初に来る
+    black_pos = text.index("black")
+    pylint_pos = text.index("pylint")
+    # 失敗コマンドの生出力がフォールバック表示される
     mypy_pos = text.index("MYPY_ERROR")
     # summary が末尾に来る
     summary_pos = text.index("summary")

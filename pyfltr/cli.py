@@ -9,6 +9,7 @@ import threading
 
 import pyfltr.command
 import pyfltr.config
+import pyfltr.error_parser
 import pyfltr.executor
 import pyfltr.llm_output
 
@@ -83,13 +84,21 @@ def _run_one_command(
 
 
 def write_log(result: pyfltr.command.CommandResult) -> None:
-    """コマンド実行結果の詳細ログ出力。"""
+    """コマンド実行結果の詳細ログ出力。
+
+    パース済みエラーがある場合は format_error() で整形した一覧を表示する。
+    エラーがなく失敗した場合は生出力をフォールバック表示する。
+    """
     mark = "@" if result.alerted else "*"
     with lock:
         logger.info(f"{mark * 32} {result.command} {mark * (NCOLS - 34 - len(result.command))}")
         logger.debug(f"{mark} commandline: {shlex.join(result.commandline)}")
         logger.info(mark)
-        logger.info(result.output)
+        if result.errors:
+            for error in result.errors:
+                logger.info(pyfltr.error_parser.format_error(error))
+        elif result.alerted:
+            logger.info(result.output)
         logger.info(mark)
         logger.info(f"{mark} returncode: {result.returncode}")
         logger.info(mark * NCOLS)

@@ -99,7 +99,7 @@ def _dump(record: dict[str, typing.Any]) -> str:
 
 
 def _build_diag_record(error: pyfltr.error_parser.ErrorLocation) -> dict[str, typing.Any]:
-    """ErrorLocation を diag レコード dict に変換する。col は None のとき省略。"""
+    """ErrorLocation を diag レコード dict に変換する。None のフィールドは省略。"""
     record: dict[str, typing.Any] = {
         "kind": "diag",
         "tool": error.command,
@@ -108,6 +108,12 @@ def _build_diag_record(error: pyfltr.error_parser.ErrorLocation) -> dict[str, ty
     }
     if error.col is not None:
         record["col"] = error.col
+    if error.rule is not None:
+        record["rule"] = error.rule
+    if error.severity is not None:
+        record["severity"] = error.severity
+    if error.fix is not None:
+        record["fix"] = error.fix
     record["msg"] = error.message
     return record
 
