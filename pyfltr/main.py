@@ -88,6 +88,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--no-clear", default=False, action="store_true", help="実行前にターミナルをクリアしません。")
     parser.add_argument(
+        "--no-exclude",
+        default=False,
+        action="store_true",
+        help="exclude/extend-exclude パターンによるファイル除外を無効化します。",
+    )
+    parser.add_argument(
+        "--no-gitignore",
+        default=False,
+        action="store_true",
+        help=".gitignore によるファイル除外を無効化します。",
+    )
+    parser.add_argument(
         "--work-dir",
         type=pathlib.Path,
         default=None,
@@ -152,11 +164,10 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
 
     subcommand, remaining_args = _parse_subcommand(sys_args)
 
-    # dirtyサブコマンドは別モジュールに委託（循環import回避のため遅延import）
+    # dirtyサブコマンドは廃止済み
     if subcommand == "dirty":
-        import pyfltr.dirty  # pylint: disable=import-outside-toplevel,redefined-outer-name
-
-        return pyfltr.dirty.run_dirty(remaining_args)
+        logger.error("dirty サブコマンドは廃止されました。")
+        return 1
 
     # `--fix` は非推奨。`pyfltr fix` サブコマンドで暗黙的に付与する経路と区別するため、
     # ユーザーが明示的に指定したかどうかは effective_args 組み立て前の remaining_args で判定する。
@@ -301,9 +312,14 @@ def _run_impl(
         if resolved_targets is not None:
             args.targets = resolved_targets
 
-        # CLIの--jobsオプションでconfigを上書き
+        # CLIオプションでconfigを上書き
         if args.jobs is not None:
             config.values["jobs"] = args.jobs
+        if args.no_exclude:
+            config.values["exclude"] = []
+            config.values["extend-exclude"] = []
+        if args.no_gitignore:
+            config.values["respect-gitignore"] = False
 
         # --commands 未指定時はカスタムコマンドを含む全登録コマンドを対象にする。
         # argparse のデフォルト評価時点では pyproject.toml を読み込んでいないため、

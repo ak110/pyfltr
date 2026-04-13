@@ -982,6 +982,18 @@ def test_excluded_default_patterns() -> None:
     assert not pyfltr.command.excluded(pathlib.Path("README.md"), config)
 
 
+def test_excluded_disabled_by_empty_config() -> None:
+    """exclude/extend-excludeが空の場合、全パスが除外されないことを確認する（--no-exclude相当）。"""
+    config = pyfltr.config.create_default_config()
+    config.values["exclude"] = []
+    config.values["extend-exclude"] = []
+
+    # 通常は除外されるパスが除外されないこと
+    assert not pyfltr.command.excluded(pathlib.Path(".venv"), config)
+    assert not pyfltr.command.excluded(pathlib.Path("node_modules"), config)
+    assert not pyfltr.command.excluded(pathlib.Path(".serena/memories/foo.md"), config)
+
+
 def test_expand_globs_respects_gitignore(tmp_path: pathlib.Path) -> None:
     """.gitignore に記載されたファイルが expand_globs から除外される。"""
     # git リポジトリを初期化

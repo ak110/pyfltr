@@ -148,10 +148,9 @@ class TestParseSubcommand:
         assert sub == "fix"
         assert remaining == ["src/"]
 
-    def test_dirty_subcommand(self):
-        sub, remaining = pyfltr.main._parse_subcommand(["dirty", "init"])
-        assert sub == "dirty"
-        assert remaining == ["init"]
+    def test_dirty_subcommand_is_deprecated(self):
+        """廃止されたdirtyサブコマンドがエラー終了することを確認。"""
+        assert pyfltr.main.run(["dirty", "init"]) == 1
 
     def test_empty_args(self):
         sub, remaining = pyfltr.main._parse_subcommand([])
