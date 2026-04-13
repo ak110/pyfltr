@@ -1,10 +1,9 @@
 # カスタム指示（プロジェクト固有）
 
-- `pyproject.toml` の編集は極力 `uv` コマンドを使う（`uv add`, `uv remove` など）
-  - 手動編集は `uv` コマンドでは対応できない箇所に限る
-
 ## 開発手順
 
+- `pyproject.toml` の編集は極力 `uv` コマンドを使う（`uv add`, `uv remove` など）
+  - 手動編集は `uv` コマンドでは対応できない箇所に限る
 - `make format`: 整形 + 軽量lint + 自動修正（開発時の手動実行用）
 - `make test`: 全チェック実行（これを通過すればコミット可能）
 - `make update`: 依存更新 + pre-commit autoupdate + pinactアクション更新 + 全テスト実行
