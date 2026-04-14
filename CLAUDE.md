@@ -32,7 +32,7 @@ uv run pyfltr run --output-format=jsonl
 - サプライチェーン攻撃対策として`UV_FROZEN=1`を`Makefile`とCIワークフローで常時有効化し、`uv sync`/`uv run`が`uv.lock`を再resolveせずそのまま使うようにしている
   - 開発者のシェルでは`UV_FROZEN`を設定しない前提のため、依存の追加・更新は通常どおり`uv add`/`uv remove`/`uv lock --upgrade-package`を使えばよい
   - `make update`も内部で自動的にUV_FROZENを外すため、そのまま実行してよい
-  - 詳細な運用方針は`docs/development/development.md`の「UV_FROZENによるlockfile尊重」セクションを参照
+  - 詳細な運用方針は`docs/development/development.md`の「サプライチェーン攻撃対策」セクションを参照
 
 ## 関連ドキュメント
 

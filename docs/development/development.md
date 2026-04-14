@@ -19,7 +19,7 @@
     pnpm config set minimum-release-age 1440 --global
     ```
 
-## UV_FROZENによるlockfile尊重（サプライチェーン攻撃対策）
+## サプライチェーン攻撃対策
 
 CI/`make`などの自動実行環境で`uv sync`/`uv run`が依存解決を再実行せず`uv.lock`をそのまま使うよう、環境変数`UV_FROZEN=1`を常時有効化している。
 意図しない再resolveでロックファイルが書き換わるリスクを抑え、`pyproject.toml`の`exclude-newer = "1 day"`と組み合わせて二重防御として機能する。
@@ -65,6 +65,10 @@ uv run mkdocs serve
 
 masterブランチへのpush時にdocs/配下やmkdocs.ymlの変更があると自動デプロイされる。
 
+## コミットメッセージ（Conventional Commits）
+
+Conventional Commits形式に従う。ただし記述の方向性があまり変わらないような軽微な修正は`chore`などにしてよい。
+
 ## リリース手順
 
 事前に`gh`コマンドをインストールして`gh auth login`でログインしておき、以下のコマンドのいずれかを実行。
@@ -76,7 +80,3 @@ gh workflow run release.yaml --field="bump=メジャーバージョンアップ"
 ```
 
 <https://github.com/ak110/pyfltr/actions> で状況を確認できる。
-
-## コミットメッセージ (Conventional Commits)
-
-Conventional Commits形式に従う。ただし記述の方向性があまり変わらないような軽微な修正は`chore`などにしてよい。

@@ -8,7 +8,7 @@ insert_final_newline = true
 indent_style = space
 indent_size = 4
 
-[*.{toml,yaml,json,jsonc,md,html,jinja2,js,ts,css,svg,xml}]
+[*.{toml,yaml,yml,json,jsonc,md,html,jinja2,js,ts,css,svg,xml}]
 indent_size = 2
 
 [*.md]

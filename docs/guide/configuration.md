@@ -1,4 +1,4 @@
-# 設定
+# 設定項目
 
 `pyproject.toml`で設定する。
 
@@ -11,7 +11,7 @@ pylint-args = ["--jobs=4"]
 extend-exclude = ["foo", "bar.py"]
 ```
 
-## 設定項目
+## 設定項目一覧
 
 設定項目と既定値は`pyfltr --generate-config`で確認可能。
 

@@ -8,22 +8,26 @@ theme:
   name: material
   language: ja
   palette:
-    - scheme: default
-      primary: indigo
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
       toggle:
         icon: material/brightness-7
-        name: ダークモードに切り替える
-    - scheme: slate
-      primary: indigo
+        name: ダークモードに切り替え
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
       toggle:
         icon: material/brightness-4
-        name: ライトモードに切り替える
+        name: ライトモードに切り替え
   features:
-    - navigation.sections
     - content.code.copy
+    - navigation.sections
+    - navigation.expand
+    - search.suggest
+    - search.highlight
 
 plugins:
-  - search
+  - search:
+      lang: ja
   - llmstxt:
       full_output: llms-full.txt
       markdown_description: |
@@ -75,8 +79,8 @@ plugins:
         設定:
           - guide/configuration.md: 基本設定・プリセット・並列実行など
           - guide/configuration-tools.md: ツール別設定（2段階実行・bin-runner・npm系・カスタムコマンド）
-          - guide/recommended.md: Pythonプロジェクトの推奨設定・タスクランナー・CI設定
-          - guide/recommended-nonpython.md: TypeScript/JS・Rust・.NETプロジェクトの推奨設定
+          - guide/recommended.md: Pythonプロジェクトの推奨設定例・タスクランナー・CI設定
+          - guide/recommended-nonpython.md: TypeScript/JS・Rust・.NETプロジェクトの推奨設定例
           - guide/custom-commands.md: カスタムコマンドの設定例集
         開発者向け:
           - development/development.md: 開発環境構築・ドキュメント・リリース手順
@@ -98,11 +102,11 @@ nav:
   - ホーム: index.md
   - 使い方:
       - 概要: guide/index.md
-      - CLI使い方: guide/usage.md
-      - 設定: guide/configuration.md
-      - ツール別設定: guide/configuration-tools.md
-      - 推奨設定: guide/recommended.md
-      - 非Python推奨設定: guide/recommended-nonpython.md
+      - CLIコマンド: guide/usage.md
+      - 設定項目: guide/configuration.md
+      - 設定項目（ツール別）: guide/configuration-tools.md
+      - 推奨設定例: guide/recommended.md
+      - 推奨設定例（非Pythonプロジェクト）: guide/recommended-nonpython.md
       - カスタムコマンド例: guide/custom-commands.md
   - 開発者向け:
       - 概要: development/index.md

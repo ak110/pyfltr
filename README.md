@@ -23,5 +23,5 @@ pip install pyfltr
 ## ドキュメント
 
 - <https://ak110.github.io/pyfltr/> — 概要・対応ツール一覧・設定リファレンス
-- [llms.txt](https://ak110.github.io/pyfltr/llms.txt) / [llms-full.txt](https://ak110.github.io/pyfltr/llms-full.txt) — LLM向け構造化インデックス
+- <https://ak110.github.io/pyfltr/llms.txt> — LLM向け構造化インデックス
 - [docs/development/development.md](docs/development/development.md) — 開発者向け情報

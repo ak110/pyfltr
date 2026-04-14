@@ -433,4 +433,4 @@ jobs:
 
 ---
 
-Python以外のプロジェクトでの推奨設定例については[非Pythonプロジェクト推奨設定例](recommended-nonpython.md)を参照。
+Python以外のプロジェクトでの推奨設定例については[推奨設定例（非Pythonプロジェクト）](recommended-nonpython.md)を参照。
