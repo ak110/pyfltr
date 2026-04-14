@@ -22,7 +22,7 @@
 Claude Codeがコミット前に検証する際は、`make test`の代わりに以下を実行する。JSON Lines出力によりLLMがツール別診断を効率的に解釈できる。
 
 ```bash
-uv run pyfltr run --output-format=jsonl
+uv run pyfltr run --output-format=jsonl | tail -30
 ```
 
 人間の開発者は従来どおり`make test`を使用する。

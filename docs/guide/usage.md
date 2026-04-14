@@ -50,7 +50,7 @@ Formattersによるファイル変更があっても終了コードは0になる
 
 含まれるコマンドは各コマンドの`{command}-fast`設定で制御できる（[設定](configuration.md)を参照）。
 
-### subcommand: generate-config
+### サブコマンド: generate-config
 
 ```shell
 pyfltr generate-config
@@ -124,7 +124,9 @@ pyfltr ci --commands=ruff-check,markdownlint [files and/or directories ...]
 Errorsタブのエラー一覧は`ファイル:行番号: [コマンド名] メッセージ`形式で、
 VSCodeのターミナルからクリックして該当箇所にジャンプできる。
 
+- `--ui`: UIを強制的に有効化する（非対話端末など自動的にUIが無効になる環境でも起動する）
 - `--no-ui`: UIを無効化し、出力を直接ターミナルに表示（エラー一覧の後にサマリーを表示）
+- `--stream`: 非TUIモード時に各コマンドの完了時点で即時出力する（既定は全コマンド完了後にまとめて出力）
 - `--no-exclude`: exclude/extend-excludeパターンによるファイル除外を無効化する
 - `--no-gitignore`: `.gitignore`によるファイル除外を無効化する
 - `--ci`: CI環境向け（`--no-shuffle --no-ui` 相当）
@@ -192,7 +194,7 @@ LLMエージェントがpyfltrを活用する基本的な流れ:
 1. 全体実行でsummaryを確認する
 
     ```shell
-    pyfltr run --output-format=jsonl
+    pyfltr run --output-format=jsonl | tail -30
     ```
 
     末尾のsummary行（`"kind":"summary"`）で`failed`の有無と`diagnostics`数を確認し、問題がなければ完了する。
@@ -200,7 +202,7 @@ LLMエージェントがpyfltrを活用する基本的な流れ:
 2. 問題があるツール/ファイルだけ個別に再実行する
 
     ```shell
-    pyfltr run --commands=mypy --output-format=jsonl path/to/file.py
+    pyfltr run --commands=mypy --output-format=jsonl path/to/file.py | tail -30
     ```
 
     `--commands`で特定ツールに絞ることで出力量を抑えつつ、`diagnostic`行から修正対象のファイル・行番号・メッセージを取得する。

@@ -4,7 +4,7 @@
 
 pyfltr本体の設定（`[tool.pyfltr]`）と、呼び出される各ツール（ruff / mypy / pytest）の設定を1つの`pyproject.toml`にまとめた例。
 
-- `preset = "latest"`: 主要ツールを有効化するプリセット（現在は`20260413`相当）。ruff-format / ruff-check / pyright / pre-commit等が有効化される。詳細は[設定項目](configuration.md)の「プリセット設定」を参照。
+- `preset = "latest"`: 主要ツールを有効化するプリセット。詳細は[設定項目](configuration.md)の「プリセット設定」を参照。
 - `pylint-args`: pylintに追加で渡す引数。`--load-plugins=pylint_pydantic`と`--enable-error-code=unused-awaitable`（mypy）は自動オプションで既定有効のため個別指定不要。
 - ruffの `per-file-ignores`: テストコード（`**_test.py`）とpackage init（`__init__.py`）のdocstring要求を除外する実用的な調整。
 
