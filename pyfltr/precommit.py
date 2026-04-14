@@ -1,6 +1,7 @@
 """pre-commit統合の処理。"""
 
 import logging
+import os
 import pathlib
 
 import yaml
@@ -8,6 +9,15 @@ import yaml
 import pyfltr.config
 
 logger = logging.getLogger(__name__)
+
+
+def is_running_under_precommit() -> bool:
+    """pre-commit 配下で実行されているかを判定する。
+
+    pre-commit フレームワークは子プロセスへ PRE_COMMIT=1 を設定する。
+    これを検出して、pyfltr 側の pre-commit 統合を自動スキップする判断に使う。
+    """
+    return os.environ.get("PRE_COMMIT") == "1"
 
 
 def detect_pyfltr_hooks(config_dir: pathlib.Path) -> list[str]:

@@ -229,15 +229,17 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # Python 系ツールの一括有効/無効。False にすると PYTHON_COMMANDS に
     # 列挙されたコマンドをすべて無効化する。個別設定で上書き可能。
     "python": True,
-    # pre-commit 統合。有効にすると pyfltr run/ci 実行時に
+    # pre-commit 統合。有効にすると pyfltr run/ci/fast 実行時に
     # pre-commit run --all-files を内部で呼び出す。
-    # pre-commit-fast = False（既定）のため pyfltr fast には含まれず、
-    # git commit 時の二重実行を防ぐ。
+    # pre-commit-fast = True（既定）により fast も統合するため、
+    # make format 相当の場面で pre-commit を別途呼ぶ必要がなくなる。
+    # pre-commit 配下から pyfltr が起動された場合は PRE_COMMIT=1
+    # 環境変数の検出により pre-commit 統合を自動でスキップする。
     "pre-commit": False,
     "pre-commit-path": "pre-commit",
     "pre-commit-args": ["run", "--all-files"],
     "pre-commit-pass-filenames": False,
-    "pre-commit-fast": False,
+    "pre-commit-fast": True,
     # .pre-commit-config.yaml から pyfltr 関連 hook を自動検出して SKIP する
     "pre-commit-auto-skip": True,
     # SKIP 環境変数に渡す hook ID の手動指定リスト（auto-skip と併用可能）

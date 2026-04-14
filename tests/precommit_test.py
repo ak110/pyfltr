@@ -9,6 +9,30 @@ import pyfltr.config
 import pyfltr.precommit
 
 
+def test_pre_commit_fast_default_is_true() -> None:
+    """pre-commit-fast 既定値が True である回帰テスト（v2.0.0 で True へ切り替え済み）。"""
+    assert pyfltr.config.DEFAULT_CONFIG["pre-commit-fast"] is True
+
+
+class TestIsRunningUnderPrecommit:
+    """is_running_under_precommit のテスト。"""
+
+    def test_detects_pre_commit_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """PRE_COMMIT=1 で True を返す。"""
+        monkeypatch.setenv("PRE_COMMIT", "1")
+        assert pyfltr.precommit.is_running_under_precommit() is True
+
+    def test_absence_returns_false(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """未設定時は False を返す。"""
+        monkeypatch.delenv("PRE_COMMIT", raising=False)
+        assert pyfltr.precommit.is_running_under_precommit() is False
+
+    def test_other_value_returns_false(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """ "1" 以外の値は False 扱い（pre-commit 公式仕様に準拠）。"""
+        monkeypatch.setenv("PRE_COMMIT", "0")
+        assert pyfltr.precommit.is_running_under_precommit() is False
+
+
 class TestDetectPyfltrHooks:
     """detect_pyfltr_hooksのテスト。"""
 

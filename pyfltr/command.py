@@ -692,6 +692,20 @@ def _execute_pre_commit(
     修正しただけなら再実行で成功する（"formatted"）。checker 系 hook のエラーが
     残る場合は "failed"（has_error=True）として返す。
     """
+    # pre-commit 配下から起動された場合は自身を再帰実行しない。
+    # git commit → pre-commit → pyfltr fast → pre-commit の二重実行を防ぐ。
+    if pyfltr.precommit.is_running_under_precommit():
+        return CommandResult(
+            command=command,
+            command_type=command_info.type,
+            commandline=commandline,
+            returncode=None,
+            has_error=False,
+            output="pre-commit 配下で実行されたため pre-commit 統合をスキップしました。",
+            files=len(targets),
+            elapsed=time.perf_counter() - start_time,
+        )
+
     # .pre-commit-config.yaml が存在しなければスキップ
     config_dir = pathlib.Path.cwd()
     config_path = config_dir / ".pre-commit-config.yaml"
