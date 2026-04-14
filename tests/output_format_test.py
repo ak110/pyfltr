@@ -223,27 +223,6 @@ def test_calculate_returncode_matches_summary_exit(default_config):
 
 
 # ---------------------------------------------------------------------------
-# pyproject.toml 既定値
-# ---------------------------------------------------------------------------
-
-
-def test_pyproject_default_output_format(tmp_path, monkeypatch):
-    """pyproject.toml の output-format が Config に反映される。"""
-    (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\noutput-format = "jsonl"\n', encoding="utf-8")
-    monkeypatch.chdir(tmp_path)
-    config = pyfltr.config.load_config()
-    assert config.values["output-format"] == "jsonl"
-
-
-def test_pyproject_output_format_invalid_value(tmp_path, monkeypatch):
-    """不正な output-format 値は ValueError になる。"""
-    (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\noutput-format = "xml"\n', encoding="utf-8")
-    monkeypatch.chdir(tmp_path)
-    with pytest.raises(ValueError, match="output-format"):
-        pyfltr.config.load_config()
-
-
-# ---------------------------------------------------------------------------
 # CLI 統合テスト (pyfltr.main.run)
 # ---------------------------------------------------------------------------
 

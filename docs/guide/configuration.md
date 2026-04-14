@@ -32,8 +32,6 @@ extend-exclude = ["foo", "bar.py"]
 - pylint-pydantic : pylint実行時に`--load-plugins=pylint_pydantic`を自動追加するか（既定: `true`、後述）
 - mypy-unused-awaitable : mypy実行時に`--enable-error-code=unused-awaitable`を自動追加するか（既定: `true`、後述）
 - jobs : linters/testersの最大並列数（既定値： 4。CLIの`-j`オプションでも指定可能）
-- output-format : 出力形式（`"text"` または `"jsonl"`。既定値 `"text"`。CLIの`--output-format`でも指定可能。`"jsonl"` はLLMエージェント向けのJSON Lines出力）
-- output-file : `--output-format`の出力先ファイルパス（既定値は空文字＝stdout。CLIの`--output-file`でも指定可能）
 - exclude : 除外するファイル名/ディレクトリ名パターン（既定値あり）
 - extend-exclude : 追加で除外するファイル名/ディレクトリ名パターン（既定値は空）
 - respect-gitignore : `.gitignore`に記載されたファイルを除外するか否か（既定: `true`）。gitのルートおよびネストした`.gitignore`、グローバルgitignore、`.git/info/exclude`を全て考慮する。`git`コマンドが必要

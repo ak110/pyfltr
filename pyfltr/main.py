@@ -76,8 +76,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--output-format",
         choices=("text", "jsonl"),
         default=None,
-        help="出力形式を指定します(text/jsonl)。jsonl は LLM 向け JSON Lines 出力。"
-        "未指定時は pyproject.toml の `output-format` 設定または `text` を使用します。",
+        help="出力形式を指定します(text/jsonl、既定: text)。jsonl は LLM 向け JSON Lines 出力。",
     )
     parser.add_argument(
         "--output-file",
@@ -263,40 +262,30 @@ def _run_impl(
         logger.info(pyfltr.config.generate_config_text())
         return 0
 
-    # jsonl stdout モードの抑止を 2 段階で掛ける。
-    # 段階 1: CLI で `--output-format=jsonl` かつ `--output-file` 未指定のケースは
-    # load_config() 前に判定できるため、先行して root logger を抑止する。これにより
-    # load_config() 失敗時のエラーログや、以降の警告/エラーが stdout/stderr に漏れない。
-    # 段階 2: pyproject.toml で指定されたケースは load_config() 成功後に追加で抑止する。
+    # jsonl stdout モード (CLI で `--output-format=jsonl` かつ `--output-file` 未指定) は
+    # load_config() 前から判定できるため、先行して root logger を抑止する。これにより
+    # load_config() 失敗時のエラーログや以降の警告/エラーが stdout/stderr に漏れない。
     # 抑止状態は try/finally で必ず復元する (run() は同一プロセス内で複数回呼ばれる設計)。
-    cli_jsonl_stdout = (args.output_format == "jsonl") and (args.output_file is None)
-    if cli_jsonl_stdout:
+    output_format: str = args.output_format or "text"
+    output_file: pathlib.Path | None = args.output_file
+    jsonl_stdout = output_format == "jsonl" and output_file is None
+    if jsonl_stdout:
         _force_jsonl_stdout_mode(args)
-    suppression = _suppress_logging() if cli_jsonl_stdout else None
+    suppression = _suppress_logging() if jsonl_stdout else None
 
     try:
         # pyproject.toml
         try:
             config = pyfltr.config.load_config()
         except (ValueError, OSError) as e:
-            if cli_jsonl_stdout:
+            if jsonl_stdout:
                 # 抑止済みなので text 出力は出せない。LLM 側は JSONL 0 行 + exit 非 0 で検知する。
                 return 1
             logger.error(f"設定エラー: {e}")
             return 1
 
-        # 最終的な output-format / output-file を決定 (CLI > pyproject > デフォルト)
-        output_format: str = args.output_format or config.values["output-format"]
-        output_file: pathlib.Path | None = args.output_file
-        if output_file is None and config.values["output-file"]:
-            output_file = pathlib.Path(config.values["output-file"])
         args.output_format = output_format
         args.output_file = output_file
-
-        # 段階 2: pyproject で jsonl stdout を指定しているケースを追加で抑止
-        if suppression is None and output_format == "jsonl" and output_file is None:
-            _force_jsonl_stdout_mode(args)
-            suppression = _suppress_logging()
 
         # カスタムコマンド用のCLI引数を動的追加して再パース
         custom_commands = [name for name, info in config.commands.items() if not info.builtin]
@@ -311,7 +300,7 @@ def _run_impl(
             # 再パースで output-format/output-file が元に戻るため、確定値を再適用する
             args.output_format = output_format
             args.output_file = output_file
-            if output_format == "jsonl" and output_file is None:
+            if jsonl_stdout:
                 _force_jsonl_stdout_mode(args)
 
         # --work-dir指定時、再パースで上書きされたtargetsを絶対パスで復元
