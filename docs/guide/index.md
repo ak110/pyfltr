@@ -3,9 +3,6 @@
 ## 対応ツール
 
 対応ツールの一覧を分類別に示す。
-既定で有効化されるツールは`preset`の値によって決まる。
-プリセットごとの有効ツールは[設定項目](configuration.md)の「プリセット設定」で確認できる。
-個別に有効化・無効化する方法や`bin-runner`/`js-runner`などの補助設定は[設定項目（ツール別）](configuration-tools.md)を参照。
 
 - Formatters
     - pyupgrade
@@ -45,6 +42,10 @@
     - cargo test
     - dotnet test
 
+プリセットで一括有効化なども可能。詳細は[設定項目](configuration.md)を参照。
+
+個別に有効化・無効化する方法や`bin-runner`/`js-runner`などの補助設定は[設定項目（ツール別）](configuration-tools.md)を参照。
+
 ## コンセプト
 
 - 各種ツールをまとめて並列で呼び出し、実行時間を短縮する
@@ -61,7 +62,7 @@ pip install pyfltr
 
 ## ガイドページ
 
-- [CLIコマンド](usage.md) — CLI使い方・サブコマンド・オプション
+- [CLIコマンド](usage.md) — CLIの使い方・サブコマンド・オプション
 - [設定項目](configuration.md) — 基本設定・プリセット・並列実行
 - [設定項目（ツール別）](configuration-tools.md) — ツール別設定（2段階実行・bin-runner・npm系・カスタムコマンド）
 - [推奨設定例](recommended.md) — 推奨設定（Pythonプロジェクト・タスクランナー・CI）

@@ -38,5 +38,7 @@ uv run pyfltr run --output-format=jsonl
 
 - @README.md
 - @docs/index.md
+- @docs/guide/index.md
+- @docs/development/index.md
 - @docs/development/development.md
 - ドキュメント追加時は `mkdocs.yml` の `nav` を更新要

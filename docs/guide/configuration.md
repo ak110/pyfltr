@@ -48,7 +48,9 @@ extend-exclude = ["foo", "bar.py"]
 preset = "latest"
 ```
 
-`preset = "latest"`はpyfltrの更新に伴って対象ツールの追加や既定値の変更が予告なく入ることがある。破壊的変更を避けたい場合は`"20260413"`のように日付指定プリセットで固定すると、当該日時点の構成をそのまま維持できる。いずれのプリセットでも`{command} = false`を個別に指定すれば特定ツールを上書きで無効化できる。適用優先度は`preset < python < 個別設定`。
+`preset = "latest"`はpyfltrの更新に伴って対象ツールの追加や既定値の変更が予告なく入ることがある。
+破壊的変更を避けたい場合は`"20260413"`のように日付指定プリセットで固定すると、当該日時点の構成をそのまま維持できる。
+いずれのプリセットでも`{command} = false`を個別に指定すれば特定ツールを上書きで無効化できる。
 
 ### preset "20260413" / "latest"
 
@@ -81,9 +83,13 @@ preset = "latest"
 
 ## Python系ツールの一括無効化
 
-`python = false`を設定するとPython系ツールを一括で無効化する。JS/TS専用プロジェクトで設定を簡潔にする場合に使う。
+`python = false`を設定するとPython系ツールを一括で無効化する。
+非Pythonプロジェクトで使用する。
 
-対象はpyupgrade・autoflake・isort・black・ruff系・pflake8・mypy・pylint・pyright・ty・pytest・uv-sort。npm系ツールやbin-runner対応ツールは影響を受けない。`python = false`でも`mypy = true`のように個別に上書きして有効化できる。
+対象はpyupgrade・autoflake・isort・black・ruff系・pflake8・mypy・pylint・pyright・ty・pytest・uv-sort。
+npm系ツールやbin-runner対応ツールは影響を受けない。
+`python = false`でも`mypy = true`のように個別に上書き可能。
+適用優先度は`preset < python < 個別設定`。
 
 ```toml
 [tool.pyfltr]
@@ -95,14 +101,16 @@ prettier = true
 
 ## 自動オプション
 
-各ツールの望ましいオプションを自動的にコマンドラインに追加する。`{command}-args`とは独立して動作する。
+各ツールの望ましいオプションを自動的にコマンドラインに追加する。
+`{command}-args`とは独立して動作する。
 
 | 設定 | 既定 | 自動追加される引数 |
 | --- | --- | --- |
 | `pylint-pydantic` | `true` | `--load-plugins=pylint_pydantic` |
 | `mypy-unused-awaitable` | `true` | `--enable-error-code=unused-awaitable` |
 
-自動引数は`{command}-args`やCLI引数と重複しないよう排除される。不要な場合は`false`に設定する。
+自動引数は`{command}-args`やCLI引数と重複しないよう排除される。
+不要な場合は`false`に設定する。
 
 ```toml
 [tool.pyfltr]
@@ -139,7 +147,8 @@ pflake8-fast = false
 
 ## 出力順序
 
-非TUIモード (`--no-ui`、`--ci`、または非対話端末) では、既定で全コマンドの完了後に成功コマンド詳細 → 失敗コマンド詳細 → `summary`の順でまとめて出力する。`pyfltr ... | tail -N`のようにパイプで末尾だけ切り出してもsummaryと失敗情報が末尾に残るため、Claude Codeなど末尾だけを読み取るツールでも実行結果を把握できる。
+非TUIモード (`--no-ui`、`--ci`、または非対話端末) では、既定で全コマンドの完了後に成功コマンド詳細 → 失敗コマンド詳細 → `summary`の順でまとめて出力する。
+`pyfltr ... | tail -N`のようにパイプで末尾だけ切り出してもsummaryと失敗情報が末尾に残るため、Claude Codeなど末尾だけを読み取るツールでも実行結果を把握できる。
 
 従来の「各コマンドの完了時に即座に詳細ログを出す」挙動を使いたい場合は`--stream`を指定する。
 

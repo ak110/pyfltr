@@ -212,10 +212,8 @@ update:
 	$(MAKE) test
 
 # フォーマット + 軽量lint（開発時の手動実行用。自動修正あり）
-# pyfltr fastが内蔵するfixステージにより、自動修正対応のlinterも同時に走る
 format:
-	-uv run pyfltr fast
-	uv run pre-commit run --all-files || uv run pre-commit run --all-files
+	uv run pyfltr fast
 
 # 全チェック実行（これを通過すればコミット可能）
 test:
@@ -241,7 +239,8 @@ test:
 
 ### mise.toml
 
-言語を問わず利用可能。Pythonプロジェクトでmiseを使う場合は`uvx pyfltr`を`uv run pyfltr`に読み替える。
+言語を問わず利用可能。
+Pythonプロジェクトでmiseを使う場合は`uvx pyfltr`を`uv run pyfltr`に読み替える。
 
 ```toml
 [tools]

@@ -89,7 +89,7 @@ plugins:
           - index.md: ドキュメント入口
         使い方:
           - guide/index.md: 対応ツール一覧・コンセプト・インストール
-          - guide/usage.md: CLI使い方・オプション・UI説明・LLM連携
+          - guide/usage.md: CLIの使い方・オプション・UI説明・LLM連携
         設定:
           - guide/configuration.md: 基本設定・プリセット・並列実行など
           - guide/configuration-tools.md: ツール別設定（2段階実行・bin-runner・npm系・カスタムコマンド）

@@ -131,7 +131,17 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 # サブコマンドとして認識する予約語
-_SUBCOMMANDS: frozenset[str] = frozenset({"ci", "run", "fast", "dirty", "generate-config"})
+_SUBCOMMANDS: frozenset[str] = frozenset(
+    {
+        "ci",
+        "run",
+        "fast",
+        "generate-config",
+        # 以下は廃止済み
+        "fix",
+        "dirty",
+    }
+)
 
 
 def _parse_subcommand(sys_args: typing.Sequence[str]) -> tuple[str, list[str]]:
@@ -161,9 +171,9 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
 
     subcommand, remaining_args = _parse_subcommand(sys_args)
 
-    # dirtyサブコマンドは廃止済み
-    if subcommand == "dirty":
-        logger.error("dirty サブコマンドは廃止されました。")
+    # 廃止済みサブコマンド
+    if subcommand in ("fix", "dirty"):
+        logger.error(f"{subcommand} サブコマンドは廃止されました。")
         return 1
 
     # generate-configサブコマンド: 他のオプションは無視して設定雛形を出力する
