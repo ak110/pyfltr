@@ -4,7 +4,7 @@
 
 pyfltr本体の設定（`[tool.pyfltr]`）と、呼び出される各ツール（ruff / mypy / pytest）の設定を1つの`pyproject.toml`にまとめた例。
 
-- `preset = "latest"`: 主要ツールを有効化するプリセット（現在は`20260413`相当）。ruff-format / ruff-check / pyright / pre-commit等が有効化される。詳細は[docs/configuration.md](configuration.md)の「プリセット設定」を参照。
+- `preset = "latest"`: 主要ツールを有効化するプリセット（現在は`20260413`相当）。ruff-format / ruff-check / pyright / pre-commit等が有効化される。詳細は[設定項目](configuration.md)の「プリセット設定」を参照。
 - `pylint-args`: pylintに追加で渡す引数。`--load-plugins=pylint_pydantic`と`--enable-error-code=unused-awaitable`（mypy）は自動オプションで既定有効のため個別指定不要。
 - ruffの `per-file-ignores`: テストコード（`**_test.py`）とpackage init（`__init__.py`）のdocstring要求を除外する実用的な調整。
 
@@ -107,7 +107,7 @@ js-runner = "pnpm"
 `pnpm` / `npm` / `yarn` / `direct`では`textlint-packages`は無視される（`package.json`側でインストールする前提のため）。
 textlintのプリセットやルールも`package.json`の`devDependencies`で管理すること。
 
-詳細は[docs/guide/configuration-tools.md](configuration-tools.md)の「npm系ツール」を参照。
+詳細は[設定項目（ツール別）](configuration-tools.md)の「npm系ツール」を参照。
 
 ## .pre-commit-config.yaml
 
@@ -212,7 +212,7 @@ update:
 	$(MAKE) test
 
 # フォーマット + 軽量lint（開発時の手動実行用。自動修正あり）
-# pyfltr fast がfix段を内蔵するため、従来の `pyfltr fix` 相当も走る
+# pyfltr fastが内蔵するfixステージにより、自動修正対応のlinterも同時に走る
 format:
 	-uv run pyfltr fast
 	uv run pre-commit run --all-files || uv run pre-commit run --all-files

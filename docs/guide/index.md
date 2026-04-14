@@ -2,43 +2,48 @@
 
 ## 対応ツール
 
+対応ツールの一覧を分類別に示す。
+既定で有効化されるツールは`preset`の値によって決まる。
+プリセットごとの有効ツールは[設定項目](configuration.md)の「プリセット設定」で確認できる。
+個別に有効化・無効化する方法や`bin-runner`/`js-runner`などの補助設定は[設定項目（ツール別）](configuration-tools.md)を参照。
+
 - Formatters
     - pyupgrade
     - autoflake
     - isort
     - black
-    - ruff format（既定では無効。有効時は `ruff check --fix --unsafe-fixes` を併走する、`ruff-format-by-check`でOFF可）
-    - prettier（既定では無効、`js-runner`設定で起動方式を切替可能。`--check`と`--write`の2段階実行）
-    - uv-sort（既定では無効、`pyproject.toml`の依存ソート）
-    - shfmt（既定では無効、`bin-runner`設定で起動方式を切替可能。prettierと同様の2段階実行）
-    - cargo fmt（既定では無効、`pass-filenames = false`でcrate全体を対象）
-    - dotnet format（既定では無効、`pass-filenames = false`でsolution全体を対象）
+    - ruff format
+    - prettier
+    - uv-sort（依存定義のソート）
+    - shfmt
+    - cargo fmt（crate全体を対象）
+    - dotnet format（solution全体を対象）
 - Linters
-    - ruff check（既定では無効）
+    - ruff check
     - pflake8 + flake8-bugbear + flake8-tidy-imports
     - mypy
     - pylint
-    - pyright（既定では無効）
-    - ty（既定では無効）
-    - ec（editorconfig-checker。既定では無効、`bin-runner`設定で起動方式を切替可能）
-    - shellcheck（既定では無効、`bin-runner`設定で起動方式を切替可能）
-    - typos（既定では無効、`bin-runner`設定で起動方式を切替可能）
-    - actionlint（既定では無効、`bin-runner`設定で起動方式を切替可能）
-    - markdownlint-cli2（既定では無効、`js-runner`設定で起動方式を切替可能。既定は`pnpx`）
-    - textlint（既定では無効、`js-runner`設定で起動方式を切替可能。`textlint-packages`でプリセット/ルール指定）
-    - eslint（既定では無効、`js-runner`設定で起動方式を切替可能。`--format json`で機械可読出力を取得）
-    - biome（既定では無効、`js-runner`設定で起動方式を切替可能。`biome check`サブコマンドと`--reporter=github`を使用）
-    - oxlint（既定では無効、`js-runner`設定で起動方式を切替可能）
-    - tsc（既定では無効、`js-runner`設定で起動方式を切替可能。`--noEmit`で型チェックのみ実行）
-    - cargo clippy（既定では無効、fixモード対応）
-    - cargo check（既定では無効）
-    - cargo deny（既定では無効、依存ライセンス・脆弱性チェック）
-    - dotnet build（既定では無効、ビルドエラーをlint段階で検出）
+    - pyright
+    - ty
+    - ec（editorconfig-checker）
+    - shellcheck
+    - typos
+    - actionlint
+    - markdownlint-cli2
+    - textlint
+    - eslint
+    - biome
+    - oxlint
+    - tsc（型チェックのみ実行）
+    - cargo clippy
+    - cargo check
+    - cargo deny（依存ライセンス・脆弱性チェック）
+    - dotnet build（ビルドエラーをlint段階で検出）
 - Testers
     - pytest
-    - vitest（既定では無効、`js-runner`設定で起動方式を切替可能。`run`サブコマンドで実行）
-    - cargo test（既定では無効）
-    - dotnet test（既定では無効）
+    - vitest
+    - cargo test
+    - dotnet test
 
 ## コンセプト
 
@@ -56,9 +61,9 @@ pip install pyfltr
 
 ## ガイドページ
 
-- [usage.md](usage.md) — CLI使い方・サブコマンド・オプション
-- [configuration.md](configuration.md) — 基本設定・プリセット・並列実行
-- [configuration-tools.md](configuration-tools.md) — ツール別設定（2段階実行・bin-runner・npm系・カスタムコマンド）
-- [recommended.md](recommended.md) — 推奨設定（Pythonプロジェクト・タスクランナー・CI）
-- [recommended-nonpython.md](recommended-nonpython.md) — 非Pythonプロジェクトの推奨設定
-- [custom-commands.md](custom-commands.md) — カスタムコマンドの設定例
+- [CLIコマンド](usage.md) — CLI使い方・サブコマンド・オプション
+- [設定項目](configuration.md) — 基本設定・プリセット・並列実行
+- [設定項目（ツール別）](configuration-tools.md) — ツール別設定（2段階実行・bin-runner・npm系・カスタムコマンド）
+- [推奨設定例](recommended.md) — 推奨設定（Pythonプロジェクト・タスクランナー・CI）
+- [推奨設定例（非Pythonプロジェクト）](recommended-nonpython.md) — 非Pythonプロジェクトの推奨設定
+- [カスタムコマンド例](custom-commands.md) — カスタムコマンドの設定例

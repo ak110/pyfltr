@@ -1,6 +1,6 @@
 # 設定項目（ツール別）
 
-基本設定（プリセット、Python一括無効化、並列実行等）は[設定](configuration.md)を参照。
+基本設定（プリセット、Python一括無効化、並列実行等）は[設定項目](configuration.md)を参照。
 
 ## ruff-format の 2 段階実行
 
@@ -284,7 +284,7 @@ biome = true
     - `biome-fix-args = ["--write"]`（safe fixのみ。unsafe fixを使う場合は`["--write", "--unsafe"]`に上書き）
     - 注: `biome-args`の先頭からサブコマンド（`check` / `lint` / `format`）を外すとbiomeがhelp表示で失敗する。必ずサブコマンド名を残すこと
 
-プリセット（`preset = "latest"`）にはeslint / prettier / biome / oxlint / tsc / vitestは含まれない（opt-in）。
+eslint / prettier / biome / oxlint / tsc / vitestは`preset = "latest"`では有効化されない。利用する場合は`pyproject.toml`で個別に`= true`にする。
 
 ## カスタムコマンド
 

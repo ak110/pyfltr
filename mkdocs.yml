@@ -65,13 +65,25 @@ plugins:
 
         非Pythonプロジェクトでは `python = false` でPython系ツールを無効化し、対象言語のツールを個別に有効化する。
 
-        ## LLMエージェント向け出力
+        ## LLMエージェント向け出力（`--output-format=jsonl`）
 
-        `--output-format=jsonl` でJSON Lines形式の構造化出力を生成する。
+        `--output-format=jsonl`でJSON Lines形式の構造化出力が得られる。レコードは3種類。
+
+        - `diagnostic`: 1診断1行（`tool` / `file` / `line` / `col` / `rule` / `severity` / `msg`）
+        - `tool`: ツールごとの実行結果サマリ（`status` / `elapsed` / `diagnostics` / `rc`）
+        - `summary`: 最終1行の全体集計（`succeeded` / `formatted` / `failed` / `skipped` / `diagnostics` / `exit`）
+
+        出力順は`diagnostic`（file/line/col/command順）→`tool`（`pyproject.toml`定義順）→`summary`（1行）で固定。
+
+        `--output-file`未指定時はstdoutへJSONLのみを書き、進捗ログやTUIは無音化される。指定時はファイルへJSONLを書き、stdoutには従来どおりのテキスト出力を並行出力する（ローカル実行で進捗を追える）。
+
+        既定値は`text`でCLIオプションのみ。`pyproject.toml`側での既定値指定には対応しない。
 
         ```shell
         pyfltr run --output-format=jsonl
         ```
+
+        末尾の`summary`行を`tail -1`で読めば全体像を把握でき、必要な`diagnostic`行だけを参照することでトークン消費を抑えられる。
       sections:
         ホーム:
           - index.md: ドキュメント入口

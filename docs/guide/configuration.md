@@ -13,30 +13,30 @@ extend-exclude = ["foo", "bar.py"]
 
 ## 設定項目一覧
 
-設定項目と既定値は`pyfltr generate-config`で確認可能。
+設定項目と既定値は`pyfltr generate-config`で確認可能。`{command}`系の項目およびツール固有の項目（`prettier-check-args`など）の詳細はツール別設定ページを参照。
 
 - preset : プリセット設定（後述）
 - python : Python系ツールの一括有効/無効（後述）
 - {command} : 各コマンドの有効/無効
 - {command}-path : 実行するコマンド
 - {command}-args : 追加のコマンドライン引数（lint/fix両モードで常に付与）
-- {command}-lint-args : 非fixモード（およびtextlint fix後段のlintチェック) でのみ付与する引数（既定値はtextlintのみ `["--format", "compact"]` を定義）
+- {command}-lint-args : 非fixモードで付与する引数（既定はtextlintのみ`["--format", "compact"]`）
 - {command}-fast : `fast`サブコマンドに含めるか否か（後述）
-- {command}-fix-args : `fix`サブコマンド時に`{command}-args`の後に追加する引数（既定値はtextlint / markdownlint / ruff-check / eslint / biomeのみ定義）
-- {command}-targets : 対象ファイルパターンの完全上書き（[ツール別設定](configuration-tools.md)を参照）
-- {command}-extend-targets : 対象ファイルパターンへの追加（[ツール別設定](configuration-tools.md)を参照）
-- {command}-pass-filenames : ファイル引数をコマンドに渡すか否か（既定: `true`。[ツール別設定](configuration-tools.md)を参照）
-- {command}-version : bin-runner対応ツールのバージョン指定（既定: `"latest"`。[ツール別設定](configuration-tools.md)を参照）
-- prettier-check-args / prettier-write-args : prettierの2段階実行で使う引数（[ツール別設定](configuration-tools.md)を参照）
-- shfmt-check-args / shfmt-write-args : shfmtの2段階実行で使う引数（[ツール別設定](configuration-tools.md)を参照）
+- {command}-fix-args : fix段で`{command}-args`の後に追加する引数（既定値はtextlint / markdownlint / ruff-check / eslint / biomeのみ定義）
+- {command}-targets : 対象ファイルパターンの完全上書き
+- {command}-extend-targets : 対象ファイルパターンへの追加
+- {command}-pass-filenames : ファイル引数をコマンドに渡すか否か（既定: `true`）
+- {command}-version : bin-runner対応ツールのバージョン指定（既定: `"latest"`）
 - pylint-pydantic : pylint実行時に`--load-plugins=pylint_pydantic`を自動追加するか（既定: `true`、後述）
 - mypy-unused-awaitable : mypy実行時に`--enable-error-code=unused-awaitable`を自動追加するか（既定: `true`、後述）
-- jobs : linters/testersの最大並列数（既定値： 4。CLIの`-j`オプションでも指定可能）
+- jobs : linters/testersの最大並列数（既定: 4。CLIの`-j`オプションでも指定可能）
 - exclude : 除外するファイル名/ディレクトリ名パターン（既定値あり）
-- extend-exclude : 追加で除外するファイル名/ディレクトリ名パターン（既定値は空）
+- extend-exclude : 追加で除外するファイル名/ディレクトリ名パターン（既定は空）
 - respect-gitignore : `.gitignore`に記載されたファイルを除外するか否か（既定: `true`）。gitのルートおよびネストした`.gitignore`、グローバルgitignore、`.git/info/exclude`を全て考慮する。`git`コマンドが必要
 - pre-commit-auto-skip : `.pre-commit-config.yaml`からpyfltr関連hookを自動検出してSKIP環境変数に追加するか（既定: `true`）
 - pre-commit-skip : SKIP環境変数に渡すhook IDの手動指定リスト（`pre-commit-auto-skip`と併用可能）
+
+`prettier-check-args` / `prettier-write-args` / `shfmt-check-args` / `shfmt-write-args`などの2段階実行向け引数はツール別設定ページで詳しく扱う。
 
 ## プリセット設定
 
@@ -48,7 +48,7 @@ extend-exclude = ["foo", "bar.py"]
 preset = "latest"
 ```
 
-`preset = "latest"`は予告なく動作を変更する可能性がある。
+`preset = "latest"`はpyfltrの更新に伴って対象ツールの追加や既定値の変更が予告なく入ることがある。破壊的変更を避けたい場合は`"20260413"`のように日付指定プリセットで固定すると、当該日時点の構成をそのまま維持できる。いずれのプリセットでも`{command} = false`を個別に指定すれば特定ツールを上書きで無効化できる。適用優先度は`preset < python < 個別設定`。
 
 ### preset "20260413" / "latest"
 
@@ -81,12 +81,9 @@ preset = "latest"
 
 ## Python系ツールの一括無効化
 
-`python = false`を設定すると、Python系のツールを一括で無効化する。JS/TS専用プロジェクトで設定を簡潔にする場合に使う。
+`python = false`を設定するとPython系ツールを一括で無効化する。JS/TS専用プロジェクトで設定を簡潔にする場合に使う。
 
-対象ツール:
-
-- pyupgrade / autoflake / isort / black / ruff-format / ruff-check
-- pflake8 / mypy / pylint / pyright / ty / pytest / uv-sort
+対象はpyupgrade・autoflake・isort・black・ruff系・pflake8・mypy・pylint・pyright・ty・pytest・uv-sort。npm系ツールやbin-runner対応ツールは影響を受けない。`python = false`でも`mypy = true`のように個別に上書きして有効化できる。
 
 ```toml
 [tool.pyfltr]
@@ -95,13 +92,6 @@ js-runner = "pnpm"
 eslint = true
 prettier = true
 ```
-
-以下のツールは`python`設定の影響を受けない。
-
-- npm系ツール: markdownlint / textlint / eslint / prettier / biome / oxlint / tsc / vitest
-- bin-runner対応ツール: ec / shellcheck / shfmt / typos / actionlint
-
-適用優先度は `preset < python < 個別設定`。`python = false`でも`mypy = true`のように個別に有効化できる。
 
 ## 自動オプション
 
@@ -122,8 +112,7 @@ mypy-unused-awaitable = false
 
 ## 並列実行
 
-linters/testersは既定で最大4並列で実行される。
-`jobs`で変更可能。
+linters/testersは`jobs`で指定した並列数で実行される（既定: 4）。
 
 ```toml
 [tool.pyfltr]
@@ -156,4 +145,4 @@ pflake8-fast = false
 
 ---
 
-個別のツール設定（2段階実行、ファイルパターン、bin-runner、npm系ツール、カスタムコマンド等）は[ツール別設定](configuration-tools.md)を参照。
+個別のツール設定（2段階実行、ファイルパターン、bin-runner、npm系ツール、カスタムコマンド等）の詳細はツール別設定ページ（[docs/guide/configuration-tools.md](configuration-tools.md)）を参照。
