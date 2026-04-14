@@ -34,6 +34,12 @@ uv run pyfltr run --output-format=jsonl
   - `make update`も内部で自動的にUV_FROZENを外すため、そのまま実行してよい
   - 詳細な運用方針は`docs/development/development.md`の「サプライチェーン攻撃対策」セクションを参照
 
+## ドキュメント編集時の注意
+
+- `uv run mkdocs build --strict`でリンク・nav整合性を検証（ただし日本語アンカーリンク`#見出し日本語`はMkDocs TOCで解決できずINFO通知のみで`--strict`でも検知されないため手動確認要）
+- `docs/guide/index.md`の対応ツール一覧と`mkdocs.yml`内llmstxt `markdown_description`の「対応ツール」節は人手同期（SSOT化しない運用）
+- ドキュメント構成変更時は`docs/development/development.md`の「READMEとdocsの役割分担」節を先に参照
+
 ## 関連ドキュメント
 
 - @README.md
