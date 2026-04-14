@@ -427,23 +427,30 @@ def execute_command(
     config: pyfltr.config.Config,
     all_files: list[pathlib.Path],
     on_output: typing.Callable[[str], None] | None = None,
+    *,
+    fix_stage: bool = False,
 ) -> CommandResult:
-    """コマンドの実行。"""
+    """コマンドの実行。
+
+    ``fix_stage=True`` の場合、当該コマンドが fix-args を持っていれば fix 経路
+    （``--fix`` 付きの単発実行）で動作する。fix-args 未定義の formatter では
+    通常経路と挙動が変わらないため、呼び出し側は fix ステージで走らせる対象を
+    ``split_commands_for_execution()`` で絞り込んだうえで指定する前提。
+    """
     command_info = config.commands[command]
     globs = command_info.target_globs()
     targets: list[pathlib.Path] = filter_by_globs(all_files, globs)
 
-    # ファイルの順番をシャッフルまたはソート
-    if args.shuffle:
+    # ファイルの順番をシャッフルまたはソート（fix ステージは再現性重視でシャッフルを無効化）
+    if args.shuffle and not fix_stage:
         random.shuffle(targets)
     else:
         # natsort.natsorted の型ヒントが不十分で ty が union 型へ縮めるため cast で明示。
         targets = typing.cast("list[pathlib.Path]", natsort.natsorted(targets, key=str))
 
-    # fix モード判定: `pyfltr --fix` かつ当該コマンドに fix-args が定義されている場合は、
-    # linter 向けの単発 fix 実行経路を使う。fix-args 未定義の formatter は通常経路を通る
-    # (通常実行そのものがファイルを修正するため fix モードでも挙動は変わらない)。
-    fix_mode = bool(getattr(args, "fix", False))
+    # fix ステージでは当該コマンドの fix-args を引用して fix 経路に分岐する。
+    # fix-args 未定義の formatter は通常経路を通る（通常実行でもファイルを書き換えるため挙動は同じ）。
+    fix_mode = fix_stage
     fix_args: list[str] | None = None
     if fix_mode:
         fix_args = config.values.get(f"{command}-fix-args")
@@ -567,7 +574,7 @@ def execute_command(
 
     # prettier は --check (read-only) と --write (書き込み) が排他のため 2 段階実行する。
     # ruff-format と同じ位置・スタイルで分岐する。
-    # prettier には {cmd}-fix-args を定義していないため fix 判定は args.fix 由来の
+    # prettier には {cmd}-fix-args を定義していないため fix 判定は fix_stage 由来の
     # fix_mode 変数を使う (filter_fix_commands では formatter として常に fix 対象となる)。
     if command == "prettier":
         return _execute_prettier_two_step(

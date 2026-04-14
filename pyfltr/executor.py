@@ -42,27 +42,34 @@ def split_commands_for_execution(
     config: pyfltr.config.Config,
     all_files: list[pathlib.Path],
     *,
-    fix_mode: bool = False,
-) -> tuple[list[str], list[str]]:
+    include_fix_stage: bool = False,
+) -> tuple[list[str], list[str], list[str]]:
     """有効なコマンドをフェーズごとに分割。
+
+    ``(fixers, formatters, linters_and_testers)`` の 3 段を返す。上流の実行器は
+    この順で fixers → formatters → linters_and_testers の 3 ステージに分けて
+    実行する。各ステージ内は fixers/formatters が順次、linters/testers が並列。
 
     linters/testers は推定実行時間の降順（LPT アルゴリズム）でソートし、
     並列実行時に重いツールが先に開始されるようにする。推定時間は
     ``CommandInfo.fixed_cost + CommandInfo.per_file_cost * 対象ファイル数`` で算出する。
 
-    fix_mode=True のときは、対象コマンドを全て順次実行バケツ (formatters) に積み、
-    linters/testers バケツは空にする (同一ファイルへの書き込み競合を避けるため
-    並列実行を停止する)。
+    ``include_fix_stage=True`` のときは、fix-args 定義済みかつ有効化済みのコマンドを
+    ``fixers`` に積む。``commands`` 側で既に fix 対象フィルタが効いている前提だが、
+    ここでも ``filter_fix_commands()`` を適用して安全側に倒す。fixers に積んだ
+    コマンドは通常ステージ（formatters / linters_and_testers）にも従来どおり含める
+    （ruff-check のように fix と lint を 2 段階で走らせる構成を取るため）。
     """
+    fixers: list[str] = []
+    if include_fix_stage:
+        fixers = pyfltr.config.filter_fix_commands(commands, config)
+
     formatters: list[str] = []
     linters_and_testers: list[str] = []
     for command in commands:
         if not config[command]:
             continue
-        if fix_mode:
-            # fix モードでは全て順次実行バケツに積む
-            formatters.append(command)
-        elif config.commands[command].type == "formatter":
+        if config.commands[command].type == "formatter":
             formatters.append(command)
         else:
             linters_and_testers.append(command)
@@ -74,4 +81,4 @@ def split_commands_for_execution(
         return info.fixed_cost + info.per_file_cost * n
 
     linters_and_testers.sort(key=_estimate_time, reverse=True)
-    return formatters, linters_and_testers
+    return fixers, formatters, linters_and_testers

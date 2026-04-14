@@ -174,17 +174,16 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant U as make format
-    participant FIX as pyfltr fix
+    participant PF as pyfltr fast
     participant PC as pre-commit
     participant PH as pre-commit-hooks
-    participant PF as pyfltr fast
 
-    U->>FIX: pyfltr fix（linter autofix）
-    FIX->>FIX: ruff check --fix,<br/>textlint --fix等
+    U->>PF: pyfltr fast
+    PF->>PF: fix段（ruff check --fix等）
+    PF->>PF: formatter段（ruff-format等）
+    PF->>PF: linter段（軽量linter）
     U->>PC: pre-commit run --all-files
     PC->>PH: check-yaml, trailing-whitespace等
-    PC->>PF: pyfltr fast（local hook）
-    PF->>PF: ruff-format等
 ```
 
 ## タスクランナー
@@ -213,8 +212,9 @@ update:
 	$(MAKE) test
 
 # フォーマット + 軽量lint（開発時の手動実行用。自動修正あり）
+# pyfltr fast がfix段を内蔵するため、従来の `pyfltr fix` 相当も走る
 format:
-	-uv run pyfltr fix
+	-uv run pyfltr fast
 	uv run pre-commit run --all-files || uv run pre-commit run --all-files
 
 # 全チェック実行（これを通過すればコミット可能）
@@ -231,7 +231,7 @@ test:
 
 # フォーマット + 軽量lint（開発時の手動実行用。自動修正あり）
 format:
-	-uvx pyfltr fix
+	-uvx pyfltr fast
 	uvx pre-commit run --all-files || uvx pre-commit run --all-files
 
 # 全チェック実行（これを通過すればコミット可能）
@@ -258,7 +258,7 @@ run = [
 [tasks.format]
 description = "フォーマット + 軽量lint（開発時の手動実行用。自動修正あり）"
 run = [
-  "uvx pyfltr fix || true",
+  "uvx pyfltr fast || true",
   "uvx pre-commit run --all-files || uvx pre-commit run --all-files",
 ]
 
@@ -278,7 +278,7 @@ run = [
 ポイント:
 
 - `setup`: 開発環境のセットアップ
-- `format`: `pyfltr fix`でlinterのautofixを実行した後、`pre-commit run --all-files`でformatterとpre-commit-hooksを実行する
+- `format`: `pyfltr fast`（fix段→formatter段→軽量linter段）を実行した後、`pre-commit run --all-files`で残りのpre-commit-hooksを実行する
 - `test`: ローカル開発用。`pyfltr run`がpre-commitを内部で呼び出すため、1コマンドで全チェックが完結する
 - `ci`: CI用。`pyfltr ci`はformatter差分も含めて失敗扱いにする
 
@@ -348,7 +348,7 @@ textlint-lint-args = ["--format", "compact"]
 ```
 
 旧版の`textlint-args = ["--format", "compact", ...]`をそのまま引き継いでもクラッシュしない。
-pyfltrは`pyfltr fix`実行時にfix段階の起動コマンドから`--format`ペアを自動除去するため。
+pyfltrはfix段の起動コマンドから`--format`ペアを自動除去するため。
 ただし新規設定では`textlint-lint-args`に書くことを推奨する。
 
 ## CI

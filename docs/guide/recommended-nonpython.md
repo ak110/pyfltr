@@ -101,7 +101,7 @@ extend-exclude = [
 
 ポイント:
 
-- `format`: `pyfltr fix`でlinterのautofix（`cargo-clippy --fix`、`markdownlint --fix`等）を実行した後、`pyfltr fast`でformatter + 軽量linterを実行する。
+- `format`: `pyfltr fast`がfix段を内蔵するため、linterのautofix（`cargo-clippy --fix`、`markdownlint --fix`等）→ formatter → 軽量linterの順で実行される。
 - `test`: ローカル開発用。`pyfltr run`はformatter差分を自動修正し、linter/tester通過で成功する。
 - `ci`: CI用。`pyfltr ci`はformatter差分も含めて失敗扱いにする。
 - `js-runner = "pnpm"`: pnpmワークスペース経由でJS系ツールを呼ぶ。`textlint-packages`は無視される。

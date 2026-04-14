@@ -38,41 +38,44 @@ def test_work_dir(mocker, tmp_path):
     assert pathlib.Path.cwd() == original_cwd
 
 
-def test_fix_mode_with_no_eligible_commands(mocker, caplog):
-    """fix モードで対象コマンドが 0 件なら exit 1 にする。"""
-    # formatter だけ指定しても fix 対象は 0 件になる (formatter は対象外)
+def test_run_auto_includes_fix_stage(mocker):
+    """run サブコマンドでは fix-args 付きの fix ステージが自動実行される。"""
     proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="")
-    mocker.patch("subprocess.run", return_value=proc)
-    returncode = pyfltr.main.run(["fix", "--commands=black,ruff-format", str(pathlib.Path(__file__).parent.parent)])
-    # black/ruff-format は formatter のため 0 件
-    assert returncode == 1
-    assert "fix モードで実行可能なコマンドがありません" in caplog.text
+    mock_run = mocker.patch("subprocess.run", return_value=proc)
 
-
-def test_fix_mode_disables_shuffle(mocker, caplog):
-    """fix モードと --shuffle を同時指定した場合、shuffle が無効化される。"""
-    proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="")
-    mocker.patch("subprocess.run", return_value=proc)
     # ruff-check は fix-args 定義済みかつ preset=latest で有効化されている
-    returncode = pyfltr.main.run(["fix", "--shuffle", "--commands=ruff-check", str(pathlib.Path(__file__).parent.parent)])
+    returncode = pyfltr.main.run(["run", "--commands=ruff-check", str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 0
-    assert "--shuffle を無効化" in caplog.text
+
+    # 通常モードの引数リストと fix モードの引数リストが両方実行されていること
+    invoked_commandlines = [call.args[0] for call in mock_run.call_args_list if call.args and isinstance(call.args[0], list)]
+    fix_calls = [cl for cl in invoked_commandlines if "--fix" in cl]
+    assert fix_calls, "fix ステージが実行されていない"
 
 
-def test_explicit_fix_flag_emits_deprecation_warning(mocker, caplog):
-    """`--fix` を明示指定すると非推奨警告が出力される。"""
+def test_no_fix_skips_fix_stage(mocker):
+    """--no-fix 指定時は fix ステージがスキップされる。"""
     proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="")
-    mocker.patch("subprocess.run", return_value=proc)
-    pyfltr.main.run(["--fix", "--commands=ruff-check", str(pathlib.Path(__file__).parent.parent)])
-    assert "--fix は非推奨です" in caplog.text
+    mock_run = mocker.patch("subprocess.run", return_value=proc)
+
+    returncode = pyfltr.main.run(["run", "--no-fix", "--commands=ruff-check", str(pathlib.Path(__file__).parent.parent)])
+    assert returncode == 0
+
+    invoked_commandlines = [call.args[0] for call in mock_run.call_args_list if call.args and isinstance(call.args[0], list)]
+    fix_calls = [cl for cl in invoked_commandlines if "--fix" in cl]
+    assert not fix_calls, "--no-fix 指定時に fix ステージが走っている"
 
 
-def test_fix_subcommand_does_not_emit_deprecation_warning(mocker, caplog):
-    """`pyfltr fix` サブコマンド経由では非推奨警告は出力されない。"""
+def test_ci_does_not_run_fix_stage(mocker):
+    """ci サブコマンドでは fix ステージを走らせない（ファイル書換を避けるため）。"""
     proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="")
-    mocker.patch("subprocess.run", return_value=proc)
-    pyfltr.main.run(["fix", "--commands=ruff-check", str(pathlib.Path(__file__).parent.parent)])
-    assert "--fix は非推奨です" not in caplog.text
+    mock_run = mocker.patch("subprocess.run", return_value=proc)
+
+    pyfltr.main.run(["ci", "--commands=ruff-check", str(pathlib.Path(__file__).parent.parent)])
+
+    invoked_commandlines = [call.args[0] for call in mock_run.call_args_list if call.args and isinstance(call.args[0], list)]
+    fix_calls = [cl for cl in invoked_commandlines if "--fix" in cl]
+    assert not fix_calls, "ci サブコマンドで fix ステージが走っている"
 
 
 def test_stream_mode_writes_detail_log_during_run(mocker, caplog):
@@ -143,11 +146,6 @@ class TestParseSubcommand:
         assert sub == "fast"
         assert remaining == ["src/"]
 
-    def test_fix_subcommand(self):
-        sub, remaining = pyfltr.main._parse_subcommand(["fix", "src/"])
-        assert sub == "fix"
-        assert remaining == ["src/"]
-
     def test_dirty_subcommand_is_deprecated(self):
         """廃止されたdirtyサブコマンドがエラー終了することを確認。"""
         assert pyfltr.main.run(["dirty", "init"]) == 1
@@ -172,10 +170,6 @@ class TestBuildEffectiveArgs:
     def test_fast(self):
         result = pyfltr.main._build_effective_args("fast", ["src/"])
         assert result == ["--exit-zero-even-if-formatted", "--commands=fast", "src/"]
-
-    def test_fix(self):
-        result = pyfltr.main._build_effective_args("fix", ["src/"])
-        assert result == ["--fix", "src/"]
 
 
 class TestSubcommandIntegration:

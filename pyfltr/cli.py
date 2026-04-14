@@ -27,6 +27,7 @@ def run_commands_with_cli(
     all_files: list[pathlib.Path],
     *,
     per_command_log: bool,
+    include_fix_stage: bool = False,
 ) -> list[pyfltr.command.CommandResult]:
     """コマンドを実行する (非 TUI)。
 
@@ -34,11 +35,21 @@ def run_commands_with_cli(
     `per_command_log=False` のときは完了時に 1 行進捗のみを出し、詳細はバッファに残す。
     いずれの場合も、呼び出し側で最後に `render_results()` を呼ぶことで
     summary と詳細ログをまとめて出力できる。
+
+    ``include_fix_stage=True`` のとき、fix-args 定義済みコマンドを先に ``--fix`` 付きで
+    直列実行してから、formatter → linter/tester の順で通常実行に進む
+    （``ruff check --fix → ruff format → ruff check`` と同じ 2 段階方式の一般化）。
     """
     results: list[pyfltr.command.CommandResult] = []
-    formatters, linters_and_testers = pyfltr.executor.split_commands_for_execution(
-        commands, config, all_files, fix_mode=bool(getattr(args, "fix", False))
+    fixers, formatters, linters_and_testers = pyfltr.executor.split_commands_for_execution(
+        commands, config, all_files, include_fix_stage=include_fix_stage
     )
+
+    # fix ステージ: 同一ファイルへの書き込み競合を避けるため直列実行する。
+    # 結果は summary / jsonl には含めない（後段の通常ステージで同一コマンドが
+    # 再度走って最終状態を報告するため。ruff-format の 2 段階と同じ位置づけ）。
+    for command in fixers:
+        _run_one_command(command, args, config, all_files, per_command_log=per_command_log, fix_stage=True)
 
     # formatters を順序実行
     for command in formatters:
@@ -64,6 +75,7 @@ def _run_one_command(
     all_files: list[pathlib.Path],
     *,
     per_command_log: bool,
+    fix_stage: bool = False,
 ) -> pyfltr.command.CommandResult:
     """1 コマンドの実行。
 
@@ -73,13 +85,14 @@ def _run_one_command(
     # serial_group を持つコマンドは同一グループ内で排他実行される (cargo / dotnet 等)
     with pyfltr.executor.serial_group_lock(config.commands[command].serial_group):
         with lock:
-            logger.info(f"{command} 実行中です...")
-        result = pyfltr.command.execute_command(command, args, config, all_files)
+            suffix = " (fix)" if fix_stage else ""
+            logger.info(f"{command}{suffix} 実行中です...")
+        result = pyfltr.command.execute_command(command, args, config, all_files, fix_stage=fix_stage)
         if per_command_log:
             write_log(result)
         else:
             with lock:
-                logger.info(f"{command} 完了 ({result.get_status_text()})")
+                logger.info(f"{command}{suffix} 完了 ({result.get_status_text()})")
         return result
 
 

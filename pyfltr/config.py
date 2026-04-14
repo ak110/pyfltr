@@ -321,7 +321,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "markdownlint-path": "",
     "markdownlint-args": [],
     "markdownlint-fast": True,
-    # fix モード (pyfltr --fix) 時に通常 args の後に追加する引数。
+    # fix ステージ (pyfltr run / fast の自動修正段) で通常 args の後に追加する引数。
     # markdownlint-cli2 は --fix でファイルを in-place 修正する。
     "markdownlint-fix-args": ["--fix"],
     "textlint": False,
@@ -869,12 +869,12 @@ def _validate_targets_value(key: str, value: typing.Any) -> str | list[str]:
 
 
 def filter_fix_commands(commands: list[str], config: Config) -> list[str]:
-    """Fix モードで実行すべきコマンドに絞り込む。
+    """Fix ステージで実行すべきコマンドに絞り込む。
 
-    `pyfltr fix` は linter の autofix 機能 (`{command}-fix-args`) を呼び出すための
-    サブコマンドであり、formatter は対象外とする。formatter 本体は通常実行
-    (`pyfltr run` など) で常に書き込みモードで動くため、fix モードで重複して
-    走らせる必要は無い。
+    `pyfltr run` / `pyfltr fast` の fix ステージは linter の autofix 機能
+    (`{command}-fix-args`) を前段で呼び出すための段で、formatter は対象外。
+    formatter 本体は通常ステージで常に書き込みモードで動くため、fix ステージで
+    重複して走らせる必要は無い。
 
     enabled かつ `{command}-fix-args` が定義されている linter/tester を返す。
     """

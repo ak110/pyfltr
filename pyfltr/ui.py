@@ -168,9 +168,14 @@ class UIApp(App):
     def _run_in_background(self):
         """バックグラウンド処理。"""
         try:
-            formatters, linters_and_testers = pyfltr.executor.split_commands_for_execution(
-                self.commands, self.config, self._all_files, fix_mode=bool(getattr(self.args, "fix", False))
+            include_fix_stage = bool(getattr(self.args, "include_fix_stage", False))
+            fixers, formatters, linters_and_testers = pyfltr.executor.split_commands_for_execution(
+                self.commands, self.config, self._all_files, include_fix_stage=include_fix_stage
             )
+
+            # fix ステージ (serial)。結果は summary に含めず、後段の通常ステージに委ねる。
+            for command in fixers:
+                self._execute_command(command, fix_stage=True)
 
             # formatters (serial)
             for command in formatters:
@@ -207,7 +212,7 @@ class UIApp(App):
             except Exception:
                 logging.error(error_msg)
 
-    def _execute_command(self, command: str) -> pyfltr.command.CommandResult:
+    def _execute_command(self, command: str, *, fix_stage: bool = False) -> pyfltr.command.CommandResult:
         """出力をキャプチャしながらコマンド実行。"""
         # serial_group を持つコマンドは同一グループ内で排他実行される (cargo / dotnet 等)。
         # ロック取得前は「待機中」の表示に留め、running 表示はロック取得後に切り替える。
@@ -235,7 +240,9 @@ class UIApp(App):
 
                 callback = _on_output
 
-            result = pyfltr.command.execute_command(command, self.args, self.config, self._all_files, on_output=callback)
+            result = pyfltr.command.execute_command(
+                command, self.args, self.config, self._all_files, on_output=callback, fix_stage=fix_stage
+            )
         # ここ以降は結果の UI 反映のみなので serial_group ロックの外で行う。
 
         with self.lock:

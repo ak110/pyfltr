@@ -51,10 +51,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ui", default=None, action="store_true", help="Textual UI を強制的に有効化します。")
     parser.add_argument("--no-ui", default=None, action="store_true", help="Textual UI を強制的に無効化します。")
     parser.add_argument(
-        "--fix",
+        "--no-fix",
         default=False,
         action="store_true",
-        help=argparse.SUPPRESS,
+        help="run / fast サブコマンドで自動付与される fix ステージを抑止します。",
     )
     parser.add_argument(
         "--stream",
@@ -131,7 +131,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 # サブコマンドとして認識する予約語
-_SUBCOMMANDS: frozenset[str] = frozenset({"ci", "run", "fast", "fix", "dirty", "generate-config"})
+_SUBCOMMANDS: frozenset[str] = frozenset({"ci", "run", "fast", "dirty", "generate-config"})
 
 
 def _parse_subcommand(sys_args: typing.Sequence[str]) -> tuple[str, list[str]]:
@@ -150,8 +150,6 @@ def _build_effective_args(subcommand: str, args: list[str]) -> list[str]:
         return ["--exit-zero-even-if-formatted", *args]
     if subcommand == "fast":
         return ["--exit-zero-even-if-formatted", "--commands=fast", *args]
-    if subcommand == "fix":
-        return ["--fix", *args]
     # ci: 変更なし
     return list(args)
 
@@ -174,18 +172,14 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
         logger.info(pyfltr.config.generate_config_text())
         return 0
 
-    # `--fix` は非推奨。`pyfltr fix` サブコマンドで暗黙的に付与する経路と区別するため、
-    # ユーザーが明示的に指定したかどうかは effective_args 組み立て前の remaining_args で判定する。
-    explicit_fix_flag = "--fix" in remaining_args
-
     effective_args = _build_effective_args(subcommand, remaining_args)
 
     parser = build_parser()
     args = parser.parse_args(effective_args)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, format="%(message)s")
 
-    if explicit_fix_flag:
-        logger.warning("--fix は非推奨です。代わりに `pyfltr fix` サブコマンドを使用してください。")
+    # fix ステージは run / fast で既定有効、ci では無効。`--no-fix` で明示抑止も可。
+    args.include_fix_stage = subcommand in ("run", "fast") and not args.no_fix
 
     # --work-dir: ターゲットパスを絶対パスに変換してからcwd変更
     original_cwd: str | None = None
@@ -326,19 +320,6 @@ def _run_impl(
             if command not in config.values:
                 parser.error(f"コマンドが見つかりません: {command}")
 
-        # fix モードの前処理
-        if args.fix:
-            if args.shuffle:
-                # fix モードは修正の再現性を重視するためシャッフルを無効化
-                logger.warning("--fix 指定時は --shuffle を無効化します。")
-                args.shuffle = False
-            commands = pyfltr.config.filter_fix_commands(commands, config)
-            if not commands:
-                logger.error(
-                    "fix モードで実行可能なコマンドがありません(有効化された fix-args 定義済み linter を指定してください)。"
-                )
-                return 1
-
         return run_pipeline(args, commands, config)
     finally:
         if suppression is not None:
@@ -371,13 +352,16 @@ def run_pipeline(
     use_ui = not args.no_ui and (args.ui or pyfltr.ui.can_use_ui())
 
     # run
+    include_fix_stage = bool(getattr(args, "include_fix_stage", False))
     if use_ui:
         results, returncode = pyfltr.ui.run_commands_with_ui(commands, args, config, all_files)
         include_details = True
     else:
         # 非 TUI モード: 既定はバッファリング (最後にまとめて出力)、`--stream` で従来の即時出力。
         per_command_log = bool(args.stream)
-        results = pyfltr.cli.run_commands_with_cli(commands, args, config, all_files, per_command_log=per_command_log)
+        results = pyfltr.cli.run_commands_with_cli(
+            commands, args, config, all_files, per_command_log=per_command_log, include_fix_stage=include_fix_stage
+        )
         returncode = 0
         # `--stream` のときは詳細ログは既に出力済み。summary のみ表示する。
         include_details = not per_command_log
