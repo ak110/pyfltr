@@ -117,3 +117,32 @@ def test_render_results_include_details_false_writes_only_summary(caplog):
 
     assert "summary" in caplog.text
     assert "MYPY_ERROR" not in caplog.text
+
+
+def test_render_results_writes_warnings_section_before_summary(caplog):
+    """warnings 引数が渡されると summary 直前に warnings セクションが出る。"""
+    config = pyfltr.config.create_default_config()
+    results = [_make_result("mypy", returncode=0)]
+    warnings = [{"source": "config", "message": "pre-commit 設定ファイル不在"}]
+
+    with caplog.at_level(logging.INFO):
+        pyfltr.cli.render_results(results, config, include_details=True, warnings=warnings)
+
+    text = caplog.text
+    warning_pos = text.index("pre-commit 設定ファイル不在")
+    summary_pos = text.index("summary")
+    assert warning_pos < summary_pos
+    assert "[config]" in text
+
+
+def test_render_results_skips_warnings_section_when_empty(caplog):
+    """warnings が空のときは warnings 見出しを出さない。"""
+    config = pyfltr.config.create_default_config()
+    results = [_make_result("mypy", returncode=0)]
+
+    with caplog.at_level(logging.INFO):
+        pyfltr.cli.render_results(results, config, include_details=True, warnings=[])
+
+    # warnings セクションは出力されない（summary 直前の見出しだけを検証するのは困難なため、
+    # [source] 形式のエントリ行が無いことで代替する）
+    assert "[config]" not in caplog.text

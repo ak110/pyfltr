@@ -26,19 +26,25 @@ def build_lines(
     config: pyfltr.config.Config,
     *,
     exit_code: int,
+    warnings: list[dict[str, typing.Any]] | None = None,
 ) -> list[str]:
     """CommandResult 群から JSONL 各行を生成する。
 
     出力順:
-        1. 全診断を (file, line, col, command 順) で昇順ソートした diagnostic 行
-        2. config.command_names の定義順に並べた tool 行
-        3. summary 行 1 行
+        1. `warnings` が非空なら kind="warning" 行（先頭）
+        2. 全診断を (file, line, col, command 順) で昇順ソートした diagnostic 行
+        3. config.command_names の定義順に並べた tool 行
+        4. summary 行 1 行
 
     results は順序を問わない。内部で `config.command_names` 順にソートする。
+    ``warnings`` は `pyfltr.warnings_.collected_warnings()` の返り値を想定する。
     """
     ordered = sorted(results, key=lambda r: _command_index(config, r.command))
 
     lines: list[str] = []
+
+    for warning in warnings or []:
+        lines.append(_dump(_build_warning_record(warning)))
 
     all_errors: list[pyfltr.error_parser.ErrorLocation] = []
     for result in ordered:
@@ -72,6 +78,7 @@ def write_jsonl(
     *,
     exit_code: int,
     destination: pathlib.Path | None,
+    warnings: list[dict[str, typing.Any]] | None = None,
 ) -> None:
     """JSONL を stdout もしくは指定ファイルに書き出す。
 
@@ -79,7 +86,7 @@ def write_jsonl(
     親ディレクトリを自動作成し、atomic write せず単純に上書きする
     (LLM 用途の使い捨てのため)。
     """
-    lines = build_lines(results, config, exit_code=exit_code)
+    lines = build_lines(results, config, exit_code=exit_code, warnings=warnings)
     if destination is None:
         for line in lines:
             sys.stdout.write(line)
@@ -96,6 +103,15 @@ def write_jsonl(
 def _dump(record: dict[str, typing.Any]) -> str:
     """JSON 1 行にシリアライズする。ensure_ascii=False + 区切り最短化でトークン効率を稼ぐ。"""
     return json.dumps(record, ensure_ascii=False, separators=(",", ":"))
+
+
+def _build_warning_record(entry: dict[str, typing.Any]) -> dict[str, typing.Any]:
+    """警告 dict を warning レコード dict に変換する。"""
+    return {
+        "kind": "warning",
+        "source": entry["source"],
+        "msg": entry["message"],
+    }
 
 
 def _build_diagnostic_record(error: pyfltr.error_parser.ErrorLocation) -> dict[str, typing.Any]:

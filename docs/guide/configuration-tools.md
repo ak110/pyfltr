@@ -309,6 +309,7 @@ path = "bandit"
 args = ["-r", "-f", "custom"]
 targets = "*.py"
 error-pattern = '(?P<file>[^:]+):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>.+)'
+config-files = [".banditrc", "pyproject.toml"]
 fast = true
 ```
 
@@ -326,6 +327,7 @@ fast = true
 - `fast`: `fast`サブコマンドに含めるか否か（省略時は`false`）
 - `fix-args`: fix段で`args`の後ろへ追加する引数（省略時はfix段の対象外）
 - `pass-filenames`: ファイル引数をコマンドに渡すか否か（省略時は`true`）。プロジェクト全体を一括チェックするツールでは`false`に設定する
+- `config-files`: このコマンドの設定ファイル候補のリスト（省略時は空）。globパターン可。有効化時にどれもプロジェクトルート直下に見つからないとpyfltrが警告を出す（ツール自体は実行する）。pre-commitなどの「設定ファイル無しでは機能しないツール」の設定不備を可視化する用途
 
 ビルトインコマンド（mypy等）は自動的にエラーパースされる。
 カスタムコマンドに対しても`--{name}-args`やenable/disableを使用できる。

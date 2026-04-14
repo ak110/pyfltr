@@ -14,6 +14,7 @@ import pyfltr.cli
 import pyfltr.command
 import pyfltr.config
 import pyfltr.ui
+import pyfltr.warnings_
 
 logger = logging.getLogger(__name__)
 
@@ -247,6 +248,9 @@ def _run_impl(
     resolved_targets: list[pathlib.Path] | None,
 ) -> int:
     """run()の内部実装。"""
+    # 同一プロセス内で run() が複数回呼ばれるケースに備えて警告蓄積を初期化する。
+    pyfltr.warnings_.clear()
+
     # --ciオプションの処理
     if args.ci:
         args.shuffle = False
@@ -387,6 +391,7 @@ def run_pipeline(
         output_format=args.output_format or "text",
         output_file=args.output_file,
         exit_code=returncode,
+        warnings=pyfltr.warnings_.collected_warnings(),
     )
     return returncode
 

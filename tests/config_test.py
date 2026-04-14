@@ -5,6 +5,7 @@ import pathlib
 import pytest
 
 import pyfltr.config
+import pyfltr.warnings_
 from tests import conftest as _testconf
 
 
@@ -399,6 +400,92 @@ targets = 42
     (tmp_path / "pyproject.toml").write_text(pyproject_content)
     with pytest.raises(ValueError, match="targets"):
         pyfltr.config.load_config(config_dir=tmp_path)
+
+
+class TestConfigFilesWarning:
+    """config_files 未配置時の警告機構のテスト。"""
+
+    @pytest.fixture(autouse=True)
+    def _reset_warnings(self) -> None:
+        pyfltr.warnings_.clear()
+
+    def test_pre_commit_enabled_without_config_emits_warning(self, tmp_path: pathlib.Path) -> None:
+        """pre-commit 有効かつ .pre-commit-config.yaml 不在で警告が出る。"""
+        (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latest"\n')
+        pyfltr.config.load_config(config_dir=tmp_path)
+        entries = [w for w in pyfltr.warnings_.collected_warnings() if w["source"] == "config"]
+        assert len(entries) == 1
+        assert "pre-commit" in entries[0]["message"]
+        assert ".pre-commit-config.yaml" in entries[0]["message"]
+
+    def test_pre_commit_enabled_with_config_no_warning(self, tmp_path: pathlib.Path) -> None:
+        """設定ファイルが存在すれば警告は出ない。"""
+        (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latest"\n')
+        (tmp_path / ".pre-commit-config.yaml").write_text("repos: []\n")
+        pyfltr.config.load_config(config_dir=tmp_path)
+        entries = [w for w in pyfltr.warnings_.collected_warnings() if w["source"] == "config"]
+        assert not entries
+
+    def test_pre_commit_disabled_no_warning(self, tmp_path: pathlib.Path) -> None:
+        """pre-commit 無効なら設定ファイル不在でも警告は出ない。"""
+        (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\npre-commit = false\n")
+        pyfltr.config.load_config(config_dir=tmp_path)
+        entries = [w for w in pyfltr.warnings_.collected_warnings() if w["source"] == "config"]
+        assert not entries
+
+    def test_custom_command_missing_config_file_emits_warning(self, tmp_path: pathlib.Path) -> None:
+        """カスタムコマンドに config-files を指定し不在なら警告。"""
+        pyproject_content = """
+[tool.pyfltr.custom-commands.mytool]
+type = "linter"
+path = "mytool"
+config-files = [".mytoolrc"]
+"""
+        (tmp_path / "pyproject.toml").write_text(pyproject_content)
+        pyfltr.config.load_config(config_dir=tmp_path)
+        entries = [w for w in pyfltr.warnings_.collected_warnings() if w["source"] == "config"]
+        assert len(entries) == 1
+        assert "mytool" in entries[0]["message"]
+
+    def test_custom_command_config_file_present_no_warning(self, tmp_path: pathlib.Path) -> None:
+        """カスタムコマンドの config-files が配置済みなら警告は出ない。"""
+        pyproject_content = """
+[tool.pyfltr.custom-commands.mytool]
+type = "linter"
+path = "mytool"
+config-files = [".mytoolrc"]
+"""
+        (tmp_path / "pyproject.toml").write_text(pyproject_content)
+        (tmp_path / ".mytoolrc").write_text("")
+        pyfltr.config.load_config(config_dir=tmp_path)
+        entries = [w for w in pyfltr.warnings_.collected_warnings() if w["source"] == "config"]
+        assert not entries
+
+    def test_config_files_glob_pattern(self, tmp_path: pathlib.Path) -> None:
+        """config-files に glob を指定し、いずれかがマッチすれば警告は出ない。"""
+        pyproject_content = """
+[tool.pyfltr.custom-commands.mytool]
+type = "linter"
+path = "mytool"
+config-files = [".mytoolrc*"]
+"""
+        (tmp_path / "pyproject.toml").write_text(pyproject_content)
+        (tmp_path / ".mytoolrc.json").write_text("{}")
+        pyfltr.config.load_config(config_dir=tmp_path)
+        entries = [w for w in pyfltr.warnings_.collected_warnings() if w["source"] == "config"]
+        assert not entries
+
+    def test_config_files_invalid_type_rejected(self, tmp_path: pathlib.Path) -> None:
+        """カスタムコマンドの config-files が list[str] でなければエラー。"""
+        pyproject_content = """
+[tool.pyfltr.custom-commands.mytool]
+type = "linter"
+path = "mytool"
+config-files = "foo"
+"""
+        (tmp_path / "pyproject.toml").write_text(pyproject_content)
+        with pytest.raises(ValueError, match="config-files"):
+            pyfltr.config.load_config(config_dir=tmp_path)
 
 
 def test_invalid_preset(tmp_path: pathlib.Path) -> None:

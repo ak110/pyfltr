@@ -34,6 +34,12 @@ class CommandInfo:
     """推定固定コスト（秒）。並列実行のスケジューリングに使用する。"""
     per_file_cost: float = 0.0
     """推定ファイルあたりコスト（秒/file）。並列実行のスケジューリングに使用する。"""
+    config_files: list[str] = dataclasses.field(default_factory=list)
+    """このコマンドの設定ファイル候補（glob 可）。
+
+    非空かつプロジェクトルートにいずれもマッチしないとき、``load_config`` が警告を発行する。
+    pre-commit のような「設定ファイル不在だと機能しない」ツールの設定不備を可視化する用途。
+    """
 
     def target_globs(self) -> list[str]:
         """対象ファイルパターンをリスト形式で返す。"""
@@ -57,7 +63,11 @@ _JS_COMMON_TARGETS: list[str] = [
 ]
 
 BUILTIN_COMMANDS: dict[str, CommandInfo] = {
-    "pre-commit": CommandInfo(type="formatter", targets="*"),
+    "pre-commit": CommandInfo(
+        type="formatter",
+        targets="*",
+        config_files=[".pre-commit-config.yaml"],
+    ),
     "pyupgrade": CommandInfo(type="formatter"),
     "autoflake": CommandInfo(type="formatter"),
     "isort": CommandInfo(type="formatter"),
@@ -764,7 +774,29 @@ def load_config(config_dir: pathlib.Path | None = None) -> Config:
     # per-command fastフラグからfastエイリアスを再計算
     config.values["aliases"]["fast"] = _build_fast_alias(config)
 
+    # 有効化されているコマンドの config_files が見つからなければ警告
+    _warn_missing_config_files(config, base)
+
     return config
+
+
+def _warn_missing_config_files(config: Config, base: pathlib.Path) -> None:
+    """有効化されているコマンドで ``CommandInfo.config_files`` を満たさないものを警告する。"""
+    # 遅延 import で循環依存を避ける（warnings_ は pyfltr 内で広く参照されるため）
+    import pyfltr.warnings_  # pylint: disable=import-outside-toplevel
+
+    for command, info in config.commands.items():
+        if not info.config_files:
+            continue
+        if config.values.get(command) is not True:
+            continue
+        if any(list(base.glob(pattern)) for pattern in info.config_files):
+            continue
+        candidates = ", ".join(info.config_files)
+        pyfltr.warnings_.emit_warning(
+            source="config",
+            message=f"{command} が有効化されていますが、設定ファイルが見つかりません: {candidates}",
+        )
 
 
 def _register_custom_command(config: Config, name: str, definition: dict[str, typing.Any]) -> None:
@@ -813,12 +845,19 @@ def _register_custom_command(config: Config, name: str, definition: dict[str, ty
             raise ValueError(f"カスタムコマンド {name} のerror-patternは文字列で指定してください")
         _validate_error_pattern(name, error_pattern)
 
+    # config-files (省略可。設定ファイル候補の glob パターン)
+    raw_config_files: typing.Any = definition.get("config-files", definition.get("config_files", []))
+    if not isinstance(raw_config_files, list) or not all(isinstance(item, str) for item in raw_config_files):
+        raise ValueError(f"カスタムコマンド {name} のconfig-filesは文字列のリストで指定してください")
+    config_files: list[str] = [str(item) for item in raw_config_files]
+
     # CommandInfoを登録
     config.commands[name] = CommandInfo(
         type=cmd_type,
         builtin=False,
         targets=targets,
         error_pattern=error_pattern,
+        config_files=config_files,
     )
     config.command_names.append(name)
 

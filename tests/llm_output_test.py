@@ -87,3 +87,9 @@ def test_dump_roundtrip() -> None:
     assert parsed["rule"] == "F401"
     assert parsed["severity"] == "error"
     assert parsed["fix"] == "safe"
+
+
+def test_build_warning_record() -> None:
+    """warning dict が kind/source/msg を持つレコードに変換される。"""
+    record = pyfltr.llm_output._build_warning_record({"source": "config", "message": "foo"})
+    assert record == {"kind": "warning", "source": "config", "msg": "foo"}

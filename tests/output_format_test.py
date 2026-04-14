@@ -58,6 +58,31 @@ def test_build_lines_supported_tool_diagnostics(default_config):
     assert parsed[3]["failed"] == 1
 
 
+def test_build_lines_warnings_prepended(default_config):
+    """warnings 引数の内容が diagnostic より前に kind="warning" で出力されること。"""
+    result = _make_result("black", returncode=0, command_type="formatter")
+    warnings = [
+        {"source": "config", "message": "pre-commit 設定ファイル不在"},
+        {"source": "git", "message": "git が見つからない"},
+    ]
+    lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=0, warnings=warnings)
+    parsed = [json.loads(line) for line in lines]
+
+    assert [r["kind"] for r in parsed[:2]] == ["warning", "warning"]
+    assert parsed[0] == {"kind": "warning", "source": "config", "msg": "pre-commit 設定ファイル不在"}
+    assert parsed[1] == {"kind": "warning", "source": "git", "msg": "git が見つからない"}
+    # warnings の後に tool レコード、最後に summary が並ぶ
+    assert [r["kind"] for r in parsed[2:]] == ["tool", "summary"]
+
+
+def test_build_lines_no_warnings_when_omitted(default_config):
+    """warnings 引数を省略すると warning レコードは出ない。"""
+    result = _make_result("black", returncode=0, command_type="formatter")
+    lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=0)
+    parsed = [json.loads(line) for line in lines]
+    assert all(r["kind"] != "warning" for r in parsed)
+
+
 def test_build_lines_unsupported_tool_only(default_config):
     """error_parser 非対応ツール (black) は tool レコードのみ。"""
     result = _make_result("black", returncode=1, command_type="formatter", has_error=False)

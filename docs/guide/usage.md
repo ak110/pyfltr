@@ -156,20 +156,24 @@ pyfltr run --output-format=jsonl
 
 ### jsonlスキーマ
 
-出力は以下3種別のレコードからなる。`kind`フィールドでレコード種別を判別する。
+出力は以下4種別のレコードからなる。`kind`フィールドでレコード種別を判別する。
 
+- `warning`: pyfltrが検出した設定・実行時の警告（`source`で発生元を識別）
 - `diagnostic`: 個々の診断（`error_parser`対応ツールの抽出結果）
 - `tool`: 1ツール1レコードの実行メタ情報
 - `summary`: 最終1行、全体集計
 
 ```json
+{"kind":"warning","source":"config","msg":"pre-commit が有効化されていますが、設定ファイルが見つかりません: .pre-commit-config.yaml"}
 {"kind":"diagnostic","tool":"mypy","file":"src/a.py","line":42,"col":5,"msg":"Incompatible return value type"}
 {"kind":"tool","tool":"mypy","type":"linter","status":"failed","files":12,"elapsed":0.8,"diagnostics":1,"rc":1}
 {"kind":"tool","tool":"black","type":"formatter","status":"formatted","files":12,"elapsed":0.3,"diagnostics":0,"rc":1}
 {"kind":"summary","total":2,"succeeded":0,"formatted":1,"failed":1,"skipped":0,"diagnostics":1,"exit":1}
 ```
 
-出力順は`diagnostic`（file/line/col/command順）→`tool`（`pyproject.toml`の定義順）→`summary`（1行）で固定。`tail -1`で`summary`だけ取り出せる。
+出力順は`warning`→`diagnostic`（file/line/col/command順）→`tool`（`pyproject.toml`の定義順）→`summary`（1行）で固定。
+
+`warning`レコードの`source`は`config`（設定ファイル不在など）/`tool-resolve`（ツール解決失敗）/`file-resolver`（対象ファイル選定時）/`git`（`git check-ignore`失敗）のいずれか。
 
 `diagnostic`レコードの`col`は抽出できた場合のみ含まれる。`tool`レコードの`rc`は`returncode is not None`のときのみ含まれる（`skipped`では省略）。
 

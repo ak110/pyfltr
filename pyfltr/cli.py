@@ -6,6 +6,7 @@ import logging
 import pathlib
 import shlex
 import threading
+import typing
 
 import pyfltr.command
 import pyfltr.config
@@ -129,6 +130,7 @@ def render_results(
     output_format: str = "text",
     output_file: pathlib.Path | None = None,
     exit_code: int = 0,
+    warnings: list[dict[str, typing.Any]] | None = None,
 ) -> None:
     """実行結果を `成功コマンド → 失敗コマンド → summary` の順でまとめて出力する。
 
@@ -145,9 +147,10 @@ def render_results(
     そのファイルに JSONL を書いたうえで、stdout には従来の text 出力も継続する。
     """
     ordered = sorted(results, key=lambda r: config.command_names.index(r.command))
+    warnings = warnings or []
 
     if output_format == "jsonl":
-        pyfltr.llm_output.write_jsonl(ordered, config, exit_code=exit_code, destination=output_file)
+        pyfltr.llm_output.write_jsonl(ordered, config, exit_code=exit_code, destination=output_file, warnings=warnings)
         if output_file is None:
             return
 
@@ -162,8 +165,21 @@ def render_results(
             if result.alerted:
                 write_log(result)
 
-    # 3. summary (末尾に出力することで tail -N で必ず見えるようにする)
+    # 3. warnings (summary の直前。先頭だと見落とされやすいため)
+    _write_warnings_section(warnings)
+
+    # 4. summary (末尾に出力することで tail -N で必ず見えるようにする)
     _write_summary(ordered)
+
+
+def _write_warnings_section(warnings: list[dict[str, typing.Any]]) -> None:
+    """Warnings セクションを summary 直前に出力する。"""
+    if not warnings:
+        return
+    with lock:
+        logger.info(f"{'-' * 10} warnings {'-' * (72 - 10 - 10)}")
+        for entry in warnings:
+            logger.info(f"    [{entry['source']}] {entry['message']}")
 
 
 def _write_summary(ordered_results: list[pyfltr.command.CommandResult]) -> None:

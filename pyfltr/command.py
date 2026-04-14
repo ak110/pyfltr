@@ -21,6 +21,7 @@ import natsort
 import pyfltr.config
 import pyfltr.error_parser
 import pyfltr.precommit
+import pyfltr.warnings_
 
 logger = logging.getLogger(__name__)
 
@@ -242,7 +243,7 @@ def _failed_resolution_result(
     message: str,
 ) -> "CommandResult":
     """ツール解決失敗時の `CommandResult` を組み立てる。"""
-    logger.warning("%s: %s", command, message)
+    pyfltr.warnings_.emit_warning(source="tool-resolve", message=f"{command}: {message}")
     return CommandResult(
         command=command,
         command_type=command_info.type,
@@ -1370,7 +1371,10 @@ def expand_all_files(targets: list[pathlib.Path], config: pyfltr.config.Config) 
         try:
             if excluded(target, config):
                 if is_direct:
-                    logger.warning("指定されたファイルが除外設定により無視されました: %s", target)
+                    pyfltr.warnings_.emit_warning(
+                        source="file-resolver",
+                        message=f"指定されたファイルが除外設定により無視されました: {target}",
+                    )
                 return
             if target.is_dir():
                 for child in target.iterdir():
@@ -1380,7 +1384,11 @@ def expand_all_files(targets: list[pathlib.Path], config: pyfltr.config.Config) 
                 if is_direct:
                     directly_specified.add(target)
         except OSError:
-            logger.warning("I/O Error: %s", target, exc_info=True)
+            pyfltr.warnings_.emit_warning(
+                source="file-resolver",
+                message=f"I/O Error: {target}",
+                exc_info=True,
+            )
 
     for target in targets:
         # 絶対パスの場合はcwd基準の相対パスに変換
@@ -1397,7 +1405,10 @@ def expand_all_files(targets: list[pathlib.Path], config: pyfltr.config.Config) 
         # 直接指定されたファイルがgitignoreで除外された場合に警告
         for target in directly_specified:
             if target in before_gitignore and target not in set(expanded):
-                logger.warning("指定されたファイルが .gitignore により無視されました: %s", target)
+                pyfltr.warnings_.emit_warning(
+                    source="file-resolver",
+                    message=f"指定されたファイルが .gitignore により無視されました: {target}",
+                )
 
     return expanded
 
@@ -1422,10 +1433,10 @@ def _filter_by_gitignore(paths: list[pathlib.Path]) -> list[pathlib.Path]:
             check=False,
         )
     except FileNotFoundError:
-        logger.warning("git が見つからないため respect-gitignore をスキップする")
+        pyfltr.warnings_.emit_warning(source="git", message="git が見つからないため respect-gitignore をスキップする")
         return paths
     except subprocess.TimeoutExpired:
-        logger.warning("git check-ignore がタイムアウトしたためスキップする")
+        pyfltr.warnings_.emit_warning(source="git", message="git check-ignore がタイムアウトしたためスキップする")
         return paths
     if result.returncode not in (0, 1):
         # 0: 1つ以上 ignored, 1: 全て not ignored, 128: fatal error（リポジトリ外等）

@@ -17,11 +17,19 @@ import pyfltr.command
 import pyfltr.config
 import pyfltr.error_parser
 import pyfltr.executor
+import pyfltr.warnings_
 
 
 def can_use_ui() -> bool:
     """UIを使用するかどうか判定。"""
     return sys.stdin.isatty() and sys.stdout.isatty()
+
+
+def _format_errors_tab_label(error_count: int, warning_count: int) -> str:
+    """Errors タブのラベル文字列を組み立てる。"""
+    if warning_count:
+        return f"Errors ({error_count}/{warning_count}w)"
+    return f"Errors ({error_count})"
 
 
 def run_commands_with_ui(
@@ -283,24 +291,40 @@ class UIApp(App):
             if result.status == "failed":
                 self.call_from_thread(self._update_tab_title, result.command)
 
-            # エラーがあればErrorsタブを即時追加/更新
+            # エラーまたは警告があればErrorsタブを即時追加/更新
             if result.errors:
                 self._all_errors.extend(result.errors)
-                sorted_errors = pyfltr.error_parser.sort_errors(self._all_errors, self.config.command_names)
-                self.call_from_thread(self._update_errors_tab, sorted_errors)  # type: ignore[arg-type]
+            sorted_errors = pyfltr.error_parser.sort_errors(self._all_errors, self.config.command_names)
+            current_warnings = pyfltr.warnings_.collected_warnings()
+            if sorted_errors or current_warnings:
+                self.call_from_thread(self._update_errors_tab, sorted_errors, current_warnings)  # type: ignore[arg-type]
 
         return result
 
-    async def _update_errors_tab(self, errors: list[pyfltr.error_parser.ErrorLocation]) -> None:
-        """Errorsタブを追加または更新。初回のみアクティブに切り替え。"""
+    async def _update_errors_tab(
+        self,
+        errors: list[pyfltr.error_parser.ErrorLocation],
+        warnings: list[dict[str, typing.Any]],
+    ) -> None:
+        """Errors タブを追加または更新。初回のみアクティブに切り替え。
+
+        警告は errors の後ろに「warnings:」セクションとして追記する。
+        """
         tc = self.query_one(TabbedContent)
-        lines = [pyfltr.error_parser.format_error(e) for e in errors]
-        content = "\n".join(lines)
+        sections: list[str] = [pyfltr.error_parser.format_error(e) for e in errors]
+        if warnings:
+            if sections:
+                sections.append("")
+            sections.append("warnings:")
+            sections.extend(f"    [{entry['source']}] {entry['message']}" for entry in warnings)
+        content = "\n".join(sections)
+
+        label = _format_errors_tab_label(len(errors), len(warnings))
 
         if not self._errors_tab_exists:
             # 初回: タブを追加してアクティブにする
             errors_log = Log(id="errors-log", classes="output")
-            errors_pane = TabPane(f"Errors ({len(errors)})", errors_log, id="tab-errors")
+            errors_pane = TabPane(label, errors_log, id="tab-errors")
             await tc.add_pane(errors_pane, after="summary")
             self._write_log("#errors-log", content)
             self._errors_tab_exists = True
@@ -311,7 +335,7 @@ class UIApp(App):
             errors_log.clear()
             self._write_log("#errors-log", content)
             tab = tc.get_tab("tab-errors")
-            tab.label = f"Errors ({len(errors)})"  # type: ignore[assignment]
+            tab.label = label  # type: ignore[assignment]
 
     def _clear_log(self, widget_id: str) -> None:
         """ログをクリアする。"""
