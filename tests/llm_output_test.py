@@ -7,8 +7,8 @@ import pyfltr.error_parser
 import pyfltr.llm_output
 
 
-def test_build_diag_record_with_rule_severity_fix() -> None:
-    """rule・severity・fixフィールドがdiagレコードに含まれることのテスト。"""
+def test_build_diagnostic_record_with_rule_severity_fix() -> None:
+    """rule・severity・fixフィールドがdiagnosticレコードに含まれることのテスト。"""
     error = pyfltr.error_parser.ErrorLocation(
         file="src/foo.py",
         line=10,
@@ -19,8 +19,8 @@ def test_build_diag_record_with_rule_severity_fix() -> None:
         severity="error",
         fix="safe",
     )
-    record = pyfltr.llm_output._build_diag_record(error)
-    assert record["kind"] == "diag"
+    record = pyfltr.llm_output._build_diagnostic_record(error)
+    assert record["kind"] == "diagnostic"
     assert record["tool"] == "ruff-check"
     assert record["file"] == "src/foo.py"
     assert record["line"] == 10
@@ -35,7 +35,7 @@ def test_build_diag_record_with_rule_severity_fix() -> None:
     assert keys[-1] == "msg"
 
 
-def test_build_diag_record_none_fields_omitted() -> None:
+def test_build_diagnostic_record_none_fields_omitted() -> None:
     """rule・severity・fixがNoneのときフィールドが省略されることのテスト。"""
     error = pyfltr.error_parser.ErrorLocation(
         file="src/foo.py",
@@ -44,7 +44,7 @@ def test_build_diag_record_none_fields_omitted() -> None:
         command="mypy",
         message="Name 'x' is not defined",
     )
-    record = pyfltr.llm_output._build_diag_record(error)
+    record = pyfltr.llm_output._build_diagnostic_record(error)
     assert "col" not in record
     assert "rule" not in record
     assert "severity" not in record
@@ -52,7 +52,7 @@ def test_build_diag_record_none_fields_omitted() -> None:
     assert record["msg"] == "Name 'x' is not defined"
 
 
-def test_build_diag_record_partial_fields() -> None:
+def test_build_diagnostic_record_partial_fields() -> None:
     """一部のフィールドのみ設定されている場合のテスト。"""
     error = pyfltr.error_parser.ErrorLocation(
         file="src/foo.py",
@@ -63,7 +63,7 @@ def test_build_diag_record_partial_fields() -> None:
         rule="C0114",
         severity="warning",
     )
-    record = pyfltr.llm_output._build_diag_record(error)
+    record = pyfltr.llm_output._build_diagnostic_record(error)
     assert record["rule"] == "C0114"
     assert record["severity"] == "warning"
     assert "fix" not in record
@@ -81,7 +81,7 @@ def test_dump_roundtrip() -> None:
         severity="error",
         fix="safe",
     )
-    record = pyfltr.llm_output._build_diag_record(error)
+    record = pyfltr.llm_output._build_diagnostic_record(error)
     line = pyfltr.llm_output._dump(record)
     parsed = json.loads(line)
     assert parsed["rule"] == "F401"

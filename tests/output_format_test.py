@@ -26,8 +26,8 @@ def _default_config() -> pyfltr.config.Config:
 # ---------------------------------------------------------------------------
 
 
-def test_build_lines_supported_tool_diags(default_config):
-    """error_parser 対応ツールの診断が diag レコードとして出ること。"""
+def test_build_lines_supported_tool_diagnostics(default_config):
+    """error_parser 対応ツールの診断が diagnostic レコードとして出ること。"""
     errors = [
         _make_error("mypy", "src/a.py", 10, "bad type", col=4),
         _make_error("mypy", "src/a.py", 20, "missing return"),
@@ -36,12 +36,25 @@ def test_build_lines_supported_tool_diags(default_config):
     lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=1)
     parsed = [json.loads(line) for line in lines]
 
-    assert [r["kind"] for r in parsed] == ["diag", "diag", "tool", "summary"]
-    assert parsed[0] == {"kind": "diag", "tool": "mypy", "file": "src/a.py", "line": 10, "col": 4, "msg": "bad type"}
-    assert parsed[1] == {"kind": "diag", "tool": "mypy", "file": "src/a.py", "line": 20, "msg": "missing return"}
-    assert parsed[2]["diags"] == 2
+    assert [r["kind"] for r in parsed] == ["diagnostic", "diagnostic", "tool", "summary"]
+    assert parsed[0] == {
+        "kind": "diagnostic",
+        "tool": "mypy",
+        "file": "src/a.py",
+        "line": 10,
+        "col": 4,
+        "msg": "bad type",
+    }
+    assert parsed[1] == {
+        "kind": "diagnostic",
+        "tool": "mypy",
+        "file": "src/a.py",
+        "line": 20,
+        "msg": "missing return",
+    }
+    assert parsed[2]["diagnostics"] == 2
     assert parsed[2]["status"] == "failed"
-    assert parsed[3]["diags"] == 2
+    assert parsed[3]["diagnostics"] == 2
     assert parsed[3]["failed"] == 1
 
 
@@ -54,13 +67,13 @@ def test_build_lines_unsupported_tool_only(default_config):
     assert [r["kind"] for r in parsed] == ["tool", "summary"]
     assert parsed[0]["tool"] == "black"
     assert parsed[0]["status"] == "formatted"
-    assert parsed[0]["diags"] == 0
+    assert parsed[0]["diagnostics"] == 0
     assert "message" not in parsed[0]
     assert parsed[1]["formatted"] == 1
 
 
 def test_build_lines_mixed_order(default_config):
-    """diag はファイル/行順、tool は config.command_names 順になること。"""
+    """diagnostic はファイル/行順、tool は config.command_names 順になること。"""
     mypy_result = _make_result(
         "mypy",
         returncode=1,
@@ -80,8 +93,8 @@ def test_build_lines_mixed_order(default_config):
     lines = pyfltr.llm_output.build_lines([mypy_result, pylint_result, black_result], default_config, exit_code=1)
     parsed = [json.loads(line) for line in lines]
 
-    diag_records = [r for r in parsed if r["kind"] == "diag"]
-    assert [(r["file"], r["line"], r["tool"]) for r in diag_records] == [
+    diagnostic_records = [r for r in parsed if r["kind"] == "diagnostic"]
+    assert [(r["file"], r["line"], r["tool"]) for r in diagnostic_records] == [
         ("src/a.py", 10, "pylint"),
         ("src/a.py", 30, "mypy"),
         ("src/b.py", 5, "mypy"),
@@ -101,7 +114,7 @@ def test_build_lines_ensure_ascii_false(default_config):
 
 
 def test_build_lines_skipped_status(default_config):
-    """returncode=None (skipped) は rc キーを省略し diags=0 の tool レコードを出す。"""
+    """returncode=None (skipped) は rc キーを省略し diagnostics=0 の tool レコードを出す。"""
     result = _make_result("mypy", returncode=None, has_error=False)
     lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=0)
     parsed = [json.loads(line) for line in lines]
@@ -117,8 +130,8 @@ def test_build_lines_skipped_status(default_config):
 # ---------------------------------------------------------------------------
 
 
-def test_tool_record_message_on_failure_without_diags(default_config):
-    """status=failed かつ diags=0 のとき、output 末尾が message に入ること。"""
+def test_tool_record_message_on_failure_without_diagnostics(default_config):
+    """status=failed かつ diagnostics=0 のとき、output 末尾が message に入ること。"""
     output = "line1\nline2\nError: command not found\n"
     result = _make_result("shellcheck", returncode=127, output=output)
     lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=1)
@@ -142,8 +155,8 @@ def test_tool_record_message_truncates_long_output(default_config):
     assert len(msg) <= 2000 + len("... (truncated)\n")
 
 
-def test_tool_record_no_message_when_diags_present(default_config):
-    """failed でも diags > 0 のときは message を出さない。"""
+def test_tool_record_no_message_when_diagnostics_present(default_config):
+    """failed でも diagnostics > 0 のときは message を出さない。"""
     errors = [_make_error("mypy", "src/a.py", 1, "bad")]
     result = _make_result("mypy", returncode=1, output="verbose mypy output", errors=errors)
     lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=1)

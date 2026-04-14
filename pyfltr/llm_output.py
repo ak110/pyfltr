@@ -1,7 +1,7 @@
 """LLM 向け JSON Lines 出力。
 
 `--output-format=jsonl` で呼ばれ、CommandResult 群を LLM / エージェントが
-読みやすいフラットな JSON Lines 形式 (diag / tool / summary の 3 種別) に
+読みやすいフラットな JSON Lines 形式 (diagnostic / tool / summary の 3 種別) に
 変換して書き出す。
 """
 
@@ -14,7 +14,7 @@ import pyfltr.command
 import pyfltr.config
 import pyfltr.error_parser
 
-# failed かつ diags=0 のときに tool.message として載せる生出力のトリム上限。
+# failed かつ diagnostics=0 のときに tool.message として載せる生出力のトリム上限。
 # 末尾 30 行を取り出し、さらに末尾 2000 文字に切り詰める。
 _MESSAGE_MAX_LINES = 30
 _MESSAGE_MAX_CHARS = 2000
@@ -30,7 +30,7 @@ def build_lines(
     """CommandResult 群から JSONL 各行を生成する。
 
     出力順:
-        1. 全診断を (file, line, col, command 順) で昇順ソートした diag 行
+        1. 全診断を (file, line, col, command 順) で昇順ソートした diagnostic 行
         2. config.command_names の定義順に並べた tool 行
         3. summary 行 1 行
 
@@ -45,15 +45,15 @@ def build_lines(
         all_errors.extend(result.errors)
     sorted_errors = pyfltr.error_parser.sort_errors(all_errors, config.command_names)
     for error in sorted_errors:
-        lines.append(_dump(_build_diag_record(error)))
+        lines.append(_dump(_build_diagnostic_record(error)))
 
-    diag_counts: dict[str, int] = {}
+    diagnostic_counts: dict[str, int] = {}
     for error in all_errors:
-        diag_counts[error.command] = diag_counts.get(error.command, 0) + 1
+        diagnostic_counts[error.command] = diagnostic_counts.get(error.command, 0) + 1
 
     for result in ordered:
-        diags = diag_counts.get(result.command, 0)
-        lines.append(_dump(_build_tool_record(result, diags=diags)))
+        diagnostics = diagnostic_counts.get(result.command, 0)
+        lines.append(_dump(_build_tool_record(result, diagnostics=diagnostics)))
 
     lines.append(_dump(_build_summary_record(ordered, exit_code=exit_code)))
     return lines
@@ -98,10 +98,10 @@ def _dump(record: dict[str, typing.Any]) -> str:
     return json.dumps(record, ensure_ascii=False, separators=(",", ":"))
 
 
-def _build_diag_record(error: pyfltr.error_parser.ErrorLocation) -> dict[str, typing.Any]:
-    """ErrorLocation を diag レコード dict に変換する。None のフィールドは省略。"""
+def _build_diagnostic_record(error: pyfltr.error_parser.ErrorLocation) -> dict[str, typing.Any]:
+    """ErrorLocation を diagnostic レコード dict に変換する。None のフィールドは省略。"""
     record: dict[str, typing.Any] = {
-        "kind": "diag",
+        "kind": "diagnostic",
         "tool": error.command,
         "file": error.file,
         "line": error.line,
@@ -118,10 +118,10 @@ def _build_diag_record(error: pyfltr.error_parser.ErrorLocation) -> dict[str, ty
     return record
 
 
-def _build_tool_record(result: pyfltr.command.CommandResult, *, diags: int) -> dict[str, typing.Any]:
+def _build_tool_record(result: pyfltr.command.CommandResult, *, diagnostics: int) -> dict[str, typing.Any]:
     """CommandResult を tool レコード dict に変換する。
 
-    `failed` かつ `diags == 0` のときに限り、`CommandResult.output` の末尾を
+    `failed` かつ `diagnostics == 0` のときに限り、`CommandResult.output` の末尾を
     `_truncate_message()` でトリムして `message` フィールドを付与する。
     """
     record: dict[str, typing.Any] = {
@@ -131,11 +131,11 @@ def _build_tool_record(result: pyfltr.command.CommandResult, *, diags: int) -> d
         "status": result.status,
         "files": result.files,
         "elapsed": round(result.elapsed, 2),
-        "diags": diags,
+        "diagnostics": diagnostics,
     }
     if result.returncode is not None:
         record["rc"] = result.returncode
-    if result.status == "failed" and diags == 0:
+    if result.status == "failed" and diagnostics == 0:
         message = _truncate_message(result.output)
         if message:
             record["message"] = message
@@ -149,10 +149,10 @@ def _build_summary_record(
 ) -> dict[str, typing.Any]:
     """ordered_results から集計して summary レコード dict を作る。"""
     counts = {"succeeded": 0, "formatted": 0, "failed": 0, "skipped": 0}
-    total_diags = 0
+    total_diagnostics = 0
     for result in ordered_results:
         counts[result.status] = counts.get(result.status, 0) + 1
-        total_diags += len(result.errors)
+        total_diagnostics += len(result.errors)
     return {
         "kind": "summary",
         "total": len(ordered_results),
@@ -160,7 +160,7 @@ def _build_summary_record(
         "formatted": counts["formatted"],
         "failed": counts["failed"],
         "skipped": counts["skipped"],
-        "diags": total_diags,
+        "diagnostics": total_diagnostics,
         "exit": exit_code,
     }
 

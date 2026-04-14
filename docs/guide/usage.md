@@ -156,22 +156,22 @@ pyfltr ci --output-format=jsonl --exit-zero-even-if-formatted | tee out.jsonl
 
 出力は以下3種別のレコードからなる。
 
-- `diag`: 個々の診断（`error_parser`対応ツールの抽出結果）
+- `diagnostic`: 個々の診断（`error_parser`対応ツールの抽出結果）
 - `tool`: 1ツール1レコードの実行メタ情報
 - `summary`: 最終行1レコード、全体集計
 
 ```json
-{"kind":"diag","tool":"mypy","file":"src/a.py","line":42,"col":5,"msg":"Incompatible return value type"}
-{"kind":"tool","tool":"mypy","type":"linter","status":"failed","files":12,"elapsed":0.8,"diags":1,"rc":1}
-{"kind":"tool","tool":"black","type":"formatter","status":"formatted","files":12,"elapsed":0.3,"diags":0,"rc":1}
-{"kind":"summary","total":2,"succeeded":0,"formatted":1,"failed":1,"skipped":0,"diags":1,"exit":1}
+{"kind":"diagnostic","tool":"mypy","file":"src/a.py","line":42,"col":5,"msg":"Incompatible return value type"}
+{"kind":"tool","tool":"mypy","type":"linter","status":"failed","files":12,"elapsed":0.8,"diagnostics":1,"rc":1}
+{"kind":"tool","tool":"black","type":"formatter","status":"formatted","files":12,"elapsed":0.3,"diagnostics":0,"rc":1}
+{"kind":"summary","total":2,"succeeded":0,"formatted":1,"failed":1,"skipped":0,"diagnostics":1,"exit":1}
 ```
 
-出力順は`diag`（file/line/col/command順）→`tool`（`pyproject.toml`の定義順）→`summary`（1行）で固定。`tail -1`で`summary`だけ取れる。
+出力順は`diagnostic`（file/line/col/command順）→`tool`（`pyproject.toml`の定義順）→`summary`（1行）で固定。`tail -1`で`summary`だけ取れる。
 
-`tool`レコードは`status == "failed"`かつ`diags == 0`のときに限り、`message`フィールドに`CommandResult.output`の末尾をトリム（30行・2000文字の短い方）した内容を含める。実行ファイル未検出など、`error_parser`でパースできない失敗理由を捕捉するため。
+`tool`レコードは`status == "failed"`かつ`diagnostics == 0`のときに限り、`message`フィールドに`CommandResult.output`の末尾をトリム（30行・2000文字の短い方）した内容を含める。実行ファイル未検出など、`error_parser`でパースできない失敗理由を捕捉するため。
 
-`diag`レコードの`col`は抽出できた場合のみ含まれる。`tool`レコードの`rc`は`returncode is not None`のときのみ（`skipped`では省略）。
+`diagnostic`レコードの`col`は抽出できた場合のみ含まれる。`tool`レコードの`rc`は`returncode is not None`のときのみ（`skipped`では省略）。
 
 ### LLM連携の例
 
@@ -181,7 +181,7 @@ pyfltr ci --output-format=jsonl --exit-zero-even-if-formatted | tee out.jsonl
 pyfltr ci --output-format=jsonl --exit-zero-even-if-formatted --output-file=.claude/lint.jsonl
 ```
 
-ファイル末尾の`summary`行を読めば全体像が掴めて、必要に応じて`diag`行を参照することでトークン消費を抑えられる。
+ファイル末尾の`summary`行を読めば全体像が掴めて、必要に応じて`diagnostic`行を参照することでトークン消費を抑えられる。
 
 LLMエージェントがpyfltrを活用する基本的な流れ:
 
@@ -191,7 +191,7 @@ LLMエージェントがpyfltrを活用する基本的な流れ:
     pyfltr run --output-format=jsonl
     ```
 
-    末尾のsummary行（`"kind":"summary"`）で`failed`の有無と`diags`数を確認し、問題がなければ完了する。
+    末尾のsummary行（`"kind":"summary"`）で`failed`の有無と`diagnostics`数を確認し、問題がなければ完了する。
 
 2. 問題があるツールだけ個別に再実行する
 
@@ -199,7 +199,7 @@ LLMエージェントがpyfltrを活用する基本的な流れ:
     pyfltr run --commands=mypy --output-format=jsonl
     ```
 
-    `--commands`で特定ツールに絞ることで出力量を抑えつつ、`diag`行から修正対象のファイル・行番号・メッセージを取得する。
+    `--commands`で特定ツールに絞ることで出力量を抑えつつ、`diagnostic`行から修正対象のファイル・行番号・メッセージを取得する。
 
 pyfltrを頻繁に呼び出すプロジェクトでは、`pyproject.toml`に既定値を設定するとCLIオプションの指定を省略できる。
 
