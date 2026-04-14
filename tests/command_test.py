@@ -686,6 +686,14 @@ def test_build_subprocess_env_sets_supply_chain_defaults(monkeypatch: pytest.Mon
     assert env["NPM_CONFIG_MINIMUM_RELEASE_AGE"] == "1440"
 
 
+def test_build_subprocess_env_sets_python_utf8_mode() -> None:
+    """サブプロセスはPython UTF-8モードで動く。"""
+    config = pyfltr.config.create_default_config()
+    env = pyfltr.command._build_subprocess_env(config, "pytest")
+
+    assert env["PYTHONUTF8"] == "1"
+
+
 def test_build_subprocess_env_preserves_existing_supply_chain_values(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -656,6 +656,10 @@ def _build_subprocess_env(config: pyfltr.config.Config, command: str) -> dict[st
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUNBUFFERED"] = "1"
     env["PYTHONDONTWRITEBYTECODE"] = "1"
+    # Windows の cp932/cp1252 などに依存せず、ツール側の open()/Path.read_text() を UTF-8 で動かす。
+    # 例: uv-sort が pyproject.toml をエンコーディング未指定で読み込む箇所で発生する
+    # UnicodeDecodeError を回避する。
+    env["PYTHONUTF8"] = "1"
     if config.values.get(f"{command}-devmode", False):
         env["PYTHONDEVMODE"] = "1"
     # 表示幅を適切な範囲に制限する
