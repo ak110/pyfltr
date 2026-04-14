@@ -46,6 +46,7 @@ Formattersによるファイル変更があっても終了コードは0になる
 
 - Formatters: `pyupgrade` `autoflake` `isort` `black` `ruff-format` `prettier` `uv-sort` `shfmt` `cargo-fmt` `dotnet-format`
 - Linters: `ec` `shellcheck` `typos` `actionlint` `ruff-check` `pflake8` `ty` `markdownlint` `textlint` `biome` `oxlint` `cargo-clippy`
+- その他: `pre-commit`（`.pre-commit-config.yaml`のhookを統合実行）
 
 含まれるコマンドは各コマンドの`{command}-fast`設定で制御できる（[設定](configuration.md)を参照）。
 
@@ -99,7 +100,7 @@ pyfltr ci --commands=ruff-check,markdownlint [files and/or directories ...]
 
 以下のエイリアスも使用可能。(例: `--commands=format`)
 
-- `format`: `pyupgrade` `autoflake` `isort` `black` `ruff-format` `prettier` `uv-sort` `shfmt` `cargo-fmt` `dotnet-format`
+- `format`: `pre-commit` `pyupgrade` `autoflake` `isort` `black` `ruff-format` `prettier` `uv-sort` `shfmt` `cargo-fmt` `dotnet-format`
 - `lint`:
     - Python系: `ruff-check` `pflake8` `mypy` `pylint` `pyright` `ty`
     - Markdown系: `markdownlint` `textlint`

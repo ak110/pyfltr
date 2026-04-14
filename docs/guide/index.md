@@ -41,6 +41,8 @@
     - vitest
     - cargo test
     - dotnet test
+- その他
+    - pre-commit（`.pre-commit-config.yaml`のhookを統合実行）
 
 プリセットで一括有効化なども可能。詳細は[設定項目](configuration.md)を参照。
 
