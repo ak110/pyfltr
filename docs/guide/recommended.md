@@ -297,7 +297,7 @@ config:
 ## .textlintrc.yaml
 
 textlintで技術文書向けの複数プリセットと誤用語チェックを併用する例。
-対応する`textlint-packages`の設定例は[textlint-packagesのカスタマイズ](#textlint-packagesのカスタマイズ)を参照。
+対応する`textlint-packages`の設定例は本ページ後半の「textlint-packagesのカスタマイズ」節を参照。
 
 ```yaml
 rules:

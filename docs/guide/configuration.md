@@ -154,4 +154,4 @@ pflake8-fast = false
 
 ---
 
-個別のツール設定（2段階実行、ファイルパターン、bin-runner、npm系ツール、カスタムコマンド等）の詳細はツール別設定ページ（[docs/guide/configuration-tools.md](configuration-tools.md)）を参照。
+個別のツール設定（2段階実行、ファイルパターン、bin-runner、npm系ツール、カスタムコマンド等）の詳細は[ツール別設定](configuration-tools.md)を参照。
