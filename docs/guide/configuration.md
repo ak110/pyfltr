@@ -13,7 +13,7 @@ extend-exclude = ["foo", "bar.py"]
 
 ## 設定項目一覧
 
-設定項目と既定値は`pyfltr --generate-config`で確認可能。
+設定項目と既定値は`pyfltr generate-config`で確認可能。
 
 - preset : プリセット設定（後述）
 - python : Python系ツールの一括有効/無効（後述）

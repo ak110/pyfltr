@@ -48,12 +48,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="カンマ区切りのコマンド一覧を指定します。"
         "(既定: ビルトイン + カスタムコマンドを含む、pyproject.toml で有効な全コマンド)",
     )
-    parser.add_argument(
-        "--generate-config",
-        default=False,
-        action="store_true",
-        help="設定ファイルのサンプルを生成します(pyproject.toml の一部)。",
-    )
     parser.add_argument("--ui", default=None, action="store_true", help="Textual UI を強制的に有効化します。")
     parser.add_argument("--no-ui", default=None, action="store_true", help="Textual UI を強制的に無効化します。")
     parser.add_argument(
@@ -137,7 +131,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 # サブコマンドとして認識する予約語
-_SUBCOMMANDS: frozenset[str] = frozenset({"ci", "run", "fast", "fix", "dirty"})
+_SUBCOMMANDS: frozenset[str] = frozenset({"ci", "run", "fast", "fix", "dirty", "generate-config"})
 
 
 def _parse_subcommand(sys_args: typing.Sequence[str]) -> tuple[str, list[str]]:
@@ -173,6 +167,12 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
     if subcommand == "dirty":
         logger.error("dirty サブコマンドは廃止されました。")
         return 1
+
+    # generate-configサブコマンド: 他のオプションは無視して設定雛形を出力する
+    if subcommand == "generate-config":
+        logging.basicConfig(level=logging.INFO, format="%(message)s")
+        logger.info(pyfltr.config.generate_config_text())
+        return 0
 
     # `--fix` は非推奨。`pyfltr fix` サブコマンドで暗黙的に付与する経路と区別するため、
     # ユーザーが明示的に指定したかどうかは effective_args 組み立て前の remaining_args で判定する。
@@ -255,11 +255,6 @@ def _run_impl(
     # --version
     if args.version:
         logger.info(f"pyfltr {importlib.metadata.version('pyfltr')}")
-        return 0
-
-    # --generate-config
-    if args.generate_config:
-        logger.info(pyfltr.config.generate_config_text())
         return 0
 
     # jsonl stdout モード (CLI で `--output-format=jsonl` かつ `--output-file` 未指定) は
