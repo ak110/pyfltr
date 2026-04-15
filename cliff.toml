@@ -1,7 +1,7 @@
 [changelog]
 body = """
 {% for group, commits in commits | group_by(attribute="group") %}
-### {{ group | upper_first }}
+### {{ group | striptags | trim | upper_first }}
 {% for commit in commits %}
 - {{ commit.message | split(pat="\n") | first | trim }}
 {%- endfor %}
@@ -14,12 +14,10 @@ conventional_commits = true
 filter_unconventional = false
 protect_breaking_commits = true
 commit_parsers = [
-    { message = "^feat", group = "Features" },
-    { message = "^fix", group = "Bug Fixes" },
-    { message = "^refactor", group = "Refactoring" },
-    { message = "^perf", group = "Performance" },
-    { message = "^docs", group = "Documentation" },
+    { message = "^feat", group = "<!-- 0 -->Features" },
+    { message = "^fix", group = "<!-- 1 -->Bug Fixes" },
+    { message = "^perf", group = "<!-- 2 -->Performance" },
     { message = "^chore|^ci|^test|^style|^build|^release", skip = true },
-    { message = ".*", group = "Other" },
+    { message = ".*", group = "<!-- 3 -->Other" },
 ]
 tag_pattern = "v[0-9].*"
