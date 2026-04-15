@@ -67,10 +67,10 @@ class TestDetectPyfltrHooks:
                   - repo: local
                     hooks:
                       - id: pyfltr-app
-                        entry: uv run pyfltr --exit-zero-even-if-formatted --commands=fast app
+                        entry: uv run pyfltr run --exit-zero-even-if-formatted --commands=fast app
                         language: system
                       - id: pyfltr-markdown
-                        entry: uv run pyfltr --exit-zero-even-if-formatted --commands=markdownlint,textlint
+                        entry: uv run pyfltr run --exit-zero-even-if-formatted --commands=markdownlint,textlint
                         language: system
                       - id: pyfltr-server
                         entry: bash -c 'cd server && uv run pyfltr fast'

@@ -94,7 +94,7 @@ uv add --optional <extra> <new-tool-package>
 ## 7. 検証
 
 ```bash
-make test
+uv run pyfltr run --output-format=jsonl
 ```
 
 このテストが成功すればコミット可能。
