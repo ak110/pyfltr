@@ -33,7 +33,17 @@ def main() -> typing.NoReturn:
 def build_parser() -> argparse.ArgumentParser:
     """引数パーサーを生成。"""
     parser = argparse.ArgumentParser(
-        epilog="ドキュメント: https://ak110.github.io/pyfltr/\nllms.txt: https://ak110.github.io/pyfltr/llms.txt",
+        epilog=(
+            "サブコマンド (省略時は ci):\n"
+            "  ci               CI モードで実行する (既定)。フォーマッターの変更も失敗扱い。\n"
+            "  run              通常実行。フォーマッターの変更は成功扱いで fix ステージ有効。\n"
+            "  fast             高速ツールのみ実行 (--commands=fast 相当)。\n"
+            "  agent            LLM エージェント向け (JSONL 出力を既定化)。\n"
+            "  generate-config  pyproject.toml 用の設定雛形を出力する。\n"
+            "\n"
+            "ドキュメント: https://ak110.github.io/pyfltr/\n"
+            "llms.txt: https://ak110.github.io/pyfltr/llms.txt"
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("-v", "--verbose", default=False, action="store_true", help="詳細な出力を表示します。")
