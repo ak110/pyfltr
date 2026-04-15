@@ -730,6 +730,14 @@ def load_config(config_dir: pathlib.Path | None = None) -> Config:
         key = key.replace("_", "-")  # 「_」区切りと「-」区切りのどちらもOK
         if key in skip_keys:
             continue  # 別途処理済み
+        # {command}-exclude の検出
+        if key.endswith("-exclude"):
+            cmd_name = key.removesuffix("-exclude")
+            if cmd_name in config.commands:
+                if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+                    raise ValueError(f"設定値が不正です: {key} はstr型のリストで指定してください")
+                config.values[key] = value
+                continue
         # {command}-extend-targets の検出（長いサフィックスを先に判定）
         if key.endswith("-extend-targets"):
             cmd_name = key.removesuffix("-extend-targets")

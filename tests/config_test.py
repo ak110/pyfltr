@@ -906,3 +906,24 @@ def test_native_lang_tools_in_aliases() -> None:
     assert "dotnet-build" in aliases["lint"]
     assert "cargo-test" in aliases["test"]
     assert "dotnet-test" in aliases["test"]
+
+
+def test_tool_exclude_loaded(tmp_path: pathlib.Path) -> None:
+    """{tool}-exclude が pyproject.toml から読み込まれて config.values に格納される。"""
+    (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\nmypy-exclude = ["vendor", "gen_*.py"]\n')
+    config = pyfltr.config.load_config(config_dir=tmp_path)
+    assert config.values["mypy-exclude"] == ["vendor", "gen_*.py"]
+
+
+def test_tool_exclude_unknown_command(tmp_path: pathlib.Path) -> None:
+    """未知のコマンド名の {tool}-exclude 指定はエラーになる。"""
+    (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\nunknown-exclude = ["foo"]\n')
+    with pytest.raises(ValueError, match="設定キーが不正です"):
+        pyfltr.config.load_config(config_dir=tmp_path)
+
+
+def test_tool_exclude_invalid_type(tmp_path: pathlib.Path) -> None:
+    """{tool}-exclude に文字列リスト以外を指定するとエラーになる。"""
+    (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\nmypy-exclude = 42\n")
+    with pytest.raises(ValueError, match="str型のリスト"):
+        pyfltr.config.load_config(config_dir=tmp_path)

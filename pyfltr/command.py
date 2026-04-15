@@ -442,6 +442,12 @@ def execute_command(
     globs = command_info.target_globs()
     targets: list[pathlib.Path] = filter_by_globs(all_files, globs)
 
+    # ツール別excludeの適用（--no-excludeが指定された場合はスキップ）
+    if not args.no_exclude:
+        tool_excludes: list[str] = config.values.get(f"{command}-exclude", [])
+        if tool_excludes:
+            targets = [t for t in targets if not _matches_exclude_patterns(t, tool_excludes)]
+
     # ファイルの順番をシャッフルまたはソート（fix ステージは再現性重視でシャッフルを無効化）
     if args.shuffle and not fix_stage:
         random.shuffle(targets)
@@ -1448,17 +1454,20 @@ def _filter_by_gitignore(paths: list[pathlib.Path]) -> list[pathlib.Path]:
     return [p for p in paths if str(p) not in ignored_set]
 
 
+def _matches_exclude_patterns(path: pathlib.Path, patterns: list[str]) -> bool:
+    """パスが除外パターンのいずれかに一致するか否かを返す。"""
+    if any(path.match(glob) for glob in patterns):
+        return True
+    # 親ディレクトリに一致してもTrue
+    part = path.parent
+    for _ in range(len(path.parts) - 1):
+        if any(part.match(glob) for glob in patterns):
+            return True
+        part = part.parent
+    return False
+
+
 def excluded(path: pathlib.Path, config: pyfltr.config.Config) -> bool:
     """無視パターンチェック。"""
     excludes = config["exclude"] + config["extend-exclude"]
-    # 対象パスに一致したらTrue
-    if any(path.match(glob) for glob in excludes):
-        return True
-    # 親に一致してもTrue
-    part = path.parent
-    for _ in range(len(path.parts) - 1):
-        if any(part.match(glob) for glob in excludes):
-            return True
-        part = part.parent
-    # どれにも一致しなかったらFalse
-    return False
+    return _matches_exclude_patterns(path, excludes)

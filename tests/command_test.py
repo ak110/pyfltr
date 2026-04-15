@@ -16,9 +16,9 @@ import pyfltr.config
 from tests import conftest as _testconf
 
 
-def _make_args() -> argparse.Namespace:
+def _make_args(*, no_exclude: bool = False) -> argparse.Namespace:
     """execute_command に渡す argparse.Namespace を作成。"""
-    return argparse.Namespace(shuffle=False, verbose=False)
+    return argparse.Namespace(shuffle=False, verbose=False, no_exclude=no_exclude)
 
 
 def test_ruff_format_two_step_runs_check_and_format(mocker, tmp_path: pathlib.Path) -> None:
@@ -1442,3 +1442,50 @@ def test_cargo_test_skipped_when_no_rs_files(mocker) -> None:
     assert mock_run.call_count == 0
     assert result.returncode is None
     assert result.files == 0
+
+
+def test_tool_exclude_filters_files(mocker, tmp_path: pathlib.Path) -> None:
+    """{tool}-exclude に一致するファイルがツール実行から除外される。"""
+    kept = tmp_path / "main.py"
+    excluded_ = tmp_path / "gen_foo.py"
+    kept.write_text("x = 1\n")
+    excluded_.write_text("x = 2\n")
+
+    proc = subprocess.CompletedProcess(["ruff"], returncode=0, stdout="")
+    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+
+    config = pyfltr.config.create_default_config()
+    config.values["ruff-check"] = True
+    config.values["ruff-check-exclude"] = ["gen_*.py"]
+
+    result = pyfltr.command.execute_command("ruff-check", _make_args(), config, [kept, excluded_])
+
+    assert mock_run.call_count == 1
+    cmdline = mock_run.call_args_list[0][0][0]
+    assert str(kept) in cmdline
+    assert str(excluded_) not in cmdline
+    assert result.status == "succeeded"
+
+
+def test_tool_exclude_disabled_by_no_exclude(mocker, tmp_path: pathlib.Path) -> None:
+    """--no-exclude 指定時は {tool}-exclude が無効化される。"""
+    kept = tmp_path / "main.py"
+    would_be_excluded = tmp_path / "gen_foo.py"
+    kept.write_text("x = 1\n")
+    would_be_excluded.write_text("x = 2\n")
+
+    proc = subprocess.CompletedProcess(["ruff"], returncode=0, stdout="")
+    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+
+    config = pyfltr.config.create_default_config()
+    config.values["ruff-check"] = True
+    config.values["ruff-check-exclude"] = ["gen_*.py"]
+
+    result = pyfltr.command.execute_command("ruff-check", _make_args(no_exclude=True), config, [kept, would_be_excluded])
+
+    assert mock_run.call_count == 1
+    cmdline = mock_run.call_args_list[0][0][0]
+    # --no-exclude なので両ファイルとも渡される
+    assert str(kept) in cmdline
+    assert str(would_be_excluded) in cmdline
+    assert result.status == "succeeded"

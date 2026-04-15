@@ -25,6 +25,7 @@ extend-exclude = ["foo", "bar.py"]
 - {command}-fix-args : fix段で`{command}-args`の後に追加する引数（既定値はtextlint / markdownlint / ruff-check / eslint / biomeのみ定義）
 - {command}-targets : 対象ファイルパターンの完全上書き
 - {command}-extend-targets : 対象ファイルパターンへの追加
+- {command}-exclude : ツール別の追加除外パターン（後述）
 - {command}-pass-filenames : ファイル引数をコマンドに渡すか否か（既定: `true`）
 - {command}-version : bin-runner対応ツールのバージョン指定（既定: `"latest"`）
 - pylint-pydantic : pylint実行時に`--load-plugins=pylint_pydantic`を自動追加するか（既定: `true`、後述）
@@ -98,6 +99,22 @@ js-runner = "pnpm"
 eslint = true
 prettier = true
 ```
+
+## ツール別除外設定
+
+`{command}-exclude`を設定すると、特定ツールにのみ適用する追加の除外パターンを指定できる。
+全体の`exclude`/`extend-exclude`による除外はこれとは独立して事前に適用される。
+
+```toml
+[tool.pyfltr]
+# mypy だけ vendor/ と gen_*.py を除外する
+mypy-exclude = ["vendor", "gen_*.py"]
+```
+
+パターンの書式は`extend-exclude`と同じflake8風のglobパターンで、ディレクトリ指定はその配下も除外される。
+`--no-exclude`を指定した場合、全体の`exclude`/`extend-exclude`と合わせてツール別除外も無効化される。
+
+`pass-filenames = false`のツール（pre-commit・tsc・cargo-\*・dotnet-\*など）はファイル名をコマンドに渡さないため、`{command}-exclude`を設定しても効果がない。
 
 ## 自動オプション
 
