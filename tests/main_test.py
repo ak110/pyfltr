@@ -146,6 +146,11 @@ class TestParseSubcommand:
         assert sub == "fast"
         assert remaining == ["src/"]
 
+    def test_agent_subcommand(self):
+        sub, remaining = pyfltr.main._parse_subcommand(["agent", "src/"])
+        assert sub == "agent"
+        assert remaining == ["src/"]
+
     def test_dirty_subcommand_is_deprecated(self):
         """廃止されたdirtyサブコマンドがエラー終了することを確認。"""
         assert pyfltr.main.run(["dirty", "init"]) == 1
@@ -171,6 +176,10 @@ class TestBuildEffectiveArgs:
         result = pyfltr.main._build_effective_args("fast", ["src/"])
         assert result == ["--exit-zero-even-if-formatted", "--commands=fast", "src/"]
 
+    def test_agent(self):
+        result = pyfltr.main._build_effective_args("agent", ["src/"])
+        assert result == ["--exit-zero-even-if-formatted", "--output-format=jsonl", "src/"]
+
 
 class TestSubcommandIntegration:
     """サブコマンドの統合テスト。"""
@@ -187,6 +196,13 @@ class TestSubcommandIntegration:
         proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="test")
         mocker.patch("subprocess.run", return_value=proc)
         returncode = pyfltr.main.run(["fast", str(pathlib.Path(__file__).parent.parent)])
+        assert returncode == 0
+
+    def test_agent_subcommand(self, mocker):
+        """agentサブコマンドで--exit-zero-even-if-formattedと--output-format=jsonlが暗黙的に有効化される。"""
+        proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="test")
+        mocker.patch("subprocess.run", return_value=proc)
+        returncode = pyfltr.main.run(["agent", str(pathlib.Path(__file__).parent.parent)])
         assert returncode == 0
 
     def test_ci_explicit(self, mocker):

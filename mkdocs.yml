@@ -79,8 +79,11 @@ plugins:
         `--output-file`未指定時はstdoutへJSONLのみを書き、進捗ログやTUIは無音化される。指定時はファイルへJSONLを書き、stdoutには従来どおりのテキスト出力を並行出力する（ローカル実行で進捗を追える）。
 
         ```shell
-        pyfltr run --output-format=jsonl | tail -30
+        pyfltr agent | tail -30
         ```
+
+        `pyfltr agent`は`pyfltr run --output-format=jsonl`と等価のエイリアス。
+        環境変数`PYFLTR_OUTPUT_FORMAT=jsonl`でも出力形式を既定で切り替えられる。
 
       sections:
         ホーム:

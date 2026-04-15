@@ -71,7 +71,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--output-format",
         choices=("text", "jsonl"),
         default=None,
-        help="出力形式を指定します(text/jsonl、既定: text)。jsonl は LLM 向け JSON Lines 出力。",
+        help="出力形式を指定します(text/jsonl、既定: text)。jsonl は LLM 向け JSON Lines 出力。"
+        "未指定時は環境変数 PYFLTR_OUTPUT_FORMAT の値を使用します。",
     )
     parser.add_argument(
         "--output-file",
@@ -137,6 +138,7 @@ _SUBCOMMANDS: frozenset[str] = frozenset(
         "ci",
         "run",
         "fast",
+        "agent",
         "generate-config",
         # 以下は廃止済み
         "fix",
@@ -161,6 +163,10 @@ def _build_effective_args(subcommand: str, args: list[str]) -> list[str]:
         return ["--exit-zero-even-if-formatted", *args]
     if subcommand == "fast":
         return ["--exit-zero-even-if-formatted", "--commands=fast", *args]
+    if subcommand == "agent":
+        # run と同等（fix ステージ有効 + formatted を失敗扱いしない）に加え、
+        # JSONL 出力を既定にする LLM エージェント向けのエイリアス。
+        return ["--exit-zero-even-if-formatted", "--output-format=jsonl", *args]
     # ci: 変更なし
     return list(args)
 
@@ -189,8 +195,8 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
     args = parser.parse_args(effective_args)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, format="%(message)s")
 
-    # fix ステージは run / fast で既定有効、ci では無効。`--no-fix` で明示抑止も可。
-    args.include_fix_stage = subcommand in ("run", "fast") and not args.no_fix
+    # fix ステージは run / fast / agent で既定有効、ci では無効。`--no-fix` で明示抑止も可。
+    args.include_fix_stage = subcommand in ("run", "fast", "agent") and not args.no_fix
 
     # --work-dir: ターゲットパスを絶対パスに変換してからcwd変更
     original_cwd: str | None = None
@@ -204,6 +210,28 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
     finally:
         if original_cwd is not None:
             os.chdir(original_cwd)
+
+
+_OUTPUT_FORMAT_ENV = "PYFLTR_OUTPUT_FORMAT"
+_VALID_OUTPUT_FORMATS: frozenset[str] = frozenset({"text", "jsonl"})
+
+
+def _resolve_output_format(parser: argparse.ArgumentParser, cli_value: str | None) -> str:
+    """CLI 引数 > 環境変数 > 既定値(text) の優先順で出力形式を決定する。
+
+    環境変数に不正値が入っている場合は argparse 同様のエラーで即座に終了させる。
+    """
+    if cli_value is not None:
+        return cli_value
+    env_value = os.environ.get(_OUTPUT_FORMAT_ENV)
+    if env_value is None or env_value == "":
+        return "text"
+    if env_value not in _VALID_OUTPUT_FORMATS:
+        parser.error(
+            f"環境変数 {_OUTPUT_FORMAT_ENV} に不正な値が指定されています: {env_value!r} "
+            f"(有効値: {', '.join(sorted(_VALID_OUTPUT_FORMATS))})"
+        )
+    return env_value
 
 
 def _force_jsonl_stdout_mode(args: argparse.Namespace) -> None:
@@ -269,7 +297,7 @@ def _run_impl(
     # load_config() 前から判定できるため、先行して root logger を抑止する。これにより
     # load_config() 失敗時のエラーログや以降の警告/エラーが stdout/stderr に漏れない。
     # 抑止状態は try/finally で必ず復元する (run() は同一プロセス内で複数回呼ばれる設計)。
-    output_format: str = args.output_format or "text"
+    output_format = _resolve_output_format(parser, args.output_format)
     output_file: pathlib.Path | None = args.output_file
     jsonl_stdout = output_format == "jsonl" and output_file is None
     if jsonl_stdout:

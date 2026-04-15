@@ -310,6 +310,44 @@ def test_run_cli_jsonl_ignores_ui(mocker, capsys):
     assert last["kind"] == "summary"
 
 
+def test_run_cli_env_var_jsonl(mocker, capsys, monkeypatch):
+    """PYFLTR_OUTPUT_FORMAT=jsonl で --output-format 未指定でも JSONL 出力になる。"""
+    proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
+    mocker.patch("subprocess.run", return_value=proc)
+    monkeypatch.setenv("PYFLTR_OUTPUT_FORMAT", "jsonl")
+
+    returncode = pyfltr.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    assert returncode == 0
+    captured = capsys.readouterr()
+    assert "----- pyfltr" not in captured.out
+    lines = [line for line in captured.out.splitlines() if line.strip()]
+    assert lines, "JSONL が 1 行も出ていない"
+    last = json.loads(lines[-1])
+    assert last["kind"] == "summary"
+
+
+def test_run_cli_env_var_overridden_by_cli(mocker, caplog, monkeypatch):
+    """PYFLTR_OUTPUT_FORMAT より CLI --output-format=text が優先される。"""
+    proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
+    mocker.patch("subprocess.run", return_value=proc)
+    monkeypatch.setenv("PYFLTR_OUTPUT_FORMAT", "jsonl")
+
+    with caplog.at_level(logging.INFO):
+        pyfltr.main.run(["ci", "--output-format=text", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    # CLI で text を明示しているので従来 text ログが出るべき
+    assert "summary" in caplog.text
+
+
+def test_run_cli_env_var_invalid(mocker, monkeypatch):
+    """PYFLTR_OUTPUT_FORMAT に不正値が入っている場合は SystemExit で終了する。"""
+    proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
+    mocker.patch("subprocess.run", return_value=proc)
+    monkeypatch.setenv("PYFLTR_OUTPUT_FORMAT", "yaml")
+
+    with pytest.raises(SystemExit):
+        pyfltr.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+
+
 def test_run_cli_jsonl_restores_logger_state(mocker, caplog, capsys):
     """jsonl モード実行後、text モードの logger が復元されること。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")

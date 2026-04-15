@@ -94,7 +94,7 @@ uv add --optional <extra> <new-tool-package>
 ## 7. 検証
 
 ```bash
-uv run pyfltr run --output-format=jsonl
+uv run pyfltr agent
 ```
 
 このテストが成功すればコミット可能。
@@ -121,10 +121,10 @@ uv run pyfltr run --output-format=jsonl
 
 ```bash
 # 少数ファイル（対象種別のファイルを1〜2個指定）
-uv run pyfltr run --output-format=jsonl <file1> [file2] 2>/dev/null
+uv run pyfltr agent <file1> [file2] 2>/dev/null
 
 # 全ファイル（引数なしでリポジトリ全体を対象）
-uv run pyfltr run --output-format=jsonl 2>/dev/null
+uv run pyfltr agent 2>/dev/null
 ```
 
 JSONL出力の`tool`レコードから`tool`, `elapsed`, `files`を抽出する:
