@@ -38,7 +38,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  ci               CI モードで実行する (既定)。フォーマッターの変更も失敗扱い。\n"
             "  run              通常実行。フォーマッターの変更は成功扱いで fix ステージ有効。\n"
             "  fast             高速ツールのみ実行 (--commands=fast 相当)。\n"
-            "  agent            LLM エージェント向け (JSONL 出力を既定化)。\n"
+            "  run-for-agent    LLM エージェント向け (JSONL 出力を既定化)。\n"
             "  generate-config  pyproject.toml 用の設定雛形を出力する。\n"
             "\n"
             "ドキュメント: https://ak110.github.io/pyfltr/\n"
@@ -148,7 +148,7 @@ _SUBCOMMANDS: frozenset[str] = frozenset(
         "ci",
         "run",
         "fast",
-        "agent",
+        "run-for-agent",
         "generate-config",
         # 以下は廃止済み
         "fix",
@@ -173,7 +173,7 @@ def _build_effective_args(subcommand: str, args: list[str]) -> list[str]:
         return ["--exit-zero-even-if-formatted", *args]
     if subcommand == "fast":
         return ["--exit-zero-even-if-formatted", "--commands=fast", *args]
-    if subcommand == "agent":
+    if subcommand == "run-for-agent":
         # run と同等（fix ステージ有効 + formatted を失敗扱いしない）に加え、
         # JSONL 出力を既定にする LLM エージェント向けのエイリアス。
         return ["--exit-zero-even-if-formatted", "--output-format=jsonl", *args]
@@ -205,8 +205,8 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
     args = parser.parse_args(effective_args)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, format="%(message)s")
 
-    # fix ステージは run / fast / agent で既定有効、ci では無効。`--no-fix` で明示抑止も可。
-    args.include_fix_stage = subcommand in ("run", "fast", "agent") and not args.no_fix
+    # fix ステージは run / fast / run-for-agent で既定有効、ci では無効。`--no-fix` で明示抑止も可。
+    args.include_fix_stage = subcommand in ("run", "fast", "run-for-agent") and not args.no_fix
 
     # --work-dir: ターゲットパスを絶対パスに変換してからcwd変更
     original_cwd: str | None = None
