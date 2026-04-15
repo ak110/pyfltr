@@ -12,7 +12,7 @@
 - 設定の集約: `pyproject.toml`に寄せた統一設定
 - 除外指定（exclude）の書式差をツール間で吸収
 - 自動修正系ツール（ruff format・prettierなど）を修正と失敗扱いの両立で実行
-- LLMエージェント向けJSON Lines出力（`--output-format=jsonl`）に対応
+- LLMエージェント向けJSON Lines出力（`pyfltr run-for-agent`・`PYFLTR_OUTPUT_FORMAT`環境変数・`--output-format=jsonl`）に対応
 
 ## インストール
 

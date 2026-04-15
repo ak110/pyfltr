@@ -38,9 +38,10 @@ plugins:
         - `pyfltr ci`: 全チェック。formatterによる変更も失敗と判定する（CI向け）
         - `pyfltr run`: 全チェック。fix段→formatter段→linter/tester段の順で、fix-args定義済みlinterの自動修正→formatter→残りの検査を実行する（ローカル向け）
         - `pyfltr fast`: 軽量チェック。`run`と同じ3段構成だが、mypy/pylint/pytest等の重いツールを除外（pre-commit向け）
+        - `pyfltr run-for-agent`: `pyfltr run --output-format=jsonl`のエイリアス。JSONL出力を既定にする（LLMエージェント向け）
         - `pyfltr generate-config`: pyproject.toml用の設定雛形を出力
 
-        `--no-fix`で`run`/`fast`のfix段を抑止できる。`ci`は副作用回避のため元々fix段を持たない。
+        `--no-fix`で`run`/`fast`/`run-for-agent`のfix段を抑止できる。`ci`は副作用回避のため元々fix段を持たない。
 
         ## 対応ツール
 

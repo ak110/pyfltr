@@ -65,7 +65,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-fix",
         default=False,
         action="store_true",
-        help="run / fast サブコマンドで自動付与される fix ステージを抑止します。",
+        help="run / fast / run-for-agent サブコマンドで自動付与される fix ステージを抑止します。",
     )
     parser.add_argument(
         "--stream",

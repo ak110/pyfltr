@@ -81,7 +81,7 @@ pyfltr generate-config
 - markdownlint / textlint: `*.md`
 - pytest: `*_test.py`
 
-### `fast` / `run` / `ci`の動作の違いと自動修正（fixステージ）
+### `fast` / `run` / `run-for-agent` / `ci`の動作の違いと自動修正（fixステージ）
 
 各サブコマンドの主な違いを以下に示す（軽い順）。
 
