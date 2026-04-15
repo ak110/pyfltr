@@ -212,7 +212,7 @@ LLMエージェントがpyfltrを活用する基本的な流れ:
 1. 全体実行でsummaryを確認する
 
     ```shell
-    pyfltr run-for-agent | tail -30
+    pyfltr run-for-agent
     ```
 
     末尾のsummary行（`"kind":"summary"`）で`failed`の有無と`diagnostics`数を確認し、問題がなければ完了する。
@@ -220,11 +220,11 @@ LLMエージェントがpyfltrを活用する基本的な流れ:
 2. 問題があるツール/ファイルだけ個別に再実行する
 
     ```shell
-    pyfltr run-for-agent --commands=mypy path/to/file.py | tail -30
+    pyfltr run-for-agent --commands=mypy path/to/file.py
     ```
 
     `--commands`で特定ツールに絞ることで出力量を抑えつつ、`diagnostic`行から修正対象のファイル・行番号・メッセージを取得する。
-    詳細が必要な場合に限り`--output-format=text`で再実行するなど、段階的に情報を掘り下げることも可能。
+    詳細が必要な場合に限り`run`で再実行するなど、段階的に情報を掘り下げることも可能。
 
 ## pre-commitとの統合
 
