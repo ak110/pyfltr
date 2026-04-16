@@ -70,6 +70,30 @@ pyfltr generate-config
 設定ファイルの雛形を標準出力に書き出す。`[tool.pyfltr]`セクションに貼り付けて利用する。
 このサブコマンドは他のオプションやターゲット指定を受け付けず、設定出力だけを行う。
 
+### サブコマンド: generate-shell-completion
+
+```shell
+pyfltr generate-shell-completion bash
+pyfltr generate-shell-completion powershell
+```
+
+シェル補完スクリプトを標準出力に書き出す。
+引数にシェル種別（`bash`または`powershell`）を指定する。
+
+bashでの設定例:
+
+```shell
+eval "$(pyfltr generate-shell-completion bash)"
+```
+
+PowerShellでの設定例:
+
+```powershell
+pyfltr generate-shell-completion powershell | Out-String | Invoke-Expression
+```
+
+永続化する場合はプロファイルに上記を追記する。
+
 ### `[files and/or directories ...]`
 
 対象を指定しなかった場合は、カレントディレクトリ(`.`)を指定した場合と同じ扱いとなる。

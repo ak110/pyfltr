@@ -14,6 +14,7 @@ import pyfltr.cli
 import pyfltr.command
 import pyfltr.config
 import pyfltr.llm_output
+import pyfltr.shell_completion
 import pyfltr.ui
 import pyfltr.warnings_
 
@@ -41,6 +42,8 @@ def build_parser() -> argparse.ArgumentParser:
             "  fast             高速ツールのみ実行 (--commands=fast 相当)。\n"
             "  run-for-agent    LLM エージェント向け (JSONL 出力を既定化)。\n"
             "  generate-config  pyproject.toml 用の設定雛形を出力する。\n"
+            "  generate-shell-completion <shell>\n"
+            "                   シェル補完スクリプトを出力する (bash / powershell)。\n"
             "\n"
             "ドキュメント: https://ak110.github.io/pyfltr/\n"
             "llms.txt: https://ak110.github.io/pyfltr/llms.txt"
@@ -151,11 +154,15 @@ _SUBCOMMANDS: frozenset[str] = frozenset(
         "fast",
         "run-for-agent",
         "generate-config",
+        "generate-shell-completion",
         # 以下は廃止済み
         "fix",
         "dirty",
     }
 )
+
+# 廃止済みサブコマンド
+_DEPRECATED_SUBCOMMANDS: frozenset[str] = frozenset({"fix", "dirty"})
 
 
 def _parse_subcommand(sys_args: typing.Sequence[str]) -> tuple[str, list[str]]:
@@ -190,7 +197,7 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
     subcommand, remaining_args = _parse_subcommand(sys_args)
 
     # 廃止済みサブコマンド
-    if subcommand in ("fix", "dirty"):
+    if subcommand in _DEPRECATED_SUBCOMMANDS:
         logger.error(f"{subcommand} サブコマンドは廃止されました。")
         return 1
 
@@ -198,6 +205,17 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
     if subcommand == "generate-config":
         logging.basicConfig(level=logging.INFO, format="%(message)s")
         logger.info(pyfltr.config.generate_config_text())
+        return 0
+
+    # generate-shell-completionサブコマンド: 補完スクリプトをstdoutに出力する
+    if subcommand == "generate-shell-completion":
+        if not remaining_args or remaining_args[0] not in pyfltr.shell_completion.SUPPORTED_SHELLS:
+            supported = ", ".join(pyfltr.shell_completion.SUPPORTED_SHELLS)
+            logger.error(f"シェルを指定してください: pyfltr generate-shell-completion <{supported}>")
+            return 1
+        active_subcommands = _SUBCOMMANDS - _DEPRECATED_SUBCOMMANDS
+        script = pyfltr.shell_completion.generate(remaining_args[0], build_parser(), active_subcommands)
+        print(script, end="")
         return 0
 
     effective_args = _build_effective_args(subcommand, remaining_args)
