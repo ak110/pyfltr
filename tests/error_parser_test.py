@@ -437,24 +437,80 @@ def test_parse_typos_jsonl_fallback() -> None:
     assert errors[0].line == 3
 
 
-def test_parse_pytest_tb_line() -> None:
-    """pytest --tb=line 出力からの行番号取得。"""
+def test_parse_pytest_tb_short_project_frame() -> None:
+    """pytest --tb=short: プロジェクト内フレームが選択される。"""
     output = (
-        "============================= test session starts ==============================\n"
-        "collected 3 items\n"
-        "\n"
-        "tests/foo_test.py F..                                                    [100%]\n"
-        "\n"
         "================================= FAILURES =================================\n"
-        "/abs/path/tests/foo_test.py:42: assert 1 == 2\n"
+        "_______________________________ test_bar ________________________________\n"
+        "tests/foo_test.py:42: in test_bar\n"
+        "    result = do_something()\n"
+        "E   AssertionError: assert 1 == 2\n"
         "========================= short test summary info ==========================\n"
-        "FAILED tests/foo_test.py::test_bar - assert 1 == 2\n"
-        "========================= 1 failed, 2 passed in 0.5s =========================\n"
+        "FAILED tests/foo_test.py::test_bar - AssertionError: assert 1 == 2\n"
     )
     errors = pyfltr.error_parser.parse_errors("pytest", output)
     assert len(errors) == 1
+    assert errors[0].file == "tests/foo_test.py"
     assert errors[0].line == 42
     assert "assert 1 == 2" in errors[0].message
+
+
+def test_parse_pytest_tb_short_library_exception() -> None:
+    """pytest --tb=short: ライブラリ内部で例外が発生した場合、テスト関数フレームが選択される。"""
+    output = (
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_request ________________________________\n"
+        "tests/api_test.py:15: in test_request\n"
+        "    client.get('/api')\n"
+        ".venv/lib/python3.14/site-packages/httpx/_transports/default.py:118: in handle_request\n"
+        "    resp = self._pool.handle_request(request)\n"
+        "E   httpx.ConnectError: connection refused\n"
+        "========================= short test summary info ==========================\n"
+    )
+    errors = pyfltr.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 1
+    assert errors[0].file == "tests/api_test.py"
+    assert errors[0].line == 15
+    assert "httpx.ConnectError" in errors[0].message
+
+
+def test_parse_pytest_tb_short_stdlib_exception() -> None:
+    """pytest --tb=short: 標準ライブラリで例外が発生した場合、プロジェクト内フレームが選択される。
+
+    uv管理Pythonでは標準ライブラリが``..``始まりの相対パスで出力される。
+    """
+    output = (
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_path ________________________________\n"
+        "tests/path_test.py:10: in test_path\n"
+        "    pathlib.Path('/nonexistent').resolve(strict=True)\n"
+        "../.local/share/uv/python/cpython-3.14.0-linux-x86_64/lib/python3.14/pathlib.py:881: in resolve\n"
+        "    s = os.path.realpath(self, strict=strict)\n"
+        "E   FileNotFoundError: [Errno 2] No such file or directory: '/nonexistent'\n"
+        "========================= short test summary info ==========================\n"
+    )
+    errors = pyfltr.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 1
+    assert errors[0].file == "tests/path_test.py"
+    assert errors[0].line == 10
+
+
+def test_parse_pytest_tb_short_all_external() -> None:
+    """pytest --tb=short: 全フレームがプロジェクト外の場合、最後のフレームにフォールバック。"""
+    output = (
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_ext ________________________________\n"
+        ".venv/lib/python3.14/site-packages/somelib/core.py:50: in setup\n"
+        "    do_init()\n"
+        ".venv/lib/python3.14/site-packages/somelib/init.py:20: in do_init\n"
+        "    raise RuntimeError('fail')\n"
+        "E   RuntimeError: fail\n"
+        "========================= short test summary info ==========================\n"
+    )
+    errors = pyfltr.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 1
+    assert errors[0].line == 20
+    assert "RuntimeError: fail" in errors[0].message
 
 
 def test_parse_pytest_fallback() -> None:

@@ -121,7 +121,7 @@ _STRUCTURED_OUTPUT_SPECS: dict[str, tuple[str, _StructuredOutputSpec]] = {
     "pytest-tb-line": (
         "pytest",
         _StructuredOutputSpec(
-            inject=["--tb=line"],
+            inject=["--tb=short"],
             conflicts=["--tb"],
         ),
     ),

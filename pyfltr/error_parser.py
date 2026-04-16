@@ -427,28 +427,58 @@ def _parse_typos_jsonl(output: str) -> list[ErrorLocation]:
 
 
 def _parse_pytest(output: str) -> list[ErrorLocation]:
-    """Pytest 出力をパース。--tb=line 形式の行番号付き出力を優先的に抽出する。"""
-    # --tb=line 出力行を探す: /path/to/test.py:42: assert message
-    tb_line_re = re.compile(rf"^(?P<file>{_FILE}):(?P<line>\d+):\s+(?P<message>.+)$", re.MULTILINE)
-    # FAILURES セクション内の --tb=line 出力のみを対象にする
+    """Pytest出力をパース。--tb=short形式のトレースバックからプロジェクト内フレームを優先的に抽出する。"""
     failures_start = output.find("= FAILURES =")
     summary_start = output.find("short test summary info")
-    if failures_start >= 0:
-        end = summary_start if summary_start > failures_start else len(output)
-        failures_section = output[failures_start:end]
-        tb_results: list[ErrorLocation] = []
-        for match in tb_line_re.finditer(failures_section):
-            tb_results.append(
-                ErrorLocation(
-                    file=_normalize_path(match.group("file")),
-                    line=int(match.group("line")),
-                    col=None,
-                    command="pytest",
-                    message=match.group("message").strip(),
-                )
+    if failures_start < 0:
+        return _parse_with_pattern("pytest", output, _BUILTIN_PATTERNS["pytest"])
+
+    end = summary_start if summary_start > failures_start else len(output)
+    failures_section = output[failures_start:end]
+
+    # テスト単位のブロックに分割（`_ test_name _` 区切り）
+    block_re = re.compile(r"^_+ .+ _+$", re.MULTILINE)
+    block_starts = [m.end() for m in block_re.finditer(failures_section)]
+    if not block_starts:
+        return _parse_with_pattern("pytest", output, _BUILTIN_PATTERNS["pytest"])
+
+    # フレーム行: file:line: in func_name
+    frame_re = re.compile(rf"^(?P<file>{_FILE}):(?P<line>\d+): in .+$", re.MULTILINE)
+    # エラー行: E   message
+    error_re = re.compile(r"^E\s+(?P<message>.+)$", re.MULTILINE)
+
+    results: list[ErrorLocation] = []
+    for i, start in enumerate(block_starts):
+        block_end = block_starts[i + 1] if i + 1 < len(block_starts) else len(failures_section)
+        block = failures_section[start:block_end]
+
+        # フレーム群から最後のプロジェクト内フレームを選択
+        frames = list(frame_re.finditer(block))
+        if not frames:
+            continue
+
+        chosen = frames[-1]  # フォールバック: 最後のフレーム
+        for frame in reversed(frames):
+            if _is_project_path(_normalize_path(frame.group("file"))):
+                chosen = frame
+                break
+
+        # エラーメッセージ（先頭のE行）
+        error_match = error_re.search(block)
+        message = error_match.group("message").strip() if error_match else ""
+
+        results.append(
+            ErrorLocation(
+                file=_normalize_path(chosen.group("file")),
+                line=int(chosen.group("line")),
+                col=None,
+                command="pytest",
+                message=message,
             )
-        if tb_results:
-            return tb_results
+        )
+
+    if results:
+        return results
     # フォールバック: FAILED file::test_name パターン（line=0）
     return _parse_with_pattern("pytest", output, _BUILTIN_PATTERNS["pytest"])
 
@@ -576,3 +606,21 @@ def _normalize_path(file_path: str) -> str:
             return file_path
         return result.replace("\\", "/")
     return file_path.replace("\\", "/")
+
+
+def _is_project_path(normalized_path: str) -> bool:
+    """正規化済みパスがプロジェクト内のファイルかを判定する。
+
+    以下を全て満たす場合にプロジェクト内と見なす:
+    - 相対パスである（絶対パスはcwd外 = 標準ライブラリ等）
+    - ``..``で始まらない（uv管理Pythonの標準ライブラリ等）
+    - ``.venv/``で始まらない（仮想環境内サードパーティー）
+    - ``site-packages/``・``dist-packages/``を含まない（名前の異なる仮想環境内サードパーティー）
+    """
+    if pathlib.PurePosixPath(normalized_path).is_absolute():
+        return False
+    if normalized_path.startswith(".."):
+        return False
+    if normalized_path.startswith(".venv/"):
+        return False
+    return not ("site-packages/" in normalized_path or "dist-packages/" in normalized_path)
