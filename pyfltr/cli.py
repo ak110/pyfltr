@@ -29,6 +29,7 @@ def run_commands_with_cli(
     *,
     per_command_log: bool,
     include_fix_stage: bool = False,
+    on_result: typing.Callable[[pyfltr.command.CommandResult], None] | None = None,
 ) -> list[pyfltr.command.CommandResult]:
     """コマンドを実行する (非 TUI)。
 
@@ -40,6 +41,9 @@ def run_commands_with_cli(
     ``include_fix_stage=True`` のとき、fix-args 定義済みコマンドを先に ``--fix`` 付きで
     直列実行してから、formatter → linter/tester の順で通常実行に進む
     （``ruff check --fix → ruff format → ruff check`` と同じ 2 段階方式の一般化）。
+
+    ``on_result`` が指定されている場合、各コマンド完了時にコールバックを呼び出す。
+    JSONL stdoutモードでのストリーミング出力に使用する。
     """
     results: list[pyfltr.command.CommandResult] = []
     fixers, formatters, linters_and_testers = pyfltr.executor.split_commands_for_execution(
@@ -54,7 +58,10 @@ def run_commands_with_cli(
 
     # formatters を順序実行
     for command in formatters:
-        results.append(_run_one_command(command, args, config, all_files, per_command_log=per_command_log))
+        result = _run_one_command(command, args, config, all_files, per_command_log=per_command_log)
+        results.append(result)
+        if on_result is not None:
+            on_result(result)
 
     # linters/testers を並列実行
     if len(linters_and_testers) > 0:
@@ -64,7 +71,10 @@ def run_commands_with_cli(
                 for command in linters_and_testers
             }
             for future in concurrent.futures.as_completed(future_to_command):
-                results.append(future.result())
+                result = future.result()
+                results.append(result)
+                if on_result is not None:
+                    on_result(result)
 
     return results
 

@@ -98,7 +98,7 @@ def test_build_lines_unsupported_tool_only(default_config):
 
 
 def test_build_lines_mixed_order(default_config):
-    """diagnostic はファイル/行順、tool は config.command_names 順になること。"""
+    """ツール単位でdiagnostic+toolがグルーピングされ、config.command_names順に並ぶこと。"""
     mypy_result = _make_result(
         "mypy",
         returncode=1,
@@ -118,11 +118,22 @@ def test_build_lines_mixed_order(default_config):
     lines = pyfltr.llm_output.build_lines([mypy_result, pylint_result, black_result], default_config, exit_code=1)
     parsed = [json.loads(line) for line in lines]
 
-    diagnostic_records = [r for r in parsed if r["kind"] == "diagnostic"]
-    assert [(r["file"], r["line"], r["tool"]) for r in diagnostic_records] == [
-        ("src/a.py", 10, "pylint"),
-        ("src/a.py", 30, "mypy"),
-        ("src/b.py", 5, "mypy"),
+    # ツール単位のグルーピング: black(tool) → mypy(diagnostic, diagnostic, tool) → pylint(diagnostic, tool) → summary
+    assert [r["kind"] for r in parsed] == [
+        "tool",  # black
+        "diagnostic",
+        "diagnostic",
+        "tool",  # mypy
+        "diagnostic",
+        "tool",  # pylint
+        "summary",
+    ]
+
+    # mypy 内の diagnostic はファイル/行順
+    mypy_diagnostics = [r for r in parsed if r["kind"] == "diagnostic" and r["tool"] == "mypy"]
+    assert [(r["file"], r["line"]) for r in mypy_diagnostics] == [
+        ("src/a.py", 30),
+        ("src/b.py", 5),
     ]
 
     tool_records = [r for r in parsed if r["kind"] == "tool"]
@@ -364,3 +375,95 @@ def test_run_cli_jsonl_restores_logger_state(mocker, caplog, capsys):
         pyfltr.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
 
     assert "summary" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# build_tool_lines のユニットテスト
+# ---------------------------------------------------------------------------
+
+
+def test_build_tool_lines_with_diagnostics(default_config):
+    """diagnostic行+tool行がツール単位でまとまること。"""
+    errors = [
+        _make_error("mypy", "src/b.py", 5, "later"),
+        _make_error("mypy", "src/a.py", 10, "earlier"),
+    ]
+    result = _make_result("mypy", returncode=1, errors=errors)
+    lines = pyfltr.llm_output.build_tool_lines(result, default_config)
+    parsed = [json.loads(line) for line in lines]
+
+    assert len(parsed) == 3
+    # diagnostic行はツール内でファイル/行順にソートされる
+    assert parsed[0]["kind"] == "diagnostic"
+    assert parsed[0]["file"] == "src/a.py"
+    assert parsed[1]["kind"] == "diagnostic"
+    assert parsed[1]["file"] == "src/b.py"
+    # 最後にtool行
+    assert parsed[2]["kind"] == "tool"
+    assert parsed[2]["diagnostics"] == 2
+
+
+def test_build_tool_lines_no_diagnostics(default_config):
+    """diagnosticがないツールはtool行のみ。"""
+    result = _make_result("black", returncode=0, command_type="formatter")
+    lines = pyfltr.llm_output.build_tool_lines(result, default_config)
+    parsed = [json.loads(line) for line in lines]
+
+    assert len(parsed) == 1
+    assert parsed[0]["kind"] == "tool"
+    assert parsed[0]["diagnostics"] == 0
+
+
+# ---------------------------------------------------------------------------
+# write_jsonl_streaming のユニットテスト
+# ---------------------------------------------------------------------------
+
+
+def test_write_jsonl_streaming(default_config, capsys):
+    """ストリーミング書き出しがstdoutに即時出力されること。"""
+    errors = [_make_error("mypy", "src/a.py", 10, "bad type")]
+    result = _make_result("mypy", returncode=1, errors=errors)
+    pyfltr.llm_output.write_jsonl_streaming(result, default_config)
+
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    parsed = [json.loads(line) for line in captured.out.splitlines()]
+    assert len(parsed) == 2
+    assert parsed[0]["kind"] == "diagnostic"
+    assert parsed[1]["kind"] == "tool"
+
+
+# ---------------------------------------------------------------------------
+# write_jsonl_footer のユニットテスト
+# ---------------------------------------------------------------------------
+
+
+def test_write_jsonl_footer_with_warnings(capsys):
+    """warning行+summary行がstdoutに出力されること。"""
+    result = _make_result("mypy", returncode=1, errors=[_make_error("mypy", "a.py", 1, "bad")])
+    warnings = [{"source": "config", "message": "test warning"}]
+    pyfltr.llm_output.write_jsonl_footer(
+        [result],
+        exit_code=1,
+        warnings=warnings,
+    )
+
+    captured = capsys.readouterr()
+    parsed = [json.loads(line) for line in captured.out.splitlines()]
+    assert len(parsed) == 2
+    assert parsed[0]["kind"] == "warning"
+    assert parsed[0]["msg"] == "test warning"
+    assert parsed[1]["kind"] == "summary"
+    assert parsed[1]["exit"] == 1
+
+
+def test_write_jsonl_footer_no_warnings(capsys):
+    """warningがない場合はsummary行のみ。"""
+    result = _make_result("mypy", returncode=0)
+    pyfltr.llm_output.write_jsonl_footer([result], exit_code=0)
+
+    captured = capsys.readouterr()
+    parsed = [json.loads(line) for line in captured.out.splitlines()]
+    assert len(parsed) == 1
+    assert parsed[0]["kind"] == "summary"
+    assert parsed[0]["succeeded"] == 1

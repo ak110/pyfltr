@@ -13,6 +13,7 @@ import typing
 import pyfltr.cli
 import pyfltr.command
 import pyfltr.config
+import pyfltr.llm_output
 import pyfltr.ui
 import pyfltr.warnings_
 
@@ -403,6 +404,9 @@ def run_pipeline(
     # UIの判定
     use_ui = not args.no_ui and (args.ui or pyfltr.ui.can_use_ui())
 
+    # JSONL stdoutモード: ツール完了時に随時JSONL行を書き出す
+    jsonl_stdout = (args.output_format == "jsonl") and (args.output_file is None)
+
     # run
     include_fix_stage = bool(getattr(args, "include_fix_stage", False))
     if use_ui:
@@ -411,8 +415,15 @@ def run_pipeline(
     else:
         # 非 TUI モード: 既定はバッファリング (最後にまとめて出力)、`--stream` で従来の即時出力。
         per_command_log = bool(args.stream)
+        on_result = (lambda result: pyfltr.llm_output.write_jsonl_streaming(result, config)) if jsonl_stdout else None
         results = pyfltr.cli.run_commands_with_cli(
-            commands, args, config, all_files, per_command_log=per_command_log, include_fix_stage=include_fix_stage
+            commands,
+            args,
+            config,
+            all_files,
+            per_command_log=per_command_log,
+            include_fix_stage=include_fix_stage,
+            on_result=on_result,
         )
         returncode = 0
         # `--stream` のときは詳細ログは既に出力済み。summary のみ表示する。
@@ -422,15 +433,23 @@ def run_pipeline(
     if returncode == 0:
         returncode = calculate_returncode(results, args.exit_zero_even_if_formatted)
 
-    pyfltr.cli.render_results(
-        results,
-        config,
-        include_details=include_details,
-        output_format=args.output_format or "text",
-        output_file=args.output_file,
-        exit_code=returncode,
-        warnings=pyfltr.warnings_.collected_warnings(),
-    )
+    if jsonl_stdout:
+        # ストリーミングモード: diagnostic行+tool行は出力済み。footer（warning+summary）のみ書き出す
+        pyfltr.llm_output.write_jsonl_footer(
+            results,
+            exit_code=returncode,
+            warnings=pyfltr.warnings_.collected_warnings(),
+        )
+    else:
+        pyfltr.cli.render_results(
+            results,
+            config,
+            include_details=include_details,
+            output_format=args.output_format or "text",
+            output_file=args.output_file,
+            exit_code=returncode,
+            warnings=pyfltr.warnings_.collected_warnings(),
+        )
     return returncode
 
 

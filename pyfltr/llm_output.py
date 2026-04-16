@@ -8,17 +8,38 @@
 import json
 import pathlib
 import sys
+import threading
 import typing
 
 import pyfltr.command
 import pyfltr.config
 import pyfltr.error_parser
 
+# ストリーミング書き出し時に複数行（diagnostic行+tool行）をアトミックに出力するためのロック。
+# 並列実行される linters/testers から同時にコールバックが呼ばれる可能性がある。
+_write_lock = threading.Lock()
+
 # failed かつ diagnostics=0 のときに tool.message として載せる生出力のトリム上限。
 # 末尾 30 行を取り出し、さらに末尾 2000 文字に切り詰める。
 _MESSAGE_MAX_LINES = 30
 _MESSAGE_MAX_CHARS = 2000
 _TRUNCATED_PREFIX = "... (truncated)\n"
+
+
+def build_tool_lines(
+    result: pyfltr.command.CommandResult,
+    config: pyfltr.config.Config,
+) -> list[str]:
+    """1コマンド分のdiagnostic行+tool行をJSONL文字列のリストとして生成する。
+
+    diagnostic行はツール内でソートされる。
+    """
+    sorted_errors = pyfltr.error_parser.sort_errors(result.errors, config.command_names)
+    lines: list[str] = []
+    for error in sorted_errors:
+        lines.append(_dump(_build_diagnostic_record(error)))
+    lines.append(_dump(_build_tool_record(result, diagnostics=len(result.errors))))
+    return lines
 
 
 def build_lines(
@@ -28,16 +49,15 @@ def build_lines(
     exit_code: int,
     warnings: list[dict[str, typing.Any]] | None = None,
 ) -> list[str]:
-    """CommandResult 群から JSONL 各行を生成する。
+    """CommandResult群からJSONL各行を生成する。
 
     出力順:
-        1. `warnings` が非空なら kind="warning" 行（先頭）
-        2. 全診断を (file, line, col, command 順) で昇順ソートした diagnostic 行
-        3. config.command_names の定義順に並べた tool 行
-        4. summary 行 1 行
+        1. ``warnings``が非空ならkind="warning"行
+        2. ツール単位でdiagnostic行+tool行（``config.command_names``の定義順）
+        3. summary行1行
 
-    results は順序を問わない。内部で `config.command_names` 順にソートする。
-    ``warnings`` は `pyfltr.warnings_.collected_warnings()` の返り値を想定する。
+    resultsは順序を問わない。内部で``config.command_names``順にソートする。
+    ``warnings``は``pyfltr.warnings_.collected_warnings()``の返り値を想定する。
     """
     ordered = sorted(results, key=lambda r: _command_index(config, r.command))
 
@@ -46,20 +66,8 @@ def build_lines(
     for warning in warnings or []:
         lines.append(_dump(_build_warning_record(warning)))
 
-    all_errors: list[pyfltr.error_parser.ErrorLocation] = []
     for result in ordered:
-        all_errors.extend(result.errors)
-    sorted_errors = pyfltr.error_parser.sort_errors(all_errors, config.command_names)
-    for error in sorted_errors:
-        lines.append(_dump(_build_diagnostic_record(error)))
-
-    diagnostic_counts: dict[str, int] = {}
-    for error in all_errors:
-        diagnostic_counts[error.command] = diagnostic_counts.get(error.command, 0) + 1
-
-    for result in ordered:
-        diagnostics = diagnostic_counts.get(result.command, 0)
-        lines.append(_dump(_build_tool_record(result, diagnostics=diagnostics)))
+        lines.extend(build_tool_lines(result, config))
 
     lines.append(_dump(_build_summary_record(ordered, exit_code=exit_code)))
     return lines
@@ -98,6 +106,42 @@ def write_jsonl(
         for line in lines:
             f.write(line)
             f.write("\n")
+
+
+def write_jsonl_streaming(
+    result: pyfltr.command.CommandResult,
+    config: pyfltr.config.Config,
+) -> None:
+    """1コマンド分のdiagnostic行+tool行をstdoutに即時書き出す。
+
+    ``_write_lock``取得下で書き出し+flushするため、並列実行されるlinters/testers
+    から呼ばれてもツール単位のグルーピングが崩れない。
+    """
+    lines = build_tool_lines(result, config)
+    with _write_lock:
+        for line in lines:
+            sys.stdout.write(line)
+            sys.stdout.write("\n")
+        sys.stdout.flush()
+
+
+def write_jsonl_footer(
+    results: list[pyfltr.command.CommandResult],
+    *,
+    exit_code: int,
+    warnings: list[dict[str, typing.Any]] | None = None,
+) -> None:
+    """warning行+summary行をstdoutに書き出す。
+
+    ``results``は``_build_summary_record()``の集計に使用する。
+    """
+    with _write_lock:
+        for warning in warnings or []:
+            sys.stdout.write(_dump(_build_warning_record(warning)))
+            sys.stdout.write("\n")
+        sys.stdout.write(_dump(_build_summary_record(results, exit_code=exit_code)))
+        sys.stdout.write("\n")
+        sys.stdout.flush()
 
 
 def _dump(record: dict[str, typing.Any]) -> str:

@@ -191,7 +191,9 @@ CLIオプション`--output-format`が指定されている場合は環境変数
 {"kind":"summary","total":2,"succeeded":0,"formatted":1,"failed":1,"skipped":0,"diagnostics":1,"exit":1}
 ```
 
-出力順は`warning`→`diagnostic`（file/line/col/command順）→`tool`（`pyproject.toml`の定義順）→`summary`（1行）で固定。
+stdoutモード（`--output-file`未指定）では、各ツールの完了時にdiagnostic行+tool行を随時書き出す。
+ツール間の出力順は完了順となり、最後にwarning行+summary行が続く。
+ファイル出力時（`--output-file`指定）では、`pyproject.toml`の定義順にツール単位でグルーピングし、先頭にwarning行、末尾にsummary行を配置する。
 
 `warning`レコードの`source`は`config`（設定ファイル不在など）/`tool-resolve`（ツール解決失敗）/`file-resolver`（対象ファイル選定時）/`git`（`git check-ignore`失敗）のいずれか。
 
