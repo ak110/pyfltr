@@ -176,14 +176,16 @@ CLIオプション`--output-format`が指定されている場合は環境変数
 
 ### jsonlスキーマ
 
-出力は以下4種別のレコードからなる。`kind`フィールドでレコード種別を判別する。
+出力は以下5種別のレコードからなる。`kind`フィールドでレコード種別を判別する。
 
+- `header`: 先頭1行。実行環境情報（`version` / `python` / `platform` / `cwd` / `commands` / `files`）
 - `warning`: pyfltrが検出した設定・実行時の警告（`source`で発生元を識別）
 - `diagnostic`: 個々の診断（`error_parser`対応ツールの抽出結果）
 - `tool`: 1ツール1レコードの実行メタ情報
 - `summary`: 最終1行、全体集計
 
 ```json
+{"kind":"header","version":"1.25.0","python":"3.12.0 ...","executable":"/usr/bin/python3","platform":"linux","cwd":"/work","commands":["mypy","black"],"files":12}
 {"kind":"warning","source":"config","msg":"pre-commit が有効化されていますが、設定ファイルが見つかりません: .pre-commit-config.yaml"}
 {"kind":"diagnostic","tool":"mypy","file":"src/a.py","line":42,"col":5,"msg":"Incompatible return value type"}
 {"kind":"tool","tool":"mypy","type":"linter","status":"failed","files":12,"elapsed":0.8,"diagnostics":1,"rc":1}
@@ -191,9 +193,9 @@ CLIオプション`--output-format`が指定されている場合は環境変数
 {"kind":"summary","total":2,"succeeded":0,"formatted":1,"failed":1,"skipped":0,"diagnostics":1,"exit":1}
 ```
 
-stdoutモード（`--output-file`未指定）では、各ツールの完了時にdiagnostic行+tool行を随時書き出す。
+stdoutモード（`--output-file`未指定）では、先頭にheader行を出力し、各ツールの完了時にdiagnostic行+tool行を随時書き出す。
 ツール間の出力順は完了順となり、最後にwarning行+summary行が続く。
-ファイル出力時（`--output-file`指定）では、`pyproject.toml`の定義順にツール単位でグルーピングし、先頭にwarning行、末尾にsummary行を配置する。
+ファイル出力時（`--output-file`指定）では、先頭にheader行、続いて`pyproject.toml`の定義順にツール単位でグルーピングし、先頭にwarning行、末尾にsummary行を配置する。
 
 `warning`レコードの`source`は`config`（設定ファイル不在など）/`tool-resolve`（ツール解決失敗）/`file-resolver`（対象ファイル選定時）/`git`（`git check-ignore`失敗）のいずれか。
 

@@ -33,11 +33,11 @@ def test_build_lines_supported_tool_diagnostics(default_config):
         _make_error("mypy", "src/a.py", 20, "missing return"),
     ]
     result = _make_result("mypy", returncode=1, errors=errors)
-    lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=1)
+    lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=1, commands=["mypy"], files=5)
     parsed = [json.loads(line) for line in lines]
 
-    assert [r["kind"] for r in parsed] == ["diagnostic", "diagnostic", "tool", "summary"]
-    assert parsed[0] == {
+    assert [r["kind"] for r in parsed] == ["header", "diagnostic", "diagnostic", "tool", "summary"]
+    assert parsed[1] == {
         "kind": "diagnostic",
         "tool": "mypy",
         "file": "src/a.py",
@@ -45,17 +45,17 @@ def test_build_lines_supported_tool_diagnostics(default_config):
         "col": 4,
         "msg": "bad type",
     }
-    assert parsed[1] == {
+    assert parsed[2] == {
         "kind": "diagnostic",
         "tool": "mypy",
         "file": "src/a.py",
         "line": 20,
         "msg": "missing return",
     }
-    assert parsed[2]["diagnostics"] == 2
-    assert parsed[2]["status"] == "failed"
     assert parsed[3]["diagnostics"] == 2
-    assert parsed[3]["failed"] == 1
+    assert parsed[3]["status"] == "failed"
+    assert parsed[4]["diagnostics"] == 2
+    assert parsed[4]["failed"] == 1
 
 
 def test_build_lines_warnings_prepended(default_config):
@@ -65,14 +65,15 @@ def test_build_lines_warnings_prepended(default_config):
         {"source": "config", "message": "pre-commit 設定ファイル不在"},
         {"source": "git", "message": "git が見つからない"},
     ]
-    lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=0, warnings=warnings)
+    lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=0, commands=["black"], files=1, warnings=warnings)
     parsed = [json.loads(line) for line in lines]
 
-    assert [r["kind"] for r in parsed[:2]] == ["warning", "warning"]
-    assert parsed[0] == {"kind": "warning", "source": "config", "msg": "pre-commit 設定ファイル不在"}
-    assert parsed[1] == {"kind": "warning", "source": "git", "msg": "git が見つからない"}
+    assert parsed[0]["kind"] == "header"
+    assert [r["kind"] for r in parsed[1:3]] == ["warning", "warning"]
+    assert parsed[1] == {"kind": "warning", "source": "config", "msg": "pre-commit 設定ファイル不在"}
+    assert parsed[2] == {"kind": "warning", "source": "git", "msg": "git が見つからない"}
     # warnings の後に tool レコード、最後に summary が並ぶ
-    assert [r["kind"] for r in parsed[2:]] == ["tool", "summary"]
+    assert [r["kind"] for r in parsed[3:]] == ["tool", "summary"]
 
 
 def test_build_lines_no_warnings_when_omitted(default_config):
@@ -84,7 +85,7 @@ def test_build_lines_no_warnings_when_omitted(default_config):
 
 
 def test_build_lines_unsupported_tool_only(default_config):
-    """error_parser 非対応ツール (black) は tool レコードのみ。"""
+    """error_parser 非対応ツール (black) は tool レコードのみ（header省略時）。"""
     result = _make_result("black", returncode=1, command_type="formatter", has_error=False)
     lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=1)
     parsed = [json.loads(line) for line in lines]
@@ -115,11 +116,18 @@ def test_build_lines_mixed_order(default_config):
     black_result = _make_result("black", returncode=0, command_type="formatter")
 
     # config.command_names 順では black → mypy → pylint
-    lines = pyfltr.llm_output.build_lines([mypy_result, pylint_result, black_result], default_config, exit_code=1)
+    lines = pyfltr.llm_output.build_lines(
+        [mypy_result, pylint_result, black_result],
+        default_config,
+        exit_code=1,
+        commands=["black", "mypy", "pylint"],
+        files=10,
+    )
     parsed = [json.loads(line) for line in lines]
 
-    # ツール単位のグルーピング: black(tool) → mypy(diagnostic, diagnostic, tool) → pylint(diagnostic, tool) → summary
+    # header → ツール単位のグルーピング: black(tool) → mypy(diagnostic, diagnostic, tool) → pylint(diagnostic, tool) → summary
     assert [r["kind"] for r in parsed] == [
+        "header",
         "tool",  # black
         "diagnostic",
         "diagnostic",
@@ -253,7 +261,7 @@ def test_calculate_returncode_matches_summary_exit(default_config):
         _make_result("black", returncode=0, command_type="formatter"),
     ]
     exit_code = pyfltr.main.calculate_returncode(results, exit_zero_even_if_formatted=False)
-    lines = pyfltr.llm_output.build_lines(results, default_config, exit_code=exit_code)
+    lines = pyfltr.llm_output.build_lines(results, default_config, exit_code=exit_code, commands=["mypy", "black"], files=3)
     summary = json.loads(lines[-1])
     assert summary["exit"] == exit_code == 1
 
@@ -275,6 +283,9 @@ def test_run_cli_jsonl_stdout_suppresses_text(mocker, capsys):
     assert "summary" not in captured.out or '"kind":"summary"' in captured.out
     lines = [line for line in captured.out.splitlines() if line.strip()]
     assert lines, "JSONL が 1 行も出ていない"
+    first = json.loads(lines[0])
+    assert first["kind"] == "header"
+    assert "mypy" in first["commands"]
     last = json.loads(lines[-1])
     assert last["kind"] == "summary"
     assert last["exit"] == 0
@@ -467,3 +478,51 @@ def test_write_jsonl_footer_no_warnings(capsys):
     assert len(parsed) == 1
     assert parsed[0]["kind"] == "summary"
     assert parsed[0]["succeeded"] == 1
+
+
+# ---------------------------------------------------------------------------
+# header レコードのユニットテスト
+# ---------------------------------------------------------------------------
+
+
+def test_build_header_record_fields():
+    """_build_header_record が必要なフィールドをすべて含むこと。"""
+    record = pyfltr.llm_output._build_header_record(["ruff-format", "mypy"], 42)
+    assert record["kind"] == "header"
+    assert record["commands"] == ["ruff-format", "mypy"]
+    assert record["files"] == 42
+    assert "version" in record
+    assert "python" in record
+    assert "executable" in record
+    assert "platform" in record
+    assert "cwd" in record
+
+
+def test_build_lines_header_first(default_config):
+    """commands/filesを指定するとheader行が先頭に出力されること。"""
+    result = _make_result("mypy", returncode=0)
+    lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=0, commands=["mypy"], files=10)
+    parsed = [json.loads(line) for line in lines]
+    assert parsed[0]["kind"] == "header"
+    assert parsed[0]["commands"] == ["mypy"]
+    assert parsed[0]["files"] == 10
+    assert parsed[-1]["kind"] == "summary"
+
+
+def test_build_lines_no_header_when_omitted(default_config):
+    """commands/filesを省略するとheader行は出力されないこと。"""
+    result = _make_result("mypy", returncode=0)
+    lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=0)
+    parsed = [json.loads(line) for line in lines]
+    assert all(r["kind"] != "header" for r in parsed)
+
+
+def test_write_jsonl_header_stdout(capsys):
+    """write_jsonl_headerがstdoutにheader行を書き出すこと。"""
+    pyfltr.llm_output.write_jsonl_header(commands=["ruff-format", "mypy"], files=5)
+    captured = capsys.readouterr()
+    parsed = [json.loads(line) for line in captured.out.splitlines()]
+    assert len(parsed) == 1
+    assert parsed[0]["kind"] == "header"
+    assert parsed[0]["commands"] == ["ruff-format", "mypy"]
+    assert parsed[0]["files"] == 5

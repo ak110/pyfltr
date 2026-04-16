@@ -39,7 +39,6 @@ plugins:
         - `pyfltr run`: 全チェック。fix段→formatter段→linter/tester段の順で、fix-args定義済みlinterの自動修正→formatter→残りの検査を実行する（ローカル向け）
         - `pyfltr fast`: 軽量チェック。`run`と同じ3段構成だが、mypy/pylint/pytest等の重いツールを除外（pre-commit向け）
         - `pyfltr run-for-agent`: `pyfltr run --output-format=jsonl`のエイリアス。JSONL出力を既定にする（LLMエージェント向け）
-        - `pyfltr generate-config`: pyproject.toml用の設定雛形を出力
 
         `--no-fix`で`run`/`fast`/`run-for-agent`のfix段を抑止できる。`ci`は副作用回避のため元々fix段を持たない。
 
@@ -68,16 +67,15 @@ plugins:
 
         ## LLMエージェント向け出力（`--output-format=jsonl`）
 
-        `--output-format=jsonl`でJSON Lines形式の構造化出力が得られる。レコードは4種類。
+        `--output-format=jsonl`でJSON Lines形式の構造化出力が得られる。レコードは5種類。
 
+        - `header`: 先頭1行。実行環境情報（`version` / `python` / `platform` / `cwd` / `commands` / `files`）
         - `warning`: pyfltr が検出した設定・実行時の警告（`source` で発生元を識別）
         - `diagnostic`: 1診断1行（`tool` / `file` / `line` / `col` / `rule` / `severity` / `msg`）
         - `tool`: ツールごとの実行結果サマリ（`status` / `elapsed` / `diagnostics` / `rc`）
         - `summary`: 最終1行の全体集計（`succeeded` / `formatted` / `failed` / `skipped` / `diagnostics` / `exit`）
 
-        出力順は`warning`→`diagnostic`（file/line/col/command順）→`tool`（`pyproject.toml`定義順）→`summary`（1行）で固定。
-
-        `--output-file`未指定時はstdoutへJSONLのみを書き、進捗ログやTUIは無音化される。指定時はファイルへJSONLを書き、stdoutには従来どおりのテキスト出力を並行出力する（ローカル実行で進捗を追える）。
+        stdoutモード（`--output-file`未指定）の出力順は`header`→ツール完了順に`diagnostic`+`tool`→`warning`→`summary`。stdoutへJSONLのみを書き、進捗ログやTUIは無音化される。`--output-file`指定時はファイルへJSONLを書き、stdoutには従来どおりのテキスト出力を並行出力する（ローカル実行で進捗を追える）。
 
         ```shell
         pyfltr run-for-agent

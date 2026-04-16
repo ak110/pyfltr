@@ -1,11 +1,13 @@
 """LLM 向け JSON Lines 出力。
 
 `--output-format=jsonl` で呼ばれ、CommandResult 群を LLM / エージェントが
-読みやすいフラットな JSON Lines 形式 (diagnostic / tool / summary の 3 種別) に
+読みやすいフラットな JSON Lines 形式 (header / diagnostic / tool / summary の 4 種別) に
 変換して書き出す。
 """
 
+import importlib.metadata
 import json
+import os
 import pathlib
 import sys
 import threading
@@ -47,14 +49,17 @@ def build_lines(
     config: pyfltr.config.Config,
     *,
     exit_code: int,
+    commands: list[str] | None = None,
+    files: int | None = None,
     warnings: list[dict[str, typing.Any]] | None = None,
 ) -> list[str]:
     """CommandResult群からJSONL各行を生成する。
 
     出力順:
-        1. ``warnings``が非空ならkind="warning"行
-        2. ツール単位でdiagnostic行+tool行（``config.command_names``の定義順）
-        3. summary行1行
+        1. ``commands``と``files``が指定されていればkind="header"行
+        2. ``warnings``が非空ならkind="warning"行
+        3. ツール単位でdiagnostic行+tool行（``config.command_names``の定義順）
+        4. summary行1行
 
     resultsは順序を問わない。内部で``config.command_names``順にソートする。
     ``warnings``は``pyfltr.warnings_.collected_warnings()``の返り値を想定する。
@@ -62,6 +67,9 @@ def build_lines(
     ordered = sorted(results, key=lambda r: _command_index(config, r.command))
 
     lines: list[str] = []
+
+    if commands is not None and files is not None:
+        lines.append(_dump(_build_header_record(commands, files)))
 
     for warning in warnings or []:
         lines.append(_dump(_build_warning_record(warning)))
@@ -86,6 +94,8 @@ def write_jsonl(
     *,
     exit_code: int,
     destination: pathlib.Path | None,
+    commands: list[str] | None = None,
+    files: int | None = None,
     warnings: list[dict[str, typing.Any]] | None = None,
 ) -> None:
     """JSONL を stdout もしくは指定ファイルに書き出す。
@@ -94,7 +104,7 @@ def write_jsonl(
     親ディレクトリを自動作成し、atomic write せず単純に上書きする
     (LLM 用途の使い捨てのため)。
     """
-    lines = build_lines(results, config, exit_code=exit_code, warnings=warnings)
+    lines = build_lines(results, config, exit_code=exit_code, commands=commands, files=files, warnings=warnings)
     if destination is None:
         for line in lines:
             sys.stdout.write(line)
@@ -106,6 +116,17 @@ def write_jsonl(
         for line in lines:
             f.write(line)
             f.write("\n")
+
+
+def write_jsonl_header(commands: list[str], files: int) -> None:
+    """header行をstdoutに書き出す（ストリーミングモード用）。
+
+    パイプライン開始直後、diagnostic行より前に1回だけ呼ぶ。
+    """
+    with _write_lock:
+        sys.stdout.write(_dump(_build_header_record(commands, files)))
+        sys.stdout.write("\n")
+        sys.stdout.flush()
 
 
 def write_jsonl_streaming(
@@ -147,6 +168,20 @@ def write_jsonl_footer(
 def _dump(record: dict[str, typing.Any]) -> str:
     """JSON 1 行にシリアライズする。ensure_ascii=False + 区切り最短化でトークン効率を稼ぐ。"""
     return json.dumps(record, ensure_ascii=False, separators=(",", ":"))
+
+
+def _build_header_record(commands: list[str], files: int) -> dict[str, typing.Any]:
+    """実行環境の基本情報を header レコード dict として返す。"""
+    return {
+        "kind": "header",
+        "version": importlib.metadata.version("pyfltr"),
+        "python": sys.version,
+        "executable": sys.executable,
+        "platform": sys.platform,
+        "cwd": os.getcwd(),
+        "commands": commands,
+        "files": files,
+    }
 
 
 def _build_warning_record(entry: dict[str, typing.Any]) -> dict[str, typing.Any]:

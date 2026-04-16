@@ -140,6 +140,8 @@ def render_results(
     output_format: str = "text",
     output_file: pathlib.Path | None = None,
     exit_code: int = 0,
+    commands: list[str] | None = None,
+    files: int | None = None,
     warnings: list[dict[str, typing.Any]] | None = None,
 ) -> None:
     """実行結果を `成功コマンド → 失敗コマンド → summary` の順でまとめて出力する。
@@ -160,7 +162,9 @@ def render_results(
     warnings = warnings or []
 
     if output_format == "jsonl":
-        pyfltr.llm_output.write_jsonl(ordered, config, exit_code=exit_code, destination=output_file, warnings=warnings)
+        pyfltr.llm_output.write_jsonl(
+            ordered, config, exit_code=exit_code, destination=output_file, commands=commands, files=files, warnings=warnings
+        )
         if output_file is None:
             return
 

@@ -407,6 +407,9 @@ def run_pipeline(
     # JSONL stdoutモード: ツール完了時に随時JSONL行を書き出す
     jsonl_stdout = (args.output_format == "jsonl") and (args.output_file is None)
 
+    if jsonl_stdout:
+        pyfltr.llm_output.write_jsonl_header(commands=commands, files=len(all_files))
+
     # run
     include_fix_stage = bool(getattr(args, "include_fix_stage", False))
     if use_ui:
@@ -448,6 +451,8 @@ def run_pipeline(
             output_format=args.output_format or "text",
             output_file=args.output_file,
             exit_code=returncode,
+            commands=commands,
+            files=len(all_files),
             warnings=pyfltr.warnings_.collected_warnings(),
         )
     return returncode
