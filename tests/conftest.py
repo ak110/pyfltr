@@ -37,6 +37,8 @@ def make_command_result(
     has_error: bool | None = None,
     archived: bool = True,
     retry_command: str | None = None,
+    cached: bool = False,
+    cached_from: str | None = None,
 ) -> pyfltr.command.CommandResult:
     """テスト用の CommandResult を生成する。
 
@@ -59,6 +61,8 @@ def make_command_result(
         errors=list(errors) if errors else [],
         archived=archived,
         retry_command=retry_command,
+        cached=cached,
+        cached_from=cached_from,
     )
 
 

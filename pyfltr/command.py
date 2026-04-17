@@ -13,6 +13,7 @@ import random
 import shlex
 import shutil
 import subprocess
+import threading
 import time
 import typing
 
@@ -23,9 +24,16 @@ import pyfltr.error_parser
 import pyfltr.precommit
 import pyfltr.warnings_
 
+if typing.TYPE_CHECKING:
+    import pyfltr.cache
+
 logger = logging.getLogger(__name__)
 
 _active_processes: list[subprocess.Popen] = []  # type: ignore[type-arg]
+# ``_active_processes`` への多スレッドアクセスを直列化する。
+# --fail-fast が別スレッドから Popen.terminate() を呼ぶ際に、実行中プロセスの
+# 追加・削除と衝突させないための明示ロック。
+_active_processes_lock = threading.Lock()
 
 
 # pyfltr のコマンド名 -> 実際に起動するパッケージの bin 名の対応表。
@@ -258,12 +266,40 @@ def _failed_resolution_result(
 
 def _cleanup_processes() -> None:
     """プロセス終了時に実行中の子プロセスを終了。"""
-    for proc in _active_processes:
+    with _active_processes_lock:
+        procs = list(_active_processes)
+    for proc in procs:
         with contextlib.suppress(OSError):
             proc.kill()
 
 
 atexit.register(_cleanup_processes)
+
+
+def terminate_active_processes(*, timeout: float = 5.0) -> None:
+    """実行中のすべての子プロセスに terminate() → kill() を送る。
+
+    --fail-fast による早期中断で、並列実行中の他ツールを止めるために呼ばれる。
+    まず ``terminate()`` で穏当に停止を試み、``timeout`` 秒待ってもまだ生存している
+    プロセスに対して ``kill()`` を送る。Windows でも ``terminate()`` は ``TerminateProcess``
+    経由で動作する (Popen の Windows 実装が kill() と同等に振る舞う)。
+    """
+    with _active_processes_lock:
+        procs = list(_active_processes)
+    for proc in procs:
+        with contextlib.suppress(OSError):
+            proc.terminate()
+    deadline = time.monotonic() + timeout
+    for proc in procs:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            remaining = 0.0
+        with contextlib.suppress(subprocess.TimeoutExpired, OSError):
+            proc.wait(timeout=remaining)
+    for proc in procs:
+        if proc.poll() is None:
+            with contextlib.suppress(OSError):
+                proc.kill()
 
 
 @dataclasses.dataclass
@@ -297,6 +333,18 @@ class CommandResult:
 
     ``run_pipeline`` がツール完了時に埋める。未設定 (``None``) のときは tool レコードから
     省略する (テスト等、パイプライン外で CommandResult を生成する場合)。
+    """
+    cached: bool = False
+    """ファイル hash キャッシュから復元された結果か否か。
+
+    ``True`` のとき、当該ツールは実際には実行されておらず、過去の実行結果を復元して
+    返されている。``--no-cache`` またはキャッシュ未ヒットの場合は ``False``。
+    """
+    cached_from: str | None = None
+    """キャッシュヒット時の復元元 run_id (ULID)。
+
+    ``cached=True`` のときに限り設定される。JSONL tool レコードで参照誘導用に出力する
+    (``show-run`` / MCP の詳細参照経路で当該 run の全文を確認できる)。
     """
 
     @property
@@ -388,24 +436,18 @@ def _run_subprocess(
     env: dict[str, str],
     on_output: typing.Callable[[str], None] | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    """サブプロセスの実行。
+    """サブプロセスの実行 (Popen ベース)。
+
+    --fail-fast で並列実行中の他プロセスを外部スレッドから terminate() できるよう、
+    subprocess.run の経路も Popen に統一し ``_active_processes`` に登録する。
+    ``on_output`` が指定されている場合は逐次コールバックを呼び、未指定時は最後に
+    全出力をまとめて返す。
 
     実行ファイルが見つからない場合は `FileNotFoundError` を握りつぶし、
     rc=127 の `CompletedProcess` として返す。これにより並列実行下の他コマンドを
     巻き込まずに、呼び出し側で通常の失敗として扱える。
     """
     try:
-        if on_output is None:
-            return subprocess.run(
-                commandline,
-                check=False,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                env=env,
-                text=True,
-                encoding="utf-8",
-                errors="backslashreplace",
-            )
         with subprocess.Popen(
             commandline,
             stdout=subprocess.PIPE,
@@ -415,13 +457,15 @@ def _run_subprocess(
             encoding="utf-8",
             errors="backslashreplace",
         ) as proc:
-            _active_processes.append(proc)
+            with _active_processes_lock:
+                _active_processes.append(proc)
             try:
                 output_lines: list[str] = []
                 assert proc.stdout is not None
                 for line in proc.stdout:
                     output_lines.append(line)
-                    on_output(line)
+                    if on_output is not None:
+                        on_output(line)
                 proc.wait()
                 return subprocess.CompletedProcess(
                     args=commandline,
@@ -429,7 +473,8 @@ def _run_subprocess(
                     stdout="".join(output_lines),
                 )
             finally:
-                _active_processes.remove(proc)
+                with _active_processes_lock, contextlib.suppress(ValueError):
+                    _active_processes.remove(proc)
     except FileNotFoundError as e:
         message = f"実行ファイルが見つかりません: {commandline[0]} ({e})\n"
         if on_output is not None:
@@ -449,6 +494,8 @@ def execute_command(
     on_output: typing.Callable[[str], None] | None = None,
     *,
     fix_stage: bool = False,
+    cache_store: "pyfltr.cache.CacheStore | None" = None,
+    cache_run_id: str | None = None,
 ) -> CommandResult:
     """コマンドの実行。
 
@@ -456,6 +503,13 @@ def execute_command(
     （``--fix`` 付きの単発実行）で動作する。fix-args 未定義の formatter では
     通常経路と挙動が変わらないため、呼び出し側は fix ステージで走らせる対象を
     ``split_commands_for_execution()`` で絞り込んだうえで指定する前提。
+
+    ``cache_store`` が指定され、かつ当該コマンドが ``CommandInfo.cacheable=True`` の
+    非 fix モード実行なら、ファイル hash キャッシュを参照して一致があれば実行を
+    スキップし、過去の結果を復元して ``cached=True`` で返す。キャッシュミス時は
+    通常実行のうえ、成功 (rc=0, has_error=False) に限り ``cache_run_id`` をソースとして
+    書き込む。``cache_run_id`` が ``None`` の場合はキャッシュ書き込みをスキップする
+    (アーカイブ無効時に ``cached_from`` で参照させる元 run が無いため)。
     """
     command_info = config.commands[command]
     globs = command_info.target_globs()
@@ -635,6 +689,30 @@ def execute_command(
 
     has_error = False
 
+    # ファイル hash キャッシュの参照 (cacheable=True の非 fix 実行のみ)。
+    # 実装簡潔化のため、cacheable=True のコマンドは本 plain 経路でのみキャッシュを
+    # 扱う (textlint の fix モードは _execute_textlint_fix 経由なので対象外)。
+    # キャッシュ対象判定 / キー算出 / 書き込みを break/resume できるよう、結果を
+    # 後段で差し替える設計とする。
+    cache_context = _prepare_cache_context(
+        command,
+        command_info,
+        config,
+        commandline,
+        targets,
+        additional_args,
+        fix_args=fix_args,
+        cache_store=cache_store,
+    )
+    if cache_context is not None:
+        cached_result = cache_context.lookup()
+        if cached_result is not None:
+            cached_result.target_files = list(targets)
+            # 復元値の files / elapsed は過去実行時のもの。復元時の実ファイル数は
+            # 現在のターゲットリストに合わせ直す (再実行時の対象件数表示のため)。
+            cached_result.files = len(targets)
+            return cached_result
+
     # verbose時はコマンドラインをon_output経由で出力
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(commandline)}\n")
@@ -647,7 +725,7 @@ def execute_command(
     # エラー箇所のパース
     errors = pyfltr.error_parser.parse_errors(command, output, command_info.error_pattern)
 
-    return _with_targets(
+    result = _with_targets(
         CommandResult(
             command=command,
             command_type=command_info.type,
@@ -660,6 +738,63 @@ def execute_command(
             errors=errors,
         )
     )
+
+    # キャッシュ書き込み (成功 rc=0 のみ)。失敗結果を記録すると再試行で同じ失敗が
+    # 復元されて修正確認できなくなるため、成功時に限定する。
+    if cache_context is not None and returncode == 0 and not has_error:
+        cache_context.store(result, run_id=cache_run_id)
+
+    return result
+
+
+@dataclasses.dataclass
+class _CacheContext:
+    """キャッシュ参照用のコンテキスト。
+
+    ``execute_command`` の plain 経路でのみ使う内部ヘルパー。
+    """
+
+    cache_store: "pyfltr.cache.CacheStore"
+    command: str
+    key: str
+
+    def lookup(self) -> CommandResult | None:
+        """キャッシュを参照する。ヒットなら CommandResult、ミスなら None。"""
+        return self.cache_store.get(self.command, self.key)
+
+    def store(self, result: CommandResult, *, run_id: str | None) -> None:
+        """キャッシュへ書き込む (ソース run_id 付き)。"""
+        self.cache_store.put(self.command, self.key, result, run_id=run_id)
+
+
+def _prepare_cache_context(
+    command: str,
+    command_info: pyfltr.config.CommandInfo,
+    config: pyfltr.config.Config,
+    commandline: list[str],
+    targets: list[pathlib.Path],
+    additional_args: list[str],
+    *,
+    fix_args: list[str] | None,
+    cache_store: "pyfltr.cache.CacheStore | None",
+) -> _CacheContext | None:
+    """キャッシュ参照用のキー算出。対象外の場合は None を返す。"""
+    if cache_store is None or not command_info.cacheable or fix_args is not None:
+        return None
+    import pyfltr.cache  # pylint: disable=import-outside-toplevel
+
+    if not pyfltr.cache.is_cacheable(command, config, additional_args):
+        return None
+    structured_spec = _get_structured_output_spec(command, config)
+    key = cache_store.compute_key(
+        command=command,
+        commandline=commandline,
+        fix_stage=False,
+        structured_output=structured_spec is not None,
+        target_files=targets,
+        config_files=pyfltr.cache.resolve_config_files(command, config),
+    )
+    return _CacheContext(cache_store=cache_store, command=command, key=key)
 
 
 def _build_auto_args(command: str, config: pyfltr.config.Config, user_args: list[str]) -> list[str]:

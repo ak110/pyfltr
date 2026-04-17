@@ -1,4 +1,5 @@
 """テストコード。"""
+# pylint: disable=too-many-lines
 
 import pathlib
 
@@ -389,17 +390,28 @@ class TestConfigFilesWarning:
         """pre-commit 有効かつ .pre-commit-config.yaml 不在で警告が出る。"""
         (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latest"\n')
         pyfltr.config.load_config(config_dir=tmp_path)
-        entries = [w for w in pyfltr.warnings_.collected_warnings() if w["source"] == "config"]
+        # preset=latest では textlint などにも config_files が定義されるため複数の warning が出る。
+        # 本テストは pre-commit 分が出ることだけを確認する。
+        entries = [
+            w
+            for w in pyfltr.warnings_.collected_warnings()
+            if w["source"] == "config" and ".pre-commit-config.yaml" in w["message"]
+        ]
         assert len(entries) == 1
         assert "pre-commit" in entries[0]["message"]
-        assert ".pre-commit-config.yaml" in entries[0]["message"]
 
     def test_pre_commit_enabled_with_config_no_warning(self, tmp_path: pathlib.Path) -> None:
         """設定ファイルが存在すれば警告は出ない。"""
         (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latest"\n')
         (tmp_path / ".pre-commit-config.yaml").write_text("repos: []\n")
         pyfltr.config.load_config(config_dir=tmp_path)
-        entries = [w for w in pyfltr.warnings_.collected_warnings() if w["source"] == "config"]
+        # pre-commit の config は配置済みなので pre-commit 固有の警告は出ない。
+        # textlint 等の他ツールの config_files 警告は関心外として除外する。
+        entries = [
+            w
+            for w in pyfltr.warnings_.collected_warnings()
+            if w["source"] == "config" and ".pre-commit-config.yaml" in w["message"]
+        ]
         assert not entries
 
     def test_pre_commit_disabled_no_warning(self, tmp_path: pathlib.Path) -> None:
@@ -555,6 +567,58 @@ def test_respect_gitignore_default() -> None:
     """respect-gitignore の既定値が True であることを確認する。"""
     config = pyfltr.config.create_default_config()
     assert config["respect-gitignore"] is True
+
+
+def test_cache_config_defaults() -> None:
+    """ファイル hash キャッシュ設定の既定値テスト。"""
+    config = pyfltr.config.create_default_config()
+    assert config["cache"] is True
+    assert config["cache-max-age-hours"] == 12
+
+
+def test_cache_config_override(tmp_path: pathlib.Path) -> None:
+    """pyproject.toml でキャッシュ設定を上書きできる。"""
+    pyproject_content = """
+[tool.pyfltr]
+cache = false
+cache-max-age-hours = 24
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    config = pyfltr.config.load_config(config_dir=tmp_path)
+    assert config["cache"] is False
+    assert config["cache-max-age-hours"] == 24
+
+
+def test_cache_config_invalid_type(tmp_path: pathlib.Path) -> None:
+    """cache-max-age-hours に整数以外を指定するとエラーになる。"""
+    (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\ncache-max-age-hours = "many"\n')
+    with pytest.raises(ValueError, match="cache-max-age-hours"):
+        pyfltr.config.load_config(config_dir=tmp_path)
+
+
+def test_textlint_command_info_is_cacheable() -> None:
+    """textlint の CommandInfo が cacheable=True で config_files を完全列挙している。"""
+    config = pyfltr.config.create_default_config()
+    info = config.commands["textlint"]
+    assert info.cacheable is True
+    # textlint の公式設定ファイル候補が全て列挙されている
+    assert ".textlintrc" in info.config_files
+    assert ".textlintrc.json" in info.config_files
+    assert ".textlintrc.yml" in info.config_files
+    assert ".textlintrc.yaml" in info.config_files
+    assert ".textlintrc.js" in info.config_files
+    assert ".textlintrc.cjs" in info.config_files
+    assert "package.json" in info.config_files
+    assert ".textlintignore" in info.config_files
+
+
+def test_non_cacheable_commands_remain_default() -> None:
+    """textlint 以外のビルトインコマンドは cacheable=False (既定) のまま。"""
+    config = pyfltr.config.create_default_config()
+    for name, info in config.commands.items():
+        if name == "textlint":
+            continue
+        assert info.cacheable is False, f"{name} が意図せず cacheable=True になっている"
 
 
 def test_auto_option_defaults() -> None:

@@ -12,6 +12,7 @@ import sys
 import typing
 
 import pyfltr.archive
+import pyfltr.cache
 import pyfltr.cli
 import pyfltr.command
 import pyfltr.config
@@ -128,6 +129,19 @@ def _make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> 
         default=False,
         action="store_true",
         help="実行アーカイブ (ユーザーキャッシュ配下への全実行の保存) を無効化します。",
+    )
+    common.add_argument(
+        "--no-cache",
+        default=False,
+        action="store_true",
+        help="ファイル hash キャッシュ (対象ファイル未変更時の再実行スキップ) を無効化します。",
+    )
+    common.add_argument(
+        "--fail-fast",
+        default=False,
+        action="store_true",
+        help="1 ツールでもエラーが発生した時点で残りのジョブを打ち切ります。"
+        "起動済みサブプロセスには terminate() を送り、未開始ジョブは skipped として扱われます。",
     )
     common.add_argument(
         "--work-dir",
@@ -690,6 +704,21 @@ def run_pipeline(
             archive_store = None
             run_id = None
 
+    # ファイル hash キャッシュの初期化 (既定で有効)。
+    # ``--no-cache`` または ``cache = false`` で無効化できる。期間超過エントリの削除失敗や
+    # 書き込み失敗はパイプライン本体を止めないため warnings に流す。
+    cache_enabled = bool(config.values.get("cache", True)) and not getattr(args, "no_cache", False)
+    cache_store: pyfltr.cache.CacheStore | None = None
+    if cache_enabled:
+        try:
+            cache_store = pyfltr.cache.CacheStore()
+            cache_removed = cache_store.cleanup(pyfltr.cache.cache_policy_from_config(config))
+            if cache_removed:
+                logger.debug("cache: 期間超過で %d 件のエントリを削除", len(cache_removed))
+        except OSError as e:
+            pyfltr.warnings_.emit_warning(source="cache", message=f"ファイル hash キャッシュを初期化できません: {e}")
+            cache_store = None
+
     archive_hook: typing.Callable[[pyfltr.command.CommandResult], None] | None = None
     if archive_store is not None and run_id is not None:
         captured_store = archive_store
@@ -744,8 +773,18 @@ def run_pipeline(
 
     # run
     include_fix_stage = bool(getattr(args, "include_fix_stage", False))
+    fail_fast = bool(getattr(args, "fail_fast", False))
     if use_ui:
-        results, returncode = pyfltr.ui.run_commands_with_ui(commands, args, config, all_files, archive_hook=composed_hook)
+        results, returncode = pyfltr.ui.run_commands_with_ui(
+            commands,
+            args,
+            config,
+            all_files,
+            archive_hook=composed_hook,
+            cache_store=cache_store,
+            cache_run_id=run_id,
+            fail_fast=fail_fast,
+        )
         include_details = True
     else:
         # 非 TUI モード: 既定はバッファリング (最後にまとめて出力)、`--stream` で従来の即時出力。
@@ -760,6 +799,9 @@ def run_pipeline(
             include_fix_stage=include_fix_stage,
             on_result=on_result,
             archive_hook=composed_hook,
+            cache_store=cache_store,
+            cache_run_id=run_id,
+            fail_fast=fail_fast,
         )
         returncode = 0
         # `--stream` のときは詳細ログは既に出力済み。summary のみ表示する。

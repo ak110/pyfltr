@@ -11,6 +11,7 @@ import subprocess
 
 import pytest
 
+import pyfltr.cache
 import pyfltr.command
 import pyfltr.config
 from tests import conftest as _testconf
@@ -1489,3 +1490,86 @@ def test_tool_exclude_disabled_by_no_exclude(mocker, tmp_path: pathlib.Path) -> 
     assert str(kept) in cmdline
     assert str(would_be_excluded) in cmdline
     assert result.status == "succeeded"
+
+
+def test_command_result_cached_defaults() -> None:
+    """CommandResult の新フィールド cached/cached_from の既定値テスト。"""
+    result = pyfltr.command.CommandResult(
+        command="mypy",
+        command_type="linter",
+        commandline=["mypy"],
+        returncode=0,
+        has_error=False,
+        files=1,
+        output="",
+        elapsed=0.1,
+    )
+    assert result.cached is False
+    assert result.cached_from is None
+
+
+def test_execute_command_cache_hit_skips_subprocess(mocker, tmp_path: pathlib.Path) -> None:
+    """キャッシュヒット時は subprocess 実行をスキップして cached=True を返す。"""
+    target = tmp_path / "foo.md"
+    target.write_text("# title\n")
+    cache_root = tmp_path / ".cache"
+    store = pyfltr.cache.CacheStore(cache_root=cache_root)
+
+    mock_run = mocker.patch("pyfltr.command._run_subprocess")
+
+    config = pyfltr.config.create_default_config()
+    config.values["textlint"] = True
+    config.values["textlint-path"] = "/bin/true"  # js-runner を使わず path 指定で解決を単純化
+
+    # 1 回目: キャッシュミスで subprocess 実行
+    mock_run.return_value = subprocess.CompletedProcess(["textlint"], returncode=0, stdout="ok")
+    result1 = pyfltr.command.execute_command(
+        "textlint",
+        _make_args(),
+        config,
+        [target],
+        cache_store=store,
+        cache_run_id="01ABCDEFGH",
+    )
+    assert mock_run.call_count == 1
+    assert result1.cached is False
+
+    # 2 回目: キャッシュヒットで subprocess 実行されない
+    result2 = pyfltr.command.execute_command(
+        "textlint",
+        _make_args(),
+        config,
+        [target],
+        cache_store=store,
+        cache_run_id="01XYZ",
+    )
+    assert mock_run.call_count == 1  # 増えていない
+    assert result2.cached is True
+    assert result2.cached_from == "01ABCDEFGH"
+
+
+def test_execute_command_non_cacheable_skips_cache(mocker, tmp_path: pathlib.Path) -> None:
+    """cacheable=False のツール (mypy 等) はキャッシュに書かれない。"""
+    target = tmp_path / "foo.py"
+    target.write_text("x = 1\n")
+    cache_root = tmp_path / ".cache"
+    store = pyfltr.cache.CacheStore(cache_root=cache_root)
+
+    mocker.patch(
+        "pyfltr.command._run_subprocess",
+        return_value=subprocess.CompletedProcess(["mypy"], returncode=0, stdout=""),
+    )
+
+    config = pyfltr.config.create_default_config()
+    config.values["mypy"] = True
+
+    pyfltr.command.execute_command(
+        "mypy",
+        _make_args(),
+        config,
+        [target],
+        cache_store=store,
+        cache_run_id="01ABCDEFGH",
+    )
+    # mypy は cacheable=False のため、キャッシュエントリは作られない
+    assert not list(cache_root.rglob("*.json"))

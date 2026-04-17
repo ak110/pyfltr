@@ -36,6 +36,15 @@ extend-exclude = ["foo", "bar.py"]
 - respect-gitignore : `.gitignore`に記載されたファイルを除外するか否か（既定: `true`）。gitのルートおよびネストした`.gitignore`、グローバルgitignore、`.git/info/exclude`を全て考慮する。`git`コマンドが必要
 - pre-commit-auto-skip : `.pre-commit-config.yaml`からpyfltr関連hookを自動検出してSKIP環境変数に追加するか（既定: `true`）
 - pre-commit-skip : SKIP環境変数に渡すhook IDの手動指定リスト（`pre-commit-auto-skip`と併用可能）
+- archive : 実行アーカイブの有効/無効（既定: `true`。`--no-archive`で実行単位に無効化）
+- archive-max-runs : 保存する最大世代数（既定: 100。0以下で世代軸の自動削除を無効化）
+- archive-max-size-mb : アーカイブ全体の合計サイズ上限（既定: 1024 MB。0以下でサイズ軸の自動削除を無効化）
+- archive-max-age-days : 保存期間の上限（日数。既定: 30。0以下で期間軸の自動削除を無効化）
+- cache : ファイルhashキャッシュの有効/無効（既定: `true`。`--no-cache`で実行単位に無効化）
+- cache-max-age-hours : キャッシュエントリの保存期間（時間。既定: 12。0以下で期間軸の自動削除を無効化）
+- jsonl-diagnostic-limit : 1ツールあたりのdiagnostic出力件数上限（既定: 0 = 無制限）
+- jsonl-message-max-lines : `tool.message`の行数上限（既定: 30）
+- jsonl-message-max-chars : `tool.message`の文字数上限（既定: 2000）
 
 `prettier-check-args` / `prettier-write-args` / `shfmt-check-args` / `shfmt-write-args`などの2段階実行向け引数はツール別設定ページで詳しく扱う。
 

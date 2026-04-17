@@ -278,7 +278,7 @@ def test_calculate_returncode_matches_summary_exit(default_config):
 def test_run_cli_jsonl_stdout_suppresses_text(mocker, capsys):
     """jsonl + stdout モードでは stdout は JSONL のみで text ログは出ない。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
-    mocker.patch("subprocess.run", return_value=proc)
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
     returncode = pyfltr.main.run(["ci", "--output-format=jsonl", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 0
@@ -298,7 +298,7 @@ def test_run_cli_jsonl_stdout_suppresses_text(mocker, capsys):
 def test_run_cli_output_file_keeps_text_stdout(mocker, caplog, tmp_path):
     """--output-file 指定時は stdout には従来 text、ファイルには JSONL。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
-    mocker.patch("subprocess.run", return_value=proc)
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
     destination = tmp_path / "out.jsonl"
     with caplog.at_level(logging.INFO):
@@ -322,7 +322,7 @@ def test_run_cli_output_file_keeps_text_stdout(mocker, caplog, tmp_path):
 def test_run_cli_jsonl_ignores_ui(mocker, capsys):
     """jsonl + stdout モードでは --ui が silently 無効化される (stderr に漏れない)。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
-    mocker.patch("subprocess.run", return_value=proc)
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
     returncode = pyfltr.main.run(
         ["ci", "--output-format=jsonl", "--ui", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)]
@@ -339,7 +339,7 @@ def test_run_cli_jsonl_ignores_ui(mocker, capsys):
 def test_run_cli_env_var_jsonl(mocker, capsys, monkeypatch):
     """PYFLTR_OUTPUT_FORMAT=jsonl で --output-format 未指定でも JSONL 出力になる。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
-    mocker.patch("subprocess.run", return_value=proc)
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
     monkeypatch.setenv("PYFLTR_OUTPUT_FORMAT", "jsonl")
 
     returncode = pyfltr.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
@@ -355,7 +355,7 @@ def test_run_cli_env_var_jsonl(mocker, capsys, monkeypatch):
 def test_run_cli_env_var_overridden_by_cli(mocker, caplog, monkeypatch):
     """PYFLTR_OUTPUT_FORMAT より CLI --output-format=text が優先される。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
-    mocker.patch("subprocess.run", return_value=proc)
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
     monkeypatch.setenv("PYFLTR_OUTPUT_FORMAT", "jsonl")
 
     with caplog.at_level(logging.INFO):
@@ -377,7 +377,7 @@ def test_run_cli_env_var_invalid(monkeypatch):
 def test_run_cli_jsonl_restores_logger_state(mocker, caplog, capsys):
     """jsonl モード実行後、text モードの logger が復元されること。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
-    mocker.patch("subprocess.run", return_value=proc)
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
     # 1 回目: jsonl モード (logger 抑止)
     pyfltr.main.run(["ci", "--output-format=jsonl", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])

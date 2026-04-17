@@ -69,7 +69,7 @@ plugins:
         - `header`: 先頭1行。実行環境情報（`version` / `run_id` / `python` / `platform` / `cwd` / `commands` / `files`）
         - `warning`: pyfltr が検出した設定・実行時の警告（`source` で発生元を識別）
         - `diagnostic`: 1診断1行（`tool` / `file` / `line` / `col` / `rule` / `rule_url` / `severity` / `fix` / `msg`）
-        - `tool`: ツールごとの実行結果サマリ（`status` / `elapsed` / `diagnostics` / `rc` / `retry_command` / `truncated`）
+        - `tool`: ツールごとの実行結果サマリ（`status` / `elapsed` / `diagnostics` / `rc` / `retry_command` / `truncated` / `cached` / `cached_from`）
         - `summary`: 最終1行の全体集計（`succeeded` / `formatted` / `failed` / `skipped` / `diagnostics` / `exit`）
 
         stdoutモード（`--output-file`未指定）の出力順は`header`→ツール完了順に`diagnostic`+`tool`→`warning`→`summary`。stdoutへJSONLのみを書き、進捗ログやTUIは無音化される。`--output-file`指定時はファイルへJSONLを書き、stdoutには従来どおりのテキスト出力を並行出力する（ローカル実行で進捗を追える）。
@@ -77,6 +77,10 @@ plugins:
         `diagnostic`の`rule_url`は対応ツール（ruff / pylint / pyright / mypy / shellcheck / eslint / markdownlint）でのみ付与される。`severity`は`"error"` / `"warning"` / `"info"` の3値に正規化される（未対応ツールは省略）。
 
         `tool`の`retry_command`は当該ツール1件を再実行するshellコマンド文字列で、`--no-fix`/`--output-format`などの実行意味論フラグを保持する。`truncated`はsmart truncationが発生した場合のみ付与され、`archive`パス（`tools/<tool>/output.log` / `tools/<tool>/diagnostics.jsonl`）から全文を復元できる。smart truncationの閾値は`jsonl-diagnostic-limit`/`jsonl-message-max-lines`/`jsonl-message-max-chars`で制御できる。
+
+        `cached`はファイルhashキャッシュから結果を復元したときだけ `true` として付与される（現状は `textlint` のみ対象）。`cached_from`は復元元の `run_id` で、`show-run` や MCP 経由で当該 run の全文を参照できる。キャッシュは `--no-cache` または `cache = false` で無効化でき、既定の保存期間は 12 時間（`cache-max-age-hours`）。
+
+        `--fail-fast`は1ツールでもエラーが出た時点で残りのジョブを打ち切り、起動済みサブプロセスには `terminate()` を送る。未開始ジョブは `future.cancel()` で取消され、JSONL `tool` レコードには `status="skipped"` として計上される。
 
         ```shell
         pyfltr run-for-agent
@@ -107,6 +111,7 @@ plugins:
         v3.0.0:
           - v3/index.md: v3.0.0の概要・パート構成・破壊的変更
           - v3/JSONL出力拡張.md: severity正規化・rule_url・retry_command・smart truncation・SARIF/GA出力
+          - v3/パイプライン機能拡張.md: --fail-fast・ファイルhashキャッシュ・Popen一本化
         開発者向け:
           - development/development.md: 開発環境構築・ドキュメント・リリース手順
           - development/roadmap.md: エージェント連携の拡張候補（採否未決・議論用）
@@ -139,6 +144,7 @@ nav:
       - 依存整理と破壊的変更: v3/依存整理と破壊的変更.md
       - 実行アーカイブ: v3/実行アーカイブ.md
       - JSONL出力拡張: v3/JSONL出力拡張.md
+      - パイプライン機能拡張: v3/パイプライン機能拡張.md
       - マイグレーションガイド: v3/マイグレーションガイド.md
       - 作業ステータス: v3/作業ステータス.md
   - 開発者向け:

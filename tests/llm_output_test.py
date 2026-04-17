@@ -1,5 +1,5 @@
 """llm_outputのテストコード。"""
-# pylint: disable=protected-access
+# pylint: disable=protected-access,duplicate-code
 
 import json
 
@@ -210,6 +210,42 @@ def test_build_tool_lines_no_truncation_when_not_archived() -> None:
     tool_record = json.loads(lines[-1])
     assert tool_record["diagnostics"] == 10
     assert "truncated" not in tool_record
+
+
+def test_build_tool_record_cached_includes_cached_from() -> None:
+    """cached=True のとき cached/cached_from が tool レコードに含まれる。"""
+    result = pyfltr.command.CommandResult(
+        command="textlint",
+        command_type="linter",
+        commandline=["textlint"],
+        returncode=0,
+        has_error=False,
+        files=3,
+        output="",
+        elapsed=0.0,
+        cached=True,
+        cached_from="01ABCDEFGH",
+    )
+    record = pyfltr.llm_output._build_tool_record(result, diagnostics=0)
+    assert record["cached"] is True
+    assert record["cached_from"] == "01ABCDEFGH"
+
+
+def test_build_tool_record_cached_omitted_when_false() -> None:
+    """cached=False の場合は cached/cached_from が省略される。"""
+    result = pyfltr.command.CommandResult(
+        command="textlint",
+        command_type="linter",
+        commandline=["textlint"],
+        returncode=0,
+        has_error=False,
+        files=3,
+        output="",
+        elapsed=0.0,
+    )
+    record = pyfltr.llm_output._build_tool_record(result, diagnostics=0)
+    assert "cached" not in record
+    assert "cached_from" not in record
 
 
 def test_build_tool_record_message_truncated_when_archived() -> None:

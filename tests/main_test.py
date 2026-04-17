@@ -13,7 +13,7 @@ import pyfltr.main
 @pytest.mark.parametrize("mode", ["run", "ci"])
 def test_success(mocker, mode):
     proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="test")
-    mocker.patch("subprocess.run", return_value=proc)
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
     returncode = pyfltr.main.run([mode, str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 0
 
@@ -21,7 +21,7 @@ def test_success(mocker, mode):
 @pytest.mark.parametrize("mode", ["run", "ci"])
 def test_fail(mocker, mode):
     proc = subprocess.CompletedProcess(["test"], returncode=-1, stdout="test")
-    mocker.patch("subprocess.run", return_value=proc)
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
     returncode = pyfltr.main.run([mode, str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 1
 
@@ -36,7 +36,7 @@ def test_work_dir(mocker, tmp_path):
     """--work-dirオプションのテスト。"""
     (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latest"\n')
     proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="test")
-    mocker.patch("subprocess.run", return_value=proc)
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
     original_cwd = pathlib.Path.cwd()
     returncode = pyfltr.main.run(
         ["ci", "--work-dir", str(tmp_path), "--commands=pytest", str(pathlib.Path(__file__).parent.parent)]
@@ -49,7 +49,7 @@ def test_work_dir(mocker, tmp_path):
 def test_run_auto_includes_fix_stage(mocker):
     """run サブコマンドでは fix-args 付きの fix ステージが自動実行される。"""
     proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="")
-    mock_run = mocker.patch("subprocess.run", return_value=proc)
+    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
     # ruff-check は fix-args 定義済みかつ preset=latest で有効化されている
     returncode = pyfltr.main.run(["run", "--commands=ruff-check", str(pathlib.Path(__file__).parent.parent)])
@@ -64,7 +64,7 @@ def test_run_auto_includes_fix_stage(mocker):
 def test_no_fix_skips_fix_stage(mocker):
     """--no-fix 指定時は fix ステージがスキップされる。"""
     proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="")
-    mock_run = mocker.patch("subprocess.run", return_value=proc)
+    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
     returncode = pyfltr.main.run(["run", "--no-fix", "--commands=ruff-check", str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 0
@@ -77,7 +77,7 @@ def test_no_fix_skips_fix_stage(mocker):
 def test_ci_does_not_run_fix_stage(mocker):
     """ci サブコマンドでは fix ステージを走らせない（ファイル書換を避けるため）。"""
     proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="")
-    mock_run = mocker.patch("subprocess.run", return_value=proc)
+    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
     pyfltr.main.run(["ci", "--commands=ruff-check", str(pathlib.Path(__file__).parent.parent)])
 
@@ -90,7 +90,7 @@ def test_stream_mode_writes_detail_log_during_run(mocker, caplog):
     """--stream 指定時はコマンド完了時に詳細ログが出力される。"""
     # pyfltr ルートの pyproject.toml には python=true が設定されているため mypy は有効
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy-detail")
-    mocker.patch("subprocess.run", return_value=proc)
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
     returncode = pyfltr.main.run(["ci", "--no-ui", "--stream", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 0
@@ -104,7 +104,7 @@ def test_buffered_mode_is_default(mocker, caplog):
     """既定では 成功コマンド詳細 → summary の順でまとめて出力される。"""
     # pyfltr ルートの pyproject.toml には python=true が設定されているため mypy は有効
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy-detail")
-    mocker.patch("subprocess.run", return_value=proc)
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
     returncode = pyfltr.main.run(["ci", "--no-ui", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 0
@@ -118,7 +118,7 @@ def test_buffered_mode_is_default(mocker, caplog):
 def test_additional_args(mocker):
     """追加引数のテスト。"""
     proc = subprocess.CompletedProcess(["pytest"], returncode=0, stdout="test")
-    mock_run = mocker.patch("subprocess.run", return_value=proc)
+    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
     returncode = pyfltr.main.run(
         ["ci", "--commands=pytest", "--pytest-args=--maxfail=5 -v", str(pathlib.Path(__file__).parent.parent)]
@@ -138,28 +138,28 @@ class TestSubcommandIntegration:
     def test_run_subcommand(self, mocker):
         """runサブコマンドで--exit-zero-even-if-formattedが暗黙的に有効化される。"""
         proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="test")
-        mocker.patch("subprocess.run", return_value=proc)
+        mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
         returncode = pyfltr.main.run(["run", str(pathlib.Path(__file__).parent.parent)])
         assert returncode == 0
 
     def test_fast_subcommand(self, mocker):
         """fastサブコマンドで--exit-zero-even-if-formattedと--commands=fastが暗黙的に有効化される。"""
         proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="test")
-        mocker.patch("subprocess.run", return_value=proc)
+        mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
         returncode = pyfltr.main.run(["fast", str(pathlib.Path(__file__).parent.parent)])
         assert returncode == 0
 
     def test_run_for_agent_subcommand(self, mocker):
         """run-for-agentサブコマンドで--exit-zero-even-if-formattedと--output-format=jsonlが暗黙的に有効化される。"""
         proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="test")
-        mocker.patch("subprocess.run", return_value=proc)
+        mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
         returncode = pyfltr.main.run(["run-for-agent", str(pathlib.Path(__file__).parent.parent)])
         assert returncode == 0
 
     def test_ci_explicit(self, mocker):
         """明示的なciサブコマンド。"""
         proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="test")
-        mocker.patch("subprocess.run", return_value=proc)
+        mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
         returncode = pyfltr.main.run(["ci", str(pathlib.Path(__file__).parent.parent)])
         assert returncode == 0
 
@@ -178,7 +178,7 @@ pass-filenames = false
         (tmp_path / "sample.py").write_text("x = 1\n")
 
         proc = subprocess.CompletedProcess(["my-linter-exe"], returncode=0, stdout="")
-        mock_run = mocker.patch("subprocess.run", return_value=proc)
+        mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
         returncode = pyfltr.main.run(["run", "--work-dir", str(tmp_path), "--commands=my-linter", str(tmp_path)])
         assert returncode == 0
@@ -192,7 +192,7 @@ pass-filenames = false
 def test_human_readable_disables_structured_output(mocker):
     """--human-readable で構造化出力の引数が注入されない。"""
     proc = subprocess.CompletedProcess(["ruff"], returncode=0, stdout="")
-    mock_run = mocker.patch("subprocess.run", return_value=proc)
+    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
     pyfltr.main.run(["run", "--human-readable", "--commands=ruff-check", str(pathlib.Path(__file__).parent.parent)])
 
@@ -208,7 +208,7 @@ def test_human_readable_disables_structured_output(mocker):
 def test_output_format_accepts_structured_choices(mocker, fmt):
     """--output-format の新 choices (jsonl/sarif/github-annotations) が受理される。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
-    mocker.patch("subprocess.run", return_value=proc)
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
     returncode = pyfltr.main.run(["ci", "--output-format", fmt, "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 0
@@ -224,7 +224,7 @@ def test_output_format_invalid_choice_rejected():
 def test_structured_stdout_suppresses_logging(mocker, capsys, fmt):
     """SARIF / GitHub Annotation 出力時も stdout が構造化出力に専有される。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
-    mocker.patch("subprocess.run", return_value=proc)
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
     pyfltr.main.run(["ci", "--output-format", fmt, "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr()
@@ -265,6 +265,22 @@ def test_build_retry_command_replaces_commands_and_targets(tmp_path):
     assert "--no-fix" in retry
     # ターゲットは original_cwd 基準の絶対パス
     assert str(tmp_path) in retry
+
+
+def test_fail_fast_flag_accepted(mocker):
+    """--fail-fast フラグが受理される。"""
+    proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="test")
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+    returncode = pyfltr.main.run(["ci", "--fail-fast", str(pathlib.Path(__file__).parent.parent)])
+    assert returncode == 0
+
+
+def test_no_cache_flag_accepted(mocker):
+    """--no-cache フラグが受理される。"""
+    proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="test")
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+    returncode = pyfltr.main.run(["ci", "--no-cache", str(pathlib.Path(__file__).parent.parent)])
+    assert returncode == 0
 
 
 def test_build_retry_command_missing_commands_inserts(tmp_path):

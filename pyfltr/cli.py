@@ -1,4 +1,7 @@
 """コマンドライン処理。"""
+# cli.py と ui.py は並列実行・fail-fast・skipped 生成の責務が対称的に重複するが、
+# パート D のスコープではそのまま残す方針 (統合は別パートで扱う)。
+# pylint: disable=duplicate-code
 
 import argparse
 import concurrent.futures
@@ -8,6 +11,7 @@ import shlex
 import threading
 import typing
 
+import pyfltr.cache
 import pyfltr.command
 import pyfltr.config
 import pyfltr.error_parser
@@ -31,6 +35,9 @@ def run_commands_with_cli(
     include_fix_stage: bool = False,
     on_result: typing.Callable[[pyfltr.command.CommandResult], None] | None = None,
     archive_hook: typing.Callable[[pyfltr.command.CommandResult], None] | None = None,
+    cache_store: pyfltr.cache.CacheStore | None = None,
+    cache_run_id: str | None = None,
+    fail_fast: bool = False,
 ) -> list[pyfltr.command.CommandResult]:
     """コマンドを実行する (非 TUI)。
 
@@ -49,6 +56,14 @@ def run_commands_with_cli(
     ``archive_hook`` が指定されている場合、各コマンド完了時に実行アーカイブへ書き出す。
     fix ステージの結果は summary に含めないが、アーカイブには通常ステージ以外も含めて
     全実行を保存するため fix ステージからも ``archive_hook`` を呼び出す。
+
+    ``cache_store`` が指定されていれば ``execute_command`` にファイル hash キャッシュを
+    渡す。キャッシュヒット時のアーカイブ書き込みは行わない
+    (``cached_from`` で過去 run を参照させる前提)。
+
+    ``fail_fast=True`` のとき、いずれかのツール完了時に ``has_error=True`` を検出した
+    時点で未開始のジョブを ``future.cancel()`` で打ち切り、起動済みサブプロセスに
+    ``terminate()`` を送る。formatter の ``formatted`` は failure に含めない。
     """
     results: list[pyfltr.command.CommandResult] = []
     fixers, formatters, linters_and_testers = pyfltr.executor.split_commands_for_execution(
@@ -59,35 +74,136 @@ def run_commands_with_cli(
     # 結果は summary / jsonl には含めない（後段の通常ステージで同一コマンドが
     # 再度走って最終状態を報告するため。ruff-format の 2 段階と同じ位置づけ）。
     for command in fixers:
-        fix_result = _run_one_command(command, args, config, all_files, per_command_log=per_command_log, fix_stage=True)
-        if archive_hook is not None:
+        fix_result = _run_one_command(
+            command,
+            args,
+            config,
+            all_files,
+            per_command_log=per_command_log,
+            fix_stage=True,
+            cache_store=cache_store,
+            cache_run_id=cache_run_id,
+        )
+        if archive_hook is not None and not fix_result.cached:
             archive_hook(fix_result)
+        if fail_fast and fix_result.has_error:
+            return _emit_skipped_results(
+                results,
+                remaining=[*formatters, *linters_and_testers],
+                config=config,
+                on_result=on_result,
+                archive_hook=archive_hook,
+            )
 
     # formatters を順序実行
-    for command in formatters:
-        result = _run_one_command(command, args, config, all_files, per_command_log=per_command_log)
+    for idx, command in enumerate(formatters):
+        result = _run_one_command(
+            command,
+            args,
+            config,
+            all_files,
+            per_command_log=per_command_log,
+            cache_store=cache_store,
+            cache_run_id=cache_run_id,
+        )
         results.append(result)
-        if archive_hook is not None:
+        if archive_hook is not None and not result.cached:
             archive_hook(result)
         if on_result is not None:
             on_result(result)
+        if fail_fast and result.has_error:
+            remaining = [*formatters[idx + 1 :], *linters_and_testers]
+            return _emit_skipped_results(
+                results,
+                remaining=remaining,
+                config=config,
+                on_result=on_result,
+                archive_hook=archive_hook,
+            )
 
     # linters/testers を並列実行
     if len(linters_and_testers) > 0:
         with concurrent.futures.ThreadPoolExecutor(max_workers=config["jobs"]) as executor:
             future_to_command = {
-                executor.submit(_run_one_command, command, args, config, all_files, per_command_log=per_command_log): command
+                executor.submit(
+                    _run_one_command,
+                    command,
+                    args,
+                    config,
+                    all_files,
+                    per_command_log=per_command_log,
+                    cache_store=cache_store,
+                    cache_run_id=cache_run_id,
+                ): command
                 for command in linters_and_testers
             }
+            aborted = False
+            aborted_commands: set[str] = set()
             for future in concurrent.futures.as_completed(future_to_command):
-                result = future.result()
+                try:
+                    result = future.result()
+                except concurrent.futures.CancelledError:
+                    aborted_commands.add(future_to_command[future])
+                    continue
                 results.append(result)
-                if archive_hook is not None:
+                if archive_hook is not None and not result.cached:
                     archive_hook(result)
                 if on_result is not None:
                     on_result(result)
+                if fail_fast and not aborted and result.has_error:
+                    aborted = True
+                    # 未開始ジョブをまとめてキャンセルし、起動済みサブプロセスを中断する。
+                    for pending_future, pending_command in future_to_command.items():
+                        if pending_future.done():
+                            continue
+                        if pending_future.cancel():
+                            aborted_commands.add(pending_command)
+                    pyfltr.command.terminate_active_processes()
+            if aborted_commands:
+                for pending_command in aborted_commands:
+                    skipped = _make_skipped_result(pending_command, config)
+                    results.append(skipped)
+                    if archive_hook is not None:
+                        archive_hook(skipped)
+                    if on_result is not None:
+                        on_result(skipped)
 
     return results
+
+
+def _emit_skipped_results(
+    results: list[pyfltr.command.CommandResult],
+    *,
+    remaining: list[str],
+    config: pyfltr.config.Config,
+    on_result: typing.Callable[[pyfltr.command.CommandResult], None] | None,
+    archive_hook: typing.Callable[[pyfltr.command.CommandResult], None] | None,
+) -> list[pyfltr.command.CommandResult]:
+    """--fail-fast 中断時、未実行ツールを skipped 扱いで追加する (fix/formatter 段から)。"""
+    pyfltr.command.terminate_active_processes()
+    for command in remaining:
+        skipped = _make_skipped_result(command, config)
+        results.append(skipped)
+        if archive_hook is not None:
+            archive_hook(skipped)
+        if on_result is not None:
+            on_result(skipped)
+    return results
+
+
+def _make_skipped_result(command: str, config: pyfltr.config.Config) -> pyfltr.command.CommandResult:
+    """--fail-fast 中断対象の skipped CommandResult を作る。"""
+    command_info = config.commands[command]
+    return pyfltr.command.CommandResult(
+        command=command,
+        command_type=command_info.type,
+        commandline=[],
+        returncode=None,
+        has_error=False,
+        files=0,
+        output="--fail-fast により実行をスキップしました。",
+        elapsed=0.0,
+    )
 
 
 def _run_one_command(
@@ -98,6 +214,8 @@ def _run_one_command(
     *,
     per_command_log: bool,
     fix_stage: bool = False,
+    cache_store: pyfltr.cache.CacheStore | None = None,
+    cache_run_id: str | None = None,
 ) -> pyfltr.command.CommandResult:
     """1 コマンドの実行。
 
@@ -109,7 +227,15 @@ def _run_one_command(
         with lock:
             suffix = " (fix)" if fix_stage else ""
             logger.info(f"{command}{suffix} 実行中です...")
-        result = pyfltr.command.execute_command(command, args, config, all_files, fix_stage=fix_stage)
+        result = pyfltr.command.execute_command(
+            command,
+            args,
+            config,
+            all_files,
+            fix_stage=fix_stage,
+            cache_store=cache_store,
+            cache_run_id=cache_run_id,
+        )
         if per_command_log:
             write_log(result)
         else:

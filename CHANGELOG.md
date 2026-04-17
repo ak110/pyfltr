@@ -40,7 +40,20 @@ v3.0.0から整備を開始した。それ以前の変更はgit logおよびGitH
   JSONL出力側でdiagnostic件数および`tool.message`の行数・文字数を制限し、アーカイブには全文を保存する
   - 関連設定キー: `jsonl-diagnostic-limit` / `jsonl-message-max-lines` / `jsonl-message-max-chars`
 - 出力形式: `--output-format=sarif`（SARIF 2.1.0互換）と`--output-format=github-annotations`（GitHub Actions向け注釈）
+- `--fail-fast`オプション。
+  1ツールでもエラーが発生した時点で残りのジョブを打ち切る。
+  起動済みサブプロセスには`terminate()`（最大5秒待機 → `kill()`フォールバック）を送り、未開始ジョブは`future.cancel()`で取消して`skipped`として扱う
+- ファイルhashキャッシュ機能。
+  対象ファイル・設定ファイル未変更時のツール実行をスキップし、過去の結果を復元する
+  - 既定で有効。`--no-cache`や`cache = false`でオプトアウト可能
+  - 対象は`textlint`のみ（ファイル間依存を持たず、設定ファイルもCWDで完結するlinter）
+  - 保存先は実行アーカイブと同じユーザーキャッシュ配下（`<cache_root>/cache/`）
+  - キャッシュヒット時はJSONL `tool`レコードに`cached: true` / `cached_from: <ソースrun_id>`を付与
+  - 自動クリーンアップ: 期間（既定12時間）超過で削除
+  - 関連設定キー: `cache` / `cache-max-age-hours`
 
 ### 変更
 
 - `run-for-agent`サブコマンドの既定出力形式を`jsonl`とする（`pyfltr run --output-format=jsonl`と等価）
+- `_run_subprocess()`を`subprocess.Popen`ベースに一本化。
+  `--fail-fast`による外部スレッドからの`terminate()`を可能にするための実行基盤統一

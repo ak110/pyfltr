@@ -293,6 +293,13 @@ def _build_tool_record(
         record["truncated"] = truncated
     if result.retry_command is not None:
         record["retry_command"] = result.retry_command
+    # ファイル hash キャッシュ (v3.0.0 パートD)。
+    # ``cached=True`` のときはツール実行がスキップされ過去結果を復元したことを示す。
+    # ``cached_from`` は復元元の run_id (ULID) で、show-run / MCP から全文参照できる。
+    if result.cached:
+        record["cached"] = True
+        if result.cached_from is not None:
+            record["cached_from"] = result.cached_from
     return record
 
 

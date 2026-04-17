@@ -1,4 +1,7 @@
 """Textual UI関連の処理。"""
+# cli.py と ui.py は並列実行・fail-fast・skipped 生成の責務が対称的に重複するが、
+# パート D のスコープではそのまま残す方針 (統合は別パートで扱う)。
+# pylint: disable=duplicate-code
 
 import argparse
 import concurrent.futures
@@ -13,6 +16,7 @@ import typing
 from textual.app import App, ComposeResult
 from textual.widgets import DataTable, Log, TabbedContent, TabPane
 
+import pyfltr.cache
 import pyfltr.command
 import pyfltr.config
 import pyfltr.error_parser
@@ -39,13 +43,30 @@ def run_commands_with_ui(
     all_files: list[pathlib.Path],
     *,
     archive_hook: typing.Callable[[pyfltr.command.CommandResult], None] | None = None,
+    cache_store: pyfltr.cache.CacheStore | None = None,
+    cache_run_id: str | None = None,
+    fail_fast: bool = False,
 ) -> tuple[list[pyfltr.command.CommandResult], int]:
     """UI付きでコマンドを実行。
 
     ``archive_hook`` が指定されている場合、各コマンド完了時に実行アーカイブへ書き出す
-    (fix ステージも含めて全実行を保存する)。
+    (fix ステージも含めて全実行を保存する)。キャッシュヒット時の結果はアーカイブには
+    書き込まない (``cached_from`` でソース run を参照させる前提)。
+
+    ``fail_fast=True`` のとき、いずれかのツールが ``has_error=True`` で完了した時点で
+    未実行ジョブを ``future.cancel()`` で打ち切り、起動済みサブプロセスに
+    ``terminate()`` を送る。
     """
-    app = UIApp(commands, args, config, all_files, archive_hook=archive_hook)
+    app = UIApp(
+        commands,
+        args,
+        config,
+        all_files,
+        archive_hook=archive_hook,
+        cache_store=cache_store,
+        cache_run_id=cache_run_id,
+        fail_fast=fail_fast,
+    )
     try:
         return_code = app.run()
         if return_code is None:
@@ -93,6 +114,9 @@ class UIApp(App):
         all_files: list[pathlib.Path],
         *,
         archive_hook: typing.Callable[[pyfltr.command.CommandResult], None] | None = None,
+        cache_store: pyfltr.cache.CacheStore | None = None,
+        cache_run_id: str | None = None,
+        fail_fast: bool = False,
     ) -> None:
         super().__init__()
         self.commands = commands
@@ -100,6 +124,9 @@ class UIApp(App):
         self.config = config
         self._all_files = all_files
         self._archive_hook = archive_hook
+        self._cache_store = cache_store
+        self._cache_run_id = cache_run_id
+        self._fail_fast = fail_fast
         self.results: list[pyfltr.command.CommandResult] = []
         self.lock = threading.Lock()
         self.last_ctrl_c_time: float = 0.0
@@ -189,32 +216,68 @@ class UIApp(App):
             fixers, formatters, linters_and_testers = pyfltr.executor.split_commands_for_execution(
                 self.commands, self.config, self._all_files, include_fix_stage=include_fix_stage
             )
+            aborted = False
 
             # fix ステージ (serial)。結果は summary に含めず、後段の通常ステージに委ねる。
             # アーカイブには fix ステージも含めて全実行を保存する。
             for command in fixers:
                 fix_result = self._execute_command(command, fix_stage=True)
-                if self._archive_hook is not None:
+                if self._archive_hook is not None and not fix_result.cached:
                     self._archive_hook(fix_result)
+                if self._fail_fast and fix_result.has_error:
+                    aborted = True
+                    self._skip_remaining([*formatters, *linters_and_testers])
+                    break
 
             # formatters (serial)
-            for command in formatters:
-                fmt_result = self._execute_command(command)
-                self.results.append(fmt_result)
-                if self._archive_hook is not None:
-                    self._archive_hook(fmt_result)
+            if not aborted:
+                for idx, command in enumerate(formatters):
+                    fmt_result = self._execute_command(command)
+                    self.results.append(fmt_result)
+                    if self._archive_hook is not None and not fmt_result.cached:
+                        self._archive_hook(fmt_result)
+                    if self._fail_fast and fmt_result.has_error:
+                        aborted = True
+                        self._skip_remaining([*formatters[idx + 1 :], *linters_and_testers])
+                        break
 
             # linters/testers (parallel)
-            if len(linters_and_testers) > 0:
+            if not aborted and len(linters_and_testers) > 0:
+                aborted_commands: set[str] = set()
                 with concurrent.futures.ThreadPoolExecutor(max_workers=self.config["jobs"]) as executor:
                     future_to_command = {
                         executor.submit(self._execute_command, command): command for command in linters_and_testers
                     }
                     for future in concurrent.futures.as_completed(future_to_command):
-                        lt_result = future.result()
+                        try:
+                            lt_result = future.result()
+                        except concurrent.futures.CancelledError:
+                            aborted_commands.add(future_to_command[future])
+                            continue
                         self.results.append(lt_result)
-                        if self._archive_hook is not None:
+                        if self._archive_hook is not None and not lt_result.cached:
                             self._archive_hook(lt_result)
+                        if self._fail_fast and not aborted and lt_result.has_error:
+                            aborted = True
+                            for pending_future, pending_command in future_to_command.items():
+                                if pending_future.done():
+                                    continue
+                                if pending_future.cancel():
+                                    aborted_commands.add(pending_command)
+                            pyfltr.command.terminate_active_processes()
+                if aborted_commands:
+                    for pending_command in aborted_commands:
+                        skipped = self._make_skipped_result(pending_command)
+                        self.results.append(skipped)
+                        if self._archive_hook is not None:
+                            self._archive_hook(skipped)
+                        self.call_from_thread(
+                            self._update_summary,
+                            pending_command,
+                            "skipped",
+                            0,
+                            0.0,
+                        )
 
             # 自動終了判定
             statuses = [result.status for result in self.results]
@@ -267,7 +330,14 @@ class UIApp(App):
                 callback = _on_output
 
             result = pyfltr.command.execute_command(
-                command, self.args, self.config, self._all_files, on_output=callback, fix_stage=fix_stage
+                command,
+                self.args,
+                self.config,
+                self._all_files,
+                on_output=callback,
+                fix_stage=fix_stage,
+                cache_store=self._cache_store,
+                cache_run_id=self._cache_run_id,
             )
         # ここ以降は結果の UI 反映のみなので serial_group ロックの外で行う。
 
@@ -385,3 +455,27 @@ class UIApp(App):
         logging.error(f"致命的エラーが発生しました: {msg}")
         # アプリケーションを終了
         self.exit(return_code=1)
+
+    def _skip_remaining(self, commands: list[str]) -> None:
+        """--fail-fast 中断時、未実行ツールを skipped として登録する (fix/formatter 段から)。"""
+        pyfltr.command.terminate_active_processes()
+        for command in commands:
+            skipped = self._make_skipped_result(command)
+            self.results.append(skipped)
+            if self._archive_hook is not None:
+                self._archive_hook(skipped)
+            self.call_from_thread(self._update_summary, command, "skipped", 0, 0.0)
+
+    def _make_skipped_result(self, command: str) -> pyfltr.command.CommandResult:
+        """--fail-fast 中断対象の skipped CommandResult を作る。"""
+        command_info = self.config.commands[command]
+        return pyfltr.command.CommandResult(
+            command=command,
+            command_type=command_info.type,
+            commandline=[],
+            returncode=None,
+            has_error=False,
+            files=0,
+            output="--fail-fast により実行をスキップしました。",
+            elapsed=0.0,
+        )

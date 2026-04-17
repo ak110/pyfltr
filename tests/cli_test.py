@@ -146,3 +146,58 @@ def test_render_results_skips_warnings_section_when_empty(caplog):
     # warnings セクションは出力されない（summary 直前の見出しだけを検証するのは困難なため、
     # [source] 形式のエントリ行が無いことで代替する）
     assert "[config]" not in caplog.text
+
+
+def test_run_commands_with_cli_fail_fast_aborts_remaining_fixers(mocker):
+    """--fail-fast 発動時、fix ステージのエラーで後続の formatter/linter を skipped 化する。"""
+    config = pyfltr.config.create_default_config()
+    config.values["ruff-check"] = True
+    config.values["ruff-format"] = True
+    config.values["mypy"] = True
+    # fix ステージで ruff-check が has_error=True で返る想定
+    fix_fail = _make_result("ruff-check", returncode=1, command_type="linter")
+    mocker.patch("pyfltr.command.execute_command", return_value=fix_fail)
+    mock_args = mocker.MagicMock()
+
+    results = pyfltr.cli.run_commands_with_cli(
+        ["ruff-check", "ruff-format", "mypy"],
+        mock_args,
+        config,
+        [],
+        per_command_log=False,
+        include_fix_stage=True,
+        fail_fast=True,
+    )
+    # 通常ステージはスキップされ、ruff-format と mypy が skipped で積まれる
+    statuses = {r.command: r.status for r in results}
+    assert statuses.get("ruff-format") == "skipped"
+    assert statuses.get("mypy") == "skipped"
+
+
+def test_run_commands_with_cli_without_fail_fast_continues(mocker):
+    """fail_fast=False なら1ツール失敗でも後続が走る。"""
+    config = pyfltr.config.create_default_config()
+    config.values["ruff-format"] = True
+    config.values["mypy"] = True
+    fail_result = _make_result("ruff-format", returncode=1, command_type="formatter", has_error=True)
+    success = _make_result("mypy", returncode=0)
+
+    def _fake_execute(command, *_args, **_kwargs):
+        return fail_result if command == "ruff-format" else success
+
+    mocker.patch("pyfltr.command.execute_command", side_effect=_fake_execute)
+    mock_args = mocker.MagicMock()
+
+    results = pyfltr.cli.run_commands_with_cli(
+        ["ruff-format", "mypy"],
+        mock_args,
+        config,
+        [],
+        per_command_log=False,
+        include_fix_stage=False,
+        fail_fast=False,
+    )
+    commands = [r.command for r in results]
+    assert "mypy" in commands
+    assert "ruff-format" in commands
+    assert not any(r.status == "skipped" for r in results)

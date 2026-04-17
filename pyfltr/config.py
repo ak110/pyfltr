@@ -1,4 +1,5 @@
 """設定関連の処理。"""
+# pylint: disable=too-many-lines
 
 import copy
 import dataclasses
@@ -39,6 +40,15 @@ class CommandInfo:
 
     非空かつプロジェクトルートにいずれもマッチしないとき、``load_config`` が警告を発行する。
     pre-commit のような「設定ファイル不在だと機能しない」ツールの設定不備を可視化する用途。
+    ``cacheable=True`` のコマンドでは、ここに列挙した設定ファイルの内容 hash もキャッシュキーに
+    含める (設定変更時の誤ヒットを避けるため)。
+    """
+    cacheable: bool = False
+    """ファイル hash キャッシュの対象にするか否か。
+
+    ``True`` を指定できるのは「ファイル間依存を持たず、設定ファイルも CWD で完結し、
+    書き込みを伴わない linter」に限られる。新ツール追加時の判断ミスを防ぐため既定は
+    ``False`` とし、対象ツールのみ明示的に ``True`` を指定する。
     """
 
     def target_globs(self) -> list[str]:
@@ -116,7 +126,26 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
     "pyright": CommandInfo(type="linter", fixed_cost=0.8, per_file_cost=0.155),
     "ty": CommandInfo(type="linter", fixed_cost=0.05, per_file_cost=0.01),
     "markdownlint": CommandInfo(type="linter", targets="*.md", fixed_cost=0.9, per_file_cost=0.035),
-    "textlint": CommandInfo(type="linter", targets="*.md", fixed_cost=2.3, per_file_cost=0.4),
+    "textlint": CommandInfo(
+        type="linter",
+        targets="*.md",
+        fixed_cost=2.3,
+        per_file_cost=0.4,
+        # textlint は対象ファイル単独で完結する解析を行い、設定ファイルも CLI から起動した場合は
+        # CWD 直下でのみ解決される (公式ドキュメントの configuring / ignore 章に準拠)。
+        # 以下は textlint が自動で読み込む設定ファイルとignoreファイルの完全列挙。
+        config_files=[
+            ".textlintrc",
+            ".textlintrc.json",
+            ".textlintrc.yml",
+            ".textlintrc.yaml",
+            ".textlintrc.js",
+            ".textlintrc.cjs",
+            "package.json",
+            ".textlintignore",
+        ],
+        cacheable=True,
+    ),
     "eslint": CommandInfo(
         type="linter",
         targets=[*_JS_COMMON_TARGETS, "*.vue", "*.svelte"],
@@ -506,6 +535,16 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "jsonl-diagnostic-limit": 0,
     "jsonl-message-max-lines": 30,
     "jsonl-message-max-chars": 2000,
+    # ファイル hash キャッシュ (v3.0.0 パート D)。
+    # ``CommandInfo.cacheable=True`` のツール (textlint) の実行結果をユーザーキャッシュへ保存し、
+    # 同じ入力 (対象ファイル群・設定ファイル・実効コマンドライン等) が繰り返された場合に
+    # ツール実行を省略して結果を復元する。エージェントが同じ markdown に対して textlint を
+    # 繰り返し呼び出すワークフローでの待機時間を削減する用途。
+    # ``--no-cache`` CLI フラグまたは ``cache = false`` 設定で無効化できる。
+    # ``cache-max-age-hours`` は保存期間 (時間) で、短期破棄前提として既定 12 時間。
+    # 0 以下で期間軸のクリーンアップを無効化する。
+    "cache": True,
+    "cache-max-age-hours": 12,
     # 最大並列数（linters/testersの並列実行数の上限）
     "jobs": 4,
     # flake8風無視パターン。

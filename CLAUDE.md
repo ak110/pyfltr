@@ -13,7 +13,10 @@
   - JSONL出力は`header`（実行環境・`run_id`）→ `diagnostic`+`tool`（ツール完了ごと）→ `warning`→ `summary`（末尾）の順に出力される。末尾の`summary`で`failed`と`diagnostics`を確認し、必要に応じて`diagnostic`行のファイル・行番号・メッセージを参照する。`header.run_id`（ULID）は実行アーカイブの参照キー
   - `diagnostic`の任意フィールド: `rule`・`rule_url`（対応ツールのみ）・`severity`（3値に正規化）・`fix`
   - `tool`の任意フィールド: `retry_command`（当該ツール1件の再実行コマンド）・`truncated`（smart truncation発生時。`archive`パスで全文参照）
+  - `tool`のキャッシュ関連フィールド: `cached`（ファイルhashキャッシュから復元されたとき `true`）・`cached_from`（`cached=true` 時のソース `run_id`）
   - 詳細仕様は`docs/guide/usage.md`の「jsonlスキーマ」節および`llms.txt`を参照。`--output-format=sarif` / `github-annotations` でCI向け形式にも切り替え可能
+  - `--fail-fast`: 1ツールでもエラーが出た時点で残りを打ち切る（起動済みはterminate、未開始はskipped扱い）
+  - `--no-cache`: ファイルhashキャッシュを無効化する。現状はtextlintのみ対象
 
 ## 注意点
 
@@ -21,4 +24,4 @@
 - `docs/guide/index.md`の対応ツール一覧と`mkdocs.yml`内llmstxt `markdown_description`の「対応ツール」節は人手同期（SSOT化しない運用）
 - `mkdocs.yml`内llmstxt `markdown_description`にはLLMが利用する際に有用な情報のみ記載する（`run-for-agent`サブコマンド、主要オプションなど）。LLMにとって不要な情報はdocs側をSSOTとし、多重管理を避ける
 - ドキュメント構成変更時は`docs/development/development.md`の「READMEとdocsの役割分担」節を先に参照
-- v3.0.0の実装進捗は`docs/v3/作業ステータス.md`を参照。未完了パート（D/E/F）と残ドキュメント更新項目がまとまっている
+- v3.0.0の実装進捗は`docs/v3/作業ステータス.md`を参照。未完了パート（E/F）がまとまっている

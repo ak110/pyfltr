@@ -19,7 +19,7 @@ v3.0.0は6パートに分割して段階実装する。
 | A | 依存整理・破壊的変更 | Python 系オプトイン化、5 ツール完全削除、プリセット 20250710 削除、依存の extras 化 |
 | B | 実行アーカイブ基盤 | 全実行の詳細をユーザーキャッシュへ自動保存・run_id 発行・自動クリーンアップ |
 | C | JSONL 出力拡張 | severity 正規化完了・rule_url 付与・リトライ提案埋め込み・smart truncation・SARIF / GitHub Annotation 出力 |
-| D | パイプライン機能拡張 | `--fail-fast`、ファイル hash ベースのスキップキャッシュ |
+| D | パイプライン機能拡張 | `--fail-fast`、ファイル hash ベースのスキップキャッシュ（textlint のみ）、`execute_command` の Popen 一本化 |
 | E | 詳細参照サブコマンド | `show-run` / `list-runs` サブコマンド追加 |
 | F | MCP サーバー化 | `pyfltr mcp` サブコマンドでの MCP サーバー本体同梱、詳細参照 API の提供、stdio 隔離 |
 
@@ -28,6 +28,7 @@ v3.0.0は6パートに分割して段階実装する。
 - [依存整理と破壊的変更](依存整理と破壊的変更.md)
 - [実行アーカイブ](実行アーカイブ.md)
 - [JSONL 出力拡張](JSONL出力拡張.md)
+- [パイプライン機能拡張](パイプライン機能拡張.md)
 - [マイグレーションガイド](マイグレーションガイド.md)
 - [作業ステータス](作業ステータス.md)
 
@@ -49,6 +50,9 @@ v3.0.0は6パートに分割して段階実装する。
 - `--no-archive`: 実行アーカイブを一時的に無効化するCLIオプション
 - JSONLの `header` レコードに `run_id` フィールドが追加された（アーカイブ参照キー）
 - JSONL出力拡張 ([JSONL 出力拡張](JSONL出力拡張.md)): severity正規化・`rule_url` / `retry_command` / smart truncation・SARIF 2.1.0 / GitHub Annotation形式への出力対応
+- `--fail-fast`: 1ツールでもエラーが発生した時点で残りの実行を打ち切る ([パイプライン機能拡張](パイプライン機能拡張.md))
+- ファイルhashキャッシュ: 対象ファイル未変更時のtextlint実行をスキップし、JSONL toolレコードに `cached` / `cached_from` を付与する ([パイプライン機能拡張](パイプライン機能拡張.md))
+- `--no-cache`: ファイルhashキャッシュを一時的に無効化するCLIオプション
 
 ## 依存関係の整理
 
