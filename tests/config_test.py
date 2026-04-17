@@ -12,28 +12,13 @@ from tests import conftest as _testconf
 @pytest.mark.parametrize(
     "preset,expected",
     [
-        # presetが空の場合はデフォルト
+        # presetが空の場合はデフォルト（Python系ツールは全てFalse）
         (
             "",
             {
-                "isort": True,
-                "black": True,
+                "mypy": False,
                 "ruff-format": False,
                 "ruff-check": False,
-                "pyright": False,
-                "ty": False,
-                "textlint": False,
-                "markdownlint": False,
-            },
-        ),
-        # 20250710プリセット（互換性維持）
-        (
-            "20250710",
-            {
-                "isort": False,
-                "black": False,
-                "ruff-format": True,
-                "ruff-check": True,
                 "pyright": False,
                 "ty": False,
                 "textlint": False,
@@ -44,8 +29,6 @@ from tests import conftest as _testconf
         (
             "20260330",
             {
-                "isort": False,
-                "black": False,
                 "ruff-format": True,
                 "ruff-check": True,
                 "pyright": True,
@@ -58,8 +41,6 @@ from tests import conftest as _testconf
         (
             "20260411",
             {
-                "isort": False,
-                "black": False,
                 "ruff-format": True,
                 "ruff-check": True,
                 "pyright": True,
@@ -71,12 +52,10 @@ from tests import conftest as _testconf
                 "uv-sort": True,
             },
         ),
-        # latestプリセット（= 20260411）
+        # latestプリセット（= 20260413相当）
         (
             "latest",
             {
-                "isort": False,
-                "black": False,
                 "ruff-format": True,
                 "ruff-check": True,
                 "pyright": True,
@@ -182,14 +161,12 @@ error-pattern = '(?P<file>[^:]+):(?P<line>\\d+)'
 def test_fast_alias_dynamic(tmp_path: pathlib.Path) -> None:
     """fastエイリアスがper-command fastフラグから動的計算されることのテスト。"""
     # デフォルト設定でfastエイリアスが正しく構築される
+    # fast エイリアスはツールの有効/無効に関わらず {tool}-fast フラグが True のものを列挙する
     config = pyfltr.config.create_default_config()
     fast = config["aliases"]["fast"]
-    # デフォルトでfastに含まれるコマンド
-    assert "pyupgrade" in fast
+    # ruff-format-fast=True なので fast に含まれる
     assert "ruff-format" in fast
-    assert "markdownlint" in fast
-    assert "textlint" in fast
-    # デフォルトでfastに含まれないコマンド
+    # mypy-fast=False なので fast に含まれない
     assert "mypy" not in fast
     assert "pylint" not in fast
     assert "pytest" not in fast
@@ -197,14 +174,15 @@ def test_fast_alias_dynamic(tmp_path: pathlib.Path) -> None:
     # pyproject.tomlでfastフラグを変更
     pyproject_content = """
 [tool.pyfltr]
+python = true
 mypy-fast = true
-pyupgrade-fast = false
+ruff-format-fast = false
 """
     (tmp_path / "pyproject.toml").write_text(pyproject_content)
     config = pyfltr.config.load_config(config_dir=tmp_path)
     fast = config["aliases"]["fast"]
     assert "mypy" in fast
-    assert "pyupgrade" not in fast
+    assert "ruff-format" not in fast
 
 
 def test_ruff_format_by_check_default() -> None:
@@ -239,16 +217,14 @@ def test_fix_args_defaults() -> None:
     # fix 非対応ビルトインは fix-args キーが存在しない
     assert "mypy-fix-args" not in config.values
     assert "pytest-fix-args" not in config.values
-    assert "black-fix-args" not in config.values
 
 
 def test_filter_fix_commands_defaults() -> None:
     """filter_fix_commands の基本動作テスト。"""
     config = pyfltr.config.create_default_config()
-    # 既定では textlint/markdownlint/ruff-check は disabled、formatter は enabled
-    commands = ["pyupgrade", "black", "mypy", "textlint", "markdownlint", "ruff-check"]
+    # 既定では全ツール無効または fix-args 未定義のため全て除外
+    commands = ["mypy", "textlint", "markdownlint", "ruff-check"]
     result = pyfltr.config.filter_fix_commands(commands, config)
-    # formatter (pyupgrade, black) は fix モード対象外、
     # mypy は fix-args 未定義、textlint/markdownlint/ruff-check は disabled のため全て除外
     assert not result
 
@@ -502,6 +478,48 @@ preset = "invalid"
         pyfltr.config.load_config(config_dir=tmp_path)
 
 
+def test_removed_preset_20250710(tmp_path: pathlib.Path) -> None:
+    """preset = "20250710" は ValueError になり、メッセージに「削除」と「latest」が含まれる。"""
+    (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "20250710"\n')
+    with pytest.raises(ValueError, match="削除") as exc_info:
+        pyfltr.config.load_config(config_dir=tmp_path)
+    assert "latest" in str(exc_info.value)
+
+
+@pytest.mark.parametrize("removed_tool", ["pyupgrade", "autoflake", "isort", "black", "pflake8"])
+def test_removed_tool_config_key(tmp_path: pathlib.Path, removed_tool: str) -> None:
+    """削除ツールの設定キーを書くと ValueError が出て、メッセージにツール名が含まれる。"""
+    (tmp_path / "pyproject.toml").write_text(f"[tool.pyfltr]\n{removed_tool} = true\n")
+    with pytest.raises(ValueError, match=removed_tool):
+        pyfltr.config.load_config(config_dir=tmp_path)
+
+
+def test_archive_config_defaults() -> None:
+    """アーカイブ設定の既定値テスト。"""
+    config = pyfltr.config.create_default_config()
+    assert config["archive"] is True
+    assert config["archive-max-runs"] == 100
+    assert config["archive-max-size-mb"] == 1024
+    assert config["archive-max-age-days"] == 30
+
+
+def test_archive_config_override(tmp_path: pathlib.Path) -> None:
+    """pyproject.toml でアーカイブ設定を上書きできることのテスト。"""
+    pyproject_content = """
+[tool.pyfltr]
+archive = false
+archive-max-runs = 50
+archive-max-size-mb = 512
+archive-max-age-days = 7
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    config = pyfltr.config.load_config(config_dir=tmp_path)
+    assert config["archive"] is False
+    assert config["archive-max-runs"] == 50
+    assert config["archive-max-size-mb"] == 512
+    assert config["archive-max-age-days"] == 7
+
+
 def test_respect_gitignore_default() -> None:
     """respect-gitignore の既定値が True であることを確認する。"""
     config = pyfltr.config.create_default_config()
@@ -528,59 +546,70 @@ mypy-unused-awaitable = false
     assert config["mypy-unused-awaitable"] is False
 
 
-def test_python_false_disables_python_tools(tmp_path: pathlib.Path) -> None:
-    """python = false で Python 系ツールが一括無効化される。"""
+def test_python_default() -> None:
+    """python の既定値は False（opt-in）。"""
+    config = pyfltr.config.create_default_config()
+    assert config["python"] is False
+
+
+def test_python_default_disables_python_tools() -> None:
+    """既定で Python 系ツールが全て無効化されている。"""
+    config = pyfltr.config.create_default_config()
+    for cmd in pyfltr.config.PYTHON_COMMANDS:
+        assert config[cmd] is False, f"{cmd} は既定で無効化されるべき"
+    # JS/共通系も影響を受けない
+    assert config["markdownlint"] is False
+    assert config["textlint"] is False
+
+
+def test_python_true_enables_python_tools(tmp_path: pathlib.Path) -> None:
+    """python = true で PYTHON_COMMANDS が全て True になる（uv-sort 含む）。"""
     pyproject_content = """
 [tool.pyfltr]
-python = false
+python = true
 """
     (tmp_path / "pyproject.toml").write_text(pyproject_content)
     config = pyfltr.config.load_config(config_dir=tmp_path)
     for cmd in pyfltr.config.PYTHON_COMMANDS:
-        assert config[cmd] is False, f"{cmd} は python=false で無効化されるべき"
+        assert config[cmd] is True, f"{cmd} は python=true で有効化されるべき"
+    assert "uv-sort" in pyfltr.config.PYTHON_COMMANDS
     # JS/共通系は影響を受けない
-    assert config["markdownlint"] is False  # デフォルト無効のまま
-    assert config["textlint"] is False  # デフォルト無効のまま
+    assert config["markdownlint"] is False
+    assert config["textlint"] is False
 
 
-def test_python_false_with_preset(tmp_path: pathlib.Path) -> None:
-    """preset と python = false の組み合わせ。preset で有効化されたツールも無効化される。"""
+def test_python_true_with_preset(tmp_path: pathlib.Path) -> None:
+    """preset と python = true の組み合わせ。Python 系も有効化される。"""
     pyproject_content = """
 [tool.pyfltr]
 preset = "latest"
-python = false
+python = true
 """
     (tmp_path / "pyproject.toml").write_text(pyproject_content)
     config = pyfltr.config.load_config(config_dir=tmp_path)
-    # preset が有効化した pyright も python=false で無効化
-    assert config["pyright"] is False
-    assert config["ruff-format"] is False
-    assert config["ruff-check"] is False
-    # preset が有効化した JS 系ツールは無効化されない
+    # python=true で Python 系が有効化
+    assert config["pyright"] is True
+    assert config["ruff-format"] is True
+    assert config["ruff-check"] is True
+    # preset が有効化した JS 系ツールも有効
     assert config["textlint"] is True
     assert config["markdownlint"] is True
 
 
-def test_python_false_with_individual_override(tmp_path: pathlib.Path) -> None:
-    """python = false でも個別設定で上書きできる。"""
+def test_python_true_with_individual_override(tmp_path: pathlib.Path) -> None:
+    """python = true でも個別設定で上書きできる。"""
     pyproject_content = """
 [tool.pyfltr]
-python = false
-mypy = true
+python = true
+mypy = false
 """
     (tmp_path / "pyproject.toml").write_text(pyproject_content)
     config = pyfltr.config.load_config(config_dir=tmp_path)
-    # mypy だけ個別に有効化
-    assert config["mypy"] is True
-    # 他の Python ツールは無効
-    assert config["pylint"] is False
-    assert config["pytest"] is False
-
-
-def test_python_default() -> None:
-    """python の既定値は True。"""
-    config = pyfltr.config.create_default_config()
-    assert config["python"] is True
+    # mypy だけ個別に無効化
+    assert config["mypy"] is False
+    # 他の Python ツールは有効
+    assert config["pylint"] is True
+    assert config["pytest"] is True
 
 
 def test_bin_runner_default() -> None:
@@ -851,11 +880,11 @@ def test_native_lang_tools_fast_defaults() -> None:
         assert config[f"{tool}-fast"] is False, f"{tool}-fast は既定 False であるべき"
 
 
-def test_native_lang_tools_not_affected_by_python_false(tmp_path: pathlib.Path) -> None:
-    """python = false は Rust / .NET 言語ツールの設定を変更しない。"""
+def test_native_lang_tools_not_affected_by_python(tmp_path: pathlib.Path) -> None:
+    """python 設定は Rust / .NET 言語ツールの設定を変更しない。"""
     pyproject_content = """
 [tool.pyfltr]
-python = false
+python = true
 cargo-fmt = true
 cargo-clippy = true
 dotnet-format = true
@@ -865,9 +894,9 @@ dotnet-format = true
     assert config["cargo-fmt"] is True
     assert config["cargo-clippy"] is True
     assert config["dotnet-format"] is True
-    # python 系ツールは無効化されている
-    assert config["mypy"] is False
-    assert config["pytest"] is False
+    # python 系ツールは python=true で有効化されている
+    assert config["mypy"] is True
+    assert config["pytest"] is True
 
 
 def test_native_lang_tools_serial_group() -> None:

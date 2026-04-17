@@ -68,10 +68,6 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         targets="*",
         config_files=[".pre-commit-config.yaml"],
     ),
-    "pyupgrade": CommandInfo(type="formatter"),
-    "autoflake": CommandInfo(type="formatter"),
-    "isort": CommandInfo(type="formatter"),
-    "black": CommandInfo(type="formatter"),
     "ruff-format": CommandInfo(type="formatter", fixed_cost=0.02),
     "prettier": CommandInfo(
         type="formatter",
@@ -115,7 +111,6 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         fixed_cost=0.2,
     ),
     "ruff-check": CommandInfo(type="linter", fixed_cost=0.01),
-    "pflake8": CommandInfo(type="linter"),
     "mypy": CommandInfo(type="linter", fixed_cost=0.2, per_file_cost=0.12),
     "pylint": CommandInfo(type="linter", fixed_cost=1.75, per_file_cost=0.3),
     "pyright": CommandInfo(type="linter", fixed_cost=0.8, per_file_cost=0.155),
@@ -201,13 +196,8 @@ BIN_RUNNERS: tuple[str, ...] = ("direct", "mise")
 """ec / shellcheck 等のネイティブバイナリツールの起動方式として指定できる値。"""
 
 PYTHON_COMMANDS: tuple[str, ...] = (
-    "pyupgrade",
-    "autoflake",
-    "isort",
-    "black",
     "ruff-format",
     "ruff-check",
-    "pflake8",
     "mypy",
     "pylint",
     "pyright",
@@ -215,7 +205,16 @@ PYTHON_COMMANDS: tuple[str, ...] = (
     "pytest",
     "uv-sort",
 )
-"""python = false で一括無効化されるコマンドの一覧。"""
+"""python 設定および `pyfltr[python]` extras に紐づく Python 系コマンドの一覧。
+
+既定ではすべて無効 (opt-in) となる。ユーザーが ``python = true`` を指定すると
+一括で True に、個別に ``{command} = true`` を指定することでも有効化できる。"""
+
+REMOVED_COMMANDS: frozenset[str] = frozenset({"pyupgrade", "autoflake", "isort", "black", "pflake8"})
+"""v3.0.0 で削除されたコマンド名。
+
+設定ファイル中に関連キー (``pyupgrade = true`` / ``black-args = [...]`` など) を検出した
+場合、``load_config`` が案内付きの ValueError を送出して移行を促す。"""
 
 AUTO_ARGS: dict[str, list[tuple[str, list[str]]]] = {
     "pylint": [
@@ -236,9 +235,12 @@ AUTO_ARGS: dict[str, list[tuple[str, list[str]]]] = {
 DEFAULT_CONFIG: dict[str, typing.Any] = {
     # プリセット
     "preset": "",
-    # Python 系ツールの一括有効/無効。False にすると PYTHON_COMMANDS に
-    # 列挙されたコマンドをすべて無効化する。個別設定で上書き可能。
-    "python": True,
+    # Python 系ツールの一括有効/無効。True にすると PYTHON_COMMANDS に
+    # 列挙されたコマンドをすべて有効化する。個別設定で上書き可能。
+    # v3.0.0 で既定値を False (opt-in) に変更。非 Python プロジェクトで
+    # Python 系 linter が勝手に走るのを防ぐためで、利用時は別途
+    # ``pip install pyfltr[python]`` で Python 系の依存を導入する必要がある。
+    "python": False,
     # pre-commit 統合。有効にすると pyfltr run/ci/fast 実行時に
     # pre-commit run --all-files を内部で呼び出す。
     # pre-commit-fast = True（既定）により fast も統合するため、
@@ -285,37 +287,13 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # - direct: PATH 上のバイナリを直接実行
     "bin-runner": "mise",
     # コマンド毎に有効無効、パス、追加の引数を設定
-    "pyupgrade": True,
-    "pyupgrade-path": "pyupgrade",
-    "pyupgrade-args": [],
-    "pyupgrade-fast": True,
-    "autoflake": True,
-    "autoflake-path": "autoflake",
-    "autoflake-args": [
-        "--in-place",
-        "--remove-all-unused-imports",
-        "--ignore-init-module-imports",
-        "--remove-unused-variables",
-        "--verbose",
-    ],
-    "autoflake-fast": True,
-    "isort": True,
-    "isort-path": "isort",
-    "isort-args": ["--settings-path=./pyproject.toml"],
-    "isort-fast": True,
-    "black": True,
-    "black-path": "black",
-    "black-args": [],
-    "black-fast": True,
-    "pflake8": True,
-    "pflake8-path": "pflake8",
-    "pflake8-args": [],
-    "pflake8-fast": True,
-    "mypy": True,
+    # Python 系ツールは v3.0.0 で opt-in 化したため、既定値は False。
+    # ``python = true`` または個別に ``{command} = true`` で有効化する。
+    "mypy": False,
     "mypy-path": "mypy",
     "mypy-args": [],
     "mypy-fast": False,
-    "pylint": True,
+    "pylint": False,
     "pylint-path": "pylint",
     "pylint-args": [],
     "pylint-fast": False,
@@ -479,7 +457,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "actionlint-args": [],
     "actionlint-version": "latest",
     "actionlint-fast": True,
-    "pytest": True,
+    "pytest": False,
     "pytest-path": "pytest",
     "pytest-args": [],
     "pytest-devmode": True,  # PYTHONDEVMODE=1をするか否か
@@ -507,6 +485,17 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # `ruff check --fix --unsafe-fixes` で autofix 可能な違反を修正する。
     # (通常モードの ruff-format-by-check とは別経路で動作する)
     "ruff-check-fix-args": ["--fix", "--unsafe-fixes"],
+    # 実行アーカイブ (v3.0.0 追加)
+    # 全実行のツール生出力・diagnostic 全件・実行メタをユーザーキャッシュ
+    # (``platformdirs.user_cache_dir("pyfltr")``) へ保存する。CLI とは独立した
+    # 詳細参照経路 (``show-run`` / ``list-runs``、MCP ツール) からいつでも
+    # 全文を参照できるようにする。
+    "archive": True,
+    # 自動クリーンアップの閾値。いずれかを超過した時点で古い順に削除する。
+    # 0 以下を指定するとその軸の自動削除は無効化される。
+    "archive-max-runs": 100,
+    "archive-max-size-mb": 1024,
+    "archive-max-age-days": 30,
     # 最大並列数（linters/testersの並列実行数の上限）
     "jobs": 4,
     # flake8風無視パターン。
@@ -581,10 +570,6 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "aliases": {
         "format": [
             "pre-commit",
-            "pyupgrade",
-            "autoflake",
-            "isort",
-            "black",
             "ruff-format",
             "prettier",
             "uv-sort",
@@ -594,7 +579,6 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
         ],
         "lint": [
             "ruff-check",
-            "pflake8",
             "mypy",
             "pylint",
             "pyright",
@@ -646,20 +630,17 @@ def create_default_config() -> Config:
     return config
 
 
-# 全プリセットの基盤: 旧ツール無効化 + ruff有効化
+# 全プリセットの基盤: ruff を有効化する。
+# v3.0.0 で Python 系ツールを opt-in 化したため、プリセット適用時点で
+# ruff-format / ruff-check など必要なツールを明示的に True に切り替える。
 _PRESET_BASE: dict[str, bool] = {
-    "pyupgrade": False,
-    "autoflake": False,
-    "pflake8": False,
-    "isort": False,
-    "black": False,
     "ruff-format": True,
     "ruff-check": True,
 }
 
 # プリセット定義。新しいプリセットほど有効化ツールが増える増分構造。
+# ``20250710`` は v3.0.0 で削除した (削除5ツール分の設定しか持たなかったため)。
 _PRESETS: dict[str, dict[str, bool]] = {
-    "20250710": _PRESET_BASE,
     "20260330": {**_PRESET_BASE, "pyright": True, "textlint": True, "markdownlint": True},
     "20260411": {
         **_PRESET_BASE,
@@ -683,6 +664,17 @@ _PRESETS: dict[str, dict[str, bool]] = {
 }
 _PRESETS["latest"] = _PRESETS["20260413"]
 
+# v3.0.0 で削除されたプリセット名と、移行先を示すメッセージの対応表。
+# ``load_config`` が該当プリセット指定を検知したら案内付き ValueError を送出する。
+_REMOVED_PRESETS: dict[str, str] = {
+    "20250710": (
+        'preset "20250710" は v3.0.0 で削除された。'
+        "5 ツール削除 (pyupgrade / autoflake / isort / black / pflake8) に伴い、"
+        '当該プリセットは実質的に内容を失ったため廃止された。代わりに `preset = "latest"` を使い、'
+        "必要な Python 系ツールを ``python = true`` または個別設定で有効化すること"
+    ),
+}
+
 
 def load_config(config_dir: pathlib.Path | None = None) -> Config:
     """pyproject.tomlから設定を読み込み。"""
@@ -703,6 +695,8 @@ def load_config(config_dir: pathlib.Path | None = None) -> Config:
         pass
     elif preset in _PRESETS:
         config.values.update(_PRESETS[preset])
+    elif preset in _REMOVED_PRESETS:
+        raise ValueError(_REMOVED_PRESETS[preset])
     else:
         raise ValueError(f"preset の設定値が正しくありません。{preset=}")
 
@@ -715,12 +709,13 @@ def load_config(config_dir: pathlib.Path | None = None) -> Config:
         _register_custom_command(config, name, definition)
 
     # python 設定の適用 (preset < python < 個別設定)
-    # python = false なら PYTHON_COMMANDS を一括無効化する。
-    # 後続の個別設定ループで mypy = true 等の上書きが可能。
-    python_flag = tool_pyfltr.get("python", True)
-    if not python_flag:
+    # python = true なら PYTHON_COMMANDS を一括有効化する (v3.0.0 で opt-in 化)。
+    # python 未指定もしくは False の場合はプリセット既定値のままとする。
+    # 後続の個別設定ループで mypy = false 等の上書きが可能。
+    python_flag = tool_pyfltr.get("python", False)
+    if python_flag:
         for cmd in PYTHON_COMMANDS:
-            config.values[cmd] = False
+            config.values[cmd] = True
 
     # プリセット・python 以外の設定を適用 (プリセットと重複があれば上書き)
     skip_keys = ("custom-commands", "python")
@@ -730,6 +725,15 @@ def load_config(config_dir: pathlib.Path | None = None) -> Config:
         key = key.replace("_", "-")  # 「_」区切りと「-」区切りのどちらもOK
         if key in skip_keys:
             continue  # 別途処理済み
+        # v3.0.0 で削除されたツール名に紐づく設定キーを検出したら移行案内を出す。
+        # "pyupgrade" / "pyupgrade-path" / "pyupgrade-args" / "pyupgrade-fast" などを網羅する。
+        removed_owner = _extract_removed_command(key)
+        if removed_owner is not None:
+            raise ValueError(
+                f'"{key}" は v3.0.0 で削除されたツール "{removed_owner}" 向けの設定である。'
+                "5 ツール (pyupgrade / autoflake / isort / black / pflake8) は ruff への統合により削除された。"
+                "該当設定をすべて pyproject.toml から除去すること"
+            )
         # {command}-exclude の検出
         if key.endswith("-exclude"):
             cmd_name = key.removesuffix("-exclude")
@@ -906,6 +910,20 @@ def _validate_error_pattern(name: str, pattern: str) -> None:
     for required in ("file", "line", "message"):
         if required not in groups:
             raise ValueError(f"カスタムコマンド {name} のerror-patternに{required}グループが必要です")
+
+
+def _extract_removed_command(key: str) -> str | None:
+    """設定キーが削除コマンド宛なら該当コマンド名を返す、そうでなければ None。
+
+    ``"pyupgrade"`` のような bare key と、``"pyupgrade-path"`` / ``"pyupgrade-args"`` /
+    ``"pyupgrade-fast"`` などの派生キーの双方を検出する。
+    """
+    if key in REMOVED_COMMANDS:
+        return key
+    for command in REMOVED_COMMANDS:
+        if key.startswith(f"{command}-"):
+            return command
+    return None
 
 
 def _validate_targets_value(key: str, value: typing.Any) -> str | list[str]:

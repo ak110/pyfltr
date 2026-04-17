@@ -12,21 +12,24 @@ import pyfltr.executor
 def test_split_commands_estimated_time_order() -> None:
     """推定実行時間の降順（重いツール先頭）でソートされることのテスト。"""
     config = pyfltr.config.create_default_config()
-    # pflake8（コスト0）とmypy/pylint/pytest（コスト非0）はデフォルトで有効
-    commands = ["pflake8", "mypy", "pylint", "pytest"]
+    # python=True 相当に有効化する
+    for cmd in ["ruff-check", "mypy", "pylint", "pytest"]:
+        config.values[cmd] = True
+    commands = ["ruff-check", "mypy", "pylint", "pytest"]
     # Pythonファイルを含むファイルリストを渡す
     all_files = [pathlib.Path("test.py")]
     _, _, linters_and_testers = pyfltr.executor.split_commands_for_execution(commands, config, all_files)
 
-    # 推定時間の降順: pytest(3.0), pylint(1.75+0.3), pyright相当なし, mypy(0.2+0.12), pflake8(0.0)
+    # 推定時間の降順: pytest(3.0), pylint(1.75+0.3), mypy(0.2+0.12), ruff-check(0.01)
     assert linters_and_testers[0] == "pytest"
     assert linters_and_testers[1] == "pylint"
-    assert linters_and_testers[-1] == "pflake8"
+    assert linters_and_testers[-1] == "ruff-check"
 
 
 def test_split_commands_estimated_time_scales_with_files() -> None:
     """対象ファイル数に応じて推定時間が変化し、ソート順が変わることのテスト。"""
     config = pyfltr.config.create_default_config()
+    config.values["mypy"] = True
     config.values["textlint"] = True
     # mypy: fixed=0.2, per_file=0.12 → 1ファイルで 0.32
     # textlint: fixed=2.3, per_file=0.4 → mdファイルが対象
@@ -48,10 +51,11 @@ def test_split_commands_include_fix_stage() -> None:
     """include_fix_stage=True のとき fix-args 定義済みコマンドが fixers に積まれる。"""
     config = pyfltr.config.create_default_config()
     config.values["ruff-check"] = True
-    config.values["black"] = True
+    config.values["ruff-format"] = True
     config.values["markdownlint"] = True
-    # ruff-check / markdownlint は fix-args 定義済み、black / mypy は未定義
-    commands = ["black", "ruff-check", "mypy", "markdownlint"]
+    config.values["mypy"] = True
+    # ruff-check / markdownlint は fix-args 定義済み、ruff-format（formatter）/ mypy は未定義
+    commands = ["ruff-format", "ruff-check", "mypy", "markdownlint"]
     all_files: list[pathlib.Path] = []
     fixers, formatters, linters = pyfltr.executor.split_commands_for_execution(
         commands, config, all_files, include_fix_stage=True
@@ -60,11 +64,11 @@ def test_split_commands_include_fix_stage() -> None:
     # fix-args 定義済みかつ enabled の linter のみ fixers
     assert "ruff-check" in fixers
     assert "markdownlint" in fixers
-    assert "black" not in fixers
+    assert "ruff-format" not in fixers
     assert "mypy" not in fixers
 
     # 通常ステージは fix ステージ有無で挙動が変わらない（fixers は通常ステージにも含まれる）
-    assert "black" in formatters
+    assert "ruff-format" in formatters
     assert "ruff-check" in linters
     assert "mypy" in linters
 

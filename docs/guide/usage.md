@@ -3,16 +3,16 @@
 ## サブコマンド
 
 pyfltrはサブコマンドで動作モードを指定する。
+v3.0.0でサブコマンドは必須化された（省略時のフォールバックは廃止）。
 
 ```shell
 pyfltr <subcommand> [files and/or directories ...]
 ```
 
-### サブコマンド: ci（既定）
+### サブコマンド: ci
 
 ```shell
 pyfltr ci [files and/or directories ...]
-pyfltr [files and/or directories ...]  # ciは省略可能
 ```
 
 全チェック実行。CI環境やコミット前の検証に適する。
@@ -55,8 +55,8 @@ Formattersによるファイル変更があっても終了コードは0になる
 
 既定で含まれるコマンドは以下。
 
-- Formatters: `pyupgrade` `autoflake` `isort` `black` `ruff-format` `prettier` `uv-sort` `shfmt` `cargo-fmt` `dotnet-format`
-- Linters: `ec` `shellcheck` `typos` `actionlint` `ruff-check` `pflake8` `ty` `markdownlint` `textlint` `biome` `oxlint` `cargo-clippy`
+- Formatters: `ruff-format` `prettier` `uv-sort` `shfmt` `cargo-fmt` `dotnet-format`
+- Linters: `ec` `shellcheck` `typos` `actionlint` `ruff-check` `ty` `markdownlint` `textlint` `biome` `oxlint` `cargo-clippy`
 - その他: `pre-commit`（`.pre-commit-config.yaml`のhookを統合実行）
 
 含まれるコマンドは各コマンドの`{command}-fast`設定で制御できる（[設定](configuration.md)を参照）。
@@ -136,9 +136,9 @@ pyfltr ci --commands=ruff-check,markdownlint [files and/or directories ...]
 
 以下のエイリアスも使用可能。(例: `--commands=format`)
 
-- `format`: `pre-commit` `pyupgrade` `autoflake` `isort` `black` `ruff-format` `prettier` `uv-sort` `shfmt` `cargo-fmt` `dotnet-format`
+- `format`: `pre-commit` `ruff-format` `prettier` `uv-sort` `shfmt` `cargo-fmt` `dotnet-format`
 - `lint`:
-    - Python系: `ruff-check` `pflake8` `mypy` `pylint` `pyright` `ty`
+    - Python系: `ruff-check` `mypy` `pylint` `pyright` `ty`
     - Markdown系: `markdownlint` `textlint`
     - JS/TS系: `eslint` `biome` `oxlint` `tsc`
     - Rust系: `cargo-clippy` `cargo-check` `cargo-deny`
@@ -202,18 +202,20 @@ CLIオプション`--output-format`が指定されている場合は環境変数
 
 出力は以下5種別のレコードからなる。`kind`フィールドでレコード種別を判別する。
 
-- `header`: 先頭1行。実行環境情報（`version` / `python` / `platform` / `cwd` / `commands` / `files`）
+- `header`: 先頭1行。実行環境情報（`version` / `run_id` / `python` / `platform` / `cwd` / `commands` / `files`）
 - `warning`: pyfltrが検出した設定・実行時の警告（`source`で発生元を識別）
 - `diagnostic`: 個々の診断（`error_parser`対応ツールの抽出結果）
 - `tool`: 1ツール1レコードの実行メタ情報
 - `summary`: 最終1行、全体集計
 
+v3.0.0以降、`header`レコードには`run_id`（ULID）が含まれる。実行アーカイブが有効な場合のみ付与され、`show-run` / `list-runs`（将来追加）やMCP経由で該当runの詳細を参照できる。
+
 ```json
-{"kind":"header","version":"1.25.0","python":"3.12.0 ...","executable":"/usr/bin/python3","platform":"linux","cwd":"/work","commands":["mypy","black"],"files":12}
+{"kind":"header","version":"3.0.0","run_id":"01HXYZ...","python":"3.12.0 ...","executable":"/usr/bin/python3","platform":"linux","cwd":"/work","commands":["mypy","ruff-format"],"files":12}
 {"kind":"warning","source":"config","msg":"pre-commit が有効化されていますが、設定ファイルが見つかりません: .pre-commit-config.yaml"}
 {"kind":"diagnostic","tool":"mypy","file":"src/a.py","line":42,"col":5,"msg":"Incompatible return value type"}
 {"kind":"tool","tool":"mypy","type":"linter","status":"failed","files":12,"elapsed":0.8,"diagnostics":1,"rc":1}
-{"kind":"tool","tool":"black","type":"formatter","status":"formatted","files":12,"elapsed":0.3,"diagnostics":0,"rc":1}
+{"kind":"tool","tool":"ruff-format","type":"formatter","status":"formatted","files":12,"elapsed":0.3,"diagnostics":0,"rc":1}
 {"kind":"summary","total":2,"succeeded":0,"formatted":1,"failed":1,"skipped":0,"diagnostics":1,"exit":1}
 ```
 

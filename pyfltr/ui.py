@@ -37,9 +37,15 @@ def run_commands_with_ui(
     args: argparse.Namespace,
     config: pyfltr.config.Config,
     all_files: list[pathlib.Path],
+    *,
+    archive_hook: typing.Callable[[pyfltr.command.CommandResult], None] | None = None,
 ) -> tuple[list[pyfltr.command.CommandResult], int]:
-    """UI付きでコマンドを実行。"""
-    app = UIApp(commands, args, config, all_files)
+    """UI付きでコマンドを実行。
+
+    ``archive_hook`` が指定されている場合、各コマンド完了時に実行アーカイブへ書き出す
+    (fix ステージも含めて全実行を保存する)。
+    """
+    app = UIApp(commands, args, config, all_files, archive_hook=archive_hook)
     try:
         return_code = app.run()
         if return_code is None:
@@ -85,12 +91,15 @@ class UIApp(App):
         args: argparse.Namespace,
         config: pyfltr.config.Config,
         all_files: list[pathlib.Path],
+        *,
+        archive_hook: typing.Callable[[pyfltr.command.CommandResult], None] | None = None,
     ) -> None:
         super().__init__()
         self.commands = commands
         self.args = args
         self.config = config
         self._all_files = all_files
+        self._archive_hook = archive_hook
         self.results: list[pyfltr.command.CommandResult] = []
         self.lock = threading.Lock()
         self.last_ctrl_c_time: float = 0.0
@@ -182,12 +191,18 @@ class UIApp(App):
             )
 
             # fix ステージ (serial)。結果は summary に含めず、後段の通常ステージに委ねる。
+            # アーカイブには fix ステージも含めて全実行を保存する。
             for command in fixers:
-                self._execute_command(command, fix_stage=True)
+                fix_result = self._execute_command(command, fix_stage=True)
+                if self._archive_hook is not None:
+                    self._archive_hook(fix_result)
 
             # formatters (serial)
             for command in formatters:
-                self.results.append(self._execute_command(command))
+                fmt_result = self._execute_command(command)
+                self.results.append(fmt_result)
+                if self._archive_hook is not None:
+                    self._archive_hook(fmt_result)
 
             # linters/testers (parallel)
             if len(linters_and_testers) > 0:
@@ -196,7 +211,10 @@ class UIApp(App):
                         executor.submit(self._execute_command, command): command for command in linters_and_testers
                     }
                     for future in concurrent.futures.as_completed(future_to_command):
-                        self.results.append(future.result())
+                        lt_result = future.result()
+                        self.results.append(lt_result)
+                        if self._archive_hook is not None:
+                            self._archive_hook(lt_result)
 
             # 自動終了判定
             statuses = [result.status for result in self.results]

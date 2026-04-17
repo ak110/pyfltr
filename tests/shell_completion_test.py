@@ -2,6 +2,8 @@
 # pylint: disable=missing-function-docstring
 # pylint: disable=protected-access
 
+import pytest
+
 import pyfltr.config
 import pyfltr.main
 import pyfltr.shell_completion
@@ -97,15 +99,9 @@ class TestMainIntegration:
         assert "Register-ArgumentCompleter" in captured.out
 
     def test_no_shell_argument(self):
-        rc = pyfltr.main.run(["generate-shell-completion"])
-        assert rc == 1
+        with pytest.raises(SystemExit):
+            pyfltr.main.run(["generate-shell-completion"])
 
     def test_invalid_shell_argument(self):
-        rc = pyfltr.main.run(["generate-shell-completion", "zsh"])
-        assert rc == 1
-
-    def test_subcommand_recognized(self):
-        """generate-shell-completionがサブコマンドとして認識される。"""
-        sub, remaining = pyfltr.main._parse_subcommand(["generate-shell-completion", "bash"])
-        assert sub == "generate-shell-completion"
-        assert remaining == ["bash"]
+        with pytest.raises(SystemExit):
+            pyfltr.main.run(["generate-shell-completion", "zsh"])

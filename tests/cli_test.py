@@ -86,7 +86,7 @@ def test_render_results_orders_success_failed_summary(caplog):
     # 失敗コマンドはerrorsが空のため生出力がフォールバック表示される
     results = [
         _make_result("mypy", returncode=1, output="MYPY_ERROR"),
-        _make_result("black", returncode=0, command_type="formatter"),
+        _make_result("ruff-format", returncode=0, command_type="formatter"),
         _make_result("pylint", returncode=0),
     ]
 
@@ -95,14 +95,14 @@ def test_render_results_orders_success_failed_summary(caplog):
 
     text = caplog.text
     # 成功コマンドのヘッダーが最初に来る
-    black_pos = text.index("black")
+    ruff_format_pos = text.index("ruff-format")
     pylint_pos = text.index("pylint")
     # 失敗コマンドの生出力がフォールバック表示される
     mypy_pos = text.index("MYPY_ERROR")
     # summary が末尾に来る
     summary_pos = text.index("summary")
 
-    assert black_pos < mypy_pos
+    assert ruff_format_pos < mypy_pos
     assert pylint_pos < mypy_pos
     assert mypy_pos < summary_pos
 

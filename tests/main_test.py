@@ -10,7 +10,7 @@ import pytest
 import pyfltr.main
 
 
-@pytest.mark.parametrize("mode", ["run", "ci", "pre-commit"])
+@pytest.mark.parametrize("mode", ["run", "ci"])
 def test_success(mocker, mode):
     proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="test")
     mocker.patch("subprocess.run", return_value=proc)
@@ -18,12 +18,18 @@ def test_success(mocker, mode):
     assert returncode == 0
 
 
-@pytest.mark.parametrize("mode", ["run", "ci", "pre-commit"])
+@pytest.mark.parametrize("mode", ["run", "ci"])
 def test_fail(mocker, mode):
     proc = subprocess.CompletedProcess(["test"], returncode=-1, stdout="test")
     mocker.patch("subprocess.run", return_value=proc)
     returncode = pyfltr.main.run([mode, str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 1
+
+
+def test_missing_subcommand_errors():
+    """サブコマンド未指定時に SystemExit が発生することを確認。"""
+    with pytest.raises(SystemExit):
+        pyfltr.main.run([])
 
 
 def test_work_dir(mocker, tmp_path):
@@ -32,7 +38,9 @@ def test_work_dir(mocker, tmp_path):
     proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="test")
     mocker.patch("subprocess.run", return_value=proc)
     original_cwd = pathlib.Path.cwd()
-    returncode = pyfltr.main.run(["--work-dir", str(tmp_path), "--commands=pytest", str(pathlib.Path(__file__).parent.parent)])
+    returncode = pyfltr.main.run(
+        ["ci", "--work-dir", str(tmp_path), "--commands=pytest", str(pathlib.Path(__file__).parent.parent)]
+    )
     assert returncode == 0
     # cwdが復元されていることを確認
     assert pathlib.Path.cwd() == original_cwd
@@ -80,10 +88,11 @@ def test_ci_does_not_run_fix_stage(mocker):
 
 def test_stream_mode_writes_detail_log_during_run(mocker, caplog):
     """--stream 指定時はコマンド完了時に詳細ログが出力される。"""
+    # pyfltr ルートの pyproject.toml には python=true が設定されているため mypy は有効
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy-detail")
     mocker.patch("subprocess.run", return_value=proc)
 
-    returncode = pyfltr.main.run(["--no-ui", "--stream", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    returncode = pyfltr.main.run(["ci", "--no-ui", "--stream", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 0
     # 詳細ログに含まれる returncode 行が出力される
     assert "returncode: 0" in caplog.text
@@ -93,10 +102,11 @@ def test_stream_mode_writes_detail_log_during_run(mocker, caplog):
 
 def test_buffered_mode_is_default(mocker, caplog):
     """既定では 成功コマンド詳細 → summary の順でまとめて出力される。"""
+    # pyfltr ルートの pyproject.toml には python=true が設定されているため mypy は有効
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy-detail")
     mocker.patch("subprocess.run", return_value=proc)
 
-    returncode = pyfltr.main.run(["--no-ui", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    returncode = pyfltr.main.run(["ci", "--no-ui", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 0
     text = caplog.text
     # 詳細ログが summary より先に来る (summary は末尾)
@@ -111,7 +121,7 @@ def test_additional_args(mocker):
     mock_run = mocker.patch("subprocess.run", return_value=proc)
 
     returncode = pyfltr.main.run(
-        ["--commands=pytest", "--pytest-args=--maxfail=5 -v", str(pathlib.Path(__file__).parent.parent)]
+        ["ci", "--commands=pytest", "--pytest-args=--maxfail=5 -v", str(pathlib.Path(__file__).parent.parent)]
     )
     assert returncode == 0
 
@@ -120,65 +130,6 @@ def test_additional_args(mocker):
     called_args = mock_run.call_args[0][0]  # 最初の引数（コマンドライン）
     assert "--maxfail=5" in called_args
     assert "-v" in called_args
-
-
-class TestParseSubcommand:
-    """_parse_subcommandのテスト。"""
-
-    def test_explicit_ci(self):
-        sub, remaining = pyfltr.main._parse_subcommand(["ci", "src/"])
-        assert sub == "ci"
-        assert remaining == ["src/"]
-
-    def test_implicit_ci(self):
-        """予約語以外の第一引数はciとして扱う。"""
-        sub, remaining = pyfltr.main._parse_subcommand(["--verbose", "src/"])
-        assert sub == "ci"
-        assert remaining == ["--verbose", "src/"]
-
-    def test_run_subcommand(self):
-        sub, remaining = pyfltr.main._parse_subcommand(["run", "src/"])
-        assert sub == "run"
-        assert remaining == ["src/"]
-
-    def test_fast_subcommand(self):
-        sub, remaining = pyfltr.main._parse_subcommand(["fast", "src/"])
-        assert sub == "fast"
-        assert remaining == ["src/"]
-
-    def test_run_for_agent_subcommand(self):
-        sub, remaining = pyfltr.main._parse_subcommand(["run-for-agent", "src/"])
-        assert sub == "run-for-agent"
-        assert remaining == ["src/"]
-
-    def test_dirty_subcommand_is_deprecated(self):
-        """廃止されたdirtyサブコマンドがエラー終了することを確認。"""
-        assert pyfltr.main.run(["dirty", "init"]) == 1
-
-    def test_empty_args(self):
-        sub, remaining = pyfltr.main._parse_subcommand([])
-        assert sub == "ci"
-        assert not remaining
-
-
-class TestBuildEffectiveArgs:
-    """_build_effective_argsのテスト。"""
-
-    def test_ci(self):
-        result = pyfltr.main._build_effective_args("ci", ["src/"])
-        assert result == ["src/"]
-
-    def test_run(self):
-        result = pyfltr.main._build_effective_args("run", ["src/"])
-        assert result == ["--exit-zero-even-if-formatted", "src/"]
-
-    def test_fast(self):
-        result = pyfltr.main._build_effective_args("fast", ["src/"])
-        assert result == ["--exit-zero-even-if-formatted", "--commands=fast", "src/"]
-
-    def test_run_for_agent(self):
-        result = pyfltr.main._build_effective_args("run-for-agent", ["src/"])
-        assert result == ["--exit-zero-even-if-formatted", "--output-format=jsonl", "src/"]
 
 
 class TestSubcommandIntegration:
@@ -213,22 +164,9 @@ class TestSubcommandIntegration:
         assert returncode == 0
 
     def test_run_includes_custom_commands_by_default(self, mocker, tmp_path):
-        """`run` サブコマンドのデフォルトで custom-commands も実行される。"""
+        """`run` サブコマンドで custom-commands を --commands で明示すると実行される。"""
         pyproject = """
 [tool.pyfltr]
-python = false
-eslint = false
-prettier = false
-markdownlint = false
-textlint = false
-biome = false
-oxlint = false
-tsc = false
-vitest = false
-ec = false
-shellcheck = false
-typos = false
-actionlint = false
 
 [tool.pyfltr.custom-commands.my-linter]
 type = "linter"
@@ -242,7 +180,7 @@ pass-filenames = false
         proc = subprocess.CompletedProcess(["my-linter-exe"], returncode=0, stdout="")
         mock_run = mocker.patch("subprocess.run", return_value=proc)
 
-        returncode = pyfltr.main.run(["run", "--work-dir", str(tmp_path), str(tmp_path)])
+        returncode = pyfltr.main.run(["run", "--work-dir", str(tmp_path), "--commands=my-linter", str(tmp_path)])
         assert returncode == 0
 
         invoked_binaries = {

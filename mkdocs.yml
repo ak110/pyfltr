@@ -60,7 +60,7 @@ plugins:
         pylint-args = ["--jobs=4"]
         ```
 
-        非Pythonプロジェクトでは `python = false` でPython系ツールを無効化し、対象言語のツールを個別に有効化する。
+        v3.0.0以降、Python系ツールは opt-in 化された。Pythonプロジェクトでは `python = true` を設定するか個別に `{tool} = true` を指定し、別途 `pip install pyfltr[python]` で依存を導入する。非Pythonプロジェクトでは `python` を指定しなければPython系ツールは一切実行されない。
 
         ## LLMエージェント向け出力（`--output-format=jsonl`）
 
@@ -120,6 +120,12 @@ nav:
       - 推奨設定例: guide/recommended.md
       - 推奨設定例（非Pythonプロジェクト）: guide/recommended-nonpython.md
       - カスタムコマンド例: guide/custom-commands.md
+  - v3.0.0:
+      - 概要: v3/index.md
+      - 依存整理と破壊的変更: v3/依存整理と破壊的変更.md
+      - 実行アーカイブ: v3/実行アーカイブ.md
+      - マイグレーションガイド: v3/マイグレーションガイド.md
+      - 作業ステータス: v3/作業ステータス.md
   - 開発者向け:
       - 概要: development/index.md
       - 開発手順: development/development.md

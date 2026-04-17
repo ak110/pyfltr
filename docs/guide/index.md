@@ -8,11 +8,12 @@
 
 ### Python系
 
-- Formatters: pyupgrade / autoflake / isort / black / ruff format / uv-sort（依存定義のソート）
-- Linters: ruff check / pflake8（+ flake8-bugbear + flake8-tidy-imports）/ mypy / pylint / pyright / ty（既定で無効）
-- Testers: pytest
+いずれも既定で無効（opt-in）。利用時は`pyproject.toml`に`python = true`を設定するか、個別に`{command} = true`を指定する。
+同時に`pip install pyfltr[python]`でPython系ツールの依存を追加する必要がある。
 
-`preset = "latest"`ではruffへの移行のためpyupgrade / autoflake / isort / black / pflake8は無効化される。
+- Formatters: ruff format / uv-sort（依存定義のソート）
+- Linters: ruff check / mypy / pylint / pyright / ty
+- Testers: pytest
 
 ### JS/TS系
 

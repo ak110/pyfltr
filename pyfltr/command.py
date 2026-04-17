@@ -598,27 +598,13 @@ def execute_command(
             args=args,
         )
 
-    # --checkオプションを使わないとファイル変更があったかわからないコマンドは、
-    # 一度--checkオプションをつけて実行してから、
-    # 変更があった場合は再度--checkオプションなしで実行する。
-    check_args = ["--check"] if command in ("autoflake", "isort", "black") else []
-
     has_error = False
 
     # verbose時はコマンドラインをon_output経由で出力
     if args.verbose and on_output is not None:
-        on_output(f"commandline: {shlex.join(commandline + check_args)}\n")
-    proc = _run_subprocess(commandline + check_args, env, on_output)
+        on_output(f"commandline: {shlex.join(commandline)}\n")
+    proc = _run_subprocess(commandline, env, on_output)
     returncode = proc.returncode
-
-    # autoflake/isort/blackの再実行
-    if returncode != 0 and command in ("autoflake", "isort", "black"):
-        if args.verbose and on_output is not None:
-            on_output(f"commandline: {shlex.join(commandline)}\n")
-        proc = _run_subprocess(commandline, env, on_output)
-        if proc.returncode != 0:
-            returncode = proc.returncode
-            has_error = True
 
     output = proc.stdout.strip()
     elapsed = time.perf_counter() - start_time

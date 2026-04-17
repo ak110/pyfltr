@@ -52,6 +52,7 @@ def build_lines(
     commands: list[str] | None = None,
     files: int | None = None,
     warnings: list[dict[str, typing.Any]] | None = None,
+    run_id: str | None = None,
 ) -> list[str]:
     """CommandResult群からJSONL各行を生成する。
 
@@ -63,13 +64,14 @@ def build_lines(
 
     resultsは順序を問わない。内部で``config.command_names``順にソートする。
     ``warnings``は``pyfltr.warnings_.collected_warnings()``の返り値を想定する。
+    ``run_id``が指定されていればheaderレコードに埋め込む。
     """
     ordered = sorted(results, key=lambda r: _command_index(config, r.command))
 
     lines: list[str] = []
 
     if commands is not None and files is not None:
-        lines.append(_dump(_build_header_record(commands, files)))
+        lines.append(_dump(_build_header_record(commands, files, run_id=run_id)))
 
     for warning in warnings or []:
         lines.append(_dump(_build_warning_record(warning)))
@@ -97,6 +99,7 @@ def write_jsonl(
     commands: list[str] | None = None,
     files: int | None = None,
     warnings: list[dict[str, typing.Any]] | None = None,
+    run_id: str | None = None,
 ) -> None:
     """JSONL を stdout もしくは指定ファイルに書き出す。
 
@@ -104,7 +107,7 @@ def write_jsonl(
     親ディレクトリを自動作成し、atomic write せず単純に上書きする
     (LLM 用途の使い捨てのため)。
     """
-    lines = build_lines(results, config, exit_code=exit_code, commands=commands, files=files, warnings=warnings)
+    lines = build_lines(results, config, exit_code=exit_code, commands=commands, files=files, warnings=warnings, run_id=run_id)
     if destination is None:
         for line in lines:
             sys.stdout.write(line)
@@ -118,13 +121,14 @@ def write_jsonl(
             f.write("\n")
 
 
-def write_jsonl_header(commands: list[str], files: int) -> None:
+def write_jsonl_header(commands: list[str], files: int, *, run_id: str | None = None) -> None:
     """header行をstdoutに書き出す（ストリーミングモード用）。
 
-    パイプライン開始直後、diagnostic行より前に1回だけ呼ぶ。
+    パイプライン開始直後、diagnostic行より前に1回だけ呼ぶ。``run_id``が指定されていれば
+    headerレコードに含める (アーカイブ参照時の識別キー)。
     """
     with _write_lock:
-        sys.stdout.write(_dump(_build_header_record(commands, files)))
+        sys.stdout.write(_dump(_build_header_record(commands, files, run_id=run_id)))
         sys.stdout.write("\n")
         sys.stdout.flush()
 
@@ -170,9 +174,14 @@ def _dump(record: dict[str, typing.Any]) -> str:
     return json.dumps(record, ensure_ascii=False, separators=(",", ":"))
 
 
-def _build_header_record(commands: list[str], files: int) -> dict[str, typing.Any]:
+def _build_header_record(
+    commands: list[str],
+    files: int,
+    *,
+    run_id: str | None = None,
+) -> dict[str, typing.Any]:
     """実行環境の基本情報を header レコード dict として返す。"""
-    return {
+    record: dict[str, typing.Any] = {
         "kind": "header",
         "version": importlib.metadata.version("pyfltr"),
         "python": sys.version,
@@ -182,6 +191,9 @@ def _build_header_record(commands: list[str], files: int) -> dict[str, typing.An
         "commands": commands,
         "files": files,
     }
+    if run_id is not None:
+        record["run_id"] = run_id
+    return record
 
 
 def _build_warning_record(entry: dict[str, typing.Any]) -> dict[str, typing.Any]:

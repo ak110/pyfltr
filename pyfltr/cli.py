@@ -30,6 +30,7 @@ def run_commands_with_cli(
     per_command_log: bool,
     include_fix_stage: bool = False,
     on_result: typing.Callable[[pyfltr.command.CommandResult], None] | None = None,
+    archive_hook: typing.Callable[[pyfltr.command.CommandResult], None] | None = None,
 ) -> list[pyfltr.command.CommandResult]:
     """コマンドを実行する (非 TUI)。
 
@@ -44,6 +45,10 @@ def run_commands_with_cli(
 
     ``on_result`` が指定されている場合、各コマンド完了時にコールバックを呼び出す。
     JSONL stdoutモードでのストリーミング出力に使用する。
+
+    ``archive_hook`` が指定されている場合、各コマンド完了時に実行アーカイブへ書き出す。
+    fix ステージの結果は summary に含めないが、アーカイブには通常ステージ以外も含めて
+    全実行を保存するため fix ステージからも ``archive_hook`` を呼び出す。
     """
     results: list[pyfltr.command.CommandResult] = []
     fixers, formatters, linters_and_testers = pyfltr.executor.split_commands_for_execution(
@@ -54,12 +59,16 @@ def run_commands_with_cli(
     # 結果は summary / jsonl には含めない（後段の通常ステージで同一コマンドが
     # 再度走って最終状態を報告するため。ruff-format の 2 段階と同じ位置づけ）。
     for command in fixers:
-        _run_one_command(command, args, config, all_files, per_command_log=per_command_log, fix_stage=True)
+        fix_result = _run_one_command(command, args, config, all_files, per_command_log=per_command_log, fix_stage=True)
+        if archive_hook is not None:
+            archive_hook(fix_result)
 
     # formatters を順序実行
     for command in formatters:
         result = _run_one_command(command, args, config, all_files, per_command_log=per_command_log)
         results.append(result)
+        if archive_hook is not None:
+            archive_hook(result)
         if on_result is not None:
             on_result(result)
 
@@ -73,6 +82,8 @@ def run_commands_with_cli(
             for future in concurrent.futures.as_completed(future_to_command):
                 result = future.result()
                 results.append(result)
+                if archive_hook is not None:
+                    archive_hook(result)
                 if on_result is not None:
                     on_result(result)
 
@@ -143,6 +154,7 @@ def render_results(
     commands: list[str] | None = None,
     files: int | None = None,
     warnings: list[dict[str, typing.Any]] | None = None,
+    run_id: str | None = None,
 ) -> None:
     """実行結果を `成功コマンド → 失敗コマンド → summary` の順でまとめて出力する。
 
@@ -163,7 +175,14 @@ def render_results(
 
     if output_format == "jsonl":
         pyfltr.llm_output.write_jsonl(
-            ordered, config, exit_code=exit_code, destination=output_file, commands=commands, files=files, warnings=warnings
+            ordered,
+            config,
+            exit_code=exit_code,
+            destination=output_file,
+            commands=commands,
+            files=files,
+            warnings=warnings,
+            run_id=run_id,
         )
         if output_file is None:
             return

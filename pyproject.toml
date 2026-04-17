@@ -18,31 +18,31 @@ classifiers = [
     "Topic :: Software Development :: Quality Assurance",
 ]
 dependencies = [
-    "autoflake>=2.0",
-    "black>=22.0",
-    "dill>=0.3",
-    "flake8-bugbear>=23.0",
-    "flake8-tidy-imports>=4.11.0",
-    "isort>=5.0",
-    "mypy>=1.0",
+    "mcp>=1.0",
     "natsort>=8.4.0",
-    "pre-commit>=4.5.1",
-    "pylint-pydantic>=0.4.1",
-    "pylint>=3.0",
-    "pyproject-flake8>=7.0", # https://github.com/csachs/pyproject-flake8/issues/30
-    "pyright[nodejs]>=1.1.403",
-    "pytest-asyncio>=1.0.0",
-    "pytest>=7.0",
-    "pyupgrade>=3.0",
+    "platformdirs>=4.0",
+    "python-ulid>=3.0",
     "pyyaml>=6.0.3",
-    "ruff>=0.12.1",
     "textual>=8.0.0",
-    "ty>=0.0.26",
-    "uv-sort>=0.5",
 ]
 
 [project.optional-dependencies]
-pyright = []
+# Python 系 linter / tester / pre-commit 依存を導入するための extras。
+# v3.0.0 でオプトイン化したため、Python プロジェクトでは
+# ``pip install pyfltr[python]`` または ``uv add 'pyfltr[python]'`` で追加する。
+python = [
+    "dill>=0.3",
+    "mypy>=1.0",
+    "pre-commit>=4.5.1",
+    "pylint-pydantic>=0.4.1",
+    "pylint>=3.0",
+    "pyright[nodejs]>=1.1.403",
+    "pytest-asyncio>=1.0.0",
+    "pytest>=7.0",
+    "ruff>=0.12.1",
+    "ty>=0.0.26",
+    "uv-sort>=0.5",
+]
 
 [project.urls]
 Homepage = "https://github.com/ak110/pyfltr"
@@ -51,11 +51,14 @@ Homepage = "https://github.com/ak110/pyfltr"
 pyfltr = "pyfltr.main:main"
 
 [dependency-groups]
+# pyfltr 自体が Python 製のため、開発時は Python 系ツールを自身の extras 経由で導入する。
+# これにより本体リリース時に Python 系ツール依存を抱え込まない構造を保ちつつ、
+# 開発・CI では ``uv sync --group dev`` 一発で linter / tester を揃えられる。
 dev = [
     "mkdocs-llmstxt>=0.2",
     "mkdocs-material>=9.6",
     "mkdocs>=1.6",
-    "pre-commit>=4.2.0",
+    "pyfltr[python]",
     "pytest-mock",
     "types-pyyaml>=6.0.12.20260408",
 ]
@@ -72,6 +75,8 @@ exclude-newer = "1 day"
 
 [tool.pyfltr]
 preset = "latest"
+# v3.0.0 で Python 系ツールを opt-in 化したため、自リポジトリでは明示的に有効化する。
+python = true
 ty = true
 pylint-args = ["--jobs=4"]
 

@@ -28,15 +28,29 @@ def _collect_completions(
 ) -> tuple[list[str], list[str], list[str]]:
     """パーサーからオプション名・choices・コマンド名を収集する。
 
+    サブパーサー対応。argparse の ``add_subparsers`` で登録された各サブパーサーの
+    オプションも walk して収集することで、``build_parser()`` が返すトップレベル
+    parser を渡しても共通オプション (``--verbose`` / ``--output-format`` 等) を
+    検出できる。
+
     戻り値: (options, output_format_choices, commands_choices)
     """
-    options: list[str] = []
+    options: set[str] = set()
     output_format_choices: list[str] = []
-    for action in parser._actions:  # noqa: SLF001  # pylint: disable=protected-access
-        for opt in action.option_strings:
-            options.append(opt)
-        if "--output-format" in action.option_strings and action.choices:
-            output_format_choices = list(action.choices)
+
+    def _walk(p: argparse.ArgumentParser) -> None:
+        nonlocal output_format_choices
+        for action in p._actions:  # noqa: SLF001  # pylint: disable=protected-access
+            for opt in action.option_strings:
+                options.add(opt)
+            if "--output-format" in action.option_strings and action.choices:
+                output_format_choices = list(action.choices)
+            # サブパーサーを再帰的に walk
+            if isinstance(action, argparse._SubParsersAction):  # noqa: SLF001  # pylint: disable=protected-access
+                for sub in action.choices.values():
+                    _walk(sub)
+
+    _walk(parser)
 
     # --commands の補完候補: ビルトインコマンド名 + 静的エイリアスキー
     commands_choices = list(pyfltr.config.BUILTIN_COMMAND_NAMES)

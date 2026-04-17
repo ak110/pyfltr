@@ -60,12 +60,14 @@ def test_build_lines_supported_tool_diagnostics(default_config):
 
 def test_build_lines_warnings_prepended(default_config):
     """warnings 引数の内容が diagnostic より前に kind="warning" で出力されること。"""
-    result = _make_result("black", returncode=0, command_type="formatter")
+    result = _make_result("ruff-format", returncode=0, command_type="formatter")
     warnings = [
         {"source": "config", "message": "pre-commit 設定ファイル不在"},
         {"source": "git", "message": "git が見つからない"},
     ]
-    lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=0, commands=["black"], files=1, warnings=warnings)
+    lines = pyfltr.llm_output.build_lines(
+        [result], default_config, exit_code=0, commands=["ruff-format"], files=1, warnings=warnings
+    )
     parsed = [json.loads(line) for line in lines]
 
     assert parsed[0]["kind"] == "header"
@@ -78,20 +80,20 @@ def test_build_lines_warnings_prepended(default_config):
 
 def test_build_lines_no_warnings_when_omitted(default_config):
     """warnings 引数を省略すると warning レコードは出ない。"""
-    result = _make_result("black", returncode=0, command_type="formatter")
+    result = _make_result("ruff-format", returncode=0, command_type="formatter")
     lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=0)
     parsed = [json.loads(line) for line in lines]
     assert all(r["kind"] != "warning" for r in parsed)
 
 
 def test_build_lines_unsupported_tool_only(default_config):
-    """error_parser 非対応ツール (black) は tool レコードのみ（header省略時）。"""
-    result = _make_result("black", returncode=1, command_type="formatter", has_error=False)
+    """error_parser 非対応ツール (ruff-format) は tool レコードのみ（header省略時）。"""
+    result = _make_result("ruff-format", returncode=1, command_type="formatter", has_error=False)
     lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=1)
     parsed = [json.loads(line) for line in lines]
 
     assert [r["kind"] for r in parsed] == ["tool", "summary"]
-    assert parsed[0]["tool"] == "black"
+    assert parsed[0]["tool"] == "ruff-format"
     assert parsed[0]["status"] == "formatted"
     assert parsed[0]["diagnostics"] == 0
     assert "message" not in parsed[0]
@@ -113,22 +115,22 @@ def test_build_lines_mixed_order(default_config):
         returncode=1,
         errors=[_make_error("pylint", "src/a.py", 10, "C0114: missing docstring")],
     )
-    black_result = _make_result("black", returncode=0, command_type="formatter")
+    ruff_format_result = _make_result("ruff-format", returncode=0, command_type="formatter")
 
-    # config.command_names 順では black → mypy → pylint
+    # config.command_names 順では ruff-format → mypy → pylint
     lines = pyfltr.llm_output.build_lines(
-        [mypy_result, pylint_result, black_result],
+        [mypy_result, pylint_result, ruff_format_result],
         default_config,
         exit_code=1,
-        commands=["black", "mypy", "pylint"],
+        commands=["ruff-format", "mypy", "pylint"],
         files=10,
     )
     parsed = [json.loads(line) for line in lines]
 
-    # header → ツール単位のグルーピング: black(tool) → mypy(diagnostic, diagnostic, tool) → pylint(diagnostic, tool) → summary
+    # header → ツール順でグルーピング: ruff-format(tool) → mypy(diag, diag, tool) → pylint(diag, tool) → summary
     assert [r["kind"] for r in parsed] == [
         "header",
-        "tool",  # black
+        "tool",  # ruff-format
         "diagnostic",
         "diagnostic",
         "tool",  # mypy
@@ -145,7 +147,7 @@ def test_build_lines_mixed_order(default_config):
     ]
 
     tool_records = [r for r in parsed if r["kind"] == "tool"]
-    assert [r["tool"] for r in tool_records] == ["black", "mypy", "pylint"]
+    assert [r["tool"] for r in tool_records] == ["ruff-format", "mypy", "pylint"]
 
 
 def test_build_lines_ensure_ascii_false(default_config):
@@ -211,7 +213,7 @@ def test_tool_record_no_message_when_diagnostics_present(default_config):
 def test_tool_record_no_message_on_success(default_config):
     """status=succeeded/formatted では message を出さない。"""
     ok = _make_result("mypy", returncode=0, output="all ok")
-    fmt = _make_result("black", returncode=1, command_type="formatter", output="reformatted", has_error=False)
+    fmt = _make_result("ruff-format", returncode=1, command_type="formatter", output="reformatted", has_error=False)
     lines = pyfltr.llm_output.build_lines([ok, fmt], default_config, exit_code=0)
     for line in lines:
         record = json.loads(line)
@@ -258,10 +260,12 @@ def test_calculate_returncode_matches_summary_exit(default_config):
     """summary.exit と calculate_returncode の戻り値が一致すること。"""
     results = [
         _make_result("mypy", returncode=1, errors=[_make_error("mypy", "a.py", 1, "bad")]),
-        _make_result("black", returncode=0, command_type="formatter"),
+        _make_result("ruff-format", returncode=0, command_type="formatter"),
     ]
     exit_code = pyfltr.main.calculate_returncode(results, exit_zero_even_if_formatted=False)
-    lines = pyfltr.llm_output.build_lines(results, default_config, exit_code=exit_code, commands=["mypy", "black"], files=3)
+    lines = pyfltr.llm_output.build_lines(
+        results, default_config, exit_code=exit_code, commands=["mypy", "ruff-format"], files=3
+    )
     summary = json.loads(lines[-1])
     assert summary["exit"] == exit_code == 1
 
@@ -360,14 +364,14 @@ def test_run_cli_env_var_overridden_by_cli(mocker, caplog, monkeypatch):
     assert "summary" in caplog.text
 
 
-def test_run_cli_env_var_invalid(mocker, monkeypatch):
+def test_run_cli_env_var_invalid(monkeypatch):
     """PYFLTR_OUTPUT_FORMAT に不正値が入っている場合は SystemExit で終了する。"""
-    proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
-    mocker.patch("subprocess.run", return_value=proc)
+    # argparse の parents 共有によるデフォルト汚染を避けるため、_resolve_output_format を直接テストする。
+    # （cli_value=None の場合のみ環境変数が参照される）
     monkeypatch.setenv("PYFLTR_OUTPUT_FORMAT", "yaml")
-
+    parser = pyfltr.main.build_parser()
     with pytest.raises(SystemExit):
-        pyfltr.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+        pyfltr.main._resolve_output_format(parser, None)
 
 
 def test_run_cli_jsonl_restores_logger_state(mocker, caplog, capsys):
@@ -381,7 +385,7 @@ def test_run_cli_jsonl_restores_logger_state(mocker, caplog, capsys):
     capsys.readouterr()
     caplog.clear()
 
-    # 2 回目: text モード (従来どおりのログが出るべき)
+    # 2 回目: text モード (従来どおりのログが出るべき)。
     with caplog.at_level(logging.INFO):
         pyfltr.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
 
@@ -416,7 +420,7 @@ def test_build_tool_lines_with_diagnostics(default_config):
 
 def test_build_tool_lines_no_diagnostics(default_config):
     """diagnosticがないツールはtool行のみ。"""
-    result = _make_result("black", returncode=0, command_type="formatter")
+    result = _make_result("ruff-format", returncode=0, command_type="formatter")
     lines = pyfltr.llm_output.build_tool_lines(result, default_config)
     parsed = [json.loads(line) for line in lines]
 

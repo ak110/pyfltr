@@ -42,7 +42,7 @@ extend-exclude = ["foo", "bar.py"]
 ## プリセット設定
 
 `preset`を設定することで、一括して設定を変更できる。
-`"latest"` または日付指定 (`"20260413"`, `"20260411"`, `"20260330"`, `"20250710"`) が使用可能。
+`"latest"` または日付指定 (`"20260413"`, `"20260411"`, `"20260330"`) が使用可能。
 
 ```toml
 [tool.pyfltr]
@@ -67,40 +67,33 @@ preset = "latest"
 
 ### preset "20260330"
 
-- preset "20250710"に加えて以下の設定が行われる
+- `ruff-format = true`
+- `ruff-check = true`
 - `pyright = true`
 - `textlint = true`
 - `markdownlint = true`
 
-### preset "20250710"
+## Python系ツールの一括有効化
 
-- `pyupgrade = false`
-- `autoflake = false`
-- `pflake8 = false`
-- `isort = false`
-- `black = false`
-- `ruff-format = true`
-- `ruff-check = true`
+`python = true`を設定するとPython系ツールを一括で有効化する。
+Pythonプロジェクトで使用する。
 
-## Python系ツールの一括無効化
-
-`python = false`を設定するとPython系ツールを一括で無効化する。
-非Pythonプロジェクトで使用する。
-
-対象はpyupgrade・autoflake・isort・black・ruff系・pflake8・mypy・pylint・pyright・ty・pytest・uv-sort。
+対象はruff-format・ruff-check・mypy・pylint・pyright・ty・pytest・uv-sort。
 js-runner対応ツールやbin-runner対応ツール、Rust系（cargo系）・.NET系（dotnet系）は影響を受けない。
-`python = false`でも`mypy = true`のように個別に上書き可能。
+`python = true`でも`mypy = false`のように個別に無効化可能。
 適用優先度は`preset < python < 個別設定`。
 
 ```toml
 [tool.pyfltr]
-python = false
-js-runner = "pnpm"
-eslint = true
-prettier = true
+preset = "latest"
+python = true
 ```
 
-言語カテゴリ単位の一括無効化キーは`python`のみで、JavaScript/TypeScript系・Rust系・.NET系に相当するキーは存在しない。
+v3.0.0以降、`python`の既定値は`false`（opt-in）に変更された。
+非Pythonプロジェクトでは`python`を指定しなければPython系ツールは一切実行されない。
+利用時は別途`pip install pyfltr[python]`でPython系ツールの依存を導入する必要がある。
+
+言語カテゴリ単位の一括有効化キーは`python`のみで、JavaScript/TypeScript系・Rust系・.NET系に相当するキーは存在しない。
 これら他言語のツールは既定で無効なため、利用するツールを個別に`{tool} = true`で有効化する（設定例は[設定項目（ツール別）](configuration-tools.md)を参照）。
 
 ## ツール別除外設定
