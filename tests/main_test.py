@@ -202,3 +202,80 @@ def test_human_readable_disables_structured_output(mocker):
             commandline = call.args[0]
             assert "--output-format=json" not in commandline
             break
+
+
+@pytest.mark.parametrize("fmt", ["jsonl", "sarif", "github-annotations"])
+def test_output_format_accepts_structured_choices(mocker, fmt):
+    """--output-format の新 choices (jsonl/sarif/github-annotations) が受理される。"""
+    proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
+    mocker.patch("subprocess.run", return_value=proc)
+
+    returncode = pyfltr.main.run(["ci", "--output-format", fmt, "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    assert returncode == 0
+
+
+def test_output_format_invalid_choice_rejected():
+    """--output-format の不正値は SystemExit (argparse エラー)。"""
+    with pytest.raises(SystemExit):
+        pyfltr.main.run(["ci", "--output-format", "bogus", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+
+
+@pytest.mark.parametrize("fmt", ["sarif", "github-annotations"])
+def test_structured_stdout_suppresses_logging(mocker, capsys, fmt):
+    """SARIF / GitHub Annotation 出力時も stdout が構造化出力に専有される。"""
+    proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
+    mocker.patch("subprocess.run", return_value=proc)
+
+    pyfltr.main.run(["ci", "--output-format", fmt, "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    captured = capsys.readouterr()
+    # stderr には pyfltr のログが漏れない
+    assert "pyfltr" not in captured.err
+
+
+def test_build_retry_args_template_preserves_options():
+    """--no-fix / --output-format などのフラグが retry_command テンプレートに残る。"""
+    args = [
+        "run",
+        "--no-fix",
+        "--output-format",
+        "jsonl",
+        "--commands=ruff-check",
+        "src/foo.py",
+    ]
+    template = pyfltr.main._build_retry_args_template(args)
+    assert "--no-fix" in template
+    assert "--output-format" in template
+    # --commands=VALUE 形式は --commands= プレースホルダに置換される
+    assert "--commands=" in template
+
+
+def test_build_retry_command_replaces_commands_and_targets(tmp_path):
+    """retry_command が --commands と末尾ターゲットを差し替える。"""
+    template = pyfltr.main._build_retry_args_template(["run", "--no-fix", "--commands", "ruff-check", "src/foo.py"])
+    retry = pyfltr.main._build_retry_command(
+        template,
+        ["pyfltr"],
+        tool="mypy",
+        target_files=[pathlib.Path("pkg/bar.py")],
+        original_cwd=str(tmp_path),
+    )
+    # --commands は置換される
+    assert " mypy " in f" {retry} "
+    # --no-fix は保持
+    assert "--no-fix" in retry
+    # ターゲットは original_cwd 基準の絶対パス
+    assert str(tmp_path) in retry
+
+
+def test_build_retry_command_missing_commands_inserts(tmp_path):
+    """--commands 未指定時は自動で追記される。"""
+    template = pyfltr.main._build_retry_args_template(["run", "src/"])
+    retry = pyfltr.main._build_retry_command(
+        template,
+        ["pyfltr"],
+        tool="mypy",
+        target_files=[],
+        original_cwd=str(tmp_path),
+    )
+    assert "--commands" in retry
+    assert "mypy" in retry

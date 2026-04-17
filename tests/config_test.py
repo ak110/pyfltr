@@ -503,6 +503,37 @@ def test_archive_config_defaults() -> None:
     assert config["archive-max-age-days"] == 30
 
 
+def test_jsonl_smart_truncation_defaults() -> None:
+    """JSONL smart truncation 設定の既定値テスト。"""
+    config = pyfltr.config.create_default_config()
+    # 既定は diagnostic 無制限 (0)、メッセージは 30 行 / 2000 文字 (従来ハードコード値)。
+    assert config["jsonl-diagnostic-limit"] == 0
+    assert config["jsonl-message-max-lines"] == 30
+    assert config["jsonl-message-max-chars"] == 2000
+
+
+def test_jsonl_smart_truncation_override(tmp_path: pathlib.Path) -> None:
+    """pyproject.toml で JSONL smart truncation 設定を上書きできる。"""
+    pyproject_content = """
+[tool.pyfltr]
+jsonl-diagnostic-limit = 50
+jsonl-message-max-lines = 100
+jsonl-message-max-chars = 5000
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    config = pyfltr.config.load_config(config_dir=tmp_path)
+    assert config["jsonl-diagnostic-limit"] == 50
+    assert config["jsonl-message-max-lines"] == 100
+    assert config["jsonl-message-max-chars"] == 5000
+
+
+def test_jsonl_smart_truncation_invalid_type(tmp_path: pathlib.Path) -> None:
+    """JSONL smart truncation キーに整数以外を指定するとエラーになる。"""
+    (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\njsonl-diagnostic-limit = "many"\n')
+    with pytest.raises(ValueError, match="jsonl-diagnostic-limit"):
+        pyfltr.config.load_config(config_dir=tmp_path)
+
+
 def test_archive_config_override(tmp_path: pathlib.Path) -> None:
     """pyproject.toml でアーカイブ設定を上書きできることのテスト。"""
     pyproject_content = """

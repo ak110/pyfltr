@@ -15,7 +15,9 @@ import pyfltr.archive
 import pyfltr.cli
 import pyfltr.command
 import pyfltr.config
+import pyfltr.github_annotations
 import pyfltr.llm_output
+import pyfltr.sarif_output
 import pyfltr.shell_completion
 import pyfltr.ui
 import pyfltr.warnings_
@@ -89,9 +91,10 @@ def _make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> 
     common.add_argument("--ci", default=False, action="store_true", help="CI モードで動作します(--no-shuffle --no-ui 相当)。")
     common.add_argument(
         "--output-format",
-        choices=("text", "jsonl"),
+        choices=("text", "jsonl", "sarif", "github-annotations"),
         default=None,
-        help="出力形式を指定します(text/jsonl、既定: text)。jsonl は LLM 向け JSON Lines 出力。"
+        help="出力形式を指定します(text/jsonl/sarif/github-annotations、既定: text)。"
+        "jsonl は LLM 向け JSON Lines 出力、sarif は SARIF 2.1.0、github-annotations は GitHub Actions 向けの注釈形式。"
         "未指定時は環境変数 PYFLTR_OUTPUT_FORMAT の値を使用します。",
     )
     common.add_argument(
@@ -282,22 +285,26 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
     if getattr(args, "no_fix", False):
         args.include_fix_stage = False
 
-    # --work-dir: ターゲットパスを絶対パスに変換してからcwd変更
-    original_cwd: str | None = None
+    # retry_command の対象ファイル差し替え時、--work-dir 適用後の相対パスが
+    # 実行時の cwd と二重解釈されないよう、常に元 cwd を起点に絶対パス化する。
+    # os.chdir よりも前の cwd を確実に取得するため、--work-dir の有無を問わず保存する。
+    original_cwd = os.getcwd()
     resolved_targets: list[pathlib.Path] | None = None
+    chdir_applied = False
     if args.work_dir is not None:
         resolved_targets = [t.absolute() for t in args.targets]
-        original_cwd = os.getcwd()
         os.chdir(args.work_dir)
+        chdir_applied = True
     try:
-        return _run_impl(parser, args, list(sys_args), resolved_targets)
+        return _run_impl(parser, args, list(sys_args), resolved_targets, original_cwd=original_cwd)
     finally:
-        if original_cwd is not None:
+        if chdir_applied:
             os.chdir(original_cwd)
 
 
 _OUTPUT_FORMAT_ENV = "PYFLTR_OUTPUT_FORMAT"
-_VALID_OUTPUT_FORMATS: frozenset[str] = frozenset({"text", "jsonl"})
+_VALID_OUTPUT_FORMATS: frozenset[str] = frozenset({"text", "jsonl", "sarif", "github-annotations"})
+_STRUCTURED_OUTPUT_FORMATS: frozenset[str] = frozenset({"jsonl", "sarif", "github-annotations"})
 
 
 def _resolve_output_format(parser: argparse.ArgumentParser, cli_value: str | None) -> str:
@@ -318,12 +325,14 @@ def _resolve_output_format(parser: argparse.ArgumentParser, cli_value: str | Non
     return env_value
 
 
-def _force_jsonl_stdout_mode(args: argparse.Namespace) -> None:
-    """Jsonl + stdout モード時、UI/進捗系オプションを silently 無効化する。
+def _force_structured_stdout_mode(args: argparse.Namespace) -> None:
+    """構造化出力 + stdout モード時、UI/進捗系オプションを silently 無効化する。
 
     `parser.error()` で拒否すると argparse が usage を stderr に書くため
     「stdout/stderr とも完全に抑止」の要件に反する。既存 `--ci` が
     `args.no_ui=True` を silently 強制する先例に揃えて無音で上書きする。
+    jsonl だけでなく sarif / github-annotations でも stdout を専有するため
+    共通ヘルパーとして使う。
     """
     args.ui = None
     args.no_ui = True
@@ -336,7 +345,8 @@ def _suppress_logging() -> tuple[list[logging.Handler], int]:
 
     復元値をタプルで返す。復元は `_restore_logging()` で行う。`run()` は
     同一プロセスで複数回呼ばれる設計のため、必ず呼び出し側で `try`/`finally`
-    による復元を保証すること。
+    による復元を保証すること。jsonl / sarif / github-annotations のいずれも
+    stdout を構造化出力が占有するため、共通で root logger を抑止する。
     """
     root = logging.getLogger()
     saved = (root.handlers[:], root.level)
@@ -353,11 +363,187 @@ def _restore_logging(saved: tuple[list[logging.Handler], int]) -> None:
     root.setLevel(level)
 
 
+def _detect_launcher_prefix() -> list[str]:
+    """retry_command の先頭に置くべき起動プレフィックスを推定する。
+
+    Linux では ``/proc/self/status`` から親プロセスを辿り、先頭が ``uv`` で
+    第 2 引数が ``run`` なら ``["uv", "run", "pyfltr"]``、先頭が ``uvx`` なら
+    ``["uvx", "pyfltr"]`` を返す。macOS / Windows など親プロセスを取得できない
+    環境では ``[sys.argv[0]]`` の basename にフォールバックする。
+    """
+    fallback = [os.path.basename(sys.argv[0]) or "pyfltr"]
+    try:
+        with open("/proc/self/status", encoding="utf-8") as f:
+            ppid_line = next((line for line in f if line.startswith("PPid:")), None)
+        if ppid_line is None:
+            return fallback
+        ppid = ppid_line.split(":", 1)[1].strip()
+        with open(f"/proc/{ppid}/cmdline", "rb") as f:
+            raw = f.read()
+    except OSError:
+        return fallback
+    tokens = [tok.decode("utf-8", errors="replace") for tok in raw.split(b"\0") if tok]
+    if not tokens:
+        return fallback
+    launcher = os.path.basename(tokens[0])
+    if launcher == "uv" and len(tokens) >= 2 and tokens[1] == "run":
+        return ["uv", "run", "pyfltr"]
+    if launcher == "uvx":
+        return ["uvx", "pyfltr"]
+    return fallback
+
+
+def _build_retry_args_template(sys_args: list[str]) -> list[str]:
+    """起動時 argv (サブコマンド以降) を retry_command 用テンプレートとして整形する。
+
+    ``--commands`` の値は後段の per-tool 差し替え用に空文字プレースホルダへ置換し、
+    位置引数 (ターゲット) は末尾から除去する (後段で当該ツールのファイル一覧で
+    置換される前提)。``--no-fix`` や ``--output-format`` 等は保持する。
+    """
+    result: list[str] = []
+    i = 0
+    # 実行系サブコマンド (ci / run / fast / run-for-agent) は先頭に必ず来る想定。
+    # これを保持することで pyfltr ci 失敗時に fix ステージが暴発しない。
+    while i < len(sys_args):
+        arg = sys_args[i]
+        if arg == "--commands":
+            # 後段で当該ツール 1 件に差し替えるためプレースホルダを置く。
+            result.extend([arg, ""])
+            i += 2
+            continue
+        if arg.startswith("--commands="):
+            result.append("--commands=")
+            i += 1
+            continue
+        result.append(arg)
+        i += 1
+    return result
+
+
+def _build_retry_command(
+    args_template: list[str],
+    launcher_prefix: list[str],
+    *,
+    tool: str,
+    target_files: list[pathlib.Path],
+    original_cwd: str,
+) -> str:
+    """Tool レコードへ埋め込む retry_command 文字列を生成する。
+
+    ``args_template`` の ``--commands`` プレースホルダを当該ツールに差し替え、
+    位置引数 (ターゲット) を ``target_files`` で末尾に再配置する。ターゲットは
+    ``original_cwd`` 基準の絶対パスに変換することで、``--work-dir`` と cwd の
+    二重解釈を避ける。
+    """
+    import shlex  # pylint: disable=import-outside-toplevel
+
+    cwd_path = pathlib.Path(original_cwd)
+    # 位置引数 (サブコマンドを除く、`-` で始まらないトークンの末尾側) は除去する。
+    # サブコマンドは必ず最初の非オプショントークンのため、それだけ残す。
+    filtered: list[str] = []
+    seen_subcommand = False
+    i = 0
+    while i < len(args_template):
+        arg = args_template[i]
+        # オプション引数 (=付き・=なし両対応) はそのまま保持する。
+        # ``--commands`` プレースホルダ経由のみ後段で差し替え対象とする。
+        if arg.startswith("-"):
+            filtered.append(arg)
+            # 引数を伴うオプションか確認 (値が付いていない場合は次のトークンも引き取る)。
+            if "=" not in arg and i + 1 < len(args_template):
+                next_arg = args_template[i + 1]
+                if not next_arg.startswith("-") and _option_takes_value(arg):
+                    filtered.append(next_arg)
+                    i += 2
+                    continue
+            i += 1
+            continue
+        # 最初の非オプショントークンはサブコマンド扱いで保持する。
+        if not seen_subcommand:
+            filtered.append(arg)
+            seen_subcommand = True
+            i += 1
+            continue
+        # それ以降の位置引数 (= ターゲット) は捨てる。後段で target_files で差し替える。
+        i += 1
+
+    # --commands プレースホルダを当該ツールで埋める。
+    replaced: list[str] = []
+    j = 0
+    commands_replaced = False
+    while j < len(filtered):
+        arg = filtered[j]
+        if arg == "--commands":
+            replaced.extend(["--commands", tool])
+            commands_replaced = True
+            j += 2 if j + 1 < len(filtered) else 1
+            continue
+        if arg == "--commands=":
+            replaced.append(f"--commands={tool}")
+            commands_replaced = True
+            j += 1
+            continue
+        if arg.startswith("--commands="):
+            replaced.append(f"--commands={tool}")
+            commands_replaced = True
+            j += 1
+            continue
+        replaced.append(arg)
+        j += 1
+    # --commands 未指定だった場合は追記する (サブコマンドの直後に挿入)。
+    if not commands_replaced:
+        insert_at = 0
+        for k, tok in enumerate(replaced):
+            if not tok.startswith("-"):
+                insert_at = k + 1
+                break
+        replaced[insert_at:insert_at] = ["--commands", tool]
+
+    # ターゲットを元 cwd 基準の絶対パスに変換して末尾に追加する。
+    target_strs: list[str] = []
+    for target in target_files:
+        if target.is_absolute():
+            target_strs.append(str(target))
+        else:
+            target_strs.append(str((cwd_path / target).resolve(strict=False)))
+
+    parts: list[str] = [*launcher_prefix, *replaced, *target_strs]
+    return shlex.join(parts)
+
+
+# 引数を別トークンで受け取るオプション (= なし形式) の集合。
+# retry_command 整形時に位置引数と誤認しないよう明示する。
+_VALUE_OPTIONS: frozenset[str] = frozenset(
+    {
+        "--commands",
+        "--output-format",
+        "--output-file",
+        "--work-dir",
+        "-j",
+        "--jobs",
+    }
+)
+
+
+def _option_takes_value(opt: str) -> bool:
+    """オプションが次のトークンを値として取るかを判定する。
+
+    ``--foo=bar`` 形式は判定対象外 (呼び出し側で `=` の有無を先に確認する前提)。
+    ビルトイン / カスタムコマンドの ``--{cmd}-args`` も値を伴うため、末尾が
+    ``-args`` で終わるものは全て True として扱う。
+    """
+    if opt.endswith("-args"):
+        return True
+    return opt in _VALUE_OPTIONS
+
+
 def _run_impl(
     parser: argparse.ArgumentParser,
     args: argparse.Namespace,
     original_sys_args: typing.Sequence[str],
     resolved_targets: list[pathlib.Path] | None,
+    *,
+    original_cwd: str,
 ) -> int:
     """run()の内部実装 (実行系サブコマンド向け)。"""
     # 同一プロセス内で run() が複数回呼ばれるケースに備えて警告蓄積を初期化する。
@@ -377,24 +563,25 @@ def _run_impl(
         logger.info(f"pyfltr {importlib.metadata.version('pyfltr')}")
         return 0
 
-    # jsonl stdout モード (CLI で `--output-format=jsonl` かつ `--output-file` 未指定) は
-    # load_config() 前から判定できるため、先行して root logger を抑止する。これにより
-    # load_config() 失敗時のエラーログや以降の警告/エラーが stdout/stderr に漏れない。
-    # 抑止状態は try/finally で必ず復元する (run() は同一プロセス内で複数回呼ばれる設計)。
+    # 構造化出力 stdout モード (CLI で `--output-format=jsonl|sarif|github-annotations`
+    # かつ `--output-file` 未指定) は load_config() 前から判定できるため、先行して
+    # root logger を抑止する。これにより load_config() 失敗時のエラーログや以降の
+    # 警告/エラーが stdout/stderr に漏れない。抑止状態は try/finally で必ず復元する
+    # (run() は同一プロセス内で複数回呼ばれる設計)。
     output_format = _resolve_output_format(parser, args.output_format)
     output_file: pathlib.Path | None = args.output_file
-    jsonl_stdout = output_format == "jsonl" and output_file is None
-    if jsonl_stdout:
-        _force_jsonl_stdout_mode(args)
-    suppression = _suppress_logging() if jsonl_stdout else None
+    structured_stdout = output_format in _STRUCTURED_OUTPUT_FORMATS and output_file is None
+    if structured_stdout:
+        _force_structured_stdout_mode(args)
+    suppression = _suppress_logging() if structured_stdout else None
 
     try:
         # pyproject.toml
         try:
             config = pyfltr.config.load_config()
         except (ValueError, OSError) as e:
-            if jsonl_stdout:
-                # 抑止済みなので text 出力は出せない。LLM 側は JSONL 0 行 + exit 非 0 で検知する。
+            if structured_stdout:
+                # 抑止済みなので text 出力は出せない。LLM 側は構造化出力 0 行 + exit 非 0 で検知する。
                 return 1
             logger.error(f"設定エラー: {e}")
             return 1
@@ -413,8 +600,8 @@ def _run_impl(
             args.output_file = output_file
             if getattr(args, "no_fix", False):
                 args.include_fix_stage = False
-            if jsonl_stdout:
-                _force_jsonl_stdout_mode(args)
+            if structured_stdout:
+                _force_structured_stdout_mode(args)
             if args.ci:
                 args.shuffle = False
                 args.no_ui = True
@@ -447,7 +634,7 @@ def _run_impl(
             if command not in config.values:
                 parser.error(f"コマンドが見つかりません: {command}")
 
-        return run_pipeline(args, commands, config)
+        return run_pipeline(args, commands, config, original_cwd=original_cwd, original_sys_args=list(original_sys_args))
     finally:
         if suppression is not None:
             _restore_logging(suppression)
@@ -457,6 +644,9 @@ def run_pipeline(
     args: argparse.Namespace,
     commands: list[str],
     config: pyfltr.config.Config,
+    *,
+    original_cwd: str | None = None,
+    original_sys_args: list[str] | None = None,
 ) -> int:
     """実行パイプライン。"""
     # ターミナルをクリア
@@ -474,6 +664,13 @@ def run_pipeline(
     # 対象ファイルを一括展開（ディレクトリ走査・exclude・gitignoreフィルタリングを1回だけ実行）
     # TUI起動前に実行することで、除外警告がログに表示される
     all_files = pyfltr.command.expand_all_files(args.targets, config)
+
+    # retry_command 再構成用のベース情報を確定する。original_cwd は run() が保存した
+    # --work-dir 適用前の cwd、original_sys_args は起動時の sys.argv[1:] のコピー。
+    effective_cwd = original_cwd if original_cwd is not None else os.getcwd()
+    effective_sys_args = list(original_sys_args) if original_sys_args is not None else list(sys.argv[1:])
+    launcher_prefix = _detect_launcher_prefix()
+    retry_args_template = _build_retry_args_template(effective_sys_args)
 
     # 実行アーカイブの初期化 (既定で有効)。
     # ``--no-archive`` または ``archive = false`` で無効化できる。クリーンアップ失敗や
@@ -504,22 +701,51 @@ def run_pipeline(
             except OSError as e:
                 # ハンドラ内で warning を出しても summary 末尾にまとまる。
                 pyfltr.warnings_.emit_warning(source="archive", message=f"{result.command} のアーカイブ書き込みに失敗: {e}")
+                return
+            # 書き込み成功時のみ archived=True に更新。smart truncation の可否判定に使う。
+            result.archived = True
 
         archive_hook = _archive_hook
+
+    # retry_command を CommandResult に埋めるためのヘルパー。
+    # aarchive_hook と同じタイミング (各ツール完了時) に呼ばれる on_result 経路へ挿入する。
+    def _attach_retry_command(result: pyfltr.command.CommandResult) -> None:
+        result.retry_command = _build_retry_command(
+            retry_args_template,
+            launcher_prefix,
+            tool=result.command,
+            target_files=result.target_files,
+            original_cwd=effective_cwd,
+        )
 
     # UIの判定
     use_ui = not args.no_ui and (args.ui or pyfltr.ui.can_use_ui())
 
-    # JSONL stdoutモード: ツール完了時に随時JSONL行を書き出す
+    # 構造化出力 stdout モード: ツール完了時に随時出力行を書き出す (jsonl のみストリーミング)。
+    # sarif / github-annotations は全結果集約後に 1 回だけ書き出すため、ストリーミング経路には入れない。
     jsonl_stdout = (args.output_format == "jsonl") and (args.output_file is None)
+    structured_stdout = (args.output_format in _STRUCTURED_OUTPUT_FORMATS) and (args.output_file is None)
 
     if jsonl_stdout:
         pyfltr.llm_output.write_jsonl_header(commands=commands, files=len(all_files), run_id=run_id)
 
+    # 各ツール完了時のフック: retry_command 付与 → archive 書き込み → on_result (ストリーミング)。
+    # retry_command は archive と jsonl streaming の双方で必要になるため、archive_hook より前に挿入する。
+    composed_hook: typing.Callable[[pyfltr.command.CommandResult], None] | None = None
+    if archive_hook is not None:
+
+        def _composed_archive_hook(result: pyfltr.command.CommandResult) -> None:
+            _attach_retry_command(result)
+            archive_hook(result)
+
+        composed_hook = _composed_archive_hook
+    else:
+        composed_hook = _attach_retry_command
+
     # run
     include_fix_stage = bool(getattr(args, "include_fix_stage", False))
     if use_ui:
-        results, returncode = pyfltr.ui.run_commands_with_ui(commands, args, config, all_files, archive_hook=archive_hook)
+        results, returncode = pyfltr.ui.run_commands_with_ui(commands, args, config, all_files, archive_hook=composed_hook)
         include_details = True
     else:
         # 非 TUI モード: 既定はバッファリング (最後にまとめて出力)、`--stream` で従来の即時出力。
@@ -533,7 +759,7 @@ def run_pipeline(
             per_command_log=per_command_log,
             include_fix_stage=include_fix_stage,
             on_result=on_result,
-            archive_hook=archive_hook,
+            archive_hook=composed_hook,
         )
         returncode = 0
         # `--stream` のときは詳細ログは既に出力済み。summary のみ表示する。
@@ -550,6 +776,17 @@ def run_pipeline(
             exit_code=returncode,
             warnings=pyfltr.warnings_.collected_warnings(),
         )
+    elif structured_stdout and args.output_format == "sarif":
+        _write_sarif_stdout(
+            results,
+            config,
+            exit_code=returncode,
+            commands=commands,
+            files=len(all_files),
+            run_id=run_id,
+        )
+    elif structured_stdout and args.output_format == "github-annotations":
+        _write_github_annotations_stdout(results, config)
     else:
         pyfltr.cli.render_results(
             results,
@@ -572,6 +809,43 @@ def run_pipeline(
             pyfltr.warnings_.emit_warning(source="archive", message=f"meta.json の更新に失敗: {e}")
 
     return returncode
+
+
+def _write_sarif_stdout(
+    results: list[pyfltr.command.CommandResult],
+    config: pyfltr.config.Config,
+    *,
+    exit_code: int,
+    commands: list[str],
+    files: int,
+    run_id: str | None,
+) -> None:
+    """SARIF 2.1.0 形式の JSON を stdout に書き出す。"""
+    import json  # pylint: disable=import-outside-toplevel
+
+    sarif = pyfltr.sarif_output.build_sarif(
+        results,
+        config,
+        exit_code=exit_code,
+        commands=commands,
+        files=files,
+        run_id=run_id,
+    )
+    sys.stdout.write(json.dumps(sarif, ensure_ascii=False, indent=2))
+    sys.stdout.write("\n")
+    sys.stdout.flush()
+
+
+def _write_github_annotations_stdout(
+    results: list[pyfltr.command.CommandResult],
+    config: pyfltr.config.Config,
+) -> None:
+    """GitHub Actions 注釈形式の行群を stdout に書き出す。"""
+    lines = pyfltr.github_annotations.build_github_annotation_lines(results, config)
+    for line in lines:
+        sys.stdout.write(line)
+        sys.stdout.write("\n")
+    sys.stdout.flush()
 
 
 def calculate_returncode(results: list[pyfltr.command.CommandResult], exit_zero_even_if_formatted: bool) -> int:

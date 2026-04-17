@@ -496,6 +496,16 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "archive-max-runs": 100,
     "archive-max-size-mb": 1024,
     "archive-max-age-days": 30,
+    # JSONL 出力の smart truncation 設定 (v3.0.0 追加)。
+    # ``jsonl-diagnostic-limit`` はツール単位の diagnostic 出力件数上限。0 以下で無制限。
+    # ``jsonl-message-max-lines`` / ``jsonl-message-max-chars`` は failed かつ diagnostics=0 のときの
+    # tool.message (生出力末尾) を切り詰める閾値。
+    # 切り詰めが発生しても、アーカイブ書き込みに成功していれば全文は ``tools/<tool>/output.log``
+    # / ``tools/<tool>/diagnostics.jsonl`` から復元できる。アーカイブ無効時 / 初期化失敗時 /
+    # 当該ツールの書き込み失敗時は切り詰めをスキップし JSONL に全文を出力する。
+    "jsonl-diagnostic-limit": 0,
+    "jsonl-message-max-lines": 30,
+    "jsonl-message-max-chars": 2000,
     # 最大並列数（linters/testersの並列実行数の上限）
     "jobs": 4,
     # flake8風無視パターン。

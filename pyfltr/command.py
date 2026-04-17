@@ -279,6 +279,25 @@ class CommandResult:
     output: str
     elapsed: float
     errors: list[pyfltr.error_parser.ErrorLocation] = dataclasses.field(default_factory=list)
+    target_files: list[pathlib.Path] = dataclasses.field(default_factory=list)
+    """当該ツールに渡したターゲットファイル一覧 (retry_command の位置引数復元に使用)。
+
+    ``pass-filenames=False`` のツールでは ``commandline`` にファイルが含まれないため、
+    retry_command でターゲットを差し替えるには実行時点のリストを別途保持する必要がある。
+    """
+    archived: bool = False
+    """実行アーカイブへの書き込みに成功したか。
+
+    ``True`` のときに限り、JSONL 側で smart truncation によるメッセージ/diagnostic 省略を
+    適用できる (切り詰め分はアーカイブから復元可能)。``--no-archive`` やアーカイブ初期化
+    失敗時は ``False`` のままとなり、切り詰めをスキップして全文を JSONL に出力する。
+    """
+    retry_command: str | None = None
+    """当該ツール 1 件を再実行するための shell コマンド文字列 (tool レコード用)。
+
+    ``run_pipeline`` がツール完了時に埋める。未設定 (``None``) のときは tool レコードから
+    省略する (テスト等、パイプライン外で CommandResult を生成する場合)。
+    """
 
     @property
     def alerted(self) -> bool:
@@ -509,16 +528,25 @@ def execute_command(
     if config.values.get(f"{command}-pass-filenames", True):
         commandline.extend(str(t) for t in targets)
 
+    # 各 CommandResult に当該ツールのターゲットファイル一覧を埋めるためのヘルパー。
+    # retry_command で差し替え可能なターゲットを復元するのに使う (特に pass-filenames=False
+    # のツールでは commandline からも復元できないため、ここで明示的に保持する)。
+    def _with_targets(result: CommandResult) -> CommandResult:
+        result.target_files = list(targets)
+        return result
+
     if len(targets) <= 0:
-        return CommandResult(
-            command=command,
-            command_type=command_info.type,
-            commandline=commandline,
-            returncode=None,
-            has_error=False,
-            output="対象ファイルが見つかりません。",
-            files=0,
-            elapsed=0,
+        return _with_targets(
+            CommandResult(
+                command=command,
+                command_type=command_info.type,
+                commandline=commandline,
+                returncode=None,
+                has_error=False,
+                output="対象ファイルが見つかりません。",
+                files=0,
+                elapsed=0,
+            )
         )
 
     start_time = time.perf_counter()
@@ -529,54 +557,59 @@ def execute_command(
     # stage 1 でファイル修正のみ (fixer 系) なら "formatted"、
     # checker 系 hook が残存エラーを報告すれば "failed" となる。
     if command == "pre-commit":
-        return _execute_pre_commit(command, command_info, commandline, targets, config, args, env, on_output, start_time)
+        return _with_targets(
+            _execute_pre_commit(command, command_info, commandline, targets, config, args, env, on_output, start_time)
+        )
 
     # textlint の fix モードは 2 段階実行 (fix 適用 + lint チェック)。
     # fixer-formatter が compact をサポートしない問題と、残存違反を compact で取得する
     # 要件を両立させるため、他の linter とは別経路で実行する。
     if fix_args is not None and command == "textlint":
-        return _execute_textlint_fix(
-            command,
-            command_info,
-            commandline_prefix,
-            config,
-            targets,
-            additional_args,
-            env,
-            on_output,
-            start_time,
-            args,
+        return _with_targets(
+            _execute_textlint_fix(
+                command,
+                command_info,
+                commandline_prefix,
+                config,
+                targets,
+                additional_args,
+                env,
+                on_output,
+                start_time,
+                args,
+            )
         )
 
     # fix モードで linter に fix-args を適用する経路。
     # mtime 変化で formatted 判定を行い、rc != 0 はそのまま failed 扱いとする。
     if fix_args is not None and command_info.type != "formatter":
-        return _execute_linter_fix(command, command_info, commandline, targets, env, on_output, start_time, args)
+        return _with_targets(_execute_linter_fix(command, command_info, commandline, targets, env, on_output, start_time, args))
 
     # ruff-formatで ruff-format-by-check が有効な場合は、
     # 先に ruff check --fix --unsafe-fixes を実行してから ruff format を実行する。
     # ステップ1(check)の lint violation (exit 1) は無視する (lint は ruff-check で検出)。
     # ただし exit >= 2 (設定エラー等) は失敗扱いする。
     if command == "ruff-format" and config["ruff-format-by-check"]:
-        result = _execute_ruff_format_two_step(
-            command, command_info, commandline, targets, config, args, env, on_output, start_time
+        return _with_targets(
+            _execute_ruff_format_two_step(command, command_info, commandline, targets, config, args, env, on_output, start_time)
         )
-        return result
 
     # shfmt は -l (確認) と -w (書き込み) が排他のため prettier 同様の 2 段階実行。
     if command == "shfmt":
-        return _execute_shfmt_two_step(
-            command,
-            command_info,
-            commandline_prefix,
-            config,
-            targets,
-            additional_args,
-            fix_mode=fix_mode,
-            env=env,
-            on_output=on_output,
-            start_time=start_time,
-            args=args,
+        return _with_targets(
+            _execute_shfmt_two_step(
+                command,
+                command_info,
+                commandline_prefix,
+                config,
+                targets,
+                additional_args,
+                fix_mode=fix_mode,
+                env=env,
+                on_output=on_output,
+                start_time=start_time,
+                args=args,
+            )
         )
 
     # prettier は --check (read-only) と --write (書き込み) が排他のため 2 段階実行する。
@@ -584,18 +617,20 @@ def execute_command(
     # prettier には {cmd}-fix-args を定義していないため fix 判定は fix_stage 由来の
     # fix_mode 変数を使う (filter_fix_commands では formatter として常に fix 対象となる)。
     if command == "prettier":
-        return _execute_prettier_two_step(
-            command,
-            command_info,
-            commandline_prefix,
-            config,
-            targets,
-            additional_args,
-            fix_mode=fix_mode,
-            env=env,
-            on_output=on_output,
-            start_time=start_time,
-            args=args,
+        return _with_targets(
+            _execute_prettier_two_step(
+                command,
+                command_info,
+                commandline_prefix,
+                config,
+                targets,
+                additional_args,
+                fix_mode=fix_mode,
+                env=env,
+                on_output=on_output,
+                start_time=start_time,
+                args=args,
+            )
         )
 
     has_error = False
@@ -612,16 +647,18 @@ def execute_command(
     # エラー箇所のパース
     errors = pyfltr.error_parser.parse_errors(command, output, command_info.error_pattern)
 
-    return CommandResult(
-        command=command,
-        command_type=command_info.type,
-        commandline=commandline,
-        returncode=returncode,
-        has_error=has_error,
-        files=len(targets),
-        output=output,
-        elapsed=elapsed,
-        errors=errors,
+    return _with_targets(
+        CommandResult(
+            command=command,
+            command_type=command_info.type,
+            commandline=commandline,
+            returncode=returncode,
+            has_error=has_error,
+            files=len(targets),
+            output=output,
+            elapsed=elapsed,
+            errors=errors,
+        )
     )
 
 

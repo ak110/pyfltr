@@ -35,11 +35,15 @@ def make_command_result(
     elapsed: float = 0.1,
     errors: list[pyfltr.error_parser.ErrorLocation] | None = None,
     has_error: bool | None = None,
+    archived: bool = True,
+    retry_command: str | None = None,
 ) -> pyfltr.command.CommandResult:
     """テスト用の CommandResult を生成する。
 
-    `has_error` を省略した場合、`returncode` が 0/None 以外なら True に推定する。
-    `errors` は `ErrorLocation` のリスト (省略時は空)。
+    ``has_error`` を省略した場合、``returncode`` が 0/None 以外なら True に推定する。
+    ``errors`` は ``ErrorLocation`` のリスト (省略時は空)。
+    ``archived`` はテスト既定で True (smart truncation が適用される側)。
+    実運用でのデフォルト (CommandResult() 生成時の False) とは異なる点に注意。
     """
     if has_error is None:
         has_error = returncode is not None and returncode != 0
@@ -53,6 +57,8 @@ def make_command_result(
         output=output,
         elapsed=elapsed,
         errors=list(errors) if errors else [],
+        archived=archived,
+        retry_command=retry_command,
     )
 
 

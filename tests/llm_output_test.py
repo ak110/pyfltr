@@ -3,6 +3,8 @@
 
 import json
 
+import pyfltr.command
+import pyfltr.config
 import pyfltr.error_parser
 import pyfltr.llm_output
 
@@ -93,3 +95,140 @@ def test_build_warning_record() -> None:
     """warning dict が kind/source/msg を持つレコードに変換される。"""
     record = pyfltr.llm_output._build_warning_record({"source": "config", "message": "foo"})
     assert record == {"kind": "warning", "source": "config", "msg": "foo"}
+
+
+def test_build_diagnostic_record_rule_url_included() -> None:
+    """rule_url が設定されていれば diagnostic レコードに含まれる。"""
+    error = pyfltr.error_parser.ErrorLocation(
+        file="src/foo.py",
+        line=10,
+        col=5,
+        command="ruff-check",
+        message="x",
+        rule="F401",
+        rule_url="https://docs.astral.sh/ruff/rules/F401/",
+    )
+    record = pyfltr.llm_output._build_diagnostic_record(error)
+    assert record["rule_url"] == "https://docs.astral.sh/ruff/rules/F401/"
+    # 順序: rule → rule_url → severity → fix → msg
+    keys = list(record.keys())
+    assert keys.index("rule") < keys.index("rule_url") < keys.index("msg")
+
+
+def test_build_diagnostic_record_rule_url_omitted_when_none() -> None:
+    """rule_url が None の場合はフィールドが省略される。"""
+    error = pyfltr.error_parser.ErrorLocation(file="src/foo.py", line=10, col=None, command="mypy", message="x")
+    record = pyfltr.llm_output._build_diagnostic_record(error)
+    assert "rule_url" not in record
+
+
+def test_build_tool_record_retry_command_included() -> None:
+    """retry_command が設定されていれば tool レコードに含まれる。"""
+    result = pyfltr.command.CommandResult(
+        command="ruff-check",
+        command_type="linter",
+        commandline=["ruff", "check"],
+        returncode=0,
+        has_error=False,
+        files=3,
+        output="",
+        elapsed=0.5,
+        retry_command="pyfltr run --commands ruff-check -- src/foo.py",
+    )
+    record = pyfltr.llm_output._build_tool_record(result, diagnostics=0)
+    assert record["retry_command"] == "pyfltr run --commands ruff-check -- src/foo.py"
+
+
+def test_build_tool_record_retry_command_omitted() -> None:
+    """retry_command が None の場合、tool レコードから省略される。"""
+    result = pyfltr.command.CommandResult(
+        command="mypy",
+        command_type="linter",
+        commandline=["mypy"],
+        returncode=0,
+        has_error=False,
+        files=1,
+        output="",
+        elapsed=0.1,
+    )
+    record = pyfltr.llm_output._build_tool_record(result, diagnostics=0)
+    assert "retry_command" not in record
+
+
+def test_build_tool_lines_truncates_diagnostics_when_archived() -> None:
+    """jsonl-diagnostic-limit 超過時、先頭 N 件に切り詰めて truncated メタを付与する。"""
+    errors = [
+        pyfltr.error_parser.ErrorLocation(file="src/foo.py", line=i, col=None, command="mypy", message=f"err{i}")
+        for i in range(10)
+    ]
+    result = pyfltr.command.CommandResult(
+        command="mypy",
+        command_type="linter",
+        commandline=["mypy"],
+        returncode=1,
+        has_error=True,
+        files=1,
+        output="",
+        elapsed=0.1,
+        errors=errors,
+        archived=True,
+    )
+    config = pyfltr.config.create_default_config()
+    config.values["jsonl-diagnostic-limit"] = 3
+    lines = pyfltr.llm_output.build_tool_lines(result, config)
+    # diagnostic 3 行 + tool 行 = 4 行
+    assert len(lines) == 4
+    tool_record = json.loads(lines[-1])
+    assert tool_record["diagnostics"] == 3
+    assert tool_record["truncated"]["diagnostics_total"] == 10
+    assert tool_record["truncated"]["archive"] == "tools/mypy/diagnostics.jsonl"
+
+
+def test_build_tool_lines_no_truncation_when_not_archived() -> None:
+    """archived=False のときは切り詰めをスキップして全件出力する。"""
+    errors = [
+        pyfltr.error_parser.ErrorLocation(file="src/foo.py", line=i, col=None, command="mypy", message=f"err{i}")
+        for i in range(10)
+    ]
+    result = pyfltr.command.CommandResult(
+        command="mypy",
+        command_type="linter",
+        commandline=["mypy"],
+        returncode=1,
+        has_error=True,
+        files=1,
+        output="",
+        elapsed=0.1,
+        errors=errors,
+        archived=False,
+    )
+    config = pyfltr.config.create_default_config()
+    config.values["jsonl-diagnostic-limit"] = 3
+    lines = pyfltr.llm_output.build_tool_lines(result, config)
+    # 切り詰めなし: diagnostic 10 行 + tool 行
+    assert len(lines) == 11
+    tool_record = json.loads(lines[-1])
+    assert tool_record["diagnostics"] == 10
+    assert "truncated" not in tool_record
+
+
+def test_build_tool_record_message_truncated_when_archived() -> None:
+    """failed + message 切り詰め時、truncated に lines / chars / archive が入る。"""
+    many_lines = "\n".join(f"line{i}" for i in range(100))
+    result = pyfltr.command.CommandResult(
+        command="shellcheck",
+        command_type="linter",
+        commandline=["shellcheck"],
+        returncode=1,
+        has_error=True,
+        files=1,
+        output=many_lines,
+        elapsed=0.1,
+        archived=True,
+    )
+    config = pyfltr.config.create_default_config()
+    record = pyfltr.llm_output._build_tool_record(result, diagnostics=0, config=config)
+    assert "message" in record
+    assert record["message"].startswith("... (truncated)")
+    assert record["truncated"]["archive"] == "tools/shellcheck/output.log"
+    assert record["truncated"]["lines"] == 100

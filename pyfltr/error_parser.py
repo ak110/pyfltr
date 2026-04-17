@@ -11,6 +11,8 @@ import pathlib
 import re
 import typing
 
+import pyfltr.rule_urls
+
 
 @dataclasses.dataclass
 class ErrorLocation:
@@ -27,6 +29,8 @@ class ErrorLocation:
     """診断の重要度 ("error" | "warning" | "info")"""
     fix: str | None = None
     """自動修正の適用可能性 ("safe" | "unsafe" | "suggested")"""
+    rule_url: str | None = None
+    """ルールドキュメントの URL (None は未対応ツールまたは rule 未設定時)"""
 
 
 def parse_errors(command: str, output: str, error_pattern: str | None = None) -> list[ErrorLocation]:
@@ -85,11 +89,13 @@ def parse_summary(command: str, output: str) -> str | None:
 
 # ビルトインパーサー用の正規表現パターン
 # 各パターンはfile, line, messageの名前付きグループが必須。colは任意。
+# rule グループが存在する場合は ErrorLocation.rule に取り込まれる (_parse_with_pattern で対応)。
 # ファイルパスのパターンは (?:[A-Za-z]:)? でWindowsドライブレターに対応する。
 _FILE = r"(?:[A-Za-z]:)?[^\s:]+"
 _BUILTIN_PATTERNS: dict[str, str] = {
     # mypy出力例: src/foo.py:10: error: xxx [error-code]
-    "mypy": rf"(?P<file>{_FILE}):(?P<line>\d+):\s*error:\s*(?P<message>.+)",
+    # 末尾の [error-code] を rule グループとして抽出する。
+    "mypy": rf"(?P<file>{_FILE}):(?P<line>\d+):\s*error:\s*(?P<message>.+?)(?:\s*\[(?P<rule>[^\]]+)\])?\s*$",
     # pylint出力例: src/foo.py:10:5: C0114: xxx
     "pylint": rf"(?P<file>{_FILE}):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>[CRWEF]\d+:.+)",
     # ruff check出力例: src/foo.py:10:5: E001 xxx
@@ -99,7 +105,8 @@ _BUILTIN_PATTERNS: dict[str, str] = {
     # ty check --output-format concise 出力例: src/foo.py:10:5: error[rule-name] Message text
     "ty": rf"(?P<file>{_FILE}):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>(?:error|warning)\[.+?\]\s+.+)",
     # markdownlint-cli2出力例: file.md:3 MD001/heading-increment Heading levels ...
-    "markdownlint": rf"(?P<file>{_FILE}):(?P<line>\d+)\s+(?P<message>MD\d+\S*\s+.+)",
+    # 先頭の MDxxx を rule グループとして抽出する (スラッシュ以降のシンボルは message に残す)。
+    "markdownlint": rf"(?P<file>{_FILE}):(?P<line>\d+)\s+(?P<rule>MD\d+)(?P<message>\S*\s+.+)",
     # textlint --format compact出力例: /path/file.md: line 1, col 1, Error - message (rule)
     "textlint": rf"(?P<file>{_FILE}):\s*line\s+(?P<line>\d+),\s*col\s+(?P<col>\d+),\s*\w+\s*-\s*(?P<message>.+)",
     # pytest出力例: FAILED tests/xxx_test.py::test_yyy - AssertionError
@@ -133,6 +140,29 @@ def _try_json_loads(output: str) -> typing.Any:
         return json.loads(output)
     except json.JSONDecodeError:
         return None
+
+
+def _normalize_severity(value: typing.Any) -> str | None:
+    """生の severity 値を `"error" / "warning" / "info"` の 3 値に正規化する。
+
+    未知の値や None は ``None`` を返し、JSONL 出力側で省略される。
+    """
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return _eslint_severity(value)
+    if not isinstance(value, str):
+        return None
+    lowered = value.strip().lower()
+    if not lowered:
+        return None
+    if lowered in ("error", "fatal"):
+        return "error"
+    if lowered in ("warning", "warn"):
+        return "warning"
+    if lowered in ("info", "information", "informational", "note", "hint", "style", "convention", "refactor"):
+        return "info"
+    return None
 
 
 def _eslint_severity(value: typing.Any) -> str | None:
@@ -185,6 +215,7 @@ def _parse_eslint_json(output: str) -> list[ErrorLocation]:
             text = str(msg.get("message", ""))
             message = f"{text} ({rule_id})" if rule_id else text
             fix_value = "safe" if msg.get("fix") else None
+            rule = rule_id or None
             results.append(
                 ErrorLocation(
                     file=_normalize_path(file_path),
@@ -192,9 +223,10 @@ def _parse_eslint_json(output: str) -> list[ErrorLocation]:
                     col=col,
                     command="eslint",
                     message=message.strip(),
-                    rule=rule_id or None,
-                    severity=_eslint_severity(msg.get("severity")),
+                    rule=rule,
+                    severity=_normalize_severity(msg.get("severity")),
                     fix=fix_value,
+                    rule_url=pyfltr.rule_urls.build_rule_url("eslint", rule),
                 )
             )
     return results
@@ -221,6 +253,9 @@ def _parse_ruff_check_json(output: str) -> list[ErrorLocation]:
         fix_value: str | None = None
         if isinstance(fix_obj, dict):
             fix_value = str(fix_obj.get("applicability", "safe"))
+        rule = str(entry.get("code", "")) or None
+        entry_url = entry.get("url")
+        existing_url = str(entry_url) if isinstance(entry_url, str) and entry_url else None
         results.append(
             ErrorLocation(
                 file=_normalize_path(str(entry.get("filename", ""))),
@@ -228,16 +263,22 @@ def _parse_ruff_check_json(output: str) -> list[ErrorLocation]:
                 col=col,
                 command="ruff-check",
                 message=str(entry.get("message", "")),
-                rule=str(entry.get("code", "")) or None,
-                severity=str(entry.get("severity", "error")).lower() or None,
+                rule=rule,
+                severity=_normalize_severity(entry.get("severity")) or "error",
                 fix=fix_value,
+                rule_url=pyfltr.rule_urls.build_rule_url("ruff-check", rule, existing_url=existing_url),
             )
         )
     return results
 
 
 def _parse_pylint_json(output: str) -> list[ErrorLocation]:
-    """Pylint --output-format=json2 出力をパース。JSON 解析失敗時は regex にフォールバック。"""
+    """Pylint --output-format=json2 出力をパース。JSON 解析失敗時は regex にフォールバック。
+
+    公式ドキュメント URL が ``symbol`` 基準 (`missing-module-docstring` 等) のため、
+    ``ErrorLocation.rule`` には ``symbol`` を格納する。``messageId`` (`C0114` 等) は
+    ``ErrorLocation.message`` の先頭に付与して保持する。
+    """
     data = _try_json_loads(output)
     if not isinstance(data, dict) or "messages" not in data:
         return _parse_with_pattern("pylint", output, _BUILTIN_PATTERNS["pylint"])
@@ -255,15 +296,24 @@ def _parse_pylint_json(output: str) -> list[ErrorLocation]:
         col = raw_col if isinstance(raw_col, int) else None
         msg_type = str(msg.get("type", "")).lower()
         severity = "error" if msg_type in ("error", "fatal") else "warning"
+        symbol = str(msg.get("symbol") or "") or None
+        message_id = str(msg.get("messageId") or "")
+        original_message = str(msg.get("message", ""))
+        # 既存 rule スキーマ (機械判別可能な識別子) と messageId の両方を JSONL 上に残す。
+        combined_message = f"{message_id}: {original_message}" if message_id else original_message
+        # 公式ドキュメント URL はカテゴリー名 (`convention` / `warning` / `error` / `refactor` /
+        # `information` / `fatal`) を必要とする。``type`` フィールドをそのまま渡す。
+        category = msg_type or None
         results.append(
             ErrorLocation(
                 file=_normalize_path(str(msg.get("path", ""))),
                 line=line,
                 col=col,
                 command="pylint",
-                message=str(msg.get("message", "")),
-                rule=str(msg.get("messageId", "")) or None,
+                message=combined_message,
+                rule=symbol,
                 severity=severity,
+                rule_url=pyfltr.rule_urls.build_rule_url("pylint", symbol, category=category),
             )
         )
     return results
@@ -293,6 +343,7 @@ def _parse_pyright_json(output: str) -> list[ErrorLocation]:
             continue
         raw_char = start.get("character")
         col = (raw_char + 1) if isinstance(raw_char, int) else None
+        rule = str(diag.get("rule", "")) or None
         results.append(
             ErrorLocation(
                 file=_normalize_path(str(diag.get("file", ""))),
@@ -300,8 +351,9 @@ def _parse_pyright_json(output: str) -> list[ErrorLocation]:
                 col=col,
                 command="pyright",
                 message=str(diag.get("message", "")),
-                rule=str(diag.get("rule", "")) or None,
-                severity=str(diag.get("severity", "")).lower() or None,
+                rule=rule,
+                severity=_normalize_severity(diag.get("severity")),
+                rule_url=pyfltr.rule_urls.build_rule_url("pyright", rule),
             )
         )
     return results
@@ -332,8 +384,9 @@ def _parse_shellcheck_json(output: str) -> list[ErrorLocation]:
                 command="shellcheck",
                 message=str(entry.get("message", "")),
                 rule=rule,
-                severity=str(entry.get("level", "")).lower() or None,
+                severity=_normalize_severity(entry.get("level")),
                 fix=fix_value,
+                rule_url=pyfltr.rule_urls.build_rule_url("shellcheck", rule),
             )
         )
     return results
@@ -373,7 +426,7 @@ def _parse_textlint_json(output: str) -> list[ErrorLocation]:
                     command="textlint",
                     message=str(msg.get("message", "")).strip(),
                     rule=rule_id or None,
-                    severity=_eslint_severity(msg.get("severity")),
+                    severity=_normalize_severity(msg.get("severity")),
                     fix=fix_value,
                 )
             )
@@ -548,7 +601,11 @@ _SUMMARY_PARSERS: dict[str, typing.Callable[[str], str | None]] = {
 
 
 def _parse_with_pattern(command: str, output: str, pattern: str) -> list[ErrorLocation]:
-    """正規表現パターンでエラー箇所をパースする。"""
+    """正規表現パターンでエラー箇所をパースする。
+
+    パターンに名前付きグループ ``rule`` が含まれる場合、マッチ内容を
+    ``ErrorLocation.rule`` に格納し、``rule_urls.build_rule_url()`` で URL も補完する。
+    """
     compiled = re.compile(pattern)
     results: list[ErrorLocation] = []
     for line in output.splitlines():
@@ -559,7 +616,7 @@ def _parse_with_pattern(command: str, output: str, pattern: str) -> list[ErrorLo
         file_path = groups.get("file", "")
         line_str = groups.get("line", "0")
         col_str = groups.get("col")
-        message = groups.get("message", "")
+        message = groups.get("message") or ""
         try:
             line_num = int(line_str)
         except ValueError:
@@ -568,6 +625,9 @@ def _parse_with_pattern(command: str, output: str, pattern: str) -> list[ErrorLo
         if col_str is not None:
             with contextlib.suppress(ValueError):
                 col_num = int(col_str)
+        rule_raw = groups.get("rule")
+        rule = rule_raw.strip() if isinstance(rule_raw, str) and rule_raw.strip() else None
+        rule_url = pyfltr.rule_urls.build_rule_url(command, rule) if rule is not None else None
         results.append(
             ErrorLocation(
                 file=_normalize_path(file_path),
@@ -575,6 +635,8 @@ def _parse_with_pattern(command: str, output: str, pattern: str) -> list[ErrorLo
                 col=col_num,
                 command=command,
                 message=message.strip(),
+                rule=rule,
+                rule_url=rule_url,
             )
         )
     return results

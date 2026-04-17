@@ -301,7 +301,10 @@ def test_parse_ruff_check_json_fallback() -> None:
 
 
 def test_parse_pylint_json() -> None:
-    """pylint --output-format=json2 出力のパース。"""
+    """pylint --output-format=json2 出力のパース。
+
+    rule には symbol (公式ドキュメント URL 基準)、message には messageId を保持する。
+    """
     output = json.dumps(
         {
             "messages": [
@@ -320,9 +323,12 @@ def test_parse_pylint_json() -> None:
     )
     errors = pyfltr.error_parser.parse_errors("pylint", output)
     assert len(errors) == 1
-    assert errors[0].rule == "C0114"
+    assert errors[0].rule == "missing-module-docstring"
     assert errors[0].severity == "warning"
-    assert errors[0].message == "Missing module docstring"
+    assert errors[0].message == "C0114: Missing module docstring"
+    assert errors[0].rule_url == (
+        "https://pylint.readthedocs.io/en/stable/user_guide/messages/convention/missing-module-docstring.html"
+    )
 
 
 def test_parse_pylint_json_fallback() -> None:
@@ -627,3 +633,179 @@ def test_extract_last_line_skips_separators() -> None:
     output = "Some useful info\n===========================\n"
     result = pyfltr.error_parser.parse_summary("unknown-tool", output)
     assert result == "Some useful info"
+
+
+def test_parse_errors_mypy_extracts_rule() -> None:
+    """mypy の末尾 `[error-code]` が rule グループで抽出され rule_url も付与される。"""
+    output = 'src/foo.py:10: error: Name "x" is not defined  [name-defined]'
+    errors = pyfltr.error_parser.parse_errors("mypy", output)
+    assert len(errors) == 1
+    assert errors[0].rule == "name-defined"
+    assert errors[0].rule_url == "https://mypy.readthedocs.io/en/stable/_refs.html#code-name-defined"
+    # message に末尾の [rule] は含めない
+    assert errors[0].message == 'Name "x" is not defined'
+
+
+def test_parse_errors_mypy_without_rule() -> None:
+    """mypy で末尾 [code] が無い行は rule=None になる。"""
+    output = "src/foo.py:10: error: Something went wrong"
+    errors = pyfltr.error_parser.parse_errors("mypy", output)
+    assert len(errors) == 1
+    assert errors[0].rule is None
+    assert errors[0].rule_url is None
+
+
+def test_parse_errors_markdownlint_extracts_rule() -> None:
+    """markdownlint の MDxxx が rule グループで抽出される。"""
+    output = "docs/index.md:3 MD001/heading-increment Heading levels should only increment by one level at a time"
+    errors = pyfltr.error_parser.parse_errors("markdownlint", output)
+    assert len(errors) == 1
+    assert errors[0].rule == "MD001"
+    assert errors[0].rule_url == "https://github.com/DavidAnson/markdownlint/blob/main/doc/MD001.md"
+
+
+def test_parse_errors_ruff_rule_url_from_entry() -> None:
+    """ruff JSON の ``url`` フィールドを最優先で採用する。"""
+    output = json.dumps(
+        [
+            {
+                "code": "F401",
+                "message": "`os` imported but unused",
+                "filename": "src/foo.py",
+                "location": {"row": 1, "column": 8},
+                "severity": "error",
+                "url": "https://example.com/custom-ruff-url",
+            },
+        ]
+    )
+    errors = pyfltr.error_parser.parse_errors("ruff-check", output)
+    assert len(errors) == 1
+    assert errors[0].rule_url == "https://example.com/custom-ruff-url"
+
+
+def test_parse_errors_ruff_rule_url_fallback() -> None:
+    """ruff JSON に ``url`` が無い場合はテンプレートで生成する。"""
+    output = json.dumps(
+        [
+            {
+                "code": "F401",
+                "message": "`os` imported but unused",
+                "filename": "src/foo.py",
+                "location": {"row": 1, "column": 8},
+                "severity": "error",
+            },
+        ]
+    )
+    errors = pyfltr.error_parser.parse_errors("ruff-check", output)
+    assert len(errors) == 1
+    assert errors[0].rule_url == "https://docs.astral.sh/ruff/rules/F401/"
+
+
+def test_parse_errors_pyright_rule_url() -> None:
+    """pyright の rule から rule_url が生成される。"""
+    output = json.dumps(
+        {
+            "version": "1.1.400",
+            "generalDiagnostics": [
+                {
+                    "file": "src/foo.py",
+                    "range": {"start": {"line": 9, "character": 4}, "end": {"line": 9, "character": 10}},
+                    "severity": "error",
+                    "rule": "reportAssignmentType",
+                    "message": "Type mismatch",
+                },
+            ],
+        }
+    )
+    errors = pyfltr.error_parser.parse_errors("pyright", output)
+    assert errors[0].rule_url == "https://microsoft.github.io/pyright/#/configuration?id=reportAssignmentType"
+
+
+def test_parse_errors_shellcheck_rule_url() -> None:
+    """shellcheck の rule から rule_url が生成される。"""
+    output = json.dumps(
+        [
+            {
+                "file": "src/foo.sh",
+                "line": 10,
+                "column": 5,
+                "level": "warning",
+                "code": 2086,
+                "message": "Double quote to prevent globbing",
+            },
+        ]
+    )
+    errors = pyfltr.error_parser.parse_errors("shellcheck", output)
+    assert errors[0].rule_url == "https://www.shellcheck.net/wiki/SC2086"
+
+
+def test_parse_errors_eslint_rule_url() -> None:
+    """eslint の本体ルールから rule_url が生成される。プラグインルールは URL 無し。"""
+    output = json.dumps(
+        [
+            {
+                "filePath": "/abs/src/foo.js",
+                "messages": [
+                    {
+                        "line": 1,
+                        "column": 1,
+                        "message": "x",
+                        "ruleId": "no-unused-vars",
+                        "severity": 2,
+                    },
+                    {
+                        "line": 2,
+                        "column": 1,
+                        "message": "y",
+                        "ruleId": "@typescript-eslint/no-explicit-any",
+                        "severity": 2,
+                    },
+                ],
+            }
+        ]
+    )
+    errors = pyfltr.error_parser.parse_errors("eslint", output)
+    assert len(errors) == 2
+    assert errors[0].rule_url == "https://eslint.org/docs/latest/rules/no-unused-vars"
+    # プラグインルール (スラッシュ含む) は URL を返さない
+    assert errors[1].rule_url is None
+
+
+def test_parse_errors_textlint_no_rule_url() -> None:
+    """textlint は rule_url 未サポート (常に None)。"""
+    output = json.dumps(
+        [
+            {
+                "filePath": "docs/index.md",
+                "messages": [
+                    {
+                        "line": 5,
+                        "column": 1,
+                        "message": "x",
+                        "ruleId": "some-rule",
+                        "severity": 2,
+                    },
+                ],
+            }
+        ]
+    )
+    errors = pyfltr.error_parser.parse_errors("textlint", output)
+    assert errors[0].rule_url is None
+
+
+def test_parse_errors_shellcheck_severity_normalized() -> None:
+    """shellcheck の level=STYLE などを正規化する。"""
+    output = json.dumps(
+        [
+            {
+                "file": "src/foo.sh",
+                "line": 10,
+                "column": 5,
+                "level": "style",
+                "code": 2086,
+                "message": "Suggestion",
+            },
+        ]
+    )
+    errors = pyfltr.error_parser.parse_errors("shellcheck", output)
+    assert errors[0].severity == "info"

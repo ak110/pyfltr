@@ -21,10 +21,6 @@ import pyfltr.error_parser
 # 並列実行される linters/testers から同時にコールバックが呼ばれる可能性がある。
 _write_lock = threading.Lock()
 
-# failed かつ diagnostics=0 のときに tool.message として載せる生出力のトリム上限。
-# 末尾 30 行を取り出し、さらに末尾 2000 文字に切り詰める。
-_MESSAGE_MAX_LINES = 30
-_MESSAGE_MAX_CHARS = 2000
 _TRUNCATED_PREFIX = "... (truncated)\n"
 
 
@@ -34,13 +30,33 @@ def build_tool_lines(
 ) -> list[str]:
     """1コマンド分のdiagnostic行+tool行をJSONL文字列のリストとして生成する。
 
-    diagnostic行はツール内でソートされる。
+    diagnostic行はツール内でソートされる。件数が ``jsonl-diagnostic-limit`` を超える場合は
+    先頭 N 件のみを出力し、tool レコードに ``truncated.diagnostics_total`` を添付する。
+    切り詰めは ``result.archived`` が True のときのみ適用し、False の場合は全件出力する
+    (アーカイブから復元不能な情報欠落を防ぐため)。
     """
     sorted_errors = pyfltr.error_parser.sort_errors(result.errors, config.command_names)
+    diagnostic_total = len(sorted_errors)
+    diagnostic_limit = int(config.values.get("jsonl-diagnostic-limit", 0) or 0)
+
+    diagnostics_truncated = False
+    if 0 < diagnostic_limit < diagnostic_total and result.archived:
+        sorted_errors = sorted_errors[:diagnostic_limit]
+        diagnostics_truncated = True
+
     lines: list[str] = []
     for error in sorted_errors:
         lines.append(_dump(_build_diagnostic_record(error)))
-    lines.append(_dump(_build_tool_record(result, diagnostics=len(result.errors))))
+    lines.append(
+        _dump(
+            _build_tool_record(
+                result,
+                diagnostics=len(sorted_errors),
+                diagnostic_total=diagnostic_total if diagnostics_truncated else None,
+                config=config,
+            )
+        )
+    )
     return lines
 
 
@@ -217,6 +233,8 @@ def _build_diagnostic_record(error: pyfltr.error_parser.ErrorLocation) -> dict[s
         record["col"] = error.col
     if error.rule is not None:
         record["rule"] = error.rule
+    if error.rule_url is not None:
+        record["rule_url"] = error.rule_url
     if error.severity is not None:
         record["severity"] = error.severity
     if error.fix is not None:
@@ -225,11 +243,19 @@ def _build_diagnostic_record(error: pyfltr.error_parser.ErrorLocation) -> dict[s
     return record
 
 
-def _build_tool_record(result: pyfltr.command.CommandResult, *, diagnostics: int) -> dict[str, typing.Any]:
+def _build_tool_record(
+    result: pyfltr.command.CommandResult,
+    *,
+    diagnostics: int,
+    diagnostic_total: int | None = None,
+    config: pyfltr.config.Config | None = None,
+) -> dict[str, typing.Any]:
     """CommandResult を tool レコード dict に変換する。
 
-    `failed` かつ `diagnostics == 0` のときに限り、`CommandResult.output` の末尾を
-    `_truncate_message()` でトリムして `message` フィールドを付与する。
+    ``failed`` かつ ``diagnostics == 0`` のときに限り、``CommandResult.output`` の末尾を
+    ``_truncate_message()`` でトリムして ``message`` フィールドを付与する。
+    メッセージ切り詰めまたは diagnostic 切り詰めが発生した場合は ``truncated`` メタを
+    添付する。retry_command は ``CommandResult.retry_command`` が設定されていれば含める。
     """
     record: dict[str, typing.Any] = {
         "kind": "tool",
@@ -242,11 +268,44 @@ def _build_tool_record(result: pyfltr.command.CommandResult, *, diagnostics: int
     }
     if result.returncode is not None:
         record["rc"] = result.returncode
+
+    truncated: dict[str, typing.Any] = {}
+    if diagnostic_total is not None and diagnostic_total > diagnostics:
+        truncated["diagnostics_total"] = diagnostic_total
+        truncated["archive"] = f"tools/{result.command}/diagnostics.jsonl"
+
     if result.status == "failed" and diagnostics == 0:
-        message = _truncate_message(result.output)
+        message_max_lines, message_max_chars = _resolve_message_limits(config)
+        message, msg_truncated = _truncate_message(
+            result.output,
+            max_lines=message_max_lines,
+            max_chars=message_max_chars,
+            archived=result.archived,
+        )
         if message:
             record["message"] = message
+        if msg_truncated:
+            truncated["lines"] = len(result.output.splitlines())
+            truncated["chars"] = len(result.output)
+            truncated.setdefault("archive", f"tools/{result.command}/output.log")
+
+    if truncated:
+        record["truncated"] = truncated
+    if result.retry_command is not None:
+        record["retry_command"] = result.retry_command
     return record
+
+
+def _resolve_message_limits(config: pyfltr.config.Config | None) -> tuple[int, int]:
+    """tool.message の行数・文字数上限を config から取得する。
+
+    設定未指定時はパートC 以前のハードコード値 (30 行 / 2000 文字) を踏襲する。
+    """
+    if config is None:
+        return 30, 2000
+    max_lines = int(config.values.get("jsonl-message-max-lines", 30) or 0)
+    max_chars = int(config.values.get("jsonl-message-max-chars", 2000) or 0)
+    return max_lines, max_chars
 
 
 def _build_summary_record(
@@ -272,22 +331,34 @@ def _build_summary_record(
     }
 
 
-def _truncate_message(output: str) -> str:
-    r"""生出力を末尾 30 行かつ 2000 文字にトリムする。トリム時は先頭に `"... (truncated)\n"` を付与する。
+def _truncate_message(
+    output: str,
+    *,
+    max_lines: int,
+    max_chars: int,
+    archived: bool,
+) -> tuple[str, bool]:
+    r"""生出力を指定上限にトリムする。トリム時は先頭に `"... (truncated)\n"` を付与する。
 
-    空文字は空文字をそのまま返す (呼び出し側で message キーごと省略する)。
+    戻り値は ``(切り詰め後メッセージ, 切り詰め発生したか)`` のタプル。空文字は
+    ``("", False)`` を返す (呼び出し側で message キーごと省略する)。
+    ``archived`` が ``False`` の場合は切り詰めを行わず全文を返す (アーカイブから
+    復元不能な情報欠落を避けるため)。``max_lines`` / ``max_chars`` が 0 以下の場合も
+    当該軸の切り詰めを行わない。
     """
     if not output:
-        return ""
+        return "", False
+    if not archived:
+        return output, False
     lines = output.splitlines()
     truncated = False
-    if len(lines) > _MESSAGE_MAX_LINES:
-        lines = lines[-_MESSAGE_MAX_LINES:]
+    if 0 < max_lines < len(lines):
+        lines = lines[-max_lines:]
         truncated = True
     body = "\n".join(lines)
-    if len(body) > _MESSAGE_MAX_CHARS:
-        body = body[-_MESSAGE_MAX_CHARS:]
+    if 0 < max_chars < len(body):
+        body = body[-max_chars:]
         truncated = True
     if truncated:
-        return _TRUNCATED_PREFIX + body
-    return body
+        return _TRUNCATED_PREFIX + body, True
+    return body, False

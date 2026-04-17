@@ -326,6 +326,7 @@ def _error_to_dict(error: pyfltr.error_parser.ErrorLocation) -> dict[str, typing
         "line": error.line,
         "col": error.col,
         "rule": error.rule,
+        "rule_url": error.rule_url,
         "severity": error.severity,
         "fix": error.fix,
         "message": error.message,

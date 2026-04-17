@@ -61,6 +61,24 @@ def test_write_tool_result(tmp_path: pathlib.Path) -> None:
     assert lines[0]["message"] == "型エラー"
 
 
+def test_write_tool_result_includes_rule_url(tmp_path: pathlib.Path) -> None:
+    """diagnostics.jsonl に rule_url が保存される (v3.0.0 パートC)。"""
+    store = _make_store(tmp_path)
+    run_id = store.start_run(commands=["ruff-check"])
+
+    error = _make_error("ruff-check", "src/foo.py", 10, "unused import", col=5)
+    error.rule = "F401"
+    error.rule_url = "https://docs.astral.sh/ruff/rules/F401/"
+    error.severity = "error"
+    result = _make_result("ruff-check", returncode=1, output="ruff output", errors=[error])
+    store.write_tool_result(run_id, result)
+
+    diagnostics_path = tmp_path / "runs" / run_id / "tools" / "ruff-check" / "diagnostics.jsonl"
+    entries = [json.loads(line) for line in diagnostics_path.read_text(encoding="utf-8").splitlines() if line]
+    assert entries[0]["rule_url"] == "https://docs.astral.sh/ruff/rules/F401/"
+    assert entries[0]["rule"] == "F401"
+
+
 def test_finalize_run(tmp_path: pathlib.Path) -> None:
     """finalize_run で meta.json に exit_code / finished_at が追加される。"""
     store = _make_store(tmp_path)
