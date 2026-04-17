@@ -1,6 +1,6 @@
 ---
 name: tool-compat-checker
-description: pyfltr が呼び出す外部ツール（ruff/mypy/pytest/pylint/pyright/ty/black/isort/autoflake/pyupgrade/pflake8/markdownlint/textlint）のコマンドライン引数・出力フォーマットが最新版と乖離していないか検査する。PRレビュー前や make update 後に呼び出す。必ず「チェック対象ツール名」または「ALL」を引数として与えること。
+description: pyfltr が呼び出す外部ツール（ruff/mypy/pytest/pylint/pyright/ty/markdownlint/textlint/shellcheck/shfmt/typos/actionlint/eslint/biome/oxlint/prettier/tsc/vitest/cargo-fmt/cargo-clippy/cargo-check/cargo-test/cargo-deny/dotnet-format/dotnet-build/dotnet-test/uv-sort/ec/pre-commit）のコマンドライン引数・出力フォーマットが最新版と乖離していないか検査する。PRレビュー前や make update 後に呼び出す。必ず「チェック対象ツール名」または「ALL」を引数として与えること。
 tools: Read, Grep, Glob, WebFetch, Bash
 ---
 

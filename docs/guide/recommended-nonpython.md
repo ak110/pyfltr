@@ -2,8 +2,7 @@
 
 Python以外のプロジェクトでもpyfltrを活用できる。共通のポイントは以下。
 
-- `preset = "latest"`: 主要ツール（markdownlint / textlint / actionlint / typos / pre-commit等）を一括有効化する。Python系ツールは`python = false`で無効化するため競合しない
-- `python = false`: Python系ツールを一括無効化する（対象ツールの一覧は[設定項目](configuration.md)の「Python系ツールの一括無効化」を参照）
+- `preset = "latest"`: 主要ツール（markdownlint / textlint / actionlint / typos / pre-commit等）を一括有効化する。v3.0.0以降、Python系ツールは`python`既定値がFalseのためopt-in化されている。mypy / pylint / ty / pytest / uv-sortは`python = true`を指定しない限り実行されず、非Pythonプロジェクトで不要な実行は発生しない
 - `uvx pyfltr`: pyfltrをdev依存に含めないため、`uvx`で都度取得して実行する
 - 言語固有のツール + ドキュメント系lint（textlint / markdownlint / prettier）を組み合わせる
 - `bin-runner`のデフォルトは`"mise"`。actionlint / typos等のネイティブバイナリツールはmise経由で呼び出されるため、mise導入とツールのセットアップ（`mise use actionlint@latest typos@latest`等）を推奨する
@@ -19,7 +18,6 @@ exclude-newer = "1 day"
 
 [tool.pyfltr]
 preset = "latest"
-python = false
 js-runner = "pnpm"
 eslint = true
 prettier = true
@@ -58,7 +56,7 @@ extend-exclude = [
 ## Rustプロジェクト
 
 `cargo fmt` / `cargo clippy` / `cargo test` / `cargo deny`と、ドキュメント系lint（`textlint` / `markdownlint-cli2` / `prettier`）をpyfltrに一元化する例。
-Python非依存プロジェクトのため`python = false`でPython系ツールを一括無効化する。
+v3.0.0以降、Python系ツールはopt-in（`python`既定False）のため、非Pythonプロジェクトで勝手に走ることはない。
 
 `pyproject.toml`:
 
@@ -68,7 +66,6 @@ exclude-newer = "1 day"
 
 [tool.pyfltr]
 preset = "latest"
-python = false
 js-runner = "pnpm"
 cargo-fmt = true
 cargo-clippy = true
@@ -120,7 +117,6 @@ exclude-newer = "1 day"
 
 [tool.pyfltr]
 preset = "latest"
-python = false
 js-runner = "pnpm"
 dotnet-format = true
 dotnet-build = true

@@ -1,6 +1,6 @@
 # 設定項目（ツール別）
 
-基本設定（プリセット、Python一括無効化、並列実行等）は[設定項目](configuration.md)を参照。
+基本設定（プリセット、Python一括有効化、並列実行等）は[設定項目](configuration.md)を参照。
 
 pyfltrは対応ツールを実行方式の観点から次の3カテゴリに分けて扱う。
 
@@ -96,7 +96,7 @@ ruff-format-check-args = ["check", "--fix"]
 uv-sort = true
 ```
 
-Python系ツールとして扱われ、`python = false`で一括無効化の対象となる。
+Python系ツールとして扱われ、`python = true`で一括有効化の対象となる。
 
 ### Rust系（cargo系）
 

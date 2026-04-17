@@ -152,8 +152,8 @@ CLIオプション`-j`でも指定でき、`pyproject.toml`より優先される
 [tool.pyfltr]
 # mypyをfastに追加
 mypy-fast = true
-# pflake8をfastから除外
-pflake8-fast = false
+# textlintをfastから除外
+textlint-fast = false
 ```
 
 カスタムコマンドも`fast = true`でfastエイリアスに追加できる。

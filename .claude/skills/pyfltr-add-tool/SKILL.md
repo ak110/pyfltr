@@ -103,7 +103,7 @@ uv run pyfltr run-for-agent
 
 雛形にすべき既存ツールは `pyfltr/command.py` と `pyfltr/error_parser.py` を参照:
 
-- formatterの例: `ruff-format` / `black`
+- formatterの例: `ruff-format` / `prettier`
 - linterの例: `ruff-check` / `mypy`
 - testerの例: `pytest`（ほぼ唯一なので新規testerは要相談）
 

@@ -326,5 +326,5 @@ repos:
 ### 共通の注意点
 
 - `pyfltr fast` はfixステージを内蔵する。pre-commit hookから`{command}-fix-args`定義済みlinter（`cargo-clippy` / `ruff-check` / `textlint`等）の自動修正が走るため、別hookを並べる必要は無い
-- formatter（`black` / `prettier` / `cargo-fmt` / `dotnet-format`等）は通常実行で常時書き込みモードで動作するため、fixステージでは扱わない
+- formatter（`ruff-format` / `prettier` / `cargo-fmt` / `dotnet-format`等）は通常実行で常時書き込みモードで動作するため、fixステージでは扱わない
 - `pass-filenames = False`のツール（`cargo-*` / `dotnet-*` / `tsc`等）はcrate / solution全体を対象とするため、コミット時に未変更ファイルまで書き換わる可能性がある。cargo系・dotnet系は`serial_group`で自動直列化されるので、利用者が`--jobs=1`などを指定する必要は無い
