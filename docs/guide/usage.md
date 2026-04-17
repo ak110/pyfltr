@@ -70,6 +70,39 @@ pyfltr generate-config
 設定ファイルの雛形を標準出力に書き出す。`[tool.pyfltr]`セクションに貼り付けて利用する。
 このサブコマンドは他のオプションやターゲット指定を受け付けず、設定出力だけを行う。
 
+### サブコマンド: list-runs
+
+```shell
+pyfltr list-runs [--limit N] [--output-format text|json|jsonl]
+```
+
+実行アーカイブに保存されたrun一覧を新しい順で表示する。
+
+- 既定で直近20件（`--limit`で変更可能）
+- `text`: 固定幅テーブル。列は`RUN_ID` / `STARTED_AT` / `EXIT` / `FILES` / `COMMANDS`
+- `json`: `{"runs":[{...}, ...]}`の単発出力
+- `jsonl`: 1件1行ストリーム（`kind: "run"`）
+
+アーカイブ未作成の環境では`(no runs)`を出力し、終了コードは0。
+
+### サブコマンド: show-run
+
+```shell
+pyfltr show-run <run_id> [--tool NAME] [--output] [--output-format text|json|jsonl]
+```
+
+指定runの詳細を表示する。
+
+- `<run_id>`: ULID完全一致のほか、先頭一意な前方一致と`latest`エイリアスを受け付ける。前方一致で複数該当した場合は曖昧エラー（終了コード1）
+- 既定: `meta`（`run_id`・`started_at`・`finished_at`・`exit_code`・`files`・`commands`）とツール別サマリ（`status` / `has_error` / `diagnostics`）を表示
+- `--tool NAME`: 指定ツールの`tool.json`と`diagnostics.jsonl`全件を表示
+- `--tool NAME --output`: 指定ツールの生出力（`output.log`）全文を表示
+- `--output-format`: `text`（行形式 `key: value`）・ `json`（単発dict）・ `jsonl`（`kind: "meta"` / `"tool"` / `"diagnostic"` / `"output"` 種別の1行1レコード）
+
+存在しない`run_id`・`--tool`指定時は終了コード1で標準エラーにメッセージを出力する。
+
+同じツールが`fix`ステージと通常ステージの両方で実行された場合、アーカイブの保存キーはツール名固定のため通常ステージ側の結果で上書きされる（`show-run`で参照できるのは各ツールの最終保存結果のみ）。
+
 ### サブコマンド: generate-shell-completion
 
 ```shell
@@ -216,7 +249,7 @@ CLIオプション`--output-format`が指定されている場合は環境変数
 - `tool`: 1ツール1レコードの実行メタ情報
 - `summary`: 最終1行、全体集計
 
-v3.0.0以降、`header`レコードには`run_id`（ULID）が含まれる。実行アーカイブが有効な場合のみ付与され、`show-run` / `list-runs`（将来追加）やMCP経由で該当runの詳細を参照できる。
+v3.0.0以降、`header`レコードには`run_id`（ULID）が含まれる。実行アーカイブが有効な場合のみ付与され、[`pyfltr show-run`](#サブコマンド-show-run) / [`pyfltr list-runs`](#サブコマンド-list-runs)で該当runの詳細を参照できる。
 
 ```json
 {"kind":"header","version":"3.0.0","run_id":"01HXYZ...","python":"3.12.0 ...","executable":"/usr/bin/python3","platform":"linux","cwd":"/work","commands":["mypy","ruff-format"],"files":12}

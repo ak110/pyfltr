@@ -169,6 +169,31 @@ def test_read_tool_diagnostics(tmp_path: pathlib.Path) -> None:
     assert diagnostics[1]["file"] == "b.py"
 
 
+def test_list_tools_empty_run(tmp_path: pathlib.Path) -> None:
+    """ツール未書き込みの run では list_tools が空リストを返す。"""
+    store = _make_store(tmp_path)
+    run_id = store.start_run()
+
+    assert store.list_tools(run_id) == []
+
+
+def test_list_tools_multiple(tmp_path: pathlib.Path) -> None:
+    """複数ツール書き込み後の list_tools がサニタイズ済み名の自然順リストを返す。"""
+    store = _make_store(tmp_path)
+    run_id = store.start_run()
+    for tool in ("mypy", "ruff-check", "ruff-format"):
+        store.write_tool_result(run_id, _make_result(tool, returncode=0))
+
+    assert store.list_tools(run_id) == ["mypy", "ruff-check", "ruff-format"]
+
+
+def test_list_tools_not_found(tmp_path: pathlib.Path) -> None:
+    """存在しない run_id は FileNotFoundError。"""
+    store = _make_store(tmp_path)
+    with pytest.raises(FileNotFoundError):
+        store.list_tools("nonexistent-run-id")
+
+
 def test_cleanup_max_runs(tmp_path: pathlib.Path) -> None:
     """101 世代作って max_runs=100 で古いものから 1 件削除される。"""
     store = _make_store(tmp_path)

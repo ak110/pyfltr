@@ -51,6 +51,14 @@ v3.0.0から整備を開始した。それ以前の変更はgit logおよびGitH
   - キャッシュヒット時はJSONL `tool`レコードに`cached: true` / `cached_from: <ソースrun_id>`を付与
   - 自動クリーンアップ: 期間（既定12時間）超過で削除
   - 関連設定キー: `cache` / `cache-max-age-hours`
+- `pyfltr list-runs`サブコマンド。
+  実行アーカイブ内のrun一覧を新しい順で表示する
+  - `--limit N`で件数制御（既定20件）、`--output-format=text|json|jsonl`で形式切替
+- `pyfltr show-run <run_id>`サブコマンド。
+  指定runのmeta・ツール別サマリ・diagnostic・生出力を表示する
+  - `<run_id>`は前方一致と`latest`エイリアスを受け付ける（前方一致で複数該当時は曖昧エラー）
+  - `--tool NAME`でdiagnostics全件、`--tool NAME --output`で`output.log`全文
+  - `--output-format=text|json|jsonl`で形式切替
 
 ### 変更
 

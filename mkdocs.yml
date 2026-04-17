@@ -39,6 +39,8 @@ plugins:
         - `pyfltr run`: 全チェック。fix段→formatter段→linter/tester段の順で、fix-args定義済みlinterの自動修正→formatter→残りの検査を実行する（ローカル向け）
         - `pyfltr fast`: 軽量チェック。`run`と同じ3段構成だが、mypy/pylint/pytest等の重いツールを除外（pre-commit向け）
         - `pyfltr run-for-agent`: `pyfltr run --output-format=jsonl`のエイリアス。JSONL出力を既定にする（LLMエージェント向け）
+        - `pyfltr list-runs`: 実行アーカイブ内のrun一覧を表示する。`--limit`で件数制御、`--output-format=text|json|jsonl`
+        - `pyfltr show-run <run_id>`: 指定runの詳細を表示する。`<run_id>`は前方一致および`latest`エイリアス可。`--tool <name>`でdiagnostics全件、`--tool <name> --output`で`output.log`全文。`--output-format=text|json|jsonl`
         - `pyfltr generate-shell-completion bash|powershell`: シェル補完スクリプトを標準出力へ書き出す
 
         `--no-fix`で`run`/`fast`/`run-for-agent`のfix段を抑止できる。`ci`は副作用回避のため元々fix段を持たない。
@@ -78,7 +80,7 @@ plugins:
 
         `tool`の`retry_command`は当該ツール1件を再実行するshellコマンド文字列で、`--no-fix`/`--output-format`などの実行意味論フラグを保持する。`truncated`はsmart truncationが発生した場合のみ付与され、`archive`パス（`tools/<tool>/output.log` / `tools/<tool>/diagnostics.jsonl`）から全文を復元できる。smart truncationの閾値は`jsonl-diagnostic-limit`/`jsonl-message-max-lines`/`jsonl-message-max-chars`で制御できる。
 
-        `cached`はファイルhashキャッシュから結果を復元したときだけ `true` として付与される（現状は `textlint` のみ対象）。`cached_from`は復元元の `run_id` で、`show-run` や MCP 経由で当該 run の全文を参照できる。キャッシュは `--no-cache` または `cache = false` で無効化でき、既定の保存期間は 12 時間（`cache-max-age-hours`）。
+        `cached`はファイルhashキャッシュから結果を復元したときだけ `true` として付与される（現状は `textlint` のみ対象）。`cached_from`は復元元の `run_id` で、`pyfltr show-run` で当該 run の全文を参照できる。キャッシュは `--no-cache` または `cache = false` で無効化でき、既定の保存期間は 12 時間（`cache-max-age-hours`）。
 
         `--fail-fast`は1ツールでもエラーが出た時点で残りのジョブを打ち切り、起動済みサブプロセスには `terminate()` を送る。未開始ジョブは `future.cancel()` で取消され、JSONL `tool` レコードには `status="skipped"` として計上される。
 
@@ -112,6 +114,7 @@ plugins:
           - v3/index.md: v3.0.0の概要・パート構成・破壊的変更
           - v3/JSONL出力拡張.md: severity正規化・rule_url・retry_command・smart truncation・SARIF/GA出力
           - v3/パイプライン機能拡張.md: --fail-fast・ファイルhashキャッシュ・Popen一本化
+          - v3/詳細参照サブコマンド.md: list-runs / show-runサブコマンドによる実行アーカイブの詳細参照
         開発者向け:
           - development/development.md: 開発環境構築・ドキュメント・リリース手順
           - development/roadmap.md: エージェント連携の拡張候補（採否未決・議論用）
@@ -145,6 +148,7 @@ nav:
       - 実行アーカイブ: v3/実行アーカイブ.md
       - JSONL出力拡張: v3/JSONL出力拡張.md
       - パイプライン機能拡張: v3/パイプライン機能拡張.md
+      - 詳細参照サブコマンド: v3/詳細参照サブコマンド.md
       - マイグレーションガイド: v3/マイグレーションガイド.md
       - 作業ステータス: v3/作業ステータス.md
   - 開発者向け:

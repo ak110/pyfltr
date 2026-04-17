@@ -18,6 +18,7 @@ import pyfltr.command
 import pyfltr.config
 import pyfltr.github_annotations
 import pyfltr.llm_output
+import pyfltr.runs
 import pyfltr.sarif_output
 import pyfltr.shell_completion
 import pyfltr.ui
@@ -40,6 +41,8 @@ _ALL_SUBCOMMANDS: tuple[str, ...] = (
     *_RUN_SUBCOMMANDS,
     "generate-config",
     "generate-shell-completion",
+    "list-runs",
+    "show-run",
 )
 """全サブコマンド。shell completion スクリプト生成時に参照される。"""
 
@@ -196,6 +199,9 @@ def build_parser(custom_commands: collections.abc.Iterable[str] = ()) -> argpars
             "  generate-config  pyproject.toml 用の設定雛形を出力する。\n"
             "  generate-shell-completion <shell>\n"
             "                   シェル補完スクリプトを出力する (bash / powershell)。\n"
+            "  list-runs        実行アーカイブ内の run 一覧を表示する。\n"
+            "  show-run <run_id>\n"
+            "                   指定 run の詳細 (meta・ツール別サマリ・diagnostic・生出力) を表示する。\n"
             "\n"
             "ドキュメント: https://ak110.github.io/pyfltr/\n"
             "llms.txt: https://ak110.github.io/pyfltr/llms.txt"
@@ -231,6 +237,9 @@ def build_parser(custom_commands: collections.abc.Iterable[str] = ()) -> argpars
         choices=pyfltr.shell_completion.SUPPORTED_SHELLS,
         help="出力するシェル種別。",
     )
+
+    # list-runs / show-run: 実行アーカイブの詳細参照サブコマンド
+    pyfltr.runs.register_subparsers(subparsers)
 
     return parser
 
@@ -291,6 +300,12 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
         script = pyfltr.shell_completion.generate(args.shell, _make_common_parent(), frozenset(_ALL_SUBCOMMANDS))
         print(script, end="")
         return 0
+
+    # 実行アーカイブの詳細参照サブコマンド: load_config() を呼ばず archive のみを参照する。
+    if subcommand == "list-runs":
+        return pyfltr.runs.execute_list_runs(args)
+    if subcommand == "show-run":
+        return pyfltr.runs.execute_show_run(args)
 
     # サブコマンド別の既定値を注入する (CLI 明示値が優先)。
     _apply_subcommand_defaults(args)

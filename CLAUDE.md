@@ -17,6 +17,7 @@
   - 詳細仕様は`docs/guide/usage.md`の「jsonlスキーマ」節および`llms.txt`を参照。`--output-format=sarif` / `github-annotations` でCI向け形式にも切り替え可能
   - `--fail-fast`: 1ツールでもエラーが出た時点で残りを打ち切る（起動済みはterminate、未開始はskipped扱い）
   - `--no-cache`: ファイルhashキャッシュを無効化する。現状はtextlintのみ対象
+  - `header.run_id`はユーザーキャッシュに保存された該当runの参照キー。`pyfltr list-runs`で一覧、`pyfltr show-run <run_id>`で詳細（`<run_id>`は前方一致・`latest`エイリアス可）を参照する。`--tool <name>`でdiagnostics全件、`--tool <name> --output`で`output.log`全文が得られる
 
 ## 注意点
 

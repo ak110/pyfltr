@@ -221,6 +221,19 @@ class ArchiveStore:
             raise FileNotFoundError(run_id)
         return json.loads(meta_path.read_text(encoding="utf-8"))
 
+    def list_tools(self, run_id: str) -> list[str]:
+        """指定 run で実際にアーカイブされているツール名一覧を返す。
+
+        ``tools/`` 直下のディレクトリ名 (``_sanitize_tool_name()`` 済み) を自然順で返す。
+        ``meta["commands"]`` は実行予定リストで、fail-fast 中断や skipped で実体を
+        伴わないツールを含みうるため、実保存ツールの SSOT として本メソッドを使う。
+        不在 run_id 指定時は他の ``read_*`` と同じく ``FileNotFoundError`` を送出する。
+        """
+        tools_dir = self._runs_dir / run_id / "tools"
+        if not tools_dir.exists():
+            raise FileNotFoundError(run_id)
+        return sorted(entry.name for entry in tools_dir.iterdir() if entry.is_dir())
+
     def read_tool_meta(self, run_id: str, tool: str) -> dict[str, typing.Any]:
         """指定 run / tool のメタ情報を読み出す。"""
         path = self._runs_dir / run_id / "tools" / _sanitize_tool_name(tool) / _TOOL_META_FILENAME

@@ -1,0 +1,385 @@
+"""``list-runs`` / ``show-run`` サブコマンドの実装。
+
+実行アーカイブ (``archive.py``) に保存された run の読み取り経路を CLI から提供する。
+パート F で追加予定の MCP サーバーでも本モジュールの読み取り処理を再利用する想定。
+
+サブパーサー登録は ``register_subparsers()``、処理本体は ``execute_list_runs()`` /
+``execute_show_run()`` が担う。``main.py`` からは引数パース済みの ``argparse.Namespace``
+を受け取り、終了コードを返すだけの薄い API にする。
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import sys
+import typing
+
+import pyfltr.archive
+
+_OUTPUT_FORMATS: tuple[str, ...] = ("text", "json", "jsonl")
+_DEFAULT_LIST_LIMIT: int = 20
+"""既定の表示件数。画面 1 ページに収まる件数を目安に 20 件。"""
+
+
+def register_subparsers(subparsers: typing.Any) -> None:
+    """``list-runs`` / ``show-run`` サブパーサーを登録する。
+
+    ``subparsers`` は ``ArgumentParser.add_subparsers()`` の戻り値
+    (``argparse._SubParsersAction``) を想定する。サブコマンド固有引数のみを
+    登録し、実行系と共通の ``--verbose`` 等は継承しない (参照系のため不要)。
+    """
+    lr = subparsers.add_parser(
+        "list-runs",
+        help="実行アーカイブ内の run 一覧を表示する。",
+    )
+    lr.add_argument(
+        "--limit",
+        type=int,
+        default=_DEFAULT_LIST_LIMIT,
+        help=f"表示する最大件数 (既定: {_DEFAULT_LIST_LIMIT})。",
+    )
+    lr.add_argument(
+        "--output-format",
+        choices=_OUTPUT_FORMATS,
+        default="text",
+        help="出力形式を指定する (既定: text)。",
+    )
+
+    sr = subparsers.add_parser(
+        "show-run",
+        help="指定 run の詳細を表示する。",
+    )
+    sr.add_argument(
+        "run_id",
+        help="表示対象の run_id。前方一致または 'latest' 指定可。",
+    )
+    sr.add_argument(
+        "--tool",
+        default=None,
+        help="特定ツールに絞り込んで diagnostics を全件表示する。",
+    )
+    sr.add_argument(
+        "--output",
+        default=False,
+        action="store_true",
+        help="指定ツールの生出力 (output.log) 全文を表示する。--tool と併用する。",
+    )
+    sr.add_argument(
+        "--output-format",
+        choices=_OUTPUT_FORMATS,
+        default="text",
+        help="出力形式を指定する (既定: text)。",
+    )
+
+
+def execute_list_runs(args: argparse.Namespace) -> int:
+    """``list-runs`` サブコマンドの処理本体。"""
+    output_format: str = args.output_format
+    with _stdout_owned(output_format):
+        store = pyfltr.archive.ArchiveStore()
+        summaries = store.list_runs(limit=args.limit)
+        if output_format == "text":
+            _print_list_runs_text(summaries)
+        elif output_format == "json":
+            _print_json({"runs": [_summary_to_dict(s) for s in summaries]})
+        else:
+            for summary in summaries:
+                _print_jsonl_line({"kind": "run", **_summary_to_dict(summary)})
+    return 0
+
+
+def execute_show_run(args: argparse.Namespace) -> int:
+    """``show-run`` サブコマンドの処理本体。"""
+    output_format: str = args.output_format
+    raw_run_id: str = args.run_id
+    tool: str | None = args.tool
+    output_mode: bool = args.output
+
+    if output_mode and tool is None:
+        sys.stderr.write("エラー: --output は --tool と併用する必要がある。\n")
+        return 1
+
+    with _stdout_owned(output_format):
+        store = pyfltr.archive.ArchiveStore()
+        try:
+            run_id = _resolve_run_id(store, raw_run_id)
+        except _RunIdError as e:
+            sys.stderr.write(f"エラー: {e}\n")
+            return 1
+
+        try:
+            meta = store.read_meta(run_id)
+        except FileNotFoundError:
+            sys.stderr.write(f"エラー: run_id が見つからない: {run_id}\n")
+            return 1
+
+        if output_mode and tool is not None:
+            return _show_tool_output(store, run_id, tool, output_format)
+        if tool is not None:
+            return _show_tool_detail(store, run_id, tool, output_format)
+        return _show_run_overview(store, run_id, meta, output_format)
+
+
+class _RunIdError(Exception):
+    """run_id 解決に失敗した際の内部例外。"""
+
+
+def _resolve_run_id(store: pyfltr.archive.ArchiveStore, raw: str) -> str:
+    """run_id 指定を解決する。
+
+    ``latest`` エイリアス → 完全一致 → 前方一致の順に試す。前方一致が複数
+    該当した場合は曖昧と判定してエラーとする。
+    """
+    run_ids = [s.run_id for s in store.list_runs()]
+    if raw == "latest":
+        if not run_ids:
+            raise _RunIdError("アーカイブに run が存在しない。")
+        return run_ids[0]
+    if raw in run_ids:
+        return raw
+    matched = [rid for rid in run_ids if rid.startswith(raw)]
+    if len(matched) == 1:
+        return matched[0]
+    if len(matched) > 1:
+        sample = ", ".join(matched[:3])
+        suffix = "..." if len(matched) > 3 else ""
+        raise _RunIdError(f"run_id のプレフィックスが曖昧: {raw!r} に {len(matched)} 件該当 ({sample}{suffix})")
+    raise _RunIdError(f"run_id が見つからない: {raw!r}")
+
+
+def _summary_to_dict(summary: pyfltr.archive.RunSummary) -> dict[str, typing.Any]:
+    """``RunSummary`` を出力用 dict に変換する。"""
+    return {
+        "run_id": summary.run_id,
+        "started_at": summary.started_at,
+        "finished_at": summary.finished_at,
+        "exit_code": summary.exit_code,
+        "commands": list(summary.commands),
+        "files": summary.files,
+    }
+
+
+def _print_list_runs_text(summaries: list[pyfltr.archive.RunSummary]) -> None:
+    """``list-runs`` の text 出力 (固定幅テーブル)。"""
+    if not summaries:
+        print("(no runs)")
+        return
+    header = ("RUN_ID", "STARTED_AT", "EXIT", "FILES", "COMMANDS")
+    rows: list[tuple[str, ...]] = [header]
+    for summary in summaries:
+        rows.append(
+            (
+                summary.run_id,
+                summary.started_at or "-",
+                "-" if summary.exit_code is None else str(summary.exit_code),
+                "-" if summary.files is None else str(summary.files),
+                ",".join(summary.commands),
+            )
+        )
+    widths = [max(len(row[i]) for row in rows) for i in range(len(header))]
+    last = len(widths) - 1
+    for row in rows:
+        cells = [value.ljust(widths[i]) if i < last else value for i, value in enumerate(row)]
+        print("  ".join(cells))
+
+
+def _show_run_overview(
+    store: pyfltr.archive.ArchiveStore,
+    run_id: str,
+    meta: dict[str, typing.Any],
+    output_format: str,
+) -> int:
+    """既定モード: meta + ツール別サマリを表示する。"""
+    tool_summaries = _collect_tool_summaries(store, run_id)
+    if output_format == "text":
+        _print_run_overview_text(run_id, meta, tool_summaries)
+    elif output_format == "json":
+        _print_json({"run_id": run_id, "meta": meta, "tools": tool_summaries})
+    else:
+        _print_jsonl_line({"kind": "meta", **meta})
+        for tool_summary in tool_summaries:
+            _print_jsonl_line({"kind": "tool", **tool_summary})
+    return 0
+
+
+def _collect_tool_summaries(
+    store: pyfltr.archive.ArchiveStore,
+    run_id: str,
+) -> list[dict[str, typing.Any]]:
+    """``tools/`` 配下から各ツールの要約 (status / has_error / diagnostics) を集める。"""
+    summaries: list[dict[str, typing.Any]] = []
+    for tool in store.list_tools(run_id):
+        try:
+            tool_meta = store.read_tool_meta(run_id, tool)
+        except FileNotFoundError:
+            continue
+        summaries.append(
+            {
+                "tool": tool_meta.get("tool", tool),
+                "status": tool_meta.get("status"),
+                "has_error": tool_meta.get("has_error"),
+                "diagnostics": tool_meta.get("diagnostics"),
+            }
+        )
+    return summaries
+
+
+def _print_run_overview_text(
+    run_id: str,
+    meta: dict[str, typing.Any],
+    tool_summaries: list[dict[str, typing.Any]],
+) -> None:
+    """``show-run`` 既定モードの text 出力 (行形式 ``キー: 値``)。"""
+    print(f"run_id: {run_id}")
+    for key in ("started_at", "finished_at", "exit_code", "files", "cwd"):
+        if key in meta and meta[key] is not None:
+            print(f"{key}: {meta[key]}")
+    commands = meta.get("commands") or []
+    if commands:
+        print(f"commands: {','.join(commands)}")
+    print("")
+    print("tools:")
+    if not tool_summaries:
+        print("  (no archived tools)")
+        return
+    for entry in tool_summaries:
+        print(
+            f"  {entry['tool']}: "
+            f"status={entry.get('status')} "
+            f"has_error={entry.get('has_error')} "
+            f"diagnostics={entry.get('diagnostics')}"
+        )
+
+
+def _show_tool_detail(
+    store: pyfltr.archive.ArchiveStore,
+    run_id: str,
+    tool: str,
+    output_format: str,
+) -> int:
+    """``--tool`` モード: tool.json + diagnostics.jsonl 全件を表示する。"""
+    try:
+        tool_meta = store.read_tool_meta(run_id, tool)
+        diagnostics = store.read_tool_diagnostics(run_id, tool)
+    except FileNotFoundError:
+        sys.stderr.write(f"エラー: run {run_id} にツール {tool!r} の結果が保存されていない。\n")
+        return 1
+    if output_format == "text":
+        _print_tool_detail_text(tool_meta, diagnostics)
+    elif output_format == "json":
+        _print_json({"tool": tool_meta, "diagnostics": diagnostics})
+    else:
+        _print_jsonl_line({"kind": "tool", **tool_meta})
+        for diagnostic in diagnostics:
+            _print_jsonl_line({"kind": "diagnostic", **diagnostic})
+    return 0
+
+
+def _print_tool_detail_text(
+    tool_meta: dict[str, typing.Any],
+    diagnostics: list[dict[str, typing.Any]],
+) -> None:
+    """``--tool`` モードの text 出力。"""
+    for key in ("tool", "type", "status", "returncode", "files", "elapsed", "diagnostics", "has_error"):
+        if key in tool_meta and tool_meta[key] is not None:
+            print(f"{key}: {tool_meta[key]}")
+    if tool_meta.get("commandline"):
+        print(f"commandline: {tool_meta['commandline']}")
+    print("")
+    print("diagnostics:")
+    if not diagnostics:
+        print("  (none)")
+        return
+    for diagnostic in diagnostics:
+        print(f"  {_format_diagnostic_line(diagnostic)}")
+
+
+def _format_diagnostic_line(diagnostic: dict[str, typing.Any]) -> str:
+    """1 件分の diagnostic を ``file:line:col [severity] (rule) message`` 形式に整形する。"""
+    file_part = diagnostic.get("file") or "-"
+    line = diagnostic.get("line")
+    col = diagnostic.get("col")
+    location = file_part
+    if line is not None:
+        location = f"{location}:{line}"
+        if col is not None:
+            location = f"{location}:{col}"
+    severity = diagnostic.get("severity")
+    rule = diagnostic.get("rule")
+    message = diagnostic.get("message") or ""
+    parts = [location]
+    if severity:
+        parts.append(f"[{severity}]")
+    if rule:
+        parts.append(f"({rule})")
+    parts.append(message)
+    return " ".join(parts)
+
+
+def _show_tool_output(
+    store: pyfltr.archive.ArchiveStore,
+    run_id: str,
+    tool: str,
+    output_format: str,
+) -> int:
+    """``--tool <name> --output`` モード: output.log 全文を表示する。"""
+    try:
+        output = store.read_tool_output(run_id, tool)
+    except FileNotFoundError:
+        sys.stderr.write(f"エラー: run {run_id} にツール {tool!r} の結果が保存されていない。\n")
+        return 1
+    if output_format == "text":
+        sys.stdout.write(output)
+        if output and not output.endswith("\n"):
+            sys.stdout.write("\n")
+        sys.stdout.flush()
+    elif output_format == "json":
+        _print_json({"tool": tool, "output": output})
+    else:
+        _print_jsonl_line({"kind": "output", "tool": tool, "content": output})
+    return 0
+
+
+def _print_json(obj: dict[str, typing.Any]) -> None:
+    """単発 JSON を整形付きで stdout に書く (json モード)。"""
+    sys.stdout.write(json.dumps(obj, ensure_ascii=False, indent=2))
+    sys.stdout.write("\n")
+    sys.stdout.flush()
+
+
+def _print_jsonl_line(obj: dict[str, typing.Any]) -> None:
+    """JSON を 1 行で stdout に書く (jsonl モード)。"""
+    sys.stdout.write(json.dumps(obj, ensure_ascii=False, separators=(",", ":")))
+    sys.stdout.write("\n")
+    sys.stdout.flush()
+
+
+class _stdout_owned:  # noqa: N801  # pylint: disable=invalid-name
+    """json / jsonl モード時に stdout を構造化出力で専有するためのコンテキスト。
+
+    root logger を抑止して logging 経由の stdout/stderr 混入を防ぐ。エラー出力は
+    引き続き ``sys.stderr.write()`` で直接書く前提。text モードでは何もしない。
+    """
+
+    def __init__(self, output_format: str) -> None:
+        self._active = output_format in ("json", "jsonl")
+        self._saved: tuple[list[logging.Handler], int] | None = None
+
+    def __enter__(self) -> None:
+        if not self._active:
+            return
+        root = logging.getLogger()
+        self._saved = (root.handlers[:], root.level)
+        root.handlers.clear()
+        root.setLevel(logging.CRITICAL + 1)
+
+    def __exit__(self, exc_type: typing.Any, exc: typing.Any, tb: typing.Any) -> None:
+        if self._saved is None:
+            return
+        handlers, level = self._saved
+        root = logging.getLogger()
+        root.handlers[:] = handlers
+        root.setLevel(level)
+        self._saved = None
