@@ -2,49 +2,53 @@
 
 ## 対応ツール
 
-対応ツールの一覧を分類別に示す。
+対応ツールを言語・用途別に示す。
+末尾に「既定で無効」と記した項目は、`preset = "latest"`でも有効化されないため`pyproject.toml`で`{command} = true`と明示する必要がある。
+それ以外の項目は既定または`preset = "latest"`で有効化される。詳細なプリセット挙動は[設定項目](configuration.md)を参照。
 
-- Formatters
-    - pyupgrade
-    - autoflake
-    - isort
-    - black
-    - ruff format
-    - prettier
-    - uv-sort（依存定義のソート）
-    - shfmt
-    - cargo fmt（crate全体を対象）
-    - dotnet format（solution全体を対象）
-- Linters
-    - ruff check
-    - pflake8 + flake8-bugbear + flake8-tidy-imports
-    - mypy
-    - pylint
-    - pyright
-    - ty
-    - ec（editorconfig-checker）
-    - shellcheck
-    - typos
-    - actionlint
-    - markdownlint-cli2
-    - textlint
-    - eslint
-    - biome
-    - oxlint
-    - tsc（型チェックのみ実行）
-    - cargo clippy
-    - cargo check
-    - cargo deny（依存ライセンス・脆弱性チェック）
-    - dotnet build（ビルドエラーをlint段階で検出）
-- Testers
-    - pytest
-    - vitest
-    - cargo test
-    - dotnet test
-- その他
-    - pre-commit（`.pre-commit-config.yaml`のhookを統合実行）
+### Python系
 
-プリセットで一括有効化なども可能。詳細は[設定項目](configuration.md)を参照。
+- Formatters: pyupgrade / autoflake / isort / black / ruff format / uv-sort（依存定義のソート）
+- Linters: ruff check / pflake8（+ flake8-bugbear + flake8-tidy-imports）/ mypy / pylint / pyright / ty（既定で無効）
+- Testers: pytest
+
+`preset = "latest"`ではruffへの移行のためpyupgrade / autoflake / isort / black / pflake8は無効化される。
+
+### JS/TS系
+
+いずれも既定で無効。`js-runner`設定で起動方式（pnpx / pnpm / npx等）を切り替える。
+
+- Formatters: prettier
+- Linters: eslint / biome / oxlint / tsc（型チェック。`pass-filenames = false`でプロジェクト全体を対象）
+- Testers: vitest
+
+### Rust系
+
+いずれも既定で無効。プロジェクト全体（crate単位）を対象に直接実行する（`{command}-path`で実行パスを指定）。
+
+- Formatters: cargo fmt
+- Linters: cargo clippy / cargo check / cargo deny（依存ライセンス・脆弱性チェック）
+- Testers: cargo test
+
+### .NET系
+
+いずれも既定で無効。プロジェクト全体（solution単位）を対象に直接実行する（`{command}-path`で実行パスを指定）。
+
+- Formatters: dotnet format
+- Linters: dotnet build（ビルドエラーをlint段階で検出）
+- Testers: dotnet test
+
+### ドキュメント系
+
+- Linters: markdownlint-cli2 / textlint
+
+### その他
+
+- Formatters: shfmt（既定で無効）
+- Linters: ec（editorconfig-checker、既定で無効）/ shellcheck（既定で無効）/ typos / actionlint
+- 統合: pre-commit（`.pre-commit-config.yaml`のhookを統合実行）
+
+プリセットで一括有効化する方法は[設定項目](configuration.md)を参照。
 
 個別に有効化・無効化する方法や`bin-runner`/`js-runner`などの補助設定は[設定項目（ツール別）](configuration-tools.md)を参照。
 
@@ -66,7 +70,7 @@ pip install pyfltr
 
 - [CLIコマンド](usage.md) — CLIの使い方・サブコマンド・オプション
 - [設定項目](configuration.md) — 基本設定・プリセット・並列実行
-- [設定項目（ツール別）](configuration-tools.md) — ツール別設定（2段階実行・bin-runner・npm系・カスタムコマンド）
+- [設定項目（ツール別）](configuration-tools.md) — ツール別設定（直接実行 / js-runner / bin-runnerのカテゴリ別設定・2段階実行・カスタムコマンド）
 - [推奨設定例](recommended.md) — 推奨設定（Pythonプロジェクト・タスクランナー・CI）
 - [推奨設定例（非Pythonプロジェクト）](recommended-nonpython.md) — 非Pythonプロジェクトの推奨設定
 - [カスタムコマンド例](custom-commands.md) — カスタムコマンドの設定例

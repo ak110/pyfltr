@@ -88,7 +88,7 @@ preset = "latest"
 非Pythonプロジェクトで使用する。
 
 対象はpyupgrade・autoflake・isort・black・ruff系・pflake8・mypy・pylint・pyright・ty・pytest・uv-sort。
-npm系ツールやbin-runner対応ツールは影響を受けない。
+js-runner対応ツールやbin-runner対応ツール、Rust系（cargo系）・.NET系（dotnet系）は影響を受けない。
 `python = false`でも`mypy = true`のように個別に上書き可能。
 適用優先度は`preset < python < 個別設定`。
 
@@ -99,6 +99,9 @@ js-runner = "pnpm"
 eslint = true
 prettier = true
 ```
+
+言語カテゴリ単位の一括無効化キーは`python`のみで、JavaScript/TypeScript系・Rust系・.NET系に相当するキーは存在しない。
+これら他言語のツールは既定で無効なため、利用するツールを個別に`{tool} = true`で有効化する（設定例は[設定項目（ツール別）](configuration-tools.md)を参照）。
 
 ## ツール別除外設定
 
@@ -171,4 +174,4 @@ pflake8-fast = false
 
 ---
 
-個別のツール設定（2段階実行、ファイルパターン、bin-runner、npm系ツール、カスタムコマンド等）の詳細は[ツール別設定](configuration-tools.md)を参照。
+個別のツール設定（2段階実行、ファイルパターン、直接実行 / js-runner / bin-runnerのカテゴリ別設定、カスタムコマンド等）の詳細は[ツール別設定](configuration-tools.md)を参照。

@@ -10,6 +10,7 @@
   - ドキュメントなどのみの変更の場合は省略可（pre-commitで実行されるため）
   - テストコードの単体実行なども極力 `uv run pyfltr run-for-agent <path>` を使う（pytestを直接呼び出さない）
     - 詳細な情報などが必要な場合に限り `uv run pytest -vv <path>` などを使用
+  - JSONL出力は`header`（実行環境）→ `diagnostic`+`tool`（ツール完了ごと）→ `warning`→ `summary`（末尾）の順に出力される。末尾の`summary`で`failed`と`diagnostics`を確認し、必要に応じて`diagnostic`行のファイル・行番号・メッセージを参照する。詳細仕様は`docs/guide/usage.md`の「jsonlスキーマ」節および`llms.txt`を参照
 
 ## 注意点
 

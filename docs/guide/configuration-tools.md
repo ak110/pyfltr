@@ -2,61 +2,13 @@
 
 基本設定（プリセット、Python一括無効化、並列実行等）は[設定項目](configuration.md)を参照。
 
-## ruff-format の 2 段階実行
+pyfltrは対応ツールを実行方式の観点から次の3カテゴリに分けて扱う。
 
-`ruff-format` は既定で `ruff check --fix --unsafe-fixes` と `ruff format` の2ステップを連続実行する。
-importソートや自動修正可能なlint違反を整形と同時に処理するための挙動。
+- 直接実行: Python系ツール、Rust系（cargo系）、.NET系（dotnet系）など。PATH上または`{command}-path`で指定した実行ファイルを直接呼び出す
+- js-runner経由: eslint / prettier / biome / oxlint / tsc / vitest / markdownlint-cli2 / textlintなど。npm / pnpm / yarn等のJavaScriptパッケージマネージャー経由で起動する
+- bin-runner経由: ec / shellcheck / shfmt / typos / actionlintなど。miseやPATH経由でネイティブバイナリを解決する
 
-ステップ1のlint違反（ruff checkのexit 1）は無視され、別途 `ruff-check` コマンドで検出される想定。
-設定ミス等によるruffの異常終了（exit 2以上）は失敗と判定する。
-
-ステップ1に`--unsafe-fixes`を既定で含めているのは意図的な設計である。`--unsafe-fixes`を外すと自動修正できない違反が増え、手動対処の手間が増加する。実運用ではバージョン管理下で作業するため自動修正は容易に取り消せ、かつ`--unsafe-fixes`が実害のある修正を生むケースはまれである。このため開発体験を優先して既定で有効にしている。保守的に運用したい場合は後述のとおり`ruff-format-check-args`で上書きする。
-
-fix段で使う`ruff-check-fix-args`（既定値`["--fix", "--unsafe-fixes"]`）も同じ方針で`--unsafe-fixes`を含めている。
-
-```toml
-[tool.pyfltr]
-# ステップ 1 をスキップしたい場合 (既定は true)
-ruff-format-by-check = false
-# ステップ 1 の引数を差し替えたい場合 (既定は ["check", "--fix", "--unsafe-fixes"])
-ruff-format-check-args = ["check", "--fix"]
-```
-
-## prettier の 2 段階実行
-
-`prettier`は`--check`（読み取り専用）と`--write`（書き込み）が排他のため、pyfltrは2段階で実行する。
-
-まず`prettier --check`を実行する。
-
-- `rc == 0` → `succeeded`（整形済み）
-- `rc == 1` → 続けて`prettier --write`を実行し、`rc == 0`なら`formatted`、それ以外は`failed`
-- `rc >= 2` → `failed`（設定ミス等の致命的エラー、`--write`は実行しない）
-
-引数は`prettier-check-args` / `prettier-write-args`で個別に上書きできる（既定はそれぞれ`["--check"]` / `["--write"]`）。共通引数`prettier-args`は両ステップの先頭に付与される。
-
-```toml
-[tool.pyfltr]
-prettier = true
-# キャッシュ等の共通引数
-prettier-args = ["--cache"]
-```
-
-## shfmtの2段階実行
-
-`shfmt`はprettierと同様に2段階で実行する。
-
-まず`shfmt -l`（チェックのみ）を実行する。
-
-- `rc == 0` → `succeeded`（整形済み）
-- `rc != 0` → 続けて`shfmt -w`（書き込み）を実行する
-
-引数は`shfmt-check-args` / `shfmt-write-args`で個別に上書きできる（既定はそれぞれ`["-l"]` / `["-w"]`）。共通引数`shfmt-args`は両ステップの先頭に付与される。
-
-```toml
-[tool.pyfltr]
-shfmt = true
-shfmt-args = ["-i", "2"]
-```
+本ページではまず全カテゴリ共通の設定を示し、続いて各カテゴリ固有の設定を説明する。
 
 ## 対象ファイルパターンのカスタマイズ
 
@@ -107,7 +59,250 @@ args = ["--from=HEAD~1"]
 pass-filenames = false
 ```
 
-## ネイティブバイナリツール (bin-runner)
+## 直接実行ツール
+
+Python系ツール、Rust系（cargo系）、.NET系（dotnet系）、uv-sortはいずれも`{command}-path`で指定した実行ファイルをpyfltrが直接呼び出す。
+特別な起動経路を挟まないため、miseやnpm等のランナー設定は不要。
+
+### ruff-format の 2 段階実行
+
+`ruff-format` は既定で `ruff check --fix --unsafe-fixes` と `ruff format` の2ステップを連続実行する。
+importソートや自動修正可能なlint違反を整形と同時に処理するための挙動。
+
+ステップ1のlint違反（ruff checkのexit 1）は無視され、別途 `ruff-check` コマンドで検出される想定。
+設定ミス等によるruffの異常終了（exit 2以上）は失敗と判定する。
+
+ステップ1に`--unsafe-fixes`を既定で含めているのは意図的な設計である。
+`--unsafe-fixes`を外すと自動修正できない違反が増え、手動対処の手間が増加する。
+実運用ではバージョン管理下で作業するため自動修正は容易に取り消せ、かつ`--unsafe-fixes`が実害のある修正を生むケースはまれである。
+このため開発体験を優先して既定で有効にしている。保守的に運用したい場合は後述のとおり`ruff-format-check-args`で上書きする。
+
+fix段で使う`ruff-check-fix-args`（既定値`["--fix", "--unsafe-fixes"]`）も同じ方針で`--unsafe-fixes`を含めている。
+
+```toml
+[tool.pyfltr]
+# ステップ 1 をスキップしたい場合 (既定は true)
+ruff-format-by-check = false
+# ステップ 1 の引数を差し替えたい場合 (既定は ["check", "--fix", "--unsafe-fixes"])
+ruff-format-check-args = ["check", "--fix"]
+```
+
+### uv-sort
+
+`uv-sort`は`pyproject.toml`の依存定義をソートするformatter。既定で無効。
+
+```toml
+[tool.pyfltr]
+uv-sort = true
+```
+
+Python系ツールとして扱われ、`python = false`で一括無効化の対象となる。
+
+### Rust系（cargo系）
+
+`cargo-fmt` / `cargo-clippy` / `cargo-check` / `cargo-test` / `cargo-deny`はいずれも既定で無効。
+`pass-filenames = false`によりcrate全体を対象とするproject-level実行となる。
+
+```toml
+[tool.pyfltr]
+cargo-fmt = true
+cargo-clippy = true
+cargo-check = true
+cargo-test = true
+cargo-deny = true
+```
+
+実行パスはツール別に個別指定する。
+既定ではcargo系は`cargo`バイナリ経由、cargo-denyのみ`cargo-deny`バイナリを直接呼び出す。
+
+```toml
+[tool.pyfltr]
+# miseやrustup等で別のcargoを指すようにしたい場合
+cargo-fmt-path = "/path/to/cargo"
+cargo-clippy-path = "/path/to/cargo"
+cargo-check-path = "/path/to/cargo"
+cargo-test-path = "/path/to/cargo"
+cargo-deny-path = "/path/to/cargo-deny"
+```
+
+既定の引数は以下のとおり。必要に応じて上書きできる。
+
+- cargo-fmt: `cargo-fmt-args = ["fmt"]`（常時書き込みモード。pyfltr規約によりformatterは`--fix`なしでも強制修正する）
+- cargo-clippy:
+    - `cargo-clippy-args = ["clippy", "--all-targets"]`（共通前半部）
+    - `cargo-clippy-lint-args = ["--", "-D", "warnings"]`（lintモードで末尾に付与）
+    - `cargo-clippy-fix-args = ["--fix", "--allow-staged", "--allow-dirty", "--", "-D", "warnings"]`（fixモードで末尾に付与）
+- cargo-check: `cargo-check-args = ["check", "--all-targets"]`
+- cargo-test: `cargo-test-args = ["test"]`
+- cargo-deny: `cargo-deny-args = ["check"]`
+
+cargo系はcrate単位で同一ワークスペースを操作するため、`serial_group = "cargo"`で自動的に直列化される。
+利用者が`--jobs=1`などを指定する必要はない。
+
+### .NET系（dotnet系）
+
+`dotnet-format` / `dotnet-build` / `dotnet-test`はいずれも既定で無効。
+`pass-filenames = false`によりsolution全体を対象とするproject-level実行となる。
+
+```toml
+[tool.pyfltr]
+dotnet-format = true
+dotnet-build = true
+dotnet-test = true
+```
+
+実行パスはツール別に個別指定する。既定はいずれも`dotnet`バイナリ。
+
+```toml
+[tool.pyfltr]
+dotnet-format-path = "/path/to/dotnet"
+dotnet-build-path = "/path/to/dotnet"
+dotnet-test-path = "/path/to/dotnet"
+```
+
+既定の引数は以下のとおり。
+
+- dotnet-format: `dotnet-format-args = ["format"]`（常時書き込みモード）
+- dotnet-build: `dotnet-build-args = ["build", "--nologo"]`
+- dotnet-test: `dotnet-test-args = ["test", "--nologo"]`
+
+## js-runner経由で実行するツール
+
+markdownlint-cli2 / textlint / eslint / prettier / biome / oxlint / tsc / vitestは`js-runner`設定で起動方式を切り替える。
+既定は`pnpx`で、グローバル/キャッシュから都度取得する挙動となる。
+
+プロジェクトの`package.json`で既にこれらのツールをインストール済みの場合は、
+`js-runner`を`pnpm` / `npm` / `npx` / `yarn` / `direct`に切り替えるとよい。
+これによりCIなどでの再ダウンロードを避けられる。
+
+eslint / prettier / biomeはプラグイン（`typescript-eslint`・`prettier-plugin-svelte`等）を`package.json`で管理するのが一般的。
+これらのツールを使うプロジェクトでは`js-runner = "pnpm"`（もしくは`npm` / `yarn` / `direct`）を推奨する。
+
+```toml
+[tool.pyfltr]
+# プロジェクトの node_modules を使う (pnpm exec 経由)
+js-runner = "pnpm"
+```
+
+| `js-runner` | 挙動 |
+| --- | --- |
+| `pnpx` | `pnpx`経由で起動する (既定)。`textlint-packages`は`--package`で展開される |
+| `pnpm` | `pnpm exec`経由で起動する。パッケージは`package.json`側で管理する |
+| `npm` | `npm exec --no --`経由で起動する |
+| `npx` | `npx --no-install`経由で起動する。`textlint-packages`は`-p`で展開される |
+| `yarn` | `yarn run`経由で起動する |
+| `direct` | `node_modules/.bin/`配下の実行ファイルを直接起動する |
+
+`{command}-path`を明示的に設定した場合はその値が優先され、自動解決は無効化される。
+グローバルインストール済みのtextlintを直接使いたい場合などに利用する。
+
+```toml
+[tool.pyfltr]
+textlint-path = "textlint"
+# 共通引数 (lint/fix 両モードで付与)
+textlint-args = []
+# lint モード専用の引数 (既定で --format compact。builtin パーサが compact 出力を想定している)
+textlint-lint-args = ["--format", "compact"]
+```
+
+textlintのfix実行 (`textlint --fix`) では `@textlint/fixer-formatter` が使われ、`compact` フォーマッタを解決できない。
+このため `--format compact` は `textlint-args`（共通）ではなく `textlint-lint-args`（lintモード専用）に分離している。
+
+fix段では、pyfltrはtextlintを2段階で実行する（fix適用 → lintチェック）ため、
+残存違反はcompact形式で正しく取得される。
+旧版から `textlint-args = ["--format", "compact", ...]` の設定を引き継いでいる場合でも、
+pyfltrはfixステップの起動コマンドから `--format` ペアを自動除去するためクラッシュしない。
+新規設定では `textlint-lint-args` に書くことを推奨する。
+
+### prettier の 2 段階実行
+
+`prettier`は`--check`（読み取り専用）と`--write`（書き込み）が排他のため、pyfltrは2段階で実行する。
+
+まず`prettier --check`を実行する。
+
+- `rc == 0` → `succeeded`（整形済み）
+- `rc == 1` → 続けて`prettier --write`を実行し、`rc == 0`なら`formatted`、それ以外は`failed`
+- `rc >= 2` → `failed`（設定ミス等の致命的エラー、`--write`は実行しない）
+
+引数は`prettier-check-args` / `prettier-write-args`で個別に上書きできる（既定はそれぞれ`["--check"]` / `["--write"]`）。
+共通引数`prettier-args`は両ステップの先頭に付与される。
+
+```toml
+[tool.pyfltr]
+prettier = true
+# キャッシュ等の共通引数
+prettier-args = ["--cache"]
+```
+
+### textlintのプリセット/ルール指定
+
+textlintで利用するルール/プリセットパッケージは`textlint-packages`に列挙する。
+既定では以下の3パッケージが含まれる。
+
+```toml
+[tool.pyfltr]
+textlint-packages = [
+    "textlint-rule-preset-ja-technical-writing",
+    "textlint-rule-preset-jtf-style",
+    "textlint-rule-ja-no-abusage",
+]
+```
+
+`textlint-packages`は`pnpx` / `npx`モード時に`--package` / `-p`展開される。
+`pnpm` / `npm` / `yarn` / `direct`モードでは`package.json`側でインストールする前提のため無視される。
+
+### eslint / prettier / biomeの設定
+
+eslint / prettier / biomeはすべて既定で無効。
+有効化には`pyproject.toml`で切り替える。
+プラグインは`package.json`管理が前提のため、通常は`js-runner = "pnpm"`と併用する。
+
+```toml
+[tool.pyfltr]
+js-runner = "pnpm"
+eslint = true
+prettier = true
+biome = true
+```
+
+既定の引数は以下のとおり。
+必要に応じて上書きできる。
+
+- eslint:
+    - `eslint-args = ["--format", "json"]`（lint / fix両モードで有効にするため共通argsに配置）
+    - `eslint-fix-args = ["--fix"]`
+    - 注: ESLint 9系以降で`compact` / `unix` / `tap`等のコアフォーマッタは除去されたため、コア標準の`json`を採用している
+    - `eslint-args`を上書きする際は非コアフォーマッタを使わないこと
+- prettier:
+    - `prettier-check-args = ["--check"]` / `prettier-write-args = ["--write"]`
+    - 2段階実行の詳細は「prettierの2段階実行」を参照
+- biome:
+    - `biome-args = ["check", "--reporter=github"]`（`check`サブコマンドと機械可読出力を共通argsで常時適用）
+    - `biome-fix-args = ["--write"]`（safe fixのみ。unsafe fixを使う場合は`["--write", "--unsafe"]`に上書き）
+    - 注: `biome-args`の先頭からサブコマンド（`check` / `lint` / `format`）を外すとbiomeがhelp表示で失敗する。必ずサブコマンド名を残すこと
+
+### oxlint / tsc / vitest
+
+oxlint / tsc / vitestもjs-runner対応のツール。すべて既定で無効。
+
+```toml
+[tool.pyfltr]
+js-runner = "pnpm"
+oxlint = true
+tsc = true
+vitest = true
+```
+
+既定の引数は以下のとおり。
+
+- oxlint: `oxlint-args = []`
+- tsc: `tsc-args = ["--noEmit"]`、`tsc-pass-filenames = false`（プロジェクト全体をチェックするためファイル引数を渡さない）
+- vitest: `vitest-args = ["run"]`（`run`サブコマンドが必須）
+
+eslint / prettier / biome / oxlint / tsc / vitestは`preset = "latest"`では有効化されない。
+利用する場合は`pyproject.toml`で個別に`= true`にする。
+
+## bin-runner経由で実行するツール
 
 ec / shellcheck / shfmt / typos / actionlintはネイティブバイナリ（Go/Rust/Haskell製等）で、`bin-runner`設定で起動方式を切り替える。
 ecはeditorconfig-checkerの略称。既定は`mise`で、[mise](https://mise.jdx.dev/)によるバージョン管理付きの実行となる。
@@ -172,131 +367,23 @@ actionlint = true
 
 `{command}-path`を明示的に設定した場合はその値が優先され、bin-runnerによる自動解決は無効化される。
 
-## JS/TS追加ツール (oxlint / tsc / vitest)
+### shfmtの2段階実行
 
-oxlint / tsc / vitestはjs-runner対応のツール。すべて既定で無効。
+`shfmt`はprettierと同様に2段階で実行する。
 
-```toml
-[tool.pyfltr]
-js-runner = "pnpm"
-oxlint = true
-tsc = true
-vitest = true
-```
+まず`shfmt -l`（チェックのみ）を実行する。
 
-既定の引数は以下のとおり。
+- `rc == 0` → `succeeded`（整形済み）
+- `rc != 0` → 続けて`shfmt -w`（書き込み）を実行する
 
-- oxlint: `oxlint-args = []`
-- tsc: `tsc-args = ["--noEmit"]`、`tsc-pass-filenames = false`（プロジェクト全体をチェックするためファイル引数を渡さない）
-- vitest: `vitest-args = ["run"]`（`run`サブコマンドが必須）
-
-## uv-sort
-
-`uv-sort`は`pyproject.toml`の依存定義をソートするformatter。既定で無効。
+引数は`shfmt-check-args` / `shfmt-write-args`で個別に上書きできる（既定はそれぞれ`["-l"]` / `["-w"]`）。
+共通引数`shfmt-args`は両ステップの先頭に付与される。
 
 ```toml
 [tool.pyfltr]
-uv-sort = true
+shfmt = true
+shfmt-args = ["-i", "2"]
 ```
-
-Python系ツールとして扱われ、`python = false`で一括無効化の対象となる。
-
-## npm系ツール (markdownlint / textlint / eslint / prettier / biome / oxlint / tsc / vitest)
-
-markdownlint-cli2・textlint・eslint・prettier・biome・oxlint・tsc・vitestは`js-runner`設定で起動方式を切り替えることができる。
-既定は`pnpx`で、グローバル/キャッシュから都度取得する挙動となる。
-
-プロジェクトの`package.json`で既にこれらのツールをインストール済みの場合は、
-`js-runner`を`pnpm` / `npm` / `npx` / `yarn` / `direct`に切り替えるとよい。
-これによりCIなどでの再ダウンロードを避けられる。
-
-eslint / prettier / biomeはプラグイン（`typescript-eslint`・`prettier-plugin-svelte`等）を`package.json`で管理するのが一般的。
-これらのツールを使うプロジェクトでは`js-runner = "pnpm"`（もしくは`npm` / `yarn` / `direct`）を推奨する。
-
-```toml
-[tool.pyfltr]
-# プロジェクトの node_modules を使う (pnpm exec 経由)
-js-runner = "pnpm"
-```
-
-| `js-runner` | 挙動 |
-| --- | --- |
-| `pnpx` | `pnpx`経由で起動する (既定)。`textlint-packages`は`--package`で展開される |
-| `pnpm` | `pnpm exec`経由で起動する。パッケージは`package.json`側で管理する |
-| `npm` | `npm exec --no --`経由で起動する |
-| `npx` | `npx --no-install`経由で起動する。`textlint-packages`は`-p`で展開される |
-| `yarn` | `yarn run`経由で起動する |
-| `direct` | `node_modules/.bin/`配下の実行ファイルを直接起動する |
-
-`{command}-path`を明示的に設定した場合はその値が優先され、自動解決は無効化される。
-グローバルインストール済みのtextlintを直接使いたい場合などに利用する。
-
-```toml
-[tool.pyfltr]
-textlint-path = "textlint"
-# 共通引数 (lint/fix 両モードで付与)
-textlint-args = []
-# lint モード専用の引数 (既定で --format compact。builtin パーサが compact 出力を想定している)
-textlint-lint-args = ["--format", "compact"]
-```
-
-textlintのfix実行 (`textlint --fix`) では `@textlint/fixer-formatter` が使われ、`compact` フォーマッタを解決できない。
-このため `--format compact` は `textlint-args`（共通）ではなく `textlint-lint-args`（lintモード専用）に分離している。
-
-fix段では、pyfltrはtextlintを2段階で実行する（fix適用 → lintチェック）ため、
-残存違反はcompact形式で正しく取得される。
-旧版から `textlint-args = ["--format", "compact", ...]` の設定を引き継いでいる場合でも、
-pyfltrはfixステップの起動コマンドから `--format` ペアを自動除去するためクラッシュしない。
-新規設定では `textlint-lint-args` に書くことを推奨する。
-
-### textlintのプリセット/ルール指定
-
-textlintで利用するルール/プリセットパッケージは`textlint-packages`に列挙する。
-既定では以下の3パッケージが含まれる。
-
-```toml
-[tool.pyfltr]
-textlint-packages = [
-    "textlint-rule-preset-ja-technical-writing",
-    "textlint-rule-preset-jtf-style",
-    "textlint-rule-ja-no-abusage",
-]
-```
-
-`textlint-packages`は`pnpx` / `npx`モード時に`--package` / `-p`展開される。
-`pnpm` / `npm` / `yarn` / `direct`モードでは`package.json`側でインストールする前提のため無視される。
-
-### eslint / prettier / biomeの設定
-
-eslint / prettier / biomeはすべて既定で無効。
-有効化には`pyproject.toml`で切り替える。
-プラグインは`package.json`管理が前提のため、通常は`js-runner = "pnpm"`と併用する。
-
-```toml
-[tool.pyfltr]
-js-runner = "pnpm"
-eslint = true
-prettier = true
-biome = true
-```
-
-既定の引数は以下のとおり。
-必要に応じて上書きできる。
-
-- eslint:
-    - `eslint-args = ["--format", "json"]`（lint / fix両モードで有効にするため共通argsに配置）
-    - `eslint-fix-args = ["--fix"]`
-    - 注: ESLint 9系以降で`compact` / `unix` / `tap`等のコアフォーマッタは除去されたため、コア標準の`json`を採用している
-    - `eslint-args`を上書きする際は非コアフォーマッタを使わないこと
-- prettier:
-    - `prettier-check-args = ["--check"]` / `prettier-write-args = ["--write"]`
-    - 2段階実行の詳細は「prettierの2段階実行」を参照
-- biome:
-    - `biome-args = ["check", "--reporter=github"]`（`check`サブコマンドと機械可読出力を共通argsで常時適用）
-    - `biome-fix-args = ["--write"]`（safe fixのみ。unsafe fixを使う場合は`["--write", "--unsafe"]`に上書き）
-    - 注: `biome-args`の先頭からサブコマンド（`check` / `lint` / `format`）を外すとbiomeがhelp表示で失敗する。必ずサブコマンド名を残すこと
-
-eslint / prettier / biome / oxlint / tsc / vitestは`preset = "latest"`では有効化されない。利用する場合は`pyproject.toml`で個別に`= true`にする。
 
 ## カスタムコマンド
 

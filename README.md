@@ -3,7 +3,7 @@
 [![CI](https://github.com/ak110/pyfltr/actions/workflows/ci.yaml/badge.svg)](https://github.com/ak110/pyfltr/actions/workflows/ci.yaml)
 [![PyPI version](https://badge.fury.io/py/pyfltr.svg)](https://badge.fury.io/py/pyfltr)
 
-各種formatter / linter / testerをまとめて並列実行するツール。
+Python / Rust / .NET / TypeScript・JavaScript / ドキュメントなど多言語プロジェクトのformatter・linter・testerを単一コマンドで並列実行するCLIツール。
 
 ## 特徴
 
@@ -13,6 +13,7 @@
 - 除外指定（exclude）の書式差をツール間で吸収
 - 自動修正系ツール（ruff format・prettierなど）を修正と失敗扱いの両立で実行
 - LLMエージェント向けJSON Lines出力（`pyfltr run-for-agent`・`PYFLTR_OUTPUT_FORMAT`環境変数・`--output-format=jsonl`）に対応
+- シェル補完スクリプト生成（`pyfltr generate-shell-completion`）に対応
 
 ## インストール
 

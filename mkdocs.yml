@@ -31,7 +31,7 @@ plugins:
   - llmstxt:
       full_output: llms-full.txt
       markdown_description: |
-        各種formatter / linter / testerをまとめて並列実行するCLIツール。
+        Python / Rust / .NET / TypeScript・JavaScript / ドキュメントなど多言語プロジェクトのformatter・linter・testerを単一コマンドで並列実行するCLIツール。
 
         ## サブコマンド
 
@@ -39,17 +39,14 @@ plugins:
         - `pyfltr run`: 全チェック。fix段→formatter段→linter/tester段の順で、fix-args定義済みlinterの自動修正→formatter→残りの検査を実行する（ローカル向け）
         - `pyfltr fast`: 軽量チェック。`run`と同じ3段構成だが、mypy/pylint/pytest等の重いツールを除外（pre-commit向け）
         - `pyfltr run-for-agent`: `pyfltr run --output-format=jsonl`のエイリアス。JSONL出力を既定にする（LLMエージェント向け）
+        - `pyfltr generate-shell-completion bash|powershell`: シェル補完スクリプトを標準出力へ書き出す
 
         `--no-fix`で`run`/`fast`/`run-for-agent`のfix段を抑止できる。`ci`は副作用回避のため元々fix段を持たない。
 
         ## 対応ツール
 
-        Python: pyupgrade / autoflake / isort / black / ruff format / ruff check / pflake8 / mypy / pylint / pyright / ty / pytest / uv-sort
-        Rust: cargo fmt / cargo clippy / cargo check / cargo deny / cargo test
-        .NET: dotnet format / dotnet build / dotnet test
-        JS/TS: eslint / prettier / biome / oxlint / tsc / vitest
-        ドキュメント: markdownlint-cli2 / textlint
-        その他: ec / shellcheck / shfmt / typos / actionlint / pre-commit
+        対応カテゴリはPython系・Rust系（cargo系）・.NET系（dotnet系）・JS/TS系・ドキュメント系（markdownlint-cli2・textlint）・その他（ec・shellcheck・shfmt・typos・actionlint・pre-commit）。
+        個別ツールの網羅的な一覧と詳細は[対応ツール一覧](guide/index.md)を参照。
 
         `preset = "latest"` で主要ツールを一括有効化できる。
 
@@ -92,12 +89,13 @@ plugins:
           - guide/usage.md: CLIの使い方・オプション・UI説明・LLM連携
         設定:
           - guide/configuration.md: 基本設定・プリセット・並列実行など
-          - guide/configuration-tools.md: ツール別設定（2段階実行・bin-runner・npm系・カスタムコマンド）
+          - guide/configuration-tools.md: ツール別設定（直接実行 / js-runner / bin-runnerのカテゴリ別設定・2段階実行・カスタムコマンド）
           - guide/recommended.md: Pythonプロジェクトの推奨設定例・タスクランナー・CI設定
           - guide/recommended-nonpython.md: TypeScript/JS・Rust・.NETプロジェクトの推奨設定例
           - guide/custom-commands.md: カスタムコマンドの設定例集
         開発者向け:
           - development/development.md: 開発環境構築・ドキュメント・リリース手順
+          - development/roadmap.md: エージェント連携の拡張候補（採否未決・議論用）
 
 markdown_extensions:
   - pymdownx.highlight:
@@ -125,3 +123,4 @@ nav:
   - 開発者向け:
       - 概要: development/index.md
       - 開発手順: development/development.md
+      - ロードマップ: development/roadmap.md
