@@ -68,6 +68,10 @@ v3.0.0から整備を開始した。それ以前の変更はgit logおよびGitH
   - 直前runが存在しない・失敗ツールが無い・指定`targets`との交差が空の場合はメッセージを出して`rc=0`で成功終了する
   - 診断ファイルが取得できないツール（pytest等の`pass-filenames=False`系）は既定ファイル展開にフォールバックして全体再実行する
   - 位置引数`targets`との併用時は、直前runの失敗ファイル集合と`targets`の交差を対象にする
+- `--from-run <RUN_ID>`オプション。
+  `--only-failed`の参照対象runを明示指定する（前方一致・`latest`対応）
+  - `--only-failed`との併用が前提で、単独指定はargparseエラーで拒否する
+  - 指定`<RUN_ID>`が存在しない場合は警告を出して`rc=0`で早期終了する
 
 ### 変更
 
@@ -77,3 +81,9 @@ v3.0.0から整備を開始した。それ以前の変更はgit logおよびGitH
 - JSONL `tool.retry_command`のターゲットを「当該ツールで失敗したファイルのみ」に絞り込む。
   失敗ファイルを特定できない場合（pytest等の`pass-filenames=False`や全体失敗のみ）はターゲット位置引数を空にする。
   キャッシュ復元結果（`cached=true`）では`retry_command`を出力しない
+- `pyfltr/main.py`の責務を分割。
+  `pyfltr.retry`（retry_command生成）・`pyfltr.only_failed`（`--only-failed`フィルター + `ToolTargets` dataclass）・`pyfltr.paths`（パス正規化）・`pyfltr.stage_runner`（cli/ui共通ヘルパー）へ切り出し
+- テキスト出力にrun_idを表示。
+  実行ヘッダーログとsummary末尾に`run_id`と`pyfltr show-run latest`誘導文言を追加（archive有効時のみ）
+- `--only-failed`の内部データ型を`ToolTargets` dataclassへ整理。
+  `mode=fallback/files` を明示し`None`と空リストの曖昧性を排除（内部API、公開インターフェースに影響なし）

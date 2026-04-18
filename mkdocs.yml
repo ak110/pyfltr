@@ -85,7 +85,7 @@ plugins:
 
         `--fail-fast`は1ツールでもエラーが出た時点で残りのジョブを打ち切り、起動済みサブプロセスには `terminate()` を送る。未開始ジョブは `future.cancel()` で取消され、JSONL `tool` レコードには `status="skipped"` として計上される。
 
-        `--only-failed`は直前runの実行アーカイブから失敗ツール・失敗ファイルを抽出し、ツール別にその組み合わせだけを再実行する。直前runが無い/失敗ツールが無い/指定`targets`との交差が空の場合はメッセージを出して`rc=0`で成功終了する。診断ファイルが無い失敗ツール（pytest等）は既定対象にフォールバックして全体再実行する。
+        `--only-failed`は直前runの実行アーカイブから失敗ツール・失敗ファイルを抽出し、ツール別にその組み合わせだけを再実行する。直前runが無い/失敗ツールが無い/指定`targets`との交差が空の場合はメッセージを出して`rc=0`で成功終了する。診断ファイルが無い失敗ツール（pytest等）は既定対象にフォールバックして全体再実行する。`--from-run <RUN_ID>`で参照対象runを明示指定できる（前方一致・`latest`対応、`--only-failed`との併用前提）。
 
         ```shell
         pyfltr run-for-agent
@@ -119,6 +119,7 @@ plugins:
           - v3/パイプライン機能拡張.md: --fail-fast・ファイルhashキャッシュ・Popen一本化
           - v3/詳細参照サブコマンド.md: list-runs / show-runサブコマンドによる実行アーカイブの詳細参照
           - v3/retry_command絞り込み.md: retry_commandターゲットを失敗ファイルに限定・--only-failedで直前runの失敗組み合わせのみ再実行
+          - v3/リリース前整備.md: main.py責務分割・ToolTargets dataclass整理・--from-run追加・テキスト出力へのrun_id表示
         開発者向け:
           - development/development.md: 開発環境構築・ドキュメント・リリース手順
           - development/roadmap.md: エージェント連携の拡張候補（採否未決・議論用）
@@ -156,6 +157,7 @@ nav:
       - 詳細参照サブコマンド: v3/詳細参照サブコマンド.md
       - MCPサーバー化: v3/MCPサーバー化.md
       - retry_command絞り込み: v3/retry_command絞り込み.md
+      - リリース前整備: v3/リリース前整備.md
       - マイグレーションガイド: v3/マイグレーションガイド.md
       - 作業ステータス: v3/作業ステータス.md
   - 開発者向け:
