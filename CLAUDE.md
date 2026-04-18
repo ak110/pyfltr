@@ -30,4 +30,3 @@
 - `docs/guide/index.md`の対応ツール一覧と`mkdocs.yml`内llmstxt `markdown_description`の「対応ツール」節は人手同期（SSOT化しない運用）
 - `mkdocs.yml`内llmstxt `markdown_description`にはLLMが利用する際に有用な情報のみ記載する（`run-for-agent`サブコマンド、主要オプションなど）。LLMにとって不要な情報はdocs側をSSOTとし、多重管理を避ける
 - ドキュメント構成変更時は`docs/development/development.md`の「READMEとdocsの役割分担」節を先に参照
-- v3.0.0の実装進捗は`docs/v3/作業ステータス.md`を参照

@@ -4,7 +4,7 @@
 FastMCP を用いて 5 ツール（読み取り系 4 件・実行系 1 件）を公開し、
 LLM エージェントが pyfltr の実行と実行アーカイブ参照を直接利用できるようにする。
 
-仕様: docs/v3/MCPサーバー化.md
+仕様: docs/development/mcp-server.md
 """
 
 from __future__ import annotations
