@@ -1819,12 +1819,16 @@ def test_run_subprocess_resolves_via_env_path(mocker, tmp_path: pathlib.Path, mo
     """
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    target = bin_dir / "faketool"
-    # Windows の shutil.which は実行属性ではなく PATHEXT 拡張子で判定するため、
-    # プラットフォームに応じて実行ファイル名を調整する (本テストの主眼は
-    # env["PATH"] 経由での解決可否で、実行属性の有無は付随的)。
-    target.write_text("")
-    target.chmod(0o755)
+    # Windows の shutil.which は PATHEXT に列挙された拡張子で実行ファイルを判定するため、
+    # ダミー実行ファイル名を `.bat` にする (POSIX では実行属性 0o755 で判定される)。
+    # 本テストの主眼は env["PATH"] 経由での解決可否であり、拡張子/実行属性の違いは付随的。
+    if os.name == "nt":
+        target = bin_dir / "faketool.bat"
+        target.write_text("")
+    else:
+        target = bin_dir / "faketool"
+        target.write_text("")
+        target.chmod(0o755)
 
     # os.environ の PATH からは bin_dir を除外する (env["PATH"] 経由で解決することの検証)
     monkeypatch.setenv("PATH", "/nonexistent-pyfltr-test-path")
