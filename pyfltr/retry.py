@@ -3,6 +3,7 @@
 import logging
 import os
 import pathlib
+import shlex
 import sys
 
 import pyfltr.command
@@ -111,8 +112,6 @@ def build_retry_command(
     ``original_cwd`` 基準の絶対パスに変換することで、``--work-dir`` と cwd の
     二重解釈を避ける。
     """
-    import shlex  # pylint: disable=import-outside-toplevel
-
     cwd_path = pathlib.Path(original_cwd)
     # 位置引数 (サブコマンドを除く、`-` で始まらないトークンの末尾側) は除去する。
     # サブコマンドは必ず最初の非オプショントークンのため、それだけ残す。

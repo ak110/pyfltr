@@ -148,24 +148,24 @@ def test_render_results_skips_warnings_section_when_empty(caplog):
     assert "[config]" not in caplog.text
 
 
-def test_write_summary_shows_run_id_guidance_when_present(capsys):
-    """`run_id` が存在するとき run_id と誘導文言を stdout に出力すること。"""
+def test_write_summary_shows_run_id_guidance_when_present(caplog):
+    """`run_id` が存在するとき run_id と誘導文言をログに出力すること。"""
     results = [_make_result("mypy", returncode=0)]
-    pyfltr.cli._write_summary(results, run_id="01JABCDEFGH")
+    with caplog.at_level(logging.INFO):
+        pyfltr.cli._write_summary(results, run_id="01JABCDEFGH")
 
-    captured = capsys.readouterr()
-    assert "run_id: 01JABCDEFGH" in captured.out
-    assert "pyfltr show-run latest" in captured.out
+    assert "run_id: 01JABCDEFGH" in caplog.text
+    assert "pyfltr show-run latest" in caplog.text
 
 
-def test_write_summary_omits_run_id_guidance_when_none(capsys):
-    """`run_id` が None のとき run_id 関連行を出力しないこと。"""
+def test_write_summary_omits_run_id_guidance_when_none(caplog):
+    """`run_id` が None のとき run_id 関連行をログに出力しないこと。"""
     results = [_make_result("mypy", returncode=0)]
-    pyfltr.cli._write_summary(results, run_id=None)
+    with caplog.at_level(logging.INFO):
+        pyfltr.cli._write_summary(results, run_id=None)
 
-    captured = capsys.readouterr()
-    assert "run_id" not in captured.out
-    assert "show-run" not in captured.out
+    assert "run_id" not in caplog.text
+    assert "show-run" not in caplog.text
 
 
 def test_run_commands_with_cli_fail_fast_aborts_remaining_fixers(mocker):

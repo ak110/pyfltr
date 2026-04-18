@@ -93,16 +93,17 @@ def apply_filter(
         )
         return commands, None, True
 
-    # from_run 指定時に run_id が解決できない場合は warning を出して早期終了する。
-    # 解決できた場合は _load_last_run にサマリ取得を委ねる。
+    # from_run 指定時に run_id を解決し、失敗なら warning を出して早期終了する。
+    # 解決済み run_id を _load_run_summary に渡すことで二重解決を避ける。
+    resolved_run_id: str | None = None
     if from_run is not None:
         try:
-            pyfltr.runs.resolve_run_id(store, from_run)
+            resolved_run_id = pyfltr.runs.resolve_run_id(store, from_run)
         except pyfltr.runs.RunIdError as e:
             logger.warning(f"--from-run {from_run!r}: {e}")
             return commands, None, True
 
-    last_run = _load_last_run(store, from_run=from_run)
+    last_run = _load_run_summary(store, resolved_run_id=resolved_run_id)
     if last_run is None:
         _log_skip_reason("参照可能な直前 run が見つかりません。対象なしでスキップします。")
         return commands, None, True
@@ -131,21 +132,18 @@ def apply_filter(
     return filtered_commands, targets, False
 
 
-def _load_last_run(
+def _load_run_summary(
     store: pyfltr.archive.ArchiveStore,
     *,
-    from_run: str | None = None,
+    resolved_run_id: str | None = None,
 ) -> pyfltr.archive.RunSummary | None:
-    """直前 run のサマリを返す。取得失敗または存在しない場合は None。
+    """Run のサマリを返す。取得失敗または存在しない場合は None。
 
-    ``from_run`` が指定された場合は ``resolve_run_id`` で解決した run_id を用いる。
-    呼び出し元 (``apply_filter``) で ``RunIdError`` が発生しないことを確認済みの前提で
-    呼ばれるため、ここでは ``OSError`` のみを捕捉する。
+    ``resolved_run_id`` が指定された場合は、その run_id に対応するサマリを返す。
     未指定の場合は ``list_runs(limit=1)`` で最新 run を取得する。
     """
-    if from_run is not None:
+    if resolved_run_id is not None:
         try:
-            run_id = pyfltr.runs.resolve_run_id(store, from_run)
             # ArchiveStore には run_id 直接引き当て API が無いため list_runs() から探す。
             all_runs = store.list_runs()
         except OSError as e:
@@ -154,7 +152,7 @@ def _load_last_run(
                 message=f"実行アーカイブを読み取れません: {e}",
             )
             return None
-        return next((r for r in all_runs if r.run_id == run_id), None)
+        return next((r for r in all_runs if r.run_id == resolved_run_id), None)
 
     try:
         runs = store.list_runs(limit=1)

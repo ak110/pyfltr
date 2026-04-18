@@ -346,5 +346,5 @@ def _write_summary(
             logger.info(f"    {result.command:<16s} {result.get_status_text()}")
         logger.info("-" * 72)
         if run_id is not None:
-            print(f"run_id: {run_id}")
-            print("`pyfltr show-run latest`で詳細を参照")
+            logger.info(f"run_id: {run_id}")
+            logger.info("`pyfltr show-run latest`で詳細を参照")
