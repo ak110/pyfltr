@@ -6,9 +6,20 @@ import pyfltr.command
 import pyfltr.config
 
 
-def make_skipped_result(command: str, config: pyfltr.config.Config) -> pyfltr.command.CommandResult:
-    """--fail-fast 中断対象の skipped CommandResult を作る。"""
+def make_skipped_result(
+    command: str,
+    config: pyfltr.config.Config,
+    *,
+    reason: str | None = None,
+) -> pyfltr.command.CommandResult:
+    """中断対象の skipped CommandResult を作る。
+
+    ``reason`` が指定された場合は ``CommandResult.output`` に反映する。省略時は既定の
+    ``--fail-fast`` 文言（従来互換）を使う。TUI の Ctrl+C 協調停止経路では固有の文言を
+    渡して出力する。
+    """
     command_info = config.commands[command]
+    output = reason if reason is not None else "--fail-fast により実行をスキップしました。"
     return pyfltr.command.CommandResult(
         command=command,
         command_type=command_info.type,
@@ -16,7 +27,7 @@ def make_skipped_result(command: str, config: pyfltr.config.Config) -> pyfltr.co
         returncode=None,
         has_error=False,
         files=0,
-        output="--fail-fast により実行をスキップしました。",
+        output=output,
         elapsed=0.0,
     )
 

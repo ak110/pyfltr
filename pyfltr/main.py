@@ -709,6 +709,8 @@ def run_pipeline(
         include_details = not per_command_log
 
     # returncode を先に確定させる (render_results に渡して JSONL summary.exit に埋めるため)
+    # TUI の Ctrl+C 協調停止は ``run_commands_with_ui`` から 130 (SIGINT 慣例) を返す。
+    # この場合は ``calculate_returncode`` で上書きせず、そのまま採用する。
     if returncode == 0:
         returncode = calculate_returncode(results, args.exit_zero_even_if_formatted)
 

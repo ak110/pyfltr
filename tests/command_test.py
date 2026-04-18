@@ -77,7 +77,7 @@ def test_ruff_format_step1_lint_violation_ignored(mocker, tmp_path: pathlib.Path
     target = tmp_path / "sample.py"
     target.write_text("x = 1\n")
 
-    def fake_run(cmdline, env, on_output):
+    def fake_run(cmdline, env, on_output, **_kwargs):
         del env, on_output  # noqa
         if "check" in cmdline:
             return subprocess.CompletedProcess(cmdline, returncode=1, stdout="lint violation")
@@ -99,7 +99,7 @@ def test_ruff_format_step1_internal_error_fails(mocker, tmp_path: pathlib.Path) 
     target = tmp_path / "sample.py"
     target.write_text("x = 1\n")
 
-    def fake_run(cmdline, env, on_output):
+    def fake_run(cmdline, env, on_output, **_kwargs):
         del env, on_output  # noqa
         if "check" in cmdline:
             return subprocess.CompletedProcess(cmdline, returncode=2, stdout="usage error")
@@ -120,7 +120,7 @@ def test_ruff_format_step2_internal_error_fails(mocker, tmp_path: pathlib.Path) 
     target = tmp_path / "sample.py"
     target.write_text("x = 1\n")
 
-    def fake_run(cmdline, env, on_output):
+    def fake_run(cmdline, env, on_output, **_kwargs):
         del env, on_output  # noqa
         if "check" in cmdline:
             return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
@@ -144,7 +144,7 @@ def test_ruff_format_step1_mtime_change_marks_formatted(mocker, tmp_path: pathli
     # 事前に古めの mtime を設定しておく (テストの決定性担保)。
     os.utime(target, (1000000000, 1000000000))
 
-    def fake_run(cmdline, env, on_output):
+    def fake_run(cmdline, env, on_output, **_kwargs):
         del env, on_output  # noqa
         if "check" in cmdline:
             # ruff check が修正を適用したことをシミュレート: 明示的に新しい mtime を設定。
@@ -310,7 +310,7 @@ def test_textlint_fix_mode_touch_without_content_change_marks_succeeded(mocker, 
     target.write_text("# title\n")
     os.utime(target, (1000000000, 1000000000))
 
-    def fake_run(cmdline, env, on_output):
+    def fake_run(cmdline, env, on_output, **_kwargs):
         del env, on_output  # noqa
         if "--fix" in cmdline:
             # step1: 内容は変えず mtime だけ更新 (textlint の touch 挙動を模擬)
@@ -337,7 +337,7 @@ def test_textlint_fix_mode_all_fixed_marks_formatted(mocker, tmp_path: pathlib.P
 
     call_count = [0]
 
-    def fake_run(cmdline, env, on_output):
+    def fake_run(cmdline, env, on_output, **_kwargs):
         del env, on_output  # noqa
         call_count[0] += 1
         if call_count[0] == 1:
@@ -363,7 +363,7 @@ def test_textlint_fix_mode_emits_warning_when_protected_identifier_corrupted(moc
     target = tmp_path / "sample.md"
     target.write_text("本文で.NET系の話題を扱う。\n")
 
-    def fake_run(cmdline, env, on_output):
+    def fake_run(cmdline, env, on_output, **_kwargs):
         del env, on_output  # noqa
         if "--fix" in cmdline:
             # preset-jtf-style が「.」を「。」へ変換したことを模擬
@@ -392,7 +392,7 @@ def test_textlint_fix_mode_no_warning_when_protected_identifiers_empty(mocker, t
     target = tmp_path / "sample.md"
     target.write_text("本文で.NET系の話題を扱う。\n")
 
-    def fake_run(cmdline, env, on_output):
+    def fake_run(cmdline, env, on_output, **_kwargs):
         del env, on_output  # noqa
         if "--fix" in cmdline:
             target.write_text("本文で。NET系の話題を扱う。\n")
@@ -415,7 +415,7 @@ def test_textlint_fix_mode_no_warning_when_identifier_intact(mocker, tmp_path: p
     target = tmp_path / "sample.md"
     target.write_text("# title\n\n本文.NETと普通の文.\n")
 
-    def fake_run(cmdline, env, on_output):
+    def fake_run(cmdline, env, on_output, **_kwargs):
         del env, on_output  # noqa
         if "--fix" in cmdline:
             # .NET は保持、末尾の . のみ全角化
@@ -441,7 +441,7 @@ def test_textlint_fix_mode_residual_violations_mark_failed(mocker, tmp_path: pat
     violation_file = str(target)
     violation_output = f"{violation_file}: line 3, col 5, Error - No mixed period (ja-no-mixed-period)"
 
-    def fake_run(cmdline, env, on_output):
+    def fake_run(cmdline, env, on_output, **_kwargs):
         del env, on_output  # noqa
         if "--fix" in cmdline:
             # step1: fix 適用したが違反が残る (textlint は rc=1 を返すことがある)
@@ -468,7 +468,7 @@ def test_textlint_fix_mode_step1_fatal_error_fails(mocker, tmp_path: pathlib.Pat
     target = tmp_path / "sample.md"
     target.write_text("# title\n")
 
-    def fake_run(cmdline, env, on_output):
+    def fake_run(cmdline, env, on_output, **_kwargs):
         del env, on_output  # noqa
         if "--fix" in cmdline:
             return subprocess.CompletedProcess(cmdline, returncode=2, stdout="fatal error")
@@ -490,7 +490,7 @@ def test_fix_mode_mtime_change_marks_formatted(mocker, tmp_path: pathlib.Path) -
     target.write_text("# title\n")
     os.utime(target, (1000000000, 1000000000))
 
-    def fake_run(cmdline, env, on_output):
+    def fake_run(cmdline, env, on_output, **_kwargs):
         del env, on_output  # noqa
         # fix 適用をシミュレート
         target.write_text("# Title\n")
@@ -514,7 +514,7 @@ def test_fix_mode_non_zero_rc_is_failed(mocker, tmp_path: pathlib.Path) -> None:
     target.write_text("x = 1\n")
     os.utime(target, (1000000000, 1000000000))
 
-    def fake_run(cmdline, env, on_output):
+    def fake_run(cmdline, env, on_output, **_kwargs):
         del env, on_output  # noqa
         # 一部修正したが未修正の違反が残って rc=1 のケースをシミュレート
         target.write_text("# Title\n")
@@ -567,7 +567,7 @@ def test_prettier_two_step_check_needs_write(mocker, tmp_path: pathlib.Path) -> 
     target = tmp_path / "sample.js"
     target.write_text("x=1;\n")
 
-    def fake_run(cmdline, env, on_output):
+    def fake_run(cmdline, env, on_output, **_kwargs):
         del env, on_output  # noqa
         if "--check" in cmdline:
             return subprocess.CompletedProcess(cmdline, returncode=1, stdout="[warn] sample.js")
@@ -591,7 +591,7 @@ def test_prettier_two_step_check_rc2_fails_without_write(mocker, tmp_path: pathl
 
     calls: list[list[str]] = []
 
-    def fake_run(cmdline, env, on_output):
+    def fake_run(cmdline, env, on_output, **_kwargs):
         del env, on_output  # noqa
         calls.append(cmdline)
         return subprocess.CompletedProcess(cmdline, returncode=2, stdout="SyntaxError")
@@ -614,7 +614,7 @@ def test_prettier_two_step_step2_failure_marks_failed(mocker, tmp_path: pathlib.
     target = tmp_path / "sample.js"
     target.write_text("x=1;\n")
 
-    def fake_run(cmdline, env, on_output):
+    def fake_run(cmdline, env, on_output, **_kwargs):
         del env, on_output  # noqa
         if "--check" in cmdline:
             return subprocess.CompletedProcess(cmdline, returncode=1, stdout="")
@@ -636,7 +636,7 @@ def test_prettier_fix_mode_skips_check_step(mocker, tmp_path: pathlib.Path) -> N
     target.write_text("x=1;\n")
     os.utime(target, (1000000000, 1000000000))
 
-    def fake_run(cmdline, env, on_output):
+    def fake_run(cmdline, env, on_output, **_kwargs):
         del env, on_output  # noqa
         # --write 実行時にファイルを書き換えたことをシミュレート
         target.write_text("x = 1;\n")

@@ -38,6 +38,14 @@ _active_processes: list[subprocess.Popen] = []  # type: ignore[type-arg]
 _active_processes_lock = threading.Lock()
 
 
+class InterruptedExecution(Exception):
+    """TUI から協調停止が要求されたことを示す例外。
+
+    ``_run_subprocess`` が ``is_interrupted`` コールバックで中断指示を検知した際に送出する。
+    呼び出し側（``ui._execute_command``）で捕捉し、当該コマンドを ``skipped`` 結果として置き換える。
+    """
+
+
 # pyfltr のコマンド名 -> 実際に起動するパッケージの bin 名の対応表。
 # markdownlint コマンドは実体が markdownlint-cli2 である点に注意。
 _JS_TOOL_BIN: dict[str, str] = {
@@ -440,10 +448,34 @@ def _get_env_path(env: dict[str, str]) -> str | None:
     return env.get("PATH")
 
 
+def _terminate_and_drop(proc: "subprocess.Popen[str]") -> None:
+    """実行中 proc に terminate→wait→kill を順に適用し ``_active_processes`` から外す。
+
+    TUI 協調停止経路で使う。``with subprocess.Popen(...)`` の __exit__ は子が残っていても
+    ``wait()`` で止まってしまうため、``InterruptedExecution`` を送出する前に本関数で
+    確実に子を終了させる。
+    """
+    with contextlib.suppress(OSError):
+        proc.terminate()
+    with contextlib.suppress(subprocess.TimeoutExpired, OSError):
+        proc.wait(timeout=5.0)
+    if proc.poll() is None:
+        with contextlib.suppress(OSError):
+            proc.kill()
+        with contextlib.suppress(subprocess.TimeoutExpired, OSError):
+            proc.wait(timeout=5.0)
+    with _active_processes_lock, contextlib.suppress(ValueError):
+        _active_processes.remove(proc)
+
+
 def _run_subprocess(
     commandline: list[str],
     env: dict[str, str],
     on_output: typing.Callable[[str], None] | None = None,
+    *,
+    is_interrupted: typing.Callable[[], bool] | None = None,
+    on_subprocess_start: typing.Callable[[], None] | None = None,
+    on_subprocess_end: typing.Callable[[], None] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """サブプロセスの実行 (Popen ベース)。
 
@@ -451,6 +483,14 @@ def _run_subprocess(
     subprocess.run の経路も Popen に統一し ``_active_processes`` に登録する。
     ``on_output`` が指定されている場合は逐次コールバックを呼び、未指定時は最後に
     全出力をまとめて返す。
+
+    ``is_interrupted`` が指定された場合、(1) ``Popen`` 呼び出し直前、(2) ``Popen`` 生成直後、
+    (3) stdout 読み出しループの各イテレーション冒頭の 3 点で中断指示を確認し、真なら
+    当該 proc を確実に終了させてから ``InterruptedExecution`` を送出する。TUI 協調停止経路で
+    使う。``on_subprocess_start`` / ``on_subprocess_end`` は subprocess が実際に動いている
+    区間を追跡するためのフック（UI 側で「実行中コマンド集合」を正確に保つのに使う）。
+    start 後は必ず finally で end を呼ぶため、Ctrl+C スナップショットにフック外の時間帯が
+    混入しない。
 
     Windows では ``subprocess.Popen`` を ``shell=False`` でリスト渡しにすると
     ``.exe`` / ``.cmd`` 等の拡張子付きファイルを PATH から自動解決しないため、
@@ -469,6 +509,9 @@ def _run_subprocess(
     resolved = shutil.which(commandline[0], path=env_path)
     if resolved is not None and resolved != commandline[0]:
         popen_commandline = [resolved, *commandline[1:]]
+    # (1) Popen 直前の中断チェック。proc がまだ存在しないのでそのまま送出できる。
+    if is_interrupted is not None and is_interrupted():
+        raise InterruptedExecution
     try:
         with subprocess.Popen(
             popen_commandline,
@@ -481,10 +524,24 @@ def _run_subprocess(
         ) as proc:
             with _active_processes_lock:
                 _active_processes.append(proc)
+            subprocess_started = False
             try:
+                if on_subprocess_start is not None:
+                    on_subprocess_start()
+                subprocess_started = True
+                # (2) Popen 生成直後の中断チェック。_active_processes 登録済みなので
+                # _terminate_and_drop で自己登録を外してから送出する。
+                if is_interrupted is not None and is_interrupted():
+                    _terminate_and_drop(proc)
+                    raise InterruptedExecution
+
                 output_lines: list[str] = []
                 assert proc.stdout is not None
                 for line in proc.stdout:
+                    # (3) 各イテレーション冒頭の中断チェック。
+                    if is_interrupted is not None and is_interrupted():
+                        _terminate_and_drop(proc)
+                        raise InterruptedExecution
                     output_lines.append(line)
                     if on_output is not None:
                         on_output(line)
@@ -495,6 +552,8 @@ def _run_subprocess(
                     stdout="".join(output_lines),
                 )
             finally:
+                if subprocess_started and on_subprocess_end is not None:
+                    on_subprocess_end()
                 with _active_processes_lock, contextlib.suppress(ValueError):
                     _active_processes.remove(proc)
     except FileNotFoundError as e:
@@ -535,6 +594,9 @@ def execute_command(
     cache_store: "pyfltr.cache.CacheStore | None" = None,
     cache_run_id: str | None = None,
     only_failed_targets: "pyfltr.only_failed.ToolTargets | None" = None,
+    is_interrupted: typing.Callable[[], bool] | None = None,
+    on_subprocess_start: typing.Callable[[], None] | None = None,
+    on_subprocess_end: typing.Callable[[], None] | None = None,
 ) -> CommandResult:
     """コマンドの実行。
 
@@ -657,7 +719,20 @@ def execute_command(
     # checker 系 hook が残存エラーを報告すれば "failed" となる。
     if command == "pre-commit":
         return _with_targets(
-            _execute_pre_commit(command, command_info, commandline, targets, config, args, env, on_output, start_time)
+            _execute_pre_commit(
+                command,
+                command_info,
+                commandline,
+                targets,
+                config,
+                args,
+                env,
+                on_output,
+                start_time,
+                is_interrupted=is_interrupted,
+                on_subprocess_start=on_subprocess_start,
+                on_subprocess_end=on_subprocess_end,
+            )
         )
 
     # textlint の fix モードは 2 段階実行 (fix 適用 + lint チェック)。
@@ -676,13 +751,30 @@ def execute_command(
                 on_output,
                 start_time,
                 args,
+                is_interrupted=is_interrupted,
+                on_subprocess_start=on_subprocess_start,
+                on_subprocess_end=on_subprocess_end,
             )
         )
 
     # fix モードで linter に fix-args を適用する経路。
     # mtime 変化で formatted 判定を行い、rc != 0 はそのまま failed 扱いとする。
     if fix_args is not None and command_info.type != "formatter":
-        return _with_targets(_execute_linter_fix(command, command_info, commandline, targets, env, on_output, start_time, args))
+        return _with_targets(
+            _execute_linter_fix(
+                command,
+                command_info,
+                commandline,
+                targets,
+                env,
+                on_output,
+                start_time,
+                args,
+                is_interrupted=is_interrupted,
+                on_subprocess_start=on_subprocess_start,
+                on_subprocess_end=on_subprocess_end,
+            )
+        )
 
     # ruff-formatで ruff-format-by-check が有効な場合は、
     # 先に ruff check --fix --unsafe-fixes を実行してから ruff format を実行する。
@@ -690,7 +782,20 @@ def execute_command(
     # ただし exit >= 2 (設定エラー等) は失敗扱いする。
     if command == "ruff-format" and config["ruff-format-by-check"]:
         return _with_targets(
-            _execute_ruff_format_two_step(command, command_info, commandline, targets, config, args, env, on_output, start_time)
+            _execute_ruff_format_two_step(
+                command,
+                command_info,
+                commandline,
+                targets,
+                config,
+                args,
+                env,
+                on_output,
+                start_time,
+                is_interrupted=is_interrupted,
+                on_subprocess_start=on_subprocess_start,
+                on_subprocess_end=on_subprocess_end,
+            )
         )
 
     # shfmt は -l (確認) と -w (書き込み) が排他のため prettier 同様の 2 段階実行。
@@ -708,6 +813,9 @@ def execute_command(
                 on_output=on_output,
                 start_time=start_time,
                 args=args,
+                is_interrupted=is_interrupted,
+                on_subprocess_start=on_subprocess_start,
+                on_subprocess_end=on_subprocess_end,
             )
         )
 
@@ -729,6 +837,9 @@ def execute_command(
                 on_output=on_output,
                 start_time=start_time,
                 args=args,
+                is_interrupted=is_interrupted,
+                on_subprocess_start=on_subprocess_start,
+                on_subprocess_end=on_subprocess_end,
             )
         )
 
@@ -761,7 +872,14 @@ def execute_command(
     # verbose時はコマンドラインをon_output経由で出力
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(commandline)}\n")
-    proc = _run_subprocess(commandline, env, on_output)
+    proc = _run_subprocess(
+        commandline,
+        env,
+        on_output,
+        is_interrupted=is_interrupted,
+        on_subprocess_start=on_subprocess_start,
+        on_subprocess_end=on_subprocess_end,
+    )
     returncode = proc.returncode
 
     output = proc.stdout.strip()
@@ -895,6 +1013,10 @@ def _execute_pre_commit(
     env: dict[str, str] | None,
     on_output: typing.Callable[[str], None] | None,
     start_time: float,
+    *,
+    is_interrupted: typing.Callable[[], bool] | None = None,
+    on_subprocess_start: typing.Callable[[], None] | None = None,
+    on_subprocess_end: typing.Callable[[], None] | None = None,
 ) -> CommandResult:
     """pre-commit の 2 段階実行。
 
@@ -947,7 +1069,14 @@ def _execute_pre_commit(
             on_output(f"SKIP={pre_commit_env.get('SKIP', '')}\n")
 
     # stage 1: 実行
-    proc = _run_subprocess(commandline, pre_commit_env, on_output)
+    proc = _run_subprocess(
+        commandline,
+        pre_commit_env,
+        on_output,
+        is_interrupted=is_interrupted,
+        on_subprocess_start=on_subprocess_start,
+        on_subprocess_end=on_subprocess_end,
+    )
     returncode = proc.returncode
     has_error = False
 
@@ -955,7 +1084,14 @@ def _execute_pre_commit(
     if returncode != 0:
         if args.verbose and on_output is not None:
             on_output("pre-commit: stage 2 再実行\n")
-        proc = _run_subprocess(commandline, pre_commit_env, on_output)
+        proc = _run_subprocess(
+            commandline,
+            pre_commit_env,
+            on_output,
+            is_interrupted=is_interrupted,
+            on_subprocess_start=on_subprocess_start,
+            on_subprocess_end=on_subprocess_end,
+        )
         if proc.returncode != 0:
             returncode = proc.returncode
             has_error = True
@@ -984,6 +1120,10 @@ def _execute_linter_fix(
     on_output: typing.Callable[[str], None] | None,
     start_time: float,
     args: argparse.Namespace,
+    *,
+    is_interrupted: typing.Callable[[], bool] | None = None,
+    on_subprocess_start: typing.Callable[[], None] | None = None,
+    on_subprocess_end: typing.Callable[[], None] | None = None,
 ) -> CommandResult:
     """Fix モードでの linter 実行 (fix-args を適用して単発実行)。
 
@@ -1002,7 +1142,14 @@ def _execute_linter_fix(
 
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(commandline)}\n")
-    proc = _run_subprocess(commandline, env, on_output)
+    proc = _run_subprocess(
+        commandline,
+        env,
+        on_output,
+        is_interrupted=is_interrupted,
+        on_subprocess_start=on_subprocess_start,
+        on_subprocess_end=on_subprocess_end,
+    )
     returncode = proc.returncode
     output = proc.stdout.strip()
     elapsed = time.perf_counter() - start_time
@@ -1043,6 +1190,10 @@ def _execute_textlint_fix(
     on_output: typing.Callable[[str], None] | None,
     start_time: float,
     args: argparse.Namespace,
+    *,
+    is_interrupted: typing.Callable[[], bool] | None = None,
+    on_subprocess_start: typing.Callable[[], None] | None = None,
+    on_subprocess_end: typing.Callable[[], None] | None = None,
 ) -> CommandResult:
     """Textlint fix モードの 2 段階実行 (fix 適用 → lint チェック)。
 
@@ -1095,7 +1246,14 @@ def _execute_textlint_fix(
 
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(step1_commandline)}\n")
-    step1_proc = _run_subprocess(step1_commandline, env, on_output)
+    step1_proc = _run_subprocess(
+        step1_commandline,
+        env,
+        on_output,
+        is_interrupted=is_interrupted,
+        on_subprocess_start=on_subprocess_start,
+        on_subprocess_end=on_subprocess_end,
+    )
     step1_rc = step1_proc.returncode
     # rc=0 (違反なし) / rc=1 (違反残存) は通常終了、rc>=2 は致命的エラー扱い
     step1_fatal = step1_rc >= 2
@@ -1119,7 +1277,14 @@ def _execute_textlint_fix(
 
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(step2_commandline)}\n")
-    step2_proc = _run_subprocess(step2_commandline, env, on_output)
+    step2_proc = _run_subprocess(
+        step2_commandline,
+        env,
+        on_output,
+        is_interrupted=is_interrupted,
+        on_subprocess_start=on_subprocess_start,
+        on_subprocess_end=on_subprocess_end,
+    )
     step2_rc = step2_proc.returncode
     step2_fatal = step2_rc >= 2
 
@@ -1194,6 +1359,10 @@ def _execute_ruff_format_two_step(
     env: dict[str, str],
     on_output: typing.Callable[[str], None] | None,
     start_time: float,
+    *,
+    is_interrupted: typing.Callable[[], bool] | None = None,
+    on_subprocess_start: typing.Callable[[], None] | None = None,
+    on_subprocess_end: typing.Callable[[], None] | None = None,
 ) -> CommandResult:
     """ruff-format の 2 段階実行 (ruff check --fix → ruff format)。
 
@@ -1213,7 +1382,14 @@ def _execute_ruff_format_two_step(
     # ステップ1実行
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(check_commandline)}\n")
-    step1_proc = _run_subprocess(check_commandline, env, on_output)
+    step1_proc = _run_subprocess(
+        check_commandline,
+        env,
+        on_output,
+        is_interrupted=is_interrupted,
+        on_subprocess_start=on_subprocess_start,
+        on_subprocess_end=on_subprocess_end,
+    )
     step1_rc = step1_proc.returncode
     step1_failed = step1_rc >= 2  # exit 0/1 は無視、2 以上 (abrupt termination) のみ失敗扱い
     step1_changed = _snapshot_file_digests(targets) != digests_before
@@ -1221,7 +1397,14 @@ def _execute_ruff_format_two_step(
     # ステップ2実行 (常に実行)
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(format_commandline)}\n")
-    step2_proc = _run_subprocess(format_commandline, env, on_output)
+    step2_proc = _run_subprocess(
+        format_commandline,
+        env,
+        on_output,
+        is_interrupted=is_interrupted,
+        on_subprocess_start=on_subprocess_start,
+        on_subprocess_end=on_subprocess_end,
+    )
     step2_rc = step2_proc.returncode
     step2_formatted = step2_rc == 1
     step2_failed = step2_rc >= 2
@@ -1269,6 +1452,9 @@ def _execute_shfmt_two_step(
     on_output: typing.Callable[[str], None] | None,
     start_time: float,
     args: argparse.Namespace,
+    is_interrupted: typing.Callable[[], bool] | None = None,
+    on_subprocess_start: typing.Callable[[], None] | None = None,
+    on_subprocess_end: typing.Callable[[], None] | None = None,
 ) -> CommandResult:
     """Shfmt の 2 段階実行 (shfmt -l → shfmt -w)。
 
@@ -1304,7 +1490,14 @@ def _execute_shfmt_two_step(
         digests_before = _snapshot_file_digests(targets)
         if args.verbose and on_output is not None:
             on_output(f"commandline: {shlex.join(write_commandline)}\n")
-        write_proc = _run_subprocess(write_commandline, env, on_output)
+        write_proc = _run_subprocess(
+            write_commandline,
+            env,
+            on_output,
+            is_interrupted=is_interrupted,
+            on_subprocess_start=on_subprocess_start,
+            on_subprocess_end=on_subprocess_end,
+        )
         write_rc = write_proc.returncode
         output = write_proc.stdout.strip()
         elapsed = time.perf_counter() - start_time
@@ -1341,7 +1534,14 @@ def _execute_shfmt_two_step(
     ]
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(check_commandline)}\n")
-    check_proc = _run_subprocess(check_commandline, env, on_output)
+    check_proc = _run_subprocess(
+        check_commandline,
+        env,
+        on_output,
+        is_interrupted=is_interrupted,
+        on_subprocess_start=on_subprocess_start,
+        on_subprocess_end=on_subprocess_end,
+    )
     check_rc = check_proc.returncode
 
     if check_rc == 0:
@@ -1362,7 +1562,14 @@ def _execute_shfmt_two_step(
     # Step2: 書き込み
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(write_commandline)}\n")
-    write_proc = _run_subprocess(write_commandline, env, on_output)
+    write_proc = _run_subprocess(
+        write_commandline,
+        env,
+        on_output,
+        is_interrupted=is_interrupted,
+        on_subprocess_start=on_subprocess_start,
+        on_subprocess_end=on_subprocess_end,
+    )
     output = write_proc.stdout.strip()
     elapsed = time.perf_counter() - start_time
 
@@ -1403,6 +1610,9 @@ def _execute_prettier_two_step(
     on_output: typing.Callable[[str], None] | None,
     start_time: float,
     args: argparse.Namespace,
+    is_interrupted: typing.Callable[[], bool] | None = None,
+    on_subprocess_start: typing.Callable[[], None] | None = None,
+    on_subprocess_end: typing.Callable[[], None] | None = None,
 ) -> CommandResult:
     """Prettier の 2 段階実行 (prettier --check → prettier --write)。
 
@@ -1444,7 +1654,14 @@ def _execute_prettier_two_step(
         digests_before = _snapshot_file_digests(targets)
         if args.verbose and on_output is not None:
             on_output(f"commandline: {shlex.join(write_commandline)}\n")
-        write_proc = _run_subprocess(write_commandline, env, on_output)
+        write_proc = _run_subprocess(
+            write_commandline,
+            env,
+            on_output,
+            is_interrupted=is_interrupted,
+            on_subprocess_start=on_subprocess_start,
+            on_subprocess_end=on_subprocess_end,
+        )
         write_rc = write_proc.returncode
         output = write_proc.stdout.strip()
         elapsed = time.perf_counter() - start_time
@@ -1487,7 +1704,14 @@ def _execute_prettier_two_step(
 
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(check_commandline)}\n")
-    step1_proc = _run_subprocess(check_commandline, env, on_output)
+    step1_proc = _run_subprocess(
+        check_commandline,
+        env,
+        on_output,
+        is_interrupted=is_interrupted,
+        on_subprocess_start=on_subprocess_start,
+        on_subprocess_end=on_subprocess_end,
+    )
     step1_rc = step1_proc.returncode
 
     if step1_rc == 0:
@@ -1526,7 +1750,14 @@ def _execute_prettier_two_step(
     # Step1 rc == 1 → Step2 実行 (書き込み)
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(write_commandline)}\n")
-    step2_proc = _run_subprocess(write_commandline, env, on_output)
+    step2_proc = _run_subprocess(
+        write_commandline,
+        env,
+        on_output,
+        is_interrupted=is_interrupted,
+        on_subprocess_start=on_subprocess_start,
+        on_subprocess_end=on_subprocess_end,
+    )
     step2_rc = step2_proc.returncode
     output = (step1_proc.stdout + step2_proc.stdout).strip()
     elapsed = time.perf_counter() - start_time
