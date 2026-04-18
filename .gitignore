@@ -211,3 +211,8 @@ __marimo__/
 # Claude Code (個人設定とランタイム生成ファイル)
 .claude/settings.local.json
 .claude/.format-dirty
+
+# spec-driven 一時ファイル (作業中メモ・サブエージェント出力)
+# `respect-gitignore=true` 既定動作により pyfltr の textlint からも自動除外される
+*.working.md
+*.review-*.md
