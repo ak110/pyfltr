@@ -15,6 +15,7 @@ import pyfltr.cache
 import pyfltr.command
 import pyfltr.config
 import pyfltr.only_failed
+import pyfltr.paths
 import pyfltr.warnings_
 from tests import conftest as _testconf
 
@@ -379,7 +380,9 @@ def test_textlint_fix_mode_emits_warning_when_protected_identifier_corrupted(moc
     entries = [w for w in pyfltr.warnings_.collected_warnings() if w["source"] == "textlint-identifier-corruption"]
     assert len(entries) == 1
     assert ".NET" in entries[0]["message"]
-    assert str(target) in entries[0]["message"]
+    # パスは cwd 相対化されて記録される（絶対パスのまま埋め込まれない）
+    relative = pyfltr.paths.to_cwd_relative(target)
+    assert f"file={relative}" in entries[0]["message"]
 
 
 def test_textlint_fix_mode_no_warning_when_protected_identifiers_empty(mocker, tmp_path: pathlib.Path) -> None:

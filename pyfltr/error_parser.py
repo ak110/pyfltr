@@ -226,7 +226,7 @@ def _parse_eslint_json(output: str) -> list[ErrorLocation]:
             rule = rule_id or None
             results.append(
                 ErrorLocation(
-                    file=_normalize_path(file_path),
+                    file=pyfltr.paths.to_cwd_relative(file_path),
                     line=line,
                     col=col,
                     command="eslint",
@@ -266,7 +266,7 @@ def _parse_ruff_check_json(output: str) -> list[ErrorLocation]:
         existing_url = str(entry_url) if isinstance(entry_url, str) and entry_url else None
         results.append(
             ErrorLocation(
-                file=_normalize_path(str(entry.get("filename", ""))),
+                file=pyfltr.paths.to_cwd_relative(str(entry.get("filename", ""))),
                 line=line,
                 col=col,
                 command="ruff-check",
@@ -314,7 +314,7 @@ def _parse_pylint_json(output: str) -> list[ErrorLocation]:
         category = msg_type or None
         results.append(
             ErrorLocation(
-                file=_normalize_path(str(msg.get("path", ""))),
+                file=pyfltr.paths.to_cwd_relative(str(msg.get("path", ""))),
                 line=line,
                 col=col,
                 command="pylint",
@@ -354,7 +354,7 @@ def _parse_pyright_json(output: str) -> list[ErrorLocation]:
         rule = str(diag.get("rule", "")) or None
         results.append(
             ErrorLocation(
-                file=_normalize_path(str(diag.get("file", ""))),
+                file=pyfltr.paths.to_cwd_relative(str(diag.get("file", ""))),
                 line=line + 1,
                 col=col,
                 command="pyright",
@@ -387,7 +387,7 @@ def _parse_shellcheck_json(output: str) -> list[ErrorLocation]:
         fix_value = "safe" if entry.get("fix") else "none"
         results.append(
             ErrorLocation(
-                file=_normalize_path(str(entry.get("file", ""))),
+                file=pyfltr.paths.to_cwd_relative(str(entry.get("file", ""))),
                 line=line,
                 col=col,
                 command="shellcheck",
@@ -430,7 +430,7 @@ def _parse_textlint_json(output: str) -> list[ErrorLocation]:
             fix_value = "safe" if msg.get("fix") else "none"
             results.append(
                 ErrorLocation(
-                    file=_normalize_path(file_path),
+                    file=pyfltr.paths.to_cwd_relative(file_path),
                     line=line,
                     col=col,
                     command="textlint",
@@ -476,7 +476,7 @@ def _parse_typos_jsonl(output: str) -> list[ErrorLocation]:
             fix_value = "none"
         results.append(
             ErrorLocation(
-                file=_normalize_path(str(entry.get("path", ""))),
+                file=pyfltr.paths.to_cwd_relative(str(entry.get("path", ""))),
                 line=line_num,
                 col=None,
                 command="typos",
@@ -523,7 +523,7 @@ def _parse_pytest(output: str) -> list[ErrorLocation]:
 
         chosen = frames[-1]  # フォールバック: 最後のフレーム
         for frame in reversed(frames):
-            if _is_project_path(_normalize_path(frame.group("file"))):
+            if _is_project_path(pyfltr.paths.to_cwd_relative(frame.group("file"))):
                 chosen = frame
                 break
 
@@ -533,7 +533,7 @@ def _parse_pytest(output: str) -> list[ErrorLocation]:
 
         results.append(
             ErrorLocation(
-                file=_normalize_path(chosen.group("file")),
+                file=pyfltr.paths.to_cwd_relative(chosen.group("file")),
                 line=int(chosen.group("line")),
                 col=None,
                 command="pytest",
@@ -641,7 +641,7 @@ def _parse_with_pattern(command: str, output: str, pattern: str) -> list[ErrorLo
         rule_url = pyfltr.rule_urls.build_rule_url(command, rule) if rule is not None else None
         results.append(
             ErrorLocation(
-                file=_normalize_path(file_path),
+                file=pyfltr.paths.to_cwd_relative(file_path),
                 line=line_num,
                 col=col_num,
                 command=command,
@@ -666,19 +666,6 @@ def _extract_last_line(output: str) -> str | None:
         if line and not re.fullmatch(r"[=\-*#]+", line):
             return line
     return None
-
-
-def _normalize_path(file_path: str) -> str:
-    """パスをcwd基準の相対パスに正規化する。区切り文字はスラッシュに統一する。"""
-    path = pathlib.Path(file_path)
-    if path.is_absolute():
-        try:
-            result = str(path.relative_to(pathlib.Path.cwd()))
-        except ValueError:
-            # cwdの配下でない場合はそのまま返す
-            return file_path
-        return pyfltr.paths.normalize_separators(result)
-    return pyfltr.paths.normalize_separators(file_path)
 
 
 def _is_project_path(normalized_path: str) -> bool:

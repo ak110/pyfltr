@@ -21,6 +21,7 @@ import natsort
 
 import pyfltr.config
 import pyfltr.error_parser
+import pyfltr.paths
 import pyfltr.precommit
 import pyfltr.warnings_
 
@@ -1588,7 +1589,8 @@ def _warn_protected_identifier_corruption(
                     source="textlint-identifier-corruption",
                     message=(
                         f"textlint fix が保護対象識別子を変換した可能性: "
-                        f"{identifier!r} (file={path}, before={before_count}, after={after_count})"
+                        f"{identifier!r} (file={pyfltr.paths.to_cwd_relative(path)}, "
+                        f"before={before_count}, after={after_count})"
                     ),
                 )
 
