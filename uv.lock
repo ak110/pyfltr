@@ -7,7 +7,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-04-17T06:49:33.387032105Z"
+exclude-newer = "2026-04-17T20:09:30.957353014Z"
 exclude-newer-span = "P1D"
 
 [options.exclude-newer-package]
@@ -1210,6 +1210,7 @@ dependencies = [
     { name = "mcp" },
     { name = "natsort" },
     { name = "platformdirs" },
+    { name = "pre-commit" },
     { name = "psutil" },
     { name = "python-ulid" },
     { name = "pyyaml" },
@@ -1220,7 +1221,6 @@ dependencies = [
 python = [
     { name = "dill" },
     { name = "mypy" },
-    { name = "pre-commit" },
     { name = "pylint" },
     { name = "pylint-pydantic" },
     { name = "pyright", extra = ["nodejs"] },
@@ -1248,7 +1248,7 @@ requires-dist = [
     { name = "mypy", marker = "extra == 'python'", specifier = ">=1.0" },
     { name = "natsort", specifier = ">=8.4.0" },
     { name = "platformdirs", specifier = ">=4.0" },
-    { name = "pre-commit", marker = "extra == 'python'", specifier = ">=4.5.1" },
+    { name = "pre-commit", specifier = ">=4.5.1" },
     { name = "psutil", specifier = ">=6.0" },
     { name = "pylint", marker = "extra == 'python'", specifier = ">=3.0" },
     { name = "pylint-pydantic", marker = "extra == 'python'", specifier = ">=0.4.1" },

@@ -372,16 +372,6 @@ class CommandResult:
         return f"{self.status} ({self.files}files in {self.elapsed:.1f}s)"
 
 
-def _resolve_runner(name: str) -> str:
-    """コマンド名をフルパスに解決する。
-
-    Windowsでは.cmd/.bat等の拡張子付きで実行ファイルを検索する必要がある。
-    見つからない場合は元の名前をそのまま返す（subprocess側でFileNotFoundErrorになる）。
-    """
-    resolved = shutil.which(name)
-    return resolved if resolved is not None else name
-
-
 def _resolve_js_commandline(
     command: str,
     config: pyfltr.config.Config,
@@ -404,19 +394,19 @@ def _resolve_js_commandline(
         for pkg in packages:
             prefix.extend(["--package", pkg])
         prefix.append(bin_name)
-        return _resolve_runner("pnpx"), prefix
+        return "pnpx", prefix
     if runner == "pnpm":
-        return _resolve_runner("pnpm"), ["exec", bin_name]
+        return "pnpm", ["exec", bin_name]
     if runner == "npm":
-        return _resolve_runner("npm"), ["exec", "--no", "--", bin_name]
+        return "npm", ["exec", "--no", "--", bin_name]
     if runner == "npx":
         prefix = ["--no-install"]
         for pkg in packages:
             prefix.extend(["-p", pkg])
         prefix.extend(["--", bin_name])
-        return _resolve_runner("npx"), prefix
+        return "npx", prefix
     if runner == "yarn":
-        return _resolve_runner("yarn"), ["run", bin_name]
+        return "yarn", ["run", bin_name]
     if runner == "direct":
         bin_dir = pathlib.Path("node_modules") / ".bin"
         # Windows では `.cmd` 付きのラッパーを優先する。pyright の静的評価では
@@ -433,6 +423,23 @@ def _resolve_js_commandline(
     raise ValueError(f"js-runnerの設定値が正しくありません: {runner=}")
 
 
+def _get_env_path(env: dict[str, str]) -> str | None:
+    """``env`` から PATH 値を取り出す。
+
+    Windows は環境変数名が大文字小文字非区別のため ``env`` キーを非依存探索する
+    (``env={"Path": "..."}`` のように大小が混在していても拾う)。POSIX で同じ探索を
+    行うと ``env={"Path": "/tmp/bin", "PATH": "/usr/bin"}`` のようなケースで解決側と
+    Popen 実行時側の PATH が不一致となるため、POSIX では ``env.get("PATH")`` のみを
+    使う。
+    """
+    if os.name == "nt":
+        for key, value in env.items():
+            if key.upper() == "PATH":
+                return value
+        return None
+    return env.get("PATH")
+
+
 def _run_subprocess(
     commandline: list[str],
     env: dict[str, str],
@@ -445,13 +452,26 @@ def _run_subprocess(
     ``on_output`` が指定されている場合は逐次コールバックを呼び、未指定時は最後に
     全出力をまとめて返す。
 
-    実行ファイルが見つからない場合は `FileNotFoundError` を握りつぶし、
-    rc=127 の `CompletedProcess` として返す。これにより並列実行下の他コマンドを
-    巻き込まずに、呼び出し側で通常の失敗として扱える。
+    Windows では ``subprocess.Popen`` を ``shell=False`` でリスト渡しにすると
+    ``.exe`` / ``.cmd`` 等の拡張子付きファイルを PATH から自動解決しないため、
+    ここで ``shutil.which`` を使って ``commandline[0]`` をフルパスへ解決する。
+    引数の ``commandline`` は書き換えず、Popen に渡す一時リストのみで差し替える
+    (CommandResult.commandline や retry_command に解決後のフルパスが混入して
+    ポータビリティが損なわれるのを避けるため)。解決探索対象 PATH は Popen に
+    渡す ``env`` の PATH 値と一致させる (隔離した env で見えない実行ファイルを
+    起動したり、逆に env でだけ見える実行ファイルを解決できない事故を避ける)。
+    Windows では環境変数名が大文字小文字非区別のため env キーを非依存探索する。
+    解決できなかった場合は元のコマンド名のまま Popen に渡し、既存の
+    FileNotFoundError 経路で rc=127 の `CompletedProcess` に変換する。
     """
+    popen_commandline = commandline
+    env_path = _get_env_path(env)
+    resolved = shutil.which(commandline[0], path=env_path)
+    if resolved is not None and resolved != commandline[0]:
+        popen_commandline = [resolved, *commandline[1:]]
     try:
         with subprocess.Popen(
-            commandline,
+            popen_commandline,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             env=env,

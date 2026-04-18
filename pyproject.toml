@@ -21,6 +21,7 @@ dependencies = [
     "mcp>=1.0",
     "natsort>=8.4.0",
     "platformdirs>=4.0",
+    "pre-commit>=4.5.1",
     "psutil>=6.0",
     "python-ulid>=3.0",
     "pyyaml>=6.0.3",
@@ -28,13 +29,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Python 系 linter / tester / pre-commit 依存を導入するための extras。
+# Python 系 linter / tester 依存を導入するための extras。
 # v3.0.0 でオプトイン化したため、Python プロジェクトでは
 # ``pip install pyfltr[python]`` または ``uv add 'pyfltr[python]'`` で追加する。
 python = [
     "dill>=0.3",
     "mypy>=1.0",
-    "pre-commit>=4.5.1",
     "pylint-pydantic>=0.4.1",
     "pylint>=3.0",
     "pyright[nodejs]>=1.1.403",

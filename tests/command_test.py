@@ -8,6 +8,7 @@ import os
 import pathlib
 import shutil
 import subprocess
+import typing
 
 import pytest
 
@@ -1757,3 +1758,118 @@ def test_pick_targets_returns_none_for_missing_command() -> None:
     targets: dict[str, pyfltr.only_failed.ToolTargets] = {}
     result = pyfltr.command.pick_targets(targets, "mypy")
     assert result is None
+
+
+class _FakePopen:
+    """``subprocess.Popen`` を差し替えるための最小スタブ。
+
+    ``_run_subprocess`` のテスト用。Popen の with 文経由での利用と stdout 逐次読み込み・
+    wait() までを満たす最小限の振る舞いを提供する。起動引数はクラス変数
+    ``last_args_holder`` のリスト内に追記する (None 判定を避けて pylint の型縮めに頼らない)。
+    """
+
+    last_args_holder: list[list[str]] = []
+
+    def __init__(self, args, **kwargs):  # type: ignore[no-untyped-def]
+        del kwargs  # noqa
+        _FakePopen.last_args_holder.append(list(args))
+        self.returncode = 0
+        self.stdout: typing.Iterator[str] = iter([])
+
+    def __enter__(self):  # type: ignore[no-untyped-def]
+        """with 文のエントリー。"""
+        return self
+
+    def __exit__(self, exc_type, exc, tb):  # type: ignore[no-untyped-def]
+        """with 文のイグジット。"""
+        del exc_type, exc, tb  # noqa
+        return False
+
+    def wait(self):  # type: ignore[no-untyped-def]
+        """プロセス終了待ち。ダミーで直ちに returncode を返す。"""
+        return self.returncode
+
+
+def test_run_subprocess_resolves_command_via_shutil_which(mocker) -> None:
+    """``commandline[0]`` が ``shutil.which`` で解決されて Popen に渡る。"""
+    _FakePopen.last_args_holder = []
+    mocker.patch("pyfltr.command.shutil.which", return_value="/resolved/pre-commit")
+    mocker.patch("pyfltr.command.subprocess.Popen", _FakePopen)
+
+    pyfltr.command._run_subprocess(["pre-commit", "run", "--all-files"], {"PATH": "/usr/bin"})
+
+    assert _FakePopen.last_args_holder == [["/resolved/pre-commit", "run", "--all-files"]]
+
+
+def test_run_subprocess_keeps_original_name_when_unresolved(mocker) -> None:
+    """``shutil.which`` が None なら元のコマンド名のまま Popen に渡る。"""
+    _FakePopen.last_args_holder = []
+    mocker.patch("pyfltr.command.shutil.which", return_value=None)
+    mocker.patch("pyfltr.command.subprocess.Popen", _FakePopen)
+
+    pyfltr.command._run_subprocess(["missing-tool", "arg"], {"PATH": "/usr/bin"})
+
+    assert _FakePopen.last_args_holder == [["missing-tool", "arg"]]
+
+
+def test_run_subprocess_resolves_via_env_path(mocker, tmp_path: pathlib.Path, monkeypatch) -> None:
+    """``os.environ["PATH"]`` では見えず ``env["PATH"]`` にだけある実行ファイルが解決される。
+
+    解決探索対象 PATH と Popen へ渡す ``env["PATH"]`` の一致要件に対するリグレッション防止。
+    """
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    target = bin_dir / "faketool"
+    # Windows の shutil.which は実行属性ではなく PATHEXT 拡張子で判定するため、
+    # プラットフォームに応じて実行ファイル名を調整する (本テストの主眼は
+    # env["PATH"] 経由での解決可否で、実行属性の有無は付随的)。
+    target.write_text("")
+    target.chmod(0o755)
+
+    # os.environ の PATH からは bin_dir を除外する (env["PATH"] 経由で解決することの検証)
+    monkeypatch.setenv("PATH", "/nonexistent-pyfltr-test-path")
+
+    _FakePopen.last_args_holder = []
+    mocker.patch("pyfltr.command.subprocess.Popen", _FakePopen)
+
+    pyfltr.command._run_subprocess(["faketool"], {"PATH": str(bin_dir)})
+
+    # 解決されたパスが渡ること (先頭要素が /tmp/.../bin/faketool* を指す)
+    assert len(_FakePopen.last_args_holder) == 1
+    resolved = pathlib.Path(_FakePopen.last_args_holder[0][0])
+    assert resolved.name.startswith("faketool")
+    assert resolved.parent == bin_dir
+
+
+def test_run_subprocess_does_not_mutate_commandline(mocker) -> None:
+    """呼び出し側の ``commandline`` リストは書き換えない (retry_command 等に影響するため)。"""
+    _FakePopen.last_args_holder = []
+    mocker.patch("pyfltr.command.shutil.which", return_value="/resolved/tool")
+    mocker.patch("pyfltr.command.subprocess.Popen", _FakePopen)
+
+    original = ["tool", "arg"]
+    pyfltr.command._run_subprocess(original, {"PATH": "/usr/bin"})
+
+    assert original == ["tool", "arg"]
+
+
+def test_get_env_path_windows_uses_case_insensitive_key(monkeypatch) -> None:
+    """Windows (``os.name == "nt"``) では ``Path`` キーも ``PATH`` として採用される。"""
+    monkeypatch.setattr("pyfltr.command.os.name", "nt")
+    assert pyfltr.command._get_env_path({"Path": "/tmp/bin"}) == "/tmp/bin"
+    assert pyfltr.command._get_env_path({"path": "/tmp/bin"}) == "/tmp/bin"
+    # PATH 大文字が存在する場合も取れる
+    assert pyfltr.command._get_env_path({"PATH": "/tmp/bin"}) == "/tmp/bin"
+
+
+def test_get_env_path_posix_strict_key(monkeypatch) -> None:
+    """POSIX では ``env.get("PATH")`` のみを使い、``Path`` キーは採用しない。
+
+    ``env={"Path": "/tmp/bin", "PATH": "/usr/bin"}`` で解決側と Popen 実行時側の PATH が
+    不一致になる事故を防ぐ設計。
+    """
+    monkeypatch.setattr("pyfltr.command.os.name", "posix")
+    assert pyfltr.command._get_env_path({"Path": "/tmp/bin"}) is None
+    assert pyfltr.command._get_env_path({"PATH": "/usr/bin"}) == "/usr/bin"
+    # 両方あっても PATH のみを採用する
+    assert pyfltr.command._get_env_path({"Path": "/tmp/bin", "PATH": "/usr/bin"}) == "/usr/bin"

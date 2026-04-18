@@ -139,11 +139,12 @@ uv add --dev 'pyfltr[python]'
 
 `pyfltr[python]`に含まれる依存は次の通り。
 
-- `dill` / `mypy` / `pre-commit` / `pylint` / `pylint-pydantic`
+- `dill` / `mypy` / `pylint` / `pylint-pydantic`
 - `pyright[nodejs]` / `pytest` / `pytest-asyncio` / `ruff` / `ty` / `uv-sort`
 
 非Pythonプロジェクトでは`pyfltr`のみインストールすれば十分。
-本体必須依存は`mcp` / `natsort` / `platformdirs` / `python-ulid` / `pyyaml` / `textual`のみで、Python系linterを一切含まない。
+本体必須依存は`mcp` / `natsort` / `platformdirs` / `pre-commit` / `python-ulid` / `pyyaml` / `textual`で、Python系linterを一切含まない。
+`pre-commit`は言語非依存でどのプロジェクトでも利用できるため常時依存とする。
 
 ## 6. 新機能の活用
 
