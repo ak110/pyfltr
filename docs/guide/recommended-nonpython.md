@@ -3,7 +3,7 @@
 Python以外のプロジェクトでもpyfltrを活用できる。共通のポイントは以下。
 
 - `preset = "latest"`: 各時点での推奨ツール構成。ドキュメント系（markdownlint / textlint / actionlint / typos / pre-commit）はいずれの言語ゲートにも属さず常に有効化される
-- 言語別ツールはv3.0.0以降すべてopt-in。利用する言語カテゴリキー（`python` / `javascript` / `rust` / `dotnet`）を`true`にしてゲートを開けると、プリセットが推奨する当該言語のツール一式が有効化される
+- 言語カテゴリゲートの詳細は[設定項目](configuration.md)を参照
 - `uvx pyfltr`: pyfltrをdev依存に含めないため、`uvx`で都度取得して実行する
 - 言語固有のツール + ドキュメント系lint（textlint / markdownlint / prettier）を組み合わせる
 - `bin-runner`のデフォルトは`"mise"`。actionlint / typos等のネイティブバイナリツールはmise経由で呼び出されるため、mise導入とツールのセットアップ（`mise use actionlint@latest typos@latest`等）を推奨する
@@ -56,7 +56,7 @@ extend-exclude = [
 ## Rustプロジェクト
 
 `cargo fmt` / `cargo clippy` / `cargo test` / `cargo deny`と、ドキュメント系lint（`textlint` / `markdownlint-cli2` / `prettier`）をpyfltrに一元化する例。
-v3.0.0以降、言語カテゴリはすべてopt-inのため、非Rustプロジェクトでcargo系が走ることはない。
+言語カテゴリはすべてopt-inのため、非Rustプロジェクトでcargo系が実行されることはない。
 
 `pyproject.toml`:
 
@@ -68,7 +68,7 @@ exclude-newer = "1 day"
 preset = "latest"
 rust = true
 js-runner = "pnpm"
-# prettier はドキュメント系を pnpm で回すために個別に opt-in する
+# prettier はドキュメント系を pnpm で実行するために個別に opt-in する
 # (javascript ゲートは開けず、Rust 専用プロジェクトで不要な JS 系 linter / tester を走らせない)
 prettier = true
 
@@ -117,7 +117,7 @@ exclude-newer = "1 day"
 preset = "latest"
 dotnet = true
 js-runner = "pnpm"
-# prettier はドキュメント系を pnpm で回すために個別に opt-in する
+# prettier はドキュメント系を pnpm で実行するために個別に opt-in する
 # (javascript ゲートは開けず、.NET 専用プロジェクトで不要な JS 系 linter / tester を走らせない)
 prettier = true
 

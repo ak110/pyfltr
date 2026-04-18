@@ -35,7 +35,7 @@ JSONLはLLMエージェントが入力として読むケースが多いため、
 | `"unsafe"` | 自動修正可能だが副作用の可能性があるとツールが判断している（ruff`--unsafe-fixes`等） |
 | `"suggested"` | ツールが候補を示しているが適用は人間の判断に委ねる |
 | `"none"` | ツールが自動修正情報を返した上で「自動修正不可」と明示している |
-| 省略（`None`） | ツールが自動修正情報をそもそも返さない（regex パース系の mypy / pylint / markdownlint など） |
+| 省略（`None`） | ツールが自動修正情報を返さない（regex パース系の mypy / pylint / markdownlint など） |
 
 ruff-check / shellcheck / textlint / eslint / typosは自動修正情報の有無をJSON出力で明示する。
 パーサーは「情報が来たが候補ゼロ」を`"none"`として明示し、パーサー自体が情報を返さない場合は`None`として省略する。

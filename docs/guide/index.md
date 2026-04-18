@@ -10,8 +10,6 @@
 
 ### Python系
 
-いずれも既定で無効（opt-in）。
-`pyproject.toml`に`preset = "latest"` + `python = true`を設定すると推奨ツール一式が有効化される。
 対象はruff-format / ruff-check / mypy / pylint / pyright / pytest / uv-sortの7種。
 `ty`はプリセット非収録のため、必要な場合のみ個別に`ty = true`を指定する。
 同時に`pip install pyfltr[python]`でPython系ツールの依存を追加する必要がある。
@@ -22,9 +20,7 @@
 
 ### JS/TS系
 
-いずれも既定で無効（opt-in）。
-`preset = "latest"` + `javascript = true`で推奨ツール一式が有効化される（TypeScriptも同カテゴリ）。
-対象はeslint / biome / oxlint / prettier / tsc / vitestの6種。
+対象はeslint / biome / oxlint / prettier / tsc / vitestの6種（TypeScriptも同カテゴリ）。
 `js-runner`設定で起動方式（pnpx / pnpm / npx等）を切り替える。
 
 - Formatters: prettier
@@ -33,8 +29,7 @@
 
 ### Rust系
 
-いずれも既定で無効（opt-in）。
-`preset = "latest"` + `rust = true`で推奨ツール一式（cargo-fmt / cargo-clippy / cargo-check / cargo-test / cargo-deny）が有効化される。
+推奨ツール一式はcargo-fmt / cargo-clippy / cargo-check / cargo-test / cargo-denyの5種。
 プロジェクト全体（crate単位）を対象に直接実行する（`{command}-path`で実行パスを指定）。
 
 - Formatters: cargo fmt
@@ -43,8 +38,7 @@
 
 ### .NET系
 
-いずれも既定で無効（opt-in）。
-`preset = "latest"` + `dotnet = true`で推奨ツール一式（dotnet-format / dotnet-build / dotnet-test）が有効化される。
+推奨ツール一式はdotnet-format / dotnet-build / dotnet-testの3種。
 プロジェクト全体（solution単位）を対象に直接実行する（`{command}-path`で実行パスを指定）。
 
 - Formatters: dotnet format

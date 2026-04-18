@@ -64,7 +64,7 @@ plugins:
         pylint-args = ["--jobs=4"]
         ```
 
-        v3.0.0以降、Python / JavaScript / Rust / .NET の各言語カテゴリに属するツールはすべて opt-in 化された。`preset = "latest"` + `{language} = true` で当該言語の推奨ツール一式がゲートを通過して有効化される。プリセット非収録のツール (例: `ty`) を追加したい場合は個別に `{tool} = true` を指定する (ゲートを越えて最優先)。Pythonプロジェクトでは別途 `uv add --dev 'pyfltr[python]'` (または `pip install pyfltr[python]`) で依存を導入する。
+        Python / JavaScript / Rust / .NET の各言語カテゴリに属するツールはすべて既定で無効（opt-in）である。`preset = "latest"` + `{language} = true` で当該言語の推奨ツール一式がゲートを通過して有効化される。プリセット非収録のツール (例: `ty`) を追加したい場合は個別に `{tool} = true` を指定する (ゲートを越えて最優先)。Pythonプロジェクトでは別途 `uv add --dev 'pyfltr[python]'` (または `pip install pyfltr[python]`) で依存を導入する。
 
         ## LLMエージェント向け出力（`--output-format=jsonl`）
 
@@ -80,7 +80,7 @@ plugins:
 
         `diagnostic`の`rule_url`は対応ツール（ruff / pylint / pyright / mypy / shellcheck / eslint / markdownlint）でのみ付与される。`severity`は`"error"` / `"warning"` / `"info"` の3値に正規化される（未対応ツールは省略）。
 
-        `tool`の`retry_command`は当該ツール1件を再実行するshellコマンド文字列で、`--no-fix`/`--output-format`などの実行意味論フラグを保持する。v3.0.0以降、ターゲット位置引数は「当該ツールで失敗したファイルのみ」に絞り込まれる（失敗ファイルを特定できないツールはターゲット空）。キャッシュ復元結果（`cached=true`）では`retry_command`は出力されない。`truncated`はsmart truncationが発生した場合のみ付与され、`archive`パス（`tools/<tool>/output.log` / `tools/<tool>/diagnostics.jsonl`）から全文を復元できる。smart truncationの閾値は`jsonl-diagnostic-limit`/`jsonl-message-max-lines`/`jsonl-message-max-chars`で制御できる。
+        `tool`の`retry_command`は当該ツール1件を再実行するshellコマンド文字列で、`--no-fix`/`--output-format`などの実行意味論フラグを保持する。ターゲット位置引数は「当該ツールで失敗したファイルのみ」に絞り込まれる（失敗ファイルを特定できないツールはターゲット空）。キャッシュ復元結果（`cached=true`）では`retry_command`は出力されない。`truncated`はsmart truncationが発生した場合のみ付与され、`archive`パス（`tools/<tool>/output.log` / `tools/<tool>/diagnostics.jsonl`）から全文を復元できる。smart truncationの閾値は`jsonl-diagnostic-limit`/`jsonl-message-max-lines`/`jsonl-message-max-chars`で制御できる。
 
         `cached`はファイルhashキャッシュから結果を復元したときだけ `true` として付与される（現状は `textlint` のみ対象）。`cached_from`は復元元の `run_id` で、`pyfltr show-run` で当該 run の全文を参照できる。キャッシュは `--no-cache` または `cache = false` で無効化でき、既定の保存期間は 12 時間（`cache-max-age-hours`）。
 
