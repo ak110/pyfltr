@@ -1,7 +1,6 @@
 ---
 name: pyfltr-add-tool
 description: pyfltr に新しい formatter / linter / tester を追加する際の定型手順チェックリスト。config.py / command.py / error_parser.py / docs/index.md / tests を一貫して更新する。
-disable-model-invocation: true
 ---
 
 # pyfltr 新ツール追加チェックリスト
