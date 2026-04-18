@@ -10,8 +10,11 @@
   - ドキュメントなどのみの変更の場合は省略可（pre-commitで実行されるため）
   - テストコードの単体実行なども極力 `uv run pyfltr run-for-agent <path>` を使う（pytestを直接呼び出さない）
     - 詳細な情報などが必要な場合に限り `uv run pytest -vv <path>` などを使用
-  - JSONL出力は`header`（実行環境・`run_id`）→ `diagnostic`+`tool`（ツール完了ごと）→ `warning`→ `summary`（末尾）の順に出力される。末尾の`summary`で`failed`と`diagnostics`を確認し、必要に応じて`diagnostic`行のファイル・行番号・メッセージを参照する。`header.run_id`（ULID）は実行アーカイブの参照キー
-  - `diagnostic`の任意フィールド: `rule`・`rule_url`（対応ツールのみ）・`severity`（3値に正規化）・`fix`
+  - JSONL出力は`header`（実行環境・`run_id`・`schema_hints`）→ `diagnostic`+`tool`（ツール完了ごと）→ `warning`→ `summary`（末尾）の順に出力される。末尾の`summary`で`failed`と`diagnostics`を確認し、必要に応じて`diagnostic`行のファイル・行番号・メッセージを参照する。`header.run_id`（ULID）は実行アーカイブの参照キー
+  - `header.schema_hints`はJSONL各フィールドの意味をLLM向け英語ガイドとして毎runに付与する
+  - `summary.guidance`（英語配列）は`failed > 0`のときのみ付与され、`tool.retry_command` / `--only-failed` / `show-run` の案内を示す
+  - `diagnostic`の任意フィールド: `rule`・`rule_url`（対応ツールのみ）・`severity`（3値に正規化）・`fix`（値域の詳細は後述）
+  - `fix`は`"safe"` / `"unsafe"` / `"suggested"` / `"none"`の4値。ツールが自動修正情報を返さない場合はフィールドごと省略
   - `tool`の任意フィールド: `retry_command`（当該ツールで失敗したファイルのみに絞った再実行コマンド）・`truncated`（smart truncation発生時。`archive`パスで全文参照）
   - `retry_command`の追加仕様: 失敗ファイルを特定できない場合はターゲット位置引数が空。`cached=true`時は出力されない
   - `tool`のキャッシュ関連フィールド: `cached`（ファイルhashキャッシュから復元されたとき `true`）・`cached_from`（`cached=true` 時のソース `run_id`）

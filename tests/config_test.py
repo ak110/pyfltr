@@ -13,7 +13,7 @@ from tests import conftest as _testconf
 @pytest.mark.parametrize(
     "preset,expected",
     [
-        # presetが空の場合はデフォルト（Python系ツールは全てFalse）
+        # presetが空の場合はデフォルト（全ツールFalse）
         (
             "",
             {
@@ -24,48 +24,46 @@ from tests import conftest as _testconf
                 "ty": False,
                 "textlint": False,
                 "markdownlint": False,
+                "actionlint": False,
+                "typos": False,
+                "pre-commit": False,
             },
         ),
-        # 20260330プリセット
+        # 20260418プリセット（言語非依存+ドキュメント系のみ）
         (
-            "20260330",
+            "20260418",
             {
-                "ruff-format": True,
-                "ruff-check": True,
-                "pyright": True,
-                "ty": False,
-                "textlint": True,
                 "markdownlint": True,
-            },
-        ),
-        # 20260411プリセット
-        (
-            "20260411",
-            {
-                "ruff-format": True,
-                "ruff-check": True,
-                "pyright": True,
-                "ty": False,
                 "textlint": True,
-                "markdownlint": True,
                 "actionlint": True,
                 "typos": True,
-                "uv-sort": True,
+                "pre-commit": True,
+                # 言語カテゴリは有効化されない (opt-in)
+                "ruff-format": False,
+                "ruff-check": False,
+                "pyright": False,
+                "uv-sort": False,
+                "eslint": False,
+                "cargo-fmt": False,
+                "dotnet-format": False,
             },
         ),
-        # latestプリセット（= 20260413相当）
+        # latestプリセット（= 20260418相当）
         (
             "latest",
             {
-                "ruff-format": True,
-                "ruff-check": True,
-                "pyright": True,
-                "ty": False,
-                "textlint": True,
                 "markdownlint": True,
+                "textlint": True,
                 "actionlint": True,
                 "typos": True,
-                "uv-sort": True,
+                "pre-commit": True,
+                "ruff-format": False,
+                "ruff-check": False,
+                "pyright": False,
+                "uv-sort": False,
+                "eslint": False,
+                "cargo-fmt": False,
+                "dotnet-format": False,
             },
         ),
     ],
@@ -86,9 +84,11 @@ def test_apply_preset(
 
 def test_custom_command(tmp_path: pathlib.Path) -> None:
     """カスタムコマンド定義のテスト。"""
+    # preset と python opt-in を併用することで Python 系ツールの有効化も検証する。
     pyproject_content = """
 [tool.pyfltr]
 preset = "latest"
+python = true
 
 [tool.pyfltr.custom-commands.bandit]
 type = "linter"
@@ -117,8 +117,8 @@ fast = true
     # command_namesの末尾に追加されている
     assert config.command_names[-1] == "bandit"
 
-    # ビルトインコマンドも正常
-    assert config["ruff-format"] is True  # presetによる設定
+    # python = true によって Python 系ツールが有効化されている
+    assert config["ruff-format"] is True
 
     # fastエイリアスにカスタムコマンドが含まれている
     assert "bandit" in config["aliases"]["fast"]
@@ -498,6 +498,17 @@ def test_removed_preset_20250710(tmp_path: pathlib.Path) -> None:
     assert "latest" in str(exc_info.value)
 
 
+@pytest.mark.parametrize("removed_preset", ["20260330", "20260411", "20260413"])
+def test_removed_preset_v3(tmp_path: pathlib.Path, removed_preset: str) -> None:
+    """v3.0.0 で削除された旧 preset は ValueError になり、案内に latest と python が含まれる。"""
+    (tmp_path / "pyproject.toml").write_text(f'[tool.pyfltr]\npreset = "{removed_preset}"\n')
+    with pytest.raises(ValueError, match="削除") as exc_info:
+        pyfltr.config.load_config(config_dir=tmp_path)
+    message = str(exc_info.value)
+    assert "latest" in message
+    assert "python" in message
+
+
 @pytest.mark.parametrize("removed_tool", ["pyupgrade", "autoflake", "isort", "black", "pflake8"])
 def test_removed_tool_config_key(tmp_path: pathlib.Path, removed_tool: str) -> None:
     """削除ツールの設定キーを書くと ValueError が出て、メッセージにツール名が含まれる。"""
@@ -686,7 +697,7 @@ python = true
     assert config["pyright"] is True
     assert config["ruff-format"] is True
     assert config["ruff-check"] is True
-    # preset が有効化した JS 系ツールも有効
+    # preset が有効化したドキュメント系ツールも有効
     assert config["textlint"] is True
     assert config["markdownlint"] is True
 
@@ -735,45 +746,86 @@ bin-runner = "bogus"
         pyfltr.config.load_config(config_dir=tmp_path)
 
 
-def test_preset_20260330_compatibility(tmp_path: pathlib.Path) -> None:
-    """20260330プリセットがbin系ツールを有効化しないことの互換性テスト。"""
+def test_preset_latest_suppresses_language_categories(tmp_path: pathlib.Path) -> None:
+    """preset = "latest" 単独では全言語カテゴリのツールが False のまま保たれる。"""
+    (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latest"\n')
+    config = pyfltr.config.load_config(config_dir=tmp_path)
+    # preset に含まれるドキュメント系のみ True
+    for cmd in ("markdownlint", "textlint", "actionlint", "typos", "pre-commit"):
+        assert config[cmd] is True, f"{cmd} は preset=latest で有効化されるべき"
+    # 言語カテゴリに属するツールは全て False のまま
+    for _, commands in pyfltr.config.LANGUAGE_CATEGORIES:
+        for cmd in commands:
+            assert config[cmd] is False, f"{cmd} は preset=latest 単独では無効のままであるべき"
+
+
+def test_javascript_true_enables_js_tools(tmp_path: pathlib.Path) -> None:
+    """javascript = true で JAVASCRIPT_COMMANDS が全て True になる。"""
+    (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latest"\njavascript = true\n')
+    config = pyfltr.config.load_config(config_dir=tmp_path)
+    for cmd in pyfltr.config.JAVASCRIPT_COMMANDS:
+        assert config[cmd] is True, f"{cmd} は javascript=true で有効化されるべき"
+    # 他言語カテゴリは影響を受けない
+    for cmd in pyfltr.config.PYTHON_COMMANDS:
+        assert config[cmd] is False
+    for cmd in pyfltr.config.RUST_COMMANDS:
+        assert config[cmd] is False
+    for cmd in pyfltr.config.DOTNET_COMMANDS:
+        assert config[cmd] is False
+
+
+def test_rust_true_enables_rust_tools(tmp_path: pathlib.Path) -> None:
+    """rust = true で RUST_COMMANDS が全て True になる。"""
+    (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latest"\nrust = true\n')
+    config = pyfltr.config.load_config(config_dir=tmp_path)
+    for cmd in pyfltr.config.RUST_COMMANDS:
+        assert config[cmd] is True, f"{cmd} は rust=true で有効化されるべき"
+    for cmd in pyfltr.config.PYTHON_COMMANDS:
+        assert config[cmd] is False
+    for cmd in pyfltr.config.JAVASCRIPT_COMMANDS:
+        assert config[cmd] is False
+    for cmd in pyfltr.config.DOTNET_COMMANDS:
+        assert config[cmd] is False
+
+
+def test_dotnet_true_enables_dotnet_tools(tmp_path: pathlib.Path) -> None:
+    """dotnet = true で DOTNET_COMMANDS が全て True になる。"""
+    (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latest"\ndotnet = true\n')
+    config = pyfltr.config.load_config(config_dir=tmp_path)
+    for cmd in pyfltr.config.DOTNET_COMMANDS:
+        assert config[cmd] is True, f"{cmd} は dotnet=true で有効化されるべき"
+    for cmd in pyfltr.config.PYTHON_COMMANDS:
+        assert config[cmd] is False
+    for cmd in pyfltr.config.JAVASCRIPT_COMMANDS:
+        assert config[cmd] is False
+    for cmd in pyfltr.config.RUST_COMMANDS:
+        assert config[cmd] is False
+
+
+def test_individual_tool_enables_despite_category_false(tmp_path: pathlib.Path) -> None:
+    """言語カテゴリが False でも個別 ``{tool} = true`` でそのツールだけ有効化される。"""
     pyproject_content = """
 [tool.pyfltr]
-preset = "20260330"
+preset = "latest"
+eslint = true
+cargo-fmt = true
 """
     (tmp_path / "pyproject.toml").write_text(pyproject_content)
     config = pyfltr.config.load_config(config_dir=tmp_path)
-    # 20260330ではbin系ツールは有効化されない
-    assert config["ec"] is False
-    assert config["actionlint"] is False
-    assert config["typos"] is False
-    assert config["uv-sort"] is False
-    # 20260330で有効化されるツール
-    assert config["ruff-format"] is True
-    assert config["ruff-check"] is True
-    assert config["pyright"] is True
-    assert config["textlint"] is True
-    assert config["markdownlint"] is True
+    # 個別に True にしたツールは有効
+    assert config["eslint"] is True
+    assert config["cargo-fmt"] is True
+    # 同カテゴリの他ツールは False のまま
+    assert config["prettier"] is False
+    assert config["biome"] is False
+    assert config["cargo-clippy"] is False
 
 
-def test_preset_20260411_enables_bin_tools(tmp_path: pathlib.Path) -> None:
-    """20260411プリセットがbin系ツールとuv-sortを有効化することのテスト。"""
-    pyproject_content = """
-[tool.pyfltr]
-preset = "20260411"
-"""
-    (tmp_path / "pyproject.toml").write_text(pyproject_content)
-    config = pyfltr.config.load_config(config_dir=tmp_path)
-    # 20260411で新たに有効化されるツール
-    assert config["actionlint"] is True
-    assert config["typos"] is True
-    assert config["uv-sort"] is True
-    # 20260330から引き続き有効なツール
-    assert config["ruff-format"] is True
-    assert config["ruff-check"] is True
-    assert config["pyright"] is True
-    assert config["textlint"] is True
-    assert config["markdownlint"] is True
+def test_language_categories_defaults_false() -> None:
+    """言語カテゴリキーの既定値は全て False。"""
+    config = pyfltr.config.create_default_config()
+    for category_key, _ in pyfltr.config.LANGUAGE_CATEGORIES:
+        assert config[category_key] is False, f"{category_key} の既定値は False であるべき"
 
 
 def test_custom_command_pass_filenames(tmp_path: pathlib.Path) -> None:
@@ -903,16 +955,8 @@ def test_builtin_targets_no_mutation_of_builtins(tmp_path: pathlib.Path) -> None
 # Rust / .NET 言語ツール向けのテスト群。
 # 全ツール既定 False、pass-filenames=False、formatter は常時書き込みモード、
 # cargo-clippy のみ lint-args / fix-args を持つ。
-_NATIVE_LANG_TOOLS: tuple[str, ...] = (
-    "cargo-fmt",
-    "cargo-clippy",
-    "cargo-check",
-    "cargo-test",
-    "cargo-deny",
-    "dotnet-format",
-    "dotnet-build",
-    "dotnet-test",
-)
+# pylint duplicate-code (R0801) を避けるため、config 側の定義をそのまま再利用する。
+_NATIVE_LANG_TOOLS: tuple[str, ...] = pyfltr.config.RUST_COMMANDS + pyfltr.config.DOTNET_COMMANDS
 
 
 def test_native_lang_tools_registered() -> None:

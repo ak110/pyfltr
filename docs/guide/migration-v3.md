@@ -32,23 +32,34 @@ pyfltr ci
 
 Makefile・CI設定・pre-commit設定などで`pyfltr`をサブコマンドなしで呼び出している箇所があれば、すべて明示指定に書き換える。
 
-## 2. プリセット`"20250710"`を置き換える
+## 2. プリセットを`"20260418"` / `"latest"`に置き換える
 
-プリセット`"20250710"`は削除された。
+v3.0.0で旧preset群は役割を「言語非依存 + ドキュメント系」のみに整理し直したため、旧preset名はすべて削除扱いとなった。
+
+| 旧preset | 新preset | 補足 |
+| --- | --- | --- |
+| `"20250710"` | `"latest"`（言語カテゴリopt-inと組み合わせる） | v3.0.0より前に削除予定だった暫定preset |
+| `"20260330"` | `"latest"` + `python = true` | Python系ツールはopt-inキーで復元 |
+| `"20260411"` | `"latest"` + `python = true`（ `uv-sort`等は`python`に含まれる） | 同上 |
+| `"20260413"` | `"latest"` + `python = true` | 同上 |
 
 ```toml
 # 旧
 [tool.pyfltr]
-preset = "20250710"
+preset = "20260413"
 
 # 新
 [tool.pyfltr]
 preset = "latest"
-# または具体的な日付指定プリセットを使う
-# preset = "20260413"
+python = true
 ```
 
-`preset = "20250710"`を指定したまま実行すると、案内付きの設定エラーが出る。
+削除されたpreset名を指定したまま実行すると、移行先を案内する設定エラーが出る。
+
+### 新 preset `20260418` / `latest` に含まれるツール
+
+`markdownlint` / `textlint` / `actionlint` / `typos` / `pre-commit` のみ。
+Python / JavaScript / Rust / .NETの各言語カテゴリはpresetでは有効化されず、次節の言語カテゴリopt-inキーで明示する。
 
 ## 3. 削除ツールの設定キーを撤去する
 
@@ -80,21 +91,27 @@ preset = "latest"
 python = true
 ```
 
-## 4. Python系ツールを明示的に有効化する
+## 4. 言語カテゴリを明示的に有効化する
 
-v3.0.0ではPython系ツール（`mypy` / `pylint` / `pyright` / `ty` / `pytest` / `ruff-format` / `ruff-check` / `uv-sort`）がopt-in化された。
-非Pythonプロジェクトで意図しないツール実行を招くことを避けるため、既定値をすべて`False`に変更している。
+v3.0.0ではPython / JavaScript / Rust / .NETの各言語カテゴリに属するツールをすべてopt-in化した。
+非対象プロジェクトで意図しないツール実行を招くことを避けるため、既定値をすべて`False`に統一している。
 
-Pythonプロジェクトで利用する場合は、次のいずれかの方法で明示的に有効化する。
+利用する言語カテゴリだけを明示的に有効化する。
+適用優先度は`preset < 言語カテゴリ < 個別設定`で、個別設定がある場合はそれが最優先。
 
-### 方法A: 一括有効化
+### 方法A: 言語カテゴリ単位で一括有効化
 
 ```toml
 [tool.pyfltr]
-python = true
+preset = "latest"
+python = true        # ruff-format / ruff-check / mypy / pylint / pyright / ty / pytest / uv-sort
+javascript = true    # eslint / biome / oxlint / prettier / tsc / vitest
+rust = true          # cargo-fmt / cargo-clippy / cargo-check / cargo-test / cargo-deny
+dotnet = true        # dotnet-format / dotnet-build / dotnet-test
 ```
 
-`python = true`を指定すると、プリセットで定義されたPython系ツールがまとめて有効になる。
+対象カテゴリのツールがまとめて`True`になる。
+TypeScript系ツール（eslint・tsc等）は`javascript`カテゴリに内包されており、単独のキーは設けない。
 
 ### 方法B: 個別有効化
 
@@ -107,9 +124,9 @@ ruff-check = true
 ```
 
 必要なツールだけを有効化する。
-適用優先度は`preset < python < 個別設定`。
+個別指定の`{tool} = false`は言語カテゴリキーやpresetを上書きする。
 
-非Pythonプロジェクトでは両方を省略すればPython系ツールは一切実行されない。
+対象外の言語カテゴリキーと個別キーを省略すれば、そのカテゴリのツールは一切実行されない。
 
 ## 5. Python系の依存を導入する
 
@@ -210,9 +227,12 @@ pyfltr run-for-agent --only-failed --from-run 01HXYZ
 移行時は以下の順で確認するとスムーズに進む。
 
 - [ ] `pyfltr`コマンド呼び出し箇所すべてにサブコマンド（`ci` / `run` / `fast` / `run-for-agent`）を追記した
-- [ ] `pyproject.toml`の`preset = "20250710"`を`"latest"`または`"20260413"`等に置き換えた
+- [ ] `pyproject.toml`の旧preset名（`"20250710"` / `"20260330"` / `"20260411"` / `"20260413"`）を`"latest"`または`"20260418"`に置き換えた
 - [ ] `pyproject.toml`から`pyupgrade` / `autoflake` / `isort` / `black` / `pflake8`の関連設定キーをすべて削除した
 - [ ] Pythonプロジェクトの場合、`python = true`または個別`{command} = true`を追加した
+- [ ] JavaScript / TypeScriptプロジェクトの場合、`javascript = true`または個別`{command} = true`を追加した
+- [ ] Rustプロジェクトの場合、`rust = true`または個別`{command} = true`を追加した
+- [ ] .NETプロジェクトの場合、`dotnet = true`または個別`{command} = true`を追加した
 - [ ] Pythonプロジェクトの場合、`pyfltr[python]`で依存を再導入した
 - [ ] pre-commit hookの`entry:`フィールドにサブコマンドが含まれていることを確認した
 - [ ] Makefile・CIワークフロー・miseタスク等のコマンド呼び出しを再確認した

@@ -190,6 +190,25 @@ def _dump(record: dict[str, typing.Any]) -> str:
     return json.dumps(record, ensure_ascii=False, separators=(",", ":"))
 
 
+_SCHEMA_HINTS: dict[str, str] = {
+    "diagnostic.fix": (
+        "safe/unsafe/suggested = auto-fixable; none = tool reports no auto-fix; omitted = no fix info from tool"
+    ),
+    "diagnostic.severity": "error/warning/info normalised across tools; omitted when not reported",
+    "diagnostic.rule_url": "documentation URL for the rule; only populated for supported tools",
+    "tool.retry_command": ("shell command to re-run only this tool on failing files; much faster than a full rerun"),
+    "tool.cached": "true = result restored from file-hash cache; rerun with --no-cache to force",
+    "tool.truncated": ("diagnostics or message were trimmed; full content is in the archive directory (see header.run_id)"),
+    "header.run_id": "ULID identifying this run; use 'pyfltr show-run <run_id>' to fetch full output",
+}
+"""JSONL 出力フィールドの意味を補足する英語ガイド。
+
+LLM 入力として読まれる前提のため英語で記述する (トークン効率と汎用性)。
+``header.schema_hints`` として毎回の run に同梱することで、LLM がこの情報を
+事前知識として持たなくても JSONL を解釈できるようにする。
+"""
+
+
 def _build_header_record(
     commands: list[str],
     files: int,
@@ -209,6 +228,8 @@ def _build_header_record(
     }
     if run_id is not None:
         record["run_id"] = run_id
+    # LLM 向けフィールド補足。毎回出力する (header は各 run の先頭 1 行のみ)。
+    record["schema_hints"] = dict(_SCHEMA_HINTS)
     return record
 
 
@@ -315,6 +336,18 @@ def _resolve_message_limits(config: pyfltr.config.Config | None) -> tuple[int, i
     return max_lines, max_chars
 
 
+_SUMMARY_FAILURE_GUIDANCE: list[str] = [
+    "Inspect tool.retry_command in failed tool records to re-run only failing files.",
+    "Use 'pyfltr run-for-agent --only-failed' to retry the failure set in one step.",
+    ("diagnostic.fix == 'safe'/'unsafe'/'suggested' means the tool can auto-fix; 'none' or omitted means manual fix needed."),
+    "Use 'pyfltr show-run <run_id>' for full per-tool output stored in the run archive.",
+]
+"""失敗時に LLM エージェントへ次の一手を示す英語ガイド。
+
+``summary.guidance`` として ``failed > 0`` の場合にのみ同梱する (成功時は不要)。
+"""
+
+
 def _build_summary_record(
     ordered_results: list[pyfltr.command.CommandResult],
     *,
@@ -326,7 +359,7 @@ def _build_summary_record(
     for result in ordered_results:
         counts[result.status] = counts.get(result.status, 0) + 1
         total_diagnostics += len(result.errors)
-    return {
+    record: dict[str, typing.Any] = {
         "kind": "summary",
         "total": len(ordered_results),
         "succeeded": counts["succeeded"],
@@ -336,6 +369,9 @@ def _build_summary_record(
         "diagnostics": total_diagnostics,
         "exit": exit_code,
     }
+    if counts["failed"] > 0:
+        record["guidance"] = list(_SUMMARY_FAILURE_GUIDANCE)
+    return record
 
 
 def _truncate_message(

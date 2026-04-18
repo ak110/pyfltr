@@ -23,6 +23,7 @@ import pyfltr.github_annotations
 import pyfltr.llm_output
 import pyfltr.mcp_
 import pyfltr.only_failed
+import pyfltr.precommit
 import pyfltr.retry
 import pyfltr.runs
 import pyfltr.sarif_output
@@ -549,7 +550,8 @@ def run_pipeline(
     """
     # ターミナルをクリア
     if not args.no_clear:
-        subprocess.run("cls" if os.name == "nt" else "clear", check=False, shell=True)
+        clear_cmd = ["cmd", "/c", "cls"] if os.name == "nt" else ["clear"]
+        subprocess.run(clear_cmd, check=False)
 
     # 実行環境の情報を出力
     logger.info(f"{'-' * 10} pyfltr {'-' * (72 - 10 - 8)}")
@@ -748,7 +750,39 @@ def run_pipeline(
         except OSError as e:
             pyfltr.warnings_.emit_warning(source="archive", message=f"meta.json の更新に失敗: {e}")
 
+    # pre-commit 経由かつ formatter 自動修正発生時の MM 状態ガイダンスを必要に応じて出す。
+    _maybe_emit_precommit_guidance(results, structured_stdout=structured_stdout)
+
     return (returncode, run_id)
+
+
+_PRECOMMIT_MM_MESSAGE: str = (
+    "formatterによる自動修正が発生しました。"
+    "`git status`で変更を確認し、必要なら`git add`してから`git commit`を再実行してください。"
+)
+
+
+def _maybe_emit_precommit_guidance(
+    results: list[pyfltr.command.CommandResult],
+    *,
+    structured_stdout: bool,
+) -> None:
+    """pre-commit 経由かつ formatter 修正発生時に MM 状態ガイダンスを stderr へ出す。
+
+    ``git commit`` から起動された pre-commit 経由で pyfltr が formatter を走らせると、
+    修正結果がワークツリーには書き込まれる一方で index には反映されない (MM 状態)。
+    この場合に限り ``git add`` を促すメッセージを人間向け (日本語) で出力する。
+
+    構造化 stdout モード (jsonl/sarif/github-annotations を stdout に流す) では
+    ``captured.err == ""`` の既存契約を保つため抑止する。
+    """
+    if structured_stdout:
+        return
+    if not any(result.status == "formatted" for result in results):
+        return
+    if not pyfltr.precommit.is_invoked_from_git_commit():
+        return
+    print(_PRECOMMIT_MM_MESSAGE, file=sys.stderr)
 
 
 def _write_sarif_stdout(

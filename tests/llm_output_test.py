@@ -268,3 +268,54 @@ def test_build_tool_record_message_truncated_when_archived() -> None:
     assert record["message"].startswith("... (truncated)")
     assert record["truncated"]["archive"] == "tools/shellcheck/output.log"
     assert record["truncated"]["lines"] == 100
+
+
+def test_build_header_record_contains_schema_hints() -> None:
+    """header レコードに schema_hints が含まれ、代表的な英語キーが埋まっている。"""
+    record = pyfltr.llm_output._build_header_record(commands=["ruff-check"], files=3, run_id="01TESTULID")
+    assert record["run_id"] == "01TESTULID"
+    hints = record.get("schema_hints")
+    assert isinstance(hints, dict)
+    assert "diagnostic.fix" in hints
+    assert "tool.retry_command" in hints
+    assert "header.run_id" in hints
+    # 値は英語で LLM が読む前提
+    assert "auto-fix" in hints["diagnostic.fix"]
+
+
+def test_build_summary_record_emits_guidance_on_failure() -> None:
+    """failed > 0 のとき summary.guidance が英語で付与される。"""
+    result = pyfltr.command.CommandResult(
+        command="mypy",
+        command_type="linter",
+        commandline=["mypy"],
+        returncode=1,
+        has_error=True,
+        files=1,
+        output="",
+        elapsed=0.1,
+    )
+    record = pyfltr.llm_output._build_summary_record([result], exit_code=1)
+    guidance = record.get("guidance")
+    assert isinstance(guidance, list)
+    assert guidance
+    joined = " ".join(guidance)
+    assert "retry_command" in joined
+    assert "--only-failed" in joined
+    assert "show-run" in joined
+
+
+def test_build_summary_record_no_guidance_on_success() -> None:
+    """failed == 0 のときは summary.guidance が省略される。"""
+    result = pyfltr.command.CommandResult(
+        command="mypy",
+        command_type="linter",
+        commandline=["mypy"],
+        returncode=0,
+        has_error=False,
+        files=1,
+        output="",
+        elapsed=0.1,
+    )
+    record = pyfltr.llm_output._build_summary_record([result], exit_code=0)
+    assert "guidance" not in record

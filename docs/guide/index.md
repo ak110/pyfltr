@@ -3,12 +3,14 @@
 ## 対応ツール
 
 対応ツールを言語・用途別に示す。
-末尾に「既定で無効」と記した項目は、`preset = "latest"`でも有効化されないため`pyproject.toml`で`{command} = true`と明示する必要がある。
-それ以外の項目は既定または`preset = "latest"`で有効化される。詳細なプリセット挙動は[設定項目](configuration.md)を参照。
+言語カテゴリ（Python / JS/TS / Rust / .NET）に属するツールはすべて既定で無効（opt-in）。
+有効化には、該当する言語カテゴリキー（`python` / `javascript` / `rust` / `dotnet`）を`true`にするか、個別に`{command} = true`と明示する。
+`preset = "latest"`は言語非依存のツールとドキュメント系のみ有効化する。
+詳細なプリセット挙動と言語カテゴリの一括有効化は[設定項目](configuration.md)を参照。
 
 ### Python系
 
-いずれも既定で無効（opt-in）。利用時は`pyproject.toml`に`python = true`を設定するか、個別に`{command} = true`を指定する。
+いずれも既定で無効（opt-in）。`pyproject.toml`に`python = true`を設定するか、個別に`{command} = true`を指定する。
 同時に`pip install pyfltr[python]`でPython系ツールの依存を追加する必要がある。
 
 - Formatters: ruff format / uv-sort（依存定義のソート）
@@ -17,7 +19,8 @@
 
 ### JS/TS系
 
-いずれも既定で無効。`js-runner`設定で起動方式（pnpx / pnpm / npx等）を切り替える。
+いずれも既定で無効（opt-in）。`javascript = true`で一括有効化できる（TypeScriptも同カテゴリ）。
+`js-runner`設定で起動方式（pnpx / pnpm / npx等）を切り替える。
 
 - Formatters: prettier
 - Linters: eslint / biome / oxlint / tsc（型チェック。`pass-filenames = false`でプロジェクト全体を対象）
@@ -25,7 +28,8 @@
 
 ### Rust系
 
-いずれも既定で無効。プロジェクト全体（crate単位）を対象に直接実行する（`{command}-path`で実行パスを指定）。
+いずれも既定で無効（opt-in）。`rust = true`で一括有効化できる。
+プロジェクト全体（crate単位）を対象に直接実行する（`{command}-path`で実行パスを指定）。
 
 - Formatters: cargo fmt
 - Linters: cargo clippy / cargo check / cargo deny（依存ライセンス・脆弱性チェック）
@@ -33,7 +37,8 @@
 
 ### .NET系
 
-いずれも既定で無効。プロジェクト全体（solution単位）を対象に直接実行する（`{command}-path`で実行パスを指定）。
+いずれも既定で無効（opt-in）。`dotnet = true`で一括有効化できる。
+プロジェクト全体（solution単位）を対象に直接実行する（`{command}-path`で実行パスを指定）。
 
 - Formatters: dotnet format
 - Linters: dotnet build（ビルドエラーをlint段階で検出）
@@ -49,7 +54,7 @@
 - Linters: ec（editorconfig-checker、既定で無効）/ shellcheck（既定で無効）/ typos / actionlint
 - 統合: pre-commit（`.pre-commit-config.yaml`のhookを統合実行）
 
-プリセットで一括有効化する方法は[設定項目](configuration.md)を参照。
+プリセット・言語カテゴリキーで一括有効化する方法は[設定項目](configuration.md)を参照。
 
 個別に有効化・無効化する方法や`bin-runner`/`js-runner`などの補助設定は[設定項目（ツール別）](configuration-tools.md)を参照。
 

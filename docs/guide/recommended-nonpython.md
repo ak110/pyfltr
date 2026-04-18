@@ -2,7 +2,8 @@
 
 Python以外のプロジェクトでもpyfltrを活用できる。共通のポイントは以下。
 
-- `preset = "latest"`: 主要ツール（markdownlint / textlint / actionlint / typos / pre-commit等）を一括有効化する。v3.0.0以降、Python系ツールは`python`既定値がFalseのためopt-in化されている。mypy / pylint / ty / pytest / uv-sortは`python = true`を指定しない限り実行されず、非Pythonプロジェクトで不要な実行は発生しない
+- `preset = "latest"`: 言語非依存のツールとドキュメント系（markdownlint / textlint / actionlint / typos / pre-commit）を一括有効化する
+- 言語カテゴリはv3.0.0以降すべてopt-inのため、利用する言語カテゴリキー（`python` / `javascript` / `rust` / `dotnet`）を`true`にするか、個別に`{command} = true`で指定する
 - `uvx pyfltr`: pyfltrをdev依存に含めないため、`uvx`で都度取得して実行する
 - 言語固有のツール + ドキュメント系lint（textlint / markdownlint / prettier）を組み合わせる
 - `bin-runner`のデフォルトは`"mise"`。actionlint / typos等のネイティブバイナリツールはmise経由で呼び出されるため、mise導入とツールのセットアップ（`mise use actionlint@latest typos@latest`等）を推奨する
@@ -18,11 +19,8 @@ exclude-newer = "1 day"
 
 [tool.pyfltr]
 preset = "latest"
+javascript = true
 js-runner = "pnpm"
-eslint = true
-prettier = true
-vitest = true
-oxlint = true
 
 extend-exclude = [
     ".svelte-kit",
@@ -47,16 +45,17 @@ extend-exclude = [
 
 ポイント:
 
-- `js-runner = "pnpm"`: pnpmワークスペース経由でJS系ツールを呼ぶ。`textlint-packages`は無視される。
-- `oxlint = true`: eslintと併用するとeslintで非対応のルールを補完できる。Rust製のため高速。
-- `tsc = true`を追加するとTypeScript型チェックも実行できる。svelte-checkなどフレームワーク固有のチェッカーと併用する場合はどちらか一方でよい。
-- vitest: `vitest-args = ["run"]`が既定のため追加引数は不要。
-- svelte-checkなどフレームワーク固有のツールはカスタムコマンドで追加する（[カスタムコマンド例](custom-commands.md)の「svelte-check」を参照）。
+- `javascript = true`: eslint / biome / oxlint / prettier / tsc / vitestを一括有効化する。不要なツールは個別に`{tool} = false`で抑止できる
+- `js-runner = "pnpm"`: pnpmワークスペース経由でJS系ツールを呼ぶ。`textlint-packages`は無視される
+- eslintとoxlintは併用するとeslintで非対応のルールを補完できる（Rust製のため高速）
+- tsc: TypeScript型チェックも実行できる。svelte-checkなどフレームワーク固有のチェッカーと併用する場合はどちらか一方でよい
+- vitest: `vitest-args = ["run"]`が既定のため追加引数は不要
+- svelte-checkなどフレームワーク固有のツールはカスタムコマンドで追加する（[カスタムコマンド例](custom-commands.md)の「svelte-check」を参照）
 
 ## Rustプロジェクト
 
 `cargo fmt` / `cargo clippy` / `cargo test` / `cargo deny`と、ドキュメント系lint（`textlint` / `markdownlint-cli2` / `prettier`）をpyfltrに一元化する例。
-v3.0.0以降、Python系ツールはopt-in（`python`既定False）のため、非Pythonプロジェクトで勝手に走ることはない。
+v3.0.0以降、言語カテゴリはすべてopt-inのため、非Rustプロジェクトでcargo系が走ることはない。
 
 `pyproject.toml`:
 
@@ -66,12 +65,9 @@ exclude-newer = "1 day"
 
 [tool.pyfltr]
 preset = "latest"
+rust = true
 js-runner = "pnpm"
-cargo-fmt = true
-cargo-clippy = true
-cargo-check = true
-cargo-test = true
-cargo-deny = true
+# prettier はドキュメント系を pnpm で回すために個別に opt-in する
 prettier = true
 
 extend-exclude = [
@@ -117,10 +113,9 @@ exclude-newer = "1 day"
 
 [tool.pyfltr]
 preset = "latest"
+dotnet = true
 js-runner = "pnpm"
-dotnet-format = true
-dotnet-build = true
-dotnet-test = true
+# prettier はドキュメント系を pnpm で回すために個別に opt-in する
 prettier = true
 
 extend-exclude = [

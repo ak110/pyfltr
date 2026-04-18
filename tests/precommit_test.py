@@ -3,6 +3,7 @@
 import pathlib
 import textwrap
 
+import psutil
 import pytest
 
 import pyfltr.config
@@ -31,6 +32,69 @@ class TestIsRunningUnderPrecommit:
         """ "1" 以外の値は False 扱い（pre-commit 公式仕様に準拠）。"""
         monkeypatch.setenv("PRE_COMMIT", "0")
         assert pyfltr.precommit.is_running_under_precommit() is False
+
+
+class _FakeProcess:
+    """psutil.Process を差し替えるための最小スタブ。
+
+    ``name()`` / ``parents()`` の挙動だけを制御できればよいので、実プロセスは
+    一切参照しない。親系列は ``__init__`` に渡された順で返す。
+    """
+
+    def __init__(self, name: str, ancestors: list["_FakeProcess"] | None = None) -> None:
+        self._name = name
+        self._ancestors = ancestors or []
+
+    def name(self) -> str:
+        """プロセス名を返す (psutil.Process.name() 互換)。"""
+        return self._name
+
+    def parents(self) -> list["_FakeProcess"]:
+        """祖先プロセスリストを返す (psutil.Process.parents() 互換)。"""
+        return list(self._ancestors)
+
+
+class TestIsInvokedFromGitCommit:
+    """is_invoked_from_git_commit のテスト。"""
+
+    def test_direct_parent_is_git(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """直接の親が git の場合は True を返す。"""
+        parent = _FakeProcess("git", ancestors=[])
+        monkeypatch.setattr(pyfltr.precommit.psutil, "Process", lambda _pid: parent)
+        assert pyfltr.precommit.is_invoked_from_git_commit() is True
+
+    def test_ancestor_is_git(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """祖先に git が含まれていれば True を返す。"""
+        ancestors = [
+            _FakeProcess("pre-commit"),
+            _FakeProcess("git"),
+            _FakeProcess("bash"),
+        ]
+        parent = _FakeProcess("python", ancestors=ancestors)
+        monkeypatch.setattr(pyfltr.precommit.psutil, "Process", lambda _pid: parent)
+        assert pyfltr.precommit.is_invoked_from_git_commit() is True
+
+    def test_windows_git_exe_name(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Windows の ``git.exe`` も検出する。"""
+        parent = _FakeProcess("git.exe", ancestors=[])
+        monkeypatch.setattr(pyfltr.precommit.psutil, "Process", lambda _pid: parent)
+        assert pyfltr.precommit.is_invoked_from_git_commit() is True
+
+    def test_no_git_in_chain(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """親系列に git が無ければ False を返す。"""
+        ancestors = [_FakeProcess("bash"), _FakeProcess("sshd")]
+        parent = _FakeProcess("python", ancestors=ancestors)
+        monkeypatch.setattr(pyfltr.precommit.psutil, "Process", lambda _pid: parent)
+        assert pyfltr.precommit.is_invoked_from_git_commit() is False
+
+    def test_psutil_failure_returns_false(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """psutil の取得失敗時は安全側に倒して False を返す。"""
+
+        def _raise(_pid: int) -> psutil.Process:
+            raise psutil.NoSuchProcess(pid=_pid)
+
+        monkeypatch.setattr(pyfltr.precommit.psutil, "Process", _raise)
+        assert pyfltr.precommit.is_invoked_from_git_commit() is False
 
 
 class TestDetectPyfltrHooks:

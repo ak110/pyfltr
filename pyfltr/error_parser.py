@@ -29,7 +29,11 @@ class ErrorLocation:
     severity: str | None = None
     """診断の重要度 ("error" | "warning" | "info")"""
     fix: str | None = None
-    """自動修正の適用可能性 ("safe" | "unsafe" | "suggested")"""
+    """自動修正の適用可能性 ("safe" | "unsafe" | "suggested" | "none")
+
+    ``None`` はツールが自動修正情報を返さないことを示し、JSON Lines 出力でも省略する。
+    ``"none"`` はツールが自動修正情報を返した上で「自動修正不可」と明示した場合に使う。
+    """
     rule_url: str | None = None
     """ルールドキュメントの URL (None は未対応ツールまたは rule 未設定時)"""
 
@@ -215,7 +219,10 @@ def _parse_eslint_json(output: str) -> list[ErrorLocation]:
             rule_id = str(msg.get("ruleId") or "")
             text = str(msg.get("message", ""))
             message = f"{text} ({rule_id})" if rule_id else text
-            fix_value = "safe" if msg.get("fix") else None
+            # ESLint の JSON は autofix がある場合のみ ``fix`` オブジェクトが付与される。
+            # 自動修正情報の有無を報告するツールなので、欠落時は ``"none"`` として
+            # 「自動修正不可」を明示する (``None`` 省略との区別を維持)。
+            fix_value = "safe" if msg.get("fix") else "none"
             rule = rule_id or None
             results.append(
                 ErrorLocation(
@@ -251,9 +258,9 @@ def _parse_ruff_check_json(output: str) -> list[ErrorLocation]:
         raw_col = loc.get("column")
         col = raw_col if isinstance(raw_col, int) else None
         fix_obj = entry.get("fix")
-        fix_value: str | None = None
-        if isinstance(fix_obj, dict):
-            fix_value = str(fix_obj.get("applicability", "safe"))
+        # ruff は自動修正情報の有無を明示的に返すツール。``fix`` 欠落時は
+        # 自動修正不可として ``"none"`` を出力する。
+        fix_value: str | None = str(fix_obj.get("applicability", "safe")) if isinstance(fix_obj, dict) else "none"
         rule = str(entry.get("code", "")) or None
         entry_url = entry.get("url")
         existing_url = str(entry_url) if isinstance(entry_url, str) and entry_url else None
@@ -376,7 +383,8 @@ def _parse_shellcheck_json(output: str) -> list[ErrorLocation]:
         col = raw_col if isinstance(raw_col, int) else None
         code = entry.get("code")
         rule = f"SC{code}" if isinstance(code, int) else None
-        fix_value = "safe" if entry.get("fix") else None
+        # shellcheck は JSON 出力で自動修正情報の有無を明示する。
+        fix_value = "safe" if entry.get("fix") else "none"
         results.append(
             ErrorLocation(
                 file=_normalize_path(str(entry.get("file", ""))),
@@ -418,7 +426,8 @@ def _parse_textlint_json(output: str) -> list[ErrorLocation]:
             raw_col = msg.get("column")
             col = raw_col if isinstance(raw_col, int) else None
             rule_id = str(msg.get("ruleId") or "")
-            fix_value = "safe" if msg.get("fix") else None
+            # textlint は JSON 出力で autofix の有無を明示する。
+            fix_value = "safe" if msg.get("fix") else "none"
             results.append(
                 ErrorLocation(
                     file=_normalize_path(file_path),
@@ -462,8 +471,9 @@ def _parse_typos_jsonl(output: str) -> list[ErrorLocation]:
             message = f"`{typo}` -> `{correction_str}`"
             fix_value: str | None = "safe"
         else:
+            # typos は自動修正候補の有無を明示的に返すため、候補なしは ``"none"``。
             message = f"`{typo}`"
-            fix_value = None
+            fix_value = "none"
         results.append(
             ErrorLocation(
                 file=_normalize_path(str(entry.get("path", ""))),

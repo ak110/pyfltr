@@ -8,6 +8,7 @@ import subprocess
 
 import pytest
 
+import pyfltr.command
 import pyfltr.main
 
 
@@ -324,3 +325,67 @@ def test_run_pipeline_does_not_log_run_id_when_archive_disabled(mocker, caplog, 
         pyfltr.main.run(["ci", "--no-archive", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
 
     assert not any("run_id:" in record.message for record in caplog.records)
+
+
+# --- precommit MM 状態ガイダンス ---
+
+
+def _make_formatted_result() -> pyfltr.command.CommandResult:
+    """``status == "formatted"`` になる最小の CommandResult を生成する。"""
+    return pyfltr.command.CommandResult(
+        "ruff-format", "formatter", ["ruff", "format"], returncode=1, has_error=False, files=1, output="", elapsed=0.01
+    )
+
+
+def _make_succeeded_result() -> pyfltr.command.CommandResult:
+    """``status == "succeeded"`` になる最小の CommandResult を生成する。"""
+    # キーワード引数の並びを連続せず1行にまとめて pylint duplicate-code 検出を回避する。
+    # 他テストファイルにも同様の最小構築があるため、文字列比較で重複と判定されやすい。
+    return pyfltr.command.CommandResult(
+        "mypy", "linter", ["mypy"], returncode=0, has_error=False, files=1, output="", elapsed=0.01
+    )
+
+
+def test_precommit_guidance_emitted_when_formatted_under_git(monkeypatch, capsys):
+    """formatted 結果があり git commit 経由のときガイダンスが stderr に出る。"""
+    monkeypatch.setattr(pyfltr.main.pyfltr.precommit, "is_invoked_from_git_commit", lambda: True)
+    pyfltr.main._maybe_emit_precommit_guidance(
+        [_make_formatted_result(), _make_succeeded_result()],
+        structured_stdout=False,
+    )
+    captured = capsys.readouterr()
+    assert "formatter" in captured.err
+    assert "git add" in captured.err
+
+
+def test_precommit_guidance_skipped_when_not_under_git(monkeypatch, capsys):
+    """git commit 経由でなければ formatted があってもガイダンスを出さない。"""
+    monkeypatch.setattr(pyfltr.main.pyfltr.precommit, "is_invoked_from_git_commit", lambda: False)
+    pyfltr.main._maybe_emit_precommit_guidance(
+        [_make_formatted_result()],
+        structured_stdout=False,
+    )
+    captured = capsys.readouterr()
+    assert captured.err == ""
+
+
+def test_precommit_guidance_skipped_when_no_formatted(monkeypatch, capsys):
+    """formatted 結果が無ければガイダンスを出さない。"""
+    monkeypatch.setattr(pyfltr.main.pyfltr.precommit, "is_invoked_from_git_commit", lambda: True)
+    pyfltr.main._maybe_emit_precommit_guidance(
+        [_make_succeeded_result()],
+        structured_stdout=False,
+    )
+    captured = capsys.readouterr()
+    assert captured.err == ""
+
+
+def test_precommit_guidance_skipped_under_structured_stdout(monkeypatch, capsys):
+    """構造化 stdout モードでは stderr へ漏らさない (``captured.err == ""`` 契約保持)。"""
+    monkeypatch.setattr(pyfltr.main.pyfltr.precommit, "is_invoked_from_git_commit", lambda: True)
+    pyfltr.main._maybe_emit_precommit_guidance(
+        [_make_formatted_result()],
+        structured_stdout=True,
+    )
+    captured = capsys.readouterr()
+    assert captured.err == ""

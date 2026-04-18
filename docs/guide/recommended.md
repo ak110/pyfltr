@@ -409,28 +409,6 @@ jobs:
 - `uv sync --all-extras --all-groups`: pyfltrを含むdev依存をすべて同期し、`uv run pyfltr`から対応ツール群を解決できるようにする。`UV_FROZEN=1`下でも`uv.lock`をそのまま使うため問題なく動作する。
 - `uv cache prune --ci`: CIキャッシュを軽量化するための後処理。
 
-## Claude Codeプラグイン
-
-`.claude/settings.json`に以下の内容を記述することで、いくつかのHook/Skillを有効化できる。
-
-詳細は<https://github.com/ak110/dotfiles/blob/master/docs/guide/claude-code-guide.md>を参照。
-
-```json
-{
-  "extraKnownMarketplaces": {
-    "ak110-dotfiles": {
-      "source": {
-        "source": "github",
-        "repo": "ak110/dotfiles"
-      }
-    }
-  },
-  "enabledPlugins": {
-    "agent-toolkit@ak110-dotfiles": true
-  }
-}
-```
-
 ---
 
 Python以外のプロジェクトでの推奨設定例については[推奨設定例（非Pythonプロジェクト）](recommended-nonpython.md)を参照。

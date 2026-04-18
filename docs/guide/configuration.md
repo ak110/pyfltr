@@ -17,6 +17,9 @@ extend-exclude = ["foo", "bar.py"]
 
 - preset : プリセット設定（後述）
 - python : Python系ツールの一括有効/無効（後述）
+- javascript : JavaScript / TypeScript系ツールの一括有効/無効（後述）
+- rust : Rust系ツールの一括有効/無効（後述）
+- dotnet : .NET系ツールの一括有効/無効（後述）
 - {command} : 各コマンドの有効/無効
 - {command}-path : 実行するコマンド
 - {command}-args : 追加のコマンドライン引数（lint/fix両モードで常に付与）
@@ -50,8 +53,8 @@ extend-exclude = ["foo", "bar.py"]
 
 ## プリセット設定
 
-`preset`を設定することで、一括して設定を変更できる。
-`"latest"` または日付指定 (`"20260413"`, `"20260411"`, `"20260330"`) が使用可能。
+`preset`を設定すると、言語非依存のツールとドキュメント系ツールを一括で有効化できる。
+`"latest"` または日付指定 (`"20260418"`) を指定する。
 
 ```toml
 [tool.pyfltr]
@@ -59,38 +62,26 @@ preset = "latest"
 ```
 
 `preset = "latest"`はpyfltrの更新に伴って対象ツールの追加や既定値の変更が予告なく入ることがある。
-破壊的変更を避けたい場合は`"20260413"`のように日付指定プリセットで固定すると、当該日時点の構成をそのまま維持できる。
+破壊的変更を避けたい場合は`"20260418"`のように日付指定プリセットで固定すると、当該日時点の構成をそのまま維持できる。
 いずれのプリセットでも`{command} = false`を個別に指定すれば特定ツールを上書きで無効化できる。
 
-### preset "20260413" / "latest"
+v3.0.0から、プリセットは「言語非依存 + ドキュメント系」に役割を絞った。
+Python / JavaScript / Rust / .NET各言語カテゴリはプリセットでは有効化されないため、次節の言語カテゴリopt-inキーで明示する。
 
-- preset "20260411"に加えて以下の設定が行われる
-- `pre-commit = true`
+### preset "20260418" / "latest"
 
-### preset "20260411"
+以下の設定が行われる。
 
-- preset "20260330"に加えて以下の設定が行われる
+- `markdownlint = true`
+- `textlint = true`
 - `actionlint = true`
 - `typos = true`
-- `uv-sort = true`
+- `pre-commit = true`
 
-### preset "20260330"
+## 言語カテゴリの一括有効化
 
-- `ruff-format = true`
-- `ruff-check = true`
-- `pyright = true`
-- `textlint = true`
-- `markdownlint = true`
-
-## Python系ツールの一括有効化
-
-`python = true`を設定するとPython系ツールを一括で有効化する。
-Pythonプロジェクトで使用する。
-
-対象はruff-format・ruff-check・mypy・pylint・pyright・ty・pytest・uv-sort。
-js-runner対応ツールやbin-runner対応ツール、Rust系（cargo系）・.NET系（dotnet系）は影響を受けない。
-`python = true`でも`mypy = false`のように個別に無効化可能。
-適用優先度は`preset < python < 個別設定`。
+各言語カテゴリに属するツールは既定で無効（opt-in）であり、プロジェクトで利用する言語カテゴリのキーを`true`にして有効化する。
+個別のツール単位では`{command} = true`での有効化・`{command} = false`での無効化も可能で、適用優先度は`preset < 言語カテゴリ < 個別設定`。
 
 ```toml
 [tool.pyfltr]
@@ -98,12 +89,17 @@ preset = "latest"
 python = true
 ```
 
-v3.0.0以降、`python`の既定値は`false`（opt-in）に変更された。
-非Pythonプロジェクトでは`python`を指定しなければPython系ツールは一切実行されない。
-利用時は別途`pip install pyfltr[python]`でPython系ツールの依存を導入する必要がある。
+各言語カテゴリキーと対象ツールは次の通り。
 
-言語カテゴリ単位の一括有効化キーは`python`のみで、JavaScript/TypeScript系・Rust系・.NET系に相当するキーは存在しない。
-これら他言語のツールは既定で無効なため、利用するツールを個別に`{tool} = true`で有効化する（設定例は[設定項目（ツール別）](configuration-tools.md)を参照）。
+- `python = true`: ruff-format・ruff-check・mypy・pylint・pyright・ty・pytest・uv-sort
+- `javascript = true`: eslint・biome・oxlint・prettier・tsc・vitest（TypeScriptも同一カテゴリ）
+- `rust = true`: cargo-fmt・cargo-clippy・cargo-check・cargo-test・cargo-deny
+- `dotnet = true`: dotnet-format・dotnet-build・dotnet-test
+
+カテゴリ同士は独立して作用する。
+たとえば`python = true`を指定してもJavaScript系やRust系のツールは有効化されない。
+Pythonプロジェクトで利用する場合は別途`pip install pyfltr[python]`で依存を導入する必要がある。
+JavaScript系・Rust系・.NET系は各言語のツールチェイン（Node.js・cargo・dotnet CLI）が前提となる。
 
 ## ツール別除外設定
 

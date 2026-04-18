@@ -300,6 +300,56 @@ def test_parse_ruff_check_json_fallback() -> None:
     assert errors[0].line == 10
 
 
+def test_parse_ruff_check_json_fix_none() -> None:
+    """ruff-check: ``fix`` 欠落エントリは ``fix == "none"`` として出力される。"""
+    output = json.dumps(
+        [
+            {
+                "code": "E501",
+                "message": "line too long",
+                "filename": "src/foo.py",
+                "location": {"row": 2, "column": 1},
+                "end_location": {"row": 2, "column": 130},
+                "severity": "error",
+            },
+        ]
+    )
+    errors = pyfltr.error_parser.parse_errors("ruff-check", output)
+    assert len(errors) == 1
+    assert errors[0].fix == "none"
+
+
+def test_parse_typos_jsonl_no_corrections_is_none() -> None:
+    """typos: corrections が空の場合は ``fix == "none"``。"""
+    output = '{"path":"src/foo.py","line_num":3,"typo":"weirdword","corrections":[],"type":"typo"}\n'
+    errors = pyfltr.error_parser.parse_errors("typos", output)
+    assert len(errors) == 1
+    assert errors[0].fix == "none"
+
+
+def test_parse_textlint_json_fix_none() -> None:
+    """textlint: ``fix`` 欠落メッセージは ``fix == "none"``。"""
+    output = json.dumps(
+        [
+            {
+                "filePath": "docs/index.md",
+                "messages": [
+                    {
+                        "line": 5,
+                        "column": 1,
+                        "message": "一般的な文体問題",
+                        "ruleId": "ja-technical-writing/sentence-length",
+                        "severity": 2,
+                    },
+                ],
+            }
+        ]
+    )
+    errors = pyfltr.error_parser.parse_errors("textlint", output)
+    assert len(errors) == 1
+    assert errors[0].fix == "none"
+
+
 def test_parse_pylint_json() -> None:
     """pylint --output-format=json2 出力のパース。
 

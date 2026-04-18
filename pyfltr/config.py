@@ -239,6 +239,52 @@ PYTHON_COMMANDS: tuple[str, ...] = (
 既定ではすべて無効 (opt-in) となる。ユーザーが ``python = true`` を指定すると
 一括で True に、個別に ``{command} = true`` を指定することでも有効化できる。"""
 
+JAVASCRIPT_COMMANDS: tuple[str, ...] = (
+    "eslint",
+    "biome",
+    "oxlint",
+    "prettier",
+    "tsc",
+    "vitest",
+)
+"""javascript 設定に紐づく JavaScript / TypeScript 系コマンドの一覧。
+
+TypeScript は JavaScript エコシステム上のツール群（eslint / prettier / tsc 等）で
+扱うため、専用カテゴリは設けずここに内包する。既定ではすべて無効 (opt-in)。
+``javascript = true`` で一括有効化、個別に ``{command} = true`` でも有効化可能。"""
+
+RUST_COMMANDS: tuple[str, ...] = (
+    "cargo-fmt",
+    "cargo-clippy",
+    "cargo-check",
+    "cargo-test",
+    "cargo-deny",
+)
+"""rust 設定に紐づく Rust 系コマンドの一覧。
+
+既定ではすべて無効 (opt-in)。``rust = true`` で一括有効化、個別に
+``{command} = true`` でも有効化可能。"""
+
+DOTNET_COMMANDS: tuple[str, ...] = (
+    "dotnet-format",
+    "dotnet-build",
+    "dotnet-test",
+)
+"""dotnet 設定に紐づく .NET 系コマンドの一覧。
+
+既定ではすべて無効 (opt-in)。``dotnet = true`` で一括有効化、個別に
+``{command} = true`` でも有効化可能。"""
+
+LANGUAGE_CATEGORIES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("python", PYTHON_COMMANDS),
+    ("javascript", JAVASCRIPT_COMMANDS),
+    ("rust", RUST_COMMANDS),
+    ("dotnet", DOTNET_COMMANDS),
+)
+"""言語カテゴリ opt-in キーと対応するコマンド群の対応表。
+
+preset 適用後の一括抑止および一括有効化のループで共通に使う。"""
+
 REMOVED_COMMANDS: frozenset[str] = frozenset({"pyupgrade", "autoflake", "isort", "black", "pflake8"})
 """v3.0.0 で削除されたコマンド名。
 
@@ -264,12 +310,16 @@ AUTO_ARGS: dict[str, list[tuple[str, list[str]]]] = {
 DEFAULT_CONFIG: dict[str, typing.Any] = {
     # プリセット
     "preset": "",
-    # Python 系ツールの一括有効/無効。True にすると PYTHON_COMMANDS に
+    # 言語カテゴリ別の一括有効/無効。True にすると各 ``*_COMMANDS`` タプルに
     # 列挙されたコマンドをすべて有効化する。個別設定で上書き可能。
-    # v3.0.0 で既定値を False (opt-in) に変更。非 Python プロジェクトで
-    # Python 系 linter が勝手に走るのを防ぐためで、利用時は別途
-    # ``pip install pyfltr[python]`` で Python 系の依存を導入する必要がある。
+    # v3.0.0 で既定値を False (opt-in) に統一。対象外プロジェクトで言語別
+    # linter が勝手に走るのを防ぐためで、Python 系は別途
+    # ``pip install pyfltr[python]`` で依存を導入する必要がある。
+    # JavaScript / Rust / .NET 系はそれぞれのツールチェインを前提とする。
     "python": False,
+    "javascript": False,
+    "rust": False,
+    "dotnet": False,
     # pre-commit 統合。有効にすると pyfltr run/ci/fast 実行時に
     # pre-commit run --all-files を内部で呼び出す。
     # pre-commit-fast = True（既定）により fast も統合するため、
@@ -316,8 +366,9 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # - direct: PATH 上のバイナリを直接実行
     "bin-runner": "mise",
     # コマンド毎に有効無効、パス、追加の引数を設定
-    # Python 系ツールは v3.0.0 で opt-in 化したため、既定値は False。
-    # ``python = true`` または個別に ``{command} = true`` で有効化する。
+    # 言語カテゴリ (python / javascript / rust / dotnet) に属するツールは v3.0.0 で
+    # opt-in 化したため、既定値は False。対応するカテゴリキー (``python = true`` 等)
+    # または個別に ``{command} = true`` で有効化する。
     "mypy": False,
     "mypy-path": "mypy",
     "mypy-args": [],
@@ -679,39 +730,20 @@ def create_default_config() -> Config:
     return config
 
 
-# 全プリセットの基盤: ruff を有効化する。
-# v3.0.0 で Python 系ツールを opt-in 化したため、プリセット適用時点で
-# ruff-format / ruff-check など必要なツールを明示的に True に切り替える。
-_PRESET_BASE: dict[str, bool] = {
-    "ruff-format": True,
-    "ruff-check": True,
-}
-
-# プリセット定義。新しいプリセットほど有効化ツールが増える増分構造。
-# ``20250710`` は v3.0.0 で削除した (削除5ツール分の設定しか持たなかったため)。
+# プリセット定義。v3.0.0 で preset の役割を「言語非依存 + ドキュメント系」に
+# 絞る方針へ変更した。各言語カテゴリ (python / javascript / rust / dotnet) は
+# preset では有効化せず、利用側で opt-in キーを明示する運用とする。
+# これにより非 Python / 非 JS プロジェクトで意図しないツールが走るのを防ぐ。
 _PRESETS: dict[str, dict[str, bool]] = {
-    "20260330": {**_PRESET_BASE, "pyright": True, "textlint": True, "markdownlint": True},
-    "20260411": {
-        **_PRESET_BASE,
-        "pyright": True,
-        "textlint": True,
+    "20260418": {
         "markdownlint": True,
+        "textlint": True,
         "actionlint": True,
         "typos": True,
-        "uv-sort": True,
-    },
-    "20260413": {
-        **_PRESET_BASE,
-        "pyright": True,
-        "textlint": True,
-        "markdownlint": True,
-        "actionlint": True,
-        "typos": True,
-        "uv-sort": True,
         "pre-commit": True,
     },
 }
-_PRESETS["latest"] = _PRESETS["20260413"]
+_PRESETS["latest"] = _PRESETS["20260418"]
 
 # v3.0.0 で削除されたプリセット名と、移行先を示すメッセージの対応表。
 # ``load_config`` が該当プリセット指定を検知したら案内付き ValueError を送出する。
@@ -721,6 +753,24 @@ _REMOVED_PRESETS: dict[str, str] = {
         "5 ツール削除 (pyupgrade / autoflake / isort / black / pflake8) に伴い、"
         '当該プリセットは実質的に内容を失ったため廃止された。代わりに `preset = "latest"` を使い、'
         "必要な Python 系ツールを ``python = true`` または個別設定で有効化すること"
+    ),
+    "20260330": (
+        'preset "20260330" は v3.0.0 で削除された。'
+        "preset 内容が言語非依存 + ドキュメント系のみに整理されたため、"
+        '旧 preset "20260330" 相当を復元するには `preset = "latest"` を指定した上で '
+        "`python = true` (または個別の ``pyright = true`` 等) を追加すること"
+    ),
+    "20260411": (
+        'preset "20260411" は v3.0.0 で削除された。'
+        "preset 内容が言語非依存 + ドキュメント系のみに整理されたため、"
+        '旧 preset "20260411" 相当を復元するには `preset = "latest"` を指定した上で '
+        "`python = true` (または個別の ``pyright = true`` / ``uv-sort = true`` 等) を追加すること"
+    ),
+    "20260413": (
+        'preset "20260413" は v3.0.0 で削除された。'
+        "preset 内容が言語非依存 + ドキュメント系のみに整理されたため、"
+        '旧 preset "20260413" 相当を復元するには `preset = "latest"` を指定した上で '
+        "`python = true` (または個別の ``pyright = true`` / ``uv-sort = true`` 等) を追加すること"
     ),
 }
 
@@ -757,17 +807,30 @@ def load_config(config_dir: pathlib.Path | None = None) -> Config:
         name = name.replace("_", "-")
         _register_custom_command(config, name, definition)
 
-    # python 設定の適用 (preset < python < 個別設定)
-    # python = true なら PYTHON_COMMANDS を一括有効化する (v3.0.0 で opt-in 化)。
-    # python 未指定もしくは False の場合はプリセット既定値のままとする。
-    # 後続の個別設定ループで mypy = false 等の上書きが可能。
-    python_flag = tool_pyfltr.get("python", False)
-    if python_flag:
-        for cmd in PYTHON_COMMANDS:
-            config.values[cmd] = True
+    # 言語カテゴリ opt-in の適用 (preset < 言語カテゴリ < 個別設定)
+    # v3.0.0 で python / javascript / rust / dotnet を同じ枠組みの opt-in キーに統一した。
+    # preset では言語別ツールを有効化しないため、まず preset 由来で紛れ込んだ個別 True を
+    # 抑止し (各言語カテゴリキーも個別キーも False の場合のみ強制 False)、その後でカテゴリ
+    # キーが True なら該当コマンド群を一括有効化する。後続の個別設定ループで
+    # ``{command} = false`` / ``{command} = true`` による上書きが可能。
+    # 設定キーの「_」「-」ゆらぎに対応するため、ユーザー入力側のキー集合を正規化しておく。
+    user_keys = {key.replace("_", "-") for key in tool_pyfltr}
+    language_flags: dict[str, bool] = {}
+    for category_key, commands in LANGUAGE_CATEGORIES:
+        flag = bool(tool_pyfltr.get(category_key, False))
+        language_flags[category_key] = flag
+        if not flag:
+            for cmd in commands:
+                if cmd in user_keys:
+                    continue  # 個別設定による明示指定を保持 (True/False 双方)
+                config.values[cmd] = False
+    for category_key, commands in LANGUAGE_CATEGORIES:
+        if language_flags[category_key]:
+            for cmd in commands:
+                config.values[cmd] = True
 
-    # プリセット・python 以外の設定を適用 (プリセットと重複があれば上書き)
-    skip_keys = ("custom-commands", "python")
+    # プリセット・言語カテゴリ以外の設定を適用 (プリセットと重複があれば上書き)
+    skip_keys = ("custom-commands", *(key for key, _ in LANGUAGE_CATEGORIES))
     targets_overrides: dict[str, str | list[str]] = {}
     extend_targets_map: dict[str, str | list[str]] = {}
     for key, value in tool_pyfltr.items():
