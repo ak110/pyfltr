@@ -2,12 +2,16 @@
 # pylint: disable=missing-function-docstring
 # pylint: disable=protected-access
 
+import argparse
 import pathlib
 import subprocess
 
 import pytest
 
 import pyfltr.main
+from tests.conftest import make_command_result as _make_result
+from tests.conftest import make_error_location as _make_error
+from tests.conftest import seed_archive_run as _seed_run
 
 
 @pytest.mark.parametrize("mode", ["run", "ci"])
@@ -295,3 +299,211 @@ def test_build_retry_command_missing_commands_inserts(tmp_path):
     )
     assert "--commands" in retry
     assert "mypy" in retry
+
+
+# --- パートG A案: _filter_failed_files ---
+
+
+def test_filter_failed_files_empty_errors_returns_empty():
+    """errors が空なら空リストを返す (絞り込み対象なし)。"""
+    result = _make_result(
+        "mypy",
+        returncode=0,
+        target_files=[pathlib.Path("src/a.py"), pathlib.Path("src/b.py")],
+    )
+    assert not pyfltr.main._filter_failed_files(result)
+
+
+def test_filter_failed_files_intersects_target_files():
+    """errors.file と target_files の交差を target_files の並び順で返す。"""
+    errors = [
+        _make_error("mypy", "src/c.py", 1, "err"),
+        _make_error("mypy", "src/a.py", 2, "err"),
+    ]
+    result = _make_result(
+        "mypy",
+        returncode=1,
+        errors=errors,
+        target_files=[
+            pathlib.Path("src/a.py"),
+            pathlib.Path("src/b.py"),
+            pathlib.Path("src/c.py"),
+        ],
+    )
+    filtered = pyfltr.main._filter_failed_files(result)
+    # target_files の並び順 (a.py, c.py) を維持する
+    assert filtered == [pathlib.Path("src/a.py"), pathlib.Path("src/c.py")]
+
+
+def test_filter_failed_files_outside_target_files_returns_empty():
+    """errors.file が target_files に含まれなければ空。"""
+    errors = [_make_error("mypy", "src/other.py", 1, "err")]
+    result = _make_result(
+        "mypy",
+        returncode=1,
+        errors=errors,
+        target_files=[pathlib.Path("src/a.py")],
+    )
+    assert not pyfltr.main._filter_failed_files(result)
+
+
+# --- パートG A案: _populate_retry_command ---
+
+
+def test_populate_retry_command_uses_filtered_files(tmp_path):
+    """絞り込み後の target_files のみが retry_command に反映される。"""
+    errors = [_make_error("mypy", "src/b.py", 1, "err")]
+    result = _make_result(
+        "mypy",
+        returncode=1,
+        errors=errors,
+        target_files=[pathlib.Path("src/a.py"), pathlib.Path("src/b.py")],
+    )
+    template = pyfltr.main._build_retry_args_template(["run", "--commands", "mypy"])
+    pyfltr.main._populate_retry_command(
+        result,
+        retry_args_template=template,
+        launcher_prefix=["pyfltr"],
+        original_cwd=str(tmp_path),
+    )
+    assert result.retry_command is not None
+    assert "b.py" in result.retry_command
+    assert "a.py" not in result.retry_command
+
+
+def test_populate_retry_command_skips_for_cached(tmp_path):
+    """cached=True の CommandResult では retry_command を埋めない。"""
+    result = _make_result("mypy", returncode=0, cached=True, cached_from="01ABC")
+    template = pyfltr.main._build_retry_args_template(["run", "--commands", "mypy"])
+    pyfltr.main._populate_retry_command(
+        result,
+        retry_args_template=template,
+        launcher_prefix=["pyfltr"],
+        original_cwd=str(tmp_path),
+    )
+    assert result.retry_command is None
+
+
+# --- パートG B案: --only-failed ---
+
+
+@pytest.fixture
+def _only_failed_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
+    """--only-failed テスト用に PYFLTR_CACHE_DIR を tmp_path に固定する。"""
+    monkeypatch.setenv("PYFLTR_CACHE_DIR", str(tmp_path))
+    return tmp_path
+
+
+def test_only_failed_flag_accepted(_only_failed_cache):
+    """--only-failed フラグが受理される (直前 run が無ければ rc=0 で成功終了)。
+
+    直前 run が存在しないので ``_run_subprocess`` も起動しない経路を通るため
+    モック不要 (``test_only_failed_returns_zero_when_no_failures`` が起動しないこと
+    自体を検証している)。
+    """
+    returncode = pyfltr.main.run(["ci", "--only-failed", str(pathlib.Path(__file__).parent.parent)])
+    assert returncode == 0
+
+
+def test_only_failed_filter_builds_per_tool_targets(_only_failed_cache):
+    """直前 run の失敗ツールごとに独立した失敗ファイル集合を構築する。"""
+    _seed_run(
+        _only_failed_cache,
+        commands=["ruff-check", "mypy"],
+        exit_code=1,
+        tool_results=[
+            ("ruff-check", 1, "", [_make_error("ruff-check", "a.py", 1, "e")]),
+            ("mypy", 1, "", [_make_error("mypy", "b.py", 1, "e")]),
+        ],
+    )
+    args = argparse.Namespace(only_failed=True)
+    all_files = [pathlib.Path("a.py"), pathlib.Path("b.py")]
+    commands, per_tool, exit_early = pyfltr.main._apply_only_failed_filter(args, ["ruff-check", "mypy"], all_files)
+    assert exit_early is False
+    assert sorted(commands) == ["mypy", "ruff-check"]
+    assert per_tool == {"ruff-check": [pathlib.Path("a.py")], "mypy": [pathlib.Path("b.py")]}
+
+
+def test_only_failed_filter_none_for_missing_diagnostics(_only_failed_cache):
+    """診断無しの失敗ツール (pass-filenames=False 等) は値 None (フォールバック)。"""
+    _seed_run(
+        _only_failed_cache,
+        commands=["pytest"],
+        exit_code=1,
+        tool_results=[("pytest", 1, "test failed", [])],
+    )
+    args = argparse.Namespace(only_failed=True)
+    commands, per_tool, exit_early = pyfltr.main._apply_only_failed_filter(args, ["pytest"], [pathlib.Path("tests/t.py")])
+    assert exit_early is False
+    assert commands == ["pytest"]
+    assert per_tool == {"pytest": None}
+
+
+def test_only_failed_filter_empty_for_targets_intersection(_only_failed_cache):
+    """診断はあるが targets 交差が空のツールは除外される (全ツールで空なら早期終了)。"""
+    _seed_run(
+        _only_failed_cache,
+        commands=["ruff-check"],
+        exit_code=1,
+        tool_results=[
+            ("ruff-check", 1, "", [_make_error("ruff-check", "b.py", 1, "e")]),
+        ],
+    )
+    args = argparse.Namespace(only_failed=True)
+    # all_files (targets 由来) に b.py が含まれない → 交差空で早期終了
+    _, _, exit_early = pyfltr.main._apply_only_failed_filter(args, ["ruff-check"], [pathlib.Path("a.py")])
+    assert exit_early is True
+
+
+def test_only_failed_filter_empty_returns_early_no_runs(_only_failed_cache):
+    """直前 run が存在しない場合は exit_early=True (commands は未変更で返す)。"""
+    args = argparse.Namespace(only_failed=True)
+    commands, per_tool, exit_early = pyfltr.main._apply_only_failed_filter(args, ["ruff-check"], [pathlib.Path("a.py")])
+    assert exit_early is True
+    assert commands == ["ruff-check"]
+    assert per_tool is None
+
+
+def test_only_failed_filter_empty_returns_early_no_failures(_only_failed_cache):
+    """直前 run が全成功なら exit_early=True (失敗ツール抽出が空)。"""
+    _seed_run(
+        _only_failed_cache,
+        commands=["ruff-check"],
+        exit_code=0,
+        tool_results=[("ruff-check", 0, "", [])],
+    )
+    args = argparse.Namespace(only_failed=True)
+    _, _, exit_early = pyfltr.main._apply_only_failed_filter(args, ["ruff-check"], [pathlib.Path("a.py")])
+    assert exit_early is True
+
+
+def test_only_failed_filter_intersects_with_targets(_only_failed_cache):
+    """失敗ファイルと all_files (= 位置引数 targets 由来) の交差が対象になる。"""
+    _seed_run(
+        _only_failed_cache,
+        commands=["ruff-check"],
+        exit_code=1,
+        tool_results=[
+            (
+                "ruff-check",
+                1,
+                "",
+                [
+                    _make_error("ruff-check", "a.py", 1, "e"),
+                    _make_error("ruff-check", "b.py", 2, "e"),
+                ],
+            ),
+        ],
+    )
+    args = argparse.Namespace(only_failed=True)
+    all_files = [pathlib.Path("a.py")]  # targets 指定で b.py は含まない想定
+    _, per_tool, exit_early = pyfltr.main._apply_only_failed_filter(args, ["ruff-check"], all_files)
+    assert exit_early is False
+    assert per_tool == {"ruff-check": [pathlib.Path("a.py")]}
+
+
+def test_only_failed_returns_zero_when_no_failures(mocker, _only_failed_cache):
+    """--only-failed 指定で直前 run に失敗ツールが無ければ rc=0 で終了する (実コマンド起動無し)。"""
+    mocker.patch("pyfltr.command._run_subprocess").side_effect = AssertionError("不要な起動")
+    returncode = pyfltr.main.run(["run-for-agent", "--only-failed", str(pathlib.Path(__file__).parent.parent)])
+    assert returncode == 0

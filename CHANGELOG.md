@@ -63,9 +63,17 @@ v3.0.0から整備を開始した。それ以前の変更はgit logおよびGitH
   - `<run_id>`は前方一致と`latest`エイリアスを受け付ける（前方一致で複数該当時は曖昧エラー）
   - `--tool NAME`でdiagnostics全件、`--tool NAME --output`で`output.log`全文
   - `--output-format=text|json|jsonl`で形式切替
+- `--only-failed`オプション。
+  直前runの実行アーカイブから失敗ツールと失敗ファイルを抽出し、ツール別にその組み合わせだけを再実行する
+  - 直前runが存在しない・失敗ツールが無い・指定`targets`との交差が空の場合はメッセージを出して`rc=0`で成功終了する
+  - 診断ファイルが取得できないツール（pytest等の`pass-filenames=False`系）は既定ファイル展開にフォールバックして全体再実行する
+  - 位置引数`targets`との併用時は、直前runの失敗ファイル集合と`targets`の交差を対象にする
 
 ### 変更
 
 - `run-for-agent`サブコマンドの既定出力形式を`jsonl`とする（`pyfltr run --output-format=jsonl`と等価）
 - `_run_subprocess()`を`subprocess.Popen`ベースに一本化。
   `--fail-fast`による外部スレッドからの`terminate()`を可能にするための実行基盤統一
+- JSONL `tool.retry_command`のターゲットを「当該ツールで失敗したファイルのみ」に絞り込む。
+  失敗ファイルを特定できない場合（pytest等の`pass-filenames=False`や全体失敗のみ）はターゲット位置引数を空にする。
+  キャッシュ復元結果（`cached=true`）では`retry_command`を出力しない

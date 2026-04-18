@@ -12,11 +12,13 @@
     - 詳細な情報などが必要な場合に限り `uv run pytest -vv <path>` などを使用
   - JSONL出力は`header`（実行環境・`run_id`）→ `diagnostic`+`tool`（ツール完了ごと）→ `warning`→ `summary`（末尾）の順に出力される。末尾の`summary`で`failed`と`diagnostics`を確認し、必要に応じて`diagnostic`行のファイル・行番号・メッセージを参照する。`header.run_id`（ULID）は実行アーカイブの参照キー
   - `diagnostic`の任意フィールド: `rule`・`rule_url`（対応ツールのみ）・`severity`（3値に正規化）・`fix`
-  - `tool`の任意フィールド: `retry_command`（当該ツール1件の再実行コマンド）・`truncated`（smart truncation発生時。`archive`パスで全文参照）
+  - `tool`の任意フィールド: `retry_command`（当該ツールで失敗したファイルのみに絞った再実行コマンド）・`truncated`（smart truncation発生時。`archive`パスで全文参照）
+  - `retry_command`の追加仕様: 失敗ファイルを特定できない場合はターゲット位置引数が空。`cached=true`時は出力されない
   - `tool`のキャッシュ関連フィールド: `cached`（ファイルhashキャッシュから復元されたとき `true`）・`cached_from`（`cached=true` 時のソース `run_id`）
   - 詳細仕様は`docs/guide/usage.md`の「jsonlスキーマ」節および`llms.txt`を参照。`--output-format=sarif` / `github-annotations` でCI向け形式にも切り替え可能
   - `--fail-fast`: 1ツールでもエラーが出た時点で残りを打ち切る（起動済みはterminate、未開始はskipped扱い）
   - `--no-cache`: ファイルhashキャッシュを無効化する。現状はtextlintのみ対象
+  - `--only-failed`: 直前runから失敗ツール・失敗ファイルを抽出し、ツール別にその組み合わせのみ再実行する。直前run無し/失敗ツール無し/targets交差空ならメッセージを出してrc=0で成功終了する
   - `header.run_id`はユーザーキャッシュに保存された該当runの参照キー。`pyfltr list-runs`で一覧、`pyfltr show-run <run_id>`で詳細（`<run_id>`は前方一致・`latest`エイリアス可）を参照する。`--tool <name>`でdiagnostics全件、`--tool <name> --output`で`output.log`全文が得られる
   - MCPクライアント（Claude Desktopなど）からは`pyfltr mcp`でMCPサーバーを起動する。提供ツールは`list_runs` / `show_run` / `show_run_diagnostics` / `show_run_output` / `run_for_agent`の5種類で、アーカイブ参照と実行を行える
 

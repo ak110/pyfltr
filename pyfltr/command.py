@@ -486,6 +486,22 @@ def _run_subprocess(
         )
 
 
+def pick_only_failed_files(
+    only_failed_targets: dict[str, list[pathlib.Path] | None] | None,
+    command: str,
+) -> list[pathlib.Path] | None:
+    """``only_failed_targets`` から当該ツールの対象ファイル指定を取り出す。
+
+    ``only_failed_targets`` 自体が ``None`` の場合（``--only-failed`` 未指定）は常に
+    ``None`` を返し、``execute_command`` で既定の ``all_files`` に委ねる。指定あり時は
+    ``None`` と ``list`` の区別（診断なしフォールバック vs 絞り込み結果）を保持する。
+    ``cli`` と ``ui`` の両経路から同一挙動で引ける共通ヘルパー。
+    """
+    if only_failed_targets is None:
+        return None
+    return only_failed_targets.get(command)
+
+
 def execute_command(
     command: str,
     args: argparse.Namespace,
@@ -496,6 +512,7 @@ def execute_command(
     fix_stage: bool = False,
     cache_store: "pyfltr.cache.CacheStore | None" = None,
     cache_run_id: str | None = None,
+    only_failed_files: list[pathlib.Path] | None = None,
 ) -> CommandResult:
     """コマンドの実行。
 
@@ -510,10 +527,16 @@ def execute_command(
     通常実行のうえ、成功 (rc=0, has_error=False) に限り ``cache_run_id`` をソースとして
     書き込む。``cache_run_id`` が ``None`` の場合はキャッシュ書き込みをスキップする
     (アーカイブ無効時に ``cached_from`` で参照させる元 run が無いため)。
+
+    ``only_failed_files`` が指定された場合、``all_files`` の代わりにそのリストを
+    対象ファイル集合として扱う (``--only-failed`` 経路でツール別の失敗ファイル集合を
+    渡す用途)。その後の ``target_extensions`` / ``pass_filenames=False`` の分岐は
+    通常通り適用される。``None`` の場合は既定の ``all_files`` を使用する。
     """
     command_info = config.commands[command]
     globs = command_info.target_globs()
-    targets: list[pathlib.Path] = filter_by_globs(all_files, globs)
+    source_files = only_failed_files if only_failed_files is not None else all_files
+    targets: list[pathlib.Path] = filter_by_globs(source_files, globs)
 
     # ツール別excludeの適用（--no-excludeが指定された場合はスキップ）
     if not args.no_exclude:

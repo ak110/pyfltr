@@ -43,11 +43,13 @@ def make_command_result(
     retry_command: str | None = None,
     cached: bool = False,
     cached_from: str | None = None,
+    target_files: list[pathlib.Path] | None = None,
 ) -> pyfltr.command.CommandResult:
     """テスト用の CommandResult を生成する。
 
     ``has_error`` を省略した場合、``returncode`` が 0/None 以外なら True に推定する。
-    ``errors`` は ``ErrorLocation`` のリスト (省略時は空)。
+    ``errors`` は ``ErrorLocation`` のリスト (省略時は空)。``target_files`` は
+    ``retry_command`` 絞り込み (A案) のテスト用 (省略時は空)。
     ``archived`` はテスト既定で True (smart truncation が適用される側)。
     実運用でのデフォルト (CommandResult() 生成時の False) とは異なる点に注意。
     """
@@ -63,6 +65,7 @@ def make_command_result(
         output=output,
         elapsed=elapsed,
         errors=list(errors) if errors else [],
+        target_files=list(target_files) if target_files else [],
         archived=archived,
         retry_command=retry_command,
         cached=cached,

@@ -46,6 +46,7 @@ def run_commands_with_ui(
     cache_store: pyfltr.cache.CacheStore | None = None,
     cache_run_id: str | None = None,
     fail_fast: bool = False,
+    only_failed_targets: dict[str, list[pathlib.Path] | None] | None = None,
 ) -> tuple[list[pyfltr.command.CommandResult], int]:
     """UI付きでコマンドを実行。
 
@@ -56,6 +57,10 @@ def run_commands_with_ui(
     ``fail_fast=True`` のとき、いずれかのツールが ``has_error=True`` で完了した時点で
     未実行ジョブを ``future.cancel()`` で打ち切り、起動済みサブプロセスに
     ``terminate()`` を送る。
+
+    ``only_failed_targets`` が指定された場合、ツール別の失敗ファイル集合を
+    ``execute_command`` へ流す (``--only-failed`` 経路)。値が ``None`` のツールは通常の
+    ``all_files`` で実行し、``list`` のツールはその集合のみを対象にする。
     """
     app = UIApp(
         commands,
@@ -66,6 +71,7 @@ def run_commands_with_ui(
         cache_store=cache_store,
         cache_run_id=cache_run_id,
         fail_fast=fail_fast,
+        only_failed_targets=only_failed_targets,
     )
     try:
         return_code = app.run()
@@ -117,6 +123,7 @@ class UIApp(App):
         cache_store: pyfltr.cache.CacheStore | None = None,
         cache_run_id: str | None = None,
         fail_fast: bool = False,
+        only_failed_targets: dict[str, list[pathlib.Path] | None] | None = None,
     ) -> None:
         super().__init__()
         self.commands = commands
@@ -127,6 +134,7 @@ class UIApp(App):
         self._cache_store = cache_store
         self._cache_run_id = cache_run_id
         self._fail_fast = fail_fast
+        self._only_failed_targets = only_failed_targets
         self.results: list[pyfltr.command.CommandResult] = []
         self.lock = threading.Lock()
         self.last_ctrl_c_time: float = 0.0
@@ -338,6 +346,7 @@ class UIApp(App):
                 fix_stage=fix_stage,
                 cache_store=self._cache_store,
                 cache_run_id=self._cache_run_id,
+                only_failed_files=pyfltr.command.pick_only_failed_files(self._only_failed_targets, command),
             )
         # ここ以降は結果の UI 反映のみなので serial_group ロックの外で行う。
 

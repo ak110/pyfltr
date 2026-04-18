@@ -1573,3 +1573,60 @@ def test_execute_command_non_cacheable_skips_cache(mocker, tmp_path: pathlib.Pat
     )
     # mypy は cacheable=False のため、キャッシュエントリは作られない
     assert not list(cache_root.rglob("*.json"))
+
+
+def test_execute_command_only_failed_files_override(mocker, tmp_path: pathlib.Path) -> None:
+    """``only_failed_files`` に list を渡すと ``all_files`` の代わりにその集合が対象になる。"""
+    file_a = tmp_path / "a.py"
+    file_b = tmp_path / "b.py"
+    file_a.write_text("x = 1\n")
+    file_b.write_text("y = 2\n")
+
+    mock_run = mocker.patch(
+        "pyfltr.command._run_subprocess",
+        return_value=subprocess.CompletedProcess(["ruff"], returncode=0, stdout=""),
+    )
+
+    config = pyfltr.config.create_default_config()
+    config.values["ruff-check"] = True
+
+    result = pyfltr.command.execute_command(
+        "ruff-check",
+        _make_args(),
+        config,
+        [file_a, file_b],
+        only_failed_files=[file_b],
+    )
+
+    assert mock_run.call_count == 1
+    cmdline = mock_run.call_args_list[0][0][0]
+    assert str(file_b) in cmdline
+    assert str(file_a) not in cmdline
+    # CommandResult.target_files も only_failed_files ベースに絞られる
+    assert result.target_files == [file_b]
+
+
+def test_execute_command_only_failed_files_none_uses_default(mocker, tmp_path: pathlib.Path) -> None:
+    """``only_failed_files=None`` なら既定の ``all_files`` で実行される (フォールバック)。"""
+    file_a = tmp_path / "a.py"
+    file_a.write_text("x = 1\n")
+
+    mock_run = mocker.patch(
+        "pyfltr.command._run_subprocess",
+        return_value=subprocess.CompletedProcess(["ruff"], returncode=0, stdout=""),
+    )
+
+    config = pyfltr.config.create_default_config()
+    config.values["ruff-check"] = True
+
+    pyfltr.command.execute_command(
+        "ruff-check",
+        _make_args(),
+        config,
+        [file_a],
+        only_failed_files=None,
+    )
+
+    assert mock_run.call_count == 1
+    cmdline = mock_run.call_args_list[0][0][0]
+    assert str(file_a) in cmdline

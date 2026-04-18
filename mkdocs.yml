@@ -79,11 +79,13 @@ plugins:
 
         `diagnostic`の`rule_url`は対応ツール（ruff / pylint / pyright / mypy / shellcheck / eslint / markdownlint）でのみ付与される。`severity`は`"error"` / `"warning"` / `"info"` の3値に正規化される（未対応ツールは省略）。
 
-        `tool`の`retry_command`は当該ツール1件を再実行するshellコマンド文字列で、`--no-fix`/`--output-format`などの実行意味論フラグを保持する。`truncated`はsmart truncationが発生した場合のみ付与され、`archive`パス（`tools/<tool>/output.log` / `tools/<tool>/diagnostics.jsonl`）から全文を復元できる。smart truncationの閾値は`jsonl-diagnostic-limit`/`jsonl-message-max-lines`/`jsonl-message-max-chars`で制御できる。
+        `tool`の`retry_command`は当該ツール1件を再実行するshellコマンド文字列で、`--no-fix`/`--output-format`などの実行意味論フラグを保持する。v3.0.0以降、ターゲット位置引数は「当該ツールで失敗したファイルのみ」に絞り込まれる（失敗ファイルを特定できないツールはターゲット空）。キャッシュ復元結果（`cached=true`）では`retry_command`は出力されない。`truncated`はsmart truncationが発生した場合のみ付与され、`archive`パス（`tools/<tool>/output.log` / `tools/<tool>/diagnostics.jsonl`）から全文を復元できる。smart truncationの閾値は`jsonl-diagnostic-limit`/`jsonl-message-max-lines`/`jsonl-message-max-chars`で制御できる。
 
         `cached`はファイルhashキャッシュから結果を復元したときだけ `true` として付与される（現状は `textlint` のみ対象）。`cached_from`は復元元の `run_id` で、`pyfltr show-run` で当該 run の全文を参照できる。キャッシュは `--no-cache` または `cache = false` で無効化でき、既定の保存期間は 12 時間（`cache-max-age-hours`）。
 
         `--fail-fast`は1ツールでもエラーが出た時点で残りのジョブを打ち切り、起動済みサブプロセスには `terminate()` を送る。未開始ジョブは `future.cancel()` で取消され、JSONL `tool` レコードには `status="skipped"` として計上される。
+
+        `--only-failed`は直前runの実行アーカイブから失敗ツール・失敗ファイルを抽出し、ツール別にその組み合わせだけを再実行する。直前runが無い/失敗ツールが無い/指定`targets`との交差が空の場合はメッセージを出して`rc=0`で成功終了する。診断ファイルが無い失敗ツール（pytest等）は既定対象にフォールバックして全体再実行する。
 
         ```shell
         pyfltr run-for-agent
@@ -116,6 +118,7 @@ plugins:
           - v3/JSONL出力拡張.md: severity正規化・rule_url・retry_command・smart truncation・SARIF/GA出力
           - v3/パイプライン機能拡張.md: --fail-fast・ファイルhashキャッシュ・Popen一本化
           - v3/詳細参照サブコマンド.md: list-runs / show-runサブコマンドによる実行アーカイブの詳細参照
+          - v3/retry_command絞り込み.md: retry_commandターゲットを失敗ファイルに限定・--only-failedで直前runの失敗組み合わせのみ再実行
         開発者向け:
           - development/development.md: 開発環境構築・ドキュメント・リリース手順
           - development/roadmap.md: エージェント連携の拡張候補（採否未決・議論用）
@@ -151,6 +154,7 @@ nav:
       - パイプライン機能拡張: v3/パイプライン機能拡張.md
       - 詳細参照サブコマンド: v3/詳細参照サブコマンド.md
       - MCPサーバー化: v3/MCPサーバー化.md
+      - retry_command絞り込み: v3/retry_command絞り込み.md
       - マイグレーションガイド: v3/マイグレーションガイド.md
       - 作業ステータス: v3/作業ステータス.md
   - 開発者向け:
