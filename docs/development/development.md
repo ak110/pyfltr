@@ -74,9 +74,9 @@ Conventional Commits形式に従う。ただし記述の方向性があまり変
 事前に`gh`コマンドをインストールして`gh auth login`でログインしておき、以下のコマンドのいずれかを実行。
 
 ```bash
-gh workflow run release.yaml --field="bump=バグフィックス"
-gh workflow run release.yaml --field="bump=マイナーバージョンアップ"
-gh workflow run release.yaml --field="bump=メジャーバージョンアップ"
+gh workflow run release.yaml --field="bump=PATCH"
+gh workflow run release.yaml --field="bump=MINOR"
+gh workflow run release.yaml --field="bump=MAJOR"
 ```
 
 <https://github.com/ak110/pyfltr/actions> で状況を確認できる。

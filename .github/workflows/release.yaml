@@ -8,10 +8,10 @@ on:
         required: true
         type: choice
         options:
-          - バグフィックス
-          - マイナーバージョンアップ
-          - メジャーバージョンアップ
-        default: バグフィックス
+          - PATCH
+          - MINOR
+          - MAJOR
+        default: PATCH
 
 permissions:
   contents: write
@@ -98,9 +98,9 @@ jobs:
           latest=$(git tag --sort=version:refname | tail -n1)
           IFS='.' read -r major minor patch <<< "${latest#v}"
           case '${{ github.event.inputs.bump }}' in
-            'バグフィックス') ((++patch));;
-            'マイナーバージョンアップ') ((++minor)); patch=0;;
-            'メジャーバージョンアップ') ((++major)); minor=0; patch=0;;
+            'PATCH') ((++patch));;
+            'MINOR') ((++minor)); patch=0;;
+            'MAJOR') ((++major)); minor=0; patch=0;;
             *) echo "Unknown bump: '${{ github.event.inputs.bump }}'" >&2; exit 1;;
           esac
           echo "next=v${major}.${minor}.${patch}" >> "$GITHUB_OUTPUT"
