@@ -16,10 +16,10 @@ extend-exclude = ["foo", "bar.py"]
 設定項目と既定値は`pyfltr generate-config`で確認可能。`{command}`系の項目およびツール固有の項目（`prettier-check-args`など）の詳細はツール別設定ページを参照。
 
 - preset : プリセット設定（後述）
-- python : Python系ツールの一括有効/無効（後述）
-- javascript : JavaScript / TypeScript系ツールの一括有効/無効（後述）
-- rust : Rust系ツールの一括有効/無効（後述）
-- dotnet : .NET系ツールの一括有効/無効（後述）
+- python : Python系ツールのゲート開閉（後述）
+- javascript : JavaScript / TypeScript系ツールのゲート開閉（後述）
+- rust : Rust系ツールのゲート開閉（後述）
+- dotnet : .NET系ツールのゲート開閉（後述）
 - {command} : 各コマンドの有効/無効
 - {command}-path : 実行するコマンド
 - {command}-args : 追加のコマンドライン引数（lint/fix両モードで常に付与）
@@ -53,8 +53,8 @@ extend-exclude = ["foo", "bar.py"]
 
 ## プリセット設定
 
-`preset`を設定すると、言語非依存のツールとドキュメント系ツールを一括で有効化できる。
-`"latest"` または日付指定 (`"20260418"`) を指定する。
+プリセットは各時点での推奨ツール構成をバージョン付きで示すスナップショット。
+`"latest"`または日付指定（`"20260330"` / `"20260411"` / `"20260413"`）を指定する。
 
 ```toml
 [tool.pyfltr]
@@ -62,26 +62,42 @@ preset = "latest"
 ```
 
 `preset = "latest"`はpyfltrの更新に伴って対象ツールの追加や既定値の変更が予告なく入ることがある。
-破壊的変更を避けたい場合は`"20260418"`のように日付指定プリセットで固定すると、当該日時点の構成をそのまま維持できる。
-いずれのプリセットでも`{command} = false`を個別に指定すれば特定ツールを上書きで無効化できる。
+破壊的変更を避けたい場合は日付指定プリセットで固定すると、当該日時点の構成をそのまま維持できる。
 
-v3.0.0から、プリセットは「言語非依存 + ドキュメント系」に役割を絞った。
-Python / JavaScript / Rust / .NET各言語カテゴリはプリセットでは有効化されないため、次節の言語カテゴリopt-inキーで明示する。
+プリセットには言語別ツールも含まれるが、ユーザー側で明示しない限り該当ツールは実行されない。
+次節の言語カテゴリキーで「どの言語のツールを通過させるか」を明示する。
 
-### preset "20260418" / "latest"
+### preset "20260330"
 
 以下の設定が行われる。
 
-- `markdownlint = true`
+- `ruff-format = true`
+- `ruff-check = true`
+- `pyright = true`
 - `textlint = true`
+- `markdownlint = true`
+
+### preset "20260411"
+
+`"20260330"`に加えて以下が有効化される。
+
 - `actionlint = true`
 - `typos = true`
+- `uv-sort = true`
+
+### preset "20260413" / "latest"
+
+`"20260411"`に加えて以下が有効化される。
+
 - `pre-commit = true`
 
-## 言語カテゴリの一括有効化
+## 言語カテゴリによるゲート制御
 
-各言語カテゴリに属するツールは既定で無効（opt-in）であり、プロジェクトで利用する言語カテゴリのキーを`true`にして有効化する。
-個別のツール単位では`{command} = true`での有効化・`{command} = false`での無効化も可能で、適用優先度は`preset < 言語カテゴリ < 個別設定`。
+各言語カテゴリに属するツールは既定で無効（opt-in）。
+プロジェクトで利用する言語カテゴリキーを`true`にすると、プリセットで推奨された当該言語ツールが有効化される。
+カテゴリキーを`false`（既定）にすると、プリセットで推奨された当該言語ツールもゲートで`false`へ押し戻される。
+
+個別のツール単位では`{command} = true`での有効化・`{command} = false`での無効化も可能で、適用優先度は`preset < 言語カテゴリゲート < 個別設定`。
 
 ```toml
 [tool.pyfltr]
@@ -89,17 +105,28 @@ preset = "latest"
 python = true
 ```
 
-各言語カテゴリキーと対象ツールは次の通り。
+各言語カテゴリキーとゲート対象ツールは次の通り。
 
-- `python = true`: ruff-format・ruff-check・mypy・pylint・pyright・ty・pytest・uv-sort
-- `javascript = true`: eslint・biome・oxlint・prettier・tsc・vitest（TypeScriptも同一カテゴリ）
-- `rust = true`: cargo-fmt・cargo-clippy・cargo-check・cargo-test・cargo-deny
-- `dotnet = true`: dotnet-format・dotnet-build・dotnet-test
+- `python`: ruff-format・ruff-check・mypy・pylint・pyright・ty・pytest・uv-sort
+- `javascript`: eslint・biome・oxlint・prettier・tsc・vitest（TypeScriptも同一カテゴリ）
+- `rust`: cargo-fmt・cargo-clippy・cargo-check・cargo-test・cargo-deny
+- `dotnet`: dotnet-format・dotnet-build・dotnet-test
 
 カテゴリ同士は独立して作用する。
 たとえば`python = true`を指定してもJavaScript系やRust系のツールは有効化されない。
 Pythonプロジェクトで利用する場合は別途`pip install pyfltr[python]`で依存を導入する必要がある。
 JavaScript系・Rust系・.NET系は各言語のツールチェイン（Node.js・cargo・dotnet CLI）が前提となる。
+
+プリセットに含まれない言語別ツール（例: `mypy` / `pytest` は現行プリセットに含まれない）を使いたい場合は個別に`{command} = true`を指定する。
+個別指定はゲートを越えて最優先される。
+
+```toml
+[tool.pyfltr]
+preset = "latest"
+python = true
+mypy = true      # preset に無いため個別指定で追加
+pytest = true
+```
 
 ## ツール別除外設定
 

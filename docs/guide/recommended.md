@@ -4,8 +4,9 @@
 
 pyfltr本体の設定（`[tool.pyfltr]`）と、呼び出される各ツール（ruff / mypy / pytest）の設定を1つの`pyproject.toml`にまとめた例。
 
-- `preset = "latest"`: 主要ツールを有効化するプリセット。詳細は[設定項目](configuration.md)の「プリセット設定」を参照。
-- `python = true`: Python系ツール（ruff-format / ruff-check / mypy / pylint / pyright / ty / pytest / uv-sort）を一括有効化する。v3.0.0でopt-in化されたため、Pythonプロジェクトでは明示が必要。依存は`pip install 'pyfltr[python]'`または`uv add 'pyfltr[python]'`で導入する。
+- `preset = "latest"`: 各時点での推奨ツール構成。詳細は[設定項目](configuration.md)の「プリセット設定」を参照。
+- `python = true`: Python系ツールのゲートを開ける。プリセットに含まれるPython系ツール（ruff-format / ruff-check / pyright / uv-sort）がそのまま有効化される。v3.0.0でopt-in化されたため、Pythonプロジェクトでは明示が必要。依存は`uv add --dev 'pyfltr[python]'`（pipの場合は`pip install 'pyfltr[python]'`）で導入する。
+- `mypy = true` / `pylint = true` / `pytest = true`: プリセットに含まれないPython系ツールを個別に追加する。個別指定はゲートを越えて最優先される。
 - `pylint-args`: pylintに追加で渡す引数。`--load-plugins=pylint_pydantic`と`--enable-error-code=unused-awaitable`（mypy）は自動オプションで既定有効のため個別指定不要。
 - ruffの `per-file-ignores`: テストコード（`**_test.py`）とpackage init（`__init__.py`）のdocstring要求を除外する実用的な調整。
 
@@ -21,6 +22,9 @@ dev = [
 [tool.pyfltr]
 preset = "latest"
 python = true
+mypy = true
+pylint = true
+pytest = true
 pylint-args = ["--jobs=4"]
 
 [tool.ruff]
@@ -394,7 +398,7 @@ jobs:
         run: uv sync --all-extras --all-groups
 
       - name: Test with pyfltr
-        run: uv run pyfltr ci
+        run: uv run pyfltr ci --output-format=github-annotations
 
       - name: Prune uv cache for CI
         run: uv cache prune --ci
@@ -407,7 +411,26 @@ jobs:
 - `actions/setup-node` + `pnpm/action-setup`: `markdownlint-cli2`と`textlint`をpnpx経由で呼び出すため、PythonだけでなくNode.js環境も必要になる。
 - `pnpm config set minimum-release-age 1440`: サプライチェーン攻撃対策として、公開から24時間（1440分）未満のパッケージのインストールを拒否する。
 - `uv sync --all-extras --all-groups`: pyfltrを含むdev依存をすべて同期し、`uv run pyfltr`から対応ツール群を解決できるようにする。`UV_FROZEN=1`下でも`uv.lock`をそのまま使うため問題なく動作する。
+- `--output-format=github-annotations`: `::error file=...` / `::warning file=...`形式の行を標準出力へ書き出す。プル要求の該当ファイル行にコメントとして表示される。
 - `uv cache prune --ci`: CIキャッシュを軽量化するための後処理。
+
+### SARIFでGitHub code scanningへ取り込む
+
+`--output-format=sarif`でSARIF 2.1.0形式のJSONを出力し、`github/codeql-action/upload-sarif`でGitHubのcode scanningへ取り込める。
+セキュリティタブに診断結果が集約され、プル要求ファイル行の注釈と併用できる。
+
+```yaml
+      - name: Run pyfltr (SARIF)
+        run: uv run pyfltr ci --output-format=sarif --output-file=pyfltr.sarif
+        continue-on-error: true
+
+      - name: Upload SARIF to code scanning
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: pyfltr.sarif
+```
+
+アップロードステップの失敗でCIを止めたくない場合は`continue-on-error: true`を付ける。
 
 ---
 

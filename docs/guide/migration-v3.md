@@ -32,21 +32,14 @@ pyfltr ci
 
 Makefile・CI設定・pre-commit設定などで`pyfltr`をサブコマンドなしで呼び出している箇所があれば、すべて明示指定に書き換える。
 
-## 2. プリセットを`"20260418"` / `"latest"`に置き換える
+## 2. 旧プリセット`"20250710"`を置き換える
 
-v3.0.0で旧preset群は役割を「言語非依存 + ドキュメント系」のみに整理し直したため、旧preset名はすべて削除扱いとなった。
-
-| 旧preset | 新preset | 補足 |
-| --- | --- | --- |
-| `"20250710"` | `"latest"`（言語カテゴリopt-inと組み合わせる） | v3.0.0より前に削除予定だった暫定preset |
-| `"20260330"` | `"latest"` + `python = true` | Python系ツールはopt-inキーで復元 |
-| `"20260411"` | `"latest"` + `python = true`（ `uv-sort`等は`python`に含まれる） | 同上 |
-| `"20260413"` | `"latest"` + `python = true` | 同上 |
+preset `"20250710"`はv3.0.0で削除された。指定したまま実行すると移行先を案内する設定エラーが出る。
 
 ```toml
 # 旧
 [tool.pyfltr]
-preset = "20260413"
+preset = "20250710"
 
 # 新
 [tool.pyfltr]
@@ -54,12 +47,9 @@ preset = "latest"
 python = true
 ```
 
-削除されたpreset名を指定したまま実行すると、移行先を案内する設定エラーが出る。
-
-### 新 preset `20260418` / `latest` に含まれるツール
-
-`markdownlint` / `textlint` / `actionlint` / `typos` / `pre-commit` のみ。
-Python / JavaScript / Rust / .NETの各言語カテゴリはpresetでは有効化されず、次節の言語カテゴリopt-inキーで明示する。
+`"20260330"` / `"20260411"` / `"20260413"`はそのまま利用できる。
+`"latest"`は`"20260413"`を指すエイリアスで、pyfltrの更新に伴って対象ツールの追加や既定値の変更が予告なく入ることがある。
+破壊的変更を避けたい場合は日付指定プリセットで固定すると、当該日時点の構成をそのまま維持できる。
 
 ## 3. 削除ツールの設定キーを撤去する
 
@@ -85,7 +75,7 @@ ruff / ruff-formatへの移行例。
 black = true
 isort = true
 
-# 新: ruff-format + ruff-check で代替（preset = "latest" で自動有効化）
+# 新: ruff-format + ruff-check で代替（preset = "latest" で推奨構成を有効化）
 [tool.pyfltr]
 preset = "latest"
 python = true
@@ -94,39 +84,41 @@ python = true
 ## 4. 言語カテゴリを明示的に有効化する
 
 v3.0.0ではPython / JavaScript / Rust / .NETの各言語カテゴリに属するツールをすべてopt-in化した。
-非対象プロジェクトで意図しないツール実行を招くことを避けるため、既定値をすべて`False`に統一している。
+プリセットは各時点の推奨ツール構成をバージョン付きで示すスナップショットで、言語別ツールも含まれる。
+言語カテゴリキー（`python` / `javascript` / `rust` / `dotnet`）はプリセットが推奨する言語別ツールを通過させるゲートとして働く。
 
 利用する言語カテゴリだけを明示的に有効化する。
-適用優先度は`preset < 言語カテゴリ < 個別設定`で、個別設定がある場合はそれが最優先。
-
-### 方法A: 言語カテゴリ単位で一括有効化
+適用優先度は`preset < 言語カテゴリゲート < 個別設定`で、個別設定がある場合はそれが最優先。
 
 ```toml
 [tool.pyfltr]
 preset = "latest"
-python = true        # ruff-format / ruff-check / mypy / pylint / pyright / ty / pytest / uv-sort
-javascript = true    # eslint / biome / oxlint / prettier / tsc / vitest
-rust = true          # cargo-fmt / cargo-clippy / cargo-check / cargo-test / cargo-deny
-dotnet = true        # dotnet-format / dotnet-build / dotnet-test
+python = true
 ```
 
-対象カテゴリのツールがまとめて`True`になる。
-TypeScript系ツール（eslint・tsc等）は`javascript`カテゴリに内包されており、単独のキーは設けない。
+カテゴリキーを`true`にすると、プリセット内の該当言語ツールがそのまま有効化される。
+カテゴリキーを`false`（既定）のままにすると、プリセットで推奨された該当言語ツールはゲートで`false`に押し戻され実行されない。
+他言語のプロジェクトへ誤って当該ツールが走ることを防ぐため。
 
-### 方法B: 個別有効化
+プリセットに含まれない個別ツールを追加したい場合は`{command} = true`で指定する。
+個別指定はゲートを越えて最優先される。
 
 ```toml
 [tool.pyfltr]
-mypy = true
+preset = "latest"
+python = true
+mypy = true      # preset に含まれない Python 系ツールを追加
 pytest = true
-ruff-format = true
-ruff-check = true
 ```
 
-必要なツールだけを有効化する。
-個別指定の`{tool} = false`は言語カテゴリキーやpresetを上書きする。
+`{command} = false`はプリセットでも有効化されたツールを個別に無効化する用途にも使える。
 
-対象外の言語カテゴリキーと個別キーを省略すれば、そのカテゴリのツールは一切実行されない。
+```toml
+[tool.pyfltr]
+preset = "latest"
+python = true
+pyright = false  # preset が True にした pyright を個別に抑止
+```
 
 ## 5. Python系の依存を導入する
 
@@ -140,10 +132,10 @@ pip install pyfltr
 pip install 'pyfltr[python]'
 ```
 
-uvを使う場合。
+uvを使う場合は開発依存として追加する。
 
 ```shell
-uv add 'pyfltr[python]'
+uv add --dev 'pyfltr[python]'
 ```
 
 `pyfltr[python]`に含まれる依存は次の通り。
@@ -172,6 +164,16 @@ JSONL出力時、`header`レコードに`run_id`（ULID）が付与される。
 このフィールドを使って後から`pyfltr show-run <run_id>`または`pyfltr show-run latest`でツール生出力を含む全文参照ができる。
 `pyfltr list-runs`でrun一覧も確認できる。
 
+アーカイブを無効化したい場合の`pyproject.toml`例。
+
+```toml
+[tool.pyfltr]
+preset = "latest"
+python = true
+# 実行アーカイブを無効化し、ユーザーキャッシュを消費しない
+archive = false
+```
+
 ### ファイルhashキャッシュ（既定で有効）
 
 対象ファイル未変更時のtextlint実行をスキップし、過去の結果を復元する（textlintのみ対象）。
@@ -198,10 +200,39 @@ Claude Desktop等のMCPクライアントから`list_runs` / `show_run` / `show_
 - `tool.truncated` — smart truncation発生時の切り詰め前情報とアーカイブパス
 - `tool.cached` / `tool.cached_from` — ファイルhashキャッシュ復元時の判別情報
 
-### 出力形式の追加
+### 出力形式の追加とCI連携
 
 `--output-format=sarif`（SARIF 2.1.0互換）と`--output-format=github-annotations`（GitHub Actions向け注釈）が追加された。
 GitHub code scanningへの取り込みやプル要求のインライン表示に利用できる。
+
+GitHub Actionsでインライン注釈を有効化する例。
+`::error file=...` / `::warning file=...` 形式の行が出力され、プル要求の該当ファイル行にコメントとして表示される。
+
+```yaml
+      - name: Run pyfltr with GitHub annotations
+        run: uv run pyfltr ci --output-format=github-annotations
+```
+
+SARIF出力をGitHub code scanningへ取り込む例。
+`--output-file`でSARIFファイルを書き出し、`github/codeql-action/upload-sarif`でアップロードする。
+
+```yaml
+      - name: Run pyfltr (SARIF)
+        run: uv run pyfltr ci --output-format=sarif --output-file=pyfltr.sarif
+        continue-on-error: true
+
+      - name: Upload SARIF to code scanning
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: pyfltr.sarif
+```
+
+### LLMエージェントとの連携
+
+LLMエージェントから利用する導線が2つ用意されている。
+
+- `pyfltr run-for-agent` — `pyfltr run --output-format=jsonl`のエイリアス。CLIから1コマンドずつ呼び出す用途
+- `pyfltr mcp` — MCPサーバーを起動し、Claude Desktop等から常駐利用する用途。提供ツールは`list_runs` / `show_run` / `show_run_diagnostics` / `show_run_output` / `run_for_agent`の5種
 
 ### `--fail-fast`
 
@@ -227,13 +258,14 @@ pyfltr run-for-agent --only-failed --from-run 01HXYZ
 移行時は以下の順で確認するとスムーズに進む。
 
 - [ ] `pyfltr`コマンド呼び出し箇所すべてにサブコマンド（`ci` / `run` / `fast` / `run-for-agent`）を追記した
-- [ ] `pyproject.toml`の旧preset名（`"20250710"` / `"20260330"` / `"20260411"` / `"20260413"`）を`"latest"`または`"20260418"`に置き換えた
+- [ ] `pyproject.toml`の旧preset名`"20250710"`を`"latest"`または日付プリセット（`"20260330"` / `"20260411"` / `"20260413"`）に置き換えた
 - [ ] `pyproject.toml`から`pyupgrade` / `autoflake` / `isort` / `black` / `pflake8`の関連設定キーをすべて削除した
-- [ ] Pythonプロジェクトの場合、`python = true`または個別`{command} = true`を追加した
-- [ ] JavaScript / TypeScriptプロジェクトの場合、`javascript = true`または個別`{command} = true`を追加した
+- [ ] Pythonプロジェクトの場合、`python = true`を追加してpresetが推奨するPython系ツールのゲートを開けた
+- [ ] JavaScript / TypeScriptプロジェクトの場合、`javascript = true`（presetにJS系が含まれる時点でゲートを開ける）または個別`{command} = true`を追加した
 - [ ] Rustプロジェクトの場合、`rust = true`または個別`{command} = true`を追加した
 - [ ] .NETプロジェクトの場合、`dotnet = true`または個別`{command} = true`を追加した
-- [ ] Pythonプロジェクトの場合、`pyfltr[python]`で依存を再導入した
+- [ ] Pythonプロジェクトの場合、`uv add --dev 'pyfltr[python]'`（またはpipの相当コマンド）で依存を再導入した
 - [ ] pre-commit hookの`entry:`フィールドにサブコマンドが含まれていることを確認した
 - [ ] Makefile・CIワークフロー・miseタスク等のコマンド呼び出しを再確認した
 - [ ] 自動アーカイブを無効化したい場合は`[tool.pyfltr].archive = false`を追加した
+- [ ] CIワークフローで`--output-format=github-annotations`または`--output-format=sarif`の利用を検討した

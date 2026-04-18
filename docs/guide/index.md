@@ -4,13 +4,14 @@
 
 対応ツールを言語・用途別に示す。
 言語カテゴリ（Python / JS/TS / Rust / .NET）に属するツールはすべて既定で無効（opt-in）。
-有効化には、該当する言語カテゴリキー（`python` / `javascript` / `rust` / `dotnet`）を`true`にするか、個別に`{command} = true`と明示する。
-`preset = "latest"`は言語非依存のツールとドキュメント系のみ有効化する。
-詳細なプリセット挙動と言語カテゴリの一括有効化は[設定項目](configuration.md)を参照。
+有効化には、`preset`指定で推奨ツールを選び、言語カテゴリキー（`python` / `javascript` / `rust` / `dotnet`）でゲートを開ける。
+プリセットに含まれないツールは個別に`{command} = true`で明示する。
+詳細は[設定項目](configuration.md)を参照。
 
 ### Python系
 
-いずれも既定で無効（opt-in）。`pyproject.toml`に`python = true`を設定するか、個別に`{command} = true`を指定する。
+いずれも既定で無効（opt-in）。`pyproject.toml`に`preset = "latest"` + `python = true`を設定してゲートを開ける。
+プリセットに含まれないツール（mypy / pylint / pytest等）は個別に`{command} = true`を指定する。
 同時に`pip install pyfltr[python]`でPython系ツールの依存を追加する必要がある。
 
 - Formatters: ruff format / uv-sort（依存定義のソート）
@@ -19,7 +20,7 @@
 
 ### JS/TS系
 
-いずれも既定で無効（opt-in）。`javascript = true`で一括有効化できる（TypeScriptも同カテゴリ）。
+いずれも既定で無効（opt-in）。`javascript = true`でゲートを開け、現行プリセットにはJS/TS系が含まれないため個別に`{command} = true`を指定する（TypeScriptも同カテゴリ）。
 `js-runner`設定で起動方式（pnpx / pnpm / npx等）を切り替える。
 
 - Formatters: prettier
@@ -28,7 +29,7 @@
 
 ### Rust系
 
-いずれも既定で無効（opt-in）。`rust = true`で一括有効化できる。
+いずれも既定で無効（opt-in）。`rust = true`でゲートを開け、個別に`{command} = true`を指定する（現行プリセットにはRust系が含まれない）。
 プロジェクト全体（crate単位）を対象に直接実行する（`{command}-path`で実行パスを指定）。
 
 - Formatters: cargo fmt
@@ -37,7 +38,7 @@
 
 ### .NET系
 
-いずれも既定で無効（opt-in）。`dotnet = true`で一括有効化できる。
+いずれも既定で無効（opt-in）。`dotnet = true`でゲートを開け、個別に`{command} = true`を指定する（現行プリセットには`.NET`系が含まれない）。
 プロジェクト全体（solution単位）を対象に直接実行する（`{command}-path`で実行パスを指定）。
 
 - Formatters: dotnet format
@@ -54,7 +55,7 @@
 - Linters: ec（editorconfig-checker、既定で無効）/ shellcheck（既定で無効）/ typos / actionlint
 - 統合: pre-commit（`.pre-commit-config.yaml`のhookを統合実行）
 
-プリセット・言語カテゴリキーで一括有効化する方法は[設定項目](configuration.md)を参照。
+プリセット指定と言語カテゴリゲートによる有効化の詳細は[設定項目](configuration.md)を参照。
 
 個別に有効化・無効化する方法や`bin-runner`/`js-runner`などの補助設定は[設定項目（ツール別）](configuration-tools.md)を参照。
 

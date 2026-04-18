@@ -96,20 +96,19 @@ ruff-format-check-args = ["check", "--fix"]
 uv-sort = true
 ```
 
-Python系ツールとして扱われ、`python = true`で一括有効化の対象となる。
+Python系ツールとして扱われ、`python = true`のゲート対象となる（プリセット`20260411`以降に含まれる）。
 
 ### Rust系（cargo系）
 
 `cargo-fmt` / `cargo-clippy` / `cargo-check` / `cargo-test` / `cargo-deny`はいずれも既定で無効（opt-in）。
-`rust = true`で一括有効化するか、個別に`{command} = true`を指定する。
+`rust = true`でプリセットに含まれるRust系ツールのゲートを開けるか、個別に`{command} = true`を指定する。
+現行プリセットにはRust系ツールが含まれないため、個別指定の利用が基本。
 `pass-filenames = false`によりcrate全体を対象とするproject-level実行となる。
 
 ```toml
 [tool.pyfltr]
-# 一括有効化
+# ゲートを開けて個別に有効化
 rust = true
-
-# または個別指定
 cargo-fmt = true
 cargo-clippy = true
 cargo-check = true
@@ -147,15 +146,14 @@ cargo系はcrate単位で同一ワークスペースを操作するため、`ser
 ### .NET系（dotnet系）
 
 `dotnet-format` / `dotnet-build` / `dotnet-test`はいずれも既定で無効（opt-in）。
-`dotnet = true`で一括有効化するか、個別に`{command} = true`を指定する。
+`dotnet = true`でプリセットに含まれる .NET系ツールのゲートを開けるか、個別に`{command} = true`を指定する。
+現行プリセットには`.NET`系ツールが含まれないため、個別指定の利用が基本。
 `pass-filenames = false`によりsolution全体を対象とするproject-level実行となる。
 
 ```toml
 [tool.pyfltr]
-# 一括有効化
+# ゲートを開けて個別に有効化
 dotnet = true
-
-# または個別指定
 dotnet-format = true
 dotnet-build = true
 dotnet-test = true
@@ -264,19 +262,13 @@ textlint-packages = [
 ### eslint / prettier / biomeの設定
 
 eslint / prettier / biomeはすべて既定で無効（opt-in）。
-`javascript = true`でoxlint / tsc / vitestも含めて一括有効化できる。
-個別に必要なものだけを`{command} = true`で有効化することも可能。
+`javascript = true`でプリセットに含まれるJS/TS系ツールのゲートを開けるが、現行プリセットにはJS/TS系が含まれないため、個別に`{command} = true`で有効化するのが基本。
 プラグインは`package.json`管理が前提のため、通常は`js-runner = "pnpm"`と併用する。
 
 ```toml
-# 一括有効化の例
 [tool.pyfltr]
 js-runner = "pnpm"
 javascript = true
-
-# または個別有効化の例
-[tool.pyfltr]
-js-runner = "pnpm"
 eslint = true
 prettier = true
 biome = true
@@ -301,11 +293,12 @@ biome = true
 ### oxlint / tsc / vitest
 
 oxlint / tsc / vitestもjs-runner対応のツール。すべて既定で無効（opt-in）。
-`javascript = true`でeslint / prettier / biomeと併せて一括有効化するか、個別に`{command} = true`を指定する。
+`javascript = true`でゲートを開けた上で、個別に`{command} = true`を指定する（現行プリセットには含まれないため）。
 
 ```toml
 [tool.pyfltr]
 js-runner = "pnpm"
+javascript = true
 oxlint = true
 tsc = true
 vitest = true

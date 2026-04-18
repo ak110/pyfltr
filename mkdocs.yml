@@ -51,7 +51,7 @@ plugins:
         対応カテゴリはPython系・Rust系（cargo系）・.NET系（dotnet系）・JS/TS系・ドキュメント系（markdownlint-cli2・textlint）・その他（ec・shellcheck・shfmt・typos・actionlint・pre-commit）。
         個別ツールの網羅的な一覧と詳細は[対応ツール一覧](guide/index.md)を参照。
 
-        `preset = "latest"` で言語非依存のツールとドキュメント系を一括有効化できる。言語別ツールは言語カテゴリ opt-in キー (`python` / `javascript` / `rust` / `dotnet`) で有効化する。
+        `preset = "latest"` で各時点の推奨ツール構成を選べる。プリセットで有効化される言語別ツールは、言語カテゴリキー (`python` / `javascript` / `rust` / `dotnet`) がゲートとして働き、`true` にしたカテゴリのツールのみ通過する。
 
         ## 設定の基本
 
@@ -64,7 +64,7 @@ plugins:
         pylint-args = ["--jobs=4"]
         ```
 
-        v3.0.0以降、Python / JavaScript / Rust / .NET の各言語カテゴリに属するツールはすべて opt-in 化された。利用する言語カテゴリキー (`python` / `javascript` / `rust` / `dotnet`) を `true` にするか、個別に `{tool} = true` を指定する。Pythonプロジェクトでは別途 `pip install pyfltr[python]` で依存を導入する。対応言語カテゴリキーと個別キーを省略すれば、当該カテゴリのツールは一切実行されない。
+        v3.0.0以降、Python / JavaScript / Rust / .NET の各言語カテゴリに属するツールはすべて opt-in 化された。プリセットが示す推奨ツールに対し、言語カテゴリキー (`python` / `javascript` / `rust` / `dotnet`) でゲートを開けたカテゴリのみ実行される。プリセットに含まれないツールを追加したい場合は個別に `{tool} = true` を指定する (ゲートを越えて最優先)。Pythonプロジェクトでは別途 `uv add --dev 'pyfltr[python]'` (または `pip install pyfltr[python]`) で依存を導入する。
 
         ## LLMエージェント向け出力（`--output-format=jsonl`）
 
