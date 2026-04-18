@@ -1592,6 +1592,7 @@ def _warn_protected_identifier_corruption(
                         f"{identifier!r} (file={pyfltr.paths.to_cwd_relative(path)}, "
                         f"before={before_count}, after={after_count})"
                     ),
+                    hint="保護したい識別子はバックティックで囲むとtextlintのfixで改変されなくなる",
                 )
 
 

@@ -410,7 +410,11 @@ class UIApp(App):
             if sections:
                 sections.append("")
             sections.append("warnings:")
-            sections.extend(f"    [{entry['source']}] {entry['message']}" for entry in warnings)
+            for entry in warnings:
+                sections.append(f"    [{entry['source']}] {entry['message']}")
+                hint = entry.get("hint")
+                if hint is not None:
+                    sections.append(f"        hint: {hint}")
         content = "\n".join(sections)
 
         label = _format_errors_tab_label(len(errors), len(warnings))

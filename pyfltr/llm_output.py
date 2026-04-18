@@ -200,6 +200,9 @@ _SCHEMA_HINTS: dict[str, str] = {
     "tool.cached": "true = result restored from file-hash cache; rerun with --no-cache to force",
     "tool.truncated": ("diagnostics or message were trimmed; full content is in the archive directory (see header.run_id)"),
     "header.run_id": "ULID identifying this run; use 'pyfltr show-run <run_id>' to fetch full output",
+    "warning.hint": (
+        "optional short mitigation/fix suggestion for this specific warning; omitted when the source does not provide one"
+    ),
 }
 """JSONL 出力フィールドの意味を補足する英語ガイド。
 
@@ -235,11 +238,15 @@ def _build_header_record(
 
 def _build_warning_record(entry: dict[str, typing.Any]) -> dict[str, typing.Any]:
     """警告 dict を warning レコード dict に変換する。"""
-    return {
+    record: dict[str, typing.Any] = {
         "kind": "warning",
         "source": entry["source"],
         "msg": entry["message"],
     }
+    hint = entry.get("hint")
+    if hint is not None:
+        record["hint"] = hint
+    return record
 
 
 def _build_diagnostic_record(error: pyfltr.error_parser.ErrorLocation) -> dict[str, typing.Any]:

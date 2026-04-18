@@ -97,6 +97,19 @@ def test_build_warning_record() -> None:
     assert record == {"kind": "warning", "source": "config", "msg": "foo"}
 
 
+def test_build_warning_record_with_hint() -> None:
+    """hint があれば warning レコードに hint キーが含まれる。"""
+    record = pyfltr.llm_output._build_warning_record(
+        {"source": "textlint-identifier-corruption", "message": "foo", "hint": "fooをバックティックで囲む"}
+    )
+    assert record == {
+        "kind": "warning",
+        "source": "textlint-identifier-corruption",
+        "msg": "foo",
+        "hint": "fooをバックティックで囲む",
+    }
+
+
 def test_build_diagnostic_record_rule_url_included() -> None:
     """rule_url が設定されていれば diagnostic レコードに含まれる。"""
     error = pyfltr.error_parser.ErrorLocation(

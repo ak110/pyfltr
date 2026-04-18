@@ -383,6 +383,8 @@ def test_textlint_fix_mode_emits_warning_when_protected_identifier_corrupted(moc
     # パスは cwd 相対化されて記録される（絶対パスのまま埋め込まれない）
     relative = pyfltr.paths.to_cwd_relative(target)
     assert f"file={relative}" in entries[0]["message"]
+    # hint として恒久対策が添えられる
+    assert "バックティック" in entries[0]["hint"]
 
 
 def test_textlint_fix_mode_no_warning_when_protected_identifiers_empty(mocker, tmp_path: pathlib.Path) -> None:

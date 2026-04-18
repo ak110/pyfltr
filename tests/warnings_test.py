@@ -57,3 +57,18 @@ def test_emit_warning_with_exc_info_captures_traceback() -> None:
     assert entries[0]["source"] == "file-resolver"
     assert "I/O Error" in entries[0]["message"]
     assert "ValueError: boom" in entries[0]["message"]
+
+
+def test_emit_warning_with_hint_included() -> None:
+    """hint指定時は蓄積 dict に hint キーが含まれる。"""
+    pyfltr.warnings_.emit_warning(source="config", message="foo", hint="fooを bar に直す")
+    entries = pyfltr.warnings_.collected_warnings()
+    assert entries == [{"source": "config", "message": "foo", "hint": "fooを bar に直す"}]
+
+
+def test_emit_warning_without_hint_omitted() -> None:
+    """hint未指定時は蓄積 dict に hint キーが含まれない（下位互換）。"""
+    pyfltr.warnings_.emit_warning(source="config", message="foo")
+    entries = pyfltr.warnings_.collected_warnings()
+    assert entries == [{"source": "config", "message": "foo"}]
+    assert "hint" not in entries[0]
