@@ -19,12 +19,14 @@
   - `--fail-fast`: 1ツールでもエラーが出た時点で残りを打ち切る（起動済みはterminate、未開始はskipped扱い）
   - `--no-cache`: ファイルhashキャッシュを無効化する。現状はtextlintのみ対象
   - `--only-failed`: 直前runから失敗ツール・失敗ファイルを抽出し、ツール別にその組み合わせのみ再実行する。直前run無し/失敗ツール無し/targets交差空ならメッセージを出してrc=0で成功終了する
+  - `--from-run <RUN_ID>`: `--only-failed`の参照対象runを明示指定する（前方一致・`latest`対応）。併用前提で単独指定は拒否。不在`<RUN_ID>`時は警告を出してrc=0で早期終了する
   - `header.run_id`はユーザーキャッシュに保存された該当runの参照キー。`pyfltr list-runs`で一覧、`pyfltr show-run <run_id>`で詳細（`<run_id>`は前方一致・`latest`エイリアス可）を参照する。`--tool <name>`でdiagnostics全件、`--tool <name> --output`で`output.log`全文が得られる
   - MCPクライアント（Claude Desktopなど）からは`pyfltr mcp`でMCPサーバーを起動する。提供ツールは`list_runs` / `show_run` / `show_run_diagnostics` / `show_run_output` / `run_for_agent`の5種類で、アーカイブ参照と実行を行える
 
 ## 注意点
 
 - `uv run mkdocs build --strict`でリンク・nav整合性を検証（ただし日本語アンカーリンク`#見出し日本語`はMkDocs TOCで解決できずINFO通知のみで`--strict`でも検知されないため手動確認要）
+- 内部リンクは英数アンカーを優先する。MkDocs（Material）のslugifyは英数のみを採用してアンカー生成するが、markdownlint MD051は見出し原文を見るため、`{#id}`記法で明示併設する（例:「### jsonl形式の使い方 {#jsonl}」）
 - `docs/guide/index.md`の対応ツール一覧と`mkdocs.yml`内llmstxt `markdown_description`の「対応ツール」節は人手同期（SSOT化しない運用）
 - `mkdocs.yml`内llmstxt `markdown_description`にはLLMが利用する際に有用な情報のみ記載する（`run-for-agent`サブコマンド、主要オプションなど）。LLMにとって不要な情報はdocs側をSSOTとし、多重管理を避ける
 - ドキュメント構成変更時は`docs/development/development.md`の「READMEとdocsの役割分担」節を先に参照

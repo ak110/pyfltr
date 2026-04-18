@@ -216,3 +216,4 @@ __marimo__/
 # `respect-gitignore=true` 既定動作により pyfltr の textlint からも自動除外される
 *.working.md
 *.review-*.md
+*.research-*.md
