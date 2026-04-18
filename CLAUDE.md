@@ -18,6 +18,7 @@
   - `--fail-fast`: 1ツールでもエラーが出た時点で残りを打ち切る（起動済みはterminate、未開始はskipped扱い）
   - `--no-cache`: ファイルhashキャッシュを無効化する。現状はtextlintのみ対象
   - `header.run_id`はユーザーキャッシュに保存された該当runの参照キー。`pyfltr list-runs`で一覧、`pyfltr show-run <run_id>`で詳細（`<run_id>`は前方一致・`latest`エイリアス可）を参照する。`--tool <name>`でdiagnostics全件、`--tool <name> --output`で`output.log`全文が得られる
+  - MCPクライアント（Claude Desktopなど）からは`pyfltr mcp`でMCPサーバーを起動する。提供ツールは`list_runs` / `show_run` / `show_run_diagnostics` / `show_run_output` / `run_for_agent`の5種類で、アーカイブ参照と実行を行える
 
 ## 注意点
 
@@ -25,4 +26,4 @@
 - `docs/guide/index.md`の対応ツール一覧と`mkdocs.yml`内llmstxt `markdown_description`の「対応ツール」節は人手同期（SSOT化しない運用）
 - `mkdocs.yml`内llmstxt `markdown_description`にはLLMが利用する際に有用な情報のみ記載する（`run-for-agent`サブコマンド、主要オプションなど）。LLMにとって不要な情報はdocs側をSSOTとし、多重管理を避ける
 - ドキュメント構成変更時は`docs/development/development.md`の「READMEとdocsの役割分担」節を先に参照
-- v3.0.0の実装進捗は`docs/v3/作業ステータス.md`を参照。未完了パート（E/F）がまとまっている
+- v3.0.0の実装進捗は`docs/v3/作業ステータス.md`を参照

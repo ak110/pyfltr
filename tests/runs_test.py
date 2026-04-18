@@ -6,7 +6,7 @@
 参照する状態を作る。
 """
 
-# pylint: disable=missing-function-docstring
+# pylint: disable=missing-function-docstring,duplicate-code
 
 import json
 import pathlib
@@ -15,8 +15,8 @@ import pytest
 
 import pyfltr.archive
 import pyfltr.main
-from tests.conftest import make_command_result as _make_result
 from tests.conftest import make_error_location as _make_error
+from tests.conftest import seed_archive_run as _seed_run
 
 
 @pytest.fixture(autouse=True)
@@ -27,27 +27,6 @@ def _isolated_cache(
     """全テストで ``PYFLTR_CACHE_DIR`` を ``tmp_path`` に固定する。"""
     monkeypatch.setenv("PYFLTR_CACHE_DIR", str(tmp_path))
     return tmp_path
-
-
-def _seed_run(
-    tmp_path: pathlib.Path,
-    *,
-    commands: list[str] | None = None,
-    files: int = 3,
-    exit_code: int = 0,
-    tool_results: list[tuple[str, int, str, list]] | None = None,
-) -> str:
-    """テスト用の run をアーカイブに書き込み、``run_id`` を返す。
-
-    ``tool_results`` は ``(tool, returncode, output, errors)`` のタプル列。
-    """
-    store = pyfltr.archive.ArchiveStore(cache_root=tmp_path)
-    run_id = store.start_run(commands=commands or ["ruff-check"], files=files)
-    for tool, returncode, output, errors in tool_results or []:
-        result = _make_result(tool, returncode=returncode, output=output, errors=errors)
-        store.write_tool_result(run_id, result)
-    store.finalize_run(run_id, exit_code=exit_code, commands=commands, files=files)
-    return run_id
 
 
 def test_list_runs_text_empty(capsys: pytest.CaptureFixture[str]) -> None:

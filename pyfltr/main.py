@@ -18,6 +18,7 @@ import pyfltr.command
 import pyfltr.config
 import pyfltr.github_annotations
 import pyfltr.llm_output
+import pyfltr.mcp_
 import pyfltr.runs
 import pyfltr.sarif_output
 import pyfltr.shell_completion
@@ -43,6 +44,7 @@ _ALL_SUBCOMMANDS: tuple[str, ...] = (
     "generate-shell-completion",
     "list-runs",
     "show-run",
+    "mcp",
 )
 """全サブコマンド。shell completion スクリプト生成時に参照される。"""
 
@@ -202,6 +204,7 @@ def build_parser(custom_commands: collections.abc.Iterable[str] = ()) -> argpars
             "  list-runs        実行アーカイブ内の run 一覧を表示する。\n"
             "  show-run <run_id>\n"
             "                   指定 run の詳細 (meta・ツール別サマリ・diagnostic・生出力) を表示する。\n"
+            "  mcp              MCP サーバーを stdio で起動する。\n"
             "\n"
             "ドキュメント: https://ak110.github.io/pyfltr/\n"
             "llms.txt: https://ak110.github.io/pyfltr/llms.txt"
@@ -240,6 +243,9 @@ def build_parser(custom_commands: collections.abc.Iterable[str] = ()) -> argpars
 
     # list-runs / show-run: 実行アーカイブの詳細参照サブコマンド
     pyfltr.runs.register_subparsers(subparsers)
+
+    # mcp: MCP サーバーの stdio 起動
+    pyfltr.mcp_.register_subparsers(subparsers)
 
     return parser
 
@@ -306,6 +312,10 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
         return pyfltr.runs.execute_list_runs(args)
     if subcommand == "show-run":
         return pyfltr.runs.execute_show_run(args)
+
+    # MCP サーバーサブコマンド: stdio で FastMCP サーバーを起動する。
+    if subcommand == "mcp":
+        return pyfltr.mcp_.execute_mcp(args)
 
     # サブコマンド別の既定値を注入する (CLI 明示値が優先)。
     _apply_subcommand_defaults(args)
@@ -663,7 +673,10 @@ def _run_impl(
             if command not in config.values:
                 parser.error(f"コマンドが見つかりません: {command}")
 
-        return run_pipeline(args, commands, config, original_cwd=original_cwd, original_sys_args=list(original_sys_args))
+        exit_code, _run_id = run_pipeline(
+            args, commands, config, original_cwd=original_cwd, original_sys_args=list(original_sys_args)
+        )
+        return exit_code
     finally:
         if suppression is not None:
             _restore_logging(suppression)
@@ -676,8 +689,15 @@ def run_pipeline(
     *,
     original_cwd: str | None = None,
     original_sys_args: list[str] | None = None,
-) -> int:
-    """実行パイプライン。"""
+) -> tuple[int, str | None]:
+    """実行パイプライン。
+
+    Returns:
+        ``(exit_code, run_id)`` のタプル。
+        ``exit_code`` は 0 = 成功、1 = 失敗。
+        ``run_id`` は実行アーカイブが有効で採番に成功した場合の ULID 文字列、
+        無効または採番失敗時は ``None``。
+    """
     # ターミナルをクリア
     if not args.no_clear:
         subprocess.run("cls" if os.name == "nt" else "clear", check=False, shell=True)
@@ -865,7 +885,7 @@ def run_pipeline(
         except OSError as e:
             pyfltr.warnings_.emit_warning(source="archive", message=f"meta.json の更新に失敗: {e}")
 
-    return returncode
+    return (returncode, run_id)
 
 
 def _write_sarif_stdout(

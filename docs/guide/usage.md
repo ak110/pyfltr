@@ -103,6 +103,57 @@ pyfltr show-run <run_id> [--tool NAME] [--output] [--output-format text|json|jso
 
 同じツールが`fix`ステージと通常ステージの両方で実行された場合、アーカイブの保存キーはツール名固定のため通常ステージ側の結果で上書きされる（`show-run`で参照できるのは各ツールの最終保存結果のみ）。
 
+### サブコマンド: mcp
+
+```shell
+pyfltr mcp
+```
+
+stdioトランスポートでMCPサーバーを起動する。
+追加オプションはなく、起動後はstdin/stdoutをJSON-RPCフレームが専有する。MCPクライアントがstdinを閉じた時点でサーバーが終了する。
+
+提供するMCPツール（5件）:
+
+| ツール名 | 対応CLI | 説明 |
+| --- | --- | --- |
+| `list_runs` | `pyfltr list-runs` | run一覧を新しい順で返す。`limit`で件数制御（既定20件） |
+| `show_run` | `pyfltr show-run <run_id>` | 指定runのmetaとツール別サマリを返す。前方一致・`latest`エイリアス可 |
+| `show_run_diagnostics` | `pyfltr show-run <run_id> --tool <name>` | 指定runのtool.jsonとdiagnostics全件を返す |
+| `show_run_output` | `pyfltr show-run <run_id> --tool <name> --output` | 指定runのoutput.log全文を返す |
+| `run_for_agent` | `pyfltr run-for-agent` | 指定パスにlint/format/testを実行しrun_id・終了コード・失敗ツール名を返す |
+
+`run_for_agent`ツールの引数:
+
+- `paths`: 実行対象のファイルまたはディレクトリのパス一覧（必須）
+- `commands`: 実行するコマンド名のリスト（省略時はプロジェクト設定の全コマンドを使用）
+- `fail_fast`: `true`の場合、1ツールでもエラーが発生した時点で残りを打ち切る（既定`false`）
+
+MCPクライアント（Claude Desktopなど）からの設定例:
+
+```json
+{
+  "mcpServers": {
+    "pyfltr": {
+      "command": "pyfltr",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+`uv run`経由で起動する場合:
+
+```json
+{
+  "mcpServers": {
+    "pyfltr": {
+      "command": "uv",
+      "args": ["run", "pyfltr", "mcp"]
+    }
+  }
+}
+```
+
 ### サブコマンド: generate-shell-completion
 
 ```shell

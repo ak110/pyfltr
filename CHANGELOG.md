@@ -51,6 +51,10 @@ v3.0.0から整備を開始した。それ以前の変更はgit logおよびGitH
   - キャッシュヒット時はJSONL `tool`レコードに`cached: true` / `cached_from: <ソースrun_id>`を付与
   - 自動クリーンアップ: 期間（既定12時間）超過で削除
   - 関連設定キー: `cache` / `cache-max-age-hours`
+- `pyfltr mcp`サブコマンド。
+  stdioトランスポートでMCPサーバーを本体同梱で起動する
+  - MCPツール群（`list_runs` / `show_run` / `show_run_diagnostics` / `show_run_output` / `run_for_agent`）を提供
+  - LLMエージェントからpyfltrの実行と実行アーカイブ参照をMCPツール経由で利用できる
 - `pyfltr list-runs`サブコマンド。
   実行アーカイブ内のrun一覧を新しい順で表示する
   - `--limit N`で件数制御（既定20件）、`--output-format=text|json|jsonl`で形式切替

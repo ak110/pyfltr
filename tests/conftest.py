@@ -1,11 +1,15 @@
 """pytest 共通定義。
 
-`CommandResult` や `ErrorLocation` のダミーを生成するヘルパーを集約する。
+`CommandResult` や `ErrorLocation` のダミーを生成するヘルパーと、
+実行アーカイブのテストデータ生成ヘルパーを集約する。
 各テストファイルで同じようなビルダーを書き散らかすと pylint の
 duplicate-code (R0801) に掛かるため、ここに集約する。conftest.py に置くのは
 pre-commit の name-tests-test フックから除外されるため。
 """
 
+import pathlib
+
+import pyfltr.archive
 import pyfltr.command
 import pyfltr.error_parser
 
@@ -81,3 +85,26 @@ def make_error_location(
         command=command,
         message=message,
     )
+
+
+def seed_archive_run(
+    cache_root: pathlib.Path,
+    *,
+    commands: list[str] | None = None,
+    files: int = 3,
+    exit_code: int = 0,
+    tool_results: list[tuple[str, int, str, list]] | None = None,
+) -> str:
+    """テスト用の run をアーカイブに書き込み、``run_id`` を返す。
+
+    ``tool_results`` は ``(tool, returncode, output, errors)`` のタプル列。
+    ``runs_test`` / ``mcp_test`` 等で同じセットアップ手順を踏むため、
+    duplicate-code (R0801) 回避用に conftest.py 側へ集約している。
+    """
+    store = pyfltr.archive.ArchiveStore(cache_root=cache_root)
+    run_id = store.start_run(commands=commands or ["ruff-check"], files=files)
+    for tool, returncode, output, errors in tool_results or []:
+        result = make_command_result(tool, returncode=returncode, output=output, errors=errors)
+        store.write_tool_result(run_id, result)
+    store.finalize_run(run_id, exit_code=exit_code, commands=commands, files=files)
+    return run_id
