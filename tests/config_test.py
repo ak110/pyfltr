@@ -1,5 +1,5 @@
 """テストコード。"""
-# pylint: disable=too-many-lines
+# pylint: disable=too-many-lines,protected-access
 
 import pathlib
 
@@ -10,179 +10,107 @@ import pyfltr.warnings_
 from tests import conftest as _testconf
 
 
+def _assert_language_gate(
+    config: pyfltr.config.Config,
+    category_key: str,
+    *,
+    passed: bool,
+    preset: str = "latest",
+) -> None:
+    """言語カテゴリ gate の挙動をカテゴリ内ツール全件について一括検証する。
+
+    ``passed=True``: gate 開放側。当該カテゴリで preset が True にしたツールはそのまま
+    True 通過し、preset が収録していないツールは False のまま（個別 ``{command} = true``
+    が無い前提）を確認する。
+    ``passed=False``: gate 閉じ側。当該カテゴリの全ツールが False（preset 由来 True を
+    gate が押し戻す）になっていることを確認する。
+
+    個別 ``{command} = true`` / ``{command} = false`` の上書きがあるテストでは、本ヘルパー
+    ではなく直接 assert を使う（gate の挙動ではなく個別上書きの挙動を検証するため）。
+    """
+    commands = dict(pyfltr.config.LANGUAGE_CATEGORIES)[category_key]
+    if not passed:
+        for cmd in commands:
+            assert config[cmd] is False, f"{category_key} gate 閉なのに {cmd}=True"
+        return
+    preset_tools = pyfltr.config._PRESETS[preset]
+    for cmd in commands:
+        expected = preset_tools.get(cmd, False)
+        assert config[cmd] is expected, f"{category_key} gate 開 preset={preset}: {cmd} expected {expected}, got {config[cmd]}"
+
+
+_DOCS_ORTHOGONAL_KEYS = ("textlint", "markdownlint", "actionlint", "typos", "pre-commit")
+"""言語カテゴリ gate の対象外となるドキュメント系ツールキー。
+
+これらは preset が直接 True/False を決め、言語カテゴリキーの影響を受けない。
+"""
+
+
 @pytest.mark.parametrize(
-    "preset,extra_lines,expected",
+    "preset,extra_lines,docs_expected,gate_passed",
     [
-        # presetが空の場合はデフォルト（全ツールFalse）
+        # preset が空: 全ツール既定（False）。
         (
             "",
             "",
-            {
-                "mypy": False,
-                "pylint": False,
-                "pytest": False,
-                "ruff-format": False,
-                "ruff-check": False,
-                "pyright": False,
-                "ty": False,
-                "textlint": False,
-                "markdownlint": False,
-                "actionlint": False,
-                "typos": False,
-                "pre-commit": False,
-                "eslint": False,
-                "cargo-fmt": False,
-                "dotnet-format": False,
-            },
+            {"textlint": False, "markdownlint": False, "actionlint": False, "typos": False, "pre-commit": False},
+            {"python": False, "javascript": False, "rust": False, "dotnet": False},
         ),
-        # 20260330 + python = true で preset 内の Python 系とドキュメント系が有効化される
+        # 20260330 + python=true: Python 核 + pyright + docs (textlint/markdownlint)。
         (
             "20260330",
             "python = true\n",
-            {
-                "ruff-format": True,
-                "ruff-check": True,
-                "mypy": True,
-                "pylint": True,
-                "pytest": True,
-                "pyright": True,
-                "textlint": True,
-                "markdownlint": True,
-                # 20260330 には含まれない
-                "uv-sort": False,
-                "actionlint": False,
-                "typos": False,
-                "pre-commit": False,
-                # 他言語カテゴリは gate されたまま
-                "eslint": False,
-                "cargo-fmt": False,
-                "dotnet-format": False,
-                # preset 非収録の ty は gate 通過でも False
-                "ty": False,
-            },
+            {"textlint": True, "markdownlint": True, "actionlint": False, "typos": False, "pre-commit": False},
+            {"python": True, "javascript": False, "rust": False, "dotnet": False},
         ),
-        # 20260411 は uv-sort / actionlint / typos が増える
+        # 20260411 は actionlint / typos / uv-sort が追加される。
         (
             "20260411",
             "python = true\n",
-            {
-                "ruff-format": True,
-                "ruff-check": True,
-                "mypy": True,
-                "pylint": True,
-                "pytest": True,
-                "pyright": True,
-                "uv-sort": True,
-                "textlint": True,
-                "markdownlint": True,
-                "actionlint": True,
-                "typos": True,
-                # pre-commit は 20260413 以降
-                "pre-commit": False,
-            },
+            {"textlint": True, "markdownlint": True, "actionlint": True, "typos": True, "pre-commit": False},
+            {"python": True, "javascript": False, "rust": False, "dotnet": False},
         ),
-        # 20260413 は pre-commit が増える
+        # 20260413 は pre-commit が追加される。
         (
             "20260413",
             "python = true\n",
-            {
-                "ruff-format": True,
-                "ruff-check": True,
-                "mypy": True,
-                "pylint": True,
-                "pytest": True,
-                "pyright": True,
-                "uv-sort": True,
-                "textlint": True,
-                "markdownlint": True,
-                "actionlint": True,
-                "typos": True,
-                "pre-commit": True,
-            },
+            {"textlint": True, "markdownlint": True, "actionlint": True, "typos": True, "pre-commit": True},
+            {"python": True, "javascript": False, "rust": False, "dotnet": False},
         ),
-        # latest = 20260413
+        # latest = 20260413 と同じ構成。
         (
             "latest",
             "python = true\n",
-            {
-                "ruff-format": True,
-                "ruff-check": True,
-                "mypy": True,
-                "pylint": True,
-                "pytest": True,
-                "pyright": True,
-                "uv-sort": True,
-                "textlint": True,
-                "markdownlint": True,
-                "actionlint": True,
-                "typos": True,
-                "pre-commit": True,
-            },
+            {"textlint": True, "markdownlint": True, "actionlint": True, "typos": True, "pre-commit": True},
+            {"python": True, "javascript": False, "rust": False, "dotnet": False},
         ),
-        # latest + javascript = true で JS/TS 系推奨ツール一式が gate 通過する
+        # latest + javascript=true: JS/TS 系 gate 通過、docs は preset 由来で True のまま。
         (
             "latest",
             "javascript = true\n",
-            {
-                # ドキュメント系は言語 gate と独立
-                "textlint": True,
-                "markdownlint": True,
-                # JS/TS 系は全量 True
-                "eslint": True,
-                "biome": True,
-                "oxlint": True,
-                "prettier": True,
-                "tsc": True,
-                "vitest": True,
-                # 他言語は gate 閉のまま False
-                "ruff-format": False,
-                "mypy": False,
-                "pytest": False,
-                "cargo-fmt": False,
-                "dotnet-format": False,
-            },
+            {"textlint": True, "markdownlint": True},
+            {"python": False, "javascript": True, "rust": False, "dotnet": False},
         ),
-        # latest + rust = true で Rust 系推奨ツール一式が gate 通過する
+        # latest + rust=true: Rust 系 gate 通過。docs は検証不要（orthogonal）。
         (
             "latest",
             "rust = true\n",
-            {
-                "cargo-fmt": True,
-                "cargo-clippy": True,
-                "cargo-check": True,
-                "cargo-test": True,
-                "cargo-deny": True,
-                # 他言語は gate 閉のまま False
-                "ruff-format": False,
-                "eslint": False,
-                "dotnet-format": False,
-            },
+            {},
+            {"python": False, "javascript": False, "rust": True, "dotnet": False},
         ),
-        # latest + dotnet = true で .NET 系推奨ツール一式が gate 通過する
+        # latest + dotnet=true: .NET 系 gate 通過。
         (
             "latest",
             "dotnet = true\n",
-            {
-                "dotnet-format": True,
-                "dotnet-build": True,
-                "dotnet-test": True,
-                # 他言語は gate 閉のまま False
-                "ruff-format": False,
-                "eslint": False,
-                "cargo-fmt": False,
-            },
+            {},
+            {"python": False, "javascript": False, "rust": False, "dotnet": True},
         ),
-        # 20260330 + rust = true でも _PRESET_BASE 経由で Rust 系が有効化される
+        # 20260330 + rust=true: 歴史的 preset でも _PRESET_BASE 経由で Rust 系が一式有効化される。
         (
             "20260330",
             "rust = true\n",
-            {
-                "cargo-fmt": True,
-                "cargo-clippy": True,
-                "cargo-check": True,
-                "cargo-test": True,
-                "cargo-deny": True,
-            },
+            {},
+            {"python": False, "javascript": False, "rust": True, "dotnet": False},
         ),
     ],
 )
@@ -190,15 +118,26 @@ def test_apply_preset(
     tmp_path: pathlib.Path,
     preset: str,
     extra_lines: str,
-    expected: dict[str, bool],
+    docs_expected: dict[str, bool],
+    gate_passed: dict[str, bool],
 ) -> None:
-    """presetのテスト。preset で推奨構成が True になり、カテゴリキー gate を通して有効化する。"""
+    """preset × 言語カテゴリ gate の有効化パターンを一括検証する。
+
+    ``docs_expected`` は言語カテゴリと独立に決まるドキュメント系ツールの期待値。
+    ``gate_passed`` は各言語カテゴリキーの gate 開閉状態。言語カテゴリ所属ツールの期待値は
+    ``_assert_language_gate`` で preset 内容から機械的に算出する。
+    """
     pyproject_path = tmp_path / "pyproject.toml"
     pyproject_path.write_text(f'[tool.pyfltr]\npreset = "{preset}"\n{extra_lines}')
 
     config = pyfltr.config.load_config(config_dir=tmp_path)
-    for key, value in expected.items():
+    for key, value in docs_expected.items():
         assert config[key] == value, f"{key}: expected {value}, got {config[key]}"
+    # preset="" のとき _assert_language_gate の preset 参照が無効化されるよう gate 閉のみ検証
+    # (gate 閉の枝は preset 引数を見ないため "latest" 等どの値を渡しても問題ない)
+    preset_for_gate = preset or "latest"
+    for category_key, passed in gate_passed.items():
+        _assert_language_gate(config, category_key, passed=passed, preset=preset_for_gate)
 
 
 def test_custom_command(tmp_path: pathlib.Path) -> None:
@@ -787,8 +726,7 @@ def test_python_default() -> None:
 def test_python_default_disables_python_tools() -> None:
     """既定で Python 系ツールが全て無効化されている。"""
     config = pyfltr.config.create_default_config()
-    for cmd in pyfltr.config.PYTHON_COMMANDS:
-        assert config[cmd] is False, f"{cmd} は既定で無効化されるべき"
+    _assert_language_gate(config, "python", passed=False)
     # JS/共通系も影響を受けない
     assert config["markdownlint"] is False
     assert config["textlint"] is False
@@ -923,27 +861,23 @@ def test_preset_latest_suppresses_language_categories(tmp_path: pathlib.Path) ->
     (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latest"\n')
     config = pyfltr.config.load_config(config_dir=tmp_path)
     # preset に含まれるドキュメント系は True
-    for cmd in ("markdownlint", "textlint", "actionlint", "typos", "pre-commit"):
+    for cmd in _DOCS_ORTHOGONAL_KEYS:
         assert config[cmd] is True, f"{cmd} は preset=latest で有効化されるべき"
     # 言語カテゴリに属するツールは gate により全て False に押し戻される
     # (_PRESET_BASE で True だった Python 核 / JS / Rust / .NET も含む)
-    for _, commands in pyfltr.config.LANGUAGE_CATEGORIES:
-        for cmd in commands:
-            assert config[cmd] is False, f"{cmd} は preset=latest 単独では gate で False"
+    for category_key, _ in pyfltr.config.LANGUAGE_CATEGORIES:
+        _assert_language_gate(config, category_key, passed=False)
 
 
 def test_javascript_true_enables_preset_tools(tmp_path: pathlib.Path) -> None:
     """javascript = true で preset 内の JS/TS 系推奨ツール一式が gate 通過で有効化される。"""
     (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latest"\njavascript = true\n')
     config = pyfltr.config.load_config(config_dir=tmp_path)
-    # preset = latest に含まれる JS/TS 系推奨ツールが一式 True
-    for cmd in pyfltr.config.JAVASCRIPT_COMMANDS:
-        assert config[cmd] is True, f"{cmd} は preset=latest + javascript=true で有効化されるべき"
+    _assert_language_gate(config, "javascript", passed=True)
     # 他言語カテゴリは gate 閉のまま False
-    for cmd in pyfltr.config.PYTHON_COMMANDS:
-        assert config[cmd] is False, f"{cmd} は python gate 閉のため False"
-    for cmd in pyfltr.config.RUST_COMMANDS:
-        assert config[cmd] is False, f"{cmd} は rust gate 閉のため False"
+    _assert_language_gate(config, "python", passed=False)
+    _assert_language_gate(config, "rust", passed=False)
+    _assert_language_gate(config, "dotnet", passed=False)
 
 
 def test_javascript_true_with_individual_override(tmp_path: pathlib.Path) -> None:
@@ -968,16 +902,14 @@ def test_rust_true_enables_preset_tools(tmp_path: pathlib.Path) -> None:
     """rust = true で preset 内の Rust 系推奨ツール一式が gate 通過で有効化される。"""
     (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latest"\nrust = true\n')
     config = pyfltr.config.load_config(config_dir=tmp_path)
-    for cmd in pyfltr.config.RUST_COMMANDS:
-        assert config[cmd] is True, f"{cmd} は preset=latest + rust=true で有効化されるべき"
+    _assert_language_gate(config, "rust", passed=True)
 
 
 def test_dotnet_true_enables_preset_tools(tmp_path: pathlib.Path) -> None:
     """dotnet = true で preset 内の .NET 系推奨ツール一式が gate 通過で有効化される。"""
     (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latest"\ndotnet = true\n')
     config = pyfltr.config.load_config(config_dir=tmp_path)
-    for cmd in pyfltr.config.DOTNET_COMMANDS:
-        assert config[cmd] is True, f"{cmd} は preset=latest + dotnet=true で有効化されるべき"
+    _assert_language_gate(config, "dotnet", passed=True)
 
 
 def test_individual_tool_enables_despite_category_false(tmp_path: pathlib.Path) -> None:
