@@ -9,9 +9,24 @@ pre-commit の name-tests-test フックから除外されるため。
 
 import pathlib
 
+import pytest
+
 import pyfltr.archive
 import pyfltr.command
 import pyfltr.error_parser
+import pyfltr.warnings_
+
+
+@pytest.fixture(autouse=True)
+def _clear_warnings_between_tests() -> None:
+    """全テストで警告状態を持ち越さないため、各テスト開始前に蓄積をクリアする。
+
+    ``pyfltr.warnings_`` はモジュール変数としてプロセス内で共有されるため、
+    テスト間のリークが発生すると順序依存や並列実行での非決定性を招く。
+    conftest.py で autouse 化することで、各テストが空状態から始まることを保証する。
+    """
+    pyfltr.warnings_.clear()
+
 
 # Rust / .NET 言語ツールの既定値定数。config_test / command_test の両方が
 # cargo-clippy の args / fix-args を参照するため、ここで一元管理する。

@@ -7,12 +7,6 @@ import pytest
 import pyfltr.warnings_
 
 
-@pytest.fixture(autouse=True)
-def _clear_warnings() -> None:
-    """各テストの前後で警告リストをクリアする。"""
-    pyfltr.warnings_.clear()
-
-
 def test_emit_warning_accumulates() -> None:
     """emit_warning の呼び出し順で内部リストに蓄積される。"""
     pyfltr.warnings_.emit_warning(source="config", message="foo")

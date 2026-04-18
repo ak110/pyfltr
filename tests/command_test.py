@@ -359,7 +359,6 @@ def test_textlint_fix_mode_all_fixed_marks_formatted(mocker, tmp_path: pathlib.P
 
 def test_textlint_fix_mode_emits_warning_when_protected_identifier_corrupted(mocker, tmp_path: pathlib.Path) -> None:
     """保護対象識別子 (.NET など) が fix で全角化された場合、warning が発行される。"""
-    pyfltr.warnings_.clear()
     target = tmp_path / "sample.md"
     target.write_text("本文で.NET系の話題を扱う。\n")
 
@@ -389,7 +388,6 @@ def test_textlint_fix_mode_emits_warning_when_protected_identifier_corrupted(moc
 
 def test_textlint_fix_mode_no_warning_when_protected_identifiers_empty(mocker, tmp_path: pathlib.Path) -> None:
     """textlint-protected-identifiers が空なら検知をスキップし warning は出ない。"""
-    pyfltr.warnings_.clear()
     target = tmp_path / "sample.md"
     target.write_text("本文で.NET系の話題を扱う。\n")
 
@@ -413,7 +411,6 @@ def test_textlint_fix_mode_no_warning_when_protected_identifiers_empty(mocker, t
 
 def test_textlint_fix_mode_no_warning_when_identifier_intact(mocker, tmp_path: pathlib.Path) -> None:
     """fix で他の部分は変わっても、保護対象識別子が維持されていれば warning は出ない。"""
-    pyfltr.warnings_.clear()
     target = tmp_path / "sample.md"
     target.write_text("# title\n\n本文.NETと普通の文.\n")
 

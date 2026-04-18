@@ -458,10 +458,6 @@ targets = 42
 class TestConfigFilesWarning:
     """config_files 未配置時の警告機構のテスト。"""
 
-    @pytest.fixture(autouse=True)
-    def _reset_warnings(self) -> None:
-        pyfltr.warnings_.clear()
-
     def test_pre_commit_enabled_without_config_emits_warning(self, tmp_path: pathlib.Path) -> None:
         """pre-commit 有効かつ .pre-commit-config.yaml 不在で警告が出る。"""
         (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latest"\n')
