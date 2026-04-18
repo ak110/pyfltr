@@ -48,6 +48,7 @@ extend-exclude = ["foo", "bar.py"]
 - jsonl-diagnostic-limit : 1ツールあたりのdiagnostic出力件数上限（既定: 0 = 無制限）
 - jsonl-message-max-lines : `tool.message`の行数上限（既定: 30）
 - jsonl-message-max-chars : `tool.message`の文字数上限（既定: 2000）
+- textlint-protected-identifiers : textlint fixで破損させてはならない識別子のリスト。既定値は`[".NET", "Node.js", "Vue.js", "Next.js", "Nuxt.js"]`。詳細は[ツール別設定](configuration-tools.md#textlint-protected-identifiers)を参照
 
 `prettier-check-args` / `prettier-write-args` / `shfmt-check-args` / `shfmt-write-args`などの2段階実行向け引数はツール別設定ページで詳しく扱う。
 

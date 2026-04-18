@@ -424,6 +424,12 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # fix モード時に通常 args の後に追加する引数。
     # textlint は --fix で autofix 可能なルールを in-place 修正する。
     "textlint-fix-args": ["--fix"],
+    # fix モード実行で「破損させてはならない識別子」を列挙する。
+    # preset-jtf-style の「半角ピリオド→全角句点」ルール等は、コードブロック外にある
+    # ``.NET`` / ``Node.js`` 等の識別子まで変換してしまうことがあるため、
+    # fix 前には含まれていた識別子が fix 後に失われたケースを検知して警告を発行する。
+    # 空リスト (``[]``) を指定すると検知を無効化できる。
+    "textlint-protected-identifiers": [".NET", "Node.js", "Vue.js", "Next.js", "Nuxt.js"],
     "eslint": False,
     # path が空文字の場合は js-runner 設定に基づいて自動解決する。
     "eslint-path": "",

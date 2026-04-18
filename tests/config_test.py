@@ -448,6 +448,24 @@ def test_textlint_packages_default() -> None:
     ]
 
 
+def test_textlint_protected_identifiers_default() -> None:
+    """textlint-protected-identifiers のデフォルトに主要な識別子が含まれる。"""
+    config = pyfltr.config.create_default_config()
+    identifiers = config["textlint-protected-identifiers"]
+    assert ".NET" in identifiers
+    assert "Node.js" in identifiers
+    assert "Vue.js" in identifiers
+    assert "Next.js" in identifiers
+    assert "Nuxt.js" in identifiers
+
+
+def test_textlint_protected_identifiers_override(tmp_path: pathlib.Path) -> None:
+    """pyproject.toml で textlint-protected-identifiers を上書きできる (空リストも可)。"""
+    (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\ntextlint-protected-identifiers = []\n")
+    config = pyfltr.config.load_config(config_dir=tmp_path)
+    assert config["textlint-protected-identifiers"] == []
+
+
 def test_textlint_markdownlint_path_default_empty() -> None:
     """textlint-path / markdownlint-path の既定値は空文字 (runner 自動解決)。"""
     config = pyfltr.config.create_default_config()

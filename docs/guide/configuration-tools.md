@@ -250,6 +250,18 @@ textlint-packages = [
 `textlint-packages`は`pnpx` / `npx`モード時に`--package` / `-p`展開される。
 `pnpm` / `npm` / `yarn` / `direct`モードでは`package.json`側でインストールする前提のため無視される。
 
+#### 保護対象の識別子の破損検知 {#textlint-protected-identifiers}
+
+`preset-jtf-style`の「半角ピリオド→全角句点」変換などが、コードブロック外にある`.NET` / `Node.js`などの識別子まで破損させることがある。
+pyfltrは`textlint --fix`のステップ直後に「fix前には含まれていた保護対象の識別子がfix後に減っていないか」を検査し、破損の疑いがあれば`textlint-identifier-corruption`ソースの警告を発行する。
+識別子リストは`textlint-protected-identifiers`で上書きでき、空リスト`[]`を指定すると検知を無効化できる。
+警告は注意喚起のみで、ツールの成否判定には影響しない。
+
+```toml
+[tool.pyfltr]
+textlint-protected-identifiers = [".NET", "Node.js", "Vue.js", "Next.js", "Nuxt.js"]
+```
+
 ### eslint / prettier / biomeの設定
 
 eslint / prettier / biomeはすべて既定で無効（opt-in）。

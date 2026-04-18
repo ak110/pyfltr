@@ -15,6 +15,7 @@ import pyfltr.cache
 import pyfltr.command
 import pyfltr.config
 import pyfltr.only_failed
+import pyfltr.warnings_
 from tests import conftest as _testconf
 
 
@@ -353,6 +354,80 @@ def test_textlint_fix_mode_all_fixed_marks_formatted(mocker, tmp_path: pathlib.P
 
     assert result.status == "formatted"
     assert result.has_error is False
+
+
+def test_textlint_fix_mode_emits_warning_when_protected_identifier_corrupted(mocker, tmp_path: pathlib.Path) -> None:
+    """保護対象識別子 (.NET など) が fix で全角化された場合、warning が発行される。"""
+    pyfltr.warnings_.clear()
+    target = tmp_path / "sample.md"
+    target.write_text("本文で.NET系の話題を扱う。\n")
+
+    def fake_run(cmdline, env, on_output):
+        del env, on_output  # noqa
+        if "--fix" in cmdline:
+            # preset-jtf-style が「.」を「。」へ変換したことを模擬
+            target.write_text("本文で。NET系の話題を扱う。\n")
+            return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
+        return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
+
+    mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
+
+    config = pyfltr.config.create_default_config()
+    config.values["textlint"] = True
+    pyfltr.command.execute_command("textlint", _make_args(), config, [target], fix_stage=True)
+
+    entries = [w for w in pyfltr.warnings_.collected_warnings() if w["source"] == "textlint-identifier-corruption"]
+    assert len(entries) == 1
+    assert ".NET" in entries[0]["message"]
+    assert str(target) in entries[0]["message"]
+
+
+def test_textlint_fix_mode_no_warning_when_protected_identifiers_empty(mocker, tmp_path: pathlib.Path) -> None:
+    """textlint-protected-identifiers が空なら検知をスキップし warning は出ない。"""
+    pyfltr.warnings_.clear()
+    target = tmp_path / "sample.md"
+    target.write_text("本文で.NET系の話題を扱う。\n")
+
+    def fake_run(cmdline, env, on_output):
+        del env, on_output  # noqa
+        if "--fix" in cmdline:
+            target.write_text("本文で。NET系の話題を扱う。\n")
+            return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
+        return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
+
+    mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
+
+    config = pyfltr.config.create_default_config()
+    config.values["textlint"] = True
+    config.values["textlint-protected-identifiers"] = []
+    pyfltr.command.execute_command("textlint", _make_args(), config, [target], fix_stage=True)
+
+    entries = [w for w in pyfltr.warnings_.collected_warnings() if w["source"] == "textlint-identifier-corruption"]
+    assert not entries
+
+
+def test_textlint_fix_mode_no_warning_when_identifier_intact(mocker, tmp_path: pathlib.Path) -> None:
+    """fix で他の部分は変わっても、保護対象識別子が維持されていれば warning は出ない。"""
+    pyfltr.warnings_.clear()
+    target = tmp_path / "sample.md"
+    target.write_text("# title\n\n本文.NETと普通の文.\n")
+
+    def fake_run(cmdline, env, on_output):
+        del env, on_output  # noqa
+        if "--fix" in cmdline:
+            # .NET は保持、末尾の . のみ全角化
+            target.write_text("# title\n\n本文.NETと普通の文。\n")
+            return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
+        return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
+
+    mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
+
+    config = pyfltr.config.create_default_config()
+    config.values["textlint"] = True
+    pyfltr.command.execute_command("textlint", _make_args(), config, [target], fix_stage=True)
+
+    entries = [w for w in pyfltr.warnings_.collected_warnings() if w["source"] == "textlint-identifier-corruption"]
+    assert not entries
 
 
 def test_textlint_fix_mode_residual_violations_mark_failed(mocker, tmp_path: pathlib.Path) -> None:
