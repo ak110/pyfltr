@@ -84,10 +84,10 @@ python = true
 ## 4. 言語カテゴリを明示的に有効化する
 
 v3.0.0ではPython / JavaScript / Rust / .NETの各言語カテゴリに属するツールをすべてopt-in化した。
-プリセットは各時点の推奨ツール構成をバージョン付きで示すスナップショットで、言語別ツールも含まれる。
+プリセットは各時点の推奨ツール構成をバージョン付きで示すスナップショットで、全言語の推奨ツールを横断的に収録する。
 言語カテゴリキー（`python` / `javascript` / `rust` / `dotnet`）はプリセットが推奨する言語別ツールを通過させるゲートとして働く。
 
-利用する言語カテゴリだけを明示的に有効化する。
+`preset = "latest"` + `{language} = true`の組み合わせだけで当該言語の推奨ツール一式が有効化される。
 適用優先度は`preset < 言語カテゴリゲート < 個別設定`で、個別設定がある場合はそれが最優先。
 
 ```toml
@@ -96,19 +96,18 @@ preset = "latest"
 python = true
 ```
 
-カテゴリキーを`true`にすると、プリセット内の該当言語ツールがそのまま有効化される。
+カテゴリキーを`true`にすると、プリセット内の該当言語ツールが一式そのまま有効化される。
 カテゴリキーを`false`（既定）のままにすると、プリセットで推奨された該当言語ツールはゲートで`false`に押し戻され実行されない。
 他言語のプロジェクトへ誤って当該ツールが走ることを防ぐため。
 
-プリセットに含まれない個別ツールを追加したい場合は`{command} = true`で指定する。
+プリセットに含まれない個別ツール（例: `ty`は現行プリセット非収録）を追加したい場合は`{command} = true`で指定する。
 個別指定はゲートを越えて最優先される。
 
 ```toml
 [tool.pyfltr]
 preset = "latest"
 python = true
-mypy = true      # preset に含まれない Python 系ツールを追加
-pytest = true
+ty = true        # preset に含まれないツールを追加
 ```
 
 `{command} = false`はプリセットでも有効化されたツールを個別に無効化する用途にも使える。
@@ -260,10 +259,10 @@ pyfltr run-for-agent --only-failed --from-run 01HXYZ
 - [ ] `pyfltr`コマンド呼び出し箇所すべてにサブコマンド（`ci` / `run` / `fast` / `run-for-agent`）を追記した
 - [ ] `pyproject.toml`の旧preset名`"20250710"`を`"latest"`または日付プリセット（`"20260330"` / `"20260411"` / `"20260413"`）に置き換えた
 - [ ] `pyproject.toml`から`pyupgrade` / `autoflake` / `isort` / `black` / `pflake8`の関連設定キーをすべて削除した
-- [ ] Pythonプロジェクトの場合、`python = true`を追加してpresetが推奨するPython系ツールのゲートを開けた
-- [ ] JavaScript / TypeScriptプロジェクトの場合、`javascript = true`（presetにJS系が含まれる時点でゲートを開ける）または個別`{command} = true`を追加した
-- [ ] Rustプロジェクトの場合、`rust = true`または個別`{command} = true`を追加した
-- [ ] .NETプロジェクトの場合、`dotnet = true`または個別`{command} = true`を追加した
+- [ ] Pythonプロジェクトの場合、`python = true`でpreset推奨ツール一式のゲートを開けた
+- [ ] JavaScript / TypeScriptプロジェクトの場合、`javascript = true`でpreset推奨ツール一式のゲートを開けた
+- [ ] Rustプロジェクトの場合、`rust = true`でpreset推奨ツール一式のゲートを開けた
+- [ ] `.NET`プロジェクトの場合、`dotnet = true`でpreset推奨ツール一式のゲートを開けた
 - [ ] Pythonプロジェクトの場合、`uv add --dev 'pyfltr[python]'`（またはpipの相当コマンド）で依存を再導入した
 - [ ] pre-commit hookの`entry:`フィールドにサブコマンドが含まれていることを確認した
 - [ ] Makefile・CIワークフロー・miseタスク等のコマンド呼び出しを再確認した

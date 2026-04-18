@@ -5,8 +5,7 @@
 pyfltr本体の設定（`[tool.pyfltr]`）と、呼び出される各ツール（ruff / mypy / pytest）の設定を1つの`pyproject.toml`にまとめた例。
 
 - `preset = "latest"`: 各時点での推奨ツール構成。詳細は[設定項目](configuration.md)の「プリセット設定」を参照。
-- `python = true`: Python系ツールのゲートを開ける。プリセットに含まれるPython系ツール（ruff-format / ruff-check / pyright / uv-sort）がそのまま有効化される。v3.0.0でopt-in化されたため、Pythonプロジェクトでは明示が必要。依存は`uv add --dev 'pyfltr[python]'`（pipの場合は`pip install 'pyfltr[python]'`）で導入する。
-- `mypy = true` / `pylint = true` / `pytest = true`: プリセットに含まれないPython系ツールを個別に追加する。個別指定はゲートを越えて最優先される。
+- `python = true`: Python系ツールのゲートを開ける。プリセットに含まれるPython系推奨ツール（ruff-format / ruff-check / mypy / pylint / pyright / pytest / uv-sort）が一式有効化される。v3.0.0でopt-in化されたため、Pythonプロジェクトでは明示が必要。依存は`uv add --dev 'pyfltr[python]'`（pipの場合は`pip install 'pyfltr[python]'`）で導入する。
 - `pylint-args`: pylintに追加で渡す引数。`--load-plugins=pylint_pydantic`と`--enable-error-code=unused-awaitable`（mypy）は自動オプションで既定有効のため個別指定不要。
 - ruffの `per-file-ignores`: テストコード（`**_test.py`）とpackage init（`__init__.py`）のdocstring要求を除外する実用的な調整。
 
@@ -22,9 +21,6 @@ dev = [
 [tool.pyfltr]
 preset = "latest"
 python = true
-mypy = true
-pylint = true
-pytest = true
 pylint-args = ["--jobs=4"]
 
 [tool.ruff]

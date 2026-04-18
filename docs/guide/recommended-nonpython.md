@@ -3,7 +3,7 @@
 Python以外のプロジェクトでもpyfltrを活用できる。共通のポイントは以下。
 
 - `preset = "latest"`: 各時点での推奨ツール構成。ドキュメント系（markdownlint / textlint / actionlint / typos / pre-commit）はいずれの言語ゲートにも属さず常に有効化される
-- 言語別ツールはv3.0.0以降すべてopt-in。利用する言語カテゴリキー（`python` / `javascript` / `rust` / `dotnet`）を`true`にしてゲートを開ける。現行プリセットには言語別ツールが含まれないため、個別に`{command} = true`で有効化するのが基本
+- 言語別ツールはv3.0.0以降すべてopt-in。利用する言語カテゴリキー（`python` / `javascript` / `rust` / `dotnet`）を`true`にしてゲートを開けると、プリセットが推奨する当該言語のツール一式が有効化される
 - `uvx pyfltr`: pyfltrをdev依存に含めないため、`uvx`で都度取得して実行する
 - 言語固有のツール + ドキュメント系lint（textlint / markdownlint / prettier）を組み合わせる
 - `bin-runner`のデフォルトは`"mise"`。actionlint / typos等のネイティブバイナリツールはmise経由で呼び出されるため、mise導入とツールのセットアップ（`mise use actionlint@latest typos@latest`等）を推奨する
@@ -20,12 +20,6 @@ exclude-newer = "1 day"
 [tool.pyfltr]
 preset = "latest"
 javascript = true
-# 現行プリセットにはJS/TS系が含まれないため、利用するツールを個別に有効化する
-eslint = true
-prettier = true
-biome = true
-tsc = true
-vitest = true
 js-runner = "pnpm"
 
 extend-exclude = [
@@ -51,11 +45,12 @@ extend-exclude = [
 
 ポイント:
 
-- `javascript = true`: JS/TS系ツールのゲートを開ける。現行プリセットにJS/TS系は含まれないため、利用するツールを個別に`{command} = true`で有効化する
+- `javascript = true`: JS/TS系ツール一式（eslint / biome / oxlint / prettier / tsc / vitest）がプリセットのゲートを通過して有効化される
 - `js-runner = "pnpm"`: pnpmワークスペース経由でJS系ツールを呼ぶ。`textlint-packages`は無視される
 - eslintとoxlintは併用するとeslintで非対応のルールを補完できる（Rust製のため高速）
 - tsc: TypeScript型チェックも実行できる。svelte-checkなどフレームワーク固有のチェッカーと併用する場合はどちらか一方でよい
 - vitest: `vitest-args = ["run"]`が既定のため追加引数は不要
+- 使わないツールは個別に`{command} = false`で無効化できる
 - svelte-checkなどフレームワーク固有のツールはカスタムコマンドで追加する（[カスタムコマンド例](custom-commands.md)の「svelte-check」を参照）
 
 ## Rustプロジェクト
@@ -72,14 +67,9 @@ exclude-newer = "1 day"
 [tool.pyfltr]
 preset = "latest"
 rust = true
-# 現行プリセットにはRust系が含まれないため、利用するcargoコマンドを個別に有効化する
-cargo-fmt = true
-cargo-clippy = true
-cargo-check = true
-cargo-test = true
-cargo-deny = true
 js-runner = "pnpm"
 # prettier はドキュメント系を pnpm で回すために個別に opt-in する
+# (javascript ゲートは開けず、Rust 専用プロジェクトで不要な JS 系 linter / tester を走らせない)
 prettier = true
 
 extend-exclude = [
@@ -126,12 +116,9 @@ exclude-newer = "1 day"
 [tool.pyfltr]
 preset = "latest"
 dotnet = true
-# 現行プリセットには.NET系が含まれないため、利用するdotnetコマンドを個別に有効化する
-dotnet-format = true
-dotnet-build = true
-dotnet-test = true
 js-runner = "pnpm"
 # prettier はドキュメント系を pnpm で回すために個別に opt-in する
+# (javascript ゲートは開けず、.NET 専用プロジェクトで不要な JS 系 linter / tester を走らせない)
 prettier = true
 
 extend-exclude = [

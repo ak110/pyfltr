@@ -236,10 +236,11 @@ PYTHON_COMMANDS: tuple[str, ...] = (
 )
 """python 設定および `pyfltr[python]` extras に紐づく Python 系コマンドの一覧。
 
-言語カテゴリキー ``python`` の gate 対象で、preset が有効化した Python 系ツールの
-通過可否を制御する。``python = false`` または未指定のときは、preset 由来で True
-になったコマンドも個別 ``{command} = true`` 指定がなければ False に押し戻される。
-個別 ``{command} = true`` は gate を越えて優先される。"""
+言語カテゴリキー ``python`` の gate 対象で、preset 内で True となっているツールを
+通過させる。``python = false`` または未指定のときは、preset 由来で True になった
+コマンドも個別 ``{command} = true`` 指定がなければ False に押し戻される。
+個別 ``{command} = true`` は gate を越えて優先される。
+``ty`` のみ preset 非収録のため、使用時は個別に ``ty = true`` を指定する。"""
 
 JAVASCRIPT_COMMANDS: tuple[str, ...] = (
     "eslint",
@@ -253,7 +254,8 @@ JAVASCRIPT_COMMANDS: tuple[str, ...] = (
 
 TypeScript は JavaScript エコシステム上のツール群（eslint / prettier / tsc 等）で
 扱うため、専用カテゴリは設けずここに内包する。言語カテゴリキー ``javascript`` の
-gate 対象で、挙動は ``PYTHON_COMMANDS`` と同じ。"""
+gate 対象で、preset 内で True となっているツールを通過させる。挙動は
+``PYTHON_COMMANDS`` と同じ。"""
 
 RUST_COMMANDS: tuple[str, ...] = (
     "cargo-fmt",
@@ -264,7 +266,8 @@ RUST_COMMANDS: tuple[str, ...] = (
 )
 """rust 設定に紐づく Rust 系コマンドの一覧。
 
-言語カテゴリキー ``rust`` の gate 対象で、挙動は ``PYTHON_COMMANDS`` と同じ。"""
+言語カテゴリキー ``rust`` の gate 対象で、preset 内で True となっているツールを
+通過させる。挙動は ``PYTHON_COMMANDS`` と同じ。"""
 
 DOTNET_COMMANDS: tuple[str, ...] = (
     "dotnet-format",
@@ -273,7 +276,8 @@ DOTNET_COMMANDS: tuple[str, ...] = (
 )
 """dotnet 設定に紐づく .NET 系コマンドの一覧。
 
-言語カテゴリキー ``dotnet`` の gate 対象で、挙動は ``PYTHON_COMMANDS`` と同じ。"""
+言語カテゴリキー ``dotnet`` の gate 対象で、preset 内で True となっているツールを
+通過させる。挙動は ``PYTHON_COMMANDS`` と同じ。"""
 
 LANGUAGE_CATEGORIES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("python", PYTHON_COMMANDS),
@@ -734,22 +738,43 @@ def create_default_config() -> Config:
     return config
 
 
-# 全プリセットの基盤: ruff を有効化する。
-# v3.0.0 で Python 系ツールを opt-in 化したため、プリセット適用時点で
-# ruff-format / ruff-check など必要なツールを明示的に True に切り替える。
-# カテゴリキー (``python`` 等) による gate を通過しない限り、これらは最終的に
-# False に押し戻される点に注意。
+# 全プリセットで共通の推奨ツール (Python 核 + JavaScript / TypeScript + Rust + .NET) を
+# 集約する。preset = "latest" + ``{language} = true`` だけで当該言語の推奨ツール一式が
+# gate を通過して有効化される運用を実現するため、歴史的 preset も含めて全バージョンに
+# 同じ言語別推奨ツールを収録する。
+# カテゴリキー (``python`` / ``javascript`` / ``rust`` / ``dotnet``) が gate として働き、
+# false (既定) の場合は該当ツールを最終的に False へ押し戻す。
+# ``ty`` は本体がまだ preset 収録レベルに達していないため除外し、利用側で個別に
+# ``ty = true`` を指定する運用を維持する。
 _PRESET_BASE: dict[str, bool] = {
+    # Python 核
     "ruff-format": True,
     "ruff-check": True,
+    "mypy": True,
+    "pylint": True,
+    "pytest": True,
+    # JavaScript / TypeScript
+    "eslint": True,
+    "biome": True,
+    "oxlint": True,
+    "prettier": True,
+    "tsc": True,
+    "vitest": True,
+    # Rust
+    "cargo-fmt": True,
+    "cargo-clippy": True,
+    "cargo-check": True,
+    "cargo-test": True,
+    "cargo-deny": True,
+    # .NET
+    "dotnet-format": True,
+    "dotnet-build": True,
+    "dotnet-test": True,
 }
 
-# プリセット定義。各時点での推奨ツール構成をバージョン付きで示すスナップショット。
-# 新しいプリセットほど有効化ツールが増える増分構造。``20250710`` は v3.0.0 で削除した
-# (削除 5 ツール分の設定しか持たなかったため)。
-# preset は言語別ツールを含みうるが、``python`` / ``javascript`` / ``rust`` / ``dotnet``
-# の各カテゴリキーが gate として働き、false (既定) の場合は該当ツールを最終的に
-# False へ押し戻す。
+# プリセット定義。各 preset は ``_PRESET_BASE`` を基点に、日付時点で追加された
+# Python / ドキュメント系の推奨ツールを差分として加えた全量スナップショット。
+# ``20250710`` は v3.0.0 で削除した (削除 5 ツール分の設定しか持たなかったため)。
 _PRESETS: dict[str, dict[str, bool]] = {
     "20260330": {**_PRESET_BASE, "pyright": True, "textlint": True, "markdownlint": True},
     "20260411": {
@@ -820,8 +845,8 @@ def load_config(config_dir: pathlib.Path | None = None) -> Config:
 
     # 言語カテゴリ gate の適用 (preset < 言語カテゴリ gate < 個別設定)
     # v3.0.0 で python / javascript / rust / dotnet を同じ枠組みのカテゴリキーに統一した。
-    # preset は各時点の推奨構成として言語別ツールも True にするが、カテゴリキーが False
-    # (既定) のときは preset 由来の True を False へ押し戻して実行を抑止する。
+    # preset は各時点の推奨構成として全言語のツールを横断的に True にするが、カテゴリ
+    # キーが False (既定) のときは preset 由来の True を False へ押し戻して実行を抑止する。
     # 後続の個別設定ループで ``{command} = true`` / ``{command} = false`` による上書きが可能
     # (個別指定は gate を越えて最優先)。
     # 設定キーの「_」「-」ゆらぎに対応するため、ユーザー入力側のキー集合を正規化しておく。

@@ -36,7 +36,8 @@ def test_missing_subcommand_errors():
 
 def test_work_dir(mocker, tmp_path):
     """--work-dirオプションのテスト。"""
-    (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latest"\n')
+    # preset 由来の pytest を python gate 通過で実行対象に含める。
+    (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latest"\npython = true\n')
     proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="test")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
     original_cwd = pathlib.Path.cwd()

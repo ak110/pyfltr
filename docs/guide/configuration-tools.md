@@ -97,23 +97,18 @@ uv-sort = true
 ```
 
 Python系ツールとして扱われ、`python = true`のゲート対象となる（プリセット`20260411`以降に含まれる）。
+`mypy` / `pylint` / `pytest`も全プリセットに含まれ、`python = true`だけでゲートを通過する。
 
 ### Rust系（cargo系）
 
 `cargo-fmt` / `cargo-clippy` / `cargo-check` / `cargo-test` / `cargo-deny`はいずれも既定で無効（opt-in）。
-`rust = true`でプリセットに含まれるRust系ツールのゲートを開けるか、個別に`{command} = true`を指定する。
-現行プリセットにはRust系ツールが含まれないため、個別指定の利用が基本。
+全プリセットにRust系ツールが含まれるため、`preset = "latest"` + `rust = true`だけで一式が有効化される。
 `pass-filenames = false`によりcrate全体を対象とするproject-level実行となる。
 
 ```toml
 [tool.pyfltr]
-# ゲートを開けて個別に有効化
+preset = "latest"
 rust = true
-cargo-fmt = true
-cargo-clippy = true
-cargo-check = true
-cargo-test = true
-cargo-deny = true
 ```
 
 実行パスはツール別に個別指定する。
@@ -146,17 +141,13 @@ cargo系はcrate単位で同一ワークスペースを操作するため、`ser
 ### .NET系（dotnet系）
 
 `dotnet-format` / `dotnet-build` / `dotnet-test`はいずれも既定で無効（opt-in）。
-`dotnet = true`でプリセットに含まれる .NET系ツールのゲートを開けるか、個別に`{command} = true`を指定する。
-現行プリセットには`.NET`系ツールが含まれないため、個別指定の利用が基本。
+全プリセットに`.NET`系ツールが含まれるため、`preset = "latest"` + `dotnet = true`だけで一式が有効化される。
 `pass-filenames = false`によりsolution全体を対象とするproject-level実行となる。
 
 ```toml
 [tool.pyfltr]
-# ゲートを開けて個別に有効化
+preset = "latest"
 dotnet = true
-dotnet-format = true
-dotnet-build = true
-dotnet-test = true
 ```
 
 実行パスはツール別に個別指定する。既定はいずれも`dotnet`バイナリ。
@@ -262,16 +253,14 @@ textlint-packages = [
 ### eslint / prettier / biomeの設定
 
 eslint / prettier / biomeはすべて既定で無効（opt-in）。
-`javascript = true`でプリセットに含まれるJS/TS系ツールのゲートを開けるが、現行プリセットにはJS/TS系が含まれないため、個別に`{command} = true`で有効化するのが基本。
+全プリセットにJS/TS系ツールが含まれるため、`preset = "latest"` + `javascript = true`だけで一式が有効化される。
 プラグインは`package.json`管理が前提のため、通常は`js-runner = "pnpm"`と併用する。
 
 ```toml
 [tool.pyfltr]
+preset = "latest"
 js-runner = "pnpm"
 javascript = true
-eslint = true
-prettier = true
-biome = true
 ```
 
 既定の引数は以下のとおり。
@@ -293,15 +282,13 @@ biome = true
 ### oxlint / tsc / vitest
 
 oxlint / tsc / vitestもjs-runner対応のツール。すべて既定で無効（opt-in）。
-`javascript = true`でゲートを開けた上で、個別に`{command} = true`を指定する（現行プリセットには含まれないため）。
+全プリセットに含まれるため、`preset = "latest"` + `javascript = true`でeslint / prettier / biomeと同時に一式が有効化される。
 
 ```toml
 [tool.pyfltr]
+preset = "latest"
 js-runner = "pnpm"
 javascript = true
-oxlint = true
-tsc = true
-vitest = true
 ```
 
 既定の引数は以下のとおり。
@@ -310,8 +297,7 @@ vitest = true
 - tsc: `tsc-args = ["--noEmit"]`、`tsc-pass-filenames = false`（プロジェクト全体をチェックするためファイル引数を渡さない）
 - vitest: `vitest-args = ["run"]`（`run`サブコマンドが必須）
 
-eslint / prettier / biome / oxlint / tsc / vitestは`preset = "latest"`では有効化されない。
-利用する場合は`pyproject.toml`で個別に`= true`にする。
+個別に無効化したい場合のみ`{command} = false`を指定する。
 
 ## bin-runner経由で実行するツール
 

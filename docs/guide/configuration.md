@@ -54,7 +54,8 @@ extend-exclude = ["foo", "bar.py"]
 ## プリセット設定
 
 プリセットは各時点での推奨ツール構成をバージョン付きで示すスナップショット。
-`"latest"`または日付指定（`"20260330"` / `"20260411"` / `"20260413"`）を指定する。
+Python / JavaScript / TypeScript / Rust / .NET / ドキュメント系の推奨ツールを横断的に収録する。
+`"latest"`または日付指定（`"20260413"` / `"20260411"` / `"20260330"`）を指定する。
 
 ```toml
 [tool.pyfltr]
@@ -64,38 +65,71 @@ preset = "latest"
 `preset = "latest"`はpyfltrの更新に伴って対象ツールの追加や既定値の変更が予告なく入ることがある。
 破壊的変更を避けたい場合は日付指定プリセットで固定すると、当該日時点の構成をそのまま維持できる。
 
-プリセットには言語別ツールも含まれるが、ユーザー側で明示しない限り該当ツールは実行されない。
-次節の言語カテゴリキーで「どの言語のツールを通過させるか」を明示する。
-
-### preset "20260330"
-
-以下の設定が行われる。
-
-- `ruff-format = true`
-- `ruff-check = true`
-- `pyright = true`
-- `textlint = true`
-- `markdownlint = true`
-
-### preset "20260411"
-
-`"20260330"`に加えて以下が有効化される。
-
-- `actionlint = true`
-- `typos = true`
-- `uv-sort = true`
+プリセットで`true`になっているツールも、次節の言語カテゴリキーがゲートを開けた言語分だけが実際に実行される。
+`preset = "latest"` + `{language} = true`だけで当該言語の推奨ツール一式が有効化される運用を意図している。
 
 ### preset "20260413" / "latest"
 
-`"20260411"`に加えて以下が有効化される。
+以下の設定が行われる。
 
+Python核（`python = true`で通過）
+
+- `ruff-format = true`
+- `ruff-check = true`
+- `mypy = true`
+- `pylint = true`
+- `pyright = true`
+- `pytest = true`
+- `uv-sort = true`
+
+JavaScript / TypeScript（`javascript = true`で通過）
+
+- `eslint = true`
+- `biome = true`
+- `oxlint = true`
+- `prettier = true`
+- `tsc = true`
+- `vitest = true`
+
+Rust（`rust = true`で通過）
+
+- `cargo-fmt = true`
+- `cargo-clippy = true`
+- `cargo-check = true`
+- `cargo-test = true`
+- `cargo-deny = true`
+
+.NET（`dotnet = true`で通過）
+
+- `dotnet-format = true`
+- `dotnet-build = true`
+- `dotnet-test = true`
+
+ドキュメント系（カテゴリゲート非対象、常時通過）
+
+- `textlint = true`
+- `markdownlint = true`
+- `actionlint = true`
+- `typos = true`
 - `pre-commit = true`
+
+### preset "20260411"
+
+`"20260413"`から`pre-commit = true`を除いた構成（pre-commitは`"20260413"`以降で追加）。
+それ以外の有効化ツール（Python核・JavaScript / TypeScript・Rust・.NET・textlint / markdownlint / actionlint / typos / uv-sort）は同一。
+
+### preset "20260330"
+
+`"20260411"`から`actionlint = true` / `typos = true` / `uv-sort = true`を除いた構成。
+Python核・JavaScript / TypeScript・Rust・.NET・textlint・markdownlint・pyrightを有効化する。
 
 ## 言語カテゴリによるゲート制御
 
 各言語カテゴリに属するツールは既定で無効（opt-in）。
-プロジェクトで利用する言語カテゴリキーを`true`にすると、プリセットで推奨された当該言語ツールが有効化される。
-カテゴリキーを`false`（既定）にすると、プリセットで推奨された当該言語ツールもゲートで`false`へ押し戻される。
+プロジェクトで利用する言語カテゴリキーを`true`にすると、プリセットで推奨された当該言語ツールがゲートを通過して有効化される。
+カテゴリキーを`false`（既定）にすると、プリセットで`true`になっていてもゲートで`false`へ押し戻される。
+
+`preset = "latest"` + `{language} = true`の組み合わせだけで当該言語の推奨ツール一式が有効化される。
 
 個別のツール単位では`{command} = true`での有効化・`{command} = false`での無効化も可能で、適用優先度は`preset < 言語カテゴリゲート < 個別設定`。
 
@@ -117,15 +151,14 @@ python = true
 Pythonプロジェクトで利用する場合は別途`pip install pyfltr[python]`で依存を導入する必要がある。
 JavaScript系・Rust系・.NET系は各言語のツールチェイン（Node.js・cargo・dotnet CLI）が前提となる。
 
-プリセットに含まれない言語別ツール（例: `mypy` / `pytest` は現行プリセットに含まれない）を使いたい場合は個別に`{command} = true`を指定する。
+プリセットに含まれないツール（例: `ty`は現行プリセット非収録）を使いたい場合は個別に`{command} = true`を指定する。
 個別指定はゲートを越えて最優先される。
 
 ```toml
 [tool.pyfltr]
 preset = "latest"
 python = true
-mypy = true      # preset に無いため個別指定で追加
-pytest = true
+ty = true        # preset に無いため個別指定で追加
 ```
 
 ## ツール別除外設定

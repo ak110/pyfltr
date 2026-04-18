@@ -31,8 +31,8 @@ uv add --dev 'pyfltr[python]'
 ```
 
 v3.0.0以降、Python / JavaScript / Rust / .NETの各言語カテゴリに属するツールはすべて既定で無効（opt-in）となった。
-プリセットで推奨ツールを選び、`pyproject.toml`の言語カテゴリキー（`python` / `javascript` / `rust` / `dotnet`）でゲートを開けることで有効化する。
-プリセットに含まれないツールは個別に`{command} = true`で明示する。
+`preset = "latest"` + 言語カテゴリキー（`python` / `javascript` / `rust` / `dotnet`）の`true`指定だけで、当該言語の推奨ツール一式が有効化される。
+プリセット非収録のツール（`ty`など）を追加したい場合のみ個別に`{command} = true`を指定する。
 詳細は[設定項目](docs/guide/configuration.md)を参照。
 
 ## ドキュメント

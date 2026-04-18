@@ -76,13 +76,10 @@ exclude-newer = "1 day"
 
 [tool.pyfltr]
 preset = "latest"
-# v3.0.0 で Python 系ツールを opt-in 化したため、ゲートキー ``python`` を true にして
-# preset が推奨する Python 系ツール (ruff-format / ruff-check / pyright / uv-sort) を通す。
+# preset = "latest" + python = true で Python 系推奨構成 (ruff-format / ruff-check /
+# mypy / pylint / pyright / pytest / uv-sort) が gate 通過で有効化される。
+# ``ty`` のみ preset 非収録のため個別 true で追加する。
 python = true
-# preset に含まれない Python 系ツールは個別 true 指定でゲートを越えて追加する。
-mypy = true
-pylint = true
-pytest = true
 ty = true
 pylint-args = ["--jobs=4"]
 
