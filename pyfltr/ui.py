@@ -21,6 +21,7 @@ import pyfltr.command
 import pyfltr.config
 import pyfltr.error_parser
 import pyfltr.executor
+import pyfltr.only_failed
 import pyfltr.warnings_
 
 
@@ -46,7 +47,7 @@ def run_commands_with_ui(
     cache_store: pyfltr.cache.CacheStore | None = None,
     cache_run_id: str | None = None,
     fail_fast: bool = False,
-    only_failed_targets: dict[str, list[pathlib.Path] | None] | None = None,
+    only_failed_targets: dict[str, pyfltr.only_failed.ToolTargets] | None = None,
 ) -> tuple[list[pyfltr.command.CommandResult], int]:
     """UI付きでコマンドを実行。
 
@@ -123,7 +124,7 @@ class UIApp(App):
         cache_store: pyfltr.cache.CacheStore | None = None,
         cache_run_id: str | None = None,
         fail_fast: bool = False,
-        only_failed_targets: dict[str, list[pathlib.Path] | None] | None = None,
+        only_failed_targets: dict[str, pyfltr.only_failed.ToolTargets] | None = None,
     ) -> None:
         super().__init__()
         self.commands = commands
@@ -346,7 +347,7 @@ class UIApp(App):
                 fix_stage=fix_stage,
                 cache_store=self._cache_store,
                 cache_run_id=self._cache_run_id,
-                only_failed_files=pyfltr.command.pick_only_failed_files(self._only_failed_targets, command),
+                only_failed_targets=pyfltr.command.pick_targets(self._only_failed_targets, command),
             )
         # ここ以降は結果の UI 反映のみなので serial_group ロックの外で行う。
 

@@ -104,8 +104,8 @@ def execute_show_run(args: argparse.Namespace) -> int:
     with _stdout_owned(output_format):
         store = pyfltr.archive.ArchiveStore()
         try:
-            run_id = _resolve_run_id(store, raw_run_id)
-        except _RunIdError as e:
+            run_id = resolve_run_id(store, raw_run_id)
+        except RunIdError as e:
             sys.stderr.write(f"エラー: {e}\n")
             return 1
 
@@ -122,11 +122,11 @@ def execute_show_run(args: argparse.Namespace) -> int:
         return _show_run_overview(store, run_id, meta, output_format)
 
 
-class _RunIdError(Exception):
-    """run_id 解決に失敗した際の内部例外。"""
+class RunIdError(Exception):
+    """run_id 解決に失敗した際の例外。"""
 
 
-def _resolve_run_id(store: pyfltr.archive.ArchiveStore, raw: str) -> str:
+def resolve_run_id(store: pyfltr.archive.ArchiveStore, raw: str) -> str:
     """run_id 指定を解決する。
 
     ``latest`` エイリアス → 完全一致 → 前方一致の順に試す。前方一致が複数
@@ -135,7 +135,7 @@ def _resolve_run_id(store: pyfltr.archive.ArchiveStore, raw: str) -> str:
     run_ids = [s.run_id for s in store.list_runs()]
     if raw == "latest":
         if not run_ids:
-            raise _RunIdError("アーカイブに run が存在しない。")
+            raise RunIdError("アーカイブに run が存在しない。")
         return run_ids[0]
     if raw in run_ids:
         return raw
@@ -145,8 +145,8 @@ def _resolve_run_id(store: pyfltr.archive.ArchiveStore, raw: str) -> str:
     if len(matched) > 1:
         sample = ", ".join(matched[:3])
         suffix = "..." if len(matched) > 3 else ""
-        raise _RunIdError(f"run_id のプレフィックスが曖昧: {raw!r} に {len(matched)} 件該当 ({sample}{suffix})")
-    raise _RunIdError(f"run_id が見つからない: {raw!r}")
+        raise RunIdError(f"run_id のプレフィックスが曖昧: {raw!r} に {len(matched)} 件該当 ({sample}{suffix})")
+    raise RunIdError(f"run_id が見つからない: {raw!r}")
 
 
 def _summary_to_dict(summary: pyfltr.archive.RunSummary) -> dict[str, typing.Any]:

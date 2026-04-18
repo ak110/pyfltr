@@ -17,6 +17,7 @@ import pyfltr.config
 import pyfltr.error_parser
 import pyfltr.executor
 import pyfltr.llm_output
+import pyfltr.only_failed
 
 NCOLS = 128
 
@@ -38,7 +39,7 @@ def run_commands_with_cli(
     cache_store: pyfltr.cache.CacheStore | None = None,
     cache_run_id: str | None = None,
     fail_fast: bool = False,
-    only_failed_targets: dict[str, list[pathlib.Path] | None] | None = None,
+    only_failed_targets: dict[str, pyfltr.only_failed.ToolTargets] | None = None,
 ) -> list[pyfltr.command.CommandResult]:
     """コマンドを実行する (非 TUI)。
 
@@ -89,7 +90,7 @@ def run_commands_with_cli(
             fix_stage=True,
             cache_store=cache_store,
             cache_run_id=cache_run_id,
-            only_failed_files=pyfltr.command.pick_only_failed_files(only_failed_targets, command),
+            only_failed_targets=pyfltr.command.pick_targets(only_failed_targets, command),
         )
         if archive_hook is not None and not fix_result.cached:
             archive_hook(fix_result)
@@ -112,7 +113,7 @@ def run_commands_with_cli(
             per_command_log=per_command_log,
             cache_store=cache_store,
             cache_run_id=cache_run_id,
-            only_failed_files=pyfltr.command.pick_only_failed_files(only_failed_targets, command),
+            only_failed_targets=pyfltr.command.pick_targets(only_failed_targets, command),
         )
         results.append(result)
         if archive_hook is not None and not result.cached:
@@ -142,7 +143,7 @@ def run_commands_with_cli(
                     per_command_log=per_command_log,
                     cache_store=cache_store,
                     cache_run_id=cache_run_id,
-                    only_failed_files=pyfltr.command.pick_only_failed_files(only_failed_targets, command),
+                    only_failed_targets=pyfltr.command.pick_targets(only_failed_targets, command),
                 ): command
                 for command in linters_and_testers
             }
@@ -225,7 +226,7 @@ def _run_one_command(
     fix_stage: bool = False,
     cache_store: pyfltr.cache.CacheStore | None = None,
     cache_run_id: str | None = None,
-    only_failed_files: list[pathlib.Path] | None = None,
+    only_failed_targets: pyfltr.only_failed.ToolTargets | None = None,
 ) -> pyfltr.command.CommandResult:
     """1 コマンドの実行。
 
@@ -245,7 +246,7 @@ def _run_one_command(
             fix_stage=fix_stage,
             cache_store=cache_store,
             cache_run_id=cache_run_id,
-            only_failed_files=only_failed_files,
+            only_failed_targets=only_failed_targets,
         )
         if per_command_log:
             write_log(result)

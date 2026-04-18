@@ -112,10 +112,10 @@ def _raise_mcp_error(msg: str) -> typing.Never:
 
 
 def _resolve_run_id_or_raise(store: pyfltr.archive.ArchiveStore, raw: str) -> str:
-    """``_resolve_run_id`` の結果を返し、エラー時は MCP エラーへ変換する。"""
+    """``resolve_run_id`` の結果を返し、エラー時は MCP エラーへ変換する。"""
     try:
-        return pyfltr.runs._resolve_run_id(store, raw)  # noqa: SLF001  # pylint: disable=protected-access
-    except pyfltr.runs._RunIdError as e:  # noqa: SLF001  # pylint: disable=protected-access
+        return pyfltr.runs.resolve_run_id(store, raw)
+    except pyfltr.runs.RunIdError as e:
         _raise_mcp_error(str(e))
 
 

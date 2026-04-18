@@ -2,9 +2,7 @@
 """pyfltr。"""
 
 # v3.0.0 でサブコマンド・実行アーカイブ・キャッシュ・retry_command 絞り込みなどを
-# 段階的に集約したため本モジュールは 1000 行上限を超える。将来の整理候補として
-# retry_command / --only-failed 系ヘルパー (_filter_failed_files・_populate_retry_command・
-# _apply_only_failed_filter 等) の別モジュール分割がある。
+# 段階的に集約した。retry_command 生成は pyfltr.retry モジュールが担う。
 # pylint: disable=too-many-lines
 
 import argparse
@@ -25,6 +23,8 @@ import pyfltr.config
 import pyfltr.github_annotations
 import pyfltr.llm_output
 import pyfltr.mcp_
+import pyfltr.only_failed
+import pyfltr.retry
 import pyfltr.runs
 import pyfltr.sarif_output
 import pyfltr.shell_completion
@@ -416,332 +416,6 @@ def _restore_logging(saved: tuple[list[logging.Handler], int]) -> None:
     root.setLevel(level)
 
 
-def _detect_launcher_prefix() -> list[str]:
-    """retry_command の先頭に置くべき起動プレフィックスを推定する。
-
-    Linux では ``/proc/self/status`` から親プロセスを辿り、先頭が ``uv`` で
-    第 2 引数が ``run`` なら ``["uv", "run", "pyfltr"]``、先頭が ``uvx`` なら
-    ``["uvx", "pyfltr"]`` を返す。macOS / Windows など親プロセスを取得できない
-    環境では ``[sys.argv[0]]`` の basename にフォールバックする。
-    """
-    fallback = [os.path.basename(sys.argv[0]) or "pyfltr"]
-    try:
-        with open("/proc/self/status", encoding="utf-8") as f:
-            ppid_line = next((line for line in f if line.startswith("PPid:")), None)
-        if ppid_line is None:
-            return fallback
-        ppid = ppid_line.split(":", 1)[1].strip()
-        with open(f"/proc/{ppid}/cmdline", "rb") as f:
-            raw = f.read()
-    except OSError:
-        return fallback
-    tokens = [tok.decode("utf-8", errors="replace") for tok in raw.split(b"\0") if tok]
-    if not tokens:
-        return fallback
-    launcher = os.path.basename(tokens[0])
-    if launcher == "uv" and len(tokens) >= 2 and tokens[1] == "run":
-        return ["uv", "run", "pyfltr"]
-    if launcher == "uvx":
-        return ["uvx", "pyfltr"]
-    return fallback
-
-
-def _build_retry_args_template(sys_args: list[str]) -> list[str]:
-    """起動時 argv (サブコマンド以降) を retry_command 用テンプレートとして整形する。
-
-    ``--commands`` の値は後段の per-tool 差し替え用に空文字プレースホルダへ置換し、
-    位置引数 (ターゲット) は末尾から除去する (後段で当該ツールのファイル一覧で
-    置換される前提)。``--no-fix`` や ``--output-format`` 等は保持する。
-    """
-    result: list[str] = []
-    i = 0
-    # 実行系サブコマンド (ci / run / fast / run-for-agent) は先頭に必ず来る想定。
-    # これを保持することで pyfltr ci 失敗時に fix ステージが暴発しない。
-    while i < len(sys_args):
-        arg = sys_args[i]
-        if arg == "--commands":
-            # 後段で当該ツール 1 件に差し替えるためプレースホルダを置く。
-            result.extend([arg, ""])
-            i += 2
-            continue
-        if arg.startswith("--commands="):
-            result.append("--commands=")
-            i += 1
-            continue
-        result.append(arg)
-        i += 1
-    return result
-
-
-def _apply_only_failed_filter(
-    args: argparse.Namespace,
-    commands: list[str],
-    all_files: list[pathlib.Path],
-) -> tuple[list[str], dict[str, list[pathlib.Path] | None] | None, bool]:
-    """``--only-failed`` 指定時、直前 run からツール別の失敗ファイル集合を構築する。
-
-    Returns:
-        ``(絞り込み後 commands, per_tool_targets, exit_early)``
-        - ``args.only_failed`` が偽の場合は ``(commands, None, False)`` を返す (未適用)
-        - 直前 run が存在しない / アーカイブ読み取り失敗 / 失敗ツールが無い / 全ツール
-          で ``targets`` 交差が空の場合は ``(commands, None, True)`` を返し、呼び出し側で
-          ``rc=0`` の早期終了を促す
-        - それ以外は失敗ツール集合と、ツール別の失敗ファイル集合 dict を返す。
-          値 ``None`` は「直前 run に診断ファイルが無く全体再実行が必要 (pytest 等)」、
-          空リストは「交差空で除外」を意味する。戻りの ``commands`` からは除外済み。
-
-    ``all_files`` は ``expand_all_files`` の結果 (``args.targets`` 指定があれば既に
-    その範囲に絞り込まれている)。本関数ではそれとの交差を取ることで
-    ``--only-failed`` と位置引数 ``targets`` の併用要件を同時に満たす。
-    """
-    if not getattr(args, "only_failed", False):
-        return commands, None, False
-
-    try:
-        store = pyfltr.archive.ArchiveStore()
-        runs = store.list_runs(limit=1)
-    except OSError as e:
-        pyfltr.warnings_.emit_warning(
-            source="only-failed",
-            message=f"実行アーカイブを読み取れません: {e}",
-        )
-        return commands, None, True
-
-    if not runs:
-        logger.info("--only-failed: 参照可能な直前 run が見つかりません。対象なしでスキップします。")
-        return commands, None, True
-
-    last_run = runs[0]
-    try:
-        tool_names = store.list_tools(last_run.run_id)
-    except OSError as e:
-        pyfltr.warnings_.emit_warning(
-            source="only-failed",
-            message=f"直前 run のツール一覧を読み取れません: {e}",
-        )
-        return commands, None, True
-
-    # all_files を正規化済み相対パス文字列でキーに持つ辞書にしておき、
-    # 診断側の ``file`` (``_normalize_path`` 済み) とそのまま比較する。
-    all_files_map: dict[str, pathlib.Path] = {}
-    for path in all_files:
-        all_files_map[str(path).replace("\\", "/")] = path
-
-    commands_set = set(commands)
-    per_tool_targets: dict[str, list[pathlib.Path] | None] = {}
-    failed_tools: list[str] = []
-    for tool in tool_names:
-        if tool not in commands_set:
-            continue
-        try:
-            meta = store.read_tool_meta(last_run.run_id, tool)
-        except OSError:
-            continue
-        if meta.get("status") != "failed":
-            continue
-        failed_tools.append(tool)
-        try:
-            diagnostics = store.read_tool_diagnostics(last_run.run_id, tool)
-        except OSError:
-            diagnostics = []
-        failed_files = {d["file"] for d in diagnostics if isinstance(d.get("file"), str)}
-        if not failed_files:
-            # 診断ファイル無し (pass-filenames=False のツール等) → 既定対象でフォールバック実行
-            per_tool_targets[tool] = None
-            continue
-        # ``all_files_map`` を基準に走査することで ``_filter_failed_files`` と同じく
-        # target 側の並び順を保つ (``failed_files`` を直接反復するとセット由来の順序不定が混入する)。
-        intersected = [path for key, path in all_files_map.items() if key in failed_files]
-        per_tool_targets[tool] = intersected
-
-    if not failed_tools:
-        logger.info(f"--only-failed: 直前 run ({last_run.run_id}) に失敗ツールがありません。対象なしでスキップします。")
-        return commands, None, True
-
-    # per_tool_targets 値が [] のツールは「交差空 → 除外」。commands 順を保って絞り込む。
-    filtered_commands = [cmd for cmd in commands if cmd in failed_tools and per_tool_targets.get(cmd) != []]
-    if not filtered_commands:
-        logger.info(
-            f"--only-failed: 直前 run ({last_run.run_id}) の失敗ツールはすべて指定 targets と交差しません。"
-            "対象なしでスキップします。"
-        )
-        return commands, None, True
-
-    filtered_per_tool_targets = {cmd: per_tool_targets[cmd] for cmd in filtered_commands}
-    logger.info(f"--only-failed: 直前 run ({last_run.run_id}) から {len(filtered_commands)} ツールを対象として再実行します。")
-    return filtered_commands, filtered_per_tool_targets, False
-
-
-def _filter_failed_files(result: pyfltr.command.CommandResult) -> list[pathlib.Path]:
-    """``result.errors`` から失敗ファイル集合を抽出し ``result.target_files`` と交差させる。
-
-    ``retry_command`` のターゲットを「当該ツールで失敗したファイルのみ」に絞る用途
-    (パートG A案)。パス比較は文字列化した相対パス (スラッシュ区切り) で行う。
-    ``ErrorLocation.file`` は ``_normalize_path`` 経由で cwd 基準の相対パス (区切り
-    文字は ``/``) に正規化されているため、``result.target_files`` 側も同じ表現へ
-    揃えたうえで比較する。並び順は ``result.target_files`` の順序を保つ。
-
-    ``result.errors`` が空、または ``ErrorLocation.file`` 集合と ``result.target_files``
-    の交差が空の場合は空リストを返す (pytest 等の pass-filenames=False で全体失敗
-    のみのケース。呼び出し側で retry_command のターゲット位置引数を空にする前提)。
-    """
-    if not result.errors:
-        return []
-    failed_files = {error.file for error in result.errors if error.file}
-    if not failed_files:
-        return []
-    filtered: list[pathlib.Path] = []
-    for target in result.target_files:
-        normalized = str(target).replace("\\", "/")
-        if normalized in failed_files:
-            filtered.append(target)
-    return filtered
-
-
-def _populate_retry_command(
-    result: pyfltr.command.CommandResult,
-    *,
-    retry_args_template: list[str],
-    launcher_prefix: list[str],
-    original_cwd: str,
-) -> None:
-    """CommandResult に retry_command を埋める (パートG A案の絞り込みを適用)。
-
-    キャッシュ復元結果 (``result.cached == True``) では retry_command を埋めない
-    (再実行不要のため)。それ以外では ``_filter_failed_files`` で失敗ファイルのみに
-    絞り込んだターゲットを ``_build_retry_command`` へ渡す。絞り込み結果が空の場合
-    (診断ファイルなし・全体失敗のみのケース) は retry_command のターゲット位置
-    引数が空になる (当該ツールの単体再実行文字列として機能する)。
-    """
-    if result.cached:
-        return
-    filtered_targets = _filter_failed_files(result)
-    result.retry_command = _build_retry_command(
-        retry_args_template,
-        launcher_prefix,
-        tool=result.command,
-        target_files=filtered_targets,
-        original_cwd=original_cwd,
-    )
-
-
-def _build_retry_command(
-    args_template: list[str],
-    launcher_prefix: list[str],
-    *,
-    tool: str,
-    target_files: list[pathlib.Path],
-    original_cwd: str,
-) -> str:
-    """Tool レコードへ埋め込む retry_command 文字列を生成する。
-
-    ``args_template`` の ``--commands`` プレースホルダを当該ツールに差し替え、
-    位置引数 (ターゲット) を ``target_files`` で末尾に再配置する。ターゲットは
-    ``original_cwd`` 基準の絶対パスに変換することで、``--work-dir`` と cwd の
-    二重解釈を避ける。
-    """
-    import shlex  # pylint: disable=import-outside-toplevel
-
-    cwd_path = pathlib.Path(original_cwd)
-    # 位置引数 (サブコマンドを除く、`-` で始まらないトークンの末尾側) は除去する。
-    # サブコマンドは必ず最初の非オプショントークンのため、それだけ残す。
-    filtered: list[str] = []
-    seen_subcommand = False
-    i = 0
-    while i < len(args_template):
-        arg = args_template[i]
-        # オプション引数 (=付き・=なし両対応) はそのまま保持する。
-        # ``--commands`` プレースホルダ経由のみ後段で差し替え対象とする。
-        if arg.startswith("-"):
-            filtered.append(arg)
-            # 引数を伴うオプションか確認 (値が付いていない場合は次のトークンも引き取る)。
-            if "=" not in arg and i + 1 < len(args_template):
-                next_arg = args_template[i + 1]
-                if not next_arg.startswith("-") and _option_takes_value(arg):
-                    filtered.append(next_arg)
-                    i += 2
-                    continue
-            i += 1
-            continue
-        # 最初の非オプショントークンはサブコマンド扱いで保持する。
-        if not seen_subcommand:
-            filtered.append(arg)
-            seen_subcommand = True
-            i += 1
-            continue
-        # それ以降の位置引数 (= ターゲット) は捨てる。後段で target_files で差し替える。
-        i += 1
-
-    # --commands プレースホルダを当該ツールで埋める。
-    replaced: list[str] = []
-    j = 0
-    commands_replaced = False
-    while j < len(filtered):
-        arg = filtered[j]
-        if arg == "--commands":
-            replaced.extend(["--commands", tool])
-            commands_replaced = True
-            j += 2 if j + 1 < len(filtered) else 1
-            continue
-        if arg == "--commands=":
-            replaced.append(f"--commands={tool}")
-            commands_replaced = True
-            j += 1
-            continue
-        if arg.startswith("--commands="):
-            replaced.append(f"--commands={tool}")
-            commands_replaced = True
-            j += 1
-            continue
-        replaced.append(arg)
-        j += 1
-    # --commands 未指定だった場合は追記する (サブコマンドの直後に挿入)。
-    if not commands_replaced:
-        insert_at = 0
-        for k, tok in enumerate(replaced):
-            if not tok.startswith("-"):
-                insert_at = k + 1
-                break
-        replaced[insert_at:insert_at] = ["--commands", tool]
-
-    # ターゲットを元 cwd 基準の絶対パスに変換して末尾に追加する。
-    target_strs: list[str] = []
-    for target in target_files:
-        if target.is_absolute():
-            target_strs.append(str(target))
-        else:
-            target_strs.append(str((cwd_path / target).resolve(strict=False)))
-
-    parts: list[str] = [*launcher_prefix, *replaced, *target_strs]
-    return shlex.join(parts)
-
-
-# 引数を別トークンで受け取るオプション (= なし形式) の集合。
-# retry_command 整形時に位置引数と誤認しないよう明示する。
-_VALUE_OPTIONS: frozenset[str] = frozenset(
-    {
-        "--commands",
-        "--output-format",
-        "--output-file",
-        "--work-dir",
-        "-j",
-        "--jobs",
-    }
-)
-
-
-def _option_takes_value(opt: str) -> bool:
-    """オプションが次のトークンを値として取るかを判定する。
-
-    ``--foo=bar`` 形式は判定対象外 (呼び出し側で `=` の有無を先に確認する前提)。
-    ビルトイン / カスタムコマンドの ``--{cmd}-args`` も値を伴うため、末尾が
-    ``-args`` で終わるものは全て True として扱う。
-    """
-    if opt.endswith("-args"):
-        return True
-    return opt in _VALUE_OPTIONS
-
-
 def _run_impl(
     parser: argparse.ArgumentParser,
     args: argparse.Namespace,
@@ -882,7 +556,7 @@ def run_pipeline(
 
     # --only-failed 指定時は直前 run からツール別の失敗ファイル集合を構築する。
     # archive / cache 初期化より前に実行し、早期終了の場合はそれらの副作用を発生させない。
-    commands, only_failed_targets, only_failed_exit_early = _apply_only_failed_filter(args, commands, all_files)
+    commands, only_failed_targets, only_failed_exit_early = pyfltr.only_failed.apply_filter(args, commands, all_files)
     if only_failed_exit_early:
         return 0, None
 
@@ -890,8 +564,8 @@ def run_pipeline(
     # --work-dir 適用前の cwd、original_sys_args は起動時の sys.argv[1:] のコピー。
     effective_cwd = original_cwd if original_cwd is not None else os.getcwd()
     effective_sys_args = list(original_sys_args) if original_sys_args is not None else list(sys.argv[1:])
-    launcher_prefix = _detect_launcher_prefix()
-    retry_args_template = _build_retry_args_template(effective_sys_args)
+    launcher_prefix = pyfltr.retry.detect_launcher_prefix()
+    retry_args_template = pyfltr.retry.build_retry_args_template(effective_sys_args)
 
     # 実行アーカイブの初期化 (既定で有効)。
     # ``--no-archive`` または ``archive = false`` で無効化できる。クリーンアップ失敗や
@@ -948,7 +622,7 @@ def run_pipeline(
     # 実装本体は ``_populate_retry_command`` (A案の失敗ファイル絞り込み・cached
     # 判定を含む) に委譲し、クロージャ変数をキーワード引数で引き渡す。
     def _attach_retry_command(result: pyfltr.command.CommandResult) -> None:
-        _populate_retry_command(
+        pyfltr.retry.populate_retry_command(
             result,
             retry_args_template=retry_args_template,
             launcher_prefix=launcher_prefix,

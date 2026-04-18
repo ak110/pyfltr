@@ -14,6 +14,7 @@ import pytest
 import pyfltr.cache
 import pyfltr.command
 import pyfltr.config
+import pyfltr.only_failed
 from tests import conftest as _testconf
 
 
@@ -1575,8 +1576,8 @@ def test_execute_command_non_cacheable_skips_cache(mocker, tmp_path: pathlib.Pat
     assert not list(cache_root.rglob("*.json"))
 
 
-def test_execute_command_only_failed_files_override(mocker, tmp_path: pathlib.Path) -> None:
-    """``only_failed_files`` に list を渡すと ``all_files`` の代わりにその集合が対象になる。"""
+def test_execute_command_only_failed_targets_files_override(mocker, tmp_path: pathlib.Path) -> None:
+    """``only_failed_targets`` に ToolTargets.with_files を渡すと ``all_files`` の代わりにその集合が対象になる。"""
     file_a = tmp_path / "a.py"
     file_b = tmp_path / "b.py"
     file_a.write_text("x = 1\n")
@@ -1595,19 +1596,19 @@ def test_execute_command_only_failed_files_override(mocker, tmp_path: pathlib.Pa
         _make_args(),
         config,
         [file_a, file_b],
-        only_failed_files=[file_b],
+        only_failed_targets=pyfltr.only_failed.ToolTargets.with_files([file_b]),
     )
 
     assert mock_run.call_count == 1
     cmdline = mock_run.call_args_list[0][0][0]
     assert str(file_b) in cmdline
     assert str(file_a) not in cmdline
-    # CommandResult.target_files も only_failed_files ベースに絞られる
+    # CommandResult.target_files も ToolTargets ベースに絞られる
     assert result.target_files == [file_b]
 
 
-def test_execute_command_only_failed_files_none_uses_default(mocker, tmp_path: pathlib.Path) -> None:
-    """``only_failed_files=None`` なら既定の ``all_files`` で実行される (フォールバック)。"""
+def test_execute_command_only_failed_targets_fallback_uses_all_files(mocker, tmp_path: pathlib.Path) -> None:
+    """``ToolTargets.fallback_default()`` なら既定の ``all_files`` で実行される。"""
     file_a = tmp_path / "a.py"
     file_a.write_text("x = 1\n")
 
@@ -1624,9 +1625,58 @@ def test_execute_command_only_failed_files_none_uses_default(mocker, tmp_path: p
         _make_args(),
         config,
         [file_a],
-        only_failed_files=None,
+        only_failed_targets=pyfltr.only_failed.ToolTargets.fallback_default(),
     )
 
     assert mock_run.call_count == 1
     cmdline = mock_run.call_args_list[0][0][0]
     assert str(file_a) in cmdline
+
+
+def test_execute_command_only_failed_targets_none_uses_default(mocker, tmp_path: pathlib.Path) -> None:
+    """``only_failed_targets=None`` なら既定の ``all_files`` で実行される（--only-failed 未指定）。"""
+    file_a = tmp_path / "a.py"
+    file_a.write_text("x = 1\n")
+
+    mock_run = mocker.patch(
+        "pyfltr.command._run_subprocess",
+        return_value=subprocess.CompletedProcess(["ruff"], returncode=0, stdout=""),
+    )
+
+    config = pyfltr.config.create_default_config()
+    config.values["ruff-check"] = True
+
+    pyfltr.command.execute_command(
+        "ruff-check",
+        _make_args(),
+        config,
+        [file_a],
+        only_failed_targets=None,
+    )
+
+    assert mock_run.call_count == 1
+    cmdline = mock_run.call_args_list[0][0][0]
+    assert str(file_a) in cmdline
+
+
+def test_pick_targets_none_when_targets_is_none() -> None:
+    """``only_failed_targets=None`` のとき、コマンドに関係なく None を返す。"""
+    result = pyfltr.command.pick_targets(None, "ruff-check")
+    assert result is None
+
+
+def test_pick_targets_returns_entry_for_matching_command(tmp_path: pathlib.Path) -> None:
+    """``only_failed_targets`` dict にコマンドが含まれるとき、対応する ToolTargets を返す。"""
+    file_a = tmp_path / "a.py"
+    targets = {"ruff-check": pyfltr.only_failed.ToolTargets.with_files([file_a])}
+    result = pyfltr.command.pick_targets(targets, "ruff-check")
+    assert result is not None
+    assert result.mode == "files"
+    assert result.files == (file_a,)
+
+
+def test_pick_targets_returns_none_for_missing_command() -> None:
+    """``only_failed_targets`` dict にコマンドが含まれないとき None を返す。"""
+    targets: dict[str, pyfltr.only_failed.ToolTargets] = {}
+    result = pyfltr.command.pick_targets(targets, "mypy")
+    assert result is None
