@@ -163,6 +163,12 @@ def _make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> 
         "直前 run が存在しない/失敗ツールが無い場合はメッセージを出して成功終了します。",
     )
     common.add_argument(
+        "--from-run",
+        default=None,
+        metavar="RUN_ID",
+        help="--only-failed の参照対象 run を明示指定します（前方一致 / latest 対応）。未指定時は直前 run を自動選択します。",
+    )
+    common.add_argument(
         "--work-dir",
         type=pathlib.Path,
         default=None,
@@ -433,6 +439,10 @@ def _run_impl(
         args.shuffle = False
         args.no_ui = True
 
+    # --from-run は --only-failed との併用が必須
+    if getattr(args, "from_run", None) is not None and not getattr(args, "only_failed", False):
+        parser.error("argument --from-run: requires --only-failed")
+
     # --ui と --no-ui の競合チェック
     if args.ui and args.no_ui:
         parser.error("--ui と --no-ui は同時に指定できません。")
@@ -556,7 +566,9 @@ def run_pipeline(
 
     # --only-failed 指定時は直前 run からツール別の失敗ファイル集合を構築する。
     # archive / cache 初期化より前に実行し、早期終了の場合はそれらの副作用を発生させない。
-    commands, only_failed_targets, only_failed_exit_early = pyfltr.only_failed.apply_filter(args, commands, all_files)
+    commands, only_failed_targets, only_failed_exit_early = pyfltr.only_failed.apply_filter(
+        args, commands, all_files, from_run=getattr(args, "from_run", None)
+    )
     if only_failed_exit_early:
         return 0, None
 

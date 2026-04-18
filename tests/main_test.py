@@ -273,3 +273,21 @@ def test_only_failed_returns_zero_when_no_failures(mocker, _only_failed_cache):
     mocker.patch("pyfltr.command._run_subprocess").side_effect = AssertionError("不要な起動")
     returncode = pyfltr.main.run(["run-for-agent", "--only-failed", str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 0
+
+
+# --- --from-run オプション ---
+
+
+def test_from_run_flag_accepted(_only_failed_cache):
+    """--from-run + --only-failed の併用が受理される（直前 run が無ければ rc=0 で終了）。"""
+    returncode = pyfltr.main.run(["ci", "--only-failed", "--from-run", "latest", str(pathlib.Path(__file__).parent.parent)])
+    # アーカイブが空なので「run が存在しない」として rc=0 で終了する
+    assert returncode == 0
+
+
+def test_from_run_without_only_failed_is_error(_only_failed_cache, capsys):
+    """--from-run 単独指定（--only-failed なし）は argparse エラー (SystemExit)。"""
+    with pytest.raises(SystemExit):
+        pyfltr.main.run(["ci", "--from-run", "latest", str(pathlib.Path(__file__).parent.parent)])
+    captured = capsys.readouterr()
+    assert "--from-run" in captured.err

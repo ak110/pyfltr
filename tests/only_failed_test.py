@@ -8,6 +8,7 @@ skip→commands絞り込みで除外）を検証する。
 # pylint: disable=missing-function-docstring
 
 import argparse
+import logging
 import pathlib
 
 import pytest
@@ -187,3 +188,89 @@ def test_apply_filter_intersects_with_targets(_only_failed_cache: pathlib.Path) 
     assert targets is not None
     assert targets["ruff-check"].mode == "files"
     assert targets["ruff-check"].files == (pathlib.Path("a.py"),)
+
+
+# ---------------------------------------------------------------------------
+# apply_filter: --from-run オプション
+# ---------------------------------------------------------------------------
+
+
+def test_apply_filter_from_run_full_id(_only_failed_cache: pathlib.Path) -> None:
+    """from_run に完全な run_id を渡すと正しく解決される。"""
+    run_id = _seed_run(
+        _only_failed_cache,
+        commands=["ruff-check"],
+        exit_code=1,
+        tool_results=[("ruff-check", 1, "", [_make_error("ruff-check", "a.py", 1, "e")])],
+    )
+    args = argparse.Namespace(only_failed=True)
+    _, targets, exit_early = pyfltr.only_failed.apply_filter(args, ["ruff-check"], [pathlib.Path("a.py")], from_run=run_id)
+    assert exit_early is False
+    assert targets is not None
+    assert "ruff-check" in targets
+
+
+def test_apply_filter_from_run_prefix(_only_failed_cache: pathlib.Path) -> None:
+    """from_run に前方一致プレフィックスを渡すと解決される。"""
+    run_id = _seed_run(
+        _only_failed_cache,
+        commands=["ruff-check"],
+        exit_code=1,
+        tool_results=[("ruff-check", 1, "", [_make_error("ruff-check", "a.py", 1, "e")])],
+    )
+    prefix = run_id[:8]
+    args = argparse.Namespace(only_failed=True)
+    _, targets, exit_early = pyfltr.only_failed.apply_filter(args, ["ruff-check"], [pathlib.Path("a.py")], from_run=prefix)
+    assert exit_early is False
+    assert targets is not None
+    assert "ruff-check" in targets
+
+
+def test_apply_filter_from_run_latest(_only_failed_cache: pathlib.Path) -> None:
+    """from_run="latest" エイリアスで最新 run を参照できる。"""
+    _seed_run(_only_failed_cache, commands=["ruff-check"], exit_code=0)
+    _seed_run(
+        _only_failed_cache,
+        commands=["ruff-check"],
+        exit_code=1,
+        tool_results=[("ruff-check", 1, "", [_make_error("ruff-check", "a.py", 1, "e")])],
+    )
+    args = argparse.Namespace(only_failed=True)
+    _, targets, exit_early = pyfltr.only_failed.apply_filter(args, ["ruff-check"], [pathlib.Path("a.py")], from_run="latest")
+    assert exit_early is False
+    assert targets is not None
+
+
+def test_apply_filter_from_run_not_found(_only_failed_cache: pathlib.Path, caplog: pytest.LogCaptureFixture) -> None:
+    """存在しない run_id を指定すると warning ログを出して早期終了する。"""
+    args = argparse.Namespace(only_failed=True)
+    with caplog.at_level(logging.WARNING, logger="pyfltr.only_failed"):
+        commands, targets, exit_early = pyfltr.only_failed.apply_filter(
+            args, ["ruff-check"], [pathlib.Path("a.py")], from_run="nonexistent-run-id"
+        )
+    assert exit_early is True
+    assert targets is None
+    assert commands == ["ruff-check"]
+    assert "--from-run" in caplog.text
+
+
+def test_apply_filter_from_run_ambiguous_prefix(_only_failed_cache: pathlib.Path, caplog: pytest.LogCaptureFixture) -> None:
+    """曖昧なプレフィックスを指定すると warning を出して早期終了する。"""
+    # 2件以上 run を生成して共通プレフィックスを特定する
+    run_ids = [_seed_run(_only_failed_cache) for _ in range(3)]
+    # 共通プレフィックスを算出する
+    shared = 0
+    for a, b in zip(run_ids[0], run_ids[1], strict=False):
+        if a != b:
+            break
+        shared += 1
+    if shared < 1:
+        pytest.skip("共通プレフィックスが無いケースは曖昧判定にならない")
+    prefix = run_ids[0][:shared]
+
+    args = argparse.Namespace(only_failed=True)
+    with caplog.at_level(logging.WARNING, logger="pyfltr.only_failed"):
+        _, targets, exit_early = pyfltr.only_failed.apply_filter(args, ["ruff-check"], [pathlib.Path("a.py")], from_run=prefix)
+    assert exit_early is True
+    assert targets is None
+    assert "--from-run" in caplog.text

@@ -13,6 +13,7 @@ import typing
 
 import pyfltr.archive
 import pyfltr.paths
+import pyfltr.runs
 import pyfltr.warnings_
 
 logger = logging.getLogger(__name__)
@@ -56,8 +57,17 @@ def apply_filter(
     args: argparse.Namespace,
     commands: list[str],
     all_files: list[pathlib.Path],
+    *,
+    from_run: str | None = None,
 ) -> tuple[list[str], dict[str, ToolTargets] | None, bool]:
     """``--only-failed`` 指定時、直前 run からツール別の失敗ファイル集合を構築する。
+
+    Args:
+        args: コマンドライン引数。``args.only_failed`` が真のとき適用する。
+        commands: 実行対象コマンド名のリスト。
+        all_files: ``expand_all_files`` の結果。``args.targets`` 指定があれば既に絞り込み済み。
+        from_run: 参照対象 run を明示指定する（前方一致 / ``latest`` 対応）。
+            ``None`` の場合は直前 run を自動選択する。
 
     Returns:
         ``(絞り込み後 commands, per_tool_targets, exit_early)``
@@ -83,7 +93,16 @@ def apply_filter(
         )
         return commands, None, True
 
-    last_run = _load_last_run(store)
+    # from_run 指定時に run_id が解決できない場合は warning を出して早期終了する。
+    # 解決できた場合は _load_last_run にサマリ取得を委ねる。
+    if from_run is not None:
+        try:
+            pyfltr.runs.resolve_run_id(store, from_run)
+        except pyfltr.runs.RunIdError as e:
+            logger.warning(f"--from-run {from_run!r}: {e}")
+            return commands, None, True
+
+    last_run = _load_last_run(store, from_run=from_run)
     if last_run is None:
         _log_skip_reason("参照可能な直前 run が見つかりません。対象なしでスキップします。")
         return commands, None, True
@@ -112,8 +131,31 @@ def apply_filter(
     return filtered_commands, targets, False
 
 
-def _load_last_run(store: pyfltr.archive.ArchiveStore) -> pyfltr.archive.RunSummary | None:
-    """直前 run のサマリを返す。取得失敗または存在しない場合は None。"""
+def _load_last_run(
+    store: pyfltr.archive.ArchiveStore,
+    *,
+    from_run: str | None = None,
+) -> pyfltr.archive.RunSummary | None:
+    """直前 run のサマリを返す。取得失敗または存在しない場合は None。
+
+    ``from_run`` が指定された場合は ``resolve_run_id`` で解決した run_id を用いる。
+    呼び出し元 (``apply_filter``) で ``RunIdError`` が発生しないことを確認済みの前提で
+    呼ばれるため、ここでは ``OSError`` のみを捕捉する。
+    未指定の場合は ``list_runs(limit=1)`` で最新 run を取得する。
+    """
+    if from_run is not None:
+        try:
+            run_id = pyfltr.runs.resolve_run_id(store, from_run)
+            # ArchiveStore には run_id 直接引き当て API が無いため list_runs() から探す。
+            all_runs = store.list_runs()
+        except OSError as e:
+            pyfltr.warnings_.emit_warning(
+                source="only-failed",
+                message=f"実行アーカイブを読み取れません: {e}",
+            )
+            return None
+        return next((r for r in all_runs if r.run_id == run_id), None)
+
     try:
         runs = store.list_runs(limit=1)
     except OSError as e:
