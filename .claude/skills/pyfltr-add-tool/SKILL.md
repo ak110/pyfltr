@@ -1,6 +1,6 @@
 ---
 name: pyfltr-add-tool
-description: pyfltr に新しい formatter / linter / tester を追加する際の定型手順チェックリスト。config.py / command.py / error_parser.py / docs/index.md / tests を一貫して更新する。
+description: pyfltr に新しい formatter / linter / tester を追加する際の定型手順チェックリスト。config.py / command.py / error_parser.py / docs/guide/index.md / tests を一貫して更新する。
 ---
 
 # pyfltr 新ツール追加チェックリスト
@@ -44,7 +44,22 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
 "<new-tool>-fast": True,             # fast 実行対象か
 ```
 
-### 1-3. プリセット（`load_config` 内）
+### 1-3. 言語カテゴリ定数（`config.py` 上部）
+
+新ツールが特定言語専用の場合、対応する定数タプルに追加する。
+
+```python
+PYTHON_COMMANDS: tuple[str, ...] = (
+    ...
+    "<new-tool>",
+)
+```
+
+カテゴリ: `PYTHON_COMMANDS`・`JAVASCRIPT_COMMANDS`・`RUST_COMMANDS`・`DOTNET_COMMANDS`。
+カテゴリに属するツールは `python`/`javascript`/`rust`/`dotnet` キーが `False` のときゲートで無効化される。
+全言語共通のツール（`typos`・`ec`・`actionlint` 等）はいずれのカテゴリにも属さない。
+
+### 1-4. プリセット（`load_config` 内）
 
 `preset = "latest"` 等で既定挙動を変えたい場合、`config.values["<new-tool>"]` を明示的にon/offする。
 
@@ -86,9 +101,9 @@ uv add --optional <extra> <new-tool-package>
 
 ## 6. ドキュメント
 
-- `docs/index.md` の「対応ツール」一覧に追記する
+- `docs/guide/index.md` の「対応ツール」一覧に追記する
 
-対応ツール一覧は`docs/index.md`に一元化されている。`README.md`には書かない。
+対応ツール一覧は`docs/guide/index.md`に一元化されている。`README.md`には書かない。
 
 ## 7. 検証
 
