@@ -74,6 +74,8 @@ def test_build_sarif_no_errors() -> None:
     assert run["results"] == []
     assert run["tool"]["driver"]["rules"] == []
     assert run["invocations"][0]["executionSuccessful"] is True
+    # retry_command は失敗時のみ populate されるため、成功時は commandLine が省略される
+    assert "commandLine" not in run["invocations"][0]
 
 
 def test_build_sarif_without_rule_url() -> None:

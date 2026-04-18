@@ -196,7 +196,7 @@ _SCHEMA_HINTS: dict[str, str] = {
     ),
     "diagnostic.severity": "error/warning/info normalised across tools; omitted when not reported",
     "diagnostic.rule_url": "documentation URL for the rule; only populated for supported tools",
-    "tool.retry_command": ("shell command to re-run only this tool on failing files; much faster than a full rerun"),
+    "tool.retry_command": ("shell command to re-run only this tool on failing files; populated only when the tool failed"),
     "tool.cached": "true = result restored from file-hash cache; rerun with --no-cache to force",
     "tool.truncated": ("diagnostics or message were trimmed; full content is in the archive directory (see header.run_id)"),
     "header.run_id": "ULID identifying this run; use 'pyfltr show-run <run_id>' to fetch full output",

@@ -195,13 +195,19 @@ def populate_retry_command(
 ) -> None:
     """CommandResult に retry_command を埋める (パートG A案の絞り込みを適用)。
 
-    キャッシュ復元結果 (``result.cached == True``) では retry_command を埋めない
-    (再実行不要のため)。それ以外では ``filter_failed_files`` で失敗ファイルのみに
-    絞り込んだターゲットを ``build_retry_command`` へ渡す。絞り込み結果が空の場合
-    (診断ファイルなし・全体失敗のみのケース) は retry_command のターゲット位置
-    引数が空になる (当該ツールの単体再実行文字列として機能する)。
+    retry_command は「当該ツールを失敗ファイルのみに絞って再実行する文字列」である。
+    成功時 (``has_error == False``) や formatter による修正適用のみ (returncode != 0
+    でも has_error False) のケースでは再実行動機が無いため埋めない。
+    キャッシュ復元結果 (``result.cached == True``) も対象外 (再実行不要のため)。
+
+    失敗時は ``filter_failed_files`` で失敗ファイルのみに絞り込んだターゲットを
+    ``build_retry_command`` へ渡す。絞り込み結果が空の場合 (診断ファイルなし・
+    全体失敗のみのケース) は retry_command のターゲット位置引数が空になる
+    (当該ツールの単体再実行文字列として機能する)。
     """
     if result.cached:
+        return
+    if not result.has_error:
         return
     filtered_targets = filter_failed_files(result)
     result.retry_command = build_retry_command(

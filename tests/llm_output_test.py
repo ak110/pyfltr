@@ -123,13 +123,13 @@ def test_build_diagnostic_record_rule_url_omitted_when_none() -> None:
 
 
 def test_build_tool_record_retry_command_included() -> None:
-    """retry_command が設定されていれば tool レコードに含まれる。"""
+    """retry_command が設定されていれば tool レコードに含まれる (失敗時のみ populate される前提)。"""
     result = pyfltr.command.CommandResult(
         command="ruff-check",
         command_type="linter",
         commandline=["ruff", "check"],
-        returncode=0,
-        has_error=False,
+        returncode=1,
+        has_error=True,
         files=3,
         output="",
         elapsed=0.5,

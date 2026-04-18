@@ -16,7 +16,7 @@
   - `diagnostic`の任意フィールド: `rule`・`rule_url`（対応ツールのみ）・`severity`（3値に正規化）・`fix`（値域の詳細は後述）
   - `fix`は`"safe"` / `"unsafe"` / `"suggested"` / `"none"`の4値。ツールが自動修正情報を返さない場合はフィールドごと省略
   - `tool`の任意フィールド: `retry_command`（当該ツールで失敗したファイルのみに絞った再実行コマンド）・`truncated`（smart truncation発生時。`archive`パスで全文参照）
-  - `retry_command`の追加仕様: 失敗ファイルを特定できない場合はターゲット位置引数が空。`cached=true`時は出力されない
+  - `retry_command`の追加仕様: 失敗時（`has_error=true`）のみ出力。成功時・`cached=true`時は出力されない。失敗ファイルを特定できない場合はターゲット位置引数が空
   - `tool`のキャッシュ関連フィールド: `cached`（ファイルhashキャッシュから復元されたとき `true`）・`cached_from`（`cached=true` 時のソース `run_id`）
   - 詳細仕様は`docs/guide/usage.md`の「jsonlスキーマ」節および`llms.txt`を参照。`--output-format=sarif` / `github-annotations` でCI向け形式にも切り替え可能
   - `--fail-fast`: 1ツールでもエラーが出た時点で残りを打ち切る（起動済みはterminate、未開始はskipped扱い）

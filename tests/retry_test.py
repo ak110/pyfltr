@@ -205,6 +205,33 @@ def test_populate_retry_command_skips_for_cached(tmp_path):
     assert result.retry_command is None
 
 
+def test_populate_retry_command_skips_for_success(tmp_path):
+    """成功 (has_error=False) の CommandResult では retry_command を埋めない。"""
+    result = _make_result("mypy", returncode=0)
+    template = pyfltr.retry.build_retry_args_template(["run", "--commands", "mypy"])
+    pyfltr.retry.populate_retry_command(
+        result,
+        retry_args_template=template,
+        launcher_prefix=["pyfltr"],
+        original_cwd=str(tmp_path),
+    )
+    assert result.retry_command is None
+
+
+def test_populate_retry_command_skips_for_formatted(tmp_path):
+    """formatter によるファイル修正のみ (returncode!=0 だが has_error=False) では埋めない。"""
+    # 例: ruff-format が差分を検出し returncode=1 を返すが、書き込み済みのため has_error=False
+    result = _make_result("ruff-format", returncode=1, has_error=False, command_type="formatter")
+    template = pyfltr.retry.build_retry_args_template(["run", "--commands", "ruff-format"])
+    pyfltr.retry.populate_retry_command(
+        result,
+        retry_args_template=template,
+        launcher_prefix=["pyfltr"],
+        original_cwd=str(tmp_path),
+    )
+    assert result.retry_command is None
+
+
 # --- detect_launcher_prefix ---
 
 
