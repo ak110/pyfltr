@@ -148,6 +148,26 @@ def test_render_results_skips_warnings_section_when_empty(caplog):
     assert "[config]" not in caplog.text
 
 
+def test_write_summary_shows_run_id_guidance_when_present(capsys):
+    """`run_id` が存在するとき run_id と誘導文言を stdout に出力すること。"""
+    results = [_make_result("mypy", returncode=0)]
+    pyfltr.cli._write_summary(results, run_id="01JABCDEFGH")
+
+    captured = capsys.readouterr()
+    assert "run_id: 01JABCDEFGH" in captured.out
+    assert "pyfltr show-run latest" in captured.out
+
+
+def test_write_summary_omits_run_id_guidance_when_none(capsys):
+    """`run_id` が None のとき run_id 関連行を出力しないこと。"""
+    results = [_make_result("mypy", returncode=0)]
+    pyfltr.cli._write_summary(results, run_id=None)
+
+    captured = capsys.readouterr()
+    assert "run_id" not in captured.out
+    assert "show-run" not in captured.out
+
+
 def test_run_commands_with_cli_fail_fast_aborts_remaining_fixers(mocker):
     """--fail-fast 発動時、fix ステージのエラーで後続の formatter/linter を skipped 化する。"""
     config = pyfltr.config.create_default_config()

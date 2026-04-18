@@ -321,7 +321,7 @@ def render_results(
     _write_warnings_section(warnings)
 
     # 4. summary (末尾に出力することで tail -N で必ず見えるようにする)
-    _write_summary(ordered)
+    _write_summary(ordered, run_id=run_id)
 
 
 def _write_warnings_section(warnings: list[dict[str, typing.Any]]) -> None:
@@ -334,10 +334,17 @@ def _write_warnings_section(warnings: list[dict[str, typing.Any]]) -> None:
             logger.info(f"    [{entry['source']}] {entry['message']}")
 
 
-def _write_summary(ordered_results: list[pyfltr.command.CommandResult]) -> None:
+def _write_summary(
+    ordered_results: list[pyfltr.command.CommandResult],
+    *,
+    run_id: str | None = None,
+) -> None:
     """Summary セクションを出力する。"""
     with lock:
         logger.info(f"{'-' * 10} summary {'-' * (72 - 10 - 9)}")
         for result in ordered_results:
             logger.info(f"    {result.command:<16s} {result.get_status_text()}")
         logger.info("-" * 72)
+        if run_id is not None:
+            print(f"run_id: {run_id}")
+            print("`pyfltr show-run latest`で詳細を参照")

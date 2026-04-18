@@ -596,6 +596,9 @@ def run_pipeline(
             archive_store = None
             run_id = None
 
+    if run_id is not None:
+        logger.info("run_id: %s", run_id)
+
     # ファイル hash キャッシュの初期化 (既定で有効)。
     # ``--no-cache`` または ``cache = false`` で無効化できる。期間超過エントリの削除失敗や
     # 書き込み失敗はパイプライン本体を止めないため warnings に流す。

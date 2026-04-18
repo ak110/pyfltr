@@ -2,6 +2,7 @@
 # pylint: disable=missing-function-docstring
 # pylint: disable=protected-access
 
+import logging
 import pathlib
 import subprocess
 
@@ -291,3 +292,35 @@ def test_from_run_without_only_failed_is_error(_only_failed_cache, capsys):
         pyfltr.main.run(["ci", "--from-run", "latest", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr()
     assert "--from-run" in captured.err
+
+
+# --- run_id 可視化 ---
+
+
+@pytest.fixture
+def _archive_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
+    """archive テスト用に PYFLTR_CACHE_DIR を tmp_path に固定する。"""
+    monkeypatch.setenv("PYFLTR_CACHE_DIR", str(tmp_path))
+    return tmp_path
+
+
+def test_run_pipeline_logs_run_id_when_archive_enabled(mocker, caplog, _archive_cache):
+    """archive 有効時、run_pipeline の実行ログに run_id が含まれること。"""
+    proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+
+    with caplog.at_level(logging.INFO, logger="pyfltr.main"):
+        pyfltr.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+
+    assert any("run_id:" in record.message for record in caplog.records)
+
+
+def test_run_pipeline_does_not_log_run_id_when_archive_disabled(mocker, caplog, _archive_cache):
+    """--no-archive 指定時は run_id ログを出力しないこと。"""
+    proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+
+    with caplog.at_level(logging.INFO, logger="pyfltr.main"):
+        pyfltr.main.run(["ci", "--no-archive", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+
+    assert not any("run_id:" in record.message for record in caplog.records)
