@@ -10,6 +10,7 @@ import importlib.metadata
 import logging
 import os
 import pathlib
+import shlex
 import subprocess
 import sys
 import typing
@@ -553,14 +554,6 @@ def run_pipeline(
         clear_cmd = ["cmd", "/c", "cls"] if os.name == "nt" else ["clear"]
         subprocess.run(clear_cmd, check=False)
 
-    # 実行環境の情報を出力
-    logger.info(f"{'-' * 10} pyfltr {'-' * (72 - 10 - 8)}")
-    logger.info(f"version:        {importlib.metadata.version('pyfltr')}")
-    logger.info(f"sys.executable: {sys.executable}")
-    logger.info(f"sys.version:    {sys.version}")
-    logger.info(f"cwd:            {os.getcwd()}")
-    logger.info("-" * 72)
-
     # 対象ファイルを一括展開（ディレクトリ走査・exclude・gitignoreフィルタリングを1回だけ実行）
     # TUI起動前に実行することで、除外警告がログに表示される
     all_files = pyfltr.command.expand_all_files(args.targets, config)
@@ -598,8 +591,16 @@ def run_pipeline(
             archive_store = None
             run_id = None
 
+    # 実行環境の情報を出力（run_id 採番後にまとめて出すことで区切り線内に含める）。
+    logger.info(f"{'-' * 10} pyfltr {'-' * (72 - 10 - 8)}")
+    logger.info(f"version:        {importlib.metadata.version('pyfltr')}")
+    logger.info(f"sys.executable: {sys.executable}")
+    logger.info(f"sys.version:    {sys.version}")
+    logger.info(f"cwd:            {os.getcwd()}")
     if run_id is not None:
-        logger.info("run_id: %s", run_id)
+        launcher_cmd = shlex.join(launcher_prefix)
+        logger.info("run_id:         %s（`%s show-run %s` で詳細を確認可能）", run_id, launcher_cmd, run_id)
+    logger.info("-" * 72)
 
     # ファイル hash キャッシュの初期化 (既定で有効)。
     # ``--no-cache`` または ``cache = false`` で無効化できる。期間超過エントリの削除失敗や
@@ -717,6 +718,8 @@ def run_pipeline(
             results,
             exit_code=returncode,
             warnings=pyfltr.warnings_.collected_warnings(),
+            run_id=run_id,
+            launcher_prefix=launcher_prefix,
         )
     elif structured_stdout and args.output_format == "sarif":
         _write_sarif_stdout(
@@ -741,6 +744,7 @@ def run_pipeline(
             files=len(all_files),
             warnings=pyfltr.warnings_.collected_warnings(),
             run_id=run_id,
+            launcher_prefix=launcher_prefix,
         )
 
     # アーカイブ終端: meta.json に exit_code / finished_at を書き込む。

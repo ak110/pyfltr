@@ -9,6 +9,7 @@ import importlib.metadata
 import json
 import os
 import pathlib
+import shlex
 import sys
 import threading
 import typing
@@ -69,6 +70,7 @@ def build_lines(
     files: int | None = None,
     warnings: list[dict[str, typing.Any]] | None = None,
     run_id: str | None = None,
+    launcher_prefix: list[str] | None = None,
 ) -> list[str]:
     """CommandResult群からJSONL各行を生成する。
 
@@ -81,6 +83,7 @@ def build_lines(
     resultsは順序を問わない。内部で``config.command_names``順にソートする。
     ``warnings``は``pyfltr.warnings_.collected_warnings()``の返り値を想定する。
     ``run_id``が指定されていればheaderレコードに埋め込む。
+    ``launcher_prefix``が指定されていれば``summary.guidance``内の起動コマンド表記に反映する。
     """
     ordered = sorted(results, key=lambda r: _command_index(config, r.command))
 
@@ -95,7 +98,7 @@ def build_lines(
     for result in ordered:
         lines.extend(build_tool_lines(result, config))
 
-    lines.append(_dump(_build_summary_record(ordered, exit_code=exit_code)))
+    lines.append(_dump(_build_summary_record(ordered, exit_code=exit_code, run_id=run_id, launcher_prefix=launcher_prefix)))
     return lines
 
 
@@ -116,6 +119,7 @@ def write_jsonl(
     files: int | None = None,
     warnings: list[dict[str, typing.Any]] | None = None,
     run_id: str | None = None,
+    launcher_prefix: list[str] | None = None,
 ) -> None:
     """JSONL を stdout もしくは指定ファイルに書き出す。
 
@@ -123,7 +127,20 @@ def write_jsonl(
     親ディレクトリを自動作成し、atomic write せず単純に上書きする
     (LLM 用途の使い捨てのため)。
     """
-    lines = build_lines(results, config, exit_code=exit_code, commands=commands, files=files, warnings=warnings, run_id=run_id)
+    # pyfltr.main._write_sarif_stdout() 内の build_sarif 呼び出しと
+    # 先頭 5 引数が偶然一致するため duplicate-code を誤検知される。
+    # 呼び出し先は別関数なので意味的な重複ではない。
+    # pylint: disable=duplicate-code
+    lines = build_lines(
+        results,
+        config,
+        exit_code=exit_code,
+        commands=commands,
+        files=files,
+        warnings=warnings,
+        run_id=run_id,
+        launcher_prefix=launcher_prefix,
+    )
     if destination is None:
         for line in lines:
             sys.stdout.write(line)
@@ -171,16 +188,21 @@ def write_jsonl_footer(
     *,
     exit_code: int,
     warnings: list[dict[str, typing.Any]] | None = None,
+    run_id: str | None = None,
+    launcher_prefix: list[str] | None = None,
 ) -> None:
     """warning行+summary行をstdoutに書き出す。
 
     ``results``は``_build_summary_record()``の集計に使用する。
+    ``run_id``と``launcher_prefix``は``summary.guidance``の起動コマンド整形に使う。
     """
     with _write_lock:
         for warning in warnings or []:
             sys.stdout.write(_dump(_build_warning_record(warning)))
             sys.stdout.write("\n")
-        sys.stdout.write(_dump(_build_summary_record(results, exit_code=exit_code)))
+        sys.stdout.write(
+            _dump(_build_summary_record(results, exit_code=exit_code, run_id=run_id, launcher_prefix=launcher_prefix))
+        )
         sys.stdout.write("\n")
         sys.stdout.flush()
 
@@ -343,22 +365,29 @@ def _resolve_message_limits(config: pyfltr.config.Config | None) -> tuple[int, i
     return max_lines, max_chars
 
 
-_SUMMARY_FAILURE_GUIDANCE: list[str] = [
-    "Inspect tool.retry_command in failed tool records to re-run only failing files.",
-    "Use 'pyfltr run-for-agent --only-failed' to retry the failure set in one step.",
-    ("diagnostic.fix == 'safe'/'unsafe'/'suggested' means the tool can auto-fix; 'none' or omitted means manual fix needed."),
-    "Use 'pyfltr show-run <run_id>' for full per-tool output stored in the run archive.",
-]
-"""失敗時に LLM エージェントへ次の一手を示す英語ガイド。
+def _build_failure_guidance(run_id: str | None, launcher_prefix: list[str] | None) -> list[str]:
+    """失敗時に LLM エージェントへ次の一手を示す英語ガイドを生成する。
 
-``summary.guidance`` として ``failed > 0`` の場合にのみ同梱する (成功時は不要)。
-"""
+    ``summary.guidance`` として ``failed > 0`` の場合にのみ同梱する (成功時は不要)。
+    ``run_id``と``launcher_prefix``が指定されていれば、起動コマンド表記と実run_idを埋め込む。
+    未指定時はプレースホルダ (``<run_id>``)・既定値 (``pyfltr``) にフォールバックする。
+    """
+    launcher = shlex.join(launcher_prefix) if launcher_prefix else "pyfltr"
+    run_id_token = run_id if run_id is not None else "<run_id>"
+    return [
+        "Inspect tool.retry_command in failed tool records to re-run only failing files.",
+        f"Use '{launcher} run-for-agent --only-failed' to retry the failure set in one step.",
+        "diagnostic.fix == 'safe'/'unsafe'/'suggested' means the tool can auto-fix; 'none' or omitted means manual fix needed.",
+        f"Use '{launcher} show-run {run_id_token}' for full per-tool output stored in the run archive.",
+    ]
 
 
 def _build_summary_record(
     ordered_results: list[pyfltr.command.CommandResult],
     *,
     exit_code: int,
+    run_id: str | None = None,
+    launcher_prefix: list[str] | None = None,
 ) -> dict[str, typing.Any]:
     """ordered_results から集計して summary レコード dict を作る。"""
     counts = {"succeeded": 0, "formatted": 0, "failed": 0, "skipped": 0}
@@ -377,7 +406,7 @@ def _build_summary_record(
         "exit": exit_code,
     }
     if counts["failed"] > 0:
-        record["guidance"] = list(_SUMMARY_FAILURE_GUIDANCE)
+        record["guidance"] = _build_failure_guidance(run_id, launcher_prefix)
     return record
 
 

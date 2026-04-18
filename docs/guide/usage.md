@@ -363,7 +363,7 @@ smart truncationは次の設定キーで制御する（`pyproject.toml`）。
 `header.schema_hints`と`summary.guidance`はLLMエージェントへのメタ情報を提供する（どちらも英語）。
 
 - `header.schema_hints`: JSONLの各フィールドの意味を短い英文で補足する辞書。毎runに同梱されるため、LLM側で事前知識がなくてもJSONLを解釈できる
-- `summary.guidance`: `failed > 0`のときだけ付与される英語の配列。`tool.retry_command`の参照、`pyfltr run-for-agent --only-failed`の活用、`diagnostic.fix`値の解釈、`pyfltr show-run <run_id>`の案内を並べる
+- `summary.guidance`: `failed > 0`のときだけ付与される英語の配列。`tool.retry_command`の参照、`pyfltr run-for-agent --only-failed`の活用、`diagnostic.fix`値の解釈、`pyfltr show-run <run_id>`の案内を並べる。各コマンド表記には起動時のlauncher（`pyfltr`／`uv run pyfltr`／`uvx pyfltr`）と実run_idが埋め込まれる
 
 ### LLM連携の例
 

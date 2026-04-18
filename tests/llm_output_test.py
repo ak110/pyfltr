@@ -297,7 +297,36 @@ def test_build_header_record_contains_schema_hints() -> None:
 
 
 def test_build_summary_record_emits_guidance_on_failure() -> None:
-    """failed > 0 のとき summary.guidance が英語で付与される。"""
+    """failed > 0 のとき summary.guidance が英語で付与され、launcher_prefix と run_id が埋め込まれる。"""
+    result = pyfltr.command.CommandResult(
+        command="mypy",
+        command_type="linter",
+        commandline=["mypy"],
+        returncode=1,
+        has_error=True,
+        files=1,
+        output="",
+        elapsed=0.1,
+    )
+    record = pyfltr.llm_output._build_summary_record(
+        [result],
+        exit_code=1,
+        run_id="01JABCDEFGH",
+        launcher_prefix=["uvx", "pyfltr"],
+    )
+    guidance = record.get("guidance")
+    assert isinstance(guidance, list)
+    assert guidance
+    joined = " ".join(guidance)
+    assert "retry_command" in joined
+    assert "uvx pyfltr run-for-agent --only-failed" in joined
+    assert "uvx pyfltr show-run 01JABCDEFGH" in joined
+    # プレースホルダが残っていないこと
+    assert "<run_id>" not in joined
+
+
+def test_build_summary_record_guidance_falls_back_when_unspecified() -> None:
+    """run_id / launcher_prefix 未指定時はプレースホルダ・既定値にフォールバックする。"""
     result = pyfltr.command.CommandResult(
         command="mypy",
         command_type="linter",
@@ -311,11 +340,9 @@ def test_build_summary_record_emits_guidance_on_failure() -> None:
     record = pyfltr.llm_output._build_summary_record([result], exit_code=1)
     guidance = record.get("guidance")
     assert isinstance(guidance, list)
-    assert guidance
     joined = " ".join(guidance)
-    assert "retry_command" in joined
-    assert "--only-failed" in joined
-    assert "show-run" in joined
+    assert "pyfltr show-run <run_id>" in joined
+    assert "pyfltr run-for-agent --only-failed" in joined
 
 
 def test_build_summary_record_no_guidance_on_success() -> None:

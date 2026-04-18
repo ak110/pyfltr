@@ -23,7 +23,7 @@ JSONLはLLMエージェントが入力として読むケースが多いため、
 英語にするのはトークン効率（日本語より短くなりやすい）と汎用性（LLMの入力として標準的）のため。
 
 - `header.schema_hints`: 毎runに付与する英語の辞書。`diagnostic.fix` / `diagnostic.severity` / `tool.retry_command` / `tool.cached` / `tool.truncated` / `header.run_id` の意味を短い英文で説明する。実装は`pyfltr/llm_output.py`の`_SCHEMA_HINTS`
-- `summary.guidance`: `failed > 0`のときのみ付与する英語の配列。`tool.retry_command`の参照、`pyfltr run-for-agent --only-failed`、`diagnostic.fix`の解釈、`pyfltr show-run <run_id>`の案内を並べる。成功時（`failed == 0`）は省略する。実装は`pyfltr/llm_output.py`の`_SUMMARY_FAILURE_GUIDANCE`
+- `summary.guidance`: `failed > 0`のときのみ付与する英語の配列。`tool.retry_command`の参照、`pyfltr run-for-agent --only-failed`、`diagnostic.fix`の解釈、`pyfltr show-run <run_id>`の案内を並べる。成功時（`failed == 0`）は省略する。各コマンド表記には起動時のlauncher（`pyfltr`／`uv run pyfltr`／`uvx pyfltr`）と実run_idが埋め込まれる。実装は`pyfltr/llm_output.py`の`_build_failure_guidance`
 
 ## diagnostic.fix の値域
 

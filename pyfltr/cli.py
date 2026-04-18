@@ -274,6 +274,7 @@ def render_results(
     files: int | None = None,
     warnings: list[dict[str, typing.Any]] | None = None,
     run_id: str | None = None,
+    launcher_prefix: list[str] | None = None,
 ) -> None:
     """実行結果を `成功コマンド → 失敗コマンド → summary` の順でまとめて出力する。
 
@@ -302,6 +303,7 @@ def render_results(
             files=files,
             warnings=warnings,
             run_id=run_id,
+            launcher_prefix=launcher_prefix,
         )
         if output_file is None:
             return
@@ -321,7 +323,7 @@ def render_results(
     _write_warnings_section(warnings)
 
     # 4. summary (末尾に出力することで tail -N で必ず見えるようにする)
-    _write_summary(ordered, run_id=run_id)
+    _write_summary(ordered)
 
 
 def _write_warnings_section(warnings: list[dict[str, typing.Any]]) -> None:
@@ -334,17 +336,10 @@ def _write_warnings_section(warnings: list[dict[str, typing.Any]]) -> None:
             logger.info(f"    [{entry['source']}] {entry['message']}")
 
 
-def _write_summary(
-    ordered_results: list[pyfltr.command.CommandResult],
-    *,
-    run_id: str | None = None,
-) -> None:
+def _write_summary(ordered_results: list[pyfltr.command.CommandResult]) -> None:
     """Summary セクションを出力する。"""
     with lock:
         logger.info(f"{'-' * 10} summary {'-' * (72 - 10 - 9)}")
         for result in ordered_results:
             logger.info(f"    {result.command:<16s} {result.get_status_text()}")
         logger.info("-" * 72)
-        if run_id is not None:
-            logger.info(f"run_id: {run_id}")
-            logger.info("`pyfltr show-run latest`で詳細を参照")

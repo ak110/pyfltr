@@ -307,14 +307,23 @@ def _archive_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> p
 
 
 def test_run_pipeline_logs_run_id_when_archive_enabled(mocker, caplog, _archive_cache):
-    """archive 有効時、run_pipeline の実行ログに run_id が含まれること。"""
+    """archive 有効時、run_pipeline の開始時ログに run_id と launcher_prefix 整形済み show-run 案内が含まれること。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+    # launcher_prefix が環境依存（親プロセス由来）になるため、テスト中は固定値にする。
+    mocker.patch("pyfltr.retry.detect_launcher_prefix", return_value=["uvx", "pyfltr"])
 
     with caplog.at_level(logging.INFO, logger="pyfltr.main"):
         pyfltr.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
 
-    assert any("run_id:" in record.message for record in caplog.records)
+    run_id_records = [record for record in caplog.records if "run_id:" in record.message]
+    assert run_id_records, "run_id の開始時ログが出ていない"
+    message = run_id_records[0].message
+    # `run_id: <ULID>（`uvx pyfltr show-run <ULID>` で詳細を確認可能）` の1行形式
+    assert "uvx pyfltr show-run" in message
+    assert "で詳細を確認可能" in message
+    # 旧形式（2行分割・latestエイリアス）は出ないこと
+    assert not any("show-run latest" in record.message for record in caplog.records)
 
 
 def test_run_pipeline_does_not_log_run_id_when_archive_disabled(mocker, caplog, _archive_cache):
