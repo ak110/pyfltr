@@ -11,6 +11,7 @@ import pathlib
 import re
 import typing
 
+import pyfltr.paths
 import pyfltr.rule_urls
 
 
@@ -666,8 +667,8 @@ def _normalize_path(file_path: str) -> str:
         except ValueError:
             # cwdの配下でない場合はそのまま返す
             return file_path
-        return result.replace("\\", "/")
-    return file_path.replace("\\", "/")
+        return pyfltr.paths.normalize_separators(result)
+    return pyfltr.paths.normalize_separators(file_path)
 
 
 def _is_project_path(normalized_path: str) -> bool:
