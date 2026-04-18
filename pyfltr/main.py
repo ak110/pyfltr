@@ -3,7 +3,6 @@
 
 # v3.0.0 でサブコマンド・実行アーカイブ・キャッシュ・retry_command 絞り込みなどを
 # 段階的に集約した。retry_command 生成は pyfltr.retry モジュールが担う。
-# pylint: disable=too-many-lines
 
 import argparse
 import collections.abc

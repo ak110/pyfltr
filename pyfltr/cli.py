@@ -1,6 +1,5 @@
 """コマンドライン処理。"""
-# cli.py と ui.py は並列実行・fail-fast・skipped 生成の責務が対称的に重複するが、
-# パート D のスコープではそのまま残す方針 (統合は別パートで扱う)。
+# ui.py との残余重複（aborted_commands 後処理）は call_from_thread 差異のため共通化不可
 # pylint: disable=duplicate-code
 
 import argparse
@@ -18,6 +17,7 @@ import pyfltr.error_parser
 import pyfltr.executor
 import pyfltr.llm_output
 import pyfltr.only_failed
+import pyfltr.stage_runner
 
 NCOLS = 128
 
@@ -163,15 +163,11 @@ def run_commands_with_cli(
                 if fail_fast and not aborted and result.has_error:
                     aborted = True
                     # 未開始ジョブをまとめてキャンセルし、起動済みサブプロセスを中断する。
-                    for pending_future, pending_command in future_to_command.items():
-                        if pending_future.done():
-                            continue
-                        if pending_future.cancel():
-                            aborted_commands.add(pending_command)
+                    pyfltr.stage_runner.cancel_pending_futures(future_to_command, aborted_commands)
                     pyfltr.command.terminate_active_processes()
             if aborted_commands:
                 for pending_command in aborted_commands:
-                    skipped = _make_skipped_result(pending_command, config)
+                    skipped = pyfltr.stage_runner.make_skipped_result(pending_command, config)
                     results.append(skipped)
                     if archive_hook is not None:
                         archive_hook(skipped)
@@ -192,28 +188,13 @@ def _emit_skipped_results(
     """--fail-fast 中断時、未実行ツールを skipped 扱いで追加する (fix/formatter 段から)。"""
     pyfltr.command.terminate_active_processes()
     for command in remaining:
-        skipped = _make_skipped_result(command, config)
+        skipped = pyfltr.stage_runner.make_skipped_result(command, config)
         results.append(skipped)
         if archive_hook is not None:
             archive_hook(skipped)
         if on_result is not None:
             on_result(skipped)
     return results
-
-
-def _make_skipped_result(command: str, config: pyfltr.config.Config) -> pyfltr.command.CommandResult:
-    """--fail-fast 中断対象の skipped CommandResult を作る。"""
-    command_info = config.commands[command]
-    return pyfltr.command.CommandResult(
-        command=command,
-        command_type=command_info.type,
-        commandline=[],
-        returncode=None,
-        has_error=False,
-        files=0,
-        output="--fail-fast により実行をスキップしました。",
-        elapsed=0.0,
-    )
 
 
 def _run_one_command(
