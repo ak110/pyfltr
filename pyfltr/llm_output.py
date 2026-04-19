@@ -12,12 +12,12 @@ import importlib.metadata
 import json
 import logging
 import os
-import pathlib
 import shlex
 import sys
 import threading
 import typing
 
+import pyfltr.cli  # pylint: disable=cyclic-import
 import pyfltr.command
 import pyfltr.config
 import pyfltr.error_parser
@@ -26,6 +26,8 @@ logger = logging.getLogger(__name__)
 
 # ストリーミング書き出し時に複数行（diagnostic行+tool行）をアトミックに出力するためのロック。
 # 並列実行される linters/testers から同時にコールバックが呼ばれる可能性がある。
+# 出力先は `pyfltr.cli.structured_logger` の handler に委ねるが、ログ 1 件 = 1 行の
+# 粒度では複数行のグルーピングを保証できないためモジュール側でロックする。
 _write_lock = threading.Lock()
 
 _TRUNCATED_PREFIX = "... (truncated)\n"
@@ -174,78 +176,31 @@ def _command_index(config: pyfltr.config.Config, command: str) -> int:
     return len(config.command_names)
 
 
-def write_jsonl(
-    results: list[pyfltr.command.CommandResult],
-    config: pyfltr.config.Config,
-    *,
-    exit_code: int,
-    destination: pathlib.Path | None,
-    commands: list[str] | None = None,
-    files: int | None = None,
-    warnings: list[dict[str, typing.Any]] | None = None,
-    run_id: str | None = None,
-    launcher_prefix: list[str] | None = None,
-) -> None:
-    """JSONL を stdout もしくは指定ファイルに書き出す。
-
-    destination が None のときは `sys.stdout` に書く。ファイル指定時は
-    親ディレクトリを自動作成し、atomic write せず単純に上書きする
-    (LLM 用途の使い捨てのため)。
-    """
-    # pyfltr.main._write_sarif_stdout() 内の build_sarif 呼び出しと
-    # 先頭 5 引数が偶然一致するため duplicate-code を誤検知される。
-    # 呼び出し先は別関数なので意味的な重複ではない。
-    # pylint: disable=duplicate-code
-    lines = build_lines(
-        results,
-        config,
-        exit_code=exit_code,
-        commands=commands,
-        files=files,
-        warnings=warnings,
-        run_id=run_id,
-        launcher_prefix=launcher_prefix,
-    )
-    if destination is None:
-        for line in lines:
-            sys.stdout.write(line)
-            sys.stdout.write("\n")
-        sys.stdout.flush()
-        return
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    with destination.open("w", encoding="utf-8") as f:
-        for line in lines:
-            f.write(line)
-            f.write("\n")
-
-
 def write_jsonl_header(commands: list[str], files: int, *, run_id: str | None = None) -> None:
-    """header行をstdoutに書き出す（ストリーミングモード用）。
+    """header行を構造化出力loggerに書き出す（ストリーミングモード用）。
 
     パイプライン開始直後、diagnostic行より前に1回だけ呼ぶ。``run_id``が指定されていれば
     headerレコードに含める (アーカイブ参照時の識別キー)。
+    出力先は ``pyfltr.cli.configure_structured_output()`` が設定した handler に従う
+    （stdout もしくは `--output-file` の FileHandler）。
     """
     with _write_lock:
-        sys.stdout.write(_dump(_build_header_record(commands, files, run_id=run_id)))
-        sys.stdout.write("\n")
-        sys.stdout.flush()
+        pyfltr.cli.structured_logger.info(_dump(_build_header_record(commands, files, run_id=run_id)))
 
 
 def write_jsonl_streaming(
     result: pyfltr.command.CommandResult,
     config: pyfltr.config.Config,
 ) -> None:
-    """1コマンド分のdiagnostic行+tool行をstdoutに即時書き出す。
+    """1コマンド分のdiagnostic行+tool行を構造化出力loggerに即時書き出す。
 
-    ``_write_lock``取得下で書き出し+flushするため、並列実行されるlinters/testers
+    ``_write_lock``取得下で複数行を連続書き出しすることで、並列実行されるlinters/testers
     から呼ばれてもツール単位のグルーピングが崩れない。
     """
     lines = build_tool_lines(result, config)
     with _write_lock:
         for line in lines:
-            sys.stdout.write(line)
-            sys.stdout.write("\n")
-        sys.stdout.flush()
+            pyfltr.cli.structured_logger.info(line)
 
 
 def write_jsonl_footer(
@@ -256,20 +211,17 @@ def write_jsonl_footer(
     run_id: str | None = None,
     launcher_prefix: list[str] | None = None,
 ) -> None:
-    """warning行+summary行をstdoutに書き出す。
+    """warning行+summary行を構造化出力loggerに書き出す。
 
     ``results``は``_build_summary_record()``の集計に使用する。
     ``run_id``と``launcher_prefix``は``summary.guidance``の起動コマンド整形に使う。
     """
     with _write_lock:
         for warning in warnings or []:
-            sys.stdout.write(_dump(_build_warning_record(warning)))
-            sys.stdout.write("\n")
-        sys.stdout.write(
+            pyfltr.cli.structured_logger.info(_dump(_build_warning_record(warning)))
+        pyfltr.cli.structured_logger.info(
             _dump(_build_summary_record(results, exit_code=exit_code, run_id=run_id, launcher_prefix=launcher_prefix))
         )
-        sys.stdout.write("\n")
-        sys.stdout.flush()
 
 
 def _dump(record: dict[str, typing.Any]) -> str:

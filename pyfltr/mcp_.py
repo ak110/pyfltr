@@ -293,15 +293,11 @@ async def _tool_run_for_agent(
     with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False) as tmp:
         tmp_path = pathlib.Path(tmp.name)
 
-    # stdout 汚染を防ぐための抑止処理を適用する。
-    # _force_structured_stdout_mode は no_ui=True / no_clear=True / stream=False を強制する。
-    # _suppress_logging は root logger を完全抑止し、復元は try/finally で保証する。
+    # MCP の stdout は JSON-RPC フレームが占有するため、text_logger は run_pipeline 側で
+    # stderr に強制する（force_text_on_stderr=True）。
+    # 構造化出力は一時ファイル経由（FileHandler）となり stdout を汚染しない。
     args.output_file = tmp_path
-    suppression: tuple[list[logging.Handler], int] | None = None
     try:
-        _main._force_structured_stdout_mode(args)  # noqa: SLF001  # pylint: disable=protected-access
-        suppression = _main._suppress_logging()  # noqa: SLF001  # pylint: disable=protected-access
-
         config = pyfltr.config.load_config()
         # アーカイブを強制有効化する。MCPツールは run_id を返す契約を保証する。
         config.values["archive"] = True
@@ -311,10 +307,8 @@ async def _tool_run_for_agent(
             config,
         )
 
-        exit_code, run_id = _main.run_pipeline(args, commands_list, config)  # type: ignore[misc]
+        exit_code, run_id = _main.run_pipeline(args, commands_list, config, force_text_on_stderr=True)
     finally:
-        if suppression is not None:
-            _main._restore_logging(suppression)  # noqa: SLF001  # pylint: disable=protected-access
         # 一時ファイルを削除する（存在しない場合はそのまま無視する）
         with contextlib.suppress(OSError):
             tmp_path.unlink(missing_ok=True)

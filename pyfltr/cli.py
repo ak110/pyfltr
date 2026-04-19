@@ -2,6 +2,8 @@
 # ui.py との残余重複（aborted_commands 後処理）は call_from_thread 差異のため共通化不可
 # pylint: disable=duplicate-code
 
+from __future__ import annotations
+
 import argparse
 import concurrent.futures
 import logging
@@ -15,15 +17,75 @@ import pyfltr.command
 import pyfltr.config
 import pyfltr.error_parser
 import pyfltr.executor
-import pyfltr.llm_output
-import pyfltr.only_failed
 import pyfltr.stage_runner
+
+if typing.TYPE_CHECKING:
+    # only_failed は ``pyfltr.cli.text_logger`` を遅延参照で呼ぶため、モジュール間の
+    # 循環 import を避けるために型チェック時のみ import する。
+    import pyfltr.only_failed
 
 NCOLS = 128
 
 logger = logging.getLogger(__name__)
 
+# 人間向けテキスト出力用の専用 logger（進捗・詳細ログ・summary・warnings・`--only-failed` 案内）。
+# system logger（root）と分離することで、format別に出力先（stdout / stderr）と
+# ログレベルを独立に切り替えられる。propagate=False で root への伝搬を止め、
+# root の stderr handler と重複発火しないようにする。
+text_logger = logging.getLogger("pyfltr.textout")
+text_logger.propagate = False
+
+# 構造化出力（JSONL / SARIF）用の専用 logger。出力先は `configure_structured_output` で
+# StreamHandler（stdout）または FileHandler（`--output-file`）に切り替える。
+# propagate=False で root 経由の二重出力と level 継承の副作用を防ぐ。
+structured_logger = logging.getLogger("pyfltr.structured")
+structured_logger.propagate = False
+
 lock = threading.Lock()
+
+
+def configure_text_output(stream: typing.TextIO, *, level: int = logging.INFO) -> None:
+    """text_logger の出力先とログレベルを差し替える。
+
+    既存 handler を全て外してから ``StreamHandler(stream)`` を新規追加する。
+    同一プロセス内で ``run()`` が複数回呼ばれるケースに備えて、呼び出し毎に完全に
+    再構築する（古い handler が残って二重出力・古い stream 参照が残るのを避ける）。
+    """
+    for existing in list(text_logger.handlers):
+        text_logger.removeHandler(existing)
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    text_logger.addHandler(handler)
+    text_logger.setLevel(level)
+
+
+def configure_structured_output(destination: typing.TextIO | pathlib.Path | None) -> None:
+    """structured_logger の出力先を切り替える。
+
+    - ``None``: handler を全て外す（jsonl/sarif を出さない format 向け）
+    - ``TextIO``: ``StreamHandler(destination)`` を設定する
+    - ``pathlib.Path``: ``FileHandler(destination, mode="w", encoding="utf-8")`` を設定する。
+      親ディレクトリは自動作成する
+
+    level は常に ``logging.INFO`` で固定する。root logger が WARNING 初期化でも
+    structured_logger 側は INFO 記録を破棄しないようにするため。
+    """
+    for existing in list(structured_logger.handlers):
+        structured_logger.removeHandler(existing)
+        if isinstance(existing, logging.FileHandler):
+            existing.close()
+    if destination is None:
+        structured_logger.setLevel(logging.INFO)
+        return
+    handler: logging.Handler
+    if isinstance(destination, pathlib.Path):
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        handler = logging.FileHandler(destination, mode="w", encoding="utf-8")
+    else:
+        handler = logging.StreamHandler(destination)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    structured_logger.addHandler(handler)
+    structured_logger.setLevel(logging.INFO)
 
 
 def run_commands_with_cli(
@@ -218,7 +280,7 @@ def _run_one_command(
     with pyfltr.executor.serial_group_lock(config.commands[command].serial_group):
         with lock:
             suffix = " (fix)" if fix_stage else ""
-            logger.info(f"{command}{suffix} 実行中です...")
+            text_logger.info(f"{command}{suffix} 実行中です...")
         result = pyfltr.command.execute_command(
             command,
             args,
@@ -230,36 +292,42 @@ def _run_one_command(
             only_failed_targets=only_failed_targets,
         )
         if per_command_log:
-            write_log(result)
+            write_log(result, output_format=getattr(args, "output_format", "text") or "text")
         else:
             with lock:
-                logger.info(f"{command}{suffix} 完了 ({result.get_status_text()})")
+                text_logger.info(f"{command}{suffix} 完了 ({result.get_status_text()})")
         return result
 
 
-def write_log(result: pyfltr.command.CommandResult) -> None:
+def write_log(result: pyfltr.command.CommandResult, *, output_format: str = "text") -> None:
     """コマンド実行結果の詳細ログ出力。
 
     パース済みエラーがある場合は format_error() で整形した一覧を表示する。
     エラーがなく失敗した場合は生出力をフォールバック表示する。
+
+    ``output_format`` は個別の ErrorLocation 行の整形方式の切替に使う。
+    ``"github-annotations"`` のときは GA ワークフローコマンド記法で出し、
+    それ以外は従来のテキスト形式（``file:line:col: [tool:rule] msg``）で出す。
+    枠線・区切り線・進捗ラベルは常に text 記法を維持する
+    （GA はエラー箇所の解釈だけを切り替え、レイアウトは text と同じにする設計）。
     """
     mark = "@" if result.alerted else "*"
     with lock:
-        logger.info(f"{mark * 32} {result.command} {mark * (NCOLS - 34 - len(result.command))}")
+        text_logger.info(f"{mark * 32} {result.command} {mark * (NCOLS - 34 - len(result.command))}")
         logger.debug(f"{mark} commandline: {shlex.join(result.commandline)}")
-        logger.info(mark)
+        text_logger.info(mark)
         if result.errors:
             for error in result.errors:
-                logger.info(pyfltr.error_parser.format_error(error))
+                text_logger.info(pyfltr.error_parser.format_error(error, output_format=output_format))
         elif result.alerted:
-            logger.info(result.output)
+            text_logger.info(result.output)
         else:
             summary = pyfltr.error_parser.parse_summary(result.command, result.output)
             if summary:
-                logger.info(f"{mark} {summary}")
-        logger.info(mark)
-        logger.info(f"{mark} returncode: {result.returncode}")
-        logger.info(mark * NCOLS)
+                text_logger.info(f"{mark} {summary}")
+        text_logger.info(mark)
+        text_logger.info(f"{mark} returncode: {result.returncode}")
+        text_logger.info(mark * NCOLS)
 
 
 def render_results(
@@ -268,7 +336,6 @@ def render_results(
     *,
     include_details: bool,
     output_format: str = "text",
-    output_file: pathlib.Path | None = None,
     exit_code: int = 0,
     commands: list[str] | None = None,
     files: int | None = None,
@@ -285,39 +352,25 @@ def render_results(
     `include_details=False` のときは、詳細ログは既に出力済みとみなし summary のみ表示する
     (`--stream` モード向け)。
 
-    `output_format="jsonl"` のときは `pyfltr.llm_output.write_jsonl()` に委譲する。
-    `output_file` が None なら stdout に書き、text 経路は通らない
-    (呼び出し元で logging が抑止されている前提)。`output_file` が指定されている場合は
-    そのファイルに JSONL を書いたうえで、stdout には従来の text 出力も継続する。
+    構造化出力（JSONL / SARIF）はここでは扱わず、呼び出し元（`pyfltr.main`）が
+    ``structured_logger`` 経由で書き出す。本関数は常に text 整形ログを
+    ``text_logger`` に流す。``output_format`` は ErrorLocation 行の整形方式の
+    切替（``github-annotations`` 時のみ GA 記法）に使う。
     """
+    del exit_code, commands, files, run_id, launcher_prefix  # 構造化出力への委譲が無くなり未使用
     ordered = sorted(results, key=lambda r: config.command_names.index(r.command))
     warnings = warnings or []
-
-    if output_format == "jsonl":
-        pyfltr.llm_output.write_jsonl(
-            ordered,
-            config,
-            exit_code=exit_code,
-            destination=output_file,
-            commands=commands,
-            files=files,
-            warnings=warnings,
-            run_id=run_id,
-            launcher_prefix=launcher_prefix,
-        )
-        if output_file is None:
-            return
 
     if include_details:
         # 1. 成功コマンドの詳細ログ
         for result in ordered:
             if not result.alerted:
-                write_log(result)
+                write_log(result, output_format=output_format)
 
         # 2. 失敗コマンドの詳細ログ (summary の直前に配置し tail -N でも拾えるようにする)
         for result in ordered:
             if result.alerted:
-                write_log(result)
+                write_log(result, output_format=output_format)
 
     # 3. warnings (summary の直前。先頭だと見落とされやすいため)
     _write_warnings_section(warnings)
@@ -331,15 +384,15 @@ def _write_warnings_section(warnings: list[dict[str, typing.Any]]) -> None:
     if not warnings:
         return
     with lock:
-        logger.info(f"{'-' * 10} warnings {'-' * (72 - 10 - 10)}")
+        text_logger.info(f"{'-' * 10} warnings {'-' * (72 - 10 - 10)}")
         for entry in warnings:
-            logger.info(f"    [{entry['source']}] {entry['message']}")
+            text_logger.info(f"    [{entry['source']}] {entry['message']}")
 
 
 def _write_summary(ordered_results: list[pyfltr.command.CommandResult]) -> None:
     """Summary セクションを出力する。"""
     with lock:
-        logger.info(f"{'-' * 10} summary {'-' * (72 - 10 - 9)}")
+        text_logger.info(f"{'-' * 10} summary {'-' * (72 - 10 - 9)}")
         for result in ordered_results:
-            logger.info(f"    {result.command:<16s} {result.get_status_text()}")
-        logger.info("-" * 72)
+            text_logger.info(f"    {result.command:<16s} {result.get_status_text()}")
+        text_logger.info("-" * 72)

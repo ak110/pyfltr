@@ -290,13 +290,18 @@ TUI実行中にCtrl+Cを1秒以内に2回続けて押すと協調中断モード
 
 | 値 | 用途 | 動作 |
 | --- | --- | --- |
-| `text` | 既定。人間向け・従来互換 | logging経由で進捗・詳細・summaryをまとめて表示 |
-| `jsonl` | LLMエージェント向け | JSON Lines形式で診断・ツール結果・全体集計を出力 |
-| `sarif` | CIツール連携向け | SARIF 2.1.0形式のJSONを1件出力 |
-| `github-annotations` | GitHub Actions向け | `::error file=...`形式の注釈行を出力 |
+| `text` | 既定。人間向け・従来互換 | stdoutに進捗・詳細・summaryをまとめて表示 |
+| `jsonl` | LLMエージェント向け | stdoutにJSON Lines形式で診断・ツール結果・全体集計を出力。text整形はstderrのWARN以上に抑止 |
+| `sarif` | CIツール連携向け | stdoutにSARIF 2.1.0形式のJSONを1件出力。text整形はstderrのINFO |
+| `github-annotations` | GitHub Actions向け | `text`と同じレイアウトをstdoutに出し、エラー箇所のみGAワークフローコマンド記法で補強 |
 
-`sarif` / `github-annotations` は全結果集約後に1回だけ書き出すため、ストリーミング出力は無い。
-`jsonl` と同様、stdout指定時（`--output-file`未指定）は`text`ログが完全に抑止される。
+`jsonl`はツール完了順にストリーミング出力し、最後にwarning/summary行を追加する。
+`sarif`は全結果集約後に1回だけ書き出す。いずれも`--output-file`未指定時はstdoutを占有し、
+text整形出力はstderrへ振り分けられる（`jsonl`のみWARN以上に抑止）。
+`github-annotations`はstdoutをtext整形が占有するため、stdout占有は起きない。
+
+`--output-file`を指定した場合は、構造化データはファイルへ、stdoutには常に`text`整形出力が並行して出る。
+`jsonl`はファイル出力時もストリーミング（ツール完了順）で書き出す。
 
 ### jsonl形式の使い方 {#jsonl}
 
@@ -307,7 +312,8 @@ pyfltr run-for-agent
 ```
 
 `--output-format=jsonl`かつ`--output-file`未指定時、stdoutにはJSONLのみを書き、
-既存の`text`ログ（進捗・詳細・summary）は完全に抑止される。TUIや`--stream`、`--ui`も暗黙に無効化される。
+text整形出力（進捗・詳細・summary）はstderrのWARN以上に抑止される。
+TUIや`--stream`、`--ui`も暗黙に無効化される。
 
 `--output-file=path`を指定するとJSONLはファイルへ書き出され、stdoutには従来どおりの`text`出力が並行して出る
 （ローカル実行時も開発者が進捗を追える）。
@@ -340,10 +346,9 @@ CLIオプション`--output-format`が指定されている場合は環境変数
 {"kind":"summary","total":2,"succeeded":0,"formatted":1,"failed":1,"skipped":0,"diagnostics":1,"exit":1}
 ```
 
-stdoutモード（`--output-file`未指定）では、先頭にheader行を出力し、各ツールの完了時にdiagnostic行+tool行を随時書き出す。
-ツール間の出力順は完了順となり、最後にwarning行+summary行が続く。
-ファイル出力時（`--output-file`指定）では、先頭にheader行、続いて`pyproject.toml`の定義順にツール単位でグルーピングし、
-先頭にwarning行、末尾にsummary行を配置する。
+stdout / `--output-file`のどちらでも出力順は共通で、先頭にheader行、各ツールの完了順にdiagnostic行+tool行、
+末尾にwarning行+summary行を書き出すストリーミング形式に統一されている。
+consumer側は特定のツール順を仮定せず、`kind`フィールドで種別判定することで両モードを同じコードで扱える。
 
 `warning`レコードの`source`は次のいずれか。
 

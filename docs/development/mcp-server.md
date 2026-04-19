@@ -59,15 +59,18 @@ Pydantic BaseModel派生の6クラスを`mcp_.py`内で定義する。
 
 stdioトランスポートはstdin/stdoutをJSON-RPCフレームに専有するため、
 どの経路であれstdoutへの書き込みはプロトコル破壊を引き起こす。
-3層で抑止を実施する。
+3層で隔離を実施する。
 
 1. `pyfltr mcp`起動直後に`logging.basicConfig(stream=sys.stderr, ...)`を強制し、root loggerの出力先をstderrへ向ける
-2. `run_for_agent`ツール内で`run_pipeline()`を呼ぶ前に`_force_structured_stdout_mode`/`_suppress_logging`相当を適用し、
-   構造化出力をファイルへ誘導する
-3. `subprocess.run("clear")`を抑止するため`args.no_clear = True`を強制する
+2. `run_for_agent`ツール内で`run_pipeline(..., force_text_on_stderr=True)`を呼び、
+   人間向けtext整形loggerを強制的にstderrへ向ける。
+   構造化出力は一時ファイルを`--output-file`として渡すため`FileHandler`経由でファイルに流れる
+3. `args.no_ui = True` / `args.no_clear = True` / `args.stream = False`を`args`構築時に設定し、
+   `subprocess.run("clear")`やTUIの起動経路を遮断する
 
-TUI経路は`can_use_ui()`が`sys.stdout.isatty()`を判定するためMCPサーバー内では自動抑止されるが、
-`args.no_ui = True`明示でさらに確実にする。
+`run_pipeline`内の`_configure_loggers_for_format`が全format共通の初期化経路で、
+`force_text_on_stderr=True`を渡せばtext_loggerは常にstderrに向かう。
+MCP経路が増えてもこの1点だけで`stdin/stdout`専有を守れる。
 
 ## `run_for_agent`の実装経路
 
@@ -77,6 +80,7 @@ TUI経路は`can_use_ui()`が`sys.stdout.isatty()`を判定するためMCPサー
 - 他のフラグ（`no-archive`/`no-cache`/`config`/`output-format`）は固定とする。
   archive・cacheは有効、設定はCWDの`pyproject.toml`を使用、`output-format=jsonl`の出力先は一時ファイルとする
 - `commands`は既存`--commands`と同じセマンティクス（カンマ区切り文字列ではなくツール名リスト）で受け取る
+- `run_pipeline`は`force_text_on_stderr=True`付きで呼び、text整形loggerをstderrに強制する
 
 `run(sys_args=[...])`経由でargparseに渡すとエラーメッセージがstderrへ書かれる制御が困難で、
 MCPツール側でのエラー整形ができない。

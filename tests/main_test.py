@@ -89,7 +89,7 @@ def test_ci_does_not_run_fix_stage(mocker):
     assert not fix_calls, "ci サブコマンドで fix ステージが走っている"
 
 
-def test_stream_mode_writes_detail_log_during_run(mocker, caplog):
+def test_stream_mode_writes_detail_log_during_run(mocker, capsys):
     """--stream 指定時はコマンド完了時に詳細ログが出力される。"""
     # pyfltr ルートの pyproject.toml には python=true が設定されているため mypy は有効
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy-detail")
@@ -97,13 +97,14 @@ def test_stream_mode_writes_detail_log_during_run(mocker, caplog):
 
     returncode = pyfltr.main.run(["ci", "--no-ui", "--stream", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 0
+    captured = capsys.readouterr()
     # 詳細ログに含まれる returncode 行が出力される
-    assert "returncode: 0" in caplog.text
+    assert "returncode: 0" in captured.out
     # summary セクションも引き続き出力される
-    assert "summary" in caplog.text
+    assert "summary" in captured.out
 
 
-def test_buffered_mode_is_default(mocker, caplog):
+def test_buffered_mode_is_default(mocker, capsys):
     """既定では 成功コマンド詳細 → summary の順でまとめて出力される。"""
     # pyfltr ルートの pyproject.toml には python=true が設定されているため mypy は有効
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy-detail")
@@ -111,7 +112,7 @@ def test_buffered_mode_is_default(mocker, caplog):
 
     returncode = pyfltr.main.run(["ci", "--no-ui", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 0
-    text = caplog.text
+    text = capsys.readouterr().out
     # 詳細ログが summary より先に来る (summary は末尾)
     assert "summary" in text
     assert "returncode: 0" in text
@@ -223,16 +224,95 @@ def test_output_format_invalid_choice_rejected():
         pyfltr.main.run(["ci", "--output-format", "bogus", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
 
 
-@pytest.mark.parametrize("fmt", ["sarif", "github-annotations"])
-def test_structured_stdout_suppresses_logging(mocker, capsys, fmt):
-    """SARIF / GitHub Annotation 出力時も stdout が構造化出力に専有される。"""
+def test_text_output_on_stdout_for_text(mocker, capsys):
+    """text format では stdout に text 整形出力、stderr には pyfltr の INFO ログは出ない。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
-    pyfltr.main.run(["ci", "--output-format", fmt, "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    pyfltr.main.run(["ci", "--output-format=text", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr()
-    # stderr には pyfltr のログが漏れない
-    assert "pyfltr" not in captured.err
+    assert "summary" in captured.out
+    assert "----- pyfltr" in captured.out
+    # stderr は system logger 専用で text 整形は流さない
+    assert "----- summary" not in captured.err
+
+
+def test_text_output_on_stdout_for_github_annotations(mocker, capsys):
+    """github-annotations は text と同じレイアウトを stdout に出力する。"""
+    proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+
+    pyfltr.main.run(["ci", "--output-format=github-annotations", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    captured = capsys.readouterr()
+    assert "summary" in captured.out
+    assert "----- pyfltr" in captured.out
+    assert "----- summary" not in captured.err
+
+
+def test_jsonl_stdout_keeps_text_on_stderr_with_warn_level(mocker, capsys):
+    """jsonl + stdout モードでは text_logger が stderr の WARN 以上。
+
+    INFO レベルの進捗・summary は stderr に出ず、stdout は JSONL 専有となる。
+    """
+    proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+
+    pyfltr.main.run(["ci", "--output-format=jsonl", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    captured = capsys.readouterr()
+    # stdout は JSONL のみ（text の区切り線は出ない）
+    assert "----- pyfltr" not in captured.out
+    # INFO 進捗・summary は WARN レベルで抑止されるため stderr にも出ない
+    assert "----- summary" not in captured.err
+    assert "----- pyfltr" not in captured.err
+
+
+def test_sarif_stdout_keeps_text_on_stderr_with_info_level(mocker, capsys):
+    """sarif + stdout モードでは text_logger が stderr の INFO で流れる。"""
+    proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+
+    pyfltr.main.run(["ci", "--output-format=sarif", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    captured = capsys.readouterr()
+    # stdout は SARIF JSON（`"version": "2.1.0"` を含む）で text 整形は混入しない
+    assert "----- pyfltr" not in captured.out
+    assert '"version": "2.1.0"' in captured.out
+    # stderr に INFO レベルの text 整形が流れる
+    assert "----- pyfltr" in captured.err
+    assert "----- summary" in captured.err
+
+
+def test_system_logger_always_on_stderr_and_not_suppressed(mocker, capsys):
+    """どの format でも root logger は抑止されず、handlers が空にならない。"""
+    proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+
+    for fmt in ("text", "jsonl", "sarif", "github-annotations"):
+        pyfltr.main.run(["ci", "--output-format", fmt, "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+        assert logging.getLogger().handlers, f"root logger の handler が空になっている: fmt={fmt}"
+        capsys.readouterr()  # 各回のstdout/stderrを読み捨て
+
+
+@pytest.mark.parametrize("fmt", ["jsonl", "sarif", "github-annotations"])
+def test_output_file_keeps_text_on_stdout_for_all_formats(mocker, capsys, tmp_path, fmt):
+    """--output-file 指定時は stdout に text 整形出力が出る（どの format でも）。"""
+    proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+
+    # github-annotations は --output-file を解釈しないため text モードと同等の挙動となる。
+    destination = tmp_path / "out.dat"
+    pyfltr.main.run(
+        [
+            "ci",
+            "--output-format",
+            fmt,
+            f"--output-file={destination}",
+            "--commands=mypy",
+            str(pathlib.Path(__file__).parent.parent),
+        ]
+    )
+    captured = capsys.readouterr()
+    assert "summary" in captured.out
+    assert "----- pyfltr" in captured.out
 
 
 def test_fail_fast_flag_accepted(mocker):
@@ -306,35 +386,30 @@ def _archive_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> p
     return tmp_path
 
 
-def test_run_pipeline_logs_run_id_when_archive_enabled(mocker, caplog, _archive_cache):
+def test_run_pipeline_logs_run_id_when_archive_enabled(mocker, capsys, _archive_cache):
     """archive 有効時、run_pipeline の開始時ログに run_id と launcher_prefix 整形済み show-run 案内が含まれること。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
     # launcher_prefix が環境依存（親プロセス由来）になるため、テスト中は固定値にする。
     mocker.patch("pyfltr.retry.detect_launcher_prefix", return_value=["uvx", "pyfltr"])
 
-    with caplog.at_level(logging.INFO, logger="pyfltr.main"):
-        pyfltr.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
-
-    run_id_records = [record for record in caplog.records if "run_id:" in record.message]
-    assert run_id_records, "run_id の開始時ログが出ていない"
-    message = run_id_records[0].message
-    # `run_id: <ULID>（`uvx pyfltr show-run <ULID>` で詳細を確認可能）` の1行形式
-    assert "uvx pyfltr show-run" in message
-    assert "で詳細を確認可能" in message
+    pyfltr.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    captured = capsys.readouterr().out
+    assert "run_id:" in captured
+    assert "uvx pyfltr show-run" in captured
+    assert "で詳細を確認可能" in captured
     # 旧形式（2行分割・latestエイリアス）は出ないこと
-    assert not any("show-run latest" in record.message for record in caplog.records)
+    assert "show-run latest" not in captured
 
 
-def test_run_pipeline_does_not_log_run_id_when_archive_disabled(mocker, caplog, _archive_cache):
+def test_run_pipeline_does_not_log_run_id_when_archive_disabled(mocker, capsys, _archive_cache):
     """--no-archive 指定時は run_id ログを出力しないこと。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
-    with caplog.at_level(logging.INFO, logger="pyfltr.main"):
-        pyfltr.main.run(["ci", "--no-archive", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
-
-    assert not any("run_id:" in record.message for record in caplog.records)
+    pyfltr.main.run(["ci", "--no-archive", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    captured = capsys.readouterr().out
+    assert "run_id:" not in captured
 
 
 # --- precommit MM 状態ガイダンス ---
@@ -390,8 +465,11 @@ def test_precommit_guidance_skipped_when_no_formatted(monkeypatch, capsys):
     assert captured.err == ""
 
 
-def test_precommit_guidance_skipped_under_structured_stdout(monkeypatch, capsys):
-    """構造化 stdout モードでは stderr へ漏らさない (``captured.err == ""`` 契約保持)。"""
+def test_precommit_guidance_skipped_for_jsonl_and_sarif_stdout_only(monkeypatch, capsys):
+    """構造化 stdout モード (jsonl/sarif) では stderr へ漏らさない。
+
+    github-annotations は text と同じレイアウトのため ``structured_stdout=False`` で扱われる。
+    """
     monkeypatch.setattr(pyfltr.main.pyfltr.precommit, "is_invoked_from_git_commit", lambda: True)
     pyfltr.main._maybe_emit_precommit_guidance(
         [_make_formatted_result()],

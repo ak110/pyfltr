@@ -3,12 +3,12 @@
 # pylint: disable=protected-access
 
 import json
-import logging
 import pathlib
 import subprocess
 
 import pytest
 
+import pyfltr.cli
 import pyfltr.config
 import pyfltr.llm_output
 import pyfltr.main
@@ -226,30 +226,8 @@ def test_tool_record_no_message_when_output_empty(default_config):
 
 
 # ---------------------------------------------------------------------------
-# write_jsonl の出力先
+# structured_logger 経由の書き出し
 # ---------------------------------------------------------------------------
-
-
-def test_write_jsonl_stdout(default_config, capsys):
-    """destination=None のとき sys.stdout に書き出す。"""
-    result = _make_result("mypy", returncode=0)
-    pyfltr.llm_output.write_jsonl([result], default_config, exit_code=0, destination=None)
-    captured = capsys.readouterr()
-    assert captured.err == ""
-    parsed = [json.loads(line) for line in captured.out.splitlines()]
-    assert parsed[-1]["kind"] == "summary"
-    assert parsed[-1]["succeeded"] == 1
-
-
-def test_write_jsonl_file_creates_parent(default_config, tmp_path):
-    """destination 指定時、親ディレクトリが自動作成される。"""
-    destination = tmp_path / "sub" / "dir" / "out.jsonl"
-    result = _make_result("mypy", returncode=0)
-    pyfltr.llm_output.write_jsonl([result], default_config, exit_code=0, destination=destination)
-    assert destination.exists()
-    content = destination.read_text(encoding="utf-8")
-    parsed = [json.loads(line) for line in content.splitlines()]
-    assert parsed[-1]["kind"] == "summary"
 
 
 def test_calculate_returncode_matches_summary_exit(default_config):
@@ -272,15 +250,15 @@ def test_calculate_returncode_matches_summary_exit(default_config):
 
 
 def test_run_cli_jsonl_stdout_suppresses_text(mocker, capsys):
-    """jsonl + stdout モードでは stdout は JSONL のみで text ログは出ない。"""
+    """jsonl + stdout モードでは stdout は JSONL のみで text は stderr (WARN+) 扱いになる。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
     returncode = pyfltr.main.run(["ci", "--output-format=jsonl", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 0
     captured = capsys.readouterr()
+    # stdout は JSONL のみ。text 整形の区切り線が混入しないこと。
     assert "----- pyfltr" not in captured.out
-    assert "summary" not in captured.out or '"kind":"summary"' in captured.out
     lines = [line for line in captured.out.splitlines() if line.strip()]
     assert lines, "JSONL が 1 行も出ていない"
     first = json.loads(lines[0])
@@ -289,34 +267,37 @@ def test_run_cli_jsonl_stdout_suppresses_text(mocker, capsys):
     last = json.loads(lines[-1])
     assert last["kind"] == "summary"
     assert last["exit"] == 0
+    # stderr には INFO 進捗・summary が出ない（jsonl stdout は WARN 以上）
+    assert "----- pyfltr" not in captured.err
+    assert "----- summary" not in captured.err
 
 
-def test_run_cli_output_file_keeps_text_stdout(mocker, caplog, tmp_path):
+def test_run_cli_output_file_keeps_text_stdout(mocker, capsys, tmp_path):
     """--output-file 指定時は stdout には従来 text、ファイルには JSONL。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
     destination = tmp_path / "out.jsonl"
-    with caplog.at_level(logging.INFO):
-        returncode = pyfltr.main.run(
-            [
-                "ci",
-                "--output-format=jsonl",
-                f"--output-file={destination}",
-                "--commands=mypy",
-                str(pathlib.Path(__file__).parent.parent),
-            ]
-        )
+    returncode = pyfltr.main.run(
+        [
+            "ci",
+            "--output-format=jsonl",
+            f"--output-file={destination}",
+            "--commands=mypy",
+            str(pathlib.Path(__file__).parent.parent),
+        ]
+    )
     assert returncode == 0
-    # 従来の text ログが logging 経由で出ている
-    assert "summary" in caplog.text
+    captured = capsys.readouterr()
+    # 従来の text 出力が stdout に出る
+    assert "summary" in captured.out
     # ファイルには JSONL
     lines = destination.read_text(encoding="utf-8").splitlines()
     assert json.loads(lines[-1])["kind"] == "summary"
 
 
 def test_run_cli_jsonl_ignores_ui(mocker, capsys):
-    """jsonl + stdout モードでは --ui が silently 無効化される (stderr に漏れない)。"""
+    """jsonl + stdout モードでは --ui が silently 無効化される。stdout は JSONL のみ。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
@@ -325,7 +306,6 @@ def test_run_cli_jsonl_ignores_ui(mocker, capsys):
     )
     assert returncode == 0
     captured = capsys.readouterr()
-    assert captured.err == ""
     lines = [line for line in captured.out.splitlines() if line.strip()]
     assert lines, "JSONL が 1 行も出ていない"
     last = json.loads(lines[-1])
@@ -348,16 +328,16 @@ def test_run_cli_env_var_jsonl(mocker, capsys, monkeypatch):
     assert last["kind"] == "summary"
 
 
-def test_run_cli_env_var_overridden_by_cli(mocker, caplog, monkeypatch):
+def test_run_cli_env_var_overridden_by_cli(mocker, capsys, monkeypatch):
     """PYFLTR_OUTPUT_FORMAT より CLI --output-format=text が優先される。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
     monkeypatch.setenv("PYFLTR_OUTPUT_FORMAT", "jsonl")
 
-    with caplog.at_level(logging.INFO):
-        pyfltr.main.run(["ci", "--output-format=text", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
-    # CLI で text を明示しているので従来 text ログが出るべき
-    assert "summary" in caplog.text
+    pyfltr.main.run(["ci", "--output-format=text", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    captured = capsys.readouterr()
+    # CLI で text を明示しているので text 整形出力が stdout に出るべき
+    assert "summary" in captured.out
 
 
 def test_run_cli_env_var_invalid(monkeypatch):
@@ -370,22 +350,20 @@ def test_run_cli_env_var_invalid(monkeypatch):
         pyfltr.main._resolve_output_format(parser, None)
 
 
-def test_run_cli_jsonl_restores_logger_state(mocker, caplog, capsys):
-    """jsonl モード実行後、text モードの logger が復元されること。"""
+def test_run_cli_jsonl_restores_logger_state(mocker, capsys):
+    """jsonl モード実行後に text モードを再実行すると、text 出力が stdout に戻ること。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
-    # 1 回目: jsonl モード (logger 抑止)
+    # 1 回目: jsonl モード（stdout に JSONL、text は stderr の WARN+）
     pyfltr.main.run(["ci", "--output-format=jsonl", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     # 1 回目の stdout は読み捨てる (capsys をリセット)
     capsys.readouterr()
-    caplog.clear()
 
     # 2 回目: text モード (従来どおりのログが出るべき)。
-    with caplog.at_level(logging.INFO):
-        pyfltr.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
-
-    assert "summary" in caplog.text
+    pyfltr.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    captured = capsys.readouterr()
+    assert "summary" in captured.out
 
 
 # ---------------------------------------------------------------------------
@@ -432,8 +410,20 @@ def test_build_tool_lines_no_diagnostics(default_config):
 # ---------------------------------------------------------------------------
 
 
+def _configure_structured_stdout() -> None:
+    """テストのため structured_logger を現在の ``sys.stdout`` に向ける。
+
+    ``capsys`` フィクスチャは ``sys.stdout`` を差し替えているため、呼び出し時点の
+    ``sys.stdout`` をそのまま StreamHandler に掴ませれば capsys で拾える。
+    """
+    import sys  # pylint: disable=import-outside-toplevel
+
+    pyfltr.cli.configure_structured_output(sys.stdout)
+
+
 def test_write_jsonl_streaming(default_config, capsys):
     """ストリーミング書き出しがstdoutに即時出力されること。"""
+    _configure_structured_stdout()
     errors = [_make_error("mypy", "src/a.py", 10, "bad type")]
     result = _make_result("mypy", returncode=1, errors=errors)
     pyfltr.llm_output.write_jsonl_streaming(result, default_config)
@@ -453,6 +443,7 @@ def test_write_jsonl_streaming(default_config, capsys):
 
 def test_write_jsonl_footer_with_warnings(capsys):
     """warning行+summary行がstdoutに出力されること。"""
+    _configure_structured_stdout()
     result = _make_result("mypy", returncode=1, errors=[_make_error("mypy", "a.py", 1, "bad")])
     warnings = [{"source": "config", "message": "test warning"}]
     pyfltr.llm_output.write_jsonl_footer(
@@ -472,6 +463,7 @@ def test_write_jsonl_footer_with_warnings(capsys):
 
 def test_write_jsonl_footer_no_warnings(capsys):
     """warningがない場合はsummary行のみ。"""
+    _configure_structured_stdout()
     result = _make_result("mypy", returncode=0)
     pyfltr.llm_output.write_jsonl_footer([result], exit_code=0)
 
@@ -521,6 +513,7 @@ def test_build_lines_no_header_when_omitted(default_config):
 
 def test_write_jsonl_header_stdout(capsys):
     """write_jsonl_headerがstdoutにheader行を書き出すこと。"""
+    _configure_structured_stdout()
     pyfltr.llm_output.write_jsonl_header(commands=["ruff-format", "mypy"], files=5)
     captured = capsys.readouterr()
     parsed = [json.loads(line) for line in captured.out.splitlines()]

@@ -45,6 +45,25 @@
     提供ツールは`list_runs` / `show_run` / `show_run_diagnostics` / `show_run_output` / `run_for_agent`の5種類で、
     アーカイブ参照と実行を行える
 
+## 出力形式とloggerの役割分担
+
+pyfltrは3系統のloggerを使い分ける。実装を変更する際はこの設計判断を崩さないこと。
+
+- root（system logger）: 常にstderr。抑止しない。設定エラー・アーカイブ初期化失敗などを流す
+- `pyfltr.textout`: 人間向けテキスト出力（進捗・`write_log`・summary・warnings・`--only-failed`案内）。
+  `pyfltr.cli.configure_text_output(stream, *, level)`でformat別にstream/levelを切り替える:
+  - `text` / `github-annotations` → stdout / INFO
+  - `jsonl` + stdout → stderr / WARN
+  - `sarif` + stdout → stderr / INFO
+  - `jsonl` / `sarif` + `--output-file`指定 → stdout / INFO
+  - MCP経路（`run_pipeline(force_text_on_stderr=True)`）→ stderr / INFO
+- `pyfltr.structured`: JSONL / SARIFの構造化出力。`pyfltr.cli.configure_structured_output(dest)`で
+  `StreamHandler(sys.stdout)`または`FileHandler(output_file)`に切り替える。
+  `text` / `github-annotations`ではhandler未設定（構造化出力なし）
+
+JSONLはstdout / file両モードともcompletion順streamingに統一する。
+stdout占有は`jsonl` / `sarif`かつ`--output-file`未指定時のみ発生する。
+
 ## 注意点
 
 - `uv run mkdocs build --strict`でリンク・nav整合性を検証（ただし日本語アンカーリンク`#見出し日本語`は

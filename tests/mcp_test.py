@@ -254,6 +254,27 @@ async def test_tool_run_for_agent_with_typos(tmp_path: pathlib.Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_tool_run_for_agent_keeps_stdout_clean_and_text_on_stderr(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``run_for_agent`` 実行中は stdout が JSON-RPC 用に空のまま、text 整形出力は stderr に流れる。
+
+    ``force_text_on_stderr=True`` が run_pipeline 側で効いて text_logger が stderr に向き、
+    構造化出力は一時ファイルへ退避するため stdout へは何も書かれない契約を固定する。
+    """
+    sample = tmp_path / "input.txt"
+    sample.write_text("hello\n", encoding="utf-8")
+
+    # typos が利用可能なら 1 件だけ走らせる。未導入環境でも ec で確実に通す。
+    await pyfltr.mcp_._tool_run_for_agent(paths=[str(sample)], commands=["ec"])
+
+    captured = capsys.readouterr()
+    assert captured.out == "", f"stdout に漏れている: {captured.out!r}"
+    # stderr には text_logger 由来の区切り線などが出る（実行アーカイブ有効化なので run_id 行も）
+    assert "----- pyfltr" in captured.err
+
+
+@pytest.mark.asyncio
 async def test_tool_run_for_agent_returns_run_id(tmp_path: pathlib.Path) -> None:
     """``run_for_agent`` が run_id を含む結果を返すことを確認する。
 

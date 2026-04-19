@@ -2,7 +2,10 @@
 # pylint: disable=missing-function-docstring
 # pylint: disable=protected-access
 
+import collections.abc
 import logging
+
+import pytest
 
 import pyfltr.cli
 import pyfltr.command
@@ -10,7 +13,38 @@ import pyfltr.config
 from tests.conftest import make_command_result as _make_result
 
 
-def test_write_log(caplog):
+@pytest.fixture(name="text_logs")
+def _text_logs() -> collections.abc.Iterator[list[str]]:
+    """``pyfltr.cli.text_logger`` の ``info`` 出力をキャプチャする。
+
+    ``propagate=False`` のため caplog / capsys の sys.stdout 差し替えとは相性が悪い
+    （pytest capture は setup 段階の sys.stdout リファレンスと実行時の sys.stdout が
+    一致しない）。本 fixture は text_logger に専用 ListHandler を直接追加し、
+    各テスト終了時に取り外すことで副作用を残さない。
+
+    Returns:
+        現在のテスト内で text_logger が記録したメッセージ文字列のリスト。
+        （``logging.Handler.format`` を通すことで ``%`` フォーマット差分を吸収する）。
+    """
+    messages: list[str] = []
+
+    class _ListHandler(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            messages.append(self.format(record))
+
+    handler = _ListHandler(level=logging.DEBUG)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    pyfltr.cli.text_logger.addHandler(handler)
+    original_level = pyfltr.cli.text_logger.level
+    pyfltr.cli.text_logger.setLevel(logging.DEBUG)
+    try:
+        yield messages
+    finally:
+        pyfltr.cli.text_logger.removeHandler(handler)
+        pyfltr.cli.text_logger.setLevel(original_level)
+
+
+def test_write_log(text_logs):
     """write_logの出力確認。"""
     result = pyfltr.command.CommandResult(
         command="pytest",
@@ -22,14 +56,13 @@ def test_write_log(caplog):
         output="ok",
         elapsed=1.5,
     )
-    with caplog.at_level(logging.DEBUG):
-        pyfltr.cli.write_log(result)
+    pyfltr.cli.write_log(result)
+    text = "\n".join(text_logs)
+    assert "pytest" in text
+    assert "returncode: 0" in text
 
-    assert "pytest" in caplog.text
-    assert "returncode: 0" in caplog.text
 
-
-def test_write_log_failed(caplog):
+def test_write_log_failed(text_logs):
     """write_logの失敗時の出力確認。"""
     result = pyfltr.command.CommandResult(
         command="pytest",
@@ -41,46 +74,44 @@ def test_write_log_failed(caplog):
         output="FAILED",
         elapsed=0.8,
     )
-    with caplog.at_level(logging.DEBUG):
-        pyfltr.cli.write_log(result)
-
+    pyfltr.cli.write_log(result)
     # 失敗時は@マークが使われる
-    assert "@ returncode: 1" in caplog.text
+    assert "@ returncode: 1" in "\n".join(text_logs)
 
 
-def test_run_one_command_stream_mode_writes_detail_log(mocker, caplog):
+def test_run_one_command_stream_mode_writes_detail_log(mocker, text_logs):
     """per_command_log=True のとき詳細ログを即時出力すること。"""
     result = _make_result("mypy", returncode=0, output="ok")
     mocker.patch("pyfltr.command.execute_command", return_value=result)
     mock_args = mocker.MagicMock()
+    mock_args.output_format = "text"
     mock_config = mocker.MagicMock()
 
-    with caplog.at_level(logging.INFO):
-        pyfltr.cli._run_one_command("mypy", mock_args, mock_config, [], per_command_log=True)
-
-    assert "mypy 実行中です..." in caplog.text
+    pyfltr.cli._run_one_command("mypy", mock_args, mock_config, [], per_command_log=True)
+    text = "\n".join(text_logs)
+    assert "mypy 実行中です..." in text
     # 成功時はエラーなし・生出力なしのため output は表示されない
-    assert "* returncode: 0" in caplog.text
+    assert "* returncode: 0" in text
 
 
-def test_run_one_command_buffer_mode_shows_only_progress(mocker, caplog):
+def test_run_one_command_buffer_mode_shows_only_progress(mocker, text_logs):
     """per_command_log=False のとき開始/完了の 1 行進捗のみ出力すること。"""
     result = _make_result("mypy", returncode=0, output="ok")
     mocker.patch("pyfltr.command.execute_command", return_value=result)
     mock_args = mocker.MagicMock()
+    mock_args.output_format = "text"
     mock_config = mocker.MagicMock()
 
-    with caplog.at_level(logging.INFO):
-        pyfltr.cli._run_one_command("mypy", mock_args, mock_config, [], per_command_log=False)
-
-    assert "mypy 実行中です..." in caplog.text
-    assert "mypy 完了" in caplog.text
+    pyfltr.cli._run_one_command("mypy", mock_args, mock_config, [], per_command_log=False)
+    text = "\n".join(text_logs)
+    assert "mypy 実行中です..." in text
+    assert "mypy 完了" in text
     # 詳細ログ (output や returncode 行) は出ていない
-    assert "ok" not in caplog.text
-    assert "returncode: 0" not in caplog.text
+    assert "ok" not in text
+    assert "returncode: 0" not in text
 
 
-def test_render_results_orders_success_failed_summary(caplog):
+def test_render_results_orders_success_failed_summary(text_logs):
     """成功コマンド → 失敗コマンド → summary の順で出力されること。"""
     config = pyfltr.config.create_default_config()
     # 失敗コマンドはerrorsが空のため生出力がフォールバック表示される
@@ -90,10 +121,9 @@ def test_render_results_orders_success_failed_summary(caplog):
         _make_result("pylint", returncode=0),
     ]
 
-    with caplog.at_level(logging.INFO):
-        pyfltr.cli.render_results(results, config, include_details=True)
+    pyfltr.cli.render_results(results, config, include_details=True)
 
-    text = caplog.text
+    text = "\n".join(text_logs)
     # 成功コマンドのヘッダーが最初に来る
     ruff_format_pos = text.index("ruff-format")
     pylint_pos = text.index("pylint")
@@ -107,45 +137,42 @@ def test_render_results_orders_success_failed_summary(caplog):
     assert mypy_pos < summary_pos
 
 
-def test_render_results_include_details_false_writes_only_summary(caplog):
+def test_render_results_include_details_false_writes_only_summary(text_logs):
     """include_details=False のときは summary のみで詳細ログは出さない。"""
     config = pyfltr.config.create_default_config()
     results = [_make_result("mypy", returncode=1, output="MYPY_ERROR")]
 
-    with caplog.at_level(logging.INFO):
-        pyfltr.cli.render_results(results, config, include_details=False)
+    pyfltr.cli.render_results(results, config, include_details=False)
+    text = "\n".join(text_logs)
+    assert "summary" in text
+    assert "MYPY_ERROR" not in text
 
-    assert "summary" in caplog.text
-    assert "MYPY_ERROR" not in caplog.text
 
-
-def test_render_results_writes_warnings_section_before_summary(caplog):
+def test_render_results_writes_warnings_section_before_summary(text_logs):
     """warnings 引数が渡されると summary 直前に warnings セクションが出る。"""
     config = pyfltr.config.create_default_config()
     results = [_make_result("mypy", returncode=0)]
     warnings = [{"source": "config", "message": "pre-commit 設定ファイル不在"}]
 
-    with caplog.at_level(logging.INFO):
-        pyfltr.cli.render_results(results, config, include_details=True, warnings=warnings)
+    pyfltr.cli.render_results(results, config, include_details=True, warnings=warnings)
 
-    text = caplog.text
+    text = "\n".join(text_logs)
     warning_pos = text.index("pre-commit 設定ファイル不在")
     summary_pos = text.index("summary")
     assert warning_pos < summary_pos
     assert "[config]" in text
 
 
-def test_render_results_skips_warnings_section_when_empty(caplog):
+def test_render_results_skips_warnings_section_when_empty(text_logs):
     """warnings が空のときは warnings 見出しを出さない。"""
     config = pyfltr.config.create_default_config()
     results = [_make_result("mypy", returncode=0)]
 
-    with caplog.at_level(logging.INFO):
-        pyfltr.cli.render_results(results, config, include_details=True, warnings=[])
+    pyfltr.cli.render_results(results, config, include_details=True, warnings=[])
 
     # warnings セクションは出力されない（summary 直前の見出しだけを検証するのは困難なため、
     # [source] 形式のエントリ行が無いことで代替する）
-    assert "[config]" not in caplog.text
+    assert "[config]" not in "\n".join(text_logs)
 
 
 def test_run_commands_with_cli_fail_fast_aborts_remaining_fixers(mocker):
