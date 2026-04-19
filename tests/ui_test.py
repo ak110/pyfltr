@@ -49,7 +49,12 @@ def test_ctrl_c_double_press_handling() -> None:
 
 
 def test_ctrl_c_force_exit_after_interrupted() -> None:
-    """協調中断済みの状態でさらにCtrl+C×2を受けたら強制終了する。"""
+    """協調中断済みの状態でさらにCtrl+C×2を受けたら強制終了する。
+
+    強制終了経路では ``_exit_requested=True`` → ``terminate_active_processes()`` →
+    ``exit(return_code=130)`` の順で処理される。孫プロセスが残って worker が閉じた
+    イベントループへ ``call_from_thread`` し続ける事象の退路として動く。
+    """
     args = argparse.Namespace()
     args.targets = []
     args.verbose = False
@@ -61,14 +66,52 @@ def test_ctrl_c_force_exit_after_interrupted() -> None:
     mock_event = unittest.mock.MagicMock()
     mock_event.key = "ctrl+c"
 
-    with unittest.mock.patch.object(app, "exit") as mock_exit, unittest.mock.patch.object(app, "notify"):
+    call_order: list[str] = []
+    with (
+        unittest.mock.patch.object(app, "exit", side_effect=lambda **_kw: call_order.append("exit")) as mock_exit,
+        unittest.mock.patch.object(app, "notify"),
+        unittest.mock.patch(
+            "pyfltr.command.terminate_active_processes",
+            side_effect=lambda **_kw: call_order.append("terminate"),
+        ) as mock_terminate,
+    ):
         # 1回目: タイムアウト外なので通知のみ
         app.on_key(mock_event)
         mock_exit.assert_not_called()
+        assert app._exit_requested is False
 
-        # 2回目（1秒以内）: 強制終了（rc=130）
+        # 2回目（1秒以内）: 強制終了（rc=130）。terminate → exit の順で呼ばれる。
         app.on_key(mock_event)
         mock_exit.assert_called_once_with(return_code=130)
+        mock_terminate.assert_called_once()
+        assert app._exit_requested is True
+        assert call_order == ["terminate", "exit"]
+
+
+def test_safe_call_from_thread_short_circuits_when_exit_requested() -> None:
+    """``_exit_requested=True`` のとき ``_safe_call_from_thread`` は ``call_from_thread`` を呼ばない。
+
+    閉じつつあるイベントループへ ``call_from_thread`` が詰まり、worker が
+    ``ThreadPoolExecutor.shutdown(wait=True)`` から抜けられなくなる病理の退路として動く。
+    """
+    args = argparse.Namespace()
+    args.targets = []
+    args.verbose = False
+
+    app = pyfltr.ui.UIApp(["black"], args, pyfltr.config.create_default_config(), [])
+    app._exit_requested = True
+
+    callback = unittest.mock.MagicMock()
+    with unittest.mock.patch.object(app, "call_from_thread") as mock_call:
+        app._safe_call_from_thread(callback, 1, key="value")
+        mock_call.assert_not_called()
+    callback.assert_not_called()
+
+    # 逆に _exit_requested=False なら通常通り call_from_thread 経由で呼ばれる。
+    app._exit_requested = False
+    with unittest.mock.patch.object(app, "call_from_thread") as mock_call:
+        app._safe_call_from_thread(callback, 1, key="value")
+        mock_call.assert_called_once_with(callback, 1, key="value")
 
 
 def test_ctrl_c_timeout() -> None:

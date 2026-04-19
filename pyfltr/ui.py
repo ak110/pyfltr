@@ -150,6 +150,10 @@ class UIApp(App):
         # linter/tester 段のループで「中断された」と判定すべき対象を限定するのに使う。
         # ``_interrupted_commands`` は中断対象のコマンド名を登録順に保持する（warnings 出力用）。
         self._interrupted: bool = False
+        # ``_exit_requested`` は UI イベントループ終了を要求済みか（TUI 強制終了経路・BG 最終段）を示す。
+        # 立った後に worker スレッドが ``_safe_call_from_thread`` を呼ぶと、閉じつつあるイベントループ
+        # への ``call_from_thread`` が詰まる可能性があるため、短絡する。
+        self._exit_requested: bool = False
         self._subprocess_running_commands: set[str] = set()
         self._interrupt_running_snapshot: set[str] = set()
         self._interrupted_commands: dict[str, None] = {}
@@ -218,6 +222,11 @@ class UIApp(App):
                     self.last_ctrl_c_time = current_time
                 else:
                     # 協調中断済みの状態でさらにCtrl+C×2: 強制終了。
+                    # 以降の BG スレッド → UI 反映経路は短絡させ、サブプロセス停止を
+                    # もう一度念押ししてから exit する（孫プロセスが残って worker が
+                    # 終わらないケースの退路）。
+                    self._exit_requested = True
+                    pyfltr.command.terminate_active_processes()
                     self.exit(return_code=130)
             else:
                 # 初回またはタイムアウト後のCtrl+C
@@ -232,7 +241,14 @@ class UIApp(App):
         Textual はイベントループ喪失時に例外を送出する。BG スレッドはここで結果を
         ``self.results`` に蓄積する責務があるため、UI 反映側の失敗で BG スレッドを
         落とさないようにする。
+
+        ``_exit_requested=True`` のときは UI 反映を完全に短絡する。閉じつつあるイベントループへ
+        ``call_from_thread`` すると ``run_coroutine_threadsafe(...).result()`` で長引き、
+        worker スレッドが ``ThreadPoolExecutor`` の ``shutdown(wait=True)`` にたどり着けなくなる
+        病理を避けるため。
         """
+        if self._exit_requested:
+            return
         try:
             self.call_from_thread(callback, *args, **kwargs)
         except Exception:
@@ -393,7 +409,16 @@ class UIApp(App):
                         source="pyfltr",
                         message="Ctrl+C により中断しました。",
                     )
-                self._safe_call_from_thread(self.exit, return_code=130)
+                # 協調中断の最終段。自身の exit は確実に UI へ伝えたうえで
+                # ``_exit_requested`` を立て、以降の worker 側 ``_safe_call_from_thread`` を短絡させる。
+                try:
+                    self.call_from_thread(self.exit, return_code=130)
+                except Exception:
+                    logging.getLogger(__name__).debug(
+                        "call_from_thread(self.exit) 失敗（イベントループ喪失の可能性）",
+                        exc_info=True,
+                    )
+                self._exit_requested = True
                 return
 
             # 自動終了判定

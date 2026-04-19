@@ -3,13 +3,18 @@
 # pylint: disable=protected-access,too-many-lines
 
 import argparse
+import contextlib
 import logging
 import os
 import pathlib
 import shutil
 import subprocess
+import sys
+import textwrap
+import time
 import typing
 
+import psutil
 import pytest
 
 import pyfltr.cache
@@ -1877,3 +1882,128 @@ def test_get_env_path_posix_strict_key(monkeypatch) -> None:
     assert pyfltr.command._get_env_path({"PATH": "/usr/bin"}) == "/usr/bin"
     # 両方あっても PATH のみを採用する
     assert pyfltr.command._get_env_path({"Path": "/tmp/bin", "PATH": "/usr/bin"}) == "/usr/bin"
+
+
+def _spawn_parent_with_child(script: str) -> tuple[subprocess.Popen[str], int, int]:
+    """Python スクリプトを subprocess として起動し親pidと子pidを取得する。
+
+    スクリプトは最初の 1 行に自身と子の pid を空白区切りで print する契約。
+    Popen は ``start_new_session=True`` で起動する（本番と同じ条件）。
+    """
+    # pylint: disable=consider-using-with
+    # テスト対象の ``_active_processes`` へ外から登録するため、``with`` 構文では
+    # スコープ外で proc を扱えない。各テストの finally で解放する。
+    proc = subprocess.Popen(
+        [sys.executable, "-u", "-c", script],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        start_new_session=True,
+    )
+    assert proc.stdout is not None
+    line = proc.stdout.readline().strip()
+    parent_pid_str, child_pid_str = line.split()
+    return proc, int(parent_pid_str), int(child_pid_str)
+
+
+def _wait_gone(pids: list[int], *, timeout: float) -> list[int]:
+    """``pids`` が全て消滅するまで最大 ``timeout`` 秒待つ。残存する pid を返す。"""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        alive = [pid for pid in pids if psutil.pid_exists(pid)]
+        if not alive:
+            return []
+        time.sleep(0.05)
+    return [pid for pid in pids if psutil.pid_exists(pid)]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX 前提の killpg 経路を検証する")
+def test_terminate_active_processes_kills_grandchild() -> None:
+    """``terminate_active_processes`` が孫プロセスまで確実に停止する。
+
+    Popen 子が更にサブプロセスを fork する pytest-xdist 相当の構造で、
+    ``start_new_session=True`` 相当の pgid 分離により SIGTERM が全体へ届くことを検証する。
+    """
+    script = textwrap.dedent(
+        """
+        import os, time
+        r, w = os.pipe()
+        pid = os.fork()
+        if pid == 0:
+            # child: pid を pipe へ書き、あとは待機する（stdout へは書かない）。
+            os.close(r)
+            os.write(w, str(os.getpid()).encode())
+            os.close(w)
+            while True:
+                time.sleep(1)
+        else:
+            # 親: child の pid を読み取り、自身と child の pid を 1 行にまとめて出力する。
+            os.close(w)
+            child_pid = int(os.read(r, 64).decode())
+            os.close(r)
+            print(f"{os.getpid()} {child_pid}", flush=True)
+            while True:
+                time.sleep(1)
+        """
+    )
+    proc, parent_pid, child_pid = _spawn_parent_with_child(script)
+    try:
+        with pyfltr.command._active_processes_lock:
+            pyfltr.command._active_processes.append(proc)
+        assert psutil.pid_exists(parent_pid)
+        assert psutil.pid_exists(child_pid)
+
+        pyfltr.command.terminate_active_processes(timeout=3.0)
+
+        remaining = _wait_gone([parent_pid, child_pid], timeout=3.0)
+        assert remaining == [], f"停止できなかった pid: {remaining}"
+    finally:
+        with pyfltr.command._active_processes_lock:
+            if proc in pyfltr.command._active_processes:
+                pyfltr.command._active_processes.remove(proc)
+        if proc.poll() is None:
+            with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
+                os.killpg(os.getpgid(proc.pid), 9)
+        proc.wait(timeout=2.0)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX 前提の killpg 経路を検証する")
+def test_terminate_active_processes_parent_exited_grandchild_remains() -> None:
+    """親が先に exit して孫だけが stdout を握り残す構成でも停止できる。
+
+    ``start_new_session=True`` により pgid が proc.pid と一致するため、
+    親 reap 後でも ``os.killpg(proc.pid, SIGTERM)`` で孫へ届くことを検証する。
+    """
+    script = textwrap.dedent(
+        """
+        import os, time
+        pid = os.fork()
+        if pid == 0:
+            # grandchild 役。stdout を継承したまま待機する。
+            while True:
+                time.sleep(1)
+        else:
+            # 親だけが stdout に書き出してすぐ exit。grandchild は stdout を握り続ける。
+            print(f"{os.getpid()} {pid}", flush=True)
+            os._exit(0)
+        """
+    )
+    proc, _parent_pid, child_pid = _spawn_parent_with_child(script)
+    try:
+        with pyfltr.command._active_processes_lock:
+            pyfltr.command._active_processes.append(proc)
+        # 親は速やかに exit する。孫（子）は生存継続。
+        proc.wait(timeout=2.0)
+        assert psutil.pid_exists(child_pid), "孫プロセスが消えている"
+
+        pyfltr.command.terminate_active_processes(timeout=3.0)
+
+        remaining = _wait_gone([child_pid], timeout=3.0)
+        assert remaining == [], f"停止できなかった pid: {remaining}"
+    finally:
+        with pyfltr.command._active_processes_lock:
+            if proc in pyfltr.command._active_processes:
+                pyfltr.command._active_processes.remove(proc)
+        if psutil.pid_exists(child_pid):
+            with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
+                os.kill(child_pid, 9)

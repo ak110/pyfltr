@@ -12,12 +12,14 @@ import pathlib
 import random
 import shlex
 import shutil
+import signal
 import subprocess
 import threading
 import time
 import typing
 
 import natsort
+import psutil
 
 import pyfltr.config
 import pyfltr.error_parser
@@ -274,42 +276,96 @@ def _failed_resolution_result(
     )
 
 
+def _kill_process_tree(proc: "subprocess.Popen[str]", *, timeout: float) -> None:
+    """Proc とその子孫をまとめて停止する。
+
+    ``_run_subprocess`` は POSIX では ``start_new_session=True``、Windows では
+    ``CREATE_NEW_PROCESS_GROUP`` で Popen を起動している。pytest-xdist のように
+    サブプロセスが更にサブプロセスを fork してパイプを継承するツールでは、
+    親だけ ``terminate()`` しても孫が stdout を握り続け ``for line in proc.stdout``
+    が EOF を受け取れない。これを回避するため、親子孫を一括で停止する。
+
+    POSIX: ``os.killpg(pgid, SIGTERM)`` → ``timeout`` 秒待機 → 残存に
+    ``os.killpg(pgid, SIGKILL)``。``start_new_session=True`` により pgid は proc.pid と
+    一致するので、親が既に reap されていても pid=pgid として停止シグナルを届けられる。
+
+    Windows: 完全な Job Object を導入しない簡易実装。親消失後に ``children(recursive=True)``
+    では子孫を辿れないため、先に列挙して ``terminate()`` を送り、その後 ``wait_procs`` で
+    残存に ``kill()`` を送る。サブプロセスが更に分離 Job Object を使う場合は取り逃すが、
+    現状の pyfltr 対応ツールでは問題にならない範囲とする。
+    """
+    targets: list[psutil.Process] = []
+    if os.name == "nt":
+        # 親消失後に辿れなくなるため、事前に子孫 pid 集合を取得する。
+        with contextlib.suppress(psutil.NoSuchProcess, psutil.AccessDenied):
+            parent = psutil.Process(proc.pid)
+            targets = parent.children(recursive=True)
+        with contextlib.suppress(OSError):
+            proc.terminate()
+        for child in targets:
+            with contextlib.suppress(psutil.NoSuchProcess, psutil.AccessDenied):
+                child.terminate()
+    else:
+        try:
+            pgid = os.getpgid(proc.pid)
+        except ProcessLookupError:
+            # 親プロセスが既に reap されている。start_new_session=True により
+            # pgid == pid として設定されていたはずなので pid をそのまま使う。
+            pgid = proc.pid
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(pgid, signal.SIGTERM)
+
+    # psutil.Process は失敗時も自身を含めて扱うため None チェックのうえで wait 対象に含める。
+    wait_targets: list[psutil.Process] = list(targets)
+    with contextlib.suppress(psutil.NoSuchProcess):
+        wait_targets.append(psutil.Process(proc.pid))
+
+    _, alive = psutil.wait_procs(wait_targets, timeout=timeout)
+
+    # 残存プロセスへ SIGKILL / kill を送る。
+    if alive:
+        if os.name == "nt":
+            for child in alive:
+                with contextlib.suppress(psutil.NoSuchProcess, psutil.AccessDenied):
+                    child.kill()
+        else:
+            try:
+                pgid = os.getpgid(proc.pid)
+            except ProcessLookupError:
+                pgid = proc.pid
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.killpg(pgid, signal.SIGKILL)
+        _, still_alive = psutil.wait_procs(alive, timeout=timeout)
+        if still_alive:
+            remaining_pids = [p.pid for p in still_alive]
+            logger.warning("プロセスツリー停止後に残存するプロセスあり: pids=%s", remaining_pids)
+
+
 def _cleanup_processes() -> None:
     """プロセス終了時に実行中の子プロセスを終了。"""
     with _active_processes_lock:
         procs = list(_active_processes)
     for proc in procs:
         with contextlib.suppress(OSError):
-            proc.kill()
+            _kill_process_tree(proc, timeout=1.0)
 
 
 atexit.register(_cleanup_processes)
 
 
 def terminate_active_processes(*, timeout: float = 5.0) -> None:
-    """実行中のすべての子プロセスに terminate() → kill() を送る。
+    """実行中のすべての子プロセスと子孫に terminate() → kill() を送る。
 
-    --fail-fast による早期中断で、並列実行中の他ツールを止めるために呼ばれる。
-    まず ``terminate()`` で穏当に停止を試み、``timeout`` 秒待ってもまだ生存している
-    プロセスに対して ``kill()`` を送る。Windows でも ``terminate()`` は ``TerminateProcess``
-    経由で動作する (Popen の Windows 実装が kill() と同等に振る舞う)。
+    --fail-fast や TUI Ctrl+C 協調停止で、並列実行中の他ツールを止めるために呼ばれる。
+    ``_kill_process_tree`` 経由でプロセスグループ単位 (POSIX) / 子孫 pid 列挙 (Windows)
+    で停止するため、pytest-xdist のように Popen 子が更にサブプロセスを fork する
+    ツールでも確実に停止する。
     """
     with _active_processes_lock:
         procs = list(_active_processes)
     for proc in procs:
         with contextlib.suppress(OSError):
-            proc.terminate()
-    deadline = time.monotonic() + timeout
-    for proc in procs:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            remaining = 0.0
-        with contextlib.suppress(subprocess.TimeoutExpired, OSError):
-            proc.wait(timeout=remaining)
-    for proc in procs:
-        if proc.poll() is None:
-            with contextlib.suppress(OSError):
-                proc.kill()
+            _kill_process_tree(proc, timeout=timeout)
 
 
 @dataclasses.dataclass
@@ -449,21 +505,17 @@ def _get_env_path(env: dict[str, str]) -> str | None:
 
 
 def _terminate_and_drop(proc: "subprocess.Popen[str]") -> None:
-    """実行中 proc に terminate→wait→kill を順に適用し ``_active_processes`` から外す。
+    """実行中 proc とその子孫を停止し ``_active_processes`` から外す。
 
     TUI 協調停止経路で使う。``with subprocess.Popen(...)`` の __exit__ は子が残っていても
     ``wait()`` で止まってしまうため、``InterruptedExecution`` を送出する前に本関数で
-    確実に子を終了させる。
+    確実に子を終了させる。pytest-xdist など孫プロセスを fork するツールを想定し、
+    ``_kill_process_tree`` でプロセスツリー単位で停止する。
     """
     with contextlib.suppress(OSError):
-        proc.terminate()
+        _kill_process_tree(proc, timeout=5.0)
     with contextlib.suppress(subprocess.TimeoutExpired, OSError):
         proc.wait(timeout=5.0)
-    if proc.poll() is None:
-        with contextlib.suppress(OSError):
-            proc.kill()
-        with contextlib.suppress(subprocess.TimeoutExpired, OSError):
-            proc.wait(timeout=5.0)
     with _active_processes_lock, contextlib.suppress(ValueError):
         _active_processes.remove(proc)
 
@@ -512,6 +564,15 @@ def _run_subprocess(
     # (1) Popen 直前の中断チェック。proc がまだ存在しないのでそのまま送出できる。
     if is_interrupted is not None and is_interrupted():
         raise InterruptedExecution
+    # OS 別のプロセスグループ分離オプション。pytest-xdist など孫プロセスを
+    # fork するツールの中断時に、親子孫をまとめて停止できるようにする。
+    popen_extra: dict[str, typing.Any] = {}
+    if os.name == "nt":
+        # CREATE_NEW_PROCESS_GROUP は Windows 専用の定数。mypy は POSIX で
+        # attr-defined を誤検知するため getattr で取得する。
+        popen_extra["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    else:
+        popen_extra["start_new_session"] = True
     try:
         with subprocess.Popen(
             popen_commandline,
@@ -521,6 +582,7 @@ def _run_subprocess(
             text=True,
             encoding="utf-8",
             errors="backslashreplace",
+            **popen_extra,
         ) as proc:
             with _active_processes_lock:
                 _active_processes.append(proc)
