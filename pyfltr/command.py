@@ -309,13 +309,13 @@ def _kill_process_tree(proc: "subprocess.Popen[str]", *, timeout: float) -> None
         # os.killpg / os.getpgid / signal.SIGKILL は POSIX 専用で Windows 型スタブに未定義。
         # os.name ガード下なので実行時は安全。型チェッカーの誤検知だけ局所コメントで抑止する。
         try:
-            pgid = os.getpgid(proc.pid)  # type: ignore[attr-defined,unused-ignore]  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore[unresolved-attribute,unused-ignore-comment]
+            pgid = os.getpgid(proc.pid)  # type: ignore[attr-defined,unused-ignore]  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore
         except ProcessLookupError:
             # 親プロセスが既に reap されている。start_new_session=True により
             # pgid == pid として設定されていたはずなので pid をそのまま使う。
             pgid = proc.pid
         with contextlib.suppress(ProcessLookupError, PermissionError):
-            os.killpg(pgid, signal.SIGTERM)  # type: ignore[attr-defined,unused-ignore]  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore[unresolved-attribute,unused-ignore-comment]
+            os.killpg(pgid, signal.SIGTERM)  # type: ignore[attr-defined,unused-ignore]  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore
 
     # psutil.Process は失敗時も自身を含めて扱うため None チェックのうえで wait 対象に含める。
     wait_targets: list[psutil.Process] = list(targets)
@@ -332,11 +332,11 @@ def _kill_process_tree(proc: "subprocess.Popen[str]", *, timeout: float) -> None
                     child.kill()
         else:
             try:
-                pgid = os.getpgid(proc.pid)  # type: ignore[attr-defined,unused-ignore]  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore[unresolved-attribute,unused-ignore-comment]
+                pgid = os.getpgid(proc.pid)  # type: ignore[attr-defined,unused-ignore]  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore
             except ProcessLookupError:
                 pgid = proc.pid
             with contextlib.suppress(ProcessLookupError, PermissionError):
-                os.killpg(pgid, signal.SIGKILL)  # type: ignore[attr-defined,unused-ignore]  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore[unresolved-attribute,unused-ignore-comment]
+                os.killpg(pgid, signal.SIGKILL)  # type: ignore[attr-defined,unused-ignore]  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore
         _, still_alive = psutil.wait_procs(alive, timeout=timeout)
         if still_alive:
             remaining_pids = [p.pid for p in still_alive]

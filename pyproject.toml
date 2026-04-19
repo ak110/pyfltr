@@ -131,6 +131,12 @@ warn_redundant_casts = true
 warn_unused_configs = true
 show_error_codes = true
 
+[tool.ty.rules]
+# Windows 限定の attr-defined 誤検知を抑止する `# ty: ignore` コメントが、
+# Linux 上では「未使用」扱いとなり警告になってしまうため、プラットフォーム跨ぎの
+# POSIX 分岐を扱うファイルで恒常的に衝突する。ty: ignore を一元無効化する。
+unused-ignore-comment = "ignore"
+
 [tool.typos.default.extend-words]
 # テストデータ内の意図的なtypo
 teh = "teh"
