@@ -8,6 +8,7 @@ import subprocess
 
 import pytest
 
+import pyfltr.archive
 import pyfltr.cli
 import pyfltr.config
 import pyfltr.llm_output
@@ -27,7 +28,7 @@ def _default_config() -> pyfltr.config.Config:
 
 
 def test_build_lines_supported_tool_diagnostics(default_config):
-    """error_parser 対応ツールの診断が (tool, file) 単位で集約された diagnostic レコードとして出ること。"""
+    """error_parser 対応ツールの診断が (command, file) 単位で集約された diagnostic レコードとして出ること。"""
     errors = [
         _make_error("mypy", "src/a.py", 10, "bad type", col=4),
         _make_error("mypy", "src/a.py", 20, "missing return"),
@@ -37,10 +38,10 @@ def test_build_lines_supported_tool_diagnostics(default_config):
     parsed = [json.loads(line) for line in lines]
 
     # 同一 (mypy, src/a.py) に集約されるため diagnostic は 1 行
-    assert [r["kind"] for r in parsed] == ["header", "diagnostic", "tool", "summary"]
+    assert [r["kind"] for r in parsed] == ["header", "diagnostic", "command", "summary"]
     assert parsed[1] == {
         "kind": "diagnostic",
-        "tool": "mypy",
+        "command": "mypy",
         "file": "src/a.py",
         "messages": [
             {"line": 10, "col": 4, "msg": "bad type"},
@@ -70,7 +71,7 @@ def test_build_lines_warnings_prepended(default_config):
     assert parsed[1] == {"kind": "warning", "source": "config", "msg": "pre-commit 設定ファイル不在"}
     assert parsed[2] == {"kind": "warning", "source": "git", "msg": "git が見つからない"}
     # warnings の後に tool レコード、最後に summary が並ぶ
-    assert [r["kind"] for r in parsed[3:]] == ["tool", "summary"]
+    assert [r["kind"] for r in parsed[3:]] == ["command", "summary"]
 
 
 def test_build_lines_no_warnings_when_omitted(default_config):
@@ -87,8 +88,8 @@ def test_build_lines_unsupported_tool_only(default_config):
     lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=1)
     parsed = [json.loads(line) for line in lines]
 
-    assert [r["kind"] for r in parsed] == ["tool", "summary"]
-    assert parsed[0]["tool"] == "ruff-format"
+    assert [r["kind"] for r in parsed] == ["command", "summary"]
+    assert parsed[0]["command"] == "ruff-format"
     assert parsed[0]["status"] == "formatted"
     assert parsed[0]["diagnostics"] == 0
     assert "message" not in parsed[0]
@@ -123,27 +124,27 @@ def test_build_lines_mixed_order(default_config):
     parsed = [json.loads(line) for line in lines]
 
     # header → ツール順でグルーピング: ruff-format(tool) → mypy(a.pyとb.pyの2 diagnostic + tool)
-    # → pylint(diagnostic + tool) → summary。(tool, file)単位で集約される
+    # → pylint(diagnostic + tool) → summary。(command, file)単位で集約される
     assert [r["kind"] for r in parsed] == [
         "header",
-        "tool",  # ruff-format
+        "command",  # ruff-format
         "diagnostic",  # mypy / src/a.py
         "diagnostic",  # mypy / src/b.py
-        "tool",  # mypy
+        "command",  # mypy
         "diagnostic",  # pylint / src/a.py
-        "tool",  # pylint
+        "command",  # pylint
         "summary",
     ]
 
     # mypy 内の diagnostic はファイル順
-    mypy_diagnostics = [r for r in parsed if r["kind"] == "diagnostic" and r["tool"] == "mypy"]
+    mypy_diagnostics = [r for r in parsed if r["kind"] == "diagnostic" and r["command"] == "mypy"]
     assert [(r["file"], r["messages"][0]["line"]) for r in mypy_diagnostics] == [
         ("src/a.py", 30),
         ("src/b.py", 5),
     ]
 
-    tool_records = [r for r in parsed if r["kind"] == "tool"]
-    assert [r["tool"] for r in tool_records] == ["ruff-format", "mypy", "pylint"]
+    tool_records = [r for r in parsed if r["kind"] == "command"]
+    assert [r["command"] for r in tool_records] == ["ruff-format", "mypy", "pylint"]
 
 
 def test_build_lines_ensure_ascii_false(default_config):
@@ -162,7 +163,7 @@ def test_build_lines_skipped_status(default_config):
     parsed = [json.loads(line) for line in lines]
 
     tool_record = parsed[0]
-    assert tool_record["kind"] == "tool"
+    assert tool_record["kind"] == "command"
     assert tool_record["status"] == "skipped"
     assert "rc" not in tool_record
 
@@ -172,7 +173,7 @@ def test_build_lines_skipped_status(default_config):
 # ---------------------------------------------------------------------------
 
 
-def test_tool_record_message_on_failure_without_diagnostics(default_config):
+def test_command_record_message_on_failure_without_diagnostics(default_config):
     """status=failed かつ diagnostics=0 のとき、output 末尾が message に入ること。"""
     output = "line1\nline2\nError: command not found\n"
     result = _make_result("shellcheck", returncode=127, output=output)
@@ -183,7 +184,7 @@ def test_tool_record_message_on_failure_without_diagnostics(default_config):
     assert "Error: command not found" in tool_record["message"]
 
 
-def test_tool_record_message_truncates_long_output(default_config):
+def test_command_record_message_truncates_long_output(default_config):
     """長い output は末尾 30 行かつ 2000 文字にトリムされること。"""
     many_lines = "\n".join(f"line{i}" for i in range(100))
     result = _make_result("shellcheck", returncode=1, output=many_lines)
@@ -197,27 +198,27 @@ def test_tool_record_message_truncates_long_output(default_config):
     assert len(msg) <= 2000 + len("... (truncated)\n")
 
 
-def test_tool_record_no_message_when_diagnostics_present(default_config):
+def test_command_record_no_message_when_diagnostics_present(default_config):
     """failed でも diagnostics > 0 のときは message を出さない。"""
     errors = [_make_error("mypy", "src/a.py", 1, "bad")]
     result = _make_result("mypy", returncode=1, output="verbose mypy output", errors=errors)
     lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=1)
-    tool_record = next(json.loads(line) for line in lines if json.loads(line)["kind"] == "tool")
+    tool_record = next(json.loads(line) for line in lines if json.loads(line)["kind"] == "command")
     assert "message" not in tool_record
 
 
-def test_tool_record_no_message_on_success(default_config):
+def test_command_record_no_message_on_success(default_config):
     """status=succeeded/formatted では message を出さない。"""
     ok = _make_result("mypy", returncode=0, output="all ok")
     fmt = _make_result("ruff-format", returncode=1, command_type="formatter", output="reformatted", has_error=False)
     lines = pyfltr.llm_output.build_lines([ok, fmt], default_config, exit_code=0)
     for line in lines:
         record = json.loads(line)
-        if record["kind"] == "tool":
+        if record["kind"] == "command":
             assert "message" not in record
 
 
-def test_tool_record_no_message_when_output_empty(default_config):
+def test_command_record_no_message_when_output_empty(default_config):
     """failed でも output が空なら message を出さない (キーごと省略)。"""
     result = _make_result("shellcheck", returncode=1, output="")
     lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=1)
@@ -263,7 +264,8 @@ def test_run_cli_jsonl_stdout_suppresses_text(mocker, capsys):
     assert lines, "JSONL が 1 行も出ていない"
     first = json.loads(lines[0])
     assert first["kind"] == "header"
-    assert "mypy" in first["commands"]
+    # 既定では commands 配列は出ず、commands_count が入る
+    assert first["commands_count"] == 1
     last = json.loads(lines[-1])
     assert last["kind"] == "summary"
     assert last["exit"] == 0
@@ -367,18 +369,18 @@ def test_run_cli_jsonl_restores_logger_state(mocker, capsys):
 
 
 # ---------------------------------------------------------------------------
-# build_tool_lines のユニットテスト
+# build_command_lines のユニットテスト
 # ---------------------------------------------------------------------------
 
 
-def test_build_tool_lines_with_diagnostics(default_config):
-    """diagnostic行+tool行がツール単位で(tool, file)集約されてまとまること。"""
+def test_build_command_lines_with_diagnostics(default_config):
+    """diagnostic行+tool行がツール単位で(command, file)集約されてまとまること。"""
     errors = [
         _make_error("mypy", "src/b.py", 5, "later"),
         _make_error("mypy", "src/a.py", 10, "earlier"),
     ]
     result = _make_result("mypy", returncode=1, errors=errors)
-    lines = pyfltr.llm_output.build_tool_lines(result, default_config)
+    lines = pyfltr.llm_output.build_command_lines(result, default_config)
     parsed = [json.loads(line) for line in lines]
 
     assert len(parsed) == 3
@@ -390,19 +392,51 @@ def test_build_tool_lines_with_diagnostics(default_config):
     assert parsed[1]["file"] == "src/b.py"
     assert parsed[1]["messages"][0]["line"] == 5
     # 最後にtool行
-    assert parsed[2]["kind"] == "tool"
+    assert parsed[2]["kind"] == "command"
     assert parsed[2]["diagnostics"] == 2
 
 
-def test_build_tool_lines_no_diagnostics(default_config):
+def test_build_command_lines_no_diagnostics(default_config):
     """diagnosticがないツールはtool行のみ。"""
     result = _make_result("ruff-format", returncode=0, command_type="formatter")
-    lines = pyfltr.llm_output.build_tool_lines(result, default_config)
+    lines = pyfltr.llm_output.build_command_lines(result, default_config)
     parsed = [json.loads(line) for line in lines]
 
     assert len(parsed) == 1
-    assert parsed[0]["kind"] == "tool"
+    assert parsed[0]["kind"] == "command"
     assert parsed[0]["diagnostics"] == 0
+
+
+def test_build_command_lines_truncated_archive_sanitizes_command_name(default_config, tmp_path):
+    """サニタイズ対象文字を含むcommand名でも``truncated.archive``は実保存キーと一致する。
+
+    ``archive.ArchiveStore.write_tool_result``が書き込む保存キーと
+    ``command.truncated.archive``が参照するパスが同じサニタイズ関数を通ることを検証する。
+    カスタムコマンド名にスラッシュや空白が入る潜在シナリオを想定したリグレッション防止。
+    """
+    command_name = "foo/bar baz"
+    sanitized = "foo_bar_baz"
+    # diagnostic切り詰めを発生させるためerrorsを複数件用意
+    errors = [_make_error(command_name, "src/x.py", i, f"err{i}") for i in range(5)]
+    result = _make_result(command_name, returncode=1, errors=errors)
+
+    default_config.values["jsonl-diagnostic-limit"] = 2
+    lines = pyfltr.llm_output.build_command_lines(result, default_config)
+    tool_record = next(json.loads(line) for line in lines if json.loads(line)["kind"] == "command")
+    assert tool_record["truncated"]["archive"] == f"tools/{sanitized}/diagnostics.jsonl"
+
+    # message切り詰めでもサニタイズされたキーになること
+    long_output = "\n".join(f"line{i}" for i in range(100))
+    result_msg = _make_result(command_name, returncode=1, output=long_output)
+    lines = pyfltr.llm_output.build_command_lines(result_msg, default_config)
+    tool_record = next(json.loads(line) for line in lines if json.loads(line)["kind"] == "command")
+    assert tool_record["truncated"]["archive"] == f"tools/{sanitized}/output.log"
+
+    # archive側が同じ保存キーを使うことを実アーカイブ書き込みで検証
+    store = pyfltr.archive.ArchiveStore(cache_root=tmp_path)
+    run_id = store.start_run(commands=[command_name])
+    store.write_tool_result(run_id, result)
+    assert (tmp_path / "runs" / run_id / "tools" / sanitized / "diagnostics.jsonl").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -433,7 +467,7 @@ def test_write_jsonl_streaming(default_config, capsys):
     parsed = [json.loads(line) for line in captured.out.splitlines()]
     assert len(parsed) == 2
     assert parsed[0]["kind"] == "diagnostic"
-    assert parsed[1]["kind"] == "tool"
+    assert parsed[1]["kind"] == "command"
 
 
 # ---------------------------------------------------------------------------
@@ -480,10 +514,12 @@ def test_write_jsonl_footer_no_warnings(capsys):
 
 
 def test_build_header_record_fields():
-    """_build_header_record が必要なフィールドをすべて含むこと。"""
+    """_build_header_record が必要なフィールドをすべて含むこと (既定は commands_count)。"""
     record = pyfltr.llm_output._build_header_record(["ruff-format", "mypy"], 42)
     assert record["kind"] == "header"
-    assert record["commands"] == ["ruff-format", "mypy"]
+    # 既定では commands_count (整数) のみ。フル配列は verbose=True で出る。
+    assert "commands" not in record
+    assert record["commands_count"] == 2
     assert record["files"] == 42
     assert "version" in record
     assert "python" in record
@@ -493,14 +529,27 @@ def test_build_header_record_fields():
 
 
 def test_build_lines_header_first(default_config):
-    """commands/filesを指定するとheader行が先頭に出力されること。"""
+    """commands/filesを指定するとheader行が先頭に出力されること (既定は commands_count)。"""
     result = _make_result("mypy", returncode=0)
     lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=0, commands=["mypy"], files=10)
     parsed = [json.loads(line) for line in lines]
     assert parsed[0]["kind"] == "header"
-    assert parsed[0]["commands"] == ["mypy"]
+    assert parsed[0]["commands_count"] == 1
     assert parsed[0]["files"] == 10
     assert parsed[-1]["kind"] == "summary"
+
+
+def test_build_lines_header_verbose_has_full_commands(default_config):
+    """verbose=Trueでheader行にフルcommands配列とフルschema_hintsが出ること。"""
+    result = _make_result("mypy", returncode=0)
+    lines = pyfltr.llm_output.build_lines(
+        [result], default_config, exit_code=0, commands=["mypy", "ruff-check"], files=10, verbose=True
+    )
+    parsed = [json.loads(line) for line in lines]
+    assert parsed[0]["kind"] == "header"
+    assert parsed[0]["commands"] == ["mypy", "ruff-check"]
+    assert "commands_count" not in parsed[0]
+    assert "diagnostic.messages" in parsed[0]["schema_hints"]
 
 
 def test_build_lines_no_header_when_omitted(default_config):
@@ -512,15 +561,25 @@ def test_build_lines_no_header_when_omitted(default_config):
 
 
 def test_write_jsonl_header_stdout(capsys):
-    """write_jsonl_headerがstdoutにheader行を書き出すこと。"""
+    """write_jsonl_headerがstdoutにheader行を書き出すこと (既定は commands_count)。"""
     _configure_structured_stdout()
     pyfltr.llm_output.write_jsonl_header(commands=["ruff-format", "mypy"], files=5)
     captured = capsys.readouterr()
     parsed = [json.loads(line) for line in captured.out.splitlines()]
     assert len(parsed) == 1
     assert parsed[0]["kind"] == "header"
-    assert parsed[0]["commands"] == ["ruff-format", "mypy"]
+    assert parsed[0]["commands_count"] == 2
     assert parsed[0]["files"] == 5
+
+
+def test_write_jsonl_header_stdout_verbose(capsys):
+    """write_jsonl_header の verbose=True でフル commands 配列と schema_hints が出る。"""
+    _configure_structured_stdout()
+    pyfltr.llm_output.write_jsonl_header(commands=["ruff-format", "mypy"], files=5, verbose=True)
+    captured = capsys.readouterr()
+    parsed = [json.loads(line) for line in captured.out.splitlines()]
+    assert parsed[0]["commands"] == ["ruff-format", "mypy"]
+    assert "diagnostic.messages" in parsed[0]["schema_hints"]
 
 
 # ---------------------------------------------------------------------------

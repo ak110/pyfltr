@@ -48,11 +48,11 @@ def test_write_tool_result(tmp_path: pathlib.Path) -> None:
     # output.log の内容確認
     assert (tool_dir / "output.log").read_text(encoding="utf-8") == "mypy output"
 
-    # diagnostics.jsonl は集約形式で (tool, file) 単位に 1 行、messages 内に個別指摘
+    # diagnostics.jsonl は集約形式で (command, file) 単位に 1 行、messages 内に個別指摘
     lines = [json.loads(line) for line in (tool_dir / "diagnostics.jsonl").read_text(encoding="utf-8").splitlines() if line]
     assert len(lines) == 1
     assert lines[0]["kind"] == "diagnostic"
-    assert lines[0]["tool"] == "mypy"
+    assert lines[0]["command"] == "mypy"
     assert lines[0]["file"] == "src/a.py"
     messages = lines[0]["messages"]
     assert len(messages) == 1
@@ -153,7 +153,7 @@ def test_read_tool_meta(tmp_path: pathlib.Path) -> None:
     store.write_tool_result(run_id, result)
 
     tool_meta = store.read_tool_meta(run_id, "ruff-check")
-    assert tool_meta["tool"] == "ruff-check"
+    assert tool_meta["command"] == "ruff-check"
     assert tool_meta["returncode"] == 0
 
 

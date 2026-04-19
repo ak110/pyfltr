@@ -196,11 +196,11 @@ def _show_run_overview(
     if output_format == "text":
         _print_run_overview_text(run_id, meta, tool_summaries)
     elif output_format == "json":
-        _print_json({"run_id": run_id, "meta": meta, "tools": tool_summaries})
+        _print_json({"run_id": run_id, "meta": meta, "commands": tool_summaries})
     else:
         _print_jsonl_line({"kind": "meta", **meta})
         for tool_summary in tool_summaries:
-            _print_jsonl_line({"kind": "tool", **tool_summary})
+            _print_jsonl_line({"kind": "command", **tool_summary})
     return 0
 
 
@@ -217,7 +217,7 @@ def _collect_tool_summaries(
             continue
         summaries.append(
             {
-                "tool": tool_meta.get("tool", tool),
+                "command": tool_meta.get("command", tool_meta.get("tool", tool)),
                 "status": tool_meta.get("status"),
                 "has_error": tool_meta.get("has_error"),
                 "diagnostics": tool_meta.get("diagnostics"),
@@ -240,13 +240,13 @@ def _print_run_overview_text(
     if commands:
         print(f"commands: {','.join(commands)}")
     print("")
-    print("tools:")
+    print("commands:")
     if not tool_summaries:
-        print("  (no archived tools)")
+        print("  (no archived commands)")
         return
     for entry in tool_summaries:
         print(
-            f"  {entry['tool']}: "
+            f"  {entry['command']}: "
             f"status={entry.get('status')} "
             f"has_error={entry.get('has_error')} "
             f"diagnostics={entry.get('diagnostics')}"
@@ -269,9 +269,9 @@ def _show_tool_detail(
     if output_format == "text":
         _print_tool_detail_text(tool_meta, diagnostics)
     elif output_format == "json":
-        _print_json({"tool": tool_meta, "diagnostics": diagnostics})
+        _print_json({"command": tool_meta, "diagnostics": diagnostics})
     else:
-        _print_jsonl_line({"kind": "tool", **tool_meta})
+        _print_jsonl_line({"kind": "command", **tool_meta})
         for diagnostic in diagnostics:
             # diagnostics.jsonl 側は kind="diagnostic" 込みで保存されているが、
             # 古いrunや外部書き出し経路を考慮して kind を明示的に埋める。
@@ -286,10 +286,10 @@ def _print_tool_detail_text(
 ) -> None:
     """``--tool`` モードの text 出力。
 
-    ``diagnostics`` は ``(tool, file)`` 単位の集約形式を想定し、各 file 見出しの下に
+    ``diagnostics`` は ``(command, file)`` 単位の集約形式を想定し、各 file 見出しの下に
     ``messages[]`` 内の個別指摘をインデント付きで並べる。
     """
-    for key in ("tool", "type", "status", "returncode", "files", "elapsed", "diagnostics", "has_error"):
+    for key in ("command", "type", "status", "returncode", "files", "elapsed", "diagnostics", "has_error"):
         if key in tool_meta and tool_meta[key] is not None:
             print(f"{key}: {tool_meta[key]}")
     if tool_meta.get("commandline"):
@@ -351,9 +351,9 @@ def _show_tool_output(
             sys.stdout.write("\n")
         sys.stdout.flush()
     elif output_format == "json":
-        _print_json({"tool": tool, "output": output})
+        _print_json({"command": tool, "output": output})
     else:
-        _print_jsonl_line({"kind": "output", "tool": tool, "content": output})
+        _print_jsonl_line({"kind": "output", "command": tool, "content": output})
     return 0
 
 

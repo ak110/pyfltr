@@ -180,7 +180,7 @@ archive = false
 ### ファイルhashキャッシュ（既定で有効）
 
 対象ファイル未変更時のtextlint実行をスキップし、過去の結果を復元する（textlintのみ対象）。
-キャッシュヒット時はJSONL `tool`レコードに`cached: true` / `cached_from: <ソースrun_id>`が付与される。
+キャッシュヒット時はJSONL `command`レコードに`cached: true` / `cached_from: <ソースrun_id>`が付与される。
 
 - `--no-cache`で個別実行時に無効化
 - `[tool.pyfltr].cache = false`で恒久的に無効化
@@ -201,9 +201,9 @@ Claude Desktop等のMCPクライアントから
 - `diagnostic.rule_url` —
   対応ツール（ruff / pylint / pyright / mypy / shellcheck / eslint / markdownlint）のルールドキュメントURL
 - `diagnostic.severity` — `error` / `warning` / `info`の3値に正規化
-- `tool.retry_command` — 1ツール再実行用のshellコマンド文字列（失敗ファイルのみに絞り込み）
-- `tool.truncated` — smart truncation発生時の切り詰め前情報とアーカイブパス
-- `tool.cached` / `tool.cached_from` — ファイルhashキャッシュ復元時の判別情報
+- `command.retry_command` — 1ツール再実行用のshellコマンド文字列（失敗ファイルのみに絞り込み）
+- `command.truncated` — smart truncation発生時の切り詰め前情報とアーカイブパス
+- `command.cached` / `command.cached_from` — ファイルhashキャッシュ復元時の判別情報
 
 ### 出力形式の追加とCI連携
 

@@ -302,7 +302,7 @@ markdownlint-cli2が読み込む設定ファイル。`$schema`を指定してエ
 ```yaml
 $schema: https://raw.githubusercontent.com/DavidAnson/markdownlint-cli2/v0.20.0/schema/markdownlint-cli2-config-schema.json
 config:
-  # MD013: コードブロック内を除外し、127半角幅（全角2幅換算）を上限とする補助的な検査として使用
+  # MD013: コードブロック内を除外し、127文字を上限とする補助的な検査として使用
   line-length:
     line_length: 127
     code_blocks: false
@@ -319,9 +319,9 @@ textlintで技術文書向けの複数プリセットと誤用語チェックを
 ```yaml
 rules:
   preset-ja-technical-writing:
-    # ラベル型見出し ("ポイント:", "例:" など) が多用されるため、文末句点の強制を無効化する
+    # ラベル型見出し（"ポイント:", "例:" など）のため、文末句点の強制を無効化する
     ja-no-mixed-period: false
-    # 技術文書における自然な助詞連結 (「〜かどうかを検討するか」など) が頻出するため無効化する
+    # 技術文書における自然な助詞連結（「〜かどうかを検討するか」など）が頻出するため無効化する
     no-doubled-joshi: false
     # 引用文や詳細な技術説明で100文字超過が避けられないため緩和する
     sentence-length:
@@ -446,16 +446,16 @@ pyfltr:
   stage: lint
   image: ghcr.io/astral-sh/uv:python3.13-bookworm
   variables:
-    UV_FROZEN: "1"
     PYTHONDEVMODE: "1"
+    UV_FROZEN: "1"
   before_script:
     - uv sync --all-extras --all-groups
   script:
-    - uv run pyfltr ci --output-format=code-quality --output-file=gl-code-quality-report.json
+    - uv run pyfltr ci --output-format=code-quality --output-file=code-quality-report.json
   artifacts:
     when: always
     reports:
-      codequality: gl-code-quality-report.json
+      codequality: code-quality-report.json
 ```
 
 ポイント。
@@ -465,25 +465,6 @@ pyfltr:
 - `artifacts:reports:codequality`: 生成したJSONファイルをGitLabに取り込む。
   Merge Request画面のCode Quality widget（全tier）とMR diffインライン表示（Ultimate tier）に反映される。
 - `when: always`: ジョブが失敗してもアーティファクトを残す指定。lintエラーで`exit 1`したときもレポートを取り込めるようにする。
-
-### SARIFでGitHub code scanningへ取り込む
-
-`--output-format=sarif`でSARIF 2.1.0形式のJSONを出力し、
-`github/codeql-action/upload-sarif`でGitHubのcode scanningへ取り込める。
-セキュリティタブに診断結果が集約され、プル要求ファイル行の注釈と併用できる。
-
-```yaml
-      - name: Run pyfltr (SARIF)
-        run: uv run pyfltr ci --output-format=sarif --output-file=pyfltr.sarif
-        continue-on-error: true
-
-      - name: Upload SARIF to code scanning
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: pyfltr.sarif
-```
-
-アップロードステップの失敗でCIを止めたくない場合は`continue-on-error: true`を付ける。
 
 ---
 

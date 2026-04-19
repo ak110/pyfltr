@@ -42,10 +42,10 @@ class RunSummaryModel(pydantic.BaseModel):
     files: int | None = pydantic.Field(default=None, description="対象ファイル数。")
 
 
-class ToolSummaryModel(pydantic.BaseModel):
-    """ツールごとのサマリ。``show_run`` ツールの戻り値内要素。"""
+class CommandSummaryModel(pydantic.BaseModel):
+    """コマンドごとのサマリ。``show_run`` ツールの戻り値内要素。"""
 
-    tool: str | None = pydantic.Field(default=None, description="ツール名。")
+    command: str | None = pydantic.Field(default=None, description="コマンド名。")
     status: str | None = pydantic.Field(
         default=None,
         description="実行ステータス (succeeded / formatted / failed / skipped)。",
@@ -69,12 +69,12 @@ class DiagnosticMessageModel(pydantic.BaseModel):
 
 
 class DiagnosticModel(pydantic.BaseModel):
-    """``(tool, file)`` 単位で集約された diagnostic エントリ。
+    """``(command, file)`` 単位で集約された diagnostic エントリ。
 
     ``show_run_diagnostics`` ツールの戻り値内要素。``messages`` に個別指摘を保持する。
     """
 
-    tool: str | None = pydantic.Field(default=None, description="ツール名。")
+    command: str | None = pydantic.Field(default=None, description="コマンド名。")
     file: str | None = pydantic.Field(default=None, description="対象ファイルパス。")
     messages: list[DiagnosticMessageModel] = pydantic.Field(
         default_factory=list,
@@ -83,15 +83,15 @@ class DiagnosticModel(pydantic.BaseModel):
 
 
 class RunOverviewModel(pydantic.BaseModel):
-    """run の概要（meta + ツール別サマリ）。``show_run`` ツールの戻り値。"""
+    """run の概要（meta + コマンド別サマリ）。``show_run`` ツールの戻り値。"""
 
     run_id: str = pydantic.Field(description="run の識別子 (ULID)。")
     meta: dict[str, typing.Any] = pydantic.Field(description="run の meta 情報（read_meta の戻り値）。")
-    tools: list[ToolSummaryModel] = pydantic.Field(description="ツール別サマリ一覧。")
+    commands: list[CommandSummaryModel] = pydantic.Field(description="コマンド別サマリ一覧。")
 
 
-class ToolDiagnosticsModel(pydantic.BaseModel):
-    """ツールの詳細情報（tool.json + diagnostics.jsonl 全件）。``show_run_diagnostics`` ツールの戻り値。
+class CommandDiagnosticsModel(pydantic.BaseModel):
+    """コマンドの詳細情報（tool.json + diagnostics.jsonl 全件）。``show_run_diagnostics`` ツールの戻り値。
 
     ``hint_urls`` はPython内部では ``hint_urls`` 属性で扱うが、外部スキーマ（MCPクライアント向けの
     シリアライズ結果）では ``hint-urls`` キーで出す。serialization_alias のみを設定することで、
@@ -99,7 +99,7 @@ class ToolDiagnosticsModel(pydantic.BaseModel):
     キー名を揃えられる。
     """
 
-    tool_meta: dict[str, typing.Any] = pydantic.Field(description="ツールの meta 情報（tool.json の内容）。")
+    command_meta: dict[str, typing.Any] = pydantic.Field(description="コマンドの meta 情報（tool.json の内容）。")
     diagnostics: list[DiagnosticModel] = pydantic.Field(description="diagnostic の全件一覧。")
     hint_urls: dict[str, str] | None = pydantic.Field(
         default=None,
@@ -113,10 +113,10 @@ class RunForAgentResult(pydantic.BaseModel):
 
     run_id: str = pydantic.Field(description="実行アーカイブの参照キー (ULID)。")
     exit_code: int = pydantic.Field(description="終了コード。0 = 成功、1 = 失敗。")
-    failed: list[str] = pydantic.Field(description="失敗したツール名の一覧。")
-    tools: list[ToolSummaryModel] = pydantic.Field(
+    failed: list[str] = pydantic.Field(description="失敗したコマンド名の一覧。")
+    commands: list[CommandSummaryModel] = pydantic.Field(
         default_factory=list,
-        description="ツール別サマリ一覧（status・has_error・diagnostics 件数）。",
+        description="コマンド別サマリ一覧（status・has_error・diagnostics 件数）。",
     )
 
 
@@ -170,7 +170,7 @@ async def _tool_list_runs(limit: int = 20) -> list[RunSummaryModel]:
 
 
 async def _tool_show_run(run_id: str) -> RunOverviewModel:
-    """指定 run の meta 情報とツール別サマリを返す。
+    """指定 run の meta 情報とコマンド別サマリを返す。
 
     ``run_id`` は ULID 完全一致・前方一致・``latest`` エイリアスを受け付ける。
 
@@ -182,23 +182,23 @@ async def _tool_show_run(run_id: str) -> RunOverviewModel:
         meta = store.read_meta(resolved)
     except FileNotFoundError:
         _raise_mcp_error(f"run_id が見つからない: {resolved}")
-    tool_summaries = pyfltr.runs._collect_tool_summaries(store, resolved)  # noqa: SLF001  # pylint: disable=protected-access
-    tools = [
-        ToolSummaryModel(
-            tool=t.get("tool"),
-            status=t.get("status"),
-            has_error=t.get("has_error"),
-            diagnostics=t.get("diagnostics"),
+    command_summaries = pyfltr.runs._collect_tool_summaries(store, resolved)  # noqa: SLF001  # pylint: disable=protected-access
+    commands = [
+        CommandSummaryModel(
+            command=entry.get("command"),
+            status=entry.get("status"),
+            has_error=entry.get("has_error"),
+            diagnostics=entry.get("diagnostics"),
         )
-        for t in tool_summaries
+        for entry in command_summaries
     ]
-    return RunOverviewModel(run_id=resolved, meta=meta, tools=tools)
+    return RunOverviewModel(run_id=resolved, meta=meta, commands=commands)
 
 
-async def _tool_show_run_diagnostics(run_id: str, tool: str) -> ToolDiagnosticsModel:
-    """指定 run・ツールの tool.json と diagnostics.jsonl 全件を返す。
+async def _tool_show_run_diagnostics(run_id: str, command: str) -> CommandDiagnosticsModel:
+    """指定 run・コマンドの tool.json と diagnostics.jsonl 全件を返す。
 
-    ``diagnostics`` は ``(tool, file)`` 単位の集約形式で、個別指摘は ``messages`` に並ぶ。
+    ``diagnostics`` は ``(command, file)`` 単位の集約形式で、個別指摘は ``messages`` に並ぶ。
     rule→URL辞書 ``hint-urls`` は tool.json 由来でそのまま返す。
 
     対応CLI: ``pyfltr show-run <run_id> --tool <name>``
@@ -206,33 +206,33 @@ async def _tool_show_run_diagnostics(run_id: str, tool: str) -> ToolDiagnosticsM
     store = pyfltr.archive.ArchiveStore()
     resolved = _resolve_run_id_or_raise(store, run_id)
     try:
-        tool_meta = store.read_tool_meta(resolved, tool)
-        diagnostics_raw = store.read_tool_diagnostics(resolved, tool)
+        command_meta = store.read_tool_meta(resolved, command)
+        diagnostics_raw = store.read_tool_diagnostics(resolved, command)
     except FileNotFoundError:
-        _raise_mcp_error(f"run {resolved} にツール {tool!r} の結果が保存されていない。")
+        _raise_mcp_error(f"run {resolved} にコマンド {command!r} の結果が保存されていない。")
     diagnostics = [
         DiagnosticModel(
-            tool=d.get("tool"),
+            command=d.get("command", d.get("tool")),
             file=d.get("file"),
             messages=[DiagnosticMessageModel(**m) for m in d.get("messages", [])],
         )
         for d in diagnostics_raw
     ]
-    hint_urls = tool_meta.get("hint-urls") if isinstance(tool_meta.get("hint-urls"), dict) else None
-    return ToolDiagnosticsModel(tool_meta=tool_meta, diagnostics=diagnostics, hint_urls=hint_urls)
+    hint_urls = command_meta.get("hint-urls") if isinstance(command_meta.get("hint-urls"), dict) else None
+    return CommandDiagnosticsModel(command_meta=command_meta, diagnostics=diagnostics, hint_urls=hint_urls)
 
 
-async def _tool_show_run_output(run_id: str, tool: str) -> str:
-    """指定 run・ツールの output.log 全文を返す。
+async def _tool_show_run_output(run_id: str, command: str) -> str:
+    """指定 run・コマンドの output.log 全文を返す。
 
     対応CLI: ``pyfltr show-run <run_id> --tool <name> --output``
     """
     store = pyfltr.archive.ArchiveStore()
     resolved = _resolve_run_id_or_raise(store, run_id)
     try:
-        return store.read_tool_output(resolved, tool)
+        return store.read_tool_output(resolved, command)
     except FileNotFoundError:
-        _raise_mcp_error(f"run {resolved} にツール {tool!r} の結果が保存されていない。")
+        _raise_mcp_error(f"run {resolved} にコマンド {command!r} の結果が保存されていない。")
 
 
 async def _tool_run_for_agent(
@@ -316,21 +316,21 @@ async def _tool_run_for_agent(
     if run_id is None:
         raise RuntimeError("MCP run_for_agent は実行アーカイブ必須だが run_id を採番できなかった")
 
-    # ツール別サマリを最新アーカイブから集計する。
+    # コマンド別サマリを最新アーカイブから集計する。
     store = pyfltr.archive.ArchiveStore()
     try:
-        tool_summaries = pyfltr.runs._collect_tool_summaries(store, run_id)  # noqa: SLF001  # pylint: disable=protected-access
+        command_summaries = pyfltr.runs._collect_tool_summaries(store, run_id)  # noqa: SLF001  # pylint: disable=protected-access
     except Exception:  # pylint: disable=broad-exception-caught
-        tool_summaries = []
+        command_summaries = []
 
-    tools_model = [ToolSummaryModel.model_validate(entry) for entry in tool_summaries]
-    failed_tools = [t.tool for t in tools_model if t.has_error and t.tool]
+    commands_model = [CommandSummaryModel.model_validate(entry) for entry in command_summaries]
+    failed_commands = [c.command for c in commands_model if c.has_error and c.command]
 
     return RunForAgentResult(
         run_id=run_id,
         exit_code=exit_code,
-        failed=failed_tools,
-        tools=tools_model,
+        failed=failed_commands,
+        commands=commands_model,
     )
 
 
@@ -356,14 +356,15 @@ def _build_server() -> typing.Any:
 
     mcp.tool(name="list_runs", description="実行アーカイブに保存された run 一覧を新しい順で返す。")(_tool_list_runs)
     mcp.tool(
-        name="show_run", description="指定 run の meta 情報とツール別サマリを返す。run_id は前方一致・latest エイリアス可。"
+        name="show_run", description="指定 run の meta 情報とコマンド別サマリを返す。run_id は前方一致・latest エイリアス可。"
     )(_tool_show_run)
-    mcp.tool(name="show_run_diagnostics", description="指定 run・ツールの tool.json と diagnostics 全件を返す。")(
+    mcp.tool(name="show_run_diagnostics", description="指定 run・コマンドの tool.json と diagnostics 全件を返す。")(
         _tool_show_run_diagnostics
     )
-    mcp.tool(name="show_run_output", description="指定 run・ツールの output.log 全文を返す。")(_tool_show_run_output)
+    mcp.tool(name="show_run_output", description="指定 run・コマンドの output.log 全文を返す。")(_tool_show_run_output)
     mcp.tool(
-        name="run_for_agent", description="指定パスに対して lint/format/test を実行し、run_id・終了コード・失敗ツール名を返す。"
+        name="run_for_agent",
+        description="指定パスに対して lint/format/test を実行し、run_id・終了コード・失敗コマンド名を返す。",
     )(_tool_run_for_agent)
 
     return mcp

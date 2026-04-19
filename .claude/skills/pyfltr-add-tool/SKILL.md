@@ -146,15 +146,15 @@ uv run pyfltr run-for-agent <file1> [file2] 2>/dev/null
 uv run pyfltr run-for-agent 2>/dev/null
 ```
 
-JSONL出力の`tool`レコードから`tool`, `elapsed`, `files`を抽出する:
+JSONL出力の`command`レコードから`command`, `elapsed`, `files`を抽出する:
 
 ```bash
 ... | python3 -c "
 import json, sys
 for line in sys.stdin:
     r = json.loads(line)
-    if r.get('kind') == 'tool':
-        print(f\"{r['tool']:20s} {r['elapsed']:7.2f}s  files={r['files']}\")"
+    if r.get('kind') == 'command':
+        print(f\"{r['command']:20s} {r['elapsed']:7.2f}s  files={r['files']}\")"
 ```
 
 推定式: `b = (T_all - T_small) / (N_all - N_small)`, `a = T_small - b * N_small`

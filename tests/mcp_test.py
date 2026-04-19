@@ -51,7 +51,7 @@ def test_run_summary_model_fields() -> None:
 def test_diagnostic_model_all_optional() -> None:
     # 全フィールド省略可能であることを確認する
     model = pyfltr.mcp_.DiagnosticModel()
-    assert model.tool is None
+    assert model.command is None
     assert model.file is None
     assert not model.messages
 
@@ -112,9 +112,9 @@ async def test_tool_show_run_overview(tmp_path: pathlib.Path) -> None:
     result = await pyfltr.mcp_._tool_show_run(run_id)
     assert result.run_id == run_id
     assert "run_id" in result.meta
-    tool_names = [t.tool for t in result.tools]
-    assert "ruff-check" in tool_names
-    assert "mypy" in tool_names
+    command_names = [c.command for c in result.commands]
+    assert "ruff-check" in command_names
+    assert "mypy" in command_names
 
 
 @pytest.mark.asyncio
@@ -178,7 +178,7 @@ async def test_tool_show_run_diagnostics(tmp_path: pathlib.Path) -> None:
     )
 
     result = await pyfltr.mcp_._tool_show_run_diagnostics(run_id, "mypy")
-    assert result.tool_meta["tool"] == "mypy"
+    assert result.command_meta["command"] == "mypy"
     assert len(result.diagnostics) == 1
     diagnostic = result.diagnostics[0]
     assert diagnostic.file == "src/a.py"
@@ -250,7 +250,7 @@ async def test_tool_run_for_agent_with_typos(tmp_path: pathlib.Path) -> None:
     assert len(result.run_id) > 0
     assert isinstance(result.exit_code, int)
     assert isinstance(result.failed, list)
-    assert isinstance(result.tools, list)
+    assert isinstance(result.commands, list)
 
 
 @pytest.mark.asyncio

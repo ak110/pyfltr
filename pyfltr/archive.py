@@ -6,9 +6,9 @@
 ディレクトリ構造 (``<cache_root> = platformdirs.user_cache_dir("pyfltr")``)::
 
     <cache_root>/runs/<run_id>/meta.json
-    <cache_root>/runs/<run_id>/tools/<tool>/output.log
-    <cache_root>/runs/<run_id>/tools/<tool>/diagnostics.jsonl
-    <cache_root>/runs/<run_id>/tools/<tool>/tool.json
+    <cache_root>/runs/<run_id>/tools/<sanitize(command)>/output.log
+    <cache_root>/runs/<run_id>/tools/<sanitize(command)>/diagnostics.jsonl
+    <cache_root>/runs/<run_id>/tools/<sanitize(command)>/tool.json
 
 ``run_id`` は ULID (26 文字、Crockford Base32、タイムスタンプ由来で辞書順ソート可能)。
 自動クリーンアップは世代数・合計サイズ・保存期間の 3 軸のうち超過した時点で
@@ -35,6 +35,7 @@ import ulid
 import pyfltr.command
 import pyfltr.config
 import pyfltr.llm_output
+import pyfltr.paths
 
 logger = logging.getLogger(__name__)
 
@@ -141,12 +142,12 @@ class ArchiveStore:
     ) -> None:
         """1 ツール完了時に呼び出されるフック。生出力・diagnostic・メタを保存する。
 
-        ``diagnostics.jsonl`` は ``(tool, file)`` 単位の集約形式で保存する。各行は
-        ``{"kind": "diagnostic", "tool": ..., "file": ..., "messages": [...]}`` 構造で
+        ``diagnostics.jsonl`` は ``(command, file)`` 単位の集約形式で保存する。各行は
+        ``{"kind": "diagnostic", "command": ..., "file": ..., "messages": [...]}`` 構造で
         ``llm_output.aggregate_diagnostics()`` の出力と同形。
         ``tool.json`` には ``hint-urls``（ハイフンキー）を空でないときに限り含める。
         """
-        tool_dir = self._runs_dir / run_id / "tools" / _sanitize_tool_name(result.command)
+        tool_dir = self._runs_dir / run_id / "tools" / pyfltr.paths.sanitize_command_name(result.command)
         tool_dir.mkdir(parents=True, exist_ok=True)
         (tool_dir / _TOOL_OUTPUT_FILENAME).write_text(result.output, encoding="utf-8")
 
@@ -156,7 +157,7 @@ class ArchiveStore:
                 f.write(json.dumps(record, ensure_ascii=False))
                 f.write("\n")
         meta: dict[str, typing.Any] = {
-            "tool": result.command,
+            "command": result.command,
             "type": result.command_type,
             "status": result.status,
             "returncode": result.returncode,
@@ -234,7 +235,7 @@ class ArchiveStore:
     def list_tools(self, run_id: str) -> list[str]:
         """指定 run で実際にアーカイブされているツール名一覧を返す。
 
-        ``tools/`` 直下のディレクトリ名 (``_sanitize_tool_name()`` 済み) を自然順で返す。
+        ``tools/`` 直下のディレクトリ名 (``pyfltr.paths.sanitize_command_name()`` 済み) を自然順で返す。
         ``meta["commands"]`` は実行予定リストで、fail-fast 中断や skipped で実体を
         伴わないツールを含みうるため、実保存ツールの SSOT として本メソッドを使う。
         不在 run_id 指定時は他の ``read_*`` と同じく ``FileNotFoundError`` を送出する。
@@ -246,21 +247,21 @@ class ArchiveStore:
 
     def read_tool_meta(self, run_id: str, tool: str) -> dict[str, typing.Any]:
         """指定 run / tool のメタ情報を読み出す。"""
-        path = self._runs_dir / run_id / "tools" / _sanitize_tool_name(tool) / _TOOL_META_FILENAME
+        path = self._runs_dir / run_id / "tools" / pyfltr.paths.sanitize_command_name(tool) / _TOOL_META_FILENAME
         if not path.exists():
             raise FileNotFoundError(f"{run_id}/{tool}")
         return json.loads(path.read_text(encoding="utf-8"))
 
     def read_tool_output(self, run_id: str, tool: str) -> str:
         """指定 run / tool の生出力を読み出す。"""
-        path = self._runs_dir / run_id / "tools" / _sanitize_tool_name(tool) / _TOOL_OUTPUT_FILENAME
+        path = self._runs_dir / run_id / "tools" / pyfltr.paths.sanitize_command_name(tool) / _TOOL_OUTPUT_FILENAME
         if not path.exists():
             raise FileNotFoundError(f"{run_id}/{tool}")
         return path.read_text(encoding="utf-8")
 
     def read_tool_diagnostics(self, run_id: str, tool: str) -> list[dict[str, typing.Any]]:
         """指定 run / tool の diagnostic 一覧を返す。"""
-        path = self._runs_dir / run_id / "tools" / _sanitize_tool_name(tool) / _TOOL_DIAGNOSTICS_FILENAME
+        path = self._runs_dir / run_id / "tools" / pyfltr.paths.sanitize_command_name(tool) / _TOOL_DIAGNOSTICS_FILENAME
         if not path.exists():
             raise FileNotFoundError(f"{run_id}/{tool}")
         entries: list[dict[str, typing.Any]] = []
@@ -334,16 +335,6 @@ def policy_from_config(config: pyfltr.config.Config) -> ArchivePolicy:
 def _now_iso() -> str:
     """現在時刻を ISO 8601 (UTC, マイクロ秒付き) で返す。"""
     return datetime.datetime.now(datetime.UTC).isoformat()
-
-
-def _sanitize_tool_name(name: str) -> str:
-    """ツール名をファイルシステム安全な形式へ変換する。
-
-    既存の pyfltr ツール名は英数字・ハイフンのみで構成されるが、カスタムコマンド側で
-    スラッシュ等が入らない保証は無いため最低限のサニタイズを行う。
-    """
-    safe = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in name)
-    return safe or "_"
 
 
 def _started_at_of(run_dir: pathlib.Path) -> datetime.datetime | None:

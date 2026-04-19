@@ -80,7 +80,7 @@ def test_aggregate_diagnostics_groups_by_tool_and_file() -> None:
     ]
     records, hint_urls = pyfltr.llm_output.aggregate_diagnostics(errors)
     assert len(records) == 2
-    assert records[0]["tool"] == "ruff-check"
+    assert records[0]["command"] == "ruff-check"
     assert records[0]["file"] == "src/a.py"
     assert [m.get("rule") for m in records[0]["messages"]] == [None, "E401", "E501"]
     assert [m["line"] for m in records[0]["messages"]] == [5, 10, 10]
@@ -138,7 +138,7 @@ def test_dump_roundtrip() -> None:
     line = pyfltr.llm_output._dump(records[0])
     parsed = json.loads(line)
     assert parsed["kind"] == "diagnostic"
-    assert parsed["tool"] == "ruff-check"
+    assert parsed["command"] == "ruff-check"
     assert parsed["messages"][0]["rule"] == "F401"
 
 
@@ -161,7 +161,7 @@ def test_build_warning_record_with_hint() -> None:
     }
 
 
-def test_build_tool_record_includes_hint_urls_when_provided() -> None:
+def test_build_command_record_includes_hint_urls_when_provided() -> None:
     """hint_urls を与えると tool レコードにハイフン区切りキーで埋め込まれる。"""
     result = pyfltr.command.CommandResult(
         command="ruff-check",
@@ -173,7 +173,7 @@ def test_build_tool_record_includes_hint_urls_when_provided() -> None:
         output="",
         elapsed=0.1,
     )
-    record = pyfltr.llm_output._build_tool_record(
+    record = pyfltr.llm_output._build_command_record(
         result,
         diagnostics=1,
         hint_urls={"F401": "https://docs.astral.sh/ruff/rules/F401/"},
@@ -181,7 +181,7 @@ def test_build_tool_record_includes_hint_urls_when_provided() -> None:
     assert record["hint-urls"] == {"F401": "https://docs.astral.sh/ruff/rules/F401/"}
 
 
-def test_build_tool_record_omits_hint_urls_when_empty() -> None:
+def test_build_command_record_omits_hint_urls_when_empty() -> None:
     """hint_urls が None / 空の場合は `hint-urls` キー自体を出さない。"""
     result = pyfltr.command.CommandResult(
         command="mypy",
@@ -193,13 +193,13 @@ def test_build_tool_record_omits_hint_urls_when_empty() -> None:
         output="",
         elapsed=0.1,
     )
-    record_none = pyfltr.llm_output._build_tool_record(result, diagnostics=0, hint_urls=None)
-    record_empty = pyfltr.llm_output._build_tool_record(result, diagnostics=0, hint_urls={})
+    record_none = pyfltr.llm_output._build_command_record(result, diagnostics=0, hint_urls=None)
+    record_empty = pyfltr.llm_output._build_command_record(result, diagnostics=0, hint_urls={})
     assert "hint-urls" not in record_none
     assert "hint-urls" not in record_empty
 
 
-def test_build_tool_record_retry_command_included() -> None:
+def test_build_command_record_retry_command_included() -> None:
     """retry_command が設定されていれば tool レコードに含まれる (失敗時のみ populate される前提)。"""
     result = pyfltr.command.CommandResult(
         command="ruff-check",
@@ -212,11 +212,11 @@ def test_build_tool_record_retry_command_included() -> None:
         elapsed=0.5,
         retry_command="pyfltr run --commands ruff-check -- src/foo.py",
     )
-    record = pyfltr.llm_output._build_tool_record(result, diagnostics=0)
+    record = pyfltr.llm_output._build_command_record(result, diagnostics=0)
     assert record["retry_command"] == "pyfltr run --commands ruff-check -- src/foo.py"
 
 
-def test_build_tool_record_retry_command_omitted() -> None:
+def test_build_command_record_retry_command_omitted() -> None:
     """retry_command が None の場合、tool レコードから省略される。"""
     result = pyfltr.command.CommandResult(
         command="mypy",
@@ -228,11 +228,11 @@ def test_build_tool_record_retry_command_omitted() -> None:
         output="",
         elapsed=0.1,
     )
-    record = pyfltr.llm_output._build_tool_record(result, diagnostics=0)
+    record = pyfltr.llm_output._build_command_record(result, diagnostics=0)
     assert "retry_command" not in record
 
 
-def test_build_tool_lines_truncates_diagnostics_when_archived() -> None:
+def test_build_command_lines_truncates_diagnostics_when_archived() -> None:
     """jsonl-diagnostic-limit 超過時、先頭 N 件の個別指摘に切り詰めてから集約する。"""
     errors = [
         pyfltr.error_parser.ErrorLocation(file="src/foo.py", line=i, col=None, command="mypy", message=f"err{i}")
@@ -252,7 +252,7 @@ def test_build_tool_lines_truncates_diagnostics_when_archived() -> None:
     )
     config = pyfltr.config.create_default_config()
     config.values["jsonl-diagnostic-limit"] = 3
-    lines = pyfltr.llm_output.build_tool_lines(result, config)
+    lines = pyfltr.llm_output.build_command_lines(result, config)
     # 3件とも同一fileのため集約後は1 diagnostic行 + tool行 = 2行
     assert len(lines) == 2
     diag_record = json.loads(lines[0])
@@ -264,7 +264,7 @@ def test_build_tool_lines_truncates_diagnostics_when_archived() -> None:
     assert tool_record["truncated"]["archive"] == "tools/mypy/diagnostics.jsonl"
 
 
-def test_build_tool_lines_no_truncation_when_not_archived() -> None:
+def test_build_command_lines_no_truncation_when_not_archived() -> None:
     """archived=False のときは切り詰めをスキップして全件出力する。"""
     errors = [
         pyfltr.error_parser.ErrorLocation(file="src/foo.py", line=i, col=None, command="mypy", message=f"err{i}")
@@ -284,7 +284,7 @@ def test_build_tool_lines_no_truncation_when_not_archived() -> None:
     )
     config = pyfltr.config.create_default_config()
     config.values["jsonl-diagnostic-limit"] = 3
-    lines = pyfltr.llm_output.build_tool_lines(result, config)
+    lines = pyfltr.llm_output.build_command_lines(result, config)
     # 切り詰めなし: 同一fileのため集約後は1 diagnostic行 + tool行 = 2行、messages 10件
     assert len(lines) == 2
     diag_record = json.loads(lines[0])
@@ -294,7 +294,7 @@ def test_build_tool_lines_no_truncation_when_not_archived() -> None:
     assert "truncated" not in tool_record
 
 
-def test_build_tool_record_cached_includes_cached_from() -> None:
+def test_build_command_record_cached_includes_cached_from() -> None:
     """cached=True のとき cached/cached_from が tool レコードに含まれる。"""
     result = pyfltr.command.CommandResult(
         command="textlint",
@@ -308,12 +308,12 @@ def test_build_tool_record_cached_includes_cached_from() -> None:
         cached=True,
         cached_from="01ABCDEFGH",
     )
-    record = pyfltr.llm_output._build_tool_record(result, diagnostics=0)
+    record = pyfltr.llm_output._build_command_record(result, diagnostics=0)
     assert record["cached"] is True
     assert record["cached_from"] == "01ABCDEFGH"
 
 
-def test_build_tool_record_cached_omitted_when_false() -> None:
+def test_build_command_record_cached_omitted_when_false() -> None:
     """cached=False の場合は cached/cached_from が省略される。"""
     result = pyfltr.command.CommandResult(
         command="textlint",
@@ -325,12 +325,12 @@ def test_build_tool_record_cached_omitted_when_false() -> None:
         output="",
         elapsed=0.0,
     )
-    record = pyfltr.llm_output._build_tool_record(result, diagnostics=0)
+    record = pyfltr.llm_output._build_command_record(result, diagnostics=0)
     assert "cached" not in record
     assert "cached_from" not in record
 
 
-def test_build_tool_record_message_truncated_when_archived() -> None:
+def test_build_command_record_message_truncated_when_archived() -> None:
     """failed + message 切り詰め時、truncated に lines / chars / archive が入る。"""
     many_lines = "\n".join(f"line{i}" for i in range(100))
     result = pyfltr.command.CommandResult(
@@ -345,28 +345,97 @@ def test_build_tool_record_message_truncated_when_archived() -> None:
         archived=True,
     )
     config = pyfltr.config.create_default_config()
-    record = pyfltr.llm_output._build_tool_record(result, diagnostics=0, config=config)
+    record = pyfltr.llm_output._build_command_record(result, diagnostics=0, config=config)
     assert "message" in record
     assert record["message"].startswith("... (truncated)")
     assert record["truncated"]["archive"] == "tools/shellcheck/output.log"
     assert record["truncated"]["lines"] == 100
 
 
-def test_build_header_record_contains_schema_hints() -> None:
-    """header レコードに schema_hints が含まれ、代表的な英語キーが埋まっている。"""
-    record = pyfltr.llm_output._build_header_record(commands=["ruff-check"], files=3, run_id="01TESTULID")
+def test_build_header_record_default_compact() -> None:
+    """既定では commands_count と短縮 schema_hints を出す。"""
+    record = pyfltr.llm_output._build_header_record(commands=["ruff-check", "mypy", "textlint"], files=3, run_id="01TESTULID")
     assert record["run_id"] == "01TESTULID"
+    # commands フル配列ではなく commands_count が出る
+    assert "commands" not in record
+    assert record["commands_count"] == 3
+    hints = record.get("schema_hints")
+    assert isinstance(hints, dict)
+    # 短縮版は LLM が推測しづらい項目だけを載せる。自明なレコード種別 (diagnostic/warning/summary) は含まない。
+    assert "header.commands_count" in hints
+    assert "command.retry_command" in hints
+    assert "messages[].fix" in hints
+    assert "-v" in hints["_note"] or "verbose" in hints["_note"]
+    # フル版固有のキーは出さない (同名衝突しないよう別体系)
+    assert "diagnostic.messages" not in hints
+
+
+def test_build_header_record_verbose_has_full_hints() -> None:
+    """verbose=True で commands フル配列とフル schema_hints が埋まる。"""
+    record = pyfltr.llm_output._build_header_record(commands=["ruff-check"], files=3, run_id="01TESTULID", verbose=True)
+    assert record["run_id"] == "01TESTULID"
+    assert record["commands"] == ["ruff-check"]
+    assert "commands_count" not in record
     hints = record.get("schema_hints")
     assert isinstance(hints, dict)
     assert "diagnostic.messages" in hints
     assert "diagnostic.messages.fix" in hints
-    assert "tool.hint-urls" in hints
-    assert "tool.retry_command" in hints
+    assert "command.hint-urls" in hints
+    assert "command.retry_command" in hints
     assert "header.run_id" in hints
     # 集約形式以降、rule_url はトップレベルキーから削除されている
     assert "diagnostic.rule_url" not in hints
     # 値は英語で LLM が読む前提
     assert "auto-fix" in hints["diagnostic.messages.fix"]
+
+
+def test_build_header_record_size_default_is_small() -> None:
+    """既定ヘッダー (commands=15件想定) は 800 文字以下に収まる。"""
+    # 想定: pyfltr の全ビルトイン + 追加数件程度でも短縮版でヘッダーは 800 文字以下。
+    commands = [f"tool-{i}" for i in range(15)]
+    record = pyfltr.llm_output._build_header_record(commands=commands, files=10, run_id="01TESTULID")
+    serialized = pyfltr.llm_output._dump(record)
+    assert len(serialized) <= 800, f"header size {len(serialized)} exceeded 800 chars"
+
+
+def test_build_lines_verbose_flag_switches_commands() -> None:
+    """build_lines の verbose 引数で header の commands/schema_hints が切り替わる。"""
+    config = pyfltr.config.create_default_config()
+    result = pyfltr.command.CommandResult(
+        command="mypy",
+        command_type="linter",
+        commandline=["mypy"],
+        returncode=0,
+        has_error=False,
+        files=1,
+        output="",
+        elapsed=0.1,
+    )
+    lines_default = pyfltr.llm_output.build_lines([result], config, exit_code=0, commands=["mypy", "ruff-check"], files=10)
+    header_default = json.loads(lines_default[0])
+    assert "commands" not in header_default
+    assert header_default["commands_count"] == 2
+    assert "_note" in header_default["schema_hints"]
+
+    lines_verbose = pyfltr.llm_output.build_lines(
+        [result], config, exit_code=0, commands=["mypy", "ruff-check"], files=10, verbose=True
+    )
+    header_verbose = json.loads(lines_verbose[0])
+    assert header_verbose["commands"] == ["mypy", "ruff-check"]
+    assert "commands_count" not in header_verbose
+    assert "diagnostic.messages" in header_verbose["schema_hints"]
+
+
+def test_get_schema_hints_public_api() -> None:
+    """get_schema_hints はコピーを返し、full/compact で内容が切り替わる。"""
+    full = pyfltr.llm_output.get_schema_hints(full=True)
+    compact = pyfltr.llm_output.get_schema_hints(full=False)
+    assert "diagnostic.messages" in full
+    assert "diagnostic.messages" not in compact
+    assert "_note" in compact
+    # コピーであること
+    full["diagnostic.messages"] = "modified"
+    assert pyfltr.llm_output.get_schema_hints(full=True)["diagnostic.messages"] != "modified"
 
 
 def test_build_summary_record_emits_guidance_on_failure() -> None:

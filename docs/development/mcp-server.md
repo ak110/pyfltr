@@ -10,10 +10,10 @@
 | ツール名 | 対応CLI | 主要引数 | 戻り値 |
 | --- | --- | --- | --- |
 | `list_runs` | `pyfltr list-runs` | `limit: int = 20` | `RunSummary[]`（run_id・開始終了時刻・exit_code等） |
-| `show_run` | `pyfltr show-run <run_id>` | `run_id: str`（前方一致・`latest`可） | `{meta: dict, tools: ToolSummary[]}` |
-| `show_run_diagnostics` | `show-run <run_id> --tool <name>` | `run_id`・`tool` | `{tool_meta, diagnostics[]}` |
-| `show_run_output` | `pyfltr show-run <run_id> --tool <name> --output` | `run_id: str`・`tool: str` | `str`（全文） |
-| `run_for_agent` | `pyfltr run-for-agent` | `paths`・`commands`・`fail_fast` | `{run_id, exit_code, failed, tools}` |
+| `show_run` | `pyfltr show-run <run_id>` | `run_id: str`（前方一致・`latest`可） | `{meta: dict, commands: CommandSummary[]}` |
+| `show_run_diagnostics` | `show-run <run_id> --tool <name>` | `run_id`・`command` | `{command_meta, diagnostics[]}` |
+| `show_run_output` | `pyfltr show-run <run_id> --tool <name> --output` | `run_id: str`・`command: str` | `str`（全文） |
+| `run_for_agent` | `pyfltr run-for-agent` | `paths`・`commands`・`fail_fast` | `{run_id, exit_code, failed, commands}` |
 
 `run_for_agent`はCLIの`run-for-agent`サブコマンド相当の前提
 （`--output-format=jsonl`既定、fixステージ有効、formatterの書き換えは成功扱い）で動作する。
@@ -43,10 +43,10 @@
 Pydantic BaseModel派生の6クラスを`mcp_.py`内で定義する。
 
 - `RunSummaryModel`
-- `ToolSummaryModel`
+- `CommandSummaryModel`
 - `DiagnosticModel`
 - `RunOverviewModel`
-- `ToolDiagnosticsModel`
+- `CommandDiagnosticsModel`
 - `RunForAgentResult`
 
 理由は次の通り。

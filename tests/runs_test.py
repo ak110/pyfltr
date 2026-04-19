@@ -118,7 +118,7 @@ def test_show_run_text_overview(
     assert returncode == 0
     out = capsys.readouterr().out
     assert f"run_id: {run_id}" in out
-    assert "tools:" in out
+    assert "commands:" in out
     assert "ruff-check:" in out
     assert "mypy:" in out
     assert "diagnostics=1" in out
@@ -203,7 +203,7 @@ def test_show_run_tool_text(
     returncode = pyfltr.main.run(["show-run", run_id, "--tool", "mypy"])
     assert returncode == 0
     out = capsys.readouterr().out
-    assert "tool: mypy" in out
+    assert "command: mypy" in out
     assert "src/a.py:42:5" in out
     assert "型エラー" in out
 
@@ -227,7 +227,7 @@ def test_show_run_tool_json(
     returncode = pyfltr.main.run(["show-run", run_id, "--tool", "ruff-check", "--output-format=json"])
     assert returncode == 0
     payload = json.loads(capsys.readouterr().out)
-    assert payload["tool"]["tool"] == "ruff-check"
+    assert payload["command"]["command"] == "ruff-check"
     assert len(payload["diagnostics"]) == 1
     assert payload["diagnostics"][0]["file"] == "a.py"
 
@@ -254,8 +254,8 @@ def test_show_run_tool_jsonl(
     returncode = pyfltr.main.run(["show-run", run_id, "--tool", "ruff-check", "--output-format=jsonl"])
     assert returncode == 0
     lines = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
-    assert lines[0]["kind"] == "tool"
-    assert lines[0]["tool"] == "ruff-check"
+    assert lines[0]["kind"] == "command"
+    assert lines[0]["command"] == "ruff-check"
     assert [line["kind"] for line in lines[1:]] == ["diagnostic", "diagnostic"]
     assert lines[1]["file"] == "a.py"
 
@@ -313,7 +313,7 @@ def test_show_run_output_mode_jsonl(
     assert len(lines) == 1
     record = json.loads(lines[0])
     assert record["kind"] == "output"
-    assert record["tool"] == "ruff-check"
+    assert record["command"] == "ruff-check"
     assert record["content"] == "raw-log"
 
 
@@ -345,5 +345,5 @@ def test_show_run_jsonl_overview(
     lines = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
     kinds = [line["kind"] for line in lines]
     assert kinds[0] == "meta"
-    assert kinds[1:] == ["tool", "tool"]
+    assert kinds[1:] == ["command", "command"]
     assert lines[0]["run_id"] == run_id

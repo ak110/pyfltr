@@ -1,6 +1,6 @@
 $schema: https://raw.githubusercontent.com/DavidAnson/markdownlint-cli2/v0.20.0/schema/markdownlint-cli2-config-schema.json
 config:
-  # MD013: コードブロック内を除外し、127半角幅（全角2幅換算）を上限とする補助的な検査として使用
+  # MD013: コードブロック内を除外し、127文字を上限とする補助的な検査として使用
   line-length:
     line_length: 127
     code_blocks: false
