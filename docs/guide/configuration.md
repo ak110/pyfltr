@@ -58,7 +58,7 @@ extend-exclude = ["foo", "bar.py"]
 `prettier-check-args` / `prettier-write-args` / `shfmt-check-args` / `shfmt-write-args`などの
 2段階実行向け引数はツール別設定ページで詳しく扱う。
 
-## プリセット設定
+## プリセット設定 {#preset}
 
 プリセットは各時点での推奨ツール構成をバージョン付きで示すスナップショット。
 Python / JavaScript / TypeScript / Rust / .NET / ドキュメント系の推奨ツールを横断的に収録する。

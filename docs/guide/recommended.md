@@ -4,7 +4,7 @@
 
 pyfltr本体の設定（`[tool.pyfltr]`）と、呼び出される各ツール（ruff / mypy / pytest）の設定を1つの`pyproject.toml`にまとめた例。
 
-- `preset = "latest"`: 各時点での推奨ツール構成。詳細は[設定項目](configuration.md)の「プリセット設定」を参照。
+- `preset = "latest"`: 各時点での推奨ツール構成。詳細は[プリセット設定](configuration.md#preset)を参照。
 - `python = true`: Python系ツールのゲートを開ける。推奨ツール（ruff-format / ruff-check / mypy /
   pylint / pyright / pytest / uv-sort）を一式有効化する。
   依存は`uv add --dev 'pyfltr[python]'`（pipの場合は`pip install 'pyfltr[python]'`）で導入する。
