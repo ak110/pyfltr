@@ -18,16 +18,14 @@ import typing
 import pyfltr.archive
 import pyfltr.cache
 import pyfltr.cli
-import pyfltr.code_quality
 import pyfltr.command
 import pyfltr.config
-import pyfltr.llm_output
+import pyfltr.formatters
 import pyfltr.mcp_
 import pyfltr.only_failed
 import pyfltr.precommit
 import pyfltr.retry
 import pyfltr.runs
-import pyfltr.sarif_output
 import pyfltr.shell_completion
 import pyfltr.ui
 import pyfltr.warnings_
@@ -104,7 +102,7 @@ def _make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> 
     common.add_argument("--ci", default=False, action="store_true", help="CI モードで動作します(--no-shuffle --no-ui 相当)。")
     common.add_argument(
         "--output-format",
-        choices=("text", "jsonl", "sarif", "github-annotations", "code-quality"),
+        choices=sorted(pyfltr.formatters.FORMATTERS.keys()),
         default=None,
         help="出力形式を指定します(text/jsonl/sarif/github-annotations/code-quality、既定: text)。"
         "jsonl は LLM 向け JSON Lines 出力、sarif は SARIF 2.1.0、github-annotations は GitHub Actions 向けの注釈形式、"
@@ -364,7 +362,7 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
 
 
 _OUTPUT_FORMAT_ENV = "PYFLTR_OUTPUT_FORMAT"
-_VALID_OUTPUT_FORMATS: frozenset[str] = frozenset({"text", "jsonl", "sarif", "github-annotations", "code-quality"})
+_VALID_OUTPUT_FORMATS: frozenset[str] = frozenset(pyfltr.formatters.FORMATTERS.keys())
 
 
 def _resolve_output_format(parser: argparse.ArgumentParser, cli_value: str | None) -> str:
@@ -509,14 +507,18 @@ def run_pipeline(
         args.no_clear = True
         args.stream = False
 
-    # text 整形 logger / 構造化出力 logger を本関数冒頭で毎回初期化する。
-    # 同一プロセスで run_pipeline が複数回呼ばれる MCP 経路でも、format / output_file /
-    # force_text_on_stderr の組み合わせで出力先が切り替わるため、毎回張り直す。
-    _configure_loggers_for_format(
-        output_format=output_format,
+    formatter = pyfltr.formatters.FORMATTERS[output_format]()
+
+    # logger を初期化する。同一プロセスで run_pipeline が複数回呼ばれる MCP 経路でも、
+    # format / output_file / force_text_on_stderr の組み合わせで出力先が切り替わるため、毎回張り直す。
+    # configure_loggers は output_file / force_text_on_stderr のみ参照するため、
+    # run_id 等が未確定の段階でも呼び出せる（残フィールドはデフォルト値のまま渡す）。
+    early_ctx = pyfltr.formatters.RunOutputContext(
+        config=config,
         output_file=output_file,
         force_text_on_stderr=force_text_on_stderr,
     )
+    formatter.configure_loggers(early_ctx)
 
     # ターミナルをクリア
     if not args.no_clear:
@@ -618,16 +620,34 @@ def run_pipeline(
     # UIの判定
     use_ui = not args.no_ui and (args.ui or pyfltr.ui.can_use_ui())
 
-    # 構造化出力（JSONL）はツール完了時に streaming で書き出す。
-    # stdout / `--output-file` の切替は ``pyfltr.cli.structured_logger`` の handler に
-    # 委ねられており、呼び出し側は logger 経由で書くだけで済む。
-    jsonl_streaming = output_format == "jsonl"
+    # 各ツール完了時のフック: retry_command 付与 → archive 書き込み → formatter.on_result (ストリーミング等)。
+    # retry_command は archive と JSONL streaming の双方で必要になるため、archive_hook より前に挿入する。
+    # formatter.on_result は archive_hook の後に呼ぶ（result.archived=True が立った後）。
+    # on_start / on_result / on_finish で使う完全な ctx を構築する。
+    per_command_log = bool(args.stream)
+    include_details_from_stream = not per_command_log
+    ctx = pyfltr.formatters.RunOutputContext(
+        config=config,
+        output_file=output_file,
+        force_text_on_stderr=force_text_on_stderr,
+        commands=commands,
+        all_files=len(all_files),
+        run_id=run_id,
+        launcher_prefix=launcher_prefix,
+        retry_args_template=retry_args_template,
+        stream=per_command_log,
+        include_details=include_details_from_stream,
+        structured_stdout=structured_stdout,
+    )
 
-    if jsonl_streaming:
-        pyfltr.llm_output.write_jsonl_header(commands=commands, files=len(all_files), run_id=run_id)
+    formatter.on_start(ctx)
 
-    # 各ツール完了時のフック: retry_command 付与 → archive 書き込み → on_result (ストリーミング)。
-    # retry_command は archive と jsonl streaming の双方で必要になるため、archive_hook より前に挿入する。
+    # 各ツール完了時のフック順序:
+    #   1. _attach_retry_command(result) → retry_command を result に付与
+    #   2. archive_hook(result) → アーカイブ書き込み（cached の場合はスキップ）
+    #   3. formatter.on_result(ctx, result) → JSONL streaming など（cached でも呼ばれる）
+    # 上記 1+2 を composed_hook にまとめ、3 は run_commands_with_cli の on_result 引数として渡す。
+    # これにより cached の場合でも formatter.on_result が呼ばれる（cli.py の設計を踏襲）。
     composed_hook: typing.Callable[[pyfltr.command.CommandResult], None] | None = None
     if archive_hook is not None:
 
@@ -639,6 +659,9 @@ def run_pipeline(
     else:
         composed_hook = _attach_retry_command
 
+    def _on_result_callback(result: pyfltr.command.CommandResult) -> None:
+        formatter.on_result(ctx, result)
+
     # run
     include_fix_stage = bool(getattr(args, "include_fix_stage", False))
     fail_fast = bool(getattr(args, "fail_fast", False))
@@ -649,16 +672,28 @@ def run_pipeline(
             config,
             all_files,
             archive_hook=composed_hook,
+            on_result=_on_result_callback,
             cache_store=cache_store,
             cache_run_id=run_id,
             fail_fast=fail_fast,
             only_failed_targets=only_failed_targets,
         )
-        include_details = True
+        # TUI 経路では常に include_details=True（ストリーミングしていないため）。
+        ctx = pyfltr.formatters.RunOutputContext(
+            config=config,
+            output_file=output_file,
+            force_text_on_stderr=force_text_on_stderr,
+            commands=commands,
+            all_files=len(all_files),
+            run_id=run_id,
+            launcher_prefix=launcher_prefix,
+            retry_args_template=retry_args_template,
+            stream=False,
+            include_details=True,
+            structured_stdout=structured_stdout,
+        )
     else:
         # 非 TUI モード: 既定はバッファリング (最後にまとめて出力)、`--stream` で従来の即時出力。
-        per_command_log = bool(args.stream)
-        on_result = (lambda result: pyfltr.llm_output.write_jsonl_streaming(result, config)) if jsonl_streaming else None
         results = pyfltr.cli.run_commands_with_cli(
             commands,
             args,
@@ -666,7 +701,7 @@ def run_pipeline(
             all_files,
             per_command_log=per_command_log,
             include_fix_stage=include_fix_stage,
-            on_result=on_result,
+            on_result=_on_result_callback,
             archive_hook=composed_hook,
             cache_store=cache_store,
             cache_run_id=run_id,
@@ -674,8 +709,6 @@ def run_pipeline(
             only_failed_targets=only_failed_targets,
         )
         returncode = 0
-        # `--stream` のときは詳細ログは既に出力済み。summary のみ表示する。
-        include_details = not per_command_log
 
     # returncode を先に確定させる (render_results に渡して JSONL summary.exit に埋めるため)
     # TUI の Ctrl+C 協調停止は ``run_commands_with_ui`` から 130 (SIGINT 慣例) を返す。
@@ -683,36 +716,7 @@ def run_pipeline(
     if returncode == 0:
         returncode = calculate_returncode(results, args.exit_zero_even_if_formatted)
 
-    if jsonl_streaming:
-        # ストリーミングモード: diagnostic 行+tool 行は出力済み。footer (warning+summary) のみ書き出す。
-        pyfltr.llm_output.write_jsonl_footer(
-            results,
-            exit_code=returncode,
-            warnings=pyfltr.warnings_.collected_warnings(),
-            run_id=run_id,
-            launcher_prefix=launcher_prefix,
-        )
-    elif output_format == "sarif":
-        _write_sarif(
-            results,
-            config,
-            exit_code=returncode,
-            commands=commands,
-            files=len(all_files),
-            run_id=run_id,
-        )
-    elif output_format == "code-quality":
-        _write_code_quality(results)
-
-    # 構造化出力の書き出しと並行して、常に text 整形を実行する。
-    # stdout / stderr の振り分けは ``pyfltr.cli.text_logger`` の handler が担う。
-    pyfltr.cli.render_results(
-        results,
-        config,
-        include_details=include_details,
-        output_format=output_format,
-        warnings=pyfltr.warnings_.collected_warnings(),
-    )
+    formatter.on_finish(ctx, results, returncode, pyfltr.warnings_.collected_warnings())
 
     # アーカイブ終端: meta.json に exit_code / finished_at を書き込む。
     if archive_store is not None and run_id is not None:
@@ -725,48 +729,6 @@ def run_pipeline(
     _maybe_emit_precommit_guidance(results, structured_stdout=structured_stdout)
 
     return (returncode, run_id)
-
-
-def _configure_loggers_for_format(
-    *,
-    output_format: str,
-    output_file: pathlib.Path | None,
-    force_text_on_stderr: bool,
-) -> None:
-    """Text 整形 logger と構造化出力 logger を format / output_file の組み合わせに応じて初期化する。
-
-    ルール:
-
-    - text / github-annotations → text_logger は stdout (INFO)。構造化出力 logger は無効。
-    - jsonl + stdout モード → text_logger は stderr (WARN)。構造化出力 logger は stdout。
-    - sarif + stdout モード → text_logger は stderr (INFO)。構造化出力 logger は stdout。
-    - code-quality + stdout モード → text_logger は stderr (INFO)。構造化出力 logger は stdout。
-    - jsonl / sarif / code-quality + ``--output-file`` 指定 → text_logger は stdout (INFO)。
-      構造化出力 logger は FileHandler(output_file)。
-    - MCP 経路 (``force_text_on_stderr=True``) → text_logger は常に stderr (INFO)。
-      構造化出力 logger は上記 output_file 分岐に従う (MCP は一時ファイルを渡すため FileHandler)。
-
-    system logger (root) は触らない。抑止もしない。
-    """
-    if force_text_on_stderr:
-        text_stream: typing.TextIO = sys.stderr
-        text_level = logging.INFO
-    elif output_format == "jsonl" and output_file is None:
-        text_stream = sys.stderr
-        text_level = logging.WARNING
-    elif output_format in ("sarif", "code-quality") and output_file is None:
-        text_stream = sys.stderr
-        text_level = logging.INFO
-    else:
-        text_stream = sys.stdout
-        text_level = logging.INFO
-    pyfltr.cli.configure_text_output(text_stream, level=text_level)
-
-    if output_format in ("jsonl", "sarif", "code-quality"):
-        destination: typing.TextIO | pathlib.Path | None = output_file if output_file is not None else sys.stdout
-    else:
-        destination = None
-    pyfltr.cli.configure_structured_output(destination)
 
 
 _PRECOMMIT_MM_MESSAGE: str = (
@@ -797,37 +759,6 @@ def _maybe_emit_precommit_guidance(
     if not pyfltr.precommit.is_invoked_from_git_commit():
         return
     print(_PRECOMMIT_MM_MESSAGE, file=sys.stderr)
-
-
-def _write_sarif(
-    results: list[pyfltr.command.CommandResult],
-    config: pyfltr.config.Config,
-    *,
-    exit_code: int,
-    commands: list[str],
-    files: int,
-    run_id: str | None,
-) -> None:
-    """SARIF 2.1.0 形式の JSON を構造化出力 logger に書き出す。"""
-    import json  # pylint: disable=import-outside-toplevel
-
-    sarif = pyfltr.sarif_output.build_sarif(
-        results,
-        config,
-        exit_code=exit_code,
-        commands=commands,
-        files=files,
-        run_id=run_id,
-    )
-    pyfltr.cli.structured_logger.info(json.dumps(sarif, ensure_ascii=False, indent=2))
-
-
-def _write_code_quality(results: list[pyfltr.command.CommandResult]) -> None:
-    """GitLab Code Quality (Code Climate JSON issue サブセット) の JSON 配列を構造化出力 logger に書き出す。"""
-    import json  # pylint: disable=import-outside-toplevel
-
-    payload = pyfltr.code_quality.build_code_quality_payload(results)
-    pyfltr.cli.structured_logger.info(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
 def calculate_returncode(results: list[pyfltr.command.CommandResult], exit_zero_even_if_formatted: bool) -> int:

@@ -1,8 +1,8 @@
 """GitHub Actions 注釈形式の出力生成。
 
 ``--output-format=github-annotations`` のレイアウトは ``text`` と同じで、
-``pyfltr.cli.write_log()`` から呼ばれる ``pyfltr.error_parser.format_error()`` が
-1 診断 1 行の整形を本モジュールに委譲する。
+``pyfltr.cli.write_log()`` から ``pyfltr.error_parser.format_error_github()`` 経由で
+1 診断 1 行の整形が本モジュールに委譲される。
 
 GitHub のログビューアーは ``::xxx file=...,line=...,title=...::msg`` から
 プロパティ部を剥がし ``##[xxx]msg`` としてしか描画しない。そのため生ログ上でも
@@ -11,7 +11,7 @@ file / line / rule を視認できるよう、メッセージ本体に
 この 1 行が GitHub Actions の annotations とログビューアー両方の要件を満たす。
 
 ``pyfltr.error_parser`` は型ヒントにしか使わないため、``TYPE_CHECKING`` ガードで
-循環 import を回避する（``error_parser.format_error`` から本モジュールが呼ばれる）。
+循環 import を回避する（``error_parser.format_error_github`` から本モジュールが呼ばれる）。
 """
 
 from __future__ import annotations

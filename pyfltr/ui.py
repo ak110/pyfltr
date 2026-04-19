@@ -44,6 +44,7 @@ def run_commands_with_ui(
     all_files: list[pathlib.Path],
     *,
     archive_hook: typing.Callable[[pyfltr.command.CommandResult], None] | None = None,
+    on_result: typing.Callable[[pyfltr.command.CommandResult], None] | None = None,
     cache_store: pyfltr.cache.CacheStore | None = None,
     cache_run_id: str | None = None,
     fail_fast: bool = False,
@@ -54,6 +55,9 @@ def run_commands_with_ui(
     ``archive_hook`` が指定されている場合、各コマンド完了時に実行アーカイブへ書き出す
     (fix ステージも含めて全実行を保存する)。キャッシュヒット時の結果はアーカイブには
     書き込まない (``cached_from`` でソース run を参照させる前提)。
+
+    ``on_result`` が指定されている場合、通常ステージ（formatter / linter / tester）の
+    各コマンド完了時に archive_hook の後に呼ぶ。fix ステージでは呼ばない。
 
     ``fail_fast=True`` のとき、いずれかのツールが ``has_error=True`` で完了した時点で
     未実行ジョブを ``future.cancel()`` で打ち切り、起動済みサブプロセスに
@@ -69,6 +73,7 @@ def run_commands_with_ui(
         config,
         all_files,
         archive_hook=archive_hook,
+        on_result=on_result,
         cache_store=cache_store,
         cache_run_id=cache_run_id,
         fail_fast=fail_fast,
@@ -121,6 +126,7 @@ class UIApp(App):
         all_files: list[pathlib.Path],
         *,
         archive_hook: typing.Callable[[pyfltr.command.CommandResult], None] | None = None,
+        on_result: typing.Callable[[pyfltr.command.CommandResult], None] | None = None,
         cache_store: pyfltr.cache.CacheStore | None = None,
         cache_run_id: str | None = None,
         fail_fast: bool = False,
@@ -132,6 +138,7 @@ class UIApp(App):
         self.config = config
         self._all_files = all_files
         self._archive_hook = archive_hook
+        self._on_result = on_result
         self._cache_store = cache_store
         self._cache_run_id = cache_run_id
         self._fail_fast = fail_fast
@@ -322,6 +329,8 @@ class UIApp(App):
                         self.results.append(fmt_result)
                         if self._archive_hook is not None and not fmt_result.cached:
                             self._archive_hook(fmt_result)
+                        if self._on_result is not None:
+                            self._on_result(fmt_result)
                         with self.lock:
                             self._interrupted_commands[command] = None
                         self._skip_remaining(
@@ -334,6 +343,8 @@ class UIApp(App):
                     self.results.append(fmt_result)
                     if self._archive_hook is not None and not fmt_result.cached:
                         self._archive_hook(fmt_result)
+                    if self._on_result is not None:
+                        self._on_result(fmt_result)
                     if self._fail_fast and fmt_result.has_error:
                         aborted = True
                         self._skip_remaining([*formatters[idx + 1 :], *linters_and_testers])
@@ -366,6 +377,8 @@ class UIApp(App):
                         self.results.append(lt_result)
                         if self._archive_hook is not None and not lt_result.cached:
                             self._archive_hook(lt_result)
+                        if self._on_result is not None:
+                            self._on_result(lt_result)
                         if self._fail_fast and not aborted and lt_result.has_error:
                             aborted = True
                             pyfltr.stage_runner.cancel_pending_futures(future_to_command, aborted_commands)
@@ -380,6 +393,8 @@ class UIApp(App):
                         self.results.append(skipped)
                         if self._archive_hook is not None:
                             self._archive_hook(skipped)
+                        if self._on_result is not None:
+                            self._on_result(skipped)
                         if self._interrupted:
                             with self.lock:
                                 self._interrupted_commands[pending_command] = None
@@ -652,6 +667,8 @@ class UIApp(App):
             self.results.append(skipped)
             if self._archive_hook is not None:
                 self._archive_hook(skipped)
+            if self._on_result is not None:
+                self._on_result(skipped)
             if register_interrupted:
                 with self.lock:
                     self._interrupted_commands[command] = None

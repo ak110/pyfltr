@@ -124,6 +124,7 @@ def _build_result_record(
 
 
 def _command_index(config: pyfltr.config.Config, command: str) -> int:
+    """config.command_names 内での位置を返す（未登録コマンドは末尾扱い）。"""
     if command in config.command_names:
         return config.command_names.index(command)
     return len(config.command_names)

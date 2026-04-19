@@ -292,22 +292,22 @@ def _run_one_command(
             only_failed_targets=only_failed_targets,
         )
         if per_command_log:
-            write_log(result, output_format=getattr(args, "output_format", "text") or "text")
+            use_ga = (getattr(args, "output_format", "text") or "text") == "github-annotations"
+            write_log(result, use_github_annotations=use_ga)
         else:
             with lock:
                 text_logger.info(f"{command}{suffix} 完了 ({result.get_status_text()})")
         return result
 
 
-def write_log(result: pyfltr.command.CommandResult, *, output_format: str = "text") -> None:
+def write_log(result: pyfltr.command.CommandResult, *, use_github_annotations: bool = False) -> None:
     """コマンド実行結果の詳細ログ出力。
 
     パース済みエラーがある場合は format_error() で整形した一覧を表示する。
     エラーがなく失敗した場合は生出力をフォールバック表示する。
 
-    ``output_format`` は個別の ErrorLocation 行の整形方式の切替に使う。
-    ``"github-annotations"`` のときは GA ワークフローコマンド記法で出し、
-    それ以外は従来のテキスト形式（``file:line:col: [tool:rule] msg``）で出す。
+    ``use_github_annotations`` が True のとき、ErrorLocation 行を GA ワークフローコマンド記法で出す。
+    False（既定）のときは従来のテキスト形式（``file:line:col: [tool:rule] msg``）で出す。
     枠線・区切り線・進捗ラベルは常に text 記法を維持する
     （GA はエラー箇所の解釈だけを切り替え、レイアウトは text と同じにする設計）。
     """
@@ -318,7 +318,10 @@ def write_log(result: pyfltr.command.CommandResult, *, output_format: str = "tex
         text_logger.info(mark)
         if result.errors:
             for error in result.errors:
-                text_logger.info(pyfltr.error_parser.format_error(error, output_format=output_format))
+                if use_github_annotations:
+                    text_logger.info(pyfltr.error_parser.format_error_github(error))
+                else:
+                    text_logger.info(pyfltr.error_parser.format_error(error))
         elif result.alerted:
             text_logger.info(result.output)
         else:
@@ -361,16 +364,17 @@ def render_results(
     ordered = sorted(results, key=lambda r: config.command_names.index(r.command))
     warnings = warnings or []
 
+    use_ga = output_format == "github-annotations"
     if include_details:
         # 1. 成功コマンドの詳細ログ
         for result in ordered:
             if not result.alerted:
-                write_log(result, output_format=output_format)
+                write_log(result, use_github_annotations=use_ga)
 
         # 2. 失敗コマンドの詳細ログ (summary の直前に配置し tail -N でも拾えるようにする)
         for result in ordered:
             if result.alerted:
-                write_log(result, output_format=output_format)
+                write_log(result, use_github_annotations=use_ga)
 
     # 3. warnings (summary の直前。先頭だと見落とされやすいため)
     _write_warnings_section(warnings)

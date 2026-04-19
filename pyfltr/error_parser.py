@@ -73,23 +73,21 @@ def get_custom_parser_commands() -> set[str]:
     return set(_CUSTOM_PARSERS.keys())
 
 
-def format_error(error: ErrorLocation, *, output_format: str = "text") -> str:
-    """エラー箇所を表示用文字列にフォーマットする。
-
-    ``output_format == "github-annotations"`` のとき、GitHub Actions のワークフロー
-    コマンド記法（``::error file=...::message``）へ委譲する。
-    それ以外は ``file:line[:col]: [tool[:rule]] message`` のテキスト形式を返す。
-    """
-    if output_format == "github-annotations":
-        # 循環 import を避けるため関数内 import。``from pyfltr import ...`` 形式で
-        # モジュール変数 ``pyfltr`` を再束縛せず（``redefined-outer-name`` 回避）、
-        # 対象シンボルだけローカルへ取り込む。
-        from pyfltr import github_annotations  # pylint: disable=import-outside-toplevel
-
-        return github_annotations.build_workflow_command(error)
+def format_error(error: ErrorLocation) -> str:
+    """エラー箇所を ``file:line[:col]: [tool[:rule]] message`` のテキスト形式にフォーマットする。"""
     col_str = f":{error.col}" if error.col else ""
     tag = f"{error.command}:{error.rule}" if error.rule else error.command
     return f"{error.file}:{error.line}{col_str}: [{tag}] {error.message}"
+
+
+def format_error_github(error: ErrorLocation) -> str:
+    """エラー箇所を GitHub Actions のワークフローコマンド記法にフォーマットする。
+
+    ``::error file=...::message`` 形式で出力する。
+    """
+    from pyfltr import github_annotations  # pylint: disable=import-outside-toplevel
+
+    return github_annotations.build_workflow_command(error)
 
 
 def parse_summary(command: str, output: str) -> str | None:
