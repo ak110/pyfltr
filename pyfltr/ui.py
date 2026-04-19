@@ -5,7 +5,6 @@
 import argparse
 import concurrent.futures
 import logging
-import pathlib
 import sys
 import threading
 import time
@@ -15,7 +14,6 @@ import typing
 from textual.app import App, ComposeResult
 from textual.widgets import DataTable, Log, TabbedContent, TabPane
 
-import pyfltr.cache
 import pyfltr.command
 import pyfltr.config
 import pyfltr.error_parser
@@ -40,17 +38,17 @@ def _format_errors_tab_label(error_count: int, warning_count: int) -> str:
 def run_commands_with_ui(
     commands: list[str],
     args: argparse.Namespace,
-    config: pyfltr.config.Config,
-    all_files: list[pathlib.Path],
+    base_ctx: pyfltr.command.ExecutionBaseContext,
     *,
     archive_hook: typing.Callable[[pyfltr.command.CommandResult], None] | None = None,
     on_result: typing.Callable[[pyfltr.command.CommandResult], None] | None = None,
-    cache_store: pyfltr.cache.CacheStore | None = None,
-    cache_run_id: str | None = None,
     fail_fast: bool = False,
     only_failed_targets: dict[str, pyfltr.only_failed.ToolTargets] | None = None,
 ) -> tuple[list[pyfltr.command.CommandResult], int]:
     """UI付きでコマンドを実行。
+
+    ``base_ctx`` はパイプライン全体で不変のコンテキスト（config・all_files・cache_store・
+    cache_run_id を含む）。各コマンド実行前に ``ExecutionContext`` を組み立てて渡す。
 
     ``archive_hook`` が指定されている場合、各コマンド完了時に実行アーカイブへ書き出す
     (fix ステージも含めて全実行を保存する)。キャッシュヒット時の結果はアーカイブには
@@ -70,12 +68,9 @@ def run_commands_with_ui(
     app = UIApp(
         commands,
         args,
-        config,
-        all_files,
+        base_ctx,
         archive_hook=archive_hook,
         on_result=on_result,
-        cache_store=cache_store,
-        cache_run_id=cache_run_id,
         fail_fast=fail_fast,
         only_failed_targets=only_failed_targets,
     )
@@ -122,25 +117,22 @@ class UIApp(App):
         self,
         commands: list[str],
         args: argparse.Namespace,
-        config: pyfltr.config.Config,
-        all_files: list[pathlib.Path],
+        base_ctx: pyfltr.command.ExecutionBaseContext,
         *,
         archive_hook: typing.Callable[[pyfltr.command.CommandResult], None] | None = None,
         on_result: typing.Callable[[pyfltr.command.CommandResult], None] | None = None,
-        cache_store: pyfltr.cache.CacheStore | None = None,
-        cache_run_id: str | None = None,
         fail_fast: bool = False,
         only_failed_targets: dict[str, pyfltr.only_failed.ToolTargets] | None = None,
     ) -> None:
         super().__init__()
         self.commands = commands
         self.args = args
-        self.config = config
-        self._all_files = all_files
+        self._base_ctx = base_ctx
+        # base_ctx の頻出フィールドをショートカットとして保持する
+        self.config = base_ctx.config
+        self._all_files = base_ctx.all_files
         self._archive_hook = archive_hook
         self._on_result = on_result
-        self._cache_store = cache_store
-        self._cache_run_id = cache_run_id
         self._fail_fast = fail_fast
         self._only_failed_targets = only_failed_targets
         self.results: list[pyfltr.command.CommandResult] = []
@@ -508,20 +500,16 @@ class UIApp(App):
                     self._subprocess_running_commands.discard(command)
 
             try:
-                result = pyfltr.command.execute_command(
-                    command,
-                    self.args,
-                    self.config,
-                    self._all_files,
-                    on_output=callback,
+                ctx = pyfltr.command.ExecutionContext(
+                    base=self._base_ctx,
                     fix_stage=fix_stage,
-                    cache_store=self._cache_store,
-                    cache_run_id=self._cache_run_id,
                     only_failed_targets=pyfltr.command.pick_targets(self._only_failed_targets, command),
+                    on_output=callback,
                     is_interrupted=lambda: self._interrupted,
                     on_subprocess_start=_on_subprocess_start,
                     on_subprocess_end=_on_subprocess_end,
                 )
+                result = pyfltr.command.execute_command(command, self.args, ctx)
             except pyfltr.command.InterruptedExecution:
                 # execute_command 内部の多段実行経路で Ctrl+C が発生した場合の協調停止。
                 with self.lock:

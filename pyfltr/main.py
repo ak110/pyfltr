@@ -620,6 +620,15 @@ def run_pipeline(
     # UIの判定
     use_ui = not args.no_ui and (args.ui or pyfltr.ui.can_use_ui())
 
+    # run_pipeline が1回だけ組み立てる不変コンテキスト。
+    # archive_store は hook 経由で渡すため Context には含めない。
+    base_ctx = pyfltr.command.ExecutionBaseContext(
+        config=config,
+        all_files=all_files,
+        cache_store=cache_store,
+        cache_run_id=run_id,
+    )
+
     # 各ツール完了時のフック: retry_command 付与 → archive 書き込み → formatter.on_result (ストリーミング等)。
     # retry_command は archive と JSONL streaming の双方で必要になるため、archive_hook より前に挿入する。
     # formatter.on_result は archive_hook の後に呼ぶ（result.archived=True が立った後）。
@@ -669,12 +678,9 @@ def run_pipeline(
         results, returncode = pyfltr.ui.run_commands_with_ui(
             commands,
             args,
-            config,
-            all_files,
+            base_ctx,
             archive_hook=composed_hook,
             on_result=_on_result_callback,
-            cache_store=cache_store,
-            cache_run_id=run_id,
             fail_fast=fail_fast,
             only_failed_targets=only_failed_targets,
         )
@@ -697,14 +703,11 @@ def run_pipeline(
         results = pyfltr.cli.run_commands_with_cli(
             commands,
             args,
-            config,
-            all_files,
+            base_ctx,
             per_command_log=per_command_log,
             include_fix_stage=include_fix_stage,
             on_result=_on_result_callback,
             archive_hook=composed_hook,
-            cache_store=cache_store,
-            cache_run_id=run_id,
             fail_fast=fail_fast,
             only_failed_targets=only_failed_targets,
         )

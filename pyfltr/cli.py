@@ -12,7 +12,6 @@ import shlex
 import threading
 import typing
 
-import pyfltr.cache
 import pyfltr.command
 import pyfltr.config
 import pyfltr.error_parser
@@ -91,15 +90,12 @@ def configure_structured_output(destination: typing.TextIO | pathlib.Path | None
 def run_commands_with_cli(
     commands: list[str],
     args: argparse.Namespace,
-    config: pyfltr.config.Config,
-    all_files: list[pathlib.Path],
+    base_ctx: pyfltr.command.ExecutionBaseContext,
     *,
     per_command_log: bool,
     include_fix_stage: bool = False,
     on_result: typing.Callable[[pyfltr.command.CommandResult], None] | None = None,
     archive_hook: typing.Callable[[pyfltr.command.CommandResult], None] | None = None,
-    cache_store: pyfltr.cache.CacheStore | None = None,
-    cache_run_id: str | None = None,
     fail_fast: bool = False,
     only_failed_targets: dict[str, pyfltr.only_failed.ToolTargets] | None = None,
 ) -> list[pyfltr.command.CommandResult]:
@@ -121,9 +117,8 @@ def run_commands_with_cli(
     fix ステージの結果は summary に含めないが、アーカイブには通常ステージ以外も含めて
     全実行を保存するため fix ステージからも ``archive_hook`` を呼び出す。
 
-    ``cache_store`` が指定されていれば ``execute_command`` にファイル hash キャッシュを
-    渡す。キャッシュヒット時のアーカイブ書き込みは行わない
-    (``cached_from`` で過去 run を参照させる前提)。
+    ``base_ctx`` はパイプライン全体で不変のコンテキスト（config・all_files・cache_store・
+    cache_run_id を含む）。各コマンド実行前に ``ExecutionContext`` を組み立てて渡す。
 
     ``fail_fast=True`` のとき、いずれかのツール完了時に ``has_error=True`` を検出した
     時点で未開始のジョブを ``future.cancel()`` で打ち切り、起動済みサブプロセスに
@@ -134,9 +129,10 @@ def run_commands_with_cli(
     対象とする)。値が ``None`` のツールは通常の ``all_files`` で実行し、``list`` の
     ツールはその集合のみを対象にする。
     """
+    config = base_ctx.config
     results: list[pyfltr.command.CommandResult] = []
     fixers, formatters, linters_and_testers = pyfltr.executor.split_commands_for_execution(
-        commands, config, all_files, include_fix_stage=include_fix_stage
+        commands, config, base_ctx.all_files, include_fix_stage=include_fix_stage
     )
 
     # fix ステージ: 同一ファイルへの書き込み競合を避けるため直列実行する。
@@ -146,12 +142,9 @@ def run_commands_with_cli(
         fix_result = _run_one_command(
             command,
             args,
-            config,
-            all_files,
+            base_ctx,
             per_command_log=per_command_log,
             fix_stage=True,
-            cache_store=cache_store,
-            cache_run_id=cache_run_id,
             only_failed_targets=pyfltr.command.pick_targets(only_failed_targets, command),
         )
         if archive_hook is not None and not fix_result.cached:
@@ -170,11 +163,8 @@ def run_commands_with_cli(
         result = _run_one_command(
             command,
             args,
-            config,
-            all_files,
+            base_ctx,
             per_command_log=per_command_log,
-            cache_store=cache_store,
-            cache_run_id=cache_run_id,
             only_failed_targets=pyfltr.command.pick_targets(only_failed_targets, command),
         )
         results.append(result)
@@ -200,11 +190,8 @@ def run_commands_with_cli(
                     _run_one_command,
                     command,
                     args,
-                    config,
-                    all_files,
+                    base_ctx,
                     per_command_log=per_command_log,
-                    cache_store=cache_store,
-                    cache_run_id=cache_run_id,
                     only_failed_targets=pyfltr.command.pick_targets(only_failed_targets, command),
                 ): command
                 for command in linters_and_testers
@@ -262,13 +249,10 @@ def _emit_skipped_results(
 def _run_one_command(
     command: str,
     args: argparse.Namespace,
-    config: pyfltr.config.Config,
-    all_files: list[pathlib.Path],
+    base_ctx: pyfltr.command.ExecutionBaseContext,
     *,
     per_command_log: bool,
     fix_stage: bool = False,
-    cache_store: pyfltr.cache.CacheStore | None = None,
-    cache_run_id: str | None = None,
     only_failed_targets: pyfltr.only_failed.ToolTargets | None = None,
 ) -> pyfltr.command.CommandResult:
     """1 コマンドの実行。
@@ -277,20 +261,16 @@ def _run_one_command(
     それ以外は開始/完了の 1 行進捗のみ出力する。
     """
     # serial_group を持つコマンドは同一グループ内で排他実行される (cargo / dotnet 等)
-    with pyfltr.executor.serial_group_lock(config.commands[command].serial_group):
+    with pyfltr.executor.serial_group_lock(base_ctx.config.commands[command].serial_group):
         with lock:
             suffix = " (fix)" if fix_stage else ""
             text_logger.info(f"{command}{suffix} 実行中です...")
-        result = pyfltr.command.execute_command(
-            command,
-            args,
-            config,
-            all_files,
+        ctx = pyfltr.command.ExecutionContext(
+            base=base_ctx,
             fix_stage=fix_stage,
-            cache_store=cache_store,
-            cache_run_id=cache_run_id,
             only_failed_targets=only_failed_targets,
         )
+        result = pyfltr.command.execute_command(command, args, ctx)
         if per_command_log:
             use_ga = (getattr(args, "output_format", "text") or "text") == "github-annotations"
             write_log(result, use_github_annotations=use_ga)

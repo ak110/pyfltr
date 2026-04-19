@@ -11,6 +11,7 @@ import pyfltr.cli
 import pyfltr.command
 import pyfltr.config
 from tests.conftest import make_command_result as _make_result
+from tests.conftest import make_execution_context as _make_ctx
 
 
 @pytest.fixture(name="text_logs")
@@ -87,7 +88,8 @@ def test_run_one_command_stream_mode_writes_detail_log(mocker, text_logs):
     mock_args.output_format = "text"
     mock_config = mocker.MagicMock()
 
-    pyfltr.cli._run_one_command("mypy", mock_args, mock_config, [], per_command_log=True)
+    base_ctx = pyfltr.command.ExecutionBaseContext(config=mock_config, all_files=[], cache_store=None, cache_run_id=None)
+    pyfltr.cli._run_one_command("mypy", mock_args, base_ctx, per_command_log=True)
     text = "\n".join(text_logs)
     assert "mypy 実行中です..." in text
     # 成功時はエラーなし・生出力なしのため output は表示されない
@@ -102,7 +104,8 @@ def test_run_one_command_buffer_mode_shows_only_progress(mocker, text_logs):
     mock_args.output_format = "text"
     mock_config = mocker.MagicMock()
 
-    pyfltr.cli._run_one_command("mypy", mock_args, mock_config, [], per_command_log=False)
+    base_ctx = pyfltr.command.ExecutionBaseContext(config=mock_config, all_files=[], cache_store=None, cache_run_id=None)
+    pyfltr.cli._run_one_command("mypy", mock_args, base_ctx, per_command_log=False)
     text = "\n".join(text_logs)
     assert "mypy 実行中です..." in text
     assert "mypy 完了" in text
@@ -186,11 +189,11 @@ def test_run_commands_with_cli_fail_fast_aborts_remaining_fixers(mocker):
     mocker.patch("pyfltr.command.execute_command", return_value=fix_fail)
     mock_args = mocker.MagicMock()
 
+    base_ctx = _make_ctx(config, []).base
     results = pyfltr.cli.run_commands_with_cli(
         ["ruff-check", "ruff-format", "mypy"],
         mock_args,
-        config,
-        [],
+        base_ctx,
         per_command_log=False,
         include_fix_stage=True,
         fail_fast=True,
@@ -215,11 +218,11 @@ def test_run_commands_with_cli_without_fail_fast_continues(mocker):
     mocker.patch("pyfltr.command.execute_command", side_effect=_fake_execute)
     mock_args = mocker.MagicMock()
 
+    base_ctx = _make_ctx(config, []).base
     results = pyfltr.cli.run_commands_with_cli(
         ["ruff-format", "mypy"],
         mock_args,
-        config,
-        [],
+        base_ctx,
         per_command_log=False,
         include_fix_stage=False,
         fail_fast=False,

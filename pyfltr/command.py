@@ -371,6 +371,67 @@ def terminate_active_processes(*, timeout: float = 5.0) -> None:
 
 
 @dataclasses.dataclass
+class ExecutionBaseContext:
+    """実行パイプライン全体で不変のコンテキスト。
+
+    ``run_pipeline`` が1回だけ組み立て、CLI/TUI 各経路へ渡す。
+    """
+
+    config: pyfltr.config.Config
+    """実行設定（pyproject.toml から読み込んだ設定値）。"""
+    all_files: "list[pathlib.Path]"
+    """対象ファイル一覧（ディレクトリ走査・excludeフィルタリング済み）。"""
+    cache_store: "pyfltr.cache.CacheStore | None"
+    """ファイル hash キャッシュストア。``None`` の場合はキャッシュ無効。"""
+    cache_run_id: str | None
+    """キャッシュ書き込み時の参照元 run_id。``None`` の場合はキャッシュ書き込みをスキップ。"""
+
+
+@dataclasses.dataclass
+class ExecutionContext:
+    """コマンド実行ごとに変動するコンテキスト。
+
+    ``ExecutionBaseContext`` を包みつつ、各コマンド実行直前に組み立てる。
+    CLI 経路では ``_run_one_command`` が、TUI 経路では ``UIApp._execute_command`` が組み立てる。
+    """
+
+    base: ExecutionBaseContext
+    """パイプライン全体で不変のコンテキスト。"""
+    fix_stage: bool = False
+    """fix ステージとして実行するか（fix-args を適用して単発 fix 経路で動作する）。"""
+    only_failed_targets: "pyfltr.only_failed.ToolTargets | None" = None
+    """``--only-failed`` 経路でのツール別失敗ファイル集合。``None`` の場合は ``all_files`` を使用。"""
+    on_output: "typing.Callable[[str], None] | None" = None
+    """サブプロセス出力の逐次コールバック。TUI 経路でリアルタイム表示に使用。"""
+    is_interrupted: "typing.Callable[[], bool] | None" = None
+    """中断指示の確認コールバック。TUI 協調停止経路で使用。"""
+    on_subprocess_start: "typing.Callable[[], None] | None" = None
+    """サブプロセス起動直後のフック。TUI 経路で実行中コマンド集合を追跡するのに使用。"""
+    on_subprocess_end: "typing.Callable[[], None] | None" = None
+    """サブプロセス終了直前のフック。``on_subprocess_start`` と対になる。"""
+
+    @property
+    def config(self) -> pyfltr.config.Config:
+        """``base.config`` への委譲。"""
+        return self.base.config
+
+    @property
+    def all_files(self) -> "list[pathlib.Path]":
+        """``base.all_files`` への委譲。"""
+        return self.base.all_files
+
+    @property
+    def cache_store(self) -> "pyfltr.cache.CacheStore | None":
+        """``base.cache_store`` への委譲。"""
+        return self.base.cache_store
+
+    @property
+    def cache_run_id(self) -> "str | None":
+        """``base.cache_run_id`` への委譲。"""
+        return self.base.cache_run_id
+
+
+@dataclasses.dataclass
 class CommandResult:
     """コマンドの実行結果。"""
 
@@ -804,17 +865,7 @@ def _prepare_execution_params(
 def execute_command(
     command: str,
     args: argparse.Namespace,
-    config: pyfltr.config.Config,
-    all_files: list[pathlib.Path],
-    on_output: typing.Callable[[str], None] | None = None,
-    *,
-    fix_stage: bool = False,
-    cache_store: "pyfltr.cache.CacheStore | None" = None,
-    cache_run_id: str | None = None,
-    only_failed_targets: "pyfltr.only_failed.ToolTargets | None" = None,
-    is_interrupted: typing.Callable[[], bool] | None = None,
-    on_subprocess_start: typing.Callable[[], None] | None = None,
-    on_subprocess_end: typing.Callable[[], None] | None = None,
+    ctx: ExecutionContext,
 ) -> CommandResult:
     """コマンドの実行。
 
@@ -835,14 +886,22 @@ def execute_command(
     渡す用途）。その後の ``target_extensions`` / ``pass_filenames=False`` の分岐は
     通常通り適用される。``None`` の場合は既定の ``all_files`` を使用する。
     """
+    # ctx から各フィールドを展開する。
+    config = ctx.config
+    all_files = ctx.all_files
+    on_output = ctx.on_output
+    is_interrupted = ctx.is_interrupted
+    on_subprocess_start = ctx.on_subprocess_start
+    on_subprocess_end = ctx.on_subprocess_end
+
     # 共通前処理: ターゲット解決・コマンドライン構築
     params_or_error = _prepare_execution_params(
         command,
         args,
         config,
         all_files,
-        fix_stage=fix_stage,
-        only_failed_targets=only_failed_targets,
+        fix_stage=ctx.fix_stage,
+        only_failed_targets=ctx.only_failed_targets,
     )
     if isinstance(params_or_error, CommandResult):
         # ツールパス解決失敗
@@ -1023,8 +1082,8 @@ def execute_command(
             args,
             config,
             fix_args=fix_args,
-            cache_store=cache_store,
-            cache_run_id=cache_run_id,
+            cache_store=ctx.cache_store,
+            cache_run_id=ctx.cache_run_id,
             is_interrupted=is_interrupted,
             on_subprocess_start=on_subprocess_start,
             on_subprocess_end=on_subprocess_end,

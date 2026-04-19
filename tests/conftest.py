@@ -12,8 +12,11 @@ import pathlib
 import pytest
 
 import pyfltr.archive
+import pyfltr.cache
 import pyfltr.command
+import pyfltr.config
 import pyfltr.error_parser
+import pyfltr.only_failed
 import pyfltr.warnings_
 
 
@@ -42,6 +45,34 @@ CARGO_CLIPPY_FIX_ARGS: list[str] = [
 ]
 CARGO_CLIPPY_LINT_CMDLINE: list[str] = ["cargo", *CARGO_CLIPPY_ARGS, *CARGO_CLIPPY_LINT_ARGS]
 CARGO_CLIPPY_FIX_CMDLINE: list[str] = ["cargo", *CARGO_CLIPPY_ARGS, *CARGO_CLIPPY_FIX_ARGS]
+
+
+def make_execution_context(
+    config: pyfltr.config.Config,
+    all_files: list[pathlib.Path],
+    *,
+    cache_store: pyfltr.cache.CacheStore | None = None,
+    cache_run_id: str | None = None,
+    fix_stage: bool = False,
+    only_failed_targets: pyfltr.only_failed.ToolTargets | None = None,
+) -> pyfltr.command.ExecutionContext:
+    """テスト用の ExecutionContext を生成する。
+
+    ``execute_command`` を直接呼び出すテストで使用する。
+    CLI/TUI フック系（on_output / is_interrupted / on_subprocess_start / on_subprocess_end）は
+    テストでは不要なため省略（デフォルトの None が使われる）。
+    """
+    base = pyfltr.command.ExecutionBaseContext(
+        config=config,
+        all_files=all_files,
+        cache_store=cache_store,
+        cache_run_id=cache_run_id,
+    )
+    return pyfltr.command.ExecutionContext(
+        base=base,
+        fix_stage=fix_stage,
+        only_failed_targets=only_failed_targets,
+    )
 
 
 def make_command_result(

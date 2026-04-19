@@ -22,7 +22,13 @@ def test_ctrl_c_double_press_handling() -> None:
     args.targets = []
     args.verbose = False
 
-    app = pyfltr.ui.UIApp(["black"], args, pyfltr.config.create_default_config(), [])
+    app = pyfltr.ui.UIApp(
+        ["black"],
+        args,
+        pyfltr.command.ExecutionBaseContext(
+            config=pyfltr.config.create_default_config(), all_files=[], cache_store=None, cache_run_id=None
+        ),
+    )
 
     assert app.last_ctrl_c_time == 0.0
     assert app.ctrl_c_timeout == 1.0
@@ -59,7 +65,13 @@ def test_ctrl_c_force_exit_after_interrupted() -> None:
     args.targets = []
     args.verbose = False
 
-    app = pyfltr.ui.UIApp(["black"], args, pyfltr.config.create_default_config(), [])
+    app = pyfltr.ui.UIApp(
+        ["black"],
+        args,
+        pyfltr.command.ExecutionBaseContext(
+            config=pyfltr.config.create_default_config(), all_files=[], cache_store=None, cache_run_id=None
+        ),
+    )
     # 協調中断済みの状態にする
     app._interrupted = True
 
@@ -98,7 +110,13 @@ def test_safe_call_from_thread_short_circuits_when_exit_requested() -> None:
     args.targets = []
     args.verbose = False
 
-    app = pyfltr.ui.UIApp(["black"], args, pyfltr.config.create_default_config(), [])
+    app = pyfltr.ui.UIApp(
+        ["black"],
+        args,
+        pyfltr.command.ExecutionBaseContext(
+            config=pyfltr.config.create_default_config(), all_files=[], cache_store=None, cache_run_id=None
+        ),
+    )
     app._exit_requested = True
 
     callback = unittest.mock.MagicMock()
@@ -120,7 +138,13 @@ def test_ctrl_c_timeout() -> None:
     args.targets = []
     args.verbose = False
 
-    app = pyfltr.ui.UIApp(["black"], args, pyfltr.config.create_default_config(), [])
+    app = pyfltr.ui.UIApp(
+        ["black"],
+        args,
+        pyfltr.command.ExecutionBaseContext(
+            config=pyfltr.config.create_default_config(), all_files=[], cache_store=None, cache_run_id=None
+        ),
+    )
 
     mock_event = unittest.mock.MagicMock()
     mock_event.key = "ctrl+c"
@@ -164,7 +188,8 @@ def test_interrupt_preserves_completed_results(monkeypatch) -> None:
             config.values[name] = False
     config.values["jobs"] = 1
 
-    app = pyfltr.ui.UIApp(["pylint", "mypy"], args, config, [])
+    base_ctx = pyfltr.command.ExecutionBaseContext(config=config, all_files=[], cache_store=None, cache_run_id=None)
+    app = pyfltr.ui.UIApp(["pylint", "mypy"], args, base_ctx)
 
     call_order: list[str] = []
 
