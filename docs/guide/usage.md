@@ -294,10 +294,12 @@ TUI実行中にCtrl+Cを1秒以内に2回続けて押すと協調中断モード
 | `jsonl` | LLMエージェント向け | stdoutにJSON Lines形式で診断・ツール結果・全体集計を出力。text整形はstderrのWARN以上に抑止 |
 | `sarif` | CIツール連携向け | stdoutにSARIF 2.1.0形式のJSONを1件出力。text整形はstderrのINFO |
 | `github-annotations` | GitHub Actions向け | `text`と同じレイアウトをstdoutに出し、エラー箇所のみGAワークフローコマンド記法で補強 |
+| `code-quality` | GitLab CI向け | stdoutにCode Climate JSON issue形式の配列を1件出力。text整形はstderrのINFO |
 
 `jsonl`はツール完了順にストリーミング出力し、最後にwarning/summary行を追加する。
-`sarif`は全結果集約後に1回だけ書き出す。いずれも`--output-file`未指定時はstdoutを占有し、
-text整形出力はstderrへ振り分けられる（`jsonl`のみWARN以上に抑止）。
+`sarif`と`code-quality`は全結果集約後に1回だけ書き出す。
+いずれも`--output-file`未指定時はstdoutを占有し、text整形出力はstderrへ振り分けられる
+（`jsonl`のみWARN以上に抑止）。
 `github-annotations`はstdoutをtext整形が占有するため、stdout占有は起きない。
 
 `--output-file`を指定した場合は、構造化データはファイルへ、stdoutには常に`text`整形出力が並行して出る。

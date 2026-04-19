@@ -521,3 +521,77 @@ def test_write_jsonl_header_stdout(capsys):
     assert parsed[0]["kind"] == "header"
     assert parsed[0]["commands"] == ["ruff-format", "mypy"]
     assert parsed[0]["files"] == 5
+
+
+# ---------------------------------------------------------------------------
+# code-quality 形式の CLI 統合テスト
+# ---------------------------------------------------------------------------
+
+
+_REQUIRED_CQ_FIELDS = {"description", "check_name", "fingerprint", "severity", "location"}
+
+
+def test_run_cli_code_quality_stdout(mocker, capsys):
+    """code-quality + stdout モードでは stdout は JSON 配列、stderr に text 整形が出る。"""
+    proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+
+    returncode = pyfltr.main.run(
+        ["ci", "--output-format=code-quality", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)]
+    )
+    assert returncode == 0
+    captured = capsys.readouterr()
+    # stdout は JSON 配列 1 件
+    payload = json.loads(captured.out)
+    assert isinstance(payload, list)
+    # code-quality は診断なしなら空配列だが、ルート型が list である確認が主眼
+    for issue in payload:
+        assert issue.keys() >= _REQUIRED_CQ_FIELDS
+        assert (issue.keys() | {"location"}) >= _REQUIRED_CQ_FIELDS
+        assert {"path", "lines"} <= issue["location"].keys()
+        assert "begin" in issue["location"]["lines"]
+    # stderr には text 整形（進捗・summary）が出る
+    assert "----- pyfltr" in captured.err
+    assert "----- summary" in captured.err
+
+
+def test_run_cli_code_quality_output_file(mocker, capsys, tmp_path):
+    """code-quality + --output-file ではファイルに JSON 配列、stdout に text 整形。"""
+    proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+
+    destination = tmp_path / "gl.json"
+    returncode = pyfltr.main.run(
+        [
+            "ci",
+            "--output-format=code-quality",
+            f"--output-file={destination}",
+            "--commands=mypy",
+            str(pathlib.Path(__file__).parent.parent),
+        ]
+    )
+    assert returncode == 0
+    captured = capsys.readouterr()
+    # stdout には従来の text 整形出力
+    assert "summary" in captured.out
+    # ファイルは JSON 配列
+    payload = json.loads(destination.read_text(encoding="utf-8"))
+    assert isinstance(payload, list)
+
+
+def test_run_cli_code_quality_with_diagnostics(mocker, capsys):
+    """エラーを検出したツールで Code Quality 必須フィールドを満たす issue が出る。"""
+    mypy_output = "src/a.py:10: error: bad type  [arg-type]\n"
+    proc = subprocess.CompletedProcess(["mypy"], returncode=1, stdout=mypy_output)
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+
+    pyfltr.main.run(["ci", "--output-format=code-quality", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert isinstance(payload, list)
+    assert len(payload) >= 1
+    issue = payload[0]
+    assert issue.keys() >= _REQUIRED_CQ_FIELDS
+    assert issue["check_name"].startswith("mypy")
+    assert issue["location"]["lines"]["begin"] >= 1
+    assert issue["severity"] in ("info", "minor", "major", "critical", "blocker")

@@ -18,6 +18,7 @@ import typing
 import pyfltr.archive
 import pyfltr.cache
 import pyfltr.cli
+import pyfltr.code_quality
 import pyfltr.command
 import pyfltr.config
 import pyfltr.llm_output
@@ -103,10 +104,11 @@ def _make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> 
     common.add_argument("--ci", default=False, action="store_true", help="CI モードで動作します(--no-shuffle --no-ui 相当)。")
     common.add_argument(
         "--output-format",
-        choices=("text", "jsonl", "sarif", "github-annotations"),
+        choices=("text", "jsonl", "sarif", "github-annotations", "code-quality"),
         default=None,
-        help="出力形式を指定します(text/jsonl/sarif/github-annotations、既定: text)。"
-        "jsonl は LLM 向け JSON Lines 出力、sarif は SARIF 2.1.0、github-annotations は GitHub Actions 向けの注釈形式。"
+        help="出力形式を指定します(text/jsonl/sarif/github-annotations/code-quality、既定: text)。"
+        "jsonl は LLM 向け JSON Lines 出力、sarif は SARIF 2.1.0、github-annotations は GitHub Actions 向けの注釈形式、"
+        "code-quality は GitLab CI の artifacts:reports:codequality 向けの Code Climate JSON issue 形式。"
         "未指定時は環境変数 PYFLTR_OUTPUT_FORMAT の値を使用します。",
     )
     common.add_argument(
@@ -362,7 +364,7 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
 
 
 _OUTPUT_FORMAT_ENV = "PYFLTR_OUTPUT_FORMAT"
-_VALID_OUTPUT_FORMATS: frozenset[str] = frozenset({"text", "jsonl", "sarif", "github-annotations"})
+_VALID_OUTPUT_FORMATS: frozenset[str] = frozenset({"text", "jsonl", "sarif", "github-annotations", "code-quality"})
 
 
 def _resolve_output_format(parser: argparse.ArgumentParser, cli_value: str | None) -> str:
@@ -498,9 +500,9 @@ def run_pipeline(
     """
     output_format = args.output_format or "text"
     output_file: pathlib.Path | None = args.output_file
-    # JSONL/SARIF の stdout モードでは stdout を構造化出力が占有するため、
+    # JSONL / SARIF / code-quality の stdout モードでは stdout を構造化出力が占有するため、
     # UI・画面クリア・stream による詳細ログ即時出力を無効化する。
-    structured_stdout = output_format in ("jsonl", "sarif") and output_file is None
+    structured_stdout = output_format in ("jsonl", "sarif", "code-quality") and output_file is None
     if structured_stdout:
         args.ui = None
         args.no_ui = True
@@ -699,6 +701,8 @@ def run_pipeline(
             files=len(all_files),
             run_id=run_id,
         )
+    elif output_format == "code-quality":
+        _write_code_quality(results)
 
     # 構造化出力の書き出しと並行して、常に text 整形を実行する。
     # stdout / stderr の振り分けは ``pyfltr.cli.text_logger`` の handler が担う。
@@ -736,7 +740,8 @@ def _configure_loggers_for_format(
     - text / github-annotations → text_logger は stdout (INFO)。構造化出力 logger は無効。
     - jsonl + stdout モード → text_logger は stderr (WARN)。構造化出力 logger は stdout。
     - sarif + stdout モード → text_logger は stderr (INFO)。構造化出力 logger は stdout。
-    - jsonl / sarif + ``--output-file`` 指定 → text_logger は stdout (INFO)。
+    - code-quality + stdout モード → text_logger は stderr (INFO)。構造化出力 logger は stdout。
+    - jsonl / sarif / code-quality + ``--output-file`` 指定 → text_logger は stdout (INFO)。
       構造化出力 logger は FileHandler(output_file)。
     - MCP 経路 (``force_text_on_stderr=True``) → text_logger は常に stderr (INFO)。
       構造化出力 logger は上記 output_file 分岐に従う (MCP は一時ファイルを渡すため FileHandler)。
@@ -749,7 +754,7 @@ def _configure_loggers_for_format(
     elif output_format == "jsonl" and output_file is None:
         text_stream = sys.stderr
         text_level = logging.WARNING
-    elif output_format == "sarif" and output_file is None:
+    elif output_format in ("sarif", "code-quality") and output_file is None:
         text_stream = sys.stderr
         text_level = logging.INFO
     else:
@@ -757,7 +762,7 @@ def _configure_loggers_for_format(
         text_level = logging.INFO
     pyfltr.cli.configure_text_output(text_stream, level=text_level)
 
-    if output_format in ("jsonl", "sarif"):
+    if output_format in ("jsonl", "sarif", "code-quality"):
         destination: typing.TextIO | pathlib.Path | None = output_file if output_file is not None else sys.stdout
     else:
         destination = None
@@ -781,9 +786,9 @@ def _maybe_emit_precommit_guidance(
     修正結果がワークツリーには書き込まれる一方で index には反映されない (MM 状態)。
     この場合に限り ``git add`` を促すメッセージを人間向け (日本語) で出力する。
 
-    構造化 stdout モード (``jsonl`` / ``sarif`` を stdout に流す) では、stderr に
-    text が既に流れているため重複を避ける意味でも抑止する。``github-annotations`` は
-    text と同じレイアウトを stdout に出すため抑止不要。
+    構造化 stdout モード (``jsonl`` / ``sarif`` / ``code-quality`` を stdout に流す) では、
+    stderr に text が既に流れているため重複を避ける意味でも抑止する。``github-annotations``
+    は text と同じレイアウトを stdout に出すため抑止不要。
     """
     if structured_stdout:
         return
@@ -815,6 +820,14 @@ def _write_sarif(
         run_id=run_id,
     )
     pyfltr.cli.structured_logger.info(json.dumps(sarif, ensure_ascii=False, indent=2))
+
+
+def _write_code_quality(results: list[pyfltr.command.CommandResult]) -> None:
+    """GitLab Code Quality (Code Climate JSON issue サブセット) の JSON 配列を構造化出力 logger に書き出す。"""
+    import json  # pylint: disable=import-outside-toplevel
+
+    payload = pyfltr.code_quality.build_code_quality_payload(results)
+    pyfltr.cli.structured_logger.info(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
 def calculate_returncode(results: list[pyfltr.command.CommandResult], exit_zero_even_if_formatted: bool) -> int:

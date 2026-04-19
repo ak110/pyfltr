@@ -432,6 +432,40 @@ jobs:
   プル要求の該当ファイル行にコメントとして表示される。
 - `uv cache prune --ci`: CIキャッシュを軽量化するための後処理。
 
+### GitLab CIでMerge Requestへ表示する
+
+GitLab CIでは`--output-format=code-quality`でCode Climate JSON issue形式のサブセットを出力する。
+これを`artifacts:reports:codequality`としてアップロードするとMerge Request画面のCode Quality widgetに反映される。
+MR diffインライン表示はUltimate tier限定。
+
+```yaml
+stages:
+  - lint
+
+pyfltr:
+  stage: lint
+  image: ghcr.io/astral-sh/uv:python3.13-bookworm
+  variables:
+    UV_FROZEN: "1"
+    PYTHONDEVMODE: "1"
+  before_script:
+    - uv sync --all-extras --all-groups
+  script:
+    - uv run pyfltr ci --output-format=code-quality --output-file=gl-code-quality-report.json
+  artifacts:
+    when: always
+    reports:
+      codequality: gl-code-quality-report.json
+```
+
+ポイント。
+
+- `--output-format=code-quality`: Code Climate JSON issue形式の配列を出力する。
+  `--output-file`を指定するとstdoutには従来の`text`整形出力が並行して出るため、ジョブログで進捗を確認できる。
+- `artifacts:reports:codequality`: 生成したJSONファイルをGitLabに取り込む。
+  Merge Request画面のCode Quality widget（全tier）とMR diffインライン表示（Ultimate tier）に反映される。
+- `when: always`: ジョブが失敗してもアーティファクトを残す指定。lintエラーで`exit 1`したときもレポートを取り込めるようにする。
+
 ### SARIFでGitHub code scanningへ取り込む
 
 `--output-format=sarif`でSARIF 2.1.0形式のJSONを出力し、

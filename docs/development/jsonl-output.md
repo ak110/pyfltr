@@ -206,6 +206,29 @@ severity → ディレクティブのマップ。
 `file`/`line`/`col`/`title`をプロパティとして付与し、本文はGitHub仕様に沿って`%`/改行をパーセントエンコードする。
 `title`は`{tool}: {rule}`形式でruleが無ければtool名のみを使う。
 
+## Code Quality出力
+
+`--output-format=code-quality`でCode Climate JSON issue形式のサブセット（JSON配列）を
+stdout（または`--output-file`）へ書き出す。
+GitLab CIの`artifacts:reports:codequality`取り込みを想定した形式。
+
+severityからCode Quality severityへのマップ。Code Quality仕様は`info` / `minor` / `major` / `critical` / `blocker`の
+5段階だが、pyfltr側に対応情報が無く過大評価を避けるため上位2段階は使わない。
+
+- `error` → `"major"`
+- `warning` → `"minor"`
+- `info` → `"info"`
+- 未設定 → `"minor"`（フォールバック）
+
+`check_name`は`{tool}:{rule}`形式（ruleが無ければtool名のみ）。
+`location.path`はpyfltr内部で相対パス保持済みのためそのまま使う。
+`location.lines.begin`は`message.line`がNoneまたは0のとき1に補正する（Code Qualityは0行を許容しないため）。
+
+`fingerprint`はtool・file・line・col・rule・msgをタブ区切りで連結した文字列のSHA-256全桁を採用する。
+同一指摘の重複統合に足るユニーク性を確保しつつ、配置順の変化に頑強にする。
+
+書き出しは構造化出力logger（`pyfltr.structured`）経由の1回のみで、JSONLのようなstreamingは行わない。
+
 ## 出力形式とloggerの役割分担
 
 pyfltrは3系統のloggerを使い分ける。
@@ -214,7 +237,7 @@ pyfltrは3系統のloggerを使い分ける。
 | --- | --- | --- |
 | root（既定） | system logger。設定エラー・アーカイブ初期化失敗などシステム診断 | 常にstderr。抑止しない |
 | `pyfltr.textout` | 人間向けテキスト出力（進捗・詳細・summary・warnings・`--only-failed`案内） | format別にstream/level切替 |
-| `pyfltr.structured` | 構造化出力（JSONL / SARIF） | StreamHandler(stdout) または FileHandler(`--output-file`) |
+| `pyfltr.structured` | 構造化出力（JSONL / SARIF / Code Quality） | StreamHandler(stdout) または FileHandler(`--output-file`) |
 
 `pyfltr.textout`のformat別振る舞い（`pyfltr.cli.configure_text_output`で設定）。
 
@@ -226,15 +249,17 @@ pyfltrは3系統のloggerを使い分ける。
 | `jsonl` | 指定 | stdout | INFO |
 | `sarif` | 未指定 | stderr | INFO |
 | `sarif` | 指定 | stdout | INFO |
+| `code-quality` | 未指定 | stderr | INFO |
+| `code-quality` | 指定 | stdout | INFO |
 | 任意 | 任意（MCP経路） | stderr | INFO |
 
 `pyfltr.structured`のhandler設定（`pyfltr.cli.configure_structured_output`で設定）。
 
-- `jsonl` / `sarif` + `--output-file`未指定 → `StreamHandler(sys.stdout)`
-- `jsonl` / `sarif` + `--output-file`指定 → `FileHandler(output_file, mode="w", encoding="utf-8")`
+- `jsonl` / `sarif` / `code-quality` + `--output-file`未指定 → `StreamHandler(sys.stdout)`
+- `jsonl` / `sarif` / `code-quality` + `--output-file`指定 → `FileHandler(output_file, mode="w", encoding="utf-8")`
 - `text` / `github-annotations` → handler未設定（構造化出力は発生しない）
 
-stdout占有が起きるのは`jsonl` / `sarif`かつ`output_file`未指定時のみ。
+stdout占有が起きるのは`jsonl` / `sarif` / `code-quality`かつ`output_file`未指定時のみ。
 `github-annotations`はtextと同じレイアウトを基本とし、エラー箇所だけGAワークフローコマンド記法
 （`::error file=...::file:line:col: [tool:rule] message`）へ差し替える。
 ログビューアがプロパティを剥がしても生ログ上でfile/line/ruleが読める契約にするため、
