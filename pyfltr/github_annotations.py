@@ -41,6 +41,11 @@ def build_github_annotation_lines(
             kind = _SEVERITY_TO_KIND.get(error.severity, "warning")
             lines.append(_build_plain_line(result.command, error, kind))
             lines.append(_build_workflow_command(result.command, error, kind))
+        # diagnostic を伴わない失敗 / formatter による整形を生ログに可視化する。
+        # これらは ErrorLocation が生成されず GitHub の Annotations にも載らないため、
+        # プレーンテキスト行を出して原因追跡の手掛かりを残す。
+        if result.status in ("failed", "formatted") and not result.errors:
+            lines.append(_build_tool_summary_line(result))
     return lines
 
 
@@ -58,6 +63,32 @@ def _build_plain_line(command: str, error: pyfltr.error_parser.ErrorLocation, ki
     rule_part = f"[{command}: {error.rule}]" if error.rule else f"[{command}]"
     message_text = error.message.replace("\r\n", " ").replace("\n", " ").replace("\t", " ")
     return f"{location}: {kind}: {rule_part} {message_text}"
+
+
+def _build_tool_summary_line(result: pyfltr.command.CommandResult) -> str:
+    """Diagnostic を伴わない失敗/整形について、ツール単位のサマリ 1 行を組み立てる。
+
+    出力サンプル: ``pyfltr: warning: [ruff-format] formatted (2files in 0.3s, rc=1)``
+    ``::`` を含まない純テキストのため GitHub はワークフローコマンドと解釈しない。
+    出力末尾の短い末尾要約（``output`` の末尾 160 文字）も付与して原因特定を助ける。
+    """
+    kind = "error" if result.status == "failed" else "warning"
+    tail = _tail_snippet(result.output, 160)
+    tail_part = f" :: {tail}" if tail else ""
+    return (
+        f"pyfltr: {kind}: [{result.command}] "
+        f"{result.status} ({result.files}files in {result.elapsed:.1f}s, rc={result.returncode})"
+        f"{tail_part}"
+    )
+
+
+def _tail_snippet(output: str, limit: int) -> str:
+    """出力末尾 ``limit`` 文字分を 1 行へ畳んで返す。空白のみなら空文字。"""
+    snippet = output.strip()
+    if not snippet:
+        return ""
+    snippet = snippet[-limit:].replace("\r\n", " ").replace("\n", " ").replace("\t", " ")
+    return " ".join(snippet.split())
 
 
 def _build_workflow_command(command: str, error: pyfltr.error_parser.ErrorLocation, kind: str) -> str:

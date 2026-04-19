@@ -68,8 +68,28 @@ def test_build_github_annotation_lines_no_severity_fallback_warning() -> None:
 
 
 def test_build_github_annotation_lines_empty_when_no_errors() -> None:
-    """diagnostic が無いツールは行を出さない。"""
+    """diagnostic が無く status が succeeded なら行を出さない。"""
     result = _make_result("mypy", returncode=0)
     config = pyfltr.config.create_default_config()
     lines = pyfltr.github_annotations.build_github_annotation_lines([result], config)
     assert not lines
+
+
+def test_build_github_annotation_lines_failed_without_diagnostics_emits_summary() -> None:
+    """diagnostic を伴わない failed ツールでも 1 行サマリを出して原因追跡に備える。"""
+    result = _make_result("mypy", returncode=2, output="Fatal: mypy crashed")
+    config = pyfltr.config.create_default_config()
+    lines = pyfltr.github_annotations.build_github_annotation_lines([result], config)
+    assert len(lines) == 1
+    assert lines[0].startswith("pyfltr: error: [mypy] failed")
+    assert "rc=2" in lines[0]
+    assert "Fatal: mypy crashed" in lines[0]
+
+
+def test_build_github_annotation_lines_formatted_emits_summary() -> None:
+    """formatter による整形も 1 行サマリで可視化する。"""
+    result = _make_result("ruff-format", command_type="formatter", returncode=1, has_error=False)
+    config = pyfltr.config.create_default_config()
+    lines = pyfltr.github_annotations.build_github_annotation_lines([result], config)
+    assert len(lines) == 1
+    assert lines[0].startswith("pyfltr: warning: [ruff-format] formatted")
