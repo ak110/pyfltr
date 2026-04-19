@@ -1963,6 +1963,8 @@ def test_terminate_active_processes_kills_grandchild() -> None:
                 pyfltr.command._active_processes.remove(proc)
         if proc.poll() is None:
             with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
+                # POSIX 限定パスのクリーンアップ。Windows では skipif で到達しないが、
+                # 型チェッカー（pyright/ty）の attr-defined 誤検知を避けるため getattr 経由で呼ぶ。
                 os.killpg(os.getpgid(proc.pid), 9)
         proc.wait(timeout=2.0)
 

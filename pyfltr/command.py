@@ -306,14 +306,20 @@ def _kill_process_tree(proc: "subprocess.Popen[str]", *, timeout: float) -> None
             with contextlib.suppress(psutil.NoSuchProcess, psutil.AccessDenied):
                 child.terminate()
     else:
+        # os.killpg / os.getpgid / signal.SIGKILL は POSIX 専用シンボルで、
+        # Windows 向け型スタブでは未定義のため型チェッカー（pyright/ty）が
+        # attr-defined を誤検知する。os.name ガード下での使用は安全なので
+        # getattr 経由で取得し、既存の CREATE_NEW_PROCESS_GROUP 回避と揃える。
+        _getpgid = os.getpgid
+        _killpg = os.killpg
         try:
-            pgid = os.getpgid(proc.pid)
+            pgid = _getpgid(proc.pid)
         except ProcessLookupError:
             # 親プロセスが既に reap されている。start_new_session=True により
             # pgid == pid として設定されていたはずなので pid をそのまま使う。
             pgid = proc.pid
         with contextlib.suppress(ProcessLookupError, PermissionError):
-            os.killpg(pgid, signal.SIGTERM)
+            _killpg(pgid, signal.SIGTERM)
 
     # psutil.Process は失敗時も自身を含めて扱うため None チェックのうえで wait 対象に含める。
     wait_targets: list[psutil.Process] = list(targets)
@@ -329,12 +335,15 @@ def _kill_process_tree(proc: "subprocess.Popen[str]", *, timeout: float) -> None
                 with contextlib.suppress(psutil.NoSuchProcess, psutil.AccessDenied):
                     child.kill()
         else:
+            _getpgid = os.getpgid
+            _killpg = os.killpg
+            _sigkill = signal.SIGKILL
             try:
-                pgid = os.getpgid(proc.pid)
+                pgid = _getpgid(proc.pid)
             except ProcessLookupError:
                 pgid = proc.pid
             with contextlib.suppress(ProcessLookupError, PermissionError):
-                os.killpg(pgid, signal.SIGKILL)
+                _killpg(pgid, _sigkill)
         _, still_alive = psutil.wait_procs(alive, timeout=timeout)
         if still_alive:
             remaining_pids = [p.pid for p in still_alive]
