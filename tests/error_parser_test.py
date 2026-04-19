@@ -381,6 +381,37 @@ def test_parse_pylint_json() -> None:
     )
 
 
+def test_parse_pylint_json_with_stderr_prefix() -> None:
+    """pylint: JSON 前にstderrの警告などが混ざっても最初の ``{`` 以降をパースする。
+
+    Windows + Python 3.14 + PYTHONDEVMODE=1 で pylint_pydantic が大量の
+    DeprecationWarning を emit し、pylint の出力先頭に紛れ込む現象への対処。
+    """
+    body = json.dumps(
+        {
+            "messages": [
+                {
+                    "messageId": "C0114",
+                    "symbol": "missing-module-docstring",
+                    "message": "Missing module docstring",
+                    "path": "src/foo.py",
+                    "line": 1,
+                    "column": 0,
+                    "type": "convention",
+                },
+            ],
+            "statistics": {},
+        }
+    )
+    prefix = (
+        "Captured stderr while importing pylint_pydantic:\n"
+        "site-packages/pylint_pydantic/__init__.py:2: DeprecationWarning: ...\n"
+    )
+    errors = pyfltr.error_parser.parse_errors("pylint", prefix + body)
+    assert len(errors) == 1
+    assert errors[0].rule == "missing-module-docstring"
+
+
 def test_parse_pylint_json_fallback() -> None:
     """pylint: JSON でない出力は regex にフォールバックする。"""
     output = "src/foo.py:10:5: C0114: Missing module docstring (missing-module-docstring)"

@@ -137,14 +137,29 @@ _BUILTIN_PATTERNS: dict[str, str] = {
 
 
 def _try_json_loads(output: str) -> typing.Any:
-    """JSON パースを試みる。失敗時は None を返す。"""
-    output = output.strip()
-    if not output:
+    """JSON パースを試みる。失敗時は None を返す。
+
+    一部ツール（例: pylint）は ``PYTHONDEVMODE=1`` 環境で読み込んだプラグインの
+    ``DeprecationWarning`` などを JSON 本体の前にテキストで流し込む。そのままでは
+    パースが必ず失敗するため、先頭の ``{`` または ``[`` を見つけて、それ以前の
+    ゴミ文字列を落としてから再試行するフォールバックを行う。
+    """
+    stripped = output.strip()
+    if not stripped:
         return None
     try:
-        return json.loads(output)
+        return json.loads(stripped)
     except json.JSONDecodeError:
-        return None
+        pass
+    # 先頭が JSON 以外の行で汚染されているケースを救済する。
+    for start_char in ("{", "["):
+        index = stripped.find(start_char)
+        if index > 0:
+            try:
+                return json.loads(stripped[index:])
+            except json.JSONDecodeError:
+                continue
+    return None
 
 
 def _normalize_severity(value: typing.Any) -> str | None:
