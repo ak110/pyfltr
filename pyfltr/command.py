@@ -1,5 +1,5 @@
 """コマンド実行関連の処理。"""
-# pylint: disable=too-many-lines
+# pylint: disable=too-many-lines,duplicate-code
 
 import argparse
 import atexit
@@ -264,9 +264,9 @@ def _failed_resolution_result(
 ) -> "CommandResult":
     """ツール解決失敗時の `CommandResult` を組み立てる。"""
     pyfltr.warnings_.emit_warning(source="tool-resolve", message=f"{command}: {message}")
-    return CommandResult(
+    return CommandResult.from_run(
         command=command,
-        command_type=command_info.type,
+        command_info=command_info,
         commandline=[],
         returncode=1,
         has_error=True,
@@ -414,6 +414,45 @@ class CommandResult:
     ``cached=True`` のときに限り設定される。JSONL tool レコードで参照誘導用に出力する
     (``show-run`` / MCP の詳細参照経路で当該 run の全文を確認できる)。
     """
+
+    @classmethod
+    def from_run(  # pylint: disable=duplicate-code
+        cls,
+        *,
+        command: str,
+        command_info: "pyfltr.config.CommandInfo | None" = None,
+        commandline: list[str],
+        returncode: int | None,
+        output: str,
+        elapsed: float,
+        files: int,
+        has_error: bool = False,
+        errors: "list[pyfltr.error_parser.ErrorLocation] | None" = None,
+        command_type: str | None = None,
+    ) -> "CommandResult":
+        """実行結果から CommandResult を組み立てるファクトリメソッド。
+
+        ``command_type`` を省略した場合は ``command_info.type`` を使う。
+        ``command_type`` と ``command_info`` の両方を省略することはできない。
+        ``errors`` を省略した場合は空リストを使う（parse_errors の呼び出しは呼び出し側で行う）。
+        """
+        resolved_type: str
+        if command_type is None:
+            assert command_info is not None, "command_type と command_info のどちらかを指定する必要がある"
+            resolved_type = command_info.type
+        else:
+            resolved_type = command_type
+        return cls(
+            command=command,
+            command_type=resolved_type,
+            commandline=commandline,
+            returncode=returncode,
+            has_error=has_error,
+            files=files,
+            output=output,
+            elapsed=elapsed,
+            errors=errors if errors is not None else [],
+        )
 
     @property
     def alerted(self) -> bool:
@@ -647,39 +686,37 @@ def pick_targets(
     return only_failed_targets.get(command)
 
 
-def execute_command(
+@dataclasses.dataclass(frozen=True)
+class _ExecutionParams:
+    """``execute_command`` の共通前処理結果。
+
+    ターゲット解決・コマンドライン構築を済ませた中間状態を保持し、
+    dispatcher と各 runner 関数で参照する。
+    """
+
+    command_info: pyfltr.config.CommandInfo
+    targets: list[pathlib.Path]
+    commandline_prefix: list[str]
+    commandline: list[str]
+    additional_args: list[str]
+    fix_mode: bool
+    fix_args: list[str] | None
+
+
+def _prepare_execution_params(
     command: str,
     args: argparse.Namespace,
     config: pyfltr.config.Config,
     all_files: list[pathlib.Path],
-    on_output: typing.Callable[[str], None] | None = None,
     *,
-    fix_stage: bool = False,
-    cache_store: "pyfltr.cache.CacheStore | None" = None,
-    cache_run_id: str | None = None,
-    only_failed_targets: "pyfltr.only_failed.ToolTargets | None" = None,
-    is_interrupted: typing.Callable[[], bool] | None = None,
-    on_subprocess_start: typing.Callable[[], None] | None = None,
-    on_subprocess_end: typing.Callable[[], None] | None = None,
-) -> CommandResult:
-    """コマンドの実行。
+    fix_stage: bool,
+    only_failed_targets: "pyfltr.only_failed.ToolTargets | None",
+) -> "_ExecutionParams | CommandResult":
+    """実行前の共通前処理を行い ``_ExecutionParams`` を返す。
 
-    ``fix_stage=True`` の場合、当該コマンドが fix-args を持っていれば fix 経路
-    （``--fix`` 付きの単発実行）で動作する。fix-args 未定義の formatter では
-    通常経路と挙動が変わらないため、呼び出し側は fix ステージで走らせる対象を
-    ``split_commands_for_execution()`` で絞り込んだうえで指定する前提。
-
-    ``cache_store`` が指定され、かつ当該コマンドが ``CommandInfo.cacheable=True`` の
-    非 fix モード実行なら、ファイル hash キャッシュを参照して一致があれば実行を
-    スキップし、過去の結果を復元して ``cached=True`` で返す。キャッシュミス時は
-    通常実行のうえ、成功 (rc=0, has_error=False) に限り ``cache_run_id`` をソースとして
-    書き込む。``cache_run_id`` が ``None`` の場合はキャッシュ書き込みをスキップする
-    (アーカイブ無効時に ``cached_from`` で参照させる元 run が無いため)。
-
-    ``only_failed_targets`` が指定された場合、``ToolTargets.resolve_files(all_files)``
-    経由で実対象ファイルを取得する（``--only-failed`` 経路でツール別の失敗ファイル集合を
-    渡す用途）。その後の ``target_extensions`` / ``pass_filenames=False`` の分岐は
-    通常通り適用される。``None`` の場合は既定の ``all_files`` を使用する。
+    ツールパス解決に失敗した場合は ``CommandResult`` を直接返す。
+    ターゲット 0 件の場合は ``_ExecutionParams`` を返し（targets が空リスト）、
+    呼び出し側でスキップ処理を行う。
     """
     command_info = config.commands[command]
     globs = command_info.target_globs()
@@ -753,6 +790,72 @@ def execute_command(
     if config.values.get(f"{command}-pass-filenames", True):
         commandline.extend(str(t) for t in targets)
 
+    return _ExecutionParams(
+        command_info=command_info,
+        targets=targets,
+        commandline_prefix=commandline_prefix,
+        commandline=commandline,
+        additional_args=additional_args,
+        fix_mode=fix_mode,
+        fix_args=fix_args,
+    )
+
+
+def execute_command(
+    command: str,
+    args: argparse.Namespace,
+    config: pyfltr.config.Config,
+    all_files: list[pathlib.Path],
+    on_output: typing.Callable[[str], None] | None = None,
+    *,
+    fix_stage: bool = False,
+    cache_store: "pyfltr.cache.CacheStore | None" = None,
+    cache_run_id: str | None = None,
+    only_failed_targets: "pyfltr.only_failed.ToolTargets | None" = None,
+    is_interrupted: typing.Callable[[], bool] | None = None,
+    on_subprocess_start: typing.Callable[[], None] | None = None,
+    on_subprocess_end: typing.Callable[[], None] | None = None,
+) -> CommandResult:
+    """コマンドの実行。
+
+    ``fix_stage=True`` の場合、当該コマンドが fix-args を持っていれば fix 経路
+    （``--fix`` 付きの単発実行）で動作する。fix-args 未定義の formatter では
+    通常経路と挙動が変わらないため、呼び出し側は fix ステージで走らせる対象を
+    ``split_commands_for_execution()`` で絞り込んだうえで指定する前提。
+
+    ``cache_store`` が指定され、かつ当該コマンドが ``CommandInfo.cacheable=True`` の
+    非 fix モード実行なら、ファイル hash キャッシュを参照して一致があれば実行を
+    スキップし、過去の結果を復元して ``cached=True`` で返す。キャッシュミス時は
+    通常実行のうえ、成功 (rc=0, has_error=False) に限り ``cache_run_id`` をソースとして
+    書き込む。``cache_run_id`` が ``None`` の場合はキャッシュ書き込みをスキップする
+    (アーカイブ無効時に ``cached_from`` で参照させる元 run が無いため)。
+
+    ``only_failed_targets`` が指定された場合、``ToolTargets.resolve_files(all_files)``
+    経由で実対象ファイルを取得する（``--only-failed`` 経路でツール別の失敗ファイル集合を
+    渡す用途）。その後の ``target_extensions`` / ``pass_filenames=False`` の分岐は
+    通常通り適用される。``None`` の場合は既定の ``all_files`` を使用する。
+    """
+    # 共通前処理: ターゲット解決・コマンドライン構築
+    params_or_error = _prepare_execution_params(
+        command,
+        args,
+        config,
+        all_files,
+        fix_stage=fix_stage,
+        only_failed_targets=only_failed_targets,
+    )
+    if isinstance(params_or_error, CommandResult):
+        # ツールパス解決失敗
+        return params_or_error
+    params = params_or_error
+    command_info = params.command_info
+    targets = params.targets
+    commandline = params.commandline
+    commandline_prefix = params.commandline_prefix
+    additional_args = params.additional_args
+    fix_mode = params.fix_mode
+    fix_args = params.fix_args
+
     # 各 CommandResult に当該ツールのターゲットファイル一覧を埋めるためのヘルパー。
     # retry_command で差し替え可能なターゲットを復元するのに使う (特に pass-filenames=False
     # のツールでは commandline からも復元できないため、ここで明示的に保持する)。
@@ -762,12 +865,11 @@ def execute_command(
 
     if len(targets) <= 0:
         return _with_targets(
-            CommandResult(
+            CommandResult.from_run(
                 command=command,
-                command_type=command_info.type,
+                command_info=command_info,
                 commandline=commandline,
                 returncode=None,
-                has_error=False,
                 output="対象ファイルが見つかりません。",
                 files=0,
                 elapsed=0,
@@ -907,71 +1009,27 @@ def execute_command(
             )
         )
 
-    has_error = False
-
-    # ファイル hash キャッシュの参照 (cacheable=True の非 fix 実行のみ)。
-    # 実装簡潔化のため、cacheable=True のコマンドは本 plain 経路でのみキャッシュを
-    # 扱う (textlint の fix モードは _execute_textlint_fix 経由なので対象外)。
-    # キャッシュ対象判定 / キー算出 / 書き込みを break/resume できるよう、結果を
-    # 後段で差し替える設計とする。
-    cache_context = _prepare_cache_context(
-        command,
-        command_info,
-        config,
-        commandline,
-        targets,
-        additional_args,
-        fix_args=fix_args,
-        cache_store=cache_store,
-    )
-    if cache_context is not None:
-        cached_result = cache_context.lookup()
-        if cached_result is not None:
-            cached_result.target_files = list(targets)
-            # 復元値の files / elapsed は過去実行時のもの。復元時の実ファイル数は
-            # 現在のターゲットリストに合わせ直す (再実行時の対象件数表示のため)。
-            cached_result.files = len(targets)
-            return cached_result
-
-    # verbose時はコマンドラインをon_output経由で出力
-    if args.verbose and on_output is not None:
-        on_output(f"commandline: {shlex.join(commandline)}\n")
-    proc = _run_subprocess(
-        commandline,
-        env,
-        on_output,
-        is_interrupted=is_interrupted,
-        on_subprocess_start=on_subprocess_start,
-        on_subprocess_end=on_subprocess_end,
-    )
-    returncode = proc.returncode
-
-    output = proc.stdout.strip()
-    elapsed = time.perf_counter() - start_time
-
-    # エラー箇所のパース
-    errors = pyfltr.error_parser.parse_errors(command, output, command_info.error_pattern)
-
-    result = _with_targets(
-        CommandResult(
-            command=command,
-            command_type=command_info.type,
-            commandline=commandline,
-            returncode=returncode,
-            has_error=has_error,
-            files=len(targets),
-            output=output,
-            elapsed=elapsed,
-            errors=errors,
+    # plain 経路（通常の linter・formatter）
+    return _with_targets(
+        _run_plain_command(
+            command,
+            command_info,
+            commandline,
+            targets,
+            additional_args,
+            env,
+            on_output,
+            start_time,
+            args,
+            config,
+            fix_args=fix_args,
+            cache_store=cache_store,
+            cache_run_id=cache_run_id,
+            is_interrupted=is_interrupted,
+            on_subprocess_start=on_subprocess_start,
+            on_subprocess_end=on_subprocess_end,
         )
     )
-
-    # キャッシュ書き込み (成功 rc=0 のみ)。失敗結果を記録すると再試行で同じ失敗が
-    # 復元されて修正確認できなくなるため、成功時に限定する。
-    if cache_context is not None and returncode == 0 and not has_error:
-        cache_context.store(result, run_id=cache_run_id)
-
-    return result
 
 
 @dataclasses.dataclass
@@ -1022,6 +1080,93 @@ def _prepare_cache_context(
         config_files=pyfltr.cache.resolve_config_files(command, config),
     )
     return _CacheContext(cache_store=cache_store, command=command, key=key)
+
+
+def _run_plain_command(
+    command: str,
+    command_info: pyfltr.config.CommandInfo,
+    commandline: list[str],
+    targets: list[pathlib.Path],
+    additional_args: list[str],
+    env: dict[str, str],
+    on_output: typing.Callable[[str], None] | None,
+    start_time: float,
+    args: argparse.Namespace,
+    config: pyfltr.config.Config,
+    *,
+    fix_args: list[str] | None,
+    cache_store: "pyfltr.cache.CacheStore | None",
+    cache_run_id: str | None,
+    is_interrupted: typing.Callable[[], bool] | None = None,
+    on_subprocess_start: typing.Callable[[], None] | None = None,
+    on_subprocess_end: typing.Callable[[], None] | None = None,
+) -> CommandResult:
+    """通常の linter/formatter を単発実行する plain 経路。
+
+    ファイル hash キャッシュの参照・書き込みを担う。cacheable=True の非 fix 実行のみ
+    キャッシュを扱い、textlint fix など特殊経路はこの関数を通らない。
+    """
+    has_error = False
+
+    # ファイル hash キャッシュの参照 (cacheable=True の非 fix 実行のみ)。
+    # キャッシュ対象判定 / キー算出 / 書き込みを break/resume できるよう、結果を
+    # 後段で差し替える設計とする。
+    cache_context = _prepare_cache_context(
+        command,
+        command_info,
+        config,
+        commandline,
+        targets,
+        additional_args,
+        fix_args=fix_args,
+        cache_store=cache_store,
+    )
+    if cache_context is not None:
+        cached_result = cache_context.lookup()
+        if cached_result is not None:
+            cached_result.target_files = list(targets)
+            # 復元値の files / elapsed は過去実行時のもの。復元時の実ファイル数は
+            # 現在のターゲットリストに合わせ直す (再実行時の対象件数表示のため)。
+            cached_result.files = len(targets)
+            return cached_result
+
+    # verbose時はコマンドラインをon_output経由で出力
+    if args.verbose and on_output is not None:
+        on_output(f"commandline: {shlex.join(commandline)}\n")
+    proc = _run_subprocess(
+        commandline,
+        env,
+        on_output,
+        is_interrupted=is_interrupted,
+        on_subprocess_start=on_subprocess_start,
+        on_subprocess_end=on_subprocess_end,
+    )
+    returncode = proc.returncode
+
+    output = proc.stdout.strip()
+    elapsed = time.perf_counter() - start_time
+
+    # エラー箇所のパース
+    errors = pyfltr.error_parser.parse_errors(command, output, command_info.error_pattern)
+
+    result = CommandResult.from_run(
+        command=command,
+        command_info=command_info,
+        commandline=commandline,
+        returncode=returncode,
+        has_error=has_error,
+        files=len(targets),
+        output=output,
+        elapsed=elapsed,
+        errors=errors,
+    )
+
+    # キャッシュ書き込み (成功 rc=0 のみ)。失敗結果を記録すると再試行で同じ失敗が
+    # 復元されて修正確認できなくなるため、成功時に限定する。
+    if cache_context is not None and returncode == 0 and not has_error:
+        cache_context.store(result, run_id=cache_run_id)
+
+    return result
 
 
 def _build_auto_args(command: str, config: pyfltr.config.Config, user_args: list[str]) -> list[str]:
@@ -1091,12 +1236,11 @@ def _execute_pre_commit(
     # pre-commit 配下から起動された場合は自身を再帰実行しない。
     # git commit → pre-commit → pyfltr fast → pre-commit の二重実行を防ぐ。
     if pyfltr.precommit.is_running_under_precommit():
-        return CommandResult(
+        return CommandResult.from_run(
             command=command,
-            command_type=command_info.type,
+            command_info=command_info,
             commandline=commandline,
             returncode=None,
-            has_error=False,
             output="pre-commit 配下で実行されたため pre-commit 統合をスキップしました。",
             files=len(targets),
             elapsed=time.perf_counter() - start_time,
@@ -1106,12 +1250,11 @@ def _execute_pre_commit(
     config_dir = pathlib.Path.cwd()
     config_path = config_dir / ".pre-commit-config.yaml"
     if not config_path.exists():
-        return CommandResult(
+        return CommandResult.from_run(
             command=command,
-            command_type=command_info.type,
+            command_info=command_info,
             commandline=commandline,
             returncode=None,
-            has_error=False,
             output=".pre-commit-config.yaml が見つかりません。",
             files=len(targets),
             elapsed=time.perf_counter() - start_time,
@@ -1163,9 +1306,9 @@ def _execute_pre_commit(
     output = proc.stdout.strip()
     elapsed = time.perf_counter() - start_time
 
-    return CommandResult(
+    return CommandResult.from_run(
         command=command,
-        command_type=command_info.type,
+        command_info=command_info,
         commandline=commandline,
         returncode=returncode,
         has_error=has_error,
@@ -1230,7 +1373,7 @@ def _execute_linter_fix(
 
     errors = pyfltr.error_parser.parse_errors(command, output, None)
 
-    return CommandResult(
+    return CommandResult.from_run(
         command=command,
         command_type=result_command_type,
         commandline=commandline,
@@ -1377,7 +1520,7 @@ def _execute_textlint_fix(
         returncode = 0
         result_command_type = "linter"
 
-    return CommandResult(
+    return CommandResult.from_run(
         command=command,
         command_type=result_command_type,
         commandline=step2_commandline,
@@ -1490,9 +1633,9 @@ def _execute_ruff_format_two_step(
 
     # commandline は代表として「最後に実行したステップ」(= ruff format) を格納。
     # 両ステップ分の commandline は verbose 出力で確認可能。
-    return CommandResult(
+    return CommandResult.from_run(
         command=command,
-        command_type=command_info.type,
+        command_info=command_info,
         commandline=format_commandline,
         returncode=returncode,
         has_error=has_error,
@@ -1577,9 +1720,9 @@ def _execute_shfmt_two_step(
             has_error = False
             returncode = 0
 
-        return CommandResult(
+        return CommandResult.from_run(
             command=command,
-            command_type=command_info.type,
+            command_info=command_info,
             commandline=write_commandline,
             returncode=returncode,
             has_error=has_error,
@@ -1612,12 +1755,11 @@ def _execute_shfmt_two_step(
         # 整形不要
         output = check_proc.stdout.strip()
         elapsed = time.perf_counter() - start_time
-        return CommandResult(
+        return CommandResult.from_run(
             command=command,
-            command_type=command_info.type,
+            command_info=command_info,
             commandline=check_commandline,
             returncode=0,
-            has_error=False,
             files=len(targets),
             output=output,
             elapsed=elapsed,
@@ -1638,9 +1780,9 @@ def _execute_shfmt_two_step(
     elapsed = time.perf_counter() - start_time
 
     if write_proc.returncode != 0:
-        return CommandResult(
+        return CommandResult.from_run(
             command=command,
-            command_type=command_info.type,
+            command_info=command_info,
             commandline=write_commandline,
             returncode=write_proc.returncode,
             has_error=True,
@@ -1649,12 +1791,11 @@ def _execute_shfmt_two_step(
             elapsed=elapsed,
         )
 
-    return CommandResult(
+    return CommandResult.from_run(
         command=command,
-        command_type=command_info.type,
+        command_info=command_info,
         commandline=write_commandline,
         returncode=1,
-        has_error=False,
         files=len(targets),
         output=check_proc.stdout.strip(),
         elapsed=elapsed,
@@ -1745,7 +1886,7 @@ def _execute_prettier_two_step(
             result_command_type = command_info.type
 
         errors = pyfltr.error_parser.parse_errors(command, output, command_info.error_pattern)
-        return CommandResult(
+        return CommandResult.from_run(
             command=command,
             command_type=result_command_type,
             commandline=write_commandline,
@@ -1782,12 +1923,11 @@ def _execute_prettier_two_step(
         output = step1_proc.stdout.strip()
         elapsed = time.perf_counter() - start_time
         errors = pyfltr.error_parser.parse_errors(command, output, command_info.error_pattern)
-        return CommandResult(
+        return CommandResult.from_run(
             command=command,
-            command_type=command_info.type,
+            command_info=command_info,
             commandline=check_commandline,
             returncode=0,
-            has_error=False,
             files=len(targets),
             output=output,
             elapsed=elapsed,
@@ -1799,9 +1939,9 @@ def _execute_prettier_two_step(
         output = step1_proc.stdout.strip()
         elapsed = time.perf_counter() - start_time
         errors = pyfltr.error_parser.parse_errors(command, output, command_info.error_pattern)
-        return CommandResult(
+        return CommandResult.from_run(
             command=command,
-            command_type=command_info.type,
+            command_info=command_info,
             commandline=check_commandline,
             returncode=step1_rc,
             has_error=True,
@@ -1834,9 +1974,9 @@ def _execute_prettier_two_step(
         returncode = step2_rc
 
     errors = pyfltr.error_parser.parse_errors(command, output, command_info.error_pattern)
-    return CommandResult(
+    return CommandResult.from_run(
         command=command,
-        command_type=command_info.type,
+        command_info=command_info,
         commandline=write_commandline,
         returncode=returncode,
         has_error=has_error,
