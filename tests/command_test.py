@@ -1961,11 +1961,11 @@ def test_terminate_active_processes_kills_grandchild() -> None:
         with pyfltr.command._active_processes_lock:
             if proc in pyfltr.command._active_processes:
                 pyfltr.command._active_processes.remove(proc)
-        if proc.poll() is None and sys.platform != "win32":
-            # POSIX 限定パスのクリーンアップ。sys.platform 判定は型チェッカー（pyright / ty）の
-            # POSIX 専用シンボル narrowing を有効にするために必要。
+        if proc.poll() is None:
+            # POSIX 限定パスのクリーンアップ。Windows では skipif で到達しない。
+            # 型チェッカー（pyright / ty）の attr-defined 誤検知は局所コメントで抑止する。
             with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
-                os.killpg(os.getpgid(proc.pid), 9)
+                os.killpg(os.getpgid(proc.pid), 9)  # type: ignore[attr-defined,unused-ignore]  # pyright: ignore[reportAttributeAccessIssue]
         proc.wait(timeout=2.0)
 
 

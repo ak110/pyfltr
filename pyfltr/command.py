@@ -14,7 +14,6 @@ import shlex
 import shutil
 import signal
 import subprocess
-import sys
 import threading
 import time
 import typing
@@ -296,10 +295,7 @@ def _kill_process_tree(proc: "subprocess.Popen[str]", *, timeout: float) -> None
     現状の pyfltr 対応ツールでは問題にならない範囲とする。
     """
     targets: list[psutil.Process] = []
-    # os.killpg / os.getpgid / signal.SIGKILL は POSIX 専用のため Windows 型スタブには存在せず、
-    # 型チェッカー（pyright / ty）は sys.platform == "win32" による分岐のみ narrowing して
-    # POSIX 専用シンボルを隠す。os.name 判定では narrowing されず attr-defined を誤検知する。
-    if sys.platform == "win32":
+    if os.name == "nt":
         # 親消失後に辿れなくなるため、事前に子孫 pid 集合を取得する。
         with contextlib.suppress(psutil.NoSuchProcess, psutil.AccessDenied):
             parent = psutil.Process(proc.pid)
@@ -310,14 +306,16 @@ def _kill_process_tree(proc: "subprocess.Popen[str]", *, timeout: float) -> None
             with contextlib.suppress(psutil.NoSuchProcess, psutil.AccessDenied):
                 child.terminate()
     else:
+        # os.killpg / os.getpgid / signal.SIGKILL は POSIX 専用で Windows 型スタブに未定義。
+        # os.name ガード下なので実行時は安全。型チェッカーの誤検知だけ局所コメントで抑止する。
         try:
-            pgid = os.getpgid(proc.pid)
+            pgid = os.getpgid(proc.pid)  # type: ignore[attr-defined,unused-ignore]  # pyright: ignore[reportAttributeAccessIssue]
         except ProcessLookupError:
             # 親プロセスが既に reap されている。start_new_session=True により
             # pgid == pid として設定されていたはずなので pid をそのまま使う。
             pgid = proc.pid
         with contextlib.suppress(ProcessLookupError, PermissionError):
-            os.killpg(pgid, signal.SIGTERM)
+            os.killpg(pgid, signal.SIGTERM)  # type: ignore[attr-defined,unused-ignore]  # pyright: ignore[reportAttributeAccessIssue]
 
     # psutil.Process は失敗時も自身を含めて扱うため None チェックのうえで wait 対象に含める。
     wait_targets: list[psutil.Process] = list(targets)
@@ -328,17 +326,17 @@ def _kill_process_tree(proc: "subprocess.Popen[str]", *, timeout: float) -> None
 
     # 残存プロセスへ SIGKILL / kill を送る。
     if alive:
-        if sys.platform == "win32":
+        if os.name == "nt":
             for child in alive:
                 with contextlib.suppress(psutil.NoSuchProcess, psutil.AccessDenied):
                     child.kill()
         else:
             try:
-                pgid = os.getpgid(proc.pid)
+                pgid = os.getpgid(proc.pid)  # type: ignore[attr-defined,unused-ignore]  # pyright: ignore[reportAttributeAccessIssue]
             except ProcessLookupError:
                 pgid = proc.pid
             with contextlib.suppress(ProcessLookupError, PermissionError):
-                os.killpg(pgid, signal.SIGKILL)
+                os.killpg(pgid, signal.SIGKILL)  # type: ignore[attr-defined,unused-ignore]  # pyright: ignore[reportAttributeAccessIssue]
         _, still_alive = psutil.wait_procs(alive, timeout=timeout)
         if still_alive:
             remaining_pids = [p.pid for p in still_alive]
@@ -571,8 +569,10 @@ def _run_subprocess(
     # OS 別のプロセスグループ分離オプション。pytest-xdist など孫プロセスを
     # fork するツールの中断時に、親子孫をまとめて停止できるようにする。
     popen_extra: dict[str, typing.Any] = {}
-    if sys.platform == "win32":
-        popen_extra["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    if os.name == "nt":
+        # CREATE_NEW_PROCESS_GROUP は Windows 専用の定数。getattr の 3 引数形式を使うと
+        # ruff B009 の getattr→属性アクセス変換対象外になるため、型チェッカー誤検知を回避できる。
+        popen_extra["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
     else:
         popen_extra["start_new_session"] = True
     try:
