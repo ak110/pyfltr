@@ -154,8 +154,8 @@ def build_lines(
     ``warnings``は``pyfltr.warnings_.collected_warnings()``の返り値を想定する。
     ``run_id``が指定されていればheaderレコードに埋め込む。
     ``launcher_prefix``が指定されていれば``summary.guidance``内の起動コマンド表記に反映する。
-    ``verbose=True`` でheaderへフル``commands``配列とフル``schema_hints``を埋め込む
-    (既定は``commands_count``と短縮``schema_hints``)。
+    ``verbose=True`` でheaderの``schema_hints``をフル版に切り替える
+    (既定は短縮版。``commands`` 配列は常に出力する)。
     """
     ordered = sorted(results, key=lambda r: _command_index(config, r.command))
 
@@ -198,8 +198,7 @@ def write_jsonl_header(commands: list[str], files: int, *, run_id: str | None = 
     headerレコードに含める (アーカイブ参照時の識別キー)。
     出力先は ``pyfltr.cli.configure_structured_output()`` が設定した handler に従う
     （stdout もしくは `--output-file` の FileHandler）。
-    ``verbose=True`` でフル``commands``配列とフル``schema_hints``を埋め込む
-    (既定は``commands_count``と短縮``schema_hints``でヘッダーサイズを抑制)。
+    ``verbose=True`` でheaderの``schema_hints``をフル版に切り替える（既定は短縮版）。
     """
     with _write_lock:
         pyfltr.cli.structured_logger.info(_dump(_build_header_record(commands, files, run_id=run_id, verbose=verbose)))
@@ -258,8 +257,8 @@ def _dump(record: dict[str, typing.Any]) -> str:
 
 _SCHEMA_HINTS_COMPACT: dict[str, str] = {
     "_note": "non-obvious fields only; -v or get_schema_hints(full=True) for full schema",
-    "header.commands_count": "integer count; -v emits the full commands array (also archived)",
     "command.retry_command": "shell to re-run only failing files; failure runs only",
+    "command.cached_elapsed": "previous-run elapsed seconds restored with cached=true; this run skipped execution",
     "command.hint-urls": "rule id -> docs URL map; omitted when no URLs resolved",
     "messages[].fix": "safe/unsafe/suggested = auto-fixable; none = no fix; omitted = no info",
 }
@@ -296,6 +295,10 @@ _SCHEMA_HINTS: dict[str, str] = {
         "shell command to re-run only this command on failing files; populated only when the command failed"
     ),
     "command.cached": "true = result restored from file-hash cache; rerun with --no-cache to force",
+    "command.cached_elapsed": (
+        "previous-run elapsed seconds (seconds) restored alongside cached=true; this run skipped execution."
+        " elapsed is omitted when cached=true so only this key represents timing"
+    ),
     "command.truncated": ("diagnostics or message were trimmed; full content is in the archive directory (see header.run_id)"),
     "header.run_id": "ULID identifying this run; use 'pyfltr show-run <run_id>' to fetch full output",
     "warning.hint": (
@@ -331,11 +334,9 @@ def _build_header_record(
 ) -> dict[str, typing.Any]:
     """実行環境の基本情報を header レコード dict として返す。
 
-    既定 (``verbose=False``) では ``commands`` フィールドを ``commands_count`` (整数) に
-    置換し、``schema_hints`` も短縮版にしてヘッダーサイズを抑える。
-    ``verbose=True`` でフル ``commands`` 配列とフル ``schema_hints`` を埋め込む。
-    フル ``commands`` 配列は実行アーカイブの ``meta.json`` に常時保存されるため、
-    短縮時も ``show-run`` 経由で参照できる。
+    ``commands`` は「実際に実行されるツール集合」（``--only-failed`` や disabled ツール除外後）を
+    前提とする。呼び出し側で絞り込み済みの配列を渡すこと。
+    ``verbose`` は ``schema_hints`` のフル／短縮切替のみに効く。
     """
     record: dict[str, typing.Any] = {
         "kind": "header",
@@ -345,11 +346,8 @@ def _build_header_record(
         "platform": sys.platform,
         "cwd": os.getcwd(),
         "files": files,
+        "commands": commands,
     }
-    if verbose:
-        record["commands"] = commands
-    else:
-        record["commands_count"] = len(commands)
     if run_id is not None:
         record["run_id"] = run_id
     # LLM 向けフィールド補足。毎回出力する (header は各 run の先頭 1 行のみ)。
@@ -408,6 +406,8 @@ def _build_command_record(
     メッセージ切り詰めまたは diagnostic 切り詰めが発生した場合は ``truncated`` メタを
     添付する。retry_command は ``CommandResult.retry_command`` が設定されていれば含める。
     ``hint_urls`` が非空なら ``hint-urls`` キー（ハイフン区切り）で埋め込む。
+    ``result.cached`` が真のときは ``elapsed`` ではなく ``cached_elapsed`` キーに
+    リネームして出力する（実行をスキップした前回値である旨を LLM に明示するため）。
     """
     record: dict[str, typing.Any] = {
         "kind": "command",
@@ -415,9 +415,13 @@ def _build_command_record(
         "type": result.command_type,
         "status": result.status,
         "files": result.files,
-        "elapsed": round(result.elapsed, 2),
         "diagnostics": diagnostics,
     }
+    # cached=True のときは実行をスキップしているため ``elapsed`` は出力せず
+    # 前回実行時の計測値を ``cached_elapsed`` として提示する。LLM が「今回の実行時間」と
+    # 誤解するのを避けるため両者を同時に出さない設計。
+    elapsed_key = "cached_elapsed" if result.cached else "elapsed"
+    record[elapsed_key] = round(result.elapsed, 2)
     if result.returncode is not None:
         record["rc"] = result.returncode
 

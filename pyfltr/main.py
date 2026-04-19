@@ -137,7 +137,10 @@ def _make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> 
     common.add_argument(
         "--commands",
         default=None,
-        help="カンマ区切りのコマンド一覧を指定します。"
+        action="append",
+        help="対象のコマンド一覧を指定します。複数回指定可能で、各値はカンマ区切りも併用可能です。"
+        "例: --commands=mypy --commands=pyright,ruff-check は"
+        " --commands=mypy,pyright,ruff-check と同等です。"
         "(既定: ビルトイン + カスタムコマンドを含む、pyproject.toml で有効な全コマンド)",
     )
     common.add_argument("--ui", default=None, action="store_true", help="Textual UI を強制的に有効化します。")
@@ -358,7 +361,8 @@ def _apply_subcommand_defaults(args: argparse.Namespace) -> None:
     if subcommand in ("run", "fast", "run-for-agent"):
         args.exit_zero_even_if_formatted = True
     if subcommand == "fast" and args.commands is None:
-        args.commands = "fast"
+        # ``--commands`` は ``action="append"`` 化によりリストで保持する。
+        args.commands = ["fast"]
     if subcommand == "run-for-agent" and args.output_format is None:
         args.output_format = "jsonl"
 
@@ -430,6 +434,26 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
     finally:
         if chdir_applied:
             os.chdir(original_cwd)
+
+
+def _flatten_commands_arg(values: list[str] | None, config: pyfltr.config.Config) -> list[str]:
+    """``--commands`` で渡されたリスト（複数回指定の集合）をコマンド名配列に展開する。
+
+    各要素にはカンマ区切りで複数のコマンドを含められるため、split した上で
+    先頭出現を優先した重複除去を行う。``None`` の場合は設定上の全登録コマンド
+    （ビルトイン + custom-commands）を返す。
+    """
+    if values is None:
+        return list(config.command_names)
+    seen: set[str] = set()
+    result: list[str] = []
+    for raw in values:
+        for name in raw.split(","):
+            if name == "" or name in seen:
+                continue
+            seen.add(name)
+            result.append(name)
+    return result
 
 
 _OUTPUT_FORMAT_ENV = "PYFLTR_OUTPUT_FORMAT"
@@ -534,8 +558,9 @@ def _run_impl(
     # ビルトインのみの default を返すと custom-commands が常にスキップされる。
     # load_config 後に実体を決定することで、ユーザーが登録した custom-commands
     # (例: svelte-check) も `run` / `ci` サブコマンドのデフォルト動作で走るようにする。
-    commands_arg: str = args.commands if args.commands is not None else ",".join(config.command_names)
-    commands: list[str] = pyfltr.config.resolve_aliases(commands_arg.split(","), config)
+    # ``--commands`` は ``action="append"`` によりリストで渡るため、各要素を
+    # カンマ区切りで再分割して平坦化する。重複は先出を優先して除去する。
+    commands: list[str] = pyfltr.config.resolve_aliases(_flatten_commands_arg(args.commands, config), config)
     for command in commands:
         if command not in config.values:
             parser.error(f"コマンドが見つかりません: {command}")
@@ -607,6 +632,11 @@ def run_pipeline(
     )
     if only_failed_exit_early:
         return 0, None
+
+    # 実行対象として有効化されていないコマンドはパイプラインから除外する。
+    # split_commands_for_execution と同じ条件 (``config.values.get(cmd) is True``) で絞り込み、
+    # JSONL header・実行アーカイブ・formatter ctx へ渡す commands を「実際に実行されるもの」に統一する。
+    commands = [c for c in commands if config.values.get(c) is True]
 
     # retry_command 再構成用のベース情報を確定する。original_cwd は run() が保存した
     # --work-dir 適用前の cwd、original_sys_args は起動時の sys.argv[1:] のコピー。

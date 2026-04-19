@@ -72,10 +72,10 @@ plugins:
 
         `--output-format=jsonl`でJSON Lines形式の構造化出力が得られる。レコードは5種類。
 
-        - `header`: 先頭1行。実行環境情報（`version` / `run_id` / `python` / `executable` / `platform` / `cwd` / `commands_count` / `files` / `schema_hints`）。既定では `commands_count`（整数）と短縮版 `schema_hints` のみを出力してヘッダーサイズを抑え、`-v` / `--verbose` 指定時にフル `commands` 配列とフル `schema_hints` へ切り替わる。`schema_hints` は各フィールドの意味を英語で補足する LLM 向けガイド
+        - `header`: 先頭1行。実行環境情報（`version` / `run_id` / `python` / `executable` / `platform` / `cwd` / `commands` / `files` / `schema_hints`）。`commands` は実行対象（有効化された）コマンド名配列。既定では短縮版 `schema_hints` を出し、`-v` / `--verbose` 指定時にフル `schema_hints` へ切り替わる。`schema_hints` は各フィールドの意味を英語で補足する LLM 向けガイド
         - `warning`: pyfltr が検出した設定・実行時の警告（`source` で発生元を識別）
         - `diagnostic`: `(command, file)` 単位で1行に集約される診断。個別指摘は `messages[]` 配列（各要素は `line` / `col` / `rule` / `severity` / `fix` / `msg` / `hint`）として格納される。`fix` は `"safe"` / `"unsafe"` / `"suggested"` / `"none"` の4値を取り、ツールが自動修正情報を返さない場合はフィールドごと省略。`hint` は textlint の頻出ルールなど、pyfltr 側でヒントを事前登録したルールにのみ付与される
-        - `command`: ツールごとの実行結果サマリ（`status` / `elapsed` / `diagnostics` / `rc` / `retry_command` / `truncated` / `cached` / `cached_from` / `hint-urls`）。`hint-urls` は rule→ドキュメントURLの辞書
+        - `command`: ツールごとの実行結果サマリ（`status` / `elapsed` / `diagnostics` / `rc` / `retry_command` / `truncated` / `cached` / `cached_from` / `cached_elapsed` / `hint-urls`）。`cached=true` のとき `elapsed` は省略され前回実行時の計測値を `cached_elapsed` として提示する。`hint-urls` は rule→ドキュメントURLの辞書
         - `summary`: 最終1行の全体集計（`succeeded` / `formatted` / `failed` / `skipped` / `diagnostics` / `exit`）。`failed > 0` のとき英語の `guidance` 配列を付与し、再実行コマンドや `show-run` の案内を返す。直接指定ファイルが `exclude` / `.gitignore` で全除外された場合は `fully_excluded_files` にパス一覧を付与する（非空時のみ）
 
         stdoutモード（`--output-file`未指定）の出力順は`header`→ツール完了順に`diagnostic`+`command`→`warning`→`summary`。stdoutへJSONLのみを書き、進捗ログやTUIは無音化される。`--output-file`指定時はファイルへJSONLを書き、stdoutには従来どおりのテキスト出力を並行出力する（ローカル実行で進捗を追える）。

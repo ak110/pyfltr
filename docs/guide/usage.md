@@ -222,6 +222,8 @@ pyfltr ci --commands=ruff-check,markdownlint [files and/or directories ...]
 ```
 
 カンマ区切りで実行するツールだけ指定する。全サブコマンドで使用可能。
+`--commands`は複数回指定も可能で、カンマ区切りと併用できる。
+例えば`--commands=mypy --commands=pyright,ruff-check`は`--commands=mypy,pyright,ruff-check`と同じになる。
 
 以下のエイリアスも使用可能。(例: `--commands=format`)
 
@@ -330,10 +332,9 @@ CLIオプション`--output-format`が指定されている場合は環境変数
 出力は以下5種別のレコードからなる。`kind`フィールドでレコード種別を判別する。
 
 - `header`: 先頭1行。実行環境情報
- （`version` / `run_id` / `python` / `executable` / `platform` / `cwd` / `commands_count` / `files` / `schema_hints`）。
-  既定では`commands_count`（整数）と短縮版`schema_hints`（約400文字）のみを出してヘッダーサイズを抑える。
-  `-v` / `--verbose`指定時はフル`commands`配列とフル`schema_hints`を出す。
-  フル`commands`配列は実行アーカイブの`meta.json`に常時保存されるため、短縮時も`show-run <run_id>`で参照できる
+ （`version` / `run_id` / `python` / `executable` / `platform` / `cwd` / `commands` / `files` / `schema_hints`）。
+  `commands`は実行対象（有効化された、`--only-failed`適用後の）コマンド名配列。
+  既定は短縮版`schema_hints`（約400文字）。`-v` / `--verbose`指定時は`schema_hints`をフル版（約1,500文字）へ切り替える
 - `warning`: pyfltrが検出した設定・実行時の警告（`source`で発生元を識別）
 - `diagnostic`: `(command, file)`単位で集約された診断。個別指摘は`messages[]`配列に格納
 - `command`: 1コマンド1レコードの実行メタ情報
@@ -343,7 +344,7 @@ CLIオプション`--output-format`が指定されている場合は環境変数
 [`pyfltr show-run`](#show-run) / [`pyfltr list-runs`](#list-runs)で該当runの詳細を参照できる。
 
 ```json
-{"kind":"header","version":"3.0.0","run_id":"01HXYZ...","python":"3.12.0 ...","executable":"/usr/bin/python3","platform":"linux","cwd":"/work","commands_count":2,"files":12,"schema_hints":{"header":"...","_note":"full schema available with -v / --verbose ..."}}
+{"kind":"header","version":"3.0.0","run_id":"01HXYZ...","python":"3.12.0 ...","executable":"/usr/bin/python3","platform":"linux","cwd":"/work","commands":["mypy","ruff-format"],"files":12,"schema_hints":{"header":"...","_note":"full schema available with -v / --verbose ..."}}
 {"kind":"warning","source":"config","msg":"pre-commit が有効化されていますが、設定ファイルが見つかりません: .pre-commit-config.yaml"}
 {"kind":"diagnostic","command":"mypy","file":"src/a.py","messages":[{"line":42,"col":5,"msg":"Incompatible return value type"}]}
 {"kind":"command","command":"mypy","type":"linter","status":"failed","files":12,"elapsed":0.8,"diagnostics":1,"rc":1}

@@ -264,8 +264,9 @@ def test_run_cli_jsonl_stdout_suppresses_text(mocker, capsys):
     assert lines, "JSONL が 1 行も出ていない"
     first = json.loads(lines[0])
     assert first["kind"] == "header"
-    # 既定では commands 配列は出ず、commands_count が入る
-    assert first["commands_count"] == 1
+    # 実行対象のみの commands 配列として出す。commands_count は廃止済み。
+    assert first["commands"] == ["mypy"]
+    assert "commands_count" not in first
     last = json.loads(lines[-1])
     assert last["kind"] == "summary"
     assert last["exit"] == 0
@@ -514,12 +515,11 @@ def test_write_jsonl_footer_no_warnings(capsys):
 
 
 def test_build_header_record_fields():
-    """_build_header_record が必要なフィールドをすべて含むこと (既定は commands_count)。"""
+    """_build_header_record が必要なフィールドをすべて含むこと (commands は実行対象配列)。"""
     record = pyfltr.llm_output._build_header_record(["ruff-format", "mypy"], 42)
     assert record["kind"] == "header"
-    # 既定では commands_count (整数) のみ。フル配列は verbose=True で出る。
-    assert "commands" not in record
-    assert record["commands_count"] == 2
+    assert record["commands"] == ["ruff-format", "mypy"]
+    assert "commands_count" not in record
     assert record["files"] == 42
     assert "version" in record
     assert "python" in record
@@ -529,18 +529,19 @@ def test_build_header_record_fields():
 
 
 def test_build_lines_header_first(default_config):
-    """commands/filesを指定するとheader行が先頭に出力されること (既定は commands_count)。"""
+    """commands/filesを指定するとheader行が先頭に出力され、commandsは配列で入ること。"""
     result = _make_result("mypy", returncode=0)
     lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=0, commands=["mypy"], files=10)
     parsed = [json.loads(line) for line in lines]
     assert parsed[0]["kind"] == "header"
-    assert parsed[0]["commands_count"] == 1
+    assert parsed[0]["commands"] == ["mypy"]
+    assert "commands_count" not in parsed[0]
     assert parsed[0]["files"] == 10
     assert parsed[-1]["kind"] == "summary"
 
 
-def test_build_lines_header_verbose_has_full_commands(default_config):
-    """verbose=Trueでheader行にフルcommands配列とフルschema_hintsが出ること。"""
+def test_build_lines_header_verbose_switches_hints(default_config):
+    """verbose=True で schema_hints がフル版に切り替わる (commands は既定でも配列)。"""
     result = _make_result("mypy", returncode=0)
     lines = pyfltr.llm_output.build_lines(
         [result], default_config, exit_code=0, commands=["mypy", "ruff-check"], files=10, verbose=True
@@ -561,25 +562,66 @@ def test_build_lines_no_header_when_omitted(default_config):
 
 
 def test_write_jsonl_header_stdout(capsys):
-    """write_jsonl_headerがstdoutにheader行を書き出すこと (既定は commands_count)。"""
+    """write_jsonl_headerがstdoutにheader行を書き出し、commandsが配列になること。"""
     _configure_structured_stdout()
     pyfltr.llm_output.write_jsonl_header(commands=["ruff-format", "mypy"], files=5)
     captured = capsys.readouterr()
     parsed = [json.loads(line) for line in captured.out.splitlines()]
     assert len(parsed) == 1
     assert parsed[0]["kind"] == "header"
-    assert parsed[0]["commands_count"] == 2
+    assert parsed[0]["commands"] == ["ruff-format", "mypy"]
+    assert "commands_count" not in parsed[0]
     assert parsed[0]["files"] == 5
 
 
 def test_write_jsonl_header_stdout_verbose(capsys):
-    """write_jsonl_header の verbose=True でフル commands 配列と schema_hints が出る。"""
+    """write_jsonl_header の verbose=True でフル schema_hints が出る (commands は常に配列)。"""
     _configure_structured_stdout()
     pyfltr.llm_output.write_jsonl_header(commands=["ruff-format", "mypy"], files=5, verbose=True)
     captured = capsys.readouterr()
     parsed = [json.loads(line) for line in captured.out.splitlines()]
     assert parsed[0]["commands"] == ["ruff-format", "mypy"]
     assert "diagnostic.messages" in parsed[0]["schema_hints"]
+
+
+# ---------------------------------------------------------------------------
+# --commands の繰り返し指定 (action="append") + カンマ区切り併用のテスト
+# ---------------------------------------------------------------------------
+
+
+def _header_commands_for(args: list[str], mocker, capsys) -> list[str]:
+    """指定 CLI 引数で run-for-agent を走らせ header の commands 配列を取り出す。"""
+    proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+    target = str(pathlib.Path(__file__).parent.parent)
+    returncode = pyfltr.main.run(["run-for-agent", *args, target])
+    assert returncode == 0
+    captured = capsys.readouterr()
+    lines = [line for line in captured.out.splitlines() if line.strip()]
+    header = json.loads(lines[0])
+    assert header["kind"] == "header"
+    return header["commands"]
+
+
+def test_commands_option_repeated_and_comma_separated_equivalent(mocker, capsys):
+    """--commands の複数回指定とカンマ区切りが同じ commands 配列を生成する。"""
+    repeated = _header_commands_for(["--commands=mypy", "--commands=pyright"], mocker, capsys)
+    comma = _header_commands_for(["--commands=mypy,pyright"], mocker, capsys)
+    assert repeated == comma == ["mypy", "pyright"]
+
+
+def test_commands_option_mixed_repeated_and_comma(mocker, capsys):
+    """--commands の繰り返しとカンマ区切りを混在指定できる (後勝ちではなくマージ)。"""
+    commands = _header_commands_for(["--commands=mypy", "--commands=pyright,ruff-check"], mocker, capsys)
+    # 実際の実行順は config.command_names 定義順に並ぶが、少なくとも3ツールがマージされていること。
+    assert set(commands) == {"mypy", "pyright", "ruff-check"}
+
+
+def test_commands_option_dedup_preserves_first_occurrence(mocker, capsys):
+    """重複指定されたコマンドは 1 回だけ実行対象に含まれる。"""
+    commands = _header_commands_for(["--commands=mypy,pyright", "--commands=mypy"], mocker, capsys)
+    assert commands.count("mypy") == 1
+    assert "pyright" in commands
 
 
 # ---------------------------------------------------------------------------
