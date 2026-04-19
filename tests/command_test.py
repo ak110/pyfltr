@@ -1965,7 +1965,7 @@ def test_terminate_active_processes_kills_grandchild() -> None:
             # POSIX 限定パスのクリーンアップ。Windows では skipif で到達しない。
             # 型チェッカー（pyright / ty）の attr-defined 誤検知は局所コメントで抑止する。
             with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
-                os.killpg(os.getpgid(proc.pid), 9)  # type: ignore[attr-defined,unused-ignore]  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore
+                os.killpg(os.getpgid(proc.pid), 9)  # type: ignore[attr-defined,unused-ignore]  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore  # pylint: disable=no-member
         proc.wait(timeout=2.0)
 
 
