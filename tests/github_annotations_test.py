@@ -75,19 +75,21 @@ def test_build_github_annotation_lines_empty_when_no_errors() -> None:
     assert not lines
 
 
-def test_build_github_annotation_lines_failed_without_diagnostics_emits_summary() -> None:
-    """diagnostic を伴わない failed ツールでも 1 行サマリを出して原因追跡に備える。"""
-    result = _make_result("mypy", returncode=2, output="Fatal: mypy crashed")
+def test_build_github_annotation_lines_failed_without_diagnostics_emits_group() -> None:
+    """diagnostic を伴わない failed ツールはサマリ 1 行 + ``::group::`` ブロックで出力する。"""
+    result = _make_result("mypy", returncode=2, output="Fatal: mypy crashed\nSecond line")
     config = pyfltr.config.create_default_config()
     lines = pyfltr.github_annotations.build_github_annotation_lines([result], config)
-    assert len(lines) == 1
     assert lines[0].startswith("pyfltr: error: [mypy] failed")
     assert "rc=2" in lines[0]
-    assert "Fatal: mypy crashed" in lines[0]
+    assert lines[1] == "::group::pyfltr output for mypy"
+    assert "Fatal: mypy crashed" in lines
+    assert "Second line" in lines
+    assert lines[-1] == "::endgroup::"
 
 
 def test_build_github_annotation_lines_formatted_emits_summary() -> None:
-    """formatter による整形も 1 行サマリで可視化する。"""
+    """formatter による整形はサマリ 1 行のみ（出力が空なら ``::group::`` を省略する）。"""
     result = _make_result("ruff-format", command_type="formatter", returncode=1, has_error=False)
     config = pyfltr.config.create_default_config()
     lines = pyfltr.github_annotations.build_github_annotation_lines([result], config)

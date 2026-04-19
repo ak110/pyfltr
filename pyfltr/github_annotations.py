@@ -45,7 +45,7 @@ def build_github_annotation_lines(
         # これらは ErrorLocation が生成されず GitHub の Annotations にも載らないため、
         # プレーンテキスト行を出して原因追跡の手掛かりを残す。
         if result.status in ("failed", "formatted") and not result.errors:
-            lines.append(_build_tool_summary_line(result))
+            lines.extend(_build_tool_summary_lines(result))
     return lines
 
 
@@ -65,30 +65,25 @@ def _build_plain_line(command: str, error: pyfltr.error_parser.ErrorLocation, ki
     return f"{location}: {kind}: {rule_part} {message_text}"
 
 
-def _build_tool_summary_line(result: pyfltr.command.CommandResult) -> str:
-    """Diagnostic を伴わない失敗/整形について、ツール単位のサマリ 1 行を組み立てる。
+def _build_tool_summary_lines(result: pyfltr.command.CommandResult) -> list[str]:
+    """Diagnostic を伴わない失敗/整形について、ツール単位のサマリを組み立てる。
 
-    出力サンプル: ``pyfltr: warning: [ruff-format] formatted (2files in 0.3s, rc=1)``
-    ``::`` を含まない純テキストのため GitHub はワークフローコマンドと解釈しない。
-    出力末尾の短い末尾要約（``output`` の末尾 160 文字）も付与して原因特定を助ける。
+    1 行目は ``pyfltr: error: [pylint] failed (49files in 43.4s, rc=2)`` 形式のサマリ。
+    続けて ``::group::...::endgroup::`` で囲んだツール出力本体を出して生ログから
+    原因を確認できるようにする。``::group::`` は GitHub Actions が折りたたみ可能な
+    見出しとして扱うワークフローコマンドで、内部の行は通常のテキストとして扱われる。
     """
     kind = "error" if result.status == "failed" else "warning"
-    tail = _tail_snippet(result.output, 160)
-    tail_part = f" :: {tail}" if tail else ""
-    return (
+    lines: list[str] = [
         f"pyfltr: {kind}: [{result.command}] "
         f"{result.status} ({result.files}files in {result.elapsed:.1f}s, rc={result.returncode})"
-        f"{tail_part}"
-    )
-
-
-def _tail_snippet(output: str, limit: int) -> str:
-    """出力末尾 ``limit`` 文字分を 1 行へ畳んで返す。空白のみなら空文字。"""
-    snippet = output.strip()
-    if not snippet:
-        return ""
-    snippet = snippet[-limit:].replace("\r\n", " ").replace("\n", " ").replace("\t", " ")
-    return " ".join(snippet.split())
+    ]
+    body = result.output.strip()
+    if body:
+        lines.append(f"::group::pyfltr output for {result.command}")
+        lines.extend(body.splitlines() or [body])
+        lines.append("::endgroup::")
+    return lines
 
 
 def _build_workflow_command(command: str, error: pyfltr.error_parser.ErrorLocation, kind: str) -> str:
