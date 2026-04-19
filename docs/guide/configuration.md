@@ -13,7 +13,8 @@ extend-exclude = ["foo", "bar.py"]
 
 ## 設定項目一覧
 
-設定項目と既定値は`pyfltr generate-config`で確認可能。`{command}`系の項目およびツール固有の項目（`prettier-check-args`など）の詳細はツール別設定ページを参照。
+設定項目と既定値は`pyfltr generate-config`で確認可能。
+`{command}`系の項目およびツール固有の項目（`prettier-check-args`など）の詳細はツール別設定ページを参照。
 
 - preset : プリセット設定（後述）
 - python : Python系ツールのゲート開閉（後述）
@@ -25,7 +26,8 @@ extend-exclude = ["foo", "bar.py"]
 - {command}-args : 追加のコマンドライン引数（lint/fix両モードで常に付与）
 - {command}-lint-args : 非fixモードで付与する引数（既定はtextlintのみ`["--format", "compact"]`）
 - {command}-fast : `fast`サブコマンドに含めるか否か（後述）
-- {command}-fix-args : fix段で`{command}-args`の後に追加する引数（既定値はtextlint / markdownlint / ruff-check / eslint / biomeのみ定義）
+- {command}-fix-args : fix段で`{command}-args`の後に追加する引数
+ （既定値はtextlint / markdownlint / ruff-check / eslint / biomeのみ定義）
 - {command}-targets : 対象ファイルパターンの完全上書き
 - {command}-extend-targets : 対象ファイルパターンへの追加
 - {command}-exclude : ツール別の追加除外パターン（後述）
@@ -36,7 +38,8 @@ extend-exclude = ["foo", "bar.py"]
 - jobs : linters/testersの最大並列数（既定: 4。CLIの`-j`オプションでも指定可能）
 - exclude : 除外するファイル名/ディレクトリ名パターン（既定値あり）
 - extend-exclude : 追加で除外するファイル名/ディレクトリ名パターン（既定は空）
-- respect-gitignore : `.gitignore`に記載されたファイルを除外するか否か（既定: `true`）。gitのルートおよびネストした`.gitignore`、グローバルgitignore、`.git/info/exclude`を全て考慮する。`git`コマンドが必要
+- respect-gitignore : `.gitignore`に記載されたファイルを除外するか否か（既定: `true`）。
+  gitのルートおよびネストした`.gitignore`、グローバルgitignore、`.git/info/exclude`を全て考慮する。`git`コマンドが必要
 - pre-commit-auto-skip : `.pre-commit-config.yaml`からpyfltr関連hookを自動検出してSKIP環境変数に追加するか（既定: `true`）
 - pre-commit-skip : SKIP環境変数に渡すhook IDの手動指定リスト（`pre-commit-auto-skip`と併用可能）
 - archive : 実行アーカイブの有効/無効（既定: `true`。`--no-archive`で実行単位に無効化）
@@ -48,9 +51,12 @@ extend-exclude = ["foo", "bar.py"]
 - jsonl-diagnostic-limit : 1ツールあたりのdiagnostic出力件数上限（既定: 0 = 無制限）
 - jsonl-message-max-lines : `tool.message`の行数上限（既定: 30）
 - jsonl-message-max-chars : `tool.message`の文字数上限（既定: 2000）
-- textlint-protected-identifiers : textlint fixで破損させてはならない識別子のリスト。既定値は`[".NET", "Node.js", "Vue.js", "Next.js", "Nuxt.js"]`。詳細は[ツール別設定](configuration-tools.md#textlint-protected-identifiers)を参照
+- textlint-protected-identifiers : textlint fixで破損させてはならない識別子のリスト。
+  既定値は`[".NET", "Node.js", "Vue.js", "Next.js", "Nuxt.js"]`。
+  詳細は[ツール別設定](configuration-tools.md#textlint-protected-identifiers)を参照
 
-`prettier-check-args` / `prettier-write-args` / `shfmt-check-args` / `shfmt-write-args`などの2段階実行向け引数はツール別設定ページで詳しく扱う。
+`prettier-check-args` / `prettier-write-args` / `shfmt-check-args` / `shfmt-write-args`などの
+2段階実行向け引数はツール別設定ページで詳しく扱う。
 
 ## プリセット設定
 
@@ -117,7 +123,8 @@ Rust（`rust = true`で通過）
 ### preset "20260411"
 
 `"20260413"`から`pre-commit = true`を除いた構成（pre-commitは`"20260413"`以降で追加）。
-それ以外の有効化ツール（Python核・JavaScript / TypeScript・Rust・.NET・textlint / markdownlint / actionlint / typos / uv-sort）は同一。
+それ以外の有効化ツール（Python核・JavaScript / TypeScript・Rust・.NET・
+textlint / markdownlint / actionlint / typos / uv-sort）は同一。
 
 ### preset "20260330"
 
@@ -132,7 +139,8 @@ Python核・JavaScript / TypeScript・Rust・.NET・textlint・markdownlint・py
 
 `preset = "latest"` + `{language} = true`の組み合わせだけで当該言語の推奨ツール一式が有効化される。
 
-個別のツール単位では`{command} = true`での有効化・`{command} = false`での無効化も可能で、適用優先度は`preset < 言語カテゴリゲート < 個別設定`。
+個別のツール単位では`{command} = true`での有効化・`{command} = false`での無効化も可能で、
+適用優先度は`preset < 言語カテゴリゲート < 個別設定`。
 
 ```toml
 [tool.pyfltr]
@@ -176,7 +184,8 @@ mypy-exclude = ["vendor", "gen_*.py"]
 パターンの書式は`extend-exclude`と同じflake8風のglobパターンで、ディレクトリ指定はその配下も除外される。
 `--no-exclude`を指定した場合、全体の`exclude`/`extend-exclude`と合わせてツール別除外も無効化される。
 
-`pass-filenames = false`のツール（pre-commit・tsc・cargo-\*・dotnet-\*など）はファイル名をコマンドに渡さないため、`{command}-exclude`を設定しても効果がない。
+`pass-filenames = false`のツール（pre-commit・tsc・cargo-\*・dotnet-\*など）はファイル名をコマンドに渡さないため、
+`{command}-exclude`を設定しても効果がない。
 
 ## 自動オプション
 
@@ -226,11 +235,14 @@ textlint-fast = false
 
 ## 出力順序
 
-非TUIモード (`--no-ui`、`--ci`、または非対話端末) では、既定で全コマンドの完了後に成功コマンド詳細 → 失敗コマンド詳細 → `summary`の順でまとめて出力する。
-`pyfltr ... | tail -N`のようにパイプで末尾だけ切り出してもsummaryと失敗情報が末尾に残るため、Claude Codeなど末尾だけを読み取るツールでも実行結果を把握できる。
+非TUIモード（`--no-ui`、`--ci`、または非対話端末）では、既定で全コマンドの完了後に
+成功コマンド詳細 → 失敗コマンド詳細 → `summary`の順でまとめて出力する。
+`pyfltr ... | tail -N`のようにパイプで末尾だけ切り出してもsummaryと失敗情報が末尾に残るため、
+Claude Codeなど末尾だけを読み取るツールでも実行結果を把握できる。
 
 従来の「各コマンドの完了時に即座に詳細ログを出す」挙動を使いたい場合は`--stream`を指定する。
 
 ---
 
-個別のツール設定（2段階実行、ファイルパターン、直接実行 / js-runner / bin-runnerのカテゴリ別設定、カスタムコマンド等）の詳細は[ツール別設定](configuration-tools.md)を参照。
+個別のツール設定（2段階実行、ファイルパターン、直接実行 / js-runner / bin-runnerのカテゴリ別設定、
+カスタムコマンド等）の詳細は[ツール別設定](configuration-tools.md)を参照。

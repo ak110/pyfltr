@@ -1,6 +1,8 @@
 ---
 name: pyfltr-add-tool
-description: pyfltr に新しい formatter / linter / tester を追加する際の定型手順チェックリスト。config.py / command.py / error_parser.py / docs/guide/index.md / tests を一貫して更新する。
+description: >-
+  pyfltr に新しい formatter / linter / tester を追加する際の定型手順チェックリスト。
+  config.py / command.py / error_parser.py / docs/guide/index.md / tests を一貫して更新する。
 ---
 
 # pyfltr 新ツール追加チェックリスト
@@ -127,11 +129,14 @@ uv run pyfltr run-for-agent
 
 ### 方針
 
-`fast`はpre-commitフックなどで実行しても作業に支障が出にくい高速なツールを意味する。判断基準は固定コスト（起動オーバーヘッド）と可変コスト（ファイルあたりの処理時間）の両方に加え、ツールの重要度や性質も考慮する。最終判断はユーザーが行う。
+`fast`はpre-commitフックなどで実行しても作業に支障が出にくい高速なツールを意味する。
+判断基準は固定コスト（起動オーバーヘッド）と可変コスト（ファイルあたりの処理時間）の両方に加え、
+ツールの重要度や性質も考慮する。最終判断はユーザーが行う。
 
 ### 計測方法
 
-複数プロジェクトで少数ファイルと全ファイルの2パターンを計測し、`T = a + b * N`（a: 固定コスト、b: ファイルあたりコスト）を推定する。
+複数プロジェクトで少数ファイルと全ファイルの2パターンを計測し、
+`T = a + b * N`（a: 固定コスト、b: ファイルあたりコスト）を推定する。
 
 ```bash
 # 少数ファイル（対象種別のファイルを1〜2個指定）
@@ -154,7 +159,8 @@ for line in sys.stdin:
 
 推定式: `b = (T_all - T_small) / (N_all - N_small)`, `a = T_small - b * N_small`
 
-`pass-filenames=False`のツール（cargo系、dotnet系、tsc等）はファイル数によらずプロジェクト全体を走査するため、固定コストのみとして扱う。
+`pass-filenames=False`のツール（cargo系、dotnet系、tsc等）はファイル数によらずプロジェクト全体を走査するため、
+固定コストのみとして扱う。
 
 ### 参考計測値（2026-04-13、ウォーム状態）
 

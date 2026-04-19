@@ -4,7 +4,8 @@
 
 対応ツールを言語・用途別に示す。
 言語カテゴリ（Python / JS/TS / Rust / .NET）に属するツールはすべて既定で無効（opt-in）。
-`preset = "latest"` + 言語カテゴリキー（`python` / `javascript` / `rust` / `dotnet`）の`true`指定だけで、当該言語の推奨ツール一式がゲートを通過して有効化される。
+`preset = "latest"` + 言語カテゴリキー（`python` / `javascript` / `rust` / `dotnet`）の`true`指定だけで、
+当該言語の推奨ツール一式がゲートを通過して有効化される。
 追加ツール（`ty`など）や個別の無効化が必要な場合のみ`{command} = true` / `{command} = false`を書き足す。
 詳細は[設定項目](configuration.md)を参照。
 
@@ -77,7 +78,8 @@ pip install pyfltr
 
 - [CLIコマンド](usage.md) — CLIの使い方・サブコマンド・オプション
 - [設定項目](configuration.md) — 基本設定・プリセット・並列実行
-- [設定項目（ツール別）](configuration-tools.md) — ツール別設定（直接実行 / js-runner / bin-runnerのカテゴリ別設定・2段階実行・カスタムコマンド）
+- [設定項目（ツール別）](configuration-tools.md) —
+  ツール別設定（直接実行 / js-runner / bin-runnerのカテゴリ別設定・2段階実行・カスタムコマンド）
 - [推奨設定例](recommended.md) — 推奨設定（Pythonプロジェクト・タスクランナー・CI）
 - [推奨設定例（非Pythonプロジェクト）](recommended-nonpython.md) — 非Pythonプロジェクトの推奨設定
 - [カスタムコマンド例](custom-commands.md) — カスタムコマンドの設定例

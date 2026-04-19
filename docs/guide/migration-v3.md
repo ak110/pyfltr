@@ -4,7 +4,8 @@ pyfltr v2.xからv3.0.0への移行手順をチェックリスト形式で示す
 v3.0.0は破壊的変更を多く含むメジャーリリースのため、項目を順に確認する。
 
 v3.0.0以降の変更履歴は本ドキュメントでは管理しない。
-個々の変更点は[git log](https://github.com/ak110/pyfltr/commits/master)および[GitHub Releases](https://github.com/ak110/pyfltr/releases)を参照する。
+個々の変更点は[git log](https://github.com/ak110/pyfltr/commits/master)および
+[GitHub Releases](https://github.com/ak110/pyfltr/releases)を参照する。
 
 ## 1. サブコマンドを明示指定する
 
@@ -64,7 +65,8 @@ python = true
 削除理由はruffへの統合で代替可能となり、プリセット`20250710`以降は既定で無効化されていたため。
 保守対象として長期間コードベースに残り続ける負債を断ち切る意図で、v3.0.0の破壊的変更に合わせて一括削除とした。
 
-`[tool.pyfltr]`に関連する設定キー（`pyupgrade = true` / `black-args = [...]` / `isort-path = "..."`等）が残っている場合は、すべて削除する。
+`[tool.pyfltr]`に関連する設定キー（`pyupgrade = true` / `black-args = [...]` / `isort-path = "..."`等）が
+残っている場合は、すべて削除する。
 設定ファイル読込時に該当キーを検知すると、対象ツール名を明示したエラーを出す。
 
 ruff / ruff-formatへの移行例。
@@ -143,7 +145,8 @@ uv add --dev 'pyfltr[python]'
 - `pyright[nodejs]` / `pytest` / `pytest-asyncio` / `ruff` / `ty` / `uv-sort`
 
 非Pythonプロジェクトでは`pyfltr`のみインストールすれば十分。
-本体必須依存は`mcp` / `natsort` / `platformdirs` / `pre-commit` / `python-ulid` / `pyyaml` / `textual`で、Python系linterを一切含まない。
+本体必須依存は`mcp` / `natsort` / `platformdirs` / `pre-commit` / `python-ulid` / `pyyaml` / `textual`で、
+Python系linterを一切含まない。
 `pre-commit`は言語非依存でどのプロジェクトでも利用できるため常時依存とする。
 
 ## 6. 新機能の活用
@@ -186,7 +189,8 @@ archive = false
 ### MCPサーバー同梱
 
 `pyfltr mcp`でstdioトランスポートのMCPサーバーが起動する。
-Claude Desktop等のMCPクライアントから`list_runs` / `show_run` / `show_run_diagnostics` / `show_run_output` / `run_for_agent`の5ツールが使える。
+Claude Desktop等のMCPクライアントから
+`list_runs` / `show_run` / `show_run_diagnostics` / `show_run_output` / `run_for_agent`の5ツールが使える。
 詳細は[CLIコマンド](usage.md)のmcp節を参照。
 
 ### JSONL出力の拡張
@@ -194,7 +198,8 @@ Claude Desktop等のMCPクライアントから`list_runs` / `show_run` / `show_
 `--output-format=jsonl`の出力に次のフィールドが追加された。
 
 - `header.run_id`（ULID）— 実行アーカイブの参照キー
-- `diagnostic.rule_url` — 対応ツール（ruff / pylint / pyright / mypy / shellcheck / eslint / markdownlint）のルールドキュメントURL
+- `diagnostic.rule_url` —
+  対応ツール（ruff / pylint / pyright / mypy / shellcheck / eslint / markdownlint）のルールドキュメントURL
 - `diagnostic.severity` — `error` / `warning` / `info`の3値に正規化
 - `tool.retry_command` — 1ツール再実行用のshellコマンド文字列（失敗ファイルのみに絞り込み）
 - `tool.truncated` — smart truncation発生時の切り詰め前情報とアーカイブパス
@@ -232,16 +237,19 @@ SARIF出力をGitHub code scanningへ取り込む例。
 LLMエージェントから利用する導線が2つ用意されている。
 
 - `pyfltr run-for-agent` — `pyfltr run --output-format=jsonl`のエイリアス。CLIから1コマンドずつ呼び出す用途
-- `pyfltr mcp` — MCPサーバーを起動し、Claude Desktop等から常駐利用する用途。提供ツールは`list_runs` / `show_run` / `show_run_diagnostics` / `show_run_output` / `run_for_agent`の5種
+- `pyfltr mcp` — MCPサーバーを起動し、Claude Desktop等から常駐利用する用途。
+  提供ツールは`list_runs` / `show_run` / `show_run_diagnostics` / `show_run_output` / `run_for_agent`の5種
 
 ### `--fail-fast`
 
 1ツールでもエラーが発生した時点で残りのジョブを打ち切る。
-起動済みサブプロセスには`terminate()`（最大5秒待機 → `kill()`フォールバック）を送り、未開始ジョブは`future.cancel()`で取消して`skipped`として扱う。
+起動済みサブプロセスには`terminate()`（最大5秒待機 → `kill()`フォールバック）を送り、
+未開始ジョブは`future.cancel()`で取消して`skipped`として扱う。
 
 ### `--only-failed` / `--from-run`
 
-直前run（または`--from-run`で指定した過去run）の実行アーカイブから失敗ツール・失敗ファイルを抽出し、ツール別にその組み合わせのみを再実行する。
+直前run（または`--from-run`で指定した過去run）の実行アーカイブから失敗ツール・失敗ファイルを抽出し、
+ツール別にその組み合わせのみを再実行する。
 
 ```shell
 # 直前runの失敗組み合わせのみ再実行
@@ -258,7 +266,8 @@ pyfltr run-for-agent --only-failed --from-run 01HXYZ
 移行時は以下の順で確認すると円滑に進む。
 
 - [ ] `pyfltr`コマンド呼び出し箇所すべてにサブコマンド（`ci` / `run` / `fast` / `run-for-agent`）を追記した
-- [ ] `pyproject.toml`の旧preset名`"20250710"`を`"latest"`または日付プリセット（`"20260330"` / `"20260411"` / `"20260413"`）に置き換えた
+- [ ] `pyproject.toml`の旧preset名`"20250710"`を`"latest"`または
+  日付プリセット（`"20260330"` / `"20260411"` / `"20260413"`）に置き換えた
 - [ ] `pyproject.toml`から`pyupgrade` / `autoflake` / `isort` / `black` / `pflake8`の関連設定キーをすべて削除した
 - [ ] Pythonプロジェクトの場合、`python = true`でpreset推奨ツール一式のゲートを開けた
 - [ ] JavaScript / TypeScriptプロジェクトの場合、`javascript = true`でpreset推奨ツール一式のゲートを開けた

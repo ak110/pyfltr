@@ -1,9 +1,11 @@
 # pyfltr: Python Formatters, Linters, and Testers Runner
 
+<!-- markdownlint-disable-next-line MD013 -->
 [![CI](https://github.com/ak110/pyfltr/actions/workflows/ci.yaml/badge.svg)](https://github.com/ak110/pyfltr/actions/workflows/ci.yaml)
 [![PyPI version](https://badge.fury.io/py/pyfltr.svg)](https://badge.fury.io/py/pyfltr)
 
-Python / Rust / .NET / TypeScript・JavaScript / ドキュメントなど多言語プロジェクトのformatter・linter・testerを単一コマンドで並列実行するCLIツール。
+Python / Rust / .NET / TypeScript・JavaScript / ドキュメントなど多言語プロジェクトの
+formatter・linter・testerを単一コマンドで並列実行するCLIツール。
 （要Python 3.11以上）
 
 ## 特徴
@@ -38,7 +40,8 @@ pip install 'pyfltr[python]'
 ```
 
 Python / JavaScript / Rust / .NETの各言語カテゴリに属するツールはすべて既定で無効（opt-in）である。
-`preset = "latest"` + 言語カテゴリキー（`python` / `javascript` / `rust` / `dotnet`）の`true`指定だけで、当該言語の推奨ツール一式が有効化される。
+`preset = "latest"` + 言語カテゴリキー（`python` / `javascript` / `rust` / `dotnet`）の`true`指定だけで、
+当該言語の推奨ツール一式が有効化される。
 プリセット非収録のツール（`ty`など）を追加したい場合のみ個別に`{command} = true`を指定する。
 詳細は[設定項目](docs/guide/configuration.md)を参照。
 

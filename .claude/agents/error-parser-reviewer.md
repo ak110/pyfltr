@@ -1,6 +1,8 @@
 ---
 name: error-parser-reviewer
-description: pyfltr/error_parser.py を変更した PR / コミットに対して、対応ツール全てのエラー出力例に対してパースが壊れていないか網羅レビューする。error_parser.py の変更検知時に呼び出す。変更内容のサマリを引数として与えること。
+description: >-
+  pyfltr/error_parser.py を変更した PR / コミットに対して、対応ツール全てのエラー出力例に対してパースが
+  壊れていないか網羅レビューする。error_parser.py の変更検知時に呼び出す。変更内容のサマリを引数として与えること。
 tools: Read, Grep, Glob, Bash
 ---
 

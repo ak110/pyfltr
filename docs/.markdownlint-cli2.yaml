@@ -3,6 +3,9 @@ $schema: https://raw.githubusercontent.com/DavidAnson/markdownlint-cli2/v0.20.0/
 config:
   ul-indent:
     indent: 4
-  line-length: false
+  # MD013: コードブロック内を除外し、127半角幅（全角2幅換算）を上限とする補助的な検査として使用
+  line-length:
+    line_length: 127
+    code_blocks: false
   no-hard-tabs:
     code_blocks: false

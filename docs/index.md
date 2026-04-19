@@ -1,6 +1,7 @@
 # pyfltr
 
-Python / Rust / .NET / TypeScript・JavaScript / ドキュメントなど多言語プロジェクトのformatter・linter・testerを単一コマンドで並列実行するCLIツール。
+Python / Rust / .NET / TypeScript・JavaScript / ドキュメントなど多言語プロジェクトの
+formatter・linter・testerを単一コマンドで並列実行するCLIツール。
 
 ## 特徴
 
