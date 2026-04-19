@@ -273,7 +273,10 @@ def _show_tool_detail(
     else:
         _print_jsonl_line({"kind": "tool", **tool_meta})
         for diagnostic in diagnostics:
-            _print_jsonl_line({"kind": "diagnostic", **diagnostic})
+            # diagnostics.jsonl 側は kind="diagnostic" 込みで保存されているが、
+            # 古いrunや外部書き出し経路を考慮して kind を明示的に埋める。
+            record = {"kind": "diagnostic", **diagnostic}
+            _print_jsonl_line(record)
     return 0
 
 
@@ -281,40 +284,52 @@ def _print_tool_detail_text(
     tool_meta: dict[str, typing.Any],
     diagnostics: list[dict[str, typing.Any]],
 ) -> None:
-    """``--tool`` モードの text 出力。"""
+    """``--tool`` モードの text 出力。
+
+    ``diagnostics`` は ``(tool, file)`` 単位の集約形式を想定し、各 file 見出しの下に
+    ``messages[]`` 内の個別指摘をインデント付きで並べる。
+    """
     for key in ("tool", "type", "status", "returncode", "files", "elapsed", "diagnostics", "has_error"):
         if key in tool_meta and tool_meta[key] is not None:
             print(f"{key}: {tool_meta[key]}")
     if tool_meta.get("commandline"):
         print(f"commandline: {tool_meta['commandline']}")
+    hint_urls = tool_meta.get("hint-urls")
+    if isinstance(hint_urls, dict) and hint_urls:
+        print("hint-urls:")
+        for rule, url in hint_urls.items():
+            print(f"  {rule}: {url}")
     print("")
     print("diagnostics:")
     if not diagnostics:
         print("  (none)")
         return
     for diagnostic in diagnostics:
-        print(f"  {_format_diagnostic_line(diagnostic)}")
+        file_part = diagnostic.get("file") or "-"
+        print(f"  {file_part}")
+        messages = diagnostic.get("messages") or []
+        for message in messages:
+            print(f"    {_format_message_line(file_part, message)}")
 
 
-def _format_diagnostic_line(diagnostic: dict[str, typing.Any]) -> str:
-    """1 件分の diagnostic を ``file:line:col [severity] (rule) message`` 形式に整形する。"""
-    file_part = diagnostic.get("file") or "-"
-    line = diagnostic.get("line")
-    col = diagnostic.get("col")
+def _format_message_line(file_part: str, message: dict[str, typing.Any]) -> str:
+    """1 件分の message を ``file:line:col [severity] (rule) msg`` 形式に整形する。"""
+    line = message.get("line")
+    col = message.get("col")
     location = file_part
     if line is not None:
         location = f"{location}:{line}"
         if col is not None:
             location = f"{location}:{col}"
-    severity = diagnostic.get("severity")
-    rule = diagnostic.get("rule")
-    message = diagnostic.get("message") or ""
+    severity = message.get("severity")
+    rule = message.get("rule")
+    msg = message.get("msg") or ""
     parts = [location]
     if severity:
         parts.append(f"[{severity}]")
     if rule:
         parts.append(f"({rule})")
-    parts.append(message)
+    parts.append(msg)
     return " ".join(parts)
 
 

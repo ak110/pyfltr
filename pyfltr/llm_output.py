@@ -3,10 +3,14 @@
 `--output-format=jsonl` で呼ばれ、CommandResult 群を LLM / エージェントが
 読みやすいフラットな JSON Lines 形式 (header / diagnostic / tool / summary の 4 種別) に
 変換して書き出す。
+
+``diagnostic`` は `(tool, file)` 単位で集約し、個別指摘は ``messages[]`` に格納する。
+ルールURLはtool単位の`hint-urls`辞書へ寄せることで、LLM入力時のトークン浪費を抑える。
 """
 
 import importlib.metadata
 import json
+import logging
 import os
 import pathlib
 import shlex
@@ -17,6 +21,8 @@ import typing
 import pyfltr.command
 import pyfltr.config
 import pyfltr.error_parser
+
+logger = logging.getLogger(__name__)
 
 # ストリーミング書き出し時に複数行（diagnostic行+tool行）をアトミックに出力するためのロック。
 # 並列実行される linters/testers から同時にコールバックが呼ばれる可能性がある。
@@ -31,8 +37,10 @@ def build_tool_lines(
 ) -> list[str]:
     """1コマンド分のdiagnostic行+tool行をJSONL文字列のリストとして生成する。
 
-    diagnostic行はツール内でソートされる。件数が ``jsonl-diagnostic-limit`` を超える場合は
-    先頭 N 件のみを出力し、tool レコードに ``truncated.diagnostics_total`` を添付する。
+    diagnostic行は ``(tool, file)`` 単位で集約され、個別指摘は ``messages[]`` に並ぶ。
+    個別指摘の合計件数が ``jsonl-diagnostic-limit`` を超える場合は
+    ``ErrorLocation`` 列を先頭 N 件で切ってから集約し、
+    tool レコードに ``truncated.diagnostics_total`` を添付する。
     切り詰めは ``result.archived`` が True のときのみ適用し、False の場合は全件出力する
     (アーカイブから復元不能な情報欠落を防ぐため)。
     """
@@ -45,9 +53,11 @@ def build_tool_lines(
         sorted_errors = sorted_errors[:diagnostic_limit]
         diagnostics_truncated = True
 
+    diagnostic_records, hint_urls = aggregate_diagnostics(sorted_errors)
+
     lines: list[str] = []
-    for error in sorted_errors:
-        lines.append(_dump(_build_diagnostic_record(error)))
+    for record in diagnostic_records:
+        lines.append(_dump(record))
     lines.append(
         _dump(
             _build_tool_record(
@@ -55,10 +65,65 @@ def build_tool_lines(
                 diagnostics=len(sorted_errors),
                 diagnostic_total=diagnostic_total if diagnostics_truncated else None,
                 config=config,
+                hint_urls=hint_urls,
             )
         )
     )
     return lines
+
+
+def aggregate_diagnostics(
+    errors: typing.Iterable[pyfltr.error_parser.ErrorLocation],
+) -> tuple[list[dict[str, typing.Any]], dict[str, str]]:
+    """``ErrorLocation`` 列を ``(tool, file)`` 単位の集約dictへ変換する。
+
+    戻り値:
+        - ``diagnostic`` レコードのリスト。各要素は
+          ``{"kind": "diagnostic", "tool": ..., "file": ..., "messages": [...]}``。
+          ``messages`` は ``(line, col or 0, rule or "")`` 昇順で並ぶ。
+        - rule→URL辞書（ハイフン区切りキー ``hint-urls`` として tool レコードに埋め込む用）。
+          URLが生成できたruleのみ含む。
+
+    同一ruleで異なるURLが現れた場合は最初に出たURLを採用し warning ログを残す。
+    集約のキー順は入力順（``sort_errors()`` 済み）を尊重する。
+    """
+    groups: dict[tuple[str, str], list[pyfltr.error_parser.ErrorLocation]] = {}
+    group_order: list[tuple[str, str]] = []
+    hint_urls: dict[str, str] = {}
+    for error in errors:
+        key = (error.command, error.file)
+        if key not in groups:
+            groups[key] = []
+            group_order.append(key)
+        groups[key].append(error)
+        if error.rule is not None and error.rule_url is not None:
+            existing = hint_urls.get(error.rule)
+            if existing is None:
+                hint_urls[error.rule] = error.rule_url
+            elif existing != error.rule_url:
+                logger.warning(
+                    "aggregate_diagnostics: rule %r に複数のrule_urlが存在する。先勝ち採用: %s (後続 %s を無視)",
+                    error.rule,
+                    existing,
+                    error.rule_url,
+                )
+
+    records: list[dict[str, typing.Any]] = []
+    for key in group_order:
+        command, file = key
+        sorted_messages = sorted(
+            groups[key],
+            key=lambda e: (e.line, e.col if e.col is not None else 0, e.rule or ""),
+        )
+        records.append(
+            {
+                "kind": "diagnostic",
+                "tool": command,
+                "file": file,
+                "messages": [_build_message_dict(e) for e in sorted_messages],
+            }
+        )
+    return records, hint_urls
 
 
 def build_lines(
@@ -213,11 +278,15 @@ def _dump(record: dict[str, typing.Any]) -> str:
 
 
 _SCHEMA_HINTS: dict[str, str] = {
-    "diagnostic.fix": (
+    "diagnostic.messages": (
+        "per (tool,file) array of individual findings sorted by line/col/rule;"
+        " each item carries line/col/rule/severity/fix/msg (optional fields omitted when absent)"
+    ),
+    "diagnostic.messages.fix": (
         "safe/unsafe/suggested = auto-fixable; none = tool reports no auto-fix; omitted = no fix info from tool"
     ),
-    "diagnostic.severity": "error/warning/info normalised across tools; omitted when not reported",
-    "diagnostic.rule_url": "documentation URL for the rule; only populated for supported tools",
+    "diagnostic.messages.severity": "error/warning/info normalised across tools; omitted when not reported",
+    "tool.hint-urls": ("mapping of rule id to documentation URL for this tool; omitted when no rule URLs are available"),
     "tool.retry_command": ("shell command to re-run only this tool on failing files; populated only when the tool failed"),
     "tool.cached": "true = result restored from file-hash cache; rerun with --no-cache to force",
     "tool.truncated": ("diagnostics or message were trimmed; full content is in the archive directory (see header.run_id)"),
@@ -271,20 +340,18 @@ def _build_warning_record(entry: dict[str, typing.Any]) -> dict[str, typing.Any]
     return record
 
 
-def _build_diagnostic_record(error: pyfltr.error_parser.ErrorLocation) -> dict[str, typing.Any]:
-    """ErrorLocation を diagnostic レコード dict に変換する。None のフィールドは省略。"""
-    record: dict[str, typing.Any] = {
-        "kind": "diagnostic",
-        "tool": error.command,
-        "file": error.file,
-        "line": error.line,
-    }
+def _build_message_dict(error: pyfltr.error_parser.ErrorLocation) -> dict[str, typing.Any]:
+    """ErrorLocation を集約 ``messages[]`` 要素の dict に変換する。
+
+    フィールド順は ``line`` → ``col`` → ``rule`` → ``severity`` → ``fix`` → ``msg``。
+    ``rule_url`` は含めず、tool レコードの ``hint-urls`` へ集約する。
+    None のフィールドは出力しない（``msg`` は常に出力）。
+    """
+    record: dict[str, typing.Any] = {"line": error.line}
     if error.col is not None:
         record["col"] = error.col
     if error.rule is not None:
         record["rule"] = error.rule
-    if error.rule_url is not None:
-        record["rule_url"] = error.rule_url
     if error.severity is not None:
         record["severity"] = error.severity
     if error.fix is not None:
@@ -299,13 +366,16 @@ def _build_tool_record(
     diagnostics: int,
     diagnostic_total: int | None = None,
     config: pyfltr.config.Config | None = None,
+    hint_urls: dict[str, str] | None = None,
 ) -> dict[str, typing.Any]:
     """CommandResult を tool レコード dict に変換する。
 
+    ``diagnostics`` は集約前の個別指摘件数 (messages合計) を指定する。
     ``failed`` かつ ``diagnostics == 0`` のときに限り、``CommandResult.output`` の末尾を
     ``_truncate_message()`` でトリムして ``message`` フィールドを付与する。
     メッセージ切り詰めまたは diagnostic 切り詰めが発生した場合は ``truncated`` メタを
     添付する。retry_command は ``CommandResult.retry_command`` が設定されていれば含める。
+    ``hint_urls`` が非空なら ``hint-urls`` キー（ハイフン区切り）で埋め込む。
     """
     record: dict[str, typing.Any] = {
         "kind": "tool",
@@ -350,6 +420,8 @@ def _build_tool_record(
         record["cached"] = True
         if result.cached_from is not None:
             record["cached_from"] = result.cached_from
+    if hint_urls:
+        record["hint-urls"] = dict(hint_urls)
     return record
 
 

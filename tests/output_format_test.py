@@ -27,7 +27,7 @@ def _default_config() -> pyfltr.config.Config:
 
 
 def test_build_lines_supported_tool_diagnostics(default_config):
-    """error_parser 対応ツールの診断が diagnostic レコードとして出ること。"""
+    """error_parser 対応ツールの診断が (tool, file) 単位で集約された diagnostic レコードとして出ること。"""
     errors = [
         _make_error("mypy", "src/a.py", 10, "bad type", col=4),
         _make_error("mypy", "src/a.py", 20, "missing return"),
@@ -36,26 +36,21 @@ def test_build_lines_supported_tool_diagnostics(default_config):
     lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=1, commands=["mypy"], files=5)
     parsed = [json.loads(line) for line in lines]
 
-    assert [r["kind"] for r in parsed] == ["header", "diagnostic", "diagnostic", "tool", "summary"]
+    # 同一 (mypy, src/a.py) に集約されるため diagnostic は 1 行
+    assert [r["kind"] for r in parsed] == ["header", "diagnostic", "tool", "summary"]
     assert parsed[1] == {
         "kind": "diagnostic",
         "tool": "mypy",
         "file": "src/a.py",
-        "line": 10,
-        "col": 4,
-        "msg": "bad type",
+        "messages": [
+            {"line": 10, "col": 4, "msg": "bad type"},
+            {"line": 20, "msg": "missing return"},
+        ],
     }
-    assert parsed[2] == {
-        "kind": "diagnostic",
-        "tool": "mypy",
-        "file": "src/a.py",
-        "line": 20,
-        "msg": "missing return",
-    }
+    assert parsed[2]["diagnostics"] == 2
+    assert parsed[2]["status"] == "failed"
     assert parsed[3]["diagnostics"] == 2
-    assert parsed[3]["status"] == "failed"
-    assert parsed[4]["diagnostics"] == 2
-    assert parsed[4]["failed"] == 1
+    assert parsed[3]["failed"] == 1
 
 
 def test_build_lines_warnings_prepended(default_config):
@@ -127,21 +122,22 @@ def test_build_lines_mixed_order(default_config):
     )
     parsed = [json.loads(line) for line in lines]
 
-    # header → ツール順でグルーピング: ruff-format(tool) → mypy(diag, diag, tool) → pylint(diag, tool) → summary
+    # header → ツール順でグルーピング: ruff-format(tool) → mypy(a.pyとb.pyの2 diagnostic + tool)
+    # → pylint(diagnostic + tool) → summary。(tool, file)単位で集約される
     assert [r["kind"] for r in parsed] == [
         "header",
         "tool",  # ruff-format
-        "diagnostic",
-        "diagnostic",
+        "diagnostic",  # mypy / src/a.py
+        "diagnostic",  # mypy / src/b.py
         "tool",  # mypy
-        "diagnostic",
+        "diagnostic",  # pylint / src/a.py
         "tool",  # pylint
         "summary",
     ]
 
-    # mypy 内の diagnostic はファイル/行順
+    # mypy 内の diagnostic はファイル順
     mypy_diagnostics = [r for r in parsed if r["kind"] == "diagnostic" and r["tool"] == "mypy"]
-    assert [(r["file"], r["line"]) for r in mypy_diagnostics] == [
+    assert [(r["file"], r["messages"][0]["line"]) for r in mypy_diagnostics] == [
         ("src/a.py", 30),
         ("src/b.py", 5),
     ]
@@ -398,7 +394,7 @@ def test_run_cli_jsonl_restores_logger_state(mocker, caplog, capsys):
 
 
 def test_build_tool_lines_with_diagnostics(default_config):
-    """diagnostic行+tool行がツール単位でまとまること。"""
+    """diagnostic行+tool行がツール単位で(tool, file)集約されてまとまること。"""
     errors = [
         _make_error("mypy", "src/b.py", 5, "later"),
         _make_error("mypy", "src/a.py", 10, "earlier"),
@@ -408,11 +404,13 @@ def test_build_tool_lines_with_diagnostics(default_config):
     parsed = [json.loads(line) for line in lines]
 
     assert len(parsed) == 3
-    # diagnostic行はツール内でファイル/行順にソートされる
+    # diagnostic行はツール内でファイル順にソートされる（src/a.py → src/b.py）
     assert parsed[0]["kind"] == "diagnostic"
     assert parsed[0]["file"] == "src/a.py"
+    assert parsed[0]["messages"][0]["line"] == 10
     assert parsed[1]["kind"] == "diagnostic"
     assert parsed[1]["file"] == "src/b.py"
+    assert parsed[1]["messages"][0]["line"] == 5
     # 最後にtool行
     assert parsed[2]["kind"] == "tool"
     assert parsed[2]["diagnostics"] == 2

@@ -34,7 +34,7 @@ import ulid
 
 import pyfltr.command
 import pyfltr.config
-import pyfltr.error_parser
+import pyfltr.llm_output
 
 logger = logging.getLogger(__name__)
 
@@ -139,15 +139,23 @@ class ArchiveStore:
         run_id: str,
         result: pyfltr.command.CommandResult,
     ) -> None:
-        """1 ツール完了時に呼び出されるフック。生出力・diagnostic・メタを保存する。"""
+        """1 ツール完了時に呼び出されるフック。生出力・diagnostic・メタを保存する。
+
+        ``diagnostics.jsonl`` は ``(tool, file)`` 単位の集約形式で保存する。各行は
+        ``{"kind": "diagnostic", "tool": ..., "file": ..., "messages": [...]}`` 構造で
+        ``llm_output.aggregate_diagnostics()`` の出力と同形。
+        ``tool.json`` には ``hint-urls``（ハイフンキー）を空でないときに限り含める。
+        """
         tool_dir = self._runs_dir / run_id / "tools" / _sanitize_tool_name(result.command)
         tool_dir.mkdir(parents=True, exist_ok=True)
         (tool_dir / _TOOL_OUTPUT_FILENAME).write_text(result.output, encoding="utf-8")
+
+        aggregated, hint_urls = pyfltr.llm_output.aggregate_diagnostics(result.errors)
         with (tool_dir / _TOOL_DIAGNOSTICS_FILENAME).open("w", encoding="utf-8") as f:
-            for error in result.errors:
-                f.write(json.dumps(_error_to_dict(error), ensure_ascii=False))
+            for record in aggregated:
+                f.write(json.dumps(record, ensure_ascii=False))
                 f.write("\n")
-        meta = {
+        meta: dict[str, typing.Any] = {
             "tool": result.command,
             "type": result.command_type,
             "status": result.status,
@@ -158,6 +166,8 @@ class ArchiveStore:
             "has_error": result.has_error,
             "commandline": result.commandline,
         }
+        if hint_urls:
+            meta["hint-urls"] = dict(hint_urls)
         (tool_dir / _TOOL_META_FILENAME).write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def finalize_run(
@@ -324,26 +334,6 @@ def policy_from_config(config: pyfltr.config.Config) -> ArchivePolicy:
 def _now_iso() -> str:
     """現在時刻を ISO 8601 (UTC, マイクロ秒付き) で返す。"""
     return datetime.datetime.now(datetime.UTC).isoformat()
-
-
-def _error_to_dict(error: pyfltr.error_parser.ErrorLocation) -> dict[str, typing.Any]:
-    """ErrorLocation を archive 用の dict に変換する。
-
-    LLM 向け出力 (llm_output.py) とは独立した最小構造とし、ErrorLocation の全
-    フィールドを保存する。将来 rule_url などのフィールド追加にも dataclass 相当の
-    網羅性で追随できるよう ``dataclasses.asdict`` を使わず手動で列挙する。
-    """
-    return {
-        "tool": error.command,
-        "file": error.file,
-        "line": error.line,
-        "col": error.col,
-        "rule": error.rule,
-        "rule_url": error.rule_url,
-        "severity": error.severity,
-        "fix": error.fix,
-        "message": error.message,
-    }
 
 
 def _sanitize_tool_name(name: str) -> str:

@@ -53,7 +53,15 @@ def test_diagnostic_model_all_optional() -> None:
     model = pyfltr.mcp_.DiagnosticModel()
     assert model.tool is None
     assert model.file is None
+    assert not model.messages
+
+
+def test_diagnostic_message_model_all_optional() -> None:
+    # DiagnosticMessageModel も全フィールド省略可能
+    model = pyfltr.mcp_.DiagnosticMessageModel()
+    assert model.line is None
     assert model.severity is None
+    assert model.msg is None
 
 
 # ---------------------------------------------------------------------------
@@ -172,9 +180,13 @@ async def test_tool_show_run_diagnostics(tmp_path: pathlib.Path) -> None:
     result = await pyfltr.mcp_._tool_show_run_diagnostics(run_id, "mypy")
     assert result.tool_meta["tool"] == "mypy"
     assert len(result.diagnostics) == 1
-    assert result.diagnostics[0].file == "src/a.py"
-    assert result.diagnostics[0].line == 42
-    assert result.diagnostics[0].message == "型エラー"
+    diagnostic = result.diagnostics[0]
+    assert diagnostic.file == "src/a.py"
+    assert len(diagnostic.messages) == 1
+    message = diagnostic.messages[0]
+    assert message.line == 42
+    assert message.col == 5
+    assert message.msg == "型エラー"
 
 
 @pytest.mark.asyncio

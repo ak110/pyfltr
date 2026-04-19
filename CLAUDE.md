@@ -13,14 +13,19 @@
     - 詳細な情報などが必要な場合に限り `uv run pytest -vv <path>` などを使用
   - JSONL出力は`header`（実行環境・`run_id`・`schema_hints`）→ `diagnostic`+`tool`（ツール完了ごと）→
     `warning`→ `summary`（末尾）の順に出力される。末尾の`summary`で`failed`と`diagnostics`を確認し、
-    必要に応じて`diagnostic`行のファイル・行番号・メッセージを参照する。`header.run_id`（ULID）は実行アーカイブの参照キー
+    必要に応じて`diagnostic`行の`messages[]`内のファイル・行番号・メッセージを参照する。
+    `header.run_id`（ULID）は実行アーカイブの参照キー
   - `header.schema_hints`はJSONL各フィールドの意味をLLM向け英語ガイドとして毎runに付与する
   - `summary.guidance`（英語配列）は`failed > 0`のときのみ付与され、
     `tool.retry_command` / `--only-failed` / `show-run` の案内を示す
-  - `diagnostic`の任意フィールド: `rule`・`rule_url`（対応ツールのみ）・`severity`（3値に正規化）・`fix`（値域の詳細は後述）
+  - `diagnostic`は`(tool, file)`単位で1行に集約される。個別の指摘は`messages[]`配列に並び、
+    `(line, col or 0, rule or "")`の昇順でソートされている
+  - `messages[]`要素の任意フィールド: `col`・`rule`・`severity`（3値に正規化）・`fix`（値域の詳細は後述）。`msg`は必須
   - `fix`は`"safe"` / `"unsafe"` / `"suggested"` / `"none"`の4値。ツールが自動修正情報を返さない場合はフィールドごと省略
+  - ルールURLは`tool`レコード末尾の`hint-urls`辞書（ハイフン区切りキー・rule→URL）にツール単位で集約される。
+    URLを生成できたruleのみ含む
   - `tool`の任意フィールド: `retry_command`（当該ツールで失敗したファイルのみに絞った再実行コマンド）・
-    `truncated`（smart truncation発生時。`archive`パスで全文参照）
+    `truncated`（smart truncation発生時。`archive`パスで全文参照）・`hint-urls`（rule→URL辞書）
   - `retry_command`の追加仕様: 失敗時（`has_error=true`）のみ出力。成功時・`cached=true`時は出力されない。
     失敗ファイルを特定できない場合はターゲット位置引数が空
   - `tool`のキャッシュ関連フィールド: `cached`（ファイルhashキャッシュから復元されたとき `true`）・

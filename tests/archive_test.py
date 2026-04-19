@@ -52,17 +52,21 @@ def test_write_tool_result(tmp_path: pathlib.Path) -> None:
     # output.log の内容確認
     assert (tool_dir / "output.log").read_text(encoding="utf-8") == "mypy output"
 
-    # diagnostics.jsonl は JSONL 形式で 1 行
+    # diagnostics.jsonl は集約形式で (tool, file) 単位に 1 行、messages 内に個別指摘
     lines = [json.loads(line) for line in (tool_dir / "diagnostics.jsonl").read_text(encoding="utf-8").splitlines() if line]
     assert len(lines) == 1
+    assert lines[0]["kind"] == "diagnostic"
+    assert lines[0]["tool"] == "mypy"
     assert lines[0]["file"] == "src/a.py"
-    assert lines[0]["line"] == 10
-    assert lines[0]["col"] == 5
-    assert lines[0]["message"] == "型エラー"
+    messages = lines[0]["messages"]
+    assert len(messages) == 1
+    assert messages[0]["line"] == 10
+    assert messages[0]["col"] == 5
+    assert messages[0]["msg"] == "型エラー"
 
 
-def test_write_tool_result_includes_rule_url(tmp_path: pathlib.Path) -> None:
-    """diagnostics.jsonl に rule_url が保存される (v3.0.0 パートC)。"""
+def test_write_tool_result_stores_hint_urls(tmp_path: pathlib.Path) -> None:
+    """tool.json に hint-urls が保存され、diagnostics.jsonl の messages は rule を保持する。"""
     store = _make_store(tmp_path)
     run_id = store.start_run(commands=["ruff-check"])
 
@@ -73,10 +77,26 @@ def test_write_tool_result_includes_rule_url(tmp_path: pathlib.Path) -> None:
     result = _make_result("ruff-check", returncode=1, output="ruff output", errors=[error])
     store.write_tool_result(run_id, result)
 
-    diagnostics_path = tmp_path / "runs" / run_id / "tools" / "ruff-check" / "diagnostics.jsonl"
+    tool_dir = tmp_path / "runs" / run_id / "tools" / "ruff-check"
+    diagnostics_path = tool_dir / "diagnostics.jsonl"
     entries = [json.loads(line) for line in diagnostics_path.read_text(encoding="utf-8").splitlines() if line]
-    assert entries[0]["rule_url"] == "https://docs.astral.sh/ruff/rules/F401/"
-    assert entries[0]["rule"] == "F401"
+    assert entries[0]["file"] == "src/foo.py"
+    assert entries[0]["messages"][0]["rule"] == "F401"
+    # messages 内に rule_url は入らない
+    assert "rule_url" not in entries[0]["messages"][0]
+
+    tool_meta = json.loads((tool_dir / "tool.json").read_text(encoding="utf-8"))
+    assert tool_meta["hint-urls"] == {"F401": "https://docs.astral.sh/ruff/rules/F401/"}
+
+
+def test_write_tool_result_omits_hint_urls_when_no_urls(tmp_path: pathlib.Path) -> None:
+    """rule_url を持たない指摘のみなら tool.json に hint-urls キーを出さない。"""
+    store = _make_store(tmp_path)
+    run_id = store.start_run(commands=["mypy"])
+    result = _make_result("mypy", returncode=1, errors=[_make_error("mypy", "a.py", 1, "boom")])
+    store.write_tool_result(run_id, result)
+    tool_meta = json.loads((tmp_path / "runs" / run_id / "tools" / "mypy" / "tool.json").read_text(encoding="utf-8"))
+    assert "hint-urls" not in tool_meta
 
 
 def test_finalize_run(tmp_path: pathlib.Path) -> None:
@@ -153,20 +173,24 @@ def test_read_tool_output(tmp_path: pathlib.Path) -> None:
 
 
 def test_read_tool_diagnostics(tmp_path: pathlib.Path) -> None:
-    """read_tool_diagnostics が diagnostic 一覧を返す。"""
+    """read_tool_diagnostics が集約 diagnostic レコード一覧を返す。"""
     store = _make_store(tmp_path)
     run_id = store.start_run()
     errors = [
         _make_error("mypy", "a.py", 1, "error A"),
+        _make_error("mypy", "a.py", 3, "error A2"),
         _make_error("mypy", "b.py", 2, "error B"),
     ]
     result = _make_result("mypy", returncode=1, errors=errors)
     store.write_tool_result(run_id, result)
 
     diagnostics = store.read_tool_diagnostics(run_id, "mypy")
+    # (mypy, a.py) と (mypy, b.py) の 2 レコード
     assert len(diagnostics) == 2
     assert diagnostics[0]["file"] == "a.py"
+    assert len(diagnostics[0]["messages"]) == 2
     assert diagnostics[1]["file"] == "b.py"
+    assert len(diagnostics[1]["messages"]) == 1
 
 
 def test_list_tools_empty_run(tmp_path: pathlib.Path) -> None:

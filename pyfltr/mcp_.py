@@ -54,21 +54,32 @@ class ToolSummaryModel(pydantic.BaseModel):
     diagnostics: int | None = pydantic.Field(default=None, description="diagnostic の件数。")
 
 
-class DiagnosticModel(pydantic.BaseModel):
-    """1 件分の diagnostic エントリ。``show_run_diagnostics`` ツールの戻り値内要素。"""
+class DiagnosticMessageModel(pydantic.BaseModel):
+    """集約 diagnostic 内の 1 指摘分。``DiagnosticModel.messages`` の要素。"""
 
-    tool: str | None = pydantic.Field(default=None, description="ツール名。")
-    file: str | None = pydantic.Field(default=None, description="対象ファイルパス。")
     line: int | None = pydantic.Field(default=None, description="行番号。")
     col: int | None = pydantic.Field(default=None, description="列番号。")
     rule: str | None = pydantic.Field(default=None, description="ルール識別子。")
-    rule_url: str | None = pydantic.Field(default=None, description="ルールドキュメントの URL。")
     severity: str | None = pydantic.Field(
         default=None,
         description="severity（error / warning / info）。未対応ツールは None。",
     )
     fix: str | None = pydantic.Field(default=None, description="自動修正可能な場合の修正内容。")
-    message: str | None = pydantic.Field(default=None, description="エラーメッセージ。")
+    msg: str | None = pydantic.Field(default=None, description="エラーメッセージ。")
+
+
+class DiagnosticModel(pydantic.BaseModel):
+    """``(tool, file)`` 単位で集約された diagnostic エントリ。
+
+    ``show_run_diagnostics`` ツールの戻り値内要素。``messages`` に個別指摘を保持する。
+    """
+
+    tool: str | None = pydantic.Field(default=None, description="ツール名。")
+    file: str | None = pydantic.Field(default=None, description="対象ファイルパス。")
+    messages: list[DiagnosticMessageModel] = pydantic.Field(
+        default_factory=list,
+        description="``(line, col, rule)`` 昇順で並ぶ個別指摘のリスト。",
+    )
 
 
 class RunOverviewModel(pydantic.BaseModel):
@@ -80,10 +91,21 @@ class RunOverviewModel(pydantic.BaseModel):
 
 
 class ToolDiagnosticsModel(pydantic.BaseModel):
-    """ツールの詳細情報（tool.json + diagnostics.jsonl 全件）。``show_run_diagnostics`` ツールの戻り値。"""
+    """ツールの詳細情報（tool.json + diagnostics.jsonl 全件）。``show_run_diagnostics`` ツールの戻り値。
+
+    ``hint_urls`` はPython内部では ``hint_urls`` 属性で扱うが、外部スキーマ（MCPクライアント向けの
+    シリアライズ結果）では ``hint-urls`` キーで出す。serialization_alias のみを設定することで、
+    入力側は従来通り属性名でコンストラクトできつつ、出力側はJSONL本体・``tool.json`` と
+    キー名を揃えられる。
+    """
 
     tool_meta: dict[str, typing.Any] = pydantic.Field(description="ツールの meta 情報（tool.json の内容）。")
     diagnostics: list[DiagnosticModel] = pydantic.Field(description="diagnostic の全件一覧。")
+    hint_urls: dict[str, str] | None = pydantic.Field(
+        default=None,
+        serialization_alias="hint-urls",
+        description="rule ID → ドキュメントURLの辞書。URLを生成できた rule のみ含める。",
+    )
 
 
 class RunForAgentResult(pydantic.BaseModel):
@@ -176,6 +198,9 @@ async def _tool_show_run(run_id: str) -> RunOverviewModel:
 async def _tool_show_run_diagnostics(run_id: str, tool: str) -> ToolDiagnosticsModel:
     """指定 run・ツールの tool.json と diagnostics.jsonl 全件を返す。
 
+    ``diagnostics`` は ``(tool, file)`` 単位の集約形式で、個別指摘は ``messages`` に並ぶ。
+    rule→URL辞書 ``hint-urls`` は tool.json 由来でそのまま返す。
+
     対応CLI: ``pyfltr show-run <run_id> --tool <name>``
     """
     store = pyfltr.archive.ArchiveStore()
@@ -189,17 +214,12 @@ async def _tool_show_run_diagnostics(run_id: str, tool: str) -> ToolDiagnosticsM
         DiagnosticModel(
             tool=d.get("tool"),
             file=d.get("file"),
-            line=d.get("line"),
-            col=d.get("col"),
-            rule=d.get("rule"),
-            rule_url=d.get("rule_url"),
-            severity=d.get("severity"),
-            fix=d.get("fix"),
-            message=d.get("message"),
+            messages=[DiagnosticMessageModel(**m) for m in d.get("messages", [])],
         )
         for d in diagnostics_raw
     ]
-    return ToolDiagnosticsModel(tool_meta=tool_meta, diagnostics=diagnostics)
+    hint_urls = tool_meta.get("hint-urls") if isinstance(tool_meta.get("hint-urls"), dict) else None
+    return ToolDiagnosticsModel(tool_meta=tool_meta, diagnostics=diagnostics, hint_urls=hint_urls)
 
 
 async def _tool_show_run_output(run_id: str, tool: str) -> str:
