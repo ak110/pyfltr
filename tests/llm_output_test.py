@@ -432,3 +432,69 @@ def test_build_summary_record_no_guidance_on_success() -> None:
     )
     record = pyfltr.llm_output._build_summary_record([result], exit_code=0)
     assert "guidance" not in record
+
+
+def test_build_summary_record_includes_fully_excluded_files() -> None:
+    """fully_excluded_files 指定時は summary レコードに出力される。"""
+    result = pyfltr.command.CommandResult(
+        command="mypy",
+        command_type="linter",
+        commandline=["mypy"],
+        returncode=0,
+        has_error=False,
+        files=0,
+        output="",
+        elapsed=0.1,
+    )
+    record = pyfltr.llm_output._build_summary_record(
+        [result],
+        exit_code=0,
+        fully_excluded_files=["docs/ignored.md", "src/also.py"],
+    )
+    assert record["fully_excluded_files"] == ["docs/ignored.md", "src/also.py"]
+
+
+def test_build_summary_record_omits_fully_excluded_files_when_empty() -> None:
+    """空リスト・None の場合はキー自体を出力しない。"""
+    result = pyfltr.command.CommandResult(
+        command="mypy",
+        command_type="linter",
+        commandline=["mypy"],
+        returncode=0,
+        has_error=False,
+        files=0,
+        output="",
+        elapsed=0.1,
+    )
+    values: list[list[str] | None] = [None, []]
+    for value in values:
+        record = pyfltr.llm_output._build_summary_record([result], exit_code=0, fully_excluded_files=value)
+        assert "fully_excluded_files" not in record
+
+
+def test_build_message_dict_includes_hint() -> None:
+    """ErrorLocation.hint が非 None なら messages[] に含まれる。"""
+    error = pyfltr.error_parser.ErrorLocation(
+        file="a.md",
+        line=1,
+        col=1,
+        command="textlint",
+        message="文が長すぎます",
+        rule="ja-technical-writing/sentence-length",
+        hint="句点で文を区切る",
+    )
+    record = pyfltr.llm_output._build_message_dict(error)
+    assert record["hint"] == "句点で文を区切る"
+
+
+def test_build_message_dict_omits_hint_when_none() -> None:
+    """hint が None なら messages[] には含まれない。"""
+    error = pyfltr.error_parser.ErrorLocation(
+        file="a.py",
+        line=1,
+        col=1,
+        command="mypy",
+        message="x",
+    )
+    record = pyfltr.llm_output._build_message_dict(error)
+    assert "hint" not in record

@@ -54,6 +54,64 @@ _ALL_SUBCOMMANDS: tuple[str, ...] = (
 """全サブコマンド。shell completion スクリプト生成時に参照される。"""
 
 
+_STATIC_COMMAND_ALIASES: tuple[str, ...] = ("format", "lint", "test")
+"""組み込みで必ず定義されるコマンドエイリアス。ユーザー設定のカスタムエイリアスは含まない。
+
+ツール名プリフライト（個別ツール絞り込み誘導）の検出集合に含める。
+カスタムコマンド・カスタムエイリアスは pyproject.toml 読込後にしか確定しないため
+当面プリフライト対象外とする。
+"""
+
+
+class _HelpOnErrorArgumentParser(argparse.ArgumentParser):
+    """argparse エラー時に `--help` 相当を stderr に併記してから終了する ArgumentParser。
+
+    argparse 既定の error() はエラー文のみを出して exit 2 するため、利用者が正しい書式を
+    取り違えたまま同じミスを繰り返しやすい。本サブクラスではエラー文の前に
+    ``self.print_help(sys.stderr)`` を呼び、該当 parser のヘルプを併記する。
+    サブコマンド側のエラーでは当該サブコマンドの parser、メインの誤サブコマンドでは
+    メインの parser のヘルプが出る（argparse の階層別 parser_class で継承させるため）。
+    """
+
+    def error(self, message: str) -> typing.NoReturn:
+        self.print_help(sys.stderr)
+        self.exit(2, f"\n{self.prog}: error: {message}\n")
+
+
+def _preflight_tool_name_as_subcommand(sys_args: typing.Sequence[str]) -> None:
+    """ツール名をサブコマンドとして入力したケースを検知し、実行例付きメッセージを出して exit 2。
+
+    `uv run pyfltr textlint ...` / `pyfltr lint docs/` など、利用者がツール名またはエイリアスを
+    そのままサブコマンドとして指定した場合に、正しい `--commands=<tool>` 書式の実行例を提示する。
+    該当しない場合は何も行わずに返し、通常の argparse 処理を続行する。
+
+    検出対象は ``pyfltr.builtin_commands.BUILTIN_COMMAND_NAMES`` + 静的エイリアス
+    ``format`` / ``lint`` / ``test``。カスタムコマンドは pyproject.toml 読込後にしか
+    確定しないため対象外とする。
+    """
+    if not sys_args:
+        return
+    candidate = sys_args[0]
+    if candidate in _ALL_SUBCOMMANDS:
+        return
+    tool_names = frozenset(pyfltr.config.BUILTIN_COMMAND_NAMES) | frozenset(_STATIC_COMMAND_ALIASES)
+    if candidate not in tool_names:
+        return
+    rest_args = " ".join(shlex.quote(a) for a in sys_args[1:]) if len(sys_args) > 1 else "[targets]"
+    message = (
+        f"{candidate!r} はツール名またはエイリアスであり、pyfltr のサブコマンドとしては受け付けられません。\n"
+        f"個別ツールを実行する場合は --commands オプションを使ってください。\n"
+        f"\n"
+        f"実行例:\n"
+        f"  pyfltr run --commands={candidate} {rest_args}\n"
+        f"  pyfltr run-for-agent --commands={candidate} {rest_args}\n"
+        f"\n"
+        f"失敗ファイルのみを再実行する tool.retry_command も既に `--commands=<tool>` 書式で出力されます。\n"
+    )
+    print(message, file=sys.stderr, end="")
+    sys.exit(2)
+
+
 def main() -> typing.NoReturn:
     """エントリポイント。"""
     exit_code = run()
@@ -61,14 +119,14 @@ def main() -> typing.NoReturn:
     sys.exit(exit_code)
 
 
-def _make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> argparse.ArgumentParser:
+def _make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> "_HelpOnErrorArgumentParser":
     """実行系サブコマンド用の共通オプションをまとめた親 parser を返す。
 
     ``parents=[common]`` 経由で各サブコマンドに継承させる。``custom_commands`` は
     ``pyproject.toml`` で定義されたカスタムコマンド名の列で、``--{cmd}-args``
     オプションとして追加登録される (ビルトインと同じ扱い)。
     """
-    common = argparse.ArgumentParser(add_help=False)
+    common = _HelpOnErrorArgumentParser(add_help=False)
     common.add_argument("-v", "--verbose", default=False, action="store_true", help="詳細な出力を表示します。")
     common.add_argument(
         "--exit-zero-even-if-formatted",
@@ -209,9 +267,13 @@ def _make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> 
     return common
 
 
-def build_parser(custom_commands: collections.abc.Iterable[str] = ()) -> argparse.ArgumentParser:
-    """引数パーサーを生成。サブコマンド必須化 (v3.0.0)。"""
-    parser = argparse.ArgumentParser(
+def build_parser(custom_commands: collections.abc.Iterable[str] = ()) -> "_HelpOnErrorArgumentParser":
+    """引数パーサーを生成。サブコマンド必須化 (v3.0.0)。
+
+    メインおよび全サブコマンド parser には ``_HelpOnErrorArgumentParser`` を用い、
+    argparse エラー時に該当 parser の ``--help`` 相当をまとめて stderr へ出す。
+    """
+    parser = _HelpOnErrorArgumentParser(
         epilog=(
             "サブコマンド:\n"
             "  ci               CI モードで実行する。フォーマッターの変更も失敗扱い。\n"
@@ -233,7 +295,12 @@ def build_parser(custom_commands: collections.abc.Iterable[str] = ()) -> argpars
     )
     parser.add_argument("-V", "--version", action="store_true", help="バージョンを表示します。")
 
-    subparsers = parser.add_subparsers(dest="subcommand", required=True, metavar="<subcommand>")
+    subparsers = parser.add_subparsers(
+        dest="subcommand",
+        required=True,
+        metavar="<subcommand>",
+        parser_class=_HelpOnErrorArgumentParser,
+    )
 
     common = _make_common_parent(custom_commands)
 
@@ -308,6 +375,10 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
         logging.basicConfig(level=logging.INFO, format="%(message)s")
         logger.info(f"pyfltr {importlib.metadata.version('pyfltr')}")
         return 0
+
+    # ツール名をサブコマンドとして誤入力したケースを検知し、実行例付きで案内する。
+    # argparse 既定の "invalid choice" エラーより具体的な導線になるため先に捌く。
+    _preflight_tool_name_as_subcommand(sys_args)
 
     parser = build_parser()
     args = parser.parse_args(list(sys_args))

@@ -18,10 +18,14 @@
   - `header.schema_hints`はJSONL各フィールドの意味をLLM向け英語ガイドとして毎runに付与する
   - `summary.guidance`（英語配列）は`failed > 0`のときのみ付与され、
     `tool.retry_command` / `--only-failed` / `show-run` の案内を示す
+  - `summary.fully_excluded_files`（任意）は、直接指定されたが`exclude`パターンや`.gitignore`で全除外されたファイル一覧。
+    非空時のみ付与し、exitコードは0のままだが「警告0件＝問題なし」と誤解しないよう明示する
   - `diagnostic`は`(tool, file)`単位で1行に集約される。個別の指摘は`messages[]`配列に並び、
     `(line, col or 0, rule or "")`の昇順でソートされている
-  - `messages[]`要素の任意フィールド: `col`・`rule`・`severity`（3値に正規化）・`fix`（値域の詳細は後述）。`msg`は必須
+  - `messages[]`要素の任意フィールド: `col`・`rule`・`severity`（3値に正規化）・`fix`（値域の詳細は後述）・`hint`。`msg`は必須
   - `fix`は`"safe"` / `"unsafe"` / `"suggested"` / `"none"`の4値。ツールが自動修正情報を返さない場合はフィールドごと省略
+  - `hint`はルール単位の短い修正ヒント。pyfltr側で事前登録したルールのみに付与される。
+    対象はtextlintの頻出ルール（`sentence-length` / `max-ten` / `max-kanji-continuous-len`）など
   - ルールURLは`tool`レコード末尾の`hint-urls`辞書（ハイフン区切りキー・rule→URL）にツール単位で集約される。
     URLを生成できたruleのみ含む
   - `tool`の任意フィールド: `retry_command`（当該ツールで失敗したファイルのみに絞った再実行コマンド）・
@@ -32,6 +36,9 @@
     `cached_from`（`cached=true` 時のソース `run_id`）
   - 詳細仕様は`docs/guide/usage.md`の「jsonlスキーマ」節および`llms.txt`を参照。
     `--output-format=sarif` / `github-annotations` でCI向け形式にも切り替え可能
+  - `--commands=<tool>`: 個別ツールだけを実行する（例: `pyfltr run --commands=textlint docs/`）。
+    ツール名やエイリアス（`format` / `lint` / `test`）をサブコマンドとして直接渡すことはできない
+   （誤入力時は実行例付きのエラーメッセージが出る）
   - `--fail-fast`: 1ツールでもエラーが出た時点で残りを打ち切る（起動済みはterminate、未開始はskipped扱い）
   - `--no-cache`: ファイルhashキャッシュを無効化する。現状はtextlintのみ対象
   - `--only-failed`: 直前runから失敗ツール・失敗ファイルを抽出し、ツール別にその組み合わせのみ再実行する。

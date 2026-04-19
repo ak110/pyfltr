@@ -138,6 +138,7 @@ def build_lines(
     warnings: list[dict[str, typing.Any]] | None = None,
     run_id: str | None = None,
     launcher_prefix: list[str] | None = None,
+    fully_excluded_files: list[str] | None = None,
 ) -> list[str]:
     """CommandResult群からJSONL各行を生成する。
 
@@ -165,7 +166,17 @@ def build_lines(
     for result in ordered:
         lines.extend(build_tool_lines(result, config))
 
-    lines.append(_dump(_build_summary_record(ordered, exit_code=exit_code, run_id=run_id, launcher_prefix=launcher_prefix)))
+    lines.append(
+        _dump(
+            _build_summary_record(
+                ordered,
+                exit_code=exit_code,
+                run_id=run_id,
+                launcher_prefix=launcher_prefix,
+                fully_excluded_files=fully_excluded_files,
+            )
+        )
+    )
     return lines
 
 
@@ -210,17 +221,27 @@ def write_jsonl_footer(
     warnings: list[dict[str, typing.Any]] | None = None,
     run_id: str | None = None,
     launcher_prefix: list[str] | None = None,
+    fully_excluded_files: list[str] | None = None,
 ) -> None:
     """warning行+summary行を構造化出力loggerに書き出す。
 
     ``results``は``_build_summary_record()``の集計に使用する。
     ``run_id``と``launcher_prefix``は``summary.guidance``の起動コマンド整形に使う。
+    ``fully_excluded_files`` を渡すと ``summary.fully_excluded_files`` キーとして埋め込む。
     """
     with _write_lock:
         for warning in warnings or []:
             pyfltr.cli.structured_logger.info(_dump(_build_warning_record(warning)))
         pyfltr.cli.structured_logger.info(
-            _dump(_build_summary_record(results, exit_code=exit_code, run_id=run_id, launcher_prefix=launcher_prefix))
+            _dump(
+                _build_summary_record(
+                    results,
+                    exit_code=exit_code,
+                    run_id=run_id,
+                    launcher_prefix=launcher_prefix,
+                    fully_excluded_files=fully_excluded_files,
+                )
+            )
         )
 
 
@@ -238,6 +259,15 @@ _SCHEMA_HINTS: dict[str, str] = {
         "safe/unsafe/suggested = auto-fixable; none = tool reports no auto-fix; omitted = no fix info from tool"
     ),
     "diagnostic.messages.severity": "error/warning/info normalised across tools; omitted when not reported",
+    "diagnostic.messages.hint": (
+        "optional short fix guidance for this specific rule (e.g., textlint sentence-length);"
+        " omitted when the rule has no pre-registered hint"
+    ),
+    "summary.fully_excluded_files": (
+        "list of directly specified files that were fully excluded by exclude patterns or .gitignore;"
+        " omitted when no such files exist. pyfltr exits 0 in this case so inspect this field to avoid"
+        " misreading the run as 'no issues'"
+    ),
     "tool.hint-urls": ("mapping of rule id to documentation URL for this tool; omitted when no rule URLs are available"),
     "tool.retry_command": ("shell command to re-run only this tool on failing files; populated only when the tool failed"),
     "tool.cached": "true = result restored from file-hash cache; rerun with --no-cache to force",
@@ -295,7 +325,7 @@ def _build_warning_record(entry: dict[str, typing.Any]) -> dict[str, typing.Any]
 def _build_message_dict(error: pyfltr.error_parser.ErrorLocation) -> dict[str, typing.Any]:
     """ErrorLocation を集約 ``messages[]`` 要素の dict に変換する。
 
-    フィールド順は ``line`` → ``col`` → ``rule`` → ``severity`` → ``fix`` → ``msg``。
+    フィールド順は ``line`` → ``col`` → ``rule`` → ``severity`` → ``fix`` → ``msg`` → ``hint``。
     ``rule_url`` は含めず、tool レコードの ``hint-urls`` へ集約する。
     None のフィールドは出力しない（``msg`` は常に出力）。
     """
@@ -309,6 +339,8 @@ def _build_message_dict(error: pyfltr.error_parser.ErrorLocation) -> dict[str, t
     if error.fix is not None:
         record["fix"] = error.fix
     record["msg"] = error.message
+    if error.hint is not None:
+        record["hint"] = error.hint
     return record
 
 
@@ -412,8 +444,14 @@ def _build_summary_record(
     exit_code: int,
     run_id: str | None = None,
     launcher_prefix: list[str] | None = None,
+    fully_excluded_files: list[str] | None = None,
 ) -> dict[str, typing.Any]:
-    """ordered_results から集計して summary レコード dict を作る。"""
+    """ordered_results から集計して summary レコード dict を作る。
+
+    ``fully_excluded_files`` が非空のとき、直接指定されたが exclude パターン・.gitignore
+    によって全除外されたファイル一覧を ``fully_excluded_files`` キーに埋め込む。
+    exit コードは 0 のままだが、LLM／利用者が「警告ゼロ」と誤解しないよう明示する。
+    """
     counts = {"succeeded": 0, "formatted": 0, "failed": 0, "skipped": 0}
     total_diagnostics = 0
     for result in ordered_results:
@@ -431,6 +469,8 @@ def _build_summary_record(
     }
     if counts["failed"] > 0:
         record["guidance"] = _build_failure_guidance(run_id, launcher_prefix)
+    if fully_excluded_files:
+        record["fully_excluded_files"] = list(fully_excluded_files)
     return record
 
 

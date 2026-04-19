@@ -36,6 +36,23 @@ class ErrorLocation:
     """
     rule_url: str | None = None
     """ルールドキュメントの URL (None は未対応ツールまたは rule 未設定時)"""
+    hint: str | None = None
+    """診断メッセージに添える短い修正ヒント (None はヒント未登録のルール)。
+
+    JSON Lines 出力では ``messages[].hint`` として任意フィールドで出力され、
+    text 出力ではメッセージ行の直下にインデント付きで「ヒント: ...」として表示される。
+    """
+
+
+_TEXTLINT_RULE_HINTS: dict[str, str] = {
+    "ja-technical-writing/sentence-length": (
+        "textlintは句点（。）までを1文として判定する。"
+        "箇条書きを改行で分割するだけでは1文扱いになるため、句点で文を区切ると短くなることが多い"
+    ),
+    "ja-technical-writing/max-ten": ("読点（、）が多すぎる判定。1文を複数文に分けるか、接続詞・係り受けを見直す"),
+    "ja-technical-writing/max-kanji-continuous-len": ("同じ漢字が連続していないか確認する。助詞・ひらがな・読点で分割する"),
+}
+"""textlintの頻出ルール向けヒント辞書。利用者が踏みやすいルールに限定している。"""
 
 
 def parse_errors(command: str, output: str, error_pattern: str | None = None) -> list[ErrorLocation]:
@@ -453,6 +470,8 @@ def _parse_textlint_json(output: str) -> list[ErrorLocation]:
             rule_id = str(msg.get("ruleId") or "")
             # textlint は JSON 出力で autofix の有無を明示する。
             fix_value = "safe" if msg.get("fix") else "none"
+            rule = rule_id or None
+            hint = _TEXTLINT_RULE_HINTS.get(rule_id) if rule_id else None
             results.append(
                 ErrorLocation(
                     file=pyfltr.paths.to_cwd_relative(file_path),
@@ -460,9 +479,10 @@ def _parse_textlint_json(output: str) -> list[ErrorLocation]:
                     col=col,
                     command="textlint",
                     message=str(msg.get("message", "")).strip(),
-                    rule=rule_id or None,
+                    rule=rule,
                     severity=_normalize_severity(msg.get("severity")),
                     fix=fix_value,
+                    hint=hint,
                 )
             )
     return results

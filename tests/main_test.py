@@ -450,6 +450,49 @@ def test_precommit_guidance_skipped_when_no_formatted(monkeypatch, capsys):
     assert captured.err == ""
 
 
+def test_tool_name_as_subcommand_shows_guidance(capsys):
+    """ツール名をサブコマンドに渡すと実行例付きメッセージを stderr に出して exit 2。"""
+    with pytest.raises(SystemExit) as exc_info:
+        pyfltr.main.run(["textlint", "docs/"])
+    assert exc_info.value.code == 2
+    err = capsys.readouterr().err
+    assert "'textlint'" in err
+    assert "pyfltr run --commands=textlint docs/" in err
+    assert "pyfltr run-for-agent --commands=textlint docs/" in err
+
+
+def test_alias_name_as_subcommand_shows_guidance(capsys):
+    """`lint` などの静的エイリアスも同じくガイダンスを出す。"""
+    with pytest.raises(SystemExit) as exc_info:
+        pyfltr.main.run(["lint", "docs/"])
+    assert exc_info.value.code == 2
+    err = capsys.readouterr().err
+    assert "'lint'" in err
+    assert "--commands=lint" in err
+
+
+def test_argparse_error_prints_help_to_stderr(capsys):
+    """argparse エラー時に該当 parser の --help 相当が stderr に併記されること。"""
+    with pytest.raises(SystemExit) as exc_info:
+        pyfltr.main.run(["run", "--jobs", "abc"])
+    assert exc_info.value.code == 2
+    err = capsys.readouterr().err
+    # サブパーサー (pyfltr run) のヘルプが出る
+    assert "usage:" in err
+    assert "--jobs" in err
+    # エラー本文も併記される
+    assert "invalid int value" in err
+
+
+def test_invalid_subcommand_prints_main_help(capsys):
+    """不正なサブコマンド指定時はメイン parser の --help 相当が併記される。"""
+    with pytest.raises(SystemExit):
+        pyfltr.main.run(["invalid-subcommand"])
+    err = capsys.readouterr().err
+    assert "usage:" in err
+    assert "<subcommand>" in err
+
+
 def test_precommit_guidance_skipped_for_jsonl_and_sarif_stdout_only(monkeypatch, capsys):
     """構造化 stdout モード (jsonl/sarif) では stderr へ漏らさない。
 

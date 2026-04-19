@@ -46,6 +46,8 @@ plugins:
 
         `--no-fix`で`run`/`fast`/`run-for-agent`のfix段を抑止できる。`ci`は副作用回避のため元々fix段を持たない。
 
+        個別ツールだけを実行したい場合は`--commands=<tool>`オプションを使う（例:`pyfltr run --commands=textlint docs/`）。ツール名やエイリアス（`format` / `lint` / `test`）をサブコマンドとして直接渡すことはできず、誤入力時は実行例付きのエラーメッセージが表示される。失敗時に出力される`tool.retry_command`も同じ`--commands=<tool>`書式で生成される。
+
         ## 対応ツール
 
         対応カテゴリはPython系・Rust系（cargo系）・.NET系（dotnet系）・JS/TS系・ドキュメント系（markdownlint-cli2・textlint）・その他（ec・shellcheck・shfmt・typos・actionlint・pre-commit）。
@@ -72,9 +74,9 @@ plugins:
 
         - `header`: 先頭1行。実行環境情報（`version` / `run_id` / `python` / `platform` / `cwd` / `commands` / `files` / `schema_hints`）。`schema_hints` は各フィールドの意味を英語で補足する LLM 向けガイド
         - `warning`: pyfltr が検出した設定・実行時の警告（`source` で発生元を識別）
-        - `diagnostic`: `(tool, file)` 単位で1行に集約される診断。個別指摘は `messages[]` 配列（各要素は `line` / `col` / `rule` / `severity` / `fix` / `msg`）として格納される。`fix` は `"safe"` / `"unsafe"` / `"suggested"` / `"none"` の4値を取り、ツールが自動修正情報を返さない場合はフィールドごと省略
+        - `diagnostic`: `(tool, file)` 単位で1行に集約される診断。個別指摘は `messages[]` 配列（各要素は `line` / `col` / `rule` / `severity` / `fix` / `msg` / `hint`）として格納される。`fix` は `"safe"` / `"unsafe"` / `"suggested"` / `"none"` の4値を取り、ツールが自動修正情報を返さない場合はフィールドごと省略。`hint` は textlint の頻出ルールなど、pyfltr 側でヒントを事前登録したルールにのみ付与される
         - `tool`: ツールごとの実行結果サマリ（`status` / `elapsed` / `diagnostics` / `rc` / `retry_command` / `truncated` / `cached` / `cached_from` / `hint-urls`）。`hint-urls` は rule→ドキュメントURLの辞書
-        - `summary`: 最終1行の全体集計（`succeeded` / `formatted` / `failed` / `skipped` / `diagnostics` / `exit`）。`failed > 0` のとき英語の `guidance` 配列を付与し、再実行コマンドや `show-run` の案内を返す
+        - `summary`: 最終1行の全体集計（`succeeded` / `formatted` / `failed` / `skipped` / `diagnostics` / `exit`）。`failed > 0` のとき英語の `guidance` 配列を付与し、再実行コマンドや `show-run` の案内を返す。直接指定ファイルが `exclude` / `.gitignore` で全除外された場合は `fully_excluded_files` にパス一覧を付与する（非空時のみ）
 
         stdoutモード（`--output-file`未指定）の出力順は`header`→ツール完了順に`diagnostic`+`tool`→`warning`→`summary`。stdoutへJSONLのみを書き、進捗ログやTUIは無音化される。`--output-file`指定時はファイルへJSONLを書き、stdoutには従来どおりのテキスト出力を並行出力する（ローカル実行で進捗を追える）。
 

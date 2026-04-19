@@ -498,6 +498,50 @@ def test_parse_textlint_json() -> None:
     assert errors[0].rule == "ja-technical-writing/ja-no-mixed-period"
     assert errors[0].severity == "error"
     assert errors[0].fix == "safe"
+    # 登録外ルールなので hint は付与されない
+    assert errors[0].hint is None
+
+
+def test_parse_textlint_json_hint_for_sentence_length() -> None:
+    """textlint `sentence-length` 違反には修正ヒントが付与される。"""
+    output = json.dumps(
+        [
+            {
+                "filePath": "docs/index.md",
+                "messages": [
+                    {
+                        "line": 1,
+                        "column": 1,
+                        "message": "Line is too long",
+                        "ruleId": "ja-technical-writing/sentence-length",
+                        "severity": 2,
+                    },
+                ],
+            }
+        ]
+    )
+    errors = pyfltr.error_parser.parse_errors("textlint", output)
+    assert len(errors) == 1
+    assert errors[0].hint is not None
+    assert "句点" in errors[0].hint
+
+
+def test_parse_textlint_json_hint_for_known_rules() -> None:
+    """textlint `max-ten` / `max-kanji-continuous-len` にもヒントが付く。"""
+    for rule_id in (
+        "ja-technical-writing/max-ten",
+        "ja-technical-writing/max-kanji-continuous-len",
+    ):
+        output = json.dumps(
+            [
+                {
+                    "filePath": "a.md",
+                    "messages": [{"line": 1, "column": 1, "message": "x", "ruleId": rule_id, "severity": 2}],
+                }
+            ]
+        )
+        errors = pyfltr.error_parser.parse_errors("textlint", output)
+        assert errors[0].hint is not None, f"{rule_id} にヒントが付与されていない"
 
 
 def test_parse_typos_jsonl() -> None:

@@ -16,6 +16,7 @@ import typing
 import pyfltr.cli
 import pyfltr.command
 import pyfltr.config
+import pyfltr.warnings_
 
 
 @dataclasses.dataclass
@@ -225,6 +226,7 @@ class JSONLFormatter:
             warnings=warnings,
             run_id=ctx.run_id,
             launcher_prefix=ctx.launcher_prefix,
+            fully_excluded_files=pyfltr.warnings_.excluded_direct_files(),
         )
         # 構造化出力の書き出しと並行して、常に text 整形を実行する。
         pyfltr.cli.render_results(

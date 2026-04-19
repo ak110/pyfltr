@@ -66,3 +66,17 @@ def test_emit_warning_without_hint_omitted() -> None:
     entries = pyfltr.warnings_.collected_warnings()
     assert entries == [{"source": "config", "message": "foo"}]
     assert "hint" not in entries[0]
+
+
+def test_excluded_direct_files_accumulates() -> None:
+    """add_excluded_direct_file で順序通りに蓄積される。"""
+    pyfltr.warnings_.add_excluded_direct_file("docs/a.md")
+    pyfltr.warnings_.add_excluded_direct_file("src/b.py")
+    assert pyfltr.warnings_.excluded_direct_files() == ["docs/a.md", "src/b.py"]
+
+
+def test_clear_also_resets_excluded_direct_files() -> None:
+    """clear は直接指定除外ファイル蓄積もリセットする。"""
+    pyfltr.warnings_.add_excluded_direct_file("a.md")
+    pyfltr.warnings_.clear()
+    assert pyfltr.warnings_.excluded_direct_files() == []

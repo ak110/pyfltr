@@ -17,6 +17,7 @@ import pyfltr.config
 import pyfltr.error_parser
 import pyfltr.executor
 import pyfltr.stage_runner
+import pyfltr.warnings_
 
 if typing.TYPE_CHECKING:
     # only_failed は ``pyfltr.cli.text_logger`` を遅延参照で呼ぶため、モジュール間の
@@ -302,6 +303,8 @@ def write_log(result: pyfltr.command.CommandResult, *, use_github_annotations: b
                     text_logger.info(pyfltr.error_parser.format_error_github(error))
                 else:
                     text_logger.info(pyfltr.error_parser.format_error(error))
+                    if error.hint is not None:
+                        text_logger.info(f"    ヒント: {error.hint}")
         elif result.alerted:
             text_logger.info(result.output)
         else:
@@ -359,7 +362,10 @@ def render_results(
     # 3. warnings (summary の直前。先頭だと見落とされやすいため)
     _write_warnings_section(warnings)
 
-    # 4. summary (末尾に出力することで tail -N で必ず見えるようにする)
+    # 4. fully excluded files (summary 直前。警告と混ざらないよう独立ブロックで出す)
+    _write_fully_excluded_files_section(pyfltr.warnings_.excluded_direct_files())
+
+    # 5. summary (末尾に出力することで tail -N で必ず見えるようにする)
     _write_summary(ordered)
 
 
@@ -371,6 +377,20 @@ def _write_warnings_section(warnings: list[dict[str, typing.Any]]) -> None:
         text_logger.info(f"{'-' * 10} warnings {'-' * (72 - 10 - 10)}")
         for entry in warnings:
             text_logger.info(f"    [{entry['source']}] {entry['message']}")
+
+
+def _write_fully_excluded_files_section(files: list[str]) -> None:
+    """直接指定されたが除外設定で全除外されたファイルをまとめて表示する。
+
+    警告としては個別の warning 行で既に通知しているが、総覧で見落とされやすいため
+    summary 直前に専用ブロックを置く。exit コードには影響しない。
+    """
+    if not files:
+        return
+    with lock:
+        text_logger.info(f"{'-' * 10} fully-excluded-files {'-' * (72 - 10 - 22)}")
+        for path in files:
+            text_logger.info(f"    {path}")
 
 
 def _write_summary(ordered_results: list[pyfltr.command.CommandResult]) -> None:

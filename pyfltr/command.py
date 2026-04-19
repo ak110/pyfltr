@@ -2173,6 +2173,7 @@ def expand_all_files(targets: list[pathlib.Path], config: pyfltr.config.Config) 
                         source="file-resolver",
                         message=f"指定されたファイルが除外設定により無視されました: {target}",
                     )
+                    pyfltr.warnings_.add_excluded_direct_file(str(target))
                 return
             if target.is_dir():
                 for child in target.iterdir():
@@ -2201,12 +2202,14 @@ def expand_all_files(targets: list[pathlib.Path], config: pyfltr.config.Config) 
         before_gitignore = set(expanded)
         expanded = _filter_by_gitignore(expanded)
         # 直接指定されたファイルがgitignoreで除外された場合に警告
+        after_set = set(expanded)
         for target in directly_specified:
-            if target in before_gitignore and target not in set(expanded):
+            if target in before_gitignore and target not in after_set:
                 pyfltr.warnings_.emit_warning(
                     source="file-resolver",
                     message=f"指定されたファイルが .gitignore により無視されました: {target}",
                 )
+                pyfltr.warnings_.add_excluded_direct_file(str(target))
 
     return expanded
 

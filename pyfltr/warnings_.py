@@ -20,6 +20,7 @@ class WarningCollector:
 
     def __init__(self) -> None:
         self._warnings: list[dict[str, typing.Any]] = []
+        self._excluded_direct_files: list[str] = []
 
     def emit(
         self,
@@ -54,9 +55,23 @@ class WarningCollector:
         """蓄積された警告の浅いコピーを返す。"""
         return list(self._warnings)
 
+    def add_excluded_direct_file(self, path: str) -> None:
+        """直接指定されたが exclude/.gitignore で全除外されたファイルを蓄積する。
+
+        summary に ``fully_excluded_files`` として明示することで、
+        「警告 0 件 + exit 0」を「問題なし」と誤解しないようにする。
+        警告ログ出力は呼び出し側で ``emit()`` が既に担うため、本メソッドでは蓄積のみ行う。
+        """
+        self._excluded_direct_files.append(path)
+
+    def excluded_direct_files(self) -> list[str]:
+        """蓄積された直接指定除外ファイル一覧の浅いコピーを返す。"""
+        return list(self._excluded_direct_files)
+
     def clear(self) -> None:
         """蓄積を初期化する。"""
         self._warnings.clear()
+        self._excluded_direct_files.clear()
 
 
 _DEFAULT_COLLECTOR = WarningCollector()
@@ -86,6 +101,16 @@ def collected_warnings() -> list[dict[str, typing.Any]]:
     ``_DEFAULT_COLLECTOR.collected()`` に委譲する。
     """
     return _DEFAULT_COLLECTOR.collected()
+
+
+def add_excluded_direct_file(path: str) -> None:
+    """直接指定除外ファイルを蓄積する（ファサード）。"""
+    _DEFAULT_COLLECTOR.add_excluded_direct_file(path)
+
+
+def excluded_direct_files() -> list[str]:
+    """直接指定除外ファイル一覧を返す（ファサード）。"""
+    return _DEFAULT_COLLECTOR.excluded_direct_files()
 
 
 def clear() -> None:

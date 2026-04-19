@@ -379,6 +379,10 @@ consumer側は特定のツール順を仮定せず、`kind`フィールドで種
 - `fix`: 自動修正の可能性。値は`"safe"` / `"unsafe"` / `"suggested"` / `"none"`のいずれか。
   ツールが自動修正情報を返さない場合はフィールドごと省略
 - `msg`: エラーメッセージ本文（必須）
+- `hint`: ルール単位の短い修正ヒント。
+  pyfltr側でヒントを事前登録したルールに限って付与される。
+  対象はtextlintの頻出ルールなど
+ （`ja-technical-writing/sentence-length` / `max-ten` / `max-kanji-continuous-len`）
 
 ルールURLは`diagnostic`本体ではなく、対応する`tool`レコード末尾の`hint-urls`辞書（rule→URL）に集約される。
 対応ツールはruff / pylint / pyright / mypy / shellcheck / eslint / markdownlint。
@@ -414,6 +418,13 @@ smart truncationは次の設定キーで制御する（`pyproject.toml`）。
 
 `summary`レコードの`diagnostics`キーは全ツール合算の診断数で、個別の`tool`レコードの`diagnostics`と集計名を統一している。
 
+`summary`レコードの任意フィールド:
+
+- `fully_excluded_files`: コマンドラインで直接指定されたが、`exclude` / `extend-exclude`パターンまたは
+  `.gitignore`によって全除外されたファイルのパス一覧。非空のときのみ付与される。
+  exitコードは0のままだが、「警告0件＝問題なし」と誤解しないように明示する。
+  個別の発生は`warning`レコード（`source=file-resolver`）でも通知される
+
 `header.schema_hints`と`summary.guidance`はLLMエージェントへのメタ情報を提供する（どちらも英語）。
 
 - `header.schema_hints`: JSONLの各フィールドの意味を短い英文で補足する辞書。
@@ -447,6 +458,22 @@ LLMエージェントがpyfltrを活用する基本的な流れ:
 
     `--commands`で特定ツールに絞ることで出力量を抑えつつ、`diagnostic`行から修正対象のファイル・行番号・メッセージを取得する。
     詳細が必要な場合に限り`run`で再実行するなど、段階的に情報を掘り下げることも可能。
+
+## 個別ツールを絞り込んで実行したい場合 {#single-tool}
+
+特定のツール1件だけを実行したいときは`--commands=<tool>`オプションを使う。
+
+```shell
+pyfltr run --commands=textlint docs/
+pyfltr run-for-agent --commands=mypy src/
+```
+
+サブコマンドは`run`または`run-for-agent`を利用する。
+`pyfltr textlint docs/`のようにツール名をそのままサブコマンドへ書くことはできない
+（誤入力を検知した場合は実行例付きのエラーメッセージが表示される）。
+
+`run-for-agent`サブコマンドのJSONL出力に含まれる`tool.retry_command`も同じ`--commands=<tool>`書式で生成される。
+失敗ツールだけを再実行したい場合は、該当`tool`レコードの`retry_command`をそのまま貼り付けて実行できる。
 
 ## pre-commitとの統合
 
