@@ -33,11 +33,68 @@ if typing.TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_active_processes: list[subprocess.Popen] = []  # type: ignore[type-arg]
-# ``_active_processes`` への多スレッドアクセスを直列化する。
-# --fail-fast が別スレッドから Popen.terminate() を呼ぶ際に、実行中プロセスの
-# 追加・削除と衝突させないための明示ロック。
-_active_processes_lock = threading.Lock()
+
+class ProcessRegistry:
+    """実行中サブプロセスのスレッドセーフな登録簿。
+
+    グローバル変数による直接管理を本クラスに集約し、テストから差し替え可能な構造にする。
+    """
+
+    def __init__(self) -> None:
+        # サブプロセスのリストとロック。_active_processes / _active_processes_lock として
+        # モジュール外からも参照できるよう公開属性として定義する。
+        self.processes: list[subprocess.Popen[str]] = []
+        self.lock = threading.Lock()
+
+    def add(self, proc: "subprocess.Popen[str]") -> None:
+        """ロック下でプロセスをリストに追加する。"""
+        with self.lock:
+            self.processes.append(proc)
+
+    def remove(self, proc: "subprocess.Popen[str]") -> None:
+        """ロック下でプロセスをリストから削除する。存在しない場合は無視する。"""
+        with self.lock, contextlib.suppress(ValueError):
+            self.processes.remove(proc)
+
+    def snapshot(self) -> "list[subprocess.Popen[str]]":
+        """ロック下でリストのコピーを返す（terminate_all 用）。"""
+        with self.lock:
+            return list(self.processes)
+
+    def terminate_all(self, *, timeout: float) -> None:
+        """全プロセスとその子孫を停止する。
+
+        snapshot を取って各プロセスを ``_kill_process_tree`` で停止する。
+        """
+        for proc in self.snapshot():
+            with contextlib.suppress(OSError):
+                _kill_process_tree(proc, timeout=timeout)
+
+    def cleanup(self) -> None:
+        """Atexit 用クリーンアップ（タイムアウト 1 秒で全プロセスを停止）。"""
+        self.terminate_all(timeout=1.0)
+
+
+_DEFAULT_REGISTRY = ProcessRegistry()
+
+# 既存コードおよびテストコードとの互換性のため、ProcessRegistry 内部の
+# リストとロックをモジュール変数として公開する。
+# テストが直接 _active_processes.append() / remove() / _active_processes_lock を
+# 使う箇所があるため、同一オブジェクトへの参照として維持する。
+_active_processes = _DEFAULT_REGISTRY.processes
+_active_processes_lock = _DEFAULT_REGISTRY.lock
+
+
+def set_default_registry(registry: ProcessRegistry) -> None:
+    """デフォルトのプロセスレジストリを差し替える（テスト用経路）。
+
+    本 Phase では既存テストを書き換えないが、今後のテストが独自インスタンスを使いたい
+    場合のために用意する。
+    """
+    global _DEFAULT_REGISTRY, _active_processes, _active_processes_lock  # pylint: disable=global-statement
+    _DEFAULT_REGISTRY = registry
+    _active_processes = registry.processes
+    _active_processes_lock = registry.lock
 
 
 class InterruptedExecution(Exception):
@@ -343,16 +400,7 @@ def _kill_process_tree(proc: "subprocess.Popen[str]", *, timeout: float) -> None
             logger.warning("プロセスツリー停止後に残存するプロセスあり: pids=%s", remaining_pids)
 
 
-def _cleanup_processes() -> None:
-    """プロセス終了時に実行中の子プロセスを終了。"""
-    with _active_processes_lock:
-        procs = list(_active_processes)
-    for proc in procs:
-        with contextlib.suppress(OSError):
-            _kill_process_tree(proc, timeout=1.0)
-
-
-atexit.register(_cleanup_processes)
+atexit.register(_DEFAULT_REGISTRY.cleanup)
 
 
 def terminate_active_processes(*, timeout: float = 5.0) -> None:
@@ -363,11 +411,7 @@ def terminate_active_processes(*, timeout: float = 5.0) -> None:
     で停止するため、pytest-xdist のように Popen 子が更にサブプロセスを fork する
     ツールでも確実に停止する。
     """
-    with _active_processes_lock:
-        procs = list(_active_processes)
-    for proc in procs:
-        with contextlib.suppress(OSError):
-            _kill_process_tree(proc, timeout=timeout)
+    _DEFAULT_REGISTRY.terminate_all(timeout=timeout)
 
 
 @dataclasses.dataclass
@@ -618,8 +662,7 @@ def _terminate_and_drop(proc: "subprocess.Popen[str]") -> None:
         _kill_process_tree(proc, timeout=5.0)
     with contextlib.suppress(subprocess.TimeoutExpired, OSError):
         proc.wait(timeout=5.0)
-    with _active_processes_lock, contextlib.suppress(ValueError):
-        _active_processes.remove(proc)
+    _DEFAULT_REGISTRY.remove(proc)
 
 
 def _run_subprocess(
@@ -686,8 +729,7 @@ def _run_subprocess(
             errors="backslashreplace",
             **popen_extra,
         ) as proc:
-            with _active_processes_lock:
-                _active_processes.append(proc)
+            _DEFAULT_REGISTRY.add(proc)
             subprocess_started = False
             try:
                 if on_subprocess_start is not None:
@@ -718,8 +760,7 @@ def _run_subprocess(
             finally:
                 if subprocess_started and on_subprocess_end is not None:
                     on_subprocess_end()
-                with _active_processes_lock, contextlib.suppress(ValueError):
-                    _active_processes.remove(proc)
+                _DEFAULT_REGISTRY.remove(proc)
     except FileNotFoundError as e:
         message = f"実行ファイルが見つかりません: {commandline[0]} ({e})\n"
         if on_output is not None:
