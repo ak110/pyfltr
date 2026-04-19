@@ -7,6 +7,7 @@ duplicate-code (R0801) に掛かるため、ここに集約する。conftest.py 
 pre-commit の name-tests-test フックから除外されるため。
 """
 
+import argparse
 import pathlib
 
 import pytest
@@ -134,6 +135,57 @@ def make_error_location(
         command=command,
         message=message,
     )
+
+
+def make_formatted_result(command: str = "ruff-format") -> pyfltr.command.CommandResult:
+    """``status == "formatted"`` になる最小の CommandResult を生成する。
+
+    ``main_test`` など複数のテストファイルで同様の構築が必要なため conftest.py に集約する。
+    """
+    return pyfltr.command.CommandResult(
+        command, "formatter", [command], returncode=1, has_error=False, files=1, output="", elapsed=0.01
+    )
+
+
+def make_succeeded_result(command: str = "ruff-check") -> pyfltr.command.CommandResult:
+    """``status == "succeeded"`` になる最小の CommandResult を生成する。
+
+    ``main_test`` など複数のテストファイルで同様の構築が必要なため conftest.py に集約する。
+    """
+    return pyfltr.command.CommandResult(
+        command, "linter", [command], returncode=0, has_error=False, files=1, output="", elapsed=0.01
+    )
+
+
+def make_archive_store(tmp_path: pathlib.Path) -> pyfltr.archive.ArchiveStore:
+    """テスト用の ArchiveStore を生成する。
+
+    ``archive_test`` などで ``tmp_path`` 配下に隔離した store を作るための共通ファクトリー。
+    """
+    return pyfltr.archive.ArchiveStore(cache_root=tmp_path)
+
+
+def make_args(*, no_exclude: bool = False) -> argparse.Namespace:
+    """``execute_command`` に渡す argparse.Namespace を生成する。
+
+    ``command_test`` 系のテストで ``_make_args()`` として重複定義されていたものを集約した。
+    """
+    return argparse.Namespace(shuffle=False, verbose=False, no_exclude=no_exclude)
+
+
+@pytest.fixture
+def _isolated_cache(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> pathlib.Path:
+    """全テストで ``PYFLTR_CACHE_DIR`` を ``tmp_path`` に固定する。
+
+    ``runs_test`` / ``mcp_test`` で autouse=True の同名 fixture として重複定義されていたものを集約した。
+    各テストファイルで ``@pytest.fixture(autouse=True)`` として再エクスポートするか、
+    または conftest から直接参照することで利用できる。
+    """
+    monkeypatch.setenv("PYFLTR_CACHE_DIR", str(tmp_path))
+    return tmp_path
 
 
 def seed_archive_run(

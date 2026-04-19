@@ -9,13 +9,9 @@ import pytest
 import pyfltr.archive
 import pyfltr.command
 import pyfltr.error_parser
+from tests.conftest import make_archive_store as _make_store
 from tests.conftest import make_command_result as _make_result
 from tests.conftest import make_error_location as _make_error
-
-
-def _make_store(tmp_path: pathlib.Path) -> pyfltr.archive.ArchiveStore:
-    """テスト用の ArchiveStore を生成する。"""
-    return pyfltr.archive.ArchiveStore(cache_root=tmp_path)
 
 
 def test_start_run_creates_directory_and_meta(tmp_path: pathlib.Path) -> None:

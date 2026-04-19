@@ -1,8 +1,11 @@
-"""command.py のテスト。"""
+"""command.py のコアテスト。
 
-# pylint: disable=protected-access,too-many-lines
+dispatcher・共通処理・環境変数・コマンドライン解決・``_run_subprocess``・
+キャッシュ・only_failed・プロセス管理を検証する。
+"""
 
-import argparse
+# pylint: disable=protected-access,too-many-lines,duplicate-code
+
 import contextlib
 import logging
 import os
@@ -21,762 +24,7 @@ import pyfltr.cache
 import pyfltr.command
 import pyfltr.config
 import pyfltr.only_failed
-import pyfltr.paths
-import pyfltr.warnings_
 from tests import conftest as _testconf
-
-
-def _make_args(*, no_exclude: bool = False) -> argparse.Namespace:
-    """execute_command に渡す argparse.Namespace を作成。"""
-    return argparse.Namespace(shuffle=False, verbose=False, no_exclude=no_exclude)
-
-
-def _make_ctx(
-    config: pyfltr.config.Config,
-    all_files: list[pathlib.Path],
-    *,
-    fix_stage: bool = False,
-    cache_store: pyfltr.cache.CacheStore | None = None,
-    cache_run_id: str | None = None,
-    only_failed_targets: pyfltr.only_failed.ToolTargets | None = None,
-) -> pyfltr.command.ExecutionContext:
-    """execute_command に渡す ExecutionContext を作成。"""
-    return _testconf.make_execution_context(
-        config,
-        all_files,
-        fix_stage=fix_stage,
-        cache_store=cache_store,
-        cache_run_id=cache_run_id,
-        only_failed_targets=only_failed_targets,
-    )
-
-
-def test_ruff_format_two_step_runs_check_and_format(mocker, tmp_path: pathlib.Path) -> None:
-    """ruff-format-by-check=true のとき ruff check と ruff format の両方が実行される。"""
-    target = tmp_path / "sample.py"
-    target.write_text("x = 1\n")
-
-    proc = subprocess.CompletedProcess(["ruff"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
-
-    config = pyfltr.config.create_default_config()
-    config.values["ruff-format"] = True
-    result = pyfltr.command.execute_command("ruff-format", _make_args(), _make_ctx(config, [target]))
-
-    # subprocess は 2 回呼ばれる (check ステップ + format ステップ)
-    assert mock_run.call_count == 2
-    step1_cmdline = mock_run.call_args_list[0][0][0]
-    step2_cmdline = mock_run.call_args_list[1][0][0]
-    assert "check" in step1_cmdline
-    assert "--fix" in step1_cmdline
-    assert "--unsafe-fixes" in step1_cmdline
-    assert "format" in step2_cmdline
-    assert "--exit-non-zero-on-format" in step2_cmdline
-    # status はどちらも exit 0 なので succeeded
-    assert result.status == "succeeded"
-
-
-def test_ruff_format_by_check_false_skips_check_step(mocker, tmp_path: pathlib.Path) -> None:
-    """ruff-format-by-check=false のとき ruff format のみが実行される。"""
-    target = tmp_path / "sample.py"
-    target.write_text("x = 1\n")
-
-    proc = subprocess.CompletedProcess(["ruff"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
-
-    config = pyfltr.config.create_default_config()
-    config.values["ruff-format"] = True
-    config.values["ruff-format-by-check"] = False
-    result = pyfltr.command.execute_command("ruff-format", _make_args(), _make_ctx(config, [target]))
-
-    # subprocess は 1 回のみ (format ステップのみ)
-    assert mock_run.call_count == 1
-    cmdline = mock_run.call_args_list[0][0][0]
-    assert "format" in cmdline
-    assert "check" not in cmdline
-    assert result.status == "succeeded"
-
-
-def test_ruff_format_step1_lint_violation_ignored(mocker, tmp_path: pathlib.Path) -> None:
-    """ステップ1の lint violation (exit 1) は失敗扱いしない。"""
-    target = tmp_path / "sample.py"
-    target.write_text("x = 1\n")
-
-    def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # noqa
-        if "check" in cmdline:
-            return subprocess.CompletedProcess(cmdline, returncode=1, stdout="lint violation")
-        return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
-
-    mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
-
-    config = pyfltr.config.create_default_config()
-    config.values["ruff-format"] = True
-    result = pyfltr.command.execute_command("ruff-format", _make_args(), _make_ctx(config, [target]))
-
-    # ステップ1の exit 1 は無視され、ステップ2の exit 0 が反映されて succeeded
-    assert result.status == "succeeded"
-    assert result.has_error is False
-
-
-def test_ruff_format_step1_internal_error_fails(mocker, tmp_path: pathlib.Path) -> None:
-    """ステップ1の exit 2 (設定ミス等) は failed 扱い。"""
-    target = tmp_path / "sample.py"
-    target.write_text("x = 1\n")
-
-    def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # noqa
-        if "check" in cmdline:
-            return subprocess.CompletedProcess(cmdline, returncode=2, stdout="usage error")
-        return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
-
-    mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
-
-    config = pyfltr.config.create_default_config()
-    config.values["ruff-format"] = True
-    result = pyfltr.command.execute_command("ruff-format", _make_args(), _make_ctx(config, [target]))
-
-    assert result.status == "failed"
-    assert result.has_error is True
-
-
-def test_ruff_format_step2_internal_error_fails(mocker, tmp_path: pathlib.Path) -> None:
-    """ステップ2の exit 2 も failed 扱い。"""
-    target = tmp_path / "sample.py"
-    target.write_text("x = 1\n")
-
-    def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # noqa
-        if "check" in cmdline:
-            return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
-        return subprocess.CompletedProcess(cmdline, returncode=2, stdout="format error")
-
-    mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
-
-    config = pyfltr.config.create_default_config()
-    config.values["ruff-format"] = True
-    result = pyfltr.command.execute_command("ruff-format", _make_args(), _make_ctx(config, [target]))
-
-    assert result.status == "failed"
-    assert result.has_error is True
-
-
-def test_ruff_format_step1_mtime_change_marks_formatted(mocker, tmp_path: pathlib.Path) -> None:
-    """ステップ1でファイルが書き換わった場合、formatted 扱いになる。"""
-    target = tmp_path / "sample.py"
-    target.write_text("x = 1\n")
-    # ファイルシステムの mtime 分解能の影響で同一ナノ秒に収まるケースを避けるため、
-    # 事前に古めの mtime を設定しておく (テストの決定性担保)。
-    os.utime(target, (1000000000, 1000000000))
-
-    def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # noqa
-        if "check" in cmdline:
-            # ruff check が修正を適用したことをシミュレート: 明示的に新しい mtime を設定。
-            target.write_text("x = 2\n")
-            os.utime(target, (2000000000, 2000000000))
-            return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
-        return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
-
-    mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
-
-    config = pyfltr.config.create_default_config()
-    config.values["ruff-format"] = True
-    result = pyfltr.command.execute_command("ruff-format", _make_args(), _make_ctx(config, [target]))
-
-    # mtime が変化したので formatted
-    assert result.status == "formatted"
-    assert result.has_error is False
-
-
-def test_fix_mode_appends_fix_args_for_linter(mocker, tmp_path: pathlib.Path) -> None:
-    """fix モード時、linter のコマンドラインに fix-args が追加される。"""
-    target = tmp_path / "sample.md"
-    target.write_text("# title\n")
-
-    proc = subprocess.CompletedProcess(["ruff"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
-
-    config = pyfltr.config.create_default_config()
-    config.values["markdownlint"] = True
-    result = pyfltr.command.execute_command("markdownlint", _make_args(), _make_ctx(config, [target], fix_stage=True))
-
-    assert mock_run.call_count == 1
-    cmdline = mock_run.call_args_list[0][0][0]
-    # 通常 args ("markdownlint-cli2") の後に fix-args ("--fix") が続く
-    assert "markdownlint-cli2" in cmdline
-    assert "--fix" in cmdline
-    assert cmdline.index("markdownlint-cli2") < cmdline.index("--fix")
-    # 変更なし + rc=0 なので succeeded
-    assert result.status == "succeeded"
-
-
-def test_fix_mode_preserves_custom_args(mocker, tmp_path: pathlib.Path) -> None:
-    """プロジェクトが上書きした {command}-args が fix モードでも保持される (置換されない)。
-
-    markdownlint は単発 fix 経路を通るため、通常 args の後に fix-args が append される。
-    """
-    target = tmp_path / "sample.md"
-    target.write_text("# title\n")
-
-    proc = subprocess.CompletedProcess(["markdownlint-cli2"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
-
-    config = pyfltr.config.create_default_config()
-    config.values["markdownlint"] = True
-    config.values["markdownlint-args"] = ["--config", "custom.yaml"]
-    pyfltr.command.execute_command("markdownlint", _make_args(), _make_ctx(config, [target], fix_stage=True))
-
-    cmdline = mock_run.call_args_list[0][0][0]
-    # 通常 args が残っている
-    assert "--config" in cmdline
-    assert "custom.yaml" in cmdline
-    # fix-args も追加されている
-    assert "--fix" in cmdline
-    # 順序: 通常 args は --fix より前
-    assert cmdline.index("custom.yaml") < cmdline.index("--fix")
-
-
-def test_textlint_lint_mode_adds_lint_args(mocker, tmp_path: pathlib.Path) -> None:
-    """非 fix モードで textlint-lint-args (既定は --format compact) が commandline に追加される。"""
-    target = tmp_path / "sample.md"
-    target.write_text("# title\n")
-
-    proc = subprocess.CompletedProcess(["textlint"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
-
-    config = pyfltr.config.create_default_config()
-    config.values["textlint"] = True
-    pyfltr.command.execute_command("textlint", _make_args(), _make_ctx(config, [target]))
-
-    assert mock_run.call_count == 1
-    cmdline = mock_run.call_args_list[0][0][0]
-    assert "--format" in cmdline
-    # textlint-json=True（既定）により、lint-args の compact が json に置換される
-    assert "json" in cmdline
-    fmt_idx = cmdline.index("--format")
-    assert cmdline[fmt_idx + 1] == "json"
-
-
-def test_textlint_fix_mode_two_step_execution(mocker, tmp_path: pathlib.Path) -> None:
-    """fix モードで textlint は 2 段階実行される (step1: fix → step2: lint check)。"""
-    target = tmp_path / "sample.md"
-    target.write_text("# title\n")
-
-    proc = subprocess.CompletedProcess(["textlint"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
-
-    config = pyfltr.config.create_default_config()
-    config.values["textlint"] = True
-    pyfltr.command.execute_command("textlint", _make_args(), _make_ctx(config, [target], fix_stage=True))
-
-    assert mock_run.call_count == 2
-    step1_cmdline = mock_run.call_args_list[0][0][0]
-    step2_cmdline = mock_run.call_args_list[1][0][0]
-
-    # step1: fix-args (--fix) あり、--format なし (fixer-formatter は compact をサポートしないため)
-    assert "--fix" in step1_cmdline
-    assert "--format" not in step1_cmdline
-    # step2: 構造化出力注入により --format json あり、--fix なし
-    assert "--fix" not in step2_cmdline
-    assert "--format" in step2_cmdline
-    assert "json" in step2_cmdline
-
-
-def test_textlint_fix_mode_strips_user_format_from_step1(mocker, tmp_path: pathlib.Path) -> None:
-    """ユーザーが textlint-args に --format を設定していても step1 では除去される (下位互換)。"""
-    target = tmp_path / "sample.md"
-    target.write_text("# title\n")
-
-    proc = subprocess.CompletedProcess(["textlint"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
-
-    config = pyfltr.config.create_default_config()
-    config.values["textlint"] = True
-    # 旧 docs で推奨されていた設定: textlint-args に --format compact を含む
-    config.values["textlint-args"] = ["--format", "compact"]
-    pyfltr.command.execute_command("textlint", _make_args(), _make_ctx(config, [target], fix_stage=True))
-
-    assert mock_run.call_count == 2
-    step1_cmdline = mock_run.call_args_list[0][0][0]
-    # step1: --format / compact が物理的に除去されている (fixer-formatter 互換性のため)
-    assert "--format" not in step1_cmdline
-    assert "compact" not in step1_cmdline
-    assert "--fix" in step1_cmdline
-
-
-def test_textlint_fix_mode_preserves_non_format_user_args(mocker, tmp_path: pathlib.Path) -> None:
-    """ユーザーが textlint-args に追加した --format 以外のオプションは両ステップで保持される。"""
-    target = tmp_path / "sample.md"
-    target.write_text("# title\n")
-
-    proc = subprocess.CompletedProcess(["textlint"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
-
-    config = pyfltr.config.create_default_config()
-    config.values["textlint"] = True
-    config.values["textlint-args"] = ["--quiet"]
-    pyfltr.command.execute_command("textlint", _make_args(), _make_ctx(config, [target], fix_stage=True))
-
-    step1_cmdline = mock_run.call_args_list[0][0][0]
-    step2_cmdline = mock_run.call_args_list[1][0][0]
-    assert "--quiet" in step1_cmdline
-    assert "--quiet" in step2_cmdline
-
-
-def test_textlint_fix_mode_touch_without_content_change_marks_succeeded(mocker, tmp_path: pathlib.Path) -> None:
-    """textlint が内容を変えずにファイルを書き戻した場合は succeeded 扱いになる。
-
-    textlint --fix は残存違反がなくても対象ファイルを touch することがあり、
-    mtime ベースで検知すると偽陽性 (formatted) になってしまう。内容ハッシュで
-    比較することで、真の修正がない限り succeeded が維持されることを担保する。
-    """
-    target = tmp_path / "sample.md"
-    target.write_text("# title\n")
-    os.utime(target, (1000000000, 1000000000))
-
-    def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # noqa
-        if "--fix" in cmdline:
-            # step1: 内容は変えず mtime だけ更新 (textlint の touch 挙動を模擬)
-            os.utime(target, (2000000000, 2000000000))
-            return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
-        # step2: 残存違反なし
-        return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
-
-    mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
-
-    config = pyfltr.config.create_default_config()
-    config.values["textlint"] = True
-    result = pyfltr.command.execute_command("textlint", _make_args(), _make_ctx(config, [target], fix_stage=True))
-
-    assert result.status == "succeeded"
-    assert result.has_error is False
-
-
-def test_textlint_fix_mode_all_fixed_marks_formatted(mocker, tmp_path: pathlib.Path) -> None:
-    """fix モードで全件修正され残存違反なしなら formatted (内容ハッシュに変化あり)。"""
-    target = tmp_path / "sample.md"
-    target.write_text("# title\n")
-    os.utime(target, (1000000000, 1000000000))
-
-    call_count = [0]
-
-    def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # noqa
-        call_count[0] += 1
-        if call_count[0] == 1:
-            # step1: fix 適用 (mtime 更新)
-            target.write_text("# Title\n")
-            os.utime(target, (2000000000, 2000000000))
-            return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
-        # step2: 残存違反なし
-        return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
-
-    mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
-
-    config = pyfltr.config.create_default_config()
-    config.values["textlint"] = True
-    result = pyfltr.command.execute_command("textlint", _make_args(), _make_ctx(config, [target], fix_stage=True))
-
-    assert result.status == "formatted"
-    assert result.has_error is False
-
-
-def test_textlint_fix_mode_emits_warning_when_protected_identifier_corrupted(mocker, tmp_path: pathlib.Path) -> None:
-    """保護対象識別子 (.NET など) が fix で全角化された場合、warning が発行される。"""
-    target = tmp_path / "sample.md"
-    target.write_text("本文で.NET系の話題を扱う。\n")
-
-    def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # noqa
-        if "--fix" in cmdline:
-            # preset-jtf-style が「.」を「。」へ変換したことを模擬
-            target.write_text("本文で。NET系の話題を扱う。\n")
-            return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
-        return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
-
-    mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
-
-    config = pyfltr.config.create_default_config()
-    config.values["textlint"] = True
-    pyfltr.command.execute_command("textlint", _make_args(), _make_ctx(config, [target], fix_stage=True))
-
-    entries = [w for w in pyfltr.warnings_.collected_warnings() if w["source"] == "textlint-identifier-corruption"]
-    assert len(entries) == 1
-    assert ".NET" in entries[0]["message"]
-    # パスは cwd 相対化されて記録される（絶対パスのまま埋め込まれない）
-    relative = pyfltr.paths.to_cwd_relative(target)
-    assert f"file={relative}" in entries[0]["message"]
-    # hint として恒久対策が添えられる
-    assert "バックティック" in entries[0]["hint"]
-
-
-def test_textlint_fix_mode_no_warning_when_protected_identifiers_empty(mocker, tmp_path: pathlib.Path) -> None:
-    """textlint-protected-identifiers が空なら検知をスキップし warning は出ない。"""
-    target = tmp_path / "sample.md"
-    target.write_text("本文で.NET系の話題を扱う。\n")
-
-    def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # noqa
-        if "--fix" in cmdline:
-            target.write_text("本文で。NET系の話題を扱う。\n")
-            return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
-        return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
-
-    mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
-
-    config = pyfltr.config.create_default_config()
-    config.values["textlint"] = True
-    config.values["textlint-protected-identifiers"] = []
-    pyfltr.command.execute_command("textlint", _make_args(), _make_ctx(config, [target], fix_stage=True))
-
-    entries = [w for w in pyfltr.warnings_.collected_warnings() if w["source"] == "textlint-identifier-corruption"]
-    assert not entries
-
-
-def test_textlint_fix_mode_no_warning_when_identifier_intact(mocker, tmp_path: pathlib.Path) -> None:
-    """fix で他の部分は変わっても、保護対象識別子が維持されていれば warning は出ない。"""
-    target = tmp_path / "sample.md"
-    target.write_text("# title\n\n本文.NETと普通の文.\n")
-
-    def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # noqa
-        if "--fix" in cmdline:
-            # .NET は保持、末尾の . のみ全角化
-            target.write_text("# title\n\n本文.NETと普通の文。\n")
-            return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
-        return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
-
-    mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
-
-    config = pyfltr.config.create_default_config()
-    config.values["textlint"] = True
-    pyfltr.command.execute_command("textlint", _make_args(), _make_ctx(config, [target], fix_stage=True))
-
-    entries = [w for w in pyfltr.warnings_.collected_warnings() if w["source"] == "textlint-identifier-corruption"]
-    assert not entries
-
-
-def test_textlint_fix_mode_residual_violations_mark_failed(mocker, tmp_path: pathlib.Path) -> None:
-    """fix モードで残存違反がある場合は failed、errors が compact 形式でパースされる。"""
-    target = tmp_path / "sample.md"
-    target.write_text("# title\n")
-
-    violation_file = str(target)
-    violation_output = f"{violation_file}: line 3, col 5, Error - No mixed period (ja-no-mixed-period)"
-
-    def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # noqa
-        if "--fix" in cmdline:
-            # step1: fix 適用したが違反が残る (textlint は rc=1 を返すことがある)
-            return subprocess.CompletedProcess(cmdline, returncode=1, stdout="")
-        # step2: compact 形式で違反出力
-        return subprocess.CompletedProcess(cmdline, returncode=1, stdout=violation_output)
-
-    mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
-
-    config = pyfltr.config.create_default_config()
-    config.values["textlint"] = True
-    result = pyfltr.command.execute_command("textlint", _make_args(), _make_ctx(config, [target], fix_stage=True))
-
-    assert result.status == "failed"
-    assert result.has_error is True
-    assert len(result.errors) == 1
-    assert result.errors[0].line == 3
-    assert result.errors[0].col == 5
-    assert "ja-no-mixed-period" in result.errors[0].message
-
-
-def test_textlint_fix_mode_step1_fatal_error_fails(mocker, tmp_path: pathlib.Path) -> None:
-    """step1 の rc >= 2 (致命的エラー) は step2 の結果にかかわらず failed 扱い。"""
-    target = tmp_path / "sample.md"
-    target.write_text("# title\n")
-
-    def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # noqa
-        if "--fix" in cmdline:
-            return subprocess.CompletedProcess(cmdline, returncode=2, stdout="fatal error")
-        return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
-
-    mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
-
-    config = pyfltr.config.create_default_config()
-    config.values["textlint"] = True
-    result = pyfltr.command.execute_command("textlint", _make_args(), _make_ctx(config, [target], fix_stage=True))
-
-    assert result.status == "failed"
-    assert result.has_error is True
-
-
-def test_fix_mode_mtime_change_marks_formatted(mocker, tmp_path: pathlib.Path) -> None:
-    """fix モードで linter がファイルを書き換えた場合、formatted 扱いになる。"""
-    target = tmp_path / "sample.md"
-    target.write_text("# title\n")
-    os.utime(target, (1000000000, 1000000000))
-
-    def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # noqa
-        # fix 適用をシミュレート
-        target.write_text("# Title\n")
-        os.utime(target, (2000000000, 2000000000))
-        return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
-
-    mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
-
-    config = pyfltr.config.create_default_config()
-    config.values["markdownlint"] = True
-    result = pyfltr.command.execute_command("markdownlint", _make_args(), _make_ctx(config, [target], fix_stage=True))
-
-    assert result.status == "formatted"
-    assert result.has_error is False
-
-
-def test_fix_mode_non_zero_rc_is_failed(mocker, tmp_path: pathlib.Path) -> None:
-    """fix モードで rc != 0 なら mtime に関係なく failed。"""
-    # ruff-check の targets は *.py
-    target = tmp_path / "sample.py"
-    target.write_text("x = 1\n")
-    os.utime(target, (1000000000, 1000000000))
-
-    def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # noqa
-        # 一部修正したが未修正の違反が残って rc=1 のケースをシミュレート
-        target.write_text("# Title\n")
-        os.utime(target, (2000000000, 2000000000))
-        return subprocess.CompletedProcess(cmdline, returncode=1, stdout="violation remains")
-
-    mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
-
-    config = pyfltr.config.create_default_config()
-    config.values["ruff-check"] = True
-    result = pyfltr.command.execute_command("ruff-check", _make_args(), _make_ctx(config, [target], fix_stage=True))
-
-    # rc != 0 なので mtime 変化があっても failed
-    assert result.status == "failed"
-    assert result.has_error is True
-
-
-def test_fix_mode_formatter_is_not_filtered_in(tmp_path: pathlib.Path) -> None:
-    """filter_fix_commands は formatter を fix モードの対象から除外する。"""
-    del tmp_path  # noqa  # fixture互換のためだけに受け取る
-    config = pyfltr.config.create_default_config()
-    config.values["ruff-format"] = True
-    # ruff-format は formatter のため fix モードの対象外となる (fix-args 未定義)
-    result = pyfltr.config.filter_fix_commands(["ruff-format"], config)
-    assert not result
-
-
-def test_prettier_two_step_check_clean(mocker, tmp_path: pathlib.Path) -> None:
-    """Step1 (prettier --check) rc=0 → succeeded。Step2 (--write) は実行されない。"""
-    target = tmp_path / "sample.js"
-    target.write_text("x = 1;\n")
-
-    proc = subprocess.CompletedProcess(["prettier"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
-
-    config = pyfltr.config.create_default_config()
-    config.values["prettier"] = True
-    result = pyfltr.command.execute_command("prettier", _make_args(), _make_ctx(config, [target]))
-
-    assert mock_run.call_count == 1
-    cmdline = mock_run.call_args_list[0][0][0]
-    assert "--check" in cmdline
-    assert "--write" not in cmdline
-    assert result.status == "succeeded"
-    assert result.has_error is False
-
-
-def test_prettier_two_step_check_needs_write(mocker, tmp_path: pathlib.Path) -> None:
-    """Step1 rc=1 → Step2 (--write) を実行。rc=0 なら formatted。"""
-    target = tmp_path / "sample.js"
-    target.write_text("x=1;\n")
-
-    def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # noqa
-        if "--check" in cmdline:
-            return subprocess.CompletedProcess(cmdline, returncode=1, stdout="[warn] sample.js")
-        # --write step
-        return subprocess.CompletedProcess(cmdline, returncode=0, stdout="sample.js")
-
-    mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
-
-    config = pyfltr.config.create_default_config()
-    config.values["prettier"] = True
-    result = pyfltr.command.execute_command("prettier", _make_args(), _make_ctx(config, [target]))
-
-    assert result.status == "formatted"
-    assert result.has_error is False
-
-
-def test_prettier_two_step_check_rc2_fails_without_write(mocker, tmp_path: pathlib.Path) -> None:
-    """Step1 rc>=2 (致命的エラー) → failed、Step2 は実行しない。"""
-    target = tmp_path / "sample.js"
-    target.write_text("x = 1;\n")
-
-    calls: list[list[str]] = []
-
-    def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # noqa
-        calls.append(cmdline)
-        return subprocess.CompletedProcess(cmdline, returncode=2, stdout="SyntaxError")
-
-    mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
-
-    config = pyfltr.config.create_default_config()
-    config.values["prettier"] = True
-    result = pyfltr.command.execute_command("prettier", _make_args(), _make_ctx(config, [target]))
-
-    assert result.status == "failed"
-    assert result.has_error is True
-    # Step2 は実行されない
-    assert len(calls) == 1
-    assert "--check" in calls[0]
-
-
-def test_prettier_two_step_step2_failure_marks_failed(mocker, tmp_path: pathlib.Path) -> None:
-    """Step1 rc=1 でも Step2 の rc>=2 なら failed。"""
-    target = tmp_path / "sample.js"
-    target.write_text("x=1;\n")
-
-    def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # noqa
-        if "--check" in cmdline:
-            return subprocess.CompletedProcess(cmdline, returncode=1, stdout="")
-        return subprocess.CompletedProcess(cmdline, returncode=2, stdout="write failed")
-
-    mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
-
-    config = pyfltr.config.create_default_config()
-    config.values["prettier"] = True
-    result = pyfltr.command.execute_command("prettier", _make_args(), _make_ctx(config, [target]))
-
-    assert result.status == "failed"
-    assert result.has_error is True
-
-
-def test_prettier_fix_mode_skips_check_step(mocker, tmp_path: pathlib.Path) -> None:
-    """`--fix` モードでは Step1 (--check) をスキップし直接 --write を実行する。"""
-    target = tmp_path / "sample.js"
-    target.write_text("x=1;\n")
-    os.utime(target, (1000000000, 1000000000))
-
-    def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # noqa
-        # --write 実行時にファイルを書き換えたことをシミュレート
-        target.write_text("x = 1;\n")
-        os.utime(target, (2000000000, 2000000000))
-        return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
-
-    mock_run = mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
-
-    config = pyfltr.config.create_default_config()
-    config.values["prettier"] = True
-    result = pyfltr.command.execute_command("prettier", _make_args(), _make_ctx(config, [target], fix_stage=True))
-
-    # 1 回だけ呼ばれる (Step1 スキップ)
-    assert mock_run.call_count == 1
-    cmdline = mock_run.call_args_list[0][0][0]
-    assert "--write" in cmdline
-    assert "--check" not in cmdline
-    # ハッシュ変化ありなので formatted
-    assert result.status == "formatted"
-
-
-def test_prettier_fix_mode_no_change_succeeds(mocker, tmp_path: pathlib.Path) -> None:
-    """`--fix` モードで --write が走ってもハッシュ変化が無ければ succeeded。"""
-    target = tmp_path / "sample.js"
-    target.write_text("x = 1;\n")
-
-    proc = subprocess.CompletedProcess(["prettier"], returncode=0, stdout="")
-    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
-
-    config = pyfltr.config.create_default_config()
-    config.values["prettier"] = True
-    result = pyfltr.command.execute_command("prettier", _make_args(), _make_ctx(config, [target], fix_stage=True))
-
-    assert result.status == "succeeded"
-
-
-def test_eslint_lint_mode_uses_json_format(mocker, tmp_path: pathlib.Path) -> None:
-    """eslint の通常実行で `--format json` (共通 args) が commandline に含まれる。"""
-    target = tmp_path / "sample.js"
-    target.write_text("var x = 1;\n")
-
-    proc = subprocess.CompletedProcess(["eslint"], returncode=0, stdout="[]")
-    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
-
-    config = pyfltr.config.create_default_config()
-    config.values["eslint"] = True
-    pyfltr.command.execute_command("eslint", _make_args(), _make_ctx(config, [target]))
-
-    assert mock_run.call_count == 1
-    cmdline = mock_run.call_args_list[0][0][0]
-    assert "--format" in cmdline
-    assert "json" in cmdline
-    fmt_idx = cmdline.index("--format")
-    assert cmdline[fmt_idx + 1] == "json"
-    # lint モードでは --fix は付かない
-    assert "--fix" not in cmdline
-
-
-def test_eslint_fix_mode_appends_fix_and_keeps_json(mocker, tmp_path: pathlib.Path) -> None:
-    """eslint の fix モードで `--fix` が付いても `--format json` は維持される。"""
-    target = tmp_path / "sample.js"
-    target.write_text("var x = 1;\n")
-
-    proc = subprocess.CompletedProcess(["eslint"], returncode=0, stdout="[]")
-    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
-
-    config = pyfltr.config.create_default_config()
-    config.values["eslint"] = True
-    pyfltr.command.execute_command("eslint", _make_args(), _make_ctx(config, [target], fix_stage=True))
-
-    assert mock_run.call_count == 1
-    cmdline = mock_run.call_args_list[0][0][0]
-    assert "--format" in cmdline
-    assert "json" in cmdline
-    assert "--fix" in cmdline
-
-
-def test_biome_lint_mode_uses_check_and_github_reporter(mocker, tmp_path: pathlib.Path) -> None:
-    """biome の通常実行で `check` サブコマンドと `--reporter=github` が含まれる。"""
-    target = tmp_path / "sample.ts"
-    target.write_text("const x = 1;\n")
-
-    proc = subprocess.CompletedProcess(["biome"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
-
-    config = pyfltr.config.create_default_config()
-    config.values["biome"] = True
-    pyfltr.command.execute_command("biome", _make_args(), _make_ctx(config, [target]))
-
-    assert mock_run.call_count == 1
-    cmdline = mock_run.call_args_list[0][0][0]
-    assert "check" in cmdline
-    assert "--reporter=github" in cmdline
-    assert "--write" not in cmdline
-
-
-def test_biome_fix_mode_appends_write_and_keeps_reporter(mocker, tmp_path: pathlib.Path) -> None:
-    """biome の fix モードで `--write` が付いても `--reporter=github` は維持される。"""
-    target = tmp_path / "sample.ts"
-    target.write_text("const x = 1;\n")
-
-    proc = subprocess.CompletedProcess(["biome"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
-
-    config = pyfltr.config.create_default_config()
-    config.values["biome"] = True
-    pyfltr.command.execute_command("biome", _make_args(), _make_ctx(config, [target], fix_stage=True))
-
-    assert mock_run.call_count == 1
-    cmdline = mock_run.call_args_list[0][0][0]
-    assert "check" in cmdline
-    assert "--reporter=github" in cmdline
-    assert "--write" in cmdline
-    # check は共通 args なので --write より前
-    assert cmdline.index("check") < cmdline.index("--write")
 
 
 def test_build_subprocess_env_sets_supply_chain_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1011,7 +259,9 @@ def test_execute_command_direct_missing_returns_failed_result(tmp_path: pathlib.
     original_cwd = pathlib.Path.cwd()
     try:
         os.chdir(tmp_path)
-        result = pyfltr.command.execute_command("textlint", _make_args(), _make_ctx(config, [target]))
+        result = pyfltr.command.execute_command(
+            "textlint", _testconf.make_args(), _testconf.make_execution_context(config, [target])
+        )
         assert result.status == "failed"
         assert result.has_error is True
         assert "node_modules" in result.output
@@ -1266,8 +516,7 @@ def test_auto_args_included_in_commandline(mocker, tmp_path: pathlib.Path) -> No
 
     config = pyfltr.config.create_default_config()
     config.values["pylint"] = True
-    args = _make_args()
-    result = pyfltr.command.execute_command("pylint", args, _make_ctx(config, [target]))
+    result = pyfltr.command.execute_command("pylint", _testconf.make_args(), _testconf.make_execution_context(config, [target]))
     assert "--load-plugins=pylint_pydantic" in result.commandline
 
 
@@ -1401,7 +650,7 @@ def test_pass_filenames_false_omits_targets(mocker, tmp_path: pathlib.Path) -> N
     # tscはデフォルトでpass-filenames=false
     assert config["tsc-pass-filenames"] is False
 
-    result = pyfltr.command.execute_command("tsc", _make_args(), _make_ctx(config, [target]))
+    result = pyfltr.command.execute_command("tsc", _testconf.make_args(), _testconf.make_execution_context(config, [target]))
 
     assert mock_run.call_count == 1
     cmdline = mock_run.call_args_list[0][0][0]
@@ -1420,7 +669,9 @@ def test_pass_filenames_true_includes_targets(mocker, tmp_path: pathlib.Path) ->
 
     config = pyfltr.config.create_default_config()
     config.values["ruff-check"] = True
-    result = pyfltr.command.execute_command("ruff-check", _make_args(), _make_ctx(config, [target]))
+    result = pyfltr.command.execute_command(
+        "ruff-check", _testconf.make_args(), _testconf.make_execution_context(config, [target])
+    )
 
     assert mock_run.call_count == 1
     cmdline = mock_run.call_args_list[0][0][0]
@@ -1444,158 +695,6 @@ def test_bin_tool_spec_structure() -> None:
 
     spec = pyfltr.command._BIN_TOOL_SPEC["shellcheck"]
     assert spec.bin_name == "shellcheck"
-
-
-# Rust / .NET 言語ツールの実行テスト。
-# pass-filenames=False により crate / solution 全体を対象とし、
-# ファイル引数がコマンドラインに渡らないことを検証する。
-
-
-def test_cargo_fmt_runs_without_file_args(mocker, tmp_path: pathlib.Path) -> None:
-    """cargo-fmt は pass-filenames=False のためファイル引数を渡さず、既定で書き込みモード。"""
-    target = tmp_path / "sample.rs"
-    target.write_text("fn main() {}\n")
-
-    proc = subprocess.CompletedProcess(["cargo"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
-
-    config = pyfltr.config.create_default_config()
-    config.values["cargo-fmt"] = True
-    pyfltr.command.execute_command("cargo-fmt", _make_args(), _make_ctx(config, [target]))
-
-    assert mock_run.call_count == 1
-    cmdline = mock_run.call_args_list[0][0][0]
-    assert cmdline == ["cargo", "fmt"]
-    assert str(target) not in cmdline
-
-
-def test_cargo_fmt_fix_mode_unchanged(mocker, tmp_path: pathlib.Path) -> None:
-    """cargo-fmt は formatter なので --fix 指定でもコマンドラインが変わらない。"""
-    target = tmp_path / "sample.rs"
-    target.write_text("fn main() {}\n")
-
-    proc = subprocess.CompletedProcess(["cargo"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
-
-    config = pyfltr.config.create_default_config()
-    config.values["cargo-fmt"] = True
-    pyfltr.command.execute_command("cargo-fmt", _make_args(), _make_ctx(config, [target], fix_stage=True))
-
-    cmdline = mock_run.call_args_list[0][0][0]
-    assert cmdline == ["cargo", "fmt"]
-
-
-def test_cargo_clippy_normal_mode_cmdline(mocker, tmp_path: pathlib.Path) -> None:
-    """cargo-clippy の非 fix モードは args + lint-args で組み立てられる。"""
-    target = tmp_path / "sample.rs"
-    target.write_text("fn main() {}\n")
-
-    proc = subprocess.CompletedProcess(["cargo"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
-
-    config = pyfltr.config.create_default_config()
-    config.values["cargo-clippy"] = True
-    pyfltr.command.execute_command("cargo-clippy", _make_args(), _make_ctx(config, [target]))
-
-    cmdline = mock_run.call_args_list[0][0][0]
-    assert cmdline == _testconf.CARGO_CLIPPY_LINT_CMDLINE
-    assert str(target) not in cmdline
-
-
-def test_cargo_clippy_fix_mode_cmdline(mocker, tmp_path: pathlib.Path) -> None:
-    """cargo-clippy の --fix モードは args + fix-args で組み立てられる。"""
-    target = tmp_path / "sample.rs"
-    target.write_text("fn main() {}\n")
-
-    proc = subprocess.CompletedProcess(["cargo"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
-
-    config = pyfltr.config.create_default_config()
-    config.values["cargo-clippy"] = True
-    pyfltr.command.execute_command("cargo-clippy", _make_args(), _make_ctx(config, [target], fix_stage=True))
-
-    cmdline = mock_run.call_args_list[0][0][0]
-    assert cmdline == _testconf.CARGO_CLIPPY_FIX_CMDLINE
-    assert str(target) not in cmdline
-
-
-def test_dotnet_format_runs_without_file_args(mocker, tmp_path: pathlib.Path) -> None:
-    """dotnet-format は pass-filenames=False で solution 全体を対象とする。"""
-    target = tmp_path / "Sample.cs"
-    target.write_text("class Sample {}\n")
-
-    proc = subprocess.CompletedProcess(["dotnet"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
-
-    config = pyfltr.config.create_default_config()
-    config.values["dotnet-format"] = True
-    pyfltr.command.execute_command("dotnet-format", _make_args(), _make_ctx(config, [target]))
-
-    cmdline = mock_run.call_args_list[0][0][0]
-    assert cmdline == ["dotnet", "format"]
-    assert str(target) not in cmdline
-
-
-def test_cargo_test_skipped_when_no_rs_files(mocker) -> None:
-    """.rs ファイルが対象に無いとき cargo-test はスキップされる (既存 pass-filenames=False 分岐)。"""
-    mock_run = mocker.patch("pyfltr.command._run_subprocess")
-
-    config = pyfltr.config.create_default_config()
-    config.values["cargo-test"] = True
-    result = pyfltr.command.execute_command("cargo-test", _make_args(), _make_ctx(config, []))
-
-    assert mock_run.call_count == 0
-    assert result.returncode is None
-    assert result.files == 0
-
-
-def test_tool_exclude_filters_files(mocker, tmp_path: pathlib.Path) -> None:
-    """{tool}-exclude に一致するファイルがツール実行から除外される。"""
-    kept = tmp_path / "main.py"
-    excluded_ = tmp_path / "gen_foo.py"
-    kept.write_text("x = 1\n")
-    excluded_.write_text("x = 2\n")
-
-    proc = subprocess.CompletedProcess(["ruff"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
-
-    config = pyfltr.config.create_default_config()
-    config.values["ruff-check"] = True
-    config.values["ruff-check-exclude"] = ["gen_*.py"]
-
-    result = pyfltr.command.execute_command("ruff-check", _make_args(), _make_ctx(config, [kept, excluded_]))
-
-    assert mock_run.call_count == 1
-    cmdline = mock_run.call_args_list[0][0][0]
-    assert str(kept) in cmdline
-    assert str(excluded_) not in cmdline
-    assert result.status == "succeeded"
-
-
-def test_tool_exclude_disabled_by_no_exclude(mocker, tmp_path: pathlib.Path) -> None:
-    """--no-exclude 指定時は {tool}-exclude が無効化される。"""
-    kept = tmp_path / "main.py"
-    would_be_excluded = tmp_path / "gen_foo.py"
-    kept.write_text("x = 1\n")
-    would_be_excluded.write_text("x = 2\n")
-
-    proc = subprocess.CompletedProcess(["ruff"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
-
-    config = pyfltr.config.create_default_config()
-    config.values["ruff-check"] = True
-    config.values["ruff-check-exclude"] = ["gen_*.py"]
-
-    result = pyfltr.command.execute_command(
-        "ruff-check", _make_args(no_exclude=True), _make_ctx(config, [kept, would_be_excluded])
-    )
-
-    assert mock_run.call_count == 1
-    cmdline = mock_run.call_args_list[0][0][0]
-    # --no-exclude なので両ファイルとも渡される
-    assert str(kept) in cmdline
-    assert str(would_be_excluded) in cmdline
-    assert result.status == "succeeded"
 
 
 def test_command_result_cached_defaults() -> None:
@@ -1631,8 +730,8 @@ def test_execute_command_cache_hit_skips_subprocess(mocker, tmp_path: pathlib.Pa
     mock_run.return_value = subprocess.CompletedProcess(["textlint"], returncode=0, stdout="ok")
     result1 = pyfltr.command.execute_command(
         "textlint",
-        _make_args(),
-        _make_ctx(config, [target], cache_store=store, cache_run_id="01ABCDEFGH"),
+        _testconf.make_args(),
+        _testconf.make_execution_context(config, [target], cache_store=store, cache_run_id="01ABCDEFGH"),
     )
     assert mock_run.call_count == 1
     assert result1.cached is False
@@ -1640,8 +739,8 @@ def test_execute_command_cache_hit_skips_subprocess(mocker, tmp_path: pathlib.Pa
     # 2 回目: キャッシュヒットで subprocess 実行されない
     result2 = pyfltr.command.execute_command(
         "textlint",
-        _make_args(),
-        _make_ctx(config, [target], cache_store=store, cache_run_id="01XYZ"),
+        _testconf.make_args(),
+        _testconf.make_execution_context(config, [target], cache_store=store, cache_run_id="01XYZ"),
     )
     assert mock_run.call_count == 1  # 増えていない
     assert result2.cached is True
@@ -1665,8 +764,8 @@ def test_execute_command_non_cacheable_skips_cache(mocker, tmp_path: pathlib.Pat
 
     pyfltr.command.execute_command(
         "mypy",
-        _make_args(),
-        _make_ctx(config, [target], cache_store=store, cache_run_id="01ABCDEFGH"),
+        _testconf.make_args(),
+        _testconf.make_execution_context(config, [target], cache_store=store, cache_run_id="01ABCDEFGH"),
     )
     # mypy は cacheable=False のため、キャッシュエントリは作られない
     assert not list(cache_root.rglob("*.json"))
@@ -1689,8 +788,10 @@ def test_execute_command_only_failed_targets_files_override(mocker, tmp_path: pa
 
     result = pyfltr.command.execute_command(
         "ruff-check",
-        _make_args(),
-        _make_ctx(config, [file_a, file_b], only_failed_targets=pyfltr.only_failed.ToolTargets.with_files([file_b])),
+        _testconf.make_args(),
+        _testconf.make_execution_context(
+            config, [file_a, file_b], only_failed_targets=pyfltr.only_failed.ToolTargets.with_files([file_b])
+        ),
     )
 
     assert mock_run.call_count == 1
@@ -1716,8 +817,10 @@ def test_execute_command_only_failed_targets_fallback_uses_all_files(mocker, tmp
 
     pyfltr.command.execute_command(
         "ruff-check",
-        _make_args(),
-        _make_ctx(config, [file_a], only_failed_targets=pyfltr.only_failed.ToolTargets.fallback_default()),
+        _testconf.make_args(),
+        _testconf.make_execution_context(
+            config, [file_a], only_failed_targets=pyfltr.only_failed.ToolTargets.fallback_default()
+        ),
     )
 
     assert mock_run.call_count == 1
@@ -1740,8 +843,8 @@ def test_execute_command_only_failed_targets_none_uses_default(mocker, tmp_path:
 
     pyfltr.command.execute_command(
         "ruff-check",
-        _make_args(),
-        _make_ctx(config, [file_a], only_failed_targets=None),
+        _testconf.make_args(),
+        _testconf.make_execution_context(config, [file_a], only_failed_targets=None),
     )
 
     assert mock_run.call_count == 1
