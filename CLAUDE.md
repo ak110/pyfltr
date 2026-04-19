@@ -4,6 +4,7 @@
 
 - `make update`: 依存更新 + pre-commit autoupdate + pinactアクション更新 + 全テスト実行
   - `make update-actions`: GitHub Actionsのハッシュピン更新のみ（mise経由でpinact実行）
+- リリース手順: [docs/development/development.md](docs/development/development.md) 参照
 - テストコードは`pyfltr/xxx_.py`に対して`tests/xxx_test.py`として配置する
 - コミット前の検証方法: `uv run pyfltr run-for-agent`
   - ドキュメントなどのみの変更の場合は省略可（pre-commitで実行されるため）
