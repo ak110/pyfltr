@@ -300,15 +300,32 @@ def _resolve_bin_commandline(
             raise FileNotFoundError("mise")
         tool_name = spec.mise_backend or spec.bin_name
         tool_spec = f"{tool_name}@{version}"
-        # バージョン指定込みでツールの利用可否を事前チェック
-        check = subprocess.run(
-            ["mise", "exec", tool_spec, "--", spec.bin_name, "--version"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if check.returncode != 0:
-            raise FileNotFoundError(f"mise exec {tool_spec} -- {spec.bin_name}")
+        check_args = ["mise", "exec", tool_spec, "--", spec.bin_name, "--version"]
+        trusted = False
+        while True:
+            # バージョン指定込みでツールの利用可否を事前チェック
+            check = subprocess.run(
+                check_args,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if check.returncode == 0:
+                break
+            stderr = check.stderr
+            # config未信頼が原因かつ自動trust有効なら1回だけ信頼してリトライ
+            if not trusted and config["mise-auto-trust"] and "not trusted" in stderr:
+                trust = subprocess.run(
+                    ["mise", "trust", "--yes", "--all"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if trust.returncode == 0:
+                    trusted = True
+                    continue
+                raise FileNotFoundError(f"mise trust --yes --all: {trust.stderr.strip()}")
+            raise FileNotFoundError(f"mise exec {tool_spec} -- {spec.bin_name}: {stderr.strip()}")
         return "mise", ["exec", tool_spec, "--", spec.bin_name]
 
     raise ValueError(f"bin-runnerの設定値が正しくありません: {runner=}")

@@ -245,4 +245,4 @@ Claude Codeなど末尾だけを読み取るツールでも実行結果を把握
 ---
 
 個別のツール設定（2段階実行、ファイルパターン、直接実行 / js-runner / bin-runnerのカテゴリ別設定、
-カスタムコマンド等）の詳細は[ツール別設定](configuration-tools.md)を参照。
+`mise-auto-trust`によるmise未信頼の自動対応、カスタムコマンド等）の詳細は[ツール別設定](configuration-tools.md)を参照。

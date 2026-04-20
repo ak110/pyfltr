@@ -349,6 +349,25 @@ GitHub ActionsでCIを実行する場合は[jdx/mise-action](https://github.com/
 
 miseを使わず、PATH上のバイナリを直接使う場合は`bin-runner = "direct"`を設定する。
 
+### mise-auto-trust
+
+`mise`モードでは、worktreeやdotfiles配下のディレクトリなど、`mise.toml`が未信頼扱いになっている場合に
+事前チェックが失敗することがある。
+既定では`mise-auto-trust = true`となっており、未信頼configを検出すると`mise trust --yes --all`を自動実行して
+信頼を確立してからリトライする。
+`--all`オプションはcwdおよびその親ディレクトリにある全configを対象とするため、
+プロジェクト外の親ディレクトリに`mise.toml`が存在する場合もまとめて信頼される点に注意する。
+
+`mise-auto-trust`が不要な場合は無効化できる。
+
+```toml
+[tool.pyfltr]
+mise-auto-trust = false
+```
+
+無効化した場合、未信頼configが原因の失敗はmise由来のエラーメッセージとともに`failed`扱いとなる。
+手動で`mise trust`を実行して対処する。
+
 ### バージョン指定
 
 `{command}-version`でbin-runner対応ツールのバージョンを指定できる。既定は`"latest"`。

@@ -110,6 +110,11 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # - mise: mise exec <tool>@<version> -- <cmd>（既定）
     # - direct: PATH 上のバイナリを直接実行
     "bin-runner": "mise",
+    # mise 実行時に対象ディレクトリの config が未信頼だった場合、
+    # 自動で ``mise trust --yes --all`` を実行して再試行するか。
+    # worktree や dotfiles 配下など mise.toml が未信頼扱いになりやすい
+    # 環境での手動介入を不要にするための opt-out 設定（既定は有効）。
+    "mise-auto-trust": True,
     # コマンド毎に有効無効、パス、追加の引数を設定
     # 言語カテゴリ (python / javascript / rust / dotnet) に属するツールは v3.0.0 で
     # opt-in 化したため、既定値は False。preset で推奨ツールが True になり、

@@ -852,6 +852,26 @@ bin-runner = "bogus"
         pyfltr.config.load_config(config_dir=tmp_path)
 
 
+def test_mise_auto_trust_default() -> None:
+    """mise-auto-trust の既定値は True。"""
+    config = pyfltr.config.create_default_config()
+    assert config["mise-auto-trust"] is True
+
+
+def test_mise_auto_trust_disable(tmp_path: pathlib.Path) -> None:
+    """pyproject.toml で mise-auto-trust を False に設定できる。"""
+    (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\nmise-auto-trust = false\n")
+    config = pyfltr.config.load_config(config_dir=tmp_path)
+    assert config["mise-auto-trust"] is False
+
+
+def test_mise_auto_trust_invalid_type_rejected(tmp_path: pathlib.Path) -> None:
+    """mise-auto-trust に bool 以外の値を指定するとエラーになる。"""
+    (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\nmise-auto-trust = "yes"\n')
+    with pytest.raises(ValueError, match="mise-auto-trust"):
+        pyfltr.config.load_config(config_dir=tmp_path)
+
+
 def test_preset_latest_suppresses_language_categories(tmp_path: pathlib.Path) -> None:
     """preset = "latest" 単独 (カテゴリキー全 False) では全言語のツールが False に押し戻される。"""
     (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latest"\n')

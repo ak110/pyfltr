@@ -604,7 +604,7 @@ def test_resolve_bin_commandline_mise_not_installed(mocker) -> None:
 
 
 def test_resolve_bin_commandline_mise_tool_not_installed(mocker) -> None:
-    """miseモードでツールが未インストールの場合、FileNotFoundErrorを送出する。"""
+    """miseモードでツールが未インストールの場合、FileNotFoundErrorをstderr付きで送出する。"""
     mocker.patch("shutil.which", return_value="/usr/local/bin/mise")
     mocker.patch(
         "subprocess.run",
@@ -619,8 +619,167 @@ def test_resolve_bin_commandline_mise_tool_not_installed(mocker) -> None:
     config = pyfltr.config.create_default_config()
     config.values["bin-runner"] = "mise"
 
-    with pytest.raises(FileNotFoundError, match="mise exec"):
+    with pytest.raises(FileNotFoundError, match="tool not found"):
         pyfltr.command._resolve_bin_commandline("ec", config)
+
+
+def test_resolve_bin_commandline_mise_untrusted_auto_trust_success(mocker) -> None:
+    """未信頼エラー → trust成功 → 再チェック成功の3段で最終的に通常成功扱いになる。"""
+    mocker.patch("shutil.which", return_value="/usr/local/bin/mise")
+    mock_run = mocker.patch(
+        "subprocess.run",
+        side_effect=[
+            # 1回目の事前チェック: config未信頼で失敗
+            subprocess.CompletedProcess(
+                ["mise", "exec"],
+                returncode=1,
+                stdout="",
+                stderr="mise ERROR Config files in /path/to/mise.toml are not trusted.",
+            ),
+            # mise trust --yes --all: 成功
+            subprocess.CompletedProcess(
+                ["mise", "trust", "--yes", "--all"],
+                returncode=0,
+                stdout="",
+                stderr="",
+            ),
+            # 2回目の事前チェック（リトライ）: 成功
+            subprocess.CompletedProcess(
+                ["mise", "exec"],
+                returncode=0,
+                stdout="typos 1.0.0",
+                stderr="",
+            ),
+        ],
+    )
+
+    config = pyfltr.config.create_default_config()
+    config.values["bin-runner"] = "mise"
+    config.values["mise-auto-trust"] = True
+
+    path, prefix = pyfltr.command._resolve_bin_commandline("typos", config)
+
+    assert path == "mise"
+    assert prefix == ["exec", "typos@latest", "--", "typos"]
+    # 事前チェック → trust → リトライの3回が実際に発生したことを確認
+    assert mock_run.call_count == 3
+
+
+def test_resolve_bin_commandline_mise_untrusted_auto_trust_disabled(mocker) -> None:
+    """mise-auto-trust=False のとき trust が呼ばれず、stderr含むエラーメッセージで失敗する。"""
+    mocker.patch("shutil.which", return_value="/usr/local/bin/mise")
+    mock_run = mocker.patch(
+        "subprocess.run",
+        return_value=subprocess.CompletedProcess(
+            ["mise", "exec"],
+            returncode=1,
+            stdout="",
+            stderr="mise ERROR Config files in /path/to/mise.toml are not trusted.",
+        ),
+    )
+
+    config = pyfltr.config.create_default_config()
+    config.values["bin-runner"] = "mise"
+    config.values["mise-auto-trust"] = False
+
+    with pytest.raises(FileNotFoundError, match="not trusted"):
+        pyfltr.command._resolve_bin_commandline("typos", config)
+
+    # trust コマンドは呼ばれていないことを確認（subprocess.run の呼び出しは1回のみ）
+    assert mock_run.call_count == 1
+
+
+def test_resolve_bin_commandline_mise_other_error_no_retry(mocker) -> None:
+    """未信頼以外のエラー（plugin not found等）ではtrustを呼ばずそのまま失敗する。"""
+    mocker.patch("shutil.which", return_value="/usr/local/bin/mise")
+    mock_run = mocker.patch(
+        "subprocess.run",
+        return_value=subprocess.CompletedProcess(
+            ["mise", "exec"],
+            returncode=1,
+            stdout="",
+            stderr="mise ERROR plugin not found: typos",
+        ),
+    )
+
+    config = pyfltr.config.create_default_config()
+    config.values["bin-runner"] = "mise"
+    config.values["mise-auto-trust"] = True
+
+    with pytest.raises(FileNotFoundError, match="plugin not found"):
+        pyfltr.command._resolve_bin_commandline("typos", config)
+
+    # trust コマンドは呼ばれていないことを確認（subprocess.run の呼び出しは1回のみ）
+    assert mock_run.call_count == 1
+
+
+def test_resolve_bin_commandline_mise_untrusted_auto_trust_retry_failure(mocker) -> None:
+    """trust後の再チェックも失敗する場合、リトライが1回で打ち切られ通常失敗扱いになる。"""
+    mocker.patch("shutil.which", return_value="/usr/local/bin/mise")
+    mocker.patch(
+        "subprocess.run",
+        side_effect=[
+            # 1回目の事前チェック: config未信頼で失敗
+            subprocess.CompletedProcess(
+                ["mise", "exec"],
+                returncode=1,
+                stdout="",
+                stderr="mise ERROR Config files in /path/to/mise.toml are not trusted.",
+            ),
+            # mise trust --yes --all: 成功
+            subprocess.CompletedProcess(
+                ["mise", "trust", "--yes", "--all"],
+                returncode=0,
+                stdout="",
+                stderr="",
+            ),
+            # 2回目の事前チェック（リトライ）: 再度失敗
+            subprocess.CompletedProcess(
+                ["mise", "exec"],
+                returncode=1,
+                stdout="",
+                stderr="mise ERROR some other failure after trust",
+            ),
+        ],
+    )
+
+    config = pyfltr.config.create_default_config()
+    config.values["bin-runner"] = "mise"
+    config.values["mise-auto-trust"] = True
+
+    with pytest.raises(FileNotFoundError, match="some other failure after trust"):
+        pyfltr.command._resolve_bin_commandline("typos", config)
+
+
+def test_resolve_bin_commandline_mise_untrusted_auto_trust_trust_failure(mocker) -> None:
+    """mise trust コマンド自体が失敗した場合、trust.stderr を含むエラーで即座に失敗する。"""
+    mocker.patch("shutil.which", return_value="/usr/local/bin/mise")
+    mocker.patch(
+        "subprocess.run",
+        side_effect=[
+            # 事前チェック: config未信頼で失敗
+            subprocess.CompletedProcess(
+                ["mise", "exec"],
+                returncode=1,
+                stdout="",
+                stderr="mise ERROR Config files in /path/to/mise.toml are not trusted.",
+            ),
+            # mise trust --yes --all: 失敗（権限不足等）
+            subprocess.CompletedProcess(
+                ["mise", "trust", "--yes", "--all"],
+                returncode=1,
+                stdout="",
+                stderr="mise ERROR permission denied: /path/to/mise.toml",
+            ),
+        ],
+    )
+
+    config = pyfltr.config.create_default_config()
+    config.values["bin-runner"] = "mise"
+    config.values["mise-auto-trust"] = True
+
+    with pytest.raises(FileNotFoundError, match="permission denied"):
+        pyfltr.command._resolve_bin_commandline("typos", config)
 
 
 def test_failed_resolution_result() -> None:
