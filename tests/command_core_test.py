@@ -553,9 +553,9 @@ def test_resolve_bin_commandline_mise_success(mocker) -> None:
     mocker.patch(
         "subprocess.run",
         return_value=subprocess.CompletedProcess(
-            ["mise", "exec", "typos@latest", "--", "typos", "--version"],
+            ["mise", "exec", "shellcheck@latest", "--", "shellcheck", "--version"],
             returncode=0,
-            stdout="typos 1.0.0",
+            stdout="shellcheck 0.9.0",
             stderr="",
         ),
     )
@@ -563,10 +563,10 @@ def test_resolve_bin_commandline_mise_success(mocker) -> None:
     config = pyfltr.config.create_default_config()
     config.values["bin-runner"] = "mise"
 
-    path, prefix = pyfltr.command._resolve_bin_commandline("typos", config)
+    path, prefix = pyfltr.command._resolve_bin_commandline("shellcheck", config)
 
     assert path == "mise"
-    assert prefix == ["exec", "typos@latest", "--", "typos"]
+    assert prefix == ["exec", "shellcheck@latest", "--", "shellcheck"]
 
 
 def test_resolve_bin_commandline_mise_custom_version(mocker) -> None:
@@ -647,7 +647,7 @@ def test_resolve_bin_commandline_mise_untrusted_auto_trust_success(mocker) -> No
             subprocess.CompletedProcess(
                 ["mise", "exec"],
                 returncode=0,
-                stdout="typos 1.0.0",
+                stdout="shellcheck 0.9.0",
                 stderr="",
             ),
         ],
@@ -657,10 +657,10 @@ def test_resolve_bin_commandline_mise_untrusted_auto_trust_success(mocker) -> No
     config.values["bin-runner"] = "mise"
     config.values["mise-auto-trust"] = True
 
-    path, prefix = pyfltr.command._resolve_bin_commandline("typos", config)
+    path, prefix = pyfltr.command._resolve_bin_commandline("shellcheck", config)
 
     assert path == "mise"
-    assert prefix == ["exec", "typos@latest", "--", "typos"]
+    assert prefix == ["exec", "shellcheck@latest", "--", "shellcheck"]
     # 事前チェック → trust → リトライの3回が実際に発生したことを確認
     assert mock_run.call_count == 3
 
@@ -683,7 +683,7 @@ def test_resolve_bin_commandline_mise_untrusted_auto_trust_disabled(mocker) -> N
     config.values["mise-auto-trust"] = False
 
     with pytest.raises(FileNotFoundError, match="not trusted"):
-        pyfltr.command._resolve_bin_commandline("typos", config)
+        pyfltr.command._resolve_bin_commandline("shellcheck", config)
 
     # trust コマンドは呼ばれていないことを確認（subprocess.run の呼び出しは1回のみ）
     assert mock_run.call_count == 1
@@ -698,7 +698,7 @@ def test_resolve_bin_commandline_mise_other_error_no_retry(mocker) -> None:
             ["mise", "exec"],
             returncode=1,
             stdout="",
-            stderr="mise ERROR plugin not found: typos",
+            stderr="mise ERROR plugin not found: shellcheck",
         ),
     )
 
@@ -707,7 +707,7 @@ def test_resolve_bin_commandline_mise_other_error_no_retry(mocker) -> None:
     config.values["mise-auto-trust"] = True
 
     with pytest.raises(FileNotFoundError, match="plugin not found"):
-        pyfltr.command._resolve_bin_commandline("typos", config)
+        pyfltr.command._resolve_bin_commandline("shellcheck", config)
 
     # trust コマンドは呼ばれていないことを確認（subprocess.run の呼び出しは1回のみ）
     assert mock_run.call_count == 1
@@ -748,7 +748,7 @@ def test_resolve_bin_commandline_mise_untrusted_auto_trust_retry_failure(mocker)
     config.values["mise-auto-trust"] = True
 
     with pytest.raises(FileNotFoundError, match="some other failure after trust"):
-        pyfltr.command._resolve_bin_commandline("typos", config)
+        pyfltr.command._resolve_bin_commandline("shellcheck", config)
 
 
 def test_resolve_bin_commandline_mise_untrusted_auto_trust_trust_failure(mocker) -> None:
@@ -779,7 +779,7 @@ def test_resolve_bin_commandline_mise_untrusted_auto_trust_trust_failure(mocker)
     config.values["mise-auto-trust"] = True
 
     with pytest.raises(FileNotFoundError, match="permission denied"):
-        pyfltr.command._resolve_bin_commandline("typos", config)
+        pyfltr.command._resolve_bin_commandline("shellcheck", config)
 
 
 def test_failed_resolution_result() -> None:
@@ -841,7 +841,7 @@ def test_pass_filenames_true_includes_targets(mocker, tmp_path: pathlib.Path) ->
 
 def test_bin_tool_spec_all_tools_defined() -> None:
     """_BIN_TOOL_SPECに全bin系ツールが定義されている。"""
-    expected_tools = {"ec", "shellcheck", "shfmt", "typos", "actionlint"}
+    expected_tools = {"ec", "shellcheck", "shfmt", "actionlint"}
     assert set(pyfltr.command._BIN_TOOL_SPEC.keys()) == expected_tools
 
 

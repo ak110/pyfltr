@@ -26,6 +26,7 @@ dependencies = [
     "python-ulid>=3.0",
     "pyyaml>=6.0.3",
     "textual>=8.0.0",
+    "typos>=1.0",
 ]
 
 [project.optional-dependencies]

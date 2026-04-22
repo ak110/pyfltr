@@ -190,7 +190,7 @@ pyfltr generate-shell-completion powershell | Out-String | Invoke-Expression
 一例を以下に示す。
 
 - Python系ツール: `*.py`
-- markdownlint / textlint: `*.md`
+- textlint / markdownlint: `*.md`
 - pytest: `*_test.py`
 
 ### `fast` / `run` / `run-for-agent` / `ci`の動作の違いと自動修正（fixステージ）

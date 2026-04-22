@@ -285,7 +285,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "shellcheck-version": "latest",
     "shellcheck-fast": True,
     "typos": False,
-    "typos-path": "",
+    "typos-path": "typos",
     "typos-args": ["--format", "brief"],
     "typos-version": "latest",
     "typos-fast": True,
@@ -590,6 +590,10 @@ def load_config(config_dir: pathlib.Path | None = None) -> Config:
         else:
             existing.extend(extra)
         config.commands[cmd_name] = dataclasses.replace(config.commands[cmd_name], targets=existing)
+
+    # typos-path の互換正規化: generate-config が出力した空文字列を "typos" へ変換する
+    if config.values["typos-path"] == "":
+        config.values["typos-path"] = "typos"
 
     # js-runner の値バリデーション
     js_runner = config.values["js-runner"]

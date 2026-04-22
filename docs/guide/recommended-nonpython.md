@@ -3,12 +3,11 @@
 Python以外のプロジェクトでもpyfltrを活用できる。共通のポイントは以下。
 
 - `preset = "latest"`: 各時点での推奨ツール構成。
-  ドキュメント系（markdownlint / textlint / actionlint / typos / pre-commit）はいずれの言語ゲートにも属さず常に有効化される
+  ドキュメント系（textlint / markdownlint / actionlint / typos / pre-commit）はいずれの言語ゲートにも属さず常に有効化される
 - 言語カテゴリゲートの詳細は[設定項目](configuration.md)を参照
 - `uvx pyfltr`: pyfltrをdev依存に含めないため、`uvx`で都度取得して実行する
 - 言語固有のツール + ドキュメント系lint（textlint / markdownlint / prettier）を組み合わせる
-- `bin-runner`のデフォルトは`"mise"`。actionlint / typos等のネイティブバイナリツールはmise経由で呼び出されるため、
-  mise導入とツールのセットアップ（`mise use actionlint@latest typos@latest`等）を推奨する
+- `bin-runner`のデフォルトは`"mise"`。actionlint等のネイティブバイナリツールはmise経由で呼び出されるため、mise導入を推奨する
 - タスクランナー（Makefile / mise.toml）の設定例は[推奨設定例](recommended.md)の「タスクランナー」を参照
 
 ## TypeScript/JS専用プロジェクト

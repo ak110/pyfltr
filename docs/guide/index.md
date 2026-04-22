@@ -53,7 +53,7 @@
 ### その他
 
 - Formatters: shfmt（既定で無効）
-- Linters: ec（editorconfig-checker、既定で無効）/ shellcheck（既定で無効）/ typos / actionlint
+- Linters: ec（editorconfig-checker、既定で無効）/ shellcheck（既定で無効）/ typos（PyPI依存）/ actionlint
 - 統合: pre-commit（`.pre-commit-config.yaml`のhookを統合実行）
 
 プリセット指定と言語カテゴリゲートによる有効化の詳細は[設定項目](configuration.md)を参照。

@@ -149,7 +149,6 @@ _BIN_TOOL_SPEC: dict[str, BinToolSpec] = {
     "ec": BinToolSpec(bin_name="ec", mise_backend="editorconfig-checker"),
     "shellcheck": BinToolSpec(bin_name="shellcheck"),
     "shfmt": BinToolSpec(bin_name="shfmt"),
-    "typos": BinToolSpec(bin_name="typos"),
     "actionlint": BinToolSpec(bin_name="actionlint"),
 }
 

@@ -982,8 +982,8 @@ path = "my-checker"
 def test_bin_tool_default_config_values() -> None:
     """bin-runner対応ツールのデフォルト設定値が正しく定義されている。"""
     config = pyfltr.config.create_default_config()
-    # 全bin系ツールの有効/無効とバージョン設定を確認
-    bin_tools = ["ec", "shellcheck", "shfmt", "typos", "actionlint"]
+    # bin-runner経由ツールの有効/無効とバージョン設定を確認
+    bin_tools = ["ec", "shellcheck", "shfmt", "actionlint"]
     for tool in bin_tools:
         assert config[tool] is False, f"{tool}は既定で無効"
         assert config[f"{tool}-path"] == "", f"{tool}-pathは空文字"
@@ -997,6 +997,27 @@ def test_bin_tool_default_config_values() -> None:
 
     # tscのpass-filenames
     assert config["tsc-pass-filenames"] is False
+
+
+def test_typos_default_config_values() -> None:
+    """typosはPyPI依存として直接実行するため、pathはコマンド名・versionは互換維持で残す。"""
+    config = pyfltr.config.create_default_config()
+    assert config["typos"] is False, "typosは既定で無効"
+    assert config["typos-path"] == "typos", "typos-pathはコマンド名"
+    # typos-versionは既存ユーザーの設定との互換維持のため定義を残す
+    assert config["typos-version"] == "latest", "typos-versionはlatest（互換維持）"
+    assert config["typos-fast"] is True, "typos-fastはTrue"
+
+
+def test_typos_path_empty_string_normalized(tmp_path: pathlib.Path) -> None:
+    """load_config で typos-path = "" を読み込んだ場合に "typos" へ正規化される。"""
+    pyproject_content = """
+[tool.pyfltr]
+typos-path = ""
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    config = pyfltr.config.load_config(config_dir=tmp_path)
+    assert config["typos-path"] == "typos"
 
 
 def test_uv_sort_in_python_commands() -> None:
