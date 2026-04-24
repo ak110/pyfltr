@@ -295,8 +295,16 @@ def _resolve_bin_commandline(
         return resolved, []
 
     if runner == "mise":
+        # mise バイナリ自体が未導入の場合に限り direct と同等の PATH 解決へ
+        # フォールバックする。ディストロ標準パッケージで shellcheck 等を導入しただけの
+        # 環境でも opt-in で有効化されたツールが動くようにする救済策。
+        # mise が存在するが mise exec が失敗するケース (バージョン解決失敗・
+        # config 未信頼など) は使用者の意図的な mise 利用とみなし、従来どおりエラーにする。
         if shutil.which("mise") is None:
-            raise FileNotFoundError("mise")
+            resolved = shutil.which(spec.bin_name)
+            if resolved is None:
+                raise FileNotFoundError(spec.bin_name)
+            return resolved, []
         tool_name = spec.mise_backend or spec.bin_name
         tool_spec = f"{tool_name}@{version}"
         check_args = ["mise", "exec", tool_spec, "--", spec.bin_name, "--version"]

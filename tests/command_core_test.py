@@ -592,14 +592,35 @@ def test_resolve_bin_commandline_mise_custom_version(mocker) -> None:
     assert prefix == ["exec", "shellcheck@0.9.0", "--", "shellcheck"]
 
 
-def test_resolve_bin_commandline_mise_not_installed(mocker) -> None:
-    """miseモードでmiseがPATHに無い場合、FileNotFoundErrorを送出する。"""
+def test_resolve_bin_commandline_mise_not_installed_fallback(mocker) -> None:
+    """miseモードでmise未導入かつ対象バイナリがPATHにある場合、direct相当でフォールバックする。"""
+
+    def fake_which(name: str) -> str | None:
+        if name == "mise":
+            return None
+        if name == "actionlint":
+            return "/usr/local/bin/actionlint"
+        return None
+
+    mocker.patch("shutil.which", side_effect=fake_which)
+
+    config = pyfltr.config.create_default_config()
+    config.values["bin-runner"] = "mise"
+
+    path, prefix = pyfltr.command._resolve_bin_commandline("actionlint", config)
+
+    assert path == "/usr/local/bin/actionlint"
+    assert not prefix
+
+
+def test_resolve_bin_commandline_mise_not_installed_no_fallback(mocker) -> None:
+    """miseモードでmise未導入かつ対象バイナリもPATHに無い場合、FileNotFoundErrorを送出する。"""
     mocker.patch("shutil.which", return_value=None)
 
     config = pyfltr.config.create_default_config()
     config.values["bin-runner"] = "mise"
 
-    with pytest.raises(FileNotFoundError, match="mise"):
+    with pytest.raises(FileNotFoundError, match="actionlint"):
         pyfltr.command._resolve_bin_commandline("actionlint", config)
 
 
