@@ -349,6 +349,17 @@ fix-args = "--fix"
         pyfltr.config.load_config(config_dir=tmp_path)
 
 
+def test_vitest_args_default_contains_pass_with_no_tests() -> None:
+    """vitest-args の既定に --passWithNoTests が含まれることのテスト。
+
+    pyfltr が targets 設定で絞ったファイル群とプロジェクト側の vitest include
+    設定が交差せず対象ゼロになるケースで rc=1 → failed 扱いになるのを避けるため、
+    既定引数として含める方針を固定化する。
+    """
+    config = pyfltr.config.create_default_config()
+    assert config["vitest-args"] == ["run", "--passWithNoTests"]
+
+
 def test_js_runner_default() -> None:
     """js-runner の既定値は pnpx (従来互換)。"""
     config = pyfltr.config.create_default_config()

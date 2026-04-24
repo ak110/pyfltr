@@ -334,7 +334,7 @@ javascript = true
 
 - oxlint: `oxlint-args = []`
 - tsc: `tsc-args = ["--noEmit"]`、`tsc-pass-filenames = false`（プロジェクト全体をチェックするためファイル引数を渡さない）
-- vitest: `vitest-args = ["run"]`（`run`サブコマンドが必須）
+- vitest: `vitest-args = ["run", "--passWithNoTests"]`（`run`サブコマンドが必須、filter結果ゼロ時もsuccess扱い）
 
 個別に無効化したい場合のみ`{command} = false`を指定する。
 

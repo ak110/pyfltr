@@ -51,7 +51,7 @@ extend-exclude = [
 - `js-runner = "pnpm"`: pnpmワークスペース経由でJS系ツールを呼ぶ。`textlint-packages`は無視される
 - eslintとoxlintは併用するとeslintで非対応のルールを補完できる（Rust製のため高速）
 - tsc: TypeScript型チェックも実行できる。svelte-checkなどフレームワーク固有のチェッカーと併用する場合はどちらか一方でよい
-- vitest: `vitest-args = ["run"]`が既定のため追加引数は不要
+- vitest: `vitest-args = ["run", "--passWithNoTests"]`が既定のため追加引数は不要
 - 使わないツールは個別に`{command} = false`で無効化できる
 - svelte-checkなどフレームワーク固有のツールはカスタムコマンドで追加する
  （[カスタムコマンド例](custom-commands.md)の「svelte-check」を参照）

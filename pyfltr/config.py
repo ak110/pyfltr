@@ -301,7 +301,10 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "pytest-fast": False,
     "vitest": False,
     "vitest-path": "",
-    "vitest-args": ["run"],  # vitest は run サブコマンドが必須
+    # vitest は run サブコマンドが必須。また、pyfltr が targets 設定で絞ったファイル群と
+    # プロジェクト側の vitest include 設定が交差せず対象ゼロになるケースで rc=1 となり
+    # failed 扱いになるのを避けるため、--passWithNoTests を既定に含める。
+    "vitest-args": ["run", "--passWithNoTests"],
     "vitest-fast": False,
     "ruff-format": False,
     "ruff-format-path": "ruff",
