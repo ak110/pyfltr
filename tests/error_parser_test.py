@@ -656,6 +656,38 @@ def test_parse_pytest_fallback() -> None:
     assert errors[0].line == 0
 
 
+def test_parse_glab_ci_lint_valid() -> None:
+    """有効CI出力 (Validating... + ✓ ...) では空リストを返す。"""
+    output = "Validating...\n✓ CI/CD YAML is valid!\n"
+    assert pyfltr.error_parser.parse_errors("glab-ci-lint", output) == []
+
+
+def test_parse_glab_ci_lint_invalid_multi() -> None:
+    """無効CI出力から複数エラーを line=1 固定で抽出する。"""
+    output = (
+        "Validating...\n"
+        ".gitlab-ci.yml is invalid\n"
+        "\n"
+        "- jobs:test config contains unknown keys: foo\n"
+        "- root config contains unknown keys: bar\n"
+    )
+    errors = pyfltr.error_parser.parse_errors("glab-ci-lint", output)
+    assert len(errors) == 2
+    assert all(e.command == "glab-ci-lint" for e in errors)
+    assert all(e.file == ".gitlab-ci.yml" for e in errors)
+    assert all(e.line == 1 for e in errors)
+    assert all(e.col is None for e in errors)
+    assert errors[0].message == "jobs:test config contains unknown keys: foo"
+    assert errors[1].message == "root config contains unknown keys: bar"
+
+
+def test_parse_glab_ci_lint_invalid_numbered() -> None:
+    """番号付きリスト形式 (`1. xxx`) のエラー行もリストマーカーを除去して取り込む。"""
+    output = ".gitlab-ci.yml is invalid\n1. unknown key foo\n2. unknown key bar\n"
+    errors = pyfltr.error_parser.parse_errors("glab-ci-lint", output)
+    assert [e.message for e in errors] == ["unknown key foo", "unknown key bar"]
+
+
 def test_get_custom_parser_commands() -> None:
     """カスタムパーサー登録コマンド一覧の取得。"""
     commands = pyfltr.error_parser.get_custom_parser_commands()

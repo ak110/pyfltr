@@ -119,6 +119,13 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         targets=[".github/workflows/*.yaml", ".github/workflows/*.yml"],
         fixed_cost=0.2,
     ),
+    # GitLab CI 設定の構文検証。GitLab API 経由で lint するためネットワーク・認証が必須。
+    # 既定で無効 (opt-in) とし、CI や初学者環境で誤って失敗しないようにする。
+    "glab-ci-lint": CommandInfo(
+        type="linter",
+        targets=".gitlab-ci.yml",
+        fixed_cost=1.0,
+    ),
     "ruff-check": CommandInfo(type="linter", fixed_cost=0.01),
     "mypy": CommandInfo(type="linter", fixed_cost=0.2, per_file_cost=0.12),
     "pylint": CommandInfo(type="linter", fixed_cost=1.75, per_file_cost=0.3),

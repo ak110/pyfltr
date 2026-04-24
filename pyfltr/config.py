@@ -294,6 +294,14 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "actionlint-args": [],
     "actionlint-version": "latest",
     "actionlint-fast": True,
+    # glab ci lint は GitLab API 経由で .gitlab-ci.yml を検証する。
+    # 認証・ネットワーク必須のため既定で無効 (opt-in)。
+    # サブコマンド `ci lint` は args 既定値として持たせ、明示 path 指定経路でも効くようにする。
+    "glab-ci-lint": False,
+    "glab-ci-lint-path": "",
+    "glab-ci-lint-args": ["ci", "lint"],
+    "glab-ci-lint-version": "latest",
+    "glab-ci-lint-fast": False,
     "pytest": False,
     "pytest-path": "pytest",
     "pytest-args": [],
@@ -451,6 +459,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
             "shellcheck",
             "typos",
             "actionlint",
+            "glab-ci-lint",
             "oxlint",
             "tsc",
             "cargo-clippy",

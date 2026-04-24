@@ -624,6 +624,42 @@ def test_resolve_bin_commandline_mise_not_installed_no_fallback(mocker) -> None:
         pyfltr.command._resolve_bin_commandline("actionlint", config)
 
 
+def test_resolve_bin_commandline_glab_ci_lint_mise(mocker) -> None:
+    """glab-ci-lint は mise バックエンド経由で glab バイナリを解決する。
+
+    ``ci lint`` サブコマンドは args 既定値側に持たせる設計のため、bin-runner 解決の
+    プレフィクスにはサブコマンドが含まれない (commandline 組み立て段で付与される)。
+    """
+    mocker.patch("shutil.which", return_value="/usr/local/bin/mise")
+    mocker.patch(
+        "subprocess.run",
+        return_value=subprocess.CompletedProcess(["mise"], returncode=0, stdout="", stderr=""),
+    )
+
+    config = pyfltr.config.create_default_config()
+    config.values["bin-runner"] = "mise"
+
+    path, prefix = pyfltr.command._resolve_bin_commandline("glab-ci-lint", config)
+
+    assert path == "mise"
+    assert prefix == ["exec", "glab@latest", "--", "glab"]
+    # args 既定値にサブコマンドが含まれていることを確認 (明示 path 指定時にも有効化させるため)
+    assert config["glab-ci-lint-args"] == ["ci", "lint"]
+
+
+def test_resolve_bin_commandline_glab_ci_lint_direct(mocker) -> None:
+    """direct モードでは PATH 上の glab バイナリを解決する。"""
+    mocker.patch("shutil.which", return_value="/usr/local/bin/glab")
+
+    config = pyfltr.config.create_default_config()
+    config.values["bin-runner"] = "direct"
+
+    path, prefix = pyfltr.command._resolve_bin_commandline("glab-ci-lint", config)
+
+    assert path == "/usr/local/bin/glab"
+    assert not prefix
+
+
 def test_resolve_bin_commandline_mise_tool_not_installed(mocker) -> None:
     """miseモードでツールが未インストールの場合、FileNotFoundErrorをstderr付きで送出する。"""
     mocker.patch("shutil.which", return_value="/usr/local/bin/mise")
@@ -862,7 +898,7 @@ def test_pass_filenames_true_includes_targets(mocker, tmp_path: pathlib.Path) ->
 
 def test_bin_tool_spec_all_tools_defined() -> None:
     """_BIN_TOOL_SPECに全bin系ツールが定義されている。"""
-    expected_tools = {"ec", "shellcheck", "shfmt", "actionlint"}
+    expected_tools = {"ec", "shellcheck", "shfmt", "actionlint", "glab-ci-lint"}
     assert set(pyfltr.command._BIN_TOOL_SPEC.keys()) == expected_tools
 
 

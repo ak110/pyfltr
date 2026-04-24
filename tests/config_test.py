@@ -1042,6 +1042,19 @@ def test_bin_runners_tuple() -> None:
     assert "mise" in pyfltr.config.BIN_RUNNERS
 
 
+def test_glab_ci_lint_default_config_values() -> None:
+    """glab-ci-lint は既定で無効 (opt-in)、args 既定値に ``ci lint`` サブコマンドが入る。"""
+    config = pyfltr.config.create_default_config()
+    assert config["glab-ci-lint"] is False, "GitLab API 認証必須のため opt-in"
+    assert config["glab-ci-lint-path"] == ""
+    assert config["glab-ci-lint-args"] == ["ci", "lint"]
+    assert config["glab-ci-lint-version"] == "latest"
+    assert config["glab-ci-lint-fast"] is False
+    info = pyfltr.config.BUILTIN_COMMANDS["glab-ci-lint"]
+    assert info.type == "linter"
+    assert info.target_globs() == [".gitlab-ci.yml"]
+
+
 def test_builtin_targets_override_str(tmp_path: pathlib.Path) -> None:
     """ビルトインコマンドの targets を文字列で完全上書きできる。"""
     (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\nshfmt-targets = "*.bash"\n')

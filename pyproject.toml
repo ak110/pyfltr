@@ -82,6 +82,7 @@ preset = "latest"
 # ``ty`` のみ preset 非収録のため個別 true で追加する。
 python = true
 ty = true
+glab-ci-lint = true
 pylint-args = ["--jobs=4"]
 
 [tool.ruff]

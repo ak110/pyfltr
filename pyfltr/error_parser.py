@@ -535,6 +535,51 @@ def _parse_typos_jsonl(output: str) -> list[ErrorLocation]:
     return results
 
 
+def _parse_glab_ci_lint(output: str) -> list[ErrorLocation]:
+    """``glab ci lint`` 出力をパース。
+
+    glab は行番号を出さないため、検出した各エラーメッセージを ``line=1`` 固定の
+    ``ErrorLocation`` として生成する。
+
+    無効CI出力例::
+
+        Validating...
+        .gitlab-ci.yml is invalid
+
+        - jobs:test config contains unknown keys: foo
+        - root config contains unknown keys: bar
+
+    有効CI出力では ``✓ CI/CD YAML is valid!`` のみが流れるため空リストを返す。
+    """
+    results: list[ErrorLocation] = []
+    file_path: str | None = None
+    invalid_re = re.compile(r"^\s*(?P<file>\S+)\s+is\s+invalid\b")
+    for raw_line in output.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        match = invalid_re.match(line)
+        if match is not None:
+            file_path = match.group("file")
+            continue
+        if file_path is None:
+            continue
+        # 番号付きエラー行 (`- xxx` / `1. xxx`) のリストマーカーを除去する。
+        message = re.sub(r"^(?:[-*•]|\d+[.)])\s+", "", line)
+        if not message:
+            continue
+        results.append(
+            ErrorLocation(
+                file=pyfltr.paths.to_cwd_relative(file_path),
+                line=1,
+                col=None,
+                command="glab-ci-lint",
+                message=message,
+            )
+        )
+    return results
+
+
 def _parse_pytest(output: str) -> list[ErrorLocation]:
     """Pytest出力をパース。--tb=short形式のトレースバックからプロジェクト内フレームを優先的に抽出する。"""
     failures_start = output.find("= FAILURES =")
@@ -602,6 +647,7 @@ _CUSTOM_PARSERS: dict[str, typing.Callable[[str], list[ErrorLocation]]] = {
     "textlint": _parse_textlint_json,
     "typos": _parse_typos_jsonl,
     "pytest": _parse_pytest,
+    "glab-ci-lint": _parse_glab_ci_lint,
 }
 
 

@@ -53,8 +53,12 @@
 ### その他
 
 - Formatters: shfmt（既定で無効）
-- Linters: ec（editorconfig-checker、既定で無効）/ shellcheck（既定で無効）/ typos（PyPI依存）/ actionlint
+- Linters: ec（editorconfig-checker、既定で無効）/ shellcheck（既定で無効）/ typos（PyPI依存）/
+  actionlint / glab-ci-lint（既定で無効）
 - 統合: pre-commit（`.pre-commit-config.yaml`のhookを統合実行）
+
+`glab-ci-lint`は`glab ci lint`経由でGitLab CI設定を構文検証する。
+GitLab API認証とネットワーク接続が必須なため、CIや初学者環境で誤って失敗しないよう既定で無効化している。
 
 プリセット指定と言語カテゴリゲートによる有効化の詳細は[設定項目](configuration.md)を参照。
 

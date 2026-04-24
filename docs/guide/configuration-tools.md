@@ -340,7 +340,7 @@ javascript = true
 
 ## bin-runner経由で実行するツール
 
-ec / shellcheck / shfmt / actionlintはネイティブバイナリ（Go/Haskell製等）で、
+ec / shellcheck / shfmt / actionlint / glab-ci-lintはネイティブバイナリ（Go/Haskell製等）で、
 `bin-runner`設定で起動方式を切り替える。
 ecはeditorconfig-checkerの略称。既定は`mise`で、[mise](https://mise.jdx.dev/)によるバージョン管理付きの実行となる。
 
@@ -415,6 +415,7 @@ ec = true
 shellcheck = true
 shfmt = true
 actionlint = true
+glab-ci-lint = true
 ```
 
 既定の引数は以下のとおり。必要に応じて上書きできる。
@@ -423,6 +424,7 @@ actionlint = true
 - shellcheck: `shellcheck-args = ["-f", "gcc"]`
 - shfmt: `shfmt-check-args = ["-l"]` / `shfmt-write-args = ["-w"]`（2段階実行。共通引数は`shfmt-args`で指定）
 - actionlint: `actionlint-args = []`
+- glab-ci-lint: `glab-ci-lint-args = ["ci", "lint"]`（`glab ci lint`サブコマンドを既定値として保持）
 
 `{command}-path`を明示的に設定した場合はその値が優先され、bin-runnerによる自動解決は無効化される。
 

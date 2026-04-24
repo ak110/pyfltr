@@ -150,6 +150,10 @@ _BIN_TOOL_SPEC: dict[str, BinToolSpec] = {
     "shellcheck": BinToolSpec(bin_name="shellcheck"),
     "shfmt": BinToolSpec(bin_name="shfmt"),
     "actionlint": BinToolSpec(bin_name="actionlint"),
+    # glab 本体は単一バイナリで `glab ci lint` のサブコマンドを必要とするが、
+    # サブコマンド注入は -args 既定値 (["ci", "lint"]) 側に持たせて、
+    # bin-runner を経由しない明示 path 指定でも自然にサブコマンドが付く設計とする。
+    "glab-ci-lint": BinToolSpec(bin_name="glab"),
 }
 
 
