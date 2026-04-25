@@ -505,3 +505,42 @@ def test_precommit_guidance_skipped_for_jsonl_and_sarif_stdout_only(monkeypatch,
     )
     captured = capsys.readouterr()
     assert captured.err == ""
+
+
+class _FakeReconfigurableStream:  # pylint: disable=too-few-public-methods
+    """``reconfigure`` 呼び出しを記録するだけの fake stream。"""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, str]] = []
+
+    def reconfigure(self, **kwargs: str) -> None:
+        self.calls.append(kwargs)
+
+
+class _ReconfigureRaisingStream:  # pylint: disable=too-few-public-methods
+    """``reconfigure`` が例外を上げる fake stream。握り潰し挙動の検証用。"""
+
+    def reconfigure(self, **_kwargs: str) -> None:
+        raise OSError("not supported")
+
+
+def test_reconfigure_stdio_to_utf8_invokes_reconfigure(monkeypatch) -> None:
+    """``reconfigure`` を持つ stream には UTF-8 / backslashreplace が要求される。"""
+    fake_stdout = _FakeReconfigurableStream()
+    fake_stderr = _FakeReconfigurableStream()
+    monkeypatch.setattr(pyfltr.main.sys, "stdout", fake_stdout)
+    monkeypatch.setattr(pyfltr.main.sys, "stderr", fake_stderr)
+
+    pyfltr.main._reconfigure_stdio_to_utf8()
+
+    expected = {"encoding": "utf-8", "errors": "backslashreplace"}
+    assert fake_stdout.calls == [expected]
+    assert fake_stderr.calls == [expected]
+
+
+def test_reconfigure_stdio_to_utf8_tolerates_missing_or_failing_streams(monkeypatch) -> None:
+    """``reconfigure`` 未提供 stream や呼び出し失敗時に例外が伝播しない。"""
+    monkeypatch.setattr(pyfltr.main.sys, "stdout", object())
+    monkeypatch.setattr(pyfltr.main.sys, "stderr", _ReconfigureRaisingStream())
+
+    pyfltr.main._reconfigure_stdio_to_utf8()

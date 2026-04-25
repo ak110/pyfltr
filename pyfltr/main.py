@@ -6,6 +6,7 @@
 
 import argparse
 import collections.abc
+import contextlib
 import importlib.metadata
 import logging
 import os
@@ -112,8 +113,27 @@ def _preflight_tool_name_as_subcommand(sys_args: typing.Sequence[str]) -> None:
     sys.exit(2)
 
 
+def _reconfigure_stdio_to_utf8() -> None:
+    """``sys.stdout`` / ``sys.stderr`` を UTF-8 で出力するよう切り替える。
+
+    Windows + Python 3.14 では ``sys.stdout`` / ``sys.stderr`` の既定エンコーディングが
+    cp1252 等のままになるケースがあり、``pyfltr.textout`` が出す日本語ログで
+    UnicodeEncodeError を起こす。``PYTHONUTF8`` 環境変数や利用者側設定に依存せずに
+    挙動を揃えるため、エントリポイント直後に ``reconfigure`` を試みる。
+    ``reconfigure`` 未提供 stream（差し替え済み TextIO 等）や呼び出し失敗時は握り潰し、
+    既存挙動を維持する。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        with contextlib.suppress(OSError, ValueError):
+            reconfigure(encoding="utf-8", errors="backslashreplace")
+
+
 def main() -> typing.NoReturn:
     """エントリポイント。"""
+    _reconfigure_stdio_to_utf8()
     exit_code = run()
     logger.debug(f"{exit_code=}")
     sys.exit(exit_code)
