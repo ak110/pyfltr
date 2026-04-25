@@ -6,6 +6,7 @@ dispatcher・共通処理・環境変数・コマンドライン解決・``_run_
 
 # pylint: disable=protected-access,too-many-lines,duplicate-code
 
+import argparse
 import contextlib
 import logging
 import os
@@ -24,6 +25,7 @@ import pyfltr.cache
 import pyfltr.command
 import pyfltr.config
 import pyfltr.only_failed
+import pyfltr.warnings_
 from tests import conftest as _testconf
 
 
@@ -1335,3 +1337,118 @@ def test_terminate_active_processes_parent_exited_grandchild_remains() -> None:
         if psutil.pid_exists(child_pid):
             with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
                 os.kill(child_pid, 9)
+
+
+def test_looks_like_glab_host_missing_detects_known_patterns() -> None:
+    """ホスト未検出/未認証文言が大小文字差や前後文字を含んでも検出される。"""
+    assert pyfltr.command._looks_like_glab_host_missing(
+        "Error: none of the git remotes configured for this repository point to a known GitLab host."
+    )
+    assert pyfltr.command._looks_like_glab_host_missing("you are NOT AUTHENTICATED to glab")
+    assert not pyfltr.command._looks_like_glab_host_missing(
+        "Error: validation failed: jobs:test config key may not be used with `rules`"
+    )
+    assert not pyfltr.command._looks_like_glab_host_missing("")
+
+
+def _make_glab_ci_lint_args() -> argparse.Namespace:
+    """``_execute_glab_ci_lint`` で参照される最低限の属性を持つ Namespace を返す。"""
+    return argparse.Namespace(verbose=False)
+
+
+def _make_glab_ci_lint_command_info() -> pyfltr.config.CommandInfo:
+    return pyfltr.config.BUILTIN_COMMANDS["glab-ci-lint"]
+
+
+def test_execute_glab_ci_lint_skips_on_host_missing(mocker, tmp_path: pathlib.Path) -> None:
+    """ホスト未検出 stderr を検出したら returncode=None でスキップ扱いに書き換える。"""
+    pyfltr.warnings_.clear()
+    proc = subprocess.CompletedProcess(
+        args=["glab", "ci", "lint"],
+        returncode=1,
+        stdout="Error: none of the git remotes configured for this repository point to a known GitLab host.\n",
+    )
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+    target = tmp_path / ".gitlab-ci.yml"
+    target.write_text("stages: [test]\n", encoding="utf-8")
+
+    result = pyfltr.command._execute_glab_ci_lint(
+        "glab-ci-lint",
+        _make_glab_ci_lint_command_info(),
+        ["glab", "ci", "lint"],
+        [target],
+        {"PATH": os.environ.get("PATH", "")},
+        None,
+        time.perf_counter(),
+        _make_glab_ci_lint_args(),
+    )
+
+    assert result.returncode is None
+    assert result.status == "skipped"
+    assert "スキップしました" in result.output
+    warnings = pyfltr.warnings_.collected_warnings()
+    assert any(w.get("source") == "glab-ci-lint" for w in warnings)
+
+
+def test_execute_glab_ci_lint_keeps_failure_for_real_errors(mocker, tmp_path: pathlib.Path) -> None:
+    """ホスト未検出以外の非ゼロ終了は failed のまま据え置く。"""
+    pyfltr.warnings_.clear()
+    proc = subprocess.CompletedProcess(
+        args=["glab", "ci", "lint"],
+        returncode=1,
+        stdout="Error: validation failed: jobs:test config key may not be used with `rules`\n",
+    )
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+    target = tmp_path / ".gitlab-ci.yml"
+    target.write_text("stages: [test]\n", encoding="utf-8")
+
+    result = pyfltr.command._execute_glab_ci_lint(
+        "glab-ci-lint",
+        _make_glab_ci_lint_command_info(),
+        ["glab", "ci", "lint"],
+        [target],
+        {"PATH": os.environ.get("PATH", "")},
+        None,
+        time.perf_counter(),
+        _make_glab_ci_lint_args(),
+    )
+
+    assert result.returncode == 1
+    assert result.status == "failed"
+
+
+def test_execute_glab_ci_lint_passes_through_success(mocker, tmp_path: pathlib.Path) -> None:
+    """正常終了はそのまま succeeded として扱い、ロケール強制環境変数を渡す。"""
+    pyfltr.warnings_.clear()
+    proc = subprocess.CompletedProcess(
+        args=["glab", "ci", "lint"],
+        returncode=0,
+        stdout="OK\n",
+    )
+    target = tmp_path / ".gitlab-ci.yml"
+    target.write_text("stages: [test]\n", encoding="utf-8")
+
+    captured_env: dict[str, str] = {}
+
+    def _capture(*_args: typing.Any, **_kwargs: typing.Any) -> subprocess.CompletedProcess[str]:
+        captured_env.update(_args[1])
+        return proc
+
+    mocker.patch("pyfltr.command._run_subprocess", side_effect=_capture)
+
+    result = pyfltr.command._execute_glab_ci_lint(
+        "glab-ci-lint",
+        _make_glab_ci_lint_command_info(),
+        ["glab", "ci", "lint"],
+        [target],
+        {"PATH": os.environ.get("PATH", "")},
+        None,
+        time.perf_counter(),
+        _make_glab_ci_lint_args(),
+    )
+
+    assert result.returncode == 0
+    assert result.status == "succeeded"
+    # ロケール非依存判定のための環境変数強制を確認する。
+    assert captured_env["LC_ALL"] == "C"
+    assert captured_env["LANG"] == "C"

@@ -424,7 +424,8 @@ glab-ci-lint = true
 - shellcheck: `shellcheck-args = ["-f", "gcc"]`
 - shfmt: `shfmt-check-args = ["-l"]` / `shfmt-write-args = ["-w"]`（2段階実行。共通引数は`shfmt-args`で指定）
 - actionlint: `actionlint-args = []`
-- glab-ci-lint: `glab-ci-lint-args = ["ci", "lint"]`（`glab ci lint`サブコマンドを既定値として保持）
+- glab-ci-lint: `glab-ci-lint-args = ["ci", "lint"]`（`glab ci lint`サブコマンドを既定値として保持）。
+  GitLabリモートが未登録または未認証の環境では`glab`自身がエラー終了するため、pyfltrが自動でスキップ扱いに変換する
 
 `{command}-path`を明示的に設定した場合はその値が優先され、bin-runnerによる自動解決は無効化される。
 

@@ -1029,6 +1029,27 @@ def execute_command(
             )
         )
 
+    # glab-ci-lint は GitLab API 経由の lint で、GitLab remote 未登録の環境では
+    # glab 自身が非ゼロ終了しメッセージを返す。pyfltr 利用者にとっては環境的事情のため、
+    # failed ではなく skipped 相当へ書き換える。判定は glab の英語ロケール出力に
+    # 依存するため LC_ALL/LANG=C を強制する。
+    if command == "glab-ci-lint":
+        return _with_targets(
+            _execute_glab_ci_lint(
+                command,
+                command_info,
+                commandline,
+                targets,
+                env,
+                on_output,
+                start_time,
+                args,
+                is_interrupted=is_interrupted,
+                on_subprocess_start=on_subprocess_start,
+                on_subprocess_end=on_subprocess_end,
+            )
+        )
+
     # textlint の fix モードは 2 段階実行 (fix 適用 + lint チェック)。
     # fixer-formatter が compact をサポートしない問題と、残存違反を compact で取得する
     # 要件を両立させるため、他の linter とは別経路で実行する。
@@ -1338,6 +1359,83 @@ def _build_subprocess_env(config: pyfltr.config.Config, command: str) -> dict[st
     # (pytestなどは一部の表示が右寄せになるのであまり大きいと見づらい)
     env["COLUMNS"] = str(min(max(shutil.get_terminal_size().columns - 4, 80), 128))
     return env
+
+
+# GitLab remote 未登録/未認証の状況で glab 自身が出すエラー文言。
+# 検出後に glab-ci-lint を skipped 扱いへ書き換える根拠とする。
+# 大文字小文字差を吸収するため、判定は ``output.lower()`` に対して行う。
+_GLAB_HOST_NOT_FOUND_PATTERNS: tuple[str, ...] = (
+    "none of the git remotes configured for this repository point to a known gitlab host",
+    "not authenticated",
+)
+
+
+def _looks_like_glab_host_missing(output: str) -> bool:
+    """Glab がGitLabホストを検出できなかった旨のエラーかを判定する。"""
+    lowered = output.lower()
+    return any(pattern in lowered for pattern in _GLAB_HOST_NOT_FOUND_PATTERNS)
+
+
+def _execute_glab_ci_lint(
+    command: str,
+    command_info: pyfltr.config.CommandInfo,
+    commandline: list[str],
+    targets: list[pathlib.Path],
+    env: dict[str, str],
+    on_output: typing.Callable[[str], None] | None,
+    start_time: float,
+    args: argparse.Namespace,
+    *,
+    is_interrupted: typing.Callable[[], bool] | None = None,
+    on_subprocess_start: typing.Callable[[], None] | None = None,
+    on_subprocess_end: typing.Callable[[], None] | None = None,
+) -> CommandResult:
+    """Glab ci lint をホスト未検出時にスキップ扱いへ変換しつつ実行する。"""
+    glab_env = dict(env)
+    # 文言判定がロケール依存にならないよう英語ロケールを強制する。
+    glab_env["LC_ALL"] = "C"
+    glab_env["LANG"] = "C"
+
+    if args.verbose and on_output is not None:
+        on_output(f"commandline: {shlex.join(commandline)}\n")
+
+    proc = _run_subprocess(
+        commandline,
+        glab_env,
+        on_output,
+        is_interrupted=is_interrupted,
+        on_subprocess_start=on_subprocess_start,
+        on_subprocess_end=on_subprocess_end,
+    )
+    returncode = proc.returncode
+    output = proc.stdout.strip()
+    elapsed = time.perf_counter() - start_time
+
+    if returncode != 0 and _looks_like_glab_host_missing(output):
+        message = "glab がGitLabホストを検出できなかったためスキップしました。"
+        pyfltr.warnings_.emit_warning(source=command, message=message)
+        skip_output = f"{message}\n\n{output}" if output else message
+        return CommandResult.from_run(
+            command=command,
+            command_info=command_info,
+            commandline=commandline,
+            returncode=None,
+            output=skip_output,
+            files=len(targets),
+            elapsed=elapsed,
+        )
+
+    errors = pyfltr.error_parser.parse_errors(command, output, command_info.error_pattern)
+    return CommandResult.from_run(
+        command=command,
+        command_info=command_info,
+        commandline=commandline,
+        returncode=returncode,
+        output=output,
+        elapsed=elapsed,
+        files=len(targets),
+        errors=errors,
+    )
 
 
 def _execute_pre_commit(
