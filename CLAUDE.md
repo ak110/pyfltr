@@ -13,6 +13,26 @@
   - 修正後の再実行時は、対象ファイルや対象ツールを必要に応じて絞って実行する（最終検証はCIに委ねる前提）
     - 例: `pyfltr run-for-agent --commands=mypy,ruff-check path/to/file`
 
+## 対応ツールの依存方針
+
+pyfltrが対応するformatter/linter/testerの依存指定は以下の基準で振り分ける。
+ここでの「公式」は対象ツール本家プロジェクトが直接配布しているPyPIパッケージを指す
+（GitHubの本家organization配下から配布されているものを含む）。
+さらに「自己完結」とは、wheelにバイナリ等が同梱されており`pip install`時に外部ネットワーク取得を発生させないことを指す。
+
+- 本体依存（`dependencies`）: 本家公式かつ自己完結なPyPIパッケージで、
+  Pythonプロジェクト以外でも汎用的に有用なもの（例: `typos`、`pre-commit`）
+- python extras（`[python]`）: 本家公式のPyPIパッケージだがPythonプロジェクト専用のもの
+ （例: `ruff`、`mypy`、`pylint`、`pyright`、`ty`、`pytest`、`uv-sort`）
+- 依存指定なし: 上記いずれにも該当しないもの。
+  Node.js系・Goバイナリ・Rust/.NET系など利用者が個別に導入する
+
+サードパーティの非公式PyPIラッパー（例: `shfmt-py`・`actionlint-py`・`shellcheck-py`）は、
+本家から独立した個人または別組織のメンテに依存するため本体依存には組み込まない。
+本家公式であってもインストール時に外部バイナリを取得するパッケージ（例: `editorconfig-checker`）は、
+オフライン・プロキシ環境での導入失敗リスクを避けるため本体依存から除外する。
+Node.js等のランタイムを伴うパッケージも、ランタイム導入とサプライチェーンの広さの観点から本体依存に含めない。
+
 ## 出力形式とloggerの役割分担
 
 pyfltrは3系統のloggerを使い分ける。実装を変更する際はこの設計判断を崩さないこと。
