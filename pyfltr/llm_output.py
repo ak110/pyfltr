@@ -450,7 +450,7 @@ def _build_command_record(
         truncated["diagnostics_total"] = diagnostic_total
         truncated["archive"] = f"tools/{archive_command_dir}/diagnostics.jsonl"
 
-    if result.status == "failed" and diagnostics == 0:
+    if result.status in {"failed", "resolution_failed"} and diagnostics == 0:
         message_max_lines, message_max_chars = _resolve_message_limits(config)
         message, msg_truncated, head_chars, tail_chars = _truncate_message(
             result.output,
@@ -528,7 +528,7 @@ def _build_summary_record(
     ``applied_fixes`` は fix ステージ・formatter ステージで実際に内容変化したファイルパスを
     全コマンドにわたってユニオンしソートした一覧。変化なしの場合は省略する。
     """
-    counts = {"succeeded": 0, "formatted": 0, "failed": 0, "skipped": 0}
+    counts = {"succeeded": 0, "formatted": 0, "failed": 0, "resolution_failed": 0, "skipped": 0}
     total_diagnostics = 0
     fixed_files_union: set[str] = set()
     for result in ordered_results:
@@ -542,11 +542,12 @@ def _build_summary_record(
         "succeeded": counts["succeeded"],
         "formatted": counts["formatted"],
         "failed": counts["failed"],
+        "resolution_failed": counts["resolution_failed"],
         "skipped": counts["skipped"],
         "diagnostics": total_diagnostics,
         "exit": exit_code,
     }
-    if counts["failed"] > 0:
+    if counts["failed"] + counts["resolution_failed"] > 0:
         record["guidance"] = _build_failure_guidance(run_id, launcher_prefix)
     if fixed_files_union:
         record["applied_fixes"] = sorted(fixed_files_union)

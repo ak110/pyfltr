@@ -905,7 +905,7 @@ def _maybe_emit_precommit_guidance(
 def calculate_returncode(results: list[pyfltr.command.CommandResult], exit_zero_even_if_formatted: bool) -> int:
     """終了コードを計算。"""
     statuses = [result.status for result in results]
-    if any(status == "failed" for status in statuses):
+    if any(status in {"failed", "resolution_failed"} for status in statuses):
         return 1
     if not exit_zero_even_if_formatted and any(status == "formatted" for status in statuses):
         return 1

@@ -538,6 +538,25 @@ def test_build_summary_record_guidance_falls_back_when_unspecified() -> None:
     assert "pyfltr run-for-agent --only-failed" in joined
 
 
+def test_build_summary_record_counts_resolution_failed() -> None:
+    """resolution_failed は failed と区別して集計され、guidance も付与される。"""
+    result = pyfltr.command.CommandResult(
+        command="shellcheck",
+        command_type="linter",
+        commandline=[],
+        returncode=1,
+        has_error=True,
+        files=2,
+        output="ツールが見つかりません",
+        elapsed=0.0,
+        resolution_failed=True,
+    )
+    record = pyfltr.llm_output._build_summary_record([result], exit_code=1)
+    assert record["failed"] == 0
+    assert record["resolution_failed"] == 1
+    assert "guidance" in record
+
+
 def test_build_summary_record_no_guidance_on_success() -> None:
     """failed == 0 のときは summary.guidance が省略される。"""
     result = pyfltr.command.CommandResult(

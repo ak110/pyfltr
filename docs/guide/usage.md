@@ -367,7 +367,17 @@ CLIオプション`--output-format`が指定されている場合は環境変数
 - `warning`: pyfltrが検出した設定・実行時の警告（`source`で発生元を識別）
 - `diagnostic`: `(command, file)`単位で集約された診断。個別指摘は`messages[]`配列に格納
 - `command`: 1コマンド1レコードの実行メタ情報
-- `summary`: 最終1行、全体集計。`failed > 0`のとき英語の`guidance`配列を付与する
+- `summary`: 最終1行、全体集計。`failed + resolution_failed > 0`のとき英語の`guidance`配列を付与する。
+  集計フィールドは`succeeded` / `formatted` / `failed` / `resolution_failed` / `skipped`の5種別
+
+`command`レコードの`status`は次の5値を取る。
+
+- `succeeded`: ツールが正常終了し、エラーも検出していない
+- `formatted`: formatterがファイルを書き換えた（`has_error=False`かつ`returncode != 0`）
+- `failed`: ツール実行で失敗した。エラー検出または異常終了を含む
+- `resolution_failed`: ツール起動コマンド（`bin-runner` / `js-runner`）の解決に失敗した。
+  `failed`と区別することで「対象0件で実行をスキップした」のか「対象はあったが解決時点で失敗した」のかを判別できる
+- `skipped`: 実行されなかった（対象ファイル0件・割り込み等）
 
 `header`レコードには`run_id`（ULID）が含まれる。実行アーカイブが有効な場合のみ付与され、
 [`pyfltr show-run`](#show-run) / [`pyfltr list-runs`](#list-runs)で該当runの詳細を参照できる。
@@ -378,7 +388,7 @@ CLIオプション`--output-format`が指定されている場合は環境変数
 {"kind":"diagnostic","command":"mypy","file":"src/a.py","messages":[{"line":42,"col":5,"msg":"Incompatible return value type"}]}
 {"kind":"command","command":"mypy","type":"linter","status":"failed","files":12,"elapsed":0.8,"diagnostics":1,"rc":1}
 {"kind":"command","command":"ruff-format","type":"formatter","status":"formatted","files":12,"elapsed":0.3,"diagnostics":0,"rc":1}
-{"kind":"summary","total":2,"succeeded":0,"formatted":1,"failed":1,"skipped":0,"diagnostics":1,"exit":1}
+{"kind":"summary","total":2,"succeeded":0,"formatted":1,"failed":1,"resolution_failed":0,"skipped":0,"diagnostics":1,"exit":1}
 ```
 
 stdout / `--output-file`のどちらもストリーミング形式に統一されている。
@@ -421,8 +431,9 @@ consumer側は特定のツール順を仮定せず、`kind`フィールドで種
 対応ツールはruff / pylint / pyright / mypy / shellcheck / eslint / markdownlint。
 URLを生成できたruleのみ含み、1件も無ければ`hint-urls`フィールド自体を省略する。
 
-`command`レコードは`status == "failed"`かつ`diagnostics == 0`のときに限り、
-`message`フィールドに`CommandResult.output`の末尾をトリムした内容を含める。
+`command`レコードは`status`が`failed` / `resolution_failed`、かつ`diagnostics == 0`のときに限り
+`message`フィールドを付与する。
+内容は`CommandResult.output`の末尾をトリムしたもの。
 実行ファイル未検出など、`error_parser`でパースできない失敗理由を捕捉するため。
 トリム閾値は`jsonl-message-max-lines`（既定30行）と`jsonl-message-max-chars`（既定2000文字）で調整できる。
 

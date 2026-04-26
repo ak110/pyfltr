@@ -91,6 +91,7 @@ def make_command_result(
     cached: bool = False,
     cached_from: str | None = None,
     target_files: list[pathlib.Path] | None = None,
+    resolution_failed: bool = False,
 ) -> pyfltr.command.CommandResult:
     """テスト用の CommandResult を生成する。
 
@@ -117,6 +118,7 @@ def make_command_result(
         retry_command=retry_command,
         cached=cached,
         cached_from=cached_from,
+        resolution_failed=resolution_failed,
     )
 
 
@@ -195,6 +197,7 @@ def seed_archive_run(
     files: int = 3,
     exit_code: int = 0,
     tool_results: list[tuple[str, int, str, list]] | None = None,
+    resolution_failed_tools: set[str] | None = None,
 ) -> str:
     """テスト用の run をアーカイブに書き込み、``run_id`` を返す。
 
@@ -205,7 +208,13 @@ def seed_archive_run(
     store = pyfltr.archive.ArchiveStore(cache_root=cache_root)
     run_id = store.start_run(commands=commands or ["ruff-check"], files=files)
     for tool, returncode, output, errors in tool_results or []:
-        result = make_command_result(tool, returncode=returncode, output=output, errors=errors)
+        result = make_command_result(
+            tool,
+            returncode=returncode,
+            output=output,
+            errors=errors,
+            resolution_failed=tool in (resolution_failed_tools or set()),
+        )
         store.write_tool_result(run_id, result)
     store.finalize_run(run_id, exit_code=exit_code, commands=commands, files=files)
     return run_id

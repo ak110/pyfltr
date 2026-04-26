@@ -351,8 +351,14 @@ def _failed_resolution_result(
     command: str,
     command_info: pyfltr.config.CommandInfo,
     message: str,
+    *,
+    files: int,
 ) -> "CommandResult":
-    """ツール解決失敗時の `CommandResult` を組み立てる。"""
+    """ツール解決失敗時の `CommandResult` を組み立てる。
+
+    ``files`` には実際の処理対象件数を渡す。``status`` は ``resolution_failed`` を返し、
+    通常の実行失敗（``failed``）と区別できるようにする。
+    """
     pyfltr.warnings_.emit_warning(source="tool-resolve", message=f"{command}: {message}")
     return CommandResult.from_run(
         command=command,
@@ -360,9 +366,10 @@ def _failed_resolution_result(
         commandline=[],
         returncode=1,
         has_error=True,
-        files=0,
+        files=files,
         output=message,
         elapsed=0.0,
+        resolution_failed=True,
     )
 
 
@@ -559,6 +566,14 @@ class CommandResult:
     内容変化が検知されなかった場合は空。
     ``summary.applied_fixes`` の集計に使用する。
     """
+    resolution_failed: bool = False
+    """ツール起動コマンドの解決に失敗したか。
+
+    bin-runner / js-runner からの解決失敗時に ``True`` を立てる。
+    ``status`` プロパティは通常の実行失敗（``failed``）より優先して
+    ``resolution_failed`` を返し、CI ログ等で「対象 0 件で失敗したのか／
+    対象はあったが解決に失敗したのか」を区別可能にする。
+    """
 
     @classmethod
     def from_run(  # pylint: disable=duplicate-code
@@ -574,6 +589,7 @@ class CommandResult:
         has_error: bool = False,
         errors: "list[pyfltr.error_parser.ErrorLocation] | None" = None,
         command_type: str | None = None,
+        resolution_failed: bool = False,
     ) -> "CommandResult":
         """実行結果から CommandResult を組み立てるファクトリメソッド。
 
@@ -597,6 +613,7 @@ class CommandResult:
             output=output,
             elapsed=elapsed,
             errors=errors if errors is not None else [],
+            resolution_failed=resolution_failed,
         )
 
     @property
@@ -607,6 +624,8 @@ class CommandResult:
     @property
     def status(self) -> str:
         """ステータスの文字列を返す。"""
+        if self.resolution_failed:
+            return "resolution_failed"
         if self.returncode is None:
             status = "skipped"
         elif self.returncode == 0:
@@ -910,13 +929,14 @@ def _prepare_execution_params(
                 command_info,
                 f"js-runner=direct 指定ですが実行ファイルが見つかりません: {e}. "
                 "package.jsonで対象パッケージをインストールしてください。",
+                files=len(targets),
             )
         commandline_prefix: list[str] = [resolved_path, *prefix]
     elif command in _BIN_TOOL_SPEC and config[f"{command}-path"] == "":
         try:
             resolved_path, prefix = _resolve_bin_commandline(command, config)
         except FileNotFoundError as e:
-            return _failed_resolution_result(command, command_info, f"ツールが見つかりません: {e}")
+            return _failed_resolution_result(command, command_info, f"ツールが見つかりません: {e}", files=len(targets))
         commandline_prefix = [resolved_path, *prefix]
     else:
         commandline_prefix = [config[f"{command}-path"]]

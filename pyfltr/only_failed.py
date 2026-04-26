@@ -203,7 +203,7 @@ def _collect_failed_tools(
             meta = store.read_tool_meta(run_id, tool)
         except OSError:
             continue
-        if meta.get("status") == "failed":
+        if meta.get("status") in {"failed", "resolution_failed"}:
             failed.append(tool)
     return failed
 

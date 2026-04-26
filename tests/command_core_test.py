@@ -250,7 +250,7 @@ def test_resolve_js_commandline_direct_found(tmp_path: pathlib.Path) -> None:
 
 
 def test_execute_command_direct_missing_returns_failed_result(tmp_path: pathlib.Path) -> None:
-    """js-runner=direct で実行ファイル不在時、例外でなく failed CommandResult を返す。"""
+    """js-runner=direct で実行ファイル不在時、例外でなく resolution_failed CommandResult を返す。"""
     target = tmp_path / "sample.md"
     target.write_text("# title\n")
 
@@ -264,7 +264,7 @@ def test_execute_command_direct_missing_returns_failed_result(tmp_path: pathlib.
         result = pyfltr.command.execute_command(
             "textlint", _testconf.make_args(), _testconf.make_execution_context(config, [target])
         )
-        assert result.status == "failed"
+        assert result.status == "resolution_failed"
         assert result.has_error is True
         assert "node_modules" in result.output
     finally:
@@ -848,14 +848,16 @@ def test_resolve_bin_commandline_mise_untrusted_auto_trust_trust_failure(mocker)
 
 
 def test_failed_resolution_result() -> None:
-    """_failed_resolution_resultが失敗用のCommandResultを返す。"""
+    """_failed_resolution_resultが解決失敗専用のCommandResultを返す。"""
     command_info = pyfltr.config.CommandInfo(type="linter")
 
-    result = pyfltr.command._failed_resolution_result("shellcheck", command_info, "ツールが見つかりません: shellcheck")
+    result = pyfltr.command._failed_resolution_result("shellcheck", command_info, "ツールが見つかりません: shellcheck", files=3)
 
     assert result.returncode == 1
     assert result.has_error is True
-    assert result.status == "failed"
+    assert result.resolution_failed is True
+    assert result.status == "resolution_failed"
+    assert result.files == 3
     assert "shellcheck" in result.output
     assert result.command == "shellcheck"
     assert result.elapsed == 0.0

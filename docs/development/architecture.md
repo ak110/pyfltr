@@ -132,6 +132,17 @@ pyfltr本体はこれらの依存を抱えない。
 `make_skipped_result()`・`cancel_pending_futures()`の2関数を`stage_runner.py`へ抽出するに留める。
 残余重複は`# pylint: disable=duplicate-code`を理由コメント付きで維持する。
 
+### ツール解決の失敗扱い
+
+ツール起動コマンドの解決（`bin-runner` / `js-runner` 経由）は、対象ファイル0件のときは省略する。
+mise等のbin-runner解決はネットワーク制約・プラットフォーム制約で失敗し得るため、
+解決不要な状況で副作用的な失敗を出さないよう早期returnして空の実行パラメータを返す。
+
+対象ファイルがあるにもかかわらず解決に失敗した場合は、`resolution_failed`という専用ステータスを返す。
+通常の実行失敗（`failed`）とは独立に集計・表示することで、CIログから
+「対象0件で実行をスキップしたのか／対象はあったが解決時点で失敗したのか」を判別可能にする。
+exit code判定・`--only-failed`の対象抽出・UI表示はいずれも`failed`と`resolution_failed`を同等の失敗系として扱う。
+
 ### `main.py`分割の方針
 
 retry系ヘルパー・`--only-failed`フィルター・パス正規化を専用モジュールへ分離し、`main.py`の肥大化を抑える。

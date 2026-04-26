@@ -107,6 +107,24 @@ def test_apply_filter_builds_per_tool_targets(_only_failed_cache: pathlib.Path) 
     assert targets["mypy"].files == (pathlib.Path("b.py"),)
 
 
+def test_apply_filter_includes_resolution_failed_tools(_only_failed_cache: pathlib.Path) -> None:
+    """resolution_failed のツールも --only-failed の再実行対象に含まれる。"""
+    _seed_run(
+        _only_failed_cache,
+        commands=["shellcheck"],
+        exit_code=1,
+        tool_results=[("shellcheck", 1, "ツールが見つかりません", [])],
+        resolution_failed_tools={"shellcheck"},
+    )
+    args = argparse.Namespace(only_failed=True)
+    commands, targets, exit_early = pyfltr.only_failed.apply_filter(args, ["shellcheck"], [pathlib.Path("a.sh")])
+
+    assert exit_early is False
+    assert commands == ["shellcheck"]
+    assert targets is not None
+    assert "shellcheck" in targets
+
+
 def test_apply_filter_fallback_for_missing_diagnostics(_only_failed_cache: pathlib.Path) -> None:
     """診断なしの失敗ツール（pass-filenames=False 等）は fallback モードになる。"""
     _seed_run(

@@ -96,6 +96,7 @@ _STATUS_DISPLAY: dict[str, str] = {
     "running": "● running",
     "succeeded": "✓ done",
     "failed": "⚠ failed",
+    "resolution_failed": "⚠ resolution failed",
     "formatted": "△ formatted",
     "skipped": "- skipped",
 }
@@ -431,7 +432,7 @@ class UIApp(App):
             # 自動終了判定
             statuses = [result.status for result in self.results]
             overall_status: typing.Literal["SUCCESS", "FORMATTED", "FAILED"]
-            if any(status == "failed" for status in statuses):
+            if any(status in {"failed", "resolution_failed"} for status in statuses):
                 overall_status = "FAILED"
             elif any(status == "formatted" for status in statuses):
                 overall_status = "FORMATTED"
@@ -552,7 +553,7 @@ class UIApp(App):
                 footer,
             )
             # コマンド失敗時のタブタイトル更新
-            if result.status == "failed":
+            if result.status in {"failed", "resolution_failed"}:
                 self._safe_call_from_thread(self._update_tab_title, result.command)
 
             # エラーまたは警告があればErrorsタブを即時追加/更新
