@@ -191,6 +191,26 @@ jobs:
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
+      # `uv publish --check-url` 直後でも PyPI 配信エッジ (Fastly) のキャッシュ反映には
+      # ラグがあり、Docker build 内の `uv tool install pyfltr==X.Y.Z` が
+      # 「No solution found」で落ちる事象が継続発生したため、Docker build 直前に
+      # 同等条件 (clean cache) で解決可能になるまで polling する。
+      - name: Wait for PyPI propagation
+        run: |
+          set -euo pipefail
+          version="${{ steps.docker.outputs.version }}"
+          for i in $(seq 1 60); do
+            if uv tool install --reinstall --no-cache "pyfltr==${version}" >/dev/null 2>&1; then
+              echo "pyfltr==${version} is installable from PyPI"
+              uv tool uninstall pyfltr >/dev/null 2>&1 || true
+              exit 0
+            fi
+            echo "Attempt ${i}/60: pyfltr==${version} not yet resolvable, sleeping 10s..."
+            sleep 10
+          done
+          echo "Timeout waiting for PyPI propagation of pyfltr==${version}" >&2
+          exit 1
+
       - name: Build and push Docker image
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
