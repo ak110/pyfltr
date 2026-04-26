@@ -4,9 +4,16 @@
 ここでは実用的な設定例を紹介する。
 カスタムコマンドの仕様は[ツール別設定](configuration-tools.md)の「カスタムコマンド」セクションを参照。
 
+`error-pattern`は名前付きグループ`file` / `line` / `message`が必須、`col`は任意。
+正規表現にこれらが含まれない場合は設定エラーとなる。
+
 ## Pythonセキュリティ・品質ツール
 
 ### bandit（セキュリティチェック）
+
+設定ファイルとして`pyproject.toml`の`[tool.bandit]`または`.bandit`を参照する例。
+`config-files`に列挙すると、対象ツール有効化時にいずれもプロジェクトルート直下に存在しない場合に
+pyfltrが警告を出す（ツール自体は実行する）。
 
 ```toml
 [tool.pyfltr.custom-commands.bandit]
@@ -15,6 +22,7 @@ path = "bandit"
 args = ["-r", "-f", "custom"]
 targets = "*.py"
 error-pattern = '(?P<file>[^:]+):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>.+)'
+config-files = ["pyproject.toml", ".bandit"]
 fast = true
 ```
 
@@ -56,11 +64,14 @@ pass-filenames = false
 
 ### codespell（スペルチェック）
 
+`fix-args`を定義するとfix段で`args`の後ろに追加されて`--write-changes`付きで実行される。
+
 ```toml
 [tool.pyfltr.custom-commands.codespell]
 type = "linter"
 path = "codespell"
 args = []
+fix-args = ["--write-changes"]
 targets = ["*.py", "*.md", "*.rst", "*.txt"]
 fast = true
 ```

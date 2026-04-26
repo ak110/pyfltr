@@ -26,13 +26,9 @@ pip install pyfltr
 uv add --dev pyfltr
 ```
 
-uvxでの実行も可能。
-
-```shell
-uvx pyfltr --help
-```
-
-Python系ツール（ruff / mypy / pylint / pyright / ty / pytest / uv-sort）を利用する場合は、extrasで追加依存を導入する。
+対応するPython系ツールはruff-format / ruff-check / mypy / pylint / pyright / ty / pytest / uv-sortの8種。
+このうちtyのみpreset非収録のため、必要に応じて`ty = true`を個別指定する。
+Python系ツールを利用する場合はextrasで追加依存を導入する。
 
 ```shell
 pip install 'pyfltr[python]'
@@ -41,47 +37,39 @@ pip install 'pyfltr[python]'
 Python / JavaScript / Rust / .NETの各言語カテゴリに属するツールはすべて既定で無効（opt-in）である。
 `preset = "latest"` + 言語カテゴリキー（`python` / `javascript` / `rust` / `dotnet`）の`true`指定だけで、
 当該言語の推奨ツール一式が有効化される。
-プリセット非収録のツール（`ty`など）を追加したい場合のみ個別に`{command} = true`を指定する。
 詳細は[設定項目](docs/guide/configuration.md)を参照。
+
+## 使い方
+
+```shell
+uvx pyfltr --help
+```
+
+uvxでの実行も可能。
+
+## 主なサブコマンド
+
+- `pyfltr ci` / `run` / `fast` — チェック実行（CI / ローカル全体 / 軽量）
+- `pyfltr run-for-agent` — エージェント向けJSONL出力（`pyfltr run --output-format=jsonl`のエイリアス）
+- `pyfltr list-runs` / `show-run` — 実行履歴の参照
+- `pyfltr command-info` — ツール起動方式の確認
+- `pyfltr mcp` — MCPサーバー
+
+詳細は[CLIコマンド](docs/guide/usage.md)を参照。
 
 ## コーディングエージェント向け運用
 
-コーディングエージェントから利用する経路は2種類ある。
-
-直接呼び出し（シェルコマンドが実行できる環境）:
+`pyfltr run-for-agent`をエージェントから直接呼び出すか、`pyfltr mcp`でMCPサーバーとして登録する。
 
 ```shell
-# JSONL形式で全チェックを実行し、結果をエージェントが読み込む
+# 直接呼び出し（JSONL出力）
 uvx pyfltr run-for-agent
 
-# 直前runで失敗したツール・ファイルだけ再実行
-uvx pyfltr run-for-agent --only-failed
-```
-
-`run-for-agent`は`pyfltr run --output-format=jsonl`のエイリアス。
-JSONL出力の末尾`summary`行で全体像を把握でき、必要に応じて`diagnostic`行を参照することでトークン消費を抑えられる。
-
-MCP経由（コーディングエージェントのMCPクライアント経由）:
-
-```shell
-# コーディングエージェントへの登録例（コマンド形式）
+# MCPサーバーとして登録（Claude Code例）
 claude mcp add pyfltr -- uvx pyfltr mcp
 ```
 
-または設定ファイルに直接記載する方法:
-
-```json
-{
-  "mcpServers": {
-    "pyfltr": {
-      "command": "uvx",
-      "args": ["pyfltr", "mcp"]
-    }
-  }
-}
-```
-
-MCPツール`run_for_agent`で`paths`・`commands`・`fail_fast`を指定して実行できる。
+詳細は[CLIコマンド](docs/guide/usage.md)の「コーディングエージェント連携」を参照。
 
 ## ドキュメント
 

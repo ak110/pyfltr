@@ -3,11 +3,14 @@
 Python以外のプロジェクトでもpyfltrを活用できる。共通のポイントは以下。
 
 - `preset = "latest"`: 各時点での推奨ツール構成。
-  ドキュメント系（textlint / markdownlint / actionlint / typos / pre-commit）はいずれの言語ゲートにも属さず常に有効化される
+  ドキュメント系（textlint / markdownlint / actionlint / typos / pre-commit）は言語カテゴリゲートに属さず、
+  プリセットでtrueになっているツールがそのまま有効化される
 - 言語カテゴリゲートの詳細は[設定項目](configuration.md)を参照
 - `uvx pyfltr`: pyfltrをdev依存に含めないため、`uvx`で都度取得して実行する
 - 言語固有のツール + ドキュメント系lint（textlint / markdownlint / prettier）を組み合わせる
 - `bin-runner`のデフォルトは`"mise"`。actionlint等のネイティブバイナリツールはmise経由で呼び出されるため、mise導入を推奨する
+- 個別ツールをPATH直接実行へ戻すには`{command}-runner = "direct"`または`{command}-path`を指定する
+ （[ツール別設定](configuration-tools.md#command-runner)を参照）
 - タスクランナー（Makefile / mise.toml）の設定例は[推奨設定例](recommended.md)の「タスクランナー」を参照
 
 ## TypeScript/JS専用プロジェクト
@@ -86,6 +89,17 @@ extend-exclude = [
 プロジェクト固有の許可語がある場合は`[tool.typos]`セクションも追記する
 （詳細は[推奨設定例](recommended.md)の「typosの許可語設定」を参照）。
 
+`mise.toml`例（cargo系をmise経由で固定バージョンで起動）:
+
+```toml
+[tools]
+rust = "1.83.0"
+"cargo:cargo-deny" = "latest"
+```
+
+`pyfltr`は`bin-runner`既定`"mise"`に従って`mise exec rust@1.83.0 -- cargo`で起動する。
+PATH上のcargoを使いたい場合は`cargo-fmt-runner = "direct"`等を指定する。
+
 `.pre-commit-config.yaml`（ローカルフックで`uvx pyfltr fast`を呼ぶ）:
 
 ```yaml
@@ -112,6 +126,17 @@ extend-exclude = [
 
 `dotnet format` / `dotnet build` / `dotnet test`と、ドキュメント系lintをpyfltrに一元化する例。
 Rustプロジェクトと同じ構成で、cargo系をdotnet系に差し替える。
+
+`mise.toml`例（dotnet SDKをmise経由で固定バージョンで起動）:
+
+```toml
+[tools]
+dotnet = "9.0.100"
+```
+
+`bin-runner`既定`"mise"`に従い`mise exec dotnet@9.0.100 -- dotnet`で起動する。
+direct実行へ戻したい場合は`dotnet-format-runner = "direct"`等を指定する。
+direct実行時は環境変数`DOTNET_ROOT`配下の`dotnet`実行ファイルを優先採用する。
 
 `pyproject.toml`:
 

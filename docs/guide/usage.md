@@ -182,6 +182,36 @@ claude mcp add pyfltr -- pyfltr mcp
 claude mcp add pyfltr -- uv run pyfltr mcp
 ```
 
+### サブコマンド: command-info {#command-info}
+
+```shell
+pyfltr command-info <tool> [--format text|json] [--check]
+```
+
+対象ツールの起動方式（runner種別・実行ファイルパス・最終コマンドライン）の解決結果を副作用無しで表示する。
+`pyproject.toml`の`{command}-runner`設定や`bin-runner` / `js-runner`の影響を実環境で確認したいときに使う。
+
+```console
+$ pyfltr command-info cargo-fmt
+command: cargo-fmt
+enabled: True
+runner: bin-runner (default)
+effective_runner: mise
+executable: mise
+executable_resolved: /home/user/.local/bin/mise
+commandline: mise exec rust@latest -- cargo
+configured_args: fmt
+version: latest
+```
+
+主要なオプション。
+
+- `--format=text|json`: 出力形式を切り替える（既定`text`）。json形式はスクリプトからのパース向け
+- `--check`: mise経由ツールに対して`mise exec --version`での事前チェックを行う
+ （`mise install` / `mise trust`が発火する場合があるため、既定では行わない）
+
+未知のコマンド名や`{command}-runner = "mise"`を未登録ツールに指定した場合などは終了コード1で失敗する。
+
 ### サブコマンド: generate-shell-completion
 
 ```shell
@@ -253,7 +283,7 @@ pyfltr ci --commands=ruff-check,markdownlint [files and/or directories ...]
 
 - `format`: `pre-commit` `ruff-format` `prettier` `uv-sort` `shfmt` `cargo-fmt` `dotnet-format`
 - `lint`:
-    - Python系: `ruff-check` `mypy` `pylint` `pyright` `ty`
+    - Python系: `ruff-check` `mypy` `pylint` `pyright` `ty`（tyはpreset非収録のため未有効時はスキップ）
     - Markdown系: `markdownlint` `textlint`
     - JS/TS系: `eslint` `biome` `oxlint` `tsc`
     - Rust系: `cargo-clippy` `cargo-check` `cargo-deny`

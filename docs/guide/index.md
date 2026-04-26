@@ -6,14 +6,14 @@
 言語カテゴリ（Python / JS/TS / Rust / .NET）に属するツールはすべて既定で無効（opt-in）。
 `preset = "latest"` + 言語カテゴリキー（`python` / `javascript` / `rust` / `dotnet`）の`true`指定だけで、
 当該言語の推奨ツール一式がゲートを通過して有効化される。
-追加ツール（`ty`など）や個別の無効化が必要な場合のみ`{command} = true` / `{command} = false`を書き足す。
+追加ツールや個別の無効化が必要な場合のみ`{command} = true` / `{command} = false`を書き足す。
 詳細は[設定項目](configuration.md)を参照。
 
 ### Python系
 
-対象はruff-format / ruff-check / mypy / pylint / pyright / pytest / uv-sortの7種。
-`ty`はプリセット非収録のため、必要な場合のみ個別に`ty = true`を指定する。
-同時に`pip install pyfltr[python]`でPython系ツールの依存を追加する必要がある。
+対応するPython系ツールはruff-format / ruff-check / mypy / pylint / pyright / ty / pytest / uv-sortの8種。
+このうちtyのみpreset非収録のため、必要に応じて`ty = true`を個別指定する。
+利用時は同時に`pip install pyfltr[python]`でPython系ツールの依存を追加する必要がある。
 
 - Formatters: ruff format / uv-sort（依存定義のソート）
 - Linters: ruff check / mypy / pylint / pyright / ty
@@ -31,8 +31,9 @@
 ### Rust系
 
 推奨ツール一式はcargo-fmt / cargo-clippy / cargo-check / cargo-test / cargo-denyの5種。
-プロジェクト全体（crate単位）を対象とし、既定ではbin-runner経由（グローバル`bin-runner`既定`mise`によりmise経由）で起動する。
-従来挙動（PATH上の`cargo`等を直接実行）に戻したい場合は`cargo-fmt-runner = "direct"`等を設定する。
+プロジェクト全体（crate単位）を対象とし、`{command}-runner`既定値`"bin-runner"`に従い
+グローバル`bin-runner`既定`"mise"`によりmise経由で起動する。
+PATH上の`cargo`等を直接実行したい場合は`cargo-fmt-runner = "direct"`等を設定する。
 
 - Formatters: cargo fmt
 - Linters: cargo clippy / cargo check / cargo deny（依存ライセンス・脆弱性チェック）
@@ -41,8 +42,9 @@
 ### .NET系
 
 推奨ツール一式はdotnet-format / dotnet-build / dotnet-testの3種。
-プロジェクト全体（solution単位）を対象とし、既定ではbin-runner経由（グローバル`bin-runner`既定`mise`によりmise経由）で起動する。
-従来挙動（PATH上の`dotnet`を直接実行）に戻したい場合は`dotnet-format-runner = "direct"`等を設定する。
+プロジェクト全体（solution単位）を対象とし、`{command}-runner`既定値`"bin-runner"`に従い
+グローバル`bin-runner`既定`"mise"`によりmise経由で起動する。
+PATH上の`dotnet`を直接実行したい場合は`dotnet-format-runner = "direct"`等を設定する。
 direct実行時は環境変数`DOTNET_ROOT`配下に`dotnet`実行ファイルがあれば優先採用する。
 
 - Formatters: dotnet format
@@ -67,20 +69,15 @@ pyfltrの設定キーとコマンド名は`markdownlint`（例: `markdownlint = 
       gitleaks（シークレット検出、既定で無効）
 - 統合: pre-commit（`.pre-commit-config.yaml`のhookを統合実行）
 
-`glab-ci-lint`は`glab ci lint`経由でGitLab CI設定を構文検証する。
-GitLab API認証とネットワーク接続が必須なため、CIや初学者環境で誤って失敗しないよう既定で無効化している。
+既定で無効（opt-in）のツールは、利用時に`pyproject.toml`で`{command} = true`を設定する。
+特記事項を以下に示す。
 
-`taplo`はRust製のTOMLフォーマッター/リンター。bin-runner経由で実行し、shfmtと同様の2段階実行（check→format）を行う。
-既定で無効（opt-in）のため、使用時は`taplo = true`を設定する。
-
-`yamllint`はPython製のYAMLリンター。PATH上または`yamllint-path`で指定した実行ファイルを直接呼び出す。
-既定で無効（opt-in）のため、使用時は`yamllint = true`を設定する。
-
-`hadolint`はDockerfileに特化したリンター。bin-runner経由で実行する。
-既定で無効（opt-in）のため、使用時は`hadolint = true`を設定する。
-
-`gitleaks`はGoバイナリのシークレット検出ツール。`gitleaks detect`でリポジトリ全体を対象に実行する。
-既定で無効（opt-in）のため、使用時は`gitleaks = true`を設定する。
+- `taplo`: Rust製のTOMLフォーマッター/リンター。bin-runner経由で実行し、shfmtと同様の2段階実行（check→format）を行う
+- `yamllint`: Python製のYAMLリンター。PATH上または`yamllint-path`で指定した実行ファイルを直接呼び出す
+- `hadolint`: Dockerfileに特化したリンター。bin-runner経由で実行する
+- `gitleaks`: Goバイナリのシークレット検出ツール。`gitleaks detect`でリポジトリ全体を対象に実行する
+- `glab-ci-lint`: `glab ci lint`経由でGitLab CI設定を構文検証する。
+  GitLab API認証とネットワーク接続が必須なため、CIや初学者環境で誤って失敗しないよう既定で無効化している
 
 プリセット指定と言語カテゴリゲートによる有効化の詳細は[設定項目](configuration.md)を参照。
 
@@ -103,6 +100,7 @@ pip install pyfltr
 ## ガイドページ
 
 - [CLIコマンド](usage.md) — CLIの使い方・サブコマンド・オプション
+- [トラブルシューティング](troubleshooting.md) — よくある問題と回避策
 - [設定項目](configuration.md) — 基本設定・プリセット・並列実行
 - [設定項目（ツール別）](configuration-tools.md) —
   ツール別設定（直接実行 / js-runner / bin-runnerのカテゴリ別設定・2段階実行・カスタムコマンド）

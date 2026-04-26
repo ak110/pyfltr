@@ -32,6 +32,8 @@ extend-exclude = ["foo", "bar.py"]
 - {command}-extend-targets : 対象ファイルパターンへの追加
 - {command}-exclude : ツール別の追加除外パターン（後述）
 - {command}-pass-filenames : ファイル引数をコマンドに渡すか否か（既定: `true`）
+- {command}-runner : ツール起動方式（`"direct"` / `"mise"` / `"bin-runner"` / `"js-runner"`）。
+  既定値はツールごとに異なる（[ツール別設定](configuration-tools.md#command-runner)を参照）
 - {command}-version : bin-runner対応ツールのバージョン指定（既定: `"latest"`）
 - pylint-pydantic : pylint実行時に`--load-plugins=pylint_pydantic`を自動追加するか（既定: `true`、後述）
 - mypy-unused-awaitable : mypy実行時に`--enable-error-code=unused-awaitable`を自動追加するか（既定: `true`、後述）
@@ -160,14 +162,14 @@ python = true
 Pythonプロジェクトで利用する場合は別途`pip install pyfltr[python]`で依存を導入する必要がある。
 JavaScript系・Rust系・.NET系は各言語のツールチェイン（Node.js・cargo・dotnet CLI）が前提となる。
 
-プリセットに含まれないツール（例: `ty`は現行プリセット非収録）を使いたい場合は個別に`{command} = true`を指定する。
-個別指定はゲートを越えて最優先される。
+対応するPython系ツールはruff-format / ruff-check / mypy / pylint / pyright / ty / pytest / uv-sortの8種。
+このうちtyのみpreset非収録のため、必要に応じて個別に`ty = true`を指定する（ゲートを越えて最優先）。
 
 ```toml
 [tool.pyfltr]
 preset = "latest"
 python = true
-ty = true        # preset に無いため個別指定で追加
+ty = true        # preset 非収録のため個別指定で追加
 ```
 
 ## ツール別除外設定

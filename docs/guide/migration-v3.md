@@ -149,117 +149,19 @@ uv add --dev 'pyfltr[python]'
 Python系linterを一切含まない。
 `pre-commit`は言語非依存でどのプロジェクトでも利用できるため常時依存とする。
 
-## 6. 新機能の活用
+## 6. v3.0.0以降の新機能
 
-v3.0.0で追加された機能のうち、日常利用に影響するものを次に示す。
+v3.0.0以降の変更履歴は本ドキュメントでは管理しない（冒頭の方針通り）。
+主な新機能の入口を以下に示す。
 
-### 実行アーカイブ（既定で有効）
+- 実行アーカイブ・ファイルhashキャッシュ → [archive-and-cache.md](../development/archive-and-cache.md)
+- MCPサーバー（`pyfltr mcp`）→ [usage.md](usage.md)
+- JSONLスキーマ拡張（`command.hint-urls` / `command.retry_command` / smart truncation）
+  → [jsonl-output.md](../development/jsonl-output.md)
+- `{command}-runner`設定（v3.x系で追加）→ [configuration-tools.md](configuration-tools.md)
+- 失敗のみ再実行（`--only-failed` / `--from-run`）→ [usage.md](usage.md)
 
-全実行のツール生出力・diagnostic・メタ情報がユーザーキャッシュ配下に自動保存される。
-保存先は`platformdirs.user_cache_dir("pyfltr")`で解決する。
-Linuxは`~/.cache/pyfltr/`、macOSは`~/Library/Caches/pyfltr/`、Windowsは`%LOCALAPPDATA%\pyfltr\Cache`。
-
-- `--no-archive`で個別実行時に無効化
-- `[tool.pyfltr].archive = false`で恒久的に無効化
-- 既定で世代数100・合計1GB・30日のいずれかを超過すると古い順に自動削除
-
-JSONL出力時、`header`レコードに`run_id`（ULID）が付与される。
-このフィールドを使って後から`pyfltr show-run <run_id>`または`pyfltr show-run latest`でツール生出力を含む全文参照ができる。
-`pyfltr list-runs`でrun一覧も確認できる。
-
-アーカイブを無効化したい場合の`pyproject.toml`例。
-
-```toml
-[tool.pyfltr]
-preset = "latest"
-python = true
-# 実行アーカイブを無効化し、ユーザーキャッシュを消費しない
-archive = false
-```
-
-### ファイルhashキャッシュ（既定で有効）
-
-対象ファイル未変更時のtextlint実行をスキップし、過去の結果を復元する（textlintのみ対象）。
-キャッシュヒット時はJSONL `command`レコードに`cached: true` / `cached_from: <ソースrun_id>`が付与される。
-
-- `--no-cache`で個別実行時に無効化
-- `[tool.pyfltr].cache = false`で恒久的に無効化
-- 既定で12時間経過後に自動削除（`cache-max-age-hours`で調整可能）
-
-### MCPサーバー同梱
-
-`pyfltr mcp`でstdioトランスポートのMCPサーバーが起動する。
-Claude Desktop等のMCPクライアントから
-`list_runs` / `show_run` / `show_run_diagnostics` / `show_run_output` / `run_for_agent`の5ツールが使える。
-詳細は[CLIコマンド](usage.md)のmcp節を参照。
-
-### JSONL出力の拡張
-
-`--output-format=jsonl`の出力に次のフィールドが追加された。
-
-- `header.run_id`（ULID）— 実行アーカイブの参照キー
-- `diagnostic.rule_url` —
-  対応ツール（ruff / pylint / pyright / mypy / shellcheck / eslint / markdownlint）のルールドキュメントURL
-- `diagnostic.severity` — `error` / `warning` / `info`の3値に正規化
-- `command.retry_command` — 1ツール再実行用のshellコマンド文字列（失敗ファイルのみに絞り込み）
-- `command.truncated` — smart truncation発生時の切り詰め前情報とアーカイブパス
-- `command.cached` / `command.cached_from` — ファイルhashキャッシュ復元時の判別情報
-
-### 出力形式の追加とCI連携
-
-`--output-format=sarif`（SARIF 2.1.0互換）と`--output-format=github-annotations`（GitHub Actions向け注釈）が追加された。
-GitHub code scanningへの取り込みやプル要求のインライン表示に利用できる。
-
-GitHub Actionsでインライン注釈を有効化する例。
-`::error file=...` / `::warning file=...` 形式の行が出力され、プル要求の該当ファイル行にコメントとして表示される。
-
-```yaml
-      - name: Run pyfltr with GitHub annotations
-        run: uv run pyfltr ci --output-format=github-annotations
-```
-
-SARIF出力をGitHub code scanningへ取り込む例。
-`--output-file`でSARIFファイルを書き出し、`github/codeql-action/upload-sarif`でアップロードする。
-
-```yaml
-      - name: Run pyfltr (SARIF)
-        run: uv run pyfltr ci --output-format=sarif --output-file=pyfltr.sarif
-        continue-on-error: true
-
-      - name: Upload SARIF to code scanning
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: pyfltr.sarif
-```
-
-### LLMエージェントとの連携
-
-LLMエージェントから利用する導線が2つ用意されている。
-
-- `pyfltr run-for-agent` — `pyfltr run --output-format=jsonl`のエイリアス。CLIから1コマンドずつ呼び出す用途
-- `pyfltr mcp` — MCPサーバーを起動し、Claude Desktop等から常駐利用する用途。
-  提供ツールは`list_runs` / `show_run` / `show_run_diagnostics` / `show_run_output` / `run_for_agent`の5種
-
-### `--fail-fast`
-
-1ツールでもエラーが発生した時点で残りのジョブを打ち切る。
-起動済みサブプロセスには`terminate()`（最大5秒待機 → `kill()`フォールバック）を送り、
-未開始ジョブは`future.cancel()`で取消して`skipped`として扱う。
-
-### `--only-failed` / `--from-run`
-
-直前run（または`--from-run`で指定した過去run）の実行アーカイブから失敗ツール・失敗ファイルを抽出し、
-ツール別にその組み合わせのみを再実行する。
-
-```shell
-# 直前runの失敗組み合わせのみ再実行
-pyfltr run-for-agent --only-failed
-
-# 特定runを参照
-pyfltr run-for-agent --only-failed --from-run 01HXYZ
-```
-
-直前runが存在しない・失敗ツールが無い・指定`targets`との交差が空の場合はメッセージを出してrc=0で成功終了する。
+最新の変更点は[GitHub Releases](https://github.com/ak110/pyfltr/releases)を参照。
 
 ## チェックリスト
 

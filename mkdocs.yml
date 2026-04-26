@@ -52,6 +52,8 @@ plugins:
 
         ## 対応ツール
 
+        対応するPython系ツールは ruff-format / ruff-check / mypy / pylint / pyright / ty / pytest / uv-sort の8種。このうちtyのみpreset非収録のため、必要に応じて`ty = true`を個別指定する。
+
         - Python系: ruff-format / ruff-check / mypy / pylint / pyright / ty / pytest / uv-sort
         - JS/TS系: prettier / eslint / biome / oxlint / tsc / vitest
         - Rust系: cargo-fmt / cargo-clippy / cargo-check / cargo-deny / cargo-test
@@ -76,7 +78,7 @@ plugins:
         pylint-args = ["--jobs=4"]
         ```
 
-        Python / JavaScript / Rust / .NET の各言語カテゴリに属するツールはすべて既定で無効（opt-in）である。`preset = "latest"` + `{language} = true` で当該言語の推奨ツール一式がゲートを通過して有効化される。プリセット非収録のツール (例: `ty`) を追加したい場合は個別に `{tool} = true` を指定する (ゲートを越えて最優先)。Pythonプロジェクトでは別途 `uv add --dev 'pyfltr[python]'` (または `pip install pyfltr[python]`) で依存を導入する。
+        Python / JavaScript / Rust / .NET の各言語カテゴリに属するツールはすべて既定で無効（opt-in）である。`preset = "latest"` + `{language} = true` で当該言語の推奨ツール一式がゲートを通過して有効化される。preset非収録のty を追加する場合は個別に `ty = true` を指定する（ゲートを越えて最優先）。Pythonプロジェクトでは別途 `uv add --dev 'pyfltr[python]'` (または `pip install pyfltr[python]`) で依存を導入する。
 
         ## LLMエージェント向け出力（`--output-format=jsonl`）
 
@@ -109,12 +111,13 @@ plugins:
         `pyfltr run-for-agent`は`pyfltr run --output-format=jsonl`と等価のエイリアス。
         環境変数`PYFLTR_OUTPUT_FORMAT=jsonl`でも出力形式を既定で切り替えられる。
 
-        ## CI向け出力（`--output-format=sarif|github-annotations`）
+        ## CI向け出力（`--output-format=sarif|github-annotations|code-quality`）
 
         - `sarif`: SARIF 2.1.0形式のJSONを1件出力。GitHub code scanning等が取り込み可能
         - `github-annotations`: `::error file=...` / `::warning file=...` / `::notice file=...`形式の注釈行を出力。GitHub Actionsがプル要求のファイル行にインライン表示する
+        - `code-quality`: Code Climate JSON issue形式（GitLab CI互換）の配列を1件出力。GitLab CIの`artifacts:reports:codequality`へ取り込む
 
-        いずれもstdoutモードでは進捗ログやTUIが無音化される。
+        `sarif`/`code-quality`はstdoutモードでは進捗ログやTUIが無音化される（`github-annotations`はtextと同じ出力にエラー箇所のGAワークフローコマンド記法を補強する）。
 
       sections:
         ホーム:
