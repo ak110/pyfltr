@@ -46,7 +46,11 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # uv 側のサプライチェーン攻撃対策は ``~/.config/uv/uv.toml`` で
 # ``exclude-newer = "1 day"`` を指定する (USER pyfltr 切り替え後に配置)。
 # 実行時はユーザーが ``UV_EXCLUDE_NEWER`` 環境変数で上書きできる。
-# PATH 先頭の ``/home/pyfltr/.local/bin`` は ``uv tool install`` が配置する CLI を解決する。
+# PATH 先頭の ``/home/pyfltr/.local/bin`` は ``uv tool install`` が配置する CLI shim を解決する。
+# 続く ``/home/pyfltr/.local/share/uv/tools/pyfltr/bin`` は ``uv tool install pyfltr[python]``
+# が pyfltr 本体の venv に同梱する依存ツール (pre-commit / typos など) を直接 PATH 解決させるため。
+# 非 uv プロジェクトで ``pyfltr ci`` を起動した際、pyfltr が subprocess で呼び出すこれらの
+# ツールが PATH に無いと ``実行ファイルが見つかりません`` で失敗する。
 # ``MISE_GLOBAL_CONFIG_FILE`` は ``/cache`` 配下の固定パスに置く。
 # GitHub Actions が ``container:`` 配下で実行する際 ``HOME`` を上書きするため、
 # 既定の ``$HOME/.config/mise/config.toml`` だと ``mise use --global`` で書いた
@@ -63,7 +67,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     MISE_DATA_DIR=/cache/mise/data \
     MISE_CACHE_DIR=/cache/mise/cache \
     MISE_GLOBAL_CONFIG_FILE=/cache/mise/config.toml \
-    PATH=/home/pyfltr/.local/bin:/cache/mise/data/shims:/usr/local/pnpm:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    PATH=/home/pyfltr/.local/bin:/home/pyfltr/.local/share/uv/tools/pyfltr/bin:/cache/mise/data/shims:/usr/local/pnpm:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # 必要な APT パッケージをまとめてインストールする。
 # ``--no-install-recommends`` で推奨パッケージを除外し、イメージサイズを抑える。
