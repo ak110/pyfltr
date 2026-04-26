@@ -54,18 +54,6 @@ pass-filenames = false
 
 ## 汎用ツール
 
-### yamllint（YAML構文チェック）
-
-```toml
-[tool.pyfltr.custom-commands.yamllint]
-type = "linter"
-path = "yamllint"
-args = ["--format", "parsable"]
-targets = ["*.yaml", "*.yml"]
-error-pattern = '(?P<file>[^:]+):(?P<line>\d+):(?P<col>\d+):\s*\[(?:error|warning)\]\s*(?P<message>.+)'
-fast = true
-```
-
 ### codespell（スペルチェック）
 
 ```toml
