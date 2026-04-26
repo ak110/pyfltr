@@ -22,7 +22,7 @@
 #   - Python (pyfltr 本体依存): typos / pre-commit
 #   - Python 単独 (uv tool install): yamllint
 #   - mise 経由のネイティブバイナリ: shfmt / actionlint / editorconfig-checker / glab /
-#     taplo / hadolint / gitleaks
+#     taplo / hadolint / pinact / gitleaks
 #   - APT 直結の補助ツール: shellcheck (direct runner フォールバック用)
 #   - pnpm グローバル経由の JS / TS 系: prettier / markdownlint-cli / textlint / eslint /
 #     @biomejs/biome / oxlint / typescript / vitest
@@ -131,6 +131,7 @@ RUN pnpm config set store-dir "${PNPM_STORE_DIR}" --global \
         glab@latest \
         taplo@latest \
         hadolint@latest \
+        pinact@latest \
         gitleaks@latest \
     && pnpm add -g \
         prettier \

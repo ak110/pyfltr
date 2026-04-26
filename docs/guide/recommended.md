@@ -436,7 +436,7 @@ jobs:
 
 GitHub Actionsで`uv` / `pnpm` / `mise` / `hadolint`等のセットアップを毎回流す手間を避けたい場合に使う。
 リリース時に発行する公式Dockerイメージ`ghcr.io/ak110/pyfltr`を`container:`として利用できる。
-イメージには`uv` / `pnpm` / `mise` / `hadolint` / `shellcheck`等が同梱される。
+イメージには`uv` / `pnpm` / `mise` / `hadolint` / `pinact` / `shellcheck`等が同梱される。
 キャッシュディレクトリは`/cache`配下にまとめて配置済み（`uv`は`/cache/uv`、`pnpm`は`/cache/pnpm`、`mise`は`/cache/mise`）。
 
 pyfltr本体はイメージにも同梱している。
@@ -475,6 +475,46 @@ jobs:
   キーはOSのみで足り、ロックファイルhashなどの細かい無効化は不要。
 - `uv run pyfltr`: uv管理プロジェクトでロックファイルに従って解決した`pyfltr`を呼ぶ。
   uvを使わないプロジェクトでは`uv sync`の手順を省き、イメージ同梱の`pyfltr`を直接呼び出せばよい。
+
+Pythonバージョンマトリクスと組み合わせる場合は、ジョブのenvに`UV_PYTHON`を設定して`uv sync`へmatrix値を引き継ぐ。
+
+```yaml
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    container:
+      image: ghcr.io/ak110/pyfltr:latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Cache /cache
+        uses: actions/cache@v5
+        with:
+          path: /cache
+          key: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --all-extras --all-groups
+
+      - name: Run pyfltr
+        run: uv run pyfltr ci --output-format=github-annotations
+```
+
+ポイント。
+
+- `UV_PYTHON`: `uv sync`が必要なCPythonをロックファイルとmatrix値に従って自動取得する。`actions/setup-python`は不要。
+- `defaults.run.shell: bash`: GitHub Actionsの`container:`既定シェルは`sh`であり、
+  既存ワークフローで多用される`set -euo pipefail`等のbash前提の記述を通すために指定する。
+- イメージ同梱の`pyfltr`はuv管理プロジェクトでは使われず、`uv run pyfltr`経由で各venvのpyfltrが起動する。
+  matrix値に応じたバージョンのpyfltrがmatrixごとのvenvに導入される。
 
 ### PRの差分ファイルのみを対象にする
 
