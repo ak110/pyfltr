@@ -499,10 +499,14 @@ def ensure_mise_available(
             raise FileNotFoundError(bin_name)
         return dataclasses.replace(resolved, executable=resolved_path, prefix=[], effective_runner="direct")
 
+    # mise 経由の事前チェック・trust 呼び出しでも mise が tool パスにフォールバック
+    # 解決してしまう挙動を回避するため、PATH から mise tool パスを除外した env を渡す。
+    # 詳細は CLAUDE.md「subprocess 起動時の PATH 整理方針」節を参照。
+    mise_env = _build_mise_subprocess_env(dict(os.environ))
     check_args = ["mise", "exec", tool_spec, "--", bin_name, "--version"]
     trusted = False
     while True:
-        check = subprocess.run(check_args, capture_output=True, text=True, check=False)
+        check = subprocess.run(check_args, capture_output=True, text=True, check=False, env=mise_env)
         if check.returncode == 0:
             return resolved
         stderr = check.stderr
@@ -512,6 +516,7 @@ def ensure_mise_available(
                 capture_output=True,
                 text=True,
                 check=False,
+                env=mise_env,
             )
             if trust.returncode == 0:
                 trusted = True
@@ -882,6 +887,122 @@ def _get_env_path(env: dict[str, str]) -> str | None:
     return env.get("PATH")
 
 
+# mise が親プロセスの PATH に注入する tool パスのマーカー。
+# パス区切りを `/` に正規化したうえで含有判定する。``mise/bin`` は mise 本体の
+# バイナリディレクトリのため保護対象（このリストに含めない）。
+# 詳細は CLAUDE.md「subprocess 起動時の PATH 整理方針」節を参照。
+_MISE_TOOL_PATH_MARKERS: tuple[str, ...] = (
+    "/mise/installs/",
+    "/mise/dotnet-root",
+    "/mise/shims",
+)
+
+
+def _normalize_path_entry_for_dedup(entry: str) -> str:
+    r"""重複排除用の比較キーを返す。
+
+    Windows ではパス比較が大文字小文字非区別かつ ``/`` と ``\\`` を等価扱いするため、
+    両者を吸収して比較する。POSIX では大文字小文字を保ったまま末尾スラッシュのみ落とす。
+    """
+    if os.name == "nt":
+        return entry.replace("/", "\\").rstrip("\\").lower()
+    return entry.rstrip("/")
+
+
+def _detect_path_key(env: "typing.Mapping[str, str]") -> str | None:
+    """``env`` から PATH のキー名を検出する。
+
+    Windows は環境変数名が大文字小文字非区別のため ``Path`` / ``PATH`` のいずれかが
+    入りうる。書き戻し時に元のキー名を保つため、検出した名前をそのまま返す。
+    POSIX では ``"PATH"`` 固定で扱う（大小混在エントリの不整合を避けるため）。
+    """
+    if os.name == "nt":
+        for key in env:
+            if key.upper() == "PATH":
+                return key
+        return None
+    return "PATH" if "PATH" in env else None
+
+
+def _dedupe_path_value(path_value: str) -> str:
+    """順序先勝ちで PATH 文字列を重複排除する。
+
+    比較キーは ``_normalize_path_entry_for_dedup`` で OS 依存に正規化する。
+    空エントリ（POSIX で cwd 相当）は最初の 1 回だけ保持する。
+    """
+    sep = os.pathsep
+    seen: set[str] = set()
+    result: list[str] = []
+    for entry in path_value.split(sep):
+        key = _normalize_path_entry_for_dedup(entry)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(entry)
+    return sep.join(result)
+
+
+def dedupe_environ_path(environ: "typing.MutableMapping[str, str]") -> bool:
+    """``environ`` の PATH を順序先勝ちで重複排除し、同一キー名で書き戻す。
+
+    CLI エントリポイントから 1 度だけ呼ぶ前提のヘルパー。プロセス内で起動する
+    全 subprocess は ``os.environ`` を継承するため、ここで整えれば波及する。
+    Windows での PATH キー名揺れ（``Path`` / ``PATH``）は ``_detect_path_key``
+    が吸収し、検出した名前のまま書き戻す。
+
+    Returns:
+        書き換えが発生したら True、PATH 未設定または変更不要なら False。
+    """
+    key = _detect_path_key(environ)
+    if key is None:
+        return False
+    original = environ[key]
+    deduped = _dedupe_path_value(original)
+    if original == deduped:
+        return False
+    environ[key] = deduped
+    return True
+
+
+def _is_mise_tool_path(entry: str) -> bool:
+    """エントリが mise の注入した tool パスかを判定する。
+
+    対象は ``mise/installs/`` 配下・``mise/dotnet-root``・``mise/shims``。
+    mise 本体バイナリディレクトリ（``mise/bin``）は対象外として保護する。
+    Windows での大文字小文字差・パス区切り差を吸収する。
+    """
+    if entry == "":
+        return False
+    normalized = entry.replace("\\", "/")
+    if os.name == "nt":
+        normalized = normalized.lower()
+    return any(marker in normalized for marker in _MISE_TOOL_PATH_MARKERS)
+
+
+def _strip_mise_tool_paths(path_value: str) -> str:
+    """PATH 文字列から mise tool パスを除外して返す。"""
+    sep = os.pathsep
+    return sep.join(entry for entry in path_value.split(sep) if not _is_mise_tool_path(entry))
+
+
+def _build_mise_subprocess_env(env: dict[str, str]) -> dict[str, str]:
+    """``env`` のコピーから mise tool パスを除外した env を返す。
+
+    入力 ``env`` は破壊しない（純関数）。PATH 未設定時は単にコピーを返す。
+    本処理は ``mise exec`` 経由の subprocess に対してのみ適用する。
+    PATH 上に mise の tool エントリ（installs / dotnet-root / shims）が見えていると
+    mise が tools 解決をスキップして PATH 解決にフォールバックする挙動を起こすため、
+    指定バージョンの SDK が選ばれない不安定挙動を防ぐ目的で除外する。
+    詳細は CLAUDE.md「subprocess 起動時の PATH 整理方針」節を参照。
+    """
+    new_env = env.copy()
+    key = _detect_path_key(new_env)
+    if key is None:
+        return new_env
+    new_env[key] = _strip_mise_tool_paths(new_env[key])
+    return new_env
+
+
 def _terminate_and_drop(proc: "subprocess.Popen[str]") -> None:
     """実行中 proc とその子孫を停止し ``_active_processes`` から外す。
 
@@ -1035,6 +1156,15 @@ class _ExecutionParams:
     additional_args: list[str]
     fix_mode: bool
     fix_args: list[str] | None
+    via_mise: bool = False
+    """このコマンドが ``mise exec`` 経由で起動されるか。
+
+    ``ensure_mise_available`` 通過後の ``ResolvedCommandline`` から判定する
+    （mise 不在時に direct へフォールバックされたケースを除外するため、
+    ``build_commandline`` 直後の値ではなく事後の値で判断する）。
+    ``_build_subprocess_env`` での mise tool パス除外適用判断に使う。
+    詳細は CLAUDE.md「subprocess 起動時の PATH 整理方針」節を参照。
+    """
 
 
 def _prepare_execution_params(
@@ -1089,6 +1219,7 @@ def _prepare_execution_params(
             additional_args=[],
             fix_mode=fix_mode,
             fix_args=fix_args,
+            via_mise=False,
         )
 
     # `{command}-runner` および `{command}-path` 設定からツール起動コマンドラインを解決する。
@@ -1135,6 +1266,11 @@ def _prepare_execution_params(
     if config.values.get(f"{command}-pass-filenames", True):
         commandline.extend(str(t) for t in targets)
 
+    # ``ensure_mise_available`` を通過した後の ``effective_runner`` で mise 経路かを判定する。
+    # ``build_commandline`` 直後は mise 不在時の direct フォールバック前の値が入っているため、
+    # ここでは事後値を採用する（direct 経路へ tool パス除外を誤適用しないため）。
+    via_mise = resolved.effective_runner == "mise" or resolved.executable == "mise"
+
     return _ExecutionParams(
         command_info=command_info,
         targets=targets,
@@ -1143,6 +1279,7 @@ def _prepare_execution_params(
         additional_args=additional_args,
         fix_mode=fix_mode,
         fix_args=fix_args,
+        via_mise=via_mise,
     )
 
 
@@ -1220,7 +1357,7 @@ def execute_command(
         )
 
     start_time = time.perf_counter()
-    env = _build_subprocess_env(config, command)
+    env = _build_subprocess_env(config, command, via_mise=params.via_mise)
 
     # pre-commit は .pre-commit-config.yaml を参照して SKIP 環境変数を構築し、
     # pyfltr 関連 hook を除外したうえで 2 段階実行する。
@@ -1574,9 +1711,22 @@ def _build_auto_args(command: str, config: pyfltr.config.Config, user_args: list
     return result
 
 
-def _build_subprocess_env(config: pyfltr.config.Config, command: str) -> dict[str, str]:
-    """サブプロセス実行用の環境変数を構築。"""
+def _build_subprocess_env(
+    config: pyfltr.config.Config,
+    command: str,
+    *,
+    via_mise: bool = False,
+) -> dict[str, str]:
+    """サブプロセス実行用の環境変数を構築。
+
+    ``via_mise=True`` の場合、PATH から mise が注入した tool パス（installs / dotnet-root /
+    shims）を除外する。これは ``mise exec`` 経由のサブプロセスで mise が tools 解決を
+    スキップして PATH 解決にフォールバックしてしまう挙動を防ぐための対症療法。
+    詳細は CLAUDE.md「subprocess 起動時の PATH 整理方針」節を参照。
+    """
     env = os.environ.copy()
+    if via_mise:
+        env = _build_mise_subprocess_env(env)
     # サプライチェーン攻撃対策: パッケージ取得系ツールの最小待機期間を既定で設定する。
     # ユーザーが既に設定している場合はその値を尊重する。
     # pnpm は npm 互換の config 環境変数方式 (NPM_CONFIG_<SNAKE_CASE>) を採る。

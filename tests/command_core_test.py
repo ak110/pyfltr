@@ -63,6 +63,48 @@ def test_build_subprocess_env_preserves_existing_supply_chain_values(
     assert env["NPM_CONFIG_MINIMUM_RELEASE_AGE"] == "10080"
 
 
+def test_build_subprocess_env_via_mise_strips_mise_tool_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``via_mise=True`` のとき、PATH から mise tool パスが除外される。"""
+    monkeypatch.setenv(
+        "PATH",
+        os.pathsep.join(
+            [
+                "/home/u/.local/share/mise/installs/dotnet/10.0.0",
+                "/home/u/.local/share/mise/dotnet-root",
+                "/home/u/.local/share/mise/shims",
+                "/home/u/.local/share/mise/bin",
+                "/usr/bin",
+            ]
+        ),
+    )
+
+    config = pyfltr.config.create_default_config()
+    env = pyfltr.command._build_subprocess_env(config, "dotnet-build", via_mise=True)
+    entries = env["PATH"].split(os.pathsep)
+
+    assert "/home/u/.local/share/mise/installs/dotnet/10.0.0" not in entries
+    assert "/home/u/.local/share/mise/dotnet-root" not in entries
+    assert "/home/u/.local/share/mise/shims" not in entries
+    # mise 本体バイナリディレクトリと無関係エントリは保持される
+    assert "/home/u/.local/share/mise/bin" in entries
+    assert "/usr/bin" in entries
+
+
+def test_build_subprocess_env_default_keeps_mise_tool_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    """既定 (``via_mise=False``) では mise tool パスを除外しない。"""
+    monkeypatch.setenv(
+        "PATH",
+        os.pathsep.join(["/home/u/.local/share/mise/installs/dotnet/10.0.0", "/usr/bin"]),
+    )
+
+    config = pyfltr.config.create_default_config()
+    env = pyfltr.command._build_subprocess_env(config, "ruff-check")
+    entries = env["PATH"].split(os.pathsep)
+
+    assert "/home/u/.local/share/mise/installs/dotnet/10.0.0" in entries
+    assert "/usr/bin" in entries
+
+
 def test_resolve_js_commandline_pnpx_with_textlint_packages() -> None:
     """pnpx runner では textlint-packages が --package で展開される。
 
@@ -847,6 +889,95 @@ def test_resolve_bin_commandline_mise_untrusted_auto_trust_trust_failure(mocker)
         pyfltr.command._resolve_bin_commandline("shellcheck", config)
 
 
+def test_ensure_mise_available_passes_stripped_env_to_subprocess(mocker, monkeypatch) -> None:
+    """``mise exec --version`` 呼び出し時に PATH から mise tool パスが除外された env が渡る。
+
+    mise が親 PATH に自身の tool エントリを見つけると tools 解決をスキップして PATH 解決へ
+    フォールバックする挙動を回避するためのガード。
+    """
+    monkeypatch.setenv(
+        "PATH",
+        os.pathsep.join(
+            [
+                "/home/u/.local/share/mise/installs/dotnet/10.0.0",
+                "/home/u/.local/share/mise/dotnet-root",
+                "/home/u/.local/share/mise/shims",
+                "/home/u/.local/share/mise/bin",
+                "/usr/bin",
+            ]
+        ),
+    )
+    mocker.patch("shutil.which", return_value="/usr/local/bin/mise")
+    mock_run = mocker.patch(
+        "subprocess.run",
+        return_value=subprocess.CompletedProcess(["mise"], returncode=0, stdout="", stderr=""),
+    )
+
+    config = pyfltr.config.create_default_config()
+    config.values["bin-runner"] = "mise"
+    pyfltr.command._resolve_bin_commandline("shellcheck", config)
+
+    assert mock_run.call_count == 1
+    passed_env = mock_run.call_args.kwargs["env"]
+    entries = passed_env["PATH"].split(os.pathsep)
+    # mise tool パスは除外、mise/bin と通常エントリは保持される
+    assert "/home/u/.local/share/mise/installs/dotnet/10.0.0" not in entries
+    assert "/home/u/.local/share/mise/dotnet-root" not in entries
+    assert "/home/u/.local/share/mise/shims" not in entries
+    assert "/home/u/.local/share/mise/bin" in entries
+    assert "/usr/bin" in entries
+
+
+def test_ensure_mise_available_passes_stripped_env_to_trust(mocker, monkeypatch) -> None:
+    """``mise trust`` 呼び出し時にも PATH から mise tool パスが除外された env が渡る。"""
+    monkeypatch.setenv(
+        "PATH",
+        os.pathsep.join(
+            [
+                "/home/u/.local/share/mise/installs/dotnet/10.0.0",
+                "/home/u/.local/share/mise/shims",
+                "/usr/bin",
+            ]
+        ),
+    )
+    mocker.patch("shutil.which", return_value="/usr/local/bin/mise")
+    mock_run = mocker.patch(
+        "subprocess.run",
+        side_effect=[
+            # 事前チェック: 未信頼で失敗
+            subprocess.CompletedProcess(
+                ["mise", "exec"],
+                returncode=1,
+                stdout="",
+                stderr="mise ERROR Config files in /path/to/mise.toml are not trusted.",
+            ),
+            # mise trust --yes --all: 成功
+            subprocess.CompletedProcess(
+                ["mise", "trust", "--yes", "--all"],
+                returncode=0,
+                stdout="",
+                stderr="",
+            ),
+            # 再チェック: 成功
+            subprocess.CompletedProcess(["mise"], returncode=0, stdout="", stderr=""),
+        ],
+    )
+
+    config = pyfltr.config.create_default_config()
+    config.values["bin-runner"] = "mise"
+    config.values["mise-auto-trust"] = True
+    pyfltr.command._resolve_bin_commandline("shellcheck", config)
+
+    # 3 回すべての subprocess.run 呼び出しに mise tool パス除外済み env が渡る
+    assert mock_run.call_count == 3
+    for call in mock_run.call_args_list:
+        passed_env = call.kwargs["env"]
+        entries = passed_env["PATH"].split(os.pathsep)
+        assert "/home/u/.local/share/mise/installs/dotnet/10.0.0" not in entries
+        assert "/home/u/.local/share/mise/shims" not in entries
+        assert "/usr/bin" in entries
+
+
 def test_failed_resolution_result() -> None:
     """_failed_resolution_resultが解決失敗専用のCommandResultを返す。"""
     command_info = pyfltr.config.CommandInfo(type="linter")
@@ -1237,6 +1368,124 @@ def test_get_env_path_posix_strict_key(monkeypatch) -> None:
     assert pyfltr.command._get_env_path({"PATH": "/usr/bin"}) == "/usr/bin"
     # 両方あっても PATH のみを採用する
     assert pyfltr.command._get_env_path({"Path": "/tmp/bin", "PATH": "/usr/bin"}) == "/usr/bin"
+
+
+def test_normalize_path_entry_for_dedup_posix(monkeypatch) -> None:
+    """POSIX では末尾スラッシュのみ落とし、大文字小文字は保持する。"""
+    monkeypatch.setattr("pyfltr.command.os.name", "posix")
+    assert pyfltr.command._normalize_path_entry_for_dedup("/usr/bin/") == "/usr/bin"
+    assert pyfltr.command._normalize_path_entry_for_dedup("/USR/Bin") == "/USR/Bin"
+    assert pyfltr.command._normalize_path_entry_for_dedup("") == ""
+
+
+def test_normalize_path_entry_for_dedup_windows(monkeypatch) -> None:
+    """Windows では大文字小文字非区別 + パス区切り正規化。"""
+    monkeypatch.setattr("pyfltr.command.os.name", "nt")
+    assert pyfltr.command._normalize_path_entry_for_dedup("C:/Tools/Mise/bin") == "c:\\tools\\mise\\bin"
+    assert pyfltr.command._normalize_path_entry_for_dedup("c:\\tools\\mise\\bin\\") == "c:\\tools\\mise\\bin"
+    assert pyfltr.command._normalize_path_entry_for_dedup("") == ""
+
+
+def test_dedupe_path_value_preserves_first_occurrence(monkeypatch) -> None:
+    """重複は順序先勝ちで除去され、初出エントリの表記が保持される。"""
+    monkeypatch.setattr("pyfltr.command.os.name", "posix")
+    monkeypatch.setattr("pyfltr.command.os.pathsep", ":")
+    src = ":".join(["/usr/bin", "/opt/bin", "/usr/bin", "/usr/local/bin", "/opt/bin/"])
+    assert pyfltr.command._dedupe_path_value(src) == ":".join(["/usr/bin", "/opt/bin", "/usr/local/bin"])
+
+
+def test_dedupe_path_value_windows_case_insensitive(monkeypatch) -> None:
+    """Windows では大文字小文字差・パス区切り差を吸収して重複扱いする。"""
+    monkeypatch.setattr("pyfltr.command.os.name", "nt")
+    monkeypatch.setattr("pyfltr.command.os.pathsep", ";")
+    src = ";".join(["C:\\Tools\\Mise\\bin", "c:/tools/mise/bin", "C:\\Windows"])
+    deduped = pyfltr.command._dedupe_path_value(src)
+    assert deduped == ";".join(["C:\\Tools\\Mise\\bin", "C:\\Windows"])
+
+
+def test_dedupe_path_value_keeps_empty_entry_only_once(monkeypatch) -> None:
+    """空エントリ（POSIX で cwd 相当）も最初の 1 回のみ残す。"""
+    monkeypatch.setattr("pyfltr.command.os.name", "posix")
+    monkeypatch.setattr("pyfltr.command.os.pathsep", ":")
+    assert pyfltr.command._dedupe_path_value("/usr/bin::/opt/bin:") == ":".join(["/usr/bin", "", "/opt/bin"])
+
+
+def test_dedupe_environ_path_writes_back_with_same_key(monkeypatch) -> None:
+    """書き戻しは検出した PATH キー名を保持する（``Path`` / ``PATH`` 揺れ対応）。"""
+    monkeypatch.setattr("pyfltr.command.os.name", "nt")
+    monkeypatch.setattr("pyfltr.command.os.pathsep", ";")
+    env: dict[str, str] = {"Path": ";".join(["c:/tools", "C:/Tools"])}
+    assert pyfltr.command.dedupe_environ_path(env) is True
+    assert "Path" in env
+    assert "PATH" not in env
+    assert env["Path"] == "c:/tools"
+
+
+def test_dedupe_environ_path_no_change_when_unique(monkeypatch) -> None:
+    """重複が無ければ書き換え不要として ``False`` を返す。"""
+    monkeypatch.setattr("pyfltr.command.os.name", "posix")
+    monkeypatch.setattr("pyfltr.command.os.pathsep", ":")
+    env: dict[str, str] = {"PATH": "/usr/bin:/opt/bin"}
+    assert pyfltr.command.dedupe_environ_path(env) is False
+    assert env["PATH"] == "/usr/bin:/opt/bin"
+
+
+def test_dedupe_environ_path_returns_false_when_path_missing() -> None:
+    """PATH 未設定なら何もせず ``False``。"""
+    env: dict[str, str] = {}
+    assert pyfltr.command.dedupe_environ_path(env) is False
+    assert not env
+
+
+def test_is_mise_tool_path_marker_matches(monkeypatch) -> None:
+    """mise tool パスのマーカーが含まれるエントリは ``True``。"""
+    monkeypatch.setattr("pyfltr.command.os.name", "posix")
+    assert pyfltr.command._is_mise_tool_path("/home/u/.local/share/mise/installs/dotnet/10.0.0") is True
+    assert pyfltr.command._is_mise_tool_path("/home/u/.local/share/mise/dotnet-root") is True
+    assert pyfltr.command._is_mise_tool_path("/home/u/.local/share/mise/shims") is True
+
+
+def test_is_mise_tool_path_protects_mise_bin(monkeypatch) -> None:
+    """mise/bin は保護対象（mise 本体バイナリディレクトリのため）。"""
+    monkeypatch.setattr("pyfltr.command.os.name", "posix")
+    assert pyfltr.command._is_mise_tool_path("/home/u/.local/share/mise/bin") is False
+
+
+def test_is_mise_tool_path_unrelated_returns_false(monkeypatch) -> None:
+    """mise と関係ないパスや空エントリは ``False``。"""
+    monkeypatch.setattr("pyfltr.command.os.name", "posix")
+    assert pyfltr.command._is_mise_tool_path("/usr/bin") is False
+    assert pyfltr.command._is_mise_tool_path("") is False
+
+
+def test_is_mise_tool_path_windows_case_and_separator(monkeypatch) -> None:
+    """Windows では大文字混在・``\\`` 区切りでも判定できる。mise/bin は保護対象。"""
+    monkeypatch.setattr("pyfltr.command.os.name", "nt")
+    assert pyfltr.command._is_mise_tool_path("C:\\Users\\u\\AppData\\Local\\MISE\\Installs\\Dotnet\\10.0") is True
+    assert pyfltr.command._is_mise_tool_path("C:\\Users\\u\\AppData\\Local\\mise\\dotnet-root") is True
+    assert pyfltr.command._is_mise_tool_path("C:\\Users\\u\\AppData\\Local\\mise\\shims") is True
+    assert pyfltr.command._is_mise_tool_path("C:\\Users\\u\\AppData\\Local\\mise\\bin") is False
+
+
+def test_build_mise_subprocess_env_does_not_mutate_input(monkeypatch) -> None:
+    """``_build_mise_subprocess_env`` は入力 env を破壊しない（純関数）。"""
+    monkeypatch.setattr("pyfltr.command.os.name", "posix")
+    monkeypatch.setattr("pyfltr.command.os.pathsep", ":")
+    src: dict[str, str] = {"PATH": "/home/u/.local/share/mise/installs/dotnet/10.0:/usr/bin"}
+    new = pyfltr.command._build_mise_subprocess_env(src)
+
+    # 入力辞書は変更されない
+    assert src == {"PATH": "/home/u/.local/share/mise/installs/dotnet/10.0:/usr/bin"}
+    # 戻り値は mise tool パスを除外したPATHを持つ
+    assert new["PATH"] == "/usr/bin"
+
+
+def test_build_mise_subprocess_env_handles_missing_path() -> None:
+    """PATH 未設定時は単にコピーを返す。"""
+    src: dict[str, str] = {"FOO": "bar"}
+    new = pyfltr.command._build_mise_subprocess_env(src)
+    assert new == src
+    assert new is not src
 
 
 def _spawn_parent_with_child(script: str) -> tuple[subprocess.Popen[str], int, int]:
