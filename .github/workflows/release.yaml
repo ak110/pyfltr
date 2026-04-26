@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 concurrency:
   group: release
@@ -155,3 +156,37 @@ jobs:
 
       - name: Prune uv cache for CI
         run: uv cache prune --ci
+
+      # GitHub Container Registry へ pyfltr 同梱 Docker イメージを publish する。
+      # ``vX.Y.Z`` と ``latest`` の 2 タグを発行する。
+      - name: Log in to GHCR
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
+      - name: Compute Docker tags
+        id: docker
+        run: |
+          tag="${{ steps.next.outputs.next }}"
+          # PYFLTR_VERSION は PyPI 表記 (``v`` プレフィックス無し) に合わせる。
+          version="${tag#v}"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            PYFLTR_VERSION=${{ steps.docker.outputs.version }}
+          tags: |
+            ghcr.io/ak110/pyfltr:${{ steps.docker.outputs.tag }}
+            ghcr.io/ak110/pyfltr:latest

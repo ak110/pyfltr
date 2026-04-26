@@ -90,6 +90,7 @@ gitleaks = true
 ec = true
 shellcheck = true
 shfmt = true
+hadolint = true
 pylint-args = ["--jobs=4"]
 
 [tool.ruff]

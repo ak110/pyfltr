@@ -432,6 +432,50 @@ jobs:
   プル要求の該当ファイル行にコメントとして表示される。
 - `uv cache prune --ci`: CIキャッシュを軽量化するための後処理。
 
+### 公式Dockerイメージ（ghcr.io/ak110/pyfltr）を使う
+
+GitHub Actionsで`uv` / `pnpm` / `mise` / `hadolint`等のセットアップを毎回流す手間を避けたい場合に使う。
+リリース時に発行する公式Dockerイメージ`ghcr.io/ak110/pyfltr`を`container:`として利用できる。
+イメージには`uv` / `pnpm` / `mise` / `hadolint` / `shellcheck`等が同梱される。
+キャッシュディレクトリは`/cache`配下にまとめて配置済み（`uv`は`/cache/uv`、`pnpm`は`/cache/pnpm`、`mise`は`/cache/mise`）。
+
+pyfltr本体はイメージにも同梱しているが、CIではプロジェクトの`pyproject.toml` / `uv.lock`に従ったバージョンを使うため、
+`uv run pyfltr`または`uvx pyfltr`経由で起動する。
+
+```yaml
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/ak110/pyfltr:latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Cache /cache
+        uses: actions/cache@v5
+        with:
+          path: /cache
+          key: pyfltr-cache-${{ runner.os }}
+
+      - name: Install dependencies
+        run: uv sync --all-extras --all-groups
+
+      - name: Run pyfltr
+        run: uv run pyfltr ci --output-format=github-annotations
+```
+
+ポイント。
+
+- `image: ghcr.io/ak110/pyfltr:latest`: `vX.Y.Z`タグも併発行されるため、再現性を重視する場合は固定タグを指定する。
+  イメージには`UV_FROZEN=1`と`pnpm config set minimum-release-age 1440`が事前設定されているため、
+  CIワークフロー側で同じ環境変数や設定を再指定する必要はない。
+- `actions/cache`: `/cache`配下を一括キャッシュする。
+  uv / pnpm / miseのキャッシュは内容アドレス指定のため、ロックファイル変更時も追加分がそのまま積み重なる。
+  キーはOSのみで足り、ロックファイルhashなどの細かい無効化は不要。
+- `uv run pyfltr`: プロジェクトのロックファイルに従って解決した`pyfltr`を呼ぶ。
+  `pyproject.toml`を持たないリポジトリで単発実行したいだけの場合は`uvx pyfltr`を使う。
+  これによりローカル環境を汚さずに最新版で動作する。
+
 ### PRの差分ファイルのみを対象にする
 
 PR（プルリクエスト）で変更したファイルだけを対象に実行したい場合は`--changed-since`を使う。
