@@ -38,7 +38,8 @@ plugins:
         - `pyfltr ci`: 全チェック。formatterによる変更も失敗と判定する（CI向け）
         - `pyfltr run`: 全チェック。fix段→formatter段→linter/tester段の順で、fix-args定義済みlinterの自動修正→formatter→残りの検査を実行する（ローカル向け）
         - `pyfltr fast`: 軽量チェック。`run`と同じ3段構成だが、mypy/pylint/pytest等の重いツールを除外（pre-commit向け）
-        - `pyfltr run-for-agent`: `pyfltr run --output-format=jsonl`のエイリアス。JSONL出力を既定にする（LLMエージェント向け）
+        - `pyfltr run-for-agent`: `pyfltr run --output-format=jsonl`のエイリアス。JSONL出力を既定にする（コーディングエージェント向け）
+        - `pyfltr generate-config`: 設定ファイルの雛形を標準出力に書き出す。`[tool.pyfltr]`セクションに貼り付けて利用する
         - `pyfltr list-runs`: 実行アーカイブ内のrun一覧を表示する。`--limit`で件数制御、`--output-format=text|json|jsonl`
         - `pyfltr show-run <run_id>`: 指定runの詳細を表示する。`<run_id>`は前方一致および`latest`エイリアス可。`--tool <name>`でdiagnostics全件、`--tool <name> --output`で`output.log`全文。`--output-format=text|json|jsonl`
         - `pyfltr mcp`: stdioトランスポートでMCPサーバーを起動する。提供ツールは`list_runs` / `show_run` / `show_run_diagnostics` / `show_run_output` / `run_for_agent`の5件
@@ -50,7 +51,14 @@ plugins:
 
         ## 対応ツール
 
-        対応カテゴリはPython系・Rust系（cargo系）・.NET系（dotnet系）・JS/TS系・ドキュメント系（markdownlint-cli2・textlint）・その他（ec・shellcheck・shfmt・actionlint・pre-commit）。typosはpyfltr本体の依存として同梱されており追加インストール不要。
+        - Python系: ruff-format / ruff-check / mypy / pylint / pyright / ty / pytest / uv-sort
+        - JS/TS系: prettier / eslint / biome / oxlint / tsc / vitest
+        - Rust系: cargo-fmt / cargo-clippy / cargo-check / cargo-deny / cargo-test
+        - .NET系: dotnet-format / dotnet-build / dotnet-test
+        - ドキュメント系: markdownlint（実体はmarkdownlint-cli2） / textlint
+        - その他: pre-commit / typos / ec / shellcheck / shfmt / actionlint / glab-ci-lint（既定で無効）
+
+        typosはpyfltr本体の依存として同梱されており追加インストール不要。
         個別ツールの網羅的な一覧と詳細は[対応ツール一覧](guide/index.md)を参照。
 
         `preset = "latest"` で各時点の推奨ツール構成を選べる。プリセットは Python / JavaScript / TypeScript / Rust / .NET / ドキュメント系を横断的に収録し、言語カテゴリキー (`python` / `javascript` / `rust` / `dotnet`) がゲートとして働く。`preset = "latest"` + `{language} = true` の組み合わせだけで当該言語の推奨ツール一式が有効化される。
@@ -109,7 +117,8 @@ plugins:
           - index.md: ドキュメント入口
         使い方:
           - guide/index.md: 対応ツール一覧・コンセプト・インストール
-          - guide/usage.md: CLIの使い方・オプション・UI説明・LLM連携
+          - guide/usage.md: CLIの使い方・オプション・UI説明・コーディングエージェント連携
+          - guide/troubleshooting.md: MCP stdout占有・PRE_COMMIT検出・対象ファイル空・アーカイブ容量確認
           - guide/migration-v3.md: v2.xからv3.0.0への移行手順・破壊的変更・新機能の活用
         設定:
           - guide/configuration.md: 基本設定・プリセット・並列実行など
@@ -145,6 +154,7 @@ nav:
   - 使い方:
       - 概要: guide/index.md
       - CLIコマンド: guide/usage.md
+      - トラブルシューティング: guide/troubleshooting.md
       - 設定項目: guide/configuration.md
       - 設定項目（ツール別）: guide/configuration-tools.md
       - 推奨設定例: guide/recommended.md

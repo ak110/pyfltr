@@ -50,6 +50,10 @@
 
 - Linters: markdownlint-cli2 / textlint
 
+pyfltrの設定キーとコマンド名は`markdownlint`（例: `markdownlint = true`、`--commands=markdownlint`）だが、
+実際に起動するのは`markdownlint-cli2`である。
+これは設定キー名の簡潔さを優先した意図的な設計であり、利用者はこの対応関係を把握した上で設定・コマンド指定をする。
+
 ### その他
 
 - Formatters: shfmt（既定で無効）
