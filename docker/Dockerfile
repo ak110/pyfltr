@@ -137,13 +137,16 @@ RUN mkdir -p /home/pyfltr/.config/uv \
 #   参照するため初回起動コストが下がる。
 # - uv tool install: pyfltr[python] に含まれない Python 単独ツール。
 # GitHub Actions では GITHUB_TOKEN をシークレットで受け取り mise に渡す。
-# 未指定時（ローカルビルド等）も動くよう required=false とし、空文字でフォールバックする。
+# 未指定時（ローカルビルド等）も動くよう required=false とする。
 # GITHUB_TOKEN なしだと未認証 API 呼び出し（60 req/h）でレート制限に達するため必須。
-RUN --mount=type=secret,id=GITHUB_TOKEN,required=false \
+# `env=GITHUB_TOKEN` 修飾子（Dockerfile syntax 1.10+）で BuildKit が直接環境変数として
+# 注入するため、`USER pyfltr` 切り替え後でも secret ファイルの uid/mode に依存せず参照できる。
+# （ファイルマウント方式では既定の uid=0/mode=0400 のため非 root ユーザーから読めず、
+# 旧実装の `cat` 経由は permission denied を握りつぶして空文字を渡していた。）
+RUN --mount=type=secret,id=GITHUB_TOKEN,env=GITHUB_TOKEN,required=false \
     pnpm config set store-dir "${PNPM_STORE_DIR}" --global \
     && pnpm config set minimum-release-age 1440 --global \
-    && GITHUB_TOKEN="$(cat /run/secrets/GITHUB_TOKEN 2>/dev/null || true)" \
-        mise use --global \
+    && mise use --global \
         node@lts \
         shfmt@latest \
         actionlint@latest \
