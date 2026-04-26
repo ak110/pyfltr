@@ -136,9 +136,14 @@ RUN mkdir -p /home/pyfltr/.config/uv \
 # - pnpm グローバル経由 (js-runner=pnpx 既定): JS / TS 系ツール。pnpx 経由でも同一ストアを
 #   参照するため初回起動コストが下がる。
 # - uv tool install: pyfltr[python] に含まれない Python 単独ツール。
-RUN pnpm config set store-dir "${PNPM_STORE_DIR}" --global \
+# GitHub Actions では GITHUB_TOKEN をシークレットで受け取り mise に渡す。
+# 未指定時（ローカルビルド等）も動くよう required=false とし、空文字でフォールバックする。
+# GITHUB_TOKEN なしだと未認証 API 呼び出し（60 req/h）でレート制限に達するため必須。
+RUN --mount=type=secret,id=GITHUB_TOKEN,required=false \
+    pnpm config set store-dir "${PNPM_STORE_DIR}" --global \
     && pnpm config set minimum-release-age 1440 --global \
-    && mise use --global \
+    && GITHUB_TOKEN="$(cat /run/secrets/GITHUB_TOKEN 2>/dev/null || true)" \
+        mise use --global \
         node@lts \
         shfmt@latest \
         actionlint@latest \

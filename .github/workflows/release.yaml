@@ -121,6 +121,8 @@ jobs:
           file: docker/Dockerfile
           platforms: linux/amd64
           push: false
+          secrets: |
+            GITHUB_TOKEN=${{ github.token }}
 
       - name: Create tag and push
         run: |
@@ -223,3 +225,5 @@ jobs:
           tags: |
             ghcr.io/ak110/pyfltr:${{ steps.docker.outputs.tag }}
             ghcr.io/ak110/pyfltr:latest
+          secrets: |
+            GITHUB_TOKEN=${{ github.token }}
