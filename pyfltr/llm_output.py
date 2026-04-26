@@ -31,7 +31,22 @@ logger = logging.getLogger(__name__)
 # 粒度では複数行のグルーピングを保証できないためモジュール側でロックする。
 _write_lock = threading.Lock()
 
-_TRUNCATED_PREFIX = "... (truncated)\n"
+_TRUNCATED_MARKER = "\n... (truncated)\n"
+"""ハイブリッド切り詰めで先頭ブロックと末尾ブロックの間に挿入する区切りマーカー。
+
+旧仕様では先頭の ``... (truncated)\\n`` のみだったが、エラーが冒頭に出力されるツール
+（editorconfig-checker など）で重要情報が末尾切り捨て側に落ちる問題を避けるため、
+中央にマーカーを置く形式へ変更している。
+"""
+
+_DEFAULT_HEAD_RATIO = 0.2
+"""ハイブリッド切り詰め時に先頭側へ確保する割合。
+
+合計上限を ``head : tail = 1 : 4`` で配分する根拠は次の通り。
+冒頭にエラー要約を出すツール (editorconfig-checker 等) を救うのに 1KB あれば実例上十分で、
+末尾優先の従来挙動で救えていた多行スタックトレース系 (mypy・pytest 等) を温存するために
+末尾には残り 4KB を割り当てる。
+"""
 
 
 def build_command_lines(
@@ -437,7 +452,7 @@ def _build_command_record(
 
     if result.status == "failed" and diagnostics == 0:
         message_max_lines, message_max_chars = _resolve_message_limits(config)
-        message, msg_truncated = _truncate_message(
+        message, msg_truncated, head_chars, tail_chars = _truncate_message(
             result.output,
             max_lines=message_max_lines,
             max_chars=message_max_chars,
@@ -448,6 +463,8 @@ def _build_command_record(
         if msg_truncated:
             truncated["lines"] = len(result.output.splitlines())
             truncated["chars"] = len(result.output)
+            truncated["head_chars"] = head_chars
+            truncated["tail_chars"] = tail_chars
             truncated.setdefault("archive", f"tools/{archive_command_dir}/output.log")
 
     if truncated:
@@ -544,28 +561,49 @@ def _truncate_message(
     max_lines: int,
     max_chars: int,
     archived: bool,
-) -> tuple[str, bool]:
-    r"""生出力を指定上限にトリムする。トリム時は先頭に `"... (truncated)\n"` を付与する。
+) -> tuple[str, bool, int, int]:
+    r"""生出力をハイブリッド方式 (先頭 + 中略マーカー + 末尾) でトリムする。
 
-    戻り値は ``(切り詰め後メッセージ, 切り詰め発生したか)`` のタプル。空文字は
-    ``("", False)`` を返す (呼び出し側で message キーごと省略する)。
+    戻り値は ``(切り詰め後メッセージ, 切り詰め発生したか, head_chars, tail_chars)``。
+    ``head_chars`` / ``tail_chars`` は切り詰めが発生した場合の先頭・末尾ブロックの文字数。
+    切り詰めが発生しなかった場合は両方 0 を返す。
+    空文字は ``("", False, 0, 0)`` を返す (呼び出し側で message キーごと省略する)。
     ``archived`` が ``False`` の場合は切り詰めを行わず全文を返す (アーカイブから
-    復元不能な情報欠落を避けるため)。``max_lines`` / ``max_chars`` が 0 以下の場合も
-    当該軸の切り詰めを行わない。
+    復元不能な情報欠落を避けるため)。
+
+    ハイブリッド方式は冒頭側にエラー概要を出すツール (editorconfig-checker 等) と
+    末尾側にエラー詳細を出すツール (pytest・mypy 等) の双方を救うことを意図する。
+    ``max_chars`` を ``head : tail = 1 : 4`` (``_DEFAULT_HEAD_RATIO``) で配分し、
+    ``max_lines`` は末尾側に対してのみ適用する (先頭側は文字数で十分に絞られるため)。
+    ``max_lines`` / ``max_chars`` が 0 以下の場合は当該軸の切り詰めを行わない。
     """
     if not output:
-        return "", False
+        return "", False, 0, 0
     if not archived:
-        return output, False
-    lines = output.splitlines()
-    truncated = False
-    if 0 < max_lines < len(lines):
-        lines = lines[-max_lines:]
-        truncated = True
-    body = "\n".join(lines)
-    if 0 < max_chars < len(body):
-        body = body[-max_chars:]
-        truncated = True
-    if truncated:
-        return _TRUNCATED_PREFIX + body, True
-    return body, False
+        return output, False, 0, 0
+
+    line_count = output.count("\n") + (0 if output.endswith("\n") else 1)
+    needs_truncate_chars = 0 < max_chars < len(output)
+    needs_truncate_lines = 0 < max_lines < line_count
+    if not needs_truncate_chars and not needs_truncate_lines:
+        return output, False, 0, 0
+
+    # ハイブリッド配分: 文字数制限がある場合はそれを基準にし、無い場合は十分大きな値とみなす。
+    char_budget = max_chars if max_chars > 0 else len(output)
+    head_size = max(1, int(char_budget * _DEFAULT_HEAD_RATIO))
+    tail_size = char_budget - head_size
+    # マーカー長を控除して合計上限を超えないようにする。
+    overhead = len(_TRUNCATED_MARKER)
+    if tail_size > overhead:
+        tail_size -= overhead
+
+    head_block = output[:head_size]
+    tail_block = output[-tail_size:] if tail_size < len(output) else output
+
+    # 末尾側のみ行数制限を追加適用する (先頭側は冒頭の要約行を素直に保持するため不要)。
+    if max_lines > 0:
+        tail_lines = tail_block.splitlines()
+        if len(tail_lines) > max_lines:
+            tail_block = "\n".join(tail_lines[-max_lines:])
+
+    return head_block + _TRUNCATED_MARKER + tail_block, True, len(head_block), len(tail_block)

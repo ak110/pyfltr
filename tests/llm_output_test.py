@@ -357,8 +357,18 @@ def test_build_command_record_cached_without_cached_from() -> None:
 
 
 def test_build_command_record_message_truncated_when_archived() -> None:
-    """failed + message 切り詰め時、truncated に lines / chars / archive が入る。"""
-    many_lines = "\n".join(f"line{i}" for i in range(100))
+    """failed + message 切り詰め時、truncated に lines / chars / head_chars / tail_chars / archive が入る。
+
+    ハイブリッド方式の検証:
+    - 先頭ブロックは原文先頭の文字を保持する
+    - 末尾ブロックは原文末尾の文字を保持する
+    - 中央に ``... (truncated)`` マーカーが入る
+    """
+    # 既定上限 (max_chars=2000) を確実に超える 4000 行 + マーカー文字列を仕込む。
+    head_marker = "HEAD-MARKER-LINE"
+    tail_marker = "TAIL-MARKER-LINE"
+    body = "\n".join(f"line{i}" for i in range(4000))
+    output = head_marker + "\n" + body + "\n" + tail_marker
     result = pyfltr.command.CommandResult(
         command="shellcheck",
         command_type="linter",
@@ -366,16 +376,27 @@ def test_build_command_record_message_truncated_when_archived() -> None:
         returncode=1,
         has_error=True,
         files=1,
-        output=many_lines,
+        output=output,
         elapsed=0.1,
         archived=True,
     )
     config = pyfltr.config.create_default_config()
     record = pyfltr.llm_output._build_command_record(result, diagnostics=0, config=config)
     assert "message" in record
-    assert record["message"].startswith("... (truncated)")
-    assert record["truncated"]["archive"] == "tools/shellcheck/output.log"
-    assert record["truncated"]["lines"] == 100
+    message = record["message"]
+    # 先頭ブロックは原文の冒頭をそのまま保持する。
+    assert message.startswith(head_marker)
+    # 末尾ブロックは原文の末尾を保持する。
+    assert message.endswith(tail_marker)
+    # 中央に切り詰めマーカーが入る。
+    assert "... (truncated)" in message
+    truncated = record["truncated"]
+    assert truncated["archive"] == "tools/shellcheck/output.log"
+    assert truncated["chars"] == len(output)
+    assert truncated["head_chars"] > 0
+    assert truncated["tail_chars"] > 0
+    # 合計 (head + tail + marker) は max_chars を大きくは超えない。
+    assert truncated["head_chars"] + truncated["tail_chars"] <= 2000
 
 
 def test_build_header_record_default_compact() -> None:

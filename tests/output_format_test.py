@@ -185,17 +185,20 @@ def test_command_record_message_on_failure_without_diagnostics(default_config):
 
 
 def test_command_record_message_truncates_long_output(default_config):
-    """長い output は末尾 30 行かつ 2000 文字にトリムされること。"""
+    """長い output はハイブリッド方式 (先頭 + マーカー + 末尾 30 行) でトリムされること。"""
     many_lines = "\n".join(f"line{i}" for i in range(100))
     result = _make_result("shellcheck", returncode=1, output=many_lines)
     lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=1)
     tool_record = json.loads(lines[0])
     msg = tool_record["message"]
-    assert msg.startswith("... (truncated)")
+    assert "... (truncated)" in msg
+    # 先頭側は冒頭行を保持する。
+    assert msg.startswith("line0")
+    # 末尾側は末尾 30 行 (line70..line99) のみを残す。
     assert "line99" in msg
-    assert "line70" in msg  # 末尾 30 行の範囲
-    assert "line69" not in msg  # 範囲外
-    assert len(msg) <= 2000 + len("... (truncated)\n")
+    assert "line70" in msg
+    assert "line69" not in msg
+    assert len(msg) <= 2000 + len("... (truncated)") + 4
 
 
 def test_command_record_no_message_when_diagnostics_present(default_config):

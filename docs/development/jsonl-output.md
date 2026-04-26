@@ -172,7 +172,15 @@ diagnostic件数の切り詰めは集約前の`ErrorLocation`列を先頭N件で
 - `diagnostics_total`: 切り詰め前の個別指摘の総件数（diagnostic切り詰め時のみ）
 - `lines`: 切り詰め前の行数（メッセージ切り詰め時のみ）
 - `chars`: 切り詰め前の文字数（メッセージ切り詰め時のみ）
+- `head_chars` / `tail_chars`: ハイブリッド切り詰めで残した先頭・末尾の文字数（メッセージ切り詰め時のみ）
 - `archive`: 全文の参照パス（`tools/<sanitize(command)>/output.log`または`tools/<sanitize(command)>/diagnostics.jsonl`）
+
+`command.message`の切り詰めはハイブリッド方式で行う。
+書式は「先頭ブロック + 中略マーカー `\n... (truncated)\n` + 末尾ブロック」となる。
+冒頭にエラー要約を出すツール（editorconfig-checker等）と、末尾にスタックトレースを出すツール（pytest・mypy等）の双方を救う狙いがある。
+配分は`jsonl-message-max-chars`を`head : tail = 1 : 4`で割り当てる。
+比率は`pyfltr/llm_output.py`の`_DEFAULT_HEAD_RATIO`で定義する。
+`jsonl-message-max-lines`は末尾側のみに適用する（先頭側は文字数制限で十分に絞られるため）。
 
 `messages[]`内に明示的なtruncationマーカーは置かず、`command.truncated.diagnostics_total`と
 集約後の`messages[]`合計件数との差分から推定する。
