@@ -340,7 +340,7 @@ javascript = true
 
 ## bin-runner経由で実行するツール
 
-ec / shellcheck / shfmt / actionlint / glab-ci-lintはネイティブバイナリ（Go/Haskell製等）で、
+ec / shellcheck / shfmt / actionlint / glab-ci-lint / taplo / hadolint / gitleaksはネイティブバイナリ（Go/Haskell/Rust製等）。
 `bin-runner`設定で起動方式を切り替える。
 ecはeditorconfig-checkerの略称。既定は`mise`で、[mise](https://mise.jdx.dev/)によるバージョン管理付きの実行となる。
 
@@ -416,6 +416,9 @@ shellcheck = true
 shfmt = true
 actionlint = true
 glab-ci-lint = true
+taplo = true
+hadolint = true
+gitleaks = true
 ```
 
 既定の引数は以下のとおり。必要に応じて上書きできる。
@@ -426,6 +429,10 @@ glab-ci-lint = true
 - actionlint: `actionlint-args = []`
 - glab-ci-lint: `glab-ci-lint-args = ["ci", "lint"]`（`glab ci lint`サブコマンドを既定値として保持）。
   GitLabリモートが未登録または未認証の環境では`glab`自身がエラー終了するため、pyfltrが自動でスキップ扱いに変換する
+- taplo: `taplo-check-args = ["check"]` / `taplo-write-args = ["format"]`（2段階実行。共通引数は`taplo-args`で指定）
+- hadolint: `hadolint-args = []`（Dockerfileを対象とするため`targets`に`Dockerfile`・`Dockerfile.*`・`*.Dockerfile`を含む）
+- gitleaks: `gitleaks-args = ["detect", "--no-banner"]`（`detect`サブコマンドを既定値として保持）。
+  `pass-filenames = false`によりリポジトリ全体を対象とする
 
 `{command}-path`を明示的に設定した場合はその値が優先され、bin-runnerによる自動解決は無効化される。
 
@@ -445,6 +452,66 @@ glab-ci-lint = true
 [tool.pyfltr]
 shfmt = true
 shfmt-args = ["-i", "2"]
+```
+
+### taploの2段階実行
+
+`taplo`はshfmtと同様に2段階で実行する。
+
+まず`taplo check`（チェックのみ）を実行する。
+
+- `rc == 0` → `succeeded`（整形済み）
+- `rc != 0` → 続けて`taplo format`（書き込み）を実行する
+
+引数は`taplo-check-args` / `taplo-write-args`で個別に上書きできる（既定はそれぞれ`["check"]` / `["format"]`）。
+共通引数`taplo-args`は両ステップの先頭に付与される。
+
+```toml
+[tool.pyfltr]
+taplo = true
+taplo-args = ["--config", "taplo.toml"]
+```
+
+### yamllint
+
+`yamllint`はPython製のYAMLリンター。直接実行経路（PATH上または`yamllint-path`で指定した実行ファイル）で動作する。
+actionlintの`.github/workflows/*.yaml`対象とは独立して、YAML全般を対象とする。
+
+```toml
+[tool.pyfltr]
+yamllint = true
+# 設定ファイルを指定したい場合
+yamllint-args = ["-c", ".yamllint.yml"]
+```
+
+既定では`yamllint`コマンドを直接呼び出す。パスを変更したい場合は`yamllint-path`を指定する。
+
+```toml
+[tool.pyfltr]
+yamllint-path = "/path/to/yamllint"
+```
+
+### hadolint
+
+`hadolint`はHaskell製のDockerfileリンター。bin-runner経由で実行する。
+既定の対象ファイルは`Dockerfile` / `Dockerfile.*` / `*.Dockerfile`。
+対象パターンを変更したい場合は`hadolint-targets`で上書きするか`hadolint-extend-targets`で追加する。
+
+```toml
+[tool.pyfltr]
+hadolint = true
+# 対象パターンを追加したい場合
+hadolint-extend-targets = ["*.dockerfile"]
+```
+
+### gitleaks
+
+`gitleaks`はGoバイナリのシークレット検出ツール。bin-runner経由で実行する。
+`pass-filenames = false`により、ファイル一覧ではなくリポジトリ全体を対象として`gitleaks detect`を実行する。
+
+```toml
+[tool.pyfltr]
+gitleaks = true
 ```
 
 ## カスタムコマンド

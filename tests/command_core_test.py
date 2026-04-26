@@ -906,7 +906,7 @@ def test_pass_filenames_true_includes_targets(mocker, tmp_path: pathlib.Path) ->
 
 def test_bin_tool_spec_all_tools_defined() -> None:
     """_BIN_TOOL_SPECに全bin系ツールが定義されている。"""
-    expected_tools = {"ec", "shellcheck", "shfmt", "actionlint", "glab-ci-lint"}
+    expected_tools = {"ec", "shellcheck", "shfmt", "actionlint", "glab-ci-lint", "taplo", "hadolint", "gitleaks"}
     assert set(pyfltr.command._BIN_TOOL_SPEC.keys()) == expected_tools
 
 

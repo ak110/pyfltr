@@ -154,6 +154,11 @@ _BIN_TOOL_SPEC: dict[str, BinToolSpec] = {
     # サブコマンド注入は -args 既定値 (["ci", "lint"]) 側に持たせて、
     # bin-runner を経由しない明示 path 指定でも自然にサブコマンドが付く設計とする。
     "glab-ci-lint": BinToolSpec(bin_name="glab"),
+    "taplo": BinToolSpec(bin_name="taplo"),
+    "hadolint": BinToolSpec(bin_name="hadolint"),
+    # gitleaks は `detect` サブコマンドが必須だが、サブコマンド注入は
+    # -args 既定値側に持たせる（glab-ci-lint と同じ設計）。
+    "gitleaks": BinToolSpec(bin_name="gitleaks"),
 }
 
 
@@ -1120,6 +1125,27 @@ def execute_command(
             )
         )
 
+    # taplo は check と format が排他のため shfmt 同様の 2 段階実行。
+    if command == "taplo":
+        return _with_targets(
+            _execute_taplo_two_step(
+                command,
+                command_info,
+                commandline_prefix,
+                config,
+                targets,
+                additional_args,
+                fix_mode=fix_mode,
+                env=env,
+                on_output=on_output,
+                start_time=start_time,
+                args=args,
+                is_interrupted=is_interrupted,
+                on_subprocess_start=on_subprocess_start,
+                on_subprocess_end=on_subprocess_end,
+            )
+        )
+
     # shfmt は -l (確認) と -w (書き込み) が排他のため prettier 同様の 2 段階実行。
     if command == "shfmt":
         return _with_targets(
@@ -1891,6 +1917,168 @@ def _execute_ruff_format_two_step(
         # Step1（ruff --check による暗黙 fix）と Step2（ruff format）の累積差分を一括で取る。
         digests_after_step2 = _snapshot_file_digests(targets)
         result.fixed_files = _changed_files(digests_before, digests_after_step2)
+    return result
+
+
+def _execute_taplo_two_step(
+    command: str,
+    command_info: pyfltr.config.CommandInfo,
+    commandline_prefix: list[str],
+    config: pyfltr.config.Config,
+    targets: list[pathlib.Path],
+    additional_args: list[str],
+    *,
+    fix_mode: bool,
+    env: dict[str, str],
+    on_output: typing.Callable[[str], None] | None,
+    start_time: float,
+    args: argparse.Namespace,
+    is_interrupted: typing.Callable[[], bool] | None = None,
+    on_subprocess_start: typing.Callable[[], None] | None = None,
+    on_subprocess_end: typing.Callable[[], None] | None = None,
+) -> CommandResult:
+    """Taplo の 2 段階実行 (taplo check → taplo format)。
+
+    shfmt と同様、確認用サブコマンド (check) と書き込み用サブコマンド (format) が
+    排他のため専用経路で処理する。
+
+    通常モード (fix_mode=False):
+
+    - Step1: `prefix + args + check-args + additional + targets` を実行
+    - Step1 rc == 0 → succeeded (整形不要)
+    - Step1 rc != 0 → Step2 `prefix + args + write-args + additional + targets` を実行
+      - Step2 rc == 0 → formatted (整形成功)
+      - Step2 rc != 0 → failed
+
+    fix モード (fix_mode=True):
+
+    - Step1 をスキップし、直接 write-args 付きで実行
+    - 内容ハッシュスナップショットで書き込みを検知
+    """
+    common_args: list[str] = list(config[f"{command}-args"])
+    check_args: list[str] = list(config[f"{command}-check-args"])
+    write_args: list[str] = list(config[f"{command}-write-args"])
+    target_strs = [str(t) for t in targets]
+
+    write_commandline: list[str] = [
+        *commandline_prefix,
+        *common_args,
+        *write_args,
+        *additional_args,
+        *target_strs,
+    ]
+
+    if fix_mode:
+        digests_before = _snapshot_file_digests(targets)
+        if args.verbose and on_output is not None:
+            on_output(f"commandline: {shlex.join(write_commandline)}\n")
+        write_proc = _run_subprocess(
+            write_commandline,
+            env,
+            on_output,
+            is_interrupted=is_interrupted,
+            on_subprocess_start=on_subprocess_start,
+            on_subprocess_end=on_subprocess_end,
+        )
+        write_rc = write_proc.returncode
+        output = write_proc.stdout.strip()
+        elapsed = time.perf_counter() - start_time
+        digests_after = _snapshot_file_digests(targets)
+        changed = digests_after != digests_before
+
+        if write_rc != 0:
+            has_error = True
+            returncode: int = write_rc
+        elif changed:
+            has_error = False
+            returncode = 1
+        else:
+            has_error = False
+            returncode = 0
+
+        result = CommandResult.from_run(
+            command=command,
+            command_info=command_info,
+            commandline=write_commandline,
+            returncode=returncode,
+            has_error=has_error,
+            files=len(targets),
+            output=output,
+            elapsed=elapsed,
+        )
+        if not has_error and changed:
+            result.fixed_files = _changed_files(digests_before, digests_after)
+        return result
+
+    # 通常モード: Step1 (check) → Step2 (format)
+    # Step1 は read-only のため内容変化なし。変化検知のため Step1 前にスナップショットを取る。
+    # （他 formatter の digests_before と同じ起点で取る方針に揃える）
+    taplo_digests_before = _snapshot_file_digests(targets)
+    check_commandline: list[str] = [
+        *commandline_prefix,
+        *common_args,
+        *check_args,
+        *additional_args,
+        *target_strs,
+    ]
+    if args.verbose and on_output is not None:
+        on_output(f"commandline: {shlex.join(check_commandline)}\n")
+    check_proc = _run_subprocess(
+        check_commandline,
+        env,
+        on_output,
+        is_interrupted=is_interrupted,
+        on_subprocess_start=on_subprocess_start,
+        on_subprocess_end=on_subprocess_end,
+    )
+    check_rc = check_proc.returncode
+
+    if check_rc == 0:
+        # 整形不要
+        output = check_proc.stdout.strip()
+        elapsed = time.perf_counter() - start_time
+        return CommandResult.from_run(
+            command=command,
+            command_info=command_info,
+            commandline=check_commandline,
+            returncode=0,
+            files=len(targets),
+            output=output,
+            elapsed=elapsed,
+        )
+
+    # Step2: 書き込み
+    if args.verbose and on_output is not None:
+        on_output(f"commandline: {shlex.join(write_commandline)}\n")
+    write_proc = _run_subprocess(
+        write_commandline,
+        env,
+        on_output,
+        is_interrupted=is_interrupted,
+        on_subprocess_start=on_subprocess_start,
+        on_subprocess_end=on_subprocess_end,
+    )
+    output = write_proc.stdout.strip()
+    elapsed = time.perf_counter() - start_time
+
+    has_error = write_proc.returncode != 0
+    returncode = write_proc.returncode if has_error else 1
+
+    result = CommandResult.from_run(
+        command=command,
+        command_info=command_info,
+        commandline=write_commandline,
+        returncode=returncode,
+        has_error=has_error,
+        files=len(targets),
+        output=check_proc.stdout.strip() if not has_error else output,
+        elapsed=elapsed,
+    )
+    if not has_error:
+        taplo_digests_after = _snapshot_file_digests(targets)
+        changed = taplo_digests_after != taplo_digests_before
+        if changed:
+            result.fixed_files = _changed_files(taplo_digests_before, taplo_digests_after)
     return result
 
 

@@ -101,6 +101,9 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
     "uv-sort": CommandInfo(type="formatter", targets="pyproject.toml", fixed_cost=0.2),
     # bin-runner対応ツール（formatter → linterの順）
     "shfmt": CommandInfo(type="formatter", targets="*.sh"),
+    # taplo: Rust製TOMLフォーマッター/リンター。shfmtと同様の2段階実行（check → format）。
+    # 既定で無効（opt-in）。
+    "taplo": CommandInfo(type="formatter", targets="*.toml", fixed_cost=0.3),
     # Rust / .NET 言語ツール (formatter)。いずれも pass-filenames=False でcrate/solution
     # 全体を対象とする project-level 実行で動作する。serial_group により同一ツールチェイン
     # (cargo / dotnet) のコマンドは直列実行され、target ディレクトリ等のロック競合を回避する。
@@ -124,6 +127,27 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
     "glab-ci-lint": CommandInfo(
         type="linter",
         targets=".gitlab-ci.yml",
+        fixed_cost=1.0,
+    ),
+    # yamllint: Python製YAMLリンター。YAML全般を対象とする。既定で無効（opt-in）。
+    "yamllint": CommandInfo(
+        type="linter",
+        targets=["*.yaml", "*.yml"],
+        fixed_cost=0.1,
+        per_file_cost=0.01,
+    ),
+    # hadolint: Haskell製Dockerfileリンター。bin-runner経由。既定で無効（opt-in）。
+    "hadolint": CommandInfo(
+        type="linter",
+        targets=["Dockerfile", "Dockerfile.*", "*.Dockerfile"],
+        fixed_cost=0.2,
+        per_file_cost=0.05,
+    ),
+    # gitleaks: Goバイナリ。リポジトリ全体のシークレット検出。
+    # pass-filenames=Falseで全体を対象とする。bin-runner経由。既定で無効（opt-in）。
+    "gitleaks": CommandInfo(
+        type="linter",
+        targets="*",
         fixed_cost=1.0,
     ),
     "ruff-check": CommandInfo(type="linter", fixed_cost=0.01),

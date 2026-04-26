@@ -56,13 +56,28 @@ pyfltrの設定キーとコマンド名は`markdownlint`（例: `markdownlint = 
 
 ### その他
 
-- Formatters: shfmt（既定で無効）
-- Linters: ec（editorconfig-checker、既定で無効）/ shellcheck（既定で無効）/ typos（PyPI依存）/
-  actionlint / glab-ci-lint（既定で無効）
+- Formatters: shfmt（既定で無効）/ taplo（TOML formatter、既定で無効）
+- Linters
+    - 一般: typos（PyPI依存）/ actionlint / ec（editorconfig-checker、既定で無効）/
+      shellcheck（既定で無効）/ glab-ci-lint（既定で無効）
+    - YAML / Dockerfile / シークレット系: yamllint（既定で無効）/ hadolint（Dockerfile、既定で無効）/
+      gitleaks（シークレット検出、既定で無効）
 - 統合: pre-commit（`.pre-commit-config.yaml`のhookを統合実行）
 
 `glab-ci-lint`は`glab ci lint`経由でGitLab CI設定を構文検証する。
 GitLab API認証とネットワーク接続が必須なため、CIや初学者環境で誤って失敗しないよう既定で無効化している。
+
+`taplo`はRust製のTOMLフォーマッター/リンター。bin-runner経由で実行し、shfmtと同様の2段階実行（check→format）を行う。
+既定で無効（opt-in）のため、使用時は`taplo = true`を設定する。
+
+`yamllint`はPython製のYAMLリンター。PATH上または`yamllint-path`で指定した実行ファイルを直接呼び出す。
+既定で無効（opt-in）のため、使用時は`yamllint = true`を設定する。
+
+`hadolint`はDockerfileに特化したリンター。bin-runner経由で実行する。
+既定で無効（opt-in）のため、使用時は`hadolint = true`を設定する。
+
+`gitleaks`はGoバイナリのシークレット検出ツール。`gitleaks detect`でリポジトリ全体を対象に実行する。
+既定で無効（opt-in）のため、使用時は`gitleaks = true`を設定する。
 
 プリセット指定と言語カテゴリゲートによる有効化の詳細は[設定項目](configuration.md)を参照。
 

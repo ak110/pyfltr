@@ -993,8 +993,8 @@ path = "my-checker"
 def test_bin_tool_default_config_values() -> None:
     """bin-runner対応ツールのデフォルト設定値が正しく定義されている。"""
     config = pyfltr.config.create_default_config()
-    # bin-runner経由ツールの有効/無効とバージョン設定を確認
-    bin_tools = ["ec", "shellcheck", "shfmt", "actionlint"]
+    # bin-runner経由ツールの有効/無効とバージョン設定を確認（fast=True 系列）
+    bin_tools = ["ec", "shellcheck", "shfmt", "actionlint", "taplo", "hadolint"]
     for tool in bin_tools:
         assert config[tool] is False, f"{tool}は既定で無効"
         assert config[f"{tool}-path"] == "", f"{tool}-pathは空文字"
@@ -1008,6 +1008,31 @@ def test_bin_tool_default_config_values() -> None:
 
     # tscのpass-filenames
     assert config["tsc-pass-filenames"] is False
+
+
+def test_gitleaks_default_config_values() -> None:
+    """gitleaksは既定で無効、pass-filenames=falseでリポジトリ全体を対象とする。"""
+    config = pyfltr.config.create_default_config()
+    assert config["gitleaks"] is False, "gitleaksは既定で無効"
+    assert config["gitleaks-path"] == "", "gitleaks-pathは空文字"
+    assert config["gitleaks-args"] == ["detect", "--no-banner"], "gitleaks-argsはdetect --no-banner"
+    assert config["gitleaks-pass-filenames"] is False, "gitleaks-pass-filenamesはFalse"
+    assert config["gitleaks-version"] == "latest", "gitleaks-versionはlatest"
+    assert config["gitleaks-fast"] is False, "gitleaks-fastはFalse"
+    info = pyfltr.config.BUILTIN_COMMANDS["gitleaks"]
+    assert info.type == "linter"
+
+
+def test_yamllint_default_config_values() -> None:
+    """yamllintは既定で無効（opt-in）、直接実行経路でコマンド名をpathとして保持する。"""
+    config = pyfltr.config.create_default_config()
+    assert config["yamllint"] is False, "yamllintは既定で無効"
+    assert config["yamllint-path"] == "yamllint", "yamllint-pathはコマンド名"
+    assert config["yamllint-args"] == [], "yamllint-argsは空リスト"
+    assert config["yamllint-fast"] is True, "yamllint-fastはTrue"
+    info = pyfltr.config.BUILTIN_COMMANDS["yamllint"]
+    assert info.type == "linter"
+    assert info.target_globs() == ["*.yaml", "*.yml"]
 
 
 def test_typos_default_config_values() -> None:

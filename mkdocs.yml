@@ -56,7 +56,8 @@ plugins:
         - Rust系: cargo-fmt / cargo-clippy / cargo-check / cargo-deny / cargo-test
         - .NET系: dotnet-format / dotnet-build / dotnet-test
         - ドキュメント系: markdownlint（実体はmarkdownlint-cli2） / textlint
-        - その他: pre-commit / typos / ec / shellcheck / shfmt / actionlint / glab-ci-lint（既定で無効）
+        - その他: pre-commit / typos / ec / shellcheck / shfmt / actionlint / glab-ci-lint（既定で無効）/
+          taplo（既定で無効）/ yamllint（既定で無効）/ hadolint（既定で無効）/ gitleaks（既定で無効）
 
         typosはpyfltr本体の依存として同梱されており追加インストール不要。
         個別ツールの網羅的な一覧と詳細は[対応ツール一覧](guide/index.md)を参照。

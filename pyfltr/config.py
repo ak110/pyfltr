@@ -302,6 +302,35 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "glab-ci-lint-args": ["ci", "lint"],
     "glab-ci-lint-version": "latest",
     "glab-ci-lint-fast": False,
+    # taplo: Rust製TOMLフォーマッター/リンター。bin-runner経由。既定で無効（opt-in）。
+    # shfmtと同様の2段階実行（check → format）。
+    "taplo": False,
+    "taplo-path": "",
+    "taplo-args": [],
+    "taplo-check-args": ["check"],
+    "taplo-write-args": ["format"],
+    "taplo-version": "latest",
+    "taplo-fast": True,
+    # yamllint: Python製YAMLリンター。既定で無効（opt-in）。直接実行経路。
+    "yamllint": False,
+    "yamllint-path": "yamllint",
+    "yamllint-args": [],
+    "yamllint-fast": True,
+    # hadolint: Dockerfile専用リンター。bin-runner経由。既定で無効（opt-in）。
+    "hadolint": False,
+    "hadolint-path": "",
+    "hadolint-args": [],
+    "hadolint-version": "latest",
+    "hadolint-fast": True,
+    # gitleaks: シークレット検出ツール（Goバイナリ）。bin-runner経由。既定で無効（opt-in）。
+    # `detect` サブコマンドは args 既定値として持たせる（glab-ci-lint と同じ設計）。
+    # pass-filenames=false でリポジトリ全体を対象とする。
+    "gitleaks": False,
+    "gitleaks-path": "",
+    "gitleaks-args": ["detect", "--no-banner"],
+    "gitleaks-pass-filenames": False,
+    "gitleaks-version": "latest",
+    "gitleaks-fast": False,
     "pytest": False,
     "pytest-path": "pytest",
     "pytest-args": [],
@@ -442,6 +471,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
             "prettier",
             "uv-sort",
             "shfmt",
+            "taplo",
             "cargo-fmt",
             "dotnet-format",
         ],
@@ -460,6 +490,9 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
             "typos",
             "actionlint",
             "glab-ci-lint",
+            "yamllint",
+            "hadolint",
+            "gitleaks",
             "oxlint",
             "tsc",
             "cargo-clippy",
