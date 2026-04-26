@@ -31,7 +31,8 @@
 ### Rust系
 
 推奨ツール一式はcargo-fmt / cargo-clippy / cargo-check / cargo-test / cargo-denyの5種。
-プロジェクト全体（crate単位）を対象に直接実行する（`{command}-path`で実行パスを指定）。
+プロジェクト全体（crate単位）を対象とし、既定ではbin-runner経由（グローバル`bin-runner`既定`mise`によりmise経由）で起動する。
+従来挙動（PATH上の`cargo`等を直接実行）に戻したい場合は`cargo-fmt-runner = "direct"`等を設定する。
 
 - Formatters: cargo fmt
 - Linters: cargo clippy / cargo check / cargo deny（依存ライセンス・脆弱性チェック）
@@ -40,7 +41,9 @@
 ### .NET系
 
 推奨ツール一式はdotnet-format / dotnet-build / dotnet-testの3種。
-プロジェクト全体（solution単位）を対象に直接実行する（`{command}-path`で実行パスを指定）。
+プロジェクト全体（solution単位）を対象とし、既定ではbin-runner経由（グローバル`bin-runner`既定`mise`によりmise経由）で起動する。
+従来挙動（PATH上の`dotnet`を直接実行）に戻したい場合は`dotnet-format-runner = "direct"`等を設定する。
+direct実行時は環境変数`DOTNET_ROOT`配下に`dotnet`実行ファイルがあれば優先採用する。
 
 - Formatters: dotnet format
 - Linters: dotnet build（ビルドエラーをlint段階で検出）

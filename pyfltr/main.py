@@ -20,6 +20,7 @@ import pyfltr.archive
 import pyfltr.cache
 import pyfltr.cli
 import pyfltr.command
+import pyfltr.command_info
 import pyfltr.config
 import pyfltr.formatters
 import pyfltr.mcp_
@@ -50,6 +51,7 @@ _ALL_SUBCOMMANDS: tuple[str, ...] = (
     "generate-shell-completion",
     "list-runs",
     "show-run",
+    "command-info",
     "mcp",
 )
 """全サブコマンド。shell completion スクリプト生成時に参照される。"""
@@ -318,6 +320,8 @@ def build_parser(custom_commands: collections.abc.Iterable[str] = ()) -> "_HelpO
             "  list-runs        実行アーカイブ内の run 一覧を表示する。\n"
             "  show-run <run_id>\n"
             "                   指定 run の詳細 (meta・ツール別サマリ・diagnostic・生出力) を表示する。\n"
+            "  command-info <command>\n"
+            "                   ツール起動方式（runner / 実行ファイル / 最終コマンドライン等）の解決結果を表示する。\n"
             "  mcp              MCP サーバーを stdio で起動する。\n"
             "\n"
             "ドキュメント: https://ak110.github.io/pyfltr/\n"
@@ -362,6 +366,9 @@ def build_parser(custom_commands: collections.abc.Iterable[str] = ()) -> "_HelpO
 
     # list-runs / show-run: 実行アーカイブの詳細参照サブコマンド
     pyfltr.runs.register_subparsers(subparsers)
+
+    # command-info: ツール起動方式（runner / 実行ファイル / 最終コマンドライン等）の解決結果表示
+    pyfltr.command_info.register_subparsers(subparsers)
 
     # mcp: MCP サーバーの stdio 起動
     pyfltr.mcp_.register_subparsers(subparsers)
@@ -436,6 +443,10 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
         return pyfltr.runs.execute_list_runs(args)
     if subcommand == "show-run":
         return pyfltr.runs.execute_show_run(args)
+
+    # command-info: 対象ツールの起動方式・解決結果を表示する（実行はしない）
+    if subcommand == "command-info":
+        return pyfltr.command_info.execute_command_info(args)
 
     # MCP サーバーサブコマンド: stdio で FastMCP サーバーを起動する。
     if subcommand == "mcp":

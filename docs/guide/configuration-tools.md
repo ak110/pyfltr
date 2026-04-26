@@ -3,12 +3,27 @@
 基本設定（プリセット、Python一括有効化、並列実行等）は[設定項目](configuration.md)を参照。
 
 pyfltrは対応ツールを実行方式の観点から次の3カテゴリに分けて扱う。
+カテゴリの選択はツールごとの`{command}-runner`設定で切り替え可能で、既定値はカテゴリに対応した値になっている。
 
-- 直接実行: Python系ツール、Rust系（cargo系）、.NET系（dotnet系）、typosなど。
+- 直接実行（既定`{command}-runner = "direct"`）。
+  対象はPython系ツール（mypy / pylint / pyright / ty / pytest / ruff-format / ruff-check / uv-sort）。
+  これにtypos、yamllint、pre-commitも加わる。
   PATH上または`{command}-path`で指定した実行ファイルを直接呼び出す
-- js-runner経由: eslint / prettier / biome / oxlint / tsc / vitest / markdownlint-cli2 / textlintなど。
+- js-runner経由（既定`{command}-runner = "js-runner"`）。
+  対象はeslint / prettier / biome / oxlint / tsc / vitest / markdownlint-cli2 / textlint。
   npm / pnpm / yarn等のJavaScriptパッケージマネージャー経由で起動する
-- bin-runner経由: ec / shellcheck / shfmt / actionlintなど。miseやPATH経由でネイティブバイナリを解決する
+- bin-runner経由（既定`{command}-runner = "bin-runner"`）。
+  対象は既存のec / shellcheck / shfmt / actionlint / glab-ci-lint / taplo / hadolint / gitleaks。
+  さらにcargo系（cargo-fmt / cargo-clippy / cargo-check / cargo-test / cargo-deny）も含む。
+  加えてdotnet系（dotnet-format / dotnet-build / dotnet-test）も対象。
+  グローバル`bin-runner`設定（既定`mise`）に従ってmiseまたはPATH経由でネイティブバイナリを解決する
+
+`{command}-runner`の許容値は`"direct"` / `"mise"` / `"bin-runner"` / `"js-runner"`の4種。
+個別ツール単位で起動方式を切り替えたい場合は`{command}-runner`を明示する
+（例: `cargo-fmt-runner = "direct"`でcargoをPATH経由で直接呼び出す形に戻せる）。
+
+`{command}-path`を非空に指定するとあらゆる`{command}-runner`設定より優先され、その値で直接実行する。
+旧版から個別パスを指定して使っている場合の後方互換経路として機能する。
 
 本ページではまず全カテゴリ共通の設定を示し、続いて各カテゴリ固有の設定を説明する。
 
@@ -63,8 +78,9 @@ pass-filenames = false
 
 ## 直接実行ツール
 
-Python系ツール、Rust系（cargo系）、.NET系（dotnet系）、uv-sort、typosはいずれも`{command}-path`で指定した
-実行ファイルをpyfltrが直接呼び出す。
+対象はPython系ツール（mypy / pylint / pyright / ty / pytest / ruff-format / ruff-check / uv-sort）。
+これにtypos、yamllint、pre-commitを加えた一群が直接実行カテゴリ。
+いずれも`{command}-runner`既定値は`"direct"`で、`{command}-path`で指定した実行ファイルをpyfltrが直接呼び出す。
 特別な起動経路を挟まないため、miseやnpm等のランナー設定は不要。
 
 ### ruff-format の 2 段階実行
@@ -102,72 +118,6 @@ uv-sort = true
 
 Python系ツールとして扱われ、`python = true`のゲート対象となる（プリセット`20260411`以降に含まれる）。
 `mypy` / `pylint` / `pytest`も全プリセットに含まれ、`python = true`だけでゲートを通過する。
-
-### Rust系（cargo系）
-
-`cargo-fmt` / `cargo-clippy` / `cargo-check` / `cargo-test` / `cargo-deny`はいずれも既定で無効（opt-in）。
-全プリセットにRust系ツールが含まれるため、`preset = "latest"` + `rust = true`だけで一式が有効化される。
-`pass-filenames = false`によりcrate全体を対象とするproject-level実行となる。
-
-```toml
-[tool.pyfltr]
-preset = "latest"
-rust = true
-```
-
-実行パスはツール別に個別指定する。
-既定ではcargo系は`cargo`バイナリ経由、cargo-denyのみ`cargo-deny`バイナリを直接呼び出す。
-
-```toml
-[tool.pyfltr]
-# miseやrustup等で別のcargoを指すようにしたい場合
-cargo-fmt-path = "/path/to/cargo"
-cargo-clippy-path = "/path/to/cargo"
-cargo-check-path = "/path/to/cargo"
-cargo-test-path = "/path/to/cargo"
-cargo-deny-path = "/path/to/cargo-deny"
-```
-
-既定の引数は以下のとおり。必要に応じて上書きできる。
-
-- cargo-fmt: `cargo-fmt-args = ["fmt"]`（常時書き込みモード。pyfltr規約によりformatterは`--fix`なしでも強制修正する）
-- cargo-clippy:
-    - `cargo-clippy-args = ["clippy", "--all-targets"]`（共通前半部）
-    - `cargo-clippy-lint-args = ["--", "-D", "warnings"]`（lintモードで末尾に付与）
-    - `cargo-clippy-fix-args = ["--fix", "--allow-staged", "--allow-dirty", "--", "-D", "warnings"]`（fixモードで末尾に付与）
-- cargo-check: `cargo-check-args = ["check", "--all-targets"]`
-- cargo-test: `cargo-test-args = ["test"]`
-- cargo-deny: `cargo-deny-args = ["check"]`
-
-cargo系はcrate単位で同一ワークスペースを操作するため、`serial_group = "cargo"`で自動的に直列化される。
-利用者が`--jobs=1`などを指定する必要はない。
-
-### .NET系（dotnet系）
-
-`dotnet-format` / `dotnet-build` / `dotnet-test`はいずれも既定で無効（opt-in）。
-全プリセットに`.NET`系ツールが含まれるため、`preset = "latest"` + `dotnet = true`だけで一式が有効化される。
-`pass-filenames = false`によりsolution全体を対象とするproject-level実行となる。
-
-```toml
-[tool.pyfltr]
-preset = "latest"
-dotnet = true
-```
-
-実行パスはツール別に個別指定する。既定はいずれも`dotnet`バイナリ。
-
-```toml
-[tool.pyfltr]
-dotnet-format-path = "/path/to/dotnet"
-dotnet-build-path = "/path/to/dotnet"
-dotnet-test-path = "/path/to/dotnet"
-```
-
-既定の引数は以下のとおり。
-
-- dotnet-format: `dotnet-format-args = ["format"]`（常時書き込みモード）
-- dotnet-build: `dotnet-build-args = ["build", "--nologo"]`
-- dotnet-test: `dotnet-test-args = ["test", "--nologo"]`
 
 ### typos
 
@@ -340,9 +290,16 @@ javascript = true
 
 ## bin-runner経由で実行するツール
 
-ec / shellcheck / shfmt / actionlint / glab-ci-lint / taplo / hadolint / gitleaksはネイティブバイナリ（Go/Haskell/Rust製等）。
-`bin-runner`設定で起動方式を切り替える。
+以下のネイティブバイナリ系ツールはグローバル`bin-runner`設定で起動方式を切り替える。
+
+- ec / shellcheck / shfmt / actionlint / glab-ci-lint / taplo / hadolint / gitleaks
+- cargo系（cargo-fmt / cargo-clippy / cargo-check / cargo-test / cargo-deny）
+- dotnet系（dotnet-format / dotnet-build / dotnet-test）
+
 ecはeditorconfig-checkerの略称。既定は`mise`で、[mise](https://mise.jdx.dev/)によるバージョン管理付きの実行となる。
+cargo系・dotnet系はv3.x系で`{command}-path`既定値を空文字に変更し、本カテゴリへ統合した（破壊的変更）。
+従来挙動（PATH上の`cargo` / `dotnet` / `cargo-deny`を直接実行）を維持したい場合は次の2方法のいずれかを使う。
+個別ツールに`{command}-runner = "direct"`を設定するか、`{command}-path`に明示的なパスを指定する。
 
 ```toml
 [tool.pyfltr]
@@ -396,14 +353,43 @@ mise-auto-trust = false
 ### バージョン指定
 
 `{command}-version`でbin-runner対応ツールのバージョンを指定できる。既定は`"latest"`。
+cargo系・dotnet系も同枠組みで指定できる。
 
 ```toml
 [tool.pyfltr]
 shellcheck-version = "0.10.0"
 shfmt-version = "3.10.0"
+cargo-fmt-version = "1.83.0"
+dotnet-format-version = "9.0.100"
 ```
 
 miseモードでは`mise exec <tool>@<version> -- <command>`として展開される。directモードではバージョン指定は無視される。
+
+### {command}-runnerによる個別ツール切替 {#command-runner}
+
+ツール単位で起動方式を変更したいときは`{command}-runner`を指定する。許容値は次の4種。
+
+- `"direct"`: PATH上または`{command}-path`で指定した実行ファイルを直接呼び出す
+- `"mise"`: `mise exec <backend>@<version> -- <bin>`形式で起動する
+- `"bin-runner"`: グローバル`bin-runner`設定（`mise` / `direct`）に委譲する
+- `"js-runner"`: グローバル`js-runner`設定（`pnpx` / `pnpm` / `npm` / `npx` / `yarn` / `direct`）に委譲する
+
+`"mise"`を明示できるのは本カテゴリ（既存8ツール + cargo系 + dotnet系）に限る。
+typos / yamllint / Python系ツールなどbackend未登録のツールに`"mise"`を明示すると、設定読み込み時または
+解決時に明確なエラーとして拒否する（typo・誤設定の早期検知のため）。
+
+```toml
+[tool.pyfltr]
+# cargo系をPATH直接実行に戻す
+cargo-fmt-runner = "direct"
+cargo-clippy-runner = "direct"
+# 個別ツールだけmise経由（グローバルはdirectのまま）
+shellcheck-runner = "mise"
+```
+
+direct実行時、対象が`dotnet`バイナリの場合は環境変数`DOTNET_ROOT`配下の`dotnet`実行ファイルを優先採用する
+（PATHに`dotnet`が無くてもSDK配置場所で起動できる運用を救済するため）。
+miseモードでは`DOTNET_ROOT`は参照せず、miseが管理する環境に委ねる。
 
 ### bin-runner対応ツールの設定
 
@@ -419,6 +405,14 @@ glab-ci-lint = true
 taplo = true
 hadolint = true
 gitleaks = true
+cargo-fmt = true
+cargo-clippy = true
+cargo-check = true
+cargo-test = true
+cargo-deny = true
+dotnet-format = true
+dotnet-build = true
+dotnet-test = true
 ```
 
 既定の引数は以下のとおり。必要に応じて上書きできる。
@@ -433,6 +427,21 @@ gitleaks = true
 - hadolint: `hadolint-args = []`（Dockerfileを対象とするため`targets`に`Dockerfile`・`Dockerfile.*`・`*.Dockerfile`を含む）
 - gitleaks: `gitleaks-args = ["detect", "--no-banner"]`（`detect`サブコマンドを既定値として保持）。
   `pass-filenames = false`によりリポジトリ全体を対象とする
+- cargo-fmt: `cargo-fmt-args = ["fmt"]`（常時書き込みモード。pyfltr規約によりformatterは`--fix`なしでも強制修正する）
+- cargo-clippy:
+    - `cargo-clippy-args = ["clippy", "--all-targets"]`（共通前半部）
+    - `cargo-clippy-lint-args = ["--", "-D", "warnings"]`（lintモードで末尾に付与）
+    - `cargo-clippy-fix-args = ["--fix", "--allow-staged", "--allow-dirty", "--", "-D", "warnings"]`（fixモードで末尾に付与）
+- cargo-check: `cargo-check-args = ["check", "--all-targets"]`
+- cargo-test: `cargo-test-args = ["test"]`
+- cargo-deny: `cargo-deny-args = ["check"]`
+- dotnet-format: `dotnet-format-args = ["format"]`（常時書き込みモード）
+- dotnet-build: `dotnet-build-args = ["build", "--nologo"]`
+- dotnet-test: `dotnet-test-args = ["test", "--nologo"]`
+
+cargo系・dotnet系はそれぞれ`serial_group = "cargo"` / `serial_group = "dotnet"`で自動的に直列化される
+（同一ワークスペース・solutionを操作する競合を避けるため）。利用者が`--jobs=1`などを指定する必要はない。
+mise backendは既定でcargo系が`rust`、cargo-denyが`cargo-deny`、dotnet系が`dotnet`に設定されている。
 
 `{command}-path`を明示的に設定した場合はその値が優先され、bin-runnerによる自動解決は無効化される。
 
@@ -590,3 +599,30 @@ fix-args = ["--fix"]
 ```
 
 fixモードでは`args`の後に`fix-args`が追加され、`my-linter --check --fix <files>`として実行される。
+
+## command-info サブコマンド
+
+`pyfltr command-info <tool>`は、対象ツールの起動方式（runner種別・実行ファイルパス・最終コマンドライン）の解決結果を
+副作用無しで表示する。`pyproject.toml`の`{command}-runner`設定や`bin-runner` / `js-runner`の影響を実環境で確認したい
+ときに使う。
+
+```console
+$ pyfltr command-info cargo-fmt
+command: cargo-fmt
+enabled: True
+runner: bin-runner (default)
+effective_runner: mise
+executable: mise
+executable_resolved: /home/user/.local/bin/mise
+commandline: mise exec rust@latest -- cargo
+configured_args: fmt
+version: latest
+```
+
+主要なオプション。
+
+- `--format=text|json`: 出力形式を切り替える（既定`text`）。json形式はスクリプトからのパース向け
+- `--check`: mise経由ツールに対して`mise exec --version`での事前チェックを行う
+ （`mise install` / `mise trust`が発火する場合があるため、既定では行わない）
+
+未知のコマンド名や`{command}-runner = "mise"`を未登録ツールに指定した場合などは終了コード1で失敗する。

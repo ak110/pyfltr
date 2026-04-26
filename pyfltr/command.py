@@ -144,7 +144,9 @@ class BinToolSpec:
 
 
 # bin-runner で解決するネイティブバイナリツールの定義。
-# path 設定が空のとき、bin-runner 設定に基づいてコマンドを組み立てる。
+# `{command}-runner` が "bin-runner"（グローバル `bin-runner` へ委譲）または "mise" のとき、
+# このテーブルから mise backend と bin 名を引いてコマンドラインを組み立てる。
+# `{command}-path` が非空ならその値を優先し本テーブルは参照しない。
 _BIN_TOOL_SPEC: dict[str, BinToolSpec] = {
     "ec": BinToolSpec(bin_name="ec", mise_backend="editorconfig-checker"),
     "shellcheck": BinToolSpec(bin_name="shellcheck"),
@@ -159,6 +161,19 @@ _BIN_TOOL_SPEC: dict[str, BinToolSpec] = {
     # gitleaks は `detect` サブコマンドが必須だが、サブコマンド注入は
     # -args 既定値側に持たせる（glab-ci-lint と同じ設計）。
     "gitleaks": BinToolSpec(bin_name="gitleaks"),
+    # cargo 系は `cargo` バイナリを呼ぶ。mise の rust toolchain backend で解決し、
+    # cargo-fmt / cargo-clippy / cargo-check / cargo-test はサブコマンドを `-args`
+    # 既定値側に持たせる設計とする。
+    "cargo-fmt": BinToolSpec(bin_name="cargo", mise_backend="rust"),
+    "cargo-clippy": BinToolSpec(bin_name="cargo", mise_backend="rust"),
+    "cargo-check": BinToolSpec(bin_name="cargo", mise_backend="rust"),
+    "cargo-test": BinToolSpec(bin_name="cargo", mise_backend="rust"),
+    # cargo-deny は単独バイナリ。mise registry から `cargo-deny` 名で解決する。
+    "cargo-deny": BinToolSpec(bin_name="cargo-deny"),
+    # dotnet 系はいずれも `dotnet` バイナリを呼ぶ。mise の dotnet backend で解決する。
+    "dotnet-format": BinToolSpec(bin_name="dotnet", mise_backend="dotnet"),
+    "dotnet-build": BinToolSpec(bin_name="dotnet", mise_backend="dotnet"),
+    "dotnet-test": BinToolSpec(bin_name="dotnet", mise_backend="dotnet"),
 }
 
 
@@ -284,67 +299,225 @@ def _apply_structured_output(commandline: list[str], spec: _StructuredOutputSpec
     return [*filtered, *spec.inject]
 
 
+@dataclasses.dataclass(frozen=True)
+class ResolvedCommandline:
+    """コマンドライン解決結果（副作用なし）。
+
+    ``executable`` と ``prefix`` は ``[executable, *prefix]`` で起動するための値。
+    ``runner`` は経緯を表現する文字列で ``command-info`` サブコマンドや診断で使う。
+    ``runner_source`` は ``runner`` の決定経緯を示す
+    （``"explicit"`` : ``{command}-runner`` 明示、``"default"`` : 既定値、
+    ``"path-override"`` : ``{command}-path`` 非空で direct 強制）。
+    ``effective_runner`` はグローバル設定への委譲を解決した最終形
+    （``"direct"`` / ``"mise"`` / ``"js-pnpx"`` / ``"js-pnpm"`` 等）。
+    """
+
+    executable: str
+    prefix: list[str]
+    runner: str
+    runner_source: str
+    effective_runner: str
+
+    @property
+    def commandline(self) -> list[str]:
+        """``[executable, *prefix]`` の単一リスト表現を返す。"""
+        return [self.executable, *self.prefix]
+
+
+def resolve_runner(command: str, config: pyfltr.config.Config) -> tuple[str, str]:
+    """``{command}-runner`` 設定値とその決定経緯を返す。
+
+    返り値は ``(runner, source)`` で、``source`` は次のいずれか。
+
+    - ``"explicit"``: pyproject.toml で ``{command}-runner`` を明示指定
+    - ``"default"``: 設定既定値（typos 等で ``"direct"`` 等）
+
+    pyproject.toml 由来か既定値かを区別するために ``Config.values`` のフラグでは
+    検出できないため、現状は ``DEFAULT_CONFIG`` との同一性で判定する近似を使う。
+    """
+    runner = config.values.get(f"{command}-runner")
+    if runner is None:
+        # 既定値が登録されていないコマンド（カスタムコマンド等）は direct 扱い。
+        return "direct", "default"
+    default_runner = pyfltr.config.DEFAULT_CONFIG.get(f"{command}-runner")
+    source = "default" if runner == default_runner else "explicit"
+    return str(runner), source
+
+
+def build_commandline(command: str, config: pyfltr.config.Config) -> ResolvedCommandline:
+    """ツール起動コマンドラインを副作用なしで構築する。
+
+    `{command}-runner` および `{command}-path` の設定に従い、`mise exec ... --` 形式・
+    `pnpx --package ...` 形式・直接実行（PATH 解決）のいずれかを返す。
+    mise 経由でも本関数では ``mise exec --version`` の事前チェックや
+    ``mise trust`` を行わない（``command-info`` サブコマンドからも安全に呼べるようにするため）。
+
+    ツールが特定できない場合は ``FileNotFoundError`` を、
+    `{command}-runner` 値の組み合わせ自体が不正な場合は ``ValueError`` を送出する。
+    """
+    runner, source = resolve_runner(command, config)
+    if runner == "bin-runner":
+        effective = config["bin-runner"]
+    elif runner == "js-runner":
+        effective = f"js-{config['js-runner']}"
+    elif runner in ("mise", "direct"):
+        effective = runner
+    else:
+        raise ValueError(f"{command}-runnerの設定値が正しくありません: {runner=}")
+
+    # 明示的に mise / js-runner を指定したのに backend / bin が未登録の場合は、
+    # 経緯（path 上書きの有無）に関係なくエラーとする（ユーザー意図を尊重するため）。
+    if runner == "mise" and command not in _BIN_TOOL_SPEC:
+        raise ValueError(f'{command}: mise backend が登録されていないため `{command}-runner = "mise"` は指定できません')
+    if runner == "js-runner" and command not in _JS_TOOL_BIN:
+        raise ValueError(f'{command}: js-runner 対応ツールではないため `{command}-runner = "js-runner"` は指定できません')
+
+    # `{command}-path` が非空ならば、その値で direct 実行する（明示パス上書き）。
+    # 上のバリデーションで明示 runner と未登録の組み合わせは弾いているため、ここに到達するのは
+    # 実行自体が成立する組み合わせのみ。
+    if config.values.get(f"{command}-path", "") != "":
+        return ResolvedCommandline(
+            executable=config[f"{command}-path"],
+            prefix=[],
+            runner=runner,
+            runner_source="path-override",
+            effective_runner="direct",
+        )
+
+    if effective == "mise":
+        if command not in _BIN_TOOL_SPEC:
+            raise ValueError(f'{command}: mise backend が登録されていないため `{command}-runner = "mise"` は指定できません')
+        spec = _BIN_TOOL_SPEC[command]
+        version = config.values.get(f"{command}-version", spec.default_version)
+        tool_name = spec.mise_backend or spec.bin_name
+        tool_spec = f"{tool_name}@{version}"
+        return ResolvedCommandline(
+            executable="mise",
+            prefix=["exec", tool_spec, "--", spec.bin_name],
+            runner=runner,
+            runner_source=source,
+            effective_runner=effective,
+        )
+
+    if effective.startswith("js-"):
+        if command not in _JS_TOOL_BIN:
+            raise ValueError(f'{command}: js-runner 対応ツールではないため `{command}-runner = "js-runner"` は指定できません')
+        executable, prefix = _resolve_js_commandline(command, config)
+        return ResolvedCommandline(
+            executable=executable,
+            prefix=prefix,
+            runner=runner,
+            runner_source=source,
+            effective_runner=effective,
+        )
+
+    # effective == "direct"
+    if command in _BIN_TOOL_SPEC:
+        spec = _BIN_TOOL_SPEC[command]
+        executable = _resolve_direct_executable(spec.bin_name)
+        return ResolvedCommandline(
+            executable=executable,
+            prefix=[],
+            runner=runner,
+            runner_source=source,
+            effective_runner=effective,
+        )
+    if command in _JS_TOOL_BIN:
+        # JS ツールの direct は node_modules/.bin/<cmd> 解決に委譲。
+        executable, prefix = _resolve_js_commandline(command, config)
+        return ResolvedCommandline(
+            executable=executable,
+            prefix=prefix,
+            runner=runner,
+            runner_source=source,
+            effective_runner=effective,
+        )
+    # bin/js のいずれにも未登録で path も空 → 解決不能。
+    raise FileNotFoundError(
+        f"{command}: 実行ファイルが特定できません ({command}-path もしくは {command}-runner を設定してください)"
+    )
+
+
+def _resolve_direct_executable(bin_name: str) -> str:
+    """Direct モードでの実行ファイル解決。
+
+    ``dotnet`` の場合は ``DOTNET_ROOT`` 環境変数配下に存在すれば優先する。
+    PATH 上に存在すれば ``shutil.which`` で絶対パスへ解決し、見つからなければ
+    ``FileNotFoundError`` を送出する。
+    """
+    if bin_name == "dotnet":
+        dotnet_root = os.environ.get("DOTNET_ROOT")
+        if dotnet_root:
+            for candidate_name in ("dotnet.exe", "dotnet") if os.name == "nt" else ("dotnet",):
+                candidate = pathlib.Path(dotnet_root) / candidate_name
+                if candidate.is_file() and os.access(candidate, os.X_OK):
+                    return str(candidate)
+    resolved = shutil.which(bin_name)
+    if resolved is None:
+        raise FileNotFoundError(bin_name)
+    return resolved
+
+
 def _resolve_bin_commandline(
     command: str,
     config: pyfltr.config.Config,
 ) -> tuple[str, list[str]]:
-    """ネイティブバイナリツールの実行ファイルと引数 prefix を決定する。
+    """旧 API 互換の薄い wrapper（既存テスト・後方互換用）。
 
-    `{command}-path` が空のときに呼び出され、`bin-runner` 設定に基づいて
-    起動コマンドを組み立てる。ツールが利用できない場合は `FileNotFoundError` を送出する。
+    内部的には ``build_commandline`` と ``ensure_mise_available`` を組み合わせて
+    ``(executable, prefix)`` を返す。新規利用箇所では ``build_commandline`` を直接使う。
     """
-    spec = _BIN_TOOL_SPEC[command]
-    runner = config["bin-runner"]
-    version = config.values.get(f"{command}-version", spec.default_version)
+    resolved = build_commandline(command, config)
+    resolved = ensure_mise_available(resolved, config)
+    return resolved.executable, list(resolved.prefix)
 
-    if runner == "direct":
-        resolved = shutil.which(spec.bin_name)
-        if resolved is None:
-            raise FileNotFoundError(spec.bin_name)
-        return resolved, []
 
-    if runner == "mise":
-        # mise バイナリ自体が未導入の場合に限り direct と同等の PATH 解決へ
-        # フォールバックする。ディストロ標準パッケージで shellcheck 等を導入しただけの
-        # 環境でも opt-in で有効化されたツールが動くようにする救済策。
-        # mise が存在するが mise exec が失敗するケース (バージョン解決失敗・
-        # config 未信頼など) は使用者の意図的な mise 利用とみなし、従来どおりエラーにする。
-        if shutil.which("mise") is None:
-            resolved = shutil.which(spec.bin_name)
-            if resolved is None:
-                raise FileNotFoundError(spec.bin_name)
-            return resolved, []
-        tool_name = spec.mise_backend or spec.bin_name
-        tool_spec = f"{tool_name}@{version}"
-        check_args = ["mise", "exec", tool_spec, "--", spec.bin_name, "--version"]
-        trusted = False
-        while True:
-            # バージョン指定込みでツールの利用可否を事前チェック
-            check = subprocess.run(
-                check_args,
+def ensure_mise_available(
+    resolved: ResolvedCommandline,
+    config: pyfltr.config.Config,
+) -> ResolvedCommandline:
+    """Mise 経由実行時に ``mise exec --version`` の事前チェックを行う（副作用あり）。
+
+    mise バイナリ自体が PATH に存在しない場合は direct 解決へフォールバックする
+    （ディストロ標準パッケージだけで導入された環境でも動かすための救済挙動）。
+    config 未信頼が検出された場合は ``mise-auto-trust`` 設定に従い ``mise trust --yes --all``
+    を 1 回だけ試行する。失敗時は ``FileNotFoundError`` を送出する。
+    direct 実行や js-runner 実行の場合は本関数を素通りで返す。
+    """
+    if resolved.executable != "mise":
+        return resolved
+    spec = _BIN_TOOL_SPEC.get(resolved.prefix[3]) if len(resolved.prefix) >= 4 else None
+    # bin_name は prefix の末尾。spec が無くても resolved.prefix から取り出す。
+    bin_name = resolved.prefix[-1]
+    tool_spec = resolved.prefix[1] if len(resolved.prefix) >= 2 else ""
+    del spec  # 上の lookup は将来拡張用に残す。現状は使わない。
+
+    if shutil.which("mise") is None:
+        # mise 不在 → direct PATH 解決へフォールバック。
+        resolved_path = shutil.which(bin_name)
+        if resolved_path is None:
+            raise FileNotFoundError(bin_name)
+        return dataclasses.replace(resolved, executable=resolved_path, prefix=[], effective_runner="direct")
+
+    check_args = ["mise", "exec", tool_spec, "--", bin_name, "--version"]
+    trusted = False
+    while True:
+        check = subprocess.run(check_args, capture_output=True, text=True, check=False)
+        if check.returncode == 0:
+            return resolved
+        stderr = check.stderr
+        if not trusted and config["mise-auto-trust"] and "not trusted" in stderr:
+            trust = subprocess.run(
+                ["mise", "trust", "--yes", "--all"],
                 capture_output=True,
                 text=True,
                 check=False,
             )
-            if check.returncode == 0:
-                break
-            stderr = check.stderr
-            # config未信頼が原因かつ自動trust有効なら1回だけ信頼してリトライ
-            if not trusted and config["mise-auto-trust"] and "not trusted" in stderr:
-                trust = subprocess.run(
-                    ["mise", "trust", "--yes", "--all"],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-                if trust.returncode == 0:
-                    trusted = True
-                    continue
-                raise FileNotFoundError(f"mise trust --yes --all: {trust.stderr.strip()}")
-            raise FileNotFoundError(f"mise exec {tool_spec} -- {spec.bin_name}: {stderr.strip()}")
-        return "mise", ["exec", tool_spec, "--", spec.bin_name]
-
-    raise ValueError(f"bin-runnerの設定値が正しくありません: {runner=}")
+            if trust.returncode == 0:
+                trusted = True
+                continue
+            raise FileNotFoundError(f"mise trust --yes --all: {trust.stderr.strip()}")
+        raise FileNotFoundError(f"mise exec {tool_spec} -- {bin_name}: {stderr.strip()}")
 
 
 def _failed_resolution_result(
@@ -918,28 +1091,24 @@ def _prepare_execution_params(
             fix_args=fix_args,
         )
 
-    # textlint / markdownlint は path が空の場合、js-runner 設定から解決する。
-    # ec 等は bin-runner 設定から解決する。
-    if command in _JS_TOOL_BIN and config[f"{command}-path"] == "":
-        try:
-            resolved_path, prefix = _resolve_js_commandline(command, config)
-        except FileNotFoundError as e:
-            return _failed_resolution_result(
-                command,
-                command_info,
+    # `{command}-runner` および `{command}-path` 設定からツール起動コマンドラインを解決する。
+    # bin-runner 経路（mise / direct / グローバル `bin-runner` 委譲）と js-runner 経路、
+    # 直接実行を統一的に扱う。mise 経路では事前可用性チェック（mise exec --version）も実行する。
+    try:
+        resolved = build_commandline(command, config)
+        resolved = ensure_mise_available(resolved, config)
+    except ValueError as e:
+        return _failed_resolution_result(command, command_info, str(e), files=len(targets))
+    except FileNotFoundError as e:
+        if command in _JS_TOOL_BIN and config["js-runner"] == "direct":
+            message = (
                 f"js-runner=direct 指定ですが実行ファイルが見つかりません: {e}. "
-                "package.jsonで対象パッケージをインストールしてください。",
-                files=len(targets),
+                "package.jsonで対象パッケージをインストールしてください。"
             )
-        commandline_prefix: list[str] = [resolved_path, *prefix]
-    elif command in _BIN_TOOL_SPEC and config[f"{command}-path"] == "":
-        try:
-            resolved_path, prefix = _resolve_bin_commandline(command, config)
-        except FileNotFoundError as e:
-            return _failed_resolution_result(command, command_info, f"ツールが見つかりません: {e}", files=len(targets))
-        commandline_prefix = [resolved_path, *prefix]
-    else:
-        commandline_prefix = [config[f"{command}-path"]]
+        else:
+            message = f"ツールが見つかりません: {e}"
+        return _failed_resolution_result(command, command_info, message, files=len(targets))
+    commandline_prefix = resolved.commandline
 
     # 起動オプションからの追加引数 (--textlint-args など) を shlex 分割しておく
     additional_args_str = getattr(args, f"{command.replace('-', '_')}_args", "")

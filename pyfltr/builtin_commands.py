@@ -254,6 +254,15 @@ JS_RUNNERS: tuple[str, ...] = ("pnpx", "pnpm", "npm", "npx", "yarn", "direct")
 BIN_RUNNERS: tuple[str, ...] = ("direct", "mise")
 """ec / shellcheck 等のネイティブバイナリツールの起動方式として指定できる値。"""
 
+COMMAND_RUNNERS: tuple[str, ...] = ("direct", "mise", "bin-runner", "js-runner")
+"""``{command}-runner`` 設定で指定できる値。
+
+- ``"direct"``     : `{command}-path` または bin 名で直接実行する
+- ``"mise"``       : `mise exec <backend>@<version> -- <bin>` で実行する
+- ``"bin-runner"`` : グローバル `bin-runner` 設定 (mise / direct) へ委譲する
+- ``"js-runner"``  : グローバル `js-runner` 設定 (pnpx / pnpm / npm / npx / yarn / direct) へ委譲する
+"""
+
 PYTHON_COMMANDS: tuple[str, ...] = (
     "ruff-format",
     "ruff-check",

@@ -12,6 +12,7 @@ from pyfltr.builtin_commands import (
     BIN_RUNNERS,
     BUILTIN_COMMAND_NAMES,
     BUILTIN_COMMANDS,
+    COMMAND_RUNNERS,
     DOTNET_COMMANDS,
     JAVASCRIPT_COMMANDS,
     JS_RUNNERS,
@@ -31,6 +32,7 @@ __all__ = [
     "BIN_RUNNERS",
     "BUILTIN_COMMAND_NAMES",
     "BUILTIN_COMMANDS",
+    "COMMAND_RUNNERS",
     "DOTNET_COMMANDS",
     "JAVASCRIPT_COMMANDS",
     "JS_RUNNERS",
@@ -73,6 +75,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # 環境変数の検出により pre-commit 統合を自動でスキップする。
     "pre-commit": False,
     "pre-commit-path": "pre-commit",
+    "pre-commit-runner": "direct",
     "pre-commit-args": ["run", "--all-files"],
     "pre-commit-pass-filenames": False,
     "pre-commit-fast": True,
@@ -123,31 +126,37 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "mypy": False,
     "mypy-path": "mypy",
     "mypy-args": [],
+    "mypy-runner": "direct",
     "mypy-fast": False,
     "pylint": False,
     "pylint-path": "pylint",
     "pylint-args": [],
+    "pylint-runner": "direct",
     "pylint-fast": False,
     "pyright": False,
     "pyright-path": "pyright",
     "pyright-args": [],
+    "pyright-runner": "direct",
     "pyright-fast": False,
     "ty": False,
     "ty-path": "ty",
     "ty-args": ["check", "--output-format", "concise", "--error-on-warning"],
+    "ty-runner": "direct",
     "ty-fast": True,
     "markdownlint": False,
-    # path が空文字の場合は js-runner 設定に基づいて自動解決する。
+    # path が空文字の場合は {command}-runner 設定（既定 "js-runner"）に基づいて自動解決する。
     # ユーザーが明示的に path を設定した場合はその値をそのまま使い、args 先頭に自動 prefix を追加しない。
     "markdownlint-path": "",
     "markdownlint-args": [],
+    "markdownlint-runner": "js-runner",
     "markdownlint-fast": True,
     # fix ステージ (pyfltr run / fast の自動修正段) で通常 args の後に追加する引数。
     # markdownlint-cli2 は --fix でファイルを in-place 修正する。
     "markdownlint-fix-args": ["--fix"],
     "textlint": False,
-    # path が空文字の場合は js-runner 設定に基づいて自動解決する。
+    # path が空文字の場合は {command}-runner 設定（既定 "js-runner"）に基づいて自動解決する。
     "textlint-path": "",
+    "textlint-runner": "js-runner",
     # lint / fix 共通で常に付与される引数。lint 専用オプション (--format など) はここではなく
     # textlint-lint-args に書くこと。fix 時は @textlint/fixer-formatter が使用されるが
     # compact フォーマッタが存在しないため、--format compact を共通 args に含めると fix が失敗する。
@@ -174,8 +183,9 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # 空リスト (``[]``) を指定すると検知を無効化できる。
     "textlint-protected-identifiers": [".NET", "Node.js", "Vue.js", "Next.js", "Nuxt.js"],
     "eslint": False,
-    # path が空文字の場合は js-runner 設定に基づいて自動解決する。
+    # path が空文字の場合は {command}-runner 設定（既定 "js-runner"）に基づいて自動解決する。
     "eslint-path": "",
+    "eslint-runner": "js-runner",
     # ESLint 9 系以降で compact / unix / tap などのコアフォーマッタが除去されたため、
     # 構造化出力は eslint-json 設定により _STRUCTURED_OUTPUT_SPECS 経由で注入する。
     "eslint-args": [],
@@ -184,6 +194,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "eslint-fix-args": ["--fix"],
     "prettier": False,
     "prettier-path": "",
+    "prettier-runner": "js-runner",
     "prettier-args": [],
     # prettier は --check (read-only) と --write (書き込み) が排他のため、
     # pyfltr は 2 段階で実行する。詳細は command.py の _execute_prettier_two_step を参照。
@@ -193,9 +204,11 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "uv-sort": False,
     "uv-sort-path": "uv-sort",
     "uv-sort-args": [],
+    "uv-sort-runner": "direct",
     "uv-sort-fast": True,
     "biome": False,
     "biome-path": "",
+    "biome-runner": "js-runner",
     # "check" サブコマンドは共通 args に置く。--reporter=github は biome-json 設定
     # により _STRUCTURED_OUTPUT_SPECS 経由で注入する。
     "biome-args": ["check"],
@@ -206,25 +219,32 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # -- js-runner対応ツール（追加分） --
     "oxlint": False,
     "oxlint-path": "",
+    "oxlint-runner": "js-runner",
     "oxlint-args": [],
     "oxlint-fast": True,
     "tsc": False,
     "tsc-path": "",
+    "tsc-runner": "js-runner",
     "tsc-args": ["--noEmit"],
     "tsc-pass-filenames": False,
     "tsc-fast": False,
     # -- Rust 言語ツール --
     # いずれも pass-filenames=False で crate 全体を対象とする project-level 実行。
-    # cargo は version pin ではなく mise shim 経由で PATH に入る前提のため、
-    # 専用 runner は使わず path に直接 "cargo" を指定する。
+    # 既定で bin-runner 経路を通り、グローバル `bin-runner` 既定 (mise) により mise exec で
+    # 解決する。従来挙動 (PATH 上の cargo / cargo-deny を直接実行) を維持したい場合は
+    # `cargo-fmt-runner = "direct"` 等の明示指定または `cargo-fmt-path` への明示パス指定で戻せる。
     "cargo-fmt": False,
-    "cargo-fmt-path": "cargo",
+    "cargo-fmt-path": "",
+    "cargo-fmt-runner": "bin-runner",
+    "cargo-fmt-version": "latest",
     # 常時書き込みモード。pyfltr 規約により formatter は --fix 無しでも強制修正する。
     "cargo-fmt-args": ["fmt"],
     "cargo-fmt-pass-filenames": False,
     "cargo-fmt-fast": True,
     "cargo-clippy": False,
-    "cargo-clippy-path": "cargo",
+    "cargo-clippy-path": "",
+    "cargo-clippy-runner": "bin-runner",
+    "cargo-clippy-version": "latest",
     # args は lint / fix 両モードで共通の前半部分。trailing flag (-- -D warnings)
     # は lint-args / fix-args の双方に重複して置き、--fix 時には `--fix` を
     # 中間に挿入できるよう分離している。
@@ -234,40 +254,58 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "cargo-clippy-pass-filenames": False,
     "cargo-clippy-fast": True,
     "cargo-check": False,
-    "cargo-check-path": "cargo",
+    "cargo-check-path": "",
+    "cargo-check-runner": "bin-runner",
+    "cargo-check-version": "latest",
     "cargo-check-args": ["check", "--all-targets"],
     "cargo-check-pass-filenames": False,
     "cargo-check-fast": False,
     "cargo-test": False,
-    "cargo-test-path": "cargo",
+    "cargo-test-path": "",
+    "cargo-test-runner": "bin-runner",
+    "cargo-test-version": "latest",
     "cargo-test-args": ["test"],
     "cargo-test-pass-filenames": False,
     "cargo-test-fast": False,
     "cargo-deny": False,
-    "cargo-deny-path": "cargo-deny",
+    "cargo-deny-path": "",
+    "cargo-deny-runner": "bin-runner",
+    "cargo-deny-version": "latest",
     "cargo-deny-args": ["check"],
     "cargo-deny-pass-filenames": False,
     "cargo-deny-fast": False,
     # -- .NET 言語ツール --
+    # 既定で bin-runner 経路を通り、グローバル `bin-runner` 既定 (mise) により mise exec で
+    # 解決する。従来挙動 (PATH 上の dotnet を直接実行) を維持したい場合は
+    # `dotnet-format-runner = "direct"` 等の明示指定または `dotnet-format-path` への
+    # 明示パス指定で戻せる。direct モードでは ``DOTNET_ROOT`` 環境変数配下に dotnet 実行ファイルが
+    # あれば優先採用する。
     "dotnet-format": False,
-    "dotnet-format-path": "dotnet",
+    "dotnet-format-path": "",
+    "dotnet-format-runner": "bin-runner",
+    "dotnet-format-version": "latest",
     # 常時書き込みモード。pyfltr 規約により formatter は --fix 無しでも強制修正する。
     "dotnet-format-args": ["format"],
     "dotnet-format-pass-filenames": False,
     "dotnet-format-fast": True,
     "dotnet-build": False,
-    "dotnet-build-path": "dotnet",
+    "dotnet-build-path": "",
+    "dotnet-build-runner": "bin-runner",
+    "dotnet-build-version": "latest",
     "dotnet-build-args": ["build", "--nologo"],
     "dotnet-build-pass-filenames": False,
     "dotnet-build-fast": False,
     "dotnet-test": False,
-    "dotnet-test-path": "dotnet",
+    "dotnet-test-path": "",
+    "dotnet-test-runner": "bin-runner",
+    "dotnet-test-version": "latest",
     "dotnet-test-args": ["test", "--nologo"],
     "dotnet-test-pass-filenames": False,
     "dotnet-test-fast": False,
     # -- bin-runner対応ツール --
     "shfmt": False,
     "shfmt-path": "",
+    "shfmt-runner": "bin-runner",
     "shfmt-args": [],
     # shfmt は prettier 同様の二段階実行。-l でチェック、-w で書き込み。
     "shfmt-check-args": ["-l"],
@@ -276,21 +314,25 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "shfmt-fast": True,
     "ec": False,
     "ec-path": "",
+    "ec-runner": "bin-runner",
     "ec-args": ["-format", "gcc", "-no-color"],
     "ec-version": "latest",
     "ec-fast": True,
     "shellcheck": False,
     "shellcheck-path": "",
+    "shellcheck-runner": "bin-runner",
     "shellcheck-args": ["-f", "gcc"],
     "shellcheck-version": "latest",
     "shellcheck-fast": True,
     "typos": False,
     "typos-path": "typos",
+    "typos-runner": "direct",
     "typos-args": ["--format", "brief"],
     "typos-version": "latest",
     "typos-fast": True,
     "actionlint": False,
     "actionlint-path": "",
+    "actionlint-runner": "bin-runner",
     "actionlint-args": [],
     "actionlint-version": "latest",
     "actionlint-fast": True,
@@ -299,6 +341,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # サブコマンド `ci lint` は args 既定値として持たせ、明示 path 指定経路でも効くようにする。
     "glab-ci-lint": False,
     "glab-ci-lint-path": "",
+    "glab-ci-lint-runner": "bin-runner",
     "glab-ci-lint-args": ["ci", "lint"],
     "glab-ci-lint-version": "latest",
     "glab-ci-lint-fast": False,
@@ -306,6 +349,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # shfmtと同様の2段階実行（check → format）。
     "taplo": False,
     "taplo-path": "",
+    "taplo-runner": "bin-runner",
     "taplo-args": [],
     "taplo-check-args": ["check"],
     "taplo-write-args": ["format"],
@@ -314,11 +358,13 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # yamllint: Python製YAMLリンター。既定で無効（opt-in）。直接実行経路。
     "yamllint": False,
     "yamllint-path": "yamllint",
+    "yamllint-runner": "direct",
     "yamllint-args": [],
     "yamllint-fast": True,
     # hadolint: Dockerfile専用リンター。bin-runner経由。既定で無効（opt-in）。
     "hadolint": False,
     "hadolint-path": "",
+    "hadolint-runner": "bin-runner",
     "hadolint-args": [],
     "hadolint-version": "latest",
     "hadolint-fast": True,
@@ -327,17 +373,20 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # pass-filenames=false でリポジトリ全体を対象とする。
     "gitleaks": False,
     "gitleaks-path": "",
+    "gitleaks-runner": "bin-runner",
     "gitleaks-args": ["detect", "--no-banner"],
     "gitleaks-pass-filenames": False,
     "gitleaks-version": "latest",
     "gitleaks-fast": False,
     "pytest": False,
     "pytest-path": "pytest",
+    "pytest-runner": "direct",
     "pytest-args": [],
     "pytest-devmode": True,  # PYTHONDEVMODE=1をするか否か
     "pytest-fast": False,
     "vitest": False,
     "vitest-path": "",
+    "vitest-runner": "js-runner",
     # vitest は run サブコマンドが必須。また、pyfltr が targets 設定で絞ったファイル群と
     # プロジェクト側の vitest include 設定が交差せず対象ゼロになるケースで rc=1 となり
     # failed 扱いになるのを避けるため、--passWithNoTests を既定に含める。
@@ -345,6 +394,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "vitest-fast": False,
     "ruff-format": False,
     "ruff-format-path": "ruff",
+    "ruff-format-runner": "direct",
     "ruff-format-args": ["format", "--exit-non-zero-on-format"],
     "ruff-format-fast": True,
     # ruff-format 実行時に ruff check --fix --unsafe-fixes を先に実行するか。
@@ -356,6 +406,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "ruff-format-check-args": ["check", "--fix", "--unsafe-fixes"],
     "ruff-check": False,
     "ruff-check-path": "ruff",
+    "ruff-check-runner": "direct",
     "ruff-check-args": ["check"],
     "ruff-check-fast": True,
     # fix モード時に通常 args の後に追加する引数。
@@ -649,6 +700,14 @@ def load_config(config_dir: pathlib.Path | None = None) -> Config:
     bin_runner = config.values["bin-runner"]
     if bin_runner not in BIN_RUNNERS:
         raise ValueError(f"bin-runnerの設定値が正しくありません。{bin_runner=} (許容値: {', '.join(BIN_RUNNERS)})")
+
+    # {command}-runner の値バリデーション
+    # 各コマンドごとに ``"direct"`` / ``"mise"`` / ``"bin-runner"`` / ``"js-runner"`` の 4 値のみ許容する。
+    for key, value in config.values.items():
+        if not key.endswith("-runner") or key in ("bin-runner", "js-runner"):
+            continue
+        if value not in COMMAND_RUNNERS:
+            raise ValueError(f"{key}の設定値が正しくありません。{value=!r} (許容値: {', '.join(COMMAND_RUNNERS)})")
 
     # per-command fastフラグからfastエイリアスを再計算
     config.values["aliases"]["fast"] = _build_fast_alias(config)

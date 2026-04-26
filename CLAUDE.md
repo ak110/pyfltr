@@ -33,6 +33,12 @@ pyfltrが対応するformatter/linter/testerの依存指定は以下の基準で
 オフライン・プロキシ環境での導入失敗リスクを避けるため本体依存から除外する。
 Node.js等のランタイムを伴うパッケージも、ランタイム導入とサプライチェーンの広さの観点から本体依存に含めない。
 
+ネイティブバイナリツール（cargo系・dotnet系を含む）は`pyfltr/command.py`の`_BIN_TOOL_SPEC`にmise backend付きで登録する。
+あわせて`pyfltr/config.py`の`{command}-runner`既定値を`"bin-runner"`に揃える。
+グローバル`bin-runner`既定値`"mise"`へ委譲することで、追加ツール導入時もmise経由の自動セットアップが既定動作となる。
+利用者は`{command}-runner = "direct"`または`{command}-path`の明示で個別に切り戻せる。
+新ツール追加時は本方針に従い、`_BIN_TOOL_SPEC`への登録と`{command}-runner` / `{command}-version`既定値の追加をセットで行う。
+
 ## ドッグフーディング方針
 
 pyfltr自身のリポジトリでは対応ツールを可能な限り有効化し、動作確認とサンプル設定の提示を兼ねる。

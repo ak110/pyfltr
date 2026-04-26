@@ -42,6 +42,7 @@ plugins:
         - `pyfltr generate-config`: 設定ファイルの雛形を標準出力に書き出す。`[tool.pyfltr]`セクションに貼り付けて利用する
         - `pyfltr list-runs`: 実行アーカイブ内のrun一覧を表示する。`--limit`で件数制御、`--output-format=text|json|jsonl`
         - `pyfltr show-run <run_id>`: 指定runの詳細を表示する。`<run_id>`は前方一致および`latest`エイリアス可。`--tool <name>`でdiagnostics全件、`--tool <name> --output`で`output.log`全文。`--output-format=text|json|jsonl`
+        - `pyfltr command-info <tool>`: 対象ツールの起動方式（`{command}-runner` / 解決された実行ファイル / 最終コマンドライン等）を表示する。`--format=text|json` / `--check`オプションあり
         - `pyfltr mcp`: stdioトランスポートでMCPサーバーを起動する。提供ツールは`list_runs` / `show_run` / `show_run_diagnostics` / `show_run_output` / `run_for_agent`の5件。`run_for_agent`は`only_failed` / `from_run`引数で失敗ファイルの絞り込み再実行が可能。戻り値に`schema_hints`（JSONL フィールド解説）・`retry_commands`（失敗コマンドの再実行シェルコマンド辞書）・`skipped_reason`（early exit 理由）を含む
         - `pyfltr generate-shell-completion bash|powershell`: シェル補完スクリプトを標準出力へ書き出す
 

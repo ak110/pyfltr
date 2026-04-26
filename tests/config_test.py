@@ -1161,7 +1161,11 @@ def test_native_lang_tools_registered() -> None:
     for tool in _NATIVE_LANG_TOOLS:
         assert tool in pyfltr.config.BUILTIN_COMMANDS, f"{tool} が BUILTIN_COMMANDS に未登録"
         assert config[tool] is False, f"{tool} の既定値は False であるべき"
-        assert config[f"{tool}-path"], f"{tool}-path が設定されていない"
+        # cargo 系・dotnet 系は bin-runner 経由で起動する設計のため、path 既定値は空文字。
+        # 起動方式は {command}-runner（既定 "bin-runner"）→ グローバル bin-runner（既定 "mise"）で解決する。
+        assert config[f"{tool}-path"] == "", f"{tool}-path は既定で空文字であるべき"
+        assert config[f"{tool}-runner"] == "bin-runner", f"{tool}-runner の既定値は 'bin-runner' であるべき"
+        assert config[f"{tool}-version"] == "latest", f"{tool}-version の既定値は 'latest' であるべき"
 
 
 def test_native_lang_tools_pass_filenames_false() -> None:

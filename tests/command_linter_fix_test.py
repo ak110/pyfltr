@@ -219,6 +219,16 @@ def test_biome_fix_mode_appends_write_and_keeps_reporter(mocker, tmp_path: pathl
 # ファイル引数がコマンドラインに渡らないことを検証する。
 
 
+def _force_direct_runner(config: pyfltr.config.Config, command: str) -> None:
+    """テスト用ヘルパー: bin-runner 経路ではなく direct 実行へ強制する。
+
+    cargo / dotnet 系の既定 (bin-runner=mise) ではコマンドラインが mise exec 経由となり、
+    direct 実行を観測する従来テストとは形式が異なる。本ヘルパーで `{command}-runner = "direct"`
+    を上書きすることで、mise 環境の有無に依存せず PATH 上のバイナリを直接呼ぶ形式を観測できる。
+    """
+    config.values[f"{command}-runner"] = "direct"
+
+
 def test_cargo_fmt_runs_without_file_args(mocker, tmp_path: pathlib.Path) -> None:
     """cargo-fmt は pass-filenames=False のためファイル引数を渡さず、既定で書き込みモード。"""
     target = tmp_path / "sample.rs"
@@ -229,11 +239,14 @@ def test_cargo_fmt_runs_without_file_args(mocker, tmp_path: pathlib.Path) -> Non
 
     config = pyfltr.config.create_default_config()
     config.values["cargo-fmt"] = True
+    _force_direct_runner(config, "cargo-fmt")
     pyfltr.command.execute_command("cargo-fmt", _testconf.make_args(), _testconf.make_execution_context(config, [target]))
 
     assert mock_run.call_count == 1
     cmdline = mock_run.call_args_list[0][0][0]
-    assert cmdline == ["cargo", "fmt"]
+    # direct モードでは shutil.which で絶対パスへ解決されるため、basename のみで一致を確認する。
+    assert pathlib.Path(cmdline[0]).name == "cargo"
+    assert cmdline[1:] == ["fmt"]
     assert str(target) not in cmdline
 
 
@@ -247,12 +260,14 @@ def test_cargo_fmt_fix_mode_unchanged(mocker, tmp_path: pathlib.Path) -> None:
 
     config = pyfltr.config.create_default_config()
     config.values["cargo-fmt"] = True
+    _force_direct_runner(config, "cargo-fmt")
     pyfltr.command.execute_command(
         "cargo-fmt", _testconf.make_args(), _testconf.make_execution_context(config, [target], fix_stage=True)
     )
 
     cmdline = mock_run.call_args_list[0][0][0]
-    assert cmdline == ["cargo", "fmt"]
+    assert pathlib.Path(cmdline[0]).name == "cargo"
+    assert cmdline[1:] == ["fmt"]
 
 
 def test_cargo_clippy_normal_mode_cmdline(mocker, tmp_path: pathlib.Path) -> None:
@@ -265,10 +280,12 @@ def test_cargo_clippy_normal_mode_cmdline(mocker, tmp_path: pathlib.Path) -> Non
 
     config = pyfltr.config.create_default_config()
     config.values["cargo-clippy"] = True
+    _force_direct_runner(config, "cargo-clippy")
     pyfltr.command.execute_command("cargo-clippy", _testconf.make_args(), _testconf.make_execution_context(config, [target]))
 
     cmdline = mock_run.call_args_list[0][0][0]
-    assert cmdline == _testconf.CARGO_CLIPPY_LINT_CMDLINE
+    assert pathlib.Path(cmdline[0]).name == "cargo"
+    assert cmdline[1:] == _testconf.CARGO_CLIPPY_LINT_CMDLINE[1:]
     assert str(target) not in cmdline
 
 
@@ -282,12 +299,14 @@ def test_cargo_clippy_fix_mode_cmdline(mocker, tmp_path: pathlib.Path) -> None:
 
     config = pyfltr.config.create_default_config()
     config.values["cargo-clippy"] = True
+    _force_direct_runner(config, "cargo-clippy")
     pyfltr.command.execute_command(
         "cargo-clippy", _testconf.make_args(), _testconf.make_execution_context(config, [target], fix_stage=True)
     )
 
     cmdline = mock_run.call_args_list[0][0][0]
-    assert cmdline == _testconf.CARGO_CLIPPY_FIX_CMDLINE
+    assert pathlib.Path(cmdline[0]).name == "cargo"
+    assert cmdline[1:] == _testconf.CARGO_CLIPPY_FIX_CMDLINE[1:]
     assert str(target) not in cmdline
 
 
@@ -301,10 +320,12 @@ def test_dotnet_format_runs_without_file_args(mocker, tmp_path: pathlib.Path) ->
 
     config = pyfltr.config.create_default_config()
     config.values["dotnet-format"] = True
+    _force_direct_runner(config, "dotnet-format")
     pyfltr.command.execute_command("dotnet-format", _testconf.make_args(), _testconf.make_execution_context(config, [target]))
 
     cmdline = mock_run.call_args_list[0][0][0]
-    assert cmdline == ["dotnet", "format"]
+    assert pathlib.Path(cmdline[0]).name == "dotnet"
+    assert cmdline[1:] == ["format"]
     assert str(target) not in cmdline
 
 

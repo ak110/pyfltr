@@ -908,7 +908,26 @@ def test_pass_filenames_true_includes_targets(mocker, tmp_path: pathlib.Path) ->
 
 def test_bin_tool_spec_all_tools_defined() -> None:
     """_BIN_TOOL_SPECに全bin系ツールが定義されている。"""
-    expected_tools = {"ec", "shellcheck", "shfmt", "actionlint", "glab-ci-lint", "taplo", "hadolint", "gitleaks"}
+    expected_tools = {
+        # 既存のネイティブバイナリツール
+        "ec",
+        "shellcheck",
+        "shfmt",
+        "actionlint",
+        "glab-ci-lint",
+        "taplo",
+        "hadolint",
+        "gitleaks",
+        # cargo 系・dotnet 系も bin-runner 経路へ統合済み（mise backend 経由で解決）。
+        "cargo-fmt",
+        "cargo-clippy",
+        "cargo-check",
+        "cargo-test",
+        "cargo-deny",
+        "dotnet-format",
+        "dotnet-build",
+        "dotnet-test",
+    }
     assert set(pyfltr.command._BIN_TOOL_SPEC.keys()) == expected_tools
 
 
@@ -1472,3 +1491,149 @@ def test_execute_glab_ci_lint_passes_through_success(mocker, tmp_path: pathlib.P
     # ロケール非依存判定のための環境変数強制を確認する。
     assert captured_env["LC_ALL"] == "C"
     assert captured_env["LANG"] == "C"
+
+
+# --- {command}-runner per-tool 解決のテスト ---
+
+
+def test_resolve_runner_default_for_existing_bin_tools() -> None:
+    """既存の bin-runner 対応 8 ツールおよび cargo / dotnet 系の {command}-runner 既定値は "bin-runner"。"""
+    config = pyfltr.config.create_default_config()
+    expected_bin = (
+        "ec",
+        "shellcheck",
+        "shfmt",
+        "actionlint",
+        "glab-ci-lint",
+        "taplo",
+        "hadolint",
+        "gitleaks",
+        "cargo-fmt",
+        "cargo-clippy",
+        "cargo-check",
+        "cargo-test",
+        "cargo-deny",
+        "dotnet-format",
+        "dotnet-build",
+        "dotnet-test",
+    )
+    for command in expected_bin:
+        runner, source = pyfltr.command.resolve_runner(command, config)
+        assert runner == "bin-runner", f"{command} の runner は 'bin-runner' であるべき"
+        assert source == "default"
+
+
+def test_resolve_runner_default_for_js_tools() -> None:
+    """JS 系ツール（eslint / prettier / biome / oxlint / tsc / vitest / markdownlint / textlint）の既定は "js-runner"。"""
+    config = pyfltr.config.create_default_config()
+    for command in ("eslint", "prettier", "biome", "oxlint", "tsc", "vitest", "markdownlint", "textlint"):
+        runner, source = pyfltr.command.resolve_runner(command, config)
+        assert runner == "js-runner", f"{command} の runner は 'js-runner' であるべき"
+        assert source == "default"
+
+
+def test_resolve_runner_default_for_direct_tools() -> None:
+    """typos / yamllint / Python 系ツールの既定は "direct"。"""
+    config = pyfltr.config.create_default_config()
+    for command in ("typos", "yamllint", "mypy", "pylint", "pyright", "ty", "ruff-check", "ruff-format", "pytest", "uv-sort"):
+        runner, source = pyfltr.command.resolve_runner(command, config)
+        assert runner == "direct", f"{command} の runner は 'direct' であるべき"
+        assert source == "default"
+
+
+def test_build_commandline_cargo_fmt_via_mise() -> None:
+    """cargo-fmt の既定設定 (bin-runner=mise) で mise exec 形式のコマンドラインが組まれる。"""
+    config = pyfltr.config.create_default_config()
+    resolved = pyfltr.command.build_commandline("cargo-fmt", config)
+    assert resolved.commandline == ["mise", "exec", "rust@latest", "--", "cargo"]
+    assert resolved.runner == "bin-runner"
+    assert resolved.effective_runner == "mise"
+
+
+def test_build_commandline_cargo_fmt_runner_direct(mocker) -> None:
+    """{command}-runner = "direct" を明示すると direct 経路で解決される。"""
+    mocker.patch("shutil.which", return_value="/usr/local/bin/cargo")
+    config = pyfltr.config.create_default_config()
+    config.values["cargo-fmt-runner"] = "direct"
+    resolved = pyfltr.command.build_commandline("cargo-fmt", config)
+    assert resolved.commandline == ["/usr/local/bin/cargo"]
+    assert resolved.effective_runner == "direct"
+    assert resolved.runner_source == "explicit"
+
+
+def test_build_commandline_dotnet_format_via_mise() -> None:
+    """dotnet-format の既定設定で mise dotnet backend 形式になる。"""
+    config = pyfltr.config.create_default_config()
+    resolved = pyfltr.command.build_commandline("dotnet-format", config)
+    assert resolved.commandline == ["mise", "exec", "dotnet@latest", "--", "dotnet"]
+
+
+def test_build_commandline_explicit_mise_for_existing_bin_tool() -> None:
+    """{command}-runner = "mise" 明示時もグローバル bin-runner と独立に動作する。"""
+    config = pyfltr.config.create_default_config()
+    config.values["bin-runner"] = "direct"
+    config.values["shellcheck-runner"] = "mise"
+    config.values["shellcheck-version"] = "0.10.0"
+    resolved = pyfltr.command.build_commandline("shellcheck", config)
+    assert resolved.commandline == ["mise", "exec", "shellcheck@0.10.0", "--", "shellcheck"]
+    assert resolved.effective_runner == "mise"
+
+
+def test_build_commandline_mise_on_unregistered_tool_raises() -> None:
+    """backend 未登録ツールに mise 明示するとエラー。"""
+    config = pyfltr.config.create_default_config()
+    config.values["typos-runner"] = "mise"
+    with pytest.raises(ValueError, match="mise backend"):
+        pyfltr.command.build_commandline("typos", config)
+
+
+def test_build_commandline_js_runner_on_non_js_tool_raises() -> None:
+    """js-runner 非対応ツールに js-runner 明示するとエラー。"""
+    config = pyfltr.config.create_default_config()
+    config.values["typos-runner"] = "js-runner"
+    with pytest.raises(ValueError, match="js-runner"):
+        pyfltr.command.build_commandline("typos", config)
+
+
+def test_build_commandline_path_override_wins() -> None:
+    """{command}-path が非空ならその値で direct 実行する（path-override）。"""
+    config = pyfltr.config.create_default_config()
+    config.values["cargo-fmt-path"] = "/opt/rust/bin/cargo"
+    resolved = pyfltr.command.build_commandline("cargo-fmt", config)
+    assert resolved.commandline == ["/opt/rust/bin/cargo"]
+    assert resolved.runner_source == "path-override"
+    assert resolved.effective_runner == "direct"
+
+
+def test_build_commandline_dotnet_root_priority(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """direct モードの dotnet 解決では DOTNET_ROOT 環境変数が PATH より優先される。"""
+    candidate = tmp_path / "dotnet"
+    candidate.write_text("#!/bin/sh\necho stub\n")
+    candidate.chmod(0o755)
+    monkeypatch.setenv("DOTNET_ROOT", str(tmp_path))
+
+    config = pyfltr.config.create_default_config()
+    config.values["dotnet-format-runner"] = "direct"
+    resolved = pyfltr.command.build_commandline("dotnet-format", config)
+    assert resolved.commandline == [str(candidate)]
+    assert resolved.effective_runner == "direct"
+
+
+def test_build_commandline_dotnet_root_ignored_in_mise_mode(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """mise モードでは DOTNET_ROOT は参照されず、mise exec 形式のままとなる。"""
+    candidate = tmp_path / "dotnet"
+    candidate.write_text("#!/bin/sh\n")
+    candidate.chmod(0o755)
+    monkeypatch.setenv("DOTNET_ROOT", str(tmp_path))
+
+    config = pyfltr.config.create_default_config()
+    # 既定 bin-runner=mise → effective=mise
+    resolved = pyfltr.command.build_commandline("dotnet-format", config)
+    assert resolved.commandline[:2] == ["mise", "exec"]
+
+
+def test_command_runner_validation_rejects_unknown_value(tmp_path: pathlib.Path) -> None:
+    """{command}-runner に不正値を与えると load_config がエラーで弾く。"""
+    (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\ntypos-runner = "bogus"\n')
+    with pytest.raises(ValueError, match="typos-runner"):
+        pyfltr.config.load_config(config_dir=tmp_path)
