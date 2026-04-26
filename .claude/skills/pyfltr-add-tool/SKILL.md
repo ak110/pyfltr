@@ -22,6 +22,10 @@ description: >-
 - `pyfltr/error_parser.py`: 出力パーサー（regexまたは関数ベース）
 - `tests/`: `config_test.py`・`command_*_test.py`・`error_parser_test.py` に対応するテストを追加
 - `docs/guide/index.md`:「対応ツール」一覧へ追記（`README.md`には書かない。SSOTは本ファイル）
+- `docker/Dockerfile`: 公式Dockerイメージ (`ghcr.io/ak110/pyfltr`) は対応ツールを事前同梱する方針のため、
+  新ツールも該当する導入経路のRUN層へ追加する。経路の選び方は冒頭コメントの「同梱ツール一覧」を参照する
+ （bin-runner系は `mise use --global`、JS系は `pnpm add -g`、Python単独は `uv tool install`）。
+  Rust / .NETツールチェイン依存のものは同梱対象外
 
 ## 気付きにくい注意点
 
