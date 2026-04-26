@@ -1,10 +1,13 @@
+# syntax=docker/dockerfile:1
 # GitHub Actions 等の CI 用に pyfltr と pyfltr が対応する formatter / linter / tester、
 # および周辺ツール (uv / pnpm / mise / hadolint 等) を同梱する公式イメージ。
 # ``ghcr.io/ak110/pyfltr`` として公開する。
 #
 # サプライチェーン攻撃対策として、ベースイメージは digest pin で固定し、
-# uv 側は ``UV_EXCLUDE_NEWER=P1D``、pnpm 側は ``minimum-release-age=1440`` 分で
-# 公開直後の新バージョン導入を抑止する。
+# uv 側は ``~/.config/uv/uv.toml`` の ``exclude-newer = "1 day"``、
+# pnpm 側は ``minimum-release-age=1440`` 分で公開直後の新バージョン導入を抑止する。
+# pyfltr 自身はリリース直後に本イメージをビルドするため、
+# ``exclude-newer-package = { pyfltr = false }`` で除外対象から外す。
 # uv / pnpm / mise の各キャッシュディレクトリは ``/cache/{uv,pnpm,mise}`` に集約する
 # (GitHub Actions の ``actions/cache`` などから既知パスで参照しやすくするため)。
 #
@@ -39,9 +42,9 @@ FROM python:3.14-slim-bookworm@sha256:2e256d0381371566ed96980584957ed31297f43756
 # (hadolint DL4006 対応)。
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# ``UV_EXCLUDE_NEWER=P1D`` は uv 側のサプライチェーン攻撃対策で、公開から 1 日経過していない
-# パッケージの解決を抑止する (pnpm の ``minimum-release-age=1440`` 分と歩調を揃える)。
-# 実行時はユーザーが環境変数で上書きできる。
+# uv 側のサプライチェーン攻撃対策は ``~/.config/uv/uv.toml`` で
+# ``exclude-newer = "1 day"`` を指定する (USER pyfltr 切り替え後に配置)。
+# 実行時はユーザーが ``UV_EXCLUDE_NEWER`` 環境変数で上書きできる。
 # PATH 先頭の ``/home/pyfltr/.local/bin`` は ``uv tool install`` が配置する CLI を解決する。
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -50,7 +53,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
     UV_CACHE_DIR=/cache/uv \
     UV_LINK_MODE=copy \
     UV_FROZEN=1 \
-    UV_EXCLUDE_NEWER=P1D \
     PNPM_HOME=/usr/local/pnpm \
     PNPM_STORE_DIR=/cache/pnpm \
     MISE_DATA_DIR=/cache/mise/data \
@@ -98,6 +100,16 @@ RUN useradd --create-home --shell /bin/bash pyfltr \
 
 USER pyfltr
 WORKDIR /workspace
+
+# uv のサプライチェーン保護設定を ``~/.config/uv/uv.toml`` に配置する。
+# ``exclude-newer = "1 day"`` で公開から 1 日経過していないパッケージを除外し、
+# pyfltr 自身はリリース直後の本イメージビルドで毎回除外対象になるため
+# ``exclude-newer-package`` で例外指定する (自リポジトリの成果物のため対象外でよい)。
+RUN mkdir -p /home/pyfltr/.config/uv \
+    && printf '%s\n%s\n' \
+        'exclude-newer = "1 day"' \
+        'exclude-newer-package = { pyfltr = false }' \
+        > /home/pyfltr/.config/uv/uv.toml
 
 # pyfltr が呼び出す対応ツール群を pyfltr ユーザー権限で事前導入する。
 # 単一 RUN にまとめてレイヤー数とイメージサイズを抑える (新ツール追加時はここに追記する)。
