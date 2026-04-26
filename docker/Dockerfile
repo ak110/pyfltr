@@ -57,7 +57,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PNPM_STORE_DIR=/cache/pnpm \
     MISE_DATA_DIR=/cache/mise/data \
     MISE_CACHE_DIR=/cache/mise/cache \
-    PATH=/home/pyfltr/.local/bin:/usr/local/pnpm:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    PATH=/home/pyfltr/.local/bin:/cache/mise/data/shims:/usr/local/pnpm:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # 必要な APT パッケージをまとめてインストールする。
 # ``--no-install-recommends`` で推奨パッケージを除外し、イメージサイズを抑える。
@@ -94,7 +94,11 @@ RUN curl -fsSL https://mise.run | sh \
     && mv /root/.local/bin/mise /usr/local/bin/mise
 
 # 非 root ユーザーを作成し、キャッシュ・pnpm ホームの所有権を移譲する。
-RUN useradd --create-home --shell /bin/bash pyfltr \
+# UID 1001 は GitHub Actions の runner ユーザーと一致させるため固定する。
+# ``container:`` 配下で動かす際、runner が用意する ``/__w/_temp`` 等のホストマウント領域は
+# UID 1001 所有で作成されるため、コンテナー側ユーザーが UID 1001 でないと
+# ``actions/checkout`` 等が ``EACCES`` で失敗する。
+RUN useradd --create-home --shell /bin/bash --uid 1001 pyfltr \
     && mkdir -p /cache/uv /cache/pnpm /cache/mise/data /cache/mise/cache /usr/local/pnpm \
     && chown -R pyfltr:pyfltr /cache /usr/local/pnpm
 
