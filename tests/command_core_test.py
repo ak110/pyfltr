@@ -1243,14 +1243,26 @@ def _spawn_parent_with_child(script: str) -> tuple[subprocess.Popen[str], int, i
 
 
 def _wait_gone(pids: list[int], *, timeout: float) -> list[int]:
-    """``pids`` が全て消滅するまで最大 ``timeout`` 秒待つ。残存する pid を返す。"""
+    """``pids`` が全て消滅するまで最大 ``timeout`` 秒待つ。残存する pid を返す。
+
+    init を持たないコンテナー環境では親 reap が行われず zombie が残存するため、
+    zombie 状態は消滅扱いとする（プロセスツリーは既に停止しており、
+    ``terminate_active_processes`` の責務は果たされている）。
+    """
+
+    def _is_alive(pid: int) -> bool:
+        try:
+            return psutil.Process(pid).status() != psutil.STATUS_ZOMBIE
+        except psutil.NoSuchProcess:
+            return False
+
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        alive = [pid for pid in pids if psutil.pid_exists(pid)]
+        alive = [pid for pid in pids if _is_alive(pid)]
         if not alive:
             return []
         time.sleep(0.05)
-    return [pid for pid in pids if psutil.pid_exists(pid)]
+    return [pid for pid in pids if _is_alive(pid)]
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX 前提の killpg 経路を検証する")
