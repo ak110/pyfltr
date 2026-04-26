@@ -96,6 +96,8 @@ plugins:
 
         `--fail-fast`は1ツールでもエラーが出た時点で残りのジョブを打ち切り、起動済みサブプロセスには `terminate()` を送る。未開始ジョブは `future.cancel()` で取消され、JSONL `command` レコードには `status="skipped"` として計上される。
 
+        `--changed-since <REF>`はgit差分ファイルへの絞り込みオプション。`git diff --name-only <REF>`で取得したコミット差分・未コミット作業ツリー差分・staged差分の和集合と展開済みファイル一覧の交差を対象とする。git不在またはref不在は警告を出して全体実行へフォールバック。`--only-failed`と併用した場合は`--changed-since`を先に適用する。
+
         `--only-failed`は直前runの実行アーカイブから失敗ツール・失敗ファイルを抽出し、ツール別にその組み合わせだけを再実行する。直前runが無い/失敗ツールが無い/指定`targets`との交差が空の場合はメッセージを出して`rc=0`で成功終了する。診断ファイルが無い失敗ツール（pytest等）は既定対象にフォールバックして全体再実行する。`--from-run <RUN_ID>`で参照対象runを明示指定できる（前方一致・`latest`対応、`--only-failed`との併用前提）。
 
         ```shell

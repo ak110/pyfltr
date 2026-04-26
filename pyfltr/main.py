@@ -250,6 +250,15 @@ def _make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> 
         help="--only-failed の参照対象 run を明示指定します（前方一致 / latest 対応）。未指定時は直前 run を自動選択します。",
     )
     common.add_argument(
+        "--changed-since",
+        default=None,
+        metavar="REF",
+        help="git の任意の ref（ブランチ・タグ・コミットハッシュ・HEAD など）を指定し、"
+        "その ref からの変更ファイルのみを対象とします。"
+        "コミット差分・未コミット作業ツリー差分・staged 差分の和集合で絞り込みます。"
+        "git 不在または ref が存在しない場合は警告を出して全体実行へフォールバックします。",
+    )
+    common.add_argument(
         "--work-dir",
         type=pathlib.Path,
         default=None,
@@ -644,6 +653,12 @@ def run_pipeline(
     # 対象ファイルを一括展開（ディレクトリ走査・exclude・gitignoreフィルタリングを1回だけ実行）
     # TUI起動前に実行することで、除外警告がログに表示される
     all_files = pyfltr.command.expand_all_files(args.targets, config)
+
+    # --changed-since 指定時は git 差分ファイルとの交差に絞り込む。
+    # --only-failed よりも先に適用し、以後のフィルタは絞り込み済みリストを受け取る。
+    changed_since_ref: str | None = getattr(args, "changed_since", None)
+    if changed_since_ref is not None:
+        all_files = pyfltr.command.filter_by_changed_since(all_files, changed_since_ref)
 
     # --only-failed 指定時は直前 run からツール別の失敗ファイル集合を構築する。
     # archive / cache 初期化より前に実行し、早期終了の場合はそれらの副作用を発生させない。

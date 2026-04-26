@@ -432,6 +432,21 @@ jobs:
   プル要求の該当ファイル行にコメントとして表示される。
 - `uv cache prune --ci`: CIキャッシュを軽量化するための後処理。
 
+### PRの差分ファイルのみを対象にする
+
+PR（プルリクエスト）で変更したファイルだけを対象に実行したい場合は`--changed-since`を使う。
+ベースブランチとの差分ファイルのみにチェックを絞ることで、大規模リポジトリでの実行時間を短縮できる。
+
+```yaml
+      - name: Test with pyfltr (changed files only)
+        run: uv run pyfltr ci --changed-since=origin/main --output-format=github-annotations
+```
+
+`--changed-since=origin/main`は`origin/main`からの差分ファイルに絞り込んで実行する。
+対象は`git diff --name-only`が返すコミット差分・trackedファイルの作業ツリー差分・staged差分の和集合となり、
+untrackedの新規ファイルは対象外。
+gitが不在またはrefが解決できない場合は警告を出して全体実行へフォールバックする。
+
 ### GitLab CIでMerge Requestへ表示する
 
 GitLab CIでは`--output-format=code-quality`でCode Climate JSON issue形式のサブセットを出力する。

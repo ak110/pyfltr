@@ -2392,11 +2392,6 @@ def expand_all_files(targets: list[pathlib.Path], config: pyfltr.config.Config) 
     return expanded
 
 
-def filter_by_globs(all_files: list[pathlib.Path], globs: list[str]) -> list[pathlib.Path]:
-    """ファイルリストをglobパターンでフィルタリングする。"""
-    return [f for f in all_files if any(f.match(glob) for glob in globs)]
-
-
 def _filter_by_gitignore(paths: list[pathlib.Path]) -> list[pathlib.Path]:
     """Git check-ignore で .gitignore に該当するファイルを除外する。"""
     if not paths:
@@ -2425,6 +2420,77 @@ def _filter_by_gitignore(paths: list[pathlib.Path]) -> list[pathlib.Path]:
     if result.stdout:
         ignored_set = {s for s in result.stdout.split("\0") if s}
     return [p for p in paths if str(p) not in ignored_set]
+
+
+def filter_by_globs(all_files: list[pathlib.Path], globs: list[str]) -> list[pathlib.Path]:
+    """ファイルリストをglobパターンでフィルタリングする。"""
+    return [f for f in all_files if any(f.match(glob) for glob in globs)]
+
+
+def filter_by_changed_since(all_files: list[pathlib.Path], ref: str) -> list[pathlib.Path]:
+    """``--changed-since <ref>`` で変更ファイルに絞り込む。
+
+    ``git diff --name-only <ref>`` でコミット差分と tracked ファイルの作業ツリー差分・staged 差分の
+    和集合を取得し、``all_files`` との交差を返す。
+    untracked（``git add`` 未実施の新規ファイル）は対象外となる。
+
+    git 不在または ref が存在しない場合は警告を出して ``all_files`` をそのまま返す（全体実行へフォールバック）。
+    """
+    changed = _get_changed_files(ref)
+    if changed is None:
+        return all_files
+    if not changed:
+        return []
+    # normalize_separators を使って区切り文字を統一してから比較する。
+    # all_files は cwd 起点の相対 Path であり、git diff も cwd 起点の相対パスを返す。
+    changed_norm: set[str] = {pyfltr.paths.normalize_separators(p) for p in changed}
+    return [f for f in all_files if pyfltr.paths.normalize_separators(f) in changed_norm]
+
+
+def _get_changed_files(ref: str) -> list[str] | None:
+    """``git diff --name-only <ref>`` でコミット差分と tracked ファイルの作業ツリー差分・staged 差分を取得する。
+
+    untracked（``git add`` 未実施の新規ファイル）は ``git diff`` の出力に含まれないため対象外となる。
+    成功時はパス文字列のリストを返す。git 不在・ref 不在・タイムアウト時は
+    警告を出して ``None`` を返す（呼び出し元が全体実行へフォールバックする）。
+    """
+    # HEAD からのコミット差分（<ref>..HEAD）と tracked ファイルの作業ツリー差分・staged 差分の
+    # 3 種を「git diff <ref>」1 コマンドで取得する。
+    # git diff <ref> は <ref> と作業ツリーの差分（staged も含む）を返すため、
+    # コミット間差分 + tracked ファイルの作業ツリー差分を一度に網羅できる。
+    # 出力は -z オプションで NUL 区切りにしてパスにスペースや特殊文字が含まれるケースに対応する。
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--name-only", "-z", ref],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=30,
+            check=False,
+        )
+    except FileNotFoundError:
+        pyfltr.warnings_.emit_warning(
+            source="changed-since",
+            message=f"git が見つからないため --changed-since={ref!r} をスキップして全体実行します",
+        )
+        return None
+    except subprocess.TimeoutExpired:
+        pyfltr.warnings_.emit_warning(
+            source="changed-since",
+            message=f"git diff --name-only がタイムアウトしたため --changed-since={ref!r} をスキップして全体実行します",
+        )
+        return None
+    if result.returncode != 0:
+        # 終了コード非 0 は ref 不在・リポジトリ外などを示す。
+        stderr_msg = result.stderr.strip()
+        detail = f": {stderr_msg}" if stderr_msg else ""
+        pyfltr.warnings_.emit_warning(
+            source="changed-since",
+            message=f"--changed-since={ref!r} の ref が解決できないためスキップして全体実行します{detail}",
+        )
+        return None
+    # NUL 区切りでパースし、空文字列エントリを除去する。
+    return [p for p in result.stdout.split("\0") if p]
 
 
 def _matches_exclude_patterns(path: pathlib.Path, patterns: list[str]) -> str | None:

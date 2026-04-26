@@ -377,6 +377,40 @@ def test_from_run_without_only_failed_is_error(_only_failed_cache, capsys):
     assert "--from-run" in captured.err
 
 
+# --- --changed-since オプション ---
+
+
+def test_changed_since_flag_accepted(mocker):
+    """--changed-since フラグが argparse に受理される（git 差分が空なら rc=0 で終了）。"""
+    proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="")
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+    # git diff --name-only が空を返す（差分なし）ようにスタブする。
+    # 差分なし → 対象ファイル数 0 → コマンド起動なし → rc=0 で終了する。
+    mocker.patch(
+        "pyfltr.command._get_changed_files",
+        return_value=[],
+    )
+
+    returncode = pyfltr.main.run(["ci", "--changed-since=HEAD", str(pathlib.Path(__file__).parent.parent)])
+    assert returncode == 0
+
+
+def test_changed_since_with_only_failed(mocker, _only_failed_cache):
+    """--changed-since と --only-failed の併用が受理される。
+
+    直前 run が存在しないため --only-failed の早期終了経路に到達し rc=0 で終了する。
+    """
+    proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="")
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+    mocker.patch(
+        "pyfltr.command._get_changed_files",
+        return_value=["some_file.py"],
+    )
+
+    returncode = pyfltr.main.run(["ci", "--changed-since=HEAD", "--only-failed", str(pathlib.Path(__file__).parent.parent)])
+    assert returncode == 0
+
+
 # --- run_id 可視化 ---
 
 
