@@ -885,6 +885,20 @@ def _prepare_execution_params(
     if fix_mode:
         fix_args = config.values.get(f"{command}-fix-args")
 
+    # 対象ファイル0件ならこの後の実行自体が走らないため、ツールパス解決を省略する。
+    # mise 等のbin-runner解決はネットワークやプラットフォーム制約で失敗し得るため、
+    # 解決不要な状況で副作用的な失敗を出さないよう早期返却する。
+    if not targets:
+        return _ExecutionParams(
+            command_info=command_info,
+            targets=targets,
+            commandline_prefix=[],
+            commandline=[],
+            additional_args=[],
+            fix_mode=fix_mode,
+            fix_args=fix_args,
+        )
+
     # textlint / markdownlint は path が空の場合、js-runner 設定から解決する。
     # ec 等は bin-runner 設定から解決する。
     if command in _JS_TOOL_BIN and config[f"{command}-path"] == "":
