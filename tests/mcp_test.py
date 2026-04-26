@@ -177,7 +177,9 @@ async def test_tool_show_run_diagnostics(tmp_path: pathlib.Path) -> None:
         ],
     )
 
-    result = await pyfltr.mcp_._tool_show_run_diagnostics(run_id, "mypy")
+    results = await pyfltr.mcp_._tool_show_run_diagnostics(run_id, ["mypy"])
+    assert len(results) == 1
+    result = results[0]
     assert result.command_meta["command"] == "mypy"
     assert len(result.diagnostics) == 1
     diagnostic = result.diagnostics[0]
@@ -193,7 +195,7 @@ async def test_tool_show_run_diagnostics(tmp_path: pathlib.Path) -> None:
 async def test_tool_show_run_diagnostics_tool_not_found(tmp_path: pathlib.Path) -> None:
     run_id = _seed_run(tmp_path)
     with pytest.raises(ValueError, match="nonexistent"):
-        await pyfltr.mcp_._tool_show_run_diagnostics(run_id, "nonexistent")
+        await pyfltr.mcp_._tool_show_run_diagnostics(run_id, ["nonexistent"])
 
 
 @pytest.mark.asyncio
@@ -205,16 +207,17 @@ async def test_tool_show_run_output(tmp_path: pathlib.Path) -> None:
         ],
     )
 
-    result = await pyfltr.mcp_._tool_show_run_output(run_id, "ruff-check")
-    assert "raw output line 1" in result
-    assert "raw output line 2" in result
+    result = await pyfltr.mcp_._tool_show_run_output(run_id, ["ruff-check"])
+    assert "ruff-check" in result
+    assert "raw output line 1" in result["ruff-check"]
+    assert "raw output line 2" in result["ruff-check"]
 
 
 @pytest.mark.asyncio
 async def test_tool_show_run_output_tool_not_found(tmp_path: pathlib.Path) -> None:
     run_id = _seed_run(tmp_path)
     with pytest.raises(ValueError, match="nonexistent"):
-        await pyfltr.mcp_._tool_show_run_output(run_id, "nonexistent")
+        await pyfltr.mcp_._tool_show_run_output(run_id, ["nonexistent"])
 
 
 # ---------------------------------------------------------------------------

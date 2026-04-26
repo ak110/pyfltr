@@ -7,13 +7,21 @@
 
 読み取り系4ツール・実行系1ツールの計5ツールを公開する。
 
-| ツール名 | 対応CLI | 主要引数 | 戻り値 |
-| --- | --- | --- | --- |
-| `list_runs` | `pyfltr list-runs` | `limit: int = 20` | `RunSummary[]`（run_id・開始終了時刻・exit_code等） |
-| `show_run` | `pyfltr show-run <run_id>` | `run_id: str`（前方一致・`latest`可） | `{meta: dict, commands: CommandSummary[]}` |
-| `show_run_diagnostics` | `show-run <run_id> --tool <name>` | `run_id`・`command` | `{command_meta, diagnostics[]}` |
-| `show_run_output` | `pyfltr show-run <run_id> --tool <name> --output` | `run_id: str`・`command: str` | `str`（全文） |
-| `run_for_agent` | `pyfltr run-for-agent` | `paths`・`commands`など5引数（詳細は下記） | `RunForAgentResult` |
+| ツール名 | 対応CLI | 主要引数 |
+| --- | --- | --- |
+| `list_runs` | `pyfltr list-runs` | `limit: int = 20` |
+| `show_run` | `pyfltr show-run <run_id>` | `run_id: str`（前方一致・`latest`可） |
+| `show_run_diagnostics` | `show-run <run_id> --commands <name>` | `run_id`・`commands: list[str]` |
+| `show_run_output` | `show-run <run_id> --commands <name> --output` | `run_id: str`・`commands: list[str]` |
+| `run_for_agent` | `pyfltr run-for-agent` | `paths`・`commands`など5引数（詳細は下記） |
+
+戻り値:
+
+- `list_runs`: `RunSummary[]`（run_id・開始終了時刻・exit_code等）
+- `show_run`: `{meta: dict, commands: CommandSummary[]}`
+- `show_run_diagnostics`: `[{command_meta, diagnostics[]}, ...]`（入力 `commands` の順）
+- `show_run_output`: `dict[str, str]`（コマンド名→全文）
+- `run_for_agent`: `RunForAgentResult`
 
 `run_for_agent`はCLIの`run-for-agent`サブコマンド相当の前提
 （`--output-format=jsonl`既定、fixステージ有効、formatterの書き換えは成功扱い）で動作する。

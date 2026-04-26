@@ -87,7 +87,7 @@ pyfltr list-runs [--limit N] [--output-format text|json|jsonl]
 ### サブコマンド: show-run {#show-run}
 
 ```shell
-pyfltr show-run <run_id> [--tool NAME] [--output] [--output-format text|json|jsonl]
+pyfltr show-run <run_id> [--commands NAME[,NAME...]] [--output] [--output-format text|json|jsonl]
 ```
 
 指定runの詳細を表示する。
@@ -96,12 +96,13 @@ pyfltr show-run <run_id> [--tool NAME] [--output] [--output-format text|json|jso
   前方一致で複数該当した場合は曖昧エラー（終了コード1）
 - 既定: `meta`（`run_id`・`started_at`・`finished_at`・`exit_code`・`files`・`commands`）と
   ツール別サマリ（`status` / `has_error` / `diagnostics`）を表示
-- `--tool NAME`: 指定ツールの`tool.json`と`diagnostics.jsonl`全件を表示
-- `--tool NAME --output`: 指定ツールの生出力（`output.log`）全文を表示
+- `--commands NAME[,NAME...]`: 指定ツールの`tool.json`と`diagnostics.jsonl`全件を表示。
+  カンマ区切りで複数指定可（入力順で並ぶ）
+- `--commands NAME --output`: 指定ツールの生出力（`output.log`）全文を表示（単一指定のみ）
 - `--output-format`: `text`（行形式 `key: value`）・`json`（単発dict）・`jsonl`
  （`kind: "meta"` / `"command"` / `"diagnostic"` / `"output"` 種別の1行1レコード）
 
-存在しない`run_id`・`--tool`指定時は終了コード1で標準エラーにメッセージを出力する。
+存在しない`run_id`・`--commands`指定時は終了コード1で標準エラーにメッセージを出力する。
 
 同じツールが`fix`ステージと通常ステージの両方で実行された場合、アーカイブの保存キーはツール名固定のため
 通常ステージ側の結果で上書きされる（`show-run`で参照できるのは各ツールの最終保存結果のみ）。
@@ -122,8 +123,8 @@ MCPクライアントがstdinを閉じた時点でサーバーが終了する。
 | --- | --- | --- |
 | `list_runs` | `pyfltr list-runs` | run一覧を新しい順で返す。`limit`で件数制御（既定20件） |
 | `show_run` | `pyfltr show-run <run_id>` | 指定runのmetaとツール別サマリを返す。前方一致・`latest`エイリアス可 |
-| `show_run_diagnostics` | `pyfltr show-run <run_id> --tool <name>` | 指定runのtool.jsonとdiagnostics全件を返す |
-| `show_run_output` | `pyfltr show-run <run_id> --tool <name> --output` | 指定runのoutput.log全文を返す |
+| `show_run_diagnostics` | `pyfltr show-run <run_id> --commands <name>` | 指定runのtool.jsonとdiagnostics全件を返す（複数指定可） |
+| `show_run_output` | `pyfltr show-run <run_id> --commands <name> --output` | 指定runのoutput.log全文を返す（単一指定のみ） |
 | `run_for_agent` | `pyfltr run-for-agent` | lint/format/testを実行しrun_id・失敗ツール名・schema_hints等を返す |
 
 `run_for_agent`ツールの引数:

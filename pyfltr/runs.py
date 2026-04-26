@@ -56,15 +56,15 @@ def register_subparsers(subparsers: typing.Any) -> None:
         help="表示対象の run_id。前方一致または 'latest' 指定可。",
     )
     sr.add_argument(
-        "--tool",
+        "--commands",
         default=None,
-        help="特定ツールに絞り込んで diagnostics を全件表示する。",
+        help="特定ツールに絞り込んで diagnostics を全件表示する。カンマ区切りで複数指定可。",
     )
     sr.add_argument(
         "--output",
         default=False,
         action="store_true",
-        help="指定ツールの生出力 (output.log) 全文を表示する。--tool と併用する。",
+        help="指定ツールの生出力 (output.log) 全文を表示する。--commands と併用する (単一指定のみ可)。",
     )
     sr.add_argument(
         "--output-format",
@@ -94,11 +94,18 @@ def execute_show_run(args: argparse.Namespace) -> int:
     """``show-run`` サブコマンドの処理本体。"""
     output_format: str = args.output_format
     raw_run_id: str = args.run_id
-    tool: str | None = args.tool
+    commands_arg: str | None = args.commands
     output_mode: bool = args.output
 
-    if output_mode and tool is None:
-        sys.stderr.write("エラー: --output は --tool と併用する必要がある。\n")
+    tools: list[str] = []
+    if commands_arg:
+        tools = [t.strip() for t in commands_arg.split(",") if t.strip()]
+
+    if output_mode and not tools:
+        sys.stderr.write("エラー: --output は --commands と併用する必要がある。\n")
+        return 1
+    if output_mode and len(tools) > 1:
+        sys.stderr.write("エラー: --output は --commands に単一ツール指定のみ許可する。\n")
         return 1
 
     with _stdout_owned(output_format):
@@ -115,10 +122,10 @@ def execute_show_run(args: argparse.Namespace) -> int:
             sys.stderr.write(f"エラー: run_id が見つからない: {run_id}\n")
             return 1
 
-        if output_mode and tool is not None:
-            return _show_tool_output(store, run_id, tool, output_format)
-        if tool is not None:
-            return _show_tool_detail(store, run_id, tool, output_format)
+        if output_mode and tools:
+            return _show_tool_output(store, run_id, tools[0], output_format)
+        if tools:
+            return _show_tools_detail(store, run_id, tools, output_format)
         return _show_run_overview(store, run_id, meta, output_format)
 
 
@@ -253,30 +260,47 @@ def _print_run_overview_text(
         )
 
 
-def _show_tool_detail(
+def _show_tools_detail(
     store: pyfltr.archive.ArchiveStore,
     run_id: str,
-    tool: str,
+    tools: list[str],
     output_format: str,
 ) -> int:
-    """``--tool`` モード: tool.json + diagnostics.jsonl 全件を表示する。"""
-    try:
-        tool_meta = store.read_tool_meta(run_id, tool)
-        diagnostics = store.read_tool_diagnostics(run_id, tool)
-    except FileNotFoundError:
-        sys.stderr.write(f"エラー: run {run_id} にツール {tool!r} の結果が保存されていない。\n")
-        return 1
+    """``--commands`` モード: 指定ツールの tool.json + diagnostics.jsonl を表示する。
+
+    複数ツール指定時は順に表示する。json モードでは ``commands`` 配列にまとめる。
+    """
+    entries: list[tuple[str, dict[str, typing.Any], list[dict[str, typing.Any]]]] = []
+    for tool in tools:
+        try:
+            tool_meta = store.read_tool_meta(run_id, tool)
+            diagnostics = store.read_tool_diagnostics(run_id, tool)
+        except FileNotFoundError:
+            sys.stderr.write(f"エラー: run {run_id} にツール {tool!r} の結果が保存されていない。\n")
+            return 1
+        entries.append((tool, tool_meta, diagnostics))
+
     if output_format == "text":
-        _print_tool_detail_text(tool_meta, diagnostics)
+        for index, (_tool, tool_meta, diagnostics) in enumerate(entries):
+            if index > 0:
+                print("")
+            _print_tool_detail_text(tool_meta, diagnostics)
     elif output_format == "json":
-        _print_json({"command": tool_meta, "diagnostics": diagnostics})
+        if len(entries) == 1:
+            _, tool_meta, diagnostics = entries[0]
+            _print_json({"command": tool_meta, "diagnostics": diagnostics})
+        else:
+            _print_json(
+                {"commands": [{"command": tool_meta, "diagnostics": diagnostics} for _tool, tool_meta, diagnostics in entries]}
+            )
     else:
-        _print_jsonl_line({"kind": "command", **tool_meta})
-        for diagnostic in diagnostics:
-            # diagnostics.jsonl 側は kind="diagnostic" 込みで保存されているが、
-            # 古いrunや外部書き出し経路を考慮して kind を明示的に埋める。
-            record = {"kind": "diagnostic", **diagnostic}
-            _print_jsonl_line(record)
+        for _tool, tool_meta, diagnostics in entries:
+            _print_jsonl_line({"kind": "command", **tool_meta})
+            for diagnostic in diagnostics:
+                # diagnostics.jsonl 側は kind="diagnostic" 込みで保存されているが、
+                # 古いrunや外部書き出し経路を考慮して kind を明示的に埋める。
+                record = {"kind": "diagnostic", **diagnostic}
+                _print_jsonl_line(record)
     return 0
 
 

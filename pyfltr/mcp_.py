@@ -210,44 +210,57 @@ async def _tool_show_run(run_id: str) -> RunOverviewModel:
     return RunOverviewModel(run_id=resolved, meta=meta, commands=commands)
 
 
-async def _tool_show_run_diagnostics(run_id: str, command: str) -> CommandDiagnosticsModel:
+async def _tool_show_run_diagnostics(run_id: str, commands: list[str]) -> list[CommandDiagnosticsModel]:
     """指定 run・コマンドの tool.json と diagnostics.jsonl 全件を返す。
 
     ``diagnostics`` は ``(command, file)`` 単位の集約形式で、個別指摘は ``messages`` に並ぶ。
     rule→URL辞書 ``hint-urls`` は tool.json 由来でそのまま返す。
+    ``commands`` に複数を指定すると、要素ごとの結果を入力順で返す。
 
-    対応CLI: ``pyfltr show-run <run_id> --tool <name>``
+    対応CLI: ``pyfltr show-run <run_id> --commands <name1>,<name2>``
     """
+    if not commands:
+        _raise_mcp_error("commands を 1 件以上指定してください。")
     store = pyfltr.archive.ArchiveStore()
     resolved = _resolve_run_id_or_raise(store, run_id)
-    try:
-        command_meta = store.read_tool_meta(resolved, command)
-        diagnostics_raw = store.read_tool_diagnostics(resolved, command)
-    except FileNotFoundError:
-        _raise_mcp_error(f"run {resolved} にコマンド {command!r} の結果が保存されていない。")
-    diagnostics = [
-        DiagnosticModel(
-            command=d.get("command", d.get("tool")),
-            file=d.get("file"),
-            messages=[DiagnosticMessageModel(**m) for m in d.get("messages", [])],
-        )
-        for d in diagnostics_raw
-    ]
-    hint_urls = command_meta.get("hint-urls") if isinstance(command_meta.get("hint-urls"), dict) else None
-    return CommandDiagnosticsModel(command_meta=command_meta, diagnostics=diagnostics, hint_urls=hint_urls)
+    results: list[CommandDiagnosticsModel] = []
+    for command in commands:
+        try:
+            command_meta = store.read_tool_meta(resolved, command)
+            diagnostics_raw = store.read_tool_diagnostics(resolved, command)
+        except FileNotFoundError:
+            _raise_mcp_error(f"run {resolved} にコマンド {command!r} の結果が保存されていない。")
+        diagnostics = [
+            DiagnosticModel(
+                command=d.get("command", d.get("tool")),
+                file=d.get("file"),
+                messages=[DiagnosticMessageModel(**m) for m in d.get("messages", [])],
+            )
+            for d in diagnostics_raw
+        ]
+        hint_urls = command_meta.get("hint-urls") if isinstance(command_meta.get("hint-urls"), dict) else None
+        results.append(CommandDiagnosticsModel(command_meta=command_meta, diagnostics=diagnostics, hint_urls=hint_urls))
+    return results
 
 
-async def _tool_show_run_output(run_id: str, command: str) -> str:
+async def _tool_show_run_output(run_id: str, commands: list[str]) -> dict[str, str]:
     """指定 run・コマンドの output.log 全文を返す。
 
-    対応CLI: ``pyfltr show-run <run_id> --tool <name> --output``
+    戻り値はコマンド名→全文の辞書。``commands`` に複数を指定すると入力順で各全文を返す。
+
+    対応CLI: ``pyfltr show-run <run_id> --commands <name> --output``（単一指定のみ）
     """
+    if not commands:
+        _raise_mcp_error("commands を 1 件以上指定してください。")
     store = pyfltr.archive.ArchiveStore()
     resolved = _resolve_run_id_or_raise(store, run_id)
-    try:
-        return store.read_tool_output(resolved, command)
-    except FileNotFoundError:
-        _raise_mcp_error(f"run {resolved} にコマンド {command!r} の結果が保存されていない。")
+    outputs: dict[str, str] = {}
+    for command in commands:
+        try:
+            outputs[command] = store.read_tool_output(resolved, command)
+        except FileNotFoundError:
+            _raise_mcp_error(f"run {resolved} にコマンド {command!r} の結果が保存されていない。")
+    return outputs
 
 
 async def _tool_run_for_agent(
