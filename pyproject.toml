@@ -84,6 +84,12 @@ preset = "latest"
 python = true
 ty = true
 glab-ci-lint = true
+yamllint = true
+taplo = true
+gitleaks = true
+ec = true
+shellcheck = true
+shfmt = true
 pylint-args = ["--jobs=4"]
 
 [tool.ruff]

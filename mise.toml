@@ -1,2 +1,7 @@
 [tools]
 actionlint = "latest"
+editorconfig-checker = "latest"
+gitleaks = "latest"
+shellcheck = "latest"
+shfmt = "latest"
+taplo = "latest"

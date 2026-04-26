@@ -1,0 +1,8 @@
+extends: default
+
+rules:
+  # 設定値や長いURLを含むYAMLが多く、line-lengthはmarkdownlint等の他ツールに委ねる
+  line-length: disable
+  # ドキュメント類でtruthy値（"yes"/"no"等）を引用符付きで意図的に使うケースを許容する
+  truthy:
+    check-keys: false
