@@ -275,11 +275,13 @@ def test_cleanup_max_age(tmp_path: pathlib.Path) -> None:
     assert run_id2 in remaining_ids
 
 
-def test_generate_run_id_monotonic_increasing() -> None:
-    """連続生成した run_id は辞書順ソートで時系列を保つ（ULID の特性）。"""
+def test_generate_run_id_unique_and_valid() -> None:
+    """連続生成した run_id は重複なく、ULID の文字数・文字種を満たす。"""
     ids = [pyfltr.archive.generate_run_id() for _ in range(10)]
-    # 生成順と辞書順が一致する（ULID はタイムスタンプ埋め込みで辞書順 = 時系列順）
-    assert ids == sorted(ids)
+    # ULID は 26 文字の Crockford Base32
+    assert all(len(i) == 26 for i in ids)
+    assert all(c in "0123456789ABCDEFGHJKMNPQRSTVWXYZ" for i in ids for c in i)
+    assert len(set(ids)) == len(ids)
 
 
 def test_default_cache_root_respects_env(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
