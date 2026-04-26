@@ -472,6 +472,28 @@ taplo = true
 taplo-args = ["--config", "taplo.toml"]
 ```
 
+### ec（editorconfig-checker） {#ec}
+
+`ec`は`.editorconfig`違反を検出するGo製のチェッカー。bin-runner経由で実行する。
+プロジェクト固有の除外設定は`.editorconfig-checker.json`で行う。
+設定キーはPascalCase、`Exclude`は正規表現の配列で指定する。
+
+```json
+{
+  "Verbose": false,
+  "Disable": {
+    "IndentSize": true
+  },
+  "Exclude": [
+    "\\.min\\.(js|css)$",
+    "^vendor/",
+    "^docs/_build/"
+  ]
+}
+```
+
+設定キーの全一覧は[editorconfig-checker公式ドキュメント](https://github.com/editorconfig-checker/editorconfig-checker#excluding-files)を参照する。
+
 ### yamllint
 
 `yamllint`はPython製のYAMLリンター。直接実行経路（PATH上または`yamllint-path`で指定した実行ファイル）で動作する。
