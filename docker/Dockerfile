@@ -21,8 +21,9 @@
 #   - Python (pyfltr[python] 経由): ruff / mypy / pylint / pyright / ty / pytest / uv-sort
 #   - Python (pyfltr 本体依存): typos / pre-commit
 #   - Python 単独 (uv tool install): yamllint
-#   - mise 経由のネイティブバイナリ: shfmt / actionlint / editorconfig-checker / glab /
-#     taplo / hadolint / pinact / gitleaks
+#   - mise 経由のネイティブバイナリ: node (LTS) / shfmt / actionlint /
+#     editorconfig-checker / glab / taplo / hadolint / pinact / gitleaks
+#     (node は markdownlint-cli 等が要求する V8 機能のため APT の Node.js 18 を上書きする)
 #   - APT 直結の補助ツール: shellcheck (direct runner フォールバック用)
 #   - pnpm グローバル経由の JS / TS 系: prettier / markdownlint-cli / textlint / eslint /
 #     @biomejs/biome / oxlint / typescript / vitest
@@ -134,6 +135,7 @@ RUN mkdir -p /home/pyfltr/.config/uv \
 RUN pnpm config set store-dir "${PNPM_STORE_DIR}" --global \
     && pnpm config set minimum-release-age 1440 --global \
     && mise use --global \
+        node@lts \
         shfmt@latest \
         actionlint@latest \
         editorconfig-checker@latest \
