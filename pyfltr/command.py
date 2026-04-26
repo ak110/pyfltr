@@ -2293,11 +2293,13 @@ def expand_all_files(targets: list[pathlib.Path], config: pyfltr.config.Config) 
 
     def _expand_target(target: pathlib.Path, *, is_direct: bool) -> None:
         try:
-            if excluded(target, config):
+            match = excluded(target, config)
+            if match is not None:
                 if is_direct:
+                    key, pattern = match
                     pyfltr.warnings_.emit_warning(
                         source="file-resolver",
-                        message=f"指定されたファイルが除外設定により無視されました: {target}",
+                        message=(f'指定されたファイルが除外設定により無視されました: {target} ({key}="{pattern}" による)'),
                     )
                     pyfltr.warnings_.add_excluded_direct_file(str(target))
                 return
@@ -2375,20 +2377,25 @@ def _filter_by_gitignore(paths: list[pathlib.Path]) -> list[pathlib.Path]:
     return [p for p in paths if str(p) not in ignored_set]
 
 
-def _matches_exclude_patterns(path: pathlib.Path, patterns: list[str]) -> bool:
-    """パスが除外パターンのいずれかに一致するか否かを返す。"""
-    if any(path.match(glob) for glob in patterns):
-        return True
-    # 親ディレクトリに一致してもTrue
+def _matches_exclude_patterns(path: pathlib.Path, patterns: list[str]) -> str | None:
+    """パスが除外パターンのいずれかに一致した場合、最初に一致したパターン文字列を返す。"""
+    for glob in patterns:
+        if path.match(glob):
+            return glob
+    # 親ディレクトリに一致しても可
     part = path.parent
     for _ in range(len(path.parts) - 1):
-        if any(part.match(glob) for glob in patterns):
-            return True
+        for glob in patterns:
+            if part.match(glob):
+                return glob
         part = part.parent
-    return False
+    return None
 
 
-def excluded(path: pathlib.Path, config: pyfltr.config.Config) -> bool:
-    """無視パターンチェック。"""
-    excludes = config["exclude"] + config["extend-exclude"]
-    return _matches_exclude_patterns(path, excludes)
+def excluded(path: pathlib.Path, config: pyfltr.config.Config) -> tuple[str, str] | None:
+    """無視パターンチェック。一致した場合は(設定キー名, 一致パターン)を、無一致の場合はNoneを返す。"""
+    for key in ("exclude", "extend-exclude"):
+        matched = _matches_exclude_patterns(path, config[key])
+        if matched is not None:
+            return (key, matched)
+    return None

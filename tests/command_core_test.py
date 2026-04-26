@@ -345,6 +345,11 @@ def test_excluded_default_patterns() -> None:
     assert not pyfltr.command.excluded(pathlib.Path("tests/command_test.py"), config)
     assert not pyfltr.command.excluded(pathlib.Path("README.md"), config)
 
+    # 戻り値は (設定キー, 一致パターン) のタプル
+    config.values["exclude"] = []
+    config.values["extend-exclude"] = ["sample.py"]
+    assert pyfltr.command.excluded(pathlib.Path("sample.py"), config) == ("extend-exclude", "sample.py")
+
 
 def test_excluded_disabled_by_empty_config() -> None:
     """exclude/extend-excludeが空の場合、全パスが除外されないことを確認する（--no-exclude相当）。"""
@@ -429,6 +434,7 @@ def test_expand_all_files_warns_excluded_file(tmp_path: pathlib.Path, caplog) ->
             result = pyfltr.command.expand_all_files([target], config)
         assert len(result) == 0
         assert "除外設定により無視されました" in caplog.text
+        assert 'extend-exclude="sample.py"' in caplog.text
     finally:
         os.chdir(original_cwd)
 
