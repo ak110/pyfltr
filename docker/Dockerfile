@@ -46,6 +46,10 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # ``exclude-newer = "1 day"`` を指定する (USER pyfltr 切り替え後に配置)。
 # 実行時はユーザーが ``UV_EXCLUDE_NEWER`` 環境変数で上書きできる。
 # PATH 先頭の ``/home/pyfltr/.local/bin`` は ``uv tool install`` が配置する CLI を解決する。
+# ``MISE_GLOBAL_CONFIG_FILE`` は ``/cache`` 配下の固定パスに置く。
+# GitHub Actions が ``container:`` 配下で実行する際 ``HOME`` を上書きするため、
+# 既定の ``$HOME/.config/mise/config.toml`` だと ``mise use --global`` で書いた
+# バージョン指定をシムが見失い ``No version is set for shim`` で失敗する。
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -57,6 +61,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PNPM_STORE_DIR=/cache/pnpm \
     MISE_DATA_DIR=/cache/mise/data \
     MISE_CACHE_DIR=/cache/mise/cache \
+    MISE_GLOBAL_CONFIG_FILE=/cache/mise/config.toml \
     PATH=/home/pyfltr/.local/bin:/cache/mise/data/shims:/usr/local/pnpm:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # 必要な APT パッケージをまとめてインストールする。
