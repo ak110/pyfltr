@@ -23,26 +23,50 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/ak110/pyfltr:latest
-    defaults:
-      run:
-        shell: bash
     strategy:
       matrix:
         python-version: ["3.11", "3.12", "3.13", "3.14"]
-    env:
-      UV_PYTHON: ${{ matrix.python-version }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: GitHub Actionsのピン留め検証
-        run: pinact run --check
+        run: |
+          go install github.com/suzuki-shunsuke/pinact/v3/cmd/pinact@v3.9.0
+          GOPATH_BIN="$(go env GOPATH)/bin"
+          export PATH="$GOPATH_BIN:$PATH"
+          pinact run --check
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "lts/*"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@903f9c1a6ebcba6cf41d87230be49611ac97822e # v6.0.3
+        with:
+          version: latest
+
+      - name: Configure pnpm security
+        run: pnpm config set minimum-release-age 1440 --global
+
+      - name: Get pnpm store path
+        id: pnpm-store
+        run: echo "STORE_PATH=$(pnpm store path)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
-          path: /cache
-          key: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}
+          path: ${{ steps.pnpm-store.outputs.STORE_PATH }}
+          key: pnpm-store-${{ runner.os }}
+          restore-keys: pnpm-store-${{ runner.os }}
+
+      - name: Setup mise
+        uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
 
       - name: Install dependencies
         run: uv sync --all-extras --all-groups
