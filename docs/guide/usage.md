@@ -124,13 +124,28 @@ MCPクライアントがstdinを閉じた時点でサーバーが終了する。
 | `show_run` | `pyfltr show-run <run_id>` | 指定runのmetaとツール別サマリを返す。前方一致・`latest`エイリアス可 |
 | `show_run_diagnostics` | `pyfltr show-run <run_id> --tool <name>` | 指定runのtool.jsonとdiagnostics全件を返す |
 | `show_run_output` | `pyfltr show-run <run_id> --tool <name> --output` | 指定runのoutput.log全文を返す |
-| `run_for_agent` | `pyfltr run-for-agent` | 指定パスにlint/format/testを実行しrun_id・終了コード・失敗ツール名を返す |
+| `run_for_agent` | `pyfltr run-for-agent` | lint/format/testを実行しrun_id・失敗ツール名・schema_hints等を返す |
 
 `run_for_agent`ツールの引数:
 
 - `paths`: 実行対象のファイルまたはディレクトリのパス一覧（必須）
 - `commands`: 実行するコマンド名のリスト（省略時はプロジェクト設定の全コマンドを使用）
 - `fail_fast`: `true`の場合、1ツールでもエラーが発生した時点で残りを打ち切る（既定`false`）
+- `only_failed`: `true`の場合、直前runの失敗ツール・失敗ファイルのみ再実行する（CLIの`--only-failed`相当、既定`false`）
+- `from_run`: `only_failed=true`の参照runを明示指定する（前方一致・`latest`可、`only_failed=true`のときのみ有効）
+
+`run_for_agent`ツールの戻り値フィールド:
+
+- `run_id`: 実行アーカイブの参照キー（ULID）。early exit時は `null`
+- `exit_code`: 終了コード（`0` = 成功、`1` = 失敗）
+- `failed`: 失敗したコマンド名の一覧
+- `commands`: コマンド別サマリ一覧（`status`・`has_error`・`diagnostics` 件数）
+- `skipped_reason`: early exitが発生した理由。
+  `only_failed=false`の通常実行時は`null`で省略される。
+  `only_failed=true`有効時に「直前runなし」「失敗ツールなし」「対象ファイル交差が空」の
+  いずれかに該当した場合にのみ設定される
+- `schema_hints`: JSONL出力フィールドの意味を補足する英語ガイド（短縮版）
+- `retry_commands`: 失敗コマンドの再実行シェルコマンド辞書（コマンド名→シェル文字列、成功・cachedは省略）
 
 コーディングエージェント側へのMCPサーバー登録例（JSON形式で設定ファイルに記載する場合）:
 
@@ -432,6 +447,8 @@ smart truncationは次の設定キーで制御する（`pyproject.toml`）。
 
 `summary`レコードの任意フィールド:
 
+- `applied_fixes`: fixステージ・formatterステージで実際にファイル内容が変化した対象のパス一覧（ソート済み）。
+  全コマンドにわたってユニオンを取って集計する。変化がなかった場合は省略される
 - `fully_excluded_files`: コマンドラインで直接指定されたが、`exclude` / `extend-exclude`パターンまたは
   `.gitignore`によって全除外されたファイルのパス一覧。非空のときのみ付与される。
   exitコードは0のままだが、「警告0件＝問題なし」と誤解しないように明示する。

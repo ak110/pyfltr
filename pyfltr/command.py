@@ -547,6 +547,13 @@ class CommandResult:
     ``cached=True`` のときに限り設定される。JSONL tool レコードで参照誘導用に出力する
     (``show-run`` / MCP の詳細参照経路で当該 run の全文を確認できる)。
     """
+    fixed_files: list[str] = dataclasses.field(default_factory=list)
+    """fix ステージ・formatter ステージで実際にファイル内容が変化した対象のパス一覧。
+
+    内容ハッシュ比較により変化を検知して設定する。
+    内容変化が検知されなかった場合は空。
+    ``summary.applied_fixes`` の集計に使用する。
+    """
 
     @classmethod
     def from_run(  # pylint: disable=duplicate-code
@@ -1587,7 +1594,8 @@ def _execute_linter_fix(
     output = proc.stdout.strip()
     elapsed = time.perf_counter() - start_time
 
-    changed = _snapshot_file_digests(targets) != digests_before
+    digests_after = _snapshot_file_digests(targets)
+    changed = digests_after != digests_before
 
     has_error = returncode != 0
     if not has_error and changed:
@@ -1599,7 +1607,7 @@ def _execute_linter_fix(
 
     errors = pyfltr.error_parser.parse_errors(command, output, None)
 
-    return CommandResult.from_run(
+    result = CommandResult.from_run(
         command=command,
         command_type=result_command_type,
         commandline=commandline,
@@ -1610,6 +1618,9 @@ def _execute_linter_fix(
         elapsed=elapsed,
         errors=errors,
     )
+    if not has_error and changed:
+        result.fixed_files = _changed_files(digests_before, digests_after)
+    return result
 
 
 def _execute_textlint_fix(
@@ -1690,7 +1701,8 @@ def _execute_textlint_fix(
     step1_rc = step1_proc.returncode
     # rc=0 (違反なし) / rc=1 (違反残存) は通常終了、rc>=2 は致命的エラー扱い
     step1_fatal = step1_rc >= 2
-    step1_changed = _snapshot_file_digests(targets) != digests_before
+    digests_after_step1 = _snapshot_file_digests(targets)
+    step1_changed = digests_after_step1 != digests_before
 
     if protected_identifiers and step1_changed:
         _warn_protected_identifier_corruption(contents_before, _snapshot_file_texts(targets), protected_identifiers)
@@ -1746,7 +1758,7 @@ def _execute_textlint_fix(
         returncode = 0
         result_command_type = "linter"
 
-    return CommandResult.from_run(
+    result = CommandResult.from_run(
         command=command,
         command_type=result_command_type,
         commandline=step2_commandline,
@@ -1757,6 +1769,9 @@ def _execute_textlint_fix(
         elapsed=elapsed,
         errors=errors,
     )
+    if not has_error and step1_changed:
+        result.fixed_files = _changed_files(digests_before, digests_after_step1)
+    return result
 
 
 def _strip_format_option(args: list[str]) -> list[str]:
@@ -1825,7 +1840,8 @@ def _execute_ruff_format_two_step(
     )
     step1_rc = step1_proc.returncode
     step1_failed = step1_rc >= 2  # exit 0/1 は無視、2 以上 (abrupt termination) のみ失敗扱い
-    step1_changed = _snapshot_file_digests(targets) != digests_before
+    digests_after_step1 = _snapshot_file_digests(targets)
+    step1_changed = digests_after_step1 != digests_before
 
     # ステップ2実行 (常に実行)
     if args.verbose and on_output is not None:
@@ -1859,7 +1875,7 @@ def _execute_ruff_format_two_step(
 
     # commandline は代表として「最後に実行したステップ」(= ruff format) を格納。
     # 両ステップ分の commandline は verbose 出力で確認可能。
-    return CommandResult.from_run(
+    result = CommandResult.from_run(
         command=command,
         command_info=command_info,
         commandline=format_commandline,
@@ -1870,6 +1886,12 @@ def _execute_ruff_format_two_step(
         elapsed=elapsed,
         errors=errors,
     )
+    if not has_error and (step1_changed or step2_formatted):
+        # digests_before は Step1 前のスナップショット（関数冒頭で取得済み）。
+        # Step1（ruff --check による暗黙 fix）と Step2（ruff format）の累積差分を一括で取る。
+        digests_after_step2 = _snapshot_file_digests(targets)
+        result.fixed_files = _changed_files(digests_before, digests_after_step2)
+    return result
 
 
 def _execute_shfmt_two_step(
@@ -1934,7 +1956,8 @@ def _execute_shfmt_two_step(
         write_rc = write_proc.returncode
         output = write_proc.stdout.strip()
         elapsed = time.perf_counter() - start_time
-        changed = _snapshot_file_digests(targets) != digests_before
+        digests_after = _snapshot_file_digests(targets)
+        changed = digests_after != digests_before
 
         if write_rc != 0:
             has_error = True
@@ -1946,7 +1969,7 @@ def _execute_shfmt_two_step(
             has_error = False
             returncode = 0
 
-        return CommandResult.from_run(
+        result = CommandResult.from_run(
             command=command,
             command_info=command_info,
             commandline=write_commandline,
@@ -1956,8 +1979,14 @@ def _execute_shfmt_two_step(
             output=output,
             elapsed=elapsed,
         )
+        if not has_error and changed:
+            result.fixed_files = _changed_files(digests_before, digests_after)
+        return result
 
     # 通常モード: Step1 (check) → Step2 (write)
+    # Step1 は read-only のため内容変化なし。変化検知のため Step1 前にスナップショットを取る。
+    # （他 formatter の digests_before と同じ起点で取る方針に揃える）
+    shfmt_digests_before = _snapshot_file_digests(targets)
     check_commandline: list[str] = [
         *commandline_prefix,
         *common_args,
@@ -2005,27 +2034,25 @@ def _execute_shfmt_two_step(
     output = write_proc.stdout.strip()
     elapsed = time.perf_counter() - start_time
 
-    if write_proc.returncode != 0:
-        return CommandResult.from_run(
-            command=command,
-            command_info=command_info,
-            commandline=write_commandline,
-            returncode=write_proc.returncode,
-            has_error=True,
-            files=len(targets),
-            output=output,
-            elapsed=elapsed,
-        )
+    has_error = write_proc.returncode != 0
+    returncode = write_proc.returncode if has_error else 1
 
-    return CommandResult.from_run(
+    result = CommandResult.from_run(
         command=command,
         command_info=command_info,
         commandline=write_commandline,
-        returncode=1,
+        returncode=returncode,
+        has_error=has_error,
         files=len(targets),
-        output=check_proc.stdout.strip(),
+        output=check_proc.stdout.strip() if not has_error else output,
         elapsed=elapsed,
     )
+    if not has_error:
+        shfmt_digests_after = _snapshot_file_digests(targets)
+        changed = shfmt_digests_after != shfmt_digests_before
+        if changed:
+            result.fixed_files = _changed_files(shfmt_digests_before, shfmt_digests_after)
+    return result
 
 
 def _execute_prettier_two_step(
@@ -2096,7 +2123,8 @@ def _execute_prettier_two_step(
         write_rc = write_proc.returncode
         output = write_proc.stdout.strip()
         elapsed = time.perf_counter() - start_time
-        changed = _snapshot_file_digests(targets) != digests_before
+        digests_after = _snapshot_file_digests(targets)
+        changed = digests_after != digests_before
 
         if write_rc != 0:
             has_error = True
@@ -2112,7 +2140,7 @@ def _execute_prettier_two_step(
             result_command_type = command_info.type
 
         errors = pyfltr.error_parser.parse_errors(command, output, command_info.error_pattern)
-        return CommandResult.from_run(
+        result = CommandResult.from_run(
             command=command,
             command_type=result_command_type,
             commandline=write_commandline,
@@ -2123,6 +2151,9 @@ def _execute_prettier_two_step(
             elapsed=elapsed,
             errors=errors,
         )
+        if not has_error and changed:
+            result.fixed_files = _changed_files(digests_before, digests_after)
+        return result
 
     # 通常モード: Step1 (check) → 必要なら Step2 (write)
     check_commandline: list[str] = [
@@ -2178,6 +2209,7 @@ def _execute_prettier_two_step(
         )
 
     # Step1 rc == 1 → Step2 実行 (書き込み)
+    prettier_digests_before = _snapshot_file_digests(targets)
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(write_commandline)}\n")
     step2_proc = _run_subprocess(
@@ -2200,7 +2232,7 @@ def _execute_prettier_two_step(
         returncode = step2_rc
 
     errors = pyfltr.error_parser.parse_errors(command, output, command_info.error_pattern)
-    return CommandResult.from_run(
+    result = CommandResult.from_run(
         command=command,
         command_info=command_info,
         commandline=write_commandline,
@@ -2211,6 +2243,12 @@ def _execute_prettier_two_step(
         elapsed=elapsed,
         errors=errors,
     )
+    if not has_error:
+        prettier_digests_after = _snapshot_file_digests(targets)
+        changed = prettier_digests_after != prettier_digests_before
+        if changed:
+            result.fixed_files = _changed_files(prettier_digests_before, prettier_digests_after)
+    return result
 
 
 def _snapshot_file_digests(targets: list[pathlib.Path]) -> dict[pathlib.Path, bytes]:
@@ -2228,6 +2266,18 @@ def _snapshot_file_digests(targets: list[pathlib.Path]) -> dict[pathlib.Path, by
         except OSError:
             result[target] = b""
     return result
+
+
+def _changed_files(
+    before: dict[pathlib.Path, bytes],
+    after: dict[pathlib.Path, bytes],
+) -> list[str]:
+    """ハッシュスナップショット前後で内容が変化したファイルのパス文字列リストを返す。
+
+    ``_snapshot_file_digests`` の戻り値を 2 点渡し、ハッシュが変化したキーを抽出する。
+    結果は文字列化してソートして返す（summary.applied_fixes の安定ソート用）。
+    """
+    return sorted(str(p) for p, digest in after.items() if before.get(p) != digest)
 
 
 def _snapshot_file_texts(targets: list[pathlib.Path]) -> dict[pathlib.Path, str]:

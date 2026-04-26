@@ -111,12 +111,27 @@ class CommandDiagnosticsModel(pydantic.BaseModel):
 class RunForAgentResult(pydantic.BaseModel):
     """``run_for_agent`` ツールの戻り値。"""
 
-    run_id: str = pydantic.Field(description="実行アーカイブの参照キー (ULID)。")
+    run_id: str | None = pydantic.Field(
+        default=None,
+        description="実行アーカイブの参照キー (ULID)。early exit 時は None。",
+    )
     exit_code: int = pydantic.Field(description="終了コード。0 = 成功、1 = 失敗。")
     failed: list[str] = pydantic.Field(description="失敗したコマンド名の一覧。")
     commands: list[CommandSummaryModel] = pydantic.Field(
         default_factory=list,
         description="コマンド別サマリ一覧（status・has_error・diagnostics 件数）。",
+    )
+    skipped_reason: str | None = pydantic.Field(
+        default=None,
+        description="early exit が発生した理由。run が実行されなかった場合に設定される。",
+    )
+    schema_hints: dict[str, str] = pydantic.Field(
+        default_factory=dict,
+        description="JSONL 出力フィールドの意味を補足する英語ガイド（短縮版）。",
+    )
+    retry_commands: dict[str, str] = pydantic.Field(
+        default_factory=dict,
+        description="失敗コマンドの再実行シェルコマンド辞書（コマンド名 → shell 文字列）。成功・cached は省略。",
     )
 
 
@@ -239,12 +254,16 @@ async def _tool_run_for_agent(
     paths: list[str],
     commands: list[str] | None = None,
     fail_fast: bool = False,
+    only_failed: bool = False,
+    from_run: str | None = None,
 ) -> RunForAgentResult:
     """指定パスに対して lint/format/test を実行し、結果を返す。
 
     ``run-for-agent`` サブコマンド相当（JSONL 出力既定・fix ステージ有効・
     formatter 書き換えは成功扱い）で動作する。
     実行アーカイブは常に有効化され、``run_id`` を戻り値に含む。
+    early exit（直前 run なし・失敗ツールなし・対象ファイル交差が空）の場合は
+    ``run_id=None`` ・ ``skipped_reason`` に理由を設定して返す。
 
     対応CLI: ``pyfltr run-for-agent``
 
@@ -252,7 +271,13 @@ async def _tool_run_for_agent(
         paths: 実行対象のファイルまたはディレクトリのパス一覧。
         commands: 実行するコマンド名のリスト。省略時はプロジェクト設定の全コマンドを使用する。
         fail_fast: True の場合、1 ツールでもエラーが発生した時点で残りを打ち切る。
+        only_failed: True の場合、直前 run の失敗ツール・失敗ファイルのみ再実行する。
+        from_run: ``only_failed=True`` 時の参照 run_id（前方一致・``latest`` 可）。
+            ``only_failed=False`` かつ ``from_run`` 指定は ValueError。
     """
+    if from_run is not None and not only_failed:
+        _raise_mcp_error("from_run は only_failed=True のときのみ指定できます。")
+
     # run-for-agent サブコマンド相当の既定値で Namespace を構築する。
     # _apply_subcommand_defaults の結果と同等になるよう各フラグを設定する。
     commands_str: str | None = ",".join(commands) if commands else None
@@ -260,6 +285,8 @@ async def _tool_run_for_agent(
         targets=[pathlib.Path(p) for p in paths],
         commands=commands_str,
         fail_fast=fail_fast,
+        only_failed=only_failed,
+        from_run=from_run,
         no_archive=False,  # アーカイブ必須化のため明示的に False
         no_cache=False,
         verbose=False,
@@ -313,8 +340,23 @@ async def _tool_run_for_agent(
         with contextlib.suppress(OSError):
             tmp_path.unlink(missing_ok=True)
 
+    import pyfltr.llm_output as _llm_output  # pylint: disable=import-outside-toplevel,cyclic-import
+
+    schema_hints = _llm_output.get_schema_hints(full=False)
+
+    # only_failed による early exit: run_id が None のとき実行がスキップされた。
     if run_id is None:
-        raise RuntimeError("MCP run_for_agent は実行アーカイブ必須だが run_id を採番できなかった")
+        return RunForAgentResult(
+            run_id=None,
+            exit_code=exit_code,
+            failed=[],
+            commands=[],
+            skipped_reason=(
+                "only_failed が有効ですが実行対象がありませんでした（直前 run なし・失敗ツールなし・対象ファイル交差なし）。"
+            ),
+            schema_hints=schema_hints,
+            retry_commands={},
+        )
 
     # コマンド別サマリを最新アーカイブから集計する。
     store = pyfltr.archive.ArchiveStore()
@@ -326,11 +368,26 @@ async def _tool_run_for_agent(
     commands_model = [CommandSummaryModel.model_validate(entry) for entry in command_summaries]
     failed_commands = [c.command for c in commands_model if c.has_error and c.command]
 
+    # 失敗コマンドの retry_command をアーカイブから収集する（F7）。
+    retry_commands: dict[str, str] = {}
+    for summary_entry in command_summaries:
+        cmd_name = summary_entry.get("command")
+        if summary_entry.get("has_error") and cmd_name:
+            try:
+                tool_meta = store.read_tool_meta(run_id, cmd_name)
+                rc = tool_meta.get("retry_command")
+                if rc:
+                    retry_commands[cmd_name] = rc
+            except Exception:  # pylint: disable=broad-exception-caught  # tool.json 読み取り失敗は非致命的
+                logger.debug("retry_command 取得失敗: command=%s", cmd_name, exc_info=True)
+
     return RunForAgentResult(
         run_id=run_id,
         exit_code=exit_code,
         failed=failed_commands,
         commands=commands_model,
+        schema_hints=schema_hints,
+        retry_commands=retry_commands,
     )
 
 
@@ -364,7 +421,11 @@ def _build_server() -> typing.Any:
     mcp.tool(name="show_run_output", description="指定 run・コマンドの output.log 全文を返す。")(_tool_show_run_output)
     mcp.tool(
         name="run_for_agent",
-        description="指定パスに対して lint/format/test を実行し、run_id・終了コード・失敗コマンド名を返す。",
+        description=(
+            "指定パスに対して lint/format/test を実行し、run_id・終了コード・失敗コマンド名を返す。"
+            " only_failed=True で直前 run の失敗ツール・失敗ファイルのみ再実行する（from_run で参照 run を指定可）。"
+            " 戻り値に schema_hints（JSONL フィールド解説）と retry_commands（失敗コマンドの再実行シェルコマンド）を含む。"
+        ),
     )(_tool_run_for_agent)
 
     return mcp

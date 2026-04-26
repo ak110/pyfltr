@@ -597,3 +597,58 @@ def test_build_message_dict_omits_hint_when_none() -> None:
     )
     record = pyfltr.llm_output._build_message_dict(error)
     assert "hint" not in record
+
+
+def test_build_summary_record_includes_applied_fixes() -> None:
+    """fixed_files を持つ結果が複数ある場合、summary.applied_fixes にユニオンしてソートして出力される。
+
+    構築意図: `returncode=1, has_error=False, command_type="formatter"` の組み合わせで
+    `status == "formatted"` となるケースを再現する。
+    2 件の結果で `fixed_files` が重複を含む場合に、ユニオン＆ソートされた一覧が得られることを確認する。
+    """
+    result_a = pyfltr.command.CommandResult(
+        command="ruff-check",
+        command_type="formatter",
+        commandline=["ruff"],
+        returncode=1,
+        has_error=False,
+        files=2,
+        output="",
+        elapsed=0.1,
+        fixed_files=["src/b.py", "src/a.py"],
+    )
+    result_b = pyfltr.command.CommandResult(
+        command="ruff-format",
+        command_type="formatter",
+        commandline=["ruff"],
+        returncode=1,
+        has_error=False,
+        files=2,
+        output="",
+        elapsed=0.1,
+        fixed_files=["src/a.py", "src/c.py"],
+    )
+    record = pyfltr.llm_output._build_summary_record([result_a, result_b], exit_code=0)
+    assert record["applied_fixes"] == ["src/a.py", "src/b.py", "src/c.py"]
+
+
+def test_build_summary_record_omits_applied_fixes_when_empty() -> None:
+    """fixed_files が空のとき summary.applied_fixes は出力されない。"""
+    result = pyfltr.command.CommandResult(
+        command="mypy",
+        command_type="linter",
+        commandline=["mypy"],
+        returncode=0,
+        has_error=False,
+        files=1,
+        output="",
+        elapsed=0.1,
+    )
+    record = pyfltr.llm_output._build_summary_record([result], exit_code=0)
+    assert "applied_fixes" not in record
+
+
+def test_get_schema_hints_full_includes_applied_fixes() -> None:
+    """フル版 schema_hints に summary.applied_fixes の説明が含まれる。"""
+    full = pyfltr.llm_output.get_schema_hints(full=True)
+    assert "summary.applied_fixes" in full

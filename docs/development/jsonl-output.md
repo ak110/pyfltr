@@ -37,6 +37,9 @@ JSONLはLLMエージェントが入力として読むケースが多いため、
   などフィールド単位の詳細を英文で説明する。
   短縮版には`_note`キーでフル版の取得方法を案内する。
   公開窓口は`pyfltr/llm_output.py`の`get_schema_hints(full=...)`
+- `summary.applied_fixes`: fixステージ・formatterステージで実際にファイル内容が変化した対象のパス一覧（ソート済み）。
+  全コマンドの`CommandResult.fixed_files`をユニオンして集計する。変化がなかった場合は省略する。
+  書式詳細は[利用者向けガイド](../guide/usage.md)を参照
 - `summary.guidance`: `failed > 0`のときのみ付与する英語の配列。`command.retry_command`の参照、
   `pyfltr run-for-agent --only-failed`、`diagnostic.fix`の解釈、`pyfltr show-run <run_id>`の案内を並べる。
   成功時（`failed == 0`）は省略する。各コマンド表記には起動時のlauncher（`pyfltr`／`uv run pyfltr`／`uvx pyfltr`）と

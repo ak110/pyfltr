@@ -285,6 +285,10 @@ _SCHEMA_HINTS: dict[str, str] = {
         "optional short fix guidance for this specific rule (e.g., textlint sentence-length);"
         " omitted when the rule has no pre-registered hint"
     ),
+    "summary.applied_fixes": (
+        "sorted list of file paths whose contents were changed by fix-stage or formatter-stage execution;"
+        " omitted when no files were modified"
+    ),
     "summary.fully_excluded_files": (
         "list of directly specified files that were fully excluded by exclude patterns or .gitignore;"
         " omitted when no such files exist. pyfltr exits 0 in this case so inspect this field to avoid"
@@ -504,12 +508,17 @@ def _build_summary_record(
     ``fully_excluded_files`` が非空のとき、直接指定されたが exclude パターン・.gitignore
     によって全除外されたファイル一覧を ``fully_excluded_files`` キーに埋め込む。
     exit コードは 0 のままだが、LLM／利用者が「警告ゼロ」と誤解しないよう明示する。
+    ``applied_fixes`` は fix ステージ・formatter ステージで実際に内容変化したファイルパスを
+    全コマンドにわたってユニオンしソートした一覧。変化なしの場合は省略する。
     """
     counts = {"succeeded": 0, "formatted": 0, "failed": 0, "skipped": 0}
     total_diagnostics = 0
+    fixed_files_union: set[str] = set()
     for result in ordered_results:
         counts[result.status] = counts.get(result.status, 0) + 1
         total_diagnostics += len(result.errors)
+        if result.fixed_files:
+            fixed_files_union.update(result.fixed_files)
     record: dict[str, typing.Any] = {
         "kind": "summary",
         "total": len(ordered_results),
@@ -522,6 +531,8 @@ def _build_summary_record(
     }
     if counts["failed"] > 0:
         record["guidance"] = _build_failure_guidance(run_id, launcher_prefix)
+    if fixed_files_union:
+        record["applied_fixes"] = sorted(fixed_files_union)
     if fully_excluded_files:
         record["fully_excluded_files"] = list(fully_excluded_files)
     return record

@@ -42,7 +42,7 @@ plugins:
         - `pyfltr generate-config`: 設定ファイルの雛形を標準出力に書き出す。`[tool.pyfltr]`セクションに貼り付けて利用する
         - `pyfltr list-runs`: 実行アーカイブ内のrun一覧を表示する。`--limit`で件数制御、`--output-format=text|json|jsonl`
         - `pyfltr show-run <run_id>`: 指定runの詳細を表示する。`<run_id>`は前方一致および`latest`エイリアス可。`--tool <name>`でdiagnostics全件、`--tool <name> --output`で`output.log`全文。`--output-format=text|json|jsonl`
-        - `pyfltr mcp`: stdioトランスポートでMCPサーバーを起動する。提供ツールは`list_runs` / `show_run` / `show_run_diagnostics` / `show_run_output` / `run_for_agent`の5件
+        - `pyfltr mcp`: stdioトランスポートでMCPサーバーを起動する。提供ツールは`list_runs` / `show_run` / `show_run_diagnostics` / `show_run_output` / `run_for_agent`の5件。`run_for_agent`は`only_failed` / `from_run`引数で失敗ファイルの絞り込み再実行が可能。戻り値に`schema_hints`（JSONL フィールド解説）・`retry_commands`（失敗コマンドの再実行シェルコマンド辞書）・`skipped_reason`（early exit 理由）を含む
         - `pyfltr generate-shell-completion bash|powershell`: シェル補完スクリプトを標準出力へ書き出す
 
         `--no-fix`で`run`/`fast`/`run-for-agent`のfix段を抑止できる。`ci`は副作用回避のため元々fix段を持たない。
@@ -84,7 +84,7 @@ plugins:
         - `warning`: pyfltr が検出した設定・実行時の警告（`source` で発生元を識別）
         - `diagnostic`: `(command, file)` 単位で1行に集約される診断。個別指摘は `messages[]` 配列（各要素は `line` / `col` / `rule` / `severity` / `fix` / `msg` / `hint`）として格納される。`fix` は `"safe"` / `"unsafe"` / `"suggested"` / `"none"` の4値を取り、ツールが自動修正情報を返さない場合はフィールドごと省略。`hint` は textlint の頻出ルールなど、pyfltr 側でヒントを事前登録したルールにのみ付与される
         - `command`: ツールごとの実行結果サマリ（`status` / `elapsed` / `diagnostics` / `rc` / `retry_command` / `truncated` / `cached` / `cached_from` / `cached_elapsed` / `hint-urls`）。`cached=true` のとき `elapsed` は省略され前回実行時の計測値を `cached_elapsed` として提示する。`hint-urls` は rule→ドキュメントURLの辞書
-        - `summary`: 最終1行の全体集計（`succeeded` / `formatted` / `failed` / `skipped` / `diagnostics` / `exit`）。`failed > 0` のとき英語の `guidance` 配列を付与し、再実行コマンドや `show-run` の案内を返す。直接指定ファイルが `exclude` / `.gitignore` で全除外された場合は `fully_excluded_files` にパス一覧を付与する（非空時のみ）
+        - `summary`: 最終1行の全体集計（`succeeded` / `formatted` / `failed` / `skipped` / `diagnostics` / `exit`）。`failed > 0` のとき英語の `guidance` 配列を付与し、再実行コマンドや `show-run` の案内を返す。fix ステージ・formatter ステージで実際にファイル内容が変化した場合は `applied_fixes` にソート済みのパス一覧を付与する（変化なし時は省略）。直接指定ファイルが `exclude` / `.gitignore` で全除外された場合は `fully_excluded_files` にパス一覧を付与する（非空時のみ）
 
         stdoutモード（`--output-file`未指定）の出力順は`header`→ツール完了順に`diagnostic`+`command`→`warning`→`summary`。stdoutへJSONLのみを書き、進捗ログやTUIは無音化される。`--output-file`指定時はファイルへJSONLを書き、stdoutには従来どおりのテキスト出力を並行出力する（ローカル実行で進捗を追える）。
 

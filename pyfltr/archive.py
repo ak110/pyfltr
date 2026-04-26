@@ -169,6 +169,8 @@ class ArchiveStore:
         }
         if hint_urls:
             meta["hint-urls"] = dict(hint_urls)
+        if result.retry_command is not None:
+            meta["retry_command"] = result.retry_command
         (tool_dir / _TOOL_META_FILENAME).write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def finalize_run(

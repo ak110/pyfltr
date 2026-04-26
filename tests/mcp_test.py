@@ -302,3 +302,130 @@ async def test_tool_run_for_agent_returns_run_id(tmp_path: pathlib.Path) -> None
     summaries = store.list_runs(limit=1)
     assert len(summaries) == 1
     assert summaries[0].run_id == result.run_id
+
+
+# ---------------------------------------------------------------------------
+# RunForAgentResult モデルの新フィールドのテスト
+# ---------------------------------------------------------------------------
+
+
+def test_run_for_agent_result_new_fields_defaults() -> None:
+    """RunForAgentResult の新フィールドのデフォルト値を確認する。"""
+    result = pyfltr.mcp_.RunForAgentResult(
+        run_id="01TESTULID1234567890123456",
+        exit_code=0,
+        failed=[],
+    )
+    assert result.run_id is not None
+    assert result.skipped_reason is None
+    assert isinstance(result.schema_hints, dict)
+    assert isinstance(result.retry_commands, dict)
+
+
+def test_run_for_agent_result_nullable_run_id() -> None:
+    """RunForAgentResult の run_id が None を許容する（early exit 時）。"""
+    result = pyfltr.mcp_.RunForAgentResult(
+        run_id=None,
+        exit_code=0,
+        failed=[],
+        skipped_reason="失敗ツールなし",
+    )
+    assert result.run_id is None
+    assert result.skipped_reason == "失敗ツールなし"
+    assert result.exit_code == 0
+    assert not result.failed
+    assert not result.commands
+
+
+@pytest.mark.asyncio
+async def test_tool_run_for_agent_returns_schema_hints(tmp_path: pathlib.Path) -> None:
+    """run_for_agent の戻り値に schema_hints が含まれることを確認する。"""
+    sample = tmp_path / "input.txt"
+    sample.write_text("hello\n", encoding="utf-8")
+
+    result = await pyfltr.mcp_._tool_run_for_agent(
+        paths=[str(sample)],
+        commands=["ec"],
+    )
+
+    assert isinstance(result.schema_hints, dict)
+    assert len(result.schema_hints) > 0
+    # 短縮版なので _note が含まれる
+    assert "_note" in result.schema_hints
+
+
+@pytest.mark.asyncio
+async def test_tool_run_for_agent_returns_retry_commands(tmp_path: pathlib.Path) -> None:
+    """run_for_agent の戻り値に retry_commands が含まれることを確認する（失敗なしの場合は空辞書）。"""
+    sample = tmp_path / "input.txt"
+    sample.write_text("hello\n", encoding="utf-8")
+
+    result = await pyfltr.mcp_._tool_run_for_agent(
+        paths=[str(sample)],
+        commands=["ec"],
+    )
+
+    assert isinstance(result.retry_commands, dict)
+    # 成功したコマンドはキーに含まれない
+    for key in result.retry_commands:
+        assert key in result.failed
+
+
+@pytest.mark.asyncio
+async def test_tool_run_for_agent_retry_commands_includes_failed(tmp_path: pathlib.Path) -> None:
+    """失敗コマンドが存在する場合に retry_commands にキーが入る経路をカバーする。
+
+    ruff-check でエラーのある Python ファイルを実行し、失敗した場合に
+    retry_commands["ruff-check"] が設定されることを確認する。
+    retry_command はアーカイブの tool.json から読み取るため、
+    archive.write_tool_result が retry_command を保存していることも兼ねて検証する。
+    """
+    # ruff-check でエラーになる Python ファイルを用意する
+    bad_py = tmp_path / "bad.py"
+    bad_py.write_text("import os\n", encoding="utf-8")  # F401: imported but unused
+
+    result = await pyfltr.mcp_._tool_run_for_agent(
+        paths=[str(bad_py)],
+        commands=["ruff-check"],
+    )
+
+    assert isinstance(result.retry_commands, dict)
+    if "ruff-check" in result.failed:
+        # 失敗コマンドには retry_commands キーが含まれる
+        assert "ruff-check" in result.retry_commands
+        assert isinstance(result.retry_commands["ruff-check"], str)
+        assert len(result.retry_commands["ruff-check"]) > 0
+    # 成功したコマンドはキーに含まれない
+    for key in result.retry_commands:
+        assert key in result.failed
+
+
+@pytest.mark.asyncio
+async def test_tool_run_for_agent_from_run_without_only_failed_raises() -> None:
+    """only_failed=False のまま from_run を指定すると ValueError が発生する。"""
+    with pytest.raises(ValueError, match="only_failed"):
+        await pyfltr.mcp_._tool_run_for_agent(
+            paths=["dummy"],
+            from_run="latest",
+        )
+
+
+@pytest.mark.asyncio
+async def test_tool_run_for_agent_only_failed_no_previous_run(tmp_path: pathlib.Path) -> None:
+    """only_failed=True で直前 run がない場合は early exit（run_id=None・skipped_reason あり）。"""
+    sample = tmp_path / "input.txt"
+    sample.write_text("hello\n", encoding="utf-8")
+
+    result = await pyfltr.mcp_._tool_run_for_agent(
+        paths=[str(sample)],
+        commands=["ec"],
+        only_failed=True,
+    )
+
+    # 直前 run なしなので early exit
+    assert result.run_id is None
+    assert result.exit_code == 0
+    assert not result.failed
+    assert not result.commands
+    assert result.skipped_reason is not None
+    assert len(result.skipped_reason) > 0
