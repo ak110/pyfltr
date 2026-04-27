@@ -197,23 +197,65 @@ jobs:
       # ラグがあり、Docker build 内の `uv tool install pyfltr==X.Y.Z` が
       # 「No solution found」で落ちる事象が継続発生したため、Docker build 直前に
       # 同等条件 (clean cache) で解決可能になるまで polling する。
+      # extras (`[python]`) 込みで解決確認することで、Docker build と同じ要求形を検証する。
+      # さらに ``required_consecutive`` 回連続成功するまで待つことで、
+      # 単発でエッジを掴んだ瞬間だけ通る揺らぎを排除する。
       - name: Wait for PyPI propagation
         run: |
           set -euo pipefail
           version="${{ steps.docker.outputs.version }}"
+          required_consecutive=3
+          success_count=0
           for i in $(seq 1 60); do
-            if uv tool install --reinstall --no-cache "pyfltr==${version}" >/dev/null 2>&1; then
-              echo "pyfltr==${version} is installable from PyPI"
+            if uv tool install --reinstall --no-cache "pyfltr[python]==${version}" >/dev/null 2>&1; then
+              success_count=$((success_count + 1))
+              echo "Attempt ${i}/60: pyfltr[python]==${version} resolvable (${success_count}/${required_consecutive})"
               uv tool uninstall pyfltr >/dev/null 2>&1 || true
-              exit 0
+              if [ "${success_count}" -ge "${required_consecutive}" ]; then
+                echo "pyfltr[python]==${version} is stably installable from PyPI"
+                exit 0
+              fi
+            else
+              if [ "${success_count}" -gt 0 ]; then
+                echo "Attempt ${i}/60: resolution flapped, resetting consecutive counter"
+              else
+                echo "Attempt ${i}/60: pyfltr[python]==${version} not yet resolvable"
+              fi
+              success_count=0
             fi
-            echo "Attempt ${i}/60: pyfltr==${version} not yet resolvable, sleeping 10s..."
             sleep 10
           done
-          echo "Timeout waiting for PyPI propagation of pyfltr==${version}" >&2
+          echo "Timeout waiting for PyPI propagation of pyfltr[python]==${version}" >&2
           exit 1
 
+      # Wait for PyPI propagation を通過しても Docker builder ホストが別エッジを掴んで
+      # 「No solution found」になる事象が稀に残るため、初回失敗時のみ短い間を空けて再試行する。
+      # 1 回目失敗時は ``continue-on-error`` で握りつぶし、再試行 step が結果を引き取る。
       - name: Build and push Docker image
+        id: docker_build
+        continue-on-error: true
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          context: docker
+          file: docker/Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            PYFLTR_VERSION=${{ steps.docker.outputs.version }}
+          tags: |
+            ghcr.io/ak110/pyfltr:${{ steps.docker.outputs.tag }}
+            ghcr.io/ak110/pyfltr:latest
+          secrets: |
+            GITHUB_TOKEN=${{ github.token }}
+
+      - name: Wait before Docker build retry
+        if: steps.docker_build.outcome == 'failure'
+        run: |
+          echo "Initial Docker build failed, waiting 30s before retry..."
+          sleep 30
+
+      - name: Build and push Docker image (retry)
+        if: steps.docker_build.outcome == 'failure'
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
           context: docker
