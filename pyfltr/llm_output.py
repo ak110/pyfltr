@@ -300,6 +300,14 @@ _SCHEMA_HINTS: dict[str, str] = {
         "optional short fix guidance for this specific rule (e.g., textlint sentence-length);"
         " omitted when the rule has no pre-registered hint"
     ),
+    "summary.no_issues": (
+        "counts of statuses that need no follow-up action: succeeded / formatted / skipped."
+        " formatter rewrites are classified here because re-running pyfltr is not required by project policy"
+    ),
+    "summary.needs_action": (
+        "counts of statuses that require follow-up: failed / resolution_failed."
+        " inspect this group alone to decide whether any work remains"
+    ),
     "summary.applied_fixes": (
         "sorted list of file paths whose contents were changed by fix-stage or formatter-stage execution;"
         " omitted when no files were modified"
@@ -522,6 +530,11 @@ def _build_summary_record(
 ) -> dict[str, typing.Any]:
     """ordered_results から集計して summary レコード dict を作る。
 
+    集計カウンタは「対応不要」「対応要」の2グループへネストする。
+    ``no_issues`` 配下に ``succeeded`` / ``formatted`` / ``skipped`` を、
+    ``needs_action`` 配下に ``failed`` / ``resolution_failed`` を並べる。
+    ``formatted`` は本リポジトリの運用上「再実行や追加対応は原則不要」と整理し
+    ``no_issues`` 側に分類する。
     ``fully_excluded_files`` が非空のとき、直接指定されたが exclude パターン・.gitignore
     によって全除外されたファイル一覧を ``fully_excluded_files`` キーに埋め込む。
     exit コードは 0 のままだが、LLM／利用者が「警告ゼロ」と誤解しないよう明示する。
@@ -539,11 +552,15 @@ def _build_summary_record(
     record: dict[str, typing.Any] = {
         "kind": "summary",
         "total": len(ordered_results),
-        "succeeded": counts["succeeded"],
-        "formatted": counts["formatted"],
-        "failed": counts["failed"],
-        "resolution_failed": counts["resolution_failed"],
-        "skipped": counts["skipped"],
+        "no_issues": {
+            "succeeded": counts["succeeded"],
+            "formatted": counts["formatted"],
+            "skipped": counts["skipped"],
+        },
+        "needs_action": {
+            "failed": counts["failed"],
+            "resolution_failed": counts["resolution_failed"],
+        },
         "diagnostics": total_diagnostics,
         "exit": exit_code,
     }

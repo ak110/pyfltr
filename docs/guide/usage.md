@@ -397,8 +397,13 @@ CLIオプション`--output-format`が指定されている場合は環境変数
 - `warning`: pyfltrが検出した設定・実行時の警告（`source`で発生元を識別）
 - `diagnostic`: `(command, file)`単位で集約された診断。個別指摘は`messages[]`配列に格納
 - `command`: 1コマンド1レコードの実行メタ情報
-- `summary`: 最終1行、全体集計。`failed + resolution_failed > 0`のとき英語の`guidance`配列を付与する。
-  集計フィールドは`succeeded` / `formatted` / `failed` / `resolution_failed` / `skipped`の5種別
+- `summary`: 最終1行、全体集計。
+  集計カウンタは`no_issues` / `needs_action`の2グループへネストし、グループ配下に`command.status`値ごとの件数を持つ。
+  `needs_action`配下の`failed` / `resolution_failed`合計が1以上のとき英語の`guidance`配列を付与する
+    - `no_issues`: 対応不要グループ。`succeeded` / `formatted` / `skipped`を含む。
+      `formatted`はformatterが書き換えただけで再実行や追加対応は原則不要なため本グループに分類する
+    - `needs_action`: 対応要グループ。`failed` / `resolution_failed`を含む。
+      本グループの合計だけ見れば残作業の有無を判断できる
 
 `command`レコードの`status`は次の5値を取る。
 
@@ -418,7 +423,7 @@ CLIオプション`--output-format`が指定されている場合は環境変数
 {"kind":"diagnostic","command":"mypy","file":"src/a.py","messages":[{"line":42,"col":5,"msg":"Incompatible return value type"}]}
 {"kind":"command","command":"mypy","type":"linter","status":"failed","files":12,"elapsed":0.8,"diagnostics":1,"rc":1}
 {"kind":"command","command":"ruff-format","type":"formatter","status":"formatted","files":12,"elapsed":0.3,"diagnostics":0,"rc":1}
-{"kind":"summary","total":2,"succeeded":0,"formatted":1,"failed":1,"resolution_failed":0,"skipped":0,"diagnostics":1,"exit":1}
+{"kind":"summary","total":2,"no_issues":{"succeeded":0,"formatted":1,"skipped":0},"needs_action":{"failed":1,"resolution_failed":0},"diagnostics":1,"exit":1}
 ```
 
 stdout / `--output-file`のどちらもストリーミング形式に統一されている。
@@ -508,7 +513,7 @@ smart truncationは次の設定キーで制御する（`pyproject.toml`）。
   既定ではLLMが読み違いやすい非自明フィールドのみに絞った短縮版を出し、
   `-v` / `--verbose`指定時にフル版（各フィールド単位の詳細）へ切り替わる。
   短縮版には`_note`キーでフル版の取得方法を案内する
-- `summary.guidance`: `failed > 0`のときだけ付与される英語の配列。
+- `summary.guidance`: `needs_action`配下の`failed` / `resolution_failed`合計が1以上のときだけ付与される英語の配列。
   `command.retry_command`の参照、`pyfltr run-for-agent --only-failed`の活用、`diagnostic.fix`値の解釈、
   `pyfltr show-run <run_id>`の案内を並べる。
   各コマンド表記には起動時のlauncher（`pyfltr`／`uv run pyfltr`／`uvx pyfltr`）と実run_idが埋め込まれる
@@ -538,7 +543,8 @@ CLIの`run-for-agent`とは異なりJSONL出力がstdoutに流れないため、
     pyfltr run-for-agent
     ```
 
-    末尾のsummary行（`"kind":"summary"`）で`failed`の有無と`diagnostics`数を確認し、問題がなければ完了する。
+    末尾のsummary行（`"kind":"summary"`）の`needs_action`配下を見て対応要件数の有無を確認し、問題がなければ完了する。
+    `needs_action`配下の`failed` / `resolution_failed`がいずれも0であれば残作業は無く、`no_issues`配下の内訳は確認不要。
 
 2. 失敗したツール/ファイルだけ再実行する
 

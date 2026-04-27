@@ -539,7 +539,7 @@ def test_build_summary_record_guidance_falls_back_when_unspecified() -> None:
 
 
 def test_build_summary_record_counts_resolution_failed() -> None:
-    """resolution_failed は failed と区別して集計され、guidance も付与される。"""
+    """resolution_failed は failed と区別して needs_action 配下に集計され、guidance も付与される。"""
     result = pyfltr.command.CommandResult(
         command="shellcheck",
         command_type="linter",
@@ -552,9 +552,76 @@ def test_build_summary_record_counts_resolution_failed() -> None:
         resolution_failed=True,
     )
     record = pyfltr.llm_output._build_summary_record([result], exit_code=1)
-    assert record["failed"] == 0
-    assert record["resolution_failed"] == 1
+    assert record["needs_action"]["failed"] == 0
+    assert record["needs_action"]["resolution_failed"] == 1
     assert "guidance" in record
+
+
+def test_build_summary_record_groups_statuses_into_no_issues_and_needs_action() -> None:
+    """5種別のステータスが no_issues / needs_action の2グループへ正しく振り分けられる。"""
+    succeeded = pyfltr.command.CommandResult(
+        command="mypy",
+        command_type="linter",
+        commandline=["mypy"],
+        returncode=0,
+        has_error=False,
+        files=1,
+        output="",
+        elapsed=0.0,
+    )
+    formatted = pyfltr.command.CommandResult(
+        command="ruff-format",
+        command_type="formatter",
+        commandline=["ruff", "format"],
+        returncode=1,
+        has_error=False,
+        files=1,
+        output="",
+        elapsed=0.0,
+    )
+    skipped = pyfltr.command.CommandResult(
+        command="pylint",
+        command_type="linter",
+        commandline=["pylint"],
+        returncode=None,
+        has_error=False,
+        files=0,
+        output="",
+        elapsed=0.0,
+    )
+    failed = pyfltr.command.CommandResult(
+        command="ruff-check",
+        command_type="linter",
+        commandline=["ruff", "check"],
+        returncode=1,
+        has_error=True,
+        files=1,
+        output="",
+        elapsed=0.0,
+    )
+    resolution_failed = pyfltr.command.CommandResult(
+        command="shellcheck",
+        command_type="linter",
+        commandline=[],
+        returncode=1,
+        has_error=True,
+        files=1,
+        output="",
+        elapsed=0.0,
+        resolution_failed=True,
+    )
+    record = pyfltr.llm_output._build_summary_record(
+        [succeeded, formatted, skipped, failed, resolution_failed],
+        exit_code=1,
+    )
+    assert record["no_issues"] == {"succeeded": 1, "formatted": 1, "skipped": 1}
+    assert record["needs_action"] == {"failed": 1, "resolution_failed": 1}
+    # 旧フラットキーは廃止されているため、トップレベルから消えていることも確認する。
+    assert "succeeded" not in record
+    assert "formatted" not in record
+    assert "failed" not in record
+    assert "resolution_failed" not in record
+    assert "skipped" not in record
 
 
 def test_build_summary_record_no_guidance_on_success() -> None:
@@ -692,3 +759,16 @@ def test_get_schema_hints_full_includes_applied_fixes() -> None:
     """フル版 schema_hints に summary.applied_fixes の説明が含まれる。"""
     full = pyfltr.llm_output.get_schema_hints(full=True)
     assert "summary.applied_fixes" in full
+
+
+def test_get_schema_hints_full_includes_summary_groups() -> None:
+    """フル版 schema_hints に summary.no_issues / summary.needs_action の説明が含まれる。
+
+    短縮版 (``-v`` 無し) には含めず、kind 構造から大意が推測できる前提とトークン消費の抑制方針を維持する。
+    """
+    full = pyfltr.llm_output.get_schema_hints(full=True)
+    assert "summary.no_issues" in full
+    assert "summary.needs_action" in full
+    compact = pyfltr.llm_output.get_schema_hints(full=False)
+    assert "summary.no_issues" not in compact
+    assert "summary.needs_action" not in compact
