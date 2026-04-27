@@ -53,6 +53,10 @@ def default_cache_root() -> pathlib.Path:
     Windows では ``%LOCALAPPDATA%\\pyfltr\\Cache`` になる。環境変数
     ``PYFLTR_CACHE_DIR`` が設定されていればそれを優先する (テストや運用上の
     強制上書き用)。
+
+    プロジェクトローカル (``.pyfltr_cache/`` のようなリポジトリ内ディレクトリ)
+    には保存しない方針を採用する。``.gitignore`` 運用の負担を増やさず、
+    複数プロジェクト横断での参照を可能にするため。
     """
     override = os.environ.get("PYFLTR_CACHE_DIR")
     if override:
@@ -278,6 +282,10 @@ class ArchiveStore:
 
         世代数 / 合計サイズ / 保存期間のいずれかを超過した時点で、古い順
         (run_id 昇順 = ULID タイムスタンプ昇順) に削除する。
+
+        各実行冒頭で同期的に呼び出すことを想定する。アーカイブ規模は通常
+        小さく削除対象も限定的のため、非同期化は実装コストに見合わない。
+        将来的な非同期化の余地は残すが現状は同期実行とする。
         """
         if not self._runs_dir.exists():
             return []

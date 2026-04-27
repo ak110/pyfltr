@@ -418,6 +418,9 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # (``platformdirs.user_cache_dir("pyfltr")``) へ保存する。CLI とは独立した
     # 詳細参照経路 (``show-run`` / ``list-runs``、MCP ツール) からいつでも
     # 全文を参照できるようにする。
+    # 既定で有効にしている (オプトイン化を却下した) 理由: エージェント連携時の
+    # JSONL smart truncation で削られた情報を事後参照できる前提を崩さないため。
+    # 肥大化は ``archive-max-*`` 系の自動削除で抑える。
     "archive": True,
     # 自動クリーンアップの閾値。いずれかを超過した時点で古い順に削除する。
     # 0 以下を指定するとその軸の自動削除は無効化される。

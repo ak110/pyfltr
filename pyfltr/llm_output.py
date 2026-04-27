@@ -61,6 +61,10 @@ def build_command_lines(
     command レコードに ``truncated.diagnostics_total`` を添付する。
     切り詰めは ``result.archived`` が True のときのみ適用し、False の場合は全件出力する
     (アーカイブから復元不能な情報欠落を防ぐため)。
+
+    判定単位はステージごとの ``CommandResult`` 単位とする。fix ステージと
+    通常ステージは同じ ``command`` 名で別 ``CommandResult`` として渡されるため、
+    片方のアーカイブ書き込み失敗が他方の切り詰め可否に影響しない。
     """
     sorted_errors = pyfltr.error_parser.sort_errors(result.errors, config.command_names)
     diagnostic_total = len(sorted_errors)
@@ -99,10 +103,17 @@ def aggregate_diagnostics(
         - ``diagnostic`` レコードのリスト。各要素は
           ``{"kind": "diagnostic", "command": ..., "file": ..., "messages": [...]}``。
           ``messages`` は ``(line, col or 0, rule or "")`` 昇順で並ぶ。
+          rule キーを含めるのは、同一 ``(file, line, col)`` に複数ルールの指摘が
+          重なる場合でも安定した順序を保証するため (rule なし要素は空文字列扱いで
+          先頭側にまとまる)。
         - rule→URL辞書（ハイフン区切りキー ``hint-urls`` として command レコードに埋め込む用）。
           URLが生成できたruleのみ含む。
 
-    同一ruleで異なるURLが現れた場合は最初に出たURLを採用し warning ログを残す。
+    同一 rule に異なる URL が紛れた場合は先に出現した値を採用して warning ログを
+    残す。先勝ち採用にしているのは、URL がプラグインバージョン差や URL 体系切替の
+    過渡期に揺れる可能性があり、ツール単位の `hint-urls` 辞書としては 1 ルール
+    1 URL に束ねる方が LLM 入力時の混乱が少ないため。逸脱は warning ログで気付ける
+    余地を残す。
     集約のキー順は入力順（``sort_errors()`` 済み）を尊重する。
     """
     groups: dict[tuple[str, str], list[pyfltr.error_parser.ErrorLocation]] = {}

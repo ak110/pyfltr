@@ -4,7 +4,14 @@
 FastMCP を用いて 5 ツール（読み取り系 4 件・実行系 1 件）を公開し、
 LLM エージェントが pyfltr の実行と実行アーカイブ参照を直接利用できるようにする。
 
-仕様: docs/development/mcp-server.md
+実行系を ``run-for-agent`` 相当 1 本に絞っているのは、エージェント連携用途では
+``ci`` / ``run`` / ``fast`` の差分を露出する必要が薄く、パラメーター数を抑えて
+MCP スキーマを単純化するため。``no-archive`` / ``no-cache`` / ``config`` /
+``output-format`` などの実行制御フラグも MCP 側へは露出させず、エージェント側の
+スキーマ肥大化と stdio 隔離の複雑化を避ける。
+
+サフィックス付きモジュール名 (``mcp_.py``) はサードパーティ ``mcp`` パッケージ
+との import 衝突事故を予防するため (``warnings_.py`` と同じ方針)。
 """
 
 from __future__ import annotations
@@ -162,6 +169,9 @@ def _resolve_run_id_or_raise(store: pyfltr.archive.ArchiveStore, raw: str) -> st
 
 # _build_server() 内で登録するため、ここではデコレーターを付けない。
 # 公開名は _build_server() で @mcp.tool(name="...") によって明示的に設定する。
+# 公開名はアンダースコア区切り (``list_runs`` 等) を採用する。CLI サブコマンドの
+# ハイフン形式 (``list-runs``) とは異なるが、``@mcp.tool()`` のスキーマ名規則上
+# ハイフンは非推奨で互換性のある FastMCP 経路もアンダースコア前提のため。
 
 
 async def _tool_list_runs(limit: int = 20) -> list[RunSummaryModel]:
@@ -293,6 +303,14 @@ async def _tool_run_for_agent(
 
     # run-for-agent サブコマンド相当の既定値で Namespace を構築する。
     # _apply_subcommand_defaults の結果と同等になるよう各フラグを設定する。
+    # ``run(sys_args=[...])`` 経由で argparse に渡す案は不採用。argparse の
+    # エラーメッセージ出力先 (stderr) を MCP ツール側で整形する制御が困難で、
+    # 引数検証に失敗してもクライアントへエラーを返せない。``Namespace`` を
+    # 直接組み立てれば、引数検証は MCP ツール側 (Pydantic スキーマ) に
+    # 任せられる。
+    # 外部プロセス起動 (``subprocess.run(["pyfltr", "run-for-agent", ...])``)
+    # 案も不採用。stdio 隔離は自然になるが、プロセス管理・``PYFLTR_CACHE_DIR``
+    # 伝搬・``TERM`` シグナル・テスト安定性の面で同一プロセスより不利。
     commands_str: str | None = ",".join(commands) if commands else None
     args = argparse.Namespace(
         targets=[pathlib.Path(p) for p in paths],

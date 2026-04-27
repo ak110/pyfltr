@@ -138,6 +138,12 @@ def resolve_run_id(store: pyfltr.archive.ArchiveStore, raw: str) -> str:
 
     ``latest`` エイリアス → 完全一致 → 前方一致の順に試す。前方一致が複数
     該当した場合は曖昧と判定してエラーとする。
+
+    完全一致のみ受け付ける案は不採用。ULID 26 文字を毎回手入力させる UX が
+    現実的でなく、CLI からの ``show-run`` / ``--from-run`` 利用と MCP 経路の
+    どちらでも先頭数文字での参照ニーズが強いため、前方一致と ``latest``
+    エイリアスを許容する。曖昧時はエラーで明示することで、誤った run の
+    閲覧・再実行を防ぐ。
     """
     run_ids = [s.run_id for s in store.list_runs()]
     if raw == "latest":

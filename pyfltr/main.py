@@ -541,7 +541,10 @@ def _run_impl(
         args.shuffle = False
         args.no_ui = True
 
-    # --from-run は --only-failed との併用が必須
+    # --from-run は --only-failed との併用が必須。
+    # 単独利用を許可しない理由: --from-run 単独では diagnostic 参照は行われず、
+    # 「再実行対象を指定 run の失敗ツールに絞り込む」という本来の意味を持たない。
+    # argparse 段階で拒否することでユーザーに正しい併用形を即座に提示できる。
     if getattr(args, "from_run", None) is not None and not getattr(args, "only_failed", False):
         parser.error("argument --from-run: requires --only-failed")
 
@@ -636,7 +639,15 @@ def run_pipeline(
         ``(exit_code, run_id)`` のタプル。
         ``exit_code`` は 0 = 成功、1 = 失敗。
         ``run_id`` は実行アーカイブが有効で採番に成功した場合の ULID 文字列、
-        無効または採番失敗時は ``None``。
+        無効・採番失敗・early exit 時は ``None``。
+        ``--only-failed`` 指定で「直前 run なし」「失敗ツールなし」「対象ファイル
+        交差が空」のいずれかに該当する場合は early exit として ``(0, None)`` を
+        返す。MCP 経路はこの ``run_id is None`` を「実行スキップ」として識別する。
+
+    タプル戻り値を採用したのは MCP 経路が run_id を確実に取得するため。
+    代替案として MCP 側で ``ArchiveStore.list_runs(limit=1)`` を引く案も検討
+    したが、同一ユーザーキャッシュを参照する並行プロセスがあると別 run の
+    ``run_id`` を誤って拾うリスクがあるため戻り値経由とした。
     """
     output_format = args.output_format or "text"
     output_file: pathlib.Path | None = args.output_file

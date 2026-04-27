@@ -37,6 +37,11 @@ class ToolTargets:
 
     mode="fallback": 診断ファイルなしのツール（pytest 等）で all_files をそのまま使う。
     mode="files": 失敗ファイルのみを対象とする。
+
+    旧形式 (``dict[str, list[pathlib.Path] | None]``) では ``None`` と空リストの
+    違いがコードを読むだけでは不明瞭で、フォールバック実行と除外扱いを取り違える
+    実装ミスを誘発しやすかった。``mode`` 属性で二状態を型として区別し、対象ファイル
+    リスト取得は ``resolve_files()`` の単一経路に集約する。
     """
 
     mode: typing.Literal["fallback", "files"]

@@ -12,6 +12,20 @@
 CLI 引数や出力切替による誤ヒットを防ぐ一方、ツール本体のバージョンは含めない
 (短期破棄前提で許容)。
 
+対象は「ファイル間依存を持たず、設定ファイルも CWD でのみ解決する linter」に限る。
+以下はいずれもキャッシュ対象外とし ``CommandInfo.cacheable=False`` のままにする。
+
+- 書き込み型 formatter — ヒット時にファイル書き換えがスキップされ、
+  ファイル状態と結果が不整合になるため
+- tester — 対象ファイル以外のソース・設定・環境への依存があり、
+  依存解析またはプロジェクト全体 hash が必要で実装コストに見合わない
+- 依存型 linter (``mypy`` / ``ruff-check`` / ``pylint`` 等) — import 先や
+  型情報のキャッシュが必要で、対象ファイル単独の hash では整合性を保てない
+- 外部参照 linter (``shellcheck`` / ``actionlint``) — ``source`` 文や
+  reusable workflow など外部参照を含みうるため安全側で除外
+- 階層型設定を参照する linter (``ec`` / ``markdownlint`` / ``typos``) —
+  階層型の設定解決は静的列挙では網羅できない
+
 自動クリーンアップは期間軸 (``cache-max-age-hours``) のみのシンプルな方針。
 サイズ・世代数の軸は採用しない (短期破棄前提でストレージ暴発リスクが小さいため)。
 
@@ -189,6 +203,11 @@ def is_cacheable(
           外部ファイル参照を伴うフラグを含まない
 
     ``additional_args`` は ``--{command}-args`` の値を shlex 分割したリスト。
+
+    ``--config`` / ``--ignore-path`` 検知時はキャッシュの読み書きを
+    まとめて無効化する。指定されたパスを動的に解釈してキャッシュキーへ
+    含める実装は複雑度が高く、誤った hash 算出による誤ヒットの方が
+    リスクが高いため、安全側に倒して無効化のみに留める。
     """
     info = config.commands.get(command)
     if info is None or not info.cacheable:
