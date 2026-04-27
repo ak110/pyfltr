@@ -928,6 +928,36 @@ def test_ensure_mise_available_passes_stripped_env_to_subprocess(mocker, monkeyp
     assert "/usr/bin" in entries
 
 
+def test_ensure_mise_available_resolution_failure_includes_direct_hint(mocker) -> None:
+    """``mise exec`` 解決失敗時のエラー文面に ``{command}-runner = "direct"`` への切替案内が含まれる。
+
+    mise registry からツールが消失した場合などにユーザーが回避策へ自力で辿り着けるよう、
+    エラー文面で direct 経路への切替案内を提示する。
+    """
+    mocker.patch("shutil.which", return_value="/usr/local/bin/mise")
+    mocker.patch(
+        "subprocess.run",
+        return_value=subprocess.CompletedProcess(
+            ["mise", "exec"],
+            returncode=1,
+            stdout="",
+            stderr="mise ERROR plugin not found: cargo-deny",
+        ),
+    )
+
+    config = pyfltr.config.create_default_config()
+    config.values["bin-runner"] = "mise"
+
+    with pytest.raises(FileNotFoundError) as excinfo:
+        pyfltr.command._resolve_bin_commandline("cargo-deny", config)
+
+    message = str(excinfo.value)
+    # 既存のmise由来情報（ERROR内容）は引き続き含まれる。
+    assert "plugin not found" in message
+    # 回避策の案内が一文として含まれる。
+    assert 'cargo-deny-runner = "direct"' in message
+
+
 def test_ensure_mise_available_passes_stripped_env_to_trust(mocker, monkeypatch) -> None:
     """``mise trust`` 呼び出し時にも PATH から mise tool パスが除外された env が渡る。"""
     monkeypatch.setenv(
@@ -1071,6 +1101,11 @@ def test_bin_tool_spec_structure() -> None:
 
     spec = pyfltr.command._BIN_TOOL_SPEC["shellcheck"]
     assert spec.bin_name == "shellcheck"
+
+    # cargo-denyはmise registryから消失したため、aquaレジストリ経由を既定とする。
+    spec = pyfltr.command._BIN_TOOL_SPEC["cargo-deny"]
+    assert spec.bin_name == "cargo-deny"
+    assert spec.mise_backend == "aqua:EmbarkStudios/cargo-deny"
 
 
 def test_command_result_cached_defaults() -> None:
@@ -1815,6 +1850,46 @@ def test_build_commandline_dotnet_format_via_mise() -> None:
     config = pyfltr.config.create_default_config()
     resolved = pyfltr.command.build_commandline("dotnet-format", config)
     assert resolved.commandline == ["mise", "exec", "dotnet@latest", "--", "dotnet"]
+
+
+def test_build_commandline_cargo_deny_via_mise_uses_aqua_backend() -> None:
+    """cargo-deny の既定設定で aqua backend 経由の tool spec が組まれる。
+
+    mise registry から cargo-deny が消失したため、本家 aqua レジストリ経由の
+    `aqua:EmbarkStudios/cargo-deny` を既定 backend として採用する。
+    """
+    config = pyfltr.config.create_default_config()
+    resolved = pyfltr.command.build_commandline("cargo-deny", config)
+    assert resolved.commandline == ["mise", "exec", "aqua:EmbarkStudios/cargo-deny@latest", "--", "cargo-deny"]
+
+
+def test_build_commandline_version_with_at_sign_used_as_full_tool_spec() -> None:
+    """{command}-version 値が `@` を含むとき tool spec 全体として扱われる。
+
+    既定 backend を上書きしたい利用者向けの拡張。例えば cargo-deny-version に
+    `cargo-deny@latest` を与えると、mise registry 経由の旧挙動を再現できる。
+    """
+    config = pyfltr.config.create_default_config()
+    config.values["cargo-deny-version"] = "cargo-deny@latest"
+    resolved = pyfltr.command.build_commandline("cargo-deny", config)
+    # 既定 backend (aqua:EmbarkStudios/cargo-deny) は適用されず、value がそのまま渡る。
+    assert resolved.commandline == ["mise", "exec", "cargo-deny@latest", "--", "cargo-deny"]
+
+
+def test_build_commandline_version_with_colon_used_as_full_tool_spec() -> None:
+    """{command}-version 値が `:` を含むとき任意 backend 指定として扱われる。"""
+    config = pyfltr.config.create_default_config()
+    config.values["cargo-deny-version"] = "aqua:EmbarkStudios/cargo-deny@0.16.0"
+    resolved = pyfltr.command.build_commandline("cargo-deny", config)
+    assert resolved.commandline == ["mise", "exec", "aqua:EmbarkStudios/cargo-deny@0.16.0", "--", "cargo-deny"]
+
+
+def test_build_commandline_version_simple_keeps_legacy_format() -> None:
+    """単純バージョン文字列の場合は従来通り `<tool>@<version>` で組み立てられる。"""
+    config = pyfltr.config.create_default_config()
+    config.values["shellcheck-version"] = "0.10.0"
+    resolved = pyfltr.command.build_commandline("shellcheck", config)
+    assert resolved.commandline == ["mise", "exec", "shellcheck@0.10.0", "--", "shellcheck"]
 
 
 def test_build_commandline_explicit_mise_for_existing_bin_tool() -> None:

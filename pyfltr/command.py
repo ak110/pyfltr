@@ -168,8 +168,11 @@ _BIN_TOOL_SPEC: dict[str, BinToolSpec] = {
     "cargo-clippy": BinToolSpec(bin_name="cargo", mise_backend="rust"),
     "cargo-check": BinToolSpec(bin_name="cargo", mise_backend="rust"),
     "cargo-test": BinToolSpec(bin_name="cargo", mise_backend="rust"),
-    # cargo-deny は単独バイナリ。mise registry から `cargo-deny` 名で解決する。
-    "cargo-deny": BinToolSpec(bin_name="cargo-deny"),
+    # cargo-deny は単独バイナリ。mise registry から消失したため aqua レジストリ経由を既定とする。
+    # 利用者が registry 経由などへ切り替えたい場合は `cargo-deny-version` に
+    # `cargo-deny@latest` のように `:` または `@` を含む値を渡せば tool spec 全体として扱う
+    # （build_commandline 側の分岐を参照）。
+    "cargo-deny": BinToolSpec(bin_name="cargo-deny", mise_backend="aqua:EmbarkStudios/cargo-deny"),
     # dotnet 系はいずれも `dotnet` バイナリを呼ぶ。mise の dotnet backend で解決する。
     "dotnet-format": BinToolSpec(bin_name="dotnet", mise_backend="dotnet"),
     "dotnet-build": BinToolSpec(bin_name="dotnet", mise_backend="dotnet"),
@@ -389,8 +392,15 @@ def build_commandline(command: str, config: pyfltr.config.Config) -> ResolvedCom
             raise ValueError(f'{command}: mise backend が登録されていないため `{command}-runner = "mise"` は指定できません')
         spec = _BIN_TOOL_SPEC[command]
         version = config.values.get(f"{command}-version", spec.default_version)
-        tool_name = spec.mise_backend or spec.bin_name
-        tool_spec = f"{tool_name}@{version}"
+        # version 値に `:`（backend prefix 区切り）または `@`（tool@version 区切り）を含む場合は
+        # mise の tool spec 全体として扱い、bin_name 接頭辞や既定 backend を付け足さない。
+        # これにより `aqua:Org/Repo@x` のような任意 backend 指定や、既定 backend を上書きする
+        # `cargo-deny@latest` のような registry 経由維持指定を pyfltr 設定だけで表現できる。
+        if ":" in version or "@" in version:
+            tool_spec = version
+        else:
+            tool_name = spec.mise_backend or spec.bin_name
+            tool_spec = f"{tool_name}@{version}"
         return ResolvedCommandline(
             executable="mise",
             prefix=["exec", tool_spec, "--", spec.bin_name],
@@ -468,13 +478,15 @@ def _resolve_bin_commandline(
     ``(executable, prefix)`` を返す。新規利用箇所では ``build_commandline`` を直接使う。
     """
     resolved = build_commandline(command, config)
-    resolved = ensure_mise_available(resolved, config)
+    resolved = ensure_mise_available(resolved, config, command=command)
     return resolved.executable, list(resolved.prefix)
 
 
 def ensure_mise_available(
     resolved: ResolvedCommandline,
     config: pyfltr.config.Config,
+    *,
+    command: str | None = None,
 ) -> ResolvedCommandline:
     """Mise 経由実行時に ``mise exec --version`` の事前チェックを行う（副作用あり）。
 
@@ -483,14 +495,17 @@ def ensure_mise_available(
     config 未信頼が検出された場合は ``mise-auto-trust`` 設定に従い ``mise trust --yes --all``
     を 1 回だけ試行する。失敗時は ``FileNotFoundError`` を送出する。
     direct 実行や js-runner 実行の場合は本関数を素通りで返す。
+
+    ``command`` には pyfltr のコマンド名（``cargo-deny`` 等）を渡す。
+    解決失敗時のエラー文面で ``{command}-runner = "direct"`` への切替案内に用いる。
+    省略時は ``bin_name`` を案内に流用するが、cargo 系のように複数コマンドが
+    同じ ``bin_name`` を共有する場合は誤った案内になるため、極力指定する。
     """
     if resolved.executable != "mise":
         return resolved
-    spec = _BIN_TOOL_SPEC.get(resolved.prefix[3]) if len(resolved.prefix) >= 4 else None
     # bin_name は prefix の末尾。spec が無くても resolved.prefix から取り出す。
     bin_name = resolved.prefix[-1]
     tool_spec = resolved.prefix[1] if len(resolved.prefix) >= 2 else ""
-    del spec  # 上の lookup は将来拡張用に残す。現状は使わない。
 
     if shutil.which("mise") is None:
         # mise 不在 → direct PATH 解決へフォールバック。
@@ -522,7 +537,11 @@ def ensure_mise_available(
                 trusted = True
                 continue
             raise FileNotFoundError(f"mise trust --yes --all: {trust.stderr.strip()}")
-        raise FileNotFoundError(f"mise exec {tool_spec} -- {bin_name}: {stderr.strip()}")
+        # mise registry からのツール消失・バージョン解決失敗などで起動できない場合に、
+        # 利用者が pyfltr 設定だけで救済できるよう direct 経路への切替を案内する。
+        hint_command = command if command is not None else bin_name
+        hint = f'{hint_command}-runner = "direct" を指定するとmiseを介さずPATH上のバイナリを直接実行します'
+        raise FileNotFoundError(f"mise exec {tool_spec} -- {bin_name}: {stderr.strip()}\n{hint}")
 
 
 def _failed_resolution_result(
@@ -1227,7 +1246,7 @@ def _prepare_execution_params(
     # 直接実行を統一的に扱う。mise 経路では事前可用性チェック（mise exec --version）も実行する。
     try:
         resolved = build_commandline(command, config)
-        resolved = ensure_mise_available(resolved, config)
+        resolved = ensure_mise_available(resolved, config, command=command)
     except ValueError as e:
         return _failed_resolution_result(command, command_info, str(e), files=len(targets))
     except FileNotFoundError as e:

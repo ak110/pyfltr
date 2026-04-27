@@ -105,7 +105,7 @@ def _collect_info(command: str, config: pyfltr.config.Config, *, do_check: bool)
 
     if do_check:
         try:
-            checked = pyfltr.command.ensure_mise_available(resolved, config)
+            checked = pyfltr.command.ensure_mise_available(resolved, config, command=command)
         except FileNotFoundError as e:
             base["check_passed"] = False
             base["check_error"] = str(e)

@@ -373,6 +373,18 @@ dotnet-format-version = "9.0.100"
 
 miseモードでは`mise exec <tool>@<version> -- <command>`として展開される。directモードではバージョン指定は無視される。
 
+値に`:`または`@`を含む場合は、miseの[tool spec](https://mise.jdx.dev/dev-tools/#tool-options)全体として扱う。
+`<bin_name>@`接頭辞や既定backendの付与は行われず、値がそのまま`mise exec`に渡る。
+mise registryに無いツールへ切り替えたい場合や、既定backendを上書きしたい場合に利用する。
+
+```toml
+[tool.pyfltr]
+# aquaレジストリ経由で取得（cargo-denyの既定値）
+cargo-deny-version = "aqua:EmbarkStudios/cargo-deny@0.16.0"
+# 既定backend（aqua）を上書きしてmise registry経由を維持する
+cargo-deny-version = "cargo-deny@latest"
+```
+
 ### {command}-runnerによる個別ツール切替 {#command-runner}
 
 ツール単位で起動方式を変更したいときは`{command}-runner`を指定する（4値の意味はページ冒頭の早見表を参照）。
@@ -444,7 +456,8 @@ dotnet-test = true
 
 cargo系・dotnet系はそれぞれ`serial_group = "cargo"` / `serial_group = "dotnet"`で自動的に直列化される
 （同一ワークスペース・solutionを操作する競合を避けるため）。利用者が`--jobs=1`などを指定する必要はない。
-mise backendは既定でcargo系が`rust`、cargo-denyが`cargo-deny`、dotnet系が`dotnet`に設定されている。
+mise backendは既定でcargo系が`rust`、cargo-denyが`aqua:EmbarkStudios/cargo-deny`、dotnet系が`dotnet`に設定されている。
+cargo-denyはmise registryから消失したため本家[aqua](https://aquaproj.github.io/)レジストリ経由を既定とする。
 
 `{command}-path`を明示的に設定した場合はその値が優先され、bin-runnerによる自動解決は無効化される。
 
