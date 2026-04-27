@@ -134,13 +134,8 @@ plugins:
           - guide/recommended-nonpython.md: TypeScript/JS・Rust・.NETプロジェクトの推奨設定例
           - guide/custom-commands.md: カスタムコマンドの設定例集
         開発者向け:
-          - development/index.md: 開発者向けガイドの入口
           - development/development.md: 開発環境構築・ドキュメント・リリース手順
-          - development/architecture.md: 実行パイプライン・モジュール構成・主要設計判断
-          - development/archive-and-cache.md: 実行アーカイブとファイルhashキャッシュの設計
-          - development/jsonl-output.md: JSONL出力スキーマ・rule_url・retry_command・smart truncation・SARIF/GA出力
-          - development/subcommands.md: list-runs / show-runの設計・--only-failed/--from-runの絞り込み戦略
-          - development/mcp-server.md: pyfltr mcpサブコマンドとMCPツール5種・FastMCP・stdio隔離
+          - development/architecture.md: 実行パイプライン・モジュール構成・実行アーカイブ・出力フォーマット・MCPサーバー
 
 markdown_extensions:
   - pymdownx.highlight:
@@ -169,10 +164,5 @@ nav:
       - カスタムコマンド例: guide/custom-commands.md
       - v3.0.0マイグレーションガイド: guide/migration-v3.md
   - 開発者向け:
-      - 概要: development/index.md
       - 開発手順: development/development.md
       - アーキテクチャ概要: development/architecture.md
-      - 実行アーカイブとファイルhashキャッシュ: development/archive-and-cache.md
-      - JSONL出力の設計: development/jsonl-output.md
-      - 詳細参照サブコマンドと再実行支援: development/subcommands.md
-      - MCPサーバー: development/mcp-server.md

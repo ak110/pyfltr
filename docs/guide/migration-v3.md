@@ -154,10 +154,10 @@ Python系linterを一切含まない。
 v3.0.0以降の変更履歴は本ドキュメントでは管理しない（冒頭の方針通り）。
 主な新機能の入口を以下に示す。
 
-- 実行アーカイブ・ファイルhashキャッシュ → [archive-and-cache.md](../development/archive-and-cache.md)
+- 実行アーカイブ・ファイルhashキャッシュ → [architecture.md](../development/architecture.md#archive-and-cache)
 - MCPサーバー（`pyfltr mcp`）→ [usage.md](usage.md)
 - JSONLスキーマ拡張（`command.hint-urls` / `command.retry_command` / smart truncation）
-  → [jsonl-output.md](../development/jsonl-output.md)
+  → [architecture.md](../development/architecture.md#output-formats)
 - `{command}-runner`設定（v3.x系で追加）→ [configuration-tools.md](configuration-tools.md)
 - 失敗のみ再実行（`--only-failed` / `--from-run`）→ [usage.md](usage.md)
 
