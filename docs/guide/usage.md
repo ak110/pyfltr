@@ -191,18 +191,48 @@ pyfltr command-info <tool> [--format text|json] [--check]
 対象ツールの起動方式（runner種別・実行ファイルパス・最終コマンドライン）の解決結果を副作用無しで表示する。
 `pyproject.toml`の`{command}-runner`設定や`bin-runner` / `js-runner`の影響を実環境で確認したいときに使う。
 
+出力はセクション見出し（`## 実行コマンド` / `## ランナー解決` / `## 設定` / `## 環境変数`）で関連項目をまとめる。
+情報が無いセクションは省略される。
+
 ```console
 $ pyfltr command-info cargo-fmt
-command: cargo-fmt
-enabled: True
-runner: bin-runner (default)
-effective_runner: mise
+# cargo-fmt
+
+## 実行コマンド
+
+commandline: mise exec rust@latest -- cargo fmt
 executable: mise
 executable_resolved: /home/user/.local/bin/mise
-commandline: mise exec rust@latest -- cargo
+
+## ランナー解決
+
+runner: bin-runner (default)
+effective_runner: mise
+
+## 設定
+
+enabled: True
 configured_args: fmt
 version: latest
 ```
+
+`{command}-fix-args`が定義されているコマンド（textlint・markdownlintなど）では、`commandline (fix step):`と`commandline (check step):`を併記する。
+fix段とcheck段の二度実行が異なる引数を必要とするためである。
+
+```console
+$ pyfltr command-info textlint
+# textlint
+
+## 実行コマンド
+
+commandline (fix step): pnpx --package textlint --package ... textlint --fix
+commandline (check step): pnpx --package textlint --package ... textlint --format json
+...
+```
+
+textlintの場合、fix段では`@textlint/fixer-formatter`が`compact`をサポートしない。
+このためユーザーが指定した`--format`ペアを除去した形が表示される。
+check段では`textlint-json`設定（既定`true`）により出力フォーマット指定`--format json`が注入される。
 
 主要なオプション。
 

@@ -98,7 +98,18 @@ def _collect_info(command: str, config: pyfltr.config.Config, *, do_check: bool)
     base["resolved"] = True
     base["effective_runner"] = resolved.effective_runner
     base["executable"] = resolved.executable
-    base["commandline"] = resolved.commandline
+    # 実際に実行される argv 全体（対象ファイル抜き）を表示する。
+    # `build_commandline` の戻り値は実行プレフィックスのみで、`{command}-args` 等が反映されないため、
+    # `build_invocation_argv` 経由で通常段の最終 argv を組み立てる。
+    base["commandline"] = pyfltr.command.build_invocation_argv(
+        command, config, list(resolved.commandline), additional_args=[], fix_stage=False
+    )
+    # fix-args が定義されているコマンドでは、fix 段でも argv が異なるため併記する。
+    # textlint は `--format` ペアを除去する特殊経路となる（`build_invocation_argv` 内で処理）。
+    if config.values.get(f"{command}-fix-args"):
+        base["fix_commandline"] = pyfltr.command.build_invocation_argv(
+            command, config, list(resolved.commandline), additional_args=[], fix_stage=True
+        )
     # direct モードでは shutil.which で絶対パスへ解決済み。それ以外（mise / pnpx 等）は
     # 起動コマンド名（``mise`` / ``pnpx`` 等）が PATH 上に存在するかどうかも参考情報として返す。
     base["executable_resolved"] = shutil.which(resolved.executable) or resolved.executable
@@ -119,30 +130,63 @@ def _collect_info(command: str, config: pyfltr.config.Config, *, do_check: bool)
 
 
 def _print_text(info: dict[str, typing.Any]) -> None:
-    """Text 形式の出力。``key: value`` 形式の行を順に並べる。"""
-    print(f"command: {info['command']}")
-    print(f"enabled: {info['enabled']}")
-    print(f"runner: {info['runner']} ({info['runner_source']})")
+    """Text 形式の出力。セクション見出し付きで関連項目をまとめる。
+
+    情報のないセクションは省略する（常に空セクションを並べると分散感が再発するため）。
+    """
+    sections: list[tuple[str, list[str]]] = []
+
+    # ## 実行コマンド: 最終的に実行される argv（対象ファイル抜き）と executable パス。
+    exec_lines: list[str] = []
     if info.get("resolved"):
-        print(f"effective_runner: {info['effective_runner']}")
-        print(f"executable: {info['executable']}")
-        print(f"executable_resolved: {info['executable_resolved']}")
-        print(f"commandline: {' '.join(info['commandline'])}")
-    else:
-        print(f"resolved: false (error: {info.get('error')})")
-    if info.get("configured_path"):
-        print(f"configured_path: {info['configured_path']}")
-    if info.get("configured_args"):
-        print(f"configured_args: {' '.join(info['configured_args'])}")
-    if info.get("version") is not None:
-        print(f"version: {info['version']}")
-    if info.get("dotnet_root"):
-        print(f"DOTNET_ROOT: {info['dotnet_root']}")
-    if "check_passed" in info:
-        print(f"check_passed: {info['check_passed']}")
-        if not info["check_passed"]:
-            print(f"check_error: {info.get('check_error')}")
+        if info.get("fix_commandline"):
+            exec_lines.append(f"commandline (fix step): {' '.join(info['fix_commandline'])}")
+            exec_lines.append(f"commandline (check step): {' '.join(info['commandline'])}")
         else:
-            if info.get("check_commandline") and info["check_commandline"] != info.get("commandline"):
-                print(f"check_commandline: {' '.join(info['check_commandline'])}")
-                print(f"check_effective_runner: {info.get('check_effective_runner')}")
+            exec_lines.append(f"commandline: {' '.join(info['commandline'])}")
+        exec_lines.append(f"executable: {info['executable']}")
+        exec_lines.append(f"executable_resolved: {info['executable_resolved']}")
+    else:
+        exec_lines.append(f"resolved: false (error: {info.get('error')})")
+    sections.append(("## 実行コマンド", exec_lines))
+
+    # ## ランナー解決: runner 種別・解決経緯・check 結果。
+    runner_lines: list[str] = [f"runner: {info['runner']} ({info['runner_source']})"]
+    if info.get("resolved"):
+        runner_lines.append(f"effective_runner: {info['effective_runner']}")
+    if "check_passed" in info:
+        runner_lines.append(f"check_passed: {info['check_passed']}")
+        if not info["check_passed"]:
+            runner_lines.append(f"check_error: {info.get('check_error')}")
+        elif info.get("check_commandline") and info["check_commandline"] != info.get("commandline"):
+            runner_lines.append(f"check_commandline: {' '.join(info['check_commandline'])}")
+            runner_lines.append(f"check_effective_runner: {info.get('check_effective_runner')}")
+    sections.append(("## ランナー解決", runner_lines))
+
+    # ## 設定: ユーザー設定で上書きされた値のみ表示（情報がない場合はセクション省略）。
+    config_lines: list[str] = [f"enabled: {info['enabled']}"]
+    if info.get("configured_path"):
+        config_lines.append(f"configured_path: {info['configured_path']}")
+    if info.get("configured_args"):
+        config_lines.append(f"configured_args: {' '.join(info['configured_args'])}")
+    if info.get("version") is not None:
+        config_lines.append(f"version: {info['version']}")
+    sections.append(("## 設定", config_lines))
+
+    # ## 環境変数: 現状は DOTNET_ROOT のみ（未設定時はセクション省略）。
+    env_lines: list[str] = []
+    if info.get("dotnet_root"):
+        env_lines.append(f"DOTNET_ROOT: {info['dotnet_root']}")
+    if env_lines:
+        sections.append(("## 環境変数", env_lines))
+
+    # 先頭はどの命令の情報かを即座に示すための h1 見出し。
+    print(f"# {info['command']}")
+    for heading, lines in sections:
+        if not lines:
+            continue
+        print()
+        print(heading)
+        print()
+        for line in lines:
+            print(line)

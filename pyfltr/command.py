@@ -1186,6 +1186,58 @@ class _ExecutionParams:
     """
 
 
+def build_invocation_argv(
+    command: str,
+    config: pyfltr.config.Config,
+    commandline_prefix: list[str],
+    additional_args: list[str],
+    *,
+    fix_stage: bool,
+) -> list[str]:
+    """対象ファイル抜きの起動 argv を構築する共通ヘルパー。
+
+    通常段では ``[prefix] + auto_args + {command}-args + {command}-lint-args + additional_args``
+    に構造化出力引数を適用した結果を返す。fix 段では ``{command}-fix-args`` を結合する。
+    fix-args 未定義のコマンドでは fix_stage=True でも通常段と同じ argv を返す。
+
+    textlint の fix 段は ``_execute_textlint_fix`` の Step1 と同じ規則
+    （``--format`` ペアを除去した args + fix-args、auto_args / 構造化出力引数なし）を適用する。
+    実行本体（``_prepare_execution_params`` / ``_execute_textlint_fix``）と
+    ``command-info`` 表示の双方から本ヘルパーへ集約することで、組み立て規則の重複定義を避ける。
+    """
+    user_args: list[str] = list(config.values.get(f"{command}-args", []))
+    extra: list[str] = list(additional_args)
+
+    # textlint の fix Step1 は fixer-formatter が compact 系をサポートしないため、
+    # ユーザー指定の `--format` ペアを一律で除去したうえで fix-args を結合する特殊経路。
+    # auto_args・構造化出力引数も適用しない（fixer 出力の解析は本ステップでは行わないため）。
+    if fix_stage and command == "textlint":
+        fix_args: list[str] = list(config.values.get(f"{command}-fix-args", []))
+        return [
+            *commandline_prefix,
+            *_strip_format_option(user_args),
+            *fix_args,
+            *extra,
+        ]
+
+    fix_args_value: list[str] | None = None
+    if fix_stage:
+        raw = config.values.get(f"{command}-fix-args")
+        fix_args_value = list(raw) if raw is not None else None
+
+    auto_args = _build_auto_args(command, config, user_args + extra)
+    commandline: list[str] = [*commandline_prefix, *auto_args, *user_args]
+    if fix_args_value is not None:
+        commandline.extend(fix_args_value)
+    else:
+        commandline.extend(config.values.get(f"{command}-lint-args", []))
+    commandline.extend(extra)
+    structured_spec = _get_structured_output_spec(command, config)
+    if structured_spec is not None and not (structured_spec.lint_only and fix_args_value is not None):
+        commandline = _apply_structured_output(commandline, structured_spec)
+    return commandline
+
+
 def _prepare_execution_params(
     command: str,
     args: argparse.Namespace,
@@ -1264,23 +1316,17 @@ def _prepare_execution_params(
     additional_args_str = getattr(args, f"{command.replace('-', '_')}_args", "")
     additional_args = shlex.split(additional_args_str) if additional_args_str else []
 
-    # commandline を組み立てる:
-    #   [prefix] + [auto-args] + args + (lint-args or fix-args) + additional_args + targets
-    # auto-args: AUTO_ARGS で定義された自動引数（フラグが True かつ重複なしの場合に挿入）
-    # lint-args (非 fix モードでのみ付与される引数) は textlint の --format compact のように、
-    # lint 実行時にのみ必要なオプションを分離するためのキー。
-    user_args: list[str] = config[f"{command}-args"]
-    auto_args = _build_auto_args(command, config, user_args + additional_args)
-    commandline: list[str] = [*commandline_prefix, *auto_args, *user_args]
-    if fix_args is not None:
-        commandline.extend(fix_args)
-    else:
-        commandline.extend(config.values.get(f"{command}-lint-args", []))
-    commandline.extend(additional_args)
-    # 構造化出力引数の注入（-args とは独立した経路で出力形式を強制する）
-    structured_spec = _get_structured_output_spec(command, config)
-    if structured_spec is not None and not (structured_spec.lint_only and fix_args is not None):
-        commandline = _apply_structured_output(commandline, structured_spec)
+    # 対象ファイル抜きの argv を共通ヘルパーで組み立てる:
+    #   [prefix] + [auto-args] + args + (lint-args or fix-args) + additional_args + structured_output適用
+    # textlint の fix 経路では `_execute_textlint_fix` 側が改めて argv を組み立てるため
+    # ここでの値は実際には使われない（execute_command の dispatch で textlint fix は別経路へ分岐する）。
+    commandline = build_invocation_argv(
+        command,
+        config,
+        commandline_prefix,
+        additional_args,
+        fix_stage=fix_args is not None,
+    )
     # pass-filenames = false のツールはファイル引数を渡さない（tsc 等）
     if config.values.get(f"{command}-pass-filenames", True):
         commandline.extend(str(t) for t in targets)
@@ -2065,18 +2111,12 @@ def _execute_textlint_fix(
     mtime ベースの比較では偽陽性になる。このため内容ハッシュ
     (`_snapshot_file_digests`) で比較している。
     """
-    common_args: list[str] = list(config[f"{command}-args"])
-    lint_args: list[str] = list(config.values.get(f"{command}-lint-args", []))
-    fix_args: list[str] = list(config.values.get(f"{command}-fix-args", []))
     target_strs = [str(t) for t in targets]
 
     # Step1: --format X ペアを除去した共通 args + fix-args で fix 適用
-    step1_common_args = _strip_format_option(common_args)
+    # `build_invocation_argv` の textlint fix 特殊経路と同じ規則を適用する。
     step1_commandline: list[str] = [
-        *commandline_prefix,
-        *step1_common_args,
-        *fix_args,
-        *additional_args,
+        *build_invocation_argv(command, config, commandline_prefix, additional_args, fix_stage=True),
         *target_strs,
     ]
 
@@ -2106,17 +2146,12 @@ def _execute_textlint_fix(
         _warn_protected_identifier_corruption(contents_before, _snapshot_file_texts(targets), protected_identifiers)
 
     # Step2: 通常 lint 実行 (残存違反を取得)
+    # `build_invocation_argv` の通常段経路と同じ規則を適用する
+    # （auto_args は textlint には未登録のため空。構造化出力引数も lint 段なので通常通り適用される）。
     step2_commandline: list[str] = [
-        *commandline_prefix,
-        *common_args,
-        *lint_args,
-        *additional_args,
+        *build_invocation_argv(command, config, commandline_prefix, additional_args, fix_stage=False),
+        *target_strs,
     ]
-    # 構造化出力引数の注入（Step2 は lint フェーズなので lint_only でも適用する）
-    structured_spec = _get_structured_output_spec(command, config)
-    if structured_spec is not None:
-        step2_commandline = _apply_structured_output(step2_commandline, structured_spec)
-    step2_commandline.extend(target_strs)
 
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(step2_commandline)}\n")

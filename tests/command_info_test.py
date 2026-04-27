@@ -20,12 +20,40 @@ def _run(command: str, *, output_format: str = "text", do_check: bool = False, c
 
 
 def test_command_info_text_cargo_fmt(capsys: pytest.CaptureFixture[str]) -> None:
-    """cargo-fmt の既定設定で mise 形式のコマンドラインが表示される。"""
+    """cargo-fmt の既定設定で mise 形式のコマンドラインがセクション付きで表示される。"""
     out = _run("cargo-fmt", capsys=capsys)
-    assert "command: cargo-fmt" in out
+    assert "# cargo-fmt" in out
+    # セクション見出しが付与されること。
+    assert "## 実行コマンド" in out
+    assert "## ランナー解決" in out
+    assert "## 設定" in out
     assert "runner: bin-runner (default)" in out
     assert "effective_runner: mise" in out
     assert "commandline: mise exec rust@latest -- cargo" in out
+    # cargo-fmt は fix-args 未定義のため、fix step は併記されない。
+    assert "commandline (fix step)" not in out
+    assert "commandline (check step)" not in out
+
+
+def test_command_info_text_textlint_includes_fix_step(capsys: pytest.CaptureFixture[str]) -> None:
+    """fix-args 定義済みコマンド (textlint) では fix step / check step が併記される。"""
+    out = _run("textlint", capsys=capsys)
+    assert "commandline (fix step):" in out
+    assert "commandline (check step):" in out
+    fix_line = next(line for line in out.splitlines() if line.startswith("commandline (fix step):"))
+    check_line = next(line for line in out.splitlines() if line.startswith("commandline (check step):"))
+    assert "--fix" in fix_line
+    # check step には構造化出力（textlint-json 既定有効）の `--format json` が注入される。
+    assert "--format json" in check_line
+    # fix step では `--format` ペアが除去され、`--fix` のみが結合される（textlint 特殊経路）。
+    assert "--format" not in fix_line
+
+
+def test_command_info_text_markdownlint_includes_fix_step(capsys: pytest.CaptureFixture[str]) -> None:
+    """markdownlint も fix-args 既定値があるため両ステップが併記される。"""
+    out = _run("markdownlint", capsys=capsys)
+    assert "commandline (fix step):" in out
+    assert "commandline (check step):" in out
 
 
 def test_command_info_json_typos(capsys: pytest.CaptureFixture[str]) -> None:
@@ -36,6 +64,19 @@ def test_command_info_json_typos(capsys: pytest.CaptureFixture[str]) -> None:
     assert info["runner"] == "direct"
     assert info["effective_runner"] == "direct"
     assert info["commandline"][0].endswith("typos") or info["commandline"][0] == "typos"
+    # typos は fix-args 未定義のため fix_commandline キーは含まれない。
+    assert "fix_commandline" not in info
+
+
+def test_command_info_json_textlint_has_fix_commandline(capsys: pytest.CaptureFixture[str]) -> None:
+    """fix-args 定義済みコマンドの json 出力には fix_commandline キーが含まれる。"""
+    out = _run("textlint", output_format="json", capsys=capsys)
+    info = json.loads(out)
+    assert "commandline" in info
+    assert "fix_commandline" in info
+    # fix step は --fix を含み、check step は構造化出力経由で --format json を含む。
+    assert "--fix" in info["fix_commandline"]
+    assert "json" in info["commandline"]
 
 
 def test_command_info_unknown_command(capsys: pytest.CaptureFixture[str]) -> None:
