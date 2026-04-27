@@ -472,13 +472,21 @@ def _parse_textlint_json(output: str) -> list[ErrorLocation]:
             fix_value = "safe" if msg.get("fix") else "none"
             rule = rule_id or None
             hint = _TEXTLINT_RULE_HINTS.get(rule_id) if rule_id else None
+            message = str(msg.get("message", "")).strip()
+            # sentence-length 違反では文の起点・終点が分からないと修正しづらいため、
+            # textlint v12+ が返す `loc` フィールドから範囲表記を組み立てて末尾に併記する。
+            # 他ルールでは違反箇所自体が短く、併記が冗長になるため対象外。
+            if rule_id == "ja-technical-writing/sentence-length":
+                range_text = _format_textlint_loc(msg.get("loc"))
+                if range_text:
+                    message = f"{message} {range_text}"
             results.append(
                 ErrorLocation(
                     file=pyfltr.paths.to_cwd_relative(file_path),
                     line=line,
                     col=col,
                     command="textlint",
-                    message=str(msg.get("message", "")).strip(),
+                    message=message,
                     rule=rule,
                     severity=_normalize_severity(msg.get("severity")),
                     fix=fix_value,
@@ -486,6 +494,30 @@ def _parse_textlint_json(output: str) -> list[ErrorLocation]:
                 )
             )
     return results
+
+
+def _format_textlint_loc(loc: typing.Any) -> str:
+    """Textlint の ``loc`` フィールドから ``(L17:1〜23)`` 形式の範囲文字列を組み立てる。
+
+    1 行内で完結する場合は ``(Lstart:start_col〜end_col)``、
+    複数行にまたがる場合は ``(Lstart:start_col〜Lend:end_col)`` を返す。
+    ``loc`` が無い・形式が違う場合は空文字列を返す（古い textlint や未提供ルールへの後方互換）。
+    """
+    if not isinstance(loc, dict):
+        return ""
+    start = loc.get("start")
+    end = loc.get("end")
+    if not isinstance(start, dict) or not isinstance(end, dict):
+        return ""
+    start_line = start.get("line")
+    start_col = start.get("column")
+    end_line = end.get("line")
+    end_col = end.get("column")
+    if not all(isinstance(v, int) for v in (start_line, start_col, end_line, end_col)):
+        return ""
+    if start_line == end_line:
+        return f"(L{start_line}:{start_col}〜{end_col})"
+    return f"(L{start_line}:{start_col}〜L{end_line}:{end_col})"
 
 
 def _parse_typos_jsonl(output: str) -> list[ErrorLocation]:

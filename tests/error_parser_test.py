@@ -1,5 +1,7 @@
 """error_parserのテストコード。"""
 
+# pylint: disable=too-many-lines
+
 import json
 import pathlib
 
@@ -542,6 +544,99 @@ def test_parse_textlint_json_hint_for_known_rules() -> None:
         )
         errors = pyfltr.error_parser.parse_errors("textlint", output)
         assert errors[0].hint is not None, f"{rule_id} にヒントが付与されていない"
+
+
+def test_parse_textlint_json_sentence_length_appends_range_single_line() -> None:
+    """sentence-length 違反では loc から 1 行内範囲を message 末尾へ併記する。"""
+    output = json.dumps(
+        [
+            {
+                "filePath": "a.md",
+                "messages": [
+                    {
+                        "line": 17,
+                        "column": 1,
+                        "message": "Line 17 sentence length(134) exceeds...",
+                        "ruleId": "ja-technical-writing/sentence-length",
+                        "severity": 2,
+                        "loc": {"start": {"line": 17, "column": 1}, "end": {"line": 17, "column": 23}},
+                    }
+                ],
+            }
+        ]
+    )
+    errors = pyfltr.error_parser.parse_errors("textlint", output)
+    assert len(errors) == 1
+    assert errors[0].message.endswith("(L17:1〜23)")
+
+
+def test_parse_textlint_json_sentence_length_appends_range_multi_line() -> None:
+    """複数行にまたがる場合は ``(Lstart:col〜Lend:col)`` 形式で併記する。"""
+    output = json.dumps(
+        [
+            {
+                "filePath": "a.md",
+                "messages": [
+                    {
+                        "line": 17,
+                        "column": 1,
+                        "message": "Long sentence",
+                        "ruleId": "ja-technical-writing/sentence-length",
+                        "severity": 2,
+                        "loc": {"start": {"line": 17, "column": 1}, "end": {"line": 19, "column": 5}},
+                    }
+                ],
+            }
+        ]
+    )
+    errors = pyfltr.error_parser.parse_errors("textlint", output)
+    assert errors[0].message.endswith("(L17:1〜L19:5)")
+
+
+def test_parse_textlint_json_other_rules_do_not_get_range() -> None:
+    """sentence-length 以外のルールでは loc があっても範囲は付与されない。"""
+    output = json.dumps(
+        [
+            {
+                "filePath": "a.md",
+                "messages": [
+                    {
+                        "line": 1,
+                        "column": 1,
+                        "message": "Original message",
+                        "ruleId": "ja-technical-writing/max-ten",
+                        "severity": 2,
+                        "loc": {"start": {"line": 1, "column": 1}, "end": {"line": 1, "column": 5}},
+                    }
+                ],
+            }
+        ]
+    )
+    errors = pyfltr.error_parser.parse_errors("textlint", output)
+    assert errors[0].message == "Original message"
+
+
+def test_parse_textlint_json_sentence_length_without_loc() -> None:
+    """`loc` フィールドが欠落していても従来通りパースでき、範囲表記は付かない。"""
+    output = json.dumps(
+        [
+            {
+                "filePath": "a.md",
+                "messages": [
+                    {
+                        "line": 17,
+                        "column": 1,
+                        "message": "Long sentence",
+                        "ruleId": "ja-technical-writing/sentence-length",
+                        "severity": 2,
+                    }
+                ],
+            }
+        ]
+    )
+    errors = pyfltr.error_parser.parse_errors("textlint", output)
+    assert len(errors) == 1
+    assert errors[0].message == "Long sentence"
 
 
 def test_parse_typos_jsonl() -> None:
