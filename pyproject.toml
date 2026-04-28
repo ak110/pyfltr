@@ -2,7 +2,7 @@
 name = "pyfltr"
 dynamic = ["version"]
 description = "Python Formatters, Linters, and Testers Runner."
-authors = [{ name = "aki.", email = "mark@aur.ll.to" }]
+authors = [{ name = "aki.", email = "aki@tqzh.tk" }]
 requires-python = ">=3.11,<4.0"
 readme = "README.md"
 license = {text = "MIT"}
