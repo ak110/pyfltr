@@ -66,6 +66,17 @@ class DiagnosticMessageModel(pydantic.BaseModel):
 
     line: int | None = pydantic.Field(default=None, description="行番号。")
     col: int | None = pydantic.Field(default=None, description="列番号。")
+    end_line: int | None = pydantic.Field(
+        default=None,
+        description="違反範囲の終端行。範囲を返すツール（現状textlintのみ）で設定される。",
+    )
+    end_col: int | None = pydantic.Field(
+        default=None,
+        description=(
+            "違反範囲の終端列。範囲を返すツール（現状textlintのみ）で設定される。"
+            "textlintはノード先頭からの累積位置を返す仕様で、行内オフセットではない。"
+        ),
+    )
     rule: str | None = pydantic.Field(default=None, description="ルール識別子。")
     severity: str | None = pydantic.Field(
         default=None,
@@ -100,17 +111,14 @@ class RunOverviewModel(pydantic.BaseModel):
 class CommandDiagnosticsModel(pydantic.BaseModel):
     """コマンドの詳細情報（tool.json + diagnostics.jsonl 全件）。``show_run_diagnostics`` ツールの戻り値。
 
-    ``hint_urls`` はPython内部では ``hint_urls`` 属性で扱うが、外部スキーマ（MCPクライアント向けの
-    シリアライズ結果）では ``hint-urls`` キーで出す。serialization_alias のみを設定することで、
-    入力側は従来通り属性名でコンストラクトできつつ、出力側はJSONL本体・``tool.json`` と
-    キー名を揃えられる。
+    JSONL 本体・``tool.json`` の双方で ``hint_urls`` キー（アンダースコア区切り）を採用するため、
+    Pydantic 側でも属性名・出力キー名ともに ``hint_urls`` で揃える。
     """
 
     command_meta: dict[str, typing.Any] = pydantic.Field(description="コマンドの meta 情報（tool.json の内容）。")
     diagnostics: list[DiagnosticModel] = pydantic.Field(description="diagnostic の全件一覧。")
     hint_urls: dict[str, str] | None = pydantic.Field(
         default=None,
-        serialization_alias="hint-urls",
         description="rule ID → ドキュメントURLの辞書。URLを生成できた rule のみ含める。",
     )
 
@@ -224,7 +232,7 @@ async def _tool_show_run_diagnostics(run_id: str, commands: list[str]) -> list[C
     """指定 run・コマンドの tool.json と diagnostics.jsonl 全件を返す。
 
     ``diagnostics`` は ``(command, file)`` 単位の集約形式で、個別指摘は ``messages`` に並ぶ。
-    rule→URL辞書 ``hint-urls`` は tool.json 由来でそのまま返す。
+    rule→URL辞書 ``hint_urls`` は tool.json 由来でそのまま返す。
     ``commands`` に複数を指定すると、要素ごとの結果を入力順で返す。
 
     対応CLI: ``pyfltr show-run <run_id> --commands <name1>,<name2>``
@@ -248,7 +256,7 @@ async def _tool_show_run_diagnostics(run_id: str, commands: list[str]) -> list[C
             )
             for d in diagnostics_raw
         ]
-        hint_urls = command_meta.get("hint-urls") if isinstance(command_meta.get("hint-urls"), dict) else None
+        hint_urls = command_meta.get("hint_urls") if isinstance(command_meta.get("hint_urls"), dict) else None
         results.append(CommandDiagnosticsModel(command_meta=command_meta, diagnostics=diagnostics, hint_urls=hint_urls))
     return results
 

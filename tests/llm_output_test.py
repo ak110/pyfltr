@@ -162,7 +162,7 @@ def test_build_warning_record_with_hint() -> None:
 
 
 def test_build_command_record_includes_hint_urls_when_provided() -> None:
-    """hint_urls を与えると tool レコードにハイフン区切りキーで埋め込まれる。"""
+    """hint_urls を与えると tool レコードに ``hint_urls`` キーで埋め込まれる。"""
     result = pyfltr.command.CommandResult(
         command="ruff-check",
         command_type="linter",
@@ -178,11 +178,11 @@ def test_build_command_record_includes_hint_urls_when_provided() -> None:
         diagnostics=1,
         hint_urls={"F401": "https://docs.astral.sh/ruff/rules/F401/"},
     )
-    assert record["hint-urls"] == {"F401": "https://docs.astral.sh/ruff/rules/F401/"}
+    assert record["hint_urls"] == {"F401": "https://docs.astral.sh/ruff/rules/F401/"}
 
 
 def test_build_command_record_omits_hint_urls_when_empty() -> None:
-    """hint_urls が None / 空の場合は `hint-urls` キー自体を出さない。"""
+    """hint_urls が None / 空の場合は `hint_urls` キー自体を出さない。"""
     result = pyfltr.command.CommandResult(
         command="mypy",
         command_type="linter",
@@ -195,8 +195,8 @@ def test_build_command_record_omits_hint_urls_when_empty() -> None:
     )
     record_none = pyfltr.llm_output._build_command_record(result, diagnostics=0, hint_urls=None)
     record_empty = pyfltr.llm_output._build_command_record(result, diagnostics=0, hint_urls={})
-    assert "hint-urls" not in record_none
-    assert "hint-urls" not in record_empty
+    assert "hint_urls" not in record_none
+    assert "hint_urls" not in record_empty
 
 
 def test_build_command_record_retry_command_included() -> None:
@@ -413,7 +413,8 @@ def test_build_header_record_default_compact() -> None:
     assert "command.cached_elapsed" in hints
     assert "command.retry_command" in hints
     assert "messages[].fix" in hints
-    assert "-v" in hints["_note"] or "verbose" in hints["_note"]
+    # 短縮版自身の使い方説明はトークン効率を下げるため埋め込まない（フル版の取得方法はドキュメントに委ねる）。
+    assert "_note" not in hints
     # フル版固有のキーは出さない (同名衝突しないよう別体系)
     assert "diagnostic.messages" not in hints
 
@@ -428,7 +429,7 @@ def test_build_header_record_verbose_has_full_hints() -> None:
     assert isinstance(hints, dict)
     assert "diagnostic.messages" in hints
     assert "diagnostic.messages.fix" in hints
-    assert "command.hint-urls" in hints
+    assert "command.hint_urls" in hints
     assert "command.retry_command" in hints
     assert "command.cached_elapsed" in hints
     assert "header.run_id" in hints
@@ -465,7 +466,7 @@ def test_build_lines_verbose_flag_switches_hints() -> None:
     header_default = json.loads(lines_default[0])
     assert header_default["commands"] == ["mypy", "ruff-check"]
     assert "commands_count" not in header_default
-    assert "_note" in header_default["schema_hints"]
+    assert "_note" not in header_default["schema_hints"]
     assert "diagnostic.messages" not in header_default["schema_hints"]
 
     lines_verbose = pyfltr.llm_output.build_lines(
@@ -483,7 +484,8 @@ def test_get_schema_hints_public_api() -> None:
     compact = pyfltr.llm_output.get_schema_hints(full=False)
     assert "diagnostic.messages" in full
     assert "diagnostic.messages" not in compact
-    assert "_note" in compact
+    # 短縮版は使い方案内を含まない（フル版の取得方法はドキュメントに委ねる）。
+    assert "_note" not in compact
     # コピーであること
     full["diagnostic.messages"] = "modified"
     assert pyfltr.llm_output.get_schema_hints(full=True)["diagnostic.messages"] != "modified"
@@ -539,7 +541,7 @@ def test_build_summary_record_guidance_falls_back_when_unspecified() -> None:
 
 
 def test_build_summary_record_counts_resolution_failed() -> None:
-    """resolution_failed は failed と区別して needs_action 配下に集計され、guidance も付与される。"""
+    """resolution_failed は failed と区別して commands_summary.needs_action 配下に集計され、guidance も付与される。"""
     result = pyfltr.command.CommandResult(
         command="shellcheck",
         command_type="linter",
@@ -552,13 +554,13 @@ def test_build_summary_record_counts_resolution_failed() -> None:
         resolution_failed=True,
     )
     record = pyfltr.llm_output._build_summary_record([result], exit_code=1)
-    assert record["needs_action"]["failed"] == 0
-    assert record["needs_action"]["resolution_failed"] == 1
+    assert record["commands_summary"]["needs_action"]["failed"] == 0
+    assert record["commands_summary"]["needs_action"]["resolution_failed"] == 1
     assert "guidance" in record
 
 
 def test_build_summary_record_groups_statuses_into_no_issues_and_needs_action() -> None:
-    """5種別のステータスが no_issues / needs_action の2グループへ正しく振り分けられる。"""
+    """5種別のステータスが commands_summary.no_issues / needs_action の2グループへ正しく振り分けられる。"""
     succeeded = pyfltr.command.CommandResult(
         command="mypy",
         command_type="linter",
@@ -614,9 +616,12 @@ def test_build_summary_record_groups_statuses_into_no_issues_and_needs_action() 
         [succeeded, formatted, skipped, failed, resolution_failed],
         exit_code=1,
     )
-    assert record["no_issues"] == {"succeeded": 1, "formatted": 1, "skipped": 1}
-    assert record["needs_action"] == {"failed": 1, "resolution_failed": 1}
-    # 旧フラットキーは廃止されているため、トップレベルから消えていることも確認する。
+    commands_summary = record["commands_summary"]
+    assert commands_summary["no_issues"] == {"succeeded": 1, "formatted": 1, "skipped": 1}
+    assert commands_summary["needs_action"] == {"failed": 1, "resolution_failed": 1}
+    # 旧フラットキー・直下のグループキーは廃止されているため、トップレベルから消えていることも確認する。
+    assert "no_issues" not in record
+    assert "needs_action" not in record
     assert "succeeded" not in record
     assert "formatted" not in record
     assert "failed" not in record
@@ -676,6 +681,40 @@ def test_build_summary_record_omits_fully_excluded_files_when_empty() -> None:
     for value in values:
         record = pyfltr.llm_output._build_summary_record([result], exit_code=0, fully_excluded_files=value)
         assert "fully_excluded_files" not in record
+
+
+def test_build_message_dict_includes_end_line_and_end_col() -> None:
+    """end_line / end_col が設定されていれば messages[] に出力される。"""
+    error = pyfltr.error_parser.ErrorLocation(
+        file="a.md",
+        line=17,
+        col=1,
+        command="textlint",
+        message="Long sentence (L17:1〜23)",
+        rule="ja-technical-writing/sentence-length",
+        end_line=17,
+        end_col=23,
+    )
+    record = pyfltr.llm_output._build_message_dict(error)
+    assert record["end_line"] == 17
+    assert record["end_col"] == 23
+    # フィールド順は line → col → end_line → end_col → rule の順
+    keys = list(record.keys())
+    assert keys.index("col") < keys.index("end_line") < keys.index("end_col") < keys.index("rule")
+
+
+def test_build_message_dict_omits_end_line_and_end_col_when_none() -> None:
+    """end_line / end_col が None の場合はキーごと省略する。"""
+    error = pyfltr.error_parser.ErrorLocation(
+        file="a.py",
+        line=10,
+        col=5,
+        command="mypy",
+        message="x",
+    )
+    record = pyfltr.llm_output._build_message_dict(error)
+    assert "end_line" not in record
+    assert "end_col" not in record
 
 
 def test_build_message_dict_includes_hint() -> None:
@@ -762,13 +801,15 @@ def test_get_schema_hints_full_includes_applied_fixes() -> None:
 
 
 def test_get_schema_hints_full_includes_summary_groups() -> None:
-    """フル版 schema_hints に summary.no_issues / summary.needs_action の説明が含まれる。
+    """フル版 schema_hints に summary.commands_summary 配下の説明が含まれる。
 
     短縮版 (``-v`` 無し) には含めず、kind 構造から大意が推測できる前提とトークン消費の抑制方針を維持する。
     """
     full = pyfltr.llm_output.get_schema_hints(full=True)
-    assert "summary.no_issues" in full
-    assert "summary.needs_action" in full
+    assert "summary.commands_summary" in full
+    assert "summary.commands_summary.no_issues" in full
+    assert "summary.commands_summary.needs_action" in full
     compact = pyfltr.llm_output.get_schema_hints(full=False)
-    assert "summary.no_issues" not in compact
-    assert "summary.needs_action" not in compact
+    assert "summary.commands_summary" not in compact
+    assert "summary.commands_summary.no_issues" not in compact
+    assert "summary.commands_summary.needs_action" not in compact

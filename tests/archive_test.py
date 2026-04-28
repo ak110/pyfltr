@@ -62,7 +62,7 @@ def test_write_tool_result(tmp_path: pathlib.Path) -> None:
 
 
 def test_write_tool_result_stores_hint_urls(tmp_path: pathlib.Path) -> None:
-    """tool.json に hint-urls が保存され、diagnostics.jsonl の messages は rule を保持する。"""
+    """tool.json に hint_urls が保存され、diagnostics.jsonl の messages は rule を保持する。"""
     store = _make_store(tmp_path)
     run_id = store.start_run(commands=["ruff-check"])
 
@@ -82,17 +82,17 @@ def test_write_tool_result_stores_hint_urls(tmp_path: pathlib.Path) -> None:
     assert "rule_url" not in entries[0]["messages"][0]
 
     tool_meta = json.loads((tool_dir / "tool.json").read_text(encoding="utf-8"))
-    assert tool_meta["hint-urls"] == {"F401": "https://docs.astral.sh/ruff/rules/F401/"}
+    assert tool_meta["hint_urls"] == {"F401": "https://docs.astral.sh/ruff/rules/F401/"}
 
 
 def test_write_tool_result_omits_hint_urls_when_no_urls(tmp_path: pathlib.Path) -> None:
-    """rule_url を持たない指摘のみなら tool.json に hint-urls キーを出さない。"""
+    """rule_url を持たない指摘のみなら tool.json に hint_urls キーを出さない。"""
     store = _make_store(tmp_path)
     run_id = store.start_run(commands=["mypy"])
     result = _make_result("mypy", returncode=1, errors=[_make_error("mypy", "a.py", 1, "boom")])
     store.write_tool_result(run_id, result)
     tool_meta = json.loads((tmp_path / "runs" / run_id / "tools" / "mypy" / "tool.json").read_text(encoding="utf-8"))
-    assert "hint-urls" not in tool_meta
+    assert "hint_urls" not in tool_meta
 
 
 def test_finalize_run(tmp_path: pathlib.Path) -> None:

@@ -51,7 +51,7 @@ def test_build_lines_supported_tool_diagnostics(default_config):
     assert parsed[2]["diagnostics"] == 2
     assert parsed[2]["status"] == "failed"
     assert parsed[3]["diagnostics"] == 2
-    assert parsed[3]["needs_action"]["failed"] == 1
+    assert parsed[3]["commands_summary"]["needs_action"]["failed"] == 1
 
 
 def test_build_lines_warnings_prepended(default_config):
@@ -93,7 +93,7 @@ def test_build_lines_unsupported_tool_only(default_config):
     assert parsed[0]["status"] == "formatted"
     assert parsed[0]["diagnostics"] == 0
     assert "message" not in parsed[0]
-    assert parsed[1]["no_issues"]["formatted"] == 1
+    assert parsed[1]["commands_summary"]["no_issues"]["formatted"] == 1
 
 
 def test_build_lines_mixed_order(default_config):
@@ -509,7 +509,7 @@ def test_write_jsonl_footer_no_warnings(capsys):
     parsed = [json.loads(line) for line in captured.out.splitlines()]
     assert len(parsed) == 1
     assert parsed[0]["kind"] == "summary"
-    assert parsed[0]["no_issues"]["succeeded"] == 1
+    assert parsed[0]["commands_summary"]["no_issues"]["succeeded"] == 1
 
 
 # ---------------------------------------------------------------------------

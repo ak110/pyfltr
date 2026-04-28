@@ -201,14 +201,13 @@ JSONLはLLMエージェントが入力として読むケースが多いため、
   `command.retry_command`の参照、`--only-failed`再実行、`diagnostic.fix`の解釈、
   `pyfltr show-run <run_id>`の案内を並べる
 
-### hint-urls集約
+### hint_urls集約
 
-ルールドキュメントURLは`diagnostic`本体に含めず、`command`レコード末尾の`hint-urls`辞書に集約する。
+ルールドキュメントURLは`diagnostic`本体に含めず、`command`レコード末尾の`hint_urls`辞書に集約する。
 キーはrule ID、値はURL。
 URLを生成できたruleのみ含み、1件も無ければフィールドごと省略する。
-外部に出るキー名は常に`hint-urls`（ハイフン）で統一する。
-Python/Pydantic内部では`hint_urls`（アンダースコア）で扱い、`mcp_.py`の`ToolDiagnosticsModel`は
-Pydanticのaliasで吸収する。
+JSONL本体・`tool.json`・Pydanticモデルのいずれもキー名を`hint_urls`（アンダースコア）で統一する。
+JSON consumerが`record["hint_urls"]`へドット記法アクセスできるようにするため、ハイフンは採用しない。
 
 ### retry_command
 

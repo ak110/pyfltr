@@ -637,6 +637,68 @@ def test_parse_textlint_json_sentence_length_without_loc() -> None:
     errors = pyfltr.error_parser.parse_errors("textlint", output)
     assert len(errors) == 1
     assert errors[0].message == "Long sentence"
+    # `loc` 欠落時は end_line / end_col も None のまま
+    assert errors[0].end_line is None
+    assert errors[0].end_col is None
+
+
+def test_parse_textlint_json_populates_end_position() -> None:
+    """`loc.end` から end_line / end_col を ErrorLocation に詰める。
+
+    ルール種別を問わず、`loc.end` があれば共通で取り込む。
+    """
+    output = json.dumps(
+        [
+            {
+                "filePath": "a.md",
+                "messages": [
+                    {
+                        "line": 17,
+                        "column": 1,
+                        "message": "Long sentence",
+                        "ruleId": "ja-technical-writing/sentence-length",
+                        "severity": 2,
+                        "loc": {"start": {"line": 17, "column": 1}, "end": {"line": 17, "column": 23}},
+                    },
+                    {
+                        "line": 5,
+                        "column": 1,
+                        "message": "x",
+                        "ruleId": "ja-technical-writing/max-ten",
+                        "severity": 2,
+                        "loc": {"start": {"line": 5, "column": 1}, "end": {"line": 6, "column": 4}},
+                    },
+                ],
+            }
+        ]
+    )
+    errors = pyfltr.error_parser.parse_errors("textlint", output)
+    assert len(errors) == 2
+    assert (errors[0].end_line, errors[0].end_col) == (17, 23)
+    assert (errors[1].end_line, errors[1].end_col) == (6, 4)
+
+
+def test_parse_textlint_json_sentence_length_hint_includes_col_note() -> None:
+    """sentence-length のヒントには `col` が累積位置である旨の注記が含まれる。"""
+    output = json.dumps(
+        [
+            {
+                "filePath": "a.md",
+                "messages": [
+                    {
+                        "line": 1,
+                        "column": 1,
+                        "message": "Long",
+                        "ruleId": "ja-technical-writing/sentence-length",
+                        "severity": 2,
+                    }
+                ],
+            }
+        ]
+    )
+    errors = pyfltr.error_parser.parse_errors("textlint", output)
+    assert errors[0].hint is not None
+    assert "累積位置" in errors[0].hint
 
 
 def test_parse_typos_jsonl() -> None:

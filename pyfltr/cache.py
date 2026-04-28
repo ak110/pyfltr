@@ -105,9 +105,10 @@ class CacheStore:
         # JSONL / archive スキーマを変えた際の一括無効化用識別子。
         # archive / diagnostics の表現 (aggregated messages + hint-urls) 切替時に
         # v2 に更新した。textlint 向けの ErrorLocation.hint 追加に合わせて v3 に更新した。
+        # summary.commands_summary 階層化・hint_urls リネーム・textlint end_line/end_col 追加で v4 に更新した。
         # `pyproject.toml` の版数は `hatch-vcs` 管理でMAJORを手動更新できないため、
         # 互換性を落とす際はこの定数を更新してキャッシュを一括無効化する。
-        hasher.update(b"schema=v3\n")
+        hasher.update(b"schema=v4\n")
         hasher.update(f"command={command}\n".encode())
         hasher.update(f"fix_stage={int(fix_stage)}\n".encode())
         hasher.update(f"structured={int(structured_output)}\n".encode())

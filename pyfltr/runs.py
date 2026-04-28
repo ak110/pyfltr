@@ -324,9 +324,9 @@ def _print_tool_detail_text(
             print(f"{key}: {tool_meta[key]}")
     if tool_meta.get("commandline"):
         print(f"commandline: {tool_meta['commandline']}")
-    hint_urls = tool_meta.get("hint-urls")
+    hint_urls = tool_meta.get("hint_urls")
     if isinstance(hint_urls, dict) and hint_urls:
-        print("hint-urls:")
+        print("hint_urls:")
         for rule, url in hint_urls.items():
             print(f"  {rule}: {url}")
     print("")

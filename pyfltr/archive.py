@@ -149,7 +149,7 @@ class ArchiveStore:
         ``diagnostics.jsonl`` は ``(command, file)`` 単位の集約形式で保存する。各行は
         ``{"kind": "diagnostic", "command": ..., "file": ..., "messages": [...]}`` 構造で
         ``llm_output.aggregate_diagnostics()`` の出力と同形。
-        ``tool.json`` には ``hint-urls``（ハイフンキー）を空でないときに限り含める。
+        ``tool.json`` には ``hint_urls`` を空でないときに限り含める。
         """
         tool_dir = self._runs_dir / run_id / "tools" / pyfltr.paths.sanitize_command_name(result.command)
         tool_dir.mkdir(parents=True, exist_ok=True)
@@ -172,7 +172,7 @@ class ArchiveStore:
             "commandline": result.commandline,
         }
         if hint_urls:
-            meta["hint-urls"] = dict(hint_urls)
+            meta["hint_urls"] = dict(hint_urls)
         if result.retry_command is not None:
             meta["retry_command"] = result.retry_command
         (tool_dir / _TOOL_META_FILENAME).write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")

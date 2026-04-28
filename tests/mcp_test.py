@@ -353,8 +353,8 @@ async def test_tool_run_for_agent_returns_schema_hints(tmp_path: pathlib.Path) -
 
     assert isinstance(result.schema_hints, dict)
     assert len(result.schema_hints) > 0
-    # 短縮版なので _note が含まれる
-    assert "_note" in result.schema_hints
+    # 短縮版は自身の使い方案内を含まない（フル版の取得方法はドキュメントに委ねる）。
+    assert "_note" not in result.schema_hints
 
 
 @pytest.mark.asyncio

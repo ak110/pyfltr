@@ -42,12 +42,34 @@ class ErrorLocation:
     JSON Lines 出力では ``messages[].hint`` として任意フィールドで出力され、
     text 出力ではメッセージ行の直下にインデント付きで「ヒント: ...」として表示される。
     """
+    end_line: int | None = None
+    """違反範囲の終端行 (None はツールが範囲を返さない場合)。
 
+    現状はtextlint v12+ の ``loc.end.line`` のみが詰める。pyright・biome等にも将来拡張可。
+    """
+    end_col: int | None = None
+    """違反範囲の終端列 (None はツールが範囲を返さない場合)。
+
+    textlintの ``column`` 系はノード先頭からの累積位置を返す仕様のため、本フィールドも
+    同様の系で出力する。行内オフセットへの正規化はファイル本文の参照を要するため行わない。
+    """
+
+
+_TEXTLINT_COL_NOTE = (
+    "colはテキストノード先頭からの累積位置（行内オフセットではない）。"
+    "対応する位置はmessage内の範囲表記`(L…:…〜…)`またはmessages[].end_line/end_colを参照"
+)
+"""textlintの`col`が行内オフセットではない旨をエージェントへ伝える共通注記。
+
+textlintは違反箇所をテキストノード先頭からの累積位置で返す仕様のため、`col=5853`のような大値が
+出る。pyfltrはファイル本文を読まずにJSONを変換するため、行内オフセットへの正規化は行わない。
+"""
 
 _TEXTLINT_RULE_HINTS: dict[str, str] = {
     "ja-technical-writing/sentence-length": (
         "textlintは句点（。）までを1文として判定する。"
-        "箇条書きを改行で分割するだけでは1文扱いになるため、句点で文を区切ると短くなることが多い"
+        "箇条書きを改行で分割するだけでは1文扱いになるため、句点で文を区切ると短くなることが多い。"
+        f"{_TEXTLINT_COL_NOTE}"
     ),
     "ja-technical-writing/max-ten": ("読点（、）が多すぎる判定。1文を複数文に分けるか、接続詞・係り受けを見直す"),
     "ja-technical-writing/max-kanji-continuous-len": ("同じ漢字が連続していないか確認する。助詞・ひらがな・読点で分割する"),
@@ -473,6 +495,7 @@ def _parse_textlint_json(output: str) -> list[ErrorLocation]:
             rule = rule_id or None
             hint = _TEXTLINT_RULE_HINTS.get(rule_id) if rule_id else None
             message = str(msg.get("message", "")).strip()
+            end_line, end_col = _extract_textlint_end_position(msg.get("loc"))
             # sentence-length 違反では文の起点・終点が分からないと修正しづらいため、
             # textlint v12+ が返す `loc` フィールドから範囲表記を組み立てて末尾に併記する。
             # 他ルールでは違反箇所自体が短く、併記が冗長になるため対象外。
@@ -491,9 +514,29 @@ def _parse_textlint_json(output: str) -> list[ErrorLocation]:
                     severity=_normalize_severity(msg.get("severity")),
                     fix=fix_value,
                     hint=hint,
+                    end_line=end_line,
+                    end_col=end_col,
                 )
             )
     return results
+
+
+def _extract_textlint_end_position(loc: typing.Any) -> tuple[int | None, int | None]:
+    """Textlint の ``loc.end`` から ``(end_line, end_col)`` を取り出す。
+
+    ``loc`` 不在・形式不一致は ``(None, None)`` を返す（古い textlint への後方互換）。
+    取り出した ``end_line`` / ``end_col`` は ErrorLocation にそのまま詰める。
+    """
+    if not isinstance(loc, dict):
+        return None, None
+    end = loc.get("end")
+    if not isinstance(end, dict):
+        return None, None
+    end_line = end.get("line")
+    end_col = end.get("column")
+    if not isinstance(end_line, int) or not isinstance(end_col, int):
+        return None, None
+    return end_line, end_col
 
 
 def _format_textlint_loc(loc: typing.Any) -> str:
