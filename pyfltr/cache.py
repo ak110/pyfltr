@@ -103,9 +103,6 @@ class CacheStore:
         hasher = hashlib.sha256()
         hasher.update(f"pyfltr-major={_pyfltr_major_version()}\n".encode())
         # JSONL / archiveスキーマを変えた際の一括無効化用識別子。
-        # archive / diagnosticsの表現（aggregated messages + hint-urls）切替時に
-        # v2に更新した。textlint向けのErrorLocation.hint追加に合わせてv3に更新した。
-        # summary.commands_summary階層化・hint_urlsリネーム・textlint end_line/end_col追加でv4に更新した。
         # `pyproject.toml`の版数は`hatch-vcs`管理でMAJORを手動更新できないため、
         # 互換性を落とす際はこの定数を更新してキャッシュを一括無効化する。
         hasher.update(b"schema=v4\n")

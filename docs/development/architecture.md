@@ -197,9 +197,10 @@ JSONLはLLMエージェントが入力として読むケースが多いため、
   既定はLLMが読み違いやすい非自明フィールドのみに絞った短縮版、`-v` / `--verbose`指定時に
   フィールド単位の詳細を含むフル版に切り替わる
 - `summary.applied_fixes`: fixステージ・formatterステージで実際にファイル内容が変化した対象のパス一覧
-- `summary.guidance`: `failed + resolution_failed > 0`のときのみ付与する英語の配列。
-  `command.retry_command`の参照、`--only-failed`再実行、`diagnostic.fix`の解釈、
-  `pyfltr show-run <run_id>`の案内を並べる
+- `summary.guidance`: `failed + resolution_failed > 0`のとき、または`applied_fixes`が非空のときに付与する英語の配列。
+  失敗時は`command.retry_command`の参照、`--only-failed`再実行、`diagnostic.fix`の解釈、
+  `pyfltr show-run <run_id>`の案内の4項目を並べる。
+  `applied_fixes`非空時はformatter/fix-stageの書き換えだけでは再実行が不要である旨の注記を末尾に追加する
 
 ### hint_urls集約
 

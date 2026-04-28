@@ -107,4 +107,3 @@ pip install pyfltr
 - [推奨設定例](recommended.md) — 推奨設定（Pythonプロジェクト・タスクランナー・CI）
 - [推奨設定例（非Pythonプロジェクト）](recommended-nonpython.md) — 非Pythonプロジェクトの推奨設定
 - [カスタムコマンド例](custom-commands.md) — カスタムコマンドの設定例
-- [v3.0.0マイグレーションガイド](migration-v3.md) — v2.xからv3.0.0への移行手順

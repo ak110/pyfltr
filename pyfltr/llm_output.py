@@ -331,6 +331,11 @@ _SCHEMA_HINTS: dict[str, str] = {
         "counts of statuses that require follow-up: failed / resolution_failed."
         " inspect this group alone to decide whether any work remains"
     ),
+    "summary.guidance": (
+        "english bullet list of next-step actions; emitted when needs_action counts are non-zero or applied_fixes is non-empty."
+        " bullets cover retry_command inspection, --only-failed retries, diagnostic.fix interpretation, show-run access,"
+        " and a notice that formatter/fix-stage rewrites alone do not require re-running"
+    ),
     "summary.applied_fixes": (
         "sorted list of file paths whose contents were changed by fix-stage or formatter-stage execution;"
         " omitted when no files were modified"
@@ -532,21 +537,44 @@ def _resolve_message_limits(config: pyfltr.config.Config | None) -> tuple[int, i
     return max_lines, max_chars
 
 
-def _build_failure_guidance(run_id: str | None, launcher_prefix: list[str] | None) -> list[str]:
-    """失敗時にLLMエージェントへ次の一手を示す英語ガイドを生成する。
+def _build_summary_guidance(
+    *,
+    failure_present: bool,
+    applied_fixes_present: bool,
+    run_id: str | None,
+    launcher_prefix: list[str] | None,
+) -> list[str]:
+    """summaryレコード向けの状況依存ガイドを英語で生成する。
 
-    `summary.guidance`として`failed > 0`の場合にのみ同梱する（成功時は不要）。
+    `summary.guidance`として次のいずれかを満たす場合のみ同梱する。
+
+    - `commands_summary.needs_action`配下の`failed`/`resolution_failed`合計が1以上
+    - `summary.applied_fixes`が非空（formatter/fix-stageが書き換えた）
+
+    両方該当する場合は失敗時の4項目に続けてformatter書き換えの注記1項目を追記する。
     `run_id`と`launcher_prefix`が指定されていれば、起動コマンド表記と実run_idを埋め込む。
-    未指定時はプレースホルダ（`<run_id>`）・既定値（`pyfltr`）にフォールバックする。
+    未指定時はプレースホルダー（`<run_id>`）・既定値（`pyfltr`）にフォールバックする。
     """
+    if not failure_present and not applied_fixes_present:
+        return []
     launcher = shlex.join(launcher_prefix) if launcher_prefix else "pyfltr"
-    run_id_token = run_id if run_id is not None else "<run_id>"
-    return [
-        "Inspect command.retry_command in failed command records to re-run only failing files.",
-        f"Use '{launcher} run-for-agent --only-failed' to retry the failure set in one step.",
-        "diagnostic.fix == 'safe'/'unsafe'/'suggested' means auto-fixable; 'none' or omitted means manual fix needed.",
-        f"Use '{launcher} show-run {run_id_token}' for full per-command output stored in the run archive.",
-    ]
+    items: list[str] = []
+    if failure_present:
+        run_id_token = run_id if run_id is not None else "<run_id>"
+        items.extend(
+            [
+                "Inspect command.retry_command in failed command records to re-run only failing files.",
+                f"Use '{launcher} run-for-agent --only-failed' to retry the failure set in one step.",
+                "diagnostic.fix == 'safe'/'unsafe'/'suggested' means auto-fixable; 'none' or omitted means manual fix needed.",
+                f"Use '{launcher} show-run {run_id_token}' for full per-command output stored in the run archive.",
+            ]
+        )
+    if applied_fixes_present:
+        items.append(
+            "formatter/fix-stage rewrote files;"
+            " re-running is not required because formatter rewrites are classified as no_issues by project policy."
+        )
+    return items
 
 
 def _build_summary_record(
@@ -598,8 +626,14 @@ def _build_summary_record(
         "diagnostics": total_diagnostics,
         "exit": exit_code,
     }
-    if counts["failed"] + counts["resolution_failed"] > 0:
-        record["guidance"] = _build_failure_guidance(run_id, launcher_prefix)
+    guidance = _build_summary_guidance(
+        failure_present=counts["failed"] + counts["resolution_failed"] > 0,
+        applied_fixes_present=bool(fixed_files_union),
+        run_id=run_id,
+        launcher_prefix=launcher_prefix,
+    )
+    if guidance:
+        record["guidance"] = guidance
     if fixed_files_union:
         record["applied_fixes"] = sorted(fixed_files_union)
     if fully_excluded_files:

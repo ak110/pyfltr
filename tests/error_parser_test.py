@@ -678,8 +678,37 @@ def test_parse_textlint_json_populates_end_position() -> None:
     assert (errors[1].end_line, errors[1].end_col) == (6, 4)
 
 
-def test_parse_textlint_json_sentence_length_hint_includes_col_note() -> None:
-    """sentence-lengthのヒントには`col`が累積位置である旨の注記が含まれる。"""
+def test_parse_textlint_json_end_only_loc_populates_end_position() -> None:
+    """`loc.end`のみが提供された入力でもend_line/end_colを取り込み、範囲表記は付与しない。
+
+    loc共通ヘルパーがstart/endを独立に検証する設計の保証用。
+    """
+    output = json.dumps(
+        [
+            {
+                "filePath": "a.md",
+                "messages": [
+                    {
+                        "line": 17,
+                        "column": 1,
+                        "message": "Long sentence",
+                        "ruleId": "ja-technical-writing/sentence-length",
+                        "severity": 2,
+                        "loc": {"end": {"line": 17, "column": 23}},
+                    }
+                ],
+            }
+        ]
+    )
+    errors = pyfltr.error_parser.parse_errors("textlint", output)
+    assert len(errors) == 1
+    assert (errors[0].end_line, errors[0].end_col) == (17, 23)
+    # `loc.start`が無いため範囲表記は付かない（startの値が決まらないため）
+    assert errors[0].message == "Long sentence"
+
+
+def test_parse_textlint_json_sentence_length_hint_excludes_col_note() -> None:
+    """sentence-lengthのヒントは句点による文区切りの観点のみで、`col`の累積位置注記はschema_hints側に寄せている。"""
     output = json.dumps(
         [
             {
@@ -698,7 +727,7 @@ def test_parse_textlint_json_sentence_length_hint_includes_col_note() -> None:
     )
     errors = pyfltr.error_parser.parse_errors("textlint", output)
     assert errors[0].hint is not None
-    assert "累積位置" in errors[0].hint
+    assert "累積位置" not in errors[0].hint
 
 
 def test_parse_typos_jsonl() -> None:

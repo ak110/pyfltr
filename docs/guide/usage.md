@@ -430,7 +430,8 @@ CLIオプション`--output-format`が指定されている場合は環境変数
 - `summary`: 最終1行、全体集計。
   集計カウンタはコマンド単位の集計であることを示す`commands_summary`配下にまとめ、
   その下で`no_issues` / `needs_action`の2グループへネストする。グループ配下には`command.status`値ごとの件数が並ぶ。
-  `commands_summary.needs_action`配下の`failed` / `resolution_failed`合計が1以上のとき英語の`guidance`配列を付与する
+  `commands_summary.needs_action`配下の`failed` / `resolution_failed`合計が1以上のとき、
+  または`applied_fixes`が非空のとき英語の`guidance`配列を付与する
     - `commands_summary.no_issues`: 対応不要グループ。`succeeded` / `formatted` / `skipped`を含む。
       `formatted`はformatterが書き換えただけで再実行や追加対応は原則不要なため本グループに分類する
     - `commands_summary.needs_action`: 対応要グループ。`failed` / `resolution_failed`を含む。
@@ -449,7 +450,7 @@ CLIオプション`--output-format`が指定されている場合は環境変数
 [`pyfltr show-run`](#show-run) / [`pyfltr list-runs`](#list-runs)で該当runの詳細を参照できる。
 
 ```json
-{"kind":"header","version":"3.0.0","run_id":"01HXYZ...","python":"3.12.0 ...","executable":"/usr/bin/python3","platform":"linux","cwd":"/work","commands":["mypy","ruff-format"],"files":12,"schema_hints":{"command.retry_command":"...","messages[].fix":"..."}}
+{"kind":"header","version":"3.0.0","run_id":"01HXYZ...","python":"3.12.0 ...","executable":"/usr/bin/python3","platform":"linux","cwd":"/work","commands":["mypy","ruff-format"],"files":12,"schema_hints":{"command.retry_command":"...","command.cached_elapsed":"...","command.hint_urls":"...","messages[].fix":"..."}}
 {"kind":"warning","source":"config","msg":"pre-commit が有効化されていますが、設定ファイルが見つかりません: .pre-commit-config.yaml"}
 {"kind":"diagnostic","command":"mypy","file":"src/a.py","messages":[{"line":42,"col":5,"msg":"Incompatible return value type"}]}
 {"kind":"command","command":"mypy","type":"linter","status":"failed","files":12,"elapsed":0.8,"diagnostics":1,"rc":1}
@@ -472,7 +473,7 @@ consumer側は特定のツール順を仮定せず、`kind`フィールドで種
 `warning`レコードの任意フィールド:
 
 - `hint`: 当該警告固有の対処ヒント（短い日本語）。警告の発生元がヒントを提供する場合のみ出力される。
-  `summary.guidance`が失敗時の包括的な案内なのに対し、こちらは個別warning単位の補足を担う
+  `summary.guidance`が失敗時とformatter書き換え時の包括的な案内なのに対し、こちらは個別warning単位の補足を担う
 
 `command`レコードの`rc`は`returncode is not None`のときのみ含まれる（`skipped`では省略）。
 
@@ -547,9 +548,12 @@ smart truncationは次の設定キーで制御する（`pyproject.toml`）。
   既定ではLLMが読み違いやすい非自明フィールドのみに絞った短縮版を出し、
   `-v` / `--verbose`指定時にフル版（各フィールド単位の詳細）へ切り替わる。
   短縮版自身の使い方説明はトークン効率を下げるため埋め込まない
-- `summary.guidance`: `commands_summary.needs_action`配下の`failed` / `resolution_failed`合計が1以上のときだけ付与される英語の配列。
-  `command.retry_command`の参照、`pyfltr run-for-agent --only-failed`の活用、`diagnostic.fix`値の解釈、
-  `pyfltr show-run <run_id>`の案内を並べる。
+- `summary.guidance`: 状況依存の英語ガイドを並べる配列。
+  `commands_summary.needs_action`配下の`failed` / `resolution_failed`合計が1以上のとき、
+  または`applied_fixes`が非空のときに付与される。
+  失敗時は`command.retry_command`の参照、`pyfltr run-for-agent --only-failed`の活用、`diagnostic.fix`値の解釈、
+  `pyfltr show-run <run_id>`の案内の4項目を並べる。
+  `applied_fixes`が非空のときはformatter/fix-stageの書き換えだけでは再実行が不要である旨の注記を末尾に追加する。
   各コマンド表記には起動時のlauncher（`pyfltr`／`uv run pyfltr`／`uvx pyfltr`）と実run_idが埋め込まれる
 
 ### コーディングエージェント連携
@@ -579,6 +583,7 @@ CLIの`run-for-agent`とは異なりJSONL出力がstdoutに流れないため、
 
     末尾のsummary行（`"kind":"summary"`）の`commands_summary.needs_action`配下を見て対応要件数の有無を確認し、問題がなければ完了する。
     `commands_summary.needs_action`配下の`failed` / `resolution_failed`がいずれも0であれば残作業は無く、`commands_summary.no_issues`配下の内訳は確認不要。
+    `applied_fixes`が非空でも`summary.guidance`に注記が出るが、formatter/fix-stageによる書き換えのみで再実行は不要なため、そのまま完了してよい。
 
 2. 失敗したツール/ファイルだけ再実行する
 

@@ -55,26 +55,20 @@ class ErrorLocation:
     """
 
 
-_TEXTLINT_COL_NOTE = (
-    "colはテキストノード先頭からの累積位置（行内オフセットではない）。"
-    "対応する位置はmessage内の範囲表記`(L…:…〜…)`またはmessages[].end_line/end_colを参照"
-)
-"""textlintの`col`が行内オフセットではない旨をエージェントへ伝える共通注記。
-
-textlintは違反箇所をテキストノード先頭からの累積位置で返す仕様のため、`col=5853`のような大値が出る。
-pyfltrはファイル本文を読まずにJSONを変換するため、行内オフセットへの正規化は行わない。
-"""
-
 _TEXTLINT_RULE_HINTS: dict[str, str] = {
     "ja-technical-writing/sentence-length": (
         "textlintは句点（。）までを1文として判定する。"
-        "箇条書きを改行で分割するだけでは1文扱いになるため、句点で文を区切ると短くなることが多い。"
-        f"{_TEXTLINT_COL_NOTE}"
+        "箇条書きを改行で分割するだけでは1文扱いになるため、句点で文を区切ると短くなることが多い"
     ),
     "ja-technical-writing/max-ten": "読点（、）が多すぎる判定。1文を複数文に分けるか、接続詞・係り受けを見直す",
     "ja-technical-writing/max-kanji-continuous-len": "同じ漢字が連続していないか確認する。助詞・ひらがな・読点で分割する",
 }
-"""textlintの頻出ルール向けヒント辞書。利用者が踏みやすいルールに限定している。"""
+"""textlintの頻出ルール向けヒント辞書。利用者が踏みやすいルールに限定している。
+
+`col`がテキストノード先頭からの累積位置である旨はschema_hintsの`diagnostic.messages.end_col`側で
+案内する。ヒント文字列はルール固有の修正観点のみに留める（重複させず、3ルール中1ルールのみが
+膨らむのを避けるため）。
+"""
 
 
 def parse_errors(command: str, output: str, error_pattern: str | None = None) -> list[ErrorLocation]:
@@ -521,22 +515,41 @@ def _parse_textlint_json(output: str) -> list[ErrorLocation]:
     return results
 
 
+def _extract_textlint_loc_positions(
+    loc: typing.Any,
+) -> tuple[tuple[int, int] | None, tuple[int, int] | None]:
+    """Textlintの`loc`から`start`/`end`の`(line, col)`ペアを独立に取り出す。
+
+    片方のみが有効な`loc`にも対応するため、`start`と`end`は独立に検証する
+    （古いtextlintや一部ルールが`end`のみを返すケースでも有効値を失わないため）。
+    `loc`不在・形式不一致は`(None, None)`を返す。
+    """
+    if not isinstance(loc, dict):
+        return None, None
+    return _extract_textlint_point(loc.get("start")), _extract_textlint_point(loc.get("end"))
+
+
+def _extract_textlint_point(point: typing.Any) -> tuple[int, int] | None:
+    """Textlintの`{"line": int, "column": int}`形式から`(line, col)`を取り出す。"""
+    if not isinstance(point, dict):
+        return None
+    line = point.get("line")
+    col = point.get("column")
+    if not isinstance(line, int) or not isinstance(col, int):
+        return None
+    return line, col
+
+
 def _extract_textlint_end_position(loc: typing.Any) -> tuple[int | None, int | None]:
     """Textlintの`loc.end`から`(end_line, end_col)`を取り出す。
 
     `loc`不在・形式不一致は`(None, None)`を返す（古いtextlintへの後方互換）。
     取り出した`end_line`/`end_col`はErrorLocationにそのまま詰める。
     """
-    if not isinstance(loc, dict):
+    _, end = _extract_textlint_loc_positions(loc)
+    if end is None:
         return None, None
-    end = loc.get("end")
-    if not isinstance(end, dict):
-        return None, None
-    end_line = end.get("line")
-    end_col = end.get("column")
-    if not isinstance(end_line, int) or not isinstance(end_col, int):
-        return None, None
-    return end_line, end_col
+    return end
 
 
 def _format_textlint_loc(loc: typing.Any) -> str:
@@ -544,20 +557,13 @@ def _format_textlint_loc(loc: typing.Any) -> str:
 
     1行内で完結する場合は`(Lstart:start_col〜end_col)`、
     複数行にまたがる場合は`(Lstart:start_col〜Lend:end_col)`を返す。
-    `loc`がない・形式が違う場合は空文字列を返す（古いtextlintや未提供ルールへの後方互換）。
+    `start`/`end`のいずれかが欠けている場合は空文字列を返す（古いtextlintや未提供ルールへの後方互換）。
     """
-    if not isinstance(loc, dict):
+    start, end = _extract_textlint_loc_positions(loc)
+    if start is None or end is None:
         return ""
-    start = loc.get("start")
-    end = loc.get("end")
-    if not isinstance(start, dict) or not isinstance(end, dict):
-        return ""
-    start_line = start.get("line")
-    start_col = start.get("column")
-    end_line = end.get("line")
-    end_col = end.get("column")
-    if not all(isinstance(v, int) for v in (start_line, start_col, end_line, end_col)):
-        return ""
+    start_line, start_col = start
+    end_line, end_col = end
     if start_line == end_line:
         return f"(L{start_line}:{start_col}〜{end_col})"
     return f"(L{start_line}:{start_col}〜L{end_line}:{end_col})"

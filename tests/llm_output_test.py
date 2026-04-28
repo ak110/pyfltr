@@ -630,7 +630,7 @@ def test_build_summary_record_groups_statuses_into_no_issues_and_needs_action() 
 
 
 def test_build_summary_record_no_guidance_on_success() -> None:
-    """failed == 0のときはsummary.guidanceが省略される。"""
+    """failed == 0かつapplied_fixesも空のときはsummary.guidanceが省略される。"""
     result = pyfltr.command.CommandResult(
         command="mypy",
         command_type="linter",
@@ -643,6 +643,63 @@ def test_build_summary_record_no_guidance_on_success() -> None:
     )
     record = pyfltr.llm_output._build_summary_record([result], exit_code=0)
     assert "guidance" not in record
+
+
+def test_build_summary_record_guidance_emits_formatter_notice_only() -> None:
+    """failed/resolution_failed=0でもapplied_fixesが非空ならguidanceにformatter書き換え注記1項目だけ出る。"""
+    result = pyfltr.command.CommandResult(
+        command="ruff-format",
+        command_type="formatter",
+        commandline=["ruff", "format"],
+        returncode=1,
+        has_error=False,
+        files=1,
+        output="",
+        elapsed=0.1,
+        fixed_files=["src/a.py"],
+    )
+    record = pyfltr.llm_output._build_summary_record([result], exit_code=0)
+    guidance = record.get("guidance")
+    assert isinstance(guidance, list)
+    assert len(guidance) == 1
+    assert "formatter/fix-stage rewrote files" in guidance[0]
+    assert "re-running is not required" in guidance[0]
+
+
+def test_build_summary_record_guidance_combines_failure_and_formatter_notice() -> None:
+    """failed>0かつapplied_fixes非空のときは失敗時の4項目に続けてformatter書き換え注記が並ぶ。"""
+    failed = pyfltr.command.CommandResult(
+        command="mypy",
+        command_type="linter",
+        commandline=["mypy"],
+        returncode=1,
+        has_error=True,
+        files=1,
+        output="",
+        elapsed=0.1,
+    )
+    formatted = pyfltr.command.CommandResult(
+        command="ruff-format",
+        command_type="formatter",
+        commandline=["ruff", "format"],
+        returncode=1,
+        has_error=False,
+        files=1,
+        output="",
+        elapsed=0.1,
+        fixed_files=["src/a.py"],
+    )
+    record = pyfltr.llm_output._build_summary_record(
+        [failed, formatted],
+        exit_code=1,
+        run_id="01JABCDEFGH",
+        launcher_prefix=["pyfltr"],
+    )
+    guidance = record.get("guidance")
+    assert isinstance(guidance, list)
+    assert len(guidance) == 5
+    assert "retry_command" in guidance[0]
+    assert "formatter/fix-stage rewrote files" in guidance[-1]
 
 
 def test_build_summary_record_includes_fully_excluded_files() -> None:
@@ -798,6 +855,15 @@ def test_get_schema_hints_full_includes_applied_fixes() -> None:
     """フル版schema_hintsにsummary.applied_fixesの説明が含まれる。"""
     full = pyfltr.llm_output.get_schema_hints(full=True)
     assert "summary.applied_fixes" in full
+
+
+def test_get_schema_hints_full_includes_summary_guidance() -> None:
+    """フル版schema_hintsにsummary.guidanceの出力条件・内容説明が含まれる。"""
+    full = pyfltr.llm_output.get_schema_hints(full=True)
+    assert "summary.guidance" in full
+    description = full["summary.guidance"]
+    assert "needs_action" in description
+    assert "applied_fixes" in description
 
 
 def test_get_schema_hints_full_includes_summary_groups() -> None:
