@@ -11,8 +11,8 @@ import pyfltr.paths
 
 logger = logging.getLogger(__name__)
 
-# 引数を別トークンで受け取るオプション (= なし形式) の集合。
-# retry_command 整形時に位置引数と誤認しないよう明示する。
+# 引数を別トークンで受け取るオプション（=なし形式）の集合。
+# retry_command整形時に位置引数と誤認しないよう明示する。
 _VALUE_OPTIONS: frozenset[str] = frozenset(
     {
         "--commands",
@@ -29,10 +29,10 @@ _VALUE_OPTIONS: frozenset[str] = frozenset(
 def detect_launcher_prefix() -> list[str]:
     """retry_command の先頭に置くべき起動プレフィックスを推定する。
 
-    Linux では ``/proc/self/status`` から親プロセスを辿り、先頭が ``uv`` で
-    第 2 引数が ``run`` なら ``["uv", "run", "pyfltr"]``、先頭が ``uvx`` なら
-    ``["uvx", "pyfltr"]`` を返す。macOS / Windows など親プロセスを取得できない
-    環境では ``[sys.argv[0]]`` の basename にフォールバックする。
+    Linuxでは`/proc/self/status`から親プロセスを辿り、先頭が`uv`で
+    第2引数が`run`なら`["uv", "run", "pyfltr"]`、先頭が`uvx`なら
+    `["uvx", "pyfltr"]`を返す。macOS / Windowsなど親プロセスを取得できない
+    環境では`[sys.argv[0]]`のbasenameにフォールバックする。
     """
     fallback = [os.path.basename(sys.argv[0]) or "pyfltr"]
     try:
@@ -59,20 +59,20 @@ def detect_launcher_prefix() -> list[str]:
 def build_retry_args_template(sys_args: list[str]) -> list[str]:
     """起動時 argv (サブコマンド以降) を retry_command 用テンプレートとして整形する。
 
-    ``--commands`` の値は後段の per-tool 差し替え用に空文字プレースホルダへ置換し、
-    位置引数 (ターゲット) は末尾から除去する (後段で当該ツールのファイル一覧で
-    置換される前提)。``--no-fix`` や ``--output-format`` 等は保持する。
-    ``--only-failed`` フラグおよび ``--from-run`` オプション (値あり・= 付き両形式) は
-    再実行時に直前 run を暗黙参照しないよう除去する。
+    `--commands`の値は後段のper-tool差し替え用に空文字プレースホルダへ置換し、
+    位置引数（ターゲット）は末尾から除去する（後段で当該ツールのファイル一覧で
+    置換される前提）。`--no-fix`や`--output-format`等は保持する。
+    `--only-failed`フラグおよび`--from-run`オプション（値あり・=付き両形式）は
+    再実行時に直前runを暗黙参照しないよう除去する。
     """
     result: list[str] = []
     i = 0
-    # 実行系サブコマンド (ci / run / fast / run-for-agent) は先頭に必ず来る想定。
-    # これを保持することで pyfltr ci 失敗時に fix ステージが暴発しない。
+    # 実行系サブコマンド（ci / run / fast / run-for-agent）は先頭に必ず来る想定。
+    # これを保持することでpyfltr ci失敗時にfixステージが暴発しない。
     while i < len(sys_args):
         arg = sys_args[i]
         if arg == "--commands":
-            # 後段で当該ツール 1 件に差し替えるためプレースホルダを置く。
+            # 後段で当該ツール1件に差し替えるためプレースホルダを置く。
             result.extend([arg, ""])
             i += 2
             continue
@@ -80,15 +80,15 @@ def build_retry_args_template(sys_args: list[str]) -> list[str]:
             result.append("--commands=")
             i += 1
             continue
-        # --only-failed は再実行時に直前 run を暗黙参照するため除去する。
+        # --only-failedは再実行時に直前runを暗黙参照するため除去する。
         if arg == "--only-failed":
             i += 1
             continue
-        # --from-run <value> (空白区切り) を除去する。
+        # --from-run <value>（空白区切り）を除去する。
         if arg == "--from-run":
             i += 2  # フラグと値を両方スキップ
             continue
-        # --from-run=<value> (等号区切り) を除去する。
+        # --from-run=<value>（等号区切り）を除去する。
         if arg.startswith("--from-run="):
             i += 1
             continue
@@ -107,24 +107,24 @@ def build_retry_command(
 ) -> str:
     """Tool レコードへ埋め込む retry_command 文字列を生成する。
 
-    ``args_template`` の ``--commands`` プレースホルダを当該ツールに差し替え、
-    位置引数 (ターゲット) を ``target_files`` で末尾に再配置する。ターゲットは
-    ``original_cwd`` 基準の絶対パスに変換することで、``--work-dir`` と cwd の
+    `args_template`の`--commands`プレースホルダを当該ツールに差し替え、
+    位置引数（ターゲット）を`target_files`で末尾に再配置する。ターゲットは
+    `original_cwd`基準の絶対パスに変換することで、`--work-dir`とcwdの
     二重解釈を避ける。
     """
     cwd_path = pathlib.Path(original_cwd)
-    # 位置引数 (サブコマンドを除く、`-` で始まらないトークンの末尾側) は除去する。
+    # 位置引数（サブコマンドを除く、`-`で始まらないトークンの末尾側）は除去する。
     # サブコマンドは必ず最初の非オプショントークンのため、それだけ残す。
     filtered: list[str] = []
     seen_subcommand = False
     i = 0
     while i < len(args_template):
         arg = args_template[i]
-        # オプション引数 (=付き・=なし両対応) はそのまま保持する。
-        # ``--commands`` プレースホルダ経由のみ後段で差し替え対象とする。
+        # オプション引数（=付き・=なし両対応）はそのまま保持する。
+        # `--commands`プレースホルダ経由のみ後段で差し替え対象とする。
         if arg.startswith("-"):
             filtered.append(arg)
-            # 引数を伴うオプションか確認 (値が付いていない場合は次のトークンも引き取る)。
+            # 引数を伴うオプションか確認（値が付いていない場合は次のトークンも引き取る）。
             if "=" not in arg and i + 1 < len(args_template):
                 next_arg = args_template[i + 1]
                 if not next_arg.startswith("-") and _option_takes_value(arg):
@@ -139,7 +139,7 @@ def build_retry_command(
             seen_subcommand = True
             i += 1
             continue
-        # それ以降の位置引数 (= ターゲット) は捨てる。後段で target_files で差し替える。
+        # それ以降の位置引数（=ターゲット）は捨てる。後段でtarget_filesで差し替える。
         i += 1
 
     # --commands プレースホルダを当該ツールで埋める。
@@ -165,7 +165,7 @@ def build_retry_command(
             continue
         replaced.append(arg)
         j += 1
-    # --commands 未指定だった場合は追記する (サブコマンドの直後に挿入)。
+    # --commands未指定だった場合は追記する（サブコマンドの直後に挿入）。
     if not commands_replaced:
         insert_at = 0
         for k, tok in enumerate(replaced):
@@ -174,7 +174,7 @@ def build_retry_command(
                 break
         replaced[insert_at:insert_at] = ["--commands", tool]
 
-    # ターゲットを元 cwd 基準の絶対パスに変換して末尾に追加する。
+    # ターゲットを元cwd基準の絶対パスに変換して末尾に追加する。
     target_strs: list[str] = []
     for target in target_files:
         if target.is_absolute():
@@ -195,15 +195,15 @@ def populate_retry_command(
 ) -> None:
     """CommandResult に retry_command を埋める (パートG A案の絞り込みを適用)。
 
-    retry_command は「当該ツールを失敗ファイルのみに絞って再実行する文字列」である。
-    成功時 (``has_error == False``) や formatter による修正適用のみ (returncode != 0
-    でも has_error False) のケースでは再実行動機が無いため埋めない。
-    キャッシュ復元結果 (``result.cached == True``) も対象外 (再実行不要のため)。
+    `retry_command`は「当該ツールを失敗ファイルのみに絞って再実行する文字列」である。
+    成功時（`has_error == False`）やformatterによる修正適用のみ（returncode != 0
+    でもhas_error False）のケースでは再実行動機が無いため埋めない。
+    キャッシュ復元結果（`result.cached == True`）も対象外（再実行不要のため）。
 
-    失敗時は ``filter_failed_files`` で失敗ファイルのみに絞り込んだターゲットを
-    ``build_retry_command`` へ渡す。絞り込み結果が空の場合 (診断ファイルなし・
-    全体失敗のみのケース) は retry_command のターゲット位置引数が空になる
-    (当該ツールの単体再実行文字列として機能する)。
+    失敗時は`filter_failed_files`で失敗ファイルのみに絞り込んだターゲットを
+    `build_retry_command`へ渡す。絞り込み結果が空の場合（診断ファイルなし・
+    全体失敗のみのケース）は`retry_command`のターゲット位置引数が空になる
+    （当該ツールの単体再実行文字列として機能する）。
     """
     if result.cached:
         return
@@ -220,17 +220,17 @@ def populate_retry_command(
 
 
 def filter_failed_files(result: pyfltr.command.CommandResult) -> list[pathlib.Path]:
-    """``result.errors`` から失敗ファイル集合を抽出し ``result.target_files`` と交差させる。
+    """`result.errors`から失敗ファイル集合を抽出し`result.target_files`と交差させる。
 
-    ``retry_command`` のターゲットを「当該ツールで失敗したファイルのみ」に絞る用途
-    (パートG A案)。パス比較は文字列化した相対パス (スラッシュ区切り) で行う。
-    ``ErrorLocation.file`` は ``_normalize_path`` 経由で cwd 基準の相対パス (区切り
-    文字は ``/``) に正規化されているため、``result.target_files`` 側も同じ表現へ
-    揃えたうえで比較する。並び順は ``result.target_files`` の順序を保つ。
+    `retry_command`のターゲットを「当該ツールで失敗したファイルのみ」に絞る用途
+    （パートG A案）。パス比較は文字列化した相対パス（スラッシュ区切り）で行う。
+    `ErrorLocation.file`は`_normalize_path`経由でcwd基準の相対パス（区切り
+    文字は`/`）に正規化されているため、`result.target_files`側も同じ表現へ
+    揃えたうえで比較する。並び順は`result.target_files`の順序を保つ。
 
-    ``result.errors`` が空、または ``ErrorLocation.file`` 集合と ``result.target_files``
-    の交差が空の場合は空リストを返す (pytest 等の pass-filenames=False で全体失敗
-    のみのケース。呼び出し側で retry_command のターゲット位置引数を空にする前提)。
+    `result.errors`が空、または`ErrorLocation.file`集合と`result.target_files`
+    の交差が空の場合は空リストを返す（pytest等のpass-filenames=Falseで全体失敗
+    のみのケース。呼び出し側で`retry_command`のターゲット位置引数を空にする前提）。
     """
     if not result.errors:
         return []
@@ -248,9 +248,9 @@ def filter_failed_files(result: pyfltr.command.CommandResult) -> list[pathlib.Pa
 def _option_takes_value(opt: str) -> bool:
     """オプションが次のトークンを値として取るかを判定する。
 
-    ``--foo=bar`` 形式は判定対象外 (呼び出し側で `=` の有無を先に確認する前提)。
-    ビルトイン / カスタムコマンドの ``--{cmd}-args`` も値を伴うため、末尾が
-    ``-args`` で終わるものは全て True として扱う。
+    `--foo=bar`形式は判定対象外（呼び出し側で`=`の有無を先に確認する前提）。
+    ビルトイン / カスタムコマンドの`--{cmd}-args`も値を伴うため、末尾が
+    `-args`で終わるものは全てTrueとして扱う。
     """
     if opt.endswith("-args"):
         return True

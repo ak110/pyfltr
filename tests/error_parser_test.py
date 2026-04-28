@@ -85,7 +85,7 @@ import pyfltr.error_parser
             "tests/foo_test.py",
             0,  # pytestはline情報なし
         ),
-        # biome --reporter=github (line と col の間に endLine が挟まる)
+        # biome --reporter=github（lineとcolの間にendLineが挟まる）
         (
             "biome",
             "::error title=lint/suspicious/noDoubleEquals,file=src/foo.ts,"
@@ -129,7 +129,7 @@ def test_parse_errors(
 
 
 def test_parse_errors_eslint_json() -> None:
-    """ESLint --format json 出力のパース。"""
+    """ESLint --format json出力のパース。"""
     output = json.dumps(
         [
             {
@@ -159,7 +159,7 @@ def test_parse_errors_eslint_json() -> None:
     )
     errors = pyfltr.error_parser.parse_errors("eslint", output)
     assert len(errors) == 2
-    assert errors[0].file == "src/foo.js"  # cwd 配下は相対パスに正規化される
+    assert errors[0].file == "src/foo.js"  # cwd配下は相対パスに正規化される
     assert errors[0].line == 10
     assert errors[0].col == 5
     assert "no-unused-vars" in errors[0].message
@@ -180,13 +180,13 @@ def test_parse_errors_eslint_json_empty_string() -> None:
 
 
 def test_parse_errors_eslint_json_invalid() -> None:
-    """不正な JSON (stderr 混入等) は空リストを返す。"""
+    """不正なJSON（stderr混入等）は空リストを返す。"""
     errors = pyfltr.error_parser.parse_errors("eslint", "Warning: something\n[not json]")
     assert errors == []
 
 
 def test_parse_errors_eslint_json_no_rule_id() -> None:
-    """ruleId が null の場合でも message のみ格納する。"""
+    """ruleIdがnullの場合でもmessageのみ格納する。"""
     output = json.dumps(
         [
             {
@@ -231,7 +231,7 @@ def test_sort_errors() -> None:
     ]
     sorted_errors = pyfltr.error_parser.sort_errors(errors, command_names)
 
-    # ファイル名でソート → 同一箇所はcommand_names順
+    # ファイル名でソート→同一箇所はcommand_names順
     assert sorted_errors[0].file == "src/bar.py"
     assert sorted_errors[0].command == "ruff-check"  # command_namesで先
     assert sorted_errors[1].file == "src/bar.py"
@@ -268,7 +268,7 @@ def test_format_error() -> None:
 
 
 def test_parse_ruff_check_json() -> None:
-    """ruff check --output-format=json 出力のパース。"""
+    """ruff check --output-format=json出力のパース。"""
     output = json.dumps(
         [
             {
@@ -294,7 +294,7 @@ def test_parse_ruff_check_json() -> None:
 
 
 def test_parse_ruff_check_json_fallback() -> None:
-    """ruff-check: JSON でない出力は regex にフォールバックする。"""
+    """ruff-check: JSONでない出力はregexにフォールバックする。"""
     output = "src/foo.py:10:5: F401 `os` imported but unused"
     errors = pyfltr.error_parser.parse_errors("ruff-check", output)
     assert len(errors) == 1
@@ -303,7 +303,7 @@ def test_parse_ruff_check_json_fallback() -> None:
 
 
 def test_parse_ruff_check_json_fix_none() -> None:
-    """ruff-check: ``fix`` 欠落エントリは ``fix == "none"`` として出力される。"""
+    """ruff-check: `fix`欠落エントリは`fix == "none"`として出力される。"""
     output = json.dumps(
         [
             {
@@ -322,7 +322,7 @@ def test_parse_ruff_check_json_fix_none() -> None:
 
 
 def test_parse_typos_jsonl_no_corrections_is_none() -> None:
-    """typos: corrections が空の場合は ``fix == "none"``。"""
+    """typos: correctionsが空の場合は`fix == "none"`。"""
     output = '{"path":"src/foo.py","line_num":3,"typo":"weirdword","corrections":[],"type":"typo"}\n'
     errors = pyfltr.error_parser.parse_errors("typos", output)
     assert len(errors) == 1
@@ -330,7 +330,7 @@ def test_parse_typos_jsonl_no_corrections_is_none() -> None:
 
 
 def test_parse_textlint_json_fix_none() -> None:
-    """textlint: ``fix`` 欠落メッセージは ``fix == "none"``。"""
+    """textlint: `fix`欠落メッセージは`fix == "none"`。"""
     output = json.dumps(
         [
             {
@@ -353,9 +353,9 @@ def test_parse_textlint_json_fix_none() -> None:
 
 
 def test_parse_pylint_json() -> None:
-    """pylint --output-format=json2 出力のパース。
+    """pylint --output-format=json2出力のパース。
 
-    rule には symbol (公式ドキュメント URL 基準)、message には messageId を保持する。
+    ruleにはsymbol（公式ドキュメントURL基準）、messageにはmessageIdを保持する。
     """
     output = json.dumps(
         {
@@ -384,10 +384,10 @@ def test_parse_pylint_json() -> None:
 
 
 def test_parse_pylint_json_with_stderr_prefix() -> None:
-    """pylint: JSON 前にstderrの警告などが混ざっても最初の ``{`` 以降をパースする。
+    """pylint: JSON前にstderrの警告などが混ざっても最初の`{`以降をパースする。
 
-    Windows + Python 3.14 + PYTHONDEVMODE=1 で pylint_pydantic が大量の
-    DeprecationWarning を emit し、pylint の出力先頭に紛れ込む現象への対処。
+    Windows + Python 3.14 + PYTHONDEVMODE=1でpylint_pydanticが大量の
+    DeprecationWarningをemitし、pylintの出力先頭に紛れ込む現象への対処。
     """
     body = json.dumps(
         {
@@ -415,7 +415,7 @@ def test_parse_pylint_json_with_stderr_prefix() -> None:
 
 
 def test_parse_pylint_json_fallback() -> None:
-    """pylint: JSON でない出力は regex にフォールバックする。"""
+    """pylint: JSONでない出力はregexにフォールバックする。"""
     output = "src/foo.py:10:5: C0114: Missing module docstring (missing-module-docstring)"
     errors = pyfltr.error_parser.parse_errors("pylint", output)
     assert len(errors) == 1
@@ -423,7 +423,7 @@ def test_parse_pylint_json_fallback() -> None:
 
 
 def test_parse_pyright_json() -> None:
-    """pyright --outputjson 出力のパース。"""
+    """pyright --outputjson出力のパース。"""
     output = json.dumps(
         {
             "version": "1.1.400",
@@ -441,14 +441,14 @@ def test_parse_pyright_json() -> None:
     )
     errors = pyfltr.error_parser.parse_errors("pyright", output)
     assert len(errors) == 1
-    assert errors[0].line == 10  # 0-based → 1-based
-    assert errors[0].col == 5  # 0-based → 1-based
+    assert errors[0].line == 10  # 0-based→1-based
+    assert errors[0].col == 5  # 0-based→1-based
     assert errors[0].rule == "reportAssignmentType"
     assert errors[0].severity == "error"
 
 
 def test_parse_pyright_json_fallback() -> None:
-    """pyright: JSON でない出力は regex にフォールバックする。"""
+    """pyright: JSONでない出力はregexにフォールバックする。"""
     output = '  src/foo.py:10:5 - error: Type "int" is not assignable'
     errors = pyfltr.error_parser.parse_errors("pyright", output)
     assert len(errors) == 1
@@ -456,7 +456,7 @@ def test_parse_pyright_json_fallback() -> None:
 
 
 def test_parse_shellcheck_json() -> None:
-    """shellcheck -f json 出力のパース。"""
+    """shellcheck -f json出力のパース。"""
     output = json.dumps(
         [
             {
@@ -477,7 +477,7 @@ def test_parse_shellcheck_json() -> None:
 
 
 def test_parse_textlint_json() -> None:
-    """textlint --format json 出力のパース。"""
+    """textlint --format json出力のパース。"""
     output = json.dumps(
         [
             {
@@ -500,7 +500,7 @@ def test_parse_textlint_json() -> None:
     assert errors[0].rule == "ja-technical-writing/ja-no-mixed-period"
     assert errors[0].severity == "error"
     assert errors[0].fix == "safe"
-    # 登録外ルールなので hint は付与されない
+    # 登録外ルールなのでhintは付与されない
     assert errors[0].hint is None
 
 
@@ -547,7 +547,7 @@ def test_parse_textlint_json_hint_for_known_rules() -> None:
 
 
 def test_parse_textlint_json_sentence_length_appends_range_single_line() -> None:
-    """sentence-length 違反では loc から 1 行内範囲を message 末尾へ併記する。"""
+    """sentence-length違反ではlocから1行内範囲をmessage末尾へ併記する。"""
     output = json.dumps(
         [
             {
@@ -571,7 +571,7 @@ def test_parse_textlint_json_sentence_length_appends_range_single_line() -> None
 
 
 def test_parse_textlint_json_sentence_length_appends_range_multi_line() -> None:
-    """複数行にまたがる場合は ``(Lstart:col〜Lend:col)`` 形式で併記する。"""
+    """複数行にまたがる場合は`(Lstart:col〜Lend:col)`形式で併記する。"""
     output = json.dumps(
         [
             {
@@ -594,7 +594,7 @@ def test_parse_textlint_json_sentence_length_appends_range_multi_line() -> None:
 
 
 def test_parse_textlint_json_other_rules_do_not_get_range() -> None:
-    """sentence-length 以外のルールでは loc があっても範囲は付与されない。"""
+    """sentence-length以外のルールではlocがあっても範囲は付与されない。"""
     output = json.dumps(
         [
             {
@@ -637,15 +637,15 @@ def test_parse_textlint_json_sentence_length_without_loc() -> None:
     errors = pyfltr.error_parser.parse_errors("textlint", output)
     assert len(errors) == 1
     assert errors[0].message == "Long sentence"
-    # `loc` 欠落時は end_line / end_col も None のまま
+    # `loc`欠落時はend_line / end_colもNoneのまま
     assert errors[0].end_line is None
     assert errors[0].end_col is None
 
 
 def test_parse_textlint_json_populates_end_position() -> None:
-    """`loc.end` から end_line / end_col を ErrorLocation に詰める。
+    """`loc.end`からend_line / end_colをErrorLocationに詰める。
 
-    ルール種別を問わず、`loc.end` があれば共通で取り込む。
+    ルール種別を問わず、`loc.end`があれば共通で取り込む。
     """
     output = json.dumps(
         [
@@ -679,7 +679,7 @@ def test_parse_textlint_json_populates_end_position() -> None:
 
 
 def test_parse_textlint_json_sentence_length_hint_includes_col_note() -> None:
-    """sentence-length のヒントには `col` が累積位置である旨の注記が含まれる。"""
+    """sentence-lengthのヒントには`col`が累積位置である旨の注記が含まれる。"""
     output = json.dumps(
         [
             {
@@ -702,7 +702,7 @@ def test_parse_textlint_json_sentence_length_hint_includes_col_note() -> None:
 
 
 def test_parse_typos_jsonl() -> None:
-    """typos --format=json 出力（JSON Lines）のパース。"""
+    """typos --format=json出力（JSON Lines）のパース。"""
     output = (
         '{"path":"src/foo.py","line_num":3,"byte_offset":15,"typo":"teh","corrections":["the"],"type":"typo"}\n'
         '{"path":"src/bar.py","line_num":7,"byte_offset":20,"typo":"hte","corrections":["the","he"],"type":"typo"}\n'
@@ -718,7 +718,7 @@ def test_parse_typos_jsonl() -> None:
 
 
 def test_parse_typos_jsonl_fallback() -> None:
-    """typos: JSON Lines でない出力は regex にフォールバックする。"""
+    """typos: JSON Linesでない出力はregexにフォールバックする。"""
     output = "src/foo.py:3:15: `teh` -> `the`"
     errors = pyfltr.error_parser.parse_errors("typos", output)
     assert len(errors) == 1
@@ -765,7 +765,7 @@ def test_parse_pytest_tb_short_library_exception() -> None:
 def test_parse_pytest_tb_short_stdlib_exception() -> None:
     """pytest --tb=short: 標準ライブラリで例外が発生した場合、プロジェクト内フレームが選択される。
 
-    uv管理Pythonでは標準ライブラリが``..``始まりの相対パスで出力される。
+    uv管理Pythonでは標準ライブラリが`..`始まりの相対パスで出力される。
     """
     output = (
         "================================= FAILURES =================================\n"
@@ -802,7 +802,7 @@ def test_parse_pytest_tb_short_all_external() -> None:
 
 
 def test_parse_pytest_fallback() -> None:
-    """pytest: --tb=line 形式がなければ FAILED 行にフォールバック（line=0）。"""
+    """pytest: --tb=line形式がなければFAILED行にフォールバック（line=0）。"""
     output = (
         "FAILED tests/foo_test.py::test_bar - AssertionError: xxx\n"
         "========================= 1 failed in 0.5s =========================\n"
@@ -820,7 +820,7 @@ def test_parse_glab_ci_lint_valid() -> None:
 
 
 def test_parse_glab_ci_lint_invalid_multi() -> None:
-    """無効CI出力から複数エラーを line=1 固定で抽出する。"""
+    """無効CI出力から複数エラーをline=1固定で抽出する。"""
     output = (
         "Validating...\n"
         ".gitlab-ci.yml is invalid\n"
@@ -950,18 +950,18 @@ def test_extract_last_line_skips_separators() -> None:
 
 
 def test_parse_errors_mypy_extracts_rule() -> None:
-    """mypy の末尾 `[error-code]` が rule グループで抽出され rule_url も付与される。"""
+    """mypyの末尾`[error-code]`がruleグループで抽出されrule_urlも付与される。"""
     output = 'src/foo.py:10: error: Name "x" is not defined  [name-defined]'
     errors = pyfltr.error_parser.parse_errors("mypy", output)
     assert len(errors) == 1
     assert errors[0].rule == "name-defined"
     assert errors[0].rule_url == "https://mypy.readthedocs.io/en/stable/_refs.html#code-name-defined"
-    # message に末尾の [rule] は含めない
+    # messageに末尾の[rule]は含めない
     assert errors[0].message == 'Name "x" is not defined'
 
 
 def test_parse_errors_mypy_without_rule() -> None:
-    """mypy で末尾 [code] が無い行は rule=None になる。"""
+    """mypyで末尾[code]が無い行はrule=Noneになる。"""
     output = "src/foo.py:10: error: Something went wrong"
     errors = pyfltr.error_parser.parse_errors("mypy", output)
     assert len(errors) == 1
@@ -970,7 +970,7 @@ def test_parse_errors_mypy_without_rule() -> None:
 
 
 def test_parse_errors_markdownlint_extracts_rule() -> None:
-    """markdownlint の MDxxx が rule グループで抽出される。"""
+    """markdownlintのMDxxxがruleグループで抽出される。"""
     output = "docs/index.md:3 MD001/heading-increment Heading levels should only increment by one level at a time"
     errors = pyfltr.error_parser.parse_errors("markdownlint", output)
     assert len(errors) == 1
@@ -979,7 +979,7 @@ def test_parse_errors_markdownlint_extracts_rule() -> None:
 
 
 def test_parse_errors_ruff_rule_url_from_entry() -> None:
-    """ruff JSON の ``url`` フィールドを最優先で採用する。"""
+    """ruff JSONの`url`フィールドを最優先で採用する。"""
     output = json.dumps(
         [
             {
@@ -998,7 +998,7 @@ def test_parse_errors_ruff_rule_url_from_entry() -> None:
 
 
 def test_parse_errors_ruff_rule_url_fallback() -> None:
-    """ruff JSON に ``url`` が無い場合はテンプレートで生成する。"""
+    """ruff JSONに`url`が無い場合はテンプレートで生成する。"""
     output = json.dumps(
         [
             {
@@ -1016,7 +1016,7 @@ def test_parse_errors_ruff_rule_url_fallback() -> None:
 
 
 def test_parse_errors_pyright_rule_url() -> None:
-    """pyright の rule から rule_url が生成される。"""
+    """pyrightのruleからrule_urlが生成される。"""
     output = json.dumps(
         {
             "version": "1.1.400",
@@ -1036,7 +1036,7 @@ def test_parse_errors_pyright_rule_url() -> None:
 
 
 def test_parse_errors_shellcheck_rule_url() -> None:
-    """shellcheck の rule から rule_url が生成される。"""
+    """shellcheckのruleからrule_urlが生成される。"""
     output = json.dumps(
         [
             {
@@ -1054,7 +1054,7 @@ def test_parse_errors_shellcheck_rule_url() -> None:
 
 
 def test_parse_errors_eslint_rule_url() -> None:
-    """eslint の本体ルールから rule_url が生成される。プラグインルールは URL 無し。"""
+    """eslintの本体ルールからrule_urlが生成される。プラグインルールはURL無し。"""
     output = json.dumps(
         [
             {
@@ -1081,12 +1081,12 @@ def test_parse_errors_eslint_rule_url() -> None:
     errors = pyfltr.error_parser.parse_errors("eslint", output)
     assert len(errors) == 2
     assert errors[0].rule_url == "https://eslint.org/docs/latest/rules/no-unused-vars"
-    # プラグインルール (スラッシュ含む) は URL を返さない
+    # プラグインルール（スラッシュ含む）はURLを返さない
     assert errors[1].rule_url is None
 
 
 def test_parse_errors_textlint_no_rule_url() -> None:
-    """textlint は rule_url 未サポート (常に None)。"""
+    """textlintはrule_url未サポート（常にNone）。"""
     output = json.dumps(
         [
             {
@@ -1108,7 +1108,7 @@ def test_parse_errors_textlint_no_rule_url() -> None:
 
 
 def test_parse_errors_shellcheck_severity_normalized() -> None:
-    """shellcheck の level=STYLE などを正規化する。"""
+    """shellcheckのlevel=STYLEなどを正規化する。"""
     output = json.dumps(
         [
             {

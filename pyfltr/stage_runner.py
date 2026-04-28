@@ -14,8 +14,8 @@ def make_skipped_result(
 ) -> pyfltr.command.CommandResult:
     """中断対象の skipped CommandResult を作る。
 
-    ``reason`` が指定された場合は ``CommandResult.output`` に反映する。省略時は既定の
-    ``--fail-fast`` 文言（従来互換）を使う。TUI の Ctrl+C 協調停止経路では固有の文言を
+    `reason`が指定された場合は`CommandResult.output`に反映する。省略時は既定の
+    `--fail-fast`文言（従来互換）を使う。TUIのCtrl+C協調停止経路では固有の文言を
     渡して出力する。
     """
     command_info = config.commands[command]
@@ -36,10 +36,10 @@ def cancel_pending_futures(
     future_to_command: dict[concurrent.futures.Future, str],
     aborted_commands: set[str],
 ) -> None:
-    """未開始ジョブをキャンセルし、中断対象コマンド名を aborted_commands に追加する。
+    """未開始ジョブをキャンセルし、中断対象コマンド名を`aborted_commands`に追加する。
 
-    done() の future は対象外とする。cancel() が True を返した（キャンセル成功）
-    ものだけを aborted_commands に登録する。
+    `done()`のfutureは対象外とする。`cancel()`がTrueを返した（キャンセル成功）
+    ものだけを`aborted_commands`に登録する。
     """
     for future, command in future_to_command.items():
         if future.done():

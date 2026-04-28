@@ -1,8 +1,8 @@
-"""only_failed モジュールのテスト。
+"""only_failedモジュールのテスト。
 
-``ToolTargets`` dataclass の各分岐と ``apply_filter`` の3状態（fallback / files /
+`ToolTargets`dataclassの各分岐と`apply_filter`の3状態（fallback / files /
 skip→commands絞り込みで除外）を検証する。
-``tests/main_test.py`` の ``_apply_only_failed_filter`` 系テストをここへ移管済み。
+`tests/main_test.py`の`_apply_only_failed_filter`系テストをここへ移管済み。
 """
 
 # pylint: disable=missing-function-docstring
@@ -31,14 +31,14 @@ def _only_failed_cache_fixture(monkeypatch: pytest.MonkeyPatch, tmp_path: pathli
 
 
 def test_tool_targets_fallback_default() -> None:
-    """fallback_default() は mode="fallback"、files=() で生成される。"""
+    """fallback_default()はmode="fallback"、files=()で生成される。"""
     t = pyfltr.only_failed.ToolTargets.fallback_default()
     assert t.mode == "fallback"
     assert len(t.files) == 0
 
 
 def test_tool_targets_with_files(tmp_path: pathlib.Path) -> None:
-    """with_files() は mode="files"、指定ファイルを tuple で保持する。"""
+    """with_files()はmode="files"、指定ファイルをtupleで保持する。"""
     f = tmp_path / "a.py"
     t = pyfltr.only_failed.ToolTargets.with_files([f])
     assert t.mode == "files"
@@ -46,7 +46,7 @@ def test_tool_targets_with_files(tmp_path: pathlib.Path) -> None:
 
 
 def test_tool_targets_resolve_files_fallback_returns_all_files(tmp_path: pathlib.Path) -> None:
-    """fallback モードは all_files をそのまま返す。"""
+    """fallbackモードはall_filesをそのまま返す。"""
     a = tmp_path / "a.py"
     b = tmp_path / "b.py"
     t = pyfltr.only_failed.ToolTargets.fallback_default()
@@ -54,7 +54,7 @@ def test_tool_targets_resolve_files_fallback_returns_all_files(tmp_path: pathlib
 
 
 def test_tool_targets_resolve_files_files_mode(tmp_path: pathlib.Path) -> None:
-    """files モードは self.files のリストを返す。"""
+    """filesモードはself.filesのリストを返す。"""
     a = tmp_path / "a.py"
     b = tmp_path / "b.py"
     t = pyfltr.only_failed.ToolTargets.with_files([a])
@@ -63,7 +63,7 @@ def test_tool_targets_resolve_files_files_mode(tmp_path: pathlib.Path) -> None:
 
 
 def test_tool_targets_is_frozen() -> None:
-    """frozen=True なのでフィールドへの代入は TypeError になる。"""
+    """frozen=Trueなのでフィールドへの代入はTypeErrorになる。"""
     t = pyfltr.only_failed.ToolTargets.fallback_default()
     with pytest.raises((TypeError, AttributeError)):
         t.mode = "files"  # type: ignore[misc]  # ty: ignore[invalid-assignment]
@@ -75,7 +75,7 @@ def test_tool_targets_is_frozen() -> None:
 
 
 def test_apply_filter_not_only_failed(_only_failed_cache: pathlib.Path) -> None:
-    """only_failed=False（未指定）のとき、(commands, None, False) を返す。"""
+    """only_failed=False（未指定）のとき、（commands、None、False）を返す。"""
     args = argparse.Namespace(only_failed=False)
     commands, targets, exit_early = pyfltr.only_failed.apply_filter(args, ["ruff-check"], [])
     assert commands == ["ruff-check"]
@@ -84,7 +84,7 @@ def test_apply_filter_not_only_failed(_only_failed_cache: pathlib.Path) -> None:
 
 
 def test_apply_filter_builds_per_tool_targets(_only_failed_cache: pathlib.Path) -> None:
-    """直前 run の失敗ツールごとに独立した ToolTargets を構築する。"""
+    """直前runの失敗ツールごとに独立したToolTargetsを構築する。"""
     _seed_run(
         _only_failed_cache,
         commands=["ruff-check", "mypy"],
@@ -108,7 +108,7 @@ def test_apply_filter_builds_per_tool_targets(_only_failed_cache: pathlib.Path) 
 
 
 def test_apply_filter_includes_resolution_failed_tools(_only_failed_cache: pathlib.Path) -> None:
-    """resolution_failed のツールも --only-failed の再実行対象に含まれる。"""
+    """resolution_failedのツールも--only-failedの再実行対象に含まれる。"""
     _seed_run(
         _only_failed_cache,
         commands=["shellcheck"],
@@ -126,7 +126,7 @@ def test_apply_filter_includes_resolution_failed_tools(_only_failed_cache: pathl
 
 
 def test_apply_filter_fallback_for_missing_diagnostics(_only_failed_cache: pathlib.Path) -> None:
-    """診断なしの失敗ツール（pass-filenames=False 等）は fallback モードになる。"""
+    """診断なしの失敗ツール（pass-filenames=False等）はfallbackモードになる。"""
     _seed_run(
         _only_failed_cache,
         commands=["pytest"],
@@ -143,7 +143,7 @@ def test_apply_filter_fallback_for_missing_diagnostics(_only_failed_cache: pathl
 
 
 def test_apply_filter_skip_for_empty_targets_intersection(_only_failed_cache: pathlib.Path) -> None:
-    """診断はあるが targets 交差が空のツールは除外され、全ツールで空なら早期終了する。"""
+    """診断はあるがtargets交差が空のツールは除外され、全ツールで空なら早期終了する。"""
     _seed_run(
         _only_failed_cache,
         commands=["ruff-check"],
@@ -153,13 +153,13 @@ def test_apply_filter_skip_for_empty_targets_intersection(_only_failed_cache: pa
         ],
     )
     args = argparse.Namespace(only_failed=True)
-    # all_files（targets 由来）に b.py が含まれない → 交差空で早期終了
+    # all_files（targets由来）にb.pyが含まれない → 交差空で早期終了
     _, _, exit_early = pyfltr.only_failed.apply_filter(args, ["ruff-check"], [pathlib.Path("a.py")])
     assert exit_early is True
 
 
 def test_apply_filter_early_exit_no_runs(_only_failed_cache: pathlib.Path) -> None:
-    """直前 run が存在しない場合は exit_early=True（commands は未変更で返す）。"""
+    """直前runが存在しない場合はexit_early=True（commandsは未変更で返す）。"""
     args = argparse.Namespace(only_failed=True)
     commands, targets, exit_early = pyfltr.only_failed.apply_filter(args, ["ruff-check"], [pathlib.Path("a.py")])
     assert exit_early is True
@@ -168,7 +168,7 @@ def test_apply_filter_early_exit_no_runs(_only_failed_cache: pathlib.Path) -> No
 
 
 def test_apply_filter_early_exit_no_failures(_only_failed_cache: pathlib.Path) -> None:
-    """直前 run が全成功なら exit_early=True（失敗ツール抽出が空）。"""
+    """直前runが全成功ならexit_early=True（失敗ツール抽出が空）。"""
     _seed_run(
         _only_failed_cache,
         commands=["ruff-check"],
@@ -181,7 +181,7 @@ def test_apply_filter_early_exit_no_failures(_only_failed_cache: pathlib.Path) -
 
 
 def test_apply_filter_intersects_with_targets(_only_failed_cache: pathlib.Path) -> None:
-    """失敗ファイルと all_files（位置引数 targets 由来）の交差が対象になる。"""
+    """失敗ファイルとall_files（位置引数targets由来）の交差が対象になる。"""
     _seed_run(
         _only_failed_cache,
         commands=["ruff-check"],
@@ -199,7 +199,7 @@ def test_apply_filter_intersects_with_targets(_only_failed_cache: pathlib.Path) 
         ],
     )
     args = argparse.Namespace(only_failed=True)
-    all_files = [pathlib.Path("a.py")]  # targets 指定で b.py は含まない想定
+    all_files = [pathlib.Path("a.py")]  # targets指定でb.pyは含まない想定
     _, targets, exit_early = pyfltr.only_failed.apply_filter(args, ["ruff-check"], all_files)
 
     assert exit_early is False
@@ -214,7 +214,7 @@ def test_apply_filter_intersects_with_targets(_only_failed_cache: pathlib.Path) 
 
 
 def test_apply_filter_from_run_full_id(_only_failed_cache: pathlib.Path) -> None:
-    """from_run に完全な run_id を渡すと正しく解決される。"""
+    """from_runに完全なrun_idを渡すと正しく解決される。"""
     run_id = _seed_run(
         _only_failed_cache,
         commands=["ruff-check"],
@@ -229,7 +229,7 @@ def test_apply_filter_from_run_full_id(_only_failed_cache: pathlib.Path) -> None
 
 
 def test_apply_filter_from_run_prefix(_only_failed_cache: pathlib.Path) -> None:
-    """from_run に前方一致プレフィックスを渡すと解決される。"""
+    """from_runに前方一致プレフィックスを渡すと解決される。"""
     run_id = _seed_run(
         _only_failed_cache,
         commands=["ruff-check"],
@@ -245,7 +245,7 @@ def test_apply_filter_from_run_prefix(_only_failed_cache: pathlib.Path) -> None:
 
 
 def test_apply_filter_from_run_latest(_only_failed_cache: pathlib.Path) -> None:
-    """from_run="latest" エイリアスで最新 run を参照できる。"""
+    """from_run="latest"エイリアスで最新runを参照できる。"""
     _seed_run(_only_failed_cache, commands=["ruff-check"], exit_code=0)
     _seed_run(
         _only_failed_cache,
@@ -260,7 +260,7 @@ def test_apply_filter_from_run_latest(_only_failed_cache: pathlib.Path) -> None:
 
 
 def test_apply_filter_from_run_not_found(_only_failed_cache: pathlib.Path, caplog: pytest.LogCaptureFixture) -> None:
-    """存在しない run_id を指定すると warning ログを出して早期終了する。"""
+    """存在しないrun_idを指定するとwarningログを出して早期終了する。"""
     args = argparse.Namespace(only_failed=True)
     with caplog.at_level(logging.WARNING, logger="pyfltr.only_failed"):
         commands, targets, exit_early = pyfltr.only_failed.apply_filter(
@@ -273,8 +273,8 @@ def test_apply_filter_from_run_not_found(_only_failed_cache: pathlib.Path, caplo
 
 
 def test_apply_filter_from_run_ambiguous_prefix(_only_failed_cache: pathlib.Path, caplog: pytest.LogCaptureFixture) -> None:
-    """曖昧なプレフィックスを指定すると warning を出して早期終了する。"""
-    # 2件以上 run を生成して共通プレフィックスを特定する
+    """曖昧なプレフィックスを指定するとwarningを出して早期終了する。"""
+    # 2件以上runを生成して共通プレフィックスを特定する
     run_ids = [_seed_run(_only_failed_cache) for _ in range(3)]
     # 共通プレフィックスを算出する
     shared = 0

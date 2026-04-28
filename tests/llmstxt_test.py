@@ -18,12 +18,12 @@ import pyfltr.main
 def _get_markdown_description() -> str:
     """mkdocs.yml の llmstxt.markdown_description を文字列として返す。
 
-    mkdocs.yml は MkDocs 固有の ``!!python/name:`` タグを含むため SafeLoader では
-    パースできない。カスタムタグを無視する Loader を用意して読み込む。
+    mkdocs.ymlはMkDocs固有の`!!python/name:`タグを含むためSafeLoaderでは
+    パースできない。カスタムタグを無視するLoaderを用意して読み込む。
     """
 
-    # !!python/name: など Python 固有タグを文字列として無視するカスタム Loader を作成する。
-    # yaml.add_multi_constructor はグローバル状態を変更するため、Loader サブクラスに局所化する。
+    # !!python/name: などPython固有タグを文字列として無視するカスタムLoaderを作成する。
+    # yaml.add_multi_constructorはグローバル状態を変更するため、Loaderサブクラスに局所化する。
     class _IgnoreTagLoader(yaml.SafeLoader):  # pylint: disable=too-many-ancestors
         pass
 
@@ -47,9 +47,9 @@ def _get_subcommand_names() -> list[str]:
     """pyfltr.main.build_parser() から全サブコマンド名を取得する。"""
     parser = pyfltr.main.build_parser()
     subcommand_names: list[str] = []
-    # parser._actions から _SubParsersAction を探してサブコマンド名を取得する。
+    # parser._actionsから_SubParsersActionを探してサブコマンド名を取得する。
     # 2段のプライベートアクセス（_subparsers._group_actions）を避け、
-    # 1段の _actions 経由で取得することでアクセス深度を浅くする。
+    # 1段の_actions経由で取得することでアクセス深度を浅くする。
     for action in parser._actions:  # type: ignore[attr-defined]  # pylint: disable=protected-access
         if isinstance(action, argparse._SubParsersAction):  # type: ignore[attr-defined]  # pylint: disable=protected-access
             subcommand_names.extend(action.choices.keys())

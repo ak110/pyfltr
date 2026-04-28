@@ -1,10 +1,10 @@
 """pytest 共通定義。
 
-`CommandResult` や `ErrorLocation` のダミーを生成するヘルパーと、
+`CommandResult`や`ErrorLocation`のダミーを生成するヘルパーと、
 実行アーカイブのテストデータ生成ヘルパーを集約する。
-各テストファイルで同じようなビルダーを書き散らかすと pylint の
-duplicate-code (R0801) に掛かるため、ここに集約する。conftest.py に置くのは
-pre-commit の name-tests-test フックから除外されるため。
+各テストファイルで同じようなビルダーを書き散らかすとpylintの
+duplicate-code（R0801）に掛かるため、ここに集約する。conftest.pyに置くのは
+pre-commitのname-tests-testフックから除外されるため。
 """
 
 import argparse
@@ -25,9 +25,9 @@ import pyfltr.warnings_
 def _clear_warnings_between_tests() -> None:
     """全テストで警告状態を持ち越さないため、各テスト開始前に蓄積をクリアする。
 
-    ``pyfltr.warnings_`` はモジュール変数としてプロセス内で共有されるため、
+    `pyfltr.warnings_`はモジュール変数としてプロセス内で共有されるため、
     テスト間のリークが発生すると順序依存や並列実行での非決定性を招く。
-    conftest.py で autouse 化することで、各テストが空状態から始まることを保証する。
+    conftest.pyでautouse化することで、各テストが空状態から始まることを保証する。
     """
     pyfltr.warnings_.clear()
 
@@ -59,9 +59,9 @@ def make_execution_context(
 ) -> pyfltr.command.ExecutionContext:
     """テスト用の ExecutionContext を生成する。
 
-    ``execute_command`` を直接呼び出すテストで使用する。
-    CLI/TUI フック系（on_output / is_interrupted / on_subprocess_start / on_subprocess_end）は
-    テストでは不要なため省略（デフォルトの None が使われる）。
+    `execute_command`を直接呼び出すテストで使用する。
+    CLI/TUIフック系（on_output / is_interrupted / on_subprocess_start / on_subprocess_end）は
+    テストでは不要なため省略（デフォルトのNoneが使われる）。
     """
     base = pyfltr.command.ExecutionBaseContext(
         config=config,
@@ -95,11 +95,11 @@ def make_command_result(
 ) -> pyfltr.command.CommandResult:
     """テスト用の CommandResult を生成する。
 
-    ``has_error`` を省略した場合、``returncode`` が 0/None 以外なら True に推定する。
-    ``errors`` は ``ErrorLocation`` のリスト (省略時は空)。``target_files`` は
-    ``retry_command`` 絞り込み (A案) のテスト用 (省略時は空)。
-    ``archived`` はテスト既定で True (smart truncation が適用される側)。
-    実運用でのデフォルト (CommandResult() 生成時の False) とは異なる点に注意。
+    `has_error`を省略した場合、`returncode`が0/None以外ならTrueに推定する。
+    `errors`は`ErrorLocation`のリスト（省略時は空）。`target_files`は
+    `retry_command`絞り込み（A案）のテスト用（省略時は空）。
+    `archived`はテスト既定でTrue（smart truncationが適用される側）。
+    実運用でのデフォルト（`CommandResult()`生成時のFalse）とは異なる点に注意。
     """
     if has_error is None:
         has_error = returncode is not None and returncode != 0
@@ -140,9 +140,9 @@ def make_error_location(
 
 
 def make_formatted_result(command: str = "ruff-format") -> pyfltr.command.CommandResult:
-    """``status == "formatted"`` になる最小の CommandResult を生成する。
+    """`status == "formatted"` になる最小の CommandResult を生成する。
 
-    ``main_test`` など複数のテストファイルで同様の構築が必要なため conftest.py に集約する。
+    `main_test`など複数のテストファイルで同様の構築が必要なためconftest.pyに集約する。
     """
     return pyfltr.command.CommandResult(
         command, "formatter", [command], returncode=1, has_error=False, files=1, output="", elapsed=0.01
@@ -150,9 +150,9 @@ def make_formatted_result(command: str = "ruff-format") -> pyfltr.command.Comman
 
 
 def make_succeeded_result(command: str = "ruff-check") -> pyfltr.command.CommandResult:
-    """``status == "succeeded"`` になる最小の CommandResult を生成する。
+    """`status == "succeeded"` になる最小の CommandResult を生成する。
 
-    ``main_test`` など複数のテストファイルで同様の構築が必要なため conftest.py に集約する。
+    `main_test`など複数のテストファイルで同様の構築が必要なためconftest.pyに集約する。
     """
     return pyfltr.command.CommandResult(
         command, "linter", [command], returncode=0, has_error=False, files=1, output="", elapsed=0.01
@@ -160,17 +160,17 @@ def make_succeeded_result(command: str = "ruff-check") -> pyfltr.command.Command
 
 
 def make_archive_store(tmp_path: pathlib.Path) -> pyfltr.archive.ArchiveStore:
-    """テスト用の ArchiveStore を生成する。
+    """テスト用の`ArchiveStore`を生成する。
 
-    ``archive_test`` などで ``tmp_path`` 配下に隔離した store を作るための共通ファクトリー。
+    `archive_test`などで`tmp_path`配下に隔離したstoreを作るための共通ファクトリー。
     """
     return pyfltr.archive.ArchiveStore(cache_root=tmp_path)
 
 
 def make_args(*, no_exclude: bool = False) -> argparse.Namespace:
-    """``execute_command`` に渡す argparse.Namespace を生成する。
+    """`execute_command`に渡す`argparse.Namespace`を生成する。
 
-    ``command_test`` 系のテストで ``_make_args()`` として重複定義されていたものを集約した。
+    `command_test`系のテストで`_make_args()`として重複定義されていたものを集約した。
     """
     return argparse.Namespace(shuffle=False, verbose=False, no_exclude=no_exclude)
 
@@ -180,11 +180,11 @@ def _isolated_cache(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> pathlib.Path:
-    """全テストで ``PYFLTR_CACHE_DIR`` を ``tmp_path`` に固定する。
+    """全テストで`PYFLTR_CACHE_DIR`を`tmp_path`に固定する。
 
-    ``runs_test`` / ``mcp_test`` で autouse=True の同名 fixture として重複定義されていたものを集約した。
-    各テストファイルで ``@pytest.fixture(autouse=True)`` として再エクスポートするか、
-    または conftest から直接参照することで利用できる。
+    `runs_test` / `mcp_test`でautouse=Trueの同名fixtureとして重複定義されていたものを集約した。
+    各テストファイルで`@pytest.fixture(autouse=True)`として再エクスポートするか、
+    またはconftestから直接参照することで利用できる。
     """
     monkeypatch.setenv("PYFLTR_CACHE_DIR", str(tmp_path))
     return tmp_path
@@ -199,11 +199,11 @@ def seed_archive_run(
     tool_results: list[tuple[str, int, str, list]] | None = None,
     resolution_failed_tools: set[str] | None = None,
 ) -> str:
-    """テスト用の run をアーカイブに書き込み、``run_id`` を返す。
+    """テスト用の run をアーカイブに書き込み、`run_id` を返す。
 
-    ``tool_results`` は ``(tool, returncode, output, errors)`` のタプル列。
-    ``runs_test`` / ``mcp_test`` 等で同じセットアップ手順を踏むため、
-    duplicate-code (R0801) 回避用に conftest.py 側へ集約している。
+    `tool_results`は`(tool, returncode, output, errors)`のタプル列。
+    `runs_test` / `mcp_test`等で同じセットアップ手順を踏むため、
+    duplicate-code（R0801）回避用にconftest.py側へ集約している。
     """
     store = pyfltr.archive.ArchiveStore(cache_root=cache_root)
     run_id = store.start_run(commands=commands or ["ruff-check"], files=files)

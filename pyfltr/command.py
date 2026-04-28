@@ -41,7 +41,7 @@ class ProcessRegistry:
     """
 
     def __init__(self) -> None:
-        # サブプロセスのリストとロック。_active_processes / _active_processes_lock として
+        # サブプロセスのリストとロック。_active_processes / _active_processes_lockとして
         # モジュール外からも参照できるよう公開属性として定義する。
         self.processes: list[subprocess.Popen[str]] = []
         self.lock = threading.Lock()
@@ -57,29 +57,29 @@ class ProcessRegistry:
             self.processes.remove(proc)
 
     def snapshot(self) -> "list[subprocess.Popen[str]]":
-        """ロック下でリストのコピーを返す（terminate_all 用）。"""
+        """ロック下でリストのコピーを返す（terminate_all用）。"""
         with self.lock:
             return list(self.processes)
 
     def terminate_all(self, *, timeout: float) -> None:
         """全プロセスとその子孫を停止する。
 
-        snapshot を取って各プロセスを ``_kill_process_tree`` で停止する。
+        snapshotを取って各プロセスを `_kill_process_tree` で停止する。
         """
         for proc in self.snapshot():
             with contextlib.suppress(OSError):
                 _kill_process_tree(proc, timeout=timeout)
 
     def cleanup(self) -> None:
-        """Atexit 用クリーンアップ（タイムアウト 1 秒で全プロセスを停止）。"""
+        """Atexit用クリーンアップ（タイムアウト1秒で全プロセスを停止）。"""
         self.terminate_all(timeout=1.0)
 
 
 _DEFAULT_REGISTRY = ProcessRegistry()
 
-# 既存コードおよびテストコードとの互換性のため、ProcessRegistry 内部の
+# 既存コードおよびテストコードとの互換性のため、ProcessRegistry内部の
 # リストとロックをモジュール変数として公開する。
-# テストが直接 _active_processes.append() / remove() / _active_processes_lock を
+# テストが直接_active_processes.append() / remove() / _active_processes_lockを
 # 使う箇所があるため、同一オブジェクトへの参照として維持する。
 _active_processes = _DEFAULT_REGISTRY.processes
 _active_processes_lock = _DEFAULT_REGISTRY.lock
@@ -88,7 +88,7 @@ _active_processes_lock = _DEFAULT_REGISTRY.lock
 def set_default_registry(registry: ProcessRegistry) -> None:
     """デフォルトのプロセスレジストリを差し替える（テスト用経路）。
 
-    本 Phase では既存テストを書き換えないが、今後のテストが独自インスタンスを使いたい
+    本Phaseでは既存テストを書き換えないが、今後のテストが独自インスタンスを使いたい
     場合のために用意する。
     """
     global _DEFAULT_REGISTRY, _active_processes, _active_processes_lock  # pylint: disable=global-statement
@@ -98,15 +98,15 @@ def set_default_registry(registry: ProcessRegistry) -> None:
 
 
 class InterruptedExecution(Exception):
-    """TUI から協調停止が要求されたことを示す例外。
+    """TUIから協調停止が要求されたことを示す例外。
 
-    ``_run_subprocess`` が ``is_interrupted`` コールバックで中断指示を検知した際に送出する。
-    呼び出し側（``ui._execute_command``）で捕捉し、当該コマンドを ``skipped`` 結果として置き換える。
+    `_run_subprocess` が `is_interrupted` コールバックで中断指示を検知した際に送出する。
+    呼び出し側（`ui._execute_command`）で捕捉し、当該コマンドを `skipped` 結果として置き換える。
     """
 
 
-# pyfltr のコマンド名 -> 実際に起動するパッケージの bin 名の対応表。
-# markdownlint コマンドは実体が markdownlint-cli2 である点に注意。
+# pyfltrのコマンド名 -> 実際に起動するパッケージのbin名の対応表。
+# markdownlintコマンドは実体がmarkdownlint-cli2である点に注意。
 _JS_TOOL_BIN: dict[str, str] = {
     "textlint": "textlint",
     "markdownlint": "markdownlint-cli2",
@@ -118,16 +118,16 @@ _JS_TOOL_BIN: dict[str, str] = {
     "tsc": "tsc",
 }
 
-# pnpx 経由で解決するときに `--package` に渡す spec。
-# 通常は bin 名をそのまま渡すだけだが、上流の既知バグで動かないバージョンを
+# pnpx経由で解決するときに `--package` に渡すspec。
+# 通常はbin名をそのまま渡すだけだが、上流の既知バグで動かないバージョンを
 # 除外したい場合やスコープ付きパッケージの場合にここで差し替える。
-# - textlint 15.5.3 には起動不能のバグがあるため除外している (15.5.4 で修正済み)。
-# - biome は bin 名が "biome" だが npm パッケージは "@biomejs/biome" (スコープ付き)。
+# - textlint 15.5.3には起動不能のバグがあるため除外している （15.5.4で修正済み）。
+# - biomeはbin名が "biome" だがnpmパッケージは "@biomejs/biome" （スコープ付き）。
 _JS_TOOL_PNPX_PACKAGE_SPEC: dict[str, str] = {
     "textlint": "textlint@<15.5.3 || >15.5.3",
     "biome": "@biomejs/biome",
     "oxlint": "oxlint",
-    "tsc": "typescript",  # tsc コマンドは typescript パッケージに含まれる
+    "tsc": "typescript",  # tscコマンドはtypescriptパッケージに含まれる
 }
 
 
@@ -143,37 +143,37 @@ class BinToolSpec:
     """既定バージョン"""
 
 
-# bin-runner で解決するネイティブバイナリツールの定義。
+# bin-runnerで解決するネイティブバイナリツールの定義。
 # `{command}-runner` が "bin-runner"（グローバル `bin-runner` へ委譲）または "mise" のとき、
-# このテーブルから mise backend と bin 名を引いてコマンドラインを組み立てる。
+# このテーブルからmise backendとbin名を引いてコマンドラインを組み立てる。
 # `{command}-path` が非空ならその値を優先し本テーブルは参照しない。
 _BIN_TOOL_SPEC: dict[str, BinToolSpec] = {
     "ec": BinToolSpec(bin_name="ec", mise_backend="editorconfig-checker"),
     "shellcheck": BinToolSpec(bin_name="shellcheck"),
     "shfmt": BinToolSpec(bin_name="shfmt"),
     "actionlint": BinToolSpec(bin_name="actionlint"),
-    # glab 本体は単一バイナリで `glab ci lint` のサブコマンドを必要とするが、
-    # サブコマンド注入は -args 既定値 (["ci", "lint"]) 側に持たせて、
-    # bin-runner を経由しない明示 path 指定でも自然にサブコマンドが付く設計とする。
+    # glab本体は単一バイナリで `glab ci lint` のサブコマンドを必要とするが、
+    # サブコマンド注入は-args既定値 （["ci", "lint"]） 側に持たせて、
+    # bin-runnerを経由しない明示path指定でも自然にサブコマンドが付く設計とする。
     "glab-ci-lint": BinToolSpec(bin_name="glab"),
     "taplo": BinToolSpec(bin_name="taplo"),
     "hadolint": BinToolSpec(bin_name="hadolint"),
-    # gitleaks は `detect` サブコマンドが必須だが、サブコマンド注入は
-    # -args 既定値側に持たせる（glab-ci-lint と同じ設計）。
+    # gitleaksは `detect` サブコマンドが必須だが、サブコマンド注入は
+    # -args既定値側に持たせる（glab-ci-lintと同じ設計）。
     "gitleaks": BinToolSpec(bin_name="gitleaks"),
-    # cargo 系は `cargo` バイナリを呼ぶ。mise の rust toolchain backend で解決し、
-    # cargo-fmt / cargo-clippy / cargo-check / cargo-test はサブコマンドを `-args`
+    # cargo系は `cargo` バイナリを呼ぶ。miseのrust toolchain backendで解決し、
+    # cargo-fmt / cargo-clippy / cargo-check / cargo-testはサブコマンドを `-args`
     # 既定値側に持たせる設計とする。
     "cargo-fmt": BinToolSpec(bin_name="cargo", mise_backend="rust"),
     "cargo-clippy": BinToolSpec(bin_name="cargo", mise_backend="rust"),
     "cargo-check": BinToolSpec(bin_name="cargo", mise_backend="rust"),
     "cargo-test": BinToolSpec(bin_name="cargo", mise_backend="rust"),
-    # cargo-deny は単独バイナリ。mise registry から消失したため aqua レジストリ経由を既定とする。
-    # 利用者が registry 経由などへ切り替えたい場合は `cargo-deny-version` に
-    # `cargo-deny@latest` のように `:` または `@` を含む値を渡せば tool spec 全体として扱う
-    # （build_commandline 側の分岐を参照）。
+    # cargo-denyは単独バイナリ。mise registryから消失したためaquaレジストリ経由を既定とする。
+    # 利用者がregistry経由などへ切り替えたい場合は `cargo-deny-version` に
+    # `cargo-deny@latest` のように `:` または `@` を含む値を渡せばtool spec全体として扱う
+    # （build_commandline側の分岐を参照）。
     "cargo-deny": BinToolSpec(bin_name="cargo-deny", mise_backend="aqua:EmbarkStudios/cargo-deny"),
-    # dotnet 系はいずれも `dotnet` バイナリを呼ぶ。mise の dotnet backend で解決する。
+    # dotnet系はいずれも `dotnet` バイナリを呼ぶ。miseのdotnet backendで解決する。
     "dotnet-format": BinToolSpec(bin_name="dotnet", mise_backend="dotnet"),
     "dotnet-build": BinToolSpec(bin_name="dotnet", mise_backend="dotnet"),
     "dotnet-test": BinToolSpec(bin_name="dotnet", mise_backend="dotnet"),
@@ -185,20 +185,20 @@ class _StructuredOutputSpec:
     """構造化出力用の引数注入仕様。
 
     `-args` とは独立した経路で出力形式引数を強制注入する。
-    注入時は commandline から conflicts に一致する既存引数を除去したうえで
-    inject を追加する（ruff/typos は重複指定でエラーになるため）。
+    注入時はcommandlineからconflictsに一致する既存引数を除去したうえで
+    injectを追加する（ruff/typosは重複指定でエラーになるため）。
     """
 
     inject: list[str]
     """注入する引数"""
     conflicts: list[str]
-    """commandline から除去する引数プレフィクス"""
+    """commandlineから除去する引数プレフィクス"""
     lint_only: bool = False
-    """True のとき fix モードでは注入しない"""
+    """Trueのときfixモードでは注入しない"""
 
 
 # 各ツールの構造化出力用引数。設定キー → 注入仕様のマッピング。
-# 設定キー（例: "ruff-check-json"）が True のとき有効になる。
+# 設定キー（例: "ruff-check-json"）がTrueのとき有効になる。
 _STRUCTURED_OUTPUT_SPECS: dict[str, tuple[str, _StructuredOutputSpec]] = {
     "ruff-check-json": (
         "ruff-check",
@@ -268,7 +268,7 @@ _STRUCTURED_OUTPUT_SPECS: dict[str, tuple[str, _StructuredOutputSpec]] = {
 
 
 def _get_structured_output_spec(command: str, config: pyfltr.config.Config) -> _StructuredOutputSpec | None:
-    """コマンドに対応する構造化出力仕様を返す。無効化されていれば None。"""
+    """コマンドに対応する構造化出力仕様を返す。無効化されていればNone。"""
     for config_key, entry in _STRUCTURED_OUTPUT_SPECS.items():
         cmd = entry[0]
         spec = entry[1]
@@ -278,7 +278,7 @@ def _get_structured_output_spec(command: str, config: pyfltr.config.Config) -> _
 
 
 def _apply_structured_output(commandline: list[str], spec: _StructuredOutputSpec) -> list[str]:
-    """Commandline から衝突する引数を除去し、構造化出力引数を注入する。"""
+    """Commandlineから衝突する引数を除去し、構造化出力引数を注入する。"""
     filtered: list[str] = []
     skip_next = False
     for i, arg in enumerate(commandline):
@@ -306,13 +306,13 @@ def _apply_structured_output(commandline: list[str], spec: _StructuredOutputSpec
 class ResolvedCommandline:
     """コマンドライン解決結果（副作用なし）。
 
-    ``executable`` と ``prefix`` は ``[executable, *prefix]`` で起動するための値。
-    ``runner`` は経緯を表現する文字列で ``command-info`` サブコマンドや診断で使う。
-    ``runner_source`` は ``runner`` の決定経緯を示す
-    （``"explicit"`` : ``{command}-runner`` 明示、``"default"`` : 既定値、
-    ``"path-override"`` : ``{command}-path`` 非空で direct 強制）。
-    ``effective_runner`` はグローバル設定への委譲を解決した最終形
-    （``"direct"`` / ``"mise"`` / ``"js-pnpx"`` / ``"js-pnpm"`` 等）。
+    `executable` と `prefix` は `[executable, *prefix]` で起動するための値。
+    `runner` は経緯を表現する文字列で `command-info` サブコマンドや診断で使う。
+    `runner_source` は `runner` の決定経緯を示す
+    （`"explicit"` : `{command}-runner` 明示、`"default"` : 既定値、
+    `"path-override"` : `{command}-path` 非空でdirect強制）。
+    `effective_runner` はグローバル設定への委譲を解決した最終形
+    （`"direct"` / `"mise"` / `"js-pnpx"` / `"js-pnpm"` 等）。
     """
 
     executable: str
@@ -323,24 +323,24 @@ class ResolvedCommandline:
 
     @property
     def commandline(self) -> list[str]:
-        """``[executable, *prefix]`` の単一リスト表現を返す。"""
+        """`[executable, *prefix]` の単一リスト表現を返す。"""
         return [self.executable, *self.prefix]
 
 
 def resolve_runner(command: str, config: pyfltr.config.Config) -> tuple[str, str]:
-    """``{command}-runner`` 設定値とその決定経緯を返す。
+    """`{command}-runner` 設定値とその決定経緯を返す。
 
-    返り値は ``(runner, source)`` で、``source`` は次のいずれか。
+    返り値は `(runner, source)` で、`source` は次のいずれか。
 
-    - ``"explicit"``: pyproject.toml で ``{command}-runner`` を明示指定
-    - ``"default"``: 設定既定値（typos 等で ``"direct"`` 等）
+    - `"explicit"`: pyproject.tomlで `{command}-runner` を明示指定
+    - `"default"`: 設定既定値（typos等で `"direct"` 等）
 
-    pyproject.toml 由来か既定値かを区別するために ``Config.values`` のフラグでは
-    検出できないため、現状は ``DEFAULT_CONFIG`` との同一性で判定する近似を使う。
+    pyproject.toml由来か既定値かを区別するために `Config.values` のフラグでは
+    検出できないため、現状は `DEFAULT_CONFIG` との同一性で判定する近似を使う。
     """
     runner = config.values.get(f"{command}-runner")
     if runner is None:
-        # 既定値が登録されていないコマンド（カスタムコマンド等）は direct 扱い。
+        # 既定値が登録されていないコマンド（カスタムコマンド等）はdirect扱い。
         return "direct", "default"
     default_runner = pyfltr.config.DEFAULT_CONFIG.get(f"{command}-runner")
     source = "default" if runner == default_runner else "explicit"
@@ -351,12 +351,12 @@ def build_commandline(command: str, config: pyfltr.config.Config) -> ResolvedCom
     """ツール起動コマンドラインを副作用なしで構築する。
 
     `{command}-runner` および `{command}-path` の設定に従い、`mise exec ... --` 形式・
-    `pnpx --package ...` 形式・直接実行（PATH 解決）のいずれかを返す。
-    mise 経由でも本関数では ``mise exec --version`` の事前チェックや
-    ``mise trust`` を行わない（``command-info`` サブコマンドからも安全に呼べるようにするため）。
+    `pnpx --package ...` 形式・直接実行（PATH解決）のいずれかを返す。
+    mise経由でも本関数では `mise exec --version` の事前チェックや
+    `mise trust` を行わない（`command-info` サブコマンドからも安全に呼べるようにするため）。
 
-    ツールが特定できない場合は ``FileNotFoundError`` を、
-    `{command}-runner` 値の組み合わせ自体が不正な場合は ``ValueError`` を送出する。
+    ツールが特定できない場合は `FileNotFoundError` を、
+    `{command}-runner` 値の組み合わせ自体が不正な場合は `ValueError` を送出する。
     """
     runner, source = resolve_runner(command, config)
     if runner == "bin-runner":
@@ -368,15 +368,15 @@ def build_commandline(command: str, config: pyfltr.config.Config) -> ResolvedCom
     else:
         raise ValueError(f"{command}-runnerの設定値が正しくありません: {runner=}")
 
-    # 明示的に mise / js-runner を指定したのに backend / bin が未登録の場合は、
-    # 経緯（path 上書きの有無）に関係なくエラーとする（ユーザー意図を尊重するため）。
+    # 明示的にmise / js-runnerを指定したのにbackend / binが未登録の場合は、
+    # 経緯（path上書きの有無）に関係なくエラーとする（ユーザー意図を尊重するため）。
     if runner == "mise" and command not in _BIN_TOOL_SPEC:
         raise ValueError(f'{command}: mise backend が登録されていないため `{command}-runner = "mise"` は指定できません')
     if runner == "js-runner" and command not in _JS_TOOL_BIN:
         raise ValueError(f'{command}: js-runner 対応ツールではないため `{command}-runner = "js-runner"` は指定できません')
 
-    # `{command}-path` が非空ならば、その値で direct 実行する（明示パス上書き）。
-    # 上のバリデーションで明示 runner と未登録の組み合わせは弾いているため、ここに到達するのは
+    # `{command}-path` が非空ならば、その値でdirect実行する（明示パス上書き）。
+    # 上のバリデーションで明示runnerと未登録の組み合わせは弾いているため、ここに到達するのは
     # 実行自体が成立する組み合わせのみ。
     if config.values.get(f"{command}-path", "") != "":
         return ResolvedCommandline(
@@ -392,10 +392,10 @@ def build_commandline(command: str, config: pyfltr.config.Config) -> ResolvedCom
             raise ValueError(f'{command}: mise backend が登録されていないため `{command}-runner = "mise"` は指定できません')
         spec = _BIN_TOOL_SPEC[command]
         version = config.values.get(f"{command}-version", spec.default_version)
-        # version 値に `:`（backend prefix 区切り）または `@`（tool@version 区切り）を含む場合は
-        # mise の tool spec 全体として扱い、bin_name 接頭辞や既定 backend を付け足さない。
-        # これにより `aqua:Org/Repo@x` のような任意 backend 指定や、既定 backend を上書きする
-        # `cargo-deny@latest` のような registry 経由維持指定を pyfltr 設定だけで表現できる。
+        # version値に `:`（backend prefix区切り）または `@`（tool@version区切り）を含む場合は
+        # miseのtool spec全体として扱い、bin_name接頭辞や既定backendを付け足さない。
+        # これにより `aqua:Org/Repo@x` のような任意backend指定や、既定backendを上書きする
+        # `cargo-deny@latest` のようなregistry経由維持指定をpyfltr設定だけで表現できる。
         if ":" in version or "@" in version:
             tool_spec = version
         else:
@@ -433,7 +433,7 @@ def build_commandline(command: str, config: pyfltr.config.Config) -> ResolvedCom
             effective_runner=effective,
         )
     if command in _JS_TOOL_BIN:
-        # JS ツールの direct は node_modules/.bin/<cmd> 解決に委譲。
+        # JSツールのdirectはnode_modules/.bin/<cmd> 解決に委譲。
         executable, prefix = _resolve_js_commandline(command, config)
         return ResolvedCommandline(
             executable=executable,
@@ -442,18 +442,18 @@ def build_commandline(command: str, config: pyfltr.config.Config) -> ResolvedCom
             runner_source=source,
             effective_runner=effective,
         )
-    # bin/js のいずれにも未登録で path も空 → 解決不能。
+    # bin/jsのいずれにも未登録でpathも空 → 解決不能。
     raise FileNotFoundError(
         f"{command}: 実行ファイルが特定できません ({command}-path もしくは {command}-runner を設定してください)"
     )
 
 
 def _resolve_direct_executable(bin_name: str) -> str:
-    """Direct モードでの実行ファイル解決。
+    """Directモードでの実行ファイル解決。
 
-    ``dotnet`` の場合は ``DOTNET_ROOT`` 環境変数配下に存在すれば優先する。
-    PATH 上に存在すれば ``shutil.which`` で絶対パスへ解決し、見つからなければ
-    ``FileNotFoundError`` を送出する。
+    `dotnet` の場合は `DOTNET_ROOT` 環境変数配下に存在すれば優先する。
+    PATH上に存在すれば `shutil.which` で絶対パスへ解決し、見つからなければ
+    `FileNotFoundError` を送出する。
     """
     if bin_name == "dotnet":
         dotnet_root = os.environ.get("DOTNET_ROOT")
@@ -472,10 +472,10 @@ def _resolve_bin_commandline(
     command: str,
     config: pyfltr.config.Config,
 ) -> tuple[str, list[str]]:
-    """旧 API 互換の薄い wrapper（既存テスト・後方互換用）。
+    """旧API互換の薄いwrapper（既存テスト・後方互換用）。
 
-    内部的には ``build_commandline`` と ``ensure_mise_available`` を組み合わせて
-    ``(executable, prefix)`` を返す。新規利用箇所では ``build_commandline`` を直接使う。
+    内部的には `build_commandline` と `ensure_mise_available` を組み合わせて
+    `(executable, prefix)` を返す。新規利用箇所では `build_commandline` を直接使う。
     """
     resolved = build_commandline(command, config)
     resolved = ensure_mise_available(resolved, config, command=command)
@@ -488,35 +488,35 @@ def ensure_mise_available(
     *,
     command: str | None = None,
 ) -> ResolvedCommandline:
-    """Mise 経由実行時に ``mise exec --version`` の事前チェックを行う（副作用あり）。
+    """Mise経由実行時に `mise exec --version` の事前チェックを行う（副作用あり）。
 
-    mise バイナリ自体が PATH に存在しない場合は direct 解決へフォールバックする
+    miseバイナリ自体がPATHに存在しない場合はdirect解決へフォールバックする
     （ディストロ標準パッケージだけで導入された環境でも動かすための救済挙動）。
-    config 未信頼が検出された場合は ``mise-auto-trust`` 設定に従い ``mise trust --yes --all``
-    を 1 回だけ試行する。失敗時は ``FileNotFoundError`` を送出する。
-    direct 実行や js-runner 実行の場合は本関数を素通りで返す。
+    config未信頼が検出された場合は `mise-auto-trust` 設定に従い `mise trust --yes --all`
+    を1回だけ試行する。失敗時は `FileNotFoundError` を送出する。
+    direct実行やjs-runner実行の場合は本関数を素通りで返す。
 
-    ``command`` には pyfltr のコマンド名（``cargo-deny`` 等）を渡す。
-    解決失敗時のエラー文面で ``{command}-runner = "direct"`` への切替案内に用いる。
-    省略時は ``bin_name`` を案内に流用するが、cargo 系のように複数コマンドが
-    同じ ``bin_name`` を共有する場合は誤った案内になるため、極力指定する。
+    `command` にはpyfltrのコマンド名（`cargo-deny` 等）を渡す。
+    解決失敗時のエラー文面で `{command}-runner = "direct"` への切替案内に用いる。
+    省略時は `bin_name` を案内に流用するが、cargo系のように複数コマンドが
+    同じ `bin_name` を共有する場合は誤った案内になるため、極力指定する。
     """
     if resolved.executable != "mise":
         return resolved
-    # bin_name は prefix の末尾。spec が無くても resolved.prefix から取り出す。
+    # bin_nameはprefixの末尾。specが無くてもresolved.prefixから取り出す。
     bin_name = resolved.prefix[-1]
     tool_spec = resolved.prefix[1] if len(resolved.prefix) >= 2 else ""
 
     if shutil.which("mise") is None:
-        # mise 不在 → direct PATH 解決へフォールバック。
+        # mise不在 → direct PATH解決へフォールバック。
         resolved_path = shutil.which(bin_name)
         if resolved_path is None:
             raise FileNotFoundError(bin_name)
         return dataclasses.replace(resolved, executable=resolved_path, prefix=[], effective_runner="direct")
 
-    # mise 経由の事前チェック・trust 呼び出しでも mise が tool パスにフォールバック
-    # 解決してしまう挙動を回避するため、PATH から mise tool パスを除外した env を渡す。
-    # 詳細は CLAUDE.md「subprocess 起動時の PATH 整理方針」節を参照。
+    # mise経由の事前チェック・trust呼び出しでもmiseがtoolパスにフォールバック
+    # 解決してしまう挙動を回避するため、PATHからmise toolパスを除外したenvを渡す。
+    # 詳細はCLAUDE.md「subprocess起動時のPATH整理方針」節を参照。
     mise_env = _build_mise_subprocess_env(dict(os.environ))
     check_args = ["mise", "exec", tool_spec, "--", bin_name, "--version"]
     trusted = False
@@ -537,8 +537,8 @@ def ensure_mise_available(
                 trusted = True
                 continue
             raise FileNotFoundError(f"mise trust --yes --all: {trust.stderr.strip()}")
-        # mise registry からのツール消失・バージョン解決失敗などで起動できない場合に、
-        # 利用者が pyfltr 設定だけで救済できるよう direct 経路への切替を案内する。
+        # mise registryからのツール消失・バージョン解決失敗などで起動できない場合に、
+        # 利用者がpyfltr設定だけで救済できるようdirect経路への切替を案内する。
         hint_command = command if command is not None else bin_name
         hint = f'{hint_command}-runner = "direct" を指定するとmiseを介さずPATH上のバイナリを直接実行します'
         raise FileNotFoundError(f"mise exec {tool_spec} -- {bin_name}: {stderr.strip()}\n{hint}")
@@ -553,8 +553,8 @@ def _failed_resolution_result(
 ) -> "CommandResult":
     """ツール解決失敗時の `CommandResult` を組み立てる。
 
-    ``files`` には実際の処理対象件数を渡す。``status`` は ``resolution_failed`` を返し、
-    通常の実行失敗（``failed``）と区別できるようにする。
+    `files` には実際の処理対象件数を渡す。`status` は `resolution_failed` を返し、
+    通常の実行失敗（`failed`）と区別できるようにする。
     """
     pyfltr.warnings_.emit_warning(source="tool-resolve", message=f"{command}: {message}")
     return CommandResult.from_run(
@@ -571,26 +571,26 @@ def _failed_resolution_result(
 
 
 def _kill_process_tree(proc: "subprocess.Popen[str]", *, timeout: float) -> None:
-    """Proc とその子孫をまとめて停止する。
+    """Procとその子孫をまとめて停止する。
 
-    ``_run_subprocess`` は POSIX では ``start_new_session=True``、Windows では
-    ``CREATE_NEW_PROCESS_GROUP`` で Popen を起動している。pytest-xdist のように
-    サブプロセスが更にサブプロセスを fork してパイプを継承するツールでは、
-    親だけ ``terminate()`` しても孫が stdout を握り続け ``for line in proc.stdout``
-    が EOF を受け取れない。これを回避するため、親子孫を一括で停止する。
+    `_run_subprocess` はPOSIXでは `start_new_session=True`、Windowsでは
+    `CREATE_NEW_PROCESS_GROUP` でPopenを起動している。pytest-xdistのように
+    サブプロセスが更にサブプロセスをforkしてパイプを継承するツールでは、
+    親だけ `terminate()` しても孫がstdoutを握り続け `for line in proc.stdout`
+    がEOFを受け取れない。これを回避するため、親子孫を一括で停止する。
 
-    POSIX: ``os.killpg(pgid, SIGTERM)`` → ``timeout`` 秒待機 → 残存に
-    ``os.killpg(pgid, SIGKILL)``。``start_new_session=True`` により pgid は proc.pid と
-    一致するので、親が既に reap されていても pid=pgid として停止シグナルを届けられる。
+    POSIX: `os.killpg(pgid, SIGTERM)` → `timeout` 秒待機 → 残存に
+    `os.killpg(pgid, SIGKILL)`。`start_new_session=True` によりpgidはproc.pidと
+    一致するので、親が既にreapされていてもpid=pgidとして停止シグナルを届けられる。
 
-    Windows: 完全な Job Object を導入しない簡易実装。親消失後に ``children(recursive=True)``
-    では子孫を辿れないため、先に列挙して ``terminate()`` を送り、その後 ``wait_procs`` で
-    残存に ``kill()`` を送る。サブプロセスが更に分離 Job Object を使う場合は取り逃すが、
-    現状の pyfltr 対応ツールでは問題にならない範囲とする。
+    Windows: 完全なJob Objectを導入しない簡易実装。親消失後に `children(recursive=True)`
+    では子孫を辿れないため、先に列挙して `terminate()` を送り、その後 `wait_procs` で
+    残存に `kill()` を送る。サブプロセスが更に分離Job Objectを使う場合は取り逃すが、
+    現状のpyfltr対応ツールでは問題にならない範囲とする。
     """
     targets: list[psutil.Process] = []
     if os.name == "nt":
-        # 親消失後に辿れなくなるため、事前に子孫 pid 集合を取得する。
+        # 親消失後に辿れなくなるため、事前に子孫pid集合を取得する。
         with contextlib.suppress(psutil.NoSuchProcess, psutil.AccessDenied):
             parent = psutil.Process(proc.pid)
             targets = parent.children(recursive=True)
@@ -600,25 +600,25 @@ def _kill_process_tree(proc: "subprocess.Popen[str]", *, timeout: float) -> None
             with contextlib.suppress(psutil.NoSuchProcess, psutil.AccessDenied):
                 child.terminate()
     else:
-        # os.killpg / os.getpgid / signal.SIGKILL は POSIX 専用で Windows 型スタブに未定義。
-        # os.name ガード下なので実行時は安全。型チェッカーの誤検知だけ局所コメントで抑止する。
+        # os.killpg / os.getpgid / signal.SIGKILLはPOSIX専用でWindows型スタブに未定義。
+        # os.nameガード下なので実行時は安全。型チェッカーの誤検知だけ局所コメントで抑止する。
         try:
             pgid = os.getpgid(proc.pid)  # type: ignore[attr-defined,unused-ignore]  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore  # pylint: disable=no-member
         except ProcessLookupError:
-            # 親プロセスが既に reap されている。start_new_session=True により
-            # pgid == pid として設定されていたはずなので pid をそのまま使う。
+            # 親プロセスが既にreapされている。start_new_session=Trueにより
+            # pgid == pidとして設定されていたはずなのでpidをそのまま使う。
             pgid = proc.pid
         with contextlib.suppress(ProcessLookupError, PermissionError):
             os.killpg(pgid, signal.SIGTERM)  # type: ignore[attr-defined,unused-ignore]  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore  # pylint: disable=no-member
 
-    # psutil.Process は失敗時も自身を含めて扱うため None チェックのうえで wait 対象に含める。
+    # psutil.Processは失敗時も自身を含めて扱うためNoneチェックのうえでwait対象に含める。
     wait_targets: list[psutil.Process] = list(targets)
     with contextlib.suppress(psutil.NoSuchProcess):
         wait_targets.append(psutil.Process(proc.pid))
 
     _, alive = psutil.wait_procs(wait_targets, timeout=timeout)
 
-    # 残存プロセスへ SIGKILL / kill を送る。
+    # 残存プロセスへSIGKILL / killを送る。
     if alive:
         if os.name == "nt":
             for child in alive:
@@ -641,11 +641,11 @@ atexit.register(_DEFAULT_REGISTRY.cleanup)
 
 
 def terminate_active_processes(*, timeout: float = 5.0) -> None:
-    """実行中のすべての子プロセスと子孫に terminate() → kill() を送る。
+    """実行中のすべての子プロセスと子孫にterminate() → kill() を送る。
 
-    --fail-fast や TUI Ctrl+C 協調停止で、並列実行中の他ツールを止めるために呼ばれる。
-    ``_kill_process_tree`` 経由でプロセスグループ単位 (POSIX) / 子孫 pid 列挙 (Windows)
-    で停止するため、pytest-xdist のように Popen 子が更にサブプロセスを fork する
+    --fail-fastやTUI Ctrl+C協調停止で、並列実行中の他ツールを止めるために呼ばれる。
+    `_kill_process_tree` 経由でプロセスグループ単位 （POSIX） / 子孫pid列挙 （Windows）
+    で停止するため、pytest-xdistのようにPopen子が更にサブプロセスをforkする
     ツールでも確実に停止する。
     """
     _DEFAULT_REGISTRY.terminate_all(timeout=timeout)
@@ -655,60 +655,60 @@ def terminate_active_processes(*, timeout: float = 5.0) -> None:
 class ExecutionBaseContext:
     """実行パイプライン全体で不変のコンテキスト。
 
-    ``run_pipeline`` が1回だけ組み立て、CLI/TUI 各経路へ渡す。
+    `run_pipeline` が1回だけ組み立て、CLI/TUI各経路へ渡す。
     """
 
     config: pyfltr.config.Config
-    """実行設定（pyproject.toml から読み込んだ設定値）。"""
+    """実行設定（pyproject.tomlから読み込んだ設定値）。"""
     all_files: "list[pathlib.Path]"
     """対象ファイル一覧（ディレクトリ走査・excludeフィルタリング済み）。"""
     cache_store: "pyfltr.cache.CacheStore | None"
-    """ファイル hash キャッシュストア。``None`` の場合はキャッシュ無効。"""
+    """ファイルhashキャッシュストア。`None` の場合はキャッシュ無効。"""
     cache_run_id: str | None
-    """キャッシュ書き込み時の参照元 run_id。``None`` の場合はキャッシュ書き込みをスキップ。"""
+    """キャッシュ書き込み時の参照元run_id。`None` の場合はキャッシュ書き込みをスキップ。"""
 
 
 @dataclasses.dataclass
 class ExecutionContext:
     """コマンド実行ごとに変動するコンテキスト。
 
-    ``ExecutionBaseContext`` を包みつつ、各コマンド実行直前に組み立てる。
-    CLI 経路では ``_run_one_command`` が、TUI 経路では ``UIApp._execute_command`` が組み立てる。
+    `ExecutionBaseContext` を包みつつ、各コマンド実行直前に組み立てる。
+    CLI経路では `_run_one_command` が、TUI経路では `UIApp._execute_command` が組み立てる。
     """
 
     base: ExecutionBaseContext
     """パイプライン全体で不変のコンテキスト。"""
     fix_stage: bool = False
-    """fix ステージとして実行するか（fix-args を適用して単発 fix 経路で動作する）。"""
+    """fixステージとして実行するか（fix-argsを適用して単発fix経路で動作する）。"""
     only_failed_targets: "pyfltr.only_failed.ToolTargets | None" = None
-    """``--only-failed`` 経路でのツール別失敗ファイル集合。``None`` の場合は ``all_files`` を使用。"""
+    """`--only-failed` 経路でのツール別失敗ファイル集合。`None` の場合は `all_files` を使用。"""
     on_output: "typing.Callable[[str], None] | None" = None
-    """サブプロセス出力の逐次コールバック。TUI 経路でリアルタイム表示に使用。"""
+    """サブプロセス出力の逐次コールバック。TUI経路でリアルタイム表示に使用。"""
     is_interrupted: "typing.Callable[[], bool] | None" = None
-    """中断指示の確認コールバック。TUI 協調停止経路で使用。"""
+    """中断指示の確認コールバック。TUI協調停止経路で使用。"""
     on_subprocess_start: "typing.Callable[[], None] | None" = None
-    """サブプロセス起動直後のフック。TUI 経路で実行中コマンド集合を追跡するのに使用。"""
+    """サブプロセス起動直後のフック。TUI経路で実行中コマンド集合を追跡するのに使用。"""
     on_subprocess_end: "typing.Callable[[], None] | None" = None
-    """サブプロセス終了直前のフック。``on_subprocess_start`` と対になる。"""
+    """サブプロセス終了直前のフック。`on_subprocess_start` と対になる。"""
 
     @property
     def config(self) -> pyfltr.config.Config:
-        """``base.config`` への委譲。"""
+        """`base.config` への委譲。"""
         return self.base.config
 
     @property
     def all_files(self) -> "list[pathlib.Path]":
-        """``base.all_files`` への委譲。"""
+        """`base.all_files` への委譲。"""
         return self.base.all_files
 
     @property
     def cache_store(self) -> "pyfltr.cache.CacheStore | None":
-        """``base.cache_store`` への委譲。"""
+        """`base.cache_store` への委譲。"""
         return self.base.cache_store
 
     @property
     def cache_run_id(self) -> "str | None":
-        """``base.cache_run_id`` への委譲。"""
+        """`base.cache_run_id` への委譲。"""
         return self.base.cache_run_id
 
 
@@ -726,49 +726,49 @@ class CommandResult:
     elapsed: float
     errors: list[pyfltr.error_parser.ErrorLocation] = dataclasses.field(default_factory=list)
     target_files: list[pathlib.Path] = dataclasses.field(default_factory=list)
-    """当該ツールに渡したターゲットファイル一覧 (retry_command の位置引数復元に使用)。
+    """当該ツールに渡したターゲットファイル一覧 （retry_commandの位置引数復元に使用）。
 
-    ``pass-filenames=False`` のツールでは ``commandline`` にファイルが含まれないため、
-    retry_command でターゲットを差し替えるには実行時点のリストを別途保持する必要がある。
+    `pass-filenames=False` のツールでは `commandline` にファイルが含まれないため、
+    retry_commandでターゲットを差し替えるには実行時点のリストを別途保持する必要がある。
     """
     archived: bool = False
     """実行アーカイブへの書き込みに成功したか。
 
-    ``True`` のときに限り、JSONL 側で smart truncation によるメッセージ/diagnostic 省略を
-    適用できる (切り詰め分はアーカイブから復元可能)。``--no-archive`` やアーカイブ初期化
-    失敗時は ``False`` のままとなり、切り詰めをスキップして全文を JSONL に出力する。
+    `True` のときに限り、JSONL側でsmart truncationによるメッセージ/diagnostic省略を
+    適用できる （切り詰め分はアーカイブから復元可能）。`--no-archive` やアーカイブ初期化
+    失敗時は `False` のままとなり、切り詰めをスキップして全文をJSONLに出力する。
     """
     retry_command: str | None = None
-    """当該ツール 1 件を再実行するための shell コマンド文字列 (tool レコード用)。
+    """当該ツール1件を再実行するためのshellコマンド文字列 （toolレコード用）。
 
-    ``run_pipeline`` がツール完了時に埋める。未設定 (``None``) のときは tool レコードから
-    省略する (テスト等、パイプライン外で CommandResult を生成する場合)。
+    `run_pipeline` がツール完了時に埋める。未設定 （`None`） のときはtoolレコードから
+    省略する （テスト等、パイプライン外でCommandResultを生成する場合）。
     """
     cached: bool = False
-    """ファイル hash キャッシュから復元された結果か否か。
+    """ファイルhashキャッシュから復元された結果か否か。
 
-    ``True`` のとき、当該ツールは実際には実行されておらず、過去の実行結果を復元して
-    返されている。``--no-cache`` またはキャッシュ未ヒットの場合は ``False``。
+    `True` のとき、当該ツールは実際には実行されておらず、過去の実行結果を復元して
+    返されている。`--no-cache` またはキャッシュ未ヒットの場合は `False`。
     """
     cached_from: str | None = None
-    """キャッシュヒット時の復元元 run_id (ULID)。
+    """キャッシュヒット時の復元元run_id （ULID）。
 
-    ``cached=True`` のときに限り設定される。JSONL tool レコードで参照誘導用に出力する
-    (``show-run`` / MCP の詳細参照経路で当該 run の全文を確認できる)。
+    `cached=True` のときに限り設定される。JSONL toolレコードで参照誘導用に出力する
+    （`show-run` / MCPの詳細参照経路で当該runの全文を確認できる）。
     """
     fixed_files: list[str] = dataclasses.field(default_factory=list)
-    """fix ステージ・formatter ステージで実際にファイル内容が変化した対象のパス一覧。
+    """fixステージ・formatterステージで実際にファイル内容が変化した対象のパス一覧。
 
     内容ハッシュ比較により変化を検知して設定する。
     内容変化が検知されなかった場合は空。
-    ``summary.applied_fixes`` の集計に使用する。
+    `summary.applied_fixes` の集計に使用する。
     """
     resolution_failed: bool = False
     """ツール起動コマンドの解決に失敗したか。
 
-    bin-runner / js-runner からの解決失敗時に ``True`` を立てる。
-    ``status`` プロパティは通常の実行失敗（``failed``）より優先して
-    ``resolution_failed`` を返し、CI ログ等で「対象 0 件で失敗したのか／
+    bin-runner / js-runnerからの解決失敗時に `True` を立てる。
+    `status` プロパティは通常の実行失敗（`failed`）より優先して
+    `resolution_failed` を返し、CIログ等で「対象0件で失敗したのか／
     対象はあったが解決に失敗したのか」を区別可能にする。
     """
 
@@ -788,11 +788,11 @@ class CommandResult:
         command_type: str | None = None,
         resolution_failed: bool = False,
     ) -> "CommandResult":
-        """実行結果から CommandResult を組み立てるファクトリメソッド。
+        """実行結果からCommandResultを組み立てるファクトリメソッド。
 
-        ``command_type`` を省略した場合は ``command_info.type`` を使う。
-        ``command_type`` と ``command_info`` の両方を省略することはできない。
-        ``errors`` を省略した場合は空リストを使う（parse_errors の呼び出しは呼び出し側で行う）。
+        `command_type` を省略した場合は `command_info.type` を使う。
+        `command_type` と `command_info` の両方を省略することはできない。
+        `errors` を省略した場合は空リストを使う（parse_errorsの呼び出しは呼び出し側で行う）。
         """
         resolved_type: str
         if command_type is None:
@@ -842,7 +842,7 @@ def _resolve_js_commandline(
     command: str,
     config: pyfltr.config.Config,
 ) -> tuple[str, list[str]]:
-    """JS ツール (textlint / markdownlint) の実行ファイルと引数 prefix を決定する。
+    """JSツール （textlint / markdownlint） の実行ファイルと引数prefixを決定する。
 
     `{command}-path` が空のときに呼び出され、`js-runner` 設定に基づいて
     起動コマンドを組み立てる。`direct` モードで `node_modules/.bin/<cmd>` が
@@ -850,7 +850,7 @@ def _resolve_js_commandline(
     """
     bin_name = _JS_TOOL_BIN[command]
     runner = config["js-runner"]
-    # 汎用化: `{command}-packages` キーを参照することで任意の JS ツールで
+    # 汎用化: `{command}-packages` キーを参照することで任意のJSツールで
     # `--package` / `-p` 展開を利用可能にする。未定義キーは空リスト扱い。
     packages: list[str] = list(config.values.get(f"{command}-packages", []))
 
@@ -875,8 +875,8 @@ def _resolve_js_commandline(
         return "yarn", ["run", bin_name]
     if runner == "direct":
         bin_dir = pathlib.Path("node_modules") / ".bin"
-        # Windows では `.cmd` 付きのラッパーを優先する。pyright の静的評価では
-        # Linux 上だと `sys.platform == "win32"` 側の分岐を unreachable とみなすため、
+        # Windowsでは `.cmd` 付きのラッパーを優先する。pyrightの静的評価では
+        # Linux上だと `sys.platform == "win32"` 側の分岐をunreachableとみなすため、
         # `os.name` を経由して静的分岐とみなされないようにする。
         candidates: list[pathlib.Path] = []
         if os.name == "nt":
@@ -890,12 +890,12 @@ def _resolve_js_commandline(
 
 
 def _get_env_path(env: dict[str, str]) -> str | None:
-    """``env`` から PATH 値を取り出す。
+    """`env` からPATH値を取り出す。
 
-    Windows は環境変数名が大文字小文字非区別のため ``env`` キーを非依存探索する
-    (``env={"Path": "..."}`` のように大小が混在していても拾う)。POSIX で同じ探索を
-    行うと ``env={"Path": "/tmp/bin", "PATH": "/usr/bin"}`` のようなケースで解決側と
-    Popen 実行時側の PATH が不一致となるため、POSIX では ``env.get("PATH")`` のみを
+    Windowsは環境変数名が大文字小文字非区別のため `env` キーを非依存探索する
+    （`env={"Path": "..."}` のように大小が混在していても拾う）。POSIXで同じ探索を
+    行うと `env={"Path": "/tmp/bin", "PATH": "/usr/bin"}` のようなケースで解決側と
+    Popen実行時側のPATHが不一致となるため、POSIXでは `env.get("PATH")` のみを
     使う。
     """
     if os.name == "nt":
@@ -906,10 +906,10 @@ def _get_env_path(env: dict[str, str]) -> str | None:
     return env.get("PATH")
 
 
-# mise が親プロセスの PATH に注入する tool パスのマーカー。
-# パス区切りを `/` に正規化したうえで含有判定する。``mise/bin`` は mise 本体の
+# miseが親プロセスのPATHに注入するtoolパスのマーカー。
+# パス区切りを `/` に正規化したうえで含有判定する。`mise/bin` はmise本体の
 # バイナリディレクトリのため保護対象（このリストに含めない）。
-# 詳細は CLAUDE.md「subprocess 起動時の PATH 整理方針」節を参照。
+# 詳細はCLAUDE.md「subprocess起動時のPATH整理方針」節を参照。
 _MISE_TOOL_PATH_MARKERS: tuple[str, ...] = (
     "/mise/installs/",
     "/mise/dotnet-root",
@@ -920,8 +920,8 @@ _MISE_TOOL_PATH_MARKERS: tuple[str, ...] = (
 def _normalize_path_entry_for_dedup(entry: str) -> str:
     r"""重複排除用の比較キーを返す。
 
-    Windows ではパス比較が大文字小文字非区別かつ ``/`` と ``\\`` を等価扱いするため、
-    両者を吸収して比較する。POSIX では大文字小文字を保ったまま末尾スラッシュのみ落とす。
+    Windowsではパス比較が大文字小文字非区別かつ `/` と `\\` を等価扱いするため、
+    両者を吸収して比較する。POSIXでは大文字小文字を保ったまま末尾スラッシュのみ落とす。
     """
     if os.name == "nt":
         return entry.replace("/", "\\").rstrip("\\").lower()
@@ -929,11 +929,11 @@ def _normalize_path_entry_for_dedup(entry: str) -> str:
 
 
 def _detect_path_key(env: "typing.Mapping[str, str]") -> str | None:
-    """``env`` から PATH のキー名を検出する。
+    """`env` からPATHのキー名を検出する。
 
-    Windows は環境変数名が大文字小文字非区別のため ``Path`` / ``PATH`` のいずれかが
+    Windowsは環境変数名が大文字小文字非区別のため `Path` / `PATH` のいずれかが
     入りうる。書き戻し時に元のキー名を保つため、検出した名前をそのまま返す。
-    POSIX では ``"PATH"`` 固定で扱う（大小混在エントリの不整合を避けるため）。
+    POSIXでは `"PATH"` 固定で扱う（大小混在エントリの不整合を避けるため）。
     """
     if os.name == "nt":
         for key in env:
@@ -944,10 +944,10 @@ def _detect_path_key(env: "typing.Mapping[str, str]") -> str | None:
 
 
 def _dedupe_path_value(path_value: str) -> str:
-    """順序先勝ちで PATH 文字列を重複排除する。
+    """順序先勝ちでPATH文字列を重複排除する。
 
-    比較キーは ``_normalize_path_entry_for_dedup`` で OS 依存に正規化する。
-    空エントリ（POSIX で cwd 相当）は最初の 1 回だけ保持する。
+    比較キーは `_normalize_path_entry_for_dedup` でOS依存に正規化する。
+    空エントリ（POSIXでcwd相当）は最初の1回だけ保持する。
     """
     sep = os.pathsep
     seen: set[str] = set()
@@ -962,15 +962,15 @@ def _dedupe_path_value(path_value: str) -> str:
 
 
 def dedupe_environ_path(environ: "typing.MutableMapping[str, str]") -> bool:
-    """``environ`` の PATH を順序先勝ちで重複排除し、同一キー名で書き戻す。
+    """`environ` のPATHを順序先勝ちで重複排除し、同一キー名で書き戻す。
 
-    CLI エントリポイントから 1 度だけ呼ぶ前提のヘルパー。プロセス内で起動する
-    全 subprocess は ``os.environ`` を継承するため、ここで整えれば波及する。
-    Windows での PATH キー名揺れ（``Path`` / ``PATH``）は ``_detect_path_key``
+    CLIエントリポイントから1度だけ呼ぶ前提のヘルパー。プロセス内で起動する
+    全subprocessは `os.environ` を継承するため、ここで整えれば波及する。
+    WindowsでのPATHキー名揺れ（`Path` / `PATH`）は `_detect_path_key`
     が吸収し、検出した名前のまま書き戻す。
 
     Returns:
-        書き換えが発生したら True、PATH 未設定または変更不要なら False。
+        書き換えが発生したらTrue、PATH未設定または変更不要ならFalse。
     """
     key = _detect_path_key(environ)
     if key is None:
@@ -984,11 +984,11 @@ def dedupe_environ_path(environ: "typing.MutableMapping[str, str]") -> bool:
 
 
 def _is_mise_tool_path(entry: str) -> bool:
-    """エントリが mise の注入した tool パスかを判定する。
+    """エントリがmiseの注入したtoolパスかを判定する。
 
-    対象は ``mise/installs/`` 配下・``mise/dotnet-root``・``mise/shims``。
-    mise 本体バイナリディレクトリ（``mise/bin``）は対象外として保護する。
-    Windows での大文字小文字差・パス区切り差を吸収する。
+    対象は `mise/installs/` 配下・`mise/dotnet-root`・`mise/shims`。
+    mise本体バイナリディレクトリ（`mise/bin`）は対象外として保護する。
+    Windowsでの大文字小文字差・パス区切り差を吸収する。
     """
     if entry == "":
         return False
@@ -999,20 +999,20 @@ def _is_mise_tool_path(entry: str) -> bool:
 
 
 def _strip_mise_tool_paths(path_value: str) -> str:
-    """PATH 文字列から mise tool パスを除外して返す。"""
+    """PATH文字列からmise toolパスを除外して返す。"""
     sep = os.pathsep
     return sep.join(entry for entry in path_value.split(sep) if not _is_mise_tool_path(entry))
 
 
 def _build_mise_subprocess_env(env: dict[str, str]) -> dict[str, str]:
-    """``env`` のコピーから mise tool パスを除外した env を返す。
+    """`env` のコピーからmise toolパスを除外したenvを返す。
 
-    入力 ``env`` は破壊しない（純関数）。PATH 未設定時は単にコピーを返す。
-    本処理は ``mise exec`` 経由の subprocess に対してのみ適用する。
-    PATH 上に mise の tool エントリ（installs / dotnet-root / shims）が見えていると
-    mise が tools 解決をスキップして PATH 解決にフォールバックする挙動を起こすため、
-    指定バージョンの SDK が選ばれない不安定挙動を防ぐ目的で除外する。
-    詳細は CLAUDE.md「subprocess 起動時の PATH 整理方針」節を参照。
+    入力 `env` は破壊しない（純関数）。PATH未設定時は単にコピーを返す。
+    本処理は `mise exec` 経由のsubprocessに対してのみ適用する。
+    PATH上にmiseのtoolエントリ（installs / dotnet-root / shims）が見えていると
+    miseがtools解決をスキップしてPATH解決にフォールバックする挙動を起こすため、
+    指定バージョンのSDKが選ばれない不安定挙動を防ぐ目的で除外する。
+    詳細はCLAUDE.md「subprocess起動時のPATH整理方針」節を参照。
     """
     new_env = env.copy()
     key = _detect_path_key(new_env)
@@ -1023,12 +1023,12 @@ def _build_mise_subprocess_env(env: dict[str, str]) -> dict[str, str]:
 
 
 def _terminate_and_drop(proc: "subprocess.Popen[str]") -> None:
-    """実行中 proc とその子孫を停止し ``_active_processes`` から外す。
+    """実行中procとその子孫を停止し `_active_processes` から外す。
 
-    TUI 協調停止経路で使う。``with subprocess.Popen(...)`` の __exit__ は子が残っていても
-    ``wait()`` で止まってしまうため、``InterruptedExecution`` を送出する前に本関数で
-    確実に子を終了させる。pytest-xdist など孫プロセスを fork するツールを想定し、
-    ``_kill_process_tree`` でプロセスツリー単位で停止する。
+    TUI協調停止経路で使う。`with subprocess.Popen(...)` の__exit__は子が残っていても
+    `wait()` で止まってしまうため、`InterruptedExecution` を送出する前に本関数で
+    確実に子を終了させる。pytest-xdistなど孫プロセスをforkするツールを想定し、
+    `_kill_process_tree` でプロセスツリー単位で停止する。
     """
     with contextlib.suppress(OSError):
         _kill_process_tree(proc, timeout=5.0)
@@ -1046,47 +1046,47 @@ def _run_subprocess(
     on_subprocess_start: typing.Callable[[], None] | None = None,
     on_subprocess_end: typing.Callable[[], None] | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    """サブプロセスの実行 (Popen ベース)。
+    """サブプロセスの実行 （Popenベース）。
 
-    --fail-fast で並列実行中の他プロセスを外部スレッドから terminate() できるよう、
-    subprocess.run の経路も Popen に統一し ``_active_processes`` に登録する。
-    ``on_output`` が指定されている場合は逐次コールバックを呼び、未指定時は最後に
+    --fail-fastで並列実行中の他プロセスを外部スレッドからterminate() できるよう、
+    subprocess.runの経路もPopenに統一し `_active_processes` に登録する。
+    `on_output` が指定されている場合は逐次コールバックを呼び、未指定時は最後に
     全出力をまとめて返す。
 
-    ``is_interrupted`` が指定された場合、(1) ``Popen`` 呼び出し直前、(2) ``Popen`` 生成直後、
-    (3) stdout 読み出しループの各イテレーション冒頭の 3 点で中断指示を確認し、真なら
-    当該 proc を確実に終了させてから ``InterruptedExecution`` を送出する。TUI 協調停止経路で
-    使う。``on_subprocess_start`` / ``on_subprocess_end`` は subprocess が実際に動いている
-    区間を追跡するためのフック（UI 側で「実行中コマンド集合」を正確に保つのに使う）。
-    start 後は必ず finally で end を呼ぶため、Ctrl+C スナップショットにフック外の時間帯が
+    `is_interrupted` が指定された場合、（1） `Popen` 呼び出し直前、（2） `Popen` 生成直後、
+    （3） stdout読み出しループの各イテレーション冒頭の3点で中断指示を確認し、真なら
+    当該procを確実に終了させてから `InterruptedExecution` を送出する。TUI協調停止経路で
+    使う。`on_subprocess_start` / `on_subprocess_end` はsubprocessが実際に動いている
+    区間を追跡するためのフック（UI側で「実行中コマンド集合」を正確に保つのに使う）。
+    start後は必ずfinallyでendを呼ぶため、Ctrl+Cスナップショットにフック外の時間帯が
     混入しない。
 
-    Windows では ``subprocess.Popen`` を ``shell=False`` でリスト渡しにすると
-    ``.exe`` / ``.cmd`` 等の拡張子付きファイルを PATH から自動解決しないため、
-    ここで ``shutil.which`` を使って ``commandline[0]`` をフルパスへ解決する。
-    引数の ``commandline`` は書き換えず、Popen に渡す一時リストのみで差し替える
-    (CommandResult.commandline や retry_command に解決後のフルパスが混入して
-    ポータビリティが損なわれるのを避けるため)。解決探索対象 PATH は Popen に
-    渡す ``env`` の PATH 値と一致させる (隔離した env で見えない実行ファイルを
-    起動したり、逆に env でだけ見える実行ファイルを解決できない事故を避ける)。
-    Windows では環境変数名が大文字小文字非区別のため env キーを非依存探索する。
-    解決できなかった場合は元のコマンド名のまま Popen に渡し、既存の
-    FileNotFoundError 経路で rc=127 の `CompletedProcess` に変換する。
+    Windowsでは `subprocess.Popen` を `shell=False` でリスト渡しにすると
+    `.exe` / `.cmd` 等の拡張子付きファイルをPATHから自動解決しないため、
+    ここで `shutil.which` を使って `commandline[0]` をフルパスへ解決する。
+    引数の `commandline` は書き換えず、Popenに渡す一時リストのみで差し替える
+    （CommandResult.commandlineやretry_commandに解決後のフルパスが混入して
+    ポータビリティが損なわれるのを避けるため）。解決探索対象PATHはPopenに
+    渡す `env` のPATH値と一致させる（隔離したenvで見えない実行ファイルを
+    起動したり、逆にenvでだけ見える実行ファイルを解決できない事故を避ける）。
+    Windowsでは環境変数名が大文字小文字非区別のためenvキーを非依存探索する。
+    解決できなかった場合は元のコマンド名のままPopenに渡し、既存の
+    FileNotFoundError経路でrc=127の `CompletedProcess` に変換する。
     """
     popen_commandline = commandline
     env_path = _get_env_path(env)
     resolved = shutil.which(commandline[0], path=env_path)
     if resolved is not None and resolved != commandline[0]:
         popen_commandline = [resolved, *commandline[1:]]
-    # (1) Popen 直前の中断チェック。proc がまだ存在しないのでそのまま送出できる。
+    # （1） Popen直前の中断チェック。procがまだ存在しないのでそのまま送出できる。
     if is_interrupted is not None and is_interrupted():
         raise InterruptedExecution
-    # OS 別のプロセスグループ分離オプション。pytest-xdist など孫プロセスを
-    # fork するツールの中断時に、親子孫をまとめて停止できるようにする。
+    # OS別のプロセスグループ分離オプション。pytest-xdistなど孫プロセスを
+    # forkするツールの中断時に、親子孫をまとめて停止できるようにする。
     popen_extra: dict[str, typing.Any] = {}
     if os.name == "nt":
-        # CREATE_NEW_PROCESS_GROUP は Windows 専用の定数。getattr の 3 引数形式を使うと
-        # ruff B009 の getattr→属性アクセス変換対象外になるため、型チェッカー誤検知を回避できる。
+        # CREATE_NEW_PROCESS_GROUPはWindows専用の定数。getattrの3引数形式を使うと
+        # ruff B009のgetattr→属性アクセス変換対象外になるため、型チェッカー誤検知を回避できる。
         popen_extra["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
     else:
         popen_extra["start_new_session"] = True
@@ -1107,8 +1107,8 @@ def _run_subprocess(
                 if on_subprocess_start is not None:
                     on_subprocess_start()
                 subprocess_started = True
-                # (2) Popen 生成直後の中断チェック。_active_processes 登録済みなので
-                # _terminate_and_drop で自己登録を外してから送出する。
+                # （2） Popen生成直後の中断チェック。_active_processes登録済みなので
+                # _terminate_and_dropで自己登録を外してから送出する。
                 if is_interrupted is not None and is_interrupted():
                     _terminate_and_drop(proc)
                     raise InterruptedExecution
@@ -1116,7 +1116,7 @@ def _run_subprocess(
                 output_lines: list[str] = []
                 assert proc.stdout is not None
                 for line in proc.stdout:
-                    # (3) 各イテレーション冒頭の中断チェック。
+                    # （3） 各イテレーション冒頭の中断チェック。
                     if is_interrupted is not None and is_interrupted():
                         _terminate_and_drop(proc)
                         raise InterruptedExecution
@@ -1148,12 +1148,12 @@ def pick_targets(
     only_failed_targets: "dict[str, pyfltr.only_failed.ToolTargets] | None",
     command: str,
 ) -> "pyfltr.only_failed.ToolTargets | None":
-    """``only_failed_targets`` から当該ツールの ToolTargets を取り出す。
+    """`only_failed_targets` から当該ツールのToolTargetsを取り出す。
 
-    ``only_failed_targets`` 自体が ``None`` の場合（``--only-failed`` 未指定）は常に
-    ``None`` を返し、``execute_command`` で既定の ``all_files`` に委ねる。指定あり時は
-    dict から当該コマンドのエントリを返す（存在しない場合は None）。
-    ``cli`` と ``ui`` の両経路から同一挙動で引ける共通ヘルパー。
+    `only_failed_targets` 自体が `None` の場合（`--only-failed` 未指定）は常に
+    `None` を返し、`execute_command` で既定の `all_files` に委ねる。指定あり時は
+    dictから当該コマンドのエントリを返す（存在しない場合はNone）。
+    `cli` と `ui` の両経路から同一挙動で引ける共通ヘルパー。
     """
     if only_failed_targets is None:
         return None
@@ -1162,10 +1162,10 @@ def pick_targets(
 
 @dataclasses.dataclass(frozen=True)
 class _ExecutionParams:
-    """``execute_command`` の共通前処理結果。
+    """`execute_command` の共通前処理結果。
 
     ターゲット解決・コマンドライン構築を済ませた中間状態を保持し、
-    dispatcher と各 runner 関数で参照する。
+    dispatcherと各runner関数で参照する。
     """
 
     command_info: pyfltr.config.CommandInfo
@@ -1176,13 +1176,13 @@ class _ExecutionParams:
     fix_mode: bool
     fix_args: list[str] | None
     via_mise: bool = False
-    """このコマンドが ``mise exec`` 経由で起動されるか。
+    """このコマンドが `mise exec` 経由で起動されるか。
 
-    ``ensure_mise_available`` 通過後の ``ResolvedCommandline`` から判定する
-    （mise 不在時に direct へフォールバックされたケースを除外するため、
-    ``build_commandline`` 直後の値ではなく事後の値で判断する）。
-    ``_build_subprocess_env`` での mise tool パス除外適用判断に使う。
-    詳細は CLAUDE.md「subprocess 起動時の PATH 整理方針」節を参照。
+    `ensure_mise_available` 通過後の `ResolvedCommandline` から判定する
+    （mise不在時にdirectへフォールバックされたケースを除外するため、
+    `build_commandline` 直後の値ではなく事後の値で判断する）。
+    `_build_subprocess_env` でのmise toolパス除外適用判断に使う。
+    詳細はCLAUDE.md「subprocess起動時のPATH整理方針」節を参照。
     """
 
 
@@ -1194,23 +1194,23 @@ def build_invocation_argv(
     *,
     fix_stage: bool,
 ) -> list[str]:
-    """対象ファイル抜きの起動 argv を構築する共通ヘルパー。
+    """対象ファイル抜きの起動argvを構築する共通ヘルパー。
 
-    通常段では ``[prefix] + auto_args + {command}-args + {command}-lint-args + additional_args``
-    に構造化出力引数を適用した結果を返す。fix 段では ``{command}-fix-args`` を結合する。
-    fix-args 未定義のコマンドでは fix_stage=True でも通常段と同じ argv を返す。
+    通常段では `[prefix] + auto_args + {command}-args + {command}-lint-args + additional_args`
+    に構造化出力引数を適用した結果を返す。fix段では `{command}-fix-args` を結合する。
+    fix-args未定義のコマンドではfix_stage=Trueでも通常段と同じargvを返す。
 
-    textlint の fix 段は ``_execute_textlint_fix`` の Step1 と同じ規則
-    （``--format`` ペアを除去した args + fix-args、auto_args / 構造化出力引数なし）を適用する。
-    実行本体（``_prepare_execution_params`` / ``_execute_textlint_fix``）と
-    ``command-info`` 表示の双方から本ヘルパーへ集約することで、組み立て規則の重複定義を避ける。
+    textlintのfix段は `_execute_textlint_fix` のStep1と同じ規則
+    （`--format` ペアを除去したargs + fix-args、auto_args / 構造化出力引数なし）を適用する。
+    実行本体（`_prepare_execution_params` / `_execute_textlint_fix`）と
+    `command-info` 表示の双方から本ヘルパーへ集約することで、組み立て規則の重複定義を避ける。
     """
     user_args: list[str] = list(config.values.get(f"{command}-args", []))
     extra: list[str] = list(additional_args)
 
-    # textlint の fix Step1 は fixer-formatter が compact 系をサポートしないため、
-    # ユーザー指定の `--format` ペアを一律で除去したうえで fix-args を結合する特殊経路。
-    # auto_args・構造化出力引数も適用しない（fixer 出力の解析は本ステップでは行わないため）。
+    # textlintのfix Step1はfixer-formatterがcompact系をサポートしないため、
+    # ユーザー指定の `--format` ペアを一律で除去したうえでfix-argsを結合する特殊経路。
+    # auto_args・構造化出力引数も適用しない（fixer出力の解析は本ステップでは行わないため）。
     if fix_stage and command == "textlint":
         fix_args: list[str] = list(config.values.get(f"{command}-fix-args", []))
         return [
@@ -1247,10 +1247,10 @@ def _prepare_execution_params(
     fix_stage: bool,
     only_failed_targets: "pyfltr.only_failed.ToolTargets | None",
 ) -> "_ExecutionParams | CommandResult":
-    """実行前の共通前処理を行い ``_ExecutionParams`` を返す。
+    """実行前の共通前処理を行い `_ExecutionParams` を返す。
 
-    ツールパス解決に失敗した場合は ``CommandResult`` を直接返す。
-    ターゲット 0 件の場合は ``_ExecutionParams`` を返し（targets が空リスト）、
+    ツールパス解決に失敗した場合は `CommandResult` を直接返す。
+    ターゲット0件の場合は `_ExecutionParams` を返し（targetsが空リスト）、
     呼び出し側でスキップ処理を行う。
     """
     command_info = config.commands[command]
@@ -1264,22 +1264,22 @@ def _prepare_execution_params(
         if tool_excludes:
             targets = [t for t in targets if not _matches_exclude_patterns(t, tool_excludes)]
 
-    # ファイルの順番をシャッフルまたはソート（fix ステージは再現性重視でシャッフルを無効化）
+    # ファイルの順番をシャッフルまたはソート（fixステージは再現性重視でシャッフルを無効化）
     if args.shuffle and not fix_stage:
         random.shuffle(targets)
     else:
-        # natsort.natsorted の型ヒントが不十分で ty が union 型へ縮めるため cast で明示。
+        # natsort.natsortedの型ヒントが不十分でtyがunion型へ縮めるためcastで明示。
         targets = typing.cast("list[pathlib.Path]", natsort.natsorted(targets, key=str))
 
-    # fix ステージでは当該コマンドの fix-args を引用して fix 経路に分岐する。
-    # fix-args 未定義の formatter は通常経路を通る（通常実行でもファイルを書き換えるため挙動は同じ）。
+    # fixステージでは当該コマンドのfix-argsを引用してfix経路に分岐する。
+    # fix-args未定義のformatterは通常経路を通る（通常実行でもファイルを書き換えるため挙動は同じ）。
     fix_mode = fix_stage
     fix_args: list[str] | None = None
     if fix_mode:
         fix_args = config.values.get(f"{command}-fix-args")
 
     # 対象ファイル0件ならこの後の実行自体が走らないため、ツールパス解決を省略する。
-    # mise 等のbin-runner解決はネットワークやプラットフォーム制約で失敗し得るため、
+    # mise等のbin-runner解決はネットワークやプラットフォーム制約で失敗し得るため、
     # 解決不要な状況で副作用的な失敗を出さないよう早期返却する。
     if not targets:
         return _ExecutionParams(
@@ -1294,8 +1294,8 @@ def _prepare_execution_params(
         )
 
     # `{command}-runner` および `{command}-path` 設定からツール起動コマンドラインを解決する。
-    # bin-runner 経路（mise / direct / グローバル `bin-runner` 委譲）と js-runner 経路、
-    # 直接実行を統一的に扱う。mise 経路では事前可用性チェック（mise exec --version）も実行する。
+    # bin-runner経路（mise / direct / グローバル `bin-runner` 委譲）とjs-runner経路、
+    # 直接実行を統一的に扱う。mise経路では事前可用性チェック（mise exec --version）も実行する。
     try:
         resolved = build_commandline(command, config)
         resolved = ensure_mise_available(resolved, config, command=command)
@@ -1312,14 +1312,14 @@ def _prepare_execution_params(
         return _failed_resolution_result(command, command_info, message, files=len(targets))
     commandline_prefix = resolved.commandline
 
-    # 起動オプションからの追加引数 (--textlint-args など) を shlex 分割しておく
+    # 起動オプションからの追加引数 （--textlint-argsなど） をshlex分割しておく
     additional_args_str = getattr(args, f"{command.replace('-', '_')}_args", "")
     additional_args = shlex.split(additional_args_str) if additional_args_str else []
 
-    # 対象ファイル抜きの argv を共通ヘルパーで組み立てる:
+    # 対象ファイル抜きのargvを共通ヘルパーで組み立てる:
     #   [prefix] + [auto-args] + args + (lint-args or fix-args) + additional_args + structured_output適用
-    # textlint の fix 経路では `_execute_textlint_fix` 側が改めて argv を組み立てるため
-    # ここでの値は実際には使われない（execute_command の dispatch で textlint fix は別経路へ分岐する）。
+    # textlintのfix経路では `_execute_textlint_fix` 側が改めてargvを組み立てるため
+    # ここでの値は実際には使われない（execute_commandのdispatchでtextlint fixは別経路へ分岐する）。
     commandline = build_invocation_argv(
         command,
         config,
@@ -1327,13 +1327,13 @@ def _prepare_execution_params(
         additional_args,
         fix_stage=fix_args is not None,
     )
-    # pass-filenames = false のツールはファイル引数を渡さない（tsc 等）
+    # pass-filenames = falseのツールはファイル引数を渡さない（tsc等）
     if config.values.get(f"{command}-pass-filenames", True):
         commandline.extend(str(t) for t in targets)
 
-    # ``ensure_mise_available`` を通過した後の ``effective_runner`` で mise 経路かを判定する。
-    # ``build_commandline`` 直後は mise 不在時の direct フォールバック前の値が入っているため、
-    # ここでは事後値を採用する（direct 経路へ tool パス除外を誤適用しないため）。
+    # `ensure_mise_available` を通過した後の `effective_runner` でmise経路かを判定する。
+    # `build_commandline` 直後はmise不在時のdirectフォールバック前の値が入っているため、
+    # ここでは事後値を採用する（direct経路へtoolパス除外を誤適用しないため）。
     via_mise = resolved.effective_runner == "mise" or resolved.executable == "mise"
 
     return _ExecutionParams(
@@ -1355,24 +1355,24 @@ def execute_command(
 ) -> CommandResult:
     """コマンドの実行。
 
-    ``fix_stage=True`` の場合、当該コマンドが fix-args を持っていれば fix 経路
-    （``--fix`` 付きの単発実行）で動作する。fix-args 未定義の formatter では
-    通常経路と挙動が変わらないため、呼び出し側は fix ステージで走らせる対象を
-    ``split_commands_for_execution()`` で絞り込んだうえで指定する前提。
+    `fix_stage=True` の場合、当該コマンドがfix-argsを持っていればfix経路
+    （`--fix` 付きの単発実行）で動作する。fix-args未定義のformatterでは
+    通常経路と挙動が変わらないため、呼び出し側はfixステージで走らせる対象を
+    `split_commands_for_execution()` で絞り込んだうえで指定する前提。
 
-    ``cache_store`` が指定され、かつ当該コマンドが ``CommandInfo.cacheable=True`` の
-    非 fix モード実行なら、ファイル hash キャッシュを参照して一致があれば実行を
-    スキップし、過去の結果を復元して ``cached=True`` で返す。キャッシュミス時は
-    通常実行のうえ、成功 (rc=0, has_error=False) に限り ``cache_run_id`` をソースとして
-    書き込む。``cache_run_id`` が ``None`` の場合はキャッシュ書き込みをスキップする
-    (アーカイブ無効時に ``cached_from`` で参照させる元 run が無いため)。
+    `cache_store` が指定され、かつ当該コマンドが `CommandInfo.cacheable=True` の
+    非fixモード実行なら、ファイルhashキャッシュを参照して一致があれば実行を
+    スキップし、過去の結果を復元して `cached=True` で返す。キャッシュミス時は
+    通常実行のうえ、成功 （rc=0, has_error=False） に限り `cache_run_id` をソースとして
+    書き込む。`cache_run_id` が `None` の場合はキャッシュ書き込みをスキップする
+    （アーカイブ無効時に `cached_from` で参照させる元runが無いため）。
 
-    ``only_failed_targets`` が指定された場合、``ToolTargets.resolve_files(all_files)``
-    経由で実対象ファイルを取得する（``--only-failed`` 経路でツール別の失敗ファイル集合を
-    渡す用途）。その後の ``target_extensions`` / ``pass_filenames=False`` の分岐は
-    通常通り適用される。``None`` の場合は既定の ``all_files`` を使用する。
+    `only_failed_targets` が指定された場合、`ToolTargets.resolve_files(all_files)`
+    経由で実対象ファイルを取得する（`--only-failed` 経路でツール別の失敗ファイル集合を
+    渡す用途）。その後の `target_extensions` / `pass_filenames=False` の分岐は
+    通常通り適用される。`None` の場合は既定の `all_files` を使用する。
     """
-    # ctx から各フィールドを展開する。
+    # ctxから各フィールドを展開する。
     config = ctx.config
     all_files = ctx.all_files
     on_output = ctx.on_output
@@ -1401,9 +1401,9 @@ def execute_command(
     fix_mode = params.fix_mode
     fix_args = params.fix_args
 
-    # 各 CommandResult に当該ツールのターゲットファイル一覧を埋めるためのヘルパー。
-    # retry_command で差し替え可能なターゲットを復元するのに使う (特に pass-filenames=False
-    # のツールでは commandline からも復元できないため、ここで明示的に保持する)。
+    # 各CommandResultに当該ツールのターゲットファイル一覧を埋めるためのヘルパー。
+    # retry_commandで差し替え可能なターゲットを復元するのに使う（特にpass-filenames=False
+    # のツールではcommandlineからも復元できないため、ここで明示的に保持する）。
     def _with_targets(result: CommandResult) -> CommandResult:
         result.target_files = list(targets)
         return result
@@ -1424,10 +1424,10 @@ def execute_command(
     start_time = time.perf_counter()
     env = _build_subprocess_env(config, command, via_mise=params.via_mise)
 
-    # pre-commit は .pre-commit-config.yaml を参照して SKIP 環境変数を構築し、
-    # pyfltr 関連 hook を除外したうえで 2 段階実行する。
-    # stage 1 でファイル修正のみ (fixer 系) なら "formatted"、
-    # checker 系 hook が残存エラーを報告すれば "failed" となる。
+    # pre-commitは .pre-commit-config.yamlを参照してSKIP環境変数を構築し、
+    # pyfltr関連hookを除外したうえで2段階実行する。
+    # stage 1でファイル修正のみ （fixer系） なら "formatted"、
+    # checker系hookが残存エラーを報告すれば "failed" となる。
     if command == "pre-commit":
         return _with_targets(
             _execute_pre_commit(
@@ -1446,10 +1446,10 @@ def execute_command(
             )
         )
 
-    # glab-ci-lint は GitLab API 経由の lint で、GitLab remote 未登録の環境では
-    # glab 自身が非ゼロ終了しメッセージを返す。pyfltr 利用者にとっては環境的事情のため、
-    # failed ではなく skipped 相当へ書き換える。判定は glab の英語ロケール出力に
-    # 依存するため LC_ALL/LANG=C を強制する。
+    # glab-ci-lintはGitLab API経由のlintで、GitLab remote未登録の環境では
+    # glab自身が非ゼロ終了しメッセージを返す。pyfltr利用者にとっては環境的事情のため、
+    # failedではなくskipped相当へ書き換える。判定はglabの英語ロケール出力に
+    # 依存するためLC_ALL/LANG=Cを強制する。
     if command == "glab-ci-lint":
         return _with_targets(
             _execute_glab_ci_lint(
@@ -1467,9 +1467,9 @@ def execute_command(
             )
         )
 
-    # textlint の fix モードは 2 段階実行 (fix 適用 + lint チェック)。
-    # fixer-formatter が compact をサポートしない問題と、残存違反を compact で取得する
-    # 要件を両立させるため、他の linter とは別経路で実行する。
+    # textlintのfixモードは2段階実行 （fix適用 + lintチェック）。
+    # fixer-formatterがcompactをサポートしない問題と、残存違反をcompactで取得する
+    # 要件を両立させるため、他のlinterとは別経路で実行する。
     if fix_args is not None and command == "textlint":
         return _with_targets(
             _execute_textlint_fix(
@@ -1489,8 +1489,8 @@ def execute_command(
             )
         )
 
-    # fix モードで linter に fix-args を適用する経路。
-    # mtime 変化で formatted 判定を行い、rc != 0 はそのまま failed 扱いとする。
+    # fixモードでlinterにfix-argsを適用する経路。
+    # mtime変化でformatted判定を行い、rc != 0はそのままfailed扱いとする。
     if fix_args is not None and command_info.type != "formatter":
         return _with_targets(
             _execute_linter_fix(
@@ -1508,10 +1508,10 @@ def execute_command(
             )
         )
 
-    # ruff-formatで ruff-format-by-check が有効な場合は、
-    # 先に ruff check --fix --unsafe-fixes を実行してから ruff format を実行する。
-    # ステップ1(check)の lint violation (exit 1) は無視する (lint は ruff-check で検出)。
-    # ただし exit >= 2 (設定エラー等) は失敗扱いする。
+    # ruff-formatでruff-format-by-checkが有効な場合は、
+    # 先にruff check --fix --unsafe-fixesを実行してからruff formatを実行する。
+    # ステップ1（check）のlint violation （exit 1） は無視する （lintはruff-checkで検出）。
+    # ただしexit >= 2 （設定エラー等） は失敗扱いする。
     if command == "ruff-format" and config["ruff-format-by-check"]:
         return _with_targets(
             _execute_ruff_format_two_step(
@@ -1530,7 +1530,7 @@ def execute_command(
             )
         )
 
-    # taplo は check と format が排他のため shfmt 同様の 2 段階実行。
+    # taploはcheckとformatが排他のためshfmt同様の2段階実行。
     if command == "taplo":
         return _with_targets(
             _execute_taplo_two_step(
@@ -1551,7 +1551,7 @@ def execute_command(
             )
         )
 
-    # shfmt は -l (確認) と -w (書き込み) が排他のため prettier 同様の 2 段階実行。
+    # shfmtは-l （確認） と-w （書き込み） が排他のためprettier同様の2段階実行。
     if command == "shfmt":
         return _with_targets(
             _execute_shfmt_two_step(
@@ -1572,10 +1572,10 @@ def execute_command(
             )
         )
 
-    # prettier は --check (read-only) と --write (書き込み) が排他のため 2 段階実行する。
-    # ruff-format と同じ位置・スタイルで分岐する。
-    # prettier には {cmd}-fix-args を定義していないため fix 判定は fix_stage 由来の
-    # fix_mode 変数を使う (filter_fix_commands では formatter として常に fix 対象となる)。
+    # prettierは--check （read-only） と--write （書き込み） が排他のため2段階実行する。
+    # ruff-formatと同じ位置・スタイルで分岐する。
+    # prettierには {cmd}-fix-argsを定義していないためfix判定はfix_stage由来の
+    # fix_mode変数を使う （filter_fix_commandsではformatterとして常にfix対象となる）。
     if command == "prettier":
         return _with_targets(
             _execute_prettier_two_step(
@@ -1596,7 +1596,7 @@ def execute_command(
             )
         )
 
-    # plain 経路（通常の linter・formatter）
+    # plain経路（通常のlinter・formatter）
     return _with_targets(
         _run_plain_command(
             command,
@@ -1623,7 +1623,7 @@ def execute_command(
 class _CacheContext:
     """キャッシュ参照用のコンテキスト。
 
-    ``execute_command`` の plain 経路でのみ使う内部ヘルパー。
+    `execute_command` のplain経路でのみ使う内部ヘルパー。
     """
 
     cache_store: "pyfltr.cache.CacheStore"
@@ -1631,11 +1631,11 @@ class _CacheContext:
     key: str
 
     def lookup(self) -> CommandResult | None:
-        """キャッシュを参照する。ヒットなら CommandResult、ミスなら None。"""
+        """キャッシュを参照する。ヒットならCommandResult、ミスならNone。"""
         return self.cache_store.get(self.command, self.key)
 
     def store(self, result: CommandResult, *, run_id: str | None) -> None:
-        """キャッシュへ書き込む (ソース run_id 付き)。"""
+        """キャッシュへ書き込む （ソースrun_id付き）。"""
         self.cache_store.put(self.command, self.key, result, run_id=run_id)
 
 
@@ -1650,7 +1650,7 @@ def _prepare_cache_context(
     fix_args: list[str] | None,
     cache_store: "pyfltr.cache.CacheStore | None",
 ) -> _CacheContext | None:
-    """キャッシュ参照用のキー算出。対象外の場合は None を返す。"""
+    """キャッシュ参照用のキー算出。対象外の場合はNoneを返す。"""
     if cache_store is None or not command_info.cacheable or fix_args is not None:
         return None
     import pyfltr.cache  # pylint: disable=import-outside-toplevel
@@ -1688,15 +1688,15 @@ def _run_plain_command(
     on_subprocess_start: typing.Callable[[], None] | None = None,
     on_subprocess_end: typing.Callable[[], None] | None = None,
 ) -> CommandResult:
-    """通常の linter/formatter を単発実行する plain 経路。
+    """通常のlinter/formatterを単発実行するplain経路。
 
-    ファイル hash キャッシュの参照・書き込みを担う。cacheable=True の非 fix 実行のみ
-    キャッシュを扱い、textlint fix など特殊経路はこの関数を通らない。
+    ファイルhashキャッシュの参照・書き込みを担う。cacheable=Trueの非fix実行のみ
+    キャッシュを扱い、textlint fixなど特殊経路はこの関数を通らない。
     """
     has_error = False
 
-    # ファイル hash キャッシュの参照 (cacheable=True の非 fix 実行のみ)。
-    # キャッシュ対象判定 / キー算出 / 書き込みを break/resume できるよう、結果を
+    # ファイルhashキャッシュの参照 （cacheable=Trueの非fix実行のみ）。
+    # キャッシュ対象判定 / キー算出 / 書き込みをbreak/resumeできるよう、結果を
     # 後段で差し替える設計とする。
     cache_context = _prepare_cache_context(
         command,
@@ -1712,8 +1712,8 @@ def _run_plain_command(
         cached_result = cache_context.lookup()
         if cached_result is not None:
             cached_result.target_files = list(targets)
-            # 復元値の files / elapsed は過去実行時のもの。復元時の実ファイル数は
-            # 現在のターゲットリストに合わせ直す (再実行時の対象件数表示のため)。
+            # 復元値のfiles / elapsedは過去実行時のもの。復元時の実ファイル数は
+            # 現在のターゲットリストに合わせ直す （再実行時の対象件数表示のため）。
             cached_result.files = len(targets)
             return cached_result
 
@@ -1748,7 +1748,7 @@ def _run_plain_command(
         errors=errors,
     )
 
-    # キャッシュ書き込み (成功 rc=0 のみ)。失敗結果を記録すると再試行で同じ失敗が
+    # キャッシュ書き込み （成功rc=0のみ）。失敗結果を記録すると再試行で同じ失敗が
     # 復元されて修正確認できなくなるため、成功時に限定する。
     if cache_context is not None and returncode == 0 and not has_error:
         cache_context.store(result, run_id=cache_run_id)
@@ -1759,8 +1759,8 @@ def _run_plain_command(
 def _build_auto_args(command: str, config: pyfltr.config.Config, user_args: list[str]) -> list[str]:
     """自動引数を構築する。
 
-    AUTO_ARGS で定義されたフラグが True の場合、対応する引数を返す。
-    ユーザーが *-args や CLI 引数で既に同じ文字列を指定している場合はスキップする。
+    AUTO_ARGSで定義されたフラグがTrueの場合、対応する引数を返す。
+    ユーザーが *-argsやCLI引数で既に同じ文字列を指定している場合はスキップする。
     """
     auto_entries = pyfltr.config.AUTO_ARGS.get(command, [])
     if not auto_entries:
@@ -1784,37 +1784,37 @@ def _build_subprocess_env(
 ) -> dict[str, str]:
     """サブプロセス実行用の環境変数を構築。
 
-    ``via_mise=True`` の場合、PATH から mise が注入した tool パス（installs / dotnet-root /
-    shims）を除外する。これは ``mise exec`` 経由のサブプロセスで mise が tools 解決を
-    スキップして PATH 解決にフォールバックしてしまう挙動を防ぐための対症療法。
-    詳細は CLAUDE.md「subprocess 起動時の PATH 整理方針」節を参照。
+    `via_mise=True` の場合、PATHからmiseが注入したtoolパス（installs / dotnet-root /
+    shims）を除外する。これは `mise exec` 経由のサブプロセスでmiseがtools解決を
+    スキップしてPATH解決にフォールバックしてしまう挙動を防ぐための対症療法。
+    詳細はCLAUDE.md「subprocess起動時のPATH整理方針」節を参照。
     """
     env = os.environ.copy()
     if via_mise:
         env = _build_mise_subprocess_env(env)
     # サプライチェーン攻撃対策: パッケージ取得系ツールの最小待機期間を既定で設定する。
     # ユーザーが既に設定している場合はその値を尊重する。
-    # pnpm は npm 互換の config 環境変数方式 (NPM_CONFIG_<SNAKE_CASE>) を採る。
+    # pnpmはnpm互換のconfig環境変数方式 （NPM_CONFIG_<SNAKE_CASE>） を採る。
     env.setdefault("UV_EXCLUDE_NEWER", "1 day")
     env.setdefault("NPM_CONFIG_MINIMUM_RELEASE_AGE", "1440")
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUNBUFFERED"] = "1"
     env["PYTHONDONTWRITEBYTECODE"] = "1"
-    # Windows の cp932/cp1252 などに依存せず、ツール側の open()/Path.read_text() を UTF-8 で動かす。
-    # 例: uv-sort が pyproject.toml をエンコーディング未指定で読み込む箇所で発生する
-    # UnicodeDecodeError を回避する。
+    # Windowsのcp932/cp1252などに依存せず、ツール側のopen()/Path.read_text() をUTF-8で動かす。
+    # 例: uv-sortがpyproject.tomlをエンコーディング未指定で読み込む箇所で発生する
+    # UnicodeDecodeErrorを回避する。
     env["PYTHONUTF8"] = "1"
     if config.values.get(f"{command}-devmode", False):
         env["PYTHONDEVMODE"] = "1"
     # 表示幅を適切な範囲に制限する
-    # (pytestなどは一部の表示が右寄せになるのであまり大きいと見づらい)
+    # （pytestなどは一部の表示が右寄せになるのであまり大きいと見づらい）
     env["COLUMNS"] = str(min(max(shutil.get_terminal_size().columns - 4, 80), 128))
     return env
 
 
-# GitLab remote 未登録/未認証の状況で glab 自身が出すエラー文言。
-# 検出後に glab-ci-lint を skipped 扱いへ書き換える根拠とする。
-# 大文字小文字差を吸収するため、判定は ``output.lower()`` に対して行う。
+# GitLab remote未登録/未認証の状況でglab自身が出すエラー文言。
+# 検出後にglab-ci-lintをskipped扱いへ書き換える根拠とする。
+# 大文字小文字差を吸収するため、判定は `output.lower()` に対して行う。
 _GLAB_HOST_NOT_FOUND_PATTERNS: tuple[str, ...] = (
     "none of the git remotes configured for this repository point to a known gitlab host",
     "not authenticated",
@@ -1822,7 +1822,7 @@ _GLAB_HOST_NOT_FOUND_PATTERNS: tuple[str, ...] = (
 
 
 def _looks_like_glab_host_missing(output: str) -> bool:
-    """Glab がGitLabホストを検出できなかった旨のエラーかを判定する。"""
+    """GlabがGitLabホストを検出できなかった旨のエラーかを判定する。"""
     lowered = output.lower()
     return any(pattern in lowered for pattern in _GLAB_HOST_NOT_FOUND_PATTERNS)
 
@@ -1841,7 +1841,7 @@ def _execute_glab_ci_lint(
     on_subprocess_start: typing.Callable[[], None] | None = None,
     on_subprocess_end: typing.Callable[[], None] | None = None,
 ) -> CommandResult:
-    """Glab ci lint をホスト未検出時にスキップ扱いへ変換しつつ実行する。"""
+    """Glab ci lintをホスト未検出時にスキップ扱いへ変換しつつ実行する。"""
     glab_env = dict(env)
     # 文言判定がロケール依存にならないよう英語ロケールを強制する。
     glab_env["LC_ALL"] = "C"
@@ -1904,14 +1904,14 @@ def _execute_pre_commit(
     on_subprocess_start: typing.Callable[[], None] | None = None,
     on_subprocess_end: typing.Callable[[], None] | None = None,
 ) -> CommandResult:
-    """pre-commit の 2 段階実行。
+    """pre-commitの2段階実行。
 
-    stage 1 で pre-commit run --all-files を実行し、fixer 系 hook がファイルを
-    修正しただけなら再実行で成功する（"formatted"）。checker 系 hook のエラーが
+    stage 1でpre-commit run --all-filesを実行し、fixer系hookがファイルを
+    修正しただけなら再実行で成功する（"formatted"）。checker系hookのエラーが
     残る場合は "failed"（has_error=True）として返す。
     """
-    # pre-commit 配下から起動された場合は自身を再帰実行しない。
-    # git commit → pre-commit → pyfltr fast → pre-commit の二重実行を防ぐ。
+    # pre-commit配下から起動された場合は自身を再帰実行しない。
+    # git commit → pre-commit → pyfltr fast → pre-commitの二重実行を防ぐ。
     if pyfltr.precommit.is_running_under_precommit():
         return CommandResult.from_run(
             command=command,
@@ -1923,7 +1923,7 @@ def _execute_pre_commit(
             elapsed=time.perf_counter() - start_time,
         )
 
-    # .pre-commit-config.yaml が存在しなければスキップ
+    # .pre-commit-config.yamlが存在しなければスキップ
     config_dir = pathlib.Path.cwd()
     config_path = config_dir / ".pre-commit-config.yaml"
     if not config_path.exists():
@@ -1937,7 +1937,7 @@ def _execute_pre_commit(
             elapsed=time.perf_counter() - start_time,
         )
 
-    # SKIP 環境変数を構築（pyfltr 関連 hook を除外して再帰を防止）
+    # SKIP環境変数を構築（pyfltr関連hookを除外して再帰を防止）
     skip_value = pyfltr.precommit.build_skip_value(config, config_dir)
     pre_commit_env = dict(env) if env is not None else dict(os.environ)
     if skip_value:
@@ -1964,7 +1964,7 @@ def _execute_pre_commit(
     returncode = proc.returncode
     has_error = False
 
-    # stage 2: 失敗時は再実行（fixer が修正しただけなら 2 回目で成功する）
+    # stage 2: 失敗時は再実行（fixerが修正しただけなら2回目で成功する）
     if returncode != 0:
         if args.verbose and on_output is not None:
             on_output("pre-commit: stage 2 再実行\n")
@@ -2009,18 +2009,18 @@ def _execute_linter_fix(
     on_subprocess_start: typing.Callable[[], None] | None = None,
     on_subprocess_end: typing.Callable[[], None] | None = None,
 ) -> CommandResult:
-    """Fix モードでの linter 実行 (fix-args を適用して単発実行)。
+    """Fixモードでのlinter実行 （fix-argsを適用して単発実行）。
 
     ステータス判定:
-    - returncode != 0 → failed (ファイル変化に関係なく、エラーを握りつぶさない)
-    - returncode == 0 かつ内容ハッシュに変化あり → formatted (command_type を
-      "formatter" に差し替えて既存の status プロパティに委ねる)
-    - returncode == 0 かつ変化なし → succeeded
+    - returncode != 0 → failed （ファイル変化に関係なく、エラーを握りつぶさない）
+    - returncode == 0かつ内容ハッシュに変化あり → formatted（command_typeを
+      "formatter"に差し替えて既存のstatusプロパティに委ねる）
+    - returncode == 0かつ変化なし → succeeded
 
-    ruff-check は残存違反があると rc=1 を返すが、この設計では failed として扱う。
+    ruff-checkは残存違反があるとrc=1を返すが、この設計ではfailedとして扱う。
     未修正の違反はユーザーが後段で認識すべき情報であり、成功に寄せない方針。
     """
-    del command_info  # noqa  # 呼び出し側との引数形式揃え用 (使用しない)
+    del command_info  # noqa  # 呼び出し側との引数形式揃え用 （使用しない）
 
     digests_before = _snapshot_file_digests(targets)
 
@@ -2043,7 +2043,7 @@ def _execute_linter_fix(
 
     has_error = returncode != 0
     if not has_error and changed:
-        # fix が適用されたので formatter 扱いで formatted にする
+        # fixが適用されたのでformatter扱いでformattedにする
         result_command_type: str = "formatter"
         returncode = 1
     else:
@@ -2083,45 +2083,45 @@ def _execute_textlint_fix(
     on_subprocess_start: typing.Callable[[], None] | None = None,
     on_subprocess_end: typing.Callable[[], None] | None = None,
 ) -> CommandResult:
-    """Textlint fix モードの 2 段階実行 (fix 適用 → lint チェック)。
+    """Textlint fixモードの2段階実行 （fix適用 → lintチェック）。
 
-    textlint は lint 実行と fix 実行でフォーマッタ解決に使うパッケージが異なり
-    (`@textlint/linter-formatter` と `@textlint/fixer-formatter`)、fixer 側は
+    textlintはlint実行とfix実行でフォーマッタ解決に使うパッケージが異なり
+    （`@textlint/linter-formatter` と `@textlint/fixer-formatter`）、fixer側は
     `compact` フォーマッタをサポートしない。このため `textlint --format compact --fix`
-    がクラッシュする。また `textlint --fix` の既定出力 (stylish) は本ツールの
-    builtin パーサ (compact 前提) で解析できないため、残存違反を取得するには
-    別途 lint 実行を行う必要がある。
+    がクラッシュする。また `textlint --fix` の既定出力 （stylish） は本ツールの
+    builtinパーサ （compact前提） で解析できないため、残存違反を取得するには
+    別途lint実行を行う必要がある。
 
-    上記を両立させるため本関数では次の 2 段階を直列実行する。
+    上記を両立させるため本関数では次の2段階を直列実行する。
 
-    Step1: fix 適用
-        commandline_prefix + (textlint-args から --format ペアを除去) + fix-args
+    Step1: fix適用
+        commandline_prefix + （textlint-argsから--formatペアを除去） + fix-args
         + additional_args + targets
 
-    Step2: lint チェック (残存違反を compact 形式で取得)
+    Step2: lintチェック （残存違反をcompact形式で取得）
         commandline_prefix + textlint-args + textlint-lint-args + additional_args + targets
 
     ステータス判定:
-    - いずれかのステップが rc>=2 (致命的エラー) → failed
-    - Step2 rc != 0 (残存違反あり) → failed (Errors タブに反映される)
-    - Step2 rc == 0 かつ Step1 で内容ハッシュに変化あり → formatted
-    - Step2 rc == 0 かつ変化なし → succeeded
+    -いずれかのステップがrc>=2 （致命的エラー） → failed
+    - Step2 rc != 0 （残存違反あり） → failed （Errorsタブに反映される）
+    - Step2 rc == 0かつStep1で内容ハッシュに変化あり → formatted
+    - Step2 rc == 0かつ変化なし → succeeded
 
-    textlint --fix は残存違反がなくても対象ファイルを書き戻すことがあり、
-    mtime ベースの比較では偽陽性になる。このため内容ハッシュ
-    (`_snapshot_file_digests`) で比較している。
+    textlint --fixは残存違反がなくても対象ファイルを書き戻すことがあり、
+    mtimeベースの比較では偽陽性になる。このため内容ハッシュ
+    （`_snapshot_file_digests`） で比較している。
     """
     target_strs = [str(t) for t in targets]
 
-    # Step1: --format X ペアを除去した共通 args + fix-args で fix 適用
-    # `build_invocation_argv` の textlint fix 特殊経路と同じ規則を適用する。
+    # Step1: --format Xペアを除去した共通args + fix-argsでfix適用
+    # `build_invocation_argv` のtextlint fix特殊経路と同じ規則を適用する。
     step1_commandline: list[str] = [
         *build_invocation_argv(command, config, commandline_prefix, additional_args, fix_stage=True),
         *target_strs,
     ]
 
     digests_before = _snapshot_file_digests(targets)
-    # 保護対象識別子の事前検出 (Step1 で破損するケースを捕捉するため)。
+    # 保護対象識別子の事前検出 （Step1で破損するケースを捕捉するため）。
     # 空リスト設定時は計測を省略する。
     protected_identifiers: list[str] = list(config.values.get("textlint-protected-identifiers", []))
     contents_before: dict[pathlib.Path, str] = _snapshot_file_texts(targets) if protected_identifiers else {}
@@ -2137,7 +2137,7 @@ def _execute_textlint_fix(
         on_subprocess_end=on_subprocess_end,
     )
     step1_rc = step1_proc.returncode
-    # rc=0 (違反なし) / rc=1 (違反残存) は通常終了、rc>=2 は致命的エラー扱い
+    # rc=0 （違反なし） / rc=1 （違反残存） は通常終了、rc>=2は致命的エラー扱い
     step1_fatal = step1_rc >= 2
     digests_after_step1 = _snapshot_file_digests(targets)
     step1_changed = digests_after_step1 != digests_before
@@ -2145,9 +2145,9 @@ def _execute_textlint_fix(
     if protected_identifiers and step1_changed:
         _warn_protected_identifier_corruption(contents_before, _snapshot_file_texts(targets), protected_identifiers)
 
-    # Step2: 通常 lint 実行 (残存違反を取得)
+    # Step2: 通常lint実行 （残存違反を取得）
     # `build_invocation_argv` の通常段経路と同じ規則を適用する
-    # （auto_args は textlint には未登録のため空。構造化出力引数も lint 段なので通常通り適用される）。
+    # （auto_argsはtextlintには未登録のため空。構造化出力引数もlint段なので通常通り適用される）。
     step2_commandline: list[str] = [
         *build_invocation_argv(command, config, commandline_prefix, additional_args, fix_stage=False),
         *target_strs,
@@ -2169,7 +2169,7 @@ def _execute_textlint_fix(
     output = (step1_proc.stdout + step2_proc.stdout).strip()
     elapsed = time.perf_counter() - start_time
 
-    # Step2 出力 (compact 形式) から残存違反をパースする
+    # Step2出力 （compact形式） から残存違反をパースする
     errors = pyfltr.error_parser.parse_errors(command, output, command_info.error_pattern)
 
     # ステータス判定
@@ -2182,7 +2182,7 @@ def _execute_textlint_fix(
         returncode = step2_rc
         result_command_type = "linter"
     elif step1_changed:
-        # fix 適用済み、残存違反なし → formatted 扱いにする
+        # fix適用済み、残存違反なし → formatted扱いにする
         has_error = False
         returncode = 1
         result_command_type = "formatter"
@@ -2208,11 +2208,11 @@ def _execute_textlint_fix(
 
 
 def _strip_format_option(args: list[str]) -> list[str]:
-    """引数列から `--format X` / `-f X` / `--format=X` を除去する (順序は保持)。
+    """引数列から `--format X` / `-f X` / `--format=X` を除去する （順序は保持）。
 
-    textlint の fix 実行時に使用する。`@textlint/fixer-formatter` はリンター側と
-    異なるフォーマッタセットを持つため、ユーザーが共通 args に `--format compact` 等を
-    指定していてもクラッシュしないように一律で除去する。compact 文字列を特別扱いしないのは、
+    textlintのfix実行時に使用する。`@textlint/fixer-formatter` はリンター側と
+    異なるフォーマッタセットを持つため、ユーザーが共通argsに `--format compact` 等を
+    指定していてもクラッシュしないように一律で除去する。compact文字列を特別扱いしないのは、
     `--format json` などの組み合わせに対しても安全に振る舞うため。
     """
     result: list[str] = []
@@ -2245,19 +2245,19 @@ def _execute_ruff_format_two_step(
     on_subprocess_start: typing.Callable[[], None] | None = None,
     on_subprocess_end: typing.Callable[[], None] | None = None,
 ) -> CommandResult:
-    """ruff-format の 2 段階実行 (ruff check --fix → ruff format)。
+    """ruff-formatの2段階実行 （ruff check --fix → ruff format）。
 
-    ステップ1 (ruff check --fix --unsafe-fixes) の未修正 lint violation は無視する。
-    別途 ruff-check コマンドで検出される前提。ただし exit >= 2 (設定ミス等) は failed 扱い。
-    ステップ1 の成否にかかわらずステップ2 (ruff format) は実行する
-    (対象ファイル全体の format 適用を止めないため)。
+    ステップ1 （ruff check --fix --unsafe-fixes） の未修正lint violationは無視する。
+    別途ruff-checkコマンドで検出される前提。ただしexit >= 2 （設定ミス等） はfailed扱い。
+    ステップ1の成否にかかわらずステップ2 （ruff format） は実行する
+    （対象ファイル全体のformat適用を止めないため）。
     """
     # ステップ1のコマンドライン組立
     check_commandline: list[str] = [config["ruff-format-path"]]
     check_commandline.extend(config["ruff-format-check-args"])
     check_commandline.extend(str(t) for t in targets)
 
-    # ステップ1実行前の内容ハッシュを記録 (修正適用検知用)
+    # ステップ1実行前の内容ハッシュを記録 （修正適用検知用）
     digests_before = _snapshot_file_digests(targets)
 
     # ステップ1実行
@@ -2272,11 +2272,11 @@ def _execute_ruff_format_two_step(
         on_subprocess_end=on_subprocess_end,
     )
     step1_rc = step1_proc.returncode
-    step1_failed = step1_rc >= 2  # exit 0/1 は無視、2 以上 (abrupt termination) のみ失敗扱い
+    step1_failed = step1_rc >= 2  # exit 0/1は無視、2以上 （abrupt termination） のみ失敗扱い
     digests_after_step1 = _snapshot_file_digests(targets)
     step1_changed = digests_after_step1 != digests_before
 
-    # ステップ2実行 (常に実行)
+    # ステップ2実行 （常に実行）
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(format_commandline)}\n")
     step2_proc = _run_subprocess(
@@ -2306,8 +2306,8 @@ def _execute_ruff_format_two_step(
 
     errors = pyfltr.error_parser.parse_errors(command, output, command_info.error_pattern)
 
-    # commandline は代表として「最後に実行したステップ」(= ruff format) を格納。
-    # 両ステップ分の commandline は verbose 出力で確認可能。
+    # commandlineは代表として「最後に実行したステップ」（= ruff format） を格納。
+    # 両ステップ分のcommandlineはverbose出力で確認可能。
     result = CommandResult.from_run(
         command=command,
         command_info=command_info,
@@ -2320,8 +2320,8 @@ def _execute_ruff_format_two_step(
         errors=errors,
     )
     if not has_error and (step1_changed or step2_formatted):
-        # digests_before は Step1 前のスナップショット（関数冒頭で取得済み）。
-        # Step1（ruff --check による暗黙 fix）と Step2（ruff format）の累積差分を一括で取る。
+        # digests_beforeはStep1前のスナップショット（関数冒頭で取得済み）。
+        # Step1（ruff --checkによる暗黙fix）とStep2（ruff format）の累積差分を一括で取る。
         digests_after_step2 = _snapshot_file_digests(targets)
         result.fixed_files = _changed_files(digests_before, digests_after_step2)
     return result
@@ -2344,23 +2344,23 @@ def _execute_taplo_two_step(
     on_subprocess_start: typing.Callable[[], None] | None = None,
     on_subprocess_end: typing.Callable[[], None] | None = None,
 ) -> CommandResult:
-    """Taplo の 2 段階実行 (taplo check → taplo format)。
+    """Taploの2段階実行 （taplo check → taplo format）。
 
-    shfmt と同様、確認用サブコマンド (check) と書き込み用サブコマンド (format) が
+    shfmtと同様、確認用サブコマンド （check） と書き込み用サブコマンド （format） が
     排他のため専用経路で処理する。
 
-    通常モード (fix_mode=False):
+    通常モード （fix_mode=False）:
 
-    - Step1: `prefix + args + check-args + additional + targets` を実行
-    - Step1 rc == 0 → succeeded (整形不要)
-    - Step1 rc != 0 → Step2 `prefix + args + write-args + additional + targets` を実行
-      - Step2 rc == 0 → formatted (整形成功)
+    - Step1: `prefix + args + check-args + additional + targets`を実行
+    - Step1 rc == 0 → succeeded （整形不要）
+    - Step1 rc != 0 → Step2 `prefix + args + write-args + additional + targets`を実行
+      - Step2 rc == 0 → formatted （整形成功）
       - Step2 rc != 0 → failed
 
-    fix モード (fix_mode=True):
+    fixモード （fix_mode=True）:
 
-    - Step1 をスキップし、直接 write-args 付きで実行
-    - 内容ハッシュスナップショットで書き込みを検知
+    - Step1をスキップし、直接write-args付きで実行
+    -内容ハッシュスナップショットで書き込みを検知
     """
     common_args: list[str] = list(config[f"{command}-args"])
     check_args: list[str] = list(config[f"{command}-check-args"])
@@ -2417,9 +2417,9 @@ def _execute_taplo_two_step(
             result.fixed_files = _changed_files(digests_before, digests_after)
         return result
 
-    # 通常モード: Step1 (check) → Step2 (format)
-    # Step1 は read-only のため内容変化なし。変化検知のため Step1 前にスナップショットを取る。
-    # （他 formatter の digests_before と同じ起点で取る方針に揃える）
+    # 通常モード: Step1 （check） → Step2 (format)
+    # Step1はread-onlyのため内容変化なし。変化検知のためStep1前にスナップショットを取る。
+    # （他formatterのdigests_beforeと同じ起点で取る方針に揃える）
     taplo_digests_before = _snapshot_file_digests(targets)
     check_commandline: list[str] = [
         *commandline_prefix,
@@ -2506,22 +2506,22 @@ def _execute_shfmt_two_step(
     on_subprocess_start: typing.Callable[[], None] | None = None,
     on_subprocess_end: typing.Callable[[], None] | None = None,
 ) -> CommandResult:
-    """Shfmt の 2 段階実行 (shfmt -l → shfmt -w)。
+    """Shfmtの2段階実行 （shfmt -l → shfmt -w）。
 
-    prettier と同様、確認用引数 (-l) と書き込み用引数 (-w) が排他のため専用経路で処理する。
+    prettierと同様、確認用引数 （-l） と書き込み用引数 （-w） が排他のため専用経路で処理する。
 
-    通常モード (fix_mode=False):
+    通常モード （fix_mode=False）:
 
-    - Step1: `prefix + args + check-args + additional + targets` を実行
-    - Step1 rc == 0 → succeeded (整形不要)
-    - Step1 rc != 0 → Step2 `prefix + args + write-args + additional + targets` を実行
-      - Step2 rc == 0 → formatted (整形成功)
+    - Step1: `prefix + args + check-args + additional + targets`を実行
+    - Step1 rc == 0 → succeeded （整形不要）
+    - Step1 rc != 0 → Step2 `prefix + args + write-args + additional + targets`を実行
+      - Step2 rc == 0 → formatted （整形成功）
       - Step2 rc != 0 → failed
 
-    fix モード (fix_mode=True):
+    fixモード （fix_mode=True）:
 
-    - Step1 をスキップし、直接 write-args 付きで実行
-    - 内容ハッシュスナップショットで書き込みを検知
+    - Step1をスキップし、直接write-args付きで実行
+    -内容ハッシュスナップショットで書き込みを検知
     """
     common_args: list[str] = list(config[f"{command}-args"])
     check_args: list[str] = list(config[f"{command}-check-args"])
@@ -2578,9 +2578,9 @@ def _execute_shfmt_two_step(
             result.fixed_files = _changed_files(digests_before, digests_after)
         return result
 
-    # 通常モード: Step1 (check) → Step2 (write)
-    # Step1 は read-only のため内容変化なし。変化検知のため Step1 前にスナップショットを取る。
-    # （他 formatter の digests_before と同じ起点で取る方針に揃える）
+    # 通常モード: Step1 （check） → Step2 (write)
+    # Step1はread-onlyのため内容変化なし。変化検知のためStep1前にスナップショットを取る。
+    # （他formatterのdigests_beforeと同じ起点で取る方針に揃える）
     shfmt_digests_before = _snapshot_file_digests(targets)
     check_commandline: list[str] = [
         *commandline_prefix,
@@ -2667,28 +2667,28 @@ def _execute_prettier_two_step(
     on_subprocess_start: typing.Callable[[], None] | None = None,
     on_subprocess_end: typing.Callable[[], None] | None = None,
 ) -> CommandResult:
-    """Prettier の 2 段階実行 (prettier --check → prettier --write)。
+    """Prettierの2段階実行 （prettier --check → prettier --write）。
 
-    `prettier --check` (read-only) と `prettier --write` (書き込み) は排他のため、
-    既存の autoflake/isort/black の「同じ引数に --check を付与する」ダンスは使えない。
+    `prettier --check` （read-only） と `prettier --write` （書き込み） は排他のため、
+    既存のautoflake/isort/blackの「同じ引数に--checkを付与する」ダンスは使えない。
     本ヘルパーでは以下のとおり実行する。
 
-    通常モード (fix_mode=False):
+    通常モード （fix_mode=False）:
 
-    - Step1: `prefix + args + check-args + additional + targets` を実行
-    - Step1 rc == 0 → succeeded (書き込み不要)
-    - Step1 rc == 1 → Step2 `prefix + args + write-args + additional + targets` を実行
-      - Step2 rc == 0 → formatted (書き込み成功)
+    - Step1: `prefix + args + check-args + additional + targets`を実行
+    - Step1 rc == 0 → succeeded （書き込み不要）
+    - Step1 rc == 1 → Step2 `prefix + args + write-args + additional + targets`を実行
+      - Step2 rc == 0 → formatted （書き込み成功）
       - Step2 rc != 0 → failed
-    - Step1 rc >= 2 → failed (設定ミス等)
+    - Step1 rc >= 2 → failed （設定ミス等）
 
-    fix モード (fix_mode=True):
+    fixモード （fix_mode=True）:
 
-    - Step1 はスキップし、直接 `prefix + args + write-args + additional + targets` を実行
-    - 書き込み検知には内容ハッシュスナップショットを使う
+    - Step1はスキップし、直接 `prefix + args + write-args + additional + targets`を実行
+    -書き込み検知には内容ハッシュスナップショットを使う
     - rc != 0 → failed
-    - rc == 0 かつハッシュ変化あり → formatted
-    - rc == 0 かつ変化なし → succeeded
+    - rc == 0かつハッシュ変化あり → formatted
+    - rc == 0かつ変化なし → succeeded
     """
     common_args: list[str] = list(config[f"{command}-args"])
     check_args: list[str] = list(config[f"{command}-check-args"])
@@ -2750,7 +2750,7 @@ def _execute_prettier_two_step(
             result.fixed_files = _changed_files(digests_before, digests_after)
         return result
 
-    # 通常モード: Step1 (check) → 必要なら Step2 (write)
+    # 通常モード: Step1 （check） → 必要ならStep2 （write）
     check_commandline: list[str] = [
         *commandline_prefix,
         *common_args,
@@ -2787,7 +2787,7 @@ def _execute_prettier_two_step(
         )
 
     if step1_rc >= 2:
-        # 設定ミス等の致命的エラー。Step2 は実行しない。
+        # 設定ミス等の致命的エラー。Step2は実行しない。
         output = step1_proc.stdout.strip()
         elapsed = time.perf_counter() - start_time
         errors = pyfltr.error_parser.parse_errors(command, output, command_info.error_pattern)
@@ -2803,7 +2803,7 @@ def _execute_prettier_two_step(
             errors=errors,
         )
 
-    # Step1 rc == 1 → Step2 実行 (書き込み)
+    # Step1 rc == 1 → Step2実行 （書き込み）
     prettier_digests_before = _snapshot_file_digests(targets)
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(write_commandline)}\n")
@@ -2821,7 +2821,7 @@ def _execute_prettier_two_step(
 
     if step2_rc == 0:
         has_error = False
-        returncode = 1  # formatted 扱い
+        returncode = 1  # formatted扱い
     else:
         has_error = True
         returncode = step2_rc
@@ -2847,11 +2847,11 @@ def _execute_prettier_two_step(
 
 
 def _snapshot_file_digests(targets: list[pathlib.Path]) -> dict[pathlib.Path, bytes]:
-    """対象ファイルの内容ハッシュ (BLAKE2b) スナップショットを取得。
+    """対象ファイルの内容ハッシュ （BLAKE2b） スナップショットを取得。
 
-    mtime ベースの比較は textlint --fix のように「残存違反がなくても
+    mtimeベースの比較はtextlint --fixのように「残存違反がなくても
     ファイルを書き戻す」ツールで偽陽性を起こすため、内容ハッシュで比較する。
-    ファイルが存在しない場合は空 bytes を設定する (比較で差分検知できる)。
+    ファイルが存在しない場合は空bytesを設定する （比較で差分検知できる）。
     """
     result: dict[pathlib.Path, bytes] = {}
     for target in targets:
@@ -2869,8 +2869,8 @@ def _changed_files(
 ) -> list[str]:
     """ハッシュスナップショット前後で内容が変化したファイルのパス文字列リストを返す。
 
-    ``_snapshot_file_digests`` の戻り値を 2 点渡し、ハッシュが変化したキーを抽出する。
-    結果は文字列化してソートして返す（summary.applied_fixes の安定ソート用）。
+    `_snapshot_file_digests` の戻り値を2点渡し、ハッシュが変化したキーを抽出する。
+    結果は文字列化してソートして返す（summary.applied_fixesの安定ソート用）。
     """
     return sorted(str(p) for p, digest in after.items() if before.get(p) != digest)
 
@@ -2878,8 +2878,8 @@ def _changed_files(
 def _snapshot_file_texts(targets: list[pathlib.Path]) -> dict[pathlib.Path, str]:
     """対象ファイルのテキスト内容スナップショットを取得する。
 
-    textlint fix の保護対象識別子破損検知に使う。読み込めないファイルは辞書から
-    除外する (比較時には「前後どちらにも出現しない」と解釈される)。
+    textlint fixの保護対象識別子破損検知に使う。読み込めないファイルは辞書から
+    除外する （比較時には「前後どちらにも出現しない」と解釈される）。
     """
     result: dict[pathlib.Path, str] = {}
     for target in targets:
@@ -2895,11 +2895,11 @@ def _warn_protected_identifier_corruption(
     after: dict[pathlib.Path, str],
     protected_identifiers: list[str],
 ) -> None:
-    """Textlint fix 後に保護対象識別子が失われていた場合、警告を発行する。
+    """Textlint fix後に保護対象識別子が失われていた場合、警告を発行する。
 
-    fix 前のファイル内容に含まれていた識別子が fix 後に 1 件でも減っていれば、
-    当該識別子が ``preset-jtf-style`` などの機械変換で破損した可能性が高い。
-    検知は出現回数ベース (等号比較) で行い、単純な減少も破損として扱う。
+    fix前のファイル内容に含まれていた識別子がfix後に1件でも減っていれば、
+    当該識別子が `preset-jtf-style` などの機械変換で破損した可能性が高い。
+    検知は出現回数ベース （等号比較） で行い、単純な減少も破損として扱う。
     """
     for path, before_text in before.items():
         after_text = after.get(path)
@@ -2970,7 +2970,7 @@ def expand_all_files(targets: list[pathlib.Path], config: pyfltr.config.Config) 
         is_direct = not target.is_dir()
         _expand_target(target, is_direct=is_direct)
 
-    # .gitignore フィルタリング
+    # .gitignoreフィルタリング
     if config["respect-gitignore"]:
         before_gitignore = set(expanded)
         expanded = _filter_by_gitignore(expanded)
@@ -2988,7 +2988,7 @@ def expand_all_files(targets: list[pathlib.Path], config: pyfltr.config.Config) 
 
 
 def _filter_by_gitignore(paths: list[pathlib.Path]) -> list[pathlib.Path]:
-    """Git check-ignore で .gitignore に該当するファイルを除外する。"""
+    """Git check-ignoreで .gitignoreに該当するファイルを除外する。"""
     if not paths:
         return paths
     try:
@@ -3008,7 +3008,7 @@ def _filter_by_gitignore(paths: list[pathlib.Path]) -> list[pathlib.Path]:
         pyfltr.warnings_.emit_warning(source="git", message="git check-ignore がタイムアウトしたためスキップする")
         return paths
     if result.returncode not in (0, 1):
-        # 0: 1つ以上 ignored, 1: 全て not ignored, 128: fatal error（リポジトリ外等）
+        # 0: 1つ以上ignored, 1: 全てnot ignored, 128: fatal error（リポジトリ外等）
         logger.debug("git check-ignore が終了コード %d を返した", result.returncode)
         return paths
     ignored_set: set[str] = set()
@@ -3023,37 +3023,37 @@ def filter_by_globs(all_files: list[pathlib.Path], globs: list[str]) -> list[pat
 
 
 def filter_by_changed_since(all_files: list[pathlib.Path], ref: str) -> list[pathlib.Path]:
-    """``--changed-since <ref>`` で変更ファイルに絞り込む。
+    """`--changed-since <ref>` で変更ファイルに絞り込む。
 
-    ``git diff --name-only <ref>`` でコミット差分と tracked ファイルの作業ツリー差分・staged 差分の
-    和集合を取得し、``all_files`` との交差を返す。
-    untracked（``git add`` 未実施の新規ファイル）は対象外となる。
+    `git diff --name-only <ref>` でコミット差分とtrackedファイルの作業ツリー差分・staged差分の
+    和集合を取得し、`all_files` との交差を返す。
+    untracked（`git add` 未実施の新規ファイル）は対象外となる。
 
-    git 不在または ref が存在しない場合は警告を出して ``all_files`` をそのまま返す（全体実行へフォールバック）。
+    git不在またはrefが存在しない場合は警告を出して `all_files` をそのまま返す（全体実行へフォールバック）。
     """
     changed = _get_changed_files(ref)
     if changed is None:
         return all_files
     if not changed:
         return []
-    # normalize_separators を使って区切り文字を統一してから比較する。
-    # all_files は cwd 起点の相対 Path であり、git diff も cwd 起点の相対パスを返す。
+    # normalize_separatorsを使って区切り文字を統一してから比較する。
+    # all_filesはcwd起点の相対Pathであり、git diffもcwd起点の相対パスを返す。
     changed_norm: set[str] = {pyfltr.paths.normalize_separators(p) for p in changed}
     return [f for f in all_files if pyfltr.paths.normalize_separators(f) in changed_norm]
 
 
 def _get_changed_files(ref: str) -> list[str] | None:
-    """``git diff --name-only <ref>`` でコミット差分と tracked ファイルの作業ツリー差分・staged 差分を取得する。
+    """`git diff --name-only <ref>` でコミット差分とtrackedファイルの作業ツリー差分・staged差分を取得する。
 
-    untracked（``git add`` 未実施の新規ファイル）は ``git diff`` の出力に含まれないため対象外となる。
-    成功時はパス文字列のリストを返す。git 不在・ref 不在・タイムアウト時は
-    警告を出して ``None`` を返す（呼び出し元が全体実行へフォールバックする）。
+    untracked（`git add` 未実施の新規ファイル）は `git diff` の出力に含まれないため対象外となる。
+    成功時はパス文字列のリストを返す。git不在・ref不在・タイムアウト時は
+    警告を出して `None` を返す（呼び出し元が全体実行へフォールバックする）。
     """
-    # HEAD からのコミット差分（<ref>..HEAD）と tracked ファイルの作業ツリー差分・staged 差分の
-    # 3 種を「git diff <ref>」1 コマンドで取得する。
-    # git diff <ref> は <ref> と作業ツリーの差分（staged も含む）を返すため、
-    # コミット間差分 + tracked ファイルの作業ツリー差分を一度に網羅できる。
-    # 出力は -z オプションで NUL 区切りにしてパスにスペースや特殊文字が含まれるケースに対応する。
+    # HEADからのコミット差分（<ref>..HEAD）とtrackedファイルの作業ツリー差分・staged差分の
+    # 3種を「git diff <ref>」1コマンドで取得する。
+    # git diff <ref> は <ref> と作業ツリーの差分（stagedも含む）を返すため、
+    # コミット間差分 + trackedファイルの作業ツリー差分を一度に網羅できる。
+    # 出力は-zオプションでNUL区切りにしてパスにスペースや特殊文字が含まれるケースに対応する。
     try:
         result = subprocess.run(
             ["git", "diff", "--name-only", "-z", ref],
@@ -3076,7 +3076,7 @@ def _get_changed_files(ref: str) -> list[str] | None:
         )
         return None
     if result.returncode != 0:
-        # 終了コード非 0 は ref 不在・リポジトリ外などを示す。
+        # 終了コード非0はref不在・リポジトリ外などを示す。
         stderr_msg = result.stderr.strip()
         detail = f": {stderr_msg}" if stderr_msg else ""
         pyfltr.warnings_.emit_warning(
@@ -3084,7 +3084,7 @@ def _get_changed_files(ref: str) -> list[str] | None:
             message=f"--changed-since={ref!r} の ref が解決できないためスキップして全体実行します{detail}",
         )
         return None
-    # NUL 区切りでパースし、空文字列エントリを除去する。
+    # NUL区切りでパースし、空文字列エントリを除去する。
     return [p for p in result.stdout.split("\0") if p]
 
 
@@ -3104,7 +3104,7 @@ def _matches_exclude_patterns(path: pathlib.Path, patterns: list[str]) -> str | 
 
 
 def excluded(path: pathlib.Path, config: pyfltr.config.Config) -> tuple[str, str] | None:
-    """無視パターンチェック。一致した場合は(設定キー名, 一致パターン)を、無一致の場合はNoneを返す。"""
+    """無視パターンチェック。一致した場合は（設定キー名, 一致パターン）を、無一致の場合はNoneを返す。"""
     for key in ("exclude", "extend-exclude"):
         matched = _matches_exclude_patterns(path, config[key])
         if matched is not None:

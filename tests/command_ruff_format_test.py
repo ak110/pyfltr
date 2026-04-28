@@ -1,6 +1,6 @@
 """command.py の ruff-format 2段階実行テスト。
 
-``_execute_ruff_format_two_step`` の動作を検証する。
+`_execute_ruff_format_two_step` の動作を検証する。
 """
 
 # pylint: disable=protected-access,duplicate-code

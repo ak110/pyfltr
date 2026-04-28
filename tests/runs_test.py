@@ -1,8 +1,8 @@
-"""``list-runs`` / ``show-run`` サブコマンドのテスト。
+"""`list-runs` / `show-run`サブコマンドのテスト。
 
-``PYFLTR_CACHE_DIR`` を ``tmp_path`` に固定することで、テストデータ生成に使う
-``ArchiveStore(cache_root=tmp_path)`` と ``pyfltr.main.run([...])`` 経由で
-生成される ``ArchiveStore()`` (``default_cache_root()`` 解決) が同一キャッシュを
+`PYFLTR_CACHE_DIR`を`tmp_path`に固定することで、テストデータ生成に使う
+`ArchiveStore(cache_root=tmp_path)`と`pyfltr.main.run([...])`経由で
+生成される`ArchiveStore()`（`default_cache_root()`解決）が同一キャッシュを
 参照する状態を作る。
 """
 
@@ -24,7 +24,7 @@ def _isolated_cache(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> pathlib.Path:
-    """全テストで ``PYFLTR_CACHE_DIR`` を ``tmp_path`` に固定する。"""
+    """全テストで`PYFLTR_CACHE_DIR`を`tmp_path`に固定する。"""
     monkeypatch.setenv("PYFLTR_CACHE_DIR", str(tmp_path))
     return tmp_path
 
@@ -47,7 +47,7 @@ def test_list_runs_text_multiple(
     assert returncode == 0
     out = capsys.readouterr().out
     assert "RUN_ID" in out
-    # 新しい順 (降順) で並ぶ
+    # 新しい順（降順）で並ぶ
     idx1 = out.find(run_id1)
     idx2 = out.find(run_id2)
     assert idx1 >= 0 and idx2 >= 0
@@ -64,7 +64,7 @@ def test_list_runs_limit(
     returncode = pyfltr.main.run(["list-runs", "--limit", "2"])
     assert returncode == 0
     out = capsys.readouterr().out
-    # header 行 + 2 件 = 3 行
+    # header行 + 2件 = 3行
     lines = [line for line in out.splitlines() if line.strip()]
     assert len(lines) == 3
 
@@ -96,7 +96,7 @@ def test_list_runs_jsonl(
     lines = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
     assert len(lines) == 2
     assert all(line["kind"] == "run" for line in lines)
-    # 降順 (新しい順)
+    # 降順（新しい順）
     assert lines[0]["run_id"] == run_id2
     assert lines[1]["run_id"] == run_id1
 
@@ -152,7 +152,7 @@ def test_show_run_prefix_ambiguous(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     run_ids = [_seed_run(tmp_path) for _ in range(2)]
-    # ULID の先頭は同じタイムスタンプ部分 (ミリ秒単位) を共有する可能性が高いため、
+    # ULIDの先頭は同じタイムスタンプ部分（ミリ秒単位）を共有する可能性が高いため、
     # 実際に共通する最長プレフィックスを算出してテストする。
     shared = 0
     for a, b in zip(run_ids[0], run_ids[1], strict=False):
@@ -160,7 +160,7 @@ def test_show_run_prefix_ambiguous(
             break
         shared += 1
     if shared < 1:
-        pytest.skip("shared prefix が無いケースでは曖昧判定にならない")
+        pytest.skip("shared prefixが無いケースでは曖昧判定にならない")
     prefix = run_ids[0][:shared]
 
     returncode = pyfltr.main.run(["show-run", prefix])

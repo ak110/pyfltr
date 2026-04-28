@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """pyfltr。"""
 
-# v3.0.0 でサブコマンド・実行アーカイブ・キャッシュ・retry_command 絞り込みなどを
-# 段階的に集約した。retry_command 生成は pyfltr.retry モジュールが担う。
+# v3.0.0でサブコマンド・実行アーカイブ・キャッシュ・retry_command絞り込みなどを
+# 段階的に集約した。retry_command生成はpyfltr.retryモジュールが担う。
 
 import argparse
 import collections.abc
@@ -40,10 +40,10 @@ os.environ.pop("LINES", None)
 
 
 # サブコマンド名とその挙動のマッピング。
-# 実行系 (ci / run / fast / run-for-agent) は共通オプション (_COMMON_PARENT) を継承する。
-# それ以外のサブコマンド (generate-config / generate-shell-completion) は固有の引数のみ持つ。
+# 実行系 （ci / run / fast / run-for-agent） は共通オプション （_COMMON_PARENT） を継承する。
+# それ以外のサブコマンド （generate-config / generate-shell-completion） は固有の引数のみ持つ。
 _RUN_SUBCOMMANDS: tuple[str, ...] = ("ci", "run", "fast", "run-for-agent")
-"""実行系サブコマンド。パイプラインを起動して format/lint/test を走らせる。"""
+"""実行系サブコマンド。パイプラインを起動してformat/lint/testを走らせる。"""
 
 _ALL_SUBCOMMANDS: tuple[str, ...] = (
     *_RUN_SUBCOMMANDS,
@@ -54,26 +54,26 @@ _ALL_SUBCOMMANDS: tuple[str, ...] = (
     "command-info",
     "mcp",
 )
-"""全サブコマンド。shell completion スクリプト生成時に参照される。"""
+"""全サブコマンド。shell completionスクリプト生成時に参照される。"""
 
 
 _STATIC_COMMAND_ALIASES: tuple[str, ...] = ("format", "lint", "test")
 """組み込みで必ず定義されるコマンドエイリアス。ユーザー設定のカスタムエイリアスは含まない。
 
 ツール名プリフライト（個別ツール絞り込み誘導）の検出集合に含める。
-カスタムコマンド・カスタムエイリアスは pyproject.toml 読込後にしか確定しないため
+カスタムコマンド・カスタムエイリアスはpyproject.toml読込後にしか確定しないため
 当面プリフライト対象外とする。
 """
 
 
 class _HelpOnErrorArgumentParser(argparse.ArgumentParser):
-    """argparse エラー時に `--help` 相当を stderr に併記してから終了する ArgumentParser。
+    """argparseエラー時に `--help` 相当をstderrに併記してから終了するArgumentParser。
 
-    argparse 既定の error() はエラー文のみを出して exit 2 するため、利用者が正しい書式を
+    argparse既定のerror() はエラー文のみを出してexit 2するため、利用者が正しい書式を
     取り違えたまま同じミスを繰り返しやすい。本サブクラスではエラー文の前に
-    ``self.print_help(sys.stderr)`` を呼び、該当 parser のヘルプを併記する。
-    サブコマンド側のエラーでは当該サブコマンドの parser、メインの誤サブコマンドでは
-    メインの parser のヘルプが出る（argparse の階層別 parser_class で継承させるため）。
+    `self.print_help(sys.stderr)` を呼び、該当parserのヘルプを併記する。
+    サブコマンド側のエラーでは当該サブコマンドのparser、メインの誤サブコマンドでは
+    メインのparserのヘルプが出る（argparseの階層別parser_classで継承させるため）。
     """
 
     def error(self, message: str) -> typing.NoReturn:
@@ -82,14 +82,14 @@ class _HelpOnErrorArgumentParser(argparse.ArgumentParser):
 
 
 def _preflight_tool_name_as_subcommand(sys_args: typing.Sequence[str]) -> None:
-    """ツール名をサブコマンドとして入力したケースを検知し、実行例付きメッセージを出して exit 2。
+    """ツール名をサブコマンドとして入力したケースを検知し、実行例付きメッセージを出してexit 2。
 
     `uv run pyfltr textlint ...` / `pyfltr lint docs/` など、利用者がツール名またはエイリアスを
     そのままサブコマンドとして指定した場合に、正しい `--commands=<tool>` 書式の実行例を提示する。
-    該当しない場合は何も行わずに返し、通常の argparse 処理を続行する。
+    該当しない場合は何も行わずに返し、通常のargparse処理を続行する。
 
-    検出対象は ``pyfltr.builtin_commands.BUILTIN_COMMAND_NAMES`` + 静的エイリアス
-    ``format`` / ``lint`` / ``test``。カスタムコマンドは pyproject.toml 読込後にしか
+    検出対象は `pyfltr.builtin_commands.BUILTIN_COMMAND_NAMES` + 静的エイリアス
+    `format` / `lint` / `test`。カスタムコマンドはpyproject.toml読込後にしか
     確定しないため対象外とする。
     """
     if not sys_args:
@@ -116,13 +116,13 @@ def _preflight_tool_name_as_subcommand(sys_args: typing.Sequence[str]) -> None:
 
 
 def _reconfigure_stdio_to_utf8() -> None:
-    """``sys.stdout`` / ``sys.stderr`` を UTF-8 で出力するよう切り替える。
+    """`sys.stdout` / `sys.stderr` をUTF-8で出力するよう切り替える。
 
-    Windows + Python 3.14 では ``sys.stdout`` / ``sys.stderr`` の既定エンコーディングが
-    cp1252 等のままになるケースがあり、``pyfltr.textout`` が出す日本語ログで
-    UnicodeEncodeError を起こす。``PYTHONUTF8`` 環境変数や利用者側設定に依存せずに
-    挙動を揃えるため、エントリポイント直後に ``reconfigure`` を試みる。
-    ``reconfigure`` 未提供 stream（差し替え済み TextIO 等）や呼び出し失敗時は握り潰し、
+    Windows + Python 3.14では `sys.stdout` / `sys.stderr` の既定エンコーディングが
+    cp1252等のままになるケースがあり、`pyfltr.textout` が出す日本語ログで
+    UnicodeEncodeErrorを起こす。`PYTHONUTF8` 環境変数や利用者側設定に依存せずに
+    挙動を揃えるため、エントリポイント直後に `reconfigure` を試みる。
+    `reconfigure` 未提供stream（差し替え済みTextIO等）や呼び出し失敗時は握り潰し、
     既存挙動を維持する。
     """
     for stream in (sys.stdout, sys.stderr):
@@ -136,11 +136,11 @@ def _reconfigure_stdio_to_utf8() -> None:
 def main() -> typing.NoReturn:
     """エントリポイント。"""
     _reconfigure_stdio_to_utf8()
-    # 親プロセスから継承した PATH の重複排除をプロセス全体で 1 回だけ適用する。
-    # 以後 ``os.environ`` を継承する全 subprocess に波及するため、個別箇所の env
-    # 構築では追加の重複排除を行わない。CLI 経路でのみ呼ぶことで、ライブラリ
-    # 利用時に意図せず別アプリの ``os.environ`` を書き換えないようにする。
-    # 詳細は CLAUDE.md「subprocess 起動時の PATH 整理方針」節を参照。
+    # 親プロセスから継承したPATHの重複排除をプロセス全体で1回だけ適用する。
+    # 以後 `os.environ` を継承する全subprocessに波及するため、個別箇所のenv
+    # 構築では追加の重複排除を行わない。CLI経路でのみ呼ぶことで、ライブラリ
+    # 利用時に意図せず別アプリの `os.environ` を書き換えないようにする。
+    # 詳細はCLAUDE.md「subprocess起動時のPATH整理方針」節を参照。
     pyfltr.command.dedupe_environ_path(os.environ)
     exit_code = run()
     logger.debug(f"{exit_code=}")
@@ -148,11 +148,11 @@ def main() -> typing.NoReturn:
 
 
 def _make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> "_HelpOnErrorArgumentParser":
-    """実行系サブコマンド用の共通オプションをまとめた親 parser を返す。
+    """実行系サブコマンド用の共通オプションをまとめた親parserを返す。
 
-    ``parents=[common]`` 経由で各サブコマンドに継承させる。``custom_commands`` は
-    ``pyproject.toml`` で定義されたカスタムコマンド名の列で、``--{cmd}-args``
-    オプションとして追加登録される (ビルトインと同じ扱い)。
+    `parents=[common]` 経由で各サブコマンドに継承させる。`custom_commands` は
+    `pyproject.toml` で定義されたカスタムコマンド名の列で、`--{cmd}-args`
+    オプションとして追加登録される （ビルトインと同じ扱い）。
     """
     common = _HelpOnErrorArgumentParser(add_help=False)
     common.add_argument("-v", "--verbose", default=False, action="store_true", help="詳細な出力を表示します。")
@@ -209,7 +209,7 @@ def _make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> 
         "--human-readable",
         default=False,
         action="store_true",
-        help="ツールの構造化出力（JSON等）を無効化し、人間向けの元のテキスト出力を使用します。",
+        help="ツールの構造化出力(JSON等)を無効化し、人間向けの元のテキスト出力を使用します。",
     )
     common.add_argument("--no-clear", default=False, action="store_true", help="実行前にターミナルをクリアしません。")
     common.add_argument(
@@ -255,13 +255,13 @@ def _make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> 
         "--from-run",
         default=None,
         metavar="RUN_ID",
-        help="--only-failed の参照対象 run を明示指定します（前方一致 / latest 対応）。未指定時は直前 run を自動選択します。",
+        help="--only-failed の参照対象 run を明示指定します(前方一致 / latest 対応)。未指定時は直前 run を自動選択します。",
     )
     common.add_argument(
         "--changed-since",
         default=None,
         metavar="REF",
-        help="git の任意の ref（ブランチ・タグ・コミットハッシュ・HEAD など）を指定し、"
+        help="git の任意の ref(ブランチ・タグ・コミットハッシュ・HEAD など)を指定し、"
         "その ref からの変更ファイルのみを対象とします。"
         "コミット差分・未コミット作業ツリー差分・staged 差分の和集合で絞り込みます。"
         "git 不在または ref が存在しない場合は警告を出して全体実行へフォールバックします。",
@@ -280,7 +280,7 @@ def _make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> 
         help="linters/testers の最大並列数を指定します(既定: 4、pyproject.toml でも設定可能です)。",
     )
 
-    # 各コマンド用の引数追加オプション (ビルトイン + カスタム)
+    # 各コマンド用の引数追加オプション （ビルトイン + カスタム）
     registered: set[str] = set()
     for command in pyfltr.config.BUILTIN_COMMANDS:
         registered.add(command)
@@ -308,10 +308,10 @@ def _make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> 
 
 
 def build_parser(custom_commands: collections.abc.Iterable[str] = ()) -> "_HelpOnErrorArgumentParser":
-    """引数パーサーを生成。サブコマンド必須化 (v3.0.0)。
+    """引数パーサーを生成。サブコマンド必須化 （v3.0.0）。
 
-    メインおよび全サブコマンド parser には ``_HelpOnErrorArgumentParser`` を用い、
-    argparse エラー時に該当 parser の ``--help`` 相当をまとめて stderr へ出す。
+    メインおよび全サブコマンドparserには `_HelpOnErrorArgumentParser` を用い、
+    argparseエラー時に該当parserの `--help` 相当をまとめてstderrへ出す。
     """
     parser = _HelpOnErrorArgumentParser(
         epilog=(
@@ -327,7 +327,7 @@ def build_parser(custom_commands: collections.abc.Iterable[str] = ()) -> "_HelpO
             "  show-run <run_id>\n"
             "                   指定 run の詳細 (meta・ツール別サマリ・diagnostic・生出力) を表示する。\n"
             "  command-info <command>\n"
-            "                   ツール起動方式（runner / 実行ファイル / 最終コマンドライン等）の解決結果を表示する。\n"
+            "                   ツール起動方式(runner / 実行ファイル / 最終コマンドライン等)の解決結果を表示する。\n"
             "  mcp              MCP サーバーを stdio で起動する。\n"
             "\n"
             "ドキュメント: https://ak110.github.io/pyfltr/\n"
@@ -346,11 +346,11 @@ def build_parser(custom_commands: collections.abc.Iterable[str] = ()) -> "_HelpO
 
     common = _make_common_parent(custom_commands)
 
-    # サブコマンド別の既定値 (exit_zero_even_if_formatted / commands / output_format /
-    # include_fix_stage) は ``_apply_subcommand_defaults`` で解決する。
-    # subparser 単位の ``set_defaults`` は ``parents=[common]`` で共有された
-    # 名前空間を通じて他サブパーサーの default も書き換えてしまうため採用しない
-    # (argparse の既知挙動)。
+    # サブコマンド別の既定値 （exit_zero_even_if_formatted / commands / output_format ）
+    # include_fix_stage) は `_apply_subcommand_defaults` で解決する。
+    # subparser単位の `set_defaults` は `parents=[common]` で共有された
+    # 名前空間を通じて他サブパーサーのdefaultも書き換えてしまうため採用しない
+    # （argparseの既知挙動）。
     subparsers.add_parser("ci", parents=[common], help="CI モードで実行する。")
     subparsers.add_parser("run", parents=[common], help="通常実行。")
     subparsers.add_parser("fast", parents=[common], help="高速ツールのみ実行。")
@@ -376,34 +376,34 @@ def build_parser(custom_commands: collections.abc.Iterable[str] = ()) -> "_HelpO
     # command-info: ツール起動方式（runner / 実行ファイル / 最終コマンドライン等）の解決結果表示
     pyfltr.command_info.register_subparsers(subparsers)
 
-    # mcp: MCP サーバーの stdio 起動
+    # mcp: MCPサーバーのstdio起動
     pyfltr.mcp_.register_subparsers(subparsers)
 
     return parser
 
 
 def _apply_subcommand_defaults(args: argparse.Namespace) -> None:
-    """サブコマンドごとの既定値を ``args`` に反映する。
+    """サブコマンドごとの既定値を `args` に反映する。
 
-    ``subparsers.add_parser(..., parents=[common])`` で共通オプションを継承する
-    構造上、``sub_parser.set_defaults(...)`` は他サブパーサーの default まで
-    上書きしてしまうため (argparse の既知挙動)、argparse 本体の既定値機構は
-    使わずここで手動解決する。CLI 明示値 (``store_true`` や値指定) は
-    事前に args に載っているため、既定値注入は「未指定扱いの値」を上書きする
+    `subparsers.add_parser(..., parents=[common])` で共通オプションを継承する
+    構造上、`sub_parser.set_defaults(...)` は他サブパーサーのdefaultまで
+    上書きしてしまうため （argparseの既知挙動）、argparse本体の既定値機構は
+    使わずここで手動解決する。CLI明示値 （`store_true` や値指定） は
+    事前にargsに載っているため、既定値注入は「未指定扱いの値」を上書きする
     形にとどめる。
 
     サブコマンド挙動:
-        - ``ci``: fix ステージ無効。exit_zero_even_if_formatted は明示時のみ True
-        - ``run``: fix ステージ有効。exit_zero_even_if_formatted を True に
-        - ``fast``: run と同じ + ``--commands`` 未指定なら ``"fast"``
-        - ``run-for-agent``: run と同じ + ``--output-format`` 未指定なら ``"jsonl"``
+        - `ci`: fixステージ無効。exit_zero_even_if_formattedは明示時のみTrue
+        - `run`: fixステージ有効。exit_zero_even_if_formattedをTrueに
+        - `fast`: runと同じ + `--commands` 未指定なら `"fast"`
+        - `run-for-agent`: runと同じ + `--output-format` 未指定なら `"jsonl"`
     """
     subcommand = args.subcommand
     args.include_fix_stage = subcommand in ("run", "fast", "run-for-agent")
     if subcommand in ("run", "fast", "run-for-agent"):
         args.exit_zero_even_if_formatted = True
     if subcommand == "fast" and args.commands is None:
-        # ``--commands`` は ``action="append"`` 化によりリストで保持する。
+        # `--commands` は `action="append"` 化によりリストで保持する。
         args.commands = ["fast"]
     if subcommand == "run-for-agent" and args.output_format is None:
         args.output_format = "jsonl"
@@ -414,16 +414,16 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
     if sys_args is None:
         sys_args = sys.argv[1:]
 
-    # -V / --version は subparser 必須化の例外として、先頭に来た場合のみ短絡処理する。
-    # argparse の required subparsers は位置引数を要求するため、単独の --version では
-    # usage エラーになってしまう。`pyfltr -V` の利便性を維持するため明示的に捌く。
+    # -V / --versionはsubparser必須化の例外として、先頭に来た場合のみ短絡処理する。
+    # argparseのrequired subparsersは位置引数を要求するため、単独の--versionでは
+    # usageエラーになってしまう。`pyfltr -V` の利便性を維持するため明示的に捌く。
     if len(sys_args) == 1 and sys_args[0] in ("-V", "--version"):
         logging.basicConfig(level=logging.INFO, format="%(message)s")
         logger.info(f"pyfltr {importlib.metadata.version('pyfltr')}")
         return 0
 
     # ツール名をサブコマンドとして誤入力したケースを検知し、実行例付きで案内する。
-    # argparse 既定の "invalid choice" エラーより具体的な導線になるため先に捌く。
+    # argparse既定の "invalid choice" エラーより具体的な導線になるため先に捌く。
     _preflight_tool_name_as_subcommand(sys_args)
 
     parser = build_parser()
@@ -439,12 +439,12 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
     # generate-shell-completionサブコマンド: 補完スクリプトをstdoutに出力する
     if subcommand == "generate-shell-completion":
         # 補完スクリプト側は「サブコマンド + 共通オプション一式」を列挙する必要があるため、
-        # 実行系サブコマンドの共通 parent を渡す (カスタムコマンドは対象外で十分)。
+        # 実行系サブコマンドの共通parentを渡す （カスタムコマンドは対象外で十分）。
         script = pyfltr.shell_completion.generate(args.shell, _make_common_parent(), frozenset(_ALL_SUBCOMMANDS))
         print(script, end="")
         return 0
 
-    # 実行アーカイブの詳細参照サブコマンド: load_config() を呼ばず archive のみを参照する。
+    # 実行アーカイブの詳細参照サブコマンド: load_config() を呼ばずarchiveのみを参照する。
     if subcommand == "list-runs":
         return pyfltr.runs.execute_list_runs(args)
     if subcommand == "show-run":
@@ -454,20 +454,20 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
     if subcommand == "command-info":
         return pyfltr.command_info.execute_command_info(args)
 
-    # MCP サーバーサブコマンド: stdio で FastMCP サーバーを起動する。
+    # MCPサーバーサブコマンド: stdioでFastMCPサーバーを起動する。
     if subcommand == "mcp":
         return pyfltr.mcp_.execute_mcp(args)
 
-    # サブコマンド別の既定値を注入する (CLI 明示値が優先)。
+    # サブコマンド別の既定値を注入する （CLI明示値が優先）。
     _apply_subcommand_defaults(args)
 
-    # --no-fix 指定時は include_fix_stage を False に差し戻す。
+    # --no-fix指定時はinclude_fix_stageをFalseに差し戻す。
     if getattr(args, "no_fix", False):
         args.include_fix_stage = False
 
-    # retry_command の対象ファイル差し替え時、--work-dir 適用後の相対パスが
-    # 実行時の cwd と二重解釈されないよう、常に元 cwd を起点に絶対パス化する。
-    # os.chdir よりも前の cwd を確実に取得するため、--work-dir の有無を問わず保存する。
+    # retry_commandの対象ファイル差し替え時、--work-dir適用後の相対パスが
+    # 実行時のcwdと二重解釈されないよう、常に元cwdを起点に絶対パス化する。
+    # os.chdirよりも前のcwdを確実に取得するため、--work-dirの有無を問わず保存する。
     original_cwd = os.getcwd()
     resolved_targets: list[pathlib.Path] | None = None
     chdir_applied = False
@@ -483,10 +483,10 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
 
 
 def _flatten_commands_arg(values: list[str] | None, config: pyfltr.config.Config) -> list[str]:
-    """``--commands`` で渡されたリスト（複数回指定の集合）をコマンド名配列に展開する。
+    """`--commands` で渡されたリスト（複数回指定の集合）をコマンド名配列に展開する。
 
-    各要素にはカンマ区切りで複数のコマンドを含められるため、split した上で
-    先頭出現を優先した重複除去を行う。``None`` の場合は設定上の全登録コマンド
+    各要素にはカンマ区切りで複数のコマンドを含められるため、splitした上で
+    先頭出現を優先した重複除去を行う。`None` の場合は設定上の全登録コマンド
     （ビルトイン + custom-commands）を返す。
     """
     if values is None:
@@ -507,9 +507,9 @@ _VALID_OUTPUT_FORMATS: frozenset[str] = frozenset(pyfltr.formatters.FORMATTERS.k
 
 
 def _resolve_output_format(parser: argparse.ArgumentParser, cli_value: str | None) -> str:
-    """CLI 引数 > 環境変数 > 既定値(text) の優先順で出力形式を決定する。
+    """CLI引数 > 環境変数 > 既定値（text） の優先順で出力形式を決定する。
 
-    環境変数に不正値が入っている場合は argparse 同様のエラーで即座に終了させる。
+    環境変数に不正値が入っている場合はargparse同様のエラーで即座に終了させる。
     """
     if cli_value is not None:
         return cli_value
@@ -532,8 +532,8 @@ def _run_impl(
     *,
     original_cwd: str,
 ) -> int:
-    """run()の内部実装 (実行系サブコマンド向け)。"""
-    # 同一プロセス内で run() が複数回呼ばれるケースに備えて警告蓄積を初期化する。
+    """run()の内部実装（実行系サブコマンド向け）。"""
+    # 同一プロセス内でrun() が複数回呼ばれるケースに備えて警告蓄積を初期化する。
     pyfltr.warnings_.clear()
 
     # --ciオプションの処理
@@ -541,18 +541,18 @@ def _run_impl(
         args.shuffle = False
         args.no_ui = True
 
-    # --from-run は --only-failed との併用が必須。
-    # 単独利用を許可しない理由: --from-run 単独では diagnostic 参照は行われず、
-    # 「再実行対象を指定 run の失敗ツールに絞り込む」という本来の意味を持たない。
-    # argparse 段階で拒否することでユーザーに正しい併用形を即座に提示できる。
+    # --from-runは--only-failedとの併用が必須。
+    # 単独利用を許可しない理由: --from-run単独ではdiagnostic参照は行われず、
+    # 「再実行対象を指定runの失敗ツールに絞り込む」という本来の意味を持たない。
+    # argparse段階で拒否することでユーザーに正しい併用形を即座に提示できる。
     if getattr(args, "from_run", None) is not None and not getattr(args, "only_failed", False):
         parser.error("argument --from-run: requires --only-failed")
 
-    # --ui と --no-ui の競合チェック
+    # --uiと--no-uiの競合チェック
     if args.ui and args.no_ui:
         parser.error("--ui と --no-ui は同時に指定できません。")
 
-    # --version (実行系サブコマンド下でも許容)
+    # --version （実行系サブコマンド下でも許容）
     if args.version:
         logger.info(f"pyfltr {importlib.metadata.version('pyfltr')}")
         return 0
@@ -602,12 +602,12 @@ def _run_impl(
             if key.endswith("-json") or key == "pytest-tb-line":
                 config.values[key] = False
 
-    # --commands 未指定時はカスタムコマンドを含む全登録コマンドを対象にする。
-    # argparse のデフォルト評価時点では pyproject.toml を読み込んでいないため、
-    # ビルトインのみの default を返すと custom-commands が常にスキップされる。
-    # load_config 後に実体を決定することで、ユーザーが登録した custom-commands
-    # (例: svelte-check) も `run` / `ci` サブコマンドのデフォルト動作で走るようにする。
-    # ``--commands`` は ``action="append"`` によりリストで渡るため、各要素を
+    # --commands未指定時はカスタムコマンドを含む全登録コマンドを対象にする。
+    # argparseのデフォルト評価時点ではpyproject.tomlを読み込んでいないため、
+    # ビルトインのみのdefaultを返すとcustom-commandsが常にスキップされる。
+    # load_config後に実体を決定することで、ユーザーが登録したcustom-commands
+    # （例: svelte-check） も `run` / `ci` サブコマンドのデフォルト動作で走るようにする。
+    # `--commands` は `action="append"` によりリストで渡るため、各要素を
     # カンマ区切りで再分割して平坦化する。重複は先出を優先して除去する。
     commands: list[str] = pyfltr.config.resolve_aliases(_flatten_commands_arg(args.commands, config), config)
     for command in commands:
@@ -631,28 +631,28 @@ def run_pipeline(
 ) -> tuple[int, str | None]:
     """実行パイプライン。
 
-    ``force_text_on_stderr=True`` を渡すと、人間向け text 整形ログの出力先を
-    stdout ではなく stderr に強制する（MCP 経路で stdout を JSON-RPC フレームが
+    `force_text_on_stderr=True` を渡すと、人間向けtext整形ログの出力先を
+    stdoutではなくstderrに強制する（MCP経路でstdoutをJSON-RPCフレームが
     占有するケース用）。
 
     Returns:
-        ``(exit_code, run_id)`` のタプル。
-        ``exit_code`` は 0 = 成功、1 = 失敗。
-        ``run_id`` は実行アーカイブが有効で採番に成功した場合の ULID 文字列、
-        無効・採番失敗・early exit 時は ``None``。
-        ``--only-failed`` 指定で「直前 run なし」「失敗ツールなし」「対象ファイル
-        交差が空」のいずれかに該当する場合は early exit として ``(0, None)`` を
-        返す。MCP 経路はこの ``run_id is None`` を「実行スキップ」として識別する。
+        `(exit_code, run_id)` のタプル。
+        `exit_code` は0 = 成功、1 = 失敗。
+        `run_id` は実行アーカイブが有効で採番に成功した場合のULID文字列、
+        無効・採番失敗・early exit時は `None`。
+        `--only-failed` 指定で「直前runなし」「失敗ツールなし」「対象ファイル
+        交差が空」のいずれかに該当する場合はearly exitとして `(0, None)` を
+        返す。MCP経路はこの `run_id is None` を「実行スキップ」として識別する。
 
-    タプル戻り値を採用したのは MCP 経路が run_id を確実に取得するため。
-    代替案として MCP 側で ``ArchiveStore.list_runs(limit=1)`` を引く案も検討
-    したが、同一ユーザーキャッシュを参照する並行プロセスがあると別 run の
-    ``run_id`` を誤って拾うリスクがあるため戻り値経由とした。
+    タプル戻り値を採用したのはMCP経路がrun_idを確実に取得するため。
+    代替案としてMCP側で `ArchiveStore.list_runs(limit=1)` を引く案も検討
+    したが、同一ユーザーキャッシュを参照する並行プロセスがあると別runの
+    `run_id` を誤って拾うリスクがあるため戻り値経由とした。
     """
     output_format = args.output_format or "text"
     output_file: pathlib.Path | None = args.output_file
-    # JSONL / SARIF / code-quality の stdout モードでは stdout を構造化出力が占有するため、
-    # UI・画面クリア・stream による詳細ログ即時出力を無効化する。
+    # JSONL / SARIF / code-qualityのstdoutモードではstdoutを構造化出力が占有するため、
+    # UI・画面クリア・streamによる詳細ログ即時出力を無効化する。
     structured_stdout = output_format in ("jsonl", "sarif", "code-quality") and output_file is None
     if structured_stdout:
         args.ui = None
@@ -662,10 +662,10 @@ def run_pipeline(
 
     formatter = pyfltr.formatters.FORMATTERS[output_format]()
 
-    # logger を初期化する。同一プロセスで run_pipeline が複数回呼ばれる MCP 経路でも、
-    # format / output_file / force_text_on_stderr の組み合わせで出力先が切り替わるため、毎回張り直す。
-    # configure_loggers は output_file / force_text_on_stderr のみ参照するため、
-    # run_id 等が未確定の段階でも呼び出せる（残フィールドはデフォルト値のまま渡す）。
+    # loggerを初期化する。同一プロセスでrun_pipelineが複数回呼ばれるMCP経路でも、
+    # format / output_file / force_text_on_stderrの組み合わせで出力先が切り替わるため、毎回張り直す。
+    # configure_loggersはoutput_file / force_text_on_stderrのみ参照するため、
+    # run_id等が未確定の段階でも呼び出せる（残フィールドはデフォルト値のまま渡す）。
     early_ctx = pyfltr.formatters.RunOutputContext(
         config=config,
         output_file=output_file,
@@ -682,14 +682,14 @@ def run_pipeline(
     # TUI起動前に実行することで、除外警告がログに表示される
     all_files = pyfltr.command.expand_all_files(args.targets, config)
 
-    # --changed-since 指定時は git 差分ファイルとの交差に絞り込む。
-    # --only-failed よりも先に適用し、以後のフィルタは絞り込み済みリストを受け取る。
+    # --changed-since指定時はgit差分ファイルとの交差に絞り込む。
+    # --only-failedよりも先に適用し、以後のフィルタは絞り込み済みリストを受け取る。
     changed_since_ref: str | None = getattr(args, "changed_since", None)
     if changed_since_ref is not None:
         all_files = pyfltr.command.filter_by_changed_since(all_files, changed_since_ref)
 
-    # --only-failed 指定時は直前 run からツール別の失敗ファイル集合を構築する。
-    # archive / cache 初期化より前に実行し、早期終了の場合はそれらの副作用を発生させない。
+    # --only-failed指定時は直前runからツール別の失敗ファイル集合を構築する。
+    # archive / cache初期化より前に実行し、早期終了の場合はそれらの副作用を発生させない。
     commands, only_failed_targets, only_failed_exit_early = pyfltr.only_failed.apply_filter(
         args, commands, all_files, from_run=getattr(args, "from_run", None)
     )
@@ -697,20 +697,20 @@ def run_pipeline(
         return 0, None
 
     # 実行対象として有効化されていないコマンドはパイプラインから除外する。
-    # split_commands_for_execution と同じ条件 (``config.values.get(cmd) is True``) で絞り込み、
-    # JSONL header・実行アーカイブ・formatter ctx へ渡す commands を「実際に実行されるもの」に統一する。
+    # split_commands_for_executionと同じ条件 （`config.values.get(cmd) is True`） で絞り込み、
+    # JSONL header・実行アーカイブ・formatter ctxへ渡すcommandsを「実際に実行されるもの」に統一する。
     commands = [c for c in commands if config.values.get(c) is True]
 
-    # retry_command 再構成用のベース情報を確定する。original_cwd は run() が保存した
-    # --work-dir 適用前の cwd、original_sys_args は起動時の sys.argv[1:] のコピー。
+    # retry_command再構成用のベース情報を確定する。original_cwdはrun() が保存した
+    # --work-dir適用前のcwd、original_sys_argsは起動時のsys.argv[1:] のコピー。
     effective_cwd = original_cwd if original_cwd is not None else os.getcwd()
     effective_sys_args = list(original_sys_args) if original_sys_args is not None else list(sys.argv[1:])
     launcher_prefix = pyfltr.retry.detect_launcher_prefix()
     retry_args_template = pyfltr.retry.build_retry_args_template(effective_sys_args)
 
-    # 実行アーカイブの初期化 (既定で有効)。
-    # ``--no-archive`` または ``archive = false`` で無効化できる。クリーンアップ失敗や
-    # 書き込み失敗はパイプライン本体を止めないよう warnings へ流す。
+    # 実行アーカイブの初期化 （既定で有効）。
+    # `--no-archive` または `archive = false` で無効化できる。クリーンアップ失敗や
+    # 書き込み失敗はパイプライン本体を止めないようwarningsへ流す。
     archive_enabled = bool(config.values.get("archive", True)) and not getattr(args, "no_archive", False)
     archive_store: pyfltr.archive.ArchiveStore | None = None
     run_id: str | None = None
@@ -726,7 +726,7 @@ def run_pipeline(
             archive_store = None
             run_id = None
 
-    # 実行環境の情報を出力（run_id 採番後にまとめて出すことで区切り線内に含める）。
+    # 実行環境の情報を出力（run_id採番後にまとめて出すことで区切り線内に含める）。
     pyfltr.cli.text_logger.info(f"{'-' * 10} pyfltr {'-' * (72 - 10 - 8)}")
     pyfltr.cli.text_logger.info(f"version:        {importlib.metadata.version('pyfltr')}")
     pyfltr.cli.text_logger.info(f"sys.executable: {sys.executable}")
@@ -734,12 +734,12 @@ def run_pipeline(
     pyfltr.cli.text_logger.info(f"cwd:            {os.getcwd()}")
     if run_id is not None:
         launcher_cmd = shlex.join(launcher_prefix)
-        pyfltr.cli.text_logger.info("run_id:         %s（`%s show-run %s` で詳細を確認可能）", run_id, launcher_cmd, run_id)
+        pyfltr.cli.text_logger.info("run_id:         %s(`%s show-run %s` で詳細を確認可能)", run_id, launcher_cmd, run_id)
     pyfltr.cli.text_logger.info("-" * 72)
 
-    # ファイル hash キャッシュの初期化 (既定で有効)。
-    # ``--no-cache`` または ``cache = false`` で無効化できる。期間超過エントリの削除失敗や
-    # 書き込み失敗はパイプライン本体を止めないため warnings に流す。
+    # ファイルhashキャッシュの初期化 （既定で有効）。
+    # `--no-cache` または `cache = false` で無効化できる。期間超過エントリの削除失敗や
+    # 書き込み失敗はパイプライン本体を止めないためwarningsに流す。
     cache_enabled = bool(config.values.get("cache", True)) and not getattr(args, "no_cache", False)
     cache_store: pyfltr.cache.CacheStore | None = None
     if cache_enabled:
@@ -761,18 +761,18 @@ def run_pipeline(
             try:
                 captured_store.write_tool_result(captured_run_id, result)
             except OSError as e:
-                # ハンドラ内で warning を出しても summary 末尾にまとまる。
+                # ハンドラ内でwarningを出してもsummary末尾にまとまる。
                 pyfltr.warnings_.emit_warning(source="archive", message=f"{result.command} のアーカイブ書き込みに失敗: {e}")
                 return
-            # 書き込み成功時のみ archived=True に更新。smart truncation の可否判定に使う。
+            # 書き込み成功時のみarchived=Trueに更新。smart truncationの可否判定に使う。
             result.archived = True
 
         archive_hook = _archive_hook
 
-    # retry_command を CommandResult に埋めるためのヘルパー。
-    # archive_hook と同じタイミング (各ツール完了時) に呼ばれる on_result 経路へ挿入する。
-    # 実装本体は ``_populate_retry_command`` (A案の失敗ファイル絞り込み・cached
-    # 判定を含む) に委譲し、クロージャ変数をキーワード引数で引き渡す。
+    # retry_commandをCommandResultに埋めるためのヘルパー。
+    # archive_hookと同じタイミング （各ツール完了時） に呼ばれるon_result経路へ挿入する。
+    # 実装本体は `_populate_retry_command` （A案の失敗ファイル絞り込み・cached
+    # 判定を含む） に委譲し、クロージャ変数をキーワード引数で引き渡す。
     def _attach_retry_command(result: pyfltr.command.CommandResult) -> None:
         pyfltr.retry.populate_retry_command(
             result,
@@ -784,8 +784,8 @@ def run_pipeline(
     # UIの判定
     use_ui = not args.no_ui and (args.ui or pyfltr.ui.can_use_ui())
 
-    # run_pipeline が1回だけ組み立てる不変コンテキスト。
-    # archive_store は hook 経由で渡すため Context には含めない。
+    # run_pipelineが1回だけ組み立てる不変コンテキスト。
+    # archive_storeはhook経由で渡すためContextには含めない。
     base_ctx = pyfltr.command.ExecutionBaseContext(
         config=config,
         all_files=all_files,
@@ -793,10 +793,10 @@ def run_pipeline(
         cache_run_id=run_id,
     )
 
-    # 各ツール完了時のフック: retry_command 付与 → archive 書き込み → formatter.on_result (ストリーミング等)。
-    # retry_command は archive と JSONL streaming の双方で必要になるため、archive_hook より前に挿入する。
-    # formatter.on_result は archive_hook の後に呼ぶ（result.archived=True が立った後）。
-    # on_start / on_result / on_finish で使う完全な ctx を構築する。
+    # 各ツール完了時のフック: retry_command付与 → archive書き込み → formatter.on_result （ストリーミング等）。
+    # retry_commandはarchiveとJSONL streamingの双方で必要になるため、archive_hookより前に挿入する。
+    # formatter.on_resultはarchive_hookの後に呼ぶ（result.archived=Trueが立った後）。
+    # on_start / on_result / on_finishで使う完全なctxを構築する。
     per_command_log = bool(args.stream)
     include_details_from_stream = not per_command_log
     ctx = pyfltr.formatters.RunOutputContext(
@@ -817,11 +817,11 @@ def run_pipeline(
     formatter.on_start(ctx)
 
     # 各ツール完了時のフック順序:
-    #   1. _attach_retry_command(result) → retry_command を result に付与
-    #   2. archive_hook(result) → アーカイブ書き込み（cached の場合はスキップ）
-    #   3. formatter.on_result(ctx, result) → JSONL streaming など（cached でも呼ばれる）
-    # 上記 1+2 を composed_hook にまとめ、3 は run_commands_with_cli の on_result 引数として渡す。
-    # これにより cached の場合でも formatter.on_result が呼ばれる（cli.py の設計を踏襲）。
+    #   1. _attach_retry_command(result) → retry_commandをresultに付与
+    #   2. archive_hook(result) → アーカイブ書き込み（cachedの場合はスキップ）
+    #   3. formatter.on_result(ctx, result) → JSONL streamingなど（cachedでも呼ばれる）
+    # 上記1+2をcomposed_hookにまとめ、3はrun_commands_with_cliのon_result引数として渡す。
+    # これによりcachedの場合でもformatter.on_resultが呼ばれる（cli.pyの設計を踏襲）。
     composed_hook: typing.Callable[[pyfltr.command.CommandResult], None] | None = None
     if archive_hook is not None:
 
@@ -849,7 +849,7 @@ def run_pipeline(
             fail_fast=fail_fast,
             only_failed_targets=only_failed_targets,
         )
-        # TUI 経路では常に include_details=True（ストリーミングしていないため）。
+        # TUI経路では常にinclude_details=True（ストリーミングしていないため）。
         ctx = pyfltr.formatters.RunOutputContext(
             config=config,
             output_file=output_file,
@@ -865,7 +865,7 @@ def run_pipeline(
             verbose=bool(getattr(args, "verbose", False)),
         )
     else:
-        # 非 TUI モード: 既定はバッファリング (最後にまとめて出力)、`--stream` で従来の即時出力。
+        # 非TUIモード: 既定はバッファリング （最後にまとめて出力）、`--stream` で従来の即時出力。
         results = pyfltr.cli.run_commands_with_cli(
             commands,
             args,
@@ -879,22 +879,22 @@ def run_pipeline(
         )
         returncode = 0
 
-    # returncode を先に確定させる (render_results に渡して JSONL summary.exit に埋めるため)
-    # TUI の Ctrl+C 協調停止は ``run_commands_with_ui`` から 130 (SIGINT 慣例) を返す。
-    # この場合は ``calculate_returncode`` で上書きせず、そのまま採用する。
+    # returncodeを先に確定させる （render_resultsに渡してJSONL summary.exitに埋めるため）
+    # TUIのCtrl+C協調停止は `run_commands_with_ui` から130 （SIGINT慣例） を返す。
+    # この場合は `calculate_returncode` で上書きせず、そのまま採用する。
     if returncode == 0:
         returncode = calculate_returncode(results, args.exit_zero_even_if_formatted)
 
     formatter.on_finish(ctx, results, returncode, pyfltr.warnings_.collected_warnings())
 
-    # アーカイブ終端: meta.json に exit_code / finished_at を書き込む。
+    # アーカイブ終端: meta.jsonにexit_code / finished_atを書き込む。
     if archive_store is not None and run_id is not None:
         try:
             archive_store.finalize_run(run_id, exit_code=returncode, commands=commands, files=len(all_files))
         except OSError as e:
             pyfltr.warnings_.emit_warning(source="archive", message=f"meta.json の更新に失敗: {e}")
 
-    # pre-commit 経由かつ formatter 自動修正発生時の MM 状態ガイダンスを必要に応じて出す。
+    # pre-commit経由かつformatter自動修正発生時のMM状態ガイダンスを必要に応じて出す。
     _maybe_emit_precommit_guidance(results, structured_stdout=structured_stdout)
 
     return (returncode, run_id)
@@ -911,15 +911,15 @@ def _maybe_emit_precommit_guidance(
     *,
     structured_stdout: bool,
 ) -> None:
-    """pre-commit 経由かつ formatter 修正発生時に MM 状態ガイダンスを stderr へ出す。
+    """pre-commit経由かつformatter修正発生時にMM状態ガイダンスをstderrへ出す。
 
-    ``git commit`` から起動された pre-commit 経由で pyfltr が formatter を走らせると、
-    修正結果がワークツリーには書き込まれる一方で index には反映されない (MM 状態)。
-    この場合に限り ``git add`` を促すメッセージを人間向け (日本語) で出力する。
+    `git commit` から起動されたpre-commit経由でpyfltrがformatterを走らせると、
+    修正結果がワークツリーには書き込まれる一方でindexには反映されない （MM状態）。
+    この場合に限り `git add` を促すメッセージを人間向け （日本語） で出力する。
 
-    構造化 stdout モード (``jsonl`` / ``sarif`` / ``code-quality`` を stdout に流す) では、
-    stderr に text が既に流れているため重複を避ける意味でも抑止する。``github-annotations``
-    は text と同じレイアウトを stdout に出すため抑止不要。
+    構造化stdoutモード （`jsonl` / `sarif` / `code-quality` をstdoutに流す） では、
+    stderrにtextが既に流れているため重複を避ける意味でも抑止する。`github-annotations`
+    はtextと同じレイアウトをstdoutに出すため抑止不要。
     """
     if structured_stdout:
         return

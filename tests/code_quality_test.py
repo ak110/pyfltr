@@ -24,11 +24,11 @@ def test_build_payload_basic() -> None:
     assert issue["severity"] == "major"
     assert issue["location"] == {"path": "src/foo.py", "lines": {"begin": 10}}
     assert isinstance(issue["fingerprint"], str)
-    assert len(issue["fingerprint"]) == 64  # SHA-256 hex全桁
+    assert len(issue["fingerprint"]) == 64  # SHA-256 hex 全桁
 
 
 def test_build_payload_severity_mapping() -> None:
-    """severity 3 値+未設定が Code Quality の severity へマップされる。"""
+    """severity 3値+未設定がCode Qualityのseverityへマップされる。"""
     errors = [
         _make_error("tool", "a.py", 1, "e"),
         _make_error("tool", "a.py", 2, "w"),
@@ -38,7 +38,7 @@ def test_build_payload_severity_mapping() -> None:
     errors[0].severity = "error"
     errors[1].severity = "warning"
     errors[2].severity = "info"
-    # 4 件目は severity 未設定のまま
+    # 4件目はseverity未設定のまま
     result = _make_result("tool", returncode=1, errors=errors)
 
     payload = pyfltr.code_quality.build_code_quality_payload([result])
@@ -47,7 +47,7 @@ def test_build_payload_severity_mapping() -> None:
 
 
 def test_build_payload_check_name_without_rule() -> None:
-    """rule が無い場合、check_name はツール名のみ。"""
+    """ruleが無い場合、check_nameはツール名のみ。"""
     errors = [_make_error("mypy", "a.py", 1, "bad")]
     result = _make_result("mypy", returncode=1, errors=errors)
 
@@ -56,7 +56,7 @@ def test_build_payload_check_name_without_rule() -> None:
 
 
 def test_build_payload_fingerprint_deterministic() -> None:
-    """同じ入力から同じ fingerprint が生成され、SHA-256 連結仕様と一致する。"""
+    """同じ入力から同じfingerprintが生成され、SHA-256連結仕様と一致する。"""
     err1 = _make_error("ruff-check", "src/foo.py", 10, "unused import", col=3)
     err1.rule = "F401"
     err2 = _make_error("ruff-check", "src/foo.py", 10, "unused import", col=3)
@@ -73,7 +73,7 @@ def test_build_payload_fingerprint_deterministic() -> None:
 
 
 def test_build_payload_fingerprint_differs_by_rule() -> None:
-    """rule が異なれば fingerprint も異なる。"""
+    """ruleが異なればfingerprintも異なる。"""
     err1 = _make_error("ruff-check", "a.py", 1, "msg")
     err1.rule = "F401"
     err2 = _make_error("ruff-check", "a.py", 1, "msg")
@@ -85,7 +85,7 @@ def test_build_payload_fingerprint_differs_by_rule() -> None:
 
 
 def test_build_payload_begin_defaults_to_one() -> None:
-    """line が 0 の場合、location.lines.begin は 1 に補正される。"""
+    """lineが0の場合、location.lines.beginは1に補正される。"""
     errors = [_make_error("pytest", "tests/a.py", 0, "FAIL")]
     result = _make_result("pytest", returncode=1, errors=errors)
 

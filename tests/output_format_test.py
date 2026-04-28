@@ -23,12 +23,12 @@ def _default_config() -> pyfltr.config.Config:
 
 
 # ---------------------------------------------------------------------------
-# build_lines のユニットテスト
+# build_linesのユニットテスト
 # ---------------------------------------------------------------------------
 
 
 def test_build_lines_supported_tool_diagnostics(default_config):
-    """error_parser 対応ツールの診断が (command, file) 単位で集約された diagnostic レコードとして出ること。"""
+    """error_parser対応ツールの診断が（command, file）単位で集約されたdiagnosticレコードとして出ること。"""
     errors = [
         _make_error("mypy", "src/a.py", 10, "bad type", col=4),
         _make_error("mypy", "src/a.py", 20, "missing return"),
@@ -37,7 +37,7 @@ def test_build_lines_supported_tool_diagnostics(default_config):
     lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=1, commands=["mypy"], files=5)
     parsed = [json.loads(line) for line in lines]
 
-    # 同一 (mypy, src/a.py) に集約されるため diagnostic は 1 行
+    # 同一（mypy, src/a.py）に集約されるためdiagnosticは1行
     assert [r["kind"] for r in parsed] == ["header", "diagnostic", "command", "summary"]
     assert parsed[1] == {
         "kind": "diagnostic",
@@ -55,7 +55,7 @@ def test_build_lines_supported_tool_diagnostics(default_config):
 
 
 def test_build_lines_warnings_prepended(default_config):
-    """warnings 引数の内容が diagnostic より前に kind="warning" で出力されること。"""
+    """warnings引数の内容がdiagnosticより前にkind="warning"で出力されること。"""
     result = _make_result("ruff-format", returncode=0, command_type="formatter")
     warnings = [
         {"source": "config", "message": "pre-commit 設定ファイル不在"},
@@ -70,12 +70,12 @@ def test_build_lines_warnings_prepended(default_config):
     assert [r["kind"] for r in parsed[1:3]] == ["warning", "warning"]
     assert parsed[1] == {"kind": "warning", "source": "config", "msg": "pre-commit 設定ファイル不在"}
     assert parsed[2] == {"kind": "warning", "source": "git", "msg": "git が見つからない"}
-    # warnings の後に tool レコード、最後に summary が並ぶ
+    # warningsの後にtoolレコード、最後にsummaryが並ぶ
     assert [r["kind"] for r in parsed[3:]] == ["command", "summary"]
 
 
 def test_build_lines_no_warnings_when_omitted(default_config):
-    """warnings 引数を省略すると warning レコードは出ない。"""
+    """warnings引数を省略するとwarningレコードは出ない。"""
     result = _make_result("ruff-format", returncode=0, command_type="formatter")
     lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=0)
     parsed = [json.loads(line) for line in lines]
@@ -83,7 +83,7 @@ def test_build_lines_no_warnings_when_omitted(default_config):
 
 
 def test_build_lines_unsupported_tool_only(default_config):
-    """error_parser 非対応ツール (ruff-format) は tool レコードのみ（header省略時）。"""
+    """error_parser非対応ツール（ruff-format）はtoolレコードのみ（header省略時）。"""
     result = _make_result("ruff-format", returncode=1, command_type="formatter", has_error=False)
     lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=1)
     parsed = [json.loads(line) for line in lines]
@@ -113,7 +113,7 @@ def test_build_lines_mixed_order(default_config):
     )
     ruff_format_result = _make_result("ruff-format", returncode=0, command_type="formatter")
 
-    # config.command_names 順では ruff-format → mypy → pylint
+    # config.command_names順ではruff-format → mypy → pylint
     lines = pyfltr.llm_output.build_lines(
         [mypy_result, pylint_result, ruff_format_result],
         default_config,
@@ -123,8 +123,8 @@ def test_build_lines_mixed_order(default_config):
     )
     parsed = [json.loads(line) for line in lines]
 
-    # header → ツール順でグルーピング: ruff-format(tool) → mypy(a.pyとb.pyの2 diagnostic + tool)
-    # → pylint(diagnostic + tool) → summary。(command, file)単位で集約される
+    # header → ツール順でグルーピング: ruff-format（tool）→ mypy（a.pyとb.pyの2 diagnostic + tool）
+    # → pylint（diagnostic + tool）→ summary。（command, file）単位で集約される
     assert [r["kind"] for r in parsed] == [
         "header",
         "command",  # ruff-format
@@ -136,7 +136,7 @@ def test_build_lines_mixed_order(default_config):
         "summary",
     ]
 
-    # mypy 内の diagnostic はファイル順
+    # mypy内のdiagnosticはファイル順
     mypy_diagnostics = [r for r in parsed if r["kind"] == "diagnostic" and r["command"] == "mypy"]
     assert [(r["file"], r["messages"][0]["line"]) for r in mypy_diagnostics] == [
         ("src/a.py", 30),
@@ -148,7 +148,7 @@ def test_build_lines_mixed_order(default_config):
 
 
 def test_build_lines_ensure_ascii_false(default_config):
-    """日本語メッセージが生のまま出ること (ensure_ascii=False)。"""
+    """日本語メッセージが生のまま出ること（ensure_ascii=False）。"""
     errors = [_make_error("mypy", "src/a.py", 1, "型が合いません")]
     result = _make_result("mypy", returncode=1, errors=errors)
     lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=1)
@@ -157,7 +157,7 @@ def test_build_lines_ensure_ascii_false(default_config):
 
 
 def test_build_lines_skipped_status(default_config):
-    """returncode=None (skipped) は rc キーを省略し diagnostics=0 の tool レコードを出す。"""
+    """returncode=None（skipped）はrcキーを省略しdiagnostics=0のtoolレコードを出す。"""
     result = _make_result("mypy", returncode=None, has_error=False)
     lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=0)
     parsed = [json.loads(line) for line in lines]
@@ -169,12 +169,12 @@ def test_build_lines_skipped_status(default_config):
 
 
 # ---------------------------------------------------------------------------
-# tool レコードの message フィールド
+# toolレコードのmessageフィールド
 # ---------------------------------------------------------------------------
 
 
 def test_command_record_message_on_failure_without_diagnostics(default_config):
-    """status=failed かつ diagnostics=0 のとき、output 末尾が message に入ること。"""
+    """status=failedかつdiagnostics=0のとき、output末尾がmessageに入ること。"""
     output = "line1\nline2\nError: command not found\n"
     result = _make_result("shellcheck", returncode=127, output=output)
     lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=1)
@@ -185,7 +185,7 @@ def test_command_record_message_on_failure_without_diagnostics(default_config):
 
 
 def test_command_record_message_truncates_long_output(default_config):
-    """長い output はハイブリッド方式 (先頭 + マーカー + 末尾 30 行) でトリムされること。"""
+    """長いoutputはハイブリッド方式（先頭 + マーカー + 末尾30行）でトリムされること。"""
     many_lines = "\n".join(f"line{i}" for i in range(100))
     result = _make_result("shellcheck", returncode=1, output=many_lines)
     lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=1)
@@ -194,7 +194,7 @@ def test_command_record_message_truncates_long_output(default_config):
     assert "... (truncated)" in msg
     # 先頭側は冒頭行を保持する。
     assert msg.startswith("line0")
-    # 末尾側は末尾 30 行 (line70..line99) のみを残す。
+    # 末尾側は末尾30行（line70..line99）のみを残す。
     assert "line99" in msg
     assert "line70" in msg
     assert "line69" not in msg
@@ -202,7 +202,7 @@ def test_command_record_message_truncates_long_output(default_config):
 
 
 def test_command_record_no_message_when_diagnostics_present(default_config):
-    """failed でも diagnostics > 0 のときは message を出さない。"""
+    """failedでもdiagnostics > 0のときはmessageを出さない。"""
     errors = [_make_error("mypy", "src/a.py", 1, "bad")]
     result = _make_result("mypy", returncode=1, output="verbose mypy output", errors=errors)
     lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=1)
@@ -211,7 +211,7 @@ def test_command_record_no_message_when_diagnostics_present(default_config):
 
 
 def test_command_record_no_message_on_success(default_config):
-    """status=succeeded/formatted では message を出さない。"""
+    """status=succeeded/formattedではmessageを出さない。"""
     ok = _make_result("mypy", returncode=0, output="all ok")
     fmt = _make_result("ruff-format", returncode=1, command_type="formatter", output="reformatted", has_error=False)
     lines = pyfltr.llm_output.build_lines([ok, fmt], default_config, exit_code=0)
@@ -222,7 +222,7 @@ def test_command_record_no_message_on_success(default_config):
 
 
 def test_command_record_no_message_when_output_empty(default_config):
-    """failed でも output が空なら message を出さない (キーごと省略)。"""
+    """failedでもoutputが空ならmessageを出さない（キーごと省略）。"""
     result = _make_result("shellcheck", returncode=1, output="")
     lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=1)
     tool_record = json.loads(lines[0])
@@ -230,12 +230,12 @@ def test_command_record_no_message_when_output_empty(default_config):
 
 
 # ---------------------------------------------------------------------------
-# structured_logger 経由の書き出し
+# structured_logger経由の書き出し
 # ---------------------------------------------------------------------------
 
 
 def test_calculate_returncode_matches_summary_exit(default_config):
-    """summary.exit と calculate_returncode の戻り値が一致すること。"""
+    """summary.exitとcalculate_returncodeの戻り値が一致すること。"""
     results = [
         _make_result("mypy", returncode=1, errors=[_make_error("mypy", "a.py", 1, "bad")]),
         _make_result("ruff-format", returncode=0, command_type="formatter"),
@@ -249,37 +249,37 @@ def test_calculate_returncode_matches_summary_exit(default_config):
 
 
 # ---------------------------------------------------------------------------
-# CLI 統合テスト (pyfltr.main.run)
+# CLI統合テスト（pyfltr.main.run）
 # ---------------------------------------------------------------------------
 
 
 def test_run_cli_jsonl_stdout_suppresses_text(mocker, capsys):
-    """jsonl + stdout モードでは stdout は JSONL のみで text は stderr (WARN+) 扱いになる。"""
+    """jsonl + stdoutモードではstdoutはJSONLのみでtextはstderr（WARN+）扱いになる。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
     returncode = pyfltr.main.run(["ci", "--output-format=jsonl", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 0
     captured = capsys.readouterr()
-    # stdout は JSONL のみ。text 整形の区切り線が混入しないこと。
+    # stdoutはJSONLのみ。text整形の区切り線が混入しないこと。
     assert "----- pyfltr" not in captured.out
     lines = [line for line in captured.out.splitlines() if line.strip()]
-    assert lines, "JSONL が 1 行も出ていない"
+    assert lines, "JSONLが1行も出ていない"
     first = json.loads(lines[0])
     assert first["kind"] == "header"
-    # 実行対象のみの commands 配列として出す。commands_count は廃止済み。
+    # 実行対象のみのcommands配列として出す。commands_countは廃止済み。
     assert first["commands"] == ["mypy"]
     assert "commands_count" not in first
     last = json.loads(lines[-1])
     assert last["kind"] == "summary"
     assert last["exit"] == 0
-    # stderr には INFO 進捗・summary が出ない（jsonl stdout は WARN 以上）
+    # stderrにはINFO進捗・summaryが出ない（jsonl stdoutはWARN以上）
     assert "----- pyfltr" not in captured.err
     assert "----- summary" not in captured.err
 
 
 def test_run_cli_output_file_keeps_text_stdout(mocker, capsys, tmp_path):
-    """--output-file 指定時は stdout には従来 text、ファイルには JSONL。"""
+    """--output-file指定時はstdoutには従来text、ファイルにはJSONL。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
@@ -295,15 +295,15 @@ def test_run_cli_output_file_keeps_text_stdout(mocker, capsys, tmp_path):
     )
     assert returncode == 0
     captured = capsys.readouterr()
-    # 従来の text 出力が stdout に出る
+    # 従来のtext出力がstdoutに出る
     assert "summary" in captured.out
-    # ファイルには JSONL
+    # ファイルにはJSONL
     lines = destination.read_text(encoding="utf-8").splitlines()
     assert json.loads(lines[-1])["kind"] == "summary"
 
 
 def test_run_cli_jsonl_ignores_ui(mocker, capsys):
-    """jsonl + stdout モードでは --ui が silently 無効化される。stdout は JSONL のみ。"""
+    """jsonl + stdoutモードでは--uiがsilently無効化される。stdoutはJSONLのみ。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
@@ -313,13 +313,13 @@ def test_run_cli_jsonl_ignores_ui(mocker, capsys):
     assert returncode == 0
     captured = capsys.readouterr()
     lines = [line for line in captured.out.splitlines() if line.strip()]
-    assert lines, "JSONL が 1 行も出ていない"
+    assert lines, "JSONLが1行も出ていない"
     last = json.loads(lines[-1])
     assert last["kind"] == "summary"
 
 
 def test_run_cli_env_var_jsonl(mocker, capsys, monkeypatch):
-    """PYFLTR_OUTPUT_FORMAT=jsonl で --output-format 未指定でも JSONL 出力になる。"""
+    """PYFLTR_OUTPUT_FORMAT=jsonlで--output-format未指定でもJSONL出力になる。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
     monkeypatch.setenv("PYFLTR_OUTPUT_FORMAT", "jsonl")
@@ -329,27 +329,27 @@ def test_run_cli_env_var_jsonl(mocker, capsys, monkeypatch):
     captured = capsys.readouterr()
     assert "----- pyfltr" not in captured.out
     lines = [line for line in captured.out.splitlines() if line.strip()]
-    assert lines, "JSONL が 1 行も出ていない"
+    assert lines, "JSONLが1行も出ていない"
     last = json.loads(lines[-1])
     assert last["kind"] == "summary"
 
 
 def test_run_cli_env_var_overridden_by_cli(mocker, capsys, monkeypatch):
-    """PYFLTR_OUTPUT_FORMAT より CLI --output-format=text が優先される。"""
+    """PYFLTR_OUTPUT_FORMATよりCLI --output-format=textが優先される。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
     monkeypatch.setenv("PYFLTR_OUTPUT_FORMAT", "jsonl")
 
     pyfltr.main.run(["ci", "--output-format=text", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr()
-    # CLI で text を明示しているので text 整形出力が stdout に出るべき
+    # CLIでtextを明示しているのでtext整形出力がstdoutに出るべき
     assert "summary" in captured.out
 
 
 def test_run_cli_env_var_invalid(monkeypatch):
-    """PYFLTR_OUTPUT_FORMAT に不正値が入っている場合は SystemExit で終了する。"""
-    # argparse の parents 共有によるデフォルト汚染を避けるため、_resolve_output_format を直接テストする。
-    # （cli_value=None の場合のみ環境変数が参照される）
+    """PYFLTR_OUTPUT_FORMATに不正値が入っている場合はSystemExitで終了する。"""
+    # argparseのparents共有によるデフォルト汚染を避けるため、_resolve_output_formatを直接テストする。
+    # （cli_value=Noneの場合のみ環境変数が参照される）
     monkeypatch.setenv("PYFLTR_OUTPUT_FORMAT", "yaml")
     parser = pyfltr.main.build_parser()
     with pytest.raises(SystemExit):
@@ -357,28 +357,28 @@ def test_run_cli_env_var_invalid(monkeypatch):
 
 
 def test_run_cli_jsonl_restores_logger_state(mocker, capsys):
-    """jsonl モード実行後に text モードを再実行すると、text 出力が stdout に戻ること。"""
+    """jsonlモード実行後にtextモードを再実行すると、text出力がstdoutに戻ること。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
-    # 1 回目: jsonl モード（stdout に JSONL、text は stderr の WARN+）
+    # 1回目: jsonlモード（stdoutにJSONL、textはstderrのWARN+）
     pyfltr.main.run(["ci", "--output-format=jsonl", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
-    # 1 回目の stdout は読み捨てる (capsys をリセット)
+    # 1回目のstdoutは読み捨てる（capsysをリセット）
     capsys.readouterr()
 
-    # 2 回目: text モード (従来どおりのログが出るべき)。
+    # 2回目: textモード（従来どおりのログが出るべき）。
     pyfltr.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr()
     assert "summary" in captured.out
 
 
 # ---------------------------------------------------------------------------
-# build_command_lines のユニットテスト
+# build_command_linesのユニットテスト
 # ---------------------------------------------------------------------------
 
 
 def test_build_command_lines_with_diagnostics(default_config):
-    """diagnostic行+tool行がツール単位で(command, file)集約されてまとまること。"""
+    """diagnostic行+tool行がツール単位で（command, file）集約されてまとまること。"""
     errors = [
         _make_error("mypy", "src/b.py", 5, "later"),
         _make_error("mypy", "src/a.py", 10, "earlier"),
@@ -388,7 +388,7 @@ def test_build_command_lines_with_diagnostics(default_config):
     parsed = [json.loads(line) for line in lines]
 
     assert len(parsed) == 3
-    # diagnostic行はツール内でファイル順にソートされる（src/a.py → src/b.py）
+    # diagnostic行はツール内でファイル順にソートされる（src/a.py→src/b.py）
     assert parsed[0]["kind"] == "diagnostic"
     assert parsed[0]["file"] == "src/a.py"
     assert parsed[0]["messages"][0]["line"] == 10
@@ -412,10 +412,10 @@ def test_build_command_lines_no_diagnostics(default_config):
 
 
 def test_build_command_lines_truncated_archive_sanitizes_command_name(default_config, tmp_path):
-    """サニタイズ対象文字を含むcommand名でも``truncated.archive``は実保存キーと一致する。
+    """サニタイズ対象文字を含むcommand名でも`truncated.archive`は実保存キーと一致する。
 
-    ``archive.ArchiveStore.write_tool_result``が書き込む保存キーと
-    ``command.truncated.archive``が参照するパスが同じサニタイズ関数を通ることを検証する。
+    `archive.ArchiveStore.write_tool_result`が書き込む保存キーと
+    `command.truncated.archive`が参照するパスが同じサニタイズ関数を通ることを検証する。
     カスタムコマンド名にスラッシュや空白が入る潜在シナリオを想定したリグレッション防止。
     """
     command_name = "foo/bar baz"
@@ -444,15 +444,15 @@ def test_build_command_lines_truncated_archive_sanitizes_command_name(default_co
 
 
 # ---------------------------------------------------------------------------
-# write_jsonl_streaming のユニットテスト
+# write_jsonl_streamingのユニットテスト
 # ---------------------------------------------------------------------------
 
 
 def _configure_structured_stdout() -> None:
-    """テストのため structured_logger を現在の ``sys.stdout`` に向ける。
+    """テストのためstructured_loggerを現在の`sys.stdout`に向ける。
 
-    ``capsys`` フィクスチャは ``sys.stdout`` を差し替えているため、呼び出し時点の
-    ``sys.stdout`` をそのまま StreamHandler に掴ませれば capsys で拾える。
+    `capsys`フィクスチャは`sys.stdout`を差し替えているため、呼び出し時点の
+    `sys.stdout`をそのままStreamHandlerに掴ませればcapsysで拾える。
     """
     import sys  # pylint: disable=import-outside-toplevel
 
@@ -475,7 +475,7 @@ def test_write_jsonl_streaming(default_config, capsys):
 
 
 # ---------------------------------------------------------------------------
-# write_jsonl_footer のユニットテスト
+# write_jsonl_footerのユニットテスト
 # ---------------------------------------------------------------------------
 
 
@@ -513,12 +513,12 @@ def test_write_jsonl_footer_no_warnings(capsys):
 
 
 # ---------------------------------------------------------------------------
-# header レコードのユニットテスト
+# headerレコードのユニットテスト
 # ---------------------------------------------------------------------------
 
 
 def test_build_header_record_fields():
-    """_build_header_record が必要なフィールドをすべて含むこと (commands は実行対象配列)。"""
+    """`_build_header_record`が必要なフィールドをすべて含むこと（commandsは実行対象配列）。"""
     record = pyfltr.llm_output._build_header_record(["ruff-format", "mypy"], 42)
     assert record["kind"] == "header"
     assert record["commands"] == ["ruff-format", "mypy"]
@@ -544,7 +544,7 @@ def test_build_lines_header_first(default_config):
 
 
 def test_build_lines_header_verbose_switches_hints(default_config):
-    """verbose=True で schema_hints がフル版に切り替わる (commands は既定でも配列)。"""
+    """verbose=Trueでschema_hintsがフル版に切り替わる（commandsは既定でも配列）。"""
     result = _make_result("mypy", returncode=0)
     lines = pyfltr.llm_output.build_lines(
         [result], default_config, exit_code=0, commands=["mypy", "ruff-check"], files=10, verbose=True
@@ -565,7 +565,7 @@ def test_build_lines_no_header_when_omitted(default_config):
 
 
 def test_write_jsonl_header_stdout(capsys):
-    """write_jsonl_headerがstdoutにheader行を書き出し、commandsが配列になること。"""
+    """`write_jsonl_header`がstdoutにheader行を書き出し、commandsが配列になること。"""
     _configure_structured_stdout()
     pyfltr.llm_output.write_jsonl_header(commands=["ruff-format", "mypy"], files=5)
     captured = capsys.readouterr()
@@ -578,7 +578,7 @@ def test_write_jsonl_header_stdout(capsys):
 
 
 def test_write_jsonl_header_stdout_verbose(capsys):
-    """write_jsonl_header の verbose=True でフル schema_hints が出る (commands は常に配列)。"""
+    """`write_jsonl_header`のverbose=Trueでフルschema_hintsが出る（commandsは常に配列）。"""
     _configure_structured_stdout()
     pyfltr.llm_output.write_jsonl_header(commands=["ruff-format", "mypy"], files=5, verbose=True)
     captured = capsys.readouterr()
@@ -588,12 +588,12 @@ def test_write_jsonl_header_stdout_verbose(capsys):
 
 
 # ---------------------------------------------------------------------------
-# --commands の繰り返し指定 (action="append") + カンマ区切り併用のテスト
+# --commandsの繰り返し指定（action="append"）+ カンマ区切り併用のテスト
 # ---------------------------------------------------------------------------
 
 
 def _header_commands_for(args: list[str], mocker, capsys) -> list[str]:
-    """指定 CLI 引数で run-for-agent を走らせ header の commands 配列を取り出す。"""
+    """指定CLI引数でrun-for-agentを走らせheaderのcommands配列を取り出す。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
     target = str(pathlib.Path(__file__).parent.parent)
@@ -607,28 +607,28 @@ def _header_commands_for(args: list[str], mocker, capsys) -> list[str]:
 
 
 def test_commands_option_repeated_and_comma_separated_equivalent(mocker, capsys):
-    """--commands の複数回指定とカンマ区切りが同じ commands 配列を生成する。"""
+    """--commandsの複数回指定とカンマ区切りが同じcommands配列を生成する。"""
     repeated = _header_commands_for(["--commands=mypy", "--commands=pyright"], mocker, capsys)
     comma = _header_commands_for(["--commands=mypy,pyright"], mocker, capsys)
     assert repeated == comma == ["mypy", "pyright"]
 
 
 def test_commands_option_mixed_repeated_and_comma(mocker, capsys):
-    """--commands の繰り返しとカンマ区切りを混在指定できる (後勝ちではなくマージ)。"""
+    """--commandsの繰り返しとカンマ区切りを混在指定できる（後勝ちではなくマージ）。"""
     commands = _header_commands_for(["--commands=mypy", "--commands=pyright,ruff-check"], mocker, capsys)
-    # 実際の実行順は config.command_names 定義順に並ぶが、少なくとも3ツールがマージされていること。
+    # 実際の実行順はconfig.command_names定義順に並ぶが、少なくとも3ツールがマージされていること。
     assert set(commands) == {"mypy", "pyright", "ruff-check"}
 
 
 def test_commands_option_dedup_preserves_first_occurrence(mocker, capsys):
-    """重複指定されたコマンドは 1 回だけ実行対象に含まれる。"""
+    """重複指定されたコマンドは1回だけ実行対象に含まれる。"""
     commands = _header_commands_for(["--commands=mypy,pyright", "--commands=mypy"], mocker, capsys)
     assert commands.count("mypy") == 1
     assert "pyright" in commands
 
 
 # ---------------------------------------------------------------------------
-# code-quality 形式の CLI 統合テスト
+# code-quality形式のCLI統合テスト
 # ---------------------------------------------------------------------------
 
 
@@ -636,7 +636,7 @@ _REQUIRED_CQ_FIELDS = {"description", "check_name", "fingerprint", "severity", "
 
 
 def test_run_cli_code_quality_stdout(mocker, capsys):
-    """code-quality + stdout モードでは stdout は JSON 配列、stderr に text 整形が出る。"""
+    """code-quality + stdoutモードではstdoutはJSON配列、stderrにtext整形が出る。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
@@ -645,22 +645,22 @@ def test_run_cli_code_quality_stdout(mocker, capsys):
     )
     assert returncode == 0
     captured = capsys.readouterr()
-    # stdout は JSON 配列 1 件
+    # stdoutはJSON配列1件
     payload = json.loads(captured.out)
     assert isinstance(payload, list)
-    # code-quality は診断なしなら空配列だが、ルート型が list である確認が主眼
+    # code-qualityは診断なしなら空配列だが、ルート型がlistである確認が主眼
     for issue in payload:
         assert issue.keys() >= _REQUIRED_CQ_FIELDS
         assert (issue.keys() | {"location"}) >= _REQUIRED_CQ_FIELDS
         assert {"path", "lines"} <= issue["location"].keys()
         assert "begin" in issue["location"]["lines"]
-    # stderr には text 整形（進捗・summary）が出る
+    # stderrにはtext整形（進捗・summary）が出る
     assert "----- pyfltr" in captured.err
     assert "----- summary" in captured.err
 
 
 def test_run_cli_code_quality_output_file(mocker, capsys, tmp_path):
-    """code-quality + --output-file ではファイルに JSON 配列、stdout に text 整形。"""
+    """code-quality + --output-fileではファイルにJSON配列、stdoutにtext整形。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
@@ -676,15 +676,15 @@ def test_run_cli_code_quality_output_file(mocker, capsys, tmp_path):
     )
     assert returncode == 0
     captured = capsys.readouterr()
-    # stdout には従来の text 整形出力
+    # stdoutには従来のtext整形出力
     assert "summary" in captured.out
-    # ファイルは JSON 配列
+    # ファイルはJSON配列
     payload = json.loads(destination.read_text(encoding="utf-8"))
     assert isinstance(payload, list)
 
 
 def test_run_cli_code_quality_with_diagnostics(mocker, capsys):
-    """エラーを検出したツールで Code Quality 必須フィールドを満たす issue が出る。"""
+    """エラーを検出したツールでCode Quality必須フィールドを満たすissueが出る。"""
     mypy_output = "src/a.py:10: error: bad type  [arg-type]\n"
     proc = subprocess.CompletedProcess(["mypy"], returncode=1, stdout=mypy_output)
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)

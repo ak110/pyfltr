@@ -1,21 +1,21 @@
 """実行アーカイブ。
 
-全実行のツール出力・diagnostic・メタ情報を XDG Base Directory 準拠の
-ユーザーキャッシュへ保存する仕組み。v3.0.0 で追加。
+全実行のツール出力・diagnostic・メタ情報をXDG Base Directory準拠の
+ユーザーキャッシュへ保存する仕組み。v3.0.0で追加。
 
-ディレクトリ構造 (``<cache_root> = platformdirs.user_cache_dir("pyfltr")``)::
+ディレクトリ構造（`<cache_root> = platformdirs.user_cache_dir("pyfltr")`）::
 
     <cache_root>/runs/<run_id>/meta.json
     <cache_root>/runs/<run_id>/tools/<sanitize(command)>/output.log
     <cache_root>/runs/<run_id>/tools/<sanitize(command)>/diagnostics.jsonl
     <cache_root>/runs/<run_id>/tools/<sanitize(command)>/tool.json
 
-``run_id`` は ULID (26 文字、Crockford Base32、タイムスタンプ由来で辞書順ソート可能)。
-自動クリーンアップは世代数・合計サイズ・保存期間の 3 軸のうち超過した時点で
-古い順 (= run_id 昇順) に削除する。
+`run_id`はULID（26文字、Crockford Base32、タイムスタンプ由来で辞書順ソート可能）。
+自動クリーンアップは世代数・合計サイズ・保存期間の3軸のうち超過した時点で
+古い順（= run_id昇順）に削除する。
 
-アーカイブは既定で有効。``--no-archive`` CLI オプションまたは
-``archive = false`` 設定で無効化できる。
+アーカイブは既定で有効。`--no-archive` CLIオプションまたは
+`archive = false`設定で無効化できる。
 """
 
 import dataclasses
@@ -49,13 +49,13 @@ _TOOL_META_FILENAME = "tool.json"
 def default_cache_root() -> pathlib.Path:
     r"""XDG 準拠のキャッシュルートを返す。
 
-    Linux では ``~/.cache/pyfltr/``、macOS では ``~/Library/Caches/pyfltr/``、
-    Windows では ``%LOCALAPPDATA%\\pyfltr\\Cache`` になる。環境変数
-    ``PYFLTR_CACHE_DIR`` が設定されていればそれを優先する (テストや運用上の
-    強制上書き用)。
+    Linuxでは`~/.cache/pyfltr/`、macOSでは`~/Library/Caches/pyfltr/`、
+    Windowsでは`%LOCALAPPDATA%\pyfltr\Cache`になる。環境変数
+    `PYFLTR_CACHE_DIR`が設定されていればそれを優先する（テストや運用上の
+    強制上書き用）。
 
-    プロジェクトローカル (``.pyfltr_cache/`` のようなリポジトリ内ディレクトリ)
-    には保存しない方針を採用する。``.gitignore`` 運用の負担を増やさず、
+    プロジェクトローカル（`.pyfltr_cache/`のようなリポジトリ内ディレクトリ）
+    には保存しない方針を採用する。`.gitignore`運用の負担を増やさず、
     複数プロジェクト横断での参照を可能にするため。
     """
     override = os.environ.get("PYFLTR_CACHE_DIR")
@@ -96,10 +96,10 @@ class RunSummary:
 class ArchiveStore:
     """実行アーカイブの読み書き。
 
-    1 回の pyfltr 実行で 1 インスタンスを生成する。``start_run()`` で run_id を
-    採番して以後のツール書き込みを受け付け、``finalize_run()`` でメタ情報を
-    確定させる。クリーンアップは ``cleanup()`` が呼ばれた時点で行う
-    (呼び出し側は実行冒頭で発火させることを想定)。
+    1回のpyfltr実行で1インスタンスを生成する。`start_run()`でrun_idを
+    採番して以後のツール書き込みを受け付け、`finalize_run()`でメタ情報を
+    確定させる。クリーンアップは`cleanup()`が呼ばれた時点で行う
+    （呼び出し側は実行冒頭で発火させることを想定）。
     """
 
     def __init__(self, cache_root: pathlib.Path | None = None) -> None:
@@ -146,10 +146,10 @@ class ArchiveStore:
     ) -> None:
         """1 ツール完了時に呼び出されるフック。生出力・diagnostic・メタを保存する。
 
-        ``diagnostics.jsonl`` は ``(command, file)`` 単位の集約形式で保存する。各行は
-        ``{"kind": "diagnostic", "command": ..., "file": ..., "messages": [...]}`` 構造で
-        ``llm_output.aggregate_diagnostics()`` の出力と同形。
-        ``tool.json`` には ``hint_urls`` を空でないときに限り含める。
+        `diagnostics.jsonl`は`(command, file)`単位の集約形式で保存する。各行は
+        `{"kind": "diagnostic", "command": ..., "file": ..., "messages": [...]}`構造で
+        `llm_output.aggregate_diagnostics()`の出力と同形。
+        `tool.json`には`hint_urls`を空でないときに限り含める。
         """
         tool_dir = self._runs_dir / run_id / "tools" / pyfltr.paths.sanitize_command_name(result.command)
         tool_dir.mkdir(parents=True, exist_ok=True)
@@ -199,7 +199,7 @@ class ArchiveStore:
         meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def list_runs(self, *, limit: int | None = None) -> list[RunSummary]:
-        """保存済みの run を新しい順 (run_id 降順) で返す。"""
+        """保存済みのrunを新しい順（run_id降順）で返す。"""
         if not self._runs_dir.exists():
             return []
         entries = sorted(
@@ -232,7 +232,7 @@ class ArchiveStore:
         return summaries
 
     def read_meta(self, run_id: str) -> dict[str, typing.Any]:
-        """指定 run の meta.json を読み出す。存在しなければ FileNotFoundError。"""
+        """指定runのmeta.jsonを読み出す。存在しなければFileNotFoundError。"""
         meta_path = self._runs_dir / run_id / _META_FILENAME
         if not meta_path.exists():
             raise FileNotFoundError(run_id)
@@ -241,10 +241,10 @@ class ArchiveStore:
     def list_tools(self, run_id: str) -> list[str]:
         """指定 run で実際にアーカイブされているツール名一覧を返す。
 
-        ``tools/`` 直下のディレクトリ名 (``pyfltr.paths.sanitize_command_name()`` 済み) を自然順で返す。
-        ``meta["commands"]`` は実行予定リストで、fail-fast 中断や skipped で実体を
-        伴わないツールを含みうるため、実保存ツールの SSOT として本メソッドを使う。
-        不在 run_id 指定時は他の ``read_*`` と同じく ``FileNotFoundError`` を送出する。
+        `tools/`直下のディレクトリ名（`pyfltr.paths.sanitize_command_name()`済み）を自然順で返す。
+        `meta["commands"]`は実行予定リストで、fail-fast中断やskippedで実体を
+        伴わないツールを含みうるため、実保存ツールのSSOTとして本メソッドを使う。
+        不在run_id指定時は他の`read_*`と同じく`FileNotFoundError`を送出する。
         """
         tools_dir = self._runs_dir / run_id / "tools"
         if not tools_dir.exists():
@@ -281,7 +281,7 @@ class ArchiveStore:
         """自動クリーンアップを実施する。削除された run_id のリストを返す。
 
         世代数 / 合計サイズ / 保存期間のいずれかを超過した時点で、古い順
-        (run_id 昇順 = ULID タイムスタンプ昇順) に削除する。
+        （run_id昇順 = ULIDタイムスタンプ昇順）に削除する。
 
         各実行冒頭で同期的に呼び出すことを想定する。アーカイブ規模は通常
         小さく削除対象も限定的のため、非同期化は実装コストに見合わない。
@@ -299,7 +299,7 @@ class ArchiveStore:
         now = datetime.datetime.now(datetime.UTC)
         age_limit = datetime.timedelta(days=policy.max_age_days) if policy.max_age_days > 0 else None
 
-        # 期間超過の削除 (最古から)
+        # 期間超過の削除（最古から）
         if age_limit is not None:
             for entry in list(entries):
                 started = _started_at_of(entry)
@@ -318,7 +318,7 @@ class ArchiveStore:
                 removed.append(entry.name)
             entries = entries[overflow:]
 
-        # サイズ超過の削除 (古い方から削っていく)
+        # サイズ超過の削除（古い方から削っていく）
         if policy.max_size_bytes > 0:
             total = sum(_dir_size(entry) for entry in entries)
             for entry in list(entries):

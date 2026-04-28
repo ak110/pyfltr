@@ -32,7 +32,7 @@ def test_build_message_dict_with_rule_severity_fix() -> None:
     # msgは最後のキーであることを確認（フィールド順序）
     keys = list(message.keys())
     assert keys[-1] == "msg"
-    # ``rule_url`` は出力されない
+    # `rule_url`は出力されない
     assert "rule_url" not in message
 
 
@@ -143,13 +143,13 @@ def test_dump_roundtrip() -> None:
 
 
 def test_build_warning_record() -> None:
-    """warning dict が kind/source/msg を持つレコードに変換される。"""
+    """warning dictがkind/source/msgを持つレコードに変換される。"""
     record = pyfltr.llm_output._build_warning_record({"source": "config", "message": "foo"})
     assert record == {"kind": "warning", "source": "config", "msg": "foo"}
 
 
 def test_build_warning_record_with_hint() -> None:
-    """hint があれば warning レコードに hint キーが含まれる。"""
+    """hintがあればwarningレコードにhintキーが含まれる。"""
     record = pyfltr.llm_output._build_warning_record(
         {"source": "textlint-identifier-corruption", "message": "foo", "hint": "fooをバックティックで囲む"}
     )
@@ -162,7 +162,7 @@ def test_build_warning_record_with_hint() -> None:
 
 
 def test_build_command_record_includes_hint_urls_when_provided() -> None:
-    """hint_urls を与えると tool レコードに ``hint_urls`` キーで埋め込まれる。"""
+    """hint_urlsを与えるとtoolレコードに`hint_urls`キーで埋め込まれる。"""
     result = pyfltr.command.CommandResult(
         command="ruff-check",
         command_type="linter",
@@ -182,7 +182,7 @@ def test_build_command_record_includes_hint_urls_when_provided() -> None:
 
 
 def test_build_command_record_omits_hint_urls_when_empty() -> None:
-    """hint_urls が None / 空の場合は `hint_urls` キー自体を出さない。"""
+    """hint_urlsがNone / 空の場合は`hint_urls`キー自体を出さない。"""
     result = pyfltr.command.CommandResult(
         command="mypy",
         command_type="linter",
@@ -200,7 +200,7 @@ def test_build_command_record_omits_hint_urls_when_empty() -> None:
 
 
 def test_build_command_record_retry_command_included() -> None:
-    """retry_command が設定されていれば tool レコードに含まれる (失敗時のみ populate される前提)。"""
+    """retry_commandが設定されていればtoolレコードに含まれる（失敗時のみpopulateされる前提）。"""
     result = pyfltr.command.CommandResult(
         command="ruff-check",
         command_type="linter",
@@ -217,7 +217,7 @@ def test_build_command_record_retry_command_included() -> None:
 
 
 def test_build_command_record_retry_command_omitted() -> None:
-    """retry_command が None の場合、tool レコードから省略される。"""
+    """retry_commandがNoneの場合、toolレコードから省略される。"""
     result = pyfltr.command.CommandResult(
         command="mypy",
         command_type="linter",
@@ -233,7 +233,7 @@ def test_build_command_record_retry_command_omitted() -> None:
 
 
 def test_build_command_lines_truncates_diagnostics_when_archived() -> None:
-    """jsonl-diagnostic-limit 超過時、先頭 N 件の個別指摘に切り詰めてから集約する。"""
+    """jsonl-diagnostic-limit超過時、先頭N件の個別指摘に切り詰めてから集約する。"""
     errors = [
         pyfltr.error_parser.ErrorLocation(file="src/foo.py", line=i, col=None, command="mypy", message=f"err{i}")
         for i in range(10)
@@ -265,7 +265,7 @@ def test_build_command_lines_truncates_diagnostics_when_archived() -> None:
 
 
 def test_build_command_lines_no_truncation_when_not_archived() -> None:
-    """archived=False のときは切り詰めをスキップして全件出力する。"""
+    """archived=Falseのときは切り詰めをスキップして全件出力する。"""
     errors = [
         pyfltr.error_parser.ErrorLocation(file="src/foo.py", line=i, col=None, command="mypy", message=f"err{i}")
         for i in range(10)
@@ -295,7 +295,7 @@ def test_build_command_lines_no_truncation_when_not_archived() -> None:
 
 
 def test_build_command_record_cached_includes_cached_from() -> None:
-    """cached=True のとき cached/cached_from と cached_elapsed が tool レコードに含まれる。"""
+    """cached=Trueのときcached/cached_fromとcached_elapsedがtoolレコードに含まれる。"""
     result = pyfltr.command.CommandResult(
         command="textlint",
         command_type="linter",
@@ -311,14 +311,14 @@ def test_build_command_record_cached_includes_cached_from() -> None:
     record = pyfltr.llm_output._build_command_record(result, diagnostics=0)
     assert record["cached"] is True
     assert record["cached_from"] == "01ABCDEFGH"
-    # cached=True のとき elapsed は出さず cached_elapsed だけを出す
-    # （LLM が「今回の実行時間」と誤解するのを避ける）。
+    # cached=Trueのときelapsedはださずcached_elapsedだけを出す
+    # （LLMが「今回の実行時間」と誤解するのを避ける）。
     assert "elapsed" not in record
     assert record["cached_elapsed"] == 1.23
 
 
 def test_build_command_record_cached_omitted_when_false() -> None:
-    """cached=False の場合は cached/cached_from/cached_elapsed が省略され elapsed が出る。"""
+    """cached=Falseの場合はcached/cached_from/cached_elapsedが省略されelapsedが出る。"""
     result = pyfltr.command.CommandResult(
         command="textlint",
         command_type="linter",
@@ -337,7 +337,7 @@ def test_build_command_record_cached_omitted_when_false() -> None:
 
 
 def test_build_command_record_cached_without_cached_from() -> None:
-    """cached_from が未設定でも cached=True なら cached_elapsed は出る。"""
+    """cached_fromが未設定でもcached=Trueならcached_elapsedは出る。"""
     result = pyfltr.command.CommandResult(
         command="textlint",
         command_type="linter",
@@ -357,14 +357,14 @@ def test_build_command_record_cached_without_cached_from() -> None:
 
 
 def test_build_command_record_message_truncated_when_archived() -> None:
-    """failed + message 切り詰め時、truncated に lines / chars / head_chars / tail_chars / archive が入る。
+    """failed + message切り詰め時、truncatedにlines / chars / head_chars / tail_chars / archiveが入る。
 
     ハイブリッド方式の検証:
     - 先頭ブロックは原文先頭の文字を保持する
     - 末尾ブロックは原文末尾の文字を保持する
-    - 中央に ``... (truncated)`` マーカーが入る
+    - 中央に`... (truncated)`マーカーが入る
     """
-    # 既定上限 (max_chars=2000) を確実に超える 4000 行 + マーカー文字列を仕込む。
+    # 既定上限（max_chars=2000）を確実に超える4000行 + マーカー文字列を仕込む。
     head_marker = "HEAD-MARKER-LINE"
     tail_marker = "TAIL-MARKER-LINE"
     body = "\n".join(f"line{i}" for i in range(4000))
@@ -395,32 +395,32 @@ def test_build_command_record_message_truncated_when_archived() -> None:
     assert truncated["chars"] == len(output)
     assert truncated["head_chars"] > 0
     assert truncated["tail_chars"] > 0
-    # 合計 (head + tail + marker) は max_chars を大きくは超えない。
+    # 合計（head + tail + marker）はmax_charsを大きくは超えない。
     assert truncated["head_chars"] + truncated["tail_chars"] <= 2000
 
 
 def test_build_header_record_default_compact() -> None:
-    """既定では commands 配列と短縮 schema_hints を出す。"""
+    """既定ではcommands配列と短縮schema_hintsを出す。"""
     record = pyfltr.llm_output._build_header_record(commands=["ruff-check", "mypy", "textlint"], files=3, run_id="01TESTULID")
     assert record["run_id"] == "01TESTULID"
-    # 実行対象ツール名の配列として出す。commands_count は廃止済み。
+    # 実行対象ツール名の配列として出す。commands_countは廃止済み。
     assert record["commands"] == ["ruff-check", "mypy", "textlint"]
     assert "commands_count" not in record
     hints = record.get("schema_hints")
     assert isinstance(hints, dict)
-    # 短縮版は LLM が推測しづらい項目だけを載せる。自明なレコード種別 (diagnostic/warning/summary) は含まない。
+    # 短縮版はLLMが推測しづらい項目だけを載せる。自明なレコード種別（diagnostic/warning/summary）は含まない。
     assert "header.commands_count" not in hints
     assert "command.cached_elapsed" in hints
     assert "command.retry_command" in hints
     assert "messages[].fix" in hints
     # 短縮版自身の使い方説明はトークン効率を下げるため埋め込まない（フル版の取得方法はドキュメントに委ねる）。
     assert "_note" not in hints
-    # フル版固有のキーは出さない (同名衝突しないよう別体系)
+    # フル版固有のキーは出さない（同名衝突しないよう別体系）
     assert "diagnostic.messages" not in hints
 
 
 def test_build_header_record_verbose_has_full_hints() -> None:
-    """verbose=True で schema_hints がフル版に切り替わる。commands 配列は既定でも出る。"""
+    """verbose=Trueでschema_hintsがフル版に切り替わる。commands配列は既定でも出る。"""
     record = pyfltr.llm_output._build_header_record(commands=["ruff-check"], files=3, run_id="01TESTULID", verbose=True)
     assert record["run_id"] == "01TESTULID"
     assert record["commands"] == ["ruff-check"]
@@ -433,16 +433,16 @@ def test_build_header_record_verbose_has_full_hints() -> None:
     assert "command.retry_command" in hints
     assert "command.cached_elapsed" in hints
     assert "header.run_id" in hints
-    # 集約形式以降、rule_url はトップレベルキーから削除されている
+    # 集約形式以降、rule_urlはトップレベルキーから削除されている
     assert "diagnostic.rule_url" not in hints
-    # 値は英語で LLM が読む前提
+    # 値は英語でLLMが読む前提
     assert "auto-fix" in hints["diagnostic.messages.fix"]
 
 
 def test_build_header_record_size_default_is_small() -> None:
-    """既定ヘッダー (実行対象 15 件想定) は 900 文字以下に収まる。"""
-    # 想定: pyfltr の実運用上、実行対象は13件程度（有効化・only-failed 適用後）。
-    # 合成 15 件想定で 900 文字以内なら、実運用の ~13 件 (平均 10 文字) は十分にその内側に収まる。
+    """既定ヘッダー（実行対象15件想定）は900文字以下に収まる。"""
+    # 想定: pyfltrの実運用上、実行対象は13件程度（有効化・only-failed適用後）。
+    # 合成15件想定で900文字以内なら、実運用の~13件（平均10文字）は十分にその内側に収まる。
     commands = [f"tool-{i}" for i in range(15)]
     record = pyfltr.llm_output._build_header_record(commands=commands, files=10, run_id="01TESTULID")
     serialized = pyfltr.llm_output._dump(record)
@@ -450,7 +450,7 @@ def test_build_header_record_size_default_is_small() -> None:
 
 
 def test_build_lines_verbose_flag_switches_hints() -> None:
-    """build_lines の verbose 引数で header の schema_hints が切り替わる (commands は常に配列)。"""
+    """`build_lines`のverbose引数でheaderのschema_hintsが切り替わる（commandsは常に配列）。"""
     config = pyfltr.config.create_default_config()
     result = pyfltr.command.CommandResult(
         command="mypy",
@@ -479,7 +479,7 @@ def test_build_lines_verbose_flag_switches_hints() -> None:
 
 
 def test_get_schema_hints_public_api() -> None:
-    """get_schema_hints はコピーを返し、full/compact で内容が切り替わる。"""
+    """`get_schema_hints`はコピーを返し、full/compactで内容が切り替わる。"""
     full = pyfltr.llm_output.get_schema_hints(full=True)
     compact = pyfltr.llm_output.get_schema_hints(full=False)
     assert "diagnostic.messages" in full
@@ -492,7 +492,7 @@ def test_get_schema_hints_public_api() -> None:
 
 
 def test_build_summary_record_emits_guidance_on_failure() -> None:
-    """failed > 0 のとき summary.guidance が英語で付与され、launcher_prefix と run_id が埋め込まれる。"""
+    """failed > 0のときsummary.guidanceが英語で付与され、launcher_prefixとrun_idが埋め込まれる。"""
     result = pyfltr.command.CommandResult(
         command="mypy",
         command_type="linter",
@@ -516,12 +516,12 @@ def test_build_summary_record_emits_guidance_on_failure() -> None:
     assert "retry_command" in joined
     assert "uvx pyfltr run-for-agent --only-failed" in joined
     assert "uvx pyfltr show-run 01JABCDEFGH" in joined
-    # プレースホルダが残っていないこと
+    # プレースホルダーが残っていないこと
     assert "<run_id>" not in joined
 
 
 def test_build_summary_record_guidance_falls_back_when_unspecified() -> None:
-    """run_id / launcher_prefix 未指定時はプレースホルダ・既定値にフォールバックする。"""
+    """run_id / launcher_prefix未指定時はプレースホルダー・既定値にフォールバックする。"""
     result = pyfltr.command.CommandResult(
         command="mypy",
         command_type="linter",
@@ -541,7 +541,7 @@ def test_build_summary_record_guidance_falls_back_when_unspecified() -> None:
 
 
 def test_build_summary_record_counts_resolution_failed() -> None:
-    """resolution_failed は failed と区別して commands_summary.needs_action 配下に集計され、guidance も付与される。"""
+    """resolution_failedはfailedと区別してcommands_summary.needs_action配下に集計され、guidanceも付与される。"""
     result = pyfltr.command.CommandResult(
         command="shellcheck",
         command_type="linter",
@@ -560,7 +560,7 @@ def test_build_summary_record_counts_resolution_failed() -> None:
 
 
 def test_build_summary_record_groups_statuses_into_no_issues_and_needs_action() -> None:
-    """5種別のステータスが commands_summary.no_issues / needs_action の2グループへ正しく振り分けられる。"""
+    """5種別のステータスがcommands_summary.no_issues / needs_actionの2グループへ正しく振り分けられる。"""
     succeeded = pyfltr.command.CommandResult(
         command="mypy",
         command_type="linter",
@@ -630,7 +630,7 @@ def test_build_summary_record_groups_statuses_into_no_issues_and_needs_action() 
 
 
 def test_build_summary_record_no_guidance_on_success() -> None:
-    """failed == 0 のときは summary.guidance が省略される。"""
+    """failed == 0のときはsummary.guidanceが省略される。"""
     result = pyfltr.command.CommandResult(
         command="mypy",
         command_type="linter",
@@ -646,7 +646,7 @@ def test_build_summary_record_no_guidance_on_success() -> None:
 
 
 def test_build_summary_record_includes_fully_excluded_files() -> None:
-    """fully_excluded_files 指定時は summary レコードに出力される。"""
+    """fully_excluded_files指定時はsummaryレコードに出力される。"""
     result = pyfltr.command.CommandResult(
         command="mypy",
         command_type="linter",
@@ -666,7 +666,7 @@ def test_build_summary_record_includes_fully_excluded_files() -> None:
 
 
 def test_build_summary_record_omits_fully_excluded_files_when_empty() -> None:
-    """空リスト・None の場合はキー自体を出力しない。"""
+    """空リスト・Noneの場合はキー自体を出力しない。"""
     result = pyfltr.command.CommandResult(
         command="mypy",
         command_type="linter",
@@ -684,7 +684,7 @@ def test_build_summary_record_omits_fully_excluded_files_when_empty() -> None:
 
 
 def test_build_message_dict_includes_end_line_and_end_col() -> None:
-    """end_line / end_col が設定されていれば messages[] に出力される。"""
+    """end_line / end_colが設定されていればmessages[]に出力される。"""
     error = pyfltr.error_parser.ErrorLocation(
         file="a.md",
         line=17,
@@ -698,13 +698,13 @@ def test_build_message_dict_includes_end_line_and_end_col() -> None:
     record = pyfltr.llm_output._build_message_dict(error)
     assert record["end_line"] == 17
     assert record["end_col"] == 23
-    # フィールド順は line → col → end_line → end_col → rule の順
+    # フィールド順はline → col → end_line → end_col → ruleの順
     keys = list(record.keys())
     assert keys.index("col") < keys.index("end_line") < keys.index("end_col") < keys.index("rule")
 
 
 def test_build_message_dict_omits_end_line_and_end_col_when_none() -> None:
-    """end_line / end_col が None の場合はキーごと省略する。"""
+    """end_line / end_colがNoneの場合はキーごと省略する。"""
     error = pyfltr.error_parser.ErrorLocation(
         file="a.py",
         line=10,
@@ -718,7 +718,7 @@ def test_build_message_dict_omits_end_line_and_end_col_when_none() -> None:
 
 
 def test_build_message_dict_includes_hint() -> None:
-    """ErrorLocation.hint が非 None なら messages[] に含まれる。"""
+    """`ErrorLocation.hint`が非Noneならmessages[]に含まれる。"""
     error = pyfltr.error_parser.ErrorLocation(
         file="a.md",
         line=1,
@@ -733,7 +733,7 @@ def test_build_message_dict_includes_hint() -> None:
 
 
 def test_build_message_dict_omits_hint_when_none() -> None:
-    """hint が None なら messages[] には含まれない。"""
+    """hintがNoneならmessages[]には含まれない。"""
     error = pyfltr.error_parser.ErrorLocation(
         file="a.py",
         line=1,
@@ -746,11 +746,11 @@ def test_build_message_dict_omits_hint_when_none() -> None:
 
 
 def test_build_summary_record_includes_applied_fixes() -> None:
-    """fixed_files を持つ結果が複数ある場合、summary.applied_fixes にユニオンしてソートして出力される。
+    """fixed_filesを持つ結果が複数ある場合、summary.applied_fixesにユニオンしてソートして出力される。
 
-    構築意図: `returncode=1, has_error=False, command_type="formatter"` の組み合わせで
-    `status == "formatted"` となるケースを再現する。
-    2 件の結果で `fixed_files` が重複を含む場合に、ユニオン＆ソートされた一覧が得られることを確認する。
+    構築意図: `returncode=1, has_error=False, command_type="formatter"`の組み合わせで
+    `status == "formatted"`となるケースを再現する。
+    2件の結果で`fixed_files`が重複を含む場合に、ユニオン＆ソートされた一覧が得られることを確認する。
     """
     result_a = pyfltr.command.CommandResult(
         command="ruff-check",
@@ -779,7 +779,7 @@ def test_build_summary_record_includes_applied_fixes() -> None:
 
 
 def test_build_summary_record_omits_applied_fixes_when_empty() -> None:
-    """fixed_files が空のとき summary.applied_fixes は出力されない。"""
+    """fixed_filesが空のときsummary.applied_fixesは出力されない。"""
     result = pyfltr.command.CommandResult(
         command="mypy",
         command_type="linter",
@@ -795,15 +795,15 @@ def test_build_summary_record_omits_applied_fixes_when_empty() -> None:
 
 
 def test_get_schema_hints_full_includes_applied_fixes() -> None:
-    """フル版 schema_hints に summary.applied_fixes の説明が含まれる。"""
+    """フル版schema_hintsにsummary.applied_fixesの説明が含まれる。"""
     full = pyfltr.llm_output.get_schema_hints(full=True)
     assert "summary.applied_fixes" in full
 
 
 def test_get_schema_hints_full_includes_summary_groups() -> None:
-    """フル版 schema_hints に summary.commands_summary 配下の説明が含まれる。
+    """フル版schema_hintsにsummary.commands_summary配下の説明が含まれる。
 
-    短縮版 (``-v`` 無し) には含めず、kind 構造から大意が推測できる前提とトークン消費の抑制方針を維持する。
+    短縮版（`-v`無し）には含めず、kind構造から大意が推測できる前提とトークン消費の抑制方針を維持する。
     """
     full = pyfltr.llm_output.get_schema_hints(full=True)
     assert "summary.commands_summary" in full

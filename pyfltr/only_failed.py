@@ -1,6 +1,6 @@
-"""--only-failed フィルター処理。
+"""`--only-failed` フィルター処理。
 
-直前 run の失敗情報から再実行対象コマンドとファイル集合を構築する。
+直前runの失敗情報から再実行対象コマンドとファイル集合を構築する。
 """
 
 from __future__ import annotations
@@ -20,10 +20,10 @@ logger = logging.getLogger(__name__)
 
 
 def _text_logger() -> logging.Logger:
-    """``pyfltr.cli.text_logger`` を遅延参照で返す。
+    """`pyfltr.cli.text_logger`を遅延参照で返す。
 
-    ``pyfltr.cli`` は ``pyfltr.only_failed`` を import するため、モジュール
-    トップレベルの ``import pyfltr.cli`` を避けて循環 import を回避する。
+    `pyfltr.cli`は`pyfltr.only_failed`をimportするため、モジュール
+    トップレベルの`import pyfltr.cli`を避けて循環importを回避する。
     """
     # pylint: disable=import-outside-toplevel,cyclic-import
     from pyfltr import cli
@@ -35,13 +35,13 @@ def _text_logger() -> logging.Logger:
 class ToolTargets:
     """ツール別の実行対象ファイル指定。
 
-    mode="fallback": 診断ファイルなしのツール（pytest 等）で all_files をそのまま使う。
+    mode="fallback": 診断ファイルなしのツール（pytest等）でall_filesをそのまま使う。
     mode="files": 失敗ファイルのみを対象とする。
 
-    旧形式 (``dict[str, list[pathlib.Path] | None]``) では ``None`` と空リストの
+    旧形式（`dict[str, list[pathlib.Path] | None]`）では`None`と空リストの
     違いがコードを読むだけでは不明瞭で、フォールバック実行と除外扱いを取り違える
-    実装ミスを誘発しやすかった。``mode`` 属性で二状態を型として区別し、対象ファイル
-    リスト取得は ``resolve_files()`` の単一経路に集約する。
+    実装ミスを誘発しやすかった。`mode`属性で二状態を型として区別し、対象ファイル
+    リスト取得は`resolve_files()`の単一経路に集約する。
     """
 
     mode: typing.Literal["fallback", "files"]
@@ -49,7 +49,7 @@ class ToolTargets:
 
     @classmethod
     def fallback_default(cls) -> ToolTargets:
-        """診断ファイルなしのツール向け（all_files フォールバック）インスタンスを返す。"""
+        """診断ファイルなしのツール向け（all_filesフォールバック）インスタンスを返す。"""
         return cls(mode="fallback", files=())
 
     @classmethod
@@ -60,8 +60,8 @@ class ToolTargets:
     def resolve_files(self, all_files: list[pathlib.Path]) -> list[pathlib.Path]:
         """実行対象ファイルのリストを返す。
 
-        mode="fallback" のとき all_files をそのまま返す。
-        mode="files" のとき self.files のリストを返す。
+        mode="fallback"のときall_filesをそのまま返す。
+        mode="files"のときself.filesのリストを返す。
         """
         if self.mode == "fallback":
             return all_files
@@ -77,26 +77,26 @@ def apply_filter(
     *,
     from_run: str | None = None,
 ) -> tuple[list[str], dict[str, ToolTargets] | None, bool]:
-    """``--only-failed`` 指定時、直前 run からツール別の失敗ファイル集合を構築する。
+    """`--only-failed`指定時、直前runからツール別の失敗ファイル集合を構築する。
 
     Args:
-        args: コマンドライン引数。``args.only_failed`` が真のとき適用する。
+        args: コマンドライン引数。`args.only_failed`が真のとき適用する。
         commands: 実行対象コマンド名のリスト。
-        all_files: ``expand_all_files`` の結果。``args.targets`` 指定があれば既に絞り込み済み。
-        from_run: 参照対象 run を明示指定する（前方一致 / ``latest`` 対応）。
-            ``None`` の場合は直前 run を自動選択する。
+        all_files: `expand_all_files`の結果。`args.targets`指定があれば既に絞り込み済み。
+        from_run: 参照対象runを明示指定する（前方一致 / `latest`対応）。
+            `None`の場合は直前runを自動選択する。
 
     Returns:
-        ``(絞り込み後 commands, per_tool_targets, exit_early)``
-        - ``args.only_failed`` が偽の場合は ``(commands, None, False)`` を返す（未適用）
-        - 直前 run が存在しない / アーカイブ読み取り失敗 / 失敗ツールが無い / 全ツールで
-          targets 交差が空の場合は ``(commands, None, True)`` を返し、呼び出し側で
-          rc=0 の早期終了を促す
-        - それ以外は絞り込み後 commands と ToolTargets dict を返す（exit_early=False）
+        `(絞り込み後commands, per_tool_targets, exit_early)`
+        - `args.only_failed`が偽の場合は`(commands, None, False)`を返す（未適用）
+        - 直前runが存在しない / アーカイブ読み取り失敗 / 失敗ツールが無い / 全ツールで
+          targets交差が空の場合は`(commands, None, True)`を返し、呼び出し側で
+          rc=0の早期終了を促す
+        - それ以外は絞り込み後commandsとToolTargets dictを返す（exit_early=False）
 
-    ``all_files`` は ``expand_all_files`` の結果（``args.targets`` 指定があれば既に
+    `all_files`は`expand_all_files`の結果（`args.targets`指定があれば既に
     その範囲に絞り込まれている）。本関数ではそれとの交差を取ることで
-    ``--only-failed`` と位置引数 ``targets`` の併用要件を同時に満たす。
+    `--only-failed`と位置引数`targets`の併用要件を同時に満たす。
     """
     if not getattr(args, "only_failed", False):
         return commands, None, False
@@ -110,8 +110,8 @@ def apply_filter(
         )
         return commands, None, True
 
-    # from_run 指定時に run_id を解決し、失敗なら warning を出して早期終了する。
-    # 解決済み run_id を _load_run_summary に渡すことで二重解決を避ける。
+    # from_run指定時にrun_idを解決し、失敗ならwarningを出して早期終了する。
+    # 解決済みrun_idを_load_run_summaryに渡すことで二重解決を避ける。
     resolved_run_id: str | None = None
     if from_run is not None:
         try:
@@ -130,8 +130,8 @@ def apply_filter(
         _log_skip_reason(f"直前 run ({last_run.run_id}) に失敗ツールがありません。対象なしでスキップします。")
         return commands, None, True
 
-    # ツール別のターゲットを構築する。交差空のツールは targets dict から除外し、
-    # filtered_commands でも除外することで skip 状態は dict に含めない設計とする。
+    # ツール別のターゲットを構築する。交差空のツールはtargets dictから除外し、
+    # filtered_commandsでも除外することでskip状態はdictに含めない設計とする。
     targets: dict[str, ToolTargets] = {}
     for tool in failed_tools:
         tool_targets = _extract_failed_files_for_tool(store, last_run.run_id, tool, all_files)
@@ -156,14 +156,14 @@ def _load_run_summary(
     *,
     resolved_run_id: str | None = None,
 ) -> pyfltr.archive.RunSummary | None:
-    """Run のサマリを返す。取得失敗または存在しない場合は None。
+    """runのサマリを返す。取得失敗または存在しない場合はNone。
 
-    ``resolved_run_id`` が指定された場合は、その run_id に対応するサマリを返す。
-    未指定の場合は ``list_runs(limit=1)`` で最新 run を取得する。
+    `resolved_run_id`が指定された場合は、そのrun_idに対応するサマリを返す。
+    未指定の場合は`list_runs(limit=1)`で最新runを取得する。
     """
     if resolved_run_id is not None:
         try:
-            # ArchiveStore には run_id 直接引き当て API が無いため list_runs() から探す。
+            # ArchiveStoreにはrun_id直接引き当てAPIが無いためlist_runs()から探す。
             all_runs = store.list_runs()
         except OSError as e:
             pyfltr.warnings_.emit_warning(
@@ -189,7 +189,7 @@ def _collect_failed_tools(
     run_id: str,
     commands: list[str],
 ) -> list[str]:
-    """直前 run から失敗ツールの名前一覧を返す。読み取り失敗時は空リスト。"""
+    """直前runから失敗ツールの名前一覧を返す。読み取り失敗時は空リスト。"""
     try:
         tool_names = store.list_tools(run_id)
     except OSError as e:
@@ -221,8 +221,8 @@ def _extract_failed_files_for_tool(
 ) -> ToolTargets | None:
     """ツール別の失敗ファイル集合を抽出する。
 
-    - 診断ファイルなし（pytest 等）: ToolTargets.fallback_default()
-    - 診断あり・all_files との交差あり: ToolTargets.with_files(交差ファイル)
+    - 診断ファイルなし（pytest等）: ToolTargets.fallback_default()
+    - 診断あり・all_filesとの交差あり: ToolTargets.with_files(交差ファイル)
     - 診断あり・交差空: None（呼び出し側で除外扱い）
     """
     try:
@@ -232,17 +232,17 @@ def _extract_failed_files_for_tool(
 
     failed_files = {d["file"] for d in diagnostics if isinstance(d.get("file"), str)}
     if not failed_files:
-        # 診断ファイル無し（pass-filenames=False のツール等）→ 既定対象でフォールバック実行
+        # 診断ファイル無し（pass-filenames=Falseのツール等）→ 既定対象でフォールバック実行
         return ToolTargets.fallback_default()
 
-    # all_files を正規化済み相対パス文字列でキーに持つ辞書にしておき、
-    # 診断側の ``file``（``_normalize_path`` 済み）とそのまま比較する。
-    # all_files_map を基準に走査することで target 側の並び順を保つ
-    # （failed_files を直接反復するとセット由来の順序不定が混入する）。
+    # all_filesを正規化済み相対パス文字列でキーに持つ辞書にしておき、
+    # 診断側の`file`（`_normalize_path`済み）とそのまま比較する。
+    # all_files_mapを基準に走査することでtarget側の並び順を保つ
+    # （failed_filesを直接反復するとセット由来の順序不定が混入する）。
     all_files_map = {pyfltr.paths.normalize_separators(p): p for p in all_files}
     intersected = [path for key, path in all_files_map.items() if key in failed_files]
     if not intersected:
-        # 交差空 → 除外扱い（None を返すことで呼び出し側が targets dict から除く）
+        # 交差空 → 除外扱い（Noneを返すことで呼び出し側がtargets dictから除く）
         return None
     return ToolTargets.with_files(intersected)
 
@@ -251,10 +251,10 @@ def _filter_commands_with_targets(
     commands: list[str],
     targets: dict[str, ToolTargets],
 ) -> list[str]:
-    """Targets dict に含まれるツールのみに commands を絞り込む（順序は保持）。"""
+    """Targets dictに含まれるツールのみにcommandsを絞り込む（順序は保持）。"""
     return [cmd for cmd in commands if cmd in targets]
 
 
 def _log_skip_reason(reason: str) -> None:
-    """--only-failed の早期終了理由をログ出力する。"""
+    """`--only-failed`の早期終了理由をログ出力する。"""
     _text_logger().info(f"--only-failed: {reason}")

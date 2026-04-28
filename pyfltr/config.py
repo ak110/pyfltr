@@ -25,8 +25,8 @@ from pyfltr.builtin_commands import (
 )
 from pyfltr.presets import _PRESETS, _REMOVED_PRESETS
 
-# 公開 API として再エクスポートする定数・型
-# （既存の import 経路 ``pyfltr.config.BUILTIN_COMMANDS`` 等を維持するため）
+# 公開APIとして再エクスポートする定数・型
+# （既存のimport経路`pyfltr.config.BUILTIN_COMMANDS`等を維持するため）
 __all__ = [
     "AUTO_ARGS",
     "BIN_RUNNERS",
@@ -55,41 +55,41 @@ __all__ = [
 DEFAULT_CONFIG: dict[str, typing.Any] = {
     # プリセット
     "preset": "",
-    # 言語カテゴリキー: preset が示す言語別ツールを通過させる gate として働く。
-    # True なら preset 由来で有効化された該当カテゴリのコマンドをそのまま通し、
-    # False (既定) なら preset で True になった該当コマンドを個別指定が無い限り
-    # False に押し戻す。カテゴリキー単独では何も有効化されない (preset か個別
-    # ``{command} = true`` が必要)。v3.0.0 で既定値を False (opt-in) に統一。
-    # 対象外プロジェクトで言語別 linter が勝手に走るのを防ぐためで、Python 系は
-    # 別途 ``pip install pyfltr[python]`` で依存を導入する必要がある。JavaScript /
-    # Rust / .NET 系はそれぞれのツールチェインを前提とする。
+    # 言語カテゴリキー: presetが示す言語別ツールを通過させるgateとして働く。
+    # Trueならpreset由来で有効化された該当カテゴリのコマンドをそのまま通し、
+    # False（既定）ならpresetでTrueになった該当コマンドを個別指定がない限り
+    # Falseに押し戻す。カテゴリキー単独では何も有効化されない（presetか個別
+    # `{command} = true`が必要）。v3.0.0で既定値をFalse（opt-in）に統一。
+    # 対象外プロジェクトで言語別linterが勝手に走るのを防ぐためで、Python系は
+    # 別途`pip install pyfltr[python]`で依存を導入する必要がある。JavaScript /
+    # Rust / .NET系はそれぞれのツールチェインを前提とする。
     "python": False,
     "javascript": False,
     "rust": False,
     "dotnet": False,
-    # pre-commit 統合。有効にすると pyfltr run/ci/fast 実行時に
-    # pre-commit run --all-files を内部で呼び出す。
-    # pre-commit-fast = True（既定）により fast も統合するため、
-    # make format 相当の場面で pre-commit を別途呼ぶ必要がなくなる。
-    # pre-commit 配下から pyfltr が起動された場合は PRE_COMMIT=1
-    # 環境変数の検出により pre-commit 統合を自動でスキップする。
+    # pre-commit統合。有効にするとpyfltr run/ci/fast実行時に
+    # pre-commit run --all-filesを内部で呼び出す。
+    # pre-commit-fast = True（既定）によりfastも統合するため、
+    # make format相当の場面でpre-commitを別途呼ぶ必要がなくなる。
+    # pre-commit配下からpyfltrが起動された場合はPRE_COMMIT=1
+    # 環境変数の検出によりpre-commit統合を自動でスキップする。
     "pre-commit": False,
     "pre-commit-path": "pre-commit",
     "pre-commit-runner": "direct",
     "pre-commit-args": ["run", "--all-files"],
     "pre-commit-pass-filenames": False,
     "pre-commit-fast": True,
-    # .pre-commit-config.yaml から pyfltr 関連 hook を自動検出して SKIP する
+    # .pre-commit-config.yamlからpyfltr関連hookを自動検出してSKIPする
     "pre-commit-auto-skip": True,
-    # SKIP 環境変数に渡す hook ID の手動指定リスト（auto-skip と併用可能）
+    # SKIP環境変数に渡すhook IDの手動指定リスト（auto-skipと併用可能）
     "pre-commit-skip": [],
     # 自動オプション: 各ツールの望ましい引数を自動挿入する。
-    # *-args とは独立して動作し、重複排除される。False で無効化可能。
+    # *-argsとは独立して動作し、重複排除される。Falseで無効化可能。
     "pylint-pydantic": True,
     "mypy-unused-awaitable": True,
-    # 構造化出力: 対応ツールの出力形式を JSON 等に切り替え、パーサーで
-    # ルールコード・severity・fix 情報を構造化して取得する。
-    # *-args とは独立した経路で注入されるため pyproject.toml の上書きに影響されない。
+    # 構造化出力: 対応ツールの出力形式をJSON等に切り替え、パーサーで
+    # ルールコード・severity・fix情報を構造化して取得する。
+    # *-argsとは独立した経路で注入されるためpyproject.tomlの上書きに影響されない。
     "ruff-check-json": True,
     "pylint-json": True,
     "pyright-json": True,
@@ -99,30 +99,30 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "typos-json": True,
     "eslint-json": True,
     "biome-json": True,
-    # textlint / markdownlint の起動方式。
-    # textlint-path / markdownlint-path が空のときに、以下の値に従って
+    # textlint / markdownlintの起動方式。
+    # textlint-path / markdownlint-pathが空のときに、以下の値に従って
     # 実際の起動コマンドを組み立てる。
-    # - pnpx: グローバル / キャッシュから実行 (既定。従来互換)
-    # - pnpm: pnpm exec <cmd> (プロジェクトの node_modules を利用)
+    # - pnpx: グローバル / キャッシュから実行（既定。従来互換）
+    # - pnpm: pnpm exec <cmd>（プロジェクトのnode_modulesを利用）
     # - npm:  npm exec --no -- <cmd>
     # - npx:  npx --no-install -- <cmd>
     # - yarn: yarn run <cmd>
-    # - direct: node_modules/.bin/<cmd> を直接起動
+    # - direct: node_modules/.bin/<cmd>を直接起動
     "js-runner": "pnpx",
-    # ネイティブバイナリツール (Go/Rust/Haskell 製等) の起動方式:
+    # ネイティブバイナリツール（Go/Rust/Haskell製等）の起動方式:
     # - mise: mise exec <tool>@<version> -- <cmd>（既定）
-    # - direct: PATH 上のバイナリを直接実行
+    # - direct: PATH上のバイナリを直接実行
     "bin-runner": "mise",
-    # mise 実行時に対象ディレクトリの config が未信頼だった場合、
-    # 自動で ``mise trust --yes --all`` を実行して再試行するか。
-    # worktree や dotfiles 配下など mise.toml が未信頼扱いになりやすい
-    # 環境での手動介入を不要にするための opt-out 設定（既定は有効）。
+    # mise実行時に対象ディレクトリのconfigが未信頼だった場合、
+    # 自動で`mise trust --yes --all`を実行して再試行するか。
+    # worktreeやdotfiles配下などmise.tomlが未信頼扱いになりやすい
+    # 環境での手動介入を不要にするためのopt-out設定（既定は有効）。
     "mise-auto-trust": True,
     # コマンド毎に有効無効、パス、追加の引数を設定
-    # 言語カテゴリ (python / javascript / rust / dotnet) に属するツールは v3.0.0 で
-    # opt-in 化したため、既定値は False。preset で推奨ツールが True になり、
-    # カテゴリキー (``python = true`` 等) が gate を開けて有効化を通す構造。
-    # preset を使わず個別に ``{command} = true`` を指定すると gate を越えて最優先で有効化される。
+    # 言語カテゴリ（python / javascript / rust / dotnet）に属するツールはv3.0.0で
+    # opt-in化したため、既定値はFalse。presetで推奨ツールがTrueになり、
+    # カテゴリキー（`python = true`等）がgateを開けて有効化を通す構造。
+    # presetを使わず個別に`{command} = true`を指定するとgateを越えて最優先で有効化される。
     "mypy": False,
     "mypy-path": "mypy",
     "mypy-args": [],
@@ -144,60 +144,60 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "ty-runner": "direct",
     "ty-fast": True,
     "markdownlint": False,
-    # path が空文字の場合は {command}-runner 設定（既定 "js-runner"）に基づいて自動解決する。
-    # ユーザーが明示的に path を設定した場合はその値をそのまま使い、args 先頭に自動 prefix を追加しない。
+    # pathが空文字の場合は{command}-runner設定（既定 "js-runner"）に基づいて自動解決する。
+    # ユーザーが明示的にpathを設定した場合はその値をそのまま使い、args先頭に自動prefixを追加しない。
     "markdownlint-path": "",
     "markdownlint-args": [],
     "markdownlint-runner": "js-runner",
     "markdownlint-fast": True,
-    # fix ステージ (pyfltr run / fast の自動修正段) で通常 args の後に追加する引数。
-    # markdownlint-cli2 は --fix でファイルを in-place 修正する。
+    # fixステージ（pyfltr run / fastの自動修正段）で通常argsの後に追加する引数。
+    # markdownlint-cli2は--fixでファイルをin-place修正する。
     "markdownlint-fix-args": ["--fix"],
     "textlint": False,
-    # path が空文字の場合は {command}-runner 設定（既定 "js-runner"）に基づいて自動解決する。
+    # pathが空文字の場合は{command}-runner設定（既定 "js-runner"）に基づいて自動解決する。
     "textlint-path": "",
     "textlint-runner": "js-runner",
-    # lint / fix 共通で常に付与される引数。lint 専用オプション (--format など) はここではなく
-    # textlint-lint-args に書くこと。fix 時は @textlint/fixer-formatter が使用されるが
-    # compact フォーマッタが存在しないため、--format compact を共通 args に含めると fix が失敗する。
+    # lint / fix共通で常に付与される引数。lint専用オプション（--formatなど）はここではなく
+    # textlint-lint-argsに書くこと。fix時は@textlint/fixer-formatterが使用されるが
+    # compactフォーマッタが存在しないため、--format compactを共通argsに含めるとfixが失敗する。
     "textlint-args": [],
-    # 非 fix モード (および fix モードの後段 lint チェック) でのみ付与する引数。
-    # 既定は compact フォーマッタ指定 (builtin パーサが compact 出力をパースする前提のため)。
+    # 非fixモード（およびfixモードの後段lintチェック）でのみ付与する引数。
+    # 既定はcompactフォーマッタ指定（builtinパーサがcompact出力をパースする前提のため）。
     "textlint-lint-args": ["--format", "compact"],
-    # textlint 向けルール / プリセットパッケージの列挙。pnpx / npx モードでは
-    # --package / -p 展開される。pnpm / npm / yarn / direct モードでは
-    # package.json 側で管理する前提のため無視される。
+    # textlint向けルール / プリセットパッケージの列挙。pnpx / npxモードでは
+    # --package / -p展開される。pnpm / npm / yarn / directモードでは
+    # package.json側で管理する前提のため無視される。
     "textlint-packages": [
         "textlint-rule-preset-ja-technical-writing",
         "textlint-rule-preset-jtf-style",
         "textlint-rule-ja-no-abusage",
     ],
     "textlint-fast": True,
-    # fix モード時に通常 args の後に追加する引数。
-    # textlint は --fix で autofix 可能なルールを in-place 修正する。
+    # fixモード時に通常argsの後に追加する引数。
+    # textlintは--fixでautofix可能なルールをin-place修正する。
     "textlint-fix-args": ["--fix"],
-    # fix モード実行で「破損させてはならない識別子」を列挙する。
-    # preset-jtf-style の「半角ピリオド→全角句点」ルール等は、コードブロック外にある
-    # ``.NET`` / ``Node.js`` 等の識別子まで変換してしまうことがあるため、
-    # fix 前には含まれていた識別子が fix 後に失われたケースを検知して警告を発行する。
-    # 空リスト (``[]``) を指定すると検知を無効化できる。
+    # fixモード実行で「破損させてはならない識別子」を列挙する。
+    # preset-jtf-styleの「半角ピリオド→全角句点」ルール等は、コードブロック外にある
+    # `.NET` / `Node.js`等の識別子まで変換してしまうことがあるため、
+    # fix前には含まれていた識別子がfix後に失われたケースを検知して警告を発行する。
+    # 空リスト（`[]`）を指定すると検知を無効化できる。
     "textlint-protected-identifiers": [".NET", "Node.js", "Vue.js", "Next.js", "Nuxt.js"],
     "eslint": False,
-    # path が空文字の場合は {command}-runner 設定（既定 "js-runner"）に基づいて自動解決する。
+    # pathが空文字の場合は{command}-runner設定（既定 "js-runner"）に基づいて自動解決する。
     "eslint-path": "",
     "eslint-runner": "js-runner",
-    # ESLint 9 系以降で compact / unix / tap などのコアフォーマッタが除去されたため、
-    # 構造化出力は eslint-json 設定により _STRUCTURED_OUTPUT_SPECS 経由で注入する。
+    # ESLint 9系以降でcompact / unix / tapなどのコアフォーマッタが除去されたため、
+    # 構造化出力はeslint-json設定により_STRUCTURED_OUTPUT_SPECS経由で注入する。
     "eslint-args": [],
     "eslint-fast": False,
-    # fix モード時に通常 args の後に追加する引数。eslint は --fix で autofix する。
+    # fixモード時に通常argsの後に追加する引数。eslintは--fixでautofixする。
     "eslint-fix-args": ["--fix"],
     "prettier": False,
     "prettier-path": "",
     "prettier-runner": "js-runner",
     "prettier-args": [],
-    # prettier は --check (read-only) と --write (書き込み) が排他のため、
-    # pyfltr は 2 段階で実行する。詳細は command.py の _execute_prettier_two_step を参照。
+    # prettierは--check（read-only）と--write（書き込み）が排他のため、
+    # pyfltrは2段階で実行する。詳細はcommand.pyの`_execute_prettier_two_step`を参照。
     "prettier-check-args": ["--check"],
     "prettier-write-args": ["--write"],
     "prettier-fast": True,
@@ -209,12 +209,12 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "biome": False,
     "biome-path": "",
     "biome-runner": "js-runner",
-    # "check" サブコマンドは共通 args に置く。--reporter=github は biome-json 設定
-    # により _STRUCTURED_OUTPUT_SPECS 経由で注入する。
+    # "check"サブコマンドは共通argsに置く。--reporter=githubはbiome-json設定
+    # により_STRUCTURED_OUTPUT_SPECS経由で注入する。
     "biome-args": ["check"],
     "biome-fast": True,
-    # fix モード時に通常 args の後に追加する引数。
-    # `biome check --write` で safe fix のみ適用する (--unsafe は含めない)。
+    # fixモード時に通常argsの後に追加する引数。
+    # `biome check --write`でsafe fixのみ適用する（--unsafeは含めない）。
     "biome-fix-args": ["--write"],
     # -- js-runner対応ツール（追加分） --
     "oxlint": False,
@@ -278,7 +278,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # 既定で bin-runner 経路を通り、グローバル `bin-runner` 既定 (mise) により mise exec で
     # 解決する。従来挙動 (PATH 上の dotnet を直接実行) を維持したい場合は
     # `dotnet-format-runner = "direct"` 等の明示指定または `dotnet-format-path` への
-    # 明示パス指定で戻せる。direct モードでは ``DOTNET_ROOT`` 環境変数配下に dotnet 実行ファイルが
+    # 明示パス指定で戻せる。directモードでは`DOTNET_ROOT`環境変数配下にdotnet実行ファイルが
     # あれば優先採用する。
     "dotnet-format": False,
     "dotnet-format-path": "",
@@ -387,9 +387,9 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "vitest": False,
     "vitest-path": "",
     "vitest-runner": "js-runner",
-    # vitest は run サブコマンドが必須。また、pyfltr が targets 設定で絞ったファイル群と
-    # プロジェクト側の vitest include 設定が交差せず対象ゼロになるケースで rc=1 となり
-    # failed 扱いになるのを避けるため、--passWithNoTests を既定に含める。
+    # vitestはrunサブコマンドが必須。また、pyfltrがtargets設定で絞ったファイル群と
+    # プロジェクト側のvitest include設定が交差せず対象ゼロになるケースでrc=1となり
+    # failed扱いになるのを避けるため、--passWithNoTestsを既定に含める。
     "vitest-args": ["run", "--passWithNoTests"],
     "vitest-fast": False,
     "ruff-format": False,
@@ -397,11 +397,11 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "ruff-format-runner": "direct",
     "ruff-format-args": ["format", "--exit-non-zero-on-format"],
     "ruff-format-fast": True,
-    # ruff-format 実行時に ruff check --fix --unsafe-fixes を先に実行するか。
-    # 既定では有効とし、未整形の import ソートや安全に自動修正できる lint 違反を
-    # フォーマットと一緒に片付ける (ruff 公式推奨ワークフローの発展形)。
-    # lint エラーは別途 ruff-check で検出される前提のため、ステップ 1 の
-    # lint violation (exit 1) は ruff-format 側では失敗扱いしない。
+    # ruff-format実行時にruff check --fix --unsafe-fixesを先に実行するか。
+    # 既定では有効とし、未整形のimportソートや安全に自動修正できるlint違反を
+    # フォーマットと一緒に片付ける（ruff公式推奨ワークフローの発展形）。
+    # lintエラーは別途ruff-checkで検出される前提のため、ステップ1の
+    # lint violation（exit 1）はruff-format側では失敗扱いしない。
     "ruff-format-by-check": True,
     "ruff-format-check-args": ["check", "--fix", "--unsafe-fixes"],
     "ruff-check": False,
@@ -409,42 +409,42 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "ruff-check-runner": "direct",
     "ruff-check-args": ["check"],
     "ruff-check-fast": True,
-    # fix モード時に通常 args の後に追加する引数。
-    # `ruff check --fix --unsafe-fixes` で autofix 可能な違反を修正する。
-    # (通常モードの ruff-format-by-check とは別経路で動作する)
+    # fixモード時に通常argsの後に追加する引数。
+    # `ruff check --fix --unsafe-fixes`でautofix可能な違反を修正する。
+    # （通常モードのruff-format-by-checkとは別経路で動作する）
     "ruff-check-fix-args": ["--fix", "--unsafe-fixes"],
-    # 実行アーカイブ (v3.0.0 追加)
-    # 全実行のツール生出力・diagnostic 全件・実行メタをユーザーキャッシュ
-    # (``platformdirs.user_cache_dir("pyfltr")``) へ保存する。CLI とは独立した
-    # 詳細参照経路 (``show-run`` / ``list-runs``、MCP ツール) からいつでも
+    # 実行アーカイブ（v3.0.0追加）
+    # 全実行のツール生出力・diagnostic全件・実行メタをユーザーキャッシュ
+    # （`platformdirs.user_cache_dir("pyfltr")`）へ保存する。CLIとは独立した
+    # 詳細参照経路（`show-run` / `list-runs`、MCPツール）からいつでも
     # 全文を参照できるようにする。
-    # 既定で有効にしている (オプトイン化を却下した) 理由: エージェント連携時の
-    # JSONL smart truncation で削られた情報を事後参照できる前提を崩さないため。
-    # 肥大化は ``archive-max-*`` 系の自動削除で抑える。
+    # 既定で有効にしている（オプトイン化を却下した）理由: エージェント連携時の
+    # JSONL smart truncationで削られた情報を事後参照できる前提を崩さないため。
+    # 肥大化は`archive-max-*`系の自動削除で抑える。
     "archive": True,
     # 自動クリーンアップの閾値。いずれかを超過した時点で古い順に削除する。
-    # 0 以下を指定するとその軸の自動削除は無効化される。
+    # 0以下を指定するとその軸の自動削除は無効化される。
     "archive-max-runs": 100,
     "archive-max-size-mb": 1024,
     "archive-max-age-days": 30,
-    # JSONL 出力の smart truncation 設定 (v3.0.0 追加)。
-    # ``jsonl-diagnostic-limit`` はツール単位の diagnostic 出力件数上限。0 以下で無制限。
-    # ``jsonl-message-max-lines`` / ``jsonl-message-max-chars`` は failed かつ diagnostics=0 のときの
-    # tool.message (生出力末尾) を切り詰める閾値。
-    # 切り詰めが発生しても、アーカイブ書き込みに成功していれば全文は ``tools/<tool>/output.log``
-    # / ``tools/<tool>/diagnostics.jsonl`` から復元できる。アーカイブ無効時 / 初期化失敗時 /
-    # 当該ツールの書き込み失敗時は切り詰めをスキップし JSONL に全文を出力する。
+    # JSONL出力のsmart truncation設定（v3.0.0追加）。
+    # `jsonl-diagnostic-limit`はツール単位のdiagnostic出力件数上限。0以下で無制限。
+    # `jsonl-message-max-lines` / `jsonl-message-max-chars`はfailedかつdiagnostics=0のときの
+    # tool.message（生出力末尾）を切り詰める閾値。
+    # 切り詰めが発生しても、アーカイブ書き込みに成功していれば全文は`tools/<tool>/output.log`
+    # / `tools/<tool>/diagnostics.jsonl`から復元できる。アーカイブ無効時 / 初期化失敗時 /
+    # 当該ツールの書き込み失敗時は切り詰めをスキップしJSONLに全文を出力する。
     "jsonl-diagnostic-limit": 0,
     "jsonl-message-max-lines": 30,
     "jsonl-message-max-chars": 2000,
-    # ファイル hash キャッシュ (v3.0.0 パート D)。
-    # ``CommandInfo.cacheable=True`` のツール (textlint) の実行結果をユーザーキャッシュへ保存し、
-    # 同じ入力 (対象ファイル群・設定ファイル・実効コマンドライン等) が繰り返された場合に
-    # ツール実行を省略して結果を復元する。エージェントが同じ markdown に対して textlint を
+    # ファイルhashキャッシュ（v3.0.0 パートD）。
+    # `CommandInfo.cacheable=True`のツール（textlint）の実行結果をユーザーキャッシュへ保存し、
+    # 同じ入力（対象ファイル群・設定ファイル・実効コマンドライン等）が繰り返された場合に
+    # ツール実行を省略して結果を復元する。エージェントが同じmarkdownに対してtextlintを
     # 繰り返し呼び出すワークフローでの待機時間を削減する用途。
-    # ``--no-cache`` CLI フラグまたは ``cache = false`` 設定で無効化できる。
-    # ``cache-max-age-hours`` は保存期間 (時間) で、短期破棄前提として既定 12 時間。
-    # 0 以下で期間軸のクリーンアップを無効化する。
+    # `--no-cache`CLIフラグまたは`cache = false`設定で無効化できる。
+    # `cache-max-age-hours`は保存期間（時間）で、短期破棄前提として既定12時間。
+    # 0以下で期間軸のクリーンアップを無効化する。
     "cache": True,
     "cache-max-age-hours": 12,
     # 最大並列数（linters/testersの並列実行数の上限）
@@ -515,7 +515,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
         "*.zip",
     ],
     "extend-exclude": [],
-    # .gitignore に記載されたファイルを除外するか否か（git check-ignore を使用）
+    # .gitignoreに記載されたファイルを除外するか否か（git check-ignoreを使用）
     "respect-gitignore": True,
     # コマンド名のエイリアス
     "aliases": {
@@ -587,7 +587,7 @@ def create_default_config() -> Config:
 
 
 def load_config(config_dir: pathlib.Path | None = None) -> Config:
-    """pyproject.tomlから設定を読み込み。"""
+    """pyproject.tomlから設定を読み込む。"""
     config = create_default_config()
     base = config_dir or pathlib.Path.cwd()
     pyproject_path = (base / "pyproject.toml").absolute()
@@ -618,12 +618,12 @@ def load_config(config_dir: pathlib.Path | None = None) -> Config:
         name = name.replace("_", "-")
         _register_custom_command(config, name, definition)
 
-    # 言語カテゴリ gate の適用 (preset < 言語カテゴリ gate < 個別設定)
-    # v3.0.0 で python / javascript / rust / dotnet を同じ枠組みのカテゴリキーに統一した。
-    # preset は各時点の推奨構成として全言語のツールを横断的に True にするが、カテゴリ
-    # キーが False (既定) のときは preset 由来の True を False へ押し戻して実行を抑止する。
-    # 後続の個別設定ループで ``{command} = true`` / ``{command} = false`` による上書きが可能
-    # (個別指定は gate を越えて最優先)。
+    # 言語カテゴリgateの適用（preset < 言語カテゴリgate < 個別設定）
+    # v3.0.0でpython / javascript / rust / dotnetを同じ枠組みのカテゴリキーに統一した。
+    # presetは各時点の推奨構成として全言語のツールを横断的にTrueにするが、カテゴリ
+    # キーがFalse（既定）のときはpreset由来のTrueをFalseへ押し戻して実行を抑止する。
+    # 後続の個別設定ループで`{command} = true` / `{command} = false`による上書きが可能
+    # （個別指定はgateを越えて最優先）。
     # 設定キーの「_」「-」ゆらぎに対応するため、ユーザー入力側のキー集合を正規化しておく。
     user_keys = {key.replace("_", "-") for key in tool_pyfltr}
     for category_key, commands in LANGUAGE_CATEGORIES:
@@ -634,7 +634,7 @@ def load_config(config_dir: pathlib.Path | None = None) -> Config:
                 continue  # 個別設定による明示指定を保持 (True/False 双方)
             config.values[cmd] = False
 
-    # プリセット・言語カテゴリ以外の設定を適用 (プリセットと重複があれば上書き)
+    # プリセット・言語カテゴリ以外の設定を適用（プリセットと重複があれば上書き）
     skip_keys = ("custom-commands", *(key for key, _ in LANGUAGE_CATEGORIES))
     targets_overrides: dict[str, str | list[str]] = {}
     extend_targets_map: dict[str, str | list[str]] = {}
@@ -642,8 +642,8 @@ def load_config(config_dir: pathlib.Path | None = None) -> Config:
         key = key.replace("_", "-")  # 「_」区切りと「-」区切りのどちらもOK
         if key in skip_keys:
             continue  # 別途処理済み
-        # v3.0.0 で削除されたツール名に紐づく設定キーを検出したら移行案内を出す。
-        # "pyupgrade" / "pyupgrade-path" / "pyupgrade-args" / "pyupgrade-fast" などを網羅する。
+        # v3.0.0で削除されたツール名に紐づく設定キーを検出したら移行案内を出す。
+        # "pyupgrade" / "pyupgrade-path" / "pyupgrade-args" / "pyupgrade-fast"などを網羅する。
         removed_owner = _extract_removed_command(key)
         if removed_owner is not None:
             raise ValueError(
@@ -651,7 +651,7 @@ def load_config(config_dir: pathlib.Path | None = None) -> Config:
                 "5 ツール (pyupgrade / autoflake / isort / black / pflake8) は ruff への統合により削除された。"
                 "該当設定をすべて pyproject.toml から除去すること"
             )
-        # {command}-exclude の検出
+        # {command}-excludeの検出
         if key.endswith("-exclude"):
             cmd_name = key.removesuffix("-exclude")
             if cmd_name in config.commands:
@@ -659,13 +659,13 @@ def load_config(config_dir: pathlib.Path | None = None) -> Config:
                     raise ValueError(f"設定値が不正です: {key} はstr型のリストで指定してください")
                 config.values[key] = value
                 continue
-        # {command}-extend-targets の検出（長いサフィックスを先に判定）
+        # {command}-extend-targetsの検出（長いサフィックスを先に判定）
         if key.endswith("-extend-targets"):
             cmd_name = key.removesuffix("-extend-targets")
             if cmd_name in config.commands:
                 extend_targets_map[cmd_name] = _validate_targets_value(key, value)
                 continue
-        # {command}-targets の検出
+        # {command}-targetsの検出
         if key.endswith("-targets"):
             cmd_name = key.removesuffix("-targets")
             if cmd_name in config.commands:
@@ -677,11 +677,11 @@ def load_config(config_dir: pathlib.Path | None = None) -> Config:
             raise ValueError(f"設定値が不正です: {key}={type(value)}, expected {type(config.values[key])}")
         config.values[key] = value
 
-    # targets の完全上書き
+    # targetsの完全上書き
     for cmd_name, new_targets in targets_overrides.items():
         config.commands[cmd_name] = dataclasses.replace(config.commands[cmd_name], targets=new_targets)
 
-    # extend-targets の追加（targets上書き後に適用）
+    # extend-targetsの追加（targets上書き後に適用）
     for cmd_name, extra in extend_targets_map.items():
         existing = config.commands[cmd_name].target_globs()
         if isinstance(extra, str):
@@ -690,22 +690,22 @@ def load_config(config_dir: pathlib.Path | None = None) -> Config:
             existing.extend(extra)
         config.commands[cmd_name] = dataclasses.replace(config.commands[cmd_name], targets=existing)
 
-    # typos-path の互換正規化: generate-config が出力した空文字列を "typos" へ変換する
+    # typos-pathの互換正規化: generate-configが出力した空文字列を "typos" へ変換する
     if config.values["typos-path"] == "":
         config.values["typos-path"] = "typos"
 
-    # js-runner の値バリデーション
+    # js-runnerの値バリデーション
     js_runner = config.values["js-runner"]
     if js_runner not in JS_RUNNERS:
         raise ValueError(f"js-runnerの設定値が正しくありません。{js_runner=} (許容値: {', '.join(JS_RUNNERS)})")
 
-    # bin-runner の値バリデーション
+    # bin-runnerの値バリデーション
     bin_runner = config.values["bin-runner"]
     if bin_runner not in BIN_RUNNERS:
         raise ValueError(f"bin-runnerの設定値が正しくありません。{bin_runner=} (許容値: {', '.join(BIN_RUNNERS)})")
 
-    # {command}-runner の値バリデーション
-    # 各コマンドごとに ``"direct"`` / ``"mise"`` / ``"bin-runner"`` / ``"js-runner"`` の 4 値のみ許容する。
+    # {command}-runnerの値バリデーション
+    # 各コマンドごとに`"direct"` / `"mise"` / `"bin-runner"` / `"js-runner"`の4値のみ許容する。
     for key, value in config.values.items():
         if not key.endswith("-runner") or key in ("bin-runner", "js-runner"):
             continue
@@ -715,15 +715,15 @@ def load_config(config_dir: pathlib.Path | None = None) -> Config:
     # per-command fastフラグからfastエイリアスを再計算
     config.values["aliases"]["fast"] = _build_fast_alias(config)
 
-    # 有効化されているコマンドの config_files が見つからなければ警告
+    # 有効化されているコマンドのconfig_filesが見つからなければ警告
     _warn_missing_config_files(config, base)
 
     return config
 
 
 def _warn_missing_config_files(config: Config, base: pathlib.Path) -> None:
-    """有効化されているコマンドで ``CommandInfo.config_files`` を満たさないものを警告する。"""
-    # 遅延 import で循環依存を避ける（warnings_ は pyfltr 内で広く参照されるため）
+    """有効化されているコマンドで`CommandInfo.config_files`を満たさないものを警告する。"""
+    # 遅延importで循環依存を避ける（warnings_はpyfltr内で広く参照されるため）
     import pyfltr.warnings_  # pylint: disable=import-outside-toplevel
 
     for command, info in config.commands.items():
@@ -741,7 +741,7 @@ def _warn_missing_config_files(config: Config, base: pathlib.Path) -> None:
 
 
 def _register_custom_command(config: Config, name: str, definition: dict[str, typing.Any]) -> None:
-    """カスタムコマンドをConfigに登録。"""
+    """カスタムコマンドをConfigに登録する。"""
     # 名前衝突チェック
     if name in BUILTIN_COMMANDS:
         raise ValueError(f"カスタムコマンド名がビルトインコマンドと衝突しています: {name}")
@@ -761,32 +761,32 @@ def _register_custom_command(config: Config, name: str, definition: dict[str, ty
     if not isinstance(args, list):
         raise ValueError(f"カスタムコマンド {name} のargsはリストで指定してください")
 
-    # fix-args (省略可、省略時は fix モード非対応として扱う)
+    # fix-args（省略可。省略時はfixモード非対応として扱う）
     fix_args = definition.get("fix-args", definition.get("fix_args"))
     if fix_args is not None and not isinstance(fix_args, list):
         raise ValueError(f"カスタムコマンド {name} のfix-argsはリストで指定してください")
 
-    # targets (省略時は "*.py"、str または list[str])
+    # targets（省略時は "*.py"。strまたはlist[str]）
     raw_targets: typing.Any = definition.get("targets", "*.py")
     targets: str | list[str]
     if isinstance(raw_targets, str):
         targets = raw_targets
     elif isinstance(raw_targets, list) and all(isinstance(item, str) for item in raw_targets):
-        # raw_targets は typing.Any 経由のため list(raw_targets) の要素型が縮まらない。
-        # 上記 isinstance で要素が str であることを検証済みなので、明示的に str 化して
-        # list[str] を構築する。
+        # raw_targetsはtyping.Any経由のためlist(raw_targets)の要素型が縮まらない。
+        # 上記isinstanceで要素がstrであることを検証済みなので、明示的にstr化して
+        # list[str]を構築する。
         targets = [str(item) for item in raw_targets]
     else:
         raise ValueError(f"カスタムコマンド {name} のtargetsは文字列または文字列のリストで指定してください")
 
-    # error-pattern (省略可)
+    # error-pattern（省略可）
     error_pattern = definition.get("error-pattern", definition.get("error_pattern"))
     if error_pattern is not None:
         if not isinstance(error_pattern, str):
             raise ValueError(f"カスタムコマンド {name} のerror-patternは文字列で指定してください")
         _validate_error_pattern(name, error_pattern)
 
-    # config-files (省略可。設定ファイル候補の glob パターン)
+    # config-files（省略可。設定ファイル候補のglobパターン）
     raw_config_files: typing.Any = definition.get("config-files", definition.get("config_files", []))
     if not isinstance(raw_config_files, list) or not all(isinstance(item, str) for item in raw_config_files):
         raise ValueError(f"カスタムコマンド {name} のconfig-filesは文字列のリストで指定してください")
@@ -802,12 +802,12 @@ def _register_custom_command(config: Config, name: str, definition: dict[str, ty
     )
     config.command_names.append(name)
 
-    # fast (省略時はFalse)
+    # fast（省略時はFalse）
     fast = definition.get("fast", False)
     if not isinstance(fast, bool):
         raise ValueError(f"カスタムコマンド {name} のfastはboolで指定してください")
 
-    # pass-filenames (省略時はTrue)
+    # pass-filenames（省略時はTrue）
     pass_filenames = definition.get("pass-filenames", definition.get("pass_filenames", True))
     if not isinstance(pass_filenames, bool):
         raise ValueError(f"カスタムコマンド {name} のpass-filenamesはboolで指定してください")
@@ -818,7 +818,7 @@ def _register_custom_command(config: Config, name: str, definition: dict[str, ty
     config.values[f"{name}-args"] = args
     config.values[f"{name}-fast"] = fast
     config.values[f"{name}-pass-filenames"] = pass_filenames
-    # fix-args は定義されている場合のみ登録する (キーの有無で fix 対応可否を判別)
+    # fix-argsは定義されている場合のみ登録する（キーの有無でfix対応可否を判別）
     if fix_args is not None:
         config.values[f"{name}-fix-args"] = fix_args
 
@@ -842,10 +842,10 @@ def _validate_error_pattern(name: str, pattern: str) -> None:
 
 
 def _extract_removed_command(key: str) -> str | None:
-    """設定キーが削除コマンド宛なら該当コマンド名を返す、そうでなければ None。
+    """設定キーが削除コマンド宛なら該当コマンド名を返す、そうでなければNone。
 
-    ``"pyupgrade"`` のような bare key と、``"pyupgrade-path"`` / ``"pyupgrade-args"`` /
-    ``"pyupgrade-fast"`` などの派生キーの双方を検出する。
+    `"pyupgrade"`のようなbare keyと、`"pyupgrade-path"` / `"pyupgrade-args"` /
+    `"pyupgrade-fast"`などの派生キーの双方を検出する。
     """
     if key in REMOVED_COMMANDS:
         return key
@@ -865,14 +865,14 @@ def _validate_targets_value(key: str, value: typing.Any) -> str | list[str]:
 
 
 def filter_fix_commands(commands: list[str], config: Config) -> list[str]:
-    """Fix ステージで実行すべきコマンドに絞り込む。
+    """fixステージで実行すべきコマンドに絞り込む。
 
-    `pyfltr run` / `pyfltr fast` の fix ステージは linter の autofix 機能
-    (`{command}-fix-args`) を前段で呼び出すための段で、formatter は対象外。
-    formatter 本体は通常ステージで常に書き込みモードで動くため、fix ステージで
-    重複して走らせる必要は無い。
+    `pyfltr run` / `pyfltr fast`のfixステージはlinterのautofix機能
+    （`{command}-fix-args`）を前段で呼び出すための段で、formatterは対象外。
+    formatter本体は通常ステージで常に書き込みモードで動くため、fixステージで
+    重複して走らせる必要はない。
 
-    enabled かつ `{command}-fix-args` が定義されている linter/tester を返す。
+    enabledかつ`{command}-fix-args`が定義されているlinter/testerを返す。
     """
     result: list[str] = []
     for command in commands:
@@ -884,7 +884,7 @@ def filter_fix_commands(commands: list[str], config: Config) -> list[str]:
 
 
 def resolve_aliases(commands: list[str], config: Config) -> list[str]:
-    """エイリアスを展開。"""
+    """エイリアスを展開する。"""
     # 最大10回まで再帰的に展開
     result: list[str] = []
     for _ in range(10):

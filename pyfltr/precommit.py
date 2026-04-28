@@ -13,10 +13,10 @@ logger = logging.getLogger(__name__)
 
 
 def is_running_under_precommit() -> bool:
-    """pre-commit 配下で実行されているかを判定する。
+    """pre-commit配下で実行されているかを判定する。
 
-    pre-commit フレームワークは子プロセスへ PRE_COMMIT=1 を設定する。
-    これを検出して、pyfltr 側の pre-commit 統合を自動スキップする判断に使う。
+    pre-commitフレームワークは子プロセスへ`PRE_COMMIT=1`を設定する。
+    これを検出して、pyfltr側のpre-commit統合を自動スキップする判断に使う。
     """
     return os.environ.get("PRE_COMMIT") == "1"
 
@@ -25,16 +25,16 @@ _GIT_PROCESS_NAMES: frozenset[str] = frozenset({"git", "git.exe"})
 
 
 def is_invoked_from_git_commit() -> bool:
-    """親プロセス系列に git コマンドが居るかを判定する。
+    """親プロセス系列にgitコマンドが居るかを判定する。
 
-    pre-commit は ``git commit`` が spawn する ``git-hook`` → ``pre-commit`` → ``pyfltr``
-    という親子関係で動くため、祖先プロセスに ``git`` が含まれれば git commit 経由の
-    起動と判断できる。formatter による自動修正が発生したときに、ユーザーへ
-    「git add してから commit し直す」ガイダンスを出す条件として使う。
+    pre-commitは`git commit`がspawnする`git-hook` → `pre-commit` → `pyfltr`
+    という親子関係で動くため、祖先プロセスに`git`が含まれればgit commit経由の
+    起動と判断できる。formatterによる自動修正が発生したときに、ユーザーへ
+    「git addしてからcommitし直す」ガイダンスを出す条件として使う。
 
-    psutil の取得に失敗した場合 (``NoSuchProcess`` / ``AccessDenied`` や
-    プラットフォーム未対応) は ``False`` を返し、安全側に倒す (誤ったガイダンスを
-    表示しない)。
+    psutilの取得に失敗した場合（`NoSuchProcess` / `AccessDenied`や
+    プラットフォーム未対応）は`False`を返し、安全側に倒す（誤ったガイダンスを
+    表示しない）。
     """
     try:
         proc = psutil.Process(os.getppid())

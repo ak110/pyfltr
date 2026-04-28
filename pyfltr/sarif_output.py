@@ -1,10 +1,10 @@
 """SARIF 2.1.0 形式の出力生成。
 
-``--output-format=sarif`` で呼ばれ、CommandResult 群を SARIF 2.1.0 スキーマに沿った
-dict に変換する。1 つの run オブジェクトあたり 1 ツールを対応付け、``rules`` に
-重複なしで当該ツールが検出したルールを列挙する。``results`` 配列に diagnostic を
-配置し、``level`` を pyfltr の severity 3 値から SARIF の 3 値 (``error`` / ``warning``
-/ ``note``) に変換する。
+`--output-format=sarif`で呼ばれ、CommandResult群をSARIF 2.1.0スキーマに沿った
+dictに変換する。1つのrunオブジェクトあたり1ツールを対応付け、`rules`に
+重複なしで当該ツールが検出したルールを列挙する。`results`配列にdiagnosticを
+配置し、`level`をpyfltrのseverity 3値からSARIFの3値（`error` / `warning`
+/ `note`）に変換する。
 """
 
 import importlib.metadata
@@ -35,10 +35,10 @@ def build_sarif(
 ) -> dict[str, typing.Any]:
     """SARIF 2.1.0 互換の dict を生成する。
 
-    SARIF 側は executionSuccessful を使って exit_code を反映する (exit_code == 0 なら
-    True、それ以外は False)。retry_command は各 run の ``invocations[].commandLine`` に
-    添付する。``commands`` / ``files`` / ``run_id`` は ``pyfltr`` プロパティとして
-    保存し、SARIF 消費側が参考情報として利用できるようにする。
+    SARIF側は`executionSuccessful`を使ってexit_codeを反映する（exit_code == 0なら
+    True、それ以外はFalse）。`retry_command`は各runの`invocations[].commandLine`に
+    添付する。`commands` / `files` / `run_id`は`pyfltr`プロパティとして
+    保存し、SARIF消費側が参考情報として利用できるようにする。
     """
     ordered = sorted(results, key=lambda r: _command_index(config, r.command))
 
@@ -64,7 +64,7 @@ def build_sarif(
 
 def _build_run(result: pyfltr.command.CommandResult) -> dict[str, typing.Any]:
     """1 ツール分の run オブジェクトを組み立てる。"""
-    # rules リスト (ruleId の重複を除去したうえで登録順を維持)。
+    # rulesリスト（ruleIdの重複を除去したうえで登録順を維持）。
     rule_index: dict[str, int] = {}
     rules: list[dict[str, typing.Any]] = []
     for error in result.errors:
@@ -124,7 +124,7 @@ def _build_result_record(
 
 
 def _command_index(config: pyfltr.config.Config, command: str) -> int:
-    """config.command_names 内での位置を返す（未登録コマンドは末尾扱い）。"""
+    """`config.command_names`内での位置を返す（未登録コマンドは末尾扱い）。"""
     if command in config.command_names:
         return config.command_names.index(command)
     return len(config.command_names)

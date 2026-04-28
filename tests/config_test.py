@@ -17,30 +17,30 @@ def _assert_language_gate(
     passed: bool,
     preset: str = "latest",
 ) -> None:
-    """言語カテゴリ gate の挙動をカテゴリ内ツール全件について一括検証する。
+    """言語カテゴリgateの挙動をカテゴリ内ツール全件について一括検証する。
 
-    ``passed=True``: gate 開放側。当該カテゴリで preset が True にしたツールはそのまま
-    True 通過し、preset が収録していないツールは False のまま（個別 ``{command} = true``
+    `passed=True`: gate開放側。当該カテゴリでpresetがTrueにしたツールはそのまま
+    True通過し、presetが収録していないツールはFalseのまま（個別`{command} = true`
     が無い前提）を確認する。
-    ``passed=False``: gate 閉じ側。当該カテゴリの全ツールが False（preset 由来 True を
-    gate が押し戻す）になっていることを確認する。
+    `passed=False`: gate閉じ側。当該カテゴリの全ツールがFalse（preset由来Trueを
+    gateが押し戻す）になっていることを確認する。
 
-    個別 ``{command} = true`` / ``{command} = false`` の上書きがあるテストでは、本ヘルパー
-    ではなく直接 assert を使う（gate の挙動ではなく個別上書きの挙動を検証するため）。
+    個別`{command} = true` / `{command} = false`の上書きがあるテストでは、本ヘルパー
+    ではなく直接assertを使う（gateの挙動ではなく個別上書きの挙動を検証するため）。
     """
     commands = dict(pyfltr.config.LANGUAGE_CATEGORIES)[category_key]
     if not passed:
         for cmd in commands:
-            assert config[cmd] is False, f"{category_key} gate 閉なのに {cmd}=True"
+            assert config[cmd] is False, f"{category_key} gate閉なのに{cmd}=True"
         return
     preset_tools = pyfltr.config._PRESETS[preset]
     for cmd in commands:
         expected = preset_tools.get(cmd, False)
-        assert config[cmd] is expected, f"{category_key} gate 開 preset={preset}: {cmd} expected {expected}, got {config[cmd]}"
+        assert config[cmd] is expected, f"{category_key} gate開 preset={preset}: {cmd} expected {expected}, got {config[cmd]}"
 
 
 _DOCS_ORTHOGONAL_KEYS = ("textlint", "markdownlint", "actionlint", "typos", "pre-commit")
-"""言語カテゴリ gate の対象外となるドキュメント系ツールキー。
+"""言語カテゴリgateの対象外となるドキュメント系ツールキー。
 
 これらは preset が直接 True/False を決め、言語カテゴリキーの影響を受けない。
 """
@@ -49,63 +49,63 @@ _DOCS_ORTHOGONAL_KEYS = ("textlint", "markdownlint", "actionlint", "typos", "pre
 @pytest.mark.parametrize(
     "preset,extra_lines,docs_expected,gate_passed",
     [
-        # preset が空: 全ツール既定（False）。
+        # presetが空: 全ツール既定（False）。
         (
             "",
             "",
             {"textlint": False, "markdownlint": False, "actionlint": False, "typos": False, "pre-commit": False},
             {"python": False, "javascript": False, "rust": False, "dotnet": False},
         ),
-        # 20260330 + python=true: Python 核 + pyright + docs (textlint/markdownlint)。
+        # 20260330 + python=true: Python核 + pyright + docs（textlint/markdownlint）。
         (
             "20260330",
             "python = true\n",
             {"textlint": True, "markdownlint": True, "actionlint": False, "typos": False, "pre-commit": False},
             {"python": True, "javascript": False, "rust": False, "dotnet": False},
         ),
-        # 20260411 は actionlint / typos / uv-sort が追加される。
+        # 20260411はactionlint / typos / uv-sortが追加される。
         (
             "20260411",
             "python = true\n",
             {"textlint": True, "markdownlint": True, "actionlint": True, "typos": True, "pre-commit": False},
             {"python": True, "javascript": False, "rust": False, "dotnet": False},
         ),
-        # 20260413 は pre-commit が追加される。
+        # 20260413はpre-commitが追加される。
         (
             "20260413",
             "python = true\n",
             {"textlint": True, "markdownlint": True, "actionlint": True, "typos": True, "pre-commit": True},
             {"python": True, "javascript": False, "rust": False, "dotnet": False},
         ),
-        # latest = 20260413 と同じ構成。
+        # latest = 20260413と同じ構成。
         (
             "latest",
             "python = true\n",
             {"textlint": True, "markdownlint": True, "actionlint": True, "typos": True, "pre-commit": True},
             {"python": True, "javascript": False, "rust": False, "dotnet": False},
         ),
-        # latest + javascript=true: JS/TS 系 gate 通過、docs は preset 由来で True のまま。
+        # latest + javascript=true: JS/TS系gate通過、docsはpreset由来でTrueのまま。
         (
             "latest",
             "javascript = true\n",
             {"textlint": True, "markdownlint": True},
             {"python": False, "javascript": True, "rust": False, "dotnet": False},
         ),
-        # latest + rust=true: Rust 系 gate 通過。docs は検証不要（orthogonal）。
+        # latest + rust=true: Rust系gate通過。docsは検証不要（orthogonal）。
         (
             "latest",
             "rust = true\n",
             {},
             {"python": False, "javascript": False, "rust": True, "dotnet": False},
         ),
-        # latest + dotnet=true: .NET 系 gate 通過。
+        # latest + dotnet=true: .NET系gate通過。
         (
             "latest",
             "dotnet = true\n",
             {},
             {"python": False, "javascript": False, "rust": False, "dotnet": True},
         ),
-        # 20260330 + rust=true: 歴史的 preset でも _PRESET_BASE 経由で Rust 系が一式有効化される。
+        # 20260330 + rust=true: 歴史的presetでも_PRESET_BASE経由でRust系が一式有効化される。
         (
             "20260330",
             "rust = true\n",
@@ -121,11 +121,11 @@ def test_apply_preset(
     docs_expected: dict[str, bool],
     gate_passed: dict[str, bool],
 ) -> None:
-    """preset × 言語カテゴリ gate の有効化パターンを一括検証する。
+    """preset × 言語カテゴリgateの有効化パターンを一括検証する。
 
-    ``docs_expected`` は言語カテゴリと独立に決まるドキュメント系ツールの期待値。
-    ``gate_passed`` は各言語カテゴリキーの gate 開閉状態。言語カテゴリ所属ツールの期待値は
-    ``_assert_language_gate`` で preset 内容から機械的に算出する。
+    `docs_expected`は言語カテゴリと独立に決まるドキュメント系ツールの期待値。
+    `gate_passed`は各言語カテゴリキーのgate開閉状態。言語カテゴリ所属ツールの期待値は
+    `_assert_language_gate`でpreset内容から機械的に算出する。
     """
     pyproject_path = tmp_path / "pyproject.toml"
     pyproject_path.write_text(f'[tool.pyfltr]\npreset = "{preset}"\n{extra_lines}')
@@ -133,8 +133,8 @@ def test_apply_preset(
     config = pyfltr.config.load_config(config_dir=tmp_path)
     for key, value in docs_expected.items():
         assert config[key] == value, f"{key}: expected {value}, got {config[key]}"
-    # preset="" のとき _assert_language_gate の preset 参照が無効化されるよう gate 閉のみ検証
-    # (gate 閉の枝は preset 引数を見ないため "latest" 等どの値を渡しても問題ない)
+    # preset=""のとき_assert_language_gateのpreset参照が無効化されるようgate閉のみ検証
+    # （gate閉の枝はpreset引数を見ないため"latest"等どの値を渡しても問題ない）
     preset_for_gate = preset or "latest"
     for category_key, passed in gate_passed.items():
         _assert_language_gate(config, category_key, passed=passed, preset=preset_for_gate)
@@ -142,7 +142,7 @@ def test_apply_preset(
 
 def test_custom_command(tmp_path: pathlib.Path) -> None:
     """カスタムコマンド定義のテスト。"""
-    # preset と python opt-in を併用することで Python 系ツールの有効化も検証する。
+    # presetとpython opt-inを併用することでPython系ツールの有効化も検証する。
     pyproject_content = """
 [tool.pyfltr]
 preset = "latest"
@@ -175,7 +175,7 @@ fast = true
     # command_namesの末尾に追加されている
     assert config.command_names[-1] == "bandit"
 
-    # preset + python = true の gate 通過により preset 内の Python 系ツールが有効化されている
+    # preset + python = trueのgate通過によりpreset内のPython系ツールが有効化されている
     assert config["ruff-format"] is True
 
     # fastエイリアスにカスタムコマンドが含まれている
@@ -220,12 +220,12 @@ error-pattern = '(?P<file>[^:]+):(?P<line>\\d+)'
 def test_fast_alias_dynamic(tmp_path: pathlib.Path) -> None:
     """fastエイリアスがper-command fastフラグから動的計算されることのテスト。"""
     # デフォルト設定でfastエイリアスが正しく構築される
-    # fast エイリアスはツールの有効/無効に関わらず {tool}-fast フラグが True のものを列挙する
+    # fastエイリアスはツールの有効/無効に関わらず{tool}-fastフラグがTrueのものを列挙する
     config = pyfltr.config.create_default_config()
     fast = config["aliases"]["fast"]
-    # ruff-format-fast=True なので fast に含まれる
+    # ruff-format-fast=Trueなのでfastに含まれる
     assert "ruff-format" in fast
-    # mypy-fast=False なので fast に含まれない
+    # mypy-fast=Falseなのでfastに含まれない
     assert "mypy" not in fast
     assert "pylint" not in fast
     assert "pytest" not in fast
@@ -245,16 +245,16 @@ ruff-format-fast = false
 
 
 def test_ruff_format_by_check_default() -> None:
-    """ruff-format-by-check のデフォルト値テスト。"""
+    """ruff-format-by-checkのデフォルト値テスト。"""
     config = pyfltr.config.create_default_config()
     # デフォルトで有効
     assert config["ruff-format-by-check"] is True
-    # デフォルトの check 用引数は ruff check --fix --unsafe-fixes
+    # デフォルトのcheck用引数はruff check --fix --unsafe-fixes
     assert config["ruff-format-check-args"] == ["check", "--fix", "--unsafe-fixes"]
 
 
 def test_ruff_format_by_check_overridable(tmp_path: pathlib.Path) -> None:
-    """pyproject.toml で ruff-format-by-check を上書きできることのテスト。"""
+    """pyproject.tomlでruff-format-by-checkを上書きできることのテスト。"""
     pyproject_content = """
 [tool.pyfltr]
 ruff-format-by-check = false
@@ -267,29 +267,29 @@ ruff-format-check-args = ["check", "--fix"]
 
 
 def test_fix_args_defaults() -> None:
-    """fix-args の既定値テスト。"""
+    """fix-argsの既定値テスト。"""
     config = pyfltr.config.create_default_config()
-    # fix 対応ビルトインは fix-args が定義されている
+    # fix対応ビルトインはfix-argsが定義されている
     assert config["textlint-fix-args"] == ["--fix"]
     assert config["markdownlint-fix-args"] == ["--fix"]
     assert config["ruff-check-fix-args"] == ["--fix", "--unsafe-fixes"]
-    # fix 非対応ビルトインは fix-args キーが存在しない
+    # fix非対応ビルトインはfix-argsキーが存在しない
     assert "mypy-fix-args" not in config.values
     assert "pytest-fix-args" not in config.values
 
 
 def test_filter_fix_commands_defaults() -> None:
-    """filter_fix_commands の基本動作テスト。"""
+    """`filter_fix_commands`の基本動作テスト。"""
     config = pyfltr.config.create_default_config()
-    # 既定では全ツール無効または fix-args 未定義のため全て除外
+    # 既定では全ツール無効またはfix-args未定義のため全て除外
     commands = ["mypy", "textlint", "markdownlint", "ruff-check"]
     result = pyfltr.config.filter_fix_commands(commands, config)
-    # mypy は fix-args 未定義、textlint/markdownlint/ruff-check は disabled のため全て除外
+    # mypyはfix-args未定義、textlint/markdownlint/ruff-checkはdisabledのため全て除外
     assert not result
 
 
 def test_filter_fix_commands_enabled_linter(tmp_path: pathlib.Path) -> None:
-    """enabled にした fix 対応 linter が filter_fix_commands に含まれることのテスト。"""
+    """enabledにしたfix対応linterがfilter_fix_commandsに含まれることのテスト。"""
     pyproject_content = """
 [tool.pyfltr]
 textlint = true
@@ -303,11 +303,11 @@ ruff-check = true
     assert "textlint" in result
     assert "markdownlint" in result
     assert "ruff-check" in result
-    assert "mypy" not in result  # fix-args 未定義
+    assert "mypy" not in result  # fix-args未定義
 
 
 def test_custom_command_fix_args(tmp_path: pathlib.Path) -> None:
-    """カスタムコマンドの fix-args 登録テスト。"""
+    """カスタムコマンドのfix-args登録テスト。"""
     pyproject_content = """
 [tool.pyfltr.custom-commands.my-linter]
 type = "linter"
@@ -318,13 +318,13 @@ fix-args = ["--fix", "--verbose"]
     (tmp_path / "pyproject.toml").write_text(pyproject_content)
     config = pyfltr.config.load_config(config_dir=tmp_path)
     assert config["my-linter-fix-args"] == ["--fix", "--verbose"]
-    # filter_fix_commands にも含まれる
+    # filter_fix_commandsにも含まれる
     result = pyfltr.config.filter_fix_commands(["my-linter"], config)
     assert result == ["my-linter"]
 
 
 def test_custom_command_without_fix_args(tmp_path: pathlib.Path) -> None:
-    """fix-args を省略したカスタム linter は fix 対象外になる。"""
+    """fix-argsを省略したカスタムlinterはfix対象外になる。"""
     pyproject_content = """
 [tool.pyfltr.custom-commands.plain-linter]
 type = "linter"
@@ -338,7 +338,7 @@ path = "plain-linter"
 
 
 def test_custom_command_fix_args_invalid(tmp_path: pathlib.Path) -> None:
-    """fix-args が文字列などの場合はエラーになる。"""
+    """fix-argsが文字列などの場合はエラーになる。"""
     pyproject_content = """
 [tool.pyfltr.custom-commands.bad-linter]
 type = "linter"
@@ -350,10 +350,10 @@ fix-args = "--fix"
 
 
 def test_vitest_args_default_contains_pass_with_no_tests() -> None:
-    """vitest-args の既定に --passWithNoTests が含まれることのテスト。
+    """vitest-argsの既定に--passWithNoTestsが含まれることのテスト。
 
-    pyfltr が targets 設定で絞ったファイル群とプロジェクト側の vitest include
-    設定が交差せず対象ゼロになるケースで rc=1 → failed 扱いになるのを避けるため、
+    pyfltrがtargets設定で絞ったファイル群とプロジェクト側のvitest include
+    設定が交差せず対象ゼロになるケースでrc=1→failed扱いになるのを避けるため、
     既定引数として含める方針を固定化する。
     """
     config = pyfltr.config.create_default_config()
@@ -361,13 +361,13 @@ def test_vitest_args_default_contains_pass_with_no_tests() -> None:
 
 
 def test_js_runner_default() -> None:
-    """js-runner の既定値は pnpx (従来互換)。"""
+    """js-runnerの既定値はpnpx（従来互換）。"""
     config = pyfltr.config.create_default_config()
     assert config["js-runner"] == "pnpx"
 
 
 def test_js_runner_override(tmp_path: pathlib.Path) -> None:
-    """pyproject.toml で js-runner を上書きできる。"""
+    """pyproject.tomlでjs-runnerを上書きできる。"""
     pyproject_content = """
 [tool.pyfltr]
 js-runner = "pnpm"
@@ -378,7 +378,7 @@ js-runner = "pnpm"
 
 
 def test_js_runner_invalid_rejected(tmp_path: pathlib.Path) -> None:
-    """js-runner に未知の値を指定するとエラーになる。"""
+    """js-runnerに未知の値を指定するとエラーになる。"""
     pyproject_content = """
 [tool.pyfltr]
 js-runner = "bogus"
@@ -389,7 +389,7 @@ js-runner = "bogus"
 
 
 def test_textlint_packages_default() -> None:
-    """textlint-packages のデフォルトに3パッケージが含まれる。"""
+    """textlint-packagesのデフォルトに3パッケージが含まれる。"""
     config = pyfltr.config.create_default_config()
     assert config["textlint-packages"] == [
         "textlint-rule-preset-ja-technical-writing",
@@ -399,7 +399,7 @@ def test_textlint_packages_default() -> None:
 
 
 def test_textlint_protected_identifiers_default() -> None:
-    """textlint-protected-identifiers のデフォルトに主要な識別子が含まれる。"""
+    """textlint-protected-identifiersのデフォルトに主要な識別子が含まれる。"""
     config = pyfltr.config.create_default_config()
     identifiers = config["textlint-protected-identifiers"]
     assert ".NET" in identifiers
@@ -410,14 +410,14 @@ def test_textlint_protected_identifiers_default() -> None:
 
 
 def test_textlint_protected_identifiers_override(tmp_path: pathlib.Path) -> None:
-    """pyproject.toml で textlint-protected-identifiers を上書きできる (空リストも可)。"""
+    """pyproject.tomlでtextlint-protected-identifiersを上書きできる（空リストも可）。"""
     (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\ntextlint-protected-identifiers = []\n")
     config = pyfltr.config.load_config(config_dir=tmp_path)
     assert config["textlint-protected-identifiers"] == []
 
 
 def test_textlint_markdownlint_path_default_empty() -> None:
-    """textlint-path / markdownlint-path の既定値は空文字 (runner 自動解決)。"""
+    """textlint-path / markdownlint-pathの既定値は空文字（runner自動解決）。"""
     config = pyfltr.config.create_default_config()
     assert config["textlint-path"] == ""
     assert config["markdownlint-path"] == ""
@@ -425,13 +425,13 @@ def test_textlint_markdownlint_path_default_empty() -> None:
 
 
 def test_command_info_target_globs_str() -> None:
-    """CommandInfo.target_globs() は str targets を単一要素リストに正規化する。"""
+    """`CommandInfo.target_globs()`はstr targetsを単一要素リストに正規化する。"""
     info = pyfltr.config.CommandInfo(type="linter", targets="*.py")
     assert info.target_globs() == ["*.py"]
 
 
 def test_command_info_target_globs_list() -> None:
-    """CommandInfo.target_globs() は list targets をそのままコピーして返す。"""
+    """`CommandInfo.target_globs()`はlist targetsをそのままコピーして返す。"""
     info = pyfltr.config.CommandInfo(type="linter", targets=["*.ts", "*.tsx"])
     result = info.target_globs()
     assert result == ["*.ts", "*.tsx"]
@@ -441,7 +441,7 @@ def test_command_info_target_globs_list() -> None:
 
 
 def test_custom_command_targets_list(tmp_path: pathlib.Path) -> None:
-    """カスタムコマンドの targets に list を指定できる。"""
+    """カスタムコマンドのtargetsにlistを指定できる。"""
     pyproject_content = """
 [tool.pyfltr.custom-commands.multi]
 type = "linter"
@@ -455,7 +455,7 @@ targets = ["*.ts", "*.tsx"]
 
 
 def test_custom_command_targets_invalid_type(tmp_path: pathlib.Path) -> None:
-    """カスタムコマンドの targets に不正な型を指定するとエラーになる。"""
+    """カスタムコマンドのtargetsに不正な型を指定するとエラーになる。"""
     pyproject_content = """
 [tool.pyfltr.custom-commands.bad]
 type = "linter"
@@ -467,14 +467,14 @@ targets = 42
 
 
 class TestConfigFilesWarning:
-    """config_files 未配置時の警告機構のテスト。"""
+    """config_files未配置時の警告機構のテスト。"""
 
     def test_pre_commit_enabled_without_config_emits_warning(self, tmp_path: pathlib.Path) -> None:
-        """pre-commit 有効かつ .pre-commit-config.yaml 不在で警告が出る。"""
+        """pre-commit有効かつ.pre-commit-config.yaml不在で警告が出る。"""
         (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latest"\n')
         pyfltr.config.load_config(config_dir=tmp_path)
-        # preset=latest では textlint などにも config_files が定義されるため複数の warning が出る。
-        # 本テストは pre-commit 分が出ることだけを確認する。
+        # preset=latestではtextlintなどにもconfig_filesが定義されるため複数のwarningが出る。
+        # 本テストはpre-commit分が出ることだけを確認する。
         entries = [
             w
             for w in pyfltr.warnings_.collected_warnings()
@@ -488,8 +488,8 @@ class TestConfigFilesWarning:
         (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latest"\n')
         (tmp_path / ".pre-commit-config.yaml").write_text("repos: []\n")
         pyfltr.config.load_config(config_dir=tmp_path)
-        # pre-commit の config は配置済みなので pre-commit 固有の警告は出ない。
-        # textlint 等の他ツールの config_files 警告は関心外として除外する。
+        # pre-commitのconfigは配置済みなのでpre-commit固有の警告は出ない。
+        # textlint等の他ツールのconfig_files警告は関心外として除外する。
         entries = [
             w
             for w in pyfltr.warnings_.collected_warnings()
@@ -498,14 +498,14 @@ class TestConfigFilesWarning:
         assert not entries
 
     def test_pre_commit_disabled_no_warning(self, tmp_path: pathlib.Path) -> None:
-        """pre-commit 無効なら設定ファイル不在でも警告は出ない。"""
+        """pre-commit無効なら設定ファイル不在でも警告は出ない。"""
         (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\npre-commit = false\n")
         pyfltr.config.load_config(config_dir=tmp_path)
         entries = [w for w in pyfltr.warnings_.collected_warnings() if w["source"] == "config"]
         assert not entries
 
     def test_custom_command_missing_config_file_emits_warning(self, tmp_path: pathlib.Path) -> None:
-        """カスタムコマンドに config-files を指定し不在なら警告。"""
+        """カスタムコマンドにconfig-filesを指定し不在なら警告。"""
         pyproject_content = """
 [tool.pyfltr.custom-commands.mytool]
 type = "linter"
@@ -519,7 +519,7 @@ config-files = [".mytoolrc"]
         assert "mytool" in entries[0]["message"]
 
     def test_custom_command_config_file_present_no_warning(self, tmp_path: pathlib.Path) -> None:
-        """カスタムコマンドの config-files が配置済みなら警告は出ない。"""
+        """カスタムコマンドのconfig-filesが配置済みなら警告は出ない。"""
         pyproject_content = """
 [tool.pyfltr.custom-commands.mytool]
 type = "linter"
@@ -533,7 +533,7 @@ config-files = [".mytoolrc"]
         assert not entries
 
     def test_config_files_glob_pattern(self, tmp_path: pathlib.Path) -> None:
-        """config-files に glob を指定し、いずれかがマッチすれば警告は出ない。"""
+        """config-filesにglobを指定し、いずれかがマッチすれば警告は出ない。"""
         pyproject_content = """
 [tool.pyfltr.custom-commands.mytool]
 type = "linter"
@@ -547,7 +547,7 @@ config-files = [".mytoolrc*"]
         assert not entries
 
     def test_config_files_invalid_type_rejected(self, tmp_path: pathlib.Path) -> None:
-        """カスタムコマンドの config-files が list[str] でなければエラー。"""
+        """カスタムコマンドのconfig-filesがlist[str]でなければエラー。"""
         pyproject_content = """
 [tool.pyfltr.custom-commands.mytool]
 type = "linter"
@@ -574,7 +574,7 @@ preset = "invalid"
 
 
 def test_removed_preset_20250710(tmp_path: pathlib.Path) -> None:
-    """preset = "20250710" は ValueError になり、メッセージに「削除」と「latest」が含まれる。"""
+    """preset = "20250710"はValueErrorになり、メッセージに「削除」と「latest」が含まれる。"""
     (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "20250710"\n')
     with pytest.raises(ValueError, match="削除") as exc_info:
         pyfltr.config.load_config(config_dir=tmp_path)
@@ -583,7 +583,7 @@ def test_removed_preset_20250710(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.parametrize("removed_tool", ["pyupgrade", "autoflake", "isort", "black", "pflake8"])
 def test_removed_tool_config_key(tmp_path: pathlib.Path, removed_tool: str) -> None:
-    """削除ツールの設定キーを書くと ValueError が出て、メッセージにツール名が含まれる。"""
+    """削除ツールの設定キーを書くとValueErrorが出て、メッセージにツール名が含まれる。"""
     (tmp_path / "pyproject.toml").write_text(f"[tool.pyfltr]\n{removed_tool} = true\n")
     with pytest.raises(ValueError, match=removed_tool):
         pyfltr.config.load_config(config_dir=tmp_path)
@@ -599,16 +599,16 @@ def test_archive_config_defaults() -> None:
 
 
 def test_jsonl_smart_truncation_defaults() -> None:
-    """JSONL smart truncation 設定の既定値テスト。"""
+    """JSONL smart truncation設定の既定値テスト。"""
     config = pyfltr.config.create_default_config()
-    # 既定は diagnostic 無制限 (0)、メッセージは 30 行 / 2000 文字 (従来ハードコード値)。
+    # 既定はdiagnostic無制限（0）、メッセージは30行 / 2000文字（従来ハードコード値）。
     assert config["jsonl-diagnostic-limit"] == 0
     assert config["jsonl-message-max-lines"] == 30
     assert config["jsonl-message-max-chars"] == 2000
 
 
 def test_jsonl_smart_truncation_override(tmp_path: pathlib.Path) -> None:
-    """pyproject.toml で JSONL smart truncation 設定を上書きできる。"""
+    """pyproject.tomlでJSONL smart truncation設定を上書きできる。"""
     pyproject_content = """
 [tool.pyfltr]
 jsonl-diagnostic-limit = 50
@@ -623,14 +623,14 @@ jsonl-message-max-chars = 5000
 
 
 def test_jsonl_smart_truncation_invalid_type(tmp_path: pathlib.Path) -> None:
-    """JSONL smart truncation キーに整数以外を指定するとエラーになる。"""
+    """JSONL smart truncationキーに整数以外を指定するとエラーになる。"""
     (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\njsonl-diagnostic-limit = "many"\n')
     with pytest.raises(ValueError, match="jsonl-diagnostic-limit"):
         pyfltr.config.load_config(config_dir=tmp_path)
 
 
 def test_archive_config_override(tmp_path: pathlib.Path) -> None:
-    """pyproject.toml でアーカイブ設定を上書きできることのテスト。"""
+    """pyproject.tomlでアーカイブ設定を上書きできることのテスト。"""
     pyproject_content = """
 [tool.pyfltr]
 archive = false
@@ -647,20 +647,20 @@ archive-max-age-days = 7
 
 
 def test_respect_gitignore_default() -> None:
-    """respect-gitignore の既定値が True であることを確認する。"""
+    """respect-gitignoreの既定値がTrueであることを確認する。"""
     config = pyfltr.config.create_default_config()
     assert config["respect-gitignore"] is True
 
 
 def test_cache_config_defaults() -> None:
-    """ファイル hash キャッシュ設定の既定値テスト。"""
+    """ファイルhashキャッシュ設定の既定値テスト。"""
     config = pyfltr.config.create_default_config()
     assert config["cache"] is True
     assert config["cache-max-age-hours"] == 12
 
 
 def test_cache_config_override(tmp_path: pathlib.Path) -> None:
-    """pyproject.toml でキャッシュ設定を上書きできる。"""
+    """pyproject.tomlでキャッシュ設定を上書きできる。"""
     pyproject_content = """
 [tool.pyfltr]
 cache = false
@@ -673,18 +673,18 @@ cache-max-age-hours = 24
 
 
 def test_cache_config_invalid_type(tmp_path: pathlib.Path) -> None:
-    """cache-max-age-hours に整数以外を指定するとエラーになる。"""
+    """cache-max-age-hoursに整数以外を指定するとエラーになる。"""
     (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\ncache-max-age-hours = "many"\n')
     with pytest.raises(ValueError, match="cache-max-age-hours"):
         pyfltr.config.load_config(config_dir=tmp_path)
 
 
 def test_textlint_command_info_is_cacheable() -> None:
-    """textlint の CommandInfo が cacheable=True で config_files を完全列挙している。"""
+    """textlintのCommandInfoがcacheable=Trueでconfig_filesを完全列挙している。"""
     config = pyfltr.config.create_default_config()
     info = config.commands["textlint"]
     assert info.cacheable is True
-    # textlint の公式設定ファイル候補が全て列挙されている
+    # textlintの公式設定ファイル候補が全て列挙されている
     assert ".textlintrc" in info.config_files
     assert ".textlintrc.json" in info.config_files
     assert ".textlintrc.yml" in info.config_files
@@ -696,12 +696,12 @@ def test_textlint_command_info_is_cacheable() -> None:
 
 
 def test_non_cacheable_commands_remain_default() -> None:
-    """textlint 以外のビルトインコマンドは cacheable=False (既定) のまま。"""
+    """textlint以外のビルトインコマンドはcacheable=False（既定）のまま。"""
     config = pyfltr.config.create_default_config()
     for name, info in config.commands.items():
         if name == "textlint":
             continue
-        assert info.cacheable is False, f"{name} が意図せず cacheable=True になっている"
+        assert info.cacheable is False, f"{name}が意図せずcacheable=Trueになっている"
 
 
 def test_auto_option_defaults() -> None:
@@ -712,7 +712,7 @@ def test_auto_option_defaults() -> None:
 
 
 def test_auto_option_disable(tmp_path: pathlib.Path) -> None:
-    """自動オプションを False に設定できる。"""
+    """自動オプションをFalseに設定できる。"""
     pyproject_content = """
 [tool.pyfltr]
 pylint-pydantic = false
@@ -725,13 +725,13 @@ mypy-unused-awaitable = false
 
 
 def test_python_default() -> None:
-    """python の既定値は False（opt-in）。"""
+    """pythonの既定値はFalse（opt-in）。"""
     config = pyfltr.config.create_default_config()
     assert config["python"] is False
 
 
 def test_python_default_disables_python_tools() -> None:
-    """既定で Python 系ツールが全て無効化されている。"""
+    """既定でPython系ツールが全て無効化されている。"""
     config = pyfltr.config.create_default_config()
     _assert_language_gate(config, "python", passed=False)
     # JS/共通系も影響を受けない
@@ -740,7 +740,7 @@ def test_python_default_disables_python_tools() -> None:
 
 
 def test_python_true_without_preset_enables_nothing(tmp_path: pathlib.Path) -> None:
-    """python = true 単独では何も有効化されない (preset が gate を通過する対象を決める)。"""
+    """python = true単独では何も有効化されない（presetがgateを通過する対象を決める）。"""
     pyproject_content = """
 [tool.pyfltr]
 python = true
@@ -748,14 +748,14 @@ python = true
     (tmp_path / "pyproject.toml").write_text(pyproject_content)
     config = pyfltr.config.load_config(config_dir=tmp_path)
     for cmd in pyfltr.config.PYTHON_COMMANDS:
-        assert config[cmd] is False, f"{cmd} は preset 未指定では False のまま"
-    # docs 系も preset 未指定なので False
+        assert config[cmd] is False, f"{cmd}はpreset未指定ではFalseのまま"
+    # docs系もpreset未指定なのでFalse
     assert config["markdownlint"] is False
     assert config["textlint"] is False
 
 
 def test_python_true_with_preset_latest(tmp_path: pathlib.Path) -> None:
-    """preset = latest + python = true で preset 内の Python 系推奨構成が gate を通過する。"""
+    """preset = latest + python = trueでpreset内のPython系推奨構成がgateを通過する。"""
     pyproject_content = """
 [tool.pyfltr]
 preset = "latest"
@@ -763,7 +763,7 @@ python = true
 """
     (tmp_path / "pyproject.toml").write_text(pyproject_content)
     config = pyfltr.config.load_config(config_dir=tmp_path)
-    # preset = latest (= 20260413) に含まれる Python 系推奨ツールが一式 True
+    # preset = latest（= 20260413）に含まれるPython系推奨ツールが一式True
     assert config["ruff-format"] is True
     assert config["ruff-check"] is True
     assert config["mypy"] is True
@@ -771,15 +771,15 @@ python = true
     assert config["pyright"] is True
     assert config["pytest"] is True
     assert config["uv-sort"] is True
-    # ty は preset 非収録のため個別指定が必要
+    # tyはpreset非収録のため個別指定が必要
     assert config["ty"] is False
-    # preset が有効化したドキュメント系ツールも有効
+    # presetが有効化したドキュメント系ツールも有効
     assert config["textlint"] is True
     assert config["markdownlint"] is True
 
 
 def test_python_true_with_individual_extra(tmp_path: pathlib.Path) -> None:
-    """preset = latest + python = true + ty = true で preset 非収録の ty も有効化される。"""
+    """preset = latest + python = true + ty = trueでpreset非収録のtyも有効化される。"""
     pyproject_content = """
 [tool.pyfltr]
 preset = "latest"
@@ -788,16 +788,16 @@ ty = true
 """
     (tmp_path / "pyproject.toml").write_text(pyproject_content)
     config = pyfltr.config.load_config(config_dir=tmp_path)
-    # 個別指定で ty が True
+    # 個別指定でtyがTrue
     assert config["ty"] is True
-    # preset 内の Python 系も一式有効
+    # preset内のPython系も一式有効
     assert config["mypy"] is True
     assert config["pyright"] is True
     assert config["ruff-format"] is True
 
 
 def test_python_true_with_individual_override(tmp_path: pathlib.Path) -> None:
-    """preset + python = true でも個別 ``{command} = false`` で上書きできる。"""
+    """preset + python = trueでも個別`{command} = false`で上書きできる。"""
     pyproject_content = """
 [tool.pyfltr]
 preset = "latest"
@@ -807,17 +807,17 @@ mypy = false
 """
     (tmp_path / "pyproject.toml").write_text(pyproject_content)
     config = pyfltr.config.load_config(config_dir=tmp_path)
-    # 個別に False 指定したものは False
+    # 個別にFalse指定したものはFalse
     assert config["ruff-check"] is False
     assert config["mypy"] is False
-    # 他の preset 内 Python 系は有効
+    # 他のpreset内Python系は有効
     assert config["ruff-format"] is True
     assert config["pyright"] is True
     assert config["pylint"] is True
 
 
 def test_individual_tool_crosses_gate(tmp_path: pathlib.Path) -> None:
-    """言語カテゴリが False でも個別 ``{command} = true`` は gate を越えて有効化される。"""
+    """言語カテゴリがFalseでも個別`{command} = true`はgateを越えて有効化される。"""
     pyproject_content = """
 [tool.pyfltr]
 preset = "latest"
@@ -825,9 +825,9 @@ mypy = true
 """
     (tmp_path / "pyproject.toml").write_text(pyproject_content)
     config = pyfltr.config.load_config(config_dir=tmp_path)
-    # python = false でも mypy だけ個別指定で True
+    # python = falseでもmypyだけ個別指定でTrue
     assert config["mypy"] is True
-    # preset 由来の Python 系は gate により False へ押し戻される
+    # preset由来のPython系はgateによりFalseへ押し戻される
     assert config["ruff-format"] is False
     assert config["ruff-check"] is False
     assert config["pylint"] is False
@@ -836,13 +836,13 @@ mypy = true
 
 
 def test_bin_runner_default() -> None:
-    """bin-runner の既定値は mise。"""
+    """bin-runnerの既定値はmise。"""
     config = pyfltr.config.create_default_config()
     assert config["bin-runner"] == "mise"
 
 
 def test_bin_runner_override(tmp_path: pathlib.Path) -> None:
-    """pyproject.toml で bin-runner を上書きできる。"""
+    """pyproject.tomlでbin-runnerを上書きできる。"""
     pyproject_content = """
 [tool.pyfltr]
 bin-runner = "direct"
@@ -853,7 +853,7 @@ bin-runner = "direct"
 
 
 def test_bin_runner_invalid_rejected(tmp_path: pathlib.Path) -> None:
-    """bin-runner に未知の値を指定するとエラーになる。"""
+    """bin-runnerに未知の値を指定するとエラーになる。"""
     pyproject_content = """
 [tool.pyfltr]
 bin-runner = "bogus"
@@ -864,51 +864,51 @@ bin-runner = "bogus"
 
 
 def test_mise_auto_trust_default() -> None:
-    """mise-auto-trust の既定値は True。"""
+    """mise-auto-trustの既定値はTrue。"""
     config = pyfltr.config.create_default_config()
     assert config["mise-auto-trust"] is True
 
 
 def test_mise_auto_trust_disable(tmp_path: pathlib.Path) -> None:
-    """pyproject.toml で mise-auto-trust を False に設定できる。"""
+    """pyproject.tomlでmise-auto-trustをFalseに設定できる。"""
     (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\nmise-auto-trust = false\n")
     config = pyfltr.config.load_config(config_dir=tmp_path)
     assert config["mise-auto-trust"] is False
 
 
 def test_mise_auto_trust_invalid_type_rejected(tmp_path: pathlib.Path) -> None:
-    """mise-auto-trust に bool 以外の値を指定するとエラーになる。"""
+    """mise-auto-trustにbool以外の値を指定するとエラーになる。"""
     (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\nmise-auto-trust = "yes"\n')
     with pytest.raises(ValueError, match="mise-auto-trust"):
         pyfltr.config.load_config(config_dir=tmp_path)
 
 
 def test_preset_latest_suppresses_language_categories(tmp_path: pathlib.Path) -> None:
-    """preset = "latest" 単独 (カテゴリキー全 False) では全言語のツールが False に押し戻される。"""
+    """preset = "latest"単独（カテゴリキー全False）では全言語のツールがFalseに押し戻される。"""
     (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latest"\n')
     config = pyfltr.config.load_config(config_dir=tmp_path)
-    # preset に含まれるドキュメント系は True
+    # presetに含まれるドキュメント系はTrue
     for cmd in _DOCS_ORTHOGONAL_KEYS:
-        assert config[cmd] is True, f"{cmd} は preset=latest で有効化されるべき"
-    # 言語カテゴリに属するツールは gate により全て False に押し戻される
-    # (_PRESET_BASE で True だった Python 核 / JS / Rust / .NET も含む)
+        assert config[cmd] is True, f"{cmd}はpreset=latestで有効化されるべき"
+    # 言語カテゴリに属するツールはgateにより全てFalseに押し戻される
+    # （_PRESET_BASEでTrueだったPython核 / JS / Rust / .NETも含む）
     for category_key, _ in pyfltr.config.LANGUAGE_CATEGORIES:
         _assert_language_gate(config, category_key, passed=False)
 
 
 def test_javascript_true_enables_preset_tools(tmp_path: pathlib.Path) -> None:
-    """javascript = true で preset 内の JS/TS 系推奨ツール一式が gate 通過で有効化される。"""
+    """javascript = trueでpreset内のJS/TS系推奨ツール一式がgate通過で有効化される。"""
     (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latest"\njavascript = true\n')
     config = pyfltr.config.load_config(config_dir=tmp_path)
     _assert_language_gate(config, "javascript", passed=True)
-    # 他言語カテゴリは gate 閉のまま False
+    # 他言語カテゴリはgate閉のままFalse
     _assert_language_gate(config, "python", passed=False)
     _assert_language_gate(config, "rust", passed=False)
     _assert_language_gate(config, "dotnet", passed=False)
 
 
 def test_javascript_true_with_individual_override(tmp_path: pathlib.Path) -> None:
-    """javascript = true でも個別 ``{command} = false`` で preset 由来 True を無効化できる。"""
+    """javascript = trueでも個別`{command} = false`でpreset由来Trueを無効化できる。"""
     pyproject_content = """
 [tool.pyfltr]
 preset = "latest"
@@ -917,30 +917,30 @@ prettier = false
 """
     (tmp_path / "pyproject.toml").write_text(pyproject_content)
     config = pyfltr.config.load_config(config_dir=tmp_path)
-    # 個別に False 指定した prettier だけ False
+    # 個別にFalse指定したprettierだけFalse
     assert config["prettier"] is False
-    # 他の JS/TS 系は gate 通過で True のまま
+    # 他のJS/TS系はgate通過でTrueのまま
     assert config["eslint"] is True
     assert config["biome"] is True
     assert config["tsc"] is True
 
 
 def test_rust_true_enables_preset_tools(tmp_path: pathlib.Path) -> None:
-    """rust = true で preset 内の Rust 系推奨ツール一式が gate 通過で有効化される。"""
+    """rust = trueでpreset内のRust系推奨ツール一式がgate通過で有効化される。"""
     (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latest"\nrust = true\n')
     config = pyfltr.config.load_config(config_dir=tmp_path)
     _assert_language_gate(config, "rust", passed=True)
 
 
 def test_dotnet_true_enables_preset_tools(tmp_path: pathlib.Path) -> None:
-    """dotnet = true で preset 内の .NET 系推奨ツール一式が gate 通過で有効化される。"""
+    """dotnet = trueでpreset内の.NET系推奨ツール一式がgate通過で有効化される。"""
     (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latest"\ndotnet = true\n')
     config = pyfltr.config.load_config(config_dir=tmp_path)
     _assert_language_gate(config, "dotnet", passed=True)
 
 
 def test_individual_tool_enables_despite_category_false(tmp_path: pathlib.Path) -> None:
-    """言語カテゴリが False でも個別 ``{tool} = true`` でそのツールだけ有効化される。"""
+    """言語カテゴリがFalseでも個別`{tool} = true`でそのツールだけ有効化される。"""
     pyproject_content = """
 [tool.pyfltr]
 preset = "latest"
@@ -949,20 +949,20 @@ cargo-fmt = true
 """
     (tmp_path / "pyproject.toml").write_text(pyproject_content)
     config = pyfltr.config.load_config(config_dir=tmp_path)
-    # 個別に True にしたツールは有効
+    # 個別にTrueにしたツールは有効
     assert config["eslint"] is True
     assert config["cargo-fmt"] is True
-    # 同カテゴリの他ツールは gate で False へ押し戻される
+    # 同カテゴリの他ツールはgateでFalseへ押し戻される
     assert config["prettier"] is False
     assert config["biome"] is False
     assert config["cargo-clippy"] is False
 
 
 def test_language_categories_defaults_false() -> None:
-    """言語カテゴリキーの既定値は全て False。"""
+    """言語カテゴリキーの既定値は全てFalse。"""
     config = pyfltr.config.create_default_config()
     for category_key, _ in pyfltr.config.LANGUAGE_CATEGORIES:
-        assert config[category_key] is False, f"{category_key} の既定値は False であるべき"
+        assert config[category_key] is False, f"{category_key}の既定値はFalseであるべき"
 
 
 def test_custom_command_pass_filenames(tmp_path: pathlib.Path) -> None:
@@ -993,7 +993,7 @@ path = "my-checker"
 def test_bin_tool_default_config_values() -> None:
     """bin-runner対応ツールのデフォルト設定値が正しく定義されている。"""
     config = pyfltr.config.create_default_config()
-    # bin-runner経由ツールの有効/無効とバージョン設定を確認（fast=True 系列）
+    # bin-runner経由ツールの有効/無効とバージョン設定を確認（fast=True系列）
     bin_tools = ["ec", "shellcheck", "shfmt", "actionlint", "taplo", "hadolint"]
     for tool in bin_tools:
         assert config[tool] is False, f"{tool}は既定で無効"
@@ -1046,7 +1046,7 @@ def test_typos_default_config_values() -> None:
 
 
 def test_typos_path_empty_string_normalized(tmp_path: pathlib.Path) -> None:
-    """load_config で typos-path = "" を読み込んだ場合に "typos" へ正規化される。"""
+    """load_configでtypos-path = ""を読み込んだ場合に"typos"へ正規化される。"""
     pyproject_content = """
 [tool.pyfltr]
 typos-path = ""
@@ -1062,13 +1062,13 @@ def test_uv_sort_in_python_commands() -> None:
 
 
 def test_bin_runners_tuple() -> None:
-    """BIN_RUNNERS に direct と mise が含まれる。"""
+    """`BIN_RUNNERS`にdirectとmiseが含まれる。"""
     assert "direct" in pyfltr.config.BIN_RUNNERS
     assert "mise" in pyfltr.config.BIN_RUNNERS
 
 
 def test_glab_ci_lint_default_config_values() -> None:
-    """glab-ci-lint は既定で無効 (opt-in)、args 既定値に ``ci lint`` サブコマンドが入る。"""
+    """glab-ci-lintは既定で無効（opt-in）、args既定値に`ci lint`サブコマンドが入る。"""
     config = pyfltr.config.create_default_config()
     assert config["glab-ci-lint"] is False, "GitLab API 認証必須のため opt-in"
     assert config["glab-ci-lint-path"] == ""
@@ -1081,7 +1081,7 @@ def test_glab_ci_lint_default_config_values() -> None:
 
 
 def test_builtin_targets_override_str(tmp_path: pathlib.Path) -> None:
-    """ビルトインコマンドの targets を文字列で完全上書きできる。"""
+    """ビルトインコマンドのtargetsを文字列で完全上書きできる。"""
     (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\nshfmt-targets = "*.bash"\n')
     config = pyfltr.config.load_config(config_dir=tmp_path)
     assert config.commands["shfmt"].targets == "*.bash"
@@ -1089,7 +1089,7 @@ def test_builtin_targets_override_str(tmp_path: pathlib.Path) -> None:
 
 
 def test_builtin_targets_override_list(tmp_path: pathlib.Path) -> None:
-    """ビルトインコマンドの targets をリストで完全上書きできる。"""
+    """ビルトインコマンドのtargetsをリストで完全上書きできる。"""
     (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\nshfmt-targets = ["*.sh", "*.bash"]\n')
     config = pyfltr.config.load_config(config_dir=tmp_path)
     assert config.commands["shfmt"].targets == ["*.sh", "*.bash"]
@@ -1097,15 +1097,15 @@ def test_builtin_targets_override_list(tmp_path: pathlib.Path) -> None:
 
 
 def test_builtin_extend_targets_str(tmp_path: pathlib.Path) -> None:
-    """ビルトインコマンドの targets に文字列で追加できる。"""
+    """ビルトインコマンドのtargetsに文字列で追加できる。"""
     (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\nshfmt-extend-targets = "*.bash"\n')
     config = pyfltr.config.load_config(config_dir=tmp_path)
-    # デフォルトの "*.sh" に "*.bash" が追加される
+    # デフォルトの"*.sh"に"*.bash"が追加される
     assert config.commands["shfmt"].target_globs() == ["*.sh", "*.bash"]
 
 
 def test_builtin_extend_targets_list(tmp_path: pathlib.Path) -> None:
-    """ビルトインコマンドの targets にリストで追加できる。"""
+    """ビルトインコマンドのtargetsにリストで追加できる。"""
     (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\nshfmt-extend-targets = ["*.bash", "dot_bashrc"]\n')
     config = pyfltr.config.load_config(config_dir=tmp_path)
     assert config.commands["shfmt"].target_globs() == [
@@ -1116,7 +1116,7 @@ def test_builtin_extend_targets_list(tmp_path: pathlib.Path) -> None:
 
 
 def test_builtin_targets_and_extend_targets(tmp_path: pathlib.Path) -> None:
-    """targets で上書き後に extend-targets で追加される。"""
+    """targetsで上書き後にextend-targetsで追加される。"""
     (tmp_path / "pyproject.toml").write_text(
         '[tool.pyfltr]\nshfmt-targets = ["*.bash"]\nshfmt-extend-targets = ["dot_bashrc"]\n'
     )
@@ -1125,58 +1125,58 @@ def test_builtin_targets_and_extend_targets(tmp_path: pathlib.Path) -> None:
 
 
 def test_builtin_targets_invalid_type(tmp_path: pathlib.Path) -> None:
-    """ビルトインコマンドの targets に不正な型を指定するとエラーになる。"""
+    """ビルトインコマンドのtargetsに不正な型を指定するとエラーになる。"""
     (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\nshfmt-targets = 42\n")
     with pytest.raises(ValueError, match="targets"):
         pyfltr.config.load_config(config_dir=tmp_path)
 
 
 def test_builtin_targets_unknown_command(tmp_path: pathlib.Path) -> None:
-    """未知のコマンド名の targets 指定はエラーになる。"""
+    """未知のコマンド名のtargets指定はエラーになる。"""
     (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\nunknown-targets = "*.py"\n')
     with pytest.raises(ValueError, match="設定キーが不正です"):
         pyfltr.config.load_config(config_dir=tmp_path)
 
 
 def test_builtin_targets_no_mutation_of_builtins(tmp_path: pathlib.Path) -> None:
-    """targets 上書きで BUILTIN_COMMANDS が汚染されない。"""
+    """targets上書きでBUILTIN_COMMANDSが汚染されない。"""
     original_targets = pyfltr.config.BUILTIN_COMMANDS["shfmt"].targets
     (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\nshfmt-targets = "*.bash"\n')
     config = pyfltr.config.load_config(config_dir=tmp_path)
     assert config.commands["shfmt"].targets == "*.bash"
-    # BUILTIN_COMMANDS 側は元のまま
+    # BUILTIN_COMMANDS側は元のまま
     assert pyfltr.config.BUILTIN_COMMANDS["shfmt"].targets == original_targets
 
 
-# Rust / .NET 言語ツール向けのテスト群。
-# 全ツール既定 False、pass-filenames=False、formatter は常時書き込みモード、
-# cargo-clippy のみ lint-args / fix-args を持つ。
-# pylint duplicate-code (R0801) を避けるため、config 側の定義をそのまま再利用する。
+# Rust / .NET言語ツール向けのテスト群。
+# 全ツール既定False、pass-filenames=False、formatterは常時書き込みモード、
+# cargo-clippyのみlint-args / fix-argsを持つ。
+# pylint duplicate-code（R0801）を避けるため、config側の定義をそのまま再利用する。
 _NATIVE_LANG_TOOLS: tuple[str, ...] = pyfltr.config.RUST_COMMANDS + pyfltr.config.DOTNET_COMMANDS
 
 
 def test_native_lang_tools_registered() -> None:
-    """Rust / .NET 言語ツールが BUILTIN_COMMANDS と DEFAULT_CONFIG に登録されている。"""
+    """Rust / .NET言語ツールがBUILTIN_COMMANDSとDEFAULT_CONFIGに登録されている。"""
     config = pyfltr.config.create_default_config()
     for tool in _NATIVE_LANG_TOOLS:
-        assert tool in pyfltr.config.BUILTIN_COMMANDS, f"{tool} が BUILTIN_COMMANDS に未登録"
-        assert config[tool] is False, f"{tool} の既定値は False であるべき"
-        # cargo 系・dotnet 系は bin-runner 経由で起動する設計のため、path 既定値は空文字。
-        # 起動方式は {command}-runner（既定 "bin-runner"）→ グローバル bin-runner（既定 "mise"）で解決する。
-        assert config[f"{tool}-path"] == "", f"{tool}-path は既定で空文字であるべき"
-        assert config[f"{tool}-runner"] == "bin-runner", f"{tool}-runner の既定値は 'bin-runner' であるべき"
-        assert config[f"{tool}-version"] == "latest", f"{tool}-version の既定値は 'latest' であるべき"
+        assert tool in pyfltr.config.BUILTIN_COMMANDS, f"{tool}がBUILTIN_COMMANDSに未登録"
+        assert config[tool] is False, f"{tool}の既定値はFalseであるべき"
+        # cargo系・dotnet系はbin-runner経由で起動する設計のため、path既定値は空文字。
+        # 起動方式は{command}-runner（既定"bin-runner"）→グローバルbin-runner（既定"mise"）で解決する。
+        assert config[f"{tool}-path"] == "", f"{tool}-pathは既定で空文字であるべき"
+        assert config[f"{tool}-runner"] == "bin-runner", f"{tool}-runnerの既定値は'bin-runner'であるべき"
+        assert config[f"{tool}-version"] == "latest", f"{tool}-versionの既定値は'latest'であるべき"
 
 
 def test_native_lang_tools_pass_filenames_false() -> None:
-    """Rust / .NET 言語ツールは全て pass-filenames=False (crate / solution 全体を対象)。"""
+    """Rust / .NET言語ツールは全てpass-filenames=False（crate / solution全体を対象）。"""
     config = pyfltr.config.create_default_config()
     for tool in _NATIVE_LANG_TOOLS:
-        assert config[f"{tool}-pass-filenames"] is False, f"{tool}-pass-filenames は False であるべき"
+        assert config[f"{tool}-pass-filenames"] is False, f"{tool}-pass-filenamesはFalseであるべき"
 
 
 def test_native_lang_tools_command_types() -> None:
-    """Rust / .NET 言語ツールの type 分類。"""
+    """Rust / .NET言語ツールのtype分類。"""
     expected = {
         "cargo-fmt": "formatter",
         "cargo-clippy": "linter",
@@ -1192,17 +1192,17 @@ def test_native_lang_tools_command_types() -> None:
 
 
 def test_native_formatters_write_by_default() -> None:
-    """cargo-fmt / dotnet-format は既定で書き込みモード (--check 等を含まない)。"""
+    """cargo-fmt / dotnet-formatは既定で書き込みモード（--check等を含まない）。"""
     config = pyfltr.config.create_default_config()
     assert config["cargo-fmt-args"] == ["fmt"]
     assert config["dotnet-format-args"] == ["format"]
-    # pyfltr 規約: formatter には fix-args を定義しない
+    # pyfltr規約: formatterにはfix-argsを定義しない
     assert "cargo-fmt-fix-args" not in config.values
     assert "dotnet-format-fix-args" not in config.values
 
 
 def test_cargo_clippy_args_separation() -> None:
-    """cargo-clippy は args / lint-args / fix-args を分離し、trailing `-- -D warnings` を双方に持つ。"""
+    """cargo-clippyはargs / lint-args / fix-argsを分離し、trailing `-- -D warnings`を双方に持つ。"""
     config = pyfltr.config.create_default_config()
     assert config["cargo-clippy-args"] == _testconf.CARGO_CLIPPY_ARGS
     assert config["cargo-clippy-lint-args"] == _testconf.CARGO_CLIPPY_LINT_ARGS
@@ -1210,17 +1210,17 @@ def test_cargo_clippy_args_separation() -> None:
 
 
 def test_native_lang_tools_fast_defaults() -> None:
-    """fast 既定値は cargo-fmt / cargo-clippy / dotnet-format のみ True。"""
+    """fast既定値はcargo-fmt / cargo-clippy / dotnet-formatのみTrue。"""
     config = pyfltr.config.create_default_config()
     assert config["cargo-fmt-fast"] is True
     assert config["cargo-clippy-fast"] is True
     assert config["dotnet-format-fast"] is True
     for tool in ("cargo-check", "cargo-test", "cargo-deny", "dotnet-build", "dotnet-test"):
-        assert config[f"{tool}-fast"] is False, f"{tool}-fast は既定 False であるべき"
+        assert config[f"{tool}-fast"] is False, f"{tool}-fastは既定Falseであるべき"
 
 
 def test_native_lang_tools_not_affected_by_python(tmp_path: pathlib.Path) -> None:
-    """python 設定は Rust / .NET 言語ツールの設定を変更しない。"""
+    """python設定はRust / .NET言語ツールの設定を変更しない。"""
     pyproject_content = """
 [tool.pyfltr]
 preset = "latest"
@@ -1236,13 +1236,13 @@ dotnet-format = true
     assert config["cargo-fmt"] is True
     assert config["cargo-clippy"] is True
     assert config["dotnet-format"] is True
-    # python 系ツールは個別指定で有効化されている
+    # python系ツールは個別指定で有効化されている
     assert config["mypy"] is True
     assert config["pytest"] is True
 
 
 def test_native_lang_tools_serial_group() -> None:
-    """cargo 系は serial_group=cargo、dotnet 系は serial_group=dotnet に設定される。"""
+    """cargo系はserial_group=cargo、dotnet系はserial_group=dotnetに設定される。"""
     expected = {
         "cargo-fmt": "cargo",
         "cargo-clippy": "cargo",
@@ -1254,19 +1254,19 @@ def test_native_lang_tools_serial_group() -> None:
         "dotnet-test": "dotnet",
     }
     for tool, group in expected.items():
-        assert pyfltr.config.BUILTIN_COMMANDS[tool].serial_group == group, f"{tool}.serial_group は {group!r} であるべき"
+        assert pyfltr.config.BUILTIN_COMMANDS[tool].serial_group == group, f"{tool}.serial_groupは{group!r}であるべき"
 
 
 def test_existing_tools_have_no_serial_group() -> None:
-    """既存ツールは serial_group 未設定 (後方互換)。"""
+    """既存ツールはserial_group未設定（後方互換）。"""
     for name, info in pyfltr.config.BUILTIN_COMMANDS.items():
         if name.startswith(("cargo-", "dotnet-")):
             continue
-        assert info.serial_group is None, f"{name}.serial_group は None であるべき"
+        assert info.serial_group is None, f"{name}.serial_groupはNoneであるべき"
 
 
 def test_native_lang_tools_in_aliases() -> None:
-    """Rust / .NET 言語ツールが format / lint / test の各エイリアスに含まれる。"""
+    """Rust / .NET言語ツールがformat / lint / testの各エイリアスに含まれる。"""
     config = pyfltr.config.create_default_config()
     aliases = config["aliases"]
     assert "cargo-fmt" in aliases["format"]
@@ -1280,21 +1280,21 @@ def test_native_lang_tools_in_aliases() -> None:
 
 
 def test_tool_exclude_loaded(tmp_path: pathlib.Path) -> None:
-    """{tool}-exclude が pyproject.toml から読み込まれて config.values に格納される。"""
+    """`{tool}-exclude`がpyproject.tomlから読み込まれてconfig.valuesに格納される。"""
     (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\nmypy-exclude = ["vendor", "gen_*.py"]\n')
     config = pyfltr.config.load_config(config_dir=tmp_path)
     assert config.values["mypy-exclude"] == ["vendor", "gen_*.py"]
 
 
 def test_tool_exclude_unknown_command(tmp_path: pathlib.Path) -> None:
-    """未知のコマンド名の {tool}-exclude 指定はエラーになる。"""
+    """未知のコマンド名の`{tool}-exclude`指定はエラーになる。"""
     (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\nunknown-exclude = ["foo"]\n')
     with pytest.raises(ValueError, match="設定キーが不正です"):
         pyfltr.config.load_config(config_dir=tmp_path)
 
 
 def test_tool_exclude_invalid_type(tmp_path: pathlib.Path) -> None:
-    """{tool}-exclude に文字列リスト以外を指定するとエラーになる。"""
+    """`{tool}-exclude`に文字列リスト以外を指定するとエラーになる。"""
     (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\nmypy-exclude = 42\n")
     with pytest.raises(ValueError, match="str型のリスト"):
         pyfltr.config.load_config(config_dir=tmp_path)

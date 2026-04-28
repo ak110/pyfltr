@@ -26,9 +26,9 @@ def test_build_sarif_basic() -> None:
     assert len(sarif["runs"]) == 1
     run = sarif["runs"][0]
     assert run["tool"]["driver"]["name"] == "ruff-check"
-    # rules に重複排除して登録されている
+    # rulesに重複排除して登録されている
     assert run["tool"]["driver"]["rules"] == [{"id": "F401", "helpUri": "https://docs.astral.sh/ruff/rules/F401/"}]
-    # results 配列に diagnostic が載っている
+    # results配列にdiagnosticが載っている
     assert len(run["results"]) == 1
     entry = run["results"][0]
     assert entry["level"] == "error"
@@ -38,17 +38,17 @@ def test_build_sarif_basic() -> None:
     loc = entry["locations"][0]["physicalLocation"]
     assert loc["artifactLocation"]["uri"] == "src/foo.py"
     assert loc["region"]["startLine"] == 10
-    # retry_command は invocations に入る
+    # retry_commandはinvocationsに入る
     assert run["invocations"][0]["commandLine"] == "pyfltr run --commands ruff-check -- src/foo.py"
-    # executionSuccessful は has_error の反対
+    # executionSuccessfulはhas_errorの反対
     assert run["invocations"][0]["executionSuccessful"] is False
-    # pyfltr プロパティにメタ情報
+    # pyfltrプロパティにメタ情報
     assert sarif["properties"]["pyfltr"]["run_id"] == "01ABC"
     assert sarif["properties"]["pyfltr"]["exit_code"] == 1
 
 
 def test_build_sarif_severity_mapping() -> None:
-    """severity 3 値が SARIF level に正しくマップされる。"""
+    """severity 3値がSARIF levelに正しくマップされる。"""
     infos = [
         _make_error("tool", "a.py", 1, "e"),
         _make_error("tool", "a.py", 2, "w"),
@@ -74,12 +74,12 @@ def test_build_sarif_no_errors() -> None:
     assert run["results"] == []
     assert run["tool"]["driver"]["rules"] == []
     assert run["invocations"][0]["executionSuccessful"] is True
-    # retry_command は失敗時のみ populate されるため、成功時は commandLine が省略される
+    # retry_commandは失敗時のみpopulateされるため、成功時はcommandLineが省略される
     assert "commandLine" not in run["invocations"][0]
 
 
 def test_build_sarif_without_rule_url() -> None:
-    """rule_url が無い場合、rules エントリから helpUri が省略される。"""
+    """rule_urlが無い場合、rulesエントリからhelpUriが省略される。"""
     errors = [_make_error("tool", "a.py", 1, "x")]
     errors[0].rule = "X1"
     errors[0].severity = "warning"

@@ -31,7 +31,7 @@ def _compute_dummy_key(
 
 
 def test_put_and_get_restores_result(tmp_path: pathlib.Path) -> None:
-    """put で保存した結果が get で cached=True 付きで復元される。"""
+    """putで保存した結果がgetでcached=True付きで復元される。"""
     store = _make_store(tmp_path)
     target = tmp_path / "foo.md"
     target.write_text("# title\n")
@@ -58,7 +58,7 @@ def test_get_miss_returns_none(tmp_path: pathlib.Path) -> None:
 
 
 def test_put_without_run_id_is_skipped(tmp_path: pathlib.Path) -> None:
-    """run_id=None のときは書き込まない (ソース特定不能のため)。"""
+    """run_id=Noneのときは書き込まない（ソース特定不能のため）。"""
     store = _make_store(tmp_path)
     target = tmp_path / "foo.md"
     target.write_text("# title\n")
@@ -80,7 +80,7 @@ def test_compute_key_changes_on_file_content(tmp_path: pathlib.Path) -> None:
 
 
 def test_compute_key_changes_on_commandline(tmp_path: pathlib.Path) -> None:
-    """実効コマンドラインが変わるとキーが変わる (誤ヒット防止)。"""
+    """実効コマンドラインが変わるとキーが変わる（誤ヒット防止）。"""
     store = _make_store(tmp_path)
     target = tmp_path / "foo.md"
     target.write_text("# title\n")
@@ -132,7 +132,7 @@ def test_compute_key_changes_on_config_file_content(tmp_path: pathlib.Path) -> N
 
 
 def test_cleanup_removes_old_entries(tmp_path: pathlib.Path) -> None:
-    """max_age_hours を超えたエントリは削除される。"""
+    """max_age_hoursを超えたエントリは削除される。"""
     store = _make_store(tmp_path)
     target = tmp_path / "foo.md"
     target.write_text("# title\n")
@@ -141,7 +141,7 @@ def test_cleanup_removes_old_entries(tmp_path: pathlib.Path) -> None:
 
     entry_path = store.cache_dir / "textlint" / f"{key}.json"
     assert entry_path.exists()
-    # mtime を 2 時間前に戻す
+    # mtimeを2時間前に戻す
     old_mtime = time.time() - 2 * 3600
     import os  # pylint: disable=import-outside-toplevel
 
@@ -165,7 +165,7 @@ def test_cleanup_keeps_recent_entries(tmp_path: pathlib.Path) -> None:
 
 
 def test_cleanup_zero_policy_is_noop(tmp_path: pathlib.Path) -> None:
-    """max_age_hours=0 は期間軸クリーンアップ無効。"""
+    """max_age_hours=0は期間軸クリーンアップ無効。"""
     store = _make_store(tmp_path)
     target = tmp_path / "foo.md"
     target.write_text("# title\n")
@@ -174,7 +174,7 @@ def test_cleanup_zero_policy_is_noop(tmp_path: pathlib.Path) -> None:
     entry_path = store.cache_dir / "textlint" / f"{key}.json"
     import os  # pylint: disable=import-outside-toplevel
 
-    os.utime(entry_path, (0, 0))  # 1970 年扱い
+    os.utime(entry_path, (0, 0))  # 1970年扱い
 
     removed = store.cleanup(pyfltr.cache.CachePolicy(max_age_hours=0))
     assert not removed
@@ -188,27 +188,27 @@ def test_is_cacheable_true_for_textlint() -> None:
 
 
 def test_is_cacheable_false_for_mypy() -> None:
-    """cacheable=False のツール (mypy など) は対象外。"""
+    """cacheable=Falseのツール（mypyなど）は対象外。"""
     config = pyfltr.config.create_default_config()
     assert not pyfltr.cache.is_cacheable("mypy", config, additional_args=[])
 
 
 def test_is_cacheable_false_with_config_arg() -> None:
-    """--{command}-args に --config を含む場合は対象外。"""
+    """`--{command}-args`に`--config`を含む場合は対象外。"""
     config = pyfltr.config.create_default_config()
     assert not pyfltr.cache.is_cacheable("textlint", config, additional_args=["--config", "/tmp/t.json"])
     assert not pyfltr.cache.is_cacheable("textlint", config, additional_args=["--config=/tmp/t.json"])
 
 
 def test_is_cacheable_false_with_ignore_path_arg() -> None:
-    """--{command}-args に --ignore-path を含む場合は対象外。"""
+    """`--{command}-args`に`--ignore-path`を含む場合は対象外。"""
     config = pyfltr.config.create_default_config()
     assert not pyfltr.cache.is_cacheable("textlint", config, additional_args=["--ignore-path", "/tmp/i"])
     assert not pyfltr.cache.is_cacheable("textlint", config, additional_args=["--ignore-path=/tmp/i"])
 
 
 def test_resolve_config_files_textlint() -> None:
-    """textlint の config_files が完全列挙される。"""
+    """textlintのconfig_filesが完全列挙される。"""
     config = pyfltr.config.create_default_config()
     files = pyfltr.cache.resolve_config_files("textlint", config, base=pathlib.Path("/tmp"))
     assert pathlib.Path("/tmp/.textlintrc") in files
@@ -217,7 +217,7 @@ def test_resolve_config_files_textlint() -> None:
 
 
 def test_cache_policy_from_config_uses_default() -> None:
-    """既定値は 12 時間。"""
+    """既定値は12時間。"""
     config = pyfltr.config.create_default_config()
     policy = pyfltr.cache.cache_policy_from_config(config)
     assert policy.max_age_hours == 12

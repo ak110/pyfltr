@@ -1,8 +1,8 @@
-"""mcp_.py のテスト。
+"""mcp_.pyのテスト。
 
-``PYFLTR_CACHE_DIR`` を ``tmp_path`` に固定することで、テストデータ生成に使う
-``ArchiveStore(cache_root=tmp_path)`` と MCPツール内部で呼ぶ ``ArchiveStore()``
-（``default_cache_root()`` 解決）が同一キャッシュを参照する状態を作る。
+`PYFLTR_CACHE_DIR`を`tmp_path`に固定することで、テストデータ生成に使う
+`ArchiveStore(cache_root=tmp_path)`とMCPツール内部で呼ぶ`ArchiveStore()`
+（`default_cache_root()`解決）が同一キャッシュを参照する状態を作る。
 """
 
 # pylint: disable=missing-function-docstring,protected-access,duplicate-code
@@ -23,7 +23,7 @@ def _isolated_cache(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> pathlib.Path:
-    """全テストで ``PYFLTR_CACHE_DIR`` を ``tmp_path`` に固定する。"""
+    """全テストで`PYFLTR_CACHE_DIR`を`tmp_path`に固定する。"""
     monkeypatch.setenv("PYFLTR_CACHE_DIR", str(tmp_path))
     return tmp_path
 
@@ -57,7 +57,7 @@ def test_diagnostic_model_all_optional() -> None:
 
 
 def test_diagnostic_message_model_all_optional() -> None:
-    # DiagnosticMessageModel も全フィールド省略可能
+    # DiagnosticMessageModelも全フィールド省略可能
     model = pyfltr.mcp_.DiagnosticMessageModel()
     assert model.line is None
     assert model.severity is None
@@ -148,7 +148,7 @@ async def test_tool_show_run_latest_empty() -> None:
 @pytest.mark.asyncio
 async def test_tool_show_run_ambiguous_prefix(tmp_path: pathlib.Path) -> None:
     run_ids = [_seed_run(tmp_path) for _ in range(2)]
-    # ULID の先頭は同じタイムスタンプ部分 (ミリ秒単位) を共有する可能性が高いため、
+    # ULIDの先頭は同じタイムスタンプ部分（ミリ秒単位）を共有する可能性が高いため、
     # 実際に共通する最長プレフィックスを算出してテストする。
     shared = 0
     for a, b in zip(run_ids[0], run_ids[1], strict=False):
@@ -156,7 +156,7 @@ async def test_tool_show_run_ambiguous_prefix(tmp_path: pathlib.Path) -> None:
             break
         shared += 1
     if shared < 1:
-        pytest.skip("shared prefix が無いケースでは曖昧判定にならない")
+        pytest.skip("shared prefixが無いケースでは曖昧判定にならない")
     prefix = run_ids[0][:shared]
 
     with pytest.raises(ValueError, match="曖昧"):
@@ -260,10 +260,10 @@ async def test_tool_run_for_agent_with_typos(tmp_path: pathlib.Path) -> None:
 async def test_tool_run_for_agent_keeps_stdout_clean_and_text_on_stderr(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """``run_for_agent`` 実行中は stdout が JSON-RPC 用に空のまま、text 整形出力は stderr に流れる。
+    """`run_for_agent`実行中はstdoutがJSON-RPC用に空のまま、text整形出力はstderrに流れる。
 
-    ``force_text_on_stderr=True`` が run_pipeline 側で効いて text_logger が stderr に向き、
-    構造化出力は一時ファイルへ退避するため stdout へは何も書かれない契約を固定する。
+    `force_text_on_stderr=True`がrun_pipeline側で効いてtext_loggerがstderrに向き、
+    構造化出力は一時ファイルへ退避するためstdoutへは何も書かれない契約を固定する。
     """
     sample = tmp_path / "input.txt"
     sample.write_text("hello\n", encoding="utf-8")
@@ -279,25 +279,25 @@ async def test_tool_run_for_agent_keeps_stdout_clean_and_text_on_stderr(
 
 @pytest.mark.asyncio
 async def test_tool_run_for_agent_returns_run_id(tmp_path: pathlib.Path) -> None:
-    """``run_for_agent`` が run_id を含む結果を返すことを確認する。
+    """`run_for_agent`がrun_idを含む結果を返すことを確認する。
 
-    ``commands=None`` でプロジェクト設定のコマンドを使用し、アーカイブに記録されることを検証する。
-    実際のツール実行を避けるため ``commands=[]`` に近いケースとして ``typos`` を条件付きで使用するか、
-    ここでは ``typos`` が利用可能なら 1 件実行する形で確認する。
+    `commands=None`でプロジェクト設定のコマンドを使用し、アーカイブに記録されることを検証する。
+    実際のツール実行を避けるため`commands=[]`に近いケースとして`typos`を条件付きで使用するか、
+    ここでは`typos`が利用可能なら1件実行する形で確認する。
     """
     # 最小限の入力ファイルを用意する
     sample = tmp_path / "input.txt"
     sample.write_text("This is a simple test file.\n", encoding="utf-8")
 
-    # typos が使えない環境でも動作させるため、利用可能なコマンドを選ぶ。
-    # ec は設定不要で動作するため使用する。
+    # typosが使えない環境でも動作させるため、利用可能なコマンドを選ぶ。
+    # ecは設定不要で動作するため使用する。
     result = await pyfltr.mcp_._tool_run_for_agent(
         paths=[str(sample)],
         commands=["ec"],
     )
 
     assert result.run_id is not None
-    assert len(result.run_id) == 26  # ULID は 26 文字
+    assert len(result.run_id) == 26  # ULIDは26文字
     assert isinstance(result.exit_code, int)
 
     # アーカイブに保存されていることを確認する
@@ -313,7 +313,7 @@ async def test_tool_run_for_agent_returns_run_id(tmp_path: pathlib.Path) -> None
 
 
 def test_run_for_agent_result_new_fields_defaults() -> None:
-    """RunForAgentResult の新フィールドのデフォルト値を確認する。"""
+    """RunForAgentResultの新フィールドのデフォルト値を確認する。"""
     result = pyfltr.mcp_.RunForAgentResult(
         run_id="01TESTULID1234567890123456",
         exit_code=0,
@@ -326,7 +326,7 @@ def test_run_for_agent_result_new_fields_defaults() -> None:
 
 
 def test_run_for_agent_result_nullable_run_id() -> None:
-    """RunForAgentResult の run_id が None を許容する（early exit 時）。"""
+    """RunForAgentResultのrun_idがNoneを許容する（early exit時）。"""
     result = pyfltr.mcp_.RunForAgentResult(
         run_id=None,
         exit_code=0,
@@ -342,7 +342,7 @@ def test_run_for_agent_result_nullable_run_id() -> None:
 
 @pytest.mark.asyncio
 async def test_tool_run_for_agent_returns_schema_hints(tmp_path: pathlib.Path) -> None:
-    """run_for_agent の戻り値に schema_hints が含まれることを確認する。"""
+    """run_for_agentの戻り値にschema_hintsが含まれることを確認する。"""
     sample = tmp_path / "input.txt"
     sample.write_text("hello\n", encoding="utf-8")
 
@@ -353,13 +353,13 @@ async def test_tool_run_for_agent_returns_schema_hints(tmp_path: pathlib.Path) -
 
     assert isinstance(result.schema_hints, dict)
     assert len(result.schema_hints) > 0
-    # 短縮版は自身の使い方案内を含まない（フル版の取得方法はドキュメントに委ねる）。
+    # 短縮版は自身の使い方案内を含まない（フル版の取得方法はドキュメントに委ねる）
     assert "_note" not in result.schema_hints
 
 
 @pytest.mark.asyncio
 async def test_tool_run_for_agent_returns_retry_commands(tmp_path: pathlib.Path) -> None:
-    """run_for_agent の戻り値に retry_commands が含まれることを確認する（失敗なしの場合は空辞書）。"""
+    """run_for_agentの戻り値にretry_commandsが含まれることを確認する（失敗なしの場合は空辞書）。"""
     sample = tmp_path / "input.txt"
     sample.write_text("hello\n", encoding="utf-8")
 
@@ -376,12 +376,12 @@ async def test_tool_run_for_agent_returns_retry_commands(tmp_path: pathlib.Path)
 
 @pytest.mark.asyncio
 async def test_tool_run_for_agent_retry_commands_includes_failed(tmp_path: pathlib.Path) -> None:
-    """失敗コマンドが存在する場合に retry_commands にキーが入る経路をカバーする。
+    """失敗コマンドが存在する場合にretry_commandsにキーが入る経路をカバーする。
 
-    ruff-check でエラーのある Python ファイルを実行し、失敗した場合に
-    retry_commands["ruff-check"] が設定されることを確認する。
-    retry_command はアーカイブの tool.json から読み取るため、
-    archive.write_tool_result が retry_command を保存していることも兼ねて検証する。
+    ruff-checkでエラーのあるPythonファイルを実行し、失敗した場合に
+    retry_commands["ruff-check"]が設定されることを確認する。
+    retry_commandはアーカイブのtool.jsonから読み取るため、
+    archive.write_tool_resultがretry_commandを保存していることも兼ねて検証する。
     """
     # ruff-check でエラーになる Python ファイルを用意する
     bad_py = tmp_path / "bad.py"
@@ -394,7 +394,7 @@ async def test_tool_run_for_agent_retry_commands_includes_failed(tmp_path: pathl
 
     assert isinstance(result.retry_commands, dict)
     if "ruff-check" in result.failed:
-        # 失敗コマンドには retry_commands キーが含まれる
+        # 失敗コマンドにはretry_commandsキーが含まれる
         assert "ruff-check" in result.retry_commands
         assert isinstance(result.retry_commands["ruff-check"], str)
         assert len(result.retry_commands["ruff-check"]) > 0
@@ -405,7 +405,7 @@ async def test_tool_run_for_agent_retry_commands_includes_failed(tmp_path: pathl
 
 @pytest.mark.asyncio
 async def test_tool_run_for_agent_from_run_without_only_failed_raises() -> None:
-    """only_failed=False のまま from_run を指定すると ValueError が発生する。"""
+    """only_failed=Falseのままfrom_runを指定するとValueErrorが発生する。"""
     with pytest.raises(ValueError, match="only_failed"):
         await pyfltr.mcp_._tool_run_for_agent(
             paths=["dummy"],
@@ -415,7 +415,7 @@ async def test_tool_run_for_agent_from_run_without_only_failed_raises() -> None:
 
 @pytest.mark.asyncio
 async def test_tool_run_for_agent_only_failed_no_previous_run(tmp_path: pathlib.Path) -> None:
-    """only_failed=True で直前 run がない場合は early exit（run_id=None・skipped_reason あり）。"""
+    """only_failed=Trueで直前runがない場合はearly exit（run_id=None・skipped_reasonあり）。"""
     sample = tmp_path / "input.txt"
     sample.write_text("hello\n", encoding="utf-8")
 
@@ -425,7 +425,7 @@ async def test_tool_run_for_agent_only_failed_no_previous_run(tmp_path: pathlib.
         only_failed=True,
     )
 
-    # 直前 run なしなので early exit
+    # 直前runなしなのでearly exit
     assert result.run_id is None
     assert result.exit_code == 0
     assert not result.failed

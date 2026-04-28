@@ -1,6 +1,6 @@
 """command.py の taplo 2段階実行テスト。
 
-``_execute_taplo_two_step`` の動作を検証する。
+`_execute_taplo_two_step` の動作を検証する。
 """
 
 # pylint: disable=protected-access,duplicate-code

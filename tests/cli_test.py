@@ -16,16 +16,16 @@ from tests.conftest import make_execution_context as _make_ctx
 
 @pytest.fixture(name="text_logs")
 def _text_logs() -> collections.abc.Iterator[list[str]]:
-    """``pyfltr.cli.text_logger`` の ``info`` 出力をキャプチャする。
+    """`pyfltr.cli.text_logger`の`info`出力をキャプチャする。
 
-    ``propagate=False`` のため caplog / capsys の sys.stdout 差し替えとは相性が悪い
-    （pytest capture は setup 段階の sys.stdout リファレンスと実行時の sys.stdout が
-    一致しない）。本 fixture は text_logger に専用 ListHandler を直接追加し、
+    `propagate=False`のためcaplog / capsysのsys.stdout差し替えとは相性が悪い
+    （pytest captureはsetup段階のsys.stdoutリファレンスと実行時のsys.stdoutが
+    一致しない）。本fixtureはtext_loggerに専用ListHandlerを直接追加し、
     各テスト終了時に取り外すことで副作用を残さない。
 
     Returns:
-        現在のテスト内で text_logger が記録したメッセージ文字列のリスト。
-        （``logging.Handler.format`` を通すことで ``%`` フォーマット差分を吸収する）。
+        現在のテスト内でtext_loggerが記録したメッセージ文字列のリスト。
+        （`logging.Handler.format`を通すことで`%`フォーマット差分を吸収する）。
     """
     messages: list[str] = []
 
@@ -81,7 +81,7 @@ def test_write_log_failed(text_logs):
 
 
 def test_run_one_command_stream_mode_writes_detail_log(mocker, text_logs):
-    """per_command_log=True のとき詳細ログを即時出力すること。"""
+    """per_command_log=Trueのとき詳細ログを即時出力すること。"""
     result = _make_result("mypy", returncode=0, output="ok")
     mocker.patch("pyfltr.command.execute_command", return_value=result)
     mock_args = mocker.MagicMock()
@@ -92,12 +92,12 @@ def test_run_one_command_stream_mode_writes_detail_log(mocker, text_logs):
     pyfltr.cli._run_one_command("mypy", mock_args, base_ctx, per_command_log=True)
     text = "\n".join(text_logs)
     assert "mypy 実行中です..." in text
-    # 成功時はエラーなし・生出力なしのため output は表示されない
+    # 成功時はエラーなし・生出力なしのためoutputは表示されない
     assert "* returncode: 0" in text
 
 
 def test_run_one_command_buffer_mode_shows_only_progress(mocker, text_logs):
-    """per_command_log=False のとき開始/完了の 1 行進捗のみ出力すること。"""
+    """per_command_log=Falseのとき開始/完了の1行進捗のみ出力すること。"""
     result = _make_result("mypy", returncode=0, output="ok")
     mocker.patch("pyfltr.command.execute_command", return_value=result)
     mock_args = mocker.MagicMock()
@@ -109,7 +109,7 @@ def test_run_one_command_buffer_mode_shows_only_progress(mocker, text_logs):
     text = "\n".join(text_logs)
     assert "mypy 実行中です..." in text
     assert "mypy 完了" in text
-    # 詳細ログ (output や returncode 行) は出ていない
+    # 詳細ログ（outputやreturncode行）は出ていない
     assert "ok" not in text
     assert "returncode: 0" not in text
 
@@ -117,7 +117,7 @@ def test_run_one_command_buffer_mode_shows_only_progress(mocker, text_logs):
 def test_render_results_orders_success_failed_summary(text_logs):
     """成功コマンド → 失敗コマンド → summary の順で出力されること。"""
     config = pyfltr.config.create_default_config()
-    # 失敗コマンドはerrorsが空のため生出力がフォールバック表示される
+    # 失敗コマンドはerrorsが空のため、生出力がフォールバック表示される
     results = [
         _make_result("mypy", returncode=1, output="MYPY_ERROR"),
         _make_result("ruff-format", returncode=0, command_type="formatter"),
@@ -141,7 +141,7 @@ def test_render_results_orders_success_failed_summary(text_logs):
 
 
 def test_render_results_include_details_false_writes_only_summary(text_logs):
-    """include_details=False のときは summary のみで詳細ログは出さない。"""
+    """include_details=Falseのときはsummaryのみで詳細ログは出さない。"""
     config = pyfltr.config.create_default_config()
     results = [_make_result("mypy", returncode=1, output="MYPY_ERROR")]
 
@@ -152,7 +152,7 @@ def test_render_results_include_details_false_writes_only_summary(text_logs):
 
 
 def test_render_results_writes_warnings_section_before_summary(text_logs):
-    """warnings 引数が渡されると summary 直前に warnings セクションが出る。"""
+    """warnings引数が渡されるとsummary直前にwarningsセクションが出る。"""
     config = pyfltr.config.create_default_config()
     results = [_make_result("mypy", returncode=0)]
     warnings = [{"source": "config", "message": "pre-commit 設定ファイル不在"}]
@@ -167,24 +167,24 @@ def test_render_results_writes_warnings_section_before_summary(text_logs):
 
 
 def test_render_results_skips_warnings_section_when_empty(text_logs):
-    """warnings が空のときは warnings 見出しを出さない。"""
+    """warningsが空のときはwarnings見出しを出さない。"""
     config = pyfltr.config.create_default_config()
     results = [_make_result("mypy", returncode=0)]
 
     pyfltr.cli.render_results(results, config, include_details=True, warnings=[])
 
-    # warnings セクションは出力されない（summary 直前の見出しだけを検証するのは困難なため、
-    # [source] 形式のエントリ行が無いことで代替する）
+    # warningsセクションは出力されない（summary直前の見出しだけを検証するのは困難なため、
+    # [source]形式のエントリ行が無いことで代替する）
     assert "[config]" not in "\n".join(text_logs)
 
 
 def test_run_commands_with_cli_fail_fast_aborts_remaining_fixers(mocker):
-    """--fail-fast 発動時、fix ステージのエラーで後続の formatter/linter を skipped 化する。"""
+    """--fail-fast発動時、fixステージのエラーで後続のformatter/linterをskipped化する。"""
     config = pyfltr.config.create_default_config()
     config.values["ruff-check"] = True
     config.values["ruff-format"] = True
     config.values["mypy"] = True
-    # fix ステージで ruff-check が has_error=True で返る想定
+    # fixステージでruff-checkがhas_error=Trueで返る想定
     fix_fail = _make_result("ruff-check", returncode=1, command_type="linter")
     mocker.patch("pyfltr.command.execute_command", return_value=fix_fail)
     mock_args = mocker.MagicMock()
@@ -198,14 +198,14 @@ def test_run_commands_with_cli_fail_fast_aborts_remaining_fixers(mocker):
         include_fix_stage=True,
         fail_fast=True,
     )
-    # 通常ステージはスキップされ、ruff-format と mypy が skipped で積まれる
+    # 通常ステージはスキップされ、ruff-formatとmypyがskippedで積まれる
     statuses = {r.command: r.status for r in results}
     assert statuses.get("ruff-format") == "skipped"
     assert statuses.get("mypy") == "skipped"
 
 
 def test_run_commands_with_cli_without_fail_fast_continues(mocker):
-    """fail_fast=False なら1ツール失敗でも後続が走る。"""
+    """fail_fast=Falseなら1ツール失敗でも後続が走る。"""
     config = pyfltr.config.create_default_config()
     config.values["ruff-format"] = True
     config.values["mypy"] = True

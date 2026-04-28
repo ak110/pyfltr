@@ -1,6 +1,6 @@
 """エラー出力パーサー。
 
-各コマンドの出力からエラー箇所(ファイル名:行番号)を抽出する。
+各コマンドの出力からエラー箇所（ファイル名:行番号）を抽出する。
 ビルトインパーサーとカスタム正規表現の両方に対応。
 """
 
@@ -25,32 +25,32 @@ class ErrorLocation:
     command: str
     message: str
     rule: str | None = None
-    """ルールコード (F401, C0114, SC2086等)"""
+    """ルールコード（F401, C0114, SC2086等）"""
     severity: str | None = None
-    """診断の重要度 ("error" | "warning" | "info")"""
+    """診断の重要度（"error" | "warning" | "info"）"""
     fix: str | None = None
-    """自動修正の適用可能性 ("safe" | "unsafe" | "suggested" | "none")
+    """自動修正の適用可能性（"safe" | "unsafe" | "suggested" | "none"）
 
-    ``None`` はツールが自動修正情報を返さないことを示し、JSON Lines 出力でも省略する。
-    ``"none"`` はツールが自動修正情報を返した上で「自動修正不可」と明示した場合に使う。
+    `None`はツールが自動修正情報を返さないことを示し、JSON Lines出力でも省略する。
+    `"none"`はツールが自動修正情報を返した上で「自動修正不可」と明示した場合に使う。
     """
     rule_url: str | None = None
-    """ルールドキュメントの URL (None は未対応ツールまたは rule 未設定時)"""
+    """ルールドキュメントのURL（Noneは未対応ツールまたはrule未設定時）"""
     hint: str | None = None
-    """診断メッセージに添える短い修正ヒント (None はヒント未登録のルール)。
+    """診断メッセージに添える短い修正ヒント（Noneはヒント未登録のルール）。
 
-    JSON Lines 出力では ``messages[].hint`` として任意フィールドで出力され、
-    text 出力ではメッセージ行の直下にインデント付きで「ヒント: ...」として表示される。
+    JSON Lines出力では`messages[].hint`として任意フィールドで出力され、
+    text出力ではメッセージ行の直下にインデント付きで「ヒント: ...」として表示される。
     """
     end_line: int | None = None
-    """違反範囲の終端行 (None はツールが範囲を返さない場合)。
+    """違反範囲の終端行（Noneはツールが範囲を返さない場合）。
 
-    現状はtextlint v12+ の ``loc.end.line`` のみが詰める。pyright・biome等にも将来拡張可。
+    現状はtextlint v12+の`loc.end.line`のみが詰める。pyright・biome等にも将来拡張可。
     """
     end_col: int | None = None
-    """違反範囲の終端列 (None はツールが範囲を返さない場合)。
+    """違反範囲の終端列（Noneはツールが範囲を返さない場合）。
 
-    textlintの ``column`` 系はノード先頭からの累積位置を返す仕様のため、本フィールドも
+    textlintの`column`系はノード先頭からの累積位置を返す仕様のため、本フィールドも
     同様の系で出力する。行内オフセットへの正規化はファイル本文の参照を要するため行わない。
     """
 
@@ -61,8 +61,8 @@ _TEXTLINT_COL_NOTE = (
 )
 """textlintの`col`が行内オフセットではない旨をエージェントへ伝える共通注記。
 
-textlintは違反箇所をテキストノード先頭からの累積位置で返す仕様のため、`col=5853`のような大値が
-出る。pyfltrはファイル本文を読まずにJSONを変換するため、行内オフセットへの正規化は行わない。
+textlintは違反箇所をテキストノード先頭からの累積位置で返す仕様のため、`col=5853`のような大値が出る。
+pyfltrはファイル本文を読まずにJSONを変換するため、行内オフセットへの正規化は行わない。
 """
 
 _TEXTLINT_RULE_HINTS: dict[str, str] = {
@@ -71,8 +71,8 @@ _TEXTLINT_RULE_HINTS: dict[str, str] = {
         "箇条書きを改行で分割するだけでは1文扱いになるため、句点で文を区切ると短くなることが多い。"
         f"{_TEXTLINT_COL_NOTE}"
     ),
-    "ja-technical-writing/max-ten": ("読点（、）が多すぎる判定。1文を複数文に分けるか、接続詞・係り受けを見直す"),
-    "ja-technical-writing/max-kanji-continuous-len": ("同じ漢字が連続していないか確認する。助詞・ひらがな・読点で分割する"),
+    "ja-technical-writing/max-ten": "読点（、）が多すぎる判定。1文を複数文に分けるか、接続詞・係り受けを見直す",
+    "ja-technical-writing/max-kanji-continuous-len": "同じ漢字が連続していないか確認する。助詞・ひらがな・読点で分割する",
 }
 """textlintの頻出ルール向けヒント辞書。利用者が踏みやすいルールに限定している。"""
 
@@ -81,10 +81,10 @@ def parse_errors(command: str, output: str, error_pattern: str | None = None) ->
     """コマンド出力からエラー箇所をパースする。
 
     優先順位:
-        1. error_pattern (カスタム正規表現) が指定されていればそれを使用
-        2. コマンド専用の関数ベースパーサー (JSON 出力など regex で扱いにくいもの)
+        1. error_pattern（カスタム正規表現）が指定されていればそれを使用
+        2. コマンド専用の関数ベースパーサー（JSON出力などregexで扱いにくいもの）
         3. ビルトイン正規表現パーサー
-        4. いずれも無ければ空リスト
+        4. いずれもなければ空リスト
     """
     if error_pattern is not None:
         return _parse_with_pattern(command, output, error_pattern)
@@ -113,16 +113,16 @@ def get_custom_parser_commands() -> set[str]:
 
 
 def format_error(error: ErrorLocation) -> str:
-    """エラー箇所を ``file:line[:col]: [tool[:rule]] message`` のテキスト形式にフォーマットする。"""
+    """エラー箇所を`file:line[:col]: [tool[:rule]] message`のテキスト形式にフォーマットする。"""
     col_str = f":{error.col}" if error.col else ""
     tag = f"{error.command}:{error.rule}" if error.rule else error.command
     return f"{error.file}:{error.line}{col_str}: [{tag}] {error.message}"
 
 
 def format_error_github(error: ErrorLocation) -> str:
-    """エラー箇所を GitHub Actions のワークフローコマンド記法にフォーマットする。
+    """エラー箇所をGitHub Actionsのワークフローコマンド記法にフォーマットする。
 
-    ``::error file=...::message`` 形式で出力する。
+    `::error file=...::message`形式で出力する。
     """
     from pyfltr import github_annotations  # pylint: disable=import-outside-toplevel
 
@@ -143,12 +143,12 @@ def parse_summary(command: str, output: str) -> str | None:
 
 # ビルトインパーサー用の正規表現パターン
 # 各パターンはfile, line, messageの名前付きグループが必須。colは任意。
-# rule グループが存在する場合は ErrorLocation.rule に取り込まれる (_parse_with_pattern で対応)。
-# ファイルパスのパターンは (?:[A-Za-z]:)? でWindowsドライブレターに対応する。
+# ruleグループが存在する場合はErrorLocation.ruleに取り込まれる（_parse_with_patternで対応）。
+# ファイルパスのパターンは(?:[A-Za-z]:)?でWindowsドライブレターに対応する。
 _FILE = r"(?:[A-Za-z]:)?[^\s:]+"
 _BUILTIN_PATTERNS: dict[str, str] = {
     # mypy出力例: src/foo.py:10: error: xxx [error-code]
-    # 末尾の [error-code] を rule グループとして抽出する。
+    # 末尾の[error-code]をruleグループとして抽出する。
     "mypy": rf"(?P<file>{_FILE}):(?P<line>\d+):\s*error:\s*(?P<message>.+?)(?:\s*\[(?P<rule>[^\]]+)\])?\s*$",
     # pylint出力例: src/foo.py:10:5: C0114: xxx
     "pylint": rf"(?P<file>{_FILE}):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>[CRWEF]\d+:.+)",
@@ -159,15 +159,15 @@ _BUILTIN_PATTERNS: dict[str, str] = {
     # ty check --output-format concise 出力例: src/foo.py:10:5: error[rule-name] Message text
     "ty": rf"(?P<file>{_FILE}):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>(?:error|warning)\[.+?\]\s+.+)",
     # markdownlint-cli2出力例: file.md:3 MD001/heading-increment Heading levels ...
-    # 先頭の MDxxx を rule グループとして抽出する (スラッシュ以降のシンボルは message に残す)。
+    # 先頭のMDxxxをruleグループとして抽出する（スラッシュ以降のシンボルはmessageに残す）。
     "markdownlint": rf"(?P<file>{_FILE}):(?P<line>\d+)\s+(?P<rule>MD\d+)(?P<message>\S*\s+.+)",
     # textlint --format compact出力例: /path/file.md: line 1, col 1, Error - message (rule)
     "textlint": rf"(?P<file>{_FILE}):\s*line\s+(?P<line>\d+),\s*col\s+(?P<col>\d+),\s*\w+\s*-\s*(?P<message>.+)",
     # pytest出力例: FAILED tests/xxx_test.py::test_yyy - AssertionError
     "pytest": rf"FAILED\s+(?P<file>{_FILE})::(?P<message>\S+)",
-    # biome --reporter=github 出力例 (実機確認済み、line と col の間に endLine が挟まる):
+    # biome --reporter=github出力例（実機確認済み、lineとcolの間にendLineが挟まる）:
     # ::error title=lint/suspicious/noDoubleEquals,file=src/foo.ts,line=1,endLine=1,col=7,endColumn=9::Use === instead of ==
-    # [^:]*? で順序非依存かつ `::` 終端を跨がないようマッチする。
+    # [^:]*?で順序非依存かつ`::`終端を跨がないようマッチする。
     "biome": (
         r"::(?:error|warning)\s+[^:]*?file=(?P<file>[^,]+)"
         r"[^:]*?line=(?P<line>\d+)"
@@ -186,11 +186,11 @@ _BUILTIN_PATTERNS: dict[str, str] = {
 
 
 def _try_json_loads(output: str) -> typing.Any:
-    """JSON パースを試みる。失敗時は None を返す。
+    """JSONパースを試みる。失敗時はNoneを返す。
 
-    一部ツール（例: pylint）は ``PYTHONDEVMODE=1`` 環境で読み込んだプラグインの
-    ``DeprecationWarning`` などを JSON 本体の前にテキストで流し込む。そのままでは
-    パースが必ず失敗するため、先頭の ``{`` または ``[`` を見つけて、それ以前の
+    一部ツール（例: pylint）は`PYTHONDEVMODE=1`環境で読み込んだプラグインの
+    `DeprecationWarning`などをJSON本体の前にテキストで流し込む。そのままでは
+    パースが必ず失敗するため、先頭の`{`または`[`を見つけて、それ以前の
     ゴミ文字列を落としてから再試行するフォールバックを行う。
     """
     stripped = output.strip()
@@ -200,7 +200,7 @@ def _try_json_loads(output: str) -> typing.Any:
         return json.loads(stripped)
     except json.JSONDecodeError:
         pass
-    # 先頭が JSON 以外の行で汚染されているケースを救済する。
+    # 先頭がJSON以外の行で汚染されているケースを救済する。
     for start_char in ("{", "["):
         index = stripped.find(start_char)
         if index > 0:
@@ -212,9 +212,9 @@ def _try_json_loads(output: str) -> typing.Any:
 
 
 def _normalize_severity(value: typing.Any) -> str | None:
-    """生の severity 値を `"error" / "warning" / "info"` の 3 値に正規化する。
+    """生のseverity値を`"error" / "warning" / "info"`の3値に正規化する。
 
-    未知の値や None は ``None`` を返し、JSONL 出力側で省略される。
+    未知の値やNoneは`None`を返し、JSONL出力側で省略される。
     """
     if value is None:
         return None
@@ -244,10 +244,10 @@ def _eslint_severity(value: typing.Any) -> str | None:
 
 
 def _parse_eslint_json(output: str) -> list[ErrorLocation]:
-    """ESLint --format json 出力をパース。
+    """ESLint --format json出力をパース。
 
-    ESLint 9 系以降で compact / unix などのコアフォーマッタが除去されたため、
-    pyfltr では `--format json` を使う。出力は以下のような配列。
+    ESLint 9系以降でcompact / unixなどのコアフォーマッタが除去されたため、
+    pyfltrでは`--format json`を使う。出力は以下のような配列。
 
     [
       {
@@ -258,8 +258,8 @@ def _parse_eslint_json(output: str) -> list[ErrorLocation]:
       }
     ]
 
-    stderr 混入等でパースに失敗した場合は空リストを返す (regex パーサーが
-    マッチしない時の挙動と揃える)。
+    stderr混入等でパースに失敗した場合は空リストを返す（regexパーサーが
+    マッチしない時の挙動と揃える）。
     """
     data = _try_json_loads(output)
     if not isinstance(data, list):
@@ -283,9 +283,9 @@ def _parse_eslint_json(output: str) -> list[ErrorLocation]:
             rule_id = str(msg.get("ruleId") or "")
             text = str(msg.get("message", ""))
             message = f"{text} ({rule_id})" if rule_id else text
-            # ESLint の JSON は autofix がある場合のみ ``fix`` オブジェクトが付与される。
-            # 自動修正情報の有無を報告するツールなので、欠落時は ``"none"`` として
-            # 「自動修正不可」を明示する (``None`` 省略との区別を維持)。
+            # ESLintのJSONはautofixがある場合のみ`fix`オブジェクトが付与される。
+            # 自動修正情報の有無を報告するツールなので、欠落時は`"none"`として
+            # 「自動修正不可」を明示する（`None`省略との区別を維持）。
             fix_value = "safe" if msg.get("fix") else "none"
             rule = rule_id or None
             results.append(
@@ -305,7 +305,7 @@ def _parse_eslint_json(output: str) -> list[ErrorLocation]:
 
 
 def _parse_ruff_check_json(output: str) -> list[ErrorLocation]:
-    """Ruff check --output-format=json 出力をパース。JSON 解析失敗時は regex にフォールバック。"""
+    """Ruff check --output-format=json出力をパース。JSON解析失敗時はregexにフォールバック。"""
     data = _try_json_loads(output)
     if not isinstance(data, list):
         return _parse_with_pattern("ruff-check", output, _BUILTIN_PATTERNS["ruff-check"])
@@ -322,8 +322,8 @@ def _parse_ruff_check_json(output: str) -> list[ErrorLocation]:
         raw_col = loc.get("column")
         col = raw_col if isinstance(raw_col, int) else None
         fix_obj = entry.get("fix")
-        # ruff は自動修正情報の有無を明示的に返すツール。``fix`` 欠落時は
-        # 自動修正不可として ``"none"`` を出力する。
+        # ruffは自動修正情報の有無を明示的に返すツール。`fix`欠落時は
+        # 自動修正不可として`"none"`を出力する。
         fix_value: str | None = str(fix_obj.get("applicability", "safe")) if isinstance(fix_obj, dict) else "none"
         rule = str(entry.get("code", "")) or None
         entry_url = entry.get("url")
@@ -345,11 +345,11 @@ def _parse_ruff_check_json(output: str) -> list[ErrorLocation]:
 
 
 def _parse_pylint_json(output: str) -> list[ErrorLocation]:
-    """Pylint --output-format=json2 出力をパース。JSON 解析失敗時は regex にフォールバック。
+    """Pylint --output-format=json2出力をパース。JSON解析失敗時はregexにフォールバック。
 
-    公式ドキュメント URL が ``symbol`` 基準 (`missing-module-docstring` 等) のため、
-    ``ErrorLocation.rule`` には ``symbol`` を格納する。``messageId`` (`C0114` 等) は
-    ``ErrorLocation.message`` の先頭に付与して保持する。
+    公式ドキュメントURLが`symbol`基準（`missing-module-docstring`等）のため、
+    `ErrorLocation.rule`には`symbol`を格納する。`messageId`（`C0114`等）は
+    `ErrorLocation.message`の先頭に付与して保持する。
     """
     data = _try_json_loads(output)
     if not isinstance(data, dict) or "messages" not in data:
@@ -371,10 +371,10 @@ def _parse_pylint_json(output: str) -> list[ErrorLocation]:
         symbol = str(msg.get("symbol") or "") or None
         message_id = str(msg.get("messageId") or "")
         original_message = str(msg.get("message", ""))
-        # 既存 rule スキーマ (機械判別可能な識別子) と messageId の両方を JSONL 上に残す。
+        # 既存ruleスキーマ（機械判別可能な識別子）とmessageIdの両方をJSONL上に残す。
         combined_message = f"{message_id}: {original_message}" if message_id else original_message
-        # 公式ドキュメント URL はカテゴリー名 (`convention` / `warning` / `error` / `refactor` /
-        # `information` / `fatal`) を必要とする。``type`` フィールドをそのまま渡す。
+        # 公式ドキュメントURLはカテゴリー名（`convention` / `warning` / `error` / `refactor` /
+        # `information` / `fatal`）を必要とする。`type`フィールドをそのまま渡す。
         category = msg_type or None
         results.append(
             ErrorLocation(
@@ -392,7 +392,7 @@ def _parse_pylint_json(output: str) -> list[ErrorLocation]:
 
 
 def _parse_pyright_json(output: str) -> list[ErrorLocation]:
-    """Pyright --outputjson 出力をパース。JSON 解析失敗時は regex にフォールバック。"""
+    """Pyright --outputjson出力をパース。JSON解析失敗時はregexにフォールバック。"""
     data = _try_json_loads(output)
     if not isinstance(data, dict) or "generalDiagnostics" not in data:
         return _parse_with_pattern("pyright", output, _BUILTIN_PATTERNS["pyright"])
@@ -409,7 +409,7 @@ def _parse_pyright_json(output: str) -> list[ErrorLocation]:
         start = range_obj.get("start", {})
         if not isinstance(start, dict):
             continue
-        # pyright の line/character は 0-based
+        # pyrightのline/characterは0-based
         line = start.get("line")
         if not isinstance(line, int):
             continue
@@ -432,7 +432,7 @@ def _parse_pyright_json(output: str) -> list[ErrorLocation]:
 
 
 def _parse_shellcheck_json(output: str) -> list[ErrorLocation]:
-    """Shellcheck -f json 出力をパース。JSON 解析失敗時は regex にフォールバック。"""
+    """Shellcheck -f json出力をパース。JSON解析失敗時はregexにフォールバック。"""
     data = _try_json_loads(output)
     if not isinstance(data, list):
         return _parse_with_pattern("shellcheck", output, _BUILTIN_PATTERNS["shellcheck"])
@@ -447,7 +447,7 @@ def _parse_shellcheck_json(output: str) -> list[ErrorLocation]:
         col = raw_col if isinstance(raw_col, int) else None
         code = entry.get("code")
         rule = f"SC{code}" if isinstance(code, int) else None
-        # shellcheck は JSON 出力で自動修正情報の有無を明示する。
+        # shellcheckはJSON出力で自動修正情報の有無を明示する。
         fix_value = "safe" if entry.get("fix") else "none"
         results.append(
             ErrorLocation(
@@ -466,9 +466,9 @@ def _parse_shellcheck_json(output: str) -> list[ErrorLocation]:
 
 
 def _parse_textlint_json(output: str) -> list[ErrorLocation]:
-    """Textlint --format json 出力をパース。JSON 解析失敗時は regex にフォールバック。
+    """Textlint --format json出力をパース。JSON解析失敗時はregexにフォールバック。
 
-    出力構造は ESLint と同じ filePath + messages 配列形式。
+    出力構造はESLintと同じfilePath + messages配列形式。
     """
     data = _try_json_loads(output)
     if not isinstance(data, list):
@@ -490,14 +490,14 @@ def _parse_textlint_json(output: str) -> list[ErrorLocation]:
             raw_col = msg.get("column")
             col = raw_col if isinstance(raw_col, int) else None
             rule_id = str(msg.get("ruleId") or "")
-            # textlint は JSON 出力で autofix の有無を明示する。
+            # textlintはJSON出力でautofixの有無を明示する。
             fix_value = "safe" if msg.get("fix") else "none"
             rule = rule_id or None
             hint = _TEXTLINT_RULE_HINTS.get(rule_id) if rule_id else None
             message = str(msg.get("message", "")).strip()
             end_line, end_col = _extract_textlint_end_position(msg.get("loc"))
-            # sentence-length 違反では文の起点・終点が分からないと修正しづらいため、
-            # textlint v12+ が返す `loc` フィールドから範囲表記を組み立てて末尾に併記する。
+            # sentence-length違反では文の起点・終点が分からないと修正しづらいため、
+            # textlint v12+が返す`loc`フィールドから範囲表記を組み立てて末尾に併記する。
             # 他ルールでは違反箇所自体が短く、併記が冗長になるため対象外。
             if rule_id == "ja-technical-writing/sentence-length":
                 range_text = _format_textlint_loc(msg.get("loc"))
@@ -522,10 +522,10 @@ def _parse_textlint_json(output: str) -> list[ErrorLocation]:
 
 
 def _extract_textlint_end_position(loc: typing.Any) -> tuple[int | None, int | None]:
-    """Textlint の ``loc.end`` から ``(end_line, end_col)`` を取り出す。
+    """Textlintの`loc.end`から`(end_line, end_col)`を取り出す。
 
-    ``loc`` 不在・形式不一致は ``(None, None)`` を返す（古い textlint への後方互換）。
-    取り出した ``end_line`` / ``end_col`` は ErrorLocation にそのまま詰める。
+    `loc`不在・形式不一致は`(None, None)`を返す（古いtextlintへの後方互換）。
+    取り出した`end_line`/`end_col`はErrorLocationにそのまま詰める。
     """
     if not isinstance(loc, dict):
         return None, None
@@ -540,11 +540,11 @@ def _extract_textlint_end_position(loc: typing.Any) -> tuple[int | None, int | N
 
 
 def _format_textlint_loc(loc: typing.Any) -> str:
-    """Textlint の ``loc`` フィールドから ``(L17:1〜23)`` 形式の範囲文字列を組み立てる。
+    """Textlintの`loc`フィールドから`(L17:1〜23)`形式の範囲文字列を組み立てる。
 
-    1 行内で完結する場合は ``(Lstart:start_col〜end_col)``、
-    複数行にまたがる場合は ``(Lstart:start_col〜Lend:end_col)`` を返す。
-    ``loc`` が無い・形式が違う場合は空文字列を返す（古い textlint や未提供ルールへの後方互換）。
+    1行内で完結する場合は`(Lstart:start_col〜end_col)`、
+    複数行にまたがる場合は`(Lstart:start_col〜Lend:end_col)`を返す。
+    `loc`がない・形式が違う場合は空文字列を返す（古いtextlintや未提供ルールへの後方互換）。
     """
     if not isinstance(loc, dict):
         return ""
@@ -564,7 +564,7 @@ def _format_textlint_loc(loc: typing.Any) -> str:
 
 
 def _parse_typos_jsonl(output: str) -> list[ErrorLocation]:
-    """Typos --format=json 出力をパース（JSON Lines 形式）。解析失敗時は regex にフォールバック。"""
+    """Typos --format=json出力をパース（JSON Lines形式）。解析失敗時はregexにフォールバック。"""
     results: list[ErrorLocation] = []
     any_parsed = False
     for line in output.splitlines():
@@ -577,7 +577,7 @@ def _parse_typos_jsonl(output: str) -> list[ErrorLocation]:
             continue
         if not isinstance(entry, dict):
             continue
-        # typos の JSON エントリには type フィールドがある。typo 以外（binary等）はスキップ
+        # typosのJSONエントリにはtypeフィールドがある。typo以外（binary等）はスキップ
         if entry.get("type") not in ("typo", None):
             continue
         any_parsed = True
@@ -591,7 +591,7 @@ def _parse_typos_jsonl(output: str) -> list[ErrorLocation]:
             message = f"`{typo}` -> `{correction_str}`"
             fix_value: str | None = "safe"
         else:
-            # typos は自動修正候補の有無を明示的に返すため、候補なしは ``"none"``。
+            # typosは自動修正候補の有無を明示的に返すため、候補なしは`"none"`。
             message = f"`{typo}`"
             fix_value = "none"
         results.append(
@@ -611,10 +611,10 @@ def _parse_typos_jsonl(output: str) -> list[ErrorLocation]:
 
 
 def _parse_glab_ci_lint(output: str) -> list[ErrorLocation]:
-    """``glab ci lint`` 出力をパース。
+    """`glab ci lint`出力をパース。
 
-    glab は行番号を出さないため、検出した各エラーメッセージを ``line=1`` 固定の
-    ``ErrorLocation`` として生成する。
+    glabは行番号を出さないため、検出した各エラーメッセージを`line=1`固定の
+    `ErrorLocation`として生成する。
 
     無効CI出力例::
 
@@ -624,7 +624,7 @@ def _parse_glab_ci_lint(output: str) -> list[ErrorLocation]:
         - jobs:test config contains unknown keys: foo
         - root config contains unknown keys: bar
 
-    有効CI出力では ``✓ CI/CD YAML is valid!`` のみが流れるため空リストを返す。
+    有効CI出力では`✓ CI/CD YAML is valid!`のみが流れるため空リストを返す。
     """
     results: list[ErrorLocation] = []
     file_path: str | None = None
@@ -639,7 +639,7 @@ def _parse_glab_ci_lint(output: str) -> list[ErrorLocation]:
             continue
         if file_path is None:
             continue
-        # 番号付きエラー行 (`- xxx` / `1. xxx`) のリストマーカーを除去する。
+        # 番号付きエラー行（`- xxx` / `1. xxx`）のリストマーカーを除去する。
         message = re.sub(r"^(?:[-*•]|\d+[.)])\s+", "", line)
         if not message:
             continue
@@ -656,7 +656,7 @@ def _parse_glab_ci_lint(output: str) -> list[ErrorLocation]:
 
 
 def _parse_pytest(output: str) -> list[ErrorLocation]:
-    """Pytest出力をパース。--tb=short形式のトレースバックからプロジェクト内フレームを優先的に抽出する。"""
+    """Pytest出力をパース。`--tb=short`形式のトレースバックからプロジェクト内フレームを優先的に抽出する。"""
     failures_start = output.find("= FAILURES =")
     summary_start = output.find("short test summary info")
     if failures_start < 0:
@@ -665,7 +665,7 @@ def _parse_pytest(output: str) -> list[ErrorLocation]:
     end = summary_start if summary_start > failures_start else len(output)
     failures_section = output[failures_start:end]
 
-    # テスト単位のブロックに分割（`_ test_name _` 区切り）
+    # テスト単位のブロックに分割（`_ test_name _`区切り）
     block_re = re.compile(r"^_+ .+ _+$", re.MULTILINE)
     block_starts = [m.end() for m in block_re.finditer(failures_section)]
     if not block_starts:
@@ -708,11 +708,11 @@ def _parse_pytest(output: str) -> list[ErrorLocation]:
 
     if results:
         return results
-    # フォールバック: FAILED file::test_name パターン（line=0）
+    # フォールバック: FAILED file::test_nameパターン（line=0）
     return _parse_with_pattern("pytest", output, _BUILTIN_PATTERNS["pytest"])
 
 
-# コマンド名 -> 関数ベースパーサー。regex で扱いにくい出力 (JSON など) に使う。
+# コマンド名 -> 関数ベースパーサー。regexで扱いにくい出力（JSONなど）に使う。
 _CUSTOM_PARSERS: dict[str, typing.Callable[[str], list[ErrorLocation]]] = {
     "eslint": _parse_eslint_json,
     "ruff-check": _parse_ruff_check_json,
@@ -727,7 +727,7 @@ _CUSTOM_PARSERS: dict[str, typing.Callable[[str], list[ErrorLocation]]] = {
 
 
 def _summarize_pyright_json(output: str) -> str | None:
-    """Pyright --outputjson 出力から summary フィールドを抽出する。"""
+    """Pyright --outputjson出力からsummaryフィールドを抽出する。"""
     data = _try_json_loads(output)
     if not isinstance(data, dict):
         return None
@@ -743,7 +743,7 @@ def _summarize_pyright_json(output: str) -> str | None:
 
 
 def _summarize_pylint_json(output: str) -> str | None:
-    """Pylint --output-format=json2 出力から statistics フィールドを抽出する。"""
+    """Pylint --output-format=json2出力からstatisticsフィールドを抽出する。"""
     data = _try_json_loads(output)
     if not isinstance(data, dict):
         return None
@@ -760,16 +760,16 @@ def _summarize_pylint_json(output: str) -> str | None:
 
 
 def _summarize_pytest(output: str) -> str | None:
-    """Pytest 出力末尾のサマリー行から = パディングを除去して抽出する。"""
+    """Pytest出力末尾のサマリー行から = パディングを除去して抽出する。"""
     match = re.search(r"=+ (.+?) =+\s*$", output)
     if match is None:
         return None
     return match.group(1)
 
 
-# コマンド名 -> サマリーパーサー。JSON 出力にサマリーフィールドを持つツールや、
+# コマンド名 -> サマリーパーサー。JSON出力にサマリーフィールドを持つツールや、
 # テキスト出力の整形が必要なツール向け。未登録のテキスト出力ツールは
-# _extract_last_line() でフォールバックする。
+# `_extract_last_line()`でフォールバックする。
 _SUMMARY_PARSERS: dict[str, typing.Callable[[str], str | None]] = {
     "pyright": _summarize_pyright_json,
     "pylint": _summarize_pylint_json,
@@ -780,8 +780,8 @@ _SUMMARY_PARSERS: dict[str, typing.Callable[[str], str | None]] = {
 def _parse_with_pattern(command: str, output: str, pattern: str) -> list[ErrorLocation]:
     """正規表現パターンでエラー箇所をパースする。
 
-    パターンに名前付きグループ ``rule`` が含まれる場合、マッチ内容を
-    ``ErrorLocation.rule`` に格納し、``rule_urls.build_rule_url()`` で URL も補完する。
+    パターンに名前付きグループ`rule`が含まれる場合、マッチ内容を
+    `ErrorLocation.rule`に格納し、`rule_urls.build_rule_url()`でURLも補完する。
     """
     compiled = re.compile(pattern)
     results: list[ErrorLocation] = []
@@ -822,7 +822,7 @@ def _parse_with_pattern(command: str, output: str, pattern: str) -> list[ErrorLo
 def _extract_last_line(output: str) -> str | None:
     """テキスト出力の末尾から意味のある行を抽出する。
 
-    JSON出力（先頭が [ または {）は対象外。区切り線のみの行はスキップする。
+    JSON出力（先頭が`[`または`{`）は対象外。区切り線のみの行はスキップする。
     """
     stripped = output.strip()
     if not stripped or stripped[0] in ("[", "{"):
@@ -839,9 +839,9 @@ def _is_project_path(normalized_path: str) -> bool:
 
     以下を全て満たす場合にプロジェクト内と見なす:
     - 相対パスである（絶対パスはcwd外 = 標準ライブラリ等）
-    - ``..``で始まらない（uv管理Pythonの標準ライブラリ等）
-    - ``.venv/``で始まらない（仮想環境内サードパーティー）
-    - ``site-packages/``・``dist-packages/``を含まない（名前の異なる仮想環境内サードパーティー）
+    - `..`で始まらない（uv管理Pythonの標準ライブラリ等）
+    - `.venv/`で始まらない（仮想環境内サードパーティー）
+    - `site-packages/`・`dist-packages/`を含まない（名前の異なる仮想環境内サードパーティー）
     """
     if pathlib.PurePosixPath(normalized_path).is_absolute():
         return False

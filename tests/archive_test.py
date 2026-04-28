@@ -32,7 +32,7 @@ def test_start_run_creates_directory_and_meta(tmp_path: pathlib.Path) -> None:
 
 
 def test_write_tool_result(tmp_path: pathlib.Path) -> None:
-    """write_tool_result で output.log / diagnostics.jsonl / tool.json が作られる。"""
+    """write_tool_resultでoutput.log / diagnostics.jsonl / tool.jsonが作られる。"""
     store = _make_store(tmp_path)
     run_id = store.start_run(commands=["mypy"])
 
@@ -48,7 +48,7 @@ def test_write_tool_result(tmp_path: pathlib.Path) -> None:
     # output.log の内容確認
     assert (tool_dir / "output.log").read_text(encoding="utf-8") == "mypy output"
 
-    # diagnostics.jsonl は集約形式で (command, file) 単位に 1 行、messages 内に個別指摘
+    # diagnostics.jsonlは集約形式で（command、file）単位に1行、messages内に個別指摘
     lines = [json.loads(line) for line in (tool_dir / "diagnostics.jsonl").read_text(encoding="utf-8").splitlines() if line]
     assert len(lines) == 1
     assert lines[0]["kind"] == "diagnostic"
@@ -62,7 +62,7 @@ def test_write_tool_result(tmp_path: pathlib.Path) -> None:
 
 
 def test_write_tool_result_stores_hint_urls(tmp_path: pathlib.Path) -> None:
-    """tool.json に hint_urls が保存され、diagnostics.jsonl の messages は rule を保持する。"""
+    """tool.jsonにhint_urlsが保存され、diagnostics.jsonlのmessagesはruleを保持する。"""
     store = _make_store(tmp_path)
     run_id = store.start_run(commands=["ruff-check"])
 
@@ -78,7 +78,7 @@ def test_write_tool_result_stores_hint_urls(tmp_path: pathlib.Path) -> None:
     entries = [json.loads(line) for line in diagnostics_path.read_text(encoding="utf-8").splitlines() if line]
     assert entries[0]["file"] == "src/foo.py"
     assert entries[0]["messages"][0]["rule"] == "F401"
-    # messages 内に rule_url は入らない
+    # messages内にrule_urlは入らない
     assert "rule_url" not in entries[0]["messages"][0]
 
     tool_meta = json.loads((tool_dir / "tool.json").read_text(encoding="utf-8"))
@@ -86,7 +86,7 @@ def test_write_tool_result_stores_hint_urls(tmp_path: pathlib.Path) -> None:
 
 
 def test_write_tool_result_omits_hint_urls_when_no_urls(tmp_path: pathlib.Path) -> None:
-    """rule_url を持たない指摘のみなら tool.json に hint_urls キーを出さない。"""
+    """rule_urlを持たない指摘のみならtool.jsonにhint_urlsキーを出さない。"""
     store = _make_store(tmp_path)
     run_id = store.start_run(commands=["mypy"])
     result = _make_result("mypy", returncode=1, errors=[_make_error("mypy", "a.py", 1, "boom")])
@@ -96,7 +96,7 @@ def test_write_tool_result_omits_hint_urls_when_no_urls(tmp_path: pathlib.Path) 
 
 
 def test_finalize_run(tmp_path: pathlib.Path) -> None:
-    """finalize_run で meta.json に exit_code / finished_at が追加される。"""
+    """finalize_runでmeta.jsonにexit_code / finished_atが追加される。"""
     store = _make_store(tmp_path)
     run_id = store.start_run(commands=["ruff-check"])
     store.finalize_run(run_id, exit_code=1)
@@ -107,7 +107,7 @@ def test_finalize_run(tmp_path: pathlib.Path) -> None:
 
 
 def test_list_runs_sorted_desc(tmp_path: pathlib.Path) -> None:
-    """複数の run を作成して list_runs が run_id 降順で返す。"""
+    """複数のrunを作成してlist_runsがrun_id降順で返す。"""
     store = _make_store(tmp_path)
     run_ids = [store.start_run() for _ in range(3)]
 
@@ -118,7 +118,7 @@ def test_list_runs_sorted_desc(tmp_path: pathlib.Path) -> None:
 
 
 def test_list_runs_limit(tmp_path: pathlib.Path) -> None:
-    """limit で件数制限できる。"""
+    """limitで件数制限できる。"""
     store = _make_store(tmp_path)
     for _ in range(5):
         store.start_run()
@@ -139,7 +139,7 @@ def test_read_meta(tmp_path: pathlib.Path) -> None:
 
 
 def test_read_meta_not_found(tmp_path: pathlib.Path) -> None:
-    """存在しない run_id は FileNotFoundError になる。"""
+    """存在しないrun_idはFileNotFoundErrorになる。"""
     store = _make_store(tmp_path)
     with pytest.raises(FileNotFoundError):
         store.read_meta("nonexistent-run-id")
@@ -169,7 +169,7 @@ def test_read_tool_output(tmp_path: pathlib.Path) -> None:
 
 
 def test_read_tool_diagnostics(tmp_path: pathlib.Path) -> None:
-    """read_tool_diagnostics が集約 diagnostic レコード一覧を返す。"""
+    """read_tool_diagnosticsが集約diagnosticレコード一覧を返す。"""
     store = _make_store(tmp_path)
     run_id = store.start_run()
     errors = [
@@ -181,7 +181,7 @@ def test_read_tool_diagnostics(tmp_path: pathlib.Path) -> None:
     store.write_tool_result(run_id, result)
 
     diagnostics = store.read_tool_diagnostics(run_id, "mypy")
-    # (mypy, a.py) と (mypy, b.py) の 2 レコード
+    # （mypy、a.py）と（mypy、b.py）の2レコード
     assert len(diagnostics) == 2
     assert diagnostics[0]["file"] == "a.py"
     assert len(diagnostics[0]["messages"]) == 2
@@ -190,7 +190,7 @@ def test_read_tool_diagnostics(tmp_path: pathlib.Path) -> None:
 
 
 def test_list_tools_empty_run(tmp_path: pathlib.Path) -> None:
-    """ツール未書き込みの run では list_tools が空リストを返す。"""
+    """ツール未書き込みのrunではlist_toolsが空リストを返す。"""
     store = _make_store(tmp_path)
     run_id = store.start_run()
 
@@ -198,7 +198,7 @@ def test_list_tools_empty_run(tmp_path: pathlib.Path) -> None:
 
 
 def test_list_tools_multiple(tmp_path: pathlib.Path) -> None:
-    """複数ツール書き込み後の list_tools がサニタイズ済み名の自然順リストを返す。"""
+    """複数ツール書き込み後のlist_toolsがサニタイズ済み名の自然順リストを返す。"""
     store = _make_store(tmp_path)
     run_id = store.start_run()
     for tool in ("mypy", "ruff-check", "ruff-format"):
@@ -208,84 +208,84 @@ def test_list_tools_multiple(tmp_path: pathlib.Path) -> None:
 
 
 def test_list_tools_not_found(tmp_path: pathlib.Path) -> None:
-    """存在しない run_id は FileNotFoundError。"""
+    """存在しないrun_idはFileNotFoundError。"""
     store = _make_store(tmp_path)
     with pytest.raises(FileNotFoundError):
         store.list_tools("nonexistent-run-id")
 
 
 def test_cleanup_max_runs(tmp_path: pathlib.Path) -> None:
-    """101 世代作って max_runs=100 で古いものから 1 件削除される。"""
+    """101世代作ってmax_runs=100で古いものから1件削除される。"""
     store = _make_store(tmp_path)
     run_ids = [store.start_run() for _ in range(101)]
 
     policy = pyfltr.archive.ArchivePolicy(max_runs=100, max_size_bytes=0, max_age_days=0)
     removed = store.cleanup(policy)
 
-    # 最古の 1 件が削除される
+    # 最古の1件が削除される
     assert len(removed) == 1
     assert removed[0] == min(run_ids)
     assert len(store.list_runs()) == 100
 
 
 def test_cleanup_max_size(tmp_path: pathlib.Path) -> None:
-    """大きな output.log を持つ run が max_size 超過で削除される。"""
+    """大きなoutput.logを持つrunがmax_size超過で削除される。"""
     store = _make_store(tmp_path)
     run_id = store.start_run()
-    # 2MB のダミー出力を書き込む
+    # 2MBのダミー出力を書き込む
     large_output = "x" * (2 * 1024 * 1024)
     result = _make_result("mypy", returncode=0, output=large_output)
     store.write_tool_result(run_id, result)
     store.finalize_run(run_id, exit_code=0)
 
-    # 2 つ目の run（小さい）
+    # 2つ目のrun（小さい）
     run_id2 = store.start_run()
 
-    # max_size=1MB でクリーンアップ → 大きい方（古い方）が削除される
+    # max_size=1MBでクリーンアップ → 大きい方（古い方）が削除される
     policy = pyfltr.archive.ArchivePolicy(max_runs=0, max_size_bytes=1 * 1024 * 1024, max_age_days=0)
     removed = store.cleanup(policy)
 
     assert run_id in removed
-    # 新しい run は残っている
+    # 新しいrunは残っている
     remaining_ids = [s.run_id for s in store.list_runs()]
     assert run_id2 in remaining_ids
 
 
 def test_cleanup_max_age(tmp_path: pathlib.Path) -> None:
-    """meta.json の started_at を過去にしてから max_age_days で削除される。"""
+    """meta.jsonのstarted_atを過去にしてからmax_age_daysで削除される。"""
     store = _make_store(tmp_path)
     run_id = store.start_run()
 
-    # meta.json の started_at を 60 日前に書き換える
+    # meta.jsonのstarted_atを60日前に書き換える
     meta_path = tmp_path / "runs" / run_id / "meta.json"
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
     past = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=60)
     meta["started_at"] = past.isoformat()
     meta_path.write_text(json.dumps(meta), encoding="utf-8")
 
-    # 新しい run を作成
+    # 新しいrunを作成
     run_id2 = store.start_run()
 
     policy = pyfltr.archive.ArchivePolicy(max_runs=0, max_size_bytes=0, max_age_days=30)
     removed = store.cleanup(policy)
 
-    # 60 日前の run が削除される
+    # 60日前のrunが削除される
     assert run_id in removed
     remaining_ids = [s.run_id for s in store.list_runs()]
     assert run_id2 in remaining_ids
 
 
 def test_generate_run_id_unique_and_valid() -> None:
-    """連続生成した run_id は重複なく、ULID の文字数・文字種を満たす。"""
+    """連続生成したrun_idは重複なく、ULIDの文字数・文字種を満たす。"""
     ids = [pyfltr.archive.generate_run_id() for _ in range(10)]
-    # ULID は 26 文字の Crockford Base32
+    # ULIDは26文字のCrockford Base32
     assert all(len(i) == 26 for i in ids)
     assert all(c in "0123456789ABCDEFGHJKMNPQRSTVWXYZ" for i in ids for c in i)
     assert len(set(ids)) == len(ids)
 
 
 def test_default_cache_root_respects_env(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """PYFLTR_CACHE_DIR 環境変数が default_cache_root で優先される。"""
+    """PYFLTR_CACHE_DIR環境変数がdefault_cache_rootで優先される。"""
     monkeypatch.setenv("PYFLTR_CACHE_DIR", str(tmp_path))
     result = pyfltr.archive.default_cache_root()
     assert result == tmp_path

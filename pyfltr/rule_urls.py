@@ -1,10 +1,10 @@
 """ツール別のルールドキュメント URL を組み立てる。
 
-各カスタムパーサーから呼び出され、``ErrorLocation.rule_url`` に格納する URL を返す。
-ruff は JSON 出力に含まれる ``url`` フィールドを最優先で採用し、なければテンプレートで
-補完する。pylint は公式ドキュメントが ``.../messages/<category>/<symbol>.html`` の
-symbol 基準のため、``category`` 引数で経路を分岐する。textlint はプラグインごとに
-URL 体系が揃わないため未サポート。
+各カスタムパーサーから呼び出され、`ErrorLocation.rule_url`に格納するURLを返す。
+ruffはJSON出力に含まれる`url`フィールドを最優先で採用し、なければテンプレートで
+補完する。pylintは公式ドキュメントが`.../messages/<category>/<symbol>.html`の
+symbol基準のため、`category`引数で経路を分岐する。textlintはプラグインごとに
+URL体系が揃わないため未サポート。
 """
 
 import typing
@@ -41,8 +41,8 @@ def _build_shellcheck_url(rule: str, category: str | None) -> str | None:
 
 def _build_eslint_url(rule: str, category: str | None) -> str | None:
     del category  # noqa
-    # ESLint のプラグインルールは `plugin/rule` 形式で、
-    # 中央ドキュメントでは個別に辿れないため本体ルールのみ URL を返す。
+    # ESLintのプラグインルールは`plugin/rule`形式で、
+    # 中央ドキュメントでは個別に辿れないため本体ルールのみURLを返す。
     if "/" in rule:
         return None
     return f"https://eslint.org/docs/latest/rules/{rule}"
@@ -73,9 +73,9 @@ def build_rule_url(
 ) -> str | None:
     """Rule から URL を生成する。
 
-    ``existing_url`` が非 None ならそれを最優先で採用する (ruff JSON の ``url``
-    フィールドを保持するため)。``command`` がテンプレート未登録、または ``rule``
-    が空のときは ``None`` を返す。
+    `existing_url`が非Noneならそれを最優先で採用する（ruff JSONの`url`
+    フィールドを保持するため）。`command`がテンプレート未登録、または`rule`
+    が空のときは`None`を返す。
     """
     if existing_url:
         return existing_url

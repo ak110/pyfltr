@@ -1,9 +1,9 @@
 """github_annotationsのテストコード。
 
-新設計では ``build_workflow_command`` が ErrorLocation 1 件を GA ワークフローコマンド
-1 行へ整形する。1 行のメッセージ本体に ``file:line[:col]: [tool[:rule]] msg`` を
-前置することで、GitHub ログビューアがプロパティを剥がしても生ログで file / line /
-rule が読める契約とする。
+新設計では`build_workflow_command`がErrorLocation 1件をGAワークフローコマンド
+1行へ整形する。1行のメッセージ本体に`file:line[:col]: [tool[:rule]] msg`を
+前置することで、GitHubログビューアがプロパティを剥がしても生ログでfile / line /
+ruleが読める契約とする。
 """
 
 import pyfltr.github_annotations
@@ -11,7 +11,7 @@ from tests.conftest import make_error_location as _make_error
 
 
 def test_build_workflow_command_severity_mapping() -> None:
-    """severity 3 値が `::error` / `::warning` / `::notice` にマップされる。"""
+    """severity 3値が`::error` / `::warning` / `::notice`にマップされる。"""
     for severity, kind in (("error", "::error"), ("warning", "::warning"), ("info", "::notice")):
         error = _make_error("tool", "a.py", 1, "msg")
         error.severity = severity
@@ -20,7 +20,7 @@ def test_build_workflow_command_severity_mapping() -> None:
 
 
 def test_build_workflow_command_contains_plain_prefix() -> None:
-    """メッセージ本体に ``file:line:col: [tool:rule] msg`` が前置される。"""
+    """メッセージ本体に`file:line:col: [tool:rule] msg`が前置される。"""
     error = _make_error("ruff-check", "src/foo.py", 10, "unused", col=5)
     error.severity = "error"
     error.rule = "F401"
@@ -35,7 +35,7 @@ def test_build_workflow_command_contains_plain_prefix() -> None:
 
 
 def test_build_workflow_command_without_rule() -> None:
-    """rule が無い場合は ``[tool]`` のみで title も tool 名のみ。"""
+    """ruleが無い場合は`[tool]`のみでtitleもtool名のみ。"""
     error = _make_error("mypy", "src/foo.py", 3, "bad")
     line = pyfltr.github_annotations.build_workflow_command(error)
     assert "title=mypy" in line
@@ -45,7 +45,7 @@ def test_build_workflow_command_without_rule() -> None:
 
 
 def test_build_workflow_command_message_escaping() -> None:
-    """メッセージ本体の ``%`` / 改行はパーセントエンコードされる。"""
+    """メッセージ本体の`%`/改行はパーセントエンコードされる。"""
     error = _make_error("tool", "a.py", 1, "100%\nline2")
     error.severity = "warning"
     line = pyfltr.github_annotations.build_workflow_command(error)
@@ -54,14 +54,14 @@ def test_build_workflow_command_message_escaping() -> None:
 
 
 def test_build_workflow_command_no_severity_fallback_warning() -> None:
-    """severity 未設定は ``::warning`` にフォールバックする。"""
+    """severity未設定は`::warning`にフォールバックする。"""
     error = _make_error("tool", "a.py", 1, "x")
     line = pyfltr.github_annotations.build_workflow_command(error)
     assert line.startswith("::warning ")
 
 
 def test_build_workflow_command_col_optional() -> None:
-    """col が無い場合はプロパティとプレフィックス双方から省略される。"""
+    """colが無い場合はプロパティとプレフィックス双方から省略される。"""
     error = _make_error("tool", "a.py", 3, "msg")
     line = pyfltr.github_annotations.build_workflow_command(error)
     assert "col=" not in line

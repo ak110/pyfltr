@@ -28,9 +28,9 @@ def _collect_completions(
 ) -> tuple[list[str], list[str], list[str]]:
     """パーサーからオプション名・choices・コマンド名を収集する。
 
-    サブパーサー対応。argparse の ``add_subparsers`` で登録された各サブパーサーの
-    オプションも walk して収集することで、``build_parser()`` が返すトップレベル
-    parser を渡しても共通オプション (``--verbose`` / ``--output-format`` 等) を
+    サブパーサー対応。argparseの`add_subparsers`で登録された各サブパーサーの
+    オプションもwalkして収集することで、`build_parser()`が返すトップレベル
+    parserを渡しても共通オプション（`--verbose` / `--output-format`等）を
     検出できる。
 
     戻り値: (options, output_format_choices, commands_choices)
@@ -52,7 +52,7 @@ def _collect_completions(
 
     _walk(parser)
 
-    # --commands の補完候補: ビルトインコマンド名 + 静的エイリアスキー
+    # --commandsの補完候補: ビルトインコマンド名 + 静的エイリアスキー
     commands_choices = list(pyfltr.config.BUILTIN_COMMAND_NAMES)
     aliases = pyfltr.config.DEFAULT_CONFIG.get("aliases", {})
     assert isinstance(aliases, dict)

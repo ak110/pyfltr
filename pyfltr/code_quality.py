@@ -1,14 +1,14 @@
 """GitLab CI Code Quality形式の出力生成。
 
-``--output-format=code-quality``で呼ばれ、CommandResult群をCode Climate JSON issue形式の
-サブセット（JSON配列）へ変換する。GitLab CIの``artifacts:reports:codequality``で取り込み、
+`--output-format=code-quality`で呼ばれ、CommandResult群をCode Climate JSON issue形式の
+サブセット（JSON配列）へ変換する。GitLab CIの`artifacts:reports:codequality`で取り込み、
 Merge Request画面のCode Quality widgetおよびMR diffインライン表示に利用される。
 
 severityはpyfltr内部の3値（error / warning / info）をCode Quality 5段階のうちの3値へ
-マップする（``critical`` / ``blocker``は使わない）。pyfltr側に対応情報が無く、過大評価を
+マップする（`critical` / `blocker`は使わない）。pyfltr側に対応情報が無く、過大評価を
 避けるためerror→major、warning→minor、info→info、未設定→minorとする。
 
-``fingerprint``はtool・file・line・col・rule・msgをタブ区切りで連結した文字列の
+`fingerprint`はtool・file・line・col・rule・msgをタブ区切りで連結した文字列の
 SHA-256全桁を採用する。同一指摘の重複統合に足るユニーク性を確保しつつ、配置順の変化に
 対して頑強にする。
 """
@@ -26,7 +26,7 @@ _SEVERITY_MAP: dict[str | None, str] = {
     "warning": "minor",
     "info": "info",
 }
-"""pyfltr severityからCode Quality severityへのマップ。未登録キーは``minor``にフォールバック。"""
+"""pyfltr severityからCode Quality severityへのマップ。未登録キーは`minor`にフォールバック。"""
 
 
 def build_code_quality_payload(
@@ -34,8 +34,8 @@ def build_code_quality_payload(
 ) -> list[dict[str, typing.Any]]:
     """Code Quality JSON issue形式のサブセット（JSON配列）を生成する。
 
-    必須フィールド: ``description`` / ``check_name`` / ``fingerprint`` / ``severity`` /
-    ``location.path`` / ``location.lines.begin``。
+    必須フィールド: `description` / `check_name` / `fingerprint` / `severity` /
+    `location.path` / `location.lines.begin`。
     """
     payload: list[dict[str, typing.Any]] = []
     for result in results:
@@ -64,8 +64,8 @@ def _build_issue(error: pyfltr.error_parser.ErrorLocation) -> dict[str, typing.A
 def _build_fingerprint(error: pyfltr.error_parser.ErrorLocation) -> str:
     """tool・file・line・col・rule・msgのタブ区切り連結からSHA-256を算出する。
 
-    位置情報が欠落している（None）場合は空文字として連結する。tabをセパレーターに
-    することで、各フィールド内にtabが含まれなければ衝突しない。
+    位置情報が欠落している（None）場合は空文字として連結する。tabをセパレーターにする
+    ことで、各フィールド内にtabが含まれなければ衝突しない。
     """
     parts = [
         error.command,

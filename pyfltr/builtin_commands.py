@@ -16,38 +16,38 @@ class CommandInfo:
     """コマンドの情報。"""
 
     type: CommandType
-    """コマンドの種類（formatter, linter, tester）"""
+    """コマンドの種類（`formatter` / `linter` / `tester`）"""
     builtin: bool = True
     """ビルトインコマンドか否か"""
     targets: str | list[str] = "*.py"
-    """対象ファイルパターン。単一の glob 文字列または glob のリスト。"""
+    """対象ファイルパターン。単一のglob文字列またはglobのリスト。"""
     error_pattern: str | None = None
     """エラーパース用正規表現"""
     serial_group: str | None = None
     """直列実行グループ名。
 
-    同一グループ名のコマンドは linters/testers の並列実行でも同時に走らないよう
-    pyfltr 側で排他する。cargo 系は ``"cargo"``、dotnet 系は ``"dotnet"`` を指定し、
-    ``target`` ディレクトリなどの内部ロック競合を避ける。
+    同一グループ名のコマンドはlinters/testersの並列実行でも同時に走らないよう
+    pyfltr側で排他する。cargo系は`"cargo"`、dotnet系は`"dotnet"`を指定し、
+    `target`ディレクトリなどの内部ロック競合を避ける。
     """
     fixed_cost: float = 0.0
     """推定固定コスト（秒）。並列実行のスケジューリングに使用する。"""
     per_file_cost: float = 0.0
     """推定ファイルあたりコスト（秒/file）。並列実行のスケジューリングに使用する。"""
     config_files: list[str] = dataclasses.field(default_factory=list)
-    """このコマンドの設定ファイル候補（glob 可）。
+    """このコマンドの設定ファイル候補（glob可）。
 
-    非空かつプロジェクトルートにいずれもマッチしないとき、``load_config`` が警告を発行する。
-    pre-commit のような「設定ファイル不在だと機能しない」ツールの設定不備を可視化する用途。
-    ``cacheable=True`` のコマンドでは、ここに列挙した設定ファイルの内容 hash もキャッシュキーに
-    含める (設定変更時の誤ヒットを避けるため)。
+    非空かつプロジェクトルートにいずれもマッチしないとき、`load_config`が警告を発行する。
+    pre-commitのような「設定ファイル不在だと機能しない」ツールの設定不備を可視化する用途。
+    `cacheable=True`のコマンドでは、ここに列挙した設定ファイルの内容hashもキャッシュキーに
+    含める（設定変更時の誤ヒットを避けるため）。
     """
     cacheable: bool = False
     """ファイル hash キャッシュの対象にするか否か。
 
-    ``True`` を指定できるのは「ファイル間依存を持たず、設定ファイルも CWD で完結し、
-    書き込みを伴わない linter」に限られる。新ツール追加時の判断ミスを防ぐため既定は
-    ``False`` とし、対象ツールのみ明示的に ``True`` を指定する。
+    `True`を指定できるのは「ファイル間依存を持たず、設定ファイルもCWDで完結し、
+    書き込みを伴わないlinter」に限られる。新ツール追加時の判断ミスを防ぐため既定は
+    `False`とし、対象ツールのみ明示的に`True`を指定する。
     """
 
     def target_globs(self) -> list[str]:
@@ -58,8 +58,8 @@ class CommandInfo:
 
 
 # ビルトインコマンド定義（順序が並び順を決める）
-# JS ツール系の対象拡張子は主要なもののみ列挙。プロジェクト個別の拡張子は
-# 呼び出し時のターゲット指定やユーザーのシェル glob で吸収する想定。
+# JSツール系の対象拡張子は主要なもののみ列挙。プロジェクト個別の拡張子は
+# 呼び出し時のターゲット指定やユーザーのシェルglobで吸収する想定。
 _JS_COMMON_TARGETS: list[str] = [
     "*.js",
     "*.jsx",
@@ -104,9 +104,9 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
     # taplo: Rust製TOMLフォーマッター/リンター。shfmtと同様の2段階実行（check → format）。
     # 既定で無効（opt-in）。
     "taplo": CommandInfo(type="formatter", targets="*.toml", fixed_cost=0.3),
-    # Rust / .NET 言語ツール (formatter)。いずれも pass-filenames=False でcrate/solution
-    # 全体を対象とする project-level 実行で動作する。serial_group により同一ツールチェイン
-    # (cargo / dotnet) のコマンドは直列実行され、target ディレクトリ等のロック競合を回避する。
+    # Rust / .NETツール（formatter）。いずれもpass-filenames=FalseでCrate/solution
+    # 全体を対象とするproject-level実行で動作する。serial_groupにより同一ツールチェイン
+    # （cargo / dotnet）のコマンドは直列実行され、targetディレクトリ等のロック競合を回避する。
     "cargo-fmt": CommandInfo(type="formatter", targets="*.rs", serial_group="cargo", fixed_cost=1.0),
     "dotnet-format": CommandInfo(
         type="formatter",
@@ -122,8 +122,8 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         targets=[".github/workflows/*.yaml", ".github/workflows/*.yml"],
         fixed_cost=0.2,
     ),
-    # GitLab CI 設定の構文検証。GitLab API 経由で lint するためネットワーク・認証が必須。
-    # 既定で無効 (opt-in) とし、CI や初学者環境で誤って失敗しないようにする。
+    # GitLab CI設定の構文検証。GitLab API経由でlintするためネットワーク・認証が必須。
+    # 既定で無効（opt-in）とし、CIや初学者環境で誤って失敗しないようにする。
     "glab-ci-lint": CommandInfo(
         type="linter",
         targets=".gitlab-ci.yml",
@@ -161,9 +161,9 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         targets="*.md",
         fixed_cost=2.3,
         per_file_cost=0.4,
-        # textlint は対象ファイル単独で完結する解析を行い、設定ファイルも CLI から起動した場合は
-        # CWD 直下でのみ解決される (公式ドキュメントの configuring / ignore 章に準拠)。
-        # 以下は textlint が自動で読み込む設定ファイルとignoreファイルの完全列挙。
+        # textlintは対象ファイル単独で完結する解析を行い、設定ファイルもCLIから起動した場合は
+        # CWD直下でのみ解決される（公式ドキュメントのconfiguring / ignore章に準拠）。
+        # 以下はtextlintが自動で読み込む設定ファイルとignoreファイルの完全列挙。
         config_files=[
             ".textlintrc",
             ".textlintrc.json",
@@ -195,7 +195,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         type="linter",
         targets=["*.ts", "*.tsx", "*.mts", "*.cts"],
     ),
-    # Rust / .NET 言語ツール (linter)。pass-filenames=False で crate / solution 全体を対象とする。
+    # Rust / .NETツール（linter）。pass-filenames=FalseでCrate / solution全体を対象とする。
     "cargo-clippy": CommandInfo(type="linter", targets=["*.rs", "Cargo.toml"], serial_group="cargo", fixed_cost=3.0),
     "cargo-check": CommandInfo(type="linter", targets=["*.rs", "Cargo.toml"], serial_group="cargo", fixed_cost=2.0),
     "cargo-deny": CommandInfo(
@@ -234,7 +234,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
             "*.spec.cts",
         ],
     ),
-    # Rust / .NET 言語ツール (tester)。pass-filenames=False で crate / solution 全体を対象とする。
+    # Rust / .NETツール（tester）。pass-filenames=FalseでCrate / solution全体を対象とする。
     "cargo-test": CommandInfo(type="tester", targets=["*.rs", "Cargo.toml"], serial_group="cargo", fixed_cost=3.0),
     "dotnet-test": CommandInfo(
         type="tester",
@@ -249,18 +249,18 @@ BUILTIN_COMMAND_NAMES: list[str] = list(BUILTIN_COMMANDS.keys())
 
 
 JS_RUNNERS: tuple[str, ...] = ("pnpx", "pnpm", "npm", "npx", "yarn", "direct")
-"""textlint / markdownlint の起動方式として指定できる値。"""
+"""textlint / markdownlintの起動方式として指定できる値。"""
 
 BIN_RUNNERS: tuple[str, ...] = ("direct", "mise")
-"""ec / shellcheck 等のネイティブバイナリツールの起動方式として指定できる値。"""
+"""ec / shellcheck等のネイティブバイナリツールの起動方式として指定できる値。"""
 
 COMMAND_RUNNERS: tuple[str, ...] = ("direct", "mise", "bin-runner", "js-runner")
-"""``{command}-runner`` 設定で指定できる値。
+"""`{command}-runner`設定で指定できる値。
 
-- ``"direct"``     : `{command}-path` または bin 名で直接実行する
-- ``"mise"``       : `mise exec <backend>@<version> -- <bin>` で実行する
-- ``"bin-runner"`` : グローバル `bin-runner` 設定 (mise / direct) へ委譲する
-- ``"js-runner"``  : グローバル `js-runner` 設定 (pnpx / pnpm / npm / npx / yarn / direct) へ委譲する
+- `"direct"`:     `{command}-path`またはbin名で直接実行する
+- `"mise"`:       `mise exec <backend>@<version> -- <bin>`で実行する
+- `"bin-runner"`: グローバル`bin-runner`設定（mise / direct）へ委譲する
+- `"js-runner"`:  グローバル`js-runner`設定（pnpx / pnpm / npm / npx / yarn / direct）へ委譲する
 """
 
 PYTHON_COMMANDS: tuple[str, ...] = (
@@ -275,11 +275,11 @@ PYTHON_COMMANDS: tuple[str, ...] = (
 )
 """python 設定および `pyfltr[python]` extras に紐づく Python 系コマンドの一覧。
 
-言語カテゴリキー ``python`` の gate 対象で、preset 内で True となっているツールを
-通過させる。``python = false`` または未指定のときは、preset 由来で True になった
-コマンドも個別 ``{command} = true`` 指定がなければ False に押し戻される。
-個別 ``{command} = true`` は gate を越えて優先される。
-``ty`` のみ preset 非収録のため、使用時は個別に ``ty = true`` を指定する運用を維持する。"""
+言語カテゴリキー`python`のgate対象で、preset内でTrueとなっているツールを
+通過させる。`python = false`または未指定のときは、preset由来でTrueになった
+コマンドも個別`{command} = true`指定がなければFalseに押し戻される。
+個別`{command} = true`はgateを越えて優先される。
+`ty`のみpreset非収録のため、使用時は個別に`ty = true`を指定する運用を維持する。"""
 
 JAVASCRIPT_COMMANDS: tuple[str, ...] = (
     "eslint",
@@ -291,10 +291,10 @@ JAVASCRIPT_COMMANDS: tuple[str, ...] = (
 )
 """javascript 設定に紐づく JavaScript / TypeScript 系コマンドの一覧。
 
-TypeScript は JavaScript エコシステム上のツール群（eslint / prettier / tsc 等）で
-扱うため、専用カテゴリは設けずここに内包する。言語カテゴリキー ``javascript`` の
-gate 対象で、preset 内で True となっているツールを通過させる。挙動は
-``PYTHON_COMMANDS`` と同じ。"""
+TypeScriptはJavaScriptエコシステム上のツール群（eslint / prettier / tsc等）で
+扱うため、専用カテゴリは設けずここに内包する。言語カテゴリキー`javascript`の
+gate対象で、preset内でTrueとなっているツールを通過させる。挙動は
+`PYTHON_COMMANDS`と同じ。"""
 
 RUST_COMMANDS: tuple[str, ...] = (
     "cargo-fmt",
@@ -305,8 +305,8 @@ RUST_COMMANDS: tuple[str, ...] = (
 )
 """rust 設定に紐づく Rust 系コマンドの一覧。
 
-言語カテゴリキー ``rust`` の gate 対象で、preset 内で True となっているツールを
-通過させる。挙動は ``PYTHON_COMMANDS`` と同じ。"""
+言語カテゴリキー`rust`のgate対象で、preset内でTrueとなっているツールを
+通過させる。挙動は`PYTHON_COMMANDS`と同じ。"""
 
 DOTNET_COMMANDS: tuple[str, ...] = (
     "dotnet-format",
@@ -315,8 +315,8 @@ DOTNET_COMMANDS: tuple[str, ...] = (
 )
 """dotnet 設定に紐づく .NET 系コマンドの一覧。
 
-言語カテゴリキー ``dotnet`` の gate 対象で、preset 内で True となっているツールを
-通過させる。挙動は ``PYTHON_COMMANDS`` と同じ。"""
+言語カテゴリキー`dotnet`のgate対象で、preset内でTrueとなっているツールを
+通過させる。挙動は`PYTHON_COMMANDS`と同じ。"""
 
 LANGUAGE_CATEGORIES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("python", PYTHON_COMMANDS),
@@ -326,14 +326,14 @@ LANGUAGE_CATEGORIES: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 """言語カテゴリキーと対応するコマンド群の対応表。
 
-preset 適用後の gate 処理 (カテゴリ False のとき preset 由来の該当コマンド True を
-False に押し戻す) で共通に使う。"""
+preset適用後のgate処理（カテゴリFalseのときpreset由来の該当コマンドTrueを
+Falseに押し戻す）で共通に使う。"""
 
 REMOVED_COMMANDS: frozenset[str] = frozenset({"pyupgrade", "autoflake", "isort", "black", "pflake8"})
 """v3.0.0 で削除されたコマンド名。
 
-設定ファイル中に関連キー (``pyupgrade = true`` / ``black-args = [...]`` など) を検出した
-場合、``load_config`` が案内付きの ValueError を送出して移行を促す。"""
+設定ファイル中に関連キー（`pyupgrade = true` / `black-args = [...]`など）を検出した
+場合、`load_config`が案内付きのValueErrorを送出して移行を促す。"""
 
 AUTO_ARGS: dict[str, list[tuple[str, list[str]]]] = {
     "pylint": [
@@ -345,7 +345,7 @@ AUTO_ARGS: dict[str, list[tuple[str, list[str]]]] = {
 }
 """コマンドごとの自動引数マッピング。
 
-各タプルは (設定キー, 引数リスト) の対。設定キーが True の場合、
-引数リストをコマンドライン先頭に自動挿入する。ユーザーの *-args と
+各タプルは（設定キー, 引数リスト）の対。設定キーがTrueの場合、
+引数リストをコマンドライン先頭に自動挿入する。ユーザーの`*-args`と
 重複する場合はスキップする。
 """

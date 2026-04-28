@@ -1,6 +1,6 @@
-"""command.py の linter fix テスト。
+"""command.pyのlinter fixテスト。
 
-``_execute_linter_fix`` の動作と、fix モードでの各 linter (eslint/biome/cargo/dotnet) の
+`_execute_linter_fix`の動作と、fixモードでの各linter（eslint/biome/cargo/dotnet）の
 コマンドライン生成を検証する。
 """
 
@@ -16,7 +16,7 @@ from tests import conftest as _testconf
 
 
 def test_fix_mode_appends_fix_args_for_linter(mocker, tmp_path: pathlib.Path) -> None:
-    """fix モード時、linter のコマンドラインに fix-args が追加される。"""
+    """fixモード時、linterのコマンドラインにfix-argsが追加される。"""
     target = tmp_path / "sample.md"
     target.write_text("# title\n")
 
@@ -31,18 +31,18 @@ def test_fix_mode_appends_fix_args_for_linter(mocker, tmp_path: pathlib.Path) ->
 
     assert mock_run.call_count == 1
     cmdline = mock_run.call_args_list[0][0][0]
-    # 通常 args ("markdownlint-cli2") の後に fix-args ("--fix") が続く
+    # 通常args（"markdownlint-cli2"）の後にfix-args（"--fix"）が続く
     assert "markdownlint-cli2" in cmdline
     assert "--fix" in cmdline
     assert cmdline.index("markdownlint-cli2") < cmdline.index("--fix")
-    # 変更なし + rc=0 なので succeeded
+    # 変更なし + rc=0なのでsucceeded
     assert result.status == "succeeded"
 
 
 def test_fix_mode_preserves_custom_args(mocker, tmp_path: pathlib.Path) -> None:
-    """プロジェクトが上書きした {command}-args が fix モードでも保持される (置換されない)。
+    """プロジェクトが上書きした`{command}-args`がfixモードでも保持される（置換されない）。
 
-    markdownlint は単発 fix 経路を通るため、通常 args の後に fix-args が append される。
+    markdownlintは単発fix経路を通るため、通常argsの後にfix-argsがappendされる。
     """
     target = tmp_path / "sample.md"
     target.write_text("# title\n")
@@ -58,24 +58,24 @@ def test_fix_mode_preserves_custom_args(mocker, tmp_path: pathlib.Path) -> None:
     )
 
     cmdline = mock_run.call_args_list[0][0][0]
-    # 通常 args が残っている
+    # 通常argsが残っている
     assert "--config" in cmdline
     assert "custom.yaml" in cmdline
-    # fix-args も追加されている
+    # fix-argsも追加されている
     assert "--fix" in cmdline
-    # 順序: 通常 args は --fix より前
+    # 順序: 通常argsは--fixより前
     assert cmdline.index("custom.yaml") < cmdline.index("--fix")
 
 
 def test_fix_mode_mtime_change_marks_formatted(mocker, tmp_path: pathlib.Path) -> None:
-    """fix モードで linter がファイルを書き換えた場合、formatted 扱いになる。"""
+    """fixモードでlinterがファイルを書き換えた場合、formatted扱いになる。"""
     target = tmp_path / "sample.md"
     target.write_text("# title\n")
     os.utime(target, (1000000000, 1000000000))
 
     def fake_run(cmdline, env, on_output, **_kwargs):
         del env, on_output  # noqa
-        # fix 適用をシミュレート
+        # fix適用をシミュレート
         target.write_text("# Title\n")
         os.utime(target, (2000000000, 2000000000))
         return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
@@ -93,15 +93,15 @@ def test_fix_mode_mtime_change_marks_formatted(mocker, tmp_path: pathlib.Path) -
 
 
 def test_fix_mode_non_zero_rc_is_failed(mocker, tmp_path: pathlib.Path) -> None:
-    """fix モードで rc != 0 なら mtime に関係なく failed。"""
-    # ruff-check の targets は *.py
+    """fixモードでrc != 0ならmtimeに関係なくfailed。"""
+    # ruff-checkのtargetsは*.py
     target = tmp_path / "sample.py"
     target.write_text("x = 1\n")
     os.utime(target, (1000000000, 1000000000))
 
     def fake_run(cmdline, env, on_output, **_kwargs):
         del env, on_output  # noqa
-        # 一部修正したが未修正の違反が残って rc=1 のケースをシミュレート
+        # 一部修正したが未修正の違反が残ってrc=1のケースをシミュレート
         target.write_text("# Title\n")
         os.utime(target, (2000000000, 2000000000))
         return subprocess.CompletedProcess(cmdline, returncode=1, stdout="violation remains")
@@ -114,23 +114,23 @@ def test_fix_mode_non_zero_rc_is_failed(mocker, tmp_path: pathlib.Path) -> None:
         "ruff-check", _testconf.make_args(), _testconf.make_execution_context(config, [target], fix_stage=True)
     )
 
-    # rc != 0 なので mtime 変化があっても failed
+    # rc != 0なのでmtime変化があってもfailed
     assert result.status == "failed"
     assert result.has_error is True
 
 
 def test_fix_mode_formatter_is_not_filtered_in(tmp_path: pathlib.Path) -> None:
-    """filter_fix_commands は formatter を fix モードの対象から除外する。"""
+    """filter_fix_commandsはformatterをfixモードの対象から除外する。"""
     del tmp_path  # noqa  # fixture互換のためだけに受け取る
     config = pyfltr.config.create_default_config()
     config.values["ruff-format"] = True
-    # ruff-format は formatter のため fix モードの対象外となる (fix-args 未定義)
+    # ruff-formatはformatterのためfixモードの対象外となる（fix-args未定義）
     result = pyfltr.config.filter_fix_commands(["ruff-format"], config)
     assert not result
 
 
 def test_eslint_lint_mode_uses_json_format(mocker, tmp_path: pathlib.Path) -> None:
-    """eslint の通常実行で `--format json` (共通 args) が commandline に含まれる。"""
+    """eslintの通常実行で`--format json`（共通args）がcommandlineに含まれる。"""
     target = tmp_path / "sample.js"
     target.write_text("var x = 1;\n")
 
@@ -147,12 +147,12 @@ def test_eslint_lint_mode_uses_json_format(mocker, tmp_path: pathlib.Path) -> No
     assert "json" in cmdline
     fmt_idx = cmdline.index("--format")
     assert cmdline[fmt_idx + 1] == "json"
-    # lint モードでは --fix は付かない
+    # lintモードでは--fixは付かない
     assert "--fix" not in cmdline
 
 
 def test_eslint_fix_mode_appends_fix_and_keeps_json(mocker, tmp_path: pathlib.Path) -> None:
-    """eslint の fix モードで `--fix` が付いても `--format json` は維持される。"""
+    """eslintのfixモードで`--fix`が付いても`--format json`は維持される。"""
     target = tmp_path / "sample.js"
     target.write_text("var x = 1;\n")
 
@@ -173,7 +173,7 @@ def test_eslint_fix_mode_appends_fix_and_keeps_json(mocker, tmp_path: pathlib.Pa
 
 
 def test_biome_lint_mode_uses_check_and_github_reporter(mocker, tmp_path: pathlib.Path) -> None:
-    """biome の通常実行で `check` サブコマンドと `--reporter=github` が含まれる。"""
+    """biomeの通常実行で`check`サブコマンドと`--reporter=github`が含まれる。"""
     target = tmp_path / "sample.ts"
     target.write_text("const x = 1;\n")
 
@@ -192,7 +192,7 @@ def test_biome_lint_mode_uses_check_and_github_reporter(mocker, tmp_path: pathli
 
 
 def test_biome_fix_mode_appends_write_and_keeps_reporter(mocker, tmp_path: pathlib.Path) -> None:
-    """biome の fix モードで `--write` が付いても `--reporter=github` は維持される。"""
+    """biomeのfixモードで`--write`が付いても`--reporter=github`は維持される。"""
     target = tmp_path / "sample.ts"
     target.write_text("const x = 1;\n")
 
@@ -210,24 +210,24 @@ def test_biome_fix_mode_appends_write_and_keeps_reporter(mocker, tmp_path: pathl
     assert "check" in cmdline
     assert "--reporter=github" in cmdline
     assert "--write" in cmdline
-    # check は共通 args なので --write より前
+    # checkは共通argsなので--writeより前
     assert cmdline.index("check") < cmdline.index("--write")
 
 
-# Rust / .NET 言語ツールの実行テスト。
-# pass-filenames=False により crate / solution 全体を対象とし、
+# Rust / .NET言語ツールの実行テスト。
+# pass-filenames=Falseによりcrate / solution全体を対象とし、
 # ファイル引数がコマンドラインに渡らないことを検証する。
 
 
 def _force_direct_runner(config: pyfltr.config.Config, command: str, mocker) -> None:
-    """テスト用ヘルパー: bin-runner 経路ではなく direct 実行へ強制する。
+    """テスト用ヘルパー: bin-runner経路ではなくdirect実行へ強制する。
 
-    cargo / dotnet 系の既定 (bin-runner=mise) ではコマンドラインが mise exec 経由となり、
-    direct 実行を観測する従来テストとは形式が異なる。本ヘルパーで `{command}-runner = "direct"`
-    を上書きすることで、mise 環境の有無に依存せず PATH 上のバイナリを直接呼ぶ形式を観測できる。
+    cargo / dotnet系の既定（bin-runner=mise）ではコマンドラインがmise exec経由となり、
+    direct実行を観測する従来テストとは形式が異なる。本ヘルパーで`{command}-runner = "direct"`
+    を上書きすることで、mise環境の有無に依存せずPATH上のバイナリを直接呼ぶ形式を観測できる。
 
-    あわせて `_resolve_direct_executable` をモックする。CI など cargo / dotnet バイナリが
-    PATH 上に存在しない環境では実解決が `FileNotFoundError` を送出し、テストが期待する
+    あわせて`_resolve_direct_executable`をモックする。CIなどcargo / dotnetバイナリが
+    PATH上に存在しない環境では実解決が`FileNotFoundError`を送出し、テストが期待する
     コマンドライン生成まで到達できないためである。
     """
     config.values[f"{command}-runner"] = "direct"
@@ -238,7 +238,7 @@ def _force_direct_runner(config: pyfltr.config.Config, command: str, mocker) -> 
 
 
 def test_cargo_fmt_runs_without_file_args(mocker, tmp_path: pathlib.Path) -> None:
-    """cargo-fmt は pass-filenames=False のためファイル引数を渡さず、既定で書き込みモード。"""
+    """cargo-fmtはpass-filenames=Falseのためファイル引数を渡さず、既定で書き込みモード。"""
     target = tmp_path / "sample.rs"
     target.write_text("fn main() {}\n")
 
@@ -252,14 +252,14 @@ def test_cargo_fmt_runs_without_file_args(mocker, tmp_path: pathlib.Path) -> Non
 
     assert mock_run.call_count == 1
     cmdline = mock_run.call_args_list[0][0][0]
-    # direct モードでは shutil.which で絶対パスへ解決されるため、basename のみで一致を確認する。
+    # directモードではshutil.whichで絶対パスへ解決されるため、basenameのみで一致を確認する。
     assert pathlib.Path(cmdline[0]).name == "cargo"
     assert cmdline[1:] == ["fmt"]
     assert str(target) not in cmdline
 
 
 def test_cargo_fmt_fix_mode_unchanged(mocker, tmp_path: pathlib.Path) -> None:
-    """cargo-fmt は formatter なので --fix 指定でもコマンドラインが変わらない。"""
+    """cargo-fmtはformatterなので--fix指定でもコマンドラインが変わらない。"""
     target = tmp_path / "sample.rs"
     target.write_text("fn main() {}\n")
 
@@ -279,7 +279,7 @@ def test_cargo_fmt_fix_mode_unchanged(mocker, tmp_path: pathlib.Path) -> None:
 
 
 def test_cargo_clippy_normal_mode_cmdline(mocker, tmp_path: pathlib.Path) -> None:
-    """cargo-clippy の非 fix モードは args + lint-args で組み立てられる。"""
+    """cargo-clippyの非fixモードはargs + lint-argsで組み立てられる。"""
     target = tmp_path / "sample.rs"
     target.write_text("fn main() {}\n")
 
@@ -298,7 +298,7 @@ def test_cargo_clippy_normal_mode_cmdline(mocker, tmp_path: pathlib.Path) -> Non
 
 
 def test_cargo_clippy_fix_mode_cmdline(mocker, tmp_path: pathlib.Path) -> None:
-    """cargo-clippy の --fix モードは args + fix-args で組み立てられる。"""
+    """cargo-clippyの--fixモードはargs + fix-argsで組み立てられる。"""
     target = tmp_path / "sample.rs"
     target.write_text("fn main() {}\n")
 
@@ -319,7 +319,7 @@ def test_cargo_clippy_fix_mode_cmdline(mocker, tmp_path: pathlib.Path) -> None:
 
 
 def test_dotnet_format_runs_without_file_args(mocker, tmp_path: pathlib.Path) -> None:
-    """dotnet-format は pass-filenames=False で solution 全体を対象とする。"""
+    """dotnet-formatはpass-filenames=Falseでsolution全体を対象とする。"""
     target = tmp_path / "Sample.cs"
     target.write_text("class Sample {}\n")
 
@@ -338,7 +338,7 @@ def test_dotnet_format_runs_without_file_args(mocker, tmp_path: pathlib.Path) ->
 
 
 def test_cargo_test_skipped_when_no_rs_files(mocker) -> None:
-    """.rs ファイルが対象に無いとき cargo-test はスキップされる (既存 pass-filenames=False 分岐)。"""
+    """.rsファイルが対象に無いときcargo-testはスキップされる（既存pass-filenames=False分岐）。"""
     mock_run = mocker.patch("pyfltr.command._run_subprocess")
 
     config = pyfltr.config.create_default_config()
@@ -351,7 +351,7 @@ def test_cargo_test_skipped_when_no_rs_files(mocker) -> None:
 
 
 def test_tool_exclude_filters_files(mocker, tmp_path: pathlib.Path) -> None:
-    """{tool}-exclude に一致するファイルがツール実行から除外される。"""
+    """`{tool}-exclude`に一致するファイルがツール実行から除外される。"""
     kept = tmp_path / "main.py"
     excluded_ = tmp_path / "gen_foo.py"
     kept.write_text("x = 1\n")
@@ -376,7 +376,7 @@ def test_tool_exclude_filters_files(mocker, tmp_path: pathlib.Path) -> None:
 
 
 def test_tool_exclude_disabled_by_no_exclude(mocker, tmp_path: pathlib.Path) -> None:
-    """--no-exclude 指定時は {tool}-exclude が無効化される。"""
+    """--no-exclude指定時は`{tool}-exclude`が無効化される。"""
     kept = tmp_path / "main.py"
     would_be_excluded = tmp_path / "gen_foo.py"
     kept.write_text("x = 1\n")
@@ -395,7 +395,7 @@ def test_tool_exclude_disabled_by_no_exclude(mocker, tmp_path: pathlib.Path) -> 
 
     assert mock_run.call_count == 1
     cmdline = mock_run.call_args_list[0][0][0]
-    # --no-exclude なので両ファイルとも渡される
+    # --no-excludeなので両ファイルとも渡される
     assert str(kept) in cmdline
     assert str(would_be_excluded) in cmdline
     assert result.status == "succeeded"

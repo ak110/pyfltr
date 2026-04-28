@@ -1,6 +1,6 @@
 """command.py の prettier 2段階実行テスト。
 
-``_execute_prettier_two_step`` の動作を検証する。
+`_execute_prettier_two_step` の動作を検証する。
 """
 
 # pylint: disable=protected-access,duplicate-code
