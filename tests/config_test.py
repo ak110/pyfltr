@@ -1298,3 +1298,166 @@ def test_tool_exclude_invalid_type(tmp_path: pathlib.Path) -> None:
     (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\nmypy-exclude = 42\n")
     with pytest.raises(ValueError, match="str型のリスト"):
         pyfltr.config.load_config(config_dir=tmp_path)
+
+
+# --- グローバル設定（XDG準拠 + archive/cache global優先） ---
+
+
+class TestGlobalConfig:
+    """ユーザーレベルglobal設定ファイルのテスト群。
+
+    `~/.config/pyfltr/config.toml`を模した一時パスを`global_config_path=`で指定し、
+    project側`pyproject.toml`との読み込み・マージ挙動を検証する。
+    `_isolate_global_config`fixture（autouse）によりPYFLTR_GLOBAL_CONFIGは
+    既にtmp配下のダミーパスへ固定されているため、本テスト群は独立したglobal_pathを
+    `load_config(... , global_config_path=...)`で明示する。
+    """
+
+    @staticmethod
+    def _setup(
+        tmp_path: pathlib.Path,
+        *,
+        global_text: str | None = None,
+        project_text: str | None = None,
+    ) -> tuple[pathlib.Path, pathlib.Path]:
+        """global設定とproject設定の一時ファイルを配置するヘルパー。"""
+        global_path = tmp_path / "global_config.toml"
+        if global_text is not None:
+            global_path.write_text(global_text, encoding="utf-8")
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        if project_text is not None:
+            (project_dir / "pyproject.toml").write_text(project_text, encoding="utf-8")
+        return global_path, project_dir
+
+    def test_global_only_archive_key_applies(self, tmp_path: pathlib.Path) -> None:
+        """globalのみarchive-max-age-daysが書かれているとき、値が反映される。"""
+        global_path, project_dir = self._setup(
+            tmp_path,
+            global_text="[tool.pyfltr]\narchive-max-age-days = 7\n",
+            project_text="[tool.pyfltr]\n",
+        )
+        config = pyfltr.config.load_config(config_dir=project_dir, global_config_path=global_path)
+        assert config["archive-max-age-days"] == 7
+
+    def test_global_wins_archive_with_warning(self, tmp_path: pathlib.Path) -> None:
+        """globalとproject両方にarchive-max-age-daysがあるとき、global値が勝ち警告が出る。"""
+        global_path, project_dir = self._setup(
+            tmp_path,
+            global_text="[tool.pyfltr]\narchive-max-age-days = 7\n",
+            project_text="[tool.pyfltr]\narchive-max-age-days = 14\n",
+        )
+        config = pyfltr.config.load_config(config_dir=project_dir, global_config_path=global_path)
+        assert config["archive-max-age-days"] == 7
+        assert _count_config_warnings("archive-max-age-days") == 1
+
+    def test_project_wins_normal_key_no_warning(self, tmp_path: pathlib.Path) -> None:
+        """globalとproject両方にarchive/cache以外の同じキーがあるとき、project値が勝ち警告は出ない。"""
+        global_path, project_dir = self._setup(
+            tmp_path,
+            global_text='[tool.pyfltr]\njs-runner = "pnpm"\n',
+            project_text='[tool.pyfltr]\njs-runner = "npm"\n',
+        )
+        config = pyfltr.config.load_config(config_dir=project_dir, global_config_path=global_path)
+        assert config["js-runner"] == "npm"
+        assert _count_config_warnings("") == 0
+
+    def test_global_config_missing_path_acts_as_empty(self, tmp_path: pathlib.Path) -> None:
+        """global設定ファイルが存在しないパスを指したとき、project側のみが反映される。"""
+        global_path, project_dir = self._setup(
+            tmp_path,
+            project_text='[tool.pyfltr]\njs-runner = "npm"\n',
+        )
+        # global_pathは存在しないファイル
+        assert not global_path.exists()
+        config = pyfltr.config.load_config(config_dir=project_dir, global_config_path=global_path)
+        assert config["js-runner"] == "npm"
+
+    def test_global_config_invalid_toml_raises(self, tmp_path: pathlib.Path) -> None:
+        """global設定ファイルのTOMLが壊れているときValueErrorで停止する。"""
+        global_path, project_dir = self._setup(
+            tmp_path,
+            global_text="[tool.pyfltr\n",  # 閉じ括弧なし
+            project_text="[tool.pyfltr]\n",
+        )
+        with pytest.raises(ValueError, match="TOML"):
+            pyfltr.config.load_config(config_dir=project_dir, global_config_path=global_path)
+
+    def test_global_preset_applied(self, tmp_path: pathlib.Path) -> None:
+        """global側にpreset = "latest"を書いたとき、preset由来のコマンド有効化が反映される。"""
+        global_path, project_dir = self._setup(
+            tmp_path,
+            global_text='[tool.pyfltr]\npreset = "latest"\n',
+            project_text="[tool.pyfltr]\n",
+        )
+        config = pyfltr.config.load_config(config_dir=project_dir, global_config_path=global_path)
+        # preset=latestのドキュメント系ツールが有効化されている
+        assert config["textlint"] is True
+        assert config["markdownlint"] is True
+
+    def test_global_language_gate_applied(self, tmp_path: pathlib.Path) -> None:
+        """global側にpreset = latest + python = trueを書いたとき、Python系ツールがgate通過で有効化される。"""
+        global_path, project_dir = self._setup(
+            tmp_path,
+            global_text='[tool.pyfltr]\npreset = "latest"\npython = true\n',
+            project_text="[tool.pyfltr]\n",
+        )
+        config = pyfltr.config.load_config(config_dir=project_dir, global_config_path=global_path)
+        assert config["ruff-format"] is True
+        assert config["ruff-check"] is True
+        assert config["mypy"] is True
+
+    def test_global_custom_commands_applied(self, tmp_path: pathlib.Path) -> None:
+        """global側にcustom-commandsを書いたとき、カスタムコマンドが正しく登録される。"""
+        global_text = """
+[tool.pyfltr.custom-commands.my-tool]
+type = "linter"
+path = "my-tool"
+targets = ["*.py"]
+"""
+        global_path, project_dir = self._setup(
+            tmp_path,
+            global_text=global_text,
+            project_text="[tool.pyfltr]\n",
+        )
+        config = pyfltr.config.load_config(config_dir=project_dir, global_config_path=global_path)
+        assert "my-tool" in config.commands
+        assert config.commands["my-tool"].type == "linter"
+
+    def test_global_unknown_key_warns_no_error(self, tmp_path: pathlib.Path) -> None:
+        """global側に未知キーが書かれているとき、警告は出るがValueErrorにはならない（前方互換）。"""
+        global_path, project_dir = self._setup(
+            tmp_path,
+            global_text="[tool.pyfltr]\nfuture-only-key = 1\n",
+            project_text="[tool.pyfltr]\n",
+        )
+        config = pyfltr.config.load_config(config_dir=project_dir, global_config_path=global_path)
+        assert "future-only-key" not in config.values
+        assert _count_config_warnings("future-only-key") == 1
+
+    def test_unknown_key_in_both_raises(self, tmp_path: pathlib.Path) -> None:
+        """同じ未知キーがglobalとproject両方にあるとき、project由来扱いでValueErrorになる。"""
+        global_path, project_dir = self._setup(
+            tmp_path,
+            global_text="[tool.pyfltr]\nfuture-only-key = 1\n",
+            project_text="[tool.pyfltr]\nfuture-only-key = 2\n",
+        )
+        with pytest.raises(ValueError, match="future-only-key"):
+            pyfltr.config.load_config(config_dir=project_dir, global_config_path=global_path)
+
+    def test_no_pyproject_with_global_only(self, tmp_path: pathlib.Path) -> None:
+        """pyproject.toml不在のconfig_dirでglobal設定のみが書かれているとき、global値が反映される。
+
+        早期returnで素通りせずglobal設定が処理されることを確認する回帰テスト。
+        """
+        global_path = tmp_path / "global_config.toml"
+        global_path.write_text("[tool.pyfltr]\narchive-max-age-days = 5\n", encoding="utf-8")
+        project_dir = tmp_path / "project_no_pyproject"
+        project_dir.mkdir()
+        # pyproject.tomlは敢えて作らない
+        config = pyfltr.config.load_config(config_dir=project_dir, global_config_path=global_path)
+        assert config["archive-max-age-days"] == 5
+
+
+# conftest.count_config_warningsを再エクスポート（同モジュール内の参照を統一するため）
+_count_config_warnings = _testconf.count_config_warnings

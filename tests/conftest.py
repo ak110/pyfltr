@@ -32,6 +32,22 @@ def _clear_warnings_between_tests() -> None:
     pyfltr.warnings_.clear()
 
 
+@pytest.fixture(autouse=True)
+def _isolate_global_config(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> pathlib.Path:
+    """全テストで`PYFLTR_GLOBAL_CONFIG`をtmpパス配下のダミーパスへ固定する。
+
+    開発機の`~/.config/pyfltr/config.toml`がテスト結果に影響することを防ぐ。
+    各テストは`monkeypatch.setenv`で個別に上書き可能。
+    """
+    isolation_dir = tmp_path_factory.mktemp("global_config_isolation")
+    target = isolation_dir / "config.toml"
+    monkeypatch.setenv("PYFLTR_GLOBAL_CONFIG", str(target))
+    return target
+
+
 # Rust / .NET 言語ツールの既定値定数。config_test / command_test の両方が
 # cargo-clippy の args / fix-args を参照するため、ここで一元管理する。
 CARGO_CLIPPY_ARGS: list[str] = ["clippy", "--all-targets"]
@@ -188,6 +204,14 @@ def _isolated_cache(
     """
     monkeypatch.setenv("PYFLTR_CACHE_DIR", str(tmp_path))
     return tmp_path
+
+
+def count_config_warnings(needle: str) -> int:
+    """`source=="config"`かつメッセージに`needle`を含む警告の件数を返す。
+
+    `needle`に空文字列を渡すと`source=="config"`の全件をカウントする。
+    """
+    return sum(1 for w in pyfltr.warnings_.collected_warnings() if w["source"] == "config" and needle in w["message"])
 
 
 def seed_archive_run(

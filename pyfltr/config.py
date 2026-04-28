@@ -1,11 +1,21 @@
-"""設定関連の処理。"""
+"""設定関連の処理。
+
+TOMLの読み書きはコメント・セクション順を保持できる`tomlkit`に統一する
+（`tomllib`は使用しない）。`pyfltr config set`等での部分編集で
+ユーザーが手書きしたコメントを維持するために必要。
+"""
+# pylint: disable=too-many-lines
 
 import copy
 import dataclasses
+import os
 import pathlib
 import re
-import tomllib
 import typing
+
+import platformdirs
+import tomlkit
+import tomlkit.exceptions
 
 from pyfltr.builtin_commands import (
     AUTO_ARGS,
@@ -28,12 +38,15 @@ from pyfltr.presets import _PRESETS, _REMOVED_PRESETS
 # 公開APIとして再エクスポートする定数・型
 # （既存のimport経路`pyfltr.config.BUILTIN_COMMANDS`等を維持するため）
 __all__ = [
+    "ARCHIVE_CONFIG_KEYS",
     "AUTO_ARGS",
     "BIN_RUNNERS",
     "BUILTIN_COMMAND_NAMES",
     "BUILTIN_COMMANDS",
+    "CACHE_CONFIG_KEYS",
     "COMMAND_RUNNERS",
     "DOTNET_COMMANDS",
+    "GLOBAL_PRIORITY_KEYS",
     "JAVASCRIPT_COMMANDS",
     "JS_RUNNERS",
     "LANGUAGE_CATEGORIES",
@@ -45,11 +58,32 @@ __all__ = [
     "Config",
     "DEFAULT_CONFIG",
     "create_default_config",
+    "default_global_config_path",
+    "delete_config_value",
     "filter_fix_commands",
-    "generate_config_text",
     "load_config",
+    "parse_config_value",
+    "read_config_values",
     "resolve_aliases",
+    "set_config_value",
 ]
+
+
+# global優先キーのSSOT。
+# archive/cache系の設定値はマシン単位で揃えたい性質のため、
+# `~/.config/pyfltr/config.toml`（global設定）に書かれた値をproject側より優先する。
+# 通常キーはproject優先（後勝ち）であるのに対して、本集合は逆向きの優先順を持つ。
+# 範囲拡大時はCLAUDE.md「注意点」節も併せて更新すること（人手同期）。
+ARCHIVE_CONFIG_KEYS: frozenset[str] = frozenset(
+    {
+        "archive",
+        "archive-max-runs",
+        "archive-max-size-mb",
+        "archive-max-age-days",
+    }
+)
+CACHE_CONFIG_KEYS: frozenset[str] = frozenset({"cache", "cache-max-age-hours"})
+GLOBAL_PRIORITY_KEYS: frozenset[str] = ARCHIVE_CONFIG_KEYS | CACHE_CONFIG_KEYS
 
 
 DEFAULT_CONFIG: dict[str, typing.Any] = {
@@ -586,18 +620,166 @@ def create_default_config() -> Config:
     return config
 
 
-def load_config(config_dir: pathlib.Path | None = None) -> Config:
-    """pyproject.tomlから設定を読み込む。"""
+def default_global_config_path() -> pathlib.Path:
+    r"""XDG準拠のグローバル設定ファイルパスを返す。
+
+    Linuxでは`~/.config/pyfltr/config.toml`、macOSでは
+    `~/Library/Application Support/pyfltr/config.toml`、
+    Windowsでは`%APPDATA%\pyfltr\config.toml`になる。
+    環境変数`PYFLTR_GLOBAL_CONFIG`が設定されていればそれを優先する
+    （テスト容易性確保とユーザーの強制上書き用。`PYFLTR_CACHE_DIR`と命名対称）。
+    """
+    override = os.environ.get("PYFLTR_GLOBAL_CONFIG")
+    if override:
+        return pathlib.Path(override)
+    return pathlib.Path(platformdirs.user_config_dir("pyfltr")) / "config.toml"
+
+
+def _read_global_config(path: pathlib.Path) -> dict[str, typing.Any]:
+    """globalのconfig.tomlを読み込み、`[tool.pyfltr]`配下を返す。
+
+    ファイル不在時は空辞書を返す。TOML構文エラー時は`ValueError`で停止する。
+    """
+    if not path.exists():
+        return {}
+    try:
+        text = path.read_text(encoding="utf-8")
+        data = tomlkit.parse(text)
+    except tomlkit.exceptions.TOMLKitError as e:
+        raise ValueError(f"global設定ファイルのTOMLが不正です: {path}: {e}") from e
+    raw = data.get("tool", {})
+    raw = raw.get("pyfltr", {}) if isinstance(raw, dict) else {}
+    return _unwrap_tomlkit(raw) if isinstance(raw, dict) else {}
+
+
+def _unwrap_tomlkit(value: typing.Any) -> typing.Any:
+    """tomlkitの値を素のPython値（dict / list / 基本型）へ再帰的に変換する。
+
+    tomlkitはInteger / String / Bool等のラッパー型で値を返す。
+    `isinstance(v, int)`等の判定は通常通り動くが、`config.values`に格納すると
+    JSON serializeや`==`比較で予期せぬ挙動になる場合があるため、
+    入力段で純粋なPython値へ揃えておく。
+    """
+    if isinstance(value, dict):
+        return {str(k): _unwrap_tomlkit(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_unwrap_tomlkit(item) for item in value]
+    unwrap = getattr(value, "unwrap", None)
+    if callable(unwrap):
+        return unwrap()
+    return value
+
+
+def _merge_global_and_project(
+    global_data: dict[str, typing.Any],
+    project_data: dict[str, typing.Any],
+) -> tuple[dict[str, typing.Any], dict[str, set[str]]]:
+    """Global / project由来の`[tool.pyfltr]`辞書をマージし、由来情報を返す。
+
+    通常キーはproject優先（globalの値はprojectで上書きされる）。
+    `GLOBAL_PRIORITY_KEYS`に含まれるarchive/cache系はglobal優先で、
+    両方にある場合はglobal値で上書きする。
+    キー名の`_`は`-`に正規化してから判定する
+    （同じキーが`archive_max_runs`と`archive-max-runs`で別計上されないように）。
+
+    Returns:
+        マージ済みdict（normalized key → value）と、
+        normalized keyから`{"global", "project"}`部分集合への辞書のタプル。
+    """
+    normalized_global = {key.replace("_", "-"): value for key, value in global_data.items()}
+    normalized_project = {key.replace("_", "-"): value for key, value in project_data.items()}
+
+    key_sources: dict[str, set[str]] = {}
+    for key in normalized_global:
+        key_sources.setdefault(key, set()).add("global")
+    for key in normalized_project:
+        key_sources.setdefault(key, set()).add("project")
+
+    merged: dict[str, typing.Any] = {}
+    for key, sources in key_sources.items():
+        if key in GLOBAL_PRIORITY_KEYS:
+            # archive / cache系: globalがあればglobal、無ければproject。
+            if "global" in sources:
+                merged[key] = normalized_global[key]
+            else:
+                merged[key] = normalized_project[key]
+        else:
+            # 通常キー: 後勝ち（project優先）。
+            if "project" in sources:
+                merged[key] = normalized_project[key]
+            else:
+                merged[key] = normalized_global[key]
+    return merged, key_sources
+
+
+def load_config(
+    config_dir: pathlib.Path | None = None,
+    *,
+    global_config_path: pathlib.Path | None = None,
+) -> Config:
+    """pyproject.tomlとglobal設定ファイルから設定を読み込む。
+
+    `config_dir`配下の`pyproject.toml`の`[tool.pyfltr]`と、
+    XDG準拠のglobal設定ファイル`~/.config/pyfltr/config.toml`の`[tool.pyfltr]`を
+    1つの入力dictへマージしてから、preset反映・custom-commands登録・
+    言語カテゴリゲート・通常設定適用の順で処理する。
+
+    マージ仕様:
+      - 通常キーはproject優先（後勝ち）
+      - archive/cache系（`GLOBAL_PRIORITY_KEYS`）はglobal優先
+    `pyproject.toml`不在でもglobal側のみ書かれていれば反映される
+    （旧版にあった「pyproject.toml不在時の早期return」は撤廃済み）。
+
+    Args:
+        config_dir: project側の`pyproject.toml`を探すディレクトリ。
+            未指定時はカレントディレクトリ。
+        global_config_path: global設定ファイルのパス。未指定時は
+            `default_global_config_path()`の結果を使用する。
+    """
+    # 遅延importで循環依存を避ける（warnings_はpyfltr内で広く参照されるため）
+    import pyfltr.warnings_  # pylint: disable=import-outside-toplevel
+
     config = create_default_config()
     base = config_dir or pathlib.Path.cwd()
+
+    # global側の読み込み（不在時は空dict）
+    if global_config_path is None:
+        global_config_path = default_global_config_path()
+    global_data = _read_global_config(global_config_path)
+
+    # project側の読み込み（不在時は空dict）。
+    # 旧実装にあった「pyproject.toml不在時の早期return」は撤廃済み。
+    # globalだけが書かれている場合でも反映を成立させるため、
+    # 不在時は空dictとして処理を継続する。
     pyproject_path = (base / "pyproject.toml").absolute()
-    if not pyproject_path.exists():
-        return config
+    project_data: dict[str, typing.Any] = {}
+    if pyproject_path.exists():
+        text = pyproject_path.read_text(encoding="utf-8")
+        try:
+            pyproject_doc = tomlkit.parse(text)
+        except tomlkit.exceptions.TOMLKitError as e:
+            raise ValueError(f"pyproject.tomlのTOMLが不正です: {pyproject_path}: {e}") from e
+        raw = pyproject_doc.get("tool", {})
+        raw = raw.get("pyfltr", {}) if isinstance(raw, dict) else {}
+        project_data = _unwrap_tomlkit(raw) if isinstance(raw, dict) else {}
 
-    with pyproject_path.open("rb") as f:
-        pyproject_data = tomllib.load(f)
+    # global / projectをマージ。各キーの由来も記録する。
+    tool_pyfltr, key_sources = _merge_global_and_project(global_data, project_data)
 
-    tool_pyfltr = pyproject_data.get("tool", {}).get("pyfltr", {})
+    # archive/cache系がproject側に書かれていた場合の警告。
+    # global側にも当該キーがある場合のみ警告対象（global側に無ければproject値が
+    # そのまま採用されるので警告不要）。
+    priority_keys_overridden_by_global = sorted(
+        key
+        for key in GLOBAL_PRIORITY_KEYS
+        if "project" in key_sources.get(key, set()) and "global" in key_sources.get(key, set())
+    )
+    if priority_keys_overridden_by_global:
+        keys_str = ", ".join(priority_keys_overridden_by_global)
+        pyfltr.warnings_.emit_warning(
+            source="config",
+            message=(f"archive/cache系のキーはglobal設定が優先されるため、project側の値は無視されます: {keys_str}"),
+        )
 
     # プリセットの反映
     preset = str(tool_pyfltr.get("preset", ""))
@@ -611,7 +793,7 @@ def load_config(config_dir: pathlib.Path | None = None) -> Config:
         raise ValueError(f"preset の設定値が正しくありません。{preset=}")
 
     # カスタムコマンドの読み込み
-    custom_commands = tool_pyfltr.get("custom-commands", tool_pyfltr.get("custom_commands", {}))
+    custom_commands = tool_pyfltr.get("custom-commands", {})
     if not isinstance(custom_commands, dict):
         raise ValueError("custom-commandsはテーブルで指定してください")
     for name, definition in custom_commands.items():
@@ -624,8 +806,7 @@ def load_config(config_dir: pathlib.Path | None = None) -> Config:
     # キーがFalse（既定）のときはpreset由来のTrueをFalseへ押し戻して実行を抑止する。
     # 後続の個別設定ループで`{command} = true` / `{command} = false`による上書きが可能
     # （個別指定はgateを越えて最優先）。
-    # 設定キーの「_」「-」ゆらぎに対応するため、ユーザー入力側のキー集合を正規化しておく。
-    user_keys = {key.replace("_", "-") for key in tool_pyfltr}
+    user_keys = set(tool_pyfltr.keys())
     for category_key, commands in LANGUAGE_CATEGORIES:
         if bool(tool_pyfltr.get(category_key, False)):
             continue  # gate 開放: preset 由来の True をそのまま通す
@@ -638,8 +819,8 @@ def load_config(config_dir: pathlib.Path | None = None) -> Config:
     skip_keys = ("custom-commands", *(key for key, _ in LANGUAGE_CATEGORIES))
     targets_overrides: dict[str, str | list[str]] = {}
     extend_targets_map: dict[str, str | list[str]] = {}
+    global_only_unknown_keys: list[str] = []
     for key, value in tool_pyfltr.items():
-        key = key.replace("_", "-")  # 「_」区切りと「-」区切りのどちらもOK
         if key in skip_keys:
             continue  # 別途処理済み
         # v3.0.0で削除されたツール名に紐づく設定キーを検出したら移行案内を出す。
@@ -672,10 +853,25 @@ def load_config(config_dir: pathlib.Path | None = None) -> Config:
                 targets_overrides[cmd_name] = _validate_targets_value(key, value)
                 continue
         if key not in config.values:
+            # 未知キーの由来別分岐（前方互換性確保）。
+            # global由来のみのキーは新版pyfltrで追加された設定の可能性があるため、
+            # 旧版でも停止せずに警告して無視する。projectは当該プロジェクトに紐づく
+            # バージョンが既知のため従来通り厳格バリデーションを維持する。
+            sources = key_sources.get(key, set())
+            if sources == {"global"}:
+                global_only_unknown_keys.append(key)
+                continue
             raise ValueError(f"設定キーが不正です: {key}")
         if not isinstance(value, type(config.values[key])):  # 簡易チェック
             raise ValueError(f"設定値が不正です: {key}={type(value)}, expected {type(config.values[key])}")
         config.values[key] = value
+
+    if global_only_unknown_keys:
+        keys_str = ", ".join(sorted(global_only_unknown_keys))
+        pyfltr.warnings_.emit_warning(
+            source="config",
+            message=f"global設定の未知キーを無視しました: {keys_str}",
+        )
 
     # targetsの完全上書き
     for cmd_name, new_targets in targets_overrides.items():
@@ -690,7 +886,7 @@ def load_config(config_dir: pathlib.Path | None = None) -> Config:
             existing.extend(extra)
         config.commands[cmd_name] = dataclasses.replace(config.commands[cmd_name], targets=existing)
 
-    # typos-pathの互換正規化: generate-configが出力した空文字列を "typos" へ変換する
+    # typos-pathの互換正規化: 過去pyproject.tomlに残った空文字列を "typos" へ変換する
     if config.values["typos-path"] == "":
         config.values["typos-path"] = "typos"
 
@@ -907,11 +1103,120 @@ def resolve_aliases(commands: list[str], config: Config) -> list[str]:
     return result
 
 
-def generate_config_text(config: Config | None = None) -> str:
-    """設定ファイルのサンプルテキストを生成。"""
-    if config is None:
-        config = create_default_config()
-    return "[tool.pyfltr]\n" + "\n".join(
-        f"{key} = " + repr(value).replace("'", '"').replace("True", "true").replace("False", "false")
-        for key, value in config.values.items()
-    )
+def read_config_values(path: pathlib.Path) -> dict[str, typing.Any]:
+    """pyproject.tomlまたはglobal config.tomlから`[tool.pyfltr]`配下を返す。
+
+    ファイル不在時は空辞書を返す。TOML構文エラー時は`ValueError`で停止する。
+    `pyfltr config get` / `pyfltr config list`の読み取り経路で使用する。
+    """
+    if not path.exists():
+        return {}
+    try:
+        text = path.read_text(encoding="utf-8")
+        data = tomlkit.parse(text)
+    except tomlkit.exceptions.TOMLKitError as e:
+        raise ValueError(f"設定ファイルのTOMLが不正です: {path}: {e}") from e
+    raw = data.get("tool", {})
+    raw = raw.get("pyfltr", {}) if isinstance(raw, dict) else {}
+    return _unwrap_tomlkit(raw) if isinstance(raw, dict) else {}
+
+
+def set_config_value(
+    path: pathlib.Path,
+    key: str,
+    value: typing.Any,
+    *,
+    create_if_missing: bool = False,
+) -> None:
+    """設定ファイルの`[tool.pyfltr]`配下を更新する。
+
+    既存ファイルはtomlkit経由で読み書きするためコメント・セクション順は保持される。
+    `create_if_missing=True`なら、ファイル不在時にディレクトリ含めて新規作成する。
+    `create_if_missing=False`でファイル不在なら`FileNotFoundError`を送出する。
+    """
+    if path.exists():
+        text = path.read_text(encoding="utf-8")
+        try:
+            doc = tomlkit.parse(text)
+        except tomlkit.exceptions.TOMLKitError as e:
+            raise ValueError(f"設定ファイルのTOMLが不正です: {path}: {e}") from e
+    else:
+        if not create_if_missing:
+            raise FileNotFoundError(f"設定ファイルが存在しません: {path}")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        doc = tomlkit.document()
+
+    tool_table = doc.get("tool")
+    if tool_table is None:
+        tool_table = tomlkit.table()
+        doc["tool"] = tool_table
+    pyfltr_table = tool_table.get("pyfltr")
+    if pyfltr_table is None:
+        pyfltr_table = tomlkit.table()
+        tool_table["pyfltr"] = pyfltr_table
+
+    pyfltr_table[key] = value
+    path.write_text(tomlkit.dumps(doc), encoding="utf-8")
+
+
+def delete_config_value(path: pathlib.Path, key: str) -> bool:
+    """設定ファイルから`[tool.pyfltr]`配下のキーを削除する。
+
+    存在したかをboolで返す。セクションが空になっても削除しない
+    （手書きコメントを保持するため）。
+    ファイル不在時は`False`を返す。
+    """
+    if not path.exists():
+        return False
+    text = path.read_text(encoding="utf-8")
+    try:
+        doc = tomlkit.parse(text)
+    except tomlkit.exceptions.TOMLKitError as e:
+        raise ValueError(f"設定ファイルのTOMLが不正です: {path}: {e}") from e
+    tool_table = doc.get("tool")
+    if tool_table is None:
+        return False
+    pyfltr_table = tool_table.get("pyfltr")
+    if pyfltr_table is None:
+        return False
+    if key not in pyfltr_table:
+        return False
+    del pyfltr_table[key]
+    path.write_text(tomlkit.dumps(doc), encoding="utf-8")
+    return True
+
+
+def parse_config_value(key: str, raw: str) -> typing.Any:
+    """文字列値を`DEFAULT_CONFIG[key]`の型に変換する。
+
+    bool / int / str / `list[str]`のみ対応。dict系（`aliases`等）は非対応で
+    `ValueError`を送出する（CLI経由でdict編集はサポートしない方針）。
+
+    - bool: `true`/`false`/`1`/`0`を受理（大文字小文字は無視）
+    - int: `int(raw)`、失敗で`ValueError`
+    - str: そのまま
+    - list[str]: カンマ区切りでsplit、要素のtrimは行わない
+      （`*-args`系で空白を含むケースに対応するため）
+    """
+    if key not in DEFAULT_CONFIG:
+        raise ValueError(f"設定キーが不正です: {key}")
+    default = DEFAULT_CONFIG[key]
+    if isinstance(default, bool):
+        lowered = raw.strip().lower()
+        if lowered in ("true", "1"):
+            return True
+        if lowered in ("false", "0"):
+            return False
+        raise ValueError(f"{key}にはtrue/false/1/0のいずれかを指定してください: {raw!r}")
+    if isinstance(default, int):
+        try:
+            return int(raw)
+        except ValueError as e:
+            raise ValueError(f"{key}には整数を指定してください: {raw!r}") from e
+    if isinstance(default, str):
+        return raw
+    if isinstance(default, list):
+        return raw.split(",") if raw else []
+    if isinstance(default, dict):
+        raise ValueError(f"{key}は辞書型のためCLIから直接設定できません。pyproject.tomlで編集してください")
+    raise ValueError(f"{key}の値型はCLI経由では設定できません: {type(default).__name__}")

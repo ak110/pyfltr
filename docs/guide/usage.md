@@ -60,14 +60,85 @@ Formattersによるファイル変更があっても終了コードは0になる
 
 含まれるコマンドは各コマンドの`{command}-fast`設定で制御できる（[設定](configuration.md)を参照）。
 
-### サブコマンド: generate-config
+### サブコマンド: config {#config}
 
 ```shell
-pyfltr generate-config
+pyfltr config <action> [options]
 ```
 
-設定ファイルの雛形を標準出力に書き出す。`[tool.pyfltr]`セクションに貼り付けて利用する。
-このサブコマンドは他のオプションやターゲット指定を受け付けず、設定出力だけを行う。
+設定ファイルをCLIから操作する（pnpm/npm config互換の体系）。
+`--global`なしはカレントディレクトリの`pyproject.toml`、`--global`付きはグローバル設定ファイル
+（`~/.config/pyfltr/config.toml`など）が対象となる。
+
+#### config get
+
+```shell
+pyfltr config get <key> [--global]
+```
+
+指定キーの現在値を1行出力する。ファイルに書かれていなければデフォルト値を返す。
+未知のキーはエラー終了（終了コード1）。
+
+```shell
+pyfltr config get archive-max-age-days
+pyfltr config get archive-max-age-days --global
+```
+
+#### config set
+
+```shell
+pyfltr config set <key> <value> [--global]
+```
+
+指定キーに値を書き込む。値の文字列はキーのデフォルト値の型に応じて変換される。
+
+- `bool`: `true` / `false` / `1` / `0`
+- `int`: 整数表記
+- `str`: そのまま文字列として設定する
+- `list[str]`: カンマ区切りで分割してリスト化する（例: `"foo,bar"` → `["foo", "bar"]`）
+- `dict`: CLI非対応（エラー終了）
+
+```shell
+pyfltr config set archive-max-age-days 30 --global
+pyfltr config set preset latest
+```
+
+`--global`指定時、グローバル設定ファイルが存在しなければディレクトリを含めて自動作成する。
+project側（`--global`なし）で`pyproject.toml`が存在しない場合はエラー終了する。
+未知のキーはエラー終了（終了コード1）。
+
+`set`時の警告条件:
+
+- archive/cache系のキー（`archive` / `archive-max-runs`等）をproject側にsetした場合:
+  globalで集約することを推奨する旨の警告を出す。
+- archive/cache以外のキーをglobal側にsetした場合:
+  通常はproject側が優先されるため、globalで設定しても上書きされる旨の警告を出す。
+
+#### config delete
+
+```shell
+pyfltr config delete <key> [--global]
+```
+
+設定ファイルから指定キーを削除する。
+該当キーがなければ正常終了（何もしない）。
+対象ファイルが存在しない場合は「削除対象がありません」と表示して正常終了する。
+未知のキーはエラー終了（終了コード1）。
+
+#### config list
+
+```shell
+pyfltr config list [--global] [--output-format text|json|jsonl]
+```
+
+設定ファイルに書かれているキーと値の一覧を表示する（デフォルト値は含まない）。
+
+- `text`（既定）: `key = value`形式の行出力
+- `json`: `{"values": {...}}`の単発出力
+- `jsonl`: 1件1行の`{"key": ..., "value": ...}`ストリーム
+
+設定項目の一覧とデフォルト値を確認したい場合は、まず`pyfltr config list`で現在の設定を確認し、
+設定項目名の詳細は[設定項目一覧](configuration.md#設定項目一覧)を参照。
 
 ### サブコマンド: list-runs {#list-runs}
 

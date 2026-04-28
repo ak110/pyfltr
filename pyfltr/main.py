@@ -22,6 +22,7 @@ import pyfltr.cli
 import pyfltr.command
 import pyfltr.command_info
 import pyfltr.config
+import pyfltr.config_cli
 import pyfltr.formatters
 import pyfltr.mcp_
 import pyfltr.only_failed
@@ -41,13 +42,13 @@ os.environ.pop("LINES", None)
 
 # サブコマンド名とその挙動のマッピング。
 # 実行系 （ci / run / fast / run-for-agent） は共通オプション （_COMMON_PARENT） を継承する。
-# それ以外のサブコマンド （generate-config / generate-shell-completion） は固有の引数のみ持つ。
+# それ以外のサブコマンド （config / generate-shell-completion） は固有の引数のみ持つ。
 _RUN_SUBCOMMANDS: tuple[str, ...] = ("ci", "run", "fast", "run-for-agent")
 """実行系サブコマンド。パイプラインを起動してformat/lint/testを走らせる。"""
 
 _ALL_SUBCOMMANDS: tuple[str, ...] = (
     *_RUN_SUBCOMMANDS,
-    "generate-config",
+    "config",
     "generate-shell-completion",
     "list-runs",
     "show-run",
@@ -320,7 +321,7 @@ def build_parser(custom_commands: collections.abc.Iterable[str] = ()) -> "_HelpO
             "  run              通常実行。フォーマッターの変更は成功扱いで fix ステージ有効。\n"
             "  fast             高速ツールのみ実行 (--commands=fast 相当)。\n"
             "  run-for-agent    LLM エージェント向け (JSONL 出力を既定化)。\n"
-            "  generate-config  pyproject.toml 用の設定雛形を出力する。\n"
+            "  config <action>  設定ファイルを操作する (get / set / delete / list)。\n"
             "  generate-shell-completion <shell>\n"
             "                   シェル補完スクリプトを出力する (bash / powershell)。\n"
             "  list-runs        実行アーカイブ内の run 一覧を表示する。\n"
@@ -356,8 +357,56 @@ def build_parser(custom_commands: collections.abc.Iterable[str] = ()) -> "_HelpO
     subparsers.add_parser("fast", parents=[common], help="高速ツールのみ実行。")
     subparsers.add_parser("run-for-agent", parents=[common], help="LLM エージェント向け。")
 
-    # generate-config: 設定雛形出力
-    subparsers.add_parser("generate-config", help="pyproject.toml 用の設定雛形を出力する。")
+    # config: 設定ファイル操作（pnpm/npm config互換のget/set/delete/list）
+    config_parser = subparsers.add_parser("config", help="設定ファイルを操作する。")
+    config_subparsers = config_parser.add_subparsers(
+        dest="config_action",
+        required=True,
+        metavar="<action>",
+        parser_class=_HelpOnErrorArgumentParser,
+    )
+
+    config_get = config_subparsers.add_parser("get", help="設定値を取得する。")
+    config_get.add_argument("key", help="設定キー名 (例: archive-max-age-days)。")
+    config_get.add_argument(
+        "--global",
+        dest="global_",
+        action="store_true",
+        help="グローバル設定ファイルを対象にする。",
+    )
+
+    config_set = config_subparsers.add_parser("set", help="設定値を書き込む。")
+    config_set.add_argument("key", help="設定キー名 (例: archive-max-age-days)。")
+    config_set.add_argument("value", help="設定値 (型に応じて変換される)。")
+    config_set.add_argument(
+        "--global",
+        dest="global_",
+        action="store_true",
+        help="グローバル設定ファイルを対象にする (不在時は自動作成)。",
+    )
+
+    config_delete = config_subparsers.add_parser("delete", help="設定値を削除する。")
+    config_delete.add_argument("key", help="設定キー名。")
+    config_delete.add_argument(
+        "--global",
+        dest="global_",
+        action="store_true",
+        help="グローバル設定ファイルを対象にする。",
+    )
+
+    config_list = config_subparsers.add_parser("list", help="現在の設定値を一覧表示する。")
+    config_list.add_argument(
+        "--global",
+        dest="global_",
+        action="store_true",
+        help="グローバル設定ファイルを対象にする。",
+    )
+    config_list.add_argument(
+        "--output-format",
+        choices=["text", "json", "jsonl"],
+        default="text",
+        help="出力形式 (text / json / jsonl、既定: text)。",
+    )
 
     # generate-shell-completion: 補完スクリプト出力
     gsc_parser = subparsers.add_parser(
@@ -431,10 +480,9 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
     subcommand = args.subcommand
     logging.basicConfig(level=logging.DEBUG if getattr(args, "verbose", False) else logging.INFO, format="%(message)s")
 
-    # generate-configサブコマンド: 他のオプションは無視して設定雛形を出力する
-    if subcommand == "generate-config":
-        logger.info(pyfltr.config.generate_config_text())
-        return 0
+    # configサブコマンド: 設定ファイルの取得・編集（pnpm/npm config互換）
+    if subcommand == "config":
+        return pyfltr.config_cli.execute(args)
 
     # generate-shell-completionサブコマンド: 補完スクリプトをstdoutに出力する
     if subcommand == "generate-shell-completion":

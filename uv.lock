@@ -8,7 +8,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-04-25T08:25:57.311670549Z"
+exclude-newer = "2026-04-27T16:26:23.237726872Z"
 exclude-newer-span = "P1D"
 
 [options.exclude-newer-package]
@@ -1222,6 +1222,7 @@ dependencies = [
     { name = "python-ulid" },
     { name = "pyyaml" },
     { name = "textual" },
+    { name = "tomlkit" },
     { name = "typos" },
     { name = "yamllint" },
 ]
@@ -1268,6 +1269,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "ruff", marker = "extra == 'python'", specifier = ">=0.12.1" },
     { name = "textual", specifier = ">=8.0.0" },
+    { name = "tomlkit", specifier = ">=0.13" },
     { name = "ty", marker = "extra == 'python'", specifier = ">=0.0.26" },
     { name = "typos", specifier = ">=1.0" },
     { name = "uv-sort", marker = "extra == 'python'", specifier = ">=0.5" },

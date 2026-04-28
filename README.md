@@ -37,7 +37,10 @@ pip install 'pyfltr[python]'
 Python / JavaScript / Rust / .NETの各言語カテゴリに属するツールはすべて既定で無効（opt-in）である。
 `preset = "latest"` + 言語カテゴリキー（`python` / `javascript` / `rust` / `dotnet`）の`true`指定だけで、
 当該言語の推奨ツール一式が有効化される。
-詳細は[設定項目](docs/guide/configuration.md)を参照。
+archive保持期間やキャッシュ設定など複数プロジェクトで共通にしたい設定は、
+グローバル設定ファイル（Linux: `~/.config/pyfltr/config.toml`）に集約できる。
+詳細は[設定項目](docs/guide/configuration.md)および
+[グローバル設定](docs/guide/configuration.md#グローバル設定)を参照。
 
 ## 使い方
 
@@ -52,6 +55,7 @@ uvxでの実行も可能。
 - `pyfltr ci` / `run` / `fast` — チェック実行（CI / ローカル全体 / 軽量）
 - `pyfltr run-for-agent` — エージェント向けJSONL出力（`pyfltr run --output-format=jsonl`のエイリアス）
 - `pyfltr list-runs` / `show-run` — 実行履歴の参照
+- `pyfltr config` — 設定ファイルの操作（`get` / `set` / `delete` / `list`）
 - `pyfltr command-info` — ツール起動方式の確認
 - `pyfltr mcp` — MCPサーバー
 

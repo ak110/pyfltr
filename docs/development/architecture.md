@@ -301,7 +301,7 @@ MCP経路（`pyfltr.mcp_.run_for_agent`）は同一プロセス内で`run_pipeli
 ### `list-runs`/`show-run`の実装配置
 
 サブコマンド本体は`pyfltr/runs.py`に集約する。
-`main.py`は`generate-config`/`generate-shell-completion`と同じ「非実行系サブパーサー」として
+`main.py`は`config`/`generate-shell-completion`と同じ「非実行系サブパーサー」として
 サブパーサー登録とディスパッチのみを行い、出力ロジックは持たない。
 
 読み取り経路は`ArchiveStore`の既存APIを直接利用し、`load_config()`は呼ばない。

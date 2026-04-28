@@ -39,7 +39,7 @@ plugins:
         - `pyfltr run`: 全チェック。fix段→formatter段→linter/tester段の順で、fix-args定義済みlinterの自動修正→formatter→残りの検査を実行する（ローカル向け）
         - `pyfltr fast`: 軽量チェック。`run`と同じ3段構成だが、mypy/pylint/pytest等の重いツールを除外（pre-commit向け）
         - `pyfltr run-for-agent`: `pyfltr run --output-format=jsonl`のエイリアス。JSONL出力を既定にする（コーディングエージェント向け）
-        - `pyfltr generate-config`: 設定ファイルの雛形を標準出力に書き出す。`[tool.pyfltr]`セクションに貼り付けて利用する
+        - `pyfltr config <action>`: 設定ファイルを操作する（`get` / `set` / `delete` / `list`）。`--global`なしは`pyproject.toml`、`--global`付きはグローバル設定ファイル（`~/.config/pyfltr/config.toml`等）が対象となる
         - `pyfltr list-runs`: 実行アーカイブ内のrun一覧を表示する。`--limit`で件数制御、`--output-format=text|json|jsonl`
         - `pyfltr show-run <run_id>`: 指定runの詳細を表示する。`<run_id>`は前方一致および`latest`エイリアス可。`--tool <name>`でdiagnostics全件、`--tool <name> --output`で`output.log`全文。`--output-format=text|json|jsonl`
         - `pyfltr command-info <tool>`: 対象ツールの起動方式（`{command}-runner` / 解決された実行ファイル / 最終コマンドライン等）を表示する。`--format=text|json` / `--check`オプションあり
@@ -79,6 +79,8 @@ plugins:
         ```
 
         Python / JavaScript / Rust / .NET の各言語カテゴリに属するツールはすべて既定で無効（opt-in）である。`preset = "latest"` + `{language} = true` で当該言語の推奨ツール一式がゲートを通過して有効化される。preset非収録のty を追加する場合は個別に `ty = true` を指定する（ゲートを越えて最優先）。Pythonプロジェクトでは別途 `uv add --dev 'pyfltr[python]'` (または `pip install pyfltr[python]`) で依存を導入する。
+
+        archiveの保持期間やキャッシュ設定など複数プロジェクトで共通にしたい設定は、グローバル設定ファイル（Linux: `~/.config/pyfltr/config.toml`、`platformdirs.user_config_dir`が解決する場所）に集約できる。`pyfltr config set --global`でファイルを作成・編集可能。archive/cache系6キーのみグローバル優先で、それ以外はproject側（pyproject.toml）が優先される。詳細は[設定項目](guide/configuration.md)を参照。
 
         ## LLMエージェント向け出力（`--output-format=jsonl`）
 

@@ -11,9 +11,65 @@ pylint-args = ["--jobs=4"]
 extend-exclude = ["foo", "bar.py"]
 ```
 
+## グローバル設定
+
+プロジェクトをまたいで共通にしたい設定（archiveの保持期間やキャッシュ保存期間など）は、
+ユーザーレベルのグローバル設定ファイルに書くことでマシン単位で集約できる。
+
+### グローバル設定ファイルのパス
+
+OS別のパスは次の通り（`platformdirs.user_config_dir("pyfltr")`が解決する場所）。
+
+- Linux: `~/.config/pyfltr/config.toml`
+- macOS: `~/Library/Application Support/pyfltr/config.toml`
+- Windows: `%APPDATA%\pyfltr\config.toml`
+
+環境変数`PYFLTR_GLOBAL_CONFIG`を設定するとそのパスを優先する
+（テスト容易性の確保やユーザーによる強制上書きを目的とした差し替え用。`PYFLTR_CACHE_DIR`と命名対称）。
+
+### 書式
+
+`pyproject.toml`と同じ形式で、`[tool.pyfltr]`セクション配下にキーを列挙する。
+
+```toml
+[tool.pyfltr]
+archive-max-age-days = 30
+archive-max-size-mb = 2048
+cache-max-age-hours = 24
+```
+
+全項目をグローバル設定ファイルに書くことができる。
+ただし、archive系とcache系の計6キーのみ特殊仕様で、グローバル設定が優先される。
+
+- archive系（4キー）: `archive` / `archive-max-runs` / `archive-max-size-mb` / `archive-max-age-days`
+- cache系（2キー）: `cache` / `cache-max-age-hours`
+
+これらをproject側の`pyproject.toml`に書いた場合は警告が出る。
+それ以外のキーはproject側が優先されるため、グローバル設定は未設定時のフォールバックとして機能する。
+
+### 設定の適用順
+
+1. デフォルト値を生成する
+2. グローバル設定とproject設定（`pyproject.toml`）を読み込み、1つの入力にマージする
+   - archive/cache系はマージ時にグローバル側を優先する（project側に同じキーがあっても上書きされる）
+   - それ以外のキーは後勝ち（project側が優先）
+3. マージ結果にプリセット（`preset`）を反映する
+4. カスタムコマンドを登録する
+5. 言語カテゴリゲート（`python` / `javascript` / `rust` / `dotnet`）を適用する
+6. 残りのキーを通常通り適用する
+
+`pyproject.toml`が存在しないディレクトリでもグローバル設定は反映される。
+
+### 設定操作
+
+`pyfltr config`サブコマンドを使うと、project側の`pyproject.toml`とglobal側の`config.toml`の
+両方をCLIから直接操作できる。
+`--global`の有無で対象ファイルを切り替える。
+詳細は[CLIコマンド](usage.md#config)を参照。
+
 ## 設定項目一覧
 
-設定項目と既定値は`pyfltr generate-config`で確認可能。
+設定項目と既定値は`pyfltr config list`で確認可能。
 `{command}`系の項目およびツール固有の項目（`prettier-check-args`など）の詳細はツール別設定ページを参照。
 
 - preset : プリセット設定（後述）

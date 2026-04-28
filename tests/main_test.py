@@ -2,7 +2,9 @@
 # pylint: disable=missing-function-docstring
 # pylint: disable=protected-access
 
+import json
 import logging
+import os
 import pathlib
 import subprocess
 
@@ -10,6 +12,7 @@ import pytest
 
 import pyfltr.command
 import pyfltr.main
+import pyfltr.warnings_
 from tests import conftest as _testconf
 
 
@@ -578,3 +581,174 @@ def test_reconfigure_stdio_to_utf8_tolerates_missing_or_failing_streams(monkeypa
     monkeypatch.setattr(pyfltr.main.sys, "stderr", _ReconfigureRaisingStream())
 
     pyfltr.main._reconfigure_stdio_to_utf8()
+
+
+# --- configサブコマンド ---
+
+
+class TestConfigSubcommand:
+    """`pyfltr config`サブコマンドの統合テスト。
+
+    `_isolate_global_config`fixture（autouse）で`PYFLTR_GLOBAL_CONFIG`は
+    既にtmp配下のダミーパスへ固定されているため、`--global`時はそのパスが
+    対象となる。project側は`monkeypatch.chdir(tmp_path)`でcwd配下の
+    `pyproject.toml`が解決されるようにする。
+    """
+
+    def test_config_get_existing_key(self, monkeypatch, tmp_path, capsys) -> None:
+        """project側で設定した値が`config get`で返る。"""
+        (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\narchive-max-age-days = 7\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        rc = pyfltr.main.run(["config", "get", "archive-max-age-days"])
+        assert rc == 0
+        assert capsys.readouterr().out.strip() == "7"
+
+    def test_config_get_default_value(self, monkeypatch, tmp_path, capsys) -> None:
+        """未設定キーは`DEFAULT_CONFIG`の既定値が返る。"""
+        (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        rc = pyfltr.main.run(["config", "get", "archive-max-age-days"])
+        assert rc == 0
+        # DEFAULT_CONFIGは30
+        assert capsys.readouterr().out.strip() == "30"
+
+    def test_config_get_unknown_key_errors(self, monkeypatch, tmp_path, capsys) -> None:
+        """未知キーはexit 1。"""
+        (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        rc = pyfltr.main.run(["config", "get", "unknown-key"])
+        assert rc == 1
+        assert "unknown-key" in capsys.readouterr().err
+
+    def test_config_set_creates_pyproject_section(self, monkeypatch, tmp_path) -> None:
+        """既存pyproject.tomlに対してsetが書き込み成功する（[tool.pyfltr]セクションが無くても）。"""
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "demo"\n', encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        rc = pyfltr.main.run(["config", "set", "archive-max-age-days", "5"])
+        assert rc == 0
+        text = (tmp_path / "pyproject.toml").read_text(encoding="utf-8")
+        assert "[tool.pyfltr]" in text
+        assert "archive-max-age-days = 5" in text
+
+    def test_config_set_preserves_comments(self, monkeypatch, tmp_path) -> None:
+        """既存pyproject.tomlのコメントが保持される（tomlkit効果の確認）。"""
+        original = '[project]\nname = "demo"  # 重要なコメント\n\n[tool.pyfltr]\n# pyfltrのコメント\npreset = "latest"\n'
+        (tmp_path / "pyproject.toml").write_text(original, encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        rc = pyfltr.main.run(["config", "set", "archive-max-age-days", "10"])
+        assert rc == 0
+        text = (tmp_path / "pyproject.toml").read_text(encoding="utf-8")
+        assert "# 重要なコメント" in text
+        assert "# pyfltrのコメント" in text
+        assert "archive-max-age-days = 10" in text
+
+    def test_config_set_pyproject_missing_errors(self, monkeypatch, tmp_path, capsys) -> None:
+        """pyproject不在ディレクトリでのsetはエラー終了。"""
+        # tmp_pathにpyproject.tomlを作らない
+        monkeypatch.chdir(tmp_path)
+        rc = pyfltr.main.run(["config", "set", "archive-max-age-days", "5"])
+        assert rc == 1
+        assert "pyproject.toml" in capsys.readouterr().err
+
+    def test_config_set_global_creates_file(self, monkeypatch, tmp_path) -> None:
+        """`--global`指定時にglobal config.tomlが自動作成される。"""
+        global_path = pathlib.Path(_get_global_config_env())
+        # 既に存在しないことを確認
+        assert not global_path.exists()
+        monkeypatch.chdir(tmp_path)
+        rc = pyfltr.main.run(["config", "set", "--global", "archive-max-age-days", "5"])
+        assert rc == 0
+        assert global_path.exists()
+        text = global_path.read_text(encoding="utf-8")
+        assert "[tool.pyfltr]" in text
+        assert "archive-max-age-days = 5" in text
+
+    def test_config_set_warning_archive_in_project(self, monkeypatch, tmp_path) -> None:
+        """archive-max-age-daysをproject側にsetすると警告が蓄積される。"""
+        (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        rc = pyfltr.main.run(["config", "set", "archive-max-age-days", "5"])
+        assert rc == 0
+        assert _count_config_warnings("archive-max-age-days") == 1
+
+    def test_config_set_warning_normal_in_global(self, monkeypatch, tmp_path) -> None:
+        """js-runnerをglobal側にsetすると警告（archive/cache以外はproject優先）。"""
+        monkeypatch.chdir(tmp_path)
+        rc = pyfltr.main.run(["config", "set", "--global", "js-runner", "npm"])
+        assert rc == 0
+        assert _count_config_warnings("js-runner") == 1
+
+    def test_config_delete_existing_key(self, monkeypatch, tmp_path, capsys) -> None:
+        """存在キーをdeleteで削除し、その後getすると既定値が返る。"""
+        (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\narchive-max-age-days = 5\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        rc = pyfltr.main.run(["config", "delete", "archive-max-age-days"])
+        assert rc == 0
+        capsys.readouterr()
+        rc = pyfltr.main.run(["config", "get", "archive-max-age-days"])
+        assert rc == 0
+        assert capsys.readouterr().out.strip() == "30"
+
+    def test_config_delete_missing_key(self, monkeypatch, tmp_path, capsys) -> None:
+        """存在しないキーのdeleteはexit 0で終了。"""
+        (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        rc = pyfltr.main.run(["config", "delete", "archive-max-age-days"])
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "archive-max-age-days" in out
+
+    def test_config_list_text_format(self, monkeypatch, tmp_path, capsys) -> None:
+        """textフォーマットで`key = value`形式が出力される。"""
+        (tmp_path / "pyproject.toml").write_text(
+            '[tool.pyfltr]\narchive-max-age-days = 5\njs-runner = "pnpm"\n', encoding="utf-8"
+        )
+        monkeypatch.chdir(tmp_path)
+        rc = pyfltr.main.run(["config", "list"])
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "archive-max-age-days = 5" in out
+        assert "js-runner = pnpm" in out
+
+    def test_config_list_json_format(self, monkeypatch, tmp_path, capsys) -> None:
+        """jsonフォーマットで`{"values": ...}`が出力される。"""
+        (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\narchive-max-age-days = 5\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        rc = pyfltr.main.run(["config", "list", "--output-format", "json"])
+        assert rc == 0
+        out = capsys.readouterr().out.strip()
+        data = json.loads(out)
+        assert data == {"values": {"archive-max-age-days": 5}}
+
+    def test_config_set_unknown_key_errors(self, monkeypatch, tmp_path, capsys) -> None:
+        """未知キーへのsetはexit 1。"""
+        (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        rc = pyfltr.main.run(["config", "set", "unknown-key", "foo"])
+        assert rc == 1
+        assert "unknown-key" in capsys.readouterr().err
+
+    def test_config_delete_unknown_key_errors(self, monkeypatch, tmp_path, capsys) -> None:
+        """未知キーへのdeleteはexit 1。"""
+        (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        rc = pyfltr.main.run(["config", "delete", "unknown-key"])
+        assert rc == 1
+        assert "unknown-key" in capsys.readouterr().err
+
+    def test_config_unknown_subaction_errors(self, monkeypatch, tmp_path) -> None:
+        """`pyfltr config`単独はargparseエラー（required=True）。"""
+        monkeypatch.chdir(tmp_path)
+        with pytest.raises(SystemExit):
+            pyfltr.main.run(["config"])
+
+
+def _get_global_config_env() -> str:
+    """`_isolate_global_config`fixtureが設定したglobal設定パスを返す。"""
+    value = os.environ.get("PYFLTR_GLOBAL_CONFIG")
+    assert value is not None, "PYFLTR_GLOBAL_CONFIG fixtureが効いていない"
+    return value
+
+
+# conftest.count_config_warningsを再エクスポート（同モジュール内の参照を統一するため）
+_count_config_warnings = _testconf.count_config_warnings
