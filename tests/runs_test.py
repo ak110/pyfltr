@@ -185,6 +185,40 @@ def test_show_run_latest_empty(
     assert "run" in capsys.readouterr().err
 
 
+def test_list_runs_ai_agent_jsonl(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AI_AGENT 設定時、`list-runs` は --output-format 未指定でも JSONL を出す。"""
+    monkeypatch.setenv("AI_AGENT", "1")
+    run_id = _seed_run(tmp_path)
+
+    returncode = pyfltr.main.run(["list-runs"])
+    assert returncode == 0
+    lines = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
+    assert len(lines) == 1
+    assert lines[0]["kind"] == "run"
+    assert lines[0]["run_id"] == run_id
+
+
+def test_show_run_ai_agent_jsonl(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AI_AGENT 設定時、`show-run` は --output-format 未指定でも JSONL を出す。"""
+    monkeypatch.setenv("AI_AGENT", "1")
+    run_id = _seed_run(tmp_path, commands=["ruff-check"], exit_code=0)
+
+    returncode = pyfltr.main.run(["show-run", run_id])
+    assert returncode == 0
+    lines = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
+    # JSONL: meta（kind="meta"）+ ツール別command
+    assert lines, "JSONLが1行も出ていない"
+    assert lines[0]["kind"] == "meta"
+
+
 def test_show_run_tool_text(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],

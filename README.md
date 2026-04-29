@@ -53,7 +53,7 @@ uvxでの実行も可能。
 ## 主なサブコマンド
 
 - `pyfltr ci` / `run` / `fast` — チェック実行（CI / ローカル全体 / 軽量）
-- `pyfltr run-for-agent` — エージェント向けJSONL出力（`pyfltr run --output-format=jsonl`のエイリアス）
+- `pyfltr run-for-agent` — エージェント向け（`run`の出力形式の既定値を`jsonl`に切り替えたサブコマンド）
 - `pyfltr list-runs` / `show-run` — 実行履歴の参照
 - `pyfltr config` — 設定ファイルの操作（`get` / `set` / `delete` / `list`）
 - `pyfltr command-info` — ツール起動方式の確認

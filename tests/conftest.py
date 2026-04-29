@@ -32,6 +32,19 @@ def _clear_warnings_between_tests() -> None:
     pyfltr.warnings_.clear()
 
 
+@pytest.fixture(autouse=True)
+def _isolate_output_format_envs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """全テストで出力形式を左右する環境変数を未設定状態に固定する。
+
+    Claude Codeなどのエージェント環境では`AI_AGENT`が常時設定されるため、
+    autouse未対応だと開発機の状態によって既定出力形式がjsonlへ揺らぐ。
+    `PYFLTR_OUTPUT_FORMAT`も同様に開発者シェルで設定されている可能性があるため、
+    両者を一律に未設定化する。個別テストは`monkeypatch.setenv`で必要時のみ上書きする。
+    """
+    monkeypatch.delenv("AI_AGENT", raising=False)
+    monkeypatch.delenv("PYFLTR_OUTPUT_FORMAT", raising=False)
+
+
 # `_get_mise_active_tools` 実装本体を保存しておく（モック上書き前の参照）。
 # キャッシュキー検証系テストでは実装の挙動を直接確認したいため、モック前の関数オブジェクトを
 # 経由して呼べるよう、本変数をテスト側から参照可能にする。

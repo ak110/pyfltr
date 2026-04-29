@@ -348,12 +348,93 @@ def test_run_cli_env_var_overridden_by_cli(mocker, capsys, monkeypatch):
 
 def test_run_cli_env_var_invalid(monkeypatch):
     """PYFLTR_OUTPUT_FORMATに不正値が入っている場合はSystemExitで終了する。"""
-    # argparseのparents共有によるデフォルト汚染を避けるため、_resolve_output_formatを直接テストする。
-    # （cli_value=Noneの場合のみ環境変数が参照される）
+    # 実行系サブコマンドの解決ロジックを直接呼び出して環境変数バリデーションを確認する。
     monkeypatch.setenv("PYFLTR_OUTPUT_FORMAT", "yaml")
     parser = pyfltr.main.build_parser()
+    args = parser.parse_args(["ci"])
     with pytest.raises(SystemExit):
-        pyfltr.main._resolve_output_format(parser, None)
+        pyfltr.main._resolve_output_format(parser, args)
+
+
+def test_run_cli_ai_agent_jsonl(mocker, capsys, monkeypatch):
+    """AI_AGENT が設定されていれば、--output-format 未指定でも JSONL 出力になる。"""
+    proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+    monkeypatch.setenv("AI_AGENT", "1")
+
+    returncode = pyfltr.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    assert returncode == 0
+    captured = capsys.readouterr()
+    assert "----- pyfltr" not in captured.out
+    lines = [line for line in captured.out.splitlines() if line.strip()]
+    assert lines, "JSONLが1行も出ていない"
+    last = json.loads(lines[-1])
+    assert last["kind"] == "summary"
+
+
+def test_run_cli_ai_agent_overridden_by_env_var(mocker, capsys, monkeypatch):
+    """PYFLTR_OUTPUT_FORMAT は AI_AGENT より優先される。"""
+    proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+    monkeypatch.setenv("AI_AGENT", "1")
+    monkeypatch.setenv("PYFLTR_OUTPUT_FORMAT", "text")
+
+    pyfltr.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    captured = capsys.readouterr()
+    # PYFLTR_OUTPUT_FORMAT=text が優先され、stdoutにtext整形（区切り線）が出る。
+    assert "----- pyfltr" in captured.out
+    assert "----- summary" in captured.out
+
+
+def test_run_cli_ai_agent_overridden_by_cli(mocker, capsys, monkeypatch):
+    """CLI --output-format は AI_AGENT より優先される。"""
+    proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+    monkeypatch.setenv("AI_AGENT", "1")
+
+    pyfltr.main.run(["ci", "--output-format=text", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    captured = capsys.readouterr()
+    assert "----- pyfltr" in captured.out
+    assert "----- summary" in captured.out
+
+
+def test_run_cli_ai_agent_empty_string_unset(mocker, capsys, monkeypatch):
+    """AI_AGENT が空文字列の場合は未設定扱い（textに戻る）。"""
+    proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+    monkeypatch.setenv("AI_AGENT", "")
+
+    pyfltr.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    captured = capsys.readouterr()
+    assert "----- pyfltr" in captured.out
+    assert "----- summary" in captured.out
+
+
+def test_run_cli_ai_agent_zero_value_truthy(mocker, capsys, monkeypatch):
+    """AI_AGENT は値の中身を問わず、設定されていれば真扱い（"0"でもJSONL）。"""
+    proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+    monkeypatch.setenv("AI_AGENT", "0")
+
+    pyfltr.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    captured = capsys.readouterr()
+    lines = [line for line in captured.out.splitlines() if line.strip()]
+    assert lines, "JSONLが1行も出ていない"
+    last = json.loads(lines[-1])
+    assert last["kind"] == "summary"
+
+
+def test_run_for_agent_env_var_text_override(mocker, capsys, monkeypatch):
+    """PYFLTR_OUTPUT_FORMAT=text は run-for-agent のサブコマンド既定値より優先される。"""
+    proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+    monkeypatch.setenv("PYFLTR_OUTPUT_FORMAT", "text")
+
+    pyfltr.main.run(["run-for-agent", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    captured = capsys.readouterr()
+    # PYFLTR_OUTPUT_FORMAT=text が run-for-agent の jsonl 既定より優先される。
+    assert "----- pyfltr" in captured.out
+    assert "----- summary" in captured.out
 
 
 def test_run_cli_jsonl_restores_logger_state(mocker, capsys):

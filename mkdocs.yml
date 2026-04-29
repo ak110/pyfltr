@@ -38,7 +38,7 @@ plugins:
         - `pyfltr ci`: 全チェック。formatterによる変更も失敗と判定する（CI向け）
         - `pyfltr run`: 全チェック。fix段→formatter段→linter/tester段の順で、fix-args定義済みlinterの自動修正→formatter→残りの検査を実行する（ローカル向け）
         - `pyfltr fast`: 軽量チェック。`run`と同じ3段構成だが、mypy/pylint/pytest等の重いツールを除外（pre-commit向け）
-        - `pyfltr run-for-agent`: `pyfltr run --output-format=jsonl`のエイリアス。JSONL出力を既定にする（コーディングエージェント向け）
+        - `pyfltr run-for-agent`: `run`の出力形式の既定値を`jsonl`にしたサブコマンド（コーディングエージェント向け）。`PYFLTR_OUTPUT_FORMAT=text`で`text`へ切り戻し可能
         - `pyfltr config <action>`: 設定ファイルを操作する（`get` / `set` / `delete` / `list`）。`--global`なしは`pyproject.toml`、`--global`付きはグローバル設定ファイル（`~/.config/pyfltr/config.toml`等）が対象となる
         - `pyfltr list-runs`: 実行アーカイブ内のrun一覧を表示する。`--limit`で件数制御、`--output-format=text|json|jsonl`
         - `pyfltr show-run <run_id>`: 指定runの詳細を表示する。`<run_id>`は前方一致および`latest`エイリアス可。`--tool <name>`でdiagnostics全件、`--tool <name> --output`で`output.log`全文。`--output-format=text|json|jsonl`
@@ -110,8 +110,10 @@ plugins:
         pyfltr run-for-agent
         ```
 
-        `pyfltr run-for-agent`は`pyfltr run --output-format=jsonl`と等価のエイリアス。
+        `pyfltr run-for-agent`は`run`の出力形式の既定値を`jsonl`に切り替えたサブコマンド。
         環境変数`PYFLTR_OUTPUT_FORMAT=jsonl`でも出力形式を既定で切り替えられる。
+        環境変数`AI_AGENT`が設定されていれば、`jsonl`を受理する全サブコマンド（実行系・`list-runs`・`show-run`・`config list`）で出力形式の既定値が`jsonl`になる（値の中身は問わない。`command-info`は`jsonl`非対応のため対象外）。
+        優先順位は`CLI > PYFLTR_OUTPUT_FORMAT > サブコマンド既定値 > AI_AGENT > text`で、`PYFLTR_OUTPUT_FORMAT=text`で`run-for-agent`配下や`AI_AGENT`環境下でもtextへ切り戻せる。
 
         ## CI向け出力（`--output-format=sarif|github-annotations|code-quality`）
 

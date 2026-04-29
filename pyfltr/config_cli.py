@@ -10,11 +10,15 @@ import pathlib
 import sys
 import typing
 
+import pyfltr.cli
 import pyfltr.config
 import pyfltr.warnings_
 
+_LIST_OUTPUT_FORMATS: tuple[str, ...] = ("text", "json", "jsonl")
+_VALID_LIST_OUTPUT_FORMATS: frozenset[str] = frozenset(_LIST_OUTPUT_FORMATS)
 
-def execute(args: argparse.Namespace) -> int:
+
+def execute(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
     """`pyfltr config`サブコマンドのディスパッチャ。"""
     action = args.config_action
     if action == "get":
@@ -24,7 +28,7 @@ def execute(args: argparse.Namespace) -> int:
     if action == "delete":
         return _config_delete(args)
     if action == "list":
-        return _config_list(args)
+        return _config_list(parser, args)
     # argparseのrequired=Trueにより到達しない想定だが、防御的に1を返す。
     print(f"未知のconfig action: {action}", file=sys.stderr)
     return 1
@@ -137,7 +141,7 @@ def _config_delete(args: argparse.Namespace) -> int:
     return 0
 
 
-def _config_list(args: argparse.Namespace) -> int:
+def _config_list(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
     """`pyfltr config list [--global] [--output-format ...]`の実装。"""
     path = _config_target_path(args)
     try:
@@ -145,7 +149,7 @@ def _config_list(args: argparse.Namespace) -> int:
     except ValueError as e:
         print(f"設定ファイル読込エラー: {e}", file=sys.stderr)
         return 1
-    fmt = args.output_format
+    fmt = pyfltr.cli.resolve_output_format(parser, args.output_format, valid_values=_VALID_LIST_OUTPUT_FORMATS)
     if fmt == "text":
         for key, value in values.items():
             print(f"{key} = {_format_config_value_text(value)}")

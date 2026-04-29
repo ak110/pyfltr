@@ -194,10 +194,14 @@ def _make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> 
         "--output-format",
         choices=sorted(pyfltr.formatters.FORMATTERS.keys()),
         default=None,
-        help="出力形式を指定します(text/jsonl/sarif/github-annotations/code-quality、既定: text)。"
-        "jsonl は LLM 向け JSON Lines 出力、sarif は SARIF 2.1.0、github-annotations は GitHub Actions 向けの注釈形式、"
-        "code-quality は GitLab CI の artifacts:reports:codequality 向けの Code Climate JSON issue 形式。"
-        "未指定時は環境変数 PYFLTR_OUTPUT_FORMAT の値を使用します。",
+        help=(
+            "出力形式を指定します(text/jsonl/sarif/github-annotations/code-quality、既定: text)。"
+            "jsonl は LLM 向け JSON Lines 出力、sarif は SARIF 2.1.0、github-annotations は GitHub Actions 向けの注釈形式、"
+            "code-quality は GitLab CI の artifacts:reports:codequality 向けの Code Climate JSON issue 形式。"
+            f"未指定時は環境変数 {pyfltr.cli.OUTPUT_FORMAT_ENV} の値を使用します。"
+            f"さらに環境変数 {pyfltr.cli.AI_AGENT_ENV} が設定されていれば既定値が jsonl になります"
+            f"(優先順位: CLI > {pyfltr.cli.OUTPUT_FORMAT_ENV} > サブコマンド既定値 > {pyfltr.cli.AI_AGENT_ENV} > text)。"
+        ),
     )
     common.add_argument(
         "--output-file",
@@ -404,8 +408,13 @@ def build_parser(custom_commands: collections.abc.Iterable[str] = ()) -> "_HelpO
     config_list.add_argument(
         "--output-format",
         choices=["text", "json", "jsonl"],
-        default="text",
-        help="出力形式 (text / json / jsonl、既定: text)。",
+        default=None,
+        help=(
+            "出力形式 (text / json / jsonl、既定: text)。"
+            f"未指定時は環境変数 {pyfltr.cli.OUTPUT_FORMAT_ENV} を、"
+            f"{pyfltr.cli.AI_AGENT_ENV} が設定されていれば jsonl を採用する"
+            f"(優先順位: CLI > {pyfltr.cli.OUTPUT_FORMAT_ENV} > {pyfltr.cli.AI_AGENT_ENV} > text)。"
+        ),
     )
 
     # generate-shell-completion: 補完スクリプト出力
@@ -445,7 +454,8 @@ def _apply_subcommand_defaults(args: argparse.Namespace) -> None:
         - `ci`: fixステージ無効。exit_zero_even_if_formattedは明示時のみTrue
         - `run`: fixステージ有効。exit_zero_even_if_formattedをTrueに
         - `fast`: runと同じ + `--commands` 未指定なら `"fast"`
-        - `run-for-agent`: runと同じ + `--output-format` 未指定なら `"jsonl"`
+        - `run-for-agent`: runと同じ。`--output-format`の既定値は`_resolve_output_format`側で
+          サブコマンド既定値`"jsonl"`として注入し、`PYFLTR_OUTPUT_FORMAT`での切り戻しを許す
     """
     subcommand = args.subcommand
     args.include_fix_stage = subcommand in ("run", "fast", "run-for-agent")
@@ -454,8 +464,6 @@ def _apply_subcommand_defaults(args: argparse.Namespace) -> None:
     if subcommand == "fast" and args.commands is None:
         # `--commands` は `action="append"` 化によりリストで保持する。
         args.commands = ["fast"]
-    if subcommand == "run-for-agent" and args.output_format is None:
-        args.output_format = "jsonl"
 
 
 def run(sys_args: typing.Sequence[str] | None = None) -> int:
@@ -482,7 +490,7 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
 
     # configサブコマンド: 設定ファイルの取得・編集（pnpm/npm config互換）
     if subcommand == "config":
-        return pyfltr.config_cli.execute(args)
+        return pyfltr.config_cli.execute(parser, args)
 
     # generate-shell-completionサブコマンド: 補完スクリプトをstdoutに出力する
     if subcommand == "generate-shell-completion":
@@ -494,9 +502,9 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
 
     # 実行アーカイブの詳細参照サブコマンド: load_config() を呼ばずarchiveのみを参照する。
     if subcommand == "list-runs":
-        return pyfltr.runs.execute_list_runs(args)
+        return pyfltr.runs.execute_list_runs(parser, args)
     if subcommand == "show-run":
-        return pyfltr.runs.execute_show_run(args)
+        return pyfltr.runs.execute_show_run(parser, args)
 
     # command-info: 対象ツールの起動方式・解決結果を表示する（実行はしない）
     if subcommand == "command-info":
@@ -550,26 +558,22 @@ def _flatten_commands_arg(values: list[str] | None, config: pyfltr.config.Config
     return result
 
 
-_OUTPUT_FORMAT_ENV = "PYFLTR_OUTPUT_FORMAT"
 _VALID_OUTPUT_FORMATS: frozenset[str] = frozenset(pyfltr.formatters.FORMATTERS.keys())
 
 
-def _resolve_output_format(parser: argparse.ArgumentParser, cli_value: str | None) -> str:
-    """CLI引数 > 環境変数 > 既定値（text） の優先順で出力形式を決定する。
+def _resolve_output_format(parser: argparse.ArgumentParser, args: argparse.Namespace) -> str:
+    """実行系サブコマンド向けに出力形式を解決する。
 
-    環境変数に不正値が入っている場合はargparse同様のエラーで即座に終了させる。
+    `pyfltr.cli.resolve_output_format`へ委譲し、`run-for-agent`のみサブコマンド既定値`"jsonl"`を
+    渡す。これにより`PYFLTR_OUTPUT_FORMAT=text`で`run-for-agent`の既定をtextへ切り戻せる。
     """
-    if cli_value is not None:
-        return cli_value
-    env_value = os.environ.get(_OUTPUT_FORMAT_ENV)
-    if env_value is None or env_value == "":
-        return "text"
-    if env_value not in _VALID_OUTPUT_FORMATS:
-        parser.error(
-            f"環境変数 {_OUTPUT_FORMAT_ENV} に不正な値が指定されています: {env_value!r} "
-            f"(有効値: {', '.join(sorted(_VALID_OUTPUT_FORMATS))})"
-        )
-    return env_value
+    subcommand_default = "jsonl" if args.subcommand == "run-for-agent" else None
+    return pyfltr.cli.resolve_output_format(
+        parser,
+        args.output_format,
+        valid_values=_VALID_OUTPUT_FORMATS,
+        subcommand_default=subcommand_default,
+    )
 
 
 def _run_impl(
@@ -605,7 +609,7 @@ def _run_impl(
         logger.info(f"pyfltr {importlib.metadata.version('pyfltr')}")
         return 0
 
-    output_format = _resolve_output_format(parser, args.output_format)
+    output_format = _resolve_output_format(parser, args)
     output_file: pathlib.Path | None = args.output_file
 
     # pyproject.toml

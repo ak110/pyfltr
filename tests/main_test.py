@@ -720,6 +720,17 @@ class TestConfigSubcommand:
         data = json.loads(out)
         assert data == {"values": {"archive-max-age-days": 5}}
 
+    def test_config_list_ai_agent_jsonl(self, monkeypatch, tmp_path, capsys) -> None:
+        """AI_AGENT 設定時、`config list` は --output-format 未指定でも JSONL を出す。"""
+        (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\narchive-max-age-days = 5\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("AI_AGENT", "1")
+        rc = pyfltr.main.run(["config", "list"])
+        assert rc == 0
+        lines = [line for line in capsys.readouterr().out.splitlines() if line.strip()]
+        assert len(lines) == 1
+        assert json.loads(lines[0]) == {"key": "archive-max-age-days", "value": 5}
+
     def test_config_set_unknown_key_errors(self, monkeypatch, tmp_path, capsys) -> None:
         """未知キーへのsetはexit 1。"""
         (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\n", encoding="utf-8")

@@ -17,8 +17,10 @@ import sys
 import typing
 
 import pyfltr.archive
+import pyfltr.cli
 
 _OUTPUT_FORMATS: tuple[str, ...] = ("text", "json", "jsonl")
+_VALID_OUTPUT_FORMATS: frozenset[str] = frozenset(_OUTPUT_FORMATS)
 _DEFAULT_LIST_LIMIT: int = 20
 """既定の表示件数。画面1ページに収まる件数を目安に20件。"""
 
@@ -43,8 +45,13 @@ def register_subparsers(subparsers: typing.Any) -> None:
     lr.add_argument(
         "--output-format",
         choices=_OUTPUT_FORMATS,
-        default="text",
-        help="出力形式を指定する (既定: text)。",
+        default=None,
+        help=(
+            "出力形式を指定する (既定: text)。"
+            f"未指定時は環境変数 {pyfltr.cli.OUTPUT_FORMAT_ENV} を、"
+            f"{pyfltr.cli.AI_AGENT_ENV} が設定されていれば jsonl を採用する"
+            f"(優先順位: CLI > {pyfltr.cli.OUTPUT_FORMAT_ENV} > {pyfltr.cli.AI_AGENT_ENV} > text)。"
+        ),
     )
 
     sr = subparsers.add_parser(
@@ -69,14 +76,19 @@ def register_subparsers(subparsers: typing.Any) -> None:
     sr.add_argument(
         "--output-format",
         choices=_OUTPUT_FORMATS,
-        default="text",
-        help="出力形式を指定する (既定: text)。",
+        default=None,
+        help=(
+            "出力形式を指定する (既定: text)。"
+            f"未指定時は環境変数 {pyfltr.cli.OUTPUT_FORMAT_ENV} を、"
+            f"{pyfltr.cli.AI_AGENT_ENV} が設定されていれば jsonl を採用する"
+            f"(優先順位: CLI > {pyfltr.cli.OUTPUT_FORMAT_ENV} > {pyfltr.cli.AI_AGENT_ENV} > text)。"
+        ),
     )
 
 
-def execute_list_runs(args: argparse.Namespace) -> int:
+def execute_list_runs(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
     """`list-runs` サブコマンドの処理本体。"""
-    output_format: str = args.output_format
+    output_format = pyfltr.cli.resolve_output_format(parser, args.output_format, valid_values=_VALID_OUTPUT_FORMATS)
     with _stdout_owned(output_format):
         store = pyfltr.archive.ArchiveStore()
         summaries = store.list_runs(limit=args.limit)
@@ -90,9 +102,9 @@ def execute_list_runs(args: argparse.Namespace) -> int:
     return 0
 
 
-def execute_show_run(args: argparse.Namespace) -> int:
+def execute_show_run(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
     """`show-run` サブコマンドの処理本体。"""
-    output_format: str = args.output_format
+    output_format = pyfltr.cli.resolve_output_format(parser, args.output_format, valid_values=_VALID_OUTPUT_FORMATS)
     raw_run_id: str = args.run_id
     commands_arg: str | None = args.commands
     output_mode: bool = args.output

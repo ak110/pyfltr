@@ -5,8 +5,10 @@
 from __future__ import annotations
 
 import argparse
+import collections.abc
 import concurrent.futures
 import logging
+import os
 import pathlib
 import shlex
 import threading
@@ -42,6 +44,65 @@ structured_logger = logging.getLogger("pyfltr.structured")
 structured_logger.propagate = False
 
 lock = threading.Lock()
+
+
+OUTPUT_FORMAT_ENV = "PYFLTR_OUTPUT_FORMAT"
+"""出力形式を環境変数で既定指定するためのキー名。"""
+
+AI_AGENT_ENV = "AI_AGENT"
+"""エージェント実行を示す慣習的な環境変数名。"""
+
+_AI_AGENT_DEFAULT_FORMAT = "jsonl"
+"""AI_AGENT検出時に採用する出力形式。"""
+
+
+def resolve_output_format(
+    parser: argparse.ArgumentParser,
+    cli_value: str | None,
+    *,
+    valid_values: collections.abc.Set[str],
+    subcommand_default: str | None = None,
+    final_default: str = "text",
+) -> str:
+    """出力形式を共通の優先順位で決定する。
+
+    優先順位は「CLI > `PYFLTR_OUTPUT_FORMAT` > サブコマンド既定値 > `AI_AGENT(jsonl)` > 最終既定値」。
+    CLI明示値（`cli_value`）と`PYFLTR_OUTPUT_FORMAT`は利用者が意識的に指定した値とみなし、
+    サブコマンド既定値・`AI_AGENT`検出より優先する。これによりエージェント環境下や
+    `run-for-agent`配下でも`PYFLTR_OUTPUT_FORMAT=text`で切り戻せる。
+
+    Args:
+        parser: 環境変数バリデーションエラー時の`parser.error`呼び出しに使う。
+        cli_value: CLIで明示された`--output-format`の値。未指定時は`None`。
+        valid_values: サブコマンドが受理する出力形式集合。`PYFLTR_OUTPUT_FORMAT`の値検証と、
+            サブコマンド既定値・`AI_AGENT(jsonl)`の採否判定に使う。
+        subcommand_default: サブコマンド固有の既定値（例: `run-for-agent`では`"jsonl"`）。
+            `valid_values`に含まれない場合は無視する。`None`の場合は次段階へ進む。
+        final_default: いずれの解決経路にも該当しない場合の最終既定値。
+
+    Returns:
+        解決済みの出力形式。
+
+    `AI_AGENT`は環境変数が設定されていれば真扱い（空文字列は未設定扱い、値の中身は問わない）。
+    `AI_AGENT`既定値（`jsonl`）が`valid_values`に含まれない場合は無視し、利用者から見て予期しない
+    フォールバックを起こさない。
+    """
+    if cli_value is not None:
+        return cli_value
+    env_value = os.environ.get(OUTPUT_FORMAT_ENV)
+    if env_value is not None and env_value != "":
+        if env_value not in valid_values:
+            parser.error(
+                f"環境変数 {OUTPUT_FORMAT_ENV} に不正な値が指定されています: {env_value!r} "
+                f"(有効値: {', '.join(sorted(valid_values))})"
+            )
+        return env_value
+    if subcommand_default is not None and subcommand_default in valid_values:
+        return subcommand_default
+    ai_agent_value = os.environ.get(AI_AGENT_ENV)
+    if ai_agent_value is not None and ai_agent_value != "" and _AI_AGENT_DEFAULT_FORMAT in valid_values:
+        return _AI_AGENT_DEFAULT_FORMAT
+    return final_default
 
 
 def configure_text_output(stream: typing.TextIO, *, level: int = logging.INFO) -> None:
