@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import collections.abc
 import concurrent.futures
+import dataclasses
 import logging
 import os
 import pathlib
@@ -52,8 +53,25 @@ OUTPUT_FORMAT_ENV = "PYFLTR_OUTPUT_FORMAT"
 AI_AGENT_ENV = "AI_AGENT"
 """エージェント実行を示す慣習的な環境変数名。"""
 
-_AI_AGENT_DEFAULT_FORMAT = "jsonl"
-"""AI_AGENT検出時に採用する出力形式。"""
+# 解決経路を示す`format_source`の固定語彙。各値はそれ単独で読んで意味が通るよう命名する。
+# JSONL `header.format_source`の値・利用者向けドキュメントの説明・テストのassertで参照する。
+FORMAT_SOURCE_CLI = "cli"
+FORMAT_SOURCE_ENV_PYFLTR = f"env.{OUTPUT_FORMAT_ENV}"
+FORMAT_SOURCE_SUBCOMMAND_DEFAULT = "subcommand_default"
+FORMAT_SOURCE_ENV_AI_AGENT = f"env.{AI_AGENT_ENV}"
+FORMAT_SOURCE_FALLBACK = "fallback"
+
+
+@dataclasses.dataclass(frozen=True)
+class OutputFormatResolution:
+    """`resolve_output_format`の戻り値。決定値と由来ラベルの2要素で構成する。
+
+    既存実装は文字列単独を返していたが、JSONL `header.format_source`へ
+    解決経路を露出する目的で由来ラベルを追加した。
+    """
+
+    format: str
+    source: str
 
 
 def resolve_output_format(
@@ -62,11 +80,12 @@ def resolve_output_format(
     *,
     valid_values: collections.abc.Set[str],
     subcommand_default: str | None = None,
+    ai_agent_default: str | None = None,
     final_default: str = "text",
-) -> str:
+) -> OutputFormatResolution:
     """出力形式を共通の優先順位で決定する。
 
-    優先順位は「CLI > `PYFLTR_OUTPUT_FORMAT` > サブコマンド既定値 > `AI_AGENT(jsonl)` > 最終既定値」。
+    優先順位は「CLI > `PYFLTR_OUTPUT_FORMAT` > サブコマンド既定値 > `AI_AGENT` > 最終既定値」。
     CLI明示値（`cli_value`）と`PYFLTR_OUTPUT_FORMAT`は利用者が意識的に指定した値とみなし、
     サブコマンド既定値・`AI_AGENT`検出より優先する。これによりエージェント環境下や
     `run-for-agent`配下でも`PYFLTR_OUTPUT_FORMAT=text`で切り戻せる。
@@ -75,20 +94,21 @@ def resolve_output_format(
         parser: 環境変数バリデーションエラー時の`parser.error`呼び出しに使う。
         cli_value: CLIで明示された`--output-format`の値。未指定時は`None`。
         valid_values: サブコマンドが受理する出力形式集合。`PYFLTR_OUTPUT_FORMAT`の値検証と、
-            サブコマンド既定値・`AI_AGENT(jsonl)`の採否判定に使う。
+            サブコマンド既定値・`AI_AGENT`検出時既定値の採否判定に使う。
         subcommand_default: サブコマンド固有の既定値（例: `run-for-agent`では`"jsonl"`）。
             `valid_values`に含まれない場合は無視する。`None`の場合は次段階へ進む。
+        ai_agent_default: `AI_AGENT`検出時に採用する既定値。実行系・参照系では`"jsonl"`、
+            `command-info`では`"json"`を渡す。`None`または`valid_values`に含まれない場合は
+            `AI_AGENT`検出を無視する。
         final_default: いずれの解決経路にも該当しない場合の最終既定値。
 
     Returns:
-        解決済みの出力形式。
+        解決済みの出力形式と由来ラベルを保持する`OutputFormatResolution`。
 
     `AI_AGENT`は環境変数が設定されていれば真扱い（空文字列は未設定扱い、値の中身は問わない）。
-    `AI_AGENT`既定値（`jsonl`）が`valid_values`に含まれない場合は無視し、利用者から見て予期しない
-    フォールバックを起こさない。
     """
     if cli_value is not None:
-        return cli_value
+        return OutputFormatResolution(format=cli_value, source=FORMAT_SOURCE_CLI)
     env_value = os.environ.get(OUTPUT_FORMAT_ENV)
     if env_value is not None and env_value != "":
         if env_value not in valid_values:
@@ -96,13 +116,14 @@ def resolve_output_format(
                 f"環境変数 {OUTPUT_FORMAT_ENV} に不正な値が指定されています: {env_value!r} "
                 f"(有効値: {', '.join(sorted(valid_values))})"
             )
-        return env_value
+        return OutputFormatResolution(format=env_value, source=FORMAT_SOURCE_ENV_PYFLTR)
     if subcommand_default is not None and subcommand_default in valid_values:
-        return subcommand_default
-    ai_agent_value = os.environ.get(AI_AGENT_ENV)
-    if ai_agent_value is not None and ai_agent_value != "" and _AI_AGENT_DEFAULT_FORMAT in valid_values:
-        return _AI_AGENT_DEFAULT_FORMAT
-    return final_default
+        return OutputFormatResolution(format=subcommand_default, source=FORMAT_SOURCE_SUBCOMMAND_DEFAULT)
+    if ai_agent_default is not None and ai_agent_default in valid_values:
+        ai_agent_value = os.environ.get(AI_AGENT_ENV)
+        if ai_agent_value is not None and ai_agent_value != "":
+            return OutputFormatResolution(format=ai_agent_default, source=FORMAT_SOURCE_ENV_AI_AGENT)
+    return OutputFormatResolution(format=final_default, source=FORMAT_SOURCE_FALLBACK)
 
 
 def configure_text_output(stream: typing.TextIO, *, level: int = logging.INFO) -> None:

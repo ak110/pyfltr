@@ -43,6 +43,10 @@ class RunOutputContext:
     stream: bool = False
     include_details: bool = True
     structured_stdout: bool = False
+    # 出力形式の解決経路ラベル（`pyfltr.cli.FORMAT_SOURCE_*`）。
+    # 実行系サブコマンドのみ`run_pipeline`が値を埋める。参照系・MCP経路では`None`のまま。
+    # JSONL `header.format_source`に出すためにJSONLFormatterで参照する。
+    format_source: str | None = None
 
 
 class OutputFormatter(typing.Protocol):
@@ -203,6 +207,7 @@ class JSONLFormatter:
             files=ctx.all_files,
             run_id=ctx.run_id,
             config=ctx.config,
+            format_source=ctx.format_source,
         )
 
     def on_result(self, ctx: RunOutputContext, result: pyfltr.command.CommandResult) -> None:

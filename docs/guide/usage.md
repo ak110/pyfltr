@@ -524,7 +524,7 @@ CLIオプション`--output-format`が指定されている場合は環境変数
 値の中身は問わず、空文字列でない値が設定されていれば真扱いとなる
 （`AI_AGENT=1`・`AI_AGENT=cursor`等いずれも有効）。
 
-優先順位は`CLI > PYFLTR_OUTPUT_FORMAT > サブコマンド既定値（run-for-agent=jsonl）> AI_AGENT(jsonl) > text`。
+優先順位は`CLI > PYFLTR_OUTPUT_FORMAT > サブコマンド既定値（run-for-agent=jsonl）> AI_AGENT > text`。
 `PYFLTR_OUTPUT_FORMAT`を明示すれば`AI_AGENT`環境下や`run-for-agent`配下でもtext等へ切り戻せる
 （例: `PYFLTR_OUTPUT_FORMAT=text pyfltr run-for-agent`）。
 
@@ -537,13 +537,26 @@ CLIオプション`--output-format`が指定されている場合は環境変数
   `AI_AGENT`設定で`jsonl`に切り替わる
 - `command-info`: 2値（`text` / `json`）。`jsonl`非対応のため`AI_AGENT`は無視される
 
+JSONL `header`レコードには解決経路を示す`format_source`フィールドが常時出力される。
+値は次の5語彙のいずれかで、`AI_AGENT`環境下でも実際にどの優先段階で値が決まったかを後追いできる。
+
+| 値 | 由来 |
+| --- | --- |
+| `cli` | `--output-format`での明示指定 |
+| `env.PYFLTR_OUTPUT_FORMAT` | `PYFLTR_OUTPUT_FORMAT`環境変数での明示指定 |
+| `subcommand_default` | サブコマンド固有の既定値（`run-for-agent`の`jsonl`等） |
+| `env.AI_AGENT` | `AI_AGENT`環境変数検出による既定切替 |
+| `fallback` | 最終既定値（通常は`text`） |
+
 ### jsonlスキーマ
 
 出力は以下5種別のレコードからなる。`kind`フィールドでレコード種別を判別する。
 
 - `header`: 先頭1行。実行環境情報
- （`version` / `run_id` / `python` / `executable` / `platform` / `cwd` / `commands` / `files`）。
+ （`version` / `run_id` / `python` / `executable` / `platform` / `cwd` / `commands` / `files` / `format_source`）。
   `commands`は実行対象（有効化された、`--only-failed`適用後の）コマンド名配列。
+  `format_source`は出力形式の解決経路ラベルで、値は
+「`cli` / `env.PYFLTR_OUTPUT_FORMAT` / `subcommand_default` / `env.AI_AGENT` / `fallback`」の5語彙。
   実行対象にmise経路のツール（`cargo-fmt` / `actionlint`等）が含まれる場合、`mise_active_tools`フィールドへ
   取得状況（`status`・取得失敗時のみ`detail`・取得成功時のみ`active_keys`）を付与する。
   ステータスは`ok` / `mise-not-found` / `untrusted-no-side-effects` / `trust-failed` / `exec-error` /
@@ -576,7 +589,7 @@ CLIオプション`--output-format`が指定されている場合は環境変数
 [`pyfltr show-run`](#show-run) / [`pyfltr list-runs`](#list-runs)で該当runの詳細を参照できる。
 
 ```json
-{"kind":"header","version":"3.0.0","run_id":"01HXYZ...","python":"3.12.0 ...","executable":"/usr/bin/python3","platform":"linux","cwd":"/work","commands":["textlint","ruff-format"],"files":12}
+{"kind":"header","version":"3.0.0","run_id":"01HXYZ...","python":"3.12.0 ...","executable":"/usr/bin/python3","platform":"linux","cwd":"/work","commands":["textlint","ruff-format"],"files":12,"format_source":"subcommand_default"}
 {"kind":"warning","source":"config","msg":"pre-commit が有効化されていますが、設定ファイルが見つかりません: .pre-commit-config.yaml"}
 {"kind":"diagnostic","command":"textlint","file":"docs/a.md","messages":[{"line":3,"col":1,"end_line":3,"end_col":150,"rule":"ja-technical-writing/sentence-length","severity":"error","msg":"Sentence is too long"}]}
 {"kind":"command","command":"textlint","type":"linter","status":"failed","files":12,"elapsed":0.8,"diagnostics":1,"rc":1,"hints":{"ja-technical-writing/sentence-length":"textlint counts up to the period (。) as one sentence; bullet-line splits still count as one. Split with periods to shorten.","messages[].end_col":"textlint reports end_col as cumulative offset from the text-node start, not in-line offset"}}

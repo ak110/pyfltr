@@ -149,7 +149,12 @@ def _config_list(parser: argparse.ArgumentParser, args: argparse.Namespace) -> i
     except ValueError as e:
         print(f"設定ファイル読込エラー: {e}", file=sys.stderr)
         return 1
-    fmt = pyfltr.cli.resolve_output_format(parser, args.output_format, valid_values=_VALID_LIST_OUTPUT_FORMATS)
+    fmt = pyfltr.cli.resolve_output_format(
+        parser,
+        args.output_format,
+        valid_values=_VALID_LIST_OUTPUT_FORMATS,
+        ai_agent_default="jsonl",
+    ).format
     if fmt == "text":
         for key, value in values.items():
             print(f"{key} = {_format_config_value_text(value)}")

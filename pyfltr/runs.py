@@ -88,7 +88,12 @@ def register_subparsers(subparsers: typing.Any) -> None:
 
 def execute_list_runs(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
     """`list-runs` サブコマンドの処理本体。"""
-    output_format = pyfltr.cli.resolve_output_format(parser, args.output_format, valid_values=_VALID_OUTPUT_FORMATS)
+    output_format = pyfltr.cli.resolve_output_format(
+        parser,
+        args.output_format,
+        valid_values=_VALID_OUTPUT_FORMATS,
+        ai_agent_default="jsonl",
+    ).format
     with _stdout_owned(output_format):
         store = pyfltr.archive.ArchiveStore()
         summaries = store.list_runs(limit=args.limit)
@@ -104,7 +109,12 @@ def execute_list_runs(parser: argparse.ArgumentParser, args: argparse.Namespace)
 
 def execute_show_run(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
     """`show-run` サブコマンドの処理本体。"""
-    output_format = pyfltr.cli.resolve_output_format(parser, args.output_format, valid_values=_VALID_OUTPUT_FORMATS)
+    output_format = pyfltr.cli.resolve_output_format(
+        parser,
+        args.output_format,
+        valid_values=_VALID_OUTPUT_FORMATS,
+        ai_agent_default="jsonl",
+    ).format
     raw_run_id: str = args.run_id
     commands_arg: str | None = args.commands
     output_mode: bool = args.output

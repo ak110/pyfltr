@@ -180,6 +180,7 @@ def build_lines(
     run_id: str | None = None,
     launcher_prefix: list[str] | None = None,
     fully_excluded_files: list[str] | None = None,
+    format_source: str | None = None,
 ) -> list[str]:
     """CommandResult群からJSONL各行を生成する。
 
@@ -206,6 +207,7 @@ def build_lines(
                     files,
                     run_id=run_id,
                     mise_active_tools=collect_mise_active_tools_for_header(commands, config),
+                    format_source=format_source,
                 )
             )
         )
@@ -243,6 +245,7 @@ def write_jsonl_header(
     *,
     run_id: str | None = None,
     config: pyfltr.config.Config | None = None,
+    format_source: str | None = None,
 ) -> None:
     """header行を構造化出力loggerに書き出す（ストリーミングモード用）。
 
@@ -252,6 +255,7 @@ def write_jsonl_header(
     （stdoutもしくは`--output-file`のFileHandler）。
     `config`が渡された場合、mise経路を使うrunに限り
     `mise_active_tools`フィールドへ取得状況を露出する。
+    `format_source`が渡された場合、`format_source`フィールドへ解決経路ラベルを露出する。
     """
     mise_active_tools = collect_mise_active_tools_for_header(commands, config) if config is not None else None
     with _write_lock:
@@ -262,6 +266,7 @@ def write_jsonl_header(
                     files,
                     run_id=run_id,
                     mise_active_tools=mise_active_tools,
+                    format_source=format_source,
                 )
             )
         )
@@ -343,6 +348,7 @@ def _build_header_record(
     *,
     run_id: str | None = None,
     mise_active_tools: dict[str, typing.Any] | None = None,
+    format_source: str | None = None,
 ) -> dict[str, typing.Any]:
     """実行環境の基本情報をheaderレコードdictとして返す。
 
@@ -350,6 +356,8 @@ def _build_header_record(
     前提とする。呼び出し側で絞り込み済みの配列を渡すこと。
     `mise_active_tools`は`{"status": ..., "detail": ..., "active_keys": [...]}`形式で渡し、
     指定時のみheaderへ露出する（mise経路を使うrunの自己診断用途）。
+    `format_source`は`pyfltr.cli.FORMAT_SOURCE_*`の値で、出力形式の解決経路を明示する。
+    指定時のみheaderへ露出する。
     """
     record: dict[str, typing.Any] = {
         "kind": "header",
@@ -365,6 +373,8 @@ def _build_header_record(
         record["run_id"] = run_id
     if mise_active_tools is not None:
         record["mise_active_tools"] = mise_active_tools
+    if format_source is not None:
+        record["format_source"] = format_source
     return record
 
 

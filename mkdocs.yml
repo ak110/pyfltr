@@ -86,7 +86,7 @@ plugins:
 
         `--output-format=jsonl`でJSON Lines形式の構造化出力が得られる。レコードは5種類。
 
-        - `header`: 先頭1行。実行環境情報（`version` / `run_id` / `python` / `executable` / `platform` / `cwd` / `commands` / `files` / `mise_active_tools`）。`commands` は実行対象（有効化された）コマンド名配列
+        - `header`: 先頭1行。実行環境情報（`version` / `run_id` / `python` / `executable` / `platform` / `cwd` / `commands` / `files` / `mise_active_tools` / `format_source`）。`commands` は実行対象（有効化された）コマンド名配列。`format_source` は出力形式の解決経路ラベル（`cli` / `env.PYFLTR_OUTPUT_FORMAT` / `subcommand_default` / `env.AI_AGENT` / `fallback` の5値）
         - `warning`: pyfltr が検出した設定・実行時の警告（`source` で発生元を識別）
         - `diagnostic`: `(command, file)` 単位で1行に集約される診断。個別指摘は `messages[]` 配列（各要素は `line` / `col` / `rule` / `severity` / `fix` / `msg`）として格納される。`fix` は `"safe"` / `"unsafe"` / `"suggested"` / `"none"` の4値を取り、ツールが自動修正情報を返さない場合はフィールドごと省略
         - `command`: ツールごとの実行結果サマリ（`status` / `elapsed` / `diagnostics` / `rc` / `retry_command` / `truncated` / `cached` / `cached_from` / `cached_elapsed` / `hint_urls` / `hints`）。`cached=true` のとき `elapsed` は省略され前回実行時の計測値を `cached_elapsed` として提示する。`hint_urls` は rule→ドキュメントURLの辞書。`hints` は rule識別子→1文ヒントの辞書（英語）。textlintコマンドの場合は`messages[].end_col`キーでend_colフィールドがテキストノード先頭からの累積位置である旨も同梱する
@@ -114,6 +114,7 @@ plugins:
         環境変数`PYFLTR_OUTPUT_FORMAT=jsonl`でも出力形式を既定で切り替えられる。
         環境変数`AI_AGENT`が設定されていれば、`jsonl`を受理する全サブコマンド（実行系・`list-runs`・`show-run`・`config list`）で出力形式の既定値が`jsonl`になる（値の中身は問わない。`command-info`は`jsonl`非対応のため対象外）。
         優先順位は`CLI > PYFLTR_OUTPUT_FORMAT > サブコマンド既定値 > AI_AGENT > text`で、`PYFLTR_OUTPUT_FORMAT=text`で`run-for-agent`配下や`AI_AGENT`環境下でもtextへ切り戻せる。
+        実行系サブコマンドのJSONL `header`レコードには解決経路ラベル`format_source`が常時含まれ、利用者は`AI_AGENT`環境下でも実際にどの優先段階で値が決まったかを後追いできる。
 
         ## CI向け出力（`--output-format=sarif|github-annotations|code-quality`）
 

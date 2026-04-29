@@ -437,6 +437,137 @@ def test_run_for_agent_env_var_text_override(mocker, capsys, monkeypatch):
     assert "----- summary" in captured.out
 
 
+def test_resolve_output_format_returns_resolution():
+    """`resolve_output_format`が決定値+由来ラベルのdataclassを返す（CLI明示時は`cli`）。"""
+    parser = pyfltr.main.build_parser()
+    resolution = pyfltr.cli.resolve_output_format(
+        parser,
+        "jsonl",
+        valid_values=frozenset({"text", "jsonl"}),
+        ai_agent_default="jsonl",
+    )
+    assert resolution.format == "jsonl"
+    assert resolution.source == pyfltr.cli.FORMAT_SOURCE_CLI
+
+
+def test_resolve_output_format_env_pyfltr(monkeypatch):
+    """`PYFLTR_OUTPUT_FORMAT`明示時は由来ラベルが`env.PYFLTR_OUTPUT_FORMAT`になる。"""
+    monkeypatch.setenv("PYFLTR_OUTPUT_FORMAT", "jsonl")
+    parser = pyfltr.main.build_parser()
+    resolution = pyfltr.cli.resolve_output_format(
+        parser,
+        None,
+        valid_values=frozenset({"text", "jsonl"}),
+        ai_agent_default="jsonl",
+    )
+    assert resolution.format == "jsonl"
+    assert resolution.source == pyfltr.cli.FORMAT_SOURCE_ENV_PYFLTR
+
+
+def test_resolve_output_format_subcommand_default():
+    """サブコマンド既定値経路では由来ラベルが`subcommand_default`になる。"""
+    parser = pyfltr.main.build_parser()
+    resolution = pyfltr.cli.resolve_output_format(
+        parser,
+        None,
+        valid_values=frozenset({"text", "jsonl"}),
+        subcommand_default="jsonl",
+        ai_agent_default="jsonl",
+    )
+    assert resolution.format == "jsonl"
+    assert resolution.source == pyfltr.cli.FORMAT_SOURCE_SUBCOMMAND_DEFAULT
+
+
+def test_resolve_output_format_env_ai_agent(monkeypatch):
+    """`AI_AGENT`設定時は由来ラベルが`env.AI_AGENT`、形式は`ai_agent_default`の値になる。"""
+    monkeypatch.setenv("AI_AGENT", "1")
+    parser = pyfltr.main.build_parser()
+    resolution = pyfltr.cli.resolve_output_format(
+        parser,
+        None,
+        valid_values=frozenset({"text", "jsonl"}),
+        ai_agent_default="jsonl",
+    )
+    assert resolution.format == "jsonl"
+    assert resolution.source == pyfltr.cli.FORMAT_SOURCE_ENV_AI_AGENT
+
+
+def test_resolve_output_format_fallback():
+    """いずれの経路にも該当しない場合は`fallback`扱いで`final_default`を返す。"""
+    parser = pyfltr.main.build_parser()
+    resolution = pyfltr.cli.resolve_output_format(
+        parser,
+        None,
+        valid_values=frozenset({"text", "jsonl"}),
+    )
+    assert resolution.format == "text"
+    assert resolution.source == pyfltr.cli.FORMAT_SOURCE_FALLBACK
+
+
+def test_resolve_output_format_ai_agent_default_none_ignores_env(monkeypatch):
+    """`ai_agent_default=None`では`AI_AGENT`が立っていてもfallbackへ進む。"""
+    monkeypatch.setenv("AI_AGENT", "1")
+    parser = pyfltr.main.build_parser()
+    resolution = pyfltr.cli.resolve_output_format(
+        parser,
+        None,
+        valid_values=frozenset({"text", "jsonl"}),
+    )
+    assert resolution.format == "text"
+    assert resolution.source == pyfltr.cli.FORMAT_SOURCE_FALLBACK
+
+
+def test_run_cli_header_format_source_subcommand_default(mocker, capsys):
+    """run-for-agentの既定値経路ではheader.format_sourceが`subcommand_default`になる。"""
+    proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+
+    pyfltr.main.run(["run-for-agent", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    captured = capsys.readouterr()
+    lines = [line for line in captured.out.splitlines() if line.strip()]
+    header = json.loads(lines[0])
+    assert header["kind"] == "header"
+    assert header["format_source"] == pyfltr.cli.FORMAT_SOURCE_SUBCOMMAND_DEFAULT
+
+
+def test_run_cli_header_format_source_cli(mocker, capsys):
+    """`--output-format=jsonl`明示時はheader.format_sourceが`cli`になる。"""
+    proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+
+    pyfltr.main.run(["ci", "--output-format=jsonl", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    captured = capsys.readouterr()
+    lines = [line for line in captured.out.splitlines() if line.strip()]
+    header = json.loads(lines[0])
+    assert header["format_source"] == pyfltr.cli.FORMAT_SOURCE_CLI
+
+
+def test_run_cli_header_format_source_env_ai_agent(mocker, capsys, monkeypatch):
+    """`AI_AGENT`設定時のJSONL既定切替ではheader.format_sourceが`env.AI_AGENT`になる。"""
+    proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+    monkeypatch.setenv("AI_AGENT", "1")
+
+    pyfltr.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    captured = capsys.readouterr()
+    lines = [line for line in captured.out.splitlines() if line.strip()]
+    header = json.loads(lines[0])
+    assert header["format_source"] == pyfltr.cli.FORMAT_SOURCE_ENV_AI_AGENT
+
+
+def test_run_cli_header_format_source_env_pyfltr(mocker, capsys, monkeypatch):
+    """`PYFLTR_OUTPUT_FORMAT=jsonl`経路ではheader.format_sourceが`env.PYFLTR_OUTPUT_FORMAT`になる。"""
+    proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
+    mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+    monkeypatch.setenv("PYFLTR_OUTPUT_FORMAT", "jsonl")
+
+    pyfltr.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    captured = capsys.readouterr()
+    lines = [line for line in captured.out.splitlines() if line.strip()]
+    header = json.loads(lines[0])
+    assert header["format_source"] == pyfltr.cli.FORMAT_SOURCE_ENV_PYFLTR
+
+
 def test_run_cli_jsonl_restores_logger_state(mocker, capsys):
     """jsonlモード実行後にtextモードを再実行すると、text出力がstdoutに戻ること。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")

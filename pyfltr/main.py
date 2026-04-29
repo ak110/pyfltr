@@ -7,6 +7,7 @@
 import argparse
 import collections.abc
 import contextlib
+import dataclasses
 import importlib.metadata
 import logging
 import os
@@ -561,11 +562,11 @@ def _flatten_commands_arg(values: list[str] | None, config: pyfltr.config.Config
 _VALID_OUTPUT_FORMATS: frozenset[str] = frozenset(pyfltr.formatters.FORMATTERS.keys())
 
 
-def _resolve_output_format(parser: argparse.ArgumentParser, args: argparse.Namespace) -> str:
+def _resolve_output_format(parser: argparse.ArgumentParser, args: argparse.Namespace) -> pyfltr.cli.OutputFormatResolution:
     """実行系サブコマンド向けに出力形式を解決する。
 
-    `pyfltr.cli.resolve_output_format`へ委譲し、`run-for-agent`のみサブコマンド既定値`"jsonl"`を
-    渡す。これにより`PYFLTR_OUTPUT_FORMAT=text`で`run-for-agent`の既定をtextへ切り戻せる。
+    `run-for-agent`のみサブコマンド既定値`"jsonl"`を渡し、`AI_AGENT`検出時は実行系全体で
+    `jsonl`既定を採用する。`PYFLTR_OUTPUT_FORMAT=text`での切り戻しは`pyfltr.cli`側で扱う。
     """
     subcommand_default = "jsonl" if args.subcommand == "run-for-agent" else None
     return pyfltr.cli.resolve_output_format(
@@ -573,6 +574,7 @@ def _resolve_output_format(parser: argparse.ArgumentParser, args: argparse.Names
         args.output_format,
         valid_values=_VALID_OUTPUT_FORMATS,
         subcommand_default=subcommand_default,
+        ai_agent_default="jsonl",
     )
 
 
@@ -609,7 +611,8 @@ def _run_impl(
         logger.info(f"pyfltr {importlib.metadata.version('pyfltr')}")
         return 0
 
-    output_format = _resolve_output_format(parser, args)
+    resolution = _resolve_output_format(parser, args)
+    output_format, format_source = resolution.format, resolution.source
     output_file: pathlib.Path | None = args.output_file
 
     # pyproject.toml
@@ -620,6 +623,7 @@ def _run_impl(
         return 1
 
     args.output_format = output_format
+    args.format_source = format_source
     args.output_file = output_file
 
     # カスタムコマンド用のCLI引数を動的追加して再パース
@@ -630,6 +634,7 @@ def _run_impl(
         # 再パースで各種属性が初期化されるため、サブコマンド既定値とその他の確定値を再適用する。
         _apply_subcommand_defaults(args)
         args.output_format = output_format
+        args.format_source = format_source
         args.output_file = output_file
         if getattr(args, "no_fix", False):
             args.include_fix_stage = False
@@ -702,6 +707,7 @@ def run_pipeline(
     `run_id` を誤って拾うリスクがあるため戻り値経由とした。
     """
     output_format = args.output_format or "text"
+    format_source: str | None = getattr(args, "format_source", None)
     output_file: pathlib.Path | None = args.output_file
     # JSONL / SARIF / code-qualityのstdoutモードではstdoutを構造化出力が占有するため、
     # UI・画面クリア・streamによる詳細ログ即時出力を無効化する。
@@ -863,6 +869,7 @@ def run_pipeline(
         stream=per_command_log,
         include_details=include_details_from_stream,
         structured_stdout=structured_stdout,
+        format_source=format_source,
     )
 
     formatter.on_start(ctx)
@@ -901,19 +908,7 @@ def run_pipeline(
             only_failed_targets=only_failed_targets,
         )
         # TUI経路では常にinclude_details=True（ストリーミングしていないため）。
-        ctx = pyfltr.formatters.RunOutputContext(
-            config=config,
-            output_file=output_file,
-            force_text_on_stderr=force_text_on_stderr,
-            commands=commands,
-            all_files=len(all_files),
-            run_id=run_id,
-            launcher_prefix=launcher_prefix,
-            retry_args_template=retry_args_template,
-            stream=False,
-            include_details=True,
-            structured_stdout=structured_stdout,
-        )
+        ctx = dataclasses.replace(ctx, stream=False, include_details=True)
     else:
         # 非TUIモード: 既定はバッファリング （最後にまとめて出力）、`--stream` で従来の即時出力。
         results = pyfltr.cli.run_commands_with_cli(
