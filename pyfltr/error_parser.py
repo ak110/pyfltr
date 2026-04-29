@@ -463,6 +463,8 @@ def _parse_textlint_json(output: str) -> list[ErrorLocation]:
     """Textlint --format json出力をパース。JSON解析失敗時はregexにフォールバック。
 
     出力構造はESLintと同じfilePath + messages配列形式。
+    textlintはルールによって複数行にわたるmessage（sentence-lengthの`Over X characters.`等）を返すため、
+    JSONL `messages[].msg`は1行に保つ目的で改行を半角スペースへ畳む。
     """
     data = _try_json_loads(output)
     if not isinstance(data, list):
@@ -488,7 +490,9 @@ def _parse_textlint_json(output: str) -> list[ErrorLocation]:
             fix_value = "safe" if msg.get("fix") else "none"
             rule = rule_id or None
             hint = _TEXTLINT_RULE_HINTS.get(rule_id) if rule_id else None
-            message = str(msg.get("message", "")).strip()
+            # textlint側のmsgは複数行になり得るため、JSONL `messages[].msg`では空白へ畳む。
+            # 範囲表記`(L17:1〜23)`を末尾へ視認しやすく追加する都合上、先に1行化しておく必要がある。
+            message = _normalize_whitespace(str(msg.get("message", "")))
             end_line, end_col = _extract_textlint_end_position(msg.get("loc"))
             # sentence-length違反では文の起点・終点が分からないと修正しづらいため、
             # textlint v12+が返す`loc`フィールドから範囲表記を組み立てて末尾に併記する。
@@ -567,6 +571,15 @@ def _format_textlint_loc(loc: typing.Any) -> str:
     if start_line == end_line:
         return f"(L{start_line}:{start_col}〜{end_col})"
     return f"(L{start_line}:{start_col}〜L{end_line}:{end_col})"
+
+
+def _normalize_whitespace(text: str) -> str:
+    """連続するホワイトスペース（改行・タブ・全角空白等）を半角スペース1つに畳んで前後を取り除く。
+
+    JSONL `messages[].msg`を1行に保つ用途で使う。`re.split`をそのまま結合するため、
+    複数行に分かれたmsgを意味単位として連結したいケースにも適合する。
+    """
+    return " ".join(text.split())
 
 
 def _parse_typos_jsonl(output: str) -> list[ErrorLocation]:
@@ -662,7 +675,12 @@ def _parse_glab_ci_lint(output: str) -> list[ErrorLocation]:
 
 
 def _parse_pytest(output: str) -> list[ErrorLocation]:
-    """Pytest出力をパース。`--tb=short`形式のトレースバックからプロジェクト内フレームを優先的に抽出する。"""
+    """Pytest出力をパース。`--tb=short`形式のトレースバックからプロジェクト内フレームを優先的に抽出する。
+
+    `_ test_name _`区切りからテスト名を抽出し、message先頭へ`<test_name>: `として併記する。
+    pytestの`assert ... == ...`表示はテスト関数名なしでは判別が難しいケースが多く、
+    location（file/line）と組み合わせて実質的にnodeid相当の判別性を得るため。
+    """
     failures_start = output.find("= FAILURES =")
     summary_start = output.find("short test summary info")
     if failures_start < 0:
@@ -671,10 +689,11 @@ def _parse_pytest(output: str) -> list[ErrorLocation]:
     end = summary_start if summary_start > failures_start else len(output)
     failures_section = output[failures_start:end]
 
-    # テスト単位のブロックに分割（`_ test_name _`区切り）
-    block_re = re.compile(r"^_+ .+ _+$", re.MULTILINE)
-    block_starts = [m.end() for m in block_re.finditer(failures_section)]
-    if not block_starts:
+    # テスト単位のブロックに分割（`_ test_name _`区切り）。
+    # クラスベースのテストでは`_ TestX.test_y _`のようにドット連結された名前が入る。
+    block_re = re.compile(r"^_+ (?P<test_name>.+?) _+$", re.MULTILINE)
+    block_matches = list(block_re.finditer(failures_section))
+    if not block_matches:
         return _parse_with_pattern("pytest", output, _BUILTIN_PATTERNS["pytest"])
 
     # フレーム行: file:line: in func_name
@@ -683,9 +702,11 @@ def _parse_pytest(output: str) -> list[ErrorLocation]:
     error_re = re.compile(r"^E\s+(?P<message>.+)$", re.MULTILINE)
 
     results: list[ErrorLocation] = []
-    for i, start in enumerate(block_starts):
-        block_end = block_starts[i + 1] if i + 1 < len(block_starts) else len(failures_section)
+    for i, match in enumerate(block_matches):
+        start = match.end()
+        block_end = block_matches[i + 1].start() if i + 1 < len(block_matches) else len(failures_section)
         block = failures_section[start:block_end]
+        test_name = match.group("test_name").strip()
 
         # フレーム群から最後のプロジェクト内フレームを選択
         frames = list(frame_re.finditer(block))
@@ -700,7 +721,8 @@ def _parse_pytest(output: str) -> list[ErrorLocation]:
 
         # エラーメッセージ（先頭のE行）
         error_match = error_re.search(block)
-        message = error_match.group("message").strip() if error_match else ""
+        raw_message = error_match.group("message").strip() if error_match else ""
+        message = f"{test_name}: {raw_message}" if test_name else raw_message
 
         results.append(
             ErrorLocation(

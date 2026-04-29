@@ -286,12 +286,15 @@ _SCHEMA_HINTS_COMPACT: dict[str, str] = {
     "command.cached_elapsed": "previous-run elapsed seconds restored with cached=true; this run skipped execution",
     "command.hint_urls": "rule id -> docs URL map; omitted when no URLs resolved",
     "messages[].fix": "safe/unsafe/suggested = auto-fixable; none = no fix; omitted = no info",
+    "messages[].end_col": "textlint reports end_col as cumulative offset from text-node start, not in-line offset",
 }
 """JSONL出力フィールドのうち、LLMが読み違いやすい項目だけに絞った英語ガイド。
 
 `-v`無しの通常runではheaderの`schema_hints`にこの短縮版を埋め込む。
 kind構造や明らかな用途（diagnostic/warning/summaryの意味など）はLLM側で
-文脈から推測できるため含めない。フル版が欲しい場合は`-v`指定するか
+文脈から推測できるため含めない。
+ただし利用者が踏みやすい固有仕様（textlintのend_col累積位置など）は短縮版にも残す。
+フル版が欲しい場合は`-v`指定するか
 `get_schema_hints(full=True)`で取得する案内はドキュメント側に委ね、本辞書には
 案内文を含めない（短縮版自身の使い方説明はトークン効率を下げるため省略する）。
 """

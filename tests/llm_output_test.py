@@ -413,6 +413,9 @@ def test_build_header_record_default_compact() -> None:
     assert "command.cached_elapsed" in hints
     assert "command.retry_command" in hints
     assert "messages[].fix" in hints
+    # 罠になりやすい固有仕様（textlintのend_col累積位置）は短縮版にも残す
+    assert "messages[].end_col" in hints
+    assert "cumulative" in hints["messages[].end_col"]
     # 短縮版自身の使い方説明はトークン効率を下げるため埋め込まない（フル版の取得方法はドキュメントに委ねる）。
     assert "_note" not in hints
     # フル版固有のキーは出さない（同名衝突しないよう別体系）

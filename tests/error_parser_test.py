@@ -546,6 +546,58 @@ def test_parse_textlint_json_hint_for_known_rules() -> None:
         assert errors[0].hint is not None, f"{rule_id} にヒントが付与されていない"
 
 
+def test_parse_textlint_json_normalizes_multiline_message() -> None:
+    """textlintのmsgに含まれる改行は半角スペースに畳む。
+
+    sentence-lengthでは`exceeds maximum sentence length of 120.\\nOver 3 characters.`形式で
+    改行が含まれるため、JSONL `messages[].msg`を1行に保つ目的で前処理する。
+    範囲表記`(L17:1〜23)`は1行化後の末尾に視認しやすく付加する。
+    """
+    output = json.dumps(
+        [
+            {
+                "filePath": "a.md",
+                "messages": [
+                    {
+                        "line": 17,
+                        "column": 1,
+                        "message": "Line 17 sentence length(123) exceeds maximum sentence length of 120.\nOver 3 characters.",
+                        "ruleId": "ja-technical-writing/sentence-length",
+                        "severity": 2,
+                        "loc": {"start": {"line": 17, "column": 1}, "end": {"line": 17, "column": 23}},
+                    }
+                ],
+            }
+        ]
+    )
+    errors = pyfltr.error_parser.parse_errors("textlint", output)
+    assert len(errors) == 1
+    assert "\n" not in errors[0].message
+    assert errors[0].message.endswith("Over 3 characters. (L17:1〜23)")
+
+
+def test_parse_textlint_json_normalizes_multiline_message_other_rules() -> None:
+    """sentence-length以外のルールでも改行を畳む（textlint側は他ルールも複数行msgを返し得るため）。"""
+    output = json.dumps(
+        [
+            {
+                "filePath": "a.md",
+                "messages": [
+                    {
+                        "line": 1,
+                        "column": 1,
+                        "message": "First line.\n  Second line.",
+                        "ruleId": "ja-technical-writing/max-ten",
+                        "severity": 2,
+                    }
+                ],
+            }
+        ]
+    )
+    errors = pyfltr.error_parser.parse_errors("textlint", output)
+    assert errors[0].message == "First line. Second line."
+
+
 def test_parse_textlint_json_sentence_length_appends_range_single_line() -> None:
     """sentence-length違反ではlocから1行内範囲をmessage末尾へ併記する。"""
     output = json.dumps(
@@ -755,7 +807,7 @@ def test_parse_typos_jsonl_fallback() -> None:
 
 
 def test_parse_pytest_tb_short_project_frame() -> None:
-    """pytest --tb=short: プロジェクト内フレームが選択される。"""
+    """pytest --tb=short: プロジェクト内フレームが選択され、msg先頭にテスト名が併記される。"""
     output = (
         "================================= FAILURES =================================\n"
         "_______________________________ test_bar ________________________________\n"
@@ -769,7 +821,23 @@ def test_parse_pytest_tb_short_project_frame() -> None:
     assert len(errors) == 1
     assert errors[0].file == "tests/foo_test.py"
     assert errors[0].line == 42
+    assert errors[0].message.startswith("test_bar: ")
     assert "assert 1 == 2" in errors[0].message
+
+
+def test_parse_pytest_tb_short_class_based_test() -> None:
+    """pytest --tb=short: クラスベーステストでは`TestX.test_y`形式でmsg先頭に併記される。"""
+    output = (
+        "================================= FAILURES =================================\n"
+        "_______________________ TestSomething.test_method ______________________\n"
+        "tests/foo_test.py:30: in test_method\n"
+        "    assert self.value == 0\n"
+        "E   AssertionError: assert 1 == 0\n"
+        "========================= short test summary info ==========================\n"
+    )
+    errors = pyfltr.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 1
+    assert errors[0].message.startswith("TestSomething.test_method: ")
 
 
 def test_parse_pytest_tb_short_library_exception() -> None:
@@ -788,6 +856,7 @@ def test_parse_pytest_tb_short_library_exception() -> None:
     assert len(errors) == 1
     assert errors[0].file == "tests/api_test.py"
     assert errors[0].line == 15
+    assert errors[0].message.startswith("test_request: ")
     assert "httpx.ConnectError" in errors[0].message
 
 
@@ -810,6 +879,7 @@ def test_parse_pytest_tb_short_stdlib_exception() -> None:
     assert len(errors) == 1
     assert errors[0].file == "tests/path_test.py"
     assert errors[0].line == 10
+    assert errors[0].message.startswith("test_path: ")
 
 
 def test_parse_pytest_tb_short_all_external() -> None:
@@ -827,6 +897,7 @@ def test_parse_pytest_tb_short_all_external() -> None:
     errors = pyfltr.error_parser.parse_errors("pytest", output)
     assert len(errors) == 1
     assert errors[0].line == 20
+    assert errors[0].message.startswith("test_ext: ")
     assert "RuntimeError: fail" in errors[0].message
 
 
