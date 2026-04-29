@@ -568,6 +568,42 @@ def test_run_cli_header_format_source_env_pyfltr(mocker, capsys, monkeypatch):
     assert header["format_source"] == pyfltr.cli.FORMAT_SOURCE_ENV_PYFLTR
 
 
+def test_command_record_formatted_status_hint(default_config):
+    """`status="formatted"`のcommandレコードには再実行不要を示すhintが入る。"""
+    result = _make_result("ruff-format", returncode=1, command_type="formatter", has_error=False)
+    lines = pyfltr.llm_output.build_command_lines(result, default_config)
+    parsed = [json.loads(line) for line in lines]
+    command_record = parsed[-1]
+    assert command_record["status"] == "formatted"
+    assert "status.formatted" in command_record["hints"]
+    assert "rerun is not required" in command_record["hints"]["status.formatted"]
+
+
+def test_command_record_non_formatted_no_status_hint(default_config):
+    """`status="formatted"`以外のcommandレコードには`status.formatted`ヒントを出さない。"""
+    result = _make_result("mypy", returncode=0, output="ok")
+    lines = pyfltr.llm_output.build_command_lines(result, default_config)
+    parsed = [json.loads(line) for line in lines]
+    command_record = parsed[-1]
+    assert command_record["status"] == "succeeded"
+    assert "hints" not in command_record
+
+
+def test_get_status_text_formatted_includes_no_rerun_needed():
+    """text出力サマリー行のformatted行末尾に`; no rerun needed`が付く。"""
+    result = _make_result("ruff-format", returncode=1, command_type="formatter", has_error=False)
+    text = result.get_status_text()
+    assert text.startswith("formatted (")
+    assert text.endswith("; no rerun needed")
+
+
+def test_get_status_text_succeeded_no_extra_message():
+    """succeeded等のformatted以外には`; no rerun needed`を付けない。"""
+    result = _make_result("mypy", returncode=0)
+    text = result.get_status_text()
+    assert "no rerun needed" not in text
+
+
 def test_run_cli_jsonl_restores_logger_state(mocker, capsys):
     """jsonlモード実行後にtextモードを再実行すると、text出力がstdoutに戻ること。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")

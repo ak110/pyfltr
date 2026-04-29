@@ -1100,8 +1100,17 @@ class CommandResult:
         return status
 
     def get_status_text(self) -> str:
-        """成型した文字列を返す。"""
-        return f"{self.status} ({self.files}files in {self.elapsed:.1f}s)"
+        """成型した文字列を返す。
+
+        `formatted`の場合は末尾に「再実行不要」の補足を付与する。
+        formatterによる書き換えはそれ自体が成功扱いであり、再実行を要しないことを
+        利用者に明示するため。`summary.guidance`（パイプライン全体）と
+        `command.hints`（個別ツール）と並ぶtext出力側の経路。
+        """
+        base = f"{self.status} ({self.files}files in {self.elapsed:.1f}s)"
+        if self.status == "formatted":
+            base += "; no rerun needed"
+        return base
 
 
 def _resolve_js_commandline(

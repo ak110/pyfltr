@@ -498,6 +498,14 @@ def _build_command_record(
         merged_hints["messages[].end_col"] = (
             "textlint reports end_col as cumulative offset from the text-node start, not in-line offset"
         )
+    # formatterによる書き換えはそれ自体が成功扱いで、利用者・LLMエージェントが
+    # 「再実行して直さなければならない」と誤解しないようコマンド単独の文脈ヒントを添える。
+    # `summary.guidance`はパイプライン全体での総括として再実行不要に触れているが、
+    # ここでは1コマンドの読み取りで結論まで到達できるように粒度を分けて並存させる。
+    if result.status == "formatted":
+        merged_hints["status.formatted"] = (
+            "formatter rewrote files; rerun is not required because the rewrite itself counts as success"
+        )
     if merged_hints:
         record["hints"] = merged_hints
     return record
