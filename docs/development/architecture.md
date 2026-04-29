@@ -111,6 +111,16 @@ mise経由のsubprocessにはmiseが注入したtoolパスを除外したPATHを
 これを避けるための対症療法である。
 詳細な判定ロジックと比較キーは`pyfltr/command.py`の`_build_subprocess_env`を参照。
 
+### mise active tools取得結果の構造化
+
+`mise ls --current --json`の取得結果は`MiseActiveToolsResult`構造体（`pyfltr/command.py`）で扱う。
+持つフィールドは`status` / `tools` / `detail`の3つ。
+ステータスは`ok` / `mise-not-found` / `untrusted-no-side-effects`等の7値を取る。
+プロセス内キャッシュも本構造体のまま保持する。
+これによりtool spec省略判定（`_is_tool_active_in_mise_config`）・JSONL header露出・`command-info`出力の3経路で同じ結果を共有する。
+取得時刻のずれによる不整合を排除する目的。
+利用者が「tool spec省略未発動の理由」を診断できるようにする。
+
 ### `main.py`分割の方針
 
 retry系ヘルパー・`--only-failed`フィルター・パス正規化・TUI/CLI共通ヘルパーを専用モジュールへ分離し、

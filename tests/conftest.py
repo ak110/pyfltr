@@ -45,11 +45,14 @@ def _default_mise_active_tools_empty(monkeypatch: pytest.MonkeyPatch) -> None:
     `_get_mise_active_tools` は実環境のmise・cwd配下の `mise.toml` に依存して結果が変わるため、
     モック無しでは開発機の状態次第でテストが揺らぐ（tool spec省略形が混入する等）。
     既存テストはmise設定記述なし前提で従来形 `mise exec <tool>@latest -- <bin>` を期待しており、
-    本フィクスチャでautouseに空辞書を返すよう固定することでテスト全体の前提を揃える。
+    本フィクスチャでautouseに空のステータス`ok`結果を返すよう固定することでテスト全体の前提を揃える。
     新仕様（mise設定記述あり時のtool spec省略）を検証するテストは個別に上書きする。
     """
     monkeypatch.setattr("pyfltr.command._MISE_ACTIVE_TOOLS_CACHE", {}, raising=True)
-    monkeypatch.setattr("pyfltr.command._get_mise_active_tools", lambda config, *, allow_side_effects=False: {})
+    monkeypatch.setattr(
+        "pyfltr.command._get_mise_active_tools",
+        lambda config, *, allow_side_effects=False: pyfltr.command.MiseActiveToolsResult(status="ok"),
+    )
 
 
 @pytest.fixture(autouse=True)

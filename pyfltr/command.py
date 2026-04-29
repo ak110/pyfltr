@@ -314,6 +314,8 @@ class ResolvedCommandline:
     `"path-override"` : `{command}-path` 非空でdirect強制）。
     `effective_runner` はグローバル設定への委譲を解決した最終形
     （`"direct"` / `"mise"` / `"js-pnpx"` / `"js-pnpm"` 等）。
+    `tool_spec_omitted` はmise経路で `["exec", "--", <bin>]` 形（tool spec省略形）を採用したかを示す。
+    commandline文字列の見た目に頼らず判別できるよう、command-info等で明示露出する用途で持つ。
     """
 
     executable: str
@@ -321,6 +323,7 @@ class ResolvedCommandline:
     runner: str
     runner_source: str
     effective_runner: str
+    tool_spec_omitted: bool = False
 
     @property
     def commandline(self) -> list[str]:
@@ -348,17 +351,50 @@ def resolve_runner(command: str, config: pyfltr.config.Config) -> tuple[str, str
     return str(runner), source
 
 
+# `mise ls --current --json` 取得結果の状態スラッグ。
+# - `ok`: 取得成功（dictは空でも`mise.toml`記述が無いだけの場合は`ok`）
+# - `mise-not-found`: `mise`がPATH上に存在しない
+# - `untrusted-no-side-effects`: 未信頼config由来エラーで副作用OFFのためtrust試行を行わなかった
+# - `trust-failed`: trust試行が拒否された
+# - `exec-error`: その他のmise実行エラー（OSError含む）
+# - `json-parse-error`: stdoutのJSONパースに失敗した
+# - `unexpected-shape`: dict以外の値が返された
+MiseActiveToolsStatus = typing.Literal[
+    "ok",
+    "mise-not-found",
+    "untrusted-no-side-effects",
+    "trust-failed",
+    "exec-error",
+    "json-parse-error",
+    "unexpected-shape",
+]
+
+
+@dataclasses.dataclass(frozen=True)
+class MiseActiveToolsResult:
+    """`mise ls --current --json` 取得結果のステータス付き構造体。
+
+    取得成功時は `tools` がmise本体の解決結果（プロジェクト `mise.toml` ＋グローバル設定の合算）。
+    取得失敗時は `tools` を空辞書とし、`detail` に短い手がかり（mise stderr冒頭等）を入れる。
+    `command-info` 出力やJSONL header経由で利用者に状況を見える化する目的で使う。
+    """
+
+    status: MiseActiveToolsStatus
+    tools: dict[str, typing.Any] = dataclasses.field(default_factory=dict)
+    detail: str | None = None
+
+
 # `mise ls --current --json` 結果のプロセス内キャッシュ。
 # キーは `(realpath(cwd), env_signature, allow_side_effects)` のタプルで、
 # - `realpath(cwd)`: pyfltrは同一プロセス内で `os.chdir()` を伴う複数回 `run()` 呼び出しに
 #   対応するため、cwd差分で別エントリとして扱う必要がある。
 # - `env_signature`: mise設定解決に影響する環境変数（`MISE_CONFIG_FILE` 等）が変化した場合に
 #   別キャッシュを参照させる。値が無いキーは固定sentinel `None` でキー化する。
-# - `allow_side_effects`: 副作用OFFで未信頼や失敗で空辞書を返したエントリと、副作用ONで
+# - `allow_side_effects`: 副作用OFFで未信頼や失敗でフォールバックしたエントリと、副作用ONで
 #   trust経由で正規取得したエントリを共存させるため、フラグ自体もキーに含める。
 #   これにより `command-info --check` 無し → 有り の順で呼ばれた際に副作用OFFで保存した
 #   フォールバック結果が後続を阻害せず、副作用ON呼び出しで正規化される流れを担保する。
-_MISE_ACTIVE_TOOLS_CACHE: dict[tuple[str, tuple[tuple[str, str | None], ...], bool], dict[str, typing.Any]] = {}
+_MISE_ACTIVE_TOOLS_CACHE: dict[tuple[str, tuple[tuple[str, str | None], ...], bool], MiseActiveToolsResult] = {}
 
 # mise設定解決に影響する環境変数。値の差分で別キャッシュエントリとして扱う。
 # `MISE_CONFIG_FILE`: 利用するconfigファイルの明示指定。
@@ -384,17 +420,17 @@ def _get_mise_active_tools(
     config: pyfltr.config.Config,
     *,
     allow_side_effects: bool = False,
-) -> dict[str, typing.Any]:
-    """`mise ls --current --json` 結果を辞書として返す（プロセス内キャッシュ付き）。
+) -> MiseActiveToolsResult:
+    """`mise ls --current --json` 結果をステータス付きで返す（プロセス内キャッシュ付き）。
 
-    返り値はmiseが解決した活性化ツール一覧（プロジェクト `mise.toml` ＋グローバル設定の合算）。
+    `tools` はmiseが解決した活性化ツール一覧（プロジェクト `mise.toml` ＋グローバル設定の合算）。
     キーは `mise.toml` 記述そのままの形（例: `rust`、`aqua:EmbarkStudios/cargo-deny`、
     `actionlint`）で、値はmise本体が返すツール情報の配列。
 
     `allow_side_effects=True` 時は未信頼config由来エラーで `config["mise-auto-trust"]` が
     真なら `mise trust --yes --all` を1回試行し、成功時に `mise ls` を再実行する。
-    `allow_side_effects=False` 時は未信頼エラー・mise不在・JSON parse失敗・その他失敗を
-    すべて「記述なし」として空辞書にフォールバックする
+    `allow_side_effects=False` 時は未信頼エラー・mise不在・JSON parse失敗・その他失敗で
+    `tools` を空辞書のままフォールバックし、ステータス文字列で取得状況を表現する
     （`command-info` の `--check` 無し呼び出しで副作用なし契約を維持するため）。
 
     キャッシュキーには `realpath(cwd)`・mise設定解決に影響する環境変数・副作用許可フラグの
@@ -404,8 +440,6 @@ def _get_mise_active_tools(
     """
     cache_key = (os.path.realpath(os.getcwd()), _mise_env_signature(), allow_side_effects)
     cached = _MISE_ACTIVE_TOOLS_CACHE.get(cache_key)
-    # `is not None` で判定する意図: 取得失敗時も空辞書 `{}` として正規キャッシュするため、
-    # キャッシュミスは `None`（未登録）のみに相当し、`{}` はヒット扱いにする必要がある。
     if cached is not None:
         return cached
 
@@ -418,24 +452,18 @@ def _query_mise_active_tools(
     config: pyfltr.config.Config,
     *,
     allow_side_effects: bool,
-) -> dict[str, typing.Any]:
-    """`mise ls --current --json` を実際に呼び出し、結果辞書（取得不可時は空辞書）を返す。
+) -> MiseActiveToolsResult:
+    """`mise ls --current --json` を実際に呼び出し、ステータス付き結果を返す。
 
     キャッシュ管理は呼び出し側 `_get_mise_active_tools` が担当する純取得層。
     取得失敗時のフォールバック挙動は本関数docstringおよび `_get_mise_active_tools` の
     `allow_side_effects` 説明と同義。
     """
     if shutil.which("mise") is None:
-        return {}
+        return MiseActiveToolsResult(status="mise-not-found")
     mise_env = _build_mise_subprocess_env(dict(os.environ))
     ls_args = ["mise", "ls", "--current", "--json"]
-    parsed = _run_mise_ls_with_trust_retry(ls_args, config, mise_env, allow_side_effects=allow_side_effects)
-    if parsed is None:
-        return {}
-    if not isinstance(parsed, dict):
-        # mise本体は通常dictを返すが、形式が想定外（list等）なら判定対象外として空扱いにする。
-        return {}
-    return parsed
+    return _run_mise_ls_with_trust_retry(ls_args, config, mise_env, allow_side_effects=allow_side_effects)
 
 
 def _run_mise_with_trust(
@@ -481,27 +509,64 @@ def _run_mise_ls_with_trust_retry(
     mise_env: dict[str, str],
     *,
     allow_side_effects: bool,
-) -> typing.Any | None:
+) -> MiseActiveToolsResult:
     """`mise ls --current --json` を実行し、必要に応じてtrust試行→再実行する。
 
-    成功時はパース済みJSONオブジェクトを返す。
+    成功時は `MiseActiveToolsResult(status="ok", tools=...)` を返す。
     失敗時（mise呼び出し失敗・JSONパース失敗・副作用OFF下の未信頼エラー・trust拒否）は
-    `None` を返してフォールバックさせる。
+    対応するステータスを設定したMiseActiveToolsResultを返してフォールバックさせる。
     trust試行を含むリトライ核ロジックは `_run_mise_with_trust` に委譲する。
     """
     try:
-        returncode, stdout, _stderr, _trust_failed = _run_mise_with_trust(
+        returncode, stdout, stderr, trust_failed = _run_mise_with_trust(
             ls_args, mise_env, config, allow_side_effects=allow_side_effects
         )
-    except OSError:
+    except OSError as e:
         # mise自体の起動失敗（PATH不一致・実行権限なしなど）。判定不可として空扱い。
-        return None
+        return MiseActiveToolsResult(status="exec-error", detail=_summarize_mise_detail(str(e)))
     if returncode != 0:
-        return None
+        if trust_failed:
+            return MiseActiveToolsResult(status="trust-failed", detail=_summarize_mise_detail(stderr))
+        if not allow_side_effects and "not trusted" in stderr:
+            return MiseActiveToolsResult(status="untrusted-no-side-effects", detail=_summarize_mise_detail(stderr))
+        return MiseActiveToolsResult(status="exec-error", detail=_summarize_mise_detail(stderr))
     try:
-        return json.loads(stdout)
-    except json.JSONDecodeError:
+        parsed = json.loads(stdout)
+    except json.JSONDecodeError as e:
+        return MiseActiveToolsResult(status="json-parse-error", detail=_summarize_mise_detail(str(e)))
+    if not isinstance(parsed, dict):
+        # mise本体は通常dictを返すが、形式が想定外（list等）なら判定対象外として空扱いにする。
+        return MiseActiveToolsResult(status="unexpected-shape", detail=f"got {type(parsed).__name__}")
+    return MiseActiveToolsResult(status="ok", tools=parsed)
+
+
+def _summarize_mise_detail(text: str, *, max_len: int = 200) -> str | None:
+    """mise実行失敗時のstderr/exception文字列を短い1行手がかりへ整形する。
+
+    複数行はスペースへ畳み、空白を圧縮した上で先頭`max_len`文字に切り詰める。
+    JSONLや`command-info`出力の付帯情報として人間・LLM双方が読みやすい長さに揃えるため。
+    空または整形後に空となる場合は`None`を返す。
+    """
+    flat = " ".join(text.split())
+    if not flat:
         return None
+    if len(flat) <= max_len:
+        return flat
+    return flat[: max_len - 1].rstrip() + "…"
+
+
+def get_mise_active_tool_key(command: str) -> str | None:
+    """`command`がmise active tools辞書を引く際の照合キーを返す。
+
+    判定キーは `_BIN_TOOL_SPEC[command]` の `mise_backend or bin_name` で、
+    mise.toml記述（例: `rust`、`aqua:EmbarkStudios/cargo-deny`、`actionlint`）に対応する。
+    miseバックエンド未登録のコマンド（python系・js系）は `None` を返す。
+    `command-info` で名称ずれの自己診断に使う。
+    """
+    spec = _BIN_TOOL_SPEC.get(command)
+    if spec is None:
+        return None
+    return spec.mise_backend or spec.bin_name
 
 
 def _is_tool_active_in_mise_config(
@@ -521,9 +586,9 @@ def _is_tool_active_in_mise_config(
     取得失敗時は自然に `False`（記述なし扱い）が返り、tool spec省略を発動しない。
     """
     del command  # 現状判定にコマンド名は使わない（specキーで一意）。引数は将来拡張余地のため残す。
-    active_tools = _get_mise_active_tools(config, allow_side_effects=allow_side_effects)
+    result = _get_mise_active_tools(config, allow_side_effects=allow_side_effects)
     key = spec.mise_backend or spec.bin_name
-    return key in active_tools
+    return key in result.tools
 
 
 def build_commandline(
@@ -584,6 +649,7 @@ def build_commandline(
             raise ValueError(f'{command}: mise backend が登録されていないため `{command}-runner = "mise"` は指定できません')
         spec = _BIN_TOOL_SPEC[command]
         version = config.values.get(f"{command}-version", spec.default_version)
+        tool_spec_omitted = False
         # version値に `:`（backend prefix区切り）または `@`（tool@version区切り）を含む場合は
         # miseのtool spec全体として扱い、bin_name接頭辞や既定backendを付け足さない。
         # これにより `aqua:Org/Repo@x` のような任意backend指定や、既定backendを上書きする
@@ -598,6 +664,7 @@ def build_commandline(
             # pyfltrとmise設定の二重管理を回避する。
             # version明示時（"latest"以外）は利用者の意図を尊重して従来通りtool spec組み立てに留める。
             prefix = ["exec", "--", spec.bin_name]
+            tool_spec_omitted = True
         else:
             tool_name = spec.mise_backend or spec.bin_name
             prefix = ["exec", f"{tool_name}@{version}", "--", spec.bin_name]
@@ -607,6 +674,7 @@ def build_commandline(
             runner=runner,
             runner_source=source,
             effective_runner=effective,
+            tool_spec_omitted=tool_spec_omitted,
         )
 
     if effective.startswith("js-"):

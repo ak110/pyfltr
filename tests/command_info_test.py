@@ -8,6 +8,7 @@ import subprocess
 
 import pytest
 
+import pyfltr.command
 import pyfltr.command_info
 import pyfltr.config
 
@@ -44,7 +45,9 @@ def test_command_info_text_cargo_fmt_with_mise_active(capsys: pytest.CaptureFixt
     """mise.tomlに `rust` 記述があるとtool specを省略した `mise exec -- cargo` 形になる。"""
     monkeypatch.setattr(
         "pyfltr.command._get_mise_active_tools",
-        lambda config, *, allow_side_effects=False: {"rust": [{"version": "1.83.0"}]},
+        lambda config, *, allow_side_effects=False: pyfltr.command.MiseActiveToolsResult(
+            status="ok", tools={"rust": [{"version": "1.83.0"}]}
+        ),
     )
     out = _run("cargo-fmt", capsys=capsys)
     assert "commandline: mise exec -- cargo" in out
@@ -54,7 +57,10 @@ def test_command_info_text_cargo_fmt_with_mise_active(capsys: pytest.CaptureFixt
 
 def test_command_info_check_passes_allow_side_effects_true(capsys: pytest.CaptureFixture[str], mocker) -> None:
     """`--check` 真時は `_get_mise_active_tools` へ `allow_side_effects=True` が渡る。"""
-    spy = mocker.patch("pyfltr.command._get_mise_active_tools", return_value={})
+    spy = mocker.patch(
+        "pyfltr.command._get_mise_active_tools",
+        return_value=pyfltr.command.MiseActiveToolsResult(status="ok"),
+    )
     # ensure_mise_available 内のsubprocess.runは成功扱いに固定する（FileNotFoundErrorで失敗しないため）。
     mocker.patch("shutil.which", return_value="/usr/local/bin/mise")
     mocker.patch("subprocess.run", return_value=subprocess.CompletedProcess(["mise"], returncode=0, stdout="", stderr=""))
@@ -65,7 +71,10 @@ def test_command_info_check_passes_allow_side_effects_true(capsys: pytest.Captur
 
 def test_command_info_no_check_passes_allow_side_effects_false(capsys: pytest.CaptureFixture[str], mocker) -> None:
     """`--check` 偽時は `_get_mise_active_tools` へ `allow_side_effects=False` が渡る。"""
-    spy = mocker.patch("pyfltr.command._get_mise_active_tools", return_value={})
+    spy = mocker.patch(
+        "pyfltr.command._get_mise_active_tools",
+        return_value=pyfltr.command.MiseActiveToolsResult(status="ok"),
+    )
     _run("cargo-fmt", capsys=capsys)
     # 副作用なし契約のため `allow_side_effects=True` での呼び出しが発生しないこと。
     assert all(call.kwargs.get("allow_side_effects") is False for call in spy.call_args_list)
@@ -130,3 +139,116 @@ def test_command_info_does_not_invoke_mise(capsys: pytest.CaptureFixture[str], m
     spy = mocker.patch("subprocess.run")
     _run("cargo-fmt", capsys=capsys)
     assert spy.call_count == 0
+
+
+# --- mise診断フィールド（G+H+I+K） ---
+
+
+def test_command_info_text_exposes_mise_tool_spec_omitted_false(capsys: pytest.CaptureFixture[str]) -> None:
+    """既定（mise設定記述なし）ではtool spec省略未採用が `false` で露出する。"""
+    out = _run("cargo-fmt", capsys=capsys)
+    assert "mise_tool_spec_omitted: False" in out
+
+
+def test_command_info_text_exposes_mise_tool_spec_omitted_true(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """mise設定にtool記述あり時は `true` で露出する。"""
+    monkeypatch.setattr(
+        "pyfltr.command._get_mise_active_tools",
+        lambda config, *, allow_side_effects=False: pyfltr.command.MiseActiveToolsResult(
+            status="ok", tools={"rust": [{"version": "1.83.0"}]}
+        ),
+    )
+    out = _run("cargo-fmt", capsys=capsys)
+    assert "mise_tool_spec_omitted: True" in out
+
+
+def test_command_info_text_exposes_mise_active_tool_key(capsys: pytest.CaptureFixture[str]) -> None:
+    """mise active toolsを引く際の照合キーが露出する。cargo-fmtは `rust`。"""
+    out = _run("cargo-fmt", capsys=capsys)
+    assert "mise_active_tool_key: rust" in out
+
+
+def test_command_info_text_aqua_active_tool_key(capsys: pytest.CaptureFixture[str]) -> None:
+    """cargo-denyはaqua表記の照合キーが露出する（名称ずれ自己診断のため）。"""
+    out = _run("cargo-deny", capsys=capsys)
+    assert "mise_active_tool_key: aqua:EmbarkStudios/cargo-deny" in out
+
+
+def test_command_info_text_omits_active_tool_key_for_python_tools(capsys: pytest.CaptureFixture[str]) -> None:
+    """mise backend未登録ツール（ruff-check等）には判定キーフィールドを出さない。"""
+    out = _run("ruff-check", capsys=capsys)
+    assert "mise_active_tool_key" not in out
+
+
+def test_command_info_text_exposes_mise_active_tools_status_ok(capsys: pytest.CaptureFixture[str]) -> None:
+    """既定（autouse fixtureでstatus=ok）でステータスが露出する。
+
+    取得成功でキーが空の場合は`active_keys`行ごと省略され、他の任意フィールドの省略慣習と揃う。
+    """
+    out = _run("cargo-fmt", capsys=capsys)
+    assert "mise_active_tools.status: ok" in out
+    assert "mise_active_tools.active_keys" not in out
+
+
+def test_command_info_text_exposes_mise_active_tools_active_keys(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """mise active toolsが取得できた場合はキー一覧が露出する。"""
+    monkeypatch.setattr(
+        "pyfltr.command._get_mise_active_tools",
+        lambda config, *, allow_side_effects=False: pyfltr.command.MiseActiveToolsResult(
+            status="ok", tools={"rust": [], "python": []}
+        ),
+    )
+    out = _run("cargo-fmt", capsys=capsys)
+    assert "mise_active_tools.active_keys: python, rust" in out
+
+
+def test_command_info_text_trust_hint_on_untrusted_no_check(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--check`無しかつ `untrusted-no-side-effects` ステータスでは `--check` 案内を1行出す。"""
+    monkeypatch.setattr(
+        "pyfltr.command._get_mise_active_tools",
+        lambda config, *, allow_side_effects=False: pyfltr.command.MiseActiveToolsResult(
+            status="untrusted-no-side-effects", detail="config not trusted"
+        ),
+    )
+    out = _run("cargo-fmt", capsys=capsys)
+    assert "mise_active_tools.status: untrusted-no-side-effects" in out
+    assert "mise_active_tools.detail: config not trusted" in out
+    assert "`--check`を付けるとtrust試行を行う" in out
+
+
+def test_command_info_text_trust_hint_only_for_untrusted(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """他のエラー要因では trust案内を出さない（ノイズを増やさないため）。"""
+    monkeypatch.setattr(
+        "pyfltr.command._get_mise_active_tools",
+        lambda config, *, allow_side_effects=False: pyfltr.command.MiseActiveToolsResult(
+            status="exec-error", detail="something failed"
+        ),
+    )
+    out = _run("cargo-fmt", capsys=capsys)
+    assert "mise_active_tools.status: exec-error" in out
+    assert "`--check`" not in out
+
+
+def test_command_info_text_no_mise_section_for_python_tools(capsys: pytest.CaptureFixture[str]) -> None:
+    """mise経路を使わないツールには mise診断セクションを出さない。"""
+    out = _run("ruff-check", capsys=capsys)
+    assert "## mise診断" not in out
+    assert "mise_active_tools" not in out
+
+
+def test_command_info_json_includes_mise_fields(capsys: pytest.CaptureFixture[str]) -> None:
+    """JSON出力にも新フィールドが含まれる（mise_tool_spec_omitted・mise_active_tool_key・mise_active_tools）。"""
+    out = _run("cargo-fmt", output_format="json", capsys=capsys)
+    info = json.loads(out)
+    assert info["mise_tool_spec_omitted"] is False
+    assert info["mise_active_tool_key"] == "rust"
+    assert info["mise_active_tools"]["status"] == "ok"
+    assert not info["mise_active_tools"]["active_keys"]

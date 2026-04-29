@@ -73,6 +73,8 @@ def _collect_info(command: str, config: pyfltr.config.Config, *, do_check: bool)
 
     解決自体に失敗した場合も例外は外へ伝播させず、`error`キーを含めたdictを返す
     （`command-info`は調査用途のため、解決失敗そのものも観測したいケースが多い）。
+    mise active tools取得状況（status/detail/active_keys）と、tool spec省略採用フラグ・
+    判定キーをまとめて露出し、自己診断や名称ずれ検出に使えるようにする。
     """
     enabled = bool(config.values.get(command, False))
     runner, source = pyfltr.command.resolve_runner(command, config)
@@ -88,6 +90,12 @@ def _collect_info(command: str, config: pyfltr.config.Config, *, do_check: bool)
         "dotnet_root": os.environ.get("DOTNET_ROOT"),
     }
 
+    # mise active tools判定で照合に使うキーは、対象コマンドがmise backendに登録されている
+    # 場合のみ意味があるため、登録外（python系・js系等）は省略する。
+    active_tool_key = pyfltr.command.get_mise_active_tool_key(command)
+    if active_tool_key is not None:
+        base["mise_active_tool_key"] = active_tool_key
+
     try:
         # `--check` 真時のみmise設定判定の副作用（trust経由再実行）も許可する。
         # `--check` 偽時は副作用なし契約を維持し、mise設定判定も副作用OFFで動かす
@@ -101,6 +109,7 @@ def _collect_info(command: str, config: pyfltr.config.Config, *, do_check: bool)
     base["resolved"] = True
     base["effective_runner"] = resolved.effective_runner
     base["executable"] = resolved.executable
+    base["mise_tool_spec_omitted"] = resolved.tool_spec_omitted
     # 実際に実行されるargv全体（対象ファイル抜き）を表示する。
     # `build_commandline`の戻り値は実行プレフィックスのみで、`{command}-args`等が反映されないため、
     # `build_invocation_argv`経由で通常段の最終argvを組み立てる。
@@ -116,6 +125,25 @@ def _collect_info(command: str, config: pyfltr.config.Config, *, do_check: bool)
     # directモードではshutil.whichで絶対パスへ解決済み。それ以外（mise / pnpx等）は
     # 起動コマンド名（`mise` / `pnpx`等）がPATH上に存在するかどうかも参考情報として返す。
     base["executable_resolved"] = shutil.which(resolved.executable) or resolved.executable
+
+    # mise経路（effective_runner == "mise"）のときのみ、取得状況を露出する。
+    # mise配信外のコマンド（python系・js系・direct）には不要で、ノイズにしかならないため。
+    if resolved.effective_runner == "mise":
+        # `_get_mise_active_tools`は`build_commandline`内で同じ`allow_side_effects`値で
+        # キャッシュ済み。ここで再呼び出ししても副作用は再発生せず、直前の取得結果をそのまま得る。
+        active_result = pyfltr.command._get_mise_active_tools(config, allow_side_effects=do_check)  # pylint: disable=protected-access
+        mise_info: dict[str, typing.Any] = {"status": active_result.status}
+        if active_result.detail is not None:
+            mise_info["detail"] = active_result.detail
+        # 取得成功時のみactive_keysを載せる。失敗時は空であるためノイズになる。
+        if active_result.status == "ok":
+            mise_info["active_keys"] = sorted(active_result.tools.keys())
+        base["mise_active_tools"] = mise_info
+        # `--check`無しかつ未信頼configでフォールバックした場合だけ、trust試行を発動できる旨を案内する。
+        # 他のエラー要因では案内せず、ノイズを増やさない。
+        # 他のセクション（`runner: ...`等）と文体を揃えるため常体で書く。
+        if not do_check and active_result.status == "untrusted-no-side-effects":
+            base["mise_check_hint"] = "`--check`を付けるとtrust試行を行う"
 
     if do_check:
         try:
@@ -157,6 +185,9 @@ def _print_text(info: dict[str, typing.Any]) -> None:
     runner_lines: list[str] = [f"runner: {info['runner']} ({info['runner_source']})"]
     if info.get("resolved"):
         runner_lines.append(f"effective_runner: {info['effective_runner']}")
+        # mise経路でtool spec省略採用したかは見た目だけで判別しづらいため明示する。
+        if info.get("effective_runner") == "mise":
+            runner_lines.append(f"mise_tool_spec_omitted: {info.get('mise_tool_spec_omitted', False)}")
     if "check_passed" in info:
         runner_lines.append(f"check_passed: {info['check_passed']}")
         if not info["check_passed"]:
@@ -165,6 +196,24 @@ def _print_text(info: dict[str, typing.Any]) -> None:
             runner_lines.append(f"check_commandline: {' '.join(info['check_commandline'])}")
             runner_lines.append(f"check_effective_runner: {info.get('check_effective_runner')}")
     sections.append(("## ランナー解決", runner_lines))
+
+    # ## mise診断: mise取得状況と判定キー。mise経路または該当キーがある場合のみ表示。
+    mise_lines: list[str] = []
+    if info.get("mise_active_tool_key") is not None:
+        mise_lines.append(f"mise_active_tool_key: {info['mise_active_tool_key']}")
+    mise_active = info.get("mise_active_tools")
+    if isinstance(mise_active, dict):
+        mise_lines.append(f"mise_active_tools.status: {mise_active.get('status')}")
+        if mise_active.get("detail"):
+            mise_lines.append(f"mise_active_tools.detail: {mise_active['detail']}")
+        # 取得成功でキーが空の場合は行ごと省略する（他の任意フィールドの省略慣習と揃えるため）。
+        keys = mise_active.get("active_keys")
+        if keys:
+            mise_lines.append(f"mise_active_tools.active_keys: {', '.join(keys)}")
+    if info.get("mise_check_hint"):
+        mise_lines.append(f"hint: {info['mise_check_hint']}")
+    if mise_lines:
+        sections.append(("## mise診断", mise_lines))
 
     # ## 設定: ユーザー設定で上書きされた値のみ表示（情報がない場合はセクション省略）。
     config_lines: list[str] = [f"enabled: {info['enabled']}"]

@@ -204,6 +204,7 @@ class JSONLFormatter:
             files=ctx.all_files,
             run_id=ctx.run_id,
             verbose=ctx.verbose,
+            config=ctx.config,
         )
 
     def on_result(self, ctx: RunOutputContext, result: pyfltr.command.CommandResult) -> None:

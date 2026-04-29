@@ -262,7 +262,7 @@ pyfltr command-info <tool> [--format text|json] [--check]
 対象ツールの起動方式（runner種別・実行ファイルパス・最終コマンドライン）の解決結果を副作用無しで表示する。
 `pyproject.toml`の`{command}-runner`設定や`bin-runner` / `js-runner`の影響を実環境で確認したいときに使う。
 
-出力はセクション見出し（`## 実行コマンド` / `## ランナー解決` / `## 設定` / `## 環境変数`）で関連項目をまとめる。
+出力はセクション見出し（`## 実行コマンド` / `## ランナー解決` / `## mise診断` / `## 設定` / `## 環境変数`）で関連項目をまとめる。
 情報が無いセクションは省略される。
 
 mise設定（プロジェクトmise.tomlまたはグローバル設定）に`rust`記述がある場合の出力例:
@@ -281,6 +281,13 @@ executable_resolved: /home/user/.local/bin/mise
 
 runner: bin-runner (default)
 effective_runner: mise
+mise_tool_spec_omitted: True
+
+## mise診断
+
+mise_active_tool_key: rust
+mise_active_tools.status: ok
+mise_active_tools.active_keys: rust
 
 ## 設定
 
@@ -291,6 +298,24 @@ version: latest
 
 tool specを省略した`mise exec -- cargo fmt`形になり、mise設定の解決済み内容（バージョン固定・components等）が反映される。
 mise設定に`rust`記述が無い場合は`mise exec rust@latest -- cargo fmt`形になる。
+
+mise診断系フィールドの意味は次の通り。
+出力は機械可読のテキスト形式で、JSON形式（`--format=json`）でも同じキーが取れる。
+
+- `mise_tool_spec_omitted`: mise経路で`["exec", "--", <bin>]`形（tool spec省略形）を採用したか。
+  commandline文字列の見た目に頼らずに判別できる
+- `mise_active_tool_key`: mise active tools辞書を引く際の照合キー（`spec.mise_backend or spec.bin_name`）。
+  mise.tomlに記述する際の名称ずれを事前に発見するために使う。mise backend未登録のツール（python系・js系）では出力しない
+- `mise_active_tools.status`: `mise ls --current --json`の取得状況。
+  値は`ok` / `mise-not-found` / `untrusted-no-side-effects` / `trust-failed` / `exec-error` /
+  `json-parse-error` / `unexpected-shape`の7値
+- `mise_active_tools.detail`: 取得失敗時のみ。mise stderrの先頭やexceptionメッセージを整形した1行
+- `mise_active_tools.active_keys`: `status == "ok"`かつ活性化ツールが1つ以上ある場合のみ。
+  mise設定が解決した活性化ツール名一覧。空の場合はテキスト出力では行ごと省略する
+
+`--check`無しで`mise_active_tools.status`が`untrusted-no-side-effects`のときに限り、
+trust試行を発動できる旨の1行案内が`hint:`プレフィックスで出る。
+他のエラー要因では案内せず、ノイズを増やさない。
 
 `{command}-fix-args`が定義されているコマンド（textlint・markdownlintなど）では、`commandline (fix step):`と`commandline (check step):`を併記する。
 fix段とcheck段の二度実行が異なる引数を必要とするためである。
@@ -499,7 +524,11 @@ CLIオプション`--output-format`が指定されている場合は環境変数
 - `header`: 先頭1行。実行環境情報
  （`version` / `run_id` / `python` / `executable` / `platform` / `cwd` / `commands` / `files` / `schema_hints`）。
   `commands`は実行対象（有効化された、`--only-failed`適用後の）コマンド名配列。
-  既定は短縮版`schema_hints`（約400文字）。`-v` / `--verbose`指定時は`schema_hints`をフル版（約1,500文字）へ切り替える
+  既定は短縮版`schema_hints`（約500文字）。`-v` / `--verbose`指定時は`schema_hints`をフル版（約1,500文字）へ切り替える。
+  実行対象にmise経路のツール（`cargo-fmt` / `actionlint`等）が含まれる場合、`mise_active_tools`フィールドへ
+  取得状況（`status`・取得失敗時のみ`detail`・取得成功時のみ`active_keys`）を付与する。
+  ステータスは`ok` / `mise-not-found` / `untrusted-no-side-effects` / `trust-failed` / `exec-error` /
+  `json-parse-error` / `unexpected-shape`の7値
 - `warning`: pyfltrが検出した設定・実行時の警告（`source`で発生元を識別）
 - `diagnostic`: `(command, file)`単位で集約された診断。個別指摘は`messages[]`配列に格納
 - `command`: 1コマンド1レコードの実行メタ情報
@@ -526,7 +555,7 @@ CLIオプション`--output-format`が指定されている場合は環境変数
 [`pyfltr show-run`](#show-run) / [`pyfltr list-runs`](#list-runs)で該当runの詳細を参照できる。
 
 ```json
-{"kind":"header","version":"3.0.0","run_id":"01HXYZ...","python":"3.12.0 ...","executable":"/usr/bin/python3","platform":"linux","cwd":"/work","commands":["mypy","ruff-format"],"files":12,"schema_hints":{"command.retry_command":"...","command.cached_elapsed":"...","command.hint_urls":"...","messages[].fix":"..."}}
+{"kind":"header","version":"3.0.0","run_id":"01HXYZ...","python":"3.12.0 ...","executable":"/usr/bin/python3","platform":"linux","cwd":"/work","commands":["mypy","ruff-format"],"files":12,"schema_hints":{"command.retry_command":"...","command.cached_elapsed":"...","command.hint_urls":"...","messages[].fix":"...","messages[].end_col":"..."}}
 {"kind":"warning","source":"config","msg":"pre-commit が有効化されていますが、設定ファイルが見つかりません: .pre-commit-config.yaml"}
 {"kind":"diagnostic","command":"mypy","file":"src/a.py","messages":[{"line":42,"col":5,"msg":"Incompatible return value type"}]}
 {"kind":"command","command":"mypy","type":"linter","status":"failed","files":12,"elapsed":0.8,"diagnostics":1,"rc":1}

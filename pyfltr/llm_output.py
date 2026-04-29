@@ -188,7 +188,17 @@ def build_lines(
     lines: list[str] = []
 
     if commands is not None and files is not None:
-        lines.append(_dump(_build_header_record(commands, files, run_id=run_id, verbose=verbose)))
+        lines.append(
+            _dump(
+                _build_header_record(
+                    commands,
+                    files,
+                    run_id=run_id,
+                    verbose=verbose,
+                    mise_active_tools=collect_mise_active_tools_for_header(commands, config),
+                )
+            )
+        )
 
     for warning in warnings or []:
         lines.append(_dump(_build_warning_record(warning)))
@@ -217,7 +227,14 @@ def _command_index(config: pyfltr.config.Config, command: str) -> int:
     return len(config.command_names)
 
 
-def write_jsonl_header(commands: list[str], files: int, *, run_id: str | None = None, verbose: bool = False) -> None:
+def write_jsonl_header(
+    commands: list[str],
+    files: int,
+    *,
+    run_id: str | None = None,
+    verbose: bool = False,
+    config: pyfltr.config.Config | None = None,
+) -> None:
     """header行を構造化出力loggerに書き出す（ストリーミングモード用）。
 
     パイプライン開始直後、diagnostic行より前に1回だけ呼ぶ。`run_id`が指定されていれば
@@ -225,9 +242,41 @@ def write_jsonl_header(commands: list[str], files: int, *, run_id: str | None = 
     出力先は`pyfltr.cli.configure_structured_output()`が設定したhandlerに従う
     （stdoutもしくは`--output-file`のFileHandler）。
     `verbose=True`でheaderの`schema_hints`をフル版に切り替える（既定は短縮版）。
+    `config`が渡された場合、mise経路を使うrunに限り
+    `mise_active_tools`フィールドへ取得状況を露出する。
     """
+    mise_active_tools = collect_mise_active_tools_for_header(commands, config) if config is not None else None
     with _write_lock:
-        pyfltr.cli.structured_logger.info(_dump(_build_header_record(commands, files, run_id=run_id, verbose=verbose)))
+        pyfltr.cli.structured_logger.info(
+            _dump(
+                _build_header_record(
+                    commands,
+                    files,
+                    run_id=run_id,
+                    verbose=verbose,
+                    mise_active_tools=mise_active_tools,
+                )
+            )
+        )
+
+
+def collect_mise_active_tools_for_header(commands: list[str], config: pyfltr.config.Config) -> dict[str, typing.Any] | None:
+    """header露出用のmise active tools取得状況dictを組み立てる。
+
+    `commands`にmiseバックエンド登録済みのものが1つも含まれない場合は`None`を返し、
+    Python専用runのheaderへ無関係な`mise-not-found`を出さないようにする。
+    含まれる場合は`_get_mise_active_tools(config)`を副作用OFFで引き、
+    `{"status": ..., "detail": ..., "active_keys": [...]}`形式に整える。
+    """
+    if not any(pyfltr.command.get_mise_active_tool_key(cmd) is not None for cmd in commands):
+        return None
+    result = pyfltr.command._get_mise_active_tools(config)  # pylint: disable=protected-access
+    info: dict[str, typing.Any] = {"status": result.status}
+    if result.detail is not None:
+        info["detail"] = result.detail
+    if result.status == "ok":
+        info["active_keys"] = sorted(result.tools.keys())
+    return info
 
 
 def write_jsonl_streaming(
@@ -389,12 +438,15 @@ def _build_header_record(
     *,
     run_id: str | None = None,
     verbose: bool = False,
+    mise_active_tools: dict[str, typing.Any] | None = None,
 ) -> dict[str, typing.Any]:
     """実行環境の基本情報をheaderレコードdictとして返す。
 
     `commands`は「実際に実行されるツール集合」（`--only-failed`やdisabledツール除外後）を
     前提とする。呼び出し側で絞り込み済みの配列を渡すこと。
     `verbose`は`schema_hints`のフル/短縮切替のみに効く。
+    `mise_active_tools`は`{"status": ..., "detail": ..., "active_keys": [...]}`形式で渡し、
+    指定時のみheaderへ露出する（mise経路を使うrunの自己診断用途）。
     """
     record: dict[str, typing.Any] = {
         "kind": "header",
@@ -408,6 +460,8 @@ def _build_header_record(
     }
     if run_id is not None:
         record["run_id"] = run_id
+    if mise_active_tools is not None:
+        record["mise_active_tools"] = mise_active_tools
     # LLM向けフィールド補足。毎回出力する（headerは各runの先頭1行のみ）。
     record["schema_hints"] = get_schema_hints(full=verbose)
     return record

@@ -3,6 +3,8 @@
 
 import json
 
+import pytest
+
 import pyfltr.command
 import pyfltr.config
 import pyfltr.error_parser
@@ -479,6 +481,54 @@ def test_build_lines_verbose_flag_switches_hints() -> None:
     assert header_verbose["commands"] == ["mypy", "ruff-check"]
     assert "commands_count" not in header_verbose
     assert "diagnostic.messages" in header_verbose["schema_hints"]
+
+
+def test_build_header_record_omits_mise_active_tools_when_no_mise_command() -> None:
+    """mise経路ツールを含まないrunのheaderには `mise_active_tools` を出さない。"""
+    record = pyfltr.llm_output._build_header_record(commands=["mypy", "ruff-check"], files=3)
+    assert "mise_active_tools" not in record
+
+
+def test_build_header_record_includes_mise_active_tools_when_passed() -> None:
+    """`mise_active_tools` が渡された場合はheaderへ露出する。"""
+    record = pyfltr.llm_output._build_header_record(
+        commands=["cargo-fmt"],
+        files=3,
+        mise_active_tools={"status": "ok", "active_keys": ["rust"]},
+    )
+    assert record["mise_active_tools"]["status"] == "ok"
+    assert record["mise_active_tools"]["active_keys"] == ["rust"]
+
+
+def test_collect_mise_active_tools_for_header_skips_when_no_mise_command() -> None:
+    """対象commandsにmise登録ツールが無いrunでは `None` を返してheader露出を抑制する。"""
+    config = pyfltr.config.create_default_config()
+    info = pyfltr.llm_output.collect_mise_active_tools_for_header(["mypy", "ruff-check"], config)
+    assert info is None
+
+
+def test_collect_mise_active_tools_for_header_includes_when_mise_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    """mise登録コマンドが含まれる場合は取得状況dictを返す。"""
+    monkeypatch.setattr(
+        "pyfltr.command._get_mise_active_tools",
+        lambda config, *, allow_side_effects=False: pyfltr.command.MiseActiveToolsResult(status="ok", tools={"rust": []}),
+    )
+    config = pyfltr.config.create_default_config()
+    info = pyfltr.llm_output.collect_mise_active_tools_for_header(["cargo-fmt"], config)
+    assert info == {"status": "ok", "active_keys": ["rust"]}
+
+
+def test_collect_mise_active_tools_for_header_propagates_error_status(monkeypatch: pytest.MonkeyPatch) -> None:
+    """取得失敗時はstatusとdetailをそのまま伝える（active_keysはok時のみ）。"""
+    monkeypatch.setattr(
+        "pyfltr.command._get_mise_active_tools",
+        lambda config, *, allow_side_effects=False: pyfltr.command.MiseActiveToolsResult(
+            status="untrusted-no-side-effects", detail="config not trusted"
+        ),
+    )
+    config = pyfltr.config.create_default_config()
+    info = pyfltr.llm_output.collect_mise_active_tools_for_header(["cargo-fmt"], config)
+    assert info == {"status": "untrusted-no-side-effects", "detail": "config not trusted"}
 
 
 def test_get_schema_hints_public_api() -> None:

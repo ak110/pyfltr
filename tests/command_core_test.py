@@ -1970,13 +1970,16 @@ def test_build_commandline_omits_tool_spec_when_mise_config_has_rust(monkeypatch
     """mise設定に `rust` 記述ありかつversion既定値ならtool spec省略形を返す。"""
     monkeypatch.setattr(
         "pyfltr.command._get_mise_active_tools",
-        lambda config, *, allow_side_effects=False: {"rust": [{"version": "1.83.0"}]},
+        lambda config, *, allow_side_effects=False: pyfltr.command.MiseActiveToolsResult(
+            status="ok", tools={"rust": [{"version": "1.83.0"}]}
+        ),
     )
     config = pyfltr.config.create_default_config()
     resolved = pyfltr.command.build_commandline("cargo-fmt", config)
     # tool spec省略形: `mise exec -- cargo` で起動し、mise設定の解決済み内容に従わせる。
     assert resolved.commandline == ["mise", "exec", "--", "cargo"]
     assert resolved.effective_runner == "mise"
+    assert resolved.tool_spec_omitted is True
 
 
 def test_build_commandline_omits_tool_spec_when_mise_config_has_aqua_cargo_deny(
@@ -1985,22 +1988,26 @@ def test_build_commandline_omits_tool_spec_when_mise_config_has_aqua_cargo_deny(
     """mise設定にaqua表記の `aqua:EmbarkStudios/cargo-deny` 記述ありなら省略形になる。"""
     monkeypatch.setattr(
         "pyfltr.command._get_mise_active_tools",
-        lambda config, *, allow_side_effects=False: {"aqua:EmbarkStudios/cargo-deny": [{"version": "0.16.0"}]},
+        lambda config, *, allow_side_effects=False: pyfltr.command.MiseActiveToolsResult(
+            status="ok", tools={"aqua:EmbarkStudios/cargo-deny": [{"version": "0.16.0"}]}
+        ),
     )
     config = pyfltr.config.create_default_config()
     resolved = pyfltr.command.build_commandline("cargo-deny", config)
     assert resolved.commandline == ["mise", "exec", "--", "cargo-deny"]
+    assert resolved.tool_spec_omitted is True
 
 
 def test_build_commandline_keeps_tool_spec_when_mise_config_missing(monkeypatch: pytest.MonkeyPatch) -> None:
     """判定辞書が空（記述なし）の場合は従来形 `<backend>@latest` を組み立てる。"""
     monkeypatch.setattr(
         "pyfltr.command._get_mise_active_tools",
-        lambda config, *, allow_side_effects=False: {},
+        lambda config, *, allow_side_effects=False: pyfltr.command.MiseActiveToolsResult(status="ok"),
     )
     config = pyfltr.config.create_default_config()
     resolved = pyfltr.command.build_commandline("cargo-fmt", config)
     assert resolved.commandline == ["mise", "exec", "rust@latest", "--", "cargo"]
+    assert resolved.tool_spec_omitted is False
 
 
 def test_build_commandline_keeps_tool_spec_when_version_explicit(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2008,12 +2015,15 @@ def test_build_commandline_keeps_tool_spec_when_version_explicit(monkeypatch: py
     # 判定辞書には `rust` 記述があるが、versionが明示されているので利用者の意図を尊重する。
     monkeypatch.setattr(
         "pyfltr.command._get_mise_active_tools",
-        lambda config, *, allow_side_effects=False: {"rust": [{"version": "1.83.0"}]},
+        lambda config, *, allow_side_effects=False: pyfltr.command.MiseActiveToolsResult(
+            status="ok", tools={"rust": [{"version": "1.83.0"}]}
+        ),
     )
     config = pyfltr.config.create_default_config()
     config.values["cargo-fmt-version"] = "1.84.0"
     resolved = pyfltr.command.build_commandline("cargo-fmt", config)
     assert resolved.commandline == ["mise", "exec", "rust@1.84.0", "--", "cargo"]
+    assert resolved.tool_spec_omitted is False
 
 
 def test_build_commandline_allow_side_effects_propagates_to_active_tools(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2023,7 +2033,7 @@ def test_build_commandline_allow_side_effects_propagates_to_active_tools(monkeyp
     def fake(config, *, allow_side_effects=False):  # type: ignore[no-untyped-def]
         del config
         received.append(allow_side_effects)
-        return {}
+        return pyfltr.command.MiseActiveToolsResult(status="ok")
 
     monkeypatch.setattr("pyfltr.command._get_mise_active_tools", fake)
     config = pyfltr.config.create_default_config()
@@ -2115,7 +2125,7 @@ def test_get_mise_active_tools_cache_key_differs_by_cwd(monkeypatch: pytest.Monk
     def fake_query(config, *, allow_side_effects):  # type: ignore[no-untyped-def]
         del config, allow_side_effects
         call_log.append(os.getcwd())
-        return {}
+        return pyfltr.command.MiseActiveToolsResult(status="ok")
 
     monkeypatch.setattr("pyfltr.command._query_mise_active_tools", fake_query)
     config = pyfltr.config.create_default_config()
@@ -2144,7 +2154,7 @@ def test_get_mise_active_tools_cache_key_differs_by_env(monkeypatch: pytest.Monk
     def fake_query(config, *, allow_side_effects):  # type: ignore[no-untyped-def]
         del config, allow_side_effects
         call_count[0] += 1
-        return {}
+        return pyfltr.command.MiseActiveToolsResult(status="ok")
 
     monkeypatch.setattr("pyfltr.command._query_mise_active_tools", fake_query)
     config = pyfltr.config.create_default_config()
@@ -2173,16 +2183,146 @@ def test_get_mise_active_tools_cache_key_differs_by_allow_side_effects(
     def fake_query(config, *, allow_side_effects):  # type: ignore[no-untyped-def]
         del config
         received_flags.append(allow_side_effects)
-        return {"rust": []} if allow_side_effects else {}
+        if allow_side_effects:
+            return pyfltr.command.MiseActiveToolsResult(status="ok", tools={"rust": []})
+        return pyfltr.command.MiseActiveToolsResult(status="ok")
 
     monkeypatch.setattr("pyfltr.command._query_mise_active_tools", fake_query)
     config = pyfltr.config.create_default_config()
 
     result_off = pyfltr.command._get_mise_active_tools(config, allow_side_effects=False)
     result_on = pyfltr.command._get_mise_active_tools(config, allow_side_effects=True)
-    assert result_off == {}
-    assert result_on == {"rust": []}
+    assert not result_off.tools
+    assert result_on.tools == {"rust": []}
     assert received_flags == [False, True]
     # 同じフラグでの2回目はキャッシュヒット。
     pyfltr.command._get_mise_active_tools(config, allow_side_effects=True)
     assert received_flags == [False, True]
+
+
+# --- _query_mise_active_tools のステータス分類 ---
+
+
+def test_query_mise_active_tools_mise_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`mise` がPATH上に存在しないときは `mise-not-found` ステータスを返す。"""
+    monkeypatch.setattr("pyfltr.command.shutil.which", lambda name: None if name == "mise" else "/bin/" + name)
+    config = pyfltr.config.create_default_config()
+    result = pyfltr.command._query_mise_active_tools(config, allow_side_effects=False)
+    assert result.status == "mise-not-found"
+    assert not result.tools
+
+
+def test_query_mise_active_tools_untrusted_no_side_effects(monkeypatch: pytest.MonkeyPatch) -> None:
+    """副作用OFF下で未信頼config由来エラーが出たときは `untrusted-no-side-effects` を返す。"""
+    monkeypatch.setattr("pyfltr.command.shutil.which", lambda name: f"/usr/local/bin/{name}")
+
+    def fake_run_with_trust(args, mise_env, config, *, allow_side_effects):  # type: ignore[no-untyped-def]
+        del args, mise_env, config, allow_side_effects
+        return 1, "", "Error: config /home/u/mise.toml is not trusted", False
+
+    monkeypatch.setattr("pyfltr.command._run_mise_with_trust", fake_run_with_trust)
+    config = pyfltr.config.create_default_config()
+    result = pyfltr.command._query_mise_active_tools(config, allow_side_effects=False)
+    assert result.status == "untrusted-no-side-effects"
+    assert result.detail is not None
+    assert "not trusted" in result.detail
+
+
+def test_query_mise_active_tools_trust_failed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """trust試行が拒否されたら `trust-failed` を返す。"""
+    monkeypatch.setattr("pyfltr.command.shutil.which", lambda name: f"/usr/local/bin/{name}")
+
+    def fake_run_with_trust(args, mise_env, config, *, allow_side_effects):  # type: ignore[no-untyped-def]
+        del args, mise_env, config, allow_side_effects
+        return 2, "", "trust rejected by user", True
+
+    monkeypatch.setattr("pyfltr.command._run_mise_with_trust", fake_run_with_trust)
+    config = pyfltr.config.create_default_config()
+    result = pyfltr.command._query_mise_active_tools(config, allow_side_effects=True)
+    assert result.status == "trust-failed"
+    assert result.detail is not None
+    assert "trust rejected" in result.detail
+
+
+def test_query_mise_active_tools_exec_error_oserror(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`OSError` 例外が出たときは `exec-error` ステータスを返す。"""
+    monkeypatch.setattr("pyfltr.command.shutil.which", lambda name: f"/usr/local/bin/{name}")
+
+    def fake_run_with_trust(args, mise_env, config, *, allow_side_effects):  # type: ignore[no-untyped-def]
+        del args, mise_env, config, allow_side_effects
+        raise OSError("mise binary missing executable bit")
+
+    monkeypatch.setattr("pyfltr.command._run_mise_with_trust", fake_run_with_trust)
+    config = pyfltr.config.create_default_config()
+    result = pyfltr.command._query_mise_active_tools(config, allow_side_effects=False)
+    assert result.status == "exec-error"
+    assert result.detail is not None
+    assert "executable bit" in result.detail
+
+
+def test_query_mise_active_tools_json_parse_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`mise ls` のstdoutがJSONとしてパースできなければ `json-parse-error` を返す。"""
+    monkeypatch.setattr("pyfltr.command.shutil.which", lambda name: f"/usr/local/bin/{name}")
+
+    def fake_run_with_trust(args, mise_env, config, *, allow_side_effects):  # type: ignore[no-untyped-def]
+        del args, mise_env, config, allow_side_effects
+        return 0, "this is not json", "", False
+
+    monkeypatch.setattr("pyfltr.command._run_mise_with_trust", fake_run_with_trust)
+    config = pyfltr.config.create_default_config()
+    result = pyfltr.command._query_mise_active_tools(config, allow_side_effects=False)
+    assert result.status == "json-parse-error"
+
+
+def test_query_mise_active_tools_unexpected_shape(monkeypatch: pytest.MonkeyPatch) -> None:
+    """JSONがdict以外（list等）のときは `unexpected-shape` を返す。"""
+    monkeypatch.setattr("pyfltr.command.shutil.which", lambda name: f"/usr/local/bin/{name}")
+
+    def fake_run_with_trust(args, mise_env, config, *, allow_side_effects):  # type: ignore[no-untyped-def]
+        del args, mise_env, config, allow_side_effects
+        return 0, "[]", "", False
+
+    monkeypatch.setattr("pyfltr.command._run_mise_with_trust", fake_run_with_trust)
+    config = pyfltr.config.create_default_config()
+    result = pyfltr.command._query_mise_active_tools(config, allow_side_effects=False)
+    assert result.status == "unexpected-shape"
+    assert result.detail == "got list"
+
+
+def test_query_mise_active_tools_ok(monkeypatch: pytest.MonkeyPatch) -> None:
+    """正常取得時は `ok` ステータスとtoolsを返す。"""
+    monkeypatch.setattr("pyfltr.command.shutil.which", lambda name: f"/usr/local/bin/{name}")
+
+    def fake_run_with_trust(args, mise_env, config, *, allow_side_effects):  # type: ignore[no-untyped-def]
+        del args, mise_env, config, allow_side_effects
+        return 0, '{"rust": [{"version": "1.83.0"}]}', "", False
+
+    monkeypatch.setattr("pyfltr.command._run_mise_with_trust", fake_run_with_trust)
+    config = pyfltr.config.create_default_config()
+    result = pyfltr.command._query_mise_active_tools(config, allow_side_effects=False)
+    assert result.status == "ok"
+    assert result.tools == {"rust": [{"version": "1.83.0"}]}
+
+
+# --- get_mise_active_tool_key 公開API ---
+
+
+def test_get_mise_active_tool_key_for_cargo_fmt() -> None:
+    """rust backendを使うcargo-fmtは `rust` を返す。"""
+    assert pyfltr.command.get_mise_active_tool_key("cargo-fmt") == "rust"
+
+
+def test_get_mise_active_tool_key_for_cargo_deny() -> None:
+    """cargo-denyは `aqua:EmbarkStudios/cargo-deny` を返す（mise.toml記述に合わせた形）。"""
+    assert pyfltr.command.get_mise_active_tool_key("cargo-deny") == "aqua:EmbarkStudios/cargo-deny"
+
+
+def test_get_mise_active_tool_key_for_simple_tool() -> None:
+    """`mise_backend` 未設定のツールは `bin_name` をそのまま返す。"""
+    assert pyfltr.command.get_mise_active_tool_key("actionlint") == "actionlint"
+
+
+def test_get_mise_active_tool_key_for_unknown_command() -> None:
+    """mise backend未登録のコマンドは `None` を返す。"""
+    assert pyfltr.command.get_mise_active_tool_key("ruff-check") is None
+    assert pyfltr.command.get_mise_active_tool_key("not-registered") is None
