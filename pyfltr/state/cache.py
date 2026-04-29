@@ -44,10 +44,10 @@ import pathlib
 import shutil
 import typing
 
-import pyfltr.archive
 import pyfltr.command
-import pyfltr.config
+import pyfltr.config.config
 import pyfltr.error_parser
+import pyfltr.state.archive
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +77,7 @@ class CacheStore:
     """
 
     def __init__(self, cache_root: pathlib.Path | None = None) -> None:
-        self._cache_root = cache_root if cache_root is not None else pyfltr.archive.default_cache_root()
+        self._cache_root = cache_root if cache_root is not None else pyfltr.state.archive.default_cache_root()
         self._cache_dir = self._cache_root / _CACHE_DIRNAME
 
     @property
@@ -183,14 +183,14 @@ class CacheStore:
         return self._cache_dir / _sanitize_tool_name(command) / f"{key}.json"
 
 
-def cache_policy_from_config(config: pyfltr.config.Config) -> CachePolicy:
+def cache_policy_from_config(config: pyfltr.config.config.Config) -> CachePolicy:
     """pyproject.toml の設定から CachePolicy を組み立てる。"""
     return CachePolicy(max_age_hours=int(config.values.get("cache-max-age-hours", 12)))
 
 
 def is_cacheable(
     command: str,
-    config: pyfltr.config.Config,
+    config: pyfltr.config.config.Config,
     additional_args: list[str],
 ) -> bool:
     """当該実行がキャッシュ対象になるかを判定する。
@@ -221,7 +221,7 @@ def is_cacheable(
 
 def resolve_config_files(
     command: str,
-    config: pyfltr.config.Config,
+    config: pyfltr.config.config.Config,
     base: pathlib.Path | None = None,
 ) -> list[pathlib.Path]:
     """コマンドの設定ファイル候補のうち、プロジェクトルートに実在するものを列挙する。

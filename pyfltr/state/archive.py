@@ -33,8 +33,8 @@ import platformdirs
 import ulid
 
 import pyfltr.command
-import pyfltr.config
-import pyfltr.llm_output
+import pyfltr.config.config
+import pyfltr.output.jsonl
 import pyfltr.paths
 
 logger = logging.getLogger(__name__)
@@ -155,7 +155,7 @@ class ArchiveStore:
         tool_dir.mkdir(parents=True, exist_ok=True)
         (tool_dir / _TOOL_OUTPUT_FILENAME).write_text(result.output, encoding="utf-8")
 
-        aggregated, hint_urls, hints = pyfltr.llm_output.aggregate_diagnostics(result.errors)
+        aggregated, hint_urls, hints = pyfltr.output.jsonl.aggregate_diagnostics(result.errors)
         with (tool_dir / _TOOL_DIAGNOSTICS_FILENAME).open("w", encoding="utf-8") as f:
             for record in aggregated:
                 f.write(json.dumps(record, ensure_ascii=False))
@@ -335,7 +335,7 @@ class ArchiveStore:
         return removed
 
 
-def policy_from_config(config: pyfltr.config.Config) -> ArchivePolicy:
+def policy_from_config(config: pyfltr.config.config.Config) -> ArchivePolicy:
     """pyproject.toml の設定から ArchivePolicy を組み立てる。"""
     return ArchivePolicy(
         max_runs=int(config.values.get("archive-max-runs", 100)),

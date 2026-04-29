@@ -10,8 +10,10 @@ import subprocess
 
 import pytest
 
+import pyfltr.cli.main
+import pyfltr.cli.pipeline
+import pyfltr.cli.precommit_guidance
 import pyfltr.command
-import pyfltr.main
 import pyfltr.warnings_
 from tests import conftest as _testconf
 
@@ -20,7 +22,7 @@ from tests import conftest as _testconf
 def test_success(mocker, mode):
     proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="test")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
-    returncode = pyfltr.main.run([mode, str(pathlib.Path(__file__).parent.parent)])
+    returncode = pyfltr.cli.main.run([mode, str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 0
 
 
@@ -28,14 +30,14 @@ def test_success(mocker, mode):
 def test_fail(mocker, mode):
     proc = subprocess.CompletedProcess(["test"], returncode=-1, stdout="test")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
-    returncode = pyfltr.main.run([mode, str(pathlib.Path(__file__).parent.parent)])
+    returncode = pyfltr.cli.main.run([mode, str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 1
 
 
 def test_missing_subcommand_errors():
     """サブコマンド未指定時にSystemExitが発生することを確認。"""
     with pytest.raises(SystemExit):
-        pyfltr.main.run([])
+        pyfltr.cli.main.run([])
 
 
 def test_work_dir(mocker, tmp_path):
@@ -45,7 +47,7 @@ def test_work_dir(mocker, tmp_path):
     proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="test")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
     original_cwd = pathlib.Path.cwd()
-    returncode = pyfltr.main.run(
+    returncode = pyfltr.cli.main.run(
         ["ci", "--work-dir", str(tmp_path), "--commands=pytest", str(pathlib.Path(__file__).parent.parent)]
     )
     assert returncode == 0
@@ -59,7 +61,7 @@ def test_run_auto_includes_fix_stage(mocker):
     mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
     # ruff-checkはfix-args定義済みかつpreset=latestで有効化されている
-    returncode = pyfltr.main.run(["run", "--commands=ruff-check", str(pathlib.Path(__file__).parent.parent)])
+    returncode = pyfltr.cli.main.run(["run", "--commands=ruff-check", str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 0
 
     # 通常モードの引数リストとfixモードの引数リストが両方実行されていること
@@ -73,7 +75,7 @@ def test_no_fix_skips_fix_stage(mocker):
     proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="")
     mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
-    returncode = pyfltr.main.run(["run", "--no-fix", "--commands=ruff-check", str(pathlib.Path(__file__).parent.parent)])
+    returncode = pyfltr.cli.main.run(["run", "--no-fix", "--commands=ruff-check", str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 0
 
     invoked_commandlines = [call.args[0] for call in mock_run.call_args_list if call.args and isinstance(call.args[0], list)]
@@ -86,7 +88,7 @@ def test_ci_does_not_run_fix_stage(mocker):
     proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="")
     mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
-    pyfltr.main.run(["ci", "--commands=ruff-check", str(pathlib.Path(__file__).parent.parent)])
+    pyfltr.cli.main.run(["ci", "--commands=ruff-check", str(pathlib.Path(__file__).parent.parent)])
 
     invoked_commandlines = [call.args[0] for call in mock_run.call_args_list if call.args and isinstance(call.args[0], list)]
     fix_calls = [cl for cl in invoked_commandlines if "--fix" in cl]
@@ -99,7 +101,9 @@ def test_stream_mode_writes_detail_log_during_run(mocker, capsys):
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy-detail")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
-    returncode = pyfltr.main.run(["ci", "--no-ui", "--stream", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    returncode = pyfltr.cli.main.run(
+        ["ci", "--no-ui", "--stream", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)]
+    )
     assert returncode == 0
     captured = capsys.readouterr()
     # 詳細ログに含まれるreturncode行が出力される
@@ -114,7 +118,7 @@ def test_buffered_mode_is_default(mocker, capsys):
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy-detail")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
-    returncode = pyfltr.main.run(["ci", "--no-ui", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    returncode = pyfltr.cli.main.run(["ci", "--no-ui", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 0
     text = capsys.readouterr().out
     # 詳細ログがsummaryより先に来る（summaryは末尾）
@@ -128,7 +132,7 @@ def test_additional_args(mocker):
     proc = subprocess.CompletedProcess(["pytest"], returncode=0, stdout="test")
     mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
-    returncode = pyfltr.main.run(
+    returncode = pyfltr.cli.main.run(
         ["ci", "--commands=pytest", "--pytest-args=--maxfail=5 -v", str(pathlib.Path(__file__).parent.parent)]
     )
     assert returncode == 0
@@ -147,28 +151,28 @@ class TestSubcommandIntegration:
         """runサブコマンドで--exit-zero-even-if-formattedが暗黙的に有効化される。"""
         proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="test")
         mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
-        returncode = pyfltr.main.run(["run", str(pathlib.Path(__file__).parent.parent)])
+        returncode = pyfltr.cli.main.run(["run", str(pathlib.Path(__file__).parent.parent)])
         assert returncode == 0
 
     def test_fast_subcommand(self, mocker):
         """fastサブコマンドで--exit-zero-even-if-formattedと--commands=fastが暗黙的に有効化される。"""
         proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="test")
         mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
-        returncode = pyfltr.main.run(["fast", str(pathlib.Path(__file__).parent.parent)])
+        returncode = pyfltr.cli.main.run(["fast", str(pathlib.Path(__file__).parent.parent)])
         assert returncode == 0
 
     def test_run_for_agent_subcommand(self, mocker):
         """run-for-agentサブコマンドで--exit-zero-even-if-formattedと--output-format=jsonlが暗黙的に有効化される。"""
         proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="test")
         mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
-        returncode = pyfltr.main.run(["run-for-agent", str(pathlib.Path(__file__).parent.parent)])
+        returncode = pyfltr.cli.main.run(["run-for-agent", str(pathlib.Path(__file__).parent.parent)])
         assert returncode == 0
 
     def test_ci_explicit(self, mocker):
         """明示的なciサブコマンド。"""
         proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="test")
         mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
-        returncode = pyfltr.main.run(["ci", str(pathlib.Path(__file__).parent.parent)])
+        returncode = pyfltr.cli.main.run(["ci", str(pathlib.Path(__file__).parent.parent)])
         assert returncode == 0
 
     def test_run_includes_custom_commands_by_default(self, mocker, tmp_path):
@@ -188,7 +192,7 @@ pass-filenames = false
         proc = subprocess.CompletedProcess(["my-linter-exe"], returncode=0, stdout="")
         mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
-        returncode = pyfltr.main.run(["run", "--work-dir", str(tmp_path), "--commands=my-linter", str(tmp_path)])
+        returncode = pyfltr.cli.main.run(["run", "--work-dir", str(tmp_path), "--commands=my-linter", str(tmp_path)])
         assert returncode == 0
 
         invoked_binaries = {
@@ -202,7 +206,7 @@ def test_human_readable_disables_structured_output(mocker):
     proc = subprocess.CompletedProcess(["ruff"], returncode=0, stdout="")
     mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
-    pyfltr.main.run(["run", "--human-readable", "--commands=ruff-check", str(pathlib.Path(__file__).parent.parent)])
+    pyfltr.cli.main.run(["run", "--human-readable", "--commands=ruff-check", str(pathlib.Path(__file__).parent.parent)])
 
     # ruff-checkの実行コマンドラインに--output-format=jsonが含まれないことを確認
     for call in mock_run.call_args_list:
@@ -218,14 +222,16 @@ def test_output_format_accepts_structured_choices(mocker, fmt):
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
-    returncode = pyfltr.main.run(["ci", "--output-format", fmt, "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    returncode = pyfltr.cli.main.run(
+        ["ci", "--output-format", fmt, "--commands=mypy", str(pathlib.Path(__file__).parent.parent)]
+    )
     assert returncode == 0
 
 
 def test_output_format_invalid_choice_rejected():
     """--output-formatの不正値はSystemExit（argparseエラー）。"""
     with pytest.raises(SystemExit):
-        pyfltr.main.run(["ci", "--output-format", "bogus", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+        pyfltr.cli.main.run(["ci", "--output-format", "bogus", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
 
 
 def test_text_output_on_stdout_for_text(mocker, capsys):
@@ -233,7 +239,7 @@ def test_text_output_on_stdout_for_text(mocker, capsys):
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
-    pyfltr.main.run(["ci", "--output-format=text", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    pyfltr.cli.main.run(["ci", "--output-format=text", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr()
     assert "summary" in captured.out
     assert "----- pyfltr" in captured.out
@@ -246,7 +252,9 @@ def test_text_output_on_stdout_for_github_annotations(mocker, capsys):
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
-    pyfltr.main.run(["ci", "--output-format=github-annotations", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    pyfltr.cli.main.run(
+        ["ci", "--output-format=github-annotations", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)]
+    )
     captured = capsys.readouterr()
     assert "summary" in captured.out
     assert "----- pyfltr" in captured.out
@@ -261,7 +269,7 @@ def test_jsonl_stdout_keeps_text_on_stderr_with_warn_level(mocker, capsys):
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
-    pyfltr.main.run(["ci", "--output-format=jsonl", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    pyfltr.cli.main.run(["ci", "--output-format=jsonl", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr()
     # stdoutはJSONLのみ（textの区切り線は出ない）
     assert "----- pyfltr" not in captured.out
@@ -275,7 +283,7 @@ def test_sarif_stdout_keeps_text_on_stderr_with_info_level(mocker, capsys):
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
-    pyfltr.main.run(["ci", "--output-format=sarif", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    pyfltr.cli.main.run(["ci", "--output-format=sarif", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr()
     # stdoutはSARIF JSON（`"version": "2.1.0"`を含む）でtext整形は混入しない
     assert "----- pyfltr" not in captured.out
@@ -291,7 +299,7 @@ def test_system_logger_always_on_stderr_and_not_suppressed(mocker, capsys):
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
     for fmt in ("text", "jsonl", "sarif", "github-annotations"):
-        pyfltr.main.run(["ci", "--output-format", fmt, "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+        pyfltr.cli.main.run(["ci", "--output-format", fmt, "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
         assert logging.getLogger().handlers, f"root loggerのhandlerが空になっている: fmt={fmt}"
         capsys.readouterr()  # 各回のstdout/stderrを読み捨て
 
@@ -304,7 +312,7 @@ def test_output_file_keeps_text_on_stdout_for_all_formats(mocker, capsys, tmp_pa
 
     # github-annotationsは--output-fileを解釈しないためtextモードと同等の挙動となる。
     destination = tmp_path / "out.dat"
-    pyfltr.main.run(
+    pyfltr.cli.main.run(
         [
             "ci",
             "--output-format",
@@ -323,7 +331,7 @@ def test_fail_fast_flag_accepted(mocker):
     """--fail-fastフラグが受理される。"""
     proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="test")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
-    returncode = pyfltr.main.run(["ci", "--fail-fast", str(pathlib.Path(__file__).parent.parent)])
+    returncode = pyfltr.cli.main.run(["ci", "--fail-fast", str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 0
 
 
@@ -331,7 +339,7 @@ def test_no_cache_flag_accepted(mocker):
     """--no-cacheフラグが受理される。"""
     proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="test")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
-    returncode = pyfltr.main.run(["ci", "--no-cache", str(pathlib.Path(__file__).parent.parent)])
+    returncode = pyfltr.cli.main.run(["ci", "--no-cache", str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 0
 
 
@@ -351,14 +359,14 @@ def test_only_failed_flag_accepted(_only_failed_cache):
     直前runが存在しないので`_run_subprocess`も起動しない経路を通るため
     モック不要。
     """
-    returncode = pyfltr.main.run(["ci", "--only-failed", str(pathlib.Path(__file__).parent.parent)])
+    returncode = pyfltr.cli.main.run(["ci", "--only-failed", str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 0
 
 
 def test_only_failed_returns_zero_when_no_failures(mocker, _only_failed_cache):
     """--only-failed指定で直前runに失敗ツールが無ければrc=0で終了する（実コマンド起動無し）。"""
     mocker.patch("pyfltr.command._run_subprocess").side_effect = AssertionError("不要な起動")
-    returncode = pyfltr.main.run(["run-for-agent", "--only-failed", str(pathlib.Path(__file__).parent.parent)])
+    returncode = pyfltr.cli.main.run(["run-for-agent", "--only-failed", str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 0
 
 
@@ -367,7 +375,7 @@ def test_only_failed_returns_zero_when_no_failures(mocker, _only_failed_cache):
 
 def test_from_run_flag_accepted(_only_failed_cache):
     """--from-run + --only-failedの併用が受理される（直前runが無ければrc=0で終了）。"""
-    returncode = pyfltr.main.run(["ci", "--only-failed", "--from-run", "latest", str(pathlib.Path(__file__).parent.parent)])
+    returncode = pyfltr.cli.main.run(["ci", "--only-failed", "--from-run", "latest", str(pathlib.Path(__file__).parent.parent)])
     # アーカイブが空なので「runが存在しない」としてrc=0で終了する
     assert returncode == 0
 
@@ -375,7 +383,7 @@ def test_from_run_flag_accepted(_only_failed_cache):
 def test_from_run_without_only_failed_is_error(_only_failed_cache, capsys):
     """--from-run単独指定（--only-failedなし）はargparseエラー（SystemExit）。"""
     with pytest.raises(SystemExit):
-        pyfltr.main.run(["ci", "--from-run", "latest", str(pathlib.Path(__file__).parent.parent)])
+        pyfltr.cli.main.run(["ci", "--from-run", "latest", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr()
     assert "--from-run" in captured.err
 
@@ -394,7 +402,7 @@ def test_changed_since_flag_accepted(mocker):
         return_value=[],
     )
 
-    returncode = pyfltr.main.run(["ci", "--changed-since=HEAD", str(pathlib.Path(__file__).parent.parent)])
+    returncode = pyfltr.cli.main.run(["ci", "--changed-since=HEAD", str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 0
 
 
@@ -410,7 +418,7 @@ def test_changed_since_with_only_failed(mocker, _only_failed_cache):
         return_value=["some_file.py"],
     )
 
-    returncode = pyfltr.main.run(["ci", "--changed-since=HEAD", "--only-failed", str(pathlib.Path(__file__).parent.parent)])
+    returncode = pyfltr.cli.main.run(["ci", "--changed-since=HEAD", "--only-failed", str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 0
 
 
@@ -429,9 +437,9 @@ def test_run_pipeline_logs_run_id_when_archive_enabled(mocker, capsys, _archive_
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
     # launcher_prefixが環境依存（親プロセス由来）になるため、テスト中は固定値にする。
-    mocker.patch("pyfltr.retry.detect_launcher_prefix", return_value=["uvx", "pyfltr"])
+    mocker.patch("pyfltr.state.retry.detect_launcher_prefix", return_value=["uvx", "pyfltr"])
 
-    pyfltr.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    pyfltr.cli.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr().out
     assert "run_id:" in captured
     assert "uvx pyfltr show-run" in captured
@@ -445,7 +453,7 @@ def test_run_pipeline_does_not_log_run_id_when_archive_disabled(mocker, capsys, 
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
-    pyfltr.main.run(["ci", "--no-archive", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    pyfltr.cli.main.run(["ci", "--no-archive", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr().out
     assert "run_id:" not in captured
 
@@ -455,8 +463,8 @@ def test_run_pipeline_does_not_log_run_id_when_archive_disabled(mocker, capsys, 
 
 def test_precommit_guidance_emitted_when_formatted_under_git(monkeypatch, capsys):
     """formatted結果がありgit commit経由のときガイダンスがstderrに出る。"""
-    monkeypatch.setattr(pyfltr.main.pyfltr.precommit, "is_invoked_from_git_commit", lambda: True)
-    pyfltr.main._maybe_emit_precommit_guidance(
+    monkeypatch.setattr(pyfltr.cli.precommit_guidance, "is_invoked_from_git_commit", lambda: True)
+    pyfltr.cli.pipeline._maybe_emit_precommit_guidance(
         [_testconf.make_formatted_result(), _testconf.make_succeeded_result()],
         structured_stdout=False,
     )
@@ -467,8 +475,8 @@ def test_precommit_guidance_emitted_when_formatted_under_git(monkeypatch, capsys
 
 def test_precommit_guidance_skipped_when_not_under_git(monkeypatch, capsys):
     """git commit経由でなければformattedがあってもガイダンスを出さない。"""
-    monkeypatch.setattr(pyfltr.main.pyfltr.precommit, "is_invoked_from_git_commit", lambda: False)
-    pyfltr.main._maybe_emit_precommit_guidance(
+    monkeypatch.setattr(pyfltr.cli.precommit_guidance, "is_invoked_from_git_commit", lambda: False)
+    pyfltr.cli.pipeline._maybe_emit_precommit_guidance(
         [_testconf.make_formatted_result()],
         structured_stdout=False,
     )
@@ -478,8 +486,8 @@ def test_precommit_guidance_skipped_when_not_under_git(monkeypatch, capsys):
 
 def test_precommit_guidance_skipped_when_no_formatted(monkeypatch, capsys):
     """formatted結果が無ければガイダンスを出さない。"""
-    monkeypatch.setattr(pyfltr.main.pyfltr.precommit, "is_invoked_from_git_commit", lambda: True)
-    pyfltr.main._maybe_emit_precommit_guidance(
+    monkeypatch.setattr(pyfltr.cli.precommit_guidance, "is_invoked_from_git_commit", lambda: True)
+    pyfltr.cli.pipeline._maybe_emit_precommit_guidance(
         [_testconf.make_succeeded_result()],
         structured_stdout=False,
     )
@@ -490,7 +498,7 @@ def test_precommit_guidance_skipped_when_no_formatted(monkeypatch, capsys):
 def test_tool_name_as_subcommand_shows_guidance(capsys):
     """ツール名をサブコマンドに渡すと実行例付きメッセージをstderrに出してexit 2。"""
     with pytest.raises(SystemExit) as exc_info:
-        pyfltr.main.run(["textlint", "docs/"])
+        pyfltr.cli.main.run(["textlint", "docs/"])
     assert exc_info.value.code == 2
     err = capsys.readouterr().err
     assert "'textlint'" in err
@@ -501,7 +509,7 @@ def test_tool_name_as_subcommand_shows_guidance(capsys):
 def test_alias_name_as_subcommand_shows_guidance(capsys):
     """`lint`などの静的エイリアスも同じくガイダンスを出す。"""
     with pytest.raises(SystemExit) as exc_info:
-        pyfltr.main.run(["lint", "docs/"])
+        pyfltr.cli.main.run(["lint", "docs/"])
     assert exc_info.value.code == 2
     err = capsys.readouterr().err
     assert "'lint'" in err
@@ -511,7 +519,7 @@ def test_alias_name_as_subcommand_shows_guidance(capsys):
 def test_argparse_error_prints_help_to_stderr(capsys):
     """argparseエラー時に該当parserの--help相当がstderrに併記されること。"""
     with pytest.raises(SystemExit) as exc_info:
-        pyfltr.main.run(["run", "--jobs", "abc"])
+        pyfltr.cli.main.run(["run", "--jobs", "abc"])
     assert exc_info.value.code == 2
     err = capsys.readouterr().err
     # サブパーサー（pyfltr run）のヘルプが出る
@@ -524,7 +532,7 @@ def test_argparse_error_prints_help_to_stderr(capsys):
 def test_invalid_subcommand_prints_main_help(capsys):
     """不正なサブコマンド指定時はメインparserの--help相当が併記される。"""
     with pytest.raises(SystemExit):
-        pyfltr.main.run(["invalid-subcommand"])
+        pyfltr.cli.main.run(["invalid-subcommand"])
     err = capsys.readouterr().err
     assert "usage:" in err
     assert "<subcommand>" in err
@@ -535,8 +543,8 @@ def test_precommit_guidance_skipped_for_jsonl_and_sarif_stdout_only(monkeypatch,
 
     github-annotationsはtextと同じレイアウトのため`structured_stdout=False`で扱われる。
     """
-    monkeypatch.setattr(pyfltr.main.pyfltr.precommit, "is_invoked_from_git_commit", lambda: True)
-    pyfltr.main._maybe_emit_precommit_guidance(
+    monkeypatch.setattr(pyfltr.cli.precommit_guidance, "is_invoked_from_git_commit", lambda: True)
+    pyfltr.cli.pipeline._maybe_emit_precommit_guidance(
         [_testconf.make_formatted_result()],
         structured_stdout=True,
     )
@@ -565,10 +573,10 @@ def test_reconfigure_stdio_to_utf8_invokes_reconfigure(monkeypatch) -> None:
     """`reconfigure`を持つstreamにはUTF-8 / backslashreplaceが要求される。"""
     fake_stdout = _FakeReconfigurableStream()
     fake_stderr = _FakeReconfigurableStream()
-    monkeypatch.setattr(pyfltr.main.sys, "stdout", fake_stdout)
-    monkeypatch.setattr(pyfltr.main.sys, "stderr", fake_stderr)
+    monkeypatch.setattr(pyfltr.cli.main.sys, "stdout", fake_stdout)
+    monkeypatch.setattr(pyfltr.cli.main.sys, "stderr", fake_stderr)
 
-    pyfltr.main._reconfigure_stdio_to_utf8()
+    pyfltr.cli.main._reconfigure_stdio_to_utf8()
 
     expected = {"encoding": "utf-8", "errors": "backslashreplace"}
     assert fake_stdout.calls == [expected]
@@ -577,10 +585,10 @@ def test_reconfigure_stdio_to_utf8_invokes_reconfigure(monkeypatch) -> None:
 
 def test_reconfigure_stdio_to_utf8_tolerates_missing_or_failing_streams(monkeypatch) -> None:
     """`reconfigure`未提供streamや呼び出し失敗時に例外が伝播しない。"""
-    monkeypatch.setattr(pyfltr.main.sys, "stdout", object())
-    monkeypatch.setattr(pyfltr.main.sys, "stderr", _ReconfigureRaisingStream())
+    monkeypatch.setattr(pyfltr.cli.main.sys, "stdout", object())
+    monkeypatch.setattr(pyfltr.cli.main.sys, "stderr", _ReconfigureRaisingStream())
 
-    pyfltr.main._reconfigure_stdio_to_utf8()
+    pyfltr.cli.main._reconfigure_stdio_to_utf8()
 
 
 # --- configサブコマンド ---
@@ -599,7 +607,7 @@ class TestConfigSubcommand:
         """project側で設定した値が`config get`で返る。"""
         (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\narchive-max-age-days = 7\n", encoding="utf-8")
         monkeypatch.chdir(tmp_path)
-        rc = pyfltr.main.run(["config", "get", "archive-max-age-days"])
+        rc = pyfltr.cli.main.run(["config", "get", "archive-max-age-days"])
         assert rc == 0
         assert capsys.readouterr().out.strip() == "7"
 
@@ -607,7 +615,7 @@ class TestConfigSubcommand:
         """未設定キーは`DEFAULT_CONFIG`の既定値が返る。"""
         (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\n", encoding="utf-8")
         monkeypatch.chdir(tmp_path)
-        rc = pyfltr.main.run(["config", "get", "archive-max-age-days"])
+        rc = pyfltr.cli.main.run(["config", "get", "archive-max-age-days"])
         assert rc == 0
         # DEFAULT_CONFIGは30
         assert capsys.readouterr().out.strip() == "30"
@@ -616,7 +624,7 @@ class TestConfigSubcommand:
         """未知キーはexit 1。"""
         (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\n", encoding="utf-8")
         monkeypatch.chdir(tmp_path)
-        rc = pyfltr.main.run(["config", "get", "unknown-key"])
+        rc = pyfltr.cli.main.run(["config", "get", "unknown-key"])
         assert rc == 1
         assert "unknown-key" in capsys.readouterr().err
 
@@ -624,7 +632,7 @@ class TestConfigSubcommand:
         """既存pyproject.tomlに対してsetが書き込み成功する（[tool.pyfltr]セクションが無くても）。"""
         (tmp_path / "pyproject.toml").write_text('[project]\nname = "demo"\n', encoding="utf-8")
         monkeypatch.chdir(tmp_path)
-        rc = pyfltr.main.run(["config", "set", "archive-max-age-days", "5"])
+        rc = pyfltr.cli.main.run(["config", "set", "archive-max-age-days", "5"])
         assert rc == 0
         text = (tmp_path / "pyproject.toml").read_text(encoding="utf-8")
         assert "[tool.pyfltr]" in text
@@ -635,7 +643,7 @@ class TestConfigSubcommand:
         original = '[project]\nname = "demo"  # 重要なコメント\n\n[tool.pyfltr]\n# pyfltrのコメント\npreset = "latest"\n'
         (tmp_path / "pyproject.toml").write_text(original, encoding="utf-8")
         monkeypatch.chdir(tmp_path)
-        rc = pyfltr.main.run(["config", "set", "archive-max-age-days", "10"])
+        rc = pyfltr.cli.main.run(["config", "set", "archive-max-age-days", "10"])
         assert rc == 0
         text = (tmp_path / "pyproject.toml").read_text(encoding="utf-8")
         assert "# 重要なコメント" in text
@@ -646,7 +654,7 @@ class TestConfigSubcommand:
         """pyproject不在ディレクトリでのsetはエラー終了。"""
         # tmp_pathにpyproject.tomlを作らない
         monkeypatch.chdir(tmp_path)
-        rc = pyfltr.main.run(["config", "set", "archive-max-age-days", "5"])
+        rc = pyfltr.cli.main.run(["config", "set", "archive-max-age-days", "5"])
         assert rc == 1
         assert "pyproject.toml" in capsys.readouterr().err
 
@@ -656,7 +664,7 @@ class TestConfigSubcommand:
         # 既に存在しないことを確認
         assert not global_path.exists()
         monkeypatch.chdir(tmp_path)
-        rc = pyfltr.main.run(["config", "set", "--global", "archive-max-age-days", "5"])
+        rc = pyfltr.cli.main.run(["config", "set", "--global", "archive-max-age-days", "5"])
         assert rc == 0
         assert global_path.exists()
         text = global_path.read_text(encoding="utf-8")
@@ -667,14 +675,14 @@ class TestConfigSubcommand:
         """archive-max-age-daysをproject側にsetすると警告が蓄積される。"""
         (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\n", encoding="utf-8")
         monkeypatch.chdir(tmp_path)
-        rc = pyfltr.main.run(["config", "set", "archive-max-age-days", "5"])
+        rc = pyfltr.cli.main.run(["config", "set", "archive-max-age-days", "5"])
         assert rc == 0
         assert _count_config_warnings("archive-max-age-days") == 1
 
     def test_config_set_warning_normal_in_global(self, monkeypatch, tmp_path) -> None:
         """js-runnerをglobal側にsetすると警告（archive/cache以外はproject優先）。"""
         monkeypatch.chdir(tmp_path)
-        rc = pyfltr.main.run(["config", "set", "--global", "js-runner", "npm"])
+        rc = pyfltr.cli.main.run(["config", "set", "--global", "js-runner", "npm"])
         assert rc == 0
         assert _count_config_warnings("js-runner") == 1
 
@@ -682,10 +690,10 @@ class TestConfigSubcommand:
         """存在キーをdeleteで削除し、その後getすると既定値が返る。"""
         (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\narchive-max-age-days = 5\n", encoding="utf-8")
         monkeypatch.chdir(tmp_path)
-        rc = pyfltr.main.run(["config", "delete", "archive-max-age-days"])
+        rc = pyfltr.cli.main.run(["config", "delete", "archive-max-age-days"])
         assert rc == 0
         capsys.readouterr()
-        rc = pyfltr.main.run(["config", "get", "archive-max-age-days"])
+        rc = pyfltr.cli.main.run(["config", "get", "archive-max-age-days"])
         assert rc == 0
         assert capsys.readouterr().out.strip() == "30"
 
@@ -693,7 +701,7 @@ class TestConfigSubcommand:
         """存在しないキーのdeleteはexit 0で終了。"""
         (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\n", encoding="utf-8")
         monkeypatch.chdir(tmp_path)
-        rc = pyfltr.main.run(["config", "delete", "archive-max-age-days"])
+        rc = pyfltr.cli.main.run(["config", "delete", "archive-max-age-days"])
         assert rc == 0
         out = capsys.readouterr().out
         assert "archive-max-age-days" in out
@@ -704,7 +712,7 @@ class TestConfigSubcommand:
             '[tool.pyfltr]\narchive-max-age-days = 5\njs-runner = "pnpm"\n', encoding="utf-8"
         )
         monkeypatch.chdir(tmp_path)
-        rc = pyfltr.main.run(["config", "list"])
+        rc = pyfltr.cli.main.run(["config", "list"])
         assert rc == 0
         out = capsys.readouterr().out
         assert "archive-max-age-days = 5" in out
@@ -714,7 +722,7 @@ class TestConfigSubcommand:
         """jsonフォーマットで`{"values": ...}`が出力される。"""
         (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\narchive-max-age-days = 5\n", encoding="utf-8")
         monkeypatch.chdir(tmp_path)
-        rc = pyfltr.main.run(["config", "list", "--output-format", "json"])
+        rc = pyfltr.cli.main.run(["config", "list", "--output-format", "json"])
         assert rc == 0
         out = capsys.readouterr().out.strip()
         data = json.loads(out)
@@ -725,7 +733,7 @@ class TestConfigSubcommand:
         (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\narchive-max-age-days = 5\n", encoding="utf-8")
         monkeypatch.chdir(tmp_path)
         monkeypatch.setenv("AI_AGENT", "1")
-        rc = pyfltr.main.run(["config", "list"])
+        rc = pyfltr.cli.main.run(["config", "list"])
         assert rc == 0
         lines = [line for line in capsys.readouterr().out.splitlines() if line.strip()]
         assert len(lines) == 1
@@ -735,7 +743,7 @@ class TestConfigSubcommand:
         """未知キーへのsetはexit 1。"""
         (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\n", encoding="utf-8")
         monkeypatch.chdir(tmp_path)
-        rc = pyfltr.main.run(["config", "set", "unknown-key", "foo"])
+        rc = pyfltr.cli.main.run(["config", "set", "unknown-key", "foo"])
         assert rc == 1
         assert "unknown-key" in capsys.readouterr().err
 
@@ -743,7 +751,7 @@ class TestConfigSubcommand:
         """未知キーへのdeleteはexit 1。"""
         (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\n", encoding="utf-8")
         monkeypatch.chdir(tmp_path)
-        rc = pyfltr.main.run(["config", "delete", "unknown-key"])
+        rc = pyfltr.cli.main.run(["config", "delete", "unknown-key"])
         assert rc == 1
         assert "unknown-key" in capsys.readouterr().err
 
@@ -751,7 +759,7 @@ class TestConfigSubcommand:
         """`pyfltr config`単独はargparseエラー（required=True）。"""
         monkeypatch.chdir(tmp_path)
         with pytest.raises(SystemExit):
-            pyfltr.main.run(["config"])
+            pyfltr.cli.main.run(["config"])
 
 
 def _get_global_config_env() -> str:

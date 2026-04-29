@@ -10,7 +10,7 @@ import pathlib
 import subprocess
 
 import pyfltr.command
-import pyfltr.config
+import pyfltr.config.config
 from tests import conftest as _testconf
 
 
@@ -22,7 +22,7 @@ def test_taplo_two_step_check_clean(mocker, tmp_path: pathlib.Path) -> None:
     proc = subprocess.CompletedProcess(["taplo"], returncode=0, stdout="")
     mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
-    config = pyfltr.config.create_default_config()
+    config = pyfltr.config.config.create_default_config()
     config.values["taplo"] = True
     result = pyfltr.command.execute_command("taplo", _testconf.make_args(), _testconf.make_execution_context(config, [target]))
 
@@ -53,7 +53,7 @@ def test_taplo_two_step_check_needs_format(mocker, tmp_path: pathlib.Path) -> No
     # スナップショット取得後に内容が変化するよう mtime を事前に固定する
     os.utime(target, (1000000000, 1000000000))
 
-    config = pyfltr.config.create_default_config()
+    config = pyfltr.config.config.create_default_config()
     config.values["taplo"] = True
     result = pyfltr.command.execute_command("taplo", _testconf.make_args(), _testconf.make_execution_context(config, [target]))
 
@@ -75,7 +75,7 @@ def test_taplo_two_step_step2_failure_marks_failed(mocker, tmp_path: pathlib.Pat
 
     mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
 
-    config = pyfltr.config.create_default_config()
+    config = pyfltr.config.config.create_default_config()
     config.values["taplo"] = True
     result = pyfltr.command.execute_command("taplo", _testconf.make_args(), _testconf.make_execution_context(config, [target]))
 
@@ -98,7 +98,7 @@ def test_taplo_fix_mode_skips_check_step(mocker, tmp_path: pathlib.Path) -> None
 
     mock_run = mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
 
-    config = pyfltr.config.create_default_config()
+    config = pyfltr.config.config.create_default_config()
     config.values["taplo"] = True
     result = pyfltr.command.execute_command(
         "taplo", _testconf.make_args(), _testconf.make_execution_context(config, [target], fix_stage=True)
@@ -122,7 +122,7 @@ def test_taplo_fix_mode_no_change_succeeds(mocker, tmp_path: pathlib.Path) -> No
     proc = subprocess.CompletedProcess(["taplo"], returncode=0, stdout="")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
-    config = pyfltr.config.create_default_config()
+    config = pyfltr.config.config.create_default_config()
     config.values["taplo"] = True
     result = pyfltr.command.execute_command(
         "taplo", _testconf.make_args(), _testconf.make_execution_context(config, [target], fix_stage=True)
@@ -140,7 +140,7 @@ def test_taplo_fix_mode_process_error_fails(mocker, tmp_path: pathlib.Path) -> N
     proc = subprocess.CompletedProcess(["taplo"], returncode=1, stdout="syntax error")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
-    config = pyfltr.config.create_default_config()
+    config = pyfltr.config.config.create_default_config()
     config.values["taplo"] = True
     result = pyfltr.command.execute_command(
         "taplo", _testconf.make_args(), _testconf.make_execution_context(config, [target], fix_stage=True)

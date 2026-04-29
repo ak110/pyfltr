@@ -6,9 +6,9 @@ import pathlib
 
 import pytest
 
-import pyfltr.archive
 import pyfltr.command
 import pyfltr.error_parser
+import pyfltr.state.archive
 from tests.conftest import make_archive_store as _make_store
 from tests.conftest import make_command_result as _make_result
 from tests.conftest import make_error_location as _make_error
@@ -244,7 +244,7 @@ def test_cleanup_max_runs(tmp_path: pathlib.Path) -> None:
     store = _make_store(tmp_path)
     run_ids = [store.start_run() for _ in range(101)]
 
-    policy = pyfltr.archive.ArchivePolicy(max_runs=100, max_size_bytes=0, max_age_days=0)
+    policy = pyfltr.state.archive.ArchivePolicy(max_runs=100, max_size_bytes=0, max_age_days=0)
     removed = store.cleanup(policy)
 
     # 最古の1件が削除される
@@ -267,7 +267,7 @@ def test_cleanup_max_size(tmp_path: pathlib.Path) -> None:
     run_id2 = store.start_run()
 
     # max_size=1MBでクリーンアップ → 大きい方（古い方）が削除される
-    policy = pyfltr.archive.ArchivePolicy(max_runs=0, max_size_bytes=1 * 1024 * 1024, max_age_days=0)
+    policy = pyfltr.state.archive.ArchivePolicy(max_runs=0, max_size_bytes=1 * 1024 * 1024, max_age_days=0)
     removed = store.cleanup(policy)
 
     assert run_id in removed
@@ -291,7 +291,7 @@ def test_cleanup_max_age(tmp_path: pathlib.Path) -> None:
     # 新しいrunを作成
     run_id2 = store.start_run()
 
-    policy = pyfltr.archive.ArchivePolicy(max_runs=0, max_size_bytes=0, max_age_days=30)
+    policy = pyfltr.state.archive.ArchivePolicy(max_runs=0, max_size_bytes=0, max_age_days=30)
     removed = store.cleanup(policy)
 
     # 60日前のrunが削除される
@@ -302,7 +302,7 @@ def test_cleanup_max_age(tmp_path: pathlib.Path) -> None:
 
 def test_generate_run_id_unique_and_valid() -> None:
     """連続生成したrun_idは重複なく、ULIDの文字数・文字種を満たす。"""
-    ids = [pyfltr.archive.generate_run_id() for _ in range(10)]
+    ids = [pyfltr.state.archive.generate_run_id() for _ in range(10)]
     # ULIDは26文字のCrockford Base32
     assert all(len(i) == 26 for i in ids)
     assert all(c in "0123456789ABCDEFGHJKMNPQRSTVWXYZ" for i in ids for c in i)
@@ -312,5 +312,5 @@ def test_generate_run_id_unique_and_valid() -> None:
 def test_default_cache_root_respects_env(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """PYFLTR_CACHE_DIR環境変数がdefault_cache_rootで優先される。"""
     monkeypatch.setenv("PYFLTR_CACHE_DIR", str(tmp_path))
-    result = pyfltr.archive.default_cache_root()
+    result = pyfltr.state.archive.default_cache_root()
     assert result == tmp_path

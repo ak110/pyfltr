@@ -12,12 +12,12 @@ import pathlib
 
 import pytest
 
-import pyfltr.archive
-import pyfltr.cache
 import pyfltr.command
-import pyfltr.config
+import pyfltr.config.config
 import pyfltr.error_parser
-import pyfltr.only_failed
+import pyfltr.state.archive
+import pyfltr.state.cache
+import pyfltr.state.only_failed
 import pyfltr.warnings_
 
 
@@ -101,13 +101,13 @@ CARGO_CLIPPY_FIX_CMDLINE: list[str] = ["cargo", *CARGO_CLIPPY_ARGS, *CARGO_CLIPP
 
 
 def make_execution_context(
-    config: pyfltr.config.Config,
+    config: pyfltr.config.config.Config,
     all_files: list[pathlib.Path],
     *,
-    cache_store: pyfltr.cache.CacheStore | None = None,
+    cache_store: pyfltr.state.cache.CacheStore | None = None,
     cache_run_id: str | None = None,
     fix_stage: bool = False,
-    only_failed_targets: pyfltr.only_failed.ToolTargets | None = None,
+    only_failed_targets: pyfltr.state.only_failed.ToolTargets | None = None,
 ) -> pyfltr.command.ExecutionContext:
     """テスト用の ExecutionContext を生成する。
 
@@ -211,12 +211,12 @@ def make_succeeded_result(command: str = "ruff-check") -> pyfltr.command.Command
     )
 
 
-def make_archive_store(tmp_path: pathlib.Path) -> pyfltr.archive.ArchiveStore:
+def make_archive_store(tmp_path: pathlib.Path) -> pyfltr.state.archive.ArchiveStore:
     """テスト用の`ArchiveStore`を生成する。
 
     `archive_test`などで`tmp_path`配下に隔離したstoreを作るための共通ファクトリー。
     """
-    return pyfltr.archive.ArchiveStore(cache_root=tmp_path)
+    return pyfltr.state.archive.ArchiveStore(cache_root=tmp_path)
 
 
 def make_args(*, no_exclude: bool = False) -> argparse.Namespace:
@@ -265,7 +265,7 @@ def seed_archive_run(
     `runs_test` / `mcp_test`等で同じセットアップ手順を踏むため、
     duplicate-code（R0801）回避用にconftest.py側へ集約している。
     """
-    store = pyfltr.archive.ArchiveStore(cache_root=cache_root)
+    store = pyfltr.state.archive.ArchiveStore(cache_root=cache_root)
     run_id = store.start_run(commands=commands or ["ruff-check"], files=files)
     for tool, returncode, output, errors in tool_results or []:
         result = make_command_result(

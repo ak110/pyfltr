@@ -10,7 +10,7 @@ import pathlib
 import subprocess
 
 import pyfltr.command
-import pyfltr.config
+import pyfltr.config.config
 from tests import conftest as _testconf
 
 
@@ -22,7 +22,7 @@ def test_prettier_two_step_check_clean(mocker, tmp_path: pathlib.Path) -> None:
     proc = subprocess.CompletedProcess(["prettier"], returncode=0, stdout="")
     mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
-    config = pyfltr.config.create_default_config()
+    config = pyfltr.config.config.create_default_config()
     config.values["prettier"] = True
     result = pyfltr.command.execute_command(
         "prettier", _testconf.make_args(), _testconf.make_execution_context(config, [target])
@@ -50,7 +50,7 @@ def test_prettier_two_step_check_needs_write(mocker, tmp_path: pathlib.Path) -> 
 
     mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
 
-    config = pyfltr.config.create_default_config()
+    config = pyfltr.config.config.create_default_config()
     config.values["prettier"] = True
     result = pyfltr.command.execute_command(
         "prettier", _testconf.make_args(), _testconf.make_execution_context(config, [target])
@@ -74,7 +74,7 @@ def test_prettier_two_step_check_rc2_fails_without_write(mocker, tmp_path: pathl
 
     mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
 
-    config = pyfltr.config.create_default_config()
+    config = pyfltr.config.config.create_default_config()
     config.values["prettier"] = True
     result = pyfltr.command.execute_command(
         "prettier", _testconf.make_args(), _testconf.make_execution_context(config, [target])
@@ -100,7 +100,7 @@ def test_prettier_two_step_step2_failure_marks_failed(mocker, tmp_path: pathlib.
 
     mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
 
-    config = pyfltr.config.create_default_config()
+    config = pyfltr.config.config.create_default_config()
     config.values["prettier"] = True
     result = pyfltr.command.execute_command(
         "prettier", _testconf.make_args(), _testconf.make_execution_context(config, [target])
@@ -125,7 +125,7 @@ def test_prettier_fix_mode_skips_check_step(mocker, tmp_path: pathlib.Path) -> N
 
     mock_run = mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
 
-    config = pyfltr.config.create_default_config()
+    config = pyfltr.config.config.create_default_config()
     config.values["prettier"] = True
     result = pyfltr.command.execute_command(
         "prettier", _testconf.make_args(), _testconf.make_execution_context(config, [target], fix_stage=True)
@@ -148,7 +148,7 @@ def test_prettier_fix_mode_no_change_succeeds(mocker, tmp_path: pathlib.Path) ->
     proc = subprocess.CompletedProcess(["prettier"], returncode=0, stdout="")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
-    config = pyfltr.config.create_default_config()
+    config = pyfltr.config.config.create_default_config()
     config.values["prettier"] = True
     result = pyfltr.command.execute_command(
         "prettier", _testconf.make_args(), _testconf.make_execution_context(config, [target], fix_stage=True)

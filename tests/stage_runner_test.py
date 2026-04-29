@@ -5,36 +5,36 @@ import concurrent.futures
 import threading
 
 import pyfltr.command
-import pyfltr.config
-import pyfltr.stage_runner
+import pyfltr.config.config
+import pyfltr.state.stage_runner
 
 
 def test_make_skipped_result_returns_command_result():
     """戻り値が CommandResult 型であること。"""
-    config = pyfltr.config.create_default_config()
-    result = pyfltr.stage_runner.make_skipped_result("mypy", config)
+    config = pyfltr.config.config.create_default_config()
+    result = pyfltr.state.stage_runner.make_skipped_result("mypy", config)
     assert isinstance(result, pyfltr.command.CommandResult)
 
 
 def test_make_skipped_result_status_is_skipped():
     """status が "skipped" であること（returncode=None が条件）。"""
-    config = pyfltr.config.create_default_config()
-    result = pyfltr.stage_runner.make_skipped_result("mypy", config)
+    config = pyfltr.config.config.create_default_config()
+    result = pyfltr.state.stage_runner.make_skipped_result("mypy", config)
     assert result.status == "skipped"
     assert result.returncode is None
 
 
 def test_make_skipped_result_preserves_command_name():
     """command 名が保持されること。"""
-    config = pyfltr.config.create_default_config()
-    result = pyfltr.stage_runner.make_skipped_result("ruff-check", config)
+    config = pyfltr.config.config.create_default_config()
+    result = pyfltr.state.stage_runner.make_skipped_result("ruff-check", config)
     assert result.command == "ruff-check"
 
 
 def test_make_skipped_result_has_no_error():
     """has_error=False であること（skipped は error 扱いしない）。"""
-    config = pyfltr.config.create_default_config()
-    result = pyfltr.stage_runner.make_skipped_result("mypy", config)
+    config = pyfltr.config.config.create_default_config()
+    result = pyfltr.state.stage_runner.make_skipped_result("mypy", config)
     assert result.has_error is False
 
 
@@ -64,7 +64,7 @@ def test_cancel_pending_futures_cancels_pending_only():
         pending_future: "pending-cmd",
     }
 
-    pyfltr.stage_runner.cancel_pending_futures(future_to_command, aborted)
+    pyfltr.state.stage_runner.cancel_pending_futures(future_to_command, aborted)
 
     # cancel が成功した future のコマンドだけ aborted に入る
     assert "done-cmd" not in aborted
@@ -83,7 +83,7 @@ def test_cancel_pending_futures_adds_cancelled_commands():
         pending2: "cmd-b",
     }
 
-    pyfltr.stage_runner.cancel_pending_futures(future_to_command, aborted)
+    pyfltr.state.stage_runner.cancel_pending_futures(future_to_command, aborted)
 
     assert "cmd-a" in aborted
     assert "cmd-b" in aborted
@@ -107,7 +107,7 @@ def test_cancel_pending_futures_does_not_add_failed_cancel():
         started.wait()  # running 状態になるまで待つ
 
         future_to_command = {running_future: "running-cmd"}
-        pyfltr.stage_runner.cancel_pending_futures(future_to_command, aborted)
+        pyfltr.state.stage_runner.cancel_pending_futures(future_to_command, aborted)
 
         can_finish.set()
 

@@ -14,9 +14,9 @@ import shutil
 import sys
 import typing
 
-import pyfltr.cli
+import pyfltr.cli.output_format
 import pyfltr.command
-import pyfltr.config
+import pyfltr.config.config
 
 _OUTPUT_FORMATS: tuple[str, ...] = ("text", "json")
 _VALID_OUTPUT_FORMATS: frozenset[str] = frozenset(_OUTPUT_FORMATS)
@@ -39,9 +39,9 @@ def register_subparsers(subparsers: typing.Any) -> None:
         default=None,
         help=(
             "出力形式を指定する（text / json、既定: text）。"
-            f"未指定時は環境変数 {pyfltr.cli.OUTPUT_FORMAT_ENV} を、"
-            f"{pyfltr.cli.AI_AGENT_ENV} が設定されていれば json を採用する"
-            f"(優先順位: CLI > {pyfltr.cli.OUTPUT_FORMAT_ENV} > {pyfltr.cli.AI_AGENT_ENV} > text)。"
+            f"未指定時は環境変数 {pyfltr.cli.output_format.OUTPUT_FORMAT_ENV} を、"
+            f"{pyfltr.cli.output_format.AI_AGENT_ENV} が設定されていれば json を採用する"
+            f"(優先順位: CLI > {pyfltr.cli.output_format.OUTPUT_FORMAT_ENV} > {pyfltr.cli.output_format.AI_AGENT_ENV} > text)。"
         ),
     )
     parser.add_argument(
@@ -56,7 +56,7 @@ def register_subparsers(subparsers: typing.Any) -> None:
 def execute_command_info(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
     """`command-info` サブコマンドの処理本体。"""
     try:
-        config = pyfltr.config.load_config()
+        config = pyfltr.config.config.load_config()
     except (ValueError, OSError) as e:
         sys.stderr.write(f"設定エラー: {e}\n")
         return 1
@@ -68,7 +68,7 @@ def execute_command_info(parser: argparse.ArgumentParser, args: argparse.Namespa
 
     info = _collect_info(command, config, do_check=bool(args.check))
 
-    output_format = pyfltr.cli.resolve_output_format(
+    output_format = pyfltr.cli.output_format.resolve_output_format(
         parser,
         args.output_format,
         valid_values=_VALID_OUTPUT_FORMATS,
@@ -82,7 +82,7 @@ def execute_command_info(parser: argparse.ArgumentParser, args: argparse.Namespa
     return 0 if info.get("resolved", True) else 1
 
 
-def _collect_info(command: str, config: pyfltr.config.Config, *, do_check: bool) -> dict[str, typing.Any]:
+def _collect_info(command: str, config: pyfltr.config.config.Config, *, do_check: bool) -> dict[str, typing.Any]:
     """ツール解決情報を辞書で組み立てる。
 
     解決自体に失敗した場合も例外は外へ伝播させず、`error`キーを含めたdictを返す

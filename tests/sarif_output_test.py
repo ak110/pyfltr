@@ -1,7 +1,7 @@
 """sarif_outputのテストコード。"""
 
-import pyfltr.config
-import pyfltr.sarif_output
+import pyfltr.config.config
+import pyfltr.output.sarif
 from tests.conftest import make_command_result as _make_result
 from tests.conftest import make_error_location as _make_error
 
@@ -18,8 +18,8 @@ def test_build_sarif_basic() -> None:
         "ruff-check", returncode=1, errors=errors, retry_command="pyfltr run --commands ruff-check -- src/foo.py"
     )
 
-    config = pyfltr.config.create_default_config()
-    sarif = pyfltr.sarif_output.build_sarif([result], config, exit_code=1, commands=["ruff-check"], files=1, run_id="01ABC")
+    config = pyfltr.config.config.create_default_config()
+    sarif = pyfltr.output.sarif.build_sarif([result], config, exit_code=1, commands=["ruff-check"], files=1, run_id="01ABC")
 
     assert sarif["version"] == "2.1.0"
     assert sarif["$schema"].endswith(".json")
@@ -59,8 +59,8 @@ def test_build_sarif_severity_mapping() -> None:
     infos[2].severity = "info"
     result = _make_result("tool", returncode=1, errors=infos)
 
-    config = pyfltr.config.create_default_config()
-    sarif = pyfltr.sarif_output.build_sarif([result], config, exit_code=1, commands=["tool"], files=1)
+    config = pyfltr.config.config.create_default_config()
+    sarif = pyfltr.output.sarif.build_sarif([result], config, exit_code=1, commands=["tool"], files=1)
     levels = [r["level"] for r in sarif["runs"][0]["results"]]
     assert levels == ["error", "warning", "note"]
 
@@ -68,8 +68,8 @@ def test_build_sarif_severity_mapping() -> None:
 def test_build_sarif_no_errors() -> None:
     """エラー無しなら results が空配列、rules も空になる。"""
     result = _make_result("mypy", returncode=0)
-    config = pyfltr.config.create_default_config()
-    sarif = pyfltr.sarif_output.build_sarif([result], config, exit_code=0, commands=["mypy"], files=1)
+    config = pyfltr.config.config.create_default_config()
+    sarif = pyfltr.output.sarif.build_sarif([result], config, exit_code=0, commands=["mypy"], files=1)
     run = sarif["runs"][0]
     assert run["results"] == []
     assert run["tool"]["driver"]["rules"] == []
@@ -84,7 +84,7 @@ def test_build_sarif_without_rule_url() -> None:
     errors[0].rule = "X1"
     errors[0].severity = "warning"
     result = _make_result("tool", returncode=1, errors=errors)
-    config = pyfltr.config.create_default_config()
-    sarif = pyfltr.sarif_output.build_sarif([result], config, exit_code=1, commands=["tool"], files=1)
+    config = pyfltr.config.config.create_default_config()
+    sarif = pyfltr.output.sarif.build_sarif([result], config, exit_code=1, commands=["tool"], files=1)
     rules = sarif["runs"][0]["tool"]["driver"]["rules"]
     assert rules == [{"id": "X1"}]

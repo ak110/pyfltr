@@ -6,7 +6,7 @@ import pathlib
 import threading
 
 import pyfltr.command
-import pyfltr.config
+import pyfltr.config.config
 
 _serial_group_locks: dict[str, threading.Lock] = {}
 """`serial_group`名をキーにした排他ロック辞書。"""
@@ -39,7 +39,7 @@ def serial_group_lock(group: str | None) -> collections.abc.Iterator[None]:
 
 def split_commands_for_execution(
     commands: list[str],
-    config: pyfltr.config.Config,
+    config: pyfltr.config.config.Config,
     all_files: list[pathlib.Path],
     *,
     include_fix_stage: bool = False,
@@ -62,7 +62,7 @@ def split_commands_for_execution(
     """
     fixers: list[str] = []
     if include_fix_stage:
-        fixers = pyfltr.config.filter_fix_commands(commands, config)
+        fixers = pyfltr.config.config.filter_fix_commands(commands, config)
 
     formatters: list[str] = []
     linters_and_testers: list[str] = []

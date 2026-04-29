@@ -6,9 +6,9 @@ import argparse
 import unittest.mock
 
 import pyfltr.command
-import pyfltr.config
-import pyfltr.stage_runner
-import pyfltr.ui
+import pyfltr.config.config
+import pyfltr.output.ui
+import pyfltr.state.stage_runner
 import pyfltr.warnings_
 
 
@@ -22,11 +22,11 @@ def test_ctrl_c_double_press_handling() -> None:
     args.targets = []
     args.verbose = False
 
-    app = pyfltr.ui.UIApp(
+    app = pyfltr.output.ui.UIApp(
         ["black"],
         args,
         pyfltr.command.ExecutionBaseContext(
-            config=pyfltr.config.create_default_config(), all_files=[], cache_store=None, cache_run_id=None
+            config=pyfltr.config.config.create_default_config(), all_files=[], cache_store=None, cache_run_id=None
         ),
     )
 
@@ -65,11 +65,11 @@ def test_ctrl_c_force_exit_after_interrupted() -> None:
     args.targets = []
     args.verbose = False
 
-    app = pyfltr.ui.UIApp(
+    app = pyfltr.output.ui.UIApp(
         ["black"],
         args,
         pyfltr.command.ExecutionBaseContext(
-            config=pyfltr.config.create_default_config(), all_files=[], cache_store=None, cache_run_id=None
+            config=pyfltr.config.config.create_default_config(), all_files=[], cache_store=None, cache_run_id=None
         ),
     )
     # 協調中断済みの状態にする
@@ -110,11 +110,11 @@ def test_safe_call_from_thread_short_circuits_when_exit_requested() -> None:
     args.targets = []
     args.verbose = False
 
-    app = pyfltr.ui.UIApp(
+    app = pyfltr.output.ui.UIApp(
         ["black"],
         args,
         pyfltr.command.ExecutionBaseContext(
-            config=pyfltr.config.create_default_config(), all_files=[], cache_store=None, cache_run_id=None
+            config=pyfltr.config.config.create_default_config(), all_files=[], cache_store=None, cache_run_id=None
         ),
     )
     app._exit_requested = True
@@ -138,11 +138,11 @@ def test_ctrl_c_timeout() -> None:
     args.targets = []
     args.verbose = False
 
-    app = pyfltr.ui.UIApp(
+    app = pyfltr.output.ui.UIApp(
         ["black"],
         args,
         pyfltr.command.ExecutionBaseContext(
-            config=pyfltr.config.create_default_config(), all_files=[], cache_store=None, cache_run_id=None
+            config=pyfltr.config.config.create_default_config(), all_files=[], cache_store=None, cache_run_id=None
         ),
     )
 
@@ -154,7 +154,7 @@ def test_ctrl_c_timeout() -> None:
         mock_exit.assert_not_called()
 
         # 1秒以上待機（time.timeをモック）
-        with unittest.mock.patch("pyfltr.ui.time.time") as mock_time:
+        with unittest.mock.patch("pyfltr.output.ui.time.time") as mock_time:
             mock_time.return_value = app.last_ctrl_c_time + 2.0  # 2秒後
 
             app.on_key(mock_event)
@@ -178,7 +178,7 @@ def test_interrupt_preserves_completed_results(monkeypatch) -> None:
     args.keep_ui = False
     args.include_fix_stage = False
 
-    config = pyfltr.config.create_default_config()
+    config = pyfltr.config.config.create_default_config()
     # 2本のlinterを有効化、それ以外は無効化。
     for name in config.command_names:
         info = config.commands[name]
@@ -189,7 +189,7 @@ def test_interrupt_preserves_completed_results(monkeypatch) -> None:
     config.values["jobs"] = 1
 
     base_ctx = pyfltr.command.ExecutionBaseContext(config=config, all_files=[], cache_store=None, cache_run_id=None)
-    app = pyfltr.ui.UIApp(["pylint", "mypy"], args, base_ctx)
+    app = pyfltr.output.ui.UIApp(["pylint", "mypy"], args, base_ctx)
 
     call_order: list[str] = []
 
@@ -236,16 +236,16 @@ def test_can_use_ui() -> None:
         unittest.mock.patch("sys.stdin.isatty", return_value=True),
         unittest.mock.patch("sys.stdout.isatty", return_value=True),
     ):
-        assert pyfltr.ui.can_use_ui() is True
+        assert pyfltr.output.ui.can_use_ui() is True
 
     with (
         unittest.mock.patch("sys.stdin.isatty", return_value=False),
         unittest.mock.patch("sys.stdout.isatty", return_value=True),
     ):
-        assert pyfltr.ui.can_use_ui() is False
+        assert pyfltr.output.ui.can_use_ui() is False
 
     with (
         unittest.mock.patch("sys.stdin.isatty", return_value=True),
         unittest.mock.patch("sys.stdout.isatty", return_value=False),
     ):
-        assert pyfltr.ui.can_use_ui() is False
+        assert pyfltr.output.ui.can_use_ui() is False

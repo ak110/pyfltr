@@ -8,18 +8,20 @@ import subprocess
 
 import pytest
 
-import pyfltr.archive
-import pyfltr.cli
-import pyfltr.config
-import pyfltr.llm_output
-import pyfltr.main
+import pyfltr.cli.main
+import pyfltr.cli.output_format
+import pyfltr.cli.parser
+import pyfltr.cli.pipeline
+import pyfltr.config.config
+import pyfltr.output.jsonl
+import pyfltr.state.archive
 from tests.conftest import make_command_result as _make_result
 from tests.conftest import make_error_location as _make_error
 
 
 @pytest.fixture(name="default_config")
-def _default_config() -> pyfltr.config.Config:
-    return pyfltr.config.create_default_config()
+def _default_config() -> pyfltr.config.config.Config:
+    return pyfltr.config.config.create_default_config()
 
 
 # ---------------------------------------------------------------------------
@@ -34,7 +36,7 @@ def test_build_lines_supported_tool_diagnostics(default_config):
         _make_error("mypy", "src/a.py", 20, "missing return"),
     ]
     result = _make_result("mypy", returncode=1, errors=errors)
-    lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=1, commands=["mypy"], files=5)
+    lines = pyfltr.output.jsonl.build_lines([result], default_config, exit_code=1, commands=["mypy"], files=5)
     parsed = [json.loads(line) for line in lines]
 
     # 同一（mypy, src/a.py）に集約されるためdiagnosticは1行
@@ -61,7 +63,7 @@ def test_build_lines_warnings_prepended(default_config):
         {"source": "config", "message": "pre-commit 設定ファイル不在"},
         {"source": "git", "message": "git が見つからない"},
     ]
-    lines = pyfltr.llm_output.build_lines(
+    lines = pyfltr.output.jsonl.build_lines(
         [result], default_config, exit_code=0, commands=["ruff-format"], files=1, warnings=warnings
     )
     parsed = [json.loads(line) for line in lines]
@@ -77,7 +79,7 @@ def test_build_lines_warnings_prepended(default_config):
 def test_build_lines_no_warnings_when_omitted(default_config):
     """warnings引数を省略するとwarningレコードは出ない。"""
     result = _make_result("ruff-format", returncode=0, command_type="formatter")
-    lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=0)
+    lines = pyfltr.output.jsonl.build_lines([result], default_config, exit_code=0)
     parsed = [json.loads(line) for line in lines]
     assert all(r["kind"] != "warning" for r in parsed)
 
@@ -85,7 +87,7 @@ def test_build_lines_no_warnings_when_omitted(default_config):
 def test_build_lines_unsupported_tool_only(default_config):
     """error_parser非対応ツール（ruff-format）はtoolレコードのみ（header省略時）。"""
     result = _make_result("ruff-format", returncode=1, command_type="formatter", has_error=False)
-    lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=1)
+    lines = pyfltr.output.jsonl.build_lines([result], default_config, exit_code=1)
     parsed = [json.loads(line) for line in lines]
 
     assert [r["kind"] for r in parsed] == ["command", "summary"]
@@ -114,7 +116,7 @@ def test_build_lines_mixed_order(default_config):
     ruff_format_result = _make_result("ruff-format", returncode=0, command_type="formatter")
 
     # config.command_names順ではruff-format → mypy → pylint
-    lines = pyfltr.llm_output.build_lines(
+    lines = pyfltr.output.jsonl.build_lines(
         [mypy_result, pylint_result, ruff_format_result],
         default_config,
         exit_code=1,
@@ -151,7 +153,7 @@ def test_build_lines_ensure_ascii_false(default_config):
     """日本語メッセージが生のまま出ること（ensure_ascii=False）。"""
     errors = [_make_error("mypy", "src/a.py", 1, "型が合いません")]
     result = _make_result("mypy", returncode=1, errors=errors)
-    lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=1)
+    lines = pyfltr.output.jsonl.build_lines([result], default_config, exit_code=1)
     assert "型が合いません" in lines[0]
     assert "\\u" not in lines[0]
 
@@ -159,7 +161,7 @@ def test_build_lines_ensure_ascii_false(default_config):
 def test_build_lines_skipped_status(default_config):
     """returncode=None（skipped）はrcキーを省略しdiagnostics=0のtoolレコードを出す。"""
     result = _make_result("mypy", returncode=None, has_error=False)
-    lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=0)
+    lines = pyfltr.output.jsonl.build_lines([result], default_config, exit_code=0)
     parsed = [json.loads(line) for line in lines]
 
     tool_record = parsed[0]
@@ -177,7 +179,7 @@ def test_command_record_message_on_failure_without_diagnostics(default_config):
     """status=failedかつdiagnostics=0のとき、output末尾がmessageに入ること。"""
     output = "line1\nline2\nError: command not found\n"
     result = _make_result("shellcheck", returncode=127, output=output)
-    lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=1)
+    lines = pyfltr.output.jsonl.build_lines([result], default_config, exit_code=1)
     tool_record = json.loads(lines[0])
     assert tool_record["status"] == "failed"
     assert "message" in tool_record
@@ -188,7 +190,7 @@ def test_command_record_message_truncates_long_output(default_config):
     """長いoutputはハイブリッド方式（先頭 + マーカー + 末尾30行）でトリムされること。"""
     many_lines = "\n".join(f"line{i}" for i in range(100))
     result = _make_result("shellcheck", returncode=1, output=many_lines)
-    lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=1)
+    lines = pyfltr.output.jsonl.build_lines([result], default_config, exit_code=1)
     tool_record = json.loads(lines[0])
     msg = tool_record["message"]
     assert "... (truncated)" in msg
@@ -205,7 +207,7 @@ def test_command_record_no_message_when_diagnostics_present(default_config):
     """failedでもdiagnostics > 0のときはmessageを出さない。"""
     errors = [_make_error("mypy", "src/a.py", 1, "bad")]
     result = _make_result("mypy", returncode=1, output="verbose mypy output", errors=errors)
-    lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=1)
+    lines = pyfltr.output.jsonl.build_lines([result], default_config, exit_code=1)
     tool_record = next(json.loads(line) for line in lines if json.loads(line)["kind"] == "command")
     assert "message" not in tool_record
 
@@ -214,7 +216,7 @@ def test_command_record_no_message_on_success(default_config):
     """status=succeeded/formattedではmessageを出さない。"""
     ok = _make_result("mypy", returncode=0, output="all ok")
     fmt = _make_result("ruff-format", returncode=1, command_type="formatter", output="reformatted", has_error=False)
-    lines = pyfltr.llm_output.build_lines([ok, fmt], default_config, exit_code=0)
+    lines = pyfltr.output.jsonl.build_lines([ok, fmt], default_config, exit_code=0)
     for line in lines:
         record = json.loads(line)
         if record["kind"] == "command":
@@ -224,7 +226,7 @@ def test_command_record_no_message_on_success(default_config):
 def test_command_record_no_message_when_output_empty(default_config):
     """failedでもoutputが空ならmessageを出さない（キーごと省略）。"""
     result = _make_result("shellcheck", returncode=1, output="")
-    lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=1)
+    lines = pyfltr.output.jsonl.build_lines([result], default_config, exit_code=1)
     tool_record = json.loads(lines[0])
     assert "message" not in tool_record
 
@@ -240,8 +242,8 @@ def test_calculate_returncode_matches_summary_exit(default_config):
         _make_result("mypy", returncode=1, errors=[_make_error("mypy", "a.py", 1, "bad")]),
         _make_result("ruff-format", returncode=0, command_type="formatter"),
     ]
-    exit_code = pyfltr.main.calculate_returncode(results, exit_zero_even_if_formatted=False)
-    lines = pyfltr.llm_output.build_lines(
+    exit_code = pyfltr.cli.pipeline.calculate_returncode(results, exit_zero_even_if_formatted=False)
+    lines = pyfltr.output.jsonl.build_lines(
         results, default_config, exit_code=exit_code, commands=["mypy", "ruff-format"], files=3
     )
     summary = json.loads(lines[-1])
@@ -249,7 +251,7 @@ def test_calculate_returncode_matches_summary_exit(default_config):
 
 
 # ---------------------------------------------------------------------------
-# CLI統合テスト（pyfltr.main.run）
+# CLI統合テスト（pyfltr.cli.main.run）
 # ---------------------------------------------------------------------------
 
 
@@ -258,7 +260,9 @@ def test_run_cli_jsonl_stdout_suppresses_text(mocker, capsys):
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
-    returncode = pyfltr.main.run(["ci", "--output-format=jsonl", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    returncode = pyfltr.cli.main.run(
+        ["ci", "--output-format=jsonl", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)]
+    )
     assert returncode == 0
     captured = capsys.readouterr()
     # stdoutはJSONLのみ。text整形の区切り線が混入しないこと。
@@ -284,7 +288,7 @@ def test_run_cli_output_file_keeps_text_stdout(mocker, capsys, tmp_path):
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
     destination = tmp_path / "out.jsonl"
-    returncode = pyfltr.main.run(
+    returncode = pyfltr.cli.main.run(
         [
             "ci",
             "--output-format=jsonl",
@@ -307,7 +311,7 @@ def test_run_cli_jsonl_ignores_ui(mocker, capsys):
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
-    returncode = pyfltr.main.run(
+    returncode = pyfltr.cli.main.run(
         ["ci", "--output-format=jsonl", "--ui", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)]
     )
     assert returncode == 0
@@ -324,7 +328,7 @@ def test_run_cli_env_var_jsonl(mocker, capsys, monkeypatch):
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
     monkeypatch.setenv("PYFLTR_OUTPUT_FORMAT", "jsonl")
 
-    returncode = pyfltr.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    returncode = pyfltr.cli.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 0
     captured = capsys.readouterr()
     assert "----- pyfltr" not in captured.out
@@ -340,7 +344,7 @@ def test_run_cli_env_var_overridden_by_cli(mocker, capsys, monkeypatch):
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
     monkeypatch.setenv("PYFLTR_OUTPUT_FORMAT", "jsonl")
 
-    pyfltr.main.run(["ci", "--output-format=text", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    pyfltr.cli.main.run(["ci", "--output-format=text", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr()
     # CLIでtextを明示しているのでtext整形出力がstdoutに出るべき
     assert "summary" in captured.out
@@ -350,10 +354,10 @@ def test_run_cli_env_var_invalid(monkeypatch):
     """PYFLTR_OUTPUT_FORMATに不正値が入っている場合はSystemExitで終了する。"""
     # 実行系サブコマンドの解決ロジックを直接呼び出して環境変数バリデーションを確認する。
     monkeypatch.setenv("PYFLTR_OUTPUT_FORMAT", "yaml")
-    parser = pyfltr.main.build_parser()
+    parser = pyfltr.cli.parser.build_parser()
     args = parser.parse_args(["ci"])
     with pytest.raises(SystemExit):
-        pyfltr.main._resolve_output_format(parser, args)
+        pyfltr.cli.pipeline._resolve_output_format(parser, args)
 
 
 def test_run_cli_ai_agent_jsonl(mocker, capsys, monkeypatch):
@@ -362,7 +366,7 @@ def test_run_cli_ai_agent_jsonl(mocker, capsys, monkeypatch):
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
     monkeypatch.setenv("AI_AGENT", "1")
 
-    returncode = pyfltr.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    returncode = pyfltr.cli.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 0
     captured = capsys.readouterr()
     assert "----- pyfltr" not in captured.out
@@ -379,7 +383,7 @@ def test_run_cli_ai_agent_overridden_by_env_var(mocker, capsys, monkeypatch):
     monkeypatch.setenv("AI_AGENT", "1")
     monkeypatch.setenv("PYFLTR_OUTPUT_FORMAT", "text")
 
-    pyfltr.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    pyfltr.cli.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr()
     # PYFLTR_OUTPUT_FORMAT=text が優先され、stdoutにtext整形（区切り線）が出る。
     assert "----- pyfltr" in captured.out
@@ -392,7 +396,7 @@ def test_run_cli_ai_agent_overridden_by_cli(mocker, capsys, monkeypatch):
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
     monkeypatch.setenv("AI_AGENT", "1")
 
-    pyfltr.main.run(["ci", "--output-format=text", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    pyfltr.cli.main.run(["ci", "--output-format=text", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr()
     assert "----- pyfltr" in captured.out
     assert "----- summary" in captured.out
@@ -404,7 +408,7 @@ def test_run_cli_ai_agent_empty_string_unset(mocker, capsys, monkeypatch):
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
     monkeypatch.setenv("AI_AGENT", "")
 
-    pyfltr.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    pyfltr.cli.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr()
     assert "----- pyfltr" in captured.out
     assert "----- summary" in captured.out
@@ -416,7 +420,7 @@ def test_run_cli_ai_agent_zero_value_truthy(mocker, capsys, monkeypatch):
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
     monkeypatch.setenv("AI_AGENT", "0")
 
-    pyfltr.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    pyfltr.cli.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr()
     lines = [line for line in captured.out.splitlines() if line.strip()]
     assert lines, "JSONLが1行も出ていない"
@@ -430,7 +434,7 @@ def test_run_for_agent_env_var_text_override(mocker, capsys, monkeypatch):
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
     monkeypatch.setenv("PYFLTR_OUTPUT_FORMAT", "text")
 
-    pyfltr.main.run(["run-for-agent", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    pyfltr.cli.main.run(["run-for-agent", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr()
     # PYFLTR_OUTPUT_FORMAT=text が run-for-agent の jsonl 既定より優先される。
     assert "----- pyfltr" in captured.out
@@ -439,35 +443,35 @@ def test_run_for_agent_env_var_text_override(mocker, capsys, monkeypatch):
 
 def test_resolve_output_format_returns_resolution():
     """`resolve_output_format`が決定値+由来ラベルのdataclassを返す（CLI明示時は`cli`）。"""
-    parser = pyfltr.main.build_parser()
-    resolution = pyfltr.cli.resolve_output_format(
+    parser = pyfltr.cli.parser.build_parser()
+    resolution = pyfltr.cli.output_format.resolve_output_format(
         parser,
         "jsonl",
         valid_values=frozenset({"text", "jsonl"}),
         ai_agent_default="jsonl",
     )
     assert resolution.format == "jsonl"
-    assert resolution.source == pyfltr.cli.FORMAT_SOURCE_CLI
+    assert resolution.source == pyfltr.cli.output_format.FORMAT_SOURCE_CLI
 
 
 def test_resolve_output_format_env_pyfltr(monkeypatch):
     """`PYFLTR_OUTPUT_FORMAT`明示時は由来ラベルが`env.PYFLTR_OUTPUT_FORMAT`になる。"""
     monkeypatch.setenv("PYFLTR_OUTPUT_FORMAT", "jsonl")
-    parser = pyfltr.main.build_parser()
-    resolution = pyfltr.cli.resolve_output_format(
+    parser = pyfltr.cli.parser.build_parser()
+    resolution = pyfltr.cli.output_format.resolve_output_format(
         parser,
         None,
         valid_values=frozenset({"text", "jsonl"}),
         ai_agent_default="jsonl",
     )
     assert resolution.format == "jsonl"
-    assert resolution.source == pyfltr.cli.FORMAT_SOURCE_ENV_PYFLTR
+    assert resolution.source == pyfltr.cli.output_format.FORMAT_SOURCE_ENV_PYFLTR
 
 
 def test_resolve_output_format_subcommand_default():
     """サブコマンド既定値経路では由来ラベルが`subcommand_default`になる。"""
-    parser = pyfltr.main.build_parser()
-    resolution = pyfltr.cli.resolve_output_format(
+    parser = pyfltr.cli.parser.build_parser()
+    resolution = pyfltr.cli.output_format.resolve_output_format(
         parser,
         None,
         valid_values=frozenset({"text", "jsonl"}),
@@ -475,46 +479,46 @@ def test_resolve_output_format_subcommand_default():
         ai_agent_default="jsonl",
     )
     assert resolution.format == "jsonl"
-    assert resolution.source == pyfltr.cli.FORMAT_SOURCE_SUBCOMMAND_DEFAULT
+    assert resolution.source == pyfltr.cli.output_format.FORMAT_SOURCE_SUBCOMMAND_DEFAULT
 
 
 def test_resolve_output_format_env_ai_agent(monkeypatch):
     """`AI_AGENT`設定時は由来ラベルが`env.AI_AGENT`、形式は`ai_agent_default`の値になる。"""
     monkeypatch.setenv("AI_AGENT", "1")
-    parser = pyfltr.main.build_parser()
-    resolution = pyfltr.cli.resolve_output_format(
+    parser = pyfltr.cli.parser.build_parser()
+    resolution = pyfltr.cli.output_format.resolve_output_format(
         parser,
         None,
         valid_values=frozenset({"text", "jsonl"}),
         ai_agent_default="jsonl",
     )
     assert resolution.format == "jsonl"
-    assert resolution.source == pyfltr.cli.FORMAT_SOURCE_ENV_AI_AGENT
+    assert resolution.source == pyfltr.cli.output_format.FORMAT_SOURCE_ENV_AI_AGENT
 
 
 def test_resolve_output_format_fallback():
     """いずれの経路にも該当しない場合は`fallback`扱いで`final_default`を返す。"""
-    parser = pyfltr.main.build_parser()
-    resolution = pyfltr.cli.resolve_output_format(
+    parser = pyfltr.cli.parser.build_parser()
+    resolution = pyfltr.cli.output_format.resolve_output_format(
         parser,
         None,
         valid_values=frozenset({"text", "jsonl"}),
     )
     assert resolution.format == "text"
-    assert resolution.source == pyfltr.cli.FORMAT_SOURCE_FALLBACK
+    assert resolution.source == pyfltr.cli.output_format.FORMAT_SOURCE_FALLBACK
 
 
 def test_resolve_output_format_ai_agent_default_none_ignores_env(monkeypatch):
     """`ai_agent_default=None`では`AI_AGENT`が立っていてもfallbackへ進む。"""
     monkeypatch.setenv("AI_AGENT", "1")
-    parser = pyfltr.main.build_parser()
-    resolution = pyfltr.cli.resolve_output_format(
+    parser = pyfltr.cli.parser.build_parser()
+    resolution = pyfltr.cli.output_format.resolve_output_format(
         parser,
         None,
         valid_values=frozenset({"text", "jsonl"}),
     )
     assert resolution.format == "text"
-    assert resolution.source == pyfltr.cli.FORMAT_SOURCE_FALLBACK
+    assert resolution.source == pyfltr.cli.output_format.FORMAT_SOURCE_FALLBACK
 
 
 def test_run_cli_header_format_source_subcommand_default(mocker, capsys):
@@ -522,12 +526,12 @@ def test_run_cli_header_format_source_subcommand_default(mocker, capsys):
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
-    pyfltr.main.run(["run-for-agent", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    pyfltr.cli.main.run(["run-for-agent", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr()
     lines = [line for line in captured.out.splitlines() if line.strip()]
     header = json.loads(lines[0])
     assert header["kind"] == "header"
-    assert header["format_source"] == pyfltr.cli.FORMAT_SOURCE_SUBCOMMAND_DEFAULT
+    assert header["format_source"] == pyfltr.cli.output_format.FORMAT_SOURCE_SUBCOMMAND_DEFAULT
 
 
 def test_run_cli_header_format_source_cli(mocker, capsys):
@@ -535,11 +539,11 @@ def test_run_cli_header_format_source_cli(mocker, capsys):
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
-    pyfltr.main.run(["ci", "--output-format=jsonl", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    pyfltr.cli.main.run(["ci", "--output-format=jsonl", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr()
     lines = [line for line in captured.out.splitlines() if line.strip()]
     header = json.loads(lines[0])
-    assert header["format_source"] == pyfltr.cli.FORMAT_SOURCE_CLI
+    assert header["format_source"] == pyfltr.cli.output_format.FORMAT_SOURCE_CLI
 
 
 def test_run_cli_header_format_source_env_ai_agent(mocker, capsys, monkeypatch):
@@ -548,11 +552,11 @@ def test_run_cli_header_format_source_env_ai_agent(mocker, capsys, monkeypatch):
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
     monkeypatch.setenv("AI_AGENT", "1")
 
-    pyfltr.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    pyfltr.cli.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr()
     lines = [line for line in captured.out.splitlines() if line.strip()]
     header = json.loads(lines[0])
-    assert header["format_source"] == pyfltr.cli.FORMAT_SOURCE_ENV_AI_AGENT
+    assert header["format_source"] == pyfltr.cli.output_format.FORMAT_SOURCE_ENV_AI_AGENT
 
 
 def test_run_cli_header_format_source_env_pyfltr(mocker, capsys, monkeypatch):
@@ -561,17 +565,17 @@ def test_run_cli_header_format_source_env_pyfltr(mocker, capsys, monkeypatch):
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
     monkeypatch.setenv("PYFLTR_OUTPUT_FORMAT", "jsonl")
 
-    pyfltr.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    pyfltr.cli.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr()
     lines = [line for line in captured.out.splitlines() if line.strip()]
     header = json.loads(lines[0])
-    assert header["format_source"] == pyfltr.cli.FORMAT_SOURCE_ENV_PYFLTR
+    assert header["format_source"] == pyfltr.cli.output_format.FORMAT_SOURCE_ENV_PYFLTR
 
 
 def test_command_record_formatted_status_hint(default_config):
     """`status="formatted"`のcommandレコードには再実行不要を示すhintが入る。"""
     result = _make_result("ruff-format", returncode=1, command_type="formatter", has_error=False)
-    lines = pyfltr.llm_output.build_command_lines(result, default_config)
+    lines = pyfltr.output.jsonl.build_command_lines(result, default_config)
     parsed = [json.loads(line) for line in lines]
     command_record = parsed[-1]
     assert command_record["status"] == "formatted"
@@ -582,7 +586,7 @@ def test_command_record_formatted_status_hint(default_config):
 def test_command_record_non_formatted_no_status_hint(default_config):
     """`status="formatted"`以外のcommandレコードには`status.formatted`ヒントを出さない。"""
     result = _make_result("mypy", returncode=0, output="ok")
-    lines = pyfltr.llm_output.build_command_lines(result, default_config)
+    lines = pyfltr.output.jsonl.build_command_lines(result, default_config)
     parsed = [json.loads(line) for line in lines]
     command_record = parsed[-1]
     assert command_record["status"] == "succeeded"
@@ -610,12 +614,12 @@ def test_run_cli_jsonl_restores_logger_state(mocker, capsys):
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
     # 1回目: jsonlモード（stdoutにJSONL、textはstderrのWARN+）
-    pyfltr.main.run(["ci", "--output-format=jsonl", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    pyfltr.cli.main.run(["ci", "--output-format=jsonl", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     # 1回目のstdoutは読み捨てる（capsysをリセット）
     capsys.readouterr()
 
     # 2回目: textモード（従来どおりのログが出るべき）。
-    pyfltr.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    pyfltr.cli.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr()
     assert "summary" in captured.out
 
@@ -632,7 +636,7 @@ def test_build_command_lines_with_diagnostics(default_config):
         _make_error("mypy", "src/a.py", 10, "earlier"),
     ]
     result = _make_result("mypy", returncode=1, errors=errors)
-    lines = pyfltr.llm_output.build_command_lines(result, default_config)
+    lines = pyfltr.output.jsonl.build_command_lines(result, default_config)
     parsed = [json.loads(line) for line in lines]
 
     assert len(parsed) == 3
@@ -651,7 +655,7 @@ def test_build_command_lines_with_diagnostics(default_config):
 def test_build_command_lines_no_diagnostics(default_config):
     """diagnosticがないツールはtool行のみ。"""
     result = _make_result("ruff-format", returncode=0, command_type="formatter")
-    lines = pyfltr.llm_output.build_command_lines(result, default_config)
+    lines = pyfltr.output.jsonl.build_command_lines(result, default_config)
     parsed = [json.loads(line) for line in lines]
 
     assert len(parsed) == 1
@@ -673,19 +677,19 @@ def test_build_command_lines_truncated_archive_sanitizes_command_name(default_co
     result = _make_result(command_name, returncode=1, errors=errors)
 
     default_config.values["jsonl-diagnostic-limit"] = 2
-    lines = pyfltr.llm_output.build_command_lines(result, default_config)
+    lines = pyfltr.output.jsonl.build_command_lines(result, default_config)
     tool_record = next(json.loads(line) for line in lines if json.loads(line)["kind"] == "command")
     assert tool_record["truncated"]["archive"] == f"tools/{sanitized}/diagnostics.jsonl"
 
     # message切り詰めでもサニタイズされたキーになること
     long_output = "\n".join(f"line{i}" for i in range(100))
     result_msg = _make_result(command_name, returncode=1, output=long_output)
-    lines = pyfltr.llm_output.build_command_lines(result_msg, default_config)
+    lines = pyfltr.output.jsonl.build_command_lines(result_msg, default_config)
     tool_record = next(json.loads(line) for line in lines if json.loads(line)["kind"] == "command")
     assert tool_record["truncated"]["archive"] == f"tools/{sanitized}/output.log"
 
     # archive側が同じ保存キーを使うことを実アーカイブ書き込みで検証
-    store = pyfltr.archive.ArchiveStore(cache_root=tmp_path)
+    store = pyfltr.state.archive.ArchiveStore(cache_root=tmp_path)
     run_id = store.start_run(commands=[command_name])
     store.write_tool_result(run_id, result)
     assert (tmp_path / "runs" / run_id / "tools" / sanitized / "diagnostics.jsonl").exists()
@@ -704,7 +708,7 @@ def _configure_structured_stdout() -> None:
     """
     import sys  # pylint: disable=import-outside-toplevel
 
-    pyfltr.cli.configure_structured_output(sys.stdout)
+    pyfltr.cli.output_format.configure_structured_output(sys.stdout)
 
 
 def test_write_jsonl_streaming(default_config, capsys):
@@ -712,7 +716,7 @@ def test_write_jsonl_streaming(default_config, capsys):
     _configure_structured_stdout()
     errors = [_make_error("mypy", "src/a.py", 10, "bad type")]
     result = _make_result("mypy", returncode=1, errors=errors)
-    pyfltr.llm_output.write_jsonl_streaming(result, default_config)
+    pyfltr.output.jsonl.write_jsonl_streaming(result, default_config)
 
     captured = capsys.readouterr()
     assert captured.err == ""
@@ -732,7 +736,7 @@ def test_write_jsonl_footer_with_warnings(capsys):
     _configure_structured_stdout()
     result = _make_result("mypy", returncode=1, errors=[_make_error("mypy", "a.py", 1, "bad")])
     warnings = [{"source": "config", "message": "test warning"}]
-    pyfltr.llm_output.write_jsonl_footer(
+    pyfltr.output.jsonl.write_jsonl_footer(
         [result],
         exit_code=1,
         warnings=warnings,
@@ -751,7 +755,7 @@ def test_write_jsonl_footer_no_warnings(capsys):
     """warningがない場合はsummary行のみ。"""
     _configure_structured_stdout()
     result = _make_result("mypy", returncode=0)
-    pyfltr.llm_output.write_jsonl_footer([result], exit_code=0)
+    pyfltr.output.jsonl.write_jsonl_footer([result], exit_code=0)
 
     captured = capsys.readouterr()
     parsed = [json.loads(line) for line in captured.out.splitlines()]
@@ -767,7 +771,7 @@ def test_write_jsonl_footer_no_warnings(capsys):
 
 def test_build_header_record_fields():
     """`_build_header_record`が必要なフィールドをすべて含むこと（commandsは実行対象配列）。"""
-    record = pyfltr.llm_output._build_header_record(["ruff-format", "mypy"], 42)
+    record = pyfltr.output.jsonl._build_header_record(["ruff-format", "mypy"], 42)
     assert record["kind"] == "header"
     assert record["commands"] == ["ruff-format", "mypy"]
     assert "commands_count" not in record
@@ -782,7 +786,7 @@ def test_build_header_record_fields():
 def test_build_lines_header_first(default_config):
     """commands/filesを指定するとheader行が先頭に出力され、commandsは配列で入ること。"""
     result = _make_result("mypy", returncode=0)
-    lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=0, commands=["mypy"], files=10)
+    lines = pyfltr.output.jsonl.build_lines([result], default_config, exit_code=0, commands=["mypy"], files=10)
     parsed = [json.loads(line) for line in lines]
     assert parsed[0]["kind"] == "header"
     assert parsed[0]["commands"] == ["mypy"]
@@ -794,7 +798,7 @@ def test_build_lines_header_first(default_config):
 def test_build_lines_no_header_when_omitted(default_config):
     """commands/filesを省略するとheader行は出力されないこと。"""
     result = _make_result("mypy", returncode=0)
-    lines = pyfltr.llm_output.build_lines([result], default_config, exit_code=0)
+    lines = pyfltr.output.jsonl.build_lines([result], default_config, exit_code=0)
     parsed = [json.loads(line) for line in lines]
     assert all(r["kind"] != "header" for r in parsed)
 
@@ -802,7 +806,7 @@ def test_build_lines_no_header_when_omitted(default_config):
 def test_write_jsonl_header_stdout(capsys):
     """`write_jsonl_header`がstdoutにheader行を書き出し、commandsが配列になること。"""
     _configure_structured_stdout()
-    pyfltr.llm_output.write_jsonl_header(commands=["ruff-format", "mypy"], files=5)
+    pyfltr.output.jsonl.write_jsonl_header(commands=["ruff-format", "mypy"], files=5)
     captured = capsys.readouterr()
     parsed = [json.loads(line) for line in captured.out.splitlines()]
     assert len(parsed) == 1
@@ -822,7 +826,7 @@ def _header_commands_for(args: list[str], mocker, capsys) -> list[str]:
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
     target = str(pathlib.Path(__file__).parent.parent)
-    returncode = pyfltr.main.run(["run-for-agent", *args, target])
+    returncode = pyfltr.cli.main.run(["run-for-agent", *args, target])
     assert returncode == 0
     captured = capsys.readouterr()
     lines = [line for line in captured.out.splitlines() if line.strip()]
@@ -865,7 +869,7 @@ def test_run_cli_code_quality_stdout(mocker, capsys):
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
-    returncode = pyfltr.main.run(
+    returncode = pyfltr.cli.main.run(
         ["ci", "--output-format=code-quality", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)]
     )
     assert returncode == 0
@@ -890,7 +894,7 @@ def test_run_cli_code_quality_output_file(mocker, capsys, tmp_path):
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
     destination = tmp_path / "gl.json"
-    returncode = pyfltr.main.run(
+    returncode = pyfltr.cli.main.run(
         [
             "ci",
             "--output-format=code-quality",
@@ -914,7 +918,7 @@ def test_run_cli_code_quality_with_diagnostics(mocker, capsys):
     proc = subprocess.CompletedProcess(["mypy"], returncode=1, stdout=mypy_output)
     mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
 
-    pyfltr.main.run(["ci", "--output-format=code-quality", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    pyfltr.cli.main.run(["ci", "--output-format=code-quality", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr()
     payload = json.loads(captured.out)
     assert isinstance(payload, list)

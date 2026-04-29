@@ -12,8 +12,8 @@ import shutil
 
 import pytest
 
-import pyfltr.archive
-import pyfltr.mcp_
+import pyfltr.cli.mcp_server
+import pyfltr.state.archive
 from tests.conftest import make_command_result as _make_result
 from tests.conftest import make_error_location as _make_error
 from tests.conftest import seed_archive_run as _seed_run
@@ -35,7 +35,7 @@ def _isolated_cache(
 
 
 def test_run_summary_model_fields() -> None:
-    model = pyfltr.mcp_.RunSummaryModel(
+    model = pyfltr.cli.mcp_server.RunSummaryModel(
         run_id="abc123",
         started_at="2026-01-01T00:00:00",
         finished_at="2026-01-01T00:01:00",
@@ -51,7 +51,7 @@ def test_run_summary_model_fields() -> None:
 
 def test_diagnostic_model_all_optional() -> None:
     # 全フィールド省略可能であることを確認する
-    model = pyfltr.mcp_.DiagnosticModel()
+    model = pyfltr.cli.mcp_server.DiagnosticModel()
     assert model.command is None
     assert model.file is None
     assert not model.messages
@@ -59,7 +59,7 @@ def test_diagnostic_model_all_optional() -> None:
 
 def test_diagnostic_message_model_all_optional() -> None:
     # DiagnosticMessageModelも全フィールド省略可能
-    model = pyfltr.mcp_.DiagnosticMessageModel()
+    model = pyfltr.cli.mcp_server.DiagnosticMessageModel()
     assert model.line is None
     assert model.severity is None
     assert model.msg is None
@@ -72,7 +72,7 @@ def test_diagnostic_message_model_all_optional() -> None:
 
 @pytest.mark.asyncio
 async def test_tool_list_runs_empty() -> None:
-    result = await pyfltr.mcp_._tool_list_runs()
+    result = await pyfltr.cli.mcp_server._tool_list_runs()
     assert result == []
 
 
@@ -81,7 +81,7 @@ async def test_tool_list_runs_returns_summaries(tmp_path: pathlib.Path) -> None:
     run_id1 = _seed_run(tmp_path, commands=["ruff-check"], exit_code=0)
     run_id2 = _seed_run(tmp_path, commands=["mypy"], exit_code=1)
 
-    result = await pyfltr.mcp_._tool_list_runs(limit=10)
+    result = await pyfltr.cli.mcp_server._tool_list_runs(limit=10)
     assert len(result) == 2
     # 新しい順（降順）
     assert result[0].run_id == run_id2
@@ -95,7 +95,7 @@ async def test_tool_list_runs_limit(tmp_path: pathlib.Path) -> None:
     for _ in range(5):
         _seed_run(tmp_path)
 
-    result = await pyfltr.mcp_._tool_list_runs(limit=2)
+    result = await pyfltr.cli.mcp_server._tool_list_runs(limit=2)
     assert len(result) == 2
 
 
@@ -110,7 +110,7 @@ async def test_tool_show_run_overview(tmp_path: pathlib.Path) -> None:
         ],
     )
 
-    result = await pyfltr.mcp_._tool_show_run(run_id)
+    result = await pyfltr.cli.mcp_server._tool_show_run(run_id)
     assert result.run_id == run_id
     assert "run_id" in result.meta
     command_names = [c.command for c in result.commands]
@@ -123,27 +123,27 @@ async def test_tool_show_run_latest(tmp_path: pathlib.Path) -> None:
     _seed_run(tmp_path, commands=["ruff-check"])
     latest_id = _seed_run(tmp_path, commands=["mypy"])
 
-    result = await pyfltr.mcp_._tool_show_run("latest")
+    result = await pyfltr.cli.mcp_server._tool_show_run("latest")
     assert result.run_id == latest_id
 
 
 @pytest.mark.asyncio
 async def test_tool_show_run_prefix(tmp_path: pathlib.Path) -> None:
     run_id = _seed_run(tmp_path)
-    result = await pyfltr.mcp_._tool_show_run(run_id[:8])
+    result = await pyfltr.cli.mcp_server._tool_show_run(run_id[:8])
     assert result.run_id == run_id
 
 
 @pytest.mark.asyncio
 async def test_tool_show_run_not_found() -> None:
     with pytest.raises(ValueError, match="run_id"):
-        await pyfltr.mcp_._tool_show_run("nonexistent")
+        await pyfltr.cli.mcp_server._tool_show_run("nonexistent")
 
 
 @pytest.mark.asyncio
 async def test_tool_show_run_latest_empty() -> None:
     with pytest.raises(ValueError, match="run"):
-        await pyfltr.mcp_._tool_show_run("latest")
+        await pyfltr.cli.mcp_server._tool_show_run("latest")
 
 
 @pytest.mark.asyncio
@@ -161,7 +161,7 @@ async def test_tool_show_run_ambiguous_prefix(tmp_path: pathlib.Path) -> None:
     prefix = run_ids[0][:shared]
 
     with pytest.raises(ValueError, match="曖昧"):
-        await pyfltr.mcp_._tool_show_run(prefix)
+        await pyfltr.cli.mcp_server._tool_show_run(prefix)
 
 
 @pytest.mark.asyncio
@@ -178,7 +178,7 @@ async def test_tool_show_run_diagnostics(tmp_path: pathlib.Path) -> None:
         ],
     )
 
-    results = await pyfltr.mcp_._tool_show_run_diagnostics(run_id, ["mypy"])
+    results = await pyfltr.cli.mcp_server._tool_show_run_diagnostics(run_id, ["mypy"])
     assert len(results) == 1
     result = results[0]
     assert result.command_meta["command"] == "mypy"
@@ -201,7 +201,7 @@ async def test_tool_show_run_diagnostics_restores_hints(tmp_path: pathlib.Path) 
     error = _make_error("textlint", "a.md", 1, "長い文", col=1)
     error.rule = "ja-technical-writing/sentence-length"
     error.hint = "句点で文を区切る"
-    store = pyfltr.archive.ArchiveStore(cache_root=tmp_path)
+    store = pyfltr.state.archive.ArchiveStore(cache_root=tmp_path)
     run_id = store.start_run(commands=["textlint"])
     result = _make_result("textlint", returncode=1, errors=[error])
     store.write_tool_result(run_id, result)
@@ -214,7 +214,7 @@ async def test_tool_show_run_diagnostics_restores_hints(tmp_path: pathlib.Path) 
     assert "ja-technical-writing/sentence-length" in tool_meta["hints"]
 
     # show_run_diagnosticsでhintsが復元されることを確認する
-    results = await pyfltr.mcp_._tool_show_run_diagnostics(run_id, ["textlint"])
+    results = await pyfltr.cli.mcp_server._tool_show_run_diagnostics(run_id, ["textlint"])
     assert len(results) == 1
     assert results[0].hints is not None
     assert "ja-technical-writing/sentence-length" in results[0].hints
@@ -230,7 +230,7 @@ async def test_tool_show_run_diagnostics_hints_none_when_absent(tmp_path: pathli
         ],
     )
 
-    results = await pyfltr.mcp_._tool_show_run_diagnostics(run_id, ["mypy"])
+    results = await pyfltr.cli.mcp_server._tool_show_run_diagnostics(run_id, ["mypy"])
     assert len(results) == 1
     assert results[0].hints is None
 
@@ -239,7 +239,7 @@ async def test_tool_show_run_diagnostics_hints_none_when_absent(tmp_path: pathli
 async def test_tool_show_run_diagnostics_tool_not_found(tmp_path: pathlib.Path) -> None:
     run_id = _seed_run(tmp_path)
     with pytest.raises(ValueError, match="nonexistent"):
-        await pyfltr.mcp_._tool_show_run_diagnostics(run_id, ["nonexistent"])
+        await pyfltr.cli.mcp_server._tool_show_run_diagnostics(run_id, ["nonexistent"])
 
 
 @pytest.mark.asyncio
@@ -251,7 +251,7 @@ async def test_tool_show_run_output(tmp_path: pathlib.Path) -> None:
         ],
     )
 
-    result = await pyfltr.mcp_._tool_show_run_output(run_id, ["ruff-check"])
+    result = await pyfltr.cli.mcp_server._tool_show_run_output(run_id, ["ruff-check"])
     assert "ruff-check" in result
     assert "raw output line 1" in result["ruff-check"]
     assert "raw output line 2" in result["ruff-check"]
@@ -261,7 +261,7 @@ async def test_tool_show_run_output(tmp_path: pathlib.Path) -> None:
 async def test_tool_show_run_output_tool_not_found(tmp_path: pathlib.Path) -> None:
     run_id = _seed_run(tmp_path)
     with pytest.raises(ValueError, match="nonexistent"):
-        await pyfltr.mcp_._tool_show_run_output(run_id, ["nonexistent"])
+        await pyfltr.cli.mcp_server._tool_show_run_output(run_id, ["nonexistent"])
 
 
 # ---------------------------------------------------------------------------
@@ -270,7 +270,7 @@ async def test_tool_show_run_output_tool_not_found(tmp_path: pathlib.Path) -> No
 
 
 def test_build_server_registers_five_tools() -> None:
-    server = pyfltr.mcp_._build_server()
+    server = pyfltr.cli.mcp_server._build_server()
     tools = server._tool_manager.list_tools()
     tool_names = {t.name for t in tools}
     expected = {"list_runs", "show_run", "show_run_diagnostics", "show_run_output", "run_for_agent"}
@@ -288,7 +288,7 @@ async def test_tool_run_for_agent_with_typos(tmp_path: pathlib.Path) -> None:
     sample = tmp_path / "sample.txt"
     sample.write_text("hello world\n", encoding="utf-8")
 
-    result = await pyfltr.mcp_._tool_run_for_agent(
+    result = await pyfltr.cli.mcp_server._tool_run_for_agent(
         paths=[str(sample)],
         commands=["typos"],
     )
@@ -313,7 +313,7 @@ async def test_tool_run_for_agent_keeps_stdout_clean_and_text_on_stderr(
     sample.write_text("hello\n", encoding="utf-8")
 
     # typos が利用可能なら 1 件だけ走らせる。未導入環境でも ec で確実に通す。
-    await pyfltr.mcp_._tool_run_for_agent(paths=[str(sample)], commands=["ec"])
+    await pyfltr.cli.mcp_server._tool_run_for_agent(paths=[str(sample)], commands=["ec"])
 
     captured = capsys.readouterr()
     assert captured.out == "", f"stdout に漏れている: {captured.out!r}"
@@ -335,7 +335,7 @@ async def test_tool_run_for_agent_returns_run_id(tmp_path: pathlib.Path) -> None
 
     # typosが使えない環境でも動作させるため、利用可能なコマンドを選ぶ。
     # ecは設定不要で動作するため使用する。
-    result = await pyfltr.mcp_._tool_run_for_agent(
+    result = await pyfltr.cli.mcp_server._tool_run_for_agent(
         paths=[str(sample)],
         commands=["ec"],
     )
@@ -345,7 +345,7 @@ async def test_tool_run_for_agent_returns_run_id(tmp_path: pathlib.Path) -> None
     assert isinstance(result.exit_code, int)
 
     # アーカイブに保存されていることを確認する
-    store = pyfltr.archive.ArchiveStore()
+    store = pyfltr.state.archive.ArchiveStore()
     summaries = store.list_runs(limit=1)
     assert len(summaries) == 1
     assert summaries[0].run_id == result.run_id
@@ -358,7 +358,7 @@ async def test_tool_run_for_agent_returns_run_id(tmp_path: pathlib.Path) -> None
 
 def test_run_for_agent_result_new_fields_defaults() -> None:
     """RunForAgentResultの新フィールドのデフォルト値を確認する。"""
-    result = pyfltr.mcp_.RunForAgentResult(
+    result = pyfltr.cli.mcp_server.RunForAgentResult(
         run_id="01TESTULID1234567890123456",
         exit_code=0,
         failed=[],
@@ -372,7 +372,7 @@ def test_run_for_agent_result_new_fields_defaults() -> None:
 
 def test_run_for_agent_result_nullable_run_id() -> None:
     """RunForAgentResultのrun_idがNoneを許容する（early exit時）。"""
-    result = pyfltr.mcp_.RunForAgentResult(
+    result = pyfltr.cli.mcp_server.RunForAgentResult(
         run_id=None,
         exit_code=0,
         failed=[],
@@ -391,7 +391,7 @@ async def test_tool_run_for_agent_returns_retry_commands(tmp_path: pathlib.Path)
     sample = tmp_path / "input.txt"
     sample.write_text("hello\n", encoding="utf-8")
 
-    result = await pyfltr.mcp_._tool_run_for_agent(
+    result = await pyfltr.cli.mcp_server._tool_run_for_agent(
         paths=[str(sample)],
         commands=["ec"],
     )
@@ -415,7 +415,7 @@ async def test_tool_run_for_agent_retry_commands_includes_failed(tmp_path: pathl
     bad_py = tmp_path / "bad.py"
     bad_py.write_text("import os\n", encoding="utf-8")  # F401: imported but unused
 
-    result = await pyfltr.mcp_._tool_run_for_agent(
+    result = await pyfltr.cli.mcp_server._tool_run_for_agent(
         paths=[str(bad_py)],
         commands=["ruff-check"],
     )
@@ -435,7 +435,7 @@ async def test_tool_run_for_agent_retry_commands_includes_failed(tmp_path: pathl
 async def test_tool_run_for_agent_from_run_without_only_failed_raises() -> None:
     """only_failed=Falseのままfrom_runを指定するとValueErrorが発生する。"""
     with pytest.raises(ValueError, match="only_failed"):
-        await pyfltr.mcp_._tool_run_for_agent(
+        await pyfltr.cli.mcp_server._tool_run_for_agent(
             paths=["dummy"],
             from_run="latest",
         )
@@ -447,7 +447,7 @@ async def test_tool_run_for_agent_only_failed_no_previous_run(tmp_path: pathlib.
     sample = tmp_path / "input.txt"
     sample.write_text("hello\n", encoding="utf-8")
 
-    result = await pyfltr.mcp_._tool_run_for_agent(
+    result = await pyfltr.cli.mcp_server._tool_run_for_agent(
         paths=[str(sample)],
         commands=["ec"],
         only_failed=True,

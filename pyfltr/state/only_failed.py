@@ -11,24 +11,25 @@ import logging
 import pathlib
 import typing
 
-import pyfltr.archive
 import pyfltr.paths
-import pyfltr.runs
+import pyfltr.state.archive
+import pyfltr.state.runs
 import pyfltr.warnings_
 
 logger = logging.getLogger(__name__)
 
 
 def _text_logger() -> logging.Logger:
-    """`pyfltr.cli.text_logger`を遅延参照で返す。
+    """`pyfltr.cli.output_format.text_logger`を遅延参照で返す。
 
-    `pyfltr.cli`は`pyfltr.only_failed`をimportするため、モジュール
-    トップレベルの`import pyfltr.cli`を避けて循環importを回避する。
+    `pyfltr.cli.output_format`は`pyfltr.state.only_failed`を直接importしないが、
+    `pyfltr.cli.pipeline`→`pyfltr.state.only_failed`の経路で循環が生じうるため、
+    モジュールトップレベルのimportを避けて遅延参照で回避する。
     """
     # pylint: disable=import-outside-toplevel,cyclic-import
-    from pyfltr import cli
+    from pyfltr.cli import output_format
 
-    return cli.text_logger
+    return output_format.text_logger
 
 
 @dataclasses.dataclass(frozen=True)
@@ -102,7 +103,7 @@ def apply_filter(
         return commands, None, False
 
     try:
-        store = pyfltr.archive.ArchiveStore()
+        store = pyfltr.state.archive.ArchiveStore()
     except OSError as e:
         pyfltr.warnings_.emit_warning(
             source="only-failed",
@@ -115,8 +116,8 @@ def apply_filter(
     resolved_run_id: str | None = None
     if from_run is not None:
         try:
-            resolved_run_id = pyfltr.runs.resolve_run_id(store, from_run)
-        except pyfltr.runs.RunIdError as e:
+            resolved_run_id = pyfltr.state.runs.resolve_run_id(store, from_run)
+        except pyfltr.state.runs.RunIdError as e:
             logger.warning(f"--from-run {from_run!r}: {e}")
             return commands, None, True
 
@@ -152,10 +153,10 @@ def apply_filter(
 
 
 def _load_run_summary(
-    store: pyfltr.archive.ArchiveStore,
+    store: pyfltr.state.archive.ArchiveStore,
     *,
     resolved_run_id: str | None = None,
-) -> pyfltr.archive.RunSummary | None:
+) -> pyfltr.state.archive.RunSummary | None:
     """runのサマリを返す。取得失敗または存在しない場合はNone。
 
     `resolved_run_id`が指定された場合は、そのrun_idに対応するサマリを返す。
@@ -185,7 +186,7 @@ def _load_run_summary(
 
 
 def _collect_failed_tools(
-    store: pyfltr.archive.ArchiveStore,
+    store: pyfltr.state.archive.ArchiveStore,
     run_id: str,
     commands: list[str],
 ) -> list[str]:
@@ -214,7 +215,7 @@ def _collect_failed_tools(
 
 
 def _extract_failed_files_for_tool(
-    store: pyfltr.archive.ArchiveStore,
+    store: pyfltr.state.archive.ArchiveStore,
     run_id: str,
     tool: str,
     all_files: list[pathlib.Path],

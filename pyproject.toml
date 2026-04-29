@@ -52,7 +52,7 @@ python = [
 Homepage = "https://github.com/ak110/pyfltr"
 
 [project.scripts]
-pyfltr = "pyfltr.main:main"
+pyfltr = "pyfltr.cli.main:main"
 
 [dependency-groups]
 # pyfltr 自体が Python 製のため、開発時は Python 系ツールを自身の extras 経由で導入する。

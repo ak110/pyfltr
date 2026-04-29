@@ -3,20 +3,20 @@
 import pathlib
 import time
 
-import pyfltr.cache
 import pyfltr.command
-import pyfltr.config
+import pyfltr.config.config
+import pyfltr.state.cache
 from tests.conftest import make_command_result as _make_result
 from tests.conftest import make_error_location as _make_error
 
 
-def _make_store(tmp_path: pathlib.Path) -> pyfltr.cache.CacheStore:
+def _make_store(tmp_path: pathlib.Path) -> pyfltr.state.cache.CacheStore:
     """テスト用の CacheStore を生成する。"""
-    return pyfltr.cache.CacheStore(cache_root=tmp_path)
+    return pyfltr.state.cache.CacheStore(cache_root=tmp_path)
 
 
 def _compute_dummy_key(
-    store: pyfltr.cache.CacheStore,
+    store: pyfltr.state.cache.CacheStore,
     command: str,
     target_file: pathlib.Path,
 ) -> str:
@@ -147,7 +147,7 @@ def test_cleanup_removes_old_entries(tmp_path: pathlib.Path) -> None:
 
     os.utime(entry_path, (old_mtime, old_mtime))
 
-    removed = store.cleanup(pyfltr.cache.CachePolicy(max_age_hours=1))
+    removed = store.cleanup(pyfltr.state.cache.CachePolicy(max_age_hours=1))
     assert len(removed) == 1
     assert not entry_path.exists()
 
@@ -160,7 +160,7 @@ def test_cleanup_keeps_recent_entries(tmp_path: pathlib.Path) -> None:
     key = _compute_dummy_key(store, "textlint", target)
     store.put("textlint", key, _make_result("textlint", returncode=0), run_id="01ABCDEFGH")
 
-    removed = store.cleanup(pyfltr.cache.CachePolicy(max_age_hours=1))
+    removed = store.cleanup(pyfltr.state.cache.CachePolicy(max_age_hours=1))
     assert not removed
 
 
@@ -176,41 +176,41 @@ def test_cleanup_zero_policy_is_noop(tmp_path: pathlib.Path) -> None:
 
     os.utime(entry_path, (0, 0))  # 1970年扱い
 
-    removed = store.cleanup(pyfltr.cache.CachePolicy(max_age_hours=0))
+    removed = store.cleanup(pyfltr.state.cache.CachePolicy(max_age_hours=0))
     assert not removed
     assert entry_path.exists()
 
 
 def test_is_cacheable_true_for_textlint() -> None:
     """textlint は cacheable=True。"""
-    config = pyfltr.config.create_default_config()
-    assert pyfltr.cache.is_cacheable("textlint", config, additional_args=[])
+    config = pyfltr.config.config.create_default_config()
+    assert pyfltr.state.cache.is_cacheable("textlint", config, additional_args=[])
 
 
 def test_is_cacheable_false_for_mypy() -> None:
     """cacheable=Falseのツール（mypyなど）は対象外。"""
-    config = pyfltr.config.create_default_config()
-    assert not pyfltr.cache.is_cacheable("mypy", config, additional_args=[])
+    config = pyfltr.config.config.create_default_config()
+    assert not pyfltr.state.cache.is_cacheable("mypy", config, additional_args=[])
 
 
 def test_is_cacheable_false_with_config_arg() -> None:
     """`--{command}-args`に`--config`を含む場合は対象外。"""
-    config = pyfltr.config.create_default_config()
-    assert not pyfltr.cache.is_cacheable("textlint", config, additional_args=["--config", "/tmp/t.json"])
-    assert not pyfltr.cache.is_cacheable("textlint", config, additional_args=["--config=/tmp/t.json"])
+    config = pyfltr.config.config.create_default_config()
+    assert not pyfltr.state.cache.is_cacheable("textlint", config, additional_args=["--config", "/tmp/t.json"])
+    assert not pyfltr.state.cache.is_cacheable("textlint", config, additional_args=["--config=/tmp/t.json"])
 
 
 def test_is_cacheable_false_with_ignore_path_arg() -> None:
     """`--{command}-args`に`--ignore-path`を含む場合は対象外。"""
-    config = pyfltr.config.create_default_config()
-    assert not pyfltr.cache.is_cacheable("textlint", config, additional_args=["--ignore-path", "/tmp/i"])
-    assert not pyfltr.cache.is_cacheable("textlint", config, additional_args=["--ignore-path=/tmp/i"])
+    config = pyfltr.config.config.create_default_config()
+    assert not pyfltr.state.cache.is_cacheable("textlint", config, additional_args=["--ignore-path", "/tmp/i"])
+    assert not pyfltr.state.cache.is_cacheable("textlint", config, additional_args=["--ignore-path=/tmp/i"])
 
 
 def test_resolve_config_files_textlint() -> None:
     """textlintのconfig_filesが完全列挙される。"""
-    config = pyfltr.config.create_default_config()
-    files = pyfltr.cache.resolve_config_files("textlint", config, base=pathlib.Path("/tmp"))
+    config = pyfltr.config.config.create_default_config()
+    files = pyfltr.state.cache.resolve_config_files("textlint", config, base=pathlib.Path("/tmp"))
     assert pathlib.Path("/tmp/.textlintrc") in files
     assert pathlib.Path("/tmp/.textlintignore") in files
     assert pathlib.Path("/tmp/package.json") in files
@@ -218,14 +218,14 @@ def test_resolve_config_files_textlint() -> None:
 
 def test_cache_policy_from_config_uses_default() -> None:
     """既定値は12時間。"""
-    config = pyfltr.config.create_default_config()
-    policy = pyfltr.cache.cache_policy_from_config(config)
+    config = pyfltr.config.config.create_default_config()
+    policy = pyfltr.state.cache.cache_policy_from_config(config)
     assert policy.max_age_hours == 12
 
 
 def test_cache_policy_respects_override() -> None:
     """設定値で上書きできる。"""
-    config = pyfltr.config.create_default_config()
+    config = pyfltr.config.config.create_default_config()
     config.values["cache-max-age-hours"] = 24
-    policy = pyfltr.cache.cache_policy_from_config(config)
+    policy = pyfltr.state.cache.cache_policy_from_config(config)
     assert policy.max_age_hours == 24

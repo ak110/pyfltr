@@ -11,8 +11,8 @@ import pathlib
 import re
 import typing
 
+import pyfltr.output.rule_urls
 import pyfltr.paths
-import pyfltr.rule_urls
 
 
 @dataclasses.dataclass
@@ -122,7 +122,7 @@ def format_error_github(error: ErrorLocation) -> str:
 
     `::error file=...::message`形式で出力する。
     """
-    from pyfltr import github_annotations  # pylint: disable=import-outside-toplevel
+    from pyfltr.output import github_annotations  # pylint: disable=import-outside-toplevel
 
     return github_annotations.build_workflow_command(error)
 
@@ -296,7 +296,7 @@ def _parse_eslint_json(output: str) -> list[ErrorLocation]:
                     rule=rule,
                     severity=_normalize_severity(msg.get("severity")),
                     fix=fix_value,
-                    rule_url=pyfltr.rule_urls.build_rule_url("eslint", rule),
+                    rule_url=pyfltr.output.rule_urls.build_rule_url("eslint", rule),
                 )
             )
     return results
@@ -336,7 +336,7 @@ def _parse_ruff_check_json(output: str) -> list[ErrorLocation]:
                 rule=rule,
                 severity=_normalize_severity(entry.get("severity")) or "error",
                 fix=fix_value,
-                rule_url=pyfltr.rule_urls.build_rule_url("ruff-check", rule, existing_url=existing_url),
+                rule_url=pyfltr.output.rule_urls.build_rule_url("ruff-check", rule, existing_url=existing_url),
             )
         )
     return results
@@ -383,7 +383,7 @@ def _parse_pylint_json(output: str) -> list[ErrorLocation]:
                 message=combined_message,
                 rule=symbol,
                 severity=severity,
-                rule_url=pyfltr.rule_urls.build_rule_url("pylint", symbol, category=category),
+                rule_url=pyfltr.output.rule_urls.build_rule_url("pylint", symbol, category=category),
             )
         )
     return results
@@ -423,7 +423,7 @@ def _parse_pyright_json(output: str) -> list[ErrorLocation]:
                 message=str(diag.get("message", "")),
                 rule=rule,
                 severity=_normalize_severity(diag.get("severity")),
-                rule_url=pyfltr.rule_urls.build_rule_url("pyright", rule),
+                rule_url=pyfltr.output.rule_urls.build_rule_url("pyright", rule),
             )
         )
     return results
@@ -457,7 +457,7 @@ def _parse_shellcheck_json(output: str) -> list[ErrorLocation]:
                 rule=rule,
                 severity=_normalize_severity(entry.get("level")),
                 fix=fix_value,
-                rule_url=pyfltr.rule_urls.build_rule_url("shellcheck", rule),
+                rule_url=pyfltr.output.rule_urls.build_rule_url("shellcheck", rule),
             )
         )
     return results
@@ -836,7 +836,7 @@ def _parse_with_pattern(command: str, output: str, pattern: str) -> list[ErrorLo
                 col_num = int(col_str)
         rule_raw = groups.get("rule")
         rule = rule_raw.strip() if isinstance(rule_raw, str) and rule_raw.strip() else None
-        rule_url = pyfltr.rule_urls.build_rule_url(command, rule) if rule is not None else None
+        rule_url = pyfltr.output.rule_urls.build_rule_url(command, rule) if rule is not None else None
         results.append(
             ErrorLocation(
                 file=pyfltr.paths.to_cwd_relative(file_path),

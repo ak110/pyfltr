@@ -33,7 +33,7 @@ from pyfltr.builtin_commands import (
     CommandInfo,
     CommandType,
 )
-from pyfltr.presets import _PRESETS, _REMOVED_PRESETS
+from pyfltr.config.presets import _PRESETS, _REMOVED_PRESETS
 
 # 公開APIとして再エクスポートする定数・型
 # （既存のimport経路`pyfltr.config.BUILTIN_COMMANDS`等を維持するため）

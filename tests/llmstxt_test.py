@@ -11,7 +11,8 @@ import pathlib
 import yaml
 
 import pyfltr.builtin_commands
-import pyfltr.main
+import pyfltr.cli.main
+import pyfltr.cli.parser
 
 
 @functools.lru_cache(maxsize=1)
@@ -44,8 +45,8 @@ def _get_markdown_description() -> str:
 
 
 def _get_subcommand_names() -> list[str]:
-    """pyfltr.main.build_parser() から全サブコマンド名を取得する。"""
-    parser = pyfltr.main.build_parser()
+    """pyfltr.cli.parser.build_parser() から全サブコマンド名を取得する。"""
+    parser = pyfltr.cli.parser.build_parser()
     subcommand_names: list[str] = []
     # parser._actionsから_SubParsersActionを探してサブコマンド名を取得する。
     # 2段のプライベートアクセス（_subparsers._group_actions）を避け、

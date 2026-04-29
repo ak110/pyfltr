@@ -26,9 +26,9 @@ import typing
 
 import pydantic
 
-import pyfltr.archive
-import pyfltr.config
-import pyfltr.runs
+import pyfltr.config.config
+import pyfltr.state.archive
+import pyfltr.state.runs
 
 logger = logging.getLogger(__name__)
 
@@ -164,11 +164,11 @@ def _raise_mcp_error(msg: str) -> typing.Never:
     raise ValueError(msg)
 
 
-def _resolve_run_id_or_raise(store: pyfltr.archive.ArchiveStore, raw: str) -> str:
+def _resolve_run_id_or_raise(store: pyfltr.state.archive.ArchiveStore, raw: str) -> str:
     """`resolve_run_id`の結果を返し、エラー時はMCPエラーへ変換する。"""
     try:
-        return pyfltr.runs.resolve_run_id(store, raw)
-    except pyfltr.runs.RunIdError as e:
+        return pyfltr.state.runs.resolve_run_id(store, raw)
+    except pyfltr.state.runs.RunIdError as e:
         _raise_mcp_error(str(e))
 
 
@@ -188,7 +188,7 @@ async def _tool_list_runs(limit: int = 20) -> list[RunSummaryModel]:
 
     対応CLI: `pyfltr list-runs`
     """
-    store = pyfltr.archive.ArchiveStore()
+    store = pyfltr.state.archive.ArchiveStore()
     summaries = store.list_runs(limit=limit)
     return [
         RunSummaryModel(
@@ -210,13 +210,13 @@ async def _tool_show_run(run_id: str) -> RunOverviewModel:
 
     対応CLI: `pyfltr show-run <run_id>`
     """
-    store = pyfltr.archive.ArchiveStore()
+    store = pyfltr.state.archive.ArchiveStore()
     resolved = _resolve_run_id_or_raise(store, run_id)
     try:
         meta = store.read_meta(resolved)
     except FileNotFoundError:
         _raise_mcp_error(f"run_id が見つからない: {resolved}")
-    command_summaries = pyfltr.runs._collect_tool_summaries(store, resolved)  # noqa: SLF001  # pylint: disable=protected-access
+    command_summaries = pyfltr.state.runs._collect_tool_summaries(store, resolved)  # noqa: SLF001  # pylint: disable=protected-access
     commands = [
         CommandSummaryModel(
             command=entry.get("command"),
@@ -240,7 +240,7 @@ async def _tool_show_run_diagnostics(run_id: str, commands: list[str]) -> list[C
     """
     if not commands:
         _raise_mcp_error("commands を 1 件以上指定してください。")
-    store = pyfltr.archive.ArchiveStore()
+    store = pyfltr.state.archive.ArchiveStore()
     resolved = _resolve_run_id_or_raise(store, run_id)
     results: list[CommandDiagnosticsModel] = []
     for command in commands:
@@ -274,7 +274,7 @@ async def _tool_show_run_output(run_id: str, commands: list[str]) -> dict[str, s
     """
     if not commands:
         _raise_mcp_error("commands を 1 件以上指定してください。")
-    store = pyfltr.archive.ArchiveStore()
+    store = pyfltr.state.archive.ArchiveStore()
     resolved = _resolve_run_id_or_raise(store, run_id)
     outputs: dict[str, str] = {}
     for command in commands:
@@ -354,9 +354,9 @@ async def _tool_run_for_agent(
         subcommand="run-for-agent",
     )
 
-    # `pyfltr.main`は`mcp_`をトップレベルでimportしているため、本モジュールからの
-    # 参照は循環importを避けるためブロック内importとする。
-    import pyfltr.main as _main  # pylint: disable=import-outside-toplevel,cyclic-import
+    # `pyfltr.cli.pipeline`は`mcp_server`をトップレベルでimportしないため、
+    # 循環importの懸念は小さいが、遅延importで明示する。
+    import pyfltr.cli.pipeline as _main  # pylint: disable=import-outside-toplevel
 
     # 構造化出力を一時ファイルへ誘導してstdout汚染を防ぐ。
     # NamedTemporaryFileをコンテキストマネージャーで使い、close後もパスを残す（delete=False）。
@@ -368,11 +368,11 @@ async def _tool_run_for_agent(
     # 構造化出力は一時ファイル経由（FileHandler）となりstdoutを汚染しない。
     args.output_file = tmp_path
     try:
-        config = pyfltr.config.load_config()
+        config = pyfltr.config.config.load_config()
         # アーカイブを強制有効化する。MCPツールはrun_idを返す契約を保証する。
         config.values["archive"] = True
 
-        commands_list: list[str] = pyfltr.config.resolve_aliases(
+        commands_list: list[str] = pyfltr.config.config.resolve_aliases(
             (args.commands or ",".join(config.command_names)).split(","),
             config,
         )
@@ -397,9 +397,9 @@ async def _tool_run_for_agent(
         )
 
     # コマンド別サマリを最新アーカイブから集計する。
-    store = pyfltr.archive.ArchiveStore()
+    store = pyfltr.state.archive.ArchiveStore()
     try:
-        command_summaries = pyfltr.runs._collect_tool_summaries(store, run_id)  # noqa: SLF001  # pylint: disable=protected-access
+        command_summaries = pyfltr.state.runs._collect_tool_summaries(store, run_id)  # noqa: SLF001  # pylint: disable=protected-access
     except Exception:  # pylint: disable=broad-exception-caught
         command_summaries = []
 

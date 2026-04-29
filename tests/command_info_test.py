@@ -8,9 +8,9 @@ import subprocess
 
 import pytest
 
+import pyfltr.cli.command_info
 import pyfltr.command
-import pyfltr.command_info
-import pyfltr.config
+import pyfltr.config.config
 
 
 def _run(
@@ -18,7 +18,7 @@ def _run(
 ) -> str:
     parser = argparse.ArgumentParser()
     args = argparse.Namespace(command=command, output_format=output_format, check=do_check)
-    rc = pyfltr.command_info.execute_command_info(parser, args)
+    rc = pyfltr.cli.command_info.execute_command_info(parser, args)
     captured = capsys.readouterr()
     assert rc == 0, captured.err
     return captured.out
@@ -151,7 +151,7 @@ def test_command_info_unknown_command(capsys: pytest.CaptureFixture[str]) -> Non
     """未知のコマンド名はエラー終了する。"""
     parser = argparse.ArgumentParser()
     args = argparse.Namespace(command="not-a-tool", output_format="text", check=False)
-    rc = pyfltr.command_info.execute_command_info(parser, args)
+    rc = pyfltr.cli.command_info.execute_command_info(parser, args)
     captured = capsys.readouterr()
     assert rc == 1
     assert "未知のコマンド" in captured.err

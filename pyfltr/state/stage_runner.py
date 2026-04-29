@@ -1,14 +1,14 @@
-"""cli.py / ui.py が共用するステージ実行ヘルパー。"""
+"""cli/pipeline.py / output/ui.py が共用するステージ実行ヘルパー。"""
 
 import concurrent.futures
 
 import pyfltr.command
-import pyfltr.config
+import pyfltr.config.config
 
 
 def make_skipped_result(
     command: str,
-    config: pyfltr.config.Config,
+    config: pyfltr.config.config.Config,
     *,
     reason: str | None = None,
 ) -> pyfltr.command.CommandResult:

@@ -1,7 +1,7 @@
 """`list-runs` / `show-run`サブコマンドのテスト。
 
 `PYFLTR_CACHE_DIR`を`tmp_path`に固定することで、テストデータ生成に使う
-`ArchiveStore(cache_root=tmp_path)`と`pyfltr.main.run([...])`経由で
+`ArchiveStore(cache_root=tmp_path)`と`pyfltr.cli.main.run([...])`経由で
 生成される`ArchiveStore()`（`default_cache_root()`解決）が同一キャッシュを
 参照する状態を作る。
 """
@@ -13,9 +13,9 @@ import pathlib
 
 import pytest
 
-import pyfltr.archive
+import pyfltr.cli.main
 import pyfltr.error_parser
-import pyfltr.main
+import pyfltr.state.archive
 from tests.conftest import make_error_location as _make_error
 from tests.conftest import seed_archive_run as _seed_run
 
@@ -31,7 +31,7 @@ def _isolated_cache(
 
 
 def test_list_runs_text_empty(capsys: pytest.CaptureFixture[str]) -> None:
-    returncode = pyfltr.main.run(["list-runs"])
+    returncode = pyfltr.cli.main.run(["list-runs"])
     assert returncode == 0
     captured = capsys.readouterr()
     assert "(no runs)" in captured.out
@@ -44,7 +44,7 @@ def test_list_runs_text_multiple(
     run_id1 = _seed_run(tmp_path, commands=["ruff-check"], exit_code=0)
     run_id2 = _seed_run(tmp_path, commands=["mypy"], exit_code=1)
 
-    returncode = pyfltr.main.run(["list-runs"])
+    returncode = pyfltr.cli.main.run(["list-runs"])
     assert returncode == 0
     out = capsys.readouterr().out
     assert "RUN_ID" in out
@@ -62,7 +62,7 @@ def test_list_runs_limit(
     for _ in range(5):
         _seed_run(tmp_path)
 
-    returncode = pyfltr.main.run(["list-runs", "--limit", "2"])
+    returncode = pyfltr.cli.main.run(["list-runs", "--limit", "2"])
     assert returncode == 0
     out = capsys.readouterr().out
     # header行 + 2件 = 3行
@@ -76,7 +76,7 @@ def test_list_runs_json(
 ) -> None:
     run_id = _seed_run(tmp_path, commands=["ruff-check"], files=2, exit_code=0)
 
-    returncode = pyfltr.main.run(["list-runs", "--output-format=json"])
+    returncode = pyfltr.cli.main.run(["list-runs", "--output-format=json"])
     assert returncode == 0
     payload = json.loads(capsys.readouterr().out)
     assert "runs" in payload
@@ -92,7 +92,7 @@ def test_list_runs_jsonl(
     run_id1 = _seed_run(tmp_path)
     run_id2 = _seed_run(tmp_path)
 
-    returncode = pyfltr.main.run(["list-runs", "--output-format=jsonl"])
+    returncode = pyfltr.cli.main.run(["list-runs", "--output-format=jsonl"])
     assert returncode == 0
     lines = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
     assert len(lines) == 2
@@ -115,7 +115,7 @@ def test_show_run_text_overview(
         ],
     )
 
-    returncode = pyfltr.main.run(["show-run", run_id])
+    returncode = pyfltr.cli.main.run(["show-run", run_id])
     assert returncode == 0
     out = capsys.readouterr().out
     assert f"run_id: {run_id}" in out
@@ -131,7 +131,7 @@ def test_show_run_prefix(
 ) -> None:
     run_id = _seed_run(tmp_path)
 
-    returncode = pyfltr.main.run(["show-run", run_id[:8]])
+    returncode = pyfltr.cli.main.run(["show-run", run_id[:8]])
     assert returncode == 0
     assert f"run_id: {run_id}" in capsys.readouterr().out
 
@@ -143,7 +143,7 @@ def test_show_run_latest(
     _seed_run(tmp_path)
     latest_id = _seed_run(tmp_path)
 
-    returncode = pyfltr.main.run(["show-run", "latest"])
+    returncode = pyfltr.cli.main.run(["show-run", "latest"])
     assert returncode == 0
     assert f"run_id: {latest_id}" in capsys.readouterr().out
 
@@ -164,7 +164,7 @@ def test_show_run_prefix_ambiguous(
         pytest.skip("shared prefixが無いケースでは曖昧判定にならない")
     prefix = run_ids[0][:shared]
 
-    returncode = pyfltr.main.run(["show-run", prefix])
+    returncode = pyfltr.cli.main.run(["show-run", prefix])
     assert returncode == 1
     assert "曖昧" in capsys.readouterr().err
 
@@ -172,7 +172,7 @@ def test_show_run_prefix_ambiguous(
 def test_show_run_not_found(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    returncode = pyfltr.main.run(["show-run", "nonexistent"])
+    returncode = pyfltr.cli.main.run(["show-run", "nonexistent"])
     assert returncode == 1
     assert "run_id" in capsys.readouterr().err
 
@@ -180,7 +180,7 @@ def test_show_run_not_found(
 def test_show_run_latest_empty(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    returncode = pyfltr.main.run(["show-run", "latest"])
+    returncode = pyfltr.cli.main.run(["show-run", "latest"])
     assert returncode == 1
     assert "run" in capsys.readouterr().err
 
@@ -194,7 +194,7 @@ def test_list_runs_ai_agent_jsonl(
     monkeypatch.setenv("AI_AGENT", "1")
     run_id = _seed_run(tmp_path)
 
-    returncode = pyfltr.main.run(["list-runs"])
+    returncode = pyfltr.cli.main.run(["list-runs"])
     assert returncode == 0
     lines = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
     assert len(lines) == 1
@@ -211,7 +211,7 @@ def test_show_run_ai_agent_jsonl(
     monkeypatch.setenv("AI_AGENT", "1")
     run_id = _seed_run(tmp_path, commands=["ruff-check"], exit_code=0)
 
-    returncode = pyfltr.main.run(["show-run", run_id])
+    returncode = pyfltr.cli.main.run(["show-run", run_id])
     assert returncode == 0
     lines = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
     # JSONL: meta（kind="meta"）+ ツール別command
@@ -235,7 +235,7 @@ def test_show_run_tool_text(
         ],
     )
 
-    returncode = pyfltr.main.run(["show-run", run_id, "--commands", "mypy"])
+    returncode = pyfltr.cli.main.run(["show-run", run_id, "--commands", "mypy"])
     assert returncode == 0
     out = capsys.readouterr().out
     assert "command: mypy" in out
@@ -263,7 +263,7 @@ def test_show_run_tool_text_renders_hint_urls_and_hints(
         tool_results=[("ruff-check", 1, "out", [error])],
     )
 
-    returncode = pyfltr.main.run(["show-run", run_id, "--commands", "ruff-check"])
+    returncode = pyfltr.cli.main.run(["show-run", run_id, "--commands", "ruff-check"])
     assert returncode == 0
     out = capsys.readouterr().out
     assert "hint_urls:" in out
@@ -288,7 +288,7 @@ def test_show_run_tool_json(
         ],
     )
 
-    returncode = pyfltr.main.run(["show-run", run_id, "--commands", "ruff-check", "--output-format=json"])
+    returncode = pyfltr.cli.main.run(["show-run", run_id, "--commands", "ruff-check", "--output-format=json"])
     assert returncode == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["command"]["command"] == "ruff-check"
@@ -315,7 +315,7 @@ def test_show_run_tool_jsonl(
         ],
     )
 
-    returncode = pyfltr.main.run(["show-run", run_id, "--commands", "ruff-check", "--output-format=jsonl"])
+    returncode = pyfltr.cli.main.run(["show-run", run_id, "--commands", "ruff-check", "--output-format=jsonl"])
     assert returncode == 0
     lines = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
     assert lines[0]["kind"] == "command"
@@ -330,7 +330,7 @@ def test_show_run_tool_not_found(
 ) -> None:
     run_id = _seed_run(tmp_path)
 
-    returncode = pyfltr.main.run(["show-run", run_id, "--commands", "nonexistent"])
+    returncode = pyfltr.cli.main.run(["show-run", run_id, "--commands", "nonexistent"])
     assert returncode == 1
     assert "nonexistent" in capsys.readouterr().err
 
@@ -346,7 +346,7 @@ def test_show_run_output_mode(
         ],
     )
 
-    returncode = pyfltr.main.run(["show-run", run_id, "--commands", "ruff-check", "--output"])
+    returncode = pyfltr.cli.main.run(["show-run", run_id, "--commands", "ruff-check", "--output"])
     assert returncode == 0
     out = capsys.readouterr().out
     assert "raw output line 1" in out
@@ -362,7 +362,7 @@ def test_show_run_output_mode_jsonl(
         tool_results=[("ruff-check", 0, "raw-log", [])],
     )
 
-    returncode = pyfltr.main.run(
+    returncode = pyfltr.cli.main.run(
         [
             "show-run",
             run_id,
@@ -387,7 +387,7 @@ def test_show_run_output_without_tool_errors(
 ) -> None:
     run_id = _seed_run(tmp_path)
 
-    returncode = pyfltr.main.run(["show-run", run_id, "--output"])
+    returncode = pyfltr.cli.main.run(["show-run", run_id, "--output"])
     assert returncode == 1
     assert "--commands" in capsys.readouterr().err
 
@@ -404,7 +404,7 @@ def test_show_run_commands_multiple(
         ],
     )
 
-    returncode = pyfltr.main.run(["show-run", run_id, "--commands", "ruff-check,mypy"])
+    returncode = pyfltr.cli.main.run(["show-run", run_id, "--commands", "ruff-check,mypy"])
     assert returncode == 0
     out = capsys.readouterr().out
     assert "command: ruff-check" in out
@@ -425,7 +425,7 @@ def test_show_run_output_with_multiple_commands_errors(
         ],
     )
 
-    returncode = pyfltr.main.run(["show-run", run_id, "--commands", "ruff-check,mypy", "--output"])
+    returncode = pyfltr.cli.main.run(["show-run", run_id, "--commands", "ruff-check,mypy", "--output"])
     assert returncode == 1
     assert "単一" in capsys.readouterr().err
 
@@ -442,7 +442,7 @@ def test_show_run_jsonl_overview(
         ],
     )
 
-    returncode = pyfltr.main.run(["show-run", run_id, "--output-format=jsonl"])
+    returncode = pyfltr.cli.main.run(["show-run", run_id, "--output-format=jsonl"])
     assert returncode == 0
     lines = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
     kinds = [line["kind"] for line in lines]

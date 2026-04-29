@@ -10,8 +10,8 @@ import pathlib
 import sys
 import typing
 
-import pyfltr.cli
-import pyfltr.config
+import pyfltr.cli.output_format
+import pyfltr.config.config
 import pyfltr.warnings_
 
 _LIST_OUTPUT_FORMATS: tuple[str, ...] = ("text", "json", "jsonl")
@@ -37,7 +37,7 @@ def execute(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
 def _config_target_path(args: argparse.Namespace) -> pathlib.Path:
     """`--global`の有無に応じて対象ファイルパスを返す。"""
     if args.global_:
-        return pyfltr.config.default_global_config_path()
+        return pyfltr.config.config.default_global_config_path()
     return pathlib.Path("pyproject.toml").absolute()
 
 
@@ -58,7 +58,7 @@ def _config_get(args: argparse.Namespace) -> int:
     """`pyfltr config get <key> [--global]`の実装。"""
     path = _config_target_path(args)
     try:
-        values = pyfltr.config.read_config_values(path)
+        values = pyfltr.config.config.read_config_values(path)
     except ValueError as e:
         print(f"設定ファイル読込エラー: {e}", file=sys.stderr)
         return 1
@@ -66,8 +66,8 @@ def _config_get(args: argparse.Namespace) -> int:
     if key in values:
         print(_format_config_value_text(values[key]))
         return 0
-    if key in pyfltr.config.DEFAULT_CONFIG:
-        print(_format_config_value_text(pyfltr.config.DEFAULT_CONFIG[key]))
+    if key in pyfltr.config.config.DEFAULT_CONFIG:
+        print(_format_config_value_text(pyfltr.config.config.DEFAULT_CONFIG[key]))
         return 0
     print(f"設定キーが不正です: {key}", file=sys.stderr)
     return 1
@@ -81,11 +81,11 @@ def _config_set(args: argparse.Namespace) -> int:
         print(f"pyproject.tomlが見つかりません: {path}", file=sys.stderr)
         return 1
     key = args.key
-    if key not in pyfltr.config.DEFAULT_CONFIG:
+    if key not in pyfltr.config.config.DEFAULT_CONFIG:
         print(f"設定キーが不正です: {key}", file=sys.stderr)
         return 1
     try:
-        value = pyfltr.config.parse_config_value(key, args.value)
+        value = pyfltr.config.config.parse_config_value(key, args.value)
     except ValueError as e:
         print(f"設定値が不正です: {e}", file=sys.stderr)
         return 1
@@ -93,7 +93,7 @@ def _config_set(args: argparse.Namespace) -> int:
     # 警告分岐:
     # - archive/cache系をproject側にset → global集約推奨
     # - archive/cache以外をglobal側にset → 通常はproject優先のため上書きされる旨
-    if key in pyfltr.config.GLOBAL_PRIORITY_KEYS and not use_global:
+    if key in pyfltr.config.config.GLOBAL_PRIORITY_KEYS and not use_global:
         pyfltr.warnings_.emit_warning(
             source="config",
             message=(
@@ -101,7 +101,7 @@ def _config_set(args: argparse.Namespace) -> int:
                 " --global での設定を推奨します（global側があればglobal優先になります）。"
             ),
         )
-    elif key not in pyfltr.config.GLOBAL_PRIORITY_KEYS and use_global:
+    elif key not in pyfltr.config.config.GLOBAL_PRIORITY_KEYS and use_global:
         pyfltr.warnings_.emit_warning(
             source="config",
             message=(
@@ -111,7 +111,7 @@ def _config_set(args: argparse.Namespace) -> int:
         )
 
     try:
-        pyfltr.config.set_config_value(path, key, value, create_if_missing=use_global)
+        pyfltr.config.config.set_config_value(path, key, value, create_if_missing=use_global)
     except (FileNotFoundError, ValueError) as e:
         print(f"設定ファイル書き込みエラー: {e}", file=sys.stderr)
         return 1
@@ -123,14 +123,14 @@ def _config_delete(args: argparse.Namespace) -> int:
     """`pyfltr config delete <key> [--global]`の実装。"""
     path = _config_target_path(args)
     key = args.key
-    if key not in pyfltr.config.DEFAULT_CONFIG:
+    if key not in pyfltr.config.config.DEFAULT_CONFIG:
         print(f"設定キーが不正です: {key}", file=sys.stderr)
         return 1
     if not path.exists():
         print(f"対象ファイルが存在しないため削除対象がありません: {path}")
         return 0
     try:
-        existed = pyfltr.config.delete_config_value(path, key)
+        existed = pyfltr.config.config.delete_config_value(path, key)
     except ValueError as e:
         print(f"設定ファイル読込エラー: {e}", file=sys.stderr)
         return 1
@@ -145,11 +145,11 @@ def _config_list(parser: argparse.ArgumentParser, args: argparse.Namespace) -> i
     """`pyfltr config list [--global] [--output-format ...]`の実装。"""
     path = _config_target_path(args)
     try:
-        values = pyfltr.config.read_config_values(path)
+        values = pyfltr.config.config.read_config_values(path)
     except ValueError as e:
         print(f"設定ファイル読込エラー: {e}", file=sys.stderr)
         return 1
-    fmt = pyfltr.cli.resolve_output_format(
+    fmt = pyfltr.cli.output_format.resolve_output_format(
         parser,
         args.output_format,
         valid_values=_VALID_LIST_OUTPUT_FORMATS,

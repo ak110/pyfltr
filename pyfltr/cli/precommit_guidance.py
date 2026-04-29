@@ -7,7 +7,7 @@ import pathlib
 import psutil
 import yaml
 
-import pyfltr.config
+import pyfltr.config.config
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +83,7 @@ def detect_pyfltr_hooks(config_dir: pathlib.Path) -> list[str]:
     return hook_ids
 
 
-def build_skip_value(config: pyfltr.config.Config, config_dir: pathlib.Path) -> str:
+def build_skip_value(config: pyfltr.config.config.Config, config_dir: pathlib.Path) -> str:
     """SKIP環境変数に渡す値を構築する。
 
     auto-skipが有効なら自動検出結果を、手動指定と合わせてカンマ区切りで返す。

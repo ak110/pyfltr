@@ -18,9 +18,9 @@ import sys
 import threading
 import typing
 
-import pyfltr.cli  # pylint: disable=cyclic-import
+import pyfltr.cli.output_format
 import pyfltr.command
-import pyfltr.config
+import pyfltr.config.config
 import pyfltr.error_parser
 import pyfltr.paths
 
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 # ストリーミング書き出し時に複数行（diagnostic行+tool行）をアトミックに出力するためのロック。
 # 並列実行されるlinters/testersから同時にコールバックが呼ばれる可能性がある。
-# 出力先は`pyfltr.cli.structured_logger`のhandlerに委ねるが、ログ1件 = 1行の
+# 出力先は`pyfltr.cli.output_format.structured_logger`のhandlerに委ねるが、ログ1件 = 1行の
 # 粒度では複数行のグルーピングを保証できないためモジュール側でロックする。
 _write_lock = threading.Lock()
 
@@ -52,7 +52,7 @@ _DEFAULT_HEAD_RATIO = 0.2
 
 def build_command_lines(
     result: pyfltr.command.CommandResult,
-    config: pyfltr.config.Config,
+    config: pyfltr.config.config.Config,
 ) -> list[str]:
     """1コマンド分のdiagnostic行+command行をJSONL文字列のリストとして生成する。
 
@@ -171,7 +171,7 @@ def aggregate_diagnostics(
 
 def build_lines(
     results: list[pyfltr.command.CommandResult],
-    config: pyfltr.config.Config,
+    config: pyfltr.config.config.Config,
     *,
     exit_code: int,
     commands: list[str] | None = None,
@@ -232,7 +232,7 @@ def build_lines(
     return lines
 
 
-def _command_index(config: pyfltr.config.Config, command: str) -> int:
+def _command_index(config: pyfltr.config.config.Config, command: str) -> int:
     """config.command_names 内での位置を返す（未登録コマンドは末尾扱い）。"""
     if command in config.command_names:
         return config.command_names.index(command)
@@ -244,14 +244,14 @@ def write_jsonl_header(
     files: int,
     *,
     run_id: str | None = None,
-    config: pyfltr.config.Config | None = None,
+    config: pyfltr.config.config.Config | None = None,
     format_source: str | None = None,
 ) -> None:
     """header行を構造化出力loggerに書き出す（ストリーミングモード用）。
 
     パイプライン開始直後、diagnostic行より前に1回だけ呼ぶ。`run_id`が指定されていれば
     headerレコードに含める（アーカイブ参照時の識別キー）。
-    出力先は`pyfltr.cli.configure_structured_output()`が設定したhandlerに従う
+    出力先は`pyfltr.cli.output_format.configure_structured_output()`が設定したhandlerに従う
     （stdoutもしくは`--output-file`のFileHandler）。
     `config`が渡された場合、mise経路を使うrunに限り
     `mise_active_tools`フィールドへ取得状況を露出する。
@@ -259,7 +259,7 @@ def write_jsonl_header(
     """
     mise_active_tools = collect_mise_active_tools_for_header(commands, config) if config is not None else None
     with _write_lock:
-        pyfltr.cli.structured_logger.info(
+        pyfltr.cli.output_format.structured_logger.info(
             _dump(
                 _build_header_record(
                     commands,
@@ -272,7 +272,9 @@ def write_jsonl_header(
         )
 
 
-def collect_mise_active_tools_for_header(commands: list[str], config: pyfltr.config.Config) -> dict[str, typing.Any] | None:
+def collect_mise_active_tools_for_header(
+    commands: list[str], config: pyfltr.config.config.Config
+) -> dict[str, typing.Any] | None:
     """header露出用のmise active tools取得状況dictを組み立てる。
 
     `commands`にmiseバックエンド登録済みのものが1つも含まれない場合は`None`を返し、
@@ -293,7 +295,7 @@ def collect_mise_active_tools_for_header(commands: list[str], config: pyfltr.con
 
 def write_jsonl_streaming(
     result: pyfltr.command.CommandResult,
-    config: pyfltr.config.Config,
+    config: pyfltr.config.config.Config,
 ) -> None:
     """1コマンド分のdiagnostic行+command行を構造化出力loggerに即時書き出す。
 
@@ -303,7 +305,7 @@ def write_jsonl_streaming(
     lines = build_command_lines(result, config)
     with _write_lock:
         for line in lines:
-            pyfltr.cli.structured_logger.info(line)
+            pyfltr.cli.output_format.structured_logger.info(line)
 
 
 def write_jsonl_footer(
@@ -323,8 +325,8 @@ def write_jsonl_footer(
     """
     with _write_lock:
         for warning in warnings or []:
-            pyfltr.cli.structured_logger.info(_dump(_build_warning_record(warning)))
-        pyfltr.cli.structured_logger.info(
+            pyfltr.cli.output_format.structured_logger.info(_dump(_build_warning_record(warning)))
+        pyfltr.cli.output_format.structured_logger.info(
             _dump(
                 _build_summary_record(
                     results,
@@ -422,7 +424,7 @@ def _build_command_record(
     *,
     diagnostics: int,
     diagnostic_total: int | None = None,
-    config: pyfltr.config.Config | None = None,
+    config: pyfltr.config.config.Config | None = None,
     hint_urls: dict[str, str] | None = None,
     hints: dict[str, str] | None = None,
 ) -> dict[str, typing.Any]:
@@ -511,7 +513,7 @@ def _build_command_record(
     return record
 
 
-def _resolve_message_limits(config: pyfltr.config.Config | None) -> tuple[int, int]:
+def _resolve_message_limits(config: pyfltr.config.config.Config | None) -> tuple[int, int]:
     """tool.messageの行数・文字数上限をconfigから取得する。
 
     設定未指定時はパートC以前のハードコード値（30行 / 2000文字）を踏襲する。

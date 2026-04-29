@@ -11,7 +11,7 @@ import importlib.metadata
 import typing
 
 import pyfltr.command
-import pyfltr.config
+import pyfltr.config.config
 import pyfltr.error_parser
 
 _SARIF_VERSION = "2.1.0"
@@ -26,7 +26,7 @@ _SEVERITY_TO_LEVEL: dict[str | None, str] = {
 
 def build_sarif(
     results: list[pyfltr.command.CommandResult],
-    config: pyfltr.config.Config,
+    config: pyfltr.config.config.Config,
     *,
     exit_code: int,
     commands: list[str] | None = None,
@@ -123,7 +123,7 @@ def _build_result_record(
     return record
 
 
-def _command_index(config: pyfltr.config.Config, command: str) -> int:
+def _command_index(config: pyfltr.config.config.Config, command: str) -> int:
     """`config.command_names`内での位置を返す（未登録コマンドは末尾扱い）。"""
     if command in config.command_names:
         return config.command_names.index(command)

@@ -2,6 +2,6 @@
 """pyfltr entry point."""
 
 if __name__ == "__main__":
-    import pyfltr.main
+    import pyfltr.cli.main
 
-    pyfltr.main.main()
+    pyfltr.cli.main.main()

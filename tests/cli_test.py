@@ -7,16 +7,17 @@ import logging
 
 import pytest
 
-import pyfltr.cli
+import pyfltr.cli.output_format
+import pyfltr.cli.pipeline
 import pyfltr.command
-import pyfltr.config
+import pyfltr.config.config
 from tests.conftest import make_command_result as _make_result
 from tests.conftest import make_execution_context as _make_ctx
 
 
 @pytest.fixture(name="text_logs")
 def _text_logs() -> collections.abc.Iterator[list[str]]:
-    """`pyfltr.cli.text_logger`の`info`出力をキャプチャする。
+    """`pyfltr.cli.output_format.text_logger`の`info`出力をキャプチャする。
 
     `propagate=False`のためcaplog / capsysのsys.stdout差し替えとは相性が悪い
     （pytest captureはsetup段階のsys.stdoutリファレンスと実行時のsys.stdoutが
@@ -35,14 +36,14 @@ def _text_logs() -> collections.abc.Iterator[list[str]]:
 
     handler = _ListHandler(level=logging.DEBUG)
     handler.setFormatter(logging.Formatter("%(message)s"))
-    pyfltr.cli.text_logger.addHandler(handler)
-    original_level = pyfltr.cli.text_logger.level
-    pyfltr.cli.text_logger.setLevel(logging.DEBUG)
+    pyfltr.cli.output_format.text_logger.addHandler(handler)
+    original_level = pyfltr.cli.output_format.text_logger.level
+    pyfltr.cli.output_format.text_logger.setLevel(logging.DEBUG)
     try:
         yield messages
     finally:
-        pyfltr.cli.text_logger.removeHandler(handler)
-        pyfltr.cli.text_logger.setLevel(original_level)
+        pyfltr.cli.output_format.text_logger.removeHandler(handler)
+        pyfltr.cli.output_format.text_logger.setLevel(original_level)
 
 
 def test_write_log(text_logs):
@@ -57,7 +58,7 @@ def test_write_log(text_logs):
         output="ok",
         elapsed=1.5,
     )
-    pyfltr.cli.write_log(result)
+    pyfltr.cli.pipeline.write_log(result)
     text = "\n".join(text_logs)
     assert "pytest" in text
     assert "returncode: 0" in text
@@ -75,7 +76,7 @@ def test_write_log_failed(text_logs):
         output="FAILED",
         elapsed=0.8,
     )
-    pyfltr.cli.write_log(result)
+    pyfltr.cli.pipeline.write_log(result)
     # 失敗時は@マークが使われる
     assert "@ returncode: 1" in "\n".join(text_logs)
 
@@ -89,7 +90,7 @@ def test_run_one_command_stream_mode_writes_detail_log(mocker, text_logs):
     mock_config = mocker.MagicMock()
 
     base_ctx = pyfltr.command.ExecutionBaseContext(config=mock_config, all_files=[], cache_store=None, cache_run_id=None)
-    pyfltr.cli._run_one_command("mypy", mock_args, base_ctx, per_command_log=True)
+    pyfltr.cli.pipeline._run_one_command("mypy", mock_args, base_ctx, per_command_log=True)
     text = "\n".join(text_logs)
     assert "mypy 実行中です..." in text
     # 成功時はエラーなし・生出力なしのためoutputは表示されない
@@ -105,7 +106,7 @@ def test_run_one_command_buffer_mode_shows_only_progress(mocker, text_logs):
     mock_config = mocker.MagicMock()
 
     base_ctx = pyfltr.command.ExecutionBaseContext(config=mock_config, all_files=[], cache_store=None, cache_run_id=None)
-    pyfltr.cli._run_one_command("mypy", mock_args, base_ctx, per_command_log=False)
+    pyfltr.cli.pipeline._run_one_command("mypy", mock_args, base_ctx, per_command_log=False)
     text = "\n".join(text_logs)
     assert "mypy 実行中です..." in text
     assert "mypy 完了" in text
@@ -116,7 +117,7 @@ def test_run_one_command_buffer_mode_shows_only_progress(mocker, text_logs):
 
 def test_render_results_orders_success_failed_summary(text_logs):
     """成功コマンド → 失敗コマンド → summary の順で出力されること。"""
-    config = pyfltr.config.create_default_config()
+    config = pyfltr.config.config.create_default_config()
     # 失敗コマンドはerrorsが空のため、生出力がフォールバック表示される
     results = [
         _make_result("mypy", returncode=1, output="MYPY_ERROR"),
@@ -124,7 +125,7 @@ def test_render_results_orders_success_failed_summary(text_logs):
         _make_result("pylint", returncode=0),
     ]
 
-    pyfltr.cli.render_results(results, config, include_details=True)
+    pyfltr.cli.pipeline.render_results(results, config, include_details=True)
 
     text = "\n".join(text_logs)
     # 成功コマンドのヘッダーが最初に来る
@@ -142,10 +143,10 @@ def test_render_results_orders_success_failed_summary(text_logs):
 
 def test_render_results_include_details_false_writes_only_summary(text_logs):
     """include_details=Falseのときはsummaryのみで詳細ログは出さない。"""
-    config = pyfltr.config.create_default_config()
+    config = pyfltr.config.config.create_default_config()
     results = [_make_result("mypy", returncode=1, output="MYPY_ERROR")]
 
-    pyfltr.cli.render_results(results, config, include_details=False)
+    pyfltr.cli.pipeline.render_results(results, config, include_details=False)
     text = "\n".join(text_logs)
     assert "summary" in text
     assert "MYPY_ERROR" not in text
@@ -153,11 +154,11 @@ def test_render_results_include_details_false_writes_only_summary(text_logs):
 
 def test_render_results_writes_warnings_section_before_summary(text_logs):
     """warnings引数が渡されるとsummary直前にwarningsセクションが出る。"""
-    config = pyfltr.config.create_default_config()
+    config = pyfltr.config.config.create_default_config()
     results = [_make_result("mypy", returncode=0)]
     warnings = [{"source": "config", "message": "pre-commit 設定ファイル不在"}]
 
-    pyfltr.cli.render_results(results, config, include_details=True, warnings=warnings)
+    pyfltr.cli.pipeline.render_results(results, config, include_details=True, warnings=warnings)
 
     text = "\n".join(text_logs)
     warning_pos = text.index("pre-commit 設定ファイル不在")
@@ -168,10 +169,10 @@ def test_render_results_writes_warnings_section_before_summary(text_logs):
 
 def test_render_results_skips_warnings_section_when_empty(text_logs):
     """warningsが空のときはwarnings見出しを出さない。"""
-    config = pyfltr.config.create_default_config()
+    config = pyfltr.config.config.create_default_config()
     results = [_make_result("mypy", returncode=0)]
 
-    pyfltr.cli.render_results(results, config, include_details=True, warnings=[])
+    pyfltr.cli.pipeline.render_results(results, config, include_details=True, warnings=[])
 
     # warningsセクションは出力されない（summary直前の見出しだけを検証するのは困難なため、
     # [source]形式のエントリ行が無いことで代替する）
@@ -180,7 +181,7 @@ def test_render_results_skips_warnings_section_when_empty(text_logs):
 
 def test_run_commands_with_cli_fail_fast_aborts_remaining_fixers(mocker):
     """--fail-fast発動時、fixステージのエラーで後続のformatter/linterをskipped化する。"""
-    config = pyfltr.config.create_default_config()
+    config = pyfltr.config.config.create_default_config()
     config.values["ruff-check"] = True
     config.values["ruff-format"] = True
     config.values["mypy"] = True
@@ -190,7 +191,7 @@ def test_run_commands_with_cli_fail_fast_aborts_remaining_fixers(mocker):
     mock_args = mocker.MagicMock()
 
     base_ctx = _make_ctx(config, []).base
-    results = pyfltr.cli.run_commands_with_cli(
+    results = pyfltr.cli.pipeline.run_commands_with_cli(
         ["ruff-check", "ruff-format", "mypy"],
         mock_args,
         base_ctx,
@@ -206,7 +207,7 @@ def test_run_commands_with_cli_fail_fast_aborts_remaining_fixers(mocker):
 
 def test_run_commands_with_cli_without_fail_fast_continues(mocker):
     """fail_fast=Falseなら1ツール失敗でも後続が走る。"""
-    config = pyfltr.config.create_default_config()
+    config = pyfltr.config.config.create_default_config()
     config.values["ruff-format"] = True
     config.values["mypy"] = True
     fail_result = _make_result("ruff-format", returncode=1, command_type="formatter", has_error=True)
@@ -219,7 +220,7 @@ def test_run_commands_with_cli_without_fail_fast_continues(mocker):
     mock_args = mocker.MagicMock()
 
     base_ctx = _make_ctx(config, []).base
-    results = pyfltr.cli.run_commands_with_cli(
+    results = pyfltr.cli.pipeline.run_commands_with_cli(
         ["ruff-format", "mypy"],
         mock_args,
         base_ctx,

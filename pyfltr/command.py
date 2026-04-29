@@ -22,15 +22,15 @@ import typing
 import natsort
 import psutil
 
-import pyfltr.config
+import pyfltr.cli.precommit_guidance
+import pyfltr.config.config
 import pyfltr.error_parser
 import pyfltr.paths
-import pyfltr.precommit
 import pyfltr.warnings_
 
 if typing.TYPE_CHECKING:
-    import pyfltr.cache
-    import pyfltr.only_failed
+    import pyfltr.state.cache
+    import pyfltr.state.only_failed
 
 logger = logging.getLogger(__name__)
 
@@ -268,7 +268,7 @@ _STRUCTURED_OUTPUT_SPECS: dict[str, tuple[str, _StructuredOutputSpec]] = {
 }
 
 
-def _get_structured_output_spec(command: str, config: pyfltr.config.Config) -> _StructuredOutputSpec | None:
+def _get_structured_output_spec(command: str, config: pyfltr.config.config.Config) -> _StructuredOutputSpec | None:
     """コマンドに対応する構造化出力仕様を返す。無効化されていればNone。"""
     for config_key, entry in _STRUCTURED_OUTPUT_SPECS.items():
         cmd = entry[0]
@@ -331,7 +331,7 @@ class ResolvedCommandline:
         return [self.executable, *self.prefix]
 
 
-def resolve_runner(command: str, config: pyfltr.config.Config) -> tuple[str, str]:
+def resolve_runner(command: str, config: pyfltr.config.config.Config) -> tuple[str, str]:
     """`{command}-runner` 設定値とその決定経緯を返す。
 
     返り値は `(runner, source)` で、`source` は次のいずれか。
@@ -346,7 +346,7 @@ def resolve_runner(command: str, config: pyfltr.config.Config) -> tuple[str, str
     if runner is None:
         # 既定値が登録されていないコマンド（カスタムコマンド等）はdirect扱い。
         return "direct", "default"
-    default_runner = pyfltr.config.DEFAULT_CONFIG.get(f"{command}-runner")
+    default_runner = pyfltr.config.config.DEFAULT_CONFIG.get(f"{command}-runner")
     source = "default" if runner == default_runner else "explicit"
     return str(runner), source
 
@@ -417,7 +417,7 @@ def _mise_env_signature() -> tuple[tuple[str, str | None], ...]:
 
 
 def _get_mise_active_tools(
-    config: pyfltr.config.Config,
+    config: pyfltr.config.config.Config,
     *,
     allow_side_effects: bool = False,
 ) -> MiseActiveToolsResult:
@@ -449,7 +449,7 @@ def _get_mise_active_tools(
 
 
 def _query_mise_active_tools(
-    config: pyfltr.config.Config,
+    config: pyfltr.config.config.Config,
     *,
     allow_side_effects: bool,
 ) -> MiseActiveToolsResult:
@@ -469,7 +469,7 @@ def _query_mise_active_tools(
 def _run_mise_with_trust(
     args: list[str],
     mise_env: dict[str, str],
-    config: pyfltr.config.Config,
+    config: pyfltr.config.config.Config,
     *,
     allow_side_effects: bool,
 ) -> tuple[int, str, str, bool]:
@@ -505,7 +505,7 @@ def _run_mise_with_trust(
 
 def _run_mise_ls_with_trust_retry(
     ls_args: list[str],
-    config: pyfltr.config.Config,
+    config: pyfltr.config.config.Config,
     mise_env: dict[str, str],
     *,
     allow_side_effects: bool,
@@ -572,7 +572,7 @@ def get_mise_active_tool_key(command: str) -> str | None:
 def _is_tool_active_in_mise_config(
     command: str,
     spec: BinToolSpec,
-    config: pyfltr.config.Config,
+    config: pyfltr.config.config.Config,
     *,
     allow_side_effects: bool,
 ) -> bool:
@@ -593,7 +593,7 @@ def _is_tool_active_in_mise_config(
 
 def build_commandline(
     command: str,
-    config: pyfltr.config.Config,
+    config: pyfltr.config.config.Config,
     *,
     allow_side_effects: bool = False,
 ) -> ResolvedCommandline:
@@ -738,7 +738,7 @@ def _resolve_direct_executable(bin_name: str) -> str:
 
 def _resolve_bin_commandline(
     command: str,
-    config: pyfltr.config.Config,
+    config: pyfltr.config.config.Config,
 ) -> tuple[str, list[str]]:
     """旧API互換の薄いwrapper（既存テスト・後方互換用）。
 
@@ -755,7 +755,7 @@ def _resolve_bin_commandline(
 
 def ensure_mise_available(
     resolved: ResolvedCommandline,
-    config: pyfltr.config.Config,
+    config: pyfltr.config.config.Config,
     *,
     command: str | None = None,
 ) -> ResolvedCommandline:
@@ -812,7 +812,7 @@ def ensure_mise_available(
 
 def _failed_resolution_result(
     command: str,
-    command_info: pyfltr.config.CommandInfo,
+    command_info: pyfltr.config.config.CommandInfo,
     message: str,
     *,
     files: int,
@@ -924,11 +924,11 @@ class ExecutionBaseContext:
     `run_pipeline` が1回だけ組み立て、CLI/TUI各経路へ渡す。
     """
 
-    config: pyfltr.config.Config
+    config: pyfltr.config.config.Config
     """実行設定（pyproject.tomlから読み込んだ設定値）。"""
     all_files: "list[pathlib.Path]"
     """対象ファイル一覧（ディレクトリ走査・excludeフィルタリング済み）。"""
-    cache_store: "pyfltr.cache.CacheStore | None"
+    cache_store: "pyfltr.state.cache.CacheStore | None"
     """ファイルhashキャッシュストア。`None` の場合はキャッシュ無効。"""
     cache_run_id: str | None
     """キャッシュ書き込み時の参照元run_id。`None` の場合はキャッシュ書き込みをスキップ。"""
@@ -946,7 +946,7 @@ class ExecutionContext:
     """パイプライン全体で不変のコンテキスト。"""
     fix_stage: bool = False
     """fixステージとして実行するか（fix-argsを適用して単発fix経路で動作する）。"""
-    only_failed_targets: "pyfltr.only_failed.ToolTargets | None" = None
+    only_failed_targets: "pyfltr.state.only_failed.ToolTargets | None" = None
     """`--only-failed` 経路でのツール別失敗ファイル集合。`None` の場合は `all_files` を使用。"""
     on_output: "typing.Callable[[str], None] | None" = None
     """サブプロセス出力の逐次コールバック。TUI経路でリアルタイム表示に使用。"""
@@ -958,7 +958,7 @@ class ExecutionContext:
     """サブプロセス終了直前のフック。`on_subprocess_start` と対になる。"""
 
     @property
-    def config(self) -> pyfltr.config.Config:
+    def config(self) -> pyfltr.config.config.Config:
         """`base.config` への委譲。"""
         return self.base.config
 
@@ -968,7 +968,7 @@ class ExecutionContext:
         return self.base.all_files
 
     @property
-    def cache_store(self) -> "pyfltr.cache.CacheStore | None":
+    def cache_store(self) -> "pyfltr.state.cache.CacheStore | None":
         """`base.cache_store` への委譲。"""
         return self.base.cache_store
 
@@ -1043,7 +1043,7 @@ class CommandResult:
         cls,
         *,
         command: str,
-        command_info: "pyfltr.config.CommandInfo | None" = None,
+        command_info: "pyfltr.config.config.CommandInfo | None" = None,
         commandline: list[str],
         returncode: int | None,
         output: str,
@@ -1115,7 +1115,7 @@ class CommandResult:
 
 def _resolve_js_commandline(
     command: str,
-    config: pyfltr.config.Config,
+    config: pyfltr.config.config.Config,
 ) -> tuple[str, list[str]]:
     """JSツール （textlint / markdownlint） の実行ファイルと引数prefixを決定する。
 
@@ -1420,9 +1420,9 @@ def _run_subprocess(
 
 
 def pick_targets(
-    only_failed_targets: "dict[str, pyfltr.only_failed.ToolTargets] | None",
+    only_failed_targets: "dict[str, pyfltr.state.only_failed.ToolTargets] | None",
     command: str,
-) -> "pyfltr.only_failed.ToolTargets | None":
+) -> "pyfltr.state.only_failed.ToolTargets | None":
     """`only_failed_targets` から当該ツールのToolTargetsを取り出す。
 
     `only_failed_targets` 自体が `None` の場合（`--only-failed` 未指定）は常に
@@ -1443,7 +1443,7 @@ class _ExecutionParams:
     dispatcherと各runner関数で参照する。
     """
 
-    command_info: pyfltr.config.CommandInfo
+    command_info: pyfltr.config.config.CommandInfo
     targets: list[pathlib.Path]
     commandline_prefix: list[str]
     commandline: list[str]
@@ -1463,7 +1463,7 @@ class _ExecutionParams:
 
 def build_invocation_argv(
     command: str,
-    config: pyfltr.config.Config,
+    config: pyfltr.config.config.Config,
     commandline_prefix: list[str],
     additional_args: list[str],
     *,
@@ -1516,11 +1516,11 @@ def build_invocation_argv(
 def _prepare_execution_params(
     command: str,
     args: argparse.Namespace,
-    config: pyfltr.config.Config,
+    config: pyfltr.config.config.Config,
     all_files: list[pathlib.Path],
     *,
     fix_stage: bool,
-    only_failed_targets: "pyfltr.only_failed.ToolTargets | None",
+    only_failed_targets: "pyfltr.state.only_failed.ToolTargets | None",
 ) -> "_ExecutionParams | CommandResult":
     """実行前の共通前処理を行い `_ExecutionParams` を返す。
 
@@ -1903,7 +1903,7 @@ class _CacheContext:
     `execute_command` のplain経路でのみ使う内部ヘルパー。
     """
 
-    cache_store: "pyfltr.cache.CacheStore"
+    cache_store: "pyfltr.state.cache.CacheStore"
     command: str
     key: str
 
@@ -1918,21 +1918,21 @@ class _CacheContext:
 
 def _prepare_cache_context(
     command: str,
-    command_info: pyfltr.config.CommandInfo,
-    config: pyfltr.config.Config,
+    command_info: pyfltr.config.config.CommandInfo,
+    config: pyfltr.config.config.Config,
     commandline: list[str],
     targets: list[pathlib.Path],
     additional_args: list[str],
     *,
     fix_args: list[str] | None,
-    cache_store: "pyfltr.cache.CacheStore | None",
+    cache_store: "pyfltr.state.cache.CacheStore | None",
 ) -> _CacheContext | None:
     """キャッシュ参照用のキー算出。対象外の場合はNoneを返す。"""
     if cache_store is None or not command_info.cacheable or fix_args is not None:
         return None
-    import pyfltr.cache  # pylint: disable=import-outside-toplevel
+    import pyfltr.state.cache  # pylint: disable=import-outside-toplevel
 
-    if not pyfltr.cache.is_cacheable(command, config, additional_args):
+    if not pyfltr.state.cache.is_cacheable(command, config, additional_args):
         return None
     structured_spec = _get_structured_output_spec(command, config)
     key = cache_store.compute_key(
@@ -1941,14 +1941,14 @@ def _prepare_cache_context(
         fix_stage=False,
         structured_output=structured_spec is not None,
         target_files=targets,
-        config_files=pyfltr.cache.resolve_config_files(command, config),
+        config_files=pyfltr.state.cache.resolve_config_files(command, config),
     )
     return _CacheContext(cache_store=cache_store, command=command, key=key)
 
 
 def _run_plain_command(
     command: str,
-    command_info: pyfltr.config.CommandInfo,
+    command_info: pyfltr.config.config.CommandInfo,
     commandline: list[str],
     targets: list[pathlib.Path],
     additional_args: list[str],
@@ -1956,10 +1956,10 @@ def _run_plain_command(
     on_output: typing.Callable[[str], None] | None,
     start_time: float,
     args: argparse.Namespace,
-    config: pyfltr.config.Config,
+    config: pyfltr.config.config.Config,
     *,
     fix_args: list[str] | None,
-    cache_store: "pyfltr.cache.CacheStore | None",
+    cache_store: "pyfltr.state.cache.CacheStore | None",
     cache_run_id: str | None,
     is_interrupted: typing.Callable[[], bool] | None = None,
     on_subprocess_start: typing.Callable[[], None] | None = None,
@@ -2033,13 +2033,13 @@ def _run_plain_command(
     return result
 
 
-def _build_auto_args(command: str, config: pyfltr.config.Config, user_args: list[str]) -> list[str]:
+def _build_auto_args(command: str, config: pyfltr.config.config.Config, user_args: list[str]) -> list[str]:
     """自動引数を構築する。
 
     AUTO_ARGSで定義されたフラグがTrueの場合、対応する引数を返す。
     ユーザーが *-argsやCLI引数で既に同じ文字列を指定している場合はスキップする。
     """
-    auto_entries = pyfltr.config.AUTO_ARGS.get(command, [])
+    auto_entries = pyfltr.config.config.AUTO_ARGS.get(command, [])
     if not auto_entries:
         return []
     user_args_joined = " ".join(user_args)
@@ -2054,7 +2054,7 @@ def _build_auto_args(command: str, config: pyfltr.config.Config, user_args: list
 
 
 def _build_subprocess_env(
-    config: pyfltr.config.Config,
+    config: pyfltr.config.config.Config,
     command: str,
     *,
     via_mise: bool = False,
@@ -2106,7 +2106,7 @@ def _looks_like_glab_host_missing(output: str) -> bool:
 
 def _execute_glab_ci_lint(
     command: str,
-    command_info: pyfltr.config.CommandInfo,
+    command_info: pyfltr.config.config.CommandInfo,
     commandline: list[str],
     targets: list[pathlib.Path],
     env: dict[str, str],
@@ -2168,10 +2168,10 @@ def _execute_glab_ci_lint(
 
 def _execute_pre_commit(
     command: str,
-    command_info: pyfltr.config.CommandInfo,
+    command_info: pyfltr.config.config.CommandInfo,
     commandline: list[str],
     targets: list[pathlib.Path],
-    config: pyfltr.config.Config,
+    config: pyfltr.config.config.Config,
     args: argparse.Namespace,
     env: dict[str, str] | None,
     on_output: typing.Callable[[str], None] | None,
@@ -2189,7 +2189,7 @@ def _execute_pre_commit(
     """
     # pre-commit配下から起動された場合は自身を再帰実行しない。
     # git commit → pre-commit → pyfltr fast → pre-commitの二重実行を防ぐ。
-    if pyfltr.precommit.is_running_under_precommit():
+    if pyfltr.cli.precommit_guidance.is_running_under_precommit():
         return CommandResult.from_run(
             command=command,
             command_info=command_info,
@@ -2215,7 +2215,7 @@ def _execute_pre_commit(
         )
 
     # SKIP環境変数を構築（pyfltr関連hookを除外して再帰を防止）
-    skip_value = pyfltr.precommit.build_skip_value(config, config_dir)
+    skip_value = pyfltr.cli.precommit_guidance.build_skip_value(config, config_dir)
     pre_commit_env = dict(env) if env is not None else dict(os.environ)
     if skip_value:
         existing_skip = pre_commit_env.get("SKIP", "")
@@ -2274,7 +2274,7 @@ def _execute_pre_commit(
 
 def _execute_linter_fix(
     command: str,
-    command_info: pyfltr.config.CommandInfo,
+    command_info: pyfltr.config.config.CommandInfo,
     commandline: list[str],
     targets: list[pathlib.Path],
     env: dict[str, str],
@@ -2346,9 +2346,9 @@ def _execute_linter_fix(
 
 def _execute_textlint_fix(
     command: str,
-    command_info: pyfltr.config.CommandInfo,
+    command_info: pyfltr.config.config.CommandInfo,
     commandline_prefix: list[str],
-    config: pyfltr.config.Config,
+    config: pyfltr.config.config.Config,
     targets: list[pathlib.Path],
     additional_args: list[str],
     env: dict[str, str],
@@ -2509,10 +2509,10 @@ def _strip_format_option(args: list[str]) -> list[str]:
 
 def _execute_ruff_format_two_step(
     command: str,
-    command_info: pyfltr.config.CommandInfo,
+    command_info: pyfltr.config.config.CommandInfo,
     format_commandline: list[str],
     targets: list[pathlib.Path],
-    config: pyfltr.config.Config,
+    config: pyfltr.config.config.Config,
     args: argparse.Namespace,
     env: dict[str, str],
     on_output: typing.Callable[[str], None] | None,
@@ -2606,9 +2606,9 @@ def _execute_ruff_format_two_step(
 
 def _execute_taplo_two_step(
     command: str,
-    command_info: pyfltr.config.CommandInfo,
+    command_info: pyfltr.config.config.CommandInfo,
     commandline_prefix: list[str],
-    config: pyfltr.config.Config,
+    config: pyfltr.config.config.Config,
     targets: list[pathlib.Path],
     additional_args: list[str],
     *,
@@ -2768,9 +2768,9 @@ def _execute_taplo_two_step(
 
 def _execute_shfmt_two_step(
     command: str,
-    command_info: pyfltr.config.CommandInfo,
+    command_info: pyfltr.config.config.CommandInfo,
     commandline_prefix: list[str],
-    config: pyfltr.config.Config,
+    config: pyfltr.config.config.Config,
     targets: list[pathlib.Path],
     additional_args: list[str],
     *,
@@ -2929,9 +2929,9 @@ def _execute_shfmt_two_step(
 
 def _execute_prettier_two_step(
     command: str,
-    command_info: pyfltr.config.CommandInfo,
+    command_info: pyfltr.config.config.CommandInfo,
     commandline_prefix: list[str],
-    config: pyfltr.config.Config,
+    config: pyfltr.config.config.Config,
     targets: list[pathlib.Path],
     additional_args: list[str],
     *,
@@ -3199,7 +3199,7 @@ def _warn_protected_identifier_corruption(
                 )
 
 
-def expand_all_files(targets: list[pathlib.Path], config: pyfltr.config.Config) -> list[pathlib.Path]:
+def expand_all_files(targets: list[pathlib.Path], config: pyfltr.config.config.Config) -> list[pathlib.Path]:
     """対象ファイルの一括展開。
 
     ディレクトリ走査・excludeチェック・gitignoreフィルタリングを1回だけ実行し、
@@ -3380,7 +3380,7 @@ def _matches_exclude_patterns(path: pathlib.Path, patterns: list[str]) -> str | 
     return None
 
 
-def excluded(path: pathlib.Path, config: pyfltr.config.Config) -> tuple[str, str] | None:
+def excluded(path: pathlib.Path, config: pyfltr.config.config.Config) -> tuple[str, str] | None:
     """無視パターンチェック。一致した場合は（設定キー名, 一致パターン）を、無一致の場合はNoneを返す。"""
     for key in ("exclude", "extend-exclude"):
         matched = _matches_exclude_patterns(path, config[key])

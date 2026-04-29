@@ -2,7 +2,7 @@
 
 import hashlib
 
-import pyfltr.code_quality
+import pyfltr.output.code_quality
 from tests.conftest import make_command_result as _make_result
 from tests.conftest import make_error_location as _make_error
 
@@ -14,7 +14,7 @@ def test_build_payload_basic() -> None:
     errors[0].severity = "error"
     result = _make_result("ruff-check", returncode=1, errors=errors)
 
-    payload = pyfltr.code_quality.build_code_quality_payload([result])
+    payload = pyfltr.output.code_quality.build_code_quality_payload([result])
 
     assert isinstance(payload, list)
     assert len(payload) == 1
@@ -41,7 +41,7 @@ def test_build_payload_severity_mapping() -> None:
     # 4件目はseverity未設定のまま
     result = _make_result("tool", returncode=1, errors=errors)
 
-    payload = pyfltr.code_quality.build_code_quality_payload([result])
+    payload = pyfltr.output.code_quality.build_code_quality_payload([result])
     severities = [issue["severity"] for issue in payload]
     assert severities == ["major", "minor", "info", "minor"]
 
@@ -51,7 +51,7 @@ def test_build_payload_check_name_without_rule() -> None:
     errors = [_make_error("mypy", "a.py", 1, "bad")]
     result = _make_result("mypy", returncode=1, errors=errors)
 
-    payload = pyfltr.code_quality.build_code_quality_payload([result])
+    payload = pyfltr.output.code_quality.build_code_quality_payload([result])
     assert payload[0]["check_name"] == "mypy"
 
 
@@ -64,8 +64,8 @@ def test_build_payload_fingerprint_deterministic() -> None:
 
     r1 = _make_result("ruff-check", returncode=1, errors=[err1])
     r2 = _make_result("ruff-check", returncode=1, errors=[err2])
-    p1 = pyfltr.code_quality.build_code_quality_payload([r1])
-    p2 = pyfltr.code_quality.build_code_quality_payload([r2])
+    p1 = pyfltr.output.code_quality.build_code_quality_payload([r1])
+    p2 = pyfltr.output.code_quality.build_code_quality_payload([r2])
     assert p1[0]["fingerprint"] == p2[0]["fingerprint"]
 
     expected = hashlib.sha256(b"ruff-check\tsrc/foo.py\t10\t3\tF401\tunused import").hexdigest()
@@ -80,7 +80,7 @@ def test_build_payload_fingerprint_differs_by_rule() -> None:
     err2.rule = "E501"
     r = _make_result("ruff-check", returncode=1, errors=[err1, err2])
 
-    payload = pyfltr.code_quality.build_code_quality_payload([r])
+    payload = pyfltr.output.code_quality.build_code_quality_payload([r])
     assert payload[0]["fingerprint"] != payload[1]["fingerprint"]
 
 
@@ -89,13 +89,13 @@ def test_build_payload_begin_defaults_to_one() -> None:
     errors = [_make_error("pytest", "tests/a.py", 0, "FAIL")]
     result = _make_result("pytest", returncode=1, errors=errors)
 
-    payload = pyfltr.code_quality.build_code_quality_payload([result])
+    payload = pyfltr.output.code_quality.build_code_quality_payload([result])
     assert payload[0]["location"]["lines"]["begin"] == 1
 
 
 def test_build_payload_empty() -> None:
     """エラー無しなら空配列。"""
     result = _make_result("mypy", returncode=0)
-    payload = pyfltr.code_quality.build_code_quality_payload([result])
+    payload = pyfltr.output.code_quality.build_code_quality_payload([result])
     assert not payload
     assert isinstance(payload, list)

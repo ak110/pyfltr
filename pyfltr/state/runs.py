@@ -1,10 +1,10 @@
 """`list-runs` / `show-run` サブコマンドの実装。
 
-実行アーカイブ（`archive.py`）に保存されたrunの読み取り経路をCLIから提供する。
-パートFで追加予定のMCPサーバーでも本モジュールの読み取り処理を再利用する想定。
+実行アーカイブ（`state/archive.py`）に保存されたrunの読み取り経路をCLIから提供する。
+MCPサーバーでも本モジュールの読み取り処理を再利用する想定。
 
 サブパーサー登録は`register_subparsers()`、処理本体は`execute_list_runs()` /
-`execute_show_run()`が担う。`main.py`からは引数パース済みの`argparse.Namespace`
+`execute_show_run()`が担う。`cli/main.py`からは引数パース済みの`argparse.Namespace`
 を受け取り、終了コードを返すだけの薄いAPIにする。
 """
 
@@ -16,8 +16,8 @@ import logging
 import sys
 import typing
 
-import pyfltr.archive
-import pyfltr.cli
+import pyfltr.cli.output_format
+import pyfltr.state.archive
 
 _OUTPUT_FORMATS: tuple[str, ...] = ("text", "json", "jsonl")
 _VALID_OUTPUT_FORMATS: frozenset[str] = frozenset(_OUTPUT_FORMATS)
@@ -48,9 +48,9 @@ def register_subparsers(subparsers: typing.Any) -> None:
         default=None,
         help=(
             "出力形式を指定する (既定: text)。"
-            f"未指定時は環境変数 {pyfltr.cli.OUTPUT_FORMAT_ENV} を、"
-            f"{pyfltr.cli.AI_AGENT_ENV} が設定されていれば jsonl を採用する"
-            f"(優先順位: CLI > {pyfltr.cli.OUTPUT_FORMAT_ENV} > {pyfltr.cli.AI_AGENT_ENV} > text)。"
+            f"未指定時は環境変数 {pyfltr.cli.output_format.OUTPUT_FORMAT_ENV} を、"
+            f"{pyfltr.cli.output_format.AI_AGENT_ENV} が設定されていれば jsonl を採用する"
+            f"(優先順位: CLI > {pyfltr.cli.output_format.OUTPUT_FORMAT_ENV} > {pyfltr.cli.output_format.AI_AGENT_ENV} > text)。"
         ),
     )
 
@@ -79,27 +79,27 @@ def register_subparsers(subparsers: typing.Any) -> None:
         default=None,
         help=(
             "出力形式を指定する (既定: text)。"
-            f"未指定時は環境変数 {pyfltr.cli.OUTPUT_FORMAT_ENV} を、"
-            f"{pyfltr.cli.AI_AGENT_ENV} が設定されていれば jsonl を採用する"
-            f"(優先順位: CLI > {pyfltr.cli.OUTPUT_FORMAT_ENV} > {pyfltr.cli.AI_AGENT_ENV} > text)。"
+            f"未指定時は環境変数 {pyfltr.cli.output_format.OUTPUT_FORMAT_ENV} を、"
+            f"{pyfltr.cli.output_format.AI_AGENT_ENV} が設定されていれば jsonl を採用する"
+            f"(優先順位: CLI > {pyfltr.cli.output_format.OUTPUT_FORMAT_ENV} > {pyfltr.cli.output_format.AI_AGENT_ENV} > text)。"
         ),
     )
 
 
 def execute_list_runs(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
     """`list-runs` サブコマンドの処理本体。"""
-    output_format = pyfltr.cli.resolve_output_format(
+    output_fmt = pyfltr.cli.output_format.resolve_output_format(
         parser,
         args.output_format,
         valid_values=_VALID_OUTPUT_FORMATS,
         ai_agent_default="jsonl",
     ).format
-    with _stdout_owned(output_format):
-        store = pyfltr.archive.ArchiveStore()
+    with _stdout_owned(output_fmt):
+        store = pyfltr.state.archive.ArchiveStore()
         summaries = store.list_runs(limit=args.limit)
-        if output_format == "text":
+        if output_fmt == "text":
             _print_list_runs_text(summaries)
-        elif output_format == "json":
+        elif output_fmt == "json":
             _print_json({"runs": [_summary_to_dict(s) for s in summaries]})
         else:
             for summary in summaries:
@@ -109,7 +109,7 @@ def execute_list_runs(parser: argparse.ArgumentParser, args: argparse.Namespace)
 
 def execute_show_run(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
     """`show-run` サブコマンドの処理本体。"""
-    output_format = pyfltr.cli.resolve_output_format(
+    output_fmt = pyfltr.cli.output_format.resolve_output_format(
         parser,
         args.output_format,
         valid_values=_VALID_OUTPUT_FORMATS,
@@ -130,8 +130,8 @@ def execute_show_run(parser: argparse.ArgumentParser, args: argparse.Namespace) 
         sys.stderr.write("エラー: --output は --commands に単一ツール指定のみ許可する。\n")
         return 1
 
-    with _stdout_owned(output_format):
-        store = pyfltr.archive.ArchiveStore()
+    with _stdout_owned(output_fmt):
+        store = pyfltr.state.archive.ArchiveStore()
         try:
             run_id = resolve_run_id(store, raw_run_id)
         except RunIdError as e:
@@ -145,17 +145,17 @@ def execute_show_run(parser: argparse.ArgumentParser, args: argparse.Namespace) 
             return 1
 
         if output_mode and tools:
-            return _show_tool_output(store, run_id, tools[0], output_format)
+            return _show_tool_output(store, run_id, tools[0], output_fmt)
         if tools:
-            return _show_tools_detail(store, run_id, tools, output_format)
-        return _show_run_overview(store, run_id, meta, output_format)
+            return _show_tools_detail(store, run_id, tools, output_fmt)
+        return _show_run_overview(store, run_id, meta, output_fmt)
 
 
 class RunIdError(Exception):
     """run_id解決に失敗した際の例外。"""
 
 
-def resolve_run_id(store: pyfltr.archive.ArchiveStore, raw: str) -> str:
+def resolve_run_id(store: pyfltr.state.archive.ArchiveStore, raw: str) -> str:
     """run_id指定を解決する。
 
     `latest`エイリアス → 完全一致 → 前方一致の順に試す。前方一致が複数
@@ -184,7 +184,7 @@ def resolve_run_id(store: pyfltr.archive.ArchiveStore, raw: str) -> str:
     raise RunIdError(f"run_id が見つからない: {raw!r}")
 
 
-def _summary_to_dict(summary: pyfltr.archive.RunSummary) -> dict[str, typing.Any]:
+def _summary_to_dict(summary: pyfltr.state.archive.RunSummary) -> dict[str, typing.Any]:
     """`RunSummary`を出力用dictに変換する。"""
     return {
         "run_id": summary.run_id,
@@ -196,7 +196,7 @@ def _summary_to_dict(summary: pyfltr.archive.RunSummary) -> dict[str, typing.Any
     }
 
 
-def _print_list_runs_text(summaries: list[pyfltr.archive.RunSummary]) -> None:
+def _print_list_runs_text(summaries: list[pyfltr.state.archive.RunSummary]) -> None:
     """`list-runs` の text 出力（固定幅テーブル）。"""
     if not summaries:
         print("(no runs)")
@@ -221,7 +221,7 @@ def _print_list_runs_text(summaries: list[pyfltr.archive.RunSummary]) -> None:
 
 
 def _show_run_overview(
-    store: pyfltr.archive.ArchiveStore,
+    store: pyfltr.state.archive.ArchiveStore,
     run_id: str,
     meta: dict[str, typing.Any],
     output_format: str,
@@ -240,7 +240,7 @@ def _show_run_overview(
 
 
 def _collect_tool_summaries(
-    store: pyfltr.archive.ArchiveStore,
+    store: pyfltr.state.archive.ArchiveStore,
     run_id: str,
 ) -> list[dict[str, typing.Any]]:
     """`tools/`配下から各ツールの要約（status / has_error / diagnostics）を集める。"""
@@ -289,7 +289,7 @@ def _print_run_overview_text(
 
 
 def _show_tools_detail(
-    store: pyfltr.archive.ArchiveStore,
+    store: pyfltr.state.archive.ArchiveStore,
     run_id: str,
     tools: list[str],
     output_format: str,
@@ -391,7 +391,7 @@ def _format_message_line(file_part: str, message: dict[str, typing.Any]) -> str:
 
 
 def _show_tool_output(
-    store: pyfltr.archive.ArchiveStore,
+    store: pyfltr.state.archive.ArchiveStore,
     run_id: str,
     tool: str,
     output_format: str,
