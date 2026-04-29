@@ -199,26 +199,47 @@ formatter・tester・依存型linter・外部参照linter・階層型設定linte
 
 ### LLM向けガイダンス
 
-JSONLはLLMエージェントが入力として読むケースが多いため、フィールドの意味と失敗時の次アクションを
-英語で明示的に同梱する。
-英語にするのはトークン効率（日本語より短くなりやすい）と汎用性（LLMの入力として標準的）のため。
+JSONLはLLMエージェントが入力として読むケースが多いため、失敗時の次アクションと修正ヒントを明示的に同梱する。
+`summary.guidance`・`command.hints`はいずれも英語で記す（トークン効率と汎用性のため）。
+粒度・性質の異なる2種で使い分ける。
 
-- `header.schema_hints`: 毎runに付与する英語の辞書。
-  既定はLLMが読み違いやすい非自明フィールドのみに絞った短縮版、`-v` / `--verbose`指定時に
-  フィールド単位の詳細を含むフル版に切り替わる
-- `summary.applied_fixes`: fixステージ・formatterステージで実際にファイル内容が変化した対象のパス一覧
+各フィールドの役割は粒度・性質で使い分ける。
+フィールドの意味の詳細説明は[CLIコマンド](../guide/usage.md#jsonl)の「jsonlスキーマ」節に集約する。
+
+- `command.hints`: ruleごとの修正ヒント短文の辞書（ruleの識別子→1文ヒント）。
+  textlintコマンドの場合は`messages[].end_col`キーで`end_col`が累積位置である旨の仕様も同梱する。
+  空の場合はフィールドごと省略する
+- `command.hint_urls`: ruleごとのドキュメントURL辞書（ruleの識別子→URL）。
+  URLを生成できたruleのみ含み、空の場合はフィールドごと省略する
+- `summary.applied_fixes`: fixステージ・formatterステージで実際にファイル内容が変化した対象のパス一覧（ソート済み）。
+  変化がなかった場合は省略される
 - `summary.guidance`: `failed + resolution_failed > 0`のとき、または`applied_fixes`が非空のときに付与する英語の配列。
+  パイプライン全体の次アクションをbullet配列で示す。
   失敗時は`command.retry_command`の参照、`--only-failed`再実行、`diagnostic.fix`の解釈、
   `pyfltr show-run <run_id>`の案内の4項目を並べる。
   `applied_fixes`非空時はformatter/fix-stageの書き換えだけでは再実行が不要である旨の注記を末尾に追加する
 
-### hint_urls集約
+### command.hints / hint_urls 集約
 
-ルールドキュメントURLは`diagnostic`本体に含めず、`command`レコード末尾の`hint_urls`辞書に集約する。
-キーはrule ID、値はURL。
-URLを生成できたruleのみ含み、1件も無ければフィールドごと省略する。
-JSONL本体・`tool.json`・Pydanticモデルのいずれもキー名を`hint_urls`（アンダースコア）で統一する。
-JSON consumerが`record["hint_urls"]`へドット記法アクセスできるようにするため、ハイフンは採用しない。
+修正ヒントとルールドキュメントURLは`diagnostic`本体に含めず、`command`レコードの`hints` / `hint_urls`辞書に集約する。
+キーはrule IDで、形式は`<plugin>/<rule>`または単一rule名。
+textlintコマンドの場合のみ、`hints`に`messages[].end_col`参照記法のキーで累積位置仕様を追加する。
+
+集約は先勝ちで行う。複数の`diagnostic`レコードで同一ruleに異なるhintが現れた場合は最初の値を採用し、
+warningログを出力する。
+
+`hint_urls`はURLを生成できたruleのみ含み、空であればフィールドごと省略する。
+`hints`もヒントが1件も無ければフィールドごと省略する。
+JSONL本体・`tool.json`・Pydanticモデルのいずれもキー名を`hint_urls` / `hints`（アンダースコア）で統一する。
+JSON consumerが`record["hint_urls"]`等へドット記法アクセスできるようにするため、ハイフンは採用しない。
+
+### summary.commands_summary の0件省略
+
+`summary.commands_summary`配下の統計フィールドは、状態判定に使う項目と付加情報で省略規則を使い分ける。
+
+- 常時出力（0件でも省略しない）: `succeeded` / `formatted` / `skipped` / `failed`。
+  特に`failed`は0件であること自体がエラーなし判定に直結するため、省略は不可
+- 0件で省略する: `resolution_failed`。ツール解決が成功する通常プロジェクトでは常に0件となる付加情報のため
 
 ### retry_command
 

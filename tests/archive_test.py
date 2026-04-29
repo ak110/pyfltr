@@ -95,6 +95,31 @@ def test_write_tool_result_omits_hint_urls_when_no_urls(tmp_path: pathlib.Path) 
     assert "hint_urls" not in tool_meta
 
 
+def test_write_tool_result_stores_hints(tmp_path: pathlib.Path) -> None:
+    """hint付きのErrorLocationのとき、tool.jsonにhintsが保存される。"""
+    store = _make_store(tmp_path)
+    run_id = store.start_run(commands=["textlint"])
+
+    error = _make_error("textlint", "a.md", 1, "長い文", col=1)
+    error.rule = "ja-technical-writing/sentence-length"
+    error.hint = "句点で文を区切る"
+    result = _make_result("textlint", returncode=1, errors=[error])
+    store.write_tool_result(run_id, result)
+
+    tool_meta = json.loads((tmp_path / "runs" / run_id / "tools" / "textlint" / "tool.json").read_text(encoding="utf-8"))
+    assert tool_meta["hints"] == {"ja-technical-writing/sentence-length": "句点で文を区切る"}
+
+
+def test_write_tool_result_omits_hints_when_no_hints(tmp_path: pathlib.Path) -> None:
+    """hintを持たない指摘のみならtool.jsonにhintsキーを出さない。"""
+    store = _make_store(tmp_path)
+    run_id = store.start_run(commands=["mypy"])
+    result = _make_result("mypy", returncode=1, errors=[_make_error("mypy", "a.py", 1, "boom")])
+    store.write_tool_result(run_id, result)
+    tool_meta = json.loads((tmp_path / "runs" / run_id / "tools" / "mypy" / "tool.json").read_text(encoding="utf-8"))
+    assert "hints" not in tool_meta
+
+
 def test_finalize_run(tmp_path: pathlib.Path) -> None:
     """finalize_runでmeta.jsonにexit_code / finished_atが追加される。"""
     store = _make_store(tmp_path)

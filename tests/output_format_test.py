@@ -543,19 +543,6 @@ def test_build_lines_header_first(default_config):
     assert parsed[-1]["kind"] == "summary"
 
 
-def test_build_lines_header_verbose_switches_hints(default_config):
-    """verbose=Trueでschema_hintsがフル版に切り替わる（commandsは既定でも配列）。"""
-    result = _make_result("mypy", returncode=0)
-    lines = pyfltr.llm_output.build_lines(
-        [result], default_config, exit_code=0, commands=["mypy", "ruff-check"], files=10, verbose=True
-    )
-    parsed = [json.loads(line) for line in lines]
-    assert parsed[0]["kind"] == "header"
-    assert parsed[0]["commands"] == ["mypy", "ruff-check"]
-    assert "commands_count" not in parsed[0]
-    assert "diagnostic.messages" in parsed[0]["schema_hints"]
-
-
 def test_build_lines_no_header_when_omitted(default_config):
     """commands/filesを省略するとheader行は出力されないこと。"""
     result = _make_result("mypy", returncode=0)
@@ -575,16 +562,6 @@ def test_write_jsonl_header_stdout(capsys):
     assert parsed[0]["commands"] == ["ruff-format", "mypy"]
     assert "commands_count" not in parsed[0]
     assert parsed[0]["files"] == 5
-
-
-def test_write_jsonl_header_stdout_verbose(capsys):
-    """`write_jsonl_header`のverbose=Trueでフルschema_hintsが出る（commandsは常に配列）。"""
-    _configure_structured_stdout()
-    pyfltr.llm_output.write_jsonl_header(commands=["ruff-format", "mypy"], files=5, verbose=True)
-    captured = capsys.readouterr()
-    parsed = [json.loads(line) for line in captured.out.splitlines()]
-    assert parsed[0]["commands"] == ["ruff-format", "mypy"]
-    assert "diagnostic.messages" in parsed[0]["schema_hints"]
 
 
 # ---------------------------------------------------------------------------

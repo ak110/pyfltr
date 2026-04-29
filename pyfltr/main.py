@@ -859,7 +859,6 @@ def run_pipeline(
         stream=per_command_log,
         include_details=include_details_from_stream,
         structured_stdout=structured_stdout,
-        verbose=bool(getattr(args, "verbose", False)),
     )
 
     formatter.on_start(ctx)
@@ -910,7 +909,6 @@ def run_pipeline(
             stream=False,
             include_details=True,
             structured_stdout=structured_stdout,
-            verbose=bool(getattr(args, "verbose", False)),
         )
     else:
         # 非TUIモード: 既定はバッファリング （最後にまとめて出力）、`--stream` で従来の即時出力。

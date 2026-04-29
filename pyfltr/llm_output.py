@@ -5,7 +5,8 @@
 変換して書き出す。
 
 `diagnostic`は`(command, file)`単位で集約し、個別指摘は`messages[]`に格納する。
-ルールURLはcommand単位の`hint_urls`辞書へ寄せることで、LLM入力時のトークン浪費を抑える。
+ルールURLはcommand単位の`hint_urls`辞書へ、ルール別の短い修正ヒントは`hints`辞書へそれぞれ集約し、
+LLM入力時のトークン浪費を抑える。
 """
 
 import importlib.metadata
@@ -75,7 +76,7 @@ def build_command_lines(
         sorted_errors = sorted_errors[:diagnostic_limit]
         diagnostics_truncated = True
 
-    diagnostic_records, hint_urls = aggregate_diagnostics(sorted_errors)
+    diagnostic_records, hint_urls, hints = aggregate_diagnostics(sorted_errors)
 
     lines: list[str] = []
     for record in diagnostic_records:
@@ -88,6 +89,7 @@ def build_command_lines(
                 diagnostic_total=diagnostic_total if diagnostics_truncated else None,
                 config=config,
                 hint_urls=hint_urls,
+                hints=hints,
             )
         )
     )
@@ -96,29 +98,30 @@ def build_command_lines(
 
 def aggregate_diagnostics(
     errors: typing.Iterable[pyfltr.error_parser.ErrorLocation],
-) -> tuple[list[dict[str, typing.Any]], dict[str, str]]:
+) -> tuple[list[dict[str, typing.Any]], dict[str, str], dict[str, str]]:
     """`ErrorLocation`列を`(command, file)`単位の集約dictへ変換する。
 
-    戻り値:
-        - `diagnostic`レコードのリスト。各要素は
-          `{"kind": "diagnostic", "command": ..., "file": ..., "messages": [...]}`。
-          `messages`は`(line, col or 0, rule or "")`昇順で並ぶ。
-          ruleキーを含めるのは、同一`(file, line, col)`に複数ルールの指摘が
-          重なる場合でも安定した順序を保証するため（ruleなし要素は空文字列扱いで
-          先頭側にまとまる）。
-        - rule→URL辞書（アンダースコア区切りキー`hint_urls`としてcommandレコードに埋め込む用）。
-          URLが生成できたruleのみ含む。
+    戻り値は`(diagnostic_records, hint_urls, hints)`の3要素タプル。
 
-    同一ruleに異なるURLが紛れた場合は先に出現した値を採用してwarningログを
-    残す。先勝ち採用にしているのは、URLがプラグインバージョン差やURL体系切替の
-    過渡期に揺れる可能性があり、ツール単位の`hint_urls`辞書としては1ルール
-    1URLに束ねる方がLLM入力時の混乱が少ないため。逸脱はwarningログで気付ける
-    余地を残す。
+    - `diagnostic_records`: `diagnostic`レコードのリスト。各要素は
+      `{"kind": "diagnostic", "command": ..., "file": ..., "messages": [...]}`。
+      `messages`は`(line, col or 0, rule or "")`昇順で並ぶ。
+      ruleキーを含めるのは、同一`(file, line, col)`に複数ルールの指摘が
+      重なる場合でも安定した順序を保証するため（ruleなし要素は空文字列扱いで
+      先頭側にまとまる）。
+    - `hint_urls`: rule→URL辞書（`command.hint_urls`キーで埋め込む用）。URLが生成できたruleのみ含む。
+    - `hints`: rule→短い修正ヒント辞書（`command.hints`キーで埋め込む用）。
+      `ErrorLocation.hint`が非Noneのruleのみ含む。
+
+    同一ruleに異なる値（URL / hint）が紛れた場合は先に出現した値を採用してwarningログを残す。
+    先勝ち採用にしているのは、ツール単位の辞書としては1ルール1値に束ねる方がLLM入力時の混乱が
+    少ないため。逸脱はwarningログで気付ける余地を残す。
     集約のキー順は入力順（`sort_errors()`済み）を尊重する。
     """
     groups: dict[tuple[str, str], list[pyfltr.error_parser.ErrorLocation]] = {}
     group_order: list[tuple[str, str]] = []
     hint_urls: dict[str, str] = {}
+    hints: dict[str, str] = {}
     for error in errors:
         key = (error.command, error.file)
         if key not in groups:
@@ -136,6 +139,17 @@ def aggregate_diagnostics(
                     existing,
                     error.rule_url,
                 )
+        if error.rule is not None and error.hint is not None:
+            existing_hint = hints.get(error.rule)
+            if existing_hint is None:
+                hints[error.rule] = error.hint
+            elif existing_hint != error.hint:
+                logger.warning(
+                    "aggregate_diagnostics: rule %r に複数のhintが存在する。先勝ち採用: %s (後続 %s を無視)",
+                    error.rule,
+                    existing_hint,
+                    error.hint,
+                )
 
     records: list[dict[str, typing.Any]] = []
     for key in group_order:
@@ -152,7 +166,7 @@ def aggregate_diagnostics(
                 "messages": [_build_message_dict(e) for e in sorted_messages],
             }
         )
-    return records, hint_urls
+    return records, hint_urls, hints
 
 
 def build_lines(
@@ -166,7 +180,6 @@ def build_lines(
     run_id: str | None = None,
     launcher_prefix: list[str] | None = None,
     fully_excluded_files: list[str] | None = None,
-    verbose: bool = False,
 ) -> list[str]:
     """CommandResult群からJSONL各行を生成する。
 
@@ -180,8 +193,6 @@ def build_lines(
     `warnings`は`pyfltr.warnings_.collected_warnings()`の返り値を想定する。
     `run_id`が指定されていればheaderレコードに埋め込む。
     `launcher_prefix`が指定されていれば`summary.guidance`内の起動コマンド表記に反映する。
-    `verbose=True`でheaderの`schema_hints`をフル版に切り替える
-    （既定は短縮版。`commands`配列は常に出力する）。
     """
     ordered = sorted(results, key=lambda r: _command_index(config, r.command))
 
@@ -194,7 +205,6 @@ def build_lines(
                     commands,
                     files,
                     run_id=run_id,
-                    verbose=verbose,
                     mise_active_tools=collect_mise_active_tools_for_header(commands, config),
                 )
             )
@@ -232,7 +242,6 @@ def write_jsonl_header(
     files: int,
     *,
     run_id: str | None = None,
-    verbose: bool = False,
     config: pyfltr.config.Config | None = None,
 ) -> None:
     """header行を構造化出力loggerに書き出す（ストリーミングモード用）。
@@ -241,7 +250,6 @@ def write_jsonl_header(
     headerレコードに含める（アーカイブ参照時の識別キー）。
     出力先は`pyfltr.cli.configure_structured_output()`が設定したhandlerに従う
     （stdoutもしくは`--output-file`のFileHandler）。
-    `verbose=True`でheaderの`schema_hints`をフル版に切り替える（既定は短縮版）。
     `config`が渡された場合、mise経路を使うrunに限り
     `mise_active_tools`フィールドへ取得状況を露出する。
     """
@@ -253,7 +261,6 @@ def write_jsonl_header(
                     commands,
                     files,
                     run_id=run_id,
-                    verbose=verbose,
                     mise_active_tools=mise_active_tools,
                 )
             )
@@ -330,121 +337,17 @@ def _dump(record: dict[str, typing.Any]) -> str:
     return json.dumps(record, ensure_ascii=False, separators=(",", ":"))
 
 
-_SCHEMA_HINTS_COMPACT: dict[str, str] = {
-    "command.retry_command": "shell to re-run only failing files; failure runs only",
-    "command.cached_elapsed": "previous-run elapsed seconds restored with cached=true; this run skipped execution",
-    "command.hint_urls": "rule id -> docs URL map; omitted when no URLs resolved",
-    "messages[].fix": "safe/unsafe/suggested = auto-fixable; none = no fix; omitted = no info",
-    "messages[].end_col": "textlint reports end_col as cumulative offset from text-node start, not in-line offset",
-}
-"""JSONL出力フィールドのうち、LLMが読み違いやすい項目だけに絞った英語ガイド。
-
-`-v`無しの通常runではheaderの`schema_hints`にこの短縮版を埋め込む。
-kind構造や明らかな用途（diagnostic/warning/summaryの意味など）はLLM側で
-文脈から推測できるため含めない。
-ただし利用者が踏みやすい固有仕様（textlintのend_col累積位置など）は短縮版にも残す。
-フル版が欲しい場合は`-v`指定するか
-`get_schema_hints(full=True)`で取得する案内はドキュメント側に委ね、本辞書には
-案内文を含めない（短縮版自身の使い方説明はトークン効率を下げるため省略する）。
-"""
-
-
-_SCHEMA_HINTS: dict[str, str] = {
-    "diagnostic.messages": (
-        "per (command,file) array of individual findings sorted by line/col/rule;"
-        " each item carries line/col/rule/severity/fix/msg (optional fields omitted when absent)"
-    ),
-    "diagnostic.messages.fix": (
-        "safe/unsafe/suggested = auto-fixable; none = command reports no auto-fix; omitted = no fix info from command"
-    ),
-    "diagnostic.messages.severity": "error/warning/info normalised across commands; omitted when not reported",
-    "diagnostic.messages.hint": (
-        "optional short fix guidance for this specific rule (e.g., textlint sentence-length);"
-        " omitted when the rule has no pre-registered hint"
-    ),
-    "diagnostic.messages.end_line": (
-        "optional end line of the violation range; currently emitted only by textlint;"
-        " omitted when the source command does not report a range"
-    ),
-    "diagnostic.messages.end_col": (
-        "optional end column of the violation range; currently emitted only by textlint."
-        " textlint reports columns as cumulative offsets from the text-node start, not in-line offsets;"
-        " omitted when the source command does not report a range"
-    ),
-    "summary.commands_summary": (
-        "per-command status counts grouped into no_issues / needs_action."
-        " inspect needs_action alone to decide whether any work remains"
-    ),
-    "summary.commands_summary.no_issues": (
-        "counts of statuses that need no follow-up action: succeeded / formatted / skipped."
-        " formatter rewrites are classified here because re-running pyfltr is not required by project policy"
-    ),
-    "summary.commands_summary.needs_action": (
-        "counts of statuses that require follow-up: failed / resolution_failed."
-        " inspect this group alone to decide whether any work remains"
-    ),
-    "summary.guidance": (
-        "english bullet list of next-step actions; emitted when needs_action counts are non-zero or applied_fixes is non-empty."
-        " bullets cover retry_command inspection, --only-failed retries, diagnostic.fix interpretation, show-run access,"
-        " and a notice that formatter/fix-stage rewrites alone do not require re-running"
-    ),
-    "summary.applied_fixes": (
-        "sorted list of file paths whose contents were changed by fix-stage or formatter-stage execution;"
-        " omitted when no files were modified"
-    ),
-    "summary.fully_excluded_files": (
-        "list of directly specified files that were fully excluded by exclude patterns or .gitignore;"
-        " omitted when no such files exist. pyfltr exits 0 in this case so inspect this field to avoid"
-        " misreading the run as 'no issues'"
-    ),
-    "command.hint_urls": ("mapping of rule id to documentation URL for this command; omitted when no rule URLs are available"),
-    "command.retry_command": (
-        "shell command to re-run only this command on failing files; populated only when the command failed"
-    ),
-    "command.cached": "true = result restored from file-hash cache; rerun with --no-cache to force",
-    "command.cached_elapsed": (
-        "previous-run elapsed seconds (seconds) restored alongside cached=true; this run skipped execution."
-        " elapsed is omitted when cached=true so only this key represents timing"
-    ),
-    "command.truncated": ("diagnostics or message were trimmed; full content is in the archive directory (see header.run_id)"),
-    "header.run_id": "ULID identifying this run; use 'pyfltr show-run <run_id>' to fetch full output",
-    "warning.hint": (
-        "optional short mitigation/fix suggestion for this specific warning; omitted when the source does not provide one"
-    ),
-}
-"""JSONL出力フィールドの意味を補足する英語ガイド。
-
-LLM入力として読まれる前提のため英語で記述する（トークン効率と汎用性）。
-`header.schema_hints`として毎回のrunに同梱することで、LLMがこの情報を
-事前知識として持たなくてもJSONLを解釈できるようにする。
-"""
-
-
-def get_schema_hints(*, full: bool = True) -> dict[str, str]:
-    """JSONL各フィールドの意味を補足する英語ガイドを返す。
-
-    `full=True`でフル版（`_SCHEMA_HINTS`）、`full=False`で短縮版
-    （`_SCHEMA_HINTS_COMPACT`）をdictのコピーとして返す。
-    `pyfltr run -v`のヘッダーにはフル版が埋め込まれ、既定では短縮版が埋め込まれる。
-    将来の`schema-help`サブコマンド化やMCP連携のための公開窓口。
-    """
-    source = _SCHEMA_HINTS if full else _SCHEMA_HINTS_COMPACT
-    return dict(source)
-
-
 def _build_header_record(
     commands: list[str],
     files: int,
     *,
     run_id: str | None = None,
-    verbose: bool = False,
     mise_active_tools: dict[str, typing.Any] | None = None,
 ) -> dict[str, typing.Any]:
     """実行環境の基本情報をheaderレコードdictとして返す。
 
     `commands`は「実際に実行されるツール集合」（`--only-failed`やdisabledツール除外後）を
     前提とする。呼び出し側で絞り込み済みの配列を渡すこと。
-    `verbose`は`schema_hints`のフル/短縮切替のみに効く。
     `mise_active_tools`は`{"status": ..., "detail": ..., "active_keys": [...]}`形式で渡し、
     指定時のみheaderへ露出する（mise経路を使うrunの自己診断用途）。
     """
@@ -462,8 +365,6 @@ def _build_header_record(
         record["run_id"] = run_id
     if mise_active_tools is not None:
         record["mise_active_tools"] = mise_active_tools
-    # LLM向けフィールド補足。毎回出力する（headerは各runの先頭1行のみ）。
-    record["schema_hints"] = get_schema_hints(full=verbose)
     return record
 
 
@@ -484,8 +385,8 @@ def _build_message_dict(error: pyfltr.error_parser.ErrorLocation) -> dict[str, t
     """ErrorLocationを集約`messages[]`要素のdictに変換する。
 
     フィールド順は`line` → `col` → `end_line` → `end_col` → `rule` →
-    `severity` → `fix` → `msg` → `hint`。
-    `rule_url`は含めず、toolレコードの`hint_urls`へ集約する。
+    `severity` → `fix` → `msg`。
+    `rule_url`・`hint`は含めず、それぞれtoolレコードの`hint_urls`・`hints`へ集約する。
     Noneのフィールドは出力しない（`msg`は常に出力）。
     現状`end_line`/`end_col`を詰めるのはtextlintのみ。
     """
@@ -503,8 +404,6 @@ def _build_message_dict(error: pyfltr.error_parser.ErrorLocation) -> dict[str, t
     if error.fix is not None:
         record["fix"] = error.fix
     record["msg"] = error.message
-    if error.hint is not None:
-        record["hint"] = error.hint
     return record
 
 
@@ -515,6 +414,7 @@ def _build_command_record(
     diagnostic_total: int | None = None,
     config: pyfltr.config.Config | None = None,
     hint_urls: dict[str, str] | None = None,
+    hints: dict[str, str] | None = None,
 ) -> dict[str, typing.Any]:
     """CommandResultをcommandレコードdictに変換する。
 
@@ -524,6 +424,8 @@ def _build_command_record(
     メッセージ切り詰めまたはdiagnostic切り詰めが発生した場合は`truncated`メタを
     添付する。retry_commandは`CommandResult.retry_command`が設定されていれば含める。
     `hint_urls`が非空なら`hint_urls`キーで埋め込む。
+    `hints`が非空なら`hints`キーで埋め込む。textlintコマンドの場合は
+    `hints`の内容にかかわらず`messages[].end_col`の仕様を必ず追加する。
     `result.cached`が真のときは`elapsed`ではなく`cached_elapsed`キーに
     リネームして出力する（実行をスキップした前回値である旨をLLMに明示するため）。
     """
@@ -579,6 +481,15 @@ def _build_command_record(
             record["cached_from"] = result.cached_from
     if hint_urls:
         record["hint_urls"] = dict(hint_urls)
+    # textlintコマンドはend_colをノード先頭からの累積位置で返す仕様のため、
+    # rule hint有無にかかわらず必ずhints辞書にその旨を追加する。
+    merged_hints = dict(hints) if hints else {}
+    if result.command == "textlint":
+        merged_hints["messages[].end_col"] = (
+            "textlint reports end_col as cumulative offset from the text-node start, not in-line offset"
+        )
+    if merged_hints:
+        record["hints"] = merged_hints
     return record
 
 
@@ -647,9 +558,11 @@ def _build_summary_record(
     集計カウンタはコマンド単位の集計であることを示す`commands_summary`配下にまとめ、
     その下で「対応不要」「対応要」の2グループへネストする。
     `commands_summary.no_issues`配下に`succeeded`/`formatted`/`skipped`を、
-    `commands_summary.needs_action`配下に`failed`/`resolution_failed`を並べる。
+    `commands_summary.needs_action`配下に`failed`を並べる。
     `formatted`は本リポジトリの運用上「再実行や追加対応は原則不要」と整理し
     `no_issues`側に分類する。
+    `resolution_failed`は0件のときキー自体を省略する（通常プロジェクトでは常に0のため）。
+    `failed`は0件でも常時出力する（0件であることがエラー無し判定に直結するため）。
     `commands_summary`の兄弟である`applied_fixes`/`fully_excluded_files`/
     `guidance`はカウント集計ではないため移動しない。
     `fully_excluded_files`が非空のとき、直接指定されたがexcludeパターン・.gitignore
@@ -666,6 +579,11 @@ def _build_summary_record(
         total_diagnostics += len(result.errors)
         if result.fixed_files:
             fixed_files_union.update(result.fixed_files)
+    needs_action: dict[str, typing.Any] = {"failed": counts["failed"]}
+    # resolution_failedはツール解決失敗時のみカウントされ、通常プロジェクトでは常に0。
+    # 0件は情報として冗長なためキー自体を省略する。failedは0件でも常時出力する。
+    if counts["resolution_failed"] > 0:
+        needs_action["resolution_failed"] = counts["resolution_failed"]
     record: dict[str, typing.Any] = {
         "kind": "summary",
         "total": len(ordered_results),
@@ -675,10 +593,7 @@ def _build_summary_record(
                 "formatted": counts["formatted"],
                 "skipped": counts["skipped"],
             },
-            "needs_action": {
-                "failed": counts["failed"],
-                "resolution_failed": counts["resolution_failed"],
-            },
+            "needs_action": needs_action,
         },
         "diagnostics": total_diagnostics,
         "exit": exit_code,

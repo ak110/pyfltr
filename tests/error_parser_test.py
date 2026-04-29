@@ -524,8 +524,7 @@ def test_parse_textlint_json_hint_for_sentence_length() -> None:
     )
     errors = pyfltr.error_parser.parse_errors("textlint", output)
     assert len(errors) == 1
-    assert errors[0].hint is not None
-    assert "句点" in errors[0].hint
+    assert errors[0].hint == pyfltr.error_parser._TEXTLINT_RULE_HINTS["ja-technical-writing/sentence-length"]  # pylint: disable=protected-access
 
 
 def test_parse_textlint_json_hint_for_known_rules() -> None:
@@ -760,7 +759,7 @@ def test_parse_textlint_json_end_only_loc_populates_end_position() -> None:
 
 
 def test_parse_textlint_json_sentence_length_hint_excludes_col_note() -> None:
-    """sentence-lengthのヒントは句点による文区切りの観点のみで、`col`の累積位置注記はschema_hints側に寄せている。"""
+    """sentence-lengthのヒントは句点による文区切りの観点のみで、`messages[].end_col`が累積位置である注記は`command.hints`側で集約する。"""
     output = json.dumps(
         [
             {

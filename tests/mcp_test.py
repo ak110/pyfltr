@@ -14,6 +14,7 @@ import pytest
 
 import pyfltr.archive
 import pyfltr.mcp_
+from tests.conftest import make_command_result as _make_result
 from tests.conftest import make_error_location as _make_error
 from tests.conftest import seed_archive_run as _seed_run
 
@@ -192,6 +193,49 @@ async def test_tool_show_run_diagnostics(tmp_path: pathlib.Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_tool_show_run_diagnostics_restores_hints(tmp_path: pathlib.Path) -> None:
+    """tool.jsonにhintsが含まれる場合、`show_run_diagnostics`の戻り値に復元される。"""
+    import json  # pylint: disable=import-outside-toplevel
+
+    # hintを持つErrorLocationでアーカイブを作成する
+    error = _make_error("textlint", "a.md", 1, "長い文", col=1)
+    error.rule = "ja-technical-writing/sentence-length"
+    error.hint = "句点で文を区切る"
+    store = pyfltr.archive.ArchiveStore(cache_root=tmp_path)
+    run_id = store.start_run(commands=["textlint"])
+    result = _make_result("textlint", returncode=1, errors=[error])
+    store.write_tool_result(run_id, result)
+    store.finalize_run(run_id, exit_code=1)
+
+    # hintsがtool.jsonに保存されているか確認する
+    tool_json_path = tmp_path / "runs" / run_id / "tools" / "textlint" / "tool.json"
+    tool_meta = json.loads(tool_json_path.read_text(encoding="utf-8"))
+    assert "hints" in tool_meta
+    assert "ja-technical-writing/sentence-length" in tool_meta["hints"]
+
+    # show_run_diagnosticsでhintsが復元されることを確認する
+    results = await pyfltr.mcp_._tool_show_run_diagnostics(run_id, ["textlint"])
+    assert len(results) == 1
+    assert results[0].hints is not None
+    assert "ja-technical-writing/sentence-length" in results[0].hints
+
+
+@pytest.mark.asyncio
+async def test_tool_show_run_diagnostics_hints_none_when_absent(tmp_path: pathlib.Path) -> None:
+    """tool.jsonにhintsキーが無い場合、`show_run_diagnostics`の`hints`はNoneになる。"""
+    run_id = _seed_run(
+        tmp_path,
+        tool_results=[
+            ("mypy", 0, "clean", []),
+        ],
+    )
+
+    results = await pyfltr.mcp_._tool_show_run_diagnostics(run_id, ["mypy"])
+    assert len(results) == 1
+    assert results[0].hints is None
+
+
+@pytest.mark.asyncio
 async def test_tool_show_run_diagnostics_tool_not_found(tmp_path: pathlib.Path) -> None:
     run_id = _seed_run(tmp_path)
     with pytest.raises(ValueError, match="nonexistent"):
@@ -321,8 +365,9 @@ def test_run_for_agent_result_new_fields_defaults() -> None:
     )
     assert result.run_id is not None
     assert result.skipped_reason is None
-    assert isinstance(result.schema_hints, dict)
     assert isinstance(result.retry_commands, dict)
+    # schema_hintsは廃止済みのため存在しない
+    assert not hasattr(result, "schema_hints")
 
 
 def test_run_for_agent_result_nullable_run_id() -> None:
@@ -338,23 +383,6 @@ def test_run_for_agent_result_nullable_run_id() -> None:
     assert result.exit_code == 0
     assert not result.failed
     assert not result.commands
-
-
-@pytest.mark.asyncio
-async def test_tool_run_for_agent_returns_schema_hints(tmp_path: pathlib.Path) -> None:
-    """run_for_agentの戻り値にschema_hintsが含まれることを確認する。"""
-    sample = tmp_path / "input.txt"
-    sample.write_text("hello\n", encoding="utf-8")
-
-    result = await pyfltr.mcp_._tool_run_for_agent(
-        paths=[str(sample)],
-        commands=["ec"],
-    )
-
-    assert isinstance(result.schema_hints, dict)
-    assert len(result.schema_hints) > 0
-    # 短縮版は自身の使い方案内を含まない（フル版の取得方法はドキュメントに委ねる）
-    assert "_note" not in result.schema_hints
 
 
 @pytest.mark.asyncio

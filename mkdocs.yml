@@ -43,7 +43,7 @@ plugins:
         - `pyfltr list-runs`: 実行アーカイブ内のrun一覧を表示する。`--limit`で件数制御、`--output-format=text|json|jsonl`
         - `pyfltr show-run <run_id>`: 指定runの詳細を表示する。`<run_id>`は前方一致および`latest`エイリアス可。`--tool <name>`でdiagnostics全件、`--tool <name> --output`で`output.log`全文。`--output-format=text|json|jsonl`
         - `pyfltr command-info <tool>`: 対象ツールの起動方式（`{command}-runner` / 解決された実行ファイル / 最終コマンドライン等）を表示する。`--format=text|json` / `--check`オプションあり
-        - `pyfltr mcp`: stdioトランスポートでMCPサーバーを起動する。提供ツールは`list_runs` / `show_run` / `show_run_diagnostics` / `show_run_output` / `run_for_agent`の5件。`run_for_agent`は`only_failed` / `from_run`引数で失敗ファイルの絞り込み再実行が可能。戻り値に`schema_hints`（JSONL フィールド解説）・`retry_commands`（失敗コマンドの再実行シェルコマンド辞書）・`skipped_reason`（early exit 理由）を含む
+        - `pyfltr mcp`: stdioトランスポートでMCPサーバーを起動する。提供ツールは`list_runs` / `show_run` / `show_run_diagnostics` / `show_run_output` / `run_for_agent`の5件。`run_for_agent`は`only_failed` / `from_run`引数で失敗ファイルの絞り込み再実行が可能。戻り値に`retry_commands`（失敗コマンドの再実行シェルコマンド辞書）・`skipped_reason`（early exit 理由）を含む
         - `pyfltr generate-shell-completion bash|powershell`: シェル補完スクリプトを標準出力へ書き出す
 
         `--no-fix`で`run`/`fast`/`run-for-agent`のfix段を抑止できる。`ci`は副作用回避のため元々fix段を持たない。
@@ -86,17 +86,17 @@ plugins:
 
         `--output-format=jsonl`でJSON Lines形式の構造化出力が得られる。レコードは5種類。
 
-        - `header`: 先頭1行。実行環境情報（`version` / `run_id` / `python` / `executable` / `platform` / `cwd` / `commands` / `files` / `schema_hints`）。`commands` は実行対象（有効化された）コマンド名配列。既定では短縮版 `schema_hints` を出し、`-v` / `--verbose` 指定時にフル `schema_hints` へ切り替わる。`schema_hints` は各フィールドの意味を英語で補足する LLM 向けガイド
+        - `header`: 先頭1行。実行環境情報（`version` / `run_id` / `python` / `executable` / `platform` / `cwd` / `commands` / `files` / `mise_active_tools`）。`commands` は実行対象（有効化された）コマンド名配列
         - `warning`: pyfltr が検出した設定・実行時の警告（`source` で発生元を識別）
-        - `diagnostic`: `(command, file)` 単位で1行に集約される診断。個別指摘は `messages[]` 配列（各要素は `line` / `col` / `rule` / `severity` / `fix` / `msg` / `hint`）として格納される。`fix` は `"safe"` / `"unsafe"` / `"suggested"` / `"none"` の4値を取り、ツールが自動修正情報を返さない場合はフィールドごと省略。`hint` は textlint の頻出ルールなど、pyfltr 側でヒントを事前登録したルールにのみ付与される
-        - `command`: ツールごとの実行結果サマリ（`status` / `elapsed` / `diagnostics` / `rc` / `retry_command` / `truncated` / `cached` / `cached_from` / `cached_elapsed` / `hint-urls`）。`cached=true` のとき `elapsed` は省略され前回実行時の計測値を `cached_elapsed` として提示する。`hint-urls` は rule→ドキュメントURLの辞書
+        - `diagnostic`: `(command, file)` 単位で1行に集約される診断。個別指摘は `messages[]` 配列（各要素は `line` / `col` / `rule` / `severity` / `fix` / `msg`）として格納される。`fix` は `"safe"` / `"unsafe"` / `"suggested"` / `"none"` の4値を取り、ツールが自動修正情報を返さない場合はフィールドごと省略
+        - `command`: ツールごとの実行結果サマリ（`status` / `elapsed` / `diagnostics` / `rc` / `retry_command` / `truncated` / `cached` / `cached_from` / `cached_elapsed` / `hint_urls` / `hints`）。`cached=true` のとき `elapsed` は省略され前回実行時の計測値を `cached_elapsed` として提示する。`hint_urls` は rule→ドキュメントURLの辞書。`hints` は rule識別子→1文ヒントの辞書（英語）。textlintコマンドの場合は`messages[].end_col`キーでend_colフィールドがテキストノード先頭からの累積位置である旨も同梱する
         - `summary`: 最終1行の全体集計。集計カウンタは `no_issues`（`succeeded` / `formatted` / `skipped`）と `needs_action`（`failed` / `resolution_failed`）の2グループへネストする。`needs_action` 配下の合計が1以上のとき、または `applied_fixes` が非空のとき英語の `guidance` 配列を付与する。失敗時は再実行コマンドや `show-run` の案内、`applied_fixes` 非空時はformatter書き換えだけでは再実行が不要である旨の注記を含む。`diagnostics` / `exit` はトップレベル維持。fix ステージ・formatter ステージで実際にファイル内容が変化した場合は `applied_fixes` にソート済みのパス一覧を付与する（変化なし時は省略）。直接指定ファイルが `exclude` / `.gitignore` で全除外された場合は `fully_excluded_files` にパス一覧を付与する（非空時のみ）
 
         stdoutモード（`--output-file`未指定）の出力順は`header`→ツール完了順に`diagnostic`+`command`→`warning`→`summary`。stdoutへJSONLのみを書き、進捗ログやTUIは無音化される。`--output-file`指定時はファイルへJSONLを書き、stdoutには従来どおりのテキスト出力を並行出力する（ローカル実行で進捗を追える）。
 
-        ルールドキュメントURLは `command.hint-urls` 辞書（rule→URL）にツール単位で集約され、対応ツール（ruff / pylint / pyright / mypy / shellcheck / eslint / markdownlint）でURLを生成できたruleのみ含まれる。`severity`は`"error"` / `"warning"` / `"info"` の3値に正規化される（未対応ツールは省略）。
+        ルールドキュメントURLは `command.hint_urls` 辞書（rule→URL）にツール単位で集約され、対応ツール（ruff / pylint / pyright / mypy / shellcheck / eslint / markdownlint）でURLを生成できたruleのみ含まれる。`severity`は`"error"` / `"warning"` / `"info"` の3値に正規化される（未対応ツールは省略）。`command.hints` はrule識別子→1文ヒント（英語）の辞書で、textlintコマンドの場合は`messages[].end_col`キーで`end_col`が累積位置である旨の仕様も含む。
 
-        `command`の`retry_command`は当該コマンド1件を再実行するshellコマンド文字列で、`--no-fix`/`--output-format`などの実行意味論フラグを保持する。ターゲット位置引数は「当該コマンドで失敗したファイルのみ」に絞り込まれる（失敗ファイルを特定できないコマンドはターゲット空）。キャッシュ復元結果（`cached=true`）では`retry_command`は出力されない。`truncated`はsmart truncationが発生した場合のみ付与され、`archive`パス（`tools/<command>/output.log` / `tools/<command>/diagnostics.jsonl`）から全文を復元できる。smart truncationの閾値は`jsonl-diagnostic-limit`/`jsonl-message-max-lines`/`jsonl-message-max-chars`で制御できる。
+        `command.hints`と`summary.guidance`はいずれも英語で記す（トークン効率と汎用性のため）。`command`の`retry_command`は当該コマンド1件を再実行するshellコマンド文字列で、`--no-fix`/`--output-format`などの実行意味論フラグを保持する。ターゲット位置引数は「当該コマンドで失敗したファイルのみ」に絞り込まれる（失敗ファイルを特定できないコマンドはターゲット空）。キャッシュ復元結果（`cached=true`）では`retry_command`は出力されない。`truncated`はsmart truncationが発生した場合のみ付与され、`archive`パス（`tools/<command>/output.log` / `tools/<command>/diagnostics.jsonl`）から全文を復元できる。smart truncationの閾値は`jsonl-diagnostic-limit`/`jsonl-message-max-lines`/`jsonl-message-max-chars`で制御できる。
 
         `cached`はファイルhashキャッシュから結果を復元したときだけ `true` として付与される（現状は `textlint` のみ対象）。`cached_from`は復元元の `run_id` で、`pyfltr show-run` で当該 run の全文を参照できる。キャッシュは `--no-cache` または `cache = false` で無効化でき、既定の保存期間は 12 時間（`cache-max-age-hours`）。
 

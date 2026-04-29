@@ -303,8 +303,6 @@ def write_log(result: pyfltr.command.CommandResult, *, use_github_annotations: b
                     text_logger.info(pyfltr.error_parser.format_error_github(error))
                 else:
                     text_logger.info(pyfltr.error_parser.format_error(error))
-                    if error.hint is not None:
-                        text_logger.info(f"    ヒント: {error.hint}")
         elif result.alerted:
             text_logger.info(result.output)
         else:

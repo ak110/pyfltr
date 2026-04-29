@@ -43,7 +43,6 @@ class RunOutputContext:
     stream: bool = False
     include_details: bool = True
     structured_stdout: bool = False
-    verbose: bool = False
 
 
 class OutputFormatter(typing.Protocol):
@@ -203,7 +202,6 @@ class JSONLFormatter:
             commands=ctx.commands,
             files=ctx.all_files,
             run_id=ctx.run_id,
-            verbose=ctx.verbose,
             config=ctx.config,
         )
 

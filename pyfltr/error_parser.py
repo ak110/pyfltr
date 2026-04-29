@@ -39,8 +39,8 @@ class ErrorLocation:
     hint: str | None = None
     """診断メッセージに添える短い修正ヒント（Noneはヒント未登録のルール）。
 
-    JSON Lines出力では`messages[].hint`として任意フィールドで出力され、
-    text出力ではメッセージ行の直下にインデント付きで「ヒント: ...」として表示される。
+    JSON Lines出力では`command.hints`辞書にrule→ヒント文字列として集約される。
+    messages[]要素への個別出力は行わない。
     """
     end_line: int | None = None
     """違反範囲の終端行（Noneはツールが範囲を返さない場合）。
@@ -57,17 +57,21 @@ class ErrorLocation:
 
 _TEXTLINT_RULE_HINTS: dict[str, str] = {
     "ja-technical-writing/sentence-length": (
-        "textlintは句点（。）までを1文として判定する。"
-        "箇条書きを改行で分割するだけでは1文扱いになるため、句点で文を区切ると短くなることが多い"
+        "textlint counts up to the period (。) as one sentence; bullet-line splits still count as one."
+        " Split with periods to shorten."
     ),
-    "ja-technical-writing/max-ten": "読点（、）が多すぎる判定。1文を複数文に分けるか、接続詞・係り受けを見直す",
-    "ja-technical-writing/max-kanji-continuous-len": "同じ漢字が連続していないか確認する。助詞・ひらがな・読点で分割する",
+    "ja-technical-writing/max-ten": (
+        "Too many commas (、) in one sentence; split into multiple sentences or revise conjunctions and dependencies."
+    ),
+    "ja-technical-writing/max-kanji-continuous-len": (
+        "Long kanji run detected; insert hiragana, particles, or commas (、) to break it up."
+    ),
 }
 """textlintの頻出ルール向けヒント辞書。利用者が踏みやすいルールに限定している。
 
-`col`がテキストノード先頭からの累積位置である旨はschema_hintsの`diagnostic.messages.end_col`側で
-案内する。ヒント文字列はルール固有の修正観点のみに留める（重複させず、3ルール中1ルールのみが
-膨らむのを避けるため）。
+ヒント文字列はルール固有の修正観点のみに留める（重複させず、3ルール中1ルールのみが
+膨らむのを避けるため）。各`ErrorLocation`の`hint`フィールドに詰められ、
+`aggregate_diagnostics()`によってcommandレコードの`command.hints`辞書へ集約される。
 """
 
 

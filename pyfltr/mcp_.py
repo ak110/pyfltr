@@ -113,6 +113,7 @@ class CommandDiagnosticsModel(pydantic.BaseModel):
 
     JSONL本体・`tool.json`の双方で`hint_urls`キー（アンダースコア区切り）を採用するため、
     Pydantic側でも属性名・出力キー名ともに`hint_urls`で揃える。
+    同様に`hints`キーも`tool.json`と同名で揃える。
     """
 
     command_meta: dict[str, typing.Any] = pydantic.Field(description="コマンドのmeta情報（`tool.json`の内容）。")
@@ -120,6 +121,10 @@ class CommandDiagnosticsModel(pydantic.BaseModel):
     hint_urls: dict[str, str] | None = pydantic.Field(
         default=None,
         description="rule ID → ドキュメントURLの辞書。URLを生成できたruleのみ含める。",
+    )
+    hints: dict[str, str] | None = pydantic.Field(
+        default=None,
+        description="rule ID → 短い修正ヒント文字列の辞書。ヒントを持つruleのみ含める。",
     )
 
 
@@ -139,10 +144,6 @@ class RunForAgentResult(pydantic.BaseModel):
     skipped_reason: str | None = pydantic.Field(
         default=None,
         description="early exitが発生した理由。runが実行されなかった場合に設定される。",
-    )
-    schema_hints: dict[str, str] = pydantic.Field(
-        default_factory=dict,
-        description="JSONL出力フィールドの意味を補足する英語ガイド（短縮版）。",
     )
     retry_commands: dict[str, str] = pydantic.Field(
         default_factory=dict,
@@ -257,7 +258,10 @@ async def _tool_show_run_diagnostics(run_id: str, commands: list[str]) -> list[C
             for d in diagnostics_raw
         ]
         hint_urls = command_meta.get("hint_urls") if isinstance(command_meta.get("hint_urls"), dict) else None
-        results.append(CommandDiagnosticsModel(command_meta=command_meta, diagnostics=diagnostics, hint_urls=hint_urls))
+        hints = command_meta.get("hints") if isinstance(command_meta.get("hints"), dict) else None
+        results.append(
+            CommandDiagnosticsModel(command_meta=command_meta, diagnostics=diagnostics, hint_urls=hint_urls, hints=hints)
+        )
     return results
 
 
@@ -379,10 +383,6 @@ async def _tool_run_for_agent(
         with contextlib.suppress(OSError):
             tmp_path.unlink(missing_ok=True)
 
-    import pyfltr.llm_output as _llm_output  # pylint: disable=import-outside-toplevel,cyclic-import
-
-    schema_hints = _llm_output.get_schema_hints(full=False)
-
     # only_failedによるearly exit: run_idがNoneのとき実行がスキップされた。
     if run_id is None:
         return RunForAgentResult(
@@ -393,7 +393,6 @@ async def _tool_run_for_agent(
             skipped_reason=(
                 "only_failed が有効ですが実行対象がありませんでした（直前 run なし・失敗ツールなし・対象ファイル交差なし）。"
             ),
-            schema_hints=schema_hints,
             retry_commands={},
         )
 
@@ -425,7 +424,6 @@ async def _tool_run_for_agent(
         exit_code=exit_code,
         failed=failed_commands,
         commands=commands_model,
-        schema_hints=schema_hints,
         retry_commands=retry_commands,
     )
 
@@ -463,7 +461,7 @@ def _build_server() -> typing.Any:
         description=(
             "指定パスに対して lint/format/test を実行し、run_id・終了コード・失敗コマンド名を返す。"
             " only_failed=True で直前 run の失敗ツール・失敗ファイルのみ再実行する（from_run で参照 run を指定可）。"
-            " 戻り値に schema_hints（JSONL フィールド解説）と retry_commands（失敗コマンドの再実行シェルコマンド）を含む。"
+            " 戻り値に retry_commands（失敗コマンドの再実行シェルコマンド）を含む。"
         ),
     )(_tool_run_for_agent)
 
