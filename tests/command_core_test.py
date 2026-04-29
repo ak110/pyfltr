@@ -1961,3 +1961,228 @@ def test_command_runner_validation_rejects_unknown_value(tmp_path: pathlib.Path)
     (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\ntypos-runner = "bogus"\n')
     with pytest.raises(ValueError, match="typos-runner"):
         pyfltr.config.load_config(config_dir=tmp_path)
+
+
+# --- mise設定記述判定によるtool spec省略仕様 ---
+
+
+def test_build_commandline_omits_tool_spec_when_mise_config_has_rust(monkeypatch: pytest.MonkeyPatch) -> None:
+    """mise設定に `rust` 記述ありかつversion既定値ならtool spec省略形を返す。"""
+    monkeypatch.setattr(
+        "pyfltr.command._get_mise_active_tools",
+        lambda config, *, allow_side_effects=False: {"rust": [{"version": "1.83.0"}]},
+    )
+    config = pyfltr.config.create_default_config()
+    resolved = pyfltr.command.build_commandline("cargo-fmt", config)
+    # tool spec省略形: `mise exec -- cargo` で起動し、mise設定の解決済み内容に従わせる。
+    assert resolved.commandline == ["mise", "exec", "--", "cargo"]
+    assert resolved.effective_runner == "mise"
+
+
+def test_build_commandline_omits_tool_spec_when_mise_config_has_aqua_cargo_deny(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """mise設定にaqua表記の `aqua:EmbarkStudios/cargo-deny` 記述ありなら省略形になる。"""
+    monkeypatch.setattr(
+        "pyfltr.command._get_mise_active_tools",
+        lambda config, *, allow_side_effects=False: {"aqua:EmbarkStudios/cargo-deny": [{"version": "0.16.0"}]},
+    )
+    config = pyfltr.config.create_default_config()
+    resolved = pyfltr.command.build_commandline("cargo-deny", config)
+    assert resolved.commandline == ["mise", "exec", "--", "cargo-deny"]
+
+
+def test_build_commandline_keeps_tool_spec_when_mise_config_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """判定辞書が空（記述なし）の場合は従来形 `<backend>@latest` を組み立てる。"""
+    monkeypatch.setattr(
+        "pyfltr.command._get_mise_active_tools",
+        lambda config, *, allow_side_effects=False: {},
+    )
+    config = pyfltr.config.create_default_config()
+    resolved = pyfltr.command.build_commandline("cargo-fmt", config)
+    assert resolved.commandline == ["mise", "exec", "rust@latest", "--", "cargo"]
+
+
+def test_build_commandline_keeps_tool_spec_when_version_explicit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`{command}-version` を具体値で指定した場合は判定結果に関わらず従来形を組み立てる。"""
+    # 判定辞書には `rust` 記述があるが、versionが明示されているので利用者の意図を尊重する。
+    monkeypatch.setattr(
+        "pyfltr.command._get_mise_active_tools",
+        lambda config, *, allow_side_effects=False: {"rust": [{"version": "1.83.0"}]},
+    )
+    config = pyfltr.config.create_default_config()
+    config.values["cargo-fmt-version"] = "1.84.0"
+    resolved = pyfltr.command.build_commandline("cargo-fmt", config)
+    assert resolved.commandline == ["mise", "exec", "rust@1.84.0", "--", "cargo"]
+
+
+def test_build_commandline_allow_side_effects_propagates_to_active_tools(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`build_commandline` の `allow_side_effects` が `_get_mise_active_tools` に連動して渡る。"""
+    received: list[bool] = []
+
+    def fake(config, *, allow_side_effects=False):  # type: ignore[no-untyped-def]
+        del config
+        received.append(allow_side_effects)
+        return {}
+
+    monkeypatch.setattr("pyfltr.command._get_mise_active_tools", fake)
+    config = pyfltr.config.create_default_config()
+    pyfltr.command.build_commandline("cargo-fmt", config, allow_side_effects=True)
+    pyfltr.command.build_commandline("cargo-fmt", config, allow_side_effects=False)
+    pyfltr.command.build_commandline("cargo-fmt", config)  # 既定値はFalse
+    assert received == [True, False, False]
+
+
+# --- ensure_mise_available のtool spec有無分岐 ---
+
+
+def test_ensure_mise_available_check_args_with_tool_spec(mocker) -> None:
+    """tool spec組立形は `mise exec <tool_spec> -- <bin> --version` を呼び出す。"""
+    mocker.patch("shutil.which", return_value="/usr/local/bin/mise")
+    mock_run = mocker.patch(
+        "subprocess.run",
+        return_value=subprocess.CompletedProcess(["mise"], returncode=0, stdout="", stderr=""),
+    )
+    resolved = pyfltr.command.ResolvedCommandline(
+        executable="mise",
+        prefix=["exec", "rust@latest", "--", "cargo"],
+        runner="bin-runner",
+        runner_source="default",
+        effective_runner="mise",
+    )
+    config = pyfltr.config.create_default_config()
+    pyfltr.command.ensure_mise_available(resolved, config, command="cargo-fmt")
+    assert mock_run.call_args.args[0] == ["mise", "exec", "rust@latest", "--", "cargo", "--version"]
+
+
+def test_ensure_mise_available_check_args_without_tool_spec(mocker) -> None:
+    """tool spec省略形は `mise exec -- <bin> --version` を呼び出す。"""
+    mocker.patch("shutil.which", return_value="/usr/local/bin/mise")
+    mock_run = mocker.patch(
+        "subprocess.run",
+        return_value=subprocess.CompletedProcess(["mise"], returncode=0, stdout="", stderr=""),
+    )
+    resolved = pyfltr.command.ResolvedCommandline(
+        executable="mise",
+        prefix=["exec", "--", "cargo"],
+        runner="bin-runner",
+        runner_source="default",
+        effective_runner="mise",
+    )
+    config = pyfltr.config.create_default_config()
+    pyfltr.command.ensure_mise_available(resolved, config, command="cargo-fmt")
+    assert mock_run.call_args.args[0] == ["mise", "exec", "--", "cargo", "--version"]
+
+
+def test_ensure_mise_available_error_message_without_tool_spec(mocker) -> None:
+    """tool spec省略形での失敗時、エラー文面が `mise exec -- <bin>: ...` 形になる。"""
+    mocker.patch("shutil.which", return_value="/usr/local/bin/mise")
+    mocker.patch(
+        "subprocess.run",
+        return_value=subprocess.CompletedProcess(["mise"], returncode=1, stdout="", stderr="mise ERROR could not resolve tool"),
+    )
+    resolved = pyfltr.command.ResolvedCommandline(
+        executable="mise",
+        prefix=["exec", "--", "cargo"],
+        runner="bin-runner",
+        runner_source="default",
+        effective_runner="mise",
+    )
+    config = pyfltr.config.create_default_config()
+    with pytest.raises(FileNotFoundError) as excinfo:
+        pyfltr.command.ensure_mise_available(resolved, config, command="cargo-fmt")
+    message = str(excinfo.value)
+    assert "mise exec -- cargo" in message
+    assert "could not resolve tool" in message
+
+
+# --- _get_mise_active_tools のキャッシュキー差分 ---
+
+
+def test_get_mise_active_tools_cache_key_differs_by_cwd(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """cwd差分で別キャッシュエントリとして扱う。
+
+    `os.chdir()` 等でcwdが切り替わった場合、`mise ls --current --json` の結果は変わるため、
+    プロセス内キャッシュもcwdをキーに含める必要がある。
+    """
+    # autouseフィクスチャは `_get_mise_active_tools` 自体をモック上書きしているため、
+    # 実装本体を直接検証するためconftestが保持する元参照に戻し、`_query_mise_active_tools` のみ
+    # fakeへ差し替える。
+    monkeypatch.setattr("pyfltr.command._get_mise_active_tools", _testconf.real_get_mise_active_tools)
+    monkeypatch.setattr("pyfltr.command._MISE_ACTIVE_TOOLS_CACHE", {}, raising=True)
+    call_log: list[str] = []
+
+    def fake_query(config, *, allow_side_effects):  # type: ignore[no-untyped-def]
+        del config, allow_side_effects
+        call_log.append(os.getcwd())
+        return {}
+
+    monkeypatch.setattr("pyfltr.command._query_mise_active_tools", fake_query)
+    config = pyfltr.config.create_default_config()
+
+    cwd_a = tmp_path / "a"
+    cwd_b = tmp_path / "b"
+    cwd_a.mkdir()
+    cwd_b.mkdir()
+
+    monkeypatch.chdir(cwd_a)
+    pyfltr.command._get_mise_active_tools(config)
+    monkeypatch.chdir(cwd_a)
+    pyfltr.command._get_mise_active_tools(config)  # 同cwd → キャッシュヒット
+    monkeypatch.chdir(cwd_b)
+    pyfltr.command._get_mise_active_tools(config)  # 別cwd → 再呼び出し
+    assert len(call_log) == 2
+
+
+def test_get_mise_active_tools_cache_key_differs_by_env(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """`MISE_CONFIG_FILE` 等のenv差分で別キャッシュエントリとして扱う。"""
+    monkeypatch.setattr("pyfltr.command._get_mise_active_tools", _testconf.real_get_mise_active_tools)
+    monkeypatch.setattr("pyfltr.command._MISE_ACTIVE_TOOLS_CACHE", {}, raising=True)
+    monkeypatch.chdir(tmp_path)
+    call_count = [0]
+
+    def fake_query(config, *, allow_side_effects):  # type: ignore[no-untyped-def]
+        del config, allow_side_effects
+        call_count[0] += 1
+        return {}
+
+    monkeypatch.setattr("pyfltr.command._query_mise_active_tools", fake_query)
+    config = pyfltr.config.create_default_config()
+
+    monkeypatch.delenv("MISE_CONFIG_FILE", raising=False)
+    pyfltr.command._get_mise_active_tools(config)
+    monkeypatch.setenv("MISE_CONFIG_FILE", "/tmp/other.toml")  # noqa: S108
+    pyfltr.command._get_mise_active_tools(config)  # env差分 → 再呼び出し
+    assert call_count[0] == 2
+
+
+def test_get_mise_active_tools_cache_key_differs_by_allow_side_effects(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """副作用許可フラグ差分で別キャッシュエントリとして扱う。
+
+    副作用OFFで保存したフォールバック結果が、後続の副作用ON呼び出しで正規化される
+    流れに対応するため、フラグ自体もキーに含める。
+    """
+    monkeypatch.setattr("pyfltr.command._get_mise_active_tools", _testconf.real_get_mise_active_tools)
+    monkeypatch.setattr("pyfltr.command._MISE_ACTIVE_TOOLS_CACHE", {}, raising=True)
+    monkeypatch.chdir(tmp_path)
+
+    received_flags: list[bool] = []
+
+    def fake_query(config, *, allow_side_effects):  # type: ignore[no-untyped-def]
+        del config
+        received_flags.append(allow_side_effects)
+        return {"rust": []} if allow_side_effects else {}
+
+    monkeypatch.setattr("pyfltr.command._query_mise_active_tools", fake_query)
+    config = pyfltr.config.create_default_config()
+
+    result_off = pyfltr.command._get_mise_active_tools(config, allow_side_effects=False)
+    result_on = pyfltr.command._get_mise_active_tools(config, allow_side_effects=True)
+    assert result_off == {}
+    assert result_on == {"rust": []}
+    assert received_flags == [False, True]
+    # 同じフラグでの2回目はキャッシュヒット。
+    pyfltr.command._get_mise_active_tools(config, allow_side_effects=True)
+    assert received_flags == [False, True]

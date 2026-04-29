@@ -2,6 +2,8 @@
 actionlint = "latest"
 editorconfig-checker = "latest"
 gitleaks = "latest"
+glab = "latest"
+hadolint = "latest"
 shellcheck = "latest"
 shfmt = "latest"
 taplo = "latest"

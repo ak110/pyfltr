@@ -6,6 +6,7 @@ import atexit
 import contextlib
 import dataclasses
 import hashlib
+import json
 import logging
 import os
 import pathlib
@@ -347,13 +348,204 @@ def resolve_runner(command: str, config: pyfltr.config.Config) -> tuple[str, str
     return str(runner), source
 
 
-def build_commandline(command: str, config: pyfltr.config.Config) -> ResolvedCommandline:
-    """ツール起動コマンドラインを副作用なしで構築する。
+# `mise ls --current --json` 結果のプロセス内キャッシュ。
+# キーは `(realpath(cwd), env_signature, allow_side_effects)` のタプルで、
+# - `realpath(cwd)`: pyfltrは同一プロセス内で `os.chdir()` を伴う複数回 `run()` 呼び出しに
+#   対応するため、cwd差分で別エントリとして扱う必要がある。
+# - `env_signature`: mise設定解決に影響する環境変数（`MISE_CONFIG_FILE` 等）が変化した場合に
+#   別キャッシュを参照させる。値が無いキーは固定sentinel `None` でキー化する。
+# - `allow_side_effects`: 副作用OFFで未信頼や失敗で空辞書を返したエントリと、副作用ONで
+#   trust経由で正規取得したエントリを共存させるため、フラグ自体もキーに含める。
+#   これにより `command-info --check` 無し → 有り の順で呼ばれた際に副作用OFFで保存した
+#   フォールバック結果が後続を阻害せず、副作用ON呼び出しで正規化される流れを担保する。
+_MISE_ACTIVE_TOOLS_CACHE: dict[tuple[str, tuple[tuple[str, str | None], ...], bool], dict[str, typing.Any]] = {}
+
+# mise設定解決に影響する環境変数。値の差分で別キャッシュエントリとして扱う。
+# `MISE_CONFIG_FILE`: 利用するconfigファイルの明示指定。
+# `MISE_ENV`: 環境別configプロファイル（`mise.{env}.toml`）の選択。
+# `MISE_DEFAULT_CONFIG_FILENAME`: 既定configファイル名の上書き。
+_MISE_CONFIG_ENV_KEYS: tuple[str, ...] = (
+    "MISE_CONFIG_FILE",
+    "MISE_ENV",
+    "MISE_DEFAULT_CONFIG_FILENAME",
+)
+
+
+def _mise_env_signature() -> tuple[tuple[str, str | None], ...]:
+    """mise設定解決に影響する環境変数の現在値を組にして返す。
+
+    値が未設定のキーは `None` をsentinelとして使い、未設定状態と空文字を区別する。
+    キャッシュキー要素として使うためタプルで返す。
+    """
+    return tuple((key, os.environ.get(key)) for key in _MISE_CONFIG_ENV_KEYS)
+
+
+def _get_mise_active_tools(
+    config: pyfltr.config.Config,
+    *,
+    allow_side_effects: bool = False,
+) -> dict[str, typing.Any]:
+    """`mise ls --current --json` 結果を辞書として返す（プロセス内キャッシュ付き）。
+
+    返り値はmiseが解決した活性化ツール一覧（プロジェクト `mise.toml` ＋グローバル設定の合算）。
+    キーは `mise.toml` 記述そのままの形（例: `rust`、`aqua:EmbarkStudios/cargo-deny`、
+    `actionlint`）で、値はmise本体が返すツール情報の配列。
+
+    `allow_side_effects=True` 時は未信頼config由来エラーで `config["mise-auto-trust"]` が
+    真なら `mise trust --yes --all` を1回試行し、成功時に `mise ls` を再実行する。
+    `allow_side_effects=False` 時は未信頼エラー・mise不在・JSON parse失敗・その他失敗を
+    すべて「記述なし」として空辞書にフォールバックする
+    （`command-info` の `--check` 無し呼び出しで副作用なし契約を維持するため）。
+
+    キャッシュキーには `realpath(cwd)`・mise設定解決に影響する環境変数・副作用許可フラグの
+    3要素を含める。`mise ls --current --json` がcwdで結果を変えるため、`os.chdir()` 後の
+    再呼び出しで誤判定しないよう必ずcwdをキーに含める。副作用OFFで失敗フォールバック保存した
+    結果と副作用ONで正規取得した結果が混線しないよう、フラグ自体もキーに含める。
+    """
+    cache_key = (os.path.realpath(os.getcwd()), _mise_env_signature(), allow_side_effects)
+    cached = _MISE_ACTIVE_TOOLS_CACHE.get(cache_key)
+    # `is not None` で判定する意図: 取得失敗時も空辞書 `{}` として正規キャッシュするため、
+    # キャッシュミスは `None`（未登録）のみに相当し、`{}` はヒット扱いにする必要がある。
+    if cached is not None:
+        return cached
+
+    result = _query_mise_active_tools(config, allow_side_effects=allow_side_effects)
+    _MISE_ACTIVE_TOOLS_CACHE[cache_key] = result
+    return result
+
+
+def _query_mise_active_tools(
+    config: pyfltr.config.Config,
+    *,
+    allow_side_effects: bool,
+) -> dict[str, typing.Any]:
+    """`mise ls --current --json` を実際に呼び出し、結果辞書（取得不可時は空辞書）を返す。
+
+    キャッシュ管理は呼び出し側 `_get_mise_active_tools` が担当する純取得層。
+    取得失敗時のフォールバック挙動は本関数docstringおよび `_get_mise_active_tools` の
+    `allow_side_effects` 説明と同義。
+    """
+    if shutil.which("mise") is None:
+        return {}
+    mise_env = _build_mise_subprocess_env(dict(os.environ))
+    ls_args = ["mise", "ls", "--current", "--json"]
+    parsed = _run_mise_ls_with_trust_retry(ls_args, config, mise_env, allow_side_effects=allow_side_effects)
+    if parsed is None:
+        return {}
+    if not isinstance(parsed, dict):
+        # mise本体は通常dictを返すが、形式が想定外（list等）なら判定対象外として空扱いにする。
+        return {}
+    return parsed
+
+
+def _run_mise_with_trust(
+    args: list[str],
+    mise_env: dict[str, str],
+    config: pyfltr.config.Config,
+    *,
+    allow_side_effects: bool,
+) -> tuple[int, str, str, bool]:
+    """miseコマンドを実行し、未信頼エラー時はtrust試行→再実行する核ロジック。
+
+    戻り値は `(returncode, stdout, stderr, trust_failed)` のタプル。
+    `trust_failed=True` はtrust試行自体が失敗したことを示し、
+    呼び出し側でエラーメッセージを出し分けるために使う。
+    `OSError` は呼び出し側へ伝播する。
+    `allow_side_effects=False` 時はtrust試行を行わず、未信頼エラーも含めてそのまま返す。
+    """
+    trusted = False
+    while True:
+        check = subprocess.run(args, capture_output=True, text=True, check=False, env=mise_env)
+        if check.returncode == 0:
+            return check.returncode, check.stdout, check.stderr, False
+        stderr = check.stderr
+        if not trusted and allow_side_effects and config["mise-auto-trust"] and "not trusted" in stderr:
+            trust = subprocess.run(
+                ["mise", "trust", "--yes", "--all"],
+                capture_output=True,
+                text=True,
+                check=False,
+                env=mise_env,
+            )
+            if trust.returncode == 0:
+                trusted = True
+                continue
+            return trust.returncode, "", trust.stderr, True
+        # 未信頼以外のエラー、副作用OFF下の未信頼、trust試行後の再失敗はすべてそのまま返す。
+        return check.returncode, check.stdout, check.stderr, False
+
+
+def _run_mise_ls_with_trust_retry(
+    ls_args: list[str],
+    config: pyfltr.config.Config,
+    mise_env: dict[str, str],
+    *,
+    allow_side_effects: bool,
+) -> typing.Any | None:
+    """`mise ls --current --json` を実行し、必要に応じてtrust試行→再実行する。
+
+    成功時はパース済みJSONオブジェクトを返す。
+    失敗時（mise呼び出し失敗・JSONパース失敗・副作用OFF下の未信頼エラー・trust拒否）は
+    `None` を返してフォールバックさせる。
+    trust試行を含むリトライ核ロジックは `_run_mise_with_trust` に委譲する。
+    """
+    try:
+        returncode, stdout, _stderr, _trust_failed = _run_mise_with_trust(
+            ls_args, mise_env, config, allow_side_effects=allow_side_effects
+        )
+    except OSError:
+        # mise自体の起動失敗（PATH不一致・実行権限なしなど）。判定不可として空扱い。
+        return None
+    if returncode != 0:
+        return None
+    try:
+        return json.loads(stdout)
+    except json.JSONDecodeError:
+        return None
+
+
+def _is_tool_active_in_mise_config(
+    command: str,
+    spec: BinToolSpec,
+    config: pyfltr.config.Config,
+    *,
+    allow_side_effects: bool,
+) -> bool:
+    """mise設定で当該ツールが活性化されているかを判定する。
+
+    判定キーは `spec.mise_backend or spec.bin_name`（mise.toml記述に合わせた形）。
+    例えばcargo系なら `rust`、cargo-denyなら `aqua:EmbarkStudios/cargo-deny`、
+    その他のシンプル系（actionlint等）は `bin_name` でそのまま引く。
+
+    `_get_mise_active_tools` のキャッシュ・フォールバック挙動を利用するため、
+    取得失敗時は自然に `False`（記述なし扱い）が返り、tool spec省略を発動しない。
+    """
+    del command  # 現状判定にコマンド名は使わない（specキーで一意）。引数は将来拡張余地のため残す。
+    active_tools = _get_mise_active_tools(config, allow_side_effects=allow_side_effects)
+    key = spec.mise_backend or spec.bin_name
+    return key in active_tools
+
+
+def build_commandline(
+    command: str,
+    config: pyfltr.config.Config,
+    *,
+    allow_side_effects: bool = False,
+) -> ResolvedCommandline:
+    """ツール起動コマンドラインを構築する（副作用は `allow_side_effects` で制御）。
 
     `{command}-runner` および `{command}-path` の設定に従い、`mise exec ... --` 形式・
     `pnpx --package ...` 形式・直接実行（PATH解決）のいずれかを返す。
-    mise経由でも本関数では `mise exec --version` の事前チェックや
-    `mise trust` を行わない（`command-info` サブコマンドからも安全に呼べるようにするため）。
+    mise経路では `_get_mise_active_tools` を引いて、mise設定（プロジェクト `mise.toml` ＋
+    グローバル設定）に該当ツール記述があり、かつ `{command}-version` が既定値 `"latest"` の
+    ときに限りtool spec部分を省略した `["exec", "--", <bin>]` 形を返す
+    （miseがmise設定の解決済み内容、つまりcomponentsや固定バージョンをそのまま使えるようにするため）。
+
+    `allow_side_effects=False`（既定）では `mise exec --version` の事前チェックや
+    `mise trust` を行わない。判定関数 `_get_mise_active_tools` も副作用OFFで呼び、
+    未信頼config由来エラーを「記述なし」扱いとして従来形のtool spec組み立てへフォールバックする。
+    `command-info` サブコマンドの `--check` 無し呼び出しから安全に呼べるようにするためである。
+    `allow_side_effects=True` 時は判定経路でも `mise-auto-trust` 設定に従いtrust→再呼び出しを許可する。
 
     ツールが特定できない場合は `FileNotFoundError` を、
     `{command}-runner` 値の組み合わせ自体が不正な場合は `ValueError` を送出する。
@@ -397,13 +589,21 @@ def build_commandline(command: str, config: pyfltr.config.Config) -> ResolvedCom
         # これにより `aqua:Org/Repo@x` のような任意backend指定や、既定backendを上書きする
         # `cargo-deny@latest` のようなregistry経由維持指定をpyfltr設定だけで表現できる。
         if ":" in version or "@" in version:
-            tool_spec = version
+            prefix = ["exec", version, "--", spec.bin_name]
+        elif version == spec.default_version and _is_tool_active_in_mise_config(
+            command, spec, config, allow_side_effects=allow_side_effects
+        ):
+            # mise設定に当該ツール記述があり、かつversionが既定値（"latest"）の場合のみtool specを省略する。
+            # これによりmise本体がmise設定の解決済み内容（componentsや固定バージョン）をそのまま使い、
+            # pyfltrとmise設定の二重管理を回避する。
+            # version明示時（"latest"以外）は利用者の意図を尊重して従来通りtool spec組み立てに留める。
+            prefix = ["exec", "--", spec.bin_name]
         else:
             tool_name = spec.mise_backend or spec.bin_name
-            tool_spec = f"{tool_name}@{version}"
+            prefix = ["exec", f"{tool_name}@{version}", "--", spec.bin_name]
         return ResolvedCommandline(
             executable="mise",
-            prefix=["exec", tool_spec, "--", spec.bin_name],
+            prefix=prefix,
             runner=runner,
             runner_source=source,
             effective_runner=effective,
@@ -476,8 +676,11 @@ def _resolve_bin_commandline(
 
     内部的には `build_commandline` と `ensure_mise_available` を組み合わせて
     `(executable, prefix)` を返す。新規利用箇所では `build_commandline` を直接使う。
+    本wrapperは `ensure_mise_available` を必ず呼ぶ副作用ありの経路であるため、
+    `build_commandline` 側にも `allow_side_effects=True` を渡してmise設定判定の
+    trustリトライを許可し、両者の副作用契約を揃える。
     """
-    resolved = build_commandline(command, config)
+    resolved = build_commandline(command, config, allow_side_effects=True)
     resolved = ensure_mise_available(resolved, config, command=command)
     return resolved.executable, list(resolved.prefix)
 
@@ -503,9 +706,13 @@ def ensure_mise_available(
     """
     if resolved.executable != "mise":
         return resolved
-    # bin_nameはprefixの末尾。specが無くてもresolved.prefixから取り出す。
+    # `build_commandline` の `effective == "mise"` 分岐は次の2形態を返す。
+    # - tool spec省略形: `prefix = ["exec", "--", <bin>]`（mise設定記述あり時）
+    # - 従来形: `prefix = ["exec", <tool_spec>, "--", <bin>]`（mise設定記述なし時）
+    # `prefix[1] == "--"` で両形態を判別し、`mise exec --version` 用argsとエラー文面を出し分ける。
     bin_name = resolved.prefix[-1]
-    tool_spec = resolved.prefix[1] if len(resolved.prefix) >= 2 else ""
+    has_tool_spec = len(resolved.prefix) >= 2 and resolved.prefix[1] != "--"
+    tool_spec = resolved.prefix[1] if has_tool_spec else ""
 
     if shutil.which("mise") is None:
         # mise不在 → direct PATH解決へフォールバック。
@@ -518,30 +725,21 @@ def ensure_mise_available(
     # 解決してしまう挙動を回避するため、PATHからmise toolパスを除外したenvを渡す。
     # 詳細はCLAUDE.md「subprocess起動時のPATH整理方針」節を参照。
     mise_env = _build_mise_subprocess_env(dict(os.environ))
-    check_args = ["mise", "exec", tool_spec, "--", bin_name, "--version"]
-    trusted = False
-    while True:
-        check = subprocess.run(check_args, capture_output=True, text=True, check=False, env=mise_env)
-        if check.returncode == 0:
-            return resolved
-        stderr = check.stderr
-        if not trusted and config["mise-auto-trust"] and "not trusted" in stderr:
-            trust = subprocess.run(
-                ["mise", "trust", "--yes", "--all"],
-                capture_output=True,
-                text=True,
-                check=False,
-                env=mise_env,
-            )
-            if trust.returncode == 0:
-                trusted = True
-                continue
-            raise FileNotFoundError(f"mise trust --yes --all: {trust.stderr.strip()}")
-        # mise registryからのツール消失・バージョン解決失敗などで起動できない場合に、
-        # 利用者がpyfltr設定だけで救済できるようdirect経路への切替を案内する。
-        hint_command = command if command is not None else bin_name
-        hint = f'{hint_command}-runner = "direct" を指定するとmiseを介さずPATH上のバイナリを直接実行します'
-        raise FileNotFoundError(f"mise exec {tool_spec} -- {bin_name}: {stderr.strip()}\n{hint}")
+    if has_tool_spec:
+        check_args = ["mise", "exec", tool_spec, "--", bin_name, "--version"]
+    else:
+        check_args = ["mise", "exec", "--", bin_name, "--version"]
+    returncode, _stdout, stderr, trust_failed = _run_mise_with_trust(check_args, mise_env, config, allow_side_effects=True)
+    if returncode == 0:
+        return resolved
+    if trust_failed:
+        raise FileNotFoundError(f"mise trust --yes --all: {stderr.strip()}")
+    # mise registryからのツール消失・バージョン解決失敗などで起動できない場合に、
+    # 利用者がpyfltr設定だけで救済できるようdirect経路への切替を案内する。
+    hint_command = command if command is not None else bin_name
+    hint = f'{hint_command}-runner = "direct" を指定するとmiseを介さずPATH上のバイナリを直接実行します'
+    prefix_text = f"mise exec {tool_spec} -- {bin_name}" if has_tool_spec else f"mise exec -- {bin_name}"
+    raise FileNotFoundError(f"{prefix_text}: {stderr.strip()}\n{hint}")
 
 
 def _failed_resolution_result(
@@ -1297,7 +1495,9 @@ def _prepare_execution_params(
     # bin-runner経路（mise / direct / グローバル `bin-runner` 委譲）とjs-runner経路、
     # 直接実行を統一的に扱う。mise経路では事前可用性チェック（mise exec --version）も実行する。
     try:
-        resolved = build_commandline(command, config)
+        # 実コマンド実行経路はmise副作用を許可し、mise設定判定の `mise ls --current --json` でも
+        # `mise-auto-trust` に従ったtrust→再実行を可能にする。
+        resolved = build_commandline(command, config, allow_side_effects=True)
         resolved = ensure_mise_available(resolved, config, command=command)
     except ValueError as e:
         return _failed_resolution_result(command, command_info, str(e), files=len(targets))

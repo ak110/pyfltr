@@ -371,7 +371,34 @@ cargo-fmt-version = "1.83.0"
 dotnet-format-version = "9.0.100"
 ```
 
-miseモードでは`mise exec <tool>@<version> -- <command>`として展開される。directモードではバージョン指定は無視される。
+`{command}-path`を明示した場合は、runner種別を問わず最初に評価され、その値で直接実行する（`bin-runner`設定を無視）。
+
+miseモードでの起動コマンドの優先順位は次のとおり（`{command}-path`未指定時）。
+
+1. `{command}-version`に具体値を明示（`"latest"`以外）→
+   `mise exec <tool>@<version> -- <command>`を組み立てる
+2. `{command}-version`が既定`"latest"`のまま、かつmise設定に当該ツールの記述がある →
+   tool specを省略し`mise exec -- <command>`を組み立てる。
+   mise設定の対象はプロジェクトmise.tomlとグローバル設定の両方。
+   判定は`mise ls --current --json`の結果を参照する（mise.tomlを直接パースしない）
+3. いずれも該当しない → `mise exec <backend>@latest -- <command>`を組み立てる
+
+2の挙動により、mise設定に記述したバージョン固定やcomponents指定が`pyfltr`経由の実行にもそのまま反映される。
+`cargo-fmt-version`等をpyfltr側で別途明示する二重管理は不要になる。
+
+この挙動は破壊的変更である。
+mise設定（プロジェクトまたはグローバル）に該当ツールの記述があり、かつ`{command}-version`を未指定の場合、
+以前は`mise exec <backend>@latest -- <command>`で起動していた。
+新仕様では`mise exec -- <command>`へ変わる。
+従来挙動を維持したい場合は`{command}-version`に具体値を明示すればよい。
+
+```toml
+[tool.pyfltr]
+# 従来通り rust@1.83.0 で起動させたい場合
+cargo-fmt-version = "1.83.0"
+```
+
+directモードではバージョン指定は無視される。
 
 値に`:`または`@`を含む場合は、miseの[tool spec](https://mise.jdx.dev/dev-tools/#tool-options)全体として扱う。
 `<bin_name>@`接頭辞や既定backendの付与は行われず、値がそのまま`mise exec`に渡る。

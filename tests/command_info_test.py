@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 
 import pytest
 
@@ -20,7 +21,11 @@ def _run(command: str, *, output_format: str = "text", do_check: bool = False, c
 
 
 def test_command_info_text_cargo_fmt(capsys: pytest.CaptureFixture[str]) -> None:
-    """cargo-fmtの既定設定でmise形式のコマンドラインがセクション付きで表示される。"""
+    """cargo-fmtの既定設定（mise.toml記述なし）でmise形式のコマンドラインがセクション付きで表示される。
+
+    autouseフィクスチャ `_default_mise_active_tools_empty` により判定辞書は空（記述なし）扱い。
+    したがって従来通り `<backend>@latest` を組み立てる経路が選ばれる。
+    """
     out = _run("cargo-fmt", capsys=capsys)
     assert "# cargo-fmt" in out
     # セクション見出しが付与されること。
@@ -33,6 +38,38 @@ def test_command_info_text_cargo_fmt(capsys: pytest.CaptureFixture[str]) -> None
     # cargo-fmtはfix-args未定義のため、fix stepは併記されない。
     assert "commandline (fix step)" not in out
     assert "commandline (check step)" not in out
+
+
+def test_command_info_text_cargo_fmt_with_mise_active(capsys: pytest.CaptureFixture[str], monkeypatch) -> None:
+    """mise.tomlに `rust` 記述があるとtool specを省略した `mise exec -- cargo` 形になる。"""
+    monkeypatch.setattr(
+        "pyfltr.command._get_mise_active_tools",
+        lambda config, *, allow_side_effects=False: {"rust": [{"version": "1.83.0"}]},
+    )
+    out = _run("cargo-fmt", capsys=capsys)
+    assert "commandline: mise exec -- cargo" in out
+    # tool spec省略でも `runner: bin-runner` / `effective_runner: mise` は維持される。
+    assert "effective_runner: mise" in out
+
+
+def test_command_info_check_passes_allow_side_effects_true(capsys: pytest.CaptureFixture[str], mocker) -> None:
+    """`--check` 真時は `_get_mise_active_tools` へ `allow_side_effects=True` が渡る。"""
+    spy = mocker.patch("pyfltr.command._get_mise_active_tools", return_value={})
+    # ensure_mise_available 内のsubprocess.runは成功扱いに固定する（FileNotFoundErrorで失敗しないため）。
+    mocker.patch("shutil.which", return_value="/usr/local/bin/mise")
+    mocker.patch("subprocess.run", return_value=subprocess.CompletedProcess(["mise"], returncode=0, stdout="", stderr=""))
+    _run("cargo-fmt", do_check=True, capsys=capsys)
+    # 少なくとも1回は allow_side_effects=True で呼ばれている。
+    assert any(call.kwargs.get("allow_side_effects") is True for call in spy.call_args_list)
+
+
+def test_command_info_no_check_passes_allow_side_effects_false(capsys: pytest.CaptureFixture[str], mocker) -> None:
+    """`--check` 偽時は `_get_mise_active_tools` へ `allow_side_effects=False` が渡る。"""
+    spy = mocker.patch("pyfltr.command._get_mise_active_tools", return_value={})
+    _run("cargo-fmt", capsys=capsys)
+    # 副作用なし契約のため `allow_side_effects=True` での呼び出しが発生しないこと。
+    assert all(call.kwargs.get("allow_side_effects") is False for call in spy.call_args_list)
+    assert spy.call_count >= 1
 
 
 def test_command_info_text_textlint_includes_fix_step(capsys: pytest.CaptureFixture[str]) -> None:

@@ -265,13 +265,15 @@ pyfltr command-info <tool> [--format text|json] [--check]
 出力はセクション見出し（`## 実行コマンド` / `## ランナー解決` / `## 設定` / `## 環境変数`）で関連項目をまとめる。
 情報が無いセクションは省略される。
 
+mise設定（プロジェクトmise.tomlまたはグローバル設定）に`rust`記述がある場合の出力例:
+
 ```console
 $ pyfltr command-info cargo-fmt
 # cargo-fmt
 
 ## 実行コマンド
 
-commandline: mise exec rust@latest -- cargo fmt
+commandline: mise exec -- cargo fmt
 executable: mise
 executable_resolved: /home/user/.local/bin/mise
 
@@ -286,6 +288,9 @@ enabled: True
 configured_args: fmt
 version: latest
 ```
+
+tool specを省略した`mise exec -- cargo fmt`形になり、mise設定の解決済み内容（バージョン固定・components等）が反映される。
+mise設定に`rust`記述が無い場合は`mise exec rust@latest -- cargo fmt`形になる。
 
 `{command}-fix-args`が定義されているコマンド（textlint・markdownlintなど）では、`commandline (fix step):`と`commandline (check step):`を併記する。
 fix段とcheck段の二度実行が異なる引数を必要とするためである。

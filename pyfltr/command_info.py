@@ -89,7 +89,10 @@ def _collect_info(command: str, config: pyfltr.config.Config, *, do_check: bool)
     }
 
     try:
-        resolved = pyfltr.command.build_commandline(command, config)
+        # `--check` 真時のみmise設定判定の副作用（trust経由再実行）も許可する。
+        # `--check` 偽時は副作用なし契約を維持し、mise設定判定も副作用OFFで動かす
+        # （未信頼config由来エラーや取得失敗を「記述なし」扱いとして従来形を返す）。
+        resolved = pyfltr.command.build_commandline(command, config, allow_side_effects=do_check)
     except (ValueError, FileNotFoundError) as e:
         base["resolved"] = False
         base["error"] = str(e)
