@@ -112,7 +112,7 @@ plugins:
 
         `pyfltr run-for-agent`は`run`の出力形式の既定値を`jsonl`に切り替えたサブコマンド。
         環境変数`PYFLTR_OUTPUT_FORMAT=jsonl`でも出力形式を既定で切り替えられる。
-        環境変数`AI_AGENT`が設定されていれば、`jsonl`を受理する全サブコマンド（実行系・`list-runs`・`show-run`・`config list`）で出力形式の既定値が`jsonl`になる（値の中身は問わない。`command-info`は`jsonl`非対応のため対象外）。
+        環境変数`AI_AGENT`が設定されていれば、サブコマンドが受理する形式に応じて出力形式の既定値が機械可読な値へ切り替わる（実行系・参照系は`jsonl`、`command-info`は`json`、値の中身は問わない）。
         優先順位は`CLI > PYFLTR_OUTPUT_FORMAT > サブコマンド既定値 > AI_AGENT > text`で、`PYFLTR_OUTPUT_FORMAT=text`で`run-for-agent`配下や`AI_AGENT`環境下でもtextへ切り戻せる。
         実行系サブコマンドのJSONL `header`レコードには解決経路ラベル`format_source`が常時含まれ、利用者は`AI_AGENT`環境下でも実際にどの優先段階で値が決まったかを後追いできる。
 

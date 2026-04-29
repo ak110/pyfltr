@@ -509,7 +509,7 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
 
     # command-info: 対象ツールの起動方式・解決結果を表示する（実行はしない）
     if subcommand == "command-info":
-        return pyfltr.command_info.execute_command_info(args)
+        return pyfltr.command_info.execute_command_info(parser, args)
 
     # MCPサーバーサブコマンド: stdioでFastMCPサーバーを起動する。
     if subcommand == "mcp":

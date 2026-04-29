@@ -528,14 +528,14 @@ CLIオプション`--output-format`が指定されている場合は環境変数
 `PYFLTR_OUTPUT_FORMAT`を明示すれば`AI_AGENT`環境下や`run-for-agent`配下でもtext等へ切り戻せる
 （例: `PYFLTR_OUTPUT_FORMAT=text pyfltr run-for-agent`）。
 
-`AI_AGENT`は`jsonl`を受理するサブコマンドでのみ`jsonl`既定を有効にする。
-`jsonl`非対応の`command-info`（`text`/`json`の2値）では`AI_AGENT`を無視する。
+`AI_AGENT`検出時の既定値はサブコマンドが受理する形式に応じて切り替える。
+実行系・参照系では`jsonl`を、`command-info`では`json`を採用する（既定値は呼び出し側で注入する）。
 
 - 実行系（`run` / `ci` / `fast` / `run-for-agent`）: 5値（`text` / `jsonl` / `sarif` / `github-annotations` / `code-quality`）。
   `AI_AGENT`設定で`jsonl`に切り替わる
 - 参照系（`list-runs` / `show-run` / `config list`）: 3値（`text` / `json` / `jsonl`）。
   `AI_AGENT`設定で`jsonl`に切り替わる
-- `command-info`: 2値（`text` / `json`）。`jsonl`非対応のため`AI_AGENT`は無視される
+- `command-info`: 2値（`text` / `json`）。`AI_AGENT`設定で`json`に切り替わる
 
 JSONL `header`レコードには解決経路を示す`format_source`フィールドが常時出力される。
 値は次の5語彙のいずれかで、`AI_AGENT`環境下でも実際にどの優先段階で値が決まったかを後追いできる。

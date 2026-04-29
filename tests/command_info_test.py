@@ -13,9 +13,12 @@ import pyfltr.command_info
 import pyfltr.config
 
 
-def _run(command: str, *, output_format: str = "text", do_check: bool = False, capsys: pytest.CaptureFixture[str]) -> str:
+def _run(
+    command: str, *, output_format: str | None = "text", do_check: bool = False, capsys: pytest.CaptureFixture[str]
+) -> str:
+    parser = argparse.ArgumentParser()
     args = argparse.Namespace(command=command, output_format=output_format, check=do_check)
-    rc = pyfltr.command_info.execute_command_info(args)
+    rc = pyfltr.command_info.execute_command_info(parser, args)
     captured = capsys.readouterr()
     assert rc == 0, captured.err
     return captured.out
@@ -125,10 +128,30 @@ def test_command_info_json_textlint_has_fix_commandline(capsys: pytest.CaptureFi
     assert "json" in info["commandline"]
 
 
+def test_command_info_ai_agent_default_json(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+    """`AI_AGENT`設定時の`command-info`既定出力はjson形式になる。"""
+    monkeypatch.setenv("AI_AGENT", "1")
+    out = _run("typos", output_format=None, capsys=capsys)
+    info = json.loads(out)
+    assert info["command"] == "typos"
+    assert info["runner"] == "direct"
+
+
+def test_command_info_pyfltr_env_overrides_ai_agent(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`PYFLTR_OUTPUT_FORMAT=text`は`AI_AGENT`より優先され、textが選ばれる。"""
+    monkeypatch.setenv("AI_AGENT", "1")
+    monkeypatch.setenv("PYFLTR_OUTPUT_FORMAT", "text")
+    out = _run("typos", output_format=None, capsys=capsys)
+    assert out.startswith("# typos")
+
+
 def test_command_info_unknown_command(capsys: pytest.CaptureFixture[str]) -> None:
     """未知のコマンド名はエラー終了する。"""
+    parser = argparse.ArgumentParser()
     args = argparse.Namespace(command="not-a-tool", output_format="text", check=False)
-    rc = pyfltr.command_info.execute_command_info(args)
+    rc = pyfltr.command_info.execute_command_info(parser, args)
     captured = capsys.readouterr()
     assert rc == 1
     assert "未知のコマンド" in captured.err

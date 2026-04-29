@@ -14,8 +14,12 @@ import shutil
 import sys
 import typing
 
+import pyfltr.cli
 import pyfltr.command
 import pyfltr.config
+
+_OUTPUT_FORMATS: tuple[str, ...] = ("text", "json")
+_VALID_OUTPUT_FORMATS: frozenset[str] = frozenset(_OUTPUT_FORMATS)
 
 
 def register_subparsers(subparsers: typing.Any) -> None:
@@ -31,9 +35,14 @@ def register_subparsers(subparsers: typing.Any) -> None:
     parser.add_argument(
         "--format",
         dest="output_format",
-        choices=("text", "json"),
-        default="text",
-        help="出力形式を指定する（既定: text）。",
+        choices=_OUTPUT_FORMATS,
+        default=None,
+        help=(
+            "出力形式を指定する（text / json、既定: text）。"
+            f"未指定時は環境変数 {pyfltr.cli.OUTPUT_FORMAT_ENV} を、"
+            f"{pyfltr.cli.AI_AGENT_ENV} が設定されていれば json を採用する"
+            f"(優先順位: CLI > {pyfltr.cli.OUTPUT_FORMAT_ENV} > {pyfltr.cli.AI_AGENT_ENV} > text)。"
+        ),
     )
     parser.add_argument(
         "--check",
@@ -44,7 +53,7 @@ def register_subparsers(subparsers: typing.Any) -> None:
     )
 
 
-def execute_command_info(args: argparse.Namespace) -> int:
+def execute_command_info(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
     """`command-info` サブコマンドの処理本体。"""
     try:
         config = pyfltr.config.load_config()
@@ -59,7 +68,12 @@ def execute_command_info(args: argparse.Namespace) -> int:
 
     info = _collect_info(command, config, do_check=bool(args.check))
 
-    output_format: str = args.output_format
+    output_format = pyfltr.cli.resolve_output_format(
+        parser,
+        args.output_format,
+        valid_values=_VALID_OUTPUT_FORMATS,
+        ai_agent_default="json",
+    ).format
     if output_format == "json":
         json.dump(info, sys.stdout, ensure_ascii=False, indent=2)
         sys.stdout.write("\n")
