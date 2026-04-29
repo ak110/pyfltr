@@ -14,6 +14,7 @@ import pathlib
 import pytest
 
 import pyfltr.archive
+import pyfltr.error_parser
 import pyfltr.main
 from tests.conftest import make_error_location as _make_error
 from tests.conftest import seed_archive_run as _seed_run
@@ -206,6 +207,35 @@ def test_show_run_tool_text(
     assert "command: mypy" in out
     assert "src/a.py:42:5" in out
     assert "型エラー" in out
+
+
+def test_show_run_tool_text_renders_hint_urls_and_hints(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`hint_urls`と`hints`がtool.jsonにあるとき`show-run --commands`のtext出力に表示される。"""
+    error = pyfltr.error_parser.ErrorLocation(
+        file="src/a.py",
+        line=1,
+        col=2,
+        command="ruff-check",
+        message="unused import",
+        rule="F401",
+        rule_url="https://docs.astral.sh/ruff/rules/F401/",
+        hint="Remove the unused import.",
+    )
+    run_id = _seed_run(
+        tmp_path,
+        tool_results=[("ruff-check", 1, "out", [error])],
+    )
+
+    returncode = pyfltr.main.run(["show-run", run_id, "--commands", "ruff-check"])
+    assert returncode == 0
+    out = capsys.readouterr().out
+    assert "hint_urls:" in out
+    assert "F401: https://docs.astral.sh/ruff/rules/F401/" in out
+    assert "hints:" in out
+    assert "F401: Remove the unused import." in out
 
 
 def test_show_run_tool_json(

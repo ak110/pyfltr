@@ -329,6 +329,11 @@ def _print_tool_detail_text(
         print("hint_urls:")
         for rule, url in hint_urls.items():
             print(f"  {rule}: {url}")
+    hints = tool_meta.get("hints")
+    if isinstance(hints, dict) and hints:
+        print("hints:")
+        for key, value in hints.items():
+            print(f"  {key}: {value}")
     print("")
     print("diagnostics:")
     if not diagnostics:
