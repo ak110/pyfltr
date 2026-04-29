@@ -333,9 +333,24 @@ bin-runner = "mise"
 GitHub ActionsでCIを実行する場合は[jdx/mise-action](https://github.com/jdx/mise-action)でmiseをセットアップする。
 
 ```yaml
-- name: Setup mise
-  uses: jdx/mise-action@v4
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    env:
+      # mise・pinact等がGitHub APIを叩く際のレート制限（403）回避
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v4
+      - run: uvx pyfltr ci
 ```
+
+`GITHUB_TOKEN`を渡さないと、mise本体やツールのリリース取得時にGitHub APIの匿名レート制限へ達する。
+結果として、mise-actionの`mise install`およびpyfltr経由の`mise exec`実行時の自動インストールが失敗する。
+`${{ github.token }}`と`${{ secrets.GITHUB_TOKEN }}`は等価。GitHub Actionsで自動発行されるため追加のシークレット設定は不要。
+
+`container:`指定ジョブでは`secrets.GITHUB_TOKEN`がコンテナ内へ自動で渡らないため、上記のとおり`env:`への明示が必須。
+ジョブレベル`env:`に置けばmise-actionステップとpyfltr実行ステップの両方をまとめてカバーできる。
 
 miseを使わず、PATH上のバイナリを直接使う場合は`bin-runner = "direct"`を設定する。
 
