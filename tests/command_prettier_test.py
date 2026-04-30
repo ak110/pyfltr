@@ -3,8 +3,6 @@
 `_execute_prettier_two_step` の動作を検証する。
 """
 
-# pylint: disable=protected-access,duplicate-code
-
 import os
 import pathlib
 import subprocess
