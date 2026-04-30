@@ -2,7 +2,7 @@
 
 import concurrent.futures
 
-import pyfltr.command.core
+import pyfltr.command.core_
 import pyfltr.config.config
 
 
@@ -11,7 +11,7 @@ def make_skipped_result(
     config: pyfltr.config.config.Config,
     *,
     reason: str | None = None,
-) -> pyfltr.command.core.CommandResult:
+) -> pyfltr.command.core_.CommandResult:
     """中断対象の skipped CommandResult を作る。
 
     `reason`が指定された場合は`CommandResult.output`に反映する。省略時は既定の
@@ -20,7 +20,7 @@ def make_skipped_result(
     """
     command_info = config.commands[command]
     output = reason if reason is not None else "--fail-fast により実行をスキップしました。"
-    return pyfltr.command.core.CommandResult(
+    return pyfltr.command.core_.CommandResult(
         command=command,
         command_type=command_info.type,
         commandline=[],

@@ -11,7 +11,7 @@ import typing
 import pyfltr.cli.precommit_guidance
 import pyfltr.command.process
 import pyfltr.config.config
-from pyfltr.command.core import CommandResult
+from pyfltr.command.core_ import CommandResult
 
 logger = __import__("logging").getLogger(__name__)
 

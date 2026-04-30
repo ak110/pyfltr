@@ -10,7 +10,7 @@ import typing
 import pyfltr.command.error_parser
 import pyfltr.command.process
 import pyfltr.config.config
-from pyfltr.command.core import CommandResult
+from pyfltr.command.core_ import CommandResult
 from pyfltr.command.runner import build_invocation_argv
 from pyfltr.command.snapshot import (
     changed_files,

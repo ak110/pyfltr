@@ -12,7 +12,7 @@ import pathlib
 
 import pytest
 
-import pyfltr.command.core
+import pyfltr.command.core_
 import pyfltr.command.error_parser
 import pyfltr.command.mise
 import pyfltr.config.config
@@ -109,20 +109,20 @@ def make_execution_context(
     cache_run_id: str | None = None,
     fix_stage: bool = False,
     only_failed_targets: pyfltr.state.only_failed.ToolTargets | None = None,
-) -> pyfltr.command.core.ExecutionContext:
+) -> pyfltr.command.core_.ExecutionContext:
     """テスト用の ExecutionContext を生成する。
 
     `execute_command`を直接呼び出すテストで使用する。
     CLI/TUIフック系（on_output / is_interrupted / on_subprocess_start / on_subprocess_end）は
     テストでは不要なため省略（デフォルトのNoneが使われる）。
     """
-    base = pyfltr.command.core.ExecutionBaseContext(
+    base = pyfltr.command.core_.ExecutionBaseContext(
         config=config,
         all_files=all_files,
         cache_store=cache_store,
         cache_run_id=cache_run_id,
     )
-    return pyfltr.command.core.ExecutionContext(
+    return pyfltr.command.core_.ExecutionContext(
         base=base,
         fix_stage=fix_stage,
         only_failed_targets=only_failed_targets,
@@ -145,7 +145,7 @@ def make_command_result(
     cached_from: str | None = None,
     target_files: list[pathlib.Path] | None = None,
     resolution_failed: bool = False,
-) -> pyfltr.command.core.CommandResult:
+) -> pyfltr.command.core_.CommandResult:
     """テスト用の CommandResult を生成する。
 
     `has_error`を省略した場合、`returncode`が0/None以外ならTrueに推定する。
@@ -156,7 +156,7 @@ def make_command_result(
     """
     if has_error is None:
         has_error = returncode is not None and returncode != 0
-    return pyfltr.command.core.CommandResult(
+    return pyfltr.command.core_.CommandResult(
         command=command,
         command_type=command_type,
         commandline=[command],
@@ -192,22 +192,22 @@ def make_error_location(
     )
 
 
-def make_formatted_result(command: str = "ruff-format") -> pyfltr.command.core.CommandResult:
+def make_formatted_result(command: str = "ruff-format") -> pyfltr.command.core_.CommandResult:
     """`status == "formatted"` になる最小の CommandResult を生成する。
 
     `main_test`など複数のテストファイルで同様の構築が必要なためconftest.pyに集約する。
     """
-    return pyfltr.command.core.CommandResult(
+    return pyfltr.command.core_.CommandResult(
         command, "formatter", [command], returncode=1, has_error=False, files=1, output="", elapsed=0.01
     )
 
 
-def make_succeeded_result(command: str = "ruff-check") -> pyfltr.command.core.CommandResult:
+def make_succeeded_result(command: str = "ruff-check") -> pyfltr.command.core_.CommandResult:
     """`status == "succeeded"` になる最小の CommandResult を生成する。
 
     `main_test`など複数のテストファイルで同様の構築が必要なためconftest.pyに集約する。
     """
-    return pyfltr.command.core.CommandResult(
+    return pyfltr.command.core_.CommandResult(
         command, "linter", [command], returncode=0, has_error=False, files=1, output="", elapsed=0.01
     )
 

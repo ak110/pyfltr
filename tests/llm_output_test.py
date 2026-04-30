@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-import pyfltr.command.core
+import pyfltr.command.core_
 import pyfltr.command.error_parser
 import pyfltr.command.mise
 import pyfltr.config.config
@@ -172,7 +172,7 @@ def test_build_warning_record_with_hint() -> None:
 
 def test_build_command_record_includes_hint_urls_when_provided() -> None:
     """hint_urlsを与えるとtoolレコードに`hint_urls`キーで埋め込まれる。"""
-    result = pyfltr.command.core.CommandResult(
+    result = pyfltr.command.core_.CommandResult(
         command="ruff-check",
         command_type="linter",
         commandline=["ruff"],
@@ -192,7 +192,7 @@ def test_build_command_record_includes_hint_urls_when_provided() -> None:
 
 def test_build_command_record_omits_hint_urls_when_empty() -> None:
     """hint_urlsがNone / 空の場合は`hint_urls`キー自体を出さない。"""
-    result = pyfltr.command.core.CommandResult(
+    result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
         commandline=["mypy"],
@@ -210,7 +210,7 @@ def test_build_command_record_omits_hint_urls_when_empty() -> None:
 
 def test_build_command_record_retry_command_included() -> None:
     """retry_commandが設定されていればtoolレコードに含まれる（失敗時のみpopulateされる前提）。"""
-    result = pyfltr.command.core.CommandResult(
+    result = pyfltr.command.core_.CommandResult(
         command="ruff-check",
         command_type="linter",
         commandline=["ruff", "check"],
@@ -227,7 +227,7 @@ def test_build_command_record_retry_command_included() -> None:
 
 def test_build_command_record_retry_command_omitted() -> None:
     """retry_commandがNoneの場合、toolレコードから省略される。"""
-    result = pyfltr.command.core.CommandResult(
+    result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
         commandline=["mypy"],
@@ -247,7 +247,7 @@ def test_build_command_lines_truncates_diagnostics_when_archived() -> None:
         pyfltr.command.error_parser.ErrorLocation(file="src/foo.py", line=i, col=None, command="mypy", message=f"err{i}")
         for i in range(10)
     ]
-    result = pyfltr.command.core.CommandResult(
+    result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
         commandline=["mypy"],
@@ -279,7 +279,7 @@ def test_build_command_lines_no_truncation_when_not_archived() -> None:
         pyfltr.command.error_parser.ErrorLocation(file="src/foo.py", line=i, col=None, command="mypy", message=f"err{i}")
         for i in range(10)
     ]
-    result = pyfltr.command.core.CommandResult(
+    result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
         commandline=["mypy"],
@@ -305,7 +305,7 @@ def test_build_command_lines_no_truncation_when_not_archived() -> None:
 
 def test_build_command_record_cached_includes_cached_from() -> None:
     """cached=Trueのときcached/cached_fromとcached_elapsedがtoolレコードに含まれる。"""
-    result = pyfltr.command.core.CommandResult(
+    result = pyfltr.command.core_.CommandResult(
         command="textlint",
         command_type="linter",
         commandline=["textlint"],
@@ -328,7 +328,7 @@ def test_build_command_record_cached_includes_cached_from() -> None:
 
 def test_build_command_record_cached_omitted_when_false() -> None:
     """cached=Falseの場合はcached/cached_from/cached_elapsedが省略されelapsedが出る。"""
-    result = pyfltr.command.core.CommandResult(
+    result = pyfltr.command.core_.CommandResult(
         command="textlint",
         command_type="linter",
         commandline=["textlint"],
@@ -347,7 +347,7 @@ def test_build_command_record_cached_omitted_when_false() -> None:
 
 def test_build_command_record_cached_without_cached_from() -> None:
     """cached_fromが未設定でもcached=Trueならcached_elapsedは出る。"""
-    result = pyfltr.command.core.CommandResult(
+    result = pyfltr.command.core_.CommandResult(
         command="textlint",
         command_type="linter",
         commandline=["textlint"],
@@ -378,7 +378,7 @@ def test_build_command_record_message_truncated_when_archived() -> None:
     tail_marker = "TAIL-MARKER-LINE"
     body = "\n".join(f"line{i}" for i in range(4000))
     output = head_marker + "\n" + body + "\n" + tail_marker
-    result = pyfltr.command.core.CommandResult(
+    result = pyfltr.command.core_.CommandResult(
         command="shellcheck",
         command_type="linter",
         commandline=["shellcheck"],
@@ -476,7 +476,7 @@ def test_collect_mise_active_tools_for_header_propagates_error_status(monkeypatc
 
 def test_build_summary_record_emits_guidance_on_failure() -> None:
     """failed > 0のときsummary.guidanceが英語で付与され、launcher_prefixとrun_idが埋め込まれる。"""
-    result = pyfltr.command.core.CommandResult(
+    result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
         commandline=["mypy"],
@@ -505,7 +505,7 @@ def test_build_summary_record_emits_guidance_on_failure() -> None:
 
 def test_build_summary_record_guidance_falls_back_when_unspecified() -> None:
     """run_id / launcher_prefix未指定時はプレースホルダー・既定値にフォールバックする。"""
-    result = pyfltr.command.core.CommandResult(
+    result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
         commandline=["mypy"],
@@ -525,7 +525,7 @@ def test_build_summary_record_guidance_falls_back_when_unspecified() -> None:
 
 def test_build_summary_record_counts_resolution_failed() -> None:
     """resolution_failedはfailedと区別してcommands_summary.needs_action配下に集計され、guidanceも付与される。"""
-    result = pyfltr.command.core.CommandResult(
+    result = pyfltr.command.core_.CommandResult(
         command="shellcheck",
         command_type="linter",
         commandline=[],
@@ -544,7 +544,7 @@ def test_build_summary_record_counts_resolution_failed() -> None:
 
 def test_build_summary_record_groups_statuses_into_no_issues_and_needs_action() -> None:
     """5種別のステータスがcommands_summary.no_issues / needs_actionの2グループへ正しく振り分けられる。"""
-    succeeded = pyfltr.command.core.CommandResult(
+    succeeded = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
         commandline=["mypy"],
@@ -554,7 +554,7 @@ def test_build_summary_record_groups_statuses_into_no_issues_and_needs_action() 
         output="",
         elapsed=0.0,
     )
-    formatted = pyfltr.command.core.CommandResult(
+    formatted = pyfltr.command.core_.CommandResult(
         command="ruff-format",
         command_type="formatter",
         commandline=["ruff", "format"],
@@ -564,7 +564,7 @@ def test_build_summary_record_groups_statuses_into_no_issues_and_needs_action() 
         output="",
         elapsed=0.0,
     )
-    skipped = pyfltr.command.core.CommandResult(
+    skipped = pyfltr.command.core_.CommandResult(
         command="pylint",
         command_type="linter",
         commandline=["pylint"],
@@ -574,7 +574,7 @@ def test_build_summary_record_groups_statuses_into_no_issues_and_needs_action() 
         output="",
         elapsed=0.0,
     )
-    failed = pyfltr.command.core.CommandResult(
+    failed = pyfltr.command.core_.CommandResult(
         command="ruff-check",
         command_type="linter",
         commandline=["ruff", "check"],
@@ -584,7 +584,7 @@ def test_build_summary_record_groups_statuses_into_no_issues_and_needs_action() 
         output="",
         elapsed=0.0,
     )
-    resolution_failed = pyfltr.command.core.CommandResult(
+    resolution_failed = pyfltr.command.core_.CommandResult(
         command="shellcheck",
         command_type="linter",
         commandline=[],
@@ -616,7 +616,7 @@ def test_build_summary_record_groups_statuses_into_no_issues_and_needs_action() 
 
 def test_build_summary_record_omits_resolution_failed_when_zero() -> None:
     """`resolution_failed`が0件のときキー自体を省略する。"""
-    result = pyfltr.command.core.CommandResult(
+    result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
         commandline=["mypy"],
@@ -634,7 +634,7 @@ def test_build_summary_record_omits_resolution_failed_when_zero() -> None:
 
 def test_build_summary_record_failed_always_present() -> None:
     """`failed`は0件でも常時出力される。"""
-    result = pyfltr.command.core.CommandResult(
+    result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
         commandline=["mypy"],
@@ -652,7 +652,7 @@ def test_build_summary_record_failed_always_present() -> None:
 
 def test_build_summary_record_no_guidance_on_success() -> None:
     """failed == 0かつapplied_fixesも空のときはsummary.guidanceが省略される。"""
-    result = pyfltr.command.core.CommandResult(
+    result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
         commandline=["mypy"],
@@ -668,7 +668,7 @@ def test_build_summary_record_no_guidance_on_success() -> None:
 
 def test_build_summary_record_guidance_emits_formatter_notice_only() -> None:
     """failed/resolution_failed=0でもapplied_fixesが非空ならguidanceにformatter書き換え注記1項目だけ出る。"""
-    result = pyfltr.command.core.CommandResult(
+    result = pyfltr.command.core_.CommandResult(
         command="ruff-format",
         command_type="formatter",
         commandline=["ruff", "format"],
@@ -689,7 +689,7 @@ def test_build_summary_record_guidance_emits_formatter_notice_only() -> None:
 
 def test_build_summary_record_guidance_combines_failure_and_formatter_notice() -> None:
     """failed>0かつapplied_fixes非空のときは失敗時の4項目に続けてformatter書き換え注記が並ぶ。"""
-    failed = pyfltr.command.core.CommandResult(
+    failed = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
         commandline=["mypy"],
@@ -699,7 +699,7 @@ def test_build_summary_record_guidance_combines_failure_and_formatter_notice() -
         output="",
         elapsed=0.1,
     )
-    formatted = pyfltr.command.core.CommandResult(
+    formatted = pyfltr.command.core_.CommandResult(
         command="ruff-format",
         command_type="formatter",
         commandline=["ruff", "format"],
@@ -725,7 +725,7 @@ def test_build_summary_record_guidance_combines_failure_and_formatter_notice() -
 
 def test_build_summary_record_includes_fully_excluded_files() -> None:
     """fully_excluded_files指定時はsummaryレコードに出力される。"""
-    result = pyfltr.command.core.CommandResult(
+    result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
         commandline=["mypy"],
@@ -745,7 +745,7 @@ def test_build_summary_record_includes_fully_excluded_files() -> None:
 
 def test_build_summary_record_omits_fully_excluded_files_when_empty() -> None:
     """空リスト・Noneの場合はキー自体を出力しない。"""
-    result = pyfltr.command.core.CommandResult(
+    result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
         commandline=["mypy"],
@@ -842,7 +842,7 @@ def test_build_command_record_includes_hints_from_errors() -> None:
 
 def test_build_command_record_hints_key_present_when_hints_given() -> None:
     """`hints`引数が非空なら`command.hints`キーとして埋め込まれる。"""
-    result = pyfltr.command.core.CommandResult(
+    result = pyfltr.command.core_.CommandResult(
         command="ruff-check",
         command_type="linter",
         commandline=["ruff"],
@@ -862,7 +862,7 @@ def test_build_command_record_hints_key_present_when_hints_given() -> None:
 
 def test_build_command_record_hints_key_omitted_when_empty() -> None:
     """`hints`がNone / 空の場合、textlint以外では`hints`キー自体を出さない。"""
-    result = pyfltr.command.core.CommandResult(
+    result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
         commandline=["mypy"],
@@ -880,7 +880,7 @@ def test_build_command_record_hints_key_omitted_when_empty() -> None:
 
 def test_build_command_record_textlint_always_includes_end_col_hint() -> None:
     """textlintコマンドのときは、rule hintがゼロでも`messages[].end_col`キーが必ず入る。"""
-    result = pyfltr.command.core.CommandResult(
+    result = pyfltr.command.core_.CommandResult(
         command="textlint",
         command_type="linter",
         commandline=["textlint"],
@@ -914,7 +914,7 @@ def test_build_summary_record_includes_applied_fixes() -> None:
     `status == "formatted"`となるケースを再現する。
     2件の結果で`fixed_files`が重複を含む場合に、ユニオン＆ソートされた一覧が得られることを確認する。
     """
-    result_a = pyfltr.command.core.CommandResult(
+    result_a = pyfltr.command.core_.CommandResult(
         command="ruff-check",
         command_type="formatter",
         commandline=["ruff"],
@@ -925,7 +925,7 @@ def test_build_summary_record_includes_applied_fixes() -> None:
         elapsed=0.1,
         fixed_files=["src/b.py", "src/a.py"],
     )
-    result_b = pyfltr.command.core.CommandResult(
+    result_b = pyfltr.command.core_.CommandResult(
         command="ruff-format",
         command_type="formatter",
         commandline=["ruff"],
@@ -942,7 +942,7 @@ def test_build_summary_record_includes_applied_fixes() -> None:
 
 def test_build_summary_record_omits_applied_fixes_when_empty() -> None:
     """fixed_filesが空のときsummary.applied_fixesは出力されない。"""
-    result = pyfltr.command.core.CommandResult(
+    result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
         commandline=["mypy"],

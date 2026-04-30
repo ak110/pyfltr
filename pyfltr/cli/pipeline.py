@@ -20,13 +20,12 @@ import pathlib
 import shlex
 import subprocess
 import sys
-import threading
 import typing
 
 import pyfltr.cli.output_format
 import pyfltr.cli.precommit_guidance
 import pyfltr.cli.render
-import pyfltr.command.core
+import pyfltr.command.core_
 import pyfltr.command.dispatcher
 import pyfltr.command.process
 import pyfltr.command.targets
@@ -43,25 +42,25 @@ import pyfltr.warnings_
 
 logger = logging.getLogger(__name__)
 
-# text_logger / structured_logger は cli/output_format.py で定義する。
+# text_logger / structured_logger / text_output_lock は cli/output_format.py で定義する。
 # 本モジュールでは output_format から参照して使う。
 text_logger = pyfltr.cli.output_format.text_logger
 structured_logger = pyfltr.cli.output_format.structured_logger
-lock = threading.Lock()
+lock = pyfltr.cli.output_format.text_output_lock
 
 
 def run_commands_with_cli(
     commands: list[str],
     args: argparse.Namespace,
-    base_ctx: pyfltr.command.core.ExecutionBaseContext,
+    base_ctx: pyfltr.command.core_.ExecutionBaseContext,
     *,
     per_command_log: bool,
     include_fix_stage: bool = False,
-    on_result: typing.Callable[[pyfltr.command.core.CommandResult], None] | None = None,
-    archive_hook: typing.Callable[[pyfltr.command.core.CommandResult], None] | None = None,
+    on_result: typing.Callable[[pyfltr.command.core_.CommandResult], None] | None = None,
+    archive_hook: typing.Callable[[pyfltr.command.core_.CommandResult], None] | None = None,
     fail_fast: bool = False,
     only_failed_targets: dict[str, pyfltr.state.only_failed.ToolTargets] | None = None,
-) -> list[pyfltr.command.core.CommandResult]:
+) -> list[pyfltr.command.core_.CommandResult]:
     """コマンドを実行する (非 TUI)。
 
     `per_command_log=True`のときは各コマンド完了時に詳細ログを即時出力する（`--stream`相当）。
@@ -93,7 +92,7 @@ def run_commands_with_cli(
     ツールはその集合のみを対象にする。
     """
     config = base_ctx.config
-    results: list[pyfltr.command.core.CommandResult] = []
+    results: list[pyfltr.command.core_.CommandResult] = []
     fixers, formatters, linters_and_testers = pyfltr.state.executor.split_commands_for_execution(
         commands, config, base_ctx.all_files, include_fix_stage=include_fix_stage
     )
@@ -190,13 +189,13 @@ def run_commands_with_cli(
 
 
 def _emit_skipped_results(
-    results: list[pyfltr.command.core.CommandResult],
+    results: list[pyfltr.command.core_.CommandResult],
     *,
     remaining: list[str],
     config: pyfltr.config.config.Config,
-    on_result: typing.Callable[[pyfltr.command.core.CommandResult], None] | None,
-    archive_hook: typing.Callable[[pyfltr.command.core.CommandResult], None] | None,
-) -> list[pyfltr.command.core.CommandResult]:
+    on_result: typing.Callable[[pyfltr.command.core_.CommandResult], None] | None,
+    archive_hook: typing.Callable[[pyfltr.command.core_.CommandResult], None] | None,
+) -> list[pyfltr.command.core_.CommandResult]:
     """--fail-fast中断時、未実行ツールをskipped扱いで追加する（fix/formatter段から）。"""
     pyfltr.command.process.terminate_active_processes()
     for command in remaining:
@@ -212,12 +211,12 @@ def _emit_skipped_results(
 def _run_one_command(
     command: str,
     args: argparse.Namespace,
-    base_ctx: pyfltr.command.core.ExecutionBaseContext,
+    base_ctx: pyfltr.command.core_.ExecutionBaseContext,
     *,
     per_command_log: bool,
     fix_stage: bool = False,
     only_failed_targets: pyfltr.state.only_failed.ToolTargets | None = None,
-) -> pyfltr.command.core.CommandResult:
+) -> pyfltr.command.core_.CommandResult:
     """1 コマンドの実行。
 
     `per_command_log=True`ならば完了直後に詳細ログを`write_log()`で出す。
@@ -228,7 +227,7 @@ def _run_one_command(
         with lock:
             suffix = " (fix)" if fix_stage else ""
             text_logger.info(f"{command}{suffix} 実行中です...")
-        ctx = pyfltr.command.core.ExecutionContext(
+        ctx = pyfltr.command.core_.ExecutionContext(
             base=base_ctx,
             fix_stage=fix_stage,
             only_failed_targets=only_failed_targets,
@@ -376,12 +375,12 @@ def run_pipeline(
             pyfltr.warnings_.emit_warning(source="cache", message=f"ファイル hash キャッシュを初期化できません: {e}")
             cache_store = None
 
-    archive_hook: typing.Callable[[pyfltr.command.core.CommandResult], None] | None = None
+    archive_hook: typing.Callable[[pyfltr.command.core_.CommandResult], None] | None = None
     if archive_store is not None and run_id is not None:
         captured_store = archive_store
         captured_run_id = run_id
 
-        def _archive_hook(result: pyfltr.command.core.CommandResult) -> None:
+        def _archive_hook(result: pyfltr.command.core_.CommandResult) -> None:
             try:
                 captured_store.write_tool_result(captured_run_id, result)
             except OSError as e:
@@ -397,7 +396,7 @@ def run_pipeline(
     # archive_hookと同じタイミング （各ツール完了時） に呼ばれるon_result経路へ挿入する。
     # 実装本体は `_populate_retry_command` （A案の失敗ファイル絞り込み・cached
     # 判定を含む） に委譲し、クロージャ変数をキーワード引数で引き渡す。
-    def _attach_retry_command(result: pyfltr.command.core.CommandResult) -> None:
+    def _attach_retry_command(result: pyfltr.command.core_.CommandResult) -> None:
         pyfltr.state.retry.populate_retry_command(
             result,
             retry_args_template=retry_args_template,
@@ -410,7 +409,7 @@ def run_pipeline(
 
     # run_pipelineが1回だけ組み立てる不変コンテキスト。
     # archive_storeはhook経由で渡すためContextには含めない。
-    base_ctx = pyfltr.command.core.ExecutionBaseContext(
+    base_ctx = pyfltr.command.core_.ExecutionBaseContext(
         config=config,
         all_files=all_files,
         cache_store=cache_store,
@@ -446,10 +445,10 @@ def run_pipeline(
     #   3. formatter.on_result(ctx, result) → JSONL streamingなど（cachedでも呼ばれる）
     # 上記1+2をcomposed_hookにまとめ、3はrun_commands_with_cliのon_result引数として渡す。
     # これによりcachedの場合でもformatter.on_resultが呼ばれる（cli.pyの設計を踏襲）。
-    composed_hook: typing.Callable[[pyfltr.command.core.CommandResult], None] | None = None
+    composed_hook: typing.Callable[[pyfltr.command.core_.CommandResult], None] | None = None
     if archive_hook is not None:
 
-        def _composed_archive_hook(result: pyfltr.command.core.CommandResult) -> None:
+        def _composed_archive_hook(result: pyfltr.command.core_.CommandResult) -> None:
             _attach_retry_command(result)
             archive_hook(result)
 
@@ -457,7 +456,7 @@ def run_pipeline(
     else:
         composed_hook = _attach_retry_command
 
-    def _on_result_callback(result: pyfltr.command.core.CommandResult) -> None:
+    def _on_result_callback(result: pyfltr.command.core_.CommandResult) -> None:
         formatter.on_result(ctx, result)
 
     # run
@@ -518,7 +517,7 @@ _PRECOMMIT_MM_MESSAGE: str = (
 
 
 def _maybe_emit_precommit_guidance(
-    results: list[pyfltr.command.core.CommandResult],
+    results: list[pyfltr.command.core_.CommandResult],
     *,
     structured_stdout: bool,
 ) -> None:
@@ -541,7 +540,7 @@ def _maybe_emit_precommit_guidance(
     print(_PRECOMMIT_MM_MESSAGE, file=sys.stderr)
 
 
-def calculate_returncode(results: list[pyfltr.command.core.CommandResult], exit_zero_even_if_formatted: bool) -> int:
+def calculate_returncode(results: list[pyfltr.command.core_.CommandResult], exit_zero_even_if_formatted: bool) -> int:
     """終了コードを計算。"""
     statuses = [result.status for result in results]
     if any(status in {"failed", "resolution_failed"} for status in statuses):

@@ -3,7 +3,7 @@
 import concurrent.futures
 import threading
 
-import pyfltr.command.core
+import pyfltr.command.core_
 import pyfltr.config.config
 import pyfltr.state.stage_runner
 
@@ -12,7 +12,7 @@ def test_make_skipped_result_returns_command_result():
     """戻り値が CommandResult 型であること。"""
     config = pyfltr.config.config.create_default_config()
     result = pyfltr.state.stage_runner.make_skipped_result("mypy", config)
-    assert isinstance(result, pyfltr.command.core.CommandResult)
+    assert isinstance(result, pyfltr.command.core_.CommandResult)
 
 
 def test_make_skipped_result_status_is_skipped():

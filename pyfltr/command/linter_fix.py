@@ -9,7 +9,7 @@ import typing
 
 import pyfltr.command.error_parser
 import pyfltr.command.process
-from pyfltr.command.core import CommandResult
+from pyfltr.command.core_ import CommandResult
 from pyfltr.command.snapshot import changed_files, snapshot_file_digests
 
 logger = __import__("logging").getLogger(__name__)

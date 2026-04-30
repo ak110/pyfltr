@@ -18,7 +18,7 @@ from __future__ import annotations
 import hashlib
 import typing
 
-import pyfltr.command.core
+import pyfltr.command.core_
 import pyfltr.command.error_parser
 
 _SEVERITY_MAP: dict[str | None, str] = {
@@ -30,7 +30,7 @@ _SEVERITY_MAP: dict[str | None, str] = {
 
 
 def build_code_quality_payload(
-    results: list[pyfltr.command.core.CommandResult],
+    results: list[pyfltr.command.core_.CommandResult],
 ) -> list[dict[str, typing.Any]]:
     """Code Quality JSON issue形式のサブセット（JSON配列）を生成する。
 

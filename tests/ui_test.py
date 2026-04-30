@@ -5,7 +5,7 @@
 import argparse
 import unittest.mock
 
-import pyfltr.command.core
+import pyfltr.command.core_
 import pyfltr.command.process
 import pyfltr.config.config
 import pyfltr.output.ui
@@ -26,7 +26,7 @@ def test_ctrl_c_double_press_handling() -> None:
     app = pyfltr.output.ui.UIApp(
         ["black"],
         args,
-        pyfltr.command.core.ExecutionBaseContext(
+        pyfltr.command.core_.ExecutionBaseContext(
             config=pyfltr.config.config.create_default_config(), all_files=[], cache_store=None, cache_run_id=None
         ),
     )
@@ -69,7 +69,7 @@ def test_ctrl_c_force_exit_after_interrupted() -> None:
     app = pyfltr.output.ui.UIApp(
         ["black"],
         args,
-        pyfltr.command.core.ExecutionBaseContext(
+        pyfltr.command.core_.ExecutionBaseContext(
             config=pyfltr.config.config.create_default_config(), all_files=[], cache_store=None, cache_run_id=None
         ),
     )
@@ -114,7 +114,7 @@ def test_safe_call_from_thread_short_circuits_when_exit_requested() -> None:
     app = pyfltr.output.ui.UIApp(
         ["black"],
         args,
-        pyfltr.command.core.ExecutionBaseContext(
+        pyfltr.command.core_.ExecutionBaseContext(
             config=pyfltr.config.config.create_default_config(), all_files=[], cache_store=None, cache_run_id=None
         ),
     )
@@ -142,7 +142,7 @@ def test_ctrl_c_timeout() -> None:
     app = pyfltr.output.ui.UIApp(
         ["black"],
         args,
-        pyfltr.command.core.ExecutionBaseContext(
+        pyfltr.command.core_.ExecutionBaseContext(
             config=pyfltr.config.config.create_default_config(), all_files=[], cache_store=None, cache_run_id=None
         ),
     )
@@ -189,7 +189,7 @@ def test_interrupt_preserves_completed_results(monkeypatch) -> None:
             config.values[name] = False
     config.values["jobs"] = 1
 
-    base_ctx = pyfltr.command.core.ExecutionBaseContext(config=config, all_files=[], cache_store=None, cache_run_id=None)
+    base_ctx = pyfltr.command.core_.ExecutionBaseContext(config=config, all_files=[], cache_store=None, cache_run_id=None)
     app = pyfltr.output.ui.UIApp(["pylint", "mypy"], args, base_ctx)
 
     call_order: list[str] = []
@@ -199,7 +199,7 @@ def test_interrupt_preserves_completed_results(monkeypatch) -> None:
         call_order.append(command)
         if command == "pylint":
             # 1本目: 成功を返す。
-            return pyfltr.command.core.CommandResult(
+            return pyfltr.command.core_.CommandResult(
                 command=command,
                 command_type="linter",
                 commandline=[],

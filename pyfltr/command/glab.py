@@ -11,7 +11,7 @@ import pyfltr.command.error_parser
 import pyfltr.command.process
 import pyfltr.config.config
 import pyfltr.warnings_
-from pyfltr.command.core import CommandResult
+from pyfltr.command.core_ import CommandResult
 
 logger = __import__("logging").getLogger(__name__)
 

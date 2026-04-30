@@ -9,11 +9,10 @@
 
 import logging
 import shlex
-import threading
 import typing
 
 import pyfltr.cli.output_format
-import pyfltr.command.core
+import pyfltr.command.core_
 import pyfltr.command.error_parser
 import pyfltr.config.config
 import pyfltr.warnings_
@@ -23,10 +22,10 @@ NCOLS = 128
 logger = logging.getLogger(__name__)
 
 text_logger = pyfltr.cli.output_format.text_logger
-lock = threading.Lock()
+lock = pyfltr.cli.output_format.text_output_lock
 
 
-def write_log(result: pyfltr.command.core.CommandResult, *, use_github_annotations: bool = False) -> None:
+def write_log(result: pyfltr.command.core_.CommandResult, *, use_github_annotations: bool = False) -> None:
     """コマンド実行結果の詳細ログ出力。
 
     パース済みエラーがある場合は`format_error()`で整形した一覧を表示する。
@@ -60,7 +59,7 @@ def write_log(result: pyfltr.command.core.CommandResult, *, use_github_annotatio
 
 
 def render_results(
-    results: list[pyfltr.command.core.CommandResult],
+    results: list[pyfltr.command.core_.CommandResult],
     config: pyfltr.config.config.Config,
     *,
     include_details: bool,
@@ -136,7 +135,7 @@ def _write_fully_excluded_files_section(files: list[str]) -> None:
             text_logger.info(f"    {path}")
 
 
-def _write_summary(ordered_results: list[pyfltr.command.core.CommandResult]) -> None:
+def _write_summary(ordered_results: list[pyfltr.command.core_.CommandResult]) -> None:
     """Summary セクションを出力する。"""
     with lock:
         text_logger.info(f"{'-' * 10} summary {'-' * (72 - 10 - 9)}")

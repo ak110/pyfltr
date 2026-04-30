@@ -19,7 +19,7 @@ import threading
 import typing
 
 import pyfltr.cli.output_format
-import pyfltr.command.core
+import pyfltr.command.core_
 import pyfltr.command.error_parser
 import pyfltr.command.mise
 import pyfltr.command.runner
@@ -53,7 +53,7 @@ _DEFAULT_HEAD_RATIO = 0.2
 
 
 def build_command_lines(
-    result: pyfltr.command.core.CommandResult,
+    result: pyfltr.command.core_.CommandResult,
     config: pyfltr.config.config.Config,
 ) -> list[str]:
     """1コマンド分のdiagnostic行+command行をJSONL文字列のリストとして生成する。
@@ -172,7 +172,7 @@ def aggregate_diagnostics(
 
 
 def build_lines(
-    results: list[pyfltr.command.core.CommandResult],
+    results: list[pyfltr.command.core_.CommandResult],
     config: pyfltr.config.config.Config,
     *,
     exit_code: int,
@@ -296,7 +296,7 @@ def collect_mise_active_tools_for_header(
 
 
 def write_jsonl_streaming(
-    result: pyfltr.command.core.CommandResult,
+    result: pyfltr.command.core_.CommandResult,
     config: pyfltr.config.config.Config,
 ) -> None:
     """1コマンド分のdiagnostic行+command行を構造化出力loggerに即時書き出す。
@@ -311,7 +311,7 @@ def write_jsonl_streaming(
 
 
 def write_jsonl_footer(
-    results: list[pyfltr.command.core.CommandResult],
+    results: list[pyfltr.command.core_.CommandResult],
     *,
     exit_code: int,
     warnings: list[dict[str, typing.Any]] | None = None,
@@ -360,7 +360,7 @@ def _build_header_record(
     前提とする。呼び出し側で絞り込み済みの配列を渡すこと。
     `mise_active_tools`は`{"status": ..., "detail": ..., "active_keys": [...]}`形式で渡し、
     指定時のみheaderへ露出する（mise経路を使うrunの自己診断用途）。
-    `format_source`は`pyfltr.cli.FORMAT_SOURCE_*`の値で、出力形式の解決経路を明示する。
+    `format_source`は`pyfltr.cli.output_format.FORMAT_SOURCE_*`の値で、出力形式の解決経路を明示する。
     指定時のみheaderへ露出する。
     """
     record: dict[str, typing.Any] = {
@@ -422,7 +422,7 @@ def _build_message_dict(error: pyfltr.command.error_parser.ErrorLocation) -> dic
 
 
 def _build_command_record(
-    result: pyfltr.command.core.CommandResult,
+    result: pyfltr.command.core_.CommandResult,
     *,
     diagnostics: int,
     diagnostic_total: int | None = None,
@@ -568,7 +568,7 @@ def _build_summary_guidance(
 
 
 def _build_summary_record(
-    ordered_results: list[pyfltr.command.core.CommandResult],
+    ordered_results: list[pyfltr.command.core_.CommandResult],
     *,
     exit_code: int,
     run_id: str | None = None,

@@ -9,7 +9,7 @@ import typing
 import pyfltr.command.error_parser
 import pyfltr.command.process
 import pyfltr.config.config
-from pyfltr.command.core import CommandResult
+from pyfltr.command.core_ import CommandResult
 from pyfltr.command.snapshot import changed_files, snapshot_file_digests
 
 
@@ -145,90 +145,6 @@ def _run_ruff_two_step(
     return result
 
 
-def _run_fix_mode(
-    command: str,
-    command_info: pyfltr.config.config.CommandInfo,
-    write_commandline: list[str],
-    targets: list[pathlib.Path],
-    env: dict[str, str],
-    args: argparse.Namespace,
-    start_time: float,
-    *,
-    parse_errors: bool,
-    command_type_override: typing.Callable[[bool, int], str] | None = None,
-    is_interrupted: typing.Callable[[], bool] | None = None,
-    on_output: typing.Callable[[str], None] | None = None,
-    on_subprocess_start: typing.Callable[[], None] | None = None,
-    on_subprocess_end: typing.Callable[[], None] | None = None,
-) -> CommandResult:
-    """fixモードの共通処理。
-
-    write_commandlineを直接実行し、スナップショット比較で書き込みを検知する。
-    taplo / shfmt / prettierのfixモードで使用する。
-
-    command_type_override: `(has_error, returncode) -> command_type`の関数。
-    Noneの場合は `command_info.type` を使う。
-    prettierのfixモードはreturncode/has_errorに応じてtypeを切り替えるためこのcallbackで吸収する。
-    parse_errors: Trueのとき `error_parser.parse_errors` を呼び出す。
-    """
-    digests_before = snapshot_file_digests(targets)
-    if args.verbose and on_output is not None:
-        on_output(f"commandline: {shlex.join(write_commandline)}\n")
-    write_proc = pyfltr.command.process.run_subprocess(
-        write_commandline,
-        env,
-        on_output,
-        is_interrupted=is_interrupted,
-        on_subprocess_start=on_subprocess_start,
-        on_subprocess_end=on_subprocess_end,
-    )
-    write_rc = write_proc.returncode
-    output = write_proc.stdout.strip()
-    elapsed = time.perf_counter() - start_time
-    digests_after = snapshot_file_digests(targets)
-    changed = digests_after != digests_before
-
-    if write_rc != 0:
-        has_error = True
-        returncode: int = write_rc
-    elif changed:
-        has_error = False
-        returncode = 1
-    else:
-        has_error = False
-        returncode = 0
-
-    errors = pyfltr.command.error_parser.parse_errors(command, output, command_info.error_pattern) if parse_errors else []
-
-    if command_type_override is not None:
-        result = CommandResult.from_run(
-            command=command,
-            command_type=command_type_override(has_error, returncode),
-            commandline=write_commandline,
-            returncode=returncode,
-            has_error=has_error,
-            files=len(targets),
-            output=output,
-            elapsed=elapsed,
-            errors=errors,
-        )
-    else:
-        result = CommandResult.from_run(
-            command=command,
-            command_info=command_info,
-            commandline=write_commandline,
-            returncode=returncode,
-            has_error=has_error,
-            files=len(targets),
-            output=output,
-            elapsed=elapsed,
-            errors=errors,
-        )
-    if not has_error and changed:
-        result.fixed_files = changed_files(digests_before, digests_after)
-    return result
-
-
 def execute_check_write_two_step(
     command: str,
     command_info: pyfltr.config.config.CommandInfo,
@@ -305,36 +221,6 @@ def execute_check_write_two_step(
         on_subprocess_start=on_subprocess_start,
         on_subprocess_end=on_subprocess_end,
     )
-
-
-def _build_commandlines(
-    commandline_prefix: list[str],
-    common_args: list[str],
-    check_args: list[str],
-    write_args: list[str],
-    additional_args: list[str],
-    target_strs: list[str],
-) -> tuple[list[str], list[str]]:
-    """check用・write用のコマンドラインを組み立てて返す。
-
-    taplo / shfmt / prettierで共通のコマンドライン構築パターンをまとめる。
-    戻り値は `(check_commandline, write_commandline)` のタプル。
-    """
-    check_commandline: list[str] = [
-        *commandline_prefix,
-        *common_args,
-        *check_args,
-        *additional_args,
-        *target_strs,
-    ]
-    write_commandline: list[str] = [
-        *commandline_prefix,
-        *common_args,
-        *write_args,
-        *additional_args,
-        *target_strs,
-    ]
-    return check_commandline, write_commandline
 
 
 def _run_check_then_write(
@@ -419,6 +305,179 @@ def _run_check_then_write(
         if changed:
             result.fixed_files = changed_files(digests_before, digests_after)
     return result
+
+
+def _run_fix_mode(
+    command: str,
+    command_info: pyfltr.config.config.CommandInfo,
+    write_commandline: list[str],
+    targets: list[pathlib.Path],
+    env: dict[str, str],
+    args: argparse.Namespace,
+    start_time: float,
+    *,
+    parse_errors: bool,
+    command_type_override: typing.Callable[[bool, int], str] | None = None,
+    is_interrupted: typing.Callable[[], bool] | None = None,
+    on_output: typing.Callable[[str], None] | None = None,
+    on_subprocess_start: typing.Callable[[], None] | None = None,
+    on_subprocess_end: typing.Callable[[], None] | None = None,
+) -> CommandResult:
+    """fixモードの共通処理。
+
+    write_commandlineを直接実行し、スナップショット比較で書き込みを検知する。
+    taplo / shfmt / prettierのfixモードで使用する。
+
+    command_type_override: `(has_error, returncode) -> command_type`の関数。
+    Noneの場合は `command_info.type` を使う。
+    prettierのfixモードはreturncode/has_errorに応じてtypeを切り替えるためこのcallbackで吸収する。
+    parse_errors: Trueのとき `error_parser.parse_errors` を呼び出す。
+    """
+    digests_before = snapshot_file_digests(targets)
+    if args.verbose and on_output is not None:
+        on_output(f"commandline: {shlex.join(write_commandline)}\n")
+    write_proc = pyfltr.command.process.run_subprocess(
+        write_commandline,
+        env,
+        on_output,
+        is_interrupted=is_interrupted,
+        on_subprocess_start=on_subprocess_start,
+        on_subprocess_end=on_subprocess_end,
+    )
+    write_rc = write_proc.returncode
+    output = write_proc.stdout.strip()
+    elapsed = time.perf_counter() - start_time
+    digests_after = snapshot_file_digests(targets)
+    changed = digests_after != digests_before
+
+    if write_rc != 0:
+        has_error = True
+        returncode: int = write_rc
+    elif changed:
+        has_error = False
+        returncode = 1
+    else:
+        has_error = False
+        returncode = 0
+
+    errors = pyfltr.command.error_parser.parse_errors(command, output, command_info.error_pattern) if parse_errors else []
+
+    if command_type_override is not None:
+        result = CommandResult.from_run(
+            command=command,
+            command_type=command_type_override(has_error, returncode),
+            commandline=write_commandline,
+            returncode=returncode,
+            has_error=has_error,
+            files=len(targets),
+            output=output,
+            elapsed=elapsed,
+            errors=errors,
+        )
+    else:
+        result = CommandResult.from_run(
+            command=command,
+            command_info=command_info,
+            commandline=write_commandline,
+            returncode=returncode,
+            has_error=has_error,
+            files=len(targets),
+            output=output,
+            elapsed=elapsed,
+            errors=errors,
+        )
+    if not has_error and changed:
+        result.fixed_files = changed_files(digests_before, digests_after)
+    return result
+
+
+def execute_prettier_two_step(
+    command: str,
+    command_info: pyfltr.config.config.CommandInfo,
+    commandline_prefix: list[str],
+    config: pyfltr.config.config.Config,
+    targets: list[pathlib.Path],
+    additional_args: list[str],
+    *,
+    fix_mode: bool,
+    env: dict[str, str],
+    on_output: typing.Callable[[str], None] | None,
+    start_time: float,
+    args: argparse.Namespace,
+    is_interrupted: typing.Callable[[], bool] | None = None,
+    on_subprocess_start: typing.Callable[[], None] | None = None,
+    on_subprocess_end: typing.Callable[[], None] | None = None,
+) -> CommandResult:
+    """Prettierの2段階実行（prettier --check → prettier --write）。
+
+    `prettier --check`（read-only）と`prettier --write`（書き込み）は排他のため、
+    既存のautoflake/isort/blackの「同じ引数に--checkを付与する」ダンスは使えない。
+
+    通常モード（fix_mode=False）:
+
+    - Step1: `prefix + args + check-args + additional + targets`を実行
+    - Step1 rc == 0 → succeeded（書き込み不要）
+    - Step1 rc == 1 → Step2 `prefix + args + write-args + additional + targets`を実行
+      - Step2 rc == 0 → formatted（書き込み成功）
+      - Step2 rc != 0 → failed
+    - Step1 rc >= 2 → failed（設定ミス等）
+
+    fixモード（fix_mode=True）:
+
+    - Step1はスキップし、直接`prefix + args + write-args + additional + targets`を実行
+    - 書き込み検知には内容ハッシュスナップショットを使う
+    - rc != 0 → failed
+    - rc == 0かつハッシュ変化あり → formatted
+    - rc == 0かつ変化なし → succeeded
+    """
+    common_args: list[str] = list(config[f"{command}-args"])
+    check_commandline, write_commandline = _build_commandlines(
+        commandline_prefix,
+        common_args,
+        list(config[f"{command}-check-args"]),
+        list(config[f"{command}-write-args"]),
+        additional_args,
+        [str(t) for t in targets],
+    )
+
+    if fix_mode:
+        # fixモードのみ: returncode==1（changed）のときcommand_typeを"formatter"に切り替える。
+        # 通常モードのcommand_infoから取得する型がformatter以外の場合に備えた固有ロジック。
+        def _prettier_type_override(has_error: bool, returncode: int) -> str:
+            if not has_error and returncode == 1:
+                return "formatter"
+            return command_info.type
+
+        return _run_fix_mode(
+            command=command,
+            command_info=command_info,
+            write_commandline=write_commandline,
+            targets=targets,
+            env=env,
+            args=args,
+            start_time=start_time,
+            parse_errors=True,
+            command_type_override=_prettier_type_override,
+            is_interrupted=is_interrupted,
+            on_output=on_output,
+            on_subprocess_start=on_subprocess_start,
+            on_subprocess_end=on_subprocess_end,
+        )
+
+    return _run_prettier_check_then_write(
+        command=command,
+        command_info=command_info,
+        check_commandline=check_commandline,
+        write_commandline=write_commandline,
+        targets=targets,
+        env=env,
+        args=args,
+        start_time=start_time,
+        is_interrupted=is_interrupted,
+        on_output=on_output,
+        on_subprocess_start=on_subprocess_start,
+        on_subprocess_end=on_subprocess_end,
+    )
 
 
 def _run_prettier_check_then_write(
@@ -528,90 +587,31 @@ def _run_prettier_check_then_write(
     return result
 
 
-def execute_prettier_two_step(
-    command: str,
-    command_info: pyfltr.config.config.CommandInfo,
+def _build_commandlines(
     commandline_prefix: list[str],
-    config: pyfltr.config.config.Config,
-    targets: list[pathlib.Path],
+    common_args: list[str],
+    check_args: list[str],
+    write_args: list[str],
     additional_args: list[str],
-    *,
-    fix_mode: bool,
-    env: dict[str, str],
-    on_output: typing.Callable[[str], None] | None,
-    start_time: float,
-    args: argparse.Namespace,
-    is_interrupted: typing.Callable[[], bool] | None = None,
-    on_subprocess_start: typing.Callable[[], None] | None = None,
-    on_subprocess_end: typing.Callable[[], None] | None = None,
-) -> CommandResult:
-    """Prettierの2段階実行（prettier --check → prettier --write）。
+    target_strs: list[str],
+) -> tuple[list[str], list[str]]:
+    """check用・write用のコマンドラインを組み立てて返す。
 
-    `prettier --check`（read-only）と`prettier --write`（書き込み）は排他のため、
-    既存のautoflake/isort/blackの「同じ引数に--checkを付与する」ダンスは使えない。
-
-    通常モード（fix_mode=False）:
-
-    - Step1: `prefix + args + check-args + additional + targets`を実行
-    - Step1 rc == 0 → succeeded（書き込み不要）
-    - Step1 rc == 1 → Step2 `prefix + args + write-args + additional + targets`を実行
-      - Step2 rc == 0 → formatted（書き込み成功）
-      - Step2 rc != 0 → failed
-    - Step1 rc >= 2 → failed（設定ミス等）
-
-    fixモード（fix_mode=True）:
-
-    - Step1はスキップし、直接`prefix + args + write-args + additional + targets`を実行
-    - 書き込み検知には内容ハッシュスナップショットを使う
-    - rc != 0 → failed
-    - rc == 0かつハッシュ変化あり → formatted
-    - rc == 0かつ変化なし → succeeded
+    taplo / shfmt / prettierで共通のコマンドライン構築パターンをまとめる。
+    戻り値は `(check_commandline, write_commandline)` のタプル。
     """
-    common_args: list[str] = list(config[f"{command}-args"])
-    check_commandline, write_commandline = _build_commandlines(
-        commandline_prefix,
-        common_args,
-        list(config[f"{command}-check-args"]),
-        list(config[f"{command}-write-args"]),
-        additional_args,
-        [str(t) for t in targets],
-    )
-
-    if fix_mode:
-        # fixモードのみ: returncode==1（changed）のときcommand_typeを"formatter"に切り替える。
-        # 通常モードのcommand_infoから取得する型がformatter以外の場合に備えた固有ロジック。
-        def _prettier_type_override(has_error: bool, returncode: int) -> str:
-            if not has_error and returncode == 1:
-                return "formatter"
-            return command_info.type
-
-        return _run_fix_mode(
-            command=command,
-            command_info=command_info,
-            write_commandline=write_commandline,
-            targets=targets,
-            env=env,
-            args=args,
-            start_time=start_time,
-            parse_errors=True,
-            command_type_override=_prettier_type_override,
-            is_interrupted=is_interrupted,
-            on_output=on_output,
-            on_subprocess_start=on_subprocess_start,
-            on_subprocess_end=on_subprocess_end,
-        )
-
-    return _run_prettier_check_then_write(
-        command=command,
-        command_info=command_info,
-        check_commandline=check_commandline,
-        write_commandline=write_commandline,
-        targets=targets,
-        env=env,
-        args=args,
-        start_time=start_time,
-        is_interrupted=is_interrupted,
-        on_output=on_output,
-        on_subprocess_start=on_subprocess_start,
-        on_subprocess_end=on_subprocess_end,
-    )
+    check_commandline: list[str] = [
+        *commandline_prefix,
+        *common_args,
+        *check_args,
+        *additional_args,
+        *target_strs,
+    ]
+    write_commandline: list[str] = [
+        *commandline_prefix,
+        *common_args,
+        *write_args,
+        *additional_args,
+        *target_strs,
+    ]
+    return check_commandline, write_commandline

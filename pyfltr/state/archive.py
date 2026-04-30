@@ -32,7 +32,7 @@ import typing
 import platformdirs
 import ulid
 
-import pyfltr.command.core
+import pyfltr.command.core_
 import pyfltr.config.config
 import pyfltr.output.jsonl
 import pyfltr.paths
@@ -142,7 +142,7 @@ class ArchiveStore:
     def write_tool_result(
         self,
         run_id: str,
-        result: pyfltr.command.core.CommandResult,
+        result: pyfltr.command.core_.CommandResult,
     ) -> None:
         """1 ツール完了時に呼び出されるフック。生出力・diagnostic・メタを保存する。
 

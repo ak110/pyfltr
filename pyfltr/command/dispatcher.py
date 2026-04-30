@@ -27,7 +27,7 @@ import pyfltr.config.config
 import pyfltr.state.cache
 import pyfltr.state.only_failed
 import pyfltr.warnings_
-from pyfltr.command.core import CacheContext, CommandResult, ExecutionContext, ExecutionParams
+from pyfltr.command.core_ import CacheContext, CommandResult, ExecutionContext, ExecutionParams
 
 logger = __import__("logging").getLogger(__name__)
 

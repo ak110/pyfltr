@@ -4,7 +4,7 @@ import os
 import pathlib
 import time
 
-import pyfltr.command.core
+import pyfltr.command.core_
 import pyfltr.config.config
 import pyfltr.state.cache
 from tests.conftest import make_command_result as _make_result

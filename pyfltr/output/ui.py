@@ -14,7 +14,7 @@ import typing
 from textual.app import App, ComposeResult
 from textual.widgets import DataTable, Log, TabbedContent, TabPane
 
-import pyfltr.command.core
+import pyfltr.command.core_
 import pyfltr.command.dispatcher
 import pyfltr.command.error_parser
 import pyfltr.command.process
@@ -41,13 +41,13 @@ def _format_errors_tab_label(error_count: int, warning_count: int) -> str:
 def run_commands_with_ui(
     commands: list[str],
     args: argparse.Namespace,
-    base_ctx: pyfltr.command.core.ExecutionBaseContext,
+    base_ctx: pyfltr.command.core_.ExecutionBaseContext,
     *,
-    archive_hook: typing.Callable[[pyfltr.command.core.CommandResult], None] | None = None,
-    on_result: typing.Callable[[pyfltr.command.core.CommandResult], None] | None = None,
+    archive_hook: typing.Callable[[pyfltr.command.core_.CommandResult], None] | None = None,
+    on_result: typing.Callable[[pyfltr.command.core_.CommandResult], None] | None = None,
     fail_fast: bool = False,
     only_failed_targets: dict[str, pyfltr.state.only_failed.ToolTargets] | None = None,
-) -> tuple[list[pyfltr.command.core.CommandResult], int]:
+) -> tuple[list[pyfltr.command.core_.CommandResult], int]:
     """UI付きでコマンドを実行。
 
     `base_ctx`はパイプライン全体で不変のコンテキスト（config・all_files・cache_store・
@@ -121,10 +121,10 @@ class UIApp(App):
         self,
         commands: list[str],
         args: argparse.Namespace,
-        base_ctx: pyfltr.command.core.ExecutionBaseContext,
+        base_ctx: pyfltr.command.core_.ExecutionBaseContext,
         *,
-        archive_hook: typing.Callable[[pyfltr.command.core.CommandResult], None] | None = None,
-        on_result: typing.Callable[[pyfltr.command.core.CommandResult], None] | None = None,
+        archive_hook: typing.Callable[[pyfltr.command.core_.CommandResult], None] | None = None,
+        on_result: typing.Callable[[pyfltr.command.core_.CommandResult], None] | None = None,
         fail_fast: bool = False,
         only_failed_targets: dict[str, pyfltr.state.only_failed.ToolTargets] | None = None,
     ) -> None:
@@ -139,7 +139,7 @@ class UIApp(App):
         self._on_result = on_result
         self._fail_fast = fail_fast
         self._only_failed_targets = only_failed_targets
-        self.results: list[pyfltr.command.core.CommandResult] = []
+        self.results: list[pyfltr.command.core_.CommandResult] = []
         self.lock = threading.Lock()
         self.last_ctrl_c_time: float = 0.0
         self.ctrl_c_timeout: float = 1.0  # 1秒以内の連続押しで終了
@@ -454,7 +454,7 @@ class UIApp(App):
             except Exception:
                 logging.error(error_msg)
 
-    def _execute_command(self, command: str, *, fix_stage: bool = False) -> pyfltr.command.core.CommandResult:
+    def _execute_command(self, command: str, *, fix_stage: bool = False) -> pyfltr.command.core_.CommandResult:
         """出力をキャプチャしながらコマンド実行。"""
         # 中断済みならsubprocessを一切起動せずskippedで返す（早期離脱）。
         if self._interrupted:
@@ -504,7 +504,7 @@ class UIApp(App):
                     self._subprocess_running_commands.discard(command)
 
             try:
-                ctx = pyfltr.command.core.ExecutionContext(
+                ctx = pyfltr.command.core_.ExecutionContext(
                     base=self._base_ctx,
                     fix_stage=fix_stage,
                     only_failed_targets=pyfltr.command.targets.pick_targets(self._only_failed_targets, command),

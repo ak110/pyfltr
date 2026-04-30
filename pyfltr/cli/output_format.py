@@ -9,6 +9,7 @@ import dataclasses
 import logging
 import os
 import pathlib
+import threading
 import typing
 
 logger = logging.getLogger(__name__)
@@ -19,6 +20,10 @@ logger = logging.getLogger(__name__)
 # rootのstderrハンドラーと重複発火しないようにする。
 text_logger = logging.getLogger("pyfltr.textout")
 text_logger.propagate = False
+
+# text_logger への並行書き込みを保護するロック。
+# pipeline.py と render.py が同一インスタンスを共有し、行間への混入を防ぐ。
+text_output_lock = threading.Lock()
 
 # 構造化出力（JSONL / SARIF）用の専用logger。出力先は`configure_structured_output`で
 # StreamHandler（stdout）またはFileHandler（`--output-file`）に切り替える。

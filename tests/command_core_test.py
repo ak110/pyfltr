@@ -23,7 +23,7 @@ import typing
 import psutil
 import pytest
 
-import pyfltr.command.core
+import pyfltr.command.core_
 import pyfltr.command.dispatcher
 import pyfltr.command.env
 import pyfltr.command.glab
@@ -38,7 +38,7 @@ import pyfltr.warnings_
 from tests import conftest as _testconf
 
 
-def testbuild_subprocess_env_sets_supply_chain_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_build_subprocess_env_sets_supply_chain_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     """サプライチェーン対策用の環境変数が既定値で注入される。"""
     monkeypatch.delenv("UV_EXCLUDE_NEWER", raising=False)
     monkeypatch.delenv("NPM_CONFIG_MINIMUM_RELEASE_AGE", raising=False)
@@ -50,7 +50,7 @@ def testbuild_subprocess_env_sets_supply_chain_defaults(monkeypatch: pytest.Monk
     assert env["NPM_CONFIG_MINIMUM_RELEASE_AGE"] == "1440"
 
 
-def testbuild_subprocess_env_sets_python_utf8_mode() -> None:
+def test_build_subprocess_env_sets_python_utf8_mode() -> None:
     """サブプロセスはPython UTF-8モードで動く。"""
     config = pyfltr.config.config.create_default_config()
     env = pyfltr.command.env.build_subprocess_env(config, "pytest")
@@ -58,7 +58,7 @@ def testbuild_subprocess_env_sets_python_utf8_mode() -> None:
     assert env["PYTHONUTF8"] == "1"
 
 
-def testbuild_subprocess_env_preserves_existing_supply_chain_values(
+def test_build_subprocess_env_preserves_existing_supply_chain_values(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """ユーザーが既に環境変数を設定している場合は既存値を尊重する。"""
@@ -72,7 +72,7 @@ def testbuild_subprocess_env_preserves_existing_supply_chain_values(
     assert env["NPM_CONFIG_MINIMUM_RELEASE_AGE"] == "10080"
 
 
-def testbuild_subprocess_env_via_mise_strips_mise_tool_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_build_subprocess_env_via_mise_strips_mise_tool_paths(monkeypatch: pytest.MonkeyPatch) -> None:
     """`via_mise=True`のとき、PATHからmise toolパスが除外される。"""
     monkeypatch.setenv(
         "PATH",
@@ -99,7 +99,7 @@ def testbuild_subprocess_env_via_mise_strips_mise_tool_paths(monkeypatch: pytest
     assert "/usr/bin" in entries
 
 
-def testbuild_subprocess_env_default_keeps_mise_tool_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_build_subprocess_env_default_keeps_mise_tool_paths(monkeypatch: pytest.MonkeyPatch) -> None:
     """既定（`via_mise=False`）ではmise toolパスを除外しない。"""
     monkeypatch.setenv(
         "PATH",
@@ -332,7 +332,7 @@ def test_run_subprocess_file_not_found_returns_127() -> None:
     assert "見つかりません" in result.stdout
 
 
-def testbuild_subprocess_env_npm_config_actually_effective(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+def test_build_subprocess_env_npm_config_actually_effective(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """注入したNPM_CONFIG_MINIMUM_RELEASE_AGEが実際にnpm互換ツールに反映されることを確認する。
 
     環境変数名がtypoしたり、仕様変更で効かなくなったりした場合に検知する。
@@ -1125,7 +1125,7 @@ def test_bin_tool_spec_structure() -> None:
 
 def test_command_result_cached_defaults() -> None:
     """`CommandResult`の新フィールドcached/cached_fromの既定値テスト。"""
-    result = pyfltr.command.core.CommandResult(
+    result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
         commandline=["mypy"],
@@ -2122,7 +2122,7 @@ def test_ensure_mise_available_error_message_without_tool_spec(mocker) -> None:
     assert "could not resolve tool" in message
 
 
-# --- _get_mise_active_tools のキャッシュキー差分 ---
+# --- get_mise_active_tools のキャッシュキー差分 ---
 
 
 def test_get_mise_active_tools_cache_key_differs_by_cwd(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:

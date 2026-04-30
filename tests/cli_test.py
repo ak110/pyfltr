@@ -9,7 +9,7 @@ import pytest
 import pyfltr.cli.output_format
 import pyfltr.cli.pipeline
 import pyfltr.cli.render
-import pyfltr.command.core
+import pyfltr.command.core_
 import pyfltr.command.dispatcher
 import pyfltr.config.config
 from tests.conftest import make_command_result as _make_result
@@ -49,7 +49,7 @@ def _text_logs() -> collections.abc.Iterator[list[str]]:
 
 def test_write_log(text_logs):
     """write_logの出力確認。"""
-    result = pyfltr.command.core.CommandResult(
+    result = pyfltr.command.core_.CommandResult(
         command="pytest",
         command_type="tester",
         commandline=["pytest", "test.py"],
@@ -67,7 +67,7 @@ def test_write_log(text_logs):
 
 def test_write_log_failed(text_logs):
     """write_logの失敗時の出力確認。"""
-    result = pyfltr.command.core.CommandResult(
+    result = pyfltr.command.core_.CommandResult(
         command="pytest",
         command_type="tester",
         commandline=["pytest", "test.py"],
@@ -90,7 +90,7 @@ def test_run_one_command_stream_mode_writes_detail_log(mocker, text_logs):
     mock_args.output_format = "text"
     mock_config = mocker.MagicMock()
 
-    base_ctx = pyfltr.command.core.ExecutionBaseContext(config=mock_config, all_files=[], cache_store=None, cache_run_id=None)
+    base_ctx = pyfltr.command.core_.ExecutionBaseContext(config=mock_config, all_files=[], cache_store=None, cache_run_id=None)
     pyfltr.cli.pipeline._run_one_command("mypy", mock_args, base_ctx, per_command_log=True)
     text = "\n".join(text_logs)
     assert "mypy 実行中です..." in text
@@ -106,7 +106,7 @@ def test_run_one_command_buffer_mode_shows_only_progress(mocker, text_logs):
     mock_args.output_format = "text"
     mock_config = mocker.MagicMock()
 
-    base_ctx = pyfltr.command.core.ExecutionBaseContext(config=mock_config, all_files=[], cache_store=None, cache_run_id=None)
+    base_ctx = pyfltr.command.core_.ExecutionBaseContext(config=mock_config, all_files=[], cache_store=None, cache_run_id=None)
     pyfltr.cli.pipeline._run_one_command("mypy", mock_args, base_ctx, per_command_log=False)
     text = "\n".join(text_logs)
     assert "mypy 実行中です..." in text
