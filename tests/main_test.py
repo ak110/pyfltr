@@ -1,6 +1,5 @@
-# pylint: disable=missing-module-docstring
-# pylint: disable=missing-function-docstring
-# pylint: disable=protected-access
+# pylint: disable=missing-module-docstring,missing-function-docstring  # テストはモジュール／関数docstringを省略する慣習
+# pylint: disable=protected-access  # 内部ヘルパー（_maybe_emit_precommit_guidance等）の単体テスト経路
 
 import json
 import logging
@@ -21,7 +20,7 @@ from tests import conftest as _testconf
 @pytest.mark.parametrize("mode", ["run", "ci"])
 def test_success(mocker, mode):
     proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="test")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
     returncode = pyfltr.cli.main.run([mode, str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 0
 
@@ -29,7 +28,7 @@ def test_success(mocker, mode):
 @pytest.mark.parametrize("mode", ["run", "ci"])
 def test_fail(mocker, mode):
     proc = subprocess.CompletedProcess(["test"], returncode=-1, stdout="test")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
     returncode = pyfltr.cli.main.run([mode, str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 1
 
@@ -45,7 +44,7 @@ def test_work_dir(mocker, tmp_path):
     # preset由来のpytestをpython gate通過で実行対象に含める。
     (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latest"\npython = true\n')
     proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="test")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
     original_cwd = pathlib.Path.cwd()
     returncode = pyfltr.cli.main.run(
         ["ci", "--work-dir", str(tmp_path), "--commands=pytest", str(pathlib.Path(__file__).parent.parent)]
@@ -58,7 +57,7 @@ def test_work_dir(mocker, tmp_path):
 def test_run_auto_includes_fix_stage(mocker):
     """runサブコマンドではfix-args付きのfixステージが自動実行される。"""
     proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     # ruff-checkはfix-args定義済みかつpreset=latestで有効化されている
     returncode = pyfltr.cli.main.run(["run", "--commands=ruff-check", str(pathlib.Path(__file__).parent.parent)])
@@ -73,7 +72,7 @@ def test_run_auto_includes_fix_stage(mocker):
 def test_no_fix_skips_fix_stage(mocker):
     """--no-fix指定時はfixステージがスキップされる。"""
     proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     returncode = pyfltr.cli.main.run(["run", "--no-fix", "--commands=ruff-check", str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 0
@@ -86,7 +85,7 @@ def test_no_fix_skips_fix_stage(mocker):
 def test_ci_does_not_run_fix_stage(mocker):
     """ciサブコマンドではfixステージを走らせない（ファイル書換を避けるため）。"""
     proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     pyfltr.cli.main.run(["ci", "--commands=ruff-check", str(pathlib.Path(__file__).parent.parent)])
 
@@ -99,7 +98,7 @@ def test_stream_mode_writes_detail_log_during_run(mocker, capsys):
     """--stream指定時はコマンド完了時に詳細ログが出力される。"""
     # pyfltrルートのpyproject.tomlにはpython=trueが設定されているためmypyは有効
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy-detail")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     returncode = pyfltr.cli.main.run(
         ["ci", "--no-ui", "--stream", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)]
@@ -116,7 +115,7 @@ def test_buffered_mode_is_default(mocker, capsys):
     """既定では成功コマンド詳細→summaryの順でまとめて出力される。"""
     # pyfltrルートのpyproject.tomlにはpython=trueが設定されているためmypyは有効
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy-detail")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     returncode = pyfltr.cli.main.run(["ci", "--no-ui", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 0
@@ -130,7 +129,7 @@ def test_buffered_mode_is_default(mocker, capsys):
 def test_additional_args(mocker):
     """追加引数のテスト。"""
     proc = subprocess.CompletedProcess(["pytest"], returncode=0, stdout="test")
-    mock_run = mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     returncode = pyfltr.cli.main.run(
         ["ci", "--commands=pytest", "--pytest-args=--maxfail=5 -v", str(pathlib.Path(__file__).parent.parent)]
@@ -150,28 +149,28 @@ class TestSubcommandIntegration:
     def test_run_subcommand(self, mocker):
         """runサブコマンドで--exit-zero-even-if-formattedが暗黙的に有効化される。"""
         proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="test")
-        mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+        mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
         returncode = pyfltr.cli.main.run(["run", str(pathlib.Path(__file__).parent.parent)])
         assert returncode == 0
 
     def test_fast_subcommand(self, mocker):
         """fastサブコマンドで--exit-zero-even-if-formattedと--commands=fastが暗黙的に有効化される。"""
         proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="test")
-        mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+        mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
         returncode = pyfltr.cli.main.run(["fast", str(pathlib.Path(__file__).parent.parent)])
         assert returncode == 0
 
     def test_run_for_agent_subcommand(self, mocker):
         """run-for-agentサブコマンドで--exit-zero-even-if-formattedと--output-format=jsonlが暗黙的に有効化される。"""
         proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="test")
-        mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+        mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
         returncode = pyfltr.cli.main.run(["run-for-agent", str(pathlib.Path(__file__).parent.parent)])
         assert returncode == 0
 
     def test_ci_explicit(self, mocker):
         """明示的なciサブコマンド。"""
         proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="test")
-        mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+        mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
         returncode = pyfltr.cli.main.run(["ci", str(pathlib.Path(__file__).parent.parent)])
         assert returncode == 0
 
@@ -190,7 +189,7 @@ pass-filenames = false
         (tmp_path / "sample.py").write_text("x = 1\n")
 
         proc = subprocess.CompletedProcess(["my-linter-exe"], returncode=0, stdout="")
-        mock_run = mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+        mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
         returncode = pyfltr.cli.main.run(["run", "--work-dir", str(tmp_path), "--commands=my-linter", str(tmp_path)])
         assert returncode == 0
@@ -204,7 +203,7 @@ pass-filenames = false
 def test_human_readable_disables_structured_output(mocker):
     """--human-readableで構造化出力の引数が注入されない。"""
     proc = subprocess.CompletedProcess(["ruff"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     pyfltr.cli.main.run(["run", "--human-readable", "--commands=ruff-check", str(pathlib.Path(__file__).parent.parent)])
 
@@ -220,7 +219,7 @@ def test_human_readable_disables_structured_output(mocker):
 def test_output_format_accepts_structured_choices(mocker, fmt):
     """--output-formatの新choices（jsonl/sarif/github-annotations）が受理される。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     returncode = pyfltr.cli.main.run(
         ["ci", "--output-format", fmt, "--commands=mypy", str(pathlib.Path(__file__).parent.parent)]
@@ -237,7 +236,7 @@ def test_output_format_invalid_choice_rejected():
 def test_text_output_on_stdout_for_text(mocker, capsys):
     """text formatではstdoutにtext整形出力、stderrにはpyfltrのINFOログは出ない。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     pyfltr.cli.main.run(["ci", "--output-format=text", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr()
@@ -250,7 +249,7 @@ def test_text_output_on_stdout_for_text(mocker, capsys):
 def test_text_output_on_stdout_for_github_annotations(mocker, capsys):
     """github-annotationsはtextと同じレイアウトをstdoutに出力する。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     pyfltr.cli.main.run(
         ["ci", "--output-format=github-annotations", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)]
@@ -267,7 +266,7 @@ def test_jsonl_stdout_keeps_text_on_stderr_with_warn_level(mocker, capsys):
     INFOレベルの進捗・summaryはstderrに出ず、stdoutはJSONL専有となる。
     """
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     pyfltr.cli.main.run(["ci", "--output-format=jsonl", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr()
@@ -281,7 +280,7 @@ def test_jsonl_stdout_keeps_text_on_stderr_with_warn_level(mocker, capsys):
 def test_sarif_stdout_keeps_text_on_stderr_with_info_level(mocker, capsys):
     """sarif + stdoutモードではtext_loggerがstderrのINFOで流れる。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     pyfltr.cli.main.run(["ci", "--output-format=sarif", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr()
@@ -296,7 +295,7 @@ def test_sarif_stdout_keeps_text_on_stderr_with_info_level(mocker, capsys):
 def test_system_logger_always_on_stderr_and_not_suppressed(mocker, capsys):
     """どのformatでもroot loggerは抑止されず、handlersが空にならない。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     for fmt in ("text", "jsonl", "sarif", "github-annotations"):
         pyfltr.cli.main.run(["ci", "--output-format", fmt, "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
@@ -308,7 +307,7 @@ def test_system_logger_always_on_stderr_and_not_suppressed(mocker, capsys):
 def test_output_file_keeps_text_on_stdout_for_all_formats(mocker, capsys, tmp_path, fmt):
     """--output-file指定時はstdoutにtext整形出力が出る（どのformatでも）。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     # github-annotationsは--output-fileを解釈しないためtextモードと同等の挙動となる。
     destination = tmp_path / "out.dat"
@@ -330,7 +329,7 @@ def test_output_file_keeps_text_on_stdout_for_all_formats(mocker, capsys, tmp_pa
 def test_fail_fast_flag_accepted(mocker):
     """--fail-fastフラグが受理される。"""
     proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="test")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
     returncode = pyfltr.cli.main.run(["ci", "--fail-fast", str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 0
 
@@ -338,7 +337,7 @@ def test_fail_fast_flag_accepted(mocker):
 def test_no_cache_flag_accepted(mocker):
     """--no-cacheフラグが受理される。"""
     proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="test")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
     returncode = pyfltr.cli.main.run(["ci", "--no-cache", str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 0
 
@@ -356,7 +355,7 @@ def _only_failed_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) 
 def test_only_failed_flag_accepted(_only_failed_cache):
     """--only-failedフラグが受理される（直前runが無ければrc=0で成功終了）。
 
-    直前runが存在しないので`_run_subprocess`も起動しない経路を通るため
+    直前runが存在しないので`run_subprocess`も起動しない経路を通るため
     モック不要。
     """
     returncode = pyfltr.cli.main.run(["ci", "--only-failed", str(pathlib.Path(__file__).parent.parent)])
@@ -365,7 +364,7 @@ def test_only_failed_flag_accepted(_only_failed_cache):
 
 def test_only_failed_returns_zero_when_no_failures(mocker, _only_failed_cache):
     """--only-failed指定で直前runに失敗ツールが無ければrc=0で終了する（実コマンド起動無し）。"""
-    mocker.patch("pyfltr.command.process._run_subprocess").side_effect = AssertionError("不要な起動")
+    mocker.patch("pyfltr.command.process.run_subprocess").side_effect = AssertionError("不要な起動")
     returncode = pyfltr.cli.main.run(["run-for-agent", "--only-failed", str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 0
 
@@ -394,7 +393,7 @@ def test_from_run_without_only_failed_is_error(_only_failed_cache, capsys):
 def test_changed_since_flag_accepted(mocker):
     """--changed-sinceフラグがargparseに受理される（git差分が空ならrc=0で終了）。"""
     proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
     # git diff --name-onlyが空を返す（差分なし）ようにスタブする。
     # 差分なし→対象ファイル数0→コマンド起動なし→rc=0で終了する。
     mocker.patch(
@@ -412,7 +411,7 @@ def test_changed_since_with_only_failed(mocker, _only_failed_cache):
     直前runが存在しないため--only-failedの早期終了経路に到達しrc=0で終了する。
     """
     proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
     mocker.patch(
         "pyfltr.command.targets._get_changed_files",
         return_value=["some_file.py"],
@@ -435,7 +434,7 @@ def _archive_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> p
 def test_run_pipeline_logs_run_id_when_archive_enabled(mocker, capsys, _archive_cache):
     """archive有効時、run_pipelineの開始時ログにrun_idとlauncher_prefix整形済みshow-run案内が含まれること。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
     # launcher_prefixが環境依存（親プロセス由来）になるため、テスト中は固定値にする。
     mocker.patch("pyfltr.state.retry.detect_launcher_prefix", return_value=["uvx", "pyfltr"])
 
@@ -451,7 +450,7 @@ def test_run_pipeline_logs_run_id_when_archive_enabled(mocker, capsys, _archive_
 def test_run_pipeline_does_not_log_run_id_when_archive_disabled(mocker, capsys, _archive_cache):
     """--no-archive指定時はrun_idログを出力しないこと。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     pyfltr.cli.main.run(["ci", "--no-archive", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr().out
@@ -552,7 +551,7 @@ def test_precommit_guidance_skipped_for_jsonl_and_sarif_stdout_only(monkeypatch,
     assert captured.err == ""
 
 
-class _FakeReconfigurableStream:  # pylint: disable=too-few-public-methods
+class _FakeReconfigurableStream:  # pylint: disable=too-few-public-methods  # テストダブルのため最小実装
     """`reconfigure`呼び出しを記録するだけのfake stream。"""
 
     def __init__(self) -> None:
@@ -562,7 +561,7 @@ class _FakeReconfigurableStream:  # pylint: disable=too-few-public-methods
         self.calls.append(kwargs)
 
 
-class _ReconfigureRaisingStream:  # pylint: disable=too-few-public-methods
+class _ReconfigureRaisingStream:  # pylint: disable=too-few-public-methods  # テストダブルのため最小実装
     """`reconfigure`が例外を上げるfake stream。握り潰し挙動の検証用。"""
 
     def reconfigure(self, **_kwargs: str) -> None:

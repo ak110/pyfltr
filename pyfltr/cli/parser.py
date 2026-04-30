@@ -21,7 +21,7 @@ import pyfltr.state.runs
 _RUN_SUBCOMMANDS: tuple[str, ...] = ("ci", "run", "fast", "run-for-agent")
 """実行系サブコマンド。パイプラインを起動してformat/lint/testを走らせる。"""
 
-_ALL_SUBCOMMANDS: tuple[str, ...] = (
+ALL_SUBCOMMANDS: tuple[str, ...] = (
     *_RUN_SUBCOMMANDS,
     "config",
     "generate-shell-completion",
@@ -70,7 +70,7 @@ def preflight_tool_name_as_subcommand(sys_args: typing.Sequence[str]) -> None:
     if not sys_args:
         return
     candidate = sys_args[0]
-    if candidate in _ALL_SUBCOMMANDS:
+    if candidate in ALL_SUBCOMMANDS:
         return
     tool_names = frozenset(pyfltr.config.config.BUILTIN_COMMAND_NAMES) | frozenset(_STATIC_COMMAND_ALIASES)
     if candidate not in tool_names:

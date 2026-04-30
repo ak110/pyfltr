@@ -5,7 +5,7 @@ skip→commands絞り込みで除外）を検証する。
 `tests/main_test.py`の`_apply_only_failed_filter`系テストをここへ移管済み。
 """
 
-# pylint: disable=missing-function-docstring
+# pylint: disable=missing-function-docstring  # テストは関数docstringを省略する慣習
 
 import argparse
 import logging
@@ -14,6 +14,7 @@ import pathlib
 import pytest
 
 import pyfltr.state.only_failed
+from tests import conftest as _testconf
 from tests.conftest import make_error_location as _make_error
 from tests.conftest import seed_archive_run as _seed_run
 
@@ -66,6 +67,7 @@ def test_tool_targets_is_frozen() -> None:
     """frozen=Trueなのでフィールドへの代入はTypeErrorになる。"""
     t = pyfltr.state.only_failed.ToolTargets.fallback_default()
     with pytest.raises((TypeError, AttributeError)):
+        # frozen=Trueへの代入が実行時にTypeErrorを送出することを検証するため、型チェッカーの警告を抑止する。
         t.mode = "files"  # type: ignore[misc]  # ty: ignore[invalid-assignment]
 
 
@@ -283,11 +285,7 @@ def test_apply_filter_from_run_ambiguous_prefix(_only_failed_cache: pathlib.Path
     # 2件以上runを生成して共通プレフィックスを特定する
     run_ids = [_seed_run(_only_failed_cache) for _ in range(3)]
     # 共通プレフィックスを算出する
-    shared = 0
-    for a, b in zip(run_ids[0], run_ids[1], strict=False):
-        if a != b:
-            break
-        shared += 1
+    shared = _testconf.shared_prefix_length(run_ids[0], run_ids[1])
     if shared < 1:
         pytest.skip("共通プレフィックスが無いケースは曖昧判定にならない")
     prefix = run_ids[0][:shared]

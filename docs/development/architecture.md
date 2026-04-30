@@ -156,7 +156,7 @@ CLI起動時に`os.environ["PATH"]`の重複エントリを順序先勝ちで除
 mise経由のsubprocessにはmiseが注入したtoolパスを除外したPATHを渡す。
 親PATHにmise自身のtoolエントリが見つかると、miseがtools解決をスキップしてPATH解決へフォールバックするため、
 これを避けるための対症療法である。
-詳細な判定ロジックと比較キーは`pyfltr/command/env.py`の`_build_subprocess_env`を参照。
+詳細な判定ロジックと比較キーは`pyfltr/command/env.py`の`build_subprocess_env`を参照。
 
 ### mise active tools取得結果の構造化
 

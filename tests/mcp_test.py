@@ -5,8 +5,11 @@
 （`default_cache_root()`解決）が同一キャッシュを参照する状態を作る。
 """
 
-# pylint: disable=missing-function-docstring,protected-access,duplicate-code
+# pylint: disable=missing-function-docstring  # テストは関数docstringを省略する慣習
+# pylint: disable=protected-access  # FastMCPツール関数（_tool_*）の単体テスト経路
+# pylint: disable=duplicate-code  # アーカイブ初期化の組み立て手順が他テストと類似
 
+import json
 import pathlib
 import shutil
 
@@ -14,6 +17,7 @@ import pytest
 
 import pyfltr.cli.mcp_server
 import pyfltr.state.archive
+from tests import conftest as _testconf
 from tests.conftest import make_command_result as _make_result
 from tests.conftest import make_error_location as _make_error
 from tests.conftest import seed_archive_run as _seed_run
@@ -151,11 +155,7 @@ async def test_tool_show_run_ambiguous_prefix(tmp_path: pathlib.Path) -> None:
     run_ids = [_seed_run(tmp_path) for _ in range(2)]
     # ULIDの先頭は同じタイムスタンプ部分（ミリ秒単位）を共有する可能性が高いため、
     # 実際に共通する最長プレフィックスを算出してテストする。
-    shared = 0
-    for a, b in zip(run_ids[0], run_ids[1], strict=False):
-        if a != b:
-            break
-        shared += 1
+    shared = _testconf.shared_prefix_length(run_ids[0], run_ids[1])
     if shared < 1:
         pytest.skip("shared prefixが無いケースでは曖昧判定にならない")
     prefix = run_ids[0][:shared]
@@ -195,8 +195,6 @@ async def test_tool_show_run_diagnostics(tmp_path: pathlib.Path) -> None:
 @pytest.mark.asyncio
 async def test_tool_show_run_diagnostics_restores_hints(tmp_path: pathlib.Path) -> None:
     """tool.jsonにhintsが含まれる場合、`show_run_diagnostics`の戻り値に復元される。"""
-    import json  # pylint: disable=import-outside-toplevel
-
     # hintを持つErrorLocationでアーカイブを作成する
     error = _make_error("textlint", "a.md", 1, "長い文", col=1)
     error.rule = "ja-technical-writing/sentence-length"

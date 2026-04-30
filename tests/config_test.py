@@ -1,5 +1,6 @@
 """テストコード。"""
-# pylint: disable=too-many-lines,protected-access
+# pylint: disable=too-many-lines  # 設定検証のSSOTテストはfixture密結合化を避けるため分割しない方針
+# pylint: disable=protected-access  # _PRESETS等の内部定数を参照する単体テスト経路
 
 import pathlib
 

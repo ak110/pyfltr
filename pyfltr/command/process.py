@@ -11,7 +11,7 @@ import typing
 
 import psutil
 
-from pyfltr.command.env import _get_env_path
+from pyfltr.command.env import get_env_path
 
 logger = __import__("logging").getLogger(__name__)
 
@@ -23,7 +23,7 @@ class ProcessRegistry:
     """
 
     def __init__(self) -> None:
-        # サブプロセスのリストとロック。_active_processes / _active_processes_lockとして
+        # サブプロセスのリストとロック。active_processes / active_processes_lockとして
         # モジュール外からも参照できるよう公開属性として定義する。
         self.processes: list[subprocess.Popen[str]] = []
         self.lock = threading.Lock()
@@ -59,26 +59,16 @@ class ProcessRegistry:
 
 _DEFAULT_REGISTRY = ProcessRegistry()
 
-# 既存コードおよびテストコードとの互換性のため、ProcessRegistry内部の
-# リストとロックをモジュール変数として公開する。
-# テストが直接_active_processes.append() / remove() / _active_processes_lockを
-# 使う箇所があるため、同一オブジェクトへの参照として維持する。
-_active_processes = _DEFAULT_REGISTRY.processes
-_active_processes_lock = _DEFAULT_REGISTRY.lock
-
-
-def set_default_registry(registry: ProcessRegistry) -> None:
-    """デフォルトのプロセスレジストリを差し替える（テスト用経路）。"""
-    global _DEFAULT_REGISTRY, _active_processes, _active_processes_lock  # pylint: disable=global-statement
-    _DEFAULT_REGISTRY = registry
-    _active_processes = registry.processes
-    _active_processes_lock = registry.lock
+# テスト等の利用者がProcessRegistry内部のリストとロックへ直接アクセスするための
+# モジュール変数。公開属性としてエクスポートする。
+active_processes = _DEFAULT_REGISTRY.processes
+active_processes_lock = _DEFAULT_REGISTRY.lock
 
 
 class InterruptedExecution(Exception):
     """TUIから協調停止が要求されたことを示す例外。
 
-    `_run_subprocess` が `is_interrupted` コールバックで中断指示を検知した際に送出する。
+    `run_subprocess` が `is_interrupted` コールバックで中断指示を検知した際に送出する。
     呼び出し側（`ui._execute_command`）で捕捉し、当該コマンドを `skipped` 結果として置き換える。
     """
 
@@ -86,7 +76,7 @@ class InterruptedExecution(Exception):
 def _kill_process_tree(proc: "subprocess.Popen[str]", *, timeout: float) -> None:
     """Procとその子孫をまとめて停止する。
 
-    `_run_subprocess` はPOSIXでは `start_new_session=True`、Windowsでは
+    `run_subprocess` はPOSIXでは `start_new_session=True`、Windowsでは
     `CREATE_NEW_PROCESS_GROUP` でPopenを起動している。pytest-xdistのように
     サブプロセスが更にサブプロセスをforkしてパイプを継承するツールでは、
     親だけ `terminate()` しても孫がstdoutを握り続け `for line in proc.stdout`
@@ -165,7 +155,7 @@ def terminate_active_processes(*, timeout: float = 5.0) -> None:
 
 
 def _terminate_and_drop(proc: "subprocess.Popen[str]") -> None:
-    """実行中procとその子孫を停止し `_active_processes` から外す。
+    """実行中procとその子孫を停止し `active_processes` から外す。
 
     TUI協調停止経路で使う。`with subprocess.Popen(...)` の__exit__は子が残っていても
     `wait()` で止まってしまうため、`InterruptedExecution` を送出する前に本関数で
@@ -179,7 +169,7 @@ def _terminate_and_drop(proc: "subprocess.Popen[str]") -> None:
     _DEFAULT_REGISTRY.remove(proc)
 
 
-def _run_subprocess(
+def run_subprocess(
     commandline: list[str],
     env: dict[str, str],
     on_output: typing.Callable[[str], None] | None = None,
@@ -191,7 +181,7 @@ def _run_subprocess(
     """サブプロセスの実行 （Popenベース）。
 
     --fail-fastで並列実行中の他プロセスを外部スレッドからterminate() できるよう、
-    subprocess.runの経路もPopenに統一し `_active_processes` に登録する。
+    subprocess.runの経路もPopenに統一し `active_processes` に登録する。
     `on_output` が指定されている場合は逐次コールバックを呼び、未指定時は最後に
     全出力をまとめて返す。
 
@@ -216,7 +206,7 @@ def _run_subprocess(
     FileNotFoundError経路でrc=127の `CompletedProcess` に変換する。
     """
     popen_commandline = commandline
-    env_path = _get_env_path(env)
+    env_path = get_env_path(env)
     resolved = shutil.which(commandline[0], path=env_path)
     if resolved is not None and resolved != commandline[0]:
         popen_commandline = [resolved, *commandline[1:]]
@@ -249,7 +239,7 @@ def _run_subprocess(
                 if on_subprocess_start is not None:
                     on_subprocess_start()
                 subprocess_started = True
-                # （2） Popen生成直後の中断チェック。_active_processes登録済みなので
+                # （2） Popen生成直後の中断チェック。active_processes登録済みなので
                 # _terminate_and_dropで自己登録を外してから送出する。
                 if is_interrupted is not None and is_interrupted():
                     _terminate_and_drop(proc)

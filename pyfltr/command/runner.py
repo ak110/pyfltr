@@ -1,4 +1,3 @@
-# pylint: disable=protected-access
 """runner解決とコマンドライン構築。"""
 
 import dataclasses
@@ -9,16 +8,16 @@ import shutil
 import pyfltr.command.mise
 import pyfltr.config.config
 
-# `_build_mise_subprocess_env`はpyfltr.command内部APIだがサブパッケージ全域で共有する。
+# `build_mise_subprocess_env`はpyfltr.command内部APIだがサブパッケージ全域で共有する。
 # 同じサブパッケージ内の`mise.py`もfrom-importで取り込んでおり、本モジュールも倣う。
-from pyfltr.command.env import _build_mise_subprocess_env
+from pyfltr.command.env import build_mise_subprocess_env
 
 logger = __import__("logging").getLogger(__name__)
 
 
 # pyfltrのコマンド名 -> 実際に起動するパッケージのbin名の対応表。
 # markdownlintコマンドは実体がmarkdownlint-cli2である点に注意。
-_JS_TOOL_BIN: dict[str, str] = {
+JS_TOOL_BIN: dict[str, str] = {
     "textlint": "textlint",
     "markdownlint": "markdownlint-cli2",
     "eslint": "eslint",
@@ -92,7 +91,7 @@ _BIN_TOOL_SPEC: dict[str, BinToolSpec] = {
 
 
 @dataclasses.dataclass(frozen=True)
-class _StructuredOutputSpec:
+class StructuredOutputSpec:
     """構造化出力用の引数注入仕様。
 
     `-args` とは独立した経路で出力形式引数を強制注入する。
@@ -110,45 +109,45 @@ class _StructuredOutputSpec:
 
 # 各ツールの構造化出力用引数。設定キー → 注入仕様のマッピング。
 # 設定キー（例: "ruff-check-json"）がTrueのとき有効になる。
-_STRUCTURED_OUTPUT_SPECS: dict[str, tuple[str, _StructuredOutputSpec]] = {
+_STRUCTURED_OUTPUT_SPECS: dict[str, tuple[str, StructuredOutputSpec]] = {
     "ruff-check-json": (
         "ruff-check",
-        _StructuredOutputSpec(
+        StructuredOutputSpec(
             inject=["--output-format=json"],
             conflicts=["--output-format"],
         ),
     ),
     "pylint-json": (
         "pylint",
-        _StructuredOutputSpec(
+        StructuredOutputSpec(
             inject=["--output-format=json2"],
             conflicts=["--output-format"],
         ),
     ),
     "pyright-json": (
         "pyright",
-        _StructuredOutputSpec(
+        StructuredOutputSpec(
             inject=["--outputjson"],
             conflicts=["--outputjson"],
         ),
     ),
     "pytest-tb-line": (
         "pytest",
-        _StructuredOutputSpec(
+        StructuredOutputSpec(
             inject=["--tb=short"],
             conflicts=["--tb"],
         ),
     ),
     "shellcheck-json": (
         "shellcheck",
-        _StructuredOutputSpec(
+        StructuredOutputSpec(
             inject=["-f", "json"],
             conflicts=["-f"],
         ),
     ),
     "textlint-json": (
         "textlint",
-        _StructuredOutputSpec(
+        StructuredOutputSpec(
             inject=["--format", "json"],
             conflicts=["--format"],
             lint_only=True,
@@ -156,21 +155,21 @@ _STRUCTURED_OUTPUT_SPECS: dict[str, tuple[str, _StructuredOutputSpec]] = {
     ),
     "typos-json": (
         "typos",
-        _StructuredOutputSpec(
+        StructuredOutputSpec(
             inject=["--format=json"],
             conflicts=["--format"],
         ),
     ),
     "eslint-json": (
         "eslint",
-        _StructuredOutputSpec(
+        StructuredOutputSpec(
             inject=["--format", "json"],
             conflicts=["--format"],
         ),
     ),
     "biome-json": (
         "biome",
-        _StructuredOutputSpec(
+        StructuredOutputSpec(
             inject=["--reporter=github"],
             conflicts=["--reporter"],
         ),
@@ -178,7 +177,7 @@ _STRUCTURED_OUTPUT_SPECS: dict[str, tuple[str, _StructuredOutputSpec]] = {
 }
 
 
-def _get_structured_output_spec(command: str, config: pyfltr.config.config.Config) -> _StructuredOutputSpec | None:
+def get_structured_output_spec(command: str, config: pyfltr.config.config.Config) -> StructuredOutputSpec | None:
     """コマンドに対応する構造化出力仕様を返す。無効化されていればNone。"""
     for config_key, entry in _STRUCTURED_OUTPUT_SPECS.items():
         cmd = entry[0]
@@ -188,7 +187,7 @@ def _get_structured_output_spec(command: str, config: pyfltr.config.config.Confi
     return None
 
 
-def _apply_structured_output(commandline: list[str], spec: _StructuredOutputSpec) -> list[str]:
+def _apply_structured_output(commandline: list[str], spec: StructuredOutputSpec) -> list[str]:
     """Commandlineから衝突する引数を除去し、構造化出力引数を注入する。"""
     filtered: list[str] = []
     skip_next = False
@@ -288,11 +287,11 @@ def _is_tool_active_in_mise_config(
     例えばcargo系なら `rust`、cargo-denyなら `aqua:EmbarkStudios/cargo-deny`、
     その他のシンプル系（actionlint等）は `bin_name` でそのまま引く。
 
-    `_get_mise_active_tools` のキャッシュ・フォールバック挙動を利用するため、
+    `get_mise_active_tools` のキャッシュ・フォールバック挙動を利用するため、
     取得失敗時は自然に `False`（記述なし扱い）が返り、tool spec省略を発動しない。
     """
     del command  # 現状判定にコマンド名は使わない（specキーで一意）。引数は将来拡張余地のため残す。
-    result = pyfltr.command.mise._get_mise_active_tools(config, allow_side_effects=allow_side_effects)
+    result = pyfltr.command.mise.get_mise_active_tools(config, allow_side_effects=allow_side_effects)
     key = spec.mise_backend or spec.bin_name
     return key in result.tools
 
@@ -327,7 +326,7 @@ def _resolve_js_commandline(
     起動コマンドを組み立てる。`direct` モードで `node_modules/.bin/<cmd>` が
     存在しない場合は `FileNotFoundError` を送出する。
     """
-    bin_name = _JS_TOOL_BIN[command]
+    bin_name = JS_TOOL_BIN[command]
     runner = config["js-runner"]
     # 汎用化: `{command}-packages` キーを参照することで任意のJSツールで
     # `--package` / `-p` 展開を利用可能にする。未定義キーは空リスト扱い。
@@ -395,13 +394,13 @@ def build_commandline(
 
     `{command}-runner` および `{command}-path` の設定に従い、`mise exec ... --` 形式・
     `pnpx --package ...` 形式・直接実行（PATH解決）のいずれかを返す。
-    mise経路では `_get_mise_active_tools` を引いて、mise設定（プロジェクト `mise.toml` ＋
+    mise経路では `get_mise_active_tools` を引いて、mise設定（プロジェクト `mise.toml` ＋
     グローバル設定）に該当ツール記述があり、かつ `{command}-version` が既定値 `"latest"` の
     ときに限りtool spec部分を省略した `["exec", "--", <bin>]` 形を返す
     （miseがmise設定の解決済み内容、つまりcomponentsや固定バージョンをそのまま使えるようにするため）。
 
     `allow_side_effects=False`（既定）では `mise exec --version` の事前チェックや
-    `mise trust` を行わない。判定関数 `_get_mise_active_tools` も副作用OFFで呼び、
+    `mise trust` を行わない。判定関数 `get_mise_active_tools` も副作用OFFで呼び、
     未信頼config由来エラーを「記述なし」扱いとして従来形のtool spec組み立てへフォールバックする。
     `command-info` サブコマンドの `--check` 無し呼び出しから安全に呼べるようにするためである。
     `allow_side_effects=True` 時は判定経路でも `mise-auto-trust` 設定に従いtrust→再呼び出しを許可する。
@@ -423,7 +422,7 @@ def build_commandline(
     # 経緯（path上書きの有無）に関係なくエラーとする（ユーザー意図を尊重するため）。
     if runner == "mise" and command not in _BIN_TOOL_SPEC:
         raise ValueError(f'{command}: mise backend が登録されていないため `{command}-runner = "mise"` は指定できません')
-    if runner == "js-runner" and command not in _JS_TOOL_BIN:
+    if runner == "js-runner" and command not in JS_TOOL_BIN:
         raise ValueError(f'{command}: js-runner 対応ツールではないため `{command}-runner = "js-runner"` は指定できません')
 
     # `{command}-path` が非空ならば、その値でdirect実行する（明示パス上書き）。
@@ -472,7 +471,7 @@ def build_commandline(
         )
 
     if effective.startswith("js-"):
-        if command not in _JS_TOOL_BIN:
+        if command not in JS_TOOL_BIN:
             raise ValueError(f'{command}: js-runner 対応ツールではないため `{command}-runner = "js-runner"` は指定できません')
         executable, prefix = _resolve_js_commandline(command, config)
         return ResolvedCommandline(
@@ -494,7 +493,7 @@ def build_commandline(
             runner_source=source,
             effective_runner=effective,
         )
-    if command in _JS_TOOL_BIN:
+    if command in JS_TOOL_BIN:
         # JSツールのdirectはnode_modules/.bin/<cmd> 解決に委譲。
         executable, prefix = _resolve_js_commandline(command, config)
         return ResolvedCommandline(
@@ -549,12 +548,12 @@ def ensure_mise_available(
     # mise経由の事前チェック・trust呼び出しでもmiseがtoolパスにフォールバック
     # 解決してしまう挙動を回避するため、PATHからmise toolパスを除外したenvを渡す。
     # 詳細はCLAUDE.md「subprocess起動時のPATH整理方針」節を参照。
-    mise_env = _build_mise_subprocess_env(dict(os.environ))
+    mise_env = build_mise_subprocess_env(dict(os.environ))
     if has_tool_spec:
         check_args = ["mise", "exec", tool_spec, "--", bin_name, "--version"]
     else:
         check_args = ["mise", "exec", "--", bin_name, "--version"]
-    returncode, _stdout, stderr, trust_failed = pyfltr.command.mise._run_mise_with_trust(
+    returncode, _stdout, stderr, trust_failed = pyfltr.command.mise.run_mise_with_trust(
         check_args, mise_env, config, allow_side_effects=True
     )
     if returncode == 0:
@@ -626,9 +625,9 @@ def build_invocation_argv(
     に構造化出力引数を適用した結果を返す。fix段では `{command}-fix-args` を結合する。
     fix-args未定義のコマンドではfix_stage=Trueでも通常段と同じargvを返す。
 
-    textlintのfix段は `_execute_textlint_fix` のStep1と同じ規則
+    textlintのfix段は `execute_textlint_fix` のStep1と同じ規則
     （`--format` ペアを除去したargs + fix-args、auto_args / 構造化出力引数なし）を適用する。
-    実行本体（`_prepare_execution_params` / `_execute_textlint_fix`）と
+    実行本体（`_prepare_execution_params` / `execute_textlint_fix`）と
     `command-info` 表示の双方から本ヘルパーへ集約することで、組み立て規則の重複定義を避ける。
     """
     user_args: list[str] = list(config.values.get(f"{command}-args", []))
@@ -658,7 +657,7 @@ def build_invocation_argv(
     else:
         commandline.extend(config.values.get(f"{command}-lint-args", []))
     commandline.extend(extra)
-    structured_spec = _get_structured_output_spec(command, config)
+    structured_spec = get_structured_output_spec(command, config)
     if structured_spec is not None and not (structured_spec.lint_only and fix_args_value is not None):
         commandline = _apply_structured_output(commandline, structured_spec)
     return commandline

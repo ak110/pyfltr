@@ -1,10 +1,10 @@
-# pylint: disable=missing-module-docstring
-# pylint: disable=missing-function-docstring
-# pylint: disable=protected-access
+# pylint: disable=missing-module-docstring,missing-function-docstring  # テストはモジュール／関数docstringを省略する慣習
+# pylint: disable=protected-access  # 内部ヘルパー（_resolve_output_format / _build_header_record等）の単体テスト経路
 
 import json
 import pathlib
 import subprocess
+import sys
 
 import pytest
 
@@ -258,7 +258,7 @@ def test_calculate_returncode_matches_summary_exit(default_config):
 def test_run_cli_jsonl_stdout_suppresses_text(mocker, capsys):
     """jsonl + stdoutモードではstdoutはJSONLのみでtextはstderr（WARN+）扱いになる。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     returncode = pyfltr.cli.main.run(
         ["ci", "--output-format=jsonl", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)]
@@ -285,7 +285,7 @@ def test_run_cli_jsonl_stdout_suppresses_text(mocker, capsys):
 def test_run_cli_output_file_keeps_text_stdout(mocker, capsys, tmp_path):
     """--output-file指定時はstdoutには従来text、ファイルにはJSONL。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     destination = tmp_path / "out.jsonl"
     returncode = pyfltr.cli.main.run(
@@ -309,7 +309,7 @@ def test_run_cli_output_file_keeps_text_stdout(mocker, capsys, tmp_path):
 def test_run_cli_jsonl_ignores_ui(mocker, capsys):
     """jsonl + stdoutモードでは--uiがsilently無効化される。stdoutはJSONLのみ。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     returncode = pyfltr.cli.main.run(
         ["ci", "--output-format=jsonl", "--ui", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)]
@@ -325,7 +325,7 @@ def test_run_cli_jsonl_ignores_ui(mocker, capsys):
 def test_run_cli_env_var_jsonl(mocker, capsys, monkeypatch):
     """PYFLTR_OUTPUT_FORMAT=jsonlで--output-format未指定でもJSONL出力になる。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
     monkeypatch.setenv("PYFLTR_OUTPUT_FORMAT", "jsonl")
 
     returncode = pyfltr.cli.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
@@ -341,7 +341,7 @@ def test_run_cli_env_var_jsonl(mocker, capsys, monkeypatch):
 def test_run_cli_env_var_overridden_by_cli(mocker, capsys, monkeypatch):
     """PYFLTR_OUTPUT_FORMATよりCLI --output-format=textが優先される。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
     monkeypatch.setenv("PYFLTR_OUTPUT_FORMAT", "jsonl")
 
     pyfltr.cli.main.run(["ci", "--output-format=text", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
@@ -363,7 +363,7 @@ def test_run_cli_env_var_invalid(monkeypatch):
 def test_run_cli_ai_agent_jsonl(mocker, capsys, monkeypatch):
     """AI_AGENT が設定されていれば、--output-format 未指定でも JSONL 出力になる。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
     monkeypatch.setenv("AI_AGENT", "1")
 
     returncode = pyfltr.cli.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
@@ -379,7 +379,7 @@ def test_run_cli_ai_agent_jsonl(mocker, capsys, monkeypatch):
 def test_run_cli_ai_agent_overridden_by_env_var(mocker, capsys, monkeypatch):
     """PYFLTR_OUTPUT_FORMAT は AI_AGENT より優先される。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
     monkeypatch.setenv("AI_AGENT", "1")
     monkeypatch.setenv("PYFLTR_OUTPUT_FORMAT", "text")
 
@@ -393,7 +393,7 @@ def test_run_cli_ai_agent_overridden_by_env_var(mocker, capsys, monkeypatch):
 def test_run_cli_ai_agent_overridden_by_cli(mocker, capsys, monkeypatch):
     """CLI --output-format は AI_AGENT より優先される。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
     monkeypatch.setenv("AI_AGENT", "1")
 
     pyfltr.cli.main.run(["ci", "--output-format=text", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
@@ -405,7 +405,7 @@ def test_run_cli_ai_agent_overridden_by_cli(mocker, capsys, monkeypatch):
 def test_run_cli_ai_agent_empty_string_unset(mocker, capsys, monkeypatch):
     """AI_AGENT が空文字列の場合は未設定扱い（textに戻る）。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
     monkeypatch.setenv("AI_AGENT", "")
 
     pyfltr.cli.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
@@ -417,7 +417,7 @@ def test_run_cli_ai_agent_empty_string_unset(mocker, capsys, monkeypatch):
 def test_run_cli_ai_agent_zero_value_truthy(mocker, capsys, monkeypatch):
     """AI_AGENT は値の中身を問わず、設定されていれば真扱い（"0"でもJSONL）。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
     monkeypatch.setenv("AI_AGENT", "0")
 
     pyfltr.cli.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
@@ -431,7 +431,7 @@ def test_run_cli_ai_agent_zero_value_truthy(mocker, capsys, monkeypatch):
 def test_run_for_agent_env_var_text_override(mocker, capsys, monkeypatch):
     """PYFLTR_OUTPUT_FORMAT=text は run-for-agent のサブコマンド既定値より優先される。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
     monkeypatch.setenv("PYFLTR_OUTPUT_FORMAT", "text")
 
     pyfltr.cli.main.run(["run-for-agent", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
@@ -524,7 +524,7 @@ def test_resolve_output_format_ai_agent_default_none_ignores_env(monkeypatch):
 def test_run_cli_header_format_source_subcommand_default(mocker, capsys):
     """run-for-agentの既定値経路ではheader.format_sourceが`subcommand_default`になる。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     pyfltr.cli.main.run(["run-for-agent", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr()
@@ -537,7 +537,7 @@ def test_run_cli_header_format_source_subcommand_default(mocker, capsys):
 def test_run_cli_header_format_source_cli(mocker, capsys):
     """`--output-format=jsonl`明示時はheader.format_sourceが`cli`になる。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     pyfltr.cli.main.run(["ci", "--output-format=jsonl", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr()
@@ -549,7 +549,7 @@ def test_run_cli_header_format_source_cli(mocker, capsys):
 def test_run_cli_header_format_source_env_ai_agent(mocker, capsys, monkeypatch):
     """`AI_AGENT`設定時のJSONL既定切替ではheader.format_sourceが`env.AI_AGENT`になる。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
     monkeypatch.setenv("AI_AGENT", "1")
 
     pyfltr.cli.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
@@ -562,7 +562,7 @@ def test_run_cli_header_format_source_env_ai_agent(mocker, capsys, monkeypatch):
 def test_run_cli_header_format_source_env_pyfltr(mocker, capsys, monkeypatch):
     """`PYFLTR_OUTPUT_FORMAT=jsonl`経路ではheader.format_sourceが`env.PYFLTR_OUTPUT_FORMAT`になる。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
     monkeypatch.setenv("PYFLTR_OUTPUT_FORMAT", "jsonl")
 
     pyfltr.cli.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
@@ -611,7 +611,7 @@ def test_get_status_text_succeeded_no_extra_message():
 def test_run_cli_jsonl_restores_logger_state(mocker, capsys):
     """jsonlモード実行後にtextモードを再実行すると、text出力がstdoutに戻ること。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     # 1回目: jsonlモード（stdoutにJSONL、textはstderrのWARN+）
     pyfltr.cli.main.run(["ci", "--output-format=jsonl", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
@@ -706,8 +706,6 @@ def _configure_structured_stdout() -> None:
     `capsys`フィクスチャは`sys.stdout`を差し替えているため、呼び出し時点の
     `sys.stdout`をそのままStreamHandlerに掴ませればcapsysで拾える。
     """
-    import sys  # pylint: disable=import-outside-toplevel
-
     pyfltr.cli.output_format.configure_structured_output(sys.stdout)
 
 
@@ -824,7 +822,7 @@ def test_write_jsonl_header_stdout(capsys):
 def _header_commands_for(args: list[str], mocker, capsys) -> list[str]:
     """指定CLI引数でrun-for-agentを走らせheaderのcommands配列を取り出す。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
     target = str(pathlib.Path(__file__).parent.parent)
     returncode = pyfltr.cli.main.run(["run-for-agent", *args, target])
     assert returncode == 0
@@ -867,7 +865,7 @@ _REQUIRED_CQ_FIELDS = {"description", "check_name", "fingerprint", "severity", "
 def test_run_cli_code_quality_stdout(mocker, capsys):
     """code-quality + stdoutモードではstdoutはJSON配列、stderrにtext整形が出る。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     returncode = pyfltr.cli.main.run(
         ["ci", "--output-format=code-quality", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)]
@@ -891,7 +889,7 @@ def test_run_cli_code_quality_stdout(mocker, capsys):
 def test_run_cli_code_quality_output_file(mocker, capsys, tmp_path):
     """code-quality + --output-fileではファイルにJSON配列、stdoutにtext整形。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     destination = tmp_path / "gl.json"
     returncode = pyfltr.cli.main.run(
@@ -916,7 +914,7 @@ def test_run_cli_code_quality_with_diagnostics(mocker, capsys):
     """エラーを検出したツールでCode Quality必須フィールドを満たすissueが出る。"""
     mypy_output = "src/a.py:10: error: bad type  [arg-type]\n"
     proc = subprocess.CompletedProcess(["mypy"], returncode=1, stdout=mypy_output)
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     pyfltr.cli.main.run(["ci", "--output-format=code-quality", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr()

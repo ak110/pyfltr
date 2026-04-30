@@ -1,4 +1,4 @@
-# pylint: disable=duplicate-code,protected-access
+# pylint: disable=duplicate-code  # process.run_subprocess呼び出しの引数列が他経路と類似
 """glab関連コマンド実行。"""
 
 import argparse
@@ -31,7 +31,7 @@ def _looks_like_glab_host_missing(output: str) -> bool:
     return any(pattern in lowered for pattern in _GLAB_HOST_NOT_FOUND_PATTERNS)
 
 
-def _execute_glab_ci_lint(
+def execute_glab_ci_lint(
     command: str,
     command_info: pyfltr.config.config.CommandInfo,
     commandline: list[str],
@@ -54,7 +54,7 @@ def _execute_glab_ci_lint(
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(commandline)}\n")
 
-    proc = pyfltr.command.process._run_subprocess(
+    proc = pyfltr.command.process.run_subprocess(
         commandline,
         glab_env,
         on_output,

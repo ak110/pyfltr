@@ -1,4 +1,4 @@
-# pylint: disable=duplicate-code,protected-access
+# pylint: disable=duplicate-code  # process.run_subprocess呼び出しの引数列が他経路と類似
 """pre-commit実行。"""
 
 import argparse
@@ -16,7 +16,7 @@ from pyfltr.command.core import CommandResult
 logger = __import__("logging").getLogger(__name__)
 
 
-def _execute_pre_commit(
+def execute_pre_commit(
     command: str,
     command_info: pyfltr.config.config.CommandInfo,
     commandline: list[str],
@@ -80,7 +80,7 @@ def _execute_pre_commit(
             on_output(f"SKIP={pre_commit_env.get('SKIP', '')}\n")
 
     # stage 1: 実行
-    proc = pyfltr.command.process._run_subprocess(
+    proc = pyfltr.command.process.run_subprocess(
         commandline,
         pre_commit_env,
         on_output,
@@ -95,7 +95,7 @@ def _execute_pre_commit(
     if returncode != 0:
         if args.verbose and on_output is not None:
             on_output("pre-commit: stage 2 再実行\n")
-        proc = pyfltr.command.process._run_subprocess(
+        proc = pyfltr.command.process.run_subprocess(
             commandline,
             pre_commit_env,
             on_output,

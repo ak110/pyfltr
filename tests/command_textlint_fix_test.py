@@ -1,9 +1,9 @@
 """command.py の textlint fix テスト。
 
-`_execute_textlint_fix` の動作を検証する。
+`execute_textlint_fix` の動作を検証する。
 """
 
-# pylint: disable=protected-access,duplicate-code
+# pylint: disable=duplicate-code  # fake_run系のサブプロセスダブル定義が他テストファイルと類似
 
 import os
 import pathlib
@@ -23,7 +23,7 @@ def test_textlint_lint_mode_adds_lint_args(mocker, tmp_path: pathlib.Path) -> No
     target.write_text("# title\n")
 
     proc = subprocess.CompletedProcess(["textlint"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     config = pyfltr.config.config.create_default_config()
     config.values["textlint"] = True
@@ -46,7 +46,7 @@ def test_textlint_fix_mode_two_step_execution(mocker, tmp_path: pathlib.Path) ->
     target.write_text("# title\n")
 
     proc = subprocess.CompletedProcess(["textlint"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     config = pyfltr.config.config.create_default_config()
     config.values["textlint"] = True
@@ -73,7 +73,7 @@ def test_textlint_fix_mode_strips_user_format_from_step1(mocker, tmp_path: pathl
     target.write_text("# title\n")
 
     proc = subprocess.CompletedProcess(["textlint"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     config = pyfltr.config.config.create_default_config()
     config.values["textlint"] = True
@@ -97,7 +97,7 @@ def test_textlint_fix_mode_preserves_non_format_user_args(mocker, tmp_path: path
     target.write_text("# title\n")
 
     proc = subprocess.CompletedProcess(["textlint"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     config = pyfltr.config.config.create_default_config()
     config.values["textlint"] = True
@@ -124,7 +124,7 @@ def test_textlint_fix_mode_touch_without_content_change_marks_succeeded(mocker, 
     os.utime(target, (1000000000, 1000000000))
 
     def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # noqa
+        del env, on_output  # 引数シグネチャ揃えのため受け取るのみ
         if "--fix" in cmdline:
             # step1: 内容は変えずmtimeだけ更新（textlintのtouch挙動を模擬）
             os.utime(target, (2000000000, 2000000000))
@@ -132,7 +132,7 @@ def test_textlint_fix_mode_touch_without_content_change_marks_succeeded(mocker, 
         # step2: 残存違反なし
         return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
 
-    mocker.patch("pyfltr.command.process._run_subprocess", side_effect=fake_run)
+    mocker.patch("pyfltr.command.process.run_subprocess", side_effect=fake_run)
 
     config = pyfltr.config.config.create_default_config()
     config.values["textlint"] = True
@@ -153,7 +153,7 @@ def test_textlint_fix_mode_all_fixed_marks_formatted(mocker, tmp_path: pathlib.P
     call_count = [0]
 
     def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # noqa
+        del env, on_output  # 引数シグネチャ揃えのため受け取るのみ
         call_count[0] += 1
         if call_count[0] == 1:
             # step1: fix適用（mtime更新）
@@ -163,7 +163,7 @@ def test_textlint_fix_mode_all_fixed_marks_formatted(mocker, tmp_path: pathlib.P
         # step2: 残存違反なし
         return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
 
-    mocker.patch("pyfltr.command.process._run_subprocess", side_effect=fake_run)
+    mocker.patch("pyfltr.command.process.run_subprocess", side_effect=fake_run)
 
     config = pyfltr.config.config.create_default_config()
     config.values["textlint"] = True
@@ -181,14 +181,14 @@ def test_textlint_fix_mode_emits_warning_when_protected_identifier_corrupted(moc
     target.write_text("本文で.NET系の話題を扱う。\n")
 
     def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # noqa
+        del env, on_output  # 引数シグネチャ揃えのため受け取るのみ
         if "--fix" in cmdline:
             # preset-jtf-styleが「.」を「。」へ変換したことを模擬
             target.write_text("本文で。NET系の話題を扱う。\n")
             return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
         return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
 
-    mocker.patch("pyfltr.command.process._run_subprocess", side_effect=fake_run)
+    mocker.patch("pyfltr.command.process.run_subprocess", side_effect=fake_run)
 
     config = pyfltr.config.config.create_default_config()
     config.values["textlint"] = True
@@ -212,13 +212,13 @@ def test_textlint_fix_mode_no_warning_when_protected_identifiers_empty(mocker, t
     target.write_text("本文で.NET系の話題を扱う。\n")
 
     def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # noqa
+        del env, on_output  # 引数シグネチャ揃えのため受け取るのみ
         if "--fix" in cmdline:
             target.write_text("本文で。NET系の話題を扱う。\n")
             return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
         return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
 
-    mocker.patch("pyfltr.command.process._run_subprocess", side_effect=fake_run)
+    mocker.patch("pyfltr.command.process.run_subprocess", side_effect=fake_run)
 
     config = pyfltr.config.config.create_default_config()
     config.values["textlint"] = True
@@ -237,14 +237,14 @@ def test_textlint_fix_mode_no_warning_when_identifier_intact(mocker, tmp_path: p
     target.write_text("# title\n\n本文.NETと普通の文.\n")
 
     def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # noqa
+        del env, on_output  # 引数シグネチャ揃えのため受け取るのみ
         if "--fix" in cmdline:
             # .NETは保持、末尾の.のみ全角化
             target.write_text("# title\n\n本文.NETと普通の文。\n")
             return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
         return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
 
-    mocker.patch("pyfltr.command.process._run_subprocess", side_effect=fake_run)
+    mocker.patch("pyfltr.command.process.run_subprocess", side_effect=fake_run)
 
     config = pyfltr.config.config.create_default_config()
     config.values["textlint"] = True
@@ -265,14 +265,14 @@ def test_textlint_fix_mode_residual_violations_mark_failed(mocker, tmp_path: pat
     violation_output = f"{violation_file}: line 3, col 5, Error - No mixed period (ja-no-mixed-period)"
 
     def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # noqa
+        del env, on_output  # 引数シグネチャ揃えのため受け取るのみ
         if "--fix" in cmdline:
             # step1: fix適用したが違反が残る（textlintはrc=1を返すことがある）
             return subprocess.CompletedProcess(cmdline, returncode=1, stdout="")
         # step2: compact 形式で違反出力
         return subprocess.CompletedProcess(cmdline, returncode=1, stdout=violation_output)
 
-    mocker.patch("pyfltr.command.process._run_subprocess", side_effect=fake_run)
+    mocker.patch("pyfltr.command.process.run_subprocess", side_effect=fake_run)
 
     config = pyfltr.config.config.create_default_config()
     config.values["textlint"] = True
@@ -294,12 +294,12 @@ def test_textlint_fix_mode_step1_fatal_error_fails(mocker, tmp_path: pathlib.Pat
     target.write_text("# title\n")
 
     def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # noqa
+        del env, on_output  # 引数シグネチャ揃えのため受け取るのみ
         if "--fix" in cmdline:
             return subprocess.CompletedProcess(cmdline, returncode=2, stdout="fatal error")
         return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
 
-    mocker.patch("pyfltr.command.process._run_subprocess", side_effect=fake_run)
+    mocker.patch("pyfltr.command.process.run_subprocess", side_effect=fake_run)
 
     config = pyfltr.config.config.create_default_config()
     config.values["textlint"] = True

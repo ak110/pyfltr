@@ -1,6 +1,6 @@
 """command.py の ruff-format 2段階実行テスト。
 
-`_execute_ruff_format_two_step` の動作を検証する。
+`execute_ruff_format_two_step` の動作を検証する。
 """
 
 import os
@@ -19,7 +19,7 @@ def test_ruff_format_two_step_runs_check_and_format(mocker, tmp_path: pathlib.Pa
     target.write_text("x = 1\n")
 
     proc = subprocess.CompletedProcess(["ruff"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     config = pyfltr.config.config.create_default_config()
     config.values["ruff-format"] = True
@@ -46,7 +46,7 @@ def test_ruff_format_by_check_false_skips_check_step(mocker, tmp_path: pathlib.P
     target.write_text("x = 1\n")
 
     proc = subprocess.CompletedProcess(["ruff"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     config = pyfltr.config.config.create_default_config()
     config.values["ruff-format"] = True
@@ -69,12 +69,12 @@ def test_ruff_format_step1_lint_violation_ignored(mocker, tmp_path: pathlib.Path
     target.write_text("x = 1\n")
 
     def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # noqa
+        del env, on_output  # 引数シグネチャ揃えのため受け取るのみ
         if "check" in cmdline:
             return subprocess.CompletedProcess(cmdline, returncode=1, stdout="lint violation")
         return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
 
-    mocker.patch("pyfltr.command.process._run_subprocess", side_effect=fake_run)
+    mocker.patch("pyfltr.command.process.run_subprocess", side_effect=fake_run)
 
     config = pyfltr.config.config.create_default_config()
     config.values["ruff-format"] = True
@@ -93,12 +93,12 @@ def test_ruff_format_step1_internal_error_fails(mocker, tmp_path: pathlib.Path) 
     target.write_text("x = 1\n")
 
     def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # noqa
+        del env, on_output  # 引数シグネチャ揃えのため受け取るのみ
         if "check" in cmdline:
             return subprocess.CompletedProcess(cmdline, returncode=2, stdout="usage error")
         return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
 
-    mocker.patch("pyfltr.command.process._run_subprocess", side_effect=fake_run)
+    mocker.patch("pyfltr.command.process.run_subprocess", side_effect=fake_run)
 
     config = pyfltr.config.config.create_default_config()
     config.values["ruff-format"] = True
@@ -116,12 +116,12 @@ def test_ruff_format_step2_internal_error_fails(mocker, tmp_path: pathlib.Path) 
     target.write_text("x = 1\n")
 
     def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # noqa
+        del env, on_output  # 引数シグネチャ揃えのため受け取るのみ
         if "check" in cmdline:
             return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
         return subprocess.CompletedProcess(cmdline, returncode=2, stdout="format error")
 
-    mocker.patch("pyfltr.command.process._run_subprocess", side_effect=fake_run)
+    mocker.patch("pyfltr.command.process.run_subprocess", side_effect=fake_run)
 
     config = pyfltr.config.config.create_default_config()
     config.values["ruff-format"] = True
@@ -142,7 +142,7 @@ def test_ruff_format_step1_mtime_change_marks_formatted(mocker, tmp_path: pathli
     os.utime(target, (1000000000, 1000000000))
 
     def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # noqa
+        del env, on_output  # 引数シグネチャ揃えのため受け取るのみ
         if "check" in cmdline:
             # ruff check が修正を適用したことをシミュレート: 明示的に新しい mtime を設定。
             target.write_text("x = 2\n")
@@ -150,7 +150,7 @@ def test_ruff_format_step1_mtime_change_marks_formatted(mocker, tmp_path: pathli
             return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
         return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
 
-    mocker.patch("pyfltr.command.process._run_subprocess", side_effect=fake_run)
+    mocker.patch("pyfltr.command.process.run_subprocess", side_effect=fake_run)
 
     config = pyfltr.config.config.create_default_config()
     config.values["ruff-format"] = True

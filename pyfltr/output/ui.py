@@ -609,6 +609,7 @@ class UIApp(App):
             errors_log.clear()
             self._write_log("#errors-log", content)
             tab = tc.get_tab("tab-errors")
+            # Textualの型スタブはlabelをRenderableType扱いするが、実装はstr代入を許容する。
             tab.label = label  # type: ignore[assignment]
 
     def _clear_log(self, widget_id: str) -> None:
@@ -632,6 +633,7 @@ class UIApp(App):
         try:
             tc = self.query_one(TabbedContent)
             tab = tc.get_tab(f"tab-{command}")
+            # Textualの型スタブはlabelをRenderableType扱いするが、実装はstr代入を許容する。
             tab.label = f"{command} *"  # type: ignore[assignment]
         except Exception:
             logging.warning(f"タブタイトル更新失敗: {command}", exc_info=True)

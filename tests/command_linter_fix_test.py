@@ -1,10 +1,11 @@
 """command.pyのlinter fixテスト。
 
-`_execute_linter_fix`の動作と、fixモードでの各linter（eslint/biome/cargo/dotnet）の
+`execute_linter_fix`の動作と、fixモードでの各linter（eslint/biome/cargo/dotnet）の
 コマンドライン生成を検証する。
 """
 
-# pylint: disable=protected-access,duplicate-code
+# pylint: disable=protected-access  # _resolve_direct_executable等の内部ヘルパー単体テスト経路
+# pylint: disable=duplicate-code  # fake_run系のサブプロセスダブル定義が他テストファイルと類似
 
 import os
 import pathlib
@@ -22,7 +23,7 @@ def test_fix_mode_appends_fix_args_for_linter(mocker, tmp_path: pathlib.Path) ->
     target.write_text("# title\n")
 
     proc = subprocess.CompletedProcess(["ruff"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     config = pyfltr.config.config.create_default_config()
     config.values["markdownlint"] = True
@@ -49,7 +50,7 @@ def test_fix_mode_preserves_custom_args(mocker, tmp_path: pathlib.Path) -> None:
     target.write_text("# title\n")
 
     proc = subprocess.CompletedProcess(["markdownlint-cli2"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     config = pyfltr.config.config.create_default_config()
     config.values["markdownlint"] = True
@@ -75,13 +76,13 @@ def test_fix_mode_mtime_change_marks_formatted(mocker, tmp_path: pathlib.Path) -
     os.utime(target, (1000000000, 1000000000))
 
     def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # noqa
+        del env, on_output  # 引数シグネチャ揃えのため受け取るのみ
         # fix適用をシミュレート
         target.write_text("# Title\n")
         os.utime(target, (2000000000, 2000000000))
         return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
 
-    mocker.patch("pyfltr.command.process._run_subprocess", side_effect=fake_run)
+    mocker.patch("pyfltr.command.process.run_subprocess", side_effect=fake_run)
 
     config = pyfltr.config.config.create_default_config()
     config.values["markdownlint"] = True
@@ -101,13 +102,13 @@ def test_fix_mode_non_zero_rc_is_failed(mocker, tmp_path: pathlib.Path) -> None:
     os.utime(target, (1000000000, 1000000000))
 
     def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # noqa
+        del env, on_output  # 引数シグネチャ揃えのため受け取るのみ
         # 一部修正したが未修正の違反が残ってrc=1のケースをシミュレート
         target.write_text("# Title\n")
         os.utime(target, (2000000000, 2000000000))
         return subprocess.CompletedProcess(cmdline, returncode=1, stdout="violation remains")
 
-    mocker.patch("pyfltr.command.process._run_subprocess", side_effect=fake_run)
+    mocker.patch("pyfltr.command.process.run_subprocess", side_effect=fake_run)
 
     config = pyfltr.config.config.create_default_config()
     config.values["ruff-check"] = True
@@ -122,7 +123,7 @@ def test_fix_mode_non_zero_rc_is_failed(mocker, tmp_path: pathlib.Path) -> None:
 
 def test_fix_mode_formatter_is_not_filtered_in(tmp_path: pathlib.Path) -> None:
     """filter_fix_commandsはformatterをfixモードの対象から除外する。"""
-    del tmp_path  # noqa  # fixture互換のためだけに受け取る
+    del tmp_path  # fixture互換で受け取るのみ
     config = pyfltr.config.config.create_default_config()
     config.values["ruff-format"] = True
     # ruff-formatはformatterのためfixモードの対象外となる（fix-args未定義）
@@ -136,7 +137,7 @@ def test_eslint_lint_mode_uses_json_format(mocker, tmp_path: pathlib.Path) -> No
     target.write_text("var x = 1;\n")
 
     proc = subprocess.CompletedProcess(["eslint"], returncode=0, stdout="[]")
-    mock_run = mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     config = pyfltr.config.config.create_default_config()
     config.values["eslint"] = True
@@ -160,7 +161,7 @@ def test_eslint_fix_mode_appends_fix_and_keeps_json(mocker, tmp_path: pathlib.Pa
     target.write_text("var x = 1;\n")
 
     proc = subprocess.CompletedProcess(["eslint"], returncode=0, stdout="[]")
-    mock_run = mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     config = pyfltr.config.config.create_default_config()
     config.values["eslint"] = True
@@ -181,7 +182,7 @@ def test_biome_lint_mode_uses_check_and_github_reporter(mocker, tmp_path: pathli
     target.write_text("const x = 1;\n")
 
     proc = subprocess.CompletedProcess(["biome"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     config = pyfltr.config.config.create_default_config()
     config.values["biome"] = True
@@ -202,7 +203,7 @@ def test_biome_fix_mode_appends_write_and_keeps_reporter(mocker, tmp_path: pathl
     target.write_text("const x = 1;\n")
 
     proc = subprocess.CompletedProcess(["biome"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     config = pyfltr.config.config.create_default_config()
     config.values["biome"] = True
@@ -248,7 +249,7 @@ def test_cargo_fmt_runs_without_file_args(mocker, tmp_path: pathlib.Path) -> Non
     target.write_text("fn main() {}\n")
 
     proc = subprocess.CompletedProcess(["cargo"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     config = pyfltr.config.config.create_default_config()
     config.values["cargo-fmt"] = True
@@ -271,7 +272,7 @@ def test_cargo_fmt_fix_mode_unchanged(mocker, tmp_path: pathlib.Path) -> None:
     target.write_text("fn main() {}\n")
 
     proc = subprocess.CompletedProcess(["cargo"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     config = pyfltr.config.config.create_default_config()
     config.values["cargo-fmt"] = True
@@ -291,7 +292,7 @@ def test_cargo_clippy_normal_mode_cmdline(mocker, tmp_path: pathlib.Path) -> Non
     target.write_text("fn main() {}\n")
 
     proc = subprocess.CompletedProcess(["cargo"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     config = pyfltr.config.config.create_default_config()
     config.values["cargo-clippy"] = True
@@ -312,7 +313,7 @@ def test_cargo_clippy_fix_mode_cmdline(mocker, tmp_path: pathlib.Path) -> None:
     target.write_text("fn main() {}\n")
 
     proc = subprocess.CompletedProcess(["cargo"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     config = pyfltr.config.config.create_default_config()
     config.values["cargo-clippy"] = True
@@ -333,7 +334,7 @@ def test_dotnet_format_runs_without_file_args(mocker, tmp_path: pathlib.Path) ->
     target.write_text("class Sample {}\n")
 
     proc = subprocess.CompletedProcess(["dotnet"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     config = pyfltr.config.config.create_default_config()
     config.values["dotnet-format"] = True
@@ -350,7 +351,7 @@ def test_dotnet_format_runs_without_file_args(mocker, tmp_path: pathlib.Path) ->
 
 def test_cargo_test_skipped_when_no_rs_files(mocker) -> None:
     """.rsファイルが対象に無いときcargo-testはスキップされる（既存pass-filenames=False分岐）。"""
-    mock_run = mocker.patch("pyfltr.command.process._run_subprocess")
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess")
 
     config = pyfltr.config.config.create_default_config()
     config.values["cargo-test"] = True
@@ -371,7 +372,7 @@ def test_tool_exclude_filters_files(mocker, tmp_path: pathlib.Path) -> None:
     excluded_.write_text("x = 2\n")
 
     proc = subprocess.CompletedProcess(["ruff"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     config = pyfltr.config.config.create_default_config()
     config.values["ruff-check"] = True
@@ -396,7 +397,7 @@ def test_tool_exclude_disabled_by_no_exclude(mocker, tmp_path: pathlib.Path) -> 
     would_be_excluded.write_text("x = 2\n")
 
     proc = subprocess.CompletedProcess(["ruff"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     config = pyfltr.config.config.create_default_config()
     config.values["ruff-check"] = True

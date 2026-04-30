@@ -1,5 +1,6 @@
 """cache.py のテスト。"""
 
+import os
 import pathlib
 import time
 
@@ -143,8 +144,6 @@ def test_cleanup_removes_old_entries(tmp_path: pathlib.Path) -> None:
     assert entry_path.exists()
     # mtimeを2時間前に戻す
     old_mtime = time.time() - 2 * 3600
-    import os  # pylint: disable=import-outside-toplevel
-
     os.utime(entry_path, (old_mtime, old_mtime))
 
     removed = store.cleanup(pyfltr.state.cache.CachePolicy(max_age_hours=1))
@@ -172,8 +171,6 @@ def test_cleanup_zero_policy_is_noop(tmp_path: pathlib.Path) -> None:
     key = _compute_dummy_key(store, "textlint", target)
     store.put("textlint", key, _make_result("textlint", returncode=0), run_id="01ABCDEFGH")
     entry_path = store.cache_dir / "textlint" / f"{key}.json"
-    import os  # pylint: disable=import-outside-toplevel
-
     os.utime(entry_path, (0, 0))  # 1970年扱い
 
     removed = store.cleanup(pyfltr.state.cache.CachePolicy(max_age_hours=0))

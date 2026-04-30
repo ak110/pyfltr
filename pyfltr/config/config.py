@@ -4,7 +4,7 @@ TOMLの読み書きはコメント・セクション順を保持できる`tomlki
 （`tomllib`は使用しない）。`pyfltr config set`等での部分編集で
 ユーザーが手書きしたコメントを維持するために必要。
 """
-# pylint: disable=too-many-lines
+# pylint: disable=too-many-lines  # 設定の正規化・検証・出力をSSOTとして1モジュールに集約しているため
 
 import copy
 import dataclasses
@@ -232,7 +232,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "prettier-runner": "js-runner",
     "prettier-args": [],
     # prettierは--check（read-only）と--write（書き込み）が排他のため、
-    # pyfltrは2段階で実行する。詳細はcommand.pyの`_execute_prettier_two_step`を参照。
+    # pyfltrは2段階で実行する。詳細はcommand.pyの`execute_prettier_two_step`を参照。
     "prettier-check-args": ["--check"],
     "prettier-write-args": ["--write"],
     "prettier-fast": True,

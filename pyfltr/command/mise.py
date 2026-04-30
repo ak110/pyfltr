@@ -8,7 +8,7 @@ import subprocess
 import typing
 
 import pyfltr.config.config
-from pyfltr.command.env import _build_mise_subprocess_env
+from pyfltr.command.env import build_mise_subprocess_env
 
 logger = __import__("logging").getLogger(__name__)
 
@@ -78,7 +78,7 @@ def _mise_env_signature() -> tuple[tuple[str, str | None], ...]:
     return tuple((key, os.environ.get(key)) for key in _MISE_CONFIG_ENV_KEYS)
 
 
-def _get_mise_active_tools(
+def get_mise_active_tools(
     config: pyfltr.config.config.Config,
     *,
     allow_side_effects: bool = False,
@@ -117,18 +117,18 @@ def _query_mise_active_tools(
 ) -> MiseActiveToolsResult:
     """`mise ls --current --json` を実際に呼び出し、ステータス付き結果を返す。
 
-    キャッシュ管理は呼び出し側 `_get_mise_active_tools` が担当する純取得層。
-    取得失敗時のフォールバック挙動は本関数docstringおよび `_get_mise_active_tools` の
+    キャッシュ管理は呼び出し側 `get_mise_active_tools` が担当する純取得層。
+    取得失敗時のフォールバック挙動は本関数docstringおよび `get_mise_active_tools` の
     `allow_side_effects` 説明と同義。
     """
     if shutil.which("mise") is None:
         return MiseActiveToolsResult(status="mise-not-found")
-    mise_env = _build_mise_subprocess_env(dict(os.environ))
+    mise_env = build_mise_subprocess_env(dict(os.environ))
     ls_args = ["mise", "ls", "--current", "--json"]
     return _run_mise_ls_with_trust_retry(ls_args, config, mise_env, allow_side_effects=allow_side_effects)
 
 
-def _run_mise_with_trust(
+def run_mise_with_trust(
     args: list[str],
     mise_env: dict[str, str],
     config: pyfltr.config.config.Config,
@@ -177,10 +177,10 @@ def _run_mise_ls_with_trust_retry(
     成功時は `MiseActiveToolsResult(status="ok", tools=...)` を返す。
     失敗時（mise呼び出し失敗・JSONパース失敗・副作用OFF下の未信頼エラー・trust拒否）は
     対応するステータスを設定したMiseActiveToolsResultを返してフォールバックさせる。
-    trust試行を含むリトライ核ロジックは `_run_mise_with_trust` に委譲する。
+    trust試行を含むリトライ核ロジックは `run_mise_with_trust` に委譲する。
     """
     try:
-        returncode, stdout, stderr, trust_failed = _run_mise_with_trust(
+        returncode, stdout, stderr, trust_failed = run_mise_with_trust(
             ls_args, mise_env, config, allow_side_effects=allow_side_effects
         )
     except OSError as e:

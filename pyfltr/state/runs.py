@@ -227,7 +227,7 @@ def _show_run_overview(
     output_format: str,
 ) -> int:
     """既定モード: meta + ツール別サマリを表示する。"""
-    tool_summaries = _collect_tool_summaries(store, run_id)
+    tool_summaries = collect_tool_summaries(store, run_id)
     if output_format == "text":
         _print_run_overview_text(run_id, meta, tool_summaries)
     elif output_format == "json":
@@ -239,7 +239,7 @@ def _show_run_overview(
     return 0
 
 
-def _collect_tool_summaries(
+def collect_tool_summaries(
     store: pyfltr.state.archive.ArchiveStore,
     run_id: str,
 ) -> list[dict[str, typing.Any]]:
@@ -428,7 +428,7 @@ def _print_jsonl_line(obj: dict[str, typing.Any]) -> None:
     sys.stdout.flush()
 
 
-class _stdout_owned:  # noqa: N801  # pylint: disable=invalid-name
+class _stdout_owned:  # noqa: N801  # pylint: disable=invalid-name  # contextlibスタイルのスネークケース命名（withで使う名前を直感的にする）
     """json / jsonlモード時にstdoutを構造化出力で専有するためのコンテキスト。
 
     root loggerを抑止してlogging経由のstdout/stderr混入を防ぐ。エラー出力は

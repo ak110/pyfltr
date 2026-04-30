@@ -217,7 +217,7 @@ async def _tool_show_run(run_id: str) -> RunOverviewModel:
         meta = store.read_meta(resolved)
     except FileNotFoundError:
         _raise_mcp_error(f"run_id が見つからない: {resolved}")
-    command_summaries = pyfltr.state.runs._collect_tool_summaries(store, resolved)  # noqa: SLF001  # pylint: disable=protected-access
+    command_summaries = pyfltr.state.runs.collect_tool_summaries(store, resolved)
     commands = [
         CommandSummaryModel(
             command=entry.get("command"),
@@ -396,8 +396,8 @@ async def _tool_run_for_agent(
     # コマンド別サマリを最新アーカイブから集計する。
     store = pyfltr.state.archive.ArchiveStore()
     try:
-        command_summaries = pyfltr.state.runs._collect_tool_summaries(store, run_id)  # noqa: SLF001  # pylint: disable=protected-access
-    except Exception:  # pylint: disable=broad-exception-caught
+        command_summaries = pyfltr.state.runs.collect_tool_summaries(store, run_id)
+    except Exception:  # MCPツール戻り値の組み立て継続を優先するため全例外を吸収する
         command_summaries = []
 
     commands_model = [CommandSummaryModel.model_validate(entry) for entry in command_summaries]
@@ -413,7 +413,7 @@ async def _tool_run_for_agent(
                 rc = tool_meta.get("retry_command")
                 if rc:
                     retry_commands[cmd_name] = rc
-            except Exception:  # pylint: disable=broad-exception-caught  # tool.json読み取り失敗は非致命的
+            except Exception:  # tool.json読み取り失敗は非致命的
                 logger.debug("retry_command取得失敗: command=%s", cmd_name, exc_info=True)
 
     return RunForAgentResult(
@@ -491,7 +491,7 @@ def execute_mcp(args: argparse.Namespace) -> int:
     起動直後にroot loggerをstderrへ向けてJSON-RPCフレームのstdout汚染を防ぐ。
     FastMCPの`run(transport="stdio")`はstdin EOFで終了する。
     """
-    del args  # noqa: F841
+    del args  # サブコマンド呼び出し規約上受け取るのみ（mcpは追加引数を持たない）
 
     # stdioトランスポートではstdoutをJSON-RPCフレームが専有するため、
     # ロギングは必ずstderrへ向ける。
@@ -501,6 +501,6 @@ def execute_mcp(args: argparse.Namespace) -> int:
         server = _build_server()
         server.run(transport="stdio")
         return 0
-    except Exception as e:  # pylint: disable=broad-exception-caught
+    except Exception as e:  # MCPサーバー起動失敗をエージェント側へ非ゼロ終了で通知するため全例外を捕捉する
         logger.error("MCP サーバーの起動に失敗した: %s", e)
         return 1

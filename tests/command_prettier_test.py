@@ -1,6 +1,6 @@
 """command.py の prettier 2段階実行テスト。
 
-`_execute_prettier_two_step` の動作を検証する。
+`execute_prettier_two_step` の動作を検証する。
 """
 
 import os
@@ -19,7 +19,7 @@ def test_prettier_two_step_check_clean(mocker, tmp_path: pathlib.Path) -> None:
     target.write_text("x = 1;\n")
 
     proc = subprocess.CompletedProcess(["prettier"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     config = pyfltr.config.config.create_default_config()
     config.values["prettier"] = True
@@ -41,13 +41,13 @@ def test_prettier_two_step_check_needs_write(mocker, tmp_path: pathlib.Path) -> 
     target.write_text("x=1;\n")
 
     def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # noqa
+        del env, on_output  # 引数シグネチャ揃えのため受け取るのみ
         if "--check" in cmdline:
             return subprocess.CompletedProcess(cmdline, returncode=1, stdout="[warn] sample.js")
         # --write step
         return subprocess.CompletedProcess(cmdline, returncode=0, stdout="sample.js")
 
-    mocker.patch("pyfltr.command.process._run_subprocess", side_effect=fake_run)
+    mocker.patch("pyfltr.command.process.run_subprocess", side_effect=fake_run)
 
     config = pyfltr.config.config.create_default_config()
     config.values["prettier"] = True
@@ -67,11 +67,11 @@ def test_prettier_two_step_check_rc2_fails_without_write(mocker, tmp_path: pathl
     calls: list[list[str]] = []
 
     def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # noqa
+        del env, on_output  # 引数シグネチャ揃えのため受け取るのみ
         calls.append(cmdline)
         return subprocess.CompletedProcess(cmdline, returncode=2, stdout="SyntaxError")
 
-    mocker.patch("pyfltr.command.process._run_subprocess", side_effect=fake_run)
+    mocker.patch("pyfltr.command.process.run_subprocess", side_effect=fake_run)
 
     config = pyfltr.config.config.create_default_config()
     config.values["prettier"] = True
@@ -92,12 +92,12 @@ def test_prettier_two_step_step2_failure_marks_failed(mocker, tmp_path: pathlib.
     target.write_text("x=1;\n")
 
     def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # noqa
+        del env, on_output  # 引数シグネチャ揃えのため受け取るのみ
         if "--check" in cmdline:
             return subprocess.CompletedProcess(cmdline, returncode=1, stdout="")
         return subprocess.CompletedProcess(cmdline, returncode=2, stdout="write failed")
 
-    mocker.patch("pyfltr.command.process._run_subprocess", side_effect=fake_run)
+    mocker.patch("pyfltr.command.process.run_subprocess", side_effect=fake_run)
 
     config = pyfltr.config.config.create_default_config()
     config.values["prettier"] = True
@@ -116,13 +116,13 @@ def test_prettier_fix_mode_skips_check_step(mocker, tmp_path: pathlib.Path) -> N
     os.utime(target, (1000000000, 1000000000))
 
     def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # noqa
+        del env, on_output  # 引数シグネチャ揃えのため受け取るのみ
         # --write 実行時にファイルを書き換えたことをシミュレート
         target.write_text("x = 1;\n")
         os.utime(target, (2000000000, 2000000000))
         return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
 
-    mock_run = mocker.patch("pyfltr.command.process._run_subprocess", side_effect=fake_run)
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", side_effect=fake_run)
 
     config = pyfltr.config.config.create_default_config()
     config.values["prettier"] = True
@@ -145,7 +145,7 @@ def test_prettier_fix_mode_no_change_succeeds(mocker, tmp_path: pathlib.Path) ->
     target.write_text("x = 1;\n")
 
     proc = subprocess.CompletedProcess(["prettier"], returncode=0, stdout="")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     config = pyfltr.config.config.create_default_config()
     config.values["prettier"] = True

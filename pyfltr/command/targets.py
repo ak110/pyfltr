@@ -197,7 +197,7 @@ def _get_changed_files(ref: str) -> list[str] | None:
     return [p for p in result.stdout.split("\0") if p]
 
 
-def _matches_exclude_patterns(path: pathlib.Path, patterns: list[str]) -> str | None:
+def matches_exclude_patterns(path: pathlib.Path, patterns: list[str]) -> str | None:
     """パスが除外パターンのいずれかに一致した場合、最初に一致したパターン文字列を返す。"""
     for glob in patterns:
         if path.match(glob):
@@ -215,7 +215,7 @@ def _matches_exclude_patterns(path: pathlib.Path, patterns: list[str]) -> str | 
 def excluded(path: pathlib.Path, config: pyfltr.config.config.Config) -> tuple[str, str] | None:
     """無視パターンチェック。一致した場合は（設定キー名, 一致パターン）を、無一致の場合はNoneを返す。"""
     for key in ("exclude", "extend-exclude"):
-        matched = _matches_exclude_patterns(path, config[key])
+        matched = matches_exclude_patterns(path, config[key])
         if matched is not None:
             return (key, matched)
     return None

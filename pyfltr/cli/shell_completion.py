@@ -40,6 +40,8 @@ def _collect_completions(
 
     def _walk(p: argparse.ArgumentParser) -> None:
         nonlocal output_format_choices
+        # argparseはオプション一覧やサブパーサーを公開APIで列挙する手段を提供しないため、
+        # `_actions` / `_SubParsersAction` 経由の参照に依存せざるを得ない。
         for action in p._actions:  # noqa: SLF001  # pylint: disable=protected-access
             for opt in action.option_strings:
                 options.add(opt)

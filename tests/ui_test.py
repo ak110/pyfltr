@@ -1,6 +1,6 @@
 """UI関連のテストコード。"""
 
-# pylint: disable=protected-access
+# pylint: disable=protected-access  # UIApp内部状態（_interrupted / _exit_requested等）の検証経路
 
 import argparse
 import unittest.mock

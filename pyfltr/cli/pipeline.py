@@ -1,7 +1,7 @@
 """パイプライン実行と結果整形。
 
 非TUI経路でのコマンド実行（`run_commands_with_cli`）と、
-パイプライン全体を駆動する`_run_impl`・`run_pipeline`・
+パイプライン全体を駆動する`run_impl`・`run_pipeline`・
 `calculate_returncode`を担う。
 text整形描画（`render_results` / `write_log`）は`cli/render.py`に分離している。
 """
@@ -592,7 +592,7 @@ def _resolve_output_format(
     )
 
 
-def _run_impl(
+def run_impl(
     parser: argparse.ArgumentParser,
     args: argparse.Namespace,
     original_sys_args: typing.Sequence[str],

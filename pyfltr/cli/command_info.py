@@ -145,9 +145,9 @@ def _collect_info(command: str, config: pyfltr.config.config.Config, *, do_check
     # mise経路（effective_runner == "mise"）のときのみ、取得状況を露出する。
     # mise配信外のコマンド（python系・js系・direct）には不要で、ノイズにしかならないため。
     if resolved.effective_runner == "mise":
-        # `_get_mise_active_tools`は`build_commandline`内で同じ`allow_side_effects`値で
+        # `get_mise_active_tools`は`build_commandline`内で同じ`allow_side_effects`値で
         # キャッシュ済み。ここで再呼び出ししても副作用は再発生せず、直前の取得結果をそのまま得る。
-        active_result = pyfltr.command.mise._get_mise_active_tools(config, allow_side_effects=do_check)  # pylint: disable=protected-access
+        active_result = pyfltr.command.mise.get_mise_active_tools(config, allow_side_effects=do_check)
         mise_info: dict[str, typing.Any] = {"status": active_result.status}
         if active_result.detail is not None:
             mise_info["detail"] = active_result.detail

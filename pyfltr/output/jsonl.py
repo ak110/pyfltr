@@ -281,12 +281,12 @@ def collect_mise_active_tools_for_header(
 
     `commands`にmiseバックエンド登録済みのものが1つも含まれない場合は`None`を返し、
     Python専用runのheaderへ無関係な`mise-not-found`を出さないようにする。
-    含まれる場合は`_get_mise_active_tools(config)`を副作用OFFで引き、
+    含まれる場合は`get_mise_active_tools(config)`を副作用OFFで引き、
     `{"status": ..., "detail": ..., "active_keys": [...]}`形式に整える。
     """
     if not any(pyfltr.command.runner.get_mise_active_tool_key(cmd) is not None for cmd in commands):
         return None
-    result = pyfltr.command.mise._get_mise_active_tools(config)  # pylint: disable=protected-access
+    result = pyfltr.command.mise.get_mise_active_tools(config)
     info: dict[str, typing.Any] = {"status": result.status}
     if result.detail is not None:
         info["detail"] = result.detail

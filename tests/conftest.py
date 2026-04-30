@@ -46,17 +46,17 @@ def _isolate_output_format_envs(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("PYFLTR_OUTPUT_FORMAT", raising=False)
 
 
-# `_get_mise_active_tools` 実装本体を保存しておく（モック上書き前の参照）。
+# `get_mise_active_tools` 実装本体を保存しておく（モック上書き前の参照）。
 # キャッシュキー検証系テストでは実装の挙動を直接確認したいため、モック前の関数オブジェクトを
 # 経由して呼べるよう、本変数をテスト側から参照可能にする。
-real_get_mise_active_tools = pyfltr.command.mise._get_mise_active_tools  # pylint: disable=protected-access
+real_get_mise_active_tools = pyfltr.command.mise.get_mise_active_tools
 
 
 @pytest.fixture(autouse=True)
 def _default_mise_active_tools_empty(monkeypatch: pytest.MonkeyPatch) -> None:
     """全テストで `mise ls --current --json` 経路を「mise設定記述なし」相当へ固定する。
 
-    `_get_mise_active_tools` は実環境のmise・cwd配下の `mise.toml` に依存して結果が変わるため、
+    `get_mise_active_tools` は実環境のmise・cwd配下の `mise.toml` に依存して結果が変わるため、
     モック無しでは開発機の状態次第でテストが揺らぐ（tool spec省略形が混入する等）。
     既存テストはmise設定記述なし前提で従来形 `mise exec <tool>@latest -- <bin>` を期待しており、
     本フィクスチャでautouseに空のステータス`ok`結果を返すよう固定することでテスト全体の前提を揃える。
@@ -64,7 +64,7 @@ def _default_mise_active_tools_empty(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     monkeypatch.setattr("pyfltr.command.mise._MISE_ACTIVE_TOOLS_CACHE", {}, raising=True)
     monkeypatch.setattr(
-        "pyfltr.command.mise._get_mise_active_tools",
+        "pyfltr.command.mise.get_mise_active_tools",
         lambda config, *, allow_side_effects=False: pyfltr.command.mise.MiseActiveToolsResult(status="ok"),
     )
 
@@ -249,6 +249,19 @@ def count_config_warnings(needle: str) -> int:
     `needle`に空文字列を渡すと`source=="config"`の全件をカウントする。
     """
     return sum(1 for w in pyfltr.warnings_.collected_warnings() if w["source"] == "config" and needle in w["message"])
+
+
+def shared_prefix_length(a: str, b: str) -> int:
+    """2つの文字列の共通プレフィックス長を返す。
+
+    複数のテストで同じ計算（特にULIDの曖昧プレフィックステスト）を行うため共通化する。
+    """
+    shared = 0
+    for ca, cb in zip(a, b, strict=False):
+        if ca != cb:
+            break
+        shared += 1
+    return shared
 
 
 def seed_archive_run(

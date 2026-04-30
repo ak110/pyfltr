@@ -4,7 +4,7 @@ git 差分ファイルへの絞り込み・空集合・ref 不在フォールバ
 git 不在フォールバックを検証する。
 """
 
-# pylint: disable=missing-function-docstring
+# pylint: disable=missing-function-docstring  # テストは関数docstringを省略する慣習
 
 import collections.abc
 import os
@@ -60,7 +60,7 @@ def test_filter_by_changed_since_normal(tmp_path: pathlib.Path, _git_repo: pathl
 
     assert result == [pathlib.Path("changed.py")]
     # 警告は出ないこと
-    assert pyfltr.warnings_.collected_warnings() == []
+    assert not pyfltr.warnings_.collected_warnings()
 
 
 def test_filter_by_changed_since_empty_diff(tmp_path: pathlib.Path, _git_repo: pathlib.Path) -> None:
@@ -74,7 +74,7 @@ def test_filter_by_changed_since_empty_diff(tmp_path: pathlib.Path, _git_repo: p
     result = pyfltr.command.targets.filter_by_changed_since(all_files, "HEAD")
 
     assert result == []
-    assert pyfltr.warnings_.collected_warnings() == []
+    assert not pyfltr.warnings_.collected_warnings()
 
 
 def test_filter_by_changed_since_invalid_ref(tmp_path: pathlib.Path, _git_repo: pathlib.Path) -> None:
@@ -134,4 +134,4 @@ def test_filter_by_changed_since_excludes_untracked(tmp_path: pathlib.Path, _git
 
     # tracked の変更ファイルのみが対象になり、untracked は除外される
     assert result == [pathlib.Path("tracked.py")]
-    assert pyfltr.warnings_.collected_warnings() == []
+    assert not pyfltr.warnings_.collected_warnings()

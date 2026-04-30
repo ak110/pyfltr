@@ -77,16 +77,6 @@ class WarningCollector:
 _DEFAULT_COLLECTOR = WarningCollector()
 
 
-def set_default_collector(collector: WarningCollector) -> None:
-    """デフォルトの`WarningCollector`を差し替える（テスト用経路）。
-
-    本Phaseでは既存テストを書き換えないが、今後のテストが独自インスタンスを使いたい
-    場合のために用意する。
-    """
-    global _DEFAULT_COLLECTOR  # pylint: disable=global-statement
-    _DEFAULT_COLLECTOR = collector
-
-
 def emit_warning(source: str, message: str, *, exc_info: bool = False, hint: str | None = None) -> None:
     """警告を発行し、ログ出力と内部蓄積を同時に行う（ファサード）。
 

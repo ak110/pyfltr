@@ -10,10 +10,10 @@ import pyfltr.command.error_parser
 import pyfltr.command.process
 import pyfltr.config.config
 from pyfltr.command.core import CommandResult
-from pyfltr.command.snapshot import _changed_files, _snapshot_file_digests
+from pyfltr.command.snapshot import changed_files, snapshot_file_digests
 
 
-def _execute_ruff_format_two_step(
+def execute_ruff_format_two_step(
     command: str,
     command_info: pyfltr.config.config.CommandInfo,
     format_commandline: list[str],
@@ -77,11 +77,11 @@ def _run_ruff_two_step(
     step1の未修正lint violationは無視し、別途ruff-checkコマンドで検出する前提。
     """
     # ステップ1実行前の内容ハッシュを記録（修正適用検知用）
-    digests_before = _snapshot_file_digests(targets)
+    digests_before = snapshot_file_digests(targets)
 
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(check_commandline)}\n")
-    step1_proc = pyfltr.command.process._run_subprocess(  # pylint: disable=protected-access
+    step1_proc = pyfltr.command.process.run_subprocess(
         check_commandline,
         env,
         on_output,
@@ -91,13 +91,13 @@ def _run_ruff_two_step(
     )
     step1_rc = step1_proc.returncode
     step1_failed = step1_rc >= 2  # exit 0/1は無視、2以上（abrupt termination）のみ失敗扱い
-    digests_after_step1 = _snapshot_file_digests(targets)
+    digests_after_step1 = snapshot_file_digests(targets)
     step1_changed = digests_after_step1 != digests_before
 
     # ステップ2実行（常に実行）
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(format_commandline)}\n")
-    step2_proc = pyfltr.command.process._run_subprocess(  # pylint: disable=protected-access
+    step2_proc = pyfltr.command.process.run_subprocess(
         format_commandline,
         env,
         on_output,
@@ -140,8 +140,8 @@ def _run_ruff_two_step(
     if not has_error and (step1_changed or step2_formatted):
         # digests_beforeはStep1前のスナップショット（関数冒頭で取得済み）。
         # Step1（ruff --checkによる暗黙fix）とStep2（ruff format）の累積差分を一括で取る。
-        digests_after_step2 = _snapshot_file_digests(targets)
-        result.fixed_files = _changed_files(digests_before, digests_after_step2)
+        digests_after_step2 = snapshot_file_digests(targets)
+        result.fixed_files = changed_files(digests_before, digests_after_step2)
     return result
 
 
@@ -171,10 +171,10 @@ def _run_fix_mode(
     prettierのfixモードはreturncode/has_errorに応じてtypeを切り替えるためこのcallbackで吸収する。
     parse_errors: Trueのとき `error_parser.parse_errors` を呼び出す。
     """
-    digests_before = _snapshot_file_digests(targets)
+    digests_before = snapshot_file_digests(targets)
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(write_commandline)}\n")
-    write_proc = pyfltr.command.process._run_subprocess(  # pylint: disable=protected-access
+    write_proc = pyfltr.command.process.run_subprocess(
         write_commandline,
         env,
         on_output,
@@ -185,7 +185,7 @@ def _run_fix_mode(
     write_rc = write_proc.returncode
     output = write_proc.stdout.strip()
     elapsed = time.perf_counter() - start_time
-    digests_after = _snapshot_file_digests(targets)
+    digests_after = snapshot_file_digests(targets)
     changed = digests_after != digests_before
 
     if write_rc != 0:
@@ -225,11 +225,11 @@ def _run_fix_mode(
             errors=errors,
         )
     if not has_error and changed:
-        result.fixed_files = _changed_files(digests_before, digests_after)
+        result.fixed_files = changed_files(digests_before, digests_after)
     return result
 
 
-def _execute_check_write_two_step(
+def execute_check_write_two_step(
     command: str,
     command_info: pyfltr.config.config.CommandInfo,
     commandline_prefix: list[str],
@@ -359,10 +359,10 @@ def _run_check_then_write(
     prettier専用のrc>=2即failロジックは含まない（prettier用のヘルパーを別途使う）。
     """
     # Step1はread-onlyのため内容変化なし。変化検知のためStep1前にスナップショットを取る。
-    digests_before = _snapshot_file_digests(targets)
+    digests_before = snapshot_file_digests(targets)
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(check_commandline)}\n")
-    check_proc = pyfltr.command.process._run_subprocess(  # pylint: disable=protected-access
+    check_proc = pyfltr.command.process.run_subprocess(
         check_commandline,
         env,
         on_output,
@@ -389,7 +389,7 @@ def _run_check_then_write(
     # Step2: 書き込み
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(write_commandline)}\n")
-    write_proc = pyfltr.command.process._run_subprocess(  # pylint: disable=protected-access
+    write_proc = pyfltr.command.process.run_subprocess(
         write_commandline,
         env,
         on_output,
@@ -414,10 +414,10 @@ def _run_check_then_write(
         elapsed=elapsed,
     )
     if not has_error:
-        digests_after = _snapshot_file_digests(targets)
+        digests_after = snapshot_file_digests(targets)
         changed = digests_after != digests_before
         if changed:
-            result.fixed_files = _changed_files(digests_before, digests_after)
+            result.fixed_files = changed_files(digests_before, digests_after)
     return result
 
 
@@ -443,7 +443,7 @@ def _run_prettier_check_then_write(
     """
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(check_commandline)}\n")
-    step1_proc = pyfltr.command.process._run_subprocess(  # pylint: disable=protected-access
+    step1_proc = pyfltr.command.process.run_subprocess(
         check_commandline,
         env,
         on_output,
@@ -486,10 +486,10 @@ def _run_prettier_check_then_write(
         )
 
     # Step1 rc == 1 → Step2実行（書き込み）
-    prettier_digests_before = _snapshot_file_digests(targets)
+    prettier_digests_before = snapshot_file_digests(targets)
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(write_commandline)}\n")
-    step2_proc = pyfltr.command.process._run_subprocess(  # pylint: disable=protected-access
+    step2_proc = pyfltr.command.process.run_subprocess(
         write_commandline,
         env,
         on_output,
@@ -521,14 +521,14 @@ def _run_prettier_check_then_write(
         errors=errors,
     )
     if not has_error:
-        prettier_digests_after = _snapshot_file_digests(targets)
+        prettier_digests_after = snapshot_file_digests(targets)
         changed = prettier_digests_after != prettier_digests_before
         if changed:
-            result.fixed_files = _changed_files(prettier_digests_before, prettier_digests_after)
+            result.fixed_files = changed_files(prettier_digests_before, prettier_digests_after)
     return result
 
 
-def _execute_prettier_two_step(
+def execute_prettier_two_step(
     command: str,
     command_info: pyfltr.config.config.CommandInfo,
     commandline_prefix: list[str],

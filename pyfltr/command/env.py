@@ -7,7 +7,7 @@ import typing
 logger = __import__("logging").getLogger(__name__)
 
 
-def _get_env_path(env: dict[str, str]) -> str | None:
+def get_env_path(env: dict[str, str]) -> str | None:
     """`env` からPATH値を取り出す。
 
     Windowsは環境変数名が大文字小文字非区別のため `env` キーを非依存探索する
@@ -122,7 +122,7 @@ def _strip_mise_tool_paths(path_value: str) -> str:
     return sep.join(entry for entry in path_value.split(sep) if not _is_mise_tool_path(entry))
 
 
-def _build_mise_subprocess_env(env: dict[str, str]) -> dict[str, str]:
+def build_mise_subprocess_env(env: dict[str, str]) -> dict[str, str]:
     """`env` のコピーからmise toolパスを除外したenvを返す。
 
     入力 `env` は破壊しない（純関数）。PATH未設定時は単にコピーを返す。
@@ -140,7 +140,7 @@ def _build_mise_subprocess_env(env: dict[str, str]) -> dict[str, str]:
     return new_env
 
 
-def _build_subprocess_env(
+def build_subprocess_env(
     config: "typing.Any",
     command: str,
     *,
@@ -156,7 +156,7 @@ def _build_subprocess_env(
     """
     env = os.environ.copy()
     if via_mise:
-        env = _build_mise_subprocess_env(env)
+        env = build_mise_subprocess_env(env)
     # サプライチェーン攻撃対策: パッケージ取得系ツールの最小待機期間を既定で設定する。
     # ユーザーが既に設定している場合はその値を尊重する。
     # pnpmはnpm互換のconfig環境変数方式 （NPM_CONFIG_<SNAKE_CASE>） を採る。

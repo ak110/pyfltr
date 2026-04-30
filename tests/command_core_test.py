@@ -1,10 +1,12 @@
 """command.pyのコアテスト。
 
-dispatcher・共通処理・環境変数・コマンドライン解決・`_run_subprocess`・
+dispatcher・共通処理・環境変数・コマンドライン解決・`run_subprocess`・
 キャッシュ・only_failed・プロセス管理を検証する。
 """
 
-# pylint: disable=protected-access,too-many-lines,duplicate-code
+# pylint: disable=protected-access  # _normalize_path_entry等の内部ヘルパー単体テスト経路
+# pylint: disable=too-many-lines  # コアテストはfixture密結合化を避けるため分割しない方針
+# pylint: disable=duplicate-code  # fake_run系のサブプロセスダブル定義が他テストファイルと類似
 
 import argparse
 import contextlib
@@ -36,27 +38,27 @@ import pyfltr.warnings_
 from tests import conftest as _testconf
 
 
-def test_build_subprocess_env_sets_supply_chain_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+def testbuild_subprocess_env_sets_supply_chain_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     """サプライチェーン対策用の環境変数が既定値で注入される。"""
     monkeypatch.delenv("UV_EXCLUDE_NEWER", raising=False)
     monkeypatch.delenv("NPM_CONFIG_MINIMUM_RELEASE_AGE", raising=False)
 
     config = pyfltr.config.config.create_default_config()
-    env = pyfltr.command.env._build_subprocess_env(config, "pytest")
+    env = pyfltr.command.env.build_subprocess_env(config, "pytest")
 
     assert env["UV_EXCLUDE_NEWER"] == "1 day"
     assert env["NPM_CONFIG_MINIMUM_RELEASE_AGE"] == "1440"
 
 
-def test_build_subprocess_env_sets_python_utf8_mode() -> None:
+def testbuild_subprocess_env_sets_python_utf8_mode() -> None:
     """サブプロセスはPython UTF-8モードで動く。"""
     config = pyfltr.config.config.create_default_config()
-    env = pyfltr.command.env._build_subprocess_env(config, "pytest")
+    env = pyfltr.command.env.build_subprocess_env(config, "pytest")
 
     assert env["PYTHONUTF8"] == "1"
 
 
-def test_build_subprocess_env_preserves_existing_supply_chain_values(
+def testbuild_subprocess_env_preserves_existing_supply_chain_values(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """ユーザーが既に環境変数を設定している場合は既存値を尊重する。"""
@@ -64,13 +66,13 @@ def test_build_subprocess_env_preserves_existing_supply_chain_values(
     monkeypatch.setenv("NPM_CONFIG_MINIMUM_RELEASE_AGE", "10080")
 
     config = pyfltr.config.config.create_default_config()
-    env = pyfltr.command.env._build_subprocess_env(config, "pytest")
+    env = pyfltr.command.env.build_subprocess_env(config, "pytest")
 
     assert env["UV_EXCLUDE_NEWER"] == "1 week"
     assert env["NPM_CONFIG_MINIMUM_RELEASE_AGE"] == "10080"
 
 
-def test_build_subprocess_env_via_mise_strips_mise_tool_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+def testbuild_subprocess_env_via_mise_strips_mise_tool_paths(monkeypatch: pytest.MonkeyPatch) -> None:
     """`via_mise=True`のとき、PATHからmise toolパスが除外される。"""
     monkeypatch.setenv(
         "PATH",
@@ -86,7 +88,7 @@ def test_build_subprocess_env_via_mise_strips_mise_tool_paths(monkeypatch: pytes
     )
 
     config = pyfltr.config.config.create_default_config()
-    env = pyfltr.command.env._build_subprocess_env(config, "dotnet-build", via_mise=True)
+    env = pyfltr.command.env.build_subprocess_env(config, "dotnet-build", via_mise=True)
     entries = env["PATH"].split(os.pathsep)
 
     assert "/home/u/.local/share/mise/installs/dotnet/10.0.0" not in entries
@@ -97,7 +99,7 @@ def test_build_subprocess_env_via_mise_strips_mise_tool_paths(monkeypatch: pytes
     assert "/usr/bin" in entries
 
 
-def test_build_subprocess_env_default_keeps_mise_tool_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+def testbuild_subprocess_env_default_keeps_mise_tool_paths(monkeypatch: pytest.MonkeyPatch) -> None:
     """既定（`via_mise=False`）ではmise toolパスを除外しない。"""
     monkeypatch.setenv(
         "PATH",
@@ -105,7 +107,7 @@ def test_build_subprocess_env_default_keeps_mise_tool_paths(monkeypatch: pytest.
     )
 
     config = pyfltr.config.config.create_default_config()
-    env = pyfltr.command.env._build_subprocess_env(config, "ruff-check")
+    env = pyfltr.command.env.build_subprocess_env(config, "ruff-check")
     entries = env["PATH"].split(os.pathsep)
 
     assert "/home/u/.local/share/mise/installs/dotnet/10.0.0" in entries
@@ -322,7 +324,7 @@ def test_execute_command_direct_missing_returns_failed_result(tmp_path: pathlib.
 
 def test_run_subprocess_file_not_found_returns_127() -> None:
     """存在しない実行ファイルを指定しても例外を送出せずrc=127を返す。"""
-    result = pyfltr.command.process._run_subprocess(
+    result = pyfltr.command.process.run_subprocess(
         ["this-command-definitely-does-not-exist-xyz-1234"],
         env={"PATH": "/nonexistent"},
     )
@@ -330,7 +332,7 @@ def test_run_subprocess_file_not_found_returns_127() -> None:
     assert "見つかりません" in result.stdout
 
 
-def test_build_subprocess_env_npm_config_actually_effective(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+def testbuild_subprocess_env_npm_config_actually_effective(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """注入したNPM_CONFIG_MINIMUM_RELEASE_AGEが実際にnpm互換ツールに反映されることを確認する。
 
     環境変数名がtypoしたり、仕様変更で効かなくなったりした場合に検知する。
@@ -349,11 +351,11 @@ def test_build_subprocess_env_npm_config_actually_effective(monkeypatch: pytest.
     monkeypatch.setenv("MISE_TRUSTED_CONFIG_PATHS", str(mise_config))
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / ".config"))
-    # 非標準値を設定し、_build_subprocess_envがそのまま通すことを利用する。
+    # 非標準値を設定し、build_subprocess_envがそのまま通すことを利用する。
     monkeypatch.setenv("NPM_CONFIG_MINIMUM_RELEASE_AGE", "4321")
 
     config = pyfltr.config.config.create_default_config()
-    env = pyfltr.command.env._build_subprocess_env(config, "markdownlint")
+    env = pyfltr.command.env.build_subprocess_env(config, "markdownlint")
     assert env["NPM_CONFIG_MINIMUM_RELEASE_AGE"] == "4321"
 
     # Windowsではnpmがnpm.cmdとして提供されるため、shutil.whichで完全パスを取得する
@@ -569,7 +571,7 @@ def test_auto_args_included_in_commandline(mocker, tmp_path: pathlib.Path) -> No
     target.write_text("x = 1\n")
 
     proc = subprocess.CompletedProcess(["pylint"], returncode=0, stdout="")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     config = pyfltr.config.config.create_default_config()
     config.values["pylint"] = True
@@ -1041,7 +1043,7 @@ def test_pass_filenames_false_omits_targets(mocker, tmp_path: pathlib.Path) -> N
     target.write_text("const x = 1;\n")
 
     proc = subprocess.CompletedProcess(["tsc"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     config = pyfltr.config.config.create_default_config()
     config.values["tsc"] = True
@@ -1065,7 +1067,7 @@ def test_pass_filenames_true_includes_targets(mocker, tmp_path: pathlib.Path) ->
     target.write_text("x = 1\n")
 
     proc = subprocess.CompletedProcess(["ruff"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     config = pyfltr.config.config.create_default_config()
     config.values["ruff-check"] = True
@@ -1144,7 +1146,7 @@ def test_execute_command_cache_hit_skips_subprocess(mocker, tmp_path: pathlib.Pa
     cache_root = tmp_path / ".cache"
     store = pyfltr.state.cache.CacheStore(cache_root=cache_root)
 
-    mock_run = mocker.patch("pyfltr.command.process._run_subprocess")
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess")
 
     config = pyfltr.config.config.create_default_config()
     config.values["textlint"] = True
@@ -1179,7 +1181,7 @@ def test_execute_command_non_cacheable_skips_cache(mocker, tmp_path: pathlib.Pat
     store = pyfltr.state.cache.CacheStore(cache_root=cache_root)
 
     mocker.patch(
-        "pyfltr.command.process._run_subprocess",
+        "pyfltr.command.process.run_subprocess",
         return_value=subprocess.CompletedProcess(["mypy"], returncode=0, stdout=""),
     )
 
@@ -1203,7 +1205,7 @@ def test_execute_command_only_failed_targets_files_override(mocker, tmp_path: pa
     file_b.write_text("y = 2\n")
 
     mock_run = mocker.patch(
-        "pyfltr.command.process._run_subprocess",
+        "pyfltr.command.process.run_subprocess",
         return_value=subprocess.CompletedProcess(["ruff"], returncode=0, stdout=""),
     )
 
@@ -1232,7 +1234,7 @@ def test_execute_command_only_failed_targets_fallback_uses_all_files(mocker, tmp
     file_a.write_text("x = 1\n")
 
     mock_run = mocker.patch(
-        "pyfltr.command.process._run_subprocess",
+        "pyfltr.command.process.run_subprocess",
         return_value=subprocess.CompletedProcess(["ruff"], returncode=0, stdout=""),
     )
 
@@ -1258,7 +1260,7 @@ def test_execute_command_only_failed_targets_none_uses_default(mocker, tmp_path:
     file_a.write_text("x = 1\n")
 
     mock_run = mocker.patch(
-        "pyfltr.command.process._run_subprocess",
+        "pyfltr.command.process.run_subprocess",
         return_value=subprocess.CompletedProcess(["ruff"], returncode=0, stdout=""),
     )
 
@@ -1302,29 +1304,28 @@ def test_pick_targets_returns_none_for_missing_command() -> None:
 class _FakePopen:
     """`subprocess.Popen`を差し替えるための最小スタブ。
 
-    `_run_subprocess`のテスト用。Popenのwith文経由での利用とstdout逐次読み込み・
+    `run_subprocess`のテスト用。Popenのwith文経由での利用とstdout逐次読み込み・
     wait()までを満たす最小限の振る舞いを提供する。起動引数はクラス変数
     `last_args_holder`のリスト内に追記する（None判定を避けてpylintの型縮めに頼らない）。
     """
 
     last_args_holder: list[list[str]] = []
 
-    def __init__(self, args, **kwargs):  # type: ignore[no-untyped-def]
-        del kwargs  # noqa
+    def __init__(self, args: list[str], **kwargs: typing.Any) -> None:
+        del kwargs  # Popen互換の追加引数を受け取るのみ
         _FakePopen.last_args_holder.append(list(args))
         self.returncode = 0
         self.stdout: typing.Iterator[str] = iter([])
 
-    def __enter__(self):  # type: ignore[no-untyped-def]
+    def __enter__(self) -> "_FakePopen":
         """with文のエントリー。"""
         return self
 
-    def __exit__(self, exc_type, exc, tb):  # type: ignore[no-untyped-def]
+    def __exit__(self, exc_type: typing.Any, exc: typing.Any, tb: typing.Any) -> None:
         """with文のイグジット。"""
-        del exc_type, exc, tb  # noqa
-        return False
+        del exc_type, exc, tb  # contextmanager互換の引数を受け取るのみ
 
-    def wait(self):  # type: ignore[no-untyped-def]
+    def wait(self) -> int:
         """プロセス終了待ち。ダミーで直ちにreturncodeを返す。"""
         return self.returncode
 
@@ -1335,7 +1336,7 @@ def test_run_subprocess_resolves_command_via_shutil_which(mocker) -> None:
     mocker.patch("pyfltr.command.process.shutil.which", return_value="/resolved/pre-commit")
     mocker.patch("pyfltr.command.process.subprocess.Popen", _FakePopen)
 
-    pyfltr.command.process._run_subprocess(["pre-commit", "run", "--all-files"], {"PATH": "/usr/bin"})
+    pyfltr.command.process.run_subprocess(["pre-commit", "run", "--all-files"], {"PATH": "/usr/bin"})
 
     assert _FakePopen.last_args_holder == [["/resolved/pre-commit", "run", "--all-files"]]
 
@@ -1346,7 +1347,7 @@ def test_run_subprocess_keeps_original_name_when_unresolved(mocker) -> None:
     mocker.patch("pyfltr.command.process.shutil.which", return_value=None)
     mocker.patch("pyfltr.command.process.subprocess.Popen", _FakePopen)
 
-    pyfltr.command.process._run_subprocess(["missing-tool", "arg"], {"PATH": "/usr/bin"})
+    pyfltr.command.process.run_subprocess(["missing-tool", "arg"], {"PATH": "/usr/bin"})
 
     assert _FakePopen.last_args_holder == [["missing-tool", "arg"]]
 
@@ -1375,7 +1376,7 @@ def test_run_subprocess_resolves_via_env_path(mocker, tmp_path: pathlib.Path, mo
     _FakePopen.last_args_holder = []
     mocker.patch("pyfltr.command.process.subprocess.Popen", _FakePopen)
 
-    pyfltr.command.process._run_subprocess(["faketool"], {"PATH": str(bin_dir)})
+    pyfltr.command.process.run_subprocess(["faketool"], {"PATH": str(bin_dir)})
 
     # 解決されたパスが渡ること（先頭要素が/tmp/.../bin/faketool*を指す）
     assert len(_FakePopen.last_args_holder) == 1
@@ -1391,7 +1392,7 @@ def test_run_subprocess_does_not_mutate_commandline(mocker) -> None:
     mocker.patch("pyfltr.command.process.subprocess.Popen", _FakePopen)
 
     original = ["tool", "arg"]
-    pyfltr.command.process._run_subprocess(original, {"PATH": "/usr/bin"})
+    pyfltr.command.process.run_subprocess(original, {"PATH": "/usr/bin"})
 
     assert original == ["tool", "arg"]
 
@@ -1399,10 +1400,10 @@ def test_run_subprocess_does_not_mutate_commandline(mocker) -> None:
 def test_get_env_path_windows_uses_case_insensitive_key(monkeypatch) -> None:
     """Windows（`os.name == "nt"`）では`Path`キーも`PATH`として採用される。"""
     monkeypatch.setattr("pyfltr.command.env.os.name", "nt")
-    assert pyfltr.command.env._get_env_path({"Path": "/tmp/bin"}) == "/tmp/bin"
-    assert pyfltr.command.env._get_env_path({"path": "/tmp/bin"}) == "/tmp/bin"
+    assert pyfltr.command.env.get_env_path({"Path": "/tmp/bin"}) == "/tmp/bin"
+    assert pyfltr.command.env.get_env_path({"path": "/tmp/bin"}) == "/tmp/bin"
     # PATH大文字が存在する場合も取れる
-    assert pyfltr.command.env._get_env_path({"PATH": "/tmp/bin"}) == "/tmp/bin"
+    assert pyfltr.command.env.get_env_path({"PATH": "/tmp/bin"}) == "/tmp/bin"
 
 
 def test_get_env_path_posix_strict_key(monkeypatch) -> None:
@@ -1412,10 +1413,10 @@ def test_get_env_path_posix_strict_key(monkeypatch) -> None:
     不一致になる事故を防ぐ設計。
     """
     monkeypatch.setattr("pyfltr.command.env.os.name", "posix")
-    assert pyfltr.command.env._get_env_path({"Path": "/tmp/bin"}) is None
-    assert pyfltr.command.env._get_env_path({"PATH": "/usr/bin"}) == "/usr/bin"
+    assert pyfltr.command.env.get_env_path({"Path": "/tmp/bin"}) is None
+    assert pyfltr.command.env.get_env_path({"PATH": "/usr/bin"}) == "/usr/bin"
     # 両方あってもPATHのみを採用する
-    assert pyfltr.command.env._get_env_path({"Path": "/tmp/bin", "PATH": "/usr/bin"}) == "/usr/bin"
+    assert pyfltr.command.env.get_env_path({"Path": "/tmp/bin", "PATH": "/usr/bin"}) == "/usr/bin"
 
 
 def test_normalize_path_entry_for_dedup_posix(monkeypatch) -> None:
@@ -1516,11 +1517,11 @@ def test_is_mise_tool_path_windows_case_and_separator(monkeypatch) -> None:
 
 
 def test_build_mise_subprocess_env_does_not_mutate_input(monkeypatch) -> None:
-    """`_build_mise_subprocess_env`は入力envを破壊しない（純関数）。"""
+    """`build_mise_subprocess_env`は入力envを破壊しない（純関数）。"""
     monkeypatch.setattr("pyfltr.command.env.os.name", "posix")
     monkeypatch.setattr("pyfltr.command.env.os.pathsep", ":")
     src: dict[str, str] = {"PATH": "/home/u/.local/share/mise/installs/dotnet/10.0:/usr/bin"}
-    new = pyfltr.command.env._build_mise_subprocess_env(src)
+    new = pyfltr.command.env.build_mise_subprocess_env(src)
 
     # 入力辞書は変更されない
     assert src == {"PATH": "/home/u/.local/share/mise/installs/dotnet/10.0:/usr/bin"}
@@ -1531,7 +1532,7 @@ def test_build_mise_subprocess_env_does_not_mutate_input(monkeypatch) -> None:
 def test_build_mise_subprocess_env_handles_missing_path() -> None:
     """PATH未設定時は単にコピーを返す。"""
     src: dict[str, str] = {"FOO": "bar"}
-    new = pyfltr.command.env._build_mise_subprocess_env(src)
+    new = pyfltr.command.env.build_mise_subprocess_env(src)
     assert new == src
     assert new is not src
 
@@ -1543,7 +1544,7 @@ def _spawn_parent_with_child(script: str) -> tuple[subprocess.Popen[str], int, i
     Popenは`start_new_session=True`で起動する（本番と同じ条件）。
     """
     # pylint: disable=consider-using-with
-    # テスト対象の`_active_processes`へ外から登録するため、`with`構文では
+    # テスト対象の`active_processes`へ外から登録するため、`with`構文では
     # スコープ外でprocを扱えない。各テストのfinallyで解放する。
     proc = subprocess.Popen(
         [sys.executable, "-u", "-c", script],
@@ -1612,8 +1613,8 @@ def test_terminate_active_processes_kills_grandchild() -> None:
     )
     proc, parent_pid, child_pid = _spawn_parent_with_child(script)
     try:
-        with pyfltr.command.process._active_processes_lock:
-            pyfltr.command.process._active_processes.append(proc)
+        with pyfltr.command.process.active_processes_lock:
+            pyfltr.command.process.active_processes.append(proc)
         assert psutil.pid_exists(parent_pid)
         assert psutil.pid_exists(child_pid)
 
@@ -1622,9 +1623,9 @@ def test_terminate_active_processes_kills_grandchild() -> None:
         remaining = _wait_gone([parent_pid, child_pid], timeout=3.0)
         assert remaining == [], f"停止できなかったpid: {remaining}"
     finally:
-        with pyfltr.command.process._active_processes_lock:
-            if proc in pyfltr.command.process._active_processes:
-                pyfltr.command.process._active_processes.remove(proc)
+        with pyfltr.command.process.active_processes_lock:
+            if proc in pyfltr.command.process.active_processes:
+                pyfltr.command.process.active_processes.remove(proc)
         if proc.poll() is None:
             # POSIX限定パスのクリーンアップ。Windowsではskipifで到達しない。
             # 型チェッカー（pyright / ty）のattr-defined誤検知は局所コメントで抑止する。
@@ -1656,8 +1657,8 @@ def test_terminate_active_processes_parent_exited_grandchild_remains() -> None:
     )
     proc, _parent_pid, child_pid = _spawn_parent_with_child(script)
     try:
-        with pyfltr.command.process._active_processes_lock:
-            pyfltr.command.process._active_processes.append(proc)
+        with pyfltr.command.process.active_processes_lock:
+            pyfltr.command.process.active_processes.append(proc)
         # 親は速やかにexitする。孫（子）は生存継続。
         proc.wait(timeout=2.0)
         assert psutil.pid_exists(child_pid), "孫プロセスが消えている"
@@ -1667,9 +1668,9 @@ def test_terminate_active_processes_parent_exited_grandchild_remains() -> None:
         remaining = _wait_gone([child_pid], timeout=3.0)
         assert remaining == [], f"停止できなかったpid: {remaining}"
     finally:
-        with pyfltr.command.process._active_processes_lock:
-            if proc in pyfltr.command.process._active_processes:
-                pyfltr.command.process._active_processes.remove(proc)
+        with pyfltr.command.process.active_processes_lock:
+            if proc in pyfltr.command.process.active_processes:
+                pyfltr.command.process.active_processes.remove(proc)
         if psutil.pid_exists(child_pid):
             with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
                 os.kill(child_pid, 9)
@@ -1688,7 +1689,7 @@ def test_looks_like_glab_host_missing_detects_known_patterns() -> None:
 
 
 def _make_glab_ci_lint_args() -> argparse.Namespace:
-    """`_execute_glab_ci_lint`で参照される最低限の属性を持つNamespaceを返す。"""
+    """`execute_glab_ci_lint`で参照される最低限の属性を持つNamespaceを返す。"""
     return argparse.Namespace(verbose=False)
 
 
@@ -1704,11 +1705,11 @@ def test_execute_glab_ci_lint_skips_on_host_missing(mocker, tmp_path: pathlib.Pa
         returncode=1,
         stdout="Error: none of the git remotes configured for this repository point to a known GitLab host.\n",
     )
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
     target = tmp_path / ".gitlab-ci.yml"
     target.write_text("stages: [test]\n", encoding="utf-8")
 
-    result = pyfltr.command.glab._execute_glab_ci_lint(
+    result = pyfltr.command.glab.execute_glab_ci_lint(
         "glab-ci-lint",
         _make_glab_ci_lint_command_info(),
         ["glab", "ci", "lint"],
@@ -1734,11 +1735,11 @@ def test_execute_glab_ci_lint_keeps_failure_for_real_errors(mocker, tmp_path: pa
         returncode=1,
         stdout="Error: validation failed: jobs:test config key may not be used with `rules`\n",
     )
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
     target = tmp_path / ".gitlab-ci.yml"
     target.write_text("stages: [test]\n", encoding="utf-8")
 
-    result = pyfltr.command.glab._execute_glab_ci_lint(
+    result = pyfltr.command.glab.execute_glab_ci_lint(
         "glab-ci-lint",
         _make_glab_ci_lint_command_info(),
         ["glab", "ci", "lint"],
@@ -1770,9 +1771,9 @@ def test_execute_glab_ci_lint_passes_through_success(mocker, tmp_path: pathlib.P
         captured_env.update(_args[1])
         return proc
 
-    mocker.patch("pyfltr.command.process._run_subprocess", side_effect=_capture)
+    mocker.patch("pyfltr.command.process.run_subprocess", side_effect=_capture)
 
-    result = pyfltr.command.glab._execute_glab_ci_lint(
+    result = pyfltr.command.glab.execute_glab_ci_lint(
         "glab-ci-lint",
         _make_glab_ci_lint_command_info(),
         ["glab", "ci", "lint"],
@@ -1982,7 +1983,7 @@ def test_command_runner_validation_rejects_unknown_value(tmp_path: pathlib.Path)
 def test_build_commandline_omits_tool_spec_when_mise_config_has_rust(monkeypatch: pytest.MonkeyPatch) -> None:
     """mise設定に `rust` 記述ありかつversion既定値ならtool spec省略形を返す。"""
     monkeypatch.setattr(
-        "pyfltr.command.mise._get_mise_active_tools",
+        "pyfltr.command.mise.get_mise_active_tools",
         lambda config, *, allow_side_effects=False: pyfltr.command.mise.MiseActiveToolsResult(
             status="ok", tools={"rust": [{"version": "1.83.0"}]}
         ),
@@ -2000,7 +2001,7 @@ def test_build_commandline_omits_tool_spec_when_mise_config_has_aqua_cargo_deny(
 ) -> None:
     """mise設定にaqua表記の `aqua:EmbarkStudios/cargo-deny` 記述ありなら省略形になる。"""
     monkeypatch.setattr(
-        "pyfltr.command.mise._get_mise_active_tools",
+        "pyfltr.command.mise.get_mise_active_tools",
         lambda config, *, allow_side_effects=False: pyfltr.command.mise.MiseActiveToolsResult(
             status="ok", tools={"aqua:EmbarkStudios/cargo-deny": [{"version": "0.16.0"}]}
         ),
@@ -2014,7 +2015,7 @@ def test_build_commandline_omits_tool_spec_when_mise_config_has_aqua_cargo_deny(
 def test_build_commandline_keeps_tool_spec_when_mise_config_missing(monkeypatch: pytest.MonkeyPatch) -> None:
     """判定辞書が空（記述なし）の場合は従来形 `<backend>@latest` を組み立てる。"""
     monkeypatch.setattr(
-        "pyfltr.command.mise._get_mise_active_tools",
+        "pyfltr.command.mise.get_mise_active_tools",
         lambda config, *, allow_side_effects=False: pyfltr.command.mise.MiseActiveToolsResult(status="ok"),
     )
     config = pyfltr.config.config.create_default_config()
@@ -2027,7 +2028,7 @@ def test_build_commandline_keeps_tool_spec_when_version_explicit(monkeypatch: py
     """`{command}-version` を具体値で指定した場合は判定結果に関わらず従来形を組み立てる。"""
     # 判定辞書には `rust` 記述があるが、versionが明示されているので利用者の意図を尊重する。
     monkeypatch.setattr(
-        "pyfltr.command.mise._get_mise_active_tools",
+        "pyfltr.command.mise.get_mise_active_tools",
         lambda config, *, allow_side_effects=False: pyfltr.command.mise.MiseActiveToolsResult(
             status="ok", tools={"rust": [{"version": "1.83.0"}]}
         ),
@@ -2040,15 +2041,17 @@ def test_build_commandline_keeps_tool_spec_when_version_explicit(monkeypatch: py
 
 
 def test_build_commandline_allow_side_effects_propagates_to_active_tools(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`build_commandline` の `allow_side_effects` が `_get_mise_active_tools` に連動して渡る。"""
+    """`build_commandline` の `allow_side_effects` が `get_mise_active_tools` に連動して渡る。"""
     received: list[bool] = []
 
-    def fake(config, *, allow_side_effects=False):  # type: ignore[no-untyped-def]
+    def fake(
+        config: pyfltr.config.config.Config, *, allow_side_effects: bool = False
+    ) -> pyfltr.command.mise.MiseActiveToolsResult:
         del config
         received.append(allow_side_effects)
         return pyfltr.command.mise.MiseActiveToolsResult(status="ok")
 
-    monkeypatch.setattr("pyfltr.command.mise._get_mise_active_tools", fake)
+    monkeypatch.setattr("pyfltr.command.mise.get_mise_active_tools", fake)
     config = pyfltr.config.config.create_default_config()
     pyfltr.command.runner.build_commandline("cargo-fmt", config, allow_side_effects=True)
     pyfltr.command.runner.build_commandline("cargo-fmt", config, allow_side_effects=False)
@@ -2128,14 +2131,16 @@ def test_get_mise_active_tools_cache_key_differs_by_cwd(monkeypatch: pytest.Monk
     `os.chdir()` 等でcwdが切り替わった場合、`mise ls --current --json` の結果は変わるため、
     プロセス内キャッシュもcwdをキーに含める必要がある。
     """
-    # autouseフィクスチャは `_get_mise_active_tools` 自体をモック上書きしているため、
+    # autouseフィクスチャは `get_mise_active_tools` 自体をモック上書きしているため、
     # 実装本体を直接検証するためconftestが保持する元参照に戻し、`_query_mise_active_tools` のみ
     # fakeへ差し替える。
-    monkeypatch.setattr("pyfltr.command.mise._get_mise_active_tools", _testconf.real_get_mise_active_tools)
+    monkeypatch.setattr("pyfltr.command.mise.get_mise_active_tools", _testconf.real_get_mise_active_tools)
     monkeypatch.setattr("pyfltr.command.mise._MISE_ACTIVE_TOOLS_CACHE", {}, raising=True)
     call_log: list[str] = []
 
-    def fake_query(config, *, allow_side_effects):  # type: ignore[no-untyped-def]
+    def fake_query(
+        config: pyfltr.config.config.Config, *, allow_side_effects: bool
+    ) -> pyfltr.command.mise.MiseActiveToolsResult:
         del config, allow_side_effects
         call_log.append(os.getcwd())
         return pyfltr.command.mise.MiseActiveToolsResult(status="ok")
@@ -2149,22 +2154,24 @@ def test_get_mise_active_tools_cache_key_differs_by_cwd(monkeypatch: pytest.Monk
     cwd_b.mkdir()
 
     monkeypatch.chdir(cwd_a)
-    pyfltr.command.mise._get_mise_active_tools(config)
+    pyfltr.command.mise.get_mise_active_tools(config)
     monkeypatch.chdir(cwd_a)
-    pyfltr.command.mise._get_mise_active_tools(config)  # 同cwd → キャッシュヒット
+    pyfltr.command.mise.get_mise_active_tools(config)  # 同cwd → キャッシュヒット
     monkeypatch.chdir(cwd_b)
-    pyfltr.command.mise._get_mise_active_tools(config)  # 別cwd → 再呼び出し
+    pyfltr.command.mise.get_mise_active_tools(config)  # 別cwd → 再呼び出し
     assert len(call_log) == 2
 
 
 def test_get_mise_active_tools_cache_key_differs_by_env(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """`MISE_CONFIG_FILE` 等のenv差分で別キャッシュエントリとして扱う。"""
-    monkeypatch.setattr("pyfltr.command.mise._get_mise_active_tools", _testconf.real_get_mise_active_tools)
+    monkeypatch.setattr("pyfltr.command.mise.get_mise_active_tools", _testconf.real_get_mise_active_tools)
     monkeypatch.setattr("pyfltr.command.mise._MISE_ACTIVE_TOOLS_CACHE", {}, raising=True)
     monkeypatch.chdir(tmp_path)
     call_count = [0]
 
-    def fake_query(config, *, allow_side_effects):  # type: ignore[no-untyped-def]
+    def fake_query(
+        config: pyfltr.config.config.Config, *, allow_side_effects: bool
+    ) -> pyfltr.command.mise.MiseActiveToolsResult:
         del config, allow_side_effects
         call_count[0] += 1
         return pyfltr.command.mise.MiseActiveToolsResult(status="ok")
@@ -2173,9 +2180,9 @@ def test_get_mise_active_tools_cache_key_differs_by_env(monkeypatch: pytest.Monk
     config = pyfltr.config.config.create_default_config()
 
     monkeypatch.delenv("MISE_CONFIG_FILE", raising=False)
-    pyfltr.command.mise._get_mise_active_tools(config)
-    monkeypatch.setenv("MISE_CONFIG_FILE", "/tmp/other.toml")  # noqa: S108
-    pyfltr.command.mise._get_mise_active_tools(config)  # env差分 → 再呼び出し
+    pyfltr.command.mise.get_mise_active_tools(config)
+    monkeypatch.setenv("MISE_CONFIG_FILE", "/tmp/other.toml")  # noqa: S108  # テスト内のダミーパス（実ファイルアクセスなし）
+    pyfltr.command.mise.get_mise_active_tools(config)  # env差分 → 再呼び出し
     assert call_count[0] == 2
 
 
@@ -2187,13 +2194,15 @@ def test_get_mise_active_tools_cache_key_differs_by_allow_side_effects(
     副作用OFFで保存したフォールバック結果が、後続の副作用ON呼び出しで正規化される
     流れに対応するため、フラグ自体もキーに含める。
     """
-    monkeypatch.setattr("pyfltr.command.mise._get_mise_active_tools", _testconf.real_get_mise_active_tools)
+    monkeypatch.setattr("pyfltr.command.mise.get_mise_active_tools", _testconf.real_get_mise_active_tools)
     monkeypatch.setattr("pyfltr.command.mise._MISE_ACTIVE_TOOLS_CACHE", {}, raising=True)
     monkeypatch.chdir(tmp_path)
 
     received_flags: list[bool] = []
 
-    def fake_query(config, *, allow_side_effects):  # type: ignore[no-untyped-def]
+    def fake_query(
+        config: pyfltr.config.config.Config, *, allow_side_effects: bool
+    ) -> pyfltr.command.mise.MiseActiveToolsResult:
         del config
         received_flags.append(allow_side_effects)
         if allow_side_effects:
@@ -2203,13 +2212,13 @@ def test_get_mise_active_tools_cache_key_differs_by_allow_side_effects(
     monkeypatch.setattr("pyfltr.command.mise._query_mise_active_tools", fake_query)
     config = pyfltr.config.config.create_default_config()
 
-    result_off = pyfltr.command.mise._get_mise_active_tools(config, allow_side_effects=False)
-    result_on = pyfltr.command.mise._get_mise_active_tools(config, allow_side_effects=True)
+    result_off = pyfltr.command.mise.get_mise_active_tools(config, allow_side_effects=False)
+    result_on = pyfltr.command.mise.get_mise_active_tools(config, allow_side_effects=True)
     assert not result_off.tools
     assert result_on.tools == {"rust": []}
     assert received_flags == [False, True]
     # 同じフラグでの2回目はキャッシュヒット。
-    pyfltr.command.mise._get_mise_active_tools(config, allow_side_effects=True)
+    pyfltr.command.mise.get_mise_active_tools(config, allow_side_effects=True)
     assert received_flags == [False, True]
 
 
@@ -2229,11 +2238,13 @@ def test_query_mise_active_tools_untrusted_no_side_effects(monkeypatch: pytest.M
     """副作用OFF下で未信頼config由来エラーが出たときは `untrusted-no-side-effects` を返す。"""
     monkeypatch.setattr("pyfltr.command.mise.shutil.which", lambda name: f"/usr/local/bin/{name}")
 
-    def fake_run_with_trust(args, mise_env, config, *, allow_side_effects):  # type: ignore[no-untyped-def]
+    def fake_run_with_trust(
+        args: list[str], mise_env: dict[str, str], config: pyfltr.config.config.Config, *, allow_side_effects: bool
+    ) -> tuple[int, str, str, bool]:
         del args, mise_env, config, allow_side_effects
         return 1, "", "Error: config /home/u/mise.toml is not trusted", False
 
-    monkeypatch.setattr("pyfltr.command.mise._run_mise_with_trust", fake_run_with_trust)
+    monkeypatch.setattr("pyfltr.command.mise.run_mise_with_trust", fake_run_with_trust)
     config = pyfltr.config.config.create_default_config()
     result = pyfltr.command.mise._query_mise_active_tools(config, allow_side_effects=False)
     assert result.status == "untrusted-no-side-effects"
@@ -2245,11 +2256,13 @@ def test_query_mise_active_tools_trust_failed(monkeypatch: pytest.MonkeyPatch) -
     """trust試行が拒否されたら `trust-failed` を返す。"""
     monkeypatch.setattr("pyfltr.command.mise.shutil.which", lambda name: f"/usr/local/bin/{name}")
 
-    def fake_run_with_trust(args, mise_env, config, *, allow_side_effects):  # type: ignore[no-untyped-def]
+    def fake_run_with_trust(
+        args: list[str], mise_env: dict[str, str], config: pyfltr.config.config.Config, *, allow_side_effects: bool
+    ) -> tuple[int, str, str, bool]:
         del args, mise_env, config, allow_side_effects
         return 2, "", "trust rejected by user", True
 
-    monkeypatch.setattr("pyfltr.command.mise._run_mise_with_trust", fake_run_with_trust)
+    monkeypatch.setattr("pyfltr.command.mise.run_mise_with_trust", fake_run_with_trust)
     config = pyfltr.config.config.create_default_config()
     result = pyfltr.command.mise._query_mise_active_tools(config, allow_side_effects=True)
     assert result.status == "trust-failed"
@@ -2261,11 +2274,13 @@ def test_query_mise_active_tools_exec_error_oserror(monkeypatch: pytest.MonkeyPa
     """`OSError` 例外が出たときは `exec-error` ステータスを返す。"""
     monkeypatch.setattr("pyfltr.command.mise.shutil.which", lambda name: f"/usr/local/bin/{name}")
 
-    def fake_run_with_trust(args, mise_env, config, *, allow_side_effects):  # type: ignore[no-untyped-def]
+    def fake_run_with_trust(
+        args: list[str], mise_env: dict[str, str], config: pyfltr.config.config.Config, *, allow_side_effects: bool
+    ) -> tuple[int, str, str, bool]:
         del args, mise_env, config, allow_side_effects
         raise OSError("mise binary missing executable bit")
 
-    monkeypatch.setattr("pyfltr.command.mise._run_mise_with_trust", fake_run_with_trust)
+    monkeypatch.setattr("pyfltr.command.mise.run_mise_with_trust", fake_run_with_trust)
     config = pyfltr.config.config.create_default_config()
     result = pyfltr.command.mise._query_mise_active_tools(config, allow_side_effects=False)
     assert result.status == "exec-error"
@@ -2277,11 +2292,13 @@ def test_query_mise_active_tools_json_parse_error(monkeypatch: pytest.MonkeyPatc
     """`mise ls` のstdoutがJSONとしてパースできなければ `json-parse-error` を返す。"""
     monkeypatch.setattr("pyfltr.command.mise.shutil.which", lambda name: f"/usr/local/bin/{name}")
 
-    def fake_run_with_trust(args, mise_env, config, *, allow_side_effects):  # type: ignore[no-untyped-def]
+    def fake_run_with_trust(
+        args: list[str], mise_env: dict[str, str], config: pyfltr.config.config.Config, *, allow_side_effects: bool
+    ) -> tuple[int, str, str, bool]:
         del args, mise_env, config, allow_side_effects
         return 0, "this is not json", "", False
 
-    monkeypatch.setattr("pyfltr.command.mise._run_mise_with_trust", fake_run_with_trust)
+    monkeypatch.setattr("pyfltr.command.mise.run_mise_with_trust", fake_run_with_trust)
     config = pyfltr.config.config.create_default_config()
     result = pyfltr.command.mise._query_mise_active_tools(config, allow_side_effects=False)
     assert result.status == "json-parse-error"
@@ -2291,11 +2308,13 @@ def test_query_mise_active_tools_unexpected_shape(monkeypatch: pytest.MonkeyPatc
     """JSONがdict以外（list等）のときは `unexpected-shape` を返す。"""
     monkeypatch.setattr("pyfltr.command.mise.shutil.which", lambda name: f"/usr/local/bin/{name}")
 
-    def fake_run_with_trust(args, mise_env, config, *, allow_side_effects):  # type: ignore[no-untyped-def]
+    def fake_run_with_trust(
+        args: list[str], mise_env: dict[str, str], config: pyfltr.config.config.Config, *, allow_side_effects: bool
+    ) -> tuple[int, str, str, bool]:
         del args, mise_env, config, allow_side_effects
         return 0, "[]", "", False
 
-    monkeypatch.setattr("pyfltr.command.mise._run_mise_with_trust", fake_run_with_trust)
+    monkeypatch.setattr("pyfltr.command.mise.run_mise_with_trust", fake_run_with_trust)
     config = pyfltr.config.config.create_default_config()
     result = pyfltr.command.mise._query_mise_active_tools(config, allow_side_effects=False)
     assert result.status == "unexpected-shape"
@@ -2306,11 +2325,13 @@ def test_query_mise_active_tools_ok(monkeypatch: pytest.MonkeyPatch) -> None:
     """正常取得時は `ok` ステータスとtoolsを返す。"""
     monkeypatch.setattr("pyfltr.command.mise.shutil.which", lambda name: f"/usr/local/bin/{name}")
 
-    def fake_run_with_trust(args, mise_env, config, *, allow_side_effects):  # type: ignore[no-untyped-def]
+    def fake_run_with_trust(
+        args: list[str], mise_env: dict[str, str], config: pyfltr.config.config.Config, *, allow_side_effects: bool
+    ) -> tuple[int, str, str, bool]:
         del args, mise_env, config, allow_side_effects
         return 0, '{"rust": [{"version": "1.83.0"}]}', "", False
 
-    monkeypatch.setattr("pyfltr.command.mise._run_mise_with_trust", fake_run_with_trust)
+    monkeypatch.setattr("pyfltr.command.mise.run_mise_with_trust", fake_run_with_trust)
     config = pyfltr.config.config.create_default_config()
     result = pyfltr.command.mise._query_mise_active_tools(config, allow_side_effects=False)
     assert result.status == "ok"

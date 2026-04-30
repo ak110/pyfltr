@@ -1,4 +1,4 @@
-# pylint: disable=duplicate-code,protected-access
+# pylint: disable=duplicate-code  # process.run_subprocess呼び出しの引数列が他経路と類似
 """fixモードでのlinter実行。"""
 
 import argparse
@@ -10,12 +10,12 @@ import typing
 import pyfltr.command.error_parser
 import pyfltr.command.process
 from pyfltr.command.core import CommandResult
-from pyfltr.command.snapshot import _changed_files, _snapshot_file_digests
+from pyfltr.command.snapshot import changed_files, snapshot_file_digests
 
 logger = __import__("logging").getLogger(__name__)
 
 
-def _execute_linter_fix(
+def execute_linter_fix(
     command: str,
     command_info: "typing.Any",
     commandline: list[str],
@@ -40,13 +40,13 @@ def _execute_linter_fix(
     ruff-checkは残存違反があるとrc=1を返すが、この設計ではfailedとして扱う。
     未修正の違反はユーザーが後段で認識すべき情報であり、成功に寄せない方針。
     """
-    del command_info  # noqa  # 呼び出し側との引数形式揃え用 （使用しない）
+    del command_info  # 呼び出し側との引数形式揃えで受け取るのみ（使用しない）
 
-    digests_before = _snapshot_file_digests(targets)
+    digests_before = snapshot_file_digests(targets)
 
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(commandline)}\n")
-    proc = pyfltr.command.process._run_subprocess(
+    proc = pyfltr.command.process.run_subprocess(
         commandline,
         env,
         on_output,
@@ -58,7 +58,7 @@ def _execute_linter_fix(
     output = proc.stdout.strip()
     elapsed = time.perf_counter() - start_time
 
-    digests_after = _snapshot_file_digests(targets)
+    digests_after = snapshot_file_digests(targets)
     changed = digests_after != digests_before
 
     has_error = returncode != 0
@@ -83,5 +83,5 @@ def _execute_linter_fix(
         errors=errors,
     )
     if not has_error and changed:
-        result.fixed_files = _changed_files(digests_before, digests_after)
+        result.fixed_files = changed_files(digests_before, digests_after)
     return result

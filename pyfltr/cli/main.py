@@ -3,7 +3,7 @@
 
 `main()` は console script エントリポイント。
 `run()` は引数パースとサブコマンドdispatchを担う薄い関数。
-実行系サブコマンドの本体は `cli/pipeline.py` の `_run_impl` / `run_pipeline` が担う。
+実行系サブコマンドの本体は `cli/pipeline.py` の `run_impl` / `run_pipeline` が担う。
 """
 
 import argparse
@@ -87,7 +87,7 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
 
     # 非実行系サブコマンドを辞書駆動でdispatchする。
     # 辞書値はcallable（lazy importでモジュールロードコストを実行時に先送り）。
-    # 実行系（run/ci/fast/run-for-agent）は従来通り _run_impl へ委譲する。
+    # 実行系（run/ci/fast/run-for-agent）は従来通り run_impl へ委譲する。
     non_run_dispatch: dict[str, typing.Callable[[], int]] = {
         "config": lambda: pyfltr.cli.config_subcmd.execute(parser, args),
         "generate-shell-completion": lambda: _dispatch_shell_completion(args),
@@ -127,7 +127,7 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
         return p, a
 
     try:
-        return pyfltr.cli.pipeline._run_impl(  # pylint: disable=protected-access
+        return pyfltr.cli.pipeline.run_impl(
             parser,
             args,
             list(sys_args),
@@ -147,7 +147,7 @@ def _dispatch_shell_completion(args: argparse.Namespace) -> int:
     script = pyfltr.cli.shell_completion.generate(
         args.shell,
         pyfltr.cli.parser.make_common_parent(),
-        frozenset(pyfltr.cli.parser._ALL_SUBCOMMANDS),  # pylint: disable=protected-access
+        frozenset(pyfltr.cli.parser.ALL_SUBCOMMANDS),
     )
     print(script, end="")
     return 0

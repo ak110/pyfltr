@@ -1,4 +1,4 @@
-# pylint: disable=duplicate-code,protected-access
+# pylint: disable=duplicate-code  # process.run_subprocess呼び出しの引数列が他経路と類似
 """textlintのfixモード実行。"""
 
 import argparse
@@ -13,16 +13,16 @@ import pyfltr.config.config
 from pyfltr.command.core import CommandResult
 from pyfltr.command.runner import build_invocation_argv
 from pyfltr.command.snapshot import (
-    _changed_files,
-    _snapshot_file_digests,
-    _snapshot_file_texts,
-    _warn_protected_identifier_corruption,
+    changed_files,
+    snapshot_file_digests,
+    snapshot_file_texts,
+    warn_protected_identifier_corruption,
 )
 
 logger = __import__("logging").getLogger(__name__)
 
 
-def _execute_textlint_fix(
+def execute_textlint_fix(
     command: str,
     command_info: pyfltr.config.config.CommandInfo,
     commandline_prefix: list[str],
@@ -64,7 +64,7 @@ def _execute_textlint_fix(
 
     textlint --fixは残存違反がなくても対象ファイルを書き戻すことがあり、
     mtimeベースの比較では偽陽性になる。このため内容ハッシュ
-    （`_snapshot_file_digests`） で比較している。
+    （`snapshot_file_digests`） で比較している。
     """
     target_strs = [str(t) for t in targets]
 
@@ -75,15 +75,15 @@ def _execute_textlint_fix(
         *target_strs,
     ]
 
-    digests_before = _snapshot_file_digests(targets)
+    digests_before = snapshot_file_digests(targets)
     # 保護対象識別子の事前検出 （Step1で破損するケースを捕捉するため）。
     # 空リスト設定時は計測を省略する。
     protected_identifiers: list[str] = list(config.values.get("textlint-protected-identifiers", []))
-    contents_before: dict[pathlib.Path, str] = _snapshot_file_texts(targets) if protected_identifiers else {}
+    contents_before: dict[pathlib.Path, str] = snapshot_file_texts(targets) if protected_identifiers else {}
 
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(step1_commandline)}\n")
-    step1_proc = pyfltr.command.process._run_subprocess(
+    step1_proc = pyfltr.command.process.run_subprocess(
         step1_commandline,
         env,
         on_output,
@@ -94,11 +94,11 @@ def _execute_textlint_fix(
     step1_rc = step1_proc.returncode
     # rc=0 （違反なし） / rc=1 （違反残存） は通常終了、rc>=2は致命的エラー扱い
     step1_fatal = step1_rc >= 2
-    digests_after_step1 = _snapshot_file_digests(targets)
+    digests_after_step1 = snapshot_file_digests(targets)
     step1_changed = digests_after_step1 != digests_before
 
     if protected_identifiers and step1_changed:
-        _warn_protected_identifier_corruption(contents_before, _snapshot_file_texts(targets), protected_identifiers)
+        warn_protected_identifier_corruption(contents_before, snapshot_file_texts(targets), protected_identifiers)
 
     # Step2: 通常lint実行 （残存違反を取得）
     # `build_invocation_argv` の通常段経路と同じ規則を適用する
@@ -110,7 +110,7 @@ def _execute_textlint_fix(
 
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(step2_commandline)}\n")
-    step2_proc = pyfltr.command.process._run_subprocess(
+    step2_proc = pyfltr.command.process.run_subprocess(
         step2_commandline,
         env,
         on_output,
@@ -158,5 +158,5 @@ def _execute_textlint_fix(
         errors=errors,
     )
     if not has_error and step1_changed:
-        result.fixed_files = _changed_files(digests_before, digests_after_step1)
+        result.fixed_files = changed_files(digests_before, digests_after_step1)
     return result

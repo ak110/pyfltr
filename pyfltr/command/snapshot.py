@@ -9,7 +9,7 @@ import pyfltr.warnings_
 logger = __import__("logging").getLogger(__name__)
 
 
-def _snapshot_file_digests(targets: list[pathlib.Path]) -> dict[pathlib.Path, bytes]:
+def snapshot_file_digests(targets: list[pathlib.Path]) -> dict[pathlib.Path, bytes]:
     """対象ファイルの内容ハッシュ （BLAKE2b） スナップショットを取得。
 
     mtimeベースの比較はtextlint --fixのように「残存違反がなくても
@@ -26,19 +26,19 @@ def _snapshot_file_digests(targets: list[pathlib.Path]) -> dict[pathlib.Path, by
     return result
 
 
-def _changed_files(
+def changed_files(
     before: dict[pathlib.Path, bytes],
     after: dict[pathlib.Path, bytes],
 ) -> list[str]:
     """ハッシュスナップショット前後で内容が変化したファイルのパス文字列リストを返す。
 
-    `_snapshot_file_digests` の戻り値を2点渡し、ハッシュが変化したキーを抽出する。
+    `snapshot_file_digests` の戻り値を2点渡し、ハッシュが変化したキーを抽出する。
     結果は文字列化してソートして返す（summary.applied_fixesの安定ソート用）。
     """
     return sorted(str(p) for p, digest in after.items() if before.get(p) != digest)
 
 
-def _snapshot_file_texts(targets: list[pathlib.Path]) -> dict[pathlib.Path, str]:
+def snapshot_file_texts(targets: list[pathlib.Path]) -> dict[pathlib.Path, str]:
     """対象ファイルのテキスト内容スナップショットを取得する。
 
     textlint fixの保護対象識別子破損検知に使う。読み込めないファイルは辞書から
@@ -53,7 +53,7 @@ def _snapshot_file_texts(targets: list[pathlib.Path]) -> dict[pathlib.Path, str]
     return result
 
 
-def _warn_protected_identifier_corruption(
+def warn_protected_identifier_corruption(
     before: dict[pathlib.Path, str],
     after: dict[pathlib.Path, str],
     protected_identifiers: list[str],

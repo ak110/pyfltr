@@ -1,6 +1,6 @@
 """command.py の taplo 2段階実行テスト。
 
-`_execute_taplo_two_step` の動作を検証する。
+`execute_taplo_two_step` の動作を検証する。
 """
 
 import os
@@ -19,7 +19,7 @@ def test_taplo_two_step_check_clean(mocker, tmp_path: pathlib.Path) -> None:
     target.write_text('[package]\nname = "foo"\n')
 
     proc = subprocess.CompletedProcess(["taplo"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     config = pyfltr.config.config.create_default_config()
     config.values["taplo"] = True
@@ -41,7 +41,7 @@ def test_taplo_two_step_check_needs_format(mocker, tmp_path: pathlib.Path) -> No
     target.write_text('[package]\nname="foo"\n')
 
     def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # noqa
+        del env, on_output  # 引数シグネチャ揃えのため受け取るのみ
         if "check" in cmdline:
             return subprocess.CompletedProcess(cmdline, returncode=1, stdout="Cargo.toml is not formatted")
         # format ステップ: ファイルを書き換えてシミュレート
@@ -49,7 +49,7 @@ def test_taplo_two_step_check_needs_format(mocker, tmp_path: pathlib.Path) -> No
         os.utime(target, (2000000000, 2000000000))
         return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
 
-    mocker.patch("pyfltr.command.process._run_subprocess", side_effect=fake_run)
+    mocker.patch("pyfltr.command.process.run_subprocess", side_effect=fake_run)
 
     # スナップショット取得後に内容が変化するよう mtime を事前に固定する
     os.utime(target, (1000000000, 1000000000))
@@ -71,12 +71,12 @@ def test_taplo_two_step_step2_failure_marks_failed(mocker, tmp_path: pathlib.Pat
     target.write_text('[package]\nname="foo"\n')
 
     def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # noqa
+        del env, on_output  # 引数シグネチャ揃えのため受け取るのみ
         if "check" in cmdline:
             return subprocess.CompletedProcess(cmdline, returncode=1, stdout="")
         return subprocess.CompletedProcess(cmdline, returncode=1, stdout="format error")
 
-    mocker.patch("pyfltr.command.process._run_subprocess", side_effect=fake_run)
+    mocker.patch("pyfltr.command.process.run_subprocess", side_effect=fake_run)
 
     config = pyfltr.config.config.create_default_config()
     config.values["taplo"] = True
@@ -95,13 +95,13 @@ def test_taplo_fix_mode_skips_check_step(mocker, tmp_path: pathlib.Path) -> None
     os.utime(target, (1000000000, 1000000000))
 
     def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # noqa
+        del env, on_output  # 引数シグネチャ揃えのため受け取るのみ
         # format 実行時にファイルを書き換えてシミュレート
         target.write_text('[package]\nname = "foo"\n')
         os.utime(target, (2000000000, 2000000000))
         return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
 
-    mock_run = mocker.patch("pyfltr.command.process._run_subprocess", side_effect=fake_run)
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", side_effect=fake_run)
 
     config = pyfltr.config.config.create_default_config()
     config.values["taplo"] = True
@@ -125,7 +125,7 @@ def test_taplo_fix_mode_no_change_succeeds(mocker, tmp_path: pathlib.Path) -> No
     target.write_text('[package]\nname = "foo"\n')
 
     proc = subprocess.CompletedProcess(["taplo"], returncode=0, stdout="")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     config = pyfltr.config.config.create_default_config()
     config.values["taplo"] = True
@@ -143,7 +143,7 @@ def test_taplo_fix_mode_process_error_fails(mocker, tmp_path: pathlib.Path) -> N
     target.write_text('[package]\nname = "foo"\n')
 
     proc = subprocess.CompletedProcess(["taplo"], returncode=1, stdout="syntax error")
-    mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     config = pyfltr.config.config.create_default_config()
     config.values["taplo"] = True

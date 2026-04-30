@@ -25,7 +25,7 @@ def _get_markdown_description() -> str:
 
     # !!python/name: などPython固有タグを文字列として無視するカスタムLoaderを作成する。
     # yaml.add_multi_constructorはグローバル状態を変更するため、Loaderサブクラスに局所化する。
-    class _IgnoreTagLoader(yaml.SafeLoader):  # pylint: disable=too-many-ancestors
+    class _IgnoreTagLoader(yaml.SafeLoader):  # pylint: disable=too-many-ancestors  # PyYAMLの継承木に従うため不可避
         pass
 
     def _ignore_python_tag(_loader: _IgnoreTagLoader, tag_suffix: str, _node: yaml.Node) -> str:
@@ -36,7 +36,7 @@ def _get_markdown_description() -> str:
 
     mkdocs_path = pathlib.Path(__file__).parent.parent / "mkdocs.yml"
     with mkdocs_path.open(encoding="utf-8") as f:
-        data = yaml.load(f, Loader=_IgnoreTagLoader)  # noqa: S506
+        data = yaml.load(f, Loader=_IgnoreTagLoader)  # noqa: S506  # 信頼済みリポジトリ内ファイルを読むため安全
     plugins = data.get("plugins", [])
     for plugin in plugins:
         if isinstance(plugin, dict) and "llmstxt" in plugin:
@@ -49,6 +49,8 @@ def _get_subcommand_names() -> list[str]:
     parser = pyfltr.cli.parser.build_parser()
     subcommand_names: list[str] = []
     # parser._actionsから_SubParsersActionを探してサブコマンド名を取得する。
+    # argparseはサブパーサー一覧を公開APIで列挙する手段を提供しないため、
+    # `_actions` / `_SubParsersAction` 経由の参照に依存せざるを得ない。
     # 2段のプライベートアクセス（_subparsers._group_actions）を避け、
     # 1段の_actions経由で取得することでアクセス深度を浅くする。
     for action in parser._actions:  # type: ignore[attr-defined]  # pylint: disable=protected-access

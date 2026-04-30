@@ -79,4 +79,4 @@ def test_clear_also_resets_excluded_direct_files() -> None:
     """clear は直接指定除外ファイル蓄積もリセットする。"""
     pyfltr.warnings_.add_excluded_direct_file("a.md")
     pyfltr.warnings_.clear()
-    assert pyfltr.warnings_.excluded_direct_files() == []
+    assert not pyfltr.warnings_.excluded_direct_files()

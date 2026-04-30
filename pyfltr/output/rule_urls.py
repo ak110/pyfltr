@@ -14,7 +14,7 @@ _RuleUrlBuilder = typing.Callable[[str, str | None], str | None]
 
 
 def _build_ruff_url(rule: str, category: str | None) -> str | None:
-    del category  # noqa  # ruff はカテゴリーを使わない
+    del category  # シグネチャ互換のため受け取るのみ（ruffはカテゴリーを使わない）
     return f"https://docs.astral.sh/ruff/rules/{rule}/"
 
 
@@ -25,22 +25,22 @@ def _build_pylint_url(rule: str, category: str | None) -> str | None:
 
 
 def _build_pyright_url(rule: str, category: str | None) -> str | None:
-    del category  # noqa
+    del category  # シグネチャ互換のため受け取るのみ
     return f"https://microsoft.github.io/pyright/#/configuration?id={rule}"
 
 
 def _build_mypy_url(rule: str, category: str | None) -> str | None:
-    del category  # noqa
+    del category  # シグネチャ互換のため受け取るのみ
     return f"https://mypy.readthedocs.io/en/stable/_refs.html#code-{rule}"
 
 
 def _build_shellcheck_url(rule: str, category: str | None) -> str | None:
-    del category  # noqa
+    del category  # シグネチャ互換のため受け取るのみ
     return f"https://www.shellcheck.net/wiki/{rule}"
 
 
 def _build_eslint_url(rule: str, category: str | None) -> str | None:
-    del category  # noqa
+    del category  # シグネチャ互換のため受け取るのみ
     # ESLintのプラグインルールは`plugin/rule`形式で、
     # 中央ドキュメントでは個別に辿れないため本体ルールのみURLを返す。
     if "/" in rule:
@@ -49,7 +49,7 @@ def _build_eslint_url(rule: str, category: str | None) -> str | None:
 
 
 def _build_markdownlint_url(rule: str, category: str | None) -> str | None:
-    del category  # noqa
+    del category  # シグネチャ互換のため受け取るのみ
     return f"https://github.com/DavidAnson/markdownlint/blob/main/doc/{rule}.md"
 
 

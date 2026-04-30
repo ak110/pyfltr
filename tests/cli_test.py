@@ -1,6 +1,5 @@
-# pylint: disable=missing-module-docstring
-# pylint: disable=missing-function-docstring
-# pylint: disable=protected-access
+# pylint: disable=missing-module-docstring,missing-function-docstring  # テストはモジュール／関数docstringを省略する慣習
+# pylint: disable=protected-access  # 内部ヘルパー（_run_one_command）の単体テスト経路
 
 import collections.abc
 import logging

@@ -1,5 +1,6 @@
 """llm_outputのテストコード。"""
-# pylint: disable=protected-access,duplicate-code
+# pylint: disable=protected-access  # JSONL構造化レコード組み立てヘルパー（_build_*_record等）の単体テスト経路
+# pylint: disable=duplicate-code  # 各レコードビルダー検証の組み立て手順が他テストと類似
 
 import json
 
@@ -452,7 +453,7 @@ def test_collect_mise_active_tools_for_header_skips_when_no_mise_command() -> No
 def test_collect_mise_active_tools_for_header_includes_when_mise_command(monkeypatch: pytest.MonkeyPatch) -> None:
     """mise登録コマンドが含まれる場合は取得状況dictを返す。"""
     monkeypatch.setattr(
-        "pyfltr.command.mise._get_mise_active_tools",
+        "pyfltr.command.mise.get_mise_active_tools",
         lambda config, *, allow_side_effects=False: pyfltr.command.mise.MiseActiveToolsResult(status="ok", tools={"rust": []}),
     )
     config = pyfltr.config.config.create_default_config()
@@ -463,7 +464,7 @@ def test_collect_mise_active_tools_for_header_includes_when_mise_command(monkeyp
 def test_collect_mise_active_tools_for_header_propagates_error_status(monkeypatch: pytest.MonkeyPatch) -> None:
     """取得失敗時はstatusとdetailをそのまま伝える（active_keysはok時のみ）。"""
     monkeypatch.setattr(
-        "pyfltr.command.mise._get_mise_active_tools",
+        "pyfltr.command.mise.get_mise_active_tools",
         lambda config, *, allow_side_effects=False: pyfltr.command.mise.MiseActiveToolsResult(
             status="untrusted-no-side-effects", detail="config not trusted"
         ),

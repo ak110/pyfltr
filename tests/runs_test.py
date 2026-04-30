@@ -6,7 +6,8 @@
 参照する状態を作る。
 """
 
-# pylint: disable=missing-function-docstring,duplicate-code
+# pylint: disable=missing-function-docstring  # テストは関数docstringを省略する慣習
+# pylint: disable=duplicate-code  # アーカイブ初期化の組み立て手順が他テストと類似
 
 import json
 import pathlib

@@ -47,7 +47,7 @@ def test_command_info_text_cargo_fmt(capsys: pytest.CaptureFixture[str]) -> None
 def test_command_info_text_cargo_fmt_with_mise_active(capsys: pytest.CaptureFixture[str], monkeypatch) -> None:
     """mise.tomlに `rust` 記述があるとtool specを省略した `mise exec -- cargo` 形になる。"""
     monkeypatch.setattr(
-        "pyfltr.command.mise._get_mise_active_tools",
+        "pyfltr.command.mise.get_mise_active_tools",
         lambda config, *, allow_side_effects=False: pyfltr.command.mise.MiseActiveToolsResult(
             status="ok", tools={"rust": [{"version": "1.83.0"}]}
         ),
@@ -59,9 +59,9 @@ def test_command_info_text_cargo_fmt_with_mise_active(capsys: pytest.CaptureFixt
 
 
 def test_command_info_check_passes_allow_side_effects_true(capsys: pytest.CaptureFixture[str], mocker) -> None:
-    """`--check` 真時は `_get_mise_active_tools` へ `allow_side_effects=True` が渡る。"""
+    """`--check` 真時は `get_mise_active_tools` へ `allow_side_effects=True` が渡る。"""
     spy = mocker.patch(
-        "pyfltr.command.mise._get_mise_active_tools",
+        "pyfltr.command.mise.get_mise_active_tools",
         return_value=pyfltr.command.mise.MiseActiveToolsResult(status="ok"),
     )
     # ensure_mise_available 内のsubprocess.runは成功扱いに固定する（FileNotFoundErrorで失敗しないため）。
@@ -73,9 +73,9 @@ def test_command_info_check_passes_allow_side_effects_true(capsys: pytest.Captur
 
 
 def test_command_info_no_check_passes_allow_side_effects_false(capsys: pytest.CaptureFixture[str], mocker) -> None:
-    """`--check` 偽時は `_get_mise_active_tools` へ `allow_side_effects=False` が渡る。"""
+    """`--check` 偽時は `get_mise_active_tools` へ `allow_side_effects=False` が渡る。"""
     spy = mocker.patch(
-        "pyfltr.command.mise._get_mise_active_tools",
+        "pyfltr.command.mise.get_mise_active_tools",
         return_value=pyfltr.command.mise.MiseActiveToolsResult(status="ok"),
     )
     _run("cargo-fmt", capsys=capsys)
@@ -178,7 +178,7 @@ def test_command_info_text_exposes_mise_tool_spec_omitted_true(
 ) -> None:
     """mise設定にtool記述あり時は `true` で露出する。"""
     monkeypatch.setattr(
-        "pyfltr.command.mise._get_mise_active_tools",
+        "pyfltr.command.mise.get_mise_active_tools",
         lambda config, *, allow_side_effects=False: pyfltr.command.mise.MiseActiveToolsResult(
             status="ok", tools={"rust": [{"version": "1.83.0"}]}
         ),
@@ -220,7 +220,7 @@ def test_command_info_text_exposes_mise_active_tools_active_keys(
 ) -> None:
     """mise active toolsが取得できた場合はキー一覧が露出する。"""
     monkeypatch.setattr(
-        "pyfltr.command.mise._get_mise_active_tools",
+        "pyfltr.command.mise.get_mise_active_tools",
         lambda config, *, allow_side_effects=False: pyfltr.command.mise.MiseActiveToolsResult(
             status="ok", tools={"rust": [], "python": []}
         ),
@@ -234,7 +234,7 @@ def test_command_info_text_trust_hint_on_untrusted_no_check(
 ) -> None:
     """`--check`無しかつ `untrusted-no-side-effects` ステータスでは `--check` 案内を1行出す。"""
     monkeypatch.setattr(
-        "pyfltr.command.mise._get_mise_active_tools",
+        "pyfltr.command.mise.get_mise_active_tools",
         lambda config, *, allow_side_effects=False: pyfltr.command.mise.MiseActiveToolsResult(
             status="untrusted-no-side-effects", detail="config not trusted"
         ),
@@ -250,7 +250,7 @@ def test_command_info_text_trust_hint_only_for_untrusted(
 ) -> None:
     """他のエラー要因では trust案内を出さない（ノイズを増やさないため）。"""
     monkeypatch.setattr(
-        "pyfltr.command.mise._get_mise_active_tools",
+        "pyfltr.command.mise.get_mise_active_tools",
         lambda config, *, allow_side_effects=False: pyfltr.command.mise.MiseActiveToolsResult(
             status="exec-error", detail="something failed"
         ),

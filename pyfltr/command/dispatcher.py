@@ -1,4 +1,4 @@
-# pylint: disable=duplicate-code,protected-access
+# pylint: disable=duplicate-code  # process.run_subprocess呼び出しの引数並び等が他経路と類似
 """ディスパッチャー。"""
 
 import argparse
@@ -27,7 +27,7 @@ import pyfltr.config.config
 import pyfltr.state.cache
 import pyfltr.state.only_failed
 import pyfltr.warnings_
-from pyfltr.command.core import CommandResult, ExecutionContext, _CacheContext, _ExecutionParams
+from pyfltr.command.core import CacheContext, CommandResult, ExecutionContext, ExecutionParams
 
 logger = __import__("logging").getLogger(__name__)
 
@@ -66,11 +66,11 @@ def _prepare_execution_params(
     *,
     fix_stage: bool,
     only_failed_targets: "pyfltr.state.only_failed.ToolTargets | None",
-) -> "_ExecutionParams | CommandResult":
-    """実行前の共通前処理を行い `_ExecutionParams` を返す。
+) -> "ExecutionParams | CommandResult":
+    """実行前の共通前処理を行い `ExecutionParams` を返す。
 
     ツールパス解決に失敗した場合は `CommandResult` を直接返す。
-    ターゲット0件の場合は `_ExecutionParams` を返し（targetsが空リスト）、
+    ターゲット0件の場合は `ExecutionParams` を返し（targetsが空リスト）、
     呼び出し側でスキップ処理を行う。
     """
     command_info = config.commands[command]
@@ -82,7 +82,7 @@ def _prepare_execution_params(
     if not args.no_exclude:
         tool_excludes: list[str] = config.values.get(f"{command}-exclude", [])
         if tool_excludes:
-            targets = [t for t in targets if not pyfltr.command.targets._matches_exclude_patterns(t, tool_excludes)]
+            targets = [t for t in targets if not pyfltr.command.targets.matches_exclude_patterns(t, tool_excludes)]
 
     # ファイルの順番をシャッフルまたはソート（fixステージは再現性重視でシャッフルを無効化）
     if args.shuffle and not fix_stage:
@@ -102,7 +102,7 @@ def _prepare_execution_params(
     # mise等のbin-runner解決はネットワークやプラットフォーム制約で失敗し得るため、
     # 解決不要な状況で副作用的な失敗を出さないよう早期返却する。
     if not targets:
-        return _ExecutionParams(
+        return ExecutionParams(
             command_info=command_info,
             targets=targets,
             commandline_prefix=[],
@@ -124,7 +124,7 @@ def _prepare_execution_params(
     except ValueError as e:
         return _failed_resolution_result(command, command_info, str(e), files=len(targets))
     except FileNotFoundError as e:
-        if command in pyfltr.command.runner._JS_TOOL_BIN and config["js-runner"] == "direct":
+        if command in pyfltr.command.runner.JS_TOOL_BIN and config["js-runner"] == "direct":
             message = (
                 f"js-runner=direct 指定ですが実行ファイルが見つかりません: {e}. "
                 "package.jsonで対象パッケージをインストールしてください。"
@@ -140,7 +140,7 @@ def _prepare_execution_params(
 
     # 対象ファイル抜きのargvを共通ヘルパーで組み立てる:
     #   [prefix] + [auto-args] + args + (lint-args or fix-args) + additional_args + structured_output適用
-    # textlintのfix経路では `pyfltr.command.textlint_fix._execute_textlint_fix` 側が改めてargvを組み立てるため
+    # textlintのfix経路では `pyfltr.command.textlint_fix.execute_textlint_fix` 側が改めてargvを組み立てるため
     # ここでの値は実際には使われない（execute_commandのdispatchでtextlint fixは別経路へ分岐する）。
     commandline = pyfltr.command.runner.build_invocation_argv(
         command,
@@ -158,7 +158,7 @@ def _prepare_execution_params(
     # ここでは事後値を採用する（direct経路へtoolパス除外を誤適用しないため）。
     via_mise = resolved.effective_runner == "mise" or resolved.executable == "mise"
 
-    return _ExecutionParams(
+    return ExecutionParams(
         command_info=command_info,
         targets=targets,
         commandline_prefix=commandline_prefix,
@@ -180,13 +180,13 @@ def _prepare_cache_context(
     *,
     fix_args: list[str] | None,
     cache_store: "pyfltr.state.cache.CacheStore | None",
-) -> _CacheContext | None:
+) -> CacheContext | None:
     """キャッシュ参照用のキー算出。対象外の場合はNoneを返す。"""
     if cache_store is None or not command_info.cacheable or fix_args is not None:
         return None
     if not pyfltr.state.cache.is_cacheable(command, config, additional_args):
         return None
-    structured_spec = pyfltr.command.runner._get_structured_output_spec(command, config)
+    structured_spec = pyfltr.command.runner.get_structured_output_spec(command, config)
     key = cache_store.compute_key(
         command=command,
         commandline=commandline,
@@ -195,7 +195,7 @@ def _prepare_cache_context(
         target_files=targets,
         config_files=pyfltr.state.cache.resolve_config_files(command, config),
     )
-    return _CacheContext(cache_store=cache_store, command=command, key=key)
+    return CacheContext(cache_store=cache_store, command=command, key=key)
 
 
 def _run_plain_command(
@@ -249,7 +249,7 @@ def _run_plain_command(
     # verbose時はコマンドラインをon_output経由で出力
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(commandline)}\n")
-    proc = pyfltr.command.process._run_subprocess(
+    proc = pyfltr.command.process.run_subprocess(
         commandline,
         env,
         on_output,
@@ -359,7 +359,7 @@ def execute_command(
         )
 
     start_time = time.perf_counter()
-    env = pyfltr.command.env._build_subprocess_env(config, command, via_mise=params.via_mise)
+    env = pyfltr.command.env.build_subprocess_env(config, command, via_mise=params.via_mise)
 
     # pre-commitは .pre-commit-config.yamlを参照してSKIP環境変数を構築し、
     # pyfltr関連hookを除外したうえで2段階実行する。
@@ -367,7 +367,7 @@ def execute_command(
     # checker系hookが残存エラーを報告すれば "failed" となる。
     if command == "pre-commit":
         return _with_targets(
-            pyfltr.command.precommit._execute_pre_commit(
+            pyfltr.command.precommit.execute_pre_commit(
                 command,
                 command_info,
                 commandline,
@@ -389,7 +389,7 @@ def execute_command(
     # 依存するためLC_ALL/LANG=Cを強制する。
     if command == "glab-ci-lint":
         return _with_targets(
-            pyfltr.command.glab._execute_glab_ci_lint(
+            pyfltr.command.glab.execute_glab_ci_lint(
                 command,
                 command_info,
                 commandline,
@@ -409,7 +409,7 @@ def execute_command(
     # 要件を両立させるため、他のlinterとは別経路で実行する。
     if fix_args is not None and command == "textlint":
         return _with_targets(
-            pyfltr.command.textlint_fix._execute_textlint_fix(
+            pyfltr.command.textlint_fix.execute_textlint_fix(
                 command,
                 command_info,
                 commandline_prefix,
@@ -430,7 +430,7 @@ def execute_command(
     # mtime変化でformatted判定を行い、rc != 0はそのままfailed扱いとする。
     if fix_args is not None and command_info.type != "formatter":
         return _with_targets(
-            pyfltr.command.linter_fix._execute_linter_fix(
+            pyfltr.command.linter_fix.execute_linter_fix(
                 command,
                 command_info,
                 commandline,
@@ -451,7 +451,7 @@ def execute_command(
     # ただしexit >= 2 （設定エラー等） は失敗扱いする。
     if command == "ruff-format" and config["ruff-format-by-check"]:
         return _with_targets(
-            pyfltr.command.two_step.ruff._execute_ruff_format_two_step(
+            pyfltr.command.two_step.ruff.execute_ruff_format_two_step(
                 command,
                 command_info,
                 commandline,
@@ -470,7 +470,7 @@ def execute_command(
     # taploはcheckとformatが排他のためshfmt同様の2段階実行。
     if command == "taplo":
         return _with_targets(
-            pyfltr.command.two_step.taplo._execute_taplo_two_step(
+            pyfltr.command.two_step.taplo.execute_taplo_two_step(
                 command,
                 command_info,
                 commandline_prefix,
@@ -491,7 +491,7 @@ def execute_command(
     # shfmtは-l （確認） と-w （書き込み） が排他のためprettier同様の2段階実行。
     if command == "shfmt":
         return _with_targets(
-            pyfltr.command.two_step.shfmt._execute_shfmt_two_step(
+            pyfltr.command.two_step.shfmt.execute_shfmt_two_step(
                 command,
                 command_info,
                 commandline_prefix,
@@ -515,7 +515,7 @@ def execute_command(
     # fix_mode変数を使う （filter_fix_commandsではformatterとして常にfix対象となる）。
     if command == "prettier":
         return _with_targets(
-            pyfltr.command.two_step.prettier._execute_prettier_two_step(
+            pyfltr.command.two_step.prettier.execute_prettier_two_step(
                 command,
                 command_info,
                 commandline_prefix,
