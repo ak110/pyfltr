@@ -443,8 +443,10 @@ def _build_command_record(
     メッセージ切り詰めまたはdiagnostic切り詰めが発生した場合は`truncated`メタを
     添付する。retry_commandは`CommandResult.retry_command`が設定されていれば含める。
     `hint_urls`が非空なら`hint_urls`キーで埋め込む。
-    `hints`が非空なら`hints`キーで埋め込む。textlintコマンドの場合は
-    `hints`の内容にかかわらず`messages[].end_col`の仕様を必ず追加する。
+    `hints`が非空なら`hints`キーで埋め込む。
+    hintは「対応する指摘や状態が実際に該当するときのみ付与する」方針で扱い、
+    textlintコマンドの`messages[].end_col`仕様注記は`diagnostics > 0`のときに限り追加する
+    （指摘ゼロの実行で固定的なhintを残してLLMトークンを浪費しないため）。
     `result.cached`が真のときは`elapsed`ではなく`cached_elapsed`キーに
     リネームして出力する（実行をスキップした前回値である旨をLLMに明示するため）。
     """
@@ -500,10 +502,12 @@ def _build_command_record(
             record["cached_from"] = result.cached_from
     if hint_urls:
         record["hint_urls"] = dict(hint_urls)
-    # textlintコマンドはend_colをノード先頭からの累積位置で返す仕様のため、
-    # rule hint有無にかかわらず必ずhints辞書にその旨を追加する。
+    # textlintはend_colをノード先頭からの累積位置で返す独特な仕様だが、
+    # 指摘ゼロの実行ではこの注記を読み解く文脈が無いためhintを付けない。
+    # 「対応する指摘・状態が該当するときのみhintを付与する」方針との整合を取り、
+    # diagnosticsが1件以上のときに限り追加する。
     merged_hints = dict(hints) if hints else {}
-    if result.command == "textlint":
+    if result.command == "textlint" and diagnostics > 0:
         merged_hints["messages[].end_col"] = (
             "textlint reports end_col as cumulative offset from the text-node start, not in-line offset"
         )

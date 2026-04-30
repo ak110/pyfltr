@@ -919,8 +919,12 @@ def test_build_command_record_hints_key_omitted_when_empty() -> None:
     assert "hints" not in record_empty
 
 
-def test_build_command_record_textlint_always_includes_end_col_hint() -> None:
-    """textlintコマンドのときは、rule hintがゼロでも`messages[].end_col`キーが必ず入る。"""
+def test_build_command_record_textlint_end_col_hint_only_when_diagnostics() -> None:
+    """textlintの`messages[].end_col`hintは指摘ある時のみ付与される。
+
+    hint方針（CLAUDE.md「JSONL出力の`command.hints`は対応する指摘やステータスが
+    実際に該当するときのみ付与する」）に従い、指摘0件ではhintsキー自体が省略される。
+    """
     result = pyfltr.command.core_.CommandResult(
         command="textlint",
         command_type="linter",
@@ -931,10 +935,11 @@ def test_build_command_record_textlint_always_includes_end_col_hint() -> None:
         output="",
         elapsed=0.1,
     )
-    record_no_hints = pyfltr.output.jsonl._build_command_record(result, diagnostics=0, hints=None)
-    assert "hints" in record_no_hints
-    assert "messages[].end_col" in record_no_hints["hints"]
+    # 指摘0件: hintsキー自体を出さない
+    record_no_diag = pyfltr.output.jsonl._build_command_record(result, diagnostics=0, hints=None)
+    assert "hints" not in record_no_diag
 
+    # 指摘1件以上: end_col仕様注記が入り、rule hintとも併存する
     record_with_hints = pyfltr.output.jsonl._build_command_record(
         result,
         diagnostics=1,
