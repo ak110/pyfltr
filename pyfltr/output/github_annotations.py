@@ -1,7 +1,7 @@
 """GitHub Actions 注釈形式の出力生成。
 
 `--output-format=github-annotations`のレイアウトは`text`と同じで、
-`pyfltr.cli.pipeline.write_log()`から`pyfltr.error_parser.format_error_github()`経由で
+`pyfltr.cli.pipeline.write_log()`から`pyfltr.command.error_parser.format_error_github()`経由で
 1診断1行の整形が本モジュールに委譲される。
 
 GitHubのログビューアーは`::xxx file=...,line=...,title=...::msg`から
@@ -10,7 +10,7 @@ file / line / ruleを視認できるよう、メッセージ本体に
 `{file}:{line}[:{col}]: [{tool}[:{rule}]] {message}`を前置する。
 この1行がGitHub Actionsのannotationsとログビューアー両方の要件を満たす。
 
-`pyfltr.error_parser`は型ヒントにしか使わないため、`TYPE_CHECKING`ガードで
+`pyfltr.command.error_parser`は型ヒントにしか使わないため、`TYPE_CHECKING`ガードで
 循環importを回避する（`error_parser.format_error_github`から本モジュールが呼ばれる）。
 """
 
@@ -19,7 +19,7 @@ from __future__ import annotations
 import typing
 
 if typing.TYPE_CHECKING:
-    import pyfltr.error_parser
+    import pyfltr.command.error_parser
 
 _SEVERITY_TO_KIND: dict[str | None, str] = {
     "error": "error",
@@ -28,7 +28,7 @@ _SEVERITY_TO_KIND: dict[str | None, str] = {
 }
 
 
-def build_workflow_command(error: pyfltr.error_parser.ErrorLocation) -> str:
+def build_workflow_command(error: pyfltr.command.error_parser.ErrorLocation) -> str:
     """ErrorLocation 1 件を GitHub Actions のワークフローコマンド 1 行に整形する。
 
     severityが`error`→`::error`、`warning`→`::warning`、`info`→
@@ -48,7 +48,7 @@ def build_workflow_command(error: pyfltr.error_parser.ErrorLocation) -> str:
     return f"::{kind} {','.join(props)}::{message_text}"
 
 
-def _build_plain_prefix(error: pyfltr.error_parser.ErrorLocation) -> str:
+def _build_plain_prefix(error: pyfltr.command.error_parser.ErrorLocation) -> str:
     """`file:line[:col]: [tool[:rule]]`の形で生ログ視認用プレフィックスを組み立てる。"""
     location = error.file or "?"
     if error.line:

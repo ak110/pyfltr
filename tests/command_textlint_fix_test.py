@@ -9,7 +9,8 @@ import os
 import pathlib
 import subprocess
 
-import pyfltr.command
+import pyfltr.command.dispatcher
+import pyfltr.command.process
 import pyfltr.config.config
 import pyfltr.paths
 import pyfltr.warnings_
@@ -22,11 +23,13 @@ def test_textlint_lint_mode_adds_lint_args(mocker, tmp_path: pathlib.Path) -> No
     target.write_text("# title\n")
 
     proc = subprocess.CompletedProcess(["textlint"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+    mock_run = mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
 
     config = pyfltr.config.config.create_default_config()
     config.values["textlint"] = True
-    pyfltr.command.execute_command("textlint", _testconf.make_args(), _testconf.make_execution_context(config, [target]))
+    pyfltr.command.dispatcher.execute_command(
+        "textlint", _testconf.make_args(), _testconf.make_execution_context(config, [target])
+    )
 
     assert mock_run.call_count == 1
     cmdline = mock_run.call_args_list[0][0][0]
@@ -43,11 +46,11 @@ def test_textlint_fix_mode_two_step_execution(mocker, tmp_path: pathlib.Path) ->
     target.write_text("# title\n")
 
     proc = subprocess.CompletedProcess(["textlint"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+    mock_run = mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
 
     config = pyfltr.config.config.create_default_config()
     config.values["textlint"] = True
-    pyfltr.command.execute_command(
+    pyfltr.command.dispatcher.execute_command(
         "textlint", _testconf.make_args(), _testconf.make_execution_context(config, [target], fix_stage=True)
     )
 
@@ -70,13 +73,13 @@ def test_textlint_fix_mode_strips_user_format_from_step1(mocker, tmp_path: pathl
     target.write_text("# title\n")
 
     proc = subprocess.CompletedProcess(["textlint"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+    mock_run = mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
 
     config = pyfltr.config.config.create_default_config()
     config.values["textlint"] = True
     # 旧docsで推奨されていた設定: textlint-argsに--format compactを含む
     config.values["textlint-args"] = ["--format", "compact"]
-    pyfltr.command.execute_command(
+    pyfltr.command.dispatcher.execute_command(
         "textlint", _testconf.make_args(), _testconf.make_execution_context(config, [target], fix_stage=True)
     )
 
@@ -94,12 +97,12 @@ def test_textlint_fix_mode_preserves_non_format_user_args(mocker, tmp_path: path
     target.write_text("# title\n")
 
     proc = subprocess.CompletedProcess(["textlint"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command._run_subprocess", return_value=proc)
+    mock_run = mocker.patch("pyfltr.command.process._run_subprocess", return_value=proc)
 
     config = pyfltr.config.config.create_default_config()
     config.values["textlint"] = True
     config.values["textlint-args"] = ["--quiet"]
-    pyfltr.command.execute_command(
+    pyfltr.command.dispatcher.execute_command(
         "textlint", _testconf.make_args(), _testconf.make_execution_context(config, [target], fix_stage=True)
     )
 
@@ -129,11 +132,11 @@ def test_textlint_fix_mode_touch_without_content_change_marks_succeeded(mocker, 
         # step2: 残存違反なし
         return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
 
-    mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
+    mocker.patch("pyfltr.command.process._run_subprocess", side_effect=fake_run)
 
     config = pyfltr.config.config.create_default_config()
     config.values["textlint"] = True
-    result = pyfltr.command.execute_command(
+    result = pyfltr.command.dispatcher.execute_command(
         "textlint", _testconf.make_args(), _testconf.make_execution_context(config, [target], fix_stage=True)
     )
 
@@ -160,11 +163,11 @@ def test_textlint_fix_mode_all_fixed_marks_formatted(mocker, tmp_path: pathlib.P
         # step2: 残存違反なし
         return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
 
-    mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
+    mocker.patch("pyfltr.command.process._run_subprocess", side_effect=fake_run)
 
     config = pyfltr.config.config.create_default_config()
     config.values["textlint"] = True
-    result = pyfltr.command.execute_command(
+    result = pyfltr.command.dispatcher.execute_command(
         "textlint", _testconf.make_args(), _testconf.make_execution_context(config, [target], fix_stage=True)
     )
 
@@ -185,11 +188,11 @@ def test_textlint_fix_mode_emits_warning_when_protected_identifier_corrupted(moc
             return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
         return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
 
-    mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
+    mocker.patch("pyfltr.command.process._run_subprocess", side_effect=fake_run)
 
     config = pyfltr.config.config.create_default_config()
     config.values["textlint"] = True
-    pyfltr.command.execute_command(
+    pyfltr.command.dispatcher.execute_command(
         "textlint", _testconf.make_args(), _testconf.make_execution_context(config, [target], fix_stage=True)
     )
 
@@ -215,12 +218,12 @@ def test_textlint_fix_mode_no_warning_when_protected_identifiers_empty(mocker, t
             return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
         return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
 
-    mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
+    mocker.patch("pyfltr.command.process._run_subprocess", side_effect=fake_run)
 
     config = pyfltr.config.config.create_default_config()
     config.values["textlint"] = True
     config.values["textlint-protected-identifiers"] = []
-    pyfltr.command.execute_command(
+    pyfltr.command.dispatcher.execute_command(
         "textlint", _testconf.make_args(), _testconf.make_execution_context(config, [target], fix_stage=True)
     )
 
@@ -241,11 +244,11 @@ def test_textlint_fix_mode_no_warning_when_identifier_intact(mocker, tmp_path: p
             return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
         return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
 
-    mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
+    mocker.patch("pyfltr.command.process._run_subprocess", side_effect=fake_run)
 
     config = pyfltr.config.config.create_default_config()
     config.values["textlint"] = True
-    pyfltr.command.execute_command(
+    pyfltr.command.dispatcher.execute_command(
         "textlint", _testconf.make_args(), _testconf.make_execution_context(config, [target], fix_stage=True)
     )
 
@@ -269,11 +272,11 @@ def test_textlint_fix_mode_residual_violations_mark_failed(mocker, tmp_path: pat
         # step2: compact 形式で違反出力
         return subprocess.CompletedProcess(cmdline, returncode=1, stdout=violation_output)
 
-    mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
+    mocker.patch("pyfltr.command.process._run_subprocess", side_effect=fake_run)
 
     config = pyfltr.config.config.create_default_config()
     config.values["textlint"] = True
-    result = pyfltr.command.execute_command(
+    result = pyfltr.command.dispatcher.execute_command(
         "textlint", _testconf.make_args(), _testconf.make_execution_context(config, [target], fix_stage=True)
     )
 
@@ -296,11 +299,11 @@ def test_textlint_fix_mode_step1_fatal_error_fails(mocker, tmp_path: pathlib.Pat
             return subprocess.CompletedProcess(cmdline, returncode=2, stdout="fatal error")
         return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
 
-    mocker.patch("pyfltr.command._run_subprocess", side_effect=fake_run)
+    mocker.patch("pyfltr.command.process._run_subprocess", side_effect=fake_run)
 
     config = pyfltr.config.config.create_default_config()
     config.values["textlint"] = True
-    result = pyfltr.command.execute_command(
+    result = pyfltr.command.dispatcher.execute_command(
         "textlint", _testconf.make_args(), _testconf.make_execution_context(config, [target], fix_stage=True)
     )
 

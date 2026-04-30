@@ -6,7 +6,7 @@ import pathlib
 import shlex
 import sys
 
-import pyfltr.command
+import pyfltr.command.core
 import pyfltr.paths
 
 logger = logging.getLogger(__name__)
@@ -187,7 +187,7 @@ def build_retry_command(
 
 
 def populate_retry_command(
-    result: pyfltr.command.CommandResult,
+    result: pyfltr.command.core.CommandResult,
     *,
     retry_args_template: list[str],
     launcher_prefix: list[str],
@@ -219,7 +219,7 @@ def populate_retry_command(
     )
 
 
-def filter_failed_files(result: pyfltr.command.CommandResult) -> list[pathlib.Path]:
+def filter_failed_files(result: pyfltr.command.core.CommandResult) -> list[pathlib.Path]:
     """`result.errors`から失敗ファイル集合を抽出し`result.target_files`と交差させる。
 
     `retry_command`のターゲットを「当該ツールで失敗したファイルのみ」に絞る用途

@@ -13,7 +13,7 @@ import subprocess
 
 import pytest
 
-import pyfltr.command
+import pyfltr.command.targets
 import pyfltr.warnings_
 
 # ---------------------------------------------------------------------------
@@ -56,7 +56,7 @@ def test_filter_by_changed_since_normal(tmp_path: pathlib.Path, _git_repo: pathl
         pathlib.Path("unchanged.py"),
         pathlib.Path("changed.py"),
     ]
-    result = pyfltr.command.filter_by_changed_since(all_files, "HEAD")
+    result = pyfltr.command.targets.filter_by_changed_since(all_files, "HEAD")
 
     assert result == [pathlib.Path("changed.py")]
     # 警告は出ないこと
@@ -71,7 +71,7 @@ def test_filter_by_changed_since_empty_diff(tmp_path: pathlib.Path, _git_repo: p
     subprocess.run(["git", "commit", "--message=initial"], check=True, capture_output=True)
 
     all_files = [pathlib.Path("initial.py")]
-    result = pyfltr.command.filter_by_changed_since(all_files, "HEAD")
+    result = pyfltr.command.targets.filter_by_changed_since(all_files, "HEAD")
 
     assert result == []
     assert pyfltr.warnings_.collected_warnings() == []
@@ -85,7 +85,7 @@ def test_filter_by_changed_since_invalid_ref(tmp_path: pathlib.Path, _git_repo: 
     subprocess.run(["git", "commit", "--message=initial"], check=True, capture_output=True)
 
     all_files = [pathlib.Path("a.py")]
-    result = pyfltr.command.filter_by_changed_since(all_files, "no-such-branch-xyz")
+    result = pyfltr.command.targets.filter_by_changed_since(all_files, "no-such-branch-xyz")
 
     # フォールバック: 全体実行相当のリストを返す
     assert result == all_files
@@ -101,7 +101,7 @@ def test_filter_by_changed_since_git_not_found(tmp_path: pathlib.Path, monkeypat
     monkeypatch.setenv("PATH", str(tmp_path))
 
     all_files = [pathlib.Path("a.py")]
-    result = pyfltr.command.filter_by_changed_since(all_files, "HEAD")
+    result = pyfltr.command.targets.filter_by_changed_since(all_files, "HEAD")
 
     assert result == all_files
     warnings = pyfltr.warnings_.collected_warnings()
@@ -130,7 +130,7 @@ def test_filter_by_changed_since_excludes_untracked(tmp_path: pathlib.Path, _git
         pathlib.Path("tracked.py"),
         pathlib.Path("untracked.py"),
     ]
-    result = pyfltr.command.filter_by_changed_since(all_files, "HEAD")
+    result = pyfltr.command.targets.filter_by_changed_since(all_files, "HEAD")
 
     # tracked の変更ファイルのみが対象になり、untracked は除外される
     assert result == [pathlib.Path("tracked.py")]

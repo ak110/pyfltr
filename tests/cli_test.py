@@ -9,7 +9,8 @@ import pytest
 
 import pyfltr.cli.output_format
 import pyfltr.cli.pipeline
-import pyfltr.command
+import pyfltr.command.core
+import pyfltr.command.dispatcher
 import pyfltr.config.config
 from tests.conftest import make_command_result as _make_result
 from tests.conftest import make_execution_context as _make_ctx
@@ -48,7 +49,7 @@ def _text_logs() -> collections.abc.Iterator[list[str]]:
 
 def test_write_log(text_logs):
     """write_logの出力確認。"""
-    result = pyfltr.command.CommandResult(
+    result = pyfltr.command.core.CommandResult(
         command="pytest",
         command_type="tester",
         commandline=["pytest", "test.py"],
@@ -66,7 +67,7 @@ def test_write_log(text_logs):
 
 def test_write_log_failed(text_logs):
     """write_logの失敗時の出力確認。"""
-    result = pyfltr.command.CommandResult(
+    result = pyfltr.command.core.CommandResult(
         command="pytest",
         command_type="tester",
         commandline=["pytest", "test.py"],
@@ -84,12 +85,12 @@ def test_write_log_failed(text_logs):
 def test_run_one_command_stream_mode_writes_detail_log(mocker, text_logs):
     """per_command_log=Trueのとき詳細ログを即時出力すること。"""
     result = _make_result("mypy", returncode=0, output="ok")
-    mocker.patch("pyfltr.command.execute_command", return_value=result)
+    mocker.patch("pyfltr.command.dispatcher.execute_command", return_value=result)
     mock_args = mocker.MagicMock()
     mock_args.output_format = "text"
     mock_config = mocker.MagicMock()
 
-    base_ctx = pyfltr.command.ExecutionBaseContext(config=mock_config, all_files=[], cache_store=None, cache_run_id=None)
+    base_ctx = pyfltr.command.core.ExecutionBaseContext(config=mock_config, all_files=[], cache_store=None, cache_run_id=None)
     pyfltr.cli.pipeline._run_one_command("mypy", mock_args, base_ctx, per_command_log=True)
     text = "\n".join(text_logs)
     assert "mypy 実行中です..." in text
@@ -100,12 +101,12 @@ def test_run_one_command_stream_mode_writes_detail_log(mocker, text_logs):
 def test_run_one_command_buffer_mode_shows_only_progress(mocker, text_logs):
     """per_command_log=Falseのとき開始/完了の1行進捗のみ出力すること。"""
     result = _make_result("mypy", returncode=0, output="ok")
-    mocker.patch("pyfltr.command.execute_command", return_value=result)
+    mocker.patch("pyfltr.command.dispatcher.execute_command", return_value=result)
     mock_args = mocker.MagicMock()
     mock_args.output_format = "text"
     mock_config = mocker.MagicMock()
 
-    base_ctx = pyfltr.command.ExecutionBaseContext(config=mock_config, all_files=[], cache_store=None, cache_run_id=None)
+    base_ctx = pyfltr.command.core.ExecutionBaseContext(config=mock_config, all_files=[], cache_store=None, cache_run_id=None)
     pyfltr.cli.pipeline._run_one_command("mypy", mock_args, base_ctx, per_command_log=False)
     text = "\n".join(text_logs)
     assert "mypy 実行中です..." in text
@@ -187,7 +188,7 @@ def test_run_commands_with_cli_fail_fast_aborts_remaining_fixers(mocker):
     config.values["mypy"] = True
     # fixステージでruff-checkがhas_error=Trueで返る想定
     fix_fail = _make_result("ruff-check", returncode=1, command_type="linter")
-    mocker.patch("pyfltr.command.execute_command", return_value=fix_fail)
+    mocker.patch("pyfltr.command.dispatcher.execute_command", return_value=fix_fail)
     mock_args = mocker.MagicMock()
 
     base_ctx = _make_ctx(config, []).base
@@ -216,7 +217,7 @@ def test_run_commands_with_cli_without_fail_fast_continues(mocker):
     def _fake_execute(command, *_args, **_kwargs):
         return fail_result if command == "ruff-format" else success
 
-    mocker.patch("pyfltr.command.execute_command", side_effect=_fake_execute)
+    mocker.patch("pyfltr.command.dispatcher.execute_command", side_effect=_fake_execute)
     mock_args = mocker.MagicMock()
 
     base_ctx = _make_ctx(config, []).base

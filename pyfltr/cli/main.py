@@ -19,7 +19,7 @@ import pyfltr.cli.config_subcmd
 import pyfltr.cli.parser
 import pyfltr.cli.pipeline
 import pyfltr.cli.shell_completion
-import pyfltr.command
+import pyfltr.command.env
 import pyfltr.state.runs
 
 logger = logging.getLogger(__name__)
@@ -55,7 +55,7 @@ def main() -> typing.NoReturn:
     # 構築では追加の重複排除を行わない。CLI経路でのみ呼ぶことで、ライブラリ
     # 利用時に意図せず別アプリの `os.environ` を書き換えないようにする。
     # 詳細はCLAUDE.md「subprocess起動時のPATH整理方針」節を参照。
-    pyfltr.command.dedupe_environ_path(os.environ)
+    pyfltr.command.env.dedupe_environ_path(os.environ)
     exit_code = run()
     logger.debug(f"{exit_code=}")
     sys.exit(exit_code)

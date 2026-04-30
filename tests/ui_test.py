@@ -5,7 +5,8 @@
 import argparse
 import unittest.mock
 
-import pyfltr.command
+import pyfltr.command.core
+import pyfltr.command.process
 import pyfltr.config.config
 import pyfltr.output.ui
 import pyfltr.state.stage_runner
@@ -25,7 +26,7 @@ def test_ctrl_c_double_press_handling() -> None:
     app = pyfltr.output.ui.UIApp(
         ["black"],
         args,
-        pyfltr.command.ExecutionBaseContext(
+        pyfltr.command.core.ExecutionBaseContext(
             config=pyfltr.config.config.create_default_config(), all_files=[], cache_store=None, cache_run_id=None
         ),
     )
@@ -40,7 +41,7 @@ def test_ctrl_c_double_press_handling() -> None:
     with (
         unittest.mock.patch.object(app, "exit") as mock_exit,
         unittest.mock.patch.object(app, "notify") as mock_notify,
-        unittest.mock.patch("pyfltr.command.terminate_active_processes") as mock_terminate,
+        unittest.mock.patch("pyfltr.command.process.terminate_active_processes") as mock_terminate,
     ):
         # 1回目のCtrl+C: 2回目を促す通知
         app.on_key(mock_event)
@@ -68,7 +69,7 @@ def test_ctrl_c_force_exit_after_interrupted() -> None:
     app = pyfltr.output.ui.UIApp(
         ["black"],
         args,
-        pyfltr.command.ExecutionBaseContext(
+        pyfltr.command.core.ExecutionBaseContext(
             config=pyfltr.config.config.create_default_config(), all_files=[], cache_store=None, cache_run_id=None
         ),
     )
@@ -83,7 +84,7 @@ def test_ctrl_c_force_exit_after_interrupted() -> None:
         unittest.mock.patch.object(app, "exit", side_effect=lambda **_kw: call_order.append("exit")) as mock_exit,
         unittest.mock.patch.object(app, "notify"),
         unittest.mock.patch(
-            "pyfltr.command.terminate_active_processes",
+            "pyfltr.command.process.terminate_active_processes",
             side_effect=lambda **_kw: call_order.append("terminate"),
         ) as mock_terminate,
     ):
@@ -113,7 +114,7 @@ def test_safe_call_from_thread_short_circuits_when_exit_requested() -> None:
     app = pyfltr.output.ui.UIApp(
         ["black"],
         args,
-        pyfltr.command.ExecutionBaseContext(
+        pyfltr.command.core.ExecutionBaseContext(
             config=pyfltr.config.config.create_default_config(), all_files=[], cache_store=None, cache_run_id=None
         ),
     )
@@ -141,7 +142,7 @@ def test_ctrl_c_timeout() -> None:
     app = pyfltr.output.ui.UIApp(
         ["black"],
         args,
-        pyfltr.command.ExecutionBaseContext(
+        pyfltr.command.core.ExecutionBaseContext(
             config=pyfltr.config.config.create_default_config(), all_files=[], cache_store=None, cache_run_id=None
         ),
     )
@@ -188,7 +189,7 @@ def test_interrupt_preserves_completed_results(monkeypatch) -> None:
             config.values[name] = False
     config.values["jobs"] = 1
 
-    base_ctx = pyfltr.command.ExecutionBaseContext(config=config, all_files=[], cache_store=None, cache_run_id=None)
+    base_ctx = pyfltr.command.core.ExecutionBaseContext(config=config, all_files=[], cache_store=None, cache_run_id=None)
     app = pyfltr.output.ui.UIApp(["pylint", "mypy"], args, base_ctx)
 
     call_order: list[str] = []
@@ -198,7 +199,7 @@ def test_interrupt_preserves_completed_results(monkeypatch) -> None:
         call_order.append(command)
         if command == "pylint":
             # 1本目: 成功を返す。
-            return pyfltr.command.CommandResult(
+            return pyfltr.command.core.CommandResult(
                 command=command,
                 command_type="linter",
                 commandline=[],
@@ -210,9 +211,9 @@ def test_interrupt_preserves_completed_results(monkeypatch) -> None:
             )
         # 2本目: 協調停止を発火させる。
         app._interrupted = True
-        raise pyfltr.command.InterruptedExecution
+        raise pyfltr.command.process.InterruptedExecution
 
-    monkeypatch.setattr(pyfltr.command, "execute_command", _fake_execute_command)
+    monkeypatch.setattr("pyfltr.command.dispatcher.execute_command", _fake_execute_command)
     # call_from_threadはUI起動前に呼ばれても落ちないようno-op化。
     monkeypatch.setattr(app, "call_from_thread", lambda *a, **kw: None)
 

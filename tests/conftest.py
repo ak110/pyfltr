@@ -12,9 +12,10 @@ import pathlib
 
 import pytest
 
-import pyfltr.command
+import pyfltr.command.core
+import pyfltr.command.error_parser
+import pyfltr.command.mise
 import pyfltr.config.config
-import pyfltr.error_parser
 import pyfltr.state.archive
 import pyfltr.state.cache
 import pyfltr.state.only_failed
@@ -48,7 +49,7 @@ def _isolate_output_format_envs(monkeypatch: pytest.MonkeyPatch) -> None:
 # `_get_mise_active_tools` 実装本体を保存しておく（モック上書き前の参照）。
 # キャッシュキー検証系テストでは実装の挙動を直接確認したいため、モック前の関数オブジェクトを
 # 経由して呼べるよう、本変数をテスト側から参照可能にする。
-real_get_mise_active_tools = pyfltr.command._get_mise_active_tools  # pylint: disable=protected-access
+real_get_mise_active_tools = pyfltr.command.mise._get_mise_active_tools  # pylint: disable=protected-access
 
 
 @pytest.fixture(autouse=True)
@@ -61,10 +62,10 @@ def _default_mise_active_tools_empty(monkeypatch: pytest.MonkeyPatch) -> None:
     本フィクスチャでautouseに空のステータス`ok`結果を返すよう固定することでテスト全体の前提を揃える。
     新仕様（mise設定記述あり時のtool spec省略）を検証するテストは個別に上書きする。
     """
-    monkeypatch.setattr("pyfltr.command._MISE_ACTIVE_TOOLS_CACHE", {}, raising=True)
+    monkeypatch.setattr("pyfltr.command.mise._MISE_ACTIVE_TOOLS_CACHE", {}, raising=True)
     monkeypatch.setattr(
-        "pyfltr.command._get_mise_active_tools",
-        lambda config, *, allow_side_effects=False: pyfltr.command.MiseActiveToolsResult(status="ok"),
+        "pyfltr.command.mise._get_mise_active_tools",
+        lambda config, *, allow_side_effects=False: pyfltr.command.mise.MiseActiveToolsResult(status="ok"),
     )
 
 
@@ -108,20 +109,20 @@ def make_execution_context(
     cache_run_id: str | None = None,
     fix_stage: bool = False,
     only_failed_targets: pyfltr.state.only_failed.ToolTargets | None = None,
-) -> pyfltr.command.ExecutionContext:
+) -> pyfltr.command.core.ExecutionContext:
     """テスト用の ExecutionContext を生成する。
 
     `execute_command`を直接呼び出すテストで使用する。
     CLI/TUIフック系（on_output / is_interrupted / on_subprocess_start / on_subprocess_end）は
     テストでは不要なため省略（デフォルトのNoneが使われる）。
     """
-    base = pyfltr.command.ExecutionBaseContext(
+    base = pyfltr.command.core.ExecutionBaseContext(
         config=config,
         all_files=all_files,
         cache_store=cache_store,
         cache_run_id=cache_run_id,
     )
-    return pyfltr.command.ExecutionContext(
+    return pyfltr.command.core.ExecutionContext(
         base=base,
         fix_stage=fix_stage,
         only_failed_targets=only_failed_targets,
@@ -136,7 +137,7 @@ def make_command_result(
     output: str = "",
     files: int = 1,
     elapsed: float = 0.1,
-    errors: list[pyfltr.error_parser.ErrorLocation] | None = None,
+    errors: list[pyfltr.command.error_parser.ErrorLocation] | None = None,
     has_error: bool | None = None,
     archived: bool = True,
     retry_command: str | None = None,
@@ -144,7 +145,7 @@ def make_command_result(
     cached_from: str | None = None,
     target_files: list[pathlib.Path] | None = None,
     resolution_failed: bool = False,
-) -> pyfltr.command.CommandResult:
+) -> pyfltr.command.core.CommandResult:
     """テスト用の CommandResult を生成する。
 
     `has_error`を省略した場合、`returncode`が0/None以外ならTrueに推定する。
@@ -155,7 +156,7 @@ def make_command_result(
     """
     if has_error is None:
         has_error = returncode is not None and returncode != 0
-    return pyfltr.command.CommandResult(
+    return pyfltr.command.core.CommandResult(
         command=command,
         command_type=command_type,
         commandline=[command],
@@ -180,9 +181,9 @@ def make_error_location(
     line: int,
     message: str,
     col: int | None = None,
-) -> pyfltr.error_parser.ErrorLocation:
+) -> pyfltr.command.error_parser.ErrorLocation:
     """テスト用の ErrorLocation を生成する。"""
-    return pyfltr.error_parser.ErrorLocation(
+    return pyfltr.command.error_parser.ErrorLocation(
         file=file,
         line=line,
         col=col,
@@ -191,22 +192,22 @@ def make_error_location(
     )
 
 
-def make_formatted_result(command: str = "ruff-format") -> pyfltr.command.CommandResult:
+def make_formatted_result(command: str = "ruff-format") -> pyfltr.command.core.CommandResult:
     """`status == "formatted"` になる最小の CommandResult を生成する。
 
     `main_test`など複数のテストファイルで同様の構築が必要なためconftest.pyに集約する。
     """
-    return pyfltr.command.CommandResult(
+    return pyfltr.command.core.CommandResult(
         command, "formatter", [command], returncode=1, has_error=False, files=1, output="", elapsed=0.01
     )
 
 
-def make_succeeded_result(command: str = "ruff-check") -> pyfltr.command.CommandResult:
+def make_succeeded_result(command: str = "ruff-check") -> pyfltr.command.core.CommandResult:
     """`status == "succeeded"` になる最小の CommandResult を生成する。
 
     `main_test`など複数のテストファイルで同様の構築が必要なためconftest.pyに集約する。
     """
-    return pyfltr.command.CommandResult(
+    return pyfltr.command.core.CommandResult(
         command, "linter", [command], returncode=0, has_error=False, files=1, output="", elapsed=0.01
     )
 

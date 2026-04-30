@@ -19,9 +19,11 @@ import threading
 import typing
 
 import pyfltr.cli.output_format
-import pyfltr.command
+import pyfltr.command.core
+import pyfltr.command.error_parser
+import pyfltr.command.mise
+import pyfltr.command.runner
 import pyfltr.config.config
-import pyfltr.error_parser
 import pyfltr.paths
 
 logger = logging.getLogger(__name__)
@@ -51,7 +53,7 @@ _DEFAULT_HEAD_RATIO = 0.2
 
 
 def build_command_lines(
-    result: pyfltr.command.CommandResult,
+    result: pyfltr.command.core.CommandResult,
     config: pyfltr.config.config.Config,
 ) -> list[str]:
     """1コマンド分のdiagnostic行+command行をJSONL文字列のリストとして生成する。
@@ -67,7 +69,7 @@ def build_command_lines(
     通常ステージは同じ`command`名で別`CommandResult`として渡されるため、
     片方のアーカイブ書き込み失敗が他方の切り詰め可否に影響しない。
     """
-    sorted_errors = pyfltr.error_parser.sort_errors(result.errors, config.command_names)
+    sorted_errors = pyfltr.command.error_parser.sort_errors(result.errors, config.command_names)
     diagnostic_total = len(sorted_errors)
     diagnostic_limit = int(config.values.get("jsonl-diagnostic-limit", 0) or 0)
 
@@ -97,7 +99,7 @@ def build_command_lines(
 
 
 def aggregate_diagnostics(
-    errors: typing.Iterable[pyfltr.error_parser.ErrorLocation],
+    errors: typing.Iterable[pyfltr.command.error_parser.ErrorLocation],
 ) -> tuple[list[dict[str, typing.Any]], dict[str, str], dict[str, str]]:
     """`ErrorLocation`列を`(command, file)`単位の集約dictへ変換する。
 
@@ -118,7 +120,7 @@ def aggregate_diagnostics(
     少ないため。逸脱はwarningログで気付ける余地を残す。
     集約のキー順は入力順（`sort_errors()`済み）を尊重する。
     """
-    groups: dict[tuple[str, str], list[pyfltr.error_parser.ErrorLocation]] = {}
+    groups: dict[tuple[str, str], list[pyfltr.command.error_parser.ErrorLocation]] = {}
     group_order: list[tuple[str, str]] = []
     hint_urls: dict[str, str] = {}
     hints: dict[str, str] = {}
@@ -170,7 +172,7 @@ def aggregate_diagnostics(
 
 
 def build_lines(
-    results: list[pyfltr.command.CommandResult],
+    results: list[pyfltr.command.core.CommandResult],
     config: pyfltr.config.config.Config,
     *,
     exit_code: int,
@@ -282,9 +284,9 @@ def collect_mise_active_tools_for_header(
     含まれる場合は`_get_mise_active_tools(config)`を副作用OFFで引き、
     `{"status": ..., "detail": ..., "active_keys": [...]}`形式に整える。
     """
-    if not any(pyfltr.command.get_mise_active_tool_key(cmd) is not None for cmd in commands):
+    if not any(pyfltr.command.runner.get_mise_active_tool_key(cmd) is not None for cmd in commands):
         return None
-    result = pyfltr.command._get_mise_active_tools(config)  # pylint: disable=protected-access
+    result = pyfltr.command.mise._get_mise_active_tools(config)  # pylint: disable=protected-access
     info: dict[str, typing.Any] = {"status": result.status}
     if result.detail is not None:
         info["detail"] = result.detail
@@ -294,7 +296,7 @@ def collect_mise_active_tools_for_header(
 
 
 def write_jsonl_streaming(
-    result: pyfltr.command.CommandResult,
+    result: pyfltr.command.core.CommandResult,
     config: pyfltr.config.config.Config,
 ) -> None:
     """1コマンド分のdiagnostic行+command行を構造化出力loggerに即時書き出す。
@@ -309,7 +311,7 @@ def write_jsonl_streaming(
 
 
 def write_jsonl_footer(
-    results: list[pyfltr.command.CommandResult],
+    results: list[pyfltr.command.core.CommandResult],
     *,
     exit_code: int,
     warnings: list[dict[str, typing.Any]] | None = None,
@@ -393,7 +395,7 @@ def _build_warning_record(entry: dict[str, typing.Any]) -> dict[str, typing.Any]
     return record
 
 
-def _build_message_dict(error: pyfltr.error_parser.ErrorLocation) -> dict[str, typing.Any]:
+def _build_message_dict(error: pyfltr.command.error_parser.ErrorLocation) -> dict[str, typing.Any]:
     """ErrorLocationを集約`messages[]`要素のdictに変換する。
 
     フィールド順は`line` → `col` → `end_line` → `end_col` → `rule` →
@@ -420,7 +422,7 @@ def _build_message_dict(error: pyfltr.error_parser.ErrorLocation) -> dict[str, t
 
 
 def _build_command_record(
-    result: pyfltr.command.CommandResult,
+    result: pyfltr.command.core.CommandResult,
     *,
     diagnostics: int,
     diagnostic_total: int | None = None,
@@ -566,7 +568,7 @@ def _build_summary_guidance(
 
 
 def _build_summary_record(
-    ordered_results: list[pyfltr.command.CommandResult],
+    ordered_results: list[pyfltr.command.core.CommandResult],
     *,
     exit_code: int,
     run_id: str | None = None,

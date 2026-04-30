@@ -14,9 +14,12 @@ import typing
 from textual.app import App, ComposeResult
 from textual.widgets import DataTable, Log, TabbedContent, TabPane
 
-import pyfltr.command
+import pyfltr.command.core
+import pyfltr.command.dispatcher
+import pyfltr.command.error_parser
+import pyfltr.command.process
+import pyfltr.command.targets
 import pyfltr.config.config
-import pyfltr.error_parser
 import pyfltr.state.executor
 import pyfltr.state.only_failed
 import pyfltr.state.stage_runner
@@ -38,13 +41,13 @@ def _format_errors_tab_label(error_count: int, warning_count: int) -> str:
 def run_commands_with_ui(
     commands: list[str],
     args: argparse.Namespace,
-    base_ctx: pyfltr.command.ExecutionBaseContext,
+    base_ctx: pyfltr.command.core.ExecutionBaseContext,
     *,
-    archive_hook: typing.Callable[[pyfltr.command.CommandResult], None] | None = None,
-    on_result: typing.Callable[[pyfltr.command.CommandResult], None] | None = None,
+    archive_hook: typing.Callable[[pyfltr.command.core.CommandResult], None] | None = None,
+    on_result: typing.Callable[[pyfltr.command.core.CommandResult], None] | None = None,
     fail_fast: bool = False,
     only_failed_targets: dict[str, pyfltr.state.only_failed.ToolTargets] | None = None,
-) -> tuple[list[pyfltr.command.CommandResult], int]:
+) -> tuple[list[pyfltr.command.core.CommandResult], int]:
     """UI付きでコマンドを実行。
 
     `base_ctx`はパイプライン全体で不変のコンテキスト（config・all_files・cache_store・
@@ -118,10 +121,10 @@ class UIApp(App):
         self,
         commands: list[str],
         args: argparse.Namespace,
-        base_ctx: pyfltr.command.ExecutionBaseContext,
+        base_ctx: pyfltr.command.core.ExecutionBaseContext,
         *,
-        archive_hook: typing.Callable[[pyfltr.command.CommandResult], None] | None = None,
-        on_result: typing.Callable[[pyfltr.command.CommandResult], None] | None = None,
+        archive_hook: typing.Callable[[pyfltr.command.core.CommandResult], None] | None = None,
+        on_result: typing.Callable[[pyfltr.command.core.CommandResult], None] | None = None,
         fail_fast: bool = False,
         only_failed_targets: dict[str, pyfltr.state.only_failed.ToolTargets] | None = None,
     ) -> None:
@@ -136,7 +139,7 @@ class UIApp(App):
         self._on_result = on_result
         self._fail_fast = fail_fast
         self._only_failed_targets = only_failed_targets
-        self.results: list[pyfltr.command.CommandResult] = []
+        self.results: list[pyfltr.command.core.CommandResult] = []
         self.lock = threading.Lock()
         self.last_ctrl_c_time: float = 0.0
         self.ctrl_c_timeout: float = 1.0  # 1秒以内の連続押しで終了
@@ -158,7 +161,7 @@ class UIApp(App):
         self._interrupt_running_snapshot: set[str] = set()
         self._interrupted_commands: dict[str, None] = {}
         # エラー蓄積用（Errorsタブの即時更新に使用）
-        self._all_errors: list[pyfltr.error_parser.ErrorLocation] = []
+        self._all_errors: list[pyfltr.command.error_parser.ErrorLocation] = []
         self._errors_tab_exists = False
 
     def compose(self) -> ComposeResult:
@@ -217,7 +220,7 @@ class UIApp(App):
                     with self.lock:
                         self._interrupt_running_snapshot = set(self._subprocess_running_commands)
                         self._interrupted = True
-                    pyfltr.command.terminate_active_processes()
+                    pyfltr.command.process.terminate_active_processes()
                     self.notify("中断処理中です。完了済みツールの結果をまとめています...")
                     self.last_ctrl_c_time = current_time
                 else:
@@ -226,7 +229,7 @@ class UIApp(App):
                     # もう一度念押ししてからexitする（孫プロセスが残ってworkerが
                     # 終わらないケースの退路）。
                     self._exit_requested = True
-                    pyfltr.command.terminate_active_processes()
+                    pyfltr.command.process.terminate_active_processes()
                     self.exit(return_code=130)
             else:
                 # 初回またはタイムアウト後のCtrl+C
@@ -375,7 +378,7 @@ class UIApp(App):
                         if self._fail_fast and not aborted and lt_result.has_error:
                             aborted = True
                             pyfltr.state.stage_runner.cancel_pending_futures(future_to_command, aborted_commands)
-                            pyfltr.command.terminate_active_processes()
+                            pyfltr.command.process.terminate_active_processes()
                     # 中断済みの場合は未開始futureをまとめてキャンセルする（終端処理）。
                     if self._interrupted:
                         pyfltr.state.stage_runner.cancel_pending_futures(future_to_command, aborted_commands)
@@ -451,7 +454,7 @@ class UIApp(App):
             except Exception:
                 logging.error(error_msg)
 
-    def _execute_command(self, command: str, *, fix_stage: bool = False) -> pyfltr.command.CommandResult:
+    def _execute_command(self, command: str, *, fix_stage: bool = False) -> pyfltr.command.core.CommandResult:
         """出力をキャプチャしながらコマンド実行。"""
         # 中断済みならsubprocessを一切起動せずskippedで返す（早期離脱）。
         if self._interrupted:
@@ -482,7 +485,7 @@ class UIApp(App):
 
             # JSONパーサー対応ツールではストリーミング出力を抑制し、
             # 完了後にErrorLocationベースの表示に切り替える。
-            has_custom_parser = command in pyfltr.error_parser.get_custom_parser_commands()
+            has_custom_parser = command in pyfltr.command.error_parser.get_custom_parser_commands()
             callback: typing.Callable[[str], None] | None = None
             if not has_custom_parser:
 
@@ -501,17 +504,17 @@ class UIApp(App):
                     self._subprocess_running_commands.discard(command)
 
             try:
-                ctx = pyfltr.command.ExecutionContext(
+                ctx = pyfltr.command.core.ExecutionContext(
                     base=self._base_ctx,
                     fix_stage=fix_stage,
-                    only_failed_targets=pyfltr.command.pick_targets(self._only_failed_targets, command),
+                    only_failed_targets=pyfltr.command.targets.pick_targets(self._only_failed_targets, command),
                     on_output=callback,
                     is_interrupted=lambda: self._interrupted,
                     on_subprocess_start=_on_subprocess_start,
                     on_subprocess_end=_on_subprocess_end,
                 )
-                result = pyfltr.command.execute_command(command, self.args, ctx)
-            except pyfltr.command.InterruptedExecution:
+                result = pyfltr.command.dispatcher.execute_command(command, self.args, ctx)
+            except pyfltr.command.process.InterruptedExecution:
                 # execute_command 内部の多段実行経路で Ctrl+C が発生した場合の協調停止。
                 with self.lock:
                     self._interrupted_commands[command] = None
@@ -538,12 +541,12 @@ class UIApp(App):
             if has_custom_parser:
                 self._safe_call_from_thread(self._clear_log, f"#output-{command}")
                 if result.errors:
-                    lines = [pyfltr.error_parser.format_error(e) for e in result.errors]
+                    lines = [pyfltr.command.error_parser.format_error(e) for e in result.errors]
                     self._safe_call_from_thread(self._write_log, f"#output-{command}", "\n".join(lines))
                 elif result.alerted:
                     self._safe_call_from_thread(self._write_log, f"#output-{command}", result.output)
                 else:
-                    summary = pyfltr.error_parser.parse_summary(command, result.output)
+                    summary = pyfltr.command.error_parser.parse_summary(command, result.output)
                     if summary:
                         self._safe_call_from_thread(self._write_log, f"#output-{command}", summary)
 
@@ -561,7 +564,7 @@ class UIApp(App):
             # エラーまたは警告があればErrorsタブを即時追加/更新
             if result.errors:
                 self._all_errors.extend(result.errors)
-            sorted_errors = pyfltr.error_parser.sort_errors(self._all_errors, self.config.command_names)
+            sorted_errors = pyfltr.command.error_parser.sort_errors(self._all_errors, self.config.command_names)
             current_warnings = pyfltr.warnings_.collected_warnings()
             if sorted_errors or current_warnings:
                 self._safe_call_from_thread(self._update_errors_tab, sorted_errors, current_warnings)
@@ -570,7 +573,7 @@ class UIApp(App):
 
     async def _update_errors_tab(
         self,
-        errors: list[pyfltr.error_parser.ErrorLocation],
+        errors: list[pyfltr.command.error_parser.ErrorLocation],
         warnings: list[dict[str, typing.Any]],
     ) -> None:
         """Errorsタブを追加または更新。初回のみアクティブに切り替え。
@@ -578,7 +581,7 @@ class UIApp(App):
         警告はerrorsの後ろに「warnings:」セクションとして追記する。
         """
         tc = self.query_one(TabbedContent)
-        sections: list[str] = [pyfltr.error_parser.format_error(e) for e in errors]
+        sections: list[str] = [pyfltr.command.error_parser.format_error(e) for e in errors]
         if warnings:
             if sections:
                 sections.append("")
@@ -652,7 +655,7 @@ class UIApp(App):
         `register_interrupted=True`のとき、各コマンド名を`self._interrupted_commands`にも
         登録する（Ctrl+C経路限定。fail-fastでは登録しない）。
         """
-        pyfltr.command.terminate_active_processes()
+        pyfltr.command.process.terminate_active_processes()
         for command in commands:
             skipped = pyfltr.state.stage_runner.make_skipped_result(command, self.config, reason=reason)
             self.results.append(skipped)

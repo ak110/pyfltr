@@ -14,7 +14,7 @@ import sys
 import typing
 
 import pyfltr.cli.output_format
-import pyfltr.command
+import pyfltr.command.core
 import pyfltr.config.config
 import pyfltr.warnings_
 
@@ -72,7 +72,7 @@ class OutputFormatter(typing.Protocol):
         - text / github-annotations: 何もしない（ヘッダー出力はmain.pyが担う）
         """
 
-    def on_result(self, ctx: RunOutputContext, result: pyfltr.command.CommandResult) -> None:
+    def on_result(self, ctx: RunOutputContext, result: pyfltr.command.core.CommandResult) -> None:
         """1ツール完了時に呼ぶ。`archive_hook`の後に呼ばれることが前提。
 
         - JSONL: diagnostic行 + tool行をstreaming書き出し
@@ -83,7 +83,7 @@ class OutputFormatter(typing.Protocol):
     def on_finish(
         self,
         ctx: RunOutputContext,
-        results: list[pyfltr.command.CommandResult],
+        results: list[pyfltr.command.core.CommandResult],
         exit_code: int,
         warnings: list[dict[str, typing.Any]],
     ) -> None:
@@ -134,13 +134,13 @@ class TextFormatter:
     def on_start(self, ctx: RunOutputContext) -> None:
         """text形式の開始時処理。ヘッダー出力は`main.py`が担うため何もしない。"""
 
-    def on_result(self, ctx: RunOutputContext, result: pyfltr.command.CommandResult) -> None:
+    def on_result(self, ctx: RunOutputContext, result: pyfltr.command.core.CommandResult) -> None:
         """text形式のon_result。即時ログはcli._run_one_command（per_command_log経路）が担うため何もしない。"""
 
     def on_finish(
         self,
         ctx: RunOutputContext,
-        results: list[pyfltr.command.CommandResult],
+        results: list[pyfltr.command.core.CommandResult],
         exit_code: int,
         warnings: list[dict[str, typing.Any]],
     ) -> None:
@@ -172,13 +172,13 @@ class GitHubAnnotationsFormatter:
     def on_start(self, ctx: RunOutputContext) -> None:
         """github-annotations形式の開始時処理。何もしない。"""
 
-    def on_result(self, ctx: RunOutputContext, result: pyfltr.command.CommandResult) -> None:
+    def on_result(self, ctx: RunOutputContext, result: pyfltr.command.core.CommandResult) -> None:
         """github-annotations形式のon_result。即時ログはcli._run_one_command（per_command_log経路）が担うため何もしない。"""
 
     def on_finish(
         self,
         ctx: RunOutputContext,
-        results: list[pyfltr.command.CommandResult],
+        results: list[pyfltr.command.core.CommandResult],
         exit_code: int,
         warnings: list[dict[str, typing.Any]],
     ) -> None:
@@ -223,7 +223,7 @@ class JSONLFormatter:
             format_source=ctx.format_source,
         )
 
-    def on_result(self, ctx: RunOutputContext, result: pyfltr.command.CommandResult) -> None:
+    def on_result(self, ctx: RunOutputContext, result: pyfltr.command.core.CommandResult) -> None:
         """Diagnostic行 + tool行をstreaming書き出しする。"""
         from pyfltr.output import jsonl as llm_output  # pylint: disable=import-outside-toplevel
 
@@ -232,7 +232,7 @@ class JSONLFormatter:
     def on_finish(
         self,
         ctx: RunOutputContext,
-        results: list[pyfltr.command.CommandResult],
+        results: list[pyfltr.command.core.CommandResult],
         exit_code: int,
         warnings: list[dict[str, typing.Any]],
     ) -> None:
@@ -276,13 +276,13 @@ class SARIFFormatter:
     def on_start(self, ctx: RunOutputContext) -> None:
         """SARIFは事前準備なし。"""
 
-    def on_result(self, ctx: RunOutputContext, result: pyfltr.command.CommandResult) -> None:
+    def on_result(self, ctx: RunOutputContext, result: pyfltr.command.core.CommandResult) -> None:
         """SARIFはバッファリング。on_finishで一括書き出しするため何もしない。"""
 
     def on_finish(
         self,
         ctx: RunOutputContext,
-        results: list[pyfltr.command.CommandResult],
+        results: list[pyfltr.command.core.CommandResult],
         exit_code: int,
         warnings: list[dict[str, typing.Any]],
     ) -> None:
@@ -326,13 +326,13 @@ class CodeQualityFormatter:
     def on_start(self, ctx: RunOutputContext) -> None:
         """Code Qualityは事前準備なし。"""
 
-    def on_result(self, ctx: RunOutputContext, result: pyfltr.command.CommandResult) -> None:
+    def on_result(self, ctx: RunOutputContext, result: pyfltr.command.core.CommandResult) -> None:
         """Code Qualityはバッファリング。on_finishで一括書き出しするため何もしない。"""
 
     def on_finish(
         self,
         ctx: RunOutputContext,
-        results: list[pyfltr.command.CommandResult],
+        results: list[pyfltr.command.core.CommandResult],
         exit_code: int,
         warnings: list[dict[str, typing.Any]],
     ) -> None:

@@ -15,7 +15,9 @@ import sys
 import typing
 
 import pyfltr.cli.output_format
-import pyfltr.command
+import pyfltr.command.dispatcher
+import pyfltr.command.mise
+import pyfltr.command.runner
 import pyfltr.config.config
 
 _OUTPUT_FORMATS: tuple[str, ...] = ("text", "json")
@@ -91,7 +93,7 @@ def _collect_info(command: str, config: pyfltr.config.config.Config, *, do_check
     判定キーをまとめて露出し、自己診断や名称ずれ検出に使えるようにする。
     """
     enabled = bool(config.values.get(command, False))
-    runner, source = pyfltr.command.resolve_runner(command, config)
+    runner, source = pyfltr.command.runner.resolve_runner(command, config)
 
     base: dict[str, typing.Any] = {
         "command": command,
@@ -106,7 +108,7 @@ def _collect_info(command: str, config: pyfltr.config.config.Config, *, do_check
 
     # mise active tools判定で照合に使うキーは、対象コマンドがmise backendに登録されている
     # 場合のみ意味があるため、登録外（python系・js系等）は省略する。
-    active_tool_key = pyfltr.command.get_mise_active_tool_key(command)
+    active_tool_key = pyfltr.command.runner.get_mise_active_tool_key(command)
     if active_tool_key is not None:
         base["mise_active_tool_key"] = active_tool_key
 
@@ -114,7 +116,7 @@ def _collect_info(command: str, config: pyfltr.config.config.Config, *, do_check
         # `--check` 真時のみmise設定判定の副作用（trust経由再実行）も許可する。
         # `--check` 偽時は副作用なし契約を維持し、mise設定判定も副作用OFFで動かす
         # （未信頼config由来エラーや取得失敗を「記述なし」扱いとして従来形を返す）。
-        resolved = pyfltr.command.build_commandline(command, config, allow_side_effects=do_check)
+        resolved = pyfltr.command.runner.build_commandline(command, config, allow_side_effects=do_check)
     except (ValueError, FileNotFoundError) as e:
         base["resolved"] = False
         base["error"] = str(e)
@@ -127,13 +129,13 @@ def _collect_info(command: str, config: pyfltr.config.config.Config, *, do_check
     # 実際に実行されるargv全体（対象ファイル抜き）を表示する。
     # `build_commandline`の戻り値は実行プレフィックスのみで、`{command}-args`等が反映されないため、
     # `build_invocation_argv`経由で通常段の最終argvを組み立てる。
-    base["commandline"] = pyfltr.command.build_invocation_argv(
+    base["commandline"] = pyfltr.command.runner.build_invocation_argv(
         command, config, list(resolved.commandline), additional_args=[], fix_stage=False
     )
     # fix-argsが定義されているコマンドでは、fix段でもargvが異なるため併記する。
     # textlintは`--format`ペアを除去する特殊経路となる（`build_invocation_argv`内で処理）。
     if config.values.get(f"{command}-fix-args"):
-        base["fix_commandline"] = pyfltr.command.build_invocation_argv(
+        base["fix_commandline"] = pyfltr.command.runner.build_invocation_argv(
             command, config, list(resolved.commandline), additional_args=[], fix_stage=True
         )
     # directモードではshutil.whichで絶対パスへ解決済み。それ以外（mise / pnpx等）は
@@ -145,7 +147,7 @@ def _collect_info(command: str, config: pyfltr.config.config.Config, *, do_check
     if resolved.effective_runner == "mise":
         # `_get_mise_active_tools`は`build_commandline`内で同じ`allow_side_effects`値で
         # キャッシュ済み。ここで再呼び出ししても副作用は再発生せず、直前の取得結果をそのまま得る。
-        active_result = pyfltr.command._get_mise_active_tools(config, allow_side_effects=do_check)  # pylint: disable=protected-access
+        active_result = pyfltr.command.mise._get_mise_active_tools(config, allow_side_effects=do_check)  # pylint: disable=protected-access
         mise_info: dict[str, typing.Any] = {"status": active_result.status}
         if active_result.detail is not None:
             mise_info["detail"] = active_result.detail
@@ -161,7 +163,7 @@ def _collect_info(command: str, config: pyfltr.config.config.Config, *, do_check
 
     if do_check:
         try:
-            checked = pyfltr.command.ensure_mise_available(resolved, config, command=command)
+            checked = pyfltr.command.runner.ensure_mise_available(resolved, config, command=command)
         except FileNotFoundError as e:
             base["check_passed"] = False
             base["check_error"] = str(e)

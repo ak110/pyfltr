@@ -17,7 +17,7 @@ import platformdirs
 import tomlkit
 import tomlkit.exceptions
 
-from pyfltr.builtin_commands import (
+from pyfltr.command.builtin import (
     AUTO_ARGS,
     BIN_RUNNERS,
     BUILTIN_COMMAND_NAMES,

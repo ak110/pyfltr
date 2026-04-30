@@ -14,7 +14,7 @@ import pathlib
 import pytest
 
 import pyfltr.cli.main
-import pyfltr.error_parser
+import pyfltr.command.error_parser
 import pyfltr.state.archive
 from tests.conftest import make_error_location as _make_error
 from tests.conftest import seed_archive_run as _seed_run
@@ -248,7 +248,7 @@ def test_show_run_tool_text_renders_hint_urls_and_hints(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """`hint_urls`と`hints`がtool.jsonにあるとき`show-run --commands`のtext出力に表示される。"""
-    error = pyfltr.error_parser.ErrorLocation(
+    error = pyfltr.command.error_parser.ErrorLocation(
         file="src/a.py",
         line=1,
         col=2,

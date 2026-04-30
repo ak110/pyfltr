@@ -6,8 +6,8 @@ import pathlib
 
 import pytest
 
-import pyfltr.command
-import pyfltr.error_parser
+import pyfltr.command.core
+import pyfltr.command.error_parser
 import pyfltr.state.archive
 from tests.conftest import make_archive_store as _make_store
 from tests.conftest import make_command_result as _make_result

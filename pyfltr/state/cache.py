@@ -44,9 +44,9 @@ import pathlib
 import shutil
 import typing
 
-import pyfltr.command
+import pyfltr.command.core
+import pyfltr.command.error_parser
 import pyfltr.config.config
-import pyfltr.error_parser
 import pyfltr.state.archive
 
 logger = logging.getLogger(__name__)
@@ -127,7 +127,7 @@ class CacheStore:
             hasher.update(b"\n")
         return hasher.hexdigest()
 
-    def get(self, command: str, key: str) -> pyfltr.command.CommandResult | None:
+    def get(self, command: str, key: str) -> pyfltr.command.core.CommandResult | None:
         """キャッシュヒット時はCommandResultを復元して返す。ミス時はNone。"""
         path = self._entry_path(command, key)
         if not path.exists():
@@ -139,7 +139,7 @@ class CacheStore:
             return None
         return _deserialize_result(data)
 
-    def put(self, command: str, key: str, result: pyfltr.command.CommandResult, *, run_id: str | None) -> None:
+    def put(self, command: str, key: str, result: pyfltr.command.core.CommandResult, *, run_id: str | None) -> None:
         """CommandResult をキャッシュに書き込む。
 
         `run_id`は`cached_from`復元用のソースrun_id。`None`の場合は書き込まない
@@ -260,7 +260,7 @@ def _sanitize_tool_name(name: str) -> str:
     return safe or "_"
 
 
-def _serialize_result(result: pyfltr.command.CommandResult, *, source_run_id: str) -> dict[str, typing.Any]:
+def _serialize_result(result: pyfltr.command.core.CommandResult, *, source_run_id: str) -> dict[str, typing.Any]:
     """CommandResult をキャッシュエントリ用 dict に変換する。"""
     return {
         "source_run_id": source_run_id,
@@ -277,11 +277,11 @@ def _serialize_result(result: pyfltr.command.CommandResult, *, source_run_id: st
     }
 
 
-def _deserialize_result(data: dict[str, typing.Any]) -> pyfltr.command.CommandResult:
+def _deserialize_result(data: dict[str, typing.Any]) -> pyfltr.command.core.CommandResult:
     """キャッシュエントリ用dictからCommandResultを復元する（cached=Trueを付与）。"""
     errors = [_dict_to_error(e) for e in data.get("errors", [])]
     target_files = [pathlib.Path(p) for p in data.get("target_files", [])]
-    return pyfltr.command.CommandResult(
+    return pyfltr.command.core.CommandResult(
         command=data["command"],
         command_type=data["command_type"],
         commandline=list(data["commandline"]),
@@ -297,7 +297,7 @@ def _deserialize_result(data: dict[str, typing.Any]) -> pyfltr.command.CommandRe
     )
 
 
-def _error_to_dict(error: pyfltr.error_parser.ErrorLocation) -> dict[str, typing.Any]:
+def _error_to_dict(error: pyfltr.command.error_parser.ErrorLocation) -> dict[str, typing.Any]:
     """ErrorLocation をキャッシュ用 dict に変換する。"""
     return {
         "command": error.command,
@@ -313,9 +313,9 @@ def _error_to_dict(error: pyfltr.error_parser.ErrorLocation) -> dict[str, typing
     }
 
 
-def _dict_to_error(data: dict[str, typing.Any]) -> pyfltr.error_parser.ErrorLocation:
+def _dict_to_error(data: dict[str, typing.Any]) -> pyfltr.command.error_parser.ErrorLocation:
     """Dict から ErrorLocation を復元する。"""
-    return pyfltr.error_parser.ErrorLocation(
+    return pyfltr.command.error_parser.ErrorLocation(
         command=data["command"],
         file=data["file"],
         line=data["line"],

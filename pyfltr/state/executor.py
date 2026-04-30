@@ -5,7 +5,7 @@ import contextlib
 import pathlib
 import threading
 
-import pyfltr.command
+import pyfltr.command.targets
 import pyfltr.config.config
 
 _serial_group_locks: dict[str, threading.Lock] = {}
@@ -77,7 +77,7 @@ def split_commands_for_execution(
     # 推定実行時間の降順でソート（LPT: 重いツールを先に開始）
     def _estimate_time(c: str) -> float:
         info = config.commands[c]
-        n = len(pyfltr.command.filter_by_globs(all_files, info.target_globs()))
+        n = len(pyfltr.command.targets.filter_by_globs(all_files, info.target_globs()))
         return info.fixed_cost + info.per_file_cost * n
 
     linters_and_testers.sort(key=_estimate_time, reverse=True)

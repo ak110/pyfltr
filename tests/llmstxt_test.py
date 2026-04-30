@@ -10,9 +10,9 @@ import pathlib
 
 import yaml
 
-import pyfltr.builtin_commands
 import pyfltr.cli.main
 import pyfltr.cli.parser
+import pyfltr.command.builtin
 
 
 @functools.lru_cache(maxsize=1)
@@ -77,7 +77,7 @@ def test_llmstxt_contains_all_builtin_commands() -> None:
     description = _get_markdown_description()
     assert description, "mkdocs.yml から markdown_description を取得できなかった"
 
-    command_names = pyfltr.builtin_commands.BUILTIN_COMMAND_NAMES
+    command_names = pyfltr.command.builtin.BUILTIN_COMMAND_NAMES
     assert command_names, "ビルトインコマンド名を取得できなかった"
 
     missing = [name for name in command_names if name not in description]

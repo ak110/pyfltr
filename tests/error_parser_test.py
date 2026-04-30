@@ -7,7 +7,7 @@ import pathlib
 
 import pytest
 
-import pyfltr.error_parser
+import pyfltr.command.error_parser
 
 
 @pytest.mark.parametrize(
@@ -120,7 +120,7 @@ def test_parse_errors(
     expected_first_line: int | None,
 ) -> None:
     """ビルトインパーサーのテスト。"""
-    errors = pyfltr.error_parser.parse_errors(command, output)
+    errors = pyfltr.command.error_parser.parse_errors(command, output)
     assert len(errors) == expected_count
     if expected_count > 0:
         assert errors[0].file == expected_first_file
@@ -157,7 +157,7 @@ def test_parse_errors_eslint_json() -> None:
             },
         ]
     )
-    errors = pyfltr.error_parser.parse_errors("eslint", output)
+    errors = pyfltr.command.error_parser.parse_errors("eslint", output)
     assert len(errors) == 2
     assert errors[0].file == "src/foo.js"  # cwd配下は相対パスに正規化される
     assert errors[0].line == 10
@@ -169,19 +169,19 @@ def test_parse_errors_eslint_json() -> None:
 
 def test_parse_errors_eslint_json_empty_array() -> None:
     """空配列 `[]` は空リストを返す。"""
-    errors = pyfltr.error_parser.parse_errors("eslint", "[]")
+    errors = pyfltr.command.error_parser.parse_errors("eslint", "[]")
     assert errors == []
 
 
 def test_parse_errors_eslint_json_empty_string() -> None:
     """空文字列は空リストを返す (例外なし)。"""
-    errors = pyfltr.error_parser.parse_errors("eslint", "")
+    errors = pyfltr.command.error_parser.parse_errors("eslint", "")
     assert errors == []
 
 
 def test_parse_errors_eslint_json_invalid() -> None:
     """不正なJSON（stderr混入等）は空リストを返す。"""
-    errors = pyfltr.error_parser.parse_errors("eslint", "Warning: something\n[not json]")
+    errors = pyfltr.command.error_parser.parse_errors("eslint", "Warning: something\n[not json]")
     assert errors == []
 
 
@@ -203,7 +203,7 @@ def test_parse_errors_eslint_json_no_rule_id() -> None:
             }
         ]
     )
-    errors = pyfltr.error_parser.parse_errors("eslint", output)
+    errors = pyfltr.command.error_parser.parse_errors("eslint", output)
     assert len(errors) == 1
     assert errors[0].message == "Parsing error"
 
@@ -212,7 +212,7 @@ def test_parse_errors_custom_pattern() -> None:
     """カスタムerror-patternのテスト。"""
     pattern = r"(?P<file>[^:]+):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>.+)"
     output = "src/foo.py:10:5: some error\nsrc/bar.py:20:3: another error"
-    errors = pyfltr.error_parser.parse_errors("custom-tool", output, error_pattern=pattern)
+    errors = pyfltr.command.error_parser.parse_errors("custom-tool", output, error_pattern=pattern)
     assert len(errors) == 2
     assert errors[0].file == "src/foo.py"
     assert errors[0].line == 10
@@ -225,11 +225,11 @@ def test_sort_errors() -> None:
     """エラーソートのテスト。"""
     command_names = ["ruff-check", "mypy", "pylint"]
     errors = [
-        pyfltr.error_parser.ErrorLocation(file="src/bar.py", line=10, col=None, command="mypy", message="err1"),
-        pyfltr.error_parser.ErrorLocation(file="src/bar.py", line=10, col=None, command="ruff-check", message="err2"),
-        pyfltr.error_parser.ErrorLocation(file="src/foo.py", line=5, col=None, command="mypy", message="err3"),
+        pyfltr.command.error_parser.ErrorLocation(file="src/bar.py", line=10, col=None, command="mypy", message="err1"),
+        pyfltr.command.error_parser.ErrorLocation(file="src/bar.py", line=10, col=None, command="ruff-check", message="err2"),
+        pyfltr.command.error_parser.ErrorLocation(file="src/foo.py", line=5, col=None, command="mypy", message="err3"),
     ]
-    sorted_errors = pyfltr.error_parser.sort_errors(errors, command_names)
+    sorted_errors = pyfltr.command.error_parser.sort_errors(errors, command_names)
 
     # ファイル名でソート→同一箇所はcommand_names順
     assert sorted_errors[0].file == "src/bar.py"
@@ -244,27 +244,30 @@ def test_parse_errors_normalizes_absolute_path() -> None:
     cwd = str(pathlib.Path.cwd())
     # pyright風の絶対パス出力
     output = f"  {cwd}/src/foo.py:10:5 - error: some type error"
-    errors = pyfltr.error_parser.parse_errors("pyright", output)
+    errors = pyfltr.command.error_parser.parse_errors("pyright", output)
     assert len(errors) == 1
     assert errors[0].file == "src/foo.py"  # 相対パスになっている
 
 
 def test_format_error() -> None:
     """エラーフォーマットのテスト。"""
-    error = pyfltr.error_parser.ErrorLocation(file="src/foo.py", line=10, col=5, command="mypy", message="some error")
-    assert pyfltr.error_parser.format_error(error) == "src/foo.py:10:5: [mypy] some error"
+    error = pyfltr.command.error_parser.ErrorLocation(file="src/foo.py", line=10, col=5, command="mypy", message="some error")
+    assert pyfltr.command.error_parser.format_error(error) == "src/foo.py:10:5: [mypy] some error"
 
     # colなし
-    error_no_col = pyfltr.error_parser.ErrorLocation(
+    error_no_col = pyfltr.command.error_parser.ErrorLocation(
         file="src/foo.py", line=10, col=None, command="ruff-check", message="another error"
     )
-    assert pyfltr.error_parser.format_error(error_no_col) == "src/foo.py:10: [ruff-check] another error"
+    assert pyfltr.command.error_parser.format_error(error_no_col) == "src/foo.py:10: [ruff-check] another error"
 
     # ruleあり
-    error_with_rule = pyfltr.error_parser.ErrorLocation(
+    error_with_rule = pyfltr.command.error_parser.ErrorLocation(
         file="src/foo.py", line=10, col=5, command="ruff-check", message="`os` imported but unused", rule="F401"
     )
-    assert pyfltr.error_parser.format_error(error_with_rule) == "src/foo.py:10:5: [ruff-check:F401] `os` imported but unused"
+    assert (
+        pyfltr.command.error_parser.format_error(error_with_rule)
+        == "src/foo.py:10:5: [ruff-check:F401] `os` imported but unused"
+    )
 
 
 def test_parse_ruff_check_json() -> None:
@@ -282,7 +285,7 @@ def test_parse_ruff_check_json() -> None:
             },
         ]
     )
-    errors = pyfltr.error_parser.parse_errors("ruff-check", output)
+    errors = pyfltr.command.error_parser.parse_errors("ruff-check", output)
     assert len(errors) == 1
     assert errors[0].file == "src/foo.py"
     assert errors[0].line == 1
@@ -296,7 +299,7 @@ def test_parse_ruff_check_json() -> None:
 def test_parse_ruff_check_json_fallback() -> None:
     """ruff-check: JSONでない出力はregexにフォールバックする。"""
     output = "src/foo.py:10:5: F401 `os` imported but unused"
-    errors = pyfltr.error_parser.parse_errors("ruff-check", output)
+    errors = pyfltr.command.error_parser.parse_errors("ruff-check", output)
     assert len(errors) == 1
     assert errors[0].file == "src/foo.py"
     assert errors[0].line == 10
@@ -316,7 +319,7 @@ def test_parse_ruff_check_json_fix_none() -> None:
             },
         ]
     )
-    errors = pyfltr.error_parser.parse_errors("ruff-check", output)
+    errors = pyfltr.command.error_parser.parse_errors("ruff-check", output)
     assert len(errors) == 1
     assert errors[0].fix == "none"
 
@@ -324,7 +327,7 @@ def test_parse_ruff_check_json_fix_none() -> None:
 def test_parse_typos_jsonl_no_corrections_is_none() -> None:
     """typos: correctionsが空の場合は`fix == "none"`。"""
     output = '{"path":"src/foo.py","line_num":3,"typo":"weirdword","corrections":[],"type":"typo"}\n'
-    errors = pyfltr.error_parser.parse_errors("typos", output)
+    errors = pyfltr.command.error_parser.parse_errors("typos", output)
     assert len(errors) == 1
     assert errors[0].fix == "none"
 
@@ -347,7 +350,7 @@ def test_parse_textlint_json_fix_none() -> None:
             }
         ]
     )
-    errors = pyfltr.error_parser.parse_errors("textlint", output)
+    errors = pyfltr.command.error_parser.parse_errors("textlint", output)
     assert len(errors) == 1
     assert errors[0].fix == "none"
 
@@ -373,7 +376,7 @@ def test_parse_pylint_json() -> None:
             "statistics": {},
         }
     )
-    errors = pyfltr.error_parser.parse_errors("pylint", output)
+    errors = pyfltr.command.error_parser.parse_errors("pylint", output)
     assert len(errors) == 1
     assert errors[0].rule == "missing-module-docstring"
     assert errors[0].severity == "warning"
@@ -409,7 +412,7 @@ def test_parse_pylint_json_with_stderr_prefix() -> None:
         "Captured stderr while importing pylint_pydantic:\n"
         "site-packages/pylint_pydantic/__init__.py:2: DeprecationWarning: ...\n"
     )
-    errors = pyfltr.error_parser.parse_errors("pylint", prefix + body)
+    errors = pyfltr.command.error_parser.parse_errors("pylint", prefix + body)
     assert len(errors) == 1
     assert errors[0].rule == "missing-module-docstring"
 
@@ -417,7 +420,7 @@ def test_parse_pylint_json_with_stderr_prefix() -> None:
 def test_parse_pylint_json_fallback() -> None:
     """pylint: JSONでない出力はregexにフォールバックする。"""
     output = "src/foo.py:10:5: C0114: Missing module docstring (missing-module-docstring)"
-    errors = pyfltr.error_parser.parse_errors("pylint", output)
+    errors = pyfltr.command.error_parser.parse_errors("pylint", output)
     assert len(errors) == 1
     assert errors[0].line == 10
 
@@ -439,7 +442,7 @@ def test_parse_pyright_json() -> None:
             "summary": {"errorCount": 1},
         }
     )
-    errors = pyfltr.error_parser.parse_errors("pyright", output)
+    errors = pyfltr.command.error_parser.parse_errors("pyright", output)
     assert len(errors) == 1
     assert errors[0].line == 10  # 0-based→1-based
     assert errors[0].col == 5  # 0-based→1-based
@@ -450,7 +453,7 @@ def test_parse_pyright_json() -> None:
 def test_parse_pyright_json_fallback() -> None:
     """pyright: JSONでない出力はregexにフォールバックする。"""
     output = '  src/foo.py:10:5 - error: Type "int" is not assignable'
-    errors = pyfltr.error_parser.parse_errors("pyright", output)
+    errors = pyfltr.command.error_parser.parse_errors("pyright", output)
     assert len(errors) == 1
     assert errors[0].line == 10
 
@@ -469,7 +472,7 @@ def test_parse_shellcheck_json() -> None:
             },
         ]
     )
-    errors = pyfltr.error_parser.parse_errors("shellcheck", output)
+    errors = pyfltr.command.error_parser.parse_errors("shellcheck", output)
     assert len(errors) == 1
     assert errors[0].rule == "SC2086"
     assert errors[0].severity == "warning"
@@ -495,7 +498,7 @@ def test_parse_textlint_json() -> None:
             }
         ]
     )
-    errors = pyfltr.error_parser.parse_errors("textlint", output)
+    errors = pyfltr.command.error_parser.parse_errors("textlint", output)
     assert len(errors) == 1
     assert errors[0].rule == "ja-technical-writing/ja-no-mixed-period"
     assert errors[0].severity == "error"
@@ -522,9 +525,9 @@ def test_parse_textlint_json_hint_for_sentence_length() -> None:
             }
         ]
     )
-    errors = pyfltr.error_parser.parse_errors("textlint", output)
+    errors = pyfltr.command.error_parser.parse_errors("textlint", output)
     assert len(errors) == 1
-    assert errors[0].hint == pyfltr.error_parser._TEXTLINT_RULE_HINTS["ja-technical-writing/sentence-length"]  # pylint: disable=protected-access
+    assert errors[0].hint == pyfltr.command.error_parser._TEXTLINT_RULE_HINTS["ja-technical-writing/sentence-length"]  # pylint: disable=protected-access
 
 
 def test_parse_textlint_json_hint_for_known_rules() -> None:
@@ -541,7 +544,7 @@ def test_parse_textlint_json_hint_for_known_rules() -> None:
                 }
             ]
         )
-        errors = pyfltr.error_parser.parse_errors("textlint", output)
+        errors = pyfltr.command.error_parser.parse_errors("textlint", output)
         assert errors[0].hint is not None, f"{rule_id} にヒントが付与されていない"
 
 
@@ -569,7 +572,7 @@ def test_parse_textlint_json_normalizes_multiline_message() -> None:
             }
         ]
     )
-    errors = pyfltr.error_parser.parse_errors("textlint", output)
+    errors = pyfltr.command.error_parser.parse_errors("textlint", output)
     assert len(errors) == 1
     assert "\n" not in errors[0].message
     assert errors[0].message.endswith("Over 3 characters. (L17:1〜23)")
@@ -593,7 +596,7 @@ def test_parse_textlint_json_normalizes_multiline_message_other_rules() -> None:
             }
         ]
     )
-    errors = pyfltr.error_parser.parse_errors("textlint", output)
+    errors = pyfltr.command.error_parser.parse_errors("textlint", output)
     assert errors[0].message == "First line. Second line."
 
 
@@ -616,7 +619,7 @@ def test_parse_textlint_json_sentence_length_appends_range_single_line() -> None
             }
         ]
     )
-    errors = pyfltr.error_parser.parse_errors("textlint", output)
+    errors = pyfltr.command.error_parser.parse_errors("textlint", output)
     assert len(errors) == 1
     assert errors[0].message.endswith("(L17:1〜23)")
 
@@ -640,7 +643,7 @@ def test_parse_textlint_json_sentence_length_appends_range_multi_line() -> None:
             }
         ]
     )
-    errors = pyfltr.error_parser.parse_errors("textlint", output)
+    errors = pyfltr.command.error_parser.parse_errors("textlint", output)
     assert errors[0].message.endswith("(L17:1〜L19:5)")
 
 
@@ -663,7 +666,7 @@ def test_parse_textlint_json_other_rules_do_not_get_range() -> None:
             }
         ]
     )
-    errors = pyfltr.error_parser.parse_errors("textlint", output)
+    errors = pyfltr.command.error_parser.parse_errors("textlint", output)
     assert errors[0].message == "Original message"
 
 
@@ -685,7 +688,7 @@ def test_parse_textlint_json_sentence_length_without_loc() -> None:
             }
         ]
     )
-    errors = pyfltr.error_parser.parse_errors("textlint", output)
+    errors = pyfltr.command.error_parser.parse_errors("textlint", output)
     assert len(errors) == 1
     assert errors[0].message == "Long sentence"
     # `loc`欠落時はend_line / end_colもNoneのまま
@@ -723,7 +726,7 @@ def test_parse_textlint_json_populates_end_position() -> None:
             }
         ]
     )
-    errors = pyfltr.error_parser.parse_errors("textlint", output)
+    errors = pyfltr.command.error_parser.parse_errors("textlint", output)
     assert len(errors) == 2
     assert (errors[0].end_line, errors[0].end_col) == (17, 23)
     assert (errors[1].end_line, errors[1].end_col) == (6, 4)
@@ -751,7 +754,7 @@ def test_parse_textlint_json_end_only_loc_populates_end_position() -> None:
             }
         ]
     )
-    errors = pyfltr.error_parser.parse_errors("textlint", output)
+    errors = pyfltr.command.error_parser.parse_errors("textlint", output)
     assert len(errors) == 1
     assert (errors[0].end_line, errors[0].end_col) == (17, 23)
     # `loc.start`が無いため範囲表記は付かない（startの値が決まらないため）
@@ -776,7 +779,7 @@ def test_parse_textlint_json_sentence_length_hint_excludes_col_note() -> None:
             }
         ]
     )
-    errors = pyfltr.error_parser.parse_errors("textlint", output)
+    errors = pyfltr.command.error_parser.parse_errors("textlint", output)
     assert errors[0].hint is not None
     assert "累積位置" not in errors[0].hint
 
@@ -787,7 +790,7 @@ def test_parse_typos_jsonl() -> None:
         '{"path":"src/foo.py","line_num":3,"byte_offset":15,"typo":"teh","corrections":["the"],"type":"typo"}\n'
         '{"path":"src/bar.py","line_num":7,"byte_offset":20,"typo":"hte","corrections":["the","he"],"type":"typo"}\n'
     )
-    errors = pyfltr.error_parser.parse_errors("typos", output)
+    errors = pyfltr.command.error_parser.parse_errors("typos", output)
     assert len(errors) == 2
     assert errors[0].file == "src/foo.py"
     assert errors[0].line == 3
@@ -800,7 +803,7 @@ def test_parse_typos_jsonl() -> None:
 def test_parse_typos_jsonl_fallback() -> None:
     """typos: JSON Linesでない出力はregexにフォールバックする。"""
     output = "src/foo.py:3:15: `teh` -> `the`"
-    errors = pyfltr.error_parser.parse_errors("typos", output)
+    errors = pyfltr.command.error_parser.parse_errors("typos", output)
     assert len(errors) == 1
     assert errors[0].line == 3
 
@@ -816,7 +819,7 @@ def test_parse_pytest_tb_short_project_frame() -> None:
         "========================= short test summary info ==========================\n"
         "FAILED tests/foo_test.py::test_bar - AssertionError: assert 1 == 2\n"
     )
-    errors = pyfltr.error_parser.parse_errors("pytest", output)
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
     assert len(errors) == 1
     assert errors[0].file == "tests/foo_test.py"
     assert errors[0].line == 42
@@ -834,7 +837,7 @@ def test_parse_pytest_tb_short_class_based_test() -> None:
         "E   AssertionError: assert 1 == 0\n"
         "========================= short test summary info ==========================\n"
     )
-    errors = pyfltr.error_parser.parse_errors("pytest", output)
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
     assert len(errors) == 1
     assert errors[0].message.startswith("TestSomething.test_method: ")
 
@@ -851,7 +854,7 @@ def test_parse_pytest_tb_short_library_exception() -> None:
         "E   httpx.ConnectError: connection refused\n"
         "========================= short test summary info ==========================\n"
     )
-    errors = pyfltr.error_parser.parse_errors("pytest", output)
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
     assert len(errors) == 1
     assert errors[0].file == "tests/api_test.py"
     assert errors[0].line == 15
@@ -874,7 +877,7 @@ def test_parse_pytest_tb_short_stdlib_exception() -> None:
         "E   FileNotFoundError: [Errno 2] No such file or directory: '/nonexistent'\n"
         "========================= short test summary info ==========================\n"
     )
-    errors = pyfltr.error_parser.parse_errors("pytest", output)
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
     assert len(errors) == 1
     assert errors[0].file == "tests/path_test.py"
     assert errors[0].line == 10
@@ -893,7 +896,7 @@ def test_parse_pytest_tb_short_all_external() -> None:
         "E   RuntimeError: fail\n"
         "========================= short test summary info ==========================\n"
     )
-    errors = pyfltr.error_parser.parse_errors("pytest", output)
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
     assert len(errors) == 1
     assert errors[0].line == 20
     assert errors[0].message.startswith("test_ext: ")
@@ -906,7 +909,7 @@ def test_parse_pytest_fallback() -> None:
         "FAILED tests/foo_test.py::test_bar - AssertionError: xxx\n"
         "========================= 1 failed in 0.5s =========================\n"
     )
-    errors = pyfltr.error_parser.parse_errors("pytest", output)
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
     assert len(errors) == 1
     assert errors[0].file == "tests/foo_test.py"
     assert errors[0].line == 0
@@ -915,7 +918,7 @@ def test_parse_pytest_fallback() -> None:
 def test_parse_glab_ci_lint_valid() -> None:
     """有効CI出力 (Validating... + ✓ ...) では空リストを返す。"""
     output = "Validating...\n✓ CI/CD YAML is valid!\n"
-    assert pyfltr.error_parser.parse_errors("glab-ci-lint", output) == []
+    assert pyfltr.command.error_parser.parse_errors("glab-ci-lint", output) == []
 
 
 def test_parse_glab_ci_lint_invalid_multi() -> None:
@@ -927,7 +930,7 @@ def test_parse_glab_ci_lint_invalid_multi() -> None:
         "- jobs:test config contains unknown keys: foo\n"
         "- root config contains unknown keys: bar\n"
     )
-    errors = pyfltr.error_parser.parse_errors("glab-ci-lint", output)
+    errors = pyfltr.command.error_parser.parse_errors("glab-ci-lint", output)
     assert len(errors) == 2
     assert all(e.command == "glab-ci-lint" for e in errors)
     assert all(e.file == ".gitlab-ci.yml" for e in errors)
@@ -940,13 +943,13 @@ def test_parse_glab_ci_lint_invalid_multi() -> None:
 def test_parse_glab_ci_lint_invalid_numbered() -> None:
     """番号付きリスト形式 (`1. xxx`) のエラー行もリストマーカーを除去して取り込む。"""
     output = ".gitlab-ci.yml is invalid\n1. unknown key foo\n2. unknown key bar\n"
-    errors = pyfltr.error_parser.parse_errors("glab-ci-lint", output)
+    errors = pyfltr.command.error_parser.parse_errors("glab-ci-lint", output)
     assert [e.message for e in errors] == ["unknown key foo", "unknown key bar"]
 
 
 def test_get_custom_parser_commands() -> None:
     """カスタムパーサー登録コマンド一覧の取得。"""
-    commands = pyfltr.error_parser.get_custom_parser_commands()
+    commands = pyfltr.command.error_parser.get_custom_parser_commands()
     assert "eslint" in commands
     assert "ruff-check" in commands
     assert "pytest" in commands
@@ -968,14 +971,14 @@ def test_parse_summary_pyright_json() -> None:
             },
         }
     )
-    result = pyfltr.error_parser.parse_summary("pyright", output)
+    result = pyfltr.command.error_parser.parse_summary("pyright", output)
     assert result == "50 files analyzed, 0 errors, 2 warnings"
 
 
 def test_parse_summary_pyright_json_no_summary() -> None:
     """pyright: summaryフィールドがない場合はNone。"""
     output = json.dumps({"generalDiagnostics": []})
-    assert pyfltr.error_parser.parse_summary("pyright", output) is None
+    assert pyfltr.command.error_parser.parse_summary("pyright", output) is None
 
 
 def test_parse_summary_pylint_json() -> None:
@@ -990,14 +993,14 @@ def test_parse_summary_pylint_json() -> None:
             },
         }
     )
-    result = pyfltr.error_parser.parse_summary("pylint", output)
+    result = pyfltr.command.error_parser.parse_summary("pylint", output)
     assert result == "42 modules linted, score: 10.0"
 
 
 def test_parse_summary_pylint_json_no_score() -> None:
     """pylint: scoreがない場合はモジュール数のみ。"""
     output = json.dumps({"messages": [], "statistics": {"modulesLinted": 10}})
-    result = pyfltr.error_parser.parse_summary("pylint", output)
+    result = pyfltr.command.error_parser.parse_summary("pylint", output)
     assert result == "10 modules linted"
 
 
@@ -1011,47 +1014,47 @@ def test_parse_summary_pytest() -> None:
         "\n"
         "============================== 25 passed in 1.23s ==============================\n"
     )
-    result = pyfltr.error_parser.parse_summary("pytest", output)
+    result = pyfltr.command.error_parser.parse_summary("pytest", output)
     assert result == "25 passed in 1.23s"
 
 
 def test_parse_summary_pytest_long_duration() -> None:
     """pytest: 長時間実行時の (H:MM:SS) 形式も正しく抽出する。"""
     output = "============================== 25 passed in 60.00s (0:01:00) ==============================\n"
-    result = pyfltr.error_parser.parse_summary("pytest", output)
+    result = pyfltr.command.error_parser.parse_summary("pytest", output)
     assert result == "25 passed in 60.00s (0:01:00)"
 
 
 def test_parse_summary_mypy_via_fallback() -> None:
     """mypy: 汎用フォールバックでSuccess行を抽出する。"""
     output = "Success: no issues found in 42 source files\n"
-    result = pyfltr.error_parser.parse_summary("mypy", output)
+    result = pyfltr.command.error_parser.parse_summary("mypy", output)
     assert result == "Success: no issues found in 42 source files"
 
 
 def test_parse_summary_json_output_returns_none() -> None:
     """JSON出力（[]等）は汎用フォールバックでNoneを返す。"""
-    assert pyfltr.error_parser.parse_summary("ruff-check", "[]") is None
-    assert pyfltr.error_parser.parse_summary("shellcheck", "[]") is None
+    assert pyfltr.command.error_parser.parse_summary("ruff-check", "[]") is None
+    assert pyfltr.command.error_parser.parse_summary("shellcheck", "[]") is None
 
 
 def test_parse_summary_empty_output() -> None:
     """空出力はNoneを返す。"""
-    assert pyfltr.error_parser.parse_summary("mypy", "") is None
-    assert pyfltr.error_parser.parse_summary("mypy", "  \n  ") is None
+    assert pyfltr.command.error_parser.parse_summary("mypy", "") is None
+    assert pyfltr.command.error_parser.parse_summary("mypy", "  \n  ") is None
 
 
 def test_extract_last_line_skips_separators() -> None:
     """区切り線のみの行をスキップして意味のある行を返す。"""
     output = "Some useful info\n===========================\n"
-    result = pyfltr.error_parser.parse_summary("unknown-tool", output)
+    result = pyfltr.command.error_parser.parse_summary("unknown-tool", output)
     assert result == "Some useful info"
 
 
 def test_parse_errors_mypy_extracts_rule() -> None:
     """mypyの末尾`[error-code]`がruleグループで抽出されrule_urlも付与される。"""
     output = 'src/foo.py:10: error: Name "x" is not defined  [name-defined]'
-    errors = pyfltr.error_parser.parse_errors("mypy", output)
+    errors = pyfltr.command.error_parser.parse_errors("mypy", output)
     assert len(errors) == 1
     assert errors[0].rule == "name-defined"
     assert errors[0].rule_url == "https://mypy.readthedocs.io/en/stable/_refs.html#code-name-defined"
@@ -1062,7 +1065,7 @@ def test_parse_errors_mypy_extracts_rule() -> None:
 def test_parse_errors_mypy_without_rule() -> None:
     """mypyで末尾[code]が無い行はrule=Noneになる。"""
     output = "src/foo.py:10: error: Something went wrong"
-    errors = pyfltr.error_parser.parse_errors("mypy", output)
+    errors = pyfltr.command.error_parser.parse_errors("mypy", output)
     assert len(errors) == 1
     assert errors[0].rule is None
     assert errors[0].rule_url is None
@@ -1071,7 +1074,7 @@ def test_parse_errors_mypy_without_rule() -> None:
 def test_parse_errors_markdownlint_extracts_rule() -> None:
     """markdownlintのMDxxxがruleグループで抽出される。"""
     output = "docs/index.md:3 MD001/heading-increment Heading levels should only increment by one level at a time"
-    errors = pyfltr.error_parser.parse_errors("markdownlint", output)
+    errors = pyfltr.command.error_parser.parse_errors("markdownlint", output)
     assert len(errors) == 1
     assert errors[0].rule == "MD001"
     assert errors[0].rule_url == "https://github.com/DavidAnson/markdownlint/blob/main/doc/MD001.md"
@@ -1091,7 +1094,7 @@ def test_parse_errors_ruff_rule_url_from_entry() -> None:
             },
         ]
     )
-    errors = pyfltr.error_parser.parse_errors("ruff-check", output)
+    errors = pyfltr.command.error_parser.parse_errors("ruff-check", output)
     assert len(errors) == 1
     assert errors[0].rule_url == "https://example.com/custom-ruff-url"
 
@@ -1109,7 +1112,7 @@ def test_parse_errors_ruff_rule_url_fallback() -> None:
             },
         ]
     )
-    errors = pyfltr.error_parser.parse_errors("ruff-check", output)
+    errors = pyfltr.command.error_parser.parse_errors("ruff-check", output)
     assert len(errors) == 1
     assert errors[0].rule_url == "https://docs.astral.sh/ruff/rules/F401/"
 
@@ -1130,7 +1133,7 @@ def test_parse_errors_pyright_rule_url() -> None:
             ],
         }
     )
-    errors = pyfltr.error_parser.parse_errors("pyright", output)
+    errors = pyfltr.command.error_parser.parse_errors("pyright", output)
     assert errors[0].rule_url == "https://microsoft.github.io/pyright/#/configuration?id=reportAssignmentType"
 
 
@@ -1148,7 +1151,7 @@ def test_parse_errors_shellcheck_rule_url() -> None:
             },
         ]
     )
-    errors = pyfltr.error_parser.parse_errors("shellcheck", output)
+    errors = pyfltr.command.error_parser.parse_errors("shellcheck", output)
     assert errors[0].rule_url == "https://www.shellcheck.net/wiki/SC2086"
 
 
@@ -1177,7 +1180,7 @@ def test_parse_errors_eslint_rule_url() -> None:
             }
         ]
     )
-    errors = pyfltr.error_parser.parse_errors("eslint", output)
+    errors = pyfltr.command.error_parser.parse_errors("eslint", output)
     assert len(errors) == 2
     assert errors[0].rule_url == "https://eslint.org/docs/latest/rules/no-unused-vars"
     # プラグインルール（スラッシュ含む）はURLを返さない
@@ -1202,7 +1205,7 @@ def test_parse_errors_textlint_no_rule_url() -> None:
             }
         ]
     )
-    errors = pyfltr.error_parser.parse_errors("textlint", output)
+    errors = pyfltr.command.error_parser.parse_errors("textlint", output)
     assert errors[0].rule_url is None
 
 
@@ -1220,5 +1223,5 @@ def test_parse_errors_shellcheck_severity_normalized() -> None:
             },
         ]
     )
-    errors = pyfltr.error_parser.parse_errors("shellcheck", output)
+    errors = pyfltr.command.error_parser.parse_errors("shellcheck", output)
     assert errors[0].severity == "info"
