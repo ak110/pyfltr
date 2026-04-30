@@ -9,6 +9,10 @@ import shutil
 import pyfltr.command.mise
 import pyfltr.config.config
 
+# `_build_mise_subprocess_env`はpyfltr.command内部APIだがサブパッケージ全域で共有する。
+# 同じサブパッケージ内の`mise.py`もfrom-importで取り込んでおり、本モジュールも倣う。
+from pyfltr.command.env import _build_mise_subprocess_env
+
 logger = __import__("logging").getLogger(__name__)
 
 
@@ -525,8 +529,6 @@ def ensure_mise_available(
     省略時は `bin_name` を案内に流用するが、cargo系のように複数コマンドが
     同じ `bin_name` を共有する場合は誤った案内になるため、極力指定する。
     """
-    from pyfltr.command.env import _build_mise_subprocess_env  # pylint: disable=import-outside-toplevel
-
     if resolved.executable != "mise":
         return resolved
     # `build_commandline` の `effective == "mise"` 分岐は次の2形態を返す。

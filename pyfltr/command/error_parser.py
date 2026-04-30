@@ -11,6 +11,7 @@ import pathlib
 import re
 import typing
 
+import pyfltr.output.github_annotations
 import pyfltr.output.rule_urls
 import pyfltr.paths
 
@@ -122,9 +123,7 @@ def format_error_github(error: ErrorLocation) -> str:
 
     `::error file=...::message`形式で出力する。
     """
-    from pyfltr.output import github_annotations  # pylint: disable=import-outside-toplevel
-
-    return github_annotations.build_workflow_command(error)
+    return pyfltr.output.github_annotations.build_workflow_command(error)
 
 
 def parse_summary(command: str, output: str) -> str | None:

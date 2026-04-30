@@ -1,7 +1,7 @@
 """GitHub Actions 注釈形式の出力生成。
 
 `--output-format=github-annotations`のレイアウトは`text`と同じで、
-`pyfltr.cli.pipeline.write_log()`から`pyfltr.command.error_parser.format_error_github()`経由で
+`pyfltr.cli.render.write_log()`から`pyfltr.command.error_parser.format_error_github()`経由で
 1診断1行の整形が本モジュールに委譲される。
 
 GitHubのログビューアーは`::xxx file=...,line=...,title=...::msg`から

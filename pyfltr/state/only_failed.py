@@ -11,25 +11,13 @@ import logging
 import pathlib
 import typing
 
+import pyfltr.cli.output_format
 import pyfltr.paths
 import pyfltr.state.archive
 import pyfltr.state.runs
 import pyfltr.warnings_
 
 logger = logging.getLogger(__name__)
-
-
-def _text_logger() -> logging.Logger:
-    """`pyfltr.cli.output_format.text_logger`を遅延参照で返す。
-
-    `pyfltr.cli.output_format`は`pyfltr.state.only_failed`を直接importしないが、
-    `pyfltr.cli.pipeline`→`pyfltr.state.only_failed`の経路で循環が生じうるため、
-    モジュールトップレベルのimportを避けて遅延参照で回避する。
-    """
-    # pylint: disable=import-outside-toplevel,cyclic-import
-    from pyfltr.cli import output_format
-
-    return output_format.text_logger
 
 
 @dataclasses.dataclass(frozen=True)
@@ -146,7 +134,7 @@ def apply_filter(
         )
         return commands, None, True
 
-    _text_logger().info(
+    pyfltr.cli.output_format.text_logger.info(
         f"--only-failed: 直前 run ({last_run.run_id}) から {len(filtered_commands)} ツールを対象として再実行します。"
     )
     return filtered_commands, targets, False
@@ -258,4 +246,4 @@ def _filter_commands_with_targets(
 
 def _log_skip_reason(reason: str) -> None:
     """`--only-failed`の早期終了理由をログ出力する。"""
-    _text_logger().info(f"--only-failed: {reason}")
+    pyfltr.cli.output_format.text_logger.info(f"--only-failed: {reason}")

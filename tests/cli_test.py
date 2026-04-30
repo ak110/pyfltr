@@ -9,6 +9,7 @@ import pytest
 
 import pyfltr.cli.output_format
 import pyfltr.cli.pipeline
+import pyfltr.cli.render
 import pyfltr.command.core
 import pyfltr.command.dispatcher
 import pyfltr.config.config
@@ -59,7 +60,7 @@ def test_write_log(text_logs):
         output="ok",
         elapsed=1.5,
     )
-    pyfltr.cli.pipeline.write_log(result)
+    pyfltr.cli.render.write_log(result)
     text = "\n".join(text_logs)
     assert "pytest" in text
     assert "returncode: 0" in text
@@ -77,7 +78,7 @@ def test_write_log_failed(text_logs):
         output="FAILED",
         elapsed=0.8,
     )
-    pyfltr.cli.pipeline.write_log(result)
+    pyfltr.cli.render.write_log(result)
     # 失敗時は@マークが使われる
     assert "@ returncode: 1" in "\n".join(text_logs)
 
@@ -126,7 +127,7 @@ def test_render_results_orders_success_failed_summary(text_logs):
         _make_result("pylint", returncode=0),
     ]
 
-    pyfltr.cli.pipeline.render_results(results, config, include_details=True)
+    pyfltr.cli.render.render_results(results, config, include_details=True)
 
     text = "\n".join(text_logs)
     # 成功コマンドのヘッダーが最初に来る
@@ -147,7 +148,7 @@ def test_render_results_include_details_false_writes_only_summary(text_logs):
     config = pyfltr.config.config.create_default_config()
     results = [_make_result("mypy", returncode=1, output="MYPY_ERROR")]
 
-    pyfltr.cli.pipeline.render_results(results, config, include_details=False)
+    pyfltr.cli.render.render_results(results, config, include_details=False)
     text = "\n".join(text_logs)
     assert "summary" in text
     assert "MYPY_ERROR" not in text
@@ -159,7 +160,7 @@ def test_render_results_writes_warnings_section_before_summary(text_logs):
     results = [_make_result("mypy", returncode=0)]
     warnings = [{"source": "config", "message": "pre-commit 設定ファイル不在"}]
 
-    pyfltr.cli.pipeline.render_results(results, config, include_details=True, warnings=warnings)
+    pyfltr.cli.render.render_results(results, config, include_details=True, warnings=warnings)
 
     text = "\n".join(text_logs)
     warning_pos = text.index("pre-commit 設定ファイル不在")
@@ -173,7 +174,7 @@ def test_render_results_skips_warnings_section_when_empty(text_logs):
     config = pyfltr.config.config.create_default_config()
     results = [_make_result("mypy", returncode=0)]
 
-    pyfltr.cli.pipeline.render_results(results, config, include_details=True, warnings=[])
+    pyfltr.cli.render.render_results(results, config, include_details=True, warnings=[])
 
     # warningsセクションは出力されない（summary直前の見出しだけを検証するのは困難なため、
     # [source]形式のエントリ行が無いことで代替する）

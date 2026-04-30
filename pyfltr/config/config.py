@@ -17,6 +17,7 @@ import platformdirs
 import tomlkit
 import tomlkit.exceptions
 
+import pyfltr.warnings_
 from pyfltr.command.builtin import (
     AUTO_ARGS,
     BIN_RUNNERS,
@@ -736,9 +737,6 @@ def load_config(
         global_config_path: global設定ファイルのパス。未指定時は
             `default_global_config_path()`の結果を使用する。
     """
-    # 遅延importで循環依存を避ける（warnings_はpyfltr内で広く参照されるため）
-    import pyfltr.warnings_  # pylint: disable=import-outside-toplevel
-
     config = create_default_config()
     base = config_dir or pathlib.Path.cwd()
 
@@ -919,9 +917,6 @@ def load_config(
 
 def _warn_missing_config_files(config: Config, base: pathlib.Path) -> None:
     """有効化されているコマンドで`CommandInfo.config_files`を満たさないものを警告する。"""
-    # 遅延importで循環依存を避ける（warnings_はpyfltr内で広く参照されるため）
-    import pyfltr.warnings_  # pylint: disable=import-outside-toplevel
-
     for command, info in config.commands.items():
         if not info.config_files:
             continue

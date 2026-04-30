@@ -4,6 +4,8 @@
 一箇所に集約する。新フォーマット追加時は本モジュールのみ変更すればよい。
 
 フォーマット分岐は`FORMATTERS`レジストリから動的に解決する。
+レジストリは本モジュール初期化時に各formatter実装をトップレベルimportした上で
+完結させる（遅延importは行わない）。
 """
 
 import dataclasses
@@ -14,8 +16,12 @@ import sys
 import typing
 
 import pyfltr.cli.output_format
+import pyfltr.cli.render
 import pyfltr.command.core
 import pyfltr.config.config
+import pyfltr.output.code_quality
+import pyfltr.output.jsonl
+import pyfltr.output.sarif
 import pyfltr.warnings_
 
 
@@ -96,19 +102,6 @@ class OutputFormatter(typing.Protocol):
         """
 
 
-def _get_render_results() -> typing.Any:
-    """循環import回避のため遅延参照で`render_results`を返す。
-
-    `cli.pipeline`は`output.formatters`をimportするため、トップレベルimportでは
-    循環が生じる。on_finish呼び出し時点ではimport済みのため遅延参照で回避する。
-    pylintのcyclic-importはimport文の静的検出によるもので、実行時循環は生じない。
-    """
-    # pylint: disable=import-outside-toplevel,cyclic-import
-    from pyfltr.cli.pipeline import render_results
-
-    return render_results
-
-
 def command_index(config: pyfltr.config.config.Config, command: str) -> int:
     """`config.command_names`内での位置を返す（未登録コマンドは末尾扱い）。
 
@@ -146,7 +139,7 @@ class TextFormatter:
     ) -> None:
         """詳細ログ（include_detailsがTrueの場合）+ summaryを書き出す。"""
         del exit_code
-        _get_render_results()(
+        pyfltr.cli.render.render_results(
             results,
             ctx.config,
             include_details=ctx.include_details,
@@ -184,7 +177,7 @@ class GitHubAnnotationsFormatter:
     ) -> None:
         """詳細ログ（GA記法）+ summaryを書き出す。"""
         del exit_code
-        _get_render_results()(
+        pyfltr.cli.render.render_results(
             results,
             ctx.config,
             include_details=ctx.include_details,
@@ -213,9 +206,7 @@ class JSONLFormatter:
 
     def on_start(self, ctx: RunOutputContext) -> None:
         """header行を書き出す。"""
-        from pyfltr.output import jsonl as llm_output  # pylint: disable=import-outside-toplevel
-
-        llm_output.write_jsonl_header(
+        pyfltr.output.jsonl.write_jsonl_header(
             commands=ctx.commands,
             files=ctx.all_files,
             run_id=ctx.run_id,
@@ -225,9 +216,7 @@ class JSONLFormatter:
 
     def on_result(self, ctx: RunOutputContext, result: pyfltr.command.core.CommandResult) -> None:
         """Diagnostic行 + tool行をstreaming書き出しする。"""
-        from pyfltr.output import jsonl as llm_output  # pylint: disable=import-outside-toplevel
-
-        llm_output.write_jsonl_streaming(result, ctx.config)
+        pyfltr.output.jsonl.write_jsonl_streaming(result, ctx.config)
 
     def on_finish(
         self,
@@ -237,9 +226,7 @@ class JSONLFormatter:
         warnings: list[dict[str, typing.Any]],
     ) -> None:
         """Warning行 + summary行を書き出し、text整形も出力する。"""
-        from pyfltr.output import jsonl as llm_output  # pylint: disable=import-outside-toplevel
-
-        llm_output.write_jsonl_footer(
+        pyfltr.output.jsonl.write_jsonl_footer(
             results,
             exit_code=exit_code,
             warnings=warnings,
@@ -248,7 +235,7 @@ class JSONLFormatter:
             fully_excluded_files=pyfltr.warnings_.excluded_direct_files(),
         )
         # 構造化出力の書き出しと並行して、常にtext整形を実行する。
-        _get_render_results()(
+        pyfltr.cli.render.render_results(
             results,
             ctx.config,
             include_details=ctx.include_details,
@@ -287,9 +274,7 @@ class SARIFFormatter:
         warnings: list[dict[str, typing.Any]],
     ) -> None:
         """SARIF JSONを構造化出力loggerに書き出し、text整形も出力する。"""
-        from pyfltr.output import sarif as sarif_output  # pylint: disable=import-outside-toplevel
-
-        sarif = sarif_output.build_sarif(
+        sarif = pyfltr.output.sarif.build_sarif(
             results,
             ctx.config,
             exit_code=exit_code,
@@ -298,7 +283,7 @@ class SARIFFormatter:
             run_id=ctx.run_id,
         )
         pyfltr.cli.output_format.structured_logger.info(json.dumps(sarif, ensure_ascii=False, indent=2))
-        _get_render_results()(
+        pyfltr.cli.render.render_results(
             results,
             ctx.config,
             include_details=ctx.include_details,
@@ -338,11 +323,9 @@ class CodeQualityFormatter:
     ) -> None:
         """Code Quality JSON配列を構造化出力loggerに書き出し、text整形も出力する。"""
         del exit_code
-        from pyfltr.output import code_quality  # pylint: disable=import-outside-toplevel
-
-        payload = code_quality.build_code_quality_payload(results)
+        payload = pyfltr.output.code_quality.build_code_quality_payload(results)
         pyfltr.cli.output_format.structured_logger.info(json.dumps(payload, ensure_ascii=False, indent=2))
-        _get_render_results()(
+        pyfltr.cli.render.render_results(
             results,
             ctx.config,
             include_details=ctx.include_details,

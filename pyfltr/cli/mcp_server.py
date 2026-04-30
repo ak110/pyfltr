@@ -26,6 +26,7 @@ import typing
 
 import pydantic
 
+import pyfltr.cli.pipeline
 import pyfltr.config.config
 import pyfltr.state.archive
 import pyfltr.state.runs
@@ -354,10 +355,6 @@ async def _tool_run_for_agent(
         subcommand="run-for-agent",
     )
 
-    # `pyfltr.cli.pipeline`は`mcp_server`をトップレベルでimportしないため、
-    # 循環importの懸念は小さいが、遅延importで明示する。
-    import pyfltr.cli.pipeline as _main  # pylint: disable=import-outside-toplevel
-
     # 構造化出力を一時ファイルへ誘導してstdout汚染を防ぐ。
     # NamedTemporaryFileをコンテキストマネージャーで使い、close後もパスを残す（delete=False）。
     with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False) as tmp:
@@ -377,7 +374,7 @@ async def _tool_run_for_agent(
             config,
         )
 
-        exit_code, run_id = _main.run_pipeline(args, commands_list, config, force_text_on_stderr=True)
+        exit_code, run_id = pyfltr.cli.pipeline.run_pipeline(args, commands_list, config, force_text_on_stderr=True)
     finally:
         # 一時ファイルを削除する（存在しない場合はそのまま無視する）
         with contextlib.suppress(OSError):
@@ -442,6 +439,8 @@ def _build_server() -> typing.Any:
     importが壊れないよう`FastMCP`を本関数内で局所importする設計に合わせるため。
     """
     try:
+        # オプショナル依存`mcp`が未導入の環境でも本モジュールがimportできるよう、
+        # FastMCPはtry/except内で遅延importする（モジュールトップレベルへ昇格しない）。
         from mcp.server.fastmcp import FastMCP  # pylint: disable=import-outside-toplevel
     except ImportError as e:
         raise RuntimeError("mcp ライブラリが見つからない。`pip install mcp` で導入してください。") from e

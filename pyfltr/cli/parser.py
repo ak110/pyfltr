@@ -6,10 +6,12 @@
 import argparse
 import collections.abc
 import pathlib
+import shlex
 import sys
 import typing
 
 import pyfltr.cli.command_info
+import pyfltr.cli.mcp_server
 import pyfltr.cli.output_format
 import pyfltr.cli.shell_completion
 import pyfltr.config.config
@@ -65,8 +67,6 @@ def preflight_tool_name_as_subcommand(sys_args: typing.Sequence[str]) -> None:
     `format` / `lint` / `test`。カスタムコマンドはpyproject.toml読込後にしか
     確定しないため対象外とする。
     """
-    import shlex  # pylint: disable=import-outside-toplevel
-
     if not sys_args:
         return
     candidate = sys_args[0]
@@ -378,10 +378,7 @@ def build_parser(custom_commands: collections.abc.Iterable[str] = ()) -> "_HelpO
     pyfltr.cli.command_info.register_subparsers(subparsers)
 
     # mcp: MCPサーバーのstdio起動
-    # 循環importを避けるため遅延import
-    from pyfltr.cli import mcp_server as _mcp_server  # pylint: disable=import-outside-toplevel
-
-    _mcp_server.register_subparsers(subparsers)
+    pyfltr.cli.mcp_server.register_subparsers(subparsers)
 
     return parser
 

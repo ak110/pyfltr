@@ -15,7 +15,9 @@ import pathlib
 import sys
 import typing
 
+import pyfltr.cli.command_info
 import pyfltr.cli.config_subcmd
+import pyfltr.cli.mcp_server
 import pyfltr.cli.parser
 import pyfltr.cli.pipeline
 import pyfltr.cli.shell_completion
@@ -153,18 +155,12 @@ def _dispatch_shell_completion(args: argparse.Namespace) -> int:
 
 def _dispatch_command_info(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
     """command-infoサブコマンドの処理。"""
-    # 循環importを避けるため遅延importとする
-    from pyfltr.cli import command_info as _command_info  # pylint: disable=import-outside-toplevel
-
-    return _command_info.execute_command_info(parser, args)
+    return pyfltr.cli.command_info.execute_command_info(parser, args)
 
 
 def _dispatch_mcp(args: argparse.Namespace) -> int:
     """mcpサブコマンドの処理。"""
-    # 循環importを避けるため遅延importとする
-    from pyfltr.cli import mcp_server as _mcp_server  # pylint: disable=import-outside-toplevel
-
-    return _mcp_server.execute_mcp(args)
+    return pyfltr.cli.mcp_server.execute_mcp(args)
 
 
 if __name__ == "__main__":

@@ -1,9 +1,9 @@
 """パイプライン実行と結果整形。
 
 非TUI経路でのコマンド実行（`run_commands_with_cli`）と、
-実行結果のtext整形出力（`render_results` / `write_log`）、
 パイプライン全体を駆動する`_run_impl`・`run_pipeline`・
 `calculate_returncode`を担う。
+text整形描画（`render_results` / `write_log`）は`cli/render.py`に分離している。
 """
 # ui.pyとの残余重複（aborted_commands後処理）はcall_from_thread差異のため共通化不可
 # pylint: disable=duplicate-code
@@ -24,13 +24,15 @@ import threading
 import typing
 
 import pyfltr.cli.output_format
+import pyfltr.cli.precommit_guidance
+import pyfltr.cli.render
 import pyfltr.command.core
 import pyfltr.command.dispatcher
-import pyfltr.command.error_parser
 import pyfltr.command.process
 import pyfltr.command.targets
 import pyfltr.config.config
 import pyfltr.output.formatters
+import pyfltr.output.ui
 import pyfltr.state.archive
 import pyfltr.state.cache
 import pyfltr.state.executor
@@ -38,8 +40,6 @@ import pyfltr.state.only_failed
 import pyfltr.state.retry
 import pyfltr.state.stage_runner
 import pyfltr.warnings_
-
-NCOLS = 128
 
 logger = logging.getLogger(__name__)
 
@@ -236,130 +236,11 @@ def _run_one_command(
         result = pyfltr.command.dispatcher.execute_command(command, args, ctx)
         if per_command_log:
             use_ga = (getattr(args, "output_format", "text") or "text") == "github-annotations"
-            write_log(result, use_github_annotations=use_ga)
+            pyfltr.cli.render.write_log(result, use_github_annotations=use_ga)
         else:
             with lock:
                 text_logger.info(f"{command}{suffix} 完了 ({result.get_status_text()})")
         return result
-
-
-def write_log(result: pyfltr.command.core.CommandResult, *, use_github_annotations: bool = False) -> None:
-    """コマンド実行結果の詳細ログ出力。
-
-    パース済みエラーがある場合は`format_error()`で整形した一覧を表示する。
-    エラーがなく失敗した場合は生出力をフォールバック表示する。
-
-    `use_github_annotations`がTrueのとき、ErrorLocation行をGAワークフローコマンド記法で出す。
-    False（既定）のときは従来のテキスト形式（`file:line:col: [tool:rule] msg`）で出す。
-    枠線・区切り線・進捗ラベルは常にtext記法を維持する
-    （GAはエラー箇所の解釈だけを切り替え、レイアウトはtextと同じにする設計）。
-    """
-    mark = "@" if result.alerted else "*"
-    with lock:
-        text_logger.info(f"{mark * 32} {result.command} {mark * (NCOLS - 34 - len(result.command))}")
-        logger.debug(f"{mark} commandline: {shlex.join(result.commandline)}")
-        text_logger.info(mark)
-        if result.errors:
-            for error in result.errors:
-                if use_github_annotations:
-                    text_logger.info(pyfltr.command.error_parser.format_error_github(error))
-                else:
-                    text_logger.info(pyfltr.command.error_parser.format_error(error))
-        elif result.alerted:
-            text_logger.info(result.output)
-        else:
-            summary = pyfltr.command.error_parser.parse_summary(result.command, result.output)
-            if summary:
-                text_logger.info(f"{mark} {summary}")
-        text_logger.info(mark)
-        text_logger.info(f"{mark} returncode: {result.returncode}")
-        text_logger.info(mark * NCOLS)
-
-
-def render_results(
-    results: list[pyfltr.command.core.CommandResult],
-    config: pyfltr.config.config.Config,
-    *,
-    include_details: bool,
-    output_format: str = "text",
-    exit_code: int = 0,
-    commands: list[str] | None = None,
-    files: int | None = None,
-    warnings: list[dict[str, typing.Any]] | None = None,
-    run_id: str | None = None,
-    launcher_prefix: list[str] | None = None,
-) -> None:
-    """実行結果を `成功コマンド → 失敗コマンド → summary` の順でまとめて出力する。
-
-    summaryを末尾に出力することで、`tail -N`で末尾だけ読み取るツール
-    （Claude Codeなど）でもsummaryが確実に見えるようにする。失敗コマンド詳細も
-    summaryの直前に置くため、`tail -N`でエラー情報も捕捉しやすい。
-
-    `include_details=False`のときは、詳細ログは既に出力済みとみなしsummaryのみ表示する
-    （`--stream`モード向け）。
-
-    構造化出力（JSONL / SARIF）はここでは扱わず、呼び出し元（`pyfltr.cli.main`）が
-    `structured_logger`経由で書き出す。本関数は常にtext整形ログを
-    `text_logger`に流す。`output_format`はErrorLocation行の整形方式の
-    切替（`github-annotations`時のみGA記法）に使う。
-    """
-    del exit_code, commands, files, run_id, launcher_prefix  # 構造化出力への委譲が無くなり未使用
-    ordered = sorted(results, key=lambda r: config.command_names.index(r.command))
-    warnings = warnings or []
-
-    use_ga = output_format == "github-annotations"
-    if include_details:
-        # 1. 成功コマンドの詳細ログ
-        for result in ordered:
-            if not result.alerted:
-                write_log(result, use_github_annotations=use_ga)
-
-        # 2. 失敗コマンドの詳細ログ（summaryの直前に配置しtail -Nでも拾えるようにする）
-        for result in ordered:
-            if result.alerted:
-                write_log(result, use_github_annotations=use_ga)
-
-    # 3. warnings（summaryの直前。先頭だと見落とされやすいため）
-    _write_warnings_section(warnings)
-
-    # 4. fully excluded files（summary直前。警告と混ざらないよう独立ブロックで出す）
-    _write_fully_excluded_files_section(pyfltr.warnings_.excluded_direct_files())
-
-    # 5. summary（末尾に出力することでtail -Nで必ず見えるようにする）
-    _write_summary(ordered)
-
-
-def _write_warnings_section(warnings: list[dict[str, typing.Any]]) -> None:
-    """Warningsセクションをsummary直前に出力する。"""
-    if not warnings:
-        return
-    with lock:
-        text_logger.info(f"{'-' * 10} warnings {'-' * (72 - 10 - 10)}")
-        for entry in warnings:
-            text_logger.info(f"    [{entry['source']}] {entry['message']}")
-
-
-def _write_fully_excluded_files_section(files: list[str]) -> None:
-    """直接指定されたが除外設定で全除外されたファイルをまとめて表示する。
-
-    警告としては個別のwarning行で既に通知しているが、総覧で見落とされやすいため
-    summary直前に専用ブロックを置く。exit コードには影響しない。
-    """
-    if not files:
-        return
-    with lock:
-        text_logger.info(f"{'-' * 10} fully-excluded-files {'-' * (72 - 10 - 22)}")
-        for path in files:
-            text_logger.info(f"    {path}")
-
-
-def _write_summary(ordered_results: list[pyfltr.command.core.CommandResult]) -> None:
-    """Summary セクションを出力する。"""
-    with lock:
-        text_logger.info(f"{'-' * 10} summary {'-' * (72 - 10 - 9)}")
-        for result in ordered_results:
-            text_logger.info(f"    {result.command:<16s} {result.get_status_text()}")
-        text_logger.info("-" * 72)
 
 
 def run_pipeline(
@@ -525,9 +406,7 @@ def run_pipeline(
         )
 
     # UIの判定
-    from pyfltr.output import ui as _ui_module  # pylint: disable=import-outside-toplevel
-
-    use_ui = not args.no_ui and (args.ui or _ui_module.can_use_ui())
+    use_ui = not args.no_ui and (args.ui or pyfltr.output.ui.can_use_ui())
 
     # run_pipelineが1回だけ組み立てる不変コンテキスト。
     # archive_storeはhook経由で渡すためContextには含めない。
@@ -585,7 +464,7 @@ def run_pipeline(
     include_fix_stage = bool(getattr(args, "include_fix_stage", False))
     fail_fast = bool(getattr(args, "fail_fast", False))
     if use_ui:
-        results, returncode = _ui_module.run_commands_with_ui(
+        results, returncode = pyfltr.output.ui.run_commands_with_ui(
             commands,
             args,
             base_ctx,
@@ -657,9 +536,7 @@ def _maybe_emit_precommit_guidance(
         return
     if not any(result.status == "formatted" for result in results):
         return
-    from pyfltr.cli import precommit_guidance as _precommit  # pylint: disable=import-outside-toplevel
-
-    if not _precommit.is_invoked_from_git_commit():
+    if not pyfltr.cli.precommit_guidance.is_invoked_from_git_commit():
         return
     print(_PRECOMMIT_MM_MESSAGE, file=sys.stderr)
 
