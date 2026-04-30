@@ -233,6 +233,7 @@ class JSONLFormatter:
             run_id=ctx.run_id,
             launcher_prefix=ctx.launcher_prefix,
             fully_excluded_files=pyfltr.warnings_.excluded_direct_files(),
+            missing_targets=pyfltr.warnings_.missing_direct_files(),
         )
         # 構造化出力の書き出しと並行して、常にtext整形を実行する。
         pyfltr.cli.render.render_results(

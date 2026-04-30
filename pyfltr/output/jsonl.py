@@ -182,6 +182,7 @@ def build_lines(
     run_id: str | None = None,
     launcher_prefix: list[str] | None = None,
     fully_excluded_files: list[str] | None = None,
+    missing_targets: list[str] | None = None,
     format_source: str | None = None,
 ) -> list[str]:
     """CommandResult群からJSONL各行を生成する。
@@ -228,6 +229,7 @@ def build_lines(
                 run_id=run_id,
                 launcher_prefix=launcher_prefix,
                 fully_excluded_files=fully_excluded_files,
+                missing_targets=missing_targets,
             )
         )
     )
@@ -318,12 +320,14 @@ def write_jsonl_footer(
     run_id: str | None = None,
     launcher_prefix: list[str] | None = None,
     fully_excluded_files: list[str] | None = None,
+    missing_targets: list[str] | None = None,
 ) -> None:
     """warning行+summary行を構造化出力loggerに書き出す。
 
     `results`は`_build_summary_record()`の集計に使用する。
     `run_id`と`launcher_prefix`は`summary.guidance`の起動コマンド整形に使う。
     `fully_excluded_files`を渡すと`summary.fully_excluded_files`キーとして埋め込む。
+    `missing_targets`を渡すと`summary.missing_targets`キーとして埋め込む。
     """
     with _write_lock:
         for warning in warnings or []:
@@ -336,6 +340,7 @@ def write_jsonl_footer(
                     run_id=run_id,
                     launcher_prefix=launcher_prefix,
                     fully_excluded_files=fully_excluded_files,
+                    missing_targets=missing_targets,
                 )
             )
         )
@@ -574,6 +579,7 @@ def _build_summary_record(
     run_id: str | None = None,
     launcher_prefix: list[str] | None = None,
     fully_excluded_files: list[str] | None = None,
+    missing_targets: list[str] | None = None,
 ) -> dict[str, typing.Any]:
     """ordered_resultsから集計してsummaryレコードdictを作る。
 
@@ -586,9 +592,12 @@ def _build_summary_record(
     `resolution_failed`は0件のときキー自体を省略する（通常プロジェクトでは常に0のため）。
     `failed`は0件でも常時出力する（0件であることがエラー無し判定に直結するため）。
     `commands_summary`の兄弟である`applied_fixes`/`fully_excluded_files`/
-    `guidance`はカウント集計ではないため移動しない。
+    `missing_targets`/`guidance`はカウント集計ではないため移動しない。
     `fully_excluded_files`が非空のとき、直接指定されたがexcludeパターン・.gitignore
     によって全除外されたファイル一覧を`fully_excluded_files`キーに埋め込む。
+    `missing_targets`が非空のとき、直接指定されたが存在しないファイル一覧を
+    `missing_targets`キーに埋め込む（exclude/.gitignore全除外と原因を区別するため
+    別フィールドで併存させる）。
     exitコードは0のままだが、LLM/利用者が「警告ゼロ」と誤解しないよう明示する。
     `applied_fixes`はfixステージ・formatterステージで実際に内容変化したファイルパスを
     全コマンドにわたってユニオンしソートした一覧。変化なしの場合は省略する。
@@ -632,6 +641,8 @@ def _build_summary_record(
         record["applied_fixes"] = sorted(fixed_files_union)
     if fully_excluded_files:
         record["fully_excluded_files"] = list(fully_excluded_files)
+    if missing_targets:
+        record["missing_targets"] = list(missing_targets)
     return record
 
 

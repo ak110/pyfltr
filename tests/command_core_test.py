@@ -490,6 +490,29 @@ def test_expand_all_files_warns_excluded_file(tmp_path: pathlib.Path, caplog) ->
         os.chdir(original_cwd)
 
 
+def test_expand_all_files_warns_missing_file(tmp_path: pathlib.Path, caplog) -> None:
+    """直接指定されたパスが存在しない場合、警告が出て missing_direct_files に蓄積される。"""
+    # 絶対パス指定はcwd起点の相対パスへ変換されるため、cwd配下の相対パスとして検証する。
+    target_name = "does_not_exist.py"
+    target = pathlib.Path(target_name)
+
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        pyfltr.warnings_.clear()
+        config = pyfltr.config.config.create_default_config()
+        with caplog.at_level(logging.WARNING):
+            result = pyfltr.command.targets.expand_all_files([target], config)
+        assert len(result) == 0
+        assert "指定されたパスが見つかりません" in caplog.text
+        # 非存在は missing_direct_files に蓄積され、excluded_direct_files とは別系統
+        assert pyfltr.warnings_.missing_direct_files() == [target_name]
+        assert not pyfltr.warnings_.excluded_direct_files()
+    finally:
+        pyfltr.warnings_.clear()
+        os.chdir(original_cwd)
+
+
 def test_expand_all_files_warns_gitignored_file(tmp_path: pathlib.Path, caplog) -> None:
     """直接指定されたファイルが.gitignoreで除外された場合に警告が出る。"""
     subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True, check=True)

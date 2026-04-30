@@ -21,6 +21,7 @@ class WarningCollector:
     def __init__(self) -> None:
         self._warnings: list[dict[str, typing.Any]] = []
         self._excluded_direct_files: list[str] = []
+        self._missing_direct_files: list[str] = []
 
     def emit(
         self,
@@ -68,10 +69,26 @@ class WarningCollector:
         """蓄積された直接指定除外ファイル一覧の浅いコピーを返す。"""
         return list(self._excluded_direct_files)
 
+    def add_missing_direct_file(self, path: str) -> None:
+        """直接指定されたが存在しないファイルを蓄積する。
+
+        exclude/.gitignore由来の`add_excluded_direct_file()`とは別系統で蓄積する。
+        非存在は「ユーザーが指定パスをタイプミス」「ファイルが消えた」など原因が
+        異なり、CLI exit判定（全件不在なら非ゼロ終了）にも別経路で使うため、
+        excludeの集計と混載しない。
+        警告ログ出力は呼び出し側で`emit()`が既に担うため、本メソッドでは蓄積のみ行う。
+        """
+        self._missing_direct_files.append(path)
+
+    def missing_direct_files(self) -> list[str]:
+        """蓄積された直接指定非存在ファイル一覧の浅いコピーを返す。"""
+        return list(self._missing_direct_files)
+
     def clear(self) -> None:
         """蓄積を初期化する。"""
         self._warnings.clear()
         self._excluded_direct_files.clear()
+        self._missing_direct_files.clear()
 
 
 _DEFAULT_COLLECTOR = WarningCollector()
@@ -101,6 +118,16 @@ def add_excluded_direct_file(path: str) -> None:
 def excluded_direct_files() -> list[str]:
     """直接指定除外ファイル一覧を返す（ファサード）。"""
     return _DEFAULT_COLLECTOR.excluded_direct_files()
+
+
+def add_missing_direct_file(path: str) -> None:
+    """直接指定非存在ファイルを蓄積する（ファサード）。"""
+    _DEFAULT_COLLECTOR.add_missing_direct_file(path)
+
+
+def missing_direct_files() -> list[str]:
+    """直接指定非存在ファイル一覧を返す（ファサード）。"""
+    return _DEFAULT_COLLECTOR.missing_direct_files()
 
 
 def clear() -> None:

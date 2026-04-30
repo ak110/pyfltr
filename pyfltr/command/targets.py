@@ -76,6 +76,17 @@ def expand_all_files(targets: list[pathlib.Path], config: pyfltr.config.config.C
         if target.is_absolute():
             with contextlib.suppress(ValueError):
                 target = target.relative_to(pathlib.Path.cwd())
+        # 非存在パスは前段で検出して対象から外す。
+        # 各ツールが個別に「ファイルが見つからない」と失敗してJSONLが多重化するのを防ぐ。
+        # exclude/.gitignore除外（add_excluded_direct_file）とは別系統で蓄積し、
+        # CLI側では「全件不在 → 非ゼロ終了」の判定にだけ用いる。
+        if not target.exists():
+            pyfltr.warnings_.emit_warning(
+                source="file-resolver",
+                message=f"指定されたパスが見つかりません: {target}",
+            )
+            pyfltr.warnings_.add_missing_direct_file(str(target))
+            continue
         is_direct = not target.is_dir()
         _expand_target(target, is_direct=is_direct)
 

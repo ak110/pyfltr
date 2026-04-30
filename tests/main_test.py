@@ -39,6 +39,39 @@ def test_missing_subcommand_errors():
         pyfltr.cli.main.run([])
 
 
+def test_all_targets_missing_returns_nonzero(tmp_path, mocker):
+    """指定パスが全件不在の場合は CLI が非ゼロ終了する。"""
+    # 別 tmp_path をcwdとして空のpyproject.tomlを置く（preset無しで純粋に判定経路を見る）
+    (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\n")
+    # subprocess呼び出しは早期exit経路により発生しない想定だが、安全のためモックしておく。
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=subprocess.CompletedProcess(["x"], 0, ""))
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        returncode = pyfltr.cli.main.run(["run-for-agent", "does_not_exist.py"])
+    finally:
+        os.chdir(original_cwd)
+    assert returncode == 1
+
+
+def test_partial_missing_targets_continues(tmp_path, mocker):
+    """指定パスが部分的に存在する場合は処理を継続して通常の終了コードを返す。"""
+    (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\n")
+    (tmp_path / "exists.py").write_text("x = 1\n")
+    mocker.patch(
+        "pyfltr.command.process.run_subprocess",
+        return_value=subprocess.CompletedProcess(["x"], 0, ""),
+    )
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        returncode = pyfltr.cli.main.run(["run-for-agent", "exists.py", "missing.py"])
+    finally:
+        os.chdir(original_cwd)
+    # 1件は存在するため、全件不在判定は成立せず処理継続。テスト用subprocessは0返却。
+    assert returncode == 0
+
+
 def test_work_dir(mocker, tmp_path):
     """--work-dirオプションのテスト。"""
     # preset由来のpytestをpython gate通過で実行対象に含める。

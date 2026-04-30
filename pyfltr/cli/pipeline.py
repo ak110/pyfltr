@@ -305,6 +305,22 @@ def run_pipeline(
     # TUI起動前に実行することで、除外警告がログに表示される
     all_files = pyfltr.command.targets.expand_all_files(args.targets, config)
 
+    # ユーザー指定パスが全て非存在の場合は、各ツールが個別に「ファイルが見つからない」エラーを
+    # 多重に出す前段で打ち切り、非ゼロ終了する。warning自体は`expand_all_files`内で発行済み。
+    # 部分一致（一部のみ不在）は処理継続、対象未指定（カレント走査）も対象外として扱う。
+    if args.targets and len(pyfltr.warnings_.missing_direct_files()) == len(args.targets):
+        early_run_ctx = pyfltr.output.formatters.RunOutputContext(
+            config=config,
+            output_file=output_file,
+            force_text_on_stderr=force_text_on_stderr,
+            commands=[],
+            all_files=0,
+            format_source=format_source,
+        )
+        formatter.on_start(early_run_ctx)
+        formatter.on_finish(early_run_ctx, [], 1, pyfltr.warnings_.collected_warnings())
+        return 1, None
+
     # --changed-since指定時はgit差分ファイルとの交差に絞り込む。
     # --only-failedよりも先に適用し、以後のフィルタは絞り込み済みリストを受け取る。
     changed_since_ref: str | None = getattr(args, "changed_since", None)

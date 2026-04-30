@@ -1,6 +1,7 @@
 """llm_outputのテストコード。"""
 # pylint: disable=protected-access  # JSONL構造化レコード組み立てヘルパー（_build_*_record等）の単体テスト経路
 # pylint: disable=duplicate-code  # 各レコードビルダー検証の組み立て手順が他テストと類似
+# pylint: disable=too-many-lines  # JSONLビルダーの単体検証を本ファイルへ集約しているため
 
 import json
 
@@ -759,6 +760,46 @@ def test_build_summary_record_omits_fully_excluded_files_when_empty() -> None:
     for value in values:
         record = pyfltr.output.jsonl._build_summary_record([result], exit_code=0, fully_excluded_files=value)
         assert "fully_excluded_files" not in record
+
+
+def test_build_summary_record_includes_missing_targets() -> None:
+    """missing_targets指定時はsummaryレコードに出力され、fully_excluded_filesと併存する。"""
+    result = pyfltr.command.core_.CommandResult(
+        command="mypy",
+        command_type="linter",
+        commandline=["mypy"],
+        returncode=0,
+        has_error=False,
+        files=0,
+        output="",
+        elapsed=0.1,
+    )
+    record = pyfltr.output.jsonl._build_summary_record(
+        [result],
+        exit_code=1,
+        missing_targets=["does_not_exist.py", "also_missing.md"],
+        fully_excluded_files=["docs/excluded.md"],
+    )
+    assert record["missing_targets"] == ["does_not_exist.py", "also_missing.md"]
+    assert record["fully_excluded_files"] == ["docs/excluded.md"]
+
+
+def test_build_summary_record_omits_missing_targets_when_empty() -> None:
+    """空リスト・Noneの場合はキー自体を出力しない。"""
+    result = pyfltr.command.core_.CommandResult(
+        command="mypy",
+        command_type="linter",
+        commandline=["mypy"],
+        returncode=0,
+        has_error=False,
+        files=0,
+        output="",
+        elapsed=0.1,
+    )
+    values: list[list[str] | None] = [None, []]
+    for value in values:
+        record = pyfltr.output.jsonl._build_summary_record([result], exit_code=0, missing_targets=value)
+        assert "missing_targets" not in record
 
 
 def test_build_message_dict_includes_end_line_and_end_col() -> None:
