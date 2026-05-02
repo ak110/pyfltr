@@ -105,7 +105,7 @@ def render_results(
     _write_warnings_section(warnings)
 
     # 4. fully excluded files（summary直前。警告と混ざらないよう独立ブロックで出す）
-    _write_fully_excluded_files_section(pyfltr.warnings_.excluded_direct_files())
+    _write_fully_excluded_files_section(pyfltr.warnings_.filtered_direct_files(reason="excluded"))
 
     # 5. summary（末尾に出力することでtail -Nで必ず見えるようにする）
     _write_summary(ordered)

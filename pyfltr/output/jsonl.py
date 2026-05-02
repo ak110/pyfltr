@@ -445,7 +445,7 @@ def _build_command_record(
     `hint_urls`が非空なら`hint_urls`キーで埋め込む。
     `hints`が非空なら`hints`キーで埋め込む。
     hintは「対応する指摘や状態が実際に該当するときのみ付与する」方針で扱い、
-    textlintコマンドの`messages[].end_col`仕様注記は`diagnostics > 0`のときに限り追加する
+    textlintコマンドの`messages[].col`仕様注記は`diagnostics > 0`のときに限り追加する
     （指摘ゼロの実行で固定的なhintを残してLLMトークンを浪費しないため）。
     `result.cached`が真のときは`elapsed`ではなく`cached_elapsed`キーに
     リネームして出力する（実行をスキップした前回値である旨をLLMに明示するため）。
@@ -502,14 +502,15 @@ def _build_command_record(
             record["cached_from"] = result.cached_from
     if hint_urls:
         record["hint_urls"] = dict(hint_urls)
-    # textlintはend_colをノード先頭からの累積位置で返す独特な仕様だが、
+    # textlintはcol/end_colをノード先頭からの累積位置で返す独特な仕様だが、
     # 指摘ゼロの実行ではこの注記を読み解く文脈が無いためhintを付けない。
     # 「対応する指摘・状態が該当するときのみhintを付与する」方針との整合を取り、
     # diagnosticsが1件以上のときに限り追加する。
+    # col/end_colの双方を1個のhintで同時に説明し、類似文言の重複によるトークン浪費を避ける。
     merged_hints = dict(hints) if hints else {}
     if result.command == "textlint" and diagnostics > 0:
-        merged_hints["messages[].end_col"] = (
-            "textlint reports end_col as cumulative offset from the text-node start, not in-line offset"
+        merged_hints["messages[].col"] = (
+            "textlint reports col and end_col as cumulative offsets from the text-node start, not in-line offsets"
         )
     # formatterによる書き換えはそれ自体が成功扱いで、利用者・LLMエージェントが
     # 「再実行して直さなければならない」と誤解しないようコマンド単独の文脈ヒントを添える。

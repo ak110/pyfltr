@@ -10,6 +10,8 @@ import typing
 
 logger = logging.getLogger(__name__)
 
+FilteredReason = typing.Literal["excluded", "missing"]
+
 
 class WarningCollector:
     """警告エントリのコレクター。
@@ -20,8 +22,7 @@ class WarningCollector:
 
     def __init__(self) -> None:
         self._warnings: list[dict[str, typing.Any]] = []
-        self._excluded_direct_files: list[str] = []
-        self._missing_direct_files: list[str] = []
+        self._filtered_direct_files: list[tuple[str, FilteredReason]] = []
 
     def emit(
         self,
@@ -56,39 +57,31 @@ class WarningCollector:
         """蓄積された警告の浅いコピーを返す。"""
         return list(self._warnings)
 
-    def add_excluded_direct_file(self, path: str) -> None:
-        """直接指定されたがexclude/.gitignoreで全除外されたファイルを蓄積する。
+    def add_filtered_direct_file(self, path: str, *, reason: FilteredReason) -> None:
+        """直接指定されたが対象から外れたファイルをreason付きで蓄積する。
 
-        summaryに`fully_excluded_files`として明示することで、
+        `reason="excluded"`はexclude/.gitignore設定で除外されたケース、
+        `reason="missing"`は指定パスが存在しないケースを表す。
+        summaryへ`fully_excluded_files`/`missing_targets`として明示することで、
         「警告0件 + exit 0」を「問題なし」と誤解しないようにする。
         警告ログ出力は呼び出し側で`emit()`が既に担うため、本メソッドでは蓄積のみ行う。
         """
-        self._excluded_direct_files.append(path)
+        self._filtered_direct_files.append((path, reason))
 
-    def excluded_direct_files(self) -> list[str]:
-        """蓄積された直接指定除外ファイル一覧の浅いコピーを返す。"""
-        return list(self._excluded_direct_files)
+    def filtered_direct_files(self, *, reason: FilteredReason | None = None) -> list[str]:
+        """蓄積された直接指定フィルタ対象ファイル一覧の浅いコピーを返す。
 
-    def add_missing_direct_file(self, path: str) -> None:
-        """直接指定されたが存在しないファイルを蓄積する。
-
-        exclude/.gitignore由来の`add_excluded_direct_file()`とは別系統で蓄積する。
-        非存在は「ユーザーが指定パスをタイプミス」「ファイルが消えた」など原因が
-        異なり、CLI exit判定（全件不在なら非ゼロ終了）にも別経路で使うため、
-        excludeの集計と混載しない。
-        警告ログ出力は呼び出し側で`emit()`が既に担うため、本メソッドでは蓄積のみ行う。
+        `reason`を指定すると当該理由のものだけに絞り込む。
+        未指定時は理由を問わず全件を順序通りに返す。
         """
-        self._missing_direct_files.append(path)
-
-    def missing_direct_files(self) -> list[str]:
-        """蓄積された直接指定非存在ファイル一覧の浅いコピーを返す。"""
-        return list(self._missing_direct_files)
+        if reason is None:
+            return [path for path, _ in self._filtered_direct_files]
+        return [path for path, r in self._filtered_direct_files if r == reason]
 
     def clear(self) -> None:
         """蓄積を初期化する。"""
         self._warnings.clear()
-        self._excluded_direct_files.clear()
-        self._missing_direct_files.clear()
+        self._filtered_direct_files.clear()
 
 
 _DEFAULT_COLLECTOR = WarningCollector()
@@ -110,24 +103,14 @@ def collected_warnings() -> list[dict[str, typing.Any]]:
     return _DEFAULT_COLLECTOR.collected()
 
 
-def add_excluded_direct_file(path: str) -> None:
-    """直接指定除外ファイルを蓄積する（ファサード）。"""
-    _DEFAULT_COLLECTOR.add_excluded_direct_file(path)
+def add_filtered_direct_file(path: str, *, reason: FilteredReason) -> None:
+    """直接指定フィルタ対象ファイルをreason付きで蓄積する（ファサード）。"""
+    _DEFAULT_COLLECTOR.add_filtered_direct_file(path, reason=reason)
 
 
-def excluded_direct_files() -> list[str]:
-    """直接指定除外ファイル一覧を返す（ファサード）。"""
-    return _DEFAULT_COLLECTOR.excluded_direct_files()
-
-
-def add_missing_direct_file(path: str) -> None:
-    """直接指定非存在ファイルを蓄積する（ファサード）。"""
-    _DEFAULT_COLLECTOR.add_missing_direct_file(path)
-
-
-def missing_direct_files() -> list[str]:
-    """直接指定非存在ファイル一覧を返す（ファサード）。"""
-    return _DEFAULT_COLLECTOR.missing_direct_files()
+def filtered_direct_files(*, reason: FilteredReason | None = None) -> list[str]:
+    """直接指定フィルタ対象ファイル一覧を返す（ファサード）。"""
+    return _DEFAULT_COLLECTOR.filtered_direct_files(reason=reason)
 
 
 def clear() -> None:

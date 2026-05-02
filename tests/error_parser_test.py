@@ -763,7 +763,7 @@ def test_parse_textlint_json_end_only_loc_populates_end_position() -> None:
 
 
 def test_parse_textlint_json_sentence_length_hint_excludes_col_note() -> None:
-    """sentence-lengthのヒントは句点による文区切りの観点のみで、`messages[].end_col`が累積位置である注記は`command.hints`側で集約する。"""
+    """sentence-lengthのヒントは句点による文区切りの観点のみで、`messages[].col`が累積位置である注記は`command.hints`側で集約する。"""
     output = json.dumps(
         [
             {

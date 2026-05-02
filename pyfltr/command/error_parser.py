@@ -23,6 +23,11 @@ class ErrorLocation:
     file: str
     line: int
     col: int | None
+    """違反箇所の列（Noneはツールが列情報を返さない場合）。
+
+    textlintの`column`はノード先頭からの累積位置を返す仕様のため、textlint由来の
+    `col`は累積位置として扱う。他ツールは行内オフセットを返す。
+    """
     command: str
     message: str
     rule: str | None = None
@@ -51,8 +56,8 @@ class ErrorLocation:
     end_col: int | None = None
     """違反範囲の終端列（Noneはツールが範囲を返さない場合）。
 
-    textlintの`column`系はノード先頭からの累積位置を返す仕様のため、本フィールドも
-    同様の系で出力する。行内オフセットへの正規化はファイル本文の参照を要するため行わない。
+    textlintの`column`系はノード先頭からの累積位置を返す仕様のため、`col`/`end_col`の
+    双方とも同様の系で出力する。行内オフセットへの正規化はファイル本文の参照を要するため行わない。
     """
 
 

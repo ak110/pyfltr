@@ -256,7 +256,7 @@ JSONLはLLMエージェントが入力として読むケースが多いため、
 フィールドの意味の詳細説明は[CLIコマンド](../guide/usage.md#jsonl)の「jsonlスキーマ」節に集約する。
 
 - `command.hints`: ruleごとの修正ヒント短文の辞書（ruleの識別子→1文ヒント）。
-  textlintコマンドの場合は`messages[].end_col`キーで`end_col`が累積位置である旨の仕様も同梱する。
+  textlintコマンドの場合は`messages[].col`キーで`col`/`end_col`が累積位置である旨の仕様も同梱する。
   空の場合はフィールドごと省略する
 - `command.hint_urls`: ruleごとのドキュメントURL辞書（ruleの識別子→URL）。
   URLを生成できたruleのみ含み、空の場合はフィールドごと省略する
@@ -272,7 +272,7 @@ JSONLはLLMエージェントが入力として読むケースが多いため、
 
 修正ヒントとルールドキュメントURLは`diagnostic`本体に含めず、`command`レコードの`hints` / `hint_urls`辞書に集約する。
 キーはrule IDで、形式は`<plugin>/<rule>`または単一rule名。
-textlintコマンドの場合のみ、`hints`に`messages[].end_col`参照記法のキーで累積位置仕様を追加する。
+textlintコマンドの場合のみ、`hints`に`messages[].col`参照記法のキーで`col`/`end_col`の累積位置仕様を追加する。
 
 集約は先勝ちで行う。複数の`diagnostic`レコードで同一ruleに異なるhintが現れた場合は最初の値を採用し、
 warningログを出力する。

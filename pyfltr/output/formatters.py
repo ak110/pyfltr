@@ -232,8 +232,8 @@ class JSONLFormatter:
             warnings=warnings,
             run_id=ctx.run_id,
             launcher_prefix=ctx.launcher_prefix,
-            fully_excluded_files=pyfltr.warnings_.excluded_direct_files(),
-            missing_targets=pyfltr.warnings_.missing_direct_files(),
+            fully_excluded_files=pyfltr.warnings_.filtered_direct_files(reason="excluded"),
+            missing_targets=pyfltr.warnings_.filtered_direct_files(reason="missing"),
         )
         # 構造化出力の書き出しと並行して、常にtext整形を実行する。
         pyfltr.cli.render.render_results(

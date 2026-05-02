@@ -68,15 +68,21 @@ def test_emit_warning_without_hint_omitted() -> None:
     assert "hint" not in entries[0]
 
 
-def test_excluded_direct_files_accumulates() -> None:
-    """add_excluded_direct_file で順序通りに蓄積される。"""
-    pyfltr.warnings_.add_excluded_direct_file("docs/a.md")
-    pyfltr.warnings_.add_excluded_direct_file("src/b.py")
-    assert pyfltr.warnings_.excluded_direct_files() == ["docs/a.md", "src/b.py"]
+def test_filtered_direct_files_accumulates_with_reason() -> None:
+    """add_filtered_direct_file はreason別に蓄積し、reasonフィルタ・全件取得の双方が正しく返る。"""
+    pyfltr.warnings_.add_filtered_direct_file("docs/a.md", reason="excluded")
+    pyfltr.warnings_.add_filtered_direct_file("missing/x.py", reason="missing")
+    pyfltr.warnings_.add_filtered_direct_file("src/b.py", reason="excluded")
+    assert pyfltr.warnings_.filtered_direct_files(reason="excluded") == ["docs/a.md", "src/b.py"]
+    assert pyfltr.warnings_.filtered_direct_files(reason="missing") == ["missing/x.py"]
+    assert pyfltr.warnings_.filtered_direct_files() == ["docs/a.md", "missing/x.py", "src/b.py"]
 
 
-def test_clear_also_resets_excluded_direct_files() -> None:
-    """clear は直接指定除外ファイル蓄積もリセットする。"""
-    pyfltr.warnings_.add_excluded_direct_file("a.md")
+def test_clear_also_resets_filtered_direct_files() -> None:
+    """clear は直接指定フィルタ対象ファイル蓄積もreasonを問わずリセットする。"""
+    pyfltr.warnings_.add_filtered_direct_file("a.md", reason="excluded")
+    pyfltr.warnings_.add_filtered_direct_file("b.py", reason="missing")
     pyfltr.warnings_.clear()
-    assert not pyfltr.warnings_.excluded_direct_files()
+    assert not pyfltr.warnings_.filtered_direct_files()
+    assert not pyfltr.warnings_.filtered_direct_files(reason="excluded")
+    assert not pyfltr.warnings_.filtered_direct_files(reason="missing")

@@ -919,11 +919,12 @@ def test_build_command_record_hints_key_omitted_when_empty() -> None:
     assert "hints" not in record_empty
 
 
-def test_build_command_record_textlint_end_col_hint_only_when_diagnostics() -> None:
-    """textlintの`messages[].end_col`hintは指摘ある時のみ付与される。
+def test_build_command_record_textlint_col_hint_only_when_diagnostics() -> None:
+    """textlintの`messages[].col`hintは指摘ある時のみ付与され、col/end_colを1個に統合する。
 
     hint方針（CLAUDE.md「JSONL出力の`command.hints`は対応する指摘やステータスが
     実際に該当するときのみ付与する」）に従い、指摘0件ではhintsキー自体が省略される。
+    類似文言の重複を避けるため代表キー`messages[].col`の単一hintで両フィールドを説明する。
     """
     result = pyfltr.command.core_.CommandResult(
         command="textlint",
@@ -939,7 +940,7 @@ def test_build_command_record_textlint_end_col_hint_only_when_diagnostics() -> N
     record_no_diag = pyfltr.output.jsonl._build_command_record(result, diagnostics=0, hints=None)
     assert "hints" not in record_no_diag
 
-    # 指摘1件以上: end_col仕様注記が入り、rule hintとも併存する
+    # 指摘1件以上: col仕様注記が入り、rule hintとも併存する
     record_with_hints = pyfltr.output.jsonl._build_command_record(
         result,
         diagnostics=1,
@@ -949,7 +950,10 @@ def test_build_command_record_textlint_end_col_hint_only_when_diagnostics() -> N
             ]
         },
     )
-    assert "messages[].end_col" in record_with_hints["hints"]
+    assert "messages[].col" in record_with_hints["hints"]
+    assert "messages[].end_col" not in record_with_hints["hints"]
+    col_hint = record_with_hints["hints"]["messages[].col"]
+    assert "col" in col_hint and "end_col" in col_hint
     assert "ja-technical-writing/sentence-length" in record_with_hints["hints"]
 
 

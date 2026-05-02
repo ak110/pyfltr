@@ -308,7 +308,7 @@ def run_pipeline(
     # ユーザー指定パスが全て非存在の場合は、各ツールが個別に「ファイルが見つからない」エラーを
     # 多重に出す前段で打ち切り、非ゼロ終了する。warning自体は`expand_all_files`内で発行済み。
     # 部分一致（一部のみ不在）は処理継続、対象未指定（カレント走査）も対象外として扱う。
-    if args.targets and len(pyfltr.warnings_.missing_direct_files()) == len(args.targets):
+    if args.targets and len(pyfltr.warnings_.filtered_direct_files(reason="missing")) == len(args.targets):
         early_run_ctx = pyfltr.output.formatters.RunOutputContext(
             config=config,
             output_file=output_file,
