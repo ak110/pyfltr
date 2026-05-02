@@ -298,13 +298,35 @@ def test_command_info_python_tool_uv_info_shows_fallback(
     """uv.lock不在時は direct_fallback=True となる。"""
     monkeypatch.setattr(pyfltr.command.runner, "cwd_has_uv_lock", lambda: False)
     monkeypatch.setattr(pyfltr.command.runner, "ensure_uv_available", lambda: True)
-    monkeypatch.setattr("shutil.which", lambda name: f"/fake/bin/{name}" if name == "mypy" else None)
+    monkeypatch.setattr("pyfltr.command.runner.shutil.which", lambda name: f"/fake/bin/{name}" if name == "mypy" else None)
     out = _run("mypy", output_format="json", capsys=capsys)
     info = json.loads(out)
     assert "uv_info" in info
     uv_info = info["uv_info"]
     assert uv_info["uv_lock_present"] is False
     assert uv_info["direct_fallback"] is True
+
+
+def test_command_info_python_tool_uv_info_path_override_keeps_fallback_false(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`mypy-path` 指定 × uv/uv.lock 不在でも `direct_fallback` は False のまま。
+
+    `direct_fallback` は「uv経路からdirectへフォールバックした」ことを示すフィールドのため、
+    path-override経路で direct に解決された場合は uv 経路を辿っていない＝Falseが正しい。
+    """
+    monkeypatch.setattr(pyfltr.command.runner, "cwd_has_uv_lock", lambda: False)
+    monkeypatch.setattr(pyfltr.command.runner, "ensure_uv_available", lambda: False)
+    config = pyfltr.config.config.create_default_config()
+    config.values["mypy-path"] = "/usr/bin/mypy-custom"
+    monkeypatch.setattr(pyfltr.config.config, "load_config", lambda **_kw: config)
+    out = _run("mypy", output_format="json", capsys=capsys)
+    info = json.loads(out)
+    assert "uv_info" in info
+    uv_info = info["uv_info"]
+    assert uv_info["uv_available"] is False
+    assert uv_info["uv_lock_present"] is False
+    assert uv_info["direct_fallback"] is False
 
 
 def test_command_info_non_uv_tool_has_no_uv_info(capsys: pytest.CaptureFixture[str]) -> None:

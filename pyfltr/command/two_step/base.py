@@ -36,6 +36,11 @@ def execute_ruff_format_two_step(
     ステップ1の成否にかかわらずステップ2（ruff format）は実行する
     （対象ファイル全体のformat適用を止めないため）。
     `commandline_prefix` は `ruff` 単体（またはuv経路では `["uv", "run", "--frozen", "ruff"]`）を渡す。
+
+    `commandline_prefix` はrunner解決済みの実行プレフィックス（例: `["ruff"]`、
+    `["uv", "run", "--frozen", "ruff"]`、`["mise", "exec", "--", "ruff"]`）を呼び出し側から渡す。
+    Python系ツールの `{command}-path` 既定値は空文字列のため、`config["<tool>-path"]` を
+    直接参照する旧実装は壊れる。同種関数を追加する際は本引数経由でプレフィックスを受け取る形を踏襲する。
     """
     check_commandline: list[str] = list(commandline_prefix)
     check_commandline.extend(config["ruff-format-check-args"])
@@ -182,6 +187,11 @@ def execute_check_write_two_step(
 
     - Step1をスキップし、直接write-args付きで実行
     - 内容ハッシュスナップショットで書き込みを検知
+
+    `commandline_prefix` はrunner解決済みの実行プレフィックス（例: `["ruff"]`、
+    `["uv", "run", "--frozen", "ruff"]`、`["mise", "exec", "--", "ruff"]`）を呼び出し側から渡す。
+    Python系ツールの `{command}-path` 既定値は空文字列のため、`config["<tool>-path"]` を
+    直接参照する旧実装は壊れる。同種関数を追加する際は本引数経由でプレフィックスを受け取る形を踏襲する。
     """
     common_args: list[str] = list(config[f"{command}-args"])
     check_commandline, write_commandline = _build_commandlines(
@@ -431,6 +441,11 @@ def execute_prettier_two_step(
     - rc != 0 → failed
     - rc == 0かつハッシュ変化あり → formatted
     - rc == 0かつ変化なし → succeeded
+
+    `commandline_prefix` はrunner解決済みの実行プレフィックス（例: `["ruff"]`、
+    `["uv", "run", "--frozen", "ruff"]`、`["mise", "exec", "--", "ruff"]`）を呼び出し側から渡す。
+    Python系ツールの `{command}-path` 既定値は空文字列のため、`config["<tool>-path"]` を
+    直接参照する旧実装は壊れる。同種関数を追加する際は本引数経由でプレフィックスを受け取る形を踏襲する。
     """
     common_args: list[str] = list(config[f"{command}-args"])
     check_commandline, write_commandline = _build_commandlines(

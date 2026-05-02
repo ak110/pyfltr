@@ -1950,17 +1950,27 @@ def test_build_commandline_explicit_mise_for_existing_bin_tool() -> None:
 
 
 def test_build_commandline_mise_on_unregistered_tool_raises() -> None:
-    """backend未登録ツールにmise明示するとエラー。"""
+    """backend未登録ツールにmise明示しpath未指定の場合はエラー。
+
+    `typos-path`の既定値は`"typos"`（非空）でpath-override経路に流れるため、
+    未登録 × path未指定の経路を検証するには明示的に空文字列へ落とす必要がある。
+    """
     config = pyfltr.config.config.create_default_config()
     config.values["typos-runner"] = "mise"
+    config.values["typos-path"] = ""
     with pytest.raises(ValueError, match="mise backend"):
         pyfltr.command.runner.build_commandline("typos", config)
 
 
 def test_build_commandline_js_runner_on_non_js_tool_raises() -> None:
-    """js-runner非対応ツールにjs-runner明示するとエラー。"""
+    """js-runner非対応ツールにjs-runner明示しpath未指定の場合はエラー。
+
+    `typos-path`の既定値は`"typos"`（非空）でpath-override経路に流れるため、
+    未登録 × path未指定の経路を検証するには明示的に空文字列へ落とす必要がある。
+    """
     config = pyfltr.config.config.create_default_config()
     config.values["typos-runner"] = "js-runner"
+    config.values["typos-path"] = ""
     with pytest.raises(ValueError, match="js-runner"):
         pyfltr.command.runner.build_commandline("typos", config)
 
@@ -2397,10 +2407,31 @@ def test_get_mise_active_tool_key_for_unknown_command() -> None:
 # --- uv runner テスト ---
 
 
-def test_build_commandline_python_tool_uv_with_lock_and_uv_present(monkeypatch) -> None:
+@pytest.fixture(name="setup_uv_runner")
+def _setup_uv_runner(monkeypatch: pytest.MonkeyPatch) -> typing.Callable[..., None]:
+    """uv runner経路のテスト用ヘルパー。
+
+    呼び出し: `setup_uv_runner(uv_lock=..., uv_available=..., python_bin_dir=...)`。
+    `cwd_has_uv_lock` / `ensure_uv_available` をテスト引数で差し替える。
+    `python_bin_dir` 指定時は `pyfltr.command.runner.shutil.which` も差し替えて、
+    direct フォールバック後に解決される python ツールのパスを `<dir>/<name>` で返す。
+    """
+
+    def _apply(*, uv_lock: bool, uv_available: bool, python_bin_dir: str | None = None) -> None:
+        monkeypatch.setattr(pyfltr.command.runner, "cwd_has_uv_lock", lambda: uv_lock)
+        monkeypatch.setattr(pyfltr.command.runner, "ensure_uv_available", lambda: uv_available)
+        if python_bin_dir is not None:
+            monkeypatch.setattr(
+                "pyfltr.command.runner.shutil.which",
+                lambda name: f"{python_bin_dir}/{name}" if name in pyfltr.command.runner.PYTHON_TOOL_BIN.values() else None,
+            )
+
+    return _apply
+
+
+def test_build_commandline_python_tool_uv_with_lock_and_uv_present(setup_uv_runner) -> None:
     """uv.lockありかつuv利用可能な場合は `uv run --frozen <bin>` を返す。"""
-    monkeypatch.setattr(pyfltr.command.runner, "cwd_has_uv_lock", lambda: True)
-    monkeypatch.setattr(pyfltr.command.runner, "ensure_uv_available", lambda: True)
+    setup_uv_runner(uv_lock=True, uv_available=True)
     config = pyfltr.config.config.create_default_config()
     resolved = pyfltr.command.runner.build_commandline("mypy", config)
     assert resolved.commandline == ["uv", "run", "--frozen", "mypy"]
@@ -2409,32 +2440,27 @@ def test_build_commandline_python_tool_uv_with_lock_and_uv_present(monkeypatch) 
     assert resolved.runner_source == "default"
 
 
-def test_build_commandline_python_tool_uv_falls_back_when_uv_missing(monkeypatch) -> None:
+def test_build_commandline_python_tool_uv_falls_back_when_uv_missing(setup_uv_runner) -> None:
     """uv不在の場合はdirect（shutil.which）へフォールバックする。"""
-    monkeypatch.setattr(pyfltr.command.runner, "cwd_has_uv_lock", lambda: True)
-    monkeypatch.setattr(pyfltr.command.runner, "ensure_uv_available", lambda: False)
-    monkeypatch.setattr("pyfltr.command.runner.shutil.which", lambda name: f"/fake/bin/{name}" if name == "mypy" else None)
+    setup_uv_runner(uv_lock=True, uv_available=False, python_bin_dir="/fake/bin")
     config = pyfltr.config.config.create_default_config()
     resolved = pyfltr.command.runner.build_commandline("mypy", config)
     assert resolved.commandline == ["/fake/bin/mypy"]
     assert resolved.effective_runner == "direct"
 
 
-def test_build_commandline_python_tool_uv_falls_back_when_lock_missing(monkeypatch) -> None:
+def test_build_commandline_python_tool_uv_falls_back_when_lock_missing(setup_uv_runner) -> None:
     """uv.lock不在の場合はdirect（shutil.which）へフォールバックする。"""
-    monkeypatch.setattr(pyfltr.command.runner, "cwd_has_uv_lock", lambda: False)
-    monkeypatch.setattr(pyfltr.command.runner, "ensure_uv_available", lambda: True)
-    monkeypatch.setattr("pyfltr.command.runner.shutil.which", lambda name: f"/fake/bin/{name}" if name == "mypy" else None)
+    setup_uv_runner(uv_lock=False, uv_available=True, python_bin_dir="/fake/bin")
     config = pyfltr.config.config.create_default_config()
     resolved = pyfltr.command.runner.build_commandline("mypy", config)
     assert resolved.commandline == ["/fake/bin/mypy"]
     assert resolved.effective_runner == "direct"
 
 
-def test_build_commandline_python_tool_uv_path_override_wins(monkeypatch) -> None:
+def test_build_commandline_python_tool_uv_path_override_wins(setup_uv_runner) -> None:
     """`mypy-path` 明示指定時はuv経由にならずpath値が採用される。"""
-    monkeypatch.setattr(pyfltr.command.runner, "cwd_has_uv_lock", lambda: True)
-    monkeypatch.setattr(pyfltr.command.runner, "ensure_uv_available", lambda: True)
+    setup_uv_runner(uv_lock=True, uv_available=True)
     config = pyfltr.config.config.create_default_config()
     config.values["mypy-path"] = "/usr/bin/mypy-custom"
     resolved = pyfltr.command.runner.build_commandline("mypy", config)
@@ -2443,20 +2469,18 @@ def test_build_commandline_python_tool_uv_path_override_wins(monkeypatch) -> Non
     assert resolved.effective_runner == "direct"
 
 
-def test_build_commandline_ruff_format_resolves_ruff_bin(monkeypatch) -> None:
+def test_build_commandline_ruff_format_resolves_ruff_bin(setup_uv_runner) -> None:
     """`ruff-format` でuv経路のbin名は `ruff` になる（コマンド名と異なる点が重要）。"""
-    monkeypatch.setattr(pyfltr.command.runner, "cwd_has_uv_lock", lambda: True)
-    monkeypatch.setattr(pyfltr.command.runner, "ensure_uv_available", lambda: True)
+    setup_uv_runner(uv_lock=True, uv_available=True)
     config = pyfltr.config.config.create_default_config()
     resolved = pyfltr.command.runner.build_commandline("ruff-format", config)
     assert resolved.commandline == ["uv", "run", "--frozen", "ruff"]
     assert resolved.effective_runner == "uv"
 
 
-def test_build_commandline_ruff_check_resolves_ruff_bin(monkeypatch) -> None:
+def test_build_commandline_ruff_check_resolves_ruff_bin(setup_uv_runner) -> None:
     """`ruff-check` でuv経路のbin名は `ruff` になる。"""
-    monkeypatch.setattr(pyfltr.command.runner, "cwd_has_uv_lock", lambda: True)
-    monkeypatch.setattr(pyfltr.command.runner, "ensure_uv_available", lambda: True)
+    setup_uv_runner(uv_lock=True, uv_available=True)
     config = pyfltr.config.config.create_default_config()
     resolved = pyfltr.command.runner.build_commandline("ruff-check", config)
     assert resolved.commandline == ["uv", "run", "--frozen", "ruff"]
@@ -2475,8 +2499,30 @@ def test_build_commandline_python_tool_direct_uses_python_tool_bin_map(monkeypat
 
 
 def test_build_commandline_uv_runner_on_non_python_tool_raises() -> None:
-    """`typos-runner = "uv"` を設定すると `ValueError` が出る。"""
+    """`typos-runner = "uv"` × path未指定でエラー。
+
+    `typos-path`の既定値は`"typos"`（非空）でpath-override経路に流れるため、
+    未登録 × path未指定の経路を検証するには明示的に空文字列へ落とす必要がある。
+    """
     config = pyfltr.config.config.create_default_config()
     config.values["typos-runner"] = "uv"
+    config.values["typos-path"] = ""
     with pytest.raises(ValueError, match="PYTHON_TOOL_BINに登録されていない"):
         pyfltr.command.runner.build_commandline("typos", config)
+
+
+def test_build_commandline_uv_runner_with_path_override_skips_validation() -> None:
+    """`{command}-runner = "uv"` × 未登録ツール × `{command}-path` 指定は エラー扱いせずpath値を採用する。
+
+    F1の挙動変更: 明示runner × 未登録ツールでも `{command}-path` 指定時はpath-override経路で
+    direct実行に解決される（利用者が明示的にパスを示している以上、利用者の意図を優先する判断）。
+    `{command}-path` 未指定の場合のみ後段の分岐でエラー化する（path未指定の `mise` / `js-runner` ケースは
+    既存の `test_build_commandline_*_on_unregistered_tool_raises` 系テストで担保済み）。
+    """
+    config = pyfltr.config.config.create_default_config()
+    config.values["typos-runner"] = "uv"
+    config.values["typos-path"] = "/opt/typos/bin/typos"
+    resolved = pyfltr.command.runner.build_commandline("typos", config)
+    assert resolved.commandline == ["/opt/typos/bin/typos"]
+    assert resolved.runner_source == "path-override"
+    assert resolved.effective_runner == "direct"

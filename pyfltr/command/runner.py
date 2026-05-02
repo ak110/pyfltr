@@ -463,18 +463,10 @@ def build_commandline(
     else:
         raise ValueError(f"{command}-runnerの設定値が正しくありません: {runner=}")
 
-    # 明示的にmise / js-runner / uvを指定したのにbackend / binが未登録の場合は、
-    # 経緯（path上書きの有無）に関係なくエラーとする（ユーザー意図を尊重するため）。
-    if runner == "mise" and command not in _BIN_TOOL_SPEC:
-        raise ValueError(f'{command}: mise backend が登録されていないため `{command}-runner = "mise"` は指定できません')
-    if runner == "js-runner" and command not in JS_TOOL_BIN:
-        raise ValueError(f'{command}: js-runner 対応ツールではないため `{command}-runner = "js-runner"` は指定できません')
-    if runner == "uv" and command not in PYTHON_TOOL_BIN:
-        raise ValueError(f'{command}: PYTHON_TOOL_BINに登録されていないため `{command}-runner = "uv"` は指定できません')
-
     # `{command}-path` が非空ならば、その値でdirect実行する（明示パス上書き）。
-    # 上のバリデーションで明示runnerと未登録の組み合わせは弾いているため、ここに到達するのは
-    # 実行自体が成立する組み合わせのみ。
+    # この経路では `{command}-runner` と未登録ツールの組み合わせ（例: `typos-runner = "uv"` ＋ `typos-path` 指定）
+    # でもエラー扱いせずpath値を採用する。利用者が明示的にパスを示している以上、起動経路の整合性より
+    # 利用者の意図を優先する判断。明示runner × 未登録ツール × path未指定の場合のみ後段の分岐でエラー化する。
     if config.values.get(f"{command}-path", "") != "":
         return ResolvedCommandline(
             executable=config[f"{command}-path"],
@@ -530,6 +522,8 @@ def build_commandline(
         )
 
     if effective == "uv":
+        if command not in PYTHON_TOOL_BIN:
+            raise ValueError(f'{command}: PYTHON_TOOL_BINに登録されていないため `{command}-runner = "uv"` は指定できません')
         bin_name = PYTHON_TOOL_BIN[command]
         if cwd_has_uv_lock() and ensure_uv_available():
             return ResolvedCommandline(

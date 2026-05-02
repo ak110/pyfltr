@@ -134,7 +134,10 @@ def _collect_info(command: str, config: pyfltr.config.config.Config, *, do_check
         if runner_value == "uv":
             uv_present = pyfltr.command.runner.ensure_uv_available()
             uv_lock_present = pyfltr.command.runner.cwd_has_uv_lock()
-            fallback = resolved.effective_runner == "direct"
+            # `direct_fallback` は「uv経路からdirectへフォールバックした」ことを意味する。
+            # path-override経由で direct に解決された場合は uv 経路を辿っていないためFalseで揃える。
+            # uv/uv.lock 不在時のみTrueとなる。
+            fallback = resolved.runner_source != "path-override" and not (uv_present and uv_lock_present)
             base["uv_info"] = {
                 "uv_available": uv_present,
                 "uv_lock_present": uv_lock_present,
