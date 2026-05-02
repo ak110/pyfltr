@@ -96,7 +96,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # Falseに押し戻す。カテゴリキー単独では何も有効化されない（presetか個別
     # `{command} = true`が必要）。v3.0.0で既定値をFalse（opt-in）に統一。
     # 対象外プロジェクトで言語別linterが勝手に走るのを防ぐためで、Python系は
-    # 別途 `uv run --with="pyfltr[python]" pyfltr` 等で extras を導入する必要がある。
+    # Python系ツール一式が本体依存に同梱済みのため `uvx pyfltr` で揃う。
     # JavaScript / Rust / .NET系はそれぞれのツールチェインを前提とする。
     "python": False,
     "javascript": False,
@@ -159,24 +159,36 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # カテゴリキー（`python = true`等）がgateを開けて有効化を通す構造。
     # presetを使わず個別に`{command} = true`を指定するとgateを越えて最優先で有効化される。
     "mypy": False,
-    "mypy-path": "mypy",
+    # pathが空文字の場合は{command}-runner設定（既定 "uv"）に基づいて自動解決する。
+    # {command}-runner = "uv" 既定によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
+    # {command}-path明示で従来挙動（指定パスを直接実行）に戻せる。
+    "mypy-path": "",
     "mypy-args": [],
-    "mypy-runner": "direct",
+    "mypy-runner": "uv",
     "mypy-fast": False,
     "pylint": False,
-    "pylint-path": "pylint",
+    # pathが空文字の場合は{command}-runner設定（既定 "uv"）に基づいて自動解決する。
+    # {command}-runner = "uv" 既定によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
+    # {command}-path明示で従来挙動（指定パスを直接実行）に戻せる。
+    "pylint-path": "",
     "pylint-args": [],
-    "pylint-runner": "direct",
+    "pylint-runner": "uv",
     "pylint-fast": False,
     "pyright": False,
-    "pyright-path": "pyright",
+    # pathが空文字の場合は{command}-runner設定（既定 "uv"）に基づいて自動解決する。
+    # {command}-runner = "uv" 既定によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
+    # {command}-path明示で従来挙動（指定パスを直接実行）に戻せる。
+    "pyright-path": "",
     "pyright-args": [],
-    "pyright-runner": "direct",
+    "pyright-runner": "uv",
     "pyright-fast": False,
     "ty": False,
-    "ty-path": "ty",
+    # pathが空文字の場合は{command}-runner設定（既定 "uv"）に基づいて自動解決する。
+    # {command}-runner = "uv" 既定によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
+    # {command}-path明示で従来挙動（指定パスを直接実行）に戻せる。
+    "ty-path": "",
     "ty-args": ["check", "--output-format", "concise", "--error-on-warning"],
-    "ty-runner": "direct",
+    "ty-runner": "uv",
     "ty-fast": True,
     "markdownlint": False,
     # pathが空文字の場合は{command}-runner設定（既定 "js-runner"）に基づいて自動解決する。
@@ -237,9 +249,12 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "prettier-write-args": ["--write"],
     "prettier-fast": True,
     "uv-sort": False,
-    "uv-sort-path": "uv-sort",
+    # pathが空文字の場合は{command}-runner設定（既定 "uv"）に基づいて自動解決する。
+    # {command}-runner = "uv" 既定によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
+    # {command}-path明示で従来挙動（指定パスを直接実行）に戻せる。
+    "uv-sort-path": "",
     "uv-sort-args": [],
-    "uv-sort-runner": "direct",
+    "uv-sort-runner": "uv",
     "uv-sort-fast": True,
     "biome": False,
     "biome-path": "",
@@ -414,8 +429,11 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "gitleaks-version": "latest",
     "gitleaks-fast": False,
     "pytest": False,
-    "pytest-path": "pytest",
-    "pytest-runner": "direct",
+    # pathが空文字の場合は{command}-runner設定（既定 "uv"）に基づいて自動解決する。
+    # {command}-runner = "uv" 既定によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
+    # {command}-path明示で従来挙動（指定パスを直接実行）に戻せる。
+    "pytest-path": "",
+    "pytest-runner": "uv",
     "pytest-args": [],
     "pytest-devmode": True,  # PYTHONDEVMODE=1をするか否か
     "pytest-fast": False,
@@ -428,8 +446,11 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "vitest-args": ["run", "--passWithNoTests"],
     "vitest-fast": False,
     "ruff-format": False,
-    "ruff-format-path": "ruff",
-    "ruff-format-runner": "direct",
+    # pathが空文字の場合は{command}-runner設定（既定 "uv"）に基づいて自動解決する。
+    # {command}-runner = "uv" 既定によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
+    # {command}-path明示で従来挙動（指定パスを直接実行）に戻せる。
+    "ruff-format-path": "",
+    "ruff-format-runner": "uv",
     "ruff-format-args": ["format", "--exit-non-zero-on-format"],
     "ruff-format-fast": True,
     # ruff-format実行時にruff check --fix --unsafe-fixesを先に実行するか。
@@ -440,8 +461,11 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "ruff-format-by-check": True,
     "ruff-format-check-args": ["check", "--fix", "--unsafe-fixes"],
     "ruff-check": False,
-    "ruff-check-path": "ruff",
-    "ruff-check-runner": "direct",
+    # pathが空文字の場合は{command}-runner設定（既定 "uv"）に基づいて自動解決する。
+    # {command}-runner = "uv" 既定によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
+    # {command}-path明示で従来挙動（指定パスを直接実行）に戻せる。
+    "ruff-check-path": "",
+    "ruff-check-runner": "uv",
     "ruff-check-args": ["check"],
     "ruff-check-fast": True,
     # fixモード時に通常argsの後に追加する引数。
@@ -899,7 +923,7 @@ def load_config(
         raise ValueError(f"bin-runnerの設定値が正しくありません。{bin_runner=} (許容値: {', '.join(BIN_RUNNERS)})")
 
     # {command}-runnerの値バリデーション
-    # 各コマンドごとに`"direct"` / `"mise"` / `"bin-runner"` / `"js-runner"`の4値のみ許容する。
+    # 各コマンドごとに`"direct"` / `"mise"` / `"bin-runner"` / `"js-runner"` / `"uv"`の5値のみ許容する。
     for key, value in config.values.items():
         if not key.endswith("-runner") or key in ("bin-runner", "js-runner"):
             continue

@@ -455,6 +455,7 @@ def execute_command(
                 command,
                 command_info,
                 commandline,
+                commandline_prefix,
                 targets,
                 config,
                 args,

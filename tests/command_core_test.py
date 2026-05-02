@@ -1854,11 +1854,20 @@ def test_resolve_runner_default_for_js_tools() -> None:
 
 
 def test_resolve_runner_default_for_direct_tools() -> None:
-    """typos / yamllint / Python系ツールの既定は"direct"。"""
+    """typos / yamllintの既定は"direct"。"""
     config = pyfltr.config.config.create_default_config()
-    for command in ("typos", "yamllint", "mypy", "pylint", "pyright", "ty", "ruff-check", "ruff-format", "pytest", "uv-sort"):
+    for command in ("typos", "yamllint"):
         runner, source = pyfltr.command.runner.resolve_runner(command, config)
         assert runner == "direct", f"{command}のrunnerは'direct'であるべき"
+        assert source == "default"
+
+
+def test_resolve_runner_default_for_uv_tools() -> None:
+    """Python系ツールの既定は"uv"。"""
+    config = pyfltr.config.config.create_default_config()
+    for command in ("mypy", "pylint", "pyright", "ty", "ruff-check", "ruff-format", "pytest", "uv-sort"):
+        runner, source = pyfltr.command.runner.resolve_runner(command, config)
+        assert runner == "uv", f"{command}のrunnerは'uv'であるべき"
         assert source == "default"
 
 
@@ -2383,3 +2392,91 @@ def test_get_mise_active_tool_key_for_unknown_command() -> None:
     """mise backend未登録のコマンドは `None` を返す。"""
     assert pyfltr.command.runner.get_mise_active_tool_key("ruff-check") is None
     assert pyfltr.command.runner.get_mise_active_tool_key("not-registered") is None
+
+
+# --- uv runner テスト ---
+
+
+def test_build_commandline_python_tool_uv_with_lock_and_uv_present(monkeypatch) -> None:
+    """uv.lockありかつuv利用可能な場合は `uv run --frozen <bin>` を返す。"""
+    monkeypatch.setattr(pyfltr.command.runner, "cwd_has_uv_lock", lambda: True)
+    monkeypatch.setattr(pyfltr.command.runner, "ensure_uv_available", lambda: True)
+    config = pyfltr.config.config.create_default_config()
+    resolved = pyfltr.command.runner.build_commandline("mypy", config)
+    assert resolved.commandline == ["uv", "run", "--frozen", "mypy"]
+    assert resolved.runner == "uv"
+    assert resolved.effective_runner == "uv"
+    assert resolved.runner_source == "default"
+
+
+def test_build_commandline_python_tool_uv_falls_back_when_uv_missing(monkeypatch) -> None:
+    """uv不在の場合はdirect（shutil.which）へフォールバックする。"""
+    monkeypatch.setattr(pyfltr.command.runner, "cwd_has_uv_lock", lambda: True)
+    monkeypatch.setattr(pyfltr.command.runner, "ensure_uv_available", lambda: False)
+    monkeypatch.setattr("pyfltr.command.runner.shutil.which", lambda name: f"/fake/bin/{name}" if name == "mypy" else None)
+    config = pyfltr.config.config.create_default_config()
+    resolved = pyfltr.command.runner.build_commandline("mypy", config)
+    assert resolved.commandline == ["/fake/bin/mypy"]
+    assert resolved.effective_runner == "direct"
+
+
+def test_build_commandline_python_tool_uv_falls_back_when_lock_missing(monkeypatch) -> None:
+    """uv.lock不在の場合はdirect（shutil.which）へフォールバックする。"""
+    monkeypatch.setattr(pyfltr.command.runner, "cwd_has_uv_lock", lambda: False)
+    monkeypatch.setattr(pyfltr.command.runner, "ensure_uv_available", lambda: True)
+    monkeypatch.setattr("pyfltr.command.runner.shutil.which", lambda name: f"/fake/bin/{name}" if name == "mypy" else None)
+    config = pyfltr.config.config.create_default_config()
+    resolved = pyfltr.command.runner.build_commandline("mypy", config)
+    assert resolved.commandline == ["/fake/bin/mypy"]
+    assert resolved.effective_runner == "direct"
+
+
+def test_build_commandline_python_tool_uv_path_override_wins(monkeypatch) -> None:
+    """`mypy-path` 明示指定時はuv経由にならずpath値が採用される。"""
+    monkeypatch.setattr(pyfltr.command.runner, "cwd_has_uv_lock", lambda: True)
+    monkeypatch.setattr(pyfltr.command.runner, "ensure_uv_available", lambda: True)
+    config = pyfltr.config.config.create_default_config()
+    config.values["mypy-path"] = "/usr/bin/mypy-custom"
+    resolved = pyfltr.command.runner.build_commandline("mypy", config)
+    assert resolved.commandline == ["/usr/bin/mypy-custom"]
+    assert resolved.runner_source == "path-override"
+    assert resolved.effective_runner == "direct"
+
+
+def test_build_commandline_ruff_format_resolves_ruff_bin(monkeypatch) -> None:
+    """`ruff-format` でuv経路のbin名は `ruff` になる（コマンド名と異なる点が重要）。"""
+    monkeypatch.setattr(pyfltr.command.runner, "cwd_has_uv_lock", lambda: True)
+    monkeypatch.setattr(pyfltr.command.runner, "ensure_uv_available", lambda: True)
+    config = pyfltr.config.config.create_default_config()
+    resolved = pyfltr.command.runner.build_commandline("ruff-format", config)
+    assert resolved.commandline == ["uv", "run", "--frozen", "ruff"]
+    assert resolved.effective_runner == "uv"
+
+
+def test_build_commandline_ruff_check_resolves_ruff_bin(monkeypatch) -> None:
+    """`ruff-check` でuv経路のbin名は `ruff` になる。"""
+    monkeypatch.setattr(pyfltr.command.runner, "cwd_has_uv_lock", lambda: True)
+    monkeypatch.setattr(pyfltr.command.runner, "ensure_uv_available", lambda: True)
+    config = pyfltr.config.config.create_default_config()
+    resolved = pyfltr.command.runner.build_commandline("ruff-check", config)
+    assert resolved.commandline == ["uv", "run", "--frozen", "ruff"]
+    assert resolved.effective_runner == "uv"
+
+
+def test_build_commandline_python_tool_direct_uses_python_tool_bin_map(monkeypatch) -> None:
+    """`mypy-runner = "direct"` 明示時は `_resolve_python_tool_direct` 経由でshutil.whichを使う。"""
+    monkeypatch.setattr("pyfltr.command.runner.shutil.which", lambda name: f"/custom/bin/{name}" if name == "mypy" else None)
+    config = pyfltr.config.config.create_default_config()
+    config.values["mypy-runner"] = "direct"
+    resolved = pyfltr.command.runner.build_commandline("mypy", config)
+    assert resolved.commandline == ["/custom/bin/mypy"]
+    assert resolved.effective_runner == "direct"
+    assert resolved.runner_source == "explicit"
+
+
+def test_build_commandline_uv_runner_on_non_python_tool_raises() -> None:
+    """`typos-runner = "uv"` を設定すると `ValueError` が出る。"""
+    config = pyfltr.config.config.create_default_config()
+    config.values["typos-runner"] = "uv"
+    with pytest.raises(ValueError, match="PYTHON_TOOL_BINに登録されていない"):
+        pyfltr.command.runner.build_commandline("typos", config)

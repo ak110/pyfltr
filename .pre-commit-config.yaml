@@ -28,7 +28,7 @@ repos:
     hooks:
       - id: pyfltr
         name: pyfltr
-        entry: uv run --with-editable=".[python]" pyfltr fast
+        entry: uv run --frozen --with-editable=. pyfltr fast
         types_or: [python, markdown, toml]
         require_serial: true
         language: system

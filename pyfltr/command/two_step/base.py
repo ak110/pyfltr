@@ -17,6 +17,7 @@ def execute_ruff_format_two_step(
     command: str,
     command_info: pyfltr.config.config.CommandInfo,
     format_commandline: list[str],
+    commandline_prefix: list[str],
     targets: list[pathlib.Path],
     config: pyfltr.config.config.Config,
     args: argparse.Namespace,
@@ -34,8 +35,9 @@ def execute_ruff_format_two_step(
     別途ruff-checkコマンドで検出される前提。ただしexit >= 2（設定ミス等）はfailed扱い。
     ステップ1の成否にかかわらずステップ2（ruff format）は実行する
     （対象ファイル全体のformat適用を止めないため）。
+    `commandline_prefix` は `ruff` 単体（またはuv経路では `["uv", "run", "--frozen", "ruff"]`）を渡す。
     """
-    check_commandline: list[str] = [config["ruff-format-path"]]
+    check_commandline: list[str] = list(commandline_prefix)
     check_commandline.extend(config["ruff-format-check-args"])
     check_commandline.extend(str(t) for t in targets)
 

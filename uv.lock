@@ -8,7 +8,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-05-01T05:22:12.375803785Z"
+exclude-newer = "2026-05-01T07:32:05.061503475Z"
 exclude-newer-span = "P1D"
 
 [options.exclude-newer-package]
@@ -1214,31 +1214,27 @@ wheels = [
 name = "pyfltr"
 source = { editable = "." }
 dependencies = [
+    { name = "dill" },
     { name = "mcp" },
+    { name = "mypy" },
     { name = "natsort" },
     { name = "platformdirs" },
     { name = "pre-commit" },
     { name = "psutil" },
-    { name = "python-ulid" },
-    { name = "pyyaml" },
-    { name = "textual" },
-    { name = "tomlkit" },
-    { name = "typos" },
-    { name = "yamllint" },
-]
-
-[package.optional-dependencies]
-python = [
-    { name = "dill" },
-    { name = "mypy" },
     { name = "pylint" },
     { name = "pylint-pydantic" },
     { name = "pyright", extra = ["nodejs"] },
     { name = "pytest" },
     { name = "pytest-asyncio" },
+    { name = "python-ulid" },
+    { name = "pyyaml" },
     { name = "ruff" },
+    { name = "textual" },
+    { name = "tomlkit" },
     { name = "ty" },
+    { name = "typos" },
     { name = "uv-sort" },
+    { name = "yamllint" },
 ]
 
 [package.dev-dependencies]
@@ -1252,26 +1248,26 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "dill", marker = "extra == 'python'", specifier = ">=0.3" },
+    { name = "dill", specifier = ">=0.3" },
     { name = "mcp", specifier = ">=1.0" },
-    { name = "mypy", marker = "extra == 'python'", specifier = ">=1.0" },
+    { name = "mypy", specifier = ">=1.0" },
     { name = "natsort", specifier = ">=8.4.0" },
     { name = "platformdirs", specifier = ">=4.0" },
     { name = "pre-commit", specifier = ">=4.5.1" },
     { name = "psutil", specifier = ">=6.0" },
-    { name = "pylint", marker = "extra == 'python'", specifier = ">=3.0" },
-    { name = "pylint-pydantic", marker = "extra == 'python'", specifier = ">=0.4.1" },
-    { name = "pyright", extras = ["nodejs"], marker = "extra == 'python'", specifier = ">=1.1.403" },
-    { name = "pytest", marker = "extra == 'python'", specifier = ">=7.0" },
-    { name = "pytest-asyncio", marker = "extra == 'python'", specifier = ">=1.0.0" },
+    { name = "pylint", specifier = ">=3.0" },
+    { name = "pylint-pydantic", specifier = ">=0.4.1" },
+    { name = "pyright", extras = ["nodejs"], specifier = ">=1.1.403" },
+    { name = "pytest", specifier = ">=7.0" },
+    { name = "pytest-asyncio", specifier = ">=1.0.0" },
     { name = "python-ulid", specifier = ">=3.0" },
     { name = "pyyaml", specifier = ">=6.0.3" },
-    { name = "ruff", marker = "extra == 'python'", specifier = ">=0.12.1" },
+    { name = "ruff", specifier = ">=0.12.1" },
     { name = "textual", specifier = ">=8.0.0" },
     { name = "tomlkit", specifier = ">=0.13" },
-    { name = "ty", marker = "extra == 'python'", specifier = ">=0.0.26" },
+    { name = "ty", specifier = ">=0.0.26" },
     { name = "typos", specifier = ">=1.0" },
-    { name = "uv-sort", marker = "extra == 'python'", specifier = ">=0.5" },
+    { name = "uv-sort", specifier = ">=0.5" },
     { name = "yamllint", specifier = ">=1.0" },
 ]
 provides-extras = ["python"]

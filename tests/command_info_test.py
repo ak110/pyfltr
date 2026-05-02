@@ -10,6 +10,7 @@ import pytest
 
 import pyfltr.cli.command_info
 import pyfltr.command.mise
+import pyfltr.command.runner
 import pyfltr.config.config
 
 
@@ -275,3 +276,53 @@ def test_command_info_json_includes_mise_fields(capsys: pytest.CaptureFixture[st
     assert info["mise_active_tool_key"] == "rust"
     assert info["mise_active_tools"]["status"] == "ok"
     assert not info["mise_active_tools"]["active_keys"]
+
+
+def test_command_info_python_tool_shows_uv_info(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+    """`mypy` を対象に command-info を呼び出すと `uv_info` キーが含まれる。"""
+    monkeypatch.setattr(pyfltr.command.runner, "cwd_has_uv_lock", lambda: True)
+    monkeypatch.setattr(pyfltr.command.runner, "ensure_uv_available", lambda: True)
+    out = _run("mypy", output_format="json", capsys=capsys)
+    info = json.loads(out)
+    assert "uv_info" in info
+    uv_info = info["uv_info"]
+    assert uv_info["uv_available"] is True
+    assert uv_info["uv_lock_present"] is True
+    assert uv_info["direct_fallback"] is False
+    assert uv_info["python_tool_bin"] == "mypy"
+
+
+def test_command_info_python_tool_uv_info_shows_fallback(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """uv.lock不在時は direct_fallback=True となる。"""
+    monkeypatch.setattr(pyfltr.command.runner, "cwd_has_uv_lock", lambda: False)
+    monkeypatch.setattr(pyfltr.command.runner, "ensure_uv_available", lambda: True)
+    monkeypatch.setattr("shutil.which", lambda name: f"/fake/bin/{name}" if name == "mypy" else None)
+    out = _run("mypy", output_format="json", capsys=capsys)
+    info = json.loads(out)
+    assert "uv_info" in info
+    uv_info = info["uv_info"]
+    assert uv_info["uv_lock_present"] is False
+    assert uv_info["direct_fallback"] is True
+
+
+def test_command_info_non_uv_tool_has_no_uv_info(capsys: pytest.CaptureFixture[str]) -> None:
+    """uv経路対象外ツール（cargo-fmt等）には uv_info が付かない。"""
+    out = _run("cargo-fmt", output_format="json", capsys=capsys)
+    info = json.loads(out)
+    assert "uv_info" not in info
+
+
+def test_command_info_text_python_tool_shows_uv_section(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """text形式でもuv診断セクションが表示される。"""
+    monkeypatch.setattr(pyfltr.command.runner, "cwd_has_uv_lock", lambda: True)
+    monkeypatch.setattr(pyfltr.command.runner, "ensure_uv_available", lambda: True)
+    out = _run("mypy", capsys=capsys)
+    assert "## uv診断" in out
+    assert "uv_available: True" in out
+    assert "uv_lock_present: True" in out
+    assert "direct_fallback: False" in out
+    assert "python_tool_bin: mypy" in out

@@ -126,6 +126,21 @@ def _collect_info(command: str, config: pyfltr.config.config.Config, *, do_check
     base["effective_runner"] = resolved.effective_runner
     base["executable"] = resolved.executable
     base["mise_tool_spec_omitted"] = resolved.tool_spec_omitted
+
+    # uv経路（{command}-runner = "uv" 設定時）の診断情報を露出する。
+    # uv/uv.lock の状態に応じて direct フォールバックが発生したかも観測可能にする。
+    if command in pyfltr.command.runner.PYTHON_TOOL_BIN:
+        runner_value, _src = pyfltr.command.runner.resolve_runner(command, config)
+        if runner_value == "uv":
+            uv_present = pyfltr.command.runner.ensure_uv_available()
+            uv_lock_present = pyfltr.command.runner.cwd_has_uv_lock()
+            fallback = resolved.effective_runner == "direct"
+            base["uv_info"] = {
+                "uv_available": uv_present,
+                "uv_lock_present": uv_lock_present,
+                "direct_fallback": fallback,
+                "python_tool_bin": pyfltr.command.runner.PYTHON_TOOL_BIN[command],
+            }
     # 実際に実行されるargv全体（対象ファイル抜き）を表示する。
     # `build_commandline`の戻り値は実行プレフィックスのみで、`{command}-args`等が反映されないため、
     # `build_invocation_argv`経由で通常段の最終argvを組み立てる。
@@ -212,6 +227,17 @@ def _print_text(info: dict[str, typing.Any]) -> None:
             runner_lines.append(f"check_commandline: {' '.join(info['check_commandline'])}")
             runner_lines.append(f"check_effective_runner: {info.get('check_effective_runner')}")
     sections.append(("## ランナー解決", runner_lines))
+
+    # ## uv診断: uv経路ツールのuv可用性・uv.lock検出・フォールバック状態。uv_infoがある場合のみ表示。
+    uv_info = info.get("uv_info")
+    if isinstance(uv_info, dict):
+        uv_lines: list[str] = [
+            f"uv_available: {uv_info.get('uv_available')}",
+            f"uv_lock_present: {uv_info.get('uv_lock_present')}",
+            f"direct_fallback: {uv_info.get('direct_fallback')}",
+            f"python_tool_bin: {uv_info.get('python_tool_bin')}",
+        ]
+        sections.append(("## uv診断", uv_lines))
 
     # ## mise診断: mise取得状況と判定キー。mise経路または該当キーがある場合のみ表示。
     mise_lines: list[str] = []

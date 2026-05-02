@@ -1,6 +1,7 @@
 """runner解決とコマンドライン構築。"""
 
 import dataclasses
+import functools
 import os
 import pathlib
 import shutil
@@ -26,6 +27,19 @@ JS_TOOL_BIN: dict[str, str] = {
     "vitest": "vitest",
     "oxlint": "oxlint",
     "tsc": "tsc",
+}
+
+# pyfltrのコマンド名 -> uv経由およびdirect経路で起動する実行ファイル名。
+# ruff-format / ruff-check は実行ファイル名が `ruff` なので別名解決が必要。
+PYTHON_TOOL_BIN: dict[str, str] = {
+    "ruff-format": "ruff",
+    "ruff-check": "ruff",
+    "mypy": "mypy",
+    "pylint": "pylint",
+    "pyright": "pyright",
+    "ty": "ty",
+    "pytest": "pytest",
+    "uv-sort": "uv-sort",
 }
 
 # pnpx経由で解決するときに `--package` に渡すspec。
@@ -222,7 +236,7 @@ class ResolvedCommandline:
     （`"explicit"` : `{command}-runner` 明示、`"default"` : 既定値、
     `"path-override"` : `{command}-path` 非空でdirect強制）。
     `effective_runner` はグローバル設定への委譲を解決した最終形
-    （`"direct"` / `"mise"` / `"js-pnpx"` / `"js-pnpm"` 等）。
+    （`"direct"` / `"mise"` / `"js-pnpx"` / `"js-pnpm"` / `"uv"` 等）。
     `tool_spec_omitted` はmise経路で `["exec", "--", <bin>]` 形（tool spec省略形）を採用したかを示す。
     commandline文字列の見た目に頼らず判別できるよう、command-info等で明示露出する用途で持つ。
     """
@@ -294,6 +308,37 @@ def _is_tool_active_in_mise_config(
     result = pyfltr.command.mise.get_mise_active_tools(config, allow_side_effects=allow_side_effects)
     key = spec.mise_backend or spec.bin_name
     return key in result.tools
+
+
+@functools.lru_cache(maxsize=1)
+def ensure_uv_available() -> bool:
+    """`uv` バイナリが PATH 上に存在するかを判定する（実行内キャッシュつき）。
+
+    `{command}-runner = "uv"` 経路で `uv run --frozen <bin>` を組み立てるかどうかの判定に使う。
+    未導入時は False を返し、呼び出し側が direct フォールバックへ切り替える。エラー送出はしない。
+    """
+    return shutil.which("uv") is not None
+
+
+@functools.lru_cache(maxsize=1)
+def cwd_has_uv_lock() -> bool:
+    """カレントディレクトリに `uv.lock` が存在するかを判定する（実行内キャッシュつき）。"""
+    return pathlib.Path("uv.lock").is_file()
+
+
+def _resolve_python_tool_direct(command: str) -> str:
+    """Python系ツールのdirect経路実行ファイル解決。
+
+    `PYTHON_TOOL_BIN[command]` を `shutil.which` で絶対パスへ解決する。
+    解決不能なら `FileNotFoundError` を送出する。
+    `{command}-runner = "uv"` がdirectフォールバックする経路と、
+    利用者が `mypy-runner = "direct"` 等を明示した経路で共有する。
+    """
+    bin_name = PYTHON_TOOL_BIN[command]
+    resolved = shutil.which(bin_name)
+    if resolved is None:
+        raise FileNotFoundError(bin_name)
+    return resolved
 
 
 def _resolve_direct_executable(bin_name: str) -> str:
@@ -413,17 +458,19 @@ def build_commandline(
         effective = config["bin-runner"]
     elif runner == "js-runner":
         effective = f"js-{config['js-runner']}"
-    elif runner in ("mise", "direct"):
+    elif runner in ("mise", "direct", "uv"):
         effective = runner
     else:
         raise ValueError(f"{command}-runnerの設定値が正しくありません: {runner=}")
 
-    # 明示的にmise / js-runnerを指定したのにbackend / binが未登録の場合は、
+    # 明示的にmise / js-runner / uvを指定したのにbackend / binが未登録の場合は、
     # 経緯（path上書きの有無）に関係なくエラーとする（ユーザー意図を尊重するため）。
     if runner == "mise" and command not in _BIN_TOOL_SPEC:
         raise ValueError(f'{command}: mise backend が登録されていないため `{command}-runner = "mise"` は指定できません')
     if runner == "js-runner" and command not in JS_TOOL_BIN:
         raise ValueError(f'{command}: js-runner 対応ツールではないため `{command}-runner = "js-runner"` は指定できません')
+    if runner == "uv" and command not in PYTHON_TOOL_BIN:
+        raise ValueError(f'{command}: PYTHON_TOOL_BINに登録されていないため `{command}-runner = "uv"` は指定できません')
 
     # `{command}-path` が非空ならば、その値でdirect実行する（明示パス上書き）。
     # 上のバリデーションで明示runnerと未登録の組み合わせは弾いているため、ここに到達するのは
@@ -482,10 +529,39 @@ def build_commandline(
             effective_runner=effective,
         )
 
+    if effective == "uv":
+        bin_name = PYTHON_TOOL_BIN[command]
+        if cwd_has_uv_lock() and ensure_uv_available():
+            return ResolvedCommandline(
+                executable="uv",
+                prefix=["run", "--frozen", bin_name],
+                runner=runner,
+                runner_source=source,
+                effective_runner="uv",
+            )
+        # uv 不在 or uv.lock 不在 → direct PATH解決へフォールバック。
+        executable = _resolve_python_tool_direct(command)
+        return ResolvedCommandline(
+            executable=executable,
+            prefix=[],
+            runner=runner,
+            runner_source=source,
+            effective_runner="direct",
+        )
+
     # effective == "direct"
     if command in _BIN_TOOL_SPEC:
         spec = _BIN_TOOL_SPEC[command]
         executable = _resolve_direct_executable(spec.bin_name)
+        return ResolvedCommandline(
+            executable=executable,
+            prefix=[],
+            runner=runner,
+            runner_source=source,
+            effective_runner=effective,
+        )
+    if command in PYTHON_TOOL_BIN:
+        executable = _resolve_python_tool_direct(command)
         return ResolvedCommandline(
             executable=executable,
             prefix=[],
@@ -503,7 +579,7 @@ def build_commandline(
             runner_source=source,
             effective_runner=effective,
         )
-    # bin/jsのいずれにも未登録でpathも空 → 解決不能。
+    # bin/js/pythonのいずれにも未登録でpathも空 → 解決不能。
     raise FileNotFoundError(
         f"{command}: 実行ファイルが特定できません ({command}-path もしくは {command}-runner を設定してください)"
     )

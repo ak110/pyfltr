@@ -48,10 +48,10 @@ jobs:
           key: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --all-extras --all-groups
+        run: uv sync --all-groups
 
       - name: Test with pyfltr
-        run: uv run --with-editable=".[python]" pyfltr ci --output-format=github-annotations
+        run: uv run --with-editable=. pyfltr ci --output-format=github-annotations
 
       - name: Prune uv cache for CI
         run: uv cache prune --ci
@@ -98,10 +98,10 @@ jobs:
         uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
 
       - name: Install dependencies
-        run: uv sync --all-extras --all-groups
+        run: uv sync --all-groups
 
       - name: Test with pyfltr
-        run: uv run --with-editable=".[python]" pyfltr ci --output-format=github-annotations
+        run: uv run --with-editable=. pyfltr ci --output-format=github-annotations
 
       - name: Prune uv cache for CI
         run: uv cache prune --ci

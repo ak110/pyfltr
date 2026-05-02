@@ -18,8 +18,8 @@
 # 非 root ユーザー) のキャッシュを最大限再利用する。
 #
 # 同梱ツール一覧 (新ツール追加時は本リストと該当 RUN 層を更新する):
-#   - Python (pyfltr[python] 経由): ruff / mypy / pylint / pyright / ty / pytest / uv-sort
-#   - Python (pyfltr 本体依存): typos / pre-commit
+#   - Python (pyfltr 本体依存に同梱): ruff / mypy / pylint / pyright / ty / pytest / uv-sort /
+#     typos / pre-commit
 #   - Python 単独 (uv tool install): yamllint
 #   - mise 経由のネイティブバイナリ: node (LTS) / shfmt / actionlint /
 #     editorconfig-checker / glab / taplo / hadolint / pinact / gitleaks
@@ -178,9 +178,9 @@ ARG PYFLTR_VERSION=""
 # ``PYFLTR_VERSION`` が空の場合はリリース最新版、指定時は当該バージョンを固定する。
 # 非 root ユーザー ``pyfltr`` 配下に配置されるため、所有権の調整は不要。
 RUN if [ -n "${PYFLTR_VERSION}" ]; then \
-        uv tool install "pyfltr[python]==${PYFLTR_VERSION}" ; \
+        uv tool install "pyfltr==${PYFLTR_VERSION}" ; \
     else \
-        uv tool install "pyfltr[python]" ; \
+        uv tool install "pyfltr" ; \
     fi
 
 ENTRYPOINT ["pyfltr"]

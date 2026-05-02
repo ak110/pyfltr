@@ -287,6 +287,14 @@ version: latest
 tool specを省略した`mise exec -- cargo fmt`形になり、mise設定の解決済み内容（バージョン固定・components等）が反映される。
 mise設定に`rust`記述が無い場合は`mise exec rust@latest -- cargo fmt`形になる。
 
+uv診断系フィールドの意味は次の通り。
+Python系ツール（`{command}-runner = "uv"`が既定のツール）でのみ`## uv診断`セクションが出力される。
+
+- `uv_available`: `uv`バイナリが利用可能かどうか
+- `uv_lock_present`: cwdに`uv.lock`が存在するかどうか
+- `direct_fallback`: uvまたは`uv.lock`の不在によりdirectフォールバックが発生したか
+- `python_tool_bin`: コマンド名から解決された実際の実行ファイル名（`ruff-format`/`ruff-check`は`ruff`になる）
+
 mise診断系フィールドの意味は次の通り。
 出力は機械可読のテキスト形式で、JSON形式（`--format=json`）でも同じキーが取れる。
 
@@ -753,33 +761,7 @@ pyfltr run-for-agent --commands=mypy src/
 
 pyfltrは`.pre-commit-hooks.yaml`を同梱していない。
 pre-commitから呼び出したい場合は`.pre-commit-config.yaml`の`repo: local`でlocal hookとして登録する。
-entryには`uv run --with="pyfltr[python]" pyfltr`または`uvx pyfltr`を指定する。
-pyfltrの実行方式をプロジェクトのuv環境と揃えられるため、依存管理・バージョン固定の観点で一元化できる。
-
-### Pythonプロジェクト（with方式）
-
-Python系プロジェクトでの推奨構成。
-`uv run --with="pyfltr[python]" pyfltr fast`で毎回最新のpyfltrを解決して実行する
-（uvがキャッシュするため2回目以降は実用速度）。
-
-```yaml
-repos:
-  - repo: local
-    hooks:
-      - id: pyfltr-fast
-        name: pyfltr fast
-        language: system
-        entry: uv run --with="pyfltr[python]" pyfltr fast
-        require_serial: true
-        types: [file]
-```
-
-dev依存に`pyfltr[python]`を固定する運用では`entry: uv run pyfltr fast`に置き換えてもよい。
-
-### 非Pythonプロジェクト（`uvx`で都度取得する構成）
-
-Rust / .NETなどpyfltrを`uv.lock`に含めないプロジェクトでは`uvx pyfltr fast`を直接呼び出す。
-`mise`などを用いて`uv`を導入する手順にしておけば、チームメンバー間で環境差異が出にくい。
+entryには`uvx pyfltr`を指定する（`uvx`でキャッシュされるため2回目以降は実用速度）。
 
 ```yaml
 repos:
@@ -792,6 +774,8 @@ repos:
         require_serial: true
         types: [file]
 ```
+
+dev依存に`pyfltr`を固定する運用では`entry: uv run --frozen pyfltr fast`に置き換えてもよい。
 
 ### 共通の注意点
 

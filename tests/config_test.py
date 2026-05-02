@@ -864,6 +864,17 @@ bin-runner = "bogus"
         pyfltr.config.config.load_config(config_dir=tmp_path)
 
 
+def test_command_runner_validation_accepts_uv_value(tmp_path: pathlib.Path) -> None:
+    """`mypy-runner = "uv"` はエラーにならず読み込める。"""
+    pyproject_content = """
+[tool.pyfltr]
+mypy-runner = "uv"
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    config = pyfltr.config.config.load_config(config_dir=tmp_path)
+    assert config["mypy-runner"] == "uv"
+
+
 def test_mise_auto_trust_default() -> None:
     """mise-auto-trustの既定値はTrue。"""
     config = pyfltr.config.config.create_default_config()
@@ -1004,7 +1015,8 @@ def test_bin_tool_default_config_values() -> None:
 
     # uv-sortの既定値
     assert config["uv-sort"] is False
-    assert config["uv-sort-path"] == "uv-sort"
+    assert config["uv-sort-path"] == ""
+    assert config["uv-sort-runner"] == "uv"
     assert config["uv-sort-fast"] is True
 
     # tscのpass-filenames

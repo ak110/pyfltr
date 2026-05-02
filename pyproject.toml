@@ -18,36 +18,34 @@ classifiers = [
     "Topic :: Software Development :: Quality Assurance",
 ]
 dependencies = [
+    "dill>=0.3",
     "mcp>=1.0",
+    "mypy>=1.0",
     "natsort>=8.4.0",
     "platformdirs>=4.0",
     "pre-commit>=4.5.1",
     "psutil>=6.0",
-    "python-ulid>=3.0",
-    "pyyaml>=6.0.3",
-    "textual>=8.0.0",
-    "tomlkit>=0.13",
-    "typos>=1.0",
-    "yamllint>=1.0",
-]
-
-[project.optional-dependencies]
-# Python 系 linter / tester 依存を導入するための extras。
-# v3.0.0 でオプトイン化したため、Python プロジェクトでは
-# ``uv run --with="pyfltr[python]" pyfltr ...`` で都度取り込むのが推奨。
-# dev 依存に固定する場合は ``uv add --dev 'pyfltr[python]'`` または ``pip install 'pyfltr[python]'`` を使う。
-python = [
-    "dill>=0.3",
-    "mypy>=1.0",
     "pylint-pydantic>=0.4.1",
     "pylint>=3.0",
     "pyright[nodejs]>=1.1.403",
     "pytest-asyncio>=1.0.0",
     "pytest>=7.0",
+    "python-ulid>=3.0",
+    "pyyaml>=6.0.3",
     "ruff>=0.12.1",
+    "textual>=8.0.0",
+    "tomlkit>=0.13",
     "ty>=0.0.26",
+    "typos>=1.0",
     "uv-sort>=0.5",
+    "yamllint>=1.0",
 ]
+
+[project.optional-dependencies]
+# pyfltr v3 系で Python 系ツールを extras としていた経緯から、
+# `pyfltr[python]` 指定が利用者環境に残っていてもエラーにならないよう
+# 空配列エイリアスとして保持する。本体依存に Python 系ツール一式は同梱済み。
+python = []
 
 [project.urls]
 Homepage = "https://github.com/ak110/pyfltr"
@@ -56,8 +54,6 @@ Homepage = "https://github.com/ak110/pyfltr"
 pyfltr = "pyfltr.cli.main:main"
 
 [dependency-groups]
-# 利用者向け推奨と同じ起動方式 (``uv run --with-editable=".[python]" pyfltr ...``) で
-# Python 系ツールを取り込むため、dev 依存には Python 系 extras を含めない。
 # mkdocs / mkdocs-material / mkdocs-llmstxt / pytest-mock / types-pyyaml は
 # docs 生成・テストで直接使うため dev に残す。
 dev = [
@@ -80,9 +76,9 @@ exclude-newer = "1 day"
 
 [tool.pyfltr]
 preset = "latest"
-# preset = "latest" + python = true で Python 系推奨構成 (ruff-format / ruff-check /
-# mypy / pylint / pyright / pytest / uv-sort) が gate 通過で有効化される。
-# ``ty`` のみ preset 非収録のため個別 true で追加する。
+# preset = "latest" + Python 系本体依存により、`uvx pyfltr` 単発で
+# Python 系推奨構成 (ruff-format / ruff-check / mypy / pylint / pyright / pytest / uv-sort)
+# が gate 通過で有効化される。`ty` のみ preset 非収録のため個別 true で追加する。
 python = true
 ty = true
 glab-ci-lint = true
