@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import pathlib
 import subprocess
 
 import pytest
@@ -113,7 +114,7 @@ def test_command_info_json_typos(capsys: pytest.CaptureFixture[str]) -> None:
     assert info["command"] == "typos"
     assert info["runner"] == "direct"
     assert info["effective_runner"] == "direct"
-    assert info["commandline"][0].endswith("typos") or info["commandline"][0] == "typos"
+    assert pathlib.Path(info["commandline"][0]).stem == "typos"
     # typosはfix-args未定義のためfix_commandlineキーは含まれない。
     assert "fix_commandline" not in info
 
