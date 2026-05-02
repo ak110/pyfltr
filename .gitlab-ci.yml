@@ -45,7 +45,7 @@ test:
     - export PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:$HOME/.local/share/mise/bin:$PATH"
     - mise trust --all
     # 依存インストール
-    - uv sync --all-groups
+    - uv sync --all-groups --all-extras
   script:
     # --output-file 指定時はstdoutにtext形式の進捗も出力される
     - uv run --with-editable=. pyfltr ci --output-format=code-quality --output-file=code-quality-report.json
@@ -86,7 +86,7 @@ test:
     - $env:PATH = "$env:USERPROFILE\.local\share\mise\shims;$env:PATH"
     - mise trust --all
     # 依存インストール
-    - uv sync --all-groups
+    - uv sync --all-groups --all-extras
   script:
     - uv run --with-editable=. pyfltr ci --output-format=code-quality --output-file=code-quality-report.json
   artifacts:

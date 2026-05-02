@@ -10,7 +10,6 @@
   - ドキュメントなどのみの変更の場合は省略可（pre-commitで実行されるため）
   - テストコードの単体実行なども極力pyfltrを使う（pytestを直接呼び出さない）。
     具体的には `uv run --with-editable=. pyfltr run-for-agent <path>` 等
-    - 詳細な情報などが必要な場合に限り `uv run --with-editable=. pytest -vv <path>` などを使用
   - 修正後の再実行時は、対象ファイルや対象ツールを必要に応じて絞って実行する（最終検証はCIに委ねる前提）
     - 例: `uv run --with-editable=. pyfltr run-for-agent --commands=mypy,ruff-check path/to/file`
 

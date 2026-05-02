@@ -94,14 +94,12 @@ pyfltrの設定キーとコマンド名は`markdownlint`（例: `markdownlint = 
 ## インストール
 
 推奨は`uvx`での実行。事前のインストールやdev依存への追加は不要で、常に最新のpyfltrを使える。
-Python系ツール一式は本体依存に同梱されているため、`uvx pyfltr`単発で全機能を使える。
 
 ```shell
 uvx pyfltr --help
 ```
 
-dev依存に固定したい場合は`uv add --dev pyfltr`で追加し、
-通常通り`uv run pyfltr ...`で呼び出す。
+`uv`でバージョン管理したい場合は`uv add --dev pyfltr`で追加し、`uv run pyfltr ...`で呼び出す。
 pip環境では`pip install pyfltr`を使う。
 
 ## ガイドページ

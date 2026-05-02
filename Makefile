@@ -18,13 +18,13 @@ clean-stale-dist-info:
 setup:
 	$(MAKE) clean-stale-dist-info
 	uv sync --all-groups --all-extras
-	uv run pre-commit install
+	uvx pre-commit install
 
 # 依存パッケージをアップグレードし全テスト実行
 update:
 	$(MAKE) clean-stale-dist-info
 	env --unset UV_FROZEN uv sync --upgrade --all-groups --all-extras
-	uv run pre-commit autoupdate
+	uvx pre-commit autoupdate
 	$(MAKE) update-actions
 	$(MAKE) test
 
