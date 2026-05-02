@@ -375,7 +375,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "shellcheck-version": "latest",
     "shellcheck-fast": True,
     "typos": False,
-    "typos-path": "typos",
+    "typos-path": "",
     "typos-runner": "direct",
     "typos-args": ["--format", "brief"],
     "typos-version": "latest",
@@ -407,7 +407,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "taplo-fast": True,
     # yamllint: Python製YAMLリンター。既定で無効（opt-in）。直接実行経路。
     "yamllint": False,
-    "yamllint-path": "yamllint",
+    "yamllint-path": "",
     "yamllint-runner": "direct",
     "yamllint-args": [],
     "yamllint-fast": True,
@@ -907,10 +907,6 @@ def load_config(
         else:
             existing.extend(extra)
         config.commands[cmd_name] = dataclasses.replace(config.commands[cmd_name], targets=existing)
-
-    # typos-pathの互換正規化: 過去pyproject.tomlに残った空文字列を "typos" へ変換する
-    if config.values["typos-path"] == "":
-        config.values["typos-path"] = "typos"
 
     # js-runnerの値バリデーション
     js_runner = config.values["js-runner"]

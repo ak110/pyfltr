@@ -129,21 +129,19 @@ def _collect_info(command: str, config: pyfltr.config.config.Config, *, do_check
 
     # uv経路（{command}-runner = "uv" 設定時）の診断情報を露出する。
     # uv/uv.lock の状態に応じて direct フォールバックが発生したかも観測可能にする。
-    if command in pyfltr.command.runner.PYTHON_TOOL_BIN:
-        runner_value, _src = pyfltr.command.runner.resolve_runner(command, config)
-        if runner_value == "uv":
-            uv_present = pyfltr.command.runner.ensure_uv_available()
-            uv_lock_present = pyfltr.command.runner.cwd_has_uv_lock()
-            # `direct_fallback` は「uv経路からdirectへフォールバックした」ことを意味する。
-            # path-override経由で direct に解決された場合は uv 経路を辿っていないためFalseで揃える。
-            # uv/uv.lock 不在時のみTrueとなる。
-            fallback = resolved.runner_source != "path-override" and not (uv_present and uv_lock_present)
-            base["uv_info"] = {
-                "uv_available": uv_present,
-                "uv_lock_present": uv_lock_present,
-                "direct_fallback": fallback,
-                "python_tool_bin": pyfltr.command.runner.PYTHON_TOOL_BIN[command],
-            }
+    if command in pyfltr.command.runner.PYTHON_TOOL_BIN and runner == "uv":
+        uv_present = pyfltr.command.runner.ensure_uv_available()
+        uv_lock_present = pyfltr.command.runner.cwd_has_uv_lock()
+        # `direct_fallback` は「uv経路からdirectへフォールバックした」ことを意味する。
+        # path-override経由で direct に解決された場合は uv 経路を辿っていないためFalseで揃える。
+        # uv/uv.lock 不在時のみTrueとなる。
+        fallback = resolved.runner_source != "path-override" and not (uv_present and uv_lock_present)
+        base["uv_info"] = {
+            "uv_available": uv_present,
+            "uv_lock_present": uv_lock_present,
+            "direct_fallback": fallback,
+            "python_tool_bin": pyfltr.command.runner.PYTHON_TOOL_BIN[command],
+        }
     # 実際に実行されるargv全体（対象ファイル抜き）を表示する。
     # `build_commandline`の戻り値は実行プレフィックスのみで、`{command}-args`等が反映されないため、
     # `build_invocation_argv`経由で通常段の最終argvを組み立てる。

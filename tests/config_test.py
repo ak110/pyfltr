@@ -1037,10 +1037,10 @@ def test_gitleaks_default_config_values() -> None:
 
 
 def test_yamllint_default_config_values() -> None:
-    """yamllintは既定で無効（opt-in）、直接実行経路でコマンド名をpathとして保持する。"""
+    """yamllintは既定で無効（opt-in）、直接実行経路で`{command}-path`は空文字列契約に揃える。"""
     config = pyfltr.config.config.create_default_config()
     assert config["yamllint"] is False, "yamllintは既定で無効"
-    assert config["yamllint-path"] == "yamllint", "yamllint-pathはコマンド名"
+    assert config["yamllint-path"] == "", "yamllint-pathは空文字列契約に揃える"
     assert config["yamllint-args"] == [], "yamllint-argsは空リスト"
     assert config["yamllint-fast"] is True, "yamllint-fastはTrue"
     info = pyfltr.config.config.BUILTIN_COMMANDS["yamllint"]
@@ -1049,24 +1049,13 @@ def test_yamllint_default_config_values() -> None:
 
 
 def test_typos_default_config_values() -> None:
-    """typosはPyPI依存として直接実行するため、pathはコマンド名・versionは互換維持で残す。"""
+    """typosはPyPI依存として直接実行するため、pathは空文字列契約に揃え未登録ツール経路で解決する。"""
     config = pyfltr.config.config.create_default_config()
     assert config["typos"] is False, "typosは既定で無効"
-    assert config["typos-path"] == "typos", "typos-pathはコマンド名"
+    assert config["typos-path"] == "", "typos-pathは空文字列契約に揃える"
     # typos-versionは既存ユーザーの設定との互換維持のため定義を残す
     assert config["typos-version"] == "latest", "typos-versionはlatest（互換維持）"
     assert config["typos-fast"] is True, "typos-fastはTrue"
-
-
-def test_typos_path_empty_string_normalized(tmp_path: pathlib.Path) -> None:
-    """load_configでtypos-path = ""を読み込んだ場合に"typos"へ正規化される。"""
-    pyproject_content = """
-[tool.pyfltr]
-typos-path = ""
-"""
-    (tmp_path / "pyproject.toml").write_text(pyproject_content)
-    config = pyfltr.config.config.load_config(config_dir=tmp_path)
-    assert config["typos-path"] == "typos"
 
 
 def test_uv_sort_in_python_commands() -> None:

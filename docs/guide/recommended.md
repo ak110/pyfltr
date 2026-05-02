@@ -331,77 +331,25 @@ textlint-lint-args = ["--format", "compact"]
 pyfltrはfix段の起動コマンドから`--format`ペアを自動除去するため。
 ただし新規設定では`textlint-lint-args`に書くことを推奨する。
 
+## 呼び出し方の使い分け
+
+状況に応じて`pyfltr`の呼び出し方を以下のいずれかから選ぶ。
+
+| 状況 | 呼び出し方 | 補足 |
+| --- | --- | --- |
+| 公式Dockerイメージ内（CI推奨構成） | `pyfltr ...` | イメージ同梱の本体を直接呼ぶ。uvキャッシュ経由の解決を挟まない |
+| コンテナ外・dev依存に固定しない | `uvx pyfltr ...` | uvが毎回最新を解決する。ローカル開発・軽量CIで使用 |
+| コンテナ外・dev依存に固定する | `uv run pyfltr ...` | `uv add --dev pyfltr`済みのプロジェクトで使う。`UV_FROZEN`との併用を推奨 |
+
 ## CI
 
 GitHub Actionsでpyfltrを実行する構成の例。
-
-```yaml
-env:
-  # 開発モード: DeprecationWarningなどの隠れた問題を早期検出する
-  PYTHONDEVMODE: "1"
-  # サプライチェーン攻撃対策: uvがlockfileを常に尊重する
-  UV_FROZEN: "1"
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.11", "3.12", "3.13", "3.14"]
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v8
-        with:
-          python-version: ${{ matrix.python-version }}
-          enable-cache: true
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: "lts/*"
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: latest
-
-      - name: Configure pnpm security
-        run: pnpm config set minimum-release-age 1440 --global
-
-      - name: Test with pyfltr
-        run: uvx pyfltr ci --output-format=github-annotations
-
-      - name: Prune uv cache for CI
-        run: uv cache prune --ci
-```
-
-ポイント:
-
-- `env.PYTHONDEVMODE: "1"`: Pythonの開発モードを有効化する。`DeprecationWarning`の表示や各種デバッグチェックが有効になり、
-  隠れた問題を早期に検出できる。
-- `env.UV_FROZEN: "1"`: サプライチェーン攻撃対策として、ワークフロー全体で`uv sync`/`uv run`が`uv.lock`を尊重するよう強制する。
-  意図しない再resolveでロックファイルが書き換わるリスクを抑える。
-- `actions/setup-node` + `pnpm/action-setup`: `markdownlint-cli2`と`textlint`をpnpx経由で呼び出すため、
-  PythonだけでなくNode.js環境も必要になる。
-- `pnpm config set minimum-release-age 1440`: サプライチェーン攻撃対策として、
-  公開から24時間（1440分）未満のパッケージのインストールを拒否する。
-- `uvx pyfltr ci ...`: 毎回最新のpyfltrを解決して実行する。
-  事前の`uv sync`は不要。dev依存に`pyfltr`を固定する運用では`uv sync --all-groups`の後に
-  `uv run pyfltr ci ...`へ置き換えられる。
-- `--output-format=github-annotations`: `::error file=...` / `::warning file=...`形式の行を標準出力へ書き出す。
-  プル要求の該当ファイル行にコメントとして表示される。
-- `uv cache prune --ci`: CIキャッシュを軽量化するための後処理。
-
-### 公式Dockerイメージ（ghcr.io/ak110/pyfltr）を使う
-
-GitHub Actionsで`uv` / `pnpm` / `mise` / `hadolint`等のセットアップを毎回流す手間を避けたい場合に使う。
-リリース時に発行する公式Dockerイメージ`ghcr.io/ak110/pyfltr`を`container:`として利用できる。
-イメージには`uv` / `pnpm` / `mise` / `hadolint` / `pinact` / `shellcheck`等が同梱される。
+リリース時に発行する公式Dockerイメージ`ghcr.io/ak110/pyfltr`を`container:`として利用する形を推奨する。
+`uv` / `pnpm` / `mise` / `hadolint` / `pinact` / `shellcheck`等が同梱され、
+セットアップステップを毎回流す手間が省ける。
 キャッシュディレクトリは`/cache`配下にまとめて配置済み（`uv`は`/cache/uv`、`pnpm`は`/cache/pnpm`、`mise`は`/cache/mise`）。
 
-Dockerイメージにpyfltr本体を同梱しているため、CI内では`pyfltr`を直接呼び出すことを推奨する。
+Dockerイメージにpyfltr本体を同梱しているため、CI内では`pyfltr`を直接呼び出す。
 `uvx pyfltr`を使うとコンテナ起動ごとにuvキャッシュ経由のツール解決が走り、コンテナ同梱版を使う利点が薄れるため。
 
 ```yaml
@@ -446,6 +394,42 @@ jobs:
 - `pyfltr ci`: イメージ同梱のpyfltrをそのまま使う。
   uvキャッシュを介した解決を毎回挟まず、コンテナビルド時に確定したバージョンで実行できる。
   特定バージョンに固定したい場合は`image:`のタグ（`vX.Y.Z`）で揃える。
+- `--output-format=github-annotations`: `::error file=...` / `::warning file=...`形式の行を標準出力へ書き出す。
+  プル要求の該当ファイル行にコメントとして表示される。
+
+### Dockerイメージを使わない場合（setup-uv方式）
+
+自前runner制約等でDockerイメージを使えない場合は、`astral-sh/setup-uv`でuvを導入し、Node.js / pnpmを別途セットアップする。
+`UV_FROZEN`・`PYTHONDEVMODE`等の環境変数や`pnpm config set minimum-release-age 1440`は
+ワークフロー側で個別指定する必要がある（Dockerイメージでは事前設定済み）。
+
+```yaml
+env:
+  PYTHONDEVMODE: "1"
+  UV_FROZEN: "1"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v8
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "lts/*"
+      - uses: pnpm/action-setup@v6
+        with:
+          version: latest
+      - run: pnpm config set minimum-release-age 1440 --global
+      - run: uvx pyfltr ci --output-format=github-annotations
+      - run: uv cache prune --ci
+```
 
 ### PRの差分ファイルのみを対象にする
 

@@ -1950,27 +1950,17 @@ def test_build_commandline_explicit_mise_for_existing_bin_tool() -> None:
 
 
 def test_build_commandline_mise_on_unregistered_tool_raises() -> None:
-    """backend未登録ツールにmise明示しpath未指定の場合はエラー。
-
-    `typos-path`の既定値は`"typos"`（非空）でpath-override経路に流れるため、
-    未登録 × path未指定の経路を検証するには明示的に空文字列へ落とす必要がある。
-    """
+    """backend未登録ツールにmise明示しpath未指定の場合はエラー。"""
     config = pyfltr.config.config.create_default_config()
     config.values["typos-runner"] = "mise"
-    config.values["typos-path"] = ""
     with pytest.raises(ValueError, match="mise backend"):
         pyfltr.command.runner.build_commandline("typos", config)
 
 
 def test_build_commandline_js_runner_on_non_js_tool_raises() -> None:
-    """js-runner非対応ツールにjs-runner明示しpath未指定の場合はエラー。
-
-    `typos-path`の既定値は`"typos"`（非空）でpath-override経路に流れるため、
-    未登録 × path未指定の経路を検証するには明示的に空文字列へ落とす必要がある。
-    """
+    """js-runner非対応ツールにjs-runner明示しpath未指定の場合はエラー。"""
     config = pyfltr.config.config.create_default_config()
     config.values["typos-runner"] = "js-runner"
-    config.values["typos-path"] = ""
     with pytest.raises(ValueError, match="js-runner"):
         pyfltr.command.runner.build_commandline("typos", config)
 
@@ -2499,14 +2489,9 @@ def test_build_commandline_python_tool_direct_uses_python_tool_bin_map(monkeypat
 
 
 def test_build_commandline_uv_runner_on_non_python_tool_raises() -> None:
-    """`typos-runner = "uv"` × path未指定でエラー。
-
-    `typos-path`の既定値は`"typos"`（非空）でpath-override経路に流れるため、
-    未登録 × path未指定の経路を検証するには明示的に空文字列へ落とす必要がある。
-    """
+    """`typos-runner = "uv"` × path未指定でエラー。"""
     config = pyfltr.config.config.create_default_config()
     config.values["typos-runner"] = "uv"
-    config.values["typos-path"] = ""
     with pytest.raises(ValueError, match="PYTHON_TOOL_BINに登録されていない"):
         pyfltr.command.runner.build_commandline("typos", config)
 
@@ -2526,3 +2511,31 @@ def test_build_commandline_uv_runner_with_path_override_skips_validation() -> No
     assert resolved.commandline == ["/opt/typos/bin/typos"]
     assert resolved.runner_source == "path-override"
     assert resolved.effective_runner == "direct"
+
+
+def test_build_commandline_direct_unregistered_falls_back_to_path_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
+    """登録テーブル未登録のツール×runner=direct×path未指定はコマンド名のPATH解決にフォールバックする。
+
+    `typos` / `yamllint` のように `_BIN_TOOL_SPEC` / `PYTHON_TOOL_BIN` / `JS_TOOL_BIN` の
+    いずれにも登録されていないツールは、コマンド名そのものを `shutil.which` で解決する経路を通る。
+    既定のtypos / yamllint設定（runner=direct、path空文字列）で本フォールバックが発動する。
+    """
+    monkeypatch.setattr(
+        "pyfltr.command.runner.shutil.which",
+        lambda name: f"/usr/local/bin/{name}" if name in ("typos", "yamllint") else None,
+    )
+    config = pyfltr.config.config.create_default_config()
+    resolved_typos = pyfltr.command.runner.build_commandline("typos", config)
+    assert resolved_typos.commandline == ["/usr/local/bin/typos"]
+    assert resolved_typos.effective_runner == "direct"
+    resolved_yamllint = pyfltr.command.runner.build_commandline("yamllint", config)
+    assert resolved_yamllint.commandline == ["/usr/local/bin/yamllint"]
+    assert resolved_yamllint.effective_runner == "direct"
+
+
+def test_build_commandline_direct_unregistered_raises_when_not_on_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    """フォールバック経路でPATH解決に失敗した場合は `FileNotFoundError` を送出する。"""
+    monkeypatch.setattr("pyfltr.command.runner.shutil.which", lambda _name: None)
+    config = pyfltr.config.config.create_default_config()
+    with pytest.raises(FileNotFoundError, match="typos"):
+        pyfltr.command.runner.build_commandline("typos", config)

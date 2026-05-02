@@ -573,9 +573,17 @@ def build_commandline(
             runner_source=source,
             effective_runner=effective,
         )
-    # bin/js/pythonのいずれにも未登録でpathも空 → 解決不能。
-    raise FileNotFoundError(
-        f"{command}: 実行ファイルが特定できません ({command}-path もしくは {command}-runner を設定してください)"
+    # bin/js/python いずれの登録テーブルにも該当しないツール（typos / yamllint や利用者カスタムコマンド）は、
+    # コマンド名そのものをPATH解決して直接起動する。`{command}-path` 未指定でも `{command}-runner = "direct"` の
+    # 利用者意図に沿ってフォールバックする経路。PATH解決失敗時は `_resolve_direct_executable` が
+    # `FileNotFoundError` を送出する。
+    executable = _resolve_direct_executable(command)
+    return ResolvedCommandline(
+        executable=executable,
+        prefix=[],
+        runner=runner,
+        runner_source=source,
+        effective_runner=effective,
     )
 
 
