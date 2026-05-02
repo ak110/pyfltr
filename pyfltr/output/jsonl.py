@@ -367,6 +367,9 @@ def _build_header_record(
     指定時のみheaderへ露出する（mise経路を使うrunの自己診断用途）。
     `format_source`は`pyfltr.cli.output_format.FORMAT_SOURCE_*`の値で、出力形式の解決経路を明示する。
     指定時のみheaderへ露出する。
+    `uv_lock_present`・`uv_available`はプロセス共通のuv経路追跡情報で、Python系コマンドの
+    実行有無に関わらず常時出力する（利用者・LLMが「uv経路が選択された／directにフォールバックした」
+    の判別に使う）。詳細はCLAUDE.md「ツール解決の優先順位」節を参照。
     """
     record: dict[str, typing.Any] = {
         "kind": "header",
@@ -377,6 +380,8 @@ def _build_header_record(
         "cwd": os.getcwd(),
         "files": files,
         "commands": commands,
+        "uv_lock_present": pyfltr.command.runner.cwd_has_uv_lock(),
+        "uv_available": pyfltr.command.runner.ensure_uv_available(),
     }
     if run_id is not None:
         record["run_id"] = run_id
@@ -455,9 +460,17 @@ def _build_command_record(
         "command": result.command,
         "type": result.command_type,
         "status": result.status,
-        "files": result.files,
-        "diagnostics": diagnostics,
     }
+    # runner情報は `build_commandline` が成功した経路でのみ値が確定する。
+    # `resolution_failed` や対象0件などでcommandline解決を行わない経路では
+    # `effective_runner` / `runner_source` がNoneのままとなり、その場合はキーごと省略する
+    # （既存の他フィールド（rc等）と同じ「Noneは出さない」慣習に揃える）。
+    if result.effective_runner is not None:
+        record["effective_runner"] = result.effective_runner
+    if result.runner_source is not None:
+        record["runner_source"] = result.runner_source
+    record["files"] = result.files
+    record["diagnostics"] = diagnostics
     # cached=Trueのときは実行をスキップしているため`elapsed`は出力せず
     # 前回実行時の計測値を`cached_elapsed`として提示する。LLMが「今回の実行時間」と
     # 誤解するのを避けるため両者を同時に出さない設計。

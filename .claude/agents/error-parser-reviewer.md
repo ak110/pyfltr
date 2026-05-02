@@ -1,21 +1,21 @@
 ---
 name: error-parser-reviewer
 description: >-
-  pyfltr/error_parser.py を変更した PR / コミットに対して、対応ツール全てのエラー出力例に対してパースが
+  pyfltr/command/error_parser.py を変更した PR / コミットに対して、対応ツール全てのエラー出力例に対してパースが
   壊れていないか網羅レビューする。error_parser.py の変更検知時に呼び出す。変更内容のサマリを引数として与えること。
 tools: Read, Grep, Glob, Bash
 ---
 
 # error-parser-reviewer
 
-`pyfltr/error_parser.py` は対応ツールの出力フォーマットを正規表現でパースする、
+`pyfltr/command/error_parser.py` は対応ツールの出力フォーマットを正規表現でパースする、
 最も壊れやすい箇所。本エージェントはここを変更したPR / コミットに対し、
 対応ツール全てに対する網羅レビューを行う。
 
 ## 役割
 
-1. `pyfltr/error_parser.py` の変更前後を `git diff` で把握
-2. `pyfltr/config.py` の `BUILTIN_COMMANDS` から対応ツール一覧を抽出
+1. `pyfltr/command/error_parser.py` の変更前後を `git diff` で把握
+2. `pyfltr/command/builtin.py` の `BUILTIN_COMMANDS` から対応ツール一覧を抽出
 3. 各対応ツールに対し、わざと **エラーを出させる小さな検体** を `Bash` で作って実行
 4. その出力が変更後の正規表現で正しくパースされるか確認
 5. `tests/error_parser_test.py` のカバレッジを評価し、不足するケースを指摘
@@ -27,14 +27,14 @@ tools: Read, Grep, Glob, Bash
 ## 手順
 
 1. **変更内容の確認**
-   - `Bash` で `git diff HEAD pyfltr/error_parser.py` を実行
+   - `Bash` で `git diff HEAD pyfltr/command/error_parser.py` を実行
    - 影響を受けるツール（regexを変えたツール）を特定
 
 2. **対象ツール全てに検体を渡す**
    - 影響範囲が局所的でも、念のため全ツールを対象とする（退行検知）
    - 各ツールについて、わざとエラーを出す `.py` / `.md` ファイルを `/tmp` に作成
    - `uv run <tool> /tmp/<file>` 等で実行し、stdout/stderrを取得
-   - 取得した出力を `pyfltr/error_parser.py` の正規表現と手動で照合
+   - 取得した出力を `pyfltr/command/error_parser.py` の正規表現と手動で照合
 
 3. **テストカバレッジの評価**
    - `tests/error_parser_test.py` を読む

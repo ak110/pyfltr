@@ -111,6 +111,8 @@ def _prepare_execution_params(
             fix_mode=fix_mode,
             fix_args=fix_args,
             via_mise=False,
+            effective_runner=None,
+            runner_source=None,
         )
 
     # `{command}-runner` および `{command}-path` 設定からツール起動コマンドラインを解決する。
@@ -167,6 +169,8 @@ def _prepare_execution_params(
         fix_mode=fix_mode,
         fix_args=fix_args,
         via_mise=via_mise,
+        effective_runner=resolved.effective_runner,
+        runner_source=resolved.runner_source,
     )
 
 
@@ -338,11 +342,15 @@ def execute_command(
     fix_mode = params.fix_mode
     fix_args = params.fix_args
 
-    # 各CommandResultに当該ツールのターゲットファイル一覧を埋めるためのヘルパー。
+    # 各CommandResultに当該ツールのターゲットファイル一覧とrunner解決情報を埋めるためのヘルパー。
     # retry_commandで差し替え可能なターゲットを復元するのに使う（特にpass-filenames=False
     # のツールではcommandlineからも復元できないため、ここで明示的に保持する）。
+    # runner情報（effective_runner / runner_source）は `build_commandline` が成功した経路でのみ
+    # 値が確定するため、targets空（0件）経路ではNoneのまま残す。
     def _with_targets(result: CommandResult) -> CommandResult:
         result.target_files = list(targets)
+        result.effective_runner = params.effective_runner
+        result.runner_source = params.runner_source
         return result
 
     if len(targets) <= 0:

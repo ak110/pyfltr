@@ -32,97 +32,51 @@ plugins:
       full_output: llms-full.txt
       markdown_description: |
         Python / Rust / .NET / TypeScript・JavaScript / ドキュメントなど多言語プロジェクトのformatter・linter・testerを単一コマンドで並列実行するCLIツール。
+        詳細は[利用者向けガイド](guide/index.md)を参照。
 
         ## サブコマンド
 
-        - `pyfltr ci`: 全チェック。formatterによる変更も失敗と判定する（CI向け）
-        - `pyfltr run`: 全チェック。fix段→formatter段→linter/tester段の順で、fix-args定義済みlinterの自動修正→formatter→残りの検査を実行する（ローカル向け）
-        - `pyfltr fast`: 軽量チェック。`run`と同じ3段構成だが、mypy/pylint/pytest等の重いツールを除外（pre-commit向け）
-        - `pyfltr run-for-agent`: `run`の出力形式の既定値を`jsonl`にしたサブコマンド（コーディングエージェント向け）。`PYFLTR_OUTPUT_FORMAT=text`で`text`へ切り戻し可能
-        - `pyfltr config <action>`: 設定ファイルを操作する（`get` / `set` / `delete` / `list`）。`--global`なしは`pyproject.toml`、`--global`付きはグローバル設定ファイル（`~/.config/pyfltr/config.toml`等）が対象となる
-        - `pyfltr list-runs`: 実行アーカイブ内のrun一覧を表示する。`--limit`で件数制御、`--output-format=text|json|jsonl`
-        - `pyfltr show-run <run_id>`: 指定runの詳細を表示する。`<run_id>`は前方一致および`latest`エイリアス可。`--tool <name>`でdiagnostics全件、`--tool <name> --output`で`output.log`全文。`--output-format=text|json|jsonl`
-        - `pyfltr command-info <tool>`: 対象ツールの起動方式（`{command}-runner` / 解決された実行ファイル / 最終コマンドライン等）を表示する。`--format=text|json` / `--check`オプションあり
-        - `pyfltr mcp`: stdioトランスポートでMCPサーバーを起動する。提供ツールは`list_runs` / `show_run` / `show_run_diagnostics` / `show_run_output` / `run_for_agent`の5件。`run_for_agent`は`only_failed` / `from_run`引数で失敗ファイルの絞り込み再実行が可能。戻り値に`retry_commands`（失敗コマンドの再実行シェルコマンド辞書）・`skipped_reason`（early exit 理由）を含む
-        - `pyfltr generate-shell-completion bash|powershell`: シェル補完スクリプトを標準出力へ書き出す
+        - `pyfltr ci`: CI向け全チェック（formatterの変更も失敗扱い）
+        - `pyfltr run`: ローカル向け全チェック（fix→format→lint/test）
+        - `pyfltr fast`: 軽量チェック（pre-commit向け。重いツールを除外）
+        - `pyfltr run-for-agent`: エージェント向け（`run`の出力形式既定値を`jsonl`に変更）
+        - `pyfltr config <action>`: 設定ファイル操作（`get` / `set` / `delete` / `list`）
+        - `pyfltr generate-shell-completion <shell>`: シェル補完スクリプト生成
+        - `pyfltr list-runs` / `pyfltr show-run <run_id>`: 実行履歴参照
+        - `pyfltr command-info <tool>`: ツール起動方式確認（`--check`オプションあり）
+        - `pyfltr mcp`: MCPサーバー起動
 
-        `--no-fix`で`run`/`fast`/`run-for-agent`のfix段を抑止できる。`ci`は副作用回避のため元々fix段を持たない。
-
-        個別ツールだけを実行したい場合は`--commands=<tool>`オプションを使う（例:`pyfltr run --commands=textlint docs/`）。ツール名やエイリアス（`format` / `lint` / `test`）をサブコマンドとして直接渡すことはできず、誤入力時は実行例付きのエラーメッセージが表示される。失敗時に出力される`command.retry_command`も同じ`--commands=<tool>`書式で生成される。
+        `--commands=<tool>`で個別ツールのみ実行できる（例: `pyfltr run --commands=textlint docs/`）。
+        詳細は[CLIの使い方](guide/usage.md)を参照。
 
         ## 対応ツール
 
-        対応するPython系ツールは ruff-format / ruff-check / mypy / pylint / pyright / ty / pytest / uv-sort の8種。このうちtyのみpreset非収録のため、必要に応じて`ty = true`を個別指定する。
+        Python系・JS/TS系・Rust系・.NET系・ドキュメント系・その他を横断的にサポート。
+        Python系ツール一式は本体依存に同梱されており追加インストール不要。
+        `preset = "latest"` + 言語カテゴリキーの`true`指定で当該言語の推奨ツール一式が有効化される。
 
-        - Python系: ruff-format / ruff-check / mypy / pylint / pyright / ty / pytest / uv-sort
-        - JS/TS系: prettier / eslint / biome / oxlint / tsc / vitest
-        - Rust系: cargo-fmt / cargo-clippy / cargo-check / cargo-deny / cargo-test
-        - .NET系: dotnet-format / dotnet-build / dotnet-test
-        - ドキュメント系: markdownlint（実体はmarkdownlint-cli2） / textlint
-        - その他: pre-commit / typos / ec / shellcheck / shfmt / actionlint / glab-ci-lint（既定で無効）/
-          taplo（既定で無効）/ yamllint（既定で無効）/ hadolint（既定で無効）/ gitleaks（既定で無効）
+        - Python: `ruff-format` / `ruff-check` / `mypy` / `pylint` / `pyright` / `ty` / `pytest` / `uv-sort`
+        - JS/TS: `prettier` / `eslint` / `biome` / `oxlint` / `tsc` / `vitest`
+        - Rust: `cargo-fmt` / `cargo-clippy` / `cargo-check` / `cargo-test` / `cargo-deny`
+        - .NET: `dotnet-format` / `dotnet-build` / `dotnet-test`
+        - ドキュメント: `markdownlint` / `textlint`
+        - シェル: `shfmt` / `shellcheck`
+        - YAML/TOML: `yamllint` / `taplo`
+        - CI/Docker/EditorConfig: `actionlint` / `glab-ci-lint` / `hadolint` / `ec`
+        - セキュリティ/スペル: `gitleaks` / `typos`
+        - その他: `pre-commit`
 
-        typosはpyfltr本体の依存として同梱されており追加インストール不要。
-        個別ツールの網羅的な一覧と詳細は[対応ツール一覧](guide/index.md)を参照。
-
-        `preset = "latest"` で各時点の推奨ツール構成を選べる。プリセットは Python / JavaScript / TypeScript / Rust / .NET / ドキュメント系を横断的に収録し、言語カテゴリキー (`python` / `javascript` / `rust` / `dotnet`) がゲートとして働く。`preset = "latest"` + `{language} = true` の組み合わせだけで当該言語の推奨ツール一式が有効化される。
+        詳細は[対応ツール一覧](guide/index.md)を参照。
 
         ## 設定の基本
 
-        `pyproject.toml` の `[tool.pyfltr]` で設定する。
-
-        ```toml
-        [tool.pyfltr]
-        preset = "latest"
-        python = true
-        pylint-args = ["--jobs=4"]
-        ```
-
-        Python / JavaScript / Rust / .NET の各言語カテゴリに属するツールはすべて既定で無効（opt-in）である。`preset = "latest"` + `{language} = true` で当該言語の推奨ツール一式がゲートを通過して有効化される。preset非収録のty を追加する場合は個別に `ty = true` を指定する（ゲートを越えて最優先）。Python系ツール一式は本体依存に同梱されているため`uvx pyfltr`単発で利用できる（dev依存に固定する場合は `uv add --dev pyfltr` または `pip install pyfltr`）。
-
-        archiveの保持期間やキャッシュ設定など複数プロジェクトで共通にしたい設定は、グローバル設定ファイル（Linux: `~/.config/pyfltr/config.toml`、`platformdirs.user_config_dir`が解決する場所）に集約できる。`pyfltr config set --global`でファイルを作成・編集可能。archive/cache系6キーのみグローバル優先で、それ以外はproject側（pyproject.toml）が優先される。詳細は[設定項目](guide/configuration.md)を参照。
+        `pyproject.toml` の `[tool.pyfltr]` に `preset = "latest"` と言語カテゴリキーを設定する。
+        詳細は[設定項目](guide/configuration.md)を参照。
 
         ## LLMエージェント向け出力（`--output-format=jsonl`）
 
-        `--output-format=jsonl`でJSON Lines形式の構造化出力が得られる。レコードは5種類。
-
-        - `header`: 先頭1行。実行環境情報（`version` / `run_id` / `python` / `executable` / `platform` / `cwd` / `commands` / `files` / `mise_active_tools` / `format_source`）。`commands` は実行対象（有効化された）コマンド名配列。`format_source` は出力形式の解決経路ラベル（`cli` / `env.PYFLTR_OUTPUT_FORMAT` / `subcommand_default` / `env.AI_AGENT` / `fallback` の5値）
-        - `warning`: pyfltr が検出した設定・実行時の警告（`source` で発生元を識別）
-        - `diagnostic`: `(command, file)` 単位で1行に集約される診断。個別指摘は `messages[]` 配列（各要素は `line` / `col` / `rule` / `severity` / `fix` / `msg`）として格納される。`fix` は `"safe"` / `"unsafe"` / `"suggested"` / `"none"` の4値を取り、ツールが自動修正情報を返さない場合はフィールドごと省略
-        - `command`: ツールごとの実行結果サマリ（`status` / `elapsed` / `diagnostics` / `rc` / `retry_command` / `truncated` / `cached` / `cached_from` / `cached_elapsed` / `hint_urls` / `hints`）。`cached=true` のとき `elapsed` は省略され前回実行時の計測値を `cached_elapsed` として提示する。`hint_urls` は rule→ドキュメントURLの辞書。`hints` は rule識別子→1文ヒントの辞書（英語）で、対応する指摘・状態が実際に該当するときのみ付与される（指摘0件の実行ではトークン浪費を避けるため省略）。textlintコマンドで`diagnostics > 0`のときは`messages[].col`キーで`col`/`end_col`フィールドがテキストノード先頭からの累積位置である旨も同梱する。`status="formatted"` の場合は `status.formatted` キーで「書き換え自体が成功扱いで再実行を要しない」旨を含める
-        - `summary`: 最終1行の全体集計。集計カウンタは `no_issues`（`succeeded` / `formatted` / `skipped`）と `needs_action`（`failed` / `resolution_failed`）の2グループへネストする。`needs_action` 配下の合計が1以上のとき、または `applied_fixes` が非空のとき英語の `guidance` 配列を付与する。失敗時は再実行コマンドや `show-run` の案内、`applied_fixes` 非空時はformatter書き換えだけでは再実行が不要である旨の注記を含む。`diagnostics` / `exit` はトップレベル維持。fix ステージ・formatter ステージで実際にファイル内容が変化した場合は `applied_fixes` にソート済みのパス一覧を付与する（変化なし時は省略）。直接指定ファイルが `exclude` / `.gitignore` で全除外された場合は `fully_excluded_files` にパス一覧を付与する（非空時のみ）。直接指定パスが存在しない場合は `missing_targets` にパス一覧を付与する（非空時のみ。`fully_excluded_files` とは原因が別のため別フィールドで併存）
-
-        stdoutモード（`--output-file`未指定）の出力順は`header`→ツール完了順に`diagnostic`+`command`→`warning`→`summary`。stdoutへJSONLのみを書き、進捗ログやTUIは無音化される。`--output-file`指定時はファイルへJSONLを書き、stdoutには従来どおりのテキスト出力を並行出力する（ローカル実行で進捗を追える）。
-
-        ルールドキュメントURLは `command.hint_urls` 辞書（rule→URL）にツール単位で集約され、対応ツール（ruff / pylint / pyright / mypy / shellcheck / eslint / markdownlint）でURLを生成できたruleのみ含まれる。`severity`は`"error"` / `"warning"` / `"info"` の3値に正規化される（未対応ツールは省略）。`command.hints` はrule識別子→1文ヒント（英語）の辞書で、対応する指摘・状態がある場合に限り付与される。textlintコマンドで`diagnostics > 0`のときは`messages[].col`キーで`col`/`end_col`が累積位置である旨の仕様も含む。
-
-        `command.hints`と`summary.guidance`はいずれも英語で記す（トークン効率と汎用性のため）。`command`の`retry_command`は当該コマンド1件を再実行するshellコマンド文字列で、`--no-fix`/`--output-format`などの実行意味論フラグを保持する。ターゲット位置引数は「当該コマンドで失敗したファイルのみ」に絞り込まれる（失敗ファイルを特定できないコマンドはターゲット空）。キャッシュ復元結果（`cached=true`）では`retry_command`は出力されない。`truncated`はsmart truncationが発生した場合のみ付与され、`archive`パス（`tools/<command>/output.log` / `tools/<command>/diagnostics.jsonl`）から全文を復元できる。smart truncationの閾値は`jsonl-diagnostic-limit`/`jsonl-message-max-lines`/`jsonl-message-max-chars`で制御できる。
-
-        `cached`はファイルhashキャッシュから結果を復元したときだけ `true` として付与される（現状は `textlint` のみ対象）。`cached_from`は復元元の `run_id` で、`pyfltr show-run` で当該 run の全文を参照できる。キャッシュは `--no-cache` または `cache = false` で無効化でき、既定の保存期間は 12 時間（`cache-max-age-hours`）。
-
-        `--fail-fast`は1ツールでもエラーが出た時点で残りのジョブを打ち切り、起動済みサブプロセスには `terminate()` を送る。未開始ジョブは `future.cancel()` で取消され、JSONL `command` レコードには `status="skipped"` として計上される。
-
-        `--changed-since <REF>`はgit差分ファイルへの絞り込みオプション。`git diff --name-only <REF>`で取得したコミット差分・未コミット作業ツリー差分・staged差分の和集合と展開済みファイル一覧の交差を対象とする。git不在またはref不在は警告を出して全体実行へフォールバック。`--only-failed`と併用した場合は`--changed-since`を先に適用する。
-
-        `--only-failed`は直前runの実行アーカイブから失敗ツール・失敗ファイルを抽出し、ツール別にその組み合わせだけを再実行する。直前runが無い/失敗ツールが無い/指定`targets`との交差が空の場合はメッセージを出して`rc=0`で成功終了する。診断ファイルが無い失敗ツール（pytest等）は既定対象にフォールバックして全体再実行する。`--from-run <RUN_ID>`で参照対象runを明示指定できる（前方一致・`latest`対応、`--only-failed`との併用前提）。
-
-        ```shell
-        pyfltr run-for-agent
-        ```
-
-        `pyfltr run-for-agent`は`run`の出力形式の既定値を`jsonl`に切り替えたサブコマンド。
-        環境変数`PYFLTR_OUTPUT_FORMAT=jsonl`でも出力形式を既定で切り替えられる。
-        環境変数`AI_AGENT`が設定されていれば、サブコマンドが受理する形式に応じて出力形式の既定値が機械可読な値へ切り替わる（実行系・参照系は`jsonl`、`command-info`は`json`、値の中身は問わない）。
-        優先順位は`CLI > PYFLTR_OUTPUT_FORMAT > サブコマンド既定値 > AI_AGENT > text`で、`PYFLTR_OUTPUT_FORMAT=text`で`run-for-agent`配下や`AI_AGENT`環境下でもtextへ切り戻せる。
-        実行系サブコマンドのJSONL `header`レコードには解決経路ラベル`format_source`が常時含まれ、利用者は`AI_AGENT`環境下でも実際にどの優先段階で値が決まったかを後追いできる。
-
-        ## CI向け出力（`--output-format=sarif|github-annotations|code-quality`）
-
-        - `sarif`: SARIF 2.1.0形式のJSONを1件出力。GitHub code scanning等が取り込み可能
-        - `github-annotations`: `::error file=...` / `::warning file=...` / `::notice file=...`形式の注釈行を出力。GitHub Actionsがプル要求のファイル行にインライン表示する
-        - `code-quality`: Code Climate JSON issue形式（GitLab CI互換）の配列を1件出力。GitLab CIの`artifacts:reports:codequality`へ取り込む
-
-        `sarif`/`code-quality`はstdoutモードでは進捗ログやTUIが無音化される（`github-annotations`はtextと同じ出力にエラー箇所のGAワークフローコマンド記法を補強する）。
+        `pyfltr run-for-agent`でJSONL形式の構造化出力が得られる。レコードは5種類：`header`（実行環境）・`warning`（警告）・`diagnostic`（指摘）・`command`（ツール結果）・`summary`（全体集計）。
+        詳細なJSONLスキーマは[CLIの使い方](guide/usage.md)を参照。
 
       sections:
         ホーム:

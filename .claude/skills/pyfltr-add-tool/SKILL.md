@@ -2,7 +2,7 @@
 name: pyfltr-add-tool
 description: >-
   pyfltr に新しい formatter / linter / tester を追加する際の定型手順チェックリスト。
-  builtin_commands.py / config.py / command.py / error_parser.py / docs/guide/index.md / tests を一貫して更新する。
+  command/builtin.py / config/config.py / command/dispatcher.py / command/error_parser.py / docs/guide/index.md / tests を一貫して更新する。
 ---
 
 # pyfltr 新ツール追加チェックリスト
@@ -15,11 +15,11 @@ description: >-
 
 雛形にする既存ツールを1つ決め（用途が近いもの）、その変更箇所をすべて踏襲する。
 
-- `pyfltr/builtin_commands.py`: `BUILTIN_COMMANDS` への登録（順序が実行順と出力順を決める）。
+- `pyfltr/command/builtin.py`: `BUILTIN_COMMANDS` への登録（順序が実行順と出力順を決める）。
   特定言語専用ツールはあわせて `PYTHON_COMMANDS` 等の言語カテゴリ定数にも追加する
-- `pyfltr/config.py`: `DEFAULT_CONFIG` への設定キー追加と、`aliases` への登録
-- `pyfltr/command.py`: 実行ロジック。共通ヘルパーを優先利用し、独自経路は最小限に抑える
-- `pyfltr/error_parser.py`: 出力パーサー（regexまたは関数ベース）
+- `pyfltr/config/config.py`: `DEFAULT_CONFIG` への設定キー追加と、`aliases` への登録
+- `pyfltr/command/dispatcher.py`（および必要に応じて `pyfltr/command/` 配下の関連モジュール）: 実行ロジック。共通ヘルパーを優先利用し、独自経路は最小限に抑える
+- `pyfltr/command/error_parser.py`: 出力パーサー（regexまたは関数ベース）
 - `tests/`: `config_test.py`・`command_*_test.py`・`error_parser_test.py` に対応するテストを追加
 - `docs/guide/index.md`:「対応ツール」一覧へ追記（`README.md`には書かない。SSOTは本ファイル）
 - `docker/Dockerfile`: 公式Dockerイメージ (`ghcr.io/ak110/pyfltr`) は対応ツールを事前同梱する方針のため、
@@ -38,7 +38,7 @@ description: >-
 ## 検証
 
 ```bash
-uv run pyfltr run-for-agent
+uv run --with-editable=. pyfltr run-for-agent
 ```
 
 警告ゼロかつテストグリーンで完了。
@@ -59,10 +59,10 @@ uv run pyfltr run-for-agent
 
 ```bash
 # 少数ファイル（対象種別のファイルを1〜2個指定）
-uv run pyfltr run-for-agent <file1> [file2] 2>/dev/null
+uv run --with-editable=. pyfltr run-for-agent <file1> [file2] 2>/dev/null
 
 # 全ファイル（引数なしでリポジトリ全体を対象）
-uv run pyfltr run-for-agent 2>/dev/null
+uv run --with-editable=. pyfltr run-for-agent 2>/dev/null
 ```
 
 JSONL出力の `command` レコードから `command`・`elapsed`・`files` を抽出する。

@@ -242,6 +242,95 @@ def test_build_command_record_retry_command_omitted() -> None:
     assert "retry_command" not in record
 
 
+def test_build_command_record_includes_runner_info_when_set() -> None:
+    """`effective_runner` / `runner_source` が設定されていればtoolレコードに出力される。
+
+    ユーザーがuv経路を選んだうえで`uv.lock`があるrunの典型値（uv / default）を確認する。
+    出力位置は`status`の直後で`files`より前（CLAUDE.md「ツール解決の優先順位」節の追跡用途）。
+    """
+    result = pyfltr.command.core_.CommandResult(
+        command="mypy",
+        command_type="linter",
+        commandline=["uv", "run", "--frozen", "mypy"],
+        returncode=0,
+        has_error=False,
+        files=1,
+        output="",
+        elapsed=0.1,
+        effective_runner="uv",
+        runner_source="default",
+    )
+    record = pyfltr.output.jsonl._build_command_record(result, diagnostics=0)
+    assert record["effective_runner"] == "uv"
+    assert record["runner_source"] == "default"
+    keys = list(record.keys())
+    assert keys.index("status") < keys.index("effective_runner") < keys.index("runner_source")
+    assert keys.index("runner_source") < keys.index("files")
+
+
+def test_build_command_record_runner_info_direct_fallback() -> None:
+    """uv経路のdirectフォールバック時は`effective_runner="direct"`が出力される。
+
+    `{command}-runner = "uv"`既定でも、`uv.lock`欠如時はdirectへフォールバックする
+    （CLAUDE.md「ツール解決の優先順位」節の経路）。
+    """
+    result = pyfltr.command.core_.CommandResult(
+        command="mypy",
+        command_type="linter",
+        commandline=["/usr/bin/mypy"],
+        returncode=0,
+        has_error=False,
+        files=1,
+        output="",
+        elapsed=0.1,
+        effective_runner="direct",
+        runner_source="default",
+    )
+    record = pyfltr.output.jsonl._build_command_record(result, diagnostics=0)
+    assert record["effective_runner"] == "direct"
+    assert record["runner_source"] == "default"
+
+
+def test_build_command_record_omits_runner_info_when_none() -> None:
+    """`effective_runner` / `runner_source` がNoneの場合はキーごと省略する。
+
+    `resolution_failed` 経路や対象0件で `build_commandline` を呼ばない経路では
+    runner情報が確定しないためNoneのまま出力される（既存の他フィールドと同じ慣習）。
+    """
+    result = pyfltr.command.core_.CommandResult(
+        command="mypy",
+        command_type="linter",
+        commandline=["mypy"],
+        returncode=0,
+        has_error=False,
+        files=1,
+        output="",
+        elapsed=0.1,
+    )
+    record = pyfltr.output.jsonl._build_command_record(result, diagnostics=0)
+    assert "effective_runner" not in record
+    assert "runner_source" not in record
+
+
+def test_build_command_record_runner_info_path_override() -> None:
+    """`{command}-path`明示指定時は`runner_source="path-override"`になる。"""
+    result = pyfltr.command.core_.CommandResult(
+        command="mypy",
+        command_type="linter",
+        commandline=["/custom/mypy"],
+        returncode=0,
+        has_error=False,
+        files=1,
+        output="",
+        elapsed=0.1,
+        effective_runner="direct",
+        runner_source="path-override",
+    )
+    record = pyfltr.output.jsonl._build_command_record(result, diagnostics=0)
+    assert record["effective_runner"] == "direct"
+    assert record["runner_source"] == "path-override"
+
+
 def test_build_command_lines_truncates_diagnostics_when_archived() -> None:
     """jsonl-diagnostic-limit超過時、先頭N件の個別指摘に切り詰めてから集約する。"""
     errors = [
@@ -419,12 +508,44 @@ def test_build_header_record_emits_commands_and_no_schema_hints() -> None:
     assert "schema_hints" not in record
 
 
-def test_build_header_record_size_is_small() -> None:
-    """headerレコード（実行対象15件想定）は450文字以下に収まる（schema_hints撤去後）。"""
+def test_build_header_record_size_is_small(monkeypatch: pytest.MonkeyPatch) -> None:
+    """headerレコード（実行対象15件想定）は500文字以下に収まる（runner情報追加後）。
+
+    `uv_lock_present` / `uv_available` の取得関数を固定値へ差し替え、サイズ評価を実行環境
+    （`uv.lock`の有無や`uv`バイナリの導入状況）に依存させない。
+    """
+    monkeypatch.setattr("pyfltr.command.runner.cwd_has_uv_lock", lambda: True)
+    monkeypatch.setattr("pyfltr.command.runner.ensure_uv_available", lambda: True)
     commands = [f"tool-{i}" for i in range(15)]
     record = pyfltr.output.jsonl._build_header_record(commands=commands, files=10, run_id="01TESTULID")
     serialized = pyfltr.output.jsonl._dump(record)
-    assert len(serialized) <= 450, f"header size {len(serialized)} exceeded 450 chars"
+    assert len(serialized) <= 500, f"header size {len(serialized)} exceeded 500 chars"
+
+
+def test_build_header_record_includes_uv_lock_and_uv_available(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`uv_lock_present` / `uv_available` がプロセス共通の真偽値として常時出力される。
+
+    Python系コマンドが実行集合に含まれるか否かに関わらず、`mise_active_tools` のような
+    条件付き付与ではなく常時出力する設計（runner経路の追跡情報のため）。
+    """
+    monkeypatch.setattr("pyfltr.command.runner.cwd_has_uv_lock", lambda: True)
+    monkeypatch.setattr("pyfltr.command.runner.ensure_uv_available", lambda: True)
+    record_python = pyfltr.output.jsonl._build_header_record(commands=["mypy"], files=3)
+    assert record_python["uv_lock_present"] is True
+    assert record_python["uv_available"] is True
+    # Python系コマンドを含まないrunでも常時出力される。
+    record_non_python = pyfltr.output.jsonl._build_header_record(commands=["shellcheck"], files=3)
+    assert record_non_python["uv_lock_present"] is True
+    assert record_non_python["uv_available"] is True
+
+
+def test_build_header_record_uv_fields_reflect_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`uv_lock_present` / `uv_available` の値が`pyfltr.command.runner`の判定関数に追従する。"""
+    monkeypatch.setattr("pyfltr.command.runner.cwd_has_uv_lock", lambda: False)
+    monkeypatch.setattr("pyfltr.command.runner.ensure_uv_available", lambda: False)
+    record = pyfltr.output.jsonl._build_header_record(commands=["mypy"], files=3)
+    assert record["uv_lock_present"] is False
+    assert record["uv_available"] is False
 
 
 def test_build_header_record_omits_mise_active_tools_when_no_mise_command() -> None:

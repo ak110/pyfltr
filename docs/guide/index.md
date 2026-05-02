@@ -99,7 +99,7 @@ pyfltrの設定キーとコマンド名は`markdownlint`（例: `markdownlint = 
 uvx pyfltr --help
 ```
 
-`uv`でバージョン管理したい場合は`uv add --dev pyfltr`で追加し、`uv run pyfltr ...`で呼び出す。
+`uv`でバージョン管理したい場合は`uv add --dev "pyfltr[python]"`で追加し、`uv run pyfltr ...`で呼び出す。
 pip環境では`pip install pyfltr`を使う。
 
 ## ガイドページ

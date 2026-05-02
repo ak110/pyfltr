@@ -134,6 +134,20 @@ class CommandResult:
     `resolution_failed` を返し、CIログ等で「対象0件で失敗したのか／
     対象はあったが解決に失敗したのか」を区別可能にする。
     """
+    effective_runner: str | None = None
+    """`pyfltr.command.runner.ResolvedCommandline.effective_runner` の値。
+
+    `build_commandline` が成功してツール起動経路が確定した場合のみセットされる。
+    `direct` / `mise` / `uv` / `js-pnpx` 等の値を取り、
+    JSONL commandレコードの`effective_runner`フィールドへ露出する。
+    `resolution_failed` 時や対象0件でcommandline解決を行わない経路では `None` のまま。
+    """
+    runner_source: str | None = None
+    """`pyfltr.command.runner.ResolvedCommandline.runner_source` の値。
+
+    `explicit` / `default` / `path-override` のいずれかで、`{command}-runner` の決定経緯を示す。
+    `effective_runner` と同じくJSONL commandレコードの `runner_source` フィールドへ露出する。
+    """
 
     @classmethod
     # from_run は各コマンド実行モジュール（linter_fix / textlint_fix 等）で同様の引数転送パターンを持つため重複検知される
@@ -255,3 +269,12 @@ class ExecutionParams:
     `build_subprocess_env` でのmise toolパス除外適用判断に使う。
     詳細はCLAUDE.md「subprocess起動時のPATH整理方針」節を参照。
     """
+    effective_runner: str | None = None
+    """`ResolvedCommandline.effective_runner` の事後値。
+
+    `ensure_mise_available` 通過後の値を採用する（mise不在時のdirectフォールバックを反映するため）。
+    `_with_targets` 経由で `CommandResult` へ転記し、JSONL commandレコードへ露出する。
+    対象0件などでcommandline解決を行わない経路では `None`。
+    """
+    runner_source: str | None = None
+    """`ResolvedCommandline.runner_source` の値。`explicit` / `default` / `path-override` のいずれか。"""

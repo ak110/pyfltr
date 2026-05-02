@@ -6,3 +6,12 @@ rules:
   # ドキュメント類でtruthy値（"yes"/"no"等）を引用符付きで意図的に使うケースを許容する
   truthy:
     check-keys: false
+  # 設定ファイル類は単一YAMLドキュメントの前提で先頭`---`を強制しない
+  document-start: disable
+  # 行末コメント前のスペース数は1個以上で許容する（他ツールでも保証されない）
+  comments:
+    min-spaces-from-content: 1
+  # GitHub Actionsの慣用表記`[ "x", "y" ]`（要素前後にスペース1つ）を許容する
+  brackets:
+    min-spaces-inside: 0
+    max-spaces-inside: 1
