@@ -35,14 +35,15 @@ update-actions:
 
 # フォーマット + 軽量lint（開発時の手動実行用。自動修正あり）
 # pyfltr fast は fix ステージを内蔵するため、以前の `pyfltr fix` に相当する自動修正も走る
+# 利用者向け推奨と同じ with 方式で起動するが、ローカル変更を反映するため editable 指定にする
 format:
 	$(MAKE) clean-stale-dist-info
-	uv run pyfltr fast
+	uv run --with-editable=".[python]" pyfltr fast
 
 # 全チェック実行（これを通過すればコミット可能）
 test:
 	$(MAKE) clean-stale-dist-info
-	uv run pyfltr run
+	uv run --with-editable=".[python]" pyfltr run
 
 docs:
 	uv run mkdocs serve

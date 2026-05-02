@@ -8,7 +8,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-04-27T16:26:23.237726872Z"
+exclude-newer = "2026-05-01T05:22:12.375803785Z"
 exclude-newer-span = "P1D"
 
 [options.exclude-newer-package]
@@ -1246,7 +1246,6 @@ dev = [
     { name = "mkdocs" },
     { name = "mkdocs-llmstxt" },
     { name = "mkdocs-material" },
-    { name = "pyfltr", extra = ["python"] },
     { name = "pytest-mock" },
     { name = "types-pyyaml" },
 ]
@@ -1282,7 +1281,6 @@ dev = [
     { name = "mkdocs", specifier = ">=1.6" },
     { name = "mkdocs-llmstxt", specifier = ">=0.2" },
     { name = "mkdocs-material", specifier = ">=9.6" },
-    { name = "pyfltr", extras = ["python"] },
     { name = "pytest-mock" },
     { name = "types-pyyaml", specifier = ">=6.0.12.20260408" },
 ]

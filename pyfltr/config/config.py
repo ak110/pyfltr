@@ -96,8 +96,8 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # Falseに押し戻す。カテゴリキー単独では何も有効化されない（presetか個別
     # `{command} = true`が必要）。v3.0.0で既定値をFalse（opt-in）に統一。
     # 対象外プロジェクトで言語別linterが勝手に走るのを防ぐためで、Python系は
-    # 別途`pip install pyfltr[python]`で依存を導入する必要がある。JavaScript /
-    # Rust / .NET系はそれぞれのツールチェインを前提とする。
+    # 別途 `uv run --with="pyfltr[python]" pyfltr` 等で extras を導入する必要がある。
+    # JavaScript / Rust / .NET系はそれぞれのツールチェインを前提とする。
     "python": False,
     "javascript": False,
     "rust": False,

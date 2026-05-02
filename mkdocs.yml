@@ -78,7 +78,7 @@ plugins:
         pylint-args = ["--jobs=4"]
         ```
 
-        Python / JavaScript / Rust / .NET の各言語カテゴリに属するツールはすべて既定で無効（opt-in）である。`preset = "latest"` + `{language} = true` で当該言語の推奨ツール一式がゲートを通過して有効化される。preset非収録のty を追加する場合は個別に `ty = true` を指定する（ゲートを越えて最優先）。Pythonプロジェクトでは別途 `uv add --dev 'pyfltr[python]'` (または `pip install pyfltr[python]`) で依存を導入する。
+        Python / JavaScript / Rust / .NET の各言語カテゴリに属するツールはすべて既定で無効（opt-in）である。`preset = "latest"` + `{language} = true` で当該言語の推奨ツール一式がゲートを通過して有効化される。preset非収録のty を追加する場合は個別に `ty = true` を指定する（ゲートを越えて最優先）。Pythonプロジェクトでは `uv run --with="pyfltr[python]" pyfltr ...` でextrasごと最新版を都度解決して実行することを推奨する（dev依存に固定する場合は `uv add --dev 'pyfltr[python]'` または `pip install 'pyfltr[python]'`）。
 
         archiveの保持期間やキャッシュ設定など複数プロジェクトで共通にしたい設定は、グローバル設定ファイル（Linux: `~/.config/pyfltr/config.toml`、`platformdirs.user_config_dir`が解決する場所）に集約できる。`pyfltr config set --global`でファイルを作成・編集可能。archive/cache系6キーのみグローバル優先で、それ以外はproject側（pyproject.toml）が優先される。詳細は[設定項目](guide/configuration.md)を参照。
 

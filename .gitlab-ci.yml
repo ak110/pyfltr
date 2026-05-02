@@ -48,7 +48,7 @@ test:
     - uv sync --all-extras --all-groups
   script:
     # --output-file 指定時はstdoutにtext形式の進捗も出力される
-    - uv run pyfltr ci --output-format=code-quality --output-file=code-quality-report.json
+    - uv run --with-editable=".[python]" pyfltr ci --output-format=code-quality --output-file=code-quality-report.json
   artifacts:
     # lintエラーで失敗してもレポートを取り込めるよう always にする
     when: always
@@ -88,7 +88,7 @@ test:
     # 依存インストール
     - uv sync --all-extras --all-groups
   script:
-    - uv run pyfltr ci --output-format=code-quality --output-file=code-quality-report.json
+    - uv run --with-editable=".[python]" pyfltr ci --output-format=code-quality --output-file=code-quality-report.json
   artifacts:
     when: always
     reports:

@@ -226,32 +226,19 @@ MCPクライアントがstdinを閉じた時点でサーバーが終了する。
 {
   "mcpServers": {
     "pyfltr": {
-      "command": "pyfltr",
-      "args": ["mcp"]
+      "command": "uvx",
+      "args": ["pyfltr", "mcp"]
     }
   }
 }
 ```
 
-`uv run`経由で起動する場合:
-
-```json
-{
-  "mcpServers": {
-    "pyfltr": {
-      "command": "uv",
-      "args": ["run", "pyfltr", "mcp"]
-    }
-  }
-}
-```
+エージェント常駐起動は独立venvで動くuvxの方がプロジェクトの`pyproject.toml`解釈やcwd依存を受けず安定する。
 
 Claude Codeから登録する場合は`claude mcp add`コマンドが使える:
 
 ```shell
-claude mcp add pyfltr -- pyfltr mcp
-# または uv run 経由で起動する場合
-claude mcp add pyfltr -- uv run pyfltr mcp
+claude mcp add pyfltr -- uvx pyfltr mcp
 ```
 
 ### サブコマンド: command-info {#command-info}
@@ -765,14 +752,15 @@ pyfltr run-for-agent --commands=mypy src/
 ## pre-commitとの統合
 
 pyfltrは`.pre-commit-hooks.yaml`を同梱していない。
-pre-commitから呼び出したい場合は、`.pre-commit-config.yaml`の`repo: local`でlocal hookとして
-`uv run pyfltr`または`uvx pyfltr`を呼び出す。
+pre-commitから呼び出したい場合は`.pre-commit-config.yaml`の`repo: local`でlocal hookとして登録する。
+entryには`uv run --with="pyfltr[python]" pyfltr`または`uvx pyfltr`を指定する。
 pyfltrの実行方式をプロジェクトのuv環境と揃えられるため、依存管理・バージョン固定の観点で一元化できる。
 
-### Pythonプロジェクト（pyfltrを`uv.lock`に含める構成）
+### Pythonプロジェクト（with方式）
 
-pyfltr自身のリポジトリを含むPython系プロジェクトで採用している構成。
-`uv run --frozen pyfltr fast`を`uv.lock`ごとバージョン固定し、pre-commit時にキャッシュ済み`.venv`を再利用する。
+Python系プロジェクトでの推奨構成。
+`uv run --with="pyfltr[python]" pyfltr fast`で毎回最新のpyfltrを解決して実行する
+（uvがキャッシュするため2回目以降は実用速度）。
 
 ```yaml
 repos:
@@ -781,10 +769,12 @@ repos:
       - id: pyfltr-fast
         name: pyfltr fast
         language: system
-        entry: uv run --frozen pyfltr fast
+        entry: uv run --with="pyfltr[python]" pyfltr fast
         require_serial: true
         types: [file]
 ```
+
+dev依存に`pyfltr[python]`を固定する運用では`entry: uv run pyfltr fast`に置き換えてもよい。
 
 ### 非Pythonプロジェクト（`uvx`で都度取得する構成）
 

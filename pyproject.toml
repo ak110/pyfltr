@@ -34,7 +34,8 @@ dependencies = [
 [project.optional-dependencies]
 # Python 系 linter / tester 依存を導入するための extras。
 # v3.0.0 でオプトイン化したため、Python プロジェクトでは
-# ``pip install pyfltr[python]`` または ``uv add 'pyfltr[python]'`` で追加する。
+# ``uv run --with="pyfltr[python]" pyfltr ...`` で都度取り込むのが推奨。
+# dev 依存に固定する場合は ``uv add --dev 'pyfltr[python]'`` または ``pip install 'pyfltr[python]'`` を使う。
 python = [
     "dill>=0.3",
     "mypy>=1.0",
@@ -55,14 +56,14 @@ Homepage = "https://github.com/ak110/pyfltr"
 pyfltr = "pyfltr.cli.main:main"
 
 [dependency-groups]
-# pyfltr 自体が Python 製のため、開発時は Python 系ツールを自身の extras 経由で導入する。
-# これにより本体リリース時に Python 系ツール依存を抱え込まない構造を保ちつつ、
-# 開発・CI では ``uv sync --group dev`` 一発で linter / tester を揃えられる。
+# 利用者向け推奨と同じ起動方式 (``uv run --with-editable=".[python]" pyfltr ...``) で
+# Python 系ツールを取り込むため、dev 依存には Python 系 extras を含めない。
+# mkdocs / mkdocs-material / mkdocs-llmstxt / pytest-mock / types-pyyaml は
+# docs 生成・テストで直接使うため dev に残す。
 dev = [
     "mkdocs-llmstxt>=0.2",
     "mkdocs-material>=9.6",
     "mkdocs>=1.6",
-    "pyfltr[python]",
     "pytest-mock",
     "types-pyyaml>=6.0.12.20260408",
 ]

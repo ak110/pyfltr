@@ -13,7 +13,7 @@
 
 対応するPython系ツールはruff-format / ruff-check / mypy / pylint / pyright / ty / pytest / uv-sortの8種。
 このうちtyのみpreset非収録のため、必要に応じて`ty = true`を個別指定する。
-利用時は同時に`pip install pyfltr[python]`でPython系ツールの依存を追加する必要がある。
+利用時は同時に`uv run --with="pyfltr[python]" pyfltr ...`等でextrasを取り込み、Python系ツールの依存を追加する。
 
 - Formatters: ruff format / uv-sort（依存定義のソート）
 - Linters: ruff check / mypy / pylint / pyright / ty
@@ -93,9 +93,19 @@ pyfltrの設定キーとコマンド名は`markdownlint`（例: `markdownlint = 
 
 ## インストール
 
+uv利用時の推奨は、毎回最新版を解決して実行するwith方式である。
+事前のインストールやdev依存への追加は不要で、常に最新のpyfltrを使える。
+
 ```shell
-pip install pyfltr
+uv run --with="pyfltr[python]" pyfltr --help
 ```
+
+`pyfltr[python]`はPython系ツールの追加依存を含むextras指定。
+非Pythonプロジェクトでは`pyfltr`のみで十分。
+
+dev依存に固定したい場合は`uv add --dev 'pyfltr[python]'`で追加し、
+通常通り`uv run pyfltr ...`で呼び出す。
+pip環境では`pip install 'pyfltr[python]'`を使う。
 
 ## ガイドページ
 

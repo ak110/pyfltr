@@ -215,7 +215,7 @@ python = true
 
 カテゴリ同士は独立して作用する。
 たとえば`python = true`を指定してもJavaScript系やRust系のツールは有効化されない。
-Pythonプロジェクトで利用する場合は別途`pip install pyfltr[python]`で依存を導入する必要がある。
+Pythonプロジェクトで利用する場合は別途`uv run --with="pyfltr[python]" pyfltr ...`等でextrasを導入する必要がある。
 JavaScript系・Rust系・.NET系は各言語のツールチェイン（Node.js・cargo・dotnet CLI）が前提となる。
 
 対応するPython系ツールはruff-format / ruff-check / mypy / pylint / pyright / ty / pytest / uv-sortの8種。

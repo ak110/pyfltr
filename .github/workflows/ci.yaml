@@ -51,7 +51,7 @@ jobs:
         run: uv sync --all-extras --all-groups
 
       - name: Test with pyfltr
-        run: uv run pyfltr ci --output-format=github-annotations
+        run: uv run --with-editable=".[python]" pyfltr ci --output-format=github-annotations
 
       - name: Prune uv cache for CI
         run: uv cache prune --ci
@@ -101,7 +101,7 @@ jobs:
         run: uv sync --all-extras --all-groups
 
       - name: Test with pyfltr
-        run: uv run pyfltr ci --output-format=github-annotations
+        run: uv run --with-editable=".[python]" pyfltr ci --output-format=github-annotations
 
       - name: Prune uv cache for CI
         run: uv cache prune --ci
