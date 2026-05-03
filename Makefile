@@ -31,7 +31,7 @@ update:
 # GitHub Actionsのアクションをハッシュピンで最新化（mise未導入時はスキップ）
 update-actions:
 	@command -v mise >/dev/null 2>&1 || { echo "mise未検出、スキップ"; exit 0; }; \
-	GITHUB_TOKEN=$$(gh auth token) mise exec -- pinact run --update --min-age 1
+	GITHUB_TOKEN=$$(gh auth token) mise exec -- pinact run --update --min-age=1
 
 # フォーマット + 軽量lint（開発時の手動実行用。自動修正あり）
 # pyfltr fast は fix ステージを内蔵するため、以前の `pyfltr fix` に相当する自動修正も走る

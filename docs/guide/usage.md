@@ -196,29 +196,9 @@ MCPクライアントがstdinを閉じた時点でサーバーが終了する。
 | --- | --- | --- |
 | `list_runs` | `pyfltr list-runs` | run一覧を新しい順で返す。`limit`で件数制御（既定20件） |
 | `show_run` | `pyfltr show-run <run_id>` | 指定runのmetaとツール別サマリを返す。前方一致・`latest`エイリアス可 |
-| `show_run_diagnostics` | `pyfltr show-run <run_id> --commands <name>` | 指定runのtool.jsonとdiagnostics全件を返す（複数指定可） |
-| `show_run_output` | `pyfltr show-run <run_id> --commands <name> --output` | 指定runのoutput.log全文を返す（単一指定のみ） |
+| `show_run_diagnostics` | `pyfltr show-run <run_id> --commands=<name>` | 指定runのtool.jsonとdiagnostics全件を返す（複数指定可） |
+| `show_run_output` | `pyfltr show-run <run_id> --commands=<name> --output` | 指定runのoutput.log全文を返す（単一指定のみ） |
 | `run_for_agent` | `pyfltr run-for-agent` | lint/format/testを実行しrun_id・失敗ツール名・retry_commands等を返す |
-
-`run_for_agent`ツールの引数:
-
-- `paths`: 実行対象のファイルまたはディレクトリのパス一覧（必須）
-- `commands`: 実行するコマンド名のリスト（省略時はプロジェクト設定の全コマンドを使用）
-- `fail_fast`: `true`の場合、1ツールでもエラーが発生した時点で残りを打ち切る（既定`false`）
-- `only_failed`: `true`の場合、直前runの失敗ツール・失敗ファイルのみ再実行する（CLIの`--only-failed`相当、既定`false`）
-- `from_run`: `only_failed=true`の参照runを明示指定する（前方一致・`latest`可、`only_failed=true`のときのみ有効）
-
-`run_for_agent`ツールの戻り値フィールド:
-
-- `run_id`: 実行アーカイブの参照キー（ULID）。early exit時は `null`
-- `exit_code`: 終了コード（`0` = 成功、`1` = 失敗）
-- `failed`: 失敗したコマンド名の一覧
-- `commands`: コマンド別サマリ一覧（`status`・`has_error`・`diagnostics` 件数）
-- `skipped_reason`: early exitが発生した理由。
-  `only_failed=false`の通常実行時は`null`で省略される。
-  `only_failed=true`有効時に「直前runなし」「失敗ツールなし」「対象ファイル交差が空」の
-  いずれかに該当した場合にのみ設定される
-- `retry_commands`: 失敗コマンドの再実行シェルコマンド辞書（コマンド名→シェル文字列、成功・cachedは省略）
 
 コーディングエージェント側へのMCPサーバー登録例（JSON形式で設定ファイルに記載する場合）:
 
@@ -287,37 +267,6 @@ version: latest
 tool specを省略した`mise exec -- cargo fmt`形になり、mise設定の解決済み内容（バージョン固定・components等）が反映される。
 mise設定に`rust`記述が無い場合は`mise exec rust@latest -- cargo fmt`形になる。
 
-uv診断系フィールドの意味は次の通り。
-`{command}-runner`がuv経路に到達するツール（per-tool値が`python-runner` / `uv` / `uvx`）でのみ`## uv診断`セクションが出力される。
-
-- `mode`: `uv`または`uvx`のいずれの経路で起動するかを示す解決後の値。
-  `python-runner`委譲時はグローバル`python-runner`設定値（`uv` / `uvx`）に従う。
-  `python-runner = "direct"`時など`uv`/`uvx`いずれにも該当しない場合は`## uv診断`セクション自体が出力されない
-- `uv_available`: `uv`バイナリが利用可能かどうか
-- `uvx_available`: `uvx`shimが利用可能かどうか
-- `uv_lock_present`: cwdに`uv.lock`が存在するかどうか
-- `direct_fallback`: 経路ごとの前提条件不足によりdirectフォールバックが発生したか
- （`mode == "uv"`では`uv`バイナリと`uv.lock`の両方が必要、`mode == "uvx"`では`uvx`shimの可用性のみで判定）
-- `python_tool_bin`: コマンド名から解決された実際の実行ファイル名（`ruff-format`/`ruff-check`は`ruff`になる）
-
-mise診断系フィールドの意味は次の通り。
-出力は機械可読のテキスト形式で、JSON形式（`--format=json`）でも同じキーが取れる。
-
-- `mise_tool_spec_omitted`: mise経路で`["exec", "--", <bin>]`形（tool spec省略形）を採用したか。
-  commandline文字列の見た目に頼らずに判別できる
-- `mise_active_tool_key`: mise active tools辞書を引く際の照合キー（`spec.mise_backend or spec.bin_name`）。
-  mise.tomlに記述する際の名称ずれを事前に発見するために使う。mise backend未登録のツール（python系・js系）では出力しない
-- `mise_active_tools.status`: `mise ls --current --json`の取得状況。
-  値は`ok` / `mise-not-found` / `untrusted-no-side-effects` / `trust-failed` / `exec-error` /
-  `json-parse-error` / `unexpected-shape`の7値
-- `mise_active_tools.detail`: 取得失敗時のみ。mise stderrの先頭やexceptionメッセージを整形した1行
-- `mise_active_tools.active_keys`: `status == "ok"`かつ活性化ツールが1つ以上ある場合のみ。
-  mise設定が解決した活性化ツール名一覧。空の場合はテキスト出力では行ごと省略する
-
-`--check`無しで`mise_active_tools.status`が`untrusted-no-side-effects`のときに限り、
-trust試行を発動できる旨の1行案内が`hint:`プレフィックスで出る。
-他のエラー要因では案内せず、ノイズを増やさない。
-
 `{command}-fix-args`が定義されているコマンド（textlint・markdownlintなど）では、`commandline (fix step):`と`commandline (check step):`を併記する。
 fix段とcheck段の二度実行が異なる引数を必要とするためである。
 
@@ -334,7 +283,7 @@ commandline (check step): pnpx --package textlint --package ... textlint --forma
 
 textlintの場合、fix段では`@textlint/fixer-formatter`が`compact`をサポートしない。
 このためユーザーが指定した`--format`ペアを除去した形が表示される。
-check段では`textlint-json`設定（既定`true`）により出力フォーマット指定`--format json`が注入される。
+check段では`textlint-json`設定（既定`true`）により出力フォーマット指定`--format=json`が注入される。
 
 主要なオプション。
 
@@ -415,7 +364,7 @@ pyfltr ci --commands=ruff-check,markdownlint [files and/or directories ...]
 
 - `format`: `pre-commit` `ruff-format` `prettier` `uv-sort` `shfmt` `cargo-fmt` `dotnet-format`
 - `lint`:
-    - Python系: `ruff-check` `mypy` `pylint` `pyright` `ty`（tyはpreset非収録のため未有効時はスキップ）
+    - Python系: `ruff-check` `mypy` `pylint` `pyright` `ty`
     - Markdown系: `markdownlint` `textlint`
     - JS/TS系: `eslint` `biome` `oxlint` `tsc`
     - Rust系: `cargo-clippy` `cargo-check` `cargo-deny`
@@ -524,10 +473,7 @@ CLIオプション`--output-format`が指定されている場合は環境変数
 
 環境変数`AI_AGENT`が設定されていれば、`--output-format`未指定時の既定値が`jsonl`になる
 （コーディングエージェント環境下での自動切り替え用）。
-値の中身は問わず、空文字列でない値が設定されていれば真扱いとなる
-（`AI_AGENT=1`・`AI_AGENT=cursor`等いずれも有効）。
 
-優先順位は`CLI > PYFLTR_OUTPUT_FORMAT > サブコマンド既定値（run-for-agent=jsonl）> AI_AGENT > text`。
 `PYFLTR_OUTPUT_FORMAT`を明示すれば`AI_AGENT`環境下や`run-for-agent`配下でもtext等へ切り戻せる
 （例: `PYFLTR_OUTPUT_FORMAT=text pyfltr run-for-agent`）。
 

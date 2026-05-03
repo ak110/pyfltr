@@ -34,7 +34,7 @@ repos:
         language: system
       - id: mkdocs-build
         name: mkdocs build --strict
-        entry: uv run --frozen mkdocs build --strict --quiet --site-dir /tmp/mkdocs-check
+        entry: uv run --frozen mkdocs build --strict --quiet --site-dir=/tmp/mkdocs-check
         language: system
         pass_filenames: false
         files: ^(docs/|mkdocs\.yml|README\.md|CLAUDE\.md)

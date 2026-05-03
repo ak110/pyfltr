@@ -319,7 +319,7 @@ textlint-packages = [
 ```
 
 共通のコマンドライン引数を追加したい場合は `textlint-args` を使う。
-lint専用のオプション（`--format compact` など）は `textlint-lint-args` に分離する。
+lint専用のオプション（`--format=compact` など）は `textlint-lint-args` に分離する。
 
 ```toml
 [tool.pyfltr]

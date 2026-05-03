@@ -54,10 +54,9 @@ cache-max-age-hours = 24
    - archive/cache系はマージ時にグローバル側を優先する（project側に同じキーがあっても上書きされる）
    - それ以外のキーは後勝ち（project側が優先）
 3. マージ結果にプリセット（`preset`）を反映する
-4. カスタムコマンドを登録する
-5. 言語カテゴリゲート（`python` / `javascript` / `rust` / `dotnet`）を適用する
-6. 残りのキーを通常通り適用する
+4. 言語カテゴリゲート（`python` / `javascript` / `rust` / `dotnet`）を適用する
 
+適用優先度は`preset < 言語カテゴリゲート < 個別設定`。
 `pyproject.toml`が存在しないディレクトリでもグローバル設定は反映される。
 
 ### 設定操作

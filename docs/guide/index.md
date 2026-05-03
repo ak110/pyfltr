@@ -104,11 +104,18 @@ pip環境では`pip install pyfltr`を使う。
 
 ## ガイドページ
 
-- [CLIコマンド](usage.md) — CLIの使い方・サブコマンド・オプション
+### CLI基本
+
+- [CLIコマンド](usage.md) — サブコマンド・オプション・コーディングエージェント連携
 - [トラブルシューティング](troubleshooting.md) — よくある問題と回避策
-- [設定項目](configuration.md) — 基本設定・プリセット・並列実行
-- [設定項目（ツール別）](configuration-tools.md) —
-  ツール別設定（python-runner / js-runner / bin-runner / 直接実行のカテゴリ別設定・2段階実行・カスタムコマンド）
-- [推奨設定例](recommended.md) — 推奨設定（Pythonプロジェクト・タスクランナー・CI）
-- [推奨設定例（非Pythonプロジェクト）](recommended-nonpython.md) — 非Pythonプロジェクトの推奨設定
+
+### 設定
+
+- [設定項目](configuration.md) — 基本設定・プリセット・言語カテゴリゲート・並列実行
+- [設定項目（ツール別）](configuration-tools.md) — ツール別の起動方式・2段階実行・カスタムコマンド
+
+### 推奨構成
+
+- [推奨設定例](recommended.md) — Pythonプロジェクト・タスクランナー・CI設定例
+- [推奨設定例（非Pythonプロジェクト）](recommended-nonpython.md) — TypeScript/JS・Rust・.NETプロジェクト
 - [カスタムコマンド例](custom-commands.md) — カスタムコマンドの設定例

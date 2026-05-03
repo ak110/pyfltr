@@ -209,29 +209,14 @@ mise経由のsubprocessにはmiseが注入したtoolパスを除外したPATHを
 Python系ツールの`{command}-runner`既定値は`"python-runner"`とする。
 対象はruff-format / ruff-check / mypy / pylint / pyright / ty / uv-sort / pytestの8ツール。
 `"python-runner"`はグローバル`python-runner`設定（既定`"uv"`、許容値`direct` / `uv` / `uvx`の3値）へ委譲する。
-`build_commandline()`は委譲解決後の値（`uv` / `uvx` / `direct`）に従ってコマンドラインを組み立てる。
-`uv`の場合はcwdに`uv.lock`が存在しかつ`uv`が利用可能な場合に`["uv", "run", "--frozen", <bin>]`で呼ぶ。
-いずれかが満たされなければ`shutil.which(<bin>)`で本体依存に同梱されたバイナリを直接呼ぶ（directフォールバック）。
-`uvx`の場合は`uvx`shimが利用可能なら`["uvx", <bin>]`で呼び、未導入時はdirectフォールバックする
-（`uv.lock`は参照せず、`{command}-version`設定とも連動しない）。
-利用者は`{command}-runner`に直接指定値`"uv"` / `"uvx"` / `"direct"`を書いてper-toolで起動方式を上書きできる。
-`pyfltr/command/runner.py`の`PYTHON_TOOL_BIN`がpyfltrコマンド名から実行ファイル名への対応を保持し、
-`ruff-format` / `ruff-check`はいずれも`ruff`を呼び出す。
-判定結果は`@functools.lru_cache(maxsize=1)`付きの判定関数群で実行内に1回だけ評価する。
-対象はuv / uvx / mise可用性、cwdの`uv.lock`存在判定などで、具体的な関数名は`pyfltr/command/runner.py`を参照する。
+`uv`経路ではcwdに`uv.lock`があり`uv`が利用可能な場合にプロジェクトのvenv経由で起動する。
+いずれかが欠ける場合は本体依存に同梱されたバイナリへdirectフォールバックする。
+`uvx`経路は`uv.lock`を参照せず`{command}-version`設定とも連動しない。
 
-uv / uvx経路の追跡情報をJSONL headerと各commandレコードに露出する。
-header側は`uv`オブジェクト（`lock`・`available`・`x_available`の3値）で経路採用に必要な前提が揃っているかを示す。
-commandレコード側はツール単位の解決経緯を`effective_runner`と`runner_source`で示す。
-`effective_runner`の取り得る値は`uv` / `uvx` / `direct` / `mise` / `pnpx` / `pnpm` / `npm` / `npx` / `yarn`。
-`runner_source`は`explicit` / `default` / `path-override`の3値。
-利用者・LLMがuv / uvx経路で動作したか・direct fallbackが起きていないか・`{command}-path`明示が利いたかを
-出力から判別できるようにするための情報として位置づける。
+uv / uvx経路の追跡情報はJSONL headerと各commandレコードに出力する。
+commandレコードの`effective_runner`と`runner_source`でツール単位の解決経緯を確認できる。
 利用者プロジェクトに当該ツールが未登録の状態で`uv run --frozen`が失敗した場合は、
-登録手順hintを併記した警告を発行する。
-警告は`pyfltr/command/dispatcher.py`の`_maybe_emit_uv_missing_tool_warning`が担い、
-`uv add --dev "pyfltr[python]"`を案内する。
-process.pyが`stderr=subprocess.STDOUT`で統合するため判定対象は統合済みstdoutになる。
+`uv add --dev "pyfltr[python]"`を案内する警告を発行する。
 
 ### モジュール分割の方針
 
