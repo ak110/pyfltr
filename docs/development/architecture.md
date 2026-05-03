@@ -221,7 +221,7 @@ Python系ツールの`{command}-runner`既定値は`"python-runner"`とする。
 対象はuv / uvx / mise可用性、cwdの`uv.lock`存在判定などで、具体的な関数名は`pyfltr/command/runner.py`を参照する。
 
 uv / uvx経路の追跡情報をJSONL headerと各commandレコードに露出する。
-header側は`uv_lock_present`・`uv_available`・`uvx_available`の3値で経路採用に必要な前提が揃っているかを示す。
+header側は`uv`オブジェクト（`lock`・`available`・`x_available`の3値）で経路採用に必要な前提が揃っているかを示す。
 commandレコード側はツール単位の解決経緯を`effective_runner`と`runner_source`で示す。
 `effective_runner`の取り得る値は`uv` / `uvx` / `direct` / `mise` / `pnpx` / `pnpm` / `npm` / `npx` / `yarn`。
 `runner_source`は`explicit` / `default` / `path-override`の3値。
@@ -317,7 +317,7 @@ JSONLはLLMエージェントが入力として読むケースが多いため、
 粒度・性質の異なる2種で使い分ける。
 
 各フィールドの役割は粒度・性質で使い分ける。
-フィールド単位の意味は自己説明性を優先する方針のため、別途のドキュメント記述は持たない（[output方針](../../.claude/rules/output.md)参照）。
+フィールド単位の意味は自己説明性を優先する方針のため、別途のドキュメント記述は持たない。
 
 - `command.hints`: ruleごとの修正ヒント短文の辞書（ruleの識別子→1文ヒント）。
   textlintコマンドの場合は`messages[].col`キーで`col`/`end_col`が累積位置である旨の仕様も同梱する。

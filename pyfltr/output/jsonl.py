@@ -367,7 +367,7 @@ def _build_header_record(
     指定時のみheaderへ露出する（mise経路を使うrunの自己診断用途）。
     `format_source`は`pyfltr.cli.output_format.FORMAT_SOURCE_*`の値で、出力形式の解決経路を明示する。
     指定時のみheaderへ露出する。
-    `uv_lock_present`・`uv_available`・`uvx_available`はプロセス共通のuv / uvx経路追跡情報で、
+    `uv`オブジェクト（`lock`・`available`・`x_available`）はプロセス共通のuv / uvx経路追跡情報で、
     Python系コマンドの実行有無に関わらず常時出力する
     （利用者・LLMが「uv経路が選択された／uvxへフォールバックした／directにフォールバックした」の
     判別に使う）。詳細はCLAUDE.md「ツール解決の優先順位」節を参照。
@@ -381,9 +381,11 @@ def _build_header_record(
         "cwd": os.getcwd(),
         "files": files,
         "commands": commands,
-        "uv_lock_present": pyfltr.command.runner.cwd_has_uv_lock(),
-        "uv_available": pyfltr.command.runner.ensure_uv_available(),
-        "uvx_available": pyfltr.command.runner.ensure_uvx_available(),
+        "uv": {
+            "lock": pyfltr.command.runner.cwd_has_uv_lock(),
+            "available": pyfltr.command.runner.ensure_uv_available(),
+            "x_available": pyfltr.command.runner.ensure_uvx_available(),
+        },
     }
     if run_id is not None:
         record["run_id"] = run_id

@@ -140,7 +140,7 @@ pyfltr config list [--global] [--output-format text|json|jsonl]
 - `jsonl`: 1件1行の`{"key": ..., "value": ...}`ストリーム
 
 設定項目の一覧とデフォルト値を確認したい場合は、まず`pyfltr config list`で現在の設定を確認し、
-設定項目名の詳細は[設定項目一覧](configuration.md#設定項目一覧)を参照。
+設定項目名の詳細は[設定項目一覧](configuration.md#config-keys)を参照。
 
 ### サブコマンド: list-runs {#list-runs}
 

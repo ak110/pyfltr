@@ -511,20 +511,29 @@ def test_build_header_record_emits_commands_and_no_schema_hints() -> None:
 def test_build_header_record_size_is_small(monkeypatch: pytest.MonkeyPatch) -> None:
     """headerレコード（実行対象15件想定）は500文字以下に収まる（runner情報追加後）。
 
-    `uv_lock_present` / `uv_available` / `uvx_available` の取得関数を固定値へ差し替え、
-    サイズ評価を実行環境（`uv.lock`の有無や`uv` / `uvx`バイナリの導入状況）に依存させない。
+    `uv` 取得関数群と環境依存値（`sys.version` / `sys.executable` / `os.getcwd()` / version文字列）を
+    Windows CI相当の値へ差し替え、ローカル開発環境（dirty状態でversion文字列が長くなる場合等）に
+    依存せずWindows CI環境でのサイズ超過を検出できるようにする。
+    Windows Python 3.14の`sys.version`は約80字、CIのversionは`setuptools-scm`shallow git由来で20字程度。
     """
     monkeypatch.setattr("pyfltr.command.runner.cwd_has_uv_lock", lambda: True)
     monkeypatch.setattr("pyfltr.command.runner.ensure_uv_available", lambda: True)
     monkeypatch.setattr("pyfltr.command.runner.ensure_uvx_available", lambda: True)
+    monkeypatch.setattr(
+        "pyfltr.output.jsonl.sys.version",
+        "3.14.4 (tags/v3.14.4:23116f9, Apr  7 2026, 14:10:54) [MSC v.1944 64 bit (AMD64)]",
+    )
+    monkeypatch.setattr("pyfltr.output.jsonl.sys.executable", r"D:\a\pyfltr\pyfltr\.venv\Scripts\python.exe")
+    monkeypatch.setattr("pyfltr.output.jsonl.os.getcwd", lambda: r"D:\a\pyfltr\pyfltr")
+    monkeypatch.setattr("pyfltr.output.jsonl.importlib.metadata.version", lambda _name: "0.1.dev1+g0123456789")
     commands = [f"tool-{i}" for i in range(15)]
     record = pyfltr.output.jsonl._build_header_record(commands=commands, files=10, run_id="01TESTULID")
     serialized = pyfltr.output.jsonl._dump(record)
     assert len(serialized) <= 500, f"header size {len(serialized)} exceeded 500 chars"
 
 
-def test_build_header_record_includes_uv_lock_and_uv_available(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`uv_lock_present` / `uv_available` / `uvx_available` がプロセス共通の真偽値として常時出力される。
+def test_build_header_record_includes_uv_object(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`uv.lock` / `uv.available` / `uv.x_available` がプロセス共通の真偽値として常時出力される。
 
     Python系コマンドが実行集合に含まれるか否かに関わらず、`mise_active_tools` のような
     条件付き付与ではなく常時出力する設計（runner経路の追跡情報のため）。
@@ -533,25 +542,19 @@ def test_build_header_record_includes_uv_lock_and_uv_available(monkeypatch: pyte
     monkeypatch.setattr("pyfltr.command.runner.ensure_uv_available", lambda: True)
     monkeypatch.setattr("pyfltr.command.runner.ensure_uvx_available", lambda: True)
     record_python = pyfltr.output.jsonl._build_header_record(commands=["mypy"], files=3)
-    assert record_python["uv_lock_present"] is True
-    assert record_python["uv_available"] is True
-    assert record_python["uvx_available"] is True
+    assert record_python["uv"] == {"lock": True, "available": True, "x_available": True}
     # Python系コマンドを含まないrunでも常時出力される。
     record_non_python = pyfltr.output.jsonl._build_header_record(commands=["shellcheck"], files=3)
-    assert record_non_python["uv_lock_present"] is True
-    assert record_non_python["uv_available"] is True
-    assert record_non_python["uvx_available"] is True
+    assert record_non_python["uv"] == {"lock": True, "available": True, "x_available": True}
 
 
 def test_build_header_record_uv_fields_reflect_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`uv_lock_present` / `uv_available` / `uvx_available` の値が`pyfltr.command.runner`の判定関数に追従する。"""
+    """`uv.lock` / `uv.available` / `uv.x_available` の値が`pyfltr.command.runner`の判定関数に追従する。"""
     monkeypatch.setattr("pyfltr.command.runner.cwd_has_uv_lock", lambda: False)
     monkeypatch.setattr("pyfltr.command.runner.ensure_uv_available", lambda: False)
     monkeypatch.setattr("pyfltr.command.runner.ensure_uvx_available", lambda: False)
     record = pyfltr.output.jsonl._build_header_record(commands=["mypy"], files=3)
-    assert record["uv_lock_present"] is False
-    assert record["uv_available"] is False
-    assert record["uvx_available"] is False
+    assert record["uv"] == {"lock": False, "available": False, "x_available": False}
 
 
 def test_build_header_record_omits_mise_active_tools_when_no_mise_command() -> None:

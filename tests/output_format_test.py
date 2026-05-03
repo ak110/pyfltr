@@ -780,10 +780,10 @@ def test_build_header_record_fields():
     assert "platform" in record
     assert "cwd" in record
     # uv経路追跡情報は常時出力（プロセス共通の真偽値）。
-    assert "uv_lock_present" in record
-    assert "uv_available" in record
-    assert isinstance(record["uv_lock_present"], bool)
-    assert isinstance(record["uv_available"], bool)
+    assert "uv" in record
+    assert isinstance(record["uv"]["lock"], bool)
+    assert isinstance(record["uv"]["available"], bool)
+    assert isinstance(record["uv"]["x_available"], bool)
 
 
 def test_build_lines_header_first(default_config):

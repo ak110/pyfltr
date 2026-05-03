@@ -67,7 +67,7 @@ cache-max-age-hours = 24
 `--global`の有無で対象ファイルを切り替える。
 詳細は[CLIコマンド](usage.md#config)を参照。
 
-## 設定項目一覧
+## 設定項目一覧 {#config-keys}
 
 設定項目と既定値は`pyfltr config list`で確認可能。
 `{command}`系の項目およびツール固有の項目（`prettier-check-args`など）の詳細はツール別設定ページを参照。
