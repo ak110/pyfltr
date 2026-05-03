@@ -10,7 +10,7 @@
 - ty記述のSSOTは`docs/guide/index.md`。
   preset非収録の扱いを変更した場合は`README.md`・`mkdocs.yml`内llmstxt・`docs/guide/configuration.md`・`docs/guide/usage.md`を併せて更新する
 - サブコマンド一覧のSSOTは`docs/guide/usage.md`。
-  サブコマンドを追加・削除した場合は`README.md`の「主なサブコマンド」節と`mkdocs.yml`内llmstxtの「サブコマンド」節を併せて更新する
+  サブコマンドを追加・削除した場合は`README.md`の「使い方」節と`mkdocs.yml`内llmstxtの「サブコマンド」節を併せて更新する
 - `mkdocs.yml`内llmstxt `markdown_description`にはLLMが利用する際に有用な情報のみ記載する（`run-for-agent`サブコマンド・主要オプションなど）。
   LLMにとって不要な情報はdocs側をSSOTとし、多重管理を避ける
 - 出力形式解決のSSOTは`docs/guide/usage.md`「出力形式の切り替え」節。
@@ -26,7 +26,7 @@
   推奨設定例とコマンド表記を併せて更新する
 - mise active tools取得結果の構造（`MiseActiveToolsResult`）とステータス語彙7値のSSOTは`pyfltr/command/mise.py`。
   判定／JSONL header露出／`command-info`出力の3経路で同じ結果を共有する設計とする。
-  ステータス追加や露出経路を増やすときは`docs/guide/usage.md`（command-info節・JSONLスキーマ節）と
+  ステータス追加や露出経路を増やすときは`docs/guide/usage.md`の「command-info」節と
   `docs/development/architecture.md`（mise active tools取得結果の構造化節）も併せて更新する
 - モジュールパス参照を含むドキュメントはモジュール移動の際に追従更新が必要。
   主な対象は`CLAUDE.md`・`docs/development/architecture.md`・`.claude/rules/`配下

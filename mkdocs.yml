@@ -75,8 +75,8 @@ plugins:
 
         ## LLMエージェント向け出力（`--output-format=jsonl`）
 
-        `pyfltr run-for-agent`でJSONL形式の構造化出力が得られる。レコードは5種類：`header`（実行環境）・`warning`（警告）・`diagnostic`（指摘）・`command`（ツール結果）・`summary`（全体集計）。
-        詳細なJSONLスキーマは[CLIの使い方](guide/usage.md)を参照。
+        `pyfltr run-for-agent`でJSONL形式の構造化出力が得られる。
+        詳細は[CLIの使い方](guide/usage.md)を参照。
 
       sections:
         ホーム:

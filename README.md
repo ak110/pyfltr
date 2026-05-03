@@ -1,8 +1,10 @@
 # pyfltr: Python Formatters, Linters, and Testers Runner
 
-<!-- markdownlint-disable-next-line MD013 -->
-[![CI](https://github.com/ak110/pyfltr/actions/workflows/ci.yaml/badge.svg)](https://github.com/ak110/pyfltr/actions/workflows/ci.yaml)
+[![CI][ci-badge]][ci-url]
 [![PyPI version](https://badge.fury.io/py/pyfltr.svg)](https://badge.fury.io/py/pyfltr)
+
+[ci-badge]: https://github.com/ak110/pyfltr/actions/workflows/ci.yaml/badge.svg
+[ci-url]: https://github.com/ak110/pyfltr/actions/workflows/ci.yaml
 
 Python / Rust / .NET / TypeScript・JavaScript / ドキュメントなど多言語プロジェクトの
 formatter・linter・testerを単一コマンドで並列実行するCLIツール。
@@ -33,14 +35,14 @@ pip環境では`pip install pyfltr`を使う。
 実行するツールはpyproject.tomlの`[tool.pyfltr]`セクションで指定する。
 詳細は[設定項目](docs/guide/configuration.md)を参照。
 
-## 主なサブコマンド
+## 使い方
 
 チェック実行（`ci` / `run` / `fast`）・エージェント向け出力（`run-for-agent`）・
 実行履歴参照（`list-runs` / `show-run`）・設定操作（`config`）・MCPサーバー（`mcp`）など。
 
 詳細は[CLIコマンド](docs/guide/usage.md)を参照。
 
-## コーディングエージェント向け運用
+### コーディングエージェント向け
 
 `pyfltr run-for-agent`をエージェントから直接呼び出すか、`pyfltr mcp`でMCPサーバーとして登録する。
 

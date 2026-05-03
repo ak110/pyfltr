@@ -58,4 +58,4 @@ cwdのuvプロジェクトに対象ツールが登録されていない場合、
 
 ツール解決経路の追跡情報はJSONL header（`uv_lock_present`・`uv_available`）と各commandレコード（`effective_runner`・`runner_source`）に出力する。
 利用者・LLMが「想定どおりuv経路で動作したか」「direct fallbackが起きていないか」を出力から判別できるようにするための情報である。
-スキーマ変更時は`docs/guide/usage.md`の「jsonlスキーマ」節と`mkdocs.yml`内llmstxtの該当節も併せて更新する。
+JSONLフィールドの追加・名称変更は[output方針](output.md)に従う。
