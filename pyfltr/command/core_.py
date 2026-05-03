@@ -138,7 +138,7 @@ class CommandResult:
     """`pyfltr.command.runner.ResolvedCommandline.effective_runner` の値。
 
     `build_commandline` が成功してツール起動経路が確定した場合のみセットされる。
-    `direct` / `mise` / `uv` / `js-pnpx` 等の値を取り、
+    `direct` / `mise` / `uv` / `uvx` / `pnpx` / `pnpm` / `npm` / `npx` / `yarn` のいずれかの値を取り、
     JSONL commandレコードの`effective_runner`フィールドへ露出する。
     `resolution_failed` 時や対象0件でcommandline解決を行わない経路では `None` のまま。
     """

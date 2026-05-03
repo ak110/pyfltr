@@ -322,6 +322,31 @@ def test_execute_command_direct_missing_returns_failed_result(tmp_path: pathlib.
         os.chdir(original_cwd)
 
 
+def test_build_commandline_per_tool_direct_overrides_global_js_runner(tmp_path: pathlib.Path) -> None:
+    """per-tool `textlint-runner = "direct"` × global `js-runner = "pnpm"` で
+    node_modules/.bin/textlintに解決される（per-tool指定がglobalに優先）。
+    """
+    bin_dir = tmp_path / "node_modules" / ".bin"
+    bin_dir.mkdir(parents=True)
+    (bin_dir / "textlint").write_text("#!/bin/sh\necho stub\n")
+
+    config = pyfltr.config.config.create_default_config()
+    # globalはpnpm経路だが、per-toolでdirect指定しているため node_modules/.bin/<bin> 解決が走る。
+    config.values["js-runner"] = "pnpm"
+    config.values["textlint-runner"] = "direct"
+
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        resolved = pyfltr.command.runner.build_commandline("textlint", config)
+        assert resolved.runner == "direct"
+        assert resolved.effective_runner == "direct"
+        assert pathlib.Path(resolved.executable).name == "textlint"
+        assert not resolved.prefix
+    finally:
+        os.chdir(original_cwd)
+
+
 def test_run_subprocess_file_not_found_returns_127() -> None:
     """存在しない実行ファイルを指定しても例外を送出せずrc=127を返す。"""
     result = pyfltr.command.process.run_subprocess(
@@ -1862,12 +1887,12 @@ def test_resolve_runner_default_for_direct_tools() -> None:
         assert source == "default"
 
 
-def test_resolve_runner_default_for_uv_tools() -> None:
-    """Python系ツールの既定は"uv"。"""
+def test_resolve_runner_default_for_python_tools() -> None:
+    """Python系ツールの既定は"python-runner"（カテゴリ委譲値）。"""
     config = pyfltr.config.config.create_default_config()
     for command in ("mypy", "pylint", "pyright", "ty", "ruff-check", "ruff-format", "pytest", "uv-sort"):
         runner, source = pyfltr.command.runner.resolve_runner(command, config)
-        assert runner == "uv", f"{command}のrunnerは'uv'であるべき"
+        assert runner == "python-runner", f"{command}のrunnerは'python-runner'であるべき"
         assert source == "default"
 
 
@@ -2425,7 +2450,8 @@ def test_build_commandline_python_tool_uv_with_lock_and_uv_present(setup_uv_runn
     config = pyfltr.config.config.create_default_config()
     resolved = pyfltr.command.runner.build_commandline("mypy", config)
     assert resolved.commandline == ["uv", "run", "--frozen", "mypy"]
-    assert resolved.runner == "uv"
+    # per-tool値は新スキーマでカテゴリ委譲値`python-runner`が既定。
+    assert resolved.runner == "python-runner"
     assert resolved.effective_runner == "uv"
     assert resolved.runner_source == "default"
 
@@ -2494,6 +2520,96 @@ def test_build_commandline_uv_runner_on_non_python_tool_raises() -> None:
     config.values["typos-runner"] = "uv"
     with pytest.raises(ValueError, match="PYTHON_TOOL_BINに登録されていない"):
         pyfltr.command.runner.build_commandline("typos", config)
+
+
+def test_build_commandline_uvx_runner_on_non_python_tool_raises() -> None:
+    """`typos-runner = "uvx"` × path未指定でエラー。"""
+    config = pyfltr.config.config.create_default_config()
+    config.values["typos-runner"] = "uvx"
+    with pytest.raises(ValueError, match="PYTHON_TOOL_BINに登録されていない"):
+        pyfltr.command.runner.build_commandline("typos", config)
+
+
+def test_build_commandline_python_tool_uvx_with_uvx_present(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`mypy-runner = "uvx"` ×uvx shim利用可能で `uvx <bin>` 形を返す。
+
+    uvx経路は`uv.lock`を参照せず、`{command}-version`設定とも連動しない仕様を持つため、
+    setup_uv_runner（`cwd_has_uv_lock`差し替えあり）には依存させない。
+    """
+    monkeypatch.setattr(pyfltr.command.runner, "ensure_uvx_available", lambda: True)
+    config = pyfltr.config.config.create_default_config()
+    config.values["mypy-runner"] = "uvx"
+    resolved = pyfltr.command.runner.build_commandline("mypy", config)
+    assert resolved.commandline == ["uvx", "mypy"]
+    assert resolved.runner == "uvx"
+    assert resolved.effective_runner == "uvx"
+    assert resolved.runner_source == "explicit"
+
+
+def test_build_commandline_python_tool_uvx_falls_back_when_uvx_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """uvx不在の場合はdirect（shutil.which）へフォールバックする。"""
+    monkeypatch.setattr(pyfltr.command.runner, "ensure_uvx_available", lambda: False)
+    monkeypatch.setattr(
+        "pyfltr.command.runner.shutil.which",
+        lambda name: f"/fake/bin/{name}" if name in pyfltr.command.runner.PYTHON_TOOL_BIN.values() else None,
+    )
+    config = pyfltr.config.config.create_default_config()
+    config.values["mypy-runner"] = "uvx"
+    resolved = pyfltr.command.runner.build_commandline("mypy", config)
+    assert resolved.commandline == ["/fake/bin/mypy"]
+    assert resolved.effective_runner == "direct"
+
+
+def test_build_commandline_python_runner_delegation_to_uvx(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`mypy-runner = "python-runner"` × グローバル`python-runner = "uvx"` でuvx経路へ解決される。"""
+    monkeypatch.setattr(pyfltr.command.runner, "ensure_uvx_available", lambda: True)
+    config = pyfltr.config.config.create_default_config()
+    config.values["python-runner"] = "uvx"
+    resolved = pyfltr.command.runner.build_commandline("mypy", config)
+    assert resolved.commandline == ["uvx", "mypy"]
+    # per-tool値はカテゴリ委譲値、effective値は委譲先の直接指定値。
+    assert resolved.runner == "python-runner"
+    assert resolved.effective_runner == "uvx"
+
+
+def test_build_commandline_python_runner_delegation_to_direct(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`mypy-runner = "python-runner"` × グローバル`python-runner = "direct"` でdirect経路へ解決される。"""
+    monkeypatch.setattr(
+        "pyfltr.command.runner.shutil.which",
+        lambda name: f"/fake/bin/{name}" if name == "mypy" else None,
+    )
+    config = pyfltr.config.config.create_default_config()
+    config.values["python-runner"] = "direct"
+    resolved = pyfltr.command.runner.build_commandline("mypy", config)
+    assert resolved.commandline == ["/fake/bin/mypy"]
+    assert resolved.runner == "python-runner"
+    assert resolved.effective_runner == "direct"
+
+
+def test_build_commandline_js_effective_runner_has_no_prefix() -> None:
+    """JSランナー解決後の `effective_runner` は `js-` プレフィクスを持たず、直接指定値そのものになる。
+
+    対称12値刷新でプレフィクス付き値は廃止しており、純粋な直接指定値だけが取り得る値となる。
+    """
+    config = pyfltr.config.config.create_default_config()
+    # textlintはJS_TOOL_BINに登録されたツール。pnpx既定でJS_RUNNERS既定値`pnpx`を採用する。
+    resolved_pnpx = pyfltr.command.runner.build_commandline("textlint", config)
+    assert resolved_pnpx.effective_runner == "pnpx"
+
+    config.values["js-runner"] = "pnpm"
+    resolved_pnpm = pyfltr.command.runner.build_commandline("textlint", config)
+    assert resolved_pnpm.effective_runner == "pnpm"
+
+
+def test_build_commandline_js_per_tool_direct_value() -> None:
+    """per-tool直接指定値（例: `textlint-runner = "pnpm"`）が委譲経路と同じロジックで解決される。"""
+    config = pyfltr.config.config.create_default_config()
+    # グローバルはpnpx（既定）のままで、per-toolだけpnpmに切り替える。
+    config.values["textlint-runner"] = "pnpm"
+    resolved = pyfltr.command.runner.build_commandline("textlint", config)
+    assert resolved.commandline == ["pnpm", "exec", "textlint"]
+    assert resolved.runner == "pnpm"
+    assert resolved.effective_runner == "pnpm"
 
 
 def test_build_commandline_uv_runner_with_path_override_skips_validation() -> None:

@@ -137,8 +137,9 @@ mise経由のsubprocessにはmiseが注入したtoolパスを除外したPATHを
 
 ## uvx pyfltr単独実行時にpylintのimport-errorが出る
 
-`uvx pyfltr`単発で実行した場合、cwdに`uv.lock`があると`{command}-runner = "uv"`既定値により
-利用者プロジェクトのvenvに登録されたツールが優先される。
+`uvx pyfltr`単発で実行した場合、cwdに`uv.lock`があると`{command}-runner = "python-runner"`既定値経由で
+グローバル`python-runner = "uv"`既定値が解決される。
+このため、利用者プロジェクトのvenvに登録されたツールが優先される。
 このときpylintのみ`import-error`を出すケースがある。
 原因は、pylintが解析対象モジュールを実際にimportして型情報を取り出す挙動を持つため。
 利用者プロジェクトのvenvに対象モジュールの依存パッケージが登録されていないと、

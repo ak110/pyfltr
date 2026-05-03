@@ -8,6 +8,7 @@ import shutil
 
 import pyfltr.command.mise
 import pyfltr.config.config
+from pyfltr.command.builtin import COMMAND_RUNNERS, JS_RUNNERS
 
 # `build_mise_subprocess_env`はpyfltr.command内部APIだがサブパッケージ全域で共有する。
 # 同じサブパッケージ内の`mise.py`もfrom-importで取り込んでおり、本モジュールも倣う。
@@ -236,7 +237,7 @@ class ResolvedCommandline:
     （`"explicit"` : `{command}-runner` 明示、`"default"` : 既定値、
     `"path-override"` : `{command}-path` 非空でdirect強制）。
     `effective_runner` はグローバル設定への委譲を解決した最終形
-    （`"direct"` / `"mise"` / `"js-pnpx"` / `"js-pnpm"` / `"uv"` 等）。
+    （`"direct"` / `"mise"` / `"uv"` / `"uvx"` / `"pnpx"` / `"pnpm"` / `"npm"` / `"npx"` / `"yarn"`）。
     `tool_spec_omitted` はmise経路で `["exec", "--", <bin>]` 形（tool spec省略形）を採用したかを示す。
     commandline文字列の見た目に頼らず判別できるよう、command-info等で明示露出する用途で持つ。
     """
@@ -321,6 +322,16 @@ def ensure_uv_available() -> bool:
 
 
 @functools.lru_cache(maxsize=1)
+def ensure_uvx_available() -> bool:
+    """`uvx` shim が PATH 上に存在するかを判定する（実行内キャッシュつき）。
+
+    `{command}-runner = "uvx"` 経路で `uvx <bin>` を組み立てるかどうかの判定に使う。
+    未導入時は False を返し、呼び出し側が direct フォールバックへ切り替える。エラー送出はしない。
+    """
+    return shutil.which("uvx") is not None
+
+
+@functools.lru_cache(maxsize=1)
 def cwd_has_uv_lock() -> bool:
     """カレントディレクトリに `uv.lock` が存在するかを判定する（実行内キャッシュつき）。"""
     return pathlib.Path("uv.lock").is_file()
@@ -361,18 +372,56 @@ def _resolve_direct_executable(bin_name: str) -> str:
     return resolved
 
 
+def _resolve_python_commandline(
+    command: str,
+    effective: str,
+) -> tuple[str, str, list[str]]:
+    """Python系ツールの実行ファイルと引数prefixを決定する。
+
+    `effective` には `python-runner` 委譲解決後の値（`"direct"` / `"uv"` / `"uvx"`）が入る。
+    `(effective_runner, executable, prefix)` の3要素タプルを返す。
+    `effective_runner`は `direct` フォールバックを反映した最終形となる。
+
+    - `"uv"`: cwdに`uv.lock`があり、かつ`uv`バイナリが利用可能な場合は `uv run --frozen <bin>` を組み立てる。
+      いずれかが満たされなければ direct フォールバック
+    - `"uvx"`: `uvx`shimが利用可能なら `uvx <bin>` を組み立てる。
+      未導入ならdirect フォールバック。`uv.lock`は参照しない、`{command}-version`設定とも連動しない
+    - `"direct"`: `_resolve_python_tool_direct` で `shutil.which` 解決
+    """
+    bin_name = PYTHON_TOOL_BIN[command]
+    if effective == "uv":
+        if cwd_has_uv_lock() and ensure_uv_available():
+            return "uv", "uv", ["run", "--frozen", bin_name]
+        # uv不在 or uv.lock不在 → direct PATH解決へフォールバック。
+        executable = _resolve_python_tool_direct(command)
+        return "direct", executable, []
+    if effective == "uvx":
+        if ensure_uvx_available():
+            return "uvx", "uvx", [bin_name]
+        # uvx不在 → direct PATH解決へフォールバック。
+        executable = _resolve_python_tool_direct(command)
+        return "direct", executable, []
+    if effective == "direct":
+        executable = _resolve_python_tool_direct(command)
+        return "direct", executable, []
+    raise ValueError(f"python-runnerの設定値が正しくありません: {effective=}")
+
+
 def _resolve_js_commandline(
     command: str,
     config: pyfltr.config.config.Config,
+    *,
+    effective: str | None = None,
 ) -> tuple[str, list[str]]:
-    """JSツール （textlint / markdownlint） の実行ファイルと引数prefixを決定する。
+    """JSツール（textlint / markdownlint等）の実行ファイルと引数prefixを決定する。
 
-    `{command}-path` が空のときに呼び出され、`js-runner` 設定に基づいて
-    起動コマンドを組み立てる。`direct` モードで `node_modules/.bin/<cmd>` が
-    存在しない場合は `FileNotFoundError` を送出する。
+    `{command}-path` が空のときに呼び出される。
+    `effective` を明示すると当該値を採用し、省略時は `js-runner` 設定値を採用する
+    （per-tool直接指定値（`pnpx` / `pnpm` 等）を委譲経路と同一ロジックで解決するため）。
+    `direct` モードで `node_modules/.bin/<cmd>` が存在しない場合は `FileNotFoundError` を送出する。
     """
     bin_name = JS_TOOL_BIN[command]
-    runner = config["js-runner"]
+    runner = effective if effective is not None else config["js-runner"]
     # 汎用化: `{command}-packages` キーを参照することで任意のJSツールで
     # `--package` / `-p` 展開を利用可能にする。未定義キーは空リスト扱い。
     packages: list[str] = list(config.values.get(f"{command}-packages", []))
@@ -429,6 +478,36 @@ def _resolve_bin_commandline(
     return resolved.executable, list(resolved.prefix)
 
 
+# `{command}-runner`値の体系をbuiltin.py側のtuple定数から派生させ、
+# 二重定義による追従漏れを避けるためのSSOT。
+# - 委譲値: `*-runner`サフィックス（同名のグローバル設定キーへ委譲）
+# - 直接指定値: それ以外（`direct` / `mise` / `uv` / `uvx` / `pnpx` / `pnpm` / `npm` / `npx` / `yarn`）
+_DELEGATE_RUNNER_VALUES: frozenset[str] = frozenset(v for v in COMMAND_RUNNERS if v.endswith("-runner"))
+_DIRECT_RUNNER_VALUES: frozenset[str] = frozenset(COMMAND_RUNNERS) - _DELEGATE_RUNNER_VALUES
+
+
+def resolve_effective_runner(command: str, runner: str, config: pyfltr.config.config.Config) -> str:
+    """`{command}-runner` per-tool値からeffective値を解決する。
+
+    カテゴリ委譲値（`python-runner` / `js-runner` / `bin-runner`）はグローバル設定値に置換し、
+    直接指定値（`direct` / `mise` / `uv` / `uvx` / `pnpx` / ...）はそのまま返す。
+    未知値は`ValueError`を送出する（`{command}-runner`バリデーションを通過していれば本経路に来ない）。
+    """
+    # 委譲値はサフィックス`-runner`がそのままグローバル設定キーに一致する設計のため、
+    # `runner`値をそのまま`config`の引きキーとして使える。
+    if runner in _DELEGATE_RUNNER_VALUES:
+        return str(config[runner])
+    if runner in _DIRECT_RUNNER_VALUES:
+        return runner
+    raise ValueError(f"{command}-runnerの設定値が正しくありません: {runner=}")
+
+
+# JSランナーのeffective値集合（直接指定値・グローバル委譲後の値の両方を判定するため）。
+# `JS_RUNNERS`は`("pnpx", "pnpm", "npm", "npx", "yarn", "direct")`で`direct`を含むが、
+# JSパッケージマネージャー経路の判定では`direct`を除外する（`direct`は別分岐で処理する）。
+_JS_EFFECTIVE_VALUES: frozenset[str] = frozenset(JS_RUNNERS) - {"direct"}
+
+
 def build_commandline(
     command: str,
     config: pyfltr.config.config.Config,
@@ -438,7 +517,7 @@ def build_commandline(
     """ツール起動コマンドラインを構築する（副作用は `allow_side_effects` で制御）。
 
     `{command}-runner` および `{command}-path` の設定に従い、`mise exec ... --` 形式・
-    `pnpx --package ...` 形式・直接実行（PATH解決）のいずれかを返す。
+    `pnpx --package ...` 形式・`uv run --frozen` 形式・`uvx <bin>` 形式・直接実行（PATH解決）のいずれかを返す。
     mise経路では `get_mise_active_tools` を引いて、mise設定（プロジェクト `mise.toml` ＋
     グローバル設定）に該当ツール記述があり、かつ `{command}-version` が既定値 `"latest"` の
     ときに限りtool spec部分を省略した `["exec", "--", <bin>]` 形を返す
@@ -454,14 +533,7 @@ def build_commandline(
     `{command}-runner` 値の組み合わせ自体が不正な場合は `ValueError` を送出する。
     """
     runner, source = resolve_runner(command, config)
-    if runner == "bin-runner":
-        effective = config["bin-runner"]
-    elif runner == "js-runner":
-        effective = f"js-{config['js-runner']}"
-    elif runner in ("mise", "direct", "uv"):
-        effective = runner
-    else:
-        raise ValueError(f"{command}-runnerの設定値が正しくありません: {runner=}")
+    effective = resolve_effective_runner(command, runner, config)
 
     # `{command}-path` が非空ならば、その値でdirect実行する（明示パス上書き）。
     # この経路では `{command}-runner` と未登録ツールの組み合わせ（例: `typos-runner = "uv"` ＋ `typos-path` 指定）
@@ -509,10 +581,13 @@ def build_commandline(
             tool_spec_omitted=tool_spec_omitted,
         )
 
-    if effective.startswith("js-"):
+    if effective in _JS_EFFECTIVE_VALUES:
         if command not in JS_TOOL_BIN:
-            raise ValueError(f'{command}: js-runner 対応ツールではないため `{command}-runner = "js-runner"` は指定できません')
-        executable, prefix = _resolve_js_commandline(command, config)
+            raise ValueError(
+                f"{command}: js-runner 対応ツールではないため "
+                f'`{command}-runner = "{runner}"`（解決後 "{effective}"）は指定できません'
+            )
+        executable, prefix = _resolve_js_commandline(command, config, effective=effective)
         return ResolvedCommandline(
             executable=executable,
             prefix=prefix,
@@ -521,26 +596,19 @@ def build_commandline(
             effective_runner=effective,
         )
 
-    if effective == "uv":
+    if effective in ("uv", "uvx"):
         if command not in PYTHON_TOOL_BIN:
-            raise ValueError(f'{command}: PYTHON_TOOL_BINに登録されていないため `{command}-runner = "uv"` は指定できません')
-        bin_name = PYTHON_TOOL_BIN[command]
-        if cwd_has_uv_lock() and ensure_uv_available():
-            return ResolvedCommandline(
-                executable="uv",
-                prefix=["run", "--frozen", bin_name],
-                runner=runner,
-                runner_source=source,
-                effective_runner="uv",
+            raise ValueError(
+                f"{command}: PYTHON_TOOL_BINに登録されていないため "
+                f'`{command}-runner = "{runner}"`（解決後 "{effective}"）は指定できません'
             )
-        # uv 不在 or uv.lock 不在 → direct PATH解決へフォールバック。
-        executable = _resolve_python_tool_direct(command)
+        resolved_effective, executable, prefix = _resolve_python_commandline(command, effective)
         return ResolvedCommandline(
             executable=executable,
-            prefix=[],
+            prefix=prefix,
             runner=runner,
             runner_source=source,
-            effective_runner="direct",
+            effective_runner=resolved_effective,
         )
 
     # effective == "direct"
@@ -555,6 +623,7 @@ def build_commandline(
             effective_runner=effective,
         )
     if command in PYTHON_TOOL_BIN:
+        # python-runner経由（python-runner = "direct"）と直接指定（{command}-runner = "direct"）の両方を吸収する。
         executable = _resolve_python_tool_direct(command)
         return ResolvedCommandline(
             executable=executable,
@@ -565,7 +634,7 @@ def build_commandline(
         )
     if command in JS_TOOL_BIN:
         # JSツールのdirectはnode_modules/.bin/<cmd> 解決に委譲。
-        executable, prefix = _resolve_js_commandline(command, config)
+        executable, prefix = _resolve_js_commandline(command, config, effective="direct")
         return ResolvedCommandline(
             executable=executable,
             prefix=prefix,

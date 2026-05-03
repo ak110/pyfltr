@@ -9,6 +9,7 @@ pre-commitのname-tests-testフックから除外されるため。
 
 import argparse
 import pathlib
+import time
 
 import pytest
 
@@ -278,7 +279,11 @@ def seed_archive_run(
     `tool_results`は`(tool, returncode, output, errors)`のタプル列。
     `runs_test` / `mcp_test`等で同じセットアップ手順を踏むため、
     duplicate-code（R0801）回避用にconftest.py側へ集約している。
+
+    run_idはULIDで生成され、ミリ秒解像度のタイムスタンプ部分を含む。
+    連続呼び出しで同一ULIDが返るflakyな衝突を避けるため、冒頭に1ミリ秒のスリープを挟む。
     """
+    time.sleep(0.001)
     store = pyfltr.state.archive.ArchiveStore(cache_root=cache_root)
     run_id = store.start_run(commands=commands or ["ruff-check"], files=files)
     for tool, returncode, output, errors in tool_results or []:

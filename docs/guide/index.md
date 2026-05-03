@@ -81,7 +81,7 @@ pyfltrの設定キーとコマンド名は`markdownlint`（例: `markdownlint = 
 
 プリセット指定と言語カテゴリゲートによる有効化の詳細は[設定項目](configuration.md)を参照。
 
-個別に有効化・無効化する方法や`bin-runner`/`js-runner`などの補助設定は[設定項目（ツール別）](configuration-tools.md)を参照。
+個別に有効化・無効化する方法や`python-runner`/`js-runner`/`bin-runner`などの補助設定は[設定項目（ツール別）](configuration-tools.md)を参照。
 
 ## コンセプト
 
@@ -108,7 +108,7 @@ pip環境では`pip install pyfltr`を使う。
 - [トラブルシューティング](troubleshooting.md) — よくある問題と回避策
 - [設定項目](configuration.md) — 基本設定・プリセット・並列実行
 - [設定項目（ツール別）](configuration-tools.md) —
-  ツール別設定（直接実行 / js-runner / bin-runnerのカテゴリ別設定・2段階実行・カスタムコマンド）
+  ツール別設定（python-runner / js-runner / bin-runner / 直接実行のカテゴリ別設定・2段階実行・カスタムコマンド）
 - [推奨設定例](recommended.md) — 推奨設定（Pythonプロジェクト・タスクランナー・CI）
 - [推奨設定例（非Pythonプロジェクト）](recommended-nonpython.md) — 非Pythonプロジェクトの推奨設定
 - [カスタムコマンド例](custom-commands.md) — カスタムコマンドの設定例

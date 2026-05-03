@@ -88,8 +88,12 @@ cache-max-age-hours = 24
 - {command}-extend-targets : 対象ファイルパターンへの追加
 - {command}-exclude : ツール別の追加除外パターン（後述）
 - {command}-pass-filenames : ファイル引数をコマンドに渡すか否か（既定: `true`）
-- {command}-runner : ツール起動方式（`"uv"` / `"direct"` / `"mise"` / `"bin-runner"` / `"js-runner"`）。
+- {command}-runner : ツール起動方式。
+  カテゴリ委譲値（`"python-runner"` / `"js-runner"` / `"bin-runner"`）または直接指定値（9種）の対称12値を許容する。
   既定値はツールごとに異なる（[ツール別設定](configuration-tools.md#command-runner)を参照）
+- python-runner : `{command}-runner = "python-runner"`の解決先（`"uv"` / `"uvx"` / `"direct"`、既定: `"uv"`）
+- js-runner : `{command}-runner = "js-runner"`の解決先（`"pnpx"` / `"pnpm"` / `"npm"` / `"npx"` / `"yarn"` / `"direct"`、既定: `"pnpx"`）
+- bin-runner : `{command}-runner = "bin-runner"`の解決先（`"mise"` / `"direct"`、既定: `"mise"`）
 - {command}-version : bin-runner対応ツールのバージョン指定（既定: `"latest"`）
 - pylint-pydantic : pylint実行時に`--load-plugins=pylint_pydantic`を自動追加するか（既定: `true`、後述）
 - mypy-unused-awaitable : mypy実行時に`--enable-error-code=unused-awaitable`を自動追加するか（既定: `true`、後述）

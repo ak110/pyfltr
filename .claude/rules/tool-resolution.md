@@ -9,8 +9,8 @@ pyfltrが対応するformatter/linter/testerの依存指定および実行時の
 - 本体依存（`dependencies`）: 本家公式かつ自己完結なPyPIパッケージ
   - 汎用的に有用なもの（例: `typos`、`pre-commit`）
   - Python系ツール一式（例: `ruff`、`mypy`、`pylint`、`pyright`、`ty`、`pytest`、`uv-sort`）。
-    `uvx pyfltr`単発で揃うようにし、`{command}-runner = "uv"`既定でcwdの`uv.lock`検出時は
-    利用者プロジェクトの登録版へ切り替える。
+    `uvx pyfltr`単発で揃うようにし、`{command}-runner = "python-runner"`既定でグローバル
+    `python-runner = "uv"`へ委譲し、cwdの`uv.lock`検出時は利用者プロジェクトの登録版へ切り替える。
     なお`pyright[nodejs]` extrasはインストール時にNode.jsランタイムを取得するため厳密には
    「自己完結」ではないが、Python系ツール一式を`uvx pyfltr`単発で揃える利便性を優先して同梱する
 - 依存指定なし: 本家から独立した個人または別組織のメンテに依存するもの、
@@ -45,12 +45,19 @@ extrasの空エイリアスは過去版からの利用者環境の`pyfltr[python
 ツールsubprocess起動時は、`{command}-runner`設定値に応じて以下の優先順位で解決する。
 
 - `{command}-path` 明示指定: 最優先で当該パスを採用する（Python系の既定値は空文字列で「未指定」扱い）
-- `{command}-runner = "uv"`（Python系ツールの既定）:
+- `{command}-runner = "python-runner"`（Python系ツールの既定）:
+  グローバル`python-runner`設定（既定`"uv"`）へ委譲する。
+  解決先は`"uv"` / `"uvx"` / `"direct"`のいずれかとなる
+- `{command}-runner = "uv"`:
   cwdに`uv.lock`があり、かつ`uv`バイナリが利用可能な場合は`uv run --frozen <bin>`経由でプロジェクトのvenvにあるツールを呼ぶ。
   いずれかが満たされない場合は`shutil.which`で本体依存に同梱されたバイナリを直接呼ぶ（directフォールバック）
+- `{command}-runner = "uvx"`:
+  `uvx <bin>`形式でPyPI最新版を都度取得して起動する。`uv.lock`は参照せず、`{command}-version`設定とも連動しない。
+  `uvx`shim不在時はdirectフォールバック
 - `{command}-runner = "mise"`: mise経由で解決
 - `{command}-runner = "direct"`: PATH解決
-- `{command}-runner = "js-runner"`: pnpx/npx経由で解決
+- `{command}-runner = "js-runner"`: グローバル`js-runner`設定（pnpx/pnpm/npm/npx/yarn/direct）へ委譲
+- `{command}-runner = "pnpx"` / `"pnpm"` / `"npm"` / `"npx"` / `"yarn"`: per-tool直接指定でJSパッケージマネージャー経由で解決
 
 cwdのuvプロジェクトに対象ツールが登録されていない場合、`uv run`側がエラーで失敗する。
 利用者は当該ツールをプロジェクトに追加するか、`{command}-path`で明示するか、
@@ -59,3 +66,23 @@ cwdのuvプロジェクトに対象ツールが登録されていない場合、
 ツール解決経路の追跡情報はJSONL header（`uv_lock_present`・`uv_available`）と各commandレコード（`effective_runner`・`runner_source`）に出力する。
 利用者・LLMが「想定どおりuv経路で動作したか」「direct fallbackが起きていないか」を出力から判別できるようにするための情報である。
 JSONLフィールドの追加・名称変更は[output方針](output.md)に従う。
+
+## {command}-runnerの値の体系
+
+`{command}-runner`はper-tool設定で、以下の2種類の値を取る。両者は対等な選択肢として並ぶ。
+
+- カテゴリ委譲値: `python-runner` / `js-runner` / `bin-runner`。
+  各カテゴリのグローバル設定値へ委譲する。
+  Python系tool・JS系tool・ネイティブ系toolの既定値はそれぞれ対応するカテゴリ委譲値とする
+- 直接指定値: `direct` / `mise` / `uv` / `uvx` / `pnpx` / `pnpm` / `npm` / `npx` / `yarn`。
+  per-toolで実装ツールを直接指定する場合に使う
+
+カテゴリ委譲値のグローバル設定は以下。
+
+- `python-runner`許容値: `("direct", "uv", "uvx")`、既定値`"uv"`
+- `js-runner`許容値: `("direct", "pnpx", "pnpm", "npm", "npx", "yarn")`、既定値`"pnpx"`
+- `bin-runner`許容値: `("direct", "mise")`、既定値`"mise"`
+
+直接指定値のカテゴリ横断バリデーション（例: `mypy-runner = "pnpm"`）は弾かない。
+無意味な組み合わせは実行時に解決ロジックがエラー終了する。
+実装簡潔さを優先した方針。

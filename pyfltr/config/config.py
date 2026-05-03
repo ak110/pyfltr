@@ -29,6 +29,7 @@ from pyfltr.command.builtin import (
     JS_RUNNERS,
     LANGUAGE_CATEGORIES,
     PYTHON_COMMANDS,
+    PYTHON_RUNNERS,
     REMOVED_COMMANDS,
     RUST_COMMANDS,
     CommandInfo,
@@ -52,6 +53,7 @@ __all__ = [
     "JS_RUNNERS",
     "LANGUAGE_CATEGORIES",
     "PYTHON_COMMANDS",
+    "PYTHON_RUNNERS",
     "REMOVED_COMMANDS",
     "RUST_COMMANDS",
     "CommandInfo",
@@ -134,6 +136,13 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "typos-json": True,
     "eslint-json": True,
     "biome-json": True,
+    # Python系ツール（mypy / pylint / pyright / ty / pytest / ruff-format / ruff-check / uv-sort）の
+    # 起動方式。{command}-path / {command}-runner明示が無いときに、以下の値に従って起動コマンドを組み立てる。
+    # - direct: shutil.whichで本体依存に同梱されたバイナリを直接起動
+    # - uv:     cwdにuv.lockがあり、かつuvが利用可能ならuv run --frozen <bin>経由で起動。
+    #           いずれかが満たされなければdirectへフォールバック（既定。従来互換）
+    # - uvx:    uvx <bin>形式でPyPI最新版を都度取得して起動（uv.lockは参照せず、{command}-versionとも連動しない）
+    "python-runner": "uv",
     # textlint / markdownlintの起動方式。
     # textlint-path / markdownlint-pathが空のときに、以下の値に従って
     # 実際の起動コマンドを組み立てる。
@@ -159,36 +168,36 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # カテゴリキー（`python = true`等）がgateを開けて有効化を通す構造。
     # presetを使わず個別に`{command} = true`を指定するとgateを越えて最優先で有効化される。
     "mypy": False,
-    # pathが空文字の場合は{command}-runner設定（既定 "uv"）に基づいて自動解決する。
-    # {command}-runner = "uv" 既定によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
+    # pathが空文字の場合は{command}-runner設定（既定 "python-runner"）に基づいて自動解決する。
+    # python-runner経路の既定（"uv"）によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
     # {command}-path明示で従来挙動（指定パスを直接実行）に戻せる。
     "mypy-path": "",
     "mypy-args": [],
-    "mypy-runner": "uv",
+    "mypy-runner": "python-runner",
     "mypy-fast": False,
     "pylint": False,
-    # pathが空文字の場合は{command}-runner設定（既定 "uv"）に基づいて自動解決する。
-    # {command}-runner = "uv" 既定によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
+    # pathが空文字の場合は{command}-runner設定（既定 "python-runner"）に基づいて自動解決する。
+    # python-runner経路の既定（"uv"）によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
     # {command}-path明示で従来挙動（指定パスを直接実行）に戻せる。
     "pylint-path": "",
     "pylint-args": [],
-    "pylint-runner": "uv",
+    "pylint-runner": "python-runner",
     "pylint-fast": False,
     "pyright": False,
-    # pathが空文字の場合は{command}-runner設定（既定 "uv"）に基づいて自動解決する。
-    # {command}-runner = "uv" 既定によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
+    # pathが空文字の場合は{command}-runner設定（既定 "python-runner"）に基づいて自動解決する。
+    # python-runner経路の既定（"uv"）によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
     # {command}-path明示で従来挙動（指定パスを直接実行）に戻せる。
     "pyright-path": "",
     "pyright-args": [],
-    "pyright-runner": "uv",
+    "pyright-runner": "python-runner",
     "pyright-fast": False,
     "ty": False,
-    # pathが空文字の場合は{command}-runner設定（既定 "uv"）に基づいて自動解決する。
-    # {command}-runner = "uv" 既定によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
+    # pathが空文字の場合は{command}-runner設定（既定 "python-runner"）に基づいて自動解決する。
+    # python-runner経路の既定（"uv"）によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
     # {command}-path明示で従来挙動（指定パスを直接実行）に戻せる。
     "ty-path": "",
     "ty-args": ["check", "--output-format", "concise", "--error-on-warning"],
-    "ty-runner": "uv",
+    "ty-runner": "python-runner",
     "ty-fast": True,
     "markdownlint": False,
     # pathが空文字の場合は{command}-runner設定（既定 "js-runner"）に基づいて自動解決する。
@@ -249,12 +258,12 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "prettier-write-args": ["--write"],
     "prettier-fast": True,
     "uv-sort": False,
-    # pathが空文字の場合は{command}-runner設定（既定 "uv"）に基づいて自動解決する。
-    # {command}-runner = "uv" 既定によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
+    # pathが空文字の場合は{command}-runner設定（既定 "python-runner"）に基づいて自動解決する。
+    # python-runner経路の既定（"uv"）によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
     # {command}-path明示で従来挙動（指定パスを直接実行）に戻せる。
     "uv-sort-path": "",
     "uv-sort-args": [],
-    "uv-sort-runner": "uv",
+    "uv-sort-runner": "python-runner",
     "uv-sort-fast": True,
     "biome": False,
     "biome-path": "",
@@ -429,11 +438,11 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "gitleaks-version": "latest",
     "gitleaks-fast": False,
     "pytest": False,
-    # pathが空文字の場合は{command}-runner設定（既定 "uv"）に基づいて自動解決する。
-    # {command}-runner = "uv" 既定によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
+    # pathが空文字の場合は{command}-runner設定（既定 "python-runner"）に基づいて自動解決する。
+    # python-runner経路の既定（"uv"）によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
     # {command}-path明示で従来挙動（指定パスを直接実行）に戻せる。
     "pytest-path": "",
-    "pytest-runner": "uv",
+    "pytest-runner": "python-runner",
     "pytest-args": [],
     "pytest-devmode": True,  # PYTHONDEVMODE=1をするか否か
     "pytest-fast": False,
@@ -446,11 +455,11 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "vitest-args": ["run", "--passWithNoTests"],
     "vitest-fast": False,
     "ruff-format": False,
-    # pathが空文字の場合は{command}-runner設定（既定 "uv"）に基づいて自動解決する。
-    # {command}-runner = "uv" 既定によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
+    # pathが空文字の場合は{command}-runner設定（既定 "python-runner"）に基づいて自動解決する。
+    # python-runner経路の既定（"uv"）によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
     # {command}-path明示で従来挙動（指定パスを直接実行）に戻せる。
     "ruff-format-path": "",
-    "ruff-format-runner": "uv",
+    "ruff-format-runner": "python-runner",
     "ruff-format-args": ["format", "--exit-non-zero-on-format"],
     "ruff-format-fast": True,
     # ruff-format実行時にruff check --fix --unsafe-fixesを先に実行するか。
@@ -461,11 +470,11 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "ruff-format-by-check": True,
     "ruff-format-check-args": ["check", "--fix", "--unsafe-fixes"],
     "ruff-check": False,
-    # pathが空文字の場合は{command}-runner設定（既定 "uv"）に基づいて自動解決する。
-    # {command}-runner = "uv" 既定によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
+    # pathが空文字の場合は{command}-runner設定（既定 "python-runner"）に基づいて自動解決する。
+    # python-runner経路の既定（"uv"）によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
     # {command}-path明示で従来挙動（指定パスを直接実行）に戻せる。
     "ruff-check-path": "",
-    "ruff-check-runner": "uv",
+    "ruff-check-runner": "python-runner",
     "ruff-check-args": ["check"],
     "ruff-check-fast": True,
     # fixモード時に通常argsの後に追加する引数。
@@ -908,20 +917,24 @@ def load_config(
             existing.extend(extra)
         config.commands[cmd_name] = dataclasses.replace(config.commands[cmd_name], targets=existing)
 
-    # js-runnerの値バリデーション
-    js_runner = config.values["js-runner"]
-    if js_runner not in JS_RUNNERS:
-        raise ValueError(f"js-runnerの設定値が正しくありません。{js_runner=} (許容値: {', '.join(JS_RUNNERS)})")
+    # グローバルrunner設定（python-runner / js-runner / bin-runner）の値バリデーション。
+    # カテゴリごとに許容値が異なるため、共通dispatcher構造で1箇所に集約する。
+    _global_runner_specs: tuple[tuple[str, tuple[str, ...]], ...] = (
+        ("python-runner", PYTHON_RUNNERS),
+        ("js-runner", JS_RUNNERS),
+        ("bin-runner", BIN_RUNNERS),
+    )
+    for runner_key, allowed in _global_runner_specs:
+        runner_value = config.values[runner_key]
+        if runner_value not in allowed:
+            raise ValueError(f"{runner_key}の設定値が正しくありません。{runner_value=} (許容値: {', '.join(allowed)})")
 
-    # bin-runnerの値バリデーション
-    bin_runner = config.values["bin-runner"]
-    if bin_runner not in BIN_RUNNERS:
-        raise ValueError(f"bin-runnerの設定値が正しくありません。{bin_runner=} (許容値: {', '.join(BIN_RUNNERS)})")
-
-    # {command}-runnerの値バリデーション
-    # 各コマンドごとに`"direct"` / `"mise"` / `"bin-runner"` / `"js-runner"` / `"uv"`の5値のみ許容する。
+    # per-tool {command}-runnerの値バリデーション。
+    # 対称12値のいずれかを許容する。カテゴリ横断の組み合わせ（例: Python系ツールに`pnpm`を指定）は
+    # 弾かない方針（実装簡潔さを優先し、無意味な組み合わせは実行時の解決ロジックがエラー終了する）。
+    _global_runner_keys = frozenset(key for key, _ in _global_runner_specs)
     for key, value in config.values.items():
-        if not key.endswith("-runner") or key in ("bin-runner", "js-runner"):
+        if not key.endswith("-runner") or key in _global_runner_keys:
             continue
         if value not in COMMAND_RUNNERS:
             raise ValueError(f"{key}の設定値が正しくありません。{value=!r} (許容値: {', '.join(COMMAND_RUNNERS)})")

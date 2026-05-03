@@ -26,7 +26,7 @@ format別のlogger stream/level切替の詳細は[docs/development/architecture.
 
 ## 注意点
 
-- ツール解決経路（`uv`／`mise`／`direct`／`js-runner`等）と本体依存方針はトピック別の規約ファイルに集約している。
+- ツール解決経路と本体依存方針はトピック別の規約ファイルに集約している。
   新ツール追加や依存方針を変更する際は規約ファイル群とdocs側のSSOTを合わせて見直す
 - JSONLスキーマ・logger分離・SSOT・テスト実装制約・subprocess PATH整理方針も同様に
   自動ロード対象の規約ファイル群へ分離している。

@@ -865,7 +865,7 @@ bin-runner = "bogus"
 
 
 def test_command_runner_validation_accepts_uv_value(tmp_path: pathlib.Path) -> None:
-    """`mypy-runner = "uv"` はエラーにならず読み込める。"""
+    """`mypy-runner = "uv"` はエラーにならず読み込める（直接指定値として後方互換維持）。"""
     pyproject_content = """
 [tool.pyfltr]
 mypy-runner = "uv"
@@ -873,6 +873,49 @@ mypy-runner = "uv"
     (tmp_path / "pyproject.toml").write_text(pyproject_content)
     config = pyfltr.config.config.load_config(config_dir=tmp_path)
     assert config["mypy-runner"] == "uv"
+
+
+def test_python_runner_default() -> None:
+    """python-runnerの既定値はuv（従来互換）。"""
+    config = pyfltr.config.config.create_default_config()
+    assert config["python-runner"] == "uv"
+
+
+def test_python_runner_override(tmp_path: pathlib.Path) -> None:
+    """pyproject.tomlでpython-runnerを上書きできる。"""
+    pyproject_content = """
+[tool.pyfltr]
+python-runner = "uvx"
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    config = pyfltr.config.config.load_config(config_dir=tmp_path)
+    assert config["python-runner"] == "uvx"
+
+
+def test_python_runner_invalid_rejected(tmp_path: pathlib.Path) -> None:
+    """python-runnerに未知の値を指定するとエラーになる。"""
+    pyproject_content = """
+[tool.pyfltr]
+python-runner = "bogus"
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    with pytest.raises(ValueError, match="python-runner"):
+        pyfltr.config.config.load_config(config_dir=tmp_path)
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["python-runner", "js-runner", "bin-runner", "direct", "mise", "uv", "uvx", "pnpx", "pnpm", "npm", "npx", "yarn"],
+)
+def test_command_runner_validation_accepts_symmetric_12_values(tmp_path: pathlib.Path, value: str) -> None:
+    """{command}-runnerは対称12値（カテゴリ委譲3値＋直接指定9値）すべてを受理する。
+
+    カテゴリ横断の組み合わせ（例: Python系ツールに`pnpm`を指定）はバリデーションでは弾かない方針で、
+    実装簡潔さを優先する（無意味な組み合わせは実行時の解決ロジックがエラー終了する）。
+    """
+    (tmp_path / "pyproject.toml").write_text(f'[tool.pyfltr]\nmypy-runner = "{value}"\n')
+    config = pyfltr.config.config.load_config(config_dir=tmp_path)
+    assert config["mypy-runner"] == value
 
 
 def test_mise_auto_trust_default() -> None:
@@ -1016,7 +1059,7 @@ def test_bin_tool_default_config_values() -> None:
     # uv-sortの既定値
     assert config["uv-sort"] is False
     assert config["uv-sort-path"] == ""
-    assert config["uv-sort-runner"] == "uv"
+    assert config["uv-sort-runner"] == "python-runner"
     assert config["uv-sort-fast"] is True
 
     # tscのpass-filenames

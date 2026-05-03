@@ -280,13 +280,21 @@ def test_command_info_json_includes_mise_fields(capsys: pytest.CaptureFixture[st
 
 
 def test_command_info_python_tool_shows_uv_info(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
-    """`mypy` を対象に command-info を呼び出すと `uv_info` キーが含まれる。"""
+    """`mypy` を対象に command-info を呼び出すと `uv_info` キーが含まれる。
+
+    既定では `mypy-runner = "python-runner"` ＋ グローバル `python-runner = "uv"` のため
+    `uv_info.mode == "uv"` となる。`runner` キー値はper-tool値で `"python-runner"`、
+    `effective_runner` は委譲解決後の `"uv"` となる。
+    """
     monkeypatch.setattr(pyfltr.command.runner, "cwd_has_uv_lock", lambda: True)
     monkeypatch.setattr(pyfltr.command.runner, "ensure_uv_available", lambda: True)
     out = _run("mypy", output_format="json", capsys=capsys)
     info = json.loads(out)
+    assert info["runner"] == "python-runner"
+    assert info["effective_runner"] == "uv"
     assert "uv_info" in info
     uv_info = info["uv_info"]
+    assert uv_info["mode"] == "uv"
     assert uv_info["uv_available"] is True
     assert uv_info["uv_lock_present"] is True
     assert uv_info["direct_fallback"] is False
@@ -337,6 +345,67 @@ def test_command_info_non_uv_tool_has_no_uv_info(capsys: pytest.CaptureFixture[s
     assert "uv_info" not in info
 
 
+def test_command_info_python_tool_uvx_runner_shows_uv_info(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`mypy-runner = "uvx"` 設定時は `uv_info.mode == "uvx"` となる。
+
+    uvx経路では`uv.lock`を参照しないため、`mode == "uv"`との判定差を確認する。
+    `direct_fallback`はuvx shimの可用性のみで判定される。
+    """
+    monkeypatch.setattr(pyfltr.command.runner, "ensure_uvx_available", lambda: True)
+    config = pyfltr.config.config.create_default_config()
+    config.values["mypy-runner"] = "uvx"
+    monkeypatch.setattr(pyfltr.config.config, "load_config", lambda **_kw: config)
+    out = _run("mypy", output_format="json", capsys=capsys)
+    info = json.loads(out)
+    assert info["runner"] == "uvx"
+    assert info["effective_runner"] == "uvx"
+    assert "uv_info" in info
+    uv_info = info["uv_info"]
+    assert uv_info["mode"] == "uvx"
+    assert uv_info["uvx_available"] is True
+    assert uv_info["direct_fallback"] is False
+
+
+def test_command_info_python_tool_uvx_runner_fallback_when_uvx_missing(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """uvx shim不在時は `direct_fallback=True` となる（mode="uvx"側の判定経路）。"""
+    monkeypatch.setattr(pyfltr.command.runner, "ensure_uvx_available", lambda: False)
+    monkeypatch.setattr(
+        "pyfltr.command.runner.shutil.which",
+        lambda name: f"/fake/bin/{name}" if name == "mypy" else None,
+    )
+    config = pyfltr.config.config.create_default_config()
+    config.values["mypy-runner"] = "uvx"
+    monkeypatch.setattr(pyfltr.config.config, "load_config", lambda **_kw: config)
+    out = _run("mypy", output_format="json", capsys=capsys)
+    info = json.loads(out)
+    uv_info = info["uv_info"]
+    assert uv_info["mode"] == "uvx"
+    assert uv_info["uvx_available"] is False
+    assert uv_info["direct_fallback"] is True
+
+
+def test_command_info_python_tool_python_runner_direct_omits_uv_info(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`python-runner = "direct"` の場合はuv経路を辿らないため `uv_info` を出力しない。"""
+    monkeypatch.setattr(
+        "pyfltr.command.runner.shutil.which",
+        lambda name: f"/fake/bin/{name}" if name == "mypy" else None,
+    )
+    config = pyfltr.config.config.create_default_config()
+    config.values["python-runner"] = "direct"
+    monkeypatch.setattr(pyfltr.config.config, "load_config", lambda **_kw: config)
+    out = _run("mypy", output_format="json", capsys=capsys)
+    info = json.loads(out)
+    assert info["runner"] == "python-runner"
+    assert info["effective_runner"] == "direct"
+    assert "uv_info" not in info
+
+
 def test_command_info_text_python_tool_shows_uv_section(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -345,6 +414,7 @@ def test_command_info_text_python_tool_shows_uv_section(
     monkeypatch.setattr(pyfltr.command.runner, "ensure_uv_available", lambda: True)
     out = _run("mypy", capsys=capsys)
     assert "## uv診断" in out
+    assert "mode: uv" in out
     assert "uv_available: True" in out
     assert "uv_lock_present: True" in out
     assert "direct_fallback: False" in out

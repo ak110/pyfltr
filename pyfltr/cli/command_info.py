@@ -127,21 +127,38 @@ def _collect_info(command: str, config: pyfltr.config.config.Config, *, do_check
     base["executable"] = resolved.executable
     base["mise_tool_spec_omitted"] = resolved.tool_spec_omitted
 
-    # uv経路（{command}-runner = "uv" 設定時）の診断情報を露出する。
-    # uv/uv.lock の状態に応じて direct フォールバックが発生したかも観測可能にする。
-    if command in pyfltr.command.runner.PYTHON_TOOL_BIN and runner == "uv":
-        uv_present = pyfltr.command.runner.ensure_uv_available()
-        uv_lock_present = pyfltr.command.runner.cwd_has_uv_lock()
-        # `direct_fallback` は「uv経路からdirectへフォールバックした」ことを意味する。
-        # path-override経由で direct に解決された場合は uv 経路を辿っていないためFalseで揃える。
-        # uv/uv.lock 不在時のみTrueとなる。
-        fallback = resolved.runner_source != "path-override" and not (uv_present and uv_lock_present)
-        base["uv_info"] = {
-            "uv_available": uv_present,
-            "uv_lock_present": uv_lock_present,
-            "direct_fallback": fallback,
-            "python_tool_bin": pyfltr.command.runner.PYTHON_TOOL_BIN[command],
-        }
+    # uv経路（{command}-runner = "python-runner" / "uv" / "uvx" 設定時）の診断情報を露出する。
+    # uv/uv.lock/uvx の状態に応じて direct フォールバックが発生したかも観測可能にする。
+    # 判定はper-tool設定値`runner`を見る（`effective_runner`はフォールバック後の最終値で
+    # `python-runner = "direct"`時もuv_info省略の判断に流用できないため）。
+    if command in pyfltr.command.runner.PYTHON_TOOL_BIN and runner in {"python-runner", "uv", "uvx"}:
+        # `mode`はeffective値変換と同義。runner == "python-runner"ならグローバル委譲先、
+        # runner in {"uv", "uvx"}ならrunner値そのものを採用する。
+        mode = str(config["python-runner"]) if runner == "python-runner" else runner
+        # `mode == "direct"`の場合はuv経路を一切辿らないため、診断情報は不要として出力しない
+        # （他カテゴリの「不要な情報を出さない」方針と同じ扱い）。
+        if mode != "direct":
+            uv_present = pyfltr.command.runner.ensure_uv_available()
+            uv_lock_present = pyfltr.command.runner.cwd_has_uv_lock()
+            uvx_present = pyfltr.command.runner.ensure_uvx_available()
+            # `direct_fallback`は「指定モードからdirectへフォールバックした」ことを意味する。
+            # path-override経由でdirectに解決された場合はuv/uvx経路を辿っていないためFalseで揃える。
+            # mode別の判定: "uv"はuvバイナリとuv.lockの両存在を要求、"uvx"はuvx shimの可用性のみ。
+            if resolved.runner_source == "path-override":
+                fallback = False
+            elif mode == "uv":
+                fallback = not (uv_present and uv_lock_present)
+            else:
+                # mode == "uvx"
+                fallback = not uvx_present
+            base["uv_info"] = {
+                "mode": mode,
+                "uv_available": uv_present,
+                "uv_lock_present": uv_lock_present,
+                "uvx_available": uvx_present,
+                "direct_fallback": fallback,
+                "python_tool_bin": pyfltr.command.runner.PYTHON_TOOL_BIN[command],
+            }
     # 実際に実行されるargv全体（対象ファイル抜き）を表示する。
     # `build_commandline`の戻り値は実行プレフィックスのみで、`{command}-args`等が反映されないため、
     # `build_invocation_argv`経由で通常段の最終argvを組み立てる。
@@ -229,12 +246,14 @@ def _print_text(info: dict[str, typing.Any]) -> None:
             runner_lines.append(f"check_effective_runner: {info.get('check_effective_runner')}")
     sections.append(("## ランナー解決", runner_lines))
 
-    # ## uv診断: uv経路ツールのuv可用性・uv.lock検出・フォールバック状態。uv_infoがある場合のみ表示。
+    # ## uv診断: uv経路ツールのmode・uv/uvx可用性・uv.lock検出・フォールバック状態。uv_infoがある場合のみ表示。
     uv_info = info.get("uv_info")
     if isinstance(uv_info, dict):
         uv_lines: list[str] = [
+            f"mode: {uv_info.get('mode')}",
             f"uv_available: {uv_info.get('uv_available')}",
             f"uv_lock_present: {uv_info.get('uv_lock_present')}",
+            f"uvx_available: {uv_info.get('uvx_available')}",
             f"direct_fallback: {uv_info.get('direct_fallback')}",
             f"python_tool_bin: {uv_info.get('python_tool_bin')}",
         ]

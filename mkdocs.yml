@@ -87,7 +87,7 @@ plugins:
           - guide/troubleshooting.md: MCP stdout占有・PRE_COMMIT検出・対象ファイル空・アーカイブ容量確認
         設定:
           - guide/configuration.md: 基本設定・プリセット・並列実行など
-          - guide/configuration-tools.md: ツール別設定（直接実行 / js-runner / bin-runnerのカテゴリ別設定・2段階実行・カスタムコマンド）
+          - guide/configuration-tools.md: ツール別設定（python-runner / js-runner / bin-runnerのカテゴリ委譲と直接指定値の対称12値設定・2段階実行・カスタムコマンド）
           - guide/recommended.md: Pythonプロジェクトの推奨設定例・タスクランナー・CI設定
           - guide/recommended-nonpython.md: TypeScript/JS・Rust・.NETプロジェクトの推奨設定例
           - guide/custom-commands.md: カスタムコマンドの設定例集

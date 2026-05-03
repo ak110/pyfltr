@@ -271,8 +271,8 @@ def test_build_command_record_includes_runner_info_when_set() -> None:
 def test_build_command_record_runner_info_direct_fallback() -> None:
     """uv経路のdirectフォールバック時は`effective_runner="direct"`が出力される。
 
-    `{command}-runner = "uv"`既定でも、`uv.lock`欠如時はdirectへフォールバックする
-    （CLAUDE.md「ツール解決の優先順位」節の経路）。
+    `{command}-runner = "python-runner"`既定経由でグローバル`python-runner = "uv"`既定値に解決される場合でも、
+    `uv.lock`欠如時はdirectへフォールバックする（CLAUDE.md「ツール解決の優先順位」節の経路）。
     """
     result = pyfltr.command.core_.CommandResult(
         command="mypy",
@@ -511,11 +511,12 @@ def test_build_header_record_emits_commands_and_no_schema_hints() -> None:
 def test_build_header_record_size_is_small(monkeypatch: pytest.MonkeyPatch) -> None:
     """headerレコード（実行対象15件想定）は500文字以下に収まる（runner情報追加後）。
 
-    `uv_lock_present` / `uv_available` の取得関数を固定値へ差し替え、サイズ評価を実行環境
-    （`uv.lock`の有無や`uv`バイナリの導入状況）に依存させない。
+    `uv_lock_present` / `uv_available` / `uvx_available` の取得関数を固定値へ差し替え、
+    サイズ評価を実行環境（`uv.lock`の有無や`uv` / `uvx`バイナリの導入状況）に依存させない。
     """
     monkeypatch.setattr("pyfltr.command.runner.cwd_has_uv_lock", lambda: True)
     monkeypatch.setattr("pyfltr.command.runner.ensure_uv_available", lambda: True)
+    monkeypatch.setattr("pyfltr.command.runner.ensure_uvx_available", lambda: True)
     commands = [f"tool-{i}" for i in range(15)]
     record = pyfltr.output.jsonl._build_header_record(commands=commands, files=10, run_id="01TESTULID")
     serialized = pyfltr.output.jsonl._dump(record)
@@ -523,29 +524,34 @@ def test_build_header_record_size_is_small(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 def test_build_header_record_includes_uv_lock_and_uv_available(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`uv_lock_present` / `uv_available` がプロセス共通の真偽値として常時出力される。
+    """`uv_lock_present` / `uv_available` / `uvx_available` がプロセス共通の真偽値として常時出力される。
 
     Python系コマンドが実行集合に含まれるか否かに関わらず、`mise_active_tools` のような
     条件付き付与ではなく常時出力する設計（runner経路の追跡情報のため）。
     """
     monkeypatch.setattr("pyfltr.command.runner.cwd_has_uv_lock", lambda: True)
     monkeypatch.setattr("pyfltr.command.runner.ensure_uv_available", lambda: True)
+    monkeypatch.setattr("pyfltr.command.runner.ensure_uvx_available", lambda: True)
     record_python = pyfltr.output.jsonl._build_header_record(commands=["mypy"], files=3)
     assert record_python["uv_lock_present"] is True
     assert record_python["uv_available"] is True
+    assert record_python["uvx_available"] is True
     # Python系コマンドを含まないrunでも常時出力される。
     record_non_python = pyfltr.output.jsonl._build_header_record(commands=["shellcheck"], files=3)
     assert record_non_python["uv_lock_present"] is True
     assert record_non_python["uv_available"] is True
+    assert record_non_python["uvx_available"] is True
 
 
 def test_build_header_record_uv_fields_reflect_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`uv_lock_present` / `uv_available` の値が`pyfltr.command.runner`の判定関数に追従する。"""
+    """`uv_lock_present` / `uv_available` / `uvx_available` の値が`pyfltr.command.runner`の判定関数に追従する。"""
     monkeypatch.setattr("pyfltr.command.runner.cwd_has_uv_lock", lambda: False)
     monkeypatch.setattr("pyfltr.command.runner.ensure_uv_available", lambda: False)
+    monkeypatch.setattr("pyfltr.command.runner.ensure_uvx_available", lambda: False)
     record = pyfltr.output.jsonl._build_header_record(commands=["mypy"], files=3)
     assert record["uv_lock_present"] is False
     assert record["uv_available"] is False
+    assert record["uvx_available"] is False
 
 
 def test_build_header_record_omits_mise_active_tools_when_no_mise_command() -> None:

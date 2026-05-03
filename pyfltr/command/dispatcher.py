@@ -71,14 +71,16 @@ _UV_TOOL_MISSING_PATTERNS: tuple[str, ...] = ("does not have",)
 
 
 def _maybe_emit_uv_missing_tool_warning(result: "CommandResult") -> None:
-    """uv経路でツール未登録の出力を検出した場合に登録手順の案内警告を発行する。
+    """Uv / uvx経路でツール未登録の出力を検出した場合に登録手順の案内警告を発行する。
 
     Python系ツール一式は本体依存に同梱されているため `uvx pyfltr` 単発で動作するが、
-    利用者プロジェクトに `uv.lock` が存在すると `{command}-runner = "uv"` 既定により
+    利用者プロジェクトに `uv.lock` が存在すると既定の `python-runner = "uv"` により
     `uv run --frozen <bin>` 経由でプロジェクトのvenvに登録されたツールを呼び出す。
     プロジェクト側に未登録の場合は `uv run` がエラーで失敗するため、登録手順を案内する。
+    `uvx` 経路でも同種のエラー出力（`does not have ... as a dependency`）が出る可能性は薄いが、
+    判定ルールを揃える方針で同じ案内を発行する。
     """
-    if result.effective_runner != "uv":
+    if result.effective_runner not in {"uv", "uvx"}:
         return
     if result.returncode is None or result.returncode == 0:
         return
@@ -87,7 +89,8 @@ def _maybe_emit_uv_missing_tool_warning(result: "CommandResult") -> None:
     pyfltr.warnings_.emit_warning(
         source="tool-resolve",
         message=(
-            f"{result.command}: uv経路でのツール起動に失敗しました。利用者プロジェクトに当該ツールが未登録の可能性があります。"
+            f"{result.command}: {result.effective_runner}経路でのツール起動に失敗しました。"
+            "利用者プロジェクトに当該ツールが未登録の可能性があります。"
         ),
         hint=(
             '`uv add --dev "pyfltr[python]"` でPython系ツール一式をdev依存に追加してください。'
@@ -163,17 +166,30 @@ def _prepare_execution_params(
         resolved = pyfltr.command.runner.ensure_mise_available(resolved, config, command=command)
     except ValueError as e:
         message = str(e)
-        # `{command}-runner = "uv"` をPython系以外のツールに指定した場合、`build_commandline` が
+        # `{command}-runner = "uv"` または `"uvx"` をPython系以外のツールに指定した場合、`build_commandline` が
         # `PYTHON_TOOL_BIN` 未登録の旨を含むValueErrorを送出する。利用者向けに `runner` 設定の
-        # 切り替え先を案内するヒントを併記する（uv経路で動かすdev依存追加は本ケースでは無関係）。
+        # 切り替え先を案内するヒントを併記する（uv / uvx経路で動かすdev依存追加は本ケースでは無関係）。
+        # 列挙する`"direct"` / `"mise"` / `"bin-runner"` / `"js-runner"`は、Python系以外でも安全に動く代替値の集合。
         hint: str | None = None
         if "PYTHON_TOOL_BIN" in message:
             hint = (
-                f'`{command}-runner` に `"direct"` / `"bin-runner"` / `"js-runner"` / `"mise"` のいずれかを指定してください。'
+                f'`{command}-runner` に `"direct"` / `"mise"` / `"bin-runner"` / `"js-runner"` '
+                "などのいずれかを指定してください。"
             )
         return _failed_resolution_result(command, command_info, message, files=len(targets), hint=hint)
     except FileNotFoundError as e:
-        if command in pyfltr.command.runner.JS_TOOL_BIN and config["js-runner"] == "direct":
+        # JSツールの`node_modules/.bin/<cmd>`解決失敗は、per-tool `{command}-runner = "direct"` 指定でも
+        # global `js-runner = "direct"` 委譲でも同じ経路で起きる。`resolve_effective_runner`で
+        # 効果値ベースに判定し、グローバルキー単独に依存しない。
+        is_js_direct = False
+        if command in pyfltr.command.runner.JS_TOOL_BIN:
+            try:
+                runner_value, _ = pyfltr.command.runner.resolve_runner(command, config)
+                effective_runner = pyfltr.command.runner.resolve_effective_runner(command, runner_value, config)
+            except ValueError:
+                effective_runner = None
+            is_js_direct = effective_runner == "direct"
+        if is_js_direct:
             message = (
                 f"js-runner=direct 指定ですが実行ファイルが見つかりません: {e}. "
                 "package.jsonで対象パッケージをインストールしてください。"

@@ -253,22 +253,59 @@ BUILTIN_COMMAND_NAMES: list[str] = list(BUILTIN_COMMANDS.keys())
 """ビルトインコマンドの名前リスト。"""
 
 
+PYTHON_RUNNERS: tuple[str, ...] = ("direct", "uv", "uvx")
+"""グローバル`python-runner`設定で指定できる値。
+
+- `"direct"`: `shutil.which`で本体依存に同梱されたバイナリを直接呼ぶ
+- `"uv"`:     cwdに`uv.lock`があり、かつ`uv`バイナリが利用可能な場合は
+              `uv run --frozen <bin>`経由でプロジェクトのvenvにあるツールを呼ぶ。
+              いずれかが満たされなければdirectへフォールバック
+- `"uvx"`:    `uvx <bin>`形式でPyPI最新版を都度取得して起動する。
+              `uv.lock`は参照せず、`{command}-version`設定とも連動しない
+"""
+
 JS_RUNNERS: tuple[str, ...] = ("pnpx", "pnpm", "npm", "npx", "yarn", "direct")
-"""textlint / markdownlintの起動方式として指定できる値。"""
+"""グローバル`js-runner`設定で指定できる値。"""
 
 BIN_RUNNERS: tuple[str, ...] = ("direct", "mise")
-"""ec / shellcheck等のネイティブバイナリツールの起動方式として指定できる値。"""
+"""グローバル`bin-runner`設定で指定できる値。"""
 
-COMMAND_RUNNERS: tuple[str, ...] = ("direct", "mise", "bin-runner", "js-runner", "uv")
-"""`{command}-runner`設定で指定できる値。
+COMMAND_RUNNERS: tuple[str, ...] = (
+    # カテゴリ委譲値（3値）
+    "python-runner",
+    "js-runner",
+    "bin-runner",
+    # 直接指定値（9値）
+    "direct",
+    "mise",
+    "uv",
+    "uvx",
+    "pnpx",
+    "pnpm",
+    "npm",
+    "npx",
+    "yarn",
+)
+"""`{command}-runner`設定で指定できる値（対称12値）。
 
-- `"direct"`:     `{command}-path`またはbin名で直接実行する
-- `"mise"`:       `mise exec <backend>@<version> -- <bin>`で実行する
-- `"bin-runner"`: グローバル`bin-runner`設定（mise / direct）へ委譲する
-- `"js-runner"`:  グローバル`js-runner`設定（pnpx / pnpm / npm / npx / yarn / direct）へ委譲する
-- `"uv"`:         cwdに`uv.lock`があり、かつ`uv`バイナリが利用可能な場合は
-                  `uv run --frozen <bin>`経由で起動する。いずれかが満たされなければdirectへフォールバック。
-                  Python系ツール（ruff-format / ruff-check / mypy / pylint / pyright / ty / uv-sort / pytest）専用。
+カテゴリ委譲値とper-tool直接指定値を対等な選択肢として並べる。
+両者は対称で、利用者は委譲とper-toolオーバーライドを自由に選べる。
+
+- カテゴリ委譲値（グローバル設定へ委譲）:
+    - `"python-runner"`: グローバル`python-runner`設定（`direct` / `uv` / `uvx`）へ委譲する
+    - `"js-runner"`:     グローバル`js-runner`設定（`pnpx` / `pnpm` / `npm` / `npx` / `yarn` / `direct`）へ委譲する
+    - `"bin-runner"`:    グローバル`bin-runner`設定（`mise` / `direct`）へ委譲する
+- 直接指定値（per-toolで実装ツールを直接指定）:
+    - `"direct"`: `{command}-path`またはbin名で直接実行する
+    - `"mise"`:   `mise exec <backend>@<version> -- <bin>`で実行する
+    - `"uv"`:     cwdに`uv.lock`があり、かつ`uv`バイナリが利用可能な場合は
+                  `uv run --frozen <bin>`経由で起動する。いずれかが満たされなければdirectへフォールバック
+    - `"uvx"`:    `uvx <bin>`形式でPyPI最新版を都度取得して起動する。
+                  `uv.lock`は参照せず、`{command}-version`設定とも連動しない
+    - `"pnpx"` / `"pnpm"` / `"npm"` / `"npx"` / `"yarn"`: 各JSパッケージマネージャー経由で起動する
+
+カテゴリ横断の組み合わせ（例: Python系ツールに`pnpm`を指定）はバリデーションでは弾かない。
+無意味な組み合わせは実行時の解決ロジックがエラー終了する。
 """
 
 PYTHON_COMMANDS: tuple[str, ...] = (
@@ -284,7 +321,7 @@ PYTHON_COMMANDS: tuple[str, ...] = (
 """python 設定に紐づく Python 系コマンドの一覧。
 
 Python 系ツール一式は本体依存（`dependencies`）に同梱済みで、
-`uvx pyfltr` 単発で揃う。`{command}-runner = "uv"` 既定により、
+`uvx pyfltr` 単発で揃う。`{command}-runner = "python-runner"` 既定（グローバル `python-runner = "uv"` 既定経由）により、
 cwdに`uv.lock`がある場合は利用者プロジェクトのuv環境のツール版が優先される。
 
 言語カテゴリキー`python`のgate対象で、preset内でTrueとなっているツールを
