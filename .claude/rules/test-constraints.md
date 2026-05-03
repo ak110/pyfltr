@@ -42,3 +42,8 @@
   Windows runnerでは`typos.EXE`のように大文字`.EXE`等の拡張子が付いて返るため、
   `pathlib.Path(<path>).stem == "<tool>"`の形で比較する。
   `<path>.endswith("<tool>")`では拡張子付きの戻り値で失敗する
+- `pyfltr.command.runner.cwd_has_uv_lock` / `pyfltr.command.runner.ensure_uv_available`は
+  `@functools.lru_cache(maxsize=1)`でプロセス内固定化される。
+  テストで判定値を差し替える場合は関数自体を置換する形で
+  `monkeypatch.setattr("pyfltr.command.runner.cwd_has_uv_lock", lambda: True)`のように指定する。
+  キャッシュ済み戻り値の上書きは効かないため、関数差し替えで対応する

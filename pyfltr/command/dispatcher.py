@@ -38,13 +38,15 @@ def _failed_resolution_result(
     message: str,
     *,
     files: int,
+    hint: str | None = None,
 ) -> "CommandResult":
     """ツール解決失敗時の `CommandResult` を組み立てる。
 
     `files` には実際の処理対象件数を渡す。`status` は `resolution_failed` を返し、
     通常の実行失敗（`failed`）と区別できるようにする。
+    `hint` を指定すると `emit_warning` 経由で利用者向けの追加案内を併記する。
     """
-    pyfltr.warnings_.emit_warning(source="tool-resolve", message=f"{command}: {message}")
+    pyfltr.warnings_.emit_warning(source="tool-resolve", message=f"{command}: {message}", hint=hint)
     return CommandResult.from_run(
         command=command,
         command_info=command_info,
@@ -55,6 +57,42 @@ def _failed_resolution_result(
         output=message,
         elapsed=0.0,
         resolution_failed=True,
+    )
+
+
+_UV_TOOL_MISSING_PATTERNS: tuple[str, ...] = ("does not have",)
+"""uv経路でツール未登録を示す統合済みstdout（stderr統合済み）の検出パターン。
+
+`uv run --frozen <bin>` 実行時に利用者プロジェクトへ対象パッケージが未登録だと、
+`error: project '<name>' does not have '<pkg>' as a dependency` のメッセージが出る。
+`pyfltr/command/process.py` の `run_subprocess` が `stderr=subprocess.STDOUT` で統合するため、
+判定対象は `proc.stdout` 由来の `CommandResult.output` になる。
+"""
+
+
+def _maybe_emit_uv_missing_tool_warning(result: "CommandResult") -> None:
+    """uv経路でツール未登録の出力を検出した場合に登録手順の案内警告を発行する。
+
+    Python系ツール一式は本体依存に同梱されているため `uvx pyfltr` 単発で動作するが、
+    利用者プロジェクトに `uv.lock` が存在すると `{command}-runner = "uv"` 既定により
+    `uv run --frozen <bin>` 経由でプロジェクトのvenvに登録されたツールを呼び出す。
+    プロジェクト側に未登録の場合は `uv run` がエラーで失敗するため、登録手順を案内する。
+    """
+    if result.effective_runner != "uv":
+        return
+    if result.returncode is None or result.returncode == 0:
+        return
+    if not any(pattern in result.output for pattern in _UV_TOOL_MISSING_PATTERNS):
+        return
+    pyfltr.warnings_.emit_warning(
+        source="tool-resolve",
+        message=(
+            f"{result.command}: uv経路でのツール起動に失敗しました。利用者プロジェクトに当該ツールが未登録の可能性があります。"
+        ),
+        hint=(
+            '`uv add --dev "pyfltr[python]"` でPython系ツール一式をdev依存に追加してください。'
+            f' 当該ツールを利用者プロジェクトで使わない場合は `{result.command}-runner = "direct"` への切り替えで回避できます。'
+        ),
     )
 
 
@@ -124,7 +162,16 @@ def _prepare_execution_params(
         resolved = pyfltr.command.runner.build_commandline(command, config, allow_side_effects=True)
         resolved = pyfltr.command.runner.ensure_mise_available(resolved, config, command=command)
     except ValueError as e:
-        return _failed_resolution_result(command, command_info, str(e), files=len(targets))
+        message = str(e)
+        # `{command}-runner = "uv"` をPython系以外のツールに指定した場合、`build_commandline` が
+        # `PYTHON_TOOL_BIN` 未登録の旨を含むValueErrorを送出する。利用者向けに `runner` 設定の
+        # 切り替え先を案内するヒントを併記する（uv経路で動かすdev依存追加は本ケースでは無関係）。
+        hint: str | None = None
+        if "PYTHON_TOOL_BIN" in message:
+            hint = (
+                f'`{command}-runner` に `"direct"` / `"bin-runner"` / `"js-runner"` / `"mise"` のいずれかを指定してください。'
+            )
+        return _failed_resolution_result(command, command_info, message, files=len(targets), hint=hint)
     except FileNotFoundError as e:
         if command in pyfltr.command.runner.JS_TOOL_BIN and config["js-runner"] == "direct":
             message = (
@@ -312,6 +359,24 @@ def execute_command(
     経由で実対象ファイルを取得する（`--only-failed` 経路でツール別の失敗ファイル集合を
     渡す用途）。その後の `target_extensions` / `pass_filenames=False` の分岐は
     通常通り適用される。`None` の場合は既定の `all_files` を使用する。
+
+    実行結果に対してuv経路でのツール未登録パターンを判定し、検出時には
+    利用者向けの登録手順案内を `pyfltr.warnings_.emit_warning` 経由で発行する。
+    """
+    result = _dispatch_command(command, args, ctx)
+    _maybe_emit_uv_missing_tool_warning(result)
+    return result
+
+
+def _dispatch_command(
+    command: str,
+    args: argparse.Namespace,
+    ctx: ExecutionContext,
+) -> CommandResult:
+    """コマンドを実行経路へ振り分ける本体実装。
+
+    `execute_command` のwrapperから呼び出され、ターゲット解決・コマンドライン構築・
+    各種2段階実行・plain経路など全ての分岐を担う。
     """
     # ctxから各フィールドを展開する。
     config = ctx.config

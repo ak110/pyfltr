@@ -6,7 +6,10 @@
   MkDocs（Material）のslugifyは英数のみを採用してアンカー生成するため、
   日本語アンカーリンク`#見出し日本語`はTOCで解決できずINFO通知のみで`--strict`でも検知されない（手動確認要）。
   markdownlint MD051は見出し原文を見るため、`{#id}`記法で明示併設する（例:「### jsonl形式の使い方 {#jsonl}」）
-- `docs/guide/index.md`の対応ツール一覧と`mkdocs.yml`内llmstxt `markdown_description`の「対応ツール」節は人手同期（SSOT化しない運用）
+- `docs/guide/index.md`の対応ツール一覧と`mkdocs.yml`内llmstxt `markdown_description`の「対応ツール」節は人手同期（SSOT化しない運用）。
+  ただし`mkdocs.yml`内llmstxt `markdown_description`本文については
+  `tests/llmstxt_test.py`が「全サブコマンド名・全ビルトインコマンド名を含むこと」を機械検証する。
+  整理時に圧縮しすぎると当該テストが落ちるため、これらの名前は漏らさず記載する
 - ty記述のSSOTは`docs/guide/index.md`。
   preset非収録の扱いを変更した場合は`README.md`・`mkdocs.yml`内llmstxt・`docs/guide/configuration.md`・`docs/guide/usage.md`を併せて更新する
 - サブコマンド一覧のSSOTは`docs/guide/usage.md`。

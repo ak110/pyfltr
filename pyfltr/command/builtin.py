@@ -58,6 +58,7 @@ class CommandInfo:
 
 
 # ビルトインコマンド定義（順序が並び順を決める）
+# 並び順方針は`.claude/rules/order.md`に集約。
 # JSツール系の対象拡張子は主要なもののみ列挙。プロジェクト個別の拡張子は
 # 呼び出し時のターゲット指定やユーザーのシェルglobで吸収する想定。
 _JS_COMMON_TARGETS: list[str] = [
@@ -72,12 +73,7 @@ _JS_COMMON_TARGETS: list[str] = [
 ]
 
 BUILTIN_COMMANDS: dict[str, CommandInfo] = {
-    "pre-commit": CommandInfo(
-        type="formatter",
-        targets="*",
-        config_files=[".pre-commit-config.yaml"],
-    ),
-    "ruff-format": CommandInfo(type="formatter", fixed_cost=0.02),
+    # formatter群: 純粋formatter先頭（prettier）→ 中段（決定論的整形）→ 末尾（pre-commit）。
     "prettier": CommandInfo(
         type="formatter",
         fixed_cost=1.5,
@@ -98,6 +94,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
             "*.html",
         ],
     ),
+    "ruff-format": CommandInfo(type="formatter", fixed_cost=0.02),
     "uv-sort": CommandInfo(type="formatter", targets="pyproject.toml", fixed_cost=0.2),
     # bin-runner対応ツール（formatter → linterの順）
     "shfmt": CommandInfo(type="formatter", targets="*.sh"),
@@ -113,6 +110,12 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         targets=["*.cs", "*.csproj", "*.sln", "Directory.Build.props", ".editorconfig"],
         serial_group="dotnet",
         fixed_cost=2.0,
+    ),
+    # pre-commitはリポジトリ固有チェックが幅広く走るため、他formatterの修正後に最後で呼ぶ。
+    "pre-commit": CommandInfo(
+        type="formatter",
+        targets="*",
+        config_files=[".pre-commit-config.yaml"],
     ),
     "ec": CommandInfo(type="linter", targets="*"),
     "shellcheck": CommandInfo(type="linter", targets="*.sh", per_file_cost=0.03),
@@ -150,9 +153,10 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         targets="*",
         fixed_cost=1.0,
     ),
-    "ruff-check": CommandInfo(type="linter", fixed_cost=0.01),
-    "mypy": CommandInfo(type="linter", fixed_cost=0.2, per_file_cost=0.12),
+    # Python linter群はモダン順（後ろほど新しい）に並べる。実行順はLPT並列で別管理。
     "pylint": CommandInfo(type="linter", fixed_cost=1.75, per_file_cost=0.3),
+    "mypy": CommandInfo(type="linter", fixed_cost=0.2, per_file_cost=0.12),
+    "ruff-check": CommandInfo(type="linter", fixed_cost=0.01),
     "pyright": CommandInfo(type="linter", fixed_cost=0.8, per_file_cost=0.155),
     "ty": CommandInfo(type="linter", fixed_cost=0.05, per_file_cost=0.01),
     "markdownlint": CommandInfo(type="linter", targets="*.md", fixed_cost=0.9, per_file_cost=0.035),
@@ -176,6 +180,11 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         ],
         cacheable=True,
     ),
+    # JS/TS linter群はモダン順（後ろほど新しい）に並べる。
+    "tsc": CommandInfo(
+        type="linter",
+        targets=["*.ts", "*.tsx", "*.mts", "*.cts"],
+    ),
     "eslint": CommandInfo(
         type="linter",
         targets=[*_JS_COMMON_TARGETS, "*.vue", "*.svelte"],
@@ -190,10 +199,6 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         type="linter",
         targets=[*_JS_COMMON_TARGETS, "*.vue", "*.svelte"],
         fixed_cost=0.7,
-    ),
-    "tsc": CommandInfo(
-        type="linter",
-        targets=["*.ts", "*.tsx", "*.mts", "*.cts"],
     ),
     # Rust / .NETツール（linter）。pass-filenames=FalseでCrate / solution全体を対象とする。
     "cargo-clippy": CommandInfo(type="linter", targets=["*.rs", "Cargo.toml"], serial_group="cargo", fixed_cost=3.0),

@@ -115,26 +115,26 @@ def test_build_lines_mixed_order(default_config):
     )
     ruff_format_result = _make_result("ruff-format", returncode=0, command_type="formatter")
 
-    # config.command_names順ではruff-format → mypy → pylint
+    # config.command_names順ではruff-format → pylint → mypy
     lines = pyfltr.output.jsonl.build_lines(
         [mypy_result, pylint_result, ruff_format_result],
         default_config,
         exit_code=1,
-        commands=["ruff-format", "mypy", "pylint"],
+        commands=["ruff-format", "pylint", "mypy"],
         files=10,
     )
     parsed = [json.loads(line) for line in lines]
 
-    # header → ツール順でグルーピング: ruff-format（tool）→ mypy（a.pyとb.pyの2 diagnostic + tool）
-    # → pylint（diagnostic + tool）→ summary。（command, file）単位で集約される
+    # header → ツール順でグルーピング: ruff-format（tool）→ pylint（diagnostic + tool）
+    # → mypy（a.pyとb.pyの2 diagnostic + tool）→ summary。（command, file）単位で集約される
     assert [r["kind"] for r in parsed] == [
         "header",
         "command",  # ruff-format
+        "diagnostic",  # pylint / src/a.py
+        "command",  # pylint
         "diagnostic",  # mypy / src/a.py
         "diagnostic",  # mypy / src/b.py
         "command",  # mypy
-        "diagnostic",  # pylint / src/a.py
-        "command",  # pylint
         "summary",
     ]
 
@@ -146,7 +146,7 @@ def test_build_lines_mixed_order(default_config):
     ]
 
     tool_records = [r for r in parsed if r["kind"] == "command"]
-    assert [r["command"] for r in tool_records] == ["ruff-format", "mypy", "pylint"]
+    assert [r["command"] for r in tool_records] == ["ruff-format", "pylint", "mypy"]
 
 
 def test_build_lines_ensure_ascii_false(default_config):

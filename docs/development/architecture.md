@@ -215,6 +215,18 @@ Python系ツール（ruff-format / ruff-check / mypy / pylint / pyright / ty / u
 `ruff-format` / `ruff-check`はいずれも`ruff`を呼び出す。
 判定結果は`@functools.lru_cache(maxsize=1)`付きの関数で実行内に1回だけ評価する。
 
+uv経路の追跡情報をJSONL headerと各commandレコードに露出する。
+header側は`uv_lock_present`・`uv_available`の2値でuv経路採用に必要な前提が揃っているかを示す。
+commandレコード側は`effective_runner`（`uv` / `direct` / `mise`等）と`runner_source`
+（`explicit` / `default` / `path-override`）でツール単位の解決経緯を示す。
+利用者・LLMがuv経路で動作したか・direct fallbackが起きていないか・`{command}-path`明示が利いたかを
+出力から判別できるようにするための情報として位置づける。
+利用者プロジェクトに当該ツールが未登録の状態で`uv run --frozen`が失敗した場合は、
+登録手順hintを併記した警告を発行する。
+警告は`pyfltr/command/dispatcher.py`の`_maybe_emit_uv_missing_tool_warning`が担い、
+`uv add --dev "pyfltr[python]"`を案内する。
+process.pyが`stderr=subprocess.STDOUT`で統合するため判定対象は統合済みstdoutになる。
+
 ### モジュール分割の方針
 
 retry系ヘルパー・`--only-failed`フィルター・パス正規化・TUI/CLI共通ヘルパーは専用モジュールへ分離し、

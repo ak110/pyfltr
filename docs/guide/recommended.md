@@ -331,7 +331,7 @@ textlint-lint-args = ["--format", "compact"]
 pyfltrはfix段の起動コマンドから`--format`ペアを自動除去するため。
 ただし新規設定では`textlint-lint-args`に書くことを推奨する。
 
-## 呼び出し方の使い分け
+## 呼び出し方の使い分け {#calling-style}
 
 状況に応じて`pyfltr`の呼び出し方を以下のいずれかから選ぶ。
 コンテナ外で「常に最新版を使う」（`uvx pyfltr ...`）か

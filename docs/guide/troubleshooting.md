@@ -135,6 +135,26 @@ mise経由のsubprocessにはmiseが注入したtoolパスを除外したPATHを
 - ユーザーシェル設定で`PATH`に`mise/installs/`配下を直接追加していないか確認する
  （pyfltrは内部でこれを除外するが、ユーザー操作で再注入されると影響を受ける）
 
+## uvx pyfltr単独実行時にpylintのimport-errorが出る
+
+`uvx pyfltr`単発で実行した場合、cwdに`uv.lock`があると`{command}-runner = "uv"`既定値により
+利用者プロジェクトのvenvに登録されたツールが優先される。
+このときpylintのみ`import-error`を出すケースがある。
+原因は、pylintが解析対象モジュールを実際にimportして型情報を取り出す挙動を持つため。
+利用者プロジェクトのvenvに対象モジュールの依存パッケージが登録されていないと、
+pyfltr本体に同梱されたpylintを使う場合と異なり`import-error`として報告される。
+
+対処は次のいずれかを選ぶ。
+
+- 利用者プロジェクトのdev依存にpyfltr本体を加える（推奨）。
+  `uv add --dev "pyfltr[python]"`を実行すると、Python系ツール一式が利用者プロジェクトのvenvへ揃い、
+  解析時に同じ依存解決経路を使える。
+  `uv run pyfltr ...`で呼び出す
+- もしくは`pylint-runner = "direct"`を`pyproject.toml`の`[tool.pyfltr]`配下に明示する。
+  pyfltr本体に同梱されたpylintを直接呼ぶ経路に切り替わる
+
+呼び出し方の使い分けと推奨理由は[呼び出し方の使い分け](recommended.md#calling-style)を参照する。
+
 ## 実行アーカイブのディスク使用量確認（定期管理）
 
 pyfltrは各実行の結果をユーザーキャッシュ配下にアーカイブとして保存する。

@@ -2539,3 +2539,54 @@ def test_build_commandline_direct_unregistered_raises_when_not_on_path(monkeypat
     config = pyfltr.config.config.create_default_config()
     with pytest.raises(FileNotFoundError, match="typos"):
         pyfltr.command.runner.build_commandline("typos", config)
+
+
+def test_execute_command_uv_runner_on_non_python_tool_emits_runner_change_hint(
+    tmp_path: pathlib.Path,
+) -> None:
+    """非Python系ツールに `runner = "uv"` を指定するとValueError経路でrunner変更案内hintが発行される。"""
+    target = tmp_path / "sample.txt"
+    target.write_text("hello\n")
+
+    config = pyfltr.config.config.create_default_config()
+    config.values["typos"] = True
+    config.values["typos-runner"] = "uv"
+
+    result = pyfltr.command.dispatcher.execute_command(
+        "typos", _testconf.make_args(), _testconf.make_execution_context(config, [target])
+    )
+    assert result.status == "resolution_failed"
+    warnings = pyfltr.warnings_.collected_warnings()
+    runner_warnings = [w for w in warnings if w["source"] == "tool-resolve" and "PYTHON_TOOL_BIN" in w["message"]]
+    assert len(runner_warnings) == 1
+    assert "typos-runner" in runner_warnings[0].get("hint", "")
+    assert "direct" in runner_warnings[0]["hint"]
+
+
+def test_execute_command_uv_path_does_not_have_emits_uv_add_hint(
+    mocker, tmp_path: pathlib.Path, setup_uv_runner: typing.Callable[..., None]
+) -> None:
+    """uv経路で利用者プロジェクトに対象ツール未登録の出力を検出した場合、`uv add` 案内hintを発行する。"""
+    target = tmp_path / "sample.py"
+    target.write_text("x = 1\n")
+
+    setup_uv_runner(uv_lock=True, uv_available=True)
+
+    proc = subprocess.CompletedProcess(
+        ["uv", "run", "--frozen", "mypy"],
+        returncode=2,
+        stdout="error: project 'sample' does not have 'mypy' as a dependency\n",
+    )
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
+
+    config = pyfltr.config.config.create_default_config()
+    config.values["mypy"] = True
+
+    pyfltr.command.dispatcher.execute_command("mypy", _testconf.make_args(), _testconf.make_execution_context(config, [target]))
+
+    warnings = pyfltr.warnings_.collected_warnings()
+    uv_warnings = [w for w in warnings if w["source"] == "tool-resolve" and "uv経路でのツール起動に失敗" in w["message"]]
+    assert len(uv_warnings) == 1
+    hint = uv_warnings[0].get("hint", "")
+    assert "uv add --dev" in hint
+    assert "pyfltr[python]" in hint

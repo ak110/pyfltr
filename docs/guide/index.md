@@ -11,21 +11,21 @@
 
 ### Python系
 
-対応するPython系ツールはruff-format / ruff-check / mypy / pylint / pyright / ty / pytest / uv-sortの8種。
+対応するPython系ツールはruff-format / uv-sort / pylint / mypy / ruff-check / pyright / ty / pytestの8種。
 このうちtyのみpreset非収録のため、必要に応じて`ty = true`を個別指定する。
 Python系ツール一式は本体依存に同梱されているため、`uvx pyfltr`単発で利用できる。
 
 - Formatters: ruff format / uv-sort（依存定義のソート）
-- Linters: ruff check / mypy / pylint / pyright / ty
+- Linters: pylint / mypy / ruff check / pyright / ty
 - Testers: pytest
 
 ### JS/TS系
 
-対象はeslint / biome / oxlint / prettier / tsc / vitestの6種（TypeScriptも同カテゴリ）。
+対象はprettier / tsc / eslint / biome / oxlint / vitestの6種（TypeScriptも同カテゴリ）。
 `js-runner`設定で起動方式（pnpx / pnpm / npx等）を切り替える。
 
 - Formatters: prettier
-- Linters: eslint / biome / oxlint / tsc（型チェック。`pass-filenames = false`でプロジェクト全体を対象）
+- Linters: tsc（型チェック。`pass-filenames = false`でプロジェクト全体を対象）/ eslint / biome / oxlint
 - Testers: vitest
 
 ### Rust系

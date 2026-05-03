@@ -55,8 +55,8 @@ plugins:
         Python系ツール一式は本体依存に同梱されており追加インストール不要。
         `preset = "latest"` + 言語カテゴリキーの`true`指定で当該言語の推奨ツール一式が有効化される。
 
-        - Python: `ruff-format` / `ruff-check` / `mypy` / `pylint` / `pyright` / `ty` / `pytest` / `uv-sort`
-        - JS/TS: `prettier` / `eslint` / `biome` / `oxlint` / `tsc` / `vitest`
+        - Python: `ruff-format` / `uv-sort` / `pylint` / `mypy` / `ruff-check` / `pyright` / `ty` / `pytest`
+        - JS/TS: `prettier` / `tsc` / `eslint` / `biome` / `oxlint` / `vitest`
         - Rust: `cargo-fmt` / `cargo-clippy` / `cargo-check` / `cargo-test` / `cargo-deny`
         - .NET: `dotnet-format` / `dotnet-build` / `dotnet-test`
         - ドキュメント: `markdownlint` / `textlint`

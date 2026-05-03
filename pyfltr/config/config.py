@@ -579,14 +579,14 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # コマンド名のエイリアス
     "aliases": {
         "format": [
-            "pre-commit",
-            "ruff-format",
             "prettier",
+            "ruff-format",
             "uv-sort",
             "shfmt",
             "taplo",
             "cargo-fmt",
             "dotnet-format",
+            "pre-commit",
         ],
         "lint": [
             "ruff-check",
