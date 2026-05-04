@@ -362,7 +362,9 @@ def test_expanduser_expands_path_in_build_commandline(monkeypatch: pytest.Monkey
 
     path-override経路で `~/foo/bar` が `<HOME>/foo/bar` へ展開されたexecutableが返ることを確認する。
     """
+    # Windowsの`ntpath.expanduser`は`USERPROFILE`を優先するため両方上書きする。
     monkeypatch.setenv("HOME", "/tmp/fake-home")
+    monkeypatch.setenv("USERPROFILE", "/tmp/fake-home")
     config = pyfltr.config.config.create_default_config()
     config.values["mypy-path"] = "~/bin/mypy"
     resolved = pyfltr.command.runner.build_commandline("mypy", config)
@@ -377,7 +379,9 @@ def test_expanduser_expands_args_in_build_invocation_argv(monkeypatch: pytest.Mo
     `"--config=~/cfg.toml"` のような途中に `~` を含む形式は展開されない。
     実用上は `["--config", "~/cfg.toml"]` または単独パス指定で書く運用となる。
     """
+    # Windowsの`ntpath.expanduser`は`USERPROFILE`を優先するため両方上書きする。
     monkeypatch.setenv("HOME", "/tmp/fake-home")
+    monkeypatch.setenv("USERPROFILE", "/tmp/fake-home")
     config = pyfltr.config.config.create_default_config()
     config.values["mypy-args"] = ["--config", "~/cfg.toml", "~/extra/path.py"]
     argv = pyfltr.command.runner.build_invocation_argv(
@@ -389,7 +393,9 @@ def test_expanduser_expands_args_in_build_invocation_argv(monkeypatch: pytest.Mo
 
 def test_expanduser_expands_fix_args(monkeypatch: pytest.MonkeyPatch) -> None:
     """`{command}-fix-args` 各要素の `~` がfix_stage=Trueの組み立て時に展開される。"""
+    # Windowsの`ntpath.expanduser`は`USERPROFILE`を優先するため両方上書きする。
     monkeypatch.setenv("HOME", "/tmp/fake-home")
+    monkeypatch.setenv("USERPROFILE", "/tmp/fake-home")
     config = pyfltr.config.config.create_default_config()
     config.values["ruff-check-fix-args"] = ["--fix", "--config", "~/ruff.toml"]
     argv = pyfltr.command.runner.build_invocation_argv(
