@@ -16,7 +16,7 @@ from pyfltr.command.core_ import CommandResult
 logger = __import__("logging").getLogger(__name__)
 
 
-# GitLab remote未登録/未認証の状況でglab自身が出すエラー文言。
+# GitLab remote未登録/未認証の状況でglab自身が出力するエラー文言。
 # 検出後にglab-ci-lintをskipped扱いへ書き換える根拠とする。
 # 大文字小文字差を吸収するため、判定は `output.lower()` に対して行う。
 _GLAB_HOST_NOT_FOUND_PATTERNS: tuple[str, ...] = (

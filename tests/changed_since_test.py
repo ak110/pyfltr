@@ -78,7 +78,7 @@ def test_filter_by_changed_since_empty_diff(tmp_path: pathlib.Path, _git_repo: p
 
 
 def test_filter_by_changed_since_invalid_ref(tmp_path: pathlib.Path, _git_repo: pathlib.Path) -> None:
-    """ref 不在ケース: 存在しない ref を指定した場合に警告を出して全体実行へフォールバックする。"""
+    """ref 不在ケース: 存在しない ref を指定した場合に警告を発行して全体実行へフォールバックする。"""
     initial = tmp_path / "a.py"
     initial.write_text("x = 1\n")
     subprocess.run(["git", "add", "."], check=True, capture_output=True)

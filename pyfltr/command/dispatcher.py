@@ -139,9 +139,9 @@ def _prepare_execution_params(
     if fix_mode:
         fix_args = config.values.get(f"{command}-fix-args")
 
-    # 対象ファイル0件ならこの後の実行自体が走らないため、ツールパス解決を省略する。
+    # 対象ファイル0件ならこの後の実行自体が行われないため、ツールパス解決を省略する。
     # mise等のbin-runner解決はネットワークやプラットフォーム制約で失敗し得るため、
-    # 解決不要な状況で副作用的な失敗を出さないよう早期返却する。
+    # 解決不要な状況で副作用的な失敗を発生させないよう早期返却する。
     if not targets:
         return ExecutionParams(
             command_info=command_info,
@@ -361,7 +361,7 @@ def execute_command(
 
     `fix_stage=True` の場合、当該コマンドがfix-argsを持っていればfix経路
     （`--fix` 付きの単発実行）で動作する。fix-args未定義のformatterでは
-    通常経路と挙動が変わらないため、呼び出し側はfixステージで走らせる対象を
+    通常経路と挙動が変わらないため、呼び出し側はfixステージで実行する対象を
     `split_commands_for_execution()` で絞り込んだうえで指定する前提。
 
     `cache_store` が指定され、かつ当該コマンドが `CommandInfo.cacheable=True` の

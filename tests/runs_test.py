@@ -3,7 +3,7 @@
 `PYFLTR_CACHE_DIR`を`tmp_path`に固定することで、テストデータ生成に使う
 `ArchiveStore(cache_root=tmp_path)`と`pyfltr.cli.main.run([...])`経由で
 生成される`ArchiveStore()`（`default_cache_root()`解決）が同一キャッシュを
-参照する状態を作る。
+参照する状態を構築する。
 """
 
 # pylint: disable=missing-function-docstring  # テストは関数docstringを省略する慣習
@@ -191,7 +191,7 @@ def test_list_runs_ai_agent_jsonl(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """AI_AGENT 設定時、`list-runs` は --output-format 未指定でも JSONL を出す。"""
+    """AI_AGENT 設定時、`list-runs` は --output-format 未指定でも JSONL を出力する。"""
     monkeypatch.setenv("AI_AGENT", "1")
     run_id = _seed_run(tmp_path)
 
@@ -208,7 +208,7 @@ def test_show_run_ai_agent_jsonl(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """AI_AGENT 設定時、`show-run` は --output-format 未指定でも JSONL を出す。"""
+    """AI_AGENT 設定時、`show-run` は --output-format 未指定でも JSONL を出力する。"""
     monkeypatch.setenv("AI_AGENT", "1")
     run_id = _seed_run(tmp_path, commands=["ruff-check"], exit_code=0)
 

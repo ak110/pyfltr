@@ -64,7 +64,7 @@ def run_commands_with_cli(
     """コマンドを実行する (非 TUI)。
 
     `per_command_log=True`のときは各コマンド完了時に詳細ログを即時出力する（`--stream`相当）。
-    `per_command_log=False`のときは完了時に1行進捗のみを出し、詳細はバッファに残す。
+    `per_command_log=False`のときは完了時に1行進捗のみを出力し、詳細はバッファに残す。
     いずれの場合も、呼び出し側で最後に`render_results()`を呼ぶことで
     summaryと詳細ログをまとめて出力できる。
 
@@ -75,7 +75,7 @@ def run_commands_with_cli(
     `on_result`が指定されている場合、各コマンド完了時にコールバックを呼び出す。
     JSONL stdoutモードでのストリーミング出力に使用する。
 
-    `archive_hook`が指定されている場合、各コマンド完了時に実行アーカイブへ書き出す。
+    `archive_hook`が指定されている場合、各コマンド完了時に実行アーカイブへ書き込む。
     fixステージの結果はsummaryに含めないが、アーカイブには通常ステージ以外も含めて
     全実行を保存するためfixステージからも`archive_hook`を呼び出す。
 
@@ -87,7 +87,7 @@ def run_commands_with_cli(
     `terminate()`を送る。formatterの`formatted`はfailureに含めない。
 
     `only_failed_targets`が指定された場合、ツール別の失敗ファイル集合を
-    `execute_command`へ流す（`--only-failed`経路で直前runの失敗ファイルのみを
+    `execute_command`へ渡す（`--only-failed`経路で直前runの失敗ファイルのみを
     対象とする）。値が`None`のツールは通常の`all_files`で実行し、`list`の
     ツールはその集合のみを対象にする。
     """
@@ -99,7 +99,7 @@ def run_commands_with_cli(
 
     # fixステージ: 同一ファイルへの書き込み競合を避けるため直列実行する。
     # 結果はsummary / jsonlには含めない（後段の通常ステージで同一コマンドが
-    # 再度走って最終状態を報告するため。ruff-formatの2段階と同じ位置づけ）。
+    # 再度実行して最終状態を報告するため。ruff-formatの2段階と同じ位置づけ）。
     for command in fixers:
         fix_result = _run_one_command(
             command,
@@ -219,7 +219,7 @@ def _run_one_command(
 ) -> pyfltr.command.core_.CommandResult:
     """1 コマンドの実行。
 
-    `per_command_log=True`ならば完了直後に詳細ログを`write_log()`で出す。
+    `per_command_log=True`ならば完了直後に詳細ログを`write_log()`で出力する。
     それ以外は開始/完了の1行進捗のみ出力する。
     """
     # serial_groupを持つコマンドは同一グループ内で排他実行される（cargo / dotnet等）
@@ -286,7 +286,7 @@ def run_pipeline(
     formatter = pyfltr.output.formatters.FORMATTERS[output_format]()
 
     # loggerを初期化する。同一プロセスでrun_pipelineが複数回呼ばれるMCP経路でも、
-    # format / output_file / force_text_on_stderrの組み合わせで出力先が切り替わるため、毎回張り直す。
+    # format / output_file / force_text_on_stderrの組み合わせで出力先が変わるため、毎回再設定する。
     # configure_loggersはoutput_file / force_text_on_stderrのみ参照するため、
     # run_id等が未確定の段階でも呼び出せる（残フィールドはデフォルト値のまま渡す）。
     early_ctx = pyfltr.output.formatters.RunOutputContext(
@@ -306,7 +306,7 @@ def run_pipeline(
     all_files = pyfltr.command.targets.expand_all_files(args.targets, config)
 
     # ユーザー指定パスが全て非存在の場合は、各ツールが個別に「ファイルが見つからない」エラーを
-    # 多重に出す前段で打ち切り、非ゼロ終了する。warning自体は`expand_all_files`内で発行済み。
+    # 多重に出力する前段で打ち切り、非ゼロ終了する。warning自体は`expand_all_files`内で発行済み。
     # 部分一致（一部のみ不在）は処理継続、対象未指定（カレント走査）も対象外として扱う。
     if args.targets and len(pyfltr.warnings_.filtered_direct_files(reason="missing")) == len(args.targets):
         early_run_ctx = pyfltr.output.formatters.RunOutputContext(
@@ -349,7 +349,7 @@ def run_pipeline(
 
     # 実行アーカイブの初期化 （既定で有効）。
     # `--no-archive` または `archive = false` で無効化できる。クリーンアップ失敗や
-    # 書き込み失敗はパイプライン本体を止めないようwarningsへ流す。
+    # 書き込み失敗はパイプライン本体を止めないようwarningsへ転送する。
     archive_enabled = bool(config.values.get("archive", True)) and not getattr(args, "no_archive", False)
     archive_store: pyfltr.state.archive.ArchiveStore | None = None
     run_id: str | None = None
@@ -365,7 +365,7 @@ def run_pipeline(
             archive_store = None
             run_id = None
 
-    # 実行環境の情報を出力（run_id採番後にまとめて出すことで区切り線内に含める）。
+    # 実行環境の情報を出力（run_id採番後にまとめて出力することで区切り線内に含める）。
     text_logger.info(f"{'-' * 10} pyfltr {'-' * (72 - 10 - 8)}")
     text_logger.info(f"version:        {importlib.metadata.version('pyfltr')}")
     text_logger.info(f"sys.executable: {sys.executable}")
@@ -378,7 +378,7 @@ def run_pipeline(
 
     # ファイルhashキャッシュの初期化 （既定で有効）。
     # `--no-cache` または `cache = false` で無効化できる。期間超過エントリの削除失敗や
-    # 書き込み失敗はパイプライン本体を止めないためwarningsに流す。
+    # 書き込み失敗はパイプライン本体を止めないためwarningsへ転送する。
     cache_enabled = bool(config.values.get("cache", True)) and not getattr(args, "no_cache", False)
     cache_store: pyfltr.state.cache.CacheStore | None = None
     if cache_enabled:
@@ -400,7 +400,7 @@ def run_pipeline(
             try:
                 captured_store.write_tool_result(captured_run_id, result)
             except OSError as e:
-                # ハンドラ内でwarningを出してもsummary末尾にまとまる。
+                # ハンドラ内でwarningを通知してもsummary末尾にまとまる。
                 pyfltr.warnings_.emit_warning(source="archive", message=f"{result.command} のアーカイブ書き込みに失敗: {e}")
                 return
             # 書き込み成功時のみarchived=Trueに更新。smart truncationの可否判定に使う。
@@ -434,7 +434,7 @@ def run_pipeline(
 
     # 各ツール完了時のフック: retry_command付与 → archive書き込み → formatter.on_result （ストリーミング等）。
     # retry_commandはarchiveとJSONL streamingの双方で必要になるため、archive_hookより前に挿入する。
-    # formatter.on_resultはarchive_hookの後に呼ぶ（result.archived=Trueが立った後）。
+    # formatter.on_resultはarchive_hookの後に呼ぶ（result.archived=Trueが設定された後）。
     # on_start / on_result / on_finishで使う完全なctxを構築する。
     per_command_log = bool(args.stream)
     include_details_from_stream = not per_command_log
@@ -520,7 +520,7 @@ def run_pipeline(
         except OSError as e:
             pyfltr.warnings_.emit_warning(source="archive", message=f"meta.json の更新に失敗: {e}")
 
-    # pre-commit経由かつformatter自動修正発生時のMM状態ガイダンスを必要に応じて出す。
+    # pre-commit経由かつformatter自動修正発生時のMM状態ガイダンスを必要に応じて出力する。
     _maybe_emit_precommit_guidance(results, structured_stdout=structured_stdout)
 
     return (returncode, run_id)
@@ -537,15 +537,15 @@ def _maybe_emit_precommit_guidance(
     *,
     structured_stdout: bool,
 ) -> None:
-    """pre-commit経由かつformatter修正発生時にMM状態ガイダンスをstderrへ出す。
+    """pre-commit経由かつformatter修正発生時にMM状態ガイダンスをstderrへ出力する。
 
-    `git commit` から起動されたpre-commit経由でpyfltrがformatterを走らせると、
+    `git commit` から起動されたpre-commit経由でpyfltrがformatterを実行すると、
     修正結果がワークツリーには書き込まれる一方でindexには反映されない （MM状態）。
     この場合に限り `git add` を促すメッセージを人間向け （日本語） で出力する。
 
-    構造化stdoutモード （`jsonl` / `sarif` / `code-quality` をstdoutに流す） では、
-    stderrにtextが既に流れているため重複を避ける意味でも抑止する。`github-annotations`
-    はtextと同じレイアウトをstdoutに出すため抑止不要。
+    構造化stdoutモード （`jsonl` / `sarif` / `code-quality` をstdoutに出力する） では、
+    stderrにtextが既に出力されているため重複を避ける意味でも抑止する。`github-annotations`
+    はtextと同じレイアウトをstdoutに出力するため抑止不要。
     """
     if structured_stdout:
         return
@@ -595,7 +595,7 @@ def _resolve_output_format(
     """実行系サブコマンド向けに出力形式を解決する。
 
     `run-for-agent`のみサブコマンド既定値`"jsonl"`を渡し、`AI_AGENT`検出時は実行系全体で
-    `jsonl`既定を採用する。`PYFLTR_OUTPUT_FORMAT=text`での切り戻しは`cli/output_format.py`側で扱う。
+    `jsonl`既定を採用する。`PYFLTR_OUTPUT_FORMAT=text`での変更は`cli/output_format.py`側で扱う。
     """
     subcommand_default = "jsonl" if args.subcommand == "run-for-agent" else None
     return pyfltr.cli.output_format.resolve_output_format(
@@ -697,7 +697,7 @@ def run_impl(
     # argparseのデフォルト評価時点ではpyproject.tomlを読み込んでいないため、
     # ビルトインのみのdefaultを返すとcustom-commandsが常にスキップされる。
     # load_config後に実体を決定することで、ユーザーが登録したcustom-commands
-    # （例: svelte-check） も `run` / `ci` サブコマンドのデフォルト動作で走るようにする。
+    # （例: svelte-check） も `run` / `ci` サブコマンドのデフォルト動作で実行されるようにする。
     # `--commands` は `action="append"` によりリストで渡るため、各要素を
     # カンマ区切りで再分割して平坦化する。重複は先出を優先して除去する。
     commands: list[str] = pyfltr.config.config.resolve_aliases(_flatten_commands_arg(args.commands, config), config)

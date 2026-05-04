@@ -97,7 +97,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # False（既定）ならpresetでTrueになった該当コマンドを個別指定がない限り
     # Falseに押し戻す。カテゴリキー単独では何も有効化されない（presetか個別
     # `{command} = true`が必要）。v3.0.0で既定値をFalse（opt-in）に統一。
-    # 対象外プロジェクトで言語別linterが勝手に走るのを防ぐためで、Python系は
+    # 対象外プロジェクトで言語別linterが自動で実行されるのを防ぐためで、Python系は
     # Python系ツール一式が本体依存に同梱済みのため `uvx pyfltr` で揃う。
     # JavaScript / Rust / .NET系はそれぞれのツールチェインを前提とする。
     "python": False,
@@ -397,7 +397,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "actionlint-fast": True,
     # glab ci lint は GitLab API 経由で .gitlab-ci.yml を検証する。
     # 認証・ネットワーク必須のため既定で無効 (opt-in)。
-    # サブコマンド `ci lint` は args 既定値として持たせ、明示 path 指定経路でも効くようにする。
+    # サブコマンド `ci lint` は args 既定値として持たせ、明示 path 指定経路でも適用されるようにする。
     "glab-ci-lint": False,
     "glab-ci-lint-path": "",
     "glab-ci-lint-runner": "bin-runner",
@@ -854,7 +854,7 @@ def load_config(
     for key, value in tool_pyfltr.items():
         if key in skip_keys:
             continue  # 別途処理済み
-        # v3.0.0で削除されたツール名に紐づく設定キーを検出したら移行案内を出す。
+        # v3.0.0で削除されたツール名に紐づく設定キーを検出したら移行案内を表示する。
         # "pyupgrade" / "pyupgrade-path" / "pyupgrade-args" / "pyupgrade-fast"などを網羅する。
         removed_owner = _extract_removed_command(key)
         if removed_owner is not None:
@@ -931,7 +931,7 @@ def load_config(
 
     # per-tool {command}-runnerの値バリデーション。
     # 対称12値のいずれかを許容する。カテゴリ横断の組み合わせ（例: Python系ツールに`pnpm`を指定）は
-    # 弾かない方針（実装簡潔さを優先し、無意味な組み合わせは実行時の解決ロジックがエラー終了する）。
+    # 拒否しない方針（実装簡潔さを優先し、無意味な組み合わせは実行時の解決ロジックがエラー終了する）。
     _global_runner_keys = frozenset(key for key, _ in _global_runner_specs)
     for key, value in config.values.items():
         if not key.endswith("-runner") or key in _global_runner_keys:
@@ -1094,7 +1094,7 @@ def filter_fix_commands(commands: list[str], config: Config) -> list[str]:
     `pyfltr run` / `pyfltr fast`のfixステージはlinterのautofix機能
     （`{command}-fix-args`）を前段で呼び出すための段で、formatterは対象外。
     formatter本体は通常ステージで常に書き込みモードで動くため、fixステージで
-    重複して走らせる必要はない。
+    重複して実行する必要はない。
 
     enabledかつ`{command}-fix-args`が定義されているlinter/testerを返す。
     """

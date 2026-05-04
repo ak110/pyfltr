@@ -680,7 +680,7 @@ def ensure_mise_available(
     # `build_commandline` の `effective == "mise"` 分岐は次の2形態を返す。
     # - tool spec省略形: `prefix = ["exec", "--", <bin>]`（mise設定記述あり時）
     # - 従来形: `prefix = ["exec", <tool_spec>, "--", <bin>]`（mise設定記述なし時）
-    # `prefix[1] == "--"` で両形態を判別し、`mise exec --version` 用argsとエラー文面を出し分ける。
+    # `prefix[1] == "--"` で両形態を判別し、`mise exec --version` 用argsとエラー文面を切り替える。
     bin_name = resolved.prefix[-1]
     has_tool_spec = len(resolved.prefix) >= 2 and resolved.prefix[1] != "--"
     tool_spec = resolved.prefix[1] if has_tool_spec else ""

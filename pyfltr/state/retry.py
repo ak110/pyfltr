@@ -67,7 +67,7 @@ def build_retry_args_template(sys_args: list[str]) -> list[str]:
     """
     result: list[str] = []
     i = 0
-    # 実行系サブコマンド（ci / run / fast / run-for-agent）は先頭に必ず来る想定。
+    # 実行系サブコマンド（ci / run / fast / run-for-agent）は先頭に必ず位置する想定。
     # これを保持することでpyfltr ci失敗時にfixステージが暴発しない。
     while i < len(sys_args):
         arg = sys_args[i]
@@ -139,7 +139,7 @@ def build_retry_command(
             seen_subcommand = True
             i += 1
             continue
-        # それ以降の位置引数（=ターゲット）は捨てる。後段でtarget_filesで差し替える。
+        # それ以降の位置引数（=ターゲット）は破棄する。後段でtarget_filesで差し替える。
         i += 1
 
     # --commands プレースホルダを当該ツールで埋める。

@@ -22,7 +22,7 @@ def serial_group_lock(group: str | None) -> collections.abc.Iterator[None]:
     `group`がNoneのときはno-opとして振る舞い、呼び出し側は常に
     `with`文で包めるようにする。これにより、cargo系やdotnet系の
     `CommandInfo.serial_group`が設定されたコマンドは並列実行されても
-    同一グループ内では1件ずつ順に走り、`target`ディレクトリなどの
+    同一グループ内では1件ずつ順に実行され、`target`ディレクトリなどの
     内部ロック競合を回避できる。
     """
     if group is None:
@@ -55,10 +55,10 @@ def split_commands_for_execution(
     `CommandInfo.fixed_cost + CommandInfo.per_file_cost * 対象ファイル数`で算出する。
 
     `include_fix_stage=True`のときは、fix-args定義済みかつ有効化済みのコマンドを
-    `fixers`に積む。`commands`側で既にfix対象フィルタが効いている前提だが、
-    ここでも`filter_fix_commands()`を適用して安全側に倒す。fixersに積んだ
+    `fixers`に追加する。`commands`側で既にfix対象フィルタが適用されている前提だが、
+    ここでも`filter_fix_commands()`を適用して安全側に倒す。fixersに追加した
     コマンドは通常ステージ（formatters / linters_and_testers）にも従来どおり含める
-    （ruff-checkのようにfixとlintを2段階で走らせる構成を取るため）。
+    （ruff-checkのようにfixとlintを2段階で実行する構成を取るため）。
     """
     fixers: list[str] = []
     if include_fix_stage:

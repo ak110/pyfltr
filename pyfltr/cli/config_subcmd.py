@@ -166,6 +166,6 @@ def _config_list(parser: argparse.ArgumentParser, args: argparse.Namespace) -> i
         for key, value in values.items():
             print(json.dumps({"key": key, "value": value}, ensure_ascii=False))
         return 0
-    # argparseのchoicesで弾かれる想定だが防御的に1を返す。
+    # argparseのchoicesで除外される想定だが防御的に1を返す。
     print(f"未知の出力形式: {fmt}", file=sys.stderr)
     return 1

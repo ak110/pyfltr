@@ -32,13 +32,13 @@ def execute_linter_fix(
     """Fixモードでのlinter実行 （fix-argsを適用して単発実行）。
 
     ステータス判定:
-    - returncode != 0 → failed （ファイル変化に関係なく、エラーを握りつぶさない）
+    - returncode != 0 → failed （ファイル変化に関係なく、エラーを無視しない）
     - returncode == 0かつ内容ハッシュに変化あり → formatted（command_typeを
       "formatter"に差し替えて既存のstatusプロパティに委ねる）
     - returncode == 0かつ変化なし → succeeded
 
     ruff-checkは残存違反があるとrc=1を返すが、この設計ではfailedとして扱う。
-    未修正の違反はユーザーが後段で認識すべき情報であり、成功に寄せない方針。
+    未修正の違反はユーザーが後段で認識すべき情報であり、成功へ統合しない方針。
     """
     del command_info  # 呼び出し側との引数形式揃えで受け取るのみ（使用しない）
 

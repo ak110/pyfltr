@@ -149,7 +149,7 @@ def filter_by_changed_since(all_files: list[pathlib.Path], ref: str) -> list[pat
     和集合を取得し、`all_files` との交差を返す。
     untracked（`git add` 未実施の新規ファイル）は対象外となる。
 
-    git不在またはrefが存在しない場合は警告を出して `all_files` をそのまま返す（全体実行へフォールバック）。
+    git不在またはrefが存在しない場合は警告を発行して `all_files` をそのまま返す（全体実行へフォールバック）。
     """
     changed = _get_changed_files(ref)
     if changed is None:
@@ -167,7 +167,7 @@ def _get_changed_files(ref: str) -> list[str] | None:
 
     untracked（`git add` 未実施の新規ファイル）は `git diff` の出力に含まれないため対象外となる。
     成功時はパス文字列のリストを返す。git不在・ref不在・タイムアウト時は
-    警告を出して `None` を返す（呼び出し元が全体実行へフォールバックする）。
+    警告を発行して `None` を返す（呼び出し元が全体実行へフォールバックする）。
     """
     # HEADからのコミット差分（<ref>..HEAD）とtrackedファイルの作業ツリー差分・staged差分の
     # 3種を「git diff <ref>」1コマンドで取得する。

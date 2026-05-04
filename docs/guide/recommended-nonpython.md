@@ -76,7 +76,7 @@ preset = "latest"
 rust = true
 js-runner = "pnpm"
 # prettier はドキュメント系を pnpm で実行するために個別に opt-in する
-# (javascript ゲートは開けず、Rust 専用プロジェクトで不要な JS 系 linter / tester を走らせない)
+# (javascript ゲートは開けず、Rust 専用プロジェクトで不要な JS 系 linter / tester を実行しない)
 prettier = true
 
 extend-exclude = [
@@ -153,7 +153,7 @@ preset = "latest"
 dotnet = true
 js-runner = "pnpm"
 # prettier はドキュメント系を pnpm で実行するために個別に opt-in する
-# (javascript ゲートは開けず、.NET 専用プロジェクトで不要な JS 系 linter / tester を走らせない)
+# (javascript ゲートは開けず、.NET 専用プロジェクトで不要な JS 系 linter / tester を実行しない)
 prettier = true
 
 extend-exclude = [

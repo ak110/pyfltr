@@ -30,7 +30,7 @@ def is_invoked_from_git_commit() -> bool:
     pre-commitは`git commit`がspawnする`git-hook` → `pre-commit` → `pyfltr`
     という親子関係で動くため、祖先プロセスに`git`が含まれればgit commit経由の
     起動と判断できる。formatterによる自動修正が発生したときに、ユーザーへ
-    「git addしてからcommitし直す」ガイダンスを出す条件として使う。
+    「git addしてからcommitし直す」ガイダンスを出力する条件として使う。
 
     psutilの取得に失敗した場合（`NoSuchProcess` / `AccessDenied`や
     プラットフォーム未対応）は`False`を返し、安全側に倒す（誤ったガイダンスを

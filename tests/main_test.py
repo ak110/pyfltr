@@ -41,7 +41,7 @@ def test_missing_subcommand_errors():
 
 def test_all_targets_missing_returns_nonzero(tmp_path, mocker):
     """指定パスが全件不在の場合は CLI が非ゼロ終了する。"""
-    # 別 tmp_path をcwdとして空のpyproject.tomlを置く（preset無しで純粋に判定経路を見る）
+    # 別 tmp_path をcwdとして空のpyproject.tomlを置く（preset無しで純粋に判定経路を確認する）
     (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\n")
     # subprocess呼び出しは早期exit経路により発生しない想定だが、安全のためモックしておく。
     mocker.patch("pyfltr.command.process.run_subprocess", return_value=subprocess.CompletedProcess(["x"], 0, ""))
@@ -112,11 +112,11 @@ def test_no_fix_skips_fix_stage(mocker):
 
     invoked_commandlines = [call.args[0] for call in mock_run.call_args_list if call.args and isinstance(call.args[0], list)]
     fix_calls = [cl for cl in invoked_commandlines if "--fix" in cl]
-    assert not fix_calls, "--no-fix指定時にfixステージが走っている"
+    assert not fix_calls, "--no-fix指定時にfixステージが実行されている"
 
 
 def test_ci_does_not_run_fix_stage(mocker):
-    """ciサブコマンドではfixステージを走らせない（ファイル書換を避けるため）。"""
+    """ciサブコマンドではfixステージを実行しない（ファイル書換を避けるため）。"""
     proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="")
     mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
@@ -124,7 +124,7 @@ def test_ci_does_not_run_fix_stage(mocker):
 
     invoked_commandlines = [call.args[0] for call in mock_run.call_args_list if call.args and isinstance(call.args[0], list)]
     fix_calls = [cl for cl in invoked_commandlines if "--fix" in cl]
-    assert not fix_calls, "ciサブコマンドでfixステージが走っている"
+    assert not fix_calls, "ciサブコマンドでfixステージが実行されている"
 
 
 def test_stream_mode_writes_detail_log_during_run(mocker, capsys):
@@ -153,7 +153,7 @@ def test_buffered_mode_is_default(mocker, capsys):
     returncode = pyfltr.cli.main.run(["ci", "--no-ui", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 0
     text = capsys.readouterr().out
-    # 詳細ログがsummaryより先に来る（summaryは末尾）
+    # 詳細ログがsummaryより先に位置する（summaryは末尾）
     assert "summary" in text
     assert "returncode: 0" in text
     assert text.index("returncode: 0") < text.index("summary")
@@ -275,7 +275,7 @@ def test_text_output_on_stdout_for_text(mocker, capsys):
     captured = capsys.readouterr()
     assert "summary" in captured.out
     assert "----- pyfltr" in captured.out
-    # stderrはsystem logger専用でtext整形は流さない
+    # stderrはsystem logger専用でtext整形は出力しない
     assert "----- summary" not in captured.err
 
 
@@ -311,7 +311,7 @@ def test_jsonl_stdout_keeps_text_on_stderr_with_warn_level(mocker, capsys):
 
 
 def test_sarif_stdout_keeps_text_on_stderr_with_info_level(mocker, capsys):
-    """sarif + stdoutモードではtext_loggerがstderrのINFOで流れる。"""
+    """sarif + stdoutモードではtext_loggerがstderrのINFOで出力される。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
     mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
@@ -320,7 +320,7 @@ def test_sarif_stdout_keeps_text_on_stderr_with_info_level(mocker, capsys):
     # stdoutはSARIF JSON（`"version": "2.1.0"`を含む）でtext整形は混入しない
     assert "----- pyfltr" not in captured.out
     assert '"version": "2.1.0"' in captured.out
-    # stderrにINFOレベルのtext整形が流れる
+    # stderrにINFOレベルのtext整形が出力される
     assert "----- pyfltr" in captured.err
     assert "----- summary" in captured.err
 
@@ -333,7 +333,7 @@ def test_system_logger_always_on_stderr_and_not_suppressed(mocker, capsys):
     for fmt in ("text", "jsonl", "sarif", "github-annotations"):
         pyfltr.cli.main.run(["ci", "--output-format", fmt, "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
         assert logging.getLogger().handlers, f"root loggerのhandlerが空になっている: fmt={fmt}"
-        capsys.readouterr()  # 各回のstdout/stderrを読み捨て
+        capsys.readouterr()  # 各回のstdout/stderrを破棄する
 
 
 @pytest.mark.parametrize("fmt", ["jsonl", "sarif", "github-annotations"])
@@ -506,7 +506,7 @@ def test_precommit_guidance_emitted_when_formatted_under_git(monkeypatch, capsys
 
 
 def test_precommit_guidance_skipped_when_not_under_git(monkeypatch, capsys):
-    """git commit経由でなければformattedがあってもガイダンスを出さない。"""
+    """git commit経由でなければformattedがあってもガイダンスを出力しない。"""
     monkeypatch.setattr(pyfltr.cli.precommit_guidance, "is_invoked_from_git_commit", lambda: False)
     pyfltr.cli.pipeline._maybe_emit_precommit_guidance(
         [_testconf.make_formatted_result()],
@@ -517,7 +517,7 @@ def test_precommit_guidance_skipped_when_not_under_git(monkeypatch, capsys):
 
 
 def test_precommit_guidance_skipped_when_no_formatted(monkeypatch, capsys):
-    """formatted結果が無ければガイダンスを出さない。"""
+    """formatted結果が無ければガイダンスを出力しない。"""
     monkeypatch.setattr(pyfltr.cli.precommit_guidance, "is_invoked_from_git_commit", lambda: True)
     pyfltr.cli.pipeline._maybe_emit_precommit_guidance(
         [_testconf.make_succeeded_result()],
@@ -528,7 +528,7 @@ def test_precommit_guidance_skipped_when_no_formatted(monkeypatch, capsys):
 
 
 def test_tool_name_as_subcommand_shows_guidance(capsys):
-    """ツール名をサブコマンドに渡すと実行例付きメッセージをstderrに出してexit 2。"""
+    """ツール名をサブコマンドに渡すと実行例付きメッセージをstderrに出力してexit 2。"""
     with pytest.raises(SystemExit) as exc_info:
         pyfltr.cli.main.run(["textlint", "docs/"])
     assert exc_info.value.code == 2
@@ -539,7 +539,7 @@ def test_tool_name_as_subcommand_shows_guidance(capsys):
 
 
 def test_alias_name_as_subcommand_shows_guidance(capsys):
-    """`lint`などの静的エイリアスも同じくガイダンスを出す。"""
+    """`lint`などの静的エイリアスも同じくガイダンスを出力する。"""
     with pytest.raises(SystemExit) as exc_info:
         pyfltr.cli.main.run(["lint", "docs/"])
     assert exc_info.value.code == 2
@@ -684,7 +684,7 @@ class TestConfigSubcommand:
 
     def test_config_set_pyproject_missing_errors(self, monkeypatch, tmp_path, capsys) -> None:
         """pyproject不在ディレクトリでのsetはエラー終了。"""
-        # tmp_pathにpyproject.tomlを作らない
+        # tmp_pathにpyproject.tomlを生成しない
         monkeypatch.chdir(tmp_path)
         rc = pyfltr.cli.main.run(["config", "set", "archive-max-age-days", "5"])
         assert rc == 1
@@ -761,7 +761,7 @@ class TestConfigSubcommand:
         assert data == {"values": {"archive-max-age-days": 5}}
 
     def test_config_list_ai_agent_jsonl(self, monkeypatch, tmp_path, capsys) -> None:
-        """AI_AGENT 設定時、`config list` は --output-format 未指定でも JSONL を出す。"""
+        """AI_AGENT 設定時、`config list` は --output-format 未指定でも JSONL を出力する。"""
         (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\narchive-max-age-days = 5\n", encoding="utf-8")
         monkeypatch.chdir(tmp_path)
         monkeypatch.setenv("AI_AGENT", "1")
@@ -797,7 +797,7 @@ class TestConfigSubcommand:
 def _get_global_config_env() -> str:
     """`_isolate_global_config`fixtureが設定したglobal設定パスを返す。"""
     value = os.environ.get("PYFLTR_GLOBAL_CONFIG")
-    assert value is not None, "PYFLTR_GLOBAL_CONFIG fixtureが効いていない"
+    assert value is not None, "PYFLTR_GLOBAL_CONFIG fixtureが機能していない"
     return value
 
 

@@ -19,7 +19,7 @@ import pyfltr.output.formatters
 import pyfltr.state.runs
 
 _RUN_SUBCOMMANDS: tuple[str, ...] = ("ci", "run", "fast", "run-for-agent")
-"""実行系サブコマンド。パイプラインを起動してformat/lint/testを走らせる。"""
+"""実行系サブコマンド。パイプラインを起動してformat/lint/testを実行する。"""
 
 ALL_SUBCOMMANDS: tuple[str, ...] = (
     *_RUN_SUBCOMMANDS,
@@ -44,7 +44,7 @@ _STATIC_COMMAND_ALIASES: tuple[str, ...] = ("format", "lint", "test")
 class _HelpOnErrorArgumentParser(argparse.ArgumentParser):
     """argparseエラー時に `--help` 相当をstderrに併記してから終了するArgumentParser。
 
-    argparse既定のerror() はエラー文のみを出してexit 2するため、利用者が正しい書式を
+    argparse既定のerror() はエラー文のみを出力してexit 2するため、利用者が正しい書式を
     取り違えたまま同じミスを繰り返しやすい。本サブクラスではエラー文の前に
     `self.print_help(sys.stderr)` を呼び、該当parserのヘルプを併記する。
     サブコマンド側のエラーでは当該サブコマンドのparser、メインの誤サブコマンドでは
@@ -57,7 +57,7 @@ class _HelpOnErrorArgumentParser(argparse.ArgumentParser):
 
 
 def preflight_tool_name_as_subcommand(sys_args: typing.Sequence[str]) -> None:
-    """ツール名をサブコマンドとして入力したケースを検知し、実行例付きメッセージを出してexit 2。
+    """ツール名をサブコマンドとして入力したケースを検知し、実行例付きメッセージを出力してexit 2。
 
     `uv run pyfltr textlint ...` / `pyfltr lint docs/` など、利用者がツール名またはエイリアスを
     そのままサブコマンドとして指定した場合に、正しい `--commands=<tool>` 書式の実行例を提示する。
@@ -197,7 +197,7 @@ def make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> "
         action="store_true",
         help="直前 run のアーカイブから失敗ツールと失敗ファイルを抽出し、"
         "ツール別に失敗ファイル集合のみを対象として再実行します。"
-        "直前 run が存在しない/失敗ツールが無い場合はメッセージを出して成功終了します。",
+        "直前 run が存在しない/失敗ツールが無い場合はメッセージを出力して成功終了します。",
     )
     common.add_argument(
         "--from-run",
@@ -212,7 +212,7 @@ def make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> "
         help="git の任意の ref(ブランチ・タグ・コミットハッシュ・HEAD など)を指定し、"
         "その ref からの変更ファイルのみを対象とします。"
         "コミット差分・未コミット作業ツリー差分・staged 差分の和集合で絞り込みます。"
-        "git 不在または ref が存在しない場合は警告を出して全体実行へフォールバックします。",
+        "git 不在または ref が存在しない場合は警告を出力して全体実行へフォールバックします。",
     )
     common.add_argument(
         "--work-dir",
@@ -259,7 +259,7 @@ def build_parser(custom_commands: collections.abc.Iterable[str] = ()) -> "_HelpO
     """引数パーサーを生成。サブコマンド必須化 （v3.0.0）。
 
     メインおよび全サブコマンドparserには `_HelpOnErrorArgumentParser` を用い、
-    argparseエラー時に該当parserの `--help` 相当をまとめてstderrへ出す。
+    argparseエラー時に該当parserの `--help` 相当をまとめてstderrへ出力する。
     """
     parser = _HelpOnErrorArgumentParser(
         epilog=(
@@ -398,7 +398,7 @@ def apply_subcommand_defaults(args: argparse.Namespace) -> None:
         - `run`: fixステージ有効。exit_zero_even_if_formattedをTrueに
         - `fast`: runと同じ + `--commands` 未指定なら `"fast"`
         - `run-for-agent`: runと同じ。`--output-format`の既定値は`_resolve_output_format`側で
-          サブコマンド既定値`"jsonl"`として注入し、`PYFLTR_OUTPUT_FORMAT`での切り戻しを許す
+          サブコマンド既定値`"jsonl"`として注入し、`PYFLTR_OUTPUT_FORMAT`での変更を許容する
     """
     subcommand = args.subcommand
     args.include_fix_stage = subcommand in ("run", "fast", "run-for-agent")

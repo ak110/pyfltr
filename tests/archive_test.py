@@ -15,7 +15,7 @@ from tests.conftest import make_error_location as _make_error
 
 
 def test_start_run_creates_directory_and_meta(tmp_path: pathlib.Path) -> None:
-    """start_run で runs/<run_id>/meta.json が作られ、必要なキーが含まれる。"""
+    """start_run で runs/<run_id>/meta.json が生成され、必要なキーが含まれる。"""
     store = _make_store(tmp_path)
     run_id = store.start_run(commands=["mypy", "ruff-check"], files=10)
 
@@ -32,7 +32,7 @@ def test_start_run_creates_directory_and_meta(tmp_path: pathlib.Path) -> None:
 
 
 def test_write_tool_result(tmp_path: pathlib.Path) -> None:
-    """write_tool_resultでoutput.log / diagnostics.jsonl / tool.jsonが作られる。"""
+    """write_tool_resultでoutput.log / diagnostics.jsonl / tool.jsonが生成される。"""
     store = _make_store(tmp_path)
     run_id = store.start_run(commands=["mypy"])
 
@@ -86,7 +86,7 @@ def test_write_tool_result_stores_hint_urls(tmp_path: pathlib.Path) -> None:
 
 
 def test_write_tool_result_omits_hint_urls_when_no_urls(tmp_path: pathlib.Path) -> None:
-    """rule_urlを持たない指摘のみならtool.jsonにhint_urlsキーを出さない。"""
+    """rule_urlを持たない指摘のみならtool.jsonにhint_urlsキーを出力しない。"""
     store = _make_store(tmp_path)
     run_id = store.start_run(commands=["mypy"])
     result = _make_result("mypy", returncode=1, errors=[_make_error("mypy", "a.py", 1, "boom")])
@@ -111,7 +111,7 @@ def test_write_tool_result_stores_hints(tmp_path: pathlib.Path) -> None:
 
 
 def test_write_tool_result_omits_hints_when_no_hints(tmp_path: pathlib.Path) -> None:
-    """hintを持たない指摘のみならtool.jsonにhintsキーを出さない。"""
+    """hintを持たない指摘のみならtool.jsonにhintsキーを出力しない。"""
     store = _make_store(tmp_path)
     run_id = store.start_run(commands=["mypy"])
     result = _make_result("mypy", returncode=1, errors=[_make_error("mypy", "a.py", 1, "boom")])
@@ -240,7 +240,7 @@ def test_list_tools_not_found(tmp_path: pathlib.Path) -> None:
 
 
 def test_cleanup_max_runs(tmp_path: pathlib.Path) -> None:
-    """101世代作ってmax_runs=100で古いものから1件削除される。"""
+    """101世代生成してmax_runs=100で古いものから1件削除される。"""
     store = _make_store(tmp_path)
     run_ids = [store.start_run() for _ in range(101)]
 

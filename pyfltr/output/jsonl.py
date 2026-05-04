@@ -2,7 +2,7 @@
 
 `--output-format=jsonl`で呼ばれ、CommandResult群をLLM / エージェントが
 読みやすいフラットなJSON Lines形式（header / diagnostic / command / warning / summaryの5種別）に
-変換して書き出す。
+変換して出力する。
 
 `diagnostic`は`(command, file)`単位で集約し、個別指摘は`messages[]`に格納する。
 ルールURLはcommand単位の`hint_urls`辞書へ、ルール別の短い修正ヒントは`hints`辞書へそれぞれ集約し、
@@ -28,7 +28,7 @@ import pyfltr.paths
 
 logger = logging.getLogger(__name__)
 
-# ストリーミング書き出し時に複数行（diagnostic行+tool行）をアトミックに出力するためのロック。
+# streaming出力時に複数行（diagnostic行+tool行）をアトミックに出力するためのロック。
 # 並列実行されるlinters/testersから同時にコールバックが呼ばれる可能性がある。
 # 出力先は`pyfltr.cli.output_format.structured_logger`のhandlerに委ねるが、ログ1件 = 1行の
 # 粒度では複数行のグルーピングを保証できないためモジュール側でロックする。
@@ -38,7 +38,7 @@ _TRUNCATED_MARKER = "\n... (truncated)\n"
 """ハイブリッド切り詰めで先頭ブロックと末尾ブロックの間に挿入する区切りマーカー。
 
 旧仕様では先頭の`... (truncated)\n`のみだったが、エラーが冒頭に出力されるツール
-（editorconfig-checkerなど）で重要情報が末尾切り捨て側に落ちる問題を避けるため、
+（editorconfig-checkerなど）で重要情報が末尾の省略範囲に移動する問題を避けるため、
 中央にマーカーを置く形式へ変更している。
 """
 
@@ -46,7 +46,7 @@ _DEFAULT_HEAD_RATIO = 0.2
 """ハイブリッド切り詰め時に先頭側へ確保する割合。
 
 合計上限を`head : tail = 1 : 4`で配分する根拠は次の通り。
-冒頭にエラー要約を出すツール（editorconfig-checker等）を救うのに1KBあれば実例上十分で、
+冒頭にエラー要約を出力するツール（editorconfig-checker等）を救うのに1KBあれば実例上十分で、
 末尾優先の従来挙動で救えていた多行スタックトレース系（mypy・pytest等）を温存するために
 末尾には残り4KBを割り当てる。
 """
@@ -60,7 +60,7 @@ def build_command_lines(
 
     diagnostic行は`(command, file)`単位で集約され、個別指摘は`messages[]`に並ぶ。
     個別指摘の合計件数が`jsonl-diagnostic-limit`を超える場合は
-    `ErrorLocation`列を先頭N件で切ってから集約し、
+    `ErrorLocation`列を先頭N件に絞ってから集約し、
     commandレコードに`truncated.diagnostics_total`を添付する。
     切り詰めは`result.archived`がTrueのときのみ適用し、Falseの場合は全件出力する
     （アーカイブから復元不能な情報欠落を防ぐため）。
@@ -251,7 +251,7 @@ def write_jsonl_header(
     config: pyfltr.config.config.Config | None = None,
     format_source: str | None = None,
 ) -> None:
-    """header行を構造化出力loggerに書き出す（ストリーミングモード用）。
+    """header行を構造化出力loggerに出力する（ストリーミングモード用）。
 
     パイプライン開始直後、diagnostic行より前に1回だけ呼ぶ。`run_id`が指定されていれば
     headerレコードに含める（アーカイブ参照時の識別キー）。
@@ -282,7 +282,7 @@ def collect_mise_active_tools_for_header(
     """header露出用のmise active tools取得状況dictを組み立てる。
 
     `commands`にmiseバックエンド登録済みのものが1つも含まれない場合は`None`を返し、
-    Python専用runのheaderへ無関係な`mise-not-found`を出さないようにする。
+    Python専用runのheaderへ無関係な`mise-not-found`を出力しないようにする。
     含まれる場合は`get_mise_active_tools(config)`を副作用OFFで引き、
     `{"status": ..., "detail": ..., "active_keys": [...]}`形式に整える。
     """
@@ -301,9 +301,9 @@ def write_jsonl_streaming(
     result: pyfltr.command.core_.CommandResult,
     config: pyfltr.config.config.Config,
 ) -> None:
-    """1コマンド分のdiagnostic行+command行を構造化出力loggerに即時書き出す。
+    """1コマンド分のdiagnostic行+command行を構造化出力loggerに即時出力する。
 
-    `_write_lock`取得下で複数行を連続書き出しすることで、並列実行されるlinters/testers
+    `_write_lock`取得下で複数行を連続出力することで、並列実行されるlinters/testers
     から呼ばれてもコマンド単位のグルーピングが崩れない。
     """
     lines = build_command_lines(result, config)
@@ -322,7 +322,7 @@ def write_jsonl_footer(
     fully_excluded_files: list[str] | None = None,
     missing_targets: list[str] | None = None,
 ) -> None:
-    """warning行+summary行を構造化出力loggerに書き出す。
+    """warning行+summary行を構造化出力loggerに出力する。
 
     `results`は`_build_summary_record()`の集計に使用する。
     `run_id`と`launcher_prefix`は`summary.guidance`の起動コマンド整形に使う。
@@ -416,7 +416,7 @@ def _build_message_dict(error: pyfltr.command.error_parser.ErrorLocation) -> dic
     `severity` → `fix` → `msg`。
     `rule_url`・`hint`は含めず、それぞれtoolレコードの`hint_urls`・`hints`へ集約する。
     Noneのフィールドは出力しない（`msg`は常に出力）。
-    現状`end_line`/`end_col`を詰めるのはtextlintのみ。
+    現状`end_line`/`end_col`を格納するのはtextlintのみ。
     """
     record: dict[str, typing.Any] = {"line": error.line}
     if error.col is not None:
@@ -468,7 +468,7 @@ def _build_command_record(
     # runner情報は `build_commandline` が成功した経路でのみ値が確定する。
     # `resolution_failed` や対象0件などでcommandline解決を行わない経路では
     # `effective_runner` / `runner_source` がNoneのままとなり、その場合はキーごと省略する
-    # （既存の他フィールド（rc等）と同じ「Noneは出さない」慣習に揃える）。
+    # （既存の他フィールド（rc等）と同じ「Noneは出力しない」慣習に揃える）。
     if result.effective_runner is not None:
         record["effective_runner"] = result.effective_runner
     if result.runner_source is not None:
@@ -477,7 +477,7 @@ def _build_command_record(
     record["diagnostics"] = diagnostics
     # cached=Trueのときは実行をスキップしているため`elapsed`は出力せず
     # 前回実行時の計測値を`cached_elapsed`として提示する。LLMが「今回の実行時間」と
-    # 誤解するのを避けるため両者を同時に出さない設計。
+    # 誤解するのを避けるため両者を同時に出力しない設計。
     elapsed_key = "cached_elapsed" if result.cached else "elapsed"
     record[elapsed_key] = round(result.elapsed, 2)
     if result.returncode is not None:
@@ -603,7 +603,7 @@ def _build_summary_record(
     fully_excluded_files: list[str] | None = None,
     missing_targets: list[str] | None = None,
 ) -> dict[str, typing.Any]:
-    """ordered_resultsから集計してsummaryレコードdictを作る。
+    """ordered_resultsから集計してsummaryレコードdictを生成する。
 
     集計カウンタはコマンド単位の集計であることを示す`commands_summary`配下にまとめ、
     その下で「対応不要」「対応要」の2グループへネストする。
@@ -684,8 +684,8 @@ def _truncate_message(
     `archived`が`False`の場合は切り詰めを行わず全文を返す（アーカイブから
     復元不能な情報欠落を避けるため）。
 
-    ハイブリッド方式は冒頭側にエラー概要を出すツール（editorconfig-checker等）と
-    末尾側にエラー詳細を出すツール（pytest・mypy等）の双方を救うことを意図する。
+    ハイブリッド方式は冒頭側にエラー概要を出力するツール（editorconfig-checker等）と
+    末尾側にエラー詳細を出力するツール（pytest・mypy等）の双方を救うことを意図する。
     `max_chars`を`head : tail = 1 : 4`（`_DEFAULT_HEAD_RATIO`）で配分し、
     `max_lines`は末尾側に対してのみ適用する（先頭側は文字数で十分に絞られるため）。
     `max_lines`/`max_chars`が0以下の場合は当該軸の切り詰めを行わない。

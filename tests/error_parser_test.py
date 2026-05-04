@@ -85,7 +85,7 @@ import pyfltr.command.error_parser
             "tests/foo_test.py",
             0,  # pytestはline情報なし
         ),
-        # biome --reporter=github（lineとcolの間にendLineが挟まる）
+        # biome --reporter=github（lineとcolの間にendLineが介在する）
         (
             "biome",
             "::error title=lint/suspicious/noDoubleEquals,file=src/foo.ts,"
@@ -698,7 +698,7 @@ def test_parse_textlint_json_sentence_length_without_loc() -> None:
 
 
 def test_parse_textlint_json_populates_end_position() -> None:
-    """`loc.end`からend_line / end_colをErrorLocationに詰める。
+    """`loc.end`からend_line / end_colをErrorLocationに格納する。
 
     ルール種別を問わず、`loc.end`があれば共通で取り込む。
     """
@@ -1006,7 +1006,7 @@ def test_parse_summary_pylint_json_no_score() -> None:
 
 
 def test_parse_summary_pytest() -> None:
-    """pytest: 末尾のサマリー行から=パディングを除去して抽出する。"""
+    """pytest: 末尾のサマリー行の=パディングを除去して取り出す。"""
     output = (
         "============================= test session starts ==============================\n"
         "collected 25 items\n"

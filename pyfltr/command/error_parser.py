@@ -51,7 +51,7 @@ class ErrorLocation:
     end_line: int | None = None
     """違反範囲の終端行（Noneはツールが範囲を返さない場合）。
 
-    現状はtextlint v12+の`loc.end.line`のみが詰める。pyright・biome等にも将来拡張可。
+    現状はtextlint v12+の`loc.end.line`のみが値を格納する。pyright・biome等にも将来拡張可。
     """
     end_col: int | None = None
     """違反範囲の終端列（Noneはツールが範囲を返さない場合）。
@@ -73,10 +73,10 @@ _TEXTLINT_RULE_HINTS: dict[str, str] = {
         "Long kanji run detected; insert hiragana, particles, or commas (、) to break it up."
     ),
 }
-"""textlintの頻出ルール向けヒント辞書。利用者が踏みやすいルールに限定している。
+"""textlintの頻出ルール向けヒント辞書。利用者が該当しやすいルールに限定している。
 
 ヒント文字列はルール固有の修正観点のみに留める（重複させず、3ルール中1ルールのみが
-膨らむのを避けるため）。各`ErrorLocation`の`hint`フィールドに詰められ、
+膨らむのを避けるため）。各`ErrorLocation`の`hint`フィールドに格納され、
 `aggregate_diagnostics()`によってcommandレコードの`command.hints`辞書へ集約される。
 """
 
@@ -167,7 +167,7 @@ _BUILTIN_PATTERNS: dict[str, str] = {
     "textlint": rf"(?P<file>{_FILE}):\s*line\s+(?P<line>\d+),\s*col\s+(?P<col>\d+),\s*\w+\s*-\s*(?P<message>.+)",
     # pytest出力例: FAILED tests/xxx_test.py::test_yyy - AssertionError
     "pytest": rf"FAILED\s+(?P<file>{_FILE})::(?P<message>\S+)",
-    # biome --reporter=github出力例（実機確認済み、lineとcolの間にendLineが挟まる）:
+    # biome --reporter=github出力例（実機確認済み、lineとcolの間にendLineが介在する）:
     # ::error title=lint/suspicious/noDoubleEquals,file=src/foo.ts,line=1,endLine=1,col=7,endColumn=9::Use === instead of ==
     # [^:]*?で順序非依存かつ`::`終端を跨がないようマッチする。
     "biome": (
@@ -191,9 +191,9 @@ def _try_json_loads(output: str) -> typing.Any:
     """JSONパースを試みる。失敗時はNoneを返す。
 
     一部ツール（例: pylint）は`PYTHONDEVMODE=1`環境で読み込んだプラグインの
-    `DeprecationWarning`などをJSON本体の前にテキストで流し込む。そのままでは
+    `DeprecationWarning`などをJSON本体の前にテキストとして出力する。そのままでは
     パースが必ず失敗するため、先頭の`{`または`[`を見つけて、それ以前の
-    ゴミ文字列を落としてから再試行するフォールバックを行う。
+    不要文字列を除去してから再試行するフォールバックを行う。
     """
     stripped = output.strip()
     if not stripped:
@@ -556,7 +556,7 @@ def _extract_textlint_end_position(loc: typing.Any) -> tuple[int | None, int | N
     """Textlintの`loc.end`から`(end_line, end_col)`を取り出す。
 
     `loc`不在・形式不一致は`(None, None)`を返す（古いtextlintへの後方互換）。
-    取り出した`end_line`/`end_col`はErrorLocationにそのまま詰める。
+    取り出した`end_line`/`end_col`はErrorLocationにそのまま格納する。
     """
     _, end = _extract_textlint_loc_positions(loc)
     if end is None:
@@ -640,7 +640,7 @@ def _parse_typos_jsonl(output: str) -> list[ErrorLocation]:
 def _parse_glab_ci_lint(output: str) -> list[ErrorLocation]:
     """`glab ci lint`出力をパース。
 
-    glabは行番号を出さないため、検出した各エラーメッセージを`line=1`固定の
+    glabは行番号を出力しないため、検出した各エラーメッセージを`line=1`固定の
     `ErrorLocation`として生成する。
 
     無効CI出力例::
@@ -651,7 +651,7 @@ def _parse_glab_ci_lint(output: str) -> list[ErrorLocation]:
         - jobs:test config contains unknown keys: foo
         - root config contains unknown keys: bar
 
-    有効CI出力では`✓ CI/CD YAML is valid!`のみが流れるため空リストを返す。
+    有効CI出力では`✓ CI/CD YAML is valid!`のみが出力されるため空リストを返す。
     """
     results: list[ErrorLocation] = []
     file_path: str | None = None
@@ -796,7 +796,7 @@ def _summarize_pylint_json(output: str) -> str | None:
 
 
 def _summarize_pytest(output: str) -> str | None:
-    """Pytest出力末尾のサマリー行から = パディングを除去して抽出する。"""
+    """Pytest出力末尾のサマリー行を = パディング除去して抽出する。"""
     match = re.search(r"=+ (.+?) =+\s*$", output)
     if match is None:
         return None

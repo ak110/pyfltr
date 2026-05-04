@@ -56,7 +56,7 @@ def test_ctrl_c_double_press_handling() -> None:
 
 
 def test_ctrl_c_force_exit_after_interrupted() -> None:
-    """協調中断済みの状態でさらにCtrl+C×2を受けたら強制終了する。
+    """協調中断済みの状態でさらにCtrl+C×2を受け取ったら強制終了する。
 
     強制終了経路では`_exit_requested=True` → `terminate_active_processes()` →
     `exit(return_code=130)`の順で処理される。孫プロセスが残ってworkerが閉じた
@@ -104,7 +104,7 @@ def test_ctrl_c_force_exit_after_interrupted() -> None:
 def test_safe_call_from_thread_short_circuits_when_exit_requested() -> None:
     """`_exit_requested=True`のとき`_safe_call_from_thread`は`call_from_thread`を呼ばない。
 
-    閉じつつあるイベントループへ`call_from_thread`が詰まり、workerが
+    閉じつつあるイベントループへ`call_from_thread`がブロックされ、workerが
     `ThreadPoolExecutor.shutdown(wait=True)`から抜けられなくなる病理の退路として動く。
     """
     args = argparse.Namespace()
@@ -214,7 +214,7 @@ def test_interrupt_preserves_completed_results(monkeypatch) -> None:
         raise pyfltr.command.process.InterruptedExecution
 
     monkeypatch.setattr("pyfltr.command.dispatcher.execute_command", _fake_execute_command)
-    # call_from_threadはUI起動前に呼ばれても落ちないようno-op化。
+    # call_from_threadはUI起動前に呼ばれても失敗しないようno-op化。
     monkeypatch.setattr(app, "call_from_thread", lambda *a, **kw: None)
 
     app._run_in_background()

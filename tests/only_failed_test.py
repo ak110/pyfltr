@@ -268,7 +268,7 @@ def test_apply_filter_from_run_latest(_only_failed_cache: pathlib.Path) -> None:
 
 
 def test_apply_filter_from_run_not_found(_only_failed_cache: pathlib.Path, caplog: pytest.LogCaptureFixture) -> None:
-    """存在しないrun_idを指定するとwarningログを出して早期終了する。"""
+    """存在しないrun_idを指定するとwarningログを発行して早期終了する。"""
     args = argparse.Namespace(only_failed=True)
     with caplog.at_level(logging.WARNING, logger="pyfltr.state.only_failed"):
         commands, targets, exit_early = pyfltr.state.only_failed.apply_filter(
@@ -281,7 +281,7 @@ def test_apply_filter_from_run_not_found(_only_failed_cache: pathlib.Path, caplo
 
 
 def test_apply_filter_from_run_ambiguous_prefix(_only_failed_cache: pathlib.Path, caplog: pytest.LogCaptureFixture) -> None:
-    """曖昧なプレフィックスを指定するとwarningを出して早期終了する。"""
+    """曖昧なプレフィックスを指定するとwarningを発行して早期終了する。"""
     # 2件以上runを生成して共通プレフィックスを特定する
     run_ids = [_seed_run(_only_failed_cache) for _ in range(3)]
     # 共通プレフィックスを算出する

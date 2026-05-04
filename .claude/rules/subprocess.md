@@ -5,7 +5,7 @@ pyfltrのCLI起動時に`os.environ["PATH"]`を順序先勝ちで重複排除し
 書き換え位置は`pyfltr/cli/main.py`の`main()`冒頭で、ライブラリ用途では実行されない。
 重複排除の比較キーはOS依存に正規化する。
 Windowsは大文字と小文字を区別せず、`/`と`\\`を等価に扱う。
-POSIXは末尾スラッシュのみ落とす。
+POSIXは末尾スラッシュのみ除去する。
 Windowsの`Path` / `PATH`揺れは検出したキー名のまま書き戻す。
 
 mise経由のsubprocess（`bin-runner = "mise"`等で起動するもの）に限り、PATHから「miseが注入したtoolパス」を除外したenvを渡す。

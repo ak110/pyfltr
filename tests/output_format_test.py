@@ -159,7 +159,7 @@ def test_build_lines_ensure_ascii_false(default_config):
 
 
 def test_build_lines_skipped_status(default_config):
-    """returncode=None（skipped）はrcキーを省略しdiagnostics=0のtoolレコードを出す。"""
+    """returncode=None（skipped）はrcキーを省略しdiagnostics=0のtoolレコードを出力する。"""
     result = _make_result("mypy", returncode=None, has_error=False)
     lines = pyfltr.output.jsonl.build_lines([result], default_config, exit_code=0)
     parsed = [json.loads(line) for line in lines]
@@ -204,7 +204,7 @@ def test_command_record_message_truncates_long_output(default_config):
 
 
 def test_command_record_no_message_when_diagnostics_present(default_config):
-    """failedでもdiagnostics > 0のときはmessageを出さない。"""
+    """failedでもdiagnostics > 0のときはmessageを出力しない。"""
     errors = [_make_error("mypy", "src/a.py", 1, "bad")]
     result = _make_result("mypy", returncode=1, output="verbose mypy output", errors=errors)
     lines = pyfltr.output.jsonl.build_lines([result], default_config, exit_code=1)
@@ -213,7 +213,7 @@ def test_command_record_no_message_when_diagnostics_present(default_config):
 
 
 def test_command_record_no_message_on_success(default_config):
-    """status=succeeded/formattedではmessageを出さない。"""
+    """status=succeeded/formattedではmessageを出力しない。"""
     ok = _make_result("mypy", returncode=0, output="all ok")
     fmt = _make_result("ruff-format", returncode=1, command_type="formatter", output="reformatted", has_error=False)
     lines = pyfltr.output.jsonl.build_lines([ok, fmt], default_config, exit_code=0)
@@ -224,7 +224,7 @@ def test_command_record_no_message_on_success(default_config):
 
 
 def test_command_record_no_message_when_output_empty(default_config):
-    """failedでもoutputが空ならmessageを出さない（キーごと省略）。"""
+    """failedでもoutputが空ならmessageを出力しない（キーごと省略）。"""
     result = _make_result("shellcheck", returncode=1, output="")
     lines = pyfltr.output.jsonl.build_lines([result], default_config, exit_code=1)
     tool_record = json.loads(lines[0])
@@ -232,7 +232,7 @@ def test_command_record_no_message_when_output_empty(default_config):
 
 
 # ---------------------------------------------------------------------------
-# structured_logger経由の書き出し
+# structured_logger経由の出力
 # ---------------------------------------------------------------------------
 
 
@@ -271,7 +271,7 @@ def test_run_cli_jsonl_stdout_suppresses_text(mocker, capsys):
     assert lines, "JSONLが1行も出ていない"
     first = json.loads(lines[0])
     assert first["kind"] == "header"
-    # 実行対象のみのcommands配列として出す。commands_countは廃止済み。
+    # 実行対象のみのcommands配列として出力する。commands_countは廃止済み。
     assert first["commands"] == ["mypy"]
     assert "commands_count" not in first
     last = json.loads(lines[-1])
@@ -509,7 +509,7 @@ def test_resolve_output_format_fallback():
 
 
 def test_resolve_output_format_ai_agent_default_none_ignores_env(monkeypatch):
-    """`ai_agent_default=None`では`AI_AGENT`が立っていてもfallbackへ進む。"""
+    """`ai_agent_default=None`では`AI_AGENT`が設定されていてもfallbackへ進む。"""
     monkeypatch.setenv("AI_AGENT", "1")
     parser = pyfltr.cli.parser.build_parser()
     resolution = pyfltr.cli.output_format.resolve_output_format(
@@ -584,7 +584,7 @@ def test_command_record_formatted_status_hint(default_config):
 
 
 def test_command_record_non_formatted_no_status_hint(default_config):
-    """`status="formatted"`以外のcommandレコードには`status.formatted`ヒントを出さない。"""
+    """`status="formatted"`以外のcommandレコードには`status.formatted`ヒントを出力しない。"""
     result = _make_result("mypy", returncode=0, output="ok")
     lines = pyfltr.output.jsonl.build_command_lines(result, default_config)
     parsed = [json.loads(line) for line in lines]
@@ -615,7 +615,7 @@ def test_run_cli_jsonl_restores_logger_state(mocker, capsys):
 
     # 1回目: jsonlモード（stdoutにJSONL、textはstderrのWARN+）
     pyfltr.cli.main.run(["ci", "--output-format=jsonl", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
-    # 1回目のstdoutは読み捨てる（capsysをリセット）
+    # 1回目のstdoutは破棄する（capsysをリセット）
     capsys.readouterr()
 
     # 2回目: textモード（従来どおりのログが出るべき）。
@@ -710,7 +710,7 @@ def _configure_structured_stdout() -> None:
 
 
 def test_write_jsonl_streaming(default_config, capsys):
-    """ストリーミング書き出しがstdoutに即時出力されること。"""
+    """ストリーミング出力がstdoutに即時書き込まれること。"""
     _configure_structured_stdout()
     errors = [_make_error("mypy", "src/a.py", 10, "bad type")]
     result = _make_result("mypy", returncode=1, errors=errors)
@@ -807,7 +807,7 @@ def test_build_lines_no_header_when_omitted(default_config):
 
 
 def test_write_jsonl_header_stdout(capsys):
-    """`write_jsonl_header`がstdoutにheader行を書き出し、commandsが配列になること。"""
+    """`write_jsonl_header`がstdoutにheader行を書き込み、commandsが配列になること。"""
     _configure_structured_stdout()
     pyfltr.output.jsonl.write_jsonl_header(commands=["ruff-format", "mypy"], files=5)
     captured = capsys.readouterr()
@@ -825,7 +825,7 @@ def test_write_jsonl_header_stdout(capsys):
 
 
 def _header_commands_for(args: list[str], mocker, capsys) -> list[str]:
-    """指定CLI引数でrun-for-agentを走らせheaderのcommands配列を取り出す。"""
+    """指定CLI引数でrun-for-agentを実行してheaderのcommands配列を取り出す。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
     mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
     target = str(pathlib.Path(__file__).parent.parent)

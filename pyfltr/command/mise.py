@@ -37,7 +37,7 @@ class MiseActiveToolsResult:
     """`mise ls --current --json` 取得結果のステータス付き構造体。
 
     取得成功時は `tools` がmise本体の解決結果（プロジェクト `mise.toml` ＋グローバル設定の合算）。
-    取得失敗時は `tools` を空辞書とし、`detail` に短い手がかり（mise stderr冒頭等）を入れる。
+    取得失敗時は `tools` を空辞書とし、`detail` に短い手がかり（mise stderr冒頭等）を格納する。
     `command-info` 出力やJSONL header経由で利用者に状況を見える化する目的で使う。
     """
 
@@ -139,7 +139,7 @@ def run_mise_with_trust(
 
     戻り値は `(returncode, stdout, stderr, trust_failed)` のタプル。
     `trust_failed=True` はtrust試行自体が失敗したことを示し、
-    呼び出し側でエラーメッセージを出し分けるために使う。
+    呼び出し側でエラーメッセージを切り替えるために使う。
     `OSError` は呼び出し側へ伝播する。
     `allow_side_effects=False` 時はtrust試行を行わず、未信頼エラーも含めてそのまま返す。
     """

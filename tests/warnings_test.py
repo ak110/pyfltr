@@ -79,7 +79,7 @@ def test_filtered_direct_files_accumulates_with_reason() -> None:
 
 
 def test_clear_also_resets_filtered_direct_files() -> None:
-    """clear は直接指定フィルタ対象ファイル蓄積もreasonを問わずリセットする。"""
+    """clear は直接指定フィルタ対象ファイルの記録もreasonを問わずリセットする。"""
     pyfltr.warnings_.add_filtered_direct_file("a.md", reason="excluded")
     pyfltr.warnings_.add_filtered_direct_file("b.py", reason="missing")
     pyfltr.warnings_.clear()

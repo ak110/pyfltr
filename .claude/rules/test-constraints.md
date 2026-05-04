@@ -16,9 +16,9 @@
   やむを得ず残す場合は同一行または直前行に理由コメントを併記する。
   同一抑止が複数箇所で必要になる場合は、設定ファイル側での扱い（per-file-ignore追加等）をユーザーと相談する
 - pre-commit hookの`entry:`で`uv run`を起動する場合、必ず`--frozen`を明示する。
-  pre-commitは親の環境変数を引き継がない構成のため`UV_FROZEN`が未設定で来る可能性があり、
-  明示しないとlockfile更新が走り得る。
-  Makefileは`export UV_FROZEN := 1`で覆っているが、pre-commit hookはその恩恵を受けない
+  pre-commitは親の環境変数を引き継がない構成のため`UV_FROZEN`が未設定で到達する可能性があり、
+  明示しないとlockfile更新が実行され得る。
+  Makefileは`export UV_FROZEN := 1`で覆っているが、pre-commit hookはその恩恵を得られない
 - pyfltrテストでは`AI_AGENT` / `PYFLTR_OUTPUT_FORMAT`が予期せず設定されているとjsonl既定へ切り替わる。
   テスト挙動が揺らがないよう、
   `tests/conftest.py`のautouseフィクスチャ`_isolate_output_format_envs`で両環境変数を未設定にする。
@@ -35,7 +35,7 @@
   `caplog`等のlogger名指定の文字列引数は静的解析で検出できない。
   サブパッケージ移動・リネームのたびに`grep -rn 'pyfltr\.<旧パス>'`で全文検索して網羅置換する
 - テストコードから`pyfltr.command.runner`内の`shutil.which`をmockする場合、
-  グローバルな`shutil.which`単独パッチでは効かないため、
+  グローバルな`shutil.which`単独パッチでは適用されないため、
   `monkeypatch.setattr("pyfltr.command.runner.shutil.which", ...)`のように
   モジュールパス単位でターゲットを明示する
 - テストでツール解決パス（`shutil.which`戻り値・`commandline[0]`等）と特定ツール名を文字列比較する場合は、
@@ -46,5 +46,5 @@
  （`cwd_has_uv_lock` / `ensure_uv_available` / `ensure_uvx_available`等）はプロセス内固定化される。
   テストで判定値を差し替える場合は関数自体を置換する形で
   `monkeypatch.setattr("pyfltr.command.runner.cwd_has_uv_lock", lambda: True)`のように指定する。
-  キャッシュ済み戻り値の上書きは効かないため、関数差し替えで対応する。
+  キャッシュ済み戻り値の上書きは有効でないため、関数差し替えで対応する。
   新規にキャッシュ付き判定関数を追加した場合も同じ制約が適用される

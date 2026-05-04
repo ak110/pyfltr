@@ -31,8 +31,8 @@ def write_log(result: pyfltr.command.core_.CommandResult, *, use_github_annotati
     パース済みエラーがある場合は`format_error()`で整形した一覧を表示する。
     エラーがなく失敗した場合は生出力をフォールバック表示する。
 
-    `use_github_annotations`がTrueのとき、ErrorLocation行をGAワークフローコマンド記法で出す。
-    False（既定）のときは従来のテキスト形式（`file:line:col: [tool:rule] msg`）で出す。
+    `use_github_annotations`がTrueのとき、ErrorLocation行をGAワークフローコマンド記法で出力する。
+    False（既定）のときは従来のテキスト形式（`file:line:col: [tool:rule] msg`）で出力する。
     枠線・区切り線・進捗ラベルは常にtext記法を維持する
     （GAはエラー箇所の解釈だけを切り替え、レイアウトはtextと同じにする設計）。
     """
@@ -81,8 +81,8 @@ def render_results(
     （`--stream`モード向け）。
 
     構造化出力（JSONL / SARIF）はここでは扱わず、呼び出し元（`pyfltr.cli.main`）が
-    `structured_logger`経由で書き出す。本関数は常にtext整形ログを
-    `text_logger`に流す。`output_format`はErrorLocation行の整形方式の
+    `structured_logger`経由で出力する。本関数は常にtext整形ログを
+    `text_logger`へ送出する。`output_format`はErrorLocation行の整形方式の
     切替（`github-annotations`時のみGA記法）に使う。
     """
     del exit_code, commands, files, run_id, launcher_prefix  # 構造化出力への委譲が無くなり未使用
@@ -101,10 +101,10 @@ def render_results(
             if result.alerted:
                 write_log(result, use_github_annotations=use_ga)
 
-    # 3. warnings（summaryの直前。先頭だと見落とされやすいため）
+    # 3. warnings（summaryの直前。先頭だと見過ごされやすいため）
     _write_warnings_section(warnings)
 
-    # 4. fully excluded files（summary直前。警告と混ざらないよう独立ブロックで出す）
+    # 4. fully excluded files（summary直前。警告と混ざらないよう独立ブロックで出力する）
     _write_fully_excluded_files_section(pyfltr.warnings_.filtered_direct_files(reason="excluded"))
 
     # 5. summary（末尾に出力することでtail -Nで必ず見えるようにする）
@@ -124,7 +124,7 @@ def _write_warnings_section(warnings: list[dict[str, typing.Any]]) -> None:
 def _write_fully_excluded_files_section(files: list[str]) -> None:
     """直接指定されたが除外設定で全除外されたファイルをまとめて表示する。
 
-    警告としては個別のwarning行で既に通知しているが、総覧で見落とされやすいため
+    警告としては個別のwarning行で既に通知しているが、総覧で見過ごされやすいため
     summary直前に専用ブロックを置く。exit コードには影響しない。
     """
     if not files:

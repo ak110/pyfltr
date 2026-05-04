@@ -129,14 +129,14 @@ def _collect_info(command: str, config: pyfltr.config.config.Config, *, do_check
 
     # uv経路（{command}-runner = "python-runner" / "uv" / "uvx" 設定時）の診断情報を露出する。
     # uv/uv.lock/uvx の状態に応じて direct フォールバックが発生したかも観測可能にする。
-    # 判定はper-tool設定値`runner`を見る（`effective_runner`はフォールバック後の最終値で
+    # 判定はper-tool設定値`runner`を参照する（`effective_runner`はフォールバック後の最終値で
     # `python-runner = "direct"`時もuv_info省略の判断に流用できないため）。
     if command in pyfltr.command.runner.PYTHON_TOOL_BIN and runner in {"python-runner", "uv", "uvx"}:
         # `mode`はeffective値変換と同義。runner == "python-runner"ならグローバル委譲先、
         # runner in {"uv", "uvx"}ならrunner値そのものを採用する。
         mode = str(config["python-runner"]) if runner == "python-runner" else runner
         # `mode == "direct"`の場合はuv経路を一切辿らないため、診断情報は不要として出力しない
-        # （他カテゴリの「不要な情報を出さない」方針と同じ扱い）。
+        # （他カテゴリの「不要な情報を出力しない」方針と同じ扱い）。
         if mode != "direct":
             uv_present = pyfltr.command.runner.ensure_uv_available()
             uv_lock_present = pyfltr.command.runner.cwd_has_uv_lock()

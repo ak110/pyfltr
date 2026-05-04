@@ -99,7 +99,7 @@ def apply_filter(
         )
         return commands, None, True
 
-    # from_run指定時にrun_idを解決し、失敗ならwarningを出して早期終了する。
+    # from_run指定時にrun_idを解決し、失敗ならwarningを発行して早期終了する。
     # 解決済みrun_idを_load_run_summaryに渡すことで二重解決を避ける。
     resolved_run_id: str | None = None
     if from_run is not None:
@@ -152,7 +152,7 @@ def _load_run_summary(
     """
     if resolved_run_id is not None:
         try:
-            # ArchiveStoreにはrun_id直接引き当てAPIが無いためlist_runs()から探す。
+            # ArchiveStoreにはrun_id直接検索APIが無いためlist_runs()から探す。
             all_runs = store.list_runs()
         except OSError as e:
             pyfltr.warnings_.emit_warning(

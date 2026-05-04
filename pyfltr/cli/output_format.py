@@ -73,7 +73,7 @@ def resolve_output_format(
     優先順位は「CLI > `PYFLTR_OUTPUT_FORMAT` > サブコマンド既定値 > `AI_AGENT` > 最終既定値」。
     CLI明示値（`cli_value`）と`PYFLTR_OUTPUT_FORMAT`は利用者が意識的に指定した値とみなし、
     サブコマンド既定値・`AI_AGENT`検出より優先する。これによりエージェント環境下や
-    `run-for-agent`配下でも`PYFLTR_OUTPUT_FORMAT=text`で切り戻せる。
+    `run-for-agent`配下でも`PYFLTR_OUTPUT_FORMAT=text`で元の形式に戻すことができる。
 
     Args:
         parser: 環境変数バリデーションエラー時の`parser.error`呼び出しに使う。
@@ -129,7 +129,7 @@ def configure_text_output(stream: typing.TextIO, *, level: int = logging.INFO) -
 def configure_structured_output(destination: typing.TextIO | pathlib.Path | None) -> None:
     """structured_logger の出力先を切り替える。
 
-    - `None`: ハンドラーを全て外す（jsonl/sarifを出さないformat向け）
+    - `None`: ハンドラーを全て外す（jsonl/sarifを出力しないformat向け）
     - `TextIO`: `StreamHandler(destination)`を設定する
     - `pathlib.Path`: `FileHandler(destination, mode="w", encoding="utf-8")`を設定する。
       親ディレクトリは自動作成する

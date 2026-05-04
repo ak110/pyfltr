@@ -39,7 +39,7 @@ def _normalize_path_entry_for_dedup(entry: str) -> str:
     r"""重複排除用の比較キーを返す。
 
     Windowsではパス比較が大文字小文字非区別かつ `/` と `\\` を等価扱いするため、
-    両者を吸収して比較する。POSIXでは大文字小文字を保ったまま末尾スラッシュのみ落とす。
+    両者を吸収して比較する。POSIXでは大文字小文字を保ったまま末尾スラッシュのみ除去する。
     """
     if os.name == "nt":
         return entry.replace("/", "\\").rstrip("\\").lower()

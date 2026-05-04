@@ -202,7 +202,7 @@ def test_command_info_text_aqua_active_tool_key(capsys: pytest.CaptureFixture[st
 
 
 def test_command_info_text_omits_active_tool_key_for_python_tools(capsys: pytest.CaptureFixture[str]) -> None:
-    """mise backend未登録ツール（ruff-check等）には判定キーフィールドを出さない。"""
+    """mise backend未登録ツール（ruff-check等）には判定キーフィールドを出力しない。"""
     out = _run("ruff-check", capsys=capsys)
     assert "mise_active_tool_key" not in out
 
@@ -234,7 +234,7 @@ def test_command_info_text_exposes_mise_active_tools_active_keys(
 def test_command_info_text_trust_hint_on_untrusted_no_check(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`--check`無しかつ `untrusted-no-side-effects` ステータスでは `--check` 案内を1行出す。"""
+    """`--check`無しかつ `untrusted-no-side-effects` ステータスでは `--check` 案内を1行出力する。"""
     monkeypatch.setattr(
         "pyfltr.command.mise.get_mise_active_tools",
         lambda config, *, allow_side_effects=False: pyfltr.command.mise.MiseActiveToolsResult(
@@ -250,7 +250,7 @@ def test_command_info_text_trust_hint_on_untrusted_no_check(
 def test_command_info_text_trust_hint_only_for_untrusted(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """他のエラー要因では trust案内を出さない（ノイズを増やさないため）。"""
+    """他のエラー要因では trust案内を出力しない（ノイズを増やさないため）。"""
     monkeypatch.setattr(
         "pyfltr.command.mise.get_mise_active_tools",
         lambda config, *, allow_side_effects=False: pyfltr.command.mise.MiseActiveToolsResult(
@@ -263,7 +263,7 @@ def test_command_info_text_trust_hint_only_for_untrusted(
 
 
 def test_command_info_text_no_mise_section_for_python_tools(capsys: pytest.CaptureFixture[str]) -> None:
-    """mise経路を使わないツールには mise診断セクションを出さない。"""
+    """mise経路を使わないツールには mise診断セクションを出力しない。"""
     out = _run("ruff-check", capsys=capsys)
     assert "## mise診断" not in out
     assert "mise_active_tools" not in out

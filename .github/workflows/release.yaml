@@ -195,7 +195,7 @@ jobs:
 
       # `uv publish --check-url` 直後でも PyPI 配信エッジ (Fastly) のキャッシュ反映には
       # ラグがあり、Docker build 内の `uv tool install pyfltr==X.Y.Z` が
-      # 「No solution found」で落ちる事象が継続発生したため、Docker build 直前に
+      # 「No solution found」で失敗する事象が継続発生したため、Docker build 直前に
       # 同等条件 (clean cache) で解決可能になるまで polling する。
       # extras (`[python]`) 込みで解決確認することで、Docker build と同じ要求形を検証する。
       # 利用者向け推奨である `uv run --with="pyfltr[python]" pyfltr` の解決可能性も間接的に確認できる。
@@ -231,7 +231,7 @@ jobs:
 
       # Wait for PyPI propagation を通過しても Docker builder ホストが別エッジを掴んで
       # 「No solution found」になる事象が稀に残るため、初回失敗時のみ短い間を空けて再試行する。
-      # 1 回目失敗時は ``continue-on-error`` で握りつぶし、再試行 step が結果を引き取る。
+      # 1 回目失敗時は ``continue-on-error`` でエラーを無視し、再試行 step が結果を引き取る。
       - name: Build and push Docker image
         id: docker_build
         continue-on-error: true

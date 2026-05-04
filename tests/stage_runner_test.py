@@ -38,14 +38,14 @@ def test_make_skipped_result_has_no_error():
 
 
 def _make_pending_future() -> concurrent.futures.Future:
-    """cancel 可能な pending 状態の Future を作る。"""
+    """cancel 可能な pending 状態の Future を生成する。"""
     # Future を直接インスタンス化し、set_result も cancel() も呼ばなければ pending 状態になる。
     f: concurrent.futures.Future = concurrent.futures.Future()
     return f
 
 
 def _make_done_future() -> concurrent.futures.Future:
-    """完了済みの Future を作る。"""
+    """完了済みの Future を生成する。"""
     f: concurrent.futures.Future = concurrent.futures.Future()
     f.set_result(None)
     return f

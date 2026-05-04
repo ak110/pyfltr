@@ -471,7 +471,7 @@ class TestConfigFilesWarning:
     """config_files未配置時の警告機構のテスト。"""
 
     def test_pre_commit_enabled_without_config_emits_warning(self, tmp_path: pathlib.Path) -> None:
-        """pre-commit有効かつ.pre-commit-config.yaml不在で警告が出る。"""
+        """pre-commitが有効で.pre-commit-config.yaml不在の場合に警告を発行する。"""
         (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latest"\n')
         pyfltr.config.config.load_config(config_dir=tmp_path)
         # preset=latestではtextlintなどにもconfig_filesが定義されるため複数のwarningが出る。
@@ -910,7 +910,7 @@ python-runner = "bogus"
 def test_command_runner_validation_accepts_symmetric_12_values(tmp_path: pathlib.Path, value: str) -> None:
     """{command}-runnerは対称12値（カテゴリ委譲3値＋直接指定9値）すべてを受理する。
 
-    カテゴリ横断の組み合わせ（例: Python系ツールに`pnpm`を指定）はバリデーションでは弾かない方針で、
+    カテゴリ横断の組み合わせ（例: Python系ツールに`pnpm`を指定）はバリデーションでは拒否しない方針で、
     実装簡潔さを優先する（無意味な組み合わせは実行時の解決ロジックがエラー終了する）。
     """
     (tmp_path / "pyproject.toml").write_text(f'[tool.pyfltr]\nmypy-runner = "{value}"\n')
@@ -1419,7 +1419,7 @@ class TestGlobalConfig:
         assert config["js-runner"] == "npm"
 
     def test_global_config_invalid_toml_raises(self, tmp_path: pathlib.Path) -> None:
-        """global設定ファイルのTOMLが壊れているときValueErrorで停止する。"""
+        """global設定ファイルのTOMLが破損しているときValueErrorで停止する。"""
         global_path, project_dir = self._setup(
             tmp_path,
             global_text="[tool.pyfltr\n",  # 閉じ括弧なし
@@ -1499,7 +1499,7 @@ targets = ["*.py"]
         global_path.write_text("[tool.pyfltr]\narchive-max-age-days = 5\n", encoding="utf-8")
         project_dir = tmp_path / "project_no_pyproject"
         project_dir.mkdir()
-        # pyproject.tomlは敢えて作らない
+        # pyproject.tomlは敢えて生成しない
         config = pyfltr.config.config.load_config(config_dir=project_dir, global_config_path=global_path)
         assert config["archive-max-age-days"] == 5
 

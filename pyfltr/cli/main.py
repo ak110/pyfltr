@@ -35,7 +35,7 @@ def _reconfigure_stdio_to_utf8() -> None:
     """`sys.stdout` / `sys.stderr` をUTF-8で出力するよう切り替える。
 
     Windows + Python 3.14では `sys.stdout` / `sys.stderr` の既定エンコーディングが
-    cp1252等のままになるケースがあり、`pyfltr.textout` が出す日本語ログで
+    cp1252等のままになるケースがあり、`pyfltr.textout` が出力する日本語ログで
     UnicodeEncodeErrorを起こす。`PYTHONUTF8` 環境変数や利用者側設定に依存せずに
     挙動を揃えるため、エントリポイント直後に `reconfigure` を試みる。
     `reconfigure` 未提供stream（差し替え済みTextIO等）や呼び出し失敗時は握り潰し、
@@ -68,7 +68,7 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
     if sys_args is None:
         sys_args = sys.argv[1:]
 
-    # -V / --versionはsubparser必須化の例外として、先頭に来た場合のみ短絡処理する。
+    # -V / --versionはsubparser必須化の例外として、先頭に位置する場合のみ短絡処理する。
     # argparseのrequired subparsersは位置引数を要求するため、単独の--versionでは
     # usageエラーになってしまう。`pyfltr -V` の利便性を維持するため明示的に捌く。
     if len(sys_args) == 1 and sys_args[0] in ("-V", "--version"):

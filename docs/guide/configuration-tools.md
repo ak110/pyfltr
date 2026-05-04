@@ -394,7 +394,7 @@ jobs:
   ci:
     runs-on: ubuntu-latest
     env:
-      # mise・pinact等がGitHub APIを叩く際のレート制限（403）回避
+      # mise・pinact等がGitHub APIを呼び出す際のレート制限（403）回避。
       GITHUB_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v6
@@ -669,7 +669,7 @@ fast = true
 - `pass-filenames`: ファイル引数をコマンドに渡すか否か（省略時は`true`）。
   プロジェクト全体を一括チェックするツールでは`false`に設定する
 - `config-files`: このコマンドの設定ファイル候補のリスト（省略時は空）。globパターン可。
-  有効化時にどれもプロジェクトルート直下に見つからないとpyfltrが警告を出す（ツール自体は実行する）。
+  有効化時にどれもプロジェクトルート直下に見つからないとpyfltrが警告を発行する（ツール自体は実行する）。
   pre-commitなどの「設定ファイル無しでは機能しないツール」の設定不備を可視化する用途
 
 ビルトインコマンド（mypy等）は自動的にエラーパースされる。

@@ -53,7 +53,7 @@ def run_commands_with_ui(
     `base_ctx`はパイプライン全体で不変のコンテキスト（config・all_files・cache_store・
     cache_run_idを含む）。各コマンド実行前に`ExecutionContext`を組み立てて渡す。
 
-    `archive_hook`が指定されている場合、各コマンド完了時に実行アーカイブへ書き出す
+    `archive_hook`が指定されている場合、各コマンド完了時に実行アーカイブへ書き込む
     （fixステージも含めて全実行を保存する）。キャッシュヒット時の結果はアーカイブには
     書き込まない（`cached_from`でソースrunを参照させる前提）。
 
@@ -65,7 +65,7 @@ def run_commands_with_ui(
     `terminate()`を送る。
 
     `only_failed_targets`が指定された場合、ツール別の失敗ファイル集合を
-    `execute_command`へ流す（`--only-failed`経路）。値が`None`のツールは通常の
+    `execute_command`へ渡す（`--only-failed`経路）。値が`None`のツールは通常の
     `all_files`で実行し、`list`のツールはその集合のみを対象にする。
     """
     app = UIApp(
@@ -154,8 +154,8 @@ class UIApp(App):
         # `_interrupted_commands`は中断対象のコマンド名を登録順に保持する（warnings出力用）。
         self._interrupted: bool = False
         # `_exit_requested`はUIイベントループ終了を要求済みか（TUI強制終了経路・BG最終段）を示す。
-        # 立った後にworkerスレッドが`_safe_call_from_thread`を呼ぶと、閉じつつあるイベントループ
-        # への`call_from_thread`が詰まる可能性があるため、短絡する。
+        # 設定された後にworkerスレッドが`_safe_call_from_thread`を呼ぶと、閉じつつあるイベントループ
+        # への`call_from_thread`が滞留する可能性があるため、短絡する。
         self._exit_requested: bool = False
         self._subprocess_running_commands: set[str] = set()
         self._interrupt_running_snapshot: set[str] = set()
@@ -209,7 +209,7 @@ class UIApp(App):
         フラグを立てて`terminate_active_processes()`でサブプロセスのみ止め、
         BGスレッドが完了済み結果を`self.results`に書き込み終えるのを待つ。
         BGスレッドが長引いた場合の退路として、既に中断済みの状態でさらにCtrl+C×2を
-        受けたら`self.exit(return_code=130)`で強制終了する。
+        到来したら`self.exit(return_code=130)`で強制終了する。
         """
         if event.key == "ctrl+c":
             current_time = time.time()
@@ -238,12 +238,12 @@ class UIApp(App):
                 self.notify("終了するには 1 秒以内にもう一度 Ctrl+C を押してください。")
 
     def _safe_call_from_thread(self, callback, *args, **kwargs) -> None:
-        """イベントループ喪失時に握りつぶす`call_from_thread`ラッパー。
+        """イベントループ喪失時に抑止する`call_from_thread`ラッパー。
 
-        協調停止ではUIイベントループが閉じた後もBGスレッドが短時間走り続ける設計だが、
+        協調停止ではUIイベントループが閉じた後もBGスレッドが短時間実行し続ける設計だが、
         Textualはイベントループ喪失時に例外を送出する。BGスレッドはここで結果を
         `self.results`に蓄積する責務があるため、UI反映側の失敗でBGスレッドを
-        落とさないようにする。
+        停止させないようにする。
 
         `_exit_requested=True`のときはUI反映を完全に短絡する。閉じつつあるイベントループへ
         `call_from_thread`すると`run_coroutine_threadsafe(...).result()`で長引き、
@@ -402,7 +402,7 @@ class UIApp(App):
                             0.0,
                         )
 
-            # 中断時はwarnings欄に中断通知を1行出す。
+            # 中断時はwarnings欄に中断通知を1行出力する。
             if self._interrupted:
                 with self.lock:
                     interrupted_ordered = list(self._interrupted_commands)
@@ -421,7 +421,7 @@ class UIApp(App):
                         message="Ctrl+C により中断しました。",
                     )
                 # 協調中断の最終段。自身のexitは確実にUIへ伝えたうえで
-                # `_exit_requested`を立て、以降のworker側`_safe_call_from_thread`を短絡させる。
+                # `_exit_requested`を設定し、以降のworker側`_safe_call_from_thread`を短絡させる。
                 try:
                     self.call_from_thread(self.exit, return_code=130)
                 except Exception:
@@ -465,7 +465,7 @@ class UIApp(App):
         # serial_groupを持つコマンドは同一グループ内で排他実行される（cargo / dotnet等）。
         # ロック取得前は「待機中」の表示に留め、running表示はロック取得後に切り替える。
         with pyfltr.state.executor.serial_group_lock(self.config.commands[command].serial_group):
-            # ロック取得後の再チェック。serial_group待機中にCtrl+Cを受けた場合、
+            # ロック取得後の再チェック。serial_group待機中にCtrl+Cを受け取った場合、
             # ロック取得後にsubprocessを起動せずskippedで返すことで協調停止前提を保つ。
             if self._interrupted:
                 with self.lock:
@@ -537,7 +537,7 @@ class UIApp(App):
             )
 
             # JSONパーサー対応ツールはストリーミングしていないため、
-            # ErrorLocationベースの表示または生出力フォールバックを書き出す。
+            # ErrorLocationベースの表示または生出力フォールバックを出力する。
             if has_custom_parser:
                 self._safe_call_from_thread(self._clear_log, f"#output-{command}")
                 if result.errors:

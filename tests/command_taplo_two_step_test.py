@@ -120,7 +120,7 @@ def test_taplo_fix_mode_skips_check_step(mocker, tmp_path: pathlib.Path) -> None
 
 
 def test_taplo_fix_mode_no_change_succeeds(mocker, tmp_path: pathlib.Path) -> None:
-    """`--fix` モードで format が走ってもハッシュ変化が無ければ succeeded。"""
+    """`--fix` モードで format が実行されてもハッシュ変化が無ければ succeeded。"""
     target = tmp_path / "Cargo.toml"
     target.write_text('[package]\nname = "foo"\n')
 

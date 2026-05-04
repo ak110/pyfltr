@@ -331,7 +331,7 @@ def test_build_commandline_per_tool_direct_overrides_global_js_runner(tmp_path: 
     (bin_dir / "textlint").write_text("#!/bin/sh\necho stub\n")
 
     config = pyfltr.config.config.create_default_config()
-    # globalはpnpm経路だが、per-toolでdirect指定しているため node_modules/.bin/<bin> 解決が走る。
+    # globalはpnpm経路だが、per-toolでdirect指定しているため node_modules/.bin/<bin> 解決が実行される。
     config.values["js-runner"] = "pnpm"
     config.values["textlint-runner"] = "direct"
 
@@ -360,7 +360,7 @@ def test_run_subprocess_file_not_found_returns_127() -> None:
 def test_build_subprocess_env_npm_config_actually_effective(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """注入したNPM_CONFIG_MINIMUM_RELEASE_AGEが実際にnpm互換ツールに反映されることを確認する。
 
-    環境変数名がtypoしたり、仕様変更で効かなくなったりした場合に検知する。
+    環境変数名がtypoしたり、仕様変更で適用されなくなったりした場合に検知する。
     既定値（1440）は実行環境のグローバル設定と区別できないため、
     ユーザー既定値優先（setdefault）の動作を利用して非標準値4321を注入し検証する。
 
@@ -1241,7 +1241,7 @@ def test_execute_command_non_cacheable_skips_cache(mocker, tmp_path: pathlib.Pat
         _testconf.make_args(),
         _testconf.make_execution_context(config, [target], cache_store=store, cache_run_id="01ABCDEFGH"),
     )
-    # mypyはcacheable=Falseのため、キャッシュエントリは作られない
+    # mypyはcacheable=Falseのため、キャッシュエントリは生成されない
     assert not list(cache_root.rglob("*.json"))
 
 
@@ -1468,7 +1468,7 @@ def test_get_env_path_posix_strict_key(monkeypatch) -> None:
 
 
 def test_normalize_path_entry_for_dedup_posix(monkeypatch) -> None:
-    """POSIXでは末尾スラッシュのみ落とし、大文字小文字は保持する。"""
+    """POSIXでは末尾スラッシュのみ除去し、大文字小文字は保持する。"""
     monkeypatch.setattr("pyfltr.command.env.os.name", "posix")
     assert pyfltr.command.env._normalize_path_entry_for_dedup("/usr/bin/") == "/usr/bin"
     assert pyfltr.command.env._normalize_path_entry_for_dedup("/USR/Bin") == "/USR/Bin"
@@ -1698,7 +1698,7 @@ def test_terminate_active_processes_parent_exited_grandchild_remains() -> None:
             while True:
                 time.sleep(1)
         else:
-            # 親だけがstdoutに書き出してすぐexit。grandchildはstdoutを握り続ける。
+            # 親だけがstdoutに出力してすぐexit。grandchildはstdoutを保持し続ける。
             print(f"{os.getpid()} {pid}", flush=True)
             os._exit(0)
         """
@@ -2028,7 +2028,7 @@ def test_build_commandline_dotnet_root_ignored_in_mise_mode(monkeypatch: pytest.
 
 
 def test_command_runner_validation_rejects_unknown_value(tmp_path: pathlib.Path) -> None:
-    """`{command}-runner`に不正値を与えるとload_configがエラーで弾く。"""
+    """`{command}-runner`に不正値を与えるとload_configがエラーで拒否する。"""
     (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\ntypos-runner = "bogus"\n')
     with pytest.raises(ValueError, match="typos-runner"):
         pyfltr.config.config.load_config(config_dir=tmp_path)

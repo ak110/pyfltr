@@ -186,7 +186,7 @@ def run_subprocess(
     全出力をまとめて返す。
 
     `is_interrupted` が指定された場合、（1） `Popen` 呼び出し直前、（2） `Popen` 生成直後、
-    （3） stdout読み出しループの各イテレーション冒頭の3点で中断指示を確認し、真なら
+    （3） stdout読み取りループの各イテレーション冒頭の3点で中断指示を確認し、真の場合は
     当該procを確実に終了させてから `InterruptedExecution` を送出する。TUI協調停止経路で
     使う。`on_subprocess_start` / `on_subprocess_end` はsubprocessが実際に動いている
     区間を追跡するためのフック（UI側で「実行中コマンド集合」を正確に保つのに使う）。

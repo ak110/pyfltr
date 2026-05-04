@@ -26,7 +26,7 @@ class CommandInfo:
     serial_group: str | None = None
     """直列実行グループ名。
 
-    同一グループ名のコマンドはlinters/testersの並列実行でも同時に走らないよう
+    同一グループ名のコマンドはlinters/testersの並列実行でも同時に実行されないよう
     pyfltr側で排他する。cargo系は`"cargo"`、dotnet系は`"dotnet"`を指定し、
     `target`ディレクトリなどの内部ロック競合を避ける。
     """
@@ -111,7 +111,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         serial_group="dotnet",
         fixed_cost=2.0,
     ),
-    # pre-commitはリポジトリ固有チェックが幅広く走るため、他formatterの修正後に最後で呼ぶ。
+    # pre-commitはリポジトリ固有チェックが幅広く実行されるため、他formatterの修正後に最後で呼ぶ。
     "pre-commit": CommandInfo(
         type="formatter",
         targets="*",
@@ -304,7 +304,7 @@ COMMAND_RUNNERS: tuple[str, ...] = (
                   `uv.lock`は参照せず、`{command}-version`設定とも連動しない
     - `"pnpx"` / `"pnpm"` / `"npm"` / `"npx"` / `"yarn"`: 各JSパッケージマネージャー経由で起動する
 
-カテゴリ横断の組み合わせ（例: Python系ツールに`pnpm`を指定）はバリデーションでは弾かない。
+カテゴリ横断の組み合わせ（例: Python系ツールに`pnpm`を指定）はバリデーションでは拒否しない。
 無意味な組み合わせは実行時の解決ロジックがエラー終了する。
 """
 

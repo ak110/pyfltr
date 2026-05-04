@@ -216,7 +216,7 @@ def make_succeeded_result(command: str = "ruff-check") -> pyfltr.command.core_.C
 def make_archive_store(tmp_path: pathlib.Path) -> pyfltr.state.archive.ArchiveStore:
     """テスト用の`ArchiveStore`を生成する。
 
-    `archive_test`などで`tmp_path`配下に隔離したstoreを作るための共通ファクトリー。
+    `archive_test`などで`tmp_path`配下に隔離したstoreを生成するための共通ファクトリー。
     """
     return pyfltr.state.archive.ArchiveStore(cache_root=tmp_path)
 
@@ -277,11 +277,11 @@ def seed_archive_run(
     """テスト用の run をアーカイブに書き込み、`run_id` を返す。
 
     `tool_results`は`(tool, returncode, output, errors)`のタプル列。
-    `runs_test` / `mcp_test`等で同じセットアップ手順を踏むため、
+    `runs_test` / `mcp_test`等で同じセットアップ手順を経るため、
     duplicate-code（R0801）回避用にconftest.py側へ集約している。
 
     run_idはULIDで生成され、ミリ秒解像度のタイムスタンプ部分を含む。
-    連続呼び出しで同一ULIDが返るflakyな衝突を避けるため、冒頭に1ミリ秒のスリープを挟む。
+    連続呼び出しで同一ULIDが返るflakyな衝突を避けるため、冒頭に1ミリ秒のスリープを介在させる。
     """
     time.sleep(0.001)
     store = pyfltr.state.archive.ArchiveStore(cache_root=cache_root)

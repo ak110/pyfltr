@@ -40,7 +40,7 @@ def execute_ruff_format_two_step(
     `commandline_prefix` はrunner解決済みの実行プレフィックス（例: `["ruff"]`、
     `["uv", "run", "--frozen", "ruff"]`、`["mise", "exec", "--", "ruff"]`）を呼び出し側から渡す。
     Python系ツールの `{command}-path` 既定値は空文字列のため、`config["<tool>-path"]` を
-    直接参照する旧実装は壊れる。同種関数を追加する際は本引数経由でプレフィックスを受け取る形を踏襲する。
+    直接参照する旧実装は動作しなくなる。同種関数を追加する際は本引数経由でプレフィックスを受け取る形を踏襲する。
     """
     check_commandline: list[str] = list(commandline_prefix)
     check_commandline.extend(config["ruff-format-check-args"])
@@ -191,7 +191,7 @@ def execute_check_write_two_step(
     `commandline_prefix` はrunner解決済みの実行プレフィックス（例: `["ruff"]`、
     `["uv", "run", "--frozen", "ruff"]`、`["mise", "exec", "--", "ruff"]`）を呼び出し側から渡す。
     Python系ツールの `{command}-path` 既定値は空文字列のため、`config["<tool>-path"]` を
-    直接参照する旧実装は壊れる。同種関数を追加する際は本引数経由でプレフィックスを受け取る形を踏襲する。
+    直接参照する旧実装は動作しなくなる。同種関数を追加する際は本引数経由でプレフィックスを受け取る形を踏襲する。
     """
     common_args: list[str] = list(config[f"{command}-args"])
     check_commandline, write_commandline = _build_commandlines(
@@ -445,7 +445,7 @@ def execute_prettier_two_step(
     `commandline_prefix` はrunner解決済みの実行プレフィックス（例: `["ruff"]`、
     `["uv", "run", "--frozen", "ruff"]`、`["mise", "exec", "--", "ruff"]`）を呼び出し側から渡す。
     Python系ツールの `{command}-path` 既定値は空文字列のため、`config["<tool>-path"]` を
-    直接参照する旧実装は壊れる。同種関数を追加する際は本引数経由でプレフィックスを受け取る形を踏襲する。
+    直接参照する旧実装は動作しなくなる。同種関数を追加する際は本引数経由でプレフィックスを受け取る形を踏襲する。
     """
     common_args: list[str] = list(config[f"{command}-args"])
     check_commandline, write_commandline = _build_commandlines(

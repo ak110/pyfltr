@@ -234,7 +234,7 @@ class ArchiveStore:
         return summaries
 
     def read_meta(self, run_id: str) -> dict[str, typing.Any]:
-        """指定runのmeta.jsonを読み出す。存在しなければFileNotFoundError。"""
+        """指定runのmeta.jsonを読み取る。存在しなければFileNotFoundError。"""
         meta_path = self._runs_dir / run_id / _META_FILENAME
         if not meta_path.exists():
             raise FileNotFoundError(run_id)
@@ -254,14 +254,14 @@ class ArchiveStore:
         return sorted(entry.name for entry in tools_dir.iterdir() if entry.is_dir())
 
     def read_tool_meta(self, run_id: str, tool: str) -> dict[str, typing.Any]:
-        """指定 run / tool のメタ情報を読み出す。"""
+        """指定 run / tool のメタ情報を読み取る。"""
         path = self._runs_dir / run_id / "tools" / pyfltr.paths.sanitize_command_name(tool) / _TOOL_META_FILENAME
         if not path.exists():
             raise FileNotFoundError(f"{run_id}/{tool}")
         return json.loads(path.read_text(encoding="utf-8"))
 
     def read_tool_output(self, run_id: str, tool: str) -> str:
-        """指定 run / tool の生出力を読み出す。"""
+        """指定 run / tool の生出力を読み取る。"""
         path = self._runs_dir / run_id / "tools" / pyfltr.paths.sanitize_command_name(tool) / _TOOL_OUTPUT_FILENAME
         if not path.exists():
             raise FileNotFoundError(f"{run_id}/{tool}")

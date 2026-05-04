@@ -12,7 +12,7 @@ def make_skipped_result(
     *,
     reason: str | None = None,
 ) -> pyfltr.command.core_.CommandResult:
-    """中断対象の skipped CommandResult を作る。
+    """中断対象の skipped CommandResult を生成する。
 
     `reason`が指定された場合は`CommandResult.output`に反映する。省略時は既定の
     `--fail-fast`文言（従来互換）を使う。TUIのCtrl+C協調停止経路では固有の文言を

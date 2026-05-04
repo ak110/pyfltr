@@ -192,7 +192,7 @@ def test_build_command_record_includes_hint_urls_when_provided() -> None:
 
 
 def test_build_command_record_omits_hint_urls_when_empty() -> None:
-    """hint_urlsがNone / 空の場合は`hint_urls`キー自体を出さない。"""
+    """hint_urlsがNone / 空の場合は`hint_urls`キー自体を出力しない。"""
     result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
@@ -410,7 +410,7 @@ def test_build_command_record_cached_includes_cached_from() -> None:
     record = pyfltr.output.jsonl._build_command_record(result, diagnostics=0)
     assert record["cached"] is True
     assert record["cached_from"] == "01ABCDEFGH"
-    # cached=Trueのときelapsedはださずcached_elapsedだけを出す
+    # cached=Trueのときelapsedは出力せずcached_elapsedだけを出力する
     # （LLMが「今回の実行時間」と誤解するのを避ける）。
     assert "elapsed" not in record
     assert record["cached_elapsed"] == 1.23
@@ -558,7 +558,7 @@ def test_build_header_record_uv_fields_reflect_environment(monkeypatch: pytest.M
 
 
 def test_build_header_record_omits_mise_active_tools_when_no_mise_command() -> None:
-    """mise経路ツールを含まないrunのheaderには `mise_active_tools` を出さない。"""
+    """mise経路ツールを含まないrunのheaderには `mise_active_tools` を出力しない。"""
     record = pyfltr.output.jsonl._build_header_record(commands=["mypy", "ruff-check"], files=3)
     assert "mise_active_tools" not in record
 
@@ -1032,7 +1032,7 @@ def test_build_command_record_hints_key_present_when_hints_given() -> None:
 
 
 def test_build_command_record_hints_key_omitted_when_empty() -> None:
-    """`hints`がNone / 空の場合、textlint以外では`hints`キー自体を出さない。"""
+    """`hints`がNone / 空の場合、textlint以外では`hints`キー自体を出力しない。"""
     result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
@@ -1066,7 +1066,7 @@ def test_build_command_record_textlint_col_hint_only_when_diagnostics() -> None:
         output="",
         elapsed=0.1,
     )
-    # 指摘0件: hintsキー自体を出さない
+    # 指摘0件: hintsキー自体を出力しない
     record_no_diag = pyfltr.output.jsonl._build_command_record(result, diagnostics=0, hints=None)
     assert "hints" not in record_no_diag
 

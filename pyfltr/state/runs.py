@@ -326,7 +326,7 @@ def _show_tools_detail(
             _print_jsonl_line({"kind": "command", **tool_meta})
             for diagnostic in diagnostics:
                 # diagnostics.jsonl側はkind="diagnostic"込みで保存されているが、
-                # 古いrunや外部書き出し経路を考慮してkindを明示的に埋める。
+                # 古いrunや外部出力経路を考慮してkindを明示的に埋める。
                 record = {"kind": "diagnostic", **diagnostic}
                 _print_jsonl_line(record)
     return 0

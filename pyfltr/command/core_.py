@@ -129,7 +129,7 @@ class CommandResult:
     resolution_failed: bool = False
     """ツール起動コマンドの解決に失敗したか。
 
-    bin-runner / js-runnerからの解決失敗時に `True` を立てる。
+    bin-runner / js-runnerからの解決失敗時に `True` を設定する。
     `status` プロパティは通常の実行失敗（`failed`）より優先して
     `resolution_failed` を返し、CIログ等で「対象0件で失敗したのか／
     対象はあったが解決に失敗したのか」を区別可能にする。

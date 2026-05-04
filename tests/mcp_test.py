@@ -2,7 +2,7 @@
 
 `PYFLTR_CACHE_DIR`を`tmp_path`に固定することで、テストデータ生成に使う
 `ArchiveStore(cache_root=tmp_path)`とMCPツール内部で呼ぶ`ArchiveStore()`
-（`default_cache_root()`解決）が同一キャッシュを参照する状態を作る。
+（`default_cache_root()`解決）が同一キャッシュを参照する状態を構築する。
 """
 
 # pylint: disable=missing-function-docstring  # テストは関数docstringを省略する慣習
@@ -302,15 +302,15 @@ async def test_tool_run_for_agent_with_typos(tmp_path: pathlib.Path) -> None:
 async def test_tool_run_for_agent_keeps_stdout_clean_and_text_on_stderr(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`run_for_agent`実行中はstdoutがJSON-RPC用に空のまま、text整形出力はstderrに流れる。
+    """`run_for_agent`実行中はstdoutがJSON-RPC用に空のまま、text整形出力はstderrに出力される。
 
-    `force_text_on_stderr=True`がrun_pipeline側で効いてtext_loggerがstderrに向き、
+    `force_text_on_stderr=True`がrun_pipeline側で有効化されてtext_loggerがstderrに向き、
     構造化出力は一時ファイルへ退避するためstdoutへは何も書かれない契約を固定する。
     """
     sample = tmp_path / "input.txt"
     sample.write_text("hello\n", encoding="utf-8")
 
-    # typos が利用可能なら 1 件だけ走らせる。未導入環境でも ec で確実に通す。
+    # typos が利用可能なら 1 件だけ実行する。未導入環境でも ec で確実に通す。
     await pyfltr.cli.mcp_server._tool_run_for_agent(paths=[str(sample)], commands=["ec"])
 
     captured = capsys.readouterr()

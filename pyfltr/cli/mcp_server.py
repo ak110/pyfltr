@@ -436,7 +436,7 @@ def _build_server() -> typing.Any:
     公開名は`@mcp.tool(name=...)`で明示し、Python側の関数名（`_tool_*`）
     とは独立したスキーマ名（`list_runs`等）を維持する。
     戻り値型を`typing.Any`とするのは、`mcp`未インストール環境でも本モジュールの
-    importが壊れないよう`FastMCP`を本関数内で局所importする設計に合わせるため。
+    importが機能しなくならないよう`FastMCP`を本関数内で局所importする設計に合わせるため。
     """
     try:
         # オプショナル依存`mcp`が未導入の環境でも本モジュールがimportできるよう、

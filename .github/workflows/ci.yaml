@@ -33,7 +33,7 @@ jobs:
         python-version: [ "3.11", "3.12", "3.13", "3.14" ]
     env:
       UV_PYTHON: ${{ matrix.python-version }}
-      # mise・pinact等がGitHub APIを叩く際のレート制限（403）回避。
+      # mise・pinact等がGitHub APIを呼び出す際のレート制限（403）回避。
       # container jobでは明示しないとsecrets.GITHUB_TOKENがコンテナへ渡らない
       GITHUB_TOKEN: ${{ github.token }}
     steps:
@@ -59,7 +59,7 @@ jobs:
   test-windows:
     runs-on: windows-latest
     env:
-      # mise・pinact等がGitHub APIを叩く際のレート制限（403）回避
+      # mise・pinact等がGitHub APIを呼び出す際のレート制限（403）回避。
       GITHUB_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2

@@ -152,7 +152,7 @@ def test_cleanup_removes_old_entries(tmp_path: pathlib.Path) -> None:
 
 
 def test_cleanup_keeps_recent_entries(tmp_path: pathlib.Path) -> None:
-    """新しいエントリは cleanup で消されない。"""
+    """新しいエントリは cleanup で削除されない。"""
     store = _make_store(tmp_path)
     target = tmp_path / "foo.md"
     target.write_text("# title\n")

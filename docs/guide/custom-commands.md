@@ -13,7 +13,7 @@
 
 設定ファイルとして`pyproject.toml`の`[tool.bandit]`または`.bandit`を参照する例。
 `config-files`に列挙すると、対象ツール有効化時にいずれもプロジェクトルート直下に存在しない場合に
-pyfltrが警告を出す（ツール自体は実行する）。
+pyfltrが警告を発行する（ツール自体は実行する）。
 
 ```toml
 [tool.pyfltr.custom-commands.bandit]

@@ -129,12 +129,12 @@ def test_render_results_orders_success_failed_summary(text_logs):
     pyfltr.cli.render.render_results(results, config, include_details=True)
 
     text = "\n".join(text_logs)
-    # 成功コマンドのヘッダーが最初に来る
+    # 成功コマンドのヘッダーが先頭に位置する
     ruff_format_pos = text.index("ruff-format")
     pylint_pos = text.index("pylint")
     # 失敗コマンドの生出力がフォールバック表示される
     mypy_pos = text.index("MYPY_ERROR")
-    # summary が末尾に来る
+    # summary が末尾に位置する
     summary_pos = text.index("summary")
 
     assert ruff_format_pos < mypy_pos
@@ -143,7 +143,7 @@ def test_render_results_orders_success_failed_summary(text_logs):
 
 
 def test_render_results_include_details_false_writes_only_summary(text_logs):
-    """include_details=Falseのときはsummaryのみで詳細ログは出さない。"""
+    """include_details=Falseのときはsummaryのみで詳細ログは出力しない。"""
     config = pyfltr.config.config.create_default_config()
     results = [_make_result("mypy", returncode=1, output="MYPY_ERROR")]
 
@@ -169,7 +169,7 @@ def test_render_results_writes_warnings_section_before_summary(text_logs):
 
 
 def test_render_results_skips_warnings_section_when_empty(text_logs):
-    """warningsが空のときはwarnings見出しを出さない。"""
+    """warningsが空のときはwarnings見出しを出力しない。"""
     config = pyfltr.config.config.create_default_config()
     results = [_make_result("mypy", returncode=0)]
 
@@ -200,14 +200,14 @@ def test_run_commands_with_cli_fail_fast_aborts_remaining_fixers(mocker):
         include_fix_stage=True,
         fail_fast=True,
     )
-    # 通常ステージはスキップされ、ruff-formatとmypyがskippedで積まれる
+    # 通常ステージはスキップされ、ruff-formatとmypyがskippedで蓄積される
     statuses = {r.command: r.status for r in results}
     assert statuses.get("ruff-format") == "skipped"
     assert statuses.get("mypy") == "skipped"
 
 
 def test_run_commands_with_cli_without_fail_fast_continues(mocker):
-    """fail_fast=Falseなら1ツール失敗でも後続が走る。"""
+    """fail_fast=Falseなら1ツール失敗でも後続が実行される。"""
     config = pyfltr.config.config.create_default_config()
     config.values["ruff-format"] = True
     config.values["mypy"] = True

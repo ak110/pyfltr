@@ -140,7 +140,7 @@ def test_prettier_fix_mode_skips_check_step(mocker, tmp_path: pathlib.Path) -> N
 
 
 def test_prettier_fix_mode_no_change_succeeds(mocker, tmp_path: pathlib.Path) -> None:
-    """`--fix` モードで --write が走ってもハッシュ変化が無ければ succeeded。"""
+    """`--fix` モードで --write が実行されてもハッシュ変化が無ければ succeeded。"""
     target = tmp_path / "sample.js"
     target.write_text("x = 1;\n")
 

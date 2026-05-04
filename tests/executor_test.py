@@ -48,7 +48,7 @@ def test_split_commands_estimated_time_scales_with_files() -> None:
 
 
 def test_split_commands_include_fix_stage() -> None:
-    """include_fix_stage=True のとき fix-args 定義済みコマンドが fixers に積まれる。"""
+    """include_fix_stage=True のとき fix-args 定義済みコマンドが fixers に追加される。"""
     config = pyfltr.config.config.create_default_config()
     config.values["ruff-check"] = True
     config.values["ruff-format"] = True
@@ -100,7 +100,7 @@ def test_serial_group_lock_noop_for_none() -> None:
 
 
 def test_serial_group_lock_mutual_exclusion() -> None:
-    """同一serial_groupのコマンドは並列実行されても1件ずつしか走らない。"""
+    """同一serial_groupのコマンドは並列実行されても1件ずつしか実行されない。"""
     # テスト間でグローバル辞書の状態が残らないよう固有のグループ名を使う
     group = "test-mutex"
     concurrent_count = 0
