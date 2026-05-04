@@ -582,6 +582,15 @@ def _build_command_record(
         merged_hints["messages[].col"] = (
             "textlint reports col and end_col as cumulative offsets from the text-node start, not in-line offsets"
         )
+    # ユーザー定義の `{command}-hints` は、指摘1件以上のときに限り `user.<n>` 連番キーで
+    # 追加する。指摘0件で固定的なhintを残してLLM入力のトークンを浪費しないため、
+    # 既存のtextlint/formatted/timeoutと同じ「対応する状態が該当するときのみhintを付与する」方針に
+    # 揃える。連番キーは `aggregate_diagnostics` 由来のrule名キーや `messages[].col` 等の
+    # ツール固有キーと衝突しないよう `user.` プレフィクスを付ける。
+    if config is not None and diagnostics > 0:
+        user_hints: list[str] = list(config.values.get(f"{result.command}-hints", []))
+        for index, hint_text in enumerate(user_hints):
+            merged_hints[f"user.{index}"] = hint_text
     # formatterによる書き換えはそれ自体が成功扱いで、利用者・LLMエージェントが
     # 「再実行して直さなければならない」と誤解しないようコマンド単独の文脈ヒントを添える。
     # `summary.guidance`はパイプライン全体での総括として再実行不要に触れているが、
@@ -670,11 +679,11 @@ def _build_summary_record(
     集計カウンタはコマンド単位の集計であることを示す`commands_summary`配下にまとめ、
     その下で「対応不要」「対応要」の2グループへネストする。
     `commands_summary.no_issues`配下に`succeeded`/`formatted`/`skipped`を、
-    `commands_summary.needs_action`配下に`failed`を並べる。
+    `commands_summary.needs_action`配下に`failed`/`warning`を並べる。
     `formatted`は本リポジトリの運用上「再実行や追加対応は原則不要」と整理し
     `no_issues`側に分類する。
     `resolution_failed`は0件のときキー自体を省略する（通常プロジェクトでは常に0のため）。
-    `failed`は0件でも常時出力する（0件であることがエラー無し判定に直結するため）。
+    `failed`/`warning`は0件でも常時出力する（0件であることがエラー無し / 警告無し判定に直結するため）。
     `commands_summary`の兄弟である`applied_fixes`/`fully_excluded_files`/
     `missing_targets`/`guidance`はカウント集計ではないため移動しない。
     `fully_excluded_files`が非空のとき、直接指定されたがexcludeパターン・.gitignore
@@ -686,7 +695,7 @@ def _build_summary_record(
     `applied_fixes`はfixステージ・formatterステージで実際に内容変化したファイルパスを
     全コマンドにわたってユニオンしソートした一覧。変化なしの場合は省略する。
     """
-    counts = {"succeeded": 0, "formatted": 0, "failed": 0, "resolution_failed": 0, "skipped": 0}
+    counts = {"succeeded": 0, "formatted": 0, "failed": 0, "warning": 0, "resolution_failed": 0, "skipped": 0}
     total_diagnostics = 0
     fixed_files_union: set[str] = set()
     for result in ordered_results:
@@ -694,9 +703,9 @@ def _build_summary_record(
         total_diagnostics += len(result.errors)
         if result.fixed_files:
             fixed_files_union.update(result.fixed_files)
-    needs_action: dict[str, typing.Any] = {"failed": counts["failed"]}
+    needs_action: dict[str, typing.Any] = {"failed": counts["failed"], "warning": counts["warning"]}
     # resolution_failedはツール解決失敗時のみカウントされ、通常プロジェクトでは常に0。
-    # 0件は情報として冗長なためキー自体を省略する。failedは0件でも常時出力する。
+    # 0件は情報として冗長なためキー自体を省略する。failed/warningは0件でも常時出力する。
     if counts["resolution_failed"] > 0:
         needs_action["resolution_failed"] = counts["resolution_failed"]
     record: dict[str, typing.Any] = {

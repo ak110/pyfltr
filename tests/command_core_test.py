@@ -357,6 +357,68 @@ def test_run_subprocess_file_not_found_returns_127() -> None:
     assert "見つかりません" in result.stdout
 
 
+def test_expanduser_expands_path_in_build_commandline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`{command}-path` の `~` がbuild_commandlineで展開される。
+
+    path-override経路で `~/foo/bar` が `<HOME>/foo/bar` へ展開されたexecutableが返ることを確認する。
+    """
+    monkeypatch.setenv("HOME", "/tmp/fake-home")
+    config = pyfltr.config.config.create_default_config()
+    config.values["mypy-path"] = "~/bin/mypy"
+    resolved = pyfltr.command.runner.build_commandline("mypy", config)
+    assert resolved.runner_source == "path-override"
+    assert resolved.executable == "/tmp/fake-home/bin/mypy"
+
+
+def test_expanduser_expands_args_in_build_invocation_argv(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`{command}-args` 各要素の `~` がbuild_invocation_argvで展開される。
+
+    `os.path.expanduser` の仕様により、展開対象は文字列の先頭が `~` または `~user` で始まる場合のみ。
+    `"--config=~/cfg.toml"` のような途中に `~` を含む形式は展開されない。
+    実用上は `["--config", "~/cfg.toml"]` または単独パス指定で書く運用となる。
+    """
+    monkeypatch.setenv("HOME", "/tmp/fake-home")
+    config = pyfltr.config.config.create_default_config()
+    config.values["mypy-args"] = ["--config", "~/cfg.toml", "~/extra/path.py"]
+    argv = pyfltr.command.runner.build_invocation_argv(
+        "mypy", config, commandline_prefix=["mypy"], additional_args=[], fix_stage=False
+    )
+    assert "/tmp/fake-home/cfg.toml" in argv
+    assert "/tmp/fake-home/extra/path.py" in argv
+
+
+def test_expanduser_expands_fix_args(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`{command}-fix-args` 各要素の `~` がfix_stage=Trueの組み立て時に展開される。"""
+    monkeypatch.setenv("HOME", "/tmp/fake-home")
+    config = pyfltr.config.config.create_default_config()
+    config.values["ruff-check-fix-args"] = ["--fix", "--config", "~/ruff.toml"]
+    argv = pyfltr.command.runner.build_invocation_argv(
+        "ruff-check", config, commandline_prefix=["ruff"], additional_args=[], fix_stage=True
+    )
+    assert "/tmp/fake-home/ruff.toml" in argv
+
+
+def test_expanduser_does_not_apply_to_targets(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`config-files` / `targets` 等のglobパターンには `~` 展開を適用しない。
+
+    config.values上で原文を保持することは `test_custom_command_args_preserve_tilde`
+    で確認しているが、glob展開経路では原文がそのままtargets解決に流れる必要がある。
+    本テストは `CommandInfo.targets` 値が `~`混じりでも何も書き換わっていないことを確認する。
+    """
+    monkeypatch.setenv("HOME", "/tmp/fake-home")
+    pyproject_content = """
+[tool.pyfltr.custom-commands.tilde-glob]
+type = "linter"
+path = "echo"
+targets = ["~/never-expanded.py"]
+config-files = ["~/never-expanded.toml"]
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    config = pyfltr.config.config.load_config(config_dir=tmp_path)
+    assert config.commands["tilde-glob"].target_globs() == ["~/never-expanded.py"]
+    assert config.commands["tilde-glob"].config_files == ["~/never-expanded.toml"]
+
+
 def test_build_subprocess_env_npm_config_actually_effective(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """注入したNPM_CONFIG_MINIMUM_RELEASE_AGEが実際にnpm互換ツールに反映されることを確認する。
 
@@ -627,6 +689,25 @@ def test_auto_args_included_in_commandline(mocker, tmp_path: pathlib.Path) -> No
         "pylint", _testconf.make_args(), _testconf.make_execution_context(config, [target])
     )
     assert "--load-plugins=pylint_pydantic" in result.commandline
+
+
+def test_execute_command_propagates_severity_to_result(mocker, tmp_path: pathlib.Path) -> None:
+    """`{command}-severity = "warning"` 設定下では失敗結果のstatusがwarningになる。"""
+    target = tmp_path / "sample.py"
+    target.write_text("x = 1\n")
+
+    # subprocessをrc=1で失敗させる。
+    proc = subprocess.CompletedProcess(["pylint"], returncode=1, stdout="some lint failure")
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
+
+    config = pyfltr.config.config.create_default_config()
+    config.values["pylint"] = True
+    config.values["pylint-severity"] = "warning"
+    result = pyfltr.command.dispatcher.execute_command(
+        "pylint", _testconf.make_args(), _testconf.make_execution_context(config, [target])
+    )
+    assert result.severity == "warning"
+    assert result.status == "warning"
 
 
 # --- bin-runnerテスト ---

@@ -350,6 +350,124 @@ fix-args = "--fix"
         pyfltr.config.config.load_config(config_dir=tmp_path)
 
 
+def test_severity_default_is_error() -> None:
+    """severityの既定値は "error" で、ビルトイン全コマンドに登録されている。"""
+    config = pyfltr.config.config.create_default_config()
+    for name in pyfltr.config.config.BUILTIN_COMMAND_NAMES:
+        assert config.values[f"{name}-severity"] == "error", f"{name}-severity既定値"
+    assert pyfltr.config.config.resolve_severity(config.values, "mypy") == "error"
+
+
+def test_severity_warning_resolved(tmp_path: pathlib.Path) -> None:
+    """ビルトインコマンドのseverityをwarningに上書きできる。"""
+    (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\nmypy-severity = "warning"\n')
+    config = pyfltr.config.config.load_config(config_dir=tmp_path)
+    assert config.values["mypy-severity"] == "warning"
+    assert pyfltr.config.config.resolve_severity(config.values, "mypy") == "warning"
+
+
+def test_severity_invalid_value_rejected(tmp_path: pathlib.Path) -> None:
+    """severityに許容外の値を指定するとValueErrorになる。"""
+    (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\nmypy-severity = "info"\n')
+    with pytest.raises(ValueError, match="severity"):
+        pyfltr.config.config.load_config(config_dir=tmp_path)
+
+
+def test_custom_command_severity_warning(tmp_path: pathlib.Path) -> None:
+    """カスタムコマンドのseverityにwarningを指定できる。"""
+    pyproject_content = """
+[tool.pyfltr.custom-commands.colloquial]
+type = "linter"
+path = "uv"
+args = ["run"]
+severity = "warning"
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    config = pyfltr.config.config.load_config(config_dir=tmp_path)
+    assert config.values["colloquial-severity"] == "warning"
+
+
+def test_custom_command_severity_invalid(tmp_path: pathlib.Path) -> None:
+    """カスタムコマンドのseverityに不正な値を指定するとValueErrorになる。"""
+    pyproject_content = """
+[tool.pyfltr.custom-commands.bad]
+type = "linter"
+severity = "info"
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    with pytest.raises(ValueError, match="severity"):
+        pyfltr.config.config.load_config(config_dir=tmp_path)
+
+
+def test_hints_default_is_empty() -> None:
+    """hintsの既定値は空配列で、ビルトイン全コマンドに登録されている。"""
+    config = pyfltr.config.config.create_default_config()
+    for name in pyfltr.config.config.BUILTIN_COMMAND_NAMES:
+        assert config.values[f"{name}-hints"] == [], f"{name}-hints既定値"
+
+
+def test_hints_override(tmp_path: pathlib.Path) -> None:
+    """hintsを文字列リストで上書きできる。"""
+    (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\nmypy-hints = ["Read mypy strict-mode docs.", "Avoid Any."]\n')
+    config = pyfltr.config.config.load_config(config_dir=tmp_path)
+    assert config.values["mypy-hints"] == ["Read mypy strict-mode docs.", "Avoid Any."]
+
+
+def test_hints_invalid_element_rejected(tmp_path: pathlib.Path) -> None:
+    """hints要素にstr以外を含めるとValueErrorになる。"""
+    (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\nmypy-hints = [1, 2]\n")
+    with pytest.raises(ValueError, match="hints"):
+        pyfltr.config.config.load_config(config_dir=tmp_path)
+
+
+def test_custom_command_hints(tmp_path: pathlib.Path) -> None:
+    """カスタムコマンドのhintsを文字列リストで指定できる。"""
+    pyproject_content = """
+[tool.pyfltr.custom-commands.colloquial]
+type = "linter"
+path = "uv"
+hints = ["Replace colloquial expressions.", "See SKILL.md for guidance."]
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    config = pyfltr.config.config.load_config(config_dir=tmp_path)
+    assert config.values["colloquial-hints"] == [
+        "Replace colloquial expressions.",
+        "See SKILL.md for guidance.",
+    ]
+
+
+def test_custom_command_hints_invalid(tmp_path: pathlib.Path) -> None:
+    """カスタムコマンドのhintsが文字列以外を含むとValueErrorになる。"""
+    pyproject_content = """
+[tool.pyfltr.custom-commands.bad]
+type = "linter"
+hints = [1]
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    with pytest.raises(ValueError, match="hints"):
+        pyfltr.config.config.load_config(config_dir=tmp_path)
+
+
+def test_custom_command_args_preserve_tilde(tmp_path: pathlib.Path) -> None:
+    """カスタムコマンドの`~`を含むargs / pathはconfig読込時点では原文を保持する。
+
+    展開はsubprocess引数組み立て直前で行うため、config.valuesには `~` のまま入る。
+    `command-info` の `configured_args` / `configured_path` 等で原文が露出する。
+    """
+    pyproject_content = """
+[tool.pyfltr.custom-commands.colloquial]
+type = "linter"
+path = "~/dotfiles/scripts/check.py"
+args = ["--config=~/dotfiles/config.toml"]
+fix-args = ["--fix=~/tmp/log"]
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    config = pyfltr.config.config.load_config(config_dir=tmp_path)
+    assert config.values["colloquial-path"] == "~/dotfiles/scripts/check.py"
+    assert config.values["colloquial-args"] == ["--config=~/dotfiles/config.toml"]
+    assert config.values["colloquial-fix-args"] == ["--fix=~/tmp/log"]
+
+
 def test_vitest_args_default_contains_pass_with_no_tests() -> None:
     """vitest-argsの既定に--passWithNoTestsが含まれることのテスト。
 
@@ -1468,6 +1586,44 @@ targets = ["*.py"]
         config = pyfltr.config.config.load_config(config_dir=project_dir, global_config_path=global_path)
         assert "my-tool" in config.commands
         assert config.commands["my-tool"].type == "linter"
+
+    def test_global_custom_commands_with_severity_and_hints(self, tmp_path: pathlib.Path) -> None:
+        """global側にseverity / hints / `~`混じりのargsを含むカスタムコマンドを書ける。
+
+        「カスタムコマンドにseverity・hints・~展開を追加し
+        check_colloquialをchezmoiでホスト限定配布する」計画の主用途を再現する統合経路。
+        """
+        global_text = """
+[tool.pyfltr.custom-commands.colloquial]
+type = "linter"
+path = "uv"
+args = ["run", "--script", "~/dotfiles/agent-toolkit/skills/writing-standards/scripts/check_colloquial.py"]
+targets = ["*"]
+severity = "warning"
+hints = [
+    "Colloquial Japanese expressions detected.",
+    "See SKILL.md for guidance.",
+]
+"""
+        global_path, project_dir = self._setup(
+            tmp_path,
+            global_text=global_text,
+            project_text="[tool.pyfltr]\n",
+        )
+        config = pyfltr.config.config.load_config(config_dir=project_dir, global_config_path=global_path)
+        assert "colloquial" in config.commands
+        assert config["colloquial"] is True
+        assert config["colloquial-severity"] == "warning"
+        assert config["colloquial-hints"] == [
+            "Colloquial Japanese expressions detected.",
+            "See SKILL.md for guidance.",
+        ]
+        # ~混じりargsはconfig読込時点では原文を保持する（subprocess引数組み立て直前で展開）。
+        assert config["colloquial-args"] == [
+            "run",
+            "--script",
+            "~/dotfiles/agent-toolkit/skills/writing-standards/scripts/check_colloquial.py",
+        ]
 
     def test_global_unknown_key_warns_no_error(self, tmp_path: pathlib.Path) -> None:
         """global側に未知キーが書かれているとき、警告は出るがValueErrorにはならない（前方互換）。"""

@@ -155,6 +155,15 @@ class CommandResult:
     相当の英文注記を1件付与する。利用者・LLMがハング由来の失敗と通常のlint failureを
     区別できるようにするためのフラグ。
     """
+    severity: str = "error"
+    """当該ツールの失敗時の扱い。`{command}-severity` 設定値を結果生成時に転記する。
+
+    - `"error"`（既定）: 通常失敗を `status="failed"` で扱う（従来挙動）
+    - `"warning"`: 通常失敗を `status="warning"` に格下げし、パイプラインのexit codeに影響させない
+
+    `status` プロパティはconfigを保持しないため、解決済み値を本フィールドへ保持する設計とする。
+    `resolution_failed` / `timeout_exceeded` はツール自体の異常を示すため severity の影響を受けない。
+    """
 
     @classmethod
     # from_run は各コマンド実行モジュール（linter_fix / textlint_fix 等）で同様の引数転送パターンを持つため重複検知される
@@ -213,6 +222,10 @@ class CommandResult:
         `timeout_exceeded=True`の場合、`command_type`がformatterであっても`failed`を返す。
         timeoutで強制停止された結果を成功扱い（`formatted`）にしてしまうと、
         利用者・LLMがハング由来の停止と通常のformatter書き換えを区別できなくなるため。
+
+        `severity="warning"` 設定下では通常失敗を `"warning"` に格下げする。
+        ツール起動自体に失敗したケース（`resolution_failed` / `timeout_exceeded`）は
+        ツール起動自体の異常で警告扱いに馴染まないため、`severity` の影響を受けない。
         """
         if self.resolution_failed:
             return "resolution_failed"
@@ -224,6 +237,8 @@ class CommandResult:
             status = "failed"
         elif self.command_type == "formatter" and not self.has_error:
             status = "formatted"
+        elif self.severity == "warning":
+            status = "warning"
         else:
             status = "failed"
         return status

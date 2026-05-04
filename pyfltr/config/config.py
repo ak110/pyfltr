@@ -48,6 +48,7 @@ __all__ = [
     "CACHE_CONFIG_KEYS",
     "COMMAND_RUNNERS",
     "DOTNET_COMMANDS",
+    "EXPAND_USER_KEY_SUFFIXES",
     "GLOBAL_PRIORITY_KEYS",
     "JAVASCRIPT_COMMANDS",
     "JS_RUNNERS",
@@ -56,6 +57,7 @@ __all__ = [
     "PYTHON_RUNNERS",
     "REMOVED_COMMANDS",
     "RUST_COMMANDS",
+    "SEVERITY_VALUES",
     "CommandInfo",
     "CommandType",
     "Config",
@@ -69,6 +71,7 @@ __all__ = [
     "read_config_values",
     "resolve_aliases",
     "resolve_command_timeout",
+    "resolve_severity",
     "set_config_value",
 ]
 
@@ -88,6 +91,22 @@ ARCHIVE_CONFIG_KEYS: frozenset[str] = frozenset(
 )
 CACHE_CONFIG_KEYS: frozenset[str] = frozenset({"cache", "cache-max-age-hours"})
 GLOBAL_PRIORITY_KEYS: frozenset[str] = ARCHIVE_CONFIG_KEYS | CACHE_CONFIG_KEYS
+
+SEVERITY_VALUES: tuple[str, ...] = ("error", "warning")
+"""`{command}-severity`に指定可能な値。
+
+- `"error"`（既定）: 従来通り。失敗時にJSONL `status="failed"` を返し、パイプライン全体のexit codeも非0となる
+- `"warning"`: 失敗時にJSONL `status="warning"` を返す。`commands_summary.needs_action.warning` に集計するが、
+  `failure_present` 判定からは除外するため `summary.guidance` のfailure系は出力されず、パイプラインのexit codeにも影響しない
+"""
+
+EXPAND_USER_KEY_SUFFIXES: tuple[str, ...] = ("-path", "-args", "-fix-args")
+"""`~`展開を適用する設定キーのサフィックス集合。
+
+利用者ホームディレクトリ依存のパスを設定値として書けるようにする。
+globパターン用キー（`config-files`・`targets`等）は意図しない展開を防ぐため対象外とする。
+展開タイミングはsubprocess引数組み立て直前で、`config.values` 読込時点では原文を保持する。
+"""
 
 
 DEFAULT_CONFIG: dict[str, typing.Any] = {
@@ -651,6 +670,45 @@ def _register_command_timeout_defaults(defaults: dict[str, typing.Any], command_
 _register_command_timeout_defaults(DEFAULT_CONFIG, BUILTIN_COMMAND_NAMES)
 
 
+def _register_command_severity_defaults(defaults: dict[str, typing.Any], command_names: list[str]) -> None:
+    """全ビルトインコマンドへ `{command}-severity = "error"` の既定値を登録する。
+
+    `severity = "warning"` 設定下では従来 `failed` 扱いの結果がJSONL上 `status="warning"` に切り替わる。
+    既定値 `"error"` は従来挙動を維持するためのもので、変更したい場合のみ
+    `pyproject.toml`/global設定で個別に指定する。
+    """
+    for command in command_names:
+        defaults[f"{command}-severity"] = "error"
+
+
+def _register_command_hints_defaults(defaults: dict[str, typing.Any], command_names: list[str]) -> None:
+    """全ビルトインコマンドへ `{command}-hints = []` の既定値を登録する。
+
+    指摘1件以上のときに限りJSONL `command.hints` の `user.<n>` キーへ
+    順番に追加される。既定の空配列はLLM入力にhintを追加しない挙動を意味する。
+    """
+    for command in command_names:
+        defaults[f"{command}-hints"] = []
+
+
+_register_command_severity_defaults(DEFAULT_CONFIG, BUILTIN_COMMAND_NAMES)
+_register_command_hints_defaults(DEFAULT_CONFIG, BUILTIN_COMMAND_NAMES)
+
+
+def resolve_severity(values: dict[str, typing.Any], command: str) -> str:
+    """per-tool `{command}-severity` の有効値を返す。
+
+    既定値 `"error"` は従来挙動と同じ。`"warning"` 設定時は
+    `CommandResult.severity` フィールドへ転記され、`status` プロパティが
+    通常失敗を `"warning"` に置き換える。未知の値は `"error"` として扱う
+    （バリデーションは `load_config` 側で行う）。
+    """
+    raw = values.get(f"{command}-severity", "error")
+    if raw in SEVERITY_VALUES:
+        return str(raw)
+    return "error"
+
+
 def resolve_command_timeout(values: dict[str, typing.Any], command: str) -> float | None:
     """per-tool `{command}-timeout` とグローバル `command-timeout` から有効値を解決する。
 
@@ -996,6 +1054,26 @@ def load_config(
         if value not in COMMAND_RUNNERS:
             raise ValueError(f"{key}の設定値が正しくありません。{value=!r} (許容値: {', '.join(COMMAND_RUNNERS)})")
 
+    # per-tool {command}-severityの値バリデーション。
+    # ビルトイン分は既定値 "error" が登録済みでも、利用者が pyproject.toml で
+    # 別値を書いた場合は本ループで検出する。カスタムコマンド側は
+    # `_register_custom_command` で登録時に検証済みのため、ここでは値のみ確認する。
+    for key, value in config.values.items():
+        if not key.endswith("-severity"):
+            continue
+        if value not in SEVERITY_VALUES:
+            raise ValueError(f"{key}の設定値が正しくありません。{value=!r} (許容値: {', '.join(SEVERITY_VALUES)})")
+
+    # per-tool {command}-hintsの要素型バリデーション。
+    # 上位の汎用バリデーション（list型一致）はパスするが、要素がstrでなければ
+    # JSONL出力時に文字列前提のレコード組み立てが失敗するため、ここで明示的に
+    # 文字列リストであることを確認する。
+    for key, value in config.values.items():
+        if not key.endswith("-hints"):
+            continue
+        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+            raise ValueError(f"{key}は文字列のリストで指定してください: {value!r}")
+
     # per-command fastフラグからfastエイリアスを再計算
     config.values["aliases"]["fast"] = _build_fast_alias(config)
 
@@ -1093,12 +1171,28 @@ def _register_custom_command(config: Config, name: str, definition: dict[str, ty
     if not isinstance(pass_filenames, bool):
         raise ValueError(f"カスタムコマンド {name} のpass-filenamesはboolで指定してください")
 
+    # severity（省略時は "error"）。許容値以外はValueError。
+    raw_severity: typing.Any = definition.get("severity", "error")
+    if raw_severity not in SEVERITY_VALUES:
+        raise ValueError(
+            f"カスタムコマンド {name} のseverityは {SEVERITY_VALUES} のいずれかで指定してください: {raw_severity!r}"
+        )
+    severity: str = str(raw_severity)
+
+    # hints（省略時は空リスト。要素はstr）。
+    raw_hints: typing.Any = definition.get("hints", [])
+    if not isinstance(raw_hints, list) or not all(isinstance(item, str) for item in raw_hints):
+        raise ValueError(f"カスタムコマンド {name} のhintsは文字列のリストで指定してください")
+    hints: list[str] = [str(item) for item in raw_hints]
+
     # values辞書にデフォルト設定を追加
     config.values[name] = True
     config.values[f"{name}-path"] = path
     config.values[f"{name}-args"] = args
     config.values[f"{name}-fast"] = fast
     config.values[f"{name}-pass-filenames"] = pass_filenames
+    config.values[f"{name}-severity"] = severity
+    config.values[f"{name}-hints"] = hints
     # fix-argsは定義されている場合のみ登録する（キーの有無でfix対応可否を判別）
     if fix_args is not None:
         config.values[f"{name}-fix-args"] = fix_args

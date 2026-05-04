@@ -102,6 +102,8 @@ def _collect_info(command: str, config: pyfltr.config.config.Config, *, do_check
         "runner_source": source,
         "configured_path": config.values.get(f"{command}-path", ""),
         "configured_args": list(config.values.get(f"{command}-args", [])),
+        "severity": pyfltr.config.config.resolve_severity(config.values, command),
+        "hints": list(config.values.get(f"{command}-hints", [])),
         "version": config.values.get(f"{command}-version"),
         "dotnet_root": os.environ.get("DOTNET_ROOT"),
     }
@@ -278,11 +280,17 @@ def _print_text(info: dict[str, typing.Any]) -> None:
         sections.append(("## mise診断", mise_lines))
 
     # ## 設定: ユーザー設定で上書きされた値のみ表示（情報がない場合はセクション省略）。
+    # severityは既定値 "error" の場合のみ表示を省略する（既定値は情報として冗長なため）。
     config_lines: list[str] = [f"enabled: {info['enabled']}"]
     if info.get("configured_path"):
         config_lines.append(f"configured_path: {info['configured_path']}")
     if info.get("configured_args"):
         config_lines.append(f"configured_args: {' '.join(info['configured_args'])}")
+    if info.get("severity") and info["severity"] != "error":
+        config_lines.append(f"severity: {info['severity']}")
+    if info.get("hints"):
+        for index, hint_text in enumerate(info["hints"]):
+            config_lines.append(f"hints[{index}]: {hint_text}")
     if info.get("version") is not None:
         config_lines.append(f"version: {info['version']}")
     sections.append(("## 設定", config_lines))

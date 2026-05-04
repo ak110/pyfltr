@@ -1134,3 +1134,162 @@ def test_build_summary_record_omits_applied_fixes_when_empty() -> None:
     )
     record = pyfltr.output.jsonl._build_summary_record([result], exit_code=0)
     assert "applied_fixes" not in record
+
+
+def test_command_result_status_warning_when_severity_warning() -> None:
+    """severity="warning"設定下では通常失敗が status="warning" に格下げされる。"""
+    result = pyfltr.command.core_.CommandResult(
+        command="colloquial",
+        command_type="linter",
+        commandline=["uv", "run"],
+        returncode=1,
+        has_error=True,
+        files=1,
+        output="",
+        elapsed=0.1,
+        severity="warning",
+    )
+    assert result.status == "warning"
+
+
+def test_command_result_status_failed_when_severity_error() -> None:
+    """severity="error"（既定）は従来通りfailedを返す。"""
+    result = pyfltr.command.core_.CommandResult(
+        command="mypy",
+        command_type="linter",
+        commandline=["mypy"],
+        returncode=1,
+        has_error=True,
+        files=1,
+        output="",
+        elapsed=0.1,
+        severity="error",
+    )
+    assert result.status == "failed"
+
+
+def test_command_result_status_resolution_failed_ignores_severity() -> None:
+    """resolution_failedはseverity="warning"でもresolution_failedのまま。"""
+    result = pyfltr.command.core_.CommandResult(
+        command="colloquial",
+        command_type="linter",
+        commandline=[],
+        returncode=1,
+        has_error=True,
+        files=0,
+        output="",
+        elapsed=0.0,
+        resolution_failed=True,
+        severity="warning",
+    )
+    assert result.status == "resolution_failed"
+
+
+def test_command_result_status_timeout_ignores_severity() -> None:
+    """timeout_exceededはseverity="warning"でもfailedのまま。"""
+    result = pyfltr.command.core_.CommandResult(
+        command="colloquial",
+        command_type="linter",
+        commandline=["uv"],
+        returncode=137,
+        has_error=True,
+        files=1,
+        output="",
+        elapsed=600.0,
+        timeout_exceeded=True,
+        severity="warning",
+    )
+    assert result.status == "failed"
+
+
+def test_build_summary_record_counts_warning() -> None:
+    """severity="warning"由来のwarningはcommands_summary.needs_action.warningに集計される。"""
+    warning_result = pyfltr.command.core_.CommandResult(
+        command="colloquial",
+        command_type="linter",
+        commandline=["uv"],
+        returncode=1,
+        has_error=True,
+        files=1,
+        output="",
+        elapsed=0.1,
+        severity="warning",
+    )
+    record = pyfltr.output.jsonl._build_summary_record([warning_result], exit_code=0)
+    needs_action = record["commands_summary"]["needs_action"]
+    assert needs_action["failed"] == 0
+    assert needs_action["warning"] == 1
+
+
+def test_build_summary_record_warning_count_always_present() -> None:
+    """warningは0件でも常時出力される。"""
+    result = pyfltr.command.core_.CommandResult(
+        command="mypy",
+        command_type="linter",
+        commandline=["mypy"],
+        returncode=0,
+        has_error=False,
+        files=1,
+        output="",
+        elapsed=0.1,
+    )
+    record = pyfltr.output.jsonl._build_summary_record([result], exit_code=0)
+    needs_action = record["commands_summary"]["needs_action"]
+    assert needs_action["failed"] == 0
+    assert needs_action["warning"] == 0
+
+
+def test_build_summary_record_no_failure_guidance_when_only_warning() -> None:
+    """warningのみで failed/resolution_failed が0件の場合 guidance は付与されない。"""
+    warning_result = pyfltr.command.core_.CommandResult(
+        command="colloquial",
+        command_type="linter",
+        commandline=["uv"],
+        returncode=1,
+        has_error=True,
+        files=1,
+        output="",
+        elapsed=0.1,
+        severity="warning",
+    )
+    record = pyfltr.output.jsonl._build_summary_record([warning_result], exit_code=0)
+    assert "guidance" not in record
+
+
+def test_build_command_record_includes_user_hints_when_diagnostics_present() -> None:
+    """{command}-hints は messages 1件以上のとき user.<n> 連番キーで command.hints に出力される。"""
+    config = pyfltr.config.config.create_default_config()
+    config.values["mypy-hints"] = ["First user hint.", "Second user hint."]
+    result = pyfltr.command.core_.CommandResult(
+        command="mypy",
+        command_type="linter",
+        commandline=["mypy"],
+        returncode=1,
+        has_error=True,
+        files=1,
+        output="",
+        elapsed=0.1,
+    )
+    record = pyfltr.output.jsonl._build_command_record(result, diagnostics=2, config=config)
+    hints = record.get("hints", {})
+    assert hints.get("user.0") == "First user hint."
+    assert hints.get("user.1") == "Second user hint."
+
+
+def test_build_command_record_omits_user_hints_when_no_diagnostics() -> None:
+    """diagnostics=0のときは{command}-hintsを出力しない（指摘0件で固定hintを残してトークン浪費しないため）。"""
+    config = pyfltr.config.config.create_default_config()
+    config.values["mypy-hints"] = ["This must not be emitted."]
+    result = pyfltr.command.core_.CommandResult(
+        command="mypy",
+        command_type="linter",
+        commandline=["mypy"],
+        returncode=0,
+        has_error=False,
+        files=1,
+        output="",
+        elapsed=0.1,
+    )
+    record = pyfltr.output.jsonl._build_command_record(result, diagnostics=0, config=config)
+    hints = record.get("hints", {})
+    assert all(not key.startswith("user.") for key in hints)

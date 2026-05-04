@@ -8,6 +8,7 @@ import typing
 
 import pyfltr.command.error_parser
 import pyfltr.command.process
+import pyfltr.command.runner
 import pyfltr.config.config
 from pyfltr.command.core_ import CommandResult
 from pyfltr.command.snapshot import changed_files, snapshot_file_digests
@@ -199,7 +200,7 @@ def execute_check_write_two_step(
     Python系ツールの `{command}-path` 既定値は空文字列のため、`config["<tool>-path"]` を
     直接参照する旧実装は動作しなくなる。同種関数を追加する際は本引数経由でプレフィックスを受け取る形を踏襲する。
     """
-    common_args: list[str] = list(config[f"{command}-args"])
+    common_args: list[str] = pyfltr.command.runner.expanduser_args(list(config[f"{command}-args"]))
     check_commandline, write_commandline = _build_commandlines(
         commandline_prefix,
         common_args,
@@ -482,7 +483,7 @@ def execute_prettier_two_step(
     Python系ツールの `{command}-path` 既定値は空文字列のため、`config["<tool>-path"]` を
     直接参照する旧実装は動作しなくなる。同種関数を追加する際は本引数経由でプレフィックスを受け取る形を踏襲する。
     """
-    common_args: list[str] = list(config[f"{command}-args"])
+    common_args: list[str] = pyfltr.command.runner.expanduser_args(list(config[f"{command}-args"]))
     check_commandline, write_commandline = _build_commandlines(
         commandline_prefix,
         common_args,

@@ -539,9 +539,10 @@ def build_commandline(
     # この経路では `{command}-runner` と未登録ツールの組み合わせ（例: `typos-runner = "uv"` ＋ `typos-path` 指定）
     # でもエラー扱いせずpath値を採用する。利用者が明示的にパスを示している以上、起動経路の整合性より
     # 利用者の意図を優先する判断。明示runner × 未登録ツール × path未指定の場合のみ後段の分岐でエラー化する。
+    # `~` を含む利用者ホーム依存のパス指定を許すため、`os.path.expanduser` で展開してから採用する。
     if config.values.get(f"{command}-path", "") != "":
         return ResolvedCommandline(
-            executable=config[f"{command}-path"],
+            executable=os.path.expanduser(config[f"{command}-path"]),
             prefix=[],
             runner=runner,
             runner_source="path-override",
@@ -758,6 +759,19 @@ def _build_auto_args(command: str, config: pyfltr.config.config.Config, user_arg
     return result
 
 
+def expanduser_args(values: list[str]) -> list[str]:
+    """各要素に `os.path.expanduser` を適用したリストを返す。
+
+    `{command}-path` / `{command}-args` / `{command}-fix-args` 経路に書かれた
+    利用者ホームディレクトリ依存のパス（例: `~/dotfiles/.../tool.py`）を
+    subprocess引数組み立て直前に展開する。展開対象キー一覧と適用タイミングのSSOTは
+    `pyfltr.config.config.EXPAND_USER_KEY_SUFFIXES` を参照する。
+    `config-files` / `targets` 等のglobパターンは意図しない展開を防ぐため対象外で、
+    本ヘルパーを通さない。
+    """
+    return [os.path.expanduser(value) for value in values]
+
+
 def build_invocation_argv(
     command: str,
     config: pyfltr.config.config.Config,
@@ -772,19 +786,24 @@ def build_invocation_argv(
     に構造化出力引数を適用した結果を返す。fix段では `{command}-fix-args` を結合する。
     fix-args未定義のコマンドではfix_stage=Trueでも通常段と同じargvを返す。
 
+    `{command}-args` / `{command}-fix-args` の各要素は `_expanduser_args` で
+    `~` 展開してから結合する。利用者ホームディレクトリ依存のパスを設定値として
+    書けるようにするための処置。`commandline_prefix` 側（`{command}-path` 由来）の
+    展開は `build_commandline` で済ませている。
+
     textlintのfix段は `execute_textlint_fix` のStep1と同じ規則
     （`--format` ペアを除去したargs + fix-args、auto_args / 構造化出力引数なし）を適用する。
     実行本体（`_prepare_execution_params` / `execute_textlint_fix`）と
     `command-info` 表示の双方から本ヘルパーへ集約することで、組み立て規則の重複定義を避ける。
     """
-    user_args: list[str] = list(config.values.get(f"{command}-args", []))
+    user_args: list[str] = expanduser_args(list(config.values.get(f"{command}-args", [])))
     extra: list[str] = list(additional_args)
 
     # textlintのfix Step1はfixer-formatterがcompact系をサポートしないため、
     # ユーザー指定の `--format` ペアを一律で除去したうえでfix-argsを結合する特殊経路。
     # auto_args・構造化出力引数も適用しない（fixer出力の解析は本ステップでは行わないため）。
     if fix_stage and command == "textlint":
-        fix_args: list[str] = list(config.values.get(f"{command}-fix-args", []))
+        fix_args: list[str] = expanduser_args(list(config.values.get(f"{command}-fix-args", [])))
         return [
             *commandline_prefix,
             *_strip_format_option(user_args),
@@ -795,7 +814,7 @@ def build_invocation_argv(
     fix_args_value: list[str] | None = None
     if fix_stage:
         raw = config.values.get(f"{command}-fix-args")
-        fix_args_value = list(raw) if raw is not None else None
+        fix_args_value = expanduser_args(list(raw)) if raw is not None else None
 
     auto_args = _build_auto_args(command, config, user_args + extra)
     commandline: list[str] = [*commandline_prefix, *auto_args, *user_args]

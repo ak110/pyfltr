@@ -671,6 +671,10 @@ fast = true
 - `config-files`: このコマンドの設定ファイル候補のリスト（省略時は空）。globパターン可。
   有効化時にどれもプロジェクトルート直下に見つからないとpyfltrが警告を発行する（ツール自体は実行する）。
   pre-commitなどの「設定ファイル無しでは機能しないツール」の設定不備を可視化する用途
+- `severity`: `"error"`（既定）または`"warning"`。
+  詳細は[severityによる失敗の警告化](#severity)を参照
+- `hints`: LLM向けの追加文言（文字列の配列、省略時は空）。
+  詳細は[hintsによるLLM向け補足](#hints)を参照
 
 ビルトインコマンド（mypy等）は自動的にエラーパースされる。
 カスタムコマンドに対しても`--{name}-args`やenable/disableを使用できる。
@@ -692,6 +696,68 @@ fix-args = ["--fix"]
 ```
 
 fixモードでは`args`の後に`fix-args`が追加され、`my-linter --check --fix <files>`として実行される。
+
+### severityによる失敗の警告化 {#severity}
+
+`{command}-severity`を`"warning"`に設定すると、当該ツールの失敗をJSONL `command.status="warning"` で記録し、
+パイプライン全体のexit codeに影響させない扱いに切り替えられる。
+口語表現検出など「警告で十分」な用途で、エージェントを止めずに通知だけしたい場合に使う。
+カスタムコマンド・ビルトイン共通で利用できる。
+
+```toml
+[tool.pyfltr.custom-commands.colloquial]
+type = "linter"
+path = "uv"
+args = ["run", "--script", "~/dotfiles/agent-toolkit/skills/writing-standards/scripts/check_colloquial.py"]
+targets = ["*"]
+severity = "warning"
+```
+
+許容値は`"error"`（既定）と`"warning"`の2値。
+`"warning"`設定下では`commands_summary.needs_action.warning`に集計し、
+`summary.guidance`のfailure系文言は出力しない。
+
+ツール起動自体に失敗するケース（`resolution_failed` / `timeout_exceeded`）は`severity`の影響を受けない。
+ツール起動側の異常で警告扱いに馴染まないため、`failed`/`resolution_failed`のままとなる。
+
+### hintsによるLLM向け補足 {#hints}
+
+`{command}-hints`に文字列配列を指定すると、JSONL `command.hints` に `user.<n>` 連番キーで埋め込む。
+LLMエージェントへ修正方針や参考文献を渡したいときに使う。
+配列要素は英語推奨（`command.hints` / `summary.guidance` と同じくLLM入力前提のため）。
+
+```toml
+[tool.pyfltr.custom-commands.colloquial]
+type = "linter"
+# ...
+hints = [
+    "Colloquial Japanese expressions detected. Replace with formal written-language equivalents.",
+    "See ~/dotfiles/agent-toolkit/skills/writing-standards/SKILL.md for guidance.",
+]
+```
+
+指摘1件以上のときに限り出力する（指摘0件の実行で固定的なhintを残してLLM入力のトークンを浪費しないため）。
+ビルトインコマンドにも同名キーで指定可能で、利用者ごとの運用ノウハウを永続化する用途に利用できる。
+
+### `~`展開
+
+対応キーは`{command}-path` / `{command}-args` / `{command}-fix-args`（および2段階実行系の`{command}-args`）。
+これらに`~`を含めると、subprocess引数組み立て直前に`os.path.expanduser`で展開する。
+利用者ホーム配下に置いた個人ツールスクリプトをそのまま参照したい場合に使う。
+
+```toml
+[tool.pyfltr.custom-commands.my-tool]
+type = "linter"
+path = "uv"
+args = ["run", "--script", "~/dotfiles/scripts/my_tool.py"]
+```
+
+展開は`os.path.expanduser`の仕様により、各要素の先頭が`~`または`~user`の場合のみ適用される。
+`"--config=~/cfg.toml"`のように要素の途中に`~`を含む形式は展開されないため、
+`["--config", "~/cfg.toml"]`のように分けて指定する運用となる。
+
+`config-files` / `targets` / `{command}-extend-targets`等のglobパターンには展開を適用しない
+（glob内チルダの意図しない展開を防ぐため）。
 
 ## 起動方式の確認
 

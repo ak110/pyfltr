@@ -430,10 +430,15 @@ def _dispatch_command(
     # のツールではcommandlineからも復元できないため、ここで明示的に保持する）。
     # runner情報（effective_runner / runner_source）は `build_commandline` が成功した経路でのみ
     # 値が確定するため、targets空（0件）経路ではNoneのまま残す。
+    # severityは `status` プロパティが従来failedとなる結果を `warning` に格下げするか
+    # を決めるフラグで、結果生成時にconfigから解決して固定値で持たせる。
+    severity = pyfltr.config.config.resolve_severity(config.values, command)
+
     def _with_targets(result: CommandResult) -> CommandResult:
         result.target_files = list(targets)
         result.effective_runner = params.effective_runner
         result.runner_source = params.runner_source
+        result.severity = severity
         return result
 
     if len(targets) <= 0:
