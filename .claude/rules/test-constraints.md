@@ -42,6 +42,10 @@
   Windows runnerでは`typos.EXE`のように大文字`.EXE`等の拡張子が付いて返るため、
   `pathlib.Path(<path>).stem == "<tool>"`の形で比較する。
   `<path>.endswith("<tool>")`では拡張子付きの戻り値で失敗する
+- `os.path.expanduser`の`~`展開先をテストで固定する場合は、
+  `monkeypatch.setenv("HOME", ...)`に加えて`monkeypatch.setenv("USERPROFILE", ...)`も同じ値で上書きする。
+  Windowsの`ntpath.expanduser`は`USERPROFILE`を優先するため`HOME`単独では効かず、
+  Windows runnerで展開先が実環境のユーザープロファイルになりテストが失敗する
 - `pyfltr/command/runner.py`の`@functools.lru_cache(maxsize=1)`デコレーター付き判定関数群
  （`cwd_has_uv_lock` / `ensure_uv_available` / `ensure_uvx_available`等）はプロセス内固定化される。
   テストで判定値を差し替える場合は関数自体を置換する形で
