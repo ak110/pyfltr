@@ -7,9 +7,12 @@ pyfltrは3系統のloggerを使い分ける。
 
 format別のstream/level切替の詳細は[docs/development/architecture.md](../../docs/development/architecture.md#logger)を参照。
 
-- root（system logger）: 常にstderr。抑止しない。設定エラー・アーカイブ初期化失敗などを送出する
-- `pyfltr.textout`: 人間向けテキスト出力。`pyfltr.cli.output_format.configure_text_output(stream, *, level)`で切り替える
-- `pyfltr.structured`: JSONL / SARIF / Code Qualityの構造化出力。`pyfltr.cli.output_format.configure_structured_output(dest)`で切り替える
+- root（system logger）: 常にstderr。抑止しない。
+  設定エラー・アーカイブ初期化失敗などを送出する
+- `pyfltr.textout`: 人間向けテキスト出力。
+  `pyfltr.cli.output_format.configure_text_output(stream, *, level)`で切り替える
+- `pyfltr.structured`: JSONL / SARIF / Code Qualityの構造化出力。
+  `pyfltr.cli.output_format.configure_structured_output(dest)`で切り替える
 
 stdout占有は`jsonl` / `sarif` / `code-quality`かつ`--output-file`未指定時のみ発生する。
 

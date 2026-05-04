@@ -103,9 +103,23 @@ SEVERITY_VALUES: tuple[str, ...] = ("error", "warning")
 EXPAND_USER_KEY_SUFFIXES: tuple[str, ...] = ("-path", "-args", "-fix-args")
 """`~`展開を適用する設定キーのサフィックス集合。
 
-利用者ホームディレクトリ依存のパスを設定値として記述できるようにする。
-globパターン用キー（`config-files`・`targets`等）は意図しない展開を防ぐため対象外とする。
-展開タイミングはsubprocess引数組み立て直前で、`config.values` 読込時点では原文を保持する。
+利用者ホームディレクトリ依存のパス（例: `~/dotfiles/.../tool.py`）を設定値として
+記述できるようにするため、特定のper-toolキーに限り `~` 展開を適用する。
+対象は `{command}-path` / `{command}-args` / `{command}-lint-args` / `{command}-fix-args` /
+`{command}-check-args` / `{command}-write-args` および `ruff-format-check-args`。
+
+`config-files` / `targets` / `{command}-extend-targets` 等のglobパターン用キーは
+glob内チルダの意図しない展開を防ぐため対象外とする。
+
+展開規則は要素先頭の `~` に加え、要素内の最初の `=` 直後の `~` も展開する
+（`--config=~/cfg.toml` を `--config=<HOME>/cfg.toml` に展開）。
+`os.path.expanduser` は先頭の `~` のみ展開するため、展開は
+`pyfltr.command.runner.expanduser_args` を経由する。
+
+展開タイミングはsubprocess引数組み立て直前（`pyfltr.command.runner.build_commandline` /
+`build_invocation_argv` および `pyfltr.command.two_step.base` の各経路）で、
+`config.values` 読込時点では原文を保持する（`command-info` サブコマンドの
+`configured_path` / `configured_args` にも原文が露出する）。
 """
 
 

@@ -760,16 +760,39 @@ def _build_auto_args(command: str, config: pyfltr.config.config.Config, user_arg
 
 
 def expanduser_args(values: list[str]) -> list[str]:
-    """各要素に `os.path.expanduser` を適用したリストを返す。
+    """各要素に `~` 展開を適用したリストを返す。
 
-    `{command}-path` / `{command}-args` / `{command}-fix-args` 経路に書かれた
-    利用者ホームディレクトリ依存のパス（例: `~/dotfiles/.../tool.py`）を
-    subprocess引数組み立て直前に展開する。展開対象キー一覧と適用タイミングのSSOTは
+    対象キーは `{command}-path` / `{command}-args` / `{command}-lint-args` /
+    `{command}-fix-args` / `{command}-check-args` / `{command}-write-args` /
+    `ruff-format-check-args` 経路に書かれた利用者ホームディレクトリ依存のパス
+    （例: `~/dotfiles/.../tool.py`）。subprocess引数組み立て直前に展開する。
+    展開対象キー一覧と適用タイミングのSSOTは
     `pyfltr.config.config.EXPAND_USER_KEY_SUFFIXES` を参照する。
     `config-files` / `targets` 等のglobパターンは意図しない展開を防ぐため対象外で、
     本ヘルパーを通さない。
+
+    展開規則は次の2点。
+    要素先頭が `~` または `~user` の場合は `os.path.expanduser` で展開する。
+    要素内の最初の `=` 直後が `~` または `~user` の場合も展開する
+    （`--config=~/cfg.toml` を `--config=<HOME>/cfg.toml` に展開する利便のため）。
+    `os.path.expanduser` は先頭の `~` のみ展開するため、後者は要素を分割してから委譲する。
     """
-    return [os.path.expanduser(value) for value in values]
+    return [_expanduser_arg(value) for value in values]
+
+
+def _expanduser_arg(value: str) -> str:
+    expanded = os.path.expanduser(value)
+    if expanded != value:
+        return expanded
+    sep_index = value.find("=")
+    if sep_index < 0:
+        return value
+    prefix = value[: sep_index + 1]
+    rest = value[sep_index + 1 :]
+    expanded_rest = os.path.expanduser(rest)
+    if expanded_rest == rest:
+        return value
+    return prefix + expanded_rest
 
 
 def build_invocation_argv(
@@ -786,9 +809,9 @@ def build_invocation_argv(
     に構造化出力引数を適用した結果を返す。fix段では `{command}-fix-args` を結合する。
     fix-args未定義のコマンドではfix_stage=Trueでも通常段と同じargvを返す。
 
-    `{command}-args` / `{command}-fix-args` の各要素は `_expanduser_args` で
-    `~` 展開してから結合する。利用者ホームディレクトリ依存のパスを設定値として
-    書けるようにするための処置。`commandline_prefix` 側（`{command}-path` 由来）の
+    `{command}-args` / `{command}-lint-args` / `{command}-fix-args` の各要素は
+    `expanduser_args` で `~` 展開してから結合する。利用者ホームディレクトリ依存のパスを
+    設定値として指定できるようにするための処置。`commandline_prefix` 側（`{command}-path` 由来）の
     展開は `build_commandline` で済ませている。
 
     textlintのfix段は `execute_textlint_fix` のStep1と同じ規則
@@ -821,7 +844,7 @@ def build_invocation_argv(
     if fix_args_value is not None:
         commandline.extend(fix_args_value)
     else:
-        commandline.extend(config.values.get(f"{command}-lint-args", []))
+        commandline.extend(expanduser_args(list(config.values.get(f"{command}-lint-args", []))))
     commandline.extend(extra)
     structured_spec = get_structured_output_spec(command, config)
     if structured_spec is not None and not (structured_spec.lint_only and fix_args_value is not None):

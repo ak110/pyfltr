@@ -44,7 +44,7 @@ def execute_ruff_format_two_step(
     直接参照する旧実装は動作しなくなる。同種関数を追加する際は本引数経由でプレフィックスを受け取る形を踏襲する。
     """
     check_commandline: list[str] = list(commandline_prefix)
-    check_commandline.extend(config["ruff-format-check-args"])
+    check_commandline.extend(pyfltr.command.runner.expanduser_args(list(config["ruff-format-check-args"])))
     check_commandline.extend(str(t) for t in targets)
 
     return _run_ruff_two_step(
@@ -204,8 +204,8 @@ def execute_check_write_two_step(
     check_commandline, write_commandline = _build_commandlines(
         commandline_prefix,
         common_args,
-        list(config[f"{command}-check-args"]),
-        list(config[f"{command}-write-args"]),
+        pyfltr.command.runner.expanduser_args(list(config[f"{command}-check-args"])),
+        pyfltr.command.runner.expanduser_args(list(config[f"{command}-write-args"])),
         additional_args,
         [str(t) for t in targets],
     )
@@ -487,8 +487,8 @@ def execute_prettier_two_step(
     check_commandline, write_commandline = _build_commandlines(
         commandline_prefix,
         common_args,
-        list(config[f"{command}-check-args"]),
-        list(config[f"{command}-write-args"]),
+        pyfltr.command.runner.expanduser_args(list(config[f"{command}-check-args"])),
+        pyfltr.command.runner.expanduser_args(list(config[f"{command}-write-args"])),
         additional_args,
         [str(t) for t in targets],
     )

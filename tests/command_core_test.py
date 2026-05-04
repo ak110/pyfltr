@@ -31,6 +31,7 @@ import pyfltr.command.mise
 import pyfltr.command.process
 import pyfltr.command.runner
 import pyfltr.command.targets
+import pyfltr.command.two_step.base
 import pyfltr.config.config
 import pyfltr.state.cache
 import pyfltr.state.only_failed
@@ -375,20 +376,20 @@ def test_expanduser_expands_path_in_build_commandline(monkeypatch: pytest.Monkey
 def test_expanduser_expands_args_in_build_invocation_argv(monkeypatch: pytest.MonkeyPatch) -> None:
     """`{command}-args` 各要素の `~` がbuild_invocation_argvで展開される。
 
-    `os.path.expanduser` の仕様により、展開対象は文字列の先頭が `~` または `~user` で始まる場合のみ。
-    `"--config=~/cfg.toml"` のような途中に `~` を含む形式は展開されない。
-    実用上は `["--config", "~/cfg.toml"]` または単独パス指定で書く運用となる。
+    展開規則は2点。要素先頭の `~` / `~user` を `os.path.expanduser` で展開する。
+    要素内の最初の `=` 直後の `~` も展開する（`--config=~/cfg.toml` 形式の利便のため）。
     """
     # Windowsの`ntpath.expanduser`は`USERPROFILE`を優先するため両方上書きする。
     monkeypatch.setenv("HOME", "/tmp/fake-home")
     monkeypatch.setenv("USERPROFILE", "/tmp/fake-home")
     config = pyfltr.config.config.create_default_config()
-    config.values["mypy-args"] = ["--config", "~/cfg.toml", "~/extra/path.py"]
+    config.values["mypy-args"] = ["--config", "~/cfg.toml", "~/extra/path.py", "--cache-dir=~/cache"]
     argv = pyfltr.command.runner.build_invocation_argv(
         "mypy", config, commandline_prefix=["mypy"], additional_args=[], fix_stage=False
     )
     assert "/tmp/fake-home/cfg.toml" in argv
     assert "/tmp/fake-home/extra/path.py" in argv
+    assert "--cache-dir=/tmp/fake-home/cache" in argv
 
 
 def test_expanduser_expands_fix_args(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -402,6 +403,109 @@ def test_expanduser_expands_fix_args(monkeypatch: pytest.MonkeyPatch) -> None:
         "ruff-check", config, commandline_prefix=["ruff"], additional_args=[], fix_stage=True
     )
     assert "/tmp/fake-home/ruff.toml" in argv
+
+
+def test_expanduser_expands_lint_args(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`{command}-lint-args` 各要素の `~` がfix-args未指定の通常段で展開される。
+
+    fix_stage=Trueでもfix-args未定義のコマンドではlint-argsが結合経路に残る。
+    """
+    monkeypatch.setenv("HOME", "/tmp/fake-home")
+    monkeypatch.setenv("USERPROFILE", "/tmp/fake-home")
+    config = pyfltr.config.config.create_default_config()
+    config.values["mypy-lint-args"] = ["--strict", "--config=~/strict.toml"]
+    argv = pyfltr.command.runner.build_invocation_argv(
+        "mypy", config, commandline_prefix=["mypy"], additional_args=[], fix_stage=False
+    )
+    assert "--config=/tmp/fake-home/strict.toml" in argv
+
+
+def test_expanduser_expands_check_and_write_args(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """`{command}-check-args` / `{command}-write-args` の `~` が two_step経路で展開される。
+
+    `execute_check_write_two_step` 内部のサブプロセス実行を差し替え、組み立てた
+    check_commandline / write_commandlineに展開後のパスが含まれることを検証する。
+    """
+    monkeypatch.setenv("HOME", "/tmp/fake-home")
+    monkeypatch.setenv("USERPROFILE", "/tmp/fake-home")
+
+    config = pyfltr.config.config.create_default_config()
+    config.values["taplo-check-args"] = ["fmt", "--check", "--config=~/taplo.toml"]
+    config.values["taplo-write-args"] = ["fmt", "--config=~/taplo.toml"]
+
+    captured: list[list[str]] = []
+
+    def _fake_run(
+        commandline: list[str], *_args: typing.Any, **_kwargs: typing.Any
+    ) -> pyfltr.command.process.CompletedProcessWithTimeoutInfo:
+        captured.append(list(commandline))
+        return pyfltr.command.process.CompletedProcessWithTimeoutInfo(
+            args=list(commandline), returncode=0, stdout="", timeout_exceeded=False
+        )
+
+    monkeypatch.setattr(pyfltr.command.process, "run_subprocess_with_timeout", _fake_run)
+
+    target = tmp_path / "x.toml"
+    target.write_text("")
+    command_info = config.commands["taplo"]
+    args_ns = argparse.Namespace(verbose=False)
+    pyfltr.command.two_step.base.execute_check_write_two_step(
+        "taplo",
+        command_info,
+        commandline_prefix=["taplo"],
+        config=config,
+        targets=[target],
+        additional_args=[],
+        fix_mode=False,
+        env={},
+        on_output=None,
+        start_time=time.perf_counter(),
+        args=args_ns,
+    )
+
+    assert captured, "expected at least the check step to run"
+    assert "--config=/tmp/fake-home/taplo.toml" in captured[0]
+
+
+def test_expanduser_expands_ruff_format_check_args(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """`ruff-format-check-args` の `~` が ruff-format two_step経路で展開される。"""
+    monkeypatch.setenv("HOME", "/tmp/fake-home")
+    monkeypatch.setenv("USERPROFILE", "/tmp/fake-home")
+
+    config = pyfltr.config.config.create_default_config()
+    config.values["ruff-format-check-args"] = ["check", "--fix", "--config=~/ruff.toml"]
+
+    captured: list[list[str]] = []
+
+    def _fake_run(
+        commandline: list[str], *_args: typing.Any, **_kwargs: typing.Any
+    ) -> pyfltr.command.process.CompletedProcessWithTimeoutInfo:
+        captured.append(list(commandline))
+        return pyfltr.command.process.CompletedProcessWithTimeoutInfo(
+            args=list(commandline), returncode=0, stdout="", timeout_exceeded=False
+        )
+
+    monkeypatch.setattr(pyfltr.command.process, "run_subprocess_with_timeout", _fake_run)
+
+    target = tmp_path / "x.py"
+    target.write_text("")
+    command_info = config.commands["ruff-format"]
+    args_ns = argparse.Namespace(verbose=False)
+    pyfltr.command.two_step.base.execute_ruff_format_two_step(
+        "ruff-format",
+        command_info,
+        format_commandline=["ruff", "format", str(target)],
+        commandline_prefix=["ruff"],
+        targets=[target],
+        config=config,
+        args=args_ns,
+        env={},
+        on_output=None,
+        start_time=time.perf_counter(),
+    )
+
+    assert captured, "expected ruff-format two-step steps to run"
+    assert "--config=/tmp/fake-home/ruff.toml" in captured[0]
 
 
 def test_expanduser_does_not_apply_to_targets(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
