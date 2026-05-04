@@ -90,7 +90,7 @@ def _collect_info(command: str, config: pyfltr.config.config.Config, *, do_check
     解決自体に失敗した場合も例外は外へ伝播させず、`error`キーを含めたdictを返す
     （`command-info`は調査用途のため、解決失敗そのものも観測したいケースが多い）。
     mise active tools取得状況（status/detail/active_keys）と、tool spec省略採用フラグ・
-    判定キーをまとめて露出し、自己診断や名称ずれ検出に使えるようにする。
+    判定キーをまとめて露出し、自己診断や名称ずれ検出に利用できるようにする。
     """
     enabled = bool(config.values.get(command, False))
     runner, source = pyfltr.command.runner.resolve_runner(command, config)

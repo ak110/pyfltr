@@ -331,7 +331,7 @@ async def test_tool_run_for_agent_returns_run_id(tmp_path: pathlib.Path) -> None
     sample = tmp_path / "input.txt"
     sample.write_text("This is a simple test file.\n", encoding="utf-8")
 
-    # typosが使えない環境でも動作させるため、利用可能なコマンドを選ぶ。
+    # typosが利用できない環境でも動作させるため、利用可能なコマンドを選ぶ。
     # ecは設定不要で動作するため使用する。
     result = await pyfltr.cli.mcp_server._tool_run_for_agent(
         paths=[str(sample)],

@@ -125,7 +125,7 @@ def test_build_retry_command_missing_commands_inserts(tmp_path):
 
 
 def test_filter_failed_files_empty_errors_returns_empty():
-    """errorsが空なら空リストを返す（絞り込み対象なし）。"""
+    """errorsが空なら空リストを返す（フィルタリング対象なし）。"""
     result = _make_result(
         "mypy",
         returncode=0,
@@ -171,7 +171,7 @@ def test_filter_failed_files_outside_target_files_returns_empty():
 
 
 def test_populate_retry_command_uses_filtered_files(tmp_path):
-    """絞り込み後のtarget_filesのみがretry_commandに反映される。"""
+    """フィルタリング後のtarget_filesのみがretry_commandに反映される。"""
     errors = [_make_error("mypy", "src/b.py", 1, "err")]
     result = _make_result(
         "mypy",

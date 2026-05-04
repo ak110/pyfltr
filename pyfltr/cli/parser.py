@@ -35,7 +35,7 @@ ALL_SUBCOMMANDS: tuple[str, ...] = (
 _STATIC_COMMAND_ALIASES: tuple[str, ...] = ("format", "lint", "test")
 """組み込みで必ず定義されるコマンドエイリアス。ユーザー設定のカスタムエイリアスは含まない。
 
-ツール名プリフライト（個別ツール絞り込み誘導）の検出集合に含める。
+ツール名プリフライト（個別ツール限定実行への誘導）の検出集合に含める。
 カスタムコマンド・カスタムエイリアスはpyproject.toml読込後にしか確定しないため
 当面プリフライト対象外とする。
 """
@@ -211,7 +211,7 @@ def make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> "
         metavar="REF",
         help="git の任意の ref(ブランチ・タグ・コミットハッシュ・HEAD など)を指定し、"
         "その ref からの変更ファイルのみを対象とします。"
-        "コミット差分・未コミット作業ツリー差分・staged 差分の和集合で絞り込みます。"
+        "コミット差分・未コミット作業ツリー差分・staged 差分の和集合でフィルタリングします。"
         "git 不在または ref が存在しない場合は警告を出力して全体実行へフォールバックします。",
     )
     common.add_argument(

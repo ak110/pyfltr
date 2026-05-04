@@ -7,7 +7,7 @@ pyfltrの実装構造と主要な設計判断をまとめる。
 ## 実行パイプライン
 
 `pyfltr.cli.pipeline.run_pipeline()`がCLI/MCPの双方から呼び出される最上位エントリ。
-TUI/非TUIの分岐はこの関数の内側で行い、パイプライン共通の前処理（ファイル展開・`--only-failed`絞り込み・
+TUI/非TUIの分岐はこの関数の内側で行い、パイプライン共通の前処理（ファイル展開・`--only-failed`フィルタリング・
 アーカイブ初期化など）はTUI起動より前に集約する。
 
 実行ステージは次の3段で構成する。
@@ -161,7 +161,7 @@ pyfltr本体はこれらの依存を抱えない。
 - MCP同梱: `mcp`・`platformdirs`
 - プロセス判定: `psutil`（`git commit`経由起動を親系列で検出してMM状態ガイダンスを出力する用途）
 
-`mcp`を本体必須に含めるのはサーバー同梱体験（`pyfltr mcp`が即座に使える）を保つため。
+`mcp`を本体必須に含めるのはサーバー同梱体験（`pyfltr mcp`が即座に起動できる）を保つため。
 
 ### subprocess実行はPopen一本化
 
@@ -169,7 +169,7 @@ subprocess起動は`subprocess.Popen`ベースに統一する。
 `--fail-fast`の中断処理（外部スレッドからの`terminate()`呼び出し）が成立する基盤として必要。
 パイプライン外で動く`mise --version`・`git check-ignore`・`cls`/`clear`はこの方針の対象外とする。
 
-### `cli/pipeline.py`/`output/ui.py`の共通化はヘルパーに絞る
+### `cli/pipeline.py`/`output/ui.py`の共通化はヘルパーに限定する
 
 `cli/pipeline.py`は直接呼び出し、`output/ui.py`はRich UIへの`call_from_thread`埋め込みという構造差がある。
 完全共通化はlock取得タイミング差で実装が複雑になるため、共通化は`state/stage_runner.py`の小さなヘルパーへの抽出に留める。
@@ -454,12 +454,12 @@ MCPサーバー・`--only-failed`からも再利用する。
 
 - 直前runは`ArchiveStore.list_runs(limit=1)`の先頭を採用する
 - 失敗ツール・失敗ファイルはアーカイブのtoolメタとdiagnosticsから抽出する
-- 絞り込み結果はツール別の`ToolTargets` dataclass（`pyfltr/only_failed.py`）として保持する
+- フィルタリング結果はツール別の`ToolTargets` dataclass（`pyfltr/only_failed.py`）として保持する
 - 直前runが存在しない、失敗ツールが無い、ターゲット交差が空となった場合はメッセージを出力して
   成功終了（rc=0）する
 - 位置引数`targets`との併用時は、直前runの失敗ファイル集合と`targets`を交差させる
 
-絞り込みは`run_pipeline`内のファイル展開直後・archive/cache初期化前に行う。
+フィルタリングは`run_pipeline`内のファイル展開直後・archive/cache初期化前に行う。
 今回のrunのrun_id/cache_storeに影響させないため。
 
 ### `--from-run`
@@ -487,7 +487,7 @@ MCPサーバー・`--only-failed`からも再利用する。
 
 読み取り系4ツール（`list_runs`・`show_run`・`show_run_diagnostics`・`show_run_output`）と
 実行系1ツール（`run_for_agent`）の計5ツールを公開する。
-実行系を1本に絞ったのは、エージェント連携用途では`ci`/`run`/`fast`の差分を露出する必要が薄く、
+実行系を1本に限定したのは、エージェント連携用途では`ci`/`run`/`fast`の差分を露出する必要が薄く、
 パラメーター数を抑えてMCPスキーマを単純化するため。
 
 ツール名はCLIサブコマンドのハイフン形式と異なりアンダースコア形式（`list_runs`/`show_run`等）とする。

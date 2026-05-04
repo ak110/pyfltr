@@ -71,7 +71,7 @@ class WarningCollector:
     def filtered_direct_files(self, *, reason: FilteredReason | None = None) -> list[str]:
         """蓄積された直接指定フィルタ対象ファイル一覧の浅いコピーを返す。
 
-        `reason`を指定すると当該理由のものだけに絞り込む。
+        `reason`を指定すると当該理由のものだけに限定する。
         未指定時は理由を問わず全件を順序通りに返す。
         """
         if reason is None:

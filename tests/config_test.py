@@ -353,7 +353,7 @@ fix-args = "--fix"
 def test_vitest_args_default_contains_pass_with_no_tests() -> None:
     """vitest-argsの既定に--passWithNoTestsが含まれることのテスト。
 
-    pyfltrがtargets設定で絞ったファイル群とプロジェクト側のvitest include
+    pyfltrがtargets設定でフィルタリングしたファイル群とプロジェクト側のvitest include
     設定が交差せず対象ゼロになるケースでrc=1→failed扱いになるのを避けるため、
     既定引数として含める方針を固定化する。
     """

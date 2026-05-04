@@ -364,7 +364,7 @@ def execute_command(
     `fix_stage=True` の場合、当該コマンドがfix-argsを持っていればfix経路
     （`--fix` 付きの単発実行）で動作する。fix-args未定義のformatterでは
     通常経路と挙動が変わらないため、呼び出し側はfixステージで実行する対象を
-    `split_commands_for_execution()` で絞り込んだうえで指定する前提。
+    `split_commands_for_execution()` でフィルタリングしたうえで指定する前提。
 
     `cache_store` が指定され、かつ当該コマンドが `CommandInfo.cacheable=True` の
     非fixモード実行なら、ファイルhashキャッシュを参照して一致があれば実行を

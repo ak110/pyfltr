@@ -1,4 +1,4 @@
-"""retry_command 生成および失敗ファイル絞り込み。"""
+"""retry_command 生成および失敗ファイルのフィルタリング。"""
 
 import logging
 import os
@@ -193,15 +193,15 @@ def populate_retry_command(
     launcher_prefix: list[str],
     original_cwd: str,
 ) -> None:
-    """CommandResult に retry_command を埋める (パートG A案の絞り込みを適用)。
+    """CommandResult に retry_command を埋める (パートG A案のフィルタリングを適用)。
 
-    `retry_command`は「当該ツールを失敗ファイルのみに絞って再実行する文字列」である。
+    `retry_command`は「当該ツールを失敗ファイルのみに限定して再実行する文字列」である。
     成功時（`has_error == False`）やformatterによる修正適用のみ（returncode != 0
     でもhas_error False）のケースでは再実行動機が無いため埋めない。
     キャッシュ復元結果（`result.cached == True`）も対象外（再実行不要のため）。
 
-    失敗時は`filter_failed_files`で失敗ファイルのみに絞り込んだターゲットを
-    `build_retry_command`へ渡す。絞り込み結果が空の場合（診断ファイルなし・
+    失敗時は`filter_failed_files`で失敗ファイルのみに限定したターゲットを
+    `build_retry_command`へ渡す。フィルタリング結果が空の場合（診断ファイルなし・
     全体失敗のみのケース）は`retry_command`のターゲット位置引数が空になる
     （当該ツールの単体再実行文字列として機能する）。
     """
@@ -222,7 +222,7 @@ def populate_retry_command(
 def filter_failed_files(result: pyfltr.command.core_.CommandResult) -> list[pathlib.Path]:
     """`result.errors`から失敗ファイル集合を抽出し`result.target_files`と交差させる。
 
-    `retry_command`のターゲットを「当該ツールで失敗したファイルのみ」に絞る用途
+    `retry_command`のターゲットを「当該ツールで失敗したファイルのみ」に限定する用途
     （パートG A案）。パス比較は文字列化した相対パス（スラッシュ区切り）で行う。
     `ErrorLocation.file`は`_normalize_path`経由でcwd基準の相対パス（区切り
     文字は`/`）に正規化されているため、`result.target_files`側も同じ表現へ

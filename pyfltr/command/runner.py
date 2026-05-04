@@ -494,7 +494,7 @@ def resolve_effective_runner(command: str, runner: str, config: pyfltr.config.co
     未知値は`ValueError`を送出する（`{command}-runner`バリデーションを通過していれば本経路に来ない）。
     """
     # 委譲値はサフィックス`-runner`がそのままグローバル設定キーに一致する設計のため、
-    # `runner`値をそのまま`config`の引きキーとして使える。
+    # `runner`値をそのまま`config`の引きキーとして利用できる。
     if runner in _DELEGATE_RUNNER_VALUES:
         return str(config[runner])
     if runner in _DIRECT_RUNNER_VALUES:
@@ -521,7 +521,7 @@ def build_commandline(
     mise経路では `get_mise_active_tools` を引いて、mise設定（プロジェクト `mise.toml` ＋
     グローバル設定）に該当ツール記述があり、かつ `{command}-version` が既定値 `"latest"` の
     ときに限りtool spec部分を省略した `["exec", "--", <bin>]` 形を返す
-    （miseがmise設定の解決済み内容、つまりcomponentsや固定バージョンをそのまま使えるようにするため）。
+    （miseがmise設定の解決済み内容、つまりcomponentsや固定バージョンをそのまま参照できるようにするため）。
 
     `allow_side_effects=False`（既定）では `mise exec --version` の事前チェックや
     `mise trust` を行わない。判定関数 `get_mise_active_tools` も副作用OFFで呼び、

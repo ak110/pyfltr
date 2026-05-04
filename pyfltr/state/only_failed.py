@@ -43,7 +43,7 @@ class ToolTargets:
 
     @classmethod
     def with_files(cls, files: typing.Iterable[pathlib.Path]) -> ToolTargets:
-        """絞り込みファイル集合付きインスタンスを返す。"""
+        """フィルタリング済みファイル集合付きインスタンスを返す。"""
         return cls(mode="files", files=tuple(files))
 
     def resolve_files(self, all_files: list[pathlib.Path]) -> list[pathlib.Path]:
@@ -71,20 +71,20 @@ def apply_filter(
     Args:
         args: コマンドライン引数。`args.only_failed`が真のとき適用する。
         commands: 実行対象コマンド名のリスト。
-        all_files: `expand_all_files`の結果。`args.targets`指定があれば既に絞り込み済み。
+        all_files: `expand_all_files`の結果。`args.targets`指定があれば既にフィルタリング済み。
         from_run: 参照対象runを明示指定する（前方一致 / `latest`対応）。
             `None`の場合は直前runを自動選択する。
 
     Returns:
-        `(絞り込み後commands, per_tool_targets, exit_early)`
+        `(フィルタリング後commands, per_tool_targets, exit_early)`
         - `args.only_failed`が偽の場合は`(commands, None, False)`を返す（未適用）
         - 直前runが存在しない / アーカイブ読み取り失敗 / 失敗ツールが無い / 全ツールで
           targets交差が空の場合は`(commands, None, True)`を返し、呼び出し側で
           rc=0の早期終了を促す
-        - それ以外は絞り込み後commandsとToolTargets dictを返す（exit_early=False）
+        - それ以外はフィルタリング後commandsとToolTargets dictを返す（exit_early=False）
 
     `all_files`は`expand_all_files`の結果（`args.targets`指定があれば既に
-    その範囲に絞り込まれている）。本関数ではそれとの交差を取ることで
+    その範囲でフィルタリング済み）。本関数ではそれとの交差を取ることで
     `--only-failed`と位置引数`targets`の併用要件を同時に満たす。
     """
     if not getattr(args, "only_failed", False):
@@ -240,7 +240,7 @@ def _filter_commands_with_targets(
     commands: list[str],
     targets: dict[str, ToolTargets],
 ) -> list[str]:
-    """Targets dictに含まれるツールのみにcommandsを絞り込む（順序は保持）。"""
+    """Targets dictに含まれるツールのみにcommandsを限定する（順序は保持）。"""
     return [cmd for cmd in commands if cmd in targets]
 
 

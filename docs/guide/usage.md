@@ -215,7 +215,7 @@ MCPクライアントがstdinを閉じた時点でサーバーが終了する。
 
 エージェント常駐起動は独立venvで動くuvxの方がプロジェクトの`pyproject.toml`解釈やcwd依存の影響を受けず安定する。
 
-Claude Codeから登録する場合は`claude mcp add`コマンドが使える:
+Claude Codeから登録する場合は`claude mcp add`コマンドを利用できる:
 
 ```shell
 claude mcp add pyfltr -- uvx pyfltr mcp
@@ -509,20 +509,20 @@ CLIの`run-for-agent`とは異なりJSONL出力がstdoutに流れないため、
 2. 失敗したツール/ファイルだけ再実行する
 
     ```shell
-    # 失敗ツールを --commands で絞る
+    # 失敗ツールを --commands で限定する
     pyfltr run-for-agent --commands=mypy path/to/file.py
 
     # または直前runの失敗ツール・失敗ファイルをまとめて再実行
     pyfltr run-for-agent --only-failed
     ```
 
-    `--commands`で特定ツールに絞ることで出力量を抑えつつ、`diagnostic`行から修正対象のファイル・行番号・メッセージを取得する。
-    `command.retry_command`フィールドには当該ツールだけを失敗ファイルに絞り込んだ再実行コマンドが既に生成されているため、
+    `--commands`で特定ツールに限定することで出力量を抑えつつ、`diagnostic`行から修正対象のファイル・行番号・メッセージを取得する。
+    `command.retry_command`フィールドには当該ツールだけを失敗ファイルに限定した再実行コマンドが既に生成されているため、
     そのまま貼り付けて実行できる。
     `--only-failed`は直前runのアーカイブから失敗ツール・失敗ファイルを自動抽出して再実行する。
     直前runが無い・失敗ツールが無い・対象との交差が空の場合は終了コード0で成功終了する。
 
-## 個別ツールを絞り込んで実行したい場合 {#single-tool}
+## 個別ツールを限定して実行したい場合 {#single-tool}
 
 特定のツール1件だけを実行したいときは`--commands=<tool>`オプションを使う。
 

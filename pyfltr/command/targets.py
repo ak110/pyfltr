@@ -143,7 +143,7 @@ def filter_by_globs(all_files: list[pathlib.Path], globs: list[str]) -> list[pat
 
 
 def filter_by_changed_since(all_files: list[pathlib.Path], ref: str) -> list[pathlib.Path]:
-    """`--changed-since <ref>` で変更ファイルに絞り込む。
+    """`--changed-since <ref>` で変更ファイルにフィルタリングする。
 
     `git diff --name-only <ref>` でコミット差分とtrackedファイルの作業ツリー差分・staged差分の
     和集合を取得し、`all_files` との交差を返す。

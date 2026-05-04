@@ -43,7 +43,7 @@ def test_run_subprocess_raises_timeout_when_exceeded() -> None:
     # 例外オブジェクトが途中までのoutputとelapsed情報を保持する。
     assert exc_info.value.timeout == 0.1
     assert exc_info.value.elapsed >= 0.1
-    # outputはsubprocessが何も書き出していないため空文字列。
+    # outputはsubprocessが何も出力していないため空文字列。
     assert isinstance(exc_info.value.output, str)
 
 

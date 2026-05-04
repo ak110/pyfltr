@@ -74,7 +74,7 @@ def render_results(
     """実行結果を `成功コマンド → 失敗コマンド → summary` の順でまとめて出力する。
 
     summaryを末尾に出力することで、`tail -N`で末尾だけ読み取るツール
-    （Claude Codeなど）でもsummaryが確実に見えるようにする。失敗コマンド詳細も
+    （Claude Codeなど）でもsummaryが確実に確認できるようにする。失敗コマンド詳細も
     summaryの直前に置くため、`tail -N`でエラー情報も捕捉しやすい。
 
     `include_details=False`のときは、詳細ログは既に出力済みとみなしsummaryのみ表示する
@@ -107,7 +107,7 @@ def render_results(
     # 4. fully excluded files（summary直前。警告と混ざらないよう独立ブロックで出力する）
     _write_fully_excluded_files_section(pyfltr.warnings_.filtered_direct_files(reason="excluded"))
 
-    # 5. summary（末尾に出力することでtail -Nで必ず見えるようにする）
+    # 5. summary（末尾に出力することでtail -Nで必ず確認できるようにする）
     _write_summary(ordered)
 
 

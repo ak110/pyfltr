@@ -362,7 +362,7 @@ class UIApp(App):
                             continue
                         # 中断時に実行中だったコマンド、またはskippedで返ってきたコマンドは
                         # まとめて「Ctrl+Cにより中断しました。」扱いに揃える。完了済み結果は
-                        # そのまま残してsummaryに反映する（中断でも進捗が見えるようにするため）。
+                        # そのまま残してsummaryに反映する（中断でも進捗を確認できるようにするため）。
                         if self._interrupted and (command in self._interrupt_running_snapshot or lt_result.status == "skipped"):
                             lt_result = pyfltr.state.stage_runner.make_skipped_result(
                                 command, self.config, reason="Ctrl+C により中断しました。"

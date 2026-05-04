@@ -151,7 +151,7 @@ def make_command_result(
 
     `has_error`を省略した場合、`returncode`が0/None以外ならTrueに推定する。
     `errors`は`ErrorLocation`のリスト（省略時は空）。`target_files`は
-    `retry_command`絞り込み（A案）のテスト用（省略時は空）。
+    `retry_command`フィルタリング（A案）のテスト用（省略時は空）。
     `archived`はテスト既定でTrue（smart truncationが適用される側）。
     実運用でのデフォルト（`CommandResult()`生成時のFalse）とは異なる点に注意。
     """

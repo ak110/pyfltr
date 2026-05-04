@@ -1272,7 +1272,7 @@ def test_execute_command_only_failed_targets_files_override(mocker, tmp_path: pa
     cmdline = mock_run.call_args_list[0][0][0]
     assert str(file_b) in cmdline
     assert str(file_a) not in cmdline
-    # CommandResult.target_filesもToolTargetsベースに絞られる
+    # CommandResult.target_filesもToolTargetsベースでフィルタリングされる
     assert result.target_files == [file_b]
 
 

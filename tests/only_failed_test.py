@@ -1,7 +1,7 @@
 """only_failedモジュールのテスト。
 
 `ToolTargets`dataclassの各分岐と`apply_filter`の3状態（fallback / files /
-skip→commands絞り込みで除外）を検証する。
+skip→commandsフィルタリングで除外）を検証する。
 `tests/main_test.py`の`_apply_only_failed_filter`系テストをここへ移管済み。
 """
 

@@ -458,7 +458,7 @@ def execute_prettier_two_step(
     """Prettierの2段階実行（prettier --check → prettier --write）。
 
     `prettier --check`（read-only）と`prettier --write`（書き込み）は排他のため、
-    既存のautoflake/isort/blackの「同じ引数に--checkを付与する」ダンスは使えない。
+    既存のautoflake/isort/blackの「同じ引数に--checkを付与する」ダンスは適用できない。
 
     通常モード（fix_mode=False）:
 

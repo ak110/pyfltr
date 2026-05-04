@@ -5,7 +5,7 @@
 1診断1行の整形が本モジュールに委譲される。
 
 GitHubのログビューアーは`::xxx file=...,line=...,title=...::msg`から
-プロパティ部を剥がし`##[xxx]msg`としてしか描画しない。そのため生ログ上でも
+プロパティ部を除去し`##[xxx]msg`としてしか描画しない。そのため生ログ上でも
 file / line / ruleを視認できるよう、メッセージ本体に
 `{file}:{line}[:{col}]: [{tool}[:{rule}]] {message}`を前置する。
 この1行がGitHub Actionsのannotationsとログビューアー両方の要件を満たす。

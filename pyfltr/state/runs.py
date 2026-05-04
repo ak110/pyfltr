@@ -65,7 +65,7 @@ def register_subparsers(subparsers: typing.Any) -> None:
     sr.add_argument(
         "--commands",
         default=None,
-        help="特定ツールに絞り込んで diagnostics を全件表示する。カンマ区切りで複数指定可。",
+        help="特定ツールに限定して diagnostics を全件表示する。カンマ区切りで複数指定可。",
     )
     sr.add_argument(
         "--output",

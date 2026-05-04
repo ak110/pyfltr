@@ -38,7 +38,7 @@ class MiseActiveToolsResult:
 
     取得成功時は `tools` がmise本体の解決結果（プロジェクト `mise.toml` ＋グローバル設定の合算）。
     取得失敗時は `tools` を空辞書とし、`detail` に短い手がかり（mise stderr冒頭等）を格納する。
-    `command-info` 出力やJSONL header経由で利用者に状況を見える化する目的で使う。
+    `command-info` 出力やJSONL header経由で利用者に状況を可視化する目的で使う。
     """
 
     status: MiseActiveToolsStatus

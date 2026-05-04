@@ -2,8 +2,8 @@
 
 新設計では`build_workflow_command`がErrorLocation 1件をGAワークフローコマンド
 1行へ整形する。1行のメッセージ本体に`file:line[:col]: [tool[:rule]] msg`を
-前置することで、GitHubログビューアがプロパティを剥がしても生ログでfile / line /
-ruleが読める契約とする。
+前置することで、GitHubログビューアがプロパティを除去しても生ログでfile / line /
+ruleが判読できる契約とする。
 """
 
 import pyfltr.output.github_annotations

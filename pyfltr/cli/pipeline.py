@@ -614,7 +614,7 @@ def run_pipeline(
     # `jsonl`形式のときに限定して起動する。
     # `sarif`・`code-quality`はbufferingformatter（`on_finish`で単一JSONドキュメントを一括出力）のため、
     # 途中で`status:"running"`レコードを混入させると最終的な出力（SARIF 2.1.0オブジェクト・
-    # Code Climate JSON配列）が壊れる。
+    # Code Climate JSON配列）が不正な形式になる。
     # `text`等のJSONLレコードが流れない出力形式ではheartbeatの観測対象が成立しない。
     # TUI経路はUIに進捗表示があるため別途heartbeat不要。
     heartbeat: HeartbeatMonitor | None = None
