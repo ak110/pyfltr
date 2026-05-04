@@ -226,6 +226,11 @@ class CommandResult:
         `severity="warning"` 設定下では通常失敗を `"warning"` に格下げする。
         ツール起動自体に失敗したケース（`resolution_failed` / `timeout_exceeded`）は
         ツール起動自体の異常で警告扱いに馴染まないため、`severity` の影響を受けない。
+
+        `status`は`resolution_failed`・`returncode`・`has_error`・`command_type`・
+        `timeout_exceeded`・`severity`から導出する計算プロパティとして実装する。
+        新規status値を追加する際は本判定分岐に組み込み、個別箇所でのstatus文字列
+        直接組み立ては避ける。
         """
         if self.resolution_failed:
             return "resolution_failed"

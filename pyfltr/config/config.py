@@ -103,7 +103,7 @@ SEVERITY_VALUES: tuple[str, ...] = ("error", "warning")
 EXPAND_USER_KEY_SUFFIXES: tuple[str, ...] = ("-path", "-args", "-fix-args")
 """`~`展開を適用する設定キーのサフィックス集合。
 
-利用者ホームディレクトリ依存のパスを設定値として書けるようにする。
+利用者ホームディレクトリ依存のパスを設定値として記述できるようにする。
 globパターン用キー（`config-files`・`targets`等）は意図しない展開を防ぐため対象外とする。
 展開タイミングはsubprocess引数組み立て直前で、`config.values` 読込時点では原文を保持する。
 """
@@ -659,6 +659,9 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
 # `0` 以下を明示指定した場合は当該コマンドのtimeoutを無効化する。
 # `>0` の場合は秒数を指定する。`per-tool` 値が `-1` 以外なら本値を優先する。
 # 命名は既存の `{command}-args` / `{command}-fast` 系と同パターンに揃える。
+# 別のper-toolキーで「未指定でグローバル値へフォールバック」を表現する場合も同じ `-1`
+# sentinel運用に揃える。`None` 表現はTOML上の素直な記述方法が無く、整数フィールド
+# としての一貫性も崩れるため採用しない。
 # モジュールトップレベルでの `for` ループ変数のスコープ漏れを避けるため関数経由で適用する
 # （pyrightの `reportPossiblyUnboundVariable` 誤検知も同時に回避）。
 def _register_command_timeout_defaults(defaults: dict[str, typing.Any], command_names: list[str]) -> None:
