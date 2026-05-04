@@ -741,9 +741,14 @@ hints = [
 
 ### `~`展開
 
-対応キーは`{command}-path` / `{command}-args` / `{command}-fix-args`（および2段階実行系の`{command}-args`）。
-これらに`~`を含めると、subprocess引数組み立て直前に`os.path.expanduser`で展開する。
+対応キーは以下。
+これらに`~`を含めると、subprocess引数組み立て直前に展開する。
 利用者ホーム配下に置いた個人ツールスクリプトをそのまま参照したい場合に使う。
+
+- `{command}-path`
+- `{command}-args` / `{command}-lint-args` / `{command}-fix-args`
+- `{command}-check-args` / `{command}-write-args`
+- `ruff-format-check-args`
 
 ```toml
 [tool.pyfltr.custom-commands.my-tool]
@@ -752,9 +757,10 @@ path = "uv"
 args = ["run", "--script", "~/dotfiles/scripts/my_tool.py"]
 ```
 
-展開は`os.path.expanduser`の仕様により、各要素の先頭が`~`または`~user`の場合のみ適用される。
-`"--config=~/cfg.toml"`のように要素の途中に`~`を含む形式は展開されないため、
-`["--config", "~/cfg.toml"]`のように分けて指定する運用となる。
+展開規則は2点。
+要素先頭が`~`または`~user`の場合は`os.path.expanduser`で展開する。
+要素内最初の`=`直後の`~`/`~user`も同様に展開する。
+そのため`"--config=~/cfg.toml"`形式と`["--config", "~/cfg.toml"]`の分割形式のどちらでも同じく展開される。
 
 `config-files` / `targets` / `{command}-extend-targets`等のglobパターンには展開を適用しない
 （glob内チルダの意図しない展開を防ぐため）。

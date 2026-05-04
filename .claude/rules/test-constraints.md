@@ -38,6 +38,13 @@
   グローバルな`shutil.which`単独パッチでは適用されないため、
   `monkeypatch.setattr("pyfltr.command.runner.shutil.which", ...)`のように
   モジュールパス単位でターゲットを明示する
+- `pyfltr.command.process.run_subprocess_with_timeout`をmonkeypatchで差し替える場合、
+  戻り値型はテスト用ダミークラスを定義しない。
+  代わりに`pyfltr.command.process.CompletedProcessWithTimeoutInfo`を直接構築する。
+  ダミークラス定義はpylintの`too-few-public-methods`を誘発する。
+  さらにテスト関数内で`class _FakeProc:`のように書くと、
+  モジュール先頭の`import pyfltr`をシャドウして`redefined-outer-name`も併発する。
+  本物の戻り値型を使う方が無難
 - テストでツール解決パス（`shutil.which`戻り値・`commandline[0]`等）と特定ツール名を文字列比較する場合は、
   Windows runnerでは`typos.EXE`のように大文字`.EXE`等の拡張子が付いて返るため、
   `pathlib.Path(<path>).stem == "<tool>"`の形で比較する。
