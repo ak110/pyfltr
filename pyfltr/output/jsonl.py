@@ -16,6 +16,7 @@ import os
 import shlex
 import sys
 import threading
+import time
 import typing
 
 import pyfltr.cli.output_format
@@ -33,6 +34,37 @@ logger = logging.getLogger(__name__)
 # 出力先は`pyfltr.cli.output_format.structured_logger`のhandlerに委ねるが、ログ1件 = 1行の
 # 粒度では複数行のグルーピングを保証できないためモジュール側でロックする。
 _write_lock = threading.Lock()
+
+# パイプライン全体で「最後にJSONL構造化レコードを書き込んだタイミング（time.monotonic）」を保持する。
+# heartbeatタイマーが「最後の出力からの無音時間」判定に使う。
+# 初期値はNone=未出力（プロセス起動直後）。
+# `_write_lock` 配下で更新し、参照側もロック取得して一貫性を保つ。
+# pylint UPPER_CASE規約はモジュールレベルの可変状態変数の意図に合わないため抑止する。
+_last_jsonl_output_time: float | None = None  # pylint: disable=invalid-name
+
+
+def get_last_jsonl_output_time() -> float | None:
+    """`last_jsonl_output_time` を返す（heartbeat監視スレッドからの参照用）。"""
+    with _write_lock:
+        return _last_jsonl_output_time
+
+
+def set_last_jsonl_output_time(value: float) -> None:
+    """`last_jsonl_output_time` を更新する（heartbeat発火後の発火時刻記録用）。"""
+    global _last_jsonl_output_time  # pylint: disable=global-statement  # 単一プロセス内の最終出力時刻SSOT
+    with _write_lock:
+        _last_jsonl_output_time = value
+
+
+def _emit_structured(line: str) -> None:
+    """構造化出力を書き込みつつ、最終出力時刻を更新する。
+
+    呼び出し元はあらかじめ `_write_lock` を取得していること（複数行のアトミック書き込みを担保するため）。
+    """
+    global _last_jsonl_output_time  # pylint: disable=global-statement  # 単一プロセス内の最終出力時刻SSOT
+    pyfltr.cli.output_format.structured_logger.info(line)
+    _last_jsonl_output_time = time.monotonic()
+
 
 _TRUNCATED_MARKER = "\n... (truncated)\n"
 """ハイブリッド切り詰めで先頭ブロックと末尾ブロックの間に挿入する区切りマーカー。
@@ -60,7 +92,7 @@ def build_command_lines(
 
     diagnostic行は`(command, file)`単位で集約され、個別指摘は`messages[]`に並ぶ。
     個別指摘の合計件数が`jsonl-diagnostic-limit`を超える場合は
-    `ErrorLocation`列を先頭N件に絞ってから集約し、
+    `ErrorLocation`列を先頭N件に限定してから集約し、
     commandレコードに`truncated.diagnostics_total`を添付する。
     切り詰めは`result.archived`がTrueのときのみ適用し、Falseの場合は全件出力する
     （アーカイブから復元不能な情報欠落を防ぐため）。
@@ -263,7 +295,7 @@ def write_jsonl_header(
     """
     mise_active_tools = collect_mise_active_tools_for_header(commands, config) if config is not None else None
     with _write_lock:
-        pyfltr.cli.output_format.structured_logger.info(
+        _emit_structured(
             _dump(
                 _build_header_record(
                     commands,
@@ -309,7 +341,28 @@ def write_jsonl_streaming(
     lines = build_command_lines(result, config)
     with _write_lock:
         for line in lines:
-            pyfltr.cli.output_format.structured_logger.info(line)
+            _emit_structured(line)
+
+
+def write_jsonl_running_event(command: str, elapsed: float) -> None:
+    """heartbeat由来の `status:"running"` レコードを構造化出力loggerに即時出力する。
+
+    `command`は実行中コマンド名、`elapsed`はパイプライン側で追跡している
+    `start_time` からの経過秒数（壁時計）。
+    フィールド名は最終commandレコードの`elapsed`と揃え、LLMの自己説明性を高める。
+    パイプライン全体の「最後のJSONL出力からの無音時間」がしきい値を超えた際、
+    実行中コマンドそれぞれについて1件ずつ呼び出される設計。
+    `_emit_structured` 経由で `last_jsonl_output_time` も更新するため、
+    heartbeat発火直後の連続発火は自動的に抑止される。
+    """
+    record: dict[str, typing.Any] = {
+        "kind": "command",
+        "command": command,
+        "status": "running",
+        "elapsed": round(elapsed, 2),
+    }
+    with _write_lock:
+        _emit_structured(_dump(record))
 
 
 def write_jsonl_footer(
@@ -331,8 +384,8 @@ def write_jsonl_footer(
     """
     with _write_lock:
         for warning in warnings or []:
-            pyfltr.cli.output_format.structured_logger.info(_dump(_build_warning_record(warning)))
-        pyfltr.cli.output_format.structured_logger.info(
+            _emit_structured(_dump(_build_warning_record(warning)))
+        _emit_structured(
             _dump(
                 _build_summary_record(
                     results,
@@ -362,7 +415,7 @@ def _build_header_record(
     """実行環境の基本情報をheaderレコードdictとして返す。
 
     `commands`は「実際に実行されるツール集合」（`--only-failed`やdisabledツール除外後）を
-    前提とする。呼び出し側で絞り込み済みの配列を渡すこと。
+    前提とする。呼び出し側でフィルタリング済みの配列を渡すこと。
     `mise_active_tools`は`{"status": ..., "detail": ..., "active_keys": [...]}`形式で渡し、
     指定時のみheaderへ露出する（mise経路を使うrunの自己診断用途）。
     `format_source`は`pyfltr.cli.output_format.FORMAT_SOURCE_*`の値で、出力形式の解決経路を明示する。
@@ -537,6 +590,15 @@ def _build_command_record(
         merged_hints["status.formatted"] = (
             "formatter rewrote files; rerun is not required because the rewrite itself counts as success"
         )
+    # timeout由来の停止はLLMがハング・無限ループを判別するためのキーとなる情報。
+    # 通常のlint failureと区別できるよう専用hintを付与する。
+    # 発行条件は「対応する状態が実際に該当するときのみ」方針に沿い、`timeout_exceeded=True`時のみ。
+    if result.timeout_exceeded:
+        merged_hints["status.timeout"] = (
+            "subprocess was killed because it exceeded the configured timeout;"
+            " inspect command.message for the captured tail and consider adjusting `command-timeout`"
+            " or the per-tool `{command}-timeout`"
+        )
     if merged_hints:
         record["hints"] = merged_hints
     return record
@@ -687,7 +749,7 @@ def _truncate_message(
     ハイブリッド方式は冒頭側にエラー概要を出力するツール（editorconfig-checker等）と
     末尾側にエラー詳細を出力するツール（pytest・mypy等）の双方を救うことを意図する。
     `max_chars`を`head : tail = 1 : 4`（`_DEFAULT_HEAD_RATIO`）で配分し、
-    `max_lines`は末尾側に対してのみ適用する（先頭側は文字数で十分に絞られるため）。
+    `max_lines`は末尾側に対してのみ適用する（先頭側は文字数で十分に制限されるため）。
     `max_lines`/`max_chars`が0以下の場合は当該軸の切り詰めを行わない。
     """
     if not output:

@@ -7,6 +7,7 @@ import shutil
 import signal
 import subprocess
 import threading
+import time
 import typing
 
 import psutil
@@ -71,6 +72,22 @@ class InterruptedExecution(Exception):
     `run_subprocess` が `is_interrupted` コールバックで中断指示を検知した際に送出する。
     呼び出し側（`ui._execute_command`）で捕捉し、当該コマンドを `skipped` 結果として置き換える。
     """
+
+
+class TimeoutExceededExecution(Exception):
+    """`run_subprocess` が `timeout` で指定された秒数を超過して停止されたことを示す例外。
+
+    別スレッドのTimerが `_kill_process_tree` を呼び出してsubprocessを終了させることで、
+    本体ループがEOFに到達して解放される。例外は本体ループ後にflagベースで送出する。
+    途中まで蓄積したstdout出力（`output`）と経過秒数（`elapsed`）を保持し、
+    上位の各 `run_subprocess` 呼び出し経路で `CommandResult(status="failed")` の組み立てに使う。
+    """
+
+    def __init__(self, *, output: str, elapsed: float, timeout: float) -> None:
+        super().__init__(f"timeout exceeded after {timeout:.1f}s (elapsed={elapsed:.1f}s)")
+        self.output = output
+        self.elapsed = elapsed
+        self.timeout = timeout
 
 
 def _kill_process_tree(proc: "subprocess.Popen[str]", *, timeout: float) -> None:
@@ -169,6 +186,22 @@ def _terminate_and_drop(proc: "subprocess.Popen[str]") -> None:
     _DEFAULT_REGISTRY.remove(proc)
 
 
+def _on_timeout(proc: "subprocess.Popen[str]", fired: threading.Event) -> None:
+    """`run_subprocess`のTimerスレッドからsubprocessを強制停止する。
+
+    `fired.set()`で本体ループ後のtimeout検知に使うフラグを立て、その後
+    `_kill_process_tree`でプロセスツリー一式を停止する。
+    `proc`・`fired`は`run_subprocess`内で生成されるリソースで、
+    Timerにキーワード引数として注入される（`functools.partial`相当の役割を
+    `threading.Timer`の`args`/`kwargs`で担う）。
+    `_kill_process_tree`の停止猶予は5.0秒で、`_terminate_and_drop`/`ProcessRegistry.cleanup`等の
+    既存呼び出しと同じ値を採用する。
+    """
+    fired.set()
+    with contextlib.suppress(OSError):
+        _kill_process_tree(proc, timeout=5.0)
+
+
 def run_subprocess(
     commandline: list[str],
     env: dict[str, str],
@@ -177,6 +210,7 @@ def run_subprocess(
     is_interrupted: typing.Callable[[], bool] | None = None,
     on_subprocess_start: typing.Callable[[], None] | None = None,
     on_subprocess_end: typing.Callable[[], None] | None = None,
+    timeout: float | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """サブプロセスの実行 （Popenベース）。
 
@@ -193,14 +227,20 @@ def run_subprocess(
     start後は必ずfinallyでendを呼ぶため、Ctrl+Cスナップショットにフック外の時間帯が
     混入しない。
 
+    `timeout` は壁時計秒数のフェイルセーフ。正の値を渡すと、別スレッドのTimerで経過時間を監視し、
+    超過時に `_kill_process_tree` でsubprocessを停止して `TimeoutExceededExecution` を送出する。
+    `None` または `0` 以下は無効（=既存挙動）。Timerによる停止後はメインの `for line in proc.stdout`
+    ループがEOFを受け取って解放されるため、既存ループの非ブロック化は不要。
+    途中まで蓄積したstdoutと経過秒数は例外オブジェクトに保持し、上位経路でCommandResult組み立てに使う。
+
     Windowsでは `subprocess.Popen` を `shell=False` でリスト渡しにすると
     `.exe` / `.cmd` 等の拡張子付きファイルをPATHから自動解決しないため、
     ここで `shutil.which` を使って `commandline[0]` をフルパスへ解決する。
     引数の `commandline` は書き換えず、Popenに渡す一時リストのみで差し替える
     （CommandResult.commandlineやretry_commandに解決後のフルパスが混入して
     ポータビリティが損なわれるのを避けるため）。解決探索対象PATHはPopenに
-    渡す `env` のPATH値と一致させる（隔離したenvで見えない実行ファイルを
-    起動したり、逆にenvでだけ見える実行ファイルを解決できない事故を避ける）。
+    渡す `env` のPATH値と一致させる（隔離したenvで参照できない実行ファイルを
+    起動したり、逆にenvでのみ参照できる実行ファイルを解決できない事故を避ける）。
     Windowsでは環境変数名が大文字小文字非区別のためenvキーを非依存探索する。
     解決できなかった場合は元のコマンド名のままPopenに渡し、既存の
     FileNotFoundError経路でrc=127の `CompletedProcess` に変換する。
@@ -222,6 +262,11 @@ def run_subprocess(
         popen_extra["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
     else:
         popen_extra["start_new_session"] = True
+    # timeout監視用のフラグとTimer。正の値が指定された場合のみ起動する。
+    timeout_active = timeout is not None and timeout > 0
+    timeout_fired = threading.Event()
+    timer: threading.Timer | None = None
+    start_monotonic = time.monotonic()
     try:
         with subprocess.Popen(
             popen_commandline,
@@ -235,6 +280,7 @@ def run_subprocess(
         ) as proc:
             _DEFAULT_REGISTRY.add(proc)
             subprocess_started = False
+
             try:
                 if on_subprocess_start is not None:
                     on_subprocess_start()
@@ -244,6 +290,12 @@ def run_subprocess(
                 if is_interrupted is not None and is_interrupted():
                     _terminate_and_drop(proc)
                     raise InterruptedExecution
+
+                if timeout_active:
+                    assert timeout is not None
+                    timer = threading.Timer(timeout, _on_timeout, args=(proc, timeout_fired))
+                    timer.daemon = True
+                    timer.start()
 
                 output_lines: list[str] = []
                 assert proc.stdout is not None
@@ -256,12 +308,21 @@ def run_subprocess(
                     if on_output is not None:
                         on_output(line)
                 proc.wait()
+                if timeout_fired.is_set():
+                    assert timeout is not None
+                    raise TimeoutExceededExecution(
+                        output="".join(output_lines),
+                        elapsed=time.monotonic() - start_monotonic,
+                        timeout=timeout,
+                    )
                 return subprocess.CompletedProcess(
                     args=commandline,
                     returncode=proc.returncode,
                     stdout="".join(output_lines),
                 )
             finally:
+                if timer is not None:
+                    timer.cancel()
                 if subprocess_started and on_subprocess_end is not None:
                     on_subprocess_end()
                 _DEFAULT_REGISTRY.remove(proc)
@@ -274,3 +335,80 @@ def run_subprocess(
             returncode=127,
             stdout=message,
         )
+
+
+# timeout超過時に `CompletedProcess.returncode` として採用する値。
+# POSIX慣習でtimeout停止に使われる124を踏襲し、シェル経由のtimeout(1)等と整合させる。
+TIMEOUT_RETURNCODE: int = 124
+
+
+class CompletedProcessWithTimeoutInfo(subprocess.CompletedProcess[str]):  # pylint: disable=too-few-public-methods
+    """`run_subprocess_with_timeout` の戻り値型。
+
+    `subprocess.CompletedProcess[str]` を継承し、timeout超過判定フラグを保持する。
+    呼び出し側が `CommandResult.timeout_exceeded` を組み立てるために参照する。
+    属性追加目的の最小限の継承で、メソッドは増やさない方針。
+    """
+
+    timeout_exceeded: bool
+
+    def __init__(
+        self,
+        *,
+        args: list[str] | tuple[str, ...],
+        returncode: int,
+        stdout: str,
+        timeout_exceeded: bool = False,
+    ) -> None:
+        super().__init__(args=args, returncode=returncode, stdout=stdout)
+        self.timeout_exceeded = timeout_exceeded
+
+
+def run_subprocess_with_timeout(
+    commandline: list[str],
+    env: dict[str, str],
+    on_output: typing.Callable[[str], None] | None = None,
+    *,
+    is_interrupted: typing.Callable[[], bool] | None = None,
+    on_subprocess_start: typing.Callable[[], None] | None = None,
+    on_subprocess_end: typing.Callable[[], None] | None = None,
+    timeout: float | None = None,
+) -> CompletedProcessWithTimeoutInfo:
+    """`run_subprocess` のtimeout例外を捕捉して`CompletedProcess`相当に変換する共通wrapper。
+
+    timeout超過時は `returncode=TIMEOUT_RETURNCODE` (=124) と `timeout_exceeded=True` をセットし、
+    途中まで蓄積したstdout末尾に英文の `Timeout exceeded after Ns` 注記を1行追記して返す。
+    既存の各 `run_subprocess` 呼び出し経路では `returncode != 0 → has_error=True/failed`
+    に分岐する流れを変えずにtimeout検知を取り込めるようにする。
+    `InterruptedExecution` は捕捉せずに上位へ伝播させる（TUI協調停止の責務は呼び出し側）。
+
+    `_kill_process_tree` でsubprocessを停止した後の経過秒数は途中outputに数値として残らないため、
+    付加メッセージでLLMが「timeoutで停止した」ことを把握できるよう、英文注記も同時に追記する。
+    """
+    try:
+        proc = run_subprocess(
+            commandline,
+            env,
+            on_output,
+            is_interrupted=is_interrupted,
+            on_subprocess_start=on_subprocess_start,
+            on_subprocess_end=on_subprocess_end,
+            timeout=timeout,
+        )
+    except TimeoutExceededExecution as e:
+        message = f"\nTimeout exceeded after {e.timeout:.1f}s (elapsed={e.elapsed:.1f}s)\n"
+        if on_output is not None:
+            on_output(message)
+        combined_output = e.output + message
+        return CompletedProcessWithTimeoutInfo(
+            args=commandline,
+            returncode=TIMEOUT_RETURNCODE,
+            stdout=combined_output,
+            timeout_exceeded=True,
+        )
+    return CompletedProcessWithTimeoutInfo(
+        args=commandline,
+        returncode=proc.returncode,
+        stdout=proc.stdout,
+        timeout_exceeded=False,
+    )

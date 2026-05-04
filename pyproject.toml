@@ -29,6 +29,7 @@ dependencies = [
     "pylint>=3.0",
     "pyright[nodejs]>=1.1.403",
     "pytest-asyncio>=1.0.0",
+    "pytest-timeout>=2",
     "pytest>=7.0",
     "python-ulid>=3.0",
     "pyyaml>=6.0.3",
@@ -152,7 +153,7 @@ hte = "hte"
 
 [tool.pytest.ini_options]
 # https://docs.pytest.org/en/latest/reference/reference.html#ini-options-ref
-addopts = "--showlocals -p no:cacheprovider --maxfail=5 --durations=30 --durations-min=0.5"
+addopts = "--showlocals -p no:cacheprovider --maxfail=5 --durations=30 --durations-min=0.5 --timeout=60"
 log_level = "DEBUG"
 xfail_strict = true
 asyncio_mode = "strict"

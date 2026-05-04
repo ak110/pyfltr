@@ -36,6 +36,7 @@ def execute_glab_ci_lint(
     command_info: pyfltr.config.config.CommandInfo,
     commandline: list[str],
     targets: list[pathlib.Path],
+    config: pyfltr.config.config.Config,
     env: dict[str, str],
     on_output: typing.Callable[[str], None] | None,
     start_time: float,
@@ -54,13 +55,14 @@ def execute_glab_ci_lint(
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(commandline)}\n")
 
-    proc = pyfltr.command.process.run_subprocess(
+    proc = pyfltr.command.process.run_subprocess_with_timeout(
         commandline,
         glab_env,
         on_output,
         is_interrupted=is_interrupted,
         on_subprocess_start=on_subprocess_start,
         on_subprocess_end=on_subprocess_end,
+        timeout=pyfltr.config.config.resolve_command_timeout(config.values, command),
     )
     returncode = proc.returncode
     output = proc.stdout.strip()
@@ -90,4 +92,5 @@ def execute_glab_ci_lint(
         elapsed=elapsed,
         files=len(targets),
         errors=errors,
+        timeout_exceeded=proc.timeout_exceeded,
     )

@@ -20,6 +20,8 @@ import pathlib
 import shlex
 import subprocess
 import sys
+import threading
+import time
 import typing
 
 import pyfltr.cli.output_format
@@ -31,6 +33,7 @@ import pyfltr.command.process
 import pyfltr.command.targets
 import pyfltr.config.config
 import pyfltr.output.formatters
+import pyfltr.output.jsonl
 import pyfltr.output.ui
 import pyfltr.state.archive
 import pyfltr.state.cache
@@ -49,6 +52,136 @@ structured_logger = pyfltr.cli.output_format.structured_logger
 lock = pyfltr.cli.output_format.text_output_lock
 
 
+# heartbeat監視の発火しきい値（秒）。
+# パイプライン全体の「最後のJSONL出力からの経過時間」がこの値を超えると、
+# 実行中コマンドそれぞれに対して `status:"running"` レコードを発行する。
+# 設定キー化は複雑度を増やすだけで利用頻度が低いため固定値とする。
+_HEARTBEAT_THRESHOLD_SECONDS: float = 30.0
+"""heartbeat発火しきい値（最後のJSONL出力からの無音時間、秒）。"""
+
+_HEARTBEAT_TICK_INTERVAL: float = 5.0
+"""heartbeat監視ループの判定間隔（秒）。
+
+しきい値より細かく刻むことで、しきい値超過の検知遅れを最大 `_HEARTBEAT_TICK_INTERVAL` 秒に抑える。
+発火自体は最終出力からの経過時間で判定するため、本値は「監視解像度」の調整値。
+"""
+
+
+class HeartbeatMonitor:
+    """パイプライン全体のheartbeat監視。
+
+    別スレッドで一定間隔ループし、`pyfltr.output.jsonl.get_last_jsonl_output_time()` から
+    最終JSONL出力時刻を取得して経過時間を判定する。しきい値超過時は実行中コマンド集合
+    （`{command_name -> start_time}`）から各commandへ `status:"running"` レコードを発行する。
+    text_loggerにも発火を残し、人間向け表示でも進捗が確認できるようにする。
+
+    `start()` / `stop()` を `run_pipeline` の入口・出口で呼ぶ。
+    `on_command_start(command)` / `on_command_end(command)` は subprocess の開始・終了に
+    フックして登録・削除する。並列実行下のアクセスは `_lock` で保護する。
+    """
+
+    def __init__(
+        self,
+        *,
+        threshold: float = _HEARTBEAT_THRESHOLD_SECONDS,
+        tick_interval: float = _HEARTBEAT_TICK_INTERVAL,
+        emit_running: typing.Callable[[str, float], None] | None = None,
+        emit_text: typing.Callable[[str], None] | None = None,
+        get_last_output_time: typing.Callable[[], float | None] | None = None,
+        set_last_output_time: typing.Callable[[float], None] | None = None,
+    ) -> None:
+        self._threshold = threshold
+        self._tick_interval = tick_interval
+        self._emit_running = emit_running or pyfltr.output.jsonl.write_jsonl_running_event
+        self._emit_text = emit_text or _heartbeat_text_emit
+        self._get_last_output_time = get_last_output_time or pyfltr.output.jsonl.get_last_jsonl_output_time
+        self._set_last_output_time = set_last_output_time or pyfltr.output.jsonl.set_last_jsonl_output_time
+        self._lock = threading.Lock()
+        self._running: dict[str, float] = {}
+        self._stop_event = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        """監視スレッドを起動する。`stop()` 呼び出しまで非daemon相当でループする。
+
+        起動時点を初期最終出力時刻として常時上書きする。
+        モジュールグローバルな`_last_jsonl_output_time`は同一プロセスで`run_pipeline`が
+        複数回呼ばれるMCP経路で前回値が残存し得るため、毎回起動時に明示的に上書きする
+        （未初期化判定では2回目以降の起動で前回値がそのまま使われ、
+        起動直後にしきい値超過とみなされる誤発火を招く）。
+        """
+        if self._thread is not None:
+            return
+        self._set_last_output_time(time.monotonic())
+        self._stop_event.clear()
+        thread = threading.Thread(target=self._loop, name="pyfltr-heartbeat", daemon=True)
+        self._thread = thread
+        thread.start()
+
+    def stop(self) -> None:
+        """監視スレッドを停止する。"""
+        if self._thread is None:
+            return
+        self._stop_event.set()
+        self._thread.join(timeout=self._tick_interval * 2)
+        self._thread = None
+
+    def on_command_start(self, command: str) -> None:
+        """実行中コマンド集合に追加する。"""
+        with self._lock:
+            self._running[command] = time.monotonic()
+
+    def on_command_end(self, command: str) -> None:
+        """実行中コマンド集合から削除する。"""
+        with self._lock:
+            self._running.pop(command, None)
+
+    def _snapshot_running(self) -> list[tuple[str, float]]:
+        """現時点の実行中コマンドのリスト（command, start_time）を返す。"""
+        with self._lock:
+            return list(self._running.items())
+
+    def _loop(self) -> None:
+        """監視ループ本体。`_tick_interval` 毎にしきい値判定を行う。"""
+        while not self._stop_event.wait(self._tick_interval):
+            self.tick(time.monotonic())
+
+    def tick(self, now: float) -> None:
+        """1回分の判定。しきい値超過なら実行中各コマンドへrunningイベントを発行する。
+
+        テストから時刻依存の発火検証を行うためpublic APIとして公開する。
+        通常運用では`_loop`から自動的に呼ばれる。
+        """
+        last_output = self._get_last_output_time()
+        if last_output is None:
+            return
+        silence = now - last_output
+        if silence <= self._threshold:
+            return
+        running = self._snapshot_running()
+        if not running:
+            # 実行中コマンドが無ければheartbeat発行しても意味が無いため抑止する。
+            # ただし無音時間カウンタは更新して連続ティックでの再判定を抑える。
+            self._set_last_output_time(now)
+            return
+        for command, started in running:
+            elapsed = now - started
+            self._emit_text(f"{command} running for {elapsed:.0f}s (no JSONL output for {silence:.0f}s)")
+            self._emit_running(command, elapsed)
+        # heartbeat発火後、`_emit_running`内の `_emit_structured` で `last_jsonl_output_time` が
+        # 自動的に更新されるため、明示更新は不要。次の判定はそこから再びしきい値経過後に発火する。
+
+
+def _heartbeat_text_emit(message: str) -> None:
+    """heartbeat発火時のtext_logger経由warning出力。
+
+    text_loggerはoutput_formatごとに出力先（stdout/stderr）が切り替わるため、
+    本関数はその差分を吸収する単純なラッパー。
+    """
+    with lock:
+        text_logger.warning(message)
+
+
 def run_commands_with_cli(
     commands: list[str],
     args: argparse.Namespace,
@@ -60,6 +193,7 @@ def run_commands_with_cli(
     archive_hook: typing.Callable[[pyfltr.command.core_.CommandResult], None] | None = None,
     fail_fast: bool = False,
     only_failed_targets: dict[str, pyfltr.state.only_failed.ToolTargets] | None = None,
+    heartbeat: HeartbeatMonitor | None = None,
 ) -> list[pyfltr.command.core_.CommandResult]:
     """コマンドを実行する (非 TUI)。
 
@@ -108,6 +242,7 @@ def run_commands_with_cli(
             per_command_log=per_command_log,
             fix_stage=True,
             only_failed_targets=pyfltr.command.targets.pick_targets(only_failed_targets, command),
+            heartbeat=heartbeat,
         )
         if archive_hook is not None and not fix_result.cached:
             archive_hook(fix_result)
@@ -128,6 +263,7 @@ def run_commands_with_cli(
             base_ctx,
             per_command_log=per_command_log,
             only_failed_targets=pyfltr.command.targets.pick_targets(only_failed_targets, command),
+            heartbeat=heartbeat,
         )
         results.append(result)
         if archive_hook is not None and not result.cached:
@@ -155,6 +291,7 @@ def run_commands_with_cli(
                     base_ctx,
                     per_command_log=per_command_log,
                     only_failed_targets=pyfltr.command.targets.pick_targets(only_failed_targets, command),
+                    heartbeat=heartbeat,
                 ): command
                 for command in linters_and_testers
             }
@@ -216,21 +353,39 @@ def _run_one_command(
     per_command_log: bool,
     fix_stage: bool = False,
     only_failed_targets: pyfltr.state.only_failed.ToolTargets | None = None,
+    heartbeat: HeartbeatMonitor | None = None,
 ) -> pyfltr.command.core_.CommandResult:
     """1 コマンドの実行。
 
     `per_command_log=True`ならば完了直後に詳細ログを`write_log()`で出力する。
     それ以外は開始/完了の1行進捗のみ出力する。
+    `heartbeat` が指定された場合、subprocess起動・終了に合わせて実行中コマンド集合を更新し、
+    パイプラインheartbeatの追跡対象に含める。
     """
     # serial_groupを持つコマンドは同一グループ内で排他実行される（cargo / dotnet等）
     with pyfltr.state.executor.serial_group_lock(base_ctx.config.commands[command].serial_group):
         with lock:
             suffix = " (fix)" if fix_stage else ""
             text_logger.info(f"{command}{suffix} 実行中です...")
+        on_start: typing.Callable[[], None] | None = None
+        on_end: typing.Callable[[], None] | None = None
+        if heartbeat is not None:
+
+            def _on_start(_command: str = command) -> None:
+                # type checkerにcaptureを明示するためデフォルト引数で固定する。
+                heartbeat.on_command_start(_command)
+
+            def _on_end(_command: str = command) -> None:
+                heartbeat.on_command_end(_command)
+
+            on_start = _on_start
+            on_end = _on_end
         ctx = pyfltr.command.core_.ExecutionContext(
             base=base_ctx,
             fix_stage=fix_stage,
             only_failed_targets=only_failed_targets,
+            on_subprocess_start=on_start,
+            on_subprocess_end=on_end,
         )
         result = pyfltr.command.dispatcher.execute_command(command, args, ctx)
         if per_command_log:
@@ -321,8 +476,8 @@ def run_pipeline(
         formatter.on_finish(early_run_ctx, [], 1, pyfltr.warnings_.collected_warnings())
         return 1, None
 
-    # --changed-since指定時はgit差分ファイルとの交差に絞り込む。
-    # --only-failedよりも先に適用し、以後のフィルタは絞り込み済みリストを受け取る。
+    # --changed-since指定時はgit差分ファイルとの交差でフィルタリングする。
+    # --only-failedよりも先に適用し、以後のフィルタはフィルタリング済みリストを受け取る。
     changed_since_ref: str | None = getattr(args, "changed_since", None)
     if changed_since_ref is not None:
         all_files = pyfltr.command.targets.filter_by_changed_since(all_files, changed_since_ref)
@@ -336,7 +491,7 @@ def run_pipeline(
         return 0, None
 
     # 実行対象として有効化されていないコマンドはパイプラインから除外する。
-    # split_commands_for_executionと同じ条件 （`config.values.get(cmd) is True`） で絞り込み、
+    # split_commands_for_executionと同じ条件 （`config.values.get(cmd) is True`） でフィルタリングし、
     # JSONL header・実行アーカイブ・formatter ctxへ渡すcommandsを「実際に実行されるもの」に統一する。
     commands = [c for c in commands if config.values.get(c) is True]
 
@@ -410,7 +565,7 @@ def run_pipeline(
 
     # retry_commandをCommandResultに埋めるためのヘルパー。
     # archive_hookと同じタイミング （各ツール完了時） に呼ばれるon_result経路へ挿入する。
-    # 実装本体は `_populate_retry_command` （A案の失敗ファイル絞り込み・cached
+    # 実装本体は `_populate_retry_command` （A案の失敗ファイルフィルタリング・cached
     # 判定を含む） に委譲し、クロージャ変数をキーワード引数で引き渡す。
     def _attach_retry_command(result: pyfltr.command.core_.CommandResult) -> None:
         pyfltr.state.retry.populate_retry_command(
@@ -454,6 +609,18 @@ def run_pipeline(
     )
 
     formatter.on_start(ctx)
+
+    # heartbeat監視の起動。
+    # `jsonl`形式のときに限定して起動する。
+    # `sarif`・`code-quality`はbufferingformatter（`on_finish`で単一JSONドキュメントを一括出力）のため、
+    # 途中で`status:"running"`レコードを混入させると最終的な出力（SARIF 2.1.0オブジェクト・
+    # Code Climate JSON配列）が壊れる。
+    # `text`等のJSONLレコードが流れない出力形式ではheartbeatの観測対象が成立しない。
+    # TUI経路はUIに進捗表示があるため別途heartbeat不要。
+    heartbeat: HeartbeatMonitor | None = None
+    if output_format == "jsonl" and not use_ui:
+        heartbeat = HeartbeatMonitor()
+        heartbeat.start()
 
     # 各ツール完了時のフック順序:
     #   1. _attach_retry_command(result) → retry_commandをresultに付与
@@ -502,8 +669,13 @@ def run_pipeline(
             archive_hook=composed_hook,
             fail_fast=fail_fast,
             only_failed_targets=only_failed_targets,
+            heartbeat=heartbeat,
         )
         returncode = 0
+
+    # heartbeat監視の停止（成果物書き込み前に確実に停止する）。
+    if heartbeat is not None:
+        heartbeat.stop()
 
     # returncodeを先に確定させる （render_resultsに渡してJSONL summary.exitに埋めるため）
     # TUIのCtrl+C協調停止は `run_commands_with_ui` から130 （SIGINT慣例） を返す。
@@ -632,7 +804,7 @@ def run_impl(
 
     # --from-runは--only-failedとの併用が必須。
     # 単独利用を許可しない理由: --from-run単独ではdiagnostic参照は行われず、
-    # 「再実行対象を指定runの失敗ツールに絞り込む」という本来の意味を持たない。
+    # 「再実行対象を指定runの失敗ツールに限定する」という本来の意味を持たない。
     # argparse段階で拒否することでユーザーに正しい併用形を即座に提示できる。
     if getattr(args, "from_run", None) is not None and not getattr(args, "only_failed", False):
         parser.error("argument --from-run: requires --only-failed")

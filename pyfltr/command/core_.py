@@ -148,6 +148,13 @@ class CommandResult:
     `explicit` / `default` / `path-override` のいずれかで、`{command}-runner` の決定経緯を示す。
     `effective_runner` と同じくJSONL commandレコードの `runner_source` フィールドへ露出する。
     """
+    timeout_exceeded: bool = False
+    """`{command}-timeout` で指定された壁時計上限を超過してsubprocessが停止されたか。
+
+    `True` のとき `status` は `failed` を取り、JSONL `command.hints` に `status.timeout`
+    相当の英文注記を1件付与する。利用者・LLMがハング由来の失敗と通常のlint failureを
+    区別できるようにするためのフラグ。
+    """
 
     @classmethod
     # from_run は各コマンド実行モジュール（linter_fix / textlint_fix 等）で同様の引数転送パターンを持つため重複検知される
@@ -165,12 +172,14 @@ class CommandResult:
         errors: "list[pyfltr.command.error_parser.ErrorLocation] | None" = None,
         command_type: str | None = None,
         resolution_failed: bool = False,
+        timeout_exceeded: bool = False,
     ) -> "CommandResult":
         """実行結果からCommandResultを組み立てるファクトリメソッド。
 
         `command_type` を省略した場合は `command_info.type` を使う。
         `command_type` と `command_info` の両方を省略することはできない。
         `errors` を省略した場合は空リストを使う（parse_errorsの呼び出しは呼び出し側で行う）。
+        `timeout_exceeded=True` を指定すると当該結果がtimeout由来の失敗であることを示す。
         """
         resolved_type: str
         if command_type is None:
@@ -189,6 +198,7 @@ class CommandResult:
             elapsed=elapsed,
             errors=errors if errors is not None else [],
             resolution_failed=resolution_failed,
+            timeout_exceeded=timeout_exceeded,
         )
 
     @property
@@ -198,13 +208,20 @@ class CommandResult:
 
     @property
     def status(self) -> str:
-        """ステータスの文字列を返す。"""
+        """ステータスの文字列を返す。
+
+        `timeout_exceeded=True`の場合、`command_type`がformatterであっても`failed`を返す。
+        timeoutで強制停止された結果を成功扱い（`formatted`）にしてしまうと、
+        利用者・LLMがハング由来の停止と通常のformatter書き換えを区別できなくなるため。
+        """
         if self.resolution_failed:
             return "resolution_failed"
         if self.returncode is None:
             status = "skipped"
         elif self.returncode == 0:
             status = "succeeded"
+        elif self.timeout_exceeded:
+            status = "failed"
         elif self.command_type == "formatter" and not self.has_error:
             status = "formatted"
         else:

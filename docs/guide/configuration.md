@@ -97,6 +97,10 @@ cache-max-age-hours = 24
 - pylint-pydantic : pylint実行時に`--load-plugins=pylint_pydantic`を自動追加するか（既定: `true`、後述）
 - mypy-unused-awaitable : mypy実行時に`--enable-error-code=unused-awaitable`を自動追加するか（既定: `true`、後述）
 - jobs : linters/testersの最大並列数（既定: 4。CLIの`-j`オプションでも指定可能）
+- command-timeout : コマンド単体のタイムアウト秒数のグローバル既定値（既定: 600秒。0で無効化）
+- {command}-timeout : per-toolのタイムアウト秒数。未指定時は`command-timeout`のグローバル値にフォールバックする。
+  正の秒数を指定すると当該コマンドのみその値で上書きし、`0`を指定すると当該コマンドのtimeoutのみ無効化する。
+  内部的には負値を「未指定」のsentinelとして扱うため、誤って負値を設定した場合もグローバル値へフォールバックする
 - exclude : 除外するファイル名/ディレクトリ名パターン（既定値あり）
 - extend-exclude : 追加で除外するファイル名/ディレクトリ名パターン（既定は空）
 - respect-gitignore : `.gitignore`に記載されたファイルを除外するか否か（既定: `true`）。

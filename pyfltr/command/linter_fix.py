@@ -9,6 +9,7 @@ import typing
 
 import pyfltr.command.error_parser
 import pyfltr.command.process
+import pyfltr.config.config
 from pyfltr.command.core_ import CommandResult
 from pyfltr.command.snapshot import changed_files, snapshot_file_digests
 
@@ -20,6 +21,7 @@ def execute_linter_fix(
     command_info: "typing.Any",
     commandline: list[str],
     targets: list[pathlib.Path],
+    config: pyfltr.config.config.Config,
     env: dict[str, str],
     on_output: typing.Callable[[str], None] | None,
     start_time: float,
@@ -46,13 +48,14 @@ def execute_linter_fix(
 
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(commandline)}\n")
-    proc = pyfltr.command.process.run_subprocess(
+    proc = pyfltr.command.process.run_subprocess_with_timeout(
         commandline,
         env,
         on_output,
         is_interrupted=is_interrupted,
         on_subprocess_start=on_subprocess_start,
         on_subprocess_end=on_subprocess_end,
+        timeout=pyfltr.config.config.resolve_command_timeout(config.values, command),
     )
     returncode = proc.returncode
     output = proc.stdout.strip()
@@ -81,6 +84,7 @@ def execute_linter_fix(
         output=output,
         elapsed=elapsed,
         errors=errors,
+        timeout_exceeded=proc.timeout_exceeded,
     )
     if not has_error and changed:
         result.fixed_files = changed_files(digests_before, digests_after)

@@ -83,13 +83,15 @@ def execute_textlint_fix(
 
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(step1_commandline)}\n")
-    step1_proc = pyfltr.command.process.run_subprocess(
+    timeout = pyfltr.config.config.resolve_command_timeout(config.values, command)
+    step1_proc = pyfltr.command.process.run_subprocess_with_timeout(
         step1_commandline,
         env,
         on_output,
         is_interrupted=is_interrupted,
         on_subprocess_start=on_subprocess_start,
         on_subprocess_end=on_subprocess_end,
+        timeout=timeout,
     )
     step1_rc = step1_proc.returncode
     # rc=0 （違反なし） / rc=1 （違反残存） は通常終了、rc>=2は致命的エラー扱い
@@ -110,13 +112,14 @@ def execute_textlint_fix(
 
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(step2_commandline)}\n")
-    step2_proc = pyfltr.command.process.run_subprocess(
+    step2_proc = pyfltr.command.process.run_subprocess_with_timeout(
         step2_commandline,
         env,
         on_output,
         is_interrupted=is_interrupted,
         on_subprocess_start=on_subprocess_start,
         on_subprocess_end=on_subprocess_end,
+        timeout=timeout,
     )
     step2_rc = step2_proc.returncode
     step2_fatal = step2_rc >= 2
@@ -128,6 +131,7 @@ def execute_textlint_fix(
     errors = pyfltr.command.error_parser.parse_errors(command, output, command_info.error_pattern)
 
     # ステータス判定
+    timeout_exceeded = step1_proc.timeout_exceeded or step2_proc.timeout_exceeded
     if step1_fatal or step2_fatal:
         has_error = True
         returncode: int = step1_rc if step1_fatal else step2_rc
@@ -156,6 +160,7 @@ def execute_textlint_fix(
         output=output,
         elapsed=elapsed,
         errors=errors,
+        timeout_exceeded=timeout_exceeded,
     )
     if not has_error and step1_changed:
         result.fixed_files = changed_files(digests_before, digests_after_step1)

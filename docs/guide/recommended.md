@@ -72,13 +72,27 @@ show_error_codes = true
 
 [tool.pytest.ini_options]
 # https://docs.pytest.org/en/latest/reference/reference.html#ini-options-ref
-addopts = "--showlocals -p no:cacheprovider --maxfail=5 --durations=30 --durations-min=0.5"
+addopts = "--showlocals -p no:cacheprovider --maxfail=5 --durations=30 --durations-min=0.5 --timeout=60"
 log_level = "DEBUG"
 xfail_strict = true
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
 ```
+
+`--timeout=60`は`pytest-timeout`プラグインが必要。
+ランナー別の有効条件は次の通り。
+
+- `python-runner = "direct"`経路では、pyfltrのvenv配下のpytestを直接起動するため
+  本体依存の`pytest-timeout`がそのまま利用できる。
+- `uvx pyfltr`を`uv.lock`不在のディレクトリで実行する標準シナリオでは、`uv`経路の前提が満たされず
+  `shutil.which`によるdirectフォールバックが発生する。
+  この場合もpyfltrの本体venv同梱のpytestが採用されるため本体依存の`pytest-timeout`が有効。
+- `uv`経路（既定）でcwdの`uv.lock`にpytestが登録されている場合は、利用者プロジェクトのvenvで
+  pytestが解決される。
+  プロジェクトに`pytest-timeout`を導入していない場合は別途導入が必要（例: `uv add --dev pytest-timeout`）。
+- `uvx`経路（per-tool直接指定でpytest用の独立環境が生成される場合）は、
+  当該環境側への`pytest-timeout`の導入が別途必要。
 
 ### typosの許可語設定
 
@@ -167,7 +181,7 @@ sequenceDiagram
 ## タスクランナー
 
 pyfltrを呼び出すタスクランナーの設定例。
-言語を問わず`uvx pyfltr`を使える。
+言語を問わず`uvx pyfltr`を利用できる。
 pre-commitはpyfltrの依存に含まれるため、`uvx pre-commit`で利用可能になる。
 
 ### Makefile
@@ -401,7 +415,7 @@ jobs:
 
 ### Dockerイメージを使わない場合（setup-uv方式）
 
-自前runner制約等でDockerイメージを使えない場合は、`astral-sh/setup-uv`でuvを導入し、Node.js / pnpmを別途セットアップする。
+自前runner制約等でDockerイメージを使用できない場合は、`astral-sh/setup-uv`でuvを導入し、Node.js / pnpmを別途セットアップする。
 `UV_FROZEN`・`PYTHONDEVMODE`等の環境変数や`pnpm config set minimum-release-age 1440`は
 ワークフロー側で個別指定する必要がある（Dockerイメージでは事前設定済み）。
 
@@ -436,14 +450,14 @@ jobs:
 ### PRの差分ファイルのみを対象にする
 
 PR（プルリクエスト）で変更したファイルだけを対象に実行したい場合は`--changed-since`を使う。
-ベースブランチとの差分ファイルのみにチェックを絞ることで、大規模リポジトリでの実行時間を短縮できる。
+ベースブランチとの差分ファイルのみにチェック対象を限定することで、大規模リポジトリでの実行時間を短縮できる。
 
 ```yaml
       - name: Test with pyfltr (changed files only)
         run: uvx pyfltr ci --changed-since=origin/main --output-format=github-annotations
 ```
 
-`--changed-since=origin/main`は`origin/main`からの差分ファイルに絞り込んで実行する。
+`--changed-since=origin/main`は`origin/main`からの差分ファイルに限定して実行する。
 対象は`git diff --name-only`が返すコミット差分・trackedファイルの作業ツリー差分・staged差分の和集合となり、
 untrackedの新規ファイルは対象外。
 gitが不在またはrefが解決できない場合は警告を出力して全体実行へフォールバックする。

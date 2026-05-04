@@ -55,6 +55,7 @@ def execute_ruff_format_two_step(
         env=env,
         args=args,
         start_time=start_time,
+        timeout=pyfltr.config.config.resolve_command_timeout(config.values, command),
         is_interrupted=is_interrupted,
         on_output=on_output,
         on_subprocess_start=on_subprocess_start,
@@ -72,6 +73,7 @@ def _run_ruff_two_step(
     args: argparse.Namespace,
     start_time: float,
     *,
+    timeout: float | None,
     is_interrupted: typing.Callable[[], bool] | None = None,
     on_output: typing.Callable[[str], None] | None = None,
     on_subprocess_start: typing.Callable[[], None] | None = None,
@@ -88,13 +90,14 @@ def _run_ruff_two_step(
 
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(check_commandline)}\n")
-    step1_proc = pyfltr.command.process.run_subprocess(
+    step1_proc = pyfltr.command.process.run_subprocess_with_timeout(
         check_commandline,
         env,
         on_output,
         is_interrupted=is_interrupted,
         on_subprocess_start=on_subprocess_start,
         on_subprocess_end=on_subprocess_end,
+        timeout=timeout,
     )
     step1_rc = step1_proc.returncode
     step1_failed = step1_rc >= 2  # exit 0/1は無視、2以上（abrupt termination）のみ失敗扱い
@@ -104,13 +107,14 @@ def _run_ruff_two_step(
     # ステップ2実行（常に実行）
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(format_commandline)}\n")
-    step2_proc = pyfltr.command.process.run_subprocess(
+    step2_proc = pyfltr.command.process.run_subprocess_with_timeout(
         format_commandline,
         env,
         on_output,
         is_interrupted=is_interrupted,
         on_subprocess_start=on_subprocess_start,
         on_subprocess_end=on_subprocess_end,
+        timeout=timeout,
     )
     step2_rc = step2_proc.returncode
     step2_formatted = step2_rc == 1
@@ -121,6 +125,7 @@ def _run_ruff_two_step(
     elapsed = time.perf_counter() - start_time
 
     # 最終判定
+    timeout_exceeded = step1_proc.timeout_exceeded or step2_proc.timeout_exceeded
     has_error = step1_failed or step2_failed
     if has_error:
         returncode: int = step1_rc if step1_failed else step2_rc
@@ -143,6 +148,7 @@ def _run_ruff_two_step(
         output=output,
         elapsed=elapsed,
         errors=errors,
+        timeout_exceeded=timeout_exceeded,
     )
     if not has_error and (step1_changed or step2_formatted):
         # digests_beforeはStep1前のスナップショット（関数冒頭で取得済み）。
@@ -203,6 +209,7 @@ def execute_check_write_two_step(
         [str(t) for t in targets],
     )
 
+    timeout = pyfltr.config.config.resolve_command_timeout(config.values, command)
     if fix_mode:
         return _run_fix_mode(
             command=command,
@@ -212,6 +219,7 @@ def execute_check_write_two_step(
             env=env,
             args=args,
             start_time=start_time,
+            timeout=timeout,
             parse_errors=False,
             is_interrupted=is_interrupted,
             on_output=on_output,
@@ -228,6 +236,7 @@ def execute_check_write_two_step(
         env=env,
         args=args,
         start_time=start_time,
+        timeout=timeout,
         is_interrupted=is_interrupted,
         on_output=on_output,
         on_subprocess_start=on_subprocess_start,
@@ -245,6 +254,7 @@ def _run_check_then_write(
     args: argparse.Namespace,
     start_time: float,
     *,
+    timeout: float | None,
     is_interrupted: typing.Callable[[], bool] | None = None,
     on_output: typing.Callable[[str], None] | None = None,
     on_subprocess_start: typing.Callable[[], None] | None = None,
@@ -260,13 +270,14 @@ def _run_check_then_write(
     digests_before = snapshot_file_digests(targets)
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(check_commandline)}\n")
-    check_proc = pyfltr.command.process.run_subprocess(
+    check_proc = pyfltr.command.process.run_subprocess_with_timeout(
         check_commandline,
         env,
         on_output,
         is_interrupted=is_interrupted,
         on_subprocess_start=on_subprocess_start,
         on_subprocess_end=on_subprocess_end,
+        timeout=timeout,
     )
     check_rc = check_proc.returncode
 
@@ -282,18 +293,37 @@ def _run_check_then_write(
             files=len(targets),
             output=output,
             elapsed=elapsed,
+            timeout_exceeded=check_proc.timeout_exceeded,
+        )
+
+    # check段でtimeout超過した場合はStep2をスキップして即座にfailedを返す
+    # （同じハングが再現する確率が高く、検証時間を浪費するため）。
+    if check_proc.timeout_exceeded:
+        output = check_proc.stdout.strip()
+        elapsed = time.perf_counter() - start_time
+        return CommandResult.from_run(
+            command=command,
+            command_info=command_info,
+            commandline=check_commandline,
+            returncode=check_rc,
+            has_error=True,
+            files=len(targets),
+            output=output,
+            elapsed=elapsed,
+            timeout_exceeded=True,
         )
 
     # Step2: 書き込み
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(write_commandline)}\n")
-    write_proc = pyfltr.command.process.run_subprocess(
+    write_proc = pyfltr.command.process.run_subprocess_with_timeout(
         write_commandline,
         env,
         on_output,
         is_interrupted=is_interrupted,
         on_subprocess_start=on_subprocess_start,
         on_subprocess_end=on_subprocess_end,
+        timeout=timeout,
     )
     output = write_proc.stdout.strip()
     elapsed = time.perf_counter() - start_time
@@ -310,6 +340,7 @@ def _run_check_then_write(
         files=len(targets),
         output=check_proc.stdout.strip() if not has_error else output,
         elapsed=elapsed,
+        timeout_exceeded=write_proc.timeout_exceeded,
     )
     if not has_error:
         digests_after = snapshot_file_digests(targets)
@@ -328,6 +359,7 @@ def _run_fix_mode(
     args: argparse.Namespace,
     start_time: float,
     *,
+    timeout: float | None,
     parse_errors: bool,
     command_type_override: typing.Callable[[bool, int], str] | None = None,
     is_interrupted: typing.Callable[[], bool] | None = None,
@@ -348,13 +380,14 @@ def _run_fix_mode(
     digests_before = snapshot_file_digests(targets)
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(write_commandline)}\n")
-    write_proc = pyfltr.command.process.run_subprocess(
+    write_proc = pyfltr.command.process.run_subprocess_with_timeout(
         write_commandline,
         env,
         on_output,
         is_interrupted=is_interrupted,
         on_subprocess_start=on_subprocess_start,
         on_subprocess_end=on_subprocess_end,
+        timeout=timeout,
     )
     write_rc = write_proc.returncode
     output = write_proc.stdout.strip()
@@ -385,6 +418,7 @@ def _run_fix_mode(
             output=output,
             elapsed=elapsed,
             errors=errors,
+            timeout_exceeded=write_proc.timeout_exceeded,
         )
     else:
         result = CommandResult.from_run(
@@ -397,6 +431,7 @@ def _run_fix_mode(
             output=output,
             elapsed=elapsed,
             errors=errors,
+            timeout_exceeded=write_proc.timeout_exceeded,
         )
     if not has_error and changed:
         result.fixed_files = changed_files(digests_before, digests_after)
@@ -457,6 +492,7 @@ def execute_prettier_two_step(
         [str(t) for t in targets],
     )
 
+    timeout = pyfltr.config.config.resolve_command_timeout(config.values, command)
     if fix_mode:
         # fixモードのみ: returncode==1（changed）のときcommand_typeを"formatter"に切り替える。
         # 通常モードのcommand_infoから取得する型がformatter以外の場合に備えた固有ロジック。
@@ -473,6 +509,7 @@ def execute_prettier_two_step(
             env=env,
             args=args,
             start_time=start_time,
+            timeout=timeout,
             parse_errors=True,
             command_type_override=_prettier_type_override,
             is_interrupted=is_interrupted,
@@ -490,6 +527,7 @@ def execute_prettier_two_step(
         env=env,
         args=args,
         start_time=start_time,
+        timeout=timeout,
         is_interrupted=is_interrupted,
         on_output=on_output,
         on_subprocess_start=on_subprocess_start,
@@ -507,6 +545,7 @@ def _run_prettier_check_then_write(
     args: argparse.Namespace,
     start_time: float,
     *,
+    timeout: float | None,
     is_interrupted: typing.Callable[[], bool] | None = None,
     on_output: typing.Callable[[str], None] | None = None,
     on_subprocess_start: typing.Callable[[], None] | None = None,
@@ -519,13 +558,14 @@ def _run_prettier_check_then_write(
     """
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(check_commandline)}\n")
-    step1_proc = pyfltr.command.process.run_subprocess(
+    step1_proc = pyfltr.command.process.run_subprocess_with_timeout(
         check_commandline,
         env,
         on_output,
         is_interrupted=is_interrupted,
         on_subprocess_start=on_subprocess_start,
         on_subprocess_end=on_subprocess_end,
+        timeout=timeout,
     )
     step1_rc = step1_proc.returncode
 
@@ -542,10 +582,12 @@ def _run_prettier_check_then_write(
             output=output,
             elapsed=elapsed,
             errors=errors,
+            timeout_exceeded=step1_proc.timeout_exceeded,
         )
 
-    if step1_rc >= 2:
-        # 設定ミス等の致命的エラー。Step2は実行しない。
+    if step1_rc >= 2 or step1_proc.timeout_exceeded:
+        # 設定ミス等の致命的エラー、もしくはcheck段でtimeout超過した場合はStep2をスキップする。
+        # timeout超過は同じハングが再現する確率が高く、検証時間を浪費するためStep2を実行しない。
         output = step1_proc.stdout.strip()
         elapsed = time.perf_counter() - start_time
         errors = pyfltr.command.error_parser.parse_errors(command, output, command_info.error_pattern)
@@ -559,19 +601,21 @@ def _run_prettier_check_then_write(
             output=output,
             elapsed=elapsed,
             errors=errors,
+            timeout_exceeded=step1_proc.timeout_exceeded,
         )
 
     # Step1 rc == 1 → Step2実行（書き込み）
     prettier_digests_before = snapshot_file_digests(targets)
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(write_commandline)}\n")
-    step2_proc = pyfltr.command.process.run_subprocess(
+    step2_proc = pyfltr.command.process.run_subprocess_with_timeout(
         write_commandline,
         env,
         on_output,
         is_interrupted=is_interrupted,
         on_subprocess_start=on_subprocess_start,
         on_subprocess_end=on_subprocess_end,
+        timeout=timeout,
     )
     step2_rc = step2_proc.returncode
     output = (step1_proc.stdout + step2_proc.stdout).strip()
@@ -595,6 +639,7 @@ def _run_prettier_check_then_write(
         output=output,
         elapsed=elapsed,
         errors=errors,
+        timeout_exceeded=step2_proc.timeout_exceeded,
     )
     if not has_error:
         prettier_digests_after = snapshot_file_digests(targets)

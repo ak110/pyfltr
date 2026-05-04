@@ -68,6 +68,7 @@ __all__ = [
     "parse_config_value",
     "read_config_values",
     "resolve_aliases",
+    "resolve_command_timeout",
     "set_config_value",
 ]
 
@@ -170,7 +171,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "mypy": False,
     # pathが空文字の場合は{command}-runner設定（既定 "python-runner"）に基づいて自動解決する。
     # python-runner経路の既定（"uv"）によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
-    # {command}-path明示で従来挙動（指定パスを直接実行）に戻せる。
+    # {command}-path明示で従来挙動（指定パスを直接実行）に切り替えられる。
     "mypy-path": "",
     "mypy-args": [],
     "mypy-runner": "python-runner",
@@ -178,7 +179,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "pylint": False,
     # pathが空文字の場合は{command}-runner設定（既定 "python-runner"）に基づいて自動解決する。
     # python-runner経路の既定（"uv"）によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
-    # {command}-path明示で従来挙動（指定パスを直接実行）に戻せる。
+    # {command}-path明示で従来挙動（指定パスを直接実行）に切り替えられる。
     "pylint-path": "",
     "pylint-args": [],
     "pylint-runner": "python-runner",
@@ -186,7 +187,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "pyright": False,
     # pathが空文字の場合は{command}-runner設定（既定 "python-runner"）に基づいて自動解決する。
     # python-runner経路の既定（"uv"）によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
-    # {command}-path明示で従来挙動（指定パスを直接実行）に戻せる。
+    # {command}-path明示で従来挙動（指定パスを直接実行）に切り替えられる。
     "pyright-path": "",
     "pyright-args": [],
     "pyright-runner": "python-runner",
@@ -194,7 +195,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "ty": False,
     # pathが空文字の場合は{command}-runner設定（既定 "python-runner"）に基づいて自動解決する。
     # python-runner経路の既定（"uv"）によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
-    # {command}-path明示で従来挙動（指定パスを直接実行）に戻せる。
+    # {command}-path明示で従来挙動（指定パスを直接実行）に切り替えられる。
     "ty-path": "",
     "ty-args": ["check", "--output-format", "concise", "--error-on-warning"],
     "ty-runner": "python-runner",
@@ -260,7 +261,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "uv-sort": False,
     # pathが空文字の場合は{command}-runner設定（既定 "python-runner"）に基づいて自動解決する。
     # python-runner経路の既定（"uv"）によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
-    # {command}-path明示で従来挙動（指定パスを直接実行）に戻せる。
+    # {command}-path明示で従来挙動（指定パスを直接実行）に切り替えられる。
     "uv-sort-path": "",
     "uv-sort-args": [],
     "uv-sort-runner": "python-runner",
@@ -291,7 +292,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # いずれも pass-filenames=False で crate 全体を対象とする project-level 実行。
     # 既定で bin-runner 経路を通り、グローバル `bin-runner` 既定 (mise) により mise exec で
     # 解決する。従来挙動 (PATH 上の cargo / cargo-deny を直接実行) を維持したい場合は
-    # `cargo-fmt-runner = "direct"` 等の明示指定または `cargo-fmt-path` への明示パス指定で戻せる。
+    # `cargo-fmt-runner = "direct"` 等の明示指定または `cargo-fmt-path` への明示パス指定で切り替えられる。
     "cargo-fmt": False,
     "cargo-fmt-path": "",
     "cargo-fmt-runner": "bin-runner",
@@ -337,7 +338,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # 既定で bin-runner 経路を通り、グローバル `bin-runner` 既定 (mise) により mise exec で
     # 解決する。従来挙動 (PATH 上の dotnet を直接実行) を維持したい場合は
     # `dotnet-format-runner = "direct"` 等の明示指定または `dotnet-format-path` への
-    # 明示パス指定で戻せる。directモードでは`DOTNET_ROOT`環境変数配下にdotnet実行ファイルが
+    # 明示パス指定で切り替えられる。directモードでは`DOTNET_ROOT`環境変数配下にdotnet実行ファイルが
     # あれば優先採用する。
     "dotnet-format": False,
     "dotnet-format-path": "",
@@ -440,7 +441,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "pytest": False,
     # pathが空文字の場合は{command}-runner設定（既定 "python-runner"）に基づいて自動解決する。
     # python-runner経路の既定（"uv"）によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
-    # {command}-path明示で従来挙動（指定パスを直接実行）に戻せる。
+    # {command}-path明示で従来挙動（指定パスを直接実行）に切り替えられる。
     "pytest-path": "",
     "pytest-runner": "python-runner",
     "pytest-args": [],
@@ -449,7 +450,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "vitest": False,
     "vitest-path": "",
     "vitest-runner": "js-runner",
-    # vitestはrunサブコマンドが必須。また、pyfltrがtargets設定で絞ったファイル群と
+    # vitestはrunサブコマンドが必須。また、pyfltrがtargets設定で限定したファイル群と
     # プロジェクト側のvitest include設定が交差せず対象ゼロになるケースでrc=1となり
     # failed扱いになるのを避けるため、--passWithNoTestsを既定に含める。
     "vitest-args": ["run", "--passWithNoTests"],
@@ -457,7 +458,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "ruff-format": False,
     # pathが空文字の場合は{command}-runner設定（既定 "python-runner"）に基づいて自動解決する。
     # python-runner経路の既定（"uv"）によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
-    # {command}-path明示で従来挙動（指定パスを直接実行）に戻せる。
+    # {command}-path明示で従来挙動（指定パスを直接実行）に切り替えられる。
     "ruff-format-path": "",
     "ruff-format-runner": "python-runner",
     "ruff-format-args": ["format", "--exit-non-zero-on-format"],
@@ -472,7 +473,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "ruff-check": False,
     # pathが空文字の場合は{command}-runner設定（既定 "python-runner"）に基づいて自動解決する。
     # python-runner経路の既定（"uv"）によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
-    # {command}-path明示で従来挙動（指定パスを直接実行）に戻せる。
+    # {command}-path明示で従来挙動（指定パスを直接実行）に切り替えられる。
     "ruff-check-path": "",
     "ruff-check-runner": "python-runner",
     "ruff-check-args": ["check"],
@@ -517,6 +518,12 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "cache-max-age-hours": 12,
     # 最大並列数（linters/testersの並列実行数の上限）
     "jobs": 4,
+    # 各コマンドのsubprocess実行に対する壁時計タイムアウト（秒）。
+    # 既定値10分（600秒）。0以下を指定すると無効化される（無制限）。
+    # per-tool `{command}-timeout` が `-1`（既定。「未設定」を意味するsentinel）のとき
+    # 本グローバル値を採用し、`0` 以上の値が明示された場合はそちらを優先する。
+    # ハング由来の停止はJSONL `command.hints` の `status.timeout` 注記で識別できる。
+    "command-timeout": 600,
     # flake8風無視パターン。
     "exclude": [
         # ここの値はflake8やblackなどの既定値を元に適当に。
@@ -626,6 +633,56 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     },
 }
 """デフォルト設定。"""
+
+
+# per-tool `{command}-timeout` キーをビルトインコマンドぶん追加する。
+# 既定値 `-1` は「未設定」を意味するsentinelで、解決時にグローバル `command-timeout` 値へフォールバックする。
+# `0` 以下を明示指定した場合は当該コマンドのtimeoutを無効化する。
+# `>0` の場合は秒数を指定する。`per-tool` 値が `-1` 以外なら本値を優先する。
+# 命名は既存の `{command}-args` / `{command}-fast` 系と同パターンに揃える。
+# モジュールトップレベルでの `for` ループ変数のスコープ漏れを避けるため関数経由で適用する
+# （pyrightの `reportPossiblyUnboundVariable` 誤検知も同時に回避）。
+def _register_command_timeout_defaults(defaults: dict[str, typing.Any], command_names: list[str]) -> None:
+    """全ビルトインコマンドへ `{command}-timeout = -1` のsentinel既定値を登録する。"""
+    for command in command_names:
+        defaults[f"{command}-timeout"] = -1
+
+
+_register_command_timeout_defaults(DEFAULT_CONFIG, BUILTIN_COMMAND_NAMES)
+
+
+def resolve_command_timeout(values: dict[str, typing.Any], command: str) -> float | None:
+    """per-tool `{command}-timeout` とグローバル `command-timeout` から有効値を解決する。
+
+    `{command}-timeout`の意味は次の通り。
+
+    - `-1`（既定sentinel）または負値: 「未設定」を意味し、グローバル `command-timeout`
+      の値へフォールバックする。利用者向けドキュメントでは「未指定」と表現する
+    - `0`: 当該per-toolのtimeoutを明示的に無効化する（戻り値`None`）
+    - 正の整数: 当該秒数で監視する
+
+    グローバル`command-timeout`は次の通り。
+
+    - `0`: 全コマンドのtimeoutを無効化する
+    - 正の整数: per-tool未設定時の既定秒数として採用される
+
+    `None` を返した場合 `pyfltr.command.process.run_subprocess` はtimeout監視を行わない。
+    `float` を返した場合は当該秒数で監視する。
+    """
+    per_tool_raw = values.get(f"{command}-timeout", -1)
+    try:
+        per_tool = int(per_tool_raw)
+    except (TypeError, ValueError):
+        per_tool = -1
+    if per_tool >= 0:
+        return float(per_tool) if per_tool > 0 else None
+    # per-tool未設定（sentinel）→グローバル値へフォールバック
+    global_raw = values.get("command-timeout", 0)
+    try:
+        global_value = int(global_raw)
+    except (TypeError, ValueError):
+        global_value = 0
+    return float(global_value) if global_value > 0 else None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1089,7 +1146,7 @@ def _validate_targets_value(key: str, value: typing.Any) -> str | list[str]:
 
 
 def filter_fix_commands(commands: list[str], config: Config) -> list[str]:
-    """fixステージで実行すべきコマンドに絞り込む。
+    """fixステージで実行すべきコマンドに限定する。
 
     `pyfltr run` / `pyfltr fast`のfixステージはlinterのautofix機能
     （`{command}-fix-args`）を前段で呼び出すための段で、formatterは対象外。

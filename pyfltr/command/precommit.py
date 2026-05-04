@@ -80,32 +80,41 @@ def execute_pre_commit(
             on_output(f"SKIP={pre_commit_env.get('SKIP', '')}\n")
 
     # stage 1: 実行
-    proc = pyfltr.command.process.run_subprocess(
+    timeout = pyfltr.config.config.resolve_command_timeout(config.values, command)
+    proc = pyfltr.command.process.run_subprocess_with_timeout(
         commandline,
         pre_commit_env,
         on_output,
         is_interrupted=is_interrupted,
         on_subprocess_start=on_subprocess_start,
         on_subprocess_end=on_subprocess_end,
+        timeout=timeout,
     )
     returncode = proc.returncode
     has_error = False
+    timeout_exceeded = proc.timeout_exceeded
+    if timeout_exceeded:
+        has_error = True
 
     # stage 2: 失敗時は再実行（fixerが修正しただけなら2回目で成功する）
-    if returncode != 0:
+    # ただしstage 1でtimeout超過した場合は再実行しない（同じハングが再現する確率が高く時間を浪費するため）。
+    if returncode != 0 and not timeout_exceeded:
         if args.verbose and on_output is not None:
             on_output("pre-commit: stage 2 再実行\n")
-        proc = pyfltr.command.process.run_subprocess(
+        proc = pyfltr.command.process.run_subprocess_with_timeout(
             commandline,
             pre_commit_env,
             on_output,
             is_interrupted=is_interrupted,
             on_subprocess_start=on_subprocess_start,
             on_subprocess_end=on_subprocess_end,
+            timeout=timeout,
         )
         if proc.returncode != 0:
             returncode = proc.returncode
             has_error = True
+        if proc.timeout_exceeded:
+            timeout_exceeded = True
 
     output = proc.stdout.strip()
     elapsed = time.perf_counter() - start_time
@@ -119,4 +128,5 @@ def execute_pre_commit(
         files=len(targets),
         output=output,
         elapsed=elapsed,
+        timeout_exceeded=timeout_exceeded,
     )

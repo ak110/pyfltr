@@ -316,13 +316,14 @@ def _run_plain_command(
     # verbose時はコマンドラインをon_output経由で出力
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(commandline)}\n")
-    proc = pyfltr.command.process.run_subprocess(
+    proc = pyfltr.command.process.run_subprocess_with_timeout(
         commandline,
         env,
         on_output,
         is_interrupted=is_interrupted,
         on_subprocess_start=on_subprocess_start,
         on_subprocess_end=on_subprocess_end,
+        timeout=pyfltr.config.config.resolve_command_timeout(config.values, command),
     )
     returncode = proc.returncode
 
@@ -342,6 +343,7 @@ def _run_plain_command(
         output=output,
         elapsed=elapsed,
         errors=errors,
+        timeout_exceeded=proc.timeout_exceeded,
     )
 
     # キャッシュ書き込み （成功rc=0のみ）。失敗結果を記録すると再試行で同じ失敗が
@@ -483,6 +485,7 @@ def _dispatch_command(
                 command_info,
                 commandline,
                 targets,
+                config,
                 env,
                 on_output,
                 start_time,
@@ -524,6 +527,7 @@ def _dispatch_command(
                 command_info,
                 commandline,
                 targets,
+                config,
                 env,
                 on_output,
                 start_time,
