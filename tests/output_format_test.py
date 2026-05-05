@@ -701,10 +701,10 @@ def test_build_command_lines_truncated_archive_sanitizes_command_name(default_co
 
 
 def _configure_structured_stdout() -> None:
-    """テストのためstructured_loggerを現在の`sys.stdout`に向ける。
+    """structured_logger を現在の `sys.stdout` に向ける。
 
-    `capsys`フィクスチャは`sys.stdout`を差し替えているため、呼び出し時点の
-    `sys.stdout`をそのままStreamHandlerに掴ませればcapsysで拾える。
+    `capsys` フィクスチャは `sys.stdout` を差し替えるため、呼び出し時点の
+    `sys.stdout` を StreamHandler に設定すれば capsys で捕捉できる。
     """
     pyfltr.cli.output_format.configure_structured_output(sys.stdout)
 
@@ -825,7 +825,7 @@ def test_write_jsonl_header_stdout(capsys):
 
 
 def _header_commands_for(args: list[str], mocker, capsys) -> list[str]:
-    """指定CLI引数でrun-for-agentを実行してheaderのcommands配列を取り出す。"""
+    """指定 CLI 引数で run-for-agent を実行して header の commands 配列を返す。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
     mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
     target = str(pathlib.Path(__file__).parent.parent)

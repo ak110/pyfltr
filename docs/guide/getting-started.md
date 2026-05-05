@@ -6,22 +6,22 @@ pyfltrを設定して実行するまでの導入手順。
 
 ## インストール
 
-推奨は`uvx`での実行。事前のインストールやdev依存への追加は不要で、常に最新のpyfltrを利用できる。
+`uvx pyfltr`で実行する。事前インストールやdev依存への追加なしで最新版を取得して実行する。
 
 ```shell
 uvx pyfltr --help
 ```
 
-`uv`でバージョン管理したい場合は`uv add --dev pyfltr`または`uv add --dev "pyfltr[python]"`で追加し、
+`uv`でバージョン管理する場合は`uv add --dev pyfltr`または`uv add --dev "pyfltr[python]"`で追加し、
 `uv run pyfltr ...`で呼び出す。
 pip環境では`pip install pyfltr`を使う。
 
-呼び出し方の使い分けと推奨理由は[呼び出し方の使い分け](recommended.md#calling-style)を参照。
+呼び出し方の使い分けは[呼び出し方の使い分け](recommended.md#calling-style)を参照。
 
 ## 設定
 
 pyfltrの実行内容は`pyproject.toml`の`[tool.pyfltr]`セクションで指定する。
-プリセットと言語カテゴリゲートの2行で足りる。
+プリセットと言語カテゴリゲートの2行で設定が完結する。
 
 ```toml
 [tool.pyfltr]
@@ -76,7 +76,7 @@ uvx pyfltr run --commands=mypy,pyright path/to/file.py
 
 ## コーディングエージェントから使う
 
-pyfltrはJSON Lines出力（`--output-format=jsonl`）とMCPサーバー（`pyfltr mcp`）でコーディングエージェント運用に対応する。
+JSON Lines出力（`--output-format=jsonl`）とMCPサーバー（`pyfltr mcp`）でコーディングエージェント運用に対応する。
 
 ### 直接呼び出し（推奨）
 

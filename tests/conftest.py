@@ -1,10 +1,9 @@
 """pytest 共通定義。
 
-`CommandResult`や`ErrorLocation`のダミーを生成するヘルパーと、
-実行アーカイブのテストデータ生成ヘルパーを集約する。
-各テストファイルで同じようなビルダーを書き散らかすとpylintの
-duplicate-code（R0801）に掛かるため、ここに集約する。conftest.pyに置くのは
-pre-commitのname-tests-testフックから除外されるため。
+`CommandResult`・`ErrorLocation`・`ArchiveStore`のテストデータ生成ヘルパーを集約する。
+各テストファイルに同種ビルダーを個別定義すると pylint の duplicate-code（R0801）に
+抵触するため、conftest.py に集約する。conftest.py に置くことで
+pre-commit の name-tests-test フックから除外される。
 """
 
 import argparse
@@ -25,23 +24,22 @@ import pyfltr.warnings_
 
 @pytest.fixture(autouse=True)
 def _clear_warnings_between_tests() -> None:
-    """全テストで警告状態を持ち越さないため、各テスト開始前に蓄積をクリアする。
+    """各テスト開始前に警告蓄積をクリアするフィクスチャ。
 
-    `pyfltr.warnings_`はモジュール変数としてプロセス内で共有されるため、
-    テスト間のリークが発生すると順序依存や並列実行での非決定性を招く。
-    conftest.pyでautouse化することで、各テストが空状態から始まることを保証する。
+    `pyfltr.warnings_`はプロセス内でモジュール変数として共有される。
+    クリアしないとテスト間でリークが発生し、順序依存や並列実行での非決定性を招く。
     """
     pyfltr.warnings_.clear()
 
 
 @pytest.fixture(autouse=True)
 def _isolate_output_format_envs(monkeypatch: pytest.MonkeyPatch) -> None:
-    """全テストで出力形式を左右する環境変数を未設定状態に固定する。
+    """出力形式を左右する環境変数を未設定状態に固定するフィクスチャ。
 
-    Claude Codeなどのエージェント環境では`AI_AGENT`が常時設定されるため、
-    autouse未対応だと開発機の状態によって既定出力形式がjsonlへ揺らぐ。
-    `PYFLTR_OUTPUT_FORMAT`も同様に開発者シェルで設定されている可能性があるため、
-    両者を一律に未設定化する。個別テストは`monkeypatch.setenv`で必要時のみ上書きする。
+    Claude Code などのエージェント環境では `AI_AGENT` が常時設定されるため、
+    autouse しないと開発機の状態によって既定出力形式が jsonl へ揺らぐ。
+    `PYFLTR_OUTPUT_FORMAT` も開発者シェルで設定されている可能性があるため、
+    両者を一律に未設定化する。個別テストは `monkeypatch.setenv` で上書きする。
     """
     monkeypatch.delenv("AI_AGENT", raising=False)
     monkeypatch.delenv("PYFLTR_OUTPUT_FORMAT", raising=False)
@@ -55,13 +53,12 @@ real_get_mise_active_tools = pyfltr.command.mise.get_mise_active_tools
 
 @pytest.fixture(autouse=True)
 def _default_mise_active_tools_empty(monkeypatch: pytest.MonkeyPatch) -> None:
-    """全テストで `mise ls --current --json` 経路を「mise設定記述なし」相当へ固定する。
+    """`mise ls --current --json` 経路を「mise設定記述なし」相当へ固定するフィクスチャ。
 
-    `get_mise_active_tools` は実環境のmise・cwd配下の `mise.toml` に依存して結果が変わるため、
-    モック無しでは開発機の状態次第でテストが揺らぐ（tool spec省略形が混入する等）。
-    既存テストはmise設定記述なし前提で従来形 `mise exec <tool>@latest -- <bin>` を期待しており、
-    本フィクスチャでautouseに空のステータス`ok`結果を返すよう固定することでテスト全体の前提を揃える。
-    新仕様（mise設定記述あり時のtool spec省略）を検証するテストは個別に上書きする。
+    `get_mise_active_tools` は実環境の mise と cwd 配下の `mise.toml` に依存するため、
+    モックしないと開発機の状態でテスト結果が揺らぐ（tool spec 省略形が混入する等）。
+    既存テストは mise 設定記述なし前提で `mise exec <tool>@latest -- <bin>` 形式を期待する。
+    新仕様（mise 設定記述あり時の tool spec 省略）を検証するテストは個別に上書きする。
     """
     monkeypatch.setattr("pyfltr.command.mise._MISE_ACTIVE_TOOLS_CACHE", {}, raising=True)
     monkeypatch.setattr(
@@ -75,10 +72,10 @@ def _isolate_global_config(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path_factory: pytest.TempPathFactory,
 ) -> pathlib.Path:
-    """全テストで`PYFLTR_GLOBAL_CONFIG`をtmpパス配下のダミーパスへ固定する。
+    """`PYFLTR_GLOBAL_CONFIG` を tmp パス配下のダミーパスへ固定するフィクスチャ。
 
-    開発機の`~/.config/pyfltr/config.toml`がテスト結果に影響することを防ぐ。
-    各テストは`monkeypatch.setenv`で個別に上書き可能。
+    開発機の `~/.config/pyfltr/config.toml` がテスト結果に影響しないようにする。
+    個別テストは `monkeypatch.setenv` で上書きできる。
     """
     isolation_dir = tmp_path_factory.mktemp("global_config_isolation")
     target = isolation_dir / "config.toml"
@@ -113,9 +110,9 @@ def make_execution_context(
 ) -> pyfltr.command.core_.ExecutionContext:
     """テスト用の ExecutionContext を生成する。
 
-    `execute_command`を直接呼び出すテストで使用する。
-    CLI/TUIフック系（on_output / is_interrupted / on_subprocess_start / on_subprocess_end）は
-    テストでは不要なため省略（デフォルトのNoneが使われる）。
+    `execute_command` を直接呼び出すテストで使用する。
+    CLI/TUI フック系（on_output / is_interrupted / on_subprocess_start / on_subprocess_end）は
+    省略し、デフォルトの None を使う。
     """
     base = pyfltr.command.core_.ExecutionBaseContext(
         config=config,
@@ -149,11 +146,11 @@ def make_command_result(
 ) -> pyfltr.command.core_.CommandResult:
     """テスト用の CommandResult を生成する。
 
-    `has_error`を省略した場合、`returncode`が0/None以外ならTrueに推定する。
-    `errors`は`ErrorLocation`のリスト（省略時は空）。`target_files`は
-    `retry_command`フィルタリング（A案）のテスト用（省略時は空）。
-    `archived`はテスト既定でTrue（smart truncationが適用される側）。
-    実運用でのデフォルト（`CommandResult()`生成時のFalse）とは異なる点に注意。
+    `has_error` を省略した場合、`returncode` が 0/None 以外なら True とする。
+    `errors` は `ErrorLocation` のリスト（省略時は空）。
+    `target_files` は `retry_command` フィルタリングのテスト用（省略時は空）。
+    `archived` のテスト既定は True（smart truncation 適用側）。
+    実運用の `CommandResult()` 生成時の既定（False）とは異なるため注意する。
     """
     if has_error is None:
         has_error = returncode is not None and returncode != 0
@@ -194,38 +191,26 @@ def make_error_location(
 
 
 def make_formatted_result(command: str = "ruff-format") -> pyfltr.command.core_.CommandResult:
-    """`status == "formatted"` になる最小の CommandResult を生成する。
-
-    `main_test`など複数のテストファイルで同様の構築が必要なためconftest.pyに集約する。
-    """
+    """`status == "formatted"` になる最小の CommandResult を生成する。"""
     return pyfltr.command.core_.CommandResult(
         command, "formatter", [command], returncode=1, has_error=False, files=1, output="", elapsed=0.01
     )
 
 
 def make_succeeded_result(command: str = "ruff-check") -> pyfltr.command.core_.CommandResult:
-    """`status == "succeeded"` になる最小の CommandResult を生成する。
-
-    `main_test`など複数のテストファイルで同様の構築が必要なためconftest.pyに集約する。
-    """
+    """`status == "succeeded"` になる最小の CommandResult を生成する。"""
     return pyfltr.command.core_.CommandResult(
         command, "linter", [command], returncode=0, has_error=False, files=1, output="", elapsed=0.01
     )
 
 
 def make_archive_store(tmp_path: pathlib.Path) -> pyfltr.state.archive.ArchiveStore:
-    """テスト用の`ArchiveStore`を生成する。
-
-    `archive_test`などで`tmp_path`配下に隔離したstoreを生成するための共通ファクトリー。
-    """
+    """テスト用の`ArchiveStore`を生成する。"""
     return pyfltr.state.archive.ArchiveStore(cache_root=tmp_path)
 
 
 def make_args(*, no_exclude: bool = False) -> argparse.Namespace:
-    """`execute_command`に渡す`argparse.Namespace`を生成する。
-
-    `command_test`系のテストで`_make_args()`として重複定義されていたものを集約した。
-    """
+    """`execute_command`に渡す`argparse.Namespace`を生成する。"""
     return argparse.Namespace(shuffle=False, verbose=False, no_exclude=no_exclude)
 
 
@@ -234,29 +219,25 @@ def _isolated_cache(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> pathlib.Path:
-    """全テストで`PYFLTR_CACHE_DIR`を`tmp_path`に固定する。
+    """`PYFLTR_CACHE_DIR`を`tmp_path`に固定するフィクスチャ。
 
-    `runs_test` / `mcp_test`でautouse=Trueの同名fixtureとして重複定義されていたものを集約した。
     各テストファイルで`@pytest.fixture(autouse=True)`として再エクスポートするか、
-    またはconftestから直接参照することで利用できる。
+    conftest から直接参照することで利用できる。
     """
     monkeypatch.setenv("PYFLTR_CACHE_DIR", str(tmp_path))
     return tmp_path
 
 
 def count_config_warnings(needle: str) -> int:
-    """`source=="config"`かつメッセージに`needle`を含む警告の件数を返す。
+    """`source == "config"` かつメッセージに `needle` を含む警告の件数を返す。
 
-    `needle`に空文字列を渡すと`source=="config"`の全件をカウントする。
+    `needle` に空文字列を渡すと `source == "config"` の全件をカウントする。
     """
     return sum(1 for w in pyfltr.warnings_.collected_warnings() if w["source"] == "config" and needle in w["message"])
 
 
 def shared_prefix_length(a: str, b: str) -> int:
-    """2つの文字列の共通プレフィックス長を返す。
-
-    複数のテストで同じ計算（特にULIDの曖昧プレフィックステスト）を行うため共通化する。
-    """
+    """2つの文字列の共通プレフィックス長を返す。"""
     shared = 0
     for ca, cb in zip(a, b, strict=False):
         if ca != cb:
@@ -276,12 +257,9 @@ def seed_archive_run(
 ) -> str:
     """テスト用の run をアーカイブに書き込み、`run_id` を返す。
 
-    `tool_results`は`(tool, returncode, output, errors)`のタプル列。
-    `runs_test` / `mcp_test`等で同じセットアップ手順を経るため、
-    duplicate-code（R0801）回避用にconftest.py側へ集約している。
-
-    run_idはULIDで生成され、ミリ秒解像度のタイムスタンプ部分を含む。
-    連続呼び出しで同一ULIDが返るflakyな衝突を避けるため、冒頭に1ミリ秒のスリープを介在させる。
+    `tool_results` は `(tool, returncode, output, errors)` のタプル列。
+    run_id は ULID で生成され、ミリ秒解像度のタイムスタンプ部分を含む。
+    連続呼び出しで同一 ULID が返る衝突を避けるため、冒頭に 1 ミリ秒のスリープを挿入する。
     """
     time.sleep(0.001)
     store = pyfltr.state.archive.ArchiveStore(cache_root=cache_root)

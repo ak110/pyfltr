@@ -19,17 +19,17 @@ import pyfltr.command.builtin
 def _get_markdown_description() -> str:
     """mkdocs.yml の llmstxt.markdown_description を文字列として返す。
 
-    mkdocs.ymlはMkDocs固有の`!!python/name:`タグを含むためSafeLoaderでは
-    パースできない。カスタムタグを無視するLoaderを用意して読み込む。
+    mkdocs.yml は MkDocs 固有の `!!python/name:` タグを含むため SafeLoader では
+    パースできない。カスタムタグを無視する Loader を用意して読み込む。
     """
 
     # !!python/name: などPython固有タグを文字列として無視するカスタムLoaderを作成する。
-    # yaml.add_multi_constructorはグローバル状態を変更するため、Loaderサブクラスに局所化する。
+    # yaml.add_multi_constructor はグローバル状態を変更するため、Loader サブクラスに局所化する。
     class _IgnoreTagLoader(yaml.SafeLoader):  # pylint: disable=too-many-ancestors  # PyYAMLの継承木に従うため不可避
         pass
 
     def _ignore_python_tag(_loader: _IgnoreTagLoader, tag_suffix: str, _node: yaml.Node) -> str:
-        # タグ付き値は文字列として返す（内容は不要なためダミー文字列）
+        # タグ付き値はダミー文字列として返す
         return f"<{tag_suffix}>"
 
     _IgnoreTagLoader.add_multi_constructor("tag:yaml.org,2002:python/name:", _ignore_python_tag)
@@ -48,11 +48,8 @@ def _get_subcommand_names() -> list[str]:
     """pyfltr.cli.parser.build_parser() から全サブコマンド名を取得する。"""
     parser = pyfltr.cli.parser.build_parser()
     subcommand_names: list[str] = []
-    # parser._actionsから_SubParsersActionを探してサブコマンド名を取得する。
-    # argparseはサブパーサー一覧を公開APIで列挙する手段を提供しないため、
-    # `_actions` / `_SubParsersAction` 経由の参照に依存せざるを得ない。
-    # 2段のプライベートアクセス（_subparsers._group_actions）を避け、
-    # 1段の_actions経由で取得することでアクセス深度を浅くする。
+    # argparse はサブパーサー一覧を公開 API で列挙する手段を提供しないため、
+    # `_actions` / `_SubParsersAction` 経由の参照を使う。
     for action in parser._actions:  # type: ignore[attr-defined]  # pylint: disable=protected-access
         if isinstance(action, argparse._SubParsersAction):  # type: ignore[attr-defined]  # pylint: disable=protected-access
             subcommand_names.extend(action.choices.keys())

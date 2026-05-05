@@ -17,7 +17,7 @@ concurrency:
 env:
   # 開発モード: DeprecationWarningなどの隠れた問題を早期検出する
   PYTHONDEVMODE: "1"
-  # サプライチェーン攻撃対策: uvがlockfileを常に尊重する
+  # サプライチェーン攻撃対策: uvがlockfileを尊重する
   UV_FROZEN: "1"
 
 jobs:
@@ -33,7 +33,7 @@ jobs:
         python-version: [ "3.11", "3.12", "3.13", "3.14" ]
     env:
       UV_PYTHON: ${{ matrix.python-version }}
-      # mise・pinact等がGitHub APIを呼び出す際のレート制限（403）回避。
+      # mise・pinact等がGitHub APIを呼び出す際のレート制限（403）回避
       # container jobでは明示しないとsecrets.GITHUB_TOKENがコンテナへ渡らない
       GITHUB_TOKEN: ${{ github.token }}
     steps:

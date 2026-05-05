@@ -18,16 +18,15 @@ from tests.conftest import make_execution_context as _make_ctx
 
 @pytest.fixture(name="text_logs")
 def _text_logs() -> collections.abc.Iterator[list[str]]:
-    """`pyfltr.cli.output_format.text_logger`の`info`出力をキャプチャする。
+    """`pyfltr.cli.output_format.text_logger`の`info`出力を収集するフィクスチャ。
 
-    `propagate=False`のためcaplog / capsysのsys.stdout差し替えとは相性が悪い
-    （pytest captureはsetup段階のsys.stdoutリファレンスと実行時のsys.stdoutが
-    一致しない）。本fixtureはtext_loggerに専用ListHandlerを直接追加し、
-    各テスト終了時に取り外すことで副作用を残さない。
+    `propagate=False`のため caplog / capsys の sys.stdout 差し替えでは捕捉できない
+    （pytest capture は setup 段階の sys.stdout 参照と実行時の sys.stdout が一致しない）。
+    text_logger に専用 ListHandler を直接追加し、テスト終了時に取り外す。
 
     Returns:
-        現在のテスト内でtext_loggerが記録したメッセージ文字列のリスト。
-        （`logging.Handler.format`を通すことで`%`フォーマット差分を吸収する）。
+        現在のテスト内で text_logger が記録したメッセージ文字列のリスト。
+        `logging.Handler.format` を通すことで `%` フォーマット差分を吸収する。
     """
     messages: list[str] = []
 

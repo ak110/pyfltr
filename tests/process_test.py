@@ -1,7 +1,7 @@
-"""`pyfltr.command.process.run_subprocess` のtimeout関連テスト。
+"""`pyfltr.command.process.run_subprocess` の timeout 関連テスト。
 
-軽量なPythonサブプロセスを起動し、timeout発火・既存 `is_interrupted` との整合性を検証する。
-タイムアウト値は0.1秒等の小さな固定値で1秒以内に収まる構成にしている。
+軽量な Python サブプロセスを起動し、timeout 発火と `is_interrupted` との整合性を検証する。
+タイムアウト値は 0.1 秒等の小さな固定値で 1 秒以内に収まる構成にする。
 """
 
 import os
@@ -14,7 +14,7 @@ import pyfltr.command.process
 
 
 def _make_env() -> dict[str, str]:
-    """run_subprocessに渡す最小env。PATH等を引き継いでpythonインタプリターを解決可能にする。"""
+    """run_subprocess に渡す最小 env。PATH 等を引き継いで Python インタープリターを解決可能にする。"""
     return dict(os.environ)
 
 

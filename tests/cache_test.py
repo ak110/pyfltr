@@ -12,7 +12,6 @@ from tests.conftest import make_error_location as _make_error
 
 
 def _make_store(tmp_path: pathlib.Path) -> pyfltr.state.cache.CacheStore:
-    """テスト用の CacheStore を生成する。"""
     return pyfltr.state.cache.CacheStore(cache_root=tmp_path)
 
 

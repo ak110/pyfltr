@@ -1,24 +1,26 @@
 ---
 name: pyfltr-add-tool
-description: >-
+description: >
   pyfltr に新しい formatter / linter / tester を追加する際の定型手順チェックリスト。
-  command/builtin.py / config/config.py / command/dispatcher.py / command/error_parser.py / docs/guide/index.md / tests を一貫して更新する。
+  command/builtin.py / config/config.py / command/dispatcher.py / command/error_parser.py /
+  docs/guide/index.md / tests を一貫して更新する。
 ---
 
 # pyfltr 新ツール追加チェックリスト
 
-新規ツール追加では複数ファイルへの整合した変更が必要になる。
-各ファイルの記述方法は既存ツールを雛形にすれば把握できるため、本書は「触るべきファイル」と
+新規ツール追加では複数ファイルへの整合した変更が必要となる。
+各ファイルの記述方法は既存ツールを雛形にして把握できるため、以下では「触るべきファイル」と
 「コードを読んだだけでは気付きにくい注意点」のみを列挙する。
 
 ## 触るべきファイル
 
-雛形にする既存ツールを1つ決め（用途が近いもの）、その変更箇所をすべて踏襲する。
+用途が近い既存ツールを1つ雛形として選び、その変更箇所をすべて踏襲する。
 
 - `pyfltr/command/builtin.py`: `BUILTIN_COMMANDS` への登録（順序が実行順と出力順を決める）。
   特定言語専用ツールはあわせて `PYTHON_COMMANDS` 等の言語カテゴリ定数にも追加する
 - `pyfltr/config/config.py`: `DEFAULT_CONFIG` への設定キー追加と、`aliases` への登録
-- `pyfltr/command/dispatcher.py`（および必要に応じて `pyfltr/command/` 配下の関連モジュール）: 実行ロジック。共通ヘルパーを優先利用し、独自経路は最小限に抑える
+- `pyfltr/command/dispatcher.py`（および必要に応じて `pyfltr/command/` 配下の関連モジュール）:
+  実行ロジック。共通ヘルパーを優先利用し、独自経路は最小限に抑える
 - `pyfltr/command/error_parser.py`: 出力パーサー（regexまたは関数ベース）
 - `tests/`: `config_test.py`・`command_*_test.py`・`error_parser_test.py` に対応するテストを追加
 - `docs/guide/index.md`:「対応ツール」一覧へ追記（`README.md`には書かない。SSOTは本ファイル）
@@ -41,7 +43,7 @@ description: >-
 uv run --with-editable=. pyfltr run-for-agent
 ```
 
-警告ゼロかつテストグリーンで完了。
+警告ゼロかつテスト全件成功で完了とする。
 
 ## fast 判定の計測手順
 

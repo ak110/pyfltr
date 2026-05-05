@@ -1,4 +1,4 @@
-"""テストコード。"""
+"""executor.py のテストコード。"""
 
 import concurrent.futures
 import pathlib

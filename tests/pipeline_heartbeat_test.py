@@ -1,8 +1,8 @@
-"""パイプラインheartbeat監視（`HeartbeatMonitor`）の動作テスト。
+"""HeartbeatMonitor の動作テスト。
 
-JSONL出力経路をモックし、最後の出力からの経過時間がしきい値を超えたとき、
-実行中コマンドそれぞれに`status:"running"`レコードが期待通り発行されることを確認する。
-heartbeat_interval等は固定値注入で1秒以内に収まる構成にしている。
+最後の出力からの経過時間がしきい値を超えたとき、実行中コマンドそれぞれに
+`status:"running"` レコードが発行されることを検証する。
+heartbeat_interval 等は固定値注入で 1 秒以内に収まる構成にする。
 """
 
 import time

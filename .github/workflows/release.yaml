@@ -198,7 +198,7 @@ jobs:
       # 「No solution found」で失敗する事象が継続発生したため、Docker build 直前に
       # 同等条件 (clean cache) で解決可能になるまで polling する。
       # extras (`[python]`) 込みで解決確認することで、Docker build と同じ要求形を検証する。
-      # 利用者向け推奨である `uv run --with="pyfltr[python]" pyfltr` の解決可能性も間接的に確認できる。
+      # 利用者向けコマンド `uv run --with="pyfltr[python]" pyfltr` の解決可能性も間接的に確認できる。
       # さらに ``required_consecutive`` 回連続成功するまで待つことで、
       # 単発でエッジを掴んだ瞬間だけ通る揺らぎを排除する。
       - name: Wait for PyPI propagation

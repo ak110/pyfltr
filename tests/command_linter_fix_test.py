@@ -226,15 +226,12 @@ def test_biome_fix_mode_appends_write_and_keeps_reporter(mocker, tmp_path: pathl
 
 
 def _force_direct_runner(config: pyfltr.config.config.Config, command: str, mocker) -> None:
-    """テスト用ヘルパー: bin-runner経路ではなくdirect実行へ強制する。
+    """`{command}-runner = "direct"` を設定して direct 実行へ強制するヘルパー。
 
-    cargo / dotnet系の既定（bin-runner=mise）ではコマンドラインがmise exec経由となり、
-    direct実行を観測する従来テストとは形式が異なる。本ヘルパーで`{command}-runner = "direct"`
-    を上書きすることで、mise環境の有無に依存せずPATH上のバイナリを直接呼ぶ形式を観測できる。
-
-    あわせて`_resolve_direct_executable`をモックする。CIなどcargo / dotnetバイナリが
-    PATH上に存在しない環境では実解決が`FileNotFoundError`を送出し、テストが期待する
-    コマンドライン生成まで到達できないためである。
+    cargo / dotnet 系の既定（bin-runner=mise）ではコマンドラインが mise exec 経由となるため、
+    direct 実行を観測するテストには本ヘルパーで上書きする。
+    CI 等で cargo / dotnet バイナリが PATH 上にない場合も `_resolve_direct_executable` を
+    モックしてコマンドライン生成まで到達できるようにする。
     """
     config.values[f"{command}-runner"] = "direct"
     mocker.patch(

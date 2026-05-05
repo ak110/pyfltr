@@ -14,10 +14,10 @@ import pyfltr.warnings_
 
 
 def test_ctrl_c_double_press_handling() -> None:
-    """Ctrl+Cの2回押し処理のテスト。
+    """Ctrl+C 2回押し処理の検証。
 
-    協調中断方式のため、2回目Ctrl+Cでは`exit`は呼ばず
-    `_interrupted=True`と`terminate_active_processes`呼び出しで停止する。
+    協調中断方式のため、2回目 Ctrl+C では `exit` を呼ばず、
+    `_interrupted=True` と `terminate_active_processes` 呼び出しで停止する。
     """
     args = argparse.Namespace()
     args.targets = []

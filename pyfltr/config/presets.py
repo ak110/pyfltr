@@ -5,7 +5,7 @@
 # gateを通過して有効化される運用を実現するため、歴史的presetも含めて全バージョンに
 # 同じ言語別推奨ツールを収録する。
 # カテゴリキー（`python` / `javascript` / `rust` / `dotnet`）がgateとして働き、
-# false（既定）の場合は該当ツールを最終的にFalseへ押し戻す。
+# false（既定）の場合は該当ツールを最終的にFalseへ上書きする。
 # `ty`は本体がまだpreset収録レベルに達していないため除外し、利用側で個別に
 # `ty = true`を指定する運用を維持する。
 _PRESET_BASE: dict[str, bool] = {

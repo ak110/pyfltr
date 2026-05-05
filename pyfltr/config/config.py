@@ -129,7 +129,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # 言語カテゴリキー: presetが示す言語別ツールを通過させるgateとして働く。
     # Trueならpreset由来で有効化された該当カテゴリのコマンドをそのまま通し、
     # False（既定）ならpresetでTrueになった該当コマンドを個別指定がない限り
-    # Falseに押し戻す。カテゴリキー単独では何も有効化されない（presetか個別
+    # Falseに上書きする。カテゴリキー単独では何も有効化されない（presetか個別
     # `{command} = true`が必要）。v3.0.0で既定値をFalse（opt-in）に統一。
     # 対象外プロジェクトで言語別linterが自動で実行されるのを防ぐためで、Python系は
     # Python系ツール一式が本体依存に同梱済みのため `uvx pyfltr` で揃う。
@@ -966,7 +966,7 @@ def load_config(
     # 言語カテゴリgateの適用（preset < 言語カテゴリgate < 個別設定）
     # v3.0.0でpython / javascript / rust / dotnetを同じ枠組みのカテゴリキーに統一した。
     # presetは各時点の推奨構成として全言語のツールを横断的にTrueにするが、カテゴリ
-    # キーがFalse（既定）のときはpreset由来のTrueをFalseへ押し戻して実行を抑止する。
+    # キーがFalse（既定）のときはpreset由来のTrueをFalseへ上書きして実行を抑止する。
     # 後続の個別設定ループで`{command} = true` / `{command} = false`による上書きが可能
     # （個別指定はgateを越えて最優先）。
     user_keys = set(tool_pyfltr.keys())

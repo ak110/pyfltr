@@ -1,4 +1,4 @@
-"""テストコード。"""
+"""config.py のテストコード。"""
 # pylint: disable=too-many-lines  # 設定検証のSSOTテストはfixture密結合化を避けるため分割しない方針
 # pylint: disable=protected-access  # _PRESETS等の内部定数を参照する単体テスト経路
 
@@ -18,16 +18,16 @@ def _assert_language_gate(
     passed: bool,
     preset: str = "latest",
 ) -> None:
-    """言語カテゴリgateの挙動をカテゴリ内ツール全件について一括検証する。
+    """言語カテゴリ gate の挙動をカテゴリ内ツール全件について一括検証する。
 
-    `passed=True`: gate開放側。当該カテゴリでpresetがTrueにしたツールはそのまま
-    True通過し、presetが収録していないツールはFalseのまま（個別`{command} = true`
-    が無い前提）を確認する。
-    `passed=False`: gate閉じ側。当該カテゴリの全ツールがFalse（preset由来Trueを
-    gateが押し戻す）になっていることを確認する。
+    `passed=True`: gate 開放側。当該カテゴリで preset が True にしたツールはそのまま
+    True 通過し、preset が収録していないツールは False のままであることを確認する
+    （個別 `{command} = true` が無い前提）。
+    `passed=False`: gate 閉じ側。当該カテゴリの全ツールが False（preset 由来 True を
+    gate が上書きする）になっていることを確認する。
 
-    個別`{command} = true` / `{command} = false`の上書きがあるテストでは、本ヘルパー
-    ではなく直接assertを使う（gateの挙動ではなく個別上書きの挙動を検証するため）。
+    個別 `{command} = true` / `{command} = false` の上書きがあるテストでは、
+    本ヘルパーではなく直接 assert を使う。
     """
     commands = dict(pyfltr.config.config.LANGUAGE_CATEGORIES)[category_key]
     if not passed:
@@ -41,9 +41,9 @@ def _assert_language_gate(
 
 
 _DOCS_ORTHOGONAL_KEYS = ("textlint", "markdownlint", "actionlint", "typos", "pre-commit")
-"""言語カテゴリgateの対象外となるドキュメント系ツールキー。
+"""言語カテゴリ gate の対象外となるドキュメント系ツールキー。
 
-これらは preset が直接 True/False を決め、言語カテゴリキーの影響を受けない。
+preset が直接 True/False を決め、言語カテゴリキーの影響を受けない。
 """
 
 
@@ -946,7 +946,7 @@ mypy = true
     config = pyfltr.config.config.load_config(config_dir=tmp_path)
     # python = falseでもmypyだけ個別指定でTrue
     assert config["mypy"] is True
-    # preset由来のPython系はgateによりFalseへ押し戻される
+    # preset由来のPython系はgateによりFalseに上書きされる
     assert config["ruff-format"] is False
     assert config["ruff-check"] is False
     assert config["pylint"] is False
@@ -1057,13 +1057,13 @@ def test_mise_auto_trust_invalid_type_rejected(tmp_path: pathlib.Path) -> None:
 
 
 def test_preset_latest_suppresses_language_categories(tmp_path: pathlib.Path) -> None:
-    """preset = "latest"単独（カテゴリキー全False）では全言語のツールがFalseに押し戻される。"""
+    """preset = "latest"単独（カテゴリキー全False）では全言語のツールがFalseに上書きされる。"""
     (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latest"\n')
     config = pyfltr.config.config.load_config(config_dir=tmp_path)
     # presetに含まれるドキュメント系はTrue
     for cmd in _DOCS_ORTHOGONAL_KEYS:
         assert config[cmd] is True, f"{cmd}はpreset=latestで有効化されるべき"
-    # 言語カテゴリに属するツールはgateにより全てFalseに押し戻される
+    # 言語カテゴリに属するツールはgateにより全てFalseに上書きされる
     # （_PRESET_BASEでTrueだったPython核 / JS / Rust / .NETも含む）
     for category_key, _ in pyfltr.config.config.LANGUAGE_CATEGORIES:
         _assert_language_gate(config, category_key, passed=False)
@@ -1125,7 +1125,7 @@ cargo-fmt = true
     # 個別にTrueにしたツールは有効
     assert config["eslint"] is True
     assert config["cargo-fmt"] is True
-    # 同カテゴリの他ツールはgateでFalseへ押し戻される
+    # 同カテゴリの他ツールはgateでFalseに上書きされる
     assert config["prettier"] is False
     assert config["biome"] is False
     assert config["cargo-clippy"] is False

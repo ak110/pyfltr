@@ -1,7 +1,7 @@
 # 対応ツール
 
 pyfltrが対応するformatter / linter / testerを言語・用途別に示す。
-初めて使う場合は[はじめに](getting-started.md)を参照。設定から実行までの導入手順を順に追える。
+初めて使う場合は[はじめに](getting-started.md)を参照。設定から実行までの導入手順を確認できる。
 
 言語カテゴリ（Python / JS/TS / Rust / .NET）に属するツールはすべて既定で無効（opt-in）。
 `preset = "latest"` + 言語カテゴリキー（`python` / `javascript` / `rust` / `dotnet`）の`true`指定だけで、
@@ -81,7 +81,8 @@ pyfltrの設定キーとコマンド名は`markdownlint`（例: `markdownlint = 
 
 プリセット指定と言語カテゴリゲートによる有効化の詳細は[設定項目](configuration.md)を参照。
 
-個別に有効化・無効化する方法や`python-runner`/`js-runner`/`bin-runner`などの補助設定は[設定項目（ツール別）](configuration-tools.md)を参照。
+個別に有効化・無効化する方法や`python-runner`/`js-runner`/`bin-runner`などの補助設定は
+[設定項目（ツール別）](configuration-tools.md)を参照。
 
 ## コンセプト
 

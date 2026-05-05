@@ -7,7 +7,7 @@ rules:
     # 引用文や詳細な技術説明で100文字超過が避けられないため緩和する
     sentence-length:
       max: 120
-    # agent.mdの「ドキュメントは常体」方針と整合させる
+    # ドキュメントを常体で統一する方針に従う
     no-mix-dearu-desumasu:
       preferInHeader: ""
       preferInBody: "である"

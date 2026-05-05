@@ -326,7 +326,7 @@ cwdに`uv.lock`がある場合は利用者プロジェクトのuv環境のツー
 
 言語カテゴリキー`python`のgate対象で、preset内でTrueとなっているツールを
 通過させる。`python = false`または未指定のときは、preset由来でTrueになった
-コマンドも個別`{command} = true`指定がなければFalseに押し戻される。
+コマンドも個別`{command} = true`指定がなければFalseに上書きされる。
 個別`{command} = true`はgateを越えて優先される。
 `ty`のみpreset非収録のため、使用時は個別に`ty = true`を指定する運用を維持する。"""
 
@@ -376,7 +376,7 @@ LANGUAGE_CATEGORIES: tuple[tuple[str, tuple[str, ...]], ...] = (
 """言語カテゴリキーと対応するコマンド群の対応表。
 
 preset適用後のgate処理（カテゴリFalseのときpreset由来の該当コマンドTrueを
-Falseに押し戻す）で共通に使う。"""
+Falseに上書きする）で共通に使う。"""
 
 REMOVED_COMMANDS: frozenset[str] = frozenset({"pyupgrade", "autoflake", "isort", "black", "pflake8"})
 """v3.0.0 で削除されたコマンド名。

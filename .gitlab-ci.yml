@@ -10,7 +10,7 @@ workflow:
 variables:
   # 開発モード: DeprecationWarningなどの隠れた問題を早期検出する
   PYTHONDEVMODE: "1"
-  # サプライチェーン攻撃対策: uvがlockfileを常に尊重する
+  # サプライチェーン攻撃対策: uvがlockfileを尊重する
   UV_FROZEN: "1"
   UV_CACHE_DIR: "$CI_PROJECT_DIR/.cache/uv"
   PNPM_STORE_PATH: "$CI_PROJECT_DIR/.cache/pnpm"
@@ -57,7 +57,7 @@ test:
   after_script:
     - uv cache prune --ci
 
-# とりあえず無効にしておく
+# 現在は無効化
 .test-windows:
   tags:
     - windows

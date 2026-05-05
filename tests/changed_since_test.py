@@ -25,7 +25,7 @@ import pyfltr.warnings_
 def _git_repo_fixture(tmp_path: pathlib.Path) -> collections.abc.Generator[pathlib.Path]:
     """一時 git リポジトリを作成して cwd を切り替えるフィクスチャ。
 
-    テスト終了時に元の cwd へ戻す。
+    テスト終了時に元の cwd へ復元する。
     """
     original_cwd = os.getcwd()
     os.chdir(tmp_path)

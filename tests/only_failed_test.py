@@ -1,8 +1,7 @@
-"""only_failedモジュールのテスト。
+"""only_failed モジュールのテスト。
 
-`ToolTargets`dataclassの各分岐と`apply_filter`の3状態（fallback / files /
-skip→commandsフィルタリングで除外）を検証する。
-`tests/main_test.py`の`_apply_only_failed_filter`系テストをここへ移管済み。
+`ToolTargets` dataclass の各分岐と `apply_filter` の 3 状態（fallback / files /
+skip → commands フィルタリングで除外）を検証する。
 """
 
 # pylint: disable=missing-function-docstring  # テストは関数docstringを省略する慣習

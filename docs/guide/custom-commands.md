@@ -1,7 +1,6 @@
 # カスタムコマンド例
 
 `[tool.pyfltr.custom-commands]`で任意のツールを追加できる。
-ここでは実用的な設定例を紹介する。
 カスタムコマンドの仕様は[ツール別設定](configuration-tools.md)の「カスタムコマンド」セクションを参照。
 導入手順は[はじめに](getting-started.md)を参照。
 

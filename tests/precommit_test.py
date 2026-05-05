@@ -35,10 +35,10 @@ class TestIsRunningUnderPrecommit:
 
 
 class _FakeProcess:
-    """`psutil.Process`を差し替えるための最小スタブ。
+    """`psutil.Process` の最小スタブ。
 
-    `name()` / `parents()`の挙動だけを制御できればよいので、実プロセスは
-    一切参照しない。親系列は`__init__`に渡された順で返す。
+    `name()` / `parents()` の挙動のみを制御する。実プロセスは参照しない。
+    親系列は `__init__` に渡された順で返す。
     """
 
     def __init__(self, name: str, ancestors: list["_FakeProcess"] | None = None) -> None:
@@ -46,11 +46,11 @@ class _FakeProcess:
         self._ancestors = ancestors or []
 
     def name(self) -> str:
-        """プロセス名を返す (psutil.Process.name() 互換)。"""
+        """プロセス名を返す（psutil.Process.name() 互換）。"""
         return self._name
 
     def parents(self) -> list["_FakeProcess"]:
-        """祖先プロセスリストを返す (psutil.Process.parents() 互換)。"""
+        """祖先プロセスリストを返す（psutil.Process.parents() 互換）。"""
         return list(self._ancestors)
 
 

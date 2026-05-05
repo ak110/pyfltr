@@ -3,12 +3,14 @@
 - TOML読み書きは`tomlkit`に統一する（`tomllib`は使用しない）。
   `pyproject.toml`およびグローバル設定ファイル`config.toml`の読込・編集に適用する
 - 実行内（プロセス全体で1回計算したい）キャッシュは`@functools.lru_cache(maxsize=1)`で実装する。
-  モジュール変数＋`global`文の代替案よりpylint抑止が不要で、関数として参照できるため`monkeypatch.setattr`でテスト差し替えできる利点がある
+  モジュール変数＋`global`文の代替案よりpylint抑止が不要で、
+  関数として参照できるため`monkeypatch.setattr`でテスト差し替えできる利点がある
 - 関数内ローカルimportは「循環import発生時のみ」「オプショナル依存のtry/except内」の2用途に限定する。
   起動時間の最適化を目的とした遅延importは行わない（測定根拠が無い限り早期最適化に該当するため）。
   動的フォーマッター登録のような構造的事情は、レジストリ初期化を呼び出し側へ集約することで遅延importを回避する
 - 同一サブパッケージ内のモジュール間importは、`pyright`が関数内ローカルimportを未解決として誤検知する事象がある。
-  特に`pyfltr/command/dispatcher.py`は他のcommand配下モジュールを参照する都合で関数内ローカルimportを避けてモジュールレベルimportで統一する。
+  特に`pyfltr/command/dispatcher.py`は他のcommand配下モジュールを参照する都合で、
+  関数内ローカルimportを避けてモジュールレベルimportで統一する。
   循環import発生時のみローカルimportに切り替える方針を取る
 - インライン抑止コメント（`# pylint: disable=`・`# noqa`・`# type: ignore`等）は、
   ルール本来の意図が当該箇所に当てはまらない例外を局所的に示す目的に限定する。

@@ -1,9 +1,8 @@
-"""`list-runs` / `show-run`サブコマンドのテスト。
+"""`list-runs` / `show-run` サブコマンドのテスト。
 
-`PYFLTR_CACHE_DIR`を`tmp_path`に固定することで、テストデータ生成に使う
-`ArchiveStore(cache_root=tmp_path)`と`pyfltr.cli.main.run([...])`経由で
-生成される`ArchiveStore()`（`default_cache_root()`解決）が同一キャッシュを
-参照する状態を構築する。
+`PYFLTR_CACHE_DIR` を `tmp_path` に固定することで、テストデータ生成に使う
+`ArchiveStore(cache_root=tmp_path)` と `pyfltr.cli.main.run([...])` 経由で
+生成される `ArchiveStore()`（`default_cache_root()` 解決）が同一キャッシュを参照する。
 """
 
 # pylint: disable=missing-function-docstring  # テストは関数docstringを省略する慣習
@@ -26,7 +25,7 @@ def _isolated_cache(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> pathlib.Path:
-    """全テストで`PYFLTR_CACHE_DIR`を`tmp_path`に固定する。"""
+    """`PYFLTR_CACHE_DIR`を`tmp_path`に固定するフィクスチャ。"""
     monkeypatch.setenv("PYFLTR_CACHE_DIR", str(tmp_path))
     return tmp_path
 

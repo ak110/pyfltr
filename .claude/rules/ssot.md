@@ -9,18 +9,21 @@
 - MkDocsの`docs_dir`（`docs/`）外のファイル（`.claude/rules/`配下など）への内部リンクは禁止する。
   `docs_dir`外のファイルはサイトに含まれず`--strict`でビルドが失敗するため。
   内部規約・運用ファイルへの参照は本文中での言及にとどめる
-- `docs/guide/index.md`の対応ツール一覧と`mkdocs.yml`内llmstxt `markdown_description`の「対応ツール」節は人手同期（SSOT化しない運用）。
-  ただし`mkdocs.yml`内llmstxt `markdown_description`本文については
-  `tests/llmstxt_test.py`が「全サブコマンド名・全ビルトインコマンド名を含むこと」を機械検証する。
+- `docs/guide/index.md`の対応ツール一覧と`mkdocs.yml`内llmstxtの`markdown_description`「対応ツール」節は
+  人手同期（SSOT化しない運用）。
+  ただし`markdown_description`本文については`tests/llmstxt_test.py`が
+ 「全サブコマンド名・全ビルトインコマンド名を含むこと」を機械検証する。
   整理時に圧縮しすぎると当該テストが失敗するため、これらの名前は漏らさず記載する
 - ty記述のSSOTは`docs/guide/index.md`。
-  preset非収録の扱いを変更した場合は`README.md`・`mkdocs.yml`内llmstxt・`docs/guide/configuration.md`・`docs/guide/usage.md`を併せて更新する
+  preset非収録の扱いを変更した場合は`README.md`・`mkdocs.yml`内llmstxt・`docs/guide/configuration.md`・
+  `docs/guide/usage.md`を併せて更新する
 - サブコマンド一覧のSSOTは`docs/guide/usage.md`。
   サブコマンドを追加・削除した場合は`README.md`の「使い方」節と`mkdocs.yml`内llmstxtの「サブコマンド」節を併せて更新する
-- `mkdocs.yml`内llmstxt `markdown_description`にはLLMが利用する際に有用な情報のみ記載する（`run-for-agent`サブコマンド・主要オプションなど）。
-  LLMにとって不要な情報はdocs側をSSOTとし、多重管理を避ける
+- `mkdocs.yml`内llmstxtの`markdown_description`にはLLMが利用する際に有用な情報のみ記載する
+ （`run-for-agent`サブコマンド・主要オプションなど）。LLMにとって不要な情報はdocs側をSSOTとし、多重管理を避ける
 - 出力形式解決のSSOTは`docs/guide/usage.md`「出力形式の切り替え」節。
-  優先順位は`CLI > PYFLTR_OUTPUT_FORMAT > サブコマンド既定値 > AI_AGENT(jsonl) > text`、サブコマンド別許容値は実行系5値・参照系3値・`command-info`2値。
+  優先順位は`CLI > PYFLTR_OUTPUT_FORMAT > サブコマンド既定値 > AI_AGENT(jsonl) > text`。
+  サブコマンド別許容値は実行系5値・参照系3値・`command-info`2値。
   解決ロジック本体は`pyfltr/cli/output_format.py`の`resolve_output_format`に置く。
   挙動変更時は実装・`docs/guide/usage.md`・`mkdocs.yml`内llmstxtを併せて更新する
 - グローバル設定の対象範囲・特殊仕様（archive/cache系のglobal優先）のSSOTは

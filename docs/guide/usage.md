@@ -216,7 +216,7 @@ MCPクライアントがstdinを閉じた時点でサーバーが終了する。
 }
 ```
 
-エージェント常駐起動は独立venvで動くuvxの方がプロジェクトの`pyproject.toml`解釈やcwd依存の影響を受けず安定する。
+エージェント常駐起動では、独立venvで動くuvxの方がプロジェクトの`pyproject.toml`解釈やcwd依存の影響を受けない。
 
 Claude Codeから登録する場合は`claude mcp add`コマンドを利用できる:
 
@@ -231,9 +231,11 @@ pyfltr command-info <tool> [--format text|json] [--check]
 ```
 
 対象ツールの起動方式（runner種別・実行ファイルパス・最終コマンドライン）の解決結果を副作用無しで表示する。
-`pyproject.toml`の`{command}-runner`設定や`python-runner` / `js-runner` / `bin-runner`の影響を実環境で確認したいときに使う。
+`pyproject.toml`の`{command}-runner`設定や`python-runner` / `js-runner` / `bin-runner`の影響を
+実環境で確認する場合に使う。
 
-出力はセクション見出し（`## 実行コマンド` / `## ランナー解決` / `## mise診断` / `## 設定` / `## 環境変数`）で関連項目をまとめる。
+出力はセクション見出し（`## 実行コマンド` / `## ランナー解決` / `## mise診断` / `## 設定` / `## 環境変数`）
+で関連項目をまとめる。
 情報が無いセクションは省略される。
 
 mise設定（プロジェクトmise.tomlまたはグローバル設定）に`rust`記述がある場合の出力例:
@@ -270,7 +272,8 @@ version: latest
 tool specを省略した`mise exec -- cargo fmt`形になり、mise設定の解決済み内容（バージョン固定・components等）が反映される。
 mise設定に`rust`記述が無い場合は`mise exec rust@latest -- cargo fmt`形になる。
 
-`{command}-fix-args`が定義されているコマンド（textlint・markdownlintなど）では、`commandline (fix step):`と`commandline (check step):`を併記する。
+`{command}-fix-args`が定義されているコマンド（textlint・markdownlintなど）では、
+`commandline (fix step):`と`commandline (check step):`を併記する。
 fix段とcheck段の二度実行が異なる引数を必要とするためである。
 
 ```console
@@ -318,7 +321,7 @@ PowerShellでの設定例:
 pyfltr generate-shell-completion powershell | Out-String | Invoke-Expression
 ```
 
-永続化する場合はプロファイルに上記を追記する。
+永続化する場合はプロファイルに上記を追記。
 
 ### `[files and/or directories ...]`
 
@@ -486,13 +489,14 @@ CLIオプション`--output-format`が指定されている場合は環境変数
 
 #### 直接呼び出し（推奨）
 
-エージェントがシェルコマンドを実行できる環境では、`pyfltr run-for-agent`を直接呼ぶ方法が最もシンプル。
-JSONL出力をそのまま読み込める。
+エージェントがシェルコマンドを実行できる環境では、`pyfltr run-for-agent`を直接呼ぶ。
+JSONL出力をそのまま読み込むことができる。
 
 #### MCP経由
 
 `pyfltr mcp`でMCPサーバーを起動すると、コーディングエージェントが`run_for_agent`ツールとして呼び出せる。
-CLIの`run-for-agent`とは異なりJSONL出力がstdoutに流れないため、エージェントのMCPクライアントが結果を構造化データとして受け取れる。
+CLIの`run-for-agent`とは異なりJSONL出力がstdoutに流れないため、
+エージェントのMCPクライアントが結果を構造化データとして受け取れる。
 ただし`pyfltr mcp`起動後は同一プロセスのstdin/stdoutがJSON-RPCに専有されるため、
 他のコマンドと組み合わせた場合に出力が混ざる事故に注意する
 （詳細は[トラブルシューティング](troubleshooting.md)を参照）。
@@ -505,9 +509,12 @@ CLIの`run-for-agent`とは異なりJSONL出力がstdoutに流れないため、
     pyfltr run-for-agent
     ```
 
-    末尾のsummary行（`"kind":"summary"`）の`commands_summary.needs_action`配下を参照して対応要件数の有無を確認し、問題がなければ完了する。
-    `commands_summary.needs_action`配下の`failed` / `resolution_failed`がいずれも0であれば残作業は無く、`commands_summary.no_issues`配下の内訳は確認不要。
-    `applied_fixes`が非空でも`summary.guidance`に注記が出るが、formatter/fix-stageによる書き換えのみで再実行は不要なため、そのまま完了してよい。
+    末尾のsummary行（`"kind":"summary"`）の`commands_summary.needs_action`配下を参照して対応要件数の有無を確認し、
+    問題がなければ完了する。
+    `commands_summary.needs_action`配下の`failed` / `resolution_failed`がいずれも0であれば残作業は無く、
+    `commands_summary.no_issues`配下の内訳は確認不要。
+    `applied_fixes`が非空でも`summary.guidance`に注記が出るが、formatter/fix-stageによる書き換えのみで
+    再実行は不要なため、そのまま完了してよい。
 
 2. 失敗したツール/ファイルだけ再実行する
 
@@ -519,7 +526,8 @@ CLIの`run-for-agent`とは異なりJSONL出力がstdoutに流れないため、
     pyfltr run-for-agent --only-failed
     ```
 
-    `--commands`で特定ツールに限定することで出力量を抑えつつ、`diagnostic`行から修正対象のファイル・行番号・メッセージを取得する。
+    `--commands`で特定ツールに限定することで出力量を抑えつつ、
+    `diagnostic`行から修正対象のファイル・行番号・メッセージを取得する。
     `command.retry_command`フィールドには当該ツールだけを失敗ファイルに限定した再実行コマンドが既に生成されているため、
     そのまま貼り付けて実行できる。
     `--only-failed`は直前runのアーカイブから失敗ツール・失敗ファイルを自動抽出して再実行する。
@@ -559,7 +567,7 @@ repos:
         types: [file]
 ```
 
-dev依存に`pyfltr`を固定する運用では`entry: uv run --frozen pyfltr fast`に置き換えてもよい。
+dev依存に`pyfltr`を固定する運用では`entry: uv run --frozen pyfltr fast`に置き換えることもできる。
 
 ### 共通の注意点
 
