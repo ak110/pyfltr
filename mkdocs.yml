@@ -32,7 +32,8 @@ plugins:
       full_output: llms-full.txt
       markdown_description: |
         Python / Rust / .NET / TypeScript・JavaScript / ドキュメントなど多言語プロジェクトのformatter・linter・testerを単一コマンドで並列実行するCLIツール。
-        詳細は[利用者向けガイド](guide/index.md)を参照。
+        最小設定で動かすまでの導入は[はじめに](guide/getting-started.md)を参照。
+        対応ツール一覧は[対応ツール](guide/index.md)を参照。
 
         ## サブコマンド
 
@@ -82,11 +83,12 @@ plugins:
         ホーム:
           - index.md: ドキュメント入口
         使い方:
-          - guide/index.md: 対応ツール一覧・コンセプト・インストール
+          - guide/getting-started.md: インストール・最小設定・実行・コーディングエージェント連携
+          - guide/index.md: 対応ツール一覧・コンセプト
           - guide/usage.md: CLIの使い方・オプション・UI説明・コーディングエージェント連携
           - guide/troubleshooting.md: MCP stdout占有・PRE_COMMIT検出・対象ファイル空・アーカイブ容量確認
         設定:
-          - guide/configuration.md: 基本設定・プリセット・並列実行など
+          - guide/configuration.md: プリセット・言語カテゴリゲート・設定項目一覧・グローバル設定・並列実行
           - guide/configuration-tools.md: ツール別設定（python-runner / js-runner / bin-runnerのカテゴリ委譲と直接指定値の対称12値設定・2段階実行・カスタムコマンド）
           - guide/recommended.md: Pythonプロジェクトの推奨設定例・タスクランナー・CI設定
           - guide/recommended-nonpython.md: TypeScript/JS・Rust・.NETプロジェクトの推奨設定例
@@ -112,9 +114,11 @@ markdown_extensions:
 nav:
   - ホーム: index.md
   - 使い方:
-      - 概要: guide/index.md
+      - はじめに: guide/getting-started.md
+      - 対応ツール: guide/index.md
       - CLIコマンド: guide/usage.md
       - トラブルシューティング: guide/troubleshooting.md
+  - 設定:
       - 設定項目: guide/configuration.md
       - 設定項目（ツール別）: guide/configuration-tools.md
       - 推奨設定例: guide/recommended.md

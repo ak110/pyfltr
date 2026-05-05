@@ -33,7 +33,7 @@ uvx pyfltr --help
 pip環境では`pip install pyfltr`を使う。
 
 実行するツールはpyproject.tomlの`[tool.pyfltr]`セクションで指定する。
-詳細は[設定項目](docs/guide/configuration.md)を参照。
+最小設定から段階的に導入する手順は[はじめに](docs/guide/getting-started.md)を参照。
 
 ## 使い方
 
@@ -58,6 +58,6 @@ claude mcp add pyfltr -- uvx pyfltr mcp
 
 ## ドキュメント
 
-- <https://ak110.github.io/pyfltr/> — 概要・対応ツール一覧・設定リファレンス
+- <https://ak110.github.io/pyfltr/> — はじめに・対応ツール一覧・設定リファレンス
 - <https://ak110.github.io/pyfltr/llms.txt> — LLM向け構造化インデックス
 - [docs/development/development.md](docs/development/development.md) — 開発者向け情報

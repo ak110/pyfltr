@@ -1,5 +1,8 @@
 # 推奨設定例
 
+Pythonプロジェクト向けの推奨構成例（pyproject.toml・pre-commit・タスクランナー・CI設定）。
+最小設定で動かすところから始めたい場合は[はじめに](getting-started.md)を参照する。
+
 ## pyproject.toml
 
 pyfltr本体の設定（`[tool.pyfltr]`）と、呼び出される各ツール（ruff / mypy / pytest）の設定を1つの`pyproject.toml`にまとめた例。

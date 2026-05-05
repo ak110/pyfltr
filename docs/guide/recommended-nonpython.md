@@ -1,5 +1,8 @@
 # 推奨設定例（非Pythonプロジェクト）
 
+TypeScript/JS・Rust・.NETプロジェクト向けの推奨構成例。
+最小設定で動かすところから始めたい場合は[はじめに](getting-started.md)を参照する。
+
 Python以外のプロジェクトでもpyfltrを活用できる。共通のポイントは以下。
 
 - `preset = "latest"`: 各時点での推奨ツール構成。
