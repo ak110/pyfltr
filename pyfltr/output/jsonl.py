@@ -518,14 +518,15 @@ def _build_command_record(
         "type": result.command_type,
         "status": result.status,
     }
-    # runner情報は `build_commandline` が成功した経路でのみ値が確定する。
-    # `resolution_failed` や対象0件などでcommandline解決を行わない経路では
-    # `effective_runner` / `runner_source` がNoneのままとなり、その場合はキーごと省略する
-    # （既存の他フィールド（rc等）と同じ「Noneは出力しない」慣習に揃える）。
-    if result.effective_runner is not None:
+    # runner情報は「期待した経路と実際の経路が乖離した場合」のみ出力する（fallback検出用途）。
+    # 通常経路（runnerで指定したカテゴリ・直接値の通り解決した場合、`{command}-path`指定でdirect固定の場合等）は
+    # 3フィールドとも省略してLLM入力のトークン消費を抑える。
+    # fallback判定キーは `runner_fallback`（解決層で判定済み）。
+    # 通常時の解決状況の確認は `pyfltr command-info` の責務とする。
+    if result.runner_fallback is not None:
         record["effective_runner"] = result.effective_runner
-    if result.runner_source is not None:
         record["runner_source"] = result.runner_source
+        record["runner_fallback"] = result.runner_fallback
     record["files"] = result.files
     record["diagnostics"] = diagnostics
     # cached=Trueのときは実行をスキップしているため`elapsed`は出力せず
@@ -684,6 +685,8 @@ def _build_summary_record(
     `no_issues`側に分類する。
     `resolution_failed`は0件のときキー自体を省略する（通常プロジェクトでは常に0のため）。
     `failed`/`warning`は0件でも常時出力する（0件であることがエラー無し / 警告無し判定に直結するため）。
+    コマンド総数 `total` は `commands_summary` 配下の末尾（`no_issues` / `needs_action` の後）へ配置する。
+    指摘総件数 `diagnostics` はコマンド単位の集計ではないため `commands_summary` の外に置く。
     `commands_summary`の兄弟である`applied_fixes`/`fully_excluded_files`/
     `missing_targets`/`guidance`はカウント集計ではないため移動しない。
     `fully_excluded_files`が非空のとき、直接指定されたがexcludeパターン・.gitignore
@@ -691,7 +694,8 @@ def _build_summary_record(
     `missing_targets`が非空のとき、直接指定されたが存在しないファイル一覧を
     `missing_targets`キーに埋め込む（exclude/.gitignore全除外と原因を区別するため
     別フィールドで併存させる）。
-    exitコードは0のままだが、LLM/利用者が「警告ゼロ」と誤解しないよう明示する。
+    必須キーの順序は `kind` → `exit` → `commands_summary` → `diagnostics` で、
+    結論を上位に置きLLMが読み下しやすい流れにする。
     `applied_fixes`はfixステージ・formatterステージで実際に内容変化したファイルパスを
     全コマンドにわたってユニオンしソートした一覧。変化なしの場合は省略する。
     """
@@ -710,7 +714,7 @@ def _build_summary_record(
         needs_action["resolution_failed"] = counts["resolution_failed"]
     record: dict[str, typing.Any] = {
         "kind": "summary",
-        "total": len(ordered_results),
+        "exit": exit_code,
         "commands_summary": {
             "no_issues": {
                 "succeeded": counts["succeeded"],
@@ -718,9 +722,9 @@ def _build_summary_record(
                 "skipped": counts["skipped"],
             },
             "needs_action": needs_action,
+            "total": len(ordered_results),
         },
         "diagnostics": total_diagnostics,
-        "exit": exit_code,
     }
     guidance = _build_summary_guidance(
         failure_present=counts["failed"] + counts["resolution_failed"] > 0,

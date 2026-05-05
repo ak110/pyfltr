@@ -1588,7 +1588,7 @@ targets = ["*.py"]
         assert config.commands["my-tool"].type == "linter"
 
     def test_global_custom_commands_with_severity_and_hints(self, tmp_path: pathlib.Path) -> None:
-        """global側にseverity / hints / `~`混じりのargsを含むカスタムコマンドを書ける。
+        """global側にseverity / hints / `~`混じりのargsを含むカスタムコマンドを記述できる。
 
         「カスタムコマンドにseverity・hints・~展開を追加し
         check_colloquialをchezmoiでホスト限定配布する」計画の主用途を再現する統合経路。

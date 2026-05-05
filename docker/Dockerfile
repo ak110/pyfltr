@@ -129,7 +129,7 @@ RUN mkdir -p /home/pyfltr/.config/uv \
 # 単一 RUN にまとめてレイヤー数とイメージサイズを抑える (新ツール追加時はここに追記する)。
 #
 # - pnpm 設定: ``minimum-release-age=1440`` 分 = 24 時間で公開直後の新バージョン導入を抑止。
-#   ``store-dir`` は ``PNPM_STORE_DIR`` env でも効くが、CI から pnpm を直接呼ぶ場合の
+#   ``store-dir`` は ``PNPM_STORE_DIR`` env でも反映されるが、CI から pnpm を直接呼ぶ場合の
 #   一貫性のため設定にも明示する。
 # - mise 経由 (bin-runner=mise 既定): pyfltr のネイティブバイナリ群。インストール先は
 #   ``MISE_DATA_DIR=/cache/mise/data`` に集約され、レイヤーに持続する。
@@ -142,7 +142,7 @@ RUN mkdir -p /home/pyfltr/.config/uv \
 # `env=GITHUB_TOKEN` 修飾子（Dockerfile syntax 1.10+）で BuildKit が直接環境変数として
 # 注入するため、`USER pyfltr` 切り替え後でも secret ファイルの uid/mode に依存せず参照できる。
 # （ファイルマウント方式では既定の uid=0/mode=0400 のため非 root ユーザーから読めず、
-# 旧実装の `cat` 経由は permission denied を握りつぶして空文字を渡していた。）
+# 旧実装の `cat` 経由は permission denied を黙殺して空文字を渡していた。）
 RUN --mount=type=secret,id=GITHUB_TOKEN,env=GITHUB_TOKEN,required=false \
     pnpm config set store-dir "${PNPM_STORE_DIR}" --global \
     && pnpm config set minimum-release-age 1440 --global \

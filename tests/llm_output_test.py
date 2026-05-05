@@ -242,11 +242,11 @@ def test_build_command_record_retry_command_omitted() -> None:
     assert "retry_command" not in record
 
 
-def test_build_command_record_includes_runner_info_when_set() -> None:
-    """`effective_runner` / `runner_source` が設定されていればtoolレコードに出力される。
+def test_build_command_record_omits_runner_info_when_normal_path() -> None:
+    """通常経路（fallback無し）では runner 情報3点を全て省略する。
 
-    ユーザーがuv経路を選んだうえで`uv.lock`があるrunの典型値（uv / default）を確認する。
-    出力位置は`status`の直後で`files`より前（CLAUDE.md「ツール解決の優先順位」節の追跡用途）。
+    `effective_runner` / `runner_source` が確定していても `runner_fallback` が None なら
+    LLM入力のトークン消費を抑えるため出力しない（fallback時のみ通知する責務分担）。
     """
     result = pyfltr.command.core_.CommandResult(
         command="mypy",
@@ -261,18 +261,16 @@ def test_build_command_record_includes_runner_info_when_set() -> None:
         runner_source="default",
     )
     record = pyfltr.output.jsonl._build_command_record(result, diagnostics=0)
-    assert record["effective_runner"] == "uv"
-    assert record["runner_source"] == "default"
-    keys = list(record.keys())
-    assert keys.index("status") < keys.index("effective_runner") < keys.index("runner_source")
-    assert keys.index("runner_source") < keys.index("files")
+    assert "effective_runner" not in record
+    assert "runner_source" not in record
+    assert "runner_fallback" not in record
 
 
-def test_build_command_record_runner_info_direct_fallback() -> None:
-    """uv経路のdirectフォールバック時は`effective_runner="direct"`が出力される。
+def test_build_command_record_runner_info_emitted_on_uv_fallback() -> None:
+    """uv経路のdirectフォールバック時はrunner情報3点をまとめて出力する。
 
-    `{command}-runner = "python-runner"`既定経由でグローバル`python-runner = "uv"`既定値に解決される場合でも、
-    `uv.lock`欠如時はdirectへフォールバックする（CLAUDE.md「ツール解決の優先順位」節の経路）。
+    `runner_fallback="uv->direct"` が判定キーで、3フィールドをまとめてLLMへ通知する。
+    出力位置は `status` の直後で `files` より前（fallback通知の追跡用途）。
     """
     result = pyfltr.command.core_.CommandResult(
         command="mypy",
@@ -285,17 +283,43 @@ def test_build_command_record_runner_info_direct_fallback() -> None:
         elapsed=0.1,
         effective_runner="direct",
         runner_source="default",
+        runner_fallback="uv->direct",
     )
     record = pyfltr.output.jsonl._build_command_record(result, diagnostics=0)
     assert record["effective_runner"] == "direct"
     assert record["runner_source"] == "default"
+    assert record["runner_fallback"] == "uv->direct"
+    keys = list(record.keys())
+    assert keys.index("status") < keys.index("effective_runner") < keys.index("runner_source")
+    assert keys.index("runner_source") < keys.index("runner_fallback") < keys.index("files")
+
+
+def test_build_command_record_runner_info_emitted_on_mise_fallback() -> None:
+    """mise不在によるdirect退行時も `runner_fallback="mise->direct"` で3点出力される。"""
+    result = pyfltr.command.core_.CommandResult(
+        command="cargo-fmt",
+        command_type="formatter",
+        commandline=["/usr/bin/cargo"],
+        returncode=0,
+        has_error=False,
+        files=1,
+        output="",
+        elapsed=0.1,
+        effective_runner="direct",
+        runner_source="default",
+        runner_fallback="mise->direct",
+    )
+    record = pyfltr.output.jsonl._build_command_record(result, diagnostics=0)
+    assert record["effective_runner"] == "direct"
+    assert record["runner_source"] == "default"
+    assert record["runner_fallback"] == "mise->direct"
 
 
 def test_build_command_record_omits_runner_info_when_none() -> None:
-    """`effective_runner` / `runner_source` がNoneの場合はキーごと省略する。
+    """`effective_runner` / `runner_source` がNoneの場合（解決失敗・対象0件等）もキーごと省略する。
 
     `resolution_failed` 経路や対象0件で `build_commandline` を呼ばない経路では
-    runner情報が確定しないためNoneのまま出力される（既存の他フィールドと同じ慣習）。
+    runner情報が確定せず `runner_fallback` も None のままとなる。
     """
     result = pyfltr.command.core_.CommandResult(
         command="mypy",
@@ -310,10 +334,15 @@ def test_build_command_record_omits_runner_info_when_none() -> None:
     record = pyfltr.output.jsonl._build_command_record(result, diagnostics=0)
     assert "effective_runner" not in record
     assert "runner_source" not in record
+    assert "runner_fallback" not in record
 
 
-def test_build_command_record_runner_info_path_override() -> None:
-    """`{command}-path`明示指定時は`runner_source="path-override"`になる。"""
+def test_build_command_record_omits_runner_info_when_path_override() -> None:
+    """`{command}-path`明示指定時はdirect固定経路のためfallback扱いせず省略する。
+
+    利用者が明示的にパスを指定した結果のdirect経路は退行ではないため、
+    `runner_fallback=None` で通常経路と同様に3フィールドを省略する。
+    """
     result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
@@ -327,8 +356,9 @@ def test_build_command_record_runner_info_path_override() -> None:
         runner_source="path-override",
     )
     record = pyfltr.output.jsonl._build_command_record(result, diagnostics=0)
-    assert record["effective_runner"] == "direct"
-    assert record["runner_source"] == "path-override"
+    assert "effective_runner" not in record
+    assert "runner_source" not in record
+    assert "runner_fallback" not in record
 
 
 def test_build_command_lines_truncates_diagnostics_when_archived() -> None:
@@ -743,6 +773,43 @@ def test_build_summary_record_groups_statuses_into_no_issues_and_needs_action() 
     assert "failed" not in record
     assert "resolution_failed" not in record
     assert "skipped" not in record
+
+
+def test_build_summary_record_field_order_and_total_under_commands_summary() -> None:
+    """summaryレコードの必須キーは `kind` → `exit` → `commands_summary` → `diagnostics` の順で並び、
+    `total` は `commands_summary` 配下の末尾（`no_issues` / `needs_action` の後）に置かれる。
+
+    LLMが上から読み下したときに「結論→集計→指摘総数」の流れで把握できる順序に揃える設計。
+    """
+    failed = pyfltr.command.core_.CommandResult(
+        command="mypy",
+        command_type="linter",
+        commandline=["mypy"],
+        returncode=1,
+        has_error=True,
+        files=1,
+        output="",
+        elapsed=0.0,
+    )
+    succeeded = pyfltr.command.core_.CommandResult(
+        command="ruff-check",
+        command_type="linter",
+        commandline=["ruff", "check"],
+        returncode=0,
+        has_error=False,
+        files=1,
+        output="",
+        elapsed=0.0,
+    )
+    record = pyfltr.output.jsonl._build_summary_record([failed, succeeded], exit_code=1)
+    keys = list(record.keys())
+    assert keys.index("kind") < keys.index("exit") < keys.index("commands_summary") < keys.index("diagnostics")
+    # `total` は `commands_summary` 配下に移動し、トップレベルから消える。
+    assert "total" not in record
+    commands_summary = record["commands_summary"]
+    cs_keys = list(commands_summary.keys())
+    assert cs_keys.index("no_issues") < cs_keys.index("needs_action") < cs_keys.index("total")
+    assert commands_summary["total"] == 2
 
 
 def test_build_summary_record_omits_resolution_failed_when_zero() -> None:

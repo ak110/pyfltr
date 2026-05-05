@@ -34,7 +34,7 @@ update-actions:
 	GITHUB_TOKEN=$$(gh auth token) mise exec -- pinact run --update --min-age=1
 
 # フォーマット + 軽量lint（開発時の手動実行用。自動修正あり）
-# pyfltr fast は fix ステージを内蔵するため、以前の `pyfltr fix` に相当する自動修正も走る
+# pyfltr fast は fix ステージを内蔵するため、以前の `pyfltr fix` に相当する自動修正も実行される
 # 利用者向け推奨と同じ with 方式で起動するが、ローカル変更を反映するため editable 指定にする
 format:
 	$(MAKE) clean-stale-dist-info

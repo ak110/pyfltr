@@ -148,6 +148,14 @@ class CommandResult:
     `explicit` / `default` / `path-override` のいずれかで、`{command}-runner` の決定経緯を示す。
     `effective_runner` と同じくJSONL commandレコードの `runner_source` フィールドへ露出する。
     """
+    runner_fallback: str | None = None
+    """`pyfltr.command.runner.ResolvedCommandline.runner_fallback` の値。
+
+    期待していた非direct経路がdirectへ退行した場合のみ退行経路ラベル
+    （例: `"uv->direct"` / `"uvx->direct"` / `"mise->direct"`）が入る。
+    通常経路では `None`。JSONL commandレコードでは値ありの場合のみ
+    `effective_runner` / `runner_source` / `runner_fallback` の3点をまとめて出力する判定キー。
+    """
     timeout_exceeded: bool = False
     """`{command}-timeout` で指定された壁時計上限を超過してsubprocessが停止されたか。
 
@@ -315,3 +323,9 @@ class ExecutionParams:
     """
     runner_source: str | None = None
     """`ResolvedCommandline.runner_source` の値。`explicit` / `default` / `path-override` のいずれか。"""
+    runner_fallback: str | None = None
+    """`ResolvedCommandline.runner_fallback` の事後値。
+
+    `ensure_mise_available` 通過後の値を採用し、mise不在時のdirectフォールバック分岐も反映する。
+    `_with_targets` 経由で `CommandResult.runner_fallback` へ転記する。
+    """

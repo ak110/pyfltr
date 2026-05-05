@@ -240,6 +240,10 @@ class ResolvedCommandline:
     （`"direct"` / `"mise"` / `"uv"` / `"uvx"` / `"pnpx"` / `"pnpm"` / `"npm"` / `"npx"` / `"yarn"`）。
     `tool_spec_omitted` はmise経路で `["exec", "--", <bin>]` 形（tool spec省略形）を採用したかを示す。
     commandline文字列の見た目に頼らず判別できるよう、command-info等で明示露出する用途で持つ。
+    `runner_fallback` は「期待した非direct経路がdirectへ退行した」場合の退行経路を表す
+    （例:`"uv->direct"`・`"uvx->direct"`・`"mise->direct"`）。
+    通常経路（uv指定通りuvで解決等）では `None`。
+    JSONL command レコードでfallback時のみrunner情報を出力する判定キーとして利用する。
     """
 
     executable: str
@@ -248,6 +252,7 @@ class ResolvedCommandline:
     runner_source: str
     effective_runner: str
     tool_spec_omitted: bool = False
+    runner_fallback: str | None = None
 
     @property
     def commandline(self) -> list[str]:
@@ -375,12 +380,14 @@ def _resolve_direct_executable(bin_name: str) -> str:
 def _resolve_python_commandline(
     command: str,
     effective: str,
-) -> tuple[str, str, list[str]]:
+) -> tuple[str, str, list[str], str | None]:
     """Python系ツールの実行ファイルと引数prefixを決定する。
 
     `effective` には `python-runner` 委譲解決後の値（`"direct"` / `"uv"` / `"uvx"`）が入る。
-    `(effective_runner, executable, prefix)` の3要素タプルを返す。
+    `(effective_runner, executable, prefix, runner_fallback)` の4要素タプルを返す。
     `effective_runner`は `direct` フォールバックを反映した最終形となる。
+    `runner_fallback` は期待していた非direct経路がdirectへ退行したケースのみ
+    退行経路ラベル（`"uv->direct"` / `"uvx->direct"`）を返し、それ以外は `None`。
 
     - `"uv"`: cwdに`uv.lock`があり、かつ`uv`バイナリが利用可能な場合は `uv run --frozen <bin>` を組み立てる。
       いずれかが満たされなければ direct フォールバック
@@ -391,19 +398,19 @@ def _resolve_python_commandline(
     bin_name = PYTHON_TOOL_BIN[command]
     if effective == "uv":
         if cwd_has_uv_lock() and ensure_uv_available():
-            return "uv", "uv", ["run", "--frozen", bin_name]
+            return "uv", "uv", ["run", "--frozen", bin_name], None
         # uv不在 or uv.lock不在 → direct PATH解決へフォールバック。
         executable = _resolve_python_tool_direct(command)
-        return "direct", executable, []
+        return "direct", executable, [], "uv->direct"
     if effective == "uvx":
         if ensure_uvx_available():
-            return "uvx", "uvx", [bin_name]
+            return "uvx", "uvx", [bin_name], None
         # uvx不在 → direct PATH解決へフォールバック。
         executable = _resolve_python_tool_direct(command)
-        return "direct", executable, []
+        return "direct", executable, [], "uvx->direct"
     if effective == "direct":
         executable = _resolve_python_tool_direct(command)
-        return "direct", executable, []
+        return "direct", executable, [], None
     raise ValueError(f"python-runnerの設定値が正しくありません: {effective=}")
 
 
@@ -603,13 +610,14 @@ def build_commandline(
                 f"{command}: PYTHON_TOOL_BINに登録されていないため "
                 f'`{command}-runner = "{runner}"`（解決後 "{effective}"）は指定できません'
             )
-        resolved_effective, executable, prefix = _resolve_python_commandline(command, effective)
+        resolved_effective, executable, prefix, runner_fallback = _resolve_python_commandline(command, effective)
         return ResolvedCommandline(
             executable=executable,
             prefix=prefix,
             runner=runner,
             runner_source=source,
             effective_runner=resolved_effective,
+            runner_fallback=runner_fallback,
         )
 
     # effective == "direct"
@@ -691,7 +699,13 @@ def ensure_mise_available(
         resolved_path = shutil.which(bin_name)
         if resolved_path is None:
             raise FileNotFoundError(bin_name)
-        return dataclasses.replace(resolved, executable=resolved_path, prefix=[], effective_runner="direct")
+        return dataclasses.replace(
+            resolved,
+            executable=resolved_path,
+            prefix=[],
+            effective_runner="direct",
+            runner_fallback="mise->direct",
+        )
 
     # mise経由の事前チェック・trust呼び出しでもmiseがtoolパスにフォールバック
     # 解決してしまう挙動を回避するため、PATHからmise toolパスを除外したenvを渡す。

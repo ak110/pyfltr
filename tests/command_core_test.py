@@ -512,7 +512,7 @@ def test_expanduser_does_not_apply_to_targets(tmp_path: pathlib.Path, monkeypatc
     """`config-files` / `targets` 等のglobパターンには `~` 展開を適用しない。
 
     config.values上で原文を保持することは `test_custom_command_args_preserve_tilde`
-    で確認しているが、glob展開経路では原文がそのままtargets解決に流れる必要がある。
+    で確認しているが、glob展開経路では原文がそのままtargets解決へ渡る必要がある。
     本テストは `CommandInfo.targets` 値が `~`混じりでも何も書き換わっていないことを確認する。
     """
     monkeypatch.setenv("HOME", "/tmp/fake-home")
@@ -2373,6 +2373,35 @@ def test_ensure_mise_available_error_message_without_tool_spec(mocker) -> None:
     assert "could not resolve tool" in message
 
 
+def test_ensure_mise_available_sets_runner_fallback_when_mise_missing(mocker) -> None:
+    """mise本体不在時のdirectフォールバックでは `runner_fallback="mise->direct"` がセットされる。
+
+    `effective_runner` も同時に `direct` に上書きされ、後段のJSONL出力で
+    fallback判定キーとして3フィールドをまとめて出力する根拠になる。
+    """
+
+    # `shutil.which("mise")` のみNoneを返し、他のbin解決は通常通り行われるよう振り分ける。
+    def fake_which(name: str) -> str | None:
+        if name == "mise":
+            return None
+        return f"/usr/bin/{name}"
+
+    mocker.patch("pyfltr.command.runner.shutil.which", side_effect=fake_which)
+    resolved = pyfltr.command.runner.ResolvedCommandline(
+        executable="mise",
+        prefix=["exec", "rust@latest", "--", "cargo"],
+        runner="bin-runner",
+        runner_source="default",
+        effective_runner="mise",
+    )
+    config = pyfltr.config.config.create_default_config()
+    after = pyfltr.command.runner.ensure_mise_available(resolved, config, command="cargo-fmt")
+    assert after.executable == "/usr/bin/cargo"
+    assert after.prefix == []
+    assert after.effective_runner == "direct"
+    assert after.runner_fallback == "mise->direct"
+
+
 # --- get_mise_active_tools のキャッシュキー差分 ---
 
 
@@ -2651,25 +2680,39 @@ def test_build_commandline_python_tool_uv_with_lock_and_uv_present(setup_uv_runn
 
 
 def test_build_commandline_python_tool_uv_falls_back_when_uv_missing(setup_uv_runner) -> None:
-    """uv不在の場合はdirect（shutil.which）へフォールバックする。"""
+    """uv不在の場合はdirect（shutil.which）へフォールバックし、`runner_fallback="uv->direct"` が付く。"""
     setup_uv_runner(uv_lock=True, uv_available=False, python_bin_dir="/fake/bin")
     config = pyfltr.config.config.create_default_config()
     resolved = pyfltr.command.runner.build_commandline("mypy", config)
     assert resolved.commandline == ["/fake/bin/mypy"]
     assert resolved.effective_runner == "direct"
+    assert resolved.runner_fallback == "uv->direct"
 
 
 def test_build_commandline_python_tool_uv_falls_back_when_lock_missing(setup_uv_runner) -> None:
-    """uv.lock不在の場合はdirect（shutil.which）へフォールバックする。"""
+    """uv.lock不在の場合はdirect（shutil.which）へフォールバックし、`runner_fallback="uv->direct"` が付く。"""
     setup_uv_runner(uv_lock=False, uv_available=True, python_bin_dir="/fake/bin")
     config = pyfltr.config.config.create_default_config()
     resolved = pyfltr.command.runner.build_commandline("mypy", config)
     assert resolved.commandline == ["/fake/bin/mypy"]
     assert resolved.effective_runner == "direct"
+    assert resolved.runner_fallback == "uv->direct"
+
+
+def test_build_commandline_python_tool_uv_no_fallback_when_normal(setup_uv_runner) -> None:
+    """通常経路（uv指定通りuv解決）では `runner_fallback` は None のまま。"""
+    setup_uv_runner(uv_lock=True, uv_available=True)
+    config = pyfltr.config.config.create_default_config()
+    resolved = pyfltr.command.runner.build_commandline("mypy", config)
+    assert resolved.effective_runner == "uv"
+    assert resolved.runner_fallback is None
 
 
 def test_build_commandline_python_tool_uv_path_override_wins(setup_uv_runner) -> None:
-    """`mypy-path` 明示指定時はuv経由にならずpath値が採用される。"""
+    """`mypy-path` 明示指定時はuv経由にならずpath値が採用される。
+
+    path-override由来のdirectは退行ではないため `runner_fallback` は None のまま。
+    """
     setup_uv_runner(uv_lock=True, uv_available=True)
     config = pyfltr.config.config.create_default_config()
     config.values["mypy-path"] = "/usr/bin/mypy-custom"
@@ -2677,6 +2720,7 @@ def test_build_commandline_python_tool_uv_path_override_wins(setup_uv_runner) ->
     assert resolved.commandline == ["/usr/bin/mypy-custom"]
     assert resolved.runner_source == "path-override"
     assert resolved.effective_runner == "direct"
+    assert resolved.runner_fallback is None
 
 
 def test_build_commandline_ruff_format_resolves_ruff_bin(setup_uv_runner) -> None:
@@ -2741,7 +2785,7 @@ def test_build_commandline_python_tool_uvx_with_uvx_present(monkeypatch: pytest.
 
 
 def test_build_commandline_python_tool_uvx_falls_back_when_uvx_missing(monkeypatch: pytest.MonkeyPatch) -> None:
-    """uvx不在の場合はdirect（shutil.which）へフォールバックする。"""
+    """uvx不在の場合はdirect（shutil.which）へフォールバックし、`runner_fallback="uvx->direct"` が付く。"""
     monkeypatch.setattr(pyfltr.command.runner, "ensure_uvx_available", lambda: False)
     monkeypatch.setattr(
         "pyfltr.command.runner.shutil.which",
@@ -2752,6 +2796,7 @@ def test_build_commandline_python_tool_uvx_falls_back_when_uvx_missing(monkeypat
     resolved = pyfltr.command.runner.build_commandline("mypy", config)
     assert resolved.commandline == ["/fake/bin/mypy"]
     assert resolved.effective_runner == "direct"
+    assert resolved.runner_fallback == "uvx->direct"
 
 
 def test_build_commandline_python_runner_delegation_to_uvx(monkeypatch: pytest.MonkeyPatch) -> None:

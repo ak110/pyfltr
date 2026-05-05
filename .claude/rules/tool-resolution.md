@@ -63,8 +63,14 @@ cwdのuvプロジェクトに対象ツールが登録されていない場合、
 利用者は当該ツールをプロジェクトに追加するか、`{command}-path`で明示するか、
 `{command}-runner`を`"direct"`へ切り替えて対応する。
 
-ツール解決経路の追跡情報はJSONL header（`uv.lock`・`uv.available`・`uv.x_available`）と各commandレコード（`effective_runner`・`runner_source`）に出力する。
-利用者・LLMが「想定どおりuv経路で動作したか」「direct fallbackが起きていないか」を出力から判別できるようにするための情報である。
+ツール解決経路の追跡情報は次の3系統で確認できる。
+
+- JSONL header（`uv.lock`・`uv.available`・`uv.x_available`）: プロセス全体のuv経路前提条件
+- JSONL commandレコード: fallback発生時のみ`effective_runner`・`runner_source`・`runner_fallback`を出力する。
+  通常経路では省略しトークン消費を抑える
+- `pyfltr command-info <command>`: 通常経路を含む詳細な解決状態（runner・effective_runner・mise/uv診断）を取得する
+
+JSONLレコードでfallbackを能動通知し、必要時にcommand-infoで詳細確認するという責務分担とする。
 JSONLフィールドの追加・名称変更は[output方針](output.md)に従う。
 
 ## {command}-runnerの値の体系

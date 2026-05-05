@@ -154,6 +154,7 @@ def _prepare_execution_params(
             via_mise=False,
             effective_runner=None,
             runner_source=None,
+            runner_fallback=None,
         )
 
     # `{command}-runner` および `{command}-path` 設定からツール起動コマンドラインを解決する。
@@ -234,6 +235,7 @@ def _prepare_execution_params(
         via_mise=via_mise,
         effective_runner=resolved.effective_runner,
         runner_source=resolved.runner_source,
+        runner_fallback=resolved.runner_fallback,
     )
 
 
@@ -438,6 +440,7 @@ def _dispatch_command(
         result.target_files = list(targets)
         result.effective_runner = params.effective_runner
         result.runner_source = params.runner_source
+        result.runner_fallback = params.runner_fallback
         result.severity = severity
         return result
 
