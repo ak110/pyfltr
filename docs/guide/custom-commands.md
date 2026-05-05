@@ -2,8 +2,8 @@
 
 `[tool.pyfltr.custom-commands]`で任意のツールを追加できる。
 ここでは実用的な設定例を紹介する。
-カスタムコマンドの仕様は[ツール別設定](configuration-tools.md)の「カスタムコマンド」セクションを参照する。
-最小設定からの導入手順は[はじめに](getting-started.md)を参照する。
+カスタムコマンドの仕様は[ツール別設定](configuration-tools.md)の「カスタムコマンド」セクションを参照。
+導入手順は[はじめに](getting-started.md)を参照。
 
 `error-pattern`は名前付きグループ`file` / `line` / `message`が必須、`col`は任意。
 正規表現にこれらが含まれない場合は設定エラーとなる。

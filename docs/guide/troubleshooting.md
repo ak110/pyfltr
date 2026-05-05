@@ -1,7 +1,7 @@
 # トラブルシューティング
 
 pyfltr運用中に発生しがちな事象と対処法を症状別にまとめる。
-最小設定からの導入手順は[はじめに](getting-started.md)を参照する。
+導入手順は[はじめに](getting-started.md)を参照。
 
 ## MCP起動時のstdout占有事故
 
@@ -144,7 +144,7 @@ directにフォールバックせず`failed`として扱う。
   `uv add --dev "pyfltr[python]"`を実行して`uv run pyfltr ...`で呼び出す
 - もしくは`pylint-runner = "direct"`を`pyproject.toml`の`[tool.pyfltr]`配下に明示する
 
-呼び出し方の使い分けと推奨理由は[呼び出し方の使い分け](recommended.md#calling-style)を参照する。
+呼び出し方の使い分けと推奨理由は[呼び出し方の使い分け](recommended.md#calling-style)を参照。
 
 ## 実行アーカイブのディスク使用量確認（定期管理）
 

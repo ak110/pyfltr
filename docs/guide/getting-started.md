@@ -1,8 +1,8 @@
 # はじめに
 
-pyfltrを最小設定で動かすための導入手順。
-インストール → 最小設定 → 実行 → コーディングエージェント連携 → 次のステップの順で読み進められる。
-すでにpyfltrを使っている場合は[CLIコマンド](usage.md)や[設定項目](configuration.md)を参照する。
+pyfltrを設定して実行するまでの導入手順。
+インストール・設定・実行・コーディングエージェント連携・次のステップの順に並ぶ。
+既にpyfltrを使っている場合は[CLIコマンド](usage.md)や[設定項目](configuration.md)を参照。
 
 ## インストール
 
@@ -16,12 +16,12 @@ uvx pyfltr --help
 `uv run pyfltr ...`で呼び出す。
 pip環境では`pip install pyfltr`を使う。
 
-呼び出し方の使い分けと推奨理由は[呼び出し方の使い分け](recommended.md#calling-style)を参照する。
+呼び出し方の使い分けと推奨理由は[呼び出し方の使い分け](recommended.md#calling-style)を参照。
 
-## 最小設定
+## 設定
 
 pyfltrの実行内容は`pyproject.toml`の`[tool.pyfltr]`セクションで指定する。
-最小限はプリセットと言語カテゴリゲートの2行。
+プリセットと言語カテゴリゲートの2行で足りる。
 
 ```toml
 [tool.pyfltr]
@@ -48,9 +48,9 @@ javascript = true
 ドキュメント系（textlint / markdownlint / actionlint / typos / pre-commit）は言語カテゴリゲートに属さず、
 プリセットで`true`になっているものがそのまま有効化される。
 
-プリセット・言語カテゴリゲートの詳細は[設定項目](configuration.md)を参照する。
+プリセット・言語カテゴリゲートの詳細は[設定項目](configuration.md)を参照。
 
-## 動かしてみる
+## 実行
 
 カレントディレクトリ配下のファイルを対象にチェックを実行する。
 
@@ -72,7 +72,7 @@ uvx pyfltr run --commands=ruff-check src/
 uvx pyfltr run --commands=mypy,pyright path/to/file.py
 ```
 
-サブコマンドの違いと全オプションは[CLIコマンド](usage.md)を参照する。
+サブコマンドの違いと全オプションは[CLIコマンド](usage.md)を参照。
 
 ## コーディングエージェントから使う
 
@@ -96,11 +96,11 @@ uvx pyfltr run-for-agent
 claude mcp add pyfltr -- uvx pyfltr mcp
 ```
 
-提供するMCPツールやJSONL出力の解釈方法は[CLIコマンド](usage.md#jsonl)の「コーディングエージェント連携」を参照する。
+提供するMCPツールやJSONL出力の解釈方法は[CLIコマンド](usage.md#jsonl)の「コーディングエージェント連携」を参照。
 
 ## 次のステップ
 
-利用シナリオに応じて次のページを参照する。
+利用シナリオに応じて次のページを参照。
 
 - 設定項目の全体像と詳細 → [設定項目](configuration.md) /
   [設定項目（ツール別）](configuration-tools.md)

@@ -1,7 +1,7 @@
 # 対応ツール
 
 pyfltrが対応するformatter / linter / testerを言語・用途別に示す。
-最初に試す場合は[はじめに](getting-started.md)から読み進めると、最小設定で動かすところまで線型に追える。
+初めて使う場合は[はじめに](getting-started.md)を参照。設定から実行までの導入手順を順に追える。
 
 言語カテゴリ（Python / JS/TS / Rust / .NET）に属するツールはすべて既定で無効（opt-in）。
 `preset = "latest"` + 言語カテゴリキー（`python` / `javascript` / `rust` / `dotnet`）の`true`指定だけで、

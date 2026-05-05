@@ -33,7 +33,7 @@ uvx pyfltr --help
 pip環境では`pip install pyfltr`を使う。
 
 実行するツールはpyproject.tomlの`[tool.pyfltr]`セクションで指定する。
-最小設定から段階的に導入する手順は[はじめに](docs/guide/getting-started.md)を参照。
+段階的な導入手順は[はじめに](docs/guide/getting-started.md)を参照。
 
 ## 使い方
 

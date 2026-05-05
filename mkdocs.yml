@@ -32,7 +32,7 @@ plugins:
       full_output: llms-full.txt
       markdown_description: |
         Python / Rust / .NET / TypeScript・JavaScript / ドキュメントなど多言語プロジェクトのformatter・linter・testerを単一コマンドで並列実行するCLIツール。
-        最小設定で動かすまでの導入は[はじめに](guide/getting-started.md)を参照。
+        設定から実行までの導入手順は[はじめに](guide/getting-started.md)を参照。
         対応ツール一覧は[対応ツール](guide/index.md)を参照。
 
         ## サブコマンド
@@ -83,7 +83,7 @@ plugins:
         ホーム:
           - index.md: ドキュメント入口
         使い方:
-          - guide/getting-started.md: インストール・最小設定・実行・コーディングエージェント連携
+          - guide/getting-started.md: インストール・設定・実行・コーディングエージェント連携
           - guide/index.md: 対応ツール一覧・コンセプト
           - guide/usage.md: CLIの使い方・オプション・UI説明・コーディングエージェント連携
           - guide/troubleshooting.md: MCP stdout占有・PRE_COMMIT検出・対象ファイル空・アーカイブ容量確認

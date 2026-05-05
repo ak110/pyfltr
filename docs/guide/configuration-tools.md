@@ -1,8 +1,8 @@
 # 設定項目（ツール別）
 
 ツールごとの起動方式（python-runner / js-runner / bin-runner / 直接実行）・2段階実行・カスタムコマンドを扱う。
-基本設定（プリセット・言語カテゴリゲート・並列実行等）は[設定項目](configuration.md)を参照する。
-最小設定からの導入手順は[はじめに](getting-started.md)を参照する。
+基本設定（プリセット・言語カテゴリゲート・並列実行等）は[設定項目](configuration.md)を参照。
+導入手順は[はじめに](getting-started.md)を参照。
 
 pyfltrは対応ツールを実行方式の観点から4カテゴリに分けて扱う。
 カテゴリ委譲を採用する3カテゴリでは既定値が対応するカテゴリ委譲値になっており、
@@ -615,7 +615,7 @@ taplo-args = ["--config", "taplo.toml"]
 
 設定キーの全一覧は
 [editorconfig-checker公式ドキュメント](https://github.com/editorconfig-checker/editorconfig-checker#excluding-files)
-を参照する。
+を参照。
 
 ### hadolint
 

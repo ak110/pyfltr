@@ -1,7 +1,7 @@
 # 推奨設定例
 
 Pythonプロジェクト向けの推奨構成例（pyproject.toml・pre-commit・タスクランナー・CI設定）。
-最小設定で動かすところから始めたい場合は[はじめに](getting-started.md)を参照する。
+設定して実行するところから始める場合は[はじめに](getting-started.md)を参照。
 
 ## pyproject.toml
 
