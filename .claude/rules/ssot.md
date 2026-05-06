@@ -29,6 +29,9 @@
 - グローバル設定の対象範囲・特殊仕様（archive/cache系のglobal優先）のSSOTは
   `pyfltr/config/config.py`の`ARCHIVE_CONFIG_KEYS` / `CACHE_CONFIG_KEYS` / `GLOBAL_PRIORITY_KEYS`定数。
   対象範囲を拡大する場合は実装・テスト・`docs/guide/configuration.md`を併せて更新する
+- 新規`{prefix}-{key}`系設定キー（`{prefix}-max-*`等）を`pyfltr/config/config.py`の
+  `DEFAULT_CONFIG`へ追加する場合、`docs/guide/configuration.md`の「設定項目一覧」節
+ （`#config-keys`）も併せて更新する。コードと参照ドキュメントが乖離しやすい
 - mise backend既定値・tool spec組み立て仕様・`mise ls --current`結果に基づくtool spec省略判定のSSOTは
   `pyfltr/command/runner.py`の`_BIN_TOOL_SPEC`および`build_commandline`・関連判定関数。
   変更時は`docs/guide/configuration-tools.md`・`docs/guide/recommended-nonpython.md`・`docs/guide/usage.md`の
@@ -39,5 +42,9 @@
   `docs/development/architecture.md`（mise active tools取得結果の構造化節）も併せて更新する
 - モジュールパス参照を含むドキュメントはモジュール移動の際に追従更新が必要。
   主な対象は`CLAUDE.md`・`docs/development/architecture.md`・`.claude/rules/`配下
+- `.claude/rules/`配下のルールファイルが`paths` frontmatterで連動更新先
+ （実装ファイル・テストファイル等）を列挙する場合、ルール改訂・連動先リネーム・新規追加の各タイミングで
+  pathsとリポジトリ実体の整合を計画段階で検証する。
+  実在しないパスを残すと条件付きロードのトリガーとして機能せず、想定したコンテキスト投入が動作しない
 - grep/replace機能の設計判断・undo方式・MCP既定値違いのSSOTは`pyfltr/.claude/rules/grep-replace.md`。
   新ツール固有の機能拡張（オプション追加・JSONLレコード追加・MCPツール追加）はそちらと併せて見直す

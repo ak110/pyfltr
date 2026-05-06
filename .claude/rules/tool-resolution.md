@@ -1,3 +1,17 @@
+---
+paths:
+  - "pyfltr/command/runner.py"
+  - "pyfltr/command/mise.py"
+  - "pyfltr/config/config.py"
+  - "pyfltr/command/builtin.py"
+  - "pyfltr/command/dispatcher.py"
+  - "docs/guide/recommended*.md"
+  - "docs/guide/configuration*.md"
+  - "docs/guide/usage.md"
+  - "tests/config_test.py"
+  - "tests/command_info_test.py"
+---
+
 # pyfltrのツール解決方針
 
 pyfltrが対応するformatter/linter/testerの依存指定および実行時のツール解決順位を集約する。

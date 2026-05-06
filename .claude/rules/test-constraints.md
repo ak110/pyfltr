@@ -61,3 +61,8 @@
   `monkeypatch.setattr("pyfltr.command.runner.cwd_has_uv_lock", lambda: True)`のように指定する。
   キャッシュ済み戻り値の上書きは有効でないため、関数差し替えで対応する。
   新規にキャッシュ付き判定関数を追加した場合も同じ制約が適用される
+- Python 3.11のargparseで`nargs="?"`位置引数と`nargs="*"`位置引数を併用するとき、次の挙動に注意する。
+  両者の間に`--option=value`形式の引数が介在すると、後続位置引数がunrecognizedとして拒否される。
+  grep/replaceサブコマンドのように複数位置引数（`pattern + paths`）をオプション混在で受理するときは、
+  `parse_known_args`で残余を回収し位置引数列へ統合する経路で回避する。
+  実装は`pyfltr/cli/main.py`の`grep`/`replace`分岐を参照する

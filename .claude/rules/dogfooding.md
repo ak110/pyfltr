@@ -1,3 +1,14 @@
+---
+paths:
+  - "pyfltr/command/builtin.py"
+  - "pyfltr/config/config.py"
+  - "Makefile"
+  - ".pre-commit-config.yaml"
+  - ".github/workflows/**"
+  - ".gitlab-ci.yml"
+  - "docs/development/development.md"
+---
+
 # pyfltrのドッグフーディング方針
 
 pyfltr自身のリポジトリでは対応ツールを可能な限り有効化し、動作確認とサンプル設定の提示を兼ねる。

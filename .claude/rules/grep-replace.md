@@ -1,3 +1,17 @@
+---
+paths:
+  - "pyfltr/grep_/**"
+  - "pyfltr/cli/grep_subcmd.py"
+  - "pyfltr/cli/replace_subcmd.py"
+  - "pyfltr/cli/mcp_server.py"
+  - "pyfltr/state/archive.py"
+  - "tests/grep_*_test.py"
+  - "tests/replace_subcmd_test.py"
+  - "tests/mcp_test.py"
+  - "docs/guide/grep-replace.md"
+  - "docs/guide/usage.md"
+---
+
 # pyfltrのgrep / replace機能の方針
 
 pyfltrの`grep`/`replace`サブコマンドおよびMCPツールに関する設計判断を集約する。

@@ -1,3 +1,13 @@
+---
+paths:
+  - "pyfltr/command/process.py"
+  - "pyfltr/command/env.py"
+  - "pyfltr/command/runner.py"
+  - "pyfltr/command/mise.py"
+  - "pyfltr/cli/main.py"
+  - "tests/process_test.py"
+---
+
 # pyfltrのsubprocess関連の方針
 
 subprocess起動・実行に関する設計判断をまとめる。

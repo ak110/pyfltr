@@ -1,3 +1,9 @@
+---
+paths:
+  - "pyfltr/command/builtin.py"
+  - "pyfltr/config/config.py"
+---
+
 # pyfltrのコマンド並び順方針
 
 `pyfltr/command/builtin.py`の`BUILTIN_COMMANDS`登録順は、
