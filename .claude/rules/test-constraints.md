@@ -66,3 +66,8 @@
   grep/replaceサブコマンドのように複数位置引数（`pattern + paths`）をオプション混在で受理するときは、
   `parse_known_args`で残余を回収し位置引数列へ統合する経路で回避する。
   実装は`pyfltr/cli/main.py`の`grep`/`replace`分岐を参照する
+- `pyfltr.warnings_`モジュールのトップレベル公開APIは
+  `emit_warning` / `collected_warnings` / `add_filtered_direct_file` / `filtered_direct_files` / `clear`の5つ。
+  内部で保持する`WarningCollector`クラスのメソッド名（`emit` / `collected`等）と
+  関数名が一致しないため、テストから`pyfltr.warnings_.collected()`を呼ぶ等の誤用が起きやすい。
+  蓄積済み警告を取得する用途では`collected_warnings()`を使う
