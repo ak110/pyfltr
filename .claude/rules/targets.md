@@ -20,13 +20,5 @@ paths:
 
 ## `_filter_by_gitignore`の挙動
 
-`git check-ignore --stdin -z`へ渡すパスは、各入力パスを実体パスへ正規化し
-cwdリポジトリからの相対パスへ変換した上で渡す。
-cwdリポジトリの外側に解決されたパスは判定対象外として、入力をそのまま残す。
-シンボリックリンク越えのpathspecで`fatal: pathspec ... is beyond a symbolic link`が起き、
-returncode 128で`.gitignore`除外が丸ごとスキップされる事象を回避するため。
-
-サブプロセスのreturncodeが0でも1でもない場合は`pyfltr.warnings_.emit_warning`でstderrを通知する。
-`logger.debug`のみで全パスを素通しさせるサイレントなフォールバックは、
-`.gitignore`除外スキップを覆い隠す不具合の温床となるため採用しない。
-stdoutで返ってきた部分結果はignored判定として活用する。
+cwdリポジトリ外のパスは判定対象外として残し、`returncode`が想定外の場合のサイレント素通しは採用せず`emit_warning`で通知する。
+詳細は`pyfltr/command/targets.py`の`_filter_by_gitignore`のdocstringを参照する。

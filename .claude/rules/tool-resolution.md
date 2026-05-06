@@ -53,9 +53,7 @@ extrasの空エイリアスは過去版からの利用者環境の`pyfltr[python
 
 ## 呼び出し方の推奨
 
-利用者向けの推奨呼び出し方は`uvx pyfltr`（最新解決）とする。
-`uv add --dev "pyfltr[python]"`でdev依存に固定し`uv run pyfltr`で呼び出す運用も選べるが、これはプロジェクト判断とする。
-両者の使い分けと推奨理由のSSOTは`docs/guide/recommended.md`の「呼び出し方の使い分け」節とする。
+詳細は`docs/guide/recommended.md`の「呼び出し方の使い分け」節を参照する。
 
 ## ツール解決の優先順位
 

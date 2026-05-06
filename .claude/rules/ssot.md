@@ -1,6 +1,18 @@
-# pyfltrのSSOT・参照パス
+---
+paths:
+  - "pyfltr/config/config.py"
+  - "pyfltr/cli/output_format.py"
+  - "pyfltr/command/runner.py"
+  - "pyfltr/command/mise.py"
+  - "docs/guide/*.md"
+  - "docs/development/*.md"
+  - "mkdocs.yml"
+  - "README.md"
+  - "CLAUDE.md"
+  - ".claude/rules/*.md"
+---
 
-ドキュメント・実装間で多重管理を避け、SSOTを維持するためのルール。
+# pyfltrのSSOT・参照パス
 
 - 内部リンクは英数アンカーを優先する。
   MkDocs（Material）のslugifyは英数のみを採用してアンカー生成するため、

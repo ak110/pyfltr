@@ -10,8 +10,6 @@ paths:
 
 # pyfltrのsubprocess関連の方針
 
-subprocess起動・実行に関する設計判断をまとめる。
-
 ## PATH整理
 
 pyfltrのCLI起動時に`os.environ["PATH"]`を順序先勝ちで重複排除して書き戻す。
@@ -33,12 +31,6 @@ mise不在時のdirectフォールバック後の値で判断するため、
 `build_commandline`直後の値は採用しない。
 `ensure_mise_available`内の`mise exec --version` / `mise trust`にも
 同じ除外envを明示的に渡す。
-mise本体のバイナリディレクトリ（`mise/bin`を含むエントリ）は保護対象として除外しない。
-
-本対応はmise側の挙動への対症療法である。
-親PATHにmise自身のtoolエントリを見つけると、
-miseはtools解決をスキップしてPATH解決にフォールバックする。
-mise側の修正後は本対応の撤去または維持を再検討する余地がある。
 
 ## timeout監視パターン
 

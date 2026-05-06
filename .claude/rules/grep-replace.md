@@ -14,8 +14,6 @@ paths:
 
 # pyfltrのgrep / replace機能の方針
 
-pyfltrの`grep`/`replace`サブコマンドおよびMCPツールに関する設計判断を集約する。
-
 ## 実装エンジン
 
 実装エンジンは標準ライブラリ`re`に統一する。ripgrep等の外部バイナリへの依存は導入しない。

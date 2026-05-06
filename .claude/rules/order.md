@@ -10,7 +10,6 @@ paths:
 TUI・JSONL・command-info等の表示順と、formatter群の実行順を兼ねる。
 linter/tester群の実行順はLPT並列（推定実行時間の降順スケジューリング）で別管理されるため、
 登録順は表示順としてのみ作用する。
-新ツール追加・既存ツール並び替え時は本方針に従う。
 
 ## formatter群
 

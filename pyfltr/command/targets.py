@@ -164,6 +164,11 @@ def _filter_by_gitignore(paths: list[pathlib.Path]) -> list[pathlib.Path]:
     `fatal: pathspec ... is beyond a symbolic link`が発生してreturncode 128となり
     .gitignore除外処理が丸ごとスキップされる事象を回避するため。
     cwdリポジトリ外に解決されたパスは判定対象外として、入力パスをそのまま残す。
+
+    サブプロセスのreturncodeが0でも1でもない場合は`emit_warning`でstderrを通知する。
+    `logger.debug`のみで全パスを素通しさせるサイレントなフォールバックは
+    .gitignore除外スキップを覆い隠す不具合の温床となるため採用しない。
+    stdoutで返ってきた部分結果はignored判定として活用する。
     """
     if not paths:
         return paths

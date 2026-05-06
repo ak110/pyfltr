@@ -27,7 +27,6 @@ def get_env_path(env: dict[str, str]) -> str | None:
 # miseが親プロセスのPATHに注入するtoolパスのマーカー。
 # パス区切りを `/` に正規化したうえで含有判定する。`mise/bin` はmise本体の
 # バイナリディレクトリのため保護対象（このリストに含めない）。
-# 詳細はCLAUDE.md「subprocess起動時のPATH整理方針」節を参照。
 _MISE_TOOL_PATH_MARKERS: tuple[str, ...] = (
     "/mise/installs/",
     "/mise/dotnet-root",
@@ -130,7 +129,6 @@ def build_mise_subprocess_env(env: dict[str, str]) -> dict[str, str]:
     PATH上にmiseのtoolエントリ（installs / dotnet-root / shims）が見えていると
     miseがtools解決をスキップしてPATH解決にフォールバックする挙動を起こすため、
     指定バージョンのSDKが選ばれない不安定挙動を防ぐ目的で除外する。
-    詳細はCLAUDE.md「subprocess起動時のPATH整理方針」節を参照。
     """
     new_env = env.copy()
     key = _detect_path_key(new_env)
@@ -150,9 +148,11 @@ def build_subprocess_env(
 
     `config` は `pyfltr.config.config.Config` のインスタンスを渡す。
     `via_mise=True` の場合、PATHからmiseが注入したtoolパス（installs / dotnet-root /
-    shims）を除外する。これは `mise exec` 経由のサブプロセスでmiseがtools解決を
-    スキップしてPATH解決にフォールバックしてしまう挙動を防ぐための対症療法。
-    詳細はCLAUDE.md「subprocess起動時のPATH整理方針」節を参照。
+    shims）を除外する。
+    親PATHにmise自身のtoolエントリが見えていると、miseがtools解決をスキップして
+    PATH解決にフォールバックする挙動への対症療法。
+    mise側の修正後は本対応の撤去または維持を再検討する余地がある。
+    mise本体のバイナリディレクトリ（`mise/bin`を含むエントリ）は保護対象として除外しない。
     """
     env = os.environ.copy()
     if via_mise:
