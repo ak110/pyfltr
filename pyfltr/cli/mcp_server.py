@@ -1,7 +1,7 @@
 """MCPサーバー本体。
 
 `pyfltr mcp`サブコマンドでstdioトランスポートのMCPサーバーを起動する。
-FastMCPを用いて5ツール（読み取り系4件・実行系1件）を公開し、
+FastMCPを用いて8ツール（読み取り系4件・実行系1件・grep/replace系3件）を公開し、
 LLMエージェントがpyfltrの実行と実行アーカイブ参照を直接利用できるようにする。
 
 実行系を`run-for-agent`相当1本に限定しているのは、エージェント連携用途では
@@ -27,9 +27,15 @@ import typing
 import pydantic
 
 import pyfltr.cli.pipeline
+import pyfltr.command.targets
 import pyfltr.config.config
+import pyfltr.grep_.history
+import pyfltr.grep_.matcher
+import pyfltr.grep_.replacer
+import pyfltr.grep_.scanner
 import pyfltr.state.archive
 import pyfltr.state.runs
+from pyfltr.grep_.types import MatchRecord, ReplaceCommandMeta
 
 logger = logging.getLogger(__name__)
 
@@ -150,6 +156,76 @@ class RunForAgentResult(pydantic.BaseModel):
         default_factory=dict,
         description="失敗コマンドの再実行シェルコマンド辞書（コマンド名 → shell文字列）。成功・cachedは省略。",
     )
+
+
+class GrepMatchModel(pydantic.BaseModel):
+    """`grep`ツールの1マッチ分。"""
+
+    file: str = pydantic.Field(description="マッチを検出したファイルパス。")
+    line: int = pydantic.Field(description="マッチ開始行番号（1-origin）。")
+    col: int = pydantic.Field(description="マッチ開始列番号（1-origin、文字単位）。")
+    end_col: int | None = pydantic.Field(default=None, description="マッチ終了列番号（1-origin）。")
+    match_text: str = pydantic.Field(description="マッチした文字列。")
+    line_text: str = pydantic.Field(description="マッチを含む行の本文（改行除く）。")
+    before: list[str] = pydantic.Field(default_factory=list, description="`-B`コンテキストの前行群。")
+    after: list[str] = pydantic.Field(default_factory=list, description="`-A`コンテキストの後行群。")
+
+
+class GrepResultModel(pydantic.BaseModel):
+    """`grep`ツールの戻り値。"""
+
+    matches: list[GrepMatchModel] = pydantic.Field(description="マッチ一覧。")
+    total_matches: int = pydantic.Field(description="全マッチ件数。")
+    files_scanned: int = pydantic.Field(description="走査したファイル数。")
+    exit_code: int = pydantic.Field(description="終了コード。マッチあり=0、マッチなし=1。")
+
+
+class ReplaceFileChangeModel(pydantic.BaseModel):
+    """`replace`ツールの1ファイル変更分。"""
+
+    file: str = pydantic.Field(description="変更対象ファイルパス。")
+    count: int = pydantic.Field(description="置換箇所数。")
+    before_hash: str | None = pydantic.Field(default=None, description="変更前内容のSHA-256ハッシュ。")
+    after_hash: str | None = pydantic.Field(default=None, description="変更後内容のSHA-256ハッシュ。")
+
+
+class ReplaceChangeRecordModel(pydantic.BaseModel):
+    """`replace`ツールの1置換箇所。`show_changes=True`時に`ReplaceResultModel.changes`へ含まれる。"""
+
+    file: str = pydantic.Field(description="対象ファイルパス。")
+    line: int = pydantic.Field(description="置換対象行番号（1-origin）。")
+    col: int = pydantic.Field(description="置換開始列番号（1-origin）。")
+    before_line: str = pydantic.Field(description="置換前の行本文。")
+    after_line: str = pydantic.Field(description="置換後の行本文。")
+
+
+class ReplaceResultModel(pydantic.BaseModel):
+    """`replace`ツールの戻り値。"""
+
+    replace_id: str | None = pydantic.Field(
+        default=None,
+        description="replace履歴の識別子（ULID）。dry_run=True時はNone。",
+    )
+    dry_run: bool = pydantic.Field(description="dry-runモードか否か。")
+    files_changed: int = pydantic.Field(description="変更が発生したファイル数。")
+    total_replacements: int = pydantic.Field(description="置換箇所の総数。")
+    file_changes: list[ReplaceFileChangeModel] = pydantic.Field(description="ファイルごとの変更サマリ。")
+    changes: list[ReplaceChangeRecordModel] = pydantic.Field(
+        default_factory=list,
+        description="`show_changes=True`時の各置換箇所の変更前後（空リストで省略）。",
+    )
+    exit_code: int = pydantic.Field(description="終了コード。0 = 成功。")
+
+
+class ReplaceUndoModel(pydantic.BaseModel):
+    """`replace_undo`ツールの戻り値。"""
+
+    replace_id: str = pydantic.Field(description="undo対象のreplace識別子（ULID）。")
+    restored: list[str] = pydantic.Field(description="復元に成功したファイルパスの一覧。")
+    skipped: list[str] = pydantic.Field(
+        description="ハッシュ不一致でスキップされたファイルパスの一覧（force=False時）。",
+    )
+    exit_code: int = pydantic.Field(description="終了コード。skippedあり=1、全件復元=0。")
 
 
 # ---------------------------------------------------------------------------
@@ -425,13 +501,343 @@ async def _tool_run_for_agent(
     )
 
 
+async def _tool_grep(
+    pattern: str,
+    paths: list[str],
+    ignore_case: bool = False,
+    smart_case: bool = False,
+    fixed_strings: bool = False,
+    word_regexp: bool = False,
+    line_regexp: bool = False,
+    multiline: bool = False,
+    before_context: int = 0,
+    after_context: int = 0,
+    max_count: int = 0,
+    max_total: int = 1000,
+    types: list[str] | None = None,
+    globs: list[str] | None = None,
+    encoding: str = "utf-8",
+    max_filesize: int | None = None,
+    hidden: bool = False,
+    no_exclude: bool = False,
+    no_gitignore: bool = False,
+) -> GrepResultModel:
+    """指定ファイル群から正規表現パターンを検索し、マッチ一覧を返す。
+
+    pyfltrの`exclude`/`extend-exclude`/`respect-gitignore`設定を尊重する。
+    `max_total`の既定値は1000でCLI既定（無制限）より安全側に設定する。
+
+    Args:
+        pattern: 検索パターン（正規表現、または`fixed_strings=True`で固定文字列）。
+        paths: 検索対象のファイルまたはディレクトリパスの一覧。
+        ignore_case: 大文字小文字を区別しない。
+        smart_case: パターンに大文字を含まない場合のみignore_caseを有効化する。
+        fixed_strings: パターンを固定文字列として扱う。
+        word_regexp: 単語境界で囲まれたマッチのみ採用する。
+        line_regexp: 行全体に一致したマッチのみ採用する。
+        multiline: マルチラインマッチを有効化する。
+        before_context: マッチ行の前に含める行数。
+        after_context: マッチ行の後に含める行数。
+        max_count: ファイル単位の最大マッチ件数（0で無制限）。
+        max_total: 全体の最大マッチ件数（既定1000）。
+        types: 対象言語タイプの一覧（例: ["python", "ts"]）。
+        globs: globパターンでの対象限定一覧。
+        encoding: ファイル読み込み時のエンコーディング（既定: utf-8）。
+        max_filesize: 走査対象ファイルサイズの上限（バイト単位）。
+        hidden: ドットファイルも対象に含める。
+        no_exclude: exclude/extend-excludeによる除外を無効化する。
+        no_gitignore: .gitignoreによる除外を無効化する。
+    """
+    try:
+        compiled = pyfltr.grep_.matcher.compile_pattern(
+            [pattern],
+            fixed_strings=fixed_strings,
+            ignore_case=ignore_case,
+            smart_case=smart_case,
+            word_regexp=word_regexp,
+            line_regexp=line_regexp,
+            multiline=multiline,
+        )
+    except ValueError as exc:
+        _raise_mcp_error(str(exc))
+
+    try:
+        config = pyfltr.config.config.load_config()
+    except (ValueError, OSError) as exc:
+        _raise_mcp_error(f"設定エラー: {exc}")
+
+    if no_exclude:
+        config.values["exclude"] = []
+        config.values["extend-exclude"] = []
+    if no_gitignore:
+        config.values["respect-gitignore"] = False
+
+    expanded = pyfltr.command.targets.expand_all_files(
+        [pathlib.Path(p) for p in paths],
+        config,
+    )
+    expanded = pyfltr.grep_.scanner.filter_files_by_type(expanded, types or [])
+    expanded = pyfltr.grep_.scanner.filter_by_globs(expanded, globs or [])
+    if not hidden:
+        expanded = [p for p in expanded if not _has_hidden_segment(p)]
+
+    files_scanned = len(expanded)
+    matches: list[GrepMatchModel] = []
+    for record in pyfltr.grep_.scanner.scan_files(
+        expanded,
+        compiled,
+        before_context=before_context,
+        after_context=after_context,
+        max_per_file=max_count,
+        max_total=max_total,
+        encoding=encoding,
+        max_filesize=max_filesize,
+        multiline=multiline,
+    ):
+        if isinstance(record, MatchRecord):
+            matches.append(
+                GrepMatchModel(
+                    file=str(record.file),
+                    line=record.line,
+                    col=record.col,
+                    end_col=record.end_col,
+                    match_text=record.match_text,
+                    line_text=record.line_text,
+                    before=list(record.before_lines),
+                    after=list(record.after_lines),
+                )
+            )
+
+    total_matches = len(matches)
+    return GrepResultModel(
+        matches=matches,
+        total_matches=total_matches,
+        files_scanned=files_scanned,
+        exit_code=0 if total_matches > 0 else 1,
+    )
+
+
+async def _tool_replace(
+    pattern: str,
+    replacement: str,
+    paths: list[str],
+    dry_run: bool = True,
+    ignore_case: bool = False,
+    smart_case: bool = False,
+    fixed_strings: bool = False,
+    word_regexp: bool = False,
+    line_regexp: bool = False,
+    multiline: bool = False,
+    types: list[str] | None = None,
+    globs: list[str] | None = None,
+    encoding: str = "utf-8",
+    max_filesize: int | None = None,
+    hidden: bool = False,
+    exclude_files: list[str] | None = None,
+    no_exclude: bool = False,
+    no_gitignore: bool = False,
+    show_changes: bool = False,
+) -> ReplaceResultModel:
+    r"""指定ファイル群へ正規表現置換を適用し、変更内容を返す。
+
+    `dry_run=True`（既定）はファイルを変更せず変更内容のみを返す。
+    `dry_run=False`を明示した場合のみ実書き込みし、`replace_id`を返す。
+    `dry_run`の既定値がCLI（`False`）と異なるのはLLM暴発防止のため
+    （`.claude/rules/grep-replace.md`参照）。
+
+    Args:
+        pattern: 検索パターン（正規表現）。
+        replacement: 置換式（`re.sub`互換、`\\1`/`\\g<name>`参照可）。
+        paths: 対象のファイルまたはディレクトリパスの一覧。
+        dry_run: Trueの場合（既定）、ファイルを変更せず変更内容のみ計算する。
+        ignore_case: 大文字小文字を区別しない。
+        smart_case: パターンに大文字を含まない場合のみignore_caseを有効化する。
+        fixed_strings: パターンを固定文字列として扱う。
+        word_regexp: 単語境界で囲まれたマッチのみ採用する。
+        line_regexp: 行全体に一致したマッチのみ採用する。
+        multiline: マルチラインマッチを有効化する。
+        types: 対象言語タイプの一覧。
+        globs: globパターンでの対象限定一覧。
+        encoding: ファイル読み込み・書き込み時のエンコーディング（既定: utf-8）。
+        max_filesize: 走査対象ファイルサイズの上限（バイト単位）。
+        hidden: ドットファイルも対象に含める。
+        exclude_files: 置換対象から除外するファイルパスの一覧。
+        no_exclude: exclude/extend-excludeによる除外を無効化する。
+        no_gitignore: .gitignoreによる除外を無効化する。
+        show_changes: Trueの場合、`changes`フィールドに各置換箇所の変更前後を含める。
+    """
+    if not paths:
+        _raise_mcp_error("paths を 1 件以上指定してください。")
+
+    try:
+        compiled = pyfltr.grep_.matcher.compile_pattern(
+            [pattern],
+            fixed_strings=fixed_strings,
+            ignore_case=ignore_case,
+            smart_case=smart_case,
+            word_regexp=word_regexp,
+            line_regexp=line_regexp,
+            multiline=multiline,
+        )
+    except ValueError as exc:
+        _raise_mcp_error(str(exc))
+
+    try:
+        config = pyfltr.config.config.load_config()
+    except (ValueError, OSError) as exc:
+        _raise_mcp_error(f"設定エラー: {exc}")
+
+    if no_exclude:
+        config.values["exclude"] = []
+        config.values["extend-exclude"] = []
+    if no_gitignore:
+        config.values["respect-gitignore"] = False
+
+    expanded = pyfltr.command.targets.expand_all_files(
+        [pathlib.Path(p) for p in paths],
+        config,
+    )
+    expanded = pyfltr.grep_.scanner.filter_files_by_type(expanded, types or [])
+    expanded = pyfltr.grep_.scanner.filter_by_globs(expanded, globs or [])
+    if not hidden:
+        expanded = [p for p in expanded if not _has_hidden_segment(p)]
+
+    # exclude_filesによる対象限定
+    if exclude_files:
+        excluded = {pathlib.Path(p).resolve() for p in exclude_files}
+        expanded = [p for p in expanded if p.resolve() not in excluded]
+
+    replace_id = pyfltr.grep_.history.generate_replace_id() if not dry_run else None
+    history_entries: list[dict[str, typing.Any]] = []
+    file_changes: list[ReplaceFileChangeModel] = []
+    change_records: list[ReplaceChangeRecordModel] = []
+    total_replacements = 0
+    files_changed = 0
+
+    for file in expanded:
+        if max_filesize is not None and max_filesize > 0:
+            try:
+                if file.stat().st_size > max_filesize:
+                    continue
+            except OSError:
+                continue
+        try:
+            before, after, count, records = pyfltr.grep_.replacer.apply_replace_to_file(
+                file,
+                compiled,
+                replacement,
+                encoding=encoding,
+            )
+        except (UnicodeDecodeError, OSError):
+            continue
+        if count == 0:
+            continue
+
+        files_changed += 1
+        total_replacements += count
+        before_hash = pyfltr.grep_.replacer.compute_hash(before)
+        after_hash = pyfltr.grep_.replacer.compute_hash(after)
+
+        file_changes.append(
+            ReplaceFileChangeModel(
+                file=str(file),
+                count=count,
+                before_hash=before_hash,
+                after_hash=after_hash,
+            )
+        )
+
+        if show_changes:
+            for record in records:
+                change_records.append(
+                    ReplaceChangeRecordModel(
+                        file=str(record.file),
+                        line=record.line,
+                        col=record.col,
+                        before_line=record.before_line,
+                        after_line=record.after_line,
+                    )
+                )
+
+        if not dry_run:
+            file.write_text(after, encoding=encoding)
+            history_entries.append(
+                {
+                    "file": file,
+                    "before_content": before,
+                    "after_hash": after_hash,
+                    "records": list(records),
+                }
+            )
+
+    # 実書き込み時に履歴を保存する
+    if not dry_run and history_entries and replace_id is not None:
+        meta = ReplaceCommandMeta(
+            replace_id=replace_id,
+            dry_run=False,
+            fixed_strings=fixed_strings,
+            pattern=pattern,
+            replacement=replacement,
+            encoding=encoding,
+        )
+        store = pyfltr.grep_.history.ReplaceHistoryStore()
+        store.save_replace(replace_id, command_meta=meta, file_changes=history_entries)
+        store.cleanup(pyfltr.grep_.history.policy_from_config(config))
+
+    return ReplaceResultModel(
+        replace_id=replace_id,
+        dry_run=dry_run,
+        files_changed=files_changed,
+        total_replacements=total_replacements,
+        file_changes=file_changes,
+        changes=change_records,
+        exit_code=0,
+    )
+
+
+async def _tool_replace_undo(replace_id: str, force: bool = False) -> ReplaceUndoModel:
+    """保存済みreplace履歴からファイルを変更前の内容へ復元する。
+
+    `force=True`を指定しない限り、手動編集済み（ハッシュ不一致）のファイルはスキップする。
+    スキップが発生した場合は`exit_code=1`を返す。クライアント側で`force=True`再呼び出しの
+    判断材料にする。
+
+    Args:
+        replace_id: undo対象のreplace識別子（ULID）。
+        force: Trueの場合、ハッシュ不一致のファイルも強制復元する。
+    """
+    store = pyfltr.grep_.history.ReplaceHistoryStore()
+    try:
+        restored, skipped = store.undo_replace(replace_id, force=force)
+    except FileNotFoundError:
+        _raise_mcp_error(f"replace_id が見つからない: {replace_id}")
+
+    exit_code = 1 if skipped else 0
+    return ReplaceUndoModel(
+        replace_id=replace_id,
+        restored=[str(p) for p in restored],
+        skipped=[str(p) for p in skipped],
+        exit_code=exit_code,
+    )
+
+
+def _has_hidden_segment(path: pathlib.Path) -> bool:
+    """パス内に`.`始まりのセグメント（`.`/`..`を除く）が含まれるか判定する。"""
+    for part in path.parts:
+        if part in (".", ".."):
+            continue
+        if part.startswith("."):
+            return True
+    return False
+
+
 # ---------------------------------------------------------------------------
 # FastMCPサーバー組み立て
 # ---------------------------------------------------------------------------
 
 
 def _build_server() -> typing.Any:
-    """FastMCPサーバーインスタンスを生成し、5ツールを登録して返す。
+    """FastMCPサーバーインスタンスを生成し、8ツールを登録して返す。
 
     公開名は`@mcp.tool(name=...)`で明示し、Python側の関数名（`_tool_*`）
     とは独立したスキーマ名（`list_runs`等）を維持する。
@@ -463,6 +869,27 @@ def _build_server() -> typing.Any:
             " 戻り値に retry_commands（失敗コマンドの再実行シェルコマンド）を含む。"
         ),
     )(_tool_run_for_agent)
+    mcp.tool(
+        name="grep",
+        description=(
+            "Search for a regex pattern across files. Honors pyfltr exclude/.gitignore by default. Returns match records."
+        ),
+    )(_tool_grep)
+    mcp.tool(
+        name="replace",
+        description=(
+            "Replace pattern with replacement across files."
+            " dry_run=True (default) previews changes without writing."
+            " Pass dry_run=False to write and save undo history."
+        ),
+    )(_tool_replace)
+    mcp.tool(
+        name="replace_undo",
+        description=(
+            "Undo a previous replace by replace_id."
+            " Set force=True to override hash mismatch (when files were edited after the replace)."
+        ),
+    )(_tool_replace_undo)
 
     return mcp
 

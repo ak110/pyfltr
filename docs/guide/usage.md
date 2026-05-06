@@ -183,6 +183,48 @@ pyfltr show-run <run_id> [--commands NAME[,NAME...]] [--output] [--output-format
 同じツールが`fix`ステージと通常ステージの両方で実行された場合、アーカイブの保存キーはツール名固定のため
 通常ステージ側の結果で上書きされる（`show-run`で参照できるのは各ツールの最終保存結果のみ）。
 
+### サブコマンド: grep {#grep}
+
+```shell
+pyfltr grep <pattern> [paths...]
+```
+
+正規表現でファイルを横断検索する。
+pyfltr設定の`exclude`/`extend-exclude`/`respect-gitignore`を尊重するため、
+`node_modules`や`build`配下のノイズが混入しない。
+
+例:
+
+```shell
+pyfltr grep "TODO" src/
+pyfltr grep -i "deprecated" .
+pyfltr grep -F "exact_string" --output-format=jsonl docs/
+```
+
+詳細は[検索と置換](grep-replace.md)を参照。
+
+### サブコマンド: replace {#replace}
+
+```shell
+pyfltr replace <pattern> <replacement> [paths...]
+```
+
+正規表現で横断置換する。書き込みが既定動作で、`--dry-run`で試行できる。
+実行アーカイブに履歴を保存し、`--undo`で取り消せる。
+
+例:
+
+```shell
+# 試行（書き込みなし）
+pyfltr replace --dry-run "old_name" "new_name" src/
+# 実書き込み（履歴に保存される）
+pyfltr replace "old_name" "new_name" src/
+# 直前のreplaceを取り消す
+pyfltr replace --undo <replace_id>
+```
+
+詳細は[検索と置換](grep-replace.md)を参照。
+
 ### サブコマンド: mcp
 
 ```shell
@@ -193,7 +235,7 @@ stdioトランスポートでMCPサーバーを起動する。
 追加オプションはなく、起動後はstdin/stdoutをJSON-RPCフレームが専有する。
 MCPクライアントがstdinを閉じた時点でサーバーが終了する。
 
-提供するMCPツール（5件）:
+提供するMCPツール（8件）:
 
 | ツール名 | 対応CLI | 説明 |
 | --- | --- | --- |
@@ -202,6 +244,9 @@ MCPクライアントがstdinを閉じた時点でサーバーが終了する。
 | `show_run_diagnostics` | `pyfltr show-run <run_id> --commands=<name>` | 指定runのtool.jsonとdiagnostics全件を返す（複数指定可） |
 | `show_run_output` | `pyfltr show-run <run_id> --commands=<name> --output` | 指定runのoutput.log全文を返す（単一指定のみ） |
 | `run_for_agent` | `pyfltr run-for-agent` | lint/format/testを実行しrun_id・失敗ツール名・retry_commands等を返す |
+| `grep` | `pyfltr grep` | ファイル横断の正規表現検索（pyfltr exclude/.gitignore尊重） |
+| `replace` | `pyfltr replace` | 横断置換。`dry_run`の既定値は`True`（CLI既定の`False`と異なりLLM暴発防止） |
+| `replace_undo` | `pyfltr replace --undo` | 過去のreplaceを取り消す |
 
 コーディングエージェント側へのMCPサーバー登録例（JSON形式で設定ファイルに記載する場合）:
 

@@ -173,6 +173,10 @@ ty = true        # preset 非収録のため個別指定で追加
 - archive-max-age-days : 保存期間の上限（日数。既定: 30。0以下で期間軸の自動削除を無効化）
 - cache : ファイルhashキャッシュの有効/無効（既定: `true`。`--no-cache`で実行単位に無効化）
 - cache-max-age-hours : キャッシュエントリの保存期間（時間。既定: 12。0以下で期間軸の自動削除を無効化）
+- replace-history-max-entries : `replace`サブコマンドの履歴の最大世代数（既定: 100。0以下で世代軸の自動削除を無効化）
+- replace-history-max-size-bytes : replace履歴全体の合計サイズ上限（バイト単位。
+  既定: `200 * 1024 * 1024`（約200 MiB）。0以下でサイズ軸の自動削除を無効化）
+- replace-history-max-age-days : replace履歴の保存期間の上限（日数。既定: 30。0以下で期間軸の自動削除を無効化）
 - jsonl-diagnostic-limit : 1ツールあたりのdiagnostic出力件数上限（既定: 0 = 無制限）
 - jsonl-message-max-lines : `tool.message`の行数上限（既定: 30）
 - jsonl-message-max-chars : `tool.message`の文字数上限（既定: 2000）

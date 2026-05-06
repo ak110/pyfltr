@@ -529,6 +529,12 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "archive-max-runs": 100,
     "archive-max-size-mb": 1024,
     "archive-max-age-days": 30,
+    # replace履歴の自動クリーンアップ閾値（pyfltr/grep_/history.py）。
+    # 既定値は実行アーカイブと同程度に揃え、世代数100・合計200MB・保存期間30日とする。
+    # `GLOBAL_PRIORITY_KEYS`には含めず、project側設定で上書きできる通常キー扱いとする。
+    "replace-history-max-entries": 100,
+    "replace-history-max-size-bytes": 200 * 1024 * 1024,
+    "replace-history-max-age-days": 30,
     # JSONL出力のsmart truncation設定（v3.0.0追加）。
     # `jsonl-diagnostic-limit`はツール単位のdiagnostic出力件数上限。0以下で無制限。
     # `jsonl-message-max-lines` / `jsonl-message-max-chars`はfailedかつdiagnostics=0のときの

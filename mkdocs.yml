@@ -45,6 +45,8 @@ plugins:
         - `pyfltr generate-shell-completion <shell>`: シェル補完スクリプト生成
         - `pyfltr list-runs` / `pyfltr show-run <run_id>`: 実行履歴参照
         - `pyfltr command-info <tool>`: ツール起動方式確認（`--check`オプションあり）
+        - `pyfltr grep <pattern> [paths...]`: ファイル横断の正規表現検索（pyfltr exclude/.gitignore尊重）
+        - `pyfltr replace <pattern> <replacement> [paths...]`: 横断置換（既定で書き込み・`--undo`で取消）
         - `pyfltr mcp`: MCPサーバー起動
 
         `--commands=<tool>`で個別ツールのみ実行できる（例: `pyfltr run --commands=textlint docs/`）。
@@ -86,6 +88,7 @@ plugins:
           - guide/getting-started.md: インストール・設定・実行・コーディングエージェント連携
           - guide/index.md: 対応ツール一覧・コンセプト
           - guide/usage.md: CLIの使い方・オプション・UI説明・コーディングエージェント連携
+          - guide/grep-replace.md: grep/replaceの使い方・オプション・誤爆除外フロー・undo運用・MCP公開ツール
           - guide/troubleshooting.md: MCP stdout占有・PRE_COMMIT検出・対象ファイル空・アーカイブ容量確認
         設定:
           - guide/configuration.md: プリセット・言語カテゴリゲート・設定項目一覧・グローバル設定・並列実行
@@ -117,6 +120,7 @@ nav:
       - はじめに: guide/getting-started.md
       - 対応ツール: guide/index.md
       - CLIコマンド: guide/usage.md
+      - 検索と置換: guide/grep-replace.md
       - トラブルシューティング: guide/troubleshooting.md
   - 設定:
       - 設定項目: guide/configuration.md

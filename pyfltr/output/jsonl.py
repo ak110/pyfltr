@@ -66,6 +66,29 @@ def _emit_structured(line: str) -> None:
     _last_jsonl_output_time = time.monotonic()
 
 
+def emit_record(line: str) -> None:
+    """構造化出力を1行書き込む公開ヘルパー。
+
+    `_write_lock`取得と`_emit_structured`呼び出しを内部に隠蔽し、
+    本モジュール外の呼び出し側が`_write_lock`/`_emit_structured`へ直接触れずに済むようにする。
+    順序保証が不要な単発書き込み（grep/replace等のレコード）に向く。
+    複数行をアトミックに出力する場合は`emit_records`を使う。
+    """
+    with _write_lock:
+        _emit_structured(line)
+
+
+def emit_records(lines: typing.Iterable[str]) -> None:
+    """複数行を1ロック内でアトミックに書き込む公開ヘルパー。
+
+    並列実行されるツールから同時にコールバックされても、グルーピング単位
+    （diagnostic + commandの組み合わせ等）が崩れないようロック保護する。
+    """
+    with _write_lock:
+        for line in lines:
+            _emit_structured(line)
+
+
 _TRUNCATED_MARKER = "\n... (truncated)\n"
 """ハイブリッド切り詰めで先頭ブロックと末尾ブロックの間に挿入する区切りマーカー。
 

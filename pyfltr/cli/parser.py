@@ -11,8 +11,10 @@ import sys
 import typing
 
 import pyfltr.cli.command_info
+import pyfltr.cli.grep_subcmd
 import pyfltr.cli.mcp_server
 import pyfltr.cli.output_format
+import pyfltr.cli.replace_subcmd
 import pyfltr.cli.shell_completion
 import pyfltr.config.config
 import pyfltr.output.formatters
@@ -29,6 +31,8 @@ ALL_SUBCOMMANDS: tuple[str, ...] = (
     "show-run",
     "command-info",
     "mcp",
+    "grep",
+    "replace",
 )
 """全サブコマンド。shell completionスクリプト生成時に参照される。"""
 
@@ -277,6 +281,10 @@ def build_parser(custom_commands: collections.abc.Iterable[str] = ()) -> "_HelpO
             "  command-info <command>\n"
             "                   ツール起動方式(runner / 実行ファイル / 最終コマンドライン等)の解決結果を表示する。\n"
             "  mcp              MCP サーバーを stdio で起動する。\n"
+            "  grep <pattern> [paths...]\n"
+            "                   ファイル群から正規表現に一致する行を検索する (ignore 尊重)。\n"
+            "  replace <pattern> <replacement> [paths...]\n"
+            "                   grep と同じ引数体系で置換する (履歴保存・undo 対応)。\n"
             "\n"
             "ドキュメント: https://ak110.github.io/pyfltr/\n"
             "llms.txt: https://ak110.github.io/pyfltr/llms.txt"
@@ -379,6 +387,10 @@ def build_parser(custom_commands: collections.abc.Iterable[str] = ()) -> "_HelpO
 
     # mcp: MCPサーバーのstdio起動
     pyfltr.cli.mcp_server.register_subparsers(subparsers)
+
+    # grep / replace: 横断検索・置換系サブコマンド
+    pyfltr.cli.grep_subcmd.register_subparsers(subparsers)
+    pyfltr.cli.replace_subcmd.register_subparsers(subparsers)
 
     return parser
 

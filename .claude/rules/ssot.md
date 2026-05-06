@@ -23,7 +23,7 @@
  （`run-for-agent`サブコマンド・主要オプションなど）。LLMにとって不要な情報はdocs側をSSOTとし、多重管理を避ける
 - 出力形式解決のSSOTは`docs/guide/usage.md`「出力形式の切り替え」節。
   優先順位は`CLI > PYFLTR_OUTPUT_FORMAT > サブコマンド既定値 > AI_AGENT(jsonl) > text`。
-  サブコマンド別許容値は実行系5値・参照系3値・`command-info`2値。
+  サブコマンド別許容値は実行系5値・参照系3値・grep / replace 3値・`command-info`2値。
   解決ロジック本体は`pyfltr/cli/output_format.py`の`resolve_output_format`に置く。
   挙動変更時は実装・`docs/guide/usage.md`・`mkdocs.yml`内llmstxtを併せて更新する
 - グローバル設定の対象範囲・特殊仕様（archive/cache系のglobal優先）のSSOTは
@@ -39,3 +39,5 @@
   `docs/development/architecture.md`（mise active tools取得結果の構造化節）も併せて更新する
 - モジュールパス参照を含むドキュメントはモジュール移動の際に追従更新が必要。
   主な対象は`CLAUDE.md`・`docs/development/architecture.md`・`.claude/rules/`配下
+- grep/replace機能の設計判断・undo方式・MCP既定値違いのSSOTは`pyfltr/.claude/rules/grep-replace.md`。
+  新ツール固有の機能拡張（オプション追加・JSONLレコード追加・MCPツール追加）はそちらと併せて見直す

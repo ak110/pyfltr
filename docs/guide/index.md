@@ -84,6 +84,13 @@ pyfltrの設定キーとコマンド名は`markdownlint`（例: `markdownlint = 
 個別に有効化・無効化する方法や`python-runner`/`js-runner`/`bin-runner`などの補助設定は
 [設定項目（ツール別）](configuration-tools.md)を参照。
 
+## 検索・置換機能
+
+pyfltrは横断検索（`grep`）と置換（`replace`）も内蔵する。
+pyfltr設定の`exclude`/`extend-exclude`/`respect-gitignore`を尊重するため、
+`node_modules`や`build`配下のノイズが混入しない。
+詳細は[検索と置換](grep-replace.md)を参照。
+
 ## コンセプト
 
 - 各種ツールをまとめて並列で呼び出し、実行時間を短縮する

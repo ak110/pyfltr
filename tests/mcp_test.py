@@ -9,6 +9,7 @@
 # pylint: disable=protected-access  # FastMCPツール関数（_tool_*）の単体テスト経路
 # pylint: disable=duplicate-code  # アーカイブ初期化の組み立て手順が他テストと類似
 
+import inspect
 import json
 import pathlib
 import shutil
@@ -267,11 +268,20 @@ async def test_tool_show_run_output_tool_not_found(tmp_path: pathlib.Path) -> No
 # ---------------------------------------------------------------------------
 
 
-def test_build_server_registers_five_tools() -> None:
+def test_build_server_registers_eight_tools() -> None:
     server = pyfltr.cli.mcp_server._build_server()
     tools = server._tool_manager.list_tools()
     tool_names = {t.name for t in tools}
-    expected = {"list_runs", "show_run", "show_run_diagnostics", "show_run_output", "run_for_agent"}
+    expected = {
+        "list_runs",
+        "show_run",
+        "show_run_diagnostics",
+        "show_run_output",
+        "run_for_agent",
+        "grep",
+        "replace",
+        "replace_undo",
+    }
     assert tool_names == expected
 
 
@@ -458,3 +468,272 @@ async def test_tool_run_for_agent_only_failed_no_previous_run(tmp_path: pathlib.
     assert not result.commands
     assert result.skipped_reason is not None
     assert len(result.skipped_reason) > 0
+
+
+# ---------------------------------------------------------------------------
+# grep ツールのテスト
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_tool_grep_finds_matches(tmp_path: pathlib.Path) -> None:
+    """`_tool_grep`が指定ファイル群から正しくマッチを抽出すること。"""
+    target = tmp_path / "sample.txt"
+    target.write_text("hello world\nfoo bar\nhello again\n", encoding="utf-8")
+
+    result = await pyfltr.cli.mcp_server._tool_grep(
+        pattern="hello",
+        paths=[str(target)],
+    )
+
+    assert result.total_matches == 2
+    assert result.files_scanned == 1
+    assert result.exit_code == 0
+    assert len(result.matches) == 2
+    for match in result.matches:
+        assert match.file == str(target)
+        assert "hello" in match.line_text
+
+
+@pytest.mark.asyncio
+async def test_tool_grep_no_match_returns_exit_code_1(tmp_path: pathlib.Path) -> None:
+    """`_tool_grep`がマッチ0件のとき`exit_code=1`を返すこと。"""
+    target = tmp_path / "sample.txt"
+    target.write_text("hello world\n", encoding="utf-8")
+
+    result = await pyfltr.cli.mcp_server._tool_grep(
+        pattern="notfound",
+        paths=[str(target)],
+    )
+
+    assert result.total_matches == 0
+    assert result.exit_code == 1
+    assert not result.matches
+
+
+@pytest.mark.asyncio
+async def test_tool_grep_respects_exclude(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`_tool_grep`が`exclude`設定を尊重し、除外ディレクトリ配下のファイルを結果に含めないこと。"""
+    # 除外対象ディレクトリとそれ以外を作成する
+    excluded_dir = tmp_path / "node_modules"
+    excluded_dir.mkdir()
+    excluded_file = excluded_dir / "lib.js"
+    excluded_file.write_text("hello from excluded\n", encoding="utf-8")
+
+    included_file = tmp_path / "main.py"
+    included_file.write_text("hello from included\n", encoding="utf-8")
+
+    # pyproject.toml を作成して node_modules を exclude 設定に追加する
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text('[tool.pyfltr]\nexclude = ["node_modules"]\n', encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    result = await pyfltr.cli.mcp_server._tool_grep(
+        pattern="hello",
+        paths=[str(tmp_path)],
+    )
+
+    # expand_all_filesが返すパスは相対または絶対になるため、resolve後のベース名で比較する
+    matched_resolved = {pathlib.Path(m.file).resolve() for m in result.matches}
+    assert excluded_file.resolve() not in matched_resolved
+    assert included_file.resolve() in matched_resolved
+
+
+@pytest.mark.asyncio
+async def test_tool_grep_max_total_limits_results(tmp_path: pathlib.Path) -> None:
+    """`max_total`が有効に機能しマッチ件数が上限で打ち切られること。"""
+    target = tmp_path / "sample.txt"
+    target.write_text("\n".join(f"hello {i}" for i in range(20)) + "\n", encoding="utf-8")
+
+    result = await pyfltr.cli.mcp_server._tool_grep(
+        pattern="hello",
+        paths=[str(target)],
+        max_total=5,
+    )
+
+    assert result.total_matches <= 5
+    assert len(result.matches) <= 5
+
+
+# ---------------------------------------------------------------------------
+# replace ツールのテスト
+# ---------------------------------------------------------------------------
+
+
+def test_tool_replace_dry_run_default() -> None:
+    """`_tool_replace`の`dry_run`引数の既定値が`True`であること。"""
+    sig = inspect.signature(pyfltr.cli.mcp_server._tool_replace)
+    assert sig.parameters["dry_run"].default is True
+
+
+@pytest.mark.asyncio
+async def test_tool_replace_dry_run_does_not_write(tmp_path: pathlib.Path) -> None:
+    """`_tool_replace(dry_run=True)`がファイルを変更しないこと。"""
+    target = tmp_path / "sample.txt"
+    original = "hello world\n"
+    target.write_text(original, encoding="utf-8")
+
+    result = await pyfltr.cli.mcp_server._tool_replace(
+        pattern="hello",
+        replacement="goodbye",
+        paths=[str(target)],
+        dry_run=True,
+    )
+
+    # ファイルは変更されていない
+    assert target.read_text(encoding="utf-8") == original
+    # dry_run=TrueなのでreplacE_idはNone
+    assert result.replace_id is None
+    assert result.dry_run is True
+    assert result.files_changed == 1
+    assert result.total_replacements == 1
+    assert result.exit_code == 0
+
+
+@pytest.mark.asyncio
+async def test_tool_replace_writes_file_and_returns_replace_id(tmp_path: pathlib.Path) -> None:
+    """`_tool_replace(dry_run=False)`がファイルを変更し`replace_id`を返すこと。"""
+    target = tmp_path / "sample.txt"
+    target.write_text("hello world\n", encoding="utf-8")
+
+    result = await pyfltr.cli.mcp_server._tool_replace(
+        pattern="hello",
+        replacement="goodbye",
+        paths=[str(target)],
+        dry_run=False,
+    )
+
+    assert target.read_text(encoding="utf-8") == "goodbye world\n"
+    assert result.replace_id is not None
+    assert len(result.replace_id) == 26  # ULIDは26文字
+    assert result.dry_run is False
+    assert result.files_changed == 1
+    assert result.total_replacements == 1
+    assert result.exit_code == 0
+
+
+@pytest.mark.asyncio
+async def test_tool_replace_show_changes(tmp_path: pathlib.Path) -> None:
+    """`show_changes=True`のとき`changes`フィールドに変更前後が含まれること。"""
+    target = tmp_path / "sample.txt"
+    target.write_text("hello world\nhello again\n", encoding="utf-8")
+
+    result = await pyfltr.cli.mcp_server._tool_replace(
+        pattern="hello",
+        replacement="goodbye",
+        paths=[str(target)],
+        dry_run=True,
+        show_changes=True,
+    )
+
+    assert len(result.changes) == 2
+    for change in result.changes:
+        assert "hello" in change.before_line
+        assert "goodbye" in change.after_line
+
+
+@pytest.mark.asyncio
+async def test_tool_replace_paths_empty_raises() -> None:
+    """`paths=[]`のとき`ValueError`が発生すること。"""
+    with pytest.raises(ValueError, match="paths"):
+        await pyfltr.cli.mcp_server._tool_replace(
+            pattern="hello",
+            replacement="goodbye",
+            paths=[],
+        )
+
+
+# ---------------------------------------------------------------------------
+# replace_undo ツールのテスト
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_tool_replace_undo_restores_file(tmp_path: pathlib.Path) -> None:
+    """`_tool_replace_undo`が`replace_id`から正常に復元できること。"""
+    target = tmp_path / "sample.txt"
+    original = "hello world\n"
+    target.write_text(original, encoding="utf-8")
+
+    # まず実書き込みを行い replace_id を取得する
+    replace_result = await pyfltr.cli.mcp_server._tool_replace(
+        pattern="hello",
+        replacement="goodbye",
+        paths=[str(target)],
+        dry_run=False,
+    )
+    assert replace_result.replace_id is not None
+    assert target.read_text(encoding="utf-8") == "goodbye world\n"
+
+    # undo を実行して元に戻す
+    undo_result = await pyfltr.cli.mcp_server._tool_replace_undo(
+        replace_id=replace_result.replace_id,
+    )
+
+    assert target.read_text(encoding="utf-8") == original
+    assert str(target) in undo_result.restored
+    assert not undo_result.skipped
+    assert undo_result.exit_code == 0
+
+
+@pytest.mark.asyncio
+async def test_tool_replace_undo_hash_mismatch_skips_without_force(tmp_path: pathlib.Path) -> None:
+    """`force=False`のときハッシュ不一致ファイルが`skipped`に集まり`exit_code=1`になること。"""
+    target = tmp_path / "sample.txt"
+    target.write_text("hello world\n", encoding="utf-8")
+
+    replace_result = await pyfltr.cli.mcp_server._tool_replace(
+        pattern="hello",
+        replacement="goodbye",
+        paths=[str(target)],
+        dry_run=False,
+    )
+    assert replace_result.replace_id is not None
+
+    # replace後にファイルを手動で編集する（ハッシュ不一致を発生させる）
+    target.write_text("manually edited\n", encoding="utf-8")
+
+    undo_result = await pyfltr.cli.mcp_server._tool_replace_undo(
+        replace_id=replace_result.replace_id,
+        force=False,
+    )
+
+    assert str(target) in undo_result.skipped
+    assert not undo_result.restored
+    assert undo_result.exit_code == 1
+
+
+@pytest.mark.asyncio
+async def test_tool_replace_undo_hash_mismatch_force_restores(tmp_path: pathlib.Path) -> None:
+    """`force=True`のときハッシュ不一致でも復元されること。"""
+    target = tmp_path / "sample.txt"
+    original = "hello world\n"
+    target.write_text(original, encoding="utf-8")
+
+    replace_result = await pyfltr.cli.mcp_server._tool_replace(
+        pattern="hello",
+        replacement="goodbye",
+        paths=[str(target)],
+        dry_run=False,
+    )
+    assert replace_result.replace_id is not None
+
+    # replace後にファイルを手動で編集する
+    target.write_text("manually edited\n", encoding="utf-8")
+
+    undo_result = await pyfltr.cli.mcp_server._tool_replace_undo(
+        replace_id=replace_result.replace_id,
+        force=True,
+    )
+
+    assert target.read_text(encoding="utf-8") == original
+    assert str(target) in undo_result.restored
+    assert not undo_result.skipped
+    assert undo_result.exit_code == 0
+
+
+@pytest.mark.asyncio
+async def test_tool_replace_undo_not_found_raises() -> None:
+    """`replace_id`が存在しない場合`ValueError`が発生すること。"""
+    with pytest.raises(ValueError, match="replace_id"):
+        await pyfltr.cli.mcp_server._tool_replace_undo(replace_id="NONEXISTENTID00000000000000")

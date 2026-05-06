@@ -17,9 +17,11 @@ import typing
 
 import pyfltr.cli.command_info
 import pyfltr.cli.config_subcmd
+import pyfltr.cli.grep_subcmd
 import pyfltr.cli.mcp_server
 import pyfltr.cli.parser
 import pyfltr.cli.pipeline
+import pyfltr.cli.replace_subcmd
 import pyfltr.cli.shell_completion
 import pyfltr.command.env
 import pyfltr.state.runs
@@ -81,7 +83,20 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
     pyfltr.cli.parser.preflight_tool_name_as_subcommand(sys_args)
 
     parser = pyfltr.cli.parser.build_parser()
-    args = parser.parse_args(list(sys_args))
+    # grep / replaceは複数位置引数（pattern + paths）をオプション混在で受理する。
+    # Python 3.11のargparseは`nargs="?"` + `nargs="*"`の組み合わせでサブパーサー側の
+    # 位置引数解析が早期終了する既知挙動があり、`--output-format=jsonl`等が
+    # 位置引数列の途中に出現すると後続の`paths`値がunrecognizedとして除外される。
+    # `parse_known_args`で残余を回収し、`paths`へ統合する経路で回避する。
+    if sys_args and sys_args[0] in ("grep", "replace"):
+        args, extras = parser.parse_known_args(list(sys_args))
+        unknown_options = [token for token in extras if token.startswith("-")]
+        if unknown_options:
+            parser.error(f"unrecognized arguments: {' '.join(unknown_options)}")
+        if extras and hasattr(args, "paths"):
+            args.paths = list(args.paths) + [pathlib.Path(p) for p in extras]
+    else:
+        args = parser.parse_args(list(sys_args))
     subcommand = args.subcommand
     logging.basicConfig(level=logging.DEBUG if getattr(args, "verbose", False) else logging.INFO, format="%(message)s")
 
@@ -95,6 +110,8 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
         "show-run": lambda: pyfltr.state.runs.execute_show_run(parser, args),
         "command-info": lambda: _dispatch_command_info(parser, args),
         "mcp": lambda: _dispatch_mcp(args),
+        "grep": lambda: pyfltr.cli.grep_subcmd.execute_grep(parser, args),
+        "replace": lambda: pyfltr.cli.replace_subcmd.execute_replace(parser, args),
     }
 
     if subcommand in non_run_dispatch:
