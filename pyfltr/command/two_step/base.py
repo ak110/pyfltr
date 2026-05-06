@@ -408,32 +408,19 @@ def _run_fix_mode(
 
     errors = pyfltr.command.error_parser.parse_errors(command, output, command_info.error_pattern) if parse_errors else []
 
-    if command_type_override is not None:
-        result = CommandResult.from_run(
-            command=command,
-            command_type=command_type_override(has_error, returncode),
-            commandline=write_commandline,
-            returncode=returncode,
-            has_error=has_error,
-            files=len(targets),
-            output=output,
-            elapsed=elapsed,
-            errors=errors,
-            timeout_exceeded=write_proc.timeout_exceeded,
-        )
-    else:
-        result = CommandResult.from_run(
-            command=command,
-            command_info=command_info,
-            commandline=write_commandline,
-            returncode=returncode,
-            has_error=has_error,
-            files=len(targets),
-            output=output,
-            elapsed=elapsed,
-            errors=errors,
-            timeout_exceeded=write_proc.timeout_exceeded,
-        )
+    resolved_type = command_type_override(has_error, returncode) if command_type_override is not None else command_info.type
+    result = CommandResult.from_run(
+        command=command,
+        command_type=resolved_type,
+        commandline=write_commandline,
+        returncode=returncode,
+        has_error=has_error,
+        files=len(targets),
+        output=output,
+        elapsed=elapsed,
+        errors=errors,
+        timeout_exceeded=write_proc.timeout_exceeded,
+    )
     if not has_error and changed:
         result.fixed_files = changed_files(digests_before, digests_after)
     return result
