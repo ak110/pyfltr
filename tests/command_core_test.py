@@ -729,6 +729,138 @@ def test_expand_all_files_warns_gitignored_file(tmp_path: pathlib.Path, caplog) 
         os.chdir(original_cwd)
 
 
+def test_expand_all_files_filters_symlinked_files_against_gitignore(tmp_path: pathlib.Path) -> None:
+    """シンボリックリンクディレクトリ越しに辿ったファイルでも.gitignore判定が成立する。
+
+    過去にsymlink越えのpathspecで`git check-ignore`がreturncode 128を返すと
+    .gitignore判定が丸ごとスキップされ、未追跡ファイルが対象に残る不具合があった。
+    """
+    subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True, check=True)
+    (tmp_path / "real").mkdir()
+    (tmp_path / "real" / "ok.py").write_text("x = 1\n")
+    (tmp_path / "real" / "ignored___.py").write_text("y = 2\n")
+    (tmp_path / "link").symlink_to("real", target_is_directory=True)
+    (tmp_path / ".gitignore").write_text("*___*\n")
+
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        config = pyfltr.config.config.create_default_config()
+        all_files = pyfltr.command.targets.expand_all_files([], config)
+        py_files = pyfltr.command.targets.filter_by_globs(all_files, ["*.py"])
+        names = {p.name for p in py_files}
+        assert "ok.py" in names
+        assert "ignored___.py" not in names
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_expand_all_files_warns_on_check_ignore_failure(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """git check-ignoreが想定外の終了コードを返した場合にwarningが出て部分結果が活用される。"""
+    subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True, check=True)
+    (tmp_path / "ok.py").write_text("x = 1\n")
+    (tmp_path / "ignored.py").write_text("y = 2\n")
+
+    fake_result = subprocess.CompletedProcess(
+        args=["git", "check-ignore"],
+        returncode=128,
+        stdout="ignored.py\0",
+        stderr="fatal: pathspec '...' is beyond a symbolic link\n",
+    )
+    original_run = subprocess.run
+
+    def fake_run(args, **kwargs):  # type: ignore[no-untyped-def]
+        if isinstance(args, list) and args[:2] == ["git", "check-ignore"] and "--stdin" in args:
+            return fake_result
+        return original_run(args, **kwargs)  # pylint: disable=subprocess-run-check  # 呼び出し元のkwargsを転送
+
+    monkeypatch.setattr("pyfltr.command.targets.subprocess.run", fake_run)
+
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        pyfltr.warnings_.clear()
+        config = pyfltr.config.config.create_default_config()
+        all_files = pyfltr.command.targets.expand_all_files([], config)
+        names = {p.name for p in pyfltr.command.targets.filter_by_globs(all_files, ["*.py"])}
+        assert "ok.py" in names
+        # stdoutで返ってきたignored.pyは部分結果として除外される
+        assert "ignored.py" not in names
+        collected = pyfltr.warnings_.collected_warnings()
+        assert any("git check-ignore" in w["message"] and "128" in w["message"] for w in collected)
+    finally:
+        pyfltr.warnings_.clear()
+        os.chdir(original_cwd)
+
+
+def test_expand_all_files_keeps_outside_repo_symlink_target(tmp_path: pathlib.Path) -> None:
+    """cwdリポジトリ外に解決されるシンボリックリンク先はgitignore判定対象外として残る。"""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, capture_output=True, check=True)
+    (repo / "in_repo.py").write_text("x = 1\n")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "external.py").write_text("y = 2\n")
+    (repo / "extlink").symlink_to(outside, target_is_directory=True)
+
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(repo)
+        config = pyfltr.config.config.create_default_config()
+        all_files = pyfltr.command.targets.expand_all_files([], config)
+        names = {p.name for p in pyfltr.command.targets.filter_by_globs(all_files, ["*.py"])}
+        assert "in_repo.py" in names
+        assert "external.py" in names
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_expand_all_files_skips_gitignored_symlink_dir(tmp_path: pathlib.Path) -> None:
+    """シンボリックリンクディレクトリ自身が.gitignore対象なら配下は走査されない。"""
+    subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True, check=True)
+    (tmp_path / "real").mkdir()
+    (tmp_path / "real" / "child.py").write_text("x = 1\n")
+    (tmp_path / "ignored_link").symlink_to("real", target_is_directory=True)
+    (tmp_path / "regular.py").write_text("y = 2\n")
+    # ファイル形式パターンで早期スキップが成立する
+    (tmp_path / ".gitignore").write_text("ignored_link\n")
+
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        config = pyfltr.config.config.create_default_config()
+        all_files = pyfltr.command.targets.expand_all_files([], config)
+        py_files = pyfltr.command.targets.filter_by_globs(all_files, ["*.py"])
+        names = {p.name for p in py_files}
+        assert "regular.py" in names
+        # symlink越しのパスは早期スキップにより列挙されない
+        assert not any("ignored_link" in str(p) for p in py_files)
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_expand_all_files_deduplicates_realpath(tmp_path: pathlib.Path) -> None:
+    """同一実体ファイルへ複数パスから到達した場合、実体パス単位で重複排除されソートされる。"""
+    (tmp_path / "real").mkdir()
+    (tmp_path / "real" / "shared.py").write_text("x = 1\n")
+    (tmp_path / "alias").symlink_to("real", target_is_directory=True)
+    (tmp_path / "another.py").write_text("y = 2\n")
+
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        config = pyfltr.config.config.create_default_config()
+        config.values["respect-gitignore"] = False
+        all_files = pyfltr.command.targets.expand_all_files([], config)
+        py_files = pyfltr.command.targets.filter_by_globs(all_files, ["*.py"])
+        shared_paths = [p for p in py_files if p.name == "shared.py"]
+        assert len(shared_paths) == 1
+        assert py_files == sorted(py_files, key=str)
+    finally:
+        os.chdir(original_cwd)
+
+
 def test_filter_by_globs() -> None:
     """`filter_by_globs`が正しくフィルタリングする。"""
     files = [

@@ -44,6 +44,7 @@ def expand_all_files(targets: list[pathlib.Path], config: pyfltr.config.config.C
     # コマンドラインで直接指定されたファイル（ディレクトリでないもの）を記録
     directly_specified: set[pathlib.Path] = set()
     expanded: list[pathlib.Path] = []
+    respect_gitignore = bool(config["respect-gitignore"])
 
     def _expand_target(target: pathlib.Path, *, is_direct: bool) -> None:
         try:
@@ -58,6 +59,13 @@ def expand_all_files(targets: list[pathlib.Path], config: pyfltr.config.config.C
                     pyfltr.warnings_.add_filtered_direct_file(str(target), reason="excluded")
                 return
             if target.is_dir():
+                # シンボリックリンクディレクトリ自身が.gitignore対象なら配下を辿らない。
+                # 末尾`/`を付けない単一パス指定で問い合わせるため、
+                # ファイル形式パターン（`name`・`*pattern*`等）に限り判定が成立する。
+                # `link/`形式のディレクトリ専用パターンは`git check-ignore`が
+                # symlink越えのpathspecを拒否するため判定不可となり、早期スキップは機能しない。
+                if respect_gitignore and target.is_symlink() and _is_ignored_single_path(target):
+                    return
                 for child in target.iterdir():
                     _expand_target(child, is_direct=False)
             else:
@@ -91,7 +99,7 @@ def expand_all_files(targets: list[pathlib.Path], config: pyfltr.config.config.C
         _expand_target(target, is_direct=is_direct)
 
     # .gitignoreフィルタリング
-    if config["respect-gitignore"]:
+    if respect_gitignore:
         before_gitignore = set(expanded)
         expanded = _filter_by_gitignore(expanded)
         # 直接指定されたファイルがgitignoreで除外された場合に警告
@@ -104,17 +112,85 @@ def expand_all_files(targets: list[pathlib.Path], config: pyfltr.config.config.C
                 )
                 pyfltr.warnings_.add_filtered_direct_file(str(target), reason="excluded")
 
-    return expanded
+    return _dedup_and_sort(expanded)
+
+
+def _dedup_and_sort(paths: list[pathlib.Path]) -> list[pathlib.Path]:
+    """実体パス単位で重複排除し、パス文字列で安定ソートして返す。
+
+    シンボリックリンクを辿った結果、同一実体ファイルが複数パスから列挙されるケース
+    （例: `.agents/skills` → `.claude/skills` を辿る構成）でツールチェックを
+    多重実行するのを避ける。重複時は最初に出現したパスを残す。
+    """
+    seen: set[pathlib.Path] = set()
+    deduped: list[pathlib.Path] = []
+    for p in paths:
+        try:
+            real = p.resolve()
+        except OSError:
+            real = p.absolute()
+        if real not in seen:
+            seen.add(real)
+            deduped.append(p)
+    deduped.sort(key=str)
+    return deduped
+
+
+def _is_ignored_single_path(path: pathlib.Path) -> bool:
+    """単一パスのgitignore判定。
+
+    末尾`/`を付けない指定で`git check-ignore`に問い合わせる。
+    `.gitignore`のファイル形式パターン（`name`・`*pattern*`等）に一致する場合のみ
+    Trueを返す。`link/`形式のディレクトリ専用パターンには一致しない。
+    git不在・タイムアウト・その他エラー時はFalseを返し、呼び出し元は通常走査を続ける。
+    """
+    try:
+        result = subprocess.run(
+            ["git", "check-ignore", "--quiet", str(path)],
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
 
 
 def _filter_by_gitignore(paths: list[pathlib.Path]) -> list[pathlib.Path]:
-    """Git check-ignoreで .gitignoreに該当するファイルを除外する。"""
+    """Git check-ignoreで .gitignoreに該当するファイルを除外する。
+
+    各入力パスを実体パスに正規化し、cwdリポジトリからの相対パスへ変換した上で
+    `git check-ignore --stdin -z`に渡す。シンボリックリンク越えのpathspecで
+    `fatal: pathspec ... is beyond a symbolic link`が発生してreturncode 128となり
+    .gitignore除外処理が丸ごとスキップされる事象を回避するため。
+    cwdリポジトリ外に解決されたパスは判定対象外として、入力パスをそのまま残す。
+    """
     if not paths:
         return paths
+    cwd_real = pathlib.Path.cwd().resolve()
+    in_repo: list[tuple[pathlib.Path, str]] = []  # (元path, cwd相対化したrealpath str)
+    out_repo: list[pathlib.Path] = []  # cwd外（gitignore判定対象外）
+    for p in paths:
+        try:
+            real = p.resolve()
+        except OSError:
+            out_repo.append(p)
+            continue
+        try:
+            rel = real.relative_to(cwd_real)
+        except ValueError:
+            out_repo.append(p)
+            continue
+        in_repo.append((p, str(rel)))
+
+    if not in_repo:
+        return paths
+
+    rel_strs = [rel for _, rel in in_repo]
     try:
         result = subprocess.run(
             ["git", "check-ignore", "--stdin", "-z"],
-            input="\0".join(str(p) for p in paths),
+            input="\0".join(rel_strs),
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -128,13 +204,23 @@ def _filter_by_gitignore(paths: list[pathlib.Path]) -> list[pathlib.Path]:
         pyfltr.warnings_.emit_warning(source="git", message="git check-ignore がタイムアウトしたためスキップする")
         return paths
     if result.returncode not in (0, 1):
-        # 0: 1つ以上ignored, 1: 全てnot ignored, 128: fatal error（リポジトリ外等）
-        logger.debug("git check-ignore が終了コード %d を返した", result.returncode)
-        return paths
+        # 0: 1つ以上ignored, 1: 全てnot ignored, 128等: fatal error。
+        # サイレント素通しは.gitignore除外スキップを覆い隠すため emit_warning で通知し、
+        # stdoutで返ってきた部分結果はignored判定として活用する。
+        stderr_msg = result.stderr.strip() if result.stderr else ""
+        detail = f": {stderr_msg}" if stderr_msg else ""
+        pyfltr.warnings_.emit_warning(
+            source="git",
+            message=(
+                f"git check-ignore が終了コード {result.returncode} を返したため "
+                f"一部の .gitignore 判定がスキップされました{detail}"
+            ),
+        )
     ignored_set: set[str] = set()
     if result.stdout:
         ignored_set = {s for s in result.stdout.split("\0") if s}
-    return [p for p in paths if str(p) not in ignored_set]
+    not_ignored_in_repo = [p for p, rel in in_repo if rel not in ignored_set]
+    return not_ignored_in_repo + out_repo
 
 
 def filter_by_globs(all_files: list[pathlib.Path], globs: list[str]) -> list[pathlib.Path]:
