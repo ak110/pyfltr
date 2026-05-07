@@ -14,23 +14,11 @@
 
 ## 開発コマンド
 
-本リポジトリでは「ローカル編集中のpyfltrを反映する」目的で`--with-editable=.`を使う。
-他プロジェクト向けの利用者用コマンドは`uvx pyfltr ...`であり、本リポのみの限定例外として扱う。
-
 ```bash
-# 全チェック実行（コミット前検証）
-uv run --with-editable=. pyfltr run-for-agent
-
-# 特定ファイルのみ実行
-uv run --with-editable=. pyfltr run-for-agent path/to/file
-
-# 特定ツールのみ限定して実行
-uv run --with-editable=. pyfltr run-for-agent --commands=mypy,ruff-check path/to/file
+make format   # 整形 + 軽量lint + 自動修正（開発時の手動実行用）
+make test     # 全チェック実行（これを通過すればコミット可能）
+make update   # 依存更新
 ```
-
-ドキュメントのみの変更の場合は省略可（pre-commitで実行されるため）。
-テストコードの単体実行も極力pyfltrを使い、pytestを直接呼び出さない。
-最終検証はCIに委ねる前提で、修正後の再実行時は対象を限定して実行する。
 
 ## サプライチェーン攻撃対策
 
