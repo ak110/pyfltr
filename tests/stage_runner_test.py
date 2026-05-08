@@ -1,5 +1,3 @@
-# pylint: disable=missing-module-docstring,missing-function-docstring  # テストはモジュール／関数docstringを省略する慣習
-
 import concurrent.futures
 import threading
 

@@ -175,7 +175,7 @@ class CommandResult:
 
     @classmethod
     # from_run は各コマンド実行モジュール（linter_fix / textlint_fix 等）で同様の引数転送パターンを持つため重複検知される
-    def from_run(  # pylint: disable=duplicate-code
+    def from_run(
         cls,
         *,
         command: str,

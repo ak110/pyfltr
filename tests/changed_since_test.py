@@ -4,8 +4,6 @@ git 差分ファイルへのフィルタリング・空集合・ref 不在フォ
 git 不在フォールバックを検証する。
 """
 
-# pylint: disable=missing-function-docstring  # テストは関数docstringを省略する慣習
-
 import collections.abc
 import os
 import pathlib

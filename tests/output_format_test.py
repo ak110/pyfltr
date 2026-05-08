@@ -1,6 +1,3 @@
-# pylint: disable=missing-module-docstring,missing-function-docstring  # テストはモジュール／関数docstringを省略する慣習
-# pylint: disable=protected-access  # 内部ヘルパー（_resolve_output_format / _build_header_record等）の単体テスト経路
-
 import json
 import pathlib
 import subprocess

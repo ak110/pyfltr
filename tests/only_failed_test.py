@@ -4,8 +4,6 @@
 skip → commands フィルタリングで除外）を検証する。
 """
 
-# pylint: disable=missing-function-docstring  # テストは関数docstringを省略する慣習
-
 import argparse
 import logging
 import pathlib

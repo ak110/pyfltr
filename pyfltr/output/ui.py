@@ -1,6 +1,4 @@
 """Textual UI関連の処理。"""
-# cli.pyとの残余重複（aborted_commands後処理）はcall_from_thread差異のため共通化不可
-# pylint: disable=duplicate-code
 
 import argparse
 import concurrent.futures

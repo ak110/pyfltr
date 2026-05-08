@@ -5,10 +5,6 @@
 （`default_cache_root()` 解決）が同一キャッシュを参照する。
 """
 
-# pylint: disable=missing-function-docstring  # テストは関数docstringを省略する慣習
-# pylint: disable=protected-access  # FastMCPツール関数（_tool_*）の単体テスト経路
-# pylint: disable=duplicate-code  # アーカイブ初期化の組み立て手順が他テストと類似
-
 import inspect
 import json
 import pathlib
@@ -16,6 +12,7 @@ import shutil
 
 import pytest
 
+import pyfltr.cli.mcp_models
 import pyfltr.cli.mcp_server
 import pyfltr.state.archive
 from tests import conftest as _testconf
@@ -40,7 +37,7 @@ def _isolated_cache(
 
 
 def test_run_summary_model_fields() -> None:
-    model = pyfltr.cli.mcp_server.RunSummaryModel(
+    model = pyfltr.cli.mcp_models.RunSummaryModel(
         run_id="abc123",
         started_at="2026-01-01T00:00:00",
         finished_at="2026-01-01T00:01:00",
@@ -56,7 +53,7 @@ def test_run_summary_model_fields() -> None:
 
 def test_diagnostic_model_all_optional() -> None:
     # 全フィールド省略可能であることを確認する
-    model = pyfltr.cli.mcp_server.DiagnosticModel()
+    model = pyfltr.cli.mcp_models.DiagnosticModel()
     assert model.command is None
     assert model.file is None
     assert not model.messages
@@ -64,7 +61,7 @@ def test_diagnostic_model_all_optional() -> None:
 
 def test_diagnostic_message_model_all_optional() -> None:
     # DiagnosticMessageModelも全フィールド省略可能
-    model = pyfltr.cli.mcp_server.DiagnosticMessageModel()
+    model = pyfltr.cli.mcp_models.DiagnosticMessageModel()
     assert model.line is None
     assert model.severity is None
     assert model.msg is None
@@ -366,7 +363,7 @@ async def test_tool_run_for_agent_returns_run_id(tmp_path: pathlib.Path) -> None
 
 def test_run_for_agent_result_new_fields_defaults() -> None:
     """RunForAgentResultの新フィールドのデフォルト値を確認する。"""
-    result = pyfltr.cli.mcp_server.RunForAgentResult(
+    result = pyfltr.cli.mcp_models.RunForAgentResult(
         run_id="01TESTULID1234567890123456",
         exit_code=0,
         failed=[],
@@ -380,7 +377,7 @@ def test_run_for_agent_result_new_fields_defaults() -> None:
 
 def test_run_for_agent_result_nullable_run_id() -> None:
     """RunForAgentResultのrun_idがNoneを許容する（early exit時）。"""
-    result = pyfltr.cli.mcp_server.RunForAgentResult(
+    result = pyfltr.cli.mcp_models.RunForAgentResult(
         run_id=None,
         exit_code=0,
         failed=[],

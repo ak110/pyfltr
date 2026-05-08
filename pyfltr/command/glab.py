@@ -1,4 +1,3 @@
-# pylint: disable=duplicate-code  # process.run_subprocess呼び出しの引数列が他経路と類似
 """glab関連コマンド実行。"""
 
 import argparse

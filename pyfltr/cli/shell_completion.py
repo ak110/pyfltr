@@ -42,13 +42,13 @@ def _collect_completions(
         nonlocal output_format_choices
         # argparseはオプション一覧やサブパーサーを公開APIで列挙する手段を提供しないため、
         # `_actions` / `_SubParsersAction` 経由の参照に依存せざるを得ない。
-        for action in p._actions:  # noqa: SLF001  # pylint: disable=protected-access
+        for action in p._actions:  # noqa: SLF001
             for opt in action.option_strings:
                 options.add(opt)
             if "--output-format" in action.option_strings and action.choices:
                 output_format_choices = list(action.choices)
             # サブパーサーを再帰的に walk
-            if isinstance(action, argparse._SubParsersAction):  # noqa: SLF001  # pylint: disable=protected-access
+            if isinstance(action, argparse._SubParsersAction):  # noqa: SLF001
                 for sub in action.choices.values():
                     _walk(sub)
 

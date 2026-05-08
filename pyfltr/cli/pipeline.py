@@ -5,8 +5,6 @@
 `calculate_returncode`を担う。
 text整形描画（`render_results` / `write_log`）は`cli/render.py`に分離している。
 """
-# ui.pyとの残余重複（aborted_commands後処理）はcall_from_thread差異のため共通化不可
-# pylint: disable=duplicate-code
 
 from __future__ import annotations
 
@@ -180,6 +178,52 @@ def _heartbeat_text_emit(message: str) -> None:
     """
     with lock:
         text_logger.warning(message)
+
+
+def _make_archive_hook(
+    archive_store: pyfltr.state.archive.ArchiveStore,
+    run_id: str,
+) -> typing.Callable[[pyfltr.command.core_.CommandResult], None]:
+    """アーカイブ書き込みフックを生成する。
+
+    書き込みに成功した場合のみ`result.archived = True`を設定し、
+    smart truncationの可否判定に使う。失敗時は警告を発行して処理を続行する。
+    """
+
+    def _hook(result: pyfltr.command.core_.CommandResult) -> None:
+        try:
+            archive_store.write_tool_result(run_id, result)
+        except OSError as e:
+            # ハンドラ内でwarningを通知してもsummary末尾にまとまる。
+            pyfltr.warnings_.emit_warning(source="archive", message=f"{result.command} のアーカイブ書き込みに失敗: {e}")
+            return
+        # 書き込み成功時のみarchived=Trueに更新。smart truncationの可否判定に使う。
+        result.archived = True
+
+    return _hook
+
+
+def _make_attach_retry_command(
+    *,
+    retry_args_template: list[str],
+    launcher_prefix: list[str],
+    original_cwd: str,
+) -> typing.Callable[[pyfltr.command.core_.CommandResult], None]:
+    """retry_command付与フックを生成する。
+
+    各ツール完了時（archive_hookと同じタイミング）に呼ばれるon_result経路へ挿入し、
+    `populate_retry_command`（失敗ファイルフィルタリング・cached判定を含む）に委譲する。
+    """
+
+    def _hook(result: pyfltr.command.core_.CommandResult) -> None:
+        pyfltr.state.retry.populate_retry_command(
+            result,
+            retry_args_template=retry_args_template,
+            launcher_prefix=launcher_prefix,
+            original_cwd=original_cwd,
+        )
+
+    return _hook
 
 
 def run_commands_with_cli(
@@ -548,32 +592,17 @@ def run_pipeline(
 
     archive_hook: typing.Callable[[pyfltr.command.core_.CommandResult], None] | None = None
     if archive_store is not None and run_id is not None:
-        captured_store = archive_store
-        captured_run_id = run_id
-
-        def _archive_hook(result: pyfltr.command.core_.CommandResult) -> None:
-            try:
-                captured_store.write_tool_result(captured_run_id, result)
-            except OSError as e:
-                # ハンドラ内でwarningを通知してもsummary末尾にまとまる。
-                pyfltr.warnings_.emit_warning(source="archive", message=f"{result.command} のアーカイブ書き込みに失敗: {e}")
-                return
-            # 書き込み成功時のみarchived=Trueに更新。smart truncationの可否判定に使う。
-            result.archived = True
-
-        archive_hook = _archive_hook
+        archive_hook = _make_archive_hook(archive_store, run_id)
 
     # retry_commandをCommandResultに埋めるためのヘルパー。
     # archive_hookと同じタイミング （各ツール完了時） に呼ばれるon_result経路へ挿入する。
-    # 実装本体は `_populate_retry_command` （A案の失敗ファイルフィルタリング・cached
-    # 判定を含む） に委譲し、クロージャ変数をキーワード引数で引き渡す。
-    def _attach_retry_command(result: pyfltr.command.core_.CommandResult) -> None:
-        pyfltr.state.retry.populate_retry_command(
-            result,
-            retry_args_template=retry_args_template,
-            launcher_prefix=launcher_prefix,
-            original_cwd=effective_cwd,
-        )
+    # 実装本体は `populate_retry_command` （失敗ファイルフィルタリング・cached判定を含む） に
+    # 委譲し、コンテキスト変数をファクトリ引数で引き渡す。
+    _attach_retry_command = _make_attach_retry_command(
+        retry_args_template=retry_args_template,
+        launcher_prefix=launcher_prefix,
+        original_cwd=effective_cwd,
+    )
 
     # UIの判定
     use_ui = not args.no_ui and (args.ui or pyfltr.output.ui.can_use_ui())

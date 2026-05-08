@@ -1,7 +1,5 @@
 """error_parserのテストコード。"""
 
-# pylint: disable=too-many-lines  # 各ツールのエラーフォーマット網羅テストはfixture密結合化を避けるため分割しない方針
-
 import json
 import pathlib
 
@@ -528,7 +526,7 @@ def test_parse_textlint_json_hint_for_sentence_length() -> None:
     errors = pyfltr.command.error_parser.parse_errors("textlint", output)
     assert len(errors) == 1
     # 内部定数_TEXTLINT_RULE_HINTSの値を直接突き合わせて検証する単体テスト経路。
-    assert errors[0].hint == pyfltr.command.error_parser._TEXTLINT_RULE_HINTS["ja-technical-writing/sentence-length"]  # pylint: disable=protected-access
+    assert errors[0].hint == pyfltr.command.error_parser._TEXTLINT_RULE_HINTS["ja-technical-writing/sentence-length"]
 
 
 def test_parse_textlint_json_hint_for_known_rules() -> None:

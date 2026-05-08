@@ -4,9 +4,6 @@
 コマンドライン生成を検証する。
 """
 
-# pylint: disable=protected-access  # _resolve_direct_executable等の内部ヘルパー単体テスト経路
-# pylint: disable=duplicate-code  # fake_run系のサブプロセスダブル定義が他テストファイルと類似
-
 import os
 import pathlib
 import subprocess

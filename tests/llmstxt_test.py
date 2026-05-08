@@ -50,8 +50,8 @@ def _get_subcommand_names() -> list[str]:
     subcommand_names: list[str] = []
     # argparse はサブパーサー一覧を公開 API で列挙する手段を提供しないため、
     # `_actions` / `_SubParsersAction` 経由の参照を使う。
-    for action in parser._actions:  # type: ignore[attr-defined]  # pylint: disable=protected-access
-        if isinstance(action, argparse._SubParsersAction):  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    for action in parser._actions:  # type: ignore[attr-defined]
+        if isinstance(action, argparse._SubParsersAction):  # type: ignore[attr-defined]
             subcommand_names.extend(action.choices.keys())
     return subcommand_names
 

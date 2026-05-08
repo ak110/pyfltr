@@ -1,7 +1,4 @@
 """llm_outputのテストコード。"""
-# pylint: disable=protected-access  # JSONL構造化レコード組み立てヘルパー（_build_*_record等）の単体テスト経路
-# pylint: disable=duplicate-code  # 各レコードビルダー検証の組み立て手順が他テストと類似
-# pylint: disable=too-many-lines  # JSONLビルダーの単体検証を本ファイルへ集約しているため
 
 import json
 

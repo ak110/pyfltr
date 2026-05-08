@@ -35,25 +35,34 @@ logger = logging.getLogger(__name__)
 # 粒度では複数行のグルーピングを保証できないためモジュール側でロックする。
 _write_lock = threading.Lock()
 
+
 # パイプライン全体で「最後にJSONL構造化レコードを書き込んだタイミング（time.monotonic）」を保持する。
 # heartbeatタイマーが「最後の出力からの無音時間」判定に使う。
-# 初期値はNone=未出力（プロセス起動直後）。
 # `_write_lock` 配下で更新し、参照側もロック取得して一貫性を保つ。
-# pylint UPPER_CASE規約はモジュールレベルの可変状態変数の意図に合わないため抑止する。
-_last_jsonl_output_time: float | None = None  # pylint: disable=invalid-name
+class _JsonlOutputTimeState:
+    """最終JSONL出力時刻の可変状態保持クラス。
+
+    可変状態をインスタンスへ局所化することでモジュール変数とglobal文を排除し、
+    テストでのmonkeypatchによる差し替えも容易にする。
+    初期値 None は未出力（プロセス起動直後）を表す。
+    """
+
+    monotonic_time: float | None = None
+
+
+_output_time_state = _JsonlOutputTimeState()
 
 
 def get_last_jsonl_output_time() -> float | None:
     """`last_jsonl_output_time` を返す（heartbeat監視スレッドからの参照用）。"""
     with _write_lock:
-        return _last_jsonl_output_time
+        return _output_time_state.monotonic_time
 
 
 def set_last_jsonl_output_time(value: float) -> None:
     """`last_jsonl_output_time` を更新する（heartbeat発火後の発火時刻記録用）。"""
-    global _last_jsonl_output_time  # pylint: disable=global-statement  # 単一プロセス内の最終出力時刻SSOT
     with _write_lock:
-        _last_jsonl_output_time = value
+        _output_time_state.monotonic_time = value
 
 
 def _emit_structured(line: str) -> None:
@@ -61,9 +70,8 @@ def _emit_structured(line: str) -> None:
 
     呼び出し元はあらかじめ `_write_lock` を取得していること（複数行のアトミック書き込みを担保するため）。
     """
-    global _last_jsonl_output_time  # pylint: disable=global-statement  # 単一プロセス内の最終出力時刻SSOT
     pyfltr.cli.output_format.structured_logger.info(line)
-    _last_jsonl_output_time = time.monotonic()
+    _output_time_state.monotonic_time = time.monotonic()
 
 
 def emit_record(line: str) -> None:
@@ -511,6 +519,91 @@ def _build_message_dict(error: pyfltr.command.error_parser.ErrorLocation) -> dic
     return record
 
 
+def _build_truncated_meta(
+    result: pyfltr.command.core_.CommandResult,
+    *,
+    diagnostics: int,
+    diagnostic_total: int | None,
+    config: pyfltr.config.config.Config | None,
+) -> tuple[dict[str, typing.Any], str | None]:
+    """commandレコードの`truncated`メタdictと、付与すべき`message`文字列を返す。
+
+    切り詰めが発生しない場合は空dict・Noneを返す。
+    `message`は`failed`/`resolution_failed`かつ`diagnostics == 0`のときのみ生成する。
+    `truncated`はdiagnostic切り詰めとメッセージ切り詰めの両方を統合して返す。
+    """
+    truncated: dict[str, typing.Any] = {}
+    message: str | None = None
+    archive_command_dir = pyfltr.paths.sanitize_command_name(result.command)
+    if diagnostic_total is not None and diagnostic_total > diagnostics:
+        truncated["diagnostics_total"] = diagnostic_total
+        truncated["archive"] = f"tools/{archive_command_dir}/diagnostics.jsonl"
+
+    if result.status in {"failed", "resolution_failed"} and diagnostics == 0:
+        message_max_lines, message_max_chars = _resolve_message_limits(config)
+        msg, msg_truncated, head_chars, tail_chars = _truncate_message(
+            result.output,
+            max_lines=message_max_lines,
+            max_chars=message_max_chars,
+            archived=result.archived,
+        )
+        if msg:
+            message = msg
+        if msg_truncated:
+            truncated["lines"] = len(result.output.splitlines())
+            truncated["chars"] = len(result.output)
+            truncated["head_chars"] = head_chars
+            truncated["tail_chars"] = tail_chars
+            truncated.setdefault("archive", f"tools/{archive_command_dir}/output.log")
+
+    return truncated, message
+
+
+def _build_hints_dict(
+    result: pyfltr.command.core_.CommandResult,
+    *,
+    diagnostics: int,
+    hints: dict[str, str] | None,
+    config: pyfltr.config.config.Config | None,
+) -> dict[str, str]:
+    """commandレコードの`hints`dictを組み立てる。
+
+    `aggregate_diagnostics`由来のrule別ヒント・textlint固有の仕様注記・
+    ユーザー定義のper-tool hints・formatter/timeout状態ヒントを統合する。
+    いずれも「対応する指摘や状態が実際に該当するときのみ付与する」方針に従う。
+    """
+    merged: dict[str, str] = dict(hints) if hints else {}
+    # textlintはcol/end_colをノード先頭からの累積位置で返す独特な仕様だが、
+    # 指摘ゼロの実行ではこの注記を読み解く文脈が無いためhintを付けない。
+    # col/end_colの双方を1個のhintで同時に説明し、類似文言の重複によるトークン浪費を避ける。
+    if result.command == "textlint" and diagnostics > 0:
+        merged["messages[].col"] = (
+            "textlint reports col and end_col as cumulative offsets from the text-node start, not in-line offsets"
+        )
+    # ユーザー定義の `{command}-hints` は、指摘1件以上のときに限り `user.<n>` 連番キーで
+    # 追加する。連番キーは `aggregate_diagnostics` 由来のrule名キーや `messages[].col` 等の
+    # ツール固有キーと衝突しないよう `user.` プレフィクスを付ける。
+    if config is not None and diagnostics > 0:
+        user_hints: list[str] = list(config.values.get(f"{result.command}-hints", []))
+        for index, hint_text in enumerate(user_hints):
+            merged[f"user.{index}"] = hint_text
+    # formatterによる書き換えはそれ自体が成功扱いで、利用者・LLMエージェントが
+    # 「再実行して直さなければならない」と誤解しないようコマンド単独の文脈ヒントを添える。
+    if result.status == "formatted":
+        merged["status.formatted"] = (
+            "formatter rewrote files; rerun is not required because the rewrite itself counts as success"
+        )
+    # timeout由来の停止はLLMがハング・無限ループを判別するためのキーとなる情報。
+    # 発行条件は「対応する状態が実際に該当するときのみ」方針に沿い、`timeout_exceeded=True`時のみ。
+    if result.timeout_exceeded:
+        merged["status.timeout"] = (
+            "subprocess was killed because it exceeded the configured timeout;"
+            " inspect command.message for the captured tail and consider adjusting `command-timeout`"
+            " or the per-tool `{command}-timeout`"
+        )
+    return merged
+
+
 def _build_command_record(
     result: pyfltr.command.core_.CommandResult,
     *,
@@ -560,29 +653,11 @@ def _build_command_record(
     if result.returncode is not None:
         record["rc"] = result.returncode
 
-    truncated: dict[str, typing.Any] = {}
-    archive_command_dir = pyfltr.paths.sanitize_command_name(result.command)
-    if diagnostic_total is not None and diagnostic_total > diagnostics:
-        truncated["diagnostics_total"] = diagnostic_total
-        truncated["archive"] = f"tools/{archive_command_dir}/diagnostics.jsonl"
-
-    if result.status in {"failed", "resolution_failed"} and diagnostics == 0:
-        message_max_lines, message_max_chars = _resolve_message_limits(config)
-        message, msg_truncated, head_chars, tail_chars = _truncate_message(
-            result.output,
-            max_lines=message_max_lines,
-            max_chars=message_max_chars,
-            archived=result.archived,
-        )
-        if message:
-            record["message"] = message
-        if msg_truncated:
-            truncated["lines"] = len(result.output.splitlines())
-            truncated["chars"] = len(result.output)
-            truncated["head_chars"] = head_chars
-            truncated["tail_chars"] = tail_chars
-            truncated.setdefault("archive", f"tools/{archive_command_dir}/output.log")
-
+    truncated, message = _build_truncated_meta(
+        result, diagnostics=diagnostics, diagnostic_total=diagnostic_total, config=config
+    )
+    if message is not None:
+        record["message"] = message
     if truncated:
         record["truncated"] = truncated
     if result.retry_command is not None:
@@ -596,42 +671,7 @@ def _build_command_record(
             record["cached_from"] = result.cached_from
     if hint_urls:
         record["hint_urls"] = dict(hint_urls)
-    # textlintはcol/end_colをノード先頭からの累積位置で返す独特な仕様だが、
-    # 指摘ゼロの実行ではこの注記を読み解く文脈が無いためhintを付けない。
-    # 「対応する指摘・状態が該当するときのみhintを付与する」方針との整合を取り、
-    # diagnosticsが1件以上のときに限り追加する。
-    # col/end_colの双方を1個のhintで同時に説明し、類似文言の重複によるトークン浪費を避ける。
-    merged_hints = dict(hints) if hints else {}
-    if result.command == "textlint" and diagnostics > 0:
-        merged_hints["messages[].col"] = (
-            "textlint reports col and end_col as cumulative offsets from the text-node start, not in-line offsets"
-        )
-    # ユーザー定義の `{command}-hints` は、指摘1件以上のときに限り `user.<n>` 連番キーで
-    # 追加する。指摘0件で固定的なhintを残してLLM入力のトークンを浪費しないため、
-    # 既存のtextlint/formatted/timeoutと同じ「対応する状態が該当するときのみhintを付与する」方針に
-    # 揃える。連番キーは `aggregate_diagnostics` 由来のrule名キーや `messages[].col` 等の
-    # ツール固有キーと衝突しないよう `user.` プレフィクスを付ける。
-    if config is not None and diagnostics > 0:
-        user_hints: list[str] = list(config.values.get(f"{result.command}-hints", []))
-        for index, hint_text in enumerate(user_hints):
-            merged_hints[f"user.{index}"] = hint_text
-    # formatterによる書き換えはそれ自体が成功扱いで、利用者・LLMエージェントが
-    # 「再実行して直さなければならない」と誤解しないようコマンド単独の文脈ヒントを添える。
-    # `summary.guidance`はパイプライン全体での総括として再実行不要に触れているが、
-    # ここでは1コマンドの読み取りで結論まで到達できるように粒度を分けて並存させる。
-    if result.status == "formatted":
-        merged_hints["status.formatted"] = (
-            "formatter rewrote files; rerun is not required because the rewrite itself counts as success"
-        )
-    # timeout由来の停止はLLMがハング・無限ループを判別するためのキーとなる情報。
-    # 通常のlint failureと区別できるよう専用hintを付与する。
-    # 発行条件は「対応する状態が実際に該当するときのみ」方針に沿い、`timeout_exceeded=True`時のみ。
-    if result.timeout_exceeded:
-        merged_hints["status.timeout"] = (
-            "subprocess was killed because it exceeded the configured timeout;"
-            " inspect command.message for the captured tail and consider adjusting `command-timeout`"
-            " or the per-tool `{command}-timeout`"
-        )
+    merged_hints = _build_hints_dict(result, diagnostics=diagnostics, hints=hints, config=config)
     if merged_hints:
         record["hints"] = merged_hints
     return record

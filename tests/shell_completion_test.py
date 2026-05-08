@@ -1,6 +1,3 @@
-# pylint: disable=missing-module-docstring,missing-function-docstring  # テストはモジュール／関数docstringを省略する慣習
-# pylint: disable=protected-access  # 内部ヘルパー（_collect_completions）の単体テスト経路
-
 import pytest
 
 import pyfltr.cli.main

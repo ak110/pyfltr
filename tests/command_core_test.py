@@ -4,10 +4,6 @@ dispatcher・共通処理・環境変数・コマンドライン解決・`run_su
 キャッシュ・only_failed・プロセス管理を検証する。
 """
 
-# pylint: disable=protected-access  # _normalize_path_entry等の内部ヘルパー単体テスト経路
-# pylint: disable=too-many-lines  # コアテストはfixture密結合化を避けるため分割しない方針
-# pylint: disable=duplicate-code  # fake_run系のサブプロセスダブル定義が他テストファイルと類似
-
 import argparse
 import contextlib
 import logging
@@ -32,6 +28,7 @@ import pyfltr.command.process
 import pyfltr.command.runner
 import pyfltr.command.targets
 import pyfltr.command.two_step.base
+import pyfltr.command.two_step.ruff
 import pyfltr.config.config
 import pyfltr.state.cache
 import pyfltr.state.only_failed
@@ -491,7 +488,7 @@ def test_expanduser_expands_ruff_format_check_args(monkeypatch: pytest.MonkeyPat
     target.write_text("")
     command_info = config.commands["ruff-format"]
     args_ns = argparse.Namespace(verbose=False)
-    pyfltr.command.two_step.base.execute_ruff_format_two_step(
+    pyfltr.command.two_step.ruff.execute_ruff_format_two_step(
         "ruff-format",
         command_info,
         format_commandline=["ruff", "format", str(target)],
@@ -955,6 +952,20 @@ def test_execute_command_propagates_severity_to_result(mocker, tmp_path: pathlib
 # --- bin-runnerテスト ---
 
 
+def _resolve_bin_commandline_via_two_step(
+    command: str,
+    config: pyfltr.config.config.Config,
+) -> tuple[str, list[str]]:
+    """テスト用ヘルパー: build_commandline + ensure_mise_availableの2段呼び出し。
+
+    副作用検証テスト（mise未導入時のdirectフォールバック・未信頼config時のtrustリトライ・
+    mise exec --version経由の環境加工）で共通利用する。
+    """
+    resolved = pyfltr.command.runner.build_commandline(command, config, allow_side_effects=True)
+    resolved = pyfltr.command.runner.ensure_mise_available(resolved, config, command=command)
+    return resolved.executable, list(resolved.prefix)
+
+
 def test_resolve_bin_commandline_direct_found(mocker) -> None:
     """directモードでwhichが成功した場合、解決されたパスを返す。"""
     mocker.patch("shutil.which", return_value="/usr/local/bin/shellcheck")
@@ -962,10 +973,10 @@ def test_resolve_bin_commandline_direct_found(mocker) -> None:
     config = pyfltr.config.config.create_default_config()
     config.values["bin-runner"] = "direct"
 
-    path, prefix = pyfltr.command.runner._resolve_bin_commandline("shellcheck", config)
+    resolved = pyfltr.command.runner.build_commandline("shellcheck", config)
 
-    assert path == "/usr/local/bin/shellcheck"
-    assert not prefix
+    assert resolved.executable == "/usr/local/bin/shellcheck"
+    assert not resolved.prefix
 
 
 def test_resolve_bin_commandline_direct_not_found(mocker) -> None:
@@ -976,7 +987,7 @@ def test_resolve_bin_commandline_direct_not_found(mocker) -> None:
     config.values["bin-runner"] = "direct"
 
     with pytest.raises(FileNotFoundError, match="shellcheck"):
-        pyfltr.command.runner._resolve_bin_commandline("shellcheck", config)
+        pyfltr.command.runner.build_commandline("shellcheck", config)
 
 
 def test_resolve_bin_commandline_mise_success(mocker) -> None:
@@ -995,7 +1006,7 @@ def test_resolve_bin_commandline_mise_success(mocker) -> None:
     config = pyfltr.config.config.create_default_config()
     config.values["bin-runner"] = "mise"
 
-    path, prefix = pyfltr.command.runner._resolve_bin_commandline("shellcheck", config)
+    path, prefix = _resolve_bin_commandline_via_two_step("shellcheck", config)
 
     assert path == "mise"
     assert prefix == ["exec", "shellcheck@latest", "--", "shellcheck"]
@@ -1018,7 +1029,7 @@ def test_resolve_bin_commandline_mise_custom_version(mocker) -> None:
     config.values["bin-runner"] = "mise"
     config.values["shellcheck-version"] = "0.9.0"
 
-    path, prefix = pyfltr.command.runner._resolve_bin_commandline("shellcheck", config)
+    path, prefix = _resolve_bin_commandline_via_two_step("shellcheck", config)
 
     assert path == "mise"
     assert prefix == ["exec", "shellcheck@0.9.0", "--", "shellcheck"]
@@ -1039,7 +1050,7 @@ def test_resolve_bin_commandline_mise_not_installed_fallback(mocker) -> None:
     config = pyfltr.config.config.create_default_config()
     config.values["bin-runner"] = "mise"
 
-    path, prefix = pyfltr.command.runner._resolve_bin_commandline("actionlint", config)
+    path, prefix = _resolve_bin_commandline_via_two_step("actionlint", config)
 
     assert path == "/usr/local/bin/actionlint"
     assert not prefix
@@ -1053,7 +1064,7 @@ def test_resolve_bin_commandline_mise_not_installed_no_fallback(mocker) -> None:
     config.values["bin-runner"] = "mise"
 
     with pytest.raises(FileNotFoundError, match="actionlint"):
-        pyfltr.command.runner._resolve_bin_commandline("actionlint", config)
+        _resolve_bin_commandline_via_two_step("actionlint", config)
 
 
 def test_resolve_bin_commandline_glab_ci_lint_mise(mocker) -> None:
@@ -1071,7 +1082,7 @@ def test_resolve_bin_commandline_glab_ci_lint_mise(mocker) -> None:
     config = pyfltr.config.config.create_default_config()
     config.values["bin-runner"] = "mise"
 
-    path, prefix = pyfltr.command.runner._resolve_bin_commandline("glab-ci-lint", config)
+    path, prefix = _resolve_bin_commandline_via_two_step("glab-ci-lint", config)
 
     assert path == "mise"
     assert prefix == ["exec", "glab@latest", "--", "glab"]
@@ -1086,10 +1097,10 @@ def test_resolve_bin_commandline_glab_ci_lint_direct(mocker) -> None:
     config = pyfltr.config.config.create_default_config()
     config.values["bin-runner"] = "direct"
 
-    path, prefix = pyfltr.command.runner._resolve_bin_commandline("glab-ci-lint", config)
+    resolved = pyfltr.command.runner.build_commandline("glab-ci-lint", config)
 
-    assert path == "/usr/local/bin/glab"
-    assert not prefix
+    assert resolved.executable == "/usr/local/bin/glab"
+    assert not resolved.prefix
 
 
 def test_resolve_bin_commandline_mise_tool_not_installed(mocker) -> None:
@@ -1109,7 +1120,7 @@ def test_resolve_bin_commandline_mise_tool_not_installed(mocker) -> None:
     config.values["bin-runner"] = "mise"
 
     with pytest.raises(FileNotFoundError, match="tool not found"):
-        pyfltr.command.runner._resolve_bin_commandline("ec", config)
+        _resolve_bin_commandline_via_two_step("ec", config)
 
 
 def test_resolve_bin_commandline_mise_untrusted_auto_trust_success(mocker) -> None:
@@ -1146,7 +1157,7 @@ def test_resolve_bin_commandline_mise_untrusted_auto_trust_success(mocker) -> No
     config.values["bin-runner"] = "mise"
     config.values["mise-auto-trust"] = True
 
-    path, prefix = pyfltr.command.runner._resolve_bin_commandline("shellcheck", config)
+    path, prefix = _resolve_bin_commandline_via_two_step("shellcheck", config)
 
     assert path == "mise"
     assert prefix == ["exec", "shellcheck@latest", "--", "shellcheck"]
@@ -1172,7 +1183,7 @@ def test_resolve_bin_commandline_mise_untrusted_auto_trust_disabled(mocker) -> N
     config.values["mise-auto-trust"] = False
 
     with pytest.raises(FileNotFoundError, match="not trusted"):
-        pyfltr.command.runner._resolve_bin_commandline("shellcheck", config)
+        _resolve_bin_commandline_via_two_step("shellcheck", config)
 
     # trustコマンドは呼ばれていないことを確認（subprocess.runの呼び出しは1回のみ）
     assert mock_run.call_count == 1
@@ -1196,7 +1207,7 @@ def test_resolve_bin_commandline_mise_other_error_no_retry(mocker) -> None:
     config.values["mise-auto-trust"] = True
 
     with pytest.raises(FileNotFoundError, match="plugin not found"):
-        pyfltr.command.runner._resolve_bin_commandline("shellcheck", config)
+        _resolve_bin_commandline_via_two_step("shellcheck", config)
 
     # trustコマンドは呼ばれていないことを確認（subprocess.runの呼び出しは1回のみ）
     assert mock_run.call_count == 1
@@ -1237,7 +1248,7 @@ def test_resolve_bin_commandline_mise_untrusted_auto_trust_retry_failure(mocker)
     config.values["mise-auto-trust"] = True
 
     with pytest.raises(FileNotFoundError, match="some other failure after trust"):
-        pyfltr.command.runner._resolve_bin_commandline("shellcheck", config)
+        _resolve_bin_commandline_via_two_step("shellcheck", config)
 
 
 def test_resolve_bin_commandline_mise_untrusted_auto_trust_trust_failure(mocker) -> None:
@@ -1268,7 +1279,7 @@ def test_resolve_bin_commandline_mise_untrusted_auto_trust_trust_failure(mocker)
     config.values["mise-auto-trust"] = True
 
     with pytest.raises(FileNotFoundError, match="permission denied"):
-        pyfltr.command.runner._resolve_bin_commandline("shellcheck", config)
+        _resolve_bin_commandline_via_two_step("shellcheck", config)
 
 
 def test_ensure_mise_available_passes_stripped_env_to_subprocess(mocker, monkeypatch) -> None:
@@ -1297,7 +1308,7 @@ def test_ensure_mise_available_passes_stripped_env_to_subprocess(mocker, monkeyp
 
     config = pyfltr.config.config.create_default_config()
     config.values["bin-runner"] = "mise"
-    pyfltr.command.runner._resolve_bin_commandline("shellcheck", config)
+    _resolve_bin_commandline_via_two_step("shellcheck", config)
 
     assert mock_run.call_count == 1
     passed_env = mock_run.call_args.kwargs["env"]
@@ -1331,7 +1342,7 @@ def test_ensure_mise_available_resolution_failure_includes_direct_hint(mocker) -
     config.values["bin-runner"] = "mise"
 
     with pytest.raises(FileNotFoundError) as excinfo:
-        pyfltr.command.runner._resolve_bin_commandline("cargo-deny", config)
+        _resolve_bin_commandline_via_two_step("cargo-deny", config)
 
     message = str(excinfo.value)
     # 既存のmise由来情報（ERROR内容）は引き続き含まれる。
@@ -1378,7 +1389,7 @@ def test_ensure_mise_available_passes_stripped_env_to_trust(mocker, monkeypatch)
     config = pyfltr.config.config.create_default_config()
     config.values["bin-runner"] = "mise"
     config.values["mise-auto-trust"] = True
-    pyfltr.command.runner._resolve_bin_commandline("shellcheck", config)
+    _resolve_bin_commandline_via_two_step("shellcheck", config)
 
     # 3回すべてのsubprocess.run呼び出しにmise toolパス除外済みenvが渡る
     assert mock_run.call_count == 3

@@ -342,7 +342,7 @@ def run_subprocess(
 TIMEOUT_RETURNCODE: int = 124
 
 
-class CompletedProcessWithTimeoutInfo(subprocess.CompletedProcess[str]):  # pylint: disable=too-few-public-methods
+class CompletedProcessWithTimeoutInfo(subprocess.CompletedProcess[str]):
     """`run_subprocess_with_timeout` の戻り値型。
 
     `subprocess.CompletedProcess[str]` を継承し、timeout超過判定フラグを保持する。

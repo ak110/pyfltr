@@ -4,7 +4,6 @@ TOMLの読み書きはコメント・セクション順を保持できる`tomlki
 （`tomllib`は使用しない）。`pyfltr config set`等での部分編集で
 ユーザーが手書きしたコメントを維持するために必要。
 """
-# pylint: disable=too-many-lines  # 設定の正規化・検証・出力をSSOTとして1モジュールに集約しているため
 
 import copy
 import dataclasses
@@ -19,62 +18,17 @@ import tomlkit.exceptions
 
 import pyfltr.warnings_
 from pyfltr.command.builtin import (
-    AUTO_ARGS,
     BIN_RUNNERS,
     BUILTIN_COMMAND_NAMES,
     BUILTIN_COMMANDS,
     COMMAND_RUNNERS,
-    DOTNET_COMMANDS,
-    JAVASCRIPT_COMMANDS,
     JS_RUNNERS,
     LANGUAGE_CATEGORIES,
-    PYTHON_COMMANDS,
     PYTHON_RUNNERS,
     REMOVED_COMMANDS,
-    RUST_COMMANDS,
     CommandInfo,
-    CommandType,
 )
 from pyfltr.config.presets import _PRESETS, _REMOVED_PRESETS
-
-# 公開APIとして再エクスポートする定数・型
-# （既存のimport経路`pyfltr.config.BUILTIN_COMMANDS`等を維持するため）
-__all__ = [
-    "ARCHIVE_CONFIG_KEYS",
-    "AUTO_ARGS",
-    "BIN_RUNNERS",
-    "BUILTIN_COMMAND_NAMES",
-    "BUILTIN_COMMANDS",
-    "CACHE_CONFIG_KEYS",
-    "COMMAND_RUNNERS",
-    "DOTNET_COMMANDS",
-    "EXPAND_USER_KEY_SUFFIXES",
-    "GLOBAL_PRIORITY_KEYS",
-    "JAVASCRIPT_COMMANDS",
-    "JS_RUNNERS",
-    "LANGUAGE_CATEGORIES",
-    "PYTHON_COMMANDS",
-    "PYTHON_RUNNERS",
-    "REMOVED_COMMANDS",
-    "RUST_COMMANDS",
-    "SEVERITY_VALUES",
-    "CommandInfo",
-    "CommandType",
-    "Config",
-    "DEFAULT_CONFIG",
-    "create_default_config",
-    "default_global_config_path",
-    "delete_config_value",
-    "filter_fix_commands",
-    "load_config",
-    "parse_config_value",
-    "read_config_values",
-    "resolve_aliases",
-    "resolve_command_timeout",
-    "resolve_severity",
-    "set_config_value",
-]
-
 
 # global優先キーのSSOT。
 # archive/cache系の設定値はマシン単位で揃えたい性質のため、
@@ -202,7 +156,8 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # カテゴリキー（`python = true`等）がgateを開けて有効化を通す構造。
     # presetを使わず個別に`{command} = true`を指定するとgateを越えて最優先で有効化される。
     "mypy": False,
-    # pathが空文字の場合は{command}-runner設定（既定 "python-runner"）に基づいて自動解決する。
+    # pathが空文字の場合は{command}-runner設定
+    # （既定はツール群に応じてpython-runner/js-runner/bin-runner）に基づいて自動解決する。
     # python-runner経路の既定（"uv"）によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
     # {command}-path明示で従来挙動（指定パスを直接実行）に切り替えられる。
     "mypy-path": "",
@@ -210,31 +165,21 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "mypy-runner": "python-runner",
     "mypy-fast": False,
     "pylint": False,
-    # pathが空文字の場合は{command}-runner設定（既定 "python-runner"）に基づいて自動解決する。
-    # python-runner経路の既定（"uv"）によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
-    # {command}-path明示で従来挙動（指定パスを直接実行）に切り替えられる。
     "pylint-path": "",
     "pylint-args": [],
     "pylint-runner": "python-runner",
     "pylint-fast": False,
     "pyright": False,
-    # pathが空文字の場合は{command}-runner設定（既定 "python-runner"）に基づいて自動解決する。
-    # python-runner経路の既定（"uv"）によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
-    # {command}-path明示で従来挙動（指定パスを直接実行）に切り替えられる。
     "pyright-path": "",
     "pyright-args": [],
     "pyright-runner": "python-runner",
     "pyright-fast": False,
     "ty": False,
-    # pathが空文字の場合は{command}-runner設定（既定 "python-runner"）に基づいて自動解決する。
-    # python-runner経路の既定（"uv"）によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
-    # {command}-path明示で従来挙動（指定パスを直接実行）に切り替えられる。
     "ty-path": "",
     "ty-args": ["check", "--output-format", "concise", "--error-on-warning"],
     "ty-runner": "python-runner",
     "ty-fast": True,
     "markdownlint": False,
-    # pathが空文字の場合は{command}-runner設定（既定 "js-runner"）に基づいて自動解決する。
     # ユーザーが明示的にpathを設定した場合はその値をそのまま使い、args先頭に自動prefixを追加しない。
     "markdownlint-path": "",
     "markdownlint-args": [],
@@ -244,7 +189,6 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # markdownlint-cli2は--fixでファイルをin-place修正する。
     "markdownlint-fix-args": ["--fix"],
     "textlint": False,
-    # pathが空文字の場合は{command}-runner設定（既定 "js-runner"）に基づいて自動解決する。
     "textlint-path": "",
     "textlint-runner": "js-runner",
     # lint / fix共通で常に付与される引数。lint専用オプション（--formatなど）はここではなく
@@ -273,7 +217,6 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # 空リスト（`[]`）を指定すると検知を無効化できる。
     "textlint-protected-identifiers": [".NET", "Node.js", "Vue.js", "Next.js", "Nuxt.js"],
     "eslint": False,
-    # pathが空文字の場合は{command}-runner設定（既定 "js-runner"）に基づいて自動解決する。
     "eslint-path": "",
     "eslint-runner": "js-runner",
     # ESLint 9系以降でcompact / unix / tapなどのコアフォーマッタが除去されたため、
@@ -292,9 +235,6 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "prettier-write-args": ["--write"],
     "prettier-fast": True,
     "uv-sort": False,
-    # pathが空文字の場合は{command}-runner設定（既定 "python-runner"）に基づいて自動解決する。
-    # python-runner経路の既定（"uv"）によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
-    # {command}-path明示で従来挙動（指定パスを直接実行）に切り替えられる。
     "uv-sort-path": "",
     "uv-sort-args": [],
     "uv-sort-runner": "python-runner",
@@ -472,9 +412,6 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "gitleaks-version": "latest",
     "gitleaks-fast": False,
     "pytest": False,
-    # pathが空文字の場合は{command}-runner設定（既定 "python-runner"）に基づいて自動解決する。
-    # python-runner経路の既定（"uv"）によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
-    # {command}-path明示で従来挙動（指定パスを直接実行）に切り替えられる。
     "pytest-path": "",
     "pytest-runner": "python-runner",
     "pytest-args": [],
@@ -489,9 +426,6 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "vitest-args": ["run", "--passWithNoTests"],
     "vitest-fast": False,
     "ruff-format": False,
-    # pathが空文字の場合は{command}-runner設定（既定 "python-runner"）に基づいて自動解決する。
-    # python-runner経路の既定（"uv"）によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
-    # {command}-path明示で従来挙動（指定パスを直接実行）に切り替えられる。
     "ruff-format-path": "",
     "ruff-format-runner": "python-runner",
     "ruff-format-args": ["format", "--exit-non-zero-on-format"],
@@ -504,9 +438,6 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "ruff-format-by-check": True,
     "ruff-format-check-args": ["check", "--fix", "--unsafe-fixes"],
     "ruff-check": False,
-    # pathが空文字の場合は{command}-runner設定（既定 "python-runner"）に基づいて自動解決する。
-    # python-runner経路の既定（"uv"）によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
-    # {command}-path明示で従来挙動（指定パスを直接実行）に切り替えられる。
     "ruff-check-path": "",
     "ruff-check-runner": "python-runner",
     "ruff-check-args": ["check"],
@@ -954,18 +885,32 @@ def load_config(
             message=(f"archive/cache系のキーはglobal設定が優先されるため、project側の値は無視されます: {keys_str}"),
         )
 
-    # プリセットの反映
+    _apply_preset(config, tool_pyfltr)
+    _register_custom_commands(config, tool_pyfltr)
+    _apply_language_gate(config, tool_pyfltr)
+    _normalize_config_values(config, tool_pyfltr, key_sources)
+    _validate_config(config)
+    _recompute_fast_aliases(config)
+    _warn_config_files(config, base)
+
+    return config
+
+
+def _apply_preset(config: Config, tool_pyfltr: dict[str, typing.Any]) -> None:
+    """presetキーを読み取り、対応するプリセット設定をconfigに反映する。"""
     preset = str(tool_pyfltr.get("preset", ""))
     if preset == "":
-        pass
-    elif preset in _PRESETS:
+        return
+    if preset in _PRESETS:
         config.values.update(_PRESETS[preset])
     elif preset in _REMOVED_PRESETS:
         raise ValueError(_REMOVED_PRESETS[preset])
     else:
         raise ValueError(f"preset の設定値が正しくありません。{preset=}")
 
-    # カスタムコマンドの読み込み
+
+def _register_custom_commands(config: Config, tool_pyfltr: dict[str, typing.Any]) -> None:
+    """custom-commandsエントリを読み取り、各カスタムコマンドをconfigに登録する。"""
     custom_commands = tool_pyfltr.get("custom-commands", {})
     if not isinstance(custom_commands, dict):
         raise ValueError("custom-commandsはテーブルで指定してください")
@@ -973,12 +918,16 @@ def load_config(
         name = name.replace("_", "-")
         _register_custom_command(config, name, definition)
 
-    # 言語カテゴリgateの適用（preset < 言語カテゴリgate < 個別設定）
-    # v3.0.0でpython / javascript / rust / dotnetを同じ枠組みのカテゴリキーに統一した。
-    # presetは各時点の推奨構成として全言語のツールを横断的にTrueにするが、カテゴリ
-    # キーがFalse（既定）のときはpreset由来のTrueをFalseへ上書きして実行を抑止する。
-    # 後続の個別設定ループで`{command} = true` / `{command} = false`による上書きが可能
-    # （個別指定はgateを越えて最優先）。
+
+def _apply_language_gate(config: Config, tool_pyfltr: dict[str, typing.Any]) -> None:
+    """言語カテゴリgateを適用する（preset < 言語カテゴリgate < 個別設定）。
+
+    v3.0.0でpython / javascript / rust / dotnetを同じ枠組みのカテゴリキーに統一した。
+    presetは各時点の推奨構成として全言語のツールを横断的にTrueにするが、カテゴリ
+    キーがFalse（既定）のときはpreset由来のTrueをFalseへ上書きして実行を抑止する。
+    後続の個別設定ループで`{command} = true` / `{command} = false`による上書きが可能
+    （個別指定はgateを越えて最優先）。
+    """
     user_keys = set(tool_pyfltr.keys())
     for category_key, commands in LANGUAGE_CATEGORIES:
         if bool(tool_pyfltr.get(category_key, False)):
@@ -988,11 +937,22 @@ def load_config(
                 continue  # 個別設定による明示指定を保持 (True/False 双方)
             config.values[cmd] = False
 
-    # プリセット・言語カテゴリ以外の設定を適用（プリセットと重複があれば上書き）
+
+def _normalize_config_values(
+    config: Config,
+    tool_pyfltr: dict[str, typing.Any],
+    key_sources: dict[str, set[str]],
+) -> None:
+    """プリセット・言語カテゴリ以外の設定を適用し、targets/extend-targetsを反映する。
+
+    プリセットと重複するキーは上書きされる。
+    global由来のみで未知のキーは警告して無視する（前方互換性確保）。
+    """
     skip_keys = ("custom-commands", *(key for key, _ in LANGUAGE_CATEGORIES))
     targets_overrides: dict[str, str | list[str]] = {}
     extend_targets_map: dict[str, str | list[str]] = {}
     global_only_unknown_keys: list[str] = []
+
     for key, value in tool_pyfltr.items():
         if key in skip_keys:
             continue  # 別途処理済み
@@ -1059,6 +1019,9 @@ def load_config(
             existing.extend(extra)
         config.commands[cmd_name] = dataclasses.replace(config.commands[cmd_name], targets=existing)
 
+
+def _validate_config(config: Config) -> None:
+    """Runner / severity / hintsのバリデーションを行う。"""
     # グローバルrunner設定（python-runner / js-runner / bin-runner）の値バリデーション。
     # カテゴリごとに許容値が異なるため、共通dispatcher構造で1箇所に集約する。
     _global_runner_specs: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -1101,16 +1064,13 @@ def load_config(
         if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
             raise ValueError(f"{key}は文字列のリストで指定してください: {value!r}")
 
-    # per-command fastフラグからfastエイリアスを再計算
+
+def _recompute_fast_aliases(config: Config) -> None:
+    """per-command fastフラグからfastエイリアスを再計算する。"""
     config.values["aliases"]["fast"] = _build_fast_alias(config)
 
-    # 有効化されているコマンドのconfig_filesが見つからなければ警告
-    _warn_missing_config_files(config, base)
 
-    return config
-
-
-def _warn_missing_config_files(config: Config, base: pathlib.Path) -> None:
+def _warn_config_files(config: Config, base: pathlib.Path) -> None:
     """有効化されているコマンドで`CommandInfo.config_files`を満たさないものを警告する。"""
     for command, info in config.commands.items():
         if not info.config_files:

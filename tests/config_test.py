@@ -1,11 +1,10 @@
 """config.py のテストコード。"""
-# pylint: disable=too-many-lines  # 設定検証のSSOTテストはfixture密結合化を避けるため分割しない方針
-# pylint: disable=protected-access  # _PRESETS等の内部定数を参照する単体テスト経路
 
 import pathlib
 
 import pytest
 
+import pyfltr.command.builtin
 import pyfltr.config.config
 import pyfltr.warnings_
 from tests import conftest as _testconf
@@ -866,7 +865,7 @@ python = true
 """
     (tmp_path / "pyproject.toml").write_text(pyproject_content)
     config = pyfltr.config.config.load_config(config_dir=tmp_path)
-    for cmd in pyfltr.config.config.PYTHON_COMMANDS:
+    for cmd in pyfltr.command.builtin.PYTHON_COMMANDS:
         assert config[cmd] is False, f"{cmd}はpreset未指定ではFalseのまま"
     # docs系もpreset未指定なのでFalse
     assert config["markdownlint"] is False
@@ -1221,7 +1220,7 @@ def test_typos_default_config_values() -> None:
 
 def test_uv_sort_in_python_commands() -> None:
     """uv-sortがPYTHON_COMMANDSに含まれる。"""
-    assert "uv-sort" in pyfltr.config.config.PYTHON_COMMANDS
+    assert "uv-sort" in pyfltr.command.builtin.PYTHON_COMMANDS
 
 
 def test_bin_runners_tuple() -> None:
@@ -1315,7 +1314,7 @@ def test_builtin_targets_no_mutation_of_builtins(tmp_path: pathlib.Path) -> None
 # 全ツール既定False、pass-filenames=False、formatterは常時書き込みモード、
 # cargo-clippyのみlint-args / fix-argsを持つ。
 # pylint duplicate-code（R0801）を避けるため、config側の定義をそのまま再利用する。
-_NATIVE_LANG_TOOLS: tuple[str, ...] = pyfltr.config.config.RUST_COMMANDS + pyfltr.config.config.DOTNET_COMMANDS
+_NATIVE_LANG_TOOLS: tuple[str, ...] = pyfltr.command.builtin.RUST_COMMANDS + pyfltr.command.builtin.DOTNET_COMMANDS
 
 
 def test_native_lang_tools_registered() -> None:

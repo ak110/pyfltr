@@ -245,6 +245,33 @@ def _eslint_severity(value: typing.Any) -> str | None:
     return None
 
 
+def _parse_file_messages_format(
+    data: list[dict],
+    message_to_location: typing.Callable[[dict, str], ErrorLocation | None],
+) -> list[ErrorLocation]:
+    """topレベルが`[{filePath, messages:[...]}]`形式のJSON配列を処理する共通ヘルパー。
+
+    eslint / textlint の出力形式に共通する「ファイルごとのmessages配列」構造を処理する。
+    各メッセージから`ErrorLocation`へのマッピングは`message_to_location`に委ねる。
+    `message_to_location`が`None`を返したメッセージはスキップする。
+    """
+    results: list[ErrorLocation] = []
+    for entry in data:
+        if not isinstance(entry, dict):
+            continue
+        file_path = str(entry.get("filePath", ""))
+        messages = entry.get("messages", [])
+        if not isinstance(messages, list):
+            continue
+        for msg in messages:
+            if not isinstance(msg, dict):
+                continue
+            location = message_to_location(msg, file_path)
+            if location is not None:
+                results.append(location)
+    return results
+
+
 def _parse_eslint_json(output: str) -> list[ErrorLocation]:
     """ESLint --format json出力をパース。
 
@@ -266,44 +293,34 @@ def _parse_eslint_json(output: str) -> list[ErrorLocation]:
     data = _try_json_loads(output)
     if not isinstance(data, list):
         return []
-    results: list[ErrorLocation] = []
-    for entry in data:
-        if not isinstance(entry, dict):
-            continue
-        file_path = str(entry.get("filePath", ""))
-        messages = entry.get("messages", [])
-        if not isinstance(messages, list):
-            continue
-        for msg in messages:
-            if not isinstance(msg, dict):
-                continue
-            line = msg.get("line")
-            if not isinstance(line, int):
-                continue
-            raw_col = msg.get("column")
-            col = raw_col if isinstance(raw_col, int) else None
-            rule_id = str(msg.get("ruleId") or "")
-            text = str(msg.get("message", ""))
-            message = f"{text} ({rule_id})" if rule_id else text
-            # ESLintのJSONはautofixがある場合のみ`fix`オブジェクトが付与される。
-            # 自動修正情報の有無を報告するツールなので、欠落時は`"none"`として
-            # 「自動修正不可」を明示する（`None`省略との区別を維持）。
-            fix_value = "safe" if msg.get("fix") else "none"
-            rule = rule_id or None
-            results.append(
-                ErrorLocation(
-                    file=pyfltr.paths.to_cwd_relative(file_path),
-                    line=line,
-                    col=col,
-                    command="eslint",
-                    message=message.strip(),
-                    rule=rule,
-                    severity=_normalize_severity(msg.get("severity")),
-                    fix=fix_value,
-                    rule_url=pyfltr.output.rule_urls.build_rule_url("eslint", rule),
-                )
-            )
-    return results
+
+    def _msg_to_location(msg: dict, file_path: str) -> ErrorLocation | None:
+        line = msg.get("line")
+        if not isinstance(line, int):
+            return None
+        raw_col = msg.get("column")
+        col = raw_col if isinstance(raw_col, int) else None
+        rule_id = str(msg.get("ruleId") or "")
+        text = str(msg.get("message", ""))
+        message = f"{text} ({rule_id})" if rule_id else text
+        # ESLintのJSONはautofixがある場合のみ`fix`オブジェクトが付与される。
+        # 自動修正情報の有無を報告するツールなので、欠落時は`"none"`として
+        # 「自動修正不可」を明示する（`None`省略との区別を維持）。
+        fix_value = "safe" if msg.get("fix") else "none"
+        rule = rule_id or None
+        return ErrorLocation(
+            file=pyfltr.paths.to_cwd_relative(file_path),
+            line=line,
+            col=col,
+            command="eslint",
+            message=message.strip(),
+            rule=rule,
+            severity=_normalize_severity(msg.get("severity")),
+            fix=fix_value,
+            rule_url=pyfltr.output.rule_urls.build_rule_url("eslint", rule),
+        )
+
+    return _parse_file_messages_format(data, _msg_to_location)
 
 
 def _parse_ruff_check_json(output: str) -> list[ErrorLocation]:
@@ -359,6 +376,8 @@ def _parse_pylint_json(output: str) -> list[ErrorLocation]:
     messages = data.get("messages", [])
     if not isinstance(messages, list):
         return _parse_with_pattern("pylint", output, _BUILTIN_PATTERNS["pylint"])
+
+    # pylintのmessagesはファイルごとにネストしない平坦な配列のため、直接ループしてErrorLocationを構築する。
     results: list[ErrorLocation] = []
     for msg in messages:
         if not isinstance(msg, dict):
@@ -477,54 +496,44 @@ def _parse_textlint_json(output: str) -> list[ErrorLocation]:
     data = _try_json_loads(output)
     if not isinstance(data, list):
         return _parse_with_pattern("textlint", output, _BUILTIN_PATTERNS["textlint"])
-    results: list[ErrorLocation] = []
-    for entry in data:
-        if not isinstance(entry, dict):
-            continue
-        file_path = str(entry.get("filePath", ""))
-        messages = entry.get("messages", [])
-        if not isinstance(messages, list):
-            continue
-        for msg in messages:
-            if not isinstance(msg, dict):
-                continue
-            line = msg.get("line")
-            if not isinstance(line, int):
-                continue
-            raw_col = msg.get("column")
-            col = raw_col if isinstance(raw_col, int) else None
-            rule_id = str(msg.get("ruleId") or "")
-            # textlintはJSON出力でautofixの有無を明示する。
-            fix_value = "safe" if msg.get("fix") else "none"
-            rule = rule_id or None
-            hint = _TEXTLINT_RULE_HINTS.get(rule_id) if rule_id else None
-            # textlint側のmsgは複数行になり得るため、JSONL `messages[].msg`では空白へ畳む。
-            # 範囲表記`(L17:1〜23)`を末尾へ視認しやすく追加する都合上、先に1行化しておく必要がある。
-            message = _normalize_whitespace(str(msg.get("message", "")))
-            end_line, end_col = _extract_textlint_end_position(msg.get("loc"))
-            # sentence-length違反では文の起点・終点が分からないと修正しづらいため、
-            # textlint v12+が返す`loc`フィールドから範囲表記を組み立てて末尾に併記する。
-            # 他ルールでは違反箇所自体が短く、併記が冗長になるため対象外。
-            if rule_id == "ja-technical-writing/sentence-length":
-                range_text = _format_textlint_loc(msg.get("loc"))
-                if range_text:
-                    message = f"{message} {range_text}"
-            results.append(
-                ErrorLocation(
-                    file=pyfltr.paths.to_cwd_relative(file_path),
-                    line=line,
-                    col=col,
-                    command="textlint",
-                    message=message,
-                    rule=rule,
-                    severity=_normalize_severity(msg.get("severity")),
-                    fix=fix_value,
-                    hint=hint,
-                    end_line=end_line,
-                    end_col=end_col,
-                )
-            )
-    return results
+
+    def _msg_to_location(msg: dict, file_path: str) -> ErrorLocation | None:
+        line = msg.get("line")
+        if not isinstance(line, int):
+            return None
+        raw_col = msg.get("column")
+        col = raw_col if isinstance(raw_col, int) else None
+        rule_id = str(msg.get("ruleId") or "")
+        # textlintはJSON出力でautofixの有無を明示する。
+        fix_value = "safe" if msg.get("fix") else "none"
+        rule = rule_id or None
+        hint = _TEXTLINT_RULE_HINTS.get(rule_id) if rule_id else None
+        # textlint側のmsgは複数行になり得るため、JSONL `messages[].msg`では空白へ畳む。
+        # 範囲表記`(L17:1〜23)`を末尾へ視認しやすく追加する都合上、先に1行化しておく必要がある。
+        message = _normalize_whitespace(str(msg.get("message", "")))
+        end_line, end_col = _extract_textlint_end_position(msg.get("loc"))
+        # sentence-length違反では文の起点・終点が分からないと修正しづらいため、
+        # textlint v12+が返す`loc`フィールドから範囲表記を組み立てて末尾に併記する。
+        # 他ルールでは違反箇所自体が短く、併記が冗長になるため対象外。
+        if rule_id == "ja-technical-writing/sentence-length":
+            range_text = _format_textlint_loc(msg.get("loc"))
+            if range_text:
+                message = f"{message} {range_text}"
+        return ErrorLocation(
+            file=pyfltr.paths.to_cwd_relative(file_path),
+            line=line,
+            col=col,
+            command="textlint",
+            message=message,
+            rule=rule,
+            severity=_normalize_severity(msg.get("severity")),
+            fix=fix_value,
+            hint=hint,
+            end_line=end_line,
+            end_col=end_col,
+        )
+
+    return _parse_file_messages_format(data, _msg_to_location)
 
 
 def _extract_textlint_loc_positions(

@@ -1,4 +1,3 @@
-# pylint: disable=duplicate-code  # process.run_subprocess呼び出しの引数並び等が他経路と類似
 """ディスパッチャー。"""
 
 import argparse

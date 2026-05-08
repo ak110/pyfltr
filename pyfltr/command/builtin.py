@@ -1,8 +1,4 @@
 """ビルトインコマンド定義。"""
-# pylint: disable=duplicate-code
-# DEFAULT_CONFIG の aliases.lint や aliases.format は全言語横断で構成されるため、
-# PYTHON_COMMANDS / JAVASCRIPT_COMMANDS 等の個別カテゴリとコマンド名が部分的に重複する。
-# ファイル分割によって検出されるようになった必然的な重複であり、コード変更では解消しない。
 
 import dataclasses
 import typing

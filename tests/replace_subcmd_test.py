@@ -1,7 +1,5 @@
 """`replace`サブコマンドのCLIテスト。"""
 
-# pylint: disable=missing-function-docstring  # テストは関数docstringを省略する慣習
-
 import json
 import pathlib
 

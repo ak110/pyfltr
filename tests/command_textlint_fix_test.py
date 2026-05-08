@@ -3,8 +3,6 @@
 `execute_textlint_fix` の動作を検証する。
 """
 
-# pylint: disable=duplicate-code  # fake_run系のサブプロセスダブル定義が他テストファイルと類似
-
 import os
 import pathlib
 import subprocess

@@ -8,7 +8,7 @@ import shutil
 
 import pyfltr.command.mise
 import pyfltr.config.config
-from pyfltr.command.builtin import COMMAND_RUNNERS, JS_RUNNERS
+from pyfltr.command.builtin import AUTO_ARGS, COMMAND_RUNNERS, JS_RUNNERS
 
 # `build_mise_subprocess_env`はpyfltr.command内部APIだがサブパッケージ全域で共有する。
 # 同じサブパッケージ内の`mise.py`もfrom-importで取り込んでおり、本モジュールも倣う。
@@ -468,23 +468,6 @@ def _resolve_js_commandline(
     raise ValueError(f"js-runnerの設定値が正しくありません: {runner=}")
 
 
-def _resolve_bin_commandline(
-    command: str,
-    config: pyfltr.config.config.Config,
-) -> tuple[str, list[str]]:
-    """旧API互換の薄いwrapper（既存テスト・後方互換用）。
-
-    内部的には `build_commandline` と `ensure_mise_available` を組み合わせて
-    `(executable, prefix)` を返す。新規利用箇所では `build_commandline` を直接使う。
-    本wrapperは `ensure_mise_available` を必ず呼ぶ副作用ありの経路であるため、
-    `build_commandline` 側にも `allow_side_effects=True` を渡してmise設定判定の
-    trustリトライを許可し、両者の副作用契約を揃える。
-    """
-    resolved = build_commandline(command, config, allow_side_effects=True)
-    resolved = ensure_mise_available(resolved, config, command=command)
-    return resolved.executable, list(resolved.prefix)
-
-
 # `{command}-runner`値の体系をbuiltin.py側のtuple定数から派生させ、
 # 二重定義による追従漏れを避けるためのSSOT。
 # - 委譲値: `*-runner`サフィックス（同名のグローバル設定キーへ委譲）
@@ -515,112 +498,72 @@ def resolve_effective_runner(command: str, runner: str, config: pyfltr.config.co
 _JS_EFFECTIVE_VALUES: frozenset[str] = frozenset(JS_RUNNERS) - {"direct"}
 
 
-def build_commandline(
+def _resolve_mise_runner_commandline(
     command: str,
     config: pyfltr.config.config.Config,
+    runner: str,
+    source: str,
     *,
-    allow_side_effects: bool = False,
+    allow_side_effects: bool,
 ) -> ResolvedCommandline:
-    """ツール起動コマンドラインを構築する（副作用は `allow_side_effects` で制御）。
+    """mise経路のコマンドラインを構築する。
 
-    `{command}-runner` および `{command}-path` の設定に従い、`mise exec ... --` 形式・
-    `pnpx --package ...` 形式・`uv run --frozen` 形式・`uvx <bin>` 形式・直接実行（PATH解決）のいずれかを返す。
-    mise経路では `get_mise_active_tools` を引いて、mise設定（プロジェクト `mise.toml` ＋
-    グローバル設定）に該当ツール記述があり、かつ `{command}-version` が既定値 `"latest"` の
-    ときに限りtool spec部分を省略した `["exec", "--", <bin>]` 形を返す
+    `effective == "mise"` の場合に `build_commandline` から呼ばれる。
+    `runner` は `resolve_runner` の戻り値1番目（設定上のrunner値）、
+    `source` は同2番目（委譲元カテゴリ名等）であり、`ResolvedCommandline` の構築に引き継ぐ。
+
+    mise設定（プロジェクト `mise.toml` ＋グローバル設定）に該当ツール記述があり、
+    かつ `{command}-version` が既定値 `"latest"` のときに限りtool spec部分を省略した
+    `["exec", "--", <bin>]` 形を返す
     （miseがmise設定の解決済み内容、つまりcomponentsや固定バージョンをそのまま参照できるようにするため）。
 
-    `allow_side_effects=False`（既定）では `mise exec --version` の事前チェックや
-    `mise trust` を行わない。判定関数 `get_mise_active_tools` も副作用OFFで呼び、
-    未信頼config由来エラーを「記述なし」扱いとして従来形のtool spec組み立てへフォールバックする。
-    `command-info` サブコマンドの `--check` 無し呼び出しから安全に呼べるようにするためである。
-    `allow_side_effects=True` 時は判定経路でも `mise-auto-trust` 設定に従いtrust→再呼び出しを許可する。
+    version値に `:`（backend prefix区切り）または `@`（tool@version区切り）を含む場合は
+    miseのtool spec全体として扱い、bin_name接頭辞や既定backendを付け足さない。
+    これにより `aqua:Org/Repo@x` のような任意backend指定や、既定backendを上書きする
+    `cargo-deny@latest` のようなregistry経由維持指定をpyfltr設定だけで表現できる。
 
-    ツールが特定できない場合は `FileNotFoundError` を、
-    `{command}-runner` 値の組み合わせ自体が不正な場合は `ValueError` を送出する。
+    `command` が `_BIN_TOOL_SPEC` に未登録の場合は `ValueError` を送出する。
     """
-    runner, source = resolve_runner(command, config)
-    effective = resolve_effective_runner(command, runner, config)
+    if command not in _BIN_TOOL_SPEC:
+        raise ValueError(f'{command}: mise backend が登録されていないため `{command}-runner = "mise"` は指定できません')
+    spec = _BIN_TOOL_SPEC[command]
+    version = config.values.get(f"{command}-version", spec.default_version)
+    tool_spec_omitted = False
+    if ":" in version or "@" in version:
+        prefix = ["exec", version, "--", spec.bin_name]
+    elif version == spec.default_version and _is_tool_active_in_mise_config(
+        command, spec, config, allow_side_effects=allow_side_effects
+    ):
+        # mise設定に当該ツール記述があり、かつversionが既定値（"latest"）の場合のみtool specを省略する。
+        # version明示時（"latest"以外）は利用者の意図を尊重して従来通りtool spec組み立てに留める。
+        prefix = ["exec", "--", spec.bin_name]
+        tool_spec_omitted = True
+    else:
+        tool_name = spec.mise_backend or spec.bin_name
+        prefix = ["exec", f"{tool_name}@{version}", "--", spec.bin_name]
+    return ResolvedCommandline(
+        executable="mise",
+        prefix=prefix,
+        runner=runner,
+        runner_source=source,
+        effective_runner="mise",
+        tool_spec_omitted=tool_spec_omitted,
+    )
 
-    # `{command}-path` が非空ならば、その値でdirect実行する（明示パス上書き）。
-    # この経路では `{command}-runner` と未登録ツールの組み合わせ（例: `typos-runner = "uv"` ＋ `typos-path` 指定）
-    # でもエラー扱いせずpath値を採用する。利用者が明示的にパスを示している以上、起動経路の整合性より
-    # 利用者の意図を優先する判断。明示runner × 未登録ツール × path未指定の場合のみ後段の分岐でエラー化する。
-    # `~` を含む利用者ホーム依存のパス指定を許すため、`os.path.expanduser` で展開してから採用する。
-    if config.values.get(f"{command}-path", "") != "":
-        return ResolvedCommandline(
-            executable=os.path.expanduser(config[f"{command}-path"]),
-            prefix=[],
-            runner=runner,
-            runner_source="path-override",
-            effective_runner="direct",
-        )
 
-    if effective == "mise":
-        if command not in _BIN_TOOL_SPEC:
-            raise ValueError(f'{command}: mise backend が登録されていないため `{command}-runner = "mise"` は指定できません')
-        spec = _BIN_TOOL_SPEC[command]
-        version = config.values.get(f"{command}-version", spec.default_version)
-        tool_spec_omitted = False
-        # version値に `:`（backend prefix区切り）または `@`（tool@version区切り）を含む場合は
-        # miseのtool spec全体として扱い、bin_name接頭辞や既定backendを付け足さない。
-        # これにより `aqua:Org/Repo@x` のような任意backend指定や、既定backendを上書きする
-        # `cargo-deny@latest` のようなregistry経由維持指定をpyfltr設定だけで表現できる。
-        if ":" in version or "@" in version:
-            prefix = ["exec", version, "--", spec.bin_name]
-        elif version == spec.default_version and _is_tool_active_in_mise_config(
-            command, spec, config, allow_side_effects=allow_side_effects
-        ):
-            # mise設定に当該ツール記述があり、かつversionが既定値（"latest"）の場合のみtool specを省略する。
-            # これによりmise本体がmise設定の解決済み内容（componentsや固定バージョン）をそのまま使い、
-            # pyfltrとmise設定の二重管理を回避する。
-            # version明示時（"latest"以外）は利用者の意図を尊重して従来通りtool spec組み立てに留める。
-            prefix = ["exec", "--", spec.bin_name]
-            tool_spec_omitted = True
-        else:
-            tool_name = spec.mise_backend or spec.bin_name
-            prefix = ["exec", f"{tool_name}@{version}", "--", spec.bin_name]
-        return ResolvedCommandline(
-            executable="mise",
-            prefix=prefix,
-            runner=runner,
-            runner_source=source,
-            effective_runner=effective,
-            tool_spec_omitted=tool_spec_omitted,
-        )
+def _resolve_direct_runner_commandline(
+    command: str,
+    config: pyfltr.config.config.Config,
+    runner: str,
+    source: str,
+    effective: str,
+) -> ResolvedCommandline:
+    """direct経路のコマンドラインを構築する。
 
-    if effective in _JS_EFFECTIVE_VALUES:
-        if command not in JS_TOOL_BIN:
-            raise ValueError(
-                f"{command}: js-runner 対応ツールではないため "
-                f'`{command}-runner = "{runner}"`（解決後 "{effective}"）は指定できません'
-            )
-        executable, prefix = _resolve_js_commandline(command, config, effective=effective)
-        return ResolvedCommandline(
-            executable=executable,
-            prefix=prefix,
-            runner=runner,
-            runner_source=source,
-            effective_runner=effective,
-        )
-
-    if effective in ("uv", "uvx"):
-        if command not in PYTHON_TOOL_BIN:
-            raise ValueError(
-                f"{command}: PYTHON_TOOL_BINに登録されていないため "
-                f'`{command}-runner = "{runner}"`（解決後 "{effective}"）は指定できません'
-            )
-        resolved_effective, executable, prefix, runner_fallback = _resolve_python_commandline(command, effective)
-        return ResolvedCommandline(
-            executable=executable,
-            prefix=prefix,
-            runner=runner,
-            runner_source=source,
-            effective_runner=resolved_effective,
-            runner_fallback=runner_fallback,
-        )
-
-    # effective == "direct"
+    `effective == "direct"` の場合に呼ばれる。
+    `_BIN_TOOL_SPEC` → `PYTHON_TOOL_BIN` → `JS_TOOL_BIN` → コマンド名PATH解決の順で試みる。
+    解決失敗時は `FileNotFoundError` を送出する。
+    """
     if command in _BIN_TOOL_SPEC:
         spec = _BIN_TOOL_SPEC[command]
         executable = _resolve_direct_executable(spec.bin_name)
@@ -663,6 +606,81 @@ def build_commandline(
         runner_source=source,
         effective_runner=effective,
     )
+
+
+def build_commandline(
+    command: str,
+    config: pyfltr.config.config.Config,
+    *,
+    allow_side_effects: bool = False,
+) -> ResolvedCommandline:
+    """ツール起動コマンドラインを構築する（副作用は `allow_side_effects` で制御）。
+
+    `{command}-runner` および `{command}-path` の設定に従い、`mise exec ... --` 形式・
+    `pnpx --package ...` 形式・`uv run --frozen` 形式・`uvx <bin>` 形式・直接実行（PATH解決）のいずれかを返す。
+
+    `allow_side_effects=False`（既定）では `mise exec --version` の事前チェックや
+    `mise trust` を行わない。判定関数 `get_mise_active_tools` も副作用OFFで呼び、
+    未信頼config由来エラーを「記述なし」扱いとして従来形のtool spec組み立てへフォールバックする。
+    `command-info` サブコマンドの `--check` 無し呼び出しから安全に呼べるようにするためである。
+    `allow_side_effects=True` 時は判定経路でも `mise-auto-trust` 設定に従いtrust→再呼び出しを許可する。
+
+    ツールが特定できない場合は `FileNotFoundError` を、
+    `{command}-runner` 値の組み合わせ自体が不正な場合は `ValueError` を送出する。
+    """
+    runner, source = resolve_runner(command, config)
+    effective = resolve_effective_runner(command, runner, config)
+
+    # `{command}-path` が非空ならば、その値でdirect実行する（明示パス上書き）。
+    # この経路では `{command}-runner` と未登録ツールの組み合わせ（例: `typos-runner = "uv"` ＋ `typos-path` 指定）
+    # でもエラー扱いせずpath値を採用する。利用者が明示的にパスを示している以上、起動経路の整合性より
+    # 利用者の意図を優先する判断。明示runner × 未登録ツール × path未指定の場合のみ後段の分岐でエラー化する。
+    # `~` を含む利用者ホーム依存のパス指定を許すため、`os.path.expanduser` で展開してから採用する。
+    if config.values.get(f"{command}-path", "") != "":
+        return ResolvedCommandline(
+            executable=os.path.expanduser(config[f"{command}-path"]),
+            prefix=[],
+            runner=runner,
+            runner_source="path-override",
+            effective_runner="direct",
+        )
+
+    if effective == "mise":
+        return _resolve_mise_runner_commandline(command, config, runner, source, allow_side_effects=allow_side_effects)
+
+    if effective in _JS_EFFECTIVE_VALUES:
+        if command not in JS_TOOL_BIN:
+            raise ValueError(
+                f"{command}: js-runner 対応ツールではないため "
+                f'`{command}-runner = "{runner}"`（解決後 "{effective}"）は指定できません'
+            )
+        executable, prefix = _resolve_js_commandline(command, config, effective=effective)
+        return ResolvedCommandline(
+            executable=executable,
+            prefix=prefix,
+            runner=runner,
+            runner_source=source,
+            effective_runner=effective,
+        )
+
+    if effective in ("uv", "uvx"):
+        if command not in PYTHON_TOOL_BIN:
+            raise ValueError(
+                f"{command}: PYTHON_TOOL_BINに登録されていないため "
+                f'`{command}-runner = "{runner}"`（解決後 "{effective}"）は指定できません'
+            )
+        resolved_effective, executable, prefix, runner_fallback = _resolve_python_commandline(command, effective)
+        return ResolvedCommandline(
+            executable=executable,
+            prefix=prefix,
+            runner=runner,
+            runner_source=source,
+            effective_runner=resolved_effective,
+            runner_fallback=runner_fallback,
+        )
+
+    # effective == "direct"
+    return _resolve_direct_runner_commandline(command, config, runner, source, effective)
 
 
 def ensure_mise_available(
@@ -759,7 +777,7 @@ def _build_auto_args(command: str, config: pyfltr.config.config.Config, user_arg
     AUTO_ARGSで定義されたフラグがTrueの場合、対応する引数を返す。
     ユーザーが *-argsやCLI引数で既に同じ文字列を指定している場合はスキップする。
     """
-    auto_entries = pyfltr.config.config.AUTO_ARGS.get(command, [])
+    auto_entries = AUTO_ARGS.get(command, [])
     if not auto_entries:
         return []
     user_args_joined = " ".join(user_args)
