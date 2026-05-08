@@ -3,7 +3,7 @@
 `CommandInfo.cacheable=True`のツール（textlint）の実行結果をユーザーキャッシュへ保存し、
 同じ入力に対する再実行を省略するための仕組み。v3.0.0パートDで追加。
 
-ディレクトリ構造（`<cache_root> = platformdirs.user_cache_dir("pyfltr")`）::
+ディレクトリ構造（`<cache_root> = platformdirs.user_cache_dir("pyfltr", appauthor=False)`）::
 
     <cache_root>/cache/<tool>/<hash>.json
 

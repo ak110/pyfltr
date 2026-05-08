@@ -248,7 +248,7 @@ pyfltrは2系統のユーザーキャッシュ基盤を持つ。
 利用者向けの設定キーは[設定項目](../guide/configuration.md)を、OS別の既定パスは
 [トラブルシューティング](../guide/troubleshooting.md)を参照。
 
-保存ルートは`platformdirs.user_cache_dir("pyfltr")`で解決し、環境変数`PYFLTR_CACHE_DIR`で上書きできる。
+保存ルートは`platformdirs.user_cache_dir("pyfltr", appauthor=False)`で解決し、環境変数`PYFLTR_CACHE_DIR`で上書きできる。
 プロジェクトローカルにキャッシュを生成しない方針を採るのは、`.gitignore`運用の負担を増やさず、
 複数プロジェクト横断での参照を可能にするため。
 

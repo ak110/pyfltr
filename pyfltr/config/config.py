@@ -517,7 +517,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "ruff-check-fix-args": ["--fix", "--unsafe-fixes"],
     # 実行アーカイブ（v3.0.0追加）
     # 全実行のツール生出力・diagnostic全件・実行メタをユーザーキャッシュ
-    # （`platformdirs.user_cache_dir("pyfltr")`）へ保存する。CLIとは独立した
+    # （`platformdirs.user_cache_dir("pyfltr", appauthor=False)`）へ保存する。CLIとは独立した
     # 詳細参照経路（`show-run` / `list-runs`、MCPツール）からいつでも
     # 全文を参照できるようにする。
     # 既定で有効にしている（オプトイン化を却下した）理由: エージェント連携時の
@@ -797,14 +797,18 @@ def default_global_config_path() -> pathlib.Path:
 
     Linuxでは`~/.config/pyfltr/config.toml`、macOSでは
     `~/Library/Application Support/pyfltr/config.toml`、
-    Windowsでは`%APPDATA%\pyfltr\config.toml`になる。
+    Windowsでは`%LOCALAPPDATA%\pyfltr\config.toml`になる。
     環境変数`PYFLTR_GLOBAL_CONFIG`が設定されていればそれを優先する
     （テスト容易性確保とユーザーの強制上書き用。`PYFLTR_CACHE_DIR`と命名対称）。
+
+    `appauthor=False`を渡すのは、未指定時にWindowsで`appname`が
+    appauthorとしても付与され`%LOCALAPPDATA%\pyfltr\pyfltr\config.toml`に
+    なる挙動を回避するため。
     """
     override = os.environ.get("PYFLTR_GLOBAL_CONFIG")
     if override:
         return pathlib.Path(override)
-    return pathlib.Path(platformdirs.user_config_dir("pyfltr")) / "config.toml"
+    return pathlib.Path(platformdirs.user_config_dir("pyfltr", appauthor=False)) / "config.toml"
 
 
 def _read_global_config(path: pathlib.Path) -> dict[str, typing.Any]:

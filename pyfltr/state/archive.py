@@ -3,7 +3,7 @@
 全実行のツール出力・diagnostic・メタ情報をXDG Base Directory準拠の
 ユーザーキャッシュへ保存する仕組み。v3.0.0で追加。
 
-ディレクトリ構造（`<cache_root> = platformdirs.user_cache_dir("pyfltr")`）::
+ディレクトリ構造（`<cache_root> = platformdirs.user_cache_dir("pyfltr", appauthor=False)`）::
 
     <cache_root>/runs/<run_id>/meta.json
     <cache_root>/runs/<run_id>/tools/<sanitize(command)>/output.log
@@ -54,6 +54,10 @@ def default_cache_root() -> pathlib.Path:
     `PYFLTR_CACHE_DIR`が設定されていればそれを優先する（テストや運用上の
     強制上書き用）。
 
+    `appauthor=False`を渡すのは、未指定時にWindowsで`appname`が
+    appauthorとしても付与され`%LOCALAPPDATA%\pyfltr\pyfltr\Cache`に
+    なる挙動を回避するため。
+
     プロジェクトローカル（`.pyfltr_cache/`のようなリポジトリ内ディレクトリ）
     には保存しない方針を採用する。`.gitignore`運用の負担を増やさず、
     複数プロジェクト横断での参照を可能にするため。
@@ -61,7 +65,7 @@ def default_cache_root() -> pathlib.Path:
     override = os.environ.get("PYFLTR_CACHE_DIR")
     if override:
         return pathlib.Path(override)
-    return pathlib.Path(platformdirs.user_cache_dir("pyfltr"))
+    return pathlib.Path(platformdirs.user_cache_dir("pyfltr", appauthor=False))
 
 
 def generate_run_id() -> str:
