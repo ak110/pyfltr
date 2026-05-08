@@ -4,6 +4,8 @@ paths:
   - "pyfltr/cli/output_format.py"
   - "pyfltr/command/runner.py"
   - "pyfltr/command/mise.py"
+  - "pyfltr/state/archive.py"
+  - "pyfltr/state/cache.py"
   - "docs/guide/*.md"
   - "docs/development/*.md"
   - "mkdocs.yml"
@@ -41,6 +43,13 @@ paths:
 - グローバル設定の対象範囲・特殊仕様（archive/cache系のglobal優先）のSSOTは
   `pyfltr/config/config.py`の`ARCHIVE_CONFIG_KEYS` / `CACHE_CONFIG_KEYS` / `GLOBAL_PRIORITY_KEYS`定数。
   対象範囲を拡大する場合は実装・テスト・`docs/guide/configuration.md`を併せて更新する
+- グローバル設定パス・キャッシュルートの解決ロジックのSSOTは
+  `pyfltr/config/config.py`の`default_global_config_path`と
+  `pyfltr/state/archive.py`の`default_cache_root`。
+  OS別パス・環境変数オーバーライド（`PYFLTR_GLOBAL_CONFIG`・`PYFLTR_CACHE_DIR`）の挙動を変える際は、
+  `pyfltr/state/cache.py`・`pyfltr/state/archive.py`のモジュールdocstring、
+  `docs/guide/configuration.md`・`docs/guide/troubleshooting.md`・`docs/development/architecture.md`を
+  併せて更新する
 - 新規`{prefix}-{key}`系設定キー（`{prefix}-max-*`等）を`pyfltr/config/config.py`の
   `DEFAULT_CONFIG`へ追加する場合、`docs/guide/configuration.md`の「設定項目一覧」節
  （`#config-keys`）も併せて更新する。コードと参照ドキュメントが乖離しやすい

@@ -57,6 +57,11 @@ paths:
   テストで判定値を差し替える場合は関数自体を
   `monkeypatch.setattr("pyfltr.command.runner.cwd_has_uv_lock", lambda: True)`の形で置換する。
   新規にキャッシュ付き判定関数を追加した場合も同じ制約が適用される
+- `pyfltr.command.runner`の副作用検証テスト
+ （mise未導入時のdirectフォールバック・未信頼config時のtrustリトライ・mise exec --version経由の環境加工）は
+  `build_commandline(allow_side_effects=True)`と`ensure_mise_available(...)`の2段呼び出しで記述する。
+  `tests/command_core_test.py`の`_resolve_bin_commandline_via_two_step`ヘルパーを再利用し、
+  互換ラッパー風の単段呼び出しを新規テストへ復活させない
 - Python 3.11のargparseで`nargs="?"`位置引数と`nargs="*"`位置引数を併用するとき、次の挙動に注意する。
   両者の間に`--option=value`形式の引数が介在すると、後続位置引数がunrecognizedとして拒否される。
   grep/replaceサブコマンドのように複数位置引数（`pattern + paths`）をオプション混在で受理するときは、
