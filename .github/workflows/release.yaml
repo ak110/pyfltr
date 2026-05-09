@@ -149,7 +149,7 @@ jobs:
           uv publish --check-url=https://pypi.org/simple/
 
       - name: Generate release notes
-        uses: orhun/git-cliff-action@e16f179f0be49ecdfe63753837f20b9531642772 # v4.7.0
+        uses: orhun/git-cliff-action@f50e11560dce63f7c33227798f90b924471a88b5 # v4.8.0
         with:
           args: --latest --strip header
         env:
