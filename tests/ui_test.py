@@ -1,5 +1,7 @@
 """UI関連のテストコード。"""
 
+# pylint: disable=protected-access
+
 import argparse
 import unittest.mock
 

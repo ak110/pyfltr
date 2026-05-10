@@ -1,3 +1,7 @@
+"""mainエントリーポイントのテストコード。"""
+
+# pylint: disable=protected-access
+
 import json
 import logging
 import os

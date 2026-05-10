@@ -1,5 +1,7 @@
 """config.py のテストコード。"""
 
+# pylint: disable=protected-access,too-many-lines
+
 import pathlib
 
 import pytest

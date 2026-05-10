@@ -1,3 +1,5 @@
+"""リトライ機構のテストコード。"""
+
 import pathlib
 
 import pytest

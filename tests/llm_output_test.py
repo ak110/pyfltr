@@ -1,5 +1,7 @@
 """llm_outputのテストコード。"""
 
+# pylint: disable=protected-access,too-many-lines
+
 import json
 
 import pytest

@@ -5,6 +5,8 @@
 （`default_cache_root()` 解決）が同一キャッシュを参照する。
 """
 
+# pylint: disable=protected-access
+
 import inspect
 import json
 import pathlib

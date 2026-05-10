@@ -1,3 +1,7 @@
+"""出力フォーマットのテストコード。"""
+
+# pylint: disable=protected-access
+
 import json
 import pathlib
 import subprocess

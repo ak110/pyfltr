@@ -1,3 +1,5 @@
+"""ステージランナーのテストコード。"""
+
 import concurrent.futures
 import threading
 

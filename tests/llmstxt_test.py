@@ -4,6 +4,8 @@ mkdocs.yml の llmstxt プラグイン設定 markdown_description が
 実装の全サブコマンド名と全ビルトインコマンド名を含んでいることを検査する。
 """
 
+# pylint: disable=protected-access
+
 import argparse
 import functools
 import pathlib

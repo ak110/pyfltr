@@ -1,3 +1,7 @@
+"""シェル補完生成のテストコード。"""
+
+# pylint: disable=protected-access
+
 import pytest
 
 import pyfltr.cli.main

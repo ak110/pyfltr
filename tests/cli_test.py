@@ -1,3 +1,7 @@
+"""cli経路のテストコード。"""
+
+# pylint: disable=protected-access
+
 import collections.abc
 import logging
 

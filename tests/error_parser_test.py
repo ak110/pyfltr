@@ -1,5 +1,7 @@
 """error_parserのテストコード。"""
 
+# pylint: disable=protected-access,too-many-lines
+
 import json
 import pathlib
 
