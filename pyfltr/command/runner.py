@@ -435,7 +435,16 @@ def _resolve_js_commandline(
 
     if runner == "pnpx":
         main_spec = _JS_TOOL_PNPX_PACKAGE_SPEC.get(command, bin_name)
-        prefix: list[str] = ["--package", main_spec]
+        prefix: list[str] = []
+        # pnpm 11.0.0で `enableGlobalVirtualStore` 既定が `true` 化され、pnpm dlxの
+        # パッケージ実体がグローバル仮想ストアからsymlinkされる構造に変わった結果、
+        # textlintのようにrule packageを `require()` で動的解決するツールが
+        # dlx temp dirの `node_modules/` へ到達できず `No rules found` で失敗する。
+        # plugin/rule packageを `--package` で並べる経路に限り、pnpm公式opt-outで
+        # dlxローカル仮想ストア配置（旧既定）へ戻す。pnpm 10では未知キーとして無視される。
+        if packages:
+            prefix.append("--config.enableGlobalVirtualStore=false")
+        prefix.extend(["--package", main_spec])
         for pkg in packages:
             prefix.extend(["--package", pkg])
         prefix.append(bin_name)

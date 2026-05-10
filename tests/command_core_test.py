@@ -117,6 +117,7 @@ def test_resolve_js_commandline_pnpx_with_textlint_packages() -> None:
 
     textlint本体のspecは`_JS_TOOL_PNPX_PACKAGE_SPEC`によって
     既知バグのあるバージョンを除外した形で指定される。
+    pnpm 11のグローバル仮想ストア既定を回避するopt-outが先頭に付く。
     """
     config = pyfltr.config.config.create_default_config()
     config.values["js-runner"] = "pnpx"
@@ -126,6 +127,7 @@ def test_resolve_js_commandline_pnpx_with_textlint_packages() -> None:
 
     assert pathlib.PurePath(path).stem == "pnpx"
     assert prefix == [
+        "--config.enableGlobalVirtualStore=false",
         "--package",
         "textlint@<15.5.3 || >15.5.3",
         "--package",
@@ -145,6 +147,7 @@ def test_resolve_js_commandline_pnpx_textlint_default_excludes_buggy_version() -
 
     assert pathlib.PurePath(path).stem == "pnpx"
     assert prefix == [
+        "--config.enableGlobalVirtualStore=false",
         "--package",
         "textlint@<15.5.3 || >15.5.3",
         "--package",
@@ -158,7 +161,11 @@ def test_resolve_js_commandline_pnpx_textlint_default_excludes_buggy_version() -
 
 
 def test_resolve_js_commandline_pnpx_markdownlint_unchanged() -> None:
-    """markdownlintは除外対象外で、従来どおりbin名がそのまま渡される。"""
+    """markdownlintは除外対象外で、従来どおりbin名がそのまま渡される。
+
+    `markdownlint-packages` 未指定経路ではplugin解決が不要なため、
+    pnpm 11対応のopt-outも付かない（境界値ケース）。
+    """
     config = pyfltr.config.config.create_default_config()
     config.values["js-runner"] = "pnpx"
 
@@ -166,6 +173,21 @@ def test_resolve_js_commandline_pnpx_markdownlint_unchanged() -> None:
 
     assert pathlib.PurePath(path).stem == "pnpx"
     assert prefix == ["--package", "markdownlint-cli2", "markdownlint-cli2"]
+
+
+def test_resolve_js_commandline_pnpx_no_packages_omits_global_store_optout() -> None:
+    """`*-packages` 未指定のpnpx tool（biome等）にはopt-outフラグが付かない。
+
+    `len(packages) > 0` 条件分岐の境界値ケース。
+    plugin解決を伴わない経路にopt-outを付けないことで影響範囲を最小化する設計。
+    """
+    config = pyfltr.config.config.create_default_config()
+    config.values["js-runner"] = "pnpx"
+
+    path, prefix = pyfltr.command.runner._resolve_js_commandline("biome", config)
+
+    assert pathlib.PurePath(path).stem == "pnpx"
+    assert prefix == ["--package", "@biomejs/biome", "biome"]
 
 
 def test_resolve_js_commandline_pnpm_ignores_packages() -> None:

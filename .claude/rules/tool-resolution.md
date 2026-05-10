@@ -88,6 +88,17 @@ cwdのuvプロジェクトに対象ツールが登録されていない場合、
 JSONLレコードでfallbackを能動通知し、必要時にcommand-infoで詳細確認するという責務分担とする。
 JSONLフィールドの追加・名称変更は[output方針](output.md)に従う。
 
+## pnpx経路でのplugin解決workaround
+
+pnpx経路で`{command}-packages`によりplugin/rule packageを並べるとき、
+pnpx prefix先頭に`--config.enableGlobalVirtualStore=false`を渡す。
+pnpm 11.0.0で`enableGlobalVirtualStore`既定が`true`化された。
+これによりpnpm dlxのパッケージ実体がグローバル仮想ストアからsymlinkされる構造へ変わった。
+textlintのようにrule packageを`require()`で動的解決するツールは、
+兄弟解決経路（dlx temp dirの`node_modules/`）へ到達できず`No rules found`で失敗する。
+opt-out指定でdlxローカル仮想ストア配置（旧既定）に戻すことで本事象を回避する。
+pnpm 10では未知キーとして無視されるため後方互換性あり。
+
 ## {command}-runnerの値の体系
 
 `{command}-runner`はper-tool設定で、以下の2種類の値を取る。両者は対等な選択肢として並ぶ。
