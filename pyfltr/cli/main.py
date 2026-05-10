@@ -52,13 +52,13 @@ def _reconfigure_stdio_to_utf8() -> None:
 
 
 def main() -> typing.NoReturn:
-    """エントリポイント。"""
+    """エントリポイント。
+
+    PATH重複排除はCLI経路でのみ呼ぶことで、ライブラリ用途で意図せず別アプリの
+    `os.environ` を書き換えないようにする。
+    重複排除の規則は `pyfltr.command.env.dedupe_environ_path` のdocstringを参照する。
+    """
     _reconfigure_stdio_to_utf8()
-    # 親プロセスから継承したPATHの重複排除をプロセス全体で1回だけ適用する。
-    # 以後 `os.environ` を継承する全subprocessに波及するため、個別箇所のenv
-    # 構築では追加の重複排除を行わない。CLI経路でのみ呼ぶことで、ライブラリ
-    # 利用時に意図せず別アプリの `os.environ` を書き換えないようにする。
-    # 詳細はCLAUDE.md「subprocess起動時のPATH整理方針」節を参照。
     pyfltr.command.env.dedupe_environ_path(os.environ)
     exit_code = run()
     logger.debug(f"{exit_code=}")

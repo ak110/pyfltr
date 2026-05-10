@@ -69,8 +69,14 @@ class HeartbeatMonitor:
     """パイプライン全体のheartbeat監視。
 
     別スレッドで一定間隔ループし、`pyfltr.output.jsonl.get_last_jsonl_output_time()` から
-    最終JSONL出力時刻を取得して経過時間を判定する。しきい値超過時は実行中コマンド集合
-    （`{command_name -> start_time}`）から各commandへ `status:"running"` レコードを発行する。
+    最終JSONL出力時刻を取得して経過時間を判定する。
+    発火条件は「最後のJSONL出力から既定 `_HEARTBEAT_THRESHOLD_SECONDS` 秒経過した場合」のみ。
+    subprocess側のstdout出力の有無は判定材料に含めない（LLMから観測できるのはpyfltr側のJSONL
+    出力のみで、子プロセスの静粛さは観測対象外のため）。
+    しきい値超過時は実行中コマンド集合（`{command_name -> start_time}`）から各commandへ
+    `status:"running"` レコードを発行する。複数コマンドが同時にハングしている場合も
+    各コマンドの状態を識別できるよう、実行中の全コマンドそれぞれに発行する設計。
+    完了時の最終レコード（`status:"failed"` / `"succeeded"` 等）が必ず後続することを保証する。
     text_loggerにも発火を残し、人間向け表示でも進捗が確認できるようにする。
 
     `start()` / `stop()` を `run_pipeline` の入口・出口で呼ぶ。
@@ -469,6 +475,13 @@ def run_pipeline(
     代替案としてMCP側で `ArchiveStore.list_runs(limit=1)` を引く案も検討
     したが、同一ユーザーキャッシュを参照する並行プロセスがあると別runの
     `run_id` を誤って拾うリスクがあるため戻り値経由とした。
+
+    heartbeat監視 (`HeartbeatMonitor`) は出力形式が `jsonl` のときに限定して起動する。
+    SARIFとCode Qualityは `on_finish` で単一JSONドキュメントを一括出力するbuffering型
+    formatterのため、途中で `status:"running"` レコードを混入させると最終的な出力
+    （SARIF 2.1.0オブジェクト・Code Climate JSON配列）が破損する。
+    `text` 等のJSONLレコードが流れない出力形式ではheartbeatの観測対象が成立しない。
+    TUI経路はUIに進捗表示があるためheartbeat不要。
     """
     output_format = args.output_format or "text"
     format_source: str | None = getattr(args, "format_source", None)

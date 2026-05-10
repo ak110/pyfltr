@@ -227,18 +227,29 @@ class CommandResult:
     def status(self) -> str:
         """ステータスの文字列を返す。
 
-        `timeout_exceeded=True`の場合、`command_type`がformatterであっても`failed`を返す。
+        `status` 値の語彙はJSONL `command.status` のSSOTとして本プロパティ・本docstringに集約する。
+        新規status値を追加する際は本判定分岐に組み込み、個別箇所でのstatus文字列
+        直接組み立ては避ける。値ごとの意味は次の通り。
+
+        - `succeeded`: 通常成功（`returncode == 0`）
+        - `formatted`: formatterがファイルを書き換えた成功（再実行不要）
+        - `skipped`: 対象ファイル0件等で起動しなかった
+        - `failed`: 通常の失敗。`severity` が既定値 `"error"` のとき採用する
+        - `warning`: per-tool `{command}-severity = "warning"` 設定下での失敗格下げ。
+          パイプライン全体exit codeに影響しない。`commands_summary.needs_action.warning` へ集計し、
+          `summary.guidance` のfailure系文言は出力しない
+        - `resolution_failed`: ツール起動コマンドの解決に失敗した
+        - `running`: heartbeat由来の実行中レコード（pipeline側で発行）
+
+        `timeout_exceeded=True` の場合、`command_type` がformatterであっても `failed` を返す。
         timeoutで強制停止された結果を成功扱い（`formatted`）にしてしまうと、
         利用者・LLMがハング由来の停止と通常のformatter書き換えを区別できなくなるため。
 
-        `severity="warning"` 設定下では通常失敗を `"warning"` に格下げする。
         ツール起動自体に失敗したケース（`resolution_failed` / `timeout_exceeded`）は
         ツール起動自体の異常で警告扱いに馴染まないため、`severity` の影響を受けない。
 
-        `status`は`resolution_failed`・`returncode`・`has_error`・`command_type`・
-        `timeout_exceeded`・`severity`から導出する計算プロパティとして実装する。
-        新規status値を追加する際は本判定分岐に組み込み、個別箇所でのstatus文字列
-        直接組み立ては避ける。
+        `status` は `resolution_failed`・`returncode`・`has_error`・`command_type`・
+        `timeout_exceeded`・`severity` から導出する計算プロパティとして実装する。
         """
         if self.resolution_failed:
             return "resolution_failed"
@@ -312,7 +323,7 @@ class ExecutionParams:
     （mise不在時にdirectへフォールバックされたケースを除外するため、
     `build_commandline` 直後の値ではなく事後の値で判断する）。
     `build_subprocess_env` でのmise toolパス除外適用判断に使う。
-    詳細はCLAUDE.md「subprocess起動時のPATH整理方針」節を参照。
+    詳細は `pyfltr.command.env.build_subprocess_env` のdocstringを参照する。
     """
     effective_runner: str | None = None
     """`ResolvedCommandline.effective_runner` の事後値。

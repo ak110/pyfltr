@@ -36,7 +36,7 @@ from pyfltr.config.presets import _PRESETS, _REMOVED_PRESETS
 # archive/cache系の設定値はマシン単位で揃えたい性質のため、
 # `~/.config/pyfltr/config.toml`（global設定）に書かれた値をproject側より優先する。
 # 通常キーはproject優先（後勝ち）であるのに対して、本集合は逆向きの優先順を持つ。
-# 範囲拡大時はCLAUDE.md「注意点」節も併せて更新すること（人手同期）。
+# 範囲拡大時は `docs/guide/configuration.md` と関連テストも併せて更新する（人手同期）。
 ARCHIVE_CONFIG_KEYS: frozenset[str] = frozenset(
     {
         "archive",
@@ -80,6 +80,18 @@ glob内チルダの意図しない展開を防ぐため対象外とする。
 
 
 DEFAULT_CONFIG: dict[str, typing.Any] = {
+    # キー体系の方針:
+    # - per-toolキーは `{command}-{key}` 形式（例: `ruff-check-args`・`pylint-runner`）。
+    # - `{command}-runner` の既定値は対応するカテゴリ委譲値で揃える。
+    #   Python系（mypy・pylint・pyright・ruff-* 等）は `"python-runner"` 委譲、
+    #   JS系（textlint・eslint・biome 等）は `"js-runner"` 委譲、
+    #   ネイティブ系（shellcheck・shfmt・cargo-* 等）は `"bin-runner"` 委譲。
+    #   これによりグローバル `python-runner` / `js-runner` / `bin-runner` の切り替え1箇所で
+    #   ツール群の起動経路を一括変更できる。
+    # - グローバル既定値は `python-runner = "uv"`・`js-runner = "pnpx"`・`bin-runner = "mise"`。
+    # - 利用者は `{command}-runner = "direct"` または `{command}-path` の明示で個別に上書きできる。
+    # - per-tool直接指定値の許容範囲とカテゴリ委譲値の対応詳細は
+    #   `pyfltr.command.runner.build_commandline` のdocstringを参照する。
     # プリセット
     "preset": "",
     # 言語カテゴリキー: presetが示す言語別ツールを通過させるgateとして働く。

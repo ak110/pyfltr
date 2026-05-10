@@ -456,6 +456,10 @@ def test_expanduser_expands_check_and_write_args(monkeypatch: pytest.MonkeyPatch
 
     captured: list[list[str]] = []
 
+    # `run_subprocess_with_timeout` を差し替えるテストでは戻り値に
+    # `pyfltr.command.process.CompletedProcessWithTimeoutInfo` を直接構築する。
+    # テスト用ダミークラス（例: `class _FakeProc:`）を関数内で定義すると、pylintの
+    # `too-few-public-methods` と `redefined-outer-name` を併発するため避ける。
     def _fake_run(
         commandline: list[str], *_args: typing.Any, **_kwargs: typing.Any
     ) -> pyfltr.command.process.CompletedProcessWithTimeoutInfo:
@@ -980,10 +984,13 @@ def _resolve_bin_commandline_via_two_step(
     command: str,
     config: pyfltr.config.config.Config,
 ) -> tuple[str, list[str]]:
-    """テスト用ヘルパー: build_commandline + ensure_mise_availableの2段呼び出し。
+    """テスト用ヘルパー: `build_commandline` + `ensure_mise_available` の2段呼び出し。
 
     副作用検証テスト（mise未導入時のdirectフォールバック・未信頼config時のtrustリトライ・
-    mise exec --version経由の環境加工）で共通利用する。
+    `mise exec --version` 経由の環境加工）で共通利用する。
+    `build_commandline(allow_side_effects=True)` と `ensure_mise_available(...)` を分離した経路で
+    検証することでmise副作用の発生有無を観測できる構造になっており、互換ラッパー風の単段呼び出しを
+    新規テストへ復活させない方針。新規の副作用検証テストは本ヘルパーを再利用する。
     """
     resolved = pyfltr.command.runner.build_commandline(command, config, allow_side_effects=True)
     resolved = pyfltr.command.runner.ensure_mise_available(resolved, config, command=command)
@@ -2820,6 +2827,13 @@ def _setup_uv_runner(monkeypatch: pytest.MonkeyPatch) -> typing.Callable[..., No
     `cwd_has_uv_lock` / `ensure_uv_available` をテスト引数で差し替える。
     `python_bin_dir` 指定時は `pyfltr.command.runner.shutil.which` も差し替えて、
     direct フォールバック後に解決される python ツールのパスを `<dir>/<name>` で返す。
+
+    `cwd_has_uv_lock` / `ensure_uv_available` / `ensure_uvx_available` は
+    `@functools.lru_cache(maxsize=1)` 付きでプロセス内固定化されるため、
+    `monkeypatch.setattr` で関数自体を置換する形で差し替える（`lru_cache` 内部状態の
+    クリアは行わず、関数オブジェクト差し替え経由で常に新しい結果を返させる）。
+    `shutil.which` のmockはモジュールパス指定 `"pyfltr.command.runner.shutil.which"`
+    を使う必要がある（モジュール内で `shutil` を別経路でimportしている場合に備えるため）。
     """
 
     def _apply(*, uv_lock: bool, uv_available: bool, python_bin_dir: str | None = None) -> None:

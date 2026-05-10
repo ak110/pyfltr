@@ -13,14 +13,6 @@ from pyfltr.command.env import build_mise_subprocess_env
 logger = __import__("logging").getLogger(__name__)
 
 
-# `mise ls --current --json` 取得結果の状態スラッグ。
-# - `ok`: 取得成功（dictは空でも`mise.toml`記述が無いだけの場合は`ok`）
-# - `mise-not-found`: `mise`がPATH上に存在しない
-# - `untrusted-no-side-effects`: 未信頼config由来エラーで副作用OFFのためtrust試行を行わなかった
-# - `trust-failed`: trust試行が拒否された
-# - `exec-error`: その他のmise実行エラー（OSError含む）
-# - `json-parse-error`: stdoutのJSONパースに失敗した
-# - `unexpected-shape`: dict以外の値が返された
 MiseActiveToolsStatus = typing.Literal[
     "ok",
     "mise-not-found",
@@ -30,6 +22,19 @@ MiseActiveToolsStatus = typing.Literal[
     "json-parse-error",
     "unexpected-shape",
 ]
+"""`mise ls --current --json` 取得結果の状態スラッグ。SSOTは本定義。
+
+- `ok`: 取得成功（dictは空でも `mise.toml` 記述が無いだけの場合は `ok`）
+- `mise-not-found`: `mise` がPATH上に存在しない
+- `untrusted-no-side-effects`: 未信頼config由来エラーで副作用OFFのためtrust試行を行わなかった
+- `trust-failed`: trust試行が拒否された
+- `exec-error`: その他のmise実行エラー（`OSError` 含む）
+- `json-parse-error`: stdoutのJSONパースに失敗した
+- `unexpected-shape`: dict以外の値が返された
+
+ステータス追加・露出経路追加時は `docs/guide/usage.md` の `command-info` 節と
+`docs/development/architecture.md` を併せて更新する。
+"""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -38,6 +43,13 @@ class MiseActiveToolsResult:
 
     取得成功時は `tools` がmise本体の解決結果（プロジェクト `mise.toml` ＋グローバル設定の合算）。
     取得失敗時は `tools` を空辞書とし、`detail` に短い手がかり（mise stderr冒頭等）を格納する。
+
+    本構造体は3経路で同じ結果を共有する設計とする。
+
+    - mise backend判定（`pyfltr.command.runner._is_tool_active_in_mise_config`）
+    - JSONL headerの `mise_active_tools` フィールド露出
+    - `command-info` サブコマンドの出力
+
     `command-info` 出力やJSONL header経由で利用者に状況を可視化する目的で使う。
     """
 

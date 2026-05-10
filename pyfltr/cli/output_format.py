@@ -2,6 +2,16 @@
 
 `resolve_output_format`（優先順位付き出力形式決定）と、
 `text_logger` / `structured_logger`の設定切り替えを担う。
+
+pyfltrは3系統のloggerを役割分担する。
+
+- root（system logger）: 常にstderr。抑止しない（設定エラー・アーカイブ初期化失敗等を送出する）
+- `pyfltr.textout`: 人間向けテキスト出力。`configure_text_output`で出力先を切り替える
+- `pyfltr.structured`: JSONL / SARIF / Code Quality等の構造化出力。
+  `configure_structured_output`で出力先を切り替える
+
+stdout占有は出力形式が`jsonl` / `sarif` / `code-quality`かつ`--output-file`未指定時のみ発生する。
+その場合は`text_logger`の出力先をstderrへ切り替える運用とする。
 """
 
 import collections.abc
@@ -114,9 +124,10 @@ def resolve_output_format(
 def configure_text_output(stream: typing.TextIO, *, level: int = logging.INFO) -> None:
     """text_logger の出力先とログレベルを差し替える。
 
-    既存ハンドラーを全て外してから`StreamHandler(stream)`を新規追加する。
-    同一プロセス内で`run()`が複数回呼ばれるケースに備えて、呼び出し毎に完全に
+    既存ハンドラーを全て外してから `StreamHandler(stream)` を新規追加する。
+    同一プロセス内で `run()` が複数回呼ばれるケースに備えて、呼び出し毎に完全に
     再構築する（古いハンドラーが残って二重出力・古いstream参照が残るのを避ける）。
+    logger役割分担の全体像は本モジュールのdocstringを参照する。
     """
     for existing in list(text_logger.handlers):
         text_logger.removeHandler(existing)
@@ -130,12 +141,15 @@ def configure_structured_output(destination: typing.TextIO | pathlib.Path | None
     """structured_logger の出力先を切り替える。
 
     - `None`: ハンドラーを全て外す（jsonl/sarifを出力しないformat向け）
-    - `TextIO`: `StreamHandler(destination)`を設定する
-    - `pathlib.Path`: `FileHandler(destination, mode="w", encoding="utf-8")`を設定する。
+    - `TextIO`: `StreamHandler(destination)` を設定する
+    - `pathlib.Path`: `FileHandler(destination, mode="w", encoding="utf-8")` を設定する。
       親ディレクトリは自動作成する
 
-    levelは常に`logging.INFO`で固定する。root loggerがWARNING初期化でも
+    levelは常に `logging.INFO` で固定する。root loggerがWARNING初期化でも
     structured_logger側はINFO記録を破棄しないようにするため。
+    `--output-file` 指定時は `pathlib.Path` を渡してファイル出力へ切り替えることで
+    stdout占有を解除し、人間向けtext出力をstdoutへ戻すことができる。
+    logger役割分担の全体像は本モジュールのdocstringを参照する。
     """
     for existing in list(structured_logger.handlers):
         structured_logger.removeHandler(existing)

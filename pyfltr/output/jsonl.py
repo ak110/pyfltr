@@ -75,22 +75,27 @@ def _emit_structured(line: str) -> None:
 
 
 def emit_record(line: str) -> None:
-    """構造化出力を1行書き込む公開ヘルパー。
+    """構造化出力を1行書き込む公開ヘルパー（モジュール外向けの正規API）。
 
-    `_write_lock`取得と`_emit_structured`呼び出しを内部に隠蔽し、
-    本モジュール外の呼び出し側が`_write_lock`/`_emit_structured`へ直接触れずに済むようにする。
+    `_write_lock` / `_emit_structured` は内部実装としてモジュール外には公開しない。
+    `_emit_structured` が最終出力時刻 (`_output_time_state.monotonic_time`) を更新するため、
+    新規イベント種別を追加する場合も本ヘルパー経由を維持し、heartbeat監視スレッドが
+    「最後のJSONL出力からの無音時間」を判定できる状態を崩さない。
+    `pylint: disable=protected-access` の常態化を避ける目的でも公開ヘルパーへ集約する。
     順序保証が不要な単発書き込み（grep/replace等のレコード）に向く。
-    複数行をアトミックに出力する場合は`emit_records`を使う。
+    複数行をアトミックに出力する場合は `emit_records` を使う。
     """
     with _write_lock:
         _emit_structured(line)
 
 
 def emit_records(lines: typing.Iterable[str]) -> None:
-    """複数行を1ロック内でアトミックに書き込む公開ヘルパー。
+    """複数行を1ロック内でアトミックに書き込む公開ヘルパー（モジュール外向けの正規API）。
 
     並列実行されるツールから同時にコールバックされても、グルーピング単位
     （diagnostic + commandの組み合わせ等）が崩れないようロック保護する。
+    各行は `_emit_structured` 経由で最終出力時刻も更新するため、heartbeat連動が保たれる。
+    `_write_lock` / `_emit_structured` への直接アクセスは禁止し、本ヘルパーを正規APIとする。
     """
     with _write_lock:
         for line in lines:
@@ -454,7 +459,7 @@ def _build_header_record(
     `uv`オブジェクト（`lock`・`available`・`x_available`）はプロセス共通のuv / uvx経路追跡情報で、
     Python系コマンドの実行有無に関わらず常時出力する
     （利用者・LLMが「uv経路が選択された／uvxへフォールバックした／directにフォールバックした」の
-    判別に使う）。詳細はCLAUDE.md「ツール解決の優先順位」節を参照。
+    判別に使う）。詳細は `pyfltr.command.runner.build_commandline` のdocstringを参照する。
     """
     record: dict[str, typing.Any] = {
         "kind": "header",
@@ -748,8 +753,6 @@ def _build_summary_record(
     `no_issues`側に分類する。
     `resolution_failed`は0件のときキー自体を省略する（通常プロジェクトでは常に0のため）。
     `failed`/`warning`は0件でも常時出力する（0件であることがエラー無し / 警告無し判定に直結するため）。
-    コマンド総数 `total` は `commands_summary` 配下の末尾（`no_issues` / `needs_action` の後）へ配置する。
-    指摘総件数 `diagnostics` はコマンド単位の集計ではないため `commands_summary` の外に置く。
     `commands_summary`の兄弟である`applied_fixes`/`fully_excluded_files`/
     `missing_targets`/`guidance`はカウント集計ではないため移動しない。
     `fully_excluded_files`が非空のとき、直接指定されたがexcludeパターン・.gitignore
@@ -757,10 +760,23 @@ def _build_summary_record(
     `missing_targets`が非空のとき、直接指定されたが存在しないファイル一覧を
     `missing_targets`キーに埋め込む（exclude/.gitignore全除外と原因を区別するため
     別フィールドで併存させる）。
-    必須キーの順序は `kind` → `exit` → `commands_summary` → `diagnostics` で、
-    結論を上位に置きLLMが読み下しやすい流れにする。
-    `applied_fixes`はfixステージ・formatterステージで実際に内容変化したファイルパスを
-    全コマンドにわたってユニオンしソートした一覧。変化なしの場合は省略する。
+
+    フィールド順序ルール:
+
+    - 必須キー順は`kind` → `exit` → `commands_summary` → `diagnostics`。
+      結論を上位に置きLLMが読み下しやすい流れに揃える。
+    - 条件付きキー順は`guidance` → `applied_fixes` → `fully_excluded_files` → `missing_targets`。
+      解釈支援（次に取るべき行動）→ 自動適用結果 → 除外検知 → 不在検知の流れに揃える。
+    - コマンド総数`total`は`commands_summary`配下の末尾（`no_issues` / `needs_action`の後）に置く。
+      カテゴリ集計を読んでから総数を確認できる順序とするため。
+    - 指摘総件数`diagnostics`はコマンド単位の集計ではないため`commands_summary`の外に置く。
+      集計の意味分類が混ざらないようにするため。
+    - `applied_fixes`はfixステージ・formatterステージで実際に内容変化したファイルパスを
+      全コマンドにわたってユニオンしソートした一覧。変化なしの場合は省略する。
+
+    JSONLスキーマの変更は破壊的変更扱いしない（LLMが読みやすいよう継続的に改善する）。
+    新規キーの追加・既存キー名の調整時は本docstringと利用者向けドキュメント
+    （`docs/guide/usage.md`）を併せて更新する。
     """
     counts = {"succeeded": 0, "formatted": 0, "failed": 0, "warning": 0, "resolution_failed": 0, "skipped": 0}
     total_diagnostics = 0

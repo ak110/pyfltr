@@ -10,36 +10,13 @@ paths:
 
 # pyfltrのsubprocess関連の方針
 
-## PATH整理
-
-pyfltrのCLI起動時に`os.environ["PATH"]`を順序先勝ちで重複排除して書き戻す。
-これによりプロセス内で起動する全subprocessへ自動的に波及する。
-書き換え位置は`pyfltr/cli/main.py`の`main()`冒頭で、ライブラリ用途では実行されない。
-重複排除の比較キーはOS依存に正規化する。
-Windowsは大文字と小文字を区別せず、`/`と`\\`を等価に扱う。
-POSIXは末尾スラッシュのみ除去する。
-Windowsの`Path` / `PATH`揺れは検出したキー名のまま書き戻す。
-
-## miseバックエンド向けenv整理
-
-mise経由のsubprocess（`bin-runner = "mise"`等で起動するもの）に限り、
-PATHから「miseが注入したtoolパス」を除外したenvを渡す。
-対象パスは`mise/installs/`配下・`mise/dotnet-root`・`mise/shims`を含むエントリ。
-判定ロジックは`pyfltr/command/env.py`の`build_subprocess_env`が担う。
-判定値は`ensure_mise_available`通過後の`ResolvedCommandline.effective_runner`を使う。
-mise不在時のdirectフォールバック後の値で判断するため、
-`build_commandline`直後の値は採用しない。
-`ensure_mise_available`内の`mise exec --version` / `mise trust`にも
-同じ除外envを明示的に渡す。
-
-## timeout監視パターン
-
-subprocess経過時間ベースのtimeout監視は、別スレッドの`threading.Timer`から
-`_kill_process_tree`を呼んでsubprocessを停止する。
-メインの`for line in proc.stdout`はEOFで解放される設計を採用する。
-実装は`pyfltr/command/process.py`の`_on_timeout`・`run_subprocess`を参照する。
-同種の経過時間ベース監視機能を追加する際は、Timerを別スレッドで起動し
-メインの読み取りループはEOF到達で解放される標準パターンに揃える。
-本体ループ側の非ブロック化は不要となる。
-途中まで蓄積したstdoutと経過秒数は例外オブジェクト経由で上位経路へ受け渡し、
-CommandResult組み立てへつなげる。
+- CLI起動時に`os.environ["PATH"]`を順序先勝ちで重複排除する。
+  CLI経路でのみ実行し、ライブラリ用途では実行しない。詳細は`pyfltr/cli/main.py`の`main()`docstring
+  および`pyfltr/command/env.py`の`dedupe_environ_path`に集約する
+- mise経由のsubprocess（`bin-runner = "mise"`等）に限り、PATHからmiseが注入したtoolパスを除外したenvを渡す。
+  `ensure_mise_available`内の`mise exec --version` / `mise trust`にも同じ除外envを明示的に渡す。
+  対症療法であり、mise側の修正後は撤去または維持を再検討する余地がある。
+  詳細は`pyfltr/command/env.py`の`build_subprocess_env` / `build_mise_subprocess_env`に集約する
+- subprocess経過時間ベースのtimeout監視は`threading.Timer`分離方式で組む。
+  本体ループの非ブロック化は不要、停止後はEOF到達で解放される標準パターンに揃える。
+  実装パターンは`pyfltr/command/process.py`の`run_subprocess` / `_on_timeout` / `_kill_process_tree`を参照する

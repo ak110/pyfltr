@@ -58,20 +58,25 @@ _JS_TOOL_PNPX_PACKAGE_SPEC: dict[str, str] = {
 
 @dataclasses.dataclass(frozen=True)
 class BinToolSpec:
-    """bin-runner対応ツールの解決情報。"""
+    """bin-runner対応ツール（ネイティブバイナリ）の解決情報。
+
+    `_BIN_TOOL_SPEC` テーブルでpyfltrコマンド名と対応付けて登録する。
+    `{command}-runner` が `"bin-runner"`（グローバル `bin-runner` へ委譲）または `"mise"` のとき、
+    本specの `mise_backend` と `bin_name` から `mise exec ... -- <bin>` 形式のコマンドラインを組み立てる。
+    `{command}-path` が非空ならその値が優先され、本テーブルは参照しない。
+    新ツール追加時は `_BIN_TOOL_SPEC` への登録と `pyfltr.config.config.DEFAULT_CONFIG` の
+    `{command}-runner` 既定値（`"bin-runner"`）・`{command}-version` 既定値の追加をセットで行う。
+    """
 
     bin_name: str
     """実行ファイル名"""
     mise_backend: str | None = None
-    """mise exec用のbackend指定（省略時はbin_name）"""
+    """mise exec用のbackend指定（省略時は `bin_name`）"""
     default_version: str = "latest"
     """既定バージョン"""
 
 
-# bin-runnerで解決するネイティブバイナリツールの定義。
-# `{command}-runner` が "bin-runner"（グローバル `bin-runner` へ委譲）または "mise" のとき、
-# このテーブルからmise backendとbin名を引いてコマンドラインを組み立てる。
-# `{command}-path` が非空ならその値を優先し本テーブルは参照しない。
+# bin-runnerで解決するネイティブバイナリツールの定義テーブル。各値は `BinToolSpec` 参照。
 _BIN_TOOL_SPEC: dict[str, BinToolSpec] = {
     "ec": BinToolSpec(bin_name="ec", mise_backend="editorconfig-checker"),
     "shellcheck": BinToolSpec(bin_name="shellcheck"),
@@ -322,6 +327,8 @@ def ensure_uv_available() -> bool:
 
     `{command}-runner = "uv"` 経路で `uv run --frozen <bin>` を組み立てるかどうかの判定に使う。
     未導入時は False を返し、呼び出し側が direct フォールバックへ切り替える。エラー送出はしない。
+    `lru_cache` でプロセス内固定化されるため、テストで判定値を差し替えるときは関数自体を
+    `monkeypatch.setattr("pyfltr.command.runner.ensure_uv_available", lambda: True)` の形で置換する。
     """
     return shutil.which("uv") is not None
 
@@ -332,13 +339,19 @@ def ensure_uvx_available() -> bool:
 
     `{command}-runner = "uvx"` 経路で `uvx <bin>` を組み立てるかどうかの判定に使う。
     未導入時は False を返し、呼び出し側が direct フォールバックへ切り替える。エラー送出はしない。
+    テスト差し替えは `ensure_uv_available` と同じく関数自体を `monkeypatch.setattr` で置換する。
     """
     return shutil.which("uvx") is not None
 
 
 @functools.lru_cache(maxsize=1)
 def cwd_has_uv_lock() -> bool:
-    """カレントディレクトリに `uv.lock` が存在するかを判定する（実行内キャッシュつき）。"""
+    """カレントディレクトリに `uv.lock` が存在するかを判定する（実行内キャッシュつき）。
+
+    テスト差し替えは `monkeypatch.setattr("pyfltr.command.runner.cwd_has_uv_lock", lambda: True)`
+    の形で関数自体を置換する。`lru_cache` 付き判定関数群（`ensure_uv_available`・
+    `ensure_uvx_available` 等）に共通する制約。
+    """
     return pathlib.Path("uv.lock").is_file()
 
 
@@ -628,6 +641,24 @@ def build_commandline(
     `{command}-runner` および `{command}-path` の設定に従い、`mise exec ... --` 形式・
     `pnpx --package ...` 形式・`uv run --frozen` 形式・`uvx <bin>` 形式・直接実行（PATH解決）のいずれかを返す。
 
+    `{command}-runner` 値はカテゴリ委譲値（`python-runner` / `js-runner` / `bin-runner`）と
+    直接指定値（`direct` / `mise` / `uv` / `uvx` / `pnpx` / `pnpm` / `npm` / `npx` / `yarn`）の2分類で扱い、
+    対等な選択肢として並ぶ。
+    カテゴリ横断の組み合わせ（例: `mypy-runner = "pnpm"`）はバリデーションで拒否せず、
+    無意味な組み合わせは実行時に解決ロジックがエラー終了する（実装簡潔さ優先）。
+
+    解決経路の主要な設計判断は次の通り。
+
+    - `{command}-path` 非空指定は最優先で `effective_runner = "direct"` 固定とする
+      （`runner_source = "path-override"`）。利用者が明示したパスを尊重するため
+    - `uv` 経路は `uv.lock` 存在を必須とする。`uvx` 経路はlockを参照しない。両者の使い分けは
+      利用者プロジェクトの登録版（`uv`）か最新版（`uvx`）かの選択を意図する
+    - `direct` フォールバックは `uv`・`uvx`・`mise` の各経路で前提条件を満たさないとき発動し、
+      `runner_fallback` に退行経路（例: `"uv->direct"`）を記録する。利用者環境差で起動失敗するより、
+      最低限PATH上のバイナリで動くようにするため
+    - `mise` 経路はmise設定記述があり `{command}-version` が既定値 `"latest"` のときに限り
+      tool spec部分を省略する。利用者がmise設定で固定したcomponents・バージョンを尊重するため
+
     `allow_side_effects=False`（既定）では `mise exec --version` の事前チェックや
     `mise trust` を行わない。判定関数 `get_mise_active_tools` も副作用OFFで呼び、
     未信頼config由来エラーを「記述なし」扱いとして従来形のtool spec組み立てへフォールバックする。
@@ -736,7 +767,7 @@ def ensure_mise_available(
 
     # mise経由の事前チェック・trust呼び出しでもmiseがtoolパスにフォールバック
     # 解決してしまう挙動を回避するため、PATHからmise toolパスを除外したenvを渡す。
-    # 詳細はCLAUDE.md「subprocess起動時のPATH整理方針」節を参照。
+    # 詳細は `pyfltr.command.env.build_subprocess_env` のdocstringを参照する。
     mise_env = build_mise_subprocess_env(dict(os.environ))
     if has_tool_spec:
         check_args = ["mise", "exec", tool_spec, "--", bin_name, "--version"]

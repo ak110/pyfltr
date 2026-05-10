@@ -35,7 +35,21 @@ def expand_all_files(targets: list[pathlib.Path], config: pyfltr.config.config.C
     """対象ファイルの一括展開。
 
     ディレクトリ走査・excludeチェック・gitignoreフィルタリングを1回だけ実行し、
-    全ファイルのリストを返す。コマンドごとのglobフィルタリングはfilter_by_globsで行う。
+    全ファイルのリストを返す。コマンドごとのglobフィルタリングは `filter_by_globs` で行う。
+
+    シンボリックリンクディレクトリは原則として配下を辿る。
+    `respect-gitignore=True` 下では走査前に当該ディレクトリ自身の `is_symlink()` を判定し、
+    末尾 `/` を付けない単一パス指定で `git check-ignore` へ問い合わせ、ignoredなら配下を辿らない。
+    早期スキップが機能するのは `.gitignore` のファイル形式パターン（`name`・`*pattern*` 等）に
+    限定される。`link/` 形式のディレクトリ専用パターンは `git check-ignore` がシンボリックリンク越え
+    のpathspecを拒否するため判定不可となり、早期スキップは機能しない。
+
+    最終出力は `_dedup_and_sort` が実体パス単位で重複排除し、パス文字列で安定ソートして返す。
+    リポジトリ内のシンボリックリンク再配置等で同一実体ファイルが複数パスから列挙される構成でも、
+    ツールが同じ内容を多重チェックすることを避ける。
+
+    cwdリポジトリ内/外の判定とサイレント素通し回避の挙動については `_filter_by_gitignore`
+    のdocstringを参照する。
     """
     # 空ならカレントディレクトリを対象とする
     if len(targets) == 0:

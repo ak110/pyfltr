@@ -147,12 +147,20 @@ def build_subprocess_env(
     """サブプロセス実行用の環境変数を構築。
 
     `config` は `pyfltr.config.config.Config` のインスタンスを渡す。
-    `via_mise=True` の場合、PATHからmiseが注入したtoolパス（installs / dotnet-root /
-    shims）を除外する。
+    `via_mise=True` の場合、PATHからmiseが注入したtoolパス（`mise/installs/` 配下・
+    `mise/dotnet-root`・`mise/shims` の3種）を除外する。
     親PATHにmise自身のtoolエントリが見えていると、miseがtools解決をスキップして
     PATH解決にフォールバックする挙動への対症療法。
     mise側の修正後は本対応の撤去または維持を再検討する余地がある。
-    mise本体のバイナリディレクトリ（`mise/bin`を含むエントリ）は保護対象として除外しない。
+    mise本体のバイナリディレクトリ（`mise/bin` を含むエントリ）は保護対象として除外しない。
+
+    `via_mise` の判定値は `ResolvedCommandline.effective_runner` の事後値
+    （`ensure_mise_available` 通過後の値）から `_prepare_execution_params` が決定する。
+    `build_commandline` 直後の値を使うとmise不在時のdirectフォールバックを反映できないため、
+    必ず事後値を採用する。
+    なお `ensure_mise_available` 内の事前チェック（`mise exec --version`）と `mise trust`
+    も同じ除外envが必要なため、本関数を経由せず `build_mise_subprocess_env` を直接呼んで
+    明示的に渡す。
     """
     env = os.environ.copy()
     if via_mise:
