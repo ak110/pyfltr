@@ -532,10 +532,11 @@ def test_parse_textlint_json_hint_for_sentence_length() -> None:
 
 
 def test_parse_textlint_json_hint_for_known_rules() -> None:
-    """textlint `max-ten` / `max-kanji-continuous-len` にもヒントが付く。"""
+    """textlint `max-ten` / `max-kanji-continuous-len` / `no-unmatched-pair` にもヒントが付く。"""
     for rule_id in (
         "ja-technical-writing/max-ten",
         "ja-technical-writing/max-kanji-continuous-len",
+        "ja-technical-writing/no-unmatched-pair",
     ):
         output = json.dumps(
             [
@@ -547,6 +548,31 @@ def test_parse_textlint_json_hint_for_known_rules() -> None:
         )
         errors = pyfltr.command.error_parser.parse_errors("textlint", output)
         assert errors[0].hint is not None, f"{rule_id} にヒントが付与されていない"
+
+
+def test_parse_textlint_json_hint_for_no_unmatched_pair() -> None:
+    """no-unmatched-pairヒントが括弧対応と改行跨ぎの両論を含む。"""
+    output = json.dumps(
+        [
+            {
+                "filePath": "a.md",
+                "messages": [
+                    {
+                        "line": 1,
+                        "column": 1,
+                        "message": "Unmatched pair",
+                        "ruleId": "ja-technical-writing/no-unmatched-pair",
+                        "severity": 2,
+                    }
+                ],
+            }
+        ]
+    )
+    errors = pyfltr.command.error_parser.parse_errors("textlint", output)
+    assert errors[0].hint is not None
+    hint = errors[0].hint.lower()
+    assert "matched" in hint, "括弧対応そのものに言及するキーワードが含まれていない"
+    assert "line break" in hint, "改行跨ぎに言及するキーワードが含まれていない"
 
 
 def test_parse_textlint_json_normalizes_multiline_message() -> None:

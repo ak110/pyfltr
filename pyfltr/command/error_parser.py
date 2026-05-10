@@ -72,6 +72,10 @@ _TEXTLINT_RULE_HINTS: dict[str, str] = {
     "ja-technical-writing/max-kanji-continuous-len": (
         "Long kanji run detected; insert hiragana, particles, or commas (、) to break it up."
     ),
+    "ja-technical-writing/no-unmatched-pair": (
+        "Bracket pair is unmatched. Check for typos or missing pairs, and ensure full-width bracket pairs"
+        " do not span across line breaks (the rule treats line breaks as separators)."
+    ),
 }
 """textlintの頻出ルール向けヒント辞書。利用者が該当しやすいルールに限定している。
 
