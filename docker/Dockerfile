@@ -23,7 +23,11 @@
 #   - Python 単独 (uv tool install): yamllint
 #   - mise 経由のネイティブバイナリ: node (LTS) / shfmt / actionlint /
 #     editorconfig-checker / glab / taplo / hadolint / pinact / gitleaks
-#     (node は markdownlint-cli 等が要求する V8 機能のため APT の Node.js 18 を上書きする)
+#     (Node.js は APT 由来の旧バージョンを避けて mise 管理に一本化する。
+#      pnpm 11 系が要求する Node.js v22.13+ を mise の node@lts で確保する)
+#   - npm グローバル経由 (mise の Node.js を使用): pnpm
+#     (pnpm 自体は mise でも管理可能だがスタンドアロンバイナリのシステムライブラリ依存を避け、
+#      JS 実装を npm 経由で導入する)
 #   - APT 直結の補助ツール: shellcheck (direct runner フォールバック用)
 #   - pnpm グローバル経由の JS / TS 系: prettier / markdownlint-cli / textlint / eslint /
 #     @biomejs/biome / oxlint / typescript / vitest
@@ -67,7 +71,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     MISE_DATA_DIR=/cache/mise/data \
     MISE_CACHE_DIR=/cache/mise/cache \
     MISE_GLOBAL_CONFIG_FILE=/cache/mise/config.toml \
-    PATH=/home/pyfltr/.local/bin:/home/pyfltr/.local/share/uv/tools/pyfltr/bin:/cache/mise/data/shims:/usr/local/pnpm:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    PATH=/home/pyfltr/.local/bin:/home/pyfltr/.local/share/uv/tools/pyfltr/bin:/cache/mise/data/shims:/usr/local/pnpm/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # 必要な APT パッケージをまとめてインストールする。
 # ``--no-install-recommends`` で推奨パッケージを除外し、イメージサイズを抑える。
@@ -75,6 +79,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # (cf. <https://docs.docker.com/build/cache/optimize/#use-cache-mounts>)。
 # Debian 公式イメージは ``/etc/apt/apt.conf.d/docker-clean`` で apt キャッシュを
 # 自動削除するため、キャッシュマウント有効時のみそれを除去する。
+# Node.js は mise 管理 (root で導入) に集約し、pnpm はその npm 経由で導入するため APT には含めない。
 # hadolint ignore=DL3008
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
@@ -86,8 +91,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         git \
         gnupg \
         jq \
-        nodejs \
-        npm \
         shellcheck
 
 # uv を astral 公式インストーラ経由で導入する。
@@ -95,21 +98,29 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
     && mv /root/.local/bin/uv /usr/local/bin/uv \
     && mv /root/.local/bin/uvx /usr/local/bin/uvx
 
-# pnpm スタンドアロン版を導入する。npm のグローバルキャッシュもマウントで再利用する。
-RUN --mount=type=cache,target=/root/.npm \
-    npm install -g --prefix /usr/local pnpm@latest
-
 # mise バイナリを導入する。
+# Node.js などのネイティブバイナリ群を mise で一元管理する
+# (APT の Node.js v18 は pnpm 11 系の要求バージョン v22.13+ を満たさないため採用しない)。
 RUN curl -fsSL https://mise.run | sh \
     && mv /root/.local/bin/mise /usr/local/bin/mise
+
+# Node.js を mise で先に導入し、その npm 経由で pnpm をシステム共通領域に配置する。
+# pnpm スタンドアロンバイナリは libatomic 等のシステムライブラリ依存があるため、
+# JS 実装の pnpm を npm 経由で導入することで依存範囲を広げない。
+# mise の global 設定は ``MISE_GLOBAL_CONFIG_FILE`` で /cache/mise/config.toml に集約しており、
+# root の解決結果を後段の pyfltr ユーザーがそのまま参照できる。
+RUN mkdir -p /cache/mise/data /cache/mise/cache \
+    && mise use --global node@lts \
+    && npm install -g --prefix=/usr/local pnpm@latest
 
 # 非 root ユーザーを作成し、キャッシュ・pnpm ホームの所有権を移譲する。
 # UID 1001 は GitHub Actions の runner ユーザーと一致させるため固定する。
 # ``container:`` 配下で動かす際、runner が用意する ``/__w/_temp`` 等のホストマウント領域は
 # UID 1001 所有で作成されるため、コンテナー側ユーザーが UID 1001 でないと
 # ``actions/checkout`` 等が ``EACCES`` で失敗する。
+# pnpm 11 系は global bin を ``PNPM_HOME/bin`` に配置するため、その bin ディレクトリも先に作成する。
 RUN useradd --create-home --shell /bin/bash --uid 1001 pyfltr \
-    && mkdir -p /cache/uv /cache/pnpm /cache/mise/data /cache/mise/cache /usr/local/pnpm \
+    && mkdir -p /cache/uv /cache/pnpm /cache/mise/data /cache/mise/cache /usr/local/pnpm/bin \
     && chown -R pyfltr:pyfltr /cache /usr/local/pnpm
 
 USER pyfltr
@@ -128,11 +139,13 @@ RUN mkdir -p /home/pyfltr/.config/uv \
 # pyfltr が呼び出す対応ツール群を pyfltr ユーザー権限で事前導入する。
 # 単一 RUN にまとめてレイヤー数とイメージサイズを抑える (新ツール追加時はここに追記する)。
 #
+# - mise 経由 (bin-runner=mise 既定): pyfltr のネイティブバイナリ群。インストール先は
+#   ``MISE_DATA_DIR=/cache/mise/data`` に集約され、レイヤーに持続する。
+#   Node.js は前段 (root レイヤー) の ``mise use --global node@lts`` で導入済みのため
+#   ここでは追加ツールのみを宣言する (重複指定しても害は無いが冗長になるため省く)。
 # - pnpm 設定: ``minimum-release-age=1440`` 分 = 24 時間で公開直後の新バージョン導入を抑止。
 #   ``store-dir`` は ``PNPM_STORE_DIR`` env でも反映されるが、CI から pnpm を直接呼ぶ場合の
 #   一貫性のため設定にも明示する。
-# - mise 経由 (bin-runner=mise 既定): pyfltr のネイティブバイナリ群。インストール先は
-#   ``MISE_DATA_DIR=/cache/mise/data`` に集約され、レイヤーに持続する。
 # - pnpm グローバル経由 (js-runner=pnpx 既定): JS / TS 系ツール。pnpx 経由でも同一ストアを
 #   参照するため初回起動コストが下がる。
 # - uv tool install: pyfltr[python] に含まれない Python 単独ツール。
@@ -144,10 +157,7 @@ RUN mkdir -p /home/pyfltr/.config/uv \
 # （ファイルマウント方式では既定の uid=0/mode=0400 のため非 root ユーザーから読めず、
 # 旧実装の `cat` 経由は permission denied を黙殺して空文字を渡していた。）
 RUN --mount=type=secret,id=GITHUB_TOKEN,env=GITHUB_TOKEN,required=false \
-    pnpm config set store-dir "${PNPM_STORE_DIR}" --global \
-    && pnpm config set minimum-release-age 1440 --global \
-    && mise use --global \
-        node@lts \
+    mise use --global \
         shfmt@latest \
         actionlint@latest \
         editorconfig-checker@latest \
@@ -156,6 +166,8 @@ RUN --mount=type=secret,id=GITHUB_TOKEN,env=GITHUB_TOKEN,required=false \
         hadolint@latest \
         pinact@latest \
         gitleaks@latest \
+    && pnpm config set store-dir "${PNPM_STORE_DIR}" --global \
+    && pnpm config set minimum-release-age 1440 --global \
     && pnpm add -g \
         prettier \
         markdownlint-cli \
