@@ -104,15 +104,8 @@ jobs:
         # tests/smoke_test.py が起動するmise経由ツールをWindows runnerでも揃える。
         # Linux jobは公式pyfltrイメージに同梱済みのため不要。
         # shellcheckはAPT直結ツールだがmise registryにも存在するためまとめて導入する。
-        run: |
-          mise use --global \
-            shfmt@latest \
-            actionlint@latest \
-            editorconfig-checker@latest \
-            taplo@latest \
-            hadolint@latest \
-            gitleaks@latest \
-            shellcheck@latest
+        # 既定シェル（PowerShell）でもbash継続`\`に依存せず動くよう単一行で記述する。
+        run: mise use --global shfmt@latest actionlint@latest editorconfig-checker@latest taplo@latest hadolint@latest gitleaks@latest shellcheck@latest
 
       - name: Install smoke test tooling via uv
         # yamllint / typos / pre-commit はpyfltr本体依存に含まれない単独ツール。Windows runnerにも導入する。
