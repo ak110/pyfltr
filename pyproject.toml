@@ -91,6 +91,10 @@ shellcheck = true
 shfmt = true
 hadolint = true
 pylint-args = ["--jobs=4"]
+# tests/smoke_data/ 配下にはツール毎の最小サンプル（GitHub Actionsワークフロー・
+# Dockerfile・shellスクリプト等）を含むため、本リポのpyfltr対象から外す。
+# 当該ディレクトリの起動確認は tests/smoke_test.py が pyfltr CLIをsubprocess経由で呼んで実施する。
+extend-exclude = ["tests/smoke_data"]
 
 [tool.pylint."messages control"]
 disable = [
@@ -177,9 +181,22 @@ hte = "hte"
 
 [tool.pytest.ini_options]
 # https://docs.pytest.org/en/latest/reference/reference.html#ini-options-ref
-addopts = "--showlocals -p no:cacheprovider --maxfail=5 --durations=30 --durations-min=0.5 --timeout=60"
+# `tests/smoke_data/` 配下にはツール毎のサンプル `*_test.py` を含むためpytest collectionから除外する。
+# スモークテスト本体は `tests/smoke_test.py` で、内部から pyfltr 経由で当該サンプルを呼び出す。
+addopts = [
+    "--showlocals",
+    "-p", "no:cacheprovider",
+    "--maxfail=5",
+    "--durations=30",
+    "--durations-min=0.5",
+    "--timeout=60",
+    "--ignore=tests/smoke_data",
+]
 log_level = "DEBUG"
 xfail_strict = true
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
+markers = [
+    "smoke: 対応ツール群を実起動して終了確認するスモークテスト。pnpm 11のような外部ツール側の既定変更検知が目的。",
+]

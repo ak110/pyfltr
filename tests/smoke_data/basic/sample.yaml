@@ -1,0 +1,4 @@
+smoke: true
+items:
+  - one
+  - two

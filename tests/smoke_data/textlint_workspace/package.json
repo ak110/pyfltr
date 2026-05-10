@@ -1,0 +1,9 @@
+{
+  "name": "smoke-textlint",
+  "private": true,
+  "textlint": {
+    "rules": {
+      "preset-ja-technical-writing": true
+    }
+  }
+}

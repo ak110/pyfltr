@@ -1,0 +1,23 @@
+# スモークテスト用の最小pyfltr設定。
+# 各ツールはテスト側から `--commands=<tool>` で個別に起動し、ターゲットも明示するため
+# pyproject.toml では全有効化のみ宣言する。preset 系は使わずデフォルトの言語ゲートに
+# 引きずられないようにする。
+[tool.pyfltr]
+ruff-format = true
+ruff-check = true
+pylint = true
+mypy = true
+pyright = true
+ty = true
+pytest = true
+shfmt = true
+taplo = true
+yamllint = true
+ec = true
+typos = true
+gitleaks = true
+hadolint = true
+actionlint = true
+shellcheck = true
+markdownlint = true
+respect-gitignore = false

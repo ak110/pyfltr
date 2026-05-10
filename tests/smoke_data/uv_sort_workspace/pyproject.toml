@@ -1,0 +1,13 @@
+[project]
+name = "smoke-uv-sort"
+version = "0.0.0"
+requires-python = ">=3.11"
+# uv-sort はソート対象。並び替え後でも安定するよう既にABC順で記述する。
+dependencies = [
+    "click>=8.0",
+    "requests>=2.31",
+]
+
+[tool.pyfltr]
+uv-sort = true
+respect-gitignore = false

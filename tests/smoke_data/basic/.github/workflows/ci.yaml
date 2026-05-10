@@ -1,0 +1,7 @@
+name: smoke
+on: [push]
+jobs:
+  echo:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "smoke"

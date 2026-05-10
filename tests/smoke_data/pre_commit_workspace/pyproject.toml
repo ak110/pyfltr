@@ -1,0 +1,3 @@
+[tool.pyfltr]
+pre-commit = true
+respect-gitignore = false

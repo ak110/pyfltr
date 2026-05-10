@@ -51,6 +51,9 @@ jobs:
         run: uv sync --all-groups --all-extras
 
       - name: Test with pyfltr
+        # `CI=true` を明示し、smoke test がツール不在時にスキップへ逃げず失敗扱いとなるようにする。
+        env:
+          CI: "true"
         run: uv run --with-editable=. pyfltr ci --output-format=github-annotations
 
       - name: Prune uv cache for CI
@@ -97,10 +100,34 @@ jobs:
       - name: Setup mise
         uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
 
+      - name: Install smoke test tooling via mise
+        # tests/smoke_test.py が起動するmise経由ツールをWindows runnerでも揃える。
+        # Linux jobは公式pyfltrイメージに同梱済みのため不要。
+        # shellcheckはAPT直結ツールだがmise registryにも存在するためまとめて導入する。
+        run: |
+          mise use --global \
+            shfmt@latest \
+            actionlint@latest \
+            editorconfig-checker@latest \
+            taplo@latest \
+            hadolint@latest \
+            gitleaks@latest \
+            shellcheck@latest
+
+      - name: Install smoke test tooling via uv
+        # yamllint / typos / pre-commit はpyfltr本体依存に含まれない単独ツール。Windows runnerにも導入する。
+        run: |
+          uv tool install yamllint
+          uv tool install typos
+          uv tool install pre-commit
+
       - name: Install dependencies
         run: uv sync --all-groups --all-extras
 
       - name: Test with pyfltr
+        # `CI=true` を明示し、smoke test がツール不在時にスキップへ逃げず失敗扱いとなるようにする。
+        env:
+          CI: "true"
         run: uv run --with-editable=. pyfltr ci --output-format=github-annotations
 
       - name: Prune uv cache for CI

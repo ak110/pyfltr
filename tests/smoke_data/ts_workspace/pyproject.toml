@@ -1,0 +1,8 @@
+[tool.pyfltr]
+prettier = true
+tsc = true
+eslint = true
+biome = true
+oxlint = true
+vitest = true
+respect-gitignore = false

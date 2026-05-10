@@ -1,0 +1,5 @@
+{
+  "name": "smoke-ts",
+  "private": true,
+  "type": "module"
+}
