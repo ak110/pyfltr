@@ -104,10 +104,13 @@ def render_results(
     # 3. warnings（summaryの直前。先頭だと見過ごされやすいため）
     _write_warnings_section(warnings)
 
-    # 4. fully excluded files（summary直前。警告と混ざらないよう独立ブロックで出力する）
+    # 4. missing targets（summary直前。直接指定されたが存在しないファイルを総覧表示する）
+    _write_missing_targets_section(pyfltr.warnings_.filtered_direct_files(reason="missing"))
+
+    # 5. fully excluded files（summary直前。警告と混ざらないよう独立ブロックで出力する）
     _write_fully_excluded_files_section(pyfltr.warnings_.filtered_direct_files(reason="excluded"))
 
-    # 5. summary（末尾に出力することでtail -Nで必ず確認できるようにする）
+    # 6. summary（末尾に出力することでtail -Nで必ず確認できるようにする）
     _write_summary(ordered)
 
 
@@ -119,6 +122,20 @@ def _write_warnings_section(warnings: list[dict[str, typing.Any]]) -> None:
         text_logger.info(f"{'-' * 10} warnings {'-' * (72 - 10 - 10)}")
         for entry in warnings:
             text_logger.info(f"    [{entry['source']}] {entry['message']}")
+
+
+def _write_missing_targets_section(files: list[str]) -> None:
+    """直接指定されたが存在しないファイルをまとめて表示する。
+
+    警告としては個別のwarning行で既に通知しているが、総覧で見過ごされやすいため
+    summary直前に専用ブロックを置く。
+    """
+    if not files:
+        return
+    with lock:
+        text_logger.info(f"{'-' * 10} missing-targets {'-' * (72 - 10 - 17)}")
+        for path in files:
+            text_logger.info(f"    {path}")
 
 
 def _write_fully_excluded_files_section(files: list[str]) -> None:

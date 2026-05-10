@@ -712,6 +712,19 @@ def run_pipeline(
     if returncode == 0:
         returncode = calculate_returncode(results, args.exit_zero_even_if_formatted)
 
+    # 直接指定されたパスが部分的に不在で、かつ実行された全コマンドがskippedの場合は
+    # 意図しない呼び出し（指定ファイルが見つからずほぼ何も実行されなかった）の可能性が高いため
+    # exit 1で検知する。全件不在は手前の早期exit経路で処理済みのためここでは部分不在のみが対象。
+    # resultsが空（有効化コマンド自体がゼロ）の場合は対象外。
+    if (
+        returncode == 0
+        and args.targets
+        and pyfltr.warnings_.filtered_direct_files(reason="missing")
+        and results
+        and all(result.status == "skipped" for result in results)
+    ):
+        returncode = 1
+
     formatter.on_finish(ctx, results, returncode, pyfltr.warnings_.collected_warnings())
 
     # アーカイブ終端: meta.jsonにexit_code / finished_atを書き込む。

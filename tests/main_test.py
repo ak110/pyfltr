@@ -73,6 +73,30 @@ def test_partial_missing_targets_continues(tmp_path, mocker):
     assert returncode == 0
 
 
+def test_partial_missing_with_all_skipped_returns_nonzero(tmp_path, mocker):
+    """部分不在 + 残ファイルで全コマンドskipの場合は意図しない呼び出しとして非ゼロ終了する。
+
+    指定ファイルが見つからずほぼ何も実行されなかった状況を、`missing_targets`非空 +
+    全コマンドskipの組合せで検知する。
+    """
+    # `.py`対象のPython系ツールだけを有効化する（preset未使用で`*`対象ツールが
+    # 混入しないようにする）。残ファイルは拡張子`.txt`で全Python系ツール対象外、
+    # missing.pyは不在とすることで全コマンドskippedかつmissing_targets非空の状態を再現する。
+    (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\npylint = true\nmypy = true\n")
+    (tmp_path / "note.txt").write_text("hello\n")
+    mocker.patch(
+        "pyfltr.command.process.run_subprocess",
+        return_value=subprocess.CompletedProcess(["x"], 0, ""),
+    )
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        returncode = pyfltr.cli.main.run(["run-for-agent", "note.txt", "missing.py"])
+    finally:
+        os.chdir(original_cwd)
+    assert returncode == 1
+
+
 def test_work_dir(mocker, tmp_path):
     """--work-dirオプションのテスト。"""
     # preset由来のpytestをpython gate通過で実行対象に含める。

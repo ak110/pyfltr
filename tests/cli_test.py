@@ -13,6 +13,7 @@ import pyfltr.cli.render
 import pyfltr.command.core_
 import pyfltr.command.dispatcher
 import pyfltr.config.config
+import pyfltr.warnings_
 from tests.conftest import make_command_result as _make_result
 from tests.conftest import make_execution_context as _make_ctx
 
@@ -178,6 +179,37 @@ def test_render_results_skips_warnings_section_when_empty(text_logs):
     # warningsセクションは出力されない（summary直前の見出しだけを検証するのは困難なため、
     # [source]形式のエントリ行が無いことで代替する）
     assert "[config]" not in "\n".join(text_logs)
+
+
+def test_render_results_writes_missing_targets_section_before_summary(text_logs):
+    """`missing_targets`蓄積時はsummary直前に専用ブロックが出力される。
+
+    `fully-excluded-files`との並びはmissing-targetsを先に出力する前提で固定する。
+    両者は原因が異なる（不在 vs exclude設定）ため独立ブロックで識別可能とする。
+    """
+    config = pyfltr.config.config.create_default_config()
+    results = [_make_result("mypy", returncode=0)]
+    pyfltr.warnings_.add_filtered_direct_file("does_not_exist.py", reason="missing")
+    pyfltr.warnings_.add_filtered_direct_file("excluded.py", reason="excluded")
+
+    pyfltr.cli.render.render_results(results, config, include_details=True)
+
+    text = "\n".join(text_logs)
+    missing_block_pos = text.index("missing-targets")
+    missing_path_pos = text.index("does_not_exist.py")
+    excluded_block_pos = text.index("fully-excluded-files")
+    summary_pos = text.index("summary")
+    assert missing_block_pos < missing_path_pos < excluded_block_pos < summary_pos
+
+
+def test_render_results_skips_missing_targets_section_when_empty(text_logs):
+    """`missing_targets`が空のときは専用ブロックを出力しない。"""
+    config = pyfltr.config.config.create_default_config()
+    results = [_make_result("mypy", returncode=0)]
+
+    pyfltr.cli.render.render_results(results, config, include_details=True)
+
+    assert "missing-targets" not in "\n".join(text_logs)
 
 
 def test_run_commands_with_cli_fail_fast_aborts_remaining_fixers(mocker):
