@@ -470,7 +470,7 @@ async def _tool_replace(
     `dry_run=True`（既定）はファイルを変更せず変更内容のみを返す。
     `dry_run=False`を明示した場合のみ実書き込みし、`replace_id`を返す。
     `dry_run`の既定値がCLI（`False`）と異なるのはLLM暴発防止のため
-    （`.claude/rules/grep-replace.md`参照）。
+    （`.claude/skills/grep-replace/SKILL.md`参照）。
 
     Args:
         pattern: 検索パターン（正規表現）。

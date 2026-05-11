@@ -1,8 +1,12 @@
 ---
-paths:
-  - "pyfltr/**/*.py"
-  - "tests/**/*.py"
-  - ".pre-commit-config.yaml"
+name: test-constraints
+description: >
+  pyfltrのテスト・実装制約の方針。
+  tomlkit統一・functools.lru_cacheによる実行内キャッシュ・関数内ローカルimportの制限・
+  pyright誤検知回避・monkeypatchによる設定差し替え・AI_AGENT/PYFLTR_OUTPUT_FORMAT環境変数隔離・
+  pre-commit hookでのuv runの--frozen指定・テストとモジュールパス参照の同期などの制約を集約する。
+  pyfltr配下のPythonファイル・tests配下のPythonファイル・
+  .pre-commit-config.yaml を編集する際に使用する。
 ---
 
 # pyfltrのテスト・実装制約

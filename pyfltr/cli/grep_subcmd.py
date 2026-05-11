@@ -1,7 +1,7 @@
 """`grep`サブコマンドの登録と実行本体。
 
 `pyfltr/grep_/`配下のコアロジック（パターン構築・ファイル走査）を呼び出す薄いCLI層。
-`pyfltr/.claude/rules/grep-replace.md`の引数体系（共通オプション名）に従い、
+`.claude/skills/grep-replace/SKILL.md`の引数体系（共通オプション名）に従い、
 ripgrep流儀のオプション群を受理する。
 """
 
