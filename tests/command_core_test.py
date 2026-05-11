@@ -886,6 +886,41 @@ def test_expand_all_files_deduplicates_realpath(tmp_path: pathlib.Path) -> None:
         os.chdir(original_cwd)
 
 
+@pytest.mark.parametrize(
+    ("symlink_names", "real_name"),
+    [
+        # シンボリックリンク名がアルファベット順で先（AAA.md → bbb.md）
+        (["AAA.md"], "bbb.md"),
+        # シンボリックリンク名がアルファベット順で後（zzz.md → bbb.md）
+        (["zzz.md"], "bbb.md"),
+        # シンボリックリンク名と実体名が同階層に混在（複数symlink + 実体）
+        (["AAA.md", "zzz.md"], "bbb.md"),
+    ],
+)
+def test_expand_all_files_prefers_non_symlink_target(tmp_path: pathlib.Path, symlink_names: list[str], real_name: str) -> None:
+    """同一実体に複数パスが紐付く場合、非シンボリックリンクのパスを優先して残す。
+
+    `iterdir()`の返却順差（Linux ext4は作成順・Windows NTFSはアルファベット順）に
+    左右されず、prettier等の末端シンボリックリンク明示指定エラーを決定論的に回避する。
+    """
+    # `iterdir()`の作成順走査でsymlinkが先に列挙される入力順を強制するため、
+    # 実体ファイルより先にシンボリックリンクを作成する。
+    for name in symlink_names:
+        (tmp_path / name).symlink_to(real_name)
+    (tmp_path / real_name).write_text("x\n")
+
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        config = pyfltr.config.config.create_default_config()
+        config.values["respect-gitignore"] = False
+        all_files = pyfltr.command.targets.expand_all_files([], config)
+        md_files = pyfltr.command.targets.filter_by_globs(all_files, ["*.md"])
+        assert md_files == [pathlib.Path(real_name)]
+    finally:
+        os.chdir(original_cwd)
+
+
 def test_filter_by_globs() -> None:
     """`filter_by_globs`が正しくフィルタリングする。"""
     files = [

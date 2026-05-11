@@ -132,22 +132,38 @@ def expand_all_files(targets: list[pathlib.Path], config: pyfltr.config.config.C
 def _dedup_and_sort(paths: list[pathlib.Path]) -> list[pathlib.Path]:
     """実体パス単位で重複排除し、パス文字列で安定ソートして返す。
 
-    シンボリックリンクを辿った結果、同一実体ファイルが複数パスから列挙されるケース
-    （例: `.agents/skills` → `.claude/skills` を辿る構成）でツールチェックを
-    多重実行するのを避ける。重複時は最初に出現したパスを残す。
+    同一実体に複数パスが紐付く場合は非シンボリックリンクのパスを優先して残す。
+    prettier等の一部ツールは末端がシンボリックリンクのファイルを明示指定されると
+    `Explicitly specified pattern "X" is a symbolic link`エラーで失敗する。
+    `iterdir()`の返却順はOS依存（Linuxのext4は作成順・WindowsのNTFSはアルファベット順）で
+    入力順が揺れるため、非シンボリックリンク優先の選定基準で揺れを吸収し決定論的にエラーを回避する。
+    シンボリックリンクを辿った結果、同一実体ファイルが複数パスから列挙される構成
+    （例: `.agents/skills` → `.claude/skills`）でツールチェックを多重実行するのを避ける目的も兼ねる。
+    同一実体内で全パスがシンボリックリンクか／全パスが非シンボリックリンクの同点時は、
+    パス文字列で安定化する。
     """
-    seen: set[pathlib.Path] = set()
-    deduped: list[pathlib.Path] = []
+    candidates: dict[pathlib.Path, list[pathlib.Path]] = {}
     for p in paths:
         try:
             real = p.resolve()
         except OSError:
             real = p.absolute()
-        if real not in seen:
-            seen.add(real)
-            deduped.append(p)
+        candidates.setdefault(real, []).append(p)
+    deduped = [min(group, key=_dedup_selection_key) for group in candidates.values()]
     deduped.sort(key=str)
     return deduped
+
+
+def _dedup_selection_key(path: pathlib.Path) -> tuple[bool, str]:
+    """`_dedup_and_sort`の選定キー。非シンボリックリンクを優先し、同点はパス文字列で安定化する。
+
+    `is_symlink()`のOSErrorはsymlink扱いに分類し、非シンボリックリンクを最大限残す。
+    """
+    try:
+        is_link = path.is_symlink()
+    except OSError:
+        is_link = True
+    return (is_link, str(path))
 
 
 def _is_ignored_single_path(path: pathlib.Path) -> bool:
