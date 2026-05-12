@@ -605,6 +605,19 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
         "*.woff",
         "*.woff2",
         "*.zip",
+        # ロックファイル
+        "Gemfile.lock",
+        "Pipfile.lock",
+        "composer.lock",
+        "package-lock.json",
+        "pnpm-lock.yaml",
+        "poetry.lock",
+        "uv.lock",
+        "yarn.lock",
+        # 自動生成テキスト（minify済み・source map）
+        "*.map",
+        "*.min.css",
+        "*.min.js",
     ],
     "extend-exclude": [],
     # .gitignoreに記載されたファイルを除外するか否か（git check-ignoreを使用）

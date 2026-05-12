@@ -624,6 +624,36 @@ def test_excluded_default_patterns() -> None:
     assert pyfltr.command.targets.excluded(pathlib.Path("sample.py"), config) == ("extend-exclude", "sample.py")
 
 
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        # ロックファイル（除外対象）
+        pytest.param("pnpm-lock.yaml", True, id="pnpm-lock.yaml"),
+        pytest.param("yarn.lock", True, id="yarn.lock"),
+        pytest.param("uv.lock", True, id="uv.lock"),
+        # minify済みファイル（除外対象）
+        pytest.param("app.min.js", True, id="app.min.js"),
+        pytest.param("style.min.css", True, id="style.min.css"),
+        # source map（除外対象）
+        pytest.param("app.js.map", True, id="app.js.map"),
+        # cargo-denyトリガーとして保持（除外対象外）
+        pytest.param("Cargo.lock", False, id="Cargo.lock"),
+        # minify/source mapを含まない通常ファイル（除外対象外）
+        pytest.param("config.yaml", False, id="config.yaml"),
+        pytest.param("app.js", False, id="app.js"),
+        pytest.param("map.txt", False, id="map.txt"),
+    ],
+)
+def test_excluded_added_default_patterns(name: str, expected: bool) -> None:
+    """追加されたDEFAULT_CONFIG["exclude"]パターン（ロックファイル・minify済み・source map）の動作を確認する。"""
+    config = pyfltr.config.config.create_default_config()
+    result = pyfltr.command.targets.excluded(pathlib.Path(name), config)
+    if expected:
+        assert result
+    else:
+        assert not result
+
+
 def test_excluded_disabled_by_empty_config() -> None:
     """exclude/extend-excludeが空の場合、全パスが除外されないことを確認する（--no-exclude相当）。"""
     config = pyfltr.config.config.create_default_config()

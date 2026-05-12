@@ -161,7 +161,7 @@ ty = true        # preset 非収録のため個別指定で追加
 - {command}-timeout : per-toolのタイムアウト秒数。未指定時は`command-timeout`のグローバル値にフォールバックする。
   正の秒数を指定すると当該コマンドのみその値で上書きし、`0`を指定すると当該コマンドのtimeoutのみ無効化する。
   内部的には負値を「未指定」のsentinelとして扱うため、誤って負値を設定した場合もグローバル値へフォールバックする
-- exclude : 除外するファイル名/ディレクトリ名パターン（既定値あり）
+- exclude : 除外するファイル名/ディレクトリ名パターン（既定値あり。ロックファイル・minify済みファイル・source mapも含む）
 - extend-exclude : 追加で除外するファイル名/ディレクトリ名パターン（既定は空）
 - respect-gitignore : `.gitignore`に記載されたファイルを除外するか否か（既定: `true`）。
   gitのルートおよびネストした`.gitignore`、グローバルgitignore、`.git/info/exclude`を全て考慮する。`git`コマンドが必要
