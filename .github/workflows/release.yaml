@@ -12,11 +12,6 @@ on:
           - MINOR
           - MAJOR
         default: PATCH
-      skip_ci_wait:
-        description: CI完了待ちをスキップする（CI失敗時の緊急リリース・base OS更新等の循環解消用途。通常はfalse）
-        required: false
-        type: boolean
-        default: false
 
 permissions:
   contents: write
@@ -29,6 +24,8 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.next.outputs.version }}
     steps:
       # 別ブランチからの誤リリースを防止
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -38,7 +35,6 @@ jobs:
           fetch-tags: true
 
       - name: Wait for CI to pass
-        if: inputs.skip_ci_wait != true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -98,6 +94,7 @@ jobs:
           if [ -n "${existing_tag}" ]; then
             echo "Found existing tag ${existing_tag} on HEAD, reusing"
             echo "next=${existing_tag}" >> "$GITHUB_OUTPUT"
+            echo "version=${existing_tag#v}" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -111,6 +108,7 @@ jobs:
             *) echo "Unknown bump: '${{ github.event.inputs.bump }}'" >&2; exit 1;;
           esac
           echo "next=v${major}.${minor}.${patch}" >> "$GITHUB_OUTPUT"
+          echo "version=${major}.${minor}.${patch}" >> "$GITHUB_OUTPUT"
 
       # PyPI publish ・ タグ作成前に Dockerfile が構造的に build できることを検証する。
       # PYFLTR_VERSION 未指定で実行するため PyPI 上の最新公開版 (= 今回リリース対象の
@@ -181,98 +179,15 @@ jobs:
       - name: Prune uv cache for CI
         run: uv cache prune --ci
 
-      # GitHub Container Registry へ pyfltr 同梱 Docker イメージを publish する。
-      # ``vX.Y.Z`` と ``latest`` の 2 タグを発行する。
-      - name: Log in to GHCR
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Compute Docker tags
-        id: docker
-        run: |
-          tag="${{ steps.next.outputs.next }}"
-          # PYFLTR_VERSION は PyPI 表記 (``v`` プレフィックス無し) に合わせる。
-          version="${tag#v}"
-          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
-
-      # `uv publish --check-url` 直後でも PyPI 配信エッジ (Fastly) のキャッシュ反映には
-      # ラグがあり、Docker build 内の `uv tool install pyfltr==X.Y.Z` が
-      # 「No solution found」で失敗する事象が継続発生したため、Docker build 直前に
-      # 同等条件 (clean cache) で解決可能になるまで polling する。
-      # extras (`[python]`) 込みで解決確認することで、Docker build と同じ要求形を検証する。
-      # 利用者向けコマンド `uv run --with="pyfltr[python]" pyfltr` の解決可能性も間接的に確認できる。
-      # さらに ``required_consecutive`` 回連続成功するまで待つことで、
-      # 単発でエッジを掴んだ瞬間だけ通る揺らぎを排除する。
-      - name: Wait for PyPI propagation
-        run: |
-          set -euo pipefail
-          version="${{ steps.docker.outputs.version }}"
-          required_consecutive=3
-          success_count=0
-          for i in $(seq 1 60); do
-            if uv tool install --reinstall --no-cache "pyfltr[python]==${version}" >/dev/null 2>&1; then
-              success_count=$((success_count + 1))
-              echo "Attempt ${i}/60: pyfltr[python]==${version} resolvable (${success_count}/${required_consecutive})"
-              uv tool uninstall pyfltr >/dev/null 2>&1 || true
-              if [ "${success_count}" -ge "${required_consecutive}" ]; then
-                echo "pyfltr[python]==${version} is stably installable from PyPI"
-                exit 0
-              fi
-            else
-              if [ "${success_count}" -gt 0 ]; then
-                echo "Attempt ${i}/60: resolution flapped, resetting consecutive counter"
-              else
-                echo "Attempt ${i}/60: pyfltr[python]==${version} not yet resolvable"
-              fi
-              success_count=0
-            fi
-            sleep 10
-          done
-          echo "Timeout waiting for PyPI propagation of pyfltr[python]==${version}" >&2
-          exit 1
-
-      # Wait for PyPI propagation を通過しても Docker builder ホストが別エッジを掴んで
-      # 「No solution found」になる事象が稀に残るため、初回失敗時のみ短い間を空けて再試行する。
-      # 1 回目失敗時は ``continue-on-error`` でエラーを無視し、再試行 step が結果を引き取る。
-      - name: Build and push Docker image
-        id: docker_build
-        continue-on-error: true
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
-        with:
-          context: docker
-          file: docker/Dockerfile
-          platforms: linux/amd64
-          push: true
-          build-args: |
-            PYFLTR_VERSION=${{ steps.docker.outputs.version }}
-          tags: |
-            ghcr.io/ak110/pyfltr:${{ steps.docker.outputs.tag }}
-            ghcr.io/ak110/pyfltr:latest
-          secrets: |
-            GITHUB_TOKEN=${{ github.token }}
-
-      - name: Wait before Docker build retry
-        if: steps.docker_build.outcome == 'failure'
-        run: |
-          echo "Initial Docker build failed, waiting 30s before retry..."
-          sleep 30
-
-      - name: Build and push Docker image (retry)
-        if: steps.docker_build.outcome == 'failure'
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
-        with:
-          context: docker
-          file: docker/Dockerfile
-          platforms: linux/amd64
-          push: true
-          build-args: |
-            PYFLTR_VERSION=${{ steps.docker.outputs.version }}
-          tags: |
-            ghcr.io/ak110/pyfltr:${{ steps.docker.outputs.tag }}
-            ghcr.io/ak110/pyfltr:latest
-          secrets: |
-            GITHUB_TOKEN=${{ github.token }}
+  # GitHub Container Registry へ pyfltr 同梱 Docker イメージを publish する。
+  # ``vX.Y.Z`` と ``latest`` の 2 タグを発行する。
+  # Docker build / push と PyPI 配信エッジ伝搬待ち・初回 build 失敗時の再試行ロジックは
+  # ``docker-build.yaml`` 側に集約する。CI 修復用の単発再ビルドにも同 workflow を利用する。
+  docker-publish:
+    needs: release
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/docker-build.yaml
+    with:
+      version: ${{ needs.release.outputs.version }}
