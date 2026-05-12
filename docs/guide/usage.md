@@ -133,16 +133,26 @@ pyfltr config delete <key> [--global]
 #### config list
 
 ```shell
-pyfltr config list [--global] [--output-format text|json|jsonl]
+pyfltr config list [--global] [--all] [--output-format text|json|jsonl]
 ```
 
-設定ファイルに書かれているキーと値の一覧を表示する（デフォルト値は含まない）。
+設定ファイルに書かれているキーと値の一覧を表示する。
+`--all`未指定時は明示された値のみを挿入順で表示する。
+`--all`指定時はデフォルト値のままのキーも含めて全件をキー昇順で表示し、既定値か明示値かを区別する。
+
+`--all`未指定時の出力形式は次の通り。
 
 - `text`（既定）: `key = value`形式の行出力
 - `json`: `{"values": {...}}`の単発出力
 - `jsonl`: 1件1行の`{"key": ..., "value": ...}`ストリーム
 
-設定項目の一覧とデフォルト値を確認したい場合は、まず`pyfltr config list`で現在の設定を確認し、
+`--all`指定時は各出力形式に既定値か明示値かの区別を追加する。
+
+- `text`: 既定値の行末に`(default)`を付加する（明示値には何も付かない）
+- `json`: `{"values": {key: {"value": ..., "default": bool}, ...}}`の二段構造
+- `jsonl`: `{"key": ..., "value": ..., "default": bool}`の1行1レコード
+
+設定項目の一覧とデフォルト値を確認したい場合は、`pyfltr config list --all`で全件を確認できる。
 設定項目名の詳細は[設定項目一覧](configuration.md#config-keys)を参照。
 
 ### サブコマンド: list-runs {#list-runs}

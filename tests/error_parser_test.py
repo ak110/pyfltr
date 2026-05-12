@@ -270,6 +270,28 @@ def test_format_error() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "severity,expected_message",
+    [
+        ("error", "src/foo.py:10: [designmd] critical issue"),
+        ("warning", "src/foo.py:10: [designmd] critical issue"),
+        ("info", "src/foo.py:10: [designmd] [INFO] critical issue"),
+        (None, "src/foo.py:10: [designmd] critical issue"),
+    ],
+)
+def test_format_error_severity_info_prefix(severity: str | None, expected_message: str) -> None:
+    """severity=="info"のときmessage先頭に[INFO] を付加し、他のseverityでは表記を変更しない。"""
+    error = pyfltr.command.error_parser.ErrorLocation(
+        file="src/foo.py",
+        line=10,
+        col=None,
+        command="designmd",
+        message="critical issue",
+        severity=severity,
+    )
+    assert pyfltr.command.error_parser.format_error(error) == expected_message
+
+
 def test_parse_ruff_check_json() -> None:
     """ruff check --output-format=json出力のパース。"""
     output = json.dumps(

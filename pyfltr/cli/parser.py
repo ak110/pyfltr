@@ -357,6 +357,12 @@ def build_parser(custom_commands: collections.abc.Iterable[str] = ()) -> "_HelpO
         help="グローバル設定ファイルを対象にする。",
     )
     config_list.add_argument(
+        "--all",
+        dest="all",
+        action="store_true",
+        help="デフォルト値のままのキーも含めて全件表示する (キー昇順)。",
+    )
+    config_list.add_argument(
         "--output-format",
         choices=["text", "json", "jsonl"],
         default=None,

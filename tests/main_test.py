@@ -799,6 +799,64 @@ class TestConfigSubcommand:
         assert len(lines) == 1
         assert json.loads(lines[0]) == {"key": "archive-max-age-days", "value": 5}
 
+    def test_config_list_all_text_includes_defaults(self, monkeypatch, tmp_path, capsys) -> None:
+        """`--all` text出力で既定値行に`(default)`が付き、明示値行には付かない。"""
+        (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\narchive-max-age-days = 5\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        rc = pyfltr.cli.main.run(["config", "list", "--all"])
+        assert rc == 0
+        out = capsys.readouterr().out
+        lines = [line for line in out.splitlines() if line.strip()]
+        # 明示値: (default)なし
+        assert "archive-max-age-days = 5" in lines
+        # 既定値の例: (default)付きで出力される（DEFAULT_CONFIGにあるキー）
+        default_lines = [line for line in lines if line.endswith(" (default)")]
+        assert len(default_lines) > 0
+        # キー昇順
+        keys = [line.split(" = ", 1)[0] for line in lines]
+        assert keys == sorted(keys)
+
+    def test_config_list_all_json_marks_default_per_key(self, monkeypatch, tmp_path, capsys) -> None:
+        """`--all` json出力で各キーに`value`と`default`の2フィールドが付与される。"""
+        (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\narchive-max-age-days = 5\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        rc = pyfltr.cli.main.run(["config", "list", "--all", "--output-format", "json"])
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out.strip())
+        assert "values" in data
+        values = data["values"]
+        # 明示値
+        assert values["archive-max-age-days"] == {"value": 5, "default": False}
+        # 既定値の例（DEFAULT_CONFIGに存在し未明示のキー）
+        defaults_marked = [v for v in values.values() if v["default"]]
+        assert len(defaults_marked) > 0
+
+    def test_config_list_all_jsonl_appends_default_field(self, monkeypatch, tmp_path, capsys) -> None:
+        """`--all` jsonl出力で各行に`default`フィールドが追加される。"""
+        (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\narchive-max-age-days = 5\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        rc = pyfltr.cli.main.run(["config", "list", "--all", "--output-format", "jsonl"])
+        assert rc == 0
+        lines = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
+        # 明示値行
+        explicit = [rec for rec in lines if rec["key"] == "archive-max-age-days"]
+        assert explicit == [{"key": "archive-max-age-days", "value": 5, "default": False}]
+        # 既定値行が含まれる
+        assert any(rec["default"] for rec in lines)
+        # キー昇順
+        keys = [rec["key"] for rec in lines]
+        assert keys == sorted(keys)
+
+    def test_config_list_all_empty_pyproject_marks_all_default(self, monkeypatch, tmp_path, capsys) -> None:
+        """全キー既定（明示値なし）の場合、全行に`(default)`が付く。"""
+        (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        rc = pyfltr.cli.main.run(["config", "list", "--all"])
+        assert rc == 0
+        lines = [line for line in capsys.readouterr().out.splitlines() if line.strip()]
+        assert lines
+        assert all(line.endswith(" (default)") for line in lines)
+
     def test_config_set_unknown_key_errors(self, monkeypatch, tmp_path, capsys) -> None:
         """未知キーへのsetはexit 1。"""
         (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\n", encoding="utf-8")

@@ -123,10 +123,16 @@ def get_custom_parser_commands() -> set[str]:
 
 
 def format_error(error: ErrorLocation) -> str:
-    """エラー箇所を`file:line[:col]: [tool[:rule]] message`のテキスト形式にフォーマットする。"""
+    """エラー箇所を`file:line[:col]: [tool[:rule]] message`のテキスト形式にフォーマットする。
+
+    `severity == "info"`のときはmessage先頭に`[INFO] `を付加し、
+    エラーや警告と視覚的に区別する。warning severityは既存のテキスト出力との
+    互換性を維持するため表記を変更しない。
+    """
     col_str = f":{error.col}" if error.col else ""
     tag = f"{error.command}:{error.rule}" if error.rule else error.command
-    return f"{error.file}:{error.line}{col_str}: [{tag}] {error.message}"
+    message = f"[INFO] {error.message}" if error.severity == "info" else error.message
+    return f"{error.file}:{error.line}{col_str}: [{tag}] {message}"
 
 
 def format_error_github(error: ErrorLocation) -> str:

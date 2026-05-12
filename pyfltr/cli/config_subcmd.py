@@ -142,7 +142,12 @@ def _config_delete(args: argparse.Namespace) -> int:
 
 
 def _config_list(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
-    """`pyfltr config list [--global] [--output-format ...]`の実装。"""
+    """`pyfltr config list [--global] [--all] [--output-format ...]`の実装。
+
+    `--all`指定時はDEFAULT_CONFIGを起点にpyproject.toml値をマージし、
+    既定値か明示値かを区別してキー昇順で出力する。
+    未指定時は従来通りpyproject.tomlに明示された値のみを挿入順で出力する。
+    """
     path = _config_target_path(args)
     try:
         values = pyfltr.config.config.read_config_values(path)
@@ -155,6 +160,13 @@ def _config_list(parser: argparse.ArgumentParser, args: argparse.Namespace) -> i
         valid_values=_VALID_LIST_OUTPUT_FORMATS,
         ai_agent_default="jsonl",
     ).format
+    if args.all:
+        return _print_all_config_values(fmt, values)
+    return _print_explicit_config_values(fmt, values)
+
+
+def _print_explicit_config_values(fmt: str, values: dict[str, typing.Any]) -> int:
+    """pyproject.tomlに明示された値のみを挿入順で出力する。"""
     if fmt == "text":
         for key, value in values.items():
             print(f"{key} = {_format_config_value_text(value)}")
@@ -165,6 +177,37 @@ def _config_list(parser: argparse.ArgumentParser, args: argparse.Namespace) -> i
     if fmt == "jsonl":
         for key, value in values.items():
             print(json.dumps({"key": key, "value": value}, ensure_ascii=False))
+        return 0
+    # argparseのchoicesで除外される想定だが防御的に1を返す。
+    print(f"未知の出力形式: {fmt}", file=sys.stderr)
+    return 1
+
+
+def _print_all_config_values(fmt: str, values: dict[str, typing.Any]) -> int:
+    """DEFAULT_CONFIG全件をキー昇順で出力する。既定値か明示値かを区別する。"""
+    defaults = pyfltr.config.config.DEFAULT_CONFIG
+    keys = sorted(defaults.keys())
+    if fmt == "text":
+        for key in keys:
+            value = values[key] if key in values else defaults[key]
+            suffix = "" if key in values else " (default)"
+            print(f"{key} = {_format_config_value_text(value)}{suffix}")
+        return 0
+    if fmt == "json":
+        payload = {
+            key: {
+                "value": values[key] if key in values else defaults[key],
+                "default": key not in values,
+            }
+            for key in keys
+        }
+        print(json.dumps({"values": payload}, ensure_ascii=False))
+        return 0
+    if fmt == "jsonl":
+        for key in keys:
+            is_default = key not in values
+            value = defaults[key] if is_default else values[key]
+            print(json.dumps({"key": key, "value": value, "default": is_default}, ensure_ascii=False))
         return 0
     # argparseのchoicesで除外される想定だが防御的に1を返す。
     print(f"未知の出力形式: {fmt}", file=sys.stderr)

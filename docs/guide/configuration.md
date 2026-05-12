@@ -129,6 +129,20 @@ ty = true        # preset 非収録のため個別指定で追加
 ## 設定項目一覧 {#config-keys}
 
 設定項目と既定値は`pyfltr config list`で確認できる。
+未指定時は`pyproject.toml`に明示された値のみを挿入順で表示する。
+全キー一覧（既定値のままのキーを含む）を確認するときは`--all`を付ける。
+
+```sh
+pyfltr config list --all
+```
+
+`--all`指定時は`DEFAULT_CONFIG`を起点にpyproject.toml値をマージし、キー昇順で出力する。
+出力形式ごとに既定値か明示値かを区別する。
+
+- text: 既定値の行末に`(default)`を付加する（明示値には何も付かない）
+- json: `{"values": {key: {"value": ..., "default": bool}, ...}}`の二段構造で返す
+- jsonl: 各行に`default: bool`フィールドを追加する
+
 `{command}`系の項目およびツール固有の項目（`prettier-check-args`など）の詳細はツール別設定ページを参照。
 
 - preset : プリセット設定（前述）
