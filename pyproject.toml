@@ -177,6 +177,7 @@ show_error_codes = true
 unused-ignore-comment = "ignore"
 
 [tool.typos.default.extend-words]
+# テストでtypoサジェスト動作を検証するため意図的に書く文字列はここへ追加する。
 # テストデータ内の意図的なtypo
 teh = "teh"
 hte = "hte"

@@ -1317,7 +1317,11 @@ def filter_fix_commands(commands: list[str], config: Config) -> list[str]:
 
 
 def resolve_aliases(commands: list[str], config: Config) -> list[str]:
-    """エイリアスを展開する。"""
+    """エイリアスを展開する。
+
+    展開後のコマンド列は`config.command_names`の登録順でソートする。
+    未知コマンドは末尾扱いとし、`command_names.index`の`ValueError`を発生させない。
+    """
     # 最大10回まで再帰的に展開
     result: list[str] = []
     for _ in range(10):
