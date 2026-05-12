@@ -13,6 +13,10 @@
 #
 # 非 root ユーザー ``pyfltr`` で実行する。CLI ツール用途のため ``HEALTHCHECK`` は設定しない。
 #
+# 動作検証時の注意: ``ENTRYPOINT`` は ``pyfltr`` のため、``docker run`` で
+# イメージ内の補助コマンド (``mise exec`` 等) を直接呼ぶ場合は
+# ``docker run --entrypoint=bash <image> -c "..."`` で entrypoint を上書きする。
+#
 # マルチステージ構成: 頻繁に更新される pyfltr 導入レイヤーを ``final`` ステージ末尾に
 # 切り出し、``base`` ステージで構築する基盤一式 (APT / uv / pnpm / mise / 各種ツール群 /
 # 非 root ユーザー) のキャッシュを最大限再利用する。
@@ -41,7 +45,10 @@
 # Stage 1: 基盤構築。
 # Python 3.14 (slim) の digest を固定する。
 # Renovate / Dependabot 等が更新しやすいよう ``image:tag@sha256`` の素直な形にする。
-FROM python:3.14-slim-bookworm@sha256:2e256d0381371566ed96980584957ed31297f437569b79b0e5f7e17f2720e53a AS base
+# base OS は CI 同梱バイナリ (mise 経由の lychee 等) の glibc 要件を満たす
+# Debian stable を採用する。glibc 要件が満たされず CI 同梱バイナリが起動しない事象が
+# 発生した場合は、当該バイナリのバージョン固定よりも先に base OS 更新を検討する。
+FROM python:3.14-slim-trixie@sha256:33ef7446e8c14b21cb247e23afbcdc90e98853b70812ca46b2265e769a7dfb8b AS base
 
 # パイプを使う RUN で `set -o pipefail` 相当の挙動を得るため、SHELL を明示する
 # (hadolint DL4006 対応)。

@@ -12,6 +12,11 @@ on:
           - MINOR
           - MAJOR
         default: PATCH
+      skip_ci_wait:
+        description: CI完了待ちをスキップする（CI失敗時の緊急リリース・base OS更新等の循環解消用途。通常はfalse）
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -33,6 +38,7 @@ jobs:
           fetch-tags: true
 
       - name: Wait for CI to pass
+        if: inputs.skip_ci_wait != true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
