@@ -711,12 +711,14 @@ class TestConfigSubcommand:
         assert "archive-max-age-days = 10" in text
 
     def test_config_set_pyproject_missing_errors(self, monkeypatch, tmp_path, capsys) -> None:
-        """pyproject不在ディレクトリでのsetはエラー終了。"""
+        """pyproject不在ディレクトリでのsetはエラー終了。`--global`併用案内を含む。"""
         # tmp_pathにpyproject.tomlを生成しない
         monkeypatch.chdir(tmp_path)
         rc = pyfltr.cli.main.run(["config", "set", "archive-max-age-days", "5"])
         assert rc == 1
-        assert "pyproject.toml" in capsys.readouterr().err
+        err = capsys.readouterr().err
+        assert "pyproject.toml" in err
+        assert "--global" in err
 
     def test_config_set_global_creates_file(self, monkeypatch, tmp_path) -> None:
         """`--global`指定時にglobal config.tomlが自動作成される。"""
@@ -878,6 +880,38 @@ class TestConfigSubcommand:
         monkeypatch.chdir(tmp_path)
         with pytest.raises(SystemExit):
             pyfltr.cli.main.run(["config"])
+
+    @pytest.mark.parametrize(
+        "action,key,expect_suggestion",
+        [
+            # typoしきい値内 → サジェスト候補が並ぶ
+            ("get", "python-runer", True),
+            ("set", "python-runer", True),
+            ("delete", "python-runer", True),
+            # しきい値外 → 候補無し
+            ("get", "totally-unrelated", False),
+            ("set", "totally-unrelated", False),
+            ("delete", "totally-unrelated", False),
+        ],
+    )
+    def test_config_unknown_key_suggestion(
+        self, monkeypatch, tmp_path, capsys, action: str, key: str, expect_suggestion: bool
+    ) -> None:
+        """`config get/set/delete`の未知キー文面にサジェスト・一覧確認手段が含まれる。"""
+        (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        argv = ["config", action, key]
+        if action == "set":
+            argv.append("foo")
+        rc = pyfltr.cli.main.run(argv)
+        assert rc == 1
+        err = capsys.readouterr().err
+        assert f"`{key}`" in err
+        assert "pyfltr config list --all" in err
+        if expect_suggestion:
+            assert "もしかして:" in err
+        else:
+            assert "もしかして:" not in err
 
 
 def _get_global_config_env() -> str:

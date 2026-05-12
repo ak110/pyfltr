@@ -179,3 +179,83 @@ pyfltr list-runs --output-format=jsonl
 
 アーカイブを無効化する場合は`--no-archive`オプションまたは
 `pyproject.toml`の`archive = false`設定を使う。
+
+## 設定キーのtypoと未知キー
+
+`pyproject.toml`の`[tool.pyfltr]`に未知の設定キーを書いた場合、
+pyfltrは原因と対処を1つのエラーメッセージにまとめて返す。
+
+```text
+設定キー `lychee` は認識できません。もしかして: lychee-args, lychee-runner, lychee-fast。
+有効なキー一覧は `pyfltr config list --all` で確認できます
+```
+
+対処方法。
+
+- 表示されたサジェストの中に意図したキーがあればそれへ書き換える
+- サジェストが無い場合は`pyfltr config list --all`で全キー一覧を確認する。
+  当該一覧上で`(default)`の注記が付くキーは既定値で動作中であり、上書きしたい場合のみpyproject.tomlへ追記する
+- global設定（`~/.config/pyfltr/config.toml`）の未知キーはValueErrorではなく警告で無視される。
+  古いpyfltrで新版設定を読み込んでも停止させないための前方互換の挙動である
+
+v3.0.0で削除されたツール（pyupgrade・autoflake・isort・black・pflake8）の
+設定キーを残している場合は移行案内付きの`ValueError`で停止する。
+ruffへ統合済みのため当該設定をすべて削除する。
+
+## ツール解決失敗時の対処
+
+`pyfltr run`実行時に`resolution_failed`扱いで停止する場合、ツールカテゴリ別に対処を選ぶ。
+
+### Python系ツール（mypy・pylint・pyright・ty・pytest・ruff-format・ruff-check・uv-sort・semgrep・sqlfluff）
+
+メッセージ例。
+
+```text
+ツールが見つかりません: Python系ツール `mypy` が PATH 上にありません。
+`mypy-runner = "uv"`（cwdに uv.lock が必要、`uv add --dev "pyfltr[python]"` で依存追加）
+または `mypy-runner = "uvx"` への切り替え、もしくは `mypy-path` で実行ファイルを明示してください
+```
+
+対処方法。
+
+- `{command}-runner = "uv"`へ切り替える。
+  プロジェクト直下に`uv.lock`が必要で、`uv add --dev "pyfltr[python]"`で依存追加する
+- `{command}-runner = "uvx"`へ切り替える。
+  PyPI最新版をその都度取得する（`uv.lock`は参照せず、再現性は犠牲になる）
+- `{command}-path = "/path/to/bin"`で実行ファイルを直接指定する
+
+### JS系ツール（textlint・markdownlint・eslint・biome・oxlint・prettier・tsc・vitest・designmd）
+
+メッセージ例。
+
+```text
+js-runner=direct で `textlint` がローカル node_modules に見つかりません
+（探索先: node_modules/.bin/textlint）。`pnpm install` などで対象パッケージを導入するか、
+`js-runner = "pnpx"` でグローバルキャッシュ経由に切り替えてください
+```
+
+対処方法。
+
+- `pnpm install`等でローカル`node_modules`へ対象パッケージを導入する
+- `js-runner = "pnpx"`へ切り替えてpnpmグローバルキャッシュ経由で起動する。
+  この経路は`node_modules`を必要としない
+- `{command}-path = "..."`で実行ファイルを直接指定する
+
+### ネイティブ系ツール（shellcheck・shfmt・cargo-*・dotnet-*・lychee・taplo・hadolint等）
+
+メッセージ例。
+
+```text
+ツールが見つかりません: `cargo-clippy` が解決できません。
+`cargo-clippy-runner = "direct"` への切り替えか、
+`cargo-clippy-path` で実行ファイルを明示してください
+```
+
+対処方法。
+
+- `mise install`で対応ツールを導入する（既定の`bin-runner = "mise"`経路）
+- `{command}-runner = "direct"`へ切り替えてPATH上のバイナリを直接実行する
+- `{command}-path = "/path/to/bin"`で実行ファイルを直接指定する
+
+mise経由で発生する未信頼エラー・registry解決失敗等の追加対処は
+[mise関連のトラブル](#mise関連のトラブル)節を参照。

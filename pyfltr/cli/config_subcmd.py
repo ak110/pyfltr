@@ -29,9 +29,8 @@ def execute(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
         return _config_delete(args)
     if action == "list":
         return _config_list(parser, args)
-    # argparseのrequired=Trueにより到達しない想定だが、防御的に1を返す。
-    print(f"未知のconfig action: {action}", file=sys.stderr)
-    return 1
+    # argparseのrequired=Trueにより到達しない想定。到達した場合は内部不整合のためfail-fast。
+    raise AssertionError(f"未知のconfig action: {action!r}")
 
 
 def _config_target_path(args: argparse.Namespace) -> pathlib.Path:
@@ -69,7 +68,10 @@ def _config_get(args: argparse.Namespace) -> int:
     if key in pyfltr.config.config.DEFAULT_CONFIG:
         print(_format_config_value_text(pyfltr.config.config.DEFAULT_CONFIG[key]))
         return 0
-    print(f"設定キーが不正です: {key}", file=sys.stderr)
+    print(
+        pyfltr.config.config.format_unknown_key_message(key, pyfltr.config.config.DEFAULT_CONFIG.keys()),
+        file=sys.stderr,
+    )
     return 1
 
 
@@ -78,11 +80,17 @@ def _config_set(args: argparse.Namespace) -> int:
     path = _config_target_path(args)
     use_global = bool(args.global_)
     if not use_global and not path.exists():
-        print(f"pyproject.tomlが見つかりません: {path}", file=sys.stderr)
+        print(
+            f"pyproject.tomlが見つかりません: {path}。global設定（XDG準拠）に書く場合は `--global` を併用してください",
+            file=sys.stderr,
+        )
         return 1
     key = args.key
     if key not in pyfltr.config.config.DEFAULT_CONFIG:
-        print(f"設定キーが不正です: {key}", file=sys.stderr)
+        print(
+            pyfltr.config.config.format_unknown_key_message(key, pyfltr.config.config.DEFAULT_CONFIG.keys()),
+            file=sys.stderr,
+        )
         return 1
     try:
         value = pyfltr.config.config.parse_config_value(key, args.value)
@@ -124,7 +132,10 @@ def _config_delete(args: argparse.Namespace) -> int:
     path = _config_target_path(args)
     key = args.key
     if key not in pyfltr.config.config.DEFAULT_CONFIG:
-        print(f"設定キーが不正です: {key}", file=sys.stderr)
+        print(
+            pyfltr.config.config.format_unknown_key_message(key, pyfltr.config.config.DEFAULT_CONFIG.keys()),
+            file=sys.stderr,
+        )
         return 1
     if not path.exists():
         print(f"対象ファイルが存在しないため削除対象がありません: {path}")
@@ -178,9 +189,8 @@ def _print_explicit_config_values(fmt: str, values: dict[str, typing.Any]) -> in
         for key, value in values.items():
             print(json.dumps({"key": key, "value": value}, ensure_ascii=False))
         return 0
-    # argparseのchoicesで除外される想定だが防御的に1を返す。
-    print(f"未知の出力形式: {fmt}", file=sys.stderr)
-    return 1
+    # argparseのchoicesで除外される想定。到達した場合は内部不整合のためfail-fast。
+    raise AssertionError(f"未知の出力形式: {fmt!r}")
 
 
 def _print_all_config_values(fmt: str, values: dict[str, typing.Any]) -> int:
@@ -209,6 +219,5 @@ def _print_all_config_values(fmt: str, values: dict[str, typing.Any]) -> int:
             value = defaults[key] if is_default else values[key]
             print(json.dumps({"key": key, "value": value, "default": is_default}, ensure_ascii=False))
         return 0
-    # argparseのchoicesで除外される想定だが防御的に1を返す。
-    print(f"未知の出力形式: {fmt}", file=sys.stderr)
-    return 1
+    # argparseのchoicesで除外される想定。到達した場合は内部不整合のためfail-fast。
+    raise AssertionError(f"未知の出力形式: {fmt!r}")

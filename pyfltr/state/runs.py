@@ -125,10 +125,10 @@ def execute_show_run(parser: argparse.ArgumentParser, args: argparse.Namespace) 
         tools = [t.strip() for t in commands_arg.split(",") if t.strip()]
 
     if output_mode and not tools:
-        sys.stderr.write("エラー: --output は --commands と併用する必要がある。\n")
+        sys.stderr.write("エラー: --output は --commands と併用してください。\n")
         return 1
     if output_mode and len(tools) > 1:
-        sys.stderr.write("エラー: --output は --commands に単一ツール指定のみ許可する。\n")
+        sys.stderr.write("エラー: --output は --commands に単一ツールのみ指定してください。\n")
         return 1
 
     with _stdout_owned(output_fmt):
@@ -142,7 +142,7 @@ def execute_show_run(parser: argparse.ArgumentParser, args: argparse.Namespace) 
         try:
             meta = store.read_meta(run_id)
         except FileNotFoundError:
-            sys.stderr.write(f"エラー: run_id が見つからない: {run_id}\n")
+            sys.stderr.write(f"エラー: run_id が見つかりません: {run_id}。`pyfltr list-runs` で有効な run_id を確認できます\n")
             return 1
 
         if output_mode and tools:
@@ -171,7 +171,7 @@ def resolve_run_id(store: pyfltr.state.archive.ArchiveStore, raw: str) -> str:
     run_ids = [s.run_id for s in store.list_runs()]
     if raw == "latest":
         if not run_ids:
-            raise RunIdError("アーカイブに run が存在しない。")
+            raise RunIdError("アーカイブに run が存在しません。`pyfltr run` で実行アーカイブを生成してください")
         return run_ids[0]
     if raw in run_ids:
         return raw
@@ -181,8 +181,11 @@ def resolve_run_id(store: pyfltr.state.archive.ArchiveStore, raw: str) -> str:
     if len(matched) > 1:
         sample = ", ".join(matched[:3])
         suffix = "..." if len(matched) > 3 else ""
-        raise RunIdError(f"run_id のプレフィックスが曖昧: {raw!r} に {len(matched)} 件該当 ({sample}{suffix})")
-    raise RunIdError(f"run_id が見つからない: {raw!r}")
+        raise RunIdError(
+            f"run_id のプレフィックスが曖昧です: {raw!r} に {len(matched)} 件該当 ({sample}{suffix})。"
+            "プレフィックスを長くして特定してください"
+        )
+    raise RunIdError(f"run_id が見つかりません: {raw!r}。`pyfltr list-runs` で有効な run_id を確認できます")
 
 
 def _summary_to_dict(summary: pyfltr.state.archive.RunSummary) -> dict[str, typing.Any]:
@@ -305,7 +308,10 @@ def _show_tools_detail(
             tool_meta = store.read_tool_meta(run_id, tool)
             diagnostics = store.read_tool_diagnostics(run_id, tool)
         except FileNotFoundError:
-            sys.stderr.write(f"エラー: run {run_id} にツール {tool!r} の結果が保存されていない。\n")
+            sys.stderr.write(
+                f"エラー: run {run_id} にツール {tool!r} の結果が保存されていません。"
+                f"`pyfltr show-run {run_id}` で当該runに保存されたツール一覧を確認できます\n"
+            )
             return 1
         entries.append((tool, tool_meta, diagnostics))
 
@@ -401,7 +407,10 @@ def _show_tool_output(
     try:
         output = store.read_tool_output(run_id, tool)
     except FileNotFoundError:
-        sys.stderr.write(f"エラー: run {run_id} にツール {tool!r} の結果が保存されていない。\n")
+        sys.stderr.write(
+            f"エラー: run {run_id} にツール {tool!r} の結果が保存されていません。"
+            f"`pyfltr show-run {run_id}` で当該runに保存されたツール一覧を確認できます\n"
+        )
         return 1
     if output_format == "text":
         sys.stdout.write(output)

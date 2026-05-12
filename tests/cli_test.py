@@ -7,6 +7,7 @@ import logging
 
 import pytest
 
+import pyfltr.cli.main
 import pyfltr.cli.output_format
 import pyfltr.cli.pipeline
 import pyfltr.cli.render
@@ -265,3 +266,38 @@ def test_run_commands_with_cli_without_fail_fast_continues(mocker):
     assert "mypy" in commands
     assert "ruff-format" in commands
     assert not any(r.status == "skipped" for r in results)
+
+
+# --- `--commands` 未知値経路のparser.error整形 ---
+
+
+@pytest.mark.parametrize(
+    "command,expect_suggestion",
+    [
+        # typoしきい値内 → サジェストあり
+        ("pylit", True),
+        # カスタムコマンド名typo（ruff-checkの近接）
+        ("ruff-cheack", True),
+        # しきい値外 → サジェストなし
+        ("totally-unrelated", False),
+    ],
+)
+def test_run_commands_unknown_emits_suggestion(
+    monkeypatch,
+    tmp_path,
+    capsys,
+    command: str,
+    expect_suggestion: bool,
+) -> None:
+    """`pyfltr run --commands=<typo>`経路でparser.errorに近接候補が含まれる。"""
+    (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\n", encoding="utf-8")
+    (tmp_path / "x.py").write_text("x = 1\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(SystemExit):
+        pyfltr.cli.main.run(["run", f"--commands={command}", "x.py"])
+    err = capsys.readouterr().err
+    assert "コマンドが見つかりません" in err
+    if expect_suggestion:
+        assert "もしかして:" in err
+    else:
+        assert "もしかして:" not in err

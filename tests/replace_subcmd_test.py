@@ -212,6 +212,34 @@ def test_replace_list_history_returns_saved_id(
     assert saved_id in listed_ids
 
 
+def test_replace_show_history_missing_id_emits_guidance(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """存在しないreplace_idへ`--show-history`を指定すると`--list-history`誘導を含むstderrを返す。"""
+    monkeypatch.chdir(tmp_path)
+    rc = pyfltr.cli.main.run(["replace", "--show-history", "NONEXISTENT", "--output-format=jsonl"])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "NONEXISTENT" in err
+    assert "pyfltr replace --list-history" in err
+
+
+def test_replace_undo_missing_id_emits_guidance(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """存在しないreplace_idへ`--undo`を指定すると`--list-history`誘導を含むstderrを返す。"""
+    monkeypatch.chdir(tmp_path)
+    rc = pyfltr.cli.main.run(["replace", "--undo", "NONEXISTENT", "--output-format=jsonl"])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "NONEXISTENT" in err
+    assert "pyfltr replace --list-history" in err
+
+
 def test_replace_show_history_returns_meta(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

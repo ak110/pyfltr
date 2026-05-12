@@ -180,6 +180,8 @@ unused-ignore-comment = "ignore"
 # テストデータ内の意図的なtypo
 teh = "teh"
 hte = "hte"
+# `tests/config_test.py`内でtypoサジェスト動作を検証するため意図的に書かれているtypo文字列。
+latset = "latset"
 
 [tool.pytest.ini_options]
 # https://docs.pytest.org/en/latest/reference/reference.html#ini-options-ref

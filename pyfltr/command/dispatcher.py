@@ -31,6 +31,63 @@ from pyfltr.command.core_ import CacheContext, CommandResult, ExecutionContext, 
 logger = __import__("logging").getLogger(__name__)
 
 
+def _format_tool_resolution_failure(
+    command: str,
+    raw_identifier: str,
+    config: pyfltr.config.config.Config,
+) -> str:
+    """ツール解決失敗時の利用者向け文面を組み立てる。
+
+    runner.pyの`FileNotFoundError`は識別子（bin名・パス・mise tool spec等）のみを保持する契約で、
+    本ヘルパーがcatch側として「探索経路」「代替手段（runner切り替え・パス明示）」を併記する。
+
+    分類:
+
+    - Python系（`PYTHON_TOOL_BIN`）: `uv` / `uvx` への切り替えまたは `{command}-path` 明示を案内する
+    - JS系（`JS_TOOL_BIN`）でdirect指定: `node_modules` 探索失敗として `pnpm install` / `pnpx` 切り替えを案内する
+    - JS系（`JS_TOOL_BIN`）でdirect以外: PATH探索失敗として `{command}-path` 明示を案内する
+    - ネイティブ系（`_BIN_TOOL_SPEC`）: `direct` への切り替えまたは `{command}-path` 明示を案内する
+    - その他（カスタムコマンド等）: 汎用案内（PATH探索失敗）
+    """
+    # 効果値（resolve_effective_runner適用後）を判定し、direct分岐との切り分けに使う。
+    effective_runner: str | None = None
+    try:
+        runner_value, _ = pyfltr.command.runner.resolve_runner(command, config)
+        effective_runner = pyfltr.command.runner.resolve_effective_runner(command, runner_value, config)
+    except ValueError:
+        effective_runner = None
+
+    if command in pyfltr.command.runner.PYTHON_TOOL_BIN:
+        return (
+            f"ツールが見つかりません: Python系ツール `{raw_identifier}` が PATH 上にありません。"
+            f'`{command}-runner = "uv"`（cwdに uv.lock が必要、`uv add --dev "pyfltr[python]"` で依存追加）'
+            f' または `{command}-runner = "uvx"` への切り替え、'
+            f"もしくは `{command}-path` で実行ファイルを明示してください"
+        )
+    if command in pyfltr.command.runner.JS_TOOL_BIN:
+        if effective_runner == "direct":
+            return (
+                f"js-runner=direct で `{command}` がローカル node_modules に見つかりません（探索先: {raw_identifier}）。"
+                "`pnpm install` などで対象パッケージを導入するか、"
+                f'`{command}-runner = "pnpx"` でグローバルキャッシュ経由に切り替えてください'
+            )
+        return (
+            f"ツールが見つかりません: JS系ツール `{raw_identifier}` の解決に失敗しました。"
+            f"`pnpm install` などで対象パッケージを導入するか、`{command}-path` で実行ファイルを明示してください"
+        )
+    # ネイティブ系（mise経路の事前チェック失敗）は`ensure_mise_available`が
+    # mise stderrとhint文を改行区切りで連結した文面を例外引数に保持する契約。
+    # 当該複数行文面は素通し採用し、mise stderrを欠落させない（runner.pyのmodule docstring参照）。
+    # `mise trust`失敗時の単行文面（`mise trust --yes --all: <stderr>`）は本ヘルパーの
+    # 末尾分岐の汎用文面組み立てを通過させ、`mise trust`プレフィクスで原因種別を利用者へ伝える。
+    if "\n" in raw_identifier:
+        return f"ツールが見つかりません: {raw_identifier}"
+    return (
+        f"ツールが見つかりません: `{raw_identifier}` が解決できません。"
+        f'`{command}-runner = "direct"` への切り替えか、`{command}-path` で実行ファイルを明示してください'
+    )
+
+
 def _failed_resolution_result(
     command: str,
     command_info: pyfltr.config.config.CommandInfo,
@@ -178,24 +235,9 @@ def _prepare_execution_params(
             )
         return _failed_resolution_result(command, command_info, message, files=len(targets), hint=hint)
     except FileNotFoundError as e:
-        # JSツールの`node_modules/.bin/<cmd>`解決失敗は、per-tool `{command}-runner = "direct"` 指定でも
-        # global `js-runner = "direct"` 委譲でも同じ経路で起きる。`resolve_effective_runner`で
-        # 効果値ベースに判定し、グローバルキー単独に依存しない。
-        is_js_direct = False
-        if command in pyfltr.command.runner.JS_TOOL_BIN:
-            try:
-                runner_value, _ = pyfltr.command.runner.resolve_runner(command, config)
-                effective_runner = pyfltr.command.runner.resolve_effective_runner(command, runner_value, config)
-            except ValueError:
-                effective_runner = None
-            is_js_direct = effective_runner == "direct"
-        if is_js_direct:
-            message = (
-                f"js-runner=direct 指定ですが実行ファイルが見つかりません: {e}. "
-                "package.jsonで対象パッケージをインストールしてください。"
-            )
-        else:
-            message = f"ツールが見つかりません: {e}"
+        # runner.pyは識別子のみを送出する契約のため、利用者向け文面はここで組み立てる。
+        # Python系・JS系・ネイティブ系のツール分類に応じて探索経路と代替案内を切り替える。
+        message = _format_tool_resolution_failure(command, str(e), config)
         return _failed_resolution_result(command, command_info, message, files=len(targets))
     commandline_prefix = resolved.commandline
 

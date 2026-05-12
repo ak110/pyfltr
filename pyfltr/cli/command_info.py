@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import argparse
+import difflib
 import json
 import os
 import shutil
@@ -65,7 +66,9 @@ def execute_command_info(parser: argparse.ArgumentParser, args: argparse.Namespa
 
     command: str = args.command
     if command not in config.commands:
-        sys.stderr.write(f"エラー: 未知のコマンドです: {command}\n")
+        suggestions = difflib.get_close_matches(command, list(config.commands.keys()), n=3, cutoff=0.6)
+        suffix = f"。もしかして: {', '.join(suggestions)}" if suggestions else ""
+        sys.stderr.write(f"エラー: 未知のコマンドです: {command}{suffix}\n")
         return 1
 
     info = _collect_info(command, config, do_check=bool(args.check))

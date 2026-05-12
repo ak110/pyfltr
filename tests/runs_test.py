@@ -171,7 +171,9 @@ def test_show_run_not_found(
 ) -> None:
     returncode = pyfltr.cli.main.run(["show-run", "nonexistent"])
     assert returncode == 1
-    assert "run_id" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "run_id" in err
+    assert "pyfltr list-runs" in err
 
 
 def test_show_run_latest_empty(
@@ -179,7 +181,9 @@ def test_show_run_latest_empty(
 ) -> None:
     returncode = pyfltr.cli.main.run(["show-run", "latest"])
     assert returncode == 1
-    assert "run" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "run" in err
+    assert "pyfltr run" in err
 
 
 def test_list_runs_ai_agent_jsonl(
@@ -329,7 +333,9 @@ def test_show_run_tool_not_found(
 
     returncode = pyfltr.cli.main.run(["show-run", run_id, "--commands", "nonexistent"])
     assert returncode == 1
-    assert "nonexistent" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "nonexistent" in err
+    assert "pyfltr show-run" in err
 
 
 def test_show_run_output_mode(

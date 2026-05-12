@@ -1333,7 +1333,7 @@ def test_builtin_targets_invalid_type(tmp_path: pathlib.Path) -> None:
 def test_builtin_targets_unknown_command(tmp_path: pathlib.Path) -> None:
     """未知のコマンド名のtargets指定はエラーになる。"""
     (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\nunknown-targets = "*.py"\n')
-    with pytest.raises(ValueError, match="設定キーが不正です"):
+    with pytest.raises(ValueError, match=r"設定キー .* は認識できません"):
         pyfltr.config.config.load_config(config_dir=tmp_path)
 
 
@@ -1488,7 +1488,7 @@ def test_tool_exclude_loaded(tmp_path: pathlib.Path) -> None:
 def test_tool_exclude_unknown_command(tmp_path: pathlib.Path) -> None:
     """未知のコマンド名の`{tool}-exclude`指定はエラーになる。"""
     (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\nunknown-exclude = ["foo"]\n')
-    with pytest.raises(ValueError, match="設定キーが不正です"):
+    with pytest.raises(ValueError, match=r"設定キー .* は認識できません"):
         pyfltr.config.config.load_config(config_dir=tmp_path)
 
 
@@ -1698,3 +1698,113 @@ hints = [
 
 # conftest.count_config_warningsを再エクスポート（同モジュール内の参照を統一するため）
 _count_config_warnings = _testconf.count_config_warnings
+
+
+# --- エラーメッセージ親切化（v3系）---
+
+
+class TestErrorMessages:
+    """設定エラー文面の親切化に関する回帰テスト。
+
+    境界:
+
+    - 未知キー: completion完全一致 / difflibしきい値内のtypo（候補あり） / しきい値外（候補無し）の3区分
+    - 型不一致: bool / int / str / list / dict の各代表値
+    - parse_config_value: bool・int 経路の文面再確認
+    """
+
+    @pytest.mark.parametrize(
+        "key,expect_suggestion",
+        [
+            # typoしきい値内 → 候補が得られる
+            ("python-runer", True),
+            # 完全に無関係 → 候補無し（しきい値外）
+            ("totally-unrelated-key", False),
+        ],
+    )
+    def test_unknown_key_message_with_or_without_suggestion(
+        self, tmp_path: pathlib.Path, key: str, expect_suggestion: bool
+    ) -> None:
+        """未知キー検出時に「もしかして:」のサジェストと全キー一覧誘導を併記する。"""
+        (tmp_path / "pyproject.toml").write_text(f"[tool.pyfltr]\n{key} = 1\n")
+        with pytest.raises(ValueError) as exc_info:
+            pyfltr.config.config.load_config(config_dir=tmp_path)
+        message = str(exc_info.value)
+        assert f"`{key}`" in message
+        assert "pyfltr config list --all" in message
+        if expect_suggestion:
+            assert "もしかして:" in message
+        else:
+            assert "もしかして:" not in message
+
+    def test_format_unknown_key_message_public(self) -> None:
+        """`format_unknown_key_message`は再利用可能な公開ヘルパー。"""
+        message = pyfltr.config.config.format_unknown_key_message(
+            "python-runer",
+            ["python-runner", "js-runner", "bin-runner"],
+        )
+        assert "`python-runer`" in message
+        assert "もしかして: python-runner" in message
+        assert "pyfltr config list --all" in message
+
+    @pytest.mark.parametrize(
+        "value,expected_actual_label",
+        [
+            ("'string'", "文字列"),
+            ("1", "整数"),
+            ('["a"]', "リスト"),
+        ],
+    )
+    def test_type_mismatch_japanese_label(self, tmp_path: pathlib.Path, value: str, expected_actual_label: str) -> None:
+        """boolキーに非bool値を渡すと「期待 真偽値、実値 ...」を含む文面になる。"""
+        (tmp_path / "pyproject.toml").write_text(f"[tool.pyfltr]\nmypy = {value}\n")
+        with pytest.raises(ValueError) as exc_info:
+            pyfltr.config.config.load_config(config_dir=tmp_path)
+        message = str(exc_info.value)
+        assert "`mypy`" in message
+        assert "期待 真偽値" in message
+        assert f"実値 {expected_actual_label}" in message
+
+    def test_type_mismatch_list_label(self, tmp_path: pathlib.Path) -> None:
+        """list期待のキーへ整数を渡すと「期待 リスト」を含む文面になる。"""
+        (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\nmypy-args = 1\n")
+        with pytest.raises(ValueError) as exc_info:
+            pyfltr.config.config.load_config(config_dir=tmp_path)
+        message = str(exc_info.value)
+        assert "`mypy-args`" in message
+        assert "期待 リスト" in message
+
+    def test_parse_config_value_bool_message(self) -> None:
+        """parse_config_valueのboolキー不正値文面に許容値が含まれる。"""
+        with pytest.raises(ValueError, match=r"true / false / 1 / 0"):
+            pyfltr.config.config.parse_config_value("mypy", "on")
+
+    def test_parse_config_value_int_message(self) -> None:
+        """parse_config_valueのintキー不正値文面に「整数」が含まれる。"""
+        with pytest.raises(ValueError, match="整数を指定してください"):
+            pyfltr.config.config.parse_config_value("jobs", "many")
+
+    def test_parse_config_value_unknown_key_suggestion(self) -> None:
+        """parse_config_valueの未知キー文面にもサジェストと一覧誘導が含まれる。"""
+        with pytest.raises(ValueError) as exc_info:
+            pyfltr.config.config.parse_config_value("python-runer", "uv")
+        message = str(exc_info.value)
+        assert "pyfltr config list --all" in message
+
+    def test_preset_unknown_value_suggests_candidate(self, tmp_path: pathlib.Path) -> None:
+        """preset未知値はサジェスト＋許容値列挙を伴う。"""
+        # 意図的なtypo文字列。typos検出はpyproject.tomlの`[tool.typos.default.extend-words]`で例外登録済み。
+        (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latset"\n')
+        with pytest.raises(ValueError) as exc_info:
+            pyfltr.config.config.load_config(config_dir=tmp_path)
+        message = str(exc_info.value)
+        assert "もしかして: latest" in message
+
+    def test_runner_invalid_value_contains_allowed_values(self, tmp_path: pathlib.Path) -> None:
+        """python-runner不正値文面に許容値列挙が含まれる。"""
+        (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npython-runner = "bogus"\n')
+        with pytest.raises(ValueError) as exc_info:
+            pyfltr.config.config.load_config(config_dir=tmp_path)
+        message = str(exc_info.value)
+        assert "許容値:" in message
+        assert "uv" in message and "uvx" in message and "direct" in message

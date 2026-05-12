@@ -20,7 +20,7 @@ def generate(
         return _generate_bash(options, output_format_choices, commands_choices, subcommand_list)
     if shell == "powershell":
         return _generate_powershell(options, output_format_choices, commands_choices, subcommand_list)
-    raise ValueError(f"未対応のシェル: {shell!r}")
+    raise ValueError(f"未対応のシェルです: {shell!r}（許容値: {', '.join(SUPPORTED_SHELLS)}）")
 
 
 def _collect_completions(

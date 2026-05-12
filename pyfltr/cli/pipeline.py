@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import dataclasses
+import difflib
 import importlib.metadata
 import logging
 import os
@@ -930,7 +931,9 @@ def run_impl(
     commands: list[str] = pyfltr.config.config.resolve_aliases(_flatten_commands_arg(args.commands, config), config)
     for command in commands:
         if command not in config.values:
-            parser.error(f"コマンドが見つかりません: {command}")
+            suggestions = difflib.get_close_matches(command, list(config.command_names), n=3, cutoff=0.6)
+            suffix = f"。もしかして: {', '.join(suggestions)}" if suggestions else ""
+            parser.error(f"コマンドが見つかりません: {command}{suffix}")
 
     exit_code, _run_id = run_pipeline(
         args, commands, config, original_cwd=original_cwd, original_sys_args=list(original_sys_args)

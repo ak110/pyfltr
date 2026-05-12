@@ -2,11 +2,11 @@
 
 import argparse
 import concurrent.futures
+import contextlib
 import logging
 import sys
 import threading
 import time
-import traceback
 import typing
 
 from textual.app import App, ComposeResult
@@ -83,11 +83,12 @@ def run_commands_with_ui(
             assert isinstance(return_code, int)
 
         return app.results, return_code
-    except Exception:
-        # Textualアプリケーション自体の例外処理
-        error_msg = f"UI アプリケーションの実行に失敗しました: {traceback.format_exc()}"
-        logging.error(error_msg)
-        print(f"エラー: {error_msg}", file=sys.stderr)
+    except Exception as exc:
+        # Textualアプリケーション自体の例外処理。
+        # 詳細traceback全文の画面表示は避け、利用者には1行サマリのみを示す。
+        # 詳細はlogger経由（exc_info=True）でログハンドラー側に記録させる。
+        logging.error("UI アプリケーションの実行に失敗しました: %s", exc, exc_info=True)
+        print(f"エラー: UI アプリケーションの実行に失敗しました: {exc}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -444,13 +445,13 @@ class UIApp(App):
             if overall_status != "FAILED" and not self.args.keep_ui:
                 self._safe_call_from_thread(self.exit)
 
-        except Exception:
-            # Textualエラー時の処理
-            error_msg = f"UI 処理中に致命的エラーが発生しました:\n{traceback.format_exc()}"
-            try:
+        except Exception as exc:
+            # Textualエラー時の処理。詳細はlogger（exc_info=True）に記録し、画面側は1行サマリのみ。
+            error_msg = f"UI 処理中に致命的エラーが発生しました: {exc}"
+            logging.error("UI 処理中に致命的エラーが発生しました: %s", exc, exc_info=True)
+            # call_from_thread自体が失敗した場合は既にlogging済みのため追加処理不要。
+            with contextlib.suppress(Exception):
                 self.call_from_thread(self._handle_fatal_error, error_msg)
-            except Exception:
-                logging.error(error_msg)
 
     def _execute_command(self, command: str, *, fix_stage: bool = False) -> pyfltr.command.core_.CommandResult:
         """出力をキャプチャしながらコマンド実行。"""

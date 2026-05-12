@@ -1,4 +1,17 @@
-"""runner解決とコマンドライン構築。"""
+"""runner解決とコマンドライン構築。
+
+`FileNotFoundError`の契約: 本モジュールが送出する`FileNotFoundError`の引数は
+原則として識別子（bin名・解決失敗パス）のみとし、利用者向けメッセージ文面は
+catch側（`pyfltr/command/dispatcher.py`・`pyfltr/cli/command_info.py`など）で組み立てる。
+例外として`ensure_mise_available`は次の2形態を引数に持つ。
+
+- `mise exec --version`事前チェック失敗時: miseが返す`stderr`にhint文を
+  改行区切りで連結した複数行文面（先頭は`mise exec [tool_spec] -- <bin>: <stderr>`、
+  続いて`<bin>-runner = "direct"`への切替案内）
+- `mise trust`失敗時: `mise trust --yes --all: <stderr>`の単行文面
+
+いずれも、mise由来の生エラー出力を欠落させずに利用者へ伝える目的で引数に含める。
+"""
 
 import dataclasses
 import functools
@@ -560,7 +573,12 @@ def _resolve_mise_runner_commandline(
     `command` が `_BIN_TOOL_SPEC` に未登録の場合は `ValueError` を送出する。
     """
     if command not in _BIN_TOOL_SPEC:
-        raise ValueError(f'{command}: mise backend が登録されていないため `{command}-runner = "mise"` は指定できません')
+        raise ValueError(
+            f"miseバックエンドに `{command}` が登録されていないため、"
+            f'`{command}-runner = "mise"` は使用できません。'
+            f'`{command}-runner = "python-runner"`（既定）または'
+            f' `{command}-runner = "direct"` への切り替えを検討してください'
+        )
     spec = _BIN_TOOL_SPEC[command]
     version = config.values.get(f"{command}-version", spec.default_version)
     tool_spec_omitted = False

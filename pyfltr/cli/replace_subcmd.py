@@ -470,7 +470,10 @@ def _execute_show_history(replace_id: str, output_format: str, output_file: path
     try:
         meta = store.load_replace(replace_id)
     except FileNotFoundError:
-        sys.stderr.write(f"エラー: replace_id が見つかりません: {replace_id}\n")
+        sys.stderr.write(
+            f"エラー: replace_id が見つかりません: {replace_id}。"
+            "`pyfltr replace --list-history` で有効な replace_id を確認できます\n"
+        )
         return 1
     if output_format == "jsonl":
         pyfltr.grep_.jsonl_records.emit_replace_history(meta)
@@ -499,7 +502,10 @@ def _execute_undo(parser: argparse.ArgumentParser, args: argparse.Namespace, out
     try:
         restored, skipped = store.undo_replace(replace_id, force=args.force)
     except FileNotFoundError:
-        sys.stderr.write(f"エラー: replace_id が見つかりません: {replace_id}\n")
+        sys.stderr.write(
+            f"エラー: replace_id が見つかりません: {replace_id}。"
+            "`pyfltr replace --list-history` で有効な replace_id を確認できます\n"
+        )
         return 1
     except UnicodeDecodeError as exc:
         # 履歴メタJSONや保存済み変更前ファイルのデコード失敗（保存後にディレクトリ構造を

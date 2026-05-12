@@ -3,6 +3,10 @@
 全実行のツール出力・diagnostic・メタ情報をXDG Base Directory準拠の
 ユーザーキャッシュへ保存する仕組み。v3.0.0で追加。
 
+`FileNotFoundError`の契約: 本モジュールが送出する`FileNotFoundError`の引数は
+識別子（`run_id` または `f"{run_id}/{tool}"`）のみとし、利用者向けメッセージ文面は
+catch側（`pyfltr/state/runs.py`・`pyfltr/cli/mcp_server.py`など）で組み立てる。
+
 ディレクトリ構造（`<cache_root> = platformdirs.user_cache_dir("pyfltr", appauthor=False)`）::
 
     <cache_root>/runs/<run_id>/meta.json

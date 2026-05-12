@@ -119,7 +119,7 @@ async def _tool_show_run(run_id: str) -> RunOverviewModel:
     try:
         meta = store.read_meta(resolved)
     except FileNotFoundError:
-        _raise_mcp_error(f"run_id が見つからない: {resolved}")
+        _raise_mcp_error(f"run_id が見つかりません: {resolved}")
     command_summaries = pyfltr.state.runs.collect_tool_summaries(store, resolved)
     commands = [
         CommandSummaryModel(
@@ -152,7 +152,7 @@ async def _tool_show_run_diagnostics(run_id: str, commands: list[str]) -> list[C
             command_meta = store.read_tool_meta(resolved, command)
             diagnostics_raw = store.read_tool_diagnostics(resolved, command)
         except FileNotFoundError:
-            _raise_mcp_error(f"run {resolved} にコマンド {command!r} の結果が保存されていない。")
+            _raise_mcp_error(f"run {resolved} にコマンド {command!r} の結果が保存されていません。")
         diagnostics = [
             DiagnosticModel(
                 command=d.get("command", d.get("tool")),
@@ -185,7 +185,7 @@ async def _tool_show_run_output(run_id: str, commands: list[str]) -> dict[str, s
         try:
             outputs[command] = store.read_tool_output(resolved, command)
         except FileNotFoundError:
-            _raise_mcp_error(f"run {resolved} にコマンド {command!r} の結果が保存されていない。")
+            _raise_mcp_error(f"run {resolved} にコマンド {command!r} の結果が保存されていません。")
     return outputs
 
 
@@ -637,7 +637,7 @@ async def _tool_replace_undo(replace_id: str, force: bool = False) -> ReplaceUnd
     try:
         restored, skipped = store.undo_replace(replace_id, force=force)
     except FileNotFoundError:
-        _raise_mcp_error(f"replace_id が見つからない: {replace_id}")
+        _raise_mcp_error(f"replace_id が見つかりません: {replace_id}")
 
     exit_code = 1 if skipped else 0
     return ReplaceUndoModel(

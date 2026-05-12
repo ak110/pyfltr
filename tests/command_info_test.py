@@ -159,6 +159,29 @@ def test_command_info_unknown_command(capsys: pytest.CaptureFixture[str]) -> Non
     assert "未知のコマンド" in captured.err
 
 
+@pytest.mark.parametrize(
+    "command,expect_suggestion",
+    [
+        # typoしきい値内 → サジェスト候補が並ぶ
+        ("pylit", True),
+        # 完全に無関係 → 候補無し
+        ("totally-unrelated", False),
+    ],
+)
+def test_command_info_unknown_command_suggestion(
+    capsys: pytest.CaptureFixture[str], command: str, expect_suggestion: bool
+) -> None:
+    """未知のコマンドにdifflibのサジェストが付くか/付かないかを境界別に検証する。"""
+    parser = argparse.ArgumentParser()
+    args = argparse.Namespace(command=command, output_format="text", check=False)
+    pyfltr.cli.command_info.execute_command_info(parser, args)
+    captured = capsys.readouterr()
+    if expect_suggestion:
+        assert "もしかして:" in captured.err
+    else:
+        assert "もしかして:" not in captured.err
+
+
 def test_command_info_does_not_invoke_mise(capsys: pytest.CaptureFixture[str], mocker) -> None:
     """既定（--check未指定）ではmise exec --versionなどのsubprocessを発火しない。"""
     spy = mocker.patch("subprocess.run")

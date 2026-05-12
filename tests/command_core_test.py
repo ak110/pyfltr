@@ -339,7 +339,71 @@ def test_execute_command_direct_missing_returns_failed_result(tmp_path: pathlib.
         )
         assert result.status == "resolution_failed"
         assert result.has_error is True
+        # 新文面: 探索先（node_modules）の明示・`pnpm install` 案内・`pnpx`切り替え案内を全て含む。
         assert "node_modules" in result.output
+        assert "pnpm install" in result.output
+        assert "pnpx" in result.output
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_execute_command_python_tool_missing_emits_runner_guidance(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Python系ツールがPATH不在のとき、uv/uvx切り替え案内・path明示案内を含む文面が返る。
+
+    境界: PATH欠落（Python系）。
+    """
+    target = tmp_path / "a.py"
+    target.write_text("x = 1\n")
+
+    config = pyfltr.config.config.create_default_config()
+    config.values["mypy"] = True
+    config.values["mypy-runner"] = "direct"
+
+    # `shutil.which` を強制的に未解決にする。
+    monkeypatch.setattr("shutil.which", lambda *_a, **_k: None)
+    monkeypatch.setattr("pyfltr.command.runner.ensure_uv_available", lambda: False)
+    monkeypatch.setattr("pyfltr.command.runner.ensure_uvx_available", lambda: False)
+    monkeypatch.setattr("pyfltr.command.runner.cwd_has_uv_lock", lambda: False)
+
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        result = pyfltr.command.dispatcher.execute_command(
+            "mypy", _testconf.make_args(), _testconf.make_execution_context(config, [target])
+        )
+        assert result.status == "resolution_failed"
+        assert "PATH 上にありません" in result.output
+        assert "mypy-runner" in result.output
+        assert "mypy-path" in result.output
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_execute_command_mise_not_registered_emits_switch_guidance(
+    tmp_path: pathlib.Path,
+) -> None:
+    """`{command}-runner = "mise"`をmise未登録ツール（mypy）に指定すると切り替え案内が出る。
+
+    境界: mise未登録（ネイティブ系扱い外）。runner.py側のValueError catch経路を検証する。
+    """
+    target = tmp_path / "a.py"
+    target.write_text("x = 1\n")
+
+    config = pyfltr.config.config.create_default_config()
+    config.values["mypy"] = True
+    config.values["mypy-runner"] = "mise"
+
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        result = pyfltr.command.dispatcher.execute_command(
+            "mypy", _testconf.make_args(), _testconf.make_execution_context(config, [target])
+        )
+        assert result.status == "resolution_failed"
+        assert "miseバックエンド" in result.output
+        assert "mypy-runner" in result.output
     finally:
         os.chdir(original_cwd)
 
@@ -2427,7 +2491,7 @@ def test_build_commandline_mise_on_unregistered_tool_raises() -> None:
     """backend未登録ツールにmise明示しpath未指定の場合はエラー。"""
     config = pyfltr.config.config.create_default_config()
     config.values["typos-runner"] = "mise"
-    with pytest.raises(ValueError, match="mise backend"):
+    with pytest.raises(ValueError, match="miseバックエンド"):
         pyfltr.command.runner.build_commandline("typos", config)
 
 

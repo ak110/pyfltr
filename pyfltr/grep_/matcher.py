@@ -60,7 +60,10 @@ def compile_pattern(
     try:
         return re.compile(combined, flags)
     except re.error as exc:
-        raise ValueError(f"正規表現のコンパイルに失敗しました: {exc}") from exc
+        # `re.error.pos`はパターン中の位置（0-origin）を保持する。位置情報を併記すると
+        # 利用者がどの箇所を直すべきかを特定しやすい。
+        pos_text = f"（位置 {exc.pos}）" if exc.pos is not None else ""
+        raise ValueError(f"正規表現のコンパイルに失敗しました{pos_text}: {exc}") from exc
 
 
 def read_pattern_file(path: pathlib.Path) -> list[str]:

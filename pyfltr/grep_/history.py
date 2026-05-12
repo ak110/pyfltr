@@ -4,6 +4,10 @@
 3軸自動クリーンアップ）を踏襲する。保存内容は計画通り「変更前全文・変更後ハッシュ・
 各置換箇所の前後行」の3点で、変更後全文を別途保存しない。
 
+`FileNotFoundError`の契約: 本モジュールが送出する`FileNotFoundError`の引数は
+`replace_id`のみとし、利用者向けメッセージ文面はcatch側
+（`pyfltr/cli/replace_subcmd.py`・`pyfltr/cli/mcp_server.py`など）で組み立てる。
+
 ディレクトリ構造（`<cache_root> = pyfltr.state.archive.default_cache_root()`）::
 
     <cache_root>/replaces/<replace_id>/meta.json
