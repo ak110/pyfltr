@@ -28,6 +28,9 @@ JS_TOOL_BIN: dict[str, str] = {
     "vitest": "vitest",
     "oxlint": "oxlint",
     "tsc": "tsc",
+    # designmdの実行ファイル名は`design.md`。npmパッケージ`@google/design.md`が
+    # `bin: { "design.md": "..." }`として配布する命名に合わせる。
+    "designmd": "design.md",
 }
 
 # pyfltrのコマンド名 -> uv経由およびdirect経路で起動する実行ファイル名。
@@ -41,6 +44,8 @@ PYTHON_TOOL_BIN: dict[str, str] = {
     "ty": "ty",
     "pytest": "pytest",
     "uv-sort": "uv-sort",
+    "semgrep": "semgrep",
+    "sqlfluff": "sqlfluff",
 }
 
 # pnpx経由で解決するときに `--package` に渡すspec。
@@ -53,6 +58,9 @@ _JS_TOOL_PNPX_PACKAGE_SPEC: dict[str, str] = {
     "biome": "@biomejs/biome",
     "oxlint": "oxlint",
     "tsc": "typescript",  # tscコマンドはtypescriptパッケージに含まれる
+    # designmdのnpmパッケージはスコープ付き`@google/design.md`。
+    # 内部コマンドIDがTOMLキー衝突回避のため`designmd`であるのに対し、実際の配布パッケージ名は別。
+    "designmd": "@google/design.md",
 }
 
 
@@ -91,6 +99,11 @@ _BIN_TOOL_SPEC: dict[str, BinToolSpec] = {
     # gitleaksは `detect` サブコマンドが必須だが、サブコマンド注入は
     # -args既定値側に持たせる（glab-ci-lintと同じ設計）。
     "gitleaks": BinToolSpec(bin_name="gitleaks"),
+    # lychee: Rust製リンク切れチェッカー。
+    # mise registryには未登録のためgithub backend経由で解決する。
+    # aqua backendも候補だが、`lychee-x86_64-unknown-linux-musl/lychee`のサブディレクトリ構造で
+    # 抽出されmise側のbinパス（`lychee/lychee`）と一致せず起動できないため採用しない。
+    "lychee": BinToolSpec(bin_name="lychee", mise_backend="github:lycheeverse/lychee"),
     # cargo系は `cargo` バイナリを呼ぶ。miseのrust toolchain backendで解決し、
     # cargo-fmt / cargo-clippy / cargo-check / cargo-testはサブコマンドを `-args`
     # 既定値側に持たせる設計とする。

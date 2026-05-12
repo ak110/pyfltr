@@ -149,6 +149,18 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         targets="*",
         fixed_cost=1.0,
     ),
+    # semgrep: Python製多言語SASTツール。ルールセット指定が必須のため既定で無効（opt-in）。
+    # 利用者が`semgrep-args`で`--config=auto`または個別ルールセットを指定する前提。
+    # 対象は多言語のため`*`globで広く対象とし、ツール側のルールセットで実際の検査対象を限定する。
+    # `pass-filenames=True`（既定）でファイル一覧を末尾引数として渡す。
+    # gitleaksのようなリポジトリ全体走査ではなく対象ファイル群を明示する設計とし、
+    # pyfltr側のexclude / .gitignore尊重の効果をそのまま反映する。
+    "semgrep": CommandInfo(
+        type="linter",
+        targets="*",
+        fixed_cost=2.0,
+        per_file_cost=0.05,
+    ),
     # Python linter群はモダン順（後ろほど新しい）に並べる。実行順はLPT並列で別管理。
     "pylint": CommandInfo(type="linter", fixed_cost=1.75, per_file_cost=0.3),
     "mypy": CommandInfo(type="linter", fixed_cost=0.2, per_file_cost=0.12),
@@ -176,6 +188,12 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         ],
         cacheable=True,
     ),
+    # designmd: @google/design.md による DESIGN.md 形式仕様チェック。
+    # 対象ファイル名はDESIGN.md固定（公式仕様）。js-runner経由でnpmパッケージから起動する。
+    "designmd": CommandInfo(type="linter", targets="DESIGN.md", fixed_cost=1.5),
+    # lychee: Rust製リンク切れチェッカー。bin-runner経由（mise）で起動する。
+    # 外部URLへの到達性検証を主用途とするため、ネットワーク到達性に依存する。
+    "lychee": CommandInfo(type="linter", targets=["*.md", "*.html"], fixed_cost=1.0, per_file_cost=0.05),
     # JS/TS linter群はモダン順（後ろほど新しい）に並べる。
     "tsc": CommandInfo(
         type="linter",
@@ -211,6 +229,10 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         serial_group="dotnet",
         fixed_cost=5.0,
     ),
+    # sqlfluff: Python製SQL専用linter。dialect指定が必須のため既定で無効（opt-in）。
+    # 利用者が`.sqlfluff`を配置する前提とする。`sqlfluff lint`サブコマンドをlinterとして起動する
+    # （`sqlfluff format`サブコマンドは対象外）。
+    "sqlfluff": CommandInfo(type="linter", targets="*.sql", fixed_cost=1.0, per_file_cost=0.05),
     "pytest": CommandInfo(type="tester", targets="*_test.py", fixed_cost=3.0),
     # vitest のテストファイルパターン（pytest の *_test.py と同じ考え方）
     "vitest": CommandInfo(

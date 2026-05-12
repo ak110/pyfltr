@@ -544,6 +544,41 @@ def test_textlint_markdownlint_path_default_empty() -> None:
     assert config["markdownlint-args"] == []
 
 
+@pytest.mark.parametrize(
+    "command,expected_enabled,expected_runner",
+    [
+        # designmd / lycheeは追加設定不要なため既定有効。
+        ("designmd", True, "js-runner"),
+        ("lychee", True, "bin-runner"),
+        # semgrep / sqlfluffはルールセット・dialect指定が必須のため既定無効（opt-in）。
+        ("semgrep", False, "python-runner"),
+        ("sqlfluff", False, "python-runner"),
+    ],
+)
+def test_new_tools_defaults(command: str, expected_enabled: bool, expected_runner: str) -> None:
+    """designmd / lychee / semgrep / sqlfluffの既定有効/無効と既定ランナーを検証する。"""
+    config = pyfltr.config.config.create_default_config()
+    assert config[command] is expected_enabled, f"{command} の既定値が想定と異なる"
+    assert config[f"{command}-runner"] == expected_runner
+    # 共通per-toolキーが揃っていることを確認する。
+    assert f"{command}-path" in config.values
+    assert f"{command}-args" in config.values
+    assert f"{command}-fast" in config.values
+
+
+def test_lychee_version_default_exists() -> None:
+    """lycheeはbin-runner系のため`{command}-version`キーが既定値とともに登録されている。"""
+    config = pyfltr.config.config.create_default_config()
+    assert config["lychee-version"] == "latest"
+
+
+@pytest.mark.parametrize("command", ["designmd", "lychee", "semgrep", "sqlfluff"])
+def test_new_tools_registered_in_lint_alias(command: str) -> None:
+    """4ツールが`lint`エイリアスに登録されている。"""
+    config = pyfltr.config.config.create_default_config()
+    assert command in config["aliases"]["lint"]
+
+
 def test_command_info_target_globs_str() -> None:
     """`CommandInfo.target_globs()`はstr targetsを単一要素リストに正規化する。"""
     info = pyfltr.config.config.CommandInfo(type="linter", targets="*.py")

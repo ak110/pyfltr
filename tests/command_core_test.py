@@ -1542,6 +1542,7 @@ def test_bin_tool_spec_all_tools_defined() -> None:
         "taplo",
         "hadolint",
         "gitleaks",
+        "lychee",
         # cargo系・dotnet系もbin-runner経路へ統合済み（mise backend経由で解決）。
         "cargo-fmt",
         "cargo-clippy",
@@ -2246,7 +2247,7 @@ def test_execute_glab_ci_lint_passes_through_success(mocker, tmp_path: pathlib.P
 
 
 def test_resolve_runner_default_for_existing_bin_tools() -> None:
-    """既存のbin-runner対応8ツールおよびcargo / dotnet系の{command}-runner既定値は"bin-runner"。"""
+    """既存のbin-runner対応8ツール・lychee・cargo / dotnet系の{command}-runner既定値は"bin-runner"。"""
     config = pyfltr.config.config.create_default_config()
     expected_bin = (
         "ec",
@@ -2257,6 +2258,7 @@ def test_resolve_runner_default_for_existing_bin_tools() -> None:
         "taplo",
         "hadolint",
         "gitleaks",
+        "lychee",
         "cargo-fmt",
         "cargo-clippy",
         "cargo-check",
@@ -2273,9 +2275,12 @@ def test_resolve_runner_default_for_existing_bin_tools() -> None:
 
 
 def test_resolve_runner_default_for_js_tools() -> None:
-    """JS系ツール（eslint / prettier / biome / oxlint / tsc / vitest / markdownlint / textlint）の既定は"js-runner"。"""
+    """JS系ツール（eslint / prettier / biome / oxlint / tsc / vitest / markdownlint / textlint / designmd）。
+
+    既定は"js-runner"（カテゴリ委譲値）。
+    """
     config = pyfltr.config.config.create_default_config()
-    for command in ("eslint", "prettier", "biome", "oxlint", "tsc", "vitest", "markdownlint", "textlint"):
+    for command in ("eslint", "prettier", "biome", "oxlint", "tsc", "vitest", "markdownlint", "textlint", "designmd"):
         runner, source = pyfltr.command.runner.resolve_runner(command, config)
         assert runner == "js-runner", f"{command}のrunnerは'js-runner'であるべき"
         assert source == "default"
@@ -2291,9 +2296,20 @@ def test_resolve_runner_default_for_direct_tools() -> None:
 
 
 def test_resolve_runner_default_for_python_tools() -> None:
-    """Python系ツールの既定は"python-runner"（カテゴリ委譲値）。"""
+    """Python系ツール（既存8ツール + semgrep / sqlfluff）の既定は"python-runner"（カテゴリ委譲値）。"""
     config = pyfltr.config.config.create_default_config()
-    for command in ("mypy", "pylint", "pyright", "ty", "ruff-check", "ruff-format", "pytest", "uv-sort"):
+    for command in (
+        "mypy",
+        "pylint",
+        "pyright",
+        "ty",
+        "ruff-check",
+        "ruff-format",
+        "pytest",
+        "uv-sort",
+        "semgrep",
+        "sqlfluff",
+    ):
         runner, source = pyfltr.command.runner.resolve_runner(command, config)
         assert runner == "python-runner", f"{command}のrunnerは'python-runner'であるべき"
         assert source == "default"

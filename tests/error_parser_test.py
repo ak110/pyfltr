@@ -974,12 +974,188 @@ def test_parse_glab_ci_lint_invalid_numbered() -> None:
     assert [e.message for e in errors] == ["unknown key foo", "unknown key bar"]
 
 
+def test_parse_designmd_json() -> None:
+    """`@google/design.md lint`のJSON出力から違反を抽出する。"""
+    output = json.dumps(
+        {
+            "findings": [
+                {
+                    "severity": "warning",
+                    "path": "components.button-primary",
+                    "message": "contrast ratio 15.42:1",
+                },
+                {
+                    "severity": "error",
+                    "path": "tokens.color.primary",
+                    "message": "missing definition",
+                },
+            ],
+            "summary": {"errors": 1, "warnings": 1, "info": 0},
+        }
+    )
+    errors = pyfltr.command.error_parser.parse_errors("designmd", output)
+    assert len(errors) == 2
+    # 対象ファイルは仕様上DESIGN.md固定。
+    assert all(e.file == "DESIGN.md" for e in errors)
+    assert all(e.command == "designmd" for e in errors)
+    assert errors[0].severity == "warning"
+    assert errors[0].message.startswith("components.button-primary: ")
+    assert errors[1].severity == "error"
+
+
+def test_parse_designmd_json_empty() -> None:
+    """findings空・無効JSONはいずれも空リストを返す。"""
+    assert pyfltr.command.error_parser.parse_errors("designmd", json.dumps({"findings": []})) == []
+    assert pyfltr.command.error_parser.parse_errors("designmd", "not json") == []
+    assert pyfltr.command.error_parser.parse_errors("designmd", "") == []
+
+
+def test_parse_lychee_json() -> None:
+    """lychee --format json のerror_mapからエラー行を抽出する。"""
+    output = json.dumps(
+        {
+            "total": 5,
+            "successful": 3,
+            "errors": 2,
+            "error_map": {
+                "docs/index.md": [
+                    {
+                        "url": "https://example.com/dead",
+                        "status": {"text": "404 Not Found", "code": 404},
+                    },
+                    {
+                        "url": "https://example.com/timeout",
+                        "status": {"text": "Network error", "code": None},
+                    },
+                ],
+            },
+        }
+    )
+    errors = pyfltr.command.error_parser.parse_errors("lychee", output)
+    assert len(errors) == 2
+    assert all(e.command == "lychee" for e in errors)
+    assert all(e.file == "docs/index.md" for e in errors)
+    assert all(e.line == 1 for e in errors)
+    assert all(e.severity == "error" for e in errors)
+    assert "https://example.com/dead" in errors[0].message
+    assert "404 Not Found" in errors[0].message
+
+
+def test_parse_lychee_json_empty_error_map() -> None:
+    """全リンクOK（error_mapが空）の場合は空リストを返す。"""
+    output = json.dumps({"total": 5, "successful": 5, "errors": 0, "error_map": {}})
+    assert pyfltr.command.error_parser.parse_errors("lychee", output) == []
+
+
+def test_parse_lychee_json_invalid() -> None:
+    """JSON解析失敗時は空リストを返す。"""
+    assert pyfltr.command.error_parser.parse_errors("lychee", "not json") == []
+    assert pyfltr.command.error_parser.parse_errors("lychee", "") == []
+
+
+def test_parse_semgrep_json() -> None:
+    """semgrep scan --json のresultsから違反を抽出する。"""
+    output = json.dumps(
+        {
+            "results": [
+                {
+                    "check_id": "rules.python.security.sql-injection",
+                    "path": "src/foo.py",
+                    "start": {"line": 18, "col": 9, "offset": 300},
+                    "end": {"line": 18, "col": 82, "offset": 373},
+                    "extra": {
+                        "severity": "ERROR",
+                        "message": "Using variable interpolation could allow SQL injection",
+                    },
+                },
+                {
+                    "check_id": "rules.python.style.use-fstring",
+                    "path": "src/bar.py",
+                    "start": {"line": 3, "col": 5},
+                    "end": {"line": 3, "col": 20},
+                    "extra": {"severity": "WARNING", "message": "Use f-string"},
+                },
+            ],
+            "errors": [],
+        }
+    )
+    errors = pyfltr.command.error_parser.parse_errors("semgrep", output)
+    assert len(errors) == 2
+    assert errors[0].command == "semgrep"
+    assert errors[0].file == "src/foo.py"
+    assert errors[0].line == 18
+    assert errors[0].col == 9
+    assert errors[0].rule == "rules.python.security.sql-injection"
+    assert errors[0].severity == "error"
+    assert "SQL injection" in errors[0].message
+    assert errors[1].severity == "warning"
+
+
+def test_parse_semgrep_json_empty() -> None:
+    """results空・無効JSONはいずれも空リストを返す。"""
+    assert pyfltr.command.error_parser.parse_errors("semgrep", json.dumps({"results": [], "errors": []})) == []
+    assert pyfltr.command.error_parser.parse_errors("semgrep", "not json") == []
+
+
+def test_parse_sqlfluff_json() -> None:
+    """sqlfluff lint --format=json のviolationsから違反を抽出する。"""
+    output = json.dumps(
+        [
+            {
+                "filepath": "src/foo.sql",
+                "violations": [
+                    {
+                        "start_line_no": 10,
+                        "start_line_pos": 5,
+                        "code": "L001",
+                        "name": "layout.trailing_whitespace",
+                        "description": "Unnecessary trailing whitespace.",
+                        "warning": False,
+                    },
+                    {
+                        "start_line_no": 12,
+                        "start_line_pos": 1,
+                        "code": "L010",
+                        "name": "capitalisation.keywords",
+                        "description": "Keywords must be consistently upper case.",
+                        "warning": True,
+                    },
+                ],
+            },
+            {
+                "filepath": "src/bar.sql",
+                "violations": [],
+            },
+        ]
+    )
+    errors = pyfltr.command.error_parser.parse_errors("sqlfluff", output)
+    assert len(errors) == 2
+    assert errors[0].command == "sqlfluff"
+    assert errors[0].file == "src/foo.sql"
+    assert errors[0].line == 10
+    assert errors[0].col == 5
+    assert errors[0].rule == "L001"
+    assert errors[0].severity == "error"
+    assert errors[1].severity == "warning"
+
+
+def test_parse_sqlfluff_json_empty() -> None:
+    """violations空・無効JSONはいずれも空リストを返す。"""
+    assert pyfltr.command.error_parser.parse_errors("sqlfluff", json.dumps([])) == []
+    assert pyfltr.command.error_parser.parse_errors("sqlfluff", "not json") == []
+    assert pyfltr.command.error_parser.parse_errors("sqlfluff", "") == []
+
+
 def test_get_custom_parser_commands() -> None:
     """カスタムパーサー登録コマンド一覧の取得。"""
     commands = pyfltr.command.error_parser.get_custom_parser_commands()
     assert "eslint" in commands
     assert "ruff-check" in commands
     assert "pytest" in commands
+    assert "designmd" in commands
+    assert "lychee" in commands
+    assert "semgrep" in commands
+    assert "sqlfluff" in commands
     assert "mypy" not in commands
 
 

@@ -57,7 +57,10 @@ def test_all_targets_missing_returns_nonzero(tmp_path, mocker):
 
 def test_partial_missing_targets_continues(tmp_path, mocker):
     """指定パスが部分的に存在する場合は処理を継続して通常の終了コードを返す。"""
-    (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\n")
+    # 既定有効ツール（designmd / lychee）は本テストの対象（*.py）と一致しないため、
+    # 「partial missing + 全コマンドskip」の別判定（test_partial_missing_with_all_skipped_returns_nonzero）
+    # に巻き込まれないよう明示的に無効化する。
+    (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\ndesignmd = false\nlychee = false\n")
     (tmp_path / "exists.py").write_text("x = 1\n")
     mocker.patch(
         "pyfltr.command.process.run_subprocess",

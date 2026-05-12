@@ -4,6 +4,8 @@
 ビルトインパーサーとカスタム正規表現の両方に対応。
 """
 
+# pylint: disable=too-many-lines
+
 import contextlib
 import dataclasses
 import json
@@ -650,6 +652,221 @@ def _parse_typos_jsonl(output: str) -> list[ErrorLocation]:
     return results
 
 
+def _parse_designmd_json(output: str) -> list[ErrorLocation]:
+    """`@google/design.md lint`のJSON出力をパースする。
+
+    出力例::
+
+        {
+          "findings": [
+            {
+              "severity": "warning",
+              "path": "components.button-primary",
+              "message": "..."
+            }
+          ],
+          "summary": {"errors": 0, "warnings": 1, "info": 1}
+        }
+
+    `path`はDESIGN.md内のJSONパス（プロパティ参照）であり、ファイルシステムのパスではない。
+    対象ファイル名は仕様上`DESIGN.md`固定のため、`ErrorLocation.file`にはそれを格納し、
+    JSONパスは`message`先頭へ併記する。`line`は仕様上提供されないため`0`を格納する。
+    JSON解析失敗時は空リストを返す。
+    """
+    data = _try_json_loads(output)
+    if not isinstance(data, dict):
+        return []
+    findings = data.get("findings", [])
+    if not isinstance(findings, list):
+        return []
+    results: list[ErrorLocation] = []
+    for entry in findings:
+        if not isinstance(entry, dict):
+            continue
+        json_path = str(entry.get("path", "") or "")
+        text = str(entry.get("message", "") or "")
+        message = f"{json_path}: {text}" if json_path else text
+        results.append(
+            ErrorLocation(
+                file="DESIGN.md",
+                line=0,
+                col=None,
+                command="designmd",
+                message=message,
+                severity=_normalize_severity(entry.get("severity")),
+            )
+        )
+    return results
+
+
+def _parse_lychee_json(output: str) -> list[ErrorLocation]:
+    """`lychee --format json`のJSON出力をパースする。
+
+    出力例::
+
+        {
+          "total": 100, "successful": 80, ...,
+          "error_map": {
+            "src/foo.md": [
+              {
+                "url": "https://example.com/dead",
+                "status": {"text": "Error: 404 - Not Found", "code": 404},
+                ...
+              }
+            ]
+          }
+        }
+
+    `error_map`は「ファイルパス → エラーレスポンス配列」のmap。各エラーから`url`/`status.text`を抽出し、
+    `ErrorLocation.message`へ整形する。lycheeのJSONには行情報を含まないため`line=1`固定とする。
+    JSON解析失敗時は空リストを返す。
+    """
+    data = _try_json_loads(output)
+    if not isinstance(data, dict):
+        return []
+    error_map = data.get("error_map", {})
+    if not isinstance(error_map, dict):
+        return []
+    results: list[ErrorLocation] = []
+    for file_path, entries in error_map.items():
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            url = str(entry.get("url", "") or "")
+            status_obj = entry.get("status")
+            status_text = ""
+            if isinstance(status_obj, dict):
+                status_text = str(status_obj.get("text", "") or "")
+            elif isinstance(status_obj, str):
+                status_text = status_obj
+            message = f"{url} -> {status_text}" if status_text else url
+            results.append(
+                ErrorLocation(
+                    file=pyfltr.paths.to_cwd_relative(str(file_path)),
+                    line=1,
+                    col=None,
+                    command="lychee",
+                    message=message,
+                    severity="error",
+                )
+            )
+    return results
+
+
+def _parse_semgrep_json(output: str) -> list[ErrorLocation]:
+    """`semgrep scan --json`のJSON出力をパースする。
+
+    出力例::
+
+        {
+          "results": [
+            {
+              "check_id": "rules.foo",
+              "path": "src/foo.py",
+              "start": {"line": 18, "col": 9},
+              "end": {...},
+              "extra": {"severity": "ERROR", "message": "..."}
+            }
+          ],
+          ...
+        }
+
+    JSON解析失敗時は空リストを返す。
+    """
+    data = _try_json_loads(output)
+    if not isinstance(data, dict):
+        return []
+    raw_results = data.get("results", [])
+    if not isinstance(raw_results, list):
+        return []
+    results: list[ErrorLocation] = []
+    for entry in raw_results:
+        if not isinstance(entry, dict):
+            continue
+        start = entry.get("start", {})
+        if not isinstance(start, dict):
+            continue
+        line = start.get("line")
+        if not isinstance(line, int):
+            continue
+        raw_col = start.get("col")
+        col = raw_col if isinstance(raw_col, int) else None
+        extra = entry.get("extra", {}) if isinstance(entry.get("extra"), dict) else {}
+        rule = str(entry.get("check_id", "") or "") or None
+        results.append(
+            ErrorLocation(
+                file=pyfltr.paths.to_cwd_relative(str(entry.get("path", ""))),
+                line=line,
+                col=col,
+                command="semgrep",
+                message=str(extra.get("message", "") or ""),
+                rule=rule,
+                severity=_normalize_severity(extra.get("severity")),
+            )
+        )
+    return results
+
+
+def _parse_sqlfluff_json(output: str) -> list[ErrorLocation]:
+    """`sqlfluff lint --format=json`のJSON出力をパースする。
+
+    出力例::
+
+        [
+          {
+            "filepath": "src/foo.sql",
+            "violations": [
+              {
+                "start_line_no": 10,
+                "start_line_pos": 5,
+                "code": "L001",
+                "name": "...",
+                "description": "...",
+                "warning": false
+              }
+            ]
+          }
+        ]
+
+    JSON解析失敗時は空リストを返す。
+    """
+    data = _try_json_loads(output)
+    if not isinstance(data, list):
+        return []
+    results: list[ErrorLocation] = []
+    for entry in data:
+        if not isinstance(entry, dict):
+            continue
+        file_path = str(entry.get("filepath", "") or "")
+        violations = entry.get("violations", [])
+        if not isinstance(violations, list):
+            continue
+        for violation in violations:
+            if not isinstance(violation, dict):
+                continue
+            line = violation.get("start_line_no")
+            if not isinstance(line, int):
+                continue
+            raw_col = violation.get("start_line_pos")
+            col = raw_col if isinstance(raw_col, int) else None
+            rule = str(violation.get("code", "") or "") or None
+            severity = "warning" if violation.get("warning") else "error"
+            results.append(
+                ErrorLocation(
+                    file=pyfltr.paths.to_cwd_relative(file_path),
+                    line=line,
+                    col=col,
+                    command="sqlfluff",
+                    message=str(violation.get("description", "") or ""),
+                    rule=rule,
+                    severity=severity,
+                )
+            )
+    return results
+
+
 def _parse_glab_ci_lint(output: str) -> list[ErrorLocation]:
     """`glab ci lint`出力をパース。
 
@@ -772,6 +989,10 @@ _CUSTOM_PARSERS: dict[str, typing.Callable[[str], list[ErrorLocation]]] = {
     "typos": _parse_typos_jsonl,
     "pytest": _parse_pytest,
     "glab-ci-lint": _parse_glab_ci_lint,
+    "designmd": _parse_designmd_json,
+    "lychee": _parse_lychee_json,
+    "semgrep": _parse_semgrep_json,
+    "sqlfluff": _parse_sqlfluff_json,
 }
 
 

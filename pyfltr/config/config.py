@@ -230,6 +230,23 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # fix前には含まれていた識別子がfix後に失われたケースを検知して警告を発行する。
     # 空リスト（`[]`）を指定すると検知を無効化できる。
     "textlint-protected-identifiers": [".NET", "Node.js", "Vue.js", "Next.js", "Nuxt.js"],
+    # designmd: @google/design.md による DESIGN.md 形式仕様チェック。js-runner経由。
+    # 対象ファイルがあれば自動的に有効化される設計のため既定True。
+    "designmd": True,
+    "designmd-path": "",
+    "designmd-runner": "js-runner",
+    # `@google/design.md` の起動形式は `design.md lint <files>`。サブコマンドは共通argsに含める。
+    "designmd-args": ["lint"],
+    "designmd-fast": False,
+    # lychee: Rust製リンク切れチェッカー。bin-runner経由（mise）。既定で有効。
+    # 既定argsに`--offline`は加えない（外部URL検証が本来の用途のため）。
+    # ネットワーク到達性に依存する懸念がある場合は`lychee-severity = "warning"`への切替を案内する。
+    "lychee": True,
+    "lychee-path": "",
+    "lychee-runner": "bin-runner",
+    "lychee-args": ["--format", "json", "--no-progress"],
+    "lychee-version": "latest",
+    "lychee-fast": False,
     "eslint": False,
     "eslint-path": "",
     "eslint-runner": "js-runner",
@@ -425,6 +442,22 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "gitleaks-pass-filenames": False,
     "gitleaks-version": "latest",
     "gitleaks-fast": False,
+    # semgrep: 多言語SAST。ルールセット指定が必須のため既定で無効（opt-in）。
+    # 既定argsは空とする（ルールセット既定はsemgrep側の意図と衝突するため）。
+    # 利用者は`semgrep-args = ["scan", "--json", "--error", "--config=auto"]`等で
+    # サブコマンド・出力形式・ルールセットをまとめて指定する。
+    "semgrep": False,
+    "semgrep-path": "",
+    "semgrep-runner": "python-runner",
+    "semgrep-args": [],
+    "semgrep-fast": False,
+    # sqlfluff: SQL専用linter。dialect指定が必須のため利用者の`.sqlfluff`配置を前提とするopt-in。
+    # `sqlfluff lint`サブコマンドをlinterとして起動する（`sqlfluff format`サブコマンドは対象外）。
+    "sqlfluff": False,
+    "sqlfluff-path": "",
+    "sqlfluff-runner": "python-runner",
+    "sqlfluff-args": ["lint", "--format=json"],
+    "sqlfluff-fast": False,
     "pytest": False,
     "pytest-path": "",
     "pytest-runner": "python-runner",
@@ -596,6 +629,8 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
             "ty",
             "markdownlint",
             "textlint",
+            "designmd",
+            "lychee",
             "eslint",
             "biome",
             "ec",
@@ -606,12 +641,14 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
             "yamllint",
             "hadolint",
             "gitleaks",
+            "semgrep",
             "oxlint",
             "tsc",
             "cargo-clippy",
             "cargo-check",
             "cargo-deny",
             "dotnet-build",
+            "sqlfluff",
         ],
         "test": ["pytest", "vitest", "cargo-test", "dotnet-test"],
     },

@@ -62,11 +62,12 @@ plugins:
         - JS/TS: `prettier` / `tsc` / `eslint` / `biome` / `oxlint` / `vitest`
         - Rust: `cargo-fmt` / `cargo-clippy` / `cargo-check` / `cargo-test` / `cargo-deny`
         - .NET: `dotnet-format` / `dotnet-build` / `dotnet-test`
-        - ドキュメント: `markdownlint` / `textlint`
+        - ドキュメント: `markdownlint` / `textlint` / `designmd` / `lychee`
         - シェル: `shfmt` / `shellcheck`
         - YAML/TOML: `yamllint` / `taplo`
         - CI/Docker/EditorConfig: `actionlint` / `glab-ci-lint` / `hadolint` / `ec`
-        - セキュリティ/スペル: `gitleaks` / `typos`
+        - セキュリティ/スペル: `gitleaks` / `typos` / `semgrep`
+        - SQL: `sqlfluff`
         - その他: `pre-commit`
 
         詳細は[対応ツール一覧](guide/index.md)を参照。

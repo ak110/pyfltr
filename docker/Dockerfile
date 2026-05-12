@@ -19,18 +19,18 @@
 #
 # 同梱ツール一覧 (新ツール追加時は本リストと該当 RUN 層を更新する):
 #   - Python (pyfltr 本体依存に同梱): ruff / mypy / pylint / pyright / ty / pytest / uv-sort /
-#     typos / pre-commit
+#     typos / pre-commit / semgrep / sqlfluff
 #   - Python 単独 (uv tool install): yamllint
 #   - mise 経由のネイティブバイナリ: node (LTS) / shfmt / actionlint /
-#     editorconfig-checker / glab / taplo / hadolint / pinact / gitleaks
+#     editorconfig-checker / glab / taplo / hadolint / pinact / gitleaks / lychee
 #     (Node.js は APT 由来の旧バージョンを避けて mise 管理に一本化する。
 #      pnpm 11 系が要求する Node.js v22.13+ を mise の node@lts で確保する)
 #   - npm グローバル経由 (mise の Node.js を使用): pnpm
 #     (pnpm 自体は mise でも管理可能だがスタンドアロンバイナリのシステムライブラリ依存を避け、
 #      JS 実装を npm 経由で導入する)
 #   - APT 直結の補助ツール: shellcheck (direct runner フォールバック用)
-#   - pnpm グローバル経由の JS / TS 系: prettier / markdownlint-cli / textlint / eslint /
-#     @biomejs/biome / oxlint / typescript / vitest
+#   - pnpm グローバル経由の JS / TS 系: prettier / markdownlint-cli / textlint / @google/design.md /
+#     eslint / @biomejs/biome / oxlint / typescript / vitest
 #
 # Rust (cargo-*) と .NET (dotnet-*) のツールチェインはイメージサイズへの影響が大きいため
 # 同梱しない。利用者側で `mise use rust@latest` 等を経由して導入する想定。
@@ -166,12 +166,14 @@ RUN --mount=type=secret,id=GITHUB_TOKEN,env=GITHUB_TOKEN,required=false \
         hadolint@latest \
         pinact@latest \
         gitleaks@latest \
+        lychee@latest \
     && pnpm config set store-dir "${PNPM_STORE_DIR}" --global \
     && pnpm config set minimum-release-age 1440 --global \
     && pnpm add -g \
         prettier \
         markdownlint-cli \
         textlint \
+        "@google/design.md" \
         eslint \
         "@biomejs/biome" \
         oxlint \
