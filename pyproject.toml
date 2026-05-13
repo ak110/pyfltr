@@ -63,7 +63,7 @@ pyfltr = "pyfltr.cli.main:main"
 # mkdocs-llmstxt 0.5 系を維持できるよう <1.0 へ制約する。mdformat-tables 側の追従後に解除する。
 dev = [
     "mdformat<1.0",
-    "mkdocs-llmstxt>=0.2",
+    "mkdocs-llmstxt>=0.5",
     "mkdocs-material>=9.6",
     "mkdocs>=1.6",
     "pytest-mock",
