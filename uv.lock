@@ -8,7 +8,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-05-12T02:30:06.225574472Z"
+exclude-newer = "2026-05-12T03:33:13.233296449Z"
 exclude-newer-span = "P1D"
 
 [options.exclude-newer-package]
@@ -1593,22 +1593,22 @@ requires-dist = [
     { name = "dill", specifier = ">=0.3" },
     { name = "mcp", specifier = ">=1.0" },
     { name = "mypy", specifier = ">=1.0" },
-    { name = "natsort", specifier = ">=8.4.0" },
+    { name = "natsort", specifier = ">=8.0" },
     { name = "platformdirs", specifier = ">=4.0" },
-    { name = "pre-commit", specifier = ">=4.5.1" },
+    { name = "pre-commit", specifier = ">=4.0" },
     { name = "psutil", specifier = ">=6.0" },
-    { name = "pylint", specifier = ">=3.0" },
-    { name = "pylint-pydantic", specifier = ">=0.4.1" },
-    { name = "pyright", extras = ["nodejs"], specifier = ">=1.1.403" },
+    { name = "pylint", specifier = ">=3.2" },
+    { name = "pylint-pydantic", specifier = ">=0.4" },
+    { name = "pyright", extras = ["nodejs"], specifier = ">=1.1" },
     { name = "pytest", specifier = ">=7.0" },
-    { name = "pytest-asyncio", specifier = ">=1.0.0" },
+    { name = "pytest-asyncio", specifier = ">=1.0" },
     { name = "pytest-timeout", specifier = ">=2" },
     { name = "python-ulid", specifier = ">=3.0" },
-    { name = "pyyaml", specifier = ">=6.0.3" },
-    { name = "ruff", specifier = ">=0.12.1" },
-    { name = "semgrep", specifier = ">=1.85.0" },
-    { name = "sqlfluff", specifier = ">=4.1.0" },
-    { name = "textual", specifier = ">=8.0.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "ruff", specifier = ">=0.12" },
+    { name = "semgrep", specifier = ">=1.140.0" },
+    { name = "sqlfluff", specifier = ">=4.0" },
+    { name = "textual", specifier = ">=7.0.0" },
     { name = "tomlkit", specifier = ">=0.13" },
     { name = "ty", specifier = ">=0.0.26" },
     { name = "typos", specifier = ">=1.0" },
