@@ -34,7 +34,7 @@ dependencies = [
     "python-ulid>=3.0",
     "pyyaml>=6.0.3",
     "ruff>=0.12.1",
-    "semgrep>=1.162.0",
+    "semgrep>=1.85.0",
     "sqlfluff>=4.1.0",
     "textual>=8.0.0",
     "tomlkit>=0.13",
@@ -59,7 +59,10 @@ pyfltr = "pyfltr.cli.main:main"
 [dependency-groups]
 # mkdocs / mkdocs-material / mkdocs-llmstxt / pytest-mock / types-pyyaml は
 # docs 生成・テストで直接使うため dev に残す。
+# mdformat は mkdocs-llmstxt の間接依存。mdformat 1.0 系では mdformat-tables が未対応のため、
+# mkdocs-llmstxt 0.5 系を維持できるよう <1.0 へ制約する。mdformat-tables 側の追従後に解除する。
 dev = [
+    "mdformat<1.0",
     "mkdocs-llmstxt>=0.2",
     "mkdocs-material>=9.6",
     "mkdocs>=1.6",

@@ -2540,11 +2540,12 @@ def test_build_commandline_dotnet_root_ignored_in_mise_mode(monkeypatch: pytest.
     assert resolved.commandline[:2] == ["mise", "exec"]
 
 
-def test_command_runner_validation_rejects_unknown_value(tmp_path: pathlib.Path) -> None:
-    """`{command}-runner`に不正値を与えるとload_configがエラーで拒否する。"""
+def test_command_runner_validation_warns_for_unknown_value(tmp_path: pathlib.Path) -> None:
+    """`{command}-runner`に不正値を与えるとload_configが警告を発行する。"""
     (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\ntypos-runner = "bogus"\n')
-    with pytest.raises(ValueError, match="typos-runner"):
-        pyfltr.config.config.load_config(config_dir=tmp_path)
+    pyfltr.config.config.load_config(config_dir=tmp_path)
+    messages = [w["message"] for w in pyfltr.warnings_.collected_warnings() if w["source"] == "config"]
+    assert any("typos-runner" in m for m in messages)
 
 
 # --- mise設定記述判定によるtool spec省略仕様 ---
