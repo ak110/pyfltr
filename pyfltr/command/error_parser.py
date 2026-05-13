@@ -918,6 +918,92 @@ def _parse_glab_ci_lint(output: str) -> list[ErrorLocation]:
     return results
 
 
+def _parse_vitest_json(output: str) -> list[ErrorLocation]:
+    """Vitest `--reporter=json` 出力をパースする。
+
+    入力はJest互換のJSONで、`pyfltr.command.vitest.execute_vitest`が
+    `--outputFile.json=<tmpfile>` で取得したファイル内容を文字列として渡す。
+    テキスト出力のregex解析より構造化情報が安定して得られる経路を採る
+    （Vitestデフォルト出力はバージョン差・カラー制御文字・テスト名のネスト表示など変動要素が多い）。
+
+    出力構造の主要部分::
+
+        {
+          "testResults": [
+            {
+              "name": "/abs/path/to/foo.test.ts",
+              "assertionResults": [
+                {
+                  "status": "failed",
+                  "fullName": "Suite > nested > case",
+                  "failureMessages": ["..."],
+                  "location": {"line": 12, "column": 3}
+                }
+              ]
+            }
+          ]
+        }
+
+    各失敗 `assertionResult` を1件の `ErrorLocation` へ変換する。pytestのカスタムパーサーと
+    同じく `fullName` を `message` 先頭へ併記する（locationだけでは識別性が乏しく、
+    `expect`系のassertion失敗メッセージはテスト名と組み合わせて初めて意味を持つため）。
+
+    `location` 欠落時は `line=1` 固定でフォールバックする
+    （Vitestの新しいランナー以外では `includeTaskLocation` 設定次第で欠落するため）。
+    `failureMessages` が空のときも空メッセージで1件を生成し、失敗の存在自体を保持する。
+
+    JSON解析失敗時は空リストを返す。`command.message` フォールバック経路で従来通り
+    stdout末尾が `command.message` へ格納される。
+    """
+    data = _try_json_loads(output)
+    if not isinstance(data, dict):
+        return []
+    test_results = data.get("testResults", [])
+    if not isinstance(test_results, list):
+        return []
+    results: list[ErrorLocation] = []
+    for entry in test_results:
+        if not isinstance(entry, dict):
+            continue
+        file_path = str(entry.get("name", "") or "")
+        assertions = entry.get("assertionResults", [])
+        if not isinstance(assertions, list):
+            continue
+        for assertion in assertions:
+            if not isinstance(assertion, dict):
+                continue
+            if assertion.get("status") != "failed":
+                continue
+            location = assertion.get("location")
+            line: int = 1
+            col: int | None = None
+            if isinstance(location, dict):
+                raw_line = location.get("line")
+                if isinstance(raw_line, int):
+                    line = raw_line
+                raw_col = location.get("column")
+                if isinstance(raw_col, int):
+                    col = raw_col
+            test_name = str(assertion.get("fullName", "") or "")
+            failure_messages = assertion.get("failureMessages", [])
+            raw_message = ""
+            if isinstance(failure_messages, list) and failure_messages:
+                first = failure_messages[0]
+                if isinstance(first, str):
+                    raw_message = first.splitlines()[0] if first else ""
+            message = f"{test_name}: {raw_message}" if test_name else raw_message
+            results.append(
+                ErrorLocation(
+                    file=pyfltr.paths.to_cwd_relative(file_path),
+                    line=line,
+                    col=col,
+                    command="vitest",
+                    message=message,
+                )
+            )
+    return results
+
+
 def _parse_pytest(output: str) -> list[ErrorLocation]:
     """Pytest出力をパース。`--tb=short`形式のトレースバックからプロジェクト内フレームを優先的に抽出する。
 
@@ -994,6 +1080,7 @@ _CUSTOM_PARSERS: dict[str, typing.Callable[[str], list[ErrorLocation]]] = {
     "textlint": _parse_textlint_json,
     "typos": _parse_typos_jsonl,
     "pytest": _parse_pytest,
+    "vitest": _parse_vitest_json,
     "glab-ci-lint": _parse_glab_ci_lint,
     "designmd": _parse_designmd_json,
     "lychee": _parse_lychee_json,

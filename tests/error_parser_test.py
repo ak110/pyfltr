@@ -964,6 +964,236 @@ def test_parse_pytest_fallback() -> None:
     assert errors[0].line == 0
 
 
+def _vitest_assertion(
+    *,
+    status: str,
+    full_name: str,
+    failure_messages: list[str] | None = None,
+    location: dict[str, int] | None = None,
+) -> dict:
+    """vitestのassertionResult dict を組み立てるテスト用ヘルパー。"""
+    result: dict = {"status": status, "fullName": full_name}
+    if failure_messages is not None:
+        result["failureMessages"] = failure_messages
+    if location is not None:
+        result["location"] = location
+    return result
+
+
+def _vitest_output(test_results: list[dict]) -> str:
+    """vitest JSON reporter出力相当の dict を JSON 文字列へ変換するテスト用ヘルパー。"""
+    return json.dumps({"testResults": test_results})
+
+
+_VITEST_SINGLE_FAILURE = _vitest_output(
+    [
+        {
+            "name": "/abs/proj/tests/foo.test.ts",
+            "assertionResults": [
+                _vitest_assertion(
+                    status="failed",
+                    full_name="adds correctly",
+                    failure_messages=["AssertionError: expected 3 to equal 4"],
+                    location={"line": 7, "column": 5},
+                )
+            ],
+        }
+    ]
+)
+
+
+_VITEST_MULTI_FILE_FAILURE = _vitest_output(
+    [
+        {
+            "name": "/abs/proj/tests/foo.test.ts",
+            "assertionResults": [
+                _vitest_assertion(
+                    status="failed",
+                    full_name="adds correctly",
+                    failure_messages=["AssertionError: expected 3 to equal 4"],
+                    location={"line": 7, "column": 5},
+                ),
+                _vitest_assertion(
+                    status="passed",
+                    full_name="subtracts correctly",
+                    location={"line": 12, "column": 5},
+                ),
+            ],
+        },
+        {
+            "name": "/abs/proj/tests/bar.test.ts",
+            "assertionResults": [
+                _vitest_assertion(
+                    status="failed",
+                    full_name="divides correctly",
+                    failure_messages=["TypeError: divisor is zero"],
+                    location={"line": 20, "column": 1},
+                )
+            ],
+        },
+    ]
+)
+
+
+_VITEST_LOCATION_MISSING = _vitest_output(
+    [
+        {
+            "name": "/abs/proj/tests/foo.test.ts",
+            "assertionResults": [
+                _vitest_assertion(
+                    status="failed",
+                    full_name="no location",
+                    failure_messages=["AssertionError: boom"],
+                )
+            ],
+        }
+    ]
+)
+
+
+_VITEST_NESTED_FULLNAME = _vitest_output(
+    [
+        {
+            "name": "/abs/proj/tests/foo.test.ts",
+            "assertionResults": [
+                _vitest_assertion(
+                    status="failed",
+                    full_name="Calculator > addition > positive numbers",
+                    failure_messages=["AssertionError: expected 3 to equal 4"],
+                    location={"line": 9, "column": 3},
+                )
+            ],
+        }
+    ]
+)
+
+
+_VITEST_EMPTY_FAILURE_MESSAGES = _vitest_output(
+    [
+        {
+            "name": "/abs/proj/tests/foo.test.ts",
+            "assertionResults": [
+                _vitest_assertion(
+                    status="failed",
+                    full_name="no failure messages",
+                    failure_messages=[],
+                    location={"line": 1, "column": 1},
+                )
+            ],
+        }
+    ]
+)
+
+
+_VITEST_ALL_PASSED = _vitest_output(
+    [
+        {
+            "name": "/abs/proj/tests/foo.test.ts",
+            "assertionResults": [
+                _vitest_assertion(
+                    status="passed",
+                    full_name="adds correctly",
+                    location={"line": 7, "column": 5},
+                )
+            ],
+        }
+    ]
+)
+
+
+@pytest.mark.parametrize(
+    ("case_id", "output", "expected"),
+    [
+        (
+            "single_failure",
+            _VITEST_SINGLE_FAILURE,
+            [
+                {
+                    "line": 7,
+                    "col": 5,
+                    "message_prefix": "adds correctly: ",
+                    "message_contains": "expected 3 to equal 4",
+                }
+            ],
+        ),
+        (
+            "multi_file_failure",
+            _VITEST_MULTI_FILE_FAILURE,
+            [
+                {
+                    "line": 7,
+                    "col": 5,
+                    "message_prefix": "adds correctly: ",
+                    "message_contains": "expected 3 to equal 4",
+                },
+                {
+                    "line": 20,
+                    "col": 1,
+                    "message_prefix": "divides correctly: ",
+                    "message_contains": "divisor is zero",
+                },
+            ],
+        ),
+        (
+            "location_missing_fallback",
+            _VITEST_LOCATION_MISSING,
+            [
+                {
+                    "line": 1,
+                    "col": None,
+                    "message_prefix": "no location: ",
+                    "message_contains": "boom",
+                }
+            ],
+        ),
+        (
+            "nested_describe_fullname",
+            _VITEST_NESTED_FULLNAME,
+            [
+                {
+                    "line": 9,
+                    "col": 3,
+                    "message_prefix": "Calculator > addition > positive numbers: ",
+                    "message_contains": "expected 3 to equal 4",
+                }
+            ],
+        ),
+        (
+            "empty_failure_messages",
+            _VITEST_EMPTY_FAILURE_MESSAGES,
+            [
+                {
+                    "line": 1,
+                    "col": 1,
+                    "message_prefix": "no failure messages: ",
+                    "message_contains": "",
+                }
+            ],
+        ),
+        ("all_passed", _VITEST_ALL_PASSED, []),
+        ("invalid_json", "not json", []),
+    ],
+)
+def test_parse_vitest_json(case_id: str, output: str, expected: list[dict]) -> None:
+    """vitest JSON reporter出力を失敗単位のdiagnosticへ変換する。
+
+    JSTQB準拠の同値分割・境界値分析で以下のケースを網羅する。
+    (a)単一テスト失敗、(b)複数テスト失敗（異なるファイル・異なるassertion）、
+    (c)`location`欠落時のline=1フォールバック、(d)`describe`ネストでの`fullName`併記、
+    (e)`failureMessages`空配列のフォールバック、(f)全件成功（空リスト返却）、
+    (g)パース不能JSON（空リスト返却）。
+    """
+    del case_id
+    errors = pyfltr.command.error_parser.parse_errors("vitest", output)
+    assert len(errors) == len(expected)
+    for actual, want in zip(errors, expected, strict=True):
+        assert actual.command == "vitest"
+        assert actual.line == want["line"]
+        assert actual.col == want["col"]
+        assert actual.message.startswith(want["message_prefix"])
+        assert want["message_contains"] in actual.message
+
+
 def test_parse_glab_ci_lint_valid() -> None:
     """有効CI出力 (Validating... + ✓ ...) では空リストを返す。"""
     output = "Validating...\n✓ CI/CD YAML is valid!\n"

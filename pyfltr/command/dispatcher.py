@@ -22,6 +22,7 @@ import pyfltr.command.two_step.prettier
 import pyfltr.command.two_step.ruff
 import pyfltr.command.two_step.shfmt
 import pyfltr.command.two_step.taplo
+import pyfltr.command.vitest
 import pyfltr.config.config
 import pyfltr.state.cache
 import pyfltr.state.only_failed
@@ -535,6 +536,29 @@ def _dispatch_command(
                 commandline,
                 targets,
                 config,
+                env,
+                on_output,
+                start_time,
+                args,
+                is_interrupted=is_interrupted,
+                on_subprocess_start=on_subprocess_start,
+                on_subprocess_end=on_subprocess_end,
+            )
+        )
+
+    # vitestはJSON reporter併用で失敗を構造化diagnosticへ変換する。
+    # 利用者の`vitest-args`に`--reporter`または`--outputFile`指定がある場合は
+    # 注入をスキップし、stdout経由の従来経路で動作する。
+    if command == "vitest":
+        return _with_targets(
+            pyfltr.command.vitest.execute_vitest(
+                command,
+                command_info,
+                commandline,
+                commandline_prefix,
+                targets,
+                config,
+                additional_args,
                 env,
                 on_output,
                 start_time,
