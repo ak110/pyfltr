@@ -3,8 +3,7 @@
 ## 開発環境の構築手順
 
 1. 本リポジトリをcloneする
-2. [uvをインストール](https://docs.astral.sh/uv/getting-started/installation/)する
-3. 初回セットアップを実行する
+2. 初回セットアップを実行する
 
     ```bash
     make setup
@@ -29,13 +28,6 @@
 - `uv.toml` の `exclude-newer` で公開直後パッケージを一定期間除外し、サプライチェーン汚染リスクを低減する
 - GitHub Actionsのサードパーティアクションはハッシュピン留めで固定する（`make update-actions`で更新）
 
-環境構築の初回に以下を実行する。
-
-```bash
-mkdir -p ~/.config/uv && echo 'exclude-newer = "1 day"' >> ~/.config/uv/uv.toml
-pnpm config set minimum-release-age 1440 --global
-```
-
 ## ドキュメントサイト運用
 
 ドキュメントはMkDocsで管理し、GitHub Pagesでホスティングする。
@@ -45,14 +37,6 @@ pnpm config set minimum-release-age 1440 --global
 `mkdocs.yml`の`nav`を変更した場合は`uv run mkdocs build --strict`で
 リンク切れや設定ミスがないことを確認する。
 `llmstxt`プラグインの`sections`設定もnavに合わせて更新する。
-
-### GitHub Pagesの設定
-
-初回のみリポジトリの設定が必要。
-
-1. GitHubのリポジトリ設定ページを開く
-2. `Settings` → `Pages` に移動する
-3. Sourceを「GitHub Actions」に設定する
 
 masterブランチへのpush時にdocs/配下やmkdocs.ymlの変更があると自動デプロイする。
 
