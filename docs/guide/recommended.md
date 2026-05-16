@@ -311,11 +311,12 @@ markdownlint-cli2が読み込む設定ファイル。`$schema`を指定してエ
 ```yaml
 $schema: https://raw.githubusercontent.com/DavidAnson/markdownlint-cli2/v0.20.0/schema/markdownlint-cli2-config-schema.json
 config:
-  # MD013: コードブロック内を除外し、127文字を上限とする補助的な検査として使用
+  # コードブロック/表を除外し、127文字を上限とする
   line-length:
     line_length: 127
     code_blocks: false
-  # Makefileのコードブロック内でタブ文字を使うため、コードブロック内のみ許可
+    tables: false
+  # コードブロック内でタブ文字を許可(Makefileなど用)
   no-hard-tabs:
     code_blocks: false
 ```

@@ -30,7 +30,7 @@ jobs:
         shell: bash
     strategy:
       matrix:
-        python-version: [ "3.11", "3.12", "3.13", "3.14" ]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
     env:
       UV_PYTHON: ${{ matrix.python-version }}
       # mise・pinact等がGitHub APIを呼び出す際のレート制限（403）回避
@@ -54,7 +54,7 @@ jobs:
         # `CI=true` を明示し、smoke test がツール不在時にスキップへ逃げず失敗扱いとなるようにする。
         env:
           CI: "true"
-        run: uv run --with-editable=. pyfltr ci --output-format=github-annotations
+        run: uv run pyfltr ci --output-format=github-annotations
 
       - name: Prune uv cache for CI
         run: uv cache prune --ci
@@ -126,7 +126,7 @@ jobs:
         # `CI=true` を明示し、smoke test がツール不在時にスキップへ逃げず失敗扱いとなるようにする。
         env:
           CI: "true"
-        run: uv run --with-editable=. pyfltr ci --output-format=github-annotations
+        run: uv run pyfltr ci --output-format=github-annotations
 
       - name: Prune uv cache for CI
         run: uv cache prune --ci

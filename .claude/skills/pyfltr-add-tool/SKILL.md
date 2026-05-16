@@ -40,7 +40,7 @@ description: >
 ## 検証
 
 ```bash
-uv run --with-editable=. pyfltr run-for-agent
+uv run pyfltr run-for-agent
 ```
 
 警告ゼロかつテスト全件成功で完了とする。
@@ -61,10 +61,10 @@ uv run --with-editable=. pyfltr run-for-agent
 
 ```bash
 # 少数ファイル（対象種別のファイルを1〜2個指定）
-uv run --with-editable=. pyfltr run-for-agent <file1> [file2] 2>/dev/null
+uv run pyfltr run-for-agent <file1> [file2] 2>/dev/null
 
 # 全ファイル（引数なしでリポジトリ全体を対象）
-uv run --with-editable=. pyfltr run-for-agent 2>/dev/null
+uv run pyfltr run-for-agent 2>/dev/null
 ```
 
 JSONL出力の `command` レコードから `command`・`elapsed`・`files` を抽出する。

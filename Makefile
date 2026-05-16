@@ -39,12 +39,12 @@ update-actions:
 # 利用者向け推奨と同じ with 方式で起動するが、ローカル変更を反映するため editable 指定にする
 format:
 	$(MAKE) clean-stale-dist-info
-	uv run --with-editable=. pyfltr fast
+	uv run pyfltr fast
 
 # 全チェック実行（これを通過すればコミット可能）
 test:
 	$(MAKE) clean-stale-dist-info
-	uv run --with-editable=. pyfltr run
+	uv run pyfltr run
 
 docs:
 	uv run mkdocs serve
