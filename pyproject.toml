@@ -31,6 +31,7 @@ dependencies = [
     "pyright[nodejs]>=1.1",
     "pytest-asyncio>=1.0",
     "pytest-timeout>=2",
+    "pytest-xdist>=3",
     "pytest>=7.0",
     "python-ulid>=3.0",
     "pyyaml>=6.0",
@@ -89,6 +90,9 @@ preset = "latest"
 # が gate 通過で有効化される。`ty` のみ preset 非収録のため個別 true で追加する。
 python = true
 ty = true
+# 以下の非Python系ツールは preset = "latest" に含まれないため個別 true で有効化する。
+# pyfltr本体のドッグフーディングとして、各ツールの起動経路・引数組み立て・出力解釈を
+# 本リポでも継続的に検証し、新規対応ツール追加時の回帰を検知する。
 glab-ci-lint = true
 yamllint = true
 taplo = true
@@ -200,6 +204,7 @@ addopts = [
     "--durations=30",
     "--durations-min=0.5",
     "--timeout=60",
+    "-n", "4",
     "--ignore=tests/smoke_data",
 ]
 log_level = "DEBUG"

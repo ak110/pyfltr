@@ -54,7 +54,8 @@ extend-exclude = [
 
 - `javascript = true`: JS/TS系ツール一式（eslint / biome / oxlint / prettier / tsc / vitest）が
   プリセットのゲートを通過して有効化される
-- `js-runner = "pnpm"`: pnpmワークスペース経由でJS系ツールを呼ぶ。`textlint-packages`は無視される
+- `js-runner = "pnpm"`: pnpmワークスペース経由でJS系ツールを呼ぶ
+    - `textlint-packages`は無視される
 - eslintとoxlintは併用するとeslintで非対応のルールを補完できる（Rust製のため高速）
 - tsc: TypeScript型チェックも実行できる。svelte-checkなどフレームワーク固有のチェッカーと併用する場合はどちらか一方でよい
 - vitest: `vitest-args = ["run", "--passWithNoTests"]`が既定のため追加引数は不要
@@ -122,11 +123,13 @@ PATH上のcargoを使いたい場合は`cargo-fmt-runner = "direct"`等を指定
 ポイント:
 
 - `format`: `pyfltr fast`がfix段を内蔵するため、
-  linterのautofix（`cargo-clippy --fix`、`markdownlint --fix`等）→ formatter → 軽量linterの順で実行される。
-- `test`: ローカル開発用。`pyfltr run`はformatter差分を自動修正し、linter/tester通過で成功する。
-- `ci`: CI用。`pyfltr ci`はformatter差分も含めて失敗扱いにする。
-- `js-runner = "pnpm"`: pnpmワークスペース経由でJS系ツールを呼ぶ。`textlint-packages`は無視される。
-- タスクランナーの設定例は[推奨設定例](recommended.md)の「タスクランナー」を参照。
+  linterのautofix（`cargo-clippy --fix`、`markdownlint --fix`等）→ formatter → 軽量linterの順で実行される
+- `test`: ローカル開発用
+    - `pyfltr run`はformatter差分を自動修正し、linter/tester通過で成功する
+- `ci`: CI用。`pyfltr ci`はformatter差分も含めて失敗扱いにする
+- `js-runner = "pnpm"`: pnpmワークスペース経由でJS系ツールを呼ぶ
+    - `textlint-packages`は無視される
+- タスクランナーの設定例は[推奨設定例](recommended.md)の「タスクランナー」を参照
 
 ## .NETプロジェクト
 
@@ -182,10 +185,10 @@ extend-exclude = [
 
 ポイント:
 
-- `types_or`にC#関連のタグ（`c#`、`csproj`、`sln`、`msbuild`、`editorconfig`）を含める。
-  dotnet系コマンドは`pass-filenames = false`でプロジェクト全体をチェックするが、
-  pre-commitはtypes_orに一致するファイルがコミットに含まれないとhook自体を起動しない。
-  identifyライブラリのタグ名は`csharp`ではなく`c#`であることに注意。
-- `dotnet-build`: ビルドエラーをlint段階で検出するためlinterとして分類している。
-- `dotnet-format`: formatterとして常時書き込みモードで動作する。
-- タスクランナーの設定例は[推奨設定例](recommended.md)の「タスクランナー」を参照。
+- `types_or`にC#関連のタグ（`c#`、`csproj`、`sln`、`msbuild`、`editorconfig`）を含める
+    - dotnet系コマンドは`pass-filenames = false`でプロジェクト全体をチェックするが、
+    pre-commitはtypes_orに一致するファイルがコミットに含まれないとhook自体を起動しない
+    - identifyライブラリのタグ名は`csharp`ではなく`c#`であることに注意
+- `dotnet-build`: ビルドエラーをlint段階で検出するためlinterとして分類している
+- `dotnet-format`: formatterとして常時書き込みモードで動作する
+- タスクランナーの設定例は[推奨設定例](recommended.md)の「タスクランナー」を参照
