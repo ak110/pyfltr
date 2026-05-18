@@ -280,7 +280,7 @@ class ReplaceHistoryStore:
                 removed.append(entry.name)
             entries = entries[overflow:]
 
-        # サイズ超過の削除（古い方から削っていく）
+        # サイズ超過の削除（古い方から）
         if policy.max_size_bytes > 0:
             total = sum(_dir_size(entry) for entry in entries)
             for entry in list(entries):

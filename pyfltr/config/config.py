@@ -500,7 +500,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # 詳細参照経路（`show-run` / `list-runs`、MCPツール）からいつでも
     # 全文を参照できるようにする。
     # 既定で有効にしている（オプトイン化を却下した）理由: エージェント連携時の
-    # JSONL smart truncationで削られた情報を事後参照できる前提を崩さないため。
+    # JSONL smart truncationで除外された情報を事後参照できる前提を崩さないため。
     # 肥大化は`archive-max-*`系の自動削除で抑える。
     "archive": True,
     # 自動クリーンアップの閾値。いずれかを超過した時点で古い順に削除する。
