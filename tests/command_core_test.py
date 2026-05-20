@@ -2696,7 +2696,7 @@ def test_build_commandline_omits_tool_spec_when_mise_config_has_rust(monkeypatch
     """mise設定に `rust` 記述ありかつversion既定値ならtool spec省略形を返す。"""
     monkeypatch.setattr(
         "pyfltr.command.mise.get_mise_active_tools",
-        lambda config, *, allow_side_effects=False: pyfltr.command.mise.MiseActiveToolsResult(
+        lambda config, *, allow_side_effects=False, cwd=None: pyfltr.command.mise.MiseActiveToolsResult(
             status="ok", tools={"rust": [{"version": "1.83.0"}]}
         ),
     )
@@ -2714,7 +2714,7 @@ def test_build_commandline_omits_tool_spec_when_mise_config_has_aqua_cargo_deny(
     """mise設定にaqua表記の `aqua:EmbarkStudios/cargo-deny` 記述ありなら省略形になる。"""
     monkeypatch.setattr(
         "pyfltr.command.mise.get_mise_active_tools",
-        lambda config, *, allow_side_effects=False: pyfltr.command.mise.MiseActiveToolsResult(
+        lambda config, *, allow_side_effects=False, cwd=None: pyfltr.command.mise.MiseActiveToolsResult(
             status="ok", tools={"aqua:EmbarkStudios/cargo-deny": [{"version": "0.16.0"}]}
         ),
     )
@@ -2728,7 +2728,7 @@ def test_build_commandline_keeps_tool_spec_when_mise_config_missing(monkeypatch:
     """判定辞書が空（記述なし）の場合は従来形 `<backend>@latest` を組み立てる。"""
     monkeypatch.setattr(
         "pyfltr.command.mise.get_mise_active_tools",
-        lambda config, *, allow_side_effects=False: pyfltr.command.mise.MiseActiveToolsResult(status="ok"),
+        lambda config, *, allow_side_effects=False, cwd=None: pyfltr.command.mise.MiseActiveToolsResult(status="ok"),
     )
     config = pyfltr.config.config.create_default_config()
     resolved = pyfltr.command.runner.build_commandline("cargo-fmt", config)
@@ -2741,7 +2741,7 @@ def test_build_commandline_keeps_tool_spec_when_version_explicit(monkeypatch: py
     # 判定辞書には `rust` 記述があるが、versionが明示されているので利用者の意図を尊重する。
     monkeypatch.setattr(
         "pyfltr.command.mise.get_mise_active_tools",
-        lambda config, *, allow_side_effects=False: pyfltr.command.mise.MiseActiveToolsResult(
+        lambda config, *, allow_side_effects=False, cwd=None: pyfltr.command.mise.MiseActiveToolsResult(
             status="ok", tools={"rust": [{"version": "1.83.0"}]}
         ),
     )
@@ -2757,9 +2757,9 @@ def test_build_commandline_allow_side_effects_propagates_to_active_tools(monkeyp
     received: list[bool] = []
 
     def fake(
-        config: pyfltr.config.config.Config, *, allow_side_effects: bool = False
+        config: pyfltr.config.config.Config, *, allow_side_effects: bool = False, cwd: object = None
     ) -> pyfltr.command.mise.MiseActiveToolsResult:
-        del config
+        del config, cwd
         received.append(allow_side_effects)
         return pyfltr.command.mise.MiseActiveToolsResult(status="ok")
 
@@ -2880,9 +2880,9 @@ def test_get_mise_active_tools_cache_key_differs_by_cwd(monkeypatch: pytest.Monk
     call_log: list[str] = []
 
     def fake_query(
-        config: pyfltr.config.config.Config, *, allow_side_effects: bool
+        config: pyfltr.config.config.Config, *, allow_side_effects: bool, cwd: object = None
     ) -> pyfltr.command.mise.MiseActiveToolsResult:
-        del config, allow_side_effects
+        del config, allow_side_effects, cwd
         call_log.append(os.getcwd())
         return pyfltr.command.mise.MiseActiveToolsResult(status="ok")
 
@@ -2911,9 +2911,9 @@ def test_get_mise_active_tools_cache_key_differs_by_env(monkeypatch: pytest.Monk
     call_count = [0]
 
     def fake_query(
-        config: pyfltr.config.config.Config, *, allow_side_effects: bool
+        config: pyfltr.config.config.Config, *, allow_side_effects: bool, cwd: object = None
     ) -> pyfltr.command.mise.MiseActiveToolsResult:
-        del config, allow_side_effects
+        del config, allow_side_effects, cwd
         call_count[0] += 1
         return pyfltr.command.mise.MiseActiveToolsResult(status="ok")
 
@@ -2942,9 +2942,9 @@ def test_get_mise_active_tools_cache_key_differs_by_allow_side_effects(
     received_flags: list[bool] = []
 
     def fake_query(
-        config: pyfltr.config.config.Config, *, allow_side_effects: bool
+        config: pyfltr.config.config.Config, *, allow_side_effects: bool, cwd: object = None
     ) -> pyfltr.command.mise.MiseActiveToolsResult:
-        del config
+        del config, cwd
         received_flags.append(allow_side_effects)
         if allow_side_effects:
             return pyfltr.command.mise.MiseActiveToolsResult(status="ok", tools={"rust": []})
@@ -2980,9 +2980,14 @@ def test_query_mise_active_tools_untrusted_no_side_effects(monkeypatch: pytest.M
     monkeypatch.setattr("pyfltr.command.mise.shutil.which", lambda name: f"/usr/local/bin/{name}")
 
     def fake_run_with_trust(
-        args: list[str], mise_env: dict[str, str], config: pyfltr.config.config.Config, *, allow_side_effects: bool
+        args: list[str],
+        mise_env: dict[str, str],
+        config: pyfltr.config.config.Config,
+        *,
+        allow_side_effects: bool,
+        cwd: object = None,
     ) -> tuple[int, str, str, bool]:
-        del args, mise_env, config, allow_side_effects
+        del args, mise_env, config, allow_side_effects, cwd
         return 1, "", "Error: config /home/u/mise.toml is not trusted", False
 
     monkeypatch.setattr("pyfltr.command.mise.run_mise_with_trust", fake_run_with_trust)
@@ -2998,9 +3003,14 @@ def test_query_mise_active_tools_trust_failed(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr("pyfltr.command.mise.shutil.which", lambda name: f"/usr/local/bin/{name}")
 
     def fake_run_with_trust(
-        args: list[str], mise_env: dict[str, str], config: pyfltr.config.config.Config, *, allow_side_effects: bool
+        args: list[str],
+        mise_env: dict[str, str],
+        config: pyfltr.config.config.Config,
+        *,
+        allow_side_effects: bool,
+        cwd: object = None,
     ) -> tuple[int, str, str, bool]:
-        del args, mise_env, config, allow_side_effects
+        del args, mise_env, config, allow_side_effects, cwd
         return 2, "", "trust rejected by user", True
 
     monkeypatch.setattr("pyfltr.command.mise.run_mise_with_trust", fake_run_with_trust)
@@ -3016,9 +3026,14 @@ def test_query_mise_active_tools_exec_error_oserror(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr("pyfltr.command.mise.shutil.which", lambda name: f"/usr/local/bin/{name}")
 
     def fake_run_with_trust(
-        args: list[str], mise_env: dict[str, str], config: pyfltr.config.config.Config, *, allow_side_effects: bool
+        args: list[str],
+        mise_env: dict[str, str],
+        config: pyfltr.config.config.Config,
+        *,
+        allow_side_effects: bool,
+        cwd: object = None,
     ) -> tuple[int, str, str, bool]:
-        del args, mise_env, config, allow_side_effects
+        del args, mise_env, config, allow_side_effects, cwd
         raise OSError("mise binary missing executable bit")
 
     monkeypatch.setattr("pyfltr.command.mise.run_mise_with_trust", fake_run_with_trust)
@@ -3034,9 +3049,14 @@ def test_query_mise_active_tools_json_parse_error(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr("pyfltr.command.mise.shutil.which", lambda name: f"/usr/local/bin/{name}")
 
     def fake_run_with_trust(
-        args: list[str], mise_env: dict[str, str], config: pyfltr.config.config.Config, *, allow_side_effects: bool
+        args: list[str],
+        mise_env: dict[str, str],
+        config: pyfltr.config.config.Config,
+        *,
+        allow_side_effects: bool,
+        cwd: object = None,
     ) -> tuple[int, str, str, bool]:
-        del args, mise_env, config, allow_side_effects
+        del args, mise_env, config, allow_side_effects, cwd
         return 0, "this is not json", "", False
 
     monkeypatch.setattr("pyfltr.command.mise.run_mise_with_trust", fake_run_with_trust)
@@ -3050,9 +3070,14 @@ def test_query_mise_active_tools_unexpected_shape(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr("pyfltr.command.mise.shutil.which", lambda name: f"/usr/local/bin/{name}")
 
     def fake_run_with_trust(
-        args: list[str], mise_env: dict[str, str], config: pyfltr.config.config.Config, *, allow_side_effects: bool
+        args: list[str],
+        mise_env: dict[str, str],
+        config: pyfltr.config.config.Config,
+        *,
+        allow_side_effects: bool,
+        cwd: object = None,
     ) -> tuple[int, str, str, bool]:
-        del args, mise_env, config, allow_side_effects
+        del args, mise_env, config, allow_side_effects, cwd
         return 0, "[]", "", False
 
     monkeypatch.setattr("pyfltr.command.mise.run_mise_with_trust", fake_run_with_trust)
@@ -3067,9 +3092,14 @@ def test_query_mise_active_tools_ok(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("pyfltr.command.mise.shutil.which", lambda name: f"/usr/local/bin/{name}")
 
     def fake_run_with_trust(
-        args: list[str], mise_env: dict[str, str], config: pyfltr.config.config.Config, *, allow_side_effects: bool
+        args: list[str],
+        mise_env: dict[str, str],
+        config: pyfltr.config.config.Config,
+        *,
+        allow_side_effects: bool,
+        cwd: object = None,
     ) -> tuple[int, str, str, bool]:
-        del args, mise_env, config, allow_side_effects
+        del args, mise_env, config, allow_side_effects, cwd
         return 0, '{"rust": [{"version": "1.83.0"}]}', "", False
 
     monkeypatch.setattr("pyfltr.command.mise.run_mise_with_trust", fake_run_with_trust)

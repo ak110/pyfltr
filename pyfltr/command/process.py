@@ -3,6 +3,7 @@
 import atexit
 import contextlib
 import os
+import pathlib
 import shutil
 import signal
 import subprocess
@@ -211,6 +212,7 @@ def run_subprocess(
     on_subprocess_start: typing.Callable[[], None] | None = None,
     on_subprocess_end: typing.Callable[[], None] | None = None,
     timeout: float | None = None,
+    cwd: pathlib.Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """サブプロセスの実行 （Popenベース）。
 
@@ -232,6 +234,11 @@ def run_subprocess(
     `None` または `0` 以下は無効（=既存挙動）。Timerによる停止後はメインの `for line in proc.stdout`
     ループがEOFを受け取って解放されるため、既存ループの非ブロック化は不要。
     途中まで蓄積したstdoutと経過秒数は例外オブジェクトに保持し、上位経路でCommandResult組み立てに使う。
+
+    `cwd` を指定すると `subprocess.Popen` の作業ディレクトリに渡す。サブプロジェクト単位実行で
+    各サブプロジェクトのディレクトリを起点に外部ツールを起動するために使う。`None` の場合は
+    親プロセスの cwd で起動する（既存挙動）。並列実行中の他プロセスを `os.chdir()` で
+    干渉させないため、cwd 切り替えは Popen 引数のみで行う。
 
     Windowsでは `subprocess.Popen` を `shell=False` でリスト渡しにすると
     `.exe` / `.cmd` 等の拡張子付きファイルをPATHから自動解決しないため、
@@ -276,6 +283,7 @@ def run_subprocess(
             text=True,
             encoding="utf-8",
             errors="backslashreplace",
+            cwd=str(cwd) if cwd is not None else None,
             **popen_extra,
         ) as proc:
             _DEFAULT_REGISTRY.add(proc)
@@ -373,6 +381,7 @@ def run_subprocess_with_timeout(
     on_subprocess_start: typing.Callable[[], None] | None = None,
     on_subprocess_end: typing.Callable[[], None] | None = None,
     timeout: float | None = None,
+    cwd: pathlib.Path | None = None,
 ) -> CompletedProcessWithTimeoutInfo:
     """`run_subprocess` のtimeout例外を捕捉して`CompletedProcess`相当に変換する共通wrapper。
 
@@ -394,6 +403,7 @@ def run_subprocess_with_timeout(
             on_subprocess_start=on_subprocess_start,
             on_subprocess_end=on_subprocess_end,
             timeout=timeout,
+            cwd=cwd,
         )
     except TimeoutExceededExecution as e:
         message = f"\nTimeout exceeded after {e.timeout:.1f}s (elapsed={e.elapsed:.1f}s)\n"

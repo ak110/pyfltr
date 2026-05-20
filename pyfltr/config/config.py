@@ -632,6 +632,16 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "extend-exclude": [],
     # .gitignoreに記載されたファイルを除外するか否か（git check-ignoreを使用）
     "respect-gitignore": True,
+    # モノレポ対応: サブプロジェクト検出時に再帰侵入しないディレクトリ名の追加リスト。
+    # 規定で `.venv`・`node_modules`・`target`・`build`・`dist`・`.git` は常に除外し、
+    # 本キーで追加除外を指定できる。文字列リストで指定する。
+    "subproject-exclude": [],
+    # モノレポ対応: サブプロジェクト検出で `.gitignore` を尊重するか否か。
+    # True（既定）の場合 `git check-ignore` でignored判定された候補は検出集合から除外する。
+    "subproject-use-gitignore": True,
+    # モノレポ対応: `[tool.uv.workspace] members` を読み取ってサブプロジェクト集合に
+    # 反映するか否か。True（既定）の場合 uv workspace の member を含めて検出する。
+    "subproject-uv-workspace": True,
     # コマンド名のエイリアス
     "aliases": {
         "format": [
@@ -721,6 +731,34 @@ def _register_command_hints_defaults(defaults: dict[str, typing.Any], command_na
 
 _register_command_severity_defaults(DEFAULT_CONFIG, BUILTIN_COMMAND_NAMES)
 _register_command_hints_defaults(DEFAULT_CONFIG, BUILTIN_COMMAND_NAMES)
+
+
+def _register_command_subproject_aware_defaults(
+    defaults: dict[str, typing.Any],
+    builtin_commands: dict[str, CommandInfo],
+) -> None:
+    """全ビルトインコマンドへ `{command}-subproject-aware` 既定値を登録する。
+
+    既定値は `CommandInfo.subproject_aware` から取得する。利用者は
+    `pyproject.toml` で `{command}-subproject-aware = false` 等と上書きできる。
+    """
+    for command, info in builtin_commands.items():
+        defaults[f"{command}-subproject-aware"] = info.subproject_aware
+
+
+_register_command_subproject_aware_defaults(DEFAULT_CONFIG, BUILTIN_COMMANDS)
+
+
+def resolve_subproject_aware(values: dict[str, typing.Any], command: str, default: bool) -> bool:
+    """per-tool `{command}-subproject-aware` の有効値を返す。
+
+    値が真偽値以外の場合は `default`（`CommandInfo.subproject_aware`）を返す。
+    バリデーションは `load_config` 側で行うため、ここでは型確認のみ行う安全側のヘルパー。
+    """
+    raw = values.get(f"{command}-subproject-aware", default)
+    if isinstance(raw, bool):
+        return raw
+    return default
 
 
 def resolve_severity(values: dict[str, typing.Any], command: str) -> str:

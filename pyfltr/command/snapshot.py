@@ -9,17 +9,22 @@ import pyfltr.warnings_
 logger = __import__("logging").getLogger(__name__)
 
 
-def snapshot_file_digests(targets: list[pathlib.Path]) -> dict[pathlib.Path, bytes]:
+def snapshot_file_digests(targets: list[pathlib.Path], *, base_cwd: pathlib.Path | None = None) -> dict[pathlib.Path, bytes]:
     """対象ファイルの内容ハッシュ （BLAKE2b） スナップショットを取得。
 
     mtimeベースの比較はtextlint --fixのように「残存違反がなくても
     ファイルを書き戻す」ツールで偽陽性を起こすため、内容ハッシュで比較する。
     ファイルが存在しない場合は空bytesを設定する （比較で差分検知できる）。
+
+    `base_cwd` を指定すると、相対パス `targets` の解決基準ディレクトリとして使う。
+    `None` の場合は親プロセスの cwd で解決する（既存挙動）。サブプロジェクト分割実行で、
+    pyfltr 起点 cwd 基準の相対パスを保ったままファイル読み込みを行うために使う。
     """
     result: dict[pathlib.Path, bytes] = {}
     for target in targets:
+        path = target if target.is_absolute() or base_cwd is None else base_cwd / target
         try:
-            with target.open("rb") as f:
+            with path.open("rb") as f:
                 result[target] = hashlib.file_digest(f, "blake2b").digest()
         except OSError:
             result[target] = b""
@@ -38,16 +43,20 @@ def changed_files(
     return sorted(str(p) for p, digest in after.items() if before.get(p) != digest)
 
 
-def snapshot_file_texts(targets: list[pathlib.Path]) -> dict[pathlib.Path, str]:
+def snapshot_file_texts(targets: list[pathlib.Path], *, base_cwd: pathlib.Path | None = None) -> dict[pathlib.Path, str]:
     """対象ファイルのテキスト内容スナップショットを取得する。
 
     textlint fixの保護対象識別子破損検知に使う。読み込めないファイルは辞書から
     除外する （比較時には「前後どちらにも出現しない」と解釈される）。
+
+    `base_cwd` を指定すると、相対パス `targets` の解決基準ディレクトリとして使う。
+    `None` の場合は親プロセスの cwd で解決する（既存挙動）。
     """
     result: dict[pathlib.Path, str] = {}
     for target in targets:
+        path = target if target.is_absolute() or base_cwd is None else base_cwd / target
         try:
-            result[target] = target.read_text(encoding="utf-8")
+            result[target] = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
     return result

@@ -3,6 +3,7 @@
 import dataclasses
 import json
 import os
+import pathlib
 import shutil
 import subprocess
 import typing
@@ -94,6 +95,7 @@ def get_mise_active_tools(
     config: pyfltr.config.config.Config,
     *,
     allow_side_effects: bool = False,
+    cwd: pathlib.Path | None = None,
 ) -> MiseActiveToolsResult:
     """`mise ls --current --json` 結果をステータス付きで返す（プロセス内キャッシュ付き）。
 
@@ -108,16 +110,19 @@ def get_mise_active_tools(
     （`command-info` の `--check` 無し呼び出しで副作用なし契約を維持するため）。
 
     キャッシュキーには `realpath(cwd)`・mise設定解決に影響する環境変数・副作用許可フラグの
-    3要素を含める。`mise ls --current --json` がcwdで結果を変えるため、`os.chdir()` 後の
-    再呼び出しで誤判定しないよう必ずcwdをキーに含める。副作用OFFで失敗フォールバック保存した
-    結果と副作用ONで正規取得した結果が混線しないよう、フラグ自体もキーに含める。
+    3要素を含める。`mise ls --current --json` がcwdで結果を変えるため、`cwd` を明示する。
+    `cwd` 未指定時は親プロセスの cwd を採用するが、並列実行下のcwd干渉を避けるため、
+    サブプロジェクト分割実行では呼び出し側で必ず明示する想定。
+    副作用OFFで失敗フォールバック保存した結果と副作用ONで正規取得した結果が混線しないよう、
+    フラグ自体もキーに含める。
     """
-    cache_key = (os.path.realpath(os.getcwd()), _mise_env_signature(), allow_side_effects)
+    cwd_for_query = cwd if cwd is not None else pathlib.Path.cwd()
+    cache_key = (os.path.realpath(str(cwd_for_query)), _mise_env_signature(), allow_side_effects)
     cached = _MISE_ACTIVE_TOOLS_CACHE.get(cache_key)
     if cached is not None:
         return cached
 
-    result = _query_mise_active_tools(config, allow_side_effects=allow_side_effects)
+    result = _query_mise_active_tools(config, allow_side_effects=allow_side_effects, cwd=cwd_for_query)
     _MISE_ACTIVE_TOOLS_CACHE[cache_key] = result
     return result
 
@@ -126,6 +131,7 @@ def _query_mise_active_tools(
     config: pyfltr.config.config.Config,
     *,
     allow_side_effects: bool,
+    cwd: pathlib.Path | None = None,
 ) -> MiseActiveToolsResult:
     """`mise ls --current --json` を実際に呼び出し、ステータス付き結果を返す。
 
@@ -137,7 +143,7 @@ def _query_mise_active_tools(
         return MiseActiveToolsResult(status="mise-not-found")
     mise_env = build_mise_subprocess_env(dict(os.environ))
     ls_args = ["mise", "ls", "--current", "--json"]
-    return _run_mise_ls_with_trust_retry(ls_args, config, mise_env, allow_side_effects=allow_side_effects)
+    return _run_mise_ls_with_trust_retry(ls_args, config, mise_env, allow_side_effects=allow_side_effects, cwd=cwd)
 
 
 def run_mise_with_trust(
@@ -146,6 +152,7 @@ def run_mise_with_trust(
     config: pyfltr.config.config.Config,
     *,
     allow_side_effects: bool,
+    cwd: pathlib.Path | None = None,
 ) -> tuple[int, str, str, bool]:
     """miseコマンドを実行し、未信頼エラー時はtrust試行→再実行する核ロジック。
 
@@ -155,9 +162,10 @@ def run_mise_with_trust(
     `OSError` は呼び出し側へ伝播する。
     `allow_side_effects=False` 時はtrust試行を行わず、未信頼エラーも含めてそのまま返す。
     """
+    cwd_arg = str(cwd) if cwd is not None else None
     trusted = False
     while True:
-        check = subprocess.run(args, capture_output=True, text=True, check=False, env=mise_env)
+        check = subprocess.run(args, capture_output=True, text=True, check=False, env=mise_env, cwd=cwd_arg)
         if check.returncode == 0:
             return check.returncode, check.stdout, check.stderr, False
         stderr = check.stderr
@@ -168,6 +176,7 @@ def run_mise_with_trust(
                 text=True,
                 check=False,
                 env=mise_env,
+                cwd=cwd_arg,
             )
             if trust.returncode == 0:
                 trusted = True
@@ -183,6 +192,7 @@ def _run_mise_ls_with_trust_retry(
     mise_env: dict[str, str],
     *,
     allow_side_effects: bool,
+    cwd: pathlib.Path | None = None,
 ) -> MiseActiveToolsResult:
     """`mise ls --current --json` を実行し、必要に応じてtrust試行→再実行する。
 
@@ -193,7 +203,7 @@ def _run_mise_ls_with_trust_retry(
     """
     try:
         returncode, stdout, stderr, trust_failed = run_mise_with_trust(
-            ls_args, mise_env, config, allow_side_effects=allow_side_effects
+            ls_args, mise_env, config, allow_side_effects=allow_side_effects, cwd=cwd
         )
     except OSError as e:
         # mise自体の起動失敗（PATH不一致・実行権限なしなど）。判定不可として空扱い。

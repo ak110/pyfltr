@@ -25,6 +25,8 @@ def execute_taplo_two_step(
     is_interrupted: typing.Callable[[], bool] | None = None,
     on_subprocess_start: typing.Callable[[], None] | None = None,
     on_subprocess_end: typing.Callable[[], None] | None = None,
+    cwd: pathlib.Path | None = None,
+    start_cwd: pathlib.Path | None = None,
 ) -> CommandResult:
     """Taploの2段階実行（taplo check → taplo format）。
 
@@ -46,4 +48,6 @@ def execute_taplo_two_step(
         is_interrupted=is_interrupted,
         on_subprocess_start=on_subprocess_start,
         on_subprocess_end=on_subprocess_end,
+        cwd=cwd,
+        start_cwd=start_cwd,
     )

@@ -29,6 +29,7 @@ def execute_pre_commit(
     is_interrupted: typing.Callable[[], bool] | None = None,
     on_subprocess_start: typing.Callable[[], None] | None = None,
     on_subprocess_end: typing.Callable[[], None] | None = None,
+    cwd: pathlib.Path | None = None,
 ) -> CommandResult:
     """pre-commitの2段階実行。
 
@@ -50,7 +51,7 @@ def execute_pre_commit(
         )
 
     # .pre-commit-config.yamlが存在しなければスキップ
-    config_dir = pathlib.Path.cwd()
+    config_dir = cwd if cwd is not None else pathlib.Path.cwd()
     config_path = config_dir / ".pre-commit-config.yaml"
     if not config_path.exists():
         return CommandResult.from_run(
@@ -88,6 +89,7 @@ def execute_pre_commit(
         on_subprocess_start=on_subprocess_start,
         on_subprocess_end=on_subprocess_end,
         timeout=timeout,
+        cwd=cwd,
     )
     returncode = proc.returncode
     has_error = False

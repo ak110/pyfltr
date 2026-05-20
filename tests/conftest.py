@@ -63,7 +63,7 @@ def _default_mise_active_tools_empty(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("pyfltr.command.mise._MISE_ACTIVE_TOOLS_CACHE", {}, raising=True)
     monkeypatch.setattr(
         "pyfltr.command.mise.get_mise_active_tools",
-        lambda config, *, allow_side_effects=False: pyfltr.command.mise.MiseActiveToolsResult(status="ok"),
+        lambda config, *, allow_side_effects=False, cwd=None: pyfltr.command.mise.MiseActiveToolsResult(status="ok"),
     )
 
 

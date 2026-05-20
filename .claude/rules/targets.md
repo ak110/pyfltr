@@ -16,3 +16,7 @@ paths:
   シンボリックリンク扱いの詳細・早期スキップの限界（`link/`形式パターンへの非対応など）は
   `pyfltr/command/targets.py`の`expand_all_files` / `_filter_by_gitignore`のdocstringに集約する
 - cwdリポジトリ外パスは判定対象外として残し、`returncode`想定外時の素通しは採用しない（`emit_warning`で通知）
+- モノレポ対応では、サブプロジェクト境界の子サブプロジェクト配下を親サブプロジェクトの集合から除外する。
+  最終的なファイル所属判定（どのサブプロジェクトに割り当てるか）は最深一致で
+  `pyfltr/command/subprojects.py`の`classify_files_by_subproject`に集約する。
+  `expand_all_files`の`exclude_subdirs`引数は走査効率化の補助手段に留め、ファイル所属判定の唯一の根拠としない

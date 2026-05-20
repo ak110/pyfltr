@@ -31,6 +31,8 @@ def execute_prettier_two_step(
     is_interrupted: typing.Callable[[], bool] | None = None,
     on_subprocess_start: typing.Callable[[], None] | None = None,
     on_subprocess_end: typing.Callable[[], None] | None = None,
+    cwd: pathlib.Path | None = None,
+    start_cwd: pathlib.Path | None = None,
 ) -> CommandResult:
     """Prettierの2段階実行（prettier --check → prettier --write）。
 
@@ -62,13 +64,17 @@ def execute_prettier_two_step(
     直接参照する旧実装は動作しなくなる。同種関数を追加する際は本引数経由でプレフィックスを受け取る形を踏襲する。
     """
     common_args: list[str] = pyfltr.command.runner.resolve_user_args(command, config)
+    if cwd is not None and start_cwd is not None:
+        external_targets = [_relative_to_cwd(t, cwd=cwd, start_cwd=start_cwd) for t in targets]
+    else:
+        external_targets = [str(t) for t in targets]
     check_commandline, write_commandline = _build_commandlines(
         commandline_prefix,
         common_args,
         pyfltr.command.runner.expanduser_args(list(config[f"{command}-check-args"])),
         pyfltr.command.runner.expanduser_args(list(config[f"{command}-write-args"])),
         additional_args,
-        [str(t) for t in targets],
+        external_targets,
     )
 
     timeout = pyfltr.config.config.resolve_command_timeout(config.values, command)
@@ -95,6 +101,8 @@ def execute_prettier_two_step(
             on_output=on_output,
             on_subprocess_start=on_subprocess_start,
             on_subprocess_end=on_subprocess_end,
+            cwd=cwd,
+            start_cwd=start_cwd,
         )
 
     return _run_prettier_check_then_write(
@@ -111,7 +119,19 @@ def execute_prettier_two_step(
         on_output=on_output,
         on_subprocess_start=on_subprocess_start,
         on_subprocess_end=on_subprocess_end,
+        cwd=cwd,
+        start_cwd=start_cwd,
     )
+
+
+def _relative_to_cwd(target: pathlib.Path, *, cwd: pathlib.Path, start_cwd: pathlib.Path) -> str:
+    """起点 cwd 相対パスをサブプロジェクト cwd 相対パスへ変換する。"""
+    abs_path = target if target.is_absolute() else (start_cwd / target)
+    try:
+        rel = abs_path.resolve().relative_to(cwd.resolve())
+    except (OSError, ValueError):
+        return str(target).replace("\\", "/")
+    return str(rel).replace("\\", "/")
 
 
 def _run_prettier_check_then_write(
@@ -129,6 +149,8 @@ def _run_prettier_check_then_write(
     on_output: typing.Callable[[str], None] | None = None,
     on_subprocess_start: typing.Callable[[], None] | None = None,
     on_subprocess_end: typing.Callable[[], None] | None = None,
+    cwd: pathlib.Path | None = None,
+    start_cwd: pathlib.Path | None = None,
 ) -> CommandResult:
     """prettier専用の通常モード処理。
 
@@ -145,6 +167,7 @@ def _run_prettier_check_then_write(
         on_subprocess_start=on_subprocess_start,
         on_subprocess_end=on_subprocess_end,
         timeout=timeout,
+        cwd=cwd,
     )
     step1_rc = step1_proc.returncode
 
@@ -184,7 +207,7 @@ def _run_prettier_check_then_write(
         )
 
     # Step1 rc == 1 → Step2実行（書き込み）
-    prettier_digests_before = snapshot_file_digests(targets)
+    prettier_digests_before = snapshot_file_digests(targets, base_cwd=start_cwd)
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(write_commandline)}\n")
     step2_proc = pyfltr.command.process.run_subprocess_with_timeout(
@@ -195,6 +218,7 @@ def _run_prettier_check_then_write(
         on_subprocess_start=on_subprocess_start,
         on_subprocess_end=on_subprocess_end,
         timeout=timeout,
+        cwd=cwd,
     )
     step2_rc = step2_proc.returncode
     output = (step1_proc.stdout + step2_proc.stdout).strip()
@@ -221,7 +245,7 @@ def _run_prettier_check_then_write(
         timeout_exceeded=step2_proc.timeout_exceeded,
     )
     if not has_error:
-        prettier_digests_after = snapshot_file_digests(targets)
+        prettier_digests_after = snapshot_file_digests(targets, base_cwd=start_cwd)
         changed = prettier_digests_after != prettier_digests_before
         if changed:
             result.fixed_files = changed_files(prettier_digests_before, prettier_digests_after)

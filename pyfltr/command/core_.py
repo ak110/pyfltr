@@ -8,8 +8,11 @@ import pyfltr.config.config
 
 if typing.TYPE_CHECKING:
     import pyfltr.command.error_parser
+    import pyfltr.command.subprojects
     import pyfltr.state.cache
     import pyfltr.state.only_failed
+
+    Subproject = pyfltr.command.subprojects.Subproject
 
 logger = __import__("logging").getLogger(__name__)
 
@@ -29,6 +32,33 @@ class ExecutionBaseContext:
     """ファイルhashキャッシュストア。`None` の場合はキャッシュ無効。"""
     cache_run_id: str | None
     """キャッシュ書き込み時の参照元run_id。`None` の場合はキャッシュ書き込みをスキップ。"""
+    start_cwd: pathlib.Path = dataclasses.field(default_factory=pathlib.Path.cwd)
+    """モノレポ探索とパス正規化の起点 cwd（絶対パス）。
+
+    `expand_all_files` ・ `_filter_by_gitignore` ・ `discover_subprojects` 等の
+    cwd 起点処理に明示引数として渡す。`run_pipeline` が起動時の cwd（`--work-dir` 適用後）
+    を1度だけ設定し、サブプロジェクトループで `os.chdir()` を行わずに cwd 起点処理を維持する。
+    """
+    subprojects: "list[Subproject]" = dataclasses.field(default_factory=list)
+    """検出済みサブプロジェクトの一覧。
+
+    要素0件はモノレポモード無効を意味する（単一 `pyproject.toml` 検出または検出0件）。
+    要素1件以上はモノレポモード有効。`subproject_aware=True` のツールはこの一覧を
+    元にサブプロジェクト別ループ実行する。
+    `Subproject` 型は循環import回避のためTYPE_CHECKING節で定義する。
+    """
+    subproject_files: "dict[pathlib.Path, list[pathlib.Path]]" = dataclasses.field(default_factory=dict)
+    """サブプロジェクト cwd（絶対パス）からそのサブプロジェクトに属するファイル一覧（`start_cwd` 相対）への辞書。
+
+    `pyfltr.command.subprojects.classify_files_by_subproject` で算出する。
+    サブプロジェクト未検出時は空辞書。
+    """
+    subproject_configs: "dict[pathlib.Path, pyfltr.config.config.Config]" = dataclasses.field(default_factory=dict)
+    """サブプロジェクト cwd（絶対パス）からそのサブプロジェクト配下の `Config` への辞書。
+
+    各サブプロジェクトの `load_config(config_dir=cwd)` 結果を遅延評価で格納する。
+    `subproject_aware=True` のツール起動時に当該サブプロジェクトの設定を参照する。
+    """
 
 
 @dataclasses.dataclass
@@ -53,6 +83,15 @@ class ExecutionContext:
     """サブプロセス起動直後のフック。TUI経路で実行中コマンド集合を追跡するのに使用。"""
     on_subprocess_end: "typing.Callable[[], None] | None" = None
     """サブプロセス終了直前のフック。`on_subprocess_start` と対になる。"""
+    subproject_cwd: pathlib.Path | None = None
+    """サブプロジェクト分割実行時の当該サブプロジェクト cwd（絶対パス）。
+
+    `subproject_aware=True` のツールでサブプロジェクトループ内から実行されるとき、
+    対応するサブプロジェクトの cwd を保持する。`None` の場合は起点 cwd で実行する
+    （単一プロジェクトまたは `subproject_aware=False` のツール）。
+    `subprocess.Popen(cwd=subproject_cwd)` や `load_config(config_dir=subproject_cwd)` の
+    引数として渡す。
+    """
 
     @property
     def config(self) -> pyfltr.config.config.Config:
@@ -61,7 +100,14 @@ class ExecutionContext:
 
     @property
     def all_files(self) -> "list[pathlib.Path]":
-        """`base.all_files` への委譲。"""
+        """対象ファイル一覧。サブプロジェクト分割実行時は当該サブプロジェクト分のみ返す。
+
+        `subproject_cwd` が設定されている場合は `base.subproject_files` から
+        当該サブプロジェクトのファイル集合を返す。設定されていない場合は
+        `base.all_files` 全体を返す（既存挙動）。
+        """
+        if self.subproject_cwd is not None:
+            return self.base.subproject_files.get(self.subproject_cwd, [])
         return self.base.all_files
 
     @property
@@ -266,6 +312,113 @@ class CommandResult:
         else:
             status = "failed"
         return status
+
+    @classmethod
+    def merge(cls, results: "list[CommandResult]") -> "CommandResult":
+        """サブプロジェクト別の結果を1件にマージする。
+
+        `subproject_aware=True` ツールがサブプロジェクトループで複数回実行された
+        結果を、利用者向け出力スキーマを変えずに集約するためのヘルパー。
+
+        マージ規則:
+        - `output`: 各実行の出力を連結する（区切り行は `dispatcher` 側で挿入する）
+        - `errors`: 全実行の和集合
+        - `target_files`: 全実行の和集合（重複は順序維持で除去）
+        - `files`: 全実行の和集合のファイル数
+        - `elapsed`: 全実行の合計
+        - `status`: `failed > resolution_failed > warning > formatted > succeeded > skipped`
+          の順で最も重い結果を採用（`timeout_exceeded=True` は `status` プロパティ上 `failed` を返す）。
+          `running` は heartbeat 由来の途中状態で `merge` の入力には来ない前提のため `status_weight` に含めない
+        - `command_type`: 最も重い結果の値を採用（`status` と同じく `worst` 由来）。
+          textlint fix のように同一コマンドが `linter` ・ `formatter` を切り替える結果を扱うため
+        - `returncode`: 最初に発生した非ゼロ値を採用
+        - `fixed_files`: 全実行の和集合
+        - その他のフィールドは先頭結果から引き継ぐ
+
+        `results` が1件のみの場合はそのまま返す（フィールドのコピー含む）。
+        空リスト渡しはサブプロジェクトループの呼び出し側で防ぐ前提とする。
+        """
+        if not results:
+            raise ValueError("merge には1件以上の CommandResult が必要")
+        if len(results) == 1:
+            return results[0]
+
+        head = results[0]
+        # status の重み付け（数値が大きいほど重い）。
+        # `timeout_exceeded=True` の場合 `status` プロパティは `failed` を返すため、
+        # `status` キーとしての `"timeout_exceeded"` は登場しない。
+        status_weight: dict[str, int] = {
+            "skipped": 0,
+            "succeeded": 1,
+            "formatted": 2,
+            "warning": 3,
+            "resolution_failed": 4,
+            "failed": 5,
+        }
+        worst_idx = max(range(len(results)), key=lambda i: status_weight.get(results[i].status, 0))
+        worst = results[worst_idx]
+
+        outputs: list[str] = [r.output for r in results if r.output]
+        merged_output = "\n".join(outputs)
+
+        merged_errors: list[pyfltr.command.error_parser.ErrorLocation] = []
+        for r in results:
+            merged_errors.extend(r.errors)
+
+        merged_target_files: list[pathlib.Path] = []
+        seen: set[pathlib.Path] = set()
+        for r in results:
+            for t in r.target_files:
+                if t not in seen:
+                    seen.add(t)
+                    merged_target_files.append(t)
+
+        merged_fixed_files: list[str] = []
+        seen_fixed: set[str] = set()
+        for r in results:
+            for fp in r.fixed_files:
+                if fp not in seen_fixed:
+                    seen_fixed.add(fp)
+                    merged_fixed_files.append(fp)
+
+        # returncode: 最初の非ゼロ値、無ければ最初の値
+        first_nonzero: int | None = None
+        for r in results:
+            if r.returncode is not None and r.returncode != 0:
+                first_nonzero = r.returncode
+                break
+        merged_returncode = first_nonzero if first_nonzero is not None else head.returncode
+
+        total_elapsed = sum(r.elapsed for r in results)
+        total_files = sum(r.files for r in results)
+        any_has_error = any(r.has_error for r in results)
+        any_timeout = any(r.timeout_exceeded for r in results)
+        any_resolution_failed = any(r.resolution_failed for r in results)
+        any_archived = any(r.archived for r in results)
+
+        return cls(
+            command=head.command,
+            command_type=worst.command_type,
+            commandline=head.commandline,
+            returncode=merged_returncode,
+            has_error=any_has_error,
+            files=total_files,
+            output=merged_output,
+            elapsed=total_elapsed,
+            errors=merged_errors,
+            target_files=merged_target_files,
+            archived=any_archived,
+            retry_command=head.retry_command,
+            cached=all(r.cached for r in results),
+            cached_from=head.cached_from,
+            fixed_files=merged_fixed_files,
+            resolution_failed=any_resolution_failed,
+            effective_runner=head.effective_runner,
+            runner_source=head.runner_source,
+            runner_fallback=head.runner_fallback,
+            timeout_exceeded=any_timeout,
+            severity=head.severity,
+        )
 
     def get_status_text(self) -> str:
         """成型した文字列を返す。

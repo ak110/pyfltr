@@ -48,6 +48,7 @@ def execute_vitest(
     is_interrupted: typing.Callable[[], bool] | None = None,
     on_subprocess_start: typing.Callable[[], None] | None = None,
     on_subprocess_end: typing.Callable[[], None] | None = None,
+    cwd: pathlib.Path | None = None,
 ) -> CommandResult:
     """vitestをJSON reporter併用で実行し、失敗を構造化diagnosticへ変換する。
 
@@ -81,6 +82,7 @@ def execute_vitest(
             is_interrupted=is_interrupted,
             on_subprocess_start=on_subprocess_start,
             on_subprocess_end=on_subprocess_end,
+            cwd=cwd,
         )
 
     # tmpfileは `delete=False` で確保し、後始末をfinallyで明示する。
@@ -114,6 +116,7 @@ def execute_vitest(
             is_interrupted=is_interrupted,
             on_subprocess_start=on_subprocess_start,
             on_subprocess_end=on_subprocess_end,
+            cwd=cwd,
         )
     finally:
         json_path.unlink(missing_ok=True)
@@ -134,6 +137,7 @@ def _run_vitest_subprocess(
     is_interrupted: typing.Callable[[], bool] | None,
     on_subprocess_start: typing.Callable[[], None] | None,
     on_subprocess_end: typing.Callable[[], None] | None,
+    cwd: pathlib.Path | None = None,
 ) -> CommandResult:
     """vitestをsubprocess起動し、JSON reporter出力をparse_errorsへ渡す。
 
@@ -151,6 +155,7 @@ def _run_vitest_subprocess(
         on_subprocess_start=on_subprocess_start,
         on_subprocess_end=on_subprocess_end,
         timeout=pyfltr.config.config.resolve_command_timeout(config.values, command),
+        cwd=cwd,
     )
     returncode = proc.returncode
     output = proc.stdout.strip()

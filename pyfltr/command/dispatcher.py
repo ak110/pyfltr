@@ -1,6 +1,7 @@
 """ディスパッチャー。"""
 
 import argparse
+import dataclasses
 import pathlib
 import random
 import shlex
@@ -24,12 +25,34 @@ import pyfltr.command.two_step.shfmt
 import pyfltr.command.two_step.taplo
 import pyfltr.command.vitest
 import pyfltr.config.config
+import pyfltr.paths
 import pyfltr.state.cache
 import pyfltr.state.only_failed
 import pyfltr.warnings_
 from pyfltr.command.core_ import CacheContext, CommandResult, ExecutionContext, ExecutionParams
 
 logger = __import__("logging").getLogger(__name__)
+
+
+def _to_subproject_relative(
+    target: pathlib.Path,
+    *,
+    subproject_cwd: pathlib.Path,
+    start_cwd: pathlib.Path,
+) -> str:
+    """起点 cwd 相対パスをサブプロジェクト cwd 相対パスへ変換する。
+
+    `target` が絶対パスの場合はそのまま、相対の場合は起点 cwd を起点として絶対化してから
+    サブプロジェクト cwd 相対へ変換する。サブプロジェクト cwd の外側にあるパス
+    （ファイル所属判定で外側に分類されたケース）は元の表記をそのまま使う。
+    POSIX 区切りに揃える。
+    """
+    abs_path = target if target.is_absolute() else (start_cwd / target)
+    try:
+        rel = abs_path.resolve().relative_to(subproject_cwd.resolve())
+    except (OSError, ValueError):
+        return pyfltr.paths.normalize_separators(target)
+    return pyfltr.paths.normalize_separators(str(rel))
 
 
 def _format_tool_resolution_failure(
@@ -164,6 +187,8 @@ def _prepare_execution_params(
     *,
     fix_stage: bool,
     only_failed_targets: "pyfltr.state.only_failed.ToolTargets | None",
+    subproject_cwd: pathlib.Path | None = None,
+    start_cwd: pathlib.Path | None = None,
 ) -> "ExecutionParams | CommandResult":
     """実行前の共通前処理を行い `ExecutionParams` を返す。
 
@@ -220,8 +245,8 @@ def _prepare_execution_params(
     try:
         # 実コマンド実行経路はmise副作用を許可し、mise設定判定の `mise ls --current --json` でも
         # `mise-auto-trust` に従ったtrust→再実行を可能にする。
-        resolved = pyfltr.command.runner.build_commandline(command, config, allow_side_effects=True)
-        resolved = pyfltr.command.runner.ensure_mise_available(resolved, config, command=command)
+        resolved = pyfltr.command.runner.build_commandline(command, config, allow_side_effects=True, cwd=subproject_cwd)
+        resolved = pyfltr.command.runner.ensure_mise_available(resolved, config, command=command, cwd=subproject_cwd)
     except ValueError as e:
         message = str(e)
         # `{command}-runner = "uv"` または `"uvx"` をPython系以外のツールに指定した場合、`build_commandline` が
@@ -259,7 +284,10 @@ def _prepare_execution_params(
     )
     # pass-filenames = falseのツールはファイル引数を渡さない（tsc等）
     if config.values.get(f"{command}-pass-filenames", True):
-        commandline.extend(str(t) for t in targets)
+        if subproject_cwd is not None and start_cwd is not None:
+            commandline.extend(_to_subproject_relative(t, subproject_cwd=subproject_cwd, start_cwd=start_cwd) for t in targets)
+        else:
+            commandline.extend(str(t) for t in targets)
 
     # `pyfltr.command.runner.ensure_mise_available` を通過した後の `effective_runner` でmise経路かを判定する。
     # `pyfltr.command.runner.build_commandline` 直後はmise不在時のdirectフォールバック前の値が入っているため、
@@ -291,8 +319,13 @@ def _prepare_cache_context(
     *,
     fix_args: list[str] | None,
     cache_store: "pyfltr.state.cache.CacheStore | None",
+    subproject_cwd: pathlib.Path | None = None,
 ) -> CacheContext | None:
-    """キャッシュ参照用のキー算出。対象外の場合はNoneを返す。"""
+    """キャッシュ参照用のキー算出。対象外の場合はNoneを返す。
+
+    `subproject_cwd` を指定するとサブプロジェクト cwd の実体パスをキー要素に含める。
+    同一相対パスがサブプロジェクトをまたいで存在する場合の誤ヒットを防ぐ。
+    """
     if cache_store is None or not command_info.cacheable or fix_args is not None:
         return None
     if not pyfltr.state.cache.is_cacheable(command, config, additional_args):
@@ -305,6 +338,7 @@ def _prepare_cache_context(
         structured_output=structured_spec is not None,
         target_files=targets,
         config_files=pyfltr.state.cache.resolve_config_files(command, config),
+        subproject_cwd=subproject_cwd,
     )
     return CacheContext(cache_store=cache_store, command=command, key=key)
 
@@ -327,6 +361,7 @@ def _run_plain_command(
     is_interrupted: typing.Callable[[], bool] | None = None,
     on_subprocess_start: typing.Callable[[], None] | None = None,
     on_subprocess_end: typing.Callable[[], None] | None = None,
+    cwd: pathlib.Path | None = None,
 ) -> CommandResult:
     """通常のlinter/formatterを単発実行するplain経路。
 
@@ -347,6 +382,7 @@ def _run_plain_command(
         additional_args,
         fix_args=fix_args,
         cache_store=cache_store,
+        subproject_cwd=cwd,
     )
     if cache_context is not None:
         cached_result = cache_context.lookup()
@@ -368,6 +404,7 @@ def _run_plain_command(
         on_subprocess_start=on_subprocess_start,
         on_subprocess_end=on_subprocess_end,
         timeout=pyfltr.config.config.resolve_command_timeout(config.values, command),
+        cwd=cwd,
     )
     returncode = proc.returncode
 
@@ -422,12 +459,81 @@ def execute_command(
     渡す用途）。その後の `target_extensions` / `pass_filenames=False` の分岐は
     通常通り適用される。`None` の場合は既定の `all_files` を使用する。
 
+    モノレポモード（`base.subprojects` が2件以上）で当該コマンドが `subproject_aware=True`
+    の場合、サブプロジェクト別ループで実行して `CommandResult.merge` で集約する。
+    `subproject_aware=False` または単一プロジェクト時は従来通り起点 cwd で1回実行する。
+
     実行結果に対してuv経路でのツール未登録パターンを判定し、検出時には
     利用者向けの登録手順案内を `pyfltr.warnings_.emit_warning` 経由で発行する。
     """
-    result = _dispatch_command(command, args, ctx)
+    if _should_run_subproject_loop(command, ctx):
+        result = _run_subproject_loop(command, args, ctx)
+    else:
+        result = _dispatch_command(command, args, ctx)
     _maybe_emit_uv_missing_tool_warning(result)
     return result
+
+
+def _should_run_subproject_loop(command: str, ctx: ExecutionContext) -> bool:
+    """サブプロジェクトループ経路を採るか判定する。
+
+    判定条件:
+    - モノレポモード有効（`base.subprojects` が2件以上）
+    - 当該コマンドの `subproject_aware` が True（既定は `CommandInfo.subproject_aware`、
+      利用者が `{command}-subproject-aware` で上書き可能）
+    - `ctx.subproject_cwd` が未設定（既にサブループ内側ならネストさせない）
+
+    上記をすべて満たすときに True を返す。
+    """
+    if ctx.subproject_cwd is not None:
+        return False
+    subprojects = ctx.base.subprojects
+    if len(subprojects) < 2:
+        return False
+    info = ctx.config.commands.get(command)
+    if info is None:
+        return False
+    default_aware = info.subproject_aware
+    return pyfltr.config.config.resolve_subproject_aware(ctx.config.values, command, default_aware)
+
+
+def _run_subproject_loop(
+    command: str,
+    args: argparse.Namespace,
+    ctx: ExecutionContext,
+) -> CommandResult:
+    """サブプロジェクト別ループでツールを実行し `CommandResult` をマージする。
+
+    各サブプロジェクトに属するファイル0件のサブプロジェクトはツール実行対象から除外する
+    （外部ツールへ空ファイル列を渡さない既存挙動と整合させる）。
+    結果が1件しか集まらなかった場合は merge せずそのまま返す。
+    全件0件の場合は通常経路の「対象ファイル0件」結果を返す（`_dispatch_command` 経由）。
+    """
+    base = ctx.base
+    subproject_results: list[CommandResult] = []
+    for sub in base.subprojects:
+        sub_files = base.subproject_files.get(sub.cwd, [])
+        if not sub_files:
+            continue
+        sub_config = base.subproject_configs.get(sub.cwd, base.config)
+        sub_base = dataclasses.replace(base, config=sub_config)
+        sub_ctx = dataclasses.replace(
+            ctx,
+            base=sub_base,
+            subproject_cwd=sub.cwd,
+        )
+        sub_result = _dispatch_command(command, args, sub_ctx)
+        # output 冒頭にサブプロジェクト区切り行を挿入する（人間向け識別のため）
+        if sub_result.output:
+            sub_result.output = f"# subproject: {sub.relative}\n{sub_result.output}"
+        subproject_results.append(sub_result)
+
+    if not subproject_results:
+        # 全サブプロジェクトでファイル0件 → 通常経路の0件結果を返す
+        return _dispatch_command(command, args, ctx)
+    if len(subproject_results) == 1:
+        return subproject_results[0]
+    return CommandResult.merge(subproject_results)
 
 
 def _dispatch_command(
@@ -456,6 +562,8 @@ def _dispatch_command(
         all_files,
         fix_stage=ctx.fix_stage,
         only_failed_targets=ctx.only_failed_targets,
+        subproject_cwd=ctx.subproject_cwd,
+        start_cwd=ctx.base.start_cwd,
     )
     if isinstance(params_or_error, CommandResult):
         # ツールパス解決失敗
@@ -502,6 +610,11 @@ def _dispatch_command(
     start_time = time.perf_counter()
     env = pyfltr.command.env.build_subprocess_env(config, command, via_mise=params.via_mise)
 
+    # サブプロジェクト分割実行で各helperへ伝搬する cwd 引数。
+    # 単一プロジェクト経路では None となり、subprocess.Popen は親プロセスの cwd で起動する。
+    subproject_cwd = ctx.subproject_cwd
+    start_cwd = ctx.base.start_cwd
+
     # pre-commitは .pre-commit-config.yamlを参照してSKIP環境変数を構築し、
     # pyfltr関連hookを除外したうえで2段階実行する。
     # stage 1でファイル修正のみ （fixer系） なら "formatted"、
@@ -521,6 +634,7 @@ def _dispatch_command(
                 is_interrupted=is_interrupted,
                 on_subprocess_start=on_subprocess_start,
                 on_subprocess_end=on_subprocess_end,
+                cwd=subproject_cwd,
             )
         )
 
@@ -543,6 +657,7 @@ def _dispatch_command(
                 is_interrupted=is_interrupted,
                 on_subprocess_start=on_subprocess_start,
                 on_subprocess_end=on_subprocess_end,
+                cwd=subproject_cwd,
             )
         )
 
@@ -566,6 +681,7 @@ def _dispatch_command(
                 is_interrupted=is_interrupted,
                 on_subprocess_start=on_subprocess_start,
                 on_subprocess_end=on_subprocess_end,
+                cwd=subproject_cwd,
             )
         )
 
@@ -588,6 +704,8 @@ def _dispatch_command(
                 is_interrupted=is_interrupted,
                 on_subprocess_start=on_subprocess_start,
                 on_subprocess_end=on_subprocess_end,
+                cwd=subproject_cwd,
+                start_cwd=start_cwd,
             )
         )
 
@@ -608,6 +726,8 @@ def _dispatch_command(
                 is_interrupted=is_interrupted,
                 on_subprocess_start=on_subprocess_start,
                 on_subprocess_end=on_subprocess_end,
+                cwd=subproject_cwd,
+                start_cwd=start_cwd,
             )
         )
 
@@ -631,6 +751,8 @@ def _dispatch_command(
                 is_interrupted=is_interrupted,
                 on_subprocess_start=on_subprocess_start,
                 on_subprocess_end=on_subprocess_end,
+                cwd=subproject_cwd,
+                start_cwd=start_cwd,
             )
         )
 
@@ -652,6 +774,8 @@ def _dispatch_command(
                 is_interrupted=is_interrupted,
                 on_subprocess_start=on_subprocess_start,
                 on_subprocess_end=on_subprocess_end,
+                cwd=subproject_cwd,
+                start_cwd=start_cwd,
             )
         )
 
@@ -673,6 +797,8 @@ def _dispatch_command(
                 is_interrupted=is_interrupted,
                 on_subprocess_start=on_subprocess_start,
                 on_subprocess_end=on_subprocess_end,
+                cwd=subproject_cwd,
+                start_cwd=start_cwd,
             )
         )
 
@@ -697,6 +823,8 @@ def _dispatch_command(
                 is_interrupted=is_interrupted,
                 on_subprocess_start=on_subprocess_start,
                 on_subprocess_end=on_subprocess_end,
+                cwd=subproject_cwd,
+                start_cwd=start_cwd,
             )
         )
 
@@ -719,5 +847,6 @@ def _dispatch_command(
             is_interrupted=is_interrupted,
             on_subprocess_start=on_subprocess_start,
             on_subprocess_end=on_subprocess_end,
+            cwd=subproject_cwd,
         )
     )

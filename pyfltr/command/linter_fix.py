@@ -29,6 +29,8 @@ def execute_linter_fix(
     is_interrupted: typing.Callable[[], bool] | None = None,
     on_subprocess_start: typing.Callable[[], None] | None = None,
     on_subprocess_end: typing.Callable[[], None] | None = None,
+    cwd: pathlib.Path | None = None,
+    start_cwd: pathlib.Path | None = None,
 ) -> CommandResult:
     """Fixモードでのlinter実行 （fix-argsを適用して単発実行）。
 
@@ -43,7 +45,7 @@ def execute_linter_fix(
     """
     del command_info  # 呼び出し側との引数形式揃えで受け取るのみ（使用しない）
 
-    digests_before = snapshot_file_digests(targets)
+    digests_before = snapshot_file_digests(targets, base_cwd=start_cwd)
 
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(commandline)}\n")
@@ -55,12 +57,13 @@ def execute_linter_fix(
         on_subprocess_start=on_subprocess_start,
         on_subprocess_end=on_subprocess_end,
         timeout=pyfltr.config.config.resolve_command_timeout(config.values, command),
+        cwd=cwd,
     )
     returncode = proc.returncode
     output = proc.stdout.strip()
     elapsed = time.perf_counter() - start_time
 
-    digests_after = snapshot_file_digests(targets)
+    digests_after = snapshot_file_digests(targets, base_cwd=start_cwd)
     changed = digests_after != digests_before
 
     has_error = returncode != 0

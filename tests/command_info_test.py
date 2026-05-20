@@ -50,7 +50,7 @@ def test_command_info_text_cargo_fmt_with_mise_active(capsys: pytest.CaptureFixt
     """mise.tomlに `rust` 記述があるとtool specを省略した `mise exec -- cargo` 形になる。"""
     monkeypatch.setattr(
         "pyfltr.command.mise.get_mise_active_tools",
-        lambda config, *, allow_side_effects=False: pyfltr.command.mise.MiseActiveToolsResult(
+        lambda config, *, allow_side_effects=False, cwd=None: pyfltr.command.mise.MiseActiveToolsResult(
             status="ok", tools={"rust": [{"version": "1.83.0"}]}
         ),
     )
@@ -204,7 +204,7 @@ def test_command_info_text_exposes_mise_tool_spec_omitted_true(
     """mise設定にtool記述あり時は `true` で露出する。"""
     monkeypatch.setattr(
         "pyfltr.command.mise.get_mise_active_tools",
-        lambda config, *, allow_side_effects=False: pyfltr.command.mise.MiseActiveToolsResult(
+        lambda config, *, allow_side_effects=False, cwd=None: pyfltr.command.mise.MiseActiveToolsResult(
             status="ok", tools={"rust": [{"version": "1.83.0"}]}
         ),
     )
@@ -246,7 +246,7 @@ def test_command_info_text_exposes_mise_active_tools_active_keys(
     """mise active toolsが取得できた場合はキー一覧が露出する。"""
     monkeypatch.setattr(
         "pyfltr.command.mise.get_mise_active_tools",
-        lambda config, *, allow_side_effects=False: pyfltr.command.mise.MiseActiveToolsResult(
+        lambda config, *, allow_side_effects=False, cwd=None: pyfltr.command.mise.MiseActiveToolsResult(
             status="ok", tools={"rust": [], "python": []}
         ),
     )
@@ -260,7 +260,7 @@ def test_command_info_text_trust_hint_on_untrusted_no_check(
     """`--check`無しかつ `untrusted-no-side-effects` ステータスでは `--check` 案内を1行出力する。"""
     monkeypatch.setattr(
         "pyfltr.command.mise.get_mise_active_tools",
-        lambda config, *, allow_side_effects=False: pyfltr.command.mise.MiseActiveToolsResult(
+        lambda config, *, allow_side_effects=False, cwd=None: pyfltr.command.mise.MiseActiveToolsResult(
             status="untrusted-no-side-effects", detail="config not trusted"
         ),
     )
@@ -276,7 +276,7 @@ def test_command_info_text_trust_hint_only_for_untrusted(
     """他のエラー要因では trust案内を出力しない（ノイズを増やさないため）。"""
     monkeypatch.setattr(
         "pyfltr.command.mise.get_mise_active_tools",
-        lambda config, *, allow_side_effects=False: pyfltr.command.mise.MiseActiveToolsResult(
+        lambda config, *, allow_side_effects=False, cwd=None: pyfltr.command.mise.MiseActiveToolsResult(
             status="exec-error", detail="something failed"
         ),
     )

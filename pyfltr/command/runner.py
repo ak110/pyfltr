@@ -331,6 +331,7 @@ def _is_tool_active_in_mise_config(
     config: pyfltr.config.config.Config,
     *,
     allow_side_effects: bool,
+    cwd: pathlib.Path | None = None,
 ) -> bool:
     """mise設定で当該ツールが活性化されているかを判定する。
 
@@ -342,7 +343,7 @@ def _is_tool_active_in_mise_config(
     取得失敗時は自然に `False`（記述なし扱い）が返り、tool spec省略を発動しない。
     """
     del command  # 現状判定にコマンド名は使わない（specキーで一意）。引数は将来拡張余地のため残す。
-    result = pyfltr.command.mise.get_mise_active_tools(config, allow_side_effects=allow_side_effects)
+    result = pyfltr.command.mise.get_mise_active_tools(config, allow_side_effects=allow_side_effects, cwd=cwd)
     key = spec.mise_backend or spec.bin_name
     return key in result.tools
 
@@ -377,6 +378,10 @@ def cwd_has_uv_lock() -> bool:
     テスト差し替えは `monkeypatch.setattr("pyfltr.command.runner.cwd_has_uv_lock", lambda: True)`
     の形で関数自体を置換する。`lru_cache` 付き判定関数群（`ensure_uv_available`・
     `ensure_uvx_available` 等）に共通する制約。
+
+    モノレポでサブプロジェクト cwd 別に `uv.lock` を判定したい場合は
+    `pyfltr.command.subprojects.find_uv_lock_for_cwd(cwd, workspace_root=...)` を使う
+    （workspace root までの親方向探索を含む）。
     """
     return pathlib.Path("uv.lock").is_file()
 
@@ -553,6 +558,7 @@ def _resolve_mise_runner_commandline(
     source: str,
     *,
     allow_side_effects: bool,
+    cwd: pathlib.Path | None = None,
 ) -> ResolvedCommandline:
     """mise経路のコマンドラインを構築する。
 
@@ -585,7 +591,7 @@ def _resolve_mise_runner_commandline(
     if ":" in version or "@" in version:
         prefix = ["exec", version, "--", spec.bin_name]
     elif version == spec.default_version and _is_tool_active_in_mise_config(
-        command, spec, config, allow_side_effects=allow_side_effects
+        command, spec, config, allow_side_effects=allow_side_effects, cwd=cwd
     ):
         # mise設定に当該ツール記述があり、かつversionが既定値（"latest"）の場合のみtool specを省略する。
         # version明示時（"latest"以外）は利用者の意図を尊重して従来通りtool spec組み立てに留める。
@@ -666,6 +672,7 @@ def build_commandline(
     config: pyfltr.config.config.Config,
     *,
     allow_side_effects: bool = False,
+    cwd: pathlib.Path | None = None,
 ) -> ResolvedCommandline:
     """ツール起動コマンドラインを構築する（副作用は `allow_side_effects` で制御）。
 
@@ -717,7 +724,7 @@ def build_commandline(
         )
 
     if effective == "mise":
-        return _resolve_mise_runner_commandline(command, config, runner, source, allow_side_effects=allow_side_effects)
+        return _resolve_mise_runner_commandline(command, config, runner, source, allow_side_effects=allow_side_effects, cwd=cwd)
 
     if effective in _JS_EFFECTIVE_VALUES:
         if command not in JS_TOOL_BIN:
@@ -759,6 +766,7 @@ def ensure_mise_available(
     config: pyfltr.config.config.Config,
     *,
     command: str | None = None,
+    cwd: pathlib.Path | None = None,
 ) -> ResolvedCommandline:
     """Mise経由実行時に `mise exec --version` の事前チェックを行う（副作用あり）。
 
@@ -805,7 +813,7 @@ def ensure_mise_available(
     else:
         check_args = ["mise", "exec", "--", bin_name, "--version"]
     returncode, _stdout, stderr, trust_failed = pyfltr.command.mise.run_mise_with_trust(
-        check_args, mise_env, config, allow_side_effects=True
+        check_args, mise_env, config, allow_side_effects=True, cwd=cwd
     )
     if returncode == 0:
         return resolved

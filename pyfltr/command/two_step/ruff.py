@@ -29,6 +29,8 @@ def execute_ruff_format_two_step(
     is_interrupted: typing.Callable[[], bool] | None = None,
     on_subprocess_start: typing.Callable[[], None] | None = None,
     on_subprocess_end: typing.Callable[[], None] | None = None,
+    cwd: pathlib.Path | None = None,
+    start_cwd: pathlib.Path | None = None,
 ) -> CommandResult:
     """ruff-formatの2段階実行（ruff check --fix → ruff format）。
 
@@ -45,7 +47,10 @@ def execute_ruff_format_two_step(
     """
     check_commandline: list[str] = list(commandline_prefix)
     check_commandline.extend(pyfltr.command.runner.expanduser_args(list(config["ruff-format-check-args"])))
-    check_commandline.extend(str(t) for t in targets)
+    if cwd is not None and start_cwd is not None:
+        check_commandline.extend(_relative_to_cwd(t, cwd=cwd, start_cwd=start_cwd) for t in targets)
+    else:
+        check_commandline.extend(str(t) for t in targets)
 
     return _run_ruff_two_step(
         command=command,
@@ -61,7 +66,19 @@ def execute_ruff_format_two_step(
         on_output=on_output,
         on_subprocess_start=on_subprocess_start,
         on_subprocess_end=on_subprocess_end,
+        cwd=cwd,
+        start_cwd=start_cwd,
     )
+
+
+def _relative_to_cwd(target: pathlib.Path, *, cwd: pathlib.Path, start_cwd: pathlib.Path) -> str:
+    """起点 cwd 相対パスをサブプロジェクト cwd 相対パスへ変換する。"""
+    abs_path = target if target.is_absolute() else (start_cwd / target)
+    try:
+        rel = abs_path.resolve().relative_to(cwd.resolve())
+    except (OSError, ValueError):
+        return str(target).replace("\\", "/")
+    return str(rel).replace("\\", "/")
 
 
 def _run_ruff_two_step(
@@ -79,6 +96,8 @@ def _run_ruff_two_step(
     on_output: typing.Callable[[str], None] | None = None,
     on_subprocess_start: typing.Callable[[], None] | None = None,
     on_subprocess_end: typing.Callable[[], None] | None = None,
+    cwd: pathlib.Path | None = None,
+    start_cwd: pathlib.Path | None = None,
 ) -> CommandResult:
     """ruff-format専用の2段階処理。
 
@@ -87,7 +106,7 @@ def _run_ruff_two_step(
     step1の未修正lint violationは無視し、別途ruff-checkコマンドで検出する前提。
     """
     # ステップ1実行前の内容ハッシュを記録（修正適用検知用）
-    digests_before = snapshot_file_digests(targets)
+    digests_before = snapshot_file_digests(targets, base_cwd=start_cwd)
 
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(check_commandline)}\n")
@@ -99,10 +118,11 @@ def _run_ruff_two_step(
         on_subprocess_start=on_subprocess_start,
         on_subprocess_end=on_subprocess_end,
         timeout=timeout,
+        cwd=cwd,
     )
     step1_rc = step1_proc.returncode
     step1_failed = step1_rc >= 2  # exit 0/1は無視、2以上（abrupt termination）のみ失敗扱い
-    digests_after_step1 = snapshot_file_digests(targets)
+    digests_after_step1 = snapshot_file_digests(targets, base_cwd=start_cwd)
     step1_changed = digests_after_step1 != digests_before
 
     # ステップ2実行（常に実行）
@@ -116,6 +136,7 @@ def _run_ruff_two_step(
         on_subprocess_start=on_subprocess_start,
         on_subprocess_end=on_subprocess_end,
         timeout=timeout,
+        cwd=cwd,
     )
     step2_rc = step2_proc.returncode
     step2_formatted = step2_rc == 1
@@ -154,6 +175,6 @@ def _run_ruff_two_step(
     if not has_error and (step1_changed or step2_formatted):
         # digests_beforeはStep1前のスナップショット（関数冒頭で取得済み）。
         # Step1（ruff --checkによる暗黙fix）とStep2（ruff format）の累積差分を一括で取る。
-        digests_after_step2 = snapshot_file_digests(targets)
+        digests_after_step2 = snapshot_file_digests(targets, base_cwd=start_cwd)
         result.fixed_files = changed_files(digests_before, digests_after_step2)
     return result

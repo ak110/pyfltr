@@ -31,11 +31,26 @@ def pick_targets(
     return only_failed_targets.get(command)
 
 
-def expand_all_files(targets: list[pathlib.Path], config: pyfltr.config.config.Config) -> list[pathlib.Path]:
+def expand_all_files(
+    targets: list[pathlib.Path],
+    config: pyfltr.config.config.Config,
+    *,
+    start_cwd: pathlib.Path | None = None,
+    exclude_subdirs: list[pathlib.Path] | None = None,
+) -> list[pathlib.Path]:
     """対象ファイルの一括展開。
 
     ディレクトリ走査・excludeチェック・gitignoreフィルタリングを1回だけ実行し、
     全ファイルのリストを返す。コマンドごとのglobフィルタリングは `filter_by_globs` で行う。
+
+    `start_cwd` は走査・パス正規化・git連携の起点 cwd（絶対パス）。`None` の場合は
+    `pathlib.Path.cwd()` を使う（既存挙動）。サブプロジェクト分割実行を含むパイプライン
+    では `run_pipeline` 開始時に確定した cwd を明示する。
+
+    `exclude_subdirs` には走査時に侵入を避けたいサブディレクトリ（絶対パスの一覧）を渡す。
+    モノレポでネストする子サブプロジェクト配下を親側の走査から除外する目的だが、最終的な
+    サブプロジェクト分類は `classify_files_by_subproject` の最深一致で行うため、本引数は
+    走査効率を上げる補助手段に留める。`None` の場合は除外なし。
 
     シンボリックリンクディレクトリは原則として配下を辿る。
     `respect-gitignore=True` 下では走査前に当該ディレクトリ自身の `is_symlink()` を判定し、
@@ -51,6 +66,15 @@ def expand_all_files(targets: list[pathlib.Path], config: pyfltr.config.config.C
     cwdリポジトリ内/外の判定とサイレント素通し回避の挙動については `_filter_by_gitignore`
     のdocstringを参照する。
     """
+    cwd_base = start_cwd if start_cwd is not None else pathlib.Path.cwd()
+    excluded_real: set[pathlib.Path] = set()
+    if exclude_subdirs:
+        for sub in exclude_subdirs:
+            try:
+                excluded_real.add(sub.resolve())
+            except OSError:
+                excluded_real.add(sub)
+
     # 空ならカレントディレクトリを対象とする
     if len(targets) == 0:
         targets = [pathlib.Path(".")]
@@ -60,8 +84,19 @@ def expand_all_files(targets: list[pathlib.Path], config: pyfltr.config.config.C
     expanded: list[pathlib.Path] = []
     respect_gitignore = bool(config["respect-gitignore"])
 
+    def _is_in_excluded_subdir(path: pathlib.Path) -> bool:
+        if not excluded_real:
+            return False
+        try:
+            abs_path = (cwd_base / path).resolve() if not path.is_absolute() else path.resolve()
+        except OSError:
+            abs_path = (cwd_base / path) if not path.is_absolute() else path
+        return any(_is_subpath(abs_path, sub) for sub in excluded_real)
+
     def _expand_target(target: pathlib.Path, *, is_direct: bool) -> None:
         try:
+            if _is_in_excluded_subdir(target):
+                return
             match = excluded(target, config)
             if match is not None:
                 if is_direct:
@@ -78,7 +113,7 @@ def expand_all_files(targets: list[pathlib.Path], config: pyfltr.config.config.C
                 # ファイル形式パターン（`name`・`*pattern*`等）に限り判定が成立する。
                 # `link/`形式のディレクトリ専用パターンは`git check-ignore`が
                 # symlink越えのpathspecを拒否するため判定不可となり、早期スキップは機能しない。
-                if respect_gitignore and target.is_symlink() and _is_ignored_single_path(target):
+                if respect_gitignore and target.is_symlink() and _is_ignored_single_path(target, cwd=cwd_base):
                     return
                 for child in target.iterdir():
                     _expand_target(child, is_direct=False)
@@ -94,28 +129,30 @@ def expand_all_files(targets: list[pathlib.Path], config: pyfltr.config.config.C
             )
 
     for target in targets:
-        # 絶対パスの場合はcwd基準の相対パスに変換
+        # 絶対パスの場合は起点 cwd 基準の相対パスに変換
         if target.is_absolute():
             with contextlib.suppress(ValueError):
-                target = target.relative_to(pathlib.Path.cwd())
+                target = target.relative_to(cwd_base)
         # 非存在パスは前段で検出して対象から外す。
         # 各ツールが個別に「ファイルが見つからない」と失敗してJSONLが多重化するのを防ぐ。
         # exclude/.gitignore除外（reason="excluded"）とは別系統（reason="missing"）で蓄積し、
         # CLI側では「全件不在 → 非ゼロ終了」の判定にだけ用いる。
-        if not target.exists():
+        # 起点 cwd と異なる cwd で起動した場合に備え、相対パスは起点 cwd 基準で存在確認する。
+        check_path = target if target.is_absolute() else (cwd_base / target)
+        if not check_path.exists():
             pyfltr.warnings_.emit_warning(
                 source="file-resolver",
                 message=f"指定されたパスが見つかりません: {target}",
             )
             pyfltr.warnings_.add_filtered_direct_file(str(target), reason="missing")
             continue
-        is_direct = not target.is_dir()
+        is_direct = not check_path.is_dir()
         _expand_target(target, is_direct=is_direct)
 
     # .gitignoreフィルタリング
     if respect_gitignore:
         before_gitignore = set(expanded)
-        expanded = _filter_by_gitignore(expanded)
+        expanded = _filter_by_gitignore(expanded, cwd=cwd_base)
         # 直接指定されたファイルがgitignoreで除外された場合に警告
         after_set = set(expanded)
         for target in directly_specified:
@@ -127,6 +164,15 @@ def expand_all_files(targets: list[pathlib.Path], config: pyfltr.config.config.C
                 pyfltr.warnings_.add_filtered_direct_file(str(target), reason="excluded")
 
     return _dedup_and_sort(expanded)
+
+
+def _is_subpath(path: pathlib.Path, ancestor: pathlib.Path) -> bool:
+    """`path` が `ancestor` の配下（自身含む）かを判定する。"""
+    try:
+        path.relative_to(ancestor)
+    except ValueError:
+        return False
+    return True
 
 
 def _dedup_and_sort(paths: list[pathlib.Path]) -> list[pathlib.Path]:
@@ -166,13 +212,15 @@ def _dedup_selection_key(path: pathlib.Path) -> tuple[bool, str]:
     return (is_link, str(path))
 
 
-def _is_ignored_single_path(path: pathlib.Path) -> bool:
+def _is_ignored_single_path(path: pathlib.Path, *, cwd: pathlib.Path | None = None) -> bool:
     """単一パスのgitignore判定。
 
     末尾`/`を付けない指定で`git check-ignore`に問い合わせる。
     `.gitignore`のファイル形式パターン（`name`・`*pattern*`等）に一致する場合のみ
     Trueを返す。`link/`形式のディレクトリ専用パターンには一致しない。
     git不在・タイムアウト・その他エラー時はFalseを返し、呼び出し元は通常走査を続ける。
+
+    `cwd` を指定すると `git` の作業ディレクトリに渡す。`None` の場合は親プロセスの cwd を使う。
     """
     try:
         result = subprocess.run(
@@ -180,20 +228,24 @@ def _is_ignored_single_path(path: pathlib.Path) -> bool:
             capture_output=True,
             timeout=10,
             check=False,
+            cwd=str(cwd) if cwd is not None else None,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
     return result.returncode == 0
 
 
-def _filter_by_gitignore(paths: list[pathlib.Path]) -> list[pathlib.Path]:
+def _filter_by_gitignore(paths: list[pathlib.Path], *, cwd: pathlib.Path | None = None) -> list[pathlib.Path]:
     """Git check-ignoreで .gitignoreに該当するファイルを除外する。
 
-    各入力パスを実体パスに正規化し、cwdリポジトリからの相対パスへ変換した上で
+    各入力パスを実体パスに正規化し、起点 cwd リポジトリからの相対パスへ変換した上で
     `git check-ignore --stdin -z`に渡す。シンボリックリンク越えのpathspecで
     `fatal: pathspec ... is beyond a symbolic link`が発生してreturncode 128となり
     .gitignore除外処理が丸ごとスキップされる事象を回避するため。
-    cwdリポジトリ外に解決されたパスは判定対象外として、入力パスをそのまま残す。
+    起点 cwd リポジトリ外に解決されたパスは判定対象外として、入力パスをそのまま残す。
+
+    `cwd` を指定すると `git` の作業ディレクトリと相対パス基準として使う。
+    `None` の場合は親プロセスの cwd を使う（既存挙動）。
 
     サブプロセスのreturncodeが0でも1でもない場合は`emit_warning`でstderrを通知する。
     `logger.debug`のみで全パスを素通しさせるサイレントなフォールバックは
@@ -202,12 +254,14 @@ def _filter_by_gitignore(paths: list[pathlib.Path]) -> list[pathlib.Path]:
     """
     if not paths:
         return paths
-    cwd_real = pathlib.Path.cwd().resolve()
+    cwd_base = cwd if cwd is not None else pathlib.Path.cwd()
+    cwd_real = cwd_base.resolve()
     in_repo: list[tuple[pathlib.Path, str]] = []  # (元path, cwd相対化したrealpath str)
     out_repo: list[pathlib.Path] = []  # cwd外（gitignore判定対象外）
     for p in paths:
         try:
-            real = p.resolve()
+            abs_path = p if p.is_absolute() else (cwd_base / p)
+            real = abs_path.resolve()
         except OSError:
             out_repo.append(p)
             continue
@@ -231,6 +285,7 @@ def _filter_by_gitignore(paths: list[pathlib.Path]) -> list[pathlib.Path]:
             encoding="utf-8",
             timeout=30,
             check=False,
+            cwd=str(cwd_base),
         )
     except FileNotFoundError:
         pyfltr.warnings_.emit_warning(source="git", message="git が見つからないため respect-gitignore をスキップする")
@@ -263,16 +318,17 @@ def filter_by_globs(all_files: list[pathlib.Path], globs: list[str]) -> list[pat
     return [f for f in all_files if any(f.match(glob) for glob in globs)]
 
 
-def filter_by_changed_since(all_files: list[pathlib.Path], ref: str) -> list[pathlib.Path]:
+def filter_by_changed_since(all_files: list[pathlib.Path], ref: str, *, cwd: pathlib.Path | None = None) -> list[pathlib.Path]:
     """`--changed-since <ref>` で変更ファイルにフィルタリングする。
 
     `git diff --name-only <ref>` でコミット差分とtrackedファイルの作業ツリー差分・staged差分の
     和集合を取得し、`all_files` との交差を返す。
     untracked（`git add` 未実施の新規ファイル）は対象外となる。
 
+    `cwd` を指定すると `git` の作業ディレクトリに渡す。`None` の場合は親プロセスの cwd を使う。
     git不在またはrefが存在しない場合は警告を発行して `all_files` をそのまま返す（全体実行へフォールバック）。
     """
-    changed = _get_changed_files(ref)
+    changed = _get_changed_files(ref, cwd=cwd)
     if changed is None:
         return all_files
     if not changed:
@@ -283,7 +339,7 @@ def filter_by_changed_since(all_files: list[pathlib.Path], ref: str) -> list[pat
     return [f for f in all_files if pyfltr.paths.normalize_separators(f) in changed_norm]
 
 
-def _get_changed_files(ref: str) -> list[str] | None:
+def _get_changed_files(ref: str, *, cwd: pathlib.Path | None = None) -> list[str] | None:
     """`git diff --name-only <ref>` でコミット差分とtrackedファイルの作業ツリー差分・staged差分を取得する。
 
     untracked（`git add` 未実施の新規ファイル）は `git diff` の出力に含まれないため対象外となる。
@@ -303,6 +359,7 @@ def _get_changed_files(ref: str) -> list[str] | None:
             encoding="utf-8",
             timeout=30,
             check=False,
+            cwd=str(cwd) if cwd is not None else None,
         )
     except FileNotFoundError:
         pyfltr.warnings_.emit_warning(

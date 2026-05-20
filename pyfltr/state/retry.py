@@ -111,6 +111,10 @@ def build_retry_command(
     位置引数（ターゲット）を`target_files`で末尾に再配置する。ターゲットは
     `original_cwd`基準の絶対パスに変換することで、`--work-dir`とcwdの
     二重解釈を避ける。
+
+    モノレポでサブプロジェクト分割実行が行われた場合は、`CommandResult.merge` で
+    マージされた起点 cwd 相対の和集合 `target_files` を受け取る前提で動作する。
+    マージ後リストをそのまま絶対パス化して扱う。
     """
     cwd_path = pathlib.Path(original_cwd)
     # 位置引数（サブコマンドを除く、`-`で始まらないトークンの末尾側）は除去する。

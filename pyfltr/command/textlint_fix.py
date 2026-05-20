@@ -36,6 +36,8 @@ def execute_textlint_fix(
     is_interrupted: typing.Callable[[], bool] | None = None,
     on_subprocess_start: typing.Callable[[], None] | None = None,
     on_subprocess_end: typing.Callable[[], None] | None = None,
+    cwd: pathlib.Path | None = None,
+    start_cwd: pathlib.Path | None = None,
 ) -> CommandResult:
     """Textlint fixモードの2段階実行 （fix適用 → lintチェック）。
 
@@ -65,7 +67,13 @@ def execute_textlint_fix(
     mtimeベースの比較では偽陽性になる。このため内容ハッシュ
     （`snapshot_file_digests`） で比較している。
     """
-    target_strs = [str(t) for t in targets]
+    # ツール起動コマンドラインに渡すパスはサブプロジェクト cwd 相対へ変換する。
+    # pyfltr 内部の `snapshot_file_digests` 等は起点 cwd 相対のまま読み込むため、
+    # 引数は外部用と内部用で別経路で扱う。
+    if cwd is not None and start_cwd is not None:
+        target_strs = [_relative_to_cwd(t, cwd=cwd, start_cwd=start_cwd) for t in targets]
+    else:
+        target_strs = [str(t) for t in targets]
 
     # Step1: --format Xペアを除去した共通args + fix-argsでfix適用
     # `build_invocation_argv` のtextlint fix特殊経路と同じ規則を適用する。
@@ -74,11 +82,11 @@ def execute_textlint_fix(
         *target_strs,
     ]
 
-    digests_before = snapshot_file_digests(targets)
+    digests_before = snapshot_file_digests(targets, base_cwd=start_cwd)
     # 保護対象識別子の事前検出 （Step1で破損するケースを捕捉するため）。
     # 空リスト設定時は計測を省略する。
     protected_identifiers: list[str] = list(config.values.get("textlint-protected-identifiers", []))
-    contents_before: dict[pathlib.Path, str] = snapshot_file_texts(targets) if protected_identifiers else {}
+    contents_before: dict[pathlib.Path, str] = snapshot_file_texts(targets, base_cwd=start_cwd) if protected_identifiers else {}
 
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(step1_commandline)}\n")
@@ -91,15 +99,18 @@ def execute_textlint_fix(
         on_subprocess_start=on_subprocess_start,
         on_subprocess_end=on_subprocess_end,
         timeout=timeout,
+        cwd=cwd,
     )
     step1_rc = step1_proc.returncode
     # rc=0 （違反なし） / rc=1 （違反残存） は通常終了、rc>=2は致命的エラー扱い
     step1_fatal = step1_rc >= 2
-    digests_after_step1 = snapshot_file_digests(targets)
+    digests_after_step1 = snapshot_file_digests(targets, base_cwd=start_cwd)
     step1_changed = digests_after_step1 != digests_before
 
     if protected_identifiers and step1_changed:
-        warn_protected_identifier_corruption(contents_before, snapshot_file_texts(targets), protected_identifiers)
+        warn_protected_identifier_corruption(
+            contents_before, snapshot_file_texts(targets, base_cwd=start_cwd), protected_identifiers
+        )
 
     # Step2: 通常lint実行 （残存違反を取得）
     # `build_invocation_argv` の通常段経路と同じ規則を適用する
@@ -119,6 +130,7 @@ def execute_textlint_fix(
         on_subprocess_start=on_subprocess_start,
         on_subprocess_end=on_subprocess_end,
         timeout=timeout,
+        cwd=cwd,
     )
     step2_rc = step2_proc.returncode
     step2_fatal = step2_rc >= 2
@@ -164,3 +176,17 @@ def execute_textlint_fix(
     if not has_error and step1_changed:
         result.fixed_files = changed_files(digests_before, digests_after_step1)
     return result
+
+
+def _relative_to_cwd(target: pathlib.Path, *, cwd: pathlib.Path, start_cwd: pathlib.Path) -> str:
+    """起点 cwd 相対パスをサブプロジェクト cwd 相対パスへ変換する。
+
+    `target` が絶対パスならそのまま、相対なら起点 cwd を起点として絶対化してから
+    サブプロジェクト cwd 相対へ変換する。POSIX 区切りに揃える。
+    """
+    abs_path = target if target.is_absolute() else (start_cwd / target)
+    try:
+        rel = abs_path.resolve().relative_to(cwd.resolve())
+    except (OSError, ValueError):
+        return str(target).replace("\\", "/")
+    return str(rel).replace("\\", "/")

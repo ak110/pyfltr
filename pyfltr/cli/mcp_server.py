@@ -10,6 +10,12 @@ MCPスキーマを単純化するため。`no-archive`/`no-cache`/`config`/
 `output-format`などの実行制御フラグもMCP側へは露出させず、エージェント側の
 スキーマ肥大化とstdio隔離の複雑化を避ける。
 
+動作: `run_for_agent`は`pyfltr.cli.pipeline.run_pipeline`を直接呼ぶため、
+モノレポモード（起点cwd配下に複数の`pyproject.toml`を検出した場合）の
+サブプロジェクト分割実行をMCP経由でも自動的に継承する。
+公開スキーマには`subproject`識別フィールドを追加しないため、利用者が観測する
+レコード構造は単一プロジェクト時と同じになる。
+
 サフィックス付きモジュール名（`mcp_.py`）はサードパーティ`mcp`パッケージ
 とのimport衝突事故を予防するため（`warnings_.py`と同じ方針）。
 """

@@ -35,6 +35,8 @@ def execute_check_write_two_step(
     is_interrupted: typing.Callable[[], bool] | None = None,
     on_subprocess_start: typing.Callable[[], None] | None = None,
     on_subprocess_end: typing.Callable[[], None] | None = None,
+    cwd: pathlib.Path | None = None,
+    start_cwd: pathlib.Path | None = None,
 ) -> CommandResult:
     """Taplo / shfmt用の2段階実行共通処理（check→writeパターン）。
 
@@ -62,13 +64,17 @@ def execute_check_write_two_step(
     直接参照する旧実装は動作しなくなる。同種関数を追加する際は本引数経由でプレフィックスを受け取る形を踏襲する。
     """
     common_args: list[str] = pyfltr.command.runner.resolve_user_args(command, config)
+    if cwd is not None and start_cwd is not None:
+        external_targets = [_relative_to_cwd(t, cwd=cwd, start_cwd=start_cwd) for t in targets]
+    else:
+        external_targets = [str(t) for t in targets]
     check_commandline, write_commandline = _build_commandlines(
         commandline_prefix,
         common_args,
         pyfltr.command.runner.expanduser_args(list(config[f"{command}-check-args"])),
         pyfltr.command.runner.expanduser_args(list(config[f"{command}-write-args"])),
         additional_args,
-        [str(t) for t in targets],
+        external_targets,
     )
 
     timeout = pyfltr.config.config.resolve_command_timeout(config.values, command)
@@ -87,6 +93,8 @@ def execute_check_write_two_step(
             on_output=on_output,
             on_subprocess_start=on_subprocess_start,
             on_subprocess_end=on_subprocess_end,
+            cwd=cwd,
+            start_cwd=start_cwd,
         )
 
     return _run_check_then_write(
@@ -103,7 +111,19 @@ def execute_check_write_two_step(
         on_output=on_output,
         on_subprocess_start=on_subprocess_start,
         on_subprocess_end=on_subprocess_end,
+        cwd=cwd,
+        start_cwd=start_cwd,
     )
+
+
+def _relative_to_cwd(target: pathlib.Path, *, cwd: pathlib.Path, start_cwd: pathlib.Path) -> str:
+    """起点 cwd 相対パスをサブプロジェクト cwd 相対パスへ変換する。"""
+    abs_path = target if target.is_absolute() else (start_cwd / target)
+    try:
+        rel = abs_path.resolve().relative_to(cwd.resolve())
+    except (OSError, ValueError):
+        return str(target).replace("\\", "/")
+    return str(rel).replace("\\", "/")
 
 
 def _run_check_then_write(
@@ -121,6 +141,8 @@ def _run_check_then_write(
     on_output: typing.Callable[[str], None] | None = None,
     on_subprocess_start: typing.Callable[[], None] | None = None,
     on_subprocess_end: typing.Callable[[], None] | None = None,
+    cwd: pathlib.Path | None = None,
+    start_cwd: pathlib.Path | None = None,
 ) -> CommandResult:
     """Taplo / shfmt用の通常モード共通処理。
 
@@ -129,7 +151,7 @@ def _run_check_then_write(
     prettier専用のrc>=2即failロジックは含まない（prettier用のヘルパーを別途使う）。
     """
     # Step1はread-onlyのため内容変化なし。変化検知のためStep1前にスナップショットを取る。
-    digests_before = snapshot_file_digests(targets)
+    digests_before = snapshot_file_digests(targets, base_cwd=start_cwd)
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(check_commandline)}\n")
     check_proc = pyfltr.command.process.run_subprocess_with_timeout(
@@ -140,6 +162,7 @@ def _run_check_then_write(
         on_subprocess_start=on_subprocess_start,
         on_subprocess_end=on_subprocess_end,
         timeout=timeout,
+        cwd=cwd,
     )
     check_rc = check_proc.returncode
 
@@ -186,6 +209,7 @@ def _run_check_then_write(
         on_subprocess_start=on_subprocess_start,
         on_subprocess_end=on_subprocess_end,
         timeout=timeout,
+        cwd=cwd,
     )
     output = write_proc.stdout.strip()
     elapsed = time.perf_counter() - start_time
@@ -205,7 +229,7 @@ def _run_check_then_write(
         timeout_exceeded=write_proc.timeout_exceeded,
     )
     if not has_error:
-        digests_after = snapshot_file_digests(targets)
+        digests_after = snapshot_file_digests(targets, base_cwd=start_cwd)
         changed = digests_after != digests_before
         if changed:
             result.fixed_files = changed_files(digests_before, digests_after)
@@ -228,6 +252,8 @@ def _run_fix_mode(
     on_output: typing.Callable[[str], None] | None = None,
     on_subprocess_start: typing.Callable[[], None] | None = None,
     on_subprocess_end: typing.Callable[[], None] | None = None,
+    cwd: pathlib.Path | None = None,
+    start_cwd: pathlib.Path | None = None,
 ) -> CommandResult:
     """fixモードの共通処理。
 
@@ -239,7 +265,7 @@ def _run_fix_mode(
     prettierのfixモードはreturncode/has_errorに応じてtypeを切り替えるためこのcallbackで吸収する。
     parse_errors: Trueのとき `error_parser.parse_errors` を呼び出す。
     """
-    digests_before = snapshot_file_digests(targets)
+    digests_before = snapshot_file_digests(targets, base_cwd=start_cwd)
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(write_commandline)}\n")
     write_proc = pyfltr.command.process.run_subprocess_with_timeout(
@@ -250,11 +276,12 @@ def _run_fix_mode(
         on_subprocess_start=on_subprocess_start,
         on_subprocess_end=on_subprocess_end,
         timeout=timeout,
+        cwd=cwd,
     )
     write_rc = write_proc.returncode
     output = write_proc.stdout.strip()
     elapsed = time.perf_counter() - start_time
-    digests_after = snapshot_file_digests(targets)
+    digests_after = snapshot_file_digests(targets, base_cwd=start_cwd)
     changed = digests_after != digests_before
 
     if write_rc != 0:

@@ -39,6 +39,7 @@ import hashlib
 import importlib.metadata
 import json
 import logging
+import os
 import pathlib
 import shutil
 import typing
@@ -93,11 +94,17 @@ class CacheStore:
         structured_output: bool,
         target_files: list[pathlib.Path],
         config_files: list[pathlib.Path],
+        subproject_cwd: pathlib.Path | None = None,
     ) -> str:
         """キャッシュキー (sha256 hex) を計算する。
 
         ツール名・実効コマンドライン・ステージ・構造化出力設定・対象ファイル群の内容と
-        相対パス・設定ファイル群の内容・pyfltr MAJORバージョンを連結してhash化する。
+        相対パス・設定ファイル群の内容・サブプロジェクト cwd の実体パス・pyfltr MAJORバージョンを
+        連結してhash化する。
+
+        `subproject_cwd` を指定すると、当該パスの `os.path.realpath` 結果をキー要素に含める。
+        モノレポで同一相対パスがサブプロジェクトをまたいで存在する場合の誤ヒットを防ぐ。
+        `None` の場合はサブプロジェクト要素を含めず、単一プロジェクト時と同じキーになる。
         """
         hasher = hashlib.sha256()
         hasher.update(f"pyfltr-major={_pyfltr_major_version()}\n".encode())
@@ -108,6 +115,8 @@ class CacheStore:
         hasher.update(f"command={command}\n".encode())
         hasher.update(f"fix_stage={int(fix_stage)}\n".encode())
         hasher.update(f"structured={int(structured_output)}\n".encode())
+        if subproject_cwd is not None:
+            hasher.update(f"subproject={os.path.realpath(str(subproject_cwd))}\n".encode())
         hasher.update(b"commandline:\n")
         for token in commandline:
             hasher.update(token.encode("utf-8"))

@@ -29,6 +29,7 @@ import pyfltr.cli.render
 import pyfltr.command.core_
 import pyfltr.command.dispatcher
 import pyfltr.command.process
+import pyfltr.command.subprojects
 import pyfltr.command.targets
 import pyfltr.config.config
 import pyfltr.output.formatters
@@ -514,9 +515,26 @@ def run_pipeline(
         clear_cmd = ["cmd", "/c", "cls"] if os.name == "nt" else ["clear"]
         subprocess.run(clear_cmd, check=False)
 
+    # モノレポ対応: 起点 cwd と検出したサブプロジェクト一覧を確定する。
+    # `--work-dir` 適用後の現在の cwd を起点とする（`original_cwd` は retry_command 用に別経路で扱う）。
+    # `discover_subprojects` は起点 cwd 配下の `pyproject.toml` 持ちディレクトリを再帰探索し、
+    # uv workspace member も含めて返す。検出0/1件は単一プロジェクトとして従来通り動作する。
+    start_cwd_path = pathlib.Path.cwd()
+    subprojects = pyfltr.command.subprojects.discover_subprojects(start_cwd_path, config)
+    if len(subprojects) < 2:
+        # モノレポモード非適用: subprojects を空集合として扱う（dispatcher 側で単一経路）。
+        subprojects = []
+
     # 対象ファイルを一括展開（ディレクトリ走査・exclude・gitignoreフィルタリングを1回だけ実行）
-    # TUI起動前に実行することで、除外警告がログに表示される
-    all_files = pyfltr.command.targets.expand_all_files(args.targets, config)
+    # TUI起動前に実行することで、除外警告がログに表示される。
+    # `start_cwd` を明示してプロセスグローバルな cwd 干渉を避ける。
+    # サブプロジェクトの最終的な所属判定は `classify_files_by_subproject` の最深一致で行うため、
+    # `exclude_subdirs` は渡さず全ファイルを一度収集する。
+    all_files = pyfltr.command.targets.expand_all_files(
+        args.targets,
+        config,
+        start_cwd=start_cwd_path,
+    )
 
     # ユーザー指定パスが全て非存在の場合は、各ツールが個別に「ファイルが見つからない」エラーを
     # 多重に出力する前段で打ち切り、非ゼロ終了する。warning自体は`expand_all_files`内で発行済み。
@@ -621,6 +639,18 @@ def run_pipeline(
     # UIの判定
     use_ui = not args.no_ui and (args.ui or pyfltr.output.ui.can_use_ui())
 
+    # モノレポ用のサブプロジェクト分類を準備する。
+    # `subproject_aware=True` ツールが各サブプロジェクト cwd で実行する際に参照する。
+    # サブプロジェクト別 config はCLI オーバーライド（`--human-readable`・`--jobs` 等）の
+    # 反映を保つため、初回実装では起点 config を共有する設計とする。
+    # サブ別 `pyproject.toml` の独立設定は将来的な拡張対象。
+    subproject_files: dict[pathlib.Path, list[pathlib.Path]] = {}
+    subproject_configs: dict[pathlib.Path, pyfltr.config.config.Config] = {}
+    if subprojects:
+        subproject_files = pyfltr.command.subprojects.classify_files_by_subproject(all_files, subprojects, start_cwd_path)
+        for sub in subprojects:
+            subproject_configs[sub.cwd] = config
+
     # run_pipelineが1回だけ組み立てる不変コンテキスト。
     # archive_storeはhook経由で渡すためContextには含めない。
     base_ctx = pyfltr.command.core_.ExecutionBaseContext(
@@ -628,6 +658,10 @@ def run_pipeline(
         all_files=all_files,
         cache_store=cache_store,
         cache_run_id=run_id,
+        start_cwd=start_cwd_path,
+        subprojects=subprojects,
+        subproject_files=subproject_files,
+        subproject_configs=subproject_configs,
     )
 
     # 各ツール完了時のフック: retry_command付与 → archive書き込み → formatter.on_result （ストリーミング等）。

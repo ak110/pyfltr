@@ -197,6 +197,14 @@ pyfltr config list --all
 - textlint-protected-identifiers : textlint fixで破損させてはならない識別子のリスト。
   既定値は`[".NET", "Node.js", "Vue.js", "Next.js", "Nuxt.js"]`。
   詳細は[ツール別設定](configuration-tools.md#textlint-protected-identifiers)を参照
+- subproject-exclude : モノレポ検出時に走査・サブプロジェクト集合から除外するディレクトリ名の追加リスト。
+  既定値は空。既定で`.venv`・`node_modules`・`target`・`build`・`dist`・`.git`は常に除外する
+- subproject-use-gitignore : モノレポ検出で`.gitignore`を尊重するか否か（既定: `true`）。
+  `.gitignore`の対象と判定された候補は検出集合から除外する
+- subproject-uv-workspace : `[tool.uv.workspace] members`を読み取ってサブプロジェクトに含めるか否か（既定: `true`）
+- {command}-subproject-aware : 当該ツールをサブプロジェクト単位で分割実行するか否か（per-tool）。
+  既定値はビルトイン定義に従う。
+  `mypy`・`pylint`・`pytest`・`textlint`等は`true`、`typos`・`shellcheck`・`shfmt`・`pre-commit`等は`false`
 
 `prettier-check-args` / `prettier-write-args` / `shfmt-check-args` / `shfmt-write-args`などの
 2段階実行向け引数はツール別設定ページで詳しく扱う。

@@ -45,6 +45,22 @@ class CommandInfo:
     書き込みを伴わないlinter」に限られる。新ツール追加時の判断ミスを防ぐため既定は
     `False`とし、対象ツールのみ明示的に`True`を指定する。
     """
+    subproject_aware: bool = True
+    """モノレポ検出時にサブプロジェクト単位で分割実行するか否か。
+
+    `True`（既定）の場合、起点 cwd 配下に複数の `pyproject.toml` を検出した時に、
+    対象ファイルをサブプロジェクト別に分類してそれぞれのcwdでツールを起動する。
+    Python系・JS系・Rust系・.NET系・各種linter/formatter/testerなど、
+    プロジェクトローカル設定・モジュール解決・lockfileをcwd起点で読むツールが該当する。
+
+    `False` の場合、サブプロジェクトを区別せず起点 cwd で1回起動する。
+    `typos`・`shellcheck`・`shfmt`・`pre-commit` 等、リポジトリ単位で動作する
+    ツールが該当する。
+
+    `pyproject.toml` を1件しか検出しない単一プロジェクト時は、フラグ値に
+    関わらず従来通り起点 cwd で1回起動する。利用者は
+    `{command}-subproject-aware` 設定キーで個別に上書きできる。
+    """
 
     def target_globs(self) -> list[str]:
         """対象ファイルパターンをリスト形式で返す。"""
@@ -93,7 +109,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
     "ruff-format": CommandInfo(type="formatter", fixed_cost=0.02),
     "uv-sort": CommandInfo(type="formatter", targets="pyproject.toml", fixed_cost=0.2),
     # bin-runner対応ツール（formatter → linterの順）
-    "shfmt": CommandInfo(type="formatter", targets="*.sh"),
+    "shfmt": CommandInfo(type="formatter", targets="*.sh", subproject_aware=False),
     # taplo: Rust製TOMLフォーマッター/リンター。shfmtと同様の2段階実行（check → format）。
     # 既定で無効（opt-in）。
     "taplo": CommandInfo(type="formatter", targets="*.toml", fixed_cost=0.3),
@@ -108,14 +124,17 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         fixed_cost=2.0,
     ),
     # pre-commitはリポジトリ固有チェックが幅広く実行されるため、他formatterの修正後に最後で呼ぶ。
+    # pre-commitはリポジトリ単位の hook フレームワークで `--all-files` を併用するため、
+    # サブプロジェクト分割対象から外す。
     "pre-commit": CommandInfo(
         type="formatter",
         targets="*",
         config_files=[".pre-commit-config.yaml"],
+        subproject_aware=False,
     ),
     "ec": CommandInfo(type="linter", targets="*"),
-    "shellcheck": CommandInfo(type="linter", targets="*.sh", per_file_cost=0.03),
-    "typos": CommandInfo(type="linter", targets="*", fixed_cost=0.04, per_file_cost=0.007),
+    "shellcheck": CommandInfo(type="linter", targets="*.sh", per_file_cost=0.03, subproject_aware=False),
+    "typos": CommandInfo(type="linter", targets="*", fixed_cost=0.04, per_file_cost=0.007, subproject_aware=False),
     "actionlint": CommandInfo(
         type="linter",
         targets=[".github/workflows/*.yaml", ".github/workflows/*.yml"],

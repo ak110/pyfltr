@@ -12,6 +12,10 @@ pyfltrは3系統のloggerを役割分担する。
 
 stdout占有は出力形式が`jsonl` / `sarif` / `code-quality`かつ`--output-file`未指定時のみ発生する。
 その場合は`text_logger`の出力先をstderrへ切り替える運用とする。
+
+モノレポモードのサブプロジェクト分割実行では、各サブプロジェクトに対する個別ツール起動が
+パイプラインの内側で繰り返される。loggerはプロセスごとに1度だけ設定する設計で、サブ
+プロジェクト切替の都度`configure_loggers`を呼び直さない（出力先の二重設定を避ける）。
 """
 
 import collections.abc

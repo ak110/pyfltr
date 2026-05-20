@@ -633,3 +633,22 @@ dev依存に`pyfltr`を固定する運用では`entry: uv run --frozen pyfltr fa
 - `pass-filenames = False`のツール（`cargo-*` / `dotnet-*` / `tsc`等）はcrate / solution全体を対象とするため、
   コミット時に未変更ファイルまで書き換わる可能性がある。
   cargo系・dotnet系は`serial_group`で自動直列化されるので、利用者が`--jobs=1`などを指定する必要は無い
+
+## モノレポでの動作
+
+起点cwd配下に複数の `pyproject.toml` を検出した場合、サブプロジェクト単位で
+ツールを分割実行する（モノレポモード）。
+
+- 検出: 起点cwd配下を再帰探索して `pyproject.toml` を持つディレクトリをサブプロジェクトとして扱う。
+  `[tool.pyfltr]` の有無は問わない。`[tool.uv.workspace] members` glob展開結果も含める。
+  `.gitignore` を尊重しつつ `.venv` ・ `node_modules` ・ `target` ・ `build` ・ `dist` ・ `.git` 配下は走査しない
+- 適用範囲: プロジェクトローカル設定・モジュール解決・lockfileをcwd起点で読むツール
+ （`mypy`・`pylint`・`pyright`・`pytest`・`textlint`・`eslint`・`cargo-*`・`dotnet-*`・`ruff-*` 等）は
+  サブプロジェクト別に起動する。
+  リポジトリ単位のツール（`typos`・`shellcheck`・`shfmt`・`pre-commit`）は1回だけ起動する
+- フォールバック: 検出結果が0件または1件の場合は単一プロジェクトとして従来通り動作する
+- 出力スキーマ: モノレポ実行でもJSONL・SARIF・show-run・MCP読み取り系APIの
+  公開スキーマは変更しない。サブプロジェクト境界をまたぐ実行結果は1件にマージし、人間向け`output`には
+  `# subproject: <相対パス>` の区切り行を挿入する
+- 制限: 各サブプロジェクトの `[tool.pyfltr]` 個別設定は適用されない。
+  起点 `pyproject.toml` の `[tool.pyfltr]` とCLIオプションが全サブプロジェクトで共有される

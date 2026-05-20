@@ -44,6 +44,7 @@ def execute_glab_ci_lint(
     is_interrupted: typing.Callable[[], bool] | None = None,
     on_subprocess_start: typing.Callable[[], None] | None = None,
     on_subprocess_end: typing.Callable[[], None] | None = None,
+    cwd: pathlib.Path | None = None,
 ) -> CommandResult:
     """Glab ci lintをホスト未検出時にスキップ扱いへ変換しつつ実行する。"""
     glab_env = dict(env)
@@ -62,6 +63,7 @@ def execute_glab_ci_lint(
         on_subprocess_start=on_subprocess_start,
         on_subprocess_end=on_subprocess_end,
         timeout=pyfltr.config.config.resolve_command_timeout(config.values, command),
+        cwd=cwd,
     )
     returncode = proc.returncode
     output = proc.stdout.strip()
