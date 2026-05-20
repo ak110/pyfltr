@@ -865,10 +865,10 @@ def _build_auto_args(command: str, config: pyfltr.config.config.Config, user_arg
 def expanduser_args(values: list[str]) -> list[str]:
     """各要素に `~` 展開を適用したリストを返す。
 
-    対象キーは `{command}-path` / `{command}-args` / `{command}-lint-args` /
-    `{command}-fix-args` / `{command}-check-args` / `{command}-write-args` /
-    `ruff-format-check-args` 経路に書かれた利用者ホームディレクトリ依存のパス
-    （例: `~/dotfiles/.../tool.py`）。subprocess引数組み立て直前に展開する。
+    対象キーは `{command}-path` / `{command}-args` / `{command}-extend-args` /
+    `{command}-lint-args` / `{command}-fix-args` / `{command}-check-args` /
+    `{command}-write-args` / `ruff-format-check-args` 経路に書かれた利用者ホームディレクトリ
+    依存のパス（例: `~/dotfiles/.../tool.py`）。subprocess引数組み立て直前に展開する。
     展開対象キー一覧と適用タイミングのSSOTは
     `pyfltr.config.config.EXPAND_USER_KEY_SUFFIXES` を参照する。
     `config-files` / `targets` 等のglobパターンは意図しない展開を防ぐため対象外で、
@@ -898,6 +898,18 @@ def _expanduser_arg(value: str) -> str:
     return prefix + expanded_rest
 
 
+def resolve_user_args(command: str, config: pyfltr.config.config.Config) -> list[str]:
+    """`{command}-args` と `{command}-extend-args` を `~` 展開した上で連結して返す。
+
+    `{command}-extend-args` は既定値の `{command}-args` を保ったまま末尾へ要素を追加する用途。
+    両キーとも未設定なら空リストを返す。`build_invocation_argv` と `two_step` 経路の双方が
+    本ヘルパーを経由することで、結合順序・展開タイミングのSSOTを確保する。
+    """
+    args = expanduser_args(list(config.values.get(f"{command}-args", [])))
+    extend_args = expanduser_args(list(config.values.get(f"{command}-extend-args", [])))
+    return args + extend_args
+
+
 def build_invocation_argv(
     command: str,
     config: pyfltr.config.config.Config,
@@ -908,21 +920,22 @@ def build_invocation_argv(
 ) -> list[str]:
     """対象ファイル抜きの起動argvを構築する共通ヘルパー。
 
-    通常段では `[prefix] + auto_args + {command}-args + {command}-lint-args + additional_args`
-    に構造化出力引数を適用した結果を返す。fix段では `{command}-fix-args` を結合する。
+    通常段では `[prefix] + auto_args + {command}-args + {command}-extend-args +
+    {command}-lint-args + additional_args` に構造化出力引数を適用した結果を返す。
+    fix段では `{command}-fix-args` を結合する。
     fix-args未定義のコマンドではfix_stage=Trueでも通常段と同じargvを返す。
 
-    `{command}-args` / `{command}-lint-args` / `{command}-fix-args` の各要素は
-    `expanduser_args` で `~` 展開してから結合する。利用者ホームディレクトリ依存のパスを
-    設定値として指定できるようにするための処置。`commandline_prefix` 側（`{command}-path` 由来）の
-    展開は `build_commandline` で済ませている。
+    `{command}-args` / `{command}-extend-args` / `{command}-lint-args` /
+    `{command}-fix-args` の各要素は `expanduser_args` で `~` 展開してから結合する。
+    利用者ホームディレクトリ依存のパスを設定値として指定できるようにするための処置。
+    `commandline_prefix` 側（`{command}-path` 由来）の展開は `build_commandline` で済ませている。
 
     textlintのfix段は `execute_textlint_fix` のStep1と同じ規則
     （`--format` ペアを除去したargs + fix-args、auto_args / 構造化出力引数なし）を適用する。
     実行本体（`_prepare_execution_params` / `execute_textlint_fix`）と
     `command-info` 表示の双方から本ヘルパーへ集約することで、組み立て規則の重複定義を避ける。
     """
-    user_args: list[str] = expanduser_args(list(config.values.get(f"{command}-args", [])))
+    user_args: list[str] = resolve_user_args(command, config)
     extra: list[str] = list(additional_args)
 
     # textlintのfix Step1はfixer-formatterがcompact系をサポートしないため、

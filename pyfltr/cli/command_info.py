@@ -105,6 +105,7 @@ def _collect_info(command: str, config: pyfltr.config.config.Config, *, do_check
         "runner_source": source,
         "configured_path": config.values.get(f"{command}-path", ""),
         "configured_args": list(config.values.get(f"{command}-args", [])),
+        "configured_extend_args": list(config.values.get(f"{command}-extend-args", [])),
         "severity": pyfltr.config.config.resolve_severity(config.values, command),
         "hints": list(config.values.get(f"{command}-hints", [])),
         "version": config.values.get(f"{command}-version"),
@@ -289,6 +290,8 @@ def _print_text(info: dict[str, typing.Any]) -> None:
         config_lines.append(f"configured_path: {info['configured_path']}")
     if info.get("configured_args"):
         config_lines.append(f"configured_args: {' '.join(info['configured_args'])}")
+    if info.get("configured_extend_args"):
+        config_lines.append(f"configured_extend_args: {' '.join(info['configured_extend_args'])}")
     if info.get("severity") and info["severity"] != "error":
         config_lines.append(f"severity: {info['severity']}")
     if info.get("hints"):

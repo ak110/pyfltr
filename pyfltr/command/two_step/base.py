@@ -39,20 +39,21 @@ def execute_check_write_two_step(
     """Taplo / shfmt用の2段階実行共通処理（check→writeパターン）。
 
     checkとwriteが排他のサブコマンド構成を持つツール向け。
-    設定から `{command}-args` / `{command}-check-args` / `{command}-write-args` を参照して
-    コマンドラインを組み立てる。
+    設定から `{command}-args` / `{command}-extend-args` / `{command}-check-args` /
+    `{command}-write-args` を参照してコマンドラインを組み立てる
+    （`{command}-args` と `{command}-extend-args` の結合は `resolve_user_args` で集約）。
 
     通常モード（fix_mode=False）:
 
-    - Step1: `prefix + args + check-args + additional + targets`を実行
+    - Step1: `prefix + args + extend-args + check-args + additional + targets`を実行
     - Step1 rc == 0 → succeeded（整形不要）
-    - Step1 rc != 0 → Step2 `prefix + args + write-args + additional + targets`を実行
+    - Step1 rc != 0 → Step2 `prefix + args + extend-args + write-args + additional + targets`を実行
       - Step2 rc == 0 → formatted（整形成功）
       - Step2 rc != 0 → failed
 
     fixモード（fix_mode=True）:
 
-    - Step1をスキップし、直接write-args付きで実行
+    - Step1をスキップし、`prefix + args + extend-args + write-args + additional + targets`を実行
     - 内容ハッシュスナップショットで書き込みを検知
 
     `commandline_prefix` はrunner解決済みの実行プレフィックス（例: `["ruff"]`、
@@ -60,7 +61,7 @@ def execute_check_write_two_step(
     Python系ツールの `{command}-path` 既定値は空文字列のため、`config["<tool>-path"]` を
     直接参照する旧実装は動作しなくなる。同種関数を追加する際は本引数経由でプレフィックスを受け取る形を踏襲する。
     """
-    common_args: list[str] = pyfltr.command.runner.expanduser_args(list(config[f"{command}-args"]))
+    common_args: list[str] = pyfltr.command.runner.resolve_user_args(command, config)
     check_commandline, write_commandline = _build_commandlines(
         commandline_prefix,
         common_args,

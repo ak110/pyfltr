@@ -1371,6 +1371,108 @@ def test_builtin_targets_no_mutation_of_builtins(tmp_path: pathlib.Path) -> None
     assert pyfltr.config.config.BUILTIN_COMMANDS["shfmt"].targets == original_targets
 
 
+def test_builtin_extend_args_list(tmp_path: pathlib.Path) -> None:
+    """ビルトインコマンドの`{command}-extend-args`に文字列のリストで追加できる。"""
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.pyfltr]\nlychee-extend-args = ["--exclude=github\\\\.com/owner/repo/actions"]\n'
+    )
+    config = pyfltr.config.config.load_config(config_dir=tmp_path)
+    # 既定値は変化しない
+    assert config["lychee-args"] == ["--format", "json", "--no-progress"]
+    assert config["lychee-extend-args"] == ["--exclude=github\\.com/owner/repo/actions"]
+
+
+def test_builtin_args_and_extend_args(tmp_path: pathlib.Path) -> None:
+    """`{command}-args`完全上書き後でも`{command}-extend-args`が並立して保持される。"""
+    (tmp_path / "pyproject.toml").write_text(
+        "[tool.pyfltr]\n"
+        'lychee-args = ["--format", "json", "--no-progress", "--max-concurrency=5"]\n'
+        'lychee-extend-args = ["--exclude=example\\\\.com"]\n'
+    )
+    config = pyfltr.config.config.load_config(config_dir=tmp_path)
+    assert config["lychee-args"] == ["--format", "json", "--no-progress", "--max-concurrency=5"]
+    assert config["lychee-extend-args"] == ["--exclude=example\\.com"]
+
+
+def test_builtin_extend_args_unknown_command_warns(tmp_path: pathlib.Path) -> None:
+    """未知のコマンド名のextend-args指定は警告を発行し、登録は行われない。"""
+    (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\nunknown-extend-args = ["--flag"]\n')
+    config = pyfltr.config.config.load_config(config_dir=tmp_path)
+    assert _testconf.count_config_warnings("unknown-extend-args") >= 1
+    assert "unknown-extend-args" not in config.values
+    assert "unknown" not in config.commands
+
+
+@pytest.mark.parametrize(
+    "value_repr",
+    [
+        '"--offline"',  # 文字列はリストでなく拒否
+        "42",  # 整数
+        '[1, "--offline"]',  # 非str要素混在
+    ],
+)
+def test_builtin_extend_args_invalid_type_warns(tmp_path: pathlib.Path, value_repr: str) -> None:
+    """`{command}-extend-args`の値がstrリストでない場合は警告して既定値を維持する。"""
+    (tmp_path / "pyproject.toml").write_text(f"[tool.pyfltr]\nlychee-extend-args = {value_repr}\n")
+    config = pyfltr.config.config.load_config(config_dir=tmp_path)
+    assert _testconf.count_config_warnings("lychee-extend-args") >= 1
+    # 既定値（未設定）が維持される
+    assert "lychee-extend-args" not in config.values
+
+
+def test_builtin_extend_args_preserves_tilde(tmp_path: pathlib.Path) -> None:
+    """`{command}-extend-args`はconfig.values上で原文（`~`含む）を保持する。
+
+    `~`展開はsubprocess引数組み立て直前にbuild_invocation_argv内で行うため、
+    設定読込時点では原文を保持する必要がある（command-infoの原文露出方針と整合）。
+    """
+    (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\nlychee-extend-args = ["--config=~/lychee.toml"]\n')
+    config = pyfltr.config.config.load_config(config_dir=tmp_path)
+    assert config["lychee-extend-args"] == ["--config=~/lychee.toml"]
+
+
+def test_custom_command_extend_args(tmp_path: pathlib.Path) -> None:
+    """カスタムコマンドで`extend-args`が受け付けられる。"""
+    pyproject_content = """
+[tool.pyfltr.custom-commands.mytool]
+type = "linter"
+path = "mytool"
+args = ["--default"]
+extend-args = ["--extra=foo"]
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    config = pyfltr.config.config.load_config(config_dir=tmp_path)
+    assert "mytool" in config.commands
+    assert config["mytool-args"] == ["--default"]
+    assert config["mytool-extend-args"] == ["--extra=foo"]
+
+
+def test_custom_command_extend_args_default_empty(tmp_path: pathlib.Path) -> None:
+    """カスタムコマンドで`extend-args`未指定時は空リストが登録される。"""
+    pyproject_content = """
+[tool.pyfltr.custom-commands.mytool]
+type = "linter"
+path = "mytool"
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    config = pyfltr.config.config.load_config(config_dir=tmp_path)
+    assert config["mytool-extend-args"] == []
+
+
+def test_custom_command_extend_args_invalid_type_warns(tmp_path: pathlib.Path) -> None:
+    """カスタムコマンドの`extend-args`が非リスト型の場合は警告して登録スキップ。"""
+    pyproject_content = """
+[tool.pyfltr.custom-commands.mytool]
+type = "linter"
+path = "mytool"
+extend-args = "not-a-list"
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    config = pyfltr.config.config.load_config(config_dir=tmp_path)
+    assert _testconf.count_config_warnings("extend-args") >= 1
+    assert "mytool" not in config.commands
+
+
 # Rust / .NET言語ツール向けのテスト群。
 # 全ツール既定False、pass-filenames=False、formatterは常時書き込みモード、
 # cargo-clippyのみlint-args / fix-argsを持つ。

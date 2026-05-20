@@ -57,13 +57,21 @@ SEVERITY_VALUES: tuple[str, ...] = ("error", "warning")
   `failure_present` 判定からは除外するため `summary.guidance` のfailure系は出力されず、パイプラインのexit codeにも影響しない
 """
 
-EXPAND_USER_KEY_SUFFIXES: tuple[str, ...] = ("-path", "-args", "-fix-args")
+EXPAND_USER_KEY_SUFFIXES: tuple[str, ...] = (
+    "-path",
+    "-args",
+    "-extend-args",
+    "-lint-args",
+    "-fix-args",
+    "-check-args",
+    "-write-args",
+)
 """`~`展開を適用する設定キーのサフィックス集合。
 
 利用者ホームディレクトリ依存のパス（例: `~/dotfiles/.../tool.py`）を設定値として
 記述できるようにするため、特定のper-toolキーに限り `~` 展開を適用する。
-対象は `{command}-path` / `{command}-args` / `{command}-lint-args` / `{command}-fix-args` /
-`{command}-check-args` / `{command}-write-args` および `ruff-format-check-args`。
+本集合は対象サフィックスのSSOTで、`ruff-format-check-args` のような固定名キーも
+`-check-args` サフィックスで吸収する。
 
 `config-files` / `targets` / `{command}-extend-targets` 等のglobパターン用キーは
 glob内チルダの意図しない展開を防ぐため対象外とする。
@@ -74,9 +82,10 @@ glob内チルダの意図しない展開を防ぐため対象外とする。
 `pyfltr.command.runner.expanduser_args` を経由する。
 
 展開タイミングはsubprocess引数組み立て直前（`pyfltr.command.runner.build_commandline` /
-`build_invocation_argv` および `pyfltr.command.two_step.base` の各経路）で、
+`build_invocation_argv` および `pyfltr.command.two_step.base` /
+`pyfltr.command.two_step.prettier` の各経路）で、
 `config.values` 読込時点では原文を保持する（`command-info` サブコマンドの
-`configured_path` / `configured_args` にも原文が露出する）。
+`configured_path` / `configured_args` / `configured_extend_args` にも原文が露出する）。
 """
 
 
@@ -1103,6 +1112,21 @@ def _normalize_config_values(
                 if validated is not None:
                     extend_targets_map[cmd_name] = validated
                 continue
+        # {command}-extend-argsの検出。サフィックス`-args`より長いため、後段の
+        # `key not in config.values`分岐や`-args`相当の汎用一致判定より先に処理する。
+        # `{command}-args`の末尾へ結合する追加引数で、既定値を保ったまま要素を足す用途。
+        # 値はstr型のリストとし、不正な場合は警告して既定値（空リスト）を維持する。
+        if key.endswith("-extend-args"):
+            cmd_name = key.removesuffix("-extend-args")
+            if cmd_name in config.commands:
+                if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+                    pyfltr.warnings_.emit_warning(
+                        source="config",
+                        message=f'`{key}` はstr型のリストで指定してください: 例 ["--exclude=foo"]',
+                    )
+                    continue
+                config.values[key] = value
+                continue
         # {command}-targetsの検出
         if key.endswith("-targets"):
             cmd_name = key.removesuffix("-targets")
@@ -1270,6 +1294,16 @@ def _register_custom_command(config: Config, name: str, definition: dict[str, ty
         )
         return
 
+    # extend-args（省略可。省略時は空リスト扱い）。
+    # 既定値の`args`を保ったまま末尾へ追加する引数。ビルトインコマンドと同じ意味づけ。
+    extend_args = definition.get("extend-args", definition.get("extend_args", []))
+    if not isinstance(extend_args, list) or not all(isinstance(item, str) for item in extend_args):
+        pyfltr.warnings_.emit_warning(
+            source="config",
+            message=f"カスタムコマンド `{name}` の `extend-args` は文字列のリストで指定してください",
+        )
+        return
+
     # fix-args（省略可。省略時はfixモード非対応として扱う）
     fix_args = definition.get("fix-args", definition.get("fix_args"))
     if fix_args is not None and not isinstance(fix_args, list):
@@ -1385,6 +1419,7 @@ def _register_custom_command(config: Config, name: str, definition: dict[str, ty
     config.values[name] = True
     config.values[f"{name}-path"] = path
     config.values[f"{name}-args"] = args
+    config.values[f"{name}-extend-args"] = [str(item) for item in extend_args]
     config.values[f"{name}-fast"] = fast
     config.values[f"{name}-pass-filenames"] = pass_filenames
     config.values[f"{name}-severity"] = severity

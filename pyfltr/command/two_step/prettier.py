@@ -37,18 +37,20 @@ def execute_prettier_two_step(
     `prettier --check`（read-only）と`prettier --write`（書き込み）は排他のため、
     既存のautoflake/isort/blackの「同じ引数に--checkを付与する」ダンスは適用できない。
 
+    `{command}-args` と `{command}-extend-args` の結合は `resolve_user_args` で集約する。
+
     通常モード（fix_mode=False）:
 
-    - Step1: `prefix + args + check-args + additional + targets`を実行
+    - Step1: `prefix + args + extend-args + check-args + additional + targets`を実行
     - Step1 rc == 0 → succeeded（書き込み不要）
-    - Step1 rc == 1 → Step2 `prefix + args + write-args + additional + targets`を実行
+    - Step1 rc == 1 → Step2 `prefix + args + extend-args + write-args + additional + targets`を実行
       - Step2 rc == 0 → formatted（書き込み成功）
       - Step2 rc != 0 → failed
     - Step1 rc >= 2 → failed（設定ミス等）
 
     fixモード（fix_mode=True）:
 
-    - Step1はスキップし、直接`prefix + args + write-args + additional + targets`を実行
+    - Step1はスキップし、直接`prefix + args + extend-args + write-args + additional + targets`を実行
     - 書き込み検知には内容ハッシュスナップショットを使う
     - rc != 0 → failed
     - rc == 0かつハッシュ変化あり → formatted
@@ -59,7 +61,7 @@ def execute_prettier_two_step(
     Python系ツールの `{command}-path` 既定値は空文字列のため、`config["<tool>-path"]` を
     直接参照する旧実装は動作しなくなる。同種関数を追加する際は本引数経由でプレフィックスを受け取る形を踏襲する。
     """
-    common_args: list[str] = pyfltr.command.runner.expanduser_args(list(config[f"{command}-args"]))
+    common_args: list[str] = pyfltr.command.runner.resolve_user_args(command, config)
     check_commandline, write_commandline = _build_commandlines(
         commandline_prefix,
         common_args,

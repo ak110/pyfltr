@@ -30,6 +30,7 @@ import pyfltr.command.process
 import pyfltr.command.runner
 import pyfltr.command.targets
 import pyfltr.command.two_step.base
+import pyfltr.command.two_step.prettier
 import pyfltr.command.two_step.ruff
 import pyfltr.config.config
 import pyfltr.state.cache
@@ -595,6 +596,146 @@ def test_expanduser_expands_ruff_format_check_args(monkeypatch: pytest.MonkeyPat
 
     assert captured, "expected ruff-format two-step steps to run"
     assert "--config=/tmp/fake-home/ruff.toml" in captured[0]
+
+
+def test_build_invocation_argv_without_extend_args() -> None:
+    """`{command}-extend-args`未設定時は従来と同じargvを返す。"""
+    config = pyfltr.config.config.create_default_config()
+    # mypyのauto_args（mypy-unused-awaitable）を無効化し、検証対象を{command}-argsの結合に限定する
+    config.values["mypy-unused-awaitable"] = False
+    config.values["mypy-args"] = ["--strict"]
+    argv = pyfltr.command.runner.build_invocation_argv(
+        "mypy", config, commandline_prefix=["mypy"], additional_args=["-p", "pkg"], fix_stage=False
+    )
+    assert argv == ["mypy", "--strict", "-p", "pkg"]
+
+
+def test_build_invocation_argv_appends_extend_args() -> None:
+    """`{command}-extend-args`は`{command}-args`の直後に結合される。"""
+    config = pyfltr.config.config.create_default_config()
+    config.values["mypy-unused-awaitable"] = False
+    config.values["mypy-args"] = ["--strict"]
+    config.values["mypy-extend-args"] = ["--no-warn-unused-ignores"]
+    argv = pyfltr.command.runner.build_invocation_argv(
+        "mypy", config, commandline_prefix=["mypy"], additional_args=["-p", "pkg"], fix_stage=False
+    )
+    assert argv == ["mypy", "--strict", "--no-warn-unused-ignores", "-p", "pkg"]
+
+
+def test_build_invocation_argv_fix_stage_includes_extend_args() -> None:
+    """fix段でも`{command}-extend-args`が`args`直後に結合される。"""
+    config = pyfltr.config.config.create_default_config()
+    # ruff-check-json由来の--output-format=json注入は別経路の検査対象のため、ここでは無効化する
+    config.values["ruff-check-json"] = False
+    config.values["ruff-check-args"] = ["check"]
+    config.values["ruff-check-extend-args"] = ["--config=pyproject.toml"]
+    argv = pyfltr.command.runner.build_invocation_argv(
+        "ruff-check", config, commandline_prefix=["ruff"], additional_args=[], fix_stage=True
+    )
+    # ruff-check-fix-argsは既定で ["--fix", "--unsafe-fixes"]
+    assert argv == ["ruff", "check", "--config=pyproject.toml", "--fix", "--unsafe-fixes"]
+
+
+def test_expanduser_expands_extend_args(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`{command}-extend-args`各要素の`~`がbuild_invocation_argvで展開される。"""
+    monkeypatch.setenv("HOME", "/tmp/fake-home")
+    monkeypatch.setenv("USERPROFILE", "/tmp/fake-home")
+    config = pyfltr.config.config.create_default_config()
+    config.values["mypy-extend-args"] = ["--config=~/mypy.toml"]
+    argv = pyfltr.command.runner.build_invocation_argv(
+        "mypy", config, commandline_prefix=["mypy"], additional_args=[], fix_stage=False
+    )
+    assert "--config=/tmp/fake-home/mypy.toml" in argv
+
+
+@pytest.mark.parametrize("command", ["shfmt", "taplo"])
+def test_two_step_base_includes_extend_args(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, command: str) -> None:
+    """`shfmt`/`taplo`の2段階実行で`common_args`に`{command}-extend-args`が末尾結合される。"""
+    config = pyfltr.config.config.create_default_config()
+    config.values[f"{command}-args"] = ["--base"]
+    config.values[f"{command}-extend-args"] = ["--extra"]
+
+    captured: list[list[str]] = []
+
+    def _fake_run(
+        commandline: list[str], *_args: typing.Any, **_kwargs: typing.Any
+    ) -> pyfltr.command.process.CompletedProcessWithTimeoutInfo:
+        captured.append(list(commandline))
+        # rc != 0 でStep2（write）も実行する経路に入る
+        return pyfltr.command.process.CompletedProcessWithTimeoutInfo(
+            args=list(commandline), returncode=1, stdout="", timeout_exceeded=False
+        )
+
+    monkeypatch.setattr(pyfltr.command.process, "run_subprocess_with_timeout", _fake_run)
+
+    target = tmp_path / ("x.toml" if command == "taplo" else "x.sh")
+    target.write_text("")
+    command_info = config.commands[command]
+    args_ns = argparse.Namespace(verbose=False)
+    pyfltr.command.two_step.base.execute_check_write_two_step(
+        command,
+        command_info,
+        commandline_prefix=[command],
+        config=config,
+        targets=[target],
+        additional_args=[],
+        fix_mode=False,
+        env={},
+        on_output=None,
+        start_time=time.perf_counter(),
+        args=args_ns,
+    )
+
+    # Step1（check）とStep2（write）の両方で--extraが--baseより後に結合される。
+    # 直後位置検査だと既定check-args/write-argsの並びに依存して脆いため、
+    # 出現順だけを確認する。
+    assert len(captured) == 2, f"expected both check and write steps, got {captured}"
+    for step in captured:
+        assert "--extra" in step
+        assert step.index("--extra") > step.index("--base")
+
+
+def test_two_step_prettier_includes_extend_args(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """prettierの2段階実行で`common_args`に`prettier-extend-args`が末尾結合される。"""
+    config = pyfltr.config.config.create_default_config()
+    config.values["prettier-args"] = ["--base"]
+    config.values["prettier-extend-args"] = ["--extra"]
+
+    captured: list[list[str]] = []
+
+    def _fake_run(
+        commandline: list[str], *_args: typing.Any, **_kwargs: typing.Any
+    ) -> pyfltr.command.process.CompletedProcessWithTimeoutInfo:
+        captured.append(list(commandline))
+        # Step1 rc==1 でStep2（write）も実行する経路に入る
+        return pyfltr.command.process.CompletedProcessWithTimeoutInfo(
+            args=list(commandline), returncode=1, stdout="", timeout_exceeded=False
+        )
+
+    monkeypatch.setattr(pyfltr.command.process, "run_subprocess_with_timeout", _fake_run)
+
+    target = tmp_path / "x.md"
+    target.write_text("")
+    command_info = config.commands["prettier"]
+    args_ns = argparse.Namespace(verbose=False)
+    pyfltr.command.two_step.prettier.execute_prettier_two_step(
+        "prettier",
+        command_info,
+        commandline_prefix=["prettier"],
+        config=config,
+        targets=[target],
+        additional_args=[],
+        fix_mode=False,
+        env={},
+        on_output=None,
+        start_time=time.perf_counter(),
+        args=args_ns,
+    )
+
+    assert len(captured) == 2, f"expected both check and write steps, got {captured}"
+    for step in captured:
+        assert "--extra" in step
+        assert step.index("--extra") > step.index("--base")
 
 
 def test_expanduser_does_not_apply_to_targets(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
