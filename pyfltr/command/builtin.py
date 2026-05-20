@@ -124,8 +124,8 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         fixed_cost=2.0,
     ),
     # pre-commitはリポジトリ固有チェックが幅広く実行されるため、他formatterの修正後に最後で呼ぶ。
-    # pre-commitはリポジトリ単位の hook フレームワークで `--all-files` を併用するため、
-    # サブプロジェクト分割対象から外す。
+    # 変更ファイル指定（--files）で起動するが、各hook内部のtypes・types_or・files・excludeフィルタが
+    # ファイル指定起動でも適用されるため、関係するhookのみ部分検証できる。
     "pre-commit": CommandInfo(
         type="formatter",
         targets="*",

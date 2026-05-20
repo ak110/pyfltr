@@ -105,7 +105,11 @@ pylint-args = ["--jobs=4"]
 # tests/smoke_data/ 配下にはツール毎の最小サンプル（GitHub Actionsワークフロー・
 # Dockerfile・shellスクリプト等）を含むため、本リポのpyfltr対象から外す。
 # 当該ディレクトリの起動確認は tests/smoke_test.py が pyfltr CLIをsubprocess経由で呼んで実施する。
+# `extend-exclude`はファイル走査経路の除外、`subproject-exclude`はサブプロジェクト検出経路
+# （`pyproject.toml`存在の機械的検出）の除外で別仕組み。配下に複数の`pyproject.toml`を含むため、
+# モノレポ検出時に意図しないサブプロジェクトとして列挙されないよう両方に登録する。
 extend-exclude = ["tests/smoke_data"]
+subproject-exclude = ["smoke_data"]
 
 [tool.pylint."messages control"]
 disable = [

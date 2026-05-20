@@ -2020,9 +2020,9 @@ def test_run_subprocess_resolves_command_via_shutil_which(mocker) -> None:
     mocker.patch("pyfltr.command.process.shutil.which", return_value="/resolved/pre-commit")
     mocker.patch("pyfltr.command.process.subprocess.Popen", _FakePopen)
 
-    pyfltr.command.process.run_subprocess(["pre-commit", "run", "--all-files"], {"PATH": "/usr/bin"})
+    pyfltr.command.process.run_subprocess(["pre-commit", "run", "--files", "foo.py"], {"PATH": "/usr/bin"})
 
-    assert _FakePopen.last_args_holder == [["/resolved/pre-commit", "run", "--all-files"]]
+    assert _FakePopen.last_args_holder == [["/resolved/pre-commit", "run", "--files", "foo.py"]]
 
 
 def test_run_subprocess_keeps_original_name_when_unresolved(mocker) -> None:

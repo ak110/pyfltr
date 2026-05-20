@@ -99,9 +99,12 @@ lychee-extend-args = ["--exclude=github\\.com/owner/repo/actions"]
 ビルトインでは、プロジェクト全体を単位として動作する以下のツールが`pass-filenames = false`に設定されている。
 
 - `tsc`
-- `pre-commit`
 - `cargo-fmt` / `cargo-clippy` / `cargo-check` / `cargo-test` / `cargo-deny`
 - `dotnet-format` / `dotnet-build` / `dotnet-test`
+
+`pre-commit`は変更ファイル指定（`--files <対象>`）で起動する。
+各hook内部の`types`・`types_or`・`files`・`exclude`フィルタはファイル指定起動でも適用されるため、関係するhookのみ動作する。
+`pass_filenames: false`属性のhook（`gitleaks`等）はpre-commit側でリポジトリ全体走査となる。
 
 カスタムコマンドでも同様に設定可能。
 

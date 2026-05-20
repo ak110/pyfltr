@@ -117,7 +117,10 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "rust": False,
     "dotnet": False,
     # pre-commit統合。有効にするとpyfltr run/ci/fast実行時に
-    # pre-commit run --all-filesを内部で呼び出す。
+    # pre-commit runを変更ファイル指定（--files <対象>）で内部実行する。
+    # 各hookの内部フィルタ（types・types_or・files・exclude）はファイル指定起動でも適用されるため、
+    # 関係するhookのみ動作する。pass_filenames=Falseのhook（gitleaks等）はpre-commit側で
+    # リポジトリ全体走査になるため、ファイル指定渡しでも従来通り動作する。
     # pre-commit-fast = True（既定）によりfastも統合するため、
     # make format相当の場面でpre-commitを別途呼ぶ必要がなくなる。
     # pre-commit配下からpyfltrが起動された場合はPRE_COMMIT=1
@@ -125,8 +128,10 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "pre-commit": False,
     "pre-commit-path": "pre-commit",
     "pre-commit-runner": "direct",
-    "pre-commit-args": ["run", "--all-files"],
-    "pre-commit-pass-filenames": False,
+    # `pre-commit run`の位置引数はhook IDとして解釈されるため、
+    # ファイル指定には`--files`フラグの前置が必須。
+    "pre-commit-args": ["run", "--files"],
+    "pre-commit-pass-filenames": True,
     "pre-commit-fast": True,
     # .pre-commit-config.yamlからpyfltr関連hookを自動検出してSKIPする
     "pre-commit-auto-skip": True,
@@ -553,7 +558,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "command-timeout": 600,
     # flake8風無視パターン。
     "exclude": [
-        # ここの値はflake8やblackなどの既定値を元に適当に。
+        # 値はflake8・blackの既定値および以下のgitignoreテンプレートを参考に選定する。
         # https://github.com/github/gitignore/blob/master/Python.gitignore
         # https://github.com/github/gitignore/blob/main/Node.gitignore
         "*.egg",
@@ -633,7 +638,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # .gitignoreに記載されたファイルを除外するか否か（git check-ignoreを使用）
     "respect-gitignore": True,
     # モノレポ対応: サブプロジェクト検出時に再帰侵入しないディレクトリ名の追加リスト。
-    # 規定で `.venv`・`node_modules`・`target`・`build`・`dist`・`.git` は常に除外し、
+    # 既定で `.venv`・`node_modules`・`target`・`build`・`dist`・`.git` は常に除外し、
     # 本キーで追加除外を指定できる。文字列リストで指定する。
     "subproject-exclude": [],
     # モノレポ対応: サブプロジェクト検出で `.gitignore` を尊重するか否か。

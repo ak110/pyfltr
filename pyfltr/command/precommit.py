@@ -33,7 +33,7 @@ def execute_pre_commit(
 ) -> CommandResult:
     """pre-commitの2段階実行。
 
-    stage 1でpre-commit run --all-filesを実行し、fixer系hookがファイルを
+    stage 1でpre-commit runを変更ファイル指定で実行し、fixer系hookがファイルを
     修正しただけなら再実行で成功する（"formatted"）。checker系hookのエラーが
     残る場合は "failed"（has_error=True）として返す。
     """
@@ -110,6 +110,7 @@ def execute_pre_commit(
             on_subprocess_start=on_subprocess_start,
             on_subprocess_end=on_subprocess_end,
             timeout=timeout,
+            cwd=cwd,
         )
         if proc.returncode != 0:
             returncode = proc.returncode

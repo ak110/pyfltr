@@ -287,7 +287,7 @@ mypy-exclude = ["vendor", "gen_*.py"]
 パターンの書式は`extend-exclude`と同じflake8風のglobパターンで、ディレクトリ指定はその配下も除外される。
 `--no-exclude`を指定した場合、全体の`exclude`/`extend-exclude`と合わせてツール別除外も無効化される。
 
-`pass-filenames = false`のツール（pre-commit・tsc・cargo-\*・dotnet-\*など）はファイル名をコマンドに渡さないため、
+`pass-filenames = false`のツール（tsc・cargo-\*・dotnet-\*など）はファイル名をコマンドに渡さないため、
 `{command}-exclude`を設定しても効果がない。
 
 ## 自動オプション

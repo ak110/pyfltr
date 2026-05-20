@@ -156,9 +156,9 @@ js-runner = "pnpm"
 ```
 
 `pnpm` / `npm` / `yarn` / `direct`では`textlint-packages`は無視される（`package.json`側でインストールする前提のため）。
-textlintのプリセットやルールも`package.json`の`devDependencies`で管理すること。
+textlintのプリセットやルールも`package.json`の`devDependencies`で管理する。
 
-詳細は[設定項目（ツール別）](configuration-tools.md)の「npm系ツール」を参照。
+詳細は[設定項目（ツール別）](configuration-tools.md)の「js-runner経由で実行するツール」を参照。
 
 ## .pre-commit-config.yaml
 
@@ -209,7 +209,9 @@ sequenceDiagram
     PF->>PF: ruff-format, ruff-check等
 ```
 
-逆に`make test`等から`pyfltr run`を呼び出した場合は、pyfltr側が`SKIP=pyfltr`付きで`pre-commit run --all-files`を起動する。
+逆に`make test`等から`pyfltr run`を呼び出した場合は、pyfltr側が`SKIP=pyfltr`付きで
+`pre-commit run`を変更ファイル指定（`--files <対象>`）で起動する。
+各hook内部の`types`・`types_or`・`files`・`exclude`フィルタはファイル指定起動でも適用されるため、関係するhookのみ動作する。
 これによりpre-commit-hooks（check-yaml等）を統合実行できる。
 詳細な挙動と無効化手順は[トラブルシューティング](troubleshooting.md)を参照。
 
