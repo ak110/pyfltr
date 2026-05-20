@@ -10,6 +10,7 @@ import subprocess
 import pytest
 
 import pyfltr.cli.command_info
+import pyfltr.cli.output_format
 import pyfltr.command.mise
 import pyfltr.command.runner
 import pyfltr.config.config
@@ -130,9 +131,12 @@ def test_command_info_json_textlint_has_fix_commandline(capsys: pytest.CaptureFi
     assert "json" in info["commandline"]
 
 
-def test_command_info_ai_agent_default_jsonl(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
-    """`AI_AGENT`設定時の`command-info`既定出力はjsonl形式（1行JSON+末尾改行）になる。"""
-    monkeypatch.setenv("AI_AGENT", "1")
+@pytest.mark.parametrize("env_name", pyfltr.cli.output_format.AGENT_INDICATOR_ENVS)
+def test_command_info_agent_indicator_default_jsonl(
+    env_name: str, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """エージェント検出変数のいずれかが設定された`command-info`の既定出力はjsonl形式になる。"""
+    monkeypatch.setenv(env_name, "1")
     out = _run("typos", output_format=None, capsys=capsys)
     assert out.endswith("\n")
     assert "\n" not in out[:-1]
@@ -152,11 +156,12 @@ def test_command_info_jsonl_typos(capsys: pytest.CaptureFixture[str]) -> None:
     assert info["effective_runner"] == "direct"
 
 
-def test_command_info_pyfltr_env_overrides_ai_agent(
-    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("env_name", pyfltr.cli.output_format.AGENT_INDICATOR_ENVS)
+def test_command_info_pyfltr_env_overrides_agent_indicator(
+    env_name: str, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`PYFLTR_OUTPUT_FORMAT=text`は`AI_AGENT`より優先され、textが選ばれる。"""
-    monkeypatch.setenv("AI_AGENT", "1")
+    """`PYFLTR_OUTPUT_FORMAT=text`はエージェント検出変数より優先され、textが選ばれる。"""
+    monkeypatch.setenv(env_name, "1")
     monkeypatch.setenv("PYFLTR_OUTPUT_FORMAT", "text")
     out = _run("typos", output_format=None, capsys=capsys)
     assert out.startswith("# typos")

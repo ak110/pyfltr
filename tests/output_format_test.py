@@ -361,11 +361,12 @@ def test_run_cli_env_var_invalid(monkeypatch):
         pyfltr.cli.pipeline._resolve_output_format(parser, args)
 
 
-def test_run_cli_ai_agent_jsonl(mocker, capsys, monkeypatch):
-    """AI_AGENT が設定されていれば、--output-format 未指定でも JSONL 出力になる。"""
+@pytest.mark.parametrize("env_name", pyfltr.cli.output_format.AGENT_INDICATOR_ENVS)
+def test_run_cli_agent_indicator_jsonl(env_name, mocker, capsys, monkeypatch):
+    """エージェント検出変数のいずれかが設定されていれば、--output-format 未指定でも JSONL 出力になる。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
     mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
-    monkeypatch.setenv("AI_AGENT", "1")
+    monkeypatch.setenv(env_name, "1")
 
     returncode = pyfltr.cli.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     assert returncode == 0
@@ -377,11 +378,12 @@ def test_run_cli_ai_agent_jsonl(mocker, capsys, monkeypatch):
     assert last["kind"] == "summary"
 
 
-def test_run_cli_ai_agent_overridden_by_env_var(mocker, capsys, monkeypatch):
-    """PYFLTR_OUTPUT_FORMAT は AI_AGENT より優先される。"""
+@pytest.mark.parametrize("env_name", pyfltr.cli.output_format.AGENT_INDICATOR_ENVS)
+def test_run_cli_agent_indicator_overridden_by_env_var(env_name, mocker, capsys, monkeypatch):
+    """PYFLTR_OUTPUT_FORMAT はエージェント検出変数より優先される。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
     mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
-    monkeypatch.setenv("AI_AGENT", "1")
+    monkeypatch.setenv(env_name, "1")
     monkeypatch.setenv("PYFLTR_OUTPUT_FORMAT", "text")
 
     pyfltr.cli.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
@@ -391,11 +393,12 @@ def test_run_cli_ai_agent_overridden_by_env_var(mocker, capsys, monkeypatch):
     assert "----- summary" in captured.out
 
 
-def test_run_cli_ai_agent_overridden_by_cli(mocker, capsys, monkeypatch):
-    """CLI --output-format は AI_AGENT より優先される。"""
+@pytest.mark.parametrize("env_name", pyfltr.cli.output_format.AGENT_INDICATOR_ENVS)
+def test_run_cli_agent_indicator_overridden_by_cli(env_name, mocker, capsys, monkeypatch):
+    """CLI --output-format はエージェント検出変数より優先される。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
     mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
-    monkeypatch.setenv("AI_AGENT", "1")
+    monkeypatch.setenv(env_name, "1")
 
     pyfltr.cli.main.run(["ci", "--output-format=text", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr()
@@ -403,11 +406,12 @@ def test_run_cli_ai_agent_overridden_by_cli(mocker, capsys, monkeypatch):
     assert "----- summary" in captured.out
 
 
-def test_run_cli_ai_agent_empty_string_unset(mocker, capsys, monkeypatch):
-    """AI_AGENT が空文字列の場合は未設定扱い（textに戻る）。"""
+@pytest.mark.parametrize("env_name", pyfltr.cli.output_format.AGENT_INDICATOR_ENVS)
+def test_run_cli_agent_indicator_empty_string_unset(env_name, mocker, capsys, monkeypatch):
+    """エージェント検出変数が空文字列の場合は未設定扱い（textに戻る）。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
     mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
-    monkeypatch.setenv("AI_AGENT", "")
+    monkeypatch.setenv(env_name, "")
 
     pyfltr.cli.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr()
@@ -415,11 +419,12 @@ def test_run_cli_ai_agent_empty_string_unset(mocker, capsys, monkeypatch):
     assert "----- summary" in captured.out
 
 
-def test_run_cli_ai_agent_zero_value_truthy(mocker, capsys, monkeypatch):
-    """AI_AGENT は値の中身を問わず、設定されていれば真扱い（"0"でもJSONL）。"""
+@pytest.mark.parametrize("env_name", pyfltr.cli.output_format.AGENT_INDICATOR_ENVS)
+def test_run_cli_agent_indicator_zero_value_truthy(env_name, mocker, capsys, monkeypatch):
+    """エージェント検出変数は値の中身を問わず、設定されていれば真扱い（"0"でもJSONL）。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
     mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
-    monkeypatch.setenv("AI_AGENT", "0")
+    monkeypatch.setenv(env_name, "0")
 
     pyfltr.cli.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr()
@@ -483,9 +488,10 @@ def test_resolve_output_format_subcommand_default():
     assert resolution.source == pyfltr.cli.output_format.FORMAT_SOURCE_SUBCOMMAND_DEFAULT
 
 
-def test_resolve_output_format_env_ai_agent(monkeypatch):
-    """`AI_AGENT`設定時は由来ラベルが`env.AI_AGENT`、形式は`ai_agent_default`の値になる。"""
-    monkeypatch.setenv("AI_AGENT", "1")
+@pytest.mark.parametrize("env_name", pyfltr.cli.output_format.AGENT_INDICATOR_ENVS)
+def test_resolve_output_format_env_agent_indicator(env_name, monkeypatch):
+    """エージェント検出変数のいずれかが設定されていれば、由来ラベルは`env.<name>`、形式は`ai_agent_default`の値になる。"""
+    monkeypatch.setenv(env_name, "1")
     parser = pyfltr.cli.parser.build_parser()
     resolution = pyfltr.cli.output_format.resolve_output_format(
         parser,
@@ -494,7 +500,7 @@ def test_resolve_output_format_env_ai_agent(monkeypatch):
         ai_agent_default="jsonl",
     )
     assert resolution.format == "jsonl"
-    assert resolution.source == pyfltr.cli.output_format.FORMAT_SOURCE_ENV_AI_AGENT
+    assert resolution.source == f"env.{env_name}"
 
 
 def test_resolve_output_format_fallback():
@@ -509,9 +515,10 @@ def test_resolve_output_format_fallback():
     assert resolution.source == pyfltr.cli.output_format.FORMAT_SOURCE_FALLBACK
 
 
-def test_resolve_output_format_ai_agent_default_none_ignores_env(monkeypatch):
-    """`ai_agent_default=None`では`AI_AGENT`が設定されていてもfallbackへ進む。"""
-    monkeypatch.setenv("AI_AGENT", "1")
+@pytest.mark.parametrize("env_name", pyfltr.cli.output_format.AGENT_INDICATOR_ENVS)
+def test_resolve_output_format_agent_default_none_ignores_env(env_name, monkeypatch):
+    """`ai_agent_default=None`では`AGENT_INDICATOR_ENVS`が設定されていてもfallbackへ進む。"""
+    monkeypatch.setenv(env_name, "1")
     parser = pyfltr.cli.parser.build_parser()
     resolution = pyfltr.cli.output_format.resolve_output_format(
         parser,
@@ -547,17 +554,18 @@ def test_run_cli_header_format_source_cli(mocker, capsys):
     assert header["format_source"] == pyfltr.cli.output_format.FORMAT_SOURCE_CLI
 
 
-def test_run_cli_header_format_source_env_ai_agent(mocker, capsys, monkeypatch):
-    """`AI_AGENT`設定時のJSONL既定切替ではheader.format_sourceが`env.AI_AGENT`になる。"""
+@pytest.mark.parametrize("env_name", pyfltr.cli.output_format.AGENT_INDICATOR_ENVS)
+def test_run_cli_header_format_source_env_agent_indicator(env_name, mocker, capsys, monkeypatch):
+    """エージェント検出変数のいずれかによるJSONL既定切替ではheader.format_sourceが`env.<name>`になる。"""
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
     mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
-    monkeypatch.setenv("AI_AGENT", "1")
+    monkeypatch.setenv(env_name, "1")
 
     pyfltr.cli.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr()
     lines = [line for line in captured.out.splitlines() if line.strip()]
     header = json.loads(lines[0])
-    assert header["format_source"] == pyfltr.cli.output_format.FORMAT_SOURCE_ENV_AI_AGENT
+    assert header["format_source"] == f"env.{env_name}"
 
 
 def test_run_cli_header_format_source_env_pyfltr(mocker, capsys, monkeypatch):

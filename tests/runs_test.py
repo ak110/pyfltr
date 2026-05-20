@@ -11,6 +11,7 @@ import pathlib
 import pytest
 
 import pyfltr.cli.main
+import pyfltr.cli.output_format
 import pyfltr.command.error_parser
 import pyfltr.state.archive
 from tests.conftest import make_error_location as _make_error
@@ -186,13 +187,15 @@ def test_show_run_latest_empty(
     assert "pyfltr run" in err
 
 
-def test_list_runs_ai_agent_jsonl(
+@pytest.mark.parametrize("env_name", pyfltr.cli.output_format.AGENT_INDICATOR_ENVS)
+def test_list_runs_agent_indicator_jsonl(
+    env_name: str,
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """AI_AGENT 設定時、`list-runs` は --output-format 未指定でも JSONL を出力する。"""
-    monkeypatch.setenv("AI_AGENT", "1")
+    """エージェント検出変数のいずれかが設定されていれば、`list-runs`は--output-format未指定でもJSONLを出力する。"""
+    monkeypatch.setenv(env_name, "1")
     run_id = _seed_run(tmp_path)
 
     returncode = pyfltr.cli.main.run(["list-runs"])
@@ -203,13 +206,15 @@ def test_list_runs_ai_agent_jsonl(
     assert lines[0]["run_id"] == run_id
 
 
-def test_show_run_ai_agent_jsonl(
+@pytest.mark.parametrize("env_name", pyfltr.cli.output_format.AGENT_INDICATOR_ENVS)
+def test_show_run_agent_indicator_jsonl(
+    env_name: str,
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """AI_AGENT 設定時、`show-run` は --output-format 未指定でも JSONL を出力する。"""
-    monkeypatch.setenv("AI_AGENT", "1")
+    """エージェント検出変数のいずれかが設定されていれば、`show-run`は--output-format未指定でもJSONLを出力する。"""
+    monkeypatch.setenv(env_name, "1")
     run_id = _seed_run(tmp_path, commands=["ruff-check"], exit_code=0)
 
     returncode = pyfltr.cli.main.run(["show-run", run_id])

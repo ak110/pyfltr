@@ -49,15 +49,18 @@ structured_logger.propagate = False
 OUTPUT_FORMAT_ENV = "PYFLTR_OUTPUT_FORMAT"
 """出力形式を環境変数で既定指定するためのキー名。"""
 
-AI_AGENT_ENV = "AI_AGENT"
-"""エージェント実行を示す慣習的な環境変数名。"""
+AGENT_INDICATOR_ENVS: tuple[str, ...] = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
+"""エージェント実行を示す環境変数名のタプル。
+`AI_AGENT`は慣習的な総称、`CODEX_CI`はCodex CI、`CLAUDECODE`はClaude Code、`CURSOR_AGENT`はCursor。
+走査順・採用判定は`resolve_output_format`参照。
+"""
 
 # 解決経路を示す`format_source`の固定語彙。各値はそれ単独で読んで意味が通るよう命名する。
 # JSONL `header.format_source`の値・利用者向けドキュメントの説明・テストのassertで参照する。
+# エージェント検出経由の値は別系統で、検出した変数ごとに`env.<NAME>`の形で動的に構築する。
 FORMAT_SOURCE_CLI = "cli"
 FORMAT_SOURCE_ENV_PYFLTR = f"env.{OUTPUT_FORMAT_ENV}"
 FORMAT_SOURCE_SUBCOMMAND_DEFAULT = "subcommand_default"
-FORMAT_SOURCE_ENV_AI_AGENT = f"env.{AI_AGENT_ENV}"
 FORMAT_SOURCE_FALLBACK = "fallback"
 
 
@@ -65,8 +68,7 @@ FORMAT_SOURCE_FALLBACK = "fallback"
 class OutputFormatResolution:
     """`resolve_output_format`の戻り値。決定値と由来ラベルの2要素で構成する。
 
-    既存実装は文字列単独を返していたが、JSONL `header.format_source`へ
-    解決経路を露出する目的で由来ラベルを追加した。
+    `source`はJSONL `header.format_source`へ解決経路を露出する目的で保持する。
     """
 
     format: str
@@ -84,27 +86,29 @@ def resolve_output_format(
 ) -> OutputFormatResolution:
     """出力形式を共通の優先順位で決定する。
 
-    優先順位は「CLI > `PYFLTR_OUTPUT_FORMAT` > サブコマンド既定値 > `AI_AGENT` > 最終既定値」。
+    優先順位は「CLI > `PYFLTR_OUTPUT_FORMAT` > サブコマンド既定値 > エージェント検出変数 > 最終既定値」。
     CLI明示値（`cli_value`）と`PYFLTR_OUTPUT_FORMAT`は利用者が意識的に指定した値とみなし、
-    サブコマンド既定値・`AI_AGENT`検出より優先する。これによりエージェント環境下や
+    サブコマンド既定値・エージェント検出より優先する。これによりエージェント環境下や
     `run-for-agent`配下でも`PYFLTR_OUTPUT_FORMAT=text`で元の形式に戻すことができる。
+
+    エージェント検出は`AGENT_INDICATOR_ENVS`の先頭から走査する。
+    最初に非空値（空文字列でない値）が設定された変数を採用し、
+    `format_source`は`env.<検出変数名>`の形で返す。値の中身は問わない。
 
     Args:
         parser: 環境変数バリデーションエラー時の`parser.error`呼び出しに使う。
         cli_value: CLIで明示された`--output-format`の値。未指定時は`None`。
         valid_values: サブコマンドが受理する出力形式集合。`PYFLTR_OUTPUT_FORMAT`の値検証と、
-            サブコマンド既定値・`AI_AGENT`検出時既定値の採否判定に使う。
+            サブコマンド既定値・エージェント検出時既定値の採否判定に使う。
         subcommand_default: サブコマンド固有の既定値（例: `run-for-agent`では`"jsonl"`）。
             `valid_values`に含まれない場合は無視する。`None`の場合は次段階へ進む。
-        ai_agent_default: `AI_AGENT`検出時に採用する既定値。実行系・参照系では`"jsonl"`、
+        ai_agent_default: エージェント検出時に採用する既定値。実行系・参照系では`"jsonl"`、
             `command-info`では`"json"`を渡す。`None`または`valid_values`に含まれない場合は
-            `AI_AGENT`検出を無視する。
+            エージェント検出を無視する。
         final_default: いずれの解決経路にも該当しない場合の最終既定値。
 
     Returns:
         解決済みの出力形式と由来ラベルを保持する`OutputFormatResolution`。
-
-    `AI_AGENT`は環境変数が設定されていれば真扱い（空文字列は未設定扱い、値の中身は問わない）。
     """
     if cli_value is not None:
         return OutputFormatResolution(format=cli_value, source=FORMAT_SOURCE_CLI)
@@ -119,9 +123,10 @@ def resolve_output_format(
     if subcommand_default is not None and subcommand_default in valid_values:
         return OutputFormatResolution(format=subcommand_default, source=FORMAT_SOURCE_SUBCOMMAND_DEFAULT)
     if ai_agent_default is not None and ai_agent_default in valid_values:
-        ai_agent_value = os.environ.get(AI_AGENT_ENV)
-        if ai_agent_value is not None and ai_agent_value != "":
-            return OutputFormatResolution(format=ai_agent_default, source=FORMAT_SOURCE_ENV_AI_AGENT)
+        for env_name in AGENT_INDICATOR_ENVS:
+            indicator_value = os.environ.get(env_name)
+            if indicator_value is not None and indicator_value != "":
+                return OutputFormatResolution(format=ai_agent_default, source=f"env.{env_name}")
     return OutputFormatResolution(format=final_default, source=FORMAT_SOURCE_FALLBACK)
 
 
@@ -131,7 +136,7 @@ def configure_text_output(stream: typing.TextIO, *, level: int = logging.INFO) -
     既存ハンドラーを全て外してから `StreamHandler(stream)` を新規追加する。
     同一プロセス内で `run()` が複数回呼ばれるケースに備えて、呼び出し毎に完全に
     再構築する（古いハンドラーが残って二重出力・古いstream参照が残るのを避ける）。
-    logger役割分担の全体像は本モジュールのdocstringを参照する。
+    logger役割分担の全体像は本モジュールのdocstring参照。
     """
     for existing in list(text_logger.handlers):
         text_logger.removeHandler(existing)
@@ -153,7 +158,7 @@ def configure_structured_output(destination: typing.TextIO | pathlib.Path | None
     structured_logger側はINFO記録を破棄しないようにするため。
     `--output-file` 指定時は `pathlib.Path` を渡してファイル出力へ切り替えることで
     stdout占有を解除し、人間向けtext出力をstdoutへ戻すことができる。
-    logger役割分担の全体像は本モジュールのdocstringを参照する。
+    logger役割分担の全体像は本モジュールのdocstring参照。
     """
     for existing in list(structured_logger.handlers):
         structured_logger.removeHandler(existing)

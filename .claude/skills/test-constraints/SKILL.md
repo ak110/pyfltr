@@ -3,7 +3,7 @@ name: test-constraints
 description: >
   pyfltrのテスト・実装制約の方針。
   tomlkit統一・functools.lru_cacheによる実行内キャッシュ・関数内ローカルimportの制限・
-  pyright誤検知回避・monkeypatchによる設定差し替え・AI_AGENT/PYFLTR_OUTPUT_FORMAT環境変数隔離・
+  pyright誤検知回避・monkeypatchによる設定差し替え・エージェント検出変数およびPYFLTR_OUTPUT_FORMATの環境変数隔離・
   pre-commit hookでのuv runの--frozen指定・テストとモジュールパス参照の同期などの制約を集約する。
   pyfltr配下のPythonファイル・tests配下のPythonファイル・
   .pre-commit-config.yaml を編集する際に使用する。
@@ -28,8 +28,9 @@ description: >
   同一抑止が複数箇所で必要になる場合は設定ファイル側での扱いをユーザーと相談する
 - pre-commit hookの`entry:`で`uv run`を起動する場合、必ず`--frozen`を明示する。
   pre-commitは親の環境変数を引き継がない構成のため`UV_FROZEN`が未設定で到達する可能性がある
-- pyfltrテストでは`AI_AGENT` / `PYFLTR_OUTPUT_FORMAT`が予期せず設定されているとjsonl既定へ切り替わる。
-  `tests/conftest.py`のautouseフィクスチャ`_isolate_output_format_envs`で両環境変数を未設定にする。
+- pyfltrテストでは`AGENT_INDICATOR_ENVS`のいずれかまたは`PYFLTR_OUTPUT_FORMAT`が
+  予期せず設定されているとjsonl既定へ切り替わる。
+  `tests/conftest.py`のautouseフィクスチャ`_isolate_output_format_envs`で一律に未設定化する。
   値を設定するテストでのみ`monkeypatch.setenv`で個別に上書きする
 - テストで`pyfltr.config.config.load_config()`経由の設定値を差し替えたい場合は、
   `monkeypatch.setattr(pyfltr.config.config, "load_config", lambda **_kw: <test_config>)`の形で関数自体を置換する。

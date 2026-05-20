@@ -145,9 +145,10 @@ def make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> "
             "jsonl は LLM 向け JSON Lines 出力、sarif は SARIF 2.1.0、github-annotations は GitHub Actions 向けの注釈形式、"
             "code-quality は GitLab CI の artifacts:reports:codequality 向けの Code Climate JSON issue 形式。"
             f"未指定時は環境変数 {pyfltr.cli.output_format.OUTPUT_FORMAT_ENV} の値を使用します。"
-            f"さらに環境変数 {pyfltr.cli.output_format.AI_AGENT_ENV} が設定されていれば既定値が jsonl になります"
+            f"さらに環境変数 {' / '.join(pyfltr.cli.output_format.AGENT_INDICATOR_ENVS)} の"
+            f"いずれかが設定されていれば既定値が jsonl になります。"
             f"(優先順位: CLI > {pyfltr.cli.output_format.OUTPUT_FORMAT_ENV} > サブコマンド既定値"
-            f" > {pyfltr.cli.output_format.AI_AGENT_ENV} > text)。"
+            f" > {' / '.join(pyfltr.cli.output_format.AGENT_INDICATOR_ENVS)} > text)。"
         ),
     )
     common.add_argument(
@@ -368,9 +369,10 @@ def build_parser(custom_commands: collections.abc.Iterable[str] = ()) -> "_HelpO
         default=None,
         help=(
             "出力形式 (text / json / jsonl、既定: text)。"
-            f"未指定時は環境変数 {pyfltr.cli.output_format.OUTPUT_FORMAT_ENV} を、"
-            f"{pyfltr.cli.output_format.AI_AGENT_ENV} が設定されていれば jsonl を採用する"
-            f"(優先順位: CLI > {pyfltr.cli.output_format.OUTPUT_FORMAT_ENV} > {pyfltr.cli.output_format.AI_AGENT_ENV} > text)。"
+            f"未指定時は環境変数 {pyfltr.cli.output_format.OUTPUT_FORMAT_ENV} を採用し、"
+            f"{' / '.join(pyfltr.cli.output_format.AGENT_INDICATOR_ENVS)} のいずれかが設定されていれば jsonl を採用する。"
+            f"(優先順位: CLI > {pyfltr.cli.output_format.OUTPUT_FORMAT_ENV}"
+            f" > {' / '.join(pyfltr.cli.output_format.AGENT_INDICATOR_ENVS)} > text)。"
         ),
     )
 

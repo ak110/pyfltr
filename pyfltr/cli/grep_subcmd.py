@@ -158,8 +158,8 @@ def register_subparsers(subparsers: typing.Any) -> None:
         default=None,
         help=(
             "出力形式を指定する（text / json / jsonl、既定: text）。"
-            f"未指定時は環境変数 {pyfltr.cli.output_format.OUTPUT_FORMAT_ENV} を、"
-            f"{pyfltr.cli.output_format.AI_AGENT_ENV} が設定されていれば jsonl を採用する。"
+            f"未指定時は環境変数 {pyfltr.cli.output_format.OUTPUT_FORMAT_ENV} を採用し、"
+            f"{' / '.join(pyfltr.cli.output_format.AGENT_INDICATOR_ENVS)} のいずれかが設定されていれば jsonl を採用する。"
         ),
     )
     parser.add_argument(

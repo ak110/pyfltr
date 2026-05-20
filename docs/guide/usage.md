@@ -349,7 +349,8 @@ check段では`textlint-json`設定（既定`true`）により出力フォーマ
 主要なオプション。
 
 - `--output-format=text|json|jsonl`: 出力形式を切り替える（既定`text`）。
-  未指定時は環境変数`PYFLTR_OUTPUT_FORMAT`を、`AI_AGENT`が設定されていれば`jsonl`を採用する
+  未指定時は環境変数`PYFLTR_OUTPUT_FORMAT`を、`AI_AGENT` / `CODEX_CI` / `CLAUDECODE` / `CURSOR_AGENT`の
+  いずれかが設定されていれば`jsonl`を採用する
 - `--check`: mise経由ツールに対して`mise exec --version`での事前チェックを行う
  （`mise install` / `mise trust`が発生する場合があるため、既定では行わない）
 
@@ -533,10 +534,12 @@ CLIオプション`--output-format`が指定されている場合は環境変数
 エージェント起動スクリプトなどに`PYFLTR_OUTPUT_FORMAT=jsonl`を設定しておけば、
 毎回オプションを明示しなくても`ci`など任意のサブコマンドでJSONL出力に切り替えられる。
 
-環境変数`AI_AGENT`が設定されていれば、`--output-format`未指定時の既定値が`jsonl`になる
-（コーディングエージェント環境下での自動切り替え用）。
+環境変数`AI_AGENT` / `CODEX_CI` / `CLAUDECODE` / `CURSOR_AGENT`のいずれかが設定されていれば、
+`--output-format`未指定時の既定値が`jsonl`になる。
+コーディングエージェント環境下での自動切り替え用とする。
+JSONLヘッダーの`format_source`には検出した変数名（例: `env.CODEX_CI`）が記録される。
 
-`PYFLTR_OUTPUT_FORMAT`を明示すれば`AI_AGENT`環境下や`run-for-agent`配下でもtext等へ変更できる
+`PYFLTR_OUTPUT_FORMAT`を明示すれば、エージェント検出環境下や`run-for-agent`配下でもtext等へ変更できる
 （例: `PYFLTR_OUTPUT_FORMAT=text pyfltr run-for-agent`）。
 
 ### コーディングエージェント連携

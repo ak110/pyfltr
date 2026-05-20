@@ -11,6 +11,7 @@ import subprocess
 import pytest
 
 import pyfltr.cli.main
+import pyfltr.cli.output_format
 import pyfltr.cli.pipeline
 import pyfltr.cli.precommit_guidance
 import pyfltr.command.process
@@ -790,11 +791,12 @@ class TestConfigSubcommand:
         data = json.loads(out)
         assert data == {"values": {"archive-max-age-days": 5}}
 
-    def test_config_list_ai_agent_jsonl(self, monkeypatch, tmp_path, capsys) -> None:
-        """AI_AGENT 設定時、`config list` は --output-format 未指定でも JSONL を出力する。"""
+    @pytest.mark.parametrize("env_name", pyfltr.cli.output_format.AGENT_INDICATOR_ENVS)
+    def test_config_list_agent_indicator_jsonl(self, env_name, monkeypatch, tmp_path, capsys) -> None:
+        """エージェント検出変数のいずれかが設定されていれば、`config list`は--output-format未指定でもJSONLを出力する。"""
         (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\narchive-max-age-days = 5\n", encoding="utf-8")
         monkeypatch.chdir(tmp_path)
-        monkeypatch.setenv("AI_AGENT", "1")
+        monkeypatch.setenv(env_name, "1")
         rc = pyfltr.cli.main.run(["config", "list"])
         assert rc == 0
         lines = [line for line in capsys.readouterr().out.splitlines() if line.strip()]

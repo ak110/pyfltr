@@ -856,8 +856,9 @@ def _resolve_output_format(
 ) -> pyfltr.cli.output_format.OutputFormatResolution:
     """実行系サブコマンド向けに出力形式を解決する。
 
-    `run-for-agent`のみサブコマンド既定値`"jsonl"`を渡し、`AI_AGENT`検出時は実行系全体で
-    `jsonl`既定を採用する。`PYFLTR_OUTPUT_FORMAT=text`での変更は`cli/output_format.py`側で扱う。
+    `run-for-agent`のみサブコマンド既定値`"jsonl"`を渡し、`AGENT_INDICATOR_ENVS`のいずれかが
+    検出された場合は実行系全体で`jsonl`既定を採用する。
+    `PYFLTR_OUTPUT_FORMAT=text`での変更は`cli/output_format.py`側で扱う。
     """
     subcommand_default = "jsonl" if args.subcommand == "run-for-agent" else None
     return pyfltr.cli.output_format.resolve_output_format(

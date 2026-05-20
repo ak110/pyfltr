@@ -12,6 +12,7 @@ import time
 
 import pytest
 
+import pyfltr.cli.output_format
 import pyfltr.command.core_
 import pyfltr.command.error_parser
 import pyfltr.command.mise
@@ -36,13 +37,15 @@ def _clear_warnings_between_tests() -> None:
 def _isolate_output_format_envs(monkeypatch: pytest.MonkeyPatch) -> None:
     """出力形式を左右する環境変数を未設定状態に固定するフィクスチャ。
 
-    Claude Code などのエージェント環境では `AI_AGENT` が常時設定されるため、
+    エージェント環境では `AGENT_INDICATOR_ENVS` のいずれか
+    （`AI_AGENT` / `CODEX_CI` / `CLAUDECODE` / `CURSOR_AGENT`）が常時設定されるため、
     autouse しないと開発機の状態によって既定出力形式が jsonl へ揺らぐ。
     `PYFLTR_OUTPUT_FORMAT` も開発者シェルで設定されている可能性があるため、
-    両者を一律に未設定化する。個別テストは `monkeypatch.setenv` で上書きする。
+    全てを一律に未設定化する。個別テストは `monkeypatch.setenv` で上書きする。
     """
-    monkeypatch.delenv("AI_AGENT", raising=False)
-    monkeypatch.delenv("PYFLTR_OUTPUT_FORMAT", raising=False)
+    for env_name in pyfltr.cli.output_format.AGENT_INDICATOR_ENVS:
+        monkeypatch.delenv(env_name, raising=False)
+    monkeypatch.delenv(pyfltr.cli.output_format.OUTPUT_FORMAT_ENV, raising=False)
 
 
 # `get_mise_active_tools` 実装本体を保存しておく（モック上書き前の参照）。

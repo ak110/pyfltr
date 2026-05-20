@@ -52,7 +52,7 @@ pyfltr grep -F "exact_string" docs/
 - `json`: 単一JSONとしてmatches配列とsummaryを返す
 - `jsonl`: header → match行 → summary行のストリーム
 
-`AI_AGENT`環境変数が設定されている場合は`jsonl`が既定値となる。
+`AI_AGENT` / `CODEX_CI` / `CLAUDECODE` / `CURSOR_AGENT`環境変数のいずれかが設定されている場合は`jsonl`が既定値となる。
 
 ### grep→replace連携
 
