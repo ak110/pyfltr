@@ -130,13 +130,26 @@ def test_command_info_json_textlint_has_fix_commandline(capsys: pytest.CaptureFi
     assert "json" in info["commandline"]
 
 
-def test_command_info_ai_agent_default_json(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
-    """`AI_AGENT`設定時の`command-info`既定出力はjson形式になる。"""
+def test_command_info_ai_agent_default_jsonl(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+    """`AI_AGENT`設定時の`command-info`既定出力はjsonl形式（1行JSON+末尾改行）になる。"""
     monkeypatch.setenv("AI_AGENT", "1")
     out = _run("typos", output_format=None, capsys=capsys)
+    assert out.endswith("\n")
+    assert "\n" not in out[:-1]
     info = json.loads(out)
     assert info["command"] == "typos"
     assert info["runner"] == "direct"
+
+
+def test_command_info_jsonl_typos(capsys: pytest.CaptureFixture[str]) -> None:
+    """jsonl形式は1行JSON+末尾改行で出力され、`json.loads`でdictへ復元できる。"""
+    out = _run("typos", output_format="jsonl", capsys=capsys)
+    assert out.endswith("\n")
+    assert "\n" not in out[:-1]
+    info = json.loads(out)
+    assert info["command"] == "typos"
+    assert info["runner"] == "direct"
+    assert info["effective_runner"] == "direct"
 
 
 def test_command_info_pyfltr_env_overrides_ai_agent(

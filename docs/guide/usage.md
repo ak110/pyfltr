@@ -282,7 +282,7 @@ claude mcp add pyfltr -- uvx pyfltr mcp
 ### サブコマンド: command-info {#command-info}
 
 ```shell
-pyfltr command-info <tool> [--format text|json] [--check]
+pyfltr command-info <tool> [--output-format text|json|jsonl] [--check]
 ```
 
 対象ツールの起動方式（runner種別・実行ファイルパス・最終コマンドライン）の解決結果を副作用無しで表示する。
@@ -348,9 +348,10 @@ check段では`textlint-json`設定（既定`true`）により出力フォーマ
 
 主要なオプション。
 
-- `--format=text|json`: 出力形式を切り替える（既定`text`）。json形式はスクリプトからのパース向け
+- `--output-format=text|json|jsonl`: 出力形式を切り替える（既定`text`）。
+  未指定時は環境変数`PYFLTR_OUTPUT_FORMAT`を、`AI_AGENT`が設定されていれば`jsonl`を採用する
 - `--check`: mise経由ツールに対して`mise exec --version`での事前チェックを行う
- （`mise install` / `mise trust`が発火する場合があるため、既定では行わない）
+ （`mise install` / `mise trust`が発生する場合があるため、既定では行わない）
 
 未知のコマンド名や`{command}-runner = "mise"`を未登録ツールに指定した場合などは終了コード1で失敗する。
 

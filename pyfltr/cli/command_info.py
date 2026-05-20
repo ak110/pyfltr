@@ -21,7 +21,7 @@ import pyfltr.command.mise
 import pyfltr.command.runner
 import pyfltr.config.config
 
-_OUTPUT_FORMATS: tuple[str, ...] = ("text", "json")
+_OUTPUT_FORMATS: tuple[str, ...] = ("text", "json", "jsonl")
 _VALID_OUTPUT_FORMATS: frozenset[str] = frozenset(_OUTPUT_FORMATS)
 
 
@@ -36,14 +36,14 @@ def register_subparsers(subparsers: typing.Any) -> None:
         help="情報を表示する対象のツール名（例: cargo-fmt / shellcheck / typos など）。",
     )
     parser.add_argument(
-        "--format",
+        "--output-format",
         dest="output_format",
         choices=_OUTPUT_FORMATS,
         default=None,
         help=(
-            "出力形式を指定する（text / json、既定: text）。"
+            "出力形式を指定する（text / json / jsonl、既定: text）。"
             f"未指定時は環境変数 {pyfltr.cli.output_format.OUTPUT_FORMAT_ENV} を、"
-            f"{pyfltr.cli.output_format.AI_AGENT_ENV} が設定されていれば json を採用する"
+            f"{pyfltr.cli.output_format.AI_AGENT_ENV} が設定されていれば jsonl を採用する"
             f"(優先順位: CLI > {pyfltr.cli.output_format.OUTPUT_FORMAT_ENV} > {pyfltr.cli.output_format.AI_AGENT_ENV} > text)。"
         ),
     )
@@ -77,11 +77,13 @@ def execute_command_info(parser: argparse.ArgumentParser, args: argparse.Namespa
         parser,
         args.output_format,
         valid_values=_VALID_OUTPUT_FORMATS,
-        ai_agent_default="json",
+        ai_agent_default="jsonl",
     ).format
     if output_format == "json":
         json.dump(info, sys.stdout, ensure_ascii=False, indent=2)
         sys.stdout.write("\n")
+    elif output_format == "jsonl":
+        sys.stdout.write(json.dumps(info, ensure_ascii=False) + "\n")
     else:
         _print_text(info)
     return 0 if info.get("resolved", True) else 1

@@ -49,3 +49,5 @@ JSONL出力経路は`pyfltr/output/jsonl.py`の公開ヘルパー（`emit_record
   `pyfltr/cli/pipeline.py`の`HeartbeatMonitor`のdocstringを参照する。
   buffering型formatter（SARIF・Code Quality）でheartbeat由来のrunningイベントを混入させない理由は
   `run_pipeline`のdocstringに集約する
+- 全サブコマンドの出力形式オプションは`--output-format`に統一し、
+  choicesは`{text, json, jsonl}`から必要なものを採用する。`--format`等の別名は導入しない
