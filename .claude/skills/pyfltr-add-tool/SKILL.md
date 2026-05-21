@@ -8,9 +8,7 @@ description: >
 
 # pyfltr 新ツール追加チェックリスト
 
-新規ツール追加では複数ファイルへの整合した変更が必要となる。
-各ファイルの記述方法は既存ツールを雛形にして把握できるため、以下では「触るべきファイル」と
-「コードを読んだだけでは気付きにくい注意点」のみを列挙する。
+以下では「触るべきファイル」と「コードを読んだだけでは気付きにくい注意点」のみを列挙する。
 
 ## 触るべきファイル
 
@@ -24,10 +22,9 @@ description: >
 - `pyfltr/command/error_parser.py`: 出力パーサー（regexまたは関数ベース）
 - `tests/`: `config_test.py`・`command_*_test.py`・`error_parser_test.py` に対応するテストを追加
 - `docs/guide/index.md`:「対応ツール」一覧へ追記（`README.md`には書かない。SSOTは本ファイル）
-- `docker/Dockerfile`: 公式Dockerイメージ (`ghcr.io/ak110/pyfltr`) は対応ツールを事前同梱する方針のため、
-  新ツールも該当する導入経路のRUN層へ追加する。経路の選び方は冒頭コメントの「同梱ツール一覧」を参照する
- （bin-runner系は `mise use --global`、JS系は `pnpm add -g`、Python単独は `uv tool install`）。
-  Rust / .NETツールチェイン依存のものは同梱対象外
+- `docker/Dockerfile`: 対応ツールは公式Dockerイメージ（`ghcr.io/ak110/pyfltr`）に事前同梱する。
+  導入経路の区分は冒頭コメントの「同梱ツール一覧」を参照する。
+  Rust / .NETツールチェイン依存は対象外
 
 ## 気付きにくい注意点
 
@@ -36,13 +33,16 @@ description: >
   `-version` キーを必須とし、`-path` の既定値は空文字列にする
 - `error_parser` のカスタム関数パーサーは `_CUSTOM_PARSERS` 辞書に登録しないと有効化されない
 - 依存追加は `uv add` を使う（`uv.lock` の直接編集はPreToolUse hookでブロックされる）
-- 外部パス対応分類（`allows_external_paths` ・ `config_arg_template` ・ `config_inject_candidates`）の判断が必要となる。
+- 外部パス対応分類（`allows_external_paths`・`config_arg_template`・`config_inject_candidates`）の判断が必要となる。
   分類方針の詳細は `.claude/rules/targets.md` を参照する
   - リポジトリ全体走査型（`gitleaks` 等）・`tester`（`pytest` 等）・pre-commitのように
     起点cwd外のファイルを渡すと想定外動作になるツールは `allows_external_paths=False` を指定する
   - 起点cwd直下の設定ファイルを外部パス指定時にも適用したいツールは
     `config_arg_template=["--config", "{path}"]` と `config_inject_candidates=[...]` を指定する
   - 上記以外は既定値（素通し）のままとする
+  - `allows_external_paths=False` を新規指定した場合は、
+    `tests/external_paths_test.py::test_external_path_filtered_with_warning` の対象一覧へ
+    当該ツール名と境界確認用の対象パターンを1件追加する
 
 ## 検証
 
@@ -54,8 +54,7 @@ uv run pyfltr run-for-agent
 
 ## fast 判定の計測手順
 
-`{command}-fast` の既定値は実測値で判断する。
-最終判断はユーザーが行うため、計測結果のみを提示する。
+`{command}-fast` の既定値は実測値で判断する。最終判断はユーザーが行うため、計測結果のみを提示する。
 
 `fast` はpre-commitフックなどで実行しても作業に支障が出にくい高速ツールを示す。
 固定コスト（起動オーバーヘッド）と可変コスト（ファイルあたりの処理時間）の両方に加え、
@@ -74,19 +73,7 @@ uv run pyfltr run-for-agent <file1> [file2] 2>/dev/null
 uv run pyfltr run-for-agent 2>/dev/null
 ```
 
-JSONL出力の `command` レコードから `command`・`elapsed`・`files` を抽出する。
-
-```bash
-... | python3 -c "
-import json, sys
-for line in sys.stdin:
-    r = json.loads(line)
-    if r.get('kind') == 'command':
-        print(f\"{r['command']:20s} {r['elapsed']:7.2f}s  files={r['files']}\")"
-```
-
-推定式: `b = (T_all - T_small) / (N_all - N_small)`、`a = T_small - b * N_small`
-
+JSONL出力の `command` レコードの `elapsed` と `files` から `a`・`b` を算出する。
 `pass-filenames=False` のツール（cargo系・dotnet系・tsc等）はファイル数に関係なく
 プロジェクト全体を走査するため、固定コストのみとして扱う。
 
