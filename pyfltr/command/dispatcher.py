@@ -55,6 +55,48 @@ def _to_subproject_relative(
     return pyfltr.paths.normalize_separators(str(rel))
 
 
+def _is_external_path(target: pathlib.Path, *, start_cwd: pathlib.Path) -> bool:
+    """`target` が起点cwd配下にない絶対パス（外部パス）かを判定する。
+
+    相対パスは起点cwd配下扱いとして`False`を返す。絶対パスは実体パスを起点cwd配下と
+    比較し、配下に含まれないか実体解決に失敗した場合に`True`を返す。
+    """
+    if not target.is_absolute():
+        return False
+    try:
+        target.resolve().relative_to(start_cwd.resolve())
+    except (OSError, ValueError):
+        return True
+    return False
+
+
+def _resolve_config_inject_path(start_cwd: pathlib.Path, candidates: list[str]) -> pathlib.Path | None:
+    """起点cwd直下を`candidates`順に走査し、最初に見つかった設定ファイルの絶対パスを返す。
+
+    候補が見つからない場合は`None`を返す（呼び出し側は注入をスキップする）。
+    返り値はシンボリックリンクを解決した実体パス。
+    """
+    for name in candidates:
+        candidate = start_cwd / name
+        if candidate.is_file():
+            return candidate.resolve()
+    return None
+
+
+def _user_overrides_config(*arg_lists: list[str]) -> bool:
+    """利用者が`--config`を明示指定済みか判定する。
+
+    対象は`{command}-args`・`{command}-extend-args`・CLI`--{command}-args`の合算。
+    含まれている場合、`config_arg_template`による自動注入はスキップして利用者指定を優先する。
+    重複指定で各ツールがエラー終了するのを避けるため。
+    """
+    for args in arg_lists:
+        for arg in args:
+            if arg == "--config" or arg.startswith("--config="):
+                return True
+    return False
+
+
 def _format_tool_resolution_failure(
     command: str,
     raw_identifier: str,
@@ -207,6 +249,21 @@ def _prepare_execution_params(
         if tool_excludes:
             targets = [t for t in targets if not pyfltr.command.targets.matches_exclude_patterns(t, tool_excludes)]
 
+    # `allows_external_paths=False`のツールは外部パスを除外して警告発行する。
+    if not command_info.allows_external_paths:
+        start_for_filter = start_cwd if start_cwd is not None else pathlib.Path.cwd()
+        kept: list[pathlib.Path] = []
+        for t in targets:
+            if _is_external_path(t, start_cwd=start_for_filter):
+                pyfltr.warnings_.emit_warning(
+                    source="external-path",
+                    message=f"{command}: 起点cwd外のパスは対象から除外しました: {t}",
+                )
+                pyfltr.warnings_.add_filtered_direct_file(str(t), reason="external")
+            else:
+                kept.append(t)
+        targets = kept
+
     # ファイルの順番をシャッフルまたはソート（fixステージは再現性重視でシャッフルを無効化）
     if args.shuffle and not fix_stage:
         random.shuffle(targets)
@@ -282,6 +339,24 @@ def _prepare_execution_params(
         additional_args,
         fix_stage=fix_args is not None,
     )
+
+    # `config_arg_template`指定ツール（markdownlint・textlint等）は、起点cwd直下の設定ファイルを
+    # `--config <絶対パス>`形式で明示注入する。内部パスのみの実行でも一律で適用し、
+    # 外部パス指定時に暗黙のcwd探索（markdownlint-cli2が対象ファイルとCWDの共通親から探索する仕様等）が
+    # 起こらないよう挙動を統一する。利用者が`{command}-args`で`--config`を指定済みのときは
+    # 重複指定を避けるため注入をスキップする。設定ファイルが起点cwd直下に見つからないときも
+    # 注入をスキップしてツールの既定動作に委ねる。挿入位置は`commandline_prefix`直後。
+    if command_info.config_arg_template and command_info.config_inject_candidates:
+        user_args_list: list[str] = list(config.values.get(f"{command}-args", []))
+        extend_args_list: list[str] = list(config.values.get(f"{command}-extend-args", []))
+        if not _user_overrides_config(user_args_list, extend_args_list, additional_args):
+            start_for_inject = start_cwd if start_cwd is not None else pathlib.Path.cwd()
+            config_path = _resolve_config_inject_path(start_for_inject, command_info.config_inject_candidates)
+            if config_path is not None:
+                injection = [tok.format(path=str(config_path)) for tok in command_info.config_arg_template]
+                prefix_len = len(commandline_prefix)
+                commandline = commandline[:prefix_len] + injection + commandline[prefix_len:]
+
     # pass-filenames = falseのツールはファイル引数を渡さない（tsc等）
     if config.values.get(f"{command}-pass-filenames", True):
         if subproject_cwd is not None and start_cwd is not None:
@@ -506,6 +581,13 @@ def _run_subproject_loop(
 
     各サブプロジェクトに属するファイル0件のサブプロジェクトはツール実行対象から除外する
     （外部ツールへ空ファイル列を渡さない既存挙動と整合させる）。
+
+    外部パス（`base.external_files`）は`classify_files_by_subproject`がサブプロジェクト
+    辞書から除外したファイル群。`allows_external_paths=True`のツール（注入対象と素通し対象）は
+    起点cwd（`subproject_cwd=None`）で外部パス専用の追加実行を行い、サブプロジェクト結果と
+    `CommandResult.merge`で集約する。`allows_external_paths=False`のツールでは
+    当ループから直接`emit_warning`と`add_filtered_direct_file(reason="external")`を発行する。
+
     結果が1件しか集まらなかった場合は merge せずそのまま返す。
     全件0件の場合は通常経路の「対象ファイル0件」結果を返す（`_dispatch_command` 経由）。
     """
@@ -527,6 +609,42 @@ def _run_subproject_loop(
         if sub_result.output:
             sub_result.output = f"# subproject: {sub.relative}\n{sub_result.output}"
         subproject_results.append(sub_result)
+
+    # 外部パスに対する追加実行（注入対象および素通し対象ツールのみ）。
+    # `allows_external_paths=True`のツールは起点cwd（`subproject_cwd=None`）で
+    # 外部パス専用に追加実行し、注入対象では`config_arg_template`の自動注入が適用される。
+    # `allows_external_paths=False`のツールでは追加実行せず警告のみ発行する。
+    info = ctx.config.commands.get(command)
+    external_files = base.external_files
+    if external_files and info is not None:
+        # 当該ツールのglob条件にマッチする外部パスのみを対象とする
+        # （サブプロジェクト経路と同じ`filter_by_globs`基準）。
+        relevant_external = pyfltr.command.targets.filter_by_globs(external_files, info.target_globs())
+        if relevant_external:
+            if info.allows_external_paths:
+                ext_base = dataclasses.replace(
+                    base,
+                    all_files=relevant_external,
+                    subprojects=[],
+                    subproject_files={},
+                    external_files=[],
+                )
+                ext_ctx = dataclasses.replace(
+                    ctx,
+                    base=ext_base,
+                    subproject_cwd=None,
+                )
+                ext_result = _dispatch_command(command, args, ext_ctx)
+                if ext_result.output:
+                    ext_result.output = f"# external paths\n{ext_result.output}"
+                subproject_results.append(ext_result)
+            else:
+                for t in relevant_external:
+                    pyfltr.warnings_.emit_warning(
+                        source="external-path",
+                        message=f"{command}: 起点cwd外のパスは対象から除外しました: {t}",
+                    )
+                    pyfltr.warnings_.add_filtered_direct_file(str(t), reason="external")
 
     if not subproject_results:
         # 全サブプロジェクトでファイル0件 → 通常経路の0件結果を返す

@@ -9,6 +9,7 @@ pre-commit の name-tests-test フックから除外される。
 import argparse
 import pathlib
 import time
+import typing
 
 import pytest
 
@@ -110,19 +111,27 @@ def make_execution_context(
     cache_run_id: str | None = None,
     fix_stage: bool = False,
     only_failed_targets: pyfltr.state.only_failed.ToolTargets | None = None,
+    start_cwd: pathlib.Path | None = None,
 ) -> pyfltr.command.core_.ExecutionContext:
     """テスト用の ExecutionContext を生成する。
 
     `execute_command` を直接呼び出すテストで使用する。
     CLI/TUI フック系（on_output / is_interrupted / on_subprocess_start / on_subprocess_end）は
     省略し、デフォルトの None を使う。
+
+    `start_cwd` は外部パス判定の起点。`None` の場合は `pathlib.Path.cwd()` を使う既定挙動。
+    `tmp_path` 配下のファイルを対象にするテストで `allows_external_paths=False` ツールを
+    扱う場合は `start_cwd=tmp_path` を明示する。
     """
-    base = pyfltr.command.core_.ExecutionBaseContext(
-        config=config,
-        all_files=all_files,
-        cache_store=cache_store,
-        cache_run_id=cache_run_id,
-    )
+    base_kwargs: dict[str, typing.Any] = {
+        "config": config,
+        "all_files": all_files,
+        "cache_store": cache_store,
+        "cache_run_id": cache_run_id,
+    }
+    if start_cwd is not None:
+        base_kwargs["start_cwd"] = start_cwd
+    base = pyfltr.command.core_.ExecutionBaseContext(**base_kwargs)
     return pyfltr.command.core_.ExecutionContext(
         base=base,
         fix_stage=fix_stage,

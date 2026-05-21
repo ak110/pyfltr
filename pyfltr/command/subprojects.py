@@ -263,26 +263,29 @@ def classify_files_by_subproject(
     files: list[pathlib.Path],
     subprojects: list[Subproject],
     start_cwd: pathlib.Path,
-) -> dict[pathlib.Path, list[pathlib.Path]]:
-    """ファイル一覧をサブプロジェクト別に分類した辞書を返す。
+) -> tuple[dict[pathlib.Path, list[pathlib.Path]], list[pathlib.Path]]:
+    """ファイル一覧をサブプロジェクト別の辞書と外部パス一覧へ分類して返す。
 
     各ファイルは「実体パスがどのサブプロジェクト cwd 配下に最も深く含まれるか」で
     最深一致のサブプロジェクトに割り当てる。これによりネストする子サブプロジェクト
     配下のファイルは親サブプロジェクトの集合から除外され、子サブプロジェクトの
     集合へ含まれる。
 
-    `files` は起点 cwd 相対の `pathlib.Path` を想定する。返り値の値は同じ起点 cwd 相対の
+    `files` は起点 cwd 相対の `pathlib.Path` を想定する。返り値の辞書値は同じ起点 cwd 相対の
     ファイルパス一覧。サブプロジェクトに属さない（起点 cwd の外側等）ファイルは
-    破棄する（呼び出し側で要件外）。
+    辞書からは外し、第2戻り値の外部パス一覧へ保持する。
+    外部パス一覧は注入対象ツール（`config_arg_template`指定のmarkdownlint・textlint等）
+    の追加実行や、除外対象ツール（`allows_external_paths=False`）の警告発行に使う。
 
-    `subprojects` が空の場合は空辞書を返す（呼び出し側は単一実行経路へフォールバック）。
+    `subprojects` が空の場合は空辞書と空リストを返す（呼び出し側は単一実行経路へフォールバック）。
     """
     if not subprojects:
-        return {}
+        return {}, []
     # cwd の depth（パス要素数）が深いほど優先する。
     sorted_subs = sorted(subprojects, key=lambda s: len(s.cwd.parts), reverse=True)
     start_real = start_cwd.resolve()
     result: dict[pathlib.Path, list[pathlib.Path]] = {s.cwd: [] for s in subprojects}
+    external: list[pathlib.Path] = []
     for f in files:
         try:
             abs_path = (start_real / f).resolve() if not f.is_absolute() else f.resolve()
@@ -298,7 +301,9 @@ def classify_files_by_subproject(
             break
         if chosen is not None:
             result[chosen].append(f)
-    return result
+        else:
+            external.append(f)
+    return result, external
 
 
 def find_uv_lock_for_cwd(cwd: pathlib.Path, *, workspace_root: pathlib.Path | None = None) -> pathlib.Path | None:

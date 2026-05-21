@@ -36,6 +36,13 @@ description: >
   `-version` キーを必須とし、`-path` の既定値は空文字列にする
 - `error_parser` のカスタム関数パーサーは `_CUSTOM_PARSERS` 辞書に登録しないと有効化されない
 - 依存追加は `uv add` を使う（`uv.lock` の直接編集はPreToolUse hookでブロックされる）
+- 外部パス対応分類（`allows_external_paths` ・ `config_arg_template` ・ `config_inject_candidates`）の判断が必要となる。
+  分類方針の詳細は `.claude/rules/targets.md` を参照する
+  - リポジトリ全体走査型（`gitleaks` 等）・`tester`（`pytest` 等）・pre-commitのように
+    起点cwd外のファイルを渡すと想定外動作になるツールは `allows_external_paths=False` を指定する
+  - 起点cwd直下の設定ファイルを外部パス指定時にも適用したいツールは
+    `config_arg_template=["--config", "{path}"]` と `config_inject_candidates=[...]` を指定する
+  - 上記以外は既定値（素通し）のままとする
 
 ## 検証
 

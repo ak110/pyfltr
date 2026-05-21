@@ -642,12 +642,14 @@ def run_pipeline(
     # モノレポ用のサブプロジェクト分類を準備する。
     # `subproject_aware=True` ツールが各サブプロジェクト cwd で実行する際に参照する。
     # サブプロジェクト別 config はCLI オーバーライド（`--human-readable`・`--jobs` 等）の
-    # 反映を保つため、初回実装では起点 config を共有する設計とする。
-    # サブ別 `pyproject.toml` の独立設定は将来的な拡張対象。
+    # 反映を保つため、現状は起点 config を全サブプロジェクトで共有する。
     subproject_files: dict[pathlib.Path, list[pathlib.Path]] = {}
     subproject_configs: dict[pathlib.Path, pyfltr.config.config.Config] = {}
+    external_files: list[pathlib.Path] = []
     if subprojects:
-        subproject_files = pyfltr.command.subprojects.classify_files_by_subproject(all_files, subprojects, start_cwd_path)
+        subproject_files, external_files = pyfltr.command.subprojects.classify_files_by_subproject(
+            all_files, subprojects, start_cwd_path
+        )
         for sub in subprojects:
             subproject_configs[sub.cwd] = config
 
@@ -661,6 +663,7 @@ def run_pipeline(
         start_cwd=start_cwd_path,
         subprojects=subprojects,
         subproject_files=subproject_files,
+        external_files=external_files,
         subproject_configs=subproject_configs,
     )
 

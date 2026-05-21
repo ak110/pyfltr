@@ -91,7 +91,9 @@ def test_classify_files_by_subproject_deep_first(tmp_path: pathlib.Path) -> None
     subs = pyfltr.command.subprojects.discover_subprojects(tmp_path, config, git_check_ignore=lambda _start, _candidates: set())
     assert {s.relative for s in subs} == {".", "a", "a/inner"}
 
-    result = pyfltr.command.subprojects.classify_files_by_subproject([parent_file, child_file, root_file], subs, tmp_path)
+    result, external = pyfltr.command.subprojects.classify_files_by_subproject(
+        [parent_file, child_file, root_file], subs, tmp_path
+    )
     # 最深一致でルート (./root.py)、a/foo.py は a、a/inner/foo.py は a/inner へ。
     root_cwd = next(s.cwd for s in subs if s.relative == ".")
     a_cwd = next(s.cwd for s in subs if s.relative == "a")
@@ -99,6 +101,7 @@ def test_classify_files_by_subproject_deep_first(tmp_path: pathlib.Path) -> None
     assert result[root_cwd] == [root_file]
     assert result[a_cwd] == [parent_file]
     assert result[inner_cwd] == [child_file]
+    assert not external
 
 
 def test_find_uv_lock_for_cwd_direct(tmp_path: pathlib.Path) -> None:

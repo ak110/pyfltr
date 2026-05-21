@@ -1,7 +1,7 @@
 """ファイル hash ベースのスキップキャッシュ。
 
 `CommandInfo.cacheable=True`のツール（textlint）の実行結果をユーザーキャッシュへ保存し、
-同じ入力に対する再実行を省略するための仕組み。v3.0.0パートDで追加。
+同じ入力に対する再実行を省略するための仕組み。
 
 ディレクトリ構造（`<cache_root> = platformdirs.user_cache_dir("pyfltr", appauthor=False)`）::
 
@@ -236,6 +236,11 @@ def resolve_config_files(
 
     `CommandInfo.config_files`は自動読込対象を完全列挙した静的リストで、
     存在しないファイルはhash計算時に空文字扱いとなる（`_file_sha256`の挙動に準拠）。
+
+    本関数はキャッシュキー算出専用で、`CommandInfo.config_arg_template`による
+    `--config`引数注入とは別経路。注入経路は`dispatcher._resolve_config_inject_path`が
+    `config_inject_candidates`を順に走査して候補1件を選び、本関数の`config_files`
+    （自動読込候補の完全列挙）とは責務を分離している。
     """
     info = config.commands.get(command)
     if info is None or not info.config_files:

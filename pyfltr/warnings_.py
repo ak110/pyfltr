@@ -10,7 +10,7 @@ import typing
 
 logger = logging.getLogger(__name__)
 
-FilteredReason = typing.Literal["excluded", "missing"]
+FilteredReason = typing.Literal["excluded", "missing", "external"]
 
 _warnings: list[dict[str, typing.Any]] = []
 _filtered_direct_files: list[tuple[str, FilteredReason]] = []
@@ -48,9 +48,15 @@ def add_filtered_direct_file(path: str, *, reason: FilteredReason) -> None:
     """直接指定されたが対象から外れたファイルをreason付きで蓄積する。
 
     `reason="excluded"`はexclude/.gitignore設定で除外されたケース、
-    `reason="missing"`は指定パスが存在しないケースを表す。
-    summaryへ`fully_excluded_files`/`missing_targets`として明示することで、
+    `reason="missing"`は指定パスが存在しないケースを表し、summaryへ
+    `fully_excluded_files`・`missing_targets`として明示することで、
     「警告0件 + exit 0」を「問題なし」と誤解しないようにする。
+    `reason="external"`は`allows_external_paths=False`のツールに対して
+    起点cwd配下にない絶対パスが指定されたケースを表す（ツール別の除外）。
+    `external`は`emit_warning`経由のwarning出力のみで利用者へ伝え、
+    summaryフィールドへの集計は行わない（パイプライン全体ではなく
+    特定ツールに対する個別除外であり、`fully_excluded_files`が想定する
+    「全ツール共通の除外」と性質が異なるため）。
     警告ログ出力は呼び出し側で`emit_warning`が既に担うため、本関数では蓄積のみ行う。
     """
     _filtered_direct_files.append((path, reason))

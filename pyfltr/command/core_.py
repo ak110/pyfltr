@@ -53,6 +53,14 @@ class ExecutionBaseContext:
     `pyfltr.command.subprojects.classify_files_by_subproject` で算出する。
     サブプロジェクト未検出時は空辞書。
     """
+    external_files: "list[pathlib.Path]" = dataclasses.field(default_factory=list)
+    """モノレポモードで`classify_files_by_subproject`がいずれのサブプロジェクトにも
+    割り当てなかったファイル一覧（起点cwd配下にない絶対パスを含む）。
+
+    `dispatcher._run_subproject_loop` で注入対象ツールおよび素通し対象ツールへ
+    起点cwdでの追加実行を行うために参照する。
+    モノレポモード非適用時（`subprojects` が空）は空リスト。
+    """
     subproject_configs: "dict[pathlib.Path, pyfltr.config.config.Config]" = dataclasses.field(default_factory=dict)
     """サブプロジェクト cwd（絶対パス）からそのサブプロジェクト配下の `Config` への辞書。
 

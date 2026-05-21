@@ -37,6 +37,42 @@ class CommandInfo:
     pre-commitのような「設定ファイル不在だと機能しない」ツールの設定不備を可視化する用途。
     `cacheable=True`のコマンドでは、ここに列挙した設定ファイルの内容hashもキャッシュキーに
     含める（設定変更時の誤ヒットを避けるため）。
+
+    `--config`引数として渡す注入候補は`config_inject_candidates`へ別途列挙する。
+    本フィールドの値は注入経路には使わない（`.textlintignore`や`package.json`など
+    `--config`引数として渡せない要素を含み得るため、責務を分離している）。
+    """
+    config_arg_template: list[str] | None = None
+    """設定ファイル絶対パスを注入するための引数テンプレート。
+
+    `None`（既定）の場合、外部パス指定時の`--config`明示注入を行わない。
+    指定する場合は`["--config", "{path}"]`のように、`{path}`プレースホルダーを
+    含む文字列リストを渡す。`_prepare_execution_params`が起点cwd直下から
+    `config_inject_candidates`を順に探索し、最初に見つかった設定ファイルの
+    絶対パスを`{path}`へ置換して`commandline_prefix`直後に挿入する。
+    起点cwd直下に候補が見つからないときは注入をスキップしてツールの既定動作に委ねる。
+
+    対象ファイルが起点cwd配下のみのときも一律で注入経路を通し、
+    内部パス／外部パス混在で挙動差が出ないようにする。
+    """
+    config_inject_candidates: list[str] = dataclasses.field(default_factory=list)
+    """`--config`引数として渡せる設定ファイル候補（順序＝探索優先順）。
+
+    `config_arg_template`が指定されたツールで起点cwd直下を本リスト順に走査し、
+    最初に見つかったファイルの絶対パスを注入する。
+    `config_files`（自動読込候補の完全列挙）とは別フィールドとし、
+    `--config`引数として受け付け可能な候補のみを列挙する。
+    """
+    allows_external_paths: bool = True
+    """起点cwd配下にない絶対パス（外部パス）を実行対象として許容するか否か。
+
+    `True`（既定）の場合、外部パスもそのまま対象に含めて起動する。
+    `False`の場合、`_prepare_execution_params`が対象から外部パスを除外し、
+    各ファイルに対して警告を発行（`pyfltr.warnings_.emit_warning`）し、
+    `pyfltr.warnings_.add_filtered_direct_file(reason="external")`へ蓄積する。
+    pre-commit・tester系（`pytest`・`vitest`・`cargo-test`・`dotnet-test`）・
+    リポジトリ全体走査型（`gitleaks`・`semgrep`）等、リポジトリ外ファイルを
+    渡すと想定外動作となるツールで`False`を指定する。
     """
     cacheable: bool = False
     """ファイル hash キャッシュの対象にするか否か。
@@ -131,6 +167,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         targets="*",
         config_files=[".pre-commit-config.yaml"],
         subproject_aware=False,
+        allows_external_paths=False,
     ),
     "ec": CommandInfo(type="linter", targets="*"),
     "shellcheck": CommandInfo(type="linter", targets="*.sh", per_file_cost=0.03, subproject_aware=False),
@@ -167,6 +204,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         type="linter",
         targets="*",
         fixed_cost=1.0,
+        allows_external_paths=False,
     ),
     # semgrep: Python製多言語SASTツール。ルールセット指定が必須のため既定で無効（opt-in）。
     # 利用者が`semgrep-args`で`--config=auto`または個別ルールセットを指定する前提。
@@ -179,6 +217,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         targets="*",
         fixed_cost=2.0,
         per_file_cost=0.05,
+        allows_external_paths=False,
     ),
     # Python linter群はモダン順（後ろほど新しい）に並べる。実行順はLPT並列で別管理。
     "pylint": CommandInfo(type="linter", fixed_cost=1.75, per_file_cost=0.3),
@@ -186,7 +225,29 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
     "ruff-check": CommandInfo(type="linter", fixed_cost=0.01),
     "pyright": CommandInfo(type="linter", fixed_cost=0.8, per_file_cost=0.155),
     "ty": CommandInfo(type="linter", fixed_cost=0.05, per_file_cost=0.01),
-    "markdownlint": CommandInfo(type="linter", targets="*.md", fixed_cost=0.9, per_file_cost=0.035),
+    "markdownlint": CommandInfo(
+        type="linter",
+        targets="*.md",
+        fixed_cost=0.9,
+        per_file_cost=0.035,
+        # `--config`が受け付ける候補（markdownlint-cli2公式README参照）。
+        # `config_files`は登録しない（登録すると`_warn_config_files`が
+        # 設定不在時に警告を発行してしまい、外部パスのみ検査するケースで
+        # 「プロジェクト側に設定不要」の運用と矛盾するため）。
+        config_arg_template=["--config", "{path}"],
+        config_inject_candidates=[
+            ".markdownlint-cli2.jsonc",
+            ".markdownlint-cli2.yaml",
+            ".markdownlint-cli2.cjs",
+            ".markdownlint-cli2.mjs",
+            ".markdownlint.jsonc",
+            ".markdownlint.json",
+            ".markdownlint.yaml",
+            ".markdownlint.yml",
+            ".markdownlint.cjs",
+            ".markdownlint.mjs",
+        ],
+    ),
     "textlint": CommandInfo(
         type="linter",
         targets="*.md",
@@ -204,6 +265,17 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
             ".textlintrc.cjs",
             "package.json",
             ".textlintignore",
+        ],
+        # `--config`が受け付ける候補（textlint CLI仕様）。
+        # `.textlintignore`・`package.json`は`--config`では渡せないため除外する。
+        config_arg_template=["--config", "{path}"],
+        config_inject_candidates=[
+            ".textlintrc",
+            ".textlintrc.json",
+            ".textlintrc.yml",
+            ".textlintrc.yaml",
+            ".textlintrc.js",
+            ".textlintrc.cjs",
         ],
         cacheable=True,
     ),
@@ -252,7 +324,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
     # 利用者が`.sqlfluff`を配置する前提とする。`sqlfluff lint`サブコマンドをlinterとして起動する
     # （`sqlfluff format`サブコマンドは対象外）。
     "sqlfluff": CommandInfo(type="linter", targets="*.sql", fixed_cost=1.0, per_file_cost=0.05),
-    "pytest": CommandInfo(type="tester", targets="*_test.py", fixed_cost=3.0),
+    "pytest": CommandInfo(type="tester", targets="*_test.py", fixed_cost=3.0, allows_external_paths=False),
     # vitest のテストファイルパターン（pytest の *_test.py と同じ考え方）
     "vitest": CommandInfo(
         type="tester",
@@ -275,14 +347,22 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
             "*.spec.cjs",
             "*.spec.cts",
         ],
+        allows_external_paths=False,
     ),
     # Rust / .NETツール（tester）。pass-filenames=FalseでCrate / solution全体を対象とする。
-    "cargo-test": CommandInfo(type="tester", targets=["*.rs", "Cargo.toml"], serial_group="cargo", fixed_cost=3.0),
+    "cargo-test": CommandInfo(
+        type="tester",
+        targets=["*.rs", "Cargo.toml"],
+        serial_group="cargo",
+        fixed_cost=3.0,
+        allows_external_paths=False,
+    ),
     "dotnet-test": CommandInfo(
         type="tester",
         targets=["*.cs", "*.csproj", "*.sln", "Directory.Build.props"],
         serial_group="dotnet",
         fixed_cost=5.0,
+        allows_external_paths=False,
     ),
 }
 

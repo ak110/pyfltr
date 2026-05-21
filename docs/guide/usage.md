@@ -391,6 +391,37 @@ pyfltr generate-shell-completion powershell | Out-String | Invoke-Expression
 - textlint / markdownlint: `*.md`
 - pytest: `*_test.py`
 
+### 外部パス指定時の挙動
+
+起点cwd（`--work-dir`適用後の作業ディレクトリ）配下にない絶対パスを「外部パス」と呼ぶ。
+ツールの性質に応じて以下の3分類で扱う。
+
+- `--config`明示注入: `markdownlint` ・ `textlint`
+- 外部パス除外＋警告: `pre-commit` ・ `pytest` ・ `vitest` ・ `cargo-test` ・ `dotnet-test` ・
+  `gitleaks` ・ `semgrep`
+- 既定（素通し）: 上記以外。各ツールの設定探索仕様に委ねる
+
+注入対象では起点cwd直下の設定ファイル（`.textlintrc.yaml` ・ `.markdownlint-cli2.yaml` 等）を
+`--config <絶対パス>` 形式で明示注入する。
+内部パスのみの実行でも一律で注入経路を通すため、外部パス指定時に暗黙のcwd探索仕様
+（markdownlint-cli2が対象ファイルと`CWD`の共通親から設定探索する仕様等）には依存しない。
+起点cwd直下に設定ファイルが見つからないときは注入をスキップし、ツールの既定動作で処理する。
+利用者が `{command}-args` ・ `{command}-extend-args` ・ CLI `--{command}-args` のいずれかで
+`--config` を指定している場合は注入をスキップする。
+
+除外対象では対象ファイル展開後の最終リストから外部パスのみを除いて内部パスは対象として実行し、
+除外時は1ファイルにつき1件の警告を発行する。
+
+pyfltrプロジェクト外にある計画ファイルを検査する場合に、
+pyfltrプロジェクトの `.textlintrc.yaml` ・ `.markdownlint-cli2.yaml` 設定を適用するには次のように起動する。
+
+```shell
+pyfltr run-for-agent --work-dir=/path/to/pyfltr ~/.claude/plans/example.md
+```
+
+上記の分類に従い、`markdownlint` ・ `textlint` には `--config` 経由で設定が注入され、
+`pre-commit` などの除外対象ツールでは外部パスがスキップされて警告が発行される。
+
 ### `fast` / `run` / `run-for-agent` / `ci`の動作の違いと自動修正（fixステージ）
 
 各サブコマンドの主な違いを以下に示す（軽い順）。

@@ -39,7 +39,7 @@ def test_vitest_default_args_injects_reporter_and_outputfile(mocker, tmp_path: p
     config = pyfltr.config.config.create_default_config()
     config.values["vitest"] = True
     pyfltr.command.dispatcher.execute_command(
-        "vitest", _testconf.make_args(), _testconf.make_execution_context(config, [target])
+        "vitest", _testconf.make_args(), _testconf.make_execution_context(config, [target], start_cwd=tmp_path)
     )
 
     assert mock_run.call_count == 1
@@ -63,7 +63,7 @@ def test_vitest_reporter_user_override_skips_injection(mocker, tmp_path: pathlib
     config.values["vitest"] = True
     config.values["vitest-args"] = ["run", "--passWithNoTests", "--reporter=verbose"]
     pyfltr.command.dispatcher.execute_command(
-        "vitest", _testconf.make_args(), _testconf.make_execution_context(config, [target])
+        "vitest", _testconf.make_args(), _testconf.make_execution_context(config, [target], start_cwd=tmp_path)
     )
 
     cmdline = mock_run.call_args_list[0][0][0]
@@ -86,7 +86,7 @@ def test_vitest_outputfile_user_override_skips_injection(mocker, tmp_path: pathl
     config.values["vitest"] = True
     config.values["vitest-args"] = ["run", "--passWithNoTests", "--outputFile=custom-result.json"]
     pyfltr.command.dispatcher.execute_command(
-        "vitest", _testconf.make_args(), _testconf.make_execution_context(config, [target])
+        "vitest", _testconf.make_args(), _testconf.make_execution_context(config, [target], start_cwd=tmp_path)
     )
 
     cmdline = mock_run.call_args_list[0][0][0]
