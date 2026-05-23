@@ -459,6 +459,23 @@ jobs:
 - `--output-format=github-annotations`: `::error file=...` / `::warning file=...`形式の行を標準出力へ出力する
     - プル要求の該当ファイル行にコメントとして表示される
 
+### 追加のシステムパッケージが必要な場合
+
+公式Dockerイメージの既定ユーザーは非root（sudo無し）のため、`apt`でシステムパッケージを追加するには
+`container.options`で`--user root`を指定する。
+PDFを画像化する`pdf2image`が必要とする`poppler-utils`を導入する例を次に示す。
+
+```yaml
+    container:
+      image: ghcr.io/ak110/pyfltr:latest
+      options: --user root
+    steps:
+      - name: システムパッケージ導入
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends poppler-utils
+```
+
 ### Dockerイメージを使わない場合（setup-uv方式）
 
 自前runner制約等でDockerイメージを使用できない場合は、`astral-sh/setup-uv`でuvを導入し、Node.js / pnpmを別途セットアップする。
