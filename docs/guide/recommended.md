@@ -463,13 +463,19 @@ jobs:
 
 公式Dockerイメージの既定ユーザーは非root（sudo無し）のため、`apt`でシステムパッケージを追加するには
 `container.options`で`--user root`を指定する。
-PDFを画像化する`pdf2image`が必要とする`poppler-utils`を導入する例を次に示す。
+ただし`--user root`実行時は、checkoutステップが用意したワークスペースの所有者と、コンテナ実行ユーザー（root）が一致しない。
+この不一致により`pre-commit`等の`git`操作が`dubious ownership`で停止する。
+`git config --global --add safe.directory`で対象ワークスペースを信頼対象に追加して回避する。
+PDFを画像化する`pdf2image`が必要とする`poppler-utils`の導入と`safe.directory`設定を含めた例を次に示す。
 
 ```yaml
     container:
       image: ghcr.io/ak110/pyfltr:latest
       options: --user root
     steps:
+      - uses: actions/checkout@v6
+      - name: safe.directory の設定
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: システムパッケージ導入
         run: |
           apt-get update
