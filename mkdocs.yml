@@ -68,6 +68,7 @@ plugins:
         - CI/Docker/EditorConfig: `actionlint` / `glab-ci-lint` / `hadolint` / `ec`
         - セキュリティ/スペル: `gitleaks` / `typos` / `semgrep`
         - SQL: `sqlfluff`
+        - 依存の脆弱性監査: `uv-audit` / `pnpm-audit` / `npm-audit` / `yarn-audit`
         - その他: `pre-commit`
 
         詳細は[対応ツール一覧](guide/index.md)を参照。

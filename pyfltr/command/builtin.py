@@ -71,8 +71,9 @@ class CommandInfo:
     各ファイルに対して警告を発行（`pyfltr.warnings_.emit_warning`）し、
     `pyfltr.warnings_.add_filtered_direct_file(reason="external")`へ蓄積する。
     pre-commit・tester系（`pytest`・`vitest`・`cargo-test`・`dotnet-test`）・
-    リポジトリ全体走査型（`gitleaks`・`semgrep`）等、リポジトリ外ファイルを
-    渡すと想定外動作となるツールで`False`を指定する。
+    リポジトリ全体走査型（`gitleaks`・`semgrep`）・
+    プロジェクト単位で起動する依存の脆弱性監査ツール（`uv-audit`・`pnpm-audit`・`npm-audit`・`yarn-audit`）等、
+    リポジトリ外ファイルを渡すと想定外動作となるツールで`False`を指定する。
     """
     cacheable: bool = False
     """ファイル hash キャッシュの対象にするか否か。
@@ -324,6 +325,18 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
     # 利用者が`.sqlfluff`を配置する前提とする。`sqlfluff lint`サブコマンドをlinterとして起動する
     # （`sqlfluff format`サブコマンドは対象外）。
     "sqlfluff": CommandInfo(type="linter", targets="*.sql", fixed_cost=1.0, per_file_cost=0.05),
+    # 依存の脆弱性監査ツール群（uv audit / pnpm audit / npm audit / yarn audit）。
+    # いずれもパッケージマネージャー自体のサブコマンドを起動する（実体の解決は
+    # runner.pyの`PACKAGE_MANAGER_TOOL_BIN`。`{command}-runner = "direct"`既定）。
+    # マニフェスト（pyproject.toml / package.json）の存在をトリガーとし、対象ファイルは
+    # 渡さず（`{command}-pass-filenames = false`）プロジェクト単位で起動する。
+    # 既定で無効（opt-in）。外部脆弱性データベースへの問い合わせで所要時間が読めないため
+    # fastは無効（`{command}-fast = false`）。`allows_external_paths=False`で
+    # リポジトリ外マニフェストを対象外とする。
+    "uv-audit": CommandInfo(type="linter", targets="pyproject.toml", fixed_cost=3.0, allows_external_paths=False),
+    "pnpm-audit": CommandInfo(type="linter", targets="package.json", fixed_cost=3.0, allows_external_paths=False),
+    "npm-audit": CommandInfo(type="linter", targets="package.json", fixed_cost=3.0, allows_external_paths=False),
+    "yarn-audit": CommandInfo(type="linter", targets="package.json", fixed_cost=3.0, allows_external_paths=False),
     "pytest": CommandInfo(type="tester", targets="*_test.py", fixed_cost=3.0, allows_external_paths=False),
     # vitest のテストファイルパターン（pytest の *_test.py と同じ考え方）
     "vitest": CommandInfo(

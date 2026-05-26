@@ -473,6 +473,41 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "sqlfluff-runner": "python-runner",
     "sqlfluff-args": ["lint", "--format=json"],
     "sqlfluff-fast": False,
+    # 依存の脆弱性監査ツール群（uv audit / pnpm audit / npm audit / yarn audit）。
+    # BUILTIN_COMMANDS登録順・lintエイリアス・order.mdに合わせ、sqlfluffの直後へ配置する。
+    # いずれもパッケージマネージャー自体のサブコマンドを直接呼ぶ（`{command}-runner = "direct"`、
+    # 実体の解決はrunner.pyの`PACKAGE_MANAGER_TOOL_BIN`）。ネットワーク必須かつ結果が
+    # 外部脆弱性データベース更新で変動するため既定で無効（opt-in）・fast無効。
+    # `pass-filenames = false`で対象ファイルは渡さずプロジェクト単位で実行する。
+    # bin-runner系ではないため`{command}-version`キーは設けない。
+    # uv-auditは`--frozen`でロック解決によるuv.lock書き換えを防ぐ（linterは検査のみで副作用を持たない原則）。
+    "uv-audit": False,
+    "uv-audit-path": "",
+    "uv-audit-runner": "direct",
+    "uv-audit-args": ["audit", "--frozen", "--no-progress"],
+    "uv-audit-pass-filenames": False,
+    "uv-audit-fast": False,
+    "pnpm-audit": False,
+    "pnpm-audit-path": "",
+    "pnpm-audit-runner": "direct",
+    "pnpm-audit-args": ["audit", "--json"],
+    "pnpm-audit-pass-filenames": False,
+    "pnpm-audit-fast": False,
+    "npm-audit": False,
+    "npm-audit-path": "",
+    "npm-audit-runner": "direct",
+    "npm-audit-args": ["audit", "--json"],
+    "npm-audit-pass-filenames": False,
+    "npm-audit-fast": False,
+    # yarn classic（1.x）はJSON Lines（auditAdvisory / auditSummary行）を出力する。
+    # yarn berry（2+）は`yarn npm audit --json`等とサブコマンド体系が異なるため、
+    # 利用時は`yarn-audit-args`で上書きする。
+    "yarn-audit": False,
+    "yarn-audit-path": "",
+    "yarn-audit-runner": "direct",
+    "yarn-audit-args": ["audit", "--json"],
+    "yarn-audit-pass-filenames": False,
+    "yarn-audit-fast": False,
     "pytest": False,
     "pytest-path": "",
     "pytest-runner": "python-runner",
@@ -687,6 +722,10 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
             "cargo-deny",
             "dotnet-build",
             "sqlfluff",
+            "uv-audit",
+            "pnpm-audit",
+            "npm-audit",
+            "yarn-audit",
         ],
         "test": ["pytest", "vitest", "cargo-test", "dotnet-test"],
     },

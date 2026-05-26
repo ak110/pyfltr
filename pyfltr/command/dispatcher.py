@@ -109,6 +109,8 @@ def _format_tool_resolution_failure(
 
     分類:
 
+    - パッケージマネージャーのサブコマンド系（`PACKAGE_MANAGER_TOOL_BIN`）:
+      対象のパッケージマネージャー（`uv` / `pnpm` / `npm` / `yarn`）導入または `{command}-path` 明示を案内する
     - Python系（`PYTHON_TOOL_BIN`）: `uv` / `uvx` への切り替えまたは `{command}-path` 明示を案内する
     - JS系（`JS_TOOL_BIN`）でdirect指定: `node_modules` 探索失敗として `pnpm install` / `pnpx` 切り替えを案内する
     - JS系（`JS_TOOL_BIN`）でdirect以外: PATH探索失敗として `{command}-path` 明示を案内する
@@ -123,6 +125,14 @@ def _format_tool_resolution_failure(
     except ValueError:
         effective_runner = None
 
+    if command in pyfltr.command.runner.PACKAGE_MANAGER_TOOL_BIN:
+        # uv audit等は既定でdirect解決のため、PYTHON_TOOL_BIN分岐のuv経由起動案内は誤誘導になる。
+        # 起動対象のパッケージマネージャー導入を促す専用文面を返す。
+        bin_name = pyfltr.command.runner.PACKAGE_MANAGER_TOOL_BIN[command]
+        return (
+            f"ツールが見つかりません: パッケージマネージャー `{bin_name}` が PATH 上にありません。"
+            f"`{bin_name}` を導入するか、`{command}-path` で実行ファイルを明示してください"
+        )
     if command in pyfltr.command.runner.PYTHON_TOOL_BIN:
         return (
             f"ツールが見つかりません: Python系ツール `{raw_identifier}` が PATH 上にありません。"

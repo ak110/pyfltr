@@ -62,6 +62,19 @@ extend-exclude = [
 - 使わないツールは個別に`{command} = false`で無効化できる
 - svelte-checkなどフレームワーク固有のツールはカスタムコマンドで追加する
  （[カスタムコマンド例](custom-commands.md)の「svelte-check」を参照）
+- 依存の脆弱性監査は任意で追加できる（既定無効）。
+  `js-runner`に合わせて`pnpm-audit` / `npm-audit` / `yarn-audit`のいずれかを有効化する
+
+```toml
+[tool.pyfltr]
+pnpm-audit = true
+# ネットワーク不調時に失敗ではなく警告として扱う場合
+# pnpm-audit-severity = "warning"
+```
+
+`pnpm audit` / `npm audit` / `yarn audit`が`package.json`を対象にJavaScript依存の既知脆弱性を検査する。
+外部脆弱性データベースへ問い合わせるためネットワーク接続が必須で結果が変動する。
+yarn berry（2+）利用時は`yarn-audit-args = ["npm", "audit", "--json"]`へ上書きする。
 
 ## Rustプロジェクト
 

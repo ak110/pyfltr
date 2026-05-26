@@ -596,6 +596,39 @@ def test_new_tools_registered_in_lint_alias(command: str) -> None:
     assert command in config["aliases"]["lint"]
 
 
+@pytest.mark.parametrize("command", ["uv-audit", "pnpm-audit", "npm-audit", "yarn-audit"])
+def test_audit_tools_defaults(command: str) -> None:
+    """依存の脆弱性監査ツール4種の既定値（無効・runner=direct・pass-filenames=false・fast=false）を検証する。"""
+    config = pyfltr.config.config.create_default_config()
+    assert config[command] is False, f"{command} はopt-inのため既定無効"
+    assert config[f"{command}-runner"] == "direct"
+    assert config[f"{command}-pass-filenames"] is False
+    assert config[f"{command}-fast"] is False
+    # bin-runner系ではないため`{command}-version`キーは設けない。
+    assert f"{command}-version" not in config.values
+
+
+@pytest.mark.parametrize("command", ["uv-audit", "pnpm-audit", "npm-audit", "yarn-audit"])
+def test_audit_tools_registered_in_lint_alias(command: str) -> None:
+    """依存の脆弱性監査ツール4種が`lint`エイリアスに登録されている。"""
+    config = pyfltr.config.config.create_default_config()
+    assert command in config["aliases"]["lint"]
+
+
+def test_uv_audit_args_contain_frozen() -> None:
+    """uv-auditの既定引数に`--frozen`が含まれ、uv.lockの書き換えを防ぐ。"""
+    config = pyfltr.config.config.create_default_config()
+    assert config["uv-audit-args"] == ["audit", "--frozen", "--no-progress"]
+    assert "--frozen" in config["uv-audit-args"]
+
+
+@pytest.mark.parametrize("command", ["pnpm-audit", "npm-audit", "yarn-audit"])
+def test_js_audit_tools_args_use_json(command: str) -> None:
+    """JavaScript系監査ツールの既定引数は`audit --json`で機械可読出力を取得する。"""
+    config = pyfltr.config.config.create_default_config()
+    assert config[f"{command}-args"] == ["audit", "--json"]
+
+
 def test_command_info_target_globs_str() -> None:
     """`CommandInfo.target_globs()`はstr targetsを単一要素リストに正規化する。"""
     info = pyfltr.config.config.CommandInfo(type="linter", targets="*.py")

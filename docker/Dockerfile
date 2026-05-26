@@ -36,6 +36,10 @@
 #   - pnpm グローバル経由の JS / TS 系: prettier / markdownlint-cli / textlint / @google/design.md /
 #     eslint / @biomejs/biome / oxlint / typescript / vitest
 #
+# 依存の脆弱性監査 (uv-audit / pnpm-audit / npm-audit / yarn-audit) はいずれも既定で無効 (opt-in) で、
+# 同梱済みの uv / pnpm / npm (Node.js 同梱) のサブコマンドをそのまま使うため追加導入は不要。
+# yarn は同梱しないため yarn-audit を有効化する場合のみ利用者側で yarn を導入する。
+#
 # Rust (cargo-*) と .NET (dotnet-*) のツールチェインはイメージサイズへの影響が大きいため
 # 同梱しない。利用者側で `mise use rust@latest` 等を経由して導入する想定。
 

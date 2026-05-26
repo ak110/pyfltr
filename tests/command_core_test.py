@@ -434,6 +434,39 @@ def test_build_commandline_per_tool_direct_overrides_global_js_runner(tmp_path: 
         os.chdir(original_cwd)
 
 
+@pytest.mark.parametrize(
+    "command,expected_bin",
+    [
+        ("uv-audit", "uv"),
+        ("pnpm-audit", "pnpm"),
+        ("npm-audit", "npm"),
+        ("yarn-audit", "yarn"),
+    ],
+)
+def test_build_commandline_package_manager_audit_resolves_direct(
+    monkeypatch: pytest.MonkeyPatch, command: str, expected_bin: str
+) -> None:
+    """依存脆弱性監査ツールは既定のdirect経路でパッケージマネージャーのバイナリへ解決される。
+
+    `PACKAGE_MANAGER_TOOL_BIN`の対応付け（uv-audit→uv等）と
+    `_resolve_direct_runner_commandline`先頭分岐の到達を確認する。
+    環境にバイナリが無くても判定できるよう`shutil.which`を差し替える。
+    """
+
+    def _fake_which(name: str, **kwargs: typing.Any) -> str:
+        del kwargs  # shutil.which の mode / path 引数を受け流す。
+        return f"/usr/bin/{name}"
+
+    monkeypatch.setattr("pyfltr.command.runner.shutil.which", _fake_which)
+    config = pyfltr.config.config.create_default_config()
+    resolved = pyfltr.command.runner.build_commandline(command, config)
+    assert resolved.runner == "direct"
+    assert resolved.runner_source == "default"
+    assert resolved.effective_runner == "direct"
+    assert pathlib.Path(resolved.executable).stem == expected_bin
+    assert not resolved.prefix
+
+
 def test_run_subprocess_file_not_found_returns_127() -> None:
     """存在しない実行ファイルを指定しても例外を送出せずrc=127を返す。"""
     result = pyfltr.command.process.run_subprocess(

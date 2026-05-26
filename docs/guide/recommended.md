@@ -147,6 +147,22 @@ hte = "hte"
 識別子（変数名・関数名）単位で許可したい場合は`[tool.typos.default.extend-identifiers]`を使う。
 詳細は[typos公式ドキュメント](https://github.com/crate-ci/typos/blob/master/docs/reference.md)を参照。
 
+### 依存の脆弱性監査の有効化（任意）
+
+依存パッケージの脆弱性を`pyfltr`の枠組みでまとめて監査したい場合は`uv-audit`を有効化する。
+`uv audit`（uv 0.10.8以降）が`pyproject.toml`を対象にPython依存の既知脆弱性を検査する。
+外部脆弱性データベースへ問い合わせるためネットワーク接続が必須で結果が変動する。
+ネットワークが不安定なCIで失敗扱いを避けたい場合は`uv-audit-severity = "warning"`で警告扱いに切り替える。
+
+```toml
+[tool.pyfltr]
+uv-audit = true
+# ネットワーク不調時に失敗ではなく警告として扱う場合
+# uv-audit-severity = "warning"
+```
+
+既定引数`uv-audit-args = ["audit", "--frozen", "--no-progress"]`は`--frozen`を含み、監査時に`uv.lock`を書き換えない。
+
 ### JS/TSを併用するプロジェクトでの推奨設定
 
 JS/TSを併用するプロジェクトでは、`js-runner`をプロジェクトのパッケージマネージャーに合わせる。

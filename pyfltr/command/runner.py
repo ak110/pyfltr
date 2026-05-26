@@ -61,6 +61,20 @@ PYTHON_TOOL_BIN: dict[str, str] = {
     "sqlfluff": "sqlfluff",
 }
 
+# pyfltrのコマンド名 -> 起動するパッケージマネージャーのbin名。
+# uv audit / pnpm audit / npm audit / yarn auditはツール単体のバイナリではなく
+# パッケージマネージャー自体のサブコマンドを起動する。`{command}-runner = "direct"`（既定）で
+# PATH上のバイナリを直接呼び出し、`audit`等のサブコマンドは `{command}-args` 既定値側に持たせる。
+# `PYTHON_TOOL_BIN` へ相乗りさせると、未検出時の案内
+# （`pyfltr.command.dispatcher._format_tool_resolution_failure`）がuv経由起動を促す
+# 誤誘導になるため別表へ分離する。
+PACKAGE_MANAGER_TOOL_BIN: dict[str, str] = {
+    "uv-audit": "uv",
+    "pnpm-audit": "pnpm",
+    "npm-audit": "npm",
+    "yarn-audit": "yarn",
+}
+
 # pnpx経由で解決するときに `--package` に渡すspec。
 # 通常はbin名をそのまま渡すだけだが、上流の既知バグで動かないバージョンを
 # 除外したい場合やスコープ付きパッケージの場合にここで差し替える。
@@ -620,9 +634,20 @@ def _resolve_direct_runner_commandline(
     """direct経路のコマンドラインを構築する。
 
     `effective == "direct"` の場合に呼ばれる。
-    `_BIN_TOOL_SPEC` → `PYTHON_TOOL_BIN` → `JS_TOOL_BIN` → コマンド名PATH解決の順で試みる。
-    解決失敗時は `FileNotFoundError` を送出する。
+    `PACKAGE_MANAGER_TOOL_BIN` → `_BIN_TOOL_SPEC` → `PYTHON_TOOL_BIN` → `JS_TOOL_BIN` →
+    コマンド名PATH解決の順で試みる。解決失敗時は `FileNotFoundError` を送出する。
     """
+    if command in PACKAGE_MANAGER_TOOL_BIN:
+        # uv audit等はパッケージマネージャー自体のサブコマンドを起動する。
+        # bin名（uv / pnpm / npm / yarn）をPATH解決し、サブコマンドは `{command}-args` 側で付与する。
+        executable = _resolve_direct_executable(PACKAGE_MANAGER_TOOL_BIN[command])
+        return ResolvedCommandline(
+            executable=executable,
+            prefix=[],
+            runner=runner,
+            runner_source=source,
+            effective_runner=effective,
+        )
     if command in _BIN_TOOL_SPEC:
         spec = _BIN_TOOL_SPEC[command]
         executable = _resolve_direct_executable(spec.bin_name)

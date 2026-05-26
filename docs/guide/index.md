@@ -77,6 +77,7 @@ bin-runner経由（既定はmise）で起動する。
     - YAML / Dockerfile / シークレット系: yamllint（既定で無効）/ hadolint（Dockerfile、既定で無効）
     - シークレット検出・SAST: gitleaks（既定で無効）/ semgrep（既定で無効）
     - SQL: sqlfluff（既定で無効）
+    - 依存の脆弱性監査: uv-audit / pnpm-audit / npm-audit / yarn-audit（いずれも既定で無効）
 - 統合: pre-commit（`.pre-commit-config.yaml`のhookを統合実行）
 
 既定で無効（opt-in）のツールは、利用時に`pyproject.toml`で`{command} = true`を設定する。
@@ -92,6 +93,8 @@ bin-runner経由（既定はmise）で起動する。
   `sqlfluff lint`サブコマンドをlinterとして起動する（`sqlfluff format`サブコマンドは対象外）
 - `glab-ci-lint`: `glab ci lint`経由でGitLab CI設定を構文検証する。
   GitLab API認証とネットワーク接続が必須なため、CIや初学者環境で誤って失敗しないよう既定で無効化している
+- `uv-audit` / `pnpm-audit` / `npm-audit` / `yarn-audit`: 依存パッケージの脆弱性を監査する。
+  それぞれパッケージマネージャーのauditサブコマンドを起動し、外部脆弱性データベースへの問い合わせを伴うため既定で無効
 
 プリセット指定と言語カテゴリゲートによる有効化の詳細は[設定項目](configuration.md)を参照。
 

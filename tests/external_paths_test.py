@@ -4,7 +4,8 @@
 
 - 注入対象（`config_arg_template`指定）: `markdownlint` / `textlint`
 - 除外対象（`allows_external_paths=False`）: `pre-commit` / `pytest` / `vitest` /
-  `cargo-test` / `dotnet-test` / `gitleaks` / `semgrep`
+  `cargo-test` / `dotnet-test` / `gitleaks` / `semgrep` /
+  `uv-audit` / `pnpm-audit` / `npm-audit` / `yarn-audit`
 - 素通し対象（既定）: 上記以外（`ruff-check` を代表として確認）
 
 テストは`execute_command`経由で実行し、`run_subprocess_with_timeout`をfakeで差し替えて
@@ -289,6 +290,10 @@ def test_inject_skipped_when_user_specifies_config(
         ("cargo-test", "lib.rs"),
         ("dotnet-test", "Program.cs"),
         ("semgrep", "code.py"),
+        ("uv-audit", "pyproject.toml"),
+        ("pnpm-audit", "package.json"),
+        ("npm-audit", "package.json"),
+        ("yarn-audit", "package.json"),
     ],
 )
 def test_external_path_filtered_with_warning(
