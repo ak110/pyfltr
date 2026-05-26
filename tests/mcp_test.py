@@ -554,6 +554,37 @@ async def test_tool_grep_max_total_limits_results(tmp_path: pathlib.Path) -> Non
     assert len(result.matches) <= 5
 
 
+@pytest.mark.asyncio
+async def test_tool_grep_includes_hidden_files(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`_tool_grep`がドット始まりファイルも対象に含めること（run系と統一）。"""
+    hidden = tmp_path / ".hidden.py"
+    hidden.write_text("foo here\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    result = await pyfltr.cli.mcp_server._tool_grep(pattern="foo", paths=[str(tmp_path)])
+    assert result.total_matches == 1
+    assert any(pathlib.Path(m.file).name == ".hidden.py" for m in result.matches)
+
+
+@pytest.mark.asyncio
+async def test_tool_grep_reports_excluded_and_clears_between_requests(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """除外ファイルをfully_excluded_filesで通知し、連続リクエストで前回分が混入しないこと。"""
+    lock = tmp_path / "uv.lock"
+    lock.write_text("foo\n", encoding="utf-8")
+    normal = tmp_path / "a.py"
+    normal.write_text("foo\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    first = await pyfltr.cli.mcp_server._tool_grep(pattern="foo", paths=[str(lock)])
+    assert first.fully_excluded_files == ["uv.lock"]
+    second = await pyfltr.cli.mcp_server._tool_grep(pattern="foo", paths=[str(normal)])
+    assert not second.fully_excluded_files
+    # 不在パスはmissing_targetsで通知し、前リクエストの除外は混入しない
+    third = await pyfltr.cli.mcp_server._tool_grep(pattern="foo", paths=[str(tmp_path / "nope.py")])
+    assert third.missing_targets == ["nope.py"]
+    assert not third.fully_excluded_files
+
+
 # ---------------------------------------------------------------------------
 # replace ツールのテスト
 # ---------------------------------------------------------------------------
@@ -563,6 +594,25 @@ def test_tool_replace_dry_run_default() -> None:
     """`_tool_replace`の`dry_run`引数の既定値が`True`であること。"""
     sig = inspect.signature(pyfltr.cli.mcp_server._tool_replace)
     assert sig.parameters["dry_run"].default is True
+
+
+@pytest.mark.asyncio
+async def test_tool_replace_reports_filtered_and_clears_between_requests(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`_tool_replace`が除外・不在を通知し、連続リクエストで前回分が混入しないこと。"""
+    lock = tmp_path / "uv.lock"
+    lock.write_text("foo\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    # exclude該当ファイルを明示 → fully_excluded_filesに載り、書き換えは発生しない
+    excluded = await pyfltr.cli.mcp_server._tool_replace(pattern="foo", replacement="baz", paths=[str(lock)])
+    assert excluded.fully_excluded_files == ["uv.lock"]
+    assert excluded.files_changed == 0
+    assert lock.read_text(encoding="utf-8") == "foo\n"
+    # 不在パスはmissing_targetsで通知し、前リクエストの除外は混入しない
+    missing = await pyfltr.cli.mcp_server._tool_replace(pattern="foo", replacement="baz", paths=[str(tmp_path / "nope.py")])
+    assert missing.missing_targets == ["nope.py"]
+    assert not missing.fully_excluded_files
 
 
 @pytest.mark.asyncio

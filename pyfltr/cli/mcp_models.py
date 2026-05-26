@@ -144,6 +144,14 @@ class GrepResultModel(pydantic.BaseModel):
     total_matches: int = pydantic.Field(description="全マッチ件数。")
     files_scanned: int = pydantic.Field(description="走査したファイル数。")
     exit_code: int = pydantic.Field(description="終了コード。マッチあり=0、マッチなし=1。")
+    fully_excluded_files: list[str] = pydantic.Field(
+        default_factory=list,
+        description="直接指定がexclude / .gitignoreで対象外になったファイル一覧。",
+    )
+    missing_targets: list[str] = pydantic.Field(
+        default_factory=list,
+        description="直接指定したが存在しなかったファイル一覧。",
+    )
 
 
 class ReplaceFileChangeModel(pydantic.BaseModel):
@@ -181,6 +189,14 @@ class ReplaceResultModel(pydantic.BaseModel):
         description="`show_changes=True`時の各置換箇所の変更前後（空リストで省略）。",
     )
     exit_code: int = pydantic.Field(description="終了コード。0 = 成功。")
+    fully_excluded_files: list[str] = pydantic.Field(
+        default_factory=list,
+        description="直接指定がexclude / .gitignoreで対象外になったファイル一覧。",
+    )
+    missing_targets: list[str] = pydantic.Field(
+        default_factory=list,
+        description="直接指定したが存在しなかったファイル一覧。",
+    )
 
 
 class ReplaceUndoModel(pydantic.BaseModel):

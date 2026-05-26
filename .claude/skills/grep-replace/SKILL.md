@@ -16,9 +16,16 @@ description: >
 実装エンジンは標準ライブラリ`re`に統一する。ripgrep等の外部バイナリ依存は導入しない。
 pyfltrの既存ファイル収集機構（`expand_all_files`）とignore設定をそのまま流用し、検索系を内部実装に閉じる。
 
+## ファイル収集の除外
+
+ファイル収集の除外はrun系（`expand_all_files`のexclude / extend-exclude / respect-gitignore）と統一する。
+grep / replace固有の追加除外は設けず、ドット始まりのファイルやディレクトリも対象に含める。
+直接指定したパスがexcludeパターンや`.gitignore`で対象外になった場合は、
+warningとsummaryの`fully_excluded_files` / `missing_targets`で通知し、無言のスキップを避ける。
+
 ## 引数体系の同一性
 
-`grep`と`replace`は共通オプション名（`-i`/`-w`/`-x`/`-F`/`--type`/`-g`/`--hidden`等）を共有する。
+`grep`と`replace`は共通オプション名（`-i`/`-w`/`-x`/`-F`/`--type`/`-g`等）を共有する。
 利用者が`grep`で確認した引数列を`replace`へそのまま転用できる設計とする。
 両コマンド固有のオプション（grepの`-l`/`-c`等、replaceの`--dry-run`/`--undo`等）は
 片方でのみ受理し、もう片方では拒否する。

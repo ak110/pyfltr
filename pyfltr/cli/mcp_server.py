@@ -41,6 +41,7 @@ import pyfltr.grep_.replacer
 import pyfltr.grep_.scanner
 import pyfltr.state.archive
 import pyfltr.state.runs
+import pyfltr.warnings_
 from pyfltr.cli.mcp_models import (
     CommandDiagnosticsModel,
     CommandSummaryModel,
@@ -351,7 +352,6 @@ async def _tool_grep(
     globs: list[str] | None = None,
     encoding: str = "utf-8",
     max_filesize: int | None = None,
-    hidden: bool = False,
     no_exclude: bool = False,
     no_gitignore: bool = False,
 ) -> GrepResultModel:
@@ -377,10 +377,11 @@ async def _tool_grep(
         globs: globパターンでの対象限定一覧。
         encoding: ファイル読み込み時のエンコーディング（既定: utf-8）。
         max_filesize: 走査対象ファイルサイズの上限（バイト単位）。
-        hidden: ドットファイルも対象に含める。
         no_exclude: exclude/extend-excludeによる除外を無効化する。
         no_gitignore: .gitignoreによる除外を無効化する。
     """
+    # warnings_はモジュールグローバルに蓄積するため、リクエスト開始時に初期化する
+    pyfltr.warnings_.clear()
     try:
         compiled = pyfltr.grep_.matcher.compile_pattern(
             [pattern],
@@ -411,8 +412,6 @@ async def _tool_grep(
     )
     expanded = pyfltr.grep_.scanner.filter_files_by_type(expanded, types or [])
     expanded = pyfltr.grep_.scanner.filter_by_globs(expanded, globs or [])
-    if not hidden:
-        expanded = [p for p in expanded if not _has_hidden_segment(p)]
 
     files_scanned = len(expanded)
     matches: list[GrepMatchModel] = []
@@ -447,6 +446,8 @@ async def _tool_grep(
         total_matches=total_matches,
         files_scanned=files_scanned,
         exit_code=0 if total_matches > 0 else 1,
+        fully_excluded_files=pyfltr.warnings_.filtered_direct_files(reason="excluded"),
+        missing_targets=pyfltr.warnings_.filtered_direct_files(reason="missing"),
     )
 
 
@@ -465,7 +466,6 @@ async def _tool_replace(
     globs: list[str] | None = None,
     encoding: str = "utf-8",
     max_filesize: int | None = None,
-    hidden: bool = False,
     exclude_files: list[str] | None = None,
     no_exclude: bool = False,
     no_gitignore: bool = False,
@@ -493,7 +493,6 @@ async def _tool_replace(
         globs: globパターンでの対象限定一覧。
         encoding: ファイル読み込み・書き込み時のエンコーディング（既定: utf-8）。
         max_filesize: 走査対象ファイルサイズの上限（バイト単位）。
-        hidden: ドットファイルも対象に含める。
         exclude_files: 置換対象から除外するファイルパスの一覧。
         no_exclude: exclude/extend-excludeによる除外を無効化する。
         no_gitignore: .gitignoreによる除外を無効化する。
@@ -502,6 +501,8 @@ async def _tool_replace(
     if not paths:
         _raise_mcp_error("paths を 1 件以上指定してください。")
 
+    # warnings_はモジュールグローバルに蓄積するため、リクエスト開始時に初期化する
+    pyfltr.warnings_.clear()
     try:
         compiled = pyfltr.grep_.matcher.compile_pattern(
             [pattern],
@@ -532,8 +533,6 @@ async def _tool_replace(
     )
     expanded = pyfltr.grep_.scanner.filter_files_by_type(expanded, types or [])
     expanded = pyfltr.grep_.scanner.filter_by_globs(expanded, globs or [])
-    if not hidden:
-        expanded = [p for p in expanded if not _has_hidden_segment(p)]
 
     # exclude_filesによる対象限定
     if exclude_files:
@@ -625,6 +624,8 @@ async def _tool_replace(
         file_changes=file_changes,
         changes=change_records,
         exit_code=0,
+        fully_excluded_files=pyfltr.warnings_.filtered_direct_files(reason="excluded"),
+        missing_targets=pyfltr.warnings_.filtered_direct_files(reason="missing"),
     )
 
 
@@ -652,16 +653,6 @@ async def _tool_replace_undo(replace_id: str, force: bool = False) -> ReplaceUnd
         skipped=[str(p) for p in skipped],
         exit_code=exit_code,
     )
-
-
-def _has_hidden_segment(path: pathlib.Path) -> bool:
-    """パス内に`.`始まりのセグメント（`.`/`..`を除く）が含まれるか判定する。"""
-    for part in path.parts:
-        if part in (".", ".."):
-            continue
-        if part.startswith("."):
-            return True
-    return False
 
 
 # ---------------------------------------------------------------------------

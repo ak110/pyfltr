@@ -20,6 +20,7 @@ import pathlib
 import shutil
 
 import pyfltr.command.mise
+import pyfltr.command.structured_output
 import pyfltr.config.config
 from pyfltr.command.builtin import AUTO_ARGS, COMMAND_RUNNERS, JS_RUNNERS
 
@@ -148,128 +149,6 @@ _BIN_TOOL_SPEC: dict[str, BinToolSpec] = {
     "dotnet-build": BinToolSpec(bin_name="dotnet", mise_backend="dotnet"),
     "dotnet-test": BinToolSpec(bin_name="dotnet", mise_backend="dotnet"),
 }
-
-
-@dataclasses.dataclass(frozen=True)
-class StructuredOutputSpec:
-    """構造化出力用の引数注入仕様。
-
-    `-args` とは独立した経路で出力形式引数を強制注入する。
-    注入時はcommandlineからconflictsに一致する既存引数を除去したうえで
-    injectを追加する（ruff/typosは重複指定でエラーになるため）。
-    """
-
-    inject: list[str]
-    """注入する引数"""
-    conflicts: list[str]
-    """commandlineから除去する引数プレフィクス"""
-    lint_only: bool = False
-    """Trueのときfixモードでは注入しない"""
-
-
-# 各ツールの構造化出力用引数。設定キー → 注入仕様のマッピング。
-# 設定キー（例: "ruff-check-json"）がTrueのとき有効になる。
-_STRUCTURED_OUTPUT_SPECS: dict[str, tuple[str, StructuredOutputSpec]] = {
-    "ruff-check-json": (
-        "ruff-check",
-        StructuredOutputSpec(
-            inject=["--output-format=json"],
-            conflicts=["--output-format"],
-        ),
-    ),
-    "pylint-json": (
-        "pylint",
-        StructuredOutputSpec(
-            inject=["--output-format=json2"],
-            conflicts=["--output-format"],
-        ),
-    ),
-    "pyright-json": (
-        "pyright",
-        StructuredOutputSpec(
-            inject=["--outputjson"],
-            conflicts=["--outputjson"],
-        ),
-    ),
-    "pytest-tb-line": (
-        "pytest",
-        StructuredOutputSpec(
-            inject=["--tb=short"],
-            conflicts=["--tb"],
-        ),
-    ),
-    "shellcheck-json": (
-        "shellcheck",
-        StructuredOutputSpec(
-            inject=["-f", "json"],
-            conflicts=["-f"],
-        ),
-    ),
-    "textlint-json": (
-        "textlint",
-        StructuredOutputSpec(
-            inject=["--format", "json"],
-            conflicts=["--format"],
-            lint_only=True,
-        ),
-    ),
-    "typos-json": (
-        "typos",
-        StructuredOutputSpec(
-            inject=["--format=json"],
-            conflicts=["--format"],
-        ),
-    ),
-    "eslint-json": (
-        "eslint",
-        StructuredOutputSpec(
-            inject=["--format", "json"],
-            conflicts=["--format"],
-        ),
-    ),
-    "biome-json": (
-        "biome",
-        StructuredOutputSpec(
-            inject=["--reporter=github"],
-            conflicts=["--reporter"],
-        ),
-    ),
-}
-
-
-def get_structured_output_spec(command: str, config: pyfltr.config.config.Config) -> StructuredOutputSpec | None:
-    """コマンドに対応する構造化出力仕様を返す。無効化されていればNone。"""
-    for config_key, entry in _STRUCTURED_OUTPUT_SPECS.items():
-        cmd = entry[0]
-        spec = entry[1]
-        if cmd == command and config.values.get(config_key, False):
-            return spec
-    return None
-
-
-def _apply_structured_output(commandline: list[str], spec: StructuredOutputSpec) -> list[str]:
-    """Commandlineから衝突する引数を除去し、構造化出力引数を注入する。"""
-    filtered: list[str] = []
-    skip_next = False
-    for i, arg in enumerate(commandline):
-        if skip_next:
-            skip_next = False
-            continue
-        matched = False
-        for prefix in spec.conflicts:
-            if arg == prefix:
-                # "-f gcc" 形式: 次の引数もスキップ
-                if i + 1 < len(commandline) and not commandline[i + 1].startswith("-"):
-                    skip_next = True
-                matched = True
-                break
-            if arg.startswith(f"{prefix}=") or (arg.startswith(prefix) and arg != prefix):
-                # "--format=json" 形式 / "--outputjson" 形式
-                matched = True
-                break
-        if not matched:
-            filtered.append(arg)
-    return [*filtered, *spec.inject]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -995,7 +874,7 @@ def build_invocation_argv(
     else:
         commandline.extend(expanduser_args(list(config.values.get(f"{command}-lint-args", []))))
     commandline.extend(extra)
-    structured_spec = get_structured_output_spec(command, config)
+    structured_spec = pyfltr.command.structured_output.get_structured_output_spec(command, config)
     if structured_spec is not None and not (structured_spec.lint_only and fix_args_value is not None):
-        commandline = _apply_structured_output(commandline, structured_spec)
+        commandline = pyfltr.command.structured_output.apply_structured_output(commandline, structured_spec)
     return commandline

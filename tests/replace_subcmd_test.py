@@ -264,3 +264,63 @@ def test_replace_show_history_returns_meta(
     assert meta["command"]["pattern"] == "foo"
     assert meta["command"]["replacement"] == "baz"
     assert any(file_entry["file"].endswith("a.txt") for file_entry in meta.get("files", []))
+
+
+def test_replace_includes_hidden_files(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """ドット始まりファイルもdry-runで置換対象になる（run系と統一）。"""
+    hidden = tmp_path / ".hidden.py"
+    hidden.write_text("foo bar\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    rc = pyfltr.cli.main.run(["replace", "foo", "baz", "--dry-run", "--output-format=jsonl", str(tmp_path)])
+    assert rc == 0
+    lines = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
+    file_changes = [line for line in lines if line["kind"] == "file_change"]
+    assert any(".hidden.py" in fc["file"] for fc in file_changes)
+
+
+@pytest.mark.parametrize("output_format", ["jsonl", "json"])
+def test_replace_notifies_excluded_explicit_file(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    output_format: str,
+) -> None:
+    """直接指定したexclude該当ファイルをsummaryのfully_excluded_filesで通知する。"""
+    lock = tmp_path / "uv.lock"
+    lock.write_text("foo\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    rc = pyfltr.cli.main.run(["replace", "foo", "baz", "--dry-run", f"--output-format={output_format}", str(lock)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    if output_format == "jsonl":
+        summary = [json.loads(line) for line in out.splitlines() if line.strip()][-1]
+    else:
+        summary = json.loads(out)["summary"]
+    assert summary["fully_excluded_files"] == ["uv.lock"]
+    assert summary["files_changed"] == 0
+    assert lock.read_text(encoding="utf-8") == "foo\n"
+
+
+@pytest.mark.parametrize("output_format", ["jsonl", "json"])
+def test_replace_notifies_missing_explicit_file(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    output_format: str,
+) -> None:
+    """直接指定した不在ファイルをsummaryのmissing_targetsで通知する。"""
+    monkeypatch.chdir(tmp_path)
+    rc = pyfltr.cli.main.run(
+        ["replace", "foo", "baz", "--dry-run", f"--output-format={output_format}", str(tmp_path / "nope.py")]
+    )
+    assert rc == 0
+    out = capsys.readouterr().out
+    if output_format == "jsonl":
+        summary = [json.loads(line) for line in out.splitlines() if line.strip()][-1]
+    else:
+        summary = json.loads(out)["summary"]
+    assert summary["missing_targets"] == ["nope.py"]

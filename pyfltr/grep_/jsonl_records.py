@@ -87,11 +87,15 @@ def emit_grep_summary(
     files_scanned: int,
     exit_code: int,
     guidance: list[str] | None = None,
+    fully_excluded_files: list[str] | None = None,
+    missing_targets: list[str] | None = None,
 ) -> None:
     """grep完了時のsummaryレコードを1件出力する。
 
     `guidance`は英語のヒント文字列リスト（replace起動コマンド案内など）を指定する。
     指摘・該当事項がある場合のみ呼び出し側で組み立てる方針とし、空リストは省略する。
+    `fully_excluded_files` / `missing_targets`は直接指定がexclude / .gitignore / 不在で
+    対象外になったファイル一覧で、キー名・キー順はrun系の`_build_summary_record`に揃える。
     """
     record: dict[str, typing.Any] = {
         "kind": "summary",
@@ -102,6 +106,10 @@ def emit_grep_summary(
     }
     if guidance:
         record["guidance"] = list(guidance)
+    if fully_excluded_files:
+        record["fully_excluded_files"] = list(fully_excluded_files)
+    if missing_targets:
+        record["missing_targets"] = list(missing_targets)
     _emit(record)
 
 
@@ -179,8 +187,14 @@ def emit_replace_summary(
     replace_id: str | None,
     dry_run: bool,
     guidance: list[str] | None = None,
+    fully_excluded_files: list[str] | None = None,
+    missing_targets: list[str] | None = None,
 ) -> None:
-    """replace完了時のsummaryレコードを1件出力する。"""
+    """replace完了時のsummaryレコードを1件出力する。
+
+    `fully_excluded_files` / `missing_targets`は直接指定がexclude / .gitignore / 不在で
+    対象外になったファイル一覧で、キー名・キー順はrun系の`_build_summary_record`に揃える。
+    """
     record: dict[str, typing.Any] = {
         "kind": "summary",
         "subcommand": "replace",
@@ -193,6 +207,10 @@ def emit_replace_summary(
         record["replace_id"] = replace_id
     if guidance:
         record["guidance"] = list(guidance)
+    if fully_excluded_files:
+        record["fully_excluded_files"] = list(fully_excluded_files)
+    if missing_targets:
+        record["missing_targets"] = list(missing_targets)
     _emit(record)
 
 

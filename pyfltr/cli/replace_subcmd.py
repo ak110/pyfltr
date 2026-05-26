@@ -86,8 +86,6 @@ def register_subparsers(subparsers: typing.Any) -> None:
         metavar="BYTES",
         help="走査対象ファイルサイズの上限（バイト単位）。",
     )
-    parser.add_argument("--hidden", action="store_true", help="ドットファイルも対象に含める。")
-
     # replace固有
     parser.add_argument(
         "--dry-run",
@@ -166,6 +164,8 @@ def register_subparsers(subparsers: typing.Any) -> None:
 
 def execute_replace(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
     """`replace`サブコマンドの処理本体。"""
+    # warnings_はモジュールグローバルに蓄積するため、実行開始時に初期化する
+    pyfltr.warnings_.clear()
     resolution = pyfltr.cli.output_format.resolve_output_format(
         parser,
         args.output_format,
@@ -227,9 +227,6 @@ def execute_replace(parser: argparse.ArgumentParser, args: argparse.Namespace) -
     expanded = pyfltr.command.targets.expand_all_files(targets, config)
     expanded = pyfltr.grep_.scanner.filter_files_by_type(expanded, args.type)
     expanded = pyfltr.grep_.scanner.filter_by_globs(expanded, args.glob)
-
-    if not args.hidden:
-        expanded = [p for p in expanded if not _has_hidden_segment(p)]
 
     # `--exclude-file` / `--from-grep` での対象限定
     excluded = {pathlib.Path(p).resolve() for p in args.exclude_file}
@@ -349,6 +346,10 @@ def execute_replace(parser: argparse.ArgumentParser, args: argparse.Namespace) -
     # 書き込みエラーは現状捕捉対象外で、呼び出し側のOSError例外として上位へ伝播する。
     exit_code = 1 if read_failures > 0 else 0
 
+    # 直接指定が除外・不在で対象外になった一覧をsummaryへ載せる。
+    fully_excluded = pyfltr.warnings_.filtered_direct_files(reason="excluded")
+    missing_targets = pyfltr.warnings_.filtered_direct_files(reason="missing")
+
     if output_format == "jsonl":
         # 走査・読み込み中に蓄積された警告をsummary直前に出力し、
         # pipelineのwarning出力位置と挙動を揃える
@@ -361,22 +362,34 @@ def execute_replace(parser: argparse.ArgumentParser, args: argparse.Namespace) -
             replace_id=replace_id,
             dry_run=dry_run,
             guidance=guidance if guidance else None,
+            fully_excluded_files=fully_excluded,
+            missing_targets=missing_targets,
         )
     elif output_format == "json":
-        payload: dict[str, typing.Any] = {
-            "changes": json_records,
-            "summary": {
-                "files_changed": files_changed,
-                "total_replacements": total_replacements,
-                "dry_run": dry_run,
-            },
+        replace_summary: dict[str, typing.Any] = {
+            "files_changed": files_changed,
+            "total_replacements": total_replacements,
+            "dry_run": dry_run,
         }
         if replace_id is not None:
-            payload["summary"]["replace_id"] = replace_id
+            replace_summary["replace_id"] = replace_id
         if guidance:
-            payload["summary"]["guidance"] = guidance
+            replace_summary["guidance"] = guidance
+        if fully_excluded:
+            replace_summary["fully_excluded_files"] = fully_excluded
+        if missing_targets:
+            replace_summary["missing_targets"] = missing_targets
+        payload: dict[str, typing.Any] = {
+            "changes": json_records,
+            "summary": replace_summary,
+        }
         _print_json(payload, args.output_file)
     else:
+        pyfltr.grep_.text_render.render_filtered_sections(
+            warnings=pyfltr.warnings_.collected_warnings(),
+            missing_targets=missing_targets,
+            fully_excluded_files=fully_excluded,
+        )
         pyfltr.grep_.text_render.render_replace_summary(
             files_changed=files_changed,
             total_replacements=total_replacements,
@@ -387,16 +400,6 @@ def execute_replace(parser: argparse.ArgumentParser, args: argparse.Namespace) -
             pyfltr.grep_.text_render.render_replace_guidance(guidance)
 
     return exit_code
-
-
-def _has_hidden_segment(path: pathlib.Path) -> bool:
-    """パス内に`.`始まりのセグメントが含まれるか判定する。"""
-    for part in path.parts:
-        if part in (".", ".."):
-            continue
-        if part.startswith("."):
-            return True
-    return False
 
 
 def _read_from_grep(parser: argparse.ArgumentParser, jsonl_path: pathlib.Path) -> set[pathlib.Path]:

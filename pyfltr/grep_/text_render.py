@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import pathlib
+import typing
 
 import pyfltr.cli.output_format
 import pyfltr.paths
@@ -23,6 +24,31 @@ def render_match(record: MatchRecord) -> None:
     line = f"{path}:{record.line}:{record.col}:{record.line_text}"
     with pyfltr.cli.output_format.text_output_lock:
         pyfltr.cli.output_format.text_logger.info(line)
+
+
+def render_filtered_sections(
+    *,
+    warnings: list[dict[str, typing.Any]],
+    missing_targets: list[str],
+    fully_excluded_files: list[str],
+) -> None:
+    """summary行の直前にwarnings・missing-targets・fully-excluded-filesの総覧を出力する。
+
+    run系（`pyfltr/cli/render.py`）と同じ見出し・配置で、直接指定したファイルの除外・不在を通知する。
+    """
+    with pyfltr.cli.output_format.text_output_lock:
+        if warnings:
+            pyfltr.cli.output_format.text_logger.info(f"{'-' * 10} warnings {'-' * (72 - 10 - 10)}")
+            for entry in warnings:
+                pyfltr.cli.output_format.text_logger.info(f"    [{entry['source']}] {entry['message']}")
+        if missing_targets:
+            pyfltr.cli.output_format.text_logger.info(f"{'-' * 10} missing-targets {'-' * (72 - 10 - 17)}")
+            for path in missing_targets:
+                pyfltr.cli.output_format.text_logger.info(f"    {path}")
+        if fully_excluded_files:
+            pyfltr.cli.output_format.text_logger.info(f"{'-' * 10} fully-excluded-files {'-' * (72 - 10 - 22)}")
+            for path in fully_excluded_files:
+                pyfltr.cli.output_format.text_logger.info(f"    {path}")
 
 
 def render_grep_summary(

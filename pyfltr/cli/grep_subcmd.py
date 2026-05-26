@@ -120,8 +120,6 @@ def register_subparsers(subparsers: typing.Any) -> None:
         metavar="BYTES",
         help="走査対象ファイルサイズの上限（バイト単位）。",
     )
-    parser.add_argument("--hidden", action="store_true", help="ドットファイルも対象に含める。")
-
     # ファイル単位サマリ系（grepでのみ受理する。replace側では拒否）
     parser.add_argument(
         "-l",
@@ -172,6 +170,8 @@ def register_subparsers(subparsers: typing.Any) -> None:
 
 def execute_grep(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
     """`grep`サブコマンドの処理本体。"""
+    # warnings_はモジュールグローバルに蓄積するため、実行開始時に初期化する
+    pyfltr.warnings_.clear()
     # 出力形式の解決
     resolution = pyfltr.cli.output_format.resolve_output_format(
         parser,
@@ -241,10 +241,6 @@ def execute_grep(parser: argparse.ArgumentParser, args: argparse.Namespace) -> i
     expanded = pyfltr.grep_.scanner.filter_files_by_type(expanded, args.type)
     expanded = pyfltr.grep_.scanner.filter_by_globs(expanded, args.glob)
 
-    # 隠しファイル除外（`--hidden`未指定時は`.`始まりエントリを除外する）
-    if not args.hidden:
-        expanded = [p for p in expanded if not _has_hidden_segment(p)]
-
     files_scanned = len(expanded)
 
     # JSONL header
@@ -298,6 +294,10 @@ def execute_grep(parser: argparse.ArgumentParser, args: argparse.Namespace) -> i
     # ガイダンス文（replace起動コマンド案内）
     guidance = _build_grep_guidance(total_matches)
 
+    # 直接指定が除外・不在で対象外になった一覧をsummaryへ載せる。
+    fully_excluded = pyfltr.warnings_.filtered_direct_files(reason="excluded")
+    missing_targets = pyfltr.warnings_.filtered_direct_files(reason="missing")
+
     if output_format == "jsonl":
         # スキャン中に蓄積された警告（エンコーディングエラー・読み込み失敗等）を
         # summaryの直前に出力し、pipelineのwarning出力位置と挙動を揃える
@@ -308,6 +308,8 @@ def execute_grep(parser: argparse.ArgumentParser, args: argparse.Namespace) -> i
             files_scanned=files_scanned,
             exit_code=0 if total_matches > 0 else 1,
             guidance=guidance if total_matches > 0 else None,
+            fully_excluded_files=fully_excluded,
+            missing_targets=missing_targets,
         )
     elif output_format == "json":
         summary: dict[str, typing.Any] = {
@@ -317,6 +319,10 @@ def execute_grep(parser: argparse.ArgumentParser, args: argparse.Namespace) -> i
         }
         if total_matches > 0 and guidance:
             summary["guidance"] = guidance
+        if fully_excluded:
+            summary["fully_excluded_files"] = fully_excluded
+        if missing_targets:
+            summary["missing_targets"] = missing_targets
         if summary_only_mode:
             payload = _build_summary_only_json(args=args, per_file_counts=per_file_counts, scanned=expanded)
             payload["summary"] = summary
@@ -327,6 +333,11 @@ def execute_grep(parser: argparse.ArgumentParser, args: argparse.Namespace) -> i
             }
         _print_json(payload, args.output_file)
     else:
+        pyfltr.grep_.text_render.render_filtered_sections(
+            warnings=pyfltr.warnings_.collected_warnings(),
+            missing_targets=missing_targets,
+            fully_excluded_files=fully_excluded,
+        )
         if not summary_only_mode:
             pyfltr.grep_.text_render.render_grep_summary(
                 total_matches=total_matches,
@@ -352,16 +363,6 @@ def _collect_patterns(parser: argparse.ArgumentParser, args: argparse.Namespace)
         except OSError as exc:
             parser.error(f"パターンファイルを読み込めません: {args.file}: {exc}")
     return patterns
-
-
-def _has_hidden_segment(path: pathlib.Path) -> bool:
-    """パス内に`.`始まりのセグメント（`.`/`..`を除く）が含まれるか判定する。"""
-    for part in path.parts:
-        if part in (".", ".."):
-            continue
-        if part.startswith("."):
-            return True
-    return False
 
 
 def _build_grep_guidance(total_matches: int) -> list[str]:

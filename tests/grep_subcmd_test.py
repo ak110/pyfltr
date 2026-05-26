@@ -143,3 +143,77 @@ def test_grep_json_output(
     assert "summary" in payload
     assert payload["summary"]["total_matches"] >= 3
     assert "guidance" in payload["summary"]
+
+
+def test_grep_includes_hidden_files(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """ドット始まりのファイル・ディレクトリも対象に含める（run系と統一）。"""
+    (tmp_path / ".hidden.py").write_text("foo here\n", encoding="utf-8")
+    hidden_dir = tmp_path / ".config"
+    hidden_dir.mkdir()
+    (hidden_dir / "settings.py").write_text("foo there\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    rc = pyfltr.cli.main.run(["grep", "foo", str(tmp_path)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert ".hidden.py" in out
+    assert "settings.py" in out
+
+
+@pytest.mark.parametrize("output_format", ["jsonl", "json"])
+def test_grep_notifies_excluded_explicit_file(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    output_format: str,
+) -> None:
+    """直接指定したexclude該当ファイルをsummaryのfully_excluded_filesで通知する。"""
+    lock = tmp_path / "uv.lock"
+    lock.write_text("foo\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    rc = pyfltr.cli.main.run(["grep", "foo", f"--output-format={output_format}", str(lock)])
+    assert rc == 1  # 除外され対象0件のためマッチ無し
+    out = capsys.readouterr().out
+    if output_format == "jsonl":
+        summary = [json.loads(line) for line in out.splitlines() if line.strip()][-1]
+    else:
+        summary = json.loads(out)["summary"]
+    assert summary["fully_excluded_files"] == ["uv.lock"]
+
+
+@pytest.mark.parametrize("output_format", ["jsonl", "json"])
+def test_grep_notifies_missing_explicit_file(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    output_format: str,
+) -> None:
+    """直接指定した不在ファイルをsummaryのmissing_targetsで通知する。"""
+    monkeypatch.chdir(tmp_path)
+    rc = pyfltr.cli.main.run(["grep", "foo", f"--output-format={output_format}", str(tmp_path / "nope.py")])
+    assert rc == 1
+    out = capsys.readouterr().out
+    if output_format == "jsonl":
+        summary = [json.loads(line) for line in out.splitlines() if line.strip()][-1]
+    else:
+        summary = json.loads(out)["summary"]
+    assert summary["missing_targets"] == ["nope.py"]
+
+
+def test_grep_text_notifies_excluded(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """text出力でも除外ファイルをfully-excluded-filesセクションで通知する。"""
+    lock = tmp_path / "uv.lock"
+    lock.write_text("foo\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    rc = pyfltr.cli.main.run(["grep", "foo", str(lock)])
+    assert rc == 1
+    out = capsys.readouterr().out
+    assert "fully-excluded-files" in out
+    assert "uv.lock" in out

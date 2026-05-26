@@ -330,7 +330,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
     # runner.pyの`PACKAGE_MANAGER_TOOL_BIN`。`{command}-runner = "direct"`既定）。
     # マニフェスト（pyproject.toml / package.json）の存在をトリガーとし、対象ファイルは
     # 渡さず（`{command}-pass-filenames = false`）プロジェクト単位で起動する。
-    # 既定で無効（opt-in）。外部脆弱性データベースへの問い合わせで所要時間が読めないため
+    # 既定で無効（opt-in）。外部脆弱性データベースへの問い合わせで所要時間を見積もれないため
     # fastは無効（`{command}-fast = false`）。`allows_external_paths=False`で
     # リポジトリ外マニフェストを対象外とする。
     "uv-audit": CommandInfo(type="linter", targets="pyproject.toml", fixed_cost=3.0, allows_external_paths=False),

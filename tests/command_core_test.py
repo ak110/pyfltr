@@ -454,7 +454,7 @@ def test_build_commandline_package_manager_audit_resolves_direct(
     """
 
     def _fake_which(name: str, **kwargs: typing.Any) -> str:
-        del kwargs  # shutil.which の mode / path 引数を受け流す。
+        del kwargs  # shutil.which の mode / path 引数を無視する。
         return f"/usr/bin/{name}"
 
     monkeypatch.setattr("pyfltr.command.runner.shutil.which", _fake_which)

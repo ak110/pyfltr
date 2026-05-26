@@ -17,6 +17,7 @@ import pyfltr.command.linter_fix
 import pyfltr.command.precommit
 import pyfltr.command.process
 import pyfltr.command.runner
+import pyfltr.command.structured_output
 import pyfltr.command.targets
 import pyfltr.command.textlint_fix
 import pyfltr.command.two_step.prettier
@@ -415,7 +416,7 @@ def _prepare_cache_context(
         return None
     if not pyfltr.state.cache.is_cacheable(command, config, additional_args):
         return None
-    structured_spec = pyfltr.command.runner.get_structured_output_spec(command, config)
+    structured_spec = pyfltr.command.structured_output.get_structured_output_spec(command, config)
     key = cache_store.compute_key(
         command=command,
         commandline=commandline,

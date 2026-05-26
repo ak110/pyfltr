@@ -8,8 +8,6 @@ description: >
 
 # pyfltr 新ツール追加チェックリスト
 
-以下では「触るべきファイル」と「コードを読んだだけでは気付きにくい注意点」のみを列挙する。
-
 ## 触るべきファイル
 
 用途が近い既存ツールを1つ雛形として選び、その変更箇所をすべて踏襲する。
@@ -21,7 +19,10 @@ description: >
   実行ロジック。共通ヘルパーを優先利用し、独自経路は最小限に抑える
 - `pyfltr/command/error_parser.py`: 出力パーサー（regexまたは関数ベース）
 - `tests/`: `config_test.py`・`command_*_test.py`・`error_parser_test.py` に対応するテストを追加
-- `docs/guide/index.md`:「対応ツール」一覧へ追記（`README.md`には書かない。SSOTは本ファイル）
+- `docs/guide/index.md`:「対応ツール」一覧へ追記（`README.md`には書かない）
+- `mkdocs.yml`: `plugins.llmstxt.markdown_description` の対応ツール一覧へ新ツール名を追記する
+  - ベタ書きで自動同期されないため、追記漏れは
+    `tests/llmstxt_test.py::test_llmstxt_contains_all_builtin_commands` の失敗につながる
 - `docker/Dockerfile`: 対応ツールは公式Dockerイメージ（`ghcr.io/ak110/pyfltr`）に事前同梱する。
   導入経路の区分は冒頭コメントの「同梱ツール一覧」を参照する。
   Rust / .NETツールチェイン依存は対象外
@@ -43,6 +44,11 @@ description: >
   - `allows_external_paths=False` を新規指定した場合は、
     `tests/external_paths_test.py::test_external_path_filtered_with_warning` の対象一覧へ
     当該ツール名と境界確認用の対象パターンを1件追加する
+- `error_parser` の正規表現には英単語を完全な形で書く
+  - 単語の一部だけの文字列はtyposが既知の誤記と判定しpre-commitがブロックする
+  - 前方一致が必要でも `(?:vulnerability|vulnerabilities)` のように単語を完結させる
+- 新ツールの並び順は `.claude/rules/order.md` の「並び順を揃える箇所」「領域別の末尾追加方針」に従う
+  - 新しい領域を設ける場合はorder.mdへ配置順も追記する
 
 ## 検証
 
