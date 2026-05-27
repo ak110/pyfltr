@@ -240,9 +240,8 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # textlintは--fixでautofix可能なルールをin-place修正する。
     "textlint-fix-args": ["--fix"],
     # fixモード実行で「破損させてはならない識別子」を列挙する。
-    # preset-jtf-styleの「半角ピリオド→全角句点」ルール等は、コードブロック外にある
-    # `.NET` / `Node.js`等の識別子まで変換してしまうことがあるため、
-    # fix前には含まれていた識別子がfix後に失われたケースを検知して警告を発行する。
+    # textlint --fixの自動修正がコードブロック外の`.NET` / `Node.js`等の識別子まで
+    # 変換してしまうことがあるため、fix前後で識別子が失われたケースを検知して警告を発行する。
     # 空リスト（`[]`）を指定すると検知を無効化できる。
     "textlint-protected-identifiers": [".NET", "Node.js", "Vue.js", "Next.js", "Nuxt.js"],
     # designmd: @google/design.md による DESIGN.md 形式仕様チェック。js-runner経由。
