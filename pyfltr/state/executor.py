@@ -43,6 +43,7 @@ def split_commands_for_execution(
     all_files: list[pathlib.Path],
     *,
     include_fix_stage: bool = False,
+    subproject_configs: dict[pathlib.Path, pyfltr.config.config.Config] | None = None,
 ) -> tuple[list[str], list[str], list[str]]:
     """有効なコマンドをフェーズごとに分割。
 
@@ -59,15 +60,18 @@ def split_commands_for_execution(
     ここでも`filter_fix_commands()`を適用して安全側に倒す。fixersに追加した
     コマンドは通常ステージ（formatters / linters_and_testers）にも従来どおり含める
     （ruff-checkのようにfixとlintを2段階で実行する構成を取るため）。
+
+    `subproject_configs`を渡すと、有効判定を起点と各サブプロジェクトの和集合で行う
+    （モノレポで親OFF・子ONのツールを子で実行するため）。未指定時は起点設定のみで判定する。
     """
     fixers: list[str] = []
     if include_fix_stage:
-        fixers = pyfltr.config.config.filter_fix_commands(commands, config)
+        fixers = pyfltr.config.config.filter_fix_commands(commands, config, subproject_configs)
 
     formatters: list[str] = []
     linters_and_testers: list[str] = []
     for command in commands:
-        if not config[command]:
+        if not pyfltr.config.config.is_command_enabled_anywhere(command, config, subproject_configs):
             continue
         if config.commands[command].type == "formatter":
             formatters.append(command)

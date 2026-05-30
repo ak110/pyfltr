@@ -280,7 +280,11 @@ def run_commands_with_cli(
     config = base_ctx.config
     results: list[pyfltr.command.core_.CommandResult] = []
     fixers, formatters, linters_and_testers = pyfltr.state.executor.split_commands_for_execution(
-        commands, config, base_ctx.all_files, include_fix_stage=include_fix_stage
+        commands,
+        config,
+        base_ctx.all_files,
+        include_fix_stage=include_fix_stage,
+        subproject_configs=base_ctx.subproject_configs,
     )
 
     # fixステージ: 同一ファイルへの書き込み競合を避けるため直列実行する。
@@ -449,6 +453,26 @@ def _run_one_command(
         return result
 
 
+def _apply_cli_overrides(config: pyfltr.config.config.Config, args: argparse.Namespace) -> None:
+    """CLIオプションによるconfig上書きを適用する。
+
+    起点configとサブプロジェクト別configの双方へ同一に適用し、`--jobs`・`--no-exclude`・
+    `--no-gitignore`・`--human-readable` の指定が一部サブプロジェクトにのみ反映される不整合を避ける。
+    `--no-fix`・`--ci` は `config.values` ではなく `args` 側に作用するためここでは扱わない。
+    """
+    if args.jobs is not None:
+        config.values["jobs"] = args.jobs
+    if args.no_exclude:
+        config.values["exclude"] = []
+        config.values["extend-exclude"] = []
+    if args.no_gitignore:
+        config.values["respect-gitignore"] = False
+    if args.human_readable:
+        for key in list(config.values):
+            if key.endswith("-json") or key == "pytest-tb-line":
+                config.values[key] = False
+
+
 def run_pipeline(
     args: argparse.Namespace,
     commands: list[str],
@@ -566,10 +590,30 @@ def run_pipeline(
     if only_failed_exit_early:
         return 0, None
 
+    # モノレポ用のサブプロジェクト分類とサブプロジェクト別 config を準備する。
+    # `subproject_aware=True` ツールが各サブプロジェクト cwd で実行する際に参照する。
+    # 各サブプロジェクトの `pyproject.toml` を `load_config(config_dir=cwd)` で個別に解決し、
+    # 起点と同一のCLIオーバーライド（`--jobs`・`--no-exclude` 等）を再適用して割り当てる。
+    # これによりツールのON/OFFや除外・targets等をサブプロジェクト単位で尊重する。
+    # 実行対象コマンドの確定（和集合判定）より前に構築する必要があるため、ここで行う。
+    subproject_files: dict[pathlib.Path, list[pathlib.Path]] = {}
+    subproject_configs: dict[pathlib.Path, pyfltr.config.config.Config] = {}
+    external_files: list[pathlib.Path] = []
+    if subprojects:
+        subproject_files, external_files = pyfltr.command.subprojects.classify_files_by_subproject(
+            all_files, subprojects, start_cwd_path
+        )
+        for sub in subprojects:
+            sub_config = pyfltr.config.config.load_config(config_dir=sub.cwd)
+            _apply_cli_overrides(sub_config, args)
+            subproject_configs[sub.cwd] = sub_config
+
     # 実行対象として有効化されていないコマンドはパイプラインから除外する。
-    # split_commands_for_executionと同じ条件 （`config.values.get(cmd) is True`） でフィルタリングし、
-    # JSONL header・実行アーカイブ・formatter ctxへ渡すcommandsを「実際に実行されるもの」に統一する。
-    commands = [c for c in commands if config.values.get(c) is True]
+    # 単一プロジェクトでは起点 config のON/OFF（`config.values.get(cmd) is True`）で判定する。
+    # モノレポでは `subproject_aware=True` ツールに限り「起点またはいずれかのサブプロジェクトで有効」
+    # の和集合で対象に含める（親OFF・子ONを子でのみ実行できるようにするため）。
+    # `subproject_aware=False`（リポジトリ単位ツール）と `subproject_aware` 判定自体は起点 config で固定する。
+    commands = [c for c in commands if pyfltr.config.config.is_command_enabled_anywhere(c, config, subproject_configs)]
 
     # retry_command再構成用のベース情報を確定する。original_cwdはrun() が保存した
     # --work-dir適用前のcwd、original_sys_argsは起動時のsys.argv[1:] のコピー。
@@ -638,20 +682,6 @@ def run_pipeline(
 
     # UIの判定
     use_ui = not args.no_ui and (args.ui or pyfltr.output.ui.can_use_ui())
-
-    # モノレポ用のサブプロジェクト分類を準備する。
-    # `subproject_aware=True` ツールが各サブプロジェクト cwd で実行する際に参照する。
-    # サブプロジェクト別 config はCLI オーバーライド（`--human-readable`・`--jobs` 等）の
-    # 反映を保つため、現状は起点 config を全サブプロジェクトで共有する。
-    subproject_files: dict[pathlib.Path, list[pathlib.Path]] = {}
-    subproject_configs: dict[pathlib.Path, pyfltr.config.config.Config] = {}
-    external_files: list[pathlib.Path] = []
-    if subprojects:
-        subproject_files, external_files = pyfltr.command.subprojects.classify_files_by_subproject(
-            all_files, subprojects, start_cwd_path
-        )
-        for sub in subprojects:
-            subproject_configs[sub.cwd] = config
 
     # run_pipelineが1回だけ組み立てる不変コンテキスト。
     # archive_storeはhook経由で渡すためContextには含めない。
@@ -946,18 +976,8 @@ def run_impl(
     if resolved_targets is not None:
         args.targets = resolved_targets
 
-    # CLIオプションでconfigを上書き
-    if args.jobs is not None:
-        config.values["jobs"] = args.jobs
-    if args.no_exclude:
-        config.values["exclude"] = []
-        config.values["extend-exclude"] = []
-    if args.no_gitignore:
-        config.values["respect-gitignore"] = False
-    if args.human_readable:
-        for key in list(config.values):
-            if key.endswith("-json") or key == "pytest-tb-line":
-                config.values[key] = False
+    # CLIオプションでconfigを上書き（サブプロジェクト別configにも同一に再適用するため共通ヘルパーへ集約）
+    _apply_cli_overrides(config, args)
 
     # --commands未指定時はカスタムコマンドを含む全登録コマンドを対象にする。
     # argparseのデフォルト評価時点ではpyproject.tomlを読み込んでいないため、

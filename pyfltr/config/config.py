@@ -1550,7 +1550,36 @@ def _validate_targets_value(key: str, value: typing.Any) -> str | list[str] | No
     return None
 
 
-def filter_fix_commands(commands: list[str], config: Config) -> list[str]:
+def is_command_enabled_anywhere(
+    command: str,
+    config: Config,
+    subproject_configs: dict[pathlib.Path, Config] | None = None,
+) -> bool:
+    """コマンドを実行対象として有効化するかを、起点と各サブプロジェクトの和集合で判定する。
+
+    起点 config で有効なら常に `True`。モノレポで当該コマンドが `subproject_aware=True` の場合に限り、
+    いずれかのサブプロジェクト config で有効なら `True` を返す（親OFF・子ON対応）。
+    `subproject_aware` 判定はツール特性を表すメタ設定のため起点 config で固定し、
+    `subproject_aware=False` のリポジトリ単位ツールは起点設定のみで判定する。
+    `subproject_configs` が空または `None`（単一プロジェクト）のときは起点設定のみで判定する。
+    """
+    if config.values.get(command) is True:
+        return True
+    if not subproject_configs:
+        return False
+    info = config.commands.get(command)
+    if info is None:
+        return False
+    if not resolve_subproject_aware(config.values, command, info.subproject_aware):
+        return False
+    return any(sub_config.values.get(command) is True for sub_config in subproject_configs.values())
+
+
+def filter_fix_commands(
+    commands: list[str],
+    config: Config,
+    subproject_configs: dict[pathlib.Path, Config] | None = None,
+) -> list[str]:
     """fixステージで実行すべきコマンドに限定する。
 
     `pyfltr run` / `pyfltr fast`のfixステージはlinterのautofix機能
@@ -1559,10 +1588,11 @@ def filter_fix_commands(commands: list[str], config: Config) -> list[str]:
     重複して実行する必要はない。
 
     enabledかつ`{command}-fix-args`が定義されているlinter/testerを返す。
+    モノレポでは起点と各サブプロジェクトの和集合で有効判定する（親OFF・子ON対応）。
     """
     result: list[str] = []
     for command in commands:
-        if not config[command]:
+        if not is_command_enabled_anywhere(command, config, subproject_configs):
             continue
         if f"{command}-fix-args" in config.values:
             result.append(command)

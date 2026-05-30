@@ -163,6 +163,17 @@ class UIApp(App):
         self._all_errors: list[pyfltr.command.error_parser.ErrorLocation] = []
         self._errors_tab_exists = False
 
+    def _enabled_commands(self) -> list[str]:
+        """実行対象として有効なコマンド一覧を返す。
+
+        モノレポでは起点と各サブプロジェクトの和集合で判定する（タブ生成とサマリー行追加で共用）。
+        """
+        return [
+            cmd
+            for cmd in self.commands
+            if pyfltr.config.config.is_command_enabled_anywhere(cmd, self.config, self._base_ctx.subproject_configs)
+        ]
+
     def compose(self) -> ComposeResult:
         """UIを構成。"""
         with TabbedContent(initial="summary"):
@@ -171,8 +182,7 @@ class UIApp(App):
 
             # 有効なコマンドのみタブを作成
             # (Errorsタブはエラー発生時にsummaryの直後に動的追加)
-            enabled_commands = [cmd for cmd in self.commands if self.config[cmd]]
-            for command in enabled_commands:
+            for command in self._enabled_commands():
                 with TabPane(command, id=f"tab-{command}"):
                     yield Log(id=f"output-{command}", classes="output")
 
@@ -185,8 +195,7 @@ class UIApp(App):
         table.add_column("Errors", key="errors", width=8)
         table.add_column("Time", key="time", width=10)
 
-        enabled_commands = [cmd for cmd in self.commands if self.config[cmd]]
-        for command in enabled_commands:
+        for command in self._enabled_commands():
             table.add_row(
                 command,
                 _STATUS_DISPLAY["waiting"],
@@ -282,7 +291,11 @@ class UIApp(App):
         try:
             include_fix_stage = bool(getattr(self.args, "include_fix_stage", False))
             fixers, formatters, linters_and_testers = pyfltr.state.executor.split_commands_for_execution(
-                self.commands, self.config, self._all_files, include_fix_stage=include_fix_stage
+                self.commands,
+                self.config,
+                self._all_files,
+                include_fix_stage=include_fix_stage,
+                subproject_configs=self._base_ctx.subproject_configs,
             )
             aborted = False
 

@@ -9,6 +9,8 @@ from __future__ import annotations
 import pathlib
 import subprocess
 
+import pytest
+
 import pyfltr.cli.main
 
 
@@ -20,6 +22,48 @@ def _make_subproject(path: pathlib.Path, *, name: str = "pkg") -> None:
         f'[project]\nname = "{name}"\n[tool.pyfltr]\npytest = true\ntypos = true\n',
         encoding="utf-8",
     )
+
+
+def _write_pyproject(
+    path: pathlib.Path,
+    name: str,
+    *,
+    pytest_on: bool | None = None,
+    typos_on: bool | None = None,
+    extra: str = "",
+) -> None:
+    """ツールのON/OFFを個別指定したサブプロジェクトの `pyproject.toml` を作成する。"""
+    path.mkdir(parents=True, exist_ok=True)
+    lines = ["[project]", f'name = "{name}"', "[tool.pyfltr]"]
+    if pytest_on is not None:
+        lines.append(f"pytest = {'true' if pytest_on else 'false'}")
+    if typos_on is not None:
+        lines.append(f"typos = {'true' if typos_on else 'false'}")
+    content = "\n".join(lines) + "\n" + extra
+    (path / "pyproject.toml").write_text(content, encoding="utf-8")
+
+
+def _pytest_cwds(mock_run) -> set[pathlib.Path]:
+    """`run_subprocess` モックから pytest が起動された cwd 集合を抽出する。"""
+    cwds: set[pathlib.Path] = set()
+    for call in mock_run.call_args_list:
+        commandline = call.args[0] if call.args else []
+        if not commandline or "pytest" not in " ".join(commandline):
+            continue
+        cwd_value = call.kwargs.get("cwd")
+        if cwd_value is not None:
+            cwds.add(pathlib.Path(cwd_value).resolve())
+    return cwds
+
+
+def _pytest_call_count(mock_run) -> int:
+    """`run_subprocess` モックから pytest 起動回数（cwd 指定の有無を問わない）を数える。"""
+    count = 0
+    for call in mock_run.call_args_list:
+        commandline = call.args[0] if call.args else []
+        if commandline and "pytest" in " ".join(commandline):
+            count += 1
+    return count
 
 
 def test_monorepo_pytest_runs_per_subproject(tmp_path: pathlib.Path, mocker) -> None:
@@ -38,20 +82,11 @@ def test_monorepo_pytest_runs_per_subproject(tmp_path: pathlib.Path, mocker) -> 
 
     pyfltr.cli.main.run(["run", "--work-dir", str(tmp_path), "--commands=pytest", "--no-archive", "--no-cache"])
 
-    # pytest が複数の cwd で呼ばれていることを確認（サブプロジェクト別実行）
-    cwds: list[pathlib.Path] = []
-    for call in mock_run.call_args_list:
-        commandline = call.args[0] if call.args else []
-        if not commandline or "pytest" not in " ".join(commandline):
-            continue
-        cwd_value = call.kwargs.get("cwd")
-        if cwd_value is not None:
-            cwds.append(pathlib.Path(cwd_value))
-
-    # 各サブプロジェクト cwd で1回ずつ呼ばれている
-    assert tmp_path.resolve() in [c.resolve() for c in cwds]
-    assert (tmp_path / "pkg_a").resolve() in [c.resolve() for c in cwds]
-    assert (tmp_path / "pkg_b").resolve() in [c.resolve() for c in cwds]
+    # 各サブプロジェクト cwd で1回ずつ呼ばれている（サブプロジェクト別実行）
+    cwds = _pytest_cwds(mock_run)
+    assert tmp_path.resolve() in cwds
+    assert (tmp_path / "pkg_a").resolve() in cwds
+    assert (tmp_path / "pkg_b").resolve() in cwds
 
 
 def test_monorepo_fallback_to_single_when_one_subproject(tmp_path: pathlib.Path, mocker) -> None:
@@ -89,3 +124,114 @@ def test_monorepo_subproject_aware_false_uses_single_cwd(tmp_path: pathlib.Path,
     # typos は単一実行（モノレポでもサブ分割されない）。
     # ここでは run_subprocess が複数回呼ばれていないことを検証する代わりに、
     # 例外なしで完走することを確認する（モノレポモードを抜けて単一経路を通る）。
+
+
+@pytest.mark.parametrize(
+    ("parent_on", "child_on", "expected"),
+    [
+        # 親ON子ON: 既存挙動の維持（起点と各サブで実行）。
+        (True, True, {"root", "pkg_a", "pkg_b"}),
+        # 親ON子OFF: 子サブプロジェクトはスキップし、起点（root）自身のファイルでのみ実行する。
+        (True, False, {"root"}),
+        # 親OFF子ON: 起点はスキップし、有効なサブプロジェクトでのみ実行する。
+        (False, True, {"pkg_a", "pkg_b"}),
+        # 親OFF子OFF: どのcwdでも実行されない。
+        (False, False, set()),
+    ],
+)
+def test_monorepo_respects_per_subproject_on_off(
+    tmp_path: pathlib.Path,
+    mocker,
+    parent_on: bool,
+    child_on: bool,
+    expected: set[str],
+) -> None:
+    """親子でツールのON/OFFが異なる両方向を、各サブプロジェクトの設定で個別に尊重する。"""
+    _write_pyproject(tmp_path, "root", pytest_on=parent_on)
+    _write_pyproject(tmp_path / "pkg_a", "pkg_a", pytest_on=child_on)
+    _write_pyproject(tmp_path / "pkg_b", "pkg_b", pytest_on=child_on)
+    (tmp_path / "root_test.py").write_text("def test_root(): pass\n", encoding="utf-8")
+    (tmp_path / "pkg_a" / "a_test.py").write_text("def test_a(): pass\n", encoding="utf-8")
+    (tmp_path / "pkg_b" / "b_test.py").write_text("def test_b(): pass\n", encoding="utf-8")
+
+    proc = subprocess.CompletedProcess(["pytest"], returncode=0, stdout="")
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
+
+    pyfltr.cli.main.run(["run", "--work-dir", str(tmp_path), "--commands=pytest", "--no-archive", "--no-cache"])
+
+    name_to_path = {
+        "root": tmp_path.resolve(),
+        "pkg_a": (tmp_path / "pkg_a").resolve(),
+        "pkg_b": (tmp_path / "pkg_b").resolve(),
+    }
+    assert _pytest_cwds(mock_run) == {name_to_path[n] for n in expected}
+
+
+def test_monorepo_all_children_disabled_does_not_run_at_start_cwd(tmp_path: pathlib.Path, mocker) -> None:
+    """全サブプロジェクトで対象ファイルがありつつ無効化された場合、起点cwdで全ファイルを誤実行しない。"""
+    # root は pytest 有効だが直下に対象ファイルを置かず、root 自身は対象0件でスキップさせる。
+    _write_pyproject(tmp_path, "root", pytest_on=True)
+    # pkg_a / pkg_b は対象ファイルを持つが pytest を無効化する。
+    _write_pyproject(tmp_path / "pkg_a", "pkg_a", pytest_on=False)
+    _write_pyproject(tmp_path / "pkg_b", "pkg_b", pytest_on=False)
+    (tmp_path / "pkg_a" / "a_test.py").write_text("def test_a(): pass\n", encoding="utf-8")
+    (tmp_path / "pkg_b" / "b_test.py").write_text("def test_b(): pass\n", encoding="utf-8")
+
+    proc = subprocess.CompletedProcess(["pytest"], returncode=0, stdout="")
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
+
+    pyfltr.cli.main.run(["run", "--work-dir", str(tmp_path), "--commands=pytest", "--no-archive", "--no-cache"])
+
+    # 0件フォールバックと無効スキップを区別し、起点cwdでの誤実行を抑止する。
+    assert _pytest_call_count(mock_run) == 0
+
+
+def test_monorepo_applies_per_subproject_exclude(tmp_path: pathlib.Path, mocker) -> None:
+    """サブプロジェクト固有のツール別除外設定が、当該サブプロジェクトの実行へ反映される。"""
+    _write_pyproject(tmp_path, "root", pytest_on=True)
+    # pkg_a は pytest 有効だが固有の pytest-exclude で唯一の対象ファイルを除外する。
+    _write_pyproject(
+        tmp_path / "pkg_a",
+        "pkg_a",
+        pytest_on=True,
+        extra='pytest-exclude = ["pkg_a/a_test.py"]\n',
+    )
+    _write_pyproject(tmp_path / "pkg_b", "pkg_b", pytest_on=True)
+    (tmp_path / "root_test.py").write_text("def test_root(): pass\n", encoding="utf-8")
+    (tmp_path / "pkg_a" / "a_test.py").write_text("def test_a(): pass\n", encoding="utf-8")
+    (tmp_path / "pkg_b" / "b_test.py").write_text("def test_b(): pass\n", encoding="utf-8")
+
+    proc = subprocess.CompletedProcess(["pytest"], returncode=0, stdout="")
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
+
+    pyfltr.cli.main.run(["run", "--work-dir", str(tmp_path), "--commands=pytest", "--no-archive", "--no-cache"])
+
+    cwds = _pytest_cwds(mock_run)
+    # pkg_a は固有除外で対象0件となり起動されない。root と pkg_b は通常通り実行する。
+    assert (tmp_path / "pkg_a").resolve() not in cwds
+    assert tmp_path.resolve() in cwds
+    assert (tmp_path / "pkg_b").resolve() in cwds
+
+
+@pytest.mark.parametrize("parent_on", [True, False])
+def test_monorepo_repo_level_tool_fixed_by_start_config(tmp_path: pathlib.Path, mocker, parent_on: bool) -> None:
+    """`subproject_aware=False` ツール（typos）のON/OFFは起点設定で固定し、子の設定で変えない。"""
+    _write_pyproject(tmp_path, "root", typos_on=parent_on)
+    # 子で typos を有効化しても、リポジトリ単位ツールのため起点設定が優先される。
+    _write_pyproject(tmp_path / "pkg_a", "pkg_a", typos_on=True)
+    _write_pyproject(tmp_path / "pkg_b", "pkg_b", typos_on=True)
+    (tmp_path / "root.txt").write_text("hello world\n", encoding="utf-8")
+    (tmp_path / "pkg_a" / "a.txt").write_text("hello world\n", encoding="utf-8")
+
+    proc = subprocess.CompletedProcess(["typos"], returncode=0, stdout="")
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
+
+    pyfltr.cli.main.run(["run", "--work-dir", str(tmp_path), "--commands=typos", "--no-archive", "--no-cache"])
+
+    typos_calls = [
+        call
+        for call in mock_run.call_args_list
+        if call.args and isinstance(call.args[0], list) and "typos" in " ".join(call.args[0])
+    ]
+    # 親ON時は起点 cwd で1回、親OFF時は子がONでも実行されない。
+    assert len(typos_calls) == (1 if parent_on else 0)
