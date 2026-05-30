@@ -615,6 +615,19 @@ def test_audit_tools_registered_in_lint_alias(command: str) -> None:
     assert command in config["aliases"]["lint"]
 
 
+def test_audit_alias_registered() -> None:
+    """`audit`エイリアスが監査ツール4種を登録順で保持する。"""
+    config = pyfltr.config.config.create_default_config()
+    assert config["aliases"]["audit"] == ["uv-audit", "pnpm-audit", "npm-audit", "yarn-audit"]
+
+
+def test_audit_alias_resolves_to_audit_tools() -> None:
+    """`resolve_aliases(["audit"])`が監査4ツールをcommand_names登録順で返す。"""
+    config = pyfltr.config.config.create_default_config()
+    resolved = pyfltr.config.config.resolve_aliases(["audit"], config)
+    assert resolved == ["uv-audit", "pnpm-audit", "npm-audit", "yarn-audit"]
+
+
 def test_uv_audit_args_contain_frozen() -> None:
     """uv-auditの既定引数に`--frozen`が含まれ、uv.lockの書き換えを防ぐ。"""
     config = pyfltr.config.config.create_default_config()

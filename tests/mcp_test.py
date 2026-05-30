@@ -640,6 +640,44 @@ async def test_tool_replace_dry_run_does_not_write(tmp_path: pathlib.Path) -> No
 
 
 @pytest.mark.asyncio
+async def test_tool_replace_within_limits_region(tmp_path: pathlib.Path) -> None:
+    """`within`はdry-run結果を領域内へ限定する（領域外fooは件数に含めない）。"""
+    target = tmp_path / "sample.txt"
+    target.write_text("foo\nKEY foo\n", encoding="utf-8")
+
+    result = await pyfltr.cli.mcp_server._tool_replace(
+        pattern="foo",
+        replacement="X",
+        paths=[str(target)],
+        within="KEY",
+    )
+
+    assert result.dry_run is True
+    # 領域はKEY行のみ（before/after=0）。領域内のfoo1件のみが対象。
+    assert result.total_replacements == 1
+
+
+@pytest.mark.asyncio
+async def test_tool_replace_within_with_multiline_raises(tmp_path: pathlib.Path) -> None:
+    """`within`と`multiline`の併用はValueErrorになる。"""
+    target = tmp_path / "sample.txt"
+    target.write_text("KEY foo\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="multiline"):
+        await pyfltr.cli.mcp_server._tool_replace(
+            pattern="foo", replacement="X", paths=[str(target)], within="KEY", multiline=True
+        )
+
+
+@pytest.mark.asyncio
+async def test_tool_replace_context_without_within_raises(tmp_path: pathlib.Path) -> None:
+    """`within`未指定で`before_context`/`after_context`指定はValueErrorになる。"""
+    target = tmp_path / "sample.txt"
+    target.write_text("foo\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="within"):
+        await pyfltr.cli.mcp_server._tool_replace(pattern="foo", replacement="X", paths=[str(target)], after_context=1)
+
+
+@pytest.mark.asyncio
 async def test_tool_replace_writes_file_and_returns_replace_id(tmp_path: pathlib.Path) -> None:
     """`_tool_replace(dry_run=False)`がファイルを変更し`replace_id`を返すこと。"""
     target = tmp_path / "sample.txt"

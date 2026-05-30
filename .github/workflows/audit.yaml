@@ -1,0 +1,68 @@
+name: Audit
+
+# 依存の脆弱性監査（uv audit）を定期実行する。監査は外部脆弱性データベースへ
+# 問い合わせるため結果がコード変更と無関係に変動する。push/PR毎のCIには載せず、
+# スケジュール実行と手動実行に限定する。
+on:
+  schedule:
+    # 毎日 06:00 UTC（JST 15:00）に実行する。
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: audit-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # 開発モード: DeprecationWarningなどの隠れた問題を早期検出する
+  PYTHONDEVMODE: "1"
+  # サプライチェーン攻撃対策: uvがlockfileを尊重する
+  UV_FROZEN: "1"
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/ak110/pyfltr:latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      # mise・pinact等がGitHub APIを呼び出す際のレート制限（403）回避
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: GitHub Actionsのピン留め検証
+        run: pinact run --check
+
+      - name: Install dependencies
+        run: uv sync --all-groups --all-extras
+
+      - name: Run dependency audit
+        # uv-auditはネットワーク必須で結果が変動するため、pyproject.tomlでは有効化していない。
+        # この定期ジョブだけで有効化するため、一時グローバル設定をPYFLTR_GLOBAL_CONFIGで読ませる。
+        # load_configはproject未指定キーにglobal値を残すため、uv-auditがtrueになる。
+        # severity未指定（error）で、脆弱性検出時はCIを失敗させる。
+        # 本リポはPython専用でpackage.jsonを持たないため、auditグループ全体ではなくuv-audit単独を指定する。
+        # JSONL出力をログへ保存し、uv-auditのcommandレコードが実際に出力された（スキップではなく
+        # 起動した）ことを同一ステップ内のgrep検証で確かめる。設定読み込み失敗等で監査が無言スキップ
+        # された場合にジョブが成功扱いになる事態を防ぐ。
+        run: |
+          set -euo pipefail
+          audit_config="${RUNNER_TEMP}/pyfltr-audit-config.toml"
+          audit_log="${RUNNER_TEMP}/pyfltr-audit.jsonl"
+          printf '[tool.pyfltr]\nuv-audit = true\n' > "${audit_config}"
+          # 脆弱性検出時はpyfltrがexit 1を返す。検証ステップへ到達させるため終了コードを保持する。
+          audit_rc=0
+          PYFLTR_GLOBAL_CONFIG="${audit_config}" uv run pyfltr ci --commands=uv-audit --output-format=jsonl \
+            | tee "${audit_log}" || audit_rc=$?
+          # JSONLのキー出現順に依存しないよう、commandフィールド単体で検証する。
+          if ! grep -q '"command":"uv-audit"' "${audit_log}"; then
+            echo "::error::uv-audit が実行されませんでした（設定読み込み失敗などでスキップされた可能性があります）。"
+            exit 1
+          fi
+          exit "${audit_rc}"

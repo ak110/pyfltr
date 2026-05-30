@@ -9,6 +9,7 @@ import hashlib
 import pathlib
 import re
 
+import pyfltr.grep_.scanner
 from pyfltr.grep_.types import ReplaceRecord
 
 
@@ -27,15 +28,16 @@ def apply_replace_to_file(
             マルチライン要否のフラグ（`re.DOTALL | re.MULTILINE`）は
             `compile_pattern`側で組み込まれており、本関数では追加の指定を取らない
         replacement: `re.sub`互換の置換式（`\\1`/`\\g<name>`参照可）
-        encoding: ファイル読み込み・書き込み時のエンコーディング
+        encoding: ファイル読み込み時のエンコーディング（書き込みは呼び出し側の責務）
 
     Returns:
         `(before_content, after_content, count, records)`の4要素タプル。
         `count`は実際に置換された箇所数、`records`は各置換箇所のレコード。
 
-    マッチが行を跨ぐ場合（マルチラインモード）は、開始行を基準にした`ReplaceRecord`を生成し
-    `before_line`に「マッチ開始行の置換前テキスト」、`after_line`に「マッチ開始行の置換後テキスト」を
-    格納する。
+    Note:
+        マッチが行を跨ぐ場合（マルチラインモード）は、開始行を基準にした`ReplaceRecord`を生成し
+        `before_line`に「マッチ開始行の置換前テキスト」、`after_line`に「マッチ開始行の置換後テキスト」を
+        格納する。
     """
     before_content = file.read_text(encoding=encoding)
     after_content, count = pattern.subn(replacement, before_content)
@@ -46,6 +48,74 @@ def apply_replace_to_file(
             pattern=pattern,
             replacement=replacement,
             before_content=before_content,
+        )
+    return before_content, after_content, count, records
+
+
+def apply_block_replace_to_file(
+    file: pathlib.Path,
+    search_pattern: re.Pattern[str],
+    replacement: str,
+    anchor: re.Pattern[str],
+    *,
+    before_context: int,
+    after_context: int,
+    encoding: str,
+) -> tuple[str, str, int, list[ReplaceRecord]]:
+    r"""アンカーで定めた行範囲集合へ限定して単一ファイルへ置換を適用する。
+
+    `replace --within`のブロック内限定置換の本体。アンカーにマッチした行の前後
+    コンテキストで定まる領域（`compute_block_ranges`）の内側に完全包含される
+    検索マッチだけを置換する。
+
+    領域を切り出してから`subn`するのではなく、ファイル全文に対して`finditer`し、
+    マッチ範囲が許可文字範囲へ完全包含されるもののみ採用してオフセットベースで
+    再構成する。これにより`^`/`$`/`\\A`/`\\Z`/前後読みの評価対象がファイル全体置換
+    （`apply_replace_to_file`）と一致し、領域切り出しによる挙動差が生じない。
+
+    Args:
+        file: 対象ファイル
+        search_pattern: 領域内で置換する検索パターン（`compile_pattern()`生成済み）
+        replacement: `re.sub`互換の置換式（`\\1`/`\\g<name>`参照可）
+        anchor: 領域の起点を決めるアンカーパターン（`compile_pattern()`生成済み）
+        before_context: アンカー行の前に含める行数（`-B`、0以上）
+        after_context: アンカー行の後に含める行数（`-A`、0以上）
+        encoding: ファイル読み込み時のエンコーディング（書き込みは呼び出し側の責務）
+
+    Returns:
+        `(before_content, after_content, count, records)`の4要素タプル。
+        `count`は領域内で実置換した件数で、領域外のマッチは含めない。
+    """
+    before_content = file.read_text(encoding=encoding)
+    line_ranges = pyfltr.grep_.scanner.compute_block_ranges(
+        before_content,
+        anchor,
+        before_context=before_context,
+        after_context=after_context,
+    )
+    char_ranges = _line_ranges_to_char_ranges(before_content, line_ranges)
+
+    pieces: list[str] = []
+    cursor = 0
+    count = 0
+    for m in search_pattern.finditer(before_content):
+        if not _offset_in_ranges(m.start(), m.end(), char_ranges):
+            continue
+        pieces.append(before_content[cursor : m.start()])
+        pieces.append(m.expand(replacement))
+        cursor = m.end()
+        count += 1
+    pieces.append(before_content[cursor:])
+    after_content = "".join(pieces)
+
+    records: list[ReplaceRecord] = []
+    if count > 0:
+        records = _build_replace_records(
+            file=file,
+            pattern=search_pattern,
+            replacement=replacement,
+            before_content=before_content,
+            char_ranges=char_ranges,
         )
     return before_content, after_content, count, records
 
@@ -61,6 +131,7 @@ def _build_replace_records(
     pattern: re.Pattern[str],
     replacement: str,
     before_content: str,
+    char_ranges: list[tuple[int, int]] | None = None,
 ) -> list[ReplaceRecord]:
     """各置換箇所の`ReplaceRecord`を組み立てる。
 
@@ -70,11 +141,16 @@ def _build_replace_records(
 
     `after_line`は当該マッチ箇所のみを置換した行（他のマッチによる影響を受けない）を表現するため、
     1マッチごとに`Match.string[start:end]`部分を`replacement`で差し替えた行テキストで構築する。
+
+    `char_ranges`を渡すと、ブロック内限定置換（`apply_block_replace_to_file`）と同じく
+    許可文字範囲へ完全包含されるマッチだけをレコード化する。`None`なら全マッチを対象とする。
     """
     line_starts = _line_start_offsets(before_content)
     lines_before = before_content.splitlines()
     records: list[ReplaceRecord] = []
     for m in pattern.finditer(before_content):
+        if char_ranges is not None and not _offset_in_ranges(m.start(), m.end(), char_ranges):
+            continue
         start_pos = m.start()
         end_pos = m.end()
         line_index = _line_of(line_starts, start_pos)
@@ -125,3 +201,25 @@ def _line_of(line_starts: list[int], pos: int) -> int:
         else:
             break
     return line_index
+
+
+def _line_ranges_to_char_ranges(text: str, line_ranges: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """0-origin半開区間の行範囲集合を文字オフセットの半開区間へ変換する。
+
+    `_line_start_offsets`が返す`line_starts`の要素数は、末尾改行ありで論理行数+1、
+    末尾改行なしで論理行数と一致する。このため`end_line == len(lines)`のとき、
+    末尾改行ありなら添字が有効だが、末尾改行なしでは`line_starts`の範囲を超える。
+    範囲外の場合は`len(text)`へクランプして領域終端をファイル末尾に揃える。
+    """
+    line_starts = _line_start_offsets(text)
+    result: list[tuple[int, int]] = []
+    for start_line, end_line in line_ranges:
+        char_start = line_starts[start_line] if start_line < len(line_starts) else len(text)
+        char_end = line_starts[end_line] if end_line < len(line_starts) else len(text)
+        result.append((char_start, char_end))
+    return result
+
+
+def _offset_in_ranges(start: int, end: int, char_ranges: list[tuple[int, int]]) -> bool:
+    """マッチ文字範囲`[start, end)`がいずれかの許可文字範囲へ完全包含されるか判定する。"""
+    return any(range_start <= start and end <= range_end for range_start, range_end in char_ranges)

@@ -248,3 +248,52 @@ def _find_line_index(line_starts: list[int], pos: int) -> int:
         else:
             break
     return line_index
+
+
+def compute_block_ranges(
+    text: str,
+    anchor: re.Pattern[str],
+    *,
+    before_context: int,
+    after_context: int,
+) -> list[tuple[int, int]]:
+    """アンカーにマッチした行の前後コンテキストで定まる行範囲集合を返す。
+
+    `replace --within`のブロック内限定置換で、置換を許可する領域を決めるために使う。
+    各範囲は0-origin行インデックスの半開区間`[start, end)`で表す。
+    アンカーは行単位で評価し（マルチラインは`--within`で併用不可）、
+    マッチ行を中心に`before_context`行前から`after_context`行後までを範囲とする。
+    重複・隣接する範囲は`_merge_line_ranges`で1つに統合する。
+
+    Args:
+        text: 対象ファイルの全文
+        anchor: 領域の起点を決めるアンカーパターン（`compile_pattern()`生成済み）
+        before_context: マッチ行の前に含める行数（`-B`、0以上）
+        after_context: マッチ行の後に含める行数（`-A`、0以上）
+    """
+    lines = text.splitlines()
+    ranges: list[tuple[int, int]] = []
+    for line_index, line_text in enumerate(lines):
+        if anchor.search(line_text):
+            start = max(0, line_index - before_context)
+            end = min(len(lines), line_index + 1 + after_context)
+            ranges.append((start, end))
+    return _merge_line_ranges(ranges)
+
+
+def _merge_line_ranges(ranges: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """0-origin半開区間の行範囲集合を昇順整列し、重複・隣接を統合する。
+
+    半開区間のため`start == last_end`（間に隙間が無く連続する）も統合対象とする。
+    """
+    if not ranges:
+        return []
+    ordered = sorted(ranges)
+    merged: list[tuple[int, int]] = [ordered[0]]
+    for start, end in ordered[1:]:
+        last_start, last_end = merged[-1]
+        if start <= last_end:
+            merged[-1] = (last_start, max(last_end, end))
+        else:
+            merged.append((start, end))
+    return merged

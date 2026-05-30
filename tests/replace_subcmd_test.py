@@ -324,3 +324,139 @@ def test_replace_notifies_missing_explicit_file(
     else:
         summary = json.loads(out)["summary"]
     assert summary["missing_targets"] == ["nope.py"]
+
+
+def test_replace_within_limits_to_region(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """--within領域内のみ置換し、領域外の同一文字列は変えない。"""
+    target = tmp_path / "a.txt"
+    # KEY行（3行目）の前後1行が領域。領域内のfooのみ置換し、1行目・5行目のfooは領域外で不変。
+    target.write_text("foo\nL1\nKEY foo\nL3\nfoo\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    rc = pyfltr.cli.main.run(["replace", "foo", "X", str(target), "--within", "KEY", "-C", "1"])
+
+    assert rc == 0
+    assert target.read_text(encoding="utf-8") == "foo\nL1\nKEY X\nL3\nfoo\n"
+
+
+def test_replace_without_within_replaces_whole_file(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """--within省略時は全体置換（後方互換）。"""
+    target = tmp_path / "a.txt"
+    target.write_text("foo\nfoo\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    rc = pyfltr.cli.main.run(["replace", "foo", "X", str(target)])
+
+    assert rc == 0
+    assert target.read_text(encoding="utf-8") == "X\nX\n"
+
+
+def test_replace_within_with_multiline_rejected(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """--withinと-Uの併用はexit 2で拒否される。"""
+    target = tmp_path / "a.txt"
+    target.write_text("KEY foo\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(SystemExit) as exc_info:
+        pyfltr.cli.main.run(["replace", "foo", "X", str(target), "--within", "KEY", "-U"])
+    assert exc_info.value.code == 2
+
+
+def test_replace_context_without_within_rejected(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """--within未指定で-A/-B/-C指定はexit 2で拒否される。"""
+    target = tmp_path / "a.txt"
+    target.write_text("foo\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(SystemExit) as exc_info:
+        pyfltr.cli.main.run(["replace", "foo", "X", str(target), "-A", "1"])
+    assert exc_info.value.code == 2
+
+
+def test_replace_within_dry_run_counts_without_write(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--within + --dry-runは書き込まず領域内件数のみ報告する。"""
+    target = tmp_path / "a.txt"
+    original = "foo\nKEY foo\n"
+    target.write_text(original, encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    rc = pyfltr.cli.main.run(["replace", "foo", "X", str(target), "--within", "KEY", "--dry-run", "--output-format=json"])
+
+    assert rc == 0
+    assert target.read_text(encoding="utf-8") == original
+    # 領域はKEY行のみ。領域内のfoo1件のみがカウントされ、行頭fooは含めない。
+    summary = json.loads(capsys.readouterr().out)["summary"]
+    assert summary["total_replacements"] == 1
+
+
+def test_replace_within_context_expands_region(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """-Cが-A/-Bへ展開され、アンカー前後行を領域へ含める。"""
+    target = tmp_path / "a.txt"
+    # KEYの前後1行（L1・L3）まで領域。L0・L4のfooは領域外で不変。
+    target.write_text("foo\nfoo\nKEY\nfoo\nfoo\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    rc = pyfltr.cli.main.run(["replace", "foo", "X", str(target), "--within", "KEY", "-C", "1"])
+
+    assert rc == 0
+    assert target.read_text(encoding="utf-8") == "foo\nX\nKEY\nX\nfoo\n"
+
+
+def test_replace_within_show_changes_limits_to_region(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--show-changesが領域内の置換レコードのみを返す。"""
+    target = tmp_path / "a.txt"
+    target.write_text("foo\nKEY foo\nfoo\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    rc = pyfltr.cli.main.run(["replace", "foo", "X", str(target), "--within", "KEY", "--show-changes", "--output-format=json"])
+
+    assert rc == 0
+    changes = json.loads(capsys.readouterr().out)["changes"][0]["changes"]
+    # 領域はKEY行（2行目）のみ。レコードも2行目1件に限定される。
+    assert [c["line"] for c in changes] == [2]
+
+
+def test_replace_within_excludes_match_crossing_region_boundary(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """領域境界を跨ぐマルチラインマッチは置換対象から除外される。"""
+    target = tmp_path / "a.txt"
+    # 領域はKEY行（2行目）のみ。改行を含む「o\nb」は2〜3行目に跨り領域外なので不変。
+    target.write_text("a\nKEY o\nb foo\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    # `o\nb`は2行目末尾から3行目へ跨る。領域（2行目のみ）へ完全包含されないため置換されない。
+    rc = pyfltr.cli.main.run(["replace", "o\\nb", "X", str(target), "--within", "KEY"])
+
+    # 跨りマッチが除外され置換0件となる。replaceは置換0件でも正常終了（rc=0）し、ファイルは不変。
+    assert rc == 0
+    assert target.read_text(encoding="utf-8") == "a\nKEY o\nb foo\n"
+
+
+def test_replace_within_undo_round_trip(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--withinの実書き込みをundoで元の内容へ復元できる。"""
+    target = tmp_path / "a.txt"
+    original = "foo\nKEY foo\n"
+    target.write_text(original, encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    rc = pyfltr.cli.main.run(["replace", "foo", "X", str(target), "--within", "KEY", "--output-format=json"])
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    replace_id = payload["summary"]["replace_id"]
+    # 領域はKEY行のみ（before/after=0）。領域内のfooのみ置換、行頭fooは不変。
+    assert target.read_text(encoding="utf-8") == "foo\nKEY X\n"
+
+    rc = pyfltr.cli.main.run(["replace", "--undo", replace_id])
+    assert rc == 0
+    assert target.read_text(encoding="utf-8") == original

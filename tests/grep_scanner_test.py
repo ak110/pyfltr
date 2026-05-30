@@ -3,6 +3,8 @@
 import pathlib
 import re
 
+import pytest
+
 import pyfltr.grep_.scanner
 import pyfltr.grep_.types
 import pyfltr.warnings_
@@ -157,6 +159,30 @@ def test_scan_files_decode_error_emits_warning(tmp_path: pathlib.Path) -> None:
     assert not records
     warnings = pyfltr.warnings_.collected_warnings()
     assert any(w["source"] == "grep" for w in warnings)
+
+
+@pytest.mark.parametrize(
+    ("text", "before", "after", "expected"),
+    [
+        # アンカー単独（B/A=0）は該当行のみ
+        ("a\nKEY\nb\n", 0, 0, [(1, 2)]),
+        # 前後コンテキストで周辺行を包含する
+        ("L0\nL1\nKEY\nL3\nL4\n", 2, 1, [(0, 4)]),
+        # 重複する範囲は1つへ統合する
+        ("KEY\nx\nKEY\n", 1, 1, [(0, 3)]),
+        # 隣接する範囲（半開区間で連続）は1つへ統合する
+        ("KEY\nKEY\n", 0, 0, [(0, 2)]),
+        # 先頭・末尾境界はファイル範囲へクランプする
+        ("KEY\nL1\n", 3, 3, [(0, 2)]),
+        # アンカー不一致時は空
+        ("a\nb\nc\n", 1, 1, []),
+    ],
+)
+def test_compute_block_ranges(text: str, before: int, after: int, expected: list[tuple[int, int]]) -> None:
+    """アンカーと前後コンテキストから行範囲集合を算出し、重複・隣接を統合する。"""
+    anchor = re.compile(r"KEY")
+    result = pyfltr.grep_.scanner.compute_block_ranges(text, anchor, before_context=before, after_context=after)
+    assert result == expected
 
 
 def test_filter_files_by_type_python() -> None:

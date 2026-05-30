@@ -79,6 +79,9 @@ pnpm-audit = true
 外部脆弱性データベースへ問い合わせるためネットワーク接続が必須で結果が変動する。
 yarn berry（2+）利用時は`yarn-audit-args = ["npm", "audit", "--json"]`へ上書きする。
 
+監査結果はコード変更と無関係に変動するため、コミット毎ではなく定期実行に向く。
+監査ツールのみをまとめて実行する場合は`--commands=audit`を指定し、`schedule`トリガーの専用ワークフローへ切り出す構成を推奨する。
+
 ## Rustプロジェクト
 
 `cargo fmt` / `cargo clippy` / `cargo test` / `cargo deny`と、

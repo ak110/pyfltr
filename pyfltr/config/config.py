@@ -727,6 +727,10 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
             "yarn-audit",
         ],
         "test": ["pytest", "vitest", "cargo-test", "dotnet-test"],
+        # 依存の脆弱性監査ツールのみを切り出すグループ。lintエイリアスにも含まれるが、
+        # 監査だけを定期実行する運用（CIスケジュール等）で個別指定の手間を省く。
+        # 並び順は.claude/rules/order.mdの監査ツール配置順に揃える。
+        "audit": ["uv-audit", "pnpm-audit", "npm-audit", "yarn-audit"],
     },
 }
 """デフォルト設定。"""

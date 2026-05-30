@@ -163,6 +163,12 @@ uv-audit = true
 
 既定引数`uv-audit-args = ["audit", "--frozen", "--no-progress"]`は`--frozen`を含み、監査時に`uv.lock`を書き換えない。
 
+脆弱性監査の結果はコード変更と無関係に外部データベースの更新で変動する。
+このためコミット毎やpre-commitではなく、日次・週次の定期実行に向く。
+監査ツールのみをまとめて実行する場合は`--commands=audit`を指定する。
+GitHub Actionsでは`schedule`トリガーの専用ワークフローへ切り出し、
+通常のpush/PR用CIへ混在させない構成を推奨する。
+
 ### JS/TSを併用するプロジェクトでの推奨設定
 
 JS/TSを併用するプロジェクトでは、`js-runner`をプロジェクトのパッケージマネージャーに合わせる。

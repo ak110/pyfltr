@@ -462,6 +462,9 @@ async def _tool_replace(
     word_regexp: bool = False,
     line_regexp: bool = False,
     multiline: bool = False,
+    within: str | None = None,
+    before_context: int = 0,
+    after_context: int = 0,
     types: list[str] | None = None,
     globs: list[str] | None = None,
     encoding: str = "utf-8",
@@ -489,6 +492,12 @@ async def _tool_replace(
         word_regexp: 単語境界で囲まれたマッチのみ採用する。
         line_regexp: 行全体に一致したマッチのみ採用する。
         multiline: マルチラインマッチを有効化する。
+        within: アンカー正規表現。指定時はアンカー行と前後コンテキスト
+            （`before_context`/`after_context`）で定まる領域内のみ置換する。
+        before_context: `within`領域でアンカー行の前に含める行数（CLIの`-B`相当、既定0でアンカー行のみ）。
+            `within`なしで指定した場合はエラーとなる。
+        after_context: `within`領域でアンカー行の後に含める行数（CLIの`-A`相当、既定0でアンカー行のみ）。
+            `within`なしで指定した場合はエラーとなる。
         types: 対象言語タイプの一覧。
         globs: globパターンでの対象限定一覧。
         encoding: ファイル読み込み・書き込み時のエンコーディング（既定: utf-8）。
@@ -501,6 +510,13 @@ async def _tool_replace(
     if not paths:
         _raise_mcp_error("paths を 1 件以上指定してください。")
 
+    # CLIの`-A`/`-B`/`-C`拒否方針と対称に、`within`なしのコンテキスト指定を拒否する。
+    if within is None and (before_context or after_context):
+        _raise_mcp_error("before_context / after_context は within と併用してください。")
+    # `within`は行範囲で領域を定めるためマルチラインとは併用不可。
+    if within is not None and multiline:
+        _raise_mcp_error("within と multiline は併用できません。")
+
     # warnings_はモジュールグローバルに蓄積するため、リクエスト開始時に初期化する
     pyfltr.warnings_.clear()
     try:
@@ -512,6 +528,19 @@ async def _tool_replace(
             word_regexp=word_regexp,
             line_regexp=line_regexp,
             multiline=multiline,
+        )
+        anchor = (
+            pyfltr.grep_.matcher.compile_pattern(
+                [within],
+                fixed_strings=fixed_strings,
+                ignore_case=ignore_case,
+                smart_case=smart_case,
+                word_regexp=word_regexp,
+                line_regexp=line_regexp,
+                multiline=False,
+            )
+            if within is not None
+            else None
         )
     except ValueError as exc:
         _raise_mcp_error(str(exc))
@@ -554,12 +583,23 @@ async def _tool_replace(
             except OSError:
                 continue
         try:
-            before, after, count, records = pyfltr.grep_.replacer.apply_replace_to_file(
-                file,
-                compiled,
-                replacement,
-                encoding=encoding,
-            )
+            if anchor is not None:
+                before, after, count, records = pyfltr.grep_.replacer.apply_block_replace_to_file(
+                    file,
+                    compiled,
+                    replacement,
+                    anchor,
+                    before_context=before_context,
+                    after_context=after_context,
+                    encoding=encoding,
+                )
+            else:
+                before, after, count, records = pyfltr.grep_.replacer.apply_replace_to_file(
+                    file,
+                    compiled,
+                    replacement,
+                    encoding=encoding,
+                )
         except (UnicodeDecodeError, OSError):
             continue
         if count == 0:

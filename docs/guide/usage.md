@@ -463,8 +463,10 @@ pyfltr ci --commands=ruff-check,markdownlint [files and/or directories ...]
     - JS/TS系: `eslint` `biome` `oxlint` `tsc`
     - Rust系: `cargo-clippy` `cargo-check` `cargo-deny`
     - .NET系: `dotnet-build`
+    - 監査系: `uv-audit` `pnpm-audit` `npm-audit` `yarn-audit`
     - その他: `ec` `shellcheck` `typos` `actionlint`
 - `test`: `pytest` `vitest` `cargo-test` `dotnet-test`
+- `audit`: `uv-audit` `pnpm-audit` `npm-audit` `yarn-audit`
 - `fast`: per-commandの`{cmd}-fast`フラグがtrueのコマンド
 
 ※ `pyproject.toml`の`[tool.pyfltr]`で無効になっているコマンドは無視される。

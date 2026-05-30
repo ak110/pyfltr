@@ -36,7 +36,7 @@ ALL_SUBCOMMANDS: tuple[str, ...] = (
 )
 """全サブコマンド。shell completionスクリプト生成時に参照される。"""
 
-_STATIC_COMMAND_ALIASES: tuple[str, ...] = ("format", "lint", "test")
+_STATIC_COMMAND_ALIASES: tuple[str, ...] = ("format", "lint", "test", "audit")
 """組み込みで必ず定義されるコマンドエイリアス。ユーザー設定のカスタムエイリアスは含まない。
 
 ツール名プリフライト（個別ツール限定実行への誘導）の検出集合に含める。

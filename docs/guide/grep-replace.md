@@ -85,12 +85,29 @@ pyfltr replace --undo <replace_id>
 - replace固有:
     - `--dry-run`: 書き込みせず差分のみ表示
     - `--show-changes`: 各置換箇所の前後行を表示
+    - `--within ANCHOR`: アンカー正規表現の行と前後（`-A`/`-B`/`-C`）で定まる領域内のみ置換する
+    - `-A`/`-B`/`-C N`: `--within`領域の前後幅（`--within`と併用必須）
     - `--exclude-file PATH`: 特定ファイルを置換対象から除外（複数指定可）
     - `--from-grep PATH`: grep出力JSONLを再入力し、対象ファイル集合を限定する
     - `--undo [<replace_id>]`: 過去のreplaceを取り消す（`pattern`位置に履歴IDを渡す）
     - `--force`: undo時のハッシュ不一致を無視して強制復元
     - `--list-history`: 保存済み履歴一覧を表示
     - `--show-history <id>`: 指定履歴の詳細を表示
+
+### ブロック内限定置換（--within）
+
+`--within`はアンカー正規表現にマッチした行と前後コンテキストで定まる領域内のみを置換対象とする。
+領域幅は`-A`/`-B`/`-C`で指定する。sedの範囲アドレスに相当し、特定ブロック外を変更せずに書き換えたいときに使う。
+
+```shell
+# 「[section]」を含む行の前後2行の範囲内だけ「old」を「new」へ置換する
+pyfltr replace "old" "new" config.toml --within "\[section\]" -C 2
+```
+
+- アンカーは検索側フラグ（`-i`/`-w`等）を共用する。アンカー専用のフラグは無い
+- `--within`と`-U/--multiline`は併用できない（領域は行範囲で定めるため）
+- `-A`/`-B`/`-C`は`--within`と併用必須。`--within`なしで指定するとエラーになる
+- 置換件数（`count`）は領域内で実置換した件数で、領域外のマッチは含めない
 
 ### undo（取り消し）
 
@@ -128,8 +145,11 @@ pyfltr replace --undo <replace_id>
 `pyfltr mcp`サーバーは`grep`・`replace`・`replace_undo`の3ツールを公開する。
 
 - `grep(pattern, paths, ...)`: ファイル横断検索
-- `replace(pattern, replacement, paths, dry_run=True, ...)`: 横断置換。
-  **`dry_run`の既定値は`True`**（CLI既定の`False`と異なり、LLM暴発防止）
+- `replace(pattern, replacement, paths, dry_run=True, within=None, ...)`: 横断置換。
+  **`dry_run`の既定値は`True`**（CLI既定の`False`と異なり、LLM暴発防止）。
+  `within`にアンカー正規表現を渡すと、`before_context`/`after_context`で定まる領域内のみ置換する（CLIの`--within`相当）
 - `replace_undo(replace_id, force=False)`: 取り消し
 
 LLMエージェントは`replace`を呼ぶ際、明示的に`dry_run=False`を指定しない限り実書き込みされない。
+`within`なしで`before_context`/`after_context`を渡した場合と、
+`within`と`multiline`を併用した場合は、いずれもエラーを返す。

@@ -10,6 +10,7 @@ import argparse
 import json
 import logging
 import pathlib
+import re
 import sys
 import typing
 
@@ -70,6 +71,28 @@ def register_subparsers(subparsers: typing.Any) -> None:
     parser.add_argument("-w", "--word-regexp", action="store_true", help="単語境界で囲まれたマッチのみ採用する。")
     parser.add_argument("-x", "--line-regexp", action="store_true", help="行全体に一致したマッチのみ採用する。")
     parser.add_argument("-U", "--multiline", action="store_true", help="マルチラインマッチを有効化する。")
+    # ブロック内限定置換（sedの範囲アドレス相当）。`--within`でアンカーを指定し、
+    # アンカー行＋前後コンテキスト（`-A`/`-B`/`-C`）で定まる行範囲内のみ置換する。
+    parser.add_argument(
+        "--within",
+        default=None,
+        metavar="ANCHOR",
+        help="アンカー正規表現にマッチした行とその前後（`-A`/`-B`/`-C`）で定まる領域内のみ置換する。",
+    )
+    parser.add_argument(
+        "-A", "--after-context", type=int, default=0, metavar="N", help="`--within`領域のアンカー行の後ろN行を含める。"
+    )
+    parser.add_argument(
+        "-B", "--before-context", type=int, default=0, metavar="N", help="`--within`領域のアンカー行の前N行を含める。"
+    )
+    parser.add_argument(
+        "-C",
+        "--context",
+        type=int,
+        default=None,
+        metavar="N",
+        help="`--within`領域のアンカー行の前後N行を含める（`-A`/`-B`を一括指定）。",
+    )
     parser.add_argument(
         "--type",
         action="append",
@@ -199,6 +222,14 @@ def execute_replace(parser: argparse.ArgumentParser, args: argparse.Namespace) -
     if args.pattern is None or args.replacement is None:
         parser.error("`pattern`と`replacement`の両方を指定してください。")
 
+    # `--within`なしの`-A`/`-B`/`-C`はgrepからの引数転用時に意味差で誤動作させるため拒否する。
+    # grepでは表示コンテキスト幅、replaceでは`--within`領域幅と意味が異なる。
+    if args.within is None and (args.after_context or args.before_context or args.context is not None):
+        parser.error("`-A`/`-B`/`-C` は `--within` と併用してください。")
+    # `--within`は行範囲で領域を定めるため、行境界を跨ぐマルチライン検索とは併用不可。
+    if args.within is not None and args.multiline:
+        parser.error("`--within` と `-U/--multiline` は併用できません。")
+
     try:
         compiled = pyfltr.grep_.matcher.compile_pattern(
             [args.pattern],
@@ -211,6 +242,29 @@ def execute_replace(parser: argparse.ArgumentParser, args: argparse.Namespace) -
         )
     except ValueError as exc:
         parser.error(str(exc))
+
+    # `--within`指定時はアンカーを検索側フラグ共用でコンパイルする。アンカー専用フラグは設けない。
+    anchor: re.Pattern[str] | None = None
+    before_ctx = args.before_context
+    after_ctx = args.after_context
+    if args.within is not None:
+        if args.context is not None:
+            if after_ctx == 0:
+                after_ctx = args.context
+            if before_ctx == 0:
+                before_ctx = args.context
+        try:
+            anchor = pyfltr.grep_.matcher.compile_pattern(
+                [args.within],
+                fixed_strings=args.fixed_strings,
+                ignore_case=args.ignore_case,
+                smart_case=args.smart_case,
+                word_regexp=args.word_regexp,
+                line_regexp=args.line_regexp,
+                multiline=False,
+            )
+        except ValueError as exc:
+            parser.error(str(exc))
 
     try:
         config = pyfltr.config.config.load_config()
@@ -265,12 +319,23 @@ def execute_replace(parser: argparse.ArgumentParser, args: argparse.Namespace) -
             except OSError:
                 continue
         try:
-            before, after, count, records = pyfltr.grep_.replacer.apply_replace_to_file(
-                file,
-                compiled,
-                args.replacement,
-                encoding=args.encoding,
-            )
+            if anchor is not None:
+                before, after, count, records = pyfltr.grep_.replacer.apply_block_replace_to_file(
+                    file,
+                    compiled,
+                    args.replacement,
+                    anchor,
+                    before_context=before_ctx,
+                    after_context=after_ctx,
+                    encoding=args.encoding,
+                )
+            else:
+                before, after, count, records = pyfltr.grep_.replacer.apply_replace_to_file(
+                    file,
+                    compiled,
+                    args.replacement,
+                    encoding=args.encoding,
+                )
         except (UnicodeDecodeError, OSError) as exc:
             sys.stderr.write(f"warning: 読み込みに失敗したためスキップしました: {file}: {exc}\n")
             read_failures += 1
