@@ -54,6 +54,11 @@ description: >
   キャッシュルートの解決ロジック
 - `pyfltr/config/config.py`の`DEFAULT_CONFIG`:
   設定キー体系・既定値・runner方針
+- `pyfltr/config/config.py`の`is_command_enabled_anywhere`:
+  実行対象コマンドの有効（ON/OFF）判定。モノレポでは起点と各サブプロジェクトの和集合で判定する。
+  `cli/pipeline.py`の実行対象フィルタ・`state/executor.py`の`split_commands_for_execution`・
+  `config/config.py`の`filter_fix_commands`・`output/ui.py`のタブ生成とサマリー行追加で共用する。
+  これらの箇所で`config.values.get(cmd)`・`config[cmd]`を直接参照せず本関数を経由する
 - `pyfltr/command/runner.py`の`_BIN_TOOL_SPEC` / `build_commandline`:
   mise backend既定値・tool spec組み立て・active tools省略判定
 - `pyfltr/command/mise.py`の`MiseActiveToolsResult` / `MiseActiveToolsStatus`:
