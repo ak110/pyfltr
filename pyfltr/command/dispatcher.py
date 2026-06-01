@@ -279,8 +279,7 @@ def _prepare_execution_params(
     if args.shuffle and not fix_stage:
         random.shuffle(targets)
     else:
-        # natsort.natsortedの型ヒントが不十分でtyがunion型へ縮めるためcastで明示。
-        targets = typing.cast("list[pathlib.Path]", natsort.natsorted(targets, key=str))
+        targets = natsort.natsorted(targets, key=str)
 
     # fixステージでは当該コマンドのfix-argsを引用してfix経路に分岐する。
     # fix-args未定義のformatterは通常経路を通る（通常実行でもファイルを書き換えるため挙動は同じ）。

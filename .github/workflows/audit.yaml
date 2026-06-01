@@ -48,20 +48,20 @@ jobs:
         # load_configはproject未指定キーにglobal値を残すため、uv-auditがtrueになる。
         # severity未指定（error）で、脆弱性検出時はCIを失敗させる。
         # 本リポはPython専用でpackage.jsonを持たないため、auditグループ全体ではなくuv-audit単独を指定する。
-        # JSONL出力をログへ保存し、uv-auditのcommandレコードが実際に出力された（スキップではなく
-        # 起動した）ことを同一ステップ内のgrep検証で確かめる。設定読み込み失敗等で監査が無言スキップ
-        # された場合にジョブが成功扱いになる事態を防ぐ。
+        # 出力はci.yamlと揃えてgithub-annotations形式とし、脆弱性をAnnotationsへ表示する。
+        # github-annotations形式は実行時にsummaryへuv-audit行を出力する。設定読み込み失敗等で
+        # 監査が無言スキップされた場合はこの行が出ないため、出力中のuv-audit出現で起動を確かめる。
         run: |
           set -euo pipefail
           audit_config="${RUNNER_TEMP}/pyfltr-audit-config.toml"
-          audit_log="${RUNNER_TEMP}/pyfltr-audit.jsonl"
+          audit_log="${RUNNER_TEMP}/pyfltr-audit.log"
           printf '[tool.pyfltr]\nuv-audit = true\n' > "${audit_config}"
           # 脆弱性検出時はpyfltrがexit 1を返す。検証ステップへ到達させるため終了コードを保持する。
           audit_rc=0
-          PYFLTR_GLOBAL_CONFIG="${audit_config}" uv run pyfltr ci --commands=uv-audit --output-format=jsonl \
+          PYFLTR_GLOBAL_CONFIG="${audit_config}" uv run pyfltr ci --commands=uv-audit --output-format=github-annotations \
             | tee "${audit_log}" || audit_rc=$?
-          # JSONLのキー出現順に依存しないよう、commandフィールド単体で検証する。
-          if ! grep -q '"command":"uv-audit"' "${audit_log}"; then
+          # 監査が起動すればsummary行などに必ずuv-auditが出る。出ない場合は無言スキップとみなす。
+          if ! grep -q 'uv-audit' "${audit_log}"; then
             echo "::error::uv-audit が実行されませんでした（設定読み込み失敗などでスキップされた可能性があります）。"
             exit 1
           fi

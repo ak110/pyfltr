@@ -1206,7 +1206,7 @@ def _parse_vitest_json(output: str) -> list[ErrorLocation]:
 
     入力はJest互換のJSONで、`pyfltr.command.vitest.execute_vitest`が
     `--outputFile.json=<tmpfile>` で取得したファイル内容を文字列として渡す。
-    テキスト出力のregex解析より構造化情報が安定して得られる経路を採る
+    テキスト出力のregex解析より構造化情報が安定して得られる経路を採用する
     （Vitestデフォルト出力はバージョン差・カラー制御文字・テスト名のネスト表示など変動要素が多い）。
 
     出力構造の主要部分::

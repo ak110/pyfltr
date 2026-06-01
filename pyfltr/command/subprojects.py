@@ -138,7 +138,7 @@ def discover_subprojects(
         workspace_root = workspace_members.get(cwd)
         subprojects.append(Subproject(cwd=cwd, relative=rel_str, uv_workspace_root=workspace_root))
 
-    subprojects = typing.cast("list[Subproject]", natsort.natsorted(subprojects, key=lambda s: s.relative))
+    subprojects = natsort.natsorted(subprojects, key=lambda s: s.relative)
     return subprojects
 
 

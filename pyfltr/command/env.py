@@ -167,7 +167,7 @@ def build_subprocess_env(
         env = build_mise_subprocess_env(env)
     # サプライチェーン攻撃対策: パッケージ取得系ツールの最小待機期間を既定で設定する。
     # ユーザーが既に設定している場合はその値を尊重する。
-    # pnpmはnpm互換のconfig環境変数方式 （NPM_CONFIG_<SNAKE_CASE>） を採る。
+    # pnpmはnpm互換のconfig環境変数方式 （NPM_CONFIG_<SNAKE_CASE>） を採用する。
     env.setdefault("UV_EXCLUDE_NEWER", "1 day")
     env.setdefault("NPM_CONFIG_MINIMUM_RELEASE_AGE", "1440")
     env["PYTHONIOENCODING"] = "utf-8"

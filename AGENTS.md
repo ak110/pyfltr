@@ -1,8 +1,8 @@
-# CLAUDE.md: pyfltr
+# AGENTS.md: pyfltr
 
 Python/Rust/.NET/TypeScript・JavaScript/ドキュメントなど多言語プロジェクトの
 formatter・linter・testerを単一コマンドで並列実行するCLIツール。
-JSON Lines出力（`--output-format=jsonl`）とMCPサーバー（`pyfltr mcp`）でコーディングエージェント運用にも対応する。
+JSON Lines出力（`--output-format=jsonl`）とMCPサーバー（`pyfltr mcp`）でコーディングエージェント運用に対応する。
 
 ## 開発手順
 
@@ -25,7 +25,7 @@ format別のlogger stream/level切替の詳細は[docs/development/architecture.
 ## 実装上の不変条件
 
 - `subproject_aware=True`ツールはサブプロジェクトループの内側で動く前提で実装する。
-  ツール起動時のcwdは`ExecutionContext.subproject_cwd`（指定時）または起点cwdを採る
+  ツール起動時のcwdは`ExecutionContext.subproject_cwd`（指定時）または起点cwdを採用する
 - subprocess・git・mise・ファイル走査などcwd依存処理はプロセスのcwdに依存しない実装にする。
   `subprocess.Popen(cwd=...)`の引数、または`start_cwd`・`base_cwd`・`cwd`等の
   明示引数でcwdを渡す。`os.chdir()`でグローバル状態を変更しない

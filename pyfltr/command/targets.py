@@ -249,7 +249,7 @@ def _filter_by_gitignore(paths: list[pathlib.Path], *, cwd: pathlib.Path | None 
 
     サブプロセスのreturncodeが0でも1でもない場合は`emit_warning`でstderrを通知する。
     `logger.debug`のみで全パスを素通しさせるサイレントなフォールバックは
-    .gitignore除外スキップを覆い隠す不具合の温床となるため採用しない。
+    .gitignore除外スキップを隠蔽する不具合の原因となるため採用しない。
     stdoutで返ってきた部分結果はignored判定として活用する。
     """
     if not paths:
@@ -295,7 +295,7 @@ def _filter_by_gitignore(paths: list[pathlib.Path], *, cwd: pathlib.Path | None 
         return paths
     if result.returncode not in (0, 1):
         # 0: 1つ以上ignored, 1: 全てnot ignored, 128等: fatal error。
-        # サイレント素通しは.gitignore除外スキップを覆い隠すため emit_warning で通知し、
+        # サイレント素通しは.gitignore除外スキップを隠蔽するため emit_warning で通知し、
         # stdoutで返ってきた部分結果はignored判定として活用する。
         stderr_msg = result.stderr.strip() if result.stderr else ""
         detail = f": {stderr_msg}" if stderr_msg else ""
