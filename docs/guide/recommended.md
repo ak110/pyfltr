@@ -168,6 +168,9 @@ uv-audit = true
 監査ツールのみをまとめて実行する場合は`--commands=audit`を指定する。
 GitHub Actionsでは`schedule`トリガーの専用ワークフローへ切り出し、
 通常のpush/PR用CIへ混在させない構成を推奨する。
+SARIF出力（`--output-format=sarif`）と`github/codeql-action/upload-sarif`を
+組み合わせると、GitHub Code Scanningにアラート管理を委ねられる。
+同一の脆弱性は1件のアラートに集約され、解消後の定期実行で自動クローズされる。
 
 ### JS/TSを併用するプロジェクトでの推奨設定
 

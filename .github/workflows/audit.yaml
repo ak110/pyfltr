@@ -3,6 +3,8 @@ name: Audit
 # 依存の脆弱性監査（uv audit）を定期実行する。監査は外部脆弱性データベースへ
 # 問い合わせるため結果がコード変更と無関係に変動する。push/PR毎のCIには載せず、
 # スケジュール実行と手動実行に限定する。
+# 検出結果はSARIF形式でGitHub Code Scanningへアップロードする。
+# 同一の脆弱性は1件のアラートに集約され、解消後の定期実行で自動クローズされる。
 on:
   schedule:
     # 毎日 06:00 UTC（JST 15:00）に実行する。
@@ -11,6 +13,7 @@ on:
 
 permissions:
   contents: read
+  security-events: write
 
 concurrency:
   group: audit-${{ github.ref }}
@@ -46,23 +49,42 @@ jobs:
         # uv-auditはネットワーク必須で結果が変動するため、pyproject.tomlでは有効化していない。
         # この定期ジョブだけで有効化するため、一時グローバル設定をPYFLTR_GLOBAL_CONFIGで読ませる。
         # load_configはproject未指定キーにglobal値を残すため、uv-auditがtrueになる。
-        # severity未指定（error）で、脆弱性検出時はCIを失敗させる。
+        # severity未指定（error）で、脆弱性検出時はexit 1を返す。
         # 本リポはPython専用でpackage.jsonを持たないため、auditグループ全体ではなくuv-audit単独を指定する。
-        # 出力はci.yamlと揃えてgithub-annotations形式とし、脆弱性をAnnotationsへ表示する。
-        # github-annotations形式は実行時にsummaryへuv-audit行を出力する。設定読み込み失敗等で
-        # 監査が無言スキップされた場合はこの行が出ないため、出力中のuv-audit出現で起動を確かめる。
+        # SARIF出力をファイルへ保存し、後続ステップでCode Scanningへアップロードする。
         run: |
           set -euo pipefail
           audit_config="${RUNNER_TEMP}/pyfltr-audit-config.toml"
-          audit_log="${RUNNER_TEMP}/pyfltr-audit.log"
           printf '[tool.pyfltr]\nuv-audit = true\n' > "${audit_config}"
-          # 脆弱性検出時はpyfltrがexit 1を返す。検証ステップへ到達させるため終了コードを保持する。
+          # 脆弱性検出時はpyfltrがexit 1を返す。後続ステップへ到達させるため終了コードを保持する。
           audit_rc=0
-          PYFLTR_GLOBAL_CONFIG="${audit_config}" uv run pyfltr ci --commands=uv-audit --output-format=github-annotations \
-            | tee "${audit_log}" || audit_rc=$?
-          # 監査が起動すればsummary行などに必ずuv-auditが出る。出ない場合は無言スキップとみなす。
-          if ! grep -q 'uv-audit' "${audit_log}"; then
-            echo "::error::uv-audit が実行されませんでした（設定読み込み失敗などでスキップされた可能性があります）。"
+          PYFLTR_GLOBAL_CONFIG="${audit_config}" uv run pyfltr ci --commands=uv-audit --output-format=sarif \
+            > "${RUNNER_TEMP}/audit.sarif" || audit_rc=$?
+          # SARIFにuv-auditのrunが含まれることを検証する。
+          # 設定読み込み失敗等でuv-auditが無言スキップされた場合はrunが存在しない。
+          if ! jq -e '.runs[] | select(.tool.driver.name == "uv-audit")' \
+               "${RUNNER_TEMP}/audit.sarif" > /dev/null 2>&1; then
+            echo "::error::uv-audit が実行されませんでした（SARIFにuv-auditのrunが含まれていません）。"
             exit 1
           fi
-          exit "${audit_rc}"
+          # pyfltrは全失敗をexit 1に正規化するため、終了コードだけでは脆弱性検出と
+          # ツール異常を区別できない。非0時はSARIFの検出結果有無で分岐する。
+          if [ "${audit_rc}" -ne 0 ]; then
+            if jq -e '.runs[] | select(.tool.driver.name == "uv-audit") | .results | length > 0' \
+                 "${RUNNER_TEMP}/audit.sarif" > /dev/null 2>&1; then
+              # 脆弱性検出: SARIFをアップロードしCode Scanningに委ねる（次ステップ）。
+              # ワークフローは成功扱いとする（Code Scanning側でアラートを管理するため）。
+              echo "脆弱性が検出されました。Code Scanningへアップロードします。"
+            else
+              # ツール異常: 空のSARIFをアップロードすると既存アラートが誤クローズされるため、
+              # アップロードせずワークフローを失敗させる。
+              echo "::error::uv-audit の実行に失敗しました（SARIFに検出結果がありません）。"
+              exit 1
+            fi
+          fi
+
+      - name: SARIFをCode Scanningへアップロード
+        uses: github/codeql-action/upload-sarif@03e4368ac7daa2bd82b3e85262f3bf87ee112f57 # v3.36.0
+        with:
+          sarif_file: ${{ runner.temp }}/audit.sarif
+          category: uv-audit
