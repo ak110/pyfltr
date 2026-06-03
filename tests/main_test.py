@@ -599,6 +599,16 @@ def test_invalid_subcommand_prints_main_help(capsys):
     assert "<subcommand>" in err
 
 
+def test_help_contains_description(capsys):
+    """--help出力にdescription（並列実行・エージェント対応）が含まれること。"""
+    with pytest.raises(SystemExit) as exc_info:
+        pyfltr.cli.main.run(["--help"])
+    assert exc_info.value.code == 0
+    out = capsys.readouterr().out
+    assert "並列実行" in out
+    assert "コーディングエージェント" in out
+
+
 def test_precommit_guidance_skipped_for_jsonl_and_sarif_stdout_only(monkeypatch, capsys):
     """構造化stdoutモード（jsonl/sarif）ではstderrへ漏らさない。
 

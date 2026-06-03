@@ -267,6 +267,11 @@ def build_parser(custom_commands: collections.abc.Iterable[str] = ()) -> "_HelpO
     argparseエラー時に該当parserの `--help` 相当をまとめてstderrへ出力する。
     """
     parser = _HelpOnErrorArgumentParser(
+        description=(
+            "多言語プロジェクトの formatter・linter・tester を単一コマンドで実行する。"
+            "linter・tester は並列実行する。"
+            "JSON Lines 出力と MCP サーバーでコーディングエージェント運用に対応する。"
+        ),
         epilog=(
             "サブコマンド:\n"
             "  ci               CI モードで実行する。フォーマッターの変更も失敗扱い。\n"
