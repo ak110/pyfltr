@@ -449,9 +449,14 @@ javascript = true
     - 2段階実行の詳細は「prettierの2段階実行」を参照
 - biome:
     - `biome-args = ["check", "--reporter=github"]`（`check`サブコマンドと機械可読出力を共通argsで常時適用）
-    - `biome-fix-args = ["--write"]`（safe fixのみ。unsafe fixを使う場合は`["--write", "--unsafe"]`に上書き）
+    - `biome-fix-args = ["--write", "--unsafe"]`（ruffの`--unsafe-fixes`採用方針に準拠）
+    - safe fixのみに戻したい場合は`biome-fix-args = ["--write"]`に上書き
     - 注: `biome-args`の先頭からサブコマンド（`check` / `lint` / `format`）を外すとbiomeがhelp表示で失敗する。
       必ずサブコマンド名を残すこと
+    - 注: unsafe fix適用可能な診断はbiomeが`::notice`（info）として出力する。
+      pyfltrの出力（JSONL・github-annotations等）にもinfoとして反映する。
+      biome公式設計でinfoは終了コードに影響しないため、CIの失敗扱いにはならない。
+      個別ルールをCIの失敗対象に変更したい場合は`biome.json`の`linter.rules.*`でseverityを上げる
 
 ### oxlint / tsc / vitest
 

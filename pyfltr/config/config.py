@@ -292,8 +292,12 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "biome-args": ["check"],
     "biome-fast": True,
     # fixモード時に通常argsの後に追加する引数。
-    # `biome check --write`でsafe fixのみ適用する（--unsafeは含めない）。
-    "biome-fix-args": ["--write"],
+    # ruffの`--unsafe-fixes`採用方針と揃え、safe/unsafe両方のfixを自動適用する。
+    # unsafe fix適用可能な診断はbiomeが`::notice`（info）として出力するが、
+    # biome公式設計でinfoは終了コードに影響しない。
+    # 個別ルールをCIの失敗対象に変更したい場合は`biome.json`の`linter.rules.*`で
+    # severityを上げる（pyfltr側はinfoを失敗扱いに昇格させない）。
+    "biome-fix-args": ["--write", "--unsafe"],
     # -- js-runner対応ツール（追加分） --
     "oxlint": False,
     "oxlint-path": "",
@@ -529,6 +533,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # ruff-format実行時にruff check --fix --unsafe-fixesを先に実行するか。
     # 既定では有効とし、未整形のimportソートや安全に自動修正できるlint違反を
     # フォーマットと一緒に片付ける（ruff公式推奨ワークフローの発展形）。
+    # unsafe fix採用方針はbiome側（`biome-fix-args`）と統一する。
     # lintエラーは別途ruff-checkで検出される前提のため、ステップ1の
     # lint violation（exit 1）はruff-format側では失敗扱いしない。
     "ruff-format-by-check": True,
@@ -540,6 +545,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "ruff-check-fast": True,
     # fixモード時に通常argsの後に追加する引数。
     # `ruff check --fix --unsafe-fixes`でautofix可能な違反を修正する。
+    # unsafe fix採用方針はbiome側（`biome-fix-args`）と統一する。
     # （通常モードのruff-format-by-checkとは別経路で動作する）
     "ruff-check-fix-args": ["--fix", "--unsafe-fixes"],
     # 実行アーカイブ（v3.0.0追加）

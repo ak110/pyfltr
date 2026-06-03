@@ -194,8 +194,8 @@ def test_biome_lint_mode_uses_check_and_github_reporter(mocker, tmp_path: pathli
     assert "--write" not in cmdline
 
 
-def test_biome_fix_mode_appends_write_and_keeps_reporter(mocker, tmp_path: pathlib.Path) -> None:
-    """biomeのfixモードで`--write`が付いても`--reporter=github`は維持される。"""
+def test_biome_fix_mode_appends_write_and_unsafe_and_keeps_reporter(mocker, tmp_path: pathlib.Path) -> None:
+    """biomeのfixモードで`--write`と`--unsafe`が付与され`--reporter=github`は維持される。"""
     target = tmp_path / "sample.ts"
     target.write_text("const x = 1;\n")
 
@@ -213,8 +213,10 @@ def test_biome_fix_mode_appends_write_and_keeps_reporter(mocker, tmp_path: pathl
     assert "check" in cmdline
     assert "--reporter=github" in cmdline
     assert "--write" in cmdline
-    # checkは共通argsなので--writeより前
+    assert "--unsafe" in cmdline
+    # checkは共通argsなので--write / --unsafeより前
     assert cmdline.index("check") < cmdline.index("--write")
+    assert cmdline.index("check") < cmdline.index("--unsafe")
 
 
 # Rust / .NET言語ツールの実行テスト。

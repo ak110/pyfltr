@@ -102,6 +102,23 @@ import pyfltr.command.error_parser
             "src/bar.ts",
             5,
         ),
+        # biome --reporter=github (notice = info)。unsafe fix提案はnoticeとして出力される
+        (
+            "biome",
+            "::notice title=lint/complexity/useLiteralKeys,file=src/baz.ts,"
+            "line=810,endLine=810,col=49,endColumn=56::Use a literal key instead.",
+            1,
+            "src/baz.ts",
+            810,
+        ),
+        # biome --reporter=github (未知severity)。`error|warning|notice`以外はマッチしない
+        (
+            "biome",
+            "::unknown title=lint/foo/bar,file=src/qux.ts,line=1,endLine=1,col=1,endColumn=2::msg",
+            0,
+            None,
+            None,
+        ),
         # パースできないコマンド
         (
             "unknown",
@@ -126,6 +143,31 @@ def test_parse_errors(
         assert errors[0].file == expected_first_file
         assert errors[0].line == expected_first_line
         assert errors[0].command == command
+
+
+@pytest.mark.parametrize(
+    "raw_severity,expected_severity",
+    [
+        ("error", "error"),
+        ("warning", "warning"),
+        ("notice", "info"),
+    ],
+)
+def test_parse_errors_biome_severity(raw_severity: str, expected_severity: str) -> None:
+    """biome `--reporter=github`のseverity（error/warning/notice）を3値モデルへ正規化する。
+
+    `::notice`はbiomeがunsafe fix適用可能な診断に付与するseverityで、pyfltr側ではinfoとして公開する。
+    あわせてmessage本文（unsafe fix提案文を含む）が欠落せず保持されることを全ケースで確認する。
+    """
+    message_text = "Use a literal key instead."
+    output = (
+        f"::{raw_severity} title=lint/complexity/useLiteralKeys,file=src/baz.ts,"
+        f"line=810,endLine=810,col=49,endColumn=56::{message_text}"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("biome", output)
+    assert len(errors) == 1
+    assert errors[0].severity == expected_severity
+    assert errors[0].message == message_text
 
 
 def test_parse_errors_eslint_json() -> None:

@@ -182,8 +182,10 @@ _BUILTIN_PATTERNS: dict[str, str] = {
     # biome --reporter=github出力例（実機確認済み、lineとcolの間にendLineが介在する）:
     # ::error title=lint/suspicious/noDoubleEquals,file=src/foo.ts,line=1,endLine=1,col=7,endColumn=9::Use === instead of ==
     # [^:]*?で順序非依存かつ`::`終端を跨がないようマッチする。
+    # biomeはunsafe fix可能なinfo診断を`::notice`として出力する。pyfltr側ではinfoとして公開し、
+    # CIの失敗扱いには昇格させない（biome公式設計でinfoは終了コードに影響しない）。
     "biome": (
-        r"::(?:error|warning)\s+[^:]*?file=(?P<file>[^,]+)"
+        r"::(?P<severity>error|warning|notice)\s+[^:]*?file=(?P<file>[^,]+)"
         r"[^:]*?line=(?P<line>\d+)"
         r"[^:]*?col=(?P<col>\d+)"
         r"[^:]*?::(?P<message>.+)"
@@ -243,7 +245,7 @@ def _normalize_severity(value: typing.Any) -> str | None:
         return "error"
     if lowered in ("warning", "warn"):
         return "warning"
-    if lowered in ("info", "information", "informational", "note", "hint", "style", "convention", "refactor"):
+    if lowered in ("info", "information", "informational", "note", "notice", "hint", "style", "convention", "refactor"):
         return "info"
     return None
 
@@ -1432,6 +1434,8 @@ def _parse_with_pattern(command: str, output: str, pattern: str) -> list[ErrorLo
 
     パターンに名前付きグループ`rule`が含まれる場合、マッチ内容を
     `ErrorLocation.rule`に格納し、`rule_urls.build_rule_url()`でURLも補完する。
+    名前付きグループ`severity`を含む場合は`_normalize_severity`で正規化した値を
+    `ErrorLocation.severity`へ格納する（biome `::notice`→`"info"`等）。
     """
     compiled = re.compile(pattern)
     results: list[ErrorLocation] = []
@@ -1455,6 +1459,7 @@ def _parse_with_pattern(command: str, output: str, pattern: str) -> list[ErrorLo
         rule_raw = groups.get("rule")
         rule = rule_raw.strip() if isinstance(rule_raw, str) and rule_raw.strip() else None
         rule_url = pyfltr.output.rule_urls.build_rule_url(command, rule) if rule is not None else None
+        severity = _normalize_severity(groups.get("severity"))
         results.append(
             ErrorLocation(
                 file=pyfltr.paths.to_cwd_relative(file_path),
@@ -1463,6 +1468,7 @@ def _parse_with_pattern(command: str, output: str, pattern: str) -> list[ErrorLo
                 command=command,
                 message=message.strip(),
                 rule=rule,
+                severity=severity,
                 rule_url=rule_url,
             )
         )
