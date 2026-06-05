@@ -164,6 +164,7 @@ select = [
 ignore = [
     "D107", # Missing docstring in `__init__`
     "D415", # First line should end with a period
+    "D403", # First word of the first line should be properly capitalized（日本語docstringにそぐわないため）
 ]
 
 [tool.ruff.lint.pydocstyle]
