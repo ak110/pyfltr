@@ -87,14 +87,14 @@ def _resolve_run_id_or_raise(store: pyfltr.state.archive.ArchiveStore, raw: str)
 # FastMCPツール関数群（公開名は@mcp.tool(name=...)で明示）
 # ---------------------------------------------------------------------------
 
-# _build_server()内で登録するため、ここではデコレーターを付けない。
-# 公開名は_build_server()で@mcp.tool(name="...")によって明示的に設定する。
+# build_server()内で登録するため、ここではデコレーターを付けない。
+# 公開名はbuild_server()で@mcp.tool(name="...")によって明示的に設定する。
 # 公開名はアンダースコア区切り（`list_runs`等）を採用する。CLIサブコマンドの
 # ハイフン形式（`list-runs`）とは異なるが、`@mcp.tool()`のスキーマ名規則上
 # ハイフンは非推奨で互換性のあるFastMCP経路もアンダースコア前提のため。
 
 
-async def _tool_list_runs(limit: int = 20) -> list[RunSummaryModel]:
+async def tool_list_runs(limit: int = 20) -> list[RunSummaryModel]:
     """実行アーカイブに保存されたrun一覧を新しい順で返す。
 
     対応CLI: `pyfltr list-runs`
@@ -114,7 +114,7 @@ async def _tool_list_runs(limit: int = 20) -> list[RunSummaryModel]:
     ]
 
 
-async def _tool_show_run(run_id: str) -> RunOverviewModel:
+async def tool_show_run(run_id: str) -> RunOverviewModel:
     """指定runのmeta情報とコマンド別サマリを返す。
 
     `run_id`はULID完全一致・前方一致・`latest`エイリアスを受け付ける。
@@ -140,7 +140,7 @@ async def _tool_show_run(run_id: str) -> RunOverviewModel:
     return RunOverviewModel(run_id=resolved, meta=meta, commands=commands)
 
 
-async def _tool_show_run_diagnostics(run_id: str, commands: list[str]) -> list[CommandDiagnosticsModel]:
+async def tool_show_run_diagnostics(run_id: str, commands: list[str]) -> list[CommandDiagnosticsModel]:
     """指定run・コマンドのtool.jsonとdiagnostics.jsonl全件を返す。
 
     `diagnostics`は`(command, file)`単位の集約形式で、個別指摘は`messages`に並ぶ。
@@ -176,7 +176,7 @@ async def _tool_show_run_diagnostics(run_id: str, commands: list[str]) -> list[C
     return results
 
 
-async def _tool_show_run_output(run_id: str, commands: list[str]) -> dict[str, str]:
+async def tool_show_run_output(run_id: str, commands: list[str]) -> dict[str, str]:
     """指定run・コマンドのoutput.log全文を返す。
 
     戻り値はコマンド名→全文の辞書。`commands`に複数を指定すると入力順で各全文を返す。
@@ -196,7 +196,7 @@ async def _tool_show_run_output(run_id: str, commands: list[str]) -> dict[str, s
     return outputs
 
 
-async def _tool_run_for_agent(
+async def tool_run_for_agent(
     paths: list[str],
     commands: list[str] | None = None,
     fail_fast: bool = False,
@@ -335,7 +335,7 @@ async def _tool_run_for_agent(
     )
 
 
-async def _tool_grep(
+async def tool_grep(
     pattern: str,
     paths: list[str],
     ignore_case: bool = False,
@@ -451,7 +451,7 @@ async def _tool_grep(
     )
 
 
-async def _tool_replace(
+async def tool_replace(
     pattern: str,
     replacement: str,
     paths: list[str],
@@ -669,7 +669,7 @@ async def _tool_replace(
     )
 
 
-async def _tool_replace_undo(replace_id: str, force: bool = False) -> ReplaceUndoModel:
+async def tool_replace_undo(replace_id: str, force: bool = False) -> ReplaceUndoModel:
     """保存済みreplace履歴からファイルを変更前の内容へ復元する。
 
     `force=True`を指定しない限り、手動編集済み（ハッシュ不一致）のファイルはスキップする。
@@ -700,22 +700,22 @@ async def _tool_replace_undo(replace_id: str, force: bool = False) -> ReplaceUnd
 # ---------------------------------------------------------------------------
 
 
-def _build_server() -> FastMCP:
+def build_server() -> FastMCP:
     """FastMCPサーバーインスタンスを生成し、8ツールを登録して返す。
 
-    公開名は`@mcp.tool(name=...)`で明示し、Python側の関数名（`_tool_*`）
+    公開名は`@mcp.tool(name=...)`で明示し、Python側の関数名（`tool_*`）
     とは独立したスキーマ名（`list_runs`等）を維持する。
     """
     mcp = FastMCP("pyfltr")
 
-    mcp.tool(name="list_runs", description="実行アーカイブに保存された run 一覧を新しい順で返す。")(_tool_list_runs)
+    mcp.tool(name="list_runs", description="実行アーカイブに保存された run 一覧を新しい順で返す。")(tool_list_runs)
     mcp.tool(
         name="show_run", description="指定 run の meta 情報とコマンド別サマリを返す。run_id は前方一致・latest エイリアス可。"
-    )(_tool_show_run)
+    )(tool_show_run)
     mcp.tool(name="show_run_diagnostics", description="指定 run・コマンドの tool.json と diagnostics 全件を返す。")(
-        _tool_show_run_diagnostics
+        tool_show_run_diagnostics
     )
-    mcp.tool(name="show_run_output", description="指定 run・コマンドの output.log 全文を返す。")(_tool_show_run_output)
+    mcp.tool(name="show_run_output", description="指定 run・コマンドの output.log 全文を返す。")(tool_show_run_output)
     mcp.tool(
         name="run_for_agent",
         description=(
@@ -723,13 +723,13 @@ def _build_server() -> FastMCP:
             " only_failed=True で直前 run の失敗ツール・失敗ファイルのみ再実行する（from_run で参照 run を指定可）。"
             " 戻り値に retry_commands（失敗コマンドの再実行シェルコマンド）を含む。"
         ),
-    )(_tool_run_for_agent)
+    )(tool_run_for_agent)
     mcp.tool(
         name="grep",
         description=(
             "Search for a regex pattern across files. Honors pyfltr exclude/.gitignore by default. Returns match records."
         ),
-    )(_tool_grep)
+    )(tool_grep)
     mcp.tool(
         name="replace",
         description=(
@@ -737,14 +737,14 @@ def _build_server() -> FastMCP:
             " dry_run=True (default) previews changes without writing."
             " Pass dry_run=False to write and save undo history."
         ),
-    )(_tool_replace)
+    )(tool_replace)
     mcp.tool(
         name="replace_undo",
         description=(
             "Undo a previous replace by replace_id."
             " Set force=True to override hash mismatch (when files were edited after the replace)."
         ),
-    )(_tool_replace_undo)
+    )(tool_replace_undo)
 
     return mcp
 
@@ -780,7 +780,7 @@ def execute_mcp(args: argparse.Namespace) -> int:
     logging.basicConfig(stream=sys.stderr, level=logging.WARNING, format="%(levelname)s: %(message)s")
 
     try:
-        server = _build_server()
+        server = build_server()
         server.run(transport="stdio")
         return 0
     except Exception as e:  # MCPサーバー起動失敗をエージェント側へ非ゼロ終了で通知するため全例外を捕捉する

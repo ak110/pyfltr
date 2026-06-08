@@ -1,4 +1,4 @@
-"""外部パス指定時のツール別挙動の単体テスト。
+"""外部パス指定時のツール別挙動のテスト。
 
 外部パス（起点cwd配下にない絶対パス）を3分類で扱う実装の境界確認。
 
@@ -9,12 +9,8 @@
 - 素通し対象（既定）: 上記以外（`ruff-check` を代表として確認）
 
 テストは`execute_command`経由で実行し、`run_subprocess_with_timeout`をfakeで差し替えて
-subprocess起動を回避する。純関数ヘルパー3件（`_is_external_path`・
-`_resolve_config_inject_path`・`_user_overrides_config`）の単体テストのみ
-private直接呼びを最小例外として残す（境界確認の独立性のため）。
+subprocess起動を回避する。
 """
-
-# pylint: disable=protected-access
 
 import argparse
 import pathlib
@@ -132,60 +128,211 @@ def _ext_workspace(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, 
     return tmp_path, internal, external
 
 
-# --- 純関数ヘルパーの境界 -------------------------------------------------------
+# --- _is_external_path の境界を execute_command 経由で検証 -----------------------
+# allows_external_paths=False のツール（pytest）を使い、
+# 相対パス・内部絶対パス・外部絶対パスの3分岐を確認する。
 
 
-def test_is_external_path_relative_is_internal(tmp_path: pathlib.Path) -> None:
-    """相対パスは起点cwd配下扱い（外部扱いしない）。"""
-    assert pyfltr.command.dispatcher._is_external_path(pathlib.Path("a.md"), start_cwd=tmp_path) is False
+def test_is_external_path_relative_is_internal(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """相対パスは起点cwd配下扱いとなり、外部フィルタで除去されない。"""
+    relative = pathlib.Path("a_test.py")
+    # 実ファイルは不要（targets が globs に通るよう実ファイルを用意する）
+    (tmp_path / "a_test.py").write_text("", encoding="utf-8")
+
+    config = pyfltr.config.config.create_default_config()
+    _enable(config, ["pytest"])
+    _patch_build_commandline(monkeypatch)
+    _patch_subprocess(monkeypatch)
+
+    ctx = _testconf.make_execution_context(config, [relative], start_cwd=tmp_path)
+    pyfltr.command.dispatcher.execute_command("pytest", _testconf.make_args(), ctx)
+
+    # 相対パスは外部フィルタされていない
+    assert pyfltr.warnings_.filtered_direct_files(reason="external") == []
 
 
-def test_is_external_path_absolute_inside_is_internal(tmp_path: pathlib.Path) -> None:
-    """起点cwd配下の絶対パスは外部扱いしない。"""
-    inside = tmp_path / "a.md"
+def test_is_external_path_absolute_inside_is_internal(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """起点cwd配下の絶対パスは外部扱いされず、フィルタされない。"""
+    inside = tmp_path / "inside_test.py"
     inside.write_text("", encoding="utf-8")
-    assert pyfltr.command.dispatcher._is_external_path(inside.resolve(), start_cwd=tmp_path) is False
+
+    config = pyfltr.config.config.create_default_config()
+    _enable(config, ["pytest"])
+    _patch_build_commandline(monkeypatch)
+    _patch_subprocess(monkeypatch)
+
+    ctx = _testconf.make_execution_context(config, [inside.resolve()], start_cwd=tmp_path)
+    pyfltr.command.dispatcher.execute_command("pytest", _testconf.make_args(), ctx)
+
+    assert pyfltr.warnings_.filtered_direct_files(reason="external") == []
 
 
-def test_is_external_path_absolute_outside_is_external(tmp_path: pathlib.Path) -> None:
-    """起点cwd外の絶対パスは外部扱い。"""
-    outside = _make_external(tmp_path)
-    assert pyfltr.command.dispatcher._is_external_path(outside, start_cwd=tmp_path) is True
+def test_is_external_path_absolute_outside_is_external(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """起点cwd外の絶対パスは外部扱いされ、フィルタと警告が発行される。"""
+    ext_dir = tmp_path.parent / f"ext-{tmp_path.name}-iep"
+    ext_dir.mkdir(parents=True, exist_ok=True)
+    outside = (ext_dir / "ext_test.py").resolve()
+    outside.write_text("", encoding="utf-8")
+
+    config = pyfltr.config.config.create_default_config()
+    _enable(config, ["pytest"])
+    _patch_build_commandline(monkeypatch)
+    _patch_subprocess(monkeypatch)
+
+    ctx = _testconf.make_execution_context(config, [outside], start_cwd=tmp_path)
+    pyfltr.command.dispatcher.execute_command("pytest", _testconf.make_args(), ctx)
+
+    assert str(outside) in pyfltr.warnings_.filtered_direct_files(reason="external")
 
 
-def test_resolve_config_inject_path_returns_first_hit(tmp_path: pathlib.Path) -> None:
-    """候補順に走査し、最初に見つかった設定ファイルの絶対パスを返す。"""
+# --- _resolve_config_inject_path の境界を execute_command 経由で検証 --------------
+# markdownlint を使い、設定ファイルの有無・候補順を確認する。
+
+
+def test_resolve_config_inject_path_returns_first_hit(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """候補順に走査し、最初に見つかった設定ファイルが --config に注入される。"""
+    # 後候補のみ存在させる（先候補が無い状態で .markdownlint.json が注入される）
     (tmp_path / ".markdownlint.json").write_text("{}", encoding="utf-8")
-    found = pyfltr.command.dispatcher._resolve_config_inject_path(
-        tmp_path,
-        [".markdownlint-cli2.jsonc", ".markdownlint.json", ".markdownlint.yaml"],
-    )
-    assert found == (tmp_path / ".markdownlint.json").resolve()
+    internal = tmp_path / "doc.md"
+    internal.write_text("# doc\n", encoding="utf-8")
+
+    config = pyfltr.config.config.create_default_config()
+    _enable(config, ["markdownlint"])
+    _patch_build_commandline(monkeypatch)
+    _patch_subprocess(monkeypatch)
+
+    ctx = _testconf.make_execution_context(config, [internal], start_cwd=tmp_path)
+    result = pyfltr.command.dispatcher.execute_command("markdownlint", _testconf.make_args(), ctx)
+
+    prefix_len = len(_DEFAULT_PREFIXES["markdownlint"])
+    assert result.commandline[prefix_len] == "--config"
+    assert result.commandline[prefix_len + 1] == str((tmp_path / ".markdownlint.json").resolve())
 
 
-def test_resolve_config_inject_path_returns_none_if_absent(tmp_path: pathlib.Path) -> None:
-    """候補がいずれも存在しないときは`None`を返す。"""
-    assert pyfltr.command.dispatcher._resolve_config_inject_path(tmp_path, [".markdownlint.json"]) is None
+def test_resolve_config_inject_path_returns_none_if_absent(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """設定ファイルが起点cwd直下に存在しないとき、--config は注入されない。"""
+    internal = tmp_path / "doc.md"
+    internal.write_text("# doc\n", encoding="utf-8")
+
+    config = pyfltr.config.config.create_default_config()
+    _enable(config, ["markdownlint"])
+    _patch_build_commandline(monkeypatch)
+    _patch_subprocess(monkeypatch)
+
+    ctx = _testconf.make_execution_context(config, [internal], start_cwd=tmp_path)
+    result = pyfltr.command.dispatcher.execute_command("markdownlint", _testconf.make_args(), ctx)
+
+    assert "--config" not in result.commandline
 
 
-def test_user_overrides_config_detects_separate_form() -> None:
-    """`--config <path>`の分離形を検出する。"""
-    assert pyfltr.command.dispatcher._user_overrides_config(["--config", "x"]) is True
+# --- _user_overrides_config の境界を execute_command 経由で検証 -------------------
+# markdownlint の {command}-args / {command}-extend-args / CLI追加引数で
+# --config の各形式が注入スキップを引き起こすことを確認する。
 
 
-def test_user_overrides_config_detects_equal_form() -> None:
-    """`--config=path`の=区切り形を検出する。"""
-    assert pyfltr.command.dispatcher._user_overrides_config(["--config=x"]) is True
+def test_user_overrides_config_detects_separate_form(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """`--config <path>`の分離形を{command}-argsで指定すると自動注入がスキップされる。"""
+    (tmp_path / ".markdownlint.json").write_text("{}", encoding="utf-8")
+    internal = tmp_path / "doc.md"
+    internal.write_text("# doc\n", encoding="utf-8")
+
+    config = pyfltr.config.config.create_default_config()
+    _enable(config, ["markdownlint"])
+    config.values["markdownlint-args"] = ["--config", "/user/path"]
+    _patch_build_commandline(monkeypatch)
+    _patch_subprocess(monkeypatch)
+
+    ctx = _testconf.make_execution_context(config, [internal], start_cwd=tmp_path)
+    result = pyfltr.command.dispatcher.execute_command("markdownlint", _testconf.make_args(), ctx)
+
+    # 利用者指定の --config のみ（自動注入の設定ファイルパスは含まれない）
+    assert result.commandline.count("--config") == 1
+    assert "/user/path" in result.commandline
+    assert str((tmp_path / ".markdownlint.json").resolve()) not in result.commandline
 
 
-def test_user_overrides_config_detects_in_any_list() -> None:
-    """複数引数リストにまたがる`--config`も検出する。"""
-    assert pyfltr.command.dispatcher._user_overrides_config([], ["--config", "x"], []) is True
+def test_user_overrides_config_detects_equal_form(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """`--config=path`の=区切り形を{command}-argsで指定すると自動注入がスキップされる。"""
+    (tmp_path / ".markdownlint.json").write_text("{}", encoding="utf-8")
+    internal = tmp_path / "doc.md"
+    internal.write_text("# doc\n", encoding="utf-8")
+
+    config = pyfltr.config.config.create_default_config()
+    _enable(config, ["markdownlint"])
+    config.values["markdownlint-args"] = ["--config=/user/path"]
+    _patch_build_commandline(monkeypatch)
+    _patch_subprocess(monkeypatch)
+
+    ctx = _testconf.make_execution_context(config, [internal], start_cwd=tmp_path)
+    result = pyfltr.command.dispatcher.execute_command("markdownlint", _testconf.make_args(), ctx)
+
+    assert "--config=/user/path" in result.commandline
+    assert str((tmp_path / ".markdownlint.json").resolve()) not in result.commandline
 
 
-def test_user_overrides_config_negative() -> None:
-    """`--config`を含まない場合はFalse。"""
-    assert pyfltr.command.dispatcher._user_overrides_config(["--format", "json"]) is False
+def test_user_overrides_config_detects_in_extend_args(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """`{command}-extend-args`で`--config`を指定しても自動注入がスキップされる。"""
+    (tmp_path / ".markdownlint.json").write_text("{}", encoding="utf-8")
+    internal = tmp_path / "doc.md"
+    internal.write_text("# doc\n", encoding="utf-8")
+
+    config = pyfltr.config.config.create_default_config()
+    _enable(config, ["markdownlint"])
+    config.values["markdownlint-extend-args"] = ["--config", "/extend/path"]
+    _patch_build_commandline(monkeypatch)
+    _patch_subprocess(monkeypatch)
+
+    ctx = _testconf.make_execution_context(config, [internal], start_cwd=tmp_path)
+    result = pyfltr.command.dispatcher.execute_command("markdownlint", _testconf.make_args(), ctx)
+
+    assert str((tmp_path / ".markdownlint.json").resolve()) not in result.commandline
+
+
+def test_user_overrides_config_negative(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """`--config`を含まない引数を指定しても自動注入は行われる。"""
+    (tmp_path / ".markdownlint.json").write_text("{}", encoding="utf-8")
+    internal = tmp_path / "doc.md"
+    internal.write_text("# doc\n", encoding="utf-8")
+
+    config = pyfltr.config.config.create_default_config()
+    _enable(config, ["markdownlint"])
+    config.values["markdownlint-args"] = ["--format", "json"]
+    _patch_build_commandline(monkeypatch)
+    _patch_subprocess(monkeypatch)
+
+    ctx = _testconf.make_execution_context(config, [internal], start_cwd=tmp_path)
+    result = pyfltr.command.dispatcher.execute_command("markdownlint", _testconf.make_args(), ctx)
+
+    # --config 自動注入が行われている
+    assert "--config" in result.commandline
+    assert str((tmp_path / ".markdownlint.json").resolve()) in result.commandline
 
 
 # --- 注入対象（markdownlint / textlint） -----------------------------------------

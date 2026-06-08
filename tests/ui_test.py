@@ -1,7 +1,5 @@
 """UI関連のテストコード。"""
 
-# pylint: disable=protected-access
-
 import argparse
 import unittest.mock
 
@@ -33,7 +31,7 @@ def test_ctrl_c_double_press_handling() -> None:
 
     assert app.last_ctrl_c_time == 0.0
     assert app.ctrl_c_timeout == 1.0
-    assert app._interrupted is False
+    assert app._interrupted is False  # pylint: disable=protected-access  # state flag: 結合テスト化困難
 
     mock_event = unittest.mock.MagicMock()
     mock_event.key = "ctrl+c"
@@ -51,7 +49,7 @@ def test_ctrl_c_double_press_handling() -> None:
         # 1秒以内の2回目のCtrl+C: 協調中断を開始（exitは呼ばれない）
         app.on_key(mock_event)
         mock_exit.assert_not_called()
-        assert app._interrupted is True
+        assert app._interrupted is True  # pylint: disable=protected-access  # state flag: 結合テスト化困難
         mock_terminate.assert_called_once()
 
 
@@ -74,7 +72,7 @@ def test_ctrl_c_force_exit_after_interrupted() -> None:
         ),
     )
     # 協調中断済みの状態にする
-    app._interrupted = True
+    app._interrupted = True  # pylint: disable=protected-access  # state flag: 結合テスト化困難
 
     mock_event = unittest.mock.MagicMock()
     mock_event.key = "ctrl+c"
@@ -91,13 +89,13 @@ def test_ctrl_c_force_exit_after_interrupted() -> None:
         # 1回目: タイムアウト外なので通知のみ
         app.on_key(mock_event)
         mock_exit.assert_not_called()
-        assert app._exit_requested is False
+        assert app._exit_requested is False  # pylint: disable=protected-access  # state flag: 結合テスト化困難
 
         # 2回目（1秒以内）: 強制終了（rc=130）。terminate → exit の順で呼ばれる。
         app.on_key(mock_event)
         mock_exit.assert_called_once_with(return_code=130)
         mock_terminate.assert_called_once()
-        assert app._exit_requested is True
+        assert app._exit_requested is True  # pylint: disable=protected-access  # state flag: 結合テスト化困難
         assert call_order == ["terminate", "exit"]
 
 
@@ -118,18 +116,18 @@ def test_safe_call_from_thread_short_circuits_when_exit_requested() -> None:
             config=pyfltr.config.config.create_default_config(), all_files=[], cache_store=None, cache_run_id=None
         ),
     )
-    app._exit_requested = True
+    app._exit_requested = True  # pylint: disable=protected-access  # state flag: 結合テスト化困難
 
     callback = unittest.mock.MagicMock()
     with unittest.mock.patch.object(app, "call_from_thread") as mock_call:
-        app._safe_call_from_thread(callback, 1, key="value")
+        app._safe_call_from_thread(callback, 1, key="value")  # pylint: disable=protected-access  # タイミング制御困難
         mock_call.assert_not_called()
     callback.assert_not_called()
 
     # 逆に_exit_requested=Falseなら通常通りcall_from_thread経由で呼ばれる。
-    app._exit_requested = False
+    app._exit_requested = False  # pylint: disable=protected-access  # state flag: 結合テスト化困難
     with unittest.mock.patch.object(app, "call_from_thread") as mock_call:
-        app._safe_call_from_thread(callback, 1, key="value")
+        app._safe_call_from_thread(callback, 1, key="value")  # pylint: disable=protected-access  # タイミング制御困難
         mock_call.assert_called_once_with(callback, 1, key="value")
 
 
@@ -210,14 +208,14 @@ def test_interrupt_preserves_completed_results(monkeypatch) -> None:
                 elapsed=0.1,
             )
         # 2本目: 協調停止を発火させる。
-        app._interrupted = True
+        app._interrupted = True  # pylint: disable=protected-access  # state flag: 結合テスト化困難
         raise pyfltr.command.process.InterruptedExecution
 
     monkeypatch.setattr("pyfltr.command.dispatcher.execute_command", _fake_execute_command)
     # call_from_threadはUI起動前に呼ばれても失敗しないようno-op化。
     monkeypatch.setattr(app, "call_from_thread", lambda *a, **kw: None)
 
-    app._run_in_background()
+    app._run_in_background()  # pylint: disable=protected-access  # タイミング制御困難
 
     # resultsに完了分（pylint succeeded）とskipped分（mypy）が揃っている。
     by_command = {r.command: r for r in app.results}

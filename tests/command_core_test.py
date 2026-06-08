@@ -4,7 +4,7 @@ dispatcher・共通処理・環境変数・コマンドライン解決・`run_su
 キャッシュ・only_failed・プロセス管理を検証する。
 """
 
-# pylint: disable=protected-access,too-many-lines
+# pylint: disable=too-many-lines
 
 import argparse
 import contextlib
@@ -21,6 +21,7 @@ import typing
 import psutil
 import pytest
 
+import pyfltr.command.builtin
 import pyfltr.command.core_
 import pyfltr.command.dispatcher
 import pyfltr.command.env
@@ -115,7 +116,7 @@ def test_build_subprocess_env_default_keeps_mise_tool_paths(monkeypatch: pytest.
     assert "/usr/bin" in entries
 
 
-def test_resolve_js_commandline_pnpx_with_textlint_packages() -> None:
+def test_build_commandline_pnpx_with_textlint_packages() -> None:
     """pnpx runnerではtextlint-packagesが--packageで展開される。
 
     textlint本体のspecは`_JS_TOOL_PNPX_PACKAGE_SPEC`によって
@@ -126,10 +127,10 @@ def test_resolve_js_commandline_pnpx_with_textlint_packages() -> None:
     config.values["js-runner"] = "pnpx"
     config.values["textlint-packages"] = ["textlint-rule-preset-ja-technical-writing", "textlint-rule-ja-no-abusage"]
 
-    path, prefix = pyfltr.command.runner._resolve_js_commandline("textlint", config)
+    resolved = pyfltr.command.runner.build_commandline("textlint", config)
 
-    assert pathlib.PurePath(path).stem == "pnpx"
-    assert prefix == [
+    assert pathlib.PurePath(resolved.executable).stem == "pnpx"
+    assert resolved.prefix == [
         "--config.enableGlobalVirtualStore=false",
         "--package",
         "textlint@<15.5.3 || >15.5.3",
@@ -141,15 +142,15 @@ def test_resolve_js_commandline_pnpx_with_textlint_packages() -> None:
     ]
 
 
-def test_resolve_js_commandline_pnpx_textlint_default_excludes_buggy_version() -> None:
+def test_build_commandline_pnpx_textlint_default_excludes_buggy_version() -> None:
     """pnpx runnerの既定状態でもtextlint 15.5.3が除外specで指定される。"""
     config = pyfltr.config.config.create_default_config()
     config.values["js-runner"] = "pnpx"
 
-    path, prefix = pyfltr.command.runner._resolve_js_commandline("textlint", config)
+    resolved = pyfltr.command.runner.build_commandline("textlint", config)
 
-    assert pathlib.PurePath(path).stem == "pnpx"
-    assert prefix == [
+    assert pathlib.PurePath(resolved.executable).stem == "pnpx"
+    assert resolved.prefix == [
         "--config.enableGlobalVirtualStore=false",
         "--package",
         "textlint@<15.5.3 || >15.5.3",
@@ -163,7 +164,7 @@ def test_resolve_js_commandline_pnpx_textlint_default_excludes_buggy_version() -
     ]
 
 
-def test_resolve_js_commandline_pnpx_markdownlint_unchanged() -> None:
+def test_build_commandline_pnpx_markdownlint_unchanged() -> None:
     """markdownlintは除外対象外で、従来どおりbin名がそのまま渡される。
 
     `markdownlint-packages` 未指定経路ではplugin解決が不要なため、
@@ -172,13 +173,13 @@ def test_resolve_js_commandline_pnpx_markdownlint_unchanged() -> None:
     config = pyfltr.config.config.create_default_config()
     config.values["js-runner"] = "pnpx"
 
-    path, prefix = pyfltr.command.runner._resolve_js_commandline("markdownlint", config)
+    resolved = pyfltr.command.runner.build_commandline("markdownlint", config)
 
-    assert pathlib.PurePath(path).stem == "pnpx"
-    assert prefix == ["--package", "markdownlint-cli2", "markdownlint-cli2"]
+    assert pathlib.PurePath(resolved.executable).stem == "pnpx"
+    assert resolved.prefix == ["--package", "markdownlint-cli2", "markdownlint-cli2"]
 
 
-def test_resolve_js_commandline_pnpx_no_packages_omits_global_store_optout() -> None:
+def test_build_commandline_pnpx_no_packages_omits_global_store_optout() -> None:
     """`*-packages` 未指定のpnpx tool（biome等）にはopt-outフラグが付かない。
 
     `len(packages) > 0` 条件分岐の境界値ケース。
@@ -187,101 +188,101 @@ def test_resolve_js_commandline_pnpx_no_packages_omits_global_store_optout() -> 
     config = pyfltr.config.config.create_default_config()
     config.values["js-runner"] = "pnpx"
 
-    path, prefix = pyfltr.command.runner._resolve_js_commandline("biome", config)
+    resolved = pyfltr.command.runner.build_commandline("biome", config)
 
-    assert pathlib.PurePath(path).stem == "pnpx"
-    assert prefix == ["--package", "@biomejs/biome", "biome"]
+    assert pathlib.PurePath(resolved.executable).stem == "pnpx"
+    assert resolved.prefix == ["--package", "@biomejs/biome", "biome"]
 
 
-def test_resolve_js_commandline_pnpm_ignores_packages() -> None:
+def test_build_commandline_pnpm_ignores_packages() -> None:
     """pnpm runnerではtextlint-packagesは無視される（package.json側で管理前提）。"""
     config = pyfltr.config.config.create_default_config()
     config.values["js-runner"] = "pnpm"
     config.values["textlint-packages"] = ["textlint-rule-preset-ja-technical-writing"]
 
-    path, prefix = pyfltr.command.runner._resolve_js_commandline("textlint", config)
+    resolved = pyfltr.command.runner.build_commandline("textlint", config)
 
-    assert pathlib.PurePath(path).stem == "pnpm"
-    assert prefix == ["exec", "textlint"]
+    assert pathlib.PurePath(resolved.executable).stem == "pnpm"
+    assert resolved.prefix == ["exec", "textlint"]
 
 
-def test_resolve_js_commandline_markdownlint_uses_cli2_binary() -> None:
+def test_build_commandline_markdownlint_uses_cli2_binary() -> None:
     """markdownlintコマンドの実体はmarkdownlint-cli2。"""
     config = pyfltr.config.config.create_default_config()
     config.values["js-runner"] = "pnpm"
 
-    path, prefix = pyfltr.command.runner._resolve_js_commandline("markdownlint", config)
+    resolved = pyfltr.command.runner.build_commandline("markdownlint", config)
 
-    assert pathlib.PurePath(path).stem == "pnpm"
-    assert prefix == ["exec", "markdownlint-cli2"]
+    assert pathlib.PurePath(resolved.executable).stem == "pnpm"
+    assert resolved.prefix == ["exec", "markdownlint-cli2"]
 
 
-def test_resolve_js_commandline_pnpx_eslint() -> None:
+def test_build_commandline_pnpx_eslint() -> None:
     """pnpx runnerでeslintが通常通り（bin名 = パッケージ名）解決される。"""
     config = pyfltr.config.config.create_default_config()
     config.values["js-runner"] = "pnpx"
 
-    path, prefix = pyfltr.command.runner._resolve_js_commandline("eslint", config)
+    resolved = pyfltr.command.runner.build_commandline("eslint", config)
 
-    assert pathlib.PurePath(path).stem == "pnpx"
-    assert prefix == ["--package", "eslint", "eslint"]
+    assert pathlib.PurePath(resolved.executable).stem == "pnpx"
+    assert resolved.prefix == ["--package", "eslint", "eslint"]
 
 
-def test_resolve_js_commandline_pnpx_prettier() -> None:
+def test_build_commandline_pnpx_prettier() -> None:
     """pnpx runnerでprettierが通常通り解決される。"""
     config = pyfltr.config.config.create_default_config()
     config.values["js-runner"] = "pnpx"
 
-    path, prefix = pyfltr.command.runner._resolve_js_commandline("prettier", config)
+    resolved = pyfltr.command.runner.build_commandline("prettier", config)
 
-    assert pathlib.PurePath(path).stem == "pnpx"
-    assert prefix == ["--package", "prettier", "prettier"]
+    assert pathlib.PurePath(resolved.executable).stem == "pnpx"
+    assert resolved.prefix == ["--package", "prettier", "prettier"]
 
 
-def test_resolve_js_commandline_pnpx_biome_uses_scoped_package() -> None:
+def test_build_commandline_pnpx_biome_uses_scoped_package() -> None:
     """pnpx runnerでbiomeはスコープ付きパッケージ@biomejs/biomeで解決される。"""
     config = pyfltr.config.config.create_default_config()
     config.values["js-runner"] = "pnpx"
 
-    path, prefix = pyfltr.command.runner._resolve_js_commandline("biome", config)
+    resolved = pyfltr.command.runner.build_commandline("biome", config)
 
-    assert pathlib.PurePath(path).stem == "pnpx"
+    assert pathlib.PurePath(resolved.executable).stem == "pnpx"
     # --packageには@biomejs/biome、bin名はbiome
-    assert prefix == ["--package", "@biomejs/biome", "biome"]
+    assert resolved.prefix == ["--package", "@biomejs/biome", "biome"]
 
 
-def test_resolve_js_commandline_pnpm_prettier() -> None:
+def test_build_commandline_pnpm_prettier() -> None:
     """pnpm runnerでprettierがpnpm exec prettierになる。"""
     config = pyfltr.config.config.create_default_config()
     config.values["js-runner"] = "pnpm"
 
-    path, prefix = pyfltr.command.runner._resolve_js_commandline("prettier", config)
+    resolved = pyfltr.command.runner.build_commandline("prettier", config)
 
-    assert pathlib.PurePath(path).stem == "pnpm"
-    assert prefix == ["exec", "prettier"]
+    assert pathlib.PurePath(resolved.executable).stem == "pnpm"
+    assert resolved.prefix == ["exec", "prettier"]
 
 
-def test_resolve_js_commandline_pnpm_biome() -> None:
+def test_build_commandline_pnpm_biome() -> None:
     """pnpm runnerでbiomeがpnpm exec biomeになる（スコープ無効）。"""
     config = pyfltr.config.config.create_default_config()
     config.values["js-runner"] = "pnpm"
 
-    path, prefix = pyfltr.command.runner._resolve_js_commandline("biome", config)
+    resolved = pyfltr.command.runner.build_commandline("biome", config)
 
-    assert pathlib.PurePath(path).stem == "pnpm"
-    assert prefix == ["exec", "biome"]
+    assert pathlib.PurePath(resolved.executable).stem == "pnpm"
+    assert resolved.prefix == ["exec", "biome"]
 
 
-def test_resolve_js_commandline_npx() -> None:
+def test_build_commandline_npx() -> None:
     """npx runnerでは-pでパッケージを指定する。"""
     config = pyfltr.config.config.create_default_config()
     config.values["js-runner"] = "npx"
     config.values["textlint-packages"] = ["textlint-rule-preset-ja-technical-writing"]
 
-    path, prefix = pyfltr.command.runner._resolve_js_commandline("textlint", config)
+    resolved = pyfltr.command.runner.build_commandline("textlint", config)
 
-    assert pathlib.PurePath(path).stem == "npx"
-    assert prefix == [
+    assert pathlib.PurePath(resolved.executable).stem == "npx"
+    assert resolved.prefix == [
         "--no-install",
         "-p",
         "textlint-rule-preset-ja-technical-writing",
@@ -290,7 +291,7 @@ def test_resolve_js_commandline_npx() -> None:
     ]
 
 
-def test_resolve_js_commandline_direct_missing_raises(tmp_path: pathlib.Path) -> None:
+def test_build_commandline_direct_missing_raises(tmp_path: pathlib.Path) -> None:
     """direct runnerでnode_modules/.bin/<cmd>が無ければFileNotFoundError。"""
     config = pyfltr.config.config.create_default_config()
     config.values["js-runner"] = "direct"
@@ -299,12 +300,12 @@ def test_resolve_js_commandline_direct_missing_raises(tmp_path: pathlib.Path) ->
     try:
         os.chdir(tmp_path)
         with pytest.raises(FileNotFoundError):
-            pyfltr.command.runner._resolve_js_commandline("textlint", config)
+            pyfltr.command.runner.build_commandline("textlint", config)
     finally:
         os.chdir(original_cwd)
 
 
-def test_resolve_js_commandline_direct_found(tmp_path: pathlib.Path) -> None:
+def test_build_commandline_direct_found(tmp_path: pathlib.Path) -> None:
     """direct runnerでnode_modules/.bin/<cmd>があればpathを返す。"""
     bin_dir = tmp_path / "node_modules" / ".bin"
     bin_dir.mkdir(parents=True)
@@ -316,9 +317,9 @@ def test_resolve_js_commandline_direct_found(tmp_path: pathlib.Path) -> None:
     original_cwd = pathlib.Path.cwd()
     try:
         os.chdir(tmp_path)
-        path, prefix = pyfltr.command.runner._resolve_js_commandline("textlint", config)
-        assert path.endswith("textlint")
-        assert not prefix
+        resolved = pyfltr.command.runner.build_commandline("textlint", config)
+        assert resolved.executable.endswith("textlint")
+        assert not resolved.prefix
     finally:
         os.chdir(original_cwd)
 
@@ -1208,41 +1209,62 @@ def test_filter_by_globs() -> None:
     assert pyfltr.command.targets.filter_by_globs(files, ["*.rs"]) == []
 
 
-def test_build_auto_args_pylint_pydantic() -> None:
+def test_build_invocation_argv_auto_args_pylint_pydantic() -> None:
     """pylint-pydantic=trueの場合に自動引数が挿入される。"""
     config = pyfltr.config.config.create_default_config()
-    result = pyfltr.command.runner._build_auto_args("pylint", config, [])
-    assert "--load-plugins=pylint_pydantic" in result
+    argv = pyfltr.command.runner.build_invocation_argv(
+        "pylint", config, commandline_prefix=["pylint"], additional_args=[], fix_stage=False
+    )
+    assert "--load-plugins=pylint_pydantic" in argv
 
 
-def test_build_auto_args_mypy_unused_awaitable() -> None:
+def test_build_invocation_argv_auto_args_mypy_unused_awaitable() -> None:
     """mypy-unused-awaitable=trueの場合に自動引数が挿入される。"""
     config = pyfltr.config.config.create_default_config()
-    result = pyfltr.command.runner._build_auto_args("mypy", config, [])
-    assert "--enable-error-code=unused-awaitable" in result
+    argv = pyfltr.command.runner.build_invocation_argv(
+        "mypy", config, commandline_prefix=["mypy"], additional_args=[], fix_stage=False
+    )
+    assert "--enable-error-code=unused-awaitable" in argv
 
 
-def test_build_auto_args_disabled() -> None:
+def test_build_invocation_argv_auto_args_disabled() -> None:
     """自動オプションをfalseにすると引数が挿入されない。"""
     config = pyfltr.config.config.create_default_config()
     config.values["pylint-pydantic"] = False
-    result = pyfltr.command.runner._build_auto_args("pylint", config, [])
-    assert "--load-plugins=pylint_pydantic" not in result
+    argv = pyfltr.command.runner.build_invocation_argv(
+        "pylint", config, commandline_prefix=["pylint"], additional_args=[], fix_stage=False
+    )
+    assert "--load-plugins=pylint_pydantic" not in argv
 
 
-def test_build_auto_args_dedup_with_user_args() -> None:
+def test_build_invocation_argv_auto_args_dedup_with_user_args() -> None:
     """ユーザーが既に同じ引数を指定している場合はスキップする。"""
     config = pyfltr.config.config.create_default_config()
-    user_args = ["--load-plugins=pylint_pydantic", "--jobs=4"]
-    result = pyfltr.command.runner._build_auto_args("pylint", config, user_args)
-    assert "--load-plugins=pylint_pydantic" not in result
+    config.values["pylint-args"] = ["--load-plugins=pylint_pydantic", "--jobs=4"]
+    argv = pyfltr.command.runner.build_invocation_argv(
+        "pylint", config, commandline_prefix=["pylint"], additional_args=[], fix_stage=False
+    )
+    # pylint-args設定値に含まれるため、自動引数による重複挿入がされないことを確認する
+    assert argv.count("--load-plugins=pylint_pydantic") == 1
 
 
-def test_build_auto_args_no_match() -> None:
-    """`AUTO_ARGS`に定義されていないコマンドは空リストを返す。"""
+def test_build_invocation_argv_auto_args_no_match() -> None:
+    """`AUTO_ARGS`に定義されていないコマンドは自動引数が挿入されない。"""
     config = pyfltr.config.config.create_default_config()
-    result = pyfltr.command.runner._build_auto_args("ruff-check", config, [])
-    assert not result
+    # ruff-check-jsonを無効化して余分な--output-formatが入らないようにする
+    config.values["ruff-check-json"] = False
+    argv = pyfltr.command.runner.build_invocation_argv(
+        "ruff-check", config, commandline_prefix=["ruff"], additional_args=[], fix_stage=False
+    )
+    # ruff-checkはAUTO_ARGS未定義であり、AUTO_ARGS由来フラグが含まれないことを確認する
+    assert "ruff-check" not in pyfltr.command.builtin.AUTO_ARGS
+    all_auto_args_flags = [
+        flag for entries in pyfltr.command.builtin.AUTO_ARGS.values() for _, args in entries for flag in args
+    ]
+    for flag in all_auto_args_flags:
+        assert not any(a == flag or a.startswith(flag + "=") for a in argv), (
+            f"AUTO_ARGS由来フラグ {flag} が意図せず含まれています"
+        )
 
 
 def test_auto_args_included_in_commandline(mocker, tmp_path: pathlib.Path) -> None:
@@ -1735,24 +1757,6 @@ def test_ensure_mise_available_passes_stripped_env_to_trust(mocker, monkeypatch)
         assert "/usr/bin" in entries
 
 
-def test_failed_resolution_result() -> None:
-    """`_failed_resolution_result`が解決失敗専用のCommandResultを返す。"""
-    command_info = pyfltr.config.config.CommandInfo(type="linter")
-
-    result = pyfltr.command.dispatcher._failed_resolution_result(
-        "shellcheck", command_info, "ツールが見つかりません: shellcheck", files=3
-    )
-
-    assert result.returncode == 1
-    assert result.has_error is True
-    assert result.resolution_failed is True
-    assert result.status == "resolution_failed"
-    assert result.files == 3
-    assert "shellcheck" in result.output
-    assert result.command == "shellcheck"
-    assert result.elapsed == 0.0
-
-
 def test_pass_filenames_false_omits_targets(mocker, tmp_path: pathlib.Path) -> None:
     """pass-filenames=falseの場合、コマンドラインにファイル引数が含まれない。"""
     target = tmp_path / "sample.ts"
@@ -1799,8 +1803,10 @@ def test_pass_filenames_true_includes_targets(mocker, tmp_path: pathlib.Path) ->
 
 
 def test_bin_tool_spec_all_tools_defined() -> None:
-    """`_BIN_TOOL_SPEC`に全bin系ツールが定義されている。"""
-    expected_tools = {
+    """全bin系ツールが`build_commandline`経由で解決可能（`mise` runner登録済み）。"""
+    # mise runner登録済みのツール一覧。これらすべてに build_commandline を呼んでエラーが出ないことで
+    # _BIN_TOOL_SPEC への登録完全性を確認する。
+    expected_tools = [
         # 既存のネイティブバイナリツール
         "ec",
         "shellcheck",
@@ -1820,24 +1826,38 @@ def test_bin_tool_spec_all_tools_defined() -> None:
         "dotnet-format",
         "dotnet-build",
         "dotnet-test",
-    }
-    assert set(pyfltr.command.runner._BIN_TOOL_SPEC.keys()) == expected_tools
+    ]
+    config = pyfltr.config.config.create_default_config()
+    # bin-runner既定がmiseのため、各ツールをmise runner経路でbuild_commandlineが通ることを確認する。
+    for tool in expected_tools:
+        config.values[f"{tool}-runner"] = "mise"
+        result = pyfltr.command.runner.build_commandline(tool, config)
+        assert result.executable == "mise", f"{tool}: mise経路で解決されるべき"
 
 
 def test_bin_tool_spec_structure() -> None:
-    """`BinToolSpec`のフィールドが正しく設定されている。"""
-    spec = pyfltr.command.runner._BIN_TOOL_SPEC["ec"]
-    assert spec.bin_name == "ec"
-    assert spec.mise_backend == "editorconfig-checker"
-    assert spec.default_version == "latest"
+    """`build_commandline`経由でec・shellcheck・cargo-denyのコマンドライン構造を検証する。"""
+    config = pyfltr.config.config.create_default_config()
 
-    spec = pyfltr.command.runner._BIN_TOOL_SPEC["shellcheck"]
-    assert spec.bin_name == "shellcheck"
+    # ecはmise_backend="editorconfig-checker"のため、tool specに"editorconfig-checker"が含まれる。
+    config.values["ec-runner"] = "mise"
+    result_ec = pyfltr.command.runner.build_commandline("ec", config)
+    assert result_ec.executable == "mise"
+    assert any("editorconfig-checker" in p for p in result_ec.prefix)
+    assert result_ec.prefix[-1] == "ec"
 
-    # cargo-denyはmise registryから消失したため、aquaレジストリ経由を既定とする。
-    spec = pyfltr.command.runner._BIN_TOOL_SPEC["cargo-deny"]
-    assert spec.bin_name == "cargo-deny"
-    assert spec.mise_backend == "aqua:EmbarkStudios/cargo-deny"
+    # shellcheckはmise_backendなしのため、tool specに"shellcheck"が含まれる。
+    config.values["shellcheck-runner"] = "mise"
+    result_sc = pyfltr.command.runner.build_commandline("shellcheck", config)
+    assert result_sc.executable == "mise"
+    assert result_sc.prefix[-1] == "shellcheck"
+
+    # cargo-denyはaquaレジストリ経由のため、tool specに"aqua:EmbarkStudios/cargo-deny"が含まれる。
+    config.values["cargo-deny-runner"] = "mise"
+    result_cd = pyfltr.command.runner.build_commandline("cargo-deny", config)
+    assert result_cd.executable == "mise"
+    assert any("aqua:EmbarkStudios/cargo-deny" in p for p in result_cd.prefix)
+    assert result_cd.prefix[-1] == "cargo-deny"
 
 
 def test_command_result_cached_defaults() -> None:
@@ -2136,44 +2156,51 @@ def test_get_env_path_posix_strict_key(monkeypatch) -> None:
     assert pyfltr.command.env.get_env_path({"Path": "/tmp/bin", "PATH": "/usr/bin"}) == "/usr/bin"
 
 
-def test_normalize_path_entry_for_dedup_posix(monkeypatch) -> None:
-    """POSIXでは末尾スラッシュのみ除去し、大文字小文字は保持する。"""
-    monkeypatch.setattr("pyfltr.command.env.os.name", "posix")
-    assert pyfltr.command.env._normalize_path_entry_for_dedup("/usr/bin/") == "/usr/bin"
-    assert pyfltr.command.env._normalize_path_entry_for_dedup("/USR/Bin") == "/USR/Bin"
-    assert pyfltr.command.env._normalize_path_entry_for_dedup("") == ""
-
-
-def test_normalize_path_entry_for_dedup_windows(monkeypatch) -> None:
-    """Windowsでは大文字小文字非区別 + パス区切り正規化。"""
-    monkeypatch.setattr("pyfltr.command.env.os.name", "nt")
-    assert pyfltr.command.env._normalize_path_entry_for_dedup("C:/Tools/Mise/bin") == "c:\\tools\\mise\\bin"
-    assert pyfltr.command.env._normalize_path_entry_for_dedup("c:\\tools\\mise\\bin\\") == "c:\\tools\\mise\\bin"
-    assert pyfltr.command.env._normalize_path_entry_for_dedup("") == ""
-
-
-def test_dedupe_path_value_preserves_first_occurrence(monkeypatch) -> None:
-    """重複は順序先勝ちで除去され、初出エントリの表記が保持される。"""
+def test_dedupe_environ_path_posix_trailing_slash_treated_as_duplicate(monkeypatch) -> None:
+    """POSIXでは末尾スラッシュのみ差のエントリを重複扱いし、初出（末尾スラッシュなし）を保持する。"""
     monkeypatch.setattr("pyfltr.command.env.os.name", "posix")
     monkeypatch.setattr("pyfltr.command.env.os.pathsep", ":")
-    src = ":".join(["/usr/bin", "/opt/bin", "/usr/bin", "/usr/local/bin", "/opt/bin/"])
-    assert pyfltr.command.env._dedupe_path_value(src) == ":".join(["/usr/bin", "/opt/bin", "/usr/local/bin"])
+    env: dict[str, str] = {"PATH": ":".join(["/usr/bin", "/opt/bin", "/usr/bin", "/usr/local/bin", "/opt/bin/"])}
+    assert pyfltr.command.env.dedupe_environ_path(env) is True
+    assert env["PATH"] == ":".join(["/usr/bin", "/opt/bin", "/usr/local/bin"])
 
 
-def test_dedupe_path_value_windows_case_insensitive(monkeypatch) -> None:
-    """Windowsでは大文字小文字差・パス区切り差を吸収して重複扱いする。"""
+def test_dedupe_environ_path_posix_case_sensitive(monkeypatch) -> None:
+    """POSIXでは大文字小文字差があるエントリは別エントリとして扱う。"""
+    monkeypatch.setattr("pyfltr.command.env.os.name", "posix")
+    monkeypatch.setattr("pyfltr.command.env.os.pathsep", ":")
+    env: dict[str, str] = {"PATH": ":".join(["/usr/bin", "/USR/Bin"])}
+    # 大文字小文字が異なるため重複扱いされず両方残る
+    assert pyfltr.command.env.dedupe_environ_path(env) is False
+    assert env["PATH"] == ":".join(["/usr/bin", "/USR/Bin"])
+
+
+def test_dedupe_environ_path_windows_case_insensitive(monkeypatch) -> None:
+    """Windowsでは大文字小文字差・パス区切り差を吸収して重複扱いし、初出の表記を保持する。"""
     monkeypatch.setattr("pyfltr.command.env.os.name", "nt")
     monkeypatch.setattr("pyfltr.command.env.os.pathsep", ";")
-    src = ";".join(["C:\\Tools\\Mise\\bin", "c:/tools/mise/bin", "C:\\Windows"])
-    deduped = pyfltr.command.env._dedupe_path_value(src)
-    assert deduped == ";".join(["C:\\Tools\\Mise\\bin", "C:\\Windows"])
+    env: dict[str, str] = {"PATH": ";".join(["C:\\Tools\\Mise\\bin", "c:/tools/mise/bin", "C:\\Windows"])}
+    assert pyfltr.command.env.dedupe_environ_path(env) is True
+    assert env["PATH"] == ";".join(["C:\\Tools\\Mise\\bin", "C:\\Windows"])
 
 
-def test_dedupe_path_value_keeps_empty_entry_only_once(monkeypatch) -> None:
+def test_dedupe_environ_path_windows_trailing_backslash_treated_as_duplicate(monkeypatch) -> None:
+    """Windowsでは末尾区切り差のエントリも重複扱いする（境界値ケース）。"""
+    monkeypatch.setattr("pyfltr.command.env.os.name", "nt")
+    monkeypatch.setattr("pyfltr.command.env.os.pathsep", ";")
+    env: dict[str, str] = {"PATH": ";".join(["C:/Tools/Mise/bin", "c:\\tools\\mise\\bin\\"])}
+    assert pyfltr.command.env.dedupe_environ_path(env) is True
+    # 初出の表記が保持される
+    assert env["PATH"] == "C:/Tools/Mise/bin"
+
+
+def test_dedupe_environ_path_keeps_empty_entry_only_once(monkeypatch) -> None:
     """空エントリ（POSIXでcwd相当）も最初の1回のみ残す。"""
     monkeypatch.setattr("pyfltr.command.env.os.name", "posix")
     monkeypatch.setattr("pyfltr.command.env.os.pathsep", ":")
-    assert pyfltr.command.env._dedupe_path_value("/usr/bin::/opt/bin:") == ":".join(["/usr/bin", "", "/opt/bin"])
+    env: dict[str, str] = {"PATH": "/usr/bin::/opt/bin:"}
+    assert pyfltr.command.env.dedupe_environ_path(env) is True
+    assert env["PATH"] == ":".join(["/usr/bin", "", "/opt/bin"])
 
 
 def test_dedupe_environ_path_writes_back_with_same_key(monkeypatch) -> None:
@@ -2203,34 +2230,62 @@ def test_dedupe_environ_path_returns_false_when_path_missing() -> None:
     assert not env
 
 
-def test_is_mise_tool_path_marker_matches(monkeypatch) -> None:
-    """mise toolパスのマーカーが含まれるエントリは`True`。"""
+def test_build_mise_subprocess_env_strips_installs_and_dotnet_root_and_shims(monkeypatch) -> None:
+    """installs/・dotnet-root・shimsの3種は除外され、mise/binと無関係エントリは保持される。"""
     monkeypatch.setattr("pyfltr.command.env.os.name", "posix")
-    assert pyfltr.command.env._is_mise_tool_path("/home/u/.local/share/mise/installs/dotnet/10.0.0") is True
-    assert pyfltr.command.env._is_mise_tool_path("/home/u/.local/share/mise/dotnet-root") is True
-    assert pyfltr.command.env._is_mise_tool_path("/home/u/.local/share/mise/shims") is True
+    monkeypatch.setattr("pyfltr.command.env.os.pathsep", ":")
+    src: dict[str, str] = {
+        "PATH": ":".join(
+            [
+                "/home/u/.local/share/mise/installs/dotnet/10.0.0",
+                "/home/u/.local/share/mise/dotnet-root",
+                "/home/u/.local/share/mise/shims",
+                "/home/u/.local/share/mise/bin",
+                "/usr/bin",
+            ]
+        )
+    }
+    new = pyfltr.command.env.build_mise_subprocess_env(src)
+    entries = new["PATH"].split(":")
+    assert "/home/u/.local/share/mise/installs/dotnet/10.0.0" not in entries
+    assert "/home/u/.local/share/mise/dotnet-root" not in entries
+    assert "/home/u/.local/share/mise/shims" not in entries
+    # mise/bin（本体バイナリディレクトリ）と無関係エントリは保持される
+    assert "/home/u/.local/share/mise/bin" in entries
+    assert "/usr/bin" in entries
 
 
-def test_is_mise_tool_path_protects_mise_bin(monkeypatch) -> None:
-    """mise/binは保護対象（mise本体バイナリディレクトリのため）。"""
+def test_build_mise_subprocess_env_unrelated_path_preserved(monkeypatch) -> None:
+    """miseと無関係なパスや空エントリは除外されない。"""
     monkeypatch.setattr("pyfltr.command.env.os.name", "posix")
-    assert pyfltr.command.env._is_mise_tool_path("/home/u/.local/share/mise/bin") is False
+    monkeypatch.setattr("pyfltr.command.env.os.pathsep", ":")
+    src: dict[str, str] = {"PATH": ":".join(["/usr/bin", "", "/opt/bin"])}
+    new = pyfltr.command.env.build_mise_subprocess_env(src)
+    assert new["PATH"] == "/usr/bin::/opt/bin"
 
 
-def test_is_mise_tool_path_unrelated_returns_false(monkeypatch) -> None:
-    """miseと関係ないパスや空エントリは`False`。"""
-    monkeypatch.setattr("pyfltr.command.env.os.name", "posix")
-    assert pyfltr.command.env._is_mise_tool_path("/usr/bin") is False
-    assert pyfltr.command.env._is_mise_tool_path("") is False
-
-
-def test_is_mise_tool_path_windows_case_and_separator(monkeypatch) -> None:
-    """Windowsでは大文字混在・`\\`区切りでも判定できる。mise/binは保護対象。"""
+def test_build_mise_subprocess_env_windows_case_and_separator(monkeypatch) -> None:
+    """Windowsでは大文字混在・`\\`区切りでもmise toolパスを除外し、mise/binは保護する。"""
     monkeypatch.setattr("pyfltr.command.env.os.name", "nt")
-    assert pyfltr.command.env._is_mise_tool_path("C:\\Users\\u\\AppData\\Local\\MISE\\Installs\\Dotnet\\10.0") is True
-    assert pyfltr.command.env._is_mise_tool_path("C:\\Users\\u\\AppData\\Local\\mise\\dotnet-root") is True
-    assert pyfltr.command.env._is_mise_tool_path("C:\\Users\\u\\AppData\\Local\\mise\\shims") is True
-    assert pyfltr.command.env._is_mise_tool_path("C:\\Users\\u\\AppData\\Local\\mise\\bin") is False
+    monkeypatch.setattr("pyfltr.command.env.os.pathsep", ";")
+    src: dict[str, str] = {
+        "PATH": ";".join(
+            [
+                "C:\\Users\\u\\AppData\\Local\\MISE\\Installs\\Dotnet\\10.0",
+                "C:\\Users\\u\\AppData\\Local\\mise\\dotnet-root",
+                "C:\\Users\\u\\AppData\\Local\\mise\\shims",
+                "C:\\Users\\u\\AppData\\Local\\mise\\bin",
+                "C:\\Windows\\system32",
+            ]
+        )
+    }
+    new = pyfltr.command.env.build_mise_subprocess_env(src)
+    entries = new["PATH"].split(";")
+    assert "C:\\Users\\u\\AppData\\Local\\MISE\\Installs\\Dotnet\\10.0" not in entries
+    assert "C:\\Users\\u\\AppData\\Local\\mise\\dotnet-root" not in entries
+    assert "C:\\Users\\u\\AppData\\Local\\mise\\shims" not in entries
+    assert "C:\\Users\\u\\AppData\\Local\\mise\\bin" in entries
+    assert "C:\\Windows\\system32" in entries
 
 
 def test_build_mise_subprocess_env_does_not_mutate_input(monkeypatch) -> None:
@@ -2393,18 +2448,6 @@ def test_terminate_active_processes_parent_exited_grandchild_remains() -> None:
                 os.kill(child_pid, 9)
 
 
-def test_looks_like_glab_host_missing_detects_known_patterns() -> None:
-    """ホスト未検出/未認証文言が大小文字差や前後文字を含んでも検出される。"""
-    assert pyfltr.command.glab._looks_like_glab_host_missing(
-        "Error: none of the git remotes configured for this repository point to a known GitLab host."
-    )
-    assert pyfltr.command.glab._looks_like_glab_host_missing("you are NOT AUTHENTICATED to glab")
-    assert not pyfltr.command.glab._looks_like_glab_host_missing(
-        "Error: validation failed: jobs:test config key may not be used with `rules`"
-    )
-    assert not pyfltr.command.glab._looks_like_glab_host_missing("")
-
-
 def _make_glab_ci_lint_args() -> argparse.Namespace:
     """`execute_glab_ci_lint`で参照される最低限の属性を持つNamespaceを返す。"""
     return argparse.Namespace(verbose=False)
@@ -2421,6 +2464,37 @@ def test_execute_glab_ci_lint_skips_on_host_missing(mocker, tmp_path: pathlib.Pa
         args=["glab", "ci", "lint"],
         returncode=1,
         stdout="Error: none of the git remotes configured for this repository point to a known GitLab host.\n",
+    )
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
+    target = tmp_path / ".gitlab-ci.yml"
+    target.write_text("stages: [test]\n", encoding="utf-8")
+
+    result = pyfltr.command.glab.execute_glab_ci_lint(
+        "glab-ci-lint",
+        _make_glab_ci_lint_command_info(),
+        ["glab", "ci", "lint"],
+        [target],
+        pyfltr.config.config.create_default_config(),
+        {"PATH": os.environ.get("PATH", "")},
+        None,
+        time.perf_counter(),
+        _make_glab_ci_lint_args(),
+    )
+
+    assert result.returncode is None
+    assert result.status == "skipped"
+    assert "スキップしました" in result.output
+    warnings = pyfltr.warnings_.collected_warnings()
+    assert any(w.get("source") == "glab-ci-lint" for w in warnings)
+
+
+def test_execute_glab_ci_lint_skips_on_not_authenticated(mocker, tmp_path: pathlib.Path) -> None:
+    """大文字の未認証文言 "NOT AUTHENTICATED" も大小文字差を吸収してスキップ扱いに書き換える。"""
+    pyfltr.warnings_.clear()
+    proc = subprocess.CompletedProcess(
+        args=["glab", "ci", "lint"],
+        returncode=1,
+        stdout="you are NOT AUTHENTICATED to glab\n",
     )
     mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
     target = tmp_path / ".gitlab-ci.yml"
@@ -2996,20 +3070,30 @@ def test_get_mise_active_tools_cache_key_differs_by_allow_side_effects(
     assert received_flags == [False, True]
 
 
-# --- _query_mise_active_tools のステータス分類 ---
+# --- get_mise_active_tools の status 分類検証 ---
+#
+# 各シナリオを個別に検証するテストでは autouse フィクスチャによる固定値返却を打ち消す必要があるため、
+# `_MISE_ACTIVE_TOOLS_CACHE` をクリアし、`run_mise_with_trust` または `shutil.which` をシナリオ別にモックし、
+# `get_mise_active_tools` を直接呼び出してstatus文字列を検証する。
 
 
-def test_query_mise_active_tools_mise_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`mise` がPATH上に存在しないときは `mise-not-found` ステータスを返す。"""
+def test_get_mise_active_tools_status_mise_not_found(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """`mise` がPATH上に存在しないとき、statusが `mise-not-found` になる。"""
+    monkeypatch.setattr("pyfltr.command.mise.get_mise_active_tools", _testconf.real_get_mise_active_tools)
+    monkeypatch.setattr("pyfltr.command.mise._MISE_ACTIVE_TOOLS_CACHE", {}, raising=True)
     monkeypatch.setattr("pyfltr.command.mise.shutil.which", lambda name: None if name == "mise" else "/bin/" + name)
     config = pyfltr.config.config.create_default_config()
-    result = pyfltr.command.mise._query_mise_active_tools(config, allow_side_effects=False)
+    result = pyfltr.command.mise.get_mise_active_tools(config, allow_side_effects=False, cwd=tmp_path)
     assert result.status == "mise-not-found"
-    assert not result.tools
+    assert result.tools == {}
 
 
-def test_query_mise_active_tools_untrusted_no_side_effects(monkeypatch: pytest.MonkeyPatch) -> None:
-    """副作用OFF下で未信頼config由来エラーが出たときは `untrusted-no-side-effects` を返す。"""
+def test_get_mise_active_tools_status_untrusted_no_side_effects(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """副作用OFF下で未信頼config由来エラーが出たとき、statusが `untrusted-no-side-effects` になる。"""
+    monkeypatch.setattr("pyfltr.command.mise.get_mise_active_tools", _testconf.real_get_mise_active_tools)
+    monkeypatch.setattr("pyfltr.command.mise._MISE_ACTIVE_TOOLS_CACHE", {}, raising=True)
     monkeypatch.setattr("pyfltr.command.mise.shutil.which", lambda name: f"/usr/local/bin/{name}")
 
     def fake_run_with_trust(
@@ -3025,14 +3109,15 @@ def test_query_mise_active_tools_untrusted_no_side_effects(monkeypatch: pytest.M
 
     monkeypatch.setattr("pyfltr.command.mise.run_mise_with_trust", fake_run_with_trust)
     config = pyfltr.config.config.create_default_config()
-    result = pyfltr.command.mise._query_mise_active_tools(config, allow_side_effects=False)
+    result = pyfltr.command.mise.get_mise_active_tools(config, allow_side_effects=False, cwd=tmp_path)
     assert result.status == "untrusted-no-side-effects"
-    assert result.detail is not None
-    assert "not trusted" in result.detail
+    assert result.tools == {}
 
 
-def test_query_mise_active_tools_trust_failed(monkeypatch: pytest.MonkeyPatch) -> None:
-    """trust試行が拒否されたら `trust-failed` を返す。"""
+def test_get_mise_active_tools_status_trust_failed(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """trust試行が拒否されたとき、statusが `trust-failed` になる。"""
+    monkeypatch.setattr("pyfltr.command.mise.get_mise_active_tools", _testconf.real_get_mise_active_tools)
+    monkeypatch.setattr("pyfltr.command.mise._MISE_ACTIVE_TOOLS_CACHE", {}, raising=True)
     monkeypatch.setattr("pyfltr.command.mise.shutil.which", lambda name: f"/usr/local/bin/{name}")
 
     def fake_run_with_trust(
@@ -3048,14 +3133,15 @@ def test_query_mise_active_tools_trust_failed(monkeypatch: pytest.MonkeyPatch) -
 
     monkeypatch.setattr("pyfltr.command.mise.run_mise_with_trust", fake_run_with_trust)
     config = pyfltr.config.config.create_default_config()
-    result = pyfltr.command.mise._query_mise_active_tools(config, allow_side_effects=True)
+    result = pyfltr.command.mise.get_mise_active_tools(config, allow_side_effects=True, cwd=tmp_path)
     assert result.status == "trust-failed"
-    assert result.detail is not None
-    assert "trust rejected" in result.detail
+    assert result.tools == {}
 
 
-def test_query_mise_active_tools_exec_error_oserror(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`OSError` 例外が出たときは `exec-error` ステータスを返す。"""
+def test_get_mise_active_tools_status_exec_error_oserror(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """`OSError` 例外が出たとき、statusが `exec-error` になる。"""
+    monkeypatch.setattr("pyfltr.command.mise.get_mise_active_tools", _testconf.real_get_mise_active_tools)
+    monkeypatch.setattr("pyfltr.command.mise._MISE_ACTIVE_TOOLS_CACHE", {}, raising=True)
     monkeypatch.setattr("pyfltr.command.mise.shutil.which", lambda name: f"/usr/local/bin/{name}")
 
     def fake_run_with_trust(
@@ -3071,14 +3157,15 @@ def test_query_mise_active_tools_exec_error_oserror(monkeypatch: pytest.MonkeyPa
 
     monkeypatch.setattr("pyfltr.command.mise.run_mise_with_trust", fake_run_with_trust)
     config = pyfltr.config.config.create_default_config()
-    result = pyfltr.command.mise._query_mise_active_tools(config, allow_side_effects=False)
+    result = pyfltr.command.mise.get_mise_active_tools(config, allow_side_effects=False, cwd=tmp_path)
     assert result.status == "exec-error"
-    assert result.detail is not None
-    assert "executable bit" in result.detail
+    assert result.tools == {}
 
 
-def test_query_mise_active_tools_json_parse_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`mise ls` のstdoutがJSONとしてパースできなければ `json-parse-error` を返す。"""
+def test_get_mise_active_tools_status_json_parse_error(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """`mise ls` のstdoutがJSONとしてパースできなければ、statusが `json-parse-error` になる。"""
+    monkeypatch.setattr("pyfltr.command.mise.get_mise_active_tools", _testconf.real_get_mise_active_tools)
+    monkeypatch.setattr("pyfltr.command.mise._MISE_ACTIVE_TOOLS_CACHE", {}, raising=True)
     monkeypatch.setattr("pyfltr.command.mise.shutil.which", lambda name: f"/usr/local/bin/{name}")
 
     def fake_run_with_trust(
@@ -3094,12 +3181,15 @@ def test_query_mise_active_tools_json_parse_error(monkeypatch: pytest.MonkeyPatc
 
     monkeypatch.setattr("pyfltr.command.mise.run_mise_with_trust", fake_run_with_trust)
     config = pyfltr.config.config.create_default_config()
-    result = pyfltr.command.mise._query_mise_active_tools(config, allow_side_effects=False)
+    result = pyfltr.command.mise.get_mise_active_tools(config, allow_side_effects=False, cwd=tmp_path)
     assert result.status == "json-parse-error"
+    assert result.tools == {}
 
 
-def test_query_mise_active_tools_unexpected_shape(monkeypatch: pytest.MonkeyPatch) -> None:
-    """JSONがdict以外（list等）のときは `unexpected-shape` を返す。"""
+def test_get_mise_active_tools_status_unexpected_shape(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """JSONがdict以外（list等）のとき、statusが `unexpected-shape` になる。"""
+    monkeypatch.setattr("pyfltr.command.mise.get_mise_active_tools", _testconf.real_get_mise_active_tools)
+    monkeypatch.setattr("pyfltr.command.mise._MISE_ACTIVE_TOOLS_CACHE", {}, raising=True)
     monkeypatch.setattr("pyfltr.command.mise.shutil.which", lambda name: f"/usr/local/bin/{name}")
 
     def fake_run_with_trust(
@@ -3115,13 +3205,15 @@ def test_query_mise_active_tools_unexpected_shape(monkeypatch: pytest.MonkeyPatc
 
     monkeypatch.setattr("pyfltr.command.mise.run_mise_with_trust", fake_run_with_trust)
     config = pyfltr.config.config.create_default_config()
-    result = pyfltr.command.mise._query_mise_active_tools(config, allow_side_effects=False)
+    result = pyfltr.command.mise.get_mise_active_tools(config, allow_side_effects=False, cwd=tmp_path)
     assert result.status == "unexpected-shape"
-    assert result.detail == "got list"
+    assert result.tools == {}
 
 
-def test_query_mise_active_tools_ok(monkeypatch: pytest.MonkeyPatch) -> None:
-    """正常取得時は `ok` ステータスとtoolsを返す。"""
+def test_get_mise_active_tools_status_ok_with_tools(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """mise設定に対象ツールが登録済みのとき、statusが `ok` でtoolsに解決結果が入る。"""
+    monkeypatch.setattr("pyfltr.command.mise.get_mise_active_tools", _testconf.real_get_mise_active_tools)
+    monkeypatch.setattr("pyfltr.command.mise._MISE_ACTIVE_TOOLS_CACHE", {}, raising=True)
     monkeypatch.setattr("pyfltr.command.mise.shutil.which", lambda name: f"/usr/local/bin/{name}")
 
     def fake_run_with_trust(
@@ -3133,13 +3225,13 @@ def test_query_mise_active_tools_ok(monkeypatch: pytest.MonkeyPatch) -> None:
         cwd: object = None,
     ) -> tuple[int, str, str, bool]:
         del args, mise_env, config, allow_side_effects, cwd
-        return 0, '{"rust": [{"version": "1.83.0"}]}', "", False
+        return 0, '{"shellcheck": [{"version": "0.9.0"}]}', "", False
 
     monkeypatch.setattr("pyfltr.command.mise.run_mise_with_trust", fake_run_with_trust)
     config = pyfltr.config.config.create_default_config()
-    result = pyfltr.command.mise._query_mise_active_tools(config, allow_side_effects=False)
+    result = pyfltr.command.mise.get_mise_active_tools(config, allow_side_effects=False, cwd=tmp_path)
     assert result.status == "ok"
-    assert result.tools == {"rust": [{"version": "1.83.0"}]}
+    assert result.tools == {"shellcheck": [{"version": "0.9.0"}]}
 
 
 # --- get_mise_active_tool_key 公開API ---

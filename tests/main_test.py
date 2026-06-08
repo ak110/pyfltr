@@ -1,7 +1,5 @@
 """mainエントリーポイントのテストコード。"""
 
-# pylint: disable=protected-access
-
 import json
 import logging
 import os
@@ -12,10 +10,7 @@ import pytest
 
 import pyfltr.cli.main
 import pyfltr.cli.output_format
-import pyfltr.cli.pipeline
 import pyfltr.cli.precommit_guidance
-import pyfltr.command.process
-import pyfltr.warnings_
 from tests import conftest as _testconf
 
 
@@ -522,38 +517,41 @@ def test_run_pipeline_does_not_log_run_id_when_archive_disabled(mocker, capsys, 
 # --- precommit MM状態ガイダンス ---
 
 
-def test_precommit_guidance_emitted_when_formatted_under_git(monkeypatch, capsys):
+def test_precommit_guidance_emitted_when_formatted_under_git(mocker, capsys):
     """formatted結果がありgit commit経由のときガイダンスがstderrに出る。"""
-    monkeypatch.setattr(pyfltr.cli.precommit_guidance, "is_invoked_from_git_commit", lambda: True)
-    pyfltr.cli.pipeline._maybe_emit_precommit_guidance(
-        [_testconf.make_formatted_result(), _testconf.make_succeeded_result()],
-        structured_stdout=False,
-    )
+    # ruff-formatがformatted（returncode=1, has_error=False）になるよう制御する。
+    proc_formatted = subprocess.CompletedProcess(["ruff"], returncode=1, stdout="")
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc_formatted)
+    mocker.patch("pyfltr.cli.precommit_guidance.is_invoked_from_git_commit", return_value=True)
+
+    pyfltr.cli.main.run(["run", "--no-ui", "--commands=ruff-format", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr()
     assert "formatter" in captured.err
     assert "git add" in captured.err
 
 
-def test_precommit_guidance_skipped_when_not_under_git(monkeypatch, capsys):
+def test_precommit_guidance_skipped_when_not_under_git(mocker, capsys):
     """git commit経由でなければformattedがあってもガイダンスを出力しない。"""
-    monkeypatch.setattr(pyfltr.cli.precommit_guidance, "is_invoked_from_git_commit", lambda: False)
-    pyfltr.cli.pipeline._maybe_emit_precommit_guidance(
-        [_testconf.make_formatted_result()],
-        structured_stdout=False,
-    )
+    proc_formatted = subprocess.CompletedProcess(["ruff"], returncode=1, stdout="")
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc_formatted)
+    mocker.patch("pyfltr.cli.precommit_guidance.is_invoked_from_git_commit", return_value=False)
+
+    pyfltr.cli.main.run(["run", "--no-ui", "--commands=ruff-format", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr()
-    assert captured.err == ""
+    assert "formatter" not in captured.err
+    assert "git add" not in captured.err
 
 
-def test_precommit_guidance_skipped_when_no_formatted(monkeypatch, capsys):
+def test_precommit_guidance_skipped_when_no_formatted(mocker, capsys):
     """formatted結果が無ければガイダンスを出力しない。"""
-    monkeypatch.setattr(pyfltr.cli.precommit_guidance, "is_invoked_from_git_commit", lambda: True)
-    pyfltr.cli.pipeline._maybe_emit_precommit_guidance(
-        [_testconf.make_succeeded_result()],
-        structured_stdout=False,
-    )
+    proc_succeeded = subprocess.CompletedProcess(["ruff"], returncode=0, stdout="")
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc_succeeded)
+    mocker.patch("pyfltr.cli.precommit_guidance.is_invoked_from_git_commit", return_value=True)
+
+    pyfltr.cli.main.run(["run", "--no-ui", "--commands=ruff-format", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr()
-    assert captured.err == ""
+    assert "formatter" not in captured.err
+    assert "git add" not in captured.err
 
 
 def test_tool_name_as_subcommand_shows_guidance(capsys):
@@ -609,18 +607,20 @@ def test_help_contains_description(capsys):
     assert "コーディングエージェント" in out
 
 
-def test_precommit_guidance_skipped_for_jsonl_and_sarif_stdout_only(monkeypatch, capsys):
+def test_precommit_guidance_skipped_for_jsonl_and_sarif_stdout_only(mocker, capsys):
     """構造化stdoutモード（jsonl/sarif）ではstderrへ漏らさない。
 
     github-annotationsはtextと同じレイアウトのため`structured_stdout=False`で扱われる。
     """
-    monkeypatch.setattr(pyfltr.cli.precommit_guidance, "is_invoked_from_git_commit", lambda: True)
-    pyfltr.cli.pipeline._maybe_emit_precommit_guidance(
-        [_testconf.make_formatted_result()],
-        structured_stdout=True,
-    )
+    proc_formatted = subprocess.CompletedProcess(["ruff"], returncode=1, stdout="")
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc_formatted)
+    mocker.patch("pyfltr.cli.precommit_guidance.is_invoked_from_git_commit", return_value=True)
+
+    # jsonlはstructured_stdoutモード（stdoutをJSONLが占有）のため、ガイダンスをstderrへ出力しない。
+    pyfltr.cli.main.run(["run", "--output-format=jsonl", "--commands=ruff-format", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr()
-    assert captured.err == ""
+    assert "formatter" not in captured.err
+    assert "git add" not in captured.err
 
 
 class _FakeReconfigurableStream:
@@ -647,7 +647,7 @@ def test_reconfigure_stdio_to_utf8_invokes_reconfigure(monkeypatch) -> None:
     monkeypatch.setattr(pyfltr.cli.main.sys, "stdout", fake_stdout)
     monkeypatch.setattr(pyfltr.cli.main.sys, "stderr", fake_stderr)
 
-    pyfltr.cli.main._reconfigure_stdio_to_utf8()
+    pyfltr.cli.main._reconfigure_stdio_to_utf8()  # pylint: disable=protected-access
 
     expected = {"encoding": "utf-8", "errors": "backslashreplace"}
     assert fake_stdout.calls == [expected]
@@ -659,7 +659,7 @@ def test_reconfigure_stdio_to_utf8_tolerates_missing_or_failing_streams(monkeypa
     monkeypatch.setattr(pyfltr.cli.main.sys, "stdout", object())
     monkeypatch.setattr(pyfltr.cli.main.sys, "stderr", _ReconfigureRaisingStream())
 
-    pyfltr.cli.main._reconfigure_stdio_to_utf8()
+    pyfltr.cli.main._reconfigure_stdio_to_utf8()  # pylint: disable=protected-access
 
 
 # --- configサブコマンド ---

@@ -1,6 +1,6 @@
 """error_parserのテストコード。"""
 
-# pylint: disable=protected-access,too-many-lines
+# pylint: disable=too-many-lines
 
 import json
 import pathlib
@@ -591,8 +591,10 @@ def test_parse_textlint_json_hint_for_sentence_length() -> None:
     )
     errors = pyfltr.command.error_parser.parse_errors("textlint", output)
     assert len(errors) == 1
-    # 内部定数_TEXTLINT_RULE_HINTSの値を直接突き合わせて検証する単体テスト経路。
-    assert errors[0].hint == pyfltr.command.error_parser._TEXTLINT_RULE_HINTS["ja-technical-writing/sentence-length"]
+    assert errors[0].hint == (
+        "textlint counts up to the period (。) as one sentence; bullet-line splits still count as one."
+        " Split with periods to shorten."
+    )
 
 
 def test_parse_textlint_json_hint_for_known_rules() -> None:

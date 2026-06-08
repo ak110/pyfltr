@@ -1,7 +1,5 @@
 """シェル補完生成のテストコード。"""
 
-# pylint: disable=protected-access
-
 import pytest
 
 import pyfltr.cli.main
@@ -11,34 +9,34 @@ import pyfltr.config.config
 
 
 class TestCollectCompletions:
-    """補完データ収集のテスト。"""
+    """補完データ収集のテスト（generate経由でbashスクリプト内容を検証）。"""
 
     def test_options_contain_verbose(self):
         parser = pyfltr.cli.parser.build_parser()
-        options, _, _ = pyfltr.cli.shell_completion._collect_completions(parser)
-        assert "--verbose" in options
-        assert "-v" in options
+        script = pyfltr.cli.shell_completion.generate("bash", parser, frozenset())
+        assert "--verbose" in script
+        assert "-v" in script
 
     def test_options_contain_output_format(self):
         parser = pyfltr.cli.parser.build_parser()
-        options, _, _ = pyfltr.cli.shell_completion._collect_completions(parser)
-        assert "--output-format" in options
+        script = pyfltr.cli.shell_completion.generate("bash", parser, frozenset())
+        assert "--output-format" in script
 
     def test_output_format_choices(self):
         parser = pyfltr.cli.parser.build_parser()
-        _, output_format_choices, _ = pyfltr.cli.shell_completion._collect_completions(parser)
-        assert "text" in output_format_choices
-        assert "jsonl" in output_format_choices
+        script = pyfltr.cli.shell_completion.generate("bash", parser, frozenset())
+        assert "text" in script
+        assert "jsonl" in script
 
     def test_commands_choices_contain_builtin_and_aliases(self):
         parser = pyfltr.cli.parser.build_parser()
-        _, _, commands_choices = pyfltr.cli.shell_completion._collect_completions(parser)
+        script = pyfltr.cli.shell_completion.generate("bash", parser, frozenset())
         # ビルトインコマンド
         for name in pyfltr.config.config.BUILTIN_COMMAND_NAMES:
-            assert name in commands_choices
+            assert name in script
         # 静的エイリアス
         for alias in pyfltr.config.config.DEFAULT_CONFIG["aliases"]:
-            assert alias in commands_choices
+            assert alias in script
 
 
 class TestGenerateBash:

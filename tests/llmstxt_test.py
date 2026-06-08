@@ -4,8 +4,6 @@ mkdocs.yml の llmstxt プラグイン設定 markdown_description が
 実装の全サブコマンド名と全ビルトインコマンド名を含んでいることを検査する。
 """
 
-# pylint: disable=protected-access
-
 import argparse
 import functools
 import pathlib
@@ -52,8 +50,8 @@ def _get_subcommand_names() -> list[str]:
     subcommand_names: list[str] = []
     # argparse はサブパーサー一覧を公開 API で列挙する手段を提供しないため、
     # `_actions` / `_SubParsersAction` 経由の参照を使う。
-    for action in parser._actions:  # type: ignore[attr-defined]
-        if isinstance(action, argparse._SubParsersAction):  # type: ignore[attr-defined]
+    for action in parser._actions:  # pylint: disable=protected-access  # type: ignore[attr-defined]
+        if isinstance(action, argparse._SubParsersAction):  # pylint: disable=protected-access  # type: ignore[attr-defined]
             subcommand_names.extend(action.choices.keys())
     return subcommand_names
 

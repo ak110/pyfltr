@@ -1,7 +1,6 @@
 """cli経路のテストコード。"""
 
-# pylint: disable=protected-access
-
+import argparse
 import collections.abc
 import logging
 
@@ -84,38 +83,77 @@ def test_write_log_failed(text_logs):
     assert "@ returncode: 1" in "\n".join(text_logs)
 
 
-def test_run_one_command_stream_mode_writes_detail_log(mocker, text_logs):
-    """per_command_log=Trueのとき詳細ログを即時出力すること。"""
+def _make_pipeline_args(*, stream: bool) -> argparse.Namespace:
+    """run_pipeline呼び出し用の最小Namespaceを生成する。"""
+    return argparse.Namespace(
+        output_format="text",
+        output_file=None,
+        format_source=None,
+        stream=stream,
+        no_clear=True,
+        no_ui=True,
+        ui=False,
+        targets=[],
+        exit_zero_even_if_formatted=True,
+        include_fix_stage=False,
+        fail_fast=False,
+        jobs=None,
+        no_exclude=False,
+        no_gitignore=False,
+        human_readable=False,
+        shuffle=False,
+        verbose=False,
+        ci=False,
+        only_failed=False,
+        from_run=None,
+        changed_since=None,
+        no_archive=True,
+        no_cache=True,
+    )
+
+
+def test_run_one_command_stream_mode_writes_detail_log(mocker, text_logs, tmp_path, monkeypatch):
+    """stream=Trueのとき詳細ログを即時出力すること（run_pipeline経由）。"""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\nmypy = true\n", encoding="utf-8")
+    config = pyfltr.config.config.load_config()
+
     result = _make_result("mypy", returncode=0, output="ok")
     mocker.patch("pyfltr.command.dispatcher.execute_command", return_value=result)
-    mock_args = mocker.MagicMock()
-    mock_args.output_format = "text"
-    mock_config = mocker.MagicMock()
+    # configure_text_output はハンドラーを差し替えるため text_logs フィクスチャのリスナーが
+    # 除去される。無操作化してフィクスチャのハンドラーを維持する。
+    mocker.patch("pyfltr.cli.output_format.configure_text_output")
+    mocker.patch("pyfltr.cli.output_format.configure_structured_output")
 
-    base_ctx = pyfltr.command.core_.ExecutionBaseContext(config=mock_config, all_files=[], cache_store=None, cache_run_id=None)
-    pyfltr.cli.pipeline._run_one_command("mypy", mock_args, base_ctx, per_command_log=True)
+    pyfltr.cli.pipeline.run_pipeline(_make_pipeline_args(stream=True), ["mypy"], config)
+
     text = "\n".join(text_logs)
     assert "mypy 実行中です..." in text
     # 成功時はエラーなし・生出力なしのためoutputは表示されない
     assert "* returncode: 0" in text
 
 
-def test_run_one_command_buffer_mode_shows_only_progress(mocker, text_logs):
-    """per_command_log=Falseのとき開始/完了の1行進捗のみ出力すること。"""
+def test_run_one_command_buffer_mode_shows_only_progress(mocker, text_logs, tmp_path, monkeypatch):
+    """stream=Falseのとき実行中に1行進捗のみ出力し詳細はon_finishにまとめること（run_pipeline経由）。"""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\nmypy = true\n", encoding="utf-8")
+    config = pyfltr.config.config.load_config()
+
     result = _make_result("mypy", returncode=0, output="ok")
     mocker.patch("pyfltr.command.dispatcher.execute_command", return_value=result)
-    mock_args = mocker.MagicMock()
-    mock_args.output_format = "text"
-    mock_config = mocker.MagicMock()
+    # configure_text_output はハンドラーを差し替えるため text_logs フィクスチャのリスナーが
+    # 除去される。無操作化してフィクスチャのハンドラーを維持する。
+    mocker.patch("pyfltr.cli.output_format.configure_text_output")
+    mocker.patch("pyfltr.cli.output_format.configure_structured_output")
 
-    base_ctx = pyfltr.command.core_.ExecutionBaseContext(config=mock_config, all_files=[], cache_store=None, cache_run_id=None)
-    pyfltr.cli.pipeline._run_one_command("mypy", mock_args, base_ctx, per_command_log=False)
+    pyfltr.cli.pipeline.run_pipeline(_make_pipeline_args(stream=False), ["mypy"], config)
+
     text = "\n".join(text_logs)
     assert "mypy 実行中です..." in text
+    # buffer modeでは各コマンド完了時に1行進捗が出る
     assert "mypy 完了" in text
-    # 詳細ログ（outputやreturncode行）は出ていない
-    assert "ok" not in text
-    assert "returncode: 0" not in text
+    # buffer modeではon_finishでまとめて詳細とsummaryが出る
+    assert "summary" in text
 
 
 def test_render_results_orders_success_failed_summary(text_logs):

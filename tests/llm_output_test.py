@@ -1,6 +1,6 @@
 """llm_outputのテストコード。"""
 
-# pylint: disable=protected-access,too-many-lines
+# pylint: disable=too-many-lines
 
 import json
 
@@ -11,6 +11,16 @@ import pyfltr.command.error_parser
 import pyfltr.command.mise
 import pyfltr.config.config
 import pyfltr.output.jsonl
+
+
+def _parse_command_record(result: pyfltr.command.core_.CommandResult) -> dict:
+    """CommandResultからcommandレコードをパースして返す。
+
+    build_command_linesで生成した行群の最後の行がcommandレコード。
+    """
+    config = pyfltr.config.config.create_default_config()
+    lines = pyfltr.output.jsonl.build_command_lines(result, config)
+    return json.loads(lines[-1])
 
 
 def test_build_message_dict_with_rule_severity_fix() -> None:
@@ -25,7 +35,10 @@ def test_build_message_dict_with_rule_severity_fix() -> None:
         severity="error",
         fix="safe",
     )
-    message = pyfltr.output.jsonl._build_message_dict(error)
+    records, _, _ = pyfltr.output.jsonl.aggregate_diagnostics([error])
+    messages = records[0]["messages"]
+    assert len(messages) == 1
+    message = messages[0]
     assert message["line"] == 10
     assert message["col"] == 5
     assert message["rule"] == "F401"
@@ -49,7 +62,8 @@ def test_build_message_dict_none_fields_omitted() -> None:
         command="mypy",
         message="Name 'x' is not defined",
     )
-    message = pyfltr.output.jsonl._build_message_dict(error)
+    records, _, _ = pyfltr.output.jsonl.aggregate_diagnostics([error])
+    message = records[0]["messages"][0]
     assert "col" not in message
     assert "rule" not in message
     assert "severity" not in message
@@ -68,7 +82,8 @@ def test_build_message_dict_partial_fields() -> None:
         rule="C0114",
         severity="warning",
     )
-    message = pyfltr.output.jsonl._build_message_dict(error)
+    records, _, _ = pyfltr.output.jsonl.aggregate_diagnostics([error])
+    message = records[0]["messages"][0]
     assert message["rule"] == "C0114"
     assert message["severity"] == "warning"
     assert "fix" not in message
@@ -132,7 +147,7 @@ def test_aggregate_diagnostics_collects_hint_urls() -> None:
 
 
 def test_dump_roundtrip() -> None:
-    """_dump()のJSON出力がパース可能であることのテスト。"""
+    """aggregate_diagnosticsで生成したdiagnosticレコードがJSON往復可能であることのテスト。"""
     error = pyfltr.command.error_parser.ErrorLocation(
         file="src/foo.py",
         line=10,
@@ -143,9 +158,21 @@ def test_dump_roundtrip() -> None:
         severity="error",
         fix="safe",
     )
-    records, _, _ = pyfltr.output.jsonl.aggregate_diagnostics([error])
-    line = pyfltr.output.jsonl._dump(records[0])
-    parsed = json.loads(line)
+    result = pyfltr.command.core_.CommandResult(
+        command="ruff-check",
+        command_type="linter",
+        commandline=["ruff", "check"],
+        returncode=1,
+        has_error=True,
+        files=1,
+        output="",
+        elapsed=0.1,
+        errors=[error],
+    )
+    config = pyfltr.config.config.create_default_config()
+    lines = pyfltr.output.jsonl.build_command_lines(result, config)
+    # 最初の行がdiagnosticレコード
+    parsed = json.loads(lines[0])
     assert parsed["kind"] == "diagnostic"
     assert parsed["command"] == "ruff-check"
     assert parsed["messages"][0]["rule"] == "F401"
@@ -153,15 +180,30 @@ def test_dump_roundtrip() -> None:
 
 def test_build_warning_record() -> None:
     """warning dictがkind/source/msgを持つレコードに変換される。"""
-    record = pyfltr.output.jsonl._build_warning_record({"source": "config", "message": "foo"})
+    config = pyfltr.config.config.create_default_config()
+    lines = pyfltr.output.jsonl.build_lines(
+        [],
+        config,
+        exit_code=0,
+        warnings=[{"source": "config", "message": "foo"}],
+    )
+    # summary行の前にwarning行が出力される
+    warning_line = next(line for line in lines if json.loads(line).get("kind") == "warning")
+    record = json.loads(warning_line)
     assert record == {"kind": "warning", "source": "config", "msg": "foo"}
 
 
 def test_build_warning_record_with_hint() -> None:
     """hintがあればwarningレコードにhintキーが含まれる。"""
-    record = pyfltr.output.jsonl._build_warning_record(
-        {"source": "textlint-identifier-corruption", "message": "foo", "hint": "fooをバックティックで囲む"}
+    config = pyfltr.config.config.create_default_config()
+    lines = pyfltr.output.jsonl.build_lines(
+        [],
+        config,
+        exit_code=0,
+        warnings=[{"source": "textlint-identifier-corruption", "message": "foo", "hint": "fooをバックティックで囲む"}],
     )
+    warning_line = next(line for line in lines if json.loads(line).get("kind") == "warning")
+    record = json.loads(warning_line)
     assert record == {
         "kind": "warning",
         "source": "textlint-identifier-corruption",
@@ -172,6 +214,15 @@ def test_build_warning_record_with_hint() -> None:
 
 def test_build_command_record_includes_hint_urls_when_provided() -> None:
     """hint_urlsを与えるとtoolレコードに`hint_urls`キーで埋め込まれる。"""
+    error = pyfltr.command.error_parser.ErrorLocation(
+        file="src/foo.py",
+        line=1,
+        col=None,
+        command="ruff-check",
+        message="unused import",
+        rule="F401",
+        rule_url="https://docs.astral.sh/ruff/rules/F401/",
+    )
     result = pyfltr.command.core_.CommandResult(
         command="ruff-check",
         command_type="linter",
@@ -181,12 +232,9 @@ def test_build_command_record_includes_hint_urls_when_provided() -> None:
         files=1,
         output="",
         elapsed=0.1,
+        errors=[error],
     )
-    record = pyfltr.output.jsonl._build_command_record(
-        result,
-        diagnostics=1,
-        hint_urls={"F401": "https://docs.astral.sh/ruff/rules/F401/"},
-    )
+    record = _parse_command_record(result)
     assert record["hint_urls"] == {"F401": "https://docs.astral.sh/ruff/rules/F401/"}
 
 
@@ -202,10 +250,8 @@ def test_build_command_record_omits_hint_urls_when_empty() -> None:
         output="",
         elapsed=0.1,
     )
-    record_none = pyfltr.output.jsonl._build_command_record(result, diagnostics=0, hint_urls=None)
-    record_empty = pyfltr.output.jsonl._build_command_record(result, diagnostics=0, hint_urls={})
-    assert "hint_urls" not in record_none
-    assert "hint_urls" not in record_empty
+    record = _parse_command_record(result)
+    assert "hint_urls" not in record
 
 
 def test_build_command_record_retry_command_included() -> None:
@@ -221,7 +267,7 @@ def test_build_command_record_retry_command_included() -> None:
         elapsed=0.5,
         retry_command="pyfltr run --commands ruff-check -- src/foo.py",
     )
-    record = pyfltr.output.jsonl._build_command_record(result, diagnostics=0)
+    record = _parse_command_record(result)
     assert record["retry_command"] == "pyfltr run --commands ruff-check -- src/foo.py"
 
 
@@ -237,7 +283,7 @@ def test_build_command_record_retry_command_omitted() -> None:
         output="",
         elapsed=0.1,
     )
-    record = pyfltr.output.jsonl._build_command_record(result, diagnostics=0)
+    record = _parse_command_record(result)
     assert "retry_command" not in record
 
 
@@ -259,7 +305,7 @@ def test_build_command_record_omits_runner_info_when_normal_path() -> None:
         effective_runner="uv",
         runner_source="default",
     )
-    record = pyfltr.output.jsonl._build_command_record(result, diagnostics=0)
+    record = _parse_command_record(result)
     assert "effective_runner" not in record
     assert "runner_source" not in record
     assert "runner_fallback" not in record
@@ -284,7 +330,7 @@ def test_build_command_record_runner_info_emitted_on_uv_fallback() -> None:
         runner_source="default",
         runner_fallback="uv->direct",
     )
-    record = pyfltr.output.jsonl._build_command_record(result, diagnostics=0)
+    record = _parse_command_record(result)
     assert record["effective_runner"] == "direct"
     assert record["runner_source"] == "default"
     assert record["runner_fallback"] == "uv->direct"
@@ -308,7 +354,7 @@ def test_build_command_record_runner_info_emitted_on_mise_fallback() -> None:
         runner_source="default",
         runner_fallback="mise->direct",
     )
-    record = pyfltr.output.jsonl._build_command_record(result, diagnostics=0)
+    record = _parse_command_record(result)
     assert record["effective_runner"] == "direct"
     assert record["runner_source"] == "default"
     assert record["runner_fallback"] == "mise->direct"
@@ -330,7 +376,7 @@ def test_build_command_record_omits_runner_info_when_none() -> None:
         output="",
         elapsed=0.1,
     )
-    record = pyfltr.output.jsonl._build_command_record(result, diagnostics=0)
+    record = _parse_command_record(result)
     assert "effective_runner" not in record
     assert "runner_source" not in record
     assert "runner_fallback" not in record
@@ -354,7 +400,7 @@ def test_build_command_record_omits_runner_info_when_path_override() -> None:
         effective_runner="direct",
         runner_source="path-override",
     )
-    record = pyfltr.output.jsonl._build_command_record(result, diagnostics=0)
+    record = _parse_command_record(result)
     assert "effective_runner" not in record
     assert "runner_source" not in record
     assert "runner_fallback" not in record
@@ -436,7 +482,7 @@ def test_build_command_record_cached_includes_cached_from() -> None:
         cached=True,
         cached_from="01ABCDEFGH",
     )
-    record = pyfltr.output.jsonl._build_command_record(result, diagnostics=0)
+    record = _parse_command_record(result)
     assert record["cached"] is True
     assert record["cached_from"] == "01ABCDEFGH"
     # cached=Trueのときelapsedは出力せずcached_elapsedだけを出力する
@@ -457,7 +503,7 @@ def test_build_command_record_cached_omitted_when_false() -> None:
         output="",
         elapsed=0.5,
     )
-    record = pyfltr.output.jsonl._build_command_record(result, diagnostics=0)
+    record = _parse_command_record(result)
     assert "cached" not in record
     assert "cached_elapsed" not in record
     assert record["elapsed"] == 0.5
@@ -477,7 +523,7 @@ def test_build_command_record_cached_without_cached_from() -> None:
         elapsed=2.0,
         cached=True,
     )
-    record = pyfltr.output.jsonl._build_command_record(result, diagnostics=0)
+    record = _parse_command_record(result)
     assert record["cached"] is True
     assert "cached_from" not in record
     assert "elapsed" not in record
@@ -509,7 +555,8 @@ def test_build_command_record_message_truncated_when_archived() -> None:
         archived=True,
     )
     config = pyfltr.config.config.create_default_config()
-    record = pyfltr.output.jsonl._build_command_record(result, diagnostics=0, config=config)
+    lines = pyfltr.output.jsonl.build_command_lines(result, config)
+    record = json.loads(lines[-1])
     assert "message" in record
     message = record["message"]
     # 先頭ブロックは原文の冒頭をそのまま保持する。
@@ -529,7 +576,17 @@ def test_build_command_record_message_truncated_when_archived() -> None:
 
 def test_build_header_record_emits_commands_and_no_schema_hints() -> None:
     """headerレコードにcommands配列が出力され、schema_hintsは出力されない。"""
-    record = pyfltr.output.jsonl._build_header_record(commands=["ruff-check", "mypy", "textlint"], files=3, run_id="01TESTULID")
+    config = pyfltr.config.config.create_default_config()
+    lines = pyfltr.output.jsonl.build_lines(
+        [],
+        config,
+        exit_code=0,
+        commands=["ruff-check", "mypy", "textlint"],
+        files=3,
+        run_id="01TESTULID",
+    )
+    header_line = next(line for line in lines if json.loads(line).get("kind") == "header")
+    record = json.loads(header_line)
     assert record["run_id"] == "01TESTULID"
     assert record["commands"] == ["ruff-check", "mypy", "textlint"]
     assert "commands_count" not in record
@@ -556,9 +613,17 @@ def test_build_header_record_size_is_small(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setattr("pyfltr.output.jsonl.os.getcwd", lambda: r"D:\a\pyfltr\pyfltr")
     monkeypatch.setattr("pyfltr.output.jsonl.importlib.metadata.version", lambda _name: "0.1.dev1+g0123456789")
     commands = [f"tool-{i}" for i in range(15)]
-    record = pyfltr.output.jsonl._build_header_record(commands=commands, files=10, run_id="01TESTULID")
-    serialized = pyfltr.output.jsonl._dump(record)
-    assert len(serialized) <= 500, f"header size {len(serialized)} exceeded 500 chars"
+    config = pyfltr.config.config.create_default_config()
+    lines = pyfltr.output.jsonl.build_lines(
+        [],
+        config,
+        exit_code=0,
+        commands=commands,
+        files=10,
+        run_id="01TESTULID",
+    )
+    header_line = next(line for line in lines if json.loads(line).get("kind") == "header")
+    assert len(header_line) <= 500, f"header size {len(header_line)} exceeded 500 chars"
 
 
 def test_build_header_record_includes_uv_object(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -570,11 +635,16 @@ def test_build_header_record_includes_uv_object(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr("pyfltr.command.runner.cwd_has_uv_lock", lambda: True)
     monkeypatch.setattr("pyfltr.command.runner.ensure_uv_available", lambda: True)
     monkeypatch.setattr("pyfltr.command.runner.ensure_uvx_available", lambda: True)
-    record_python = pyfltr.output.jsonl._build_header_record(commands=["mypy"], files=3)
-    assert record_python["uv"] == {"lock": True, "available": True, "x_available": True}
+    config = pyfltr.config.config.create_default_config()
+
+    lines_python = pyfltr.output.jsonl.build_lines([], config, exit_code=0, commands=["mypy"], files=3)
+    header_python = json.loads(next(line for line in lines_python if json.loads(line).get("kind") == "header"))
+    assert header_python["uv"] == {"lock": True, "available": True, "x_available": True}
+
     # Python系コマンドを含まないrunでも常時出力される。
-    record_non_python = pyfltr.output.jsonl._build_header_record(commands=["shellcheck"], files=3)
-    assert record_non_python["uv"] == {"lock": True, "available": True, "x_available": True}
+    lines_non_python = pyfltr.output.jsonl.build_lines([], config, exit_code=0, commands=["shellcheck"], files=3)
+    header_non_python = json.loads(next(line for line in lines_non_python if json.loads(line).get("kind") == "header"))
+    assert header_non_python["uv"] == {"lock": True, "available": True, "x_available": True}
 
 
 def test_build_header_record_uv_fields_reflect_environment(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -582,23 +652,32 @@ def test_build_header_record_uv_fields_reflect_environment(monkeypatch: pytest.M
     monkeypatch.setattr("pyfltr.command.runner.cwd_has_uv_lock", lambda: False)
     monkeypatch.setattr("pyfltr.command.runner.ensure_uv_available", lambda: False)
     monkeypatch.setattr("pyfltr.command.runner.ensure_uvx_available", lambda: False)
-    record = pyfltr.output.jsonl._build_header_record(commands=["mypy"], files=3)
+    config = pyfltr.config.config.create_default_config()
+    lines = pyfltr.output.jsonl.build_lines([], config, exit_code=0, commands=["mypy"], files=3)
+    header_line = next(line for line in lines if json.loads(line).get("kind") == "header")
+    record = json.loads(header_line)
     assert record["uv"] == {"lock": False, "available": False, "x_available": False}
 
 
 def test_build_header_record_omits_mise_active_tools_when_no_mise_command() -> None:
     """mise経路ツールを含まないrunのheaderには `mise_active_tools` を出力しない。"""
-    record = pyfltr.output.jsonl._build_header_record(commands=["mypy", "ruff-check"], files=3)
+    config = pyfltr.config.config.create_default_config()
+    lines = pyfltr.output.jsonl.build_lines([], config, exit_code=0, commands=["mypy", "ruff-check"], files=3)
+    header_line = next(line for line in lines if json.loads(line).get("kind") == "header")
+    record = json.loads(header_line)
     assert "mise_active_tools" not in record
 
 
-def test_build_header_record_includes_mise_active_tools_when_passed() -> None:
+def test_build_header_record_includes_mise_active_tools_when_passed(monkeypatch: pytest.MonkeyPatch) -> None:
     """`mise_active_tools` が渡された場合はheaderへ露出する。"""
-    record = pyfltr.output.jsonl._build_header_record(
-        commands=["cargo-fmt"],
-        files=3,
-        mise_active_tools={"status": "ok", "active_keys": ["rust"]},
+    monkeypatch.setattr(
+        "pyfltr.command.mise.get_mise_active_tools",
+        lambda config, *, allow_side_effects=False: pyfltr.command.mise.MiseActiveToolsResult(status="ok", tools={"rust": []}),
     )
+    config = pyfltr.config.config.create_default_config()
+    lines = pyfltr.output.jsonl.build_lines([], config, exit_code=0, commands=["cargo-fmt"], files=3)
+    header_line = next(line for line in lines if json.loads(line).get("kind") == "header")
+    record = json.loads(header_line)
     assert record["mise_active_tools"]["status"] == "ok"
     assert record["mise_active_tools"]["active_keys"] == ["rust"]
 
@@ -646,12 +725,16 @@ def test_build_summary_record_emits_guidance_on_failure() -> None:
         output="",
         elapsed=0.1,
     )
-    record = pyfltr.output.jsonl._build_summary_record(
+    config = pyfltr.config.config.create_default_config()
+    lines = pyfltr.output.jsonl.build_lines(
         [result],
+        config,
         exit_code=1,
         run_id="01JABCDEFGH",
         launcher_prefix=["uvx", "pyfltr"],
     )
+    summary_line = next(line for line in lines if json.loads(line).get("kind") == "summary")
+    record = json.loads(summary_line)
     guidance = record.get("guidance")
     assert isinstance(guidance, list)
     assert guidance
@@ -675,7 +758,10 @@ def test_build_summary_record_guidance_falls_back_when_unspecified() -> None:
         output="",
         elapsed=0.1,
     )
-    record = pyfltr.output.jsonl._build_summary_record([result], exit_code=1)
+    config = pyfltr.config.config.create_default_config()
+    lines = pyfltr.output.jsonl.build_lines([result], config, exit_code=1)
+    summary_line = next(line for line in lines if json.loads(line).get("kind") == "summary")
+    record = json.loads(summary_line)
     guidance = record.get("guidance")
     assert isinstance(guidance, list)
     joined = " ".join(guidance)
@@ -696,7 +782,10 @@ def test_build_summary_record_counts_resolution_failed() -> None:
         elapsed=0.0,
         resolution_failed=True,
     )
-    record = pyfltr.output.jsonl._build_summary_record([result], exit_code=1)
+    config = pyfltr.config.config.create_default_config()
+    lines = pyfltr.output.jsonl.build_lines([result], config, exit_code=1)
+    summary_line = next(line for line in lines if json.loads(line).get("kind") == "summary")
+    record = json.loads(summary_line)
     assert record["commands_summary"]["needs_action"]["failed"] == 0
     assert record["commands_summary"]["needs_action"]["resolution_failed"] == 1
     assert "guidance" in record
@@ -755,10 +844,14 @@ def test_build_summary_record_groups_statuses_into_no_issues_and_needs_action() 
         elapsed=0.0,
         resolution_failed=True,
     )
-    record = pyfltr.output.jsonl._build_summary_record(
+    config = pyfltr.config.config.create_default_config()
+    lines = pyfltr.output.jsonl.build_lines(
         [succeeded, formatted, skipped, failed, resolution_failed],
+        config,
         exit_code=1,
     )
+    summary_line = next(line for line in lines if json.loads(line).get("kind") == "summary")
+    record = json.loads(summary_line)
     commands_summary = record["commands_summary"]
     assert commands_summary["no_issues"] == {"succeeded": 1, "formatted": 1, "skipped": 1}
     # resolution_failedが1件以上のときは出力される
@@ -800,7 +893,10 @@ def test_build_summary_record_field_order_and_total_under_commands_summary() -> 
         output="",
         elapsed=0.0,
     )
-    record = pyfltr.output.jsonl._build_summary_record([failed, succeeded], exit_code=1)
+    config = pyfltr.config.config.create_default_config()
+    lines = pyfltr.output.jsonl.build_lines([failed, succeeded], config, exit_code=1)
+    summary_line = next(line for line in lines if json.loads(line).get("kind") == "summary")
+    record = json.loads(summary_line)
     keys = list(record.keys())
     assert keys.index("kind") < keys.index("exit") < keys.index("commands_summary") < keys.index("diagnostics")
     # `total` は `commands_summary` 配下に移動し、トップレベルから消える。
@@ -823,7 +919,10 @@ def test_build_summary_record_omits_resolution_failed_when_zero() -> None:
         output="",
         elapsed=0.0,
     )
-    record = pyfltr.output.jsonl._build_summary_record([result], exit_code=1)
+    config = pyfltr.config.config.create_default_config()
+    lines = pyfltr.output.jsonl.build_lines([result], config, exit_code=1)
+    summary_line = next(line for line in lines if json.loads(line).get("kind") == "summary")
+    record = json.loads(summary_line)
     needs_action = record["commands_summary"]["needs_action"]
     assert needs_action["failed"] == 1
     assert "resolution_failed" not in needs_action
@@ -841,7 +940,10 @@ def test_build_summary_record_failed_always_present() -> None:
         output="",
         elapsed=0.0,
     )
-    record = pyfltr.output.jsonl._build_summary_record([result], exit_code=0)
+    config = pyfltr.config.config.create_default_config()
+    lines = pyfltr.output.jsonl.build_lines([result], config, exit_code=0)
+    summary_line = next(line for line in lines if json.loads(line).get("kind") == "summary")
+    record = json.loads(summary_line)
     needs_action = record["commands_summary"]["needs_action"]
     assert needs_action["failed"] == 0
     assert "resolution_failed" not in needs_action
@@ -859,7 +961,10 @@ def test_build_summary_record_no_guidance_on_success() -> None:
         output="",
         elapsed=0.1,
     )
-    record = pyfltr.output.jsonl._build_summary_record([result], exit_code=0)
+    config = pyfltr.config.config.create_default_config()
+    lines = pyfltr.output.jsonl.build_lines([result], config, exit_code=0)
+    summary_line = next(line for line in lines if json.loads(line).get("kind") == "summary")
+    record = json.loads(summary_line)
     assert "guidance" not in record
 
 
@@ -876,7 +981,10 @@ def test_build_summary_record_guidance_emits_formatter_notice_only() -> None:
         elapsed=0.1,
         fixed_files=["src/a.py"],
     )
-    record = pyfltr.output.jsonl._build_summary_record([result], exit_code=0)
+    config = pyfltr.config.config.create_default_config()
+    lines = pyfltr.output.jsonl.build_lines([result], config, exit_code=0)
+    summary_line = next(line for line in lines if json.loads(line).get("kind") == "summary")
+    record = json.loads(summary_line)
     guidance = record.get("guidance")
     assert isinstance(guidance, list)
     assert len(guidance) == 1
@@ -907,12 +1015,16 @@ def test_build_summary_record_guidance_combines_failure_and_formatter_notice() -
         elapsed=0.1,
         fixed_files=["src/a.py"],
     )
-    record = pyfltr.output.jsonl._build_summary_record(
+    config = pyfltr.config.config.create_default_config()
+    lines = pyfltr.output.jsonl.build_lines(
         [failed, formatted],
+        config,
         exit_code=1,
         run_id="01JABCDEFGH",
         launcher_prefix=["pyfltr"],
     )
+    summary_line = next(line for line in lines if json.loads(line).get("kind") == "summary")
+    record = json.loads(summary_line)
     guidance = record.get("guidance")
     assert isinstance(guidance, list)
     assert len(guidance) == 5
@@ -932,11 +1044,15 @@ def test_build_summary_record_includes_fully_excluded_files() -> None:
         output="",
         elapsed=0.1,
     )
-    record = pyfltr.output.jsonl._build_summary_record(
+    config = pyfltr.config.config.create_default_config()
+    lines = pyfltr.output.jsonl.build_lines(
         [result],
+        config,
         exit_code=0,
         fully_excluded_files=["docs/ignored.md", "src/also.py"],
     )
+    summary_line = next(line for line in lines if json.loads(line).get("kind") == "summary")
+    record = json.loads(summary_line)
     assert record["fully_excluded_files"] == ["docs/ignored.md", "src/also.py"]
 
 
@@ -952,9 +1068,12 @@ def test_build_summary_record_omits_fully_excluded_files_when_empty() -> None:
         output="",
         elapsed=0.1,
     )
+    config = pyfltr.config.config.create_default_config()
     values: list[list[str] | None] = [None, []]
     for value in values:
-        record = pyfltr.output.jsonl._build_summary_record([result], exit_code=0, fully_excluded_files=value)
+        lines = pyfltr.output.jsonl.build_lines([result], config, exit_code=0, fully_excluded_files=value)
+        summary_line = next(line for line in lines if json.loads(line).get("kind") == "summary")
+        record = json.loads(summary_line)
         assert "fully_excluded_files" not in record
 
 
@@ -970,12 +1089,16 @@ def test_build_summary_record_includes_missing_targets() -> None:
         output="",
         elapsed=0.1,
     )
-    record = pyfltr.output.jsonl._build_summary_record(
+    config = pyfltr.config.config.create_default_config()
+    lines = pyfltr.output.jsonl.build_lines(
         [result],
+        config,
         exit_code=1,
         missing_targets=["does_not_exist.py", "also_missing.md"],
         fully_excluded_files=["docs/excluded.md"],
     )
+    summary_line = next(line for line in lines if json.loads(line).get("kind") == "summary")
+    record = json.loads(summary_line)
     assert record["missing_targets"] == ["does_not_exist.py", "also_missing.md"]
     assert record["fully_excluded_files"] == ["docs/excluded.md"]
 
@@ -992,9 +1115,12 @@ def test_build_summary_record_omits_missing_targets_when_empty() -> None:
         output="",
         elapsed=0.1,
     )
+    config = pyfltr.config.config.create_default_config()
     values: list[list[str] | None] = [None, []]
     for value in values:
-        record = pyfltr.output.jsonl._build_summary_record([result], exit_code=0, missing_targets=value)
+        lines = pyfltr.output.jsonl.build_lines([result], config, exit_code=0, missing_targets=value)
+        summary_line = next(line for line in lines if json.loads(line).get("kind") == "summary")
+        record = json.loads(summary_line)
         assert "missing_targets" not in record
 
 
@@ -1010,7 +1136,8 @@ def test_build_message_dict_includes_end_line_and_end_col() -> None:
         end_line=17,
         end_col=23,
     )
-    record = pyfltr.output.jsonl._build_message_dict(error)
+    records, _, _ = pyfltr.output.jsonl.aggregate_diagnostics([error])
+    record = records[0]["messages"][0]
     assert record["end_line"] == 17
     assert record["end_col"] == 23
     # フィールド順はline → col → end_line → end_col → ruleの順
@@ -1027,7 +1154,8 @@ def test_build_message_dict_omits_end_line_and_end_col_when_none() -> None:
         command="mypy",
         message="x",
     )
-    record = pyfltr.output.jsonl._build_message_dict(error)
+    records, _, _ = pyfltr.output.jsonl.aggregate_diagnostics([error])
+    record = records[0]["messages"][0]
     assert "end_line" not in record
     assert "end_col" not in record
 
@@ -1043,7 +1171,8 @@ def test_build_message_dict_omits_hint() -> None:
         rule="ja-technical-writing/sentence-length",
         hint="Split with periods to shorten.",
     )
-    record = pyfltr.output.jsonl._build_message_dict(error)
+    records, _, _ = pyfltr.output.jsonl.aggregate_diagnostics([error])
+    record = records[0]["messages"][0]
     assert "hint" not in record
 
 
@@ -1057,7 +1186,11 @@ def test_build_command_record_includes_hints_from_errors() -> None:
             command="textlint",
             message="長い文です",
             rule="ja-technical-writing/sentence-length",
-            hint=pyfltr.command.error_parser._TEXTLINT_RULE_HINTS["ja-technical-writing/sentence-length"],
+            hint=(
+                "textlint counts up to the period (。) as one sentence;"
+                " bullet-line splits still count as one."
+                " Split with periods to shorten."
+            ),
         ),
         pyfltr.command.error_parser.ErrorLocation(
             file="a.md",
@@ -1066,19 +1199,34 @@ def test_build_command_record_includes_hints_from_errors() -> None:
             command="textlint",
             message="また長い文です",
             rule="ja-technical-writing/sentence-length",
-            hint=pyfltr.command.error_parser._TEXTLINT_RULE_HINTS["ja-technical-writing/sentence-length"],
+            hint=(
+                "textlint counts up to the period (。) as one sentence;"
+                " bullet-line splits still count as one."
+                " Split with periods to shorten."
+            ),
         ),
     ]
     _, _, hints = pyfltr.output.jsonl.aggregate_diagnostics(errors)
     assert hints == {
-        "ja-technical-writing/sentence-length": pyfltr.command.error_parser._TEXTLINT_RULE_HINTS[
-            "ja-technical-writing/sentence-length"
-        ]
+        "ja-technical-writing/sentence-length": (
+            "textlint counts up to the period (。) as one sentence;"
+            " bullet-line splits still count as one."
+            " Split with periods to shorten."
+        )
     }
 
 
 def test_build_command_record_hints_key_present_when_hints_given() -> None:
     """`hints`引数が非空なら`command.hints`キーとして埋め込まれる。"""
+    error = pyfltr.command.error_parser.ErrorLocation(
+        file="src/foo.py",
+        line=1,
+        col=None,
+        command="ruff-check",
+        message="unused import",
+        rule="F401",
+        hint="Remove unused import.",
+    )
     result = pyfltr.command.core_.CommandResult(
         command="ruff-check",
         command_type="linter",
@@ -1088,12 +1236,9 @@ def test_build_command_record_hints_key_present_when_hints_given() -> None:
         files=1,
         output="",
         elapsed=0.1,
+        errors=[error],
     )
-    record = pyfltr.output.jsonl._build_command_record(
-        result,
-        diagnostics=1,
-        hints={"F401": "Remove unused import."},
-    )
+    record = _parse_command_record(result)
     assert record["hints"] == {"F401": "Remove unused import."}
 
 
@@ -1109,10 +1254,8 @@ def test_build_command_record_hints_key_omitted_when_empty() -> None:
         output="",
         elapsed=0.1,
     )
-    record_none = pyfltr.output.jsonl._build_command_record(result, diagnostics=0, hints=None)
-    record_empty = pyfltr.output.jsonl._build_command_record(result, diagnostics=0, hints={})
-    assert "hints" not in record_none
-    assert "hints" not in record_empty
+    record = _parse_command_record(result)
+    assert "hints" not in record
 
 
 def test_build_command_record_textlint_col_hint_only_when_diagnostics() -> None:
@@ -1122,7 +1265,8 @@ def test_build_command_record_textlint_col_hint_only_when_diagnostics() -> None:
     実際に該当するときのみ付与する」）に従い、指摘0件ではhintsキー自体が省略される。
     類似文言の重複を避けるため代表キー`messages[].col`の単一hintで両フィールドを説明する。
     """
-    result = pyfltr.command.core_.CommandResult(
+    # 指摘0件: hintsキー自体を出力しない
+    result_no_diag = pyfltr.command.core_.CommandResult(
         command="textlint",
         command_type="linter",
         commandline=["textlint"],
@@ -1132,20 +1276,35 @@ def test_build_command_record_textlint_col_hint_only_when_diagnostics() -> None:
         output="",
         elapsed=0.1,
     )
-    # 指摘0件: hintsキー自体を出力しない
-    record_no_diag = pyfltr.output.jsonl._build_command_record(result, diagnostics=0, hints=None)
+    record_no_diag = _parse_command_record(result_no_diag)
     assert "hints" not in record_no_diag
 
     # 指摘1件以上: col仕様注記が入り、rule hintとも併存する
-    record_with_hints = pyfltr.output.jsonl._build_command_record(
-        result,
-        diagnostics=1,
-        hints={
-            "ja-technical-writing/sentence-length": pyfltr.command.error_parser._TEXTLINT_RULE_HINTS[
-                "ja-technical-writing/sentence-length"
-            ]
-        },
+    error_with_hint = pyfltr.command.error_parser.ErrorLocation(
+        file="a.md",
+        line=1,
+        col=1,
+        command="textlint",
+        message="文が長すぎます",
+        rule="ja-technical-writing/sentence-length",
+        hint=(
+            "textlint counts up to the period (。) as one sentence;"
+            " bullet-line splits still count as one."
+            " Split with periods to shorten."
+        ),
     )
+    result_with_diag = pyfltr.command.core_.CommandResult(
+        command="textlint",
+        command_type="linter",
+        commandline=["textlint"],
+        returncode=1,
+        has_error=True,
+        files=1,
+        output="",
+        elapsed=0.1,
+        errors=[error_with_hint],
+    )
+    record_with_hints = _parse_command_record(result_with_diag)
     assert "messages[].col" in record_with_hints["hints"]
     assert "messages[].end_col" not in record_with_hints["hints"]
     col_hint = record_with_hints["hints"]["messages[].col"]
@@ -1182,7 +1341,10 @@ def test_build_summary_record_includes_applied_fixes() -> None:
         elapsed=0.1,
         fixed_files=["src/a.py", "src/c.py"],
     )
-    record = pyfltr.output.jsonl._build_summary_record([result_a, result_b], exit_code=0)
+    config = pyfltr.config.config.create_default_config()
+    lines = pyfltr.output.jsonl.build_lines([result_a, result_b], config, exit_code=0)
+    summary_line = next(line for line in lines if json.loads(line).get("kind") == "summary")
+    record = json.loads(summary_line)
     assert record["applied_fixes"] == ["src/a.py", "src/b.py", "src/c.py"]
 
 
@@ -1198,7 +1360,10 @@ def test_build_summary_record_omits_applied_fixes_when_empty() -> None:
         output="",
         elapsed=0.1,
     )
-    record = pyfltr.output.jsonl._build_summary_record([result], exit_code=0)
+    config = pyfltr.config.config.create_default_config()
+    lines = pyfltr.output.jsonl.build_lines([result], config, exit_code=0)
+    summary_line = next(line for line in lines if json.loads(line).get("kind") == "summary")
+    record = json.loads(summary_line)
     assert "applied_fixes" not in record
 
 
@@ -1281,7 +1446,10 @@ def test_build_summary_record_counts_warning() -> None:
         elapsed=0.1,
         severity="warning",
     )
-    record = pyfltr.output.jsonl._build_summary_record([warning_result], exit_code=0)
+    config = pyfltr.config.config.create_default_config()
+    lines = pyfltr.output.jsonl.build_lines([warning_result], config, exit_code=0)
+    summary_line = next(line for line in lines if json.loads(line).get("kind") == "summary")
+    record = json.loads(summary_line)
     needs_action = record["commands_summary"]["needs_action"]
     assert needs_action["failed"] == 0
     assert needs_action["warning"] == 1
@@ -1299,7 +1467,10 @@ def test_build_summary_record_warning_count_always_present() -> None:
         output="",
         elapsed=0.1,
     )
-    record = pyfltr.output.jsonl._build_summary_record([result], exit_code=0)
+    config = pyfltr.config.config.create_default_config()
+    lines = pyfltr.output.jsonl.build_lines([result], config, exit_code=0)
+    summary_line = next(line for line in lines if json.loads(line).get("kind") == "summary")
+    record = json.loads(summary_line)
     needs_action = record["commands_summary"]["needs_action"]
     assert needs_action["failed"] == 0
     assert needs_action["warning"] == 0
@@ -1318,7 +1489,10 @@ def test_build_summary_record_no_failure_guidance_when_only_warning() -> None:
         elapsed=0.1,
         severity="warning",
     )
-    record = pyfltr.output.jsonl._build_summary_record([warning_result], exit_code=0)
+    config = pyfltr.config.config.create_default_config()
+    lines = pyfltr.output.jsonl.build_lines([warning_result], config, exit_code=0)
+    summary_line = next(line for line in lines if json.loads(line).get("kind") == "summary")
+    record = json.loads(summary_line)
     assert "guidance" not in record
 
 
@@ -1326,6 +1500,13 @@ def test_build_command_record_includes_user_hints_when_diagnostics_present() -> 
     """{command}-hints は messages 1件以上のとき user.<n> 連番キーで command.hints に出力される。"""
     config = pyfltr.config.config.create_default_config()
     config.values["mypy-hints"] = ["First user hint.", "Second user hint."]
+    error = pyfltr.command.error_parser.ErrorLocation(
+        file="src/foo.py",
+        line=1,
+        col=None,
+        command="mypy",
+        message="error msg",
+    )
     result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
@@ -1335,8 +1516,10 @@ def test_build_command_record_includes_user_hints_when_diagnostics_present() -> 
         files=1,
         output="",
         elapsed=0.1,
+        errors=[error, error],
     )
-    record = pyfltr.output.jsonl._build_command_record(result, diagnostics=2, config=config)
+    lines = pyfltr.output.jsonl.build_command_lines(result, config)
+    record = json.loads(lines[-1])
     hints = record.get("hints", {})
     assert hints.get("user.0") == "First user hint."
     assert hints.get("user.1") == "Second user hint."
@@ -1356,6 +1539,7 @@ def test_build_command_record_omits_user_hints_when_no_diagnostics() -> None:
         output="",
         elapsed=0.1,
     )
-    record = pyfltr.output.jsonl._build_command_record(result, diagnostics=0, config=config)
+    lines = pyfltr.output.jsonl.build_command_lines(result, config)
+    record = json.loads(lines[-1])
     hints = record.get("hints", {})
     assert all(not key.startswith("user.") for key in hints)

@@ -5,8 +5,6 @@
 （`default_cache_root()` 解決）が同一キャッシュを参照する。
 """
 
-# pylint: disable=protected-access
-
 import inspect
 import json
 import pathlib
@@ -76,7 +74,7 @@ def test_diagnostic_message_model_all_optional() -> None:
 
 @pytest.mark.asyncio
 async def test_tool_list_runs_empty() -> None:
-    result = await pyfltr.cli.mcp_server._tool_list_runs()
+    result = await pyfltr.cli.mcp_server.tool_list_runs()
     assert result == []
 
 
@@ -85,7 +83,7 @@ async def test_tool_list_runs_returns_summaries(tmp_path: pathlib.Path) -> None:
     run_id1 = _seed_run(tmp_path, commands=["ruff-check"], exit_code=0)
     run_id2 = _seed_run(tmp_path, commands=["mypy"], exit_code=1)
 
-    result = await pyfltr.cli.mcp_server._tool_list_runs(limit=10)
+    result = await pyfltr.cli.mcp_server.tool_list_runs(limit=10)
     assert len(result) == 2
     # 新しい順（降順）
     assert result[0].run_id == run_id2
@@ -99,7 +97,7 @@ async def test_tool_list_runs_limit(tmp_path: pathlib.Path) -> None:
     for _ in range(5):
         _seed_run(tmp_path)
 
-    result = await pyfltr.cli.mcp_server._tool_list_runs(limit=2)
+    result = await pyfltr.cli.mcp_server.tool_list_runs(limit=2)
     assert len(result) == 2
 
 
@@ -114,7 +112,7 @@ async def test_tool_show_run_overview(tmp_path: pathlib.Path) -> None:
         ],
     )
 
-    result = await pyfltr.cli.mcp_server._tool_show_run(run_id)
+    result = await pyfltr.cli.mcp_server.tool_show_run(run_id)
     assert result.run_id == run_id
     assert "run_id" in result.meta
     command_names = [c.command for c in result.commands]
@@ -127,27 +125,27 @@ async def test_tool_show_run_latest(tmp_path: pathlib.Path) -> None:
     _seed_run(tmp_path, commands=["ruff-check"])
     latest_id = _seed_run(tmp_path, commands=["mypy"])
 
-    result = await pyfltr.cli.mcp_server._tool_show_run("latest")
+    result = await pyfltr.cli.mcp_server.tool_show_run("latest")
     assert result.run_id == latest_id
 
 
 @pytest.mark.asyncio
 async def test_tool_show_run_prefix(tmp_path: pathlib.Path) -> None:
     run_id = _seed_run(tmp_path)
-    result = await pyfltr.cli.mcp_server._tool_show_run(run_id[:8])
+    result = await pyfltr.cli.mcp_server.tool_show_run(run_id[:8])
     assert result.run_id == run_id
 
 
 @pytest.mark.asyncio
 async def test_tool_show_run_not_found() -> None:
     with pytest.raises(ValueError, match="run_id"):
-        await pyfltr.cli.mcp_server._tool_show_run("nonexistent")
+        await pyfltr.cli.mcp_server.tool_show_run("nonexistent")
 
 
 @pytest.mark.asyncio
 async def test_tool_show_run_latest_empty() -> None:
     with pytest.raises(ValueError, match="run"):
-        await pyfltr.cli.mcp_server._tool_show_run("latest")
+        await pyfltr.cli.mcp_server.tool_show_run("latest")
 
 
 @pytest.mark.asyncio
@@ -161,7 +159,7 @@ async def test_tool_show_run_ambiguous_prefix(tmp_path: pathlib.Path) -> None:
     prefix = run_ids[0][:shared]
 
     with pytest.raises(ValueError, match="曖昧"):
-        await pyfltr.cli.mcp_server._tool_show_run(prefix)
+        await pyfltr.cli.mcp_server.tool_show_run(prefix)
 
 
 @pytest.mark.asyncio
@@ -178,7 +176,7 @@ async def test_tool_show_run_diagnostics(tmp_path: pathlib.Path) -> None:
         ],
     )
 
-    results = await pyfltr.cli.mcp_server._tool_show_run_diagnostics(run_id, ["mypy"])
+    results = await pyfltr.cli.mcp_server.tool_show_run_diagnostics(run_id, ["mypy"])
     assert len(results) == 1
     result = results[0]
     assert result.command_meta["command"] == "mypy"
@@ -212,7 +210,7 @@ async def test_tool_show_run_diagnostics_restores_hints(tmp_path: pathlib.Path) 
     assert "ja-technical-writing/sentence-length" in tool_meta["hints"]
 
     # show_run_diagnosticsでhintsが復元されることを確認する
-    results = await pyfltr.cli.mcp_server._tool_show_run_diagnostics(run_id, ["textlint"])
+    results = await pyfltr.cli.mcp_server.tool_show_run_diagnostics(run_id, ["textlint"])
     assert len(results) == 1
     assert results[0].hints is not None
     assert "ja-technical-writing/sentence-length" in results[0].hints
@@ -228,7 +226,7 @@ async def test_tool_show_run_diagnostics_hints_none_when_absent(tmp_path: pathli
         ],
     )
 
-    results = await pyfltr.cli.mcp_server._tool_show_run_diagnostics(run_id, ["mypy"])
+    results = await pyfltr.cli.mcp_server.tool_show_run_diagnostics(run_id, ["mypy"])
     assert len(results) == 1
     assert results[0].hints is None
 
@@ -237,7 +235,7 @@ async def test_tool_show_run_diagnostics_hints_none_when_absent(tmp_path: pathli
 async def test_tool_show_run_diagnostics_tool_not_found(tmp_path: pathlib.Path) -> None:
     run_id = _seed_run(tmp_path)
     with pytest.raises(ValueError, match="nonexistent"):
-        await pyfltr.cli.mcp_server._tool_show_run_diagnostics(run_id, ["nonexistent"])
+        await pyfltr.cli.mcp_server.tool_show_run_diagnostics(run_id, ["nonexistent"])
 
 
 @pytest.mark.asyncio
@@ -249,7 +247,7 @@ async def test_tool_show_run_output(tmp_path: pathlib.Path) -> None:
         ],
     )
 
-    result = await pyfltr.cli.mcp_server._tool_show_run_output(run_id, ["ruff-check"])
+    result = await pyfltr.cli.mcp_server.tool_show_run_output(run_id, ["ruff-check"])
     assert "ruff-check" in result
     assert "raw output line 1" in result["ruff-check"]
     assert "raw output line 2" in result["ruff-check"]
@@ -259,7 +257,7 @@ async def test_tool_show_run_output(tmp_path: pathlib.Path) -> None:
 async def test_tool_show_run_output_tool_not_found(tmp_path: pathlib.Path) -> None:
     run_id = _seed_run(tmp_path)
     with pytest.raises(ValueError, match="nonexistent"):
-        await pyfltr.cli.mcp_server._tool_show_run_output(run_id, ["nonexistent"])
+        await pyfltr.cli.mcp_server.tool_show_run_output(run_id, ["nonexistent"])
 
 
 # ---------------------------------------------------------------------------
@@ -267,9 +265,10 @@ async def test_tool_show_run_output_tool_not_found(tmp_path: pathlib.Path) -> No
 # ---------------------------------------------------------------------------
 
 
-def test_build_server_registers_eight_tools() -> None:
-    server = pyfltr.cli.mcp_server._build_server()
-    tools = server._tool_manager.list_tools()
+@pytest.mark.asyncio
+async def test_build_server_registers_eight_tools() -> None:
+    server = pyfltr.cli.mcp_server.build_server()
+    tools = await server.list_tools()
     tool_names = {t.name for t in tools}
     expected = {
         "list_runs",
@@ -295,7 +294,7 @@ async def test_tool_run_for_agent_with_typos(tmp_path: pathlib.Path) -> None:
     sample = tmp_path / "sample.txt"
     sample.write_text("hello world\n", encoding="utf-8")
 
-    result = await pyfltr.cli.mcp_server._tool_run_for_agent(
+    result = await pyfltr.cli.mcp_server.tool_run_for_agent(
         paths=[str(sample)],
         commands=["typos"],
     )
@@ -320,7 +319,7 @@ async def test_tool_run_for_agent_keeps_stdout_clean_and_text_on_stderr(
     sample.write_text("hello\n", encoding="utf-8")
 
     # typos が利用可能なら 1 件だけ実行する。未導入環境でも ec で確実に通す。
-    await pyfltr.cli.mcp_server._tool_run_for_agent(paths=[str(sample)], commands=["ec"])
+    await pyfltr.cli.mcp_server.tool_run_for_agent(paths=[str(sample)], commands=["ec"])
 
     captured = capsys.readouterr()
     assert captured.out == "", f"stdout に漏れている: {captured.out!r}"
@@ -342,7 +341,7 @@ async def test_tool_run_for_agent_returns_run_id(tmp_path: pathlib.Path) -> None
 
     # typosが利用できない環境でも動作させるため、利用可能なコマンドを選ぶ。
     # ecは設定不要で動作するため使用する。
-    result = await pyfltr.cli.mcp_server._tool_run_for_agent(
+    result = await pyfltr.cli.mcp_server.tool_run_for_agent(
         paths=[str(sample)],
         commands=["ec"],
     )
@@ -398,7 +397,7 @@ async def test_tool_run_for_agent_returns_retry_commands(tmp_path: pathlib.Path)
     sample = tmp_path / "input.txt"
     sample.write_text("hello\n", encoding="utf-8")
 
-    result = await pyfltr.cli.mcp_server._tool_run_for_agent(
+    result = await pyfltr.cli.mcp_server.tool_run_for_agent(
         paths=[str(sample)],
         commands=["ec"],
     )
@@ -422,7 +421,7 @@ async def test_tool_run_for_agent_retry_commands_includes_failed(tmp_path: pathl
     bad_py = tmp_path / "bad.py"
     bad_py.write_text("import os\n", encoding="utf-8")  # F401: imported but unused
 
-    result = await pyfltr.cli.mcp_server._tool_run_for_agent(
+    result = await pyfltr.cli.mcp_server.tool_run_for_agent(
         paths=[str(bad_py)],
         commands=["ruff-check"],
     )
@@ -442,7 +441,7 @@ async def test_tool_run_for_agent_retry_commands_includes_failed(tmp_path: pathl
 async def test_tool_run_for_agent_from_run_without_only_failed_raises() -> None:
     """only_failed=Falseのままfrom_runを指定するとValueErrorが発生する。"""
     with pytest.raises(ValueError, match="only_failed"):
-        await pyfltr.cli.mcp_server._tool_run_for_agent(
+        await pyfltr.cli.mcp_server.tool_run_for_agent(
             paths=["dummy"],
             from_run="latest",
         )
@@ -454,7 +453,7 @@ async def test_tool_run_for_agent_only_failed_no_previous_run(tmp_path: pathlib.
     sample = tmp_path / "input.txt"
     sample.write_text("hello\n", encoding="utf-8")
 
-    result = await pyfltr.cli.mcp_server._tool_run_for_agent(
+    result = await pyfltr.cli.mcp_server.tool_run_for_agent(
         paths=[str(sample)],
         commands=["ec"],
         only_failed=True,
@@ -476,11 +475,11 @@ async def test_tool_run_for_agent_only_failed_no_previous_run(tmp_path: pathlib.
 
 @pytest.mark.asyncio
 async def test_tool_grep_finds_matches(tmp_path: pathlib.Path) -> None:
-    """`_tool_grep`が指定ファイル群から正しくマッチを抽出すること。"""
+    """`tool_grep`が指定ファイル群から正しくマッチを抽出すること。"""
     target = tmp_path / "sample.txt"
     target.write_text("hello world\nfoo bar\nhello again\n", encoding="utf-8")
 
-    result = await pyfltr.cli.mcp_server._tool_grep(
+    result = await pyfltr.cli.mcp_server.tool_grep(
         pattern="hello",
         paths=[str(target)],
     )
@@ -496,11 +495,11 @@ async def test_tool_grep_finds_matches(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.asyncio
 async def test_tool_grep_no_match_returns_exit_code_1(tmp_path: pathlib.Path) -> None:
-    """`_tool_grep`がマッチ0件のとき`exit_code=1`を返すこと。"""
+    """`tool_grep`がマッチ0件のとき`exit_code=1`を返すこと。"""
     target = tmp_path / "sample.txt"
     target.write_text("hello world\n", encoding="utf-8")
 
-    result = await pyfltr.cli.mcp_server._tool_grep(
+    result = await pyfltr.cli.mcp_server.tool_grep(
         pattern="notfound",
         paths=[str(target)],
     )
@@ -512,7 +511,7 @@ async def test_tool_grep_no_match_returns_exit_code_1(tmp_path: pathlib.Path) ->
 
 @pytest.mark.asyncio
 async def test_tool_grep_respects_exclude(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """`_tool_grep`が`exclude`設定を尊重し、除外ディレクトリ配下のファイルを結果に含めないこと。"""
+    """`tool_grep`が`exclude`設定を尊重し、除外ディレクトリ配下のファイルを結果に含めないこと。"""
     # 除外対象ディレクトリとそれ以外を作成する
     excluded_dir = tmp_path / "node_modules"
     excluded_dir.mkdir()
@@ -527,7 +526,7 @@ async def test_tool_grep_respects_exclude(tmp_path: pathlib.Path, monkeypatch: p
     pyproject.write_text('[tool.pyfltr]\nexclude = ["node_modules"]\n', encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
-    result = await pyfltr.cli.mcp_server._tool_grep(
+    result = await pyfltr.cli.mcp_server.tool_grep(
         pattern="hello",
         paths=[str(tmp_path)],
     )
@@ -544,7 +543,7 @@ async def test_tool_grep_max_total_limits_results(tmp_path: pathlib.Path) -> Non
     target = tmp_path / "sample.txt"
     target.write_text("\n".join(f"hello {i}" for i in range(20)) + "\n", encoding="utf-8")
 
-    result = await pyfltr.cli.mcp_server._tool_grep(
+    result = await pyfltr.cli.mcp_server.tool_grep(
         pattern="hello",
         paths=[str(target)],
         max_total=5,
@@ -556,11 +555,11 @@ async def test_tool_grep_max_total_limits_results(tmp_path: pathlib.Path) -> Non
 
 @pytest.mark.asyncio
 async def test_tool_grep_includes_hidden_files(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """`_tool_grep`がドット始まりファイルも対象に含めること（run系と統一）。"""
+    """`tool_grep`がドット始まりファイルも対象に含めること（run系と統一）。"""
     hidden = tmp_path / ".hidden.py"
     hidden.write_text("foo here\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
-    result = await pyfltr.cli.mcp_server._tool_grep(pattern="foo", paths=[str(tmp_path)])
+    result = await pyfltr.cli.mcp_server.tool_grep(pattern="foo", paths=[str(tmp_path)])
     assert result.total_matches == 1
     assert any(pathlib.Path(m.file).name == ".hidden.py" for m in result.matches)
 
@@ -575,12 +574,12 @@ async def test_tool_grep_reports_excluded_and_clears_between_requests(
     normal = tmp_path / "a.py"
     normal.write_text("foo\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
-    first = await pyfltr.cli.mcp_server._tool_grep(pattern="foo", paths=[str(lock)])
+    first = await pyfltr.cli.mcp_server.tool_grep(pattern="foo", paths=[str(lock)])
     assert first.fully_excluded_files == ["uv.lock"]
-    second = await pyfltr.cli.mcp_server._tool_grep(pattern="foo", paths=[str(normal)])
+    second = await pyfltr.cli.mcp_server.tool_grep(pattern="foo", paths=[str(normal)])
     assert not second.fully_excluded_files
     # 不在パスはmissing_targetsで通知し、前リクエストの除外は混入しない
-    third = await pyfltr.cli.mcp_server._tool_grep(pattern="foo", paths=[str(tmp_path / "nope.py")])
+    third = await pyfltr.cli.mcp_server.tool_grep(pattern="foo", paths=[str(tmp_path / "nope.py")])
     assert third.missing_targets == ["nope.py"]
     assert not third.fully_excluded_files
 
@@ -591,8 +590,8 @@ async def test_tool_grep_reports_excluded_and_clears_between_requests(
 
 
 def test_tool_replace_dry_run_default() -> None:
-    """`_tool_replace`の`dry_run`引数の既定値が`True`であること。"""
-    sig = inspect.signature(pyfltr.cli.mcp_server._tool_replace)
+    """`tool_replace`の`dry_run`引数の既定値が`True`であること。"""
+    sig = inspect.signature(pyfltr.cli.mcp_server.tool_replace)
     assert sig.parameters["dry_run"].default is True
 
 
@@ -600,29 +599,29 @@ def test_tool_replace_dry_run_default() -> None:
 async def test_tool_replace_reports_filtered_and_clears_between_requests(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`_tool_replace`が除外・不在を通知し、連続リクエストで前回分が混入しないこと。"""
+    """`tool_replace`が除外・不在を通知し、連続リクエストで前回分が混入しないこと。"""
     lock = tmp_path / "uv.lock"
     lock.write_text("foo\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     # exclude該当ファイルを明示 → fully_excluded_filesに載り、書き換えは発生しない
-    excluded = await pyfltr.cli.mcp_server._tool_replace(pattern="foo", replacement="baz", paths=[str(lock)])
+    excluded = await pyfltr.cli.mcp_server.tool_replace(pattern="foo", replacement="baz", paths=[str(lock)])
     assert excluded.fully_excluded_files == ["uv.lock"]
     assert excluded.files_changed == 0
     assert lock.read_text(encoding="utf-8") == "foo\n"
     # 不在パスはmissing_targetsで通知し、前リクエストの除外は混入しない
-    missing = await pyfltr.cli.mcp_server._tool_replace(pattern="foo", replacement="baz", paths=[str(tmp_path / "nope.py")])
+    missing = await pyfltr.cli.mcp_server.tool_replace(pattern="foo", replacement="baz", paths=[str(tmp_path / "nope.py")])
     assert missing.missing_targets == ["nope.py"]
     assert not missing.fully_excluded_files
 
 
 @pytest.mark.asyncio
 async def test_tool_replace_dry_run_does_not_write(tmp_path: pathlib.Path) -> None:
-    """`_tool_replace(dry_run=True)`がファイルを変更しないこと。"""
+    """`tool_replace(dry_run=True)`がファイルを変更しないこと。"""
     target = tmp_path / "sample.txt"
     original = "hello world\n"
     target.write_text(original, encoding="utf-8")
 
-    result = await pyfltr.cli.mcp_server._tool_replace(
+    result = await pyfltr.cli.mcp_server.tool_replace(
         pattern="hello",
         replacement="goodbye",
         paths=[str(target)],
@@ -645,7 +644,7 @@ async def test_tool_replace_within_limits_region(tmp_path: pathlib.Path) -> None
     target = tmp_path / "sample.txt"
     target.write_text("foo\nKEY foo\n", encoding="utf-8")
 
-    result = await pyfltr.cli.mcp_server._tool_replace(
+    result = await pyfltr.cli.mcp_server.tool_replace(
         pattern="foo",
         replacement="X",
         paths=[str(target)],
@@ -663,7 +662,7 @@ async def test_tool_replace_within_with_multiline_raises(tmp_path: pathlib.Path)
     target = tmp_path / "sample.txt"
     target.write_text("KEY foo\n", encoding="utf-8")
     with pytest.raises(ValueError, match="multiline"):
-        await pyfltr.cli.mcp_server._tool_replace(
+        await pyfltr.cli.mcp_server.tool_replace(
             pattern="foo", replacement="X", paths=[str(target)], within="KEY", multiline=True
         )
 
@@ -674,16 +673,16 @@ async def test_tool_replace_context_without_within_raises(tmp_path: pathlib.Path
     target = tmp_path / "sample.txt"
     target.write_text("foo\n", encoding="utf-8")
     with pytest.raises(ValueError, match="within"):
-        await pyfltr.cli.mcp_server._tool_replace(pattern="foo", replacement="X", paths=[str(target)], after_context=1)
+        await pyfltr.cli.mcp_server.tool_replace(pattern="foo", replacement="X", paths=[str(target)], after_context=1)
 
 
 @pytest.mark.asyncio
 async def test_tool_replace_writes_file_and_returns_replace_id(tmp_path: pathlib.Path) -> None:
-    """`_tool_replace(dry_run=False)`がファイルを変更し`replace_id`を返すこと。"""
+    """`tool_replace(dry_run=False)`がファイルを変更し`replace_id`を返すこと。"""
     target = tmp_path / "sample.txt"
     target.write_text("hello world\n", encoding="utf-8")
 
-    result = await pyfltr.cli.mcp_server._tool_replace(
+    result = await pyfltr.cli.mcp_server.tool_replace(
         pattern="hello",
         replacement="goodbye",
         paths=[str(target)],
@@ -705,7 +704,7 @@ async def test_tool_replace_show_changes(tmp_path: pathlib.Path) -> None:
     target = tmp_path / "sample.txt"
     target.write_text("hello world\nhello again\n", encoding="utf-8")
 
-    result = await pyfltr.cli.mcp_server._tool_replace(
+    result = await pyfltr.cli.mcp_server.tool_replace(
         pattern="hello",
         replacement="goodbye",
         paths=[str(target)],
@@ -723,7 +722,7 @@ async def test_tool_replace_show_changes(tmp_path: pathlib.Path) -> None:
 async def test_tool_replace_paths_empty_raises() -> None:
     """`paths=[]`のとき`ValueError`が発生すること。"""
     with pytest.raises(ValueError, match="paths"):
-        await pyfltr.cli.mcp_server._tool_replace(
+        await pyfltr.cli.mcp_server.tool_replace(
             pattern="hello",
             replacement="goodbye",
             paths=[],
@@ -737,13 +736,13 @@ async def test_tool_replace_paths_empty_raises() -> None:
 
 @pytest.mark.asyncio
 async def test_tool_replace_undo_restores_file(tmp_path: pathlib.Path) -> None:
-    """`_tool_replace_undo`が`replace_id`から正常に復元できること。"""
+    """`tool_replace_undo`が`replace_id`から正常に復元できること。"""
     target = tmp_path / "sample.txt"
     original = "hello world\n"
     target.write_text(original, encoding="utf-8")
 
     # まず実書き込みを行い replace_id を取得する
-    replace_result = await pyfltr.cli.mcp_server._tool_replace(
+    replace_result = await pyfltr.cli.mcp_server.tool_replace(
         pattern="hello",
         replacement="goodbye",
         paths=[str(target)],
@@ -753,7 +752,7 @@ async def test_tool_replace_undo_restores_file(tmp_path: pathlib.Path) -> None:
     assert target.read_text(encoding="utf-8") == "goodbye world\n"
 
     # undo を実行して元に戻す
-    undo_result = await pyfltr.cli.mcp_server._tool_replace_undo(
+    undo_result = await pyfltr.cli.mcp_server.tool_replace_undo(
         replace_id=replace_result.replace_id,
     )
 
@@ -769,7 +768,7 @@ async def test_tool_replace_undo_hash_mismatch_skips_without_force(tmp_path: pat
     target = tmp_path / "sample.txt"
     target.write_text("hello world\n", encoding="utf-8")
 
-    replace_result = await pyfltr.cli.mcp_server._tool_replace(
+    replace_result = await pyfltr.cli.mcp_server.tool_replace(
         pattern="hello",
         replacement="goodbye",
         paths=[str(target)],
@@ -780,7 +779,7 @@ async def test_tool_replace_undo_hash_mismatch_skips_without_force(tmp_path: pat
     # replace後にファイルを手動で編集する（ハッシュ不一致を発生させる）
     target.write_text("manually edited\n", encoding="utf-8")
 
-    undo_result = await pyfltr.cli.mcp_server._tool_replace_undo(
+    undo_result = await pyfltr.cli.mcp_server.tool_replace_undo(
         replace_id=replace_result.replace_id,
         force=False,
     )
@@ -797,7 +796,7 @@ async def test_tool_replace_undo_hash_mismatch_force_restores(tmp_path: pathlib.
     original = "hello world\n"
     target.write_text(original, encoding="utf-8")
 
-    replace_result = await pyfltr.cli.mcp_server._tool_replace(
+    replace_result = await pyfltr.cli.mcp_server.tool_replace(
         pattern="hello",
         replacement="goodbye",
         paths=[str(target)],
@@ -808,7 +807,7 @@ async def test_tool_replace_undo_hash_mismatch_force_restores(tmp_path: pathlib.
     # replace後にファイルを手動で編集する
     target.write_text("manually edited\n", encoding="utf-8")
 
-    undo_result = await pyfltr.cli.mcp_server._tool_replace_undo(
+    undo_result = await pyfltr.cli.mcp_server.tool_replace_undo(
         replace_id=replace_result.replace_id,
         force=True,
     )
@@ -823,4 +822,4 @@ async def test_tool_replace_undo_hash_mismatch_force_restores(tmp_path: pathlib.
 async def test_tool_replace_undo_not_found_raises() -> None:
     """`replace_id`が存在しない場合`ValueError`が発生すること。"""
     with pytest.raises(ValueError, match="replace_id"):
-        await pyfltr.cli.mcp_server._tool_replace_undo(replace_id="NONEXISTENTID00000000000000")
+        await pyfltr.cli.mcp_server.tool_replace_undo(replace_id="NONEXISTENTID00000000000000")

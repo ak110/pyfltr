@@ -1,7 +1,5 @@
 """出力フォーマットのテストコード。"""
 
-# pylint: disable=protected-access
-
 import json
 import pathlib
 import subprocess
@@ -353,12 +351,9 @@ def test_run_cli_env_var_overridden_by_cli(mocker, capsys, monkeypatch):
 
 def test_run_cli_env_var_invalid(monkeypatch):
     """PYFLTR_OUTPUT_FORMATに不正値が入っている場合はSystemExitで終了する。"""
-    # 実行系サブコマンドの解決ロジックを直接呼び出して環境変数バリデーションを確認する。
     monkeypatch.setenv("PYFLTR_OUTPUT_FORMAT", "yaml")
-    parser = pyfltr.cli.parser.build_parser()
-    args = parser.parse_args(["ci"])
     with pytest.raises(SystemExit):
-        pyfltr.cli.pipeline._resolve_output_format(parser, args)
+        pyfltr.cli.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
 
 
 @pytest.mark.parametrize("env_name", pyfltr.cli.output_format.AGENT_INDICATOR_ENVS)
@@ -776,9 +771,10 @@ def test_write_jsonl_footer_no_warnings(capsys):
 # ---------------------------------------------------------------------------
 
 
-def test_build_header_record_fields():
-    """`_build_header_record`が必要なフィールドをすべて含むこと（commandsは実行対象配列）。"""
-    record = pyfltr.output.jsonl._build_header_record(["ruff-format", "mypy"], 42)
+def test_build_header_record_fields(default_config):
+    """`write_jsonl_header`が必要なフィールドをすべて含むこと（commandsは実行対象配列）。"""
+    lines = pyfltr.output.jsonl.build_lines([], default_config, exit_code=0, commands=["ruff-format", "mypy"], files=42)
+    record = json.loads(lines[0])
     assert record["kind"] == "header"
     assert record["commands"] == ["ruff-format", "mypy"]
     assert "commands_count" not in record
