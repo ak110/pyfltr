@@ -130,6 +130,8 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "pre-commit-runner": "direct",
     # `pre-commit run`の位置引数はhook IDとして解釈されるため、
     # ファイル指定には`--files`フラグの前置が必須。
+    # また`--files`へ対象ファイルが渡る既定構成では、引数なしの`pre-commit run`が行う
+    # 未ステージ変更の退避・復元（`git stash`相当の作業ツリー操作）は発生しない。
     "pre-commit-args": ["run", "--files"],
     "pre-commit-pass-filenames": True,
     "pre-commit-fast": True,
