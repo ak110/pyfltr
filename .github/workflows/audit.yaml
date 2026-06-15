@@ -37,7 +37,7 @@ jobs:
       # mise・pinact等がGitHub APIを呼び出す際のレート制限（403）回避
       GITHUB_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: GitHub Actionsのピン留め検証
         run: pinact run --check
@@ -84,7 +84,7 @@ jobs:
           fi
 
       - name: SARIFをCode Scanningへアップロード
-        uses: github/codeql-action/upload-sarif@03e4368ac7daa2bd82b3e85262f3bf87ee112f57 # v3.36.0
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
           sarif_file: ${{ runner.temp }}/audit.sarif
           category: uv-audit

@@ -3,9 +3,8 @@ name = "pyfltr"
 dynamic = ["version"]
 description = "Python Formatters, Linters, and Testers Runner."
 authors = [{ name = "aki.", email = "aki@tqzh.tk" }]
-requires-python = ">=3.11,<4.0"
-readme = "README.md"
 license = {text = "MIT"}
+readme = "README.md"
 classifiers = [
     "Environment :: Console",
     "Intended Audience :: Developers",
@@ -17,6 +16,7 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Topic :: Software Development :: Quality Assurance",
 ]
+requires-python = ">=3.11,<4.0"
 dependencies = [
     "dill>=0.3",
     "mcp>=1.0",
@@ -47,14 +47,14 @@ dependencies = [
     "yamllint>=1.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/ak110/pyfltr"
+
 [project.optional-dependencies]
 # pyfltr v3 系で Python 系ツールを extras としていた経緯から、
 # `pyfltr[python]` 指定が利用者環境に残っていてもエラーにならないよう
 # 空配列エイリアスとして保持する。本体依存に Python 系ツール一式は同梱済み。
 python = []
-
-[project.urls]
-Homepage = "https://github.com/ak110/pyfltr"
 
 [project.scripts]
 pyfltr = "pyfltr.cli.main:main"
