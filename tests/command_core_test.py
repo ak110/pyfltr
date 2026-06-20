@@ -2674,7 +2674,7 @@ def test_resolve_runner_default_for_direct_tools() -> None:
 
 
 def test_resolve_runner_default_for_python_tools() -> None:
-    """Python系ツール（既存8ツール + semgrep / sqlfluff）の既定は"python-runner"（カテゴリ委譲値）。"""
+    """Python系ツール（既存8ツール + semgrep / sqlfluff / bandit）の既定は"python-runner"（カテゴリ委譲値）。"""
     config = pyfltr.config.config.create_default_config()
     for command in (
         "mypy",
@@ -2687,6 +2687,7 @@ def test_resolve_runner_default_for_python_tools() -> None:
         "uv-sort",
         "semgrep",
         "sqlfluff",
+        "bandit",
     ):
         runner, source = pyfltr.command.runner.resolve_runner(command, config)
         assert runner == "python-runner", f"{command}のrunnerは'python-runner'であるべき"

@@ -75,7 +75,7 @@ bin-runner経由（既定はmise）で起動する。
     - 一般: typos（PyPI依存）/ actionlint / ec（editorconfig-checker、既定で無効）/
       shellcheck（既定で無効）/ glab-ci-lint（既定で無効）
     - YAML / Dockerfile / シークレット系: yamllint（既定で無効）/ hadolint（Dockerfile、既定で無効）
-    - シークレット検出・SAST: gitleaks（既定で無効）/ semgrep（既定で無効）
+    - シークレット検出・SAST: gitleaks（既定で無効）/ semgrep（既定で無効）/ bandit（既定で無効）
     - SQL: sqlfluff（既定で無効）
     - 依存の脆弱性監査: uv-audit / pnpm-audit / npm-audit / yarn-audit（いずれも既定で無効）
 - 統合: pre-commit（`.pre-commit-config.yaml`のhookを統合実行）
@@ -91,6 +91,11 @@ bin-runner経由（既定はmise）で起動する。
   利用時は`semgrep-args = ["scan", "--json", "--error", "--config=auto"]`等で実際のルールセットを指定する
 - `sqlfluff`: Python製のSQL専用linter。dialect指定が必須のため`.sqlfluff`配置を前提とする。
   `sqlfluff lint`サブコマンドをlinterとして起動する（`sqlfluff format`サブコマンドは対象外）
+- `bandit`: Python製のsource-level SAST。既定で無効（opt-in）。
+  検出された違反は`test_id`（B101等）とseverity（LOW/MEDIUM/HIGH）で識別する。
+  起点cwd直下の設定ファイルを`--configfile <絶対パス>`形式でbanditへ渡す（bandit本体は自動読み込みしない）。
+  探索対象は`pyproject.toml`・`.bandit.yaml`・`.bandit.toml`。
+  `.bandit`（INI形式）はbandit本体の`--recursive`時自動探索に委ねる
 - `glab-ci-lint`: `glab ci lint`経由でGitLab CI設定を構文検証する。
   GitLab API認証とネットワーク接続が必須なため、CIや初学者環境で誤って失敗しないよう既定で無効化している
 - `uv-audit` / `pnpm-audit` / `npm-audit` / `yarn-audit`: 依存パッケージの脆弱性を監査する。

@@ -18,6 +18,7 @@ classifiers = [
 ]
 requires-python = ">=3.11,<4.0"
 dependencies = [
+    "bandit>=1.7",
     "dill>=0.3",
     "mcp>=1.0",
     "mypy>=1.0",
@@ -83,6 +84,18 @@ source = "vcs"
 [tool.uv]
 exclude-newer = "1 day"
 
+[tool.bandit]
+# pyfltrは各種ツールを起動するCLI（subprocess経由のwrapper）であり、
+# subprocess関連の警告（B404・B603・B607）はpyfltrの本質的な動作に伴う。
+# 引数組み立てとパス解決は内部経路で完結し外部入力を直接シェル展開しないため、
+# `bandit-args = ["-q", "-r", "-f", "json"]`既定下では検出されるが運用上のリスクは限定的。
+# B101（assert）は型ガード・内部不変条件チェックで利用しており品質上必要。
+# 利用者プロジェクトでは既定のまま全ルール有効でbanditが動作する。
+skips = ["B101", "B404", "B603", "B607"]
+# テストコードはbandit対象外。テストデータでの一時パスハードコード（B108）や
+# 検証用yaml.load（B506）は本番コードのリスクと性質が異なるため別管理とする。
+exclude_dirs = ["tests"]
+
 [tool.pyfltr]
 preset = "latest"
 # preset = "latest" + Python 系本体依存により、`uvx pyfltr` 単発で
@@ -101,6 +114,7 @@ ec = true
 shellcheck = true
 shfmt = true
 hadolint = true
+bandit = true
 pylint-args = ["--jobs=4"]
 # tests/smoke_data/ 配下にはツール毎の最小サンプル（GitHub Actionsワークフロー・
 # Dockerfile・shellスクリプト等）を含むため、本リポのpyfltr対象から外す。

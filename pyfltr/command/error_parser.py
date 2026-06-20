@@ -230,6 +230,8 @@ def _try_json_loads(output: str) -> typing.Any:
 def _normalize_severity(value: typing.Any) -> str | None:
     """生のseverity値を`"error" / "warning" / "info"`の3値に正規化する。
 
+    `high` / `medium` / `low`はbanditのseverity表現に対応し、それぞれ
+    `error` / `warning` / `info`へマップする。
     未知の値やNoneは`None`を返し、JSONL出力側で省略される。
     """
     if value is None:
@@ -241,11 +243,11 @@ def _normalize_severity(value: typing.Any) -> str | None:
     lowered = value.strip().lower()
     if not lowered:
         return None
-    if lowered in ("error", "fatal"):
+    if lowered in ("error", "fatal", "high"):
         return "error"
-    if lowered in ("warning", "warn"):
+    if lowered in ("warning", "warn", "medium"):
         return "warning"
-    if lowered in ("info", "information", "informational", "note", "notice", "hint", "style", "convention", "refactor"):
+    if lowered in ("info", "information", "informational", "note", "notice", "hint", "style", "convention", "refactor", "low"):
         return "info"
     return None
 
@@ -840,6 +842,62 @@ def _parse_semgrep_json(output: str) -> list[ErrorLocation]:
     return results
 
 
+def _parse_bandit_json(output: str) -> list[ErrorLocation]:
+    """`bandit -f json`のJSON出力をパースする。
+
+    出力例::
+
+        {
+          "results": [
+            {
+              "filename": "src/foo.py",
+              "line_number": 10,
+              "col_offset": 4,
+              "test_id": "B101",
+              "test_name": "assert_used",
+              "issue_severity": "LOW",
+              "issue_text": "Use of assert detected.",
+              "more_info": "https://bandit.readthedocs.io/.../b101.html"
+            }
+          ]
+        }
+
+    JSON解析失敗時は空リストを返す。
+    """
+    data = _try_json_loads(output)
+    if not isinstance(data, dict):
+        return []
+    raw_results = data.get("results", [])
+    if not isinstance(raw_results, list):
+        return []
+    results: list[ErrorLocation] = []
+    for entry in raw_results:
+        if not isinstance(entry, dict):
+            continue
+        line = entry.get("line_number")
+        if not isinstance(line, int):
+            continue
+        raw_col = entry.get("col_offset")
+        col = raw_col if isinstance(raw_col, int) else None
+        message = str(entry.get("issue_text", "") or "")
+        more_info = entry.get("more_info")
+        if isinstance(more_info, str) and more_info:
+            message = f"{message} (see {more_info})" if message else f"(see {more_info})"
+        rule = str(entry.get("test_id", "") or "") or None
+        results.append(
+            ErrorLocation(
+                file=pyfltr.paths.to_cwd_relative(str(entry.get("filename", ""))),
+                line=line,
+                col=col,
+                command="bandit",
+                message=message,
+                rule=rule,
+                severity=_normalize_severity(entry.get("issue_severity")),
+            )
+        )
+    return results
+
+
 def _parse_sqlfluff_json(output: str) -> list[ErrorLocation]:
     """`sqlfluff lint --format=json`のJSON出力をパースする。
 
@@ -1370,6 +1428,7 @@ _CUSTOM_PARSERS: dict[str, typing.Callable[[str], list[ErrorLocation]]] = {
     "designmd": _parse_designmd_json,
     "lychee": _parse_lychee_json,
     "semgrep": _parse_semgrep_json,
+    "bandit": _parse_bandit_json,
     "sqlfluff": _parse_sqlfluff_json,
     "uv-audit": _parse_uv_audit,
     "pnpm-audit": _parse_pnpm_audit_json,

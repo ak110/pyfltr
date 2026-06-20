@@ -1393,6 +1393,71 @@ def test_parse_semgrep_json_empty() -> None:
     assert pyfltr.command.error_parser.parse_errors("semgrep", "not json") == []
 
 
+def test_parse_bandit_json() -> None:
+    """bandit -f json のresultsから違反を抽出する。
+
+    HIGH/MEDIUM/LOWの3severityを網羅し、詳細情報（`more_info`）の有無も検証する。
+    """
+    output = json.dumps(
+        {
+            "results": [
+                {
+                    "filename": "src/foo.py",
+                    "line_number": 12,
+                    "col_offset": 0,
+                    "test_id": "B602",
+                    "test_name": "subprocess_popen_with_shell_equals_true",
+                    "issue_severity": "HIGH",
+                    "issue_text": "subprocess call with shell=True identified.",
+                    "more_info": "https://bandit.readthedocs.io/.../b602.html",
+                },
+                {
+                    "filename": "src/bar.py",
+                    "line_number": 3,
+                    "col_offset": 4,
+                    "test_id": "B105",
+                    "test_name": "hardcoded_password_string",
+                    "issue_severity": "MEDIUM",
+                    "issue_text": "Possible hardcoded password.",
+                    "more_info": "https://bandit.readthedocs.io/.../b105.html",
+                },
+                {
+                    "filename": "src/baz.py",
+                    "line_number": 7,
+                    "col_offset": 8,
+                    "test_id": "B101",
+                    "test_name": "assert_used",
+                    "issue_severity": "LOW",
+                    "issue_text": "Use of assert detected.",
+                },
+            ],
+            "errors": [],
+        }
+    )
+    errors = pyfltr.command.error_parser.parse_errors("bandit", output)
+    assert len(errors) == 3
+    assert errors[0].command == "bandit"
+    assert errors[0].file == "src/foo.py"
+    assert errors[0].line == 12
+    assert errors[0].col == 0
+    assert errors[0].rule == "B602"
+    assert errors[0].severity == "error"
+    assert "shell=True" in errors[0].message
+    assert "(see https://bandit.readthedocs.io/.../b602.html)" in errors[0].message
+    assert errors[1].severity == "warning"
+    assert errors[1].rule == "B105"
+    assert errors[2].severity == "info"
+    assert errors[2].rule == "B101"
+    # more_info欠落時はメッセージ末尾に`(see ...)`が付かない
+    assert "(see " not in errors[2].message
+
+
+def test_parse_bandit_json_empty() -> None:
+    """results空・無効JSONはいずれも空リストを返す。"""
+    assert pyfltr.command.error_parser.parse_errors("bandit", json.dumps({"results": [], "errors": []})) == []
+    assert pyfltr.command.error_parser.parse_errors("bandit", "not json") == []
+
+
 def test_parse_sqlfluff_json() -> None:
     """sqlfluff lint --format=json のviolationsから違反を抽出する。"""
     output = json.dumps(

@@ -471,6 +471,15 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "semgrep-runner": "python-runner",
     "semgrep-args": [],
     "semgrep-fast": False,
+    # bandit: Python専用source-level SAST。既定で無効（opt-in）。
+    # `--quiet --recursive --format=json`で実行し、JSON出力をパースする。
+    # 設定ファイル（pyproject.toml / .bandit.yaml / .bandit.toml）はbandit本体が自動読み込みしないため、
+    # CommandInfoのconfig_arg_template経由で`--configfile <絶対パス>`を注入する。
+    "bandit": False,
+    "bandit-path": "",
+    "bandit-runner": "python-runner",
+    "bandit-args": ["--quiet", "--recursive", "--format=json"],
+    "bandit-fast": False,
     # sqlfluff: SQL専用linter。dialect指定が必須のため利用者の`.sqlfluff`配置を前提とするopt-in。
     # `sqlfluff lint`サブコマンドをlinterとして起動する（`sqlfluff format`サブコマンドは対象外）。
     "sqlfluff": False,
@@ -722,6 +731,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
             "hadolint",
             "gitleaks",
             "semgrep",
+            "bandit",
             "oxlint",
             "tsc",
             "cargo-clippy",

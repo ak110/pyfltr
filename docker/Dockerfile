@@ -23,7 +23,7 @@
 #
 # 同梱ツール一覧 (新ツール追加時は本リストと該当 RUN 層を更新する):
 #   - Python (pyfltr 本体依存に同梱): ruff / mypy / pylint / pyright / ty / pytest / uv-sort /
-#     typos / pre-commit / semgrep / sqlfluff
+#     typos / pre-commit / semgrep / sqlfluff / bandit
 #   - Python 単独 (uv tool install): yamllint
 #   - mise 経由のネイティブバイナリ: node (LTS) / shfmt / actionlint /
 #     editorconfig-checker / glab / taplo / hadolint / pinact / gitleaks / lychee

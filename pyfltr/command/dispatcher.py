@@ -84,16 +84,19 @@ def _resolve_config_inject_path(start_cwd: pathlib.Path, candidates: list[str]) 
     return None
 
 
-def _user_overrides_config(*arg_lists: list[str]) -> bool:
-    """利用者が`--config`を明示指定済みか判定する。
+def _user_overrides_config(config_flag: str, *arg_lists: list[str]) -> bool:
+    """利用者がツール固有の設定フラグを明示指定済みか判定する。
 
     対象は`{command}-args`・`{command}-extend-args`・CLI`--{command}-args`の合算。
     含まれている場合、`config_arg_template`による自動注入はスキップして利用者指定を優先する。
     重複指定で各ツールがエラー終了するのを避けるため。
+    `config_flag`は`CommandInfo.config_arg_template[0]`由来（bandit→`--configfile`、markdownlint／textlint→`--config`等）。
+    分離形（`<flag> <value>`）と等号形（`<flag>=<value>`）の両形式を判定する。
     """
+    equals_prefix = f"{config_flag}="
     for args in arg_lists:
         for arg in args:
-            if arg == "--config" or arg.startswith("--config="):
+            if arg == config_flag or arg.startswith(equals_prefix):
                 return True
     return False
 
@@ -350,16 +353,18 @@ def _prepare_execution_params(
         fix_stage=fix_args is not None,
     )
 
-    # `config_arg_template`指定ツール（markdownlint・textlint等）は、起点cwd直下の設定ファイルを
-    # `--config <絶対パス>`形式で明示注入する。内部パスのみの実行でも一律で適用し、
-    # 外部パス指定時に暗黙のcwd探索（markdownlint-cli2が対象ファイルとCWDの共通親から探索する仕様等）が
-    # 起こらないよう挙動を統一する。利用者が`{command}-args`で`--config`を指定済みのときは
-    # 重複指定を避けるため注入をスキップする。設定ファイルが起点cwd直下に見つからないときも
-    # 注入をスキップしてツールの既定動作に委ねる。挿入位置は`commandline_prefix`直後。
+    # `config_arg_template`指定ツール（markdownlint・textlint・bandit等）は、起点cwd直下の設定ファイルを
+    # `<flag> <絶対パス>`形式で明示注入する。フラグはツールごとに異なる（markdownlint／textlintは`--config`、
+    # banditは`--configfile`）。内部パスのみの実行でも一律で適用し、外部パス指定時に暗黙のcwd探索（markdownlint-cli2が
+    # 対象ファイルとCWDの共通親から探索する仕様等）が起こらないよう挙動を統一する。
+    # 利用者が`{command}-args`で同等フラグを指定済みのときは重複指定を避けるため注入をスキップする。
+    # 設定ファイルが起点cwd直下に見つからないときも注入をスキップしてツールの既定動作に委ねる。
+    # 挿入位置は`commandline_prefix`直後。
     if command_info.config_arg_template and command_info.config_inject_candidates:
         user_args_list: list[str] = list(config.values.get(f"{command}-args", []))
         extend_args_list: list[str] = list(config.values.get(f"{command}-extend-args", []))
-        if not _user_overrides_config(user_args_list, extend_args_list, additional_args):
+        config_flag = command_info.config_arg_template[0]
+        if not _user_overrides_config(config_flag, user_args_list, extend_args_list, additional_args):
             start_for_inject = start_cwd if start_cwd is not None else pathlib.Path.cwd()
             config_path = _resolve_config_inject_path(start_for_inject, command_info.config_inject_candidates)
             if config_path is not None:

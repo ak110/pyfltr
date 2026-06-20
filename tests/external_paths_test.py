@@ -2,7 +2,7 @@
 
 外部パス（起点cwd配下にない絶対パス）を3分類で扱う実装の境界確認。
 
-- 注入対象（`config_arg_template`指定）: `markdownlint` / `textlint`
+- 注入対象（`config_arg_template`指定）: `markdownlint` / `textlint` / `bandit`
 - 除外対象（`allows_external_paths=False`）: `pre-commit` / `pytest` / `vitest` /
   `cargo-test` / `dotnet-test` / `gitleaks` / `semgrep` /
   `uv-audit` / `pnpm-audit` / `npm-audit` / `yarn-audit`
@@ -333,6 +333,124 @@ def test_user_overrides_config_negative(
     # --config 自動注入が行われている
     assert "--config" in result.commandline
     assert str((tmp_path / ".markdownlint.json").resolve()) in result.commandline
+
+
+# --- _user_overrides_config の境界を bandit (--configfile flag) でも検証 -------
+# bandit は markdownlint/textlint と異なり、設定フラグが `--configfile` のためフラグ判定の汎用化を直接検証する。
+
+
+def test_bandit_config_injection_uses_pyproject_toml(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """起点cwd直下に`pyproject.toml`があると`--configfile <絶対パス>`が自動注入される。"""
+    (tmp_path / "pyproject.toml").write_text("[tool.bandit]\n", encoding="utf-8")
+    internal = tmp_path / "code.py"
+    internal.write_text("import subprocess\n", encoding="utf-8")
+
+    config = pyfltr.config.config.create_default_config()
+    _enable(config, ["bandit"])
+    _patch_build_commandline(monkeypatch)
+    _patch_subprocess(monkeypatch)
+
+    ctx = _testconf.make_execution_context(config, [internal], start_cwd=tmp_path)
+    result = pyfltr.command.dispatcher.execute_command("bandit", _testconf.make_args(), ctx)
+
+    assert "--configfile" in result.commandline
+    assert str((tmp_path / "pyproject.toml").resolve()) in result.commandline
+
+
+def test_bandit_user_overrides_separate_form(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """`--configfile <path>`の分離形を{command}-argsで指定すると自動注入がスキップされる。"""
+    (tmp_path / "pyproject.toml").write_text("[tool.bandit]\n", encoding="utf-8")
+    internal = tmp_path / "code.py"
+    internal.write_text("import subprocess\n", encoding="utf-8")
+
+    config = pyfltr.config.config.create_default_config()
+    _enable(config, ["bandit"])
+    config.values["bandit-args"] = ["--configfile", "/user/bandit.yaml"]
+    _patch_build_commandline(monkeypatch)
+    _patch_subprocess(monkeypatch)
+
+    ctx = _testconf.make_execution_context(config, [internal], start_cwd=tmp_path)
+    result = pyfltr.command.dispatcher.execute_command("bandit", _testconf.make_args(), ctx)
+
+    # 利用者指定の --configfile のみ（自動注入の設定ファイルパスは含まれない）
+    assert result.commandline.count("--configfile") == 1
+    assert "/user/bandit.yaml" in result.commandline
+    assert str((tmp_path / "pyproject.toml").resolve()) not in result.commandline
+
+
+def test_bandit_user_overrides_equal_form(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """`--configfile=path`の=区切り形を{command}-argsで指定すると自動注入がスキップされる。"""
+    (tmp_path / "pyproject.toml").write_text("[tool.bandit]\n", encoding="utf-8")
+    internal = tmp_path / "code.py"
+    internal.write_text("import subprocess\n", encoding="utf-8")
+
+    config = pyfltr.config.config.create_default_config()
+    _enable(config, ["bandit"])
+    config.values["bandit-args"] = ["--configfile=/user/bandit.yaml"]
+    _patch_build_commandline(monkeypatch)
+    _patch_subprocess(monkeypatch)
+
+    ctx = _testconf.make_execution_context(config, [internal], start_cwd=tmp_path)
+    result = pyfltr.command.dispatcher.execute_command("bandit", _testconf.make_args(), ctx)
+
+    assert "--configfile=/user/bandit.yaml" in result.commandline
+    assert str((tmp_path / "pyproject.toml").resolve()) not in result.commandline
+
+
+def test_bandit_does_not_inject_dotbandit_ini(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """起点cwd直下に`.bandit`（INI形式）のみがある場合は`--configfile`注入をスキップする。"""
+    (tmp_path / ".bandit").write_text("[bandit]\n", encoding="utf-8")
+    internal = tmp_path / "code.py"
+    internal.write_text("import subprocess\n", encoding="utf-8")
+
+    config = pyfltr.config.config.create_default_config()
+    _enable(config, ["bandit"])
+    _patch_build_commandline(monkeypatch)
+    _patch_subprocess(monkeypatch)
+
+    ctx = _testconf.make_execution_context(config, [internal], start_cwd=tmp_path)
+    result = pyfltr.command.dispatcher.execute_command("bandit", _testconf.make_args(), ctx)
+
+    # `--configfile`注入が行われない。bandit-args既定にも`--configfile`は含まれない
+    assert "--configfile" not in result.commandline
+    assert str((tmp_path / ".bandit").resolve()) not in result.commandline
+
+
+def test_bandit_inject_candidate_priority(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """候補ファイルが複数存在する場合は一覧の先頭優先で最初に見つかったものを採用する。"""
+    (tmp_path / "pyproject.toml").write_text("[tool.bandit]\n", encoding="utf-8")
+    (tmp_path / ".bandit.yaml").write_text("skips: []\n", encoding="utf-8")
+    (tmp_path / ".bandit.toml").write_text("skips = []\n", encoding="utf-8")
+    internal = tmp_path / "code.py"
+    internal.write_text("import subprocess\n", encoding="utf-8")
+
+    config = pyfltr.config.config.create_default_config()
+    _enable(config, ["bandit"])
+    _patch_build_commandline(monkeypatch)
+    _patch_subprocess(monkeypatch)
+
+    ctx = _testconf.make_execution_context(config, [internal], start_cwd=tmp_path)
+    result = pyfltr.command.dispatcher.execute_command("bandit", _testconf.make_args(), ctx)
+
+    # 先頭候補（pyproject.toml）が採用され、後続候補は採用されない
+    assert str((tmp_path / "pyproject.toml").resolve()) in result.commandline
+    assert str((tmp_path / ".bandit.yaml").resolve()) not in result.commandline
+    assert str((tmp_path / ".bandit.toml").resolve()) not in result.commandline
 
 
 # --- 注入対象（markdownlint / textlint） -----------------------------------------

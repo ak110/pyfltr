@@ -59,6 +59,7 @@ PYTHON_TOOL_BIN: dict[str, str] = {
     "pytest": "pytest",
     "uv-sort": "uv-sort",
     "semgrep": "semgrep",
+    "bandit": "bandit",
     "sqlfluff": "sqlfluff",
 }
 

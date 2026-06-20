@@ -220,6 +220,23 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         per_file_cost=0.05,
         allows_external_paths=False,
     ),
+    # bandit: Python専用source-level SAST。既定で無効（opt-in）。
+    # YAML/TOML形式設定の自動読み込みはbandit本体にないため`--configfile <設定ファイル>`明示が必須。
+    # 起点cwd直下のpyproject.toml / .bandit.yaml / .bandit.tomlを順に探索し、
+    # 最初に見つかったファイルを`--configfile <絶対パス>`形式で注入する。
+    # `.bandit`はINI形式で`--configfile`の対象外のためbandit本体の`--recursive`時自動探索に委ねる。
+    "bandit": CommandInfo(
+        type="linter",
+        targets="*.py",
+        fixed_cost=0.3,
+        per_file_cost=0.05,
+        config_arg_template=["--configfile", "{path}"],
+        config_inject_candidates=[
+            "pyproject.toml",
+            ".bandit.yaml",
+            ".bandit.toml",
+        ],
+    ),
     # Python linter群はモダン順（後ろほど新しい）に並べる。実行順はLPT並列で別管理。
     "pylint": CommandInfo(type="linter", fixed_cost=1.75, per_file_cost=0.3),
     "mypy": CommandInfo(type="linter", fixed_cost=0.2, per_file_cost=0.12),

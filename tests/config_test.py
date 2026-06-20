@@ -171,9 +171,9 @@ def test_custom_command(tmp_path: pathlib.Path) -> None:
 preset = "latest"
 python = true
 
-[tool.pyfltr.custom-commands.bandit]
+[tool.pyfltr.custom-commands.mytool]
 type = "linter"
-path = "bandit"
+path = "mytool"
 args = ["-r"]
 targets = "*.py"
 error-pattern = '(?P<file>[^:]+):(?P<line>\\d+):(?P<col>\\d+):\\s*(?P<message>.+)'
@@ -183,26 +183,26 @@ fast = true
     config = pyfltr.config.config.load_config(config_dir=tmp_path)
 
     # カスタムコマンドがレジストリに登録されている
-    assert "bandit" in config.commands
-    assert config.commands["bandit"].type == "linter"
-    assert config.commands["bandit"].builtin is False
-    assert config.commands["bandit"].targets == "*.py"
-    assert config.commands["bandit"].error_pattern is not None
+    assert "mytool" in config.commands
+    assert config.commands["mytool"].type == "linter"
+    assert config.commands["mytool"].builtin is False
+    assert config.commands["mytool"].targets == "*.py"
+    assert config.commands["mytool"].error_pattern is not None
 
     # values辞書にも登録されている
-    assert config["bandit"] is True
-    assert config["bandit-path"] == "bandit"
-    assert config["bandit-args"] == ["-r"]
-    assert config["bandit-fast"] is True
+    assert config["mytool"] is True
+    assert config["mytool-path"] == "mytool"
+    assert config["mytool-args"] == ["-r"]
+    assert config["mytool-fast"] is True
 
     # command_namesの末尾に追加されている
-    assert config.command_names[-1] == "bandit"
+    assert config.command_names[-1] == "mytool"
 
     # preset + python = trueのgate通過によりpreset内のPython系ツールが有効化されている
     assert config["ruff-format"] is True
 
     # fastエイリアスにカスタムコマンドが含まれている
-    assert "bandit" in config["aliases"]["fast"]
+    assert "mytool" in config["aliases"]["fast"]
 
 
 @pytest.mark.parametrize(
@@ -577,13 +577,14 @@ def test_textlint_markdownlint_path_default_empty() -> None:
         # designmd / lycheeは追加設定不要なため既定有効。
         ("designmd", True, "js-runner"),
         ("lychee", True, "bin-runner"),
-        # semgrep / sqlfluffはルールセット・dialect指定が必須のため既定無効（opt-in）。
+        # semgrep / sqlfluff / banditはルールセット・dialect・SAST用途のため既定無効（opt-in）。
         ("semgrep", False, "python-runner"),
         ("sqlfluff", False, "python-runner"),
+        ("bandit", False, "python-runner"),
     ],
 )
 def test_new_tools_defaults(command: str, expected_enabled: bool, expected_runner: str) -> None:
-    """designmd / lychee / semgrep / sqlfluffの既定有効/無効と既定ランナーを検証する。"""
+    """designmd / lychee / semgrep / sqlfluff / banditの既定有効/無効と既定ランナーを検証する。"""
     config = pyfltr.config.config.create_default_config()
     assert config[command] is expected_enabled, f"{command} の既定値が想定と異なる"
     assert config[f"{command}-runner"] == expected_runner
@@ -599,9 +600,9 @@ def test_lychee_version_default_exists() -> None:
     assert config["lychee-version"] == "latest"
 
 
-@pytest.mark.parametrize("command", ["designmd", "lychee", "semgrep", "sqlfluff"])
+@pytest.mark.parametrize("command", ["designmd", "lychee", "semgrep", "sqlfluff", "bandit"])
 def test_new_tools_registered_in_lint_alias(command: str) -> None:
-    """4ツールが`lint`エイリアスに登録されている。"""
+    """新規ツール群が`lint`エイリアスに登録されている。"""
     config = pyfltr.config.config.create_default_config()
     assert command in config["aliases"]["lint"]
 
