@@ -18,7 +18,7 @@ logger = __import__("logging").getLogger(__name__)
 
 # GitLab remote未登録/未認証の状況でglab自身が出力するエラー文言。
 # 検出後にglab-ci-lintをskipped扱いへ書き換える根拠とする。
-# 大文字小文字差を吸収するため、判定は `output.lower()` に対して行う。
+# 各パターンの登録形式と照合方式は `_looks_like_glab_host_missing` のdocstringへ集約する。
 _GLAB_HOST_NOT_FOUND_PATTERNS: tuple[str, ...] = (
     "none of the git remotes configured for this repository point to a known gitlab host",
     "not authenticated",
@@ -26,9 +26,15 @@ _GLAB_HOST_NOT_FOUND_PATTERNS: tuple[str, ...] = (
 
 
 def _looks_like_glab_host_missing(output: str) -> bool:
-    """GlabがGitLabホストを検出できなかった旨のエラーかを判定する。"""
-    # Windows runner等で端末幅により改行・追加スペースが挿入されパターンが分断されるため、
-    # 連続する空白（改行を含む）を単一スペースへ正規化してから判定する。
+    r"""GlabがGitLabホストを検出できなかった旨のエラーかを判定する。
+
+    外部CLIの英文エラー出力を部分文字列マッチで判定するヘルパーは、
+    判定前に `re.sub(r"\s+", " ", output.lower())` で空白を正規化するものとする。
+    Windows runner等で端末幅により改行・追加スペースが挿入されパターンが分断されても
+    検出できるようにするためである。
+    パターン側は事前に正規化済み（小文字・連続空白なし）の形で登録する前提とする。
+    同種ヘルパーを新設する場合も同方針を踏襲する。
+    """
     normalized = re.sub(r"\s+", " ", output.lower())
     return any(pattern in normalized for pattern in _GLAB_HOST_NOT_FOUND_PATTERNS)
 
