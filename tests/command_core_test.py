@@ -2488,6 +2488,42 @@ def test_execute_glab_ci_lint_skips_on_host_missing(mocker, tmp_path: pathlib.Pa
     assert any(w.get("source") == "glab-ci-lint" for w in warnings)
 
 
+def test_execute_glab_ci_lint_skips_on_wrapped_host_missing(mocker, tmp_path: pathlib.Path) -> None:
+    """端末幅で折り返された文言（Windows runner相当）でもスキップ扱いに書き換える。"""
+    pyfltr.warnings_.clear()
+    proc = subprocess.CompletedProcess(
+        args=["glab", "ci", "lint"],
+        returncode=1,
+        stdout=(
+            "ERROR  \n"
+            "          \n"
+            "  You must be in a GitLab project repository for this action: none of"
+            " the git remotes configured for this repository  \n"
+            "  point to a known GitLab host. Please use `glab auth login` to"
+            " authenticate and configure a new host for glab.       \n"
+        ),
+    )
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
+    target = tmp_path / ".gitlab-ci.yml"
+    target.write_text("stages: [test]\n", encoding="utf-8")
+
+    result = pyfltr.command.glab.execute_glab_ci_lint(
+        "glab-ci-lint",
+        _make_glab_ci_lint_command_info(),
+        ["glab", "ci", "lint"],
+        [target],
+        pyfltr.config.config.create_default_config(),
+        {"PATH": os.environ.get("PATH", "")},
+        None,
+        time.perf_counter(),
+        _make_glab_ci_lint_args(),
+    )
+
+    assert result.returncode is None
+    assert result.status == "skipped"
+    assert "スキップしました" in result.output
+
+
 def test_execute_glab_ci_lint_skips_on_not_authenticated(mocker, tmp_path: pathlib.Path) -> None:
     """大文字の未認証文言 "NOT AUTHENTICATED" も大小文字差を吸収してスキップ扱いに書き換える。"""
     pyfltr.warnings_.clear()

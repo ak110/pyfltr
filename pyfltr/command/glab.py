@@ -2,6 +2,7 @@
 
 import argparse
 import pathlib
+import re
 import shlex
 import time
 import typing
@@ -26,8 +27,10 @@ _GLAB_HOST_NOT_FOUND_PATTERNS: tuple[str, ...] = (
 
 def _looks_like_glab_host_missing(output: str) -> bool:
     """GlabがGitLabホストを検出できなかった旨のエラーかを判定する。"""
-    lowered = output.lower()
-    return any(pattern in lowered for pattern in _GLAB_HOST_NOT_FOUND_PATTERNS)
+    # Windows runner等で端末幅により改行・追加スペースが挿入されパターンが分断されるため、
+    # 連続する空白（改行を含む）を単一スペースへ正規化してから判定する。
+    normalized = re.sub(r"\s+", " ", output.lower())
+    return any(pattern in normalized for pattern in _GLAB_HOST_NOT_FOUND_PATTERNS)
 
 
 def execute_glab_ci_lint(
