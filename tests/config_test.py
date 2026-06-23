@@ -917,6 +917,31 @@ def test_cache_config_invalid_type_warns(tmp_path: pathlib.Path) -> None:
     assert config["cache-max-age-hours"] == 12  # 既定値
 
 
+def test_retry_on_oom_default() -> None:
+    """retry-on-oomの既定値はTrueである。"""
+    config = pyfltr.config.config.create_default_config()
+    assert config["retry-on-oom"] is True
+
+
+def test_retry_max_attempts_default() -> None:
+    """retry-max-attemptsの既定値は1である。"""
+    config = pyfltr.config.config.create_default_config()
+    assert config["retry-max-attempts"] == 1
+
+
+def test_retry_config_overridable(tmp_path: pathlib.Path) -> None:
+    """pyproject.tomlでretry-on-oomおよびretry-max-attemptsを上書きできる。"""
+    pyproject_content = """
+[tool.pyfltr]
+retry-on-oom = false
+retry-max-attempts = 3
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    config = pyfltr.config.config.load_config(config_dir=tmp_path)
+    assert config["retry-on-oom"] is False
+    assert config["retry-max-attempts"] == 3
+
+
 def test_textlint_command_info_is_cacheable() -> None:
     """textlintのCommandInfoがcacheable=Trueでconfig_filesを完全列挙している。"""
     config = pyfltr.config.config.create_default_config()

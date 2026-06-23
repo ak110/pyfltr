@@ -607,6 +607,14 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # 本グローバル値を採用し、`0` 以上の値が明示された場合はそちらを優先する。
     # ハング由来の停止はJSONL `command.hints` の `status.timeout` 注記で識別できる。
     "command-timeout": 600,
+    # OOM（Out of Memory）検知による自動リトライ。LinuxのOOM killerによる強制終了
+    # （returncodeが-9または137）を検知して指定回数まで自動で再実行する。
+    # 既定で有効にする。リトライは即時実行で、複数回失敗した場合は最後の失敗を返す。
+    # Windowsは強制終了時のreturncodeにOOM固有値がないため対象外。
+    "retry-on-oom": True,
+    # 上記 retry-on-oom でのリトライ最大回数。既定値1で合計2回試行する。
+    # 0以下を指定するとリトライを無効化する。
+    "retry-max-attempts": 1,
     # flake8風無視パターン。
     "exclude": [
         # 値はflake8・blackの既定値および以下のgitignoreテンプレートを参考に選定する。
@@ -872,6 +880,18 @@ def resolve_command_timeout(values: dict[str, typing.Any], command: str) -> floa
     except (TypeError, ValueError):
         global_value = 0
     return float(global_value) if global_value > 0 else None
+
+
+def resolve_retry_kwargs(values: dict[str, typing.Any]) -> dict[str, typing.Any]:
+    """`run_subprocess_with_timeout()` へ展開するOOMリトライ用キーワード引数を返す。
+
+    各subprocess呼び出し点で `**resolve_retry_kwargs(config.values)` 形で渡し、
+    `retry-on-oom`・`retry-max-attempts` の参照と型変換を集約する。
+    """
+    return {
+        "retry_on_oom": bool(values["retry-on-oom"]),
+        "retry_max_attempts": int(values["retry-max-attempts"]),
+    }
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1789,7 +1809,7 @@ _JAPANESE_TYPE_LABELS: dict[type, str] = {
 }
 """Python型 → エラーメッセージ向け日本語ラベル。
 
-`<class 'bool'>` のような生表示を避け、利用者が直感的に把握できる語へ揃える。
+`<class 'bool'>` のような生表示を避け、利用者が型として識別できる語へ揃える。
 未登録型は `type(value).__name__` のフォールバックを使う。
 """
 

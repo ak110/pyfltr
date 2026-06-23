@@ -58,6 +58,7 @@ def execute_linter_fix(
         on_subprocess_end=on_subprocess_end,
         timeout=pyfltr.config.config.resolve_command_timeout(config.values, command),
         cwd=cwd,
+        **pyfltr.config.config.resolve_retry_kwargs(config.values),
     )
     returncode = proc.returncode
     output = proc.stdout.strip()
@@ -87,6 +88,7 @@ def execute_linter_fix(
         elapsed=elapsed,
         errors=errors,
         timeout_exceeded=proc.timeout_exceeded,
+        retry_count=proc.retry_count,
     )
     if not has_error and changed:
         result.fixed_files = changed_files(digests_before, digests_after)

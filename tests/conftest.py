@@ -155,6 +155,7 @@ def make_command_result(
     cached_from: str | None = None,
     target_files: list[pathlib.Path] | None = None,
     resolution_failed: bool = False,
+    retry_count: int = 0,
 ) -> pyfltr.command.core_.CommandResult:
     """テスト用の CommandResult を生成する。
 
@@ -182,6 +183,7 @@ def make_command_result(
         cached=cached,
         cached_from=cached_from,
         resolution_failed=resolution_failed,
+        retry_count=retry_count,
     )
 
 

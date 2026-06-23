@@ -657,6 +657,8 @@ def _build_command_record(
     record[elapsed_key] = round(result.elapsed, 2)
     if result.returncode is not None:
         record["rc"] = result.returncode
+    if result.retry_count:
+        record["retry_count"] = result.retry_count
 
     truncated, message = _build_truncated_meta(
         result, diagnostics=diagnostics, diagnostic_total=diagnostic_total, config=config

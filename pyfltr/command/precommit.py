@@ -81,6 +81,7 @@ def execute_pre_commit(
 
     # stage 1: 実行
     timeout = pyfltr.config.config.resolve_command_timeout(config.values, command)
+    retry_kwargs: dict[str, typing.Any] = pyfltr.config.config.resolve_retry_kwargs(config.values)
     proc = pyfltr.command.process.run_subprocess_with_timeout(
         commandline,
         pre_commit_env,
@@ -90,10 +91,12 @@ def execute_pre_commit(
         on_subprocess_end=on_subprocess_end,
         timeout=timeout,
         cwd=cwd,
+        **retry_kwargs,
     )
     returncode = proc.returncode
     has_error = False
     timeout_exceeded = proc.timeout_exceeded
+    total_retry_count = proc.retry_count
     if timeout_exceeded:
         has_error = True
 
@@ -111,12 +114,14 @@ def execute_pre_commit(
             on_subprocess_end=on_subprocess_end,
             timeout=timeout,
             cwd=cwd,
+            **retry_kwargs,
         )
         if proc.returncode != 0:
             returncode = proc.returncode
             has_error = True
         if proc.timeout_exceeded:
             timeout_exceeded = True
+        total_retry_count += proc.retry_count
 
     output = proc.stdout.strip()
     elapsed = time.perf_counter() - start_time
@@ -131,4 +136,5 @@ def execute_pre_commit(
         output=output,
         elapsed=elapsed,
         timeout_exceeded=timeout_exceeded,
+        retry_count=total_retry_count,
     )

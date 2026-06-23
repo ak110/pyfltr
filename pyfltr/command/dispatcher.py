@@ -495,13 +495,12 @@ def _run_plain_command(
         on_subprocess_end=on_subprocess_end,
         timeout=pyfltr.config.config.resolve_command_timeout(config.values, command),
         cwd=cwd,
+        **pyfltr.config.config.resolve_retry_kwargs(config.values),
     )
     returncode = proc.returncode
 
     output = proc.stdout.strip()
     elapsed = time.perf_counter() - start_time
-
-    # エラー箇所のパース
     errors = pyfltr.command.error_parser.parse_errors(command, output, command_info.error_pattern)
 
     result = CommandResult.from_run(
@@ -515,6 +514,7 @@ def _run_plain_command(
         elapsed=elapsed,
         errors=errors,
         timeout_exceeded=proc.timeout_exceeded,
+        retry_count=proc.retry_count,
     )
 
     # キャッシュ書き込み （成功rc=0のみ）。失敗結果を記録すると再試行で同じ失敗が

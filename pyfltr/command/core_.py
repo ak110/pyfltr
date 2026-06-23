@@ -228,6 +228,8 @@ class CommandResult:
     `status` プロパティはconfigを保持しないため、解決済み値を本フィールドへ保持する設計とする。
     `resolution_failed` / `timeout_exceeded` はツール自体の異常を示すため severity の影響を受けない。
     """
+    retry_count: int = 0
+    """OOM起因で再試行した回数。0はリトライなしを意味する。"""
 
     @classmethod
     # from_run は各コマンド実行モジュール（linter_fix / textlint_fix 等）で同様の引数転送パターンを持つため重複検知される
@@ -246,6 +248,7 @@ class CommandResult:
         command_type: str | None = None,
         resolution_failed: bool = False,
         timeout_exceeded: bool = False,
+        retry_count: int = 0,
     ) -> "CommandResult":
         """実行結果からCommandResultを組み立てるファクトリメソッド。
 
@@ -253,6 +256,7 @@ class CommandResult:
         `command_type` と `command_info` の両方を省略することはできない。
         `errors` を省略した場合は空リストを使う（parse_errorsの呼び出しは呼び出し側で行う）。
         `timeout_exceeded=True` を指定すると当該結果がtimeout由来の失敗であることを示す。
+        `retry_count` はOOM起因の再試行回数（0はリトライなし、複数回subprocessを呼ぶ経路では合算値）。
         """
         resolved_type: str
         if command_type is None:
@@ -272,6 +276,7 @@ class CommandResult:
             errors=errors if errors is not None else [],
             resolution_failed=resolution_failed,
             timeout_exceeded=timeout_exceeded,
+            retry_count=retry_count,
         )
 
     @property
@@ -401,6 +406,7 @@ class CommandResult:
 
         total_elapsed = sum(r.elapsed for r in results)
         total_files = sum(r.files for r in results)
+        total_retry_count = sum(r.retry_count for r in results)
         any_has_error = any(r.has_error for r in results)
         any_timeout = any(r.timeout_exceeded for r in results)
         any_resolution_failed = any(r.resolution_failed for r in results)
@@ -428,6 +434,7 @@ class CommandResult:
             runner_fallback=head.runner_fallback,
             timeout_exceeded=any_timeout,
             severity=head.severity,
+            retry_count=total_retry_count,
         )
 
     def get_status_text(self) -> str:

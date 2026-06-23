@@ -175,6 +175,8 @@ pyfltr config list --all
 - {command}-timeout : per-toolのタイムアウト秒数。未指定時は`command-timeout`のグローバル値にフォールバックする。
   正の秒数を指定すると当該コマンドのみその値で上書きし、`0`を指定すると当該コマンドのtimeoutのみ無効化する。
   内部的には負値を「未指定」のsentinelとして扱うため、誤って負値を設定した場合もグローバル値へフォールバックする
+- retry-on-oom : LinuxのOOM killer起因でツールが強制終了された場合に自動リトライするか（既定: `true`。後述）
+- retry-max-attempts : OOM検知時の最大リトライ回数（既定: `1`。`0`でリトライ無効。後述）
 - exclude : 除外するファイル名/ディレクトリ名パターン（既定値あり。ロックファイル・minify済みファイル・source mapも含む）
 - extend-exclude : 追加で除外するファイル名/ディレクトリ名パターン（既定は空）
 - respect-gitignore : `.gitignore`に記載されたファイルを除外するか否か（既定: `true`）。
@@ -208,6 +210,21 @@ pyfltr config list --all
 
 `prettier-check-args` / `prettier-write-args` / `shfmt-check-args` / `shfmt-write-args`などの
 2段階実行向け引数はツール別設定ページで詳しく扱う。
+
+## OOM自動リトライ
+
+LinuxのOOM killerによってツールプロセスが強制終了された場合、pyfltrは自動的にリトライする。
+
+`retry-on-oom`を`true`（既定）にすると、ツールのリターンコードが`-9`または`137`のときをOOM起因とみなして
+リトライを試みる。タイムアウト超過によるSIGKILLはOOM起因とはみなさず、リトライの対象外とする。
+
+`retry-max-attempts`はOOM検知時の最大リトライ回数を指定する。既定値は`1`（最大1回リトライ）。
+`0`を指定するとリトライを無効化する（`retry-on-oom: false`と同じ効果）。
+
+JSONL出力（`--output-format=jsonl`）では、`command`レコードの`retry_count`フィールドにリトライ回数が記録される。
+`retry_count`が`0`のときはフィールド自体が省略される。
+
+Windows環境ではOOM killerが存在せずreturncodeが`-9`または`137`にならないため、本機能のリトライは実行されない。
 
 ## グローバル設定
 

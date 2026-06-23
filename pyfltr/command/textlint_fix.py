@@ -91,6 +91,7 @@ def execute_textlint_fix(
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(step1_commandline)}\n")
     timeout = pyfltr.config.config.resolve_command_timeout(config.values, command)
+    retry_kwargs: dict[str, typing.Any] = pyfltr.config.config.resolve_retry_kwargs(config.values)
     step1_proc = pyfltr.command.process.run_subprocess_with_timeout(
         step1_commandline,
         env,
@@ -100,6 +101,7 @@ def execute_textlint_fix(
         on_subprocess_end=on_subprocess_end,
         timeout=timeout,
         cwd=cwd,
+        **retry_kwargs,
     )
     step1_rc = step1_proc.returncode
     # rc=0 （違反なし） / rc=1 （違反残存） は通常終了、rc>=2は致命的エラー扱い
@@ -131,6 +133,7 @@ def execute_textlint_fix(
         on_subprocess_end=on_subprocess_end,
         timeout=timeout,
         cwd=cwd,
+        **retry_kwargs,
     )
     step2_rc = step2_proc.returncode
     step2_fatal = step2_rc >= 2
@@ -172,6 +175,7 @@ def execute_textlint_fix(
         elapsed=elapsed,
         errors=errors,
         timeout_exceeded=timeout_exceeded,
+        retry_count=step1_proc.retry_count + step2_proc.retry_count,
     )
     if not has_error and step1_changed:
         result.fixed_files = changed_files(digests_before, digests_after_step1)

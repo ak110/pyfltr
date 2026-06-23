@@ -1876,6 +1876,28 @@ def test_command_result_cached_defaults() -> None:
     assert result.cached_from is None
 
 
+def test_command_result_merge_retry_count() -> None:
+    """`CommandResult.merge()`でretry_countが合計される。"""
+
+    def _make_result(retry_count: int) -> pyfltr.command.core_.CommandResult:
+        return pyfltr.command.core_.CommandResult(
+            command="mypy",
+            command_type="linter",
+            commandline=["mypy"],
+            returncode=0,
+            has_error=False,
+            files=1,
+            output="",
+            elapsed=0.1,
+            retry_count=retry_count,
+        )
+
+    r1 = _make_result(retry_count=1)
+    r2 = _make_result(retry_count=2)
+    merged = pyfltr.command.core_.CommandResult.merge([r1, r2])
+    assert merged.retry_count == 3
+
+
 def test_execute_command_cache_hit_skips_subprocess(mocker, tmp_path: pathlib.Path) -> None:
     """キャッシュヒット時はsubprocess実行をスキップしてcached=Trueを返す。"""
     target = tmp_path / "foo.md"

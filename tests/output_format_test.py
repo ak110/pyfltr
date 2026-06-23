@@ -230,6 +230,24 @@ def test_command_record_no_message_when_output_empty(default_config):
     assert "message" not in tool_record
 
 
+def test_command_record_includes_retry_count_when_nonzero(default_config):
+    """retry_count > 0のときcommandレコードに含まれる。"""
+    result = _make_result("mypy", returncode=0, retry_count=2)
+    lines = pyfltr.output.jsonl.build_lines([result], default_config, exit_code=0)
+    tool_record = json.loads(lines[0])
+    assert tool_record["kind"] == "command"
+    assert tool_record["retry_count"] == 2
+
+
+def test_command_record_omits_retry_count_when_zero(default_config):
+    """retry_count == 0のときcommandレコードから省略される。"""
+    result = _make_result("mypy", returncode=0)
+    lines = pyfltr.output.jsonl.build_lines([result], default_config, exit_code=0)
+    tool_record = json.loads(lines[0])
+    assert tool_record["kind"] == "command"
+    assert "retry_count" not in tool_record
+
+
 # ---------------------------------------------------------------------------
 # structured_logger経由の出力
 # ---------------------------------------------------------------------------

@@ -287,6 +287,39 @@ def test_build_command_record_retry_command_omitted() -> None:
     assert "retry_command" not in record
 
 
+def test_build_command_record_retry_count_included() -> None:
+    """retry_countが1以上の場合、commandレコードに含まれる。"""
+    result = pyfltr.command.core_.CommandResult(
+        command="mypy",
+        command_type="linter",
+        commandline=["mypy"],
+        returncode=0,
+        has_error=False,
+        files=1,
+        output="",
+        elapsed=0.1,
+        retry_count=2,
+    )
+    record = _parse_command_record(result)
+    assert record["retry_count"] == 2
+
+
+def test_build_command_record_retry_count_omitted_when_zero() -> None:
+    """retry_count==0の場合、commandレコードから省略される。"""
+    result = pyfltr.command.core_.CommandResult(
+        command="mypy",
+        command_type="linter",
+        commandline=["mypy"],
+        returncode=0,
+        has_error=False,
+        files=1,
+        output="",
+        elapsed=0.1,
+    )
+    record = _parse_command_record(result)
+    assert "retry_count" not in record
+
+
 def test_build_command_record_omits_runner_info_when_normal_path() -> None:
     """通常経路（fallback無し）では runner 情報3点を全て省略する。
 

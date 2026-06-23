@@ -349,16 +349,30 @@ def run_subprocess(
 # POSIX慣習でtimeout停止に使われる124を踏襲し、シェル経由のtimeout(1)等と整合させる。
 TIMEOUT_RETURNCODE: int = 124
 
+# LinuxのOOM killerによるSIGKILL終了で観測されるreturncode集合。
+OOM_RETURNCODES: frozenset[int] = frozenset({-9, 137})
+
+
+def is_oom_returncode(returncode: int | None) -> bool:
+    """returncodeがOOM起因のSIGKILLに該当するか判定する。"""
+    return returncode in OOM_RETURNCODES
+
 
 class CompletedProcessWithTimeoutInfo(subprocess.CompletedProcess[str]):
     """`run_subprocess_with_timeout` の戻り値型。
 
-    `subprocess.CompletedProcess[str]` を継承し、timeout超過判定フラグを保持する。
-    呼び出し側が `CommandResult.timeout_exceeded` を組み立てるために参照する。
+    `subprocess.CompletedProcess[str]` を継承し、timeout超過判定フラグおよびOOMリトライ回数を保持する。
+    呼び出し側が `CommandResult.timeout_exceeded` および `CommandResult.retry_count` を
+    組み立てるために参照する。
     属性追加目的の最小限の継承で、メソッドは増やさない方針。
+
+    Attributes:
+        timeout_exceeded: timeout超過が発生した場合に `True`。
+        retry_count: OOMリトライが実行された回数。リトライなしの場合は `0`。
     """
 
     timeout_exceeded: bool
+    retry_count: int
 
     def __init__(
         self,
@@ -367,9 +381,11 @@ class CompletedProcessWithTimeoutInfo(subprocess.CompletedProcess[str]):
         returncode: int,
         stdout: str,
         timeout_exceeded: bool = False,
+        retry_count: int = 0,
     ) -> None:
         super().__init__(args=args, returncode=returncode, stdout=stdout)
         self.timeout_exceeded = timeout_exceeded
+        self.retry_count = retry_count
 
 
 def run_subprocess_with_timeout(
@@ -382,6 +398,8 @@ def run_subprocess_with_timeout(
     on_subprocess_end: typing.Callable[[], None] | None = None,
     timeout: float | None = None,
     cwd: pathlib.Path | None = None,
+    retry_on_oom: bool = False,
+    retry_max_attempts: int = 0,
 ) -> CompletedProcessWithTimeoutInfo:
     """`run_subprocess` のtimeout例外を捕捉して`CompletedProcess`相当に変換する共通wrapper。
 
@@ -393,32 +411,49 @@ def run_subprocess_with_timeout(
 
     `_kill_process_tree` でsubprocessを停止した後の経過秒数は途中outputに数値として残らないため、
     付加メッセージでLLMが「timeoutで停止した」ことを把握できるよう、英文注記も同時に追記する。
+
+    `retry_on_oom=True` かつ `retry_max_attempts > 0` のとき、OOM起因のSIGKILL
+    （timeout超過を伴わない `OOM_RETURNCODES` 該当returncode）を検知してリトライする。
+    戻り値の `retry_count` にリトライ実施回数を設定する（0はリトライなし）。
     """
-    try:
-        proc = run_subprocess(
-            commandline,
-            env,
-            on_output,
-            is_interrupted=is_interrupted,
-            on_subprocess_start=on_subprocess_start,
-            on_subprocess_end=on_subprocess_end,
-            timeout=timeout,
-            cwd=cwd,
-        )
-    except TimeoutExceededExecution as e:
-        message = f"\nTimeout exceeded after {e.timeout:.1f}s (elapsed={e.elapsed:.1f}s)\n"
-        if on_output is not None:
-            on_output(message)
-        combined_output = e.output + message
+    attempt = 0
+    while True:
+        try:
+            proc = run_subprocess(
+                commandline,
+                env,
+                on_output,
+                is_interrupted=is_interrupted,
+                on_subprocess_start=on_subprocess_start,
+                on_subprocess_end=on_subprocess_end,
+                timeout=timeout,
+                cwd=cwd,
+            )
+        except TimeoutExceededExecution as e:
+            message = f"\nTimeout exceeded after {e.timeout:.1f}s (elapsed={e.elapsed:.1f}s)\n"
+            if on_output is not None:
+                on_output(message)
+            combined_output = e.output + message
+            return CompletedProcessWithTimeoutInfo(
+                args=commandline,
+                returncode=TIMEOUT_RETURNCODE,
+                stdout=combined_output,
+                timeout_exceeded=True,
+                retry_count=attempt,
+            )
+        if retry_on_oom and attempt < retry_max_attempts and is_oom_returncode(proc.returncode):
+            attempt += 1
+            logger.warning(
+                "OOM検知のためリトライする。returncode=%s、試行 %d/%d。",
+                proc.returncode,
+                attempt,
+                retry_max_attempts,
+            )
+            continue
         return CompletedProcessWithTimeoutInfo(
             args=commandline,
-            returncode=TIMEOUT_RETURNCODE,
-            stdout=combined_output,
-            timeout_exceeded=True,
+            returncode=proc.returncode,
+            stdout=proc.stdout,
+            timeout_exceeded=False,
+            retry_count=attempt,
         )
-    return CompletedProcessWithTimeoutInfo(
-        args=commandline,
-        returncode=proc.returncode,
-        stdout=proc.stdout,
-        timeout_exceeded=False,
-    )

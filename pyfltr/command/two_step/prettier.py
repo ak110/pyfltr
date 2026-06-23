@@ -78,6 +78,7 @@ def execute_prettier_two_step(
     )
 
     timeout = pyfltr.config.config.resolve_command_timeout(config.values, command)
+    retry_kwargs: dict[str, typing.Any] = pyfltr.config.config.resolve_retry_kwargs(config.values)
     if fix_mode:
         # fixモードのみ: returncode==1（changed）のときcommand_typeを"formatter"に切り替える。
         # 通常モードのcommand_infoから取得する型がformatter以外の場合に備えた固有ロジック。
@@ -96,6 +97,7 @@ def execute_prettier_two_step(
             start_time=start_time,
             timeout=timeout,
             parse_errors=True,
+            **retry_kwargs,
             command_type_override=_prettier_type_override,
             is_interrupted=is_interrupted,
             on_output=on_output,
@@ -115,6 +117,7 @@ def execute_prettier_two_step(
         args=args,
         start_time=start_time,
         timeout=timeout,
+        **retry_kwargs,
         is_interrupted=is_interrupted,
         on_output=on_output,
         on_subprocess_start=on_subprocess_start,
@@ -145,6 +148,8 @@ def _run_prettier_check_then_write(
     start_time: float,
     *,
     timeout: float | None,
+    retry_on_oom: bool = False,
+    retry_max_attempts: int = 0,
     is_interrupted: typing.Callable[[], bool] | None = None,
     on_output: typing.Callable[[str], None] | None = None,
     on_subprocess_start: typing.Callable[[], None] | None = None,
@@ -168,6 +173,8 @@ def _run_prettier_check_then_write(
         on_subprocess_end=on_subprocess_end,
         timeout=timeout,
         cwd=cwd,
+        retry_on_oom=retry_on_oom,
+        retry_max_attempts=retry_max_attempts,
     )
     step1_rc = step1_proc.returncode
 
@@ -185,6 +192,7 @@ def _run_prettier_check_then_write(
             elapsed=elapsed,
             errors=errors,
             timeout_exceeded=step1_proc.timeout_exceeded,
+            retry_count=step1_proc.retry_count,
         )
 
     if step1_rc >= 2 or step1_proc.timeout_exceeded:
@@ -204,6 +212,7 @@ def _run_prettier_check_then_write(
             elapsed=elapsed,
             errors=errors,
             timeout_exceeded=step1_proc.timeout_exceeded,
+            retry_count=step1_proc.retry_count,
         )
 
     # Step1 rc == 1 → Step2実行（書き込み）
@@ -219,6 +228,8 @@ def _run_prettier_check_then_write(
         on_subprocess_end=on_subprocess_end,
         timeout=timeout,
         cwd=cwd,
+        retry_on_oom=retry_on_oom,
+        retry_max_attempts=retry_max_attempts,
     )
     step2_rc = step2_proc.returncode
     output = (step1_proc.stdout + step2_proc.stdout).strip()
@@ -243,6 +254,7 @@ def _run_prettier_check_then_write(
         elapsed=elapsed,
         errors=errors,
         timeout_exceeded=step2_proc.timeout_exceeded,
+        retry_count=step1_proc.retry_count + step2_proc.retry_count,
     )
     if not has_error:
         prettier_digests_after = snapshot_file_digests(targets, base_cwd=start_cwd)

@@ -73,6 +73,7 @@ def execute_glab_ci_lint(
         on_subprocess_end=on_subprocess_end,
         timeout=pyfltr.config.config.resolve_command_timeout(config.values, command),
         cwd=cwd,
+        **pyfltr.config.config.resolve_retry_kwargs(config.values),
     )
     returncode = proc.returncode
     output = proc.stdout.strip()
@@ -93,7 +94,7 @@ def execute_glab_ci_lint(
         )
 
     errors = pyfltr.command.error_parser.parse_errors(command, output, command_info.error_pattern)
-    return CommandResult.from_run(
+    result = CommandResult.from_run(
         command=command,
         command_info=command_info,
         commandline=commandline,
@@ -103,4 +104,6 @@ def execute_glab_ci_lint(
         files=len(targets),
         errors=errors,
         timeout_exceeded=proc.timeout_exceeded,
+        retry_count=proc.retry_count,
     )
+    return result

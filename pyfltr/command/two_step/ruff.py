@@ -68,6 +68,7 @@ def execute_ruff_format_two_step(
         on_subprocess_end=on_subprocess_end,
         cwd=cwd,
         start_cwd=start_cwd,
+        **pyfltr.config.config.resolve_retry_kwargs(config.values),
     )
 
 
@@ -92,6 +93,8 @@ def _run_ruff_two_step(
     start_time: float,
     *,
     timeout: float | None,
+    retry_on_oom: bool = False,
+    retry_max_attempts: int = 0,
     is_interrupted: typing.Callable[[], bool] | None = None,
     on_output: typing.Callable[[str], None] | None = None,
     on_subprocess_start: typing.Callable[[], None] | None = None,
@@ -119,6 +122,8 @@ def _run_ruff_two_step(
         on_subprocess_end=on_subprocess_end,
         timeout=timeout,
         cwd=cwd,
+        retry_on_oom=retry_on_oom,
+        retry_max_attempts=retry_max_attempts,
     )
     step1_rc = step1_proc.returncode
     step1_failed = step1_rc >= 2  # exit 0/1は無視、2以上（abrupt termination）のみ失敗扱い
@@ -137,6 +142,8 @@ def _run_ruff_two_step(
         on_subprocess_end=on_subprocess_end,
         timeout=timeout,
         cwd=cwd,
+        retry_on_oom=retry_on_oom,
+        retry_max_attempts=retry_max_attempts,
     )
     step2_rc = step2_proc.returncode
     step2_formatted = step2_rc == 1
@@ -171,6 +178,7 @@ def _run_ruff_two_step(
         elapsed=elapsed,
         errors=errors,
         timeout_exceeded=timeout_exceeded,
+        retry_count=step1_proc.retry_count + step2_proc.retry_count,
     )
     if not has_error and (step1_changed or step2_formatted):
         # digests_beforeはStep1前のスナップショット（関数冒頭で取得済み）。

@@ -156,6 +156,7 @@ def _run_vitest_subprocess(
         on_subprocess_end=on_subprocess_end,
         timeout=pyfltr.config.config.resolve_command_timeout(config.values, command),
         cwd=cwd,
+        **pyfltr.config.config.resolve_retry_kwargs(config.values),
     )
     returncode = proc.returncode
     output = proc.stdout.strip()
@@ -181,4 +182,5 @@ def _run_vitest_subprocess(
         files=len(targets),
         errors=errors,
         timeout_exceeded=proc.timeout_exceeded,
+        retry_count=proc.retry_count,
     )

@@ -78,6 +78,7 @@ def execute_check_write_two_step(
     )
 
     timeout = pyfltr.config.config.resolve_command_timeout(config.values, command)
+    retry_kwargs: dict[str, typing.Any] = pyfltr.config.config.resolve_retry_kwargs(config.values)
     if fix_mode:
         return _run_fix_mode(
             command=command,
@@ -89,6 +90,7 @@ def execute_check_write_two_step(
             start_time=start_time,
             timeout=timeout,
             parse_errors=False,
+            **retry_kwargs,
             is_interrupted=is_interrupted,
             on_output=on_output,
             on_subprocess_start=on_subprocess_start,
@@ -107,6 +109,7 @@ def execute_check_write_two_step(
         args=args,
         start_time=start_time,
         timeout=timeout,
+        **retry_kwargs,
         is_interrupted=is_interrupted,
         on_output=on_output,
         on_subprocess_start=on_subprocess_start,
@@ -137,6 +140,8 @@ def _run_check_then_write(
     start_time: float,
     *,
     timeout: float | None,
+    retry_on_oom: bool = False,
+    retry_max_attempts: int = 0,
     is_interrupted: typing.Callable[[], bool] | None = None,
     on_output: typing.Callable[[str], None] | None = None,
     on_subprocess_start: typing.Callable[[], None] | None = None,
@@ -163,6 +168,8 @@ def _run_check_then_write(
         on_subprocess_end=on_subprocess_end,
         timeout=timeout,
         cwd=cwd,
+        retry_on_oom=retry_on_oom,
+        retry_max_attempts=retry_max_attempts,
     )
     check_rc = check_proc.returncode
 
@@ -179,6 +186,7 @@ def _run_check_then_write(
             output=output,
             elapsed=elapsed,
             timeout_exceeded=check_proc.timeout_exceeded,
+            retry_count=check_proc.retry_count,
         )
 
     # check段でtimeout超過した場合はStep2をスキップして即座にfailedを返す
@@ -196,6 +204,7 @@ def _run_check_then_write(
             output=output,
             elapsed=elapsed,
             timeout_exceeded=True,
+            retry_count=check_proc.retry_count,
         )
 
     # Step2: 書き込み
@@ -210,6 +219,8 @@ def _run_check_then_write(
         on_subprocess_end=on_subprocess_end,
         timeout=timeout,
         cwd=cwd,
+        retry_on_oom=retry_on_oom,
+        retry_max_attempts=retry_max_attempts,
     )
     output = write_proc.stdout.strip()
     elapsed = time.perf_counter() - start_time
@@ -227,6 +238,7 @@ def _run_check_then_write(
         output=check_proc.stdout.strip() if not has_error else output,
         elapsed=elapsed,
         timeout_exceeded=write_proc.timeout_exceeded,
+        retry_count=check_proc.retry_count + write_proc.retry_count,
     )
     if not has_error:
         digests_after = snapshot_file_digests(targets, base_cwd=start_cwd)
@@ -247,6 +259,8 @@ def _run_fix_mode(
     *,
     timeout: float | None,
     parse_errors: bool,
+    retry_on_oom: bool = False,
+    retry_max_attempts: int = 0,
     command_type_override: typing.Callable[[bool, int], str] | None = None,
     is_interrupted: typing.Callable[[], bool] | None = None,
     on_output: typing.Callable[[str], None] | None = None,
@@ -277,6 +291,8 @@ def _run_fix_mode(
         on_subprocess_end=on_subprocess_end,
         timeout=timeout,
         cwd=cwd,
+        retry_on_oom=retry_on_oom,
+        retry_max_attempts=retry_max_attempts,
     )
     write_rc = write_proc.returncode
     output = write_proc.stdout.strip()
@@ -308,6 +324,7 @@ def _run_fix_mode(
         elapsed=elapsed,
         errors=errors,
         timeout_exceeded=write_proc.timeout_exceeded,
+        retry_count=write_proc.retry_count,
     )
     if not has_error and changed:
         result.fixed_files = changed_files(digests_before, digests_after)
