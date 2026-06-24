@@ -1,6 +1,8 @@
 ---
 paths:
   - "pyfltr/command/targets.py"
+  - "pyfltr/command/dispatcher.py"
+  - "pyfltr/command/subproject_loop.py"
   - "tests/command_core_test.py"
 ---
 
@@ -28,7 +30,7 @@ paths:
 
 - 非モノレポ経路: `pyfltr/command/dispatcher.py`の`_prepare_execution_params`で外部パスフィルタと
   `--config`注入を担う
-- モノレポ経路: `_run_subproject_loop`で注入対象・素通し対象の追加実行と、除外対象ツールの警告発行を行う
+- モノレポ経路: `subproject_loop.run_subproject_loop`で注入対象・素通し対象の追加実行と、除外対象ツールの警告発行を行う
 
 - `--config`明示注入: `config_arg_template`と`config_inject_candidates`を指定するツール
  （`markdownlint`・`textlint`）。
@@ -45,7 +47,7 @@ paths:
 外部パス判定基準は「起点cwd配下にない絶対パス」で、`_is_external_path`に集約する。
 モノレポ時は`classify_files_by_subproject`がサブプロジェクト辞書から外部パスを除いた上で
 `ExecutionBaseContext.external_files`へ保持する。
-注入対象および素通し対象ツールは`_run_subproject_loop`内で起点cwd（`subproject_cwd=None`）を使い、
+注入対象および素通し対象ツールは`subproject_loop.run_subproject_loop`内で起点cwd（`subproject_cwd=None`）を使う。
 外部パス専用の追加実行を行ったうえで結果を`CommandResult.merge`で集約する。
 除外対象ツールでは外部パスを破棄して警告のみ発行する。
 

@@ -5,7 +5,7 @@ description: >
   mise backend登録・python-runner/js-runner/bin-runner委譲・uv/uvx/pnpx/pnpm/npm/yarn等の直接指定値・
   fallback検出と~展開対象キー・対応ツールの依存方針を集約する。
   pyfltr/command/runner.py・pyfltr/command/mise.py・pyfltr/config/config.py・
-  pyfltr/command/builtin.py・pyfltr/command/dispatcher.py・
+  pyfltr/command/builtin.py・pyfltr/command/dispatcher.py・pyfltr/command/tool_resolution.py・
   docs/guide/recommended*.md・docs/guide/configuration*.md・
   tests/config_test.py・tests/command_info_test.py を編集する際に使用する。
 ---

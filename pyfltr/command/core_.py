@@ -57,7 +57,7 @@ class ExecutionBaseContext:
     """モノレポモードで`classify_files_by_subproject`がいずれのサブプロジェクトにも
     割り当てなかったファイル一覧（起点cwd配下にない絶対パスを含む）。
 
-    `dispatcher._run_subproject_loop` で注入対象ツールおよび素通し対象ツールへ
+    `subproject_loop.run_subproject_loop` で注入対象ツールおよび素通し対象ツールへ
     起点cwdでの追加実行を行うために参照する。
     モノレポモード非適用時（`subprojects` が空）は空リスト。
     """

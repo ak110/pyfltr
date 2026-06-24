@@ -2,7 +2,7 @@
 
 `FileNotFoundError`の契約: 本モジュールが送出する`FileNotFoundError`の引数は
 原則として識別子（bin名・解決失敗パス）のみとし、利用者向けメッセージ文面は
-catch側（`pyfltr/command/dispatcher.py`・`pyfltr/cli/command_info.py`など）で組み立てる。
+catch側（`pyfltr/command/dispatcher.py`・`pyfltr/command/tool_resolution.py`・`pyfltr/cli/command_info.py`など）で組み立てる。
 例外として`ensure_mise_available`は次の2形態を引数に持つ。
 
 - `mise exec --version`事前チェック失敗時: miseが返す`stderr`にhint文を
@@ -68,7 +68,7 @@ PYTHON_TOOL_BIN: dict[str, str] = {
 # パッケージマネージャー自体のサブコマンドを起動する。`{command}-runner = "direct"`（既定）で
 # PATH上のバイナリを直接呼び出し、`audit`等のサブコマンドは `{command}-args` 既定値側に持たせる。
 # `PYTHON_TOOL_BIN` へ相乗りさせると、未検出時の案内
-# （`pyfltr.command.dispatcher._format_tool_resolution_failure`）がuv経由起動を促す
+# （`pyfltr.command.tool_resolution.format_tool_resolution_failure`）がuv経由起動を促す
 # 誤誘導になるため別表へ分離する。
 PACKAGE_MANAGER_TOOL_BIN: dict[str, str] = {
     "uv-audit": "uv",

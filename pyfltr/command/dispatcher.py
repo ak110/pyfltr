@@ -1,7 +1,6 @@
 """ディスパッチャー。"""
 
 import argparse
-import dataclasses
 import pathlib
 import random
 import shlex
@@ -18,8 +17,10 @@ import pyfltr.command.precommit
 import pyfltr.command.process
 import pyfltr.command.runner
 import pyfltr.command.structured_output
+import pyfltr.command.subproject_loop
 import pyfltr.command.targets
 import pyfltr.command.textlint_fix
+import pyfltr.command.tool_resolution
 import pyfltr.command.two_step.prettier
 import pyfltr.command.two_step.ruff
 import pyfltr.command.two_step.shfmt
@@ -99,140 +100,6 @@ def _user_overrides_config(config_flag: str, *arg_lists: list[str]) -> bool:
             if arg == config_flag or arg.startswith(equals_prefix):
                 return True
     return False
-
-
-def _format_tool_resolution_failure(
-    command: str,
-    raw_identifier: str,
-    config: pyfltr.config.config.Config,
-) -> str:
-    """ツール解決失敗時の利用者向け文面を組み立てる。
-
-    runner.pyの`FileNotFoundError`は識別子（bin名・パス・mise tool spec等）のみを保持する契約で、
-    本ヘルパーがcatch側として「探索経路」「代替手段（runner切り替え・パス明示）」を併記する。
-
-    分類:
-
-    - パッケージマネージャーのサブコマンド系（`PACKAGE_MANAGER_TOOL_BIN`）:
-      対象のパッケージマネージャー（`uv` / `pnpm` / `npm` / `yarn`）導入または `{command}-path` 明示を案内する
-    - Python系（`PYTHON_TOOL_BIN`）: `uv` / `uvx` への切り替えまたは `{command}-path` 明示を案内する
-    - JS系（`JS_TOOL_BIN`）でdirect指定: `node_modules` 探索失敗として `pnpm install` / `pnpx` 切り替えを案内する
-    - JS系（`JS_TOOL_BIN`）でdirect以外: PATH探索失敗として `{command}-path` 明示を案内する
-    - ネイティブ系（`_BIN_TOOL_SPEC`）: `direct` への切り替えまたは `{command}-path` 明示を案内する
-    - その他（カスタムコマンド等）: 汎用案内（PATH探索失敗）
-    """
-    # 効果値（resolve_effective_runner適用後）を判定し、direct分岐との切り分けに使う。
-    effective_runner: str | None = None
-    try:
-        runner_value, _ = pyfltr.command.runner.resolve_runner(command, config)
-        effective_runner = pyfltr.command.runner.resolve_effective_runner(command, runner_value, config)
-    except ValueError:
-        effective_runner = None
-
-    if command in pyfltr.command.runner.PACKAGE_MANAGER_TOOL_BIN:
-        # uv audit等は既定でdirect解決のため、PYTHON_TOOL_BIN分岐のuv経由起動案内は誤誘導になる。
-        # 起動対象のパッケージマネージャー導入を促す専用文面を返す。
-        bin_name = pyfltr.command.runner.PACKAGE_MANAGER_TOOL_BIN[command]
-        return (
-            f"ツールが見つかりません: パッケージマネージャー `{bin_name}` が PATH 上にありません。"
-            f"`{bin_name}` を導入するか、`{command}-path` で実行ファイルを明示してください"
-        )
-    if command in pyfltr.command.runner.PYTHON_TOOL_BIN:
-        return (
-            f"ツールが見つかりません: Python系ツール `{raw_identifier}` が PATH 上にありません。"
-            f'`{command}-runner = "uv"`（cwdに uv.lock が必要、`uv add --dev "pyfltr[python]"` で依存追加）'
-            f' または `{command}-runner = "uvx"` への切り替え、'
-            f"もしくは `{command}-path` で実行ファイルを明示してください"
-        )
-    if command in pyfltr.command.runner.JS_TOOL_BIN:
-        if effective_runner == "direct":
-            return (
-                f"js-runner=direct で `{command}` がローカル node_modules に見つかりません（探索先: {raw_identifier}）。"
-                "`pnpm install` などで対象パッケージを導入するか、"
-                f'`{command}-runner = "pnpx"` でグローバルキャッシュ経由に切り替えてください'
-            )
-        return (
-            f"ツールが見つかりません: JS系ツール `{raw_identifier}` の解決に失敗しました。"
-            f"`pnpm install` などで対象パッケージを導入するか、`{command}-path` で実行ファイルを明示してください"
-        )
-    # ネイティブ系（mise経路の事前チェック失敗）は`ensure_mise_available`が
-    # mise stderrとhint文を改行区切りで連結した文面を例外引数に保持する契約。
-    # 当該複数行文面は素通し採用し、mise stderrを欠落させない（runner.pyのmodule docstring参照）。
-    # `mise trust`失敗時の単行文面（`mise trust --yes --all: <stderr>`）は本ヘルパーの
-    # 末尾分岐の汎用文面組み立てを通過させ、`mise trust`プレフィクスで原因種別を利用者へ伝える。
-    if "\n" in raw_identifier:
-        return f"ツールが見つかりません: {raw_identifier}"
-    return (
-        f"ツールが見つかりません: `{raw_identifier}` が解決できません。"
-        f'`{command}-runner = "direct"` への切り替えか、`{command}-path` で実行ファイルを明示してください'
-    )
-
-
-def _failed_resolution_result(
-    command: str,
-    command_info: pyfltr.config.config.CommandInfo,
-    message: str,
-    *,
-    files: int,
-    hint: str | None = None,
-) -> "CommandResult":
-    """ツール解決失敗時の `CommandResult` を組み立てる。
-
-    `files` には実際の処理対象件数を渡す。`status` は `resolution_failed` を返し、
-    通常の実行失敗（`failed`）と区別できるようにする。
-    `hint` を指定すると `emit_warning` 経由で利用者向けの追加案内を併記する。
-    """
-    pyfltr.warnings_.emit_warning(source="tool-resolve", message=f"{command}: {message}", hint=hint)
-    return CommandResult.from_run(
-        command=command,
-        command_info=command_info,
-        commandline=[],
-        returncode=1,
-        has_error=True,
-        files=files,
-        output=message,
-        elapsed=0.0,
-        resolution_failed=True,
-    )
-
-
-_UV_TOOL_MISSING_PATTERNS: tuple[str, ...] = ("does not have",)
-"""uv経路でツール未登録を示す統合済みstdout（stderr統合済み）の検出パターン。
-
-`uv run --frozen <bin>` 実行時に利用者プロジェクトへ対象パッケージが未登録だと、
-`error: project '<name>' does not have '<pkg>' as a dependency` のメッセージが出る。
-`pyfltr/command/process.py` の `run_subprocess` が `stderr=subprocess.STDOUT` で統合するため、
-判定対象は `proc.stdout` 由来の `CommandResult.output` になる。
-"""
-
-
-def _maybe_emit_uv_missing_tool_warning(result: "CommandResult") -> None:
-    """Uv / uvx経路でツール未登録の出力を検出した場合に登録手順の案内警告を発行する。
-
-    Python系ツール一式は本体依存に同梱されているため `uvx pyfltr` 単発で動作するが、
-    利用者プロジェクトに `uv.lock` が存在すると既定の `python-runner = "uv"` により
-    `uv run --frozen <bin>` 経由でプロジェクトのvenvに登録されたツールを呼び出す。
-    プロジェクト側に未登録の場合は `uv run` がエラーで失敗するため、登録手順を案内する。
-    `uvx` 経路でも同種のエラー出力（`does not have ... as a dependency`）が出る可能性は薄いが、
-    判定ルールを揃える方針で同じ案内を発行する。
-    """
-    if result.effective_runner not in {"uv", "uvx"}:
-        return
-    if result.returncode is None or result.returncode == 0:
-        return
-    if not any(pattern in result.output for pattern in _UV_TOOL_MISSING_PATTERNS):
-        return
-    pyfltr.warnings_.emit_warning(
-        source="tool-resolve",
-        message=(
-            f"{result.command}: {result.effective_runner}経路でのツール起動に失敗しました。"
-            "利用者プロジェクトに当該ツールが未登録の可能性があります。"
-        ),
-        hint=(
-            '`uv add --dev "pyfltr[python]"` でPython系ツール一式をdev依存に追加してください。'
-            f' 当該ツールを利用者プロジェクトで使わない場合は `{result.command}-runner = "direct"` への切り替えで回避できます。'
-        ),
-    )
 
 
 def _prepare_execution_params(
@@ -329,12 +196,14 @@ def _prepare_execution_params(
                 f'`{command}-runner` に `"direct"` / `"mise"` / `"bin-runner"` / `"js-runner"` '
                 "などのいずれかを指定してください。"
             )
-        return _failed_resolution_result(command, command_info, message, files=len(targets), hint=hint)
+        return pyfltr.command.tool_resolution.failed_resolution_result(
+            command, command_info, message, files=len(targets), hint=hint
+        )
     except FileNotFoundError as e:
         # runner.pyは識別子のみを送出する契約のため、利用者向け文面はここで組み立てる。
         # Python系・JS系・ネイティブ系のツール分類に応じて探索経路と代替案内を切り替える。
-        message = _format_tool_resolution_failure(command, str(e), config)
-        return _failed_resolution_result(command, command_info, message, files=len(targets))
+        message = pyfltr.command.tool_resolution.format_tool_resolution_failure(command, str(e), config)
+        return pyfltr.command.tool_resolution.failed_resolution_result(command, command_info, message, files=len(targets))
     commandline_prefix = resolved.commandline
 
     # 起動オプションからの追加引数 （--textlint-argsなど） をshlex分割しておく
@@ -556,116 +425,18 @@ def execute_command(
     実行結果に対してuv経路でのツール未登録パターンを判定し、検出時には
     利用者向けの登録手順案内を `pyfltr.warnings_.emit_warning` 経由で発行する。
     """
-    if _should_run_subproject_loop(command, ctx):
-        result = _run_subproject_loop(command, args, ctx)
+    if pyfltr.command.subproject_loop.should_run_subproject_loop(command, ctx):
+        result = pyfltr.command.subproject_loop.run_subproject_loop(
+            command,
+            args,
+            ctx,
+            dispatch_fn=_dispatch_command,
+            disabled_skip_fn=_make_disabled_skip_result,
+        )
     else:
         result = _dispatch_command(command, args, ctx)
-    _maybe_emit_uv_missing_tool_warning(result)
+    pyfltr.command.tool_resolution.maybe_emit_uv_missing_tool_warning(result)
     return result
-
-
-def _should_run_subproject_loop(command: str, ctx: ExecutionContext) -> bool:
-    """サブプロジェクトループ経路を採用するか判定する。
-
-    判定条件:
-    - モノレポモード有効（`base.subprojects` が2件以上）
-    - 当該コマンドの `subproject_aware` が True（既定は `CommandInfo.subproject_aware`、
-      利用者が `{command}-subproject-aware` で上書き可能）
-    - `ctx.subproject_cwd` が未設定（既にサブループ内側ならネストさせない）
-
-    上記をすべて満たすときに True を返す。`subproject_aware` はツール特性を表すメタ設定のため
-    起点 config で固定する。コマンドのON/OFF自体は本判定で見ず、サブプロジェクト単位の再判定は
-    `_run_subproject_loop` 内で行うため、親OFF・子ONのコマンドも本判定を通過してループへ入る。
-    """
-    if ctx.subproject_cwd is not None:
-        return False
-    subprojects = ctx.base.subprojects
-    if len(subprojects) < 2:
-        return False
-    info = ctx.config.commands.get(command)
-    if info is None:
-        return False
-    default_aware = info.subproject_aware
-    return pyfltr.config.config.resolve_subproject_aware(ctx.config.values, command, default_aware)
-
-
-def _run_subproject_loop(
-    command: str,
-    args: argparse.Namespace,
-    ctx: ExecutionContext,
-) -> CommandResult:
-    """サブプロジェクト別ループでツールを実行し `CommandResult` をマージする。
-
-    各サブプロジェクトの設定（`base.subproject_configs`）で当該コマンドのON/OFFを再判定し、
-    無効のサブプロジェクト（親ON・子OFF）とファイル0件のサブプロジェクトは実行から除外する。
-    外部パス（`base.external_files`）への適用は起点設定のON/OFFで固定し、起点で無効なら何も行わない。
-
-    結果は `CommandResult.merge` で集約する（1件のみならそのまま返す）。
-    いずれのサブプロジェクトでも実行されず、設定による無効スキップが発生したか起点でも無効な場合は、
-    起点cwdでの全ファイル誤実行を避けて skipped 結果を返す。
-    全件ファイル0件かつ起点で有効なときのみ通常経路の0件結果を返す（`_dispatch_command` 経由）。
-    """
-    base = ctx.base
-    # 起点設定での当該コマンドのON/OFF。外部パス追加実行とフォールバックの採否に用いる。
-    start_enabled = base.config.values.get(command) is True
-    subproject_results: list[CommandResult] = []
-    # 設定で無効化してスキップしたサブプロジェクトの有無。0件スキップと区別し誤実行を抑止する。
-    skipped_by_config = False
-    for sub in base.subprojects:
-        sub_files = base.subproject_files.get(sub.cwd, [])
-        if not sub_files:
-            continue
-        sub_config = base.subproject_configs.get(sub.cwd, base.config)
-        if sub_config.values.get(command) is not True:
-            # 親ON・子OFF: 当該サブプロジェクトの設定で無効化されているため実行しない。
-            skipped_by_config = True
-            continue
-        sub_base = dataclasses.replace(base, config=sub_config)
-        sub_ctx = dataclasses.replace(ctx, base=sub_base, subproject_cwd=sub.cwd)
-        sub_result = _dispatch_command(command, args, sub_ctx)
-        # output 冒頭にサブプロジェクト区切り行を挿入する（人間向け識別のため）
-        if sub_result.output:
-            sub_result.output = f"# subproject: {sub.relative}\n{sub_result.output}"
-        subproject_results.append(sub_result)
-
-    # 外部パスへの追加実行・警告は起点設定のON/OFFで固定する（起点で無効なら何も行わない）。
-    # `allows_external_paths=True`のツールは起点cwdで外部パス専用に追加実行し、注入対象では
-    # `config_arg_template`の自動注入が適用される。それ以外は除外して警告のみ発行する。
-    info = ctx.config.commands.get(command)
-    external_files = base.external_files
-    if external_files and info is not None and start_enabled:
-        # 当該ツールのglob条件にマッチする外部パスのみを対象とする
-        # （サブプロジェクト経路と同じ`filter_by_globs`基準）。
-        relevant_external = pyfltr.command.targets.filter_by_globs(external_files, info.target_globs())
-        if relevant_external:
-            if info.allows_external_paths:
-                ext_base = dataclasses.replace(
-                    base, all_files=relevant_external, subprojects=[], subproject_files={}, external_files=[]
-                )
-                ext_ctx = dataclasses.replace(ctx, base=ext_base, subproject_cwd=None)
-                ext_result = _dispatch_command(command, args, ext_ctx)
-                if ext_result.output:
-                    ext_result.output = f"# external paths\n{ext_result.output}"
-                subproject_results.append(ext_result)
-            else:
-                for t in relevant_external:
-                    pyfltr.warnings_.emit_warning(
-                        source="external-path",
-                        message=f"{command}: 起点cwd外のパスは対象から除外しました: {t}",
-                    )
-                    pyfltr.warnings_.add_filtered_direct_file(str(t), reason="external")
-
-    if subproject_results:
-        if len(subproject_results) == 1:
-            return subproject_results[0]
-        return CommandResult.merge(subproject_results)
-
-    if skipped_by_config or not start_enabled:
-        # 設定で無効化してスキップした、または起点でも無効。
-        # 起点cwdで全ファイルを誤実行しないよう、対象0件相当のskipped結果を返す。
-        return _make_disabled_skip_result(command, ctx)
-    # 全サブプロジェクトでファイル0件 → 通常経路の0件結果を返す（`_dispatch_command` 経由）。
-    return _dispatch_command(command, args, ctx)
 
 
 def _make_disabled_skip_result(command: str, ctx: ExecutionContext) -> CommandResult:
