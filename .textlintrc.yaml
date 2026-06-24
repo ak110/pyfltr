@@ -4,6 +4,10 @@ rules:
     ja-no-mixed-period: false
     # 技術文書における自然な助詞連結 (「〜かどうかを検討するか」など) が頻出するため無効化する
     no-doubled-joshi: false
+    # 全角丸括弧の閉じが改行をまたぐ書き方をfalse positiveとして誤検出するため無効化する
+    no-unmatched-pair: false
+    # 入れ子括弧の閉じ`））`連続をfalse positiveとして誤検出するため無効化する
+    ja-no-successive-word: false
     # 引用文や詳細な技術説明で100文字超過が避けられないため緩和する
     sentence-length:
       max: 120
@@ -20,6 +24,8 @@ rules:
     # 句点へ自動変換して破壊するため無効化する（lintは通過し検出できないため）
     "1.2.1.句点(。)と読点(、)": false
     "4.1.3.ピリオド(.)、カンマ(,)": false
+    # 改行折り返し時に全角括弧の前後スペースをfalse positiveとして誤検出するため無効化する
+    "3.3.かっこ類と隣接する文字の間のスペースの有無": false
     # コロン終端のラベル記法を多用するため無効化する
     "4.2.7.コロン(：)": false
   ja-no-abusage: true
