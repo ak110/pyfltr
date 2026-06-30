@@ -202,7 +202,8 @@ def make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> "
         action="store_true",
         help="直前 run のアーカイブから失敗ツールと失敗ファイルを抽出し、"
         "ツール別に失敗ファイル集合のみを対象として再実行します。"
-        "直前 run が存在しない/失敗ツールが無い場合はメッセージを出力して成功終了します。",
+        "直前 run が存在しない/失敗ツールが無い場合はメッセージを出力して成功終了します。"
+        "想定どおり動かない場合の対処は docs/guide/troubleshooting.md を参照してください。",
     )
     common.add_argument(
         "--from-run",

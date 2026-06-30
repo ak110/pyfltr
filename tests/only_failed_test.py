@@ -10,6 +10,7 @@ import pathlib
 
 import pytest
 
+import pyfltr.cli.output_format
 import pyfltr.state.only_failed
 from tests import conftest as _testconf
 from tests.conftest import make_error_location as _make_error
@@ -155,6 +156,33 @@ def test_apply_filter_skip_for_empty_targets_intersection(_only_failed_cache: pa
     # all_files（targets由来）にb.pyが含まれない → 交差空で早期終了
     _, _, exit_early = pyfltr.state.only_failed.apply_filter(args, ["ruff-check"], [pathlib.Path("a.py")])
     assert exit_early is True
+
+
+def test_apply_filter_per_tool_exclusion_logs_reason(
+    _only_failed_cache: pathlib.Path,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """複数ツール中1ツールのみ交差空のとき、除外されたツールについて理由が INFO ログに出力される。"""
+    _seed_run(
+        _only_failed_cache,
+        commands=["ruff-check", "mypy"],
+        exit_code=1,
+        tool_results=[
+            ("ruff-check", 1, "", [_make_error("ruff-check", "a.py", 1, "e")]),
+            ("mypy", 1, "", [_make_error("mypy", "b.py", 1, "e")]),
+        ],
+    )
+    monkeypatch.setattr(pyfltr.cli.output_format.text_logger, "propagate", True)
+    args = argparse.Namespace(only_failed=True)
+    all_files = [pathlib.Path("a.py")]  # b.py は含まない → mypy のみ交差空
+    with caplog.at_level(logging.INFO, logger="pyfltr.textout"):
+        commands, targets, exit_early = pyfltr.state.only_failed.apply_filter(args, ["ruff-check", "mypy"], all_files)
+    assert exit_early is False
+    assert commands == ["ruff-check"]
+    assert targets is not None and "mypy" not in targets
+    assert "mypy:" in caplog.text
+    assert "交差しません" in caplog.text
 
 
 def test_apply_filter_early_exit_no_runs(_only_failed_cache: pathlib.Path) -> None:

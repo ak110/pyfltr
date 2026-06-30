@@ -86,6 +86,10 @@ def apply_filter(
     `all_files`は`expand_all_files`の結果（`args.targets`指定があれば既に
     その範囲でフィルタリング済み）。本関数ではそれとの交差を取ることで
     `--only-failed`と位置引数`targets`の併用要件を同時に満たす。
+
+    ファイル変更検出・テスト関数の存在確認・モジュール依存追跡は本機能の責務外で、
+    判定基準は「直前 run の診断ファイル一覧」と「現在の `targets` 集合」の交差のみとする。
+    ファイル変更ベースのフィルタリングは`--changed-since`との併用で実現できる。
     """
     if not getattr(args, "only_failed", False):
         return commands, None, False
@@ -232,6 +236,11 @@ def _extract_failed_files_for_tool(
     intersected = [path for key, path in all_files_map.items() if key in failed_files]
     if not intersected:
         # 交差空 → 除外扱い（Noneを返すことで呼び出し側がtargets dictから除く）
+        # 利用者が暗黙除外に気付けるようツール単位で理由を INFO ログへ出力する。
+        _log_skip_reason(
+            f"{tool}: 直前 run の失敗ファイル {len(failed_files)} 件は指定 targets と交差しません。"
+            "本ツールは対象から除外します。"
+        )
         return None
     return ToolTargets.with_files(intersected)
 
@@ -245,5 +254,9 @@ def _filter_commands_with_targets(
 
 
 def _log_skip_reason(reason: str) -> None:
-    """`--only-failed`の早期終了理由をログ出力する。"""
+    """`--only-failed`によるスキップ・除外理由をログ出力する。
+
+    早期終了（全体スキップ）と個別ツール除外の双方で同じ`--only-failed:`
+    プレフィックス付き形式で発行する共通ヘルパー。
+    """
     pyfltr.cli.output_format.text_logger.info(f"--only-failed: {reason}")
