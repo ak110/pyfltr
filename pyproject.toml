@@ -115,6 +115,7 @@ shellcheck = true
 shfmt = true
 hadolint = true
 bandit = true
+colloquial-check = true
 pylint-args = ["--jobs=4"]
 # tests/smoke_data/ 配下にはツール毎の最小サンプル（GitHub Actionsワークフロー・
 # Dockerfile・shellスクリプト等）を含むため、本リポのpyfltr対象から外す。
@@ -123,6 +124,17 @@ pylint-args = ["--jobs=4"]
 # （`pyproject.toml`存在の機械的検出）の除外で別仕組み。配下に複数の`pyproject.toml`を含むため、
 # モノレポ検出時に意図しないサブプロジェクトとして列挙されないよう両方に登録する。
 extend-exclude = ["tests/smoke_data"]
+# 辞書ファイル自身（口語表現サンプルを大量に含む）はcolloquial-checkの誤検出対象となるため除外する。
+# テストフィクスチャ（口語表現を意図的に含むテスト入力）は現状tests/error_parser_test.pyのみが
+# 検出対象だが、将来的な追加テストで検出が発生した場合の回帰防止を目的に、
+# 口語表現サンプルを扱う3ファイルまとめて予防的に除外する。
+colloquial-check-exclude = [
+    "pyfltr/colloquial/words.txt",
+    "pyfltr/colloquial/words_allow.txt",
+    "tests/error_parser_test.py",
+    "tests/colloquial_check_test.py",
+    "tests/colloquial_cli_test.py",
+]
 subproject-exclude = ["smoke_data"]
 
 [tool.pylint."messages control"]

@@ -13,6 +13,7 @@ import difflib
 import os
 import pathlib
 import re
+import sys
 import typing
 
 import platformdirs
@@ -263,6 +264,15 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "lychee-args": ["--format", "json", "--no-progress"],
     "lychee-version": "latest",
     "lychee-fast": False,
+    # colloquial-check: 日本語文書の口語表現を検出する内蔵linter。既定で無効（opt-in）。
+    # 検出結果はseverity既定"warning"によりCI/pre-commitを失敗させない。
+    # `{command}-path`は実行ファイルパス（文字列）を1件のみ許容するため、`python -m`起動は
+    # `-path`にインタープリターを、`-args`にモジュール指定を分けて渡す。
+    "colloquial-check": False,
+    "colloquial-check-path": sys.executable,
+    "colloquial-check-args": ["-m", "pyfltr.colloquial"],
+    "colloquial-check-runner": "direct",
+    "colloquial-check-fast": True,
     "eslint": False,
     "eslint-path": "",
     "eslint-runner": "js-runner",
@@ -728,6 +738,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
             "textlint",
             "designmd",
             "lychee",
+            "colloquial-check",
             "eslint",
             "biome",
             "ec",
@@ -803,6 +814,8 @@ def _register_command_hints_defaults(defaults: dict[str, typing.Any], command_na
 
 
 _register_command_severity_defaults(DEFAULT_CONFIG, BUILTIN_COMMAND_NAMES)
+# colloquial-checkは口語表現の指摘であり、CI/pre-commitを止めない`warning`扱いを既定とする。
+DEFAULT_CONFIG["colloquial-check-severity"] = "warning"
 _register_command_hints_defaults(DEFAULT_CONFIG, BUILTIN_COMMAND_NAMES)
 
 

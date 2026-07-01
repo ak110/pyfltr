@@ -74,6 +74,7 @@ bin-runner経由（既定はmise）で起動する。
 - Linters
     - 一般: typos（PyPI依存）/ actionlint / ec（editorconfig-checker、既定で無効）/
       shellcheck（既定で無効）/ glab-ci-lint（既定で無効）
+    - 日本語文体: colloquial-check（既定で無効）
     - YAML / Dockerfile / シークレット系: yamllint（既定で無効）/ hadolint（Dockerfile、既定で無効）
     - シークレット検出・SAST: gitleaks（既定で無効）/ semgrep（既定で無効）/ bandit（既定で無効）
     - SQL: sqlfluff（既定で無効）
@@ -100,6 +101,10 @@ bin-runner経由（既定はmise）で起動する。
   GitLab API認証とネットワーク接続が必須なため、CIや初学者環境で誤って失敗しないよう既定で無効化している
 - `uv-audit` / `pnpm-audit` / `npm-audit` / `yarn-audit`: 依存パッケージの脆弱性を監査する。
   それぞれパッケージマネージャーのauditサブコマンドを起動し、外部脆弱性データベースへの問い合わせを伴うため既定で無効
+- `colloquial-check`: LLMが頻繁に出力する口語的な日本語表現を検出する内蔵linter。
+  既定で無効（opt-in）。有効化時も`colloquial-check-severity = "warning"`既定により
+  CI/pre-commitを失敗させない。対象ファイルは全種別（`*`）とし、pyfltr既定のexclude・`.gitignore`尊重に従う。
+  辞書ファイル（denylist・allowlist）はpyfltrに同梱する
 
 プリセット指定と言語カテゴリゲートによる有効化の詳細は[設定項目](configuration.md)を参照。
 

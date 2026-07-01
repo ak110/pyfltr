@@ -379,11 +379,24 @@ path = "plain-linter"
 
 
 def test_severity_default_is_error() -> None:
-    """severityの既定値は "error" で、ビルトイン全コマンドに登録されている。"""
+    """severityの既定値は "error" で、ビルトイン全コマンドに登録されている。
+
+    `colloquial-check`のみCI/pre-commitを止めない意図で"warning"へ個別上書きしているため除外する
+    （詳細は`test_colloquial_check_severity_default_is_warning`）。
+    """
     config = pyfltr.config.config.create_default_config()
     for name in pyfltr.config.config.BUILTIN_COMMAND_NAMES:
+        if name == "colloquial-check":
+            continue
         assert config.values[f"{name}-severity"] == "error", f"{name}-severity既定値"
     assert pyfltr.config.config.resolve_severity(config.values, "mypy") == "error"
+
+
+def test_colloquial_check_severity_default_is_warning() -> None:
+    """colloquial-checkの検出結果はCI/pre-commitを失敗させないよう既定で"warning"扱い。"""
+    config = pyfltr.config.config.create_default_config()
+    assert config.values["colloquial-check-severity"] == "warning"
+    assert pyfltr.config.config.resolve_severity(config.values, "colloquial-check") == "warning"
 
 
 def test_severity_warning_resolved(tmp_path: pathlib.Path) -> None:
@@ -581,10 +594,12 @@ def test_textlint_markdownlint_path_default_empty() -> None:
         ("semgrep", False, "python-runner"),
         ("sqlfluff", False, "python-runner"),
         ("bandit", False, "python-runner"),
+        # colloquial-checkは検出結果をwarning扱いに限定するopt-inツールのため既定無効。
+        ("colloquial-check", False, "direct"),
     ],
 )
 def test_new_tools_defaults(command: str, expected_enabled: bool, expected_runner: str) -> None:
-    """designmd / lychee / semgrep / sqlfluff / banditの既定有効/無効と既定ランナーを検証する。"""
+    """designmd / lychee / semgrep / sqlfluff / bandit / colloquial-checkの既定有効/無効と既定ランナーを検証する。"""
     config = pyfltr.config.config.create_default_config()
     assert config[command] is expected_enabled, f"{command} の既定値が想定と異なる"
     assert config[f"{command}-runner"] == expected_runner
@@ -600,7 +615,7 @@ def test_lychee_version_default_exists() -> None:
     assert config["lychee-version"] == "latest"
 
 
-@pytest.mark.parametrize("command", ["designmd", "lychee", "semgrep", "sqlfluff", "bandit"])
+@pytest.mark.parametrize("command", ["designmd", "lychee", "semgrep", "sqlfluff", "bandit", "colloquial-check"])
 def test_new_tools_registered_in_lint_alias(command: str) -> None:
     """新規ツール群が`lint`エイリアスに登録されている。"""
     config = pyfltr.config.config.create_default_config()

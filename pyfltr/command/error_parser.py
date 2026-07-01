@@ -198,6 +198,9 @@ _BUILTIN_PATTERNS: dict[str, str] = {
     "typos": r"(?P<file>[^\s:]+):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>.+)",
     # actionlint 出力例: .github/workflows/ci.yaml:10:5: xxx [rule-name]
     "actionlint": r"(?P<file>[^\s:]+):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>.+)",
+    # colloquial-check出力例: src/foo.md:10:5: [match] -> [replacement] excerpt
+    # 置換候補が無い場合は矢印以降を省略した`src/foo.md:10:5: [match] excerpt`形式。
+    "colloquial-check": rf"(?P<file>{_FILE}):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>.+)",
 }
 
 
@@ -207,7 +210,7 @@ def _try_json_loads(output: str) -> typing.Any:
     一部ツール（例: pylint）は`PYTHONDEVMODE=1`環境で読み込んだプラグインの
     `DeprecationWarning`などをJSON本体の前にテキストとして出力する。そのままでは
     パースが必ず失敗するため、先頭の`{`または`[`を見つけて、それ以前の
-    不要文字列を除去してから再試行するフォールバックを行う。
+    不要文字列を除去してから再試行する。
     """
     stripped = output.strip()
     if not stripped:

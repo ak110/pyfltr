@@ -1349,6 +1349,36 @@ def test_parse_lychee_json_invalid() -> None:
     assert pyfltr.command.error_parser.parse_errors("lychee", "") == []
 
 
+def test_parse_colloquial_check_without_replacement() -> None:
+    """colloquial-check: 置換候補なしの`path:line:col: [match] excerpt`形式をパースする。"""
+    output = "docs/index.md:3:5: [ちょっと] 本文にちょっと該当する"
+    errors = pyfltr.command.error_parser.parse_errors("colloquial-check", output)
+    assert len(errors) == 1
+    assert errors[0].file == "docs/index.md"
+    assert errors[0].line == 3
+    assert errors[0].col == 5
+    assert errors[0].message == "[ちょっと] 本文にちょっと該当する"
+
+
+def test_parse_colloquial_check_with_replacement() -> None:
+    """colloquial-check: 置換候補ありの`path:line:col: [match] -> [replacement] excerpt`形式をパースする。"""
+    output = "docs/index.md:10:1: [唐突感] -> [論理の飛躍] 唐突感が否めない"
+    errors = pyfltr.command.error_parser.parse_errors("colloquial-check", output)
+    assert len(errors) == 1
+    assert errors[0].line == 10
+    assert errors[0].col == 1
+    assert errors[0].message == "[唐突感] -> [論理の飛躍] 唐突感が否めない"
+
+
+def test_parse_colloquial_check_multiple_lines() -> None:
+    """colloquial-check: 複数件（改行区切り）を全件パースする。"""
+    output = "docs/a.md:1:1: [ちょっと] 該当箇所1\ndocs/b.md:2:3: [ぶっちゃけ] 該当箇所2\n"
+    errors = pyfltr.command.error_parser.parse_errors("colloquial-check", output)
+    assert len(errors) == 2
+    assert errors[0].file == "docs/a.md"
+    assert errors[1].file == "docs/b.md"
+
+
 def test_parse_semgrep_json() -> None:
     """semgrep scan --json のresultsから違反を抽出する。"""
     output = json.dumps(

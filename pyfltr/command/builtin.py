@@ -303,6 +303,16 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
     # lychee: Rust製リンク切れチェッカー。bin-runner経由（mise）で起動する。
     # 外部URLへの到達性検証を主用途とするため、ネットワーク到達性に依存する。
     "lychee": CommandInfo(type="linter", targets=["*.md", "*.html"], fixed_cost=1.0, per_file_cost=0.05),
+    # colloquial-check: 日本語文書の口語表現を検出する内蔵linter。
+    # LLMが出力しがちな口語的な言い回しを`warning`として指摘する（既定で無効・opt-in）。
+    # 起動経路は`python -m pyfltr.colloquial`。
+    "colloquial-check": CommandInfo(
+        type="linter",
+        targets="*",
+        fixed_cost=0.1,
+        per_file_cost=0.005,
+        subproject_aware=False,
+    ),
     # JS/TS linter群はモダン順（後ろほど新しい）に並べる。
     "tsc": CommandInfo(
         type="linter",

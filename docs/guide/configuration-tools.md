@@ -806,6 +806,21 @@ lychee-extend-args = ["--exclude=github\\.com/owner/repo/actions"]
 
 既定対象は`*.md`・`*.html`。`lychee-extend-targets`で対象を追加できる。
 
+### colloquial-check
+
+`colloquial-check`はLLMが頻繁に出力する口語的な日本語表現を検出する内蔵linter。
+起動経路は`python -m pyfltr.colloquial`。既定で無効（opt-in）とし、
+`colloquial-check-severity = "warning"`が既定のため有効化してもCI/pre-commitを失敗させない。
+
+```toml
+[tool.pyfltr]
+colloquial-check = true
+# 辞書ファイル自身やテスト用サンプル文言など、誤検出を招くファイルを除外する例
+colloquial-check-exclude = ["pyfltr/colloquial/words.txt"]
+# 対象ファイル種別を絞り込む例（既定は全ファイル`*`）
+colloquial-check-targets = "*.md"
+```
+
 ## カスタムコマンド
 
 `[tool.pyfltr.custom-commands]`で任意のツールを追加できる。
