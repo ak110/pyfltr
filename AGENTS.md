@@ -29,3 +29,9 @@ format別のlogger stream/level切替の詳細は[docs/development/architecture.
 - subprocess・git・mise・ファイル走査などcwd依存処理はプロセスのcwdに依存しない実装にする。
   `subprocess.Popen(cwd=...)`の引数、または`start_cwd`・`base_cwd`・`cwd`等の
   明示引数でcwdを渡す。`os.chdir()`でグローバル状態を変更しない
+
+## 注意点
+
+- 対象ファイルに応じて`.claude/skills/`配下のpyfltr固有スキル
+  （`test-constraints`・`output-format`・`tool-resolution`・`ssot`・
+  `grep-replace`・`pyfltr-add-tool`）を呼び出す
