@@ -24,6 +24,7 @@ import time
 import typing
 
 import pyfltr.cli.output_format
+import pyfltr.cli.overrides
 import pyfltr.cli.precommit_guidance
 import pyfltr.cli.render
 import pyfltr.command.core_
@@ -453,26 +454,6 @@ def _run_one_command(
         return result
 
 
-def _apply_cli_overrides(config: pyfltr.config.config.Config, args: argparse.Namespace) -> None:
-    """CLIオプションによるconfig上書きを適用する。
-
-    起点configとサブプロジェクト別configの双方へ同一に適用し、`--jobs`・`--no-exclude`・
-    `--no-gitignore`・`--human-readable` の指定が一部サブプロジェクトにのみ反映される不整合を避ける。
-    `--no-fix`・`--ci` は `config.values` ではなく `args` 側に作用するためここでは扱わない。
-    """
-    if args.jobs is not None:
-        config.values["jobs"] = args.jobs
-    if args.no_exclude:
-        config.values["exclude"] = []
-        config.values["extend-exclude"] = []
-    if args.no_gitignore:
-        config.values["respect-gitignore"] = False
-    if args.human_readable:
-        for key in list(config.values):
-            if key.endswith("-json") or key == "pytest-tb-line":
-                config.values[key] = False
-
-
 def run_pipeline(
     args: argparse.Namespace,
     commands: list[str],
@@ -605,7 +586,7 @@ def run_pipeline(
         )
         for sub in subprojects:
             sub_config = pyfltr.config.config.load_config(config_dir=sub.cwd)
-            _apply_cli_overrides(sub_config, args)
+            pyfltr.cli.overrides.apply_cli_overrides(sub_config, args)
             subproject_configs[sub.cwd] = sub_config
 
     # 実行対象として有効化されていないコマンドはパイプラインから除外する。
@@ -977,7 +958,7 @@ def run_impl(
         args.targets = resolved_targets
 
     # CLIオプションでconfigを上書き（サブプロジェクト別configにも同一に再適用するため共通ヘルパーへ集約）
-    _apply_cli_overrides(config, args)
+    pyfltr.cli.overrides.apply_cli_overrides(config, args)
 
     # --commands未指定時はカスタムコマンドを含む全登録コマンドを対象にする。
     # argparseのデフォルト評価時点ではpyproject.tomlを読み込んでいないため、

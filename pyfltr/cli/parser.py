@@ -118,6 +118,20 @@ def make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> "
         " --commands=mypy,pyright,ruff-check と同等です。"
         "(既定: ビルトイン + カスタムコマンドを含む、pyproject.toml で有効な全コマンド)",
     )
+    common.add_argument(
+        "--enable",
+        default=None,
+        action="append",
+        help="指定コマンドを一時的に有効化します。複数回指定可能で、各値はカンマ区切りも併用可能です。"
+        "永続変更は `pyfltr config set` を使用してください。",
+    )
+    common.add_argument(
+        "--disable",
+        default=None,
+        action="append",
+        help="指定コマンドを一時的に無効化します。複数回指定可能で、各値はカンマ区切りも併用可能です。"
+        "`--enable` と同一コマンドに指定された場合は `--enable` を優先します。",
+    )
     common.add_argument("--ui", default=None, action="store_true", help="Textual UI を強制的に有効化します。")
     common.add_argument("--no-ui", default=None, action="store_true", help="Textual UI を強制的に無効化します。")
     common.add_argument(

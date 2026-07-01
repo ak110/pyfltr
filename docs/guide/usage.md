@@ -471,6 +471,20 @@ pyfltr ci --commands=ruff-check,markdownlint [files and/or directories ...]
 
 ※ `pyproject.toml`の`[tool.pyfltr]`で無効になっているコマンドは無視される。
 
+一時的に有効・無効を切り替えたい場合は`--enable`・`--disable`を使う。
+
+```shell
+# 通常無効化しているsemgrepを1回だけ実行する
+pyfltr run --enable=semgrep --commands=semgrep
+
+# 通常有効なmypyを1回だけ抑止する
+pyfltr run --disable=mypy
+```
+
+`--enable`・`--disable`は`--commands`と同じくカンマ区切り・複数回指定を併用できる。
+同一コマンドを両方に指定した場合は`--enable`が優先される。
+永続的に有効・無効を切り替える場合は`pyfltr config set`を使う。
+
 ## UI
 
 ターミナル上で実行すると、TextualベースのTUIが自動的に有効になる。

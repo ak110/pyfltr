@@ -8,6 +8,7 @@ import pytest
 
 import pyfltr.cli.main
 import pyfltr.cli.output_format
+import pyfltr.cli.overrides
 import pyfltr.cli.pipeline
 import pyfltr.cli.render
 import pyfltr.command.core_
@@ -339,3 +340,81 @@ def test_run_commands_unknown_emits_suggestion(
         assert "もしかして:" in err
     else:
         assert "もしかして:" not in err
+
+
+def _make_overrides_args(
+    *,
+    enable: list[str] | None = None,
+    disable: list[str] | None = None,
+) -> argparse.Namespace:
+    """`apply_cli_overrides` 呼び出し用の最小Namespaceを生成する。"""
+    return argparse.Namespace(
+        jobs=None,
+        no_exclude=False,
+        no_gitignore=False,
+        human_readable=False,
+        enable=enable,
+        disable=disable,
+    )
+
+
+def test_apply_cli_overrides_enable_single():
+    """`--enable=mypy` で `mypy` が有効化される。"""
+    config = pyfltr.config.config.create_default_config()
+    config.values["mypy"] = False
+    pyfltr.cli.overrides.apply_cli_overrides(config, _make_overrides_args(enable=["mypy"]))
+    assert config.values["mypy"] is True
+
+
+def test_apply_cli_overrides_enable_comma_separated():
+    """`--enable=mypy,pyright` で両方が有効化される。"""
+    config = pyfltr.config.config.create_default_config()
+    config.values["mypy"] = False
+    config.values["pyright"] = False
+    pyfltr.cli.overrides.apply_cli_overrides(config, _make_overrides_args(enable=["mypy,pyright"]))
+    assert config.values["mypy"] is True
+    assert config.values["pyright"] is True
+
+
+def test_apply_cli_overrides_enable_multi_specified():
+    """`--enable=mypy --enable=pyright` で両方が有効化される。"""
+    config = pyfltr.config.config.create_default_config()
+    config.values["mypy"] = False
+    config.values["pyright"] = False
+    pyfltr.cli.overrides.apply_cli_overrides(config, _make_overrides_args(enable=["mypy", "pyright"]))
+    assert config.values["mypy"] is True
+    assert config.values["pyright"] is True
+
+
+def test_apply_cli_overrides_disable_single():
+    """`--disable=ruff-check` で `ruff-check` が無効化される。"""
+    config = pyfltr.config.config.create_default_config()
+    config.values["ruff-check"] = True
+    pyfltr.cli.overrides.apply_cli_overrides(config, _make_overrides_args(disable=["ruff-check"]))
+    assert config.values["ruff-check"] is False
+
+
+def test_apply_cli_overrides_enable_takes_precedence_over_disable():
+    """`--enable=mypy --disable=mypy` で `enable` が優先される。"""
+    config = pyfltr.config.config.create_default_config()
+    config.values["mypy"] = False
+    pyfltr.cli.overrides.apply_cli_overrides(config, _make_overrides_args(enable=["mypy"], disable=["mypy"]))
+    assert config.values["mypy"] is True
+
+
+def test_apply_cli_overrides_unknown_command_emits_warning():
+    """未知コマンド名指定時は警告し config は変更しない。"""
+    config = pyfltr.config.config.create_default_config()
+    before = dict(config.values)
+    pyfltr.cli.overrides.apply_cli_overrides(config, _make_overrides_args(enable=["nonexistent"]))
+    assert config.values == before
+    warnings = pyfltr.warnings_.collected_warnings()
+    assert any("nonexistent" in w["message"] for w in warnings)
+
+
+def test_apply_cli_overrides_none_leaves_config_unchanged():
+    """`--enable`・`--disable` 未指定時は config を変更しない。"""
+    config = pyfltr.config.config.create_default_config()
+    before = dict(config.values)
+    pyfltr.cli.overrides.apply_cli_overrides(config, _make_overrides_args())
+    assert config.values == before
