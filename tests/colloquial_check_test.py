@@ -193,6 +193,23 @@ class TestScanText:
         _, _, _, _, replacement = hits[0]
         assert replacement == expected_replacement
 
+    @pytest.mark.parametrize("raw_pattern", _read_patterns_text(pyfltr.colloquial.check.ALLOW_PATH))
+    def test_every_allow_entry_masks_deny_overlap(
+        self, deny_patterns: _PatternList, allow_patterns: _PatternList, raw_pattern: str
+    ) -> None:
+        """denylistと重複するallowlistエントリの自己サンプルは検出されない。
+
+        `words_allow.txt`冒頭コメントが定める「denylist側にマッチしつつ本ファイルでマスクされる文脈」の
+        実装を検証する。allowlistなしでdenylist検出が発火するサンプルに限定し、
+        allowlist適用後は検出されないことを確認する。
+        """
+        sample = _expand_pattern(raw_pattern)
+        if not re.compile(raw_pattern).search(sample):
+            pytest.skip(f"サンプル生成不能: {raw_pattern}")
+        if not pyfltr.colloquial.check.first_hit(sample, deny_patterns, []):
+            pytest.skip(f"denylistと重複しないエントリ: {raw_pattern}")
+        assert not pyfltr.colloquial.check.first_hit(sample, deny_patterns, allow_patterns)
+
 
 class TestMaskAllowed:
     """`mask_allowed` のテスト。"""
