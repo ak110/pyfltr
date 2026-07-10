@@ -485,6 +485,10 @@ pyfltr run --disable=mypy
 同一コマンドを両方に指定した場合は`--enable`が優先される。
 永続的に有効・無効を切り替える場合は`pyfltr config set`を使う。
 
+`--commands`で指定したコマンドのうち、`pyproject.toml`側で有効化されていないため実行されないものがある場合は
+警告レコード（`source: "commands"`）が出力される。
+`--enable`または`pyproject.toml`の`[tool.pyfltr]`で当該コマンドを`true`に設定すると実行される。
+
 ## UI
 
 ターミナル上で実行すると、TextualベースのTUIが自動的に有効になる。
@@ -638,6 +642,14 @@ CLIの`run-for-agent`とは異なりJSONL出力がstdoutに流れないため、
     そのまま貼り付けて実行できる。
     `--only-failed`は直前runのアーカイブから失敗ツール・失敗ファイルを自動抽出して再実行する。
     直前runが無い・失敗ツールが無い・対象との交差が空の場合は終了コード0で成功終了する。
+
+### 事前検査領域からの除外 {#exclude-fence-under}
+
+`--exclude-fence-under=<H2見出し>`オプションを指定すると、Markdownファイル内で指定H2見出し配下の
+フェンス内側行をtextlint・markdownlintの検査対象から除外する。
+フィードバック原文の転記領域などlint違反が原文由来で不可避な区間の検査除外を想定する。
+行番号は保存されるため診断出力の行番号は元ファイル基準となる。
+`[tool.pyfltr]`側でも`exclude-fence-under = ["## 背景"]`形式で指定できる。
 
 ## 個別ツールを限定して実行したい場合 {#single-tool}
 

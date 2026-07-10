@@ -1,7 +1,9 @@
 """実行コンテキスト型・CommandResult。"""
 
+import contextlib
 import dataclasses
 import pathlib
+import tempfile
 import typing
 
 import pyfltr.config.config
@@ -69,6 +71,24 @@ class ExecutionBaseContext:
     `subproject_aware=True` のツール起動時に当該サブプロジェクトの設定（ツールのON/OFF・除外・
     targets 等）を参照し、親子でON/OFFが異なる両方向を尊重する。
     """
+    _temporary_directory_stack: contextlib.ExitStack | None = dataclasses.field(default=None, init=False, repr=False)
+    _temporary_directory_path: pathlib.Path | None = dataclasses.field(default=None, init=False, repr=False)
+    """一時的に生成する検査用ファイルのライフタイムを保持する。"""
+
+    def ensure_temporary_directory(self) -> pathlib.Path:
+        """パイプライン内で共有する一時ディレクトリを返す。"""
+        if self._temporary_directory_path is None:
+            stack = contextlib.ExitStack()
+            self._temporary_directory_path = pathlib.Path(stack.enter_context(tempfile.TemporaryDirectory(prefix="pyfltr-")))
+            self._temporary_directory_stack = stack
+        return self._temporary_directory_path
+
+    def cleanup(self) -> None:
+        """パイプライン内で生成した一時ディレクトリを破棄する。"""
+        if self._temporary_directory_stack is not None:
+            self._temporary_directory_stack.close()
+            self._temporary_directory_stack = None
+            self._temporary_directory_path = None
 
 
 @dataclasses.dataclass
@@ -483,6 +503,11 @@ class ExecutionParams:
     targets: list[pathlib.Path]
     commandline_prefix: list[str]
     commandline: list[str]
+    cache_commandline: list[str]
+    """キャッシュキー計算に使うコマンドライン。
+
+    一時ファイルを実行用commandlineへ渡す場合も、キャッシュキーは元パス基準で安定させる。
+    """
     additional_args: list[str]
     fix_mode: bool
     fix_args: list[str] | None
@@ -510,3 +535,5 @@ class ExecutionParams:
     `ensure_mise_available` 通過後の値を採用し、mise不在時のdirectフォールバック分岐も反映する。
     `_with_targets` 経由で `CommandResult.runner_fallback` へ転記する。
     """
+    file_path_remap: dict[str, str] | None = None
+    """一時ファイルパスから元ファイルパスへ戻すための辞書。"""

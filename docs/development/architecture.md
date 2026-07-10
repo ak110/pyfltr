@@ -508,6 +508,16 @@ MCPサーバー・`--only-failed`からも再利用する。
 `--from-run`を`--only-failed`なしで単独利用可能にする案も却下した。
 `--from-run`単独では`diagnostic`参照は行われず意味を持たない。
 
+### `--commands`と有効化の関係
+
+`--commands`で指定されたコマンドは、起点configで有効化されていないものはパイプラインから除外される。
+モノレポでは`subproject_aware=True`ツールに限りサブプロジェクトいずれかで有効化されていれば実行対象に含める
+（`is_command_enabled_anywhere`）。
+除外自体は仕様どおりだが、指定したコマンドが暗黙に除外される挙動を利用者が誤解しないよう配慮する。
+`args.commands`明示指定時のみ差集合を計算する。
+`warnings_.emit_warning(source="commands", ...)`で警告発行する。
+`--commands`未指定時（暗黙全展開）はnoiseとなるため警告しない。
+
 ## MCPサーバー {#mcp-server}
 
 `pyfltr mcp`サブコマンドが提供するMCP（Model Context Protocol）サーバーの設計判断。

@@ -140,6 +140,8 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "pre-commit-auto-skip": True,
     # SKIP環境変数に渡すhook IDの手動指定リスト（auto-skipと併用可能）
     "pre-commit-skip": [],
+    # textlint・markdownlint実行時にフェンス内側行を検査対象から除外するH2見出し。
+    "exclude-fence-under": [],
     # 自動オプション: 各ツールの望ましい引数を自動挿入する。
     # *-argsとは独立して動作し、重複排除される。Falseで無効化可能。
     "pylint-pydantic": True,

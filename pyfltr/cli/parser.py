@@ -132,6 +132,15 @@ def make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> "
         help="指定コマンドを一時的に無効化します。複数回指定可能で、各値はカンマ区切りも併用可能です。"
         "`--enable` と同一コマンドに指定された場合は `--enable` を優先します。",
     )
+    common.add_argument(
+        "--exclude-fence-under",
+        default=None,
+        action="append",
+        metavar="H2_HEADING",
+        help="指定したH2見出し配下のフェンス内側行をtextlint・markdownlintの検査対象から除外します。"
+        "複数回指定可能で、各値はカンマ区切りも併用できます。"
+        "pyproject.tomlの[tool.pyfltr] exclude-fence-under = ['## 背景']でも指定できます。",
+    )
     common.add_argument("--ui", default=None, action="store_true", help="Textual UI を強制的に有効化します。")
     common.add_argument("--no-ui", default=None, action="store_true", help="Textual UI を強制的に無効化します。")
     common.add_argument(

@@ -10,6 +10,17 @@ import pyfltr.config.config
 import pyfltr.warnings_
 
 
+def _flatten_comma_separated(values: list[str]) -> list[str]:
+    """複数回指定とカンマ区切りを平坦化し、空要素を除外する。"""
+    flattened: list[str] = []
+    for raw in values:
+        for token in raw.split(","):
+            item = token.strip()
+            if item:
+                flattened.append(item)
+    return flattened
+
+
 def apply_cli_overrides(config: pyfltr.config.config.Config, args: argparse.Namespace) -> None:
     """CLIオプションによるconfig上書きを適用する。
 
@@ -32,6 +43,10 @@ def apply_cli_overrides(config: pyfltr.config.config.Config, args: argparse.Name
         for key in list(config.values):
             if key.endswith("-json") or key == "pytest-tb-line":
                 config.values[key] = False
+    if getattr(args, "exclude_fence_under", None) is not None:
+        cli_values = _flatten_comma_separated(args.exclude_fence_under)
+        existing = list(config.values.get("exclude-fence-under", []))
+        config.values["exclude-fence-under"] = existing + [value for value in cli_values if value not in existing]
     for flag, enabled in (("disable", False), ("enable", True)):
         for raw in getattr(args, flag, None) or []:
             for token in raw.split(","):

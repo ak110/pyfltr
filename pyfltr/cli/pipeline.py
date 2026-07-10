@@ -594,7 +594,18 @@ def run_pipeline(
     # モノレポでは `subproject_aware=True` ツールに限り「起点またはいずれかのサブプロジェクトで有効」
     # の和集合で対象に含める（親OFF・子ONを子でのみ実行できるようにするため）。
     # `subproject_aware=False`（リポジトリ単位ツール）と `subproject_aware` 判定自体は起点 config で固定する。
+    requested_commands = list(commands)
     commands = [c for c in commands if pyfltr.config.config.is_command_enabled_anywhere(c, config, subproject_configs)]
+    if getattr(args, "commands", None) is not None:
+        unmet = [c for c in requested_commands if c not in commands]
+        if unmet:
+            pyfltr.warnings_.emit_warning(
+                source="commands",
+                message="--commandsで指定されたが有効化されていないため未実行のコマンドがあります: " + ", ".join(unmet),
+                hint="--enable="
+                + ",".join(unmet)
+                + " または pyproject.toml [tool.pyfltr] で当該コマンドを true に設定して有効化してください。",
+            )
 
     # retry_command再構成用のベース情報を確定する。original_cwdはrun() が保存した
     # --work-dir適用前のcwd、original_sys_argsは起動時のsys.argv[1:] のコピー。
@@ -798,6 +809,8 @@ def run_pipeline(
 
     # pre-commit経由かつformatter自動修正発生時のMM状態ガイダンスを必要に応じて出力する。
     _maybe_emit_precommit_guidance(results, structured_stdout=structured_stdout)
+
+    base_ctx.cleanup()
 
     return (returncode, run_id)
 

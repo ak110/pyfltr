@@ -87,7 +87,13 @@ _TEXTLINT_RULE_HINTS: dict[str, str] = {
 """
 
 
-def parse_errors(command: str, output: str, error_pattern: str | None = None) -> list[ErrorLocation]:
+def parse_errors(
+    command: str,
+    output: str,
+    error_pattern: str | None = None,
+    *,
+    file_path_remap: dict[str, str] | None = None,
+) -> list[ErrorLocation]:
     """コマンド出力からエラー箇所をパースする。
 
     優先順位:
@@ -97,14 +103,38 @@ def parse_errors(command: str, output: str, error_pattern: str | None = None) ->
         4. いずれもなければ空リスト
     """
     if error_pattern is not None:
-        return _parse_with_pattern(command, output, error_pattern)
+        return _apply_file_path_remap(_parse_with_pattern(command, output, error_pattern), file_path_remap)
     custom_parser = _CUSTOM_PARSERS.get(command)
     if custom_parser is not None:
-        return custom_parser(output)
+        return _apply_file_path_remap(custom_parser(output), file_path_remap)
     builtin = _BUILTIN_PATTERNS.get(command)
     if builtin is not None:
-        return _parse_with_pattern(command, output, builtin)
+        return _apply_file_path_remap(_parse_with_pattern(command, output, builtin), file_path_remap)
     return []
+
+
+def _apply_file_path_remap(errors: list[ErrorLocation], remap: dict[str, str] | None) -> list[ErrorLocation]:
+    """診断の一時ファイルパスを元ファイルパスへ戻す。"""
+    if remap is None:
+        return errors
+    normalized_remap = dict(remap)
+    for temporary_path, original_path in remap.items():
+        normalized_remap[pyfltr.paths.to_cwd_relative(temporary_path)] = original_path
+        normalized_remap[pyfltr.paths.normalize_separators(pathlib.Path(temporary_path).resolve())] = original_path
+    return [
+        dataclasses.replace(error, file=pyfltr.paths.to_cwd_relative(original_path))
+        if (original_path := normalized_remap.get(_normalize_remap_lookup_path(error.file))) is not None
+        else error
+        for error in errors
+    ]
+
+
+def _normalize_remap_lookup_path(path: str) -> str:
+    """remap照合用に診断ファイルパスを正規化する。"""
+    as_path = pathlib.Path(path)
+    if as_path.is_absolute() or ".." in as_path.parts:
+        return pyfltr.paths.normalize_separators(as_path.resolve())
+    return pyfltr.paths.normalize_separators(path)
 
 
 def sort_errors(errors: list[ErrorLocation], command_names: list[str]) -> list[ErrorLocation]:
@@ -173,8 +203,9 @@ _BUILTIN_PATTERNS: dict[str, str] = {
     # ty check --output-format concise 出力例: src/foo.py:10:5: error[rule-name] Message text
     "ty": rf"(?P<file>{_FILE}):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>(?:error|warning)\[.+?\]\s+.+)",
     # markdownlint-cli2出力例: file.md:3 MD001/heading-increment Heading levels ...
+    # 実行環境により file.md:3 error MD001/... のように severity が介在する。
     # 先頭のMDxxxをruleグループとして抽出する（スラッシュ以降のシンボルはmessageに残す）。
-    "markdownlint": rf"(?P<file>{_FILE}):(?P<line>\d+)\s+(?P<rule>MD\d+)(?P<message>\S*\s+.+)",
+    "markdownlint": rf"(?P<file>{_FILE}):(?P<line>\d+)\s+(?:\w+\s+)?(?P<rule>MD\d+)(?P<message>\S*\s+.+)",
     # textlint --format compact出力例: /path/file.md: line 1, col 1, Error - message (rule)
     "textlint": rf"(?P<file>{_FILE}):\s*line\s+(?P<line>\d+),\s*col\s+(?P<col>\d+),\s*\w+\s*-\s*(?P<message>.+)",
     # pytest出力例: FAILED tests/xxx_test.py::test_yyy - AssertionError

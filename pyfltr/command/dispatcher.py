@@ -30,6 +30,7 @@ import pyfltr.config.config
 import pyfltr.paths
 import pyfltr.state.cache
 import pyfltr.state.only_failed
+import pyfltr.text.exclude_fence
 import pyfltr.warnings_
 from pyfltr.command.core_ import CacheContext, CommandResult, ExecutionContext, ExecutionParams
 
@@ -85,6 +86,84 @@ def _resolve_config_inject_path(start_cwd: pathlib.Path, candidates: list[str]) 
     return None
 
 
+def _is_mask_target(command: str, target: pathlib.Path, headings: list[str], *, fix_stage: bool) -> bool:
+    """フェンス除外用の一時ファイル生成対象か判定する。"""
+    return (
+        not fix_stage
+        and command in {"textlint", "markdownlint"}
+        and bool(headings)
+        and target.suffix.lower() in {".md", ".markdown"}
+    )
+
+
+def _source_path(target: pathlib.Path, *, start_cwd: pathlib.Path) -> pathlib.Path:
+    """起点cwd相対または絶対パスから読み込み対象の実パスを返す。"""
+    if target.is_absolute():
+        return target
+    return start_cwd / target
+
+
+def _original_file_argument(
+    target: pathlib.Path,
+    *,
+    subproject_cwd: pathlib.Path | None,
+    start_cwd: pathlib.Path,
+) -> str:
+    """通常実行時にコマンドラインへ渡す元ファイル引数を返す。"""
+    if subproject_cwd is not None:
+        return _to_subproject_relative(target, subproject_cwd=subproject_cwd, start_cwd=start_cwd)
+    return str(target)
+
+
+def _temporary_markdown_path(
+    target: pathlib.Path,
+    *,
+    start_cwd: pathlib.Path,
+    temporary_dir: pathlib.Path,
+) -> pathlib.Path:
+    """元パスの相対構造を保った一時Markdownパスを返す。"""
+    source = _source_path(target, start_cwd=start_cwd)
+    try:
+        relative = source.resolve().relative_to(start_cwd.resolve())
+    except (OSError, ValueError):
+        relative = pathlib.Path("__external__", *source.parts[1:])
+    return temporary_dir / relative
+
+
+def _masked_markdown_arguments(
+    targets: list[pathlib.Path],
+    *,
+    command: str,
+    headings: list[str],
+    fix_stage: bool,
+    start_cwd: pathlib.Path,
+    subproject_cwd: pathlib.Path | None,
+    temporary_dir_factory: typing.Callable[[], pathlib.Path] | None,
+) -> tuple[list[str], dict[str, str] | None]:
+    """Markdownフェンス除外を適用したコマンドライン用ファイル引数を返す。"""
+    file_args: list[str] = []
+    remap: dict[str, str] = {}
+    for target in targets:
+        original_arg = _original_file_argument(target, subproject_cwd=subproject_cwd, start_cwd=start_cwd)
+        if not _is_mask_target(command, target, headings, fix_stage=fix_stage):
+            file_args.append(original_arg)
+            continue
+        if temporary_dir_factory is None:
+            file_args.append(original_arg)
+            continue
+        temporary_path = _temporary_markdown_path(target, start_cwd=start_cwd, temporary_dir=temporary_dir_factory())
+        source_path = _source_path(target, start_cwd=start_cwd)
+        masked = pyfltr.text.exclude_fence.mask_fenced_blocks_under_headings(
+            source_path.read_text(encoding="utf-8"),
+            headings,
+        )
+        temporary_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary_path.write_text(masked, encoding="utf-8")
+        file_args.append(str(temporary_path))
+        remap[str(temporary_path)] = str(target)
+    return file_args, remap or None
+
+
 def _user_overrides_config(config_flag: str, *arg_lists: list[str]) -> bool:
     """利用者がツール固有の設定フラグを明示指定済みか判定する。
 
@@ -112,6 +191,7 @@ def _prepare_execution_params(
     only_failed_targets: "pyfltr.state.only_failed.ToolTargets | None",
     subproject_cwd: pathlib.Path | None = None,
     start_cwd: pathlib.Path | None = None,
+    temporary_dir_factory: typing.Callable[[], pathlib.Path] | None = None,
 ) -> "ExecutionParams | CommandResult":
     """実行前の共通前処理を行い `ExecutionParams` を返す。
 
@@ -167,6 +247,7 @@ def _prepare_execution_params(
             targets=targets,
             commandline_prefix=[],
             commandline=[],
+            cache_commandline=[],
             additional_args=[],
             fix_mode=fix_mode,
             fix_args=fix_args,
@@ -241,12 +322,28 @@ def _prepare_execution_params(
                 prefix_len = len(commandline_prefix)
                 commandline = commandline[:prefix_len] + injection + commandline[prefix_len:]
 
+    file_path_remap: dict[str, str] | None = None
+    cache_commandline = list(commandline)
+
     # pass-filenames = falseのツールはファイル引数を渡さない（tsc等）
     if config.values.get(f"{command}-pass-filenames", True):
-        if subproject_cwd is not None and start_cwd is not None:
+        start_for_mask = start_cwd if start_cwd is not None else pathlib.Path.cwd()
+        file_args, file_path_remap = _masked_markdown_arguments(
+            targets,
+            command=command,
+            headings=list(config.values.get("exclude-fence-under", [])),
+            fix_stage=fix_stage,
+            start_cwd=start_for_mask,
+            subproject_cwd=subproject_cwd,
+            temporary_dir_factory=temporary_dir_factory,
+        )
+        if file_path_remap is None and subproject_cwd is not None and start_cwd is not None:
             commandline.extend(_to_subproject_relative(t, subproject_cwd=subproject_cwd, start_cwd=start_cwd) for t in targets)
         else:
-            commandline.extend(str(t) for t in targets)
+            commandline.extend(file_args)
+        cache_commandline.extend(
+            _original_file_argument(t, subproject_cwd=subproject_cwd, start_cwd=start_for_mask) for t in targets
+        )
 
     # `pyfltr.command.runner.ensure_mise_available` を通過した後の `effective_runner` でmise経路かを判定する。
     # `pyfltr.command.runner.build_commandline` 直後はmise不在時のdirectフォールバック前の値が入っているため、
@@ -258,6 +355,7 @@ def _prepare_execution_params(
         targets=targets,
         commandline_prefix=commandline_prefix,
         commandline=commandline,
+        cache_commandline=cache_commandline,
         additional_args=additional_args,
         fix_mode=fix_mode,
         fix_args=fix_args,
@@ -265,6 +363,7 @@ def _prepare_execution_params(
         effective_runner=resolved.effective_runner,
         runner_source=resolved.runner_source,
         runner_fallback=resolved.runner_fallback,
+        file_path_remap=file_path_remap,
     )
 
 
@@ -306,6 +405,7 @@ def _run_plain_command(
     command: str,
     command_info: pyfltr.config.config.CommandInfo,
     commandline: list[str],
+    cache_commandline: list[str],
     targets: list[pathlib.Path],
     additional_args: list[str],
     env: dict[str, str],
@@ -321,6 +421,7 @@ def _run_plain_command(
     on_subprocess_start: typing.Callable[[], None] | None = None,
     on_subprocess_end: typing.Callable[[], None] | None = None,
     cwd: pathlib.Path | None = None,
+    file_path_remap: dict[str, str] | None = None,
 ) -> CommandResult:
     """通常のlinter/formatterを単発実行するplain経路。
 
@@ -336,7 +437,7 @@ def _run_plain_command(
         command,
         command_info,
         config,
-        commandline,
+        cache_commandline,
         targets,
         additional_args,
         fix_args=fix_args,
@@ -370,7 +471,9 @@ def _run_plain_command(
 
     output = proc.stdout.strip()
     elapsed = time.perf_counter() - start_time
-    errors = pyfltr.command.error_parser.parse_errors(command, output, command_info.error_pattern)
+    errors = pyfltr.command.error_parser.parse_errors(
+        command, output, command_info.error_pattern, file_path_remap=file_path_remap
+    )
 
     result = CommandResult.from_run(
         command=command,
@@ -482,6 +585,7 @@ def _dispatch_command(
         only_failed_targets=ctx.only_failed_targets,
         subproject_cwd=ctx.subproject_cwd,
         start_cwd=ctx.base.start_cwd,
+        temporary_dir_factory=ctx.base.ensure_temporary_directory,
     )
     if isinstance(params_or_error, CommandResult):
         # ツールパス解決失敗
@@ -490,6 +594,7 @@ def _dispatch_command(
     command_info = params.command_info
     targets = params.targets
     commandline = params.commandline
+    cache_commandline = params.cache_commandline
     commandline_prefix = params.commandline_prefix
     additional_args = params.additional_args
     fix_mode = params.fix_mode
@@ -752,6 +857,7 @@ def _dispatch_command(
             command,
             command_info,
             commandline,
+            cache_commandline,
             targets,
             additional_args,
             env,
@@ -766,5 +872,6 @@ def _dispatch_command(
             on_subprocess_start=on_subprocess_start,
             on_subprocess_end=on_subprocess_end,
             cwd=subproject_cwd,
+            file_path_remap=params.file_path_remap,
         )
     )
