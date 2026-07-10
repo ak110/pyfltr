@@ -29,6 +29,12 @@ format別のlogger stream/level切替の詳細は[docs/development/architecture.
 - subprocess・git・mise・ファイル走査などcwd依存処理はプロセスのcwdに依存しない実装にする。
   `subprocess.Popen(cwd=...)`の引数、または`start_cwd`・`base_cwd`・`cwd`等の
   明示引数でcwdを渡す。`os.chdir()`でグローバル状態を変更しない
+- `pyfltr/command/core_.py`の`ExecutionParams.targets`と`CommandResult.target_files`は
+  実際に処理対象となったファイル集合を表すフィールドである。
+  マスク済み一時パスなど値の意味を変える差し替えをしない。
+  一時パスへの差し替えが必要な用途は`ExecutionParams.cache_commandline`と
+  `ExecutionParams.file_path_remap`で表現する
+  （両フィールドの下流経路は[docs/development/architecture.md](docs/development/architecture.md)を参照する）
 
 ## 注意点
 
