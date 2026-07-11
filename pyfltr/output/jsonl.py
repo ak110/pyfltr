@@ -123,6 +123,8 @@ _DEFAULT_HEAD_RATIO = 0.2
 def build_command_lines(
     result: pyfltr.command.core_.CommandResult,
     config: pyfltr.config.config.Config,
+    *,
+    quiet: bool = False,
 ) -> list[str]:
     """1コマンド分のdiagnostic行+command行をJSONL文字列のリストとして生成する。
 
@@ -136,6 +138,17 @@ def build_command_lines(
     判定単位はステージごとの`CommandResult`単位とする。fixステージと
     通常ステージは同じ`command`名で別`CommandResult`として渡されるため、
     片方のアーカイブ書き込み失敗が他方の切り詰め可否に影響しない。
+
+    `quiet=True`のときは以下の全条件を満たす成功時commandレコードを出力しない
+    （SSOT: 本docstring）。
+
+    - `result.status`が`succeeded`・`formatted`・`skipped`のいずれか
+    - `diagnostic_records`が空
+    - `diagnostics_truncated`が`False`
+    - `result.runner_fallback`が`None`（fallback検知は静音時も残す）
+
+    上記いずれかを満たさない場合は通常どおりcommandレコードを出力する。
+    `diagnostic_records`自体は`quiet`の影響を受けず、非空なら常に出力する。
     """
     sorted_errors = pyfltr.command.error_parser.sort_errors(result.errors, config.command_names)
     diagnostic_total = len(sorted_errors)
@@ -151,6 +164,12 @@ def build_command_lines(
     lines: list[str] = []
     for record in diagnostic_records:
         lines.append(_dump(record))
+    if quiet and _should_suppress_command_record(
+        result,
+        diagnostic_records=diagnostic_records,
+        diagnostics_truncated=diagnostics_truncated,
+    ):
+        return lines
     lines.append(
         _dump(
             _build_command_record(
@@ -164,6 +183,25 @@ def build_command_lines(
         )
     )
     return lines
+
+
+def _should_suppress_command_record(
+    result: pyfltr.command.core_.CommandResult,
+    *,
+    diagnostic_records: list[dict[str, typing.Any]],
+    diagnostics_truncated: bool,
+) -> bool:
+    """`quiet`時にcommandレコード出力を抑止するべきか判定する。
+
+    抑止条件は`build_command_lines`のdocstringを参照する（SSOT）。
+    """
+    if result.status not in {"succeeded", "formatted", "skipped"}:
+        return False
+    if diagnostic_records:
+        return False
+    if diagnostics_truncated:
+        return False
+    return result.runner_fallback is None
 
 
 def aggregate_diagnostics(
@@ -318,6 +356,7 @@ def write_jsonl_header(
     run_id: str | None = None,
     config: pyfltr.config.config.Config | None = None,
     format_source: str | None = None,
+    quiet: bool = False,
 ) -> None:
     """header行を構造化出力loggerに出力する（ストリーミングモード用）。
 
@@ -328,8 +367,13 @@ def write_jsonl_header(
     `config`が渡された場合、mise経路を使うrunに限り
     `mise_active_tools`フィールドへ取得状況を露出する。
     `format_source`が渡された場合、`format_source`フィールドへ解決経路ラベルを露出する。
+    `quiet=True`のときは`run_id`・`commands`・`files`の3つのフィールドのみへ縮約する
+    （SSOT: `_build_header_record`のdocstring）。
     """
-    mise_active_tools = collect_mise_active_tools_for_header(commands, config) if config is not None else None
+    if quiet:
+        mise_active_tools = None
+    else:
+        mise_active_tools = collect_mise_active_tools_for_header(commands, config) if config is not None else None
     with _write_lock:
         _emit_structured(
             _dump(
@@ -339,6 +383,7 @@ def write_jsonl_header(
                     run_id=run_id,
                     mise_active_tools=mise_active_tools,
                     format_source=format_source,
+                    quiet=quiet,
                 )
             )
         )
@@ -368,13 +413,16 @@ def collect_mise_active_tools_for_header(
 def write_jsonl_streaming(
     result: pyfltr.command.core_.CommandResult,
     config: pyfltr.config.config.Config,
+    *,
+    quiet: bool = False,
 ) -> None:
     """1コマンド分のdiagnostic行+command行を構造化出力loggerに即時出力する。
 
     `_write_lock`取得下で複数行を連続出力することで、並列実行されるlinters/testers
     から呼ばれてもコマンド単位のグルーピングが崩れない。
+    `quiet=True`は`build_command_lines`へ透過する（成功時commandレコードを抑止する）。
     """
-    lines = build_command_lines(result, config)
+    lines = build_command_lines(result, config, quiet=quiet)
     with _write_lock:
         for line in lines:
             _emit_structured(line)
@@ -447,6 +495,7 @@ def _build_header_record(
     run_id: str | None = None,
     mise_active_tools: dict[str, typing.Any] | None = None,
     format_source: str | None = None,
+    quiet: bool = False,
 ) -> dict[str, typing.Any]:
     """実行環境の基本情報をheaderレコードdictとして返す。
 
@@ -460,7 +509,23 @@ def _build_header_record(
     Python系コマンドの実行有無に関わらず常時出力する
     （利用者・LLMが「uv経路が選択された／uvxへフォールバックした／directにフォールバックした」の
     判別に使う）。詳細は `pyfltr.command.runner.build_commandline` のdocstringを参照する。
+
+    `quiet=True`のときは次のフィールドのみを含む縮約レコードを返す。
+
+    - `kind`（常に`"header"`）
+    - `run_id`（渡された場合のみ）
+    - `commands`
+    - `files`
+
+    `version`・`python`・`executable`・`platform`・`cwd`・`uv`・
+    `mise_active_tools`・`format_source`は`quiet`時に省略する
+    （エージェント経路のトークン消費削減目的）。
     """
+    if quiet:
+        condensed: dict[str, typing.Any] = {"kind": "header", "commands": commands, "files": files}
+        if run_id is not None:
+            condensed["run_id"] = run_id
+        return condensed
     record: dict[str, typing.Any] = {
         "kind": "header",
         "version": importlib.metadata.version("pyfltr"),

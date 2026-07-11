@@ -150,6 +150,13 @@ def make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> "
         help="run / fast / run-for-agent サブコマンドで自動付与される fix ステージを抑止します。",
     )
     common.add_argument(
+        "--quiet",
+        default=None,
+        action=argparse.BooleanOptionalAction,
+        help="JSONL出力の成功時commandレコード省略・headerレコード縮約・"
+        "precommitガイダンス（stderr）抑止をまとめて有効化します（run-for-agent既定: 有効）。",
+    )
+    common.add_argument(
         "--stream",
         default=False,
         action="store_true",
@@ -447,7 +454,8 @@ def apply_subcommand_defaults(args: argparse.Namespace) -> None:
         - `run`: fixステージ有効。exit_zero_even_if_formattedをTrueに
         - `fast`: runと同じ + `--commands` 未指定なら `"fast"`
         - `run-for-agent`: runと同じ。`--output-format`の既定値は`_resolve_output_format`側で
-          サブコマンド既定値`"jsonl"`として注入し、`PYFLTR_OUTPUT_FORMAT`での変更を許容する
+          サブコマンド既定値`"jsonl"`として注入し、`PYFLTR_OUTPUT_FORMAT`での変更を許容する。
+          `--quiet`は未指定時に`True`を注入する（他サブコマンドは`False`）。
     """
     subcommand = args.subcommand
     args.include_fix_stage = subcommand in ("run", "fast", "run-for-agent")
@@ -456,3 +464,5 @@ def apply_subcommand_defaults(args: argparse.Namespace) -> None:
     if subcommand == "fast" and args.commands is None:
         # `--commands` は `action="append"` 化によりリストで保持する。
         args.commands = ["fast"]
+    if getattr(args, "quiet", None) is None:
+        args.quiet = subcommand == "run-for-agent"

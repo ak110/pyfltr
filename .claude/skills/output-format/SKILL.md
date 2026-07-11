@@ -4,9 +4,9 @@ description: >
   pyfltrの出力形式とlogger・LLM出力スキーマの方針。
   JSONL公開ヘルパー・logger役割分担・command.hints/summary.guidance・heartbeat段階出力・
   summaryレコードフィールド順序・effective_runner/runner_sourceなど出力スキーマの設計を集約する。
-  pyfltr/output/配下・pyfltr/cli/output_format.py・pyfltr/cli/pipeline.py・
+  pyfltr/output/配下・pyfltr/cli/output_format.py・pyfltr/cli/pipeline.py・pyfltr/cli/parser.py・
   pyfltr/command/core_.py・pyfltr/command/dispatcher.py・
-  tests/llm_output_test.py・tests/output_format_test.py・tests/pipeline_heartbeat_test.py・
+  tests/llm_output_test.py・tests/output_format_test.py・tests/pipeline_heartbeat_test.py・tests/main_test.py・
   tests/sarif_output_test.py・tests/code_quality_test.py・tests/llmstxt_test.py・
   docs/guide/usage.md・docs/development/architecture.md・mkdocs.yml を編集する際に使用する。
 ---
@@ -45,9 +45,16 @@ JSONL出力経路は`pyfltr/output/jsonl.py`の公開ヘルパー（`emit_record
  「期待した経路と実際の経路が乖離した場合」に限り出力する（fallback検出用）。
   通常経路は3フィールドとも省略してLLM入力のトークン消費を抑える方針。
   通常時の解決状況の確認は`pyfltr command-info`サブコマンドの責務とする
+- `--quiet`（`run-for-agent`は既定有効）は成功時commandレコード省略・headerレコード縮約・
+  precommitガイダンス（stderr）抑止をまとめて制御する。抑止・縮約条件のSSOTは
+  `pyfltr/output/jsonl.py`の`build_command_lines`と`_build_header_record`のdocstring
 - 段階出力イベント（`status:"running"`）の発火条件・発火時挙動・最終レコード後続保証の設計は
   `pyfltr/cli/pipeline.py`の`HeartbeatMonitor`のdocstringを参照する。
   buffering型formatter（SARIF・Code Quality）でheartbeat由来のrunningイベントを混入させない理由は
   `run_pipeline`のdocstringに集約する
-- 全サブコマンドの出力形式オプションは`--output-format`に統一し、
-  choicesは`{text, json, jsonl}`から必要なものを採用する。`--format`等の別名は導入しない
+- 全サブコマンドの出力形式オプションは`--output-format`に統一する。
+  実行系サブコマンド（`run`・`ci`・`fast`・`run-for-agent`）のchoicesは
+  `{text, jsonl, sarif, github-annotations, code-quality}`から必要なものを採用する。
+  参照・検索系サブコマンド（`list-runs`・`show-run`・`command-info`・`grep`・`replace`・`config list`）の
+  choicesは`{text, json, jsonl}`から必要なものを採用する。
+  `--format`等の別名は導入しない

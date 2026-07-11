@@ -544,6 +544,7 @@ def run_pipeline(
     # ユーザー指定パスが全て非存在の場合は、各ツールが個別に「ファイルが見つからない」エラーを
     # 多重に出力する前段で打ち切り、非ゼロ終了する。warning自体は`expand_all_files`内で発行済み。
     # 部分一致（一部のみ不在）は処理継続、対象未指定（カレント走査）も対象外として扱う。
+    quiet = bool(getattr(args, "quiet", False))
     if args.targets and len(pyfltr.warnings_.filtered_direct_files(reason="missing")) == len(args.targets):
         early_run_ctx = pyfltr.output.formatters.RunOutputContext(
             config=config,
@@ -552,6 +553,7 @@ def run_pipeline(
             commands=[],
             all_files=0,
             format_source=format_source,
+            quiet=quiet,
         )
         formatter.on_start(early_run_ctx)
         formatter.on_finish(early_run_ctx, [], 1, pyfltr.warnings_.collected_warnings())
@@ -708,6 +710,7 @@ def run_pipeline(
         include_details=include_details_from_stream,
         structured_stdout=structured_stdout,
         format_source=format_source,
+        quiet=quiet,
     )
 
     formatter.on_start(ctx)
@@ -808,7 +811,7 @@ def run_pipeline(
             pyfltr.warnings_.emit_warning(source="archive", message=f"meta.json の更新に失敗: {e}")
 
     # pre-commit経由かつformatter自動修正発生時のMM状態ガイダンスを必要に応じて出力する。
-    _maybe_emit_precommit_guidance(results, structured_stdout=structured_stdout)
+    _maybe_emit_precommit_guidance(results, structured_stdout=structured_stdout, quiet=quiet)
 
     base_ctx.cleanup()
 
@@ -825,6 +828,7 @@ def _maybe_emit_precommit_guidance(
     results: list[pyfltr.command.core_.CommandResult],
     *,
     structured_stdout: bool,
+    quiet: bool = False,
 ) -> None:
     """pre-commit経由かつformatter修正発生時にMM状態ガイダンスをstderrへ出力する。
 
@@ -835,8 +839,9 @@ def _maybe_emit_precommit_guidance(
     構造化stdoutモード （`jsonl` / `sarif` / `code-quality` をstdoutに出力する） では、
     stderrにtextが既に出力されているため重複を避ける意味でも抑止する。`github-annotations`
     はtextと同じレイアウトをstdoutに出力するため抑止不要。
+    `quiet=True`のときはエージェント経路のstderrノイズ削減目的でメッセージ自体を抑止する。
     """
-    if structured_stdout:
+    if quiet or structured_stdout:
         return
     if not any(result.status == "formatted" for result in results):
         return

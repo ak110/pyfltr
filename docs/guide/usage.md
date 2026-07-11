@@ -44,6 +44,8 @@ pyfltr run-for-agent [files and/or directories ...]
 コーディングエージェントから呼び出す際に用いる。
 `pyfltr run --output-format=jsonl`と多くの場合は等価だが、サブコマンド既定値であるため
 `PYFLTR_OUTPUT_FORMAT=text`で`text`へ戻すことができる点が異なる。
+加えて`--quiet`が既定で有効となり、JSONL出力ノイズを削減する
+（`--no-quiet`で従来挙動へ戻す）。
 
 出力形式の詳細は[jsonl形式の使い方](#jsonl)を参照。
 
@@ -433,6 +435,7 @@ pyfltr run-for-agent --work-dir=/path/to/pyfltr ~/.claude/plans/example.md
 | Formatterによる変更時の終了コード | `0`（成功扱い） | `0`（成功扱い） | `0`（成功扱い） | `1`（失敗扱い） |
 | Linters / Testersのエラー時の終了コード | `1` | `1` | `1` | `1` |
 | 既定の出力形式 | `text` | `text` | `jsonl` | `text` |
+| `--quiet`既定 | 無効 | 無効 | 有効 | 無効 |
 | 主な用途 | pre-commitフック等 | ローカルで全チェック | コーディングエージェント呼び出し | CI・コミット前 |
 
 `fast` / `run` / `run-for-agent` サブコマンドは、formatter段の前にfixステージを内蔵する。
@@ -592,6 +595,22 @@ JSONLヘッダーの`format_source`には検出した変数名（例: `env.CODEX
 
 `PYFLTR_OUTPUT_FORMAT`を明示すれば、エージェント検出環境下や`run-for-agent`配下でもtext等へ変更できる
 （例: `PYFLTR_OUTPUT_FORMAT=text pyfltr run-for-agent`）。
+
+#### 静音モード（`--quiet`・`--no-quiet`）
+
+`--quiet`指定時は次を抑止し、エージェントの繰り返し実行時のノイズ削減を目的とする。
+
+- 成功時commandレコード
+    - `status`が`succeeded`・`formatted`・`skipped`のいずれか
+    - 診断が0件・切り詰め無し・runner_fallback未発火
+    - 上記全条件を満たす場合、当該commandレコードを出力しない
+- headerレコードを`run_id`・`commands`・`files`の3つのフィールドのみへ縮約する
+- pre-commit経由でformatter修正が発生したときのstderrガイダンスも抑止する
+
+`run-for-agent`サブコマンドでは既定で`--quiet`が有効。`--no-quiet`で無効化できる。
+他サブコマンド（`run --output-format=jsonl`など）では既定で無効。
+summaryレコード・warningレコード・diagnosticレコード・`status:"running"`のheartbeatイベントは
+`--quiet`の影響を受けず常に出力する。
 
 ### コーディングエージェント連携
 

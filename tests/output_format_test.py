@@ -1,5 +1,7 @@
 """出力フォーマットのテストコード。"""
+# pylint: disable=too-many-lines
 
+import dataclasses
 import json
 import pathlib
 import subprocess
@@ -547,7 +549,8 @@ def test_run_cli_header_format_source_subcommand_default(mocker, capsys):
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="mypy ok")
     mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
-    pyfltr.cli.main.run(["run-for-agent", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    # `--no-quiet` で従来のverbose headerを維持する（`run-for-agent`は既定quietのため）。
+    pyfltr.cli.main.run(["run-for-agent", "--no-quiet", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr()
     lines = [line for line in captured.out.splitlines() if line.strip()]
     header = json.loads(lines[0])
@@ -954,3 +957,55 @@ def test_run_cli_code_quality_with_diagnostics(mocker, capsys):
     assert issue["check_name"].startswith("mypy")
     assert issue["location"]["lines"]["begin"] >= 1
     assert issue["severity"] in ("info", "minor", "major", "critical", "blocker")
+
+
+# ---------------------------------------------------------------------------
+# --quiet オプションのユニットテスト
+# ---------------------------------------------------------------------------
+
+
+def _quiet_case(default_config, kind):
+    """quietの抑止・保持判定用テストデータを1件生成する（`(result, expect_command_kept, has_diagnostic)`）。"""
+    if kind == "suppress_succeeded":
+        return _make_result("ruff-check", returncode=0), False, False
+    if kind == "runner_fallback":
+        base = _make_result("ruff-format", returncode=0, command_type="formatter")
+        return dataclasses.replace(base, runner_fallback="uv->direct"), True, False
+    if kind == "failed":
+        return _make_result("mypy", returncode=1), True, False
+    if kind == "diagnostics":
+        errors = [_make_error("mypy", "src/a.py", 10, "bad type")]
+        return _make_result("mypy", returncode=1, errors=errors), True, True
+    assert kind == "truncated"
+    errors = [_make_error("mypy", "src/a.py", i, f"err{i}") for i in range(5)]
+    default_config.values["jsonl-diagnostic-limit"] = 2
+    return _make_result("mypy", returncode=1, errors=errors), True, True
+
+
+@pytest.mark.parametrize("kind", ["suppress_succeeded", "runner_fallback", "failed", "diagnostics", "truncated"])
+def test_build_command_lines_quiet(default_config, kind):
+    """quiet時のcommandレコード抑止・保持条件を分岐別に検証する（SSOT: build_command_lines docstring）。"""
+    result, keep_command, has_diagnostic = _quiet_case(default_config, kind)
+    parsed = [json.loads(line) for line in pyfltr.output.jsonl.build_command_lines(result, default_config, quiet=True)]
+    assert any(r["kind"] == "command" for r in parsed) is keep_command
+    assert any(r["kind"] == "diagnostic" for r in parsed) is has_diagnostic
+
+
+@pytest.mark.parametrize(
+    ("run_id", "expected_keys"),
+    [("rid-1", {"kind", "commands", "files", "run_id"}), (None, {"kind", "commands", "files"})],
+)
+def test_write_jsonl_header_quiet_condensed(capsys, run_id, expected_keys):
+    """`write_jsonl_header(..., quiet=True)`が縮約header（run_id は指定時のみ含む）を出力する。"""
+    _configure_structured_stdout()
+    pyfltr.output.jsonl.write_jsonl_header(commands=["mypy"], files=2, run_id=run_id, quiet=True)
+    record = json.loads(capsys.readouterr().out.strip())
+    assert set(record.keys()) == expected_keys
+    assert record["commands"] == ["mypy"] and record["files"] == 2
+
+
+def test_write_jsonl_streaming_forwards_quiet(default_config, capsys):
+    """`write_jsonl_streaming(..., quiet=True)`が成功時commandを抑止する。"""
+    _configure_structured_stdout()
+    pyfltr.output.jsonl.write_jsonl_streaming(_make_result("ruff-check", returncode=0), default_config, quiet=True)
+    assert capsys.readouterr().out == ""

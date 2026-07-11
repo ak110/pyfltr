@@ -935,3 +935,60 @@ def _get_global_config_env() -> str:
 
 # conftest.count_config_warningsを再エクスポート（同モジュール内の参照を統一するため）
 _count_config_warnings = _testconf.count_config_warnings
+
+
+# ---------------------------------------------------------------------------
+# --quiet オプションのE2Eテスト
+# ---------------------------------------------------------------------------
+
+
+_QUIET_HEADER_FIELDS = {"kind", "commands", "files", "run_id"}
+
+
+def _parse_jsonl(text: str) -> list[dict]:
+    """capsys出力からJSONL行のリストへパースする。"""
+    return [json.loads(line) for line in text.splitlines() if line.strip()]
+
+
+@pytest.mark.parametrize(
+    ("argv_tail", "expect_quiet"),
+    [([], True), (["--no-quiet"], False)],
+)
+def test_run_for_agent_quiet_default_and_override(mocker, capsys, argv_tail, expect_quiet):
+    """`run-for-agent`はquiet既定有効、`--no-quiet`で従来のverbose挙動へ戻る。"""
+    proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
+    assert pyfltr.cli.main.run(["run-for-agent", *argv_tail, str(pathlib.Path(__file__).parent.parent)]) == 0
+    parsed = _parse_jsonl(capsys.readouterr().out)
+    header = parsed[0]
+    assert header["kind"] == "header"
+    if expect_quiet:
+        assert set(header.keys()) <= _QUIET_HEADER_FIELDS
+        assert not any(r["kind"] == "command" for r in parsed)
+    else:
+        assert {"version", "uv"} <= header.keys()
+        assert any(r["kind"] == "command" for r in parsed)
+
+
+def test_run_output_format_jsonl_defaults_verbose(mocker, capsys):
+    """`pyfltr run --output-format=jsonl`は既定でquiet=Falseとなる（従来挙動維持）。"""
+    proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
+    assert pyfltr.cli.main.run(["run", "--output-format=jsonl", str(pathlib.Path(__file__).parent.parent)]) == 0
+    header = _parse_jsonl(capsys.readouterr().out)[0]
+    assert {"version", "uv"} <= header.keys()
+
+
+def test_run_for_agent_quiet_applies_to_early_run_ctx(tmp_path, mocker, capsys):
+    """全ターゲット不在時のearly_run_ctx経路でも`--quiet`が適用され、headerが縮約される。"""
+    (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\n")
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=subprocess.CompletedProcess(["x"], 0, ""))
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        returncode = pyfltr.cli.main.run(["run-for-agent", "does_not_exist.py"])
+    finally:
+        os.chdir(original_cwd)
+    assert returncode == 1
+    header = next(r for r in _parse_jsonl(capsys.readouterr().out) if r["kind"] == "header")
+    assert set(header.keys()) <= _QUIET_HEADER_FIELDS

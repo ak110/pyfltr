@@ -53,6 +53,9 @@ class RunOutputContext:
     # 実行系サブコマンドのみ`run_pipeline`が値を埋める。参照系・MCP経路では`None`のまま。
     # JSONL `header.format_source`に出力するためにJSONLFormatterで参照する。
     format_source: str | None = None
+    # `--quiet`指定時の抑止フラグ。JSONLFormatterでのみ参照する。
+    # 抑止対象は`pyfltr.output.jsonl.build_command_lines`と`_build_header_record`のdocstringに集約する。
+    quiet: bool = False
 
 
 class OutputFormatter(typing.Protocol):
@@ -212,11 +215,12 @@ class JSONLFormatter:
             run_id=ctx.run_id,
             config=ctx.config,
             format_source=ctx.format_source,
+            quiet=ctx.quiet,
         )
 
     def on_result(self, ctx: RunOutputContext, result: pyfltr.command.core_.CommandResult) -> None:
         """Diagnostic行 + tool行をstreamingで出力する。"""
-        pyfltr.output.jsonl.write_jsonl_streaming(result, ctx.config)
+        pyfltr.output.jsonl.write_jsonl_streaming(result, ctx.config, quiet=ctx.quiet)
 
     def on_finish(
         self,
