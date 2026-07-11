@@ -9,13 +9,12 @@ import pyfltr.text.exclude_fence
 
 
 def test_mask_fenced_blocks_under_heading_masks_inner_lines_only() -> None:
-    """対象H2見出し配下のフェンス内側行だけを同長空白へ置換する。"""
+    """対象H2見出し配下のフェンス内側行だけを空行へ置換する。"""
     text = "## 背景\n\n```text\n長い原文です。\nsecond line\n```\n"
 
     masked = pyfltr.text.exclude_fence.mask_fenced_blocks_under_headings(text, ["## 背景"])
 
-    assert masked == "## 背景\n\n```text\n       \n           \n```\n"
-    assert len(masked) == len(text)
+    assert masked == "## 背景\n\n```text\n\n\n```\n"
     assert masked.count("\n") == text.count("\n")
 
 
@@ -27,7 +26,7 @@ def test_mask_fenced_blocks_under_heading_keeps_other_sections() -> None:
 
     assert "keep" in masked
     assert "mask" not in masked
-    assert "    " in masked
+    assert masked.count("\n") == text.count("\n")
 
 
 def test_mask_fenced_blocks_under_heading_accepts_multiple_headings_until_eof() -> None:
@@ -38,9 +37,7 @@ def test_mask_fenced_blocks_under_heading_accepts_multiple_headings_until_eof() 
 
     assert "first" not in masked
     assert "second" not in masked
-    assert "     " in masked
-    assert "      " in masked
-    assert len(masked) == len(text)
+    assert masked.count("\n") == text.count("\n")
 
 
 def test_mask_fenced_blocks_under_heading_returns_original_for_empty_or_missing_input() -> None:
@@ -50,6 +47,29 @@ def test_mask_fenced_blocks_under_heading_returns_original_for_empty_or_missing_
     assert pyfltr.text.exclude_fence.mask_fenced_blocks_under_headings(text, []) == text
     assert pyfltr.text.exclude_fence.mask_fenced_blocks_under_headings(text, ["## 不在"]) == text
     assert pyfltr.text.exclude_fence.mask_fenced_blocks_under_headings("", ["## 背景"]) == ""
+
+
+def test_mask_fenced_blocks_under_heading_produces_empty_lines() -> None:
+    """マスク後のフェンス内側行が空行（改行のみ）で長い行を残さない。"""
+    long_line = "あ" * 200
+    text = f"## 背景\n\n```text\n{long_line}\n```\n"
+
+    masked = pyfltr.text.exclude_fence.mask_fenced_blocks_under_headings(text, ["## 背景"])
+
+    assert masked == "## 背景\n\n```text\n\n```\n"
+    for masked_line in masked.splitlines():
+        assert len(masked_line) <= 127 or masked_line.startswith("`")
+
+
+def test_mask_fenced_blocks_under_heading_uses_short_space_for_unclosed_eof() -> None:
+    """未閉じフェンスかつ改行なしEOF最終行は短い空白へ置換する。"""
+    text = "## 背景\n\n```text\n" + "あ" * 200
+
+    masked = pyfltr.text.exclude_fence.mask_fenced_blocks_under_headings(text, ["## 背景"])
+
+    assert masked.count("\n") == text.count("\n")
+    assert "あ" not in masked
+    assert masked.splitlines()[-1] == " "
 
 
 def test_markdownlint_diagnostic_file_is_restored_from_temporary_path(
