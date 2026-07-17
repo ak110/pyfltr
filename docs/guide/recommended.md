@@ -109,6 +109,7 @@ show_error_codes = true
 [tool.pytest.ini_options]
 # https://docs.pytest.org/en/latest/reference/reference.html#ini-options-ref
 # --dist=worksteal は未実行テストを動的分配し、特定ファイルへの偏りによる律速を回避する
+# -n 4 はコア数追従（-n auto 等）を採用せず固定値とする（CI環境での逆効果とメモリ消費増を避けるため）
 addopts = "--showlocals -p no:cacheprovider --maxfail=5 --durations=30 --durations-min=0.5 --timeout=60 -n 4 \
   --dist=worksteal"
 log_level = "DEBUG"
@@ -120,6 +121,7 @@ asyncio_default_test_loop_scope = "session"
 
 `--timeout=60`は`pytest-timeout`プラグインが必要。
 `-n 4`は`pytest-xdist`プラグインが必要で、4プロセス並列でテストを実行する。
+コア数追従（`-n auto`等）は採用せず固定値とする（CI環境で逆効果になり得ることと、メモリ消費の増大を避けるため）。
 `--dist=worksteal`は`pytest-xdist`のwork-stealingスケジューラを有効化し、
 テストファイル間の実行時間差が大きい場合でも特定workerへ偏らせない。
 ランナー別の有効条件は次の通り。
