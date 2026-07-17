@@ -1,10 +1,11 @@
 """外部パス指定時のツール別挙動のテスト。
 
 外部パス（起点cwd配下にない絶対パス）を3分類で扱う実装の境界確認。
+`--config`明示注入と外部パス除外＋警告は排他ではなく、注入対象ツールが外部パスを扱えない場合は併用する。
 
-- 注入対象（`config_arg_template`指定）: `markdownlint` / `textlint` / `bandit`
-- 除外対象（`allows_external_paths=False`）: `pre-commit` / `pytest` / `vitest` /
-  `cargo-test` / `dotnet-test` / `gitleaks` / `semgrep` /
+- `--config`明示注入（内部パスのみ実行時に適用）: `markdownlint` / `textlint` / `bandit`
+- 除外対象（`allows_external_paths=False`）: `markdownlint` / `textlint` / `pre-commit` / `pytest` /
+  `vitest` / `cargo-test` / `dotnet-test` / `gitleaks` / `semgrep` /
   `uv-audit` / `pnpm-audit` / `npm-audit` / `yarn-audit`
 - 素通し対象（既定）: 上記以外（`ruff-check` を代表として確認）
 
@@ -472,7 +473,7 @@ def test_inject_config_arg_when_setting_file_exists(
     """注入対象ツールで起点cwd直下に設定ファイルが存在するとき、`--config <絶対パス>`が
     `commandline_prefix`直後に挿入される。
     """
-    start_cwd, internal, external = _ext_workspace
+    start_cwd, internal, _external = _ext_workspace
     config_path = start_cwd / config_file_name
     config_path.write_text("# dummy\n", encoding="utf-8")
 
@@ -481,7 +482,7 @@ def test_inject_config_arg_when_setting_file_exists(
     _patch_build_commandline(monkeypatch)
     captured = _patch_subprocess(monkeypatch)
 
-    ctx = _testconf.make_execution_context(config, [internal, external], start_cwd=start_cwd)
+    ctx = _testconf.make_execution_context(config, [internal], start_cwd=start_cwd)
     result = pyfltr.command.dispatcher.execute_command(command, _testconf.make_args(), ctx)
 
     # subprocessが呼ばれており、commandlineに--configが含まれる
@@ -559,6 +560,8 @@ def test_inject_skipped_when_user_specifies_config(
         ("pnpm-audit", "package.json"),
         ("npm-audit", "package.json"),
         ("yarn-audit", "package.json"),
+        ("markdownlint", "doc.md"),
+        ("textlint", "doc.md"),
     ],
 )
 def test_external_path_filtered_with_warning(
@@ -699,8 +702,8 @@ def test_monorepo_internal_only_no_external_dispatch(monkeypatch: pytest.MonkeyP
     assert len(calls) == 2
 
 
-def test_monorepo_mixed_inject_extra_dispatch(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """モノレポ＋外部パスありで、注入対象ツールは起点cwdで追加実行される。"""
+def test_monorepo_mixed_inject_target_warns_only(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """モノレポ＋外部パスありで、注入対象ツール（除外対象兼務）は追加実行せず警告のみ発行する。"""
     start_cwd, sub_a, _sub_b = _make_monorepo(tmp_path)
     file_a = sub_a / "doc.md"
     file_a.write_text("# a\n", encoding="utf-8")
@@ -712,6 +715,7 @@ def test_monorepo_mixed_inject_extra_dispatch(monkeypatch: pytest.MonkeyPatch, t
     _patch_build_commandline(monkeypatch)
 
     subs = pyfltr.command.subprojects.discover_subprojects(start_cwd, config, git_check_ignore=lambda _s, _c: set())
+    sub_a_cwd = next(s.cwd for s in subs if s.relative == "pkg_a")
     base = pyfltr.command.core_.ExecutionBaseContext(
         config=config,
         all_files=[pathlib.Path("pkg_a/doc.md"), external],
@@ -719,11 +723,7 @@ def test_monorepo_mixed_inject_extra_dispatch(monkeypatch: pytest.MonkeyPatch, t
         cache_run_id=None,
         start_cwd=start_cwd,
         subprojects=subs,
-        subproject_files={
-            next(s.cwd for s in subs if s.relative == "pkg_a"): [pathlib.Path("pkg_a/doc.md")],
-            next(s.cwd for s in subs if s.relative == "."): [],
-            next(s.cwd for s in subs if s.relative == "pkg_b"): [],
-        },
+        subproject_files={s.cwd: ([pathlib.Path("pkg_a/doc.md")] if s.cwd == sub_a_cwd else []) for s in subs},
         external_files=[external],
         subproject_configs={s.cwd: config for s in subs},
     )
@@ -739,9 +739,11 @@ def test_monorepo_mixed_inject_extra_dispatch(monkeypatch: pytest.MonkeyPatch, t
     monkeypatch.setattr(pyfltr.command.dispatcher, "_dispatch_command", _capture)
     pyfltr.command.dispatcher.execute_command("markdownlint", _testconf.make_args(), ctx)
 
-    # pkg_a の1回（サブ）+ 外部パスの起点cwd（None）の1回 = 計2回
-    assert None in calls
-    assert any(c is not None for c in calls)
+    # pkg_aの1回のみで、外部パス用の追加実行は無い（subproject_cwd=Noneでの呼び出しが無い）
+    assert calls == [sub_a_cwd]
+    # 警告と`reason="external"`蓄積が発生する
+    filtered = pyfltr.warnings_.filtered_direct_files(reason="external")
+    assert str(external) in filtered
 
 
 def test_monorepo_mixed_excluded_tool_warns_only(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:

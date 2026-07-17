@@ -1916,7 +1916,7 @@ def test_execute_command_cache_hit_skips_subprocess(mocker, tmp_path: pathlib.Pa
     result1 = pyfltr.command.dispatcher.execute_command(
         "textlint",
         _testconf.make_args(),
-        _testconf.make_execution_context(config, [target], cache_store=store, cache_run_id="01ABCDEFGH"),
+        _testconf.make_execution_context(config, [target], cache_store=store, cache_run_id="01ABCDEFGH", start_cwd=tmp_path),
     )
     assert mock_run.call_count == 1
     assert result1.cached is False
@@ -1925,7 +1925,7 @@ def test_execute_command_cache_hit_skips_subprocess(mocker, tmp_path: pathlib.Pa
     result2 = pyfltr.command.dispatcher.execute_command(
         "textlint",
         _testconf.make_args(),
-        _testconf.make_execution_context(config, [target], cache_store=store, cache_run_id="01XYZ"),
+        _testconf.make_execution_context(config, [target], cache_store=store, cache_run_id="01XYZ", start_cwd=tmp_path),
     )
     assert mock_run.call_count == 1  # 増えていない
     assert result2.cached is True

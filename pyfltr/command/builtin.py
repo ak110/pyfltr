@@ -54,6 +54,8 @@ class CommandInfo:
 
     対象ファイルが起点cwd配下のみのときも一律で注入経路を通し、
     内部パス／外部パス混在で挙動差が出ないようにする。
+    `allows_external_paths=False`を併用するツール（`markdownlint`・`textlint`）では
+    外部パスが本経路へ到達する前に除外されるため、内部パス実行時のみ本注入が働く。
     """
     config_inject_candidates: list[str] = dataclasses.field(default_factory=list)
     """`--config`引数として渡せる設定ファイル候補（順序＝探索優先順）。
@@ -248,6 +250,9 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         targets="*.md",
         fixed_cost=0.9,
         per_file_cost=0.035,
+        # 外部パス（起点cwd配下にない絶対パス）を渡すとmarkdownlint-cli2側で
+        # 対象探索エラーが未整形のまま出力されるため除外＋警告経路を適用する。
+        allows_external_paths=False,
         # `--config`が受け付ける候補（markdownlint-cli2公式README参照）。
         # `config_files`は登録しない（登録すると`_warn_config_files`が
         # 設定不在時に警告を発行してしまい、外部パスのみ検査するケースで
@@ -271,6 +276,9 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         targets="*.md",
         fixed_cost=2.3,
         per_file_cost=0.4,
+        # 外部パス（起点cwd配下にない絶対パス）を渡すとtextlint側で`SearchFilesNoTargetFileError`
+        # の未整形スタックトレースが出力されるため除外＋警告経路を適用する。
+        allows_external_paths=False,
         # textlintは対象ファイル単独で完結する解析を行い、設定ファイルもCLIから起動した場合は
         # CWD直下でのみ解決される（公式ドキュメントのconfiguring / ignore章に準拠）。
         # 以下はtextlintが自動で読み込む設定ファイルとignoreファイルの完全列挙。

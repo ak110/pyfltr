@@ -26,7 +26,7 @@ def test_textlint_lint_mode_adds_lint_args(mocker, tmp_path: pathlib.Path) -> No
     config = pyfltr.config.config.create_default_config()
     config.values["textlint"] = True
     pyfltr.command.dispatcher.execute_command(
-        "textlint", _testconf.make_args(), _testconf.make_execution_context(config, [target])
+        "textlint", _testconf.make_args(), _testconf.make_execution_context(config, [target], start_cwd=tmp_path)
     )
 
     assert mock_run.call_count == 1
@@ -49,7 +49,9 @@ def test_textlint_fix_mode_two_step_execution(mocker, tmp_path: pathlib.Path) ->
     config = pyfltr.config.config.create_default_config()
     config.values["textlint"] = True
     pyfltr.command.dispatcher.execute_command(
-        "textlint", _testconf.make_args(), _testconf.make_execution_context(config, [target], fix_stage=True)
+        "textlint",
+        _testconf.make_args(),
+        _testconf.make_execution_context(config, [target], fix_stage=True, start_cwd=tmp_path),
     )
 
     assert mock_run.call_count == 2
@@ -78,7 +80,9 @@ def test_textlint_fix_mode_strips_user_format_from_step1(mocker, tmp_path: pathl
     # 旧docsで推奨されていた設定: textlint-argsに--format compactを含む
     config.values["textlint-args"] = ["--format", "compact"]
     pyfltr.command.dispatcher.execute_command(
-        "textlint", _testconf.make_args(), _testconf.make_execution_context(config, [target], fix_stage=True)
+        "textlint",
+        _testconf.make_args(),
+        _testconf.make_execution_context(config, [target], fix_stage=True, start_cwd=tmp_path),
     )
 
     assert mock_run.call_count == 2
@@ -101,7 +105,9 @@ def test_textlint_fix_mode_preserves_non_format_user_args(mocker, tmp_path: path
     config.values["textlint"] = True
     config.values["textlint-args"] = ["--quiet"]
     pyfltr.command.dispatcher.execute_command(
-        "textlint", _testconf.make_args(), _testconf.make_execution_context(config, [target], fix_stage=True)
+        "textlint",
+        _testconf.make_args(),
+        _testconf.make_execution_context(config, [target], fix_stage=True, start_cwd=tmp_path),
     )
 
     step1_cmdline = mock_run.call_args_list[0][0][0]
@@ -135,7 +141,9 @@ def test_textlint_fix_mode_touch_without_content_change_marks_succeeded(mocker, 
     config = pyfltr.config.config.create_default_config()
     config.values["textlint"] = True
     result = pyfltr.command.dispatcher.execute_command(
-        "textlint", _testconf.make_args(), _testconf.make_execution_context(config, [target], fix_stage=True)
+        "textlint",
+        _testconf.make_args(),
+        _testconf.make_execution_context(config, [target], fix_stage=True, start_cwd=tmp_path),
     )
 
     assert result.status == "succeeded"
@@ -166,7 +174,9 @@ def test_textlint_fix_mode_all_fixed_marks_formatted(mocker, tmp_path: pathlib.P
     config = pyfltr.config.config.create_default_config()
     config.values["textlint"] = True
     result = pyfltr.command.dispatcher.execute_command(
-        "textlint", _testconf.make_args(), _testconf.make_execution_context(config, [target], fix_stage=True)
+        "textlint",
+        _testconf.make_args(),
+        _testconf.make_execution_context(config, [target], fix_stage=True, start_cwd=tmp_path),
     )
 
     assert result.status == "formatted"
@@ -191,7 +201,9 @@ def test_textlint_fix_mode_emits_warning_when_protected_identifier_corrupted(moc
     config = pyfltr.config.config.create_default_config()
     config.values["textlint"] = True
     pyfltr.command.dispatcher.execute_command(
-        "textlint", _testconf.make_args(), _testconf.make_execution_context(config, [target], fix_stage=True)
+        "textlint",
+        _testconf.make_args(),
+        _testconf.make_execution_context(config, [target], fix_stage=True, start_cwd=tmp_path),
     )
 
     entries = [w for w in pyfltr.warnings_.collected_warnings() if w["source"] == "textlint-identifier-corruption"]
@@ -222,7 +234,9 @@ def test_textlint_fix_mode_no_warning_when_protected_identifiers_empty(mocker, t
     config.values["textlint"] = True
     config.values["textlint-protected-identifiers"] = []
     pyfltr.command.dispatcher.execute_command(
-        "textlint", _testconf.make_args(), _testconf.make_execution_context(config, [target], fix_stage=True)
+        "textlint",
+        _testconf.make_args(),
+        _testconf.make_execution_context(config, [target], fix_stage=True, start_cwd=tmp_path),
     )
 
     entries = [w for w in pyfltr.warnings_.collected_warnings() if w["source"] == "textlint-identifier-corruption"]
@@ -247,7 +261,9 @@ def test_textlint_fix_mode_no_warning_when_identifier_intact(mocker, tmp_path: p
     config = pyfltr.config.config.create_default_config()
     config.values["textlint"] = True
     pyfltr.command.dispatcher.execute_command(
-        "textlint", _testconf.make_args(), _testconf.make_execution_context(config, [target], fix_stage=True)
+        "textlint",
+        _testconf.make_args(),
+        _testconf.make_execution_context(config, [target], fix_stage=True, start_cwd=tmp_path),
     )
 
     entries = [w for w in pyfltr.warnings_.collected_warnings() if w["source"] == "textlint-identifier-corruption"]
@@ -275,7 +291,9 @@ def test_textlint_fix_mode_residual_violations_mark_failed(mocker, tmp_path: pat
     config = pyfltr.config.config.create_default_config()
     config.values["textlint"] = True
     result = pyfltr.command.dispatcher.execute_command(
-        "textlint", _testconf.make_args(), _testconf.make_execution_context(config, [target], fix_stage=True)
+        "textlint",
+        _testconf.make_args(),
+        _testconf.make_execution_context(config, [target], fix_stage=True, start_cwd=tmp_path),
     )
 
     assert result.status == "failed"
@@ -302,7 +320,9 @@ def test_textlint_fix_mode_step1_fatal_error_fails(mocker, tmp_path: pathlib.Pat
     config = pyfltr.config.config.create_default_config()
     config.values["textlint"] = True
     result = pyfltr.command.dispatcher.execute_command(
-        "textlint", _testconf.make_args(), _testconf.make_execution_context(config, [target], fix_stage=True)
+        "textlint",
+        _testconf.make_args(),
+        _testconf.make_execution_context(config, [target], fix_stage=True, start_cwd=tmp_path),
     )
 
     assert result.status == "failed"

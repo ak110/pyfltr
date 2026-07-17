@@ -25,7 +25,9 @@ def test_fix_mode_appends_fix_args_for_linter(mocker, tmp_path: pathlib.Path) ->
     config = pyfltr.config.config.create_default_config()
     config.values["markdownlint"] = True
     result = pyfltr.command.dispatcher.execute_command(
-        "markdownlint", _testconf.make_args(), _testconf.make_execution_context(config, [target], fix_stage=True)
+        "markdownlint",
+        _testconf.make_args(),
+        _testconf.make_execution_context(config, [target], fix_stage=True, start_cwd=tmp_path),
     )
 
     assert mock_run.call_count == 1
@@ -53,7 +55,9 @@ def test_fix_mode_preserves_custom_args(mocker, tmp_path: pathlib.Path) -> None:
     config.values["markdownlint"] = True
     config.values["markdownlint-args"] = ["--config", "custom.yaml"]
     pyfltr.command.dispatcher.execute_command(
-        "markdownlint", _testconf.make_args(), _testconf.make_execution_context(config, [target], fix_stage=True)
+        "markdownlint",
+        _testconf.make_args(),
+        _testconf.make_execution_context(config, [target], fix_stage=True, start_cwd=tmp_path),
     )
 
     cmdline = mock_run.call_args_list[0][0][0]
@@ -84,7 +88,9 @@ def test_fix_mode_mtime_change_marks_formatted(mocker, tmp_path: pathlib.Path) -
     config = pyfltr.config.config.create_default_config()
     config.values["markdownlint"] = True
     result = pyfltr.command.dispatcher.execute_command(
-        "markdownlint", _testconf.make_args(), _testconf.make_execution_context(config, [target], fix_stage=True)
+        "markdownlint",
+        _testconf.make_args(),
+        _testconf.make_execution_context(config, [target], fix_stage=True, start_cwd=tmp_path),
     )
 
     assert result.status == "formatted"

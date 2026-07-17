@@ -39,8 +39,9 @@ paths:
   - 内部パスのみの実行でも一律で注入経路を通す
   - 利用者が`{command}-args`・`{command}-extend-args`・CLI`--{command}-args`のいずれかで
       `--config`を指定済みのときは注入をスキップする
+  - `--config`明示注入と外部パス除外＋警告は排他ではなく、注入対象ツールが外部パスを扱えない場合は併用する
 - 外部パス除外＋警告: `allows_external_paths=False`を指定するツール
- （`pre-commit`・`pytest`・`vitest`・`cargo-test`・`dotnet-test`・`gitleaks`・`semgrep`・依存の脆弱性監査の各ツール）。
+ （`markdownlint`・`textlint`・`pre-commit`・`pytest`・`vitest`・`cargo-test`・`dotnet-test`・`gitleaks`・`semgrep`・依存の脆弱性監査の各ツール）。
   対象から外部パスを除外し、各ファイルに`emit_warning` + `add_filtered_direct_file(reason="external")`を発行する
 - 既定（素通し）: 上記以外。各ツールの設定探索仕様に委ねる
 
