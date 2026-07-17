@@ -108,7 +108,9 @@ show_error_codes = true
 
 [tool.pytest.ini_options]
 # https://docs.pytest.org/en/latest/reference/reference.html#ini-options-ref
-addopts = "--showlocals -p no:cacheprovider --maxfail=5 --durations=30 --durations-min=0.5 --timeout=60 -n 4"
+# --dist=worksteal は未実行テストを動的分配し、特定ファイルへの偏りによる律速を回避する
+addopts = "--showlocals -p no:cacheprovider --maxfail=5 --durations=30 --durations-min=0.5 --timeout=60 -n 4 \
+  --dist=worksteal"
 log_level = "DEBUG"
 xfail_strict = true
 asyncio_mode = "strict"
@@ -118,6 +120,8 @@ asyncio_default_test_loop_scope = "session"
 
 `--timeout=60`は`pytest-timeout`プラグインが必要。
 `-n 4`は`pytest-xdist`プラグインが必要で、4プロセス並列でテストを実行する。
+`--dist=worksteal`は`pytest-xdist`のwork-stealingスケジューラを有効化し、
+テストファイル間の実行時間差が大きい場合でも特定workerへ偏らせない。
 ランナー別の有効条件は次の通り。
 
 - `python-runner = "direct"`経路では、pyfltrのvenv配下のpytestを直接起動するため
