@@ -289,3 +289,27 @@ def seed_archive_run(
         store.write_tool_result(run_id, result)
     store.finalize_run(run_id, exit_code=exit_code, commands=commands, files=files)
     return run_id
+
+
+@pytest.fixture
+def _isolated_target(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
+    """`pyfltr.cli.main.run([subcmd, <target>])`スモークテスト向けの隔離先を返すフィクスチャ。
+
+    `<target>`や`--work-dir`にリポジトリルートを渡すと、外側`uvx pyfltr ci`のdogfoodingと
+    同一のリポジトリツリーへ内側pytestが実I/O（`iterdir()`・`exists()`・`git check-ignore`・
+    サブプロジェクト探索）でアクセスする構造条件を持つ。`tmp_path`配下に最小の`pyproject.toml`と
+    `sample.py`を用意し、CLIの`<target>`と`--work-dir`の双方をこのパスへ揃えて実I/O経路を隔離する。
+
+    `pyfltr.command.runner.cwd_has_uv_lock`は`@functools.lru_cache(maxsize=1)`付きでプロセス内
+    メモ化されるため、`tmp_path`配下への`uv.lock`ファイル配置だけでは同一pytestワーカー内の
+    先行呼び出し結果が使い回され判定を反映しない。`.claude/skills/test-constraints/SKILL.md`が
+    定める確立済みの差し替え方式（`monkeypatch.setattr`で関数自体を置換）に従い直接固定する。
+
+    `tmp_path`には`.git`が存在しないため、`respect-gitignore`（既定`True`）が有効なままだと
+    `git check-ignore`呼び出しが`fatal: not a git repository`で失敗し警告が蓄積する。
+    `pyproject.toml`へ`respect-gitignore = false`を明示し、実I/O経路の隔離を完結させる。
+    """
+    monkeypatch.setattr("pyfltr.command.runner.cwd_has_uv_lock", lambda: True)
+    (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latest"\npython = true\nrespect-gitignore = false\n')
+    (tmp_path / "sample.py").write_text("x = 1\n")
+    return tmp_path

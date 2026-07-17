@@ -50,3 +50,6 @@ description: >
 - monkeypatchの個別事例は`tests/command_core_test.py`等の該当テストコード内コメントに集約する。
   対象は`lru_cache`付き判定関数の差し替え方法・`shutil.which`mockのモジュールパス指定・
   `run_subprocess_with_timeout`戻り値型の構築・副作用検証2段呼び出しヘルパー再利用などである
+- pyfltrテストで`pyfltr.cli.main.run([subcmd, <target>])`のスモークテストを`--commands`未指定で書く場合、
+  `<target>`と`--work-dir`にリポジトリルートを渡さず`tests/conftest.py`の`_isolated_target`フィクスチャの`tmp_path`を使う。
+  外側`uvx pyfltr ci`のdogfoodingと同一のリポジトリツリーへ実I/Oでアクセスする構造条件をテストが持たない形に保つため
