@@ -2,7 +2,6 @@
 
 import argparse
 import pathlib
-import shlex
 import time
 import typing
 
@@ -47,22 +46,26 @@ def execute_linter_fix(
 
     digests_before = snapshot_file_digests(targets, base_cwd=start_cwd)
 
-    if args.verbose and on_output is not None:
-        on_output(f"commandline: {shlex.join(commandline)}\n")
-    proc = pyfltr.command.process.run_subprocess_with_timeout(
+    # dispatcher._run_plain_commandもこの単発実行の骨格（run_configured_subprocess呼び出し +
+    # returncode/output/elapsedの取り出し）を共有するが、本関数はハッシュ差分によるfix検知を
+    # 担う別責務のため統合しない。
+    # pylint: disable=duplicate-code
+    proc = pyfltr.command.process.run_configured_subprocess(
+        command,
         commandline,
+        config,
         env,
         on_output,
+        verbose=args.verbose,
         is_interrupted=is_interrupted,
         on_subprocess_start=on_subprocess_start,
         on_subprocess_end=on_subprocess_end,
-        timeout=pyfltr.config.config.resolve_command_timeout(config.values, command),
         cwd=cwd,
-        **pyfltr.config.config.resolve_retry_kwargs(config.values),
     )
     returncode = proc.returncode
     output = proc.stdout.strip()
     elapsed = time.perf_counter() - start_time
+    # pylint: enable=duplicate-code
 
     digests_after = snapshot_file_digests(targets, base_cwd=start_cwd)
     changed = digests_after != digests_before

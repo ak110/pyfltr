@@ -20,12 +20,10 @@
 """
 
 import dataclasses
-import datetime
 import hashlib
 import json
 import logging
 import pathlib
-import shutil
 import typing
 
 import ulid
@@ -33,6 +31,7 @@ import ulid
 import pyfltr.config.config
 import pyfltr.paths
 import pyfltr.state.archive
+import pyfltr.state.retention
 from pyfltr.grep_.types import ReplaceCommandMeta, ReplaceRecord
 
 logger = logging.getLogger(__name__)
@@ -146,7 +145,7 @@ class ReplaceHistoryStore:
             )
         meta = {
             "replace_id": replace_id,
-            "saved_at": _now_iso(),
+            "saved_at": pyfltr.state.retention.now_iso(),
             "command": _command_meta_to_dict(command_meta),
             "files": files_meta,
         }
@@ -246,53 +245,21 @@ class ReplaceHistoryStore:
         """自動クリーンアップを実施する。削除された`replace_id`のリストを返す。
 
         世代数 / 合計サイズ / 保存期間のいずれかを超過した時点で、古い順
-        （`replace_id`昇順 = ULIDタイムスタンプ昇順）に削除する。
-        実装は`pyfltr/state/archive.py`の`ArchiveStore.cleanup`を踏襲する。
+        （`replace_id`昇順 = ULIDタイムスタンプ昇順）に削除する。実装本体は
+        `pyfltr.state.retention.cleanup_generational_directory`へ集約する
+        （`ArchiveStore.cleanup`と同一アルゴリズムを共有するため）。
         """
-        if not self._history_root.exists():
-            return []
-        entries = sorted(
-            (entry for entry in self._history_root.iterdir() if entry.is_dir()),
-            key=lambda p: p.name,
+        retention_policy = pyfltr.state.retention.RetentionPolicy(
+            max_entries=policy.max_entries,
+            max_size_bytes=policy.max_size_bytes,
+            max_age_days=policy.max_age_days,
         )
-        if not entries:
-            return []
-        removed: list[str] = []
-        now = datetime.datetime.now(datetime.UTC)
-        age_limit = datetime.timedelta(days=policy.max_age_days) if policy.max_age_days > 0 else None
-
-        # 期間超過の削除（最古から）
-        if age_limit is not None:
-            for entry in list(entries):
-                saved = _saved_at_of(entry)
-                if saved is None:
-                    continue
-                if now - saved > age_limit:
-                    _rmtree_silent(entry)
-                    removed.append(entry.name)
-                    entries.remove(entry)
-
-        # 世代数超過の削除
-        if policy.max_entries > 0 and len(entries) > policy.max_entries:
-            overflow = len(entries) - policy.max_entries
-            for entry in entries[:overflow]:
-                _rmtree_silent(entry)
-                removed.append(entry.name)
-            entries = entries[overflow:]
-
-        # サイズ超過の削除（古い方から）
-        if policy.max_size_bytes > 0:
-            total = sum(_dir_size(entry) for entry in entries)
-            for entry in list(entries):
-                if total <= policy.max_size_bytes:
-                    break
-                size = _dir_size(entry)
-                _rmtree_silent(entry)
-                removed.append(entry.name)
-                total -= size
-                entries.remove(entry)
-
-        return removed
+        return pyfltr.state.retention.cleanup_generational_directory(
+            self._history_root,
+            retention_policy,
+            meta_filename=_META_FILENAME,
+            timestamp_key="saved_at",
+        )
 
 
 def _command_meta_to_dict(meta: ReplaceCommandMeta) -> dict[str, typing.Any]:
@@ -330,43 +297,3 @@ def _sanitize_file_key(file: pathlib.Path) -> str:
     full = pyfltr.paths.normalize_separators(str(file))
     digest = hashlib.sha256(full.encode("utf-8")).hexdigest()[:8]
     return f"{base}_{digest}"
-
-
-def _now_iso() -> str:
-    """現在時刻をISO 8601（UTC、マイクロ秒付き）で返す。"""
-    return datetime.datetime.now(datetime.UTC).isoformat()
-
-
-def _saved_at_of(run_dir: pathlib.Path) -> datetime.datetime | None:
-    """履歴ディレクトリの`meta.json`から`saved_at`をパースして返す。"""
-    meta_path = run_dir / _META_FILENAME
-    if not meta_path.exists():
-        return None
-    try:
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    raw = meta.get("saved_at")
-    if not raw:
-        return None
-    try:
-        return datetime.datetime.fromisoformat(raw)
-    except ValueError:
-        return None
-
-
-def _dir_size(path: pathlib.Path) -> int:
-    """ディレクトリ配下の合計バイト数を返す。"""
-    total = 0
-    for entry in path.rglob("*"):
-        if entry.is_file():
-            try:
-                total += entry.stat().st_size
-            except OSError:
-                continue
-    return total
-
-
-def _rmtree_silent(path: pathlib.Path) -> None:
-    """ディレクトリを無言で再帰削除する。"""
-    shutil.rmtree(path, ignore_errors=True)

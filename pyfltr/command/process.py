@@ -2,8 +2,10 @@
 
 import atexit
 import contextlib
+import functools
 import os
 import pathlib
+import shlex
 import shutil
 import signal
 import subprocess
@@ -13,6 +15,7 @@ import typing
 
 import psutil
 
+import pyfltr.config.config
 from pyfltr.command.env import get_env_path
 
 logger = __import__("logging").getLogger(__name__)
@@ -457,3 +460,108 @@ def run_subprocess_with_timeout(
             timeout_exceeded=False,
             retry_count=attempt,
         )
+
+
+def run_traced_subprocess(
+    commandline: list[str],
+    env: dict[str, str],
+    on_output: typing.Callable[[str], None] | None,
+    *,
+    verbose: bool,
+    is_interrupted: typing.Callable[[], bool] | None = None,
+    on_subprocess_start: typing.Callable[[], None] | None = None,
+    on_subprocess_end: typing.Callable[[], None] | None = None,
+    timeout: float | None = None,
+    cwd: pathlib.Path | None = None,
+    retry_on_oom: bool = False,
+    retry_max_attempts: int = 0,
+) -> CompletedProcessWithTimeoutInfo:
+    """verboseログ出力込みで`run_subprocess_with_timeout`を実行する。
+
+    `verbose and on_output is not None`のとき実行コマンドラインを`on_output`経由で出力してから
+    `run_subprocess_with_timeout`を呼ぶ定型処理（各2段階実行ヘルパー・plain実行経路・
+    fix実行経路で共通）を集約する。
+    """
+    if verbose and on_output is not None:
+        on_output(f"commandline: {shlex.join(commandline)}\n")
+    return run_subprocess_with_timeout(
+        commandline,
+        env,
+        on_output,
+        is_interrupted=is_interrupted,
+        on_subprocess_start=on_subprocess_start,
+        on_subprocess_end=on_subprocess_end,
+        timeout=timeout,
+        cwd=cwd,
+        retry_on_oom=retry_on_oom,
+        retry_max_attempts=retry_max_attempts,
+    )
+
+
+def traced_subprocess_runner(
+    env: dict[str, str],
+    on_output: typing.Callable[[str], None] | None,
+    *,
+    verbose: bool,
+    is_interrupted: typing.Callable[[], bool] | None = None,
+    on_subprocess_start: typing.Callable[[], None] | None = None,
+    on_subprocess_end: typing.Callable[[], None] | None = None,
+    timeout: float | None = None,
+    cwd: pathlib.Path | None = None,
+    retry_on_oom: bool = False,
+    retry_max_attempts: int = 0,
+) -> typing.Callable[[list[str]], CompletedProcessWithTimeoutInfo]:
+    """`commandline`以外を固定した`run_traced_subprocess`呼び出し用callableを返す。
+
+    taplo/shfmt/prettier/ruff-formatの2段階実行（check→write、step1→step2）は
+    2回とも同一の実行時パラメータ（env・on_output・verbose・is_interrupted等）を使うため、
+    呼び出し側で`commandline`のみを差し替えて呼べるようにして重複を避ける。
+    """
+    return functools.partial(
+        run_traced_subprocess,
+        env=env,
+        on_output=on_output,
+        verbose=verbose,
+        is_interrupted=is_interrupted,
+        on_subprocess_start=on_subprocess_start,
+        on_subprocess_end=on_subprocess_end,
+        timeout=timeout,
+        cwd=cwd,
+        retry_on_oom=retry_on_oom,
+        retry_max_attempts=retry_max_attempts,
+    )
+
+
+def run_configured_subprocess(
+    command: str,
+    commandline: list[str],
+    config: pyfltr.config.config.Config,
+    env: dict[str, str],
+    on_output: typing.Callable[[str], None] | None,
+    *,
+    verbose: bool,
+    is_interrupted: typing.Callable[[], bool] | None = None,
+    on_subprocess_start: typing.Callable[[], None] | None = None,
+    on_subprocess_end: typing.Callable[[], None] | None = None,
+    cwd: pathlib.Path | None = None,
+) -> CompletedProcessWithTimeoutInfo:
+    """`config`からtimeout・retry設定を解決したうえで`run_traced_subprocess`を実行する。
+
+    plain実行経路（`dispatcher._run_plain_command`）とfix実行経路
+    （`linter_fix.execute_linter_fix`）で共通の単発実行パターン
+    （`resolve_command_timeout` + `resolve_retry_kwargs` + verboseログ出力込み実行）を集約する。
+    2段階実行系（taplo/shfmt/prettier/ruff-format）はcheck/write二段でtimeout・retry_kwargsを
+    使い回すため`_prepare_check_write_execution`側で解決済みの値を`run_traced_subprocess`へ渡す。
+    """
+    return run_traced_subprocess(
+        commandline,
+        env,
+        on_output,
+        verbose=verbose,
+        is_interrupted=is_interrupted,
+        on_subprocess_start=on_subprocess_start,
+        on_subprocess_end=on_subprocess_end,
+        timeout=pyfltr.config.config.resolve_command_timeout(config.values, command),
+        cwd=cwd,
+        **pyfltr.config.config.resolve_retry_kwargs(config.values),
+    )

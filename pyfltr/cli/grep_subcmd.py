@@ -8,27 +8,17 @@ ripgrep流儀のオプション群を受理する。
 from __future__ import annotations
 
 import argparse
-import json
-import logging
 import pathlib
-import sys
 import typing
 
+import pyfltr.cli.grep_replace_common
 import pyfltr.cli.output_format
-import pyfltr.command.targets
-import pyfltr.config.config
 import pyfltr.grep_.jsonl_records
 import pyfltr.grep_.matcher
 import pyfltr.grep_.scanner
 import pyfltr.grep_.text_render
 import pyfltr.warnings_
 from pyfltr.grep_.types import MatchRecord
-
-# grep_subcmdは`logging.WARNING`レベルを`configure_text_output`へ渡すため、
-# `logging`モジュールのimport自体は維持する
-
-_OUTPUT_FORMATS: tuple[str, ...] = ("text", "json", "jsonl")
-_VALID_OUTPUT_FORMATS: frozenset[str] = frozenset(_OUTPUT_FORMATS)
 
 
 def register_subparsers(subparsers: typing.Any) -> None:
@@ -139,62 +129,17 @@ def register_subparsers(subparsers: typing.Any) -> None:
         help="マッチが1件も無いファイルパスを列挙する。",
     )
 
-    # 共通オプション
-    parser.add_argument(
-        "--no-exclude",
-        action="store_true",
-        help="exclude / extend-exclude による除外を無効化する。",
-    )
-    parser.add_argument(
-        "--no-gitignore",
-        action="store_true",
-        help=".gitignore による除外を無効化する。",
-    )
-    parser.add_argument(
-        "--output-format",
-        choices=_OUTPUT_FORMATS,
-        default=None,
-        help=(
-            "出力形式を指定する（text / json / jsonl、既定: text）。"
-            f"未指定時は環境変数 {pyfltr.cli.output_format.OUTPUT_FORMAT_ENV} を採用し、"
-            f"{' / '.join(pyfltr.cli.output_format.AGENT_INDICATOR_ENVS)} のいずれかが設定されていれば jsonl を採用する。"
-        ),
-    )
-    parser.add_argument(
-        "--output-file",
-        type=pathlib.Path,
-        default=None,
-        help="JSONL / json出力先ファイル。未指定時は stdout に出力する。",
-    )
+    # 共通オプション（grep/replaceで共有。詳細は`grep_replace_common`のdocstringを参照）
+    pyfltr.cli.grep_replace_common.add_common_output_args(parser)
 
 
 def execute_grep(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
     """`grep`サブコマンドの処理本体。"""
     # warnings_はモジュールグローバルに蓄積するため、実行開始時に初期化する
     pyfltr.warnings_.clear()
-    # 出力形式の解決
-    resolution = pyfltr.cli.output_format.resolve_output_format(
-        parser,
-        args.output_format,
-        valid_values=_VALID_OUTPUT_FORMATS,
-        ai_agent_default="jsonl",
-    )
+    # 出力形式の解決とtext logger / structured loggerの出力先設定
+    resolution = pyfltr.cli.grep_replace_common.setup_output(parser, args)
     output_format = resolution.format
-
-    # text出力先のセットアップ。jsonl / jsonの場合はstdout専有のため text_logger を抑止する。
-    if output_format == "text":
-        pyfltr.cli.output_format.configure_text_output(sys.stdout)
-    else:
-        pyfltr.cli.output_format.configure_text_output(sys.stderr, level=logging.WARNING)
-
-    # 構造化出力先の設定（jsonl時のみハンドラー設定。json時はバッファして最後に1回dumpする）。
-    if output_format == "jsonl":
-        if args.output_file is not None:
-            pyfltr.cli.output_format.configure_structured_output(args.output_file)
-        else:
-            pyfltr.cli.output_format.configure_structured_output(sys.stdout)
-    else:
-        pyfltr.cli.output_format.configure_structured_output(None)
 
     # パターン群の収集
     patterns = _collect_patterns(parser, args)
@@ -225,21 +170,10 @@ def execute_grep(parser: argparse.ArgumentParser, args: argparse.Namespace) -> i
             before_ctx = args.context
 
     # 設定ロードとファイル展開
-    try:
-        config = pyfltr.config.config.load_config()
-    except (ValueError, OSError) as exc:
-        sys.stderr.write(f"設定エラー: {exc}\n")
+    loaded = pyfltr.cli.grep_replace_common.load_config_and_expand_targets(args)
+    if loaded is None:
         return 1
-    if args.no_exclude:
-        config.values["exclude"] = []
-        config.values["extend-exclude"] = []
-    if args.no_gitignore:
-        config.values["respect-gitignore"] = False
-
-    targets = list(args.paths) if args.paths else []
-    expanded = pyfltr.command.targets.expand_all_files(targets, config)
-    expanded = pyfltr.grep_.scanner.filter_files_by_type(expanded, args.type)
-    expanded = pyfltr.grep_.scanner.filter_by_globs(expanded, args.glob)
+    _config, expanded = loaded
 
     files_scanned = len(expanded)
 
@@ -331,7 +265,7 @@ def execute_grep(parser: argparse.ArgumentParser, args: argparse.Namespace) -> i
                 "matches": [_match_to_dict(m) for m in matches],
                 "summary": summary,
             }
-        _print_json(payload, args.output_file)
+        pyfltr.cli.grep_replace_common.print_json(payload, args.output_file)
     else:
         pyfltr.grep_.text_render.render_filtered_sections(
             warnings=pyfltr.warnings_.collected_warnings(),
@@ -462,14 +396,3 @@ def _emit_summary_only(
         elif output_format == "jsonl":
             for path, count in per_file_counts.items():
                 pyfltr.grep_.jsonl_records.emit_file_count(path, count)
-
-
-def _print_json(payload: dict[str, typing.Any], output_file: pathlib.Path | None) -> None:
-    """単発JSONをstdoutまたは`--output-file`に書く。"""
-    text = json.dumps(payload, ensure_ascii=False, indent=2)
-    if output_file is not None:
-        output_file.parent.mkdir(parents=True, exist_ok=True)
-        output_file.write_text(text + "\n", encoding="utf-8")
-    else:
-        sys.stdout.write(text + "\n")
-        sys.stdout.flush()

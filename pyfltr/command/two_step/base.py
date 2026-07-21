@@ -1,13 +1,14 @@
 """two-step formatter共通ヘルパー。
 
 `_run_check_then_write` / `_run_fix_mode` / `_build_commandlines` の共通処理と、
-taplo / shfmt から呼ばれる `execute_check_write_two_step` を集約する。
+`execute_check_write_two_step` を集約する。
+taplo / shfmtはdocstring以外が同一のラッパーだったためduplicate-code是正で統合し、
+`dispatcher.py`から本関数を直接呼び出す構成へ変更した。
 ruff-format専用処理は `ruff.py`、prettier専用処理は `prettier.py` に分離している。
 """
 
 import argparse
 import pathlib
-import shlex
 import time
 import typing
 
@@ -63,39 +64,35 @@ def execute_check_write_two_step(
     Python系ツールの `{command}-path` 既定値は空文字列のため、`config["<tool>-path"]` を
     直接参照する旧実装は動作しなくなる。同種関数を追加する際は本引数経由でプレフィックスを受け取る形を踏襲する。
     """
-    common_args: list[str] = pyfltr.command.runner.resolve_user_args(command, config)
-    if cwd is not None and start_cwd is not None:
-        external_targets = [_relative_to_cwd(t, cwd=cwd, start_cwd=start_cwd) for t in targets]
-    else:
-        external_targets = [str(t) for t in targets]
-    check_commandline, write_commandline = _build_commandlines(
+    # taplo/shfmt向けの本呼び出しとprettier.py側のexecute_prettier_two_stepは、
+    # 分岐先ヘルパー（_run_check_then_write / _run_prettier_check_then_write）が異なる別実装のため
+    # 統合できないが、_prepare_check_write_executionへの引数受け渡し部分は完全一致する。
+    # pylint: disable=duplicate-code
+    check_commandline, write_commandline, run_step = _prepare_check_write_execution(
+        command,
         commandline_prefix,
-        common_args,
-        pyfltr.command.runner.expanduser_args(list(config[f"{command}-check-args"])),
-        pyfltr.command.runner.expanduser_args(list(config[f"{command}-write-args"])),
+        config,
+        targets,
         additional_args,
-        external_targets,
+        env,
+        on_output,
+        args,
+        is_interrupted=is_interrupted,
+        on_subprocess_start=on_subprocess_start,
+        on_subprocess_end=on_subprocess_end,
+        cwd=cwd,
+        start_cwd=start_cwd,
     )
-
-    timeout = pyfltr.config.config.resolve_command_timeout(config.values, command)
-    retry_kwargs: dict[str, typing.Any] = pyfltr.config.config.resolve_retry_kwargs(config.values)
+    # pylint: enable=duplicate-code
     if fix_mode:
         return _run_fix_mode(
             command=command,
             command_info=command_info,
             write_commandline=write_commandline,
             targets=targets,
-            env=env,
-            args=args,
+            run_step=run_step,
             start_time=start_time,
-            timeout=timeout,
             parse_errors=False,
-            **retry_kwargs,
-            is_interrupted=is_interrupted,
-            on_output=on_output,
-            on_subprocess_start=on_subprocess_start,
-            on_subprocess_end=on_subprocess_end,
-            cwd=cwd,
             start_cwd=start_cwd,
         )
 
@@ -105,16 +102,8 @@ def execute_check_write_two_step(
         check_commandline=check_commandline,
         write_commandline=write_commandline,
         targets=targets,
-        env=env,
-        args=args,
+        run_step=run_step,
         start_time=start_time,
-        timeout=timeout,
-        **retry_kwargs,
-        is_interrupted=is_interrupted,
-        on_output=on_output,
-        on_subprocess_start=on_subprocess_start,
-        on_subprocess_end=on_subprocess_end,
-        cwd=cwd,
         start_cwd=start_cwd,
     )
 
@@ -129,24 +118,67 @@ def _relative_to_cwd(target: pathlib.Path, *, cwd: pathlib.Path, start_cwd: path
     return str(rel).replace("\\", "/")
 
 
+def _prepare_check_write_execution(
+    command: str,
+    commandline_prefix: list[str],
+    config: pyfltr.config.config.Config,
+    targets: list[pathlib.Path],
+    additional_args: list[str],
+    env: dict[str, str],
+    on_output: typing.Callable[[str], None] | None,
+    args: argparse.Namespace,
+    *,
+    is_interrupted: typing.Callable[[], bool] | None = None,
+    on_subprocess_start: typing.Callable[[], None] | None = None,
+    on_subprocess_end: typing.Callable[[], None] | None = None,
+    cwd: pathlib.Path | None = None,
+    start_cwd: pathlib.Path | None = None,
+) -> tuple[list[str], list[str], typing.Callable[[list[str]], "pyfltr.command.process.CompletedProcessWithTimeoutInfo"]]:
+    """check/writeコマンドラインと、それらを実行する`run_step`callableを組み立てる（taplo/shfmt/prettier共通）。
+
+    `execute_check_write_two_step`（taplo/shfmt向け）と`execute_prettier_two_step`は
+    通常モード・fixモードいずれの分岐先ヘルパーも異なるため`execute_check_write_two_step`自体は
+    共通化できないが、コマンドライン・timeout・retry設定・`run_step`の組み立て部分は
+    完全に同一のためここへ集約する。
+    """
+    common_args: list[str] = pyfltr.command.runner.resolve_user_args(command, config)
+    if cwd is not None and start_cwd is not None:
+        external_targets = [_relative_to_cwd(t, cwd=cwd, start_cwd=start_cwd) for t in targets]
+    else:
+        external_targets = [str(t) for t in targets]
+    check_commandline, write_commandline = _build_commandlines(
+        commandline_prefix,
+        common_args,
+        pyfltr.command.runner.expanduser_args(list(config[f"{command}-check-args"])),
+        pyfltr.command.runner.expanduser_args(list(config[f"{command}-write-args"])),
+        additional_args,
+        external_targets,
+    )
+    timeout = pyfltr.config.config.resolve_command_timeout(config.values, command)
+    retry_kwargs: dict[str, typing.Any] = pyfltr.config.config.resolve_retry_kwargs(config.values)
+    run_step = pyfltr.command.process.traced_subprocess_runner(
+        env,
+        on_output,
+        verbose=args.verbose,
+        is_interrupted=is_interrupted,
+        on_subprocess_start=on_subprocess_start,
+        on_subprocess_end=on_subprocess_end,
+        timeout=timeout,
+        cwd=cwd,
+        **retry_kwargs,
+    )
+    return check_commandline, write_commandline, run_step
+
+
 def _run_check_then_write(
     command: str,
     command_info: pyfltr.config.config.CommandInfo,
     check_commandline: list[str],
     write_commandline: list[str],
     targets: list[pathlib.Path],
-    env: dict[str, str],
-    args: argparse.Namespace,
+    run_step: typing.Callable[[list[str]], "pyfltr.command.process.CompletedProcessWithTimeoutInfo"],
     start_time: float,
     *,
-    timeout: float | None,
-    retry_on_oom: bool = False,
-    retry_max_attempts: int = 0,
-    is_interrupted: typing.Callable[[], bool] | None = None,
-    on_output: typing.Callable[[str], None] | None = None,
-    on_subprocess_start: typing.Callable[[], None] | None = None,
-    on_subprocess_end: typing.Callable[[], None] | None = None,
-    cwd: pathlib.Path | None = None,
     start_cwd: pathlib.Path | None = None,
 ) -> CommandResult:
     """Taplo / shfmt用の通常モード共通処理。
@@ -154,23 +186,12 @@ def _run_check_then_write(
     Step1（check）実行 → rc==0なら早期返却 → Step2（write）実行の順で処理する。
     error_parserは使用せず（taplo/shfmtはエラー解析不要のため）。
     prettier専用のrc>=2即failロジックは含まない（prettier用のヘルパーを別途使う）。
+    `run_step`は`_prepare_check_write_execution`が組み立てたcallableで、env・on_output・
+    timeout・retry設定を既に束縛済み（commandlineのみ差し替えて呼び出す）。
     """
     # Step1はread-onlyのため内容変化なし。変化検知のためStep1前にスナップショットを取る。
     digests_before = snapshot_file_digests(targets, base_cwd=start_cwd)
-    if args.verbose and on_output is not None:
-        on_output(f"commandline: {shlex.join(check_commandline)}\n")
-    check_proc = pyfltr.command.process.run_subprocess_with_timeout(
-        check_commandline,
-        env,
-        on_output,
-        is_interrupted=is_interrupted,
-        on_subprocess_start=on_subprocess_start,
-        on_subprocess_end=on_subprocess_end,
-        timeout=timeout,
-        cwd=cwd,
-        retry_on_oom=retry_on_oom,
-        retry_max_attempts=retry_max_attempts,
-    )
+    check_proc = run_step(check_commandline)
     check_rc = check_proc.returncode
 
     if check_rc == 0:
@@ -208,20 +229,7 @@ def _run_check_then_write(
         )
 
     # Step2: 書き込み
-    if args.verbose and on_output is not None:
-        on_output(f"commandline: {shlex.join(write_commandline)}\n")
-    write_proc = pyfltr.command.process.run_subprocess_with_timeout(
-        write_commandline,
-        env,
-        on_output,
-        is_interrupted=is_interrupted,
-        on_subprocess_start=on_subprocess_start,
-        on_subprocess_end=on_subprocess_end,
-        timeout=timeout,
-        cwd=cwd,
-        retry_on_oom=retry_on_oom,
-        retry_max_attempts=retry_max_attempts,
-    )
+    write_proc = run_step(write_commandline)
     output = write_proc.stdout.strip()
     elapsed = time.perf_counter() - start_time
 
@@ -253,26 +261,19 @@ def _run_fix_mode(
     command_info: pyfltr.config.config.CommandInfo,
     write_commandline: list[str],
     targets: list[pathlib.Path],
-    env: dict[str, str],
-    args: argparse.Namespace,
+    run_step: typing.Callable[[list[str]], "pyfltr.command.process.CompletedProcessWithTimeoutInfo"],
     start_time: float,
     *,
-    timeout: float | None,
     parse_errors: bool,
-    retry_on_oom: bool = False,
-    retry_max_attempts: int = 0,
     command_type_override: typing.Callable[[bool, int], str] | None = None,
-    is_interrupted: typing.Callable[[], bool] | None = None,
-    on_output: typing.Callable[[str], None] | None = None,
-    on_subprocess_start: typing.Callable[[], None] | None = None,
-    on_subprocess_end: typing.Callable[[], None] | None = None,
-    cwd: pathlib.Path | None = None,
     start_cwd: pathlib.Path | None = None,
 ) -> CommandResult:
     """fixモードの共通処理。
 
     write_commandlineを直接実行し、スナップショット比較で書き込みを検知する。
     taplo / shfmt / prettierのfixモードで使用する。
+    `run_step`は`_prepare_check_write_execution`が組み立てたcallableで、env・on_output・
+    timeout・retry設定を既に束縛済み（commandlineのみ差し替えて呼び出す）。
 
     command_type_override: `(has_error, returncode) -> command_type`の関数。
     Noneの場合は `command_info.type` を使う。
@@ -280,20 +281,7 @@ def _run_fix_mode(
     parse_errors: Trueのとき `error_parser.parse_errors` を呼び出す。
     """
     digests_before = snapshot_file_digests(targets, base_cwd=start_cwd)
-    if args.verbose and on_output is not None:
-        on_output(f"commandline: {shlex.join(write_commandline)}\n")
-    write_proc = pyfltr.command.process.run_subprocess_with_timeout(
-        write_commandline,
-        env,
-        on_output,
-        is_interrupted=is_interrupted,
-        on_subprocess_start=on_subprocess_start,
-        on_subprocess_end=on_subprocess_end,
-        timeout=timeout,
-        cwd=cwd,
-        retry_on_oom=retry_on_oom,
-        retry_max_attempts=retry_max_attempts,
-    )
+    write_proc = run_step(write_commandline)
     write_rc = write_proc.returncode
     output = write_proc.stdout.strip()
     elapsed = time.perf_counter() - start_time

@@ -140,7 +140,6 @@ subproject-exclude = ["smoke_data"]
 [tool.pylint."messages control"]
 disable = [
     "broad-exception-caught",
-    "duplicate-code",
     "fixme",
     "invalid-name",
     "line-too-long",
@@ -162,6 +161,9 @@ disable = [
     "too-many-return-statements",
     "too-many-statements",
 ]
+
+[tool.pylint.similarities]
+min-similarity-lines = 10
 
 [tool.ruff]
 # https://docs.astral.sh/ruff/configuration/

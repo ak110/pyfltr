@@ -2,17 +2,15 @@
 
 import argparse
 import pathlib
-import shlex
 import time
 import typing
 
 import pyfltr.command.error_parser
 import pyfltr.command.process
-import pyfltr.command.runner
 import pyfltr.config.config
 from pyfltr.command.core_ import CommandResult
 from pyfltr.command.snapshot import changed_files, snapshot_file_digests
-from pyfltr.command.two_step.base import _build_commandlines, _run_fix_mode
+from pyfltr.command.two_step.base import _prepare_check_write_execution, _run_fix_mode
 
 
 def execute_prettier_two_step(
@@ -63,22 +61,26 @@ def execute_prettier_two_step(
     Python系ツールの `{command}-path` 既定値は空文字列のため、`config["<tool>-path"]` を
     直接参照する旧実装は動作しなくなる。同種関数を追加する際は本引数経由でプレフィックスを受け取る形を踏襲する。
     """
-    common_args: list[str] = pyfltr.command.runner.resolve_user_args(command, config)
-    if cwd is not None and start_cwd is not None:
-        external_targets = [_relative_to_cwd(t, cwd=cwd, start_cwd=start_cwd) for t in targets]
-    else:
-        external_targets = [str(t) for t in targets]
-    check_commandline, write_commandline = _build_commandlines(
+    # taplo/shfmt向けのbase.execute_check_write_two_stepと本関数は、分岐先ヘルパー
+    # （_run_check_then_write / _run_prettier_check_then_write）が異なる別実装のため
+    # 統合できないが、_prepare_check_write_executionへの引数受け渡し部分は完全一致する。
+    # pylint: disable=duplicate-code
+    check_commandline, write_commandline, run_step = _prepare_check_write_execution(
+        command,
         commandline_prefix,
-        common_args,
-        pyfltr.command.runner.expanduser_args(list(config[f"{command}-check-args"])),
-        pyfltr.command.runner.expanduser_args(list(config[f"{command}-write-args"])),
+        config,
+        targets,
         additional_args,
-        external_targets,
+        env,
+        on_output,
+        args,
+        is_interrupted=is_interrupted,
+        on_subprocess_start=on_subprocess_start,
+        on_subprocess_end=on_subprocess_end,
+        cwd=cwd,
+        start_cwd=start_cwd,
     )
-
-    timeout = pyfltr.config.config.resolve_command_timeout(config.values, command)
-    retry_kwargs: dict[str, typing.Any] = pyfltr.config.config.resolve_retry_kwargs(config.values)
+    # pylint: enable=duplicate-code
     if fix_mode:
         # fixモードのみ: returncode==1（changed）のときcommand_typeを"formatter"に切り替える。
         # 通常モードのcommand_infoから取得する型がformatter以外の場合に備えた固有ロジック。
@@ -92,18 +94,10 @@ def execute_prettier_two_step(
             command_info=command_info,
             write_commandline=write_commandline,
             targets=targets,
-            env=env,
-            args=args,
+            run_step=run_step,
             start_time=start_time,
-            timeout=timeout,
             parse_errors=True,
-            **retry_kwargs,
             command_type_override=_prettier_type_override,
-            is_interrupted=is_interrupted,
-            on_output=on_output,
-            on_subprocess_start=on_subprocess_start,
-            on_subprocess_end=on_subprocess_end,
-            cwd=cwd,
             start_cwd=start_cwd,
         )
 
@@ -113,28 +107,10 @@ def execute_prettier_two_step(
         check_commandline=check_commandline,
         write_commandline=write_commandline,
         targets=targets,
-        env=env,
-        args=args,
+        run_step=run_step,
         start_time=start_time,
-        timeout=timeout,
-        **retry_kwargs,
-        is_interrupted=is_interrupted,
-        on_output=on_output,
-        on_subprocess_start=on_subprocess_start,
-        on_subprocess_end=on_subprocess_end,
-        cwd=cwd,
         start_cwd=start_cwd,
     )
-
-
-def _relative_to_cwd(target: pathlib.Path, *, cwd: pathlib.Path, start_cwd: pathlib.Path) -> str:
-    """起点 cwd 相対パスをサブプロジェクト cwd 相対パスへ変換する。"""
-    abs_path = target if target.is_absolute() else (start_cwd / target)
-    try:
-        rel = abs_path.resolve().relative_to(cwd.resolve())
-    except (OSError, ValueError):
-        return str(target).replace("\\", "/")
-    return str(rel).replace("\\", "/")
 
 
 def _run_prettier_check_then_write(
@@ -143,39 +119,19 @@ def _run_prettier_check_then_write(
     check_commandline: list[str],
     write_commandline: list[str],
     targets: list[pathlib.Path],
-    env: dict[str, str],
-    args: argparse.Namespace,
+    run_step: typing.Callable[[list[str]], "pyfltr.command.process.CompletedProcessWithTimeoutInfo"],
     start_time: float,
     *,
-    timeout: float | None,
-    retry_on_oom: bool = False,
-    retry_max_attempts: int = 0,
-    is_interrupted: typing.Callable[[], bool] | None = None,
-    on_output: typing.Callable[[str], None] | None = None,
-    on_subprocess_start: typing.Callable[[], None] | None = None,
-    on_subprocess_end: typing.Callable[[], None] | None = None,
-    cwd: pathlib.Path | None = None,
     start_cwd: pathlib.Path | None = None,
 ) -> CommandResult:
     """prettier専用の通常モード処理。
 
     Step1（check）rc==0→早期返却、rc>=2→即fail、rc==1→Step2（write）の順で処理する。
     taplo/shfmtと異なり、rc>=2の即fail判定とerror_parserの呼び出しが固有のロジックとして加わる。
+    `run_step`は`_prepare_check_write_execution`が組み立てたcallableで、env・on_output・
+    timeout・retry設定を既に束縛済み（commandlineのみ差し替えて呼び出す）。
     """
-    if args.verbose and on_output is not None:
-        on_output(f"commandline: {shlex.join(check_commandline)}\n")
-    step1_proc = pyfltr.command.process.run_subprocess_with_timeout(
-        check_commandline,
-        env,
-        on_output,
-        is_interrupted=is_interrupted,
-        on_subprocess_start=on_subprocess_start,
-        on_subprocess_end=on_subprocess_end,
-        timeout=timeout,
-        cwd=cwd,
-        retry_on_oom=retry_on_oom,
-        retry_max_attempts=retry_max_attempts,
-    )
+    step1_proc = run_step(check_commandline)
     step1_rc = step1_proc.returncode
 
     if step1_rc == 0:
@@ -217,20 +173,7 @@ def _run_prettier_check_then_write(
 
     # Step1 rc == 1 → Step2実行（書き込み）
     prettier_digests_before = snapshot_file_digests(targets, base_cwd=start_cwd)
-    if args.verbose and on_output is not None:
-        on_output(f"commandline: {shlex.join(write_commandline)}\n")
-    step2_proc = pyfltr.command.process.run_subprocess_with_timeout(
-        write_commandline,
-        env,
-        on_output,
-        is_interrupted=is_interrupted,
-        on_subprocess_start=on_subprocess_start,
-        on_subprocess_end=on_subprocess_end,
-        timeout=timeout,
-        cwd=cwd,
-        retry_on_oom=retry_on_oom,
-        retry_max_attempts=retry_max_attempts,
-    )
+    step2_proc = run_step(write_commandline)
     step2_rc = step2_proc.returncode
     output = (step1_proc.stdout + step2_proc.stdout).strip()
     elapsed = time.perf_counter() - start_time

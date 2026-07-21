@@ -21,10 +21,9 @@ import pyfltr.command.subproject_loop
 import pyfltr.command.targets
 import pyfltr.command.textlint_fix
 import pyfltr.command.tool_resolution
+import pyfltr.command.two_step.base
 import pyfltr.command.two_step.prettier
 import pyfltr.command.two_step.ruff
-import pyfltr.command.two_step.shfmt
-import pyfltr.command.two_step.taplo
 import pyfltr.command.vitest
 import pyfltr.config.config
 import pyfltr.paths
@@ -453,24 +452,28 @@ def _run_plain_command(
             cached_result.files = len(targets)
             return cached_result
 
-    # verbose時はコマンドラインをon_output経由で出力
-    if args.verbose and on_output is not None:
-        on_output(f"commandline: {shlex.join(commandline)}\n")
-    proc = pyfltr.command.process.run_subprocess_with_timeout(
+    # verbose時のコマンドライン出力・timeout / retry設定の解決はrun_configured_subprocessへ委ねる。
+    # linter_fix.execute_linter_fixもこの単発実行の骨格（run_configured_subprocess呼び出し +
+    # returncode/output/elapsedの取り出し）を共有するが、本関数はキャッシュ参照・書き込みを
+    # 担う別責務のため統合しない。
+    # pylint: disable=duplicate-code
+    proc = pyfltr.command.process.run_configured_subprocess(
+        command,
         commandline,
+        config,
         env,
         on_output,
+        verbose=args.verbose,
         is_interrupted=is_interrupted,
         on_subprocess_start=on_subprocess_start,
         on_subprocess_end=on_subprocess_end,
-        timeout=pyfltr.config.config.resolve_command_timeout(config.values, command),
         cwd=cwd,
-        **pyfltr.config.config.resolve_retry_kwargs(config.values),
     )
     returncode = proc.returncode
 
     output = proc.stdout.strip()
     elapsed = time.perf_counter() - start_time
+    # pylint: enable=duplicate-code
     errors = pyfltr.command.error_parser.parse_errors(
         command, output, command_info.error_pattern, file_path_remap=file_path_remap
     )
@@ -780,9 +783,11 @@ def _dispatch_command(
         )
 
     # taploはcheckとformatが排他のためshfmt同様の2段階実行。
+    # taplo/shfmtは`execute_check_write_two_step`の薄いラッパー専用モジュールを持たず直接呼び出す
+    # （両者のラッパーはdocstring以外が同一のためduplicate-code是正で統合した）。
     if command == "taplo":
         return _with_targets(
-            pyfltr.command.two_step.taplo.execute_taplo_two_step(
+            pyfltr.command.two_step.base.execute_check_write_two_step(
                 command,
                 command_info,
                 commandline_prefix,
@@ -805,7 +810,7 @@ def _dispatch_command(
     # shfmtは-l （確認） と-w （書き込み） が排他のためprettier同様の2段階実行。
     if command == "shfmt":
         return _with_targets(
-            pyfltr.command.two_step.shfmt.execute_shfmt_two_step(
+            pyfltr.command.two_step.base.execute_check_write_two_step(
                 command,
                 command_info,
                 commandline_prefix,

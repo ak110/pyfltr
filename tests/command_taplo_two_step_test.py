@@ -1,6 +1,6 @@
 """command.py の taplo 2段階実行テスト。
 
-`execute_taplo_two_step` の動作を検証する。
+`execute_command("taplo", ...)` 経由で `execute_check_write_two_step` の動作を検証する。
 """
 
 import os

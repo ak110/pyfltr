@@ -23,13 +23,11 @@ catch側（`pyfltr/state/runs.py`・`pyfltr/cli/mcp_server.py`など）で組み
 """
 
 import dataclasses
-import datetime
 import importlib.metadata
 import json
 import logging
 import os
 import pathlib
-import shutil
 import sys
 import typing
 
@@ -40,6 +38,7 @@ import pyfltr.command.core_
 import pyfltr.config.config
 import pyfltr.output.jsonl
 import pyfltr.paths
+import pyfltr.state.retention
 
 logger = logging.getLogger(__name__)
 
@@ -142,7 +141,7 @@ class ArchiveStore:
             "argv": argv if argv is not None else sys.argv[1:],
             "commands": commands or [],
             "files": files,
-            "started_at": _now_iso(),
+            "started_at": pyfltr.state.retention.now_iso(),
         }
         (run_dir / _META_FILENAME).write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
         return run_id
@@ -200,7 +199,7 @@ class ArchiveStore:
         if not meta_path.exists():
             return
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        meta["finished_at"] = _now_iso()
+        meta["finished_at"] = pyfltr.state.retention.now_iso()
         meta["exit_code"] = exit_code
         if commands is not None:
             meta["commands"] = commands
@@ -291,56 +290,25 @@ class ArchiveStore:
         """自動クリーンアップを実施する。削除された run_id のリストを返す。
 
         世代数 / 合計サイズ / 保存期間のいずれかを超過した時点で、古い順
-        （run_id昇順 = ULIDタイムスタンプ昇順）に削除する。
+        （run_id昇順 = ULIDタイムスタンプ昇順）に削除する。実装本体は
+        `pyfltr.state.retention.cleanup_generational_directory`へ集約する
+        （`ReplaceHistoryStore.cleanup`と同一アルゴリズムを共有するため）。
 
         各実行冒頭で同期的に呼び出すことを想定する。アーカイブ規模は通常
         小さく削除対象も限定的のため、非同期化は実装コストに見合わない。
         将来的な非同期化の余地は残すが現状は同期実行とする。
         """
-        if not self._runs_dir.exists():
-            return []
-        entries = sorted(
-            (entry for entry in self._runs_dir.iterdir() if entry.is_dir()),
-            key=lambda p: p.name,
+        retention_policy = pyfltr.state.retention.RetentionPolicy(
+            max_entries=policy.max_runs,
+            max_size_bytes=policy.max_size_bytes,
+            max_age_days=policy.max_age_days,
         )
-        if not entries:
-            return []
-        removed: list[str] = []
-        now = datetime.datetime.now(datetime.UTC)
-        age_limit = datetime.timedelta(days=policy.max_age_days) if policy.max_age_days > 0 else None
-
-        # 期間超過の削除（最古から）
-        if age_limit is not None:
-            for entry in list(entries):
-                started = _started_at_of(entry)
-                if started is None:
-                    continue
-                if now - started > age_limit:
-                    _rmtree_silent(entry)
-                    removed.append(entry.name)
-                    entries.remove(entry)
-
-        # 世代数超過の削除
-        if policy.max_runs > 0 and len(entries) > policy.max_runs:
-            overflow = len(entries) - policy.max_runs
-            for entry in entries[:overflow]:
-                _rmtree_silent(entry)
-                removed.append(entry.name)
-            entries = entries[overflow:]
-
-        # サイズ超過の削除（古い方から）
-        if policy.max_size_bytes > 0:
-            total = sum(_dir_size(entry) for entry in entries)
-            for entry in list(entries):
-                if total <= policy.max_size_bytes:
-                    break
-                size = _dir_size(entry)
-                _rmtree_silent(entry)
-                removed.append(entry.name)
-                total -= size
-                entries.remove(entry)
-
-        return removed
+        return pyfltr.state.retention.cleanup_generational_directory(
+            self._runs_dir,
+            retention_policy,
+            meta_filename=_META_FILENAME,
+            timestamp_key="started_at",
+        )
 
 
 def policy_from_config(config: pyfltr.config.config.Config) -> ArchivePolicy:
@@ -350,43 +318,3 @@ def policy_from_config(config: pyfltr.config.config.Config) -> ArchivePolicy:
         max_size_bytes=int(config.values.get("archive-max-size-mb", 1024)) * 1024 * 1024,
         max_age_days=int(config.values.get("archive-max-age-days", 30)),
     )
-
-
-def _now_iso() -> str:
-    """現在時刻を ISO 8601 (UTC, マイクロ秒付き) で返す。"""
-    return datetime.datetime.now(datetime.UTC).isoformat()
-
-
-def _started_at_of(run_dir: pathlib.Path) -> datetime.datetime | None:
-    """Run ディレクトリの meta.json から started_at をパースして返す。"""
-    meta_path = run_dir / _META_FILENAME
-    if not meta_path.exists():
-        return None
-    try:
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    raw = meta.get("started_at")
-    if not raw:
-        return None
-    try:
-        return datetime.datetime.fromisoformat(raw)
-    except ValueError:
-        return None
-
-
-def _dir_size(path: pathlib.Path) -> int:
-    """ディレクトリ配下の合計バイト数を返す。"""
-    total = 0
-    for entry in path.rglob("*"):
-        if entry.is_file():
-            try:
-                total += entry.stat().st_size
-            except OSError:
-                continue
-    return total
-
-
-def _rmtree_silent(path: pathlib.Path) -> None:
-    """ディレクトリを無言で再帰削除する。"""
-    shutil.rmtree(path, ignore_errors=True)

@@ -8,15 +8,13 @@ from __future__ import annotations
 
 import argparse
 import json
-import logging
 import pathlib
 import re
 import sys
 import typing
 
+import pyfltr.cli.grep_replace_common
 import pyfltr.cli.output_format
-import pyfltr.command.targets
-import pyfltr.config.config
 import pyfltr.grep_.history
 import pyfltr.grep_.jsonl_records
 import pyfltr.grep_.matcher
@@ -25,12 +23,6 @@ import pyfltr.grep_.scanner
 import pyfltr.grep_.text_render
 import pyfltr.warnings_
 from pyfltr.grep_.types import ReplaceCommandMeta
-
-# replace_subcmdは`logging.WARNING`レベルを`configure_text_output`へ渡すため、
-# `logging`モジュールのimport自体は維持する
-
-_OUTPUT_FORMATS: tuple[str, ...] = ("text", "json", "jsonl")
-_VALID_OUTPUT_FORMATS: frozenset[str] = frozenset(_OUTPUT_FORMATS)
 
 
 def register_subparsers(subparsers: typing.Any) -> None:
@@ -156,59 +148,17 @@ def register_subparsers(subparsers: typing.Any) -> None:
         help="指定replace_idの詳細（meta + ファイル一覧）を表示する。",
     )
 
-    # 共通オプション
-    parser.add_argument(
-        "--no-exclude",
-        action="store_true",
-        help="exclude / extend-exclude による除外を無効化する。",
-    )
-    parser.add_argument(
-        "--no-gitignore",
-        action="store_true",
-        help=".gitignore による除外を無効化する。",
-    )
-    parser.add_argument(
-        "--output-format",
-        choices=_OUTPUT_FORMATS,
-        default=None,
-        help=(
-            "出力形式を指定する（text / json / jsonl、既定: text）。"
-            f"未指定時は環境変数 {pyfltr.cli.output_format.OUTPUT_FORMAT_ENV} を採用し、"
-            f"{' / '.join(pyfltr.cli.output_format.AGENT_INDICATOR_ENVS)} のいずれかが設定されていれば jsonl を採用する。"
-        ),
-    )
-    parser.add_argument(
-        "--output-file",
-        type=pathlib.Path,
-        default=None,
-        help="JSONL / json出力先ファイル。未指定時は stdout に出力する。",
-    )
+    # 共通オプション（grep/replaceで共有。詳細は`grep_replace_common`のdocstringを参照）
+    pyfltr.cli.grep_replace_common.add_common_output_args(parser)
 
 
 def execute_replace(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
     """`replace`サブコマンドの処理本体。"""
     # warnings_はモジュールグローバルに蓄積するため、実行開始時に初期化する
     pyfltr.warnings_.clear()
-    resolution = pyfltr.cli.output_format.resolve_output_format(
-        parser,
-        args.output_format,
-        valid_values=_VALID_OUTPUT_FORMATS,
-        ai_agent_default="jsonl",
-    )
+    # 出力形式の解決とtext logger / structured loggerの出力先設定
+    resolution = pyfltr.cli.grep_replace_common.setup_output(parser, args)
     output_format = resolution.format
-
-    if output_format == "text":
-        pyfltr.cli.output_format.configure_text_output(sys.stdout)
-    else:
-        pyfltr.cli.output_format.configure_text_output(sys.stderr, level=logging.WARNING)
-
-    if output_format == "jsonl":
-        if args.output_file is not None:
-            pyfltr.cli.output_format.configure_structured_output(args.output_file)
-        else:
-            pyfltr.cli.output_format.configure_structured_output(sys.stdout)
-    else:
-        pyfltr.cli.output_format.configure_structured_output(None)
 
     # 履歴照会・undo モードを先に捌く（位置引数の意味が変わるため）
     if args.list_history:
@@ -266,21 +216,10 @@ def execute_replace(parser: argparse.ArgumentParser, args: argparse.Namespace) -
         except ValueError as exc:
             parser.error(str(exc))
 
-    try:
-        config = pyfltr.config.config.load_config()
-    except (ValueError, OSError) as exc:
-        sys.stderr.write(f"設定エラー: {exc}\n")
+    loaded = pyfltr.cli.grep_replace_common.load_config_and_expand_targets(args)
+    if loaded is None:
         return 1
-    if args.no_exclude:
-        config.values["exclude"] = []
-        config.values["extend-exclude"] = []
-    if args.no_gitignore:
-        config.values["respect-gitignore"] = False
-
-    targets = list(args.paths) if args.paths else []
-    expanded = pyfltr.command.targets.expand_all_files(targets, config)
-    expanded = pyfltr.grep_.scanner.filter_files_by_type(expanded, args.type)
-    expanded = pyfltr.grep_.scanner.filter_by_globs(expanded, args.glob)
+    config, expanded = loaded
 
     # `--exclude-file` / `--from-grep` での対象限定
     excluded = {pathlib.Path(p).resolve() for p in args.exclude_file}
@@ -448,7 +387,7 @@ def execute_replace(parser: argparse.ArgumentParser, args: argparse.Namespace) -
             "changes": json_records,
             "summary": replace_summary,
         }
-        _print_json(payload, args.output_file)
+        pyfltr.cli.grep_replace_common.print_json(payload, args.output_file)
     else:
         pyfltr.grep_.text_render.render_filtered_sections(
             warnings=pyfltr.warnings_.collected_warnings(),
@@ -521,7 +460,7 @@ def _execute_list_history(output_format: str, output_file: pathlib.Path | None) 
             pyfltr.grep_.jsonl_records.emit_replace_history(entry)
         return 0
     if output_format == "json":
-        _print_json({"history": entries}, output_file)
+        pyfltr.cli.grep_replace_common.print_json({"history": entries}, output_file)
         return 0
     # text
     if not entries:
@@ -551,7 +490,7 @@ def _execute_show_history(replace_id: str, output_format: str, output_file: path
         pyfltr.grep_.jsonl_records.emit_replace_history(meta)
         return 0
     if output_format == "json":
-        _print_json(meta, output_file)
+        pyfltr.cli.grep_replace_common.print_json(meta, output_file)
         return 0
     with pyfltr.cli.output_format.text_output_lock:
         pyfltr.cli.output_format.text_logger.info(f"replace_id: {meta.get('replace_id')}")
@@ -604,7 +543,7 @@ def _execute_undo(parser: argparse.ArgumentParser, args: argparse.Namespace, out
             exit_code=exit_code,
         )
     elif output_format == "json":
-        _print_json(
+        pyfltr.cli.grep_replace_common.print_json(
             {
                 "replace_id": replace_id,
                 "restored": [str(p) for p in restored],
@@ -620,14 +559,3 @@ def _execute_undo(parser: argparse.ArgumentParser, args: argparse.Namespace, out
             skipped=skipped,
         )
     return exit_code
-
-
-def _print_json(payload: dict[str, typing.Any], output_file: pathlib.Path | None) -> None:
-    """単発JSONをstdoutまたは`--output-file`に書く。"""
-    text = json.dumps(payload, ensure_ascii=False, indent=2)
-    if output_file is not None:
-        output_file.parent.mkdir(parents=True, exist_ok=True)
-        output_file.write_text(text + "\n", encoding="utf-8")
-    else:
-        sys.stdout.write(text + "\n")
-        sys.stdout.flush()

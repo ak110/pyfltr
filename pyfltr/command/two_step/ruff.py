@@ -2,7 +2,6 @@
 
 import argparse
 import pathlib
-import shlex
 import time
 import typing
 
@@ -12,6 +11,7 @@ import pyfltr.command.runner
 import pyfltr.config.config
 from pyfltr.command.core_ import CommandResult
 from pyfltr.command.snapshot import changed_files, snapshot_file_digests
+from pyfltr.command.two_step.base import _relative_to_cwd
 
 
 def execute_ruff_format_two_step(
@@ -72,16 +72,6 @@ def execute_ruff_format_two_step(
     )
 
 
-def _relative_to_cwd(target: pathlib.Path, *, cwd: pathlib.Path, start_cwd: pathlib.Path) -> str:
-    """起点 cwd 相対パスをサブプロジェクト cwd 相対パスへ変換する。"""
-    abs_path = target if target.is_absolute() else (start_cwd / target)
-    try:
-        rel = abs_path.resolve().relative_to(cwd.resolve())
-    except (OSError, ValueError):
-        return str(target).replace("\\", "/")
-    return str(rel).replace("\\", "/")
-
-
 def _run_ruff_two_step(
     command: str,
     command_info: pyfltr.config.config.CommandInfo,
@@ -111,12 +101,10 @@ def _run_ruff_two_step(
     # ステップ1実行前の内容ハッシュを記録（修正適用検知用）
     digests_before = snapshot_file_digests(targets, base_cwd=start_cwd)
 
-    if args.verbose and on_output is not None:
-        on_output(f"commandline: {shlex.join(check_commandline)}\n")
-    step1_proc = pyfltr.command.process.run_subprocess_with_timeout(
-        check_commandline,
+    run_step = pyfltr.command.process.traced_subprocess_runner(
         env,
         on_output,
+        verbose=args.verbose,
         is_interrupted=is_interrupted,
         on_subprocess_start=on_subprocess_start,
         on_subprocess_end=on_subprocess_end,
@@ -125,26 +113,14 @@ def _run_ruff_two_step(
         retry_on_oom=retry_on_oom,
         retry_max_attempts=retry_max_attempts,
     )
+    step1_proc = run_step(check_commandline)
     step1_rc = step1_proc.returncode
     step1_failed = step1_rc >= 2  # exit 0/1は無視、2以上（abrupt termination）のみ失敗扱い
     digests_after_step1 = snapshot_file_digests(targets, base_cwd=start_cwd)
     step1_changed = digests_after_step1 != digests_before
 
     # ステップ2実行（常に実行）
-    if args.verbose and on_output is not None:
-        on_output(f"commandline: {shlex.join(format_commandline)}\n")
-    step2_proc = pyfltr.command.process.run_subprocess_with_timeout(
-        format_commandline,
-        env,
-        on_output,
-        is_interrupted=is_interrupted,
-        on_subprocess_start=on_subprocess_start,
-        on_subprocess_end=on_subprocess_end,
-        timeout=timeout,
-        cwd=cwd,
-        retry_on_oom=retry_on_oom,
-        retry_max_attempts=retry_max_attempts,
-    )
+    step2_proc = run_step(format_commandline)
     step2_rc = step2_proc.returncode
     step2_formatted = step2_rc == 1
     step2_failed = step2_rc >= 2
