@@ -50,6 +50,15 @@ description: >
 - monkeypatchの個別事例は`tests/command_core_test.py`等の該当テストコード内コメントに集約する。
   対象は`lru_cache`付き判定関数の差し替え方法・`shutil.which`mockのモジュールパス指定・
   `run_subprocess_with_timeout`戻り値型の構築・副作用検証2段呼び出しヘルパー再利用などである
+- モノレポ統合テストで対象ツールがCI環境で利用できない可能性がある場合、
+  `run_subprocess`単独モックでは実行対象からドロップされ`AssertionError`となる
+  - 既定の`bin-runner = "mise"`経路では`ensure_mise_available`が`mise exec -- <bin> --version`を
+    実環境で実行して可用性判定する。
+    `run_subprocess`のモックだけでは同判定を制御できない
+  - 対象コマンドの`{command}-runner`をテスト設定で`direct`に固定したうえで
+    `shutil.which`をモックし、mise経路が実環境に依存して判定する動作を回避する
+  - 集約フィルターなど言語非依存の動作は、既存テストで検証済みの言語（現状は`cargo`系統合テスト）1件で
+    代表検証し、他言語は`discover_subprojects`単体テストで検証する
 - pyfltrテストで`pyfltr.cli.main.run([subcmd, <target>])`のスモークテストを`--commands`未指定で書く場合、
   `<target>`と`--work-dir`にリポジトリルートを渡さず`tests/conftest.py`の`_isolated_target`フィクスチャの`tmp_path`を使う。
   外側`uvx pyfltr ci`のdogfoodingと同一のリポジトリツリーへ実I/Oでアクセスする構造条件をテストが持たない形に保つため
