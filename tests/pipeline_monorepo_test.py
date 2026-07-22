@@ -346,6 +346,8 @@ def test_monorepo_dotnet_solution_excludes_csproj(tmp_path: pathlib.Path, mocker
 
     proc = subprocess.CompletedProcess(["dotnet"], returncode=0, stdout="")
     mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
+    # CI環境ではdotnetがPATH上に存在しないため、実行ファイル解決のshutil.whichもモックする。
+    mocker.patch("pyfltr.command.runner.shutil.which", side_effect=lambda name: f"/usr/bin/{name}")
 
     pyfltr.cli.main.run(["run", "--work-dir", str(tmp_path), "--commands=dotnet-build", "--no-archive", "--no-cache"])
 
