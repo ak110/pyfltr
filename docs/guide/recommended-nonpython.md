@@ -151,6 +151,46 @@ PATH上のcargoを使いたい場合は`cargo-fmt-runner = "direct"`等を指定
     - `textlint-packages`は無視される
 - タスクランナーの設定例は[推奨設定例](recommended.md)の「タスクランナー」を参照
 
+### Pythonルート＋非Pythonサブディレクトリのハイブリッド構成
+
+Pythonプロジェクトルート直下に`rust/<crate>/Cargo.toml`のようなRust crateを
+サブディレクトリとして持つ構成にも対応する。
+サブプロジェクト検出はマーカー（`pyproject.toml`・`Cargo.toml`・`*.csproj`・`*.sln`）の
+存在で判定する。
+そのため`Cargo.toml`単独ディレクトリもサブプロジェクトとして認識し、
+`cargo-clippy`・`cargo-check`・`cargo-test`・`cargo-deny`は当該ディレクトリを
+cwdとして起動する。
+同じ仕組みはPythonルート＋`.NET`のプロジェクトファイル
+（`*.csproj`・`*.sln`）単独ディレクトリにも適用される。
+
+ルート`pyproject.toml`（`rust/<crate>/`側への`pyproject.toml`追加は不要）:
+
+```toml
+[tool.pyfltr]
+preset = "latest"
+rust = true
+```
+
+`Cargo.toml`単独ディレクトリは`[tool.pyfltr]`の記述先を持たないため、
+cargo系コマンドのON/OFF・除外設定はルート`pyproject.toml`の値をそのまま継承する。
+`.pre-commit-config.yaml`の`types_or`にも`rust`を含める。
+
+```yaml
+  - repo: local
+    hooks:
+      - id: pyfltr
+        name: pyfltr
+        entry: uvx pyfltr fast
+        types_or: [rust, python, markdown, toml, yaml]
+        require_serial: true
+        language: system
+```
+
+`package.json`は汎用ファイルのため単独ではサブプロジェクトとして検出しない。
+JS専用サブディレクトリを独立サブプロジェクトとして分離したい場合は、
+当該ディレクトリへ`pyproject.toml`（`[tool.pyfltr] javascript = true`等）を
+追加配置する。
+
 ## .NETプロジェクト
 
 `dotnet format` / `dotnet build` / `dotnet test`と、ドキュメント系lintをpyfltrに一元化する例。

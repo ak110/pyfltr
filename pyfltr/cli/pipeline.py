@@ -27,6 +27,7 @@ import pyfltr.cli.output_format
 import pyfltr.cli.overrides
 import pyfltr.cli.precommit_guidance
 import pyfltr.cli.render
+import pyfltr.cli.subproject_config
 import pyfltr.command.core_
 import pyfltr.command.dispatcher
 import pyfltr.command.process
@@ -522,7 +523,8 @@ def run_pipeline(
 
     # モノレポ対応: 起点 cwd と検出したサブプロジェクト一覧を確定する。
     # `--work-dir` 適用後の現在の cwd を起点とする（`original_cwd` は retry_command 用に別経路で扱う）。
-    # `discover_subprojects` は起点 cwd 配下の `pyproject.toml` 持ちディレクトリを再帰探索し、
+    # `discover_subprojects` は起点 cwd 配下のマーカー
+    # （`pyproject.toml`・`Cargo.toml`・`*.csproj`・`*.sln`）持ちディレクトリを再帰探索し、
     # uv workspace member も含めて返す。検出0/1件は単一プロジェクトとして従来通り動作する。
     start_cwd_path = pathlib.Path.cwd()
     subprojects = pyfltr.command.subprojects.discover_subprojects(start_cwd_path, config)
@@ -575,9 +577,8 @@ def run_pipeline(
 
     # モノレポ用のサブプロジェクト分類とサブプロジェクト別 config を準備する。
     # `subproject_aware=True` ツールが各サブプロジェクト cwd で実行する際に参照する。
-    # 各サブプロジェクトの `pyproject.toml` を `load_config(config_dir=cwd)` で個別に解決し、
-    # 起点と同一のCLIオーバーライド（`--jobs`・`--no-exclude` 等）を再適用して割り当てる。
-    # これによりツールのON/OFFや除外・targets等をサブプロジェクト単位で尊重する。
+    # config解決（`pyproject.toml`不在時の最近接祖先継承を含む）は
+    # `pyfltr.cli.subproject_config.resolve_subproject_configs` に集約する。
     # 実行対象コマンドの確定（和集合判定）より前に構築する必要があるため、ここで行う。
     subproject_files: dict[pathlib.Path, list[pathlib.Path]] = {}
     subproject_configs: dict[pathlib.Path, pyfltr.config.config.Config] = {}
@@ -586,10 +587,7 @@ def run_pipeline(
         subproject_files, external_files = pyfltr.command.subprojects.classify_files_by_subproject(
             all_files, subprojects, start_cwd_path
         )
-        for sub in subprojects:
-            sub_config = pyfltr.config.config.load_config(config_dir=sub.cwd)
-            pyfltr.cli.overrides.apply_cli_overrides(sub_config, args)
-            subproject_configs[sub.cwd] = sub_config
+        subproject_configs = pyfltr.cli.subproject_config.resolve_subproject_configs(subprojects, config, args)
 
     # 実行対象として有効化されていないコマンドはパイプラインから除外する。
     # 単一プロジェクトでは起点 config のON/OFF（`config.values.get(cmd) is True`）で判定する。

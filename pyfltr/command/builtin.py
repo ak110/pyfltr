@@ -87,7 +87,8 @@ class CommandInfo:
     subproject_aware: bool = True
     """モノレポ検出時にサブプロジェクト単位で分割実行するか否か。
 
-    `True`（既定）の場合、起点 cwd 配下に複数の `pyproject.toml` を検出した時に、
+    `True`（既定）の場合、起点 cwd 配下に複数のマーカー
+    （`pyproject.toml`・`Cargo.toml`・`*.csproj`・`*.sln`）を検出した時に、
     対象ファイルをサブプロジェクト別に分類してそれぞれのcwdでツールを起動する。
     Python系・JS系・Rust系・.NET系・各種linter/formatter/testerなど、
     プロジェクトローカル設定・モジュール解決・lockfileをcwd起点で読むツールが該当する。
@@ -96,7 +97,7 @@ class CommandInfo:
     `typos`・`shellcheck`・`shfmt`・`pre-commit` 等、リポジトリ単位で動作する
     ツールが該当する。
 
-    `pyproject.toml` を1件しか検出しない単一プロジェクト時は、フラグ値に
+    マーカーを1件しか検出しない単一プロジェクト時は、フラグ値に
     関わらず従来通り起点 cwd で1回起動する。利用者は
     `{command}-subproject-aware` 設定キーで個別に上書きできる。
     """

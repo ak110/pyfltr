@@ -161,3 +161,82 @@ def test_is_subproject_dir(tmp_path: pathlib.Path) -> None:
     assert not pyfltr.command.subprojects.is_subproject_dir(tmp_path)
     _make_pyproject(tmp_path)
     assert pyfltr.command.subprojects.is_subproject_dir(tmp_path)
+
+
+def test_is_subproject_dir_cargo_toml_only(tmp_path: pathlib.Path) -> None:
+    """`Cargo.toml`単独ディレクトリもサブプロジェクトとして判定する。"""
+    assert not pyfltr.command.subprojects.is_subproject_dir(tmp_path)
+    (tmp_path / "Cargo.toml").write_text('[package]\nname = "crate"\nversion = "0.1.0"\n', encoding="utf-8")
+    assert pyfltr.command.subprojects.is_subproject_dir(tmp_path)
+
+
+@pytest.mark.parametrize("marker_name", ["MyApp.csproj", "MySolution.sln"])
+def test_is_subproject_dir_dotnet_marker_only(tmp_path: pathlib.Path, marker_name: str) -> None:
+    """`.NET`のプロジェクト/ソリューションファイル単独ディレクトリもサブプロジェクトとして判定する。"""
+    assert not pyfltr.command.subprojects.is_subproject_dir(tmp_path)
+    (tmp_path / marker_name).write_text("", encoding="utf-8")
+    assert pyfltr.command.subprojects.is_subproject_dir(tmp_path)
+
+
+def test_is_subproject_dir_package_json_only_not_detected(tmp_path: pathlib.Path) -> None:
+    """`package.json`単独では誤検出回避のためサブプロジェクトとして判定しない。"""
+    (tmp_path / "package.json").write_text("{}", encoding="utf-8")
+    assert not pyfltr.command.subprojects.is_subproject_dir(tmp_path)
+
+
+def test_discover_subprojects_hybrid_cargo_toml(tmp_path: pathlib.Path) -> None:
+    """Pythonルート＋`Cargo.toml`単独ディレクトリのハイブリッド構成を検出する。"""
+    _make_pyproject(tmp_path)
+    (tmp_path / "rust" / "crate_a").mkdir(parents=True)
+    (tmp_path / "rust" / "crate_a" / "Cargo.toml").write_text(
+        '[package]\nname = "crate_a"\nversion = "0.1.0"\n', encoding="utf-8"
+    )
+    config = pyfltr.config.config.create_default_config()
+    subs = pyfltr.command.subprojects.discover_subprojects(tmp_path, config, git_check_ignore=lambda _start, _candidates: set())
+    assert {s.relative for s in subs} == {".", "rust/crate_a"}
+
+
+def test_discover_subprojects_hybrid_dotnet_csproj(tmp_path: pathlib.Path) -> None:
+    """Pythonルート＋`.csproj`単独ディレクトリのハイブリッド構成を検出する。"""
+    _make_pyproject(tmp_path)
+    (tmp_path / "dotnet" / "app_a").mkdir(parents=True)
+    (tmp_path / "dotnet" / "app_a" / "AppA.csproj").write_text("", encoding="utf-8")
+    config = pyfltr.config.config.create_default_config()
+    subs = pyfltr.command.subprojects.discover_subprojects(tmp_path, config, git_check_ignore=lambda _start, _candidates: set())
+    assert {s.relative for s in subs} == {".", "dotnet/app_a"}
+
+
+def test_discover_subprojects_cargo_workspace_excludes_registered_members(tmp_path: pathlib.Path) -> None:
+    """Cargo workspace rootの`members`glob展開結果に含まれるcrateのみ除外される。"""
+    _make_pyproject(tmp_path)
+    ws = tmp_path / "rust"
+    ws.mkdir()
+    (ws / "Cargo.toml").write_text('[workspace]\nmembers = ["crate_a"]\nexclude = []\n', encoding="utf-8")
+    (ws / "crate_a").mkdir()
+    (ws / "crate_a" / "Cargo.toml").write_text('[package]\nname = "crate_a"\nversion = "0.1.0"\n', encoding="utf-8")
+    # 未登録crateは除外されず独立サブプロジェクトとして残る
+    (ws / "orphan").mkdir()
+    (ws / "orphan" / "Cargo.toml").write_text('[package]\nname = "orphan"\nversion = "0.1.0"\n', encoding="utf-8")
+    config = pyfltr.config.config.create_default_config()
+    subs = pyfltr.command.subprojects.discover_subprojects(tmp_path, config, git_check_ignore=lambda _start, _candidates: set())
+    assert {s.relative for s in subs} == {".", "rust", "rust/orphan"}
+
+
+def test_discover_subprojects_dotnet_solution_excludes_registered_projects(tmp_path: pathlib.Path) -> None:
+    """`.sln`内で登録されているproject所在ディレクトリのみ除外される。"""
+    _make_pyproject(tmp_path)
+    sln_dir = tmp_path / "dotnet"
+    sln_dir.mkdir()
+    (sln_dir / "MySolution.sln").write_text(
+        'Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AppA", "app_a/AppA.csproj", '
+        '"{11111111-1111-1111-1111-111111111111}"\nEndProject\n',
+        encoding="utf-8",
+    )
+    (sln_dir / "app_a").mkdir()
+    (sln_dir / "app_a" / "AppA.csproj").write_text("", encoding="utf-8")
+    # 未登録csprojは除外されず独立サブプロジェクトとして残る
+    (sln_dir / "orphan").mkdir()
+    (sln_dir / "orphan" / "OrphanApp.csproj").write_text("", encoding="utf-8")
+    config = pyfltr.config.config.create_default_config()
+    subs = pyfltr.command.subprojects.discover_subprojects(tmp_path, config, git_check_ignore=lambda _start, _candidates: set())
+    assert {s.relative for s in subs} == {".", "dotnet", "dotnet/orphan"}

@@ -44,7 +44,8 @@ class ExecutionBaseContext:
     subprojects: "list[Subproject]" = dataclasses.field(default_factory=list)
     """検出済みサブプロジェクトの一覧。
 
-    要素0件はモノレポモード無効を意味する（単一 `pyproject.toml` 検出または検出0件）。
+    要素0件はモノレポモード無効を意味する（単一マーカー検出または検出0件）。
+    マーカーは`pyproject.toml`・`Cargo.toml`・`*.csproj`・`*.sln`を指す。
     要素1件以上はモノレポモード有効。`subproject_aware=True` のツールはこの一覧を
     元にサブプロジェクト別ループ実行する。
     `Subproject` 型は循環import回避のためTYPE_CHECKING節で定義する。

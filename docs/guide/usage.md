@@ -713,12 +713,27 @@ dev依存に`pyfltr`を固定する運用では`entry: uv run --frozen pyfltr fa
 
 ## モノレポでの動作
 
-起点cwd配下に複数の `pyproject.toml` を検出した場合、サブプロジェクト単位で
-ツールを分割実行する（モノレポモード）。
+起点cwd配下に複数のマーカー（`pyproject.toml`・`Cargo.toml`・`*.csproj`・`*.sln`）を検出した場合、
+サブプロジェクト単位でツールを分割実行する（モノレポモード）。
 
-- 検出: 起点cwd配下を再帰探索して `pyproject.toml` を持つディレクトリをサブプロジェクトとして扱う。
-  `[tool.pyfltr]` の有無は問わない。`[tool.uv.workspace] members` glob展開結果も含める。
-  `.gitignore` を尊重しつつ `.venv` ・ `node_modules` ・ `target` ・ `build` ・ `dist` ・ `.git` 配下は走査しない
+- 検出: 起点cwd配下を再帰探索する。
+  マーカーを持つディレクトリをサブプロジェクトとして扱う。
+  マーカーは固定ファイル名`pyproject.toml`・`Cargo.toml`と、globパターン`*.csproj`・`*.sln`とする。
+  `[tool.pyfltr]`の有無は問わない。
+  `[tool.uv.workspace] members` glob展開は`pyproject.toml`側のみに適用する。
+  `.gitignore`を尊重する。
+  `.venv`・`node_modules`・`target`・`build`・`dist`・`.git`配下は走査しない
+- `pyproject.toml`を持たないサブプロジェクト（`Cargo.toml`単独・`*.csproj`単独等）は
+  `[tool.pyfltr]`の記述先が無いため、最近接祖先の`pyproject.toml`（無ければ起点で解決した設定）を継承する
+- Cargo workspace root配下の登録member crateは重複実行防止のため独立サブプロジェクトとして検出しない。
+  workspace rootは`[workspace]`テーブルを持つ`Cargo.toml`で判定する。
+  `.sln`所在ディレクトリ配下の登録csprojも同様に検出しない。
+  workspace root・solution所在ディレクトリで一括実行する。
+  ただし登録member・登録projectであっても、他のマーカー（`pyproject.toml`・
+  登録csproj所在ディレクトリの`Cargo.toml`）を併有するディレクトリは、
+  当該ディレクトリ固有の設定を尊重するため独立サブプロジェクトとして検出する
+  （この場合はworkspace・solution側の一括実行と重複し得る）
+- `package.json`は汎用ファイルのため単独ではサブプロジェクトとして検出しない
 - 適用範囲: プロジェクトローカル設定・モジュール解決・lockfileをcwd起点で読むツール
  （`mypy`・`pylint`・`pyright`・`pytest`・`textlint`・`eslint`・`cargo-*`・`dotnet-*`・`ruff-*` 等）は
   サブプロジェクト別に起動する。

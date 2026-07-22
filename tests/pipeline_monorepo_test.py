@@ -235,3 +235,119 @@ def test_monorepo_repo_level_tool_fixed_by_start_config(tmp_path: pathlib.Path, 
     ]
     # 親ON時は起点 cwd で1回、親OFF時は子がONでも実行されない。
     assert len(typos_calls) == (1 if parent_on else 0)
+
+
+def _make_cargo_crate(path: pathlib.Path, *, name: str = "crate") -> None:
+    """テスト用Rust crate一式（`Cargo.toml`のみ、`pyproject.toml`は持たない）を作成する。"""
+    path.mkdir(parents=True, exist_ok=True)
+    (path / "Cargo.toml").write_text(f'[package]\nname = "{name}"\nversion = "0.1.0"\n', encoding="utf-8")
+
+
+def _cargo_clippy_cwds(mock_run) -> set[pathlib.Path | None]:
+    """`run_subprocess` モックから cargo-clippy が起動された cwd 集合を抽出する。"""
+    cwds: set[pathlib.Path | None] = set()
+    for call in mock_run.call_args_list:
+        commandline = call.args[0] if call.args else []
+        if not commandline or "clippy" not in " ".join(commandline):
+            continue
+        cwd_value = call.kwargs.get("cwd")
+        cwds.add(pathlib.Path(cwd_value).resolve() if cwd_value is not None else None)
+    return cwds
+
+
+def test_monorepo_hybrid_cargo_only_subproject_runs_at_crate_cwd(tmp_path: pathlib.Path, mocker) -> None:
+    """Pythonルート＋`Cargo.toml`単独サブディレクトリの構成で、起点`pyproject.toml`の
+    `rust = true`設定を継承し`cargo-clippy`が`Cargo.toml`所在ディレクトリで起動される。
+    """
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "root"\n[tool.pyfltr]\npreset = "latest"\nrust = true\n',
+        encoding="utf-8",
+    )
+    _make_cargo_crate(tmp_path / "rust" / "crate_a", name="crate_a")
+
+    proc = subprocess.CompletedProcess(["cargo"], returncode=0, stdout="")
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
+
+    pyfltr.cli.main.run(["run", "--work-dir", str(tmp_path), "--commands=cargo-clippy", "--no-archive", "--no-cache"])
+
+    cwds = _cargo_clippy_cwds(mock_run)
+    assert cwds == {(tmp_path / "rust" / "crate_a").resolve()}
+
+
+def test_monorepo_cargo_workspace_root_only(tmp_path: pathlib.Path, mocker) -> None:
+    """Cargo workspace root配下のmember crateは独立検出されず、workspace rootで1回のみ起動する。"""
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "root"\n[tool.pyfltr]\npreset = "latest"\nrust = true\n', encoding="utf-8"
+    )
+    ws_root = tmp_path / "rust"
+    ws_root.mkdir()
+    (ws_root / "Cargo.toml").write_text('[workspace]\nmembers = ["crate_a"]\n', encoding="utf-8")
+    _make_cargo_crate(ws_root / "crate_a", name="crate_a")
+
+    proc = subprocess.CompletedProcess(["cargo"], returncode=0, stdout="")
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
+
+    pyfltr.cli.main.run(["run", "--work-dir", str(tmp_path), "--commands=cargo-clippy", "--no-archive", "--no-cache"])
+
+    cwds = _cargo_clippy_cwds(mock_run)
+    assert cwds == {ws_root.resolve()}
+
+
+def test_monorepo_nested_pyproject_inherits_nearest_ancestor(tmp_path: pathlib.Path, mocker) -> None:
+    """ネスト構成: 孫Cargo.tomlは最近接祖先（子pyproject.toml）のconfigを継承する。
+
+    ルートで`rust = true`、子で`rust = false`のとき、孫のcargo系はスキップされる。
+    """
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "root"\n[tool.pyfltr]\npreset = "latest"\nrust = true\n', encoding="utf-8"
+    )
+    child = tmp_path / "child"
+    child.mkdir()
+    (child / "pyproject.toml").write_text(
+        '[project]\nname = "child"\n[tool.pyfltr]\npreset = "latest"\nrust = false\n', encoding="utf-8"
+    )
+    _make_cargo_crate(child / "crate", name="grandchild_crate")
+
+    proc = subprocess.CompletedProcess(["cargo"], returncode=0, stdout="")
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
+
+    pyfltr.cli.main.run(["run", "--work-dir", str(tmp_path), "--commands=cargo-clippy", "--no-archive", "--no-cache"])
+
+    cwds = _cargo_clippy_cwds(mock_run)
+    assert cwds == set()  # 孫は`rust = false`継承でスキップ
+
+
+def _dotnet_build_cwds(mock_run) -> set[pathlib.Path | None]:
+    """`run_subprocess` モックから dotnet build が起動された cwd 集合を抽出する。"""
+    cwds: set[pathlib.Path | None] = set()
+    for call in mock_run.call_args_list:
+        commandline = call.args[0] if call.args else []
+        if not commandline or "build" not in " ".join(commandline) or "dotnet" not in " ".join(commandline):
+            continue
+        cwd_value = call.kwargs.get("cwd")
+        cwds.add(pathlib.Path(cwd_value).resolve() if cwd_value is not None else None)
+    return cwds
+
+
+def test_monorepo_dotnet_solution_excludes_csproj(tmp_path: pathlib.Path, mocker) -> None:
+    """`.sln`所在ディレクトリ配下の登録csprojは独立検出されず、solution所在ディレクトリで1回のみ起動する。"""
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "root"\n[tool.pyfltr]\npreset = "latest"\ndotnet = true\n', encoding="utf-8"
+    )
+    sln_dir = tmp_path / "dotnet"
+    sln_dir.mkdir()
+    (sln_dir / "app_a").mkdir()
+    (sln_dir / "app_a" / "AppA.csproj").write_text("", encoding="utf-8")
+    (sln_dir / "MySolution.sln").write_text(
+        'Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AppA", "app_a/AppA.csproj", '
+        '"{11111111-1111-1111-1111-111111111111}"\nEndProject\n',
+        encoding="utf-8",
+    )
+
+    proc = subprocess.CompletedProcess(["dotnet"], returncode=0, stdout="")
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
+
+    pyfltr.cli.main.run(["run", "--work-dir", str(tmp_path), "--commands=dotnet-build", "--no-archive", "--no-cache"])
+
+    cwds = _dotnet_build_cwds(mock_run)
+    assert cwds == {sln_dir.resolve()}
