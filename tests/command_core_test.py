@@ -2089,15 +2089,17 @@ class _FakePopen:
         return self.returncode
 
 
-def test_run_subprocess_resolves_command_via_shutil_which(mocker) -> None:
+@pytest.mark.parametrize("command", ["pre-commit", "prek"])
+def test_run_subprocess_resolves_command_via_shutil_which(mocker, command: str) -> None:
     """`commandline[0]`が`shutil.which`で解決されてPopenに渡る。"""
     _FakePopen.last_args_holder = []
-    mocker.patch("pyfltr.command.process.shutil.which", return_value="/resolved/pre-commit")
+    resolved = f"/resolved/{command}"
+    mocker.patch("pyfltr.command.process.shutil.which", return_value=resolved)
     mocker.patch("pyfltr.command.process.subprocess.Popen", _FakePopen)
 
-    pyfltr.command.process.run_subprocess(["pre-commit", "run", "--files", "foo.py"], {"PATH": "/usr/bin"})
+    pyfltr.command.process.run_subprocess([command, "run", "--files", "foo.py"], {"PATH": "/usr/bin"})
 
-    assert _FakePopen.last_args_holder == [["/resolved/pre-commit", "run", "--files", "foo.py"]]
+    assert _FakePopen.last_args_holder == [[resolved, "run", "--files", "foo.py"]]
 
 
 def test_run_subprocess_keeps_original_name_when_unresolved(mocker) -> None:

@@ -4,7 +4,7 @@
 `--config`明示注入と外部パス除外＋警告は排他ではなく、注入対象ツールが外部パスを扱えない場合は併用する。
 
 - `--config`明示注入（内部パスのみ実行時に適用）: `markdownlint` / `textlint` / `bandit`
-- 除外対象（`allows_external_paths=False`）: `markdownlint` / `textlint` / `pre-commit` / `pytest` /
+- 除外対象（`allows_external_paths=False`）: `markdownlint` / `textlint` / `prek` / `pre-commit` / `pytest` /
   `vitest` / `cargo-test` / `dotnet-test` / `gitleaks` / `semgrep` /
   `uv-audit` / `pnpm-audit` / `npm-audit` / `yarn-audit`
 - 素通し対象（既定）: 上記以外（`ruff-check` を代表として確認）
@@ -32,6 +32,7 @@ _DEFAULT_PREFIXES: dict[str, list[str]] = {
     "markdownlint": ["pnpx", "markdownlint-cli2"],
     "textlint": ["pnpx", "textlint"],
     "pre-commit": ["pre-commit", "run"],
+    "prek": ["prek", "run"],
     "pytest": ["pytest"],
     "vitest": ["pnpx", "vitest"],
     "cargo-test": ["cargo", "test"],
@@ -550,6 +551,7 @@ def test_inject_skipped_when_user_specifies_config(
     "command,target_pattern",
     [
         ("pre-commit", "doc.md"),
+        ("prek", "doc.md"),
         ("pytest", "x_test.py"),
         ("gitleaks", "doc.md"),
         ("vitest", "x.test.ts"),

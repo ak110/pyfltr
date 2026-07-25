@@ -51,7 +51,7 @@ jobs:
         run: uv sync --all-groups --all-extras
 
       - name: Test with pyfltr
-        # `CI=true` を明示し、smoke test がツール不在時にスキップへ逃げず失敗扱いとなるようにする。
+        # `CI=true` を明示し、smoke test がツール不在時にスキップせず失敗扱いとなるようにする。
         env:
           CI: "true"
         run: uv run pyfltr ci --output-format=github-annotations
@@ -113,17 +113,19 @@ jobs:
         run: choco install -y shellcheck
 
       - name: Install smoke test tooling via uv
-        # yamllint / typos / pre-commit はpyfltr本体依存に含まれない単独ツール。Windows runnerにも導入する。
+        # いずれもpyfltr本体依存に含まれるが、smoke testでのPATH解決を
+        # 確実にするためWindows runnerへ個別に導入する。
         run: |
           uv tool install yamllint
           uv tool install typos
           uv tool install pre-commit
+          uv tool install prek
 
       - name: Install dependencies
         run: uv sync --all-groups --all-extras
 
       - name: Test with pyfltr
-        # `CI=true` を明示し、smoke test がツール不在時にスキップへ逃げず失敗扱いとなるようにする。
+        # `CI=true` を明示し、smoke test がツール不在時にスキップせず失敗扱いとなるようにする。
         env:
           CI: "true"
         run: uv run pyfltr ci --output-format=github-annotations

@@ -18,7 +18,7 @@ extend-exclude = ["foo", "bar.py"]
 
 プリセットは各時点での推奨ツール構成をバージョン付きで示すスナップショット。
 Python / JavaScript / TypeScript / Rust / .NET / ドキュメント系の推奨ツールを横断的に収録する。
-`"latest"`または日付指定（`"20260413"` / `"20260411"` / `"20260330"`）を指定する。
+`"latest"`または日付指定（`"20260726"` / `"20260413"` / `"20260411"` / `"20260330"`）を指定する。
 
 ```toml
 [tool.pyfltr]
@@ -31,9 +31,14 @@ preset = "latest"
 プリセットで`true`になっているツールも、次節の言語カテゴリキーがゲートを開けた言語分だけが実際に実行される。
 `preset = "latest"` + `{language} = true`だけで当該言語の推奨ツール一式が有効化される運用を意図している。
 
-### preset "20260413" / "latest"
+### preset "20260726"
 
-以下の設定が行われる。
+`latest`が参照するプリセット。
+`"20260413"`から`pre-commit = true`を`prek = true`へ差し替えた構成。
+
+### preset "20260413"
+
+以下を設定する。
 
 Python核（`python = true`で通過）
 
@@ -68,7 +73,7 @@ Rust（`rust = true`で通過）
 - `dotnet-build = true`
 - `dotnet-test = true`
 
-ドキュメント系（カテゴリゲート非対象、常時通過）
+ドキュメント系と統合系（カテゴリゲート非対象、常時通過）
 
 - `textlint = true`
 - `markdownlint = true`
@@ -78,14 +83,12 @@ Rust（`rust = true`で通過）
 
 ### preset "20260411"
 
-`"20260413"`から`pre-commit = true`を除いた構成（pre-commitは`"20260413"`以降で追加）。
-それ以外の有効化ツール（Python核・JavaScript / TypeScript・Rust・.NET・
-textlint / markdownlint / actionlint / typos / uv-sort）は同一。
+`"20260413"`から`pre-commit = true`を除いた構成。
+`pre-commit = true`を含むプリセットは`"20260413"`のみ。
 
 ### preset "20260330"
 
 `"20260411"`から`actionlint = true` / `typos = true` / `uv-sort = true`を除いた構成。
-Python核・JavaScript / TypeScript・Rust・.NET・textlint・markdownlint・pyrightを有効化する。
 
 ## 言語カテゴリによるゲート制御
 
@@ -182,7 +185,9 @@ pyfltr config list --all
 - respect-gitignore : `.gitignore`に記載されたファイルを除外するか否か（既定: `true`）。
   gitのルートおよびネストした`.gitignore`、グローバルgitignore、`.git/info/exclude`を全て考慮する。`git`コマンドが必要
 - pre-commit-auto-skip : `.pre-commit-config.yaml`からpyfltr関連hookを自動検出してSKIP環境変数に追加するか（既定: `true`）
-- pre-commit-skip : SKIP環境変数に渡すhook IDの手動指定リスト（`pre-commit-auto-skip`と併用可能）
+- pre-commit-skip : SKIP環境変数に渡すhook IDの手動指定リスト（`pre-commit-auto-skip`と併用可能、既定: 空）
+- prek-auto-skip : `.pre-commit-config.yaml`からpyfltr関連hookを自動検出してprekへ渡すSKIP環境変数に追加するか（既定: `true`）
+- prek-skip : prekへ渡すSKIP環境変数のhook ID手動指定リスト（`prek-auto-skip`と併用可能、既定: 空）
 - archive : 実行アーカイブの有効/無効（既定: `true`。`--no-archive`で実行単位に無効化）
 - archive-max-runs : 保存する最大世代数（既定: 100。0以下で世代軸の自動削除を無効化）
 - archive-max-size-mb : アーカイブ全体の合計サイズ上限（既定: 1024 MB。0以下でサイズ軸の自動削除を無効化）
@@ -206,7 +211,7 @@ pyfltr config list --all
 - subproject-uv-workspace : `[tool.uv.workspace] members`を読み取ってサブプロジェクトに含めるか否か（既定: `true`）
 - {command}-subproject-aware : 当該ツールをサブプロジェクト単位で分割実行するか否か（per-tool）。
   既定値はビルトイン定義に従う。
-  `mypy`・`pylint`・`pytest`・`textlint`等は`true`、`typos`・`shellcheck`・`shfmt`・`pre-commit`等は`false`
+  `mypy`・`pylint`・`pytest`・`textlint`等は`true`、`typos`・`shellcheck`・`shfmt`・`pre-commit`・`prek`等は`false`
 
 `prettier-check-args` / `prettier-write-args` / `shfmt-check-args` / `shfmt-write-args`などの
 2段階実行向け引数はツール別設定ページで詳しく扱う。

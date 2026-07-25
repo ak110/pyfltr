@@ -1,6 +1,6 @@
 site_name: pyfltr
 site_url: https://ak110.github.io/pyfltr/
-site_description: Formatters, Linters, and Testers Runner
+site_description: 多言語プロジェクトの品質チェックを一元管理する基盤
 repo_url: https://github.com/ak110/pyfltr
 repo_name: ak110/pyfltr
 
@@ -31,7 +31,9 @@ plugins:
   - llmstxt:
       full_output: llms-full.txt
       markdown_description: |
-        Python / Rust / .NET / TypeScript・JavaScript / ドキュメントなど多言語プロジェクトのformatter・linter・testerを単一コマンドで並列実行するCLIツール。
+        多言語プロジェクトの品質チェックを一元管理し、コーディングエージェントから扱える形で提供する基盤。
+        組み込みのformatter・linter・testerに加え、プロジェクト固有のカスタムチェック
+        （[プロジェクト固有チェックの追加](guide/custom-commands.md)）を同一の実行基盤へ統合できる。
         設定から実行までの導入手順は[はじめに](guide/getting-started.md)を参照。
         対応ツール一覧は[対応ツール](guide/index.md)を参照。
 
@@ -69,9 +71,18 @@ plugins:
         - セキュリティ/スペル: `gitleaks` / `typos` / `semgrep` / `bandit`
         - SQL: `sqlfluff`
         - 依存の脆弱性監査: `uv-audit` / `pnpm-audit` / `npm-audit` / `yarn-audit`
-        - その他: `pre-commit`
+        - その他: `pre-commit` / `prek`
 
         詳細は[対応ツール一覧](guide/index.md)を参照。
+
+        ## その他の機能
+
+        - モノレポ対応: 起点cwd配下のプロジェクトマーカーを検出し、サブプロジェクト単位でツールを分割実行する。
+          詳細は[CLIの使い方](guide/usage.md)を参照
+        - ファイルhashキャッシュ: 対応ツールで同じ入力への再実行をスキップし、待ち時間を削減する。
+          現時点の対象はtextlintのみ。詳細は[CLIの使い方](guide/usage.md#file-hash-cache)を参照
+        - heartbeat出力: 長時間実行時にJSONL出力へ定期的な生存確認レコードを追加する。
+          詳細は[CLIの使い方](guide/usage.md#jsonl)を参照
 
         ## 設定の基本
 
@@ -89,6 +100,7 @@ plugins:
         使い方:
           - guide/getting-started.md: インストール・設定・実行・コーディングエージェント連携
           - guide/index.md: 対応ツール一覧・コンセプト
+          - guide/custom-commands.md: プロジェクト固有チェックの追加
           - guide/usage.md: CLIの使い方・オプション・UI説明・コーディングエージェント連携
           - guide/grep-replace.md: grep/replaceの使い方・オプション・誤爆除外フロー・undo運用・MCP公開ツール
           - guide/troubleshooting.md: MCP stdout占有・PRE_COMMIT検出・対象ファイル空・アーカイブ容量確認
@@ -97,7 +109,6 @@ plugins:
           - guide/configuration-tools.md: ツール別設定（python-runner / js-runner / bin-runnerのカテゴリ委譲と直接指定値の対称12値設定・2段階実行・カスタムコマンド）
           - guide/recommended.md: Pythonプロジェクトの推奨設定例・タスクランナー・CI設定
           - guide/recommended-nonpython.md: TypeScript/JS・Rust・.NETプロジェクトの推奨設定例
-          - guide/custom-commands.md: カスタムコマンドの設定例集
         開発者向け:
           - development/development.md: 開発環境構築・ドキュメント・リリース手順
           - development/architecture.md: 実行パイプライン・モジュール構成・実行アーカイブ・出力フォーマット・MCPサーバー
@@ -121,6 +132,7 @@ nav:
   - 使い方:
       - はじめに: guide/getting-started.md
       - 対応ツール: guide/index.md
+      - プロジェクト固有チェックの追加: guide/custom-commands.md
       - CLIコマンド: guide/usage.md
       - 検索と置換: guide/grep-replace.md
       - トラブルシューティング: guide/troubleshooting.md
@@ -129,7 +141,6 @@ nav:
       - 設定項目（ツール別）: guide/configuration-tools.md
       - 推奨設定例: guide/recommended.md
       - 推奨設定例（非Pythonプロジェクト）: guide/recommended-nonpython.md
-      - カスタムコマンド例: guide/custom-commands.md
   - 開発者向け:
       - 開発手順: development/development.md
       - アーキテクチャ概要: development/architecture.md

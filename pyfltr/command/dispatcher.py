@@ -641,11 +641,11 @@ def _dispatch_command(
     subproject_cwd = ctx.subproject_cwd
     start_cwd = ctx.base.start_cwd
 
-    # pre-commitは .pre-commit-config.yamlを参照してSKIP環境変数を構築し、
+    # pre-commit・prekは共通の.pre-commit-config.yamlを参照してSKIP環境変数を構築し、
     # pyfltr関連hookを除外したうえで2段階実行する。
     # stage 1でファイル修正のみ （fixer系） なら "formatted"、
     # checker系hookが残存エラーを報告すれば "failed" となる。
-    if command == "pre-commit":
+    if command in ("pre-commit", "prek"):
         return _with_targets(
             pyfltr.command.precommit.execute_pre_commit(
                 command,

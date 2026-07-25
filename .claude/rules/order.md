@@ -25,12 +25,15 @@ linter/tester群の実行順はLPT並列（推定実行時間の降順スケジ�
 
 ## formatter群
 
-純粋formatterを先に、lint的性質を持つものを後ろに配置する。最後尾は`pre-commit`とする
+純粋formatterを先に、lint的性質を持つものを後ろに配置する。最後尾は`prek`→`pre-commit`の順とする
 （リポジトリ固有の各種チェックが幅広く実行されるため、他formatterで直せるものを先に修正してから呼ぶ意図）。
+`prek`と`pre-commit`は同一の`.pre-commit-config.yaml`を読む代替系統のため隣接配置する。
+代替系統内では`preset = "latest"`が有効化する`prek`を先に配置し、
+旧presetが有効化する互換用の`pre-commit`を後に配置する。
 
 - 先頭: `prettier`。多言語formatterで影響範囲が広く、最初に整形すると後続判定が安定する
 - 中段: `ruff-format`・`uv-sort`・`shfmt`・`taplo`・`cargo-fmt`・`dotnet-format`（決定論的に整形する純粋formatter）
-- 末尾: `pre-commit`
+- 末尾: `prek`→`pre-commit`
 
 ## linter/tester群
 

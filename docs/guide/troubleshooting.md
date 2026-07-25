@@ -32,29 +32,31 @@ MCPクライアントから`pyfltr mcp`を登録しても`run_for_agent`等の�
 - stdoutに非JSON出力が混じっていないかをstderrへリダイレクトして確認する
  （`uvx pyfltr mcp 2>/tmp/pyfltr-mcp.err`のように手動起動して観察できる）
 
-## pre-commit統合時の自動スキップ
+## pre-commit・prek統合時の自動スキップ
 
-pre-commitからpyfltrを呼び出しているのに、一部のツールが実行されないことがある。
-これはpre-commit経由起動時の意図的なフィルタリング動作である。
+pre-commit・prek（以下いずれも実行系と呼ぶ）からpyfltrを呼び出しているのに、一部のツールが実行されないことがある。
+これは実行系を経由した起動時の意図的なフィルタリング動作である。
 
-pyfltrはpre-commitから呼び出されたことを環境変数`PRE_COMMIT=1`で検出する。
+pyfltrは実行系から呼び出されたことを環境変数`PRE_COMMIT=1`で検出する。
+pre-commitとprekは、いずれもこの環境変数を設定する。
 `PRE_COMMIT=1`が設定されている場合、`pyfltr fast`サブコマンドは`{command}-fast = true`のツールのみを対象として実行する。
 `run`サブコマンドは自動スキップを行わないため、`fast`を指定している場合は意図した動作となる。
 
 確認方法。
 
-- pre-commitの`entry`設定が`pyfltr fast`になっているか確認する
+- 実行系の`entry`設定が`pyfltr fast`になっているか確認する
 - `{command}-fast`の設定を`pyproject.toml`で確認する
  （既定では重いツール、mypy・pylint・pytestなどはfastに含まれない）
 - `pyfltr fast --verbose`で実行対象コマンドの一覧を確認する
 
-逆方向として、`make test`等から`pyfltr run`を呼び出した場合は、pyfltr側が`SKIP=pyfltr`付きで
-`pre-commit run`を変更ファイル指定（`--files <対象>`）で起動して二重実行を避ける。
-この自動連携を抑止したい場合は`pre-commit-auto-skip = false`を設定する。
+`make test`等から`pyfltr run`を呼び出すと、pyfltrは`SKIP=pyfltr`付きで有効な実行系を
+変更ファイル指定（`--files <対象>`）で起動する。
+この自動連携を抑止する場合は`pre-commit-auto-skip = false`を設定する。
+prekでは`prek-auto-skip = false`を設定する。
 
 既定設定では`--files`で対象ファイルを渡して起動するため、
-引数なしの`pre-commit run`が行う未ステージ変更の退避・復元（`git stash`相当の作業ツリー操作）は発生しない。
-対象ファイルが0件の場合はpre-commit自体を起動しない。
+引数なしの実行系が行う未ステージ変更の退避・復元（`git stash`相当の作業ツリー操作）は発生しない。
+対象ファイルが0件の場合は実行系自体を起動しない。
 
 ## `--changed-since`で対象ファイルが空になる場合
 

@@ -1,12 +1,12 @@
 # AGENTS.md: pyfltr
 
-Python/Rust/.NET/TypeScript・JavaScript/ドキュメントなど多言語プロジェクトの
-formatter・linter・testerを単一コマンドで並列実行するCLIツール。
-JSON Lines出力（`--output-format=jsonl`）とMCPサーバー（`pyfltr mcp`）でコーディングエージェント運用に対応する。
+多言語プロジェクトの品質チェックを一元管理し、コーディングエージェントから扱える形で提供する基盤。
+組み込みのformatter・linter・testerとプロジェクト固有のカスタムチェックを同じ手順で実行できる。
+JSON Lines出力（`--output-format=jsonl`）とMCPサーバー（`pyfltr mcp`）を利用できる。
 
 ## 開発手順
 
-- `make update`: 依存更新 + pre-commit autoupdate + pinactアクション更新 + 全テスト実行
+- `make update`: 依存更新 + prek autoupdate + pinactアクション更新 + 全テスト実行
   - `make update-actions`: GitHub Actionsのハッシュピン更新のみ（mise経由でpinact実行）
 - リリース手順: `gh workflow run release.yaml --field=bump=PATCH`（`PATCH`は`MINOR`・`MAJOR`に変更可）
 - Docker再ビルド単発起動: `gh workflow run docker-build.yaml`

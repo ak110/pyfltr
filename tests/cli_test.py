@@ -194,16 +194,18 @@ def test_render_results_include_details_false_writes_only_summary(text_logs):
     assert "MYPY_ERROR" not in text
 
 
-def test_render_results_writes_warnings_section_before_summary(text_logs):
+@pytest.mark.parametrize("tool", ["pre-commit", "prek"])
+def test_render_results_writes_warnings_section_before_summary(text_logs, tool: str):
     """warnings引数が渡されるとsummary直前にwarningsセクションが出る。"""
     config = pyfltr.config.config.create_default_config()
     results = [_make_result("mypy", returncode=0)]
-    warnings = [{"source": "config", "message": "pre-commit 設定ファイル不在"}]
+    warning_message = f"{tool} 設定ファイル不在"
+    warnings = [{"source": "config", "message": warning_message}]
 
     pyfltr.cli.render.render_results(results, config, include_details=True, warnings=warnings)
 
     text = "\n".join(text_logs)
-    warning_pos = text.index("pre-commit 設定ファイル不在")
+    warning_pos = text.index(warning_message)
     summary_pos = text.index("summary")
     assert warning_pos < summary_pos
     assert "[config]" in text

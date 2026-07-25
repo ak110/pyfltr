@@ -53,7 +53,7 @@ def _assert_language_gate(
         assert config[cmd] is expected, f"{category_key} gate開: {cmd} expected {expected}, got {config[cmd]}"
 
 
-_DOCS_ORTHOGONAL_KEYS = ("textlint", "markdownlint", "actionlint", "typos", "pre-commit")
+_DOCS_ORTHOGONAL_KEYS = ("textlint", "markdownlint", "actionlint", "typos", "prek", "pre-commit")
 """言語カテゴリ gate の対象外となるドキュメント系ツールキー。
 
 preset が直接 True/False を決め、言語カテゴリキーの影響を受けない。
@@ -76,35 +76,84 @@ _DOTNET_ENABLED = frozenset({"dotnet-format", "dotnet-build", "dotnet-test"})
         (
             "",
             "",
-            {"textlint": False, "markdownlint": False, "actionlint": False, "typos": False, "pre-commit": False},
+            {
+                "textlint": False,
+                "markdownlint": False,
+                "actionlint": False,
+                "typos": False,
+                "prek": False,
+                "pre-commit": False,
+            },
             {"python": False, "javascript": False, "rust": False, "dotnet": False},
         ),
         # 20260330 + python=true: Python核 + pyright + docs（textlint/markdownlint）。
         (
             "20260330",
             "python = true\n",
-            {"textlint": True, "markdownlint": True, "actionlint": False, "typos": False, "pre-commit": False},
+            {
+                "textlint": True,
+                "markdownlint": True,
+                "actionlint": False,
+                "typos": False,
+                "prek": False,
+                "pre-commit": False,
+            },
             {"python": _PYTHON_ENABLED_20260330, "javascript": False, "rust": False, "dotnet": False},
         ),
         # 20260411はactionlint / typos / uv-sortが追加される。
         (
             "20260411",
             "python = true\n",
-            {"textlint": True, "markdownlint": True, "actionlint": True, "typos": True, "pre-commit": False},
+            {
+                "textlint": True,
+                "markdownlint": True,
+                "actionlint": True,
+                "typos": True,
+                "prek": False,
+                "pre-commit": False,
+            },
             {"python": _PYTHON_ENABLED_LATEST, "javascript": False, "rust": False, "dotnet": False},
         ),
         # 20260413はpre-commitが追加される。
         (
             "20260413",
             "python = true\n",
-            {"textlint": True, "markdownlint": True, "actionlint": True, "typos": True, "pre-commit": True},
+            {
+                "textlint": True,
+                "markdownlint": True,
+                "actionlint": True,
+                "typos": True,
+                "prek": False,
+                "pre-commit": True,
+            },
             {"python": _PYTHON_ENABLED_LATEST, "javascript": False, "rust": False, "dotnet": False},
         ),
-        # latest = 20260413と同じ構成。
+        # 20260726はpre-commitからprekへ切り替わる。
+        (
+            "20260726",
+            "python = true\n",
+            {
+                "textlint": True,
+                "markdownlint": True,
+                "actionlint": True,
+                "typos": True,
+                "prek": True,
+                "pre-commit": False,
+            },
+            {"python": _PYTHON_ENABLED_LATEST, "javascript": False, "rust": False, "dotnet": False},
+        ),
+        # latest = 20260726と同じ構成。
         (
             "latest",
             "python = true\n",
-            {"textlint": True, "markdownlint": True, "actionlint": True, "typos": True, "pre-commit": True},
+            {
+                "textlint": True,
+                "markdownlint": True,
+                "actionlint": True,
+                "typos": True,
+                "prek": True,
+                "pre-commit": False,
+            },
             {"python": _PYTHON_ENABLED_LATEST, "javascript": False, "rust": False, "dotnet": False},
         ),
         # latest + javascript=true: JS/TS系gate通過、docsはpreset由来でTrueのまま。
@@ -713,10 +762,8 @@ class TestConfigFilesWarning:
 
     def test_pre_commit_enabled_without_config_emits_warning(self, tmp_path: pathlib.Path) -> None:
         """pre-commitが有効で.pre-commit-config.yaml不在の場合に警告を発行する。"""
-        (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latest"\n')
+        (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\npre-commit = true\n", encoding="utf-8")
         pyfltr.config.config.load_config(config_dir=tmp_path)
-        # preset=latestではtextlintなどにもconfig_filesが定義されるため複数のwarningが出る。
-        # 本テストはpre-commit分が出ることだけを確認する。
         entries = [
             w
             for w in pyfltr.warnings_.collected_warnings()
@@ -727,11 +774,9 @@ class TestConfigFilesWarning:
 
     def test_pre_commit_enabled_with_config_no_warning(self, tmp_path: pathlib.Path) -> None:
         """設定ファイルが存在すれば警告は出ない。"""
-        (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latest"\n')
-        (tmp_path / ".pre-commit-config.yaml").write_text("repos: []\n")
+        (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\npre-commit = true\n", encoding="utf-8")
+        (tmp_path / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
         pyfltr.config.config.load_config(config_dir=tmp_path)
-        # pre-commitのconfigは配置済みなのでpre-commit固有の警告は出ない。
-        # textlint等の他ツールのconfig_files警告は関心外として除外する。
         entries = [
             w
             for w in pyfltr.warnings_.collected_warnings()
@@ -745,6 +790,20 @@ class TestConfigFilesWarning:
         pyfltr.config.config.load_config(config_dir=tmp_path)
         entries = [w for w in pyfltr.warnings_.collected_warnings() if w["source"] == "config"]
         assert not entries
+
+    def test_prek_enabled_without_config_emits_warning(self, tmp_path: pathlib.Path) -> None:
+        """prekが有効で設定ファイル不在の場合に警告を発行する。"""
+        (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\nprek = true\n", encoding="utf-8")
+
+        pyfltr.config.config.load_config(config_dir=tmp_path)
+
+        entries = [
+            warning
+            for warning in pyfltr.warnings_.collected_warnings()
+            if warning["source"] == "config" and ".pre-commit-config.yaml" in warning["message"]
+        ]
+        assert len(entries) == 1
+        assert "prek" in entries[0]["message"]
 
     def test_custom_command_missing_config_file_emits_warning(self, tmp_path: pathlib.Path) -> None:
         """カスタムコマンドにconfig-filesを指定し不在なら警告。"""
@@ -1222,9 +1281,10 @@ def test_preset_latest_suppresses_language_categories(tmp_path: pathlib.Path) ->
     """preset = "latest"単独（カテゴリキー全False）では全言語のツールがFalseに上書きされる。"""
     (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latest"\n')
     config = pyfltr.config.config.load_config(config_dir=tmp_path)
-    # presetに含まれるドキュメント系はTrue
+    # presetに含まれるドキュメント系とprekはTrue。旧スナップショットのpre-commitはFalse。
     for cmd in _DOCS_ORTHOGONAL_KEYS:
-        assert config[cmd] is True, f"{cmd}はpreset=latestで有効化されるべき"
+        expected = cmd != "pre-commit"
+        assert config[cmd] is expected, f"{cmd}のpreset=latest有効状態が不正"
     # 言語カテゴリに属するツールはgateにより全てFalseに上書きされる
     # （_PRESET_BASEでTrueだったPython核 / JS / Rust / .NETも含む）
     for category_key, _ in pyfltr.config.config.LANGUAGE_CATEGORIES:

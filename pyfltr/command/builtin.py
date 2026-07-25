@@ -125,7 +125,7 @@ _JS_COMMON_TARGETS: list[str] = [
 ]
 
 BUILTIN_COMMANDS: dict[str, CommandInfo] = {
-    # formatter群: 純粋formatter先頭（prettier）→ 中段（決定論的整形）→ 末尾（pre-commit）。
+    # formatter群: 純粋formatter先頭（prettier）→ 中段（決定論的整形）→ 末尾（prek→pre-commit）。
     "prettier": CommandInfo(
         type="formatter",
         fixed_cost=1.5,
@@ -162,6 +162,16 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         targets=["*.cs", "*.csproj", "*.sln", "Directory.Build.props", ".editorconfig"],
         serial_group="dotnet",
         fixed_cost=2.0,
+    ),
+    # prekはRust製の`.pre-commit-config.yaml`実行系。workspace rootから再帰的に
+    # サブディレクトリの設定ファイルを探索する仕様のため、既定引数へ--configを明示して
+    # workspace探索を無効化する（pyfltr/config/config.pyの`prek`設定ブロックのコメント参照）。
+    "prek": CommandInfo(
+        type="formatter",
+        targets="*",
+        config_files=[".pre-commit-config.yaml"],
+        subproject_aware=False,
+        allows_external_paths=False,
     ),
     # pre-commitはリポジトリ固有チェックが幅広く実行されるため、他formatterの修正後に最後で呼ぶ。
     # 変更ファイル指定（--files）で起動するが、各hook内部のtypes・types_or・files・excludeフィルタが

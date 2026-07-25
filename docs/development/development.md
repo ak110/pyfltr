@@ -15,7 +15,7 @@
 | --- | --- |
 | `make format` | 整形 + 軽量lint（開発時の手動実行用） |
 | `make test` | 全チェック実行（コミット前に通過させる） |
-| `make update` | 依存更新 + pre-commit autoupdate + アクション更新 + 全テスト |
+| `make update` | 依存更新 + prek autoupdate + アクション更新 + 全テスト |
 | `uvx pyfltr run-for-agent` | エージェントからのチェック実行 |
 | `uv run mkdocs serve` | ドキュメントのローカルプレビュー |
 

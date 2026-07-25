@@ -22,7 +22,7 @@ pyfltrは対応ツールを実行方式の観点から4カテゴリに分けて�
   dotnet系（dotnet-format / dotnet-build / dotnet-test）も含む。
   グローバル`bin-runner`設定（既定`"mise"`）に従ってmiseまたはPATH経由でネイティブバイナリを解決する
 - 直接実行（既定`{command}-runner = "direct"`）。
-  対象はtypos・yamllint・pre-commit・依存の脆弱性監査ツール（uv-audit・pnpm-audit・npm-audit・yarn-audit）。
+  対象はtypos・yamllint・pre-commit・prek・依存の脆弱性監査ツール（uv-audit・pnpm-audit・npm-audit・yarn-audit）。
   PATH上または`{command}-path`で指定した実行ファイルを直接呼び出す。
   監査ツールはパッケージマネージャー（uv・pnpm・npm・yarn）自体を解決し、`audit`サブコマンドを引数で付与する
 
@@ -92,7 +92,7 @@ lychee-extend-args = ["--exclude=github\\.com/owner/repo/actions"]
 `{command}-lint-args`・`{command}-fix-args`・`{command}-check-args`・`{command}-write-args`等の
 モード専用引数には対応しない。モード切替時の引数は既定値を尊重する設計のため。
 
-## pass-filenames設定
+## pass-filenames設定 {#pass-filenames}
 
 `{command}-pass-filenames = false`を設定すると、コマンド実行時にファイル引数を渡さない。
 プロジェクト全体を一括チェックするツール（`tsc`など）で使用する。
@@ -103,9 +103,10 @@ lychee-extend-args = ["--exclude=github\\.com/owner/repo/actions"]
 - `cargo-fmt` / `cargo-clippy` / `cargo-check` / `cargo-test` / `cargo-deny`
 - `dotnet-format` / `dotnet-build` / `dotnet-test`
 
-`pre-commit`は変更ファイル指定（`--files <対象>`）で起動する。
+pre-commit・prekは変更ファイル指定（`--files <対象>`）で起動する。
 各hook内部の`types`・`types_or`・`files`・`exclude`フィルタはファイル指定起動でも適用されるため、関係するhookのみ動作する。
-`pass_filenames: false`属性のhook（`gitleaks`等）はpre-commit側でリポジトリ全体走査となる。
+`pass_filenames: false`属性のhook（`gitleaks`等）は双方ともリポジトリ全体走査となる。
+pyfltr関連hookの自動検出と`SKIP`環境変数の構築も共通する。
 
 カスタムコマンドでも同様に設定可能。
 
@@ -255,7 +256,7 @@ pyfltr既定の`bandit-args = ["--quiet", "--recursive", "--format=json"]`は出
 
 ## 直接実行ツール
 
-対象はtypos・yamllint・pre-commit・依存の脆弱性監査ツール（uv-audit・pnpm-audit・npm-audit・yarn-audit）。
+対象はtypos・yamllint・pre-commit・prek・依存の脆弱性監査ツール（uv-audit・pnpm-audit・npm-audit・yarn-audit）。
 `{command}-runner`既定値は`"direct"`で、PATH上または`{command}-path`で指定した実行ファイルをpyfltrが直接呼び出す。
 
 ### typos
@@ -297,6 +298,27 @@ yamllint-args = ["-c", ".yamllint.yml"]
 [tool.pyfltr]
 yamllint-path = "/path/to/yamllint"
 ```
+
+### pre-commit
+
+既定の引数は`pre-commit-args = ["run", "--files"]`。
+pyfltr関連hookの自動検出と`SKIP`環境変数の構築を含む共通仕様は[pass-filenames設定](#pass-filenames)を参照。
+`prek`と同時に有効化すると同一フックを二重実行するため、pyfltrが警告を発行する。
+
+### prek
+
+`prek`はRust製の`.pre-commit-config.yaml`実行系。
+PyPI wheel配布のため、`uvx prek`またはpyfltrと同じ環境の`uv run prek`で利用できる。
+
+```toml
+[tool.pyfltr]
+prek = true
+```
+
+既定の引数は`prek-args = ["run", "--config=.pre-commit-config.yaml", "--files"]`。
+`--config`明示指定は、prekによるworkspace rootからの設定ファイル探索を抑止する。
+prekの除外機能には依存せず、pyfltrが対象ファイルを選別して`--files`で渡す。
+`pre-commit`と同時に有効化すると同一フックを二重実行するため、pyfltrが警告を発行する。
 
 ### 依存の脆弱性監査ツール（uv-audit / pnpm-audit / npm-audit / yarn-audit）
 
@@ -855,7 +877,7 @@ fast = true
   プロジェクト全体を一括チェックするツールでは`false`に設定する
 - `config-files`: このコマンドの設定ファイル候補のリスト（省略時は空）。globパターン可。
   有効化時にどれもプロジェクトルート直下に見つからないとpyfltrが警告を発行する（ツール自体は実行する）。
-  pre-commitなどの「設定ファイル無しでは機能しないツール」の設定不備を可視化する用途
+  pre-commit・prekなどの「設定ファイル無しでは機能しないツール」の設定不備を可視化する用途
 - `severity`: `"error"`（既定）または`"warning"`。
   詳細は[severityによる失敗の警告化](#severity)を参照
 - `hints`: LLM向けの追加文言（文字列の配列、省略時は空）。

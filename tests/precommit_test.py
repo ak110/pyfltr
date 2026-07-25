@@ -1,4 +1,4 @@
-"""pre-commit統合のテストコード。"""
+"""pre-commit・prek統合のテストコード。"""
 
 import pathlib
 import textwrap
@@ -8,11 +8,59 @@ import pytest
 
 import pyfltr.cli.precommit_guidance
 import pyfltr.config.config
+from tests import conftest as _testconf
 
 
 def test_pre_commit_fast_default_is_true() -> None:
     """pre-commit-fastの既定値がTrueである回帰テスト（v2.0.0でTrueへ切り替え済み）。"""
     assert pyfltr.config.config.DEFAULT_CONFIG["pre-commit-fast"] is True
+
+
+def test_prek_fast_default_is_true() -> None:
+    """prek-fastの既定値がTrueであることを確認する。"""
+    assert pyfltr.config.config.DEFAULT_CONFIG["prek-fast"] is True
+
+
+def test_prek_args_default_pins_config_path() -> None:
+    """prek-argsの既定値が設定ファイルパスを明示することを確認する。
+
+    prekはworkspace rootから再帰的にサブディレクトリの設定ファイルを探索する。
+    pyfltrはその抑止手段として--configの明示指定を採用しているため、
+    既定値からの脱落を回帰として検出する。
+    """
+    args = pyfltr.config.config.DEFAULT_CONFIG["prek-args"]
+    assert "--config=.pre-commit-config.yaml" in args
+
+
+@pytest.mark.parametrize(
+    ("pre_commit_enabled", "prek_enabled", "expects_conflict_warning"),
+    [
+        (False, False, False),
+        (True, False, False),
+        (False, True, False),
+        (True, True, True),
+    ],
+)
+def test_pre_commit_prek_conflict_warning(
+    tmp_path: pathlib.Path,
+    pre_commit_enabled: bool,
+    prek_enabled: bool,
+    expects_conflict_warning: bool,
+) -> None:
+    """pre-commitとprekの有効化状態に応じて二重実行警告を発行する。"""
+    (tmp_path / "pyproject.toml").write_text(
+        textwrap.dedent(f"""\
+            [tool.pyfltr]
+            pre-commit = {str(pre_commit_enabled).lower()}
+            prek = {str(prek_enabled).lower()}
+        """),
+        encoding="utf-8",
+    )
+    (tmp_path / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
+
+    pyfltr.config.config.load_config(config_dir=tmp_path)
+
+    assert bool(_testconf.count_config_warnings("二重実行")) is expects_conflict_warning
 
 
 class TestIsRunningUnderPrecommit:
@@ -212,7 +260,7 @@ class TestBuildSkipValue:
             """),
             encoding="utf-8",
         )
-        result = pyfltr.cli.precommit_guidance.build_skip_value(config_with_auto_skip, tmp_path)
+        result = pyfltr.cli.precommit_guidance.build_skip_value(config_with_auto_skip, tmp_path, command="pre-commit")
         assert result == "pyfltr"
 
     def test_auto_skip_disabled(
@@ -233,7 +281,7 @@ class TestBuildSkipValue:
             """),
             encoding="utf-8",
         )
-        result = pyfltr.cli.precommit_guidance.build_skip_value(config_without_auto_skip, tmp_path)
+        result = pyfltr.cli.precommit_guidance.build_skip_value(config_without_auto_skip, tmp_path, command="pre-commit")
         assert result == ""
 
     def test_manual_skip_combined_with_auto(
@@ -255,7 +303,7 @@ class TestBuildSkipValue:
             """),
             encoding="utf-8",
         )
-        result = pyfltr.cli.precommit_guidance.build_skip_value(config_with_auto_skip, tmp_path)
+        result = pyfltr.cli.precommit_guidance.build_skip_value(config_with_auto_skip, tmp_path, command="pre-commit")
         assert result == "manual-hook,pyfltr"
 
     def test_manual_skip_no_duplicate(
@@ -277,7 +325,7 @@ class TestBuildSkipValue:
             """),
             encoding="utf-8",
         )
-        result = pyfltr.cli.precommit_guidance.build_skip_value(config_with_auto_skip, tmp_path)
+        result = pyfltr.cli.precommit_guidance.build_skip_value(config_with_auto_skip, tmp_path, command="pre-commit")
         assert result == "pyfltr"
 
     def test_no_config_file(
@@ -286,5 +334,46 @@ class TestBuildSkipValue:
         config_with_auto_skip: pyfltr.config.config.Config,
     ) -> None:
         """.pre-commit-config.yamlが存在しない場合は空文字を返す。"""
-        result = pyfltr.cli.precommit_guidance.build_skip_value(config_with_auto_skip, tmp_path)
+        result = pyfltr.cli.precommit_guidance.build_skip_value(config_with_auto_skip, tmp_path, command="pre-commit")
         assert result == ""
+
+
+class TestBuildPrekSkipValue:
+    """prek設定を参照するbuild_skip_valueのテスト。"""
+
+    def test_manual_skip_and_auto_skip_disabled(self, tmp_path: pathlib.Path) -> None:
+        """prek-auto-skip無効時はprek-skipの手動指定だけを返す。"""
+        config = pyfltr.config.config.create_default_config()
+        config.values["prek-auto-skip"] = False
+        config.values["prek-skip"] = ["manual-prek-hook"]
+
+        result = pyfltr.cli.precommit_guidance.build_skip_value(config, tmp_path, command="prek")
+
+        assert result == "manual-prek-hook"
+
+    def test_auto_skip_uses_prek_keys(self, tmp_path: pathlib.Path) -> None:
+        """prek-auto-skip有効時はpyfltr hookを検出する。
+
+        pre-commit側キーを対照値（auto-skip無効・手動指定あり）へ固定し、
+        prek側キーのみが結果へ反映されることを判別できるようにする。
+        """
+        config = pyfltr.config.config.create_default_config()
+        config.values["prek-auto-skip"] = True
+        config.values["prek-skip"] = []
+        config.values["pre-commit-auto-skip"] = False
+        config.values["pre-commit-skip"] = ["should-not-appear"]
+        (tmp_path / ".pre-commit-config.yaml").write_text(
+            textwrap.dedent("""\
+                repos:
+                  - repo: local
+                    hooks:
+                      - id: pyfltr
+                        entry: uv run --frozen pyfltr fast
+                        language: system
+            """),
+            encoding="utf-8",
+        )
+
+        result = pyfltr.cli.precommit_guidance.build_skip_value(config, tmp_path, command="prek")
+
+        assert result == "pyfltr"

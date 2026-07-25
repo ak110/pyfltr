@@ -12,9 +12,9 @@ TUI/非TUIの分岐はこの関数の内側で行い、パイプライン共通�
 
 実行ステージは次の3段で構成する。
 
-1. fixステージ — `{command}-fix-args`が定義された有効なlinterを順次`--fix`付きで実行する（`ci`サブコマンドは無効）
-2. formatterステージ — `ruff-format`・`prettier`等のformatterを直列または並列で実行する
-3. linter/testerステージ — 残りのlinter/testerを並列実行する
+1. fixステージ: `{command}-fix-args`が定義された有効なlinterを順次`--fix`付きで実行する（`ci`サブコマンドは無効）
+2. formatterステージ: `ruff-format`・`prettier`等のformatterを直列または並列で実行する
+3. linter/testerステージ: 残りのlinter/testerを並列実行する
 
 各ステージの結果は`CommandResult`に集約され、ステージ完了ごとに`archive_hook`へ渡される。
 ステージ間の中断（`--fail-fast`時の打ち切りなど）は`stage_runner`の共通ヘルパーで吸収する。
@@ -117,14 +117,16 @@ pyfltr本体はこれらの依存を抱えない。
 
 ### 必須依存は最小化
 
-本体必須依存は次の役割に限定する。
+本体へ同梱する各チェックツールを除き、基盤の必須依存は次の役割に限定する。
 
-- 骨組み: `textual`（TUI）・`natsort`（自然順ソート）・`pyyaml`（pre-commit設定）
+- 骨組み: `textual`（TUI）・`natsort`（自然順ソート）・`pyyaml`（pre-commit・prek設定）
 - run_id生成: `python-ulid`
 - MCP同梱: `mcp`・`platformdirs`
 - プロセス判定: `psutil`（`git commit`経由起動を親系列で検出してMM状態ガイダンスを出力する用途）
 
 `mcp`を本体必須に含めるのはサーバー同梱体験（`pyfltr mcp`が即座に起動できる）を保つため。
+pre-commitとprekは同じ設定形式を使う代替実行系である。
+既存環境との互換性を保ちつつ高速な実行系を選択できるよう、双方を本体へ同梱する。
 
 ### subprocess実行はPopen一本化
 
@@ -203,7 +205,7 @@ commandレコードの`effective_runner` / `runner_source` / `runner_fallback`�
 - ツール×サブプロジェクトの分割は `CommandInfo.subproject_aware` フラグで個別制御する。
   プロジェクトローカル設定・モジュール解決・lockfileをcwd起点で読むツール
  （Python系・JS系・Rust系・.NET系のlinter/testerなど）は既定`True`。
-  リポジトリ単位で動作するツール（`typos`・`shellcheck`・`shfmt`・`pre-commit`）は既定`False`
+  リポジトリ単位で動作するツール（`typos`・`shellcheck`・`shfmt`・`pre-commit`・`prek`）は既定`False`
 - サブプロジェクト別の設定は当該ディレクトリで `load_config(config_dir=cwd)` を解決する。
   `pyproject.toml`を持たないサブプロジェクト（`Cargo.toml`単独・`*.csproj`単独等）は
   `[tool.pyfltr]`の記述先が存在しない。
@@ -344,9 +346,16 @@ JSONL stdoutストリーミングとは独立した経路にすることで、�
 
 既定で有効。`--no-cache`または`cache = false`設定で無効化できる。
 
-カテゴリ別の対象外判定とその根拠は`pyfltr/cache.py`モジュール冒頭docstringを参照。
+カテゴリ別の対象外判定とその根拠は`pyfltr/state/cache.py`モジュール冒頭docstringを参照。
 formatter・tester・依存型linter・外部参照linter・階層型設定linterの5分類を扱う。
 `--config`/`--ignore-path`検知時の安全側無効化も同所に記載する。
+
+## heartbeat出力
+
+heartbeatは長時間実行中の生存確認をJSONLストリームへ追加する。
+発火条件とレコード構築の仕様は各実装モジュールのdocstringに集約する。
+関連する実装は`pyfltr/output/jsonl.py`・`pyfltr/command/core_.py`・`pyfltr/cli/pipeline.py`に配置する。
+利用者向けの条件とレコードの読み方は[CLIコマンド](../guide/usage.md#jsonl)を参照。
 
 ## 出力フォーマット {#output-formats}
 

@@ -15,17 +15,19 @@ clean-stale-dist-info:
 	done
 
 # 開発環境のセットアップ
+# --config明示指定はprekのworkspace再帰探索（サブディレクトリの.pre-commit-config.yamlも
+# 実行対象へ含める仕様）を無効化するため（prek 0.4.11で確認）。
 setup:
 	$(MAKE) clean-stale-dist-info
 	uv sync --all-groups --all-extras
-	uvx pre-commit install
+	uvx prek --config=.pre-commit-config.yaml install
 	git config --local commit.template .gitmessage
 
 # 依存パッケージをアップグレードし全テスト実行
 update:
 	$(MAKE) clean-stale-dist-info
 	env --unset UV_FROZEN uv sync --upgrade --all-groups --all-extras
-	uvx pre-commit autoupdate
+	uvx prek --config=.pre-commit-config.yaml autoupdate
 	$(MAKE) update-actions
 	$(MAKE) test
 

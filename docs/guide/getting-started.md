@@ -45,8 +45,11 @@ python = true
 javascript = true
 ```
 
-ドキュメント系（textlint / markdownlint / actionlint / typos / pre-commit）は言語カテゴリゲートに属さず、
+ドキュメント系（textlint / markdownlint / actionlint / typos）と統合系（prek / pre-commit）は
+言語カテゴリゲートに属さない。
 プリセットで`true`になっているものがそのまま有効化される。
+`preset = "20260413"`を指定し続ける場合は、追加設定なしでpre-commitを利用できる。
+`preset = "latest"`のままpre-commitを使う場合は、`prek = false`と`pre-commit = true`を指定する。
 
 プリセット・言語カテゴリゲートの詳細は[設定項目](configuration.md)を参照。
 
@@ -104,10 +107,10 @@ claude mcp add pyfltr -- uvx pyfltr mcp
 
 - 設定項目の全体像と詳細 → [設定項目](configuration.md) /
   [設定項目（ツール別）](configuration-tools.md)
-- 推奨設定例（pyproject.toml・pre-commit・タスクランナー・CI）
+- 推奨設定例（pyproject.toml・prek・タスクランナー・CI）
     - Pythonプロジェクト → [推奨設定例](recommended.md)
     - 非Pythonプロジェクト（TypeScript/JS・Rust・.NET）→
       [推奨設定例（非Pythonプロジェクト）](recommended-nonpython.md)
-- カスタムコマンドの追加 → [カスタムコマンド例](custom-commands.md)
+- カスタムコマンドの追加 → [プロジェクト固有チェックの追加](custom-commands.md)
 - 対応ツール一覧と各ツールの位置づけ → [対応ツール](index.md)
 - トラブルが起きたとき → [トラブルシューティング](troubleshooting.md)

@@ -117,6 +117,19 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "javascript": False,
     "rust": False,
     "dotnet": False,
+    # prek統合。pre-commitと同一の.pre-commit-config.yamlを読むRust製の実行系。
+    # 環境変数・段階的実行・出力書式がpre-commitと一致することをprek 0.4.11で実機検証済み。
+    # prekはworkspace rootから再帰的にサブディレクトリの設定ファイルを探索して実行対象へ含めるため、
+    # 既定引数へ--configを明示してworkspace探索を無効化する（.prekignoreによる除外は
+    # 検証バージョンで機能しなかったため採用しない）。
+    "prek": False,
+    "prek-path": "prek",
+    "prek-runner": "direct",
+    "prek-args": ["run", "--config=.pre-commit-config.yaml", "--files"],
+    "prek-pass-filenames": True,
+    "prek-fast": True,
+    "prek-auto-skip": True,
+    "prek-skip": [],
     # pre-commit統合。有効にするとpyfltr run/ci/fast実行時に
     # pre-commit runを変更ファイル指定（--files <対象>）で内部実行する。
     # 各hookの内部フィルタ（types・types_or・files・exclude）はファイル指定起動でも適用されるため、
@@ -126,6 +139,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # make format相当の場面でpre-commitを別途呼ぶ必要がなくなる。
     # pre-commit配下からpyfltrが起動された場合はPRE_COMMIT=1
     # 環境変数の検出によりpre-commit統合を自動でスキップする。
+    # pre-commitとprekを同時に有効化した場合は_warn_precommit_prek_conflictが警告を発行する。
     "pre-commit": False,
     "pre-commit-path": "pre-commit",
     "pre-commit-runner": "direct",
@@ -728,6 +742,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
             "taplo",
             "cargo-fmt",
             "dotnet-format",
+            "prek",
             "pre-commit",
         ],
         "lint": [
@@ -1116,6 +1131,7 @@ def load_config(
     _validate_config(config)
     _recompute_fast_aliases(config)
     _warn_config_files(config, base)
+    _warn_precommit_prek_conflict(config)
 
     return config
 
@@ -1387,6 +1403,22 @@ def _warn_config_files(config: Config, base: pathlib.Path) -> None:
         pyfltr.warnings_.emit_warning(
             source="config",
             message=f"{command} が有効化されていますが、設定ファイルが見つかりません: {candidates}",
+        )
+
+
+def _warn_precommit_prek_conflict(config: Config) -> None:
+    """pre-commitとprekが同時に有効化されている場合に警告する。
+
+    双方が同一の.pre-commit-config.yamlのフックを実行するため、同時有効化は
+    二重実行を招く。実行自体は妨げず警告のみとする。
+    """
+    if config["pre-commit"] and config["prek"]:
+        pyfltr.warnings_.emit_warning(
+            source="config",
+            message=(
+                "pre-commit と prek が両方有効化されています。"
+                "同一の.pre-commit-config.yamlのフックが二重実行されるため、いずれか一方のみを有効化してください。"
+            ),
         )
 
 

@@ -3,7 +3,7 @@ name: pyfltr-add-tool
 description: >
   pyfltr に新しい formatter / linter / tester を追加する際の定型手順チェックリスト。
   command/builtin.py / config/config.py / command/dispatcher.py / command/error_parser.py /
-  docs/guide/index.md / tests を一貫して更新する。
+  docs/guide/index.md / tests / .github/workflows などを一貫して更新する。
 ---
 
 # pyfltr 新ツール追加チェックリスト
@@ -19,6 +19,9 @@ description: >
   実行ロジック。共通ヘルパーを優先利用し、独自経路は最小限に抑える
 - `pyfltr/command/error_parser.py`: 出力パーサー（regexまたは関数ベース）
 - `tests/`: `config_test.py`・`command_*_test.py`・`error_parser_test.py` に対応するテストを追加
+- `tests/smoke_test.py`: 新ツールのsmoke testケースを追加
+- `tests/smoke_data/<tool>_workspace/`: 最小の実行対象と設定を含むsmoke test用workspace一式を追加
+- `.github/workflows/ci.yaml`: CIで新ツールを利用できるようインストール手順を追加
 - `docs/guide/index.md`:「対応ツール」一覧へ追記（`README.md`には書かない）
 - `mkdocs.yml`: `plugins.llmstxt.markdown_description` の対応ツール一覧へ新ツール名を追記する
   - ベタ書きで自動同期されないため、追記漏れは
@@ -34,10 +37,11 @@ description: >
   `-version` キーを必須とし、`-path` の既定値は空文字列にする
 - `error_parser` のカスタム関数パーサーは `_CUSTOM_PARSERS` 辞書に登録しないと有効化されない
 - 依存追加は `uv add` を使う（`uv.lock` の直接編集はPreToolUse hookでブロックされる）
-- 外部パス対応分類（`allows_external_paths`・`config_arg_template`・`config_inject_candidates`）の判断が必要となる。
+- 外部パス対応分類を決定する。
+  対象は`allows_external_paths`・`config_arg_template`・`config_inject_candidates`とする。
   分類方針の詳細は `.claude/rules/targets.md` を参照する
-  - リポジトリ全体走査型（`gitleaks` 等）・`tester`（`pytest` 等）・pre-commitのように
-    起点cwd外のファイルを渡すと想定外動作になるツールは `allows_external_paths=False` を指定する
+  - 起点cwd外のファイルを渡すと想定外の動作になるツールへ`allows_external_paths=False`を指定する。
+    `gitleaks`等の全体走査型、`pytest`等のtester、pre-commit・prekが該当する
   - 起点cwd直下の設定ファイルを外部パス指定時にも適用したいツールは
     `config_arg_template=["--config", "{path}"]` と `config_inject_candidates=[...]` を指定する
   - 上記以外は既定値（素通し）のままとする
@@ -49,6 +53,20 @@ description: >
   - 前方一致が必要でも `(?:vulnerability|vulnerabilities)` のように単語を完結させる
 - 新ツールの並び順は `.claude/rules/order.md` の「並び順を揃える箇所」「領域別の末尾追加方針」に従う
   - 新しい領域を設ける場合はorder.mdへ配置順も追記する
+
+## 既存ツールと専用実行経路を共有する新ツールの追加
+
+`pre-commit`と`prek`のように、既存ツールと同一の専用実行経路を共有する新ツールを扱う。
+専用実行経路は`command/dispatcher.py`の専用分岐と`command/precommit.py`等の専用実行モジュールを指す。
+この形の新ツールを追加する場合は以下の正規フローを適用する。
+
+- 専用実行モジュールの出力メッセージと設定キー参照をツール名でパラメーター化する
+- `{ツール名}-`接頭辞の設定キー群一式（`-path`・`-args`・`-fast`等）を新ツール用に複製する。
+  新ツールが既存ツールと同じ設定値を参照する仕様の場合は複製しない
+- 専用テストをツール名でパラメーター化する。
+  入力・期待値・実行経路が異なり、単一テストの分岐が必要になる場合はテストを複製する
+- 同時有効化で同一処理を重複実行する場合は設定警告を発行する。
+  実行対象または設定ファイルが異なり競合しない場合は警告を追加しない
 
 ## 検証
 

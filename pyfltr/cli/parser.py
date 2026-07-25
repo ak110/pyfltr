@@ -299,9 +299,10 @@ def build_parser(custom_commands: collections.abc.Iterable[str] = ()) -> "_HelpO
     """
     parser = _HelpOnErrorArgumentParser(
         description=(
-            "多言語プロジェクトの formatter・linter・tester を単一コマンドで実行する。"
+            "組み込みツールとプロジェクト固有チェックを統合し、"
+            "多言語プロジェクトの品質チェックを一元管理する。"
             "linter・tester は並列実行する。"
-            "JSON Lines 出力と MCP サーバーでコーディングエージェント運用に対応する。"
+            "JSON Lines 出力と MCP サーバーをコーディングエージェントから利用できる。"
         ),
         epilog=(
             "サブコマンド:\n"

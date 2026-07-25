@@ -79,7 +79,9 @@ bin-runner経由（既定はmise）で起動する。
     - シークレット検出・SAST: gitleaks（既定で無効）/ semgrep（既定で無効）/ bandit（既定で無効）
     - SQL: sqlfluff（既定で無効）
     - 依存の脆弱性監査: uv-audit / pnpm-audit / npm-audit / yarn-audit（いずれも既定で無効）
-- 統合: pre-commit（`.pre-commit-config.yaml`のhookを統合実行）
+- 統合: pre-commit・prek（`.pre-commit-config.yaml`のhookを統合実行する代替系統。prekはRust製）
+    - `preset = "latest"`ではprekが有効、pre-commitが無効になる
+    - 両方を有効にすると、同一フックの二重実行についてpyfltrが警告を発行する
 
 既定で無効（opt-in）のツールは、利用時に`pyproject.toml`で`{command} = true`を設定する。
 特記事項を以下に示す。
@@ -111,6 +113,11 @@ bin-runner経由（既定はmise）で起動する。
 個別に有効化・無効化する方法や`python-runner`/`js-runner`/`bin-runner`などの補助設定は
 [設定項目（ツール別）](configuration-tools.md)を参照。
 
+## プロジェクト固有のカスタムチェック
+
+独自スクリプトや社内ツールなどは、組み込みツールと同じ実行基盤へ統合できる。
+設定方法と実行時の扱いは[プロジェクト固有チェックの追加](custom-commands.md)を参照。
+
 ## 検索・置換機能
 
 pyfltrは横断検索（`grep`）と置換（`replace`）も内蔵する。
@@ -120,6 +127,8 @@ pyfltr設定の`exclude`/`extend-exclude`/`respect-gitignore`を尊重するた�
 
 ## コンセプト
 
+- 組み込み機能とプロジェクト固有の処理を同じ設定・実行・出力の規則で扱う
+- 人間とコーディングエージェントが同じ品質チェック結果を利用できる形式で提供する
 - 各種ツールをまとめて並列で呼び出し、実行時間を短縮する
 - 各種ツールのバージョンには極力依存しない（各ツール固有の設定には対応しない）
 - excludeの指定方法が各ツールで異なる問題を、pyfltr側で解決してツールに渡すことで吸収する

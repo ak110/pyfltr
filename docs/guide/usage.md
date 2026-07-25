@@ -59,11 +59,12 @@ pre-commitフックなどで実行しても作業に支障が出にくい高速�
 mypy / pylint / pytestなど起動やファイルあたりの処理に時間がかかるコマンドは除外される。
 Formattersによるファイル変更があっても終了コードは0になる。
 
-既定で含まれるコマンドは以下。
+有効化しているツールのうち`{command}-fast = true`のものが対象で、内訳は以下。
 
-- Formatters: `ruff-format` `prettier` `uv-sort` `shfmt` `cargo-fmt` `dotnet-format`
-- Linters: `ec` `shellcheck` `typos` `actionlint` `ruff-check` `ty` `markdownlint` `textlint` `biome` `oxlint` `cargo-clippy`
-- その他: `pre-commit`（`.pre-commit-config.yaml`のhookを統合実行）
+- Formatters: `prettier` `ruff-format` `uv-sort` `shfmt` `taplo` `cargo-fmt` `dotnet-format`
+- Linters（言語非依存）: `ec` `shellcheck` `typos` `actionlint` `yamllint` `hadolint` `colloquial-check`
+- Linters（言語・記法別）: `ruff-check` `ty` `markdownlint` `textlint` `biome` `oxlint` `cargo-clippy`
+- その他: `pre-commit`・`prek`（`.pre-commit-config.yaml`のhookを統合実行）
 
 含まれるコマンドは各コマンドの`{command}-fast`設定で制御できる（[設定](configuration.md)を参照）。
 
@@ -187,8 +188,9 @@ pyfltr show-run <run_id> [--commands NAME[,NAME...]] [--output] [--output-format
 - `--commands NAME[,NAME...]`: 指定ツールの`tool.json`と`diagnostics.jsonl`全件を表示。
   カンマ区切りで複数指定可（入力順で並ぶ）
 - `--commands NAME --output`: 指定ツールの生出力（`output.log`）全文を表示（単一指定のみ）
-- `--output-format`: `text`（行形式 `key: value`）・`json`（単発dict）・`jsonl`
- （`kind: "meta"` / `"command"` / `"diagnostic"` / `"output"` 種別の1行1レコード）
+- `--output-format`: `text`は行形式`key: value`、`json`は単発dictとして表示する。
+  `jsonl`は`kind`ごとの1行1レコードとして表示し、`kind`は`meta`・`command`・`diagnostic`・`output`の
+  いずれかとなる
 
 存在しない`run_id`・`--commands`指定時は終了コード1で標準エラーにメッセージを出力する。
 
@@ -399,8 +401,9 @@ pyfltr generate-shell-completion powershell | Out-String | Invoke-Expression
 ツールの性質に応じて以下の3分類で扱う。
 
 - `--config`明示注入: `markdownlint` ・ `textlint`（内部パスのみ実行時に適用）
-- 外部パス除外＋警告: `markdownlint` ・ `textlint` ・ `pre-commit` ・ `pytest` ・ `vitest` ・
-  `cargo-test` ・ `dotnet-test` ・ `gitleaks` ・ `semgrep`
+- 外部パス除外＋警告: `markdownlint`・`textlint`・`pre-commit`・`prek`・`uv-audit`・
+  `pnpm-audit`・`npm-audit`・`yarn-audit`・`pytest`・`vitest`・`cargo-test`・
+  `dotnet-test`・`gitleaks`・`semgrep`
 - 既定（素通し）: 上記以外。各ツールの設定探索仕様に委ねる
 
 注入対象では起点cwd直下の設定ファイル（`.textlintrc.yaml` ・ `.markdownlint-cli2.yaml` 等）を
@@ -451,7 +454,7 @@ pyfltr ci --commands=ruff-check,markdownlint [files and/or directories ...]
 
 以下のエイリアスも使用可能。(例: `--commands=format`)
 
-- `format`: `pre-commit` `ruff-format` `prettier` `uv-sort` `shfmt` `cargo-fmt` `dotnet-format`
+- `format`: `prettier` `ruff-format` `uv-sort` `shfmt` `taplo` `cargo-fmt` `dotnet-format` `prek` `pre-commit`
 - `lint`:
     - Python系: `ruff-check` `mypy` `pylint` `pyright` `ty`
     - Markdown系: `markdownlint` `textlint`
@@ -501,7 +504,7 @@ VSCodeのターミナルからクリックして該当箇所にジャンプで�
 - `--no-exclude`: exclude/extend-excludeパターンによるファイル除外を無効化する
 - `--no-gitignore`: `.gitignore`によるファイル除外を無効化する
 - `--no-archive`: 実行アーカイブ（ユーザーキャッシュ配下への全実行の保存）を無効化する
-- `--no-cache`: ファイルhashキャッシュ（対象ファイル未変更時の再実行スキップ）を無効化する
+- `--no-cache`: [ファイルhashキャッシュ](#file-hash-cache)を無効化する
 - `--fail-fast`: 1ツールでもエラーが発生した時点で残りのジョブを打ち切る
  （起動済みサブプロセスには`terminate()`を送り、未開始ジョブは`skipped`として扱われる）
 - `--changed-since <REF>`: gitの任意のref（ブランチ・タグ・コミットハッシュ・`HEAD`など）からの変更ファイルのみを対象とする。
@@ -597,12 +600,21 @@ JSONLヘッダーの`format_source`には検出した変数名（例: `env.CODEX
     - 診断が0件・切り詰め無し・runner_fallback未発火
     - 上記全条件を満たす場合、当該commandレコードを出力しない
 - headerレコードを`run_id`・`commands`・`files`の3つのフィールドのみへ縮約する
-- pre-commit経由でformatter修正が発生したときのstderrガイダンスも抑止する
+- pre-commit・prek経由でformatter修正が発生したときのstderrガイダンスも抑止する
 
 `run-for-agent`サブコマンドでは既定で`--quiet`が有効。`--no-quiet`で無効化できる。
 他サブコマンド（`run --output-format=jsonl`など）では既定で無効。
 summaryレコード・warningレコード・diagnosticレコード・`status:"running"`のheartbeatイベントは
 `--quiet`の影響を受けず常に出力する。
+
+#### heartbeat出力
+
+JSONL出力中に実行中のコマンドが存在し、一定時間レコードが出力されない場合、
+pyfltrは`kind:"command"`かつ`status:"running"`のheartbeatレコードを出力する。
+`command`は実行中のツール名、`elapsed`はそのツールの経過秒数を示す。
+複数のツールが実行中の場合は各ツールのレコードを出力する。
+ツールが完了すると、同じ`command`を持つ最終レコードが後続し、確定した`status`と結果を示す。
+`text`・`sarif`・`code-quality`出力およびTUI使用時はheartbeatレコードを出力しない。
 
 ### コーディングエージェント連携
 
@@ -681,10 +693,11 @@ pyfltr run-for-agent --commands=mypy src/
 `run-for-agent`サブコマンドのJSONL出力に含まれる`command.retry_command`も同じ`--commands=<tool>`書式で生成される。
 失敗ツールだけを再実行したい場合は、該当`command`レコードの`retry_command`をそのまま貼り付けて実行できる。
 
-## pre-commitとの統合
+## pre-commit・prekとの統合
 
 pyfltrは`.pre-commit-hooks.yaml`を同梱していない。
-pre-commitから呼び出したい場合は`.pre-commit-config.yaml`の`repo: local`でlocal hookとして登録する。
+pre-commit・prekいずれから呼び出す場合も、`.pre-commit-config.yaml`の`repo: local`でlocal hookとして登録する。
+prekは同じ設定ファイルをそのまま読む。
 entryには`uvx pyfltr`を指定する（`uvx`でキャッシュされるため2回目以降は実用速度）。
 
 ```yaml
@@ -701,6 +714,9 @@ repos:
 
 dev依存に`pyfltr`を固定する運用では`entry: uv run --frozen pyfltr fast`に置き換えることもできる。
 
+pyfltrからprekのhookを呼び出す統合は`prek = true`で有効化する。
+詳細は[設定項目（ツール別）](configuration-tools.md)のprekに関する説明を参照。
+
 ### 共通の注意点
 
 - `pyfltr fast` はfixステージを内蔵する。pre-commit hookから`{command}-fix-args`定義済みlinter
@@ -710,6 +726,17 @@ dev依存に`pyfltr`を固定する運用では`entry: uv run --frozen pyfltr fa
 - `pass-filenames = False`のツール（`cargo-*` / `dotnet-*` / `tsc`等）はcrate / solution全体を対象とするため、
   コミット時に未変更ファイルまで書き換わる可能性がある。
   cargo系・dotnet系は`serial_group`で自動直列化されるので、利用者が`--jobs=1`などを指定する必要は無い
+
+## ファイルhashキャッシュ {#file-hash-cache}
+
+同じ入力に対するツール再実行をスキップし、待ち時間と再計算を削減する。
+対象はファイル間依存を持たず、設定ファイルを起点cwdのみで解決するキャッシュ対応ツールに限る。
+現時点の対象はtextlintのみである。
+対象ファイル群・ツール固有設定ファイル群のハッシュとツール固有情報からキャッシュキーを構築する。
+ヒット時はツール実行をスキップして前回結果を復元する。
+既定で有効であり、`--no-cache`または`cache = false`設定で実行単位に無効化できる。
+保存期間は`cache-max-age-hours`（既定12時間）で制御する。
+設計判断の詳細は[アーキテクチャ概要](../development/architecture.md)を参照。
 
 ## モノレポでの動作
 
@@ -735,9 +762,9 @@ dev依存に`pyfltr`を固定する運用では`entry: uv run --frozen pyfltr fa
   （この場合はworkspace・solution側の一括実行と重複し得る）
 - `package.json`は汎用ファイルのため単独ではサブプロジェクトとして検出しない
 - 適用範囲: プロジェクトローカル設定・モジュール解決・lockfileをcwd起点で読むツール
- （`mypy`・`pylint`・`pyright`・`pytest`・`textlint`・`eslint`・`cargo-*`・`dotnet-*`・`ruff-*` 等）は
-  サブプロジェクト別に起動する。
-  リポジトリ単位のツール（`typos`・`shellcheck`・`shfmt`・`pre-commit`）は1回だけ起動する
+  （`mypy`・`pylint`・`pyright`・`pytest`・`textlint`・`eslint`など）はサブプロジェクト別に起動する。
+  `cargo-*`・`dotnet-*`・`ruff-*`も同様に扱う。
+  リポジトリ単位のツール（`typos`・`shellcheck`・`shfmt`・`pre-commit`・`prek`）は1回だけ起動する
 - フォールバック: 検出結果が0件または1件の場合は単一プロジェクトとして従来通り動作する
 - 出力スキーマ: モノレポ実行でもJSONL・SARIF・show-run・MCP読み取り系APIの
   公開スキーマは変更しない。サブプロジェクト境界をまたぐ実行結果は1件にマージし、人間向け`output`には
@@ -749,5 +776,5 @@ dev依存に`pyfltr`を固定する運用では`entry: uv run --frozen pyfltr fa
   起点ディレクトリ自体は1つのサブプロジェクトとして扱い、その設定が有効なら起点自身のファイルは実行する
 - 起点cwdでの一括実行はしない: あるツールが起点で有効でも、対象ファイルを持つサブプロジェクトが全て無効化している場合、
   起点cwdで全ファイルをまとめて実行することはない（サブプロジェクト境界をまたいだ誤実行を避ける）
-- リポジトリ単位のツール（`typos`・`shellcheck`・`shfmt`・`pre-commit`）のON/OFFは、
+- リポジトリ単位のツール（`typos`・`shellcheck`・`shfmt`・`pre-commit`・`prek`）のON/OFFは、
   起点 `pyproject.toml` の設定で固定し、子の設定では切り替えない

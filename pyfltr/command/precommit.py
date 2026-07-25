@@ -1,6 +1,11 @@
-"""pre-commit実行。"""
+"""pre-commit・prek実行。
+
+pre-commitとprekは共通の.pre-commit-config.yamlを参照して実行する。
+共通の2段階実行ロジック（stage1で試行→失敗時にstage2で再実行）を備える。
+"""
 
 import argparse
+import logging
 import os
 import pathlib
 import shlex
@@ -12,7 +17,7 @@ import pyfltr.command.process
 import pyfltr.config.config
 from pyfltr.command.core_ import CommandResult
 
-logger = __import__("logging").getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def execute_pre_commit(
@@ -31,21 +36,21 @@ def execute_pre_commit(
     on_subprocess_end: typing.Callable[[], None] | None = None,
     cwd: pathlib.Path | None = None,
 ) -> CommandResult:
-    """pre-commitの2段階実行。
+    """pre-commit・prekの2段階実行。
 
-    stage 1でpre-commit runを変更ファイル指定で実行し、fixer系hookがファイルを
-    修正しただけなら再実行で成功する（"formatted"）。checker系hookのエラーが
-    残る場合は "failed"（has_error=True）として返す。
+    stage 1で変更ファイル指定で実行し、fixer系hookがファイルを修正しただけなら
+    再実行で成功する（"formatted"）。checker系hookのエラーが残る場合は "failed"
+    （has_error=True）として返す。
     """
-    # pre-commit配下から起動された場合は自身を再帰実行しない。
-    # git commit → pre-commit → pyfltr fast → pre-commitの二重実行を防ぐ。
+    # pre-commit・prek配下から起動された場合は自身を再帰実行しない。
+    # git commitからフックを経由してpyfltr fastを起動した際の二重実行を防ぐ。
     if pyfltr.cli.precommit_guidance.is_running_under_precommit():
         return CommandResult.from_run(
             command=command,
             command_info=command_info,
             commandline=commandline,
             returncode=None,
-            output="pre-commit 配下で実行されたため pre-commit 統合をスキップしました。",
+            output=f"pre-commit・prek配下で実行されたため{command}統合をスキップしました。",
             files=len(targets),
             elapsed=time.perf_counter() - start_time,
         )
@@ -65,7 +70,8 @@ def execute_pre_commit(
         )
 
     # SKIP環境変数を構築（pyfltr関連hookを除外して再帰を防止）
-    skip_value = pyfltr.cli.precommit_guidance.build_skip_value(config, config_dir)
+    integration_command = typing.cast(typing.Literal["pre-commit", "prek"], command)
+    skip_value = pyfltr.cli.precommit_guidance.build_skip_value(config, config_dir, integration_command)
     pre_commit_env = dict(env) if env is not None else dict(os.environ)
     if skip_value:
         existing_skip = pre_commit_env.get("SKIP", "")
@@ -104,7 +110,7 @@ def execute_pre_commit(
     # ただしstage 1でtimeout超過した場合は再実行しない（同じハングが再現する確率が高く時間を浪費するため）。
     if returncode != 0 and not timeout_exceeded:
         if args.verbose and on_output is not None:
-            on_output("pre-commit: stage 2 再実行\n")
+            on_output(f"{command}: stage 2 再実行\n")
         proc = pyfltr.command.process.run_subprocess_with_timeout(
             commandline,
             pre_commit_env,

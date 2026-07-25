@@ -57,13 +57,12 @@ def test_build_lines_supported_tool_diagnostics(default_config):
     assert parsed[3]["commands_summary"]["needs_action"]["failed"] == 1
 
 
-def test_build_lines_warnings_prepended(default_config):
+@pytest.mark.parametrize("tool", ["pre-commit", "prek"])
+def test_build_lines_warnings_prepended(default_config, tool: str):
     """warnings引数の内容がdiagnosticより前にkind="warning"で出力されること。"""
     result = _make_result("ruff-format", returncode=0, command_type="formatter")
-    warnings = [
-        {"source": "config", "message": "pre-commit 設定ファイル不在"},
-        {"source": "git", "message": "git が見つからない"},
-    ]
+    warning_message = f"{tool} 設定ファイル不在"
+    warnings = [{"source": "config", "message": warning_message}, {"source": "git", "message": "git が見つからない"}]
     lines = pyfltr.output.jsonl.build_lines(
         [result], default_config, exit_code=0, commands=["ruff-format"], files=1, warnings=warnings
     )
@@ -71,7 +70,7 @@ def test_build_lines_warnings_prepended(default_config):
 
     assert parsed[0]["kind"] == "header"
     assert [r["kind"] for r in parsed[1:3]] == ["warning", "warning"]
-    assert parsed[1] == {"kind": "warning", "source": "config", "msg": "pre-commit 設定ファイル不在"}
+    assert parsed[1] == {"kind": "warning", "source": "config", "msg": warning_message}
     assert parsed[2] == {"kind": "warning", "source": "git", "msg": "git が見つからない"}
     # warningsの後にtoolレコード、最後にsummaryが並ぶ
     assert [r["kind"] for r in parsed[3:]] == ["command", "summary"]

@@ -1,7 +1,7 @@
 [project]
 name = "pyfltr"
 dynamic = ["version"]
-description = "Python Formatters, Linters, and Testers Runner."
+description = "多言語プロジェクトの品質チェックを一元管理し、コーディングエージェントから扱える形で提供する基盤。"
 authors = [{ name = "aki.", email = "aki@tqzh.tk" }]
 license = {text = "MIT"}
 readme = "README.md"
@@ -25,6 +25,7 @@ dependencies = [
     "natsort>=8.0",
     "platformdirs>=4.0",
     "pre-commit>=4.0",
+    "prek>=0.4.11",
     "psutil>=6.0",
     "pylint-pydantic>=0.4",
     # `--output-format=json2`レポーターの対応起点が3.2.0のため下限を3.2に固定する。

@@ -1,8 +1,9 @@
-"""pre-commit統合の処理。"""
+"""pre-commit・prek統合の処理。"""
 
 import logging
 import os
 import pathlib
+import typing
 
 import psutil
 import yaml
@@ -16,7 +17,8 @@ def is_running_under_precommit() -> bool:
     """pre-commit配下で実行されているかを判定する。
 
     pre-commitフレームワークは子プロセスへ`PRE_COMMIT=1`を設定する。
-    これを検出して、pyfltr側のpre-commit統合を自動スキップする判断に使う。
+    prekも同一の環境変数を設定する（prek 0.4.11で確認）。
+    これを検出して、pyfltr側のpre-commit・prek統合を自動スキップする判断に使う。
     """
     return os.environ.get("PRE_COMMIT") == "1"
 
@@ -27,8 +29,8 @@ _GIT_PROCESS_NAMES: frozenset[str] = frozenset({"git", "git.exe"})
 def is_invoked_from_git_commit() -> bool:
     """親プロセス系列にgitコマンドが居るかを判定する。
 
-    pre-commitは`git commit`がspawnする`git-hook` → `pre-commit` → `pyfltr`
-    という親子関係で動くため、祖先プロセスに`git`が含まれればgit commit経由の
+    pre-commit・prekは`git commit`が起動するgit hookを経由して動くため、
+    祖先プロセスに`git`が含まれればgit commit経由の
     起動と判断できる。formatterによる自動修正が発生したときに、ユーザーへ
     「git addしてからcommitし直す」ガイダンスを出力する条件として使う。
 
@@ -83,17 +85,22 @@ def detect_pyfltr_hooks(config_dir: pathlib.Path) -> list[str]:
     return hook_ids
 
 
-def build_skip_value(config: pyfltr.config.config.Config, config_dir: pathlib.Path) -> str:
+def build_skip_value(
+    config: pyfltr.config.config.Config,
+    config_dir: pathlib.Path,
+    command: typing.Literal["pre-commit", "prek"],
+) -> str:
     """SKIP環境変数に渡す値を構築する。
 
     auto-skipが有効なら自動検出結果を、手動指定と合わせてカンマ区切りで返す。
+    `command`は`"pre-commit"`または`"prek"`を受け取り、参照する設定キーの接頭辞を切り替える。
     """
-    skip_ids: list[str] = list(config["pre-commit-skip"])
-    if config["pre-commit-auto-skip"]:
+    skip_ids: list[str] = list(config[f"{command}-skip"])
+    if config[f"{command}-auto-skip"]:
         auto_ids = detect_pyfltr_hooks(config_dir)
         for hook_id in auto_ids:
             if hook_id not in skip_ids:
                 skip_ids.append(hook_id)
     if skip_ids:
-        logger.debug("pre-commit SKIP対象: %s", ", ".join(skip_ids))
+        logger.debug("%s SKIP対象: %s", command, ", ".join(skip_ids))
     return ",".join(skip_ids)

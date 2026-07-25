@@ -3,7 +3,7 @@ name: ssot
 description: >
   pyfltrのSSOT・参照パスの方針。
   内部リンクのアンカー方針・MkDocsのdocs_dir外参照禁止・規約適用ルール・モジュールパス参照追従・
-  SSOT俯瞰（連動更新先一覧）を集約する。
+  SSOT俯瞰（連動更新先の一覧）・機能追加時の文書露出判断を集約する。
   pyfltr/config/config.py・pyfltr/cli/output_format.py・pyfltr/command/runner.py・
   pyfltr/command/mise.py・pyfltr/state/archive.py・pyfltr/state/cache.py・
   docs/guide/*.md・docs/development/*.md・mkdocs.yml・README.md・CLAUDE.md・
@@ -65,8 +65,31 @@ description: >
   mise active tools取得結果の構造とステータス語彙
 - `.claude/skills/grep-replace/SKILL.md`:
   grep/replace機能の設計判断・undo方式・CLI/MCP既定値差分
+- `docs/guide/custom-commands.md`:
+  カスタムコマンド機能の解説。`README.md`特徴章・`docs/guide/index.md`の
+  カスタムチェック節およびコンセプト節・`mkdocs.yml`内llmstxtとは人手同期
+- ツールの1行概要:
+  `README.md`冒頭・`docs/index.md`冒頭・`mkdocs.yml`の`site_description`とllmstxt内
+  `markdown_description`・`pyproject.toml`の`description`・`AGENTS.md`冒頭・
+  `pyfltr/cli/parser.py`の`description`を人手同期する。
+  `site_description`は表示幅に収める短縮形を用いる
 
 `mkdocs.yml`内llmstxtの`markdown_description`にはLLMが利用する際に有用な情報のみ記載する
 （`run-for-agent`サブコマンド・主要オプションなど）。
 本文は`tests/llmstxt_test.py`が「全サブコマンド名・全ビルトインコマンド名を含むこと」を機械検証するため、
 整理時に名前を漏らさず記載する。
+
+## 機能追加時の文書露出判断
+
+既存機能の拡張・新機能追加では、利用者が機能を発見して使用できる掲載経路を整備する。
+個別の対応ツール名単位の掲載先判断は本節の対象外とし、
+`.claude/skills/pyfltr-add-tool/SKILL.md`の「触るべきファイル」節の規定に従う。
+
+- 主要機能はREADMEの特徴章へ掲載する。
+  既存機能の内部改善など、利用者が新たに選択・操作する要素が無い場合は掲載しない
+- 利用者が設定または実行する機能は、`docs/guide/index.md`のコンセプト節と関連する利用者向けページへ掲載する。
+  既存ページの手順や仕様に影響しない内部変更は掲載しない
+- LLMが機能を選択または操作するために必要な情報は、`mkdocs.yml`内llmstxtの`markdown_description`へ掲載する。
+  機能単位の記載漏れは`tests/llmstxt_test.py`で検出されないため人手で検査する
+- navでは機能の用途に対応する区分へページを配置する。
+  既存ページ内の説明追加だけで機能を発見できる場合は独立ページを追加しない

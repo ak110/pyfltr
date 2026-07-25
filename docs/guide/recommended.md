@@ -1,6 +1,6 @@
 # 推奨設定例
 
-Pythonプロジェクト向けの推奨構成例（pyproject.toml・pre-commit・タスクランナー・CI設定）。
+Pythonプロジェクト向けの推奨構成例（pyproject.toml・prek・タスクランナー・CI設定）。
 設定して実行するところから始める場合は[はじめに](getting-started.md)を参照。
 
 ## pyproject.toml
@@ -233,30 +233,30 @@ PEP 695型パラメーター構文（`def f[T](): ...`）を使用するプロ�
     - markdownはtextlint / markdownlint、TOML（pyproject.toml）でuv-sort
 - `require_serial: true`: pyfltr自身が内部で並列化するため、pre-commit側での多重起動を抑止する
 
-pre-commit統合の自動スキップなど双方向の挙動は[トラブルシューティング](troubleshooting.md)を参照。
+pre-commit・prek統合の自動スキップなど双方向の挙動は[トラブルシューティング](troubleshooting.md)を参照。
 
-## pyfltrとpre-commitの呼び出し経路
+## pyfltrとpre-commit・prekの呼び出し経路
 
-pyfltrはpre-commitを内部で呼び出し、pre-commitはpyfltrをフックとして呼び出す。
-git commit経由でpre-commitが起動した場合は、pyfltrが`PRE_COMMIT=1`を検出して
-内部のpre-commit統合を自動スキップし、二重実行を防ぐ。
+pyfltrはpre-commit・prekのうち有効な方を内部で呼び出し、pre-commit・prekはpyfltrをフックとして呼び出す。
+git commit経由でpre-commit・prekのいずれかが起動した場合、pyfltrは`PRE_COMMIT=1`を検出する。
+pyfltrは内部の統合を自動スキップし、二重実行を防ぐ。
 
 ```mermaid
 sequenceDiagram
     participant U as git commit
-    participant PC as pre-commit
+    participant PC as pre-commit / prek
     participant PH as pre-commit-hooks
     participant PF as pyfltr fast
 
     U->>PC: フック起動
     PC->>PH: check-yaml, trailing-whitespace等
     PC->>PF: pyfltr fast（local hook）
-    Note over PF: PRE_COMMIT=1 検出で<br/>pre-commit統合をスキップ
+    Note over PF: PRE_COMMIT=1 検出で<br/>統合をスキップ
     PF->>PF: ruff-format, ruff-check等
 ```
 
-逆に`make test`等から`pyfltr run`を呼び出した場合は、pyfltr側が`SKIP=pyfltr`付きで
-`pre-commit run`を変更ファイル指定（`--files <対象>`）で起動する。
+逆に`make test`等から`pyfltr run`を呼び出した場合、pyfltr側が`SKIP=pyfltr`付きで有効なpre-commitまたはprekを起動する。
+pre-commitとprekは、いずれも変更ファイル指定（`--files <対象>`）で起動する。
 各hook内部の`types`・`types_or`・`files`・`exclude`フィルタはファイル指定起動でも適用されるため、関係するhookのみ動作する。
 これによりpre-commit-hooks（check-yaml等）を統合実行できる。
 詳細な挙動と無効化手順は[トラブルシューティング](troubleshooting.md)を参照。
@@ -265,7 +265,12 @@ sequenceDiagram
 
 pyfltrを呼び出すタスクランナーの設定例。
 言語を問わず`uvx pyfltr`を利用できる。
-pre-commitはpyfltrの依存に含まれるため、`uvx pre-commit`で利用可能になる。
+pre-commit・prekはいずれもpyfltrの依存に含まれる。
+`uvx pre-commit`・`uvx prek`で利用可能になる。
+以降の例はprekを既定として示すが、`prek`関連コマンドを`pre-commit`へ置き換えても同様に動作する。
+prekはworkspace rootからサブディレクトリの設定ファイルも再帰探索するため、
+例では`--config=.pre-commit-config.yaml`で対象設定を固定している。
+pre-commitへ置き換える場合は、この指定を削除する。
 
 ### Makefile
 
@@ -295,12 +300,12 @@ help:
 # 開発環境のセットアップ
 setup:
 	uv sync --all-groups --all-extras
-	uvx pre-commit install
+	uvx prek --config=.pre-commit-config.yaml install
 
 # 依存パッケージをアップグレードし全テスト実行
 update:
 	env --unset UV_FROZEN uv sync --upgrade --all-groups
-	uvx pre-commit autoupdate
+	uvx prek --config=.pre-commit-config.yaml autoupdate
 	$(MAKE) test
 
 # フォーマット + 軽量lint（開発時の手動実行用。自動修正あり）
@@ -327,7 +332,7 @@ uv = "latest"
 description = "開発環境のセットアップ"
 run = [
   "...",
-  "uvx pre-commit install",
+  "uvx prek --config=.pre-commit-config.yaml install",
 ]
 
 [tasks.format]
@@ -337,7 +342,7 @@ run = [
 ]
 
 [tasks.test]
-description = "全チェック (pyfltr run がpre-commitを内部で呼び出す)"
+description = "全チェック（pyfltr runがprekまたはpre-commitを内部で呼び出す）"
 run = [
   "uvx pyfltr run",
 ]
@@ -352,10 +357,10 @@ run = [
 ポイント:
 
 - `setup`: 開発環境のセットアップ
-- `format`: `pyfltr fast`（fix段→formatter段→軽量linter段 + 内部pre-commit統合）を実行する
-    - pre-commit-fastが既定でTrueのため、pre-commit-hooks（check-yaml等）もこの1コマンドで実行される
+- `format`: `pyfltr fast`（fix段→formatter段→軽量linter段 + 内部prek・pre-commit統合）を実行する
+    - `prek-fast`と`pre-commit-fast`が既定で`true`のため、有効化しているprekまたはpre-commitのhookもこの1コマンドで実行される
 - `test`: ローカル開発用
-    - `pyfltr run`がpre-commitを内部で呼び出すため、1コマンドで全チェックが完結する
+    - `pyfltr run`が有効なprekまたはpre-commitを内部で呼び出すため、1コマンドで全チェックが完結する
 - `ci`: CI用
     - `pyfltr ci`はformatter差分も含めて失敗扱いにする
 

@@ -6,8 +6,11 @@ TypeScript/JS・Rust・.NETプロジェクト向けの推奨構成例。
 共通のポイントは以下のとおり。
 
 - `preset = "latest"`: 各時点での推奨ツール構成。
-  ドキュメント系（textlint / markdownlint / actionlint / typos / pre-commit）は言語カテゴリゲートに属さず、
-  プリセットでtrueになっているツールがそのまま有効化される
+  ドキュメント系（textlint / markdownlint / actionlint / typos）と統合系（prek / pre-commit）は
+  言語カテゴリゲートに属さない。
+  プリセットでtrueになっているツールがそのまま有効化される。
+  `preset = "20260413"`を指定し続ける場合は、追加設定なしでpre-commitを利用できる。
+  `preset = "latest"`のままpre-commitを使う場合は、`prek = false`と`pre-commit = true`を指定する
 - 言語カテゴリゲートの詳細は[設定項目](configuration.md)を参照
 - `uvx pyfltr`: pyfltrをdev依存に含めないため、`uvx`で都度取得して実行する
 - 言語固有のツール + ドキュメント系lint（textlint / markdownlint / prettier）を組み合わせる
@@ -18,9 +21,12 @@ TypeScript/JS・Rust・.NETプロジェクト向けの推奨構成例。
  （[ツール別設定](configuration-tools.md#command-runner)を参照）
 - タスクランナー（Makefile / mise.toml）の設定例は[推奨設定例](recommended.md)の「タスクランナー」を参照
 
+以下の`.pre-commit-config.yaml`はpre-commit・prekの双方で利用できる。
+各言語節では、対象言語に応じた`types_or`を指定する。
+
 ## TypeScript/JS専用プロジェクト
 
-`pyproject.toml`:
+TypeScript/JS用の`pyproject.toml`の例を以下に示す。
 
 ```toml
 [tool.uv]
@@ -39,7 +45,7 @@ extend-exclude = [
 ]
 ```
 
-`.pre-commit-config.yaml`:
+TypeScript/JS用の`.pre-commit-config.yaml`の例を以下に示す。
 
 ```yaml
   - repo: local
@@ -64,7 +70,7 @@ extend-exclude = [
 - vitest: `vitest-args = ["run", "--passWithNoTests"]`が既定のため追加引数を指定する必要はない
 - 使わないツールは個別に`{command} = false`で無効化できる
 - svelte-checkなどフレームワーク固有のツールはカスタムコマンドで追加する
- （[カスタムコマンド例](custom-commands.md)の「svelte-check」を参照）
+ （[プロジェクト固有チェックの追加](custom-commands.md)の「svelte-check」を参照）
 - 依存の脆弱性監査は任意で追加できる（既定無効）。
   `js-runner`に合わせて`pnpm-audit` / `npm-audit` / `yarn-audit`のいずれかを有効化する
 
@@ -90,7 +96,7 @@ SARIF出力と`github/codeql-action/upload-sarif`を組み合わせると、
 ドキュメント系lint（`textlint` / `markdownlint-cli2` / `prettier`）をpyfltrに一元化する例。
 言語カテゴリはすべてopt-inのため、非Rustプロジェクトでcargo系が実行されることはない。
 
-`pyproject.toml`:
+Rust用の`pyproject.toml`の例を以下に示す。
 
 ```toml
 [tool.uv]
@@ -114,7 +120,8 @@ extend-exclude = [
 プロジェクト固有の許可語がある場合は`[tool.typos]`セクションも追記する
 （詳細は[推奨設定例](recommended.md)の「typosの許可語設定」を参照）。
 
-`mise.toml`例（cargo系をmise経由で固定バージョン・固定コンポーネントで起動）:
+Rust用の`mise.toml`の例を以下に示す。
+cargo系をmise経由で固定バージョン・固定コンポーネントで起動する。
 
 ```toml
 [tools]
@@ -128,7 +135,7 @@ mise設定に`rust`の記述がある場合、バージョン固定・components
 `cargo-fmt-version`等をpyfltr側で別途明示する二重管理は不要。
 PATH上のcargoを使いたい場合は`cargo-fmt-runner = "direct"`等を指定する。
 
-`.pre-commit-config.yaml`（ローカルフックで`uvx pyfltr fast`を呼ぶ）:
+Rust用の`.pre-commit-config.yaml`の例を以下に示す。
 
 ```yaml
   - repo: local
@@ -163,7 +170,8 @@ cwdとして起動する。
 同じ仕組みはPythonルート＋`.NET`のプロジェクトファイル
 （`*.csproj`・`*.sln`）単独ディレクトリにも適用される。
 
-ルート`pyproject.toml`（`rust/<crate>/`側への`pyproject.toml`追加は不要）:
+PythonルートとRustサブディレクトリを併用する`pyproject.toml`の例を以下に示す。
+`rust/<crate>/`側への`pyproject.toml`追加は不要である。
 
 ```toml
 [tool.pyfltr]
@@ -173,7 +181,7 @@ rust = true
 
 `Cargo.toml`単独ディレクトリは`[tool.pyfltr]`の記述先を持たないため、
 cargo系コマンドのON/OFF・除外設定はルート`pyproject.toml`の値をそのまま継承する。
-`.pre-commit-config.yaml`の`types_or`にも`rust`を含める。
+PythonとRustの両方を対象にする`.pre-commit-config.yaml`の例を以下に示す。
 
 ```yaml
   - repo: local
@@ -196,7 +204,8 @@ JS専用サブディレクトリを独立サブプロジェクトとして分離
 `dotnet format` / `dotnet build` / `dotnet test`と、ドキュメント系lintをpyfltrに一元化する例。
 Rustプロジェクト節の構成を基準に、cargo系コマンドをdotnet系に置き換える。
 
-`mise.toml`例（dotnet SDKをmise経由で固定バージョンで起動）:
+.NET用の`mise.toml`の例を以下に示す。
+dotnet SDKをmise経由で固定バージョンで起動する。
 
 ```toml
 [tools]
@@ -208,7 +217,7 @@ mise設定に`dotnet`の記述がある場合、バージョン固定がその�
 direct実行へ戻したい場合は`dotnet-format-runner = "direct"`等を指定する。
 direct実行時、pyfltrは環境変数`DOTNET_ROOT`配下の`dotnet`実行ファイルを優先する。
 
-`pyproject.toml`:
+.NET用の`pyproject.toml`の例を以下に示す。
 
 ```toml
 [tool.uv]
@@ -230,7 +239,7 @@ extend-exclude = [
 ]
 ```
 
-`.pre-commit-config.yaml`:
+.NET用の`.pre-commit-config.yaml`の例を以下に示す。
 
 ```yaml
   - repo: local

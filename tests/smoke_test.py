@@ -86,6 +86,7 @@ _CASES: tuple[_Case, ...] = (
     _Case("yamllint", "basic", ("sample.yaml",), required_bins=("yamllint",)),
     _Case("typos", "basic", ("sample.txt",), required_bins=("typos",)),
     _Case("pre-commit", "pre_commit_workspace", ("sample.py",), required_bins=("pre-commit",), git_required=True),
+    _Case("prek", "prek_workspace", ("sample.py",), required_bins=("prek",), git_required=True),
 )
 
 _REPO_ROOT: pathlib.Path = pathlib.Path(__file__).resolve().parents[1]
