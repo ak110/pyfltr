@@ -581,7 +581,7 @@ def test_tool_name_as_subcommand_shows_guidance(capsys):
     err = capsys.readouterr().err
     assert "'textlint'" in err
     assert "pyfltr run --commands=textlint docs/" in err
-    assert "pyfltr run-for-agent --commands=textlint docs/" in err
+    assert "run-for-agent" not in err
 
 
 def test_alias_name_as_subcommand_shows_guidance(capsys):
@@ -719,7 +719,11 @@ def test_run_for_agent_quiet_default_and_override(_isolated_target, mocker, caps
 
 
 def test_run_output_format_jsonl_defaults_verbose(_isolated_target, mocker, capsys):
-    """`pyfltr run --output-format=jsonl`は既定でquiet=Falseとなる（従来挙動維持）。"""
+    """エージェント検出変数が無い環境の`pyfltr run --output-format=jsonl`は既定でquiet=Falseとなる。
+
+    `tests/conftest.py`の`_isolate_output_format_envs`が検出変数を未設定化するため、
+    本ケースは検出なしの経路を通る。
+    """
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
     mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
     argv = ["run", "--work-dir", str(_isolated_target), "--output-format=jsonl", str(_isolated_target)]

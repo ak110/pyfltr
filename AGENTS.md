@@ -13,11 +13,14 @@ JSON Lines出力（`--output-format=jsonl`）とMCPサーバー（`pyfltr mcp`�
   - `ghcr.io/ak110/pyfltr:latest`をリリースを伴わず更新する
   - `--field=version=X.Y.Z`で特定バージョンを指定する。未指定時はPyPI最新公開版を採用する
 - テストコードは`pyfltr/xxx_.py`に対して`tests/xxx_test.py`として配置する
-- コミット前の検証方法: `uv run pyfltr run-for-agent`
-  - formatter・linter・tester・カスタムチェックなど対応ツール全般を個別に直接起動せず、`pyfltr run-for-agent <path>`を使う。
+- コミット前の検証方法: `make test`
+  - formatter・linter・tester・カスタムチェックなど対応ツール全般を個別に直接起動せず、
+    `make test`または`uv run pyfltr run <path>`を使う。
     設定で無効化しているツールも直接起動すれば動作するため、設定による無効化は直接起動への防御にならない
-  - 特定ファイルのみを対象にする場合も同じ形でパスを渡す
+  - 特定ファイルのみを対象にする場合は`uv run pyfltr run <path>`にパスを渡す
   - 修正後の再実行時は`--commands=mypy,ruff-check`等で限定して実行する（最終検証はCIに委ねる前提）
+  - エージェント検出用の環境変数が設定された環境では`run`の出力形式が`jsonl`、
+    静音モードが既定で有効になるため、`run-for-agent`を明示指定する必要はない
 
 ## アーキテクチャの参照先
 

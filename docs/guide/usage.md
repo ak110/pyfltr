@@ -40,12 +40,12 @@ Formattersによるファイル変更があってもLinters/Testersでのエラ�
 pyfltr run-for-agent [files and/or directories ...]
 ```
 
-`run`と同じ動作で出力形式の既定値を`jsonl`に切り替えたサブコマンド。
-コーディングエージェントから呼び出す際に用いる。
-`pyfltr run --output-format=jsonl`と多くの場合は等価だが、サブコマンド既定値であるため
-`PYFLTR_OUTPUT_FORMAT=text`で`text`へ戻すことができる点が異なる。
-加えて`--quiet`が既定で有効となり、JSONL出力ノイズを削減する
-（`--no-quiet`で従来挙動へ戻す）。
+`run`と同じ動作で出力形式の既定値を`jsonl`に切り替え、`--quiet`を既定で有効にしたサブコマンド。
+互換維持のために残しており、通常は`run`を使う。
+`AI_AGENT` / `CODEX_CI` / `CLAUDECODE` / `CURSOR_AGENT`のいずれかが設定された環境では
+`run`も同じ既定値になるため、両者は等価に振る舞う。
+これらの環境変数が無い環境で明示的にJSON Lines出力と静音モードを得たい場合に指定する。
+`PYFLTR_OUTPUT_FORMAT=text`で`text`へ戻すことができ、`--no-quiet`で静音モードを解除できる。
 
 出力形式の詳細は[jsonl形式の使い方](#jsonl)を参照。
 
@@ -429,9 +429,12 @@ pyfltr generate-shell-completion powershell | Out-String | Invoke-Expression
 | fixステージ（自動修正） | 有効 | 有効 | 有効 | 無効 |
 | Formatterによる変更時の終了コード | `0`（成功扱い） | `0`（成功扱い） | `0`（成功扱い） | `1`（失敗扱い） |
 | Linters / Testersのエラー時の終了コード | `1` | `1` | `1` | `1` |
-| 既定の出力形式 | `text` | `text` | `jsonl` | `text` |
-| `--quiet`既定 | 無効 | 無効 | 有効 | 無効 |
-| 主な用途 | pre-commitフック等 | ローカルで全チェック | コーディングエージェント呼び出し | CI・コミット前 |
+| 既定の出力形式 | `text`（注） | `text`（注） | `jsonl` | `text`（注） |
+| `--quiet`既定 | 無効（注） | 無効（注） | 有効 | 無効（注） |
+| 主な用途 | pre-commitフック等 | ローカルで全チェック | `run`の互換用別名 | CI・コミット前 |
+
+（注）`AI_AGENT` / `CODEX_CI` / `CLAUDECODE` / `CURSOR_AGENT`のいずれかが設定された環境では、
+`fast` / `run` / `ci`の既定の出力形式は`jsonl`、`--quiet`既定は有効となり、`run`は`run-for-agent`と等価になる。
 
 `fast` / `run` / `run-for-agent` サブコマンドは、formatter段の前にfixステージを内蔵する。
 
@@ -566,8 +569,8 @@ formatterによる書き換えはそれ自体が成功扱いで、再実行を�
 
 ```shell
 pyfltr run --output-format=jsonl
-# 以下はサブコマンド既定値で出力形式を jsonl にする略形（PYFLTR_OUTPUT_FORMAT で text へ戻すことが可能）
-pyfltr run-for-agent
+# エージェント検出用の環境変数がある環境では --output-format の指定なしで jsonl になる
+pyfltr run
 ```
 
 `--output-format=jsonl`かつ`--output-file`未指定時、stdoutにはJSONLのみを書き、
@@ -588,8 +591,8 @@ CLIオプション`--output-format`が指定されている場合は環境変数
 コーディングエージェント環境下での自動切り替え用とする。
 JSONLヘッダーの`format_source`には検出した変数名（例: `env.CODEX_CI`）が記録される。
 
-`PYFLTR_OUTPUT_FORMAT`を明示すれば、エージェント検出環境下や`run-for-agent`配下でもtext等へ変更できる
-（例: `PYFLTR_OUTPUT_FORMAT=text pyfltr run-for-agent`）。
+`PYFLTR_OUTPUT_FORMAT`を明示すれば、エージェント検出環境下でもtext等へ変更できる
+（例: `PYFLTR_OUTPUT_FORMAT=text pyfltr run`）。
 
 #### 静音モード（`--quiet`・`--no-quiet`）
 
@@ -602,8 +605,10 @@ JSONLヘッダーの`format_source`には検出した変数名（例: `env.CODEX
 - headerレコードを`run_id`・`commands`・`files`の3つのフィールドのみへ縮約する
 - pre-commit・prek経由でformatter修正が発生したときのstderrガイダンスも抑止する
 
-`run-for-agent`サブコマンドでは既定で`--quiet`が有効。`--no-quiet`で無効化できる。
-他サブコマンド（`run --output-format=jsonl`など）では既定で無効。
+`run-for-agent`サブコマンドでは常に既定で`--quiet`が有効。
+`AI_AGENT` / `CODEX_CI` / `CLAUDECODE` / `CURSOR_AGENT`のいずれかが設定された環境では
+`run`・`ci`・`fast`でも既定で有効になる。いずれも`--no-quiet`で無効化できる。
+これらの環境変数が無い環境では`run-for-agent`以外は既定で無効。
 summaryレコード・warningレコード・diagnosticレコード・`status:"running"`のheartbeatイベントは
 `--quiet`の影響を受けず常に出力する。
 
@@ -622,24 +627,25 @@ pyfltrは`kind:"command"`かつ`status:"running"`のheartbeatレコードを出�
 
 #### 直接呼び出し（推奨）
 
-エージェントがシェルコマンドを実行できる環境では、`pyfltr run-for-agent`を直接呼ぶ。
-JSONL出力をそのまま読み込むことができる。
+エージェントがシェルコマンドを実行できる環境では、`pyfltr run`を直接呼ぶ。
+エージェント検出用の環境変数が設定されていれば出力形式は自動的にJSON Linesとなり、
+そのまま読み込むことができる。
 
 #### MCP経由
 
 `pyfltr mcp`でMCPサーバーを起動すると、コーディングエージェントが`run_for_agent`ツールとして呼び出せる。
-CLIの`run-for-agent`とは異なりJSONL出力がstdoutに流れないため、
+CLIの直接呼び出しとは異なりJSONL出力がstdoutに流れないため、
 エージェントのMCPクライアントが結果を構造化データとして受け取れる。
 ただし`pyfltr mcp`起動後は同一プロセスのstdin/stdoutがJSON-RPCに専有されるため、
 他のコマンドと組み合わせた場合に出力が混ざる事故に注意する
 （詳細は[トラブルシューティング](troubleshooting.md)を参照）。
 
-コーディングエージェントが`pyfltr run-for-agent`を活用する基本的な流れ:
+コーディングエージェントが`pyfltr run`を活用する基本的な流れ:
 
 1. 全体実行でsummaryを確認する
 
     ```shell
-    pyfltr run-for-agent
+    pyfltr run
     ```
 
     末尾のsummary行（`"kind":"summary"`）の`commands_summary.needs_action`配下を参照して対応要件数の有無を確認し、
@@ -653,10 +659,10 @@ CLIの`run-for-agent`とは異なりJSONL出力がstdoutに流れないため、
 
     ```shell
     # 失敗ツールを --commands で限定する
-    pyfltr run-for-agent --commands=mypy path/to/file.py
+    pyfltr run --commands=mypy path/to/file.py
 
     # または直前runの失敗ツール・失敗ファイルをまとめて再実行
-    pyfltr run-for-agent --only-failed
+    pyfltr run --only-failed
     ```
 
     `--commands`で特定ツールに限定することで出力量を抑えつつ、
@@ -683,14 +689,14 @@ CLIの`run-for-agent`とは異なりJSONL出力がstdoutに流れないため、
 
 ```shell
 pyfltr run --commands=textlint docs/
-pyfltr run-for-agent --commands=mypy src/
+pyfltr run --commands=mypy src/
 ```
 
-サブコマンドは`run`または`run-for-agent`を利用する。
+サブコマンドは`run`を利用する。
 `pyfltr textlint docs/`のようにツール名をそのままサブコマンドへ書くことはできない
 （誤入力を検知した場合は実行例付きのエラーメッセージが表示される）。
 
-`run-for-agent`サブコマンドのJSONL出力に含まれる`command.retry_command`も同じ`--commands=<tool>`書式で生成される。
+JSONL出力に含まれる`command.retry_command`も同じ`--commands=<tool>`書式で生成される。
 失敗ツールだけを再実行したい場合は、該当`command`レコードの`retry_command`をそのまま貼り付けて実行できる。
 
 ## pre-commit・prekとの統合

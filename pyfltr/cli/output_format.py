@@ -52,7 +52,7 @@ OUTPUT_FORMAT_ENV = "PYFLTR_OUTPUT_FORMAT"
 AGENT_INDICATOR_ENVS: tuple[str, ...] = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
 """エージェント実行を示す環境変数名のタプル。
 `AI_AGENT`は慣習的な総称、`CODEX_CI`はCodex CI、`CLAUDECODE`はClaude Code、`CURSOR_AGENT`はCursor。
-走査順・採用判定は`resolve_output_format`参照。
+走査順・採用判定は`detect_agent_indicator`参照。
 """
 
 # 解決経路を示す`format_source`の固定語彙。各値はそれ単独で読んで意味が通るよう命名する。
@@ -75,6 +75,23 @@ class OutputFormatResolution:
     source: str
 
 
+def detect_agent_indicator() -> str | None:
+    """エージェント実行を示す環境変数を検出し、検出した変数名を返す。
+
+    `AGENT_INDICATOR_ENVS`を先頭から走査し、最初に非空値（空文字列でない値）が
+    設定された変数名を返す。値の中身は問わない。該当が無ければ`None`を返す。
+
+    出力形式の既定値解決（`resolve_output_format`）と`--quiet`の既定値解決
+    （`pyfltr.cli.parser.apply_subcommand_defaults`）の双方が本関数を参照する。
+    エージェント検出判定のSSOTは本関数とする。
+    """
+    for env_name in AGENT_INDICATOR_ENVS:
+        indicator_value = os.environ.get(env_name)
+        if indicator_value is not None and indicator_value != "":
+            return env_name
+    return None
+
+
 def resolve_output_format(
     parser: typing.Any,
     cli_value: str | None,
@@ -91,9 +108,8 @@ def resolve_output_format(
     サブコマンド既定値・エージェント検出より優先する。これによりエージェント環境下や
     `run-for-agent`配下でも`PYFLTR_OUTPUT_FORMAT=text`で元の形式に戻すことができる。
 
-    エージェント検出は`AGENT_INDICATOR_ENVS`の先頭から走査する。
-    最初に非空値（空文字列でない値）が設定された変数を採用し、
-    `format_source`は`env.<検出変数名>`の形で返す。値の中身は問わない。
+    エージェント検出は`detect_agent_indicator`へ委譲する。
+    検出できた場合は`format_source`を`env.<検出変数名>`の形で返す。
 
     Args:
         parser: 環境変数バリデーションエラー時の`parser.error`呼び出しに使う。
@@ -123,10 +139,9 @@ def resolve_output_format(
     if subcommand_default is not None and subcommand_default in valid_values:
         return OutputFormatResolution(format=subcommand_default, source=FORMAT_SOURCE_SUBCOMMAND_DEFAULT)
     if ai_agent_default is not None and ai_agent_default in valid_values:
-        for env_name in AGENT_INDICATOR_ENVS:
-            indicator_value = os.environ.get(env_name)
-            if indicator_value is not None and indicator_value != "":
-                return OutputFormatResolution(format=ai_agent_default, source=f"env.{env_name}")
+        env_name = detect_agent_indicator()
+        if env_name is not None:
+            return OutputFormatResolution(format=ai_agent_default, source=f"env.{env_name}")
     return OutputFormatResolution(format=final_default, source=FORMAT_SOURCE_FALLBACK)
 
 

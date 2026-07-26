@@ -773,7 +773,7 @@ def test_build_summary_record_emits_guidance_on_failure() -> None:
     assert guidance
     joined = " ".join(guidance)
     assert "retry_command" in joined
-    assert "uvx pyfltr run-for-agent --only-failed" in joined
+    assert "uvx pyfltr run --only-failed" in joined
     assert "uvx pyfltr show-run 01JABCDEFGH" in joined
     # プレースホルダーが残っていないこと
     assert "<run_id>" not in joined
@@ -799,7 +799,32 @@ def test_build_summary_record_guidance_falls_back_when_unspecified() -> None:
     assert isinstance(guidance, list)
     joined = " ".join(guidance)
     assert "pyfltr show-run <run_id>" in joined
-    assert "pyfltr run-for-agent --only-failed" in joined
+    assert "pyfltr run --only-failed" in joined
+
+
+def test_build_summary_record_guidance_uses_given_subcommand() -> None:
+    """`subcommand`指定時は`--only-failed`案内が当該サブコマンド名で組み立てられる。"""
+    result = pyfltr.command.core_.CommandResult(
+        command="mypy",
+        command_type="linter",
+        commandline=["mypy"],
+        returncode=1,
+        has_error=True,
+        files=1,
+        output="",
+        elapsed=0.1,
+    )
+    config = pyfltr.config.config.create_default_config()
+    lines = pyfltr.output.jsonl.build_lines(
+        [result],
+        config,
+        exit_code=1,
+        launcher_prefix=["uvx", "pyfltr"],
+        subcommand="ci",
+    )
+    summary_line = next(line for line in lines if json.loads(line).get("kind") == "summary")
+    joined = " ".join(json.loads(summary_line)["guidance"])
+    assert "uvx pyfltr ci --only-failed" in joined
 
 
 def test_build_summary_record_counts_resolution_failed() -> None:

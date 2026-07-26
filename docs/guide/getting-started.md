@@ -83,11 +83,12 @@ JSON Lines出力（`--output-format=jsonl`）とMCPサーバー（`pyfltr mcp`�
 
 ### 直接呼び出し（推奨）
 
-エージェントがシェルコマンドを実行できる環境では`pyfltr run-for-agent`を直接呼ぶ。
-JSONL出力をそのまま読み込める。
+エージェントがシェルコマンドを実行できる環境では`pyfltr run`を直接呼ぶ。
+`AI_AGENT` / `CODEX_CI` / `CLAUDECODE` / `CURSOR_AGENT`のいずれかが設定された環境では
+出力形式がJSON Linesとなり、そのまま読み込める。
 
 ```shell
-uvx pyfltr run-for-agent
+uvx pyfltr run
 ```
 
 ### MCP経由

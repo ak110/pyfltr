@@ -263,6 +263,9 @@ async def tool_run_for_agent(
         no_fix=False,
         version=False,
         subcommand="run-for-agent",
+        # MCPの戻り値は実行アーカイブから組み立てるためJSONL縮約の影響を受けない。
+        # quiet=Trueはstderrへのprecommitガイダンス抑止のみに作用する。
+        quiet=True,
     )
 
     # 構造化出力を一時ファイルへ誘導してstdout汚染を防ぐ。

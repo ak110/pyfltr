@@ -287,6 +287,7 @@ def build_lines(
     warnings: list[dict[str, typing.Any]] | None = None,
     run_id: str | None = None,
     launcher_prefix: list[str] | None = None,
+    subcommand: str | None = None,
     fully_excluded_files: list[str] | None = None,
     missing_targets: list[str] | None = None,
     format_source: str | None = None,
@@ -303,6 +304,7 @@ def build_lines(
     `warnings`は`pyfltr.warnings_.collected_warnings()`の返り値を想定する。
     `run_id`が指定されていればheaderレコードに埋め込む。
     `launcher_prefix`が指定されていれば`summary.guidance`内の起動コマンド表記に反映する。
+    `subcommand`は`summary.guidance`の再実行例に埋め込む実行系サブコマンド名。
     """
     ordered = sorted(results, key=lambda r: _command_index(config, r.command))
 
@@ -334,6 +336,7 @@ def build_lines(
                 exit_code=exit_code,
                 run_id=run_id,
                 launcher_prefix=launcher_prefix,
+                subcommand=subcommand,
                 fully_excluded_files=fully_excluded_files,
                 missing_targets=missing_targets,
             )
@@ -456,6 +459,7 @@ def write_jsonl_footer(
     warnings: list[dict[str, typing.Any]] | None = None,
     run_id: str | None = None,
     launcher_prefix: list[str] | None = None,
+    subcommand: str | None = None,
     fully_excluded_files: list[str] | None = None,
     missing_targets: list[str] | None = None,
 ) -> None:
@@ -463,6 +467,7 @@ def write_jsonl_footer(
 
     `results`は`_build_summary_record()`の集計に使用する。
     `run_id`と`launcher_prefix`は`summary.guidance`の起動コマンド整形に使う。
+    `subcommand`は`summary.guidance`の再実行例に埋め込む実行系サブコマンド名。
     `fully_excluded_files`を渡すと`summary.fully_excluded_files`キーとして埋め込む。
     `missing_targets`を渡すと`summary.missing_targets`キーとして埋め込む。
     """
@@ -476,6 +481,7 @@ def write_jsonl_footer(
                     exit_code=exit_code,
                     run_id=run_id,
                     launcher_prefix=launcher_prefix,
+                    subcommand=subcommand,
                     fully_excluded_files=fully_excluded_files,
                     missing_targets=missing_targets,
                 )
@@ -767,6 +773,7 @@ def _build_summary_guidance(
     applied_fixes_present: bool,
     run_id: str | None,
     launcher_prefix: list[str] | None,
+    subcommand: str | None,
 ) -> list[str]:
     """summaryレコード向けの状況依存ガイドを英語で生成する。
 
@@ -777,18 +784,21 @@ def _build_summary_guidance(
 
     両方該当する場合は失敗時の4項目に続けてformatter書き換えの注記1項目を追記する。
     `run_id`と`launcher_prefix`が指定されていれば、起動コマンド表記と実run_idを埋め込む。
-    未指定時はプレースホルダー（`<run_id>`）・既定値（`pyfltr`）にフォールバックする。
+    `subcommand`は`--only-failed`の再実行例に埋め込む実行系サブコマンド名で、
+    実際に起動されたサブコマンドをそのまま反映する。
+    未指定時はプレースホルダー（`<run_id>`）・既定値（`pyfltr`・`run`）にフォールバックする。
     """
     if not failure_present and not applied_fixes_present:
         return []
     launcher = shlex.join(launcher_prefix) if launcher_prefix else "pyfltr"
+    subcommand_token = subcommand if subcommand else "run"
     items: list[str] = []
     if failure_present:
         run_id_token = run_id if run_id is not None else "<run_id>"
         items.extend(
             [
                 "Inspect command.retry_command in failed command records to re-run only failing files.",
-                f"Use '{launcher} run-for-agent --only-failed' to retry the failure set in one step.",
+                f"Use '{launcher} {subcommand_token} --only-failed' to retry the failure set in one step.",
                 "diagnostic.fix == 'safe'/'unsafe'/'suggested' means auto-fixable; 'none' or omitted means manual fix needed.",
                 f"Use '{launcher} show-run {run_id_token}' for full per-command output stored in the run archive.",
             ]
@@ -807,10 +817,13 @@ def _build_summary_record(
     exit_code: int,
     run_id: str | None = None,
     launcher_prefix: list[str] | None = None,
+    subcommand: str | None = None,
     fully_excluded_files: list[str] | None = None,
     missing_targets: list[str] | None = None,
 ) -> dict[str, typing.Any]:
     """ordered_resultsから集計してsummaryレコードdictを生成する。
+
+    `subcommand`は`summary.guidance`の再実行例に埋め込む実行系サブコマンド名。
 
     集計カウンタはコマンド単位の集計であることを示す`commands_summary`配下にまとめ、
     その下で「対応不要」「対応要」の2グループへネストする。
@@ -877,6 +890,7 @@ def _build_summary_record(
         applied_fixes_present=bool(fixed_files_union),
         run_id=run_id,
         launcher_prefix=launcher_prefix,
+        subcommand=subcommand,
     )
     if guidance:
         record["guidance"] = guidance

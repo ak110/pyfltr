@@ -454,7 +454,8 @@ fixステージと通常ステージを区別する必要があるため、判�
 冒頭にエラー要約を出力するツール（editorconfig-checker等）と、末尾にスタックトレースを出力するツール
 （pytest・mypy等）の双方を取りこぼさない狙いがある。
 
-`--quiet`指定時（`run-for-agent`は既定有効）はheaderレコードを`run_id`・`commands`・`files`へ縮約する。
+`--quiet`指定時はheaderレコードを`run_id`・`commands`・`files`へ縮約する。
+`run-for-agent`は常に既定有効で、エージェント検出用の環境変数がある環境では実行系全体で既定有効となる。
 成功時commandレコードも抑止する。
 詳細SSOTは`build_command_lines`と`_build_header_record`のdocstring。
 

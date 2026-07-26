@@ -75,7 +75,7 @@ description: >
   `site_description`は表示幅に収める短縮形を用いる
 
 `mkdocs.yml`内llmstxtの`markdown_description`にはLLMが利用する際に有用な情報のみ記載する
-（`run-for-agent`サブコマンド・主要オプションなど）。
+（全サブコマンド名・主要オプションなど）。
 本文は`tests/llmstxt_test.py`が「全サブコマンド名・全ビルトインコマンド名を含むこと」を機械検証するため、
 整理時に名前を漏らさず記載する。
 

@@ -56,6 +56,10 @@ class RunOutputContext:
     # `--quiet`指定時の抑止フラグ。JSONLFormatterでのみ参照する。
     # 抑止対象は`pyfltr.output.jsonl.build_command_lines`と`_build_header_record`のdocstringに集約する。
     quiet: bool = False
+    # 起動サブコマンド名（`run` / `ci` / `fast` / `run-for-agent`）。
+    # `summary.guidance`の再実行コマンド例をサブコマンド名込みで組み立てるために参照する。
+    # 参照系・直接呼び出し経路では`None`のままとし、jsonl側で既定値`run`へフォールバックする。
+    subcommand: str | None = None
 
 
 class OutputFormatter(typing.Protocol):
@@ -236,6 +240,7 @@ class JSONLFormatter:
             warnings=warnings,
             run_id=ctx.run_id,
             launcher_prefix=ctx.launcher_prefix,
+            subcommand=ctx.subcommand,
             fully_excluded_files=pyfltr.warnings_.filtered_direct_files(reason="excluded"),
             missing_targets=pyfltr.warnings_.filtered_direct_files(reason="missing"),
         )

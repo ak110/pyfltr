@@ -45,9 +45,11 @@ JSONL出力経路は`pyfltr/output/jsonl.py`の公開ヘルパー（`emit_record
  「期待した経路と実際の経路が乖離した場合」に限り出力する（fallback検出用）。
   通常経路は3フィールドとも省略してLLM入力のトークン消費を抑える方針。
   通常時の解決状況の確認は`pyfltr command-info`サブコマンドの責務とする
-- `--quiet`（`run-for-agent`は既定有効）は成功時commandレコード省略・headerレコード縮約・
+- `--quiet`は成功時commandレコード省略・headerレコード縮約・
   precommitガイダンス（stderr）抑止をまとめて制御する。抑止・縮約条件のSSOTは
   `pyfltr/output/jsonl.py`の`build_command_lines`と`_build_header_record`のdocstring
+  - 既定値の解決条件は`pyfltr/cli/parser.py`の`apply_subcommand_defaults`のdocstringをSSOTとする。
+    `run-for-agent`は常に既定有効、他の実行系はエージェント検出時に既定有効
 - 段階出力イベント（`status:"running"`）の発火条件・発火時挙動・最終レコード後続保証の設計は
   `pyfltr/cli/pipeline.py`の`HeartbeatMonitor`のdocstringを参照する。
   buffering型formatter（SARIF・Code Quality）でheartbeat由来のrunningイベントを混入させない理由は

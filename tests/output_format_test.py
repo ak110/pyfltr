@@ -576,11 +576,38 @@ def test_run_cli_header_format_source_env_agent_indicator(env_name, mocker, caps
     mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
     monkeypatch.setenv(env_name, "1")
 
-    pyfltr.cli.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    # エージェント検出時は`--quiet`も既定で有効になるため、`--no-quiet`でverbose headerを維持する。
+    pyfltr.cli.main.run(["ci", "--no-quiet", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
     captured = capsys.readouterr()
     lines = [line for line in captured.out.splitlines() if line.strip()]
     header = json.loads(lines[0])
     assert header["format_source"] == f"env.{env_name}"
+
+
+@pytest.mark.parametrize("env_name", pyfltr.cli.output_format.AGENT_INDICATOR_ENVS)
+def test_run_quiet_default_enabled_under_agent_env(mocker, capsys, monkeypatch, env_name):
+    """エージェント検出変数が設定された環境では`run`でも`--quiet`が既定で有効になる。"""
+    proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
+    monkeypatch.setenv(env_name, "1")
+
+    pyfltr.cli.main.run(["run", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    lines = [line for line in capsys.readouterr().out.splitlines() if line.strip()]
+    header = json.loads(lines[0])
+    assert header["kind"] == "header"
+    assert set(header.keys()) <= {"kind", "run_id", "commands", "files"}
+
+
+def test_run_no_quiet_overrides_agent_env_default(mocker, capsys, monkeypatch):
+    """エージェント検出変数がある環境でも`--no-quiet`で静音モードを解除できる。"""
+    proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
+    monkeypatch.setenv("CLAUDECODE", "1")
+
+    pyfltr.cli.main.run(["run", "--no-quiet", "--commands=mypy", str(pathlib.Path(__file__).parent.parent)])
+    lines = [line for line in capsys.readouterr().out.splitlines() if line.strip()]
+    header = json.loads(lines[0])
+    assert {"version", "uv"} <= header.keys()
 
 
 def test_run_cli_header_format_source_env_pyfltr(mocker, capsys, monkeypatch):

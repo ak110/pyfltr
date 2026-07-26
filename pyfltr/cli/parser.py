@@ -86,7 +86,6 @@ def preflight_tool_name_as_subcommand(sys_args: typing.Sequence[str]) -> None:
         f"\n"
         f"実行例:\n"
         f"  pyfltr run --commands={candidate} {rest_args}\n"
-        f"  pyfltr run-for-agent --commands={candidate} {rest_args}\n"
         f"\n"
         f"失敗ファイルのみを再実行する tool.retry_command も既に `--commands=<tool>` 書式で出力されます。\n"
     )
@@ -147,14 +146,17 @@ def make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> "
         "--no-fix",
         default=False,
         action="store_true",
-        help="run / fast / run-for-agent サブコマンドで自動付与される fix ステージを抑止します。",
+        help="run / fast / run-for-agent サブコマンドで自動付与される fix ステージを抑止します"
+        "(ci サブコマンドは元から fix ステージを持ちません)。",
     )
     common.add_argument(
         "--quiet",
         default=None,
         action=argparse.BooleanOptionalAction,
         help="JSONL出力の成功時commandレコード省略・headerレコード縮約・"
-        "precommitガイダンス（stderr）抑止をまとめて有効化します（run-for-agent既定: 有効）。",
+        "precommitガイダンス（stderr）抑止をまとめて有効化します"
+        "(run-for-agent は常に既定で有効。他の実行系サブコマンドも"
+        f" {' / '.join(pyfltr.cli.output_format.AGENT_INDICATOR_ENVS)} のいずれかが設定されていれば既定で有効)。",
     )
     common.add_argument(
         "--stream",
@@ -309,7 +311,7 @@ def build_parser(custom_commands: collections.abc.Iterable[str] = ()) -> "_HelpO
             "  ci               CI モードで実行する。フォーマッターの変更も失敗扱い。\n"
             "  run              通常実行。フォーマッターの変更は成功扱いで fix ステージ有効。\n"
             "  fast             高速ツールのみ実行 (--commands=fast 相当)。\n"
-            "  run-for-agent    LLM エージェント向け (JSONL 出力を既定化)。\n"
+            "  run-for-agent    run の互換用別名 (JSONL 出力と静音モードを既定化)。通常は run を使う。\n"
             "  config <action>  設定ファイルを操作する (get / set / delete / list)。\n"
             "  generate-shell-completion <shell>\n"
             "                   シェル補完スクリプトを出力する (bash / powershell)。\n"
@@ -348,7 +350,7 @@ def build_parser(custom_commands: collections.abc.Iterable[str] = ()) -> "_HelpO
     subparsers.add_parser("ci", parents=[common], help="CI モードで実行する。")
     subparsers.add_parser("run", parents=[common], help="通常実行。")
     subparsers.add_parser("fast", parents=[common], help="高速ツールのみ実行。")
-    subparsers.add_parser("run-for-agent", parents=[common], help="LLM エージェント向け。")
+    subparsers.add_parser("run-for-agent", parents=[common], help="run の互換用別名 (通常は run を使う)。")
 
     # config: 設定ファイル操作（pnpm/npm config互換のget/set/delete/list）
     config_parser = subparsers.add_parser("config", help="設定ファイルを操作する。")
@@ -456,7 +458,12 @@ def apply_subcommand_defaults(args: argparse.Namespace) -> None:
         - `fast`: runと同じ + `--commands` 未指定なら `"fast"`
         - `run-for-agent`: runと同じ。`--output-format`の既定値は`_resolve_output_format`側で
           サブコマンド既定値`"jsonl"`として注入し、`PYFLTR_OUTPUT_FORMAT`での変更を許容する。
-          `--quiet`は未指定時に`True`を注入する（他サブコマンドは`False`）。
+          互換維持のためのサブコマンドで、通常は`run`を使う。
+
+    `--quiet`の既定値は`run-for-agent`のとき、または`detect_agent_indicator()`が
+    エージェント実行を示す環境変数を検出したときに`True`とする。
+    エージェント検出環境下では出力形式も`jsonl`へ切り替わるため、`run`と`run-for-agent`が
+    等価に振る舞う。CLIで`--quiet` / `--no-quiet`を明示した場合はそちらを優先する。
     """
     subcommand = args.subcommand
     args.include_fix_stage = subcommand in ("run", "fast", "run-for-agent")
@@ -466,4 +473,4 @@ def apply_subcommand_defaults(args: argparse.Namespace) -> None:
         # `--commands` は `action="append"` 化によりリストで保持する。
         args.commands = ["fast"]
     if getattr(args, "quiet", None) is None:
-        args.quiet = subcommand == "run-for-agent"
+        args.quiet = subcommand == "run-for-agent" or pyfltr.cli.output_format.detect_agent_indicator() is not None

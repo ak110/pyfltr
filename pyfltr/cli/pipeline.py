@@ -556,6 +556,7 @@ def run_pipeline(
             all_files=0,
             format_source=format_source,
             quiet=quiet,
+            subcommand=getattr(args, "subcommand", None),
         )
         formatter.on_start(early_run_ctx)
         formatter.on_finish(early_run_ctx, [], 1, pyfltr.warnings_.collected_warnings())
@@ -709,6 +710,7 @@ def run_pipeline(
         structured_stdout=structured_stdout,
         format_source=format_source,
         quiet=quiet,
+        subcommand=getattr(args, "subcommand", None),
     )
 
     formatter.on_start(ctx)
@@ -889,6 +891,9 @@ def _resolve_output_format(
     `run-for-agent`のみサブコマンド既定値`"jsonl"`を渡し、`AGENT_INDICATOR_ENVS`のいずれかが
     検出された場合は実行系全体で`jsonl`既定を採用する。
     `PYFLTR_OUTPUT_FORMAT=text`での変更は`cli/output_format.py`側で扱う。
+
+    エージェント検出環境下では`--quiet`既定値も`cli/parser.py`側で有効化されるため、
+    `run`と`run-for-agent`は等価に振る舞う。
     """
     subcommand_default = "jsonl" if args.subcommand == "run-for-agent" else None
     return pyfltr.cli.output_format.resolve_output_format(

@@ -39,18 +39,20 @@ pip環境では`pip install pyfltr`を使う。
 
 ## 使い方
 
-チェック実行（`ci` / `run` / `fast`）・エージェント向け出力（`run-for-agent`）・横断検索と置換（`grep` / `replace`）など。
+チェック実行（`ci` / `run` / `fast`）・横断検索と置換（`grep` / `replace`）など。
 実行履歴参照（`list-runs` / `show-run`）・設定操作（`config`）・MCPサーバー（`mcp`）も利用できる。
 
 詳細は[CLIコマンド](docs/guide/usage.md)を参照。
 
 ### コーディングエージェント向け
 
-`pyfltr run-for-agent`をエージェントから直接呼び出すか、`pyfltr mcp`でMCPサーバーとして登録する。
+`pyfltr run`をエージェントから直接呼び出すか、`pyfltr mcp`でMCPサーバーとして登録する。
+`AI_AGENT` / `CODEX_CI` / `CLAUDECODE` / `CURSOR_AGENT`のいずれかが設定された環境では、
+`run`の出力形式がJSON Lines、静音モードが既定で有効になる。
 
 ```shell
 # 直接呼び出し（JSONL出力）
-uvx pyfltr run-for-agent
+uvx pyfltr run
 
 # MCPサーバーとして登録（Claude Code例）
 claude mcp add pyfltr -- uvx pyfltr mcp
