@@ -1226,6 +1226,49 @@ def test_parse_pytest_tb_line_external_frame_not_double_counted() -> None:
     assert "RuntimeError: boom" in errors[0].message
 
 
+def test_parse_pytest_tb_line_truncated_summary_message_not_double_counted() -> None:
+    """pytest --tb=line: 集計行のメッセージが省略記号で切り詰められても診断が二重生成されない。
+
+    pytestは失敗理由が端末幅に収まらないとき末尾を`...`へ置き換える。
+    完全一致だけで突合すると位置行由来の診断と残余補完の診断が同一の失敗に対して並ぶ。
+    """
+    long_message = "json.decoder.JSONDecodeError: Expecting property name enclosed in double quotes: line 1 column 2"
+    output = (
+        "================================= FAILURES =================================\n"
+        f"E   {long_message}\n"
+        f".venv/lib/python3.13/site-packages/json/decoder.py:353: {long_message}\n"
+        "E   assert 1 == 2\n"
+        "tests/outer_test.py:9: assert 1 == 2\n"
+        "========================= short test summary info ==========================\n"
+        "FAILED tests/outer_test.py::test_long_message - json.decoder.JSONDecodeError: Expecting property...\n"
+        "FAILED tests/outer_test.py::test_other - assert 1 == 2\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 2
+    assert not any(e.line == 0 for e in errors)
+    truncated = next(e for e in errors if e.file.endswith("json/decoder.py"))
+    assert truncated.line == 353
+    assert truncated.message.startswith("test_long_message: ")
+
+
+def test_parse_pytest_tb_line_ambiguous_truncated_summary_is_not_matched() -> None:
+    """pytest --tb=line: 切り詰め後の接頭辞が複数の失敗へ一致する場合は突合しない。
+
+    前方一致で取り違えると片方の失敗を取りこぼすため、候補が1件に定まる場合のみ突合する。
+    """
+    output = (
+        "================================= FAILURES =================================\n"
+        "E   AssertionError: same prefix but different tail A\n"
+        "tests/a_test.py:5: AssertionError: same prefix but different tail A\n"
+        "========================= short test summary info ==========================\n"
+        "FAILED tests/a_test.py::test_one - AssertionError: same prefix...\n"
+        "FAILED tests/a_test.py::test_two - AssertionError: same prefix...\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 3
+    assert sum(1 for e in errors if e.line == 0) == 2
+
+
 def test_parse_pytest_same_test_name_in_different_files_not_dropped() -> None:
     """pytest --tb=short: 別ファイルの同名テストが、突合キーへのファイル込み化により
     取りこぼされず両方診断されることを検証する。

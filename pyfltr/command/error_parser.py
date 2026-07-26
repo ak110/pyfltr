@@ -1486,6 +1486,29 @@ def _consume_summary_test(
         consumed.add(fallback_key)
 
 
+def _match_truncated_summary(
+    summary: dict[tuple[str, str], str | None], consumed: set[tuple[str, str]], message: str
+) -> tuple[str, str] | None:
+    """切り詰められた集計行のメッセージを位置行のメッセージへ前方一致で突合する。
+
+    pytestの集計行は失敗理由が端末幅に収まらないとき末尾を`...`へ置き換えて出力する。
+    完全一致だけで突合すると当該の失敗が`consumed`へ登録されず、位置行由来の診断と
+    残余補完による`line=0`の診断が同一の失敗に対して二重生成される。
+
+    前方一致は別々の失敗が同じ接頭辞を持つ場合に取り違えるため、切り詰めを示す`...`で
+    終わる候補に限定し、未消費の候補が複数一致する場合は突合しない。
+    """
+    matched = [
+        key
+        for key, sum_message in summary.items()
+        if key not in consumed
+        and sum_message is not None
+        and sum_message.endswith("...")
+        and message.startswith(sum_message[: -len("...")])
+    ]
+    return matched[0] if len(matched) == 1 else None
+
+
 def _mask_pytest_captured_child_runs(output: str) -> str:
     """テストの捕捉出力へ混入した子プロセスのpytest実行を空行へ置き換える。
 
@@ -1644,6 +1667,8 @@ def _parse_pytest(output: str) -> list[ErrorLocation]:
                     if sum_message == message:
                         matched_key = key
                         break
+            if matched_key is None:
+                matched_key = _match_truncated_summary(summary, consumed, message)
             test_name = matched_key[1] if matched_key is not None else None
             if matched_key is not None:
                 consumed.add(matched_key)
