@@ -1380,7 +1380,7 @@ def _parse_vitest_json(output: str) -> list[ErrorLocation]:
 
 
 _PYTEST_SUMMARY_RE = re.compile(
-    rf"^FAILED\s+(?P<file>{_FILE})::(?P<test>.+?)(?:\s+-\s+(?P<message>.+))?$",
+    rf"^FAILED\s+(?P<file>{_FILE})::(?P<test>\S+?(?:\[[^\]]*\])?)(?:\s+-\s+(?P<message>.+))?$",
     re.MULTILINE,
 )
 _PYTEST_CRASH_RE = re.compile(rf"worker '(?P<worker>[^']+)' crashed while running '(?P<file>{_FILE})::(?P<test>[^']+)'")
@@ -1393,19 +1393,24 @@ _PYTEST_TB_LINE_RE = re.compile(
 def _parse_pytest_summary(output: str) -> dict[tuple[str, str], str | None]:
     r"""`short test summary info`の`FAILED <file>::<test> - <message>`行を解析する。
 
-    キーは`(file, test)`。`test`部分は`(?P<test>.+?)`で空白を許容する
-    （パラメータ化テストのIDが`test_a[param with space]`のように空白を含む場合に
-    対応するため）。マッチは非貪欲のため、行内で最初に現れる`\s+-\s+`区切りの直前までを
-    `test`として切り出す。`test`は`::`区切り（`TestX::test_y`形式、pytestのnodeid表記）を
+    キーは`(file, test)`。`test`部分は`(?P<test>\S+?(?:\[[^\]]*\])?)`で、パラメータ化テストの
+    角括弧内のみ空白・ハイフンを許容する（`test_a[param with space]`・`test_param[b - c]`のように
+    IDに空白やハイフンを含む場合に対応するため）。角括弧の外側は空白を含まないnodeidの制約を
+    利用し、`\S+?`で区切ることで` - `を含むIDでも失敗一覧行のメッセージ区切りと誤って
+    分割されないようにする。`test`は`::`区切り（`TestX::test_y`形式、pytestのnodeid表記）を
     `.`区切り（`TestX.test_y`形式、`= FAILURES =`セクションのブロック見出しの表記）へ
     `.replace("::", ".")`で正規化する。両表記が一致しないとテスト名突合（`consumed`集合）が
     成立せず、summary残余補完で同一テストの診断が二重生成されるため。値は`message`
     （省略時はNone、`--tb=line`経路の値と突合できるよう前後の空白・改行文字を`.strip()`で
-    除去して統一する）。専用セクション見出しの有無を問わず出力全体から該当行を拾う
-    （見出しを欠く一部pytest構成への耐性）。
+    除去して統一する）。`short test summary info`見出しが出力中に存在する場合は当該見出し以降
+    のみを走査対象にする（テストの捕捉出力に子プロセスpytestの`FAILED ...`行が混入していても、
+    実在しない失敗として誤検出しないため）。見出しを欠く一部pytest構成では従来どおり出力全体を
+    走査する（見出しを欠く構成への耐性を維持するため）。
     """
+    summary_start = output.find("short test summary info")
+    scan_target = output[summary_start:] if summary_start >= 0 else output
     summary: dict[tuple[str, str], str | None] = {}
-    for match in _PYTEST_SUMMARY_RE.finditer(output):
+    for match in _PYTEST_SUMMARY_RE.finditer(scan_target):
         file_path = pyfltr.paths.to_cwd_relative(match.group("file"))
         test_name = match.group("test").replace("::", ".")
         raw_message = match.group("message")
@@ -1413,17 +1418,21 @@ def _parse_pytest_summary(output: str) -> dict[tuple[str, str], str | None]:
     return summary
 
 
-def _parse_pytest_from_summary(summary: dict[tuple[str, str], str | None], consumed: set[str]) -> list[ErrorLocation]:
+def _parse_pytest_from_summary(
+    summary: dict[tuple[str, str], str | None], consumed: set[tuple[str, str]]
+) -> list[ErrorLocation]:
     """summary辞書のうち他経路で拾えなかった残余エントリを`line=0`の診断として補完する。
 
-    `consumed`はテスト名（`.`区切りへ正規化済み）の集合であり、ファイルパスを突合キーに
-    含めない。フレーム選択がプロジェクト外フレーム（`.venv/`配下等）へフォールバックした場合、
-    診断の`file`とsummaryの`file`（テストファイル自体のパス）が一致しないため、
-    ファイルパスを突合条件に含めると誤って残余扱いになり二重生成を招く。
+    `consumed`はsummary辞書のキーそのもの（`(file, test)`の組）の集合である。
+    キーの決定は`_consume_summary_test`が担い、フレーム選択がプロジェクト外フレーム
+    （`.venv/`配下等）へフォールバックし診断の`file`とsummaryの`file`が一致しない場合でも、
+    同名テストの未消費候補へフォールバックして消費するため、ファイルパス込みキーでも
+    二重生成を招かない。同名テストが別ファイルに存在する場合はファイル込みキーにより
+    それぞれ独立したエントリとして扱われ、取りこぼしを防ぐ。
     """
     results: list[ErrorLocation] = []
     for (file_path, test_name), message in summary.items():
-        if test_name in consumed:
+        if (file_path, test_name) in consumed:
             continue
         raw_message = message or ""
         results.append(
@@ -1436,6 +1445,34 @@ def _parse_pytest_from_summary(summary: dict[tuple[str, str], str | None], consu
             )
         )
     return results
+
+
+def _consume_summary_test(
+    summary: dict[tuple[str, str], str | None],
+    consumed: set[tuple[str, str]],
+    test_name: str,
+    diagnosed_file: str,
+) -> None:
+    """ブロック解析等で確定したテスト名をsummary辞書と突合し、対応する1件を消費済みにする。
+
+    同名テストが複数ファイルに存在し得るため、診断ファイル（`diagnosed_file`）と一致する候補を
+    優先して消費する。一致する候補が無い場合（フレーム選択がプロジェクト外へフォールバックし
+    診断ファイルとテスト本来のファイルが一致しない等）は、同名の未消費候補を1件先頭から選んで
+    消費する。マッチが1件も無い場合は何もしない（summaryに対応エントリが無い、または
+    `= FAILURES =`セクションのみでsummaryが空の場合）。
+    """
+    fallback_key: tuple[str, str] | None = None
+    for key in summary:
+        sum_file, sum_test = key
+        if sum_test != test_name or key in consumed:
+            continue
+        if sum_file == diagnosed_file:
+            consumed.add(key)
+            return
+        if fallback_key is None:
+            fallback_key = key
+    if fallback_key is not None:
+        consumed.add(fallback_key)
 
 
 def _parse_pytest(output: str) -> list[ErrorLocation]:
@@ -1456,14 +1493,17 @@ def _parse_pytest(output: str) -> list[ErrorLocation]:
     5. 上記いずれでも拾えなかったsummary辞書の残余エントリを`_parse_pytest_from_summary`で
        `line=0`の診断として補完する
 
-    経路2〜4でテスト名を確定できたつど`consumed`（テスト名の集合）へ登録し、経路5の
-    二重生成を防ぐ。`_ test_name _`区切りからテスト名を抽出し、message先頭へ
+    経路2〜4でテスト名を確定できたつど`_consume_summary_test`で`consumed`
+    （summary辞書のキー`(file, test)`の集合）へ登録し、経路5の二重生成を防ぐ。
+    同名テストが複数ファイルに存在する場合は診断ファイルと一致する候補を優先して消費し、
+    一致が無い場合（フレーム選択がプロジェクト外へフォールバックした場合等）は同名の
+    未消費候補へフォールバックする。`_ test_name _`区切りからテスト名を抽出し、message先頭へ
     `<test_name>: `として併記する。pytestの`assert ... == ...`表示はテスト関数名なしでは
     判別が難しいケースが多く、location（file/line）と組み合わせて実質的にnodeid相当の
     判別性を得るため。
     """
     summary = _parse_pytest_summary(output)
-    consumed: set[str] = set()
+    consumed: set[tuple[str, str]] = set()
 
     failures_start = output.find("= FAILURES =")
     summary_start = output.find("short test summary info")
@@ -1478,18 +1518,30 @@ def _parse_pytest(output: str) -> list[ErrorLocation]:
 
     if not block_matches:
         # ブロック区切りが無い場合（`--tb=line`形式）: `<file>:<line>: <message>`行を直接拾う。
+        # 突合は2段構成とする。1段目はファイル・メッセージの両方が一致する候補、
+        # 見つからない場合の2段目はメッセージのみ一致する候補へフォールバックする
+        # （位置行がsite-packages等の外部パスになる失敗はファイルが一致しないため）。
         results: list[ErrorLocation] = []
         for match in _PYTEST_TB_LINE_RE.finditer(failures_section):
             file_path = pyfltr.paths.to_cwd_relative(match.group("file"))
             message = match.group("message").strip()
-            test_name = None
-            for (sum_file, sum_test), sum_message in summary.items():
-                if sum_test in consumed:
+            matched_key: tuple[str, str] | None = None
+            for key, sum_message in summary.items():
+                if key in consumed:
                     continue
-                if sum_file == file_path and sum_message == message:
-                    test_name = sum_test
-                    consumed.add(sum_test)
+                if key[0] == file_path and sum_message == message:
+                    matched_key = key
                     break
+            if matched_key is None:
+                for key, sum_message in summary.items():
+                    if key in consumed:
+                        continue
+                    if sum_message == message:
+                        matched_key = key
+                        break
+            test_name = matched_key[1] if matched_key is not None else None
+            if matched_key is not None:
+                consumed.add(matched_key)
             results.append(
                 ErrorLocation(
                     file=file_path,
@@ -1529,7 +1581,7 @@ def _parse_pytest(output: str) -> list[ErrorLocation]:
             results.append(
                 ErrorLocation(file=file_path, line=int(chosen.group("line")), col=None, command="pytest", message=message)
             )
-            consumed.add(test_name)
+            _consume_summary_test(summary, consumed, test_name, file_path)
             continue
 
         # フレーム行が無いブロック: xdistワーカークラッシュを想定して専用行を探す。
@@ -1549,7 +1601,7 @@ def _parse_pytest(output: str) -> list[ErrorLocation]:
                 ),
             )
         )
-        consumed.add(crashed_test)
+        _consume_summary_test(summary, consumed, crashed_test, file_path)
 
     results.extend(_parse_pytest_from_summary(summary, consumed))
     return results

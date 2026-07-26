@@ -1102,6 +1102,96 @@ def test_parse_pytest_fallback() -> None:
     assert errors[0].line == 0
 
 
+def test_parse_pytest_parametrized_id_with_hyphen_not_double_counted() -> None:
+    """pytest --tb=short: パラメータIDが` - `を含むテストでも、ブロックとsummaryが正しく突合され
+    診断が二重生成されないことを検証する。
+
+    `_PYTEST_SUMMARY_RE`のテスト名部分が非貪欲な`.+?`のままだと、summary行の最初の` - `区切りで
+    テスト名が`test_param[b`まで切れてしまい、ブロック側の`test_param[b - c]`と突合できず
+    summary残余補完で余分な診断が生成される。
+    """
+    output = (
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_param[b - c] ________________________________\n"
+        "tests/a_test.py:5: in test_param\n"
+        "    assert value == 'x'\n"
+        "E   AssertionError: assert 'b - c' == 'x'\n"
+        "========================= short test summary info ==========================\n"
+        "FAILED tests/a_test.py::test_param[b - c] - AssertionError: assert 'b - c' == 'x'\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 1
+    assert errors[0].file == "tests/a_test.py"
+    assert errors[0].line == 5
+    assert errors[0].message.startswith("test_param[b - c]: ")
+
+
+def test_parse_pytest_tb_line_external_frame_not_double_counted() -> None:
+    """pytest --tb=line: 位置行がプロジェクト外パス（site-packages等）へ落ちる失敗でも、
+    ファイル不一致時はメッセージのみでsummaryと突合し診断が二重生成されないことを検証する。
+    """
+    abs_file = pathlib.Path.cwd() / ".venv" / "lib" / "python3.13" / "site-packages" / "somelib" / "core.py"
+    output = (
+        "================================= FAILURES =================================\n"
+        "E   RuntimeError: boom\n"
+        f"{abs_file}:50: RuntimeError: boom\n"
+        "========================= short test summary info ==========================\n"
+        "FAILED tests/a_test.py::test_ext - RuntimeError: boom\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 1
+    assert errors[0].file == ".venv/lib/python3.13/site-packages/somelib/core.py"
+    assert errors[0].line == 50
+    assert "RuntimeError: boom" in errors[0].message
+
+
+def test_parse_pytest_same_test_name_in_different_files_not_dropped() -> None:
+    """pytest --tb=short: 別ファイルの同名テストが、突合キーへのファイル込み化により
+    取りこぼされず両方診断されることを検証する。
+    """
+    output = (
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_boom ________________________________\n"
+        "tests/a_test.py:5: in test_boom\n"
+        "E   AssertionError: a\n"
+        "_______________________________ test_boom ________________________________\n"
+        "========================= short test summary info ==========================\n"
+        "FAILED tests/a_test.py::test_boom - AssertionError: a\n"
+        "FAILED tests/b_test.py::test_boom - AssertionError: b\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 2
+    a_error = next(e for e in errors if e.file == "tests/a_test.py")
+    assert a_error.line == 5
+    b_error = next(e for e in errors if e.file == "tests/b_test.py")
+    assert b_error.line == 0
+    assert "test_boom" in b_error.message
+
+
+def test_parse_pytest_ignores_failed_line_in_captured_output() -> None:
+    """pytest: テストの捕捉出力に混入した`FAILED ...`行を実在の失敗として診断化しないことを検証する。
+
+    pytestを子プロセス起動するテストの標準出力キャプチャに、子プロセスの
+    `short test summary info`相当の`FAILED`行が含まれても、実際の見出し以降のみを
+    走査対象とし誤検出しない。
+    """
+    output = (
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_runs_pytest ________________________________\n"
+        "tests/a_test.py:9: in test_runs_pytest\n"
+        "E   AssertionError: subprocess failed\n"
+        "--- Captured stdout call ---\n"
+        "FAILED other/y_test.py::test_phantom - boom\n"
+        "========================= short test summary info ==========================\n"
+        "FAILED tests/a_test.py::test_runs_pytest - AssertionError: subprocess failed\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 1
+    assert errors[0].file == "tests/a_test.py"
+    assert errors[0].line == 9
+    assert errors[0].message.startswith("test_runs_pytest: ")
+
+
 def _vitest_assertion(
     *,
     status: str,
