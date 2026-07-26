@@ -1752,6 +1752,48 @@ def test_parse_pytest_child_run_is_not_masked_without_parent_summary_line() -> N
     assert any(e.file == "child/z_test.py" for e in errors)
 
 
+def test_parse_pytest_child_run_with_nested_captured_section_is_not_masked() -> None:
+    """pytest: 子の失敗欄が捕捉出力を持つ場合に除外が成立しない現状を仕様として固定する。
+
+    子自身の節見出しが親の節見出しと同一書式で現れ、終端未確定の開始位置を破棄する
+    規則が発火する。破棄規則を外すと未終端の実行が後続の節の終了集計行と対になり、
+    親の実在する失敗を除外する側の誤りへ倒れるため、現状は実在の失敗を失わない側を採る。
+    """
+    child = (
+        "================================= test session starts =================================\n"
+        "collected 1 item\n"
+        "\n"
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_inner ________________________________\n"
+        "child/inner_test.py:3: in test_inner\n"
+        "E   assert 1 == 2\n"
+        "-------------------------- Captured stdout call ---------------------------\n"
+        "inner noise\n"
+        "========================= short test summary info ==========================\n"
+        "FAILED child/inner_test.py::test_inner - assert 1 == 2\n"
+        "================================= 1 failed in 0.04s =================================\n"
+    )
+    output = (
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_runs_child ________________________________\n"
+        "tests/p_test.py:11: in test_runs_child\n"
+        "E   AssertionError: assert 1 == 0\n"
+        "-------------------------- Captured stdout call ---------------------------\n"
+        + child
+        + "_______________________________ test_after ________________________________\n"
+        "tests/p_test.py:15: in test_after\n"
+        "E   AssertionError: after\n"
+        "========================= short test summary info ==========================\n"
+        "FAILED tests/p_test.py::test_runs_child - AssertionError: assert 1 == 0\n"
+        "FAILED tests/p_test.py::test_after - AssertionError: after\n"
+        "================================= 2 failed in 0.90s =================================\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    parent_errors = [e for e in errors if e.file == "tests/p_test.py"]
+    assert {e.line for e in parent_errors} == {11, 15}
+    assert any(e.file == "child/inner_test.py" for e in errors)
+
+
 def test_parse_pytest_unterminated_child_run_is_not_masked() -> None:
     """pytest: 子プロセスの出力が途中で欠けている場合に除外しないことを検証する。
 
@@ -2731,6 +2773,19 @@ def test_parse_errors_markdownlint_with_column() -> None:
     assert errors[0].line == 3
     assert errors[0].col == 32
     assert errors[0].rule == "MD059"
+
+
+def test_parse_errors_markdownlint_with_column_on_windows_path() -> None:
+    """markdownlint: Windowsドライブレター表記でも列番号付きの位置を正しく抽出する。
+
+    ドライブレター表記の侵入が本不具合の根本原因のため、当該表記そのものを検証する。
+    """
+    output = "C:/proj/docs/index.md:5:45 MD009/no-trailing-spaces Trailing spaces [Expected: 0; Actual: 1]"
+    errors = pyfltr.command.error_parser.parse_errors("markdownlint", output)
+    assert len(errors) == 1
+    assert errors[0].file.endswith("docs/index.md")
+    assert errors[0].line == 5
+    assert errors[0].col == 45
 
 
 def test_parse_errors_markdownlint_with_column_and_severity() -> None:
