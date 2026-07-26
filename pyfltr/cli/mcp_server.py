@@ -234,10 +234,10 @@ async def tool_run_for_agent(
     # 外部プロセス起動（`subprocess.run(["pyfltr", "run-for-agent", ...])`）
     # 案も不採用。stdio隔離は自然になるが、プロセス管理・`PYFLTR_CACHE_DIR`
     # 伝搬・`TERM`シグナル・テスト安定性の面で同一プロセスより不利。
-    commands_str: str | None = ",".join(commands) if commands else None
     args = argparse.Namespace(
         targets=[pathlib.Path(p) for p in paths],
-        commands=commands_str,
+        # CLI経路（`--commands`はaction="append"）と同じ`list[str] | None`で保持する。
+        commands=list(commands) if commands else None,
         fail_fast=fail_fast,
         only_failed=only_failed,
         from_run=from_run,
@@ -283,7 +283,7 @@ async def tool_run_for_agent(
         config.values["archive"] = True
 
         commands_list: list[str] = pyfltr.config.config.resolve_aliases(
-            (args.commands or ",".join(config.command_names)).split(","),
+            args.commands if args.commands is not None else list(config.command_names),
             config,
         )
 

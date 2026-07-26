@@ -23,6 +23,7 @@ import threading
 import time
 import typing
 
+import pyfltr.cli.command_selection
 import pyfltr.cli.output_format
 import pyfltr.cli.overrides
 import pyfltr.cli.precommit_guidance
@@ -598,7 +599,12 @@ def run_pipeline(
     requested_commands = list(commands)
     commands = [c for c in commands if pyfltr.config.config.is_command_enabled_anywhere(c, config, subproject_configs)]
     if getattr(args, "commands", None) is not None:
-        unmet = [c for c in requested_commands if c not in commands]
+        unmet = pyfltr.cli.command_selection.compute_unmet_commands(
+            pyfltr.cli.command_selection.flatten_commands_arg(args.commands, config),
+            requested_commands,
+            commands,
+            config,
+        )
         if unmet:
             pyfltr.warnings_.emit_warning(
                 source="commands",
@@ -863,26 +869,6 @@ def calculate_returncode(results: list[pyfltr.command.core_.CommandResult], exit
 _VALID_OUTPUT_FORMATS: frozenset[str] = frozenset(pyfltr.output.formatters.FORMATTERS.keys())
 
 
-def _flatten_commands_arg(values: list[str] | None, config: pyfltr.config.config.Config) -> list[str]:
-    """`--commands` で渡されたリスト（複数回指定の集合）をコマンド名配列に展開する。
-
-    各要素にはカンマ区切りで複数のコマンドを含められるため、splitした上で
-    先頭出現を優先した重複除去を行う。`None` の場合は設定上の全登録コマンド
-    （ビルトイン + custom-commands）を返す。
-    """
-    if values is None:
-        return list(config.command_names)
-    seen: set[str] = set()
-    result: list[str] = []
-    for raw in values:
-        for name in raw.split(","):
-            if name == "" or name in seen:
-                continue
-            seen.add(name)
-            result.append(name)
-    return result
-
-
 def _resolve_output_format(
     parser: argparse.ArgumentParser, args: argparse.Namespace
 ) -> pyfltr.cli.output_format.OutputFormatResolution:
@@ -988,7 +974,9 @@ def run_impl(
     # （例: svelte-check） も `run` / `ci` サブコマンドのデフォルト動作で実行されるようにする。
     # `--commands` は `action="append"` によりリストで渡るため、各要素を
     # カンマ区切りで再分割して平坦化する。重複は先出を優先して除去する。
-    commands: list[str] = pyfltr.config.config.resolve_aliases(_flatten_commands_arg(args.commands, config), config)
+    commands: list[str] = pyfltr.config.config.resolve_aliases(
+        pyfltr.cli.command_selection.flatten_commands_arg(args.commands, config), config
+    )
     for command in commands:
         if command not in config.values:
             suggestions = difflib.get_close_matches(command, list(config.command_names), n=3, cutoff=0.6)

@@ -37,6 +37,7 @@ def _make_args(tmp_path: pathlib.Path, *, commands: list[str] | None) -> argpars
         changed_since=None,
         no_archive=True,
         no_cache=True,
+        subcommand="run",
     )
 
 
@@ -121,3 +122,47 @@ def test_unmet_commands_warning_groups_multiple_commands(monkeypatch, capsys, tm
     warning = next(record for record in records if record.get("source") == "commands")
     assert warning["msg"].endswith("textlint, markdownlint")
     assert warning["hint"].startswith("--enable=textlint,markdownlint")
+
+
+def test_unmet_commands_warning_not_emitted_for_alias_with_any_enabled(monkeypatch, capsys, tmp_path) -> None:
+    """エイリアス指定で展開結果に有効化済みが1件以上あれば警告を出力しない。"""
+    records = _run_and_read_jsonl(
+        monkeypatch,
+        capsys,
+        tmp_path,
+        ["uv-audit", "pnpm-audit", "npm-audit", "yarn-audit"],
+        args_commands=["audit"],
+        enabled={"pnpm-audit"},
+    )
+
+    assert not [record for record in records if record.get("source") == "commands"]
+
+
+def test_unmet_commands_warning_emitted_for_alias_with_none_enabled(monkeypatch, capsys, tmp_path) -> None:
+    """エイリアス指定で展開結果が全て未有効化なら従来どおり警告を出力する。"""
+    records = _run_and_read_jsonl(
+        monkeypatch,
+        capsys,
+        tmp_path,
+        ["uv-audit", "pnpm-audit", "npm-audit", "yarn-audit"],
+        args_commands=["audit"],
+    )
+
+    warning = next(record for record in records if record.get("source") == "commands")
+    assert "uv-audit" in warning["msg"]
+    assert "yarn-audit" in warning["msg"]
+
+
+def test_unmet_commands_warning_emitted_for_explicit_command_with_alias(monkeypatch, capsys, tmp_path) -> None:
+    """エイリアスと個別コマンド名の併記では、個別指定した未有効化コマンドの警告を出力する。"""
+    records = _run_and_read_jsonl(
+        monkeypatch,
+        capsys,
+        tmp_path,
+        ["uv-audit", "pnpm-audit", "npm-audit", "yarn-audit"],
+        args_commands=["audit,uv-audit"],
+        enabled={"pnpm-audit"},
+    )
+
+    warning = next(record for record in records if record.get("source") == "commands")
+    assert warning["msg"].endswith("uv-audit")

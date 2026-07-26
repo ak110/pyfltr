@@ -577,6 +577,15 @@ MCPサーバー・`--only-failed`からも再利用する。
 `warnings_.emit_warning(source="commands", ...)`で警告発行する。
 `--commands`未指定時（暗黙全展開）はnoiseとなるため警告しない。
 
+エイリアス名で指定した場合は、展開結果に有効化済みコマンドが1件以上あれば警告しない。
+エイリアスは該当するものを実行する意味で使い、言語構成によって一部のみ有効となるのが正常な状態のためである。
+推奨ガイド（`docs/guide/recommended-nonpython.md`）が監査ツールの定期実行に`--commands=audit`を
+案内している一方、JavaScriptのみのプロジェクトでは`uv-audit`等が未有効であり、
+案内どおりの操作が必ず警告を伴っていた事象への対処にあたる。
+展開結果が全て未有効の場合は実行対象が空になるため警告を残す。
+個別コマンド名の指定はエイリアスとの併記の有無を問わず警告対象とする。
+判定本体は`pyfltr/cli/command_selection.py`の`compute_unmet_commands`のdocstringをSSOTとする。
+
 ## MCPサーバー {#mcp-server}
 
 `pyfltr mcp`サブコマンドが提供するMCP（Model Context Protocol）サーバーの設計判断。
