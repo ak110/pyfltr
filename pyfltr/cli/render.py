@@ -10,6 +10,7 @@
 import logging
 import shlex
 import typing
+import uuid
 
 import pyfltr.cli.output_format
 import pyfltr.command.core_
@@ -25,11 +26,29 @@ text_logger = pyfltr.cli.output_format.text_logger
 lock = pyfltr.cli.output_format.text_output_lock
 
 
+def _write_raw_output(output: str, *, use_github_annotations: bool) -> None:
+    """生出力をtext_loggerへ出力する。
+
+    GitHub Actions注釈モードでは、生出力中の`::`行がワークフローコマンドとして
+    誤解釈されるのを防ぐため、GitHub公式の`::stop-commands::<token>` / `::<token>::`で囲む。
+    tokenは実行ごとにランダムかつ一意な値（`uuid.uuid4().hex`）を用いる。
+    """
+    if use_github_annotations:
+        token = uuid.uuid4().hex
+        text_logger.info(f"::stop-commands::{token}")
+        text_logger.info(output)
+        text_logger.info(f"::{token}::")
+    else:
+        text_logger.info(output)
+
+
 def write_log(result: pyfltr.command.core_.CommandResult, *, use_github_annotations: bool = False) -> None:
     """コマンド実行結果の詳細ログ出力。
 
     パース済みエラーがある場合は`format_error()`で整形した一覧を表示する。
     エラーがなく失敗した場合は生出力をフォールバック表示する。
+    テスター（`command_type == "tester"`）が失敗した場合は、診断一覧が有っても
+    生出力を併記する。テスターの診断は要約であり生出力の代替にならないため。
 
     `use_github_annotations`がTrueのとき、ErrorLocation行をGAワークフローコマンド記法で出力する。
     False（既定）のときは従来のテキスト形式（`file:line:col: [tool:rule] msg`）で出力する。
@@ -47,8 +66,10 @@ def write_log(result: pyfltr.command.core_.CommandResult, *, use_github_annotati
                     text_logger.info(pyfltr.command.error_parser.format_error_github(error))
                 else:
                     text_logger.info(pyfltr.command.error_parser.format_error(error))
+            if result.command_type == "tester" and result.alerted:
+                _write_raw_output(result.output, use_github_annotations=use_github_annotations)
         elif result.alerted:
-            text_logger.info(result.output)
+            _write_raw_output(result.output, use_github_annotations=use_github_annotations)
         else:
             summary = pyfltr.command.error_parser.parse_summary(result.command, result.output)
             if summary:

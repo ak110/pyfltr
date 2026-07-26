@@ -323,6 +323,24 @@ JSONL stdoutストリーミングとは独立した経路にすることで、�
 `ErrorLocation`の全フィールドを保存する。
 `rule_url`等のフィールドが追加された際の追従コストを抑える狙い。
 
+### テスター失敗時の生出力併記
+
+テスター（`command_type == "tester"`）はリンター・フォーマッターと異なり、診断1件が
+`assert`の等価比較や例外メッセージの要約に留まり、失敗原因の特定に生出力（スタックトレース・
+xdistワーカークラッシュの詳細等）を要することが多い。このためtext/TUI/JSONLの3出力経路
+いずれも、テスター失敗時は診断一覧の有無にかかわらず生出力を併記する設計とする
+（linter・formatterは従来どおり診断が有れば生出力を省略する）。
+
+CI（GitHub Actions）では`--output-format=github-annotations`使用時、text出力の生出力
+併記部分に`::`を含む行があるとワークフローコマンドとして誤解釈される恐れがある。
+そのためGitHub公式の`::stop-commands::<token>` / `::<token>::`で該当ブロックを囲む
+（`pyfltr/cli/render.py`の`_write_raw_output`）。
+
+CIワークフロー側では実行アーカイブ（`PYFLTR_CACHE_DIR`配下）を`if: failure()`条件で
+`actions/upload-artifact`によりジョブ成果物として保存する構成を推奨する。生出力併記だけでは
+JSONL側のsmart truncationで長大な出力が切り詰められる場合があり、アーカイブ成果物化により
+切り詰め分も含めた全文を事後参照できる。
+
 ### ファイルhashキャッシュ
 
 同じ入力に対するツール再実行をスキップし、エージェント連携時の待ち時間と無駄な再計算を削減する。

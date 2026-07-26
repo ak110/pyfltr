@@ -4,6 +4,7 @@ import argparse
 import unittest.mock
 
 import pyfltr.command.core_
+import pyfltr.command.error_parser
 import pyfltr.command.process
 import pyfltr.config.config
 import pyfltr.output.ui
@@ -227,6 +228,56 @@ def test_interrupt_preserves_completed_results(monkeypatch) -> None:
     warning_messages = [w["message"] for w in pyfltr.warnings_.collected_warnings()]
     assert any("Ctrl+C により中断しました" in m for m in warning_messages)
     assert any("mypy" in m for m in warning_messages)
+
+
+def test_tester_failure_writes_raw_output_in_addition_to_diagnostics(monkeypatch) -> None:
+    """TUI: テスター失敗時は診断一覧に加えて生出力も#output-<command>へ書き込まれる。
+
+    `call_from_thread`を即時実行のno-opラムダへ差し替え、`_write_log`呼び出しを記録することで
+    Textualのイベントループを介さず`has_custom_parser`分岐の実出力を検証する。
+    """
+    args = argparse.Namespace()
+    args.targets = []
+    args.verbose = False
+    args.keep_ui = False
+    args.include_fix_stage = False
+
+    config = pyfltr.config.config.create_default_config()
+    for name in config.command_names:
+        config.values[name] = name == "pytest"
+    config.values["jobs"] = 1
+
+    base_ctx = pyfltr.command.core_.ExecutionBaseContext(config=config, all_files=[], cache_store=None, cache_run_id=None)
+    app = pyfltr.output.ui.UIApp(["pytest"], args, base_ctx)
+
+    written: list[tuple[str, str]] = []
+    monkeypatch.setattr(app, "call_from_thread", lambda fn, *a, **kw: fn(*a, **kw))
+    monkeypatch.setattr(app, "_write_log", lambda log_id, text: written.append((log_id, text)))
+
+    error = pyfltr.command.error_parser.ErrorLocation(
+        file="tests/a.py", line=0, col=None, command="pytest", message="test_a: crashed"
+    )
+
+    def _fake_execute_command(command, *_a, **_kw):
+        del _a, _kw
+        return pyfltr.command.core_.CommandResult(
+            command=command,
+            command_type="tester",
+            commandline=[],
+            returncode=1,
+            has_error=True,
+            files=1,
+            output="RAW CRASH OUTPUT",
+            elapsed=0.1,
+            errors=[error],
+        )
+
+    monkeypatch.setattr("pyfltr.command.dispatcher.execute_command", _fake_execute_command)
+    app._run_in_background()  # pylint: disable=protected-access  # タイミング制御困難
+
+    log_texts = [text for log_id, text in written if log_id == "#output-pytest"]
+    assert any("RAW CRASH OUTPUT" in t for t in log_texts)
+    assert any("test_a: crashed" in t for t in log_texts)
 
 
 def test_can_use_ui() -> None:

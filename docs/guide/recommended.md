@@ -530,6 +530,30 @@ jobs:
 - `--output-format=github-annotations`: `::error file=...` / `::warning file=...`形式の行を標準出力へ出力する
     - プル要求の該当ファイル行にコメントとして表示される
 
+### 失敗時のログ保存（任意）
+
+CIログのみでは失敗原因を切り分けられない場合（手元で再現しづらい環境固有の失敗等）に備え、
+実行アーカイブを失敗時のジョブ成果物として保存する構成を追加できる。
+
+````yaml
+      - name: Run pyfltr
+        env:
+          PYFLTR_CACHE_DIR: /tmp/pyfltr-ci-archive
+        run: pyfltr ci --output-format=github-annotations
+
+      - name: 失敗時に実行アーカイブを保存
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pyfltr-archive-${{ runner.os }}-py${{ matrix.python-version }}
+          path: ${{ env.PYFLTR_CACHE_DIR }}/runs
+          retention-days: 7
+````
+
+`PYFLTR_CACHE_DIR`を明示するのは、既定の保存先（`platformdirs.user_cache_dir`）が
+`container:`ジョブでは`$HOME`上書きの影響を受け不安定になり得るため。依存キャッシュ
+（`/cache`配下）とは別パスを選び、アーカイブが依存キャッシュへ混入しないようにする。
+
 ### 追加のシステムパッケージが必要な場合
 
 公式Dockerイメージの既定ユーザーは非root（sudo無し）のため、`apt`でシステムパッケージを追加するには

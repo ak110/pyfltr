@@ -36,13 +36,17 @@ jobs:
       # mise・pinact等がGitHub APIを呼び出す際のレート制限（403）回避
       # container jobでは明示しないとsecrets.GITHUB_TOKENがコンテナへ渡らない
       GITHUB_TOKEN: ${{ github.token }}
+      # 実行アーカイブの保存先。container job配下では$HOMEがGitHub Actionsに上書きされ
+      # 不安定になるため（docker/Dockerfileの既存コメント参照）、$HOME非依存の固定絶対パスを使う。
+      # 依存キャッシュ（/cache配下）とは別パスとし、actions/cacheの対象へ混入させない。
+      PYFLTR_CACHE_DIR: /tmp/pyfltr-ci-archive
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: GitHub Actionsのピン留め検証
         run: pinact run --check
 
-      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /cache
           key: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}
@@ -56,6 +60,14 @@ jobs:
           CI: "true"
         run: uv run pyfltr ci --output-format=github-annotations
 
+      - name: 失敗時に実行アーカイブを成果物として保存
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pyfltr-archive-${{ runner.os }}-py${{ matrix.python-version }}
+          path: ${{ env.PYFLTR_CACHE_DIR }}/runs
+          retention-days: 7
+
       - name: Prune uv cache for CI
         run: uv cache prune --ci
 
@@ -65,16 +77,16 @@ jobs:
       # mise・pinact等がGitHub APIを呼び出す際のレート制限（403）回避。
       GITHUB_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install uv
-        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           python-version: "3.14"
           enable-cache: true
 
       - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "lts/*"
 
@@ -98,7 +110,7 @@ jobs:
         shell: bash
         run: echo "STORE_PATH=$(pnpm store path)" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.pnpm-store-win.outputs.STORE_PATH }}
           # 固定キーでは一度保存されると更新されないため、run_idを含めて毎回保存させる。
@@ -106,7 +118,15 @@ jobs:
           restore-keys: pnpm-store-${{ runner.os }}-
 
       - name: Setup mise
-        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
+
+      - name: 実行アーカイブの保存先を設定
+        # `runner`コンテキストはジョブ直下`env`から参照できないため、ステップの`run`内で
+        # 解決してGITHUB_ENV経由で後続ステップへ引き渡す（Get pnpm store pathと同じ方式）。
+        # 同ジョブのpnpm store設定（89-94行）と同じrunner.temp起点で、ホストランナー
+        # 直接実行のため確実に利用可能。
+        shell: bash
+        run: echo "PYFLTR_CACHE_DIR=${{ runner.temp }}/pyfltr-cache" >> "$GITHUB_ENV"
 
       - name: Install smoke test tooling via mise
         # tests/smoke_test.py が起動するmise経由ツールをWindows runnerでも揃える。
@@ -137,6 +157,14 @@ jobs:
         env:
           CI: "true"
         run: uv run pyfltr ci --output-format=github-annotations
+
+      - name: 失敗時に実行アーカイブを成果物として保存
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pyfltr-archive-${{ runner.os }}
+          path: ${{ env.PYFLTR_CACHE_DIR }}/runs
+          retention-days: 7
 
       - name: Prune uv cache for CI
         run: uv cache prune --ci

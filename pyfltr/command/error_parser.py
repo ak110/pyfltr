@@ -208,8 +208,6 @@ _BUILTIN_PATTERNS: dict[str, str] = {
     "markdownlint": rf"(?P<file>{_FILE}):(?P<line>\d+)\s+(?:\w+\s+)?(?P<rule>MD\d+)(?P<message>\S*\s+.+)",
     # textlint --format compact出力例: /path/file.md: line 1, col 1, Error - message (rule)
     "textlint": rf"(?P<file>{_FILE}):\s*line\s+(?P<line>\d+),\s*col\s+(?P<col>\d+),\s*\w+\s*-\s*(?P<message>.+)",
-    # pytest出力例: FAILED tests/xxx_test.py::test_yyy - AssertionError
-    "pytest": rf"FAILED\s+(?P<file>{_FILE})::(?P<message>\S+)",
     # biome --reporter=github出力例（実機確認済み、lineとcolの間にendLineが介在する）:
     # ::error title=lint/suspicious/noDoubleEquals,file=src/foo.ts,line=1,endLine=1,col=7,endColumn=9::Use === instead of ==
     # [^:]*?で順序非依存かつ`::`終端を跨がないようマッチする。
@@ -1381,70 +1379,180 @@ def _parse_vitest_json(output: str) -> list[ErrorLocation]:
     return results
 
 
-def _parse_pytest(output: str) -> list[ErrorLocation]:
-    """Pytest出力をパース。`--tb=short`形式のトレースバックからプロジェクト内フレームを優先的に抽出する。
+_PYTEST_SUMMARY_RE = re.compile(
+    rf"^FAILED\s+(?P<file>{_FILE})::(?P<test>.+?)(?:\s+-\s+(?P<message>.+))?$",
+    re.MULTILINE,
+)
+_PYTEST_CRASH_RE = re.compile(rf"worker '(?P<worker>[^']+)' crashed while running '(?P<file>{_FILE})::(?P<test>[^']+)'")
+_PYTEST_TB_LINE_RE = re.compile(
+    rf"^(?P<file>{_FILE}):(?P<line>\d+):\s*(?P<message>.+)$",
+    re.MULTILINE,
+)
 
-    `_ test_name _`区切りからテスト名を抽出し、message先頭へ`<test_name>: `として併記する。
-    pytestの`assert ... == ...`表示はテスト関数名なしでは判別が難しいケースが多く、
-    location（file/line）と組み合わせて実質的にnodeid相当の判別性を得るため。
+
+def _parse_pytest_summary(output: str) -> dict[tuple[str, str], str | None]:
+    r"""`short test summary info`の`FAILED <file>::<test> - <message>`行を解析する。
+
+    キーは`(file, test)`。`test`部分は`(?P<test>.+?)`で空白を許容する
+    （パラメータ化テストのIDが`test_a[param with space]`のように空白を含む場合に
+    対応するため）。マッチは非貪欲のため、行内で最初に現れる`\s+-\s+`区切りの直前までを
+    `test`として切り出す。`test`は`::`区切り（`TestX::test_y`形式、pytestのnodeid表記）を
+    `.`区切り（`TestX.test_y`形式、`= FAILURES =`セクションのブロック見出しの表記）へ
+    `.replace("::", ".")`で正規化する。両表記が一致しないとテスト名突合（`consumed`集合）が
+    成立せず、summary残余補完で同一テストの診断が二重生成されるため。値は`message`
+    （省略時はNone、`--tb=line`経路の値と突合できるよう前後の空白・改行文字を`.strip()`で
+    除去して統一する）。専用セクション見出しの有無を問わず出力全体から該当行を拾う
+    （見出しを欠く一部pytest構成への耐性）。
     """
+    summary: dict[tuple[str, str], str | None] = {}
+    for match in _PYTEST_SUMMARY_RE.finditer(output):
+        file_path = pyfltr.paths.to_cwd_relative(match.group("file"))
+        test_name = match.group("test").replace("::", ".")
+        raw_message = match.group("message")
+        summary[(file_path, test_name)] = raw_message.strip() if raw_message is not None else None
+    return summary
+
+
+def _parse_pytest_from_summary(summary: dict[tuple[str, str], str | None], consumed: set[str]) -> list[ErrorLocation]:
+    """summary辞書のうち他経路で拾えなかった残余エントリを`line=0`の診断として補完する。
+
+    `consumed`はテスト名（`.`区切りへ正規化済み）の集合であり、ファイルパスを突合キーに
+    含めない。フレーム選択がプロジェクト外フレーム（`.venv/`配下等）へフォールバックした場合、
+    診断の`file`とsummaryの`file`（テストファイル自体のパス）が一致しないため、
+    ファイルパスを突合条件に含めると誤って残余扱いになり二重生成を招く。
+    """
+    results: list[ErrorLocation] = []
+    for (file_path, test_name), message in summary.items():
+        if test_name in consumed:
+            continue
+        raw_message = message or ""
+        results.append(
+            ErrorLocation(
+                file=file_path,
+                line=0,
+                col=None,
+                command="pytest",
+                message=f"{test_name}: {raw_message}" if raw_message else test_name,
+            )
+        )
+    return results
+
+
+def _parse_pytest(output: str) -> list[ErrorLocation]:
+    """Pytest出力をパース。
+
+    次の優先順で情報源を扱い、いずれの経路でも失敗理由の本文を可能な限り保持する。
+
+    1. `short test summary info`の`FAILED <file>::<test> - <message>`行を
+       `(file, test) -> message`辞書として先に収集する（メッセージ補完・突合用）。
+       `test`は`.`区切りへ正規化する
+    2. `= FAILURES =`セクションをテスト名区切り（`_ 名前 _`）でブロック分割し、
+       フレーム行（`file:line: in func`）を持つブロックはプロジェクト内フレーム優先で診断化する
+       （既存挙動を維持）
+    3. フレーム行を持たないブロック（xdistワーカークラッシュ等）は
+       `worker '<id>' crashed while running '<file>::<test>'`行から`line=0`の診断を生成する
+    4. ブロック分割できない場合（`--tb=line`形式）は`<file>:<line>: <message>`行を
+       実際の行番号付きで診断化し、summary辞書に同一`(file, message)`があればテスト名を先頭へ併記する
+    5. 上記いずれでも拾えなかったsummary辞書の残余エントリを`_parse_pytest_from_summary`で
+       `line=0`の診断として補完する
+
+    経路2〜4でテスト名を確定できたつど`consumed`（テスト名の集合）へ登録し、経路5の
+    二重生成を防ぐ。`_ test_name _`区切りからテスト名を抽出し、message先頭へ
+    `<test_name>: `として併記する。pytestの`assert ... == ...`表示はテスト関数名なしでは
+    判別が難しいケースが多く、location（file/line）と組み合わせて実質的にnodeid相当の
+    判別性を得るため。
+    """
+    summary = _parse_pytest_summary(output)
+    consumed: set[str] = set()
+
     failures_start = output.find("= FAILURES =")
     summary_start = output.find("short test summary info")
     if failures_start < 0:
-        return _parse_with_pattern("pytest", output, _BUILTIN_PATTERNS["pytest"])
+        return _parse_pytest_from_summary(summary, consumed)
 
     end = summary_start if summary_start > failures_start else len(output)
     failures_section = output[failures_start:end]
 
-    # テスト単位のブロックに分割（`_ test_name _`区切り）。
-    # クラスベースのテストでは`_ TestX.test_y _`のようにドット連結された名前が入る。
     block_re = re.compile(r"^_+ (?P<test_name>.+?) _+$", re.MULTILINE)
     block_matches = list(block_re.finditer(failures_section))
+
     if not block_matches:
-        return _parse_with_pattern("pytest", output, _BUILTIN_PATTERNS["pytest"])
+        # ブロック区切りが無い場合（`--tb=line`形式）: `<file>:<line>: <message>`行を直接拾う。
+        results: list[ErrorLocation] = []
+        for match in _PYTEST_TB_LINE_RE.finditer(failures_section):
+            file_path = pyfltr.paths.to_cwd_relative(match.group("file"))
+            message = match.group("message").strip()
+            test_name = None
+            for (sum_file, sum_test), sum_message in summary.items():
+                if sum_test in consumed:
+                    continue
+                if sum_file == file_path and sum_message == message:
+                    test_name = sum_test
+                    consumed.add(sum_test)
+                    break
+            results.append(
+                ErrorLocation(
+                    file=file_path,
+                    line=int(match.group("line")),
+                    col=None,
+                    command="pytest",
+                    message=f"{test_name}: {message}" if test_name else message,
+                )
+            )
+        results.extend(_parse_pytest_from_summary(summary, consumed))
+        return results
 
     # フレーム行: file:line: in func_name
     frame_re = re.compile(rf"^(?P<file>{_FILE}):(?P<line>\d+): in .+$", re.MULTILINE)
     # エラー行: E   message
     error_re = re.compile(r"^E\s+(?P<message>.+)$", re.MULTILINE)
 
-    results: list[ErrorLocation] = []
+    results = []
     for i, match in enumerate(block_matches):
         start = match.end()
         block_end = block_matches[i + 1].start() if i + 1 < len(block_matches) else len(failures_section)
         block = failures_section[start:block_end]
         test_name = match.group("test_name").strip()
 
-        # フレーム群から最後のプロジェクト内フレームを選択
         frames = list(frame_re.finditer(block))
-        if not frames:
+        if frames:
+            # フレーム群から最後のプロジェクト内フレームを選択
+            chosen = frames[-1]  # フォールバック: 最後のフレーム
+            for frame in reversed(frames):
+                if _is_project_path(pyfltr.paths.to_cwd_relative(frame.group("file"))):
+                    chosen = frame
+                    break
+            error_match = error_re.search(block)
+            raw_message = error_match.group("message").strip() if error_match else ""
+            message = f"{test_name}: {raw_message}" if test_name else raw_message
+            file_path = pyfltr.paths.to_cwd_relative(chosen.group("file"))
+            results.append(
+                ErrorLocation(file=file_path, line=int(chosen.group("line")), col=None, command="pytest", message=message)
+            )
+            consumed.add(test_name)
             continue
 
-        chosen = frames[-1]  # フォールバック: 最後のフレーム
-        for frame in reversed(frames):
-            if _is_project_path(pyfltr.paths.to_cwd_relative(frame.group("file"))):
-                chosen = frame
-                break
-
-        # エラーメッセージ（先頭のE行）
-        error_match = error_re.search(block)
-        raw_message = error_match.group("message").strip() if error_match else ""
-        message = f"{test_name}: {raw_message}" if test_name else raw_message
-
+        # フレーム行が無いブロック: xdistワーカークラッシュを想定して専用行を探す。
+        crash_match = _PYTEST_CRASH_RE.search(block)
+        if crash_match is None:
+            continue
+        file_path = pyfltr.paths.to_cwd_relative(crash_match.group("file"))
+        crashed_test = crash_match.group("test")
         results.append(
             ErrorLocation(
-                file=pyfltr.paths.to_cwd_relative(chosen.group("file")),
-                line=int(chosen.group("line")),
+                file=file_path,
+                line=0,
                 col=None,
                 command="pytest",
-                message=message,
+                message=(
+                    f"{crashed_test}: worker '{crash_match.group('worker')}' crashed while running {file_path}::{crashed_test}"
+                ),
             )
         )
+        consumed.add(crashed_test)
 
-    if results:
-        return results
-    # フォールバック: FAILED file::test_nameパターン（line=0）
-    return _parse_with_pattern("pytest", output, _BUILTIN_PATTERNS["pytest"])
+    results.extend(_parse_pytest_from_summary(summary, consumed))
+    return results
 
 
 # コマンド名 -> 関数ベースパーサー。regexで扱いにくい出力（JSONなど）に使う。

@@ -996,8 +996,102 @@ def test_parse_pytest_tb_short_all_external() -> None:
     assert "RuntimeError: fail" in errors[0].message
 
 
+def test_parse_pytest_worker_crash_generates_diagnostic_with_message() -> None:
+    """pytest: xdistワーカークラッシュを表すブロックからmessageを保持した診断を生成する。
+
+    Windows CIのpytest-timeout（thread方式）でワーカーが強制終了した際の実測出力を再現する。
+    """
+    output = (
+        "====================================== FAILURES ======================================\n"
+        "_________________________________ test_normal_fail __________________________________\n"
+        "[gw1] linux -- Python 3.13.3 /path/to/python3\n"
+        "tbexp/test_slow.py:9: in test_normal_fail\n"
+        "    assert 1 == 2\n"
+        "E   assert 1 == 2\n"
+        "________________________________ tbexp/test_slow.py _________________________________\n"
+        "[gw0] linux -- Python 3.13.3 /path/to/python3\n"
+        "worker 'gw0' crashed while running 'tbexp/test_slow.py::test_slow'\n"
+        "============================== short test summary info ===============================\n"
+        "FAILED tbexp/test_slow.py::test_normal_fail - assert 1 == 2\n"
+        "FAILED tbexp/test_slow.py::test_slow - worker 'gw0' crashed while running "
+        "'tbexp/test_slow.py::test_slow'\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 2
+    crashed = next(e for e in errors if e.line == 0)
+    assert crashed.file == "tbexp/test_slow.py"
+    assert "worker 'gw0' crashed" in crashed.message
+    assert "test_slow" in crashed.message
+    normal = next(e for e in errors if e.line == 9)
+    assert normal.file == "tbexp/test_slow.py"
+    assert "test_normal_fail" in normal.message
+
+
+def test_parse_pytest_tb_line_format() -> None:
+    """pytest: --tb=line形式は`<file>:<line>: <message>`行から行番号付きの診断を生成する。"""
+    abs_file = pathlib.Path.cwd() / "tbexp" / "test_line.py"
+    output = (
+        "====================================== FAILURES ======================================\n"
+        "E   assert 1 == 2\n"
+        f"{abs_file}:2: assert 1 == 2\n"
+        "E   RuntimeError: boom\n"
+        f"{abs_file}:6: RuntimeError: boom\n"
+        "============================== short test summary info ===============================\n"
+        "FAILED tbexp/test_line.py::test_a - assert 1 == 2\n"
+        "FAILED tbexp/test_line.py::test_b - RuntimeError: boom\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 2
+    err_a = next(e for e in errors if e.line == 2)
+    assert err_a.file == "tbexp/test_line.py"
+    assert err_a.message == "test_a: assert 1 == 2"
+    err_b = next(e for e in errors if e.line == 6)
+    assert err_b.message == "test_b: RuntimeError: boom"
+
+
+def test_parse_pytest_tb_short_class_based_test_not_double_counted_with_summary() -> None:
+    """pytest --tb=short: クラスベーステストの`::`区切りテスト名を`.`区切りへ正規化して
+    ブロック側と突合し、summary残余補完で二重生成されないことを検証する。
+
+    実測出力ではブロック見出しが`TestSomething.test_method`（`.`区切り）、summaryの
+    `FAILED`行が`tbexp/test_cls.py::TestSomething::test_method`（`::`区切り）となり
+    表記が一致しない。正規化を欠くと診断が2件生成される。
+    """
+    output = (
+        "====================================== FAILURES ======================================\n"
+        "_____________________________ TestSomething.test_method ______________________________\n"
+        "tbexp/test_cls.py:3: in test_method\n"
+        "    assert 1 == 2\n"
+        "E   assert 1 == 2\n"
+        "============================== short test summary info ===============================\n"
+        "FAILED tbexp/test_cls.py::TestSomething::test_method - assert 1 == 2\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 1
+    assert errors[0].message.startswith("TestSomething.test_method: ")
+
+
+def test_parse_pytest_summary_only_handles_parametrized_id_with_space() -> None:
+    """pytest: summary行のみ（FAILURESセクション無し）でも、パラメータIDの空白を
+    テスト名の一部として取り込み、診断を生成する。
+
+    `_PYTEST_SUMMARY_RE`のテスト名部分が`\\S+?`のままだと空白で分割されてしまい
+    行全体が一致せず、このテストの失敗が診断として一切出てこなくなる。
+    """
+    output = (
+        "============================== short test summary info ===============================\n"
+        "FAILED tbexp/test_param.py::test_a[param with space] - AssertionError: "
+        "assert 'param with space' == 'x'\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 1
+    assert errors[0].file == "tbexp/test_param.py"
+    assert errors[0].line == 0
+    assert errors[0].message.startswith("test_a[param with space]: ")
+
+
 def test_parse_pytest_fallback() -> None:
-    """pytest: --tb=line形式がなければFAILED行にフォールバック（line=0）。"""
+    """pytest: FAILURESセクションが無い場合、summary行から`line=0`の診断を生成する。"""
     output = (
         "FAILED tests/foo_test.py::test_bar - AssertionError: xxx\n"
         "========================= 1 failed in 0.5s =========================\n"

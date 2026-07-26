@@ -13,6 +13,7 @@ import pyfltr.cli.pipeline
 import pyfltr.cli.render
 import pyfltr.command.core_
 import pyfltr.command.dispatcher
+import pyfltr.command.error_parser
 import pyfltr.config.config
 import pyfltr.warnings_
 from tests.conftest import make_command_result as _make_result
@@ -82,6 +83,49 @@ def test_write_log_failed(text_logs):
     pyfltr.cli.render.write_log(result)
     # 失敗時は@マークが使われる
     assert "@ returncode: 1" in "\n".join(text_logs)
+
+
+def test_write_log_tester_with_errors_also_writes_raw_output(text_logs):
+    """テスター失敗時は診断一覧に加えて生出力も併記される。"""
+    error = pyfltr.command.error_parser.ErrorLocation(
+        file="tests/a_test.py", line=0, col=None, command="pytest", message="test_a: crashed"
+    )
+    result = pyfltr.command.core_.CommandResult(
+        command="pytest",
+        command_type="tester",
+        commandline=["pytest"],
+        returncode=1,
+        has_error=True,
+        files=1,
+        output="RAW PYTEST OUTPUT crash detail",
+        elapsed=1.0,
+        errors=[error],
+    )
+    pyfltr.cli.render.write_log(result)
+    text = "\n".join(text_logs)
+    assert "test_a: crashed" in text
+    assert "RAW PYTEST OUTPUT crash detail" in text
+
+
+def test_write_log_tester_github_annotations_wraps_raw_output_with_stop_commands(text_logs):
+    """GA注釈モードでは生出力を::stop-commands::で囲みワークフローコマンド誤爆を防ぐ。"""
+    error = pyfltr.command.error_parser.ErrorLocation(
+        file="tests/a_test.py", line=0, col=None, command="pytest", message="test_a: crashed"
+    )
+    result = pyfltr.command.core_.CommandResult(
+        command="pytest",
+        command_type="tester",
+        commandline=["pytest"],
+        returncode=1,
+        has_error=True,
+        files=1,
+        output="::error:: this looks like a workflow command",
+        elapsed=1.0,
+        errors=[error],
+    )
+    pyfltr.cli.render.write_log(result, use_github_annotations=True)
+    text = "\n".join(text_logs)
+    assert "::stop-commands::" in text
 
 
 def _make_pipeline_args(*, stream: bool) -> argparse.Namespace:

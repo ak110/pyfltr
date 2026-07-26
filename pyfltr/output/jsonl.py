@@ -605,7 +605,9 @@ def _build_truncated_meta(
     """commandレコードの`truncated`メタdictと、付与すべき`message`文字列を返す。
 
     切り詰めが発生しない場合は空dict・Noneを返す。
-    `message`は`failed`/`resolution_failed`かつ`diagnostics == 0`のときのみ生成する。
+    `message`は`failed`/`resolution_failed`かつ（`diagnostics == 0`または
+    `command_type == "tester"`）のときのみ生成する。テスターの診断は要約であり
+    生出力の代替にならないため、診断が有っても生出力末尾を残す。
     `truncated`はdiagnostic切り詰めとメッセージ切り詰めの両方を統合して返す。
     """
     truncated: dict[str, typing.Any] = {}
@@ -615,7 +617,7 @@ def _build_truncated_meta(
         truncated["diagnostics_total"] = diagnostic_total
         truncated["archive"] = f"tools/{archive_command_dir}/diagnostics.jsonl"
 
-    if result.status in {"failed", "resolution_failed"} and diagnostics == 0:
+    if result.status in {"failed", "resolution_failed"} and (diagnostics == 0 or result.command_type == "tester"):
         message_max_lines, message_max_chars = _resolve_message_limits(config)
         msg, msg_truncated, head_chars, tail_chars = _truncate_message(
             result.output,

@@ -555,6 +555,10 @@ class UIApp(App):
                 if result.errors:
                     lines = [pyfltr.command.error_parser.format_error(e) for e in result.errors]
                     self._safe_call_from_thread(self._write_log, f"#output-{command}", "\n".join(lines))
+                    # テスター失敗時は診断一覧に加えて生出力も併記する（text側と同じ設計判断）。
+                    # TUIはGitHub Actions注釈記法を使わないためstop-commands保護は不要。
+                    if result.command_type == "tester" and result.alerted:
+                        self._safe_call_from_thread(self._write_log, f"#output-{command}", result.output)
                 elif result.alerted:
                     self._safe_call_from_thread(self._write_log, f"#output-{command}", result.output)
                 else:

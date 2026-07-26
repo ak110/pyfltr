@@ -204,12 +204,21 @@ def test_command_record_message_truncates_long_output(default_config):
 
 
 def test_command_record_no_message_when_diagnostics_present(default_config):
-    """failedでもdiagnostics > 0のときはmessageを出力しない。"""
+    """failedでもテスター以外はdiagnostics > 0のときはmessageを出力しない。"""
     errors = [_make_error("mypy", "src/a.py", 1, "bad")]
     result = _make_result("mypy", returncode=1, output="verbose mypy output", errors=errors)
     lines = pyfltr.output.jsonl.build_lines([result], default_config, exit_code=1)
     tool_record = next(json.loads(line) for line in lines if json.loads(line)["kind"] == "command")
     assert "message" not in tool_record
+
+
+def test_command_record_message_present_for_tester_with_diagnostics(default_config):
+    """テスターはdiagnostics > 0でも生出力末尾のmessageを保持する。"""
+    errors = [_make_error("pytest", "tests/a.py", 0, "test_a: worker crashed")]
+    result = _make_result("pytest", command_type="tester", returncode=1, output="verbose pytest crash output", errors=errors)
+    lines = pyfltr.output.jsonl.build_lines([result], default_config, exit_code=1)
+    tool_record = next(json.loads(line) for line in lines if json.loads(line)["kind"] == "command")
+    assert "message" in tool_record
 
 
 def test_command_record_no_message_on_success(default_config):
