@@ -1395,6 +1395,18 @@ _PYTEST_BLOCK_HEAD_RE = re.compile(r"^_+ (?P<test_name>.+?) _+$", re.MULTILINE)
 _PYTEST_CAPTURED_SECTION_RE = re.compile(r"^-+ Captured .+ -+$", re.MULTILINE)
 _PYTEST_SESSION_START_RE = re.compile(r"^=+ test session starts =+$")
 _PYTEST_SESSION_END_RE = re.compile(r"^=+ .* in \d+(?:\.\d+)?s.*=+$")
+# `-q`で起動したpytestの最終集計行は`=`の埋めを伴わない（例: `2 failed in 0.92s`）。
+# 埋めが無い分だけ任意のテキスト行と紛れやすいため、pytestが実際に組み立てる形へ厳密に合わせる。
+# 件数と分類の並びは`_pytest/terminal.py`が`"%d %s"`を`", "`で連結する形、
+# 秒数の表記は同ファイルの`format_session_duration`が返す`<秒数>s`と
+# 60秒以上での`<秒数>s (<経過時間>)`の2形に対応する。
+# 末尾を`.*`で開いたままにすると`12 files processed in 2.5s`のような行が上限として採られ、
+# 上限が親の集計行を越えて親の失敗ごと除外する事故を招く。
+# `--collect-only`の集計行（`6 tests collected in 0.01s`等）は対象外とする。
+# 当該実行は失敗の診断を生成しないため上限を必要としない。
+_PYTEST_QUIET_SESSION_END_RE = re.compile(
+    r"^(?:\d+ \w+(?:, \d+ \w+)*|no tests ran) in \d+(?:\.\d+)?s(?: \((?:\d+ days?, )?\d+:\d{2}:\d{2}\))?$"
+)
 
 
 def _parse_pytest_summary(output: str) -> dict[tuple[str, str], str | None]:
@@ -1535,7 +1547,7 @@ def _mask_pytest_captured_child_runs(output: str) -> str:
     次の3つの構成では開始・終了のマーカーが成立せず除外できない。いずれも子プロセス側の
     失敗が親の失敗として混入するが、本処理の導入前と同じ結果であり退行にはあたらない。
 
-    - 子プロセスを`-q`で起動した場合。実行開始行を出力せず、終了集計行も`=`の埋めを伴わない
+    - 子プロセスを`-q`で起動した場合。実行開始行を出力しないため開始位置を確定できない
     - 親プロセスが`-s`で動く場合。子の出力が捕捉されず節見出しが出ないうえ、
       子の実行開始行が親の進捗行と同一行へ連結される
     - 子プロセス側の失敗したテストが出力を持つ場合。子自身の捕捉出力の節見出しが
@@ -1545,7 +1557,9 @@ def _mask_pytest_captured_child_runs(output: str) -> str:
 
     行を削除せず空行へ置き換えるのは、以降の正規表現探索が扱う行構造を保つためである。
     """
-    lines = output.splitlines(keepends=True)
+    # 行の分割は`\n`のみを区切りとする。`str.splitlines`はフォームフィード等でも分割するため、
+    # 以降の正規表現探索（`re.MULTILINE`は`\n`のみを行区切りとする）と行の対応が崩れる。
+    lines = output.split("\n")
     limit = _pytest_parent_tail_index(lines)
     masked = [False] * len(lines)
     after_captured = False
@@ -1575,21 +1589,25 @@ def _mask_pytest_captured_child_runs(output: str) -> str:
             for j in range(start, i + 1):
                 masked[j] = True
             start = None
-    return "".join("\n" if is_masked else line for is_masked, line in zip(masked, lines, strict=True))
+    return "\n".join("" if is_masked else line for is_masked, line in zip(masked, lines, strict=True))
 
 
 def _pytest_parent_tail_index(lines: list[str]) -> int:
     """親プロセス自身の最終集計行の位置を返す。子プロセスの実行を除外する範囲の上限として使う。
 
-    最終集計行（`=+ ... in <秒数>s ... =+`）のうち末尾のものを採用する。親の最終集計行は
-    親の失敗欄・失敗一覧より後に出るため、捕捉出力へ混入した子プロセスの集計行は必ず
-    これより前に位置する。末尾側を採用しないと親の失敗欄の途中で上限に達し、
-    子プロセスの除外が成立しなくなる。
+    最終集計行のうち末尾のものを採用する。親の最終集計行は親の失敗欄・失敗一覧より後に出るため、
+    捕捉出力へ混入した子プロセスの集計行は必ずこれより前に位置する。末尾側を採用しないと
+    親の失敗欄の途中で上限に達し、子プロセスの除外が成立しなくなる。
+
+    親が`-q`で動く場合の最終集計行は`=`の埋めを伴わないため、当該形式も併せて探す。
+    `=`の埋めを伴う形式だけを探すと、`-q`の親では出力中で最後に一致するのが
+    捕捉出力へ混入した子の集計行となり、上限が子の終端そのものを指して除外が成立しなくなる。
 
     最終集計行を持たない構成では上限を設けない。
     """
     for i in range(len(lines) - 1, -1, -1):
-        if _PYTEST_SESSION_END_RE.fullmatch(lines[i].rstrip()):
+        stripped = lines[i].rstrip()
+        if _PYTEST_SESSION_END_RE.fullmatch(stripped) or _PYTEST_QUIET_SESSION_END_RE.fullmatch(stripped):
             return i
     return len(lines)
 

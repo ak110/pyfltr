@@ -1777,6 +1777,115 @@ def test_parse_pytest_child_run_masked_for_stderr_and_log_sections() -> None:
         assert errors[0].line == 11, section
 
 
+@pytest.mark.parametrize(
+    "tail_line",
+    [
+        "2 failed in 0.92s",
+        "1 failed, 2 passed, 1 skipped, 1 xfailed, 1 xpassed, 1 warning in 0.06s",
+        "no tests ran in 0.00s",
+        "3 passed in 61.00s (0:01:01)",
+        "3 passed in 90061.00s (1 day, 1:01:01)",
+    ],
+)
+def test_parse_pytest_child_run_masked_with_quiet_parent(tail_line: str) -> None:
+    """pytest -q: 親の最終集計行が`=`の埋めを伴わない場合でも子の実行を除外することを検証する。
+
+    `=`の埋めを伴う形式だけを上限として探すと、出力中で最後に一致するのが捕捉出力へ
+    混入した子の集計行となり、上限が子の終端そのものを指して除外が成立しない。
+    集計行の分類の連結・件数を持たない形・経過時間の併記の各形をpytestの実出力から採る。
+    """
+    output = (
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_runs_child ________________________________\n"
+        "tests/q_test.py:11: in test_runs_child\n"
+        "E   AssertionError: assert 1 == 0\n"
+        "-------------------------- Captured stdout call ---------------------------\n"
+        + _pytest_child_run(file="child/inner_test.py", test="test_inner", line=2, message="assert 1 == 2")
+        + "_______________________________ test_after ________________________________\n"
+        "tests/q_test.py:15: in test_after\n"
+        "E   AssertionError: after\n"
+        "========================= short test summary info ==========================\n"
+        "FAILED tests/q_test.py::test_runs_child - AssertionError: assert 1 == 0\n"
+        "FAILED tests/q_test.py::test_after - AssertionError: after\n"
+        f"{tail_line}\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 2
+    assert all(e.file == "tests/q_test.py" for e in errors)
+    assert {e.line for e in errors} == {11, 15}
+
+
+def test_parse_pytest_captured_text_is_not_taken_as_parent_summary_line() -> None:
+    """pytest: 集計行に似た任意のテキスト行を除外範囲の上限として採らないことを検証する。
+
+    上限が親の集計行を越えると、終端を欠いた子の実行が親自身の最終集計行と対になり、
+    その間の親の失敗と失敗一覧をまとめて除外する。
+    """
+    output = (
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_p ________________________________\n"
+        "tests/p_test.py:3: in test_p\n"
+        "E   assert 1 == 2\n"
+        "-------------------------- Captured stdout call ---------------------------\n"
+        "================================= test session starts =================================\n"
+        "collected 1 item\n"
+        "_______________________________ test_q ________________________________\n"
+        "tests/p_test.py:7: in test_q\n"
+        "E   assert 5 == 6\n"
+        "========================= short test summary info ==========================\n"
+        "FAILED tests/p_test.py::test_p - assert 1 == 2\n"
+        "FAILED tests/p_test.py::test_q - assert 5 == 6\n"
+        "================================= 2 failed in 0.30s =================================\n"
+        "12 files processed in 2.5s\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 2
+    assert {e.line for e in errors} == {3, 7}
+
+
+def test_mask_pytest_captured_child_runs_keeps_line_structure() -> None:
+    """pytest: 除外処理が`\\n`以外の制御文字で行を切らないことを検証する。
+
+    `str.splitlines`はフォームフィード等でも分割するため、除外時に当該位置へ改行が入り、
+    以降の正規表現探索（`re.MULTILINE`は`\\n`のみを行区切りとする）と行の対応が崩れる。
+    制御文字は除外対象の範囲の内側へ置く。範囲の外では除外時の置換が起こらず、
+    分割の基準が違っても元の文字列が復元されるため、退行を検知できない。
+    """
+    child = _pytest_child_run(file="child/z_test.py", test="test_phantom", line=2, message="assert 1 == 2").replace(
+        "collected 1 item\n", "collected 1 item\nbefore\x0cafter\n"
+    )
+    output = (
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_p ________________________________\n"
+        "tests/p_test.py:3: in test_p\n"
+        "E   assert 1 == 2\n"
+        "-------------------------- Captured stdout call ---------------------------\n"
+        + child
+        + "========================= short test summary info ==========================\n"
+        "FAILED tests/p_test.py::test_p - assert 1 == 2\n"
+        "================================= 1 failed in 0.30s =================================\n"
+    )
+    # pylint: disable=protected-access  # 行構造の保持は公開関数の戻り値へ現れないため直接検証する
+    masked = pyfltr.command.error_parser._mask_pytest_captured_child_runs(output)  # noqa: SLF001
+    assert masked.count("\n") == output.count("\n")
+    assert len(masked.split("\n")) == len(output.split("\n"))
+
+
+def test_parse_pytest_child_run_masked_without_parent_failures_section() -> None:
+    """pytest: 親に失敗欄が無く捕捉出力へ子の実行だけが現れる場合に除外することを検証する。
+
+    親が全通過し通過テストの捕捉出力だけが表示される構成では、失敗欄を持たないため
+    集計行のみを情報源とする経路へ入る。除外しないと子の失敗が親の失敗として報告される。
+    """
+    output = (
+        "-------------------------- Captured stdout call ---------------------------\n"
+        + _pytest_child_run(file="child/inner_test.py", test="test_inner", line=2, message="assert 1 == 2")
+        + "================================= 2 passed in 0.90s =================================\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert errors == []
+
+
 def test_parse_pytest_child_run_is_not_masked_without_parent_summary_line() -> None:
     """pytest: 親が最終集計行を持たない出力では子の実行を除外しないことを検証する。
 
