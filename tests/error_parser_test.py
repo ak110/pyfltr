@@ -1149,6 +1149,252 @@ def test_parse_pytest_parametrized_id_with_brackets_is_not_dropped() -> None:
     assert all(e.file == "tests/e_test.py" for e in errors)
 
 
+def test_parse_pytest_default_traceback_single_frame_has_line_number() -> None:
+    """pytest --tb=auto: フレームが1つだけの失敗でも行番号を報告することを検証する。
+
+    既定のトレースバック形式はフレーム行（`<file>:<line>: in <func>`）を出さず、
+    エントリーの末尾へ`<file>:<line>: <例外名>`の位置行を出力する。位置行を拾わないと
+    集計行由来の`line=0`へ落ち、継続的インテグレーションの注釈が該当行を指さない。
+    検体はpytest 9.1.1の実出力から採る。
+    """
+    output = (
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_simple ________________________________\n"
+        "\n"
+        "    def test_simple():\n"
+        ">       assert 1 == 2\n"
+        "E       assert 1 == 2\n"
+        "\n"
+        "sample_test.py:2: AssertionError\n"
+        "========================= short test summary info ==========================\n"
+        "FAILED sample_test.py::test_simple - assert 1 == 2\n"
+        "================================= 1 failed in 0.03s =================================\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 1
+    assert errors[0].file == "sample_test.py"
+    assert errors[0].line == 2
+    assert errors[0].message == "test_simple: assert 1 == 2"
+
+
+def test_parse_pytest_default_traceback_chained_exception_uses_last_location() -> None:
+    """pytest --tb=auto: 例外の連鎖では最後の位置行とその例外を採ることを検証する。
+
+    連鎖したエントリーが並ぶ場合、実際に失敗を起こしたのは最後のエントリーであり、
+    集計行のメッセージとも一致する。先頭のエラー行を採ると内側の例外を報告する。
+    """
+    output = (
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_chained ________________________________\n"
+        "\n"
+        "    def test_chained():\n"
+        "        try:\n"
+        ">           raise KeyError('k')\n"
+        "E           KeyError: 'k'\n"
+        "\n"
+        "sample_test.py:14: KeyError\n"
+        "\n"
+        "The above exception was the direct cause of the following exception:\n"
+        "\n"
+        "    def test_chained():\n"
+        ">           raise RuntimeError('wrapped') from e\n"
+        "E           RuntimeError: wrapped\n"
+        "\n"
+        "sample_test.py:16: RuntimeError\n"
+        "========================= short test summary info ==========================\n"
+        "FAILED sample_test.py::test_chained - RuntimeError: wrapped\n"
+        "================================= 1 failed in 0.03s =================================\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 1
+    assert errors[0].line == 16
+    assert errors[0].message == "test_chained: RuntimeError: wrapped"
+
+
+def test_parse_pytest_short_traceback_chained_exception_uses_outer_message() -> None:
+    """pytest --tb=short: 例外の連鎖で最後のエントリーの例外をメッセージに採ることを検証する。
+
+    ブロック先頭のエラー行を採ると内側の例外（`KeyError`）を報告し、集計行が示す
+    実際の失敗理由（`RuntimeError`）と食い違う。
+    """
+    output = (
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_chained ________________________________\n"
+        "sample_test.py:14: in test_chained\n"
+        "    raise KeyError('k')\n"
+        "E   KeyError: 'k'\n"
+        "\n"
+        "The above exception was the direct cause of the following exception:\n"
+        "sample_test.py:16: in test_chained\n"
+        "    raise RuntimeError('wrapped') from e\n"
+        "E   RuntimeError: wrapped\n"
+        "========================= short test summary info ==========================\n"
+        "FAILED sample_test.py::test_chained - RuntimeError: wrapped\n"
+        "================================= 1 failed in 0.03s =================================\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 1
+    assert errors[0].line == 16
+    assert errors[0].message == "test_chained: RuntimeError: wrapped"
+
+
+def test_parse_pytest_default_traceback_mixed_frames_prefers_last_location() -> None:
+    """pytest --tb=auto: フレーム行と位置行が混在する場合に位置行を優先することを検証する。
+
+    既定のトレースバック形式は最初と最後のエントリーを詳細形式で、中間のエントリーを
+    簡略形式（フレーム行）で出力する。フレーム行だけを見ると中間エントリーの位置を報告し、
+    実際に例外が発生した位置を外す。中間エントリーの区切り行をブロック見出しとして
+    誤って拾わないことも併せて確認する。
+    """
+    separator = "_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ \n"
+    output = (
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_deep ________________________________\n"
+        "\n"
+        "    def test_deep():\n"
+        ">       a()\n"
+        "\n"
+        "deep_test.py:14: \n" + separator + "deep_test.py:2: in a\n"
+        "    b()\n"
+        "deep_test.py:6: in b\n"
+        "    c()\n" + separator + "\n"
+        "    def c():\n"
+        ">       raise ValueError('deep')\n"
+        "E       ValueError: deep\n"
+        "\n"
+        "deep_test.py:10: ValueError\n"
+        "========================= short test summary info ==========================\n"
+        "FAILED deep_test.py::test_deep - ValueError: deep\n"
+        "================================= 1 failed in 0.06s =================================\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 1
+    assert errors[0].file == "deep_test.py"
+    assert errors[0].line == 10
+    assert errors[0].message == "test_deep: ValueError: deep"
+
+
+def test_parse_pytest_default_traceback_ignores_location_line_in_captured_output() -> None:
+    """pytest --tb=auto: 捕捉出力の中にある位置行を失敗の位置として採らないことを検証する。
+
+    捕捉出力は任意のテキストであり、位置行と同じ書式の行が現れても失敗の位置ではない。
+    節見出しより後まで走査すると、捕捉出力の側の行を失敗の位置として報告する。
+    """
+    output = (
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_prints ________________________________\n"
+        "\n"
+        "    def test_prints():\n"
+        ">       assert False\n"
+        "E       assert False\n"
+        "\n"
+        "tests/x_test.py:5: AssertionError\n"
+        "-------------------------- Captured stdout call ---------------------------\n"
+        "other/noise.py:99: RuntimeError\n"
+        "========================= short test summary info ==========================\n"
+        "FAILED tests/x_test.py::test_prints - assert False\n"
+        "================================= 1 failed in 0.10s =================================\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 1
+    assert errors[0].file == "tests/x_test.py"
+    assert errors[0].line == 5
+
+
+def test_parse_pytest_default_traceback_external_location_keeps_project_frame() -> None:
+    """pytest --tb=auto: 位置行がプロジェクト外を指す場合はフレーム選択を維持することを検証する。
+
+    テスト関数が中継関数を経てサードパーティー内で例外になる形では、簡略形式の
+    フレーム行がプロジェクト内を指し、末尾の位置行がプロジェクト外を指す。
+    `--tb=short`が選ぶ位置と揃えるため、フレーム行の選択を優先する。
+    """
+    separator = "_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ \n"
+    output = (
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_ext3 ________________________________\n"
+        "\n"
+        "    def test_ext3():\n"
+        ">       helper()\n"
+        "\n"
+        "tests/e_test.py:13: \n" + separator + "tests/e_test.py:9: in helper\n"
+        "    somelib.boom()\n" + separator + "\n"
+        "    def boom():\n"
+        ">       raise ValueError('boom')\n"
+        "E       ValueError: boom\n"
+        "\n"
+        ".venv/lib/python3.13/site-packages/somelib/core.py:2: ValueError\n"
+        "========================= short test summary info ==========================\n"
+        "FAILED tests/e_test.py::test_ext3 - ValueError: boom\n"
+        "================================= 1 failed in 0.10s =================================\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 1
+    assert errors[0].file == "tests/e_test.py"
+    assert errors[0].line == 9
+
+
+def test_parse_pytest_default_traceback_external_location_without_frames() -> None:
+    """pytest --tb=auto: フレーム行を持たずプロジェクト外で終わる失敗の位置を検証する。
+
+    テスト関数が直接サードパーティー関数を呼んで例外になる形ではエントリーが2つとなり、
+    簡略形式のフレーム行が現れない。プロジェクト内の位置行は例外名を伴わないが、
+    `--tb=short`が選ぶプロジェクト内フレームと同じ位置を指すためこれを採る。
+    """
+    separator = "_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ \n"
+    output = (
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_ext ________________________________\n"
+        "\n"
+        "    def test_ext():\n"
+        ">       somelib.boom()\n"
+        "\n"
+        "tests/e_test.py:9: \n" + separator + "\n"
+        "    def boom():\n"
+        ">       raise ValueError('boom')\n"
+        "E       ValueError: boom\n"
+        "\n"
+        ".venv/lib/python3.13/site-packages/somelib/core.py:2: ValueError\n"
+        "========================= short test summary info ==========================\n"
+        "FAILED tests/e_test.py::test_ext - ValueError: boom\n"
+        "================================= 1 failed in 0.10s =================================\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 1
+    assert errors[0].file == "tests/e_test.py"
+    assert errors[0].line == 9
+    assert errors[0].message == "test_ext: ValueError: boom"
+
+
+def test_parse_pytest_doctest_failure_is_not_double_counted() -> None:
+    """pytest --doctest-modules: doctestの失敗で診断が二重生成されないことを検証する。
+
+    ブロック見出しは`[doctest] <モジュール>.<関数>`形式で、集計行のテスト名と一致しない。
+    接頭辞を除かずに突合すると、位置行由来の診断と残余補完の`line=0`の診断が並ぶ。
+    エラー行を持たないため、メッセージはテスト名のみとなる。
+    """
+    output = (
+        "================================= FAILURES =================================\n"
+        "_______________________ [doctest] doc_test.add _________________________\n"
+        "002 加算する。\n"
+        "003 \n"
+        "004     >>> add(1, 2)\n"
+        "Expected:\n"
+        "    4\n"
+        "Got:\n"
+        "    3\n"
+        "\n"
+        "doc_test.py:4: DocTestFailure\n"
+        "========================= short test summary info ==========================\n"
+        "FAILED doc_test.py::doc_test.add\n"
+        "================================= 1 failed in 0.02s =================================\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 1
+    assert errors[0].file == "doc_test.py"
+    assert errors[0].line == 4
+    assert errors[0].message == "doc_test.add"
+
+
 def test_parse_pytest_worker_crash_class_based_not_double_counted() -> None:
     """pytest: クラスベーステストのxdistワーカークラッシュで診断が二重生成されないことを検証する。
 
@@ -1904,12 +2150,13 @@ def test_parse_pytest_child_run_is_not_masked_without_parent_summary_line() -> N
     assert any(e.file == "child/z_test.py" for e in errors)
 
 
-def test_parse_pytest_child_run_with_nested_captured_section_is_not_masked() -> None:
-    """pytest: 子の失敗欄が捕捉出力を持つ場合に除外が成立しない現状を仕様として固定する。
+def test_parse_pytest_child_run_with_nested_captured_section_is_not_diagnosed() -> None:
+    """pytest: 子の失敗したテストが出力を持つ場合に子の失敗を診断化しないことを検証する。
 
-    子自身の節見出しが親の節見出しと同一書式で現れ、終端未確定の開始位置を破棄する
-    規則が発火する。破棄規則を外すと未終端の実行が後続の節の終了集計行と対になり、
-    親の実在する失敗を除外する側の誤りへ倒れるため、現状は実在の失敗を失わない側を採る。
+    子自身の捕捉出力の節見出しが親の節見出しと同一書式で現れるため、実行マーカーによる
+    除外は終端を確定できず成立しない。親の失敗一覧に載らないテスト名の失敗欄を除外する
+    安全網により架空の診断を防ぐ。子プロセスの失敗したテストが標準出力へ書き込む構成で
+    日常的に生じる。
     """
     child = (
         "================================= test session starts =================================\n"
@@ -1938,6 +2185,145 @@ def test_parse_pytest_child_run_with_nested_captured_section_is_not_masked() -> 
         "========================= short test summary info ==========================\n"
         "FAILED tests/p_test.py::test_runs_child - AssertionError: assert 1 == 0\n"
         "FAILED tests/p_test.py::test_after - AssertionError: after\n"
+        "================================= 2 failed in 0.90s =================================\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 2
+    assert all(e.file == "tests/p_test.py" for e in errors)
+    assert {e.line for e in errors} == {11, 15}
+
+
+def test_parse_pytest_unterminated_child_run_with_failures_section_keeps_parent_lines() -> None:
+    """pytest: 子自身の失敗欄を含む未終端の実行が親のブロックを巻き込まないことを検証する。
+
+    子の失敗欄より後の節見出しを開始位置の破棄から除くと、終端未確定の開始位置が
+    親のブロック境界を越えて生き残り、別の親のテストが表示した子の出力の末尾にある
+    終了集計行と対になる。その間にある親の失敗が行番号を失う。
+    """
+    captured = "-------------------------- Captured stdout call ---------------------------\n"
+    unterminated = (
+        "================================= test session starts =================================\n"
+        "collected 1 item\n"
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_inner ________________________________\n"
+        "child/inner_test.py:3: in test_inner\n"
+        "E   assert 1 == 2\n"
+        "-------------------------- Captured stdout call ---------------------------\n"
+        "inner noise\n"
+    )
+    tail_only = (
+        "FAILED child/y_test.py::test_y - assert 1 == 2\n"
+        "================================= 1 failed in 0.03s =================================\n"
+    )
+    output = (
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_a_child ________________________________\n"
+        "tests/c_test.py:12: in test_a_child\n"
+        "E   AssertionError: a\n"
+        + captured
+        + unterminated
+        + "_______________________________ test_b_plain ________________________________\n"
+        "tests/c_test.py:18: in test_b_plain\n"
+        "E   AssertionError: b\n"
+        "_______________________________ test_c_tail ________________________________\n"
+        "tests/c_test.py:24: in test_c_tail\n"
+        "E   AssertionError: c\n"
+        + captured
+        + tail_only
+        + "========================= short test summary info ==========================\n"
+        "FAILED tests/c_test.py::test_a_child - AssertionError: a\n"
+        "FAILED tests/c_test.py::test_b_plain - AssertionError: b\n"
+        "FAILED tests/c_test.py::test_c_tail - AssertionError: c\n"
+        "================================= 3 failed in 1.10s =================================\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 3
+    assert all(e.file == "tests/c_test.py" for e in errors)
+    assert {e.line for e in errors} == {12, 18, 24}
+
+
+def test_parse_pytest_quiet_child_failure_block_is_dropped_by_summary_safety_net() -> None:
+    """pytest: 実行マーカーで除外できない子の失敗欄を失敗一覧との突合で除外することを検証する。
+
+    子プロセスを`-q`で起動すると実行開始行が出ず、終了集計行も`=`の埋めを伴わないため
+    実行マーカーによる除外が成立しない。親の失敗一覧に載らないテスト名の失敗欄を除外する
+    安全網により、子プロセス側の失敗が親の失敗として報告されないことを確認する。
+    """
+    output = (
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_runs_child ________________________________\n"
+        "tests/p_test.py:11: in test_runs_child\n"
+        "E   AssertionError: assert 1 == 0\n"
+        "-------------------------- Captured stdout call ---------------------------\n"
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_inner ________________________________\n"
+        "child/inner_test.py:3: in test_inner\n"
+        "E   assert 1 == 2\n"
+        "========================= short test summary info ==========================\n"
+        "FAILED child/inner_test.py::test_inner - assert 1 == 2\n"
+        "1 failed in 0.03s\n"
+        "_______________________________ test_after ________________________________\n"
+        "tests/p_test.py:15: in test_after\n"
+        "E   AssertionError: after\n"
+        "========================= short test summary info ==========================\n"
+        "FAILED tests/p_test.py::test_runs_child - AssertionError: assert 1 == 0\n"
+        "FAILED tests/p_test.py::test_after - AssertionError: after\n"
+        "================================= 2 failed in 0.90s =================================\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 2
+    assert all(e.file == "tests/p_test.py" for e in errors)
+    assert {e.line for e in errors} == {11, 15}
+
+
+def test_parse_pytest_quiet_child_crash_block_is_dropped_by_summary_safety_net() -> None:
+    """pytest: 子のワーカー異常終了のブロックも失敗一覧との突合で除外することを検証する。
+
+    当該ブロックの見出しはテスト名ではなくファイルパスのため、突合には異常終了行の
+    テスト名を用いる。親の失敗一覧に載らない場合は親の失敗ではない。
+    """
+    output = (
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_runs_child ________________________________\n"
+        "tests/p_test.py:11: in test_runs_child\n"
+        "E   AssertionError: assert 1 == 0\n"
+        "-------------------------- Captured stdout call ---------------------------\n"
+        "_______________________________ child/inner_test.py ________________________________\n"
+        "worker 'gw0' crashed while running 'child/inner_test.py::test_inner'\n"
+        "========================= short test summary info ==========================\n"
+        "FAILED tests/p_test.py::test_runs_child - AssertionError: assert 1 == 0\n"
+        "================================= 1 failed in 0.90s =================================\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 1
+    assert errors[0].file == "tests/p_test.py"
+    assert errors[0].line == 11
+
+
+def test_parse_pytest_quiet_child_with_same_test_name_is_not_dropped() -> None:
+    """pytest: 親子で同名のテストが失敗する場合に安全網が働かない現状を仕様として固定する。
+
+    安全網はテスト名のみで親の失敗かを判定する。子のテスト名が親の失敗一覧の
+    テスト名と一致する構成では判定できず、実行マーカーによる除外も成立しないため
+    子プロセス側の失敗が残る。除外の判定条件を変える際に影響範囲を明示する。
+    """
+    output = (
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_runs_child ________________________________\n"
+        "tests/p_test.py:11: in test_runs_child\n"
+        "E   AssertionError: assert 1 == 0\n"
+        "-------------------------- Captured stdout call ---------------------------\n"
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_dup ________________________________\n"
+        "child/inner_test.py:3: in test_dup\n"
+        "E   assert 1 == 2\n"
+        "1 failed in 0.03s\n"
+        "_______________________________ test_dup ________________________________\n"
+        "tests/p_test.py:15: in test_dup\n"
+        "E   AssertionError: parent dup\n"
+        "========================= short test summary info ==========================\n"
+        "FAILED tests/p_test.py::test_runs_child - AssertionError: assert 1 == 0\n"
+        "FAILED tests/p_test.py::test_dup - AssertionError: parent dup\n"
         "================================= 2 failed in 0.90s =================================\n"
     )
     errors = pyfltr.command.error_parser.parse_errors("pytest", output)

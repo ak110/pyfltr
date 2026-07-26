@@ -1393,6 +1393,12 @@ _PYTEST_TB_LINE_RE = re.compile(
 )
 _PYTEST_BLOCK_HEAD_RE = re.compile(r"^_+ (?P<test_name>.+?) _+$", re.MULTILINE)
 _PYTEST_CAPTURED_SECTION_RE = re.compile(r"^-+ Captured .+ -+$", re.MULTILINE)
+# 既定のトレースバック形式（`--tb=auto`・`--tb=long`）が各エントリーの末尾へ出力する位置行。
+# 例外を送出したエントリーは例外名を伴い（`sample_test.py:6: AssertionError`）、
+# 呼び出し側のエントリーは例外名を持たない（`sample_test.py:9: `）。
+# `--tb=short`のフレーム行（`file:line: in func`）と違い関数名を伴わないため、
+# フレーム解析だけでは拾えない。両形を1つの正規表現で拾い、選択側で例外名の有無を判別する。
+_PYTEST_LOCATION_LINE_RE = re.compile(rf"^(?P<file>{_FILE}):(?P<line>\d+):(?P<message>.*)$", re.MULTILINE)
 _PYTEST_SESSION_START_RE = re.compile(r"^=+ test session starts =+$")
 _PYTEST_SESSION_END_RE = re.compile(r"^=+ .* in \d+(?:\.\d+)?s.*=+$")
 # `-q`で起動したpytestの最終集計行は`=`の埋めを伴わない（例: `2 failed in 0.92s`）。
@@ -1533,7 +1539,8 @@ def _mask_pytest_captured_child_runs(output: str) -> str:
     （`=+ ... in <秒数>s ... =+`）までとする。開始・終了の双方をpytest自身が出力する
     マーカーで判定するため、除外範囲は子プロセスの実行1回分に正確に一致する。
 
-    子プロセスのブロック見出し・位置行は親のものと書式が同一で構文だけでは判別できない。
+    子プロセスのブロック見出し・位置行・捕捉出力の節見出しは親のものと書式が同一で、
+    構文だけでは判別できない。
     親の集計行との突合で終端を判定すると、親子で同名のテストが失敗する場合や、
     ブロック見出しを持たない`--tb=line`形式で終端を決められず、本来の失敗まで除外する。
     実行マーカーによる判定はこれらの構成に依存しない。
@@ -1546,14 +1553,17 @@ def _mask_pytest_captured_child_runs(output: str) -> str:
 
     次の3つの構成では開始・終了のマーカーが成立せず除外できない。いずれも子プロセス側の
     失敗が親の失敗として混入するが、本処理の導入前と同じ結果であり退行にはあたらない。
+    親が失敗一覧を出力し、かつ子のテスト名が親の失敗一覧に無い場合は`_parse_pytest`の
+    安全網（失敗一覧に載らないテスト名の失敗欄を除外する）が働き、架空の診断が残らない。
+    親子で同名のテストが失敗する構成では安全網も働かない。
 
     - 子プロセスを`-q`で起動した場合。実行開始行を出力しないため開始位置を確定できない
     - 親プロセスが`-s`で動く場合。子の出力が捕捉されず節見出しが出ないうえ、
       子の実行開始行が親の進捗行と同一行へ連結される
     - 子プロセス側の失敗したテストが出力を持つ場合。子自身の捕捉出力の節見出しが
-      親の節見出しと同一書式で現れ、前段の破棄規則が発火して終端が確定しない。
-      破棄規則を外すと未終端の実行が後続の節の終了集計行と対になり、
-      親の失敗を除外する側の誤りへ倒れるため、実在の失敗を失わない側を優先している
+      親の節見出しと同一書式で現れ、終端未確定の開始位置を破棄する規則が発火する。
+      破棄規則を子の失敗欄より後で止めると、未終端の実行が親のブロック境界を越えて
+      後続の節の終了集計行と対になり、間にある親の失敗を除外する側の誤りへ倒れる
 
     行を削除せず空行へ置き換えるのは、以降の正規表現探索が扱う行構造を保つためである。
     """
@@ -1612,6 +1622,79 @@ def _pytest_parent_tail_index(lines: list[str]) -> int:
     return len(lines)
 
 
+def _select_pytest_location_line(block: str, *, allow_fallback: bool) -> re.Match[str] | None:
+    """失敗ブロックから既定のトレースバック形式の位置行を選ぶ。
+
+    既定のトレースバック形式（`--tb=auto`・`--tb=long`）は各エントリーの末尾へ位置行を
+    出力する。例外を送出したエントリーは例外名を伴い、呼び出し側のエントリーは伴わない。
+    フレームが1つだけの失敗（`assert`直書きの典型的な失敗）ではフレーム行
+    （`<file>:<line>: in <func>`）が現れないため、位置行が唯一の行番号の情報源となる。
+
+    走査範囲は捕捉出力の節見出しより前に限る。節より後は任意のテキストであり、
+    位置行と同じ書式の行が現れても失敗の位置ではない。
+
+    例外の連鎖では例外名を伴う位置行が複数現れる。最後のものが実際に失敗を起こした例外の
+    位置であり、集計行のメッセージとも一致する。プロジェクト内のものを優先して末尾側から
+    選ぶのはフレーム解析と同じ方針による。
+
+    `allow_fallback`はブロックがフレーム行を持たない場合に`True`とする。この場合は他に
+    行番号の情報源が無いため、プロジェクト内の位置行が例外名を伴わないものしか無ければ
+    それを採用し（`--tb=short`が選ぶプロジェクト内フレームと同じ位置を指す）、
+    プロジェクト内の位置行が皆無ならプロジェクト外の位置行まで採る。
+    フレーム行を持つ場合は`False`とし、プロジェクト内フレームを優先する選択を崩さない。
+    """
+    section = _PYTEST_CAPTURED_SECTION_RE.search(block)
+    scan_target = block[: section.start()] if section is not None else block
+    typed: list[re.Match[str]] = []
+    bare: list[re.Match[str]] = []
+    for match in _PYTEST_LOCATION_LINE_RE.finditer(scan_target):
+        (typed if match.group("message").strip() else bare).append(match)
+    for candidates in (typed, bare) if allow_fallback else (typed,):
+        for match in reversed(candidates):
+            if _is_project_path(pyfltr.paths.to_cwd_relative(match.group("file"))):
+                return match
+    return typed[-1] if typed and allow_fallback else None
+
+
+def _pytest_block_message(block: str, error_re: re.Pattern[str], location: re.Match[str]) -> str:
+    """位置行に対応するエラー行（`E   <message>`）の本文を返す。
+
+    例外の連鎖では複数のエントリーがブロック内に並ぶ。直前の位置行より後にある最初の
+    エラー行が当該エントリーの例外を表すため、そこから採る。直前の位置行が無い場合
+    （エントリーが1つだけの場合）はブロック先頭から探す。
+    """
+    previous_end = 0
+    for match in _PYTEST_LOCATION_LINE_RE.finditer(block[: location.start()]):
+        previous_end = match.end()
+    error_match = error_re.search(block, previous_end) or error_re.search(block)
+    return error_match.group("message").strip() if error_match is not None else ""
+
+
+def _pytest_join_message(test_name: str, raw_message: str) -> str:
+    """テスト名と失敗理由の本文を診断のメッセージへ組み立てる。
+
+    pytestの`assert ... == ...`表示はテスト関数名なしでは判別が難しいため、本文の先頭へ
+    テスト名を併記する。doctestのように本文（`E   <message>`行）を持たない失敗では
+    テスト名のみとする（`<名前>: `で終わる中身の無いメッセージにしない）。
+    """
+    if not test_name:
+        return raw_message
+    return f"{test_name}: {raw_message}" if raw_message else test_name
+
+
+def _is_unlisted_child_block(known_tests: set[str] | None, *, after_captured: bool, test_name: str) -> bool:
+    """失敗欄のブロックが親の失敗ではない（捕捉出力へ混入した子プロセスのもの）かを判定する。
+
+    子プロセスの失敗欄は必ず親の捕捉出力の節見出しより後に現れ、親の失敗一覧には載らない。
+    両方を満たすブロックのみ親の失敗ではないと判定する。節見出しより前のブロックを
+    対象に含めると、親自身が最終集計行を持たず子の失敗一覧だけが出力に残る構成で、
+    親の失敗欄をすべて除外する。
+
+    `known_tests`がNoneの構成（親の失敗一覧を特定できない場合）では判定しない。
+    """
+    return known_tests is not None and after_captured and test_name not in known_tests
+
+
 def _parse_pytest(output: str) -> list[ErrorLocation]:
     """Pytest出力をパース。
 
@@ -1621,9 +1704,10 @@ def _parse_pytest(output: str) -> list[ErrorLocation]:
        `(file, test) -> message`辞書として先に収集する（メッセージ補完・突合用）。
        `test`は`.`区切りへ正規化する
     2. `= FAILURES =`セクションをテスト名区切り（`_ 名前 _`）でブロック分割し、
-       フレーム行（`file:line: in func`）を持つブロックはプロジェクト内フレーム優先で診断化する
-       （既存挙動を維持）
-    3. フレーム行を持たないブロック（xdistワーカークラッシュ等）は
+       既定のトレースバック形式（`--tb=auto`・`--tb=long`）の位置行
+       （`<file>:<line>: <例外名>`、フレーム行より後にあるもの）を優先し、
+       無ければフレーム行（`file:line: in func`）をプロジェクト内フレーム優先で診断化する
+    3. いずれも持たないブロック（xdistワーカークラッシュ等）は
        `worker '<id>' crashed while running '<file>::<test>'`行から`line=0`の診断を生成する
     4. ブロック分割できない場合（`--tb=line`形式）は`<file>:<line>: <message>`行を
        実際の行番号付きで診断化し、summary辞書に同一`(file, message)`があればテスト名を先頭へ併記する
@@ -1634,6 +1718,8 @@ def _parse_pytest(output: str) -> list[ErrorLocation]:
     `_mask_pytest_captured_child_runs`で空行へ置き換える。pytestを子プロセスとして起動し
     出力を取り込むテストでは、親の失敗欄・集計行の内側へ子の失敗欄・集計行が現れるため、
     除外しないと子プロセス側の失敗を親プロセスの実在する失敗として診断化する。
+    当該除外が成立しない構成に備え、経路2〜3では親の失敗一覧に載らないテスト名のブロックを
+    除外する安全網を併用する（失敗一覧の見出しを持たない構成・失敗一覧が空の構成では働かせない）。
 
     経路2〜4でテスト名を確定できたつど`_consume_summary_test`で`consumed`
     （summary辞書のキー`(file, test)`の集合）へ登録し、経路5の二重生成を防ぐ。
@@ -1707,24 +1793,63 @@ def _parse_pytest(output: str) -> list[ErrorLocation]:
     # エラー行: E   message
     error_re = re.compile(r"^E\s+(?P<message>.+)$", re.MULTILINE)
 
+    # 親の失敗一覧に載らないテスト名の失敗欄は親の失敗ではない。除外の主経路（実行マーカーに
+    # よる対応付け）が成立しない構成で捕捉出力へ残った子プロセスの失敗欄を除外する安全網とする。
+    # 失敗一覧の見出しを持たない構成では`_parse_pytest_summary`が出力全体を走査し、
+    # 捕捉出力に混入した子の`FAILED`行まで拾うため、当該構成では安全網を働かせない。
+    # 集計行が失敗を列挙しない構成（`-r`の指定から`f`を外した場合など）でも
+    # 親の失敗欄をすべて除外しないよう、失敗一覧が空の場合は働かせない。
+    known_tests = {test for _, test in summary} if summary and summary_start >= 0 else None
+    first_captured = _PYTEST_CAPTURED_SECTION_RE.search(failures_section)
+
     results = []
     for i, match in enumerate(block_matches):
         start = match.end()
         block_end = block_matches[i + 1].start() if i + 1 < len(block_matches) else len(failures_section)
         block = failures_section[start:block_end]
-        test_name = match.group("test_name").strip()
+        # doctestのブロック見出しは`[doctest] <モジュール>.<関数>`形式で、集計行の
+        # テスト名（`<モジュール>.<関数>`）と一致しない。接頭辞を除いてから突合しないと
+        # summary残余補完で同一の失敗の診断が二重生成される。
+        test_name = match.group("test_name").strip().removeprefix("[doctest] ")
+        after_captured = first_captured is not None and match.start() > first_captured.start()
 
         frames = list(frame_re.finditer(block))
+        location = _select_pytest_location_line(block, allow_fallback=not frames)
+        if location is not None and (not frames or location.start() > frames[-1].start()):
+            # 既定のトレースバック形式では最終エントリーの位置行がフレーム行より後に現れ、
+            # 実際に例外が発生した位置を指す。フレーム行を持たない失敗ではこの行が唯一の
+            # 情報源となり、持つ場合も中間エントリーのフレーム行より正確である。
+            if _is_unlisted_child_block(known_tests, after_captured=after_captured, test_name=test_name):
+                continue
+            file_path = pyfltr.paths.to_cwd_relative(location.group("file"))
+            raw_message = _pytest_block_message(block, error_re, location)
+            results.append(
+                ErrorLocation(
+                    file=file_path,
+                    line=int(location.group("line")),
+                    col=None,
+                    command="pytest",
+                    message=_pytest_join_message(test_name, raw_message),
+                )
+            )
+            _consume_summary_test(summary, consumed, test_name, file_path)
+            continue
+
         if frames:
+            if _is_unlisted_child_block(known_tests, after_captured=after_captured, test_name=test_name):
+                continue
             # フレーム群から最後のプロジェクト内フレームを選択
             chosen = frames[-1]  # フォールバック: 最後のフレーム
             for frame in reversed(frames):
                 if _is_project_path(pyfltr.paths.to_cwd_relative(frame.group("file"))):
                     chosen = frame
                     break
-            error_match = error_re.search(block)
+            # 例外の連鎖では複数のエントリーが並ぶ。選んだフレームより後にある最初のエラー行が
+            # 当該エントリーの例外であり、集計行のメッセージとも一致する。ブロック先頭から
+            # 探すと内側の例外を報告する。
+            error_match = error_re.search(block, chosen.end()) or error_re.search(block)
             raw_message = error_match.group("message").strip() if error_match else ""
-            message = f"{test_name}: {raw_message}" if test_name else raw_message
+            message = _pytest_join_message(test_name, raw_message)
             file_path = pyfltr.paths.to_cwd_relative(chosen.group("file"))
             results.append(
                 ErrorLocation(file=file_path, line=int(chosen.group("line")), col=None, command="pytest", message=message)
@@ -1738,6 +1863,8 @@ def _parse_pytest(output: str) -> list[ErrorLocation]:
             continue
         file_path = pyfltr.paths.to_cwd_relative(crash_match.group("file"))
         crashed_test = crash_match.group("test")
+        if _is_unlisted_child_block(known_tests, after_captured=after_captured, test_name=crashed_test.replace("::", ".")):
+            continue
         results.append(
             ErrorLocation(
                 file=file_path,
