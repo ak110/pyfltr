@@ -1199,6 +1199,7 @@ def test_parse_pytest_keeps_line_numbers_when_child_summary_is_captured() -> Non
         "========================= short test summary info ==========================\n"
         "FAILED tests/d_test.py::test_runs_child - AssertionError: assert 1 == 0\n"
         "FAILED tests/d_test.py::test_later_real - AssertionError: later\n"
+        "================================= 2 failed in 0.86s =================================\n"
     )
     errors = pyfltr.command.error_parser.parse_errors("pytest", output)
     by_test = {e.message.split(":")[0]: e for e in errors}
@@ -1270,6 +1271,514 @@ def test_parse_pytest_ignores_failed_line_in_captured_output() -> None:
     assert errors[0].file == "tests/a_test.py"
     assert errors[0].line == 9
     assert errors[0].message.startswith("test_runs_pytest: ")
+
+
+def _pytest_child_run(*, file: str, test: str, line: int, message: str, terminated: bool = True) -> str:
+    """捕捉出力へ混入する子プロセスのpytest実行1回分を組み立てる。
+
+    実出力と同じく`test session starts`見出しで始まり、終了集計行で終わる形とする。
+    除外の判定は当該2つのマーカーに依存するため、検体からいずれも省略しない。
+    `terminated=False`は子プロセスが異常終了・打ち切りで終了集計行を欠く形を表す。
+    """
+    body = "================================= test session starts =================================\ncollected 1 item\n\n"
+    if not terminated:
+        return body + f"{file} \n"
+    return (
+        body + "================================= FAILURES =================================\n"
+        f"_______________________________ {test} ________________________________\n"
+        f"{file}:{line}: in {test}\n"
+        f"E   {message}\n"
+        "========================= short test summary info ==========================\n"
+        f"FAILED {file}::{test} - {message}\n"
+        "================================= 1 failed in 0.04s =================================\n"
+    )
+
+
+def test_parse_pytest_ignores_child_failure_block_in_captured_output() -> None:
+    """pytest --tb=short: 捕捉出力に混入した子プロセスの失敗欄を診断化しないことを検証する。
+
+    子のブロック見出しは親のものと書式が同一のため、除外は子プロセスの実行マーカーで
+    判定する。子のファイルパスが診断へ現れないことを確認する。
+    """
+    output = (
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_runs_child ________________________________\n"
+        "tests/d_test.py:11: in test_runs_child\n"
+        "E   AssertionError: assert 1 == 0\n"
+        "-------------------------- Captured stdout call ---------------------------\n"
+        + _pytest_child_run(file="child/z_test.py", test="test_phantom", line=2, message="assert 1 == 2")
+        + "_______________________________ test_later_real ________________________________\n"
+        "tests/d_test.py:15: in test_later_real\n"
+        "E   AssertionError: later\n"
+        "========================= short test summary info ==========================\n"
+        "FAILED tests/d_test.py::test_runs_child - AssertionError: assert 1 == 0\n"
+        "FAILED tests/d_test.py::test_later_real - AssertionError: later\n"
+        "================================= 2 failed in 0.86s =================================\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 2
+    assert all(e.file == "tests/d_test.py" for e in errors)
+    by_test = {e.message.split(":")[0]: e for e in errors}
+    assert by_test["test_runs_child"].line == 11
+    assert by_test["test_later_real"].line == 15
+
+
+def test_parse_pytest_ignores_child_failure_block_with_same_test_name() -> None:
+    """pytest: 親子で同名のテストが失敗しても子の失敗欄を診断化しないことを検証する。
+
+    テスト名の突合で除外の終端を決めると親子同名の構成で架空の診断が残るため、
+    除外は子プロセスの実行マーカーで判定する。
+    """
+    output = (
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_runs_child ________________________________\n"
+        "tests/d_test.py:11: in test_runs_child\n"
+        "E   AssertionError: assert 1 == 0\n"
+        "-------------------------- Captured stdout call ---------------------------\n"
+        + _pytest_child_run(file="child/z_test.py", test="test_dup", line=2, message="assert 1 == 2")
+        + "_______________________________ test_dup ________________________________\n"
+        "tests/d_test.py:15: in test_dup\n"
+        "E   AssertionError: parent dup\n"
+        "========================= short test summary info ==========================\n"
+        "FAILED tests/d_test.py::test_runs_child - AssertionError: assert 1 == 0\n"
+        "FAILED tests/d_test.py::test_dup - AssertionError: parent dup\n"
+        "================================= 2 failed in 0.86s =================================\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 2
+    assert all(e.file == "tests/d_test.py" for e in errors)
+    by_test = {e.message.split(":")[0]: e for e in errors}
+    assert by_test["test_runs_child"].line == 11
+    assert by_test["test_dup"].line == 15
+
+
+def test_parse_pytest_ignores_child_failure_block_without_parent_summary() -> None:
+    """pytest: 親が集計行を持たず子だけが持つ場合に子の集計行を採用しないことを検証する。
+
+    集計行の走査は出力の末尾側の見出しを起点とするため、除外しないと子の集計行を
+    親のものとして採用し、親の失敗を取りこぼす。
+    """
+    output = (
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_runs_child ________________________________\n"
+        "tests/d_test.py:11: in test_runs_child\n"
+        "E   AssertionError: assert 1 == 0\n"
+        "-------------------------- Captured stdout call ---------------------------\n"
+        + _pytest_child_run(file="child/z_test.py", test="test_dup", line=2, message="assert 1 == 2")
+        + "_______________________________ test_dup ________________________________\n"
+        "tests/d_test.py:15: in test_dup\n"
+        "E   AssertionError: parent dup\n"
+        "================================= 2 failed in 1.32s =================================\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 2
+    assert all(e.file == "tests/d_test.py" for e in errors)
+    by_test = {e.message.split(":")[0]: e for e in errors}
+    assert by_test["test_runs_child"].line == 11
+    assert by_test["test_dup"].line == 15
+
+
+def test_parse_pytest_tb_line_ignores_child_failure_block_in_captured_output() -> None:
+    """pytest --tb=line: 捕捉出力に子の失敗欄が混入しても架空の診断を生成しないことを検証する。
+
+    親が`--tb=line`形式でもブロック見出しを持たないだけで捕捉出力の混入は起こる。
+    子のファイルパスが診断へ現れず、後続の実在失敗が行番号を保つことを確認する。
+    """
+    output = (
+        "================================= FAILURES =================================\n"
+        "tests/d_test.py:11: AssertionError: assert 1 == 0\n"
+        "-------------------------- Captured stdout call ---------------------------\n"
+        + _pytest_child_run(file="child/z_test.py", test="test_phantom", line=2, message="assert 1 == 2")
+        + "tests/d_test.py:15: AssertionError: later\n"
+        "========================= short test summary info ==========================\n"
+        "FAILED tests/d_test.py::test_runs_child - AssertionError: assert 1 == 0\n"
+        "FAILED tests/d_test.py::test_later_real - AssertionError: later\n"
+        "================================= 2 failed in 0.86s =================================\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 2
+    assert all(e.file == "tests/d_test.py" for e in errors)
+    by_test = {e.message.split(":")[0]: e for e in errors}
+    assert by_test["test_runs_child"].line == 11
+    assert by_test["test_later_real"].line == 15
+
+
+def test_parse_pytest_tb_line_captured_output_keeps_following_line_numbers() -> None:
+    """pytest --tb=line: 子プロセスを含まない捕捉出力で後続の行番号を失わないことを検証する。
+
+    `--tb=line`形式では位置行が当該テストの捕捉出力より後に現れる。
+    子プロセスの実行を含まない捕捉出力を除外対象にすると、失敗した本人の位置行まで失う。
+    """
+    output = (
+        "================================= FAILURES =================================\n"
+        "E   assert 1 == 0\n"
+        "-------------------------- Captured stdout call ---------------------------\n"
+        "noise\n"
+        "tests/aa_test.py:3: assert 1 == 0\n"
+        "E   assert 2 == 0\n"
+        "tests/aa_test.py:7: assert 2 == 0\n"
+        "========================= short test summary info ==========================\n"
+        "FAILED tests/aa_test.py::test_1 - assert 1 == 0\n"
+        "FAILED tests/aa_test.py::test_2 - assert 2 == 0\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 2
+    by_test = {e.message.split(":")[0]: e for e in errors}
+    assert by_test["test_1"].line == 3
+    assert by_test["test_2"].line == 7
+
+
+def test_parse_pytest_worker_crash_after_captured_output_keeps_message() -> None:
+    """pytest -n: 捕捉出力の後に続くワーカー異常終了のブロックを失わないことを検証する。
+
+    当該ブロックの見出しはテスト名ではなくファイルパスであり、テスト名の突合では
+    除外の終端を判定できない。除外を子プロセスの実行マーカーで判定することで
+    失敗理由の全文が保持される。
+    """
+    output = (
+        "================================= FAILURES =================================\n"
+        "_______________________ test_prints_then_fails ________________________\n"
+        "cr/crash_test.py:7: in test_prints_then_fails\n"
+        "E   assert 1 == 0\n"
+        "-------------------------- Captured stdout call ---------------------------\n"
+        "noise\n"
+        "_______________________________ cr/crash_test.py ________________________________\n"
+        "worker 'gw1' crashed while running 'cr/crash_test.py::test_func_crash'\n"
+        "========================= short test summary info ==========================\n"
+        "FAILED cr/crash_test.py::test_prints_then_fails - assert 1 == 0\n"
+        "FAILED cr/crash_test.py::test_func_crash - worker 'gw1' crashed\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 2
+    crashed = next(e for e in errors if e.line == 0)
+    assert "worker 'gw1' crashed while running cr/crash_test.py::test_func_crash" in crashed.message
+
+
+def test_parse_pytest_captured_section_without_child_run_keeps_following_block() -> None:
+    """pytest: 子プロセスの実行を含まない捕捉出力では後続ブロックを除外しないことを検証する。
+
+    除外の開始は捕捉出力の節見出しだけでは決まらず、子プロセスの実行開始行を伴う場合に限る。
+    """
+    output = (
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_a ________________________________\n"
+        "tests/a_test.py:3: in test_a\n"
+        "E   AssertionError: a\n"
+        "-------------------------- Captured stdout call ---------------------------\n"
+        "hello\n"
+        "_______________________________ test_b ________________________________\n"
+        "tests/a_test.py:7: in test_b\n"
+        "E   AssertionError: b\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 2
+    by_test = {e.message.split(":")[0]: e for e in errors}
+    assert by_test["test_a"].line == 3
+    assert by_test["test_b"].line == 7
+
+
+def test_parse_pytest_child_run_without_summary_line_keeps_following_failures() -> None:
+    """pytest: 子プロセスが集計行を出さずに終わっても親の後続の失敗を失わないことを検証する。
+
+    子プロセスが異常終了・打ち切りで集計行を欠くと、除外の終端として親自身の最終集計行を
+    採りかねない。その間にある親の失敗と失敗一覧を失わないことを確認する。
+    """
+    output = (
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_runs_child ________________________________\n"
+        "tests/c_test.py:11: in test_runs_child\n"
+        "E   AssertionError: assert 1 == 0\n"
+        "-------------------------- Captured stdout call ---------------------------\n"
+        "================================= test session starts =================================\n"
+        "collected 1 item\n"
+        "\n"
+        "child/z_test.py \n"
+        "_______________________________ test_normal_after ________________________________\n"
+        "tests/c_test.py:15: in test_normal_after\n"
+        "E   AssertionError: after\n"
+        "========================= short test summary info ==========================\n"
+        "FAILED tests/c_test.py::test_runs_child - AssertionError: assert 1 == 0\n"
+        "FAILED tests/c_test.py::test_normal_after - AssertionError: after\n"
+        "================================= 2 failed in 0.75s =================================\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 2
+    by_test = {e.message.split(":")[0]: e for e in errors}
+    assert by_test["test_runs_child"].line == 11
+    assert by_test["test_normal_after"].line == 15
+
+
+def test_parse_pytest_tb_line_child_run_without_summary_line_keeps_line_numbers() -> None:
+    """pytest --tb=line: 子プロセスが集計行を欠く場合に後続の行番号を失わないことを検証する。
+
+    `--tb=line`形式では位置行が捕捉出力より後に現れるため、除外範囲の誤延長が
+    行番号の消失として現れる。
+    """
+    output = (
+        "================================= FAILURES =================================\n"
+        "E   AssertionError: assert 1 == 0\n"
+        "-------------------------- Captured stdout call ---------------------------\n"
+        "================================= test session starts =================================\n"
+        "collected 1 item\n"
+        "\n"
+        "child/z_test.py \n"
+        "tests/c_test.py:11: AssertionError: assert 1 == 0\n"
+        "E   AssertionError: after\n"
+        "tests/c_test.py:15: AssertionError: after\n"
+        "========================= short test summary info ==========================\n"
+        "FAILED tests/c_test.py::test_runs_child - AssertionError: assert 1 == 0\n"
+        "FAILED tests/c_test.py::test_normal_after - AssertionError: after\n"
+        "================================= 2 failed in 0.75s =================================\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 2
+    by_test = {e.message.split(":")[0]: e for e in errors}
+    assert by_test["test_runs_child"].line == 11
+    assert by_test["test_normal_after"].line == 15
+
+
+def _pytest_two_child_runs_output(*, tb_line: bool, summary_list: bool) -> str:
+    """子プロセスの実行が2回現れ、1回目が終了集計行を欠く形の出力を組み立てる。
+
+    1回目の実行の開始位置を保持したままにすると2回目の終了集計行と対になり、
+    その間にある親の失敗まで除外される。当該構成の検体を共通化する。
+    """
+    crashed = _pytest_child_run(file="child/dies_test.py", test="test_dies", line=0, message="", terminated=False)
+    completed = _pytest_child_run(file="child/fails_test.py", test="test_fails", line=2, message="assert 1 == 2")
+    captured = "-------------------------- Captured stdout call ---------------------------\n"
+    if tb_line:
+        failures = (
+            "E   AssertionError: assert 1 == 0\n" + captured + crashed + "tests/c_test.py:15: AssertionError: crashed\n"
+            "E   AssertionError: plain\n"
+            "tests/c_test.py:19: AssertionError: plain\n"
+            "E   AssertionError: assert 1 == 0\n" + captured + completed + "tests/c_test.py:23: AssertionError: failed\n"
+        )
+    else:
+        failures = (
+            "_______________________________ test_a_child_crashes ________________________________\n"
+            "tests/c_test.py:15: in test_a_child_crashes\n"
+            "E   AssertionError: crashed\n"
+            + captured
+            + crashed
+            + "_______________________________ test_b_child_normal ________________________________\n"
+            "tests/c_test.py:19: in test_b_child_normal\n"
+            "E   AssertionError: plain\n"
+            "_______________________________ test_c_child_fails ________________________________\n"
+            "tests/c_test.py:23: in test_c_child_fails\n"
+            "E   AssertionError: failed\n" + captured + completed
+        )
+    summary = (
+        "========================= short test summary info ==========================\n"
+        "FAILED tests/c_test.py::test_a_child_crashes - AssertionError: crashed\n"
+        "FAILED tests/c_test.py::test_b_child_normal - AssertionError: plain\n"
+        "FAILED tests/c_test.py::test_c_child_fails - AssertionError: failed\n"
+    )
+    return (
+        "================================= FAILURES =================================\n"
+        + failures
+        + (summary if summary_list else "")
+        + "================================= 3 failed in 1.20s =================================\n"
+    )
+
+
+def test_parse_pytest_unterminated_child_run_does_not_extend_to_next_child_run() -> None:
+    """pytest: 集計行を欠く子の実行が後続の子の実行まで除外範囲を延ばさないことを検証する。
+
+    終了集計行を欠いた実行の開始位置を保持したままにすると、後続の別の実行の
+    終了集計行と対になり、その間にある親の失敗まで除外する。
+    """
+    errors = pyfltr.command.error_parser.parse_errors("pytest", _pytest_two_child_runs_output(tb_line=False, summary_list=True))
+    assert len(errors) == 3
+    assert all(e.file == "tests/c_test.py" for e in errors)
+    by_test = {e.message.split(":")[0]: e for e in errors}
+    assert by_test["test_a_child_crashes"].line == 15
+    assert by_test["test_b_child_normal"].line == 19
+    assert by_test["test_c_child_fails"].line == 23
+
+
+def test_parse_pytest_tb_line_unterminated_child_run_does_not_extend_to_next_child_run() -> None:
+    """pytest --tb=line: 同じ構成で位置行を失わないことを検証する。
+
+    `--tb=line`形式では位置行が捕捉出力より後に現れるため、除外範囲の誤延長が
+    行番号の消失として現れる。
+    """
+    errors = pyfltr.command.error_parser.parse_errors("pytest", _pytest_two_child_runs_output(tb_line=True, summary_list=True))
+    assert len(errors) == 3
+    assert all(e.file == "tests/c_test.py" for e in errors)
+    assert {e.line for e in errors} == {15, 19, 23}
+
+
+def test_parse_pytest_unterminated_child_run_without_summary_list_keeps_failures() -> None:
+    """pytest: 同じ構成で失敗一覧を欠く場合に失敗が消えないことを検証する。
+
+    失敗一覧が無い構成では残余補完による救済が働かないため、除外範囲の誤延長が
+    失敗そのものの消失として現れる。
+    """
+    errors = pyfltr.command.error_parser.parse_errors(
+        "pytest", _pytest_two_child_runs_output(tb_line=False, summary_list=False)
+    )
+    assert len(errors) == 3
+    assert all(e.file == "tests/c_test.py" for e in errors)
+    assert {e.line for e in errors} == {15, 19, 23}
+
+
+def test_parse_pytest_two_complete_child_runs_are_masked_independently() -> None:
+    """pytest: 完結した子プロセスの実行が2回続く場合に双方を除外することを検証する。"""
+    first = _pytest_child_run(file="child/a_test.py", test="test_a", line=2, message="assert 1 == 2")
+    second = _pytest_child_run(file="child/b_test.py", test="test_b", line=3, message="assert 2 == 3")
+    captured = "-------------------------- Captured stdout call ---------------------------\n"
+    output = (
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_first ________________________________\n"
+        "tests/c_test.py:11: in test_first\n"
+        "E   AssertionError: first\n"
+        + captured
+        + first
+        + "_______________________________ test_second ________________________________\n"
+        "tests/c_test.py:15: in test_second\n"
+        "E   AssertionError: second\n"
+        + captured
+        + second
+        + "========================= short test summary info ==========================\n"
+        "FAILED tests/c_test.py::test_first - AssertionError: first\n"
+        "FAILED tests/c_test.py::test_second - AssertionError: second\n"
+        "================================= 2 failed in 0.90s =================================\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 2
+    assert all(e.file == "tests/c_test.py" for e in errors)
+    assert {e.line for e in errors} == {11, 15}
+
+
+def _pytest_unterminated_then_tail_output(*, summary_list: bool) -> str:
+    """未終端の子の実行の後に、開始行を持たない終了集計行が現れる形の出力を組み立てる。
+
+    親テストが子の出力の末尾だけを表示した場合に生じる。未終端の実行の開始位置を
+    節をまたいで保持すると、当該終了集計行と対になり間の親の失敗を除外する。
+    """
+    captured = "-------------------------- Captured stdout call ---------------------------\n"
+    unterminated = "================================= test session starts =================================\ncollected 1 item\n"
+    tail_only = (
+        "FAILED child/y_test.py::test_y - assert 1 == 2\n"
+        "================================= 1 failed in 0.03s =================================\n"
+    )
+    summary = (
+        "========================= short test summary info ==========================\n"
+        "FAILED tests/c_test.py::test_a_unterminated - AssertionError: a\n"
+        "FAILED tests/c_test.py::test_b_plain - AssertionError: b\n"
+        "FAILED tests/c_test.py::test_c_tail_only - AssertionError: c\n"
+    )
+    return (
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_a_unterminated ________________________________\n"
+        "tests/c_test.py:12: in test_a_unterminated\n"
+        "E   AssertionError: a\n"
+        + captured
+        + unterminated
+        + "_______________________________ test_b_plain ________________________________\n"
+        "tests/c_test.py:16: in test_b_plain\n"
+        "E   AssertionError: b\n"
+        "_______________________________ test_c_tail_only ________________________________\n"
+        "tests/c_test.py:25: in test_c_tail_only\n"
+        "E   AssertionError: c\n"
+        + captured
+        + tail_only
+        + (summary if summary_list else "")
+        + "================================= 3 failed in 1.10s =================================\n"
+    )
+
+
+def test_parse_pytest_unterminated_child_run_does_not_pair_with_later_section() -> None:
+    """pytest: 未終端の子の実行が別の節の終了集計行と対にならないことを検証する。
+
+    捕捉出力の節をまたいで開始位置を保持すると、間にある親の失敗を除外する。
+    """
+    errors = pyfltr.command.error_parser.parse_errors("pytest", _pytest_unterminated_then_tail_output(summary_list=True))
+    assert len(errors) == 3
+    assert all(e.file == "tests/c_test.py" for e in errors)
+    assert {e.line for e in errors} == {12, 16, 25}
+
+
+def test_parse_pytest_unterminated_child_run_without_summary_list_does_not_pair() -> None:
+    """pytest: 同じ構成で失敗一覧を欠く場合に失敗が消えないことを検証する。
+
+    失敗一覧が無い構成では残余補完による救済が働かないため、除外範囲の誤延長が
+    失敗そのものの消失として現れる。
+    """
+    errors = pyfltr.command.error_parser.parse_errors("pytest", _pytest_unterminated_then_tail_output(summary_list=False))
+    parent_errors = [e for e in errors if e.file == "tests/c_test.py"]
+    assert {e.line for e in parent_errors} == {12, 16, 25}
+
+
+def test_parse_pytest_child_run_masked_for_stderr_and_log_sections() -> None:
+    """pytest: 標準エラー・ログの捕捉出力でも子の実行を除外することを検証する。
+
+    除外の開始判定は節の種別に依存しない。
+    """
+    child = _pytest_child_run(file="child/z_test.py", test="test_phantom", line=2, message="assert 1 == 2")
+    for section in ("Captured stderr call", "Captured log call"):
+        output = (
+            "================================= FAILURES =================================\n"
+            "_______________________________ test_runs_child ________________________________\n"
+            "tests/d_test.py:11: in test_runs_child\n"
+            "E   AssertionError: assert 1 == 0\n"
+            f"-------------------------- {section} ---------------------------\n"
+            + child
+            + "========================= short test summary info ==========================\n"
+            "FAILED tests/d_test.py::test_runs_child - AssertionError: assert 1 == 0\n"
+            "================================= 1 failed in 0.50s =================================\n"
+        )
+        errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+        assert len(errors) == 1, section
+        assert errors[0].file == "tests/d_test.py", section
+        assert errors[0].line == 11, section
+
+
+def test_parse_pytest_child_run_is_not_masked_without_parent_summary_line() -> None:
+    """pytest: 親が最終集計行を持たない出力では子の実行を除外しないことを検証する。
+
+    除外範囲の上限を確定できないため、親の失敗を巻き込まない側へ縮退する。
+    """
+    output = (
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_runs_child ________________________________\n"
+        "tests/d_test.py:11: in test_runs_child\n"
+        "E   AssertionError: assert 1 == 0\n"
+        "-------------------------- Captured stdout call ---------------------------\n"
+        + _pytest_child_run(file="child/z_test.py", test="test_phantom", line=2, message="assert 1 == 2")
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert next(e for e in errors if e.file == "tests/d_test.py").line == 11
+    assert any(e.file == "child/z_test.py" for e in errors)
+
+
+def test_parse_pytest_unterminated_child_run_is_not_masked() -> None:
+    """pytest: 子プロセスの出力が途中で欠けている場合に除外しないことを検証する。
+
+    終了集計行を欠く領域を除外すると、以降の親の失敗をすべて失う。
+    安全側へ倒し、当該領域は除外しない。
+    """
+    output = (
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_runs_child ________________________________\n"
+        "tests/d_test.py:11: in test_runs_child\n"
+        "E   AssertionError: assert 1 == 0\n"
+        "-------------------------- Captured stdout call ---------------------------\n"
+        "================================= test session starts =================================\n"
+        "collected 1 item\n"
+        "_______________________________ test_later_real ________________________________\n"
+        "tests/d_test.py:15: in test_later_real\n"
+        "E   AssertionError: later\n"
+        "========================= short test summary info ==========================\n"
+        "FAILED tests/d_test.py::test_runs_child - AssertionError: assert 1 == 0\n"
+        "FAILED tests/d_test.py::test_later_real - AssertionError: later\n"
+        "================================= 2 failed in 0.86s =================================\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 2
+    by_test = {e.message.split(":")[0]: e for e in errors}
+    assert by_test["test_runs_child"].line == 11
+    assert by_test["test_later_real"].line == 15
 
 
 def _vitest_assertion(

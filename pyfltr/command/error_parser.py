@@ -1388,6 +1388,10 @@ _PYTEST_TB_LINE_RE = re.compile(
     rf"^(?P<file>{_FILE}):(?P<line>\d+):\s*(?P<message>.+)$",
     re.MULTILINE,
 )
+_PYTEST_BLOCK_HEAD_RE = re.compile(r"^_+ (?P<test_name>.+?) _+$", re.MULTILINE)
+_PYTEST_CAPTURED_SECTION_RE = re.compile(r"^-+ Captured .+ -+$", re.MULTILINE)
+_PYTEST_SESSION_START_RE = re.compile(r"^=+ test session starts =+$")
+_PYTEST_SESSION_END_RE = re.compile(r"^=+ .* in \d+(?:\.\d+)?s.*=+$")
 
 
 def _parse_pytest_summary(output: str) -> dict[tuple[str, str], str | None]:
@@ -1479,6 +1483,87 @@ def _consume_summary_test(
         consumed.add(fallback_key)
 
 
+def _mask_pytest_captured_child_runs(output: str) -> str:
+    """テストの捕捉出力へ混入した子プロセスのpytest実行を空行へ置き換える。
+
+    pytestを子プロセスとして起動し出力を取り込むテストでは、親の失敗欄・集計行の内側へ
+    子プロセスの失敗欄・集計行がそのまま現れる。除外しないと子プロセス側の失敗が
+    親プロセスの実在する失敗として診断化され、存在しないファイル・行番号が報告される。
+
+    除外する領域は、捕捉出力の節見出し（`-+ Captured .+ -+`）より後に現れた
+    子プロセスの実行開始行（`=+ test session starts =+`）から、対応する終了集計行
+    （`=+ ... in <秒数>s ... =+`）までとする。開始・終了の双方をpytest自身が出力する
+    マーカーで判定するため、除外範囲は子プロセスの実行1回分に正確に一致する。
+
+    子プロセスのブロック見出し・位置行は親のものと書式が同一で構文だけでは判別できない。
+    親の集計行との突合で終端を判定すると、親子で同名のテストが失敗する場合や、
+    ブロック見出しを持たない`--tb=line`形式で終端を決められず、本来の失敗まで除外する。
+    実行マーカーによる判定はこれらの構成に依存しない。
+
+    終了集計行を`_pytest_parent_tail_index`が返す上限より前に見つけられない場合、当該領域は
+    除外しない。子プロセスが異常終了・打ち切りで終了集計行を欠いたまま終わると、親自身の
+    最終集計行を終端として誤採用し、その間にある親の失敗と失敗一覧をすべて失うため、
+    上限を越える終端候補は採用せず旧来の挙動へ縮退させる。
+    捕捉出力が子プロセスのpytest実行を含まない場合も同じ理由で除外しない。
+
+    次の2つの構成では開始・終了のマーカーが成立せず除外できない。いずれも子プロセス側の
+    失敗が親の失敗として混入するが、本処理の導入前と同じ結果であり退行にはあたらない。
+
+    - 子プロセスを`-q`で起動した場合。実行開始行を出力せず、終了集計行も`=`の埋めを伴わない
+    - 親プロセスが`-s`で動く場合。子の出力が捕捉されず節見出しが出ないうえ、
+      子の実行開始行が親の進捗行と同一行へ連結される
+
+    行を削除せず空行へ置き換えるのは、以降の正規表現探索が扱う行構造を保つためである。
+    """
+    lines = output.splitlines(keepends=True)
+    limit = _pytest_parent_tail_index(lines)
+    masked = [False] * len(lines)
+    after_captured = False
+    start: int | None = None
+    for i, line in enumerate(lines):
+        stripped = line.rstrip()
+        if _PYTEST_CAPTURED_SECTION_RE.fullmatch(stripped):
+            after_captured = True
+            # 1回の実行の出力が2つの捕捉出力の節へまたがることはないため、節の切れ目で
+            # 終端未確定の開始位置を破棄する。破棄しないと、別の節に現れた終了集計行
+            # （子の出力の末尾だけを表示した場合など）と対になり、間の親の失敗を除外する。
+            start = None
+            continue
+        if after_captured and _PYTEST_SESSION_START_RE.fullmatch(stripped):
+            # 終端未確定のまま次の実行開始行に達した場合は、そちらへ開始位置を移す。
+            # 終了集計行を欠いた実行の開始位置を保持したままにすると、後続の別の実行の
+            # 終了集計行と対になり、その間にある親の失敗まで除外してしまう。
+            start = i
+            continue
+        if start is None:
+            continue
+        if i >= limit:
+            # 上限へ到達した領域は終端を確定できなかったものとして扱い、除外しない。
+            start = None
+            continue
+        if _PYTEST_SESSION_END_RE.fullmatch(stripped):
+            for j in range(start, i + 1):
+                masked[j] = True
+            start = None
+    return "".join("\n" if is_masked else line for is_masked, line in zip(masked, lines, strict=True))
+
+
+def _pytest_parent_tail_index(lines: list[str]) -> int:
+    """親プロセス自身の最終集計行の位置を返す。子プロセスの実行を除外する範囲の上限として使う。
+
+    最終集計行（`=+ ... in <秒数>s ... =+`）のうち末尾のものを採用する。親の最終集計行は
+    親の失敗欄・失敗一覧より後に出るため、捕捉出力へ混入した子プロセスの集計行は必ず
+    これより前に位置する。末尾側を採用しないと親の失敗欄の途中で上限に達し、
+    子プロセスの除外が成立しなくなる。
+
+    最終集計行を持たない構成では上限を設けない。
+    """
+    for i in range(len(lines) - 1, -1, -1):
+        if _PYTEST_SESSION_END_RE.fullmatch(lines[i].rstrip()):
+            return i
+    return len(lines)
+
+
 def _parse_pytest(output: str) -> list[ErrorLocation]:
     """Pytest出力をパース。
 
@@ -1497,6 +1582,11 @@ def _parse_pytest(output: str) -> list[ErrorLocation]:
     5. 上記いずれでも拾えなかったsummary辞書の残余エントリを`_parse_pytest_from_summary`で
        `line=0`の診断として補完する
 
+    経路1の前に、捕捉出力へ混入した子プロセスのpytest実行を
+    `_mask_pytest_captured_child_runs`で空行へ置き換える。pytestを子プロセスとして起動し
+    出力を取り込むテストでは、親の失敗欄・集計行の内側へ子の失敗欄・集計行が現れるため、
+    除外しないと子プロセス側の失敗を親プロセスの実在する失敗として診断化する。
+
     経路2〜4でテスト名を確定できたつど`_consume_summary_test`で`consumed`
     （summary辞書のキー`(file, test)`の集合）へ登録し、経路5の二重生成を防ぐ。
     同名テストが複数ファイルに存在する場合は診断ファイルと一致する候補を優先して消費し、
@@ -1506,6 +1596,7 @@ def _parse_pytest(output: str) -> list[ErrorLocation]:
     判別が難しいケースが多く、location（file/line）と組み合わせて実質的にnodeid相当の
     判別性を得るため。
     """
+    output = _mask_pytest_captured_child_runs(output)
     summary = _parse_pytest_summary(output)
     consumed: set[tuple[str, str]] = set()
 
@@ -1521,8 +1612,7 @@ def _parse_pytest(output: str) -> list[ErrorLocation]:
     end = summary_start if summary_start > failures_start else len(output)
     failures_section = output[failures_start:end]
 
-    block_re = re.compile(r"^_+ (?P<test_name>.+?) _+$", re.MULTILINE)
-    block_matches = list(block_re.finditer(failures_section))
+    block_matches = list(_PYTEST_BLOCK_HEAD_RE.finditer(failures_section))
 
     if not block_matches:
         # ブロック区切りが無い場合（`--tb=line`形式）: `<file>:<line>: <message>`行を直接拾う。

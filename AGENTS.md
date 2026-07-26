@@ -46,3 +46,6 @@ format別のlogger stream/level切替の詳細は[docs/development/architecture.
 - 対象ファイルに応じて`.claude/skills/`配下のpyfltr固有スキル
   （`test-constraints`・`output-format`・`tool-resolution`・`ssot`・
   `grep-replace`・`pyfltr-add-tool`）を呼び出す
+- `pyfltr/command/error_parser.py`を変更した場合、`error-parser-reviewer`サブエージェントによる
+  網羅レビューをコミット前に完了させる。事後レビューにすると不良を含むコミットが記録され、
+  是正に追加のリリースを要する
