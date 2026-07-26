@@ -62,3 +62,7 @@ description: >
 - pyfltrテストで`pyfltr.cli.main.run([subcmd, <target>])`のスモークテストを`--commands`未指定で書く場合、
   `<target>`と`--work-dir`にリポジトリルートを渡さず`tests/conftest.py`の`_isolated_target`フィクスチャの`tmp_path`を使う。
   外側`uvx pyfltr ci`のdogfoodingと同一のリポジトリツリーへ実I/Oでアクセスする構造条件をテストが持たない形に保つため
+- pytest全体の`--timeout`（`pyproject.toml`の`addopts`で指定）より長い実行を要するテストは、
+  `@pytest.mark.timeout`で個別に上限を指定する。
+  外側のpytestタイムアウトはテスト内部の`subprocess.run(timeout=...)`より長く保つ。
+  外側が先に発火すると内部タイムアウトの明確なエラーが得られず、原因不明の失敗として現れる

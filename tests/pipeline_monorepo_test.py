@@ -2,6 +2,11 @@
 
 `run_pipeline` がサブプロジェクト検出時に `subproject_aware=True` ツールを
 サブプロジェクト別に実行することを確認する。
+
+各テストは`run_subprocess`のみをモックするため、`pyfltr/command/targets.py`が直接呼ぶ
+`git check-ignore`は実環境のgitプロセスとして起動する。
+実行環境のgit状態への依存を断つため全ケースで`--no-gitignore`を指定する。
+`tmp_path`配下に`.gitignore`を作成しないため、対象ファイル集合は指定の有無で変わらない。
 """
 
 from __future__ import annotations
@@ -80,7 +85,9 @@ def test_monorepo_pytest_runs_per_subproject(tmp_path: pathlib.Path, mocker) -> 
     proc = subprocess.CompletedProcess(["pytest"], returncode=0, stdout="")
     mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
-    pyfltr.cli.main.run(["run", "--work-dir", str(tmp_path), "--commands=pytest", "--no-archive", "--no-cache"])
+    pyfltr.cli.main.run(
+        ["run", "--work-dir", str(tmp_path), "--commands=pytest", "--no-archive", "--no-cache", "--no-gitignore"]
+    )
 
     # 各サブプロジェクト cwd で1回ずつ呼ばれている（サブプロジェクト別実行）
     cwds = _pytest_cwds(mock_run)
@@ -97,7 +104,9 @@ def test_monorepo_fallback_to_single_when_one_subproject(tmp_path: pathlib.Path,
     proc = subprocess.CompletedProcess(["pytest"], returncode=0, stdout="")
     mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
-    pyfltr.cli.main.run(["run", "--work-dir", str(tmp_path), "--commands=pytest", "--no-archive", "--no-cache"])
+    pyfltr.cli.main.run(
+        ["run", "--work-dir", str(tmp_path), "--commands=pytest", "--no-archive", "--no-cache", "--no-gitignore"]
+    )
 
     # pytest は1回だけ呼ばれる（単一プロジェクト経路）
     pytest_calls = [
@@ -119,7 +128,9 @@ def test_monorepo_subproject_aware_false_uses_single_cwd(tmp_path: pathlib.Path,
     proc = subprocess.CompletedProcess(["typos"], returncode=0, stdout="")
     mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
-    pyfltr.cli.main.run(["run", "--work-dir", str(tmp_path), "--commands=typos", "--no-archive", "--no-cache"])
+    pyfltr.cli.main.run(
+        ["run", "--work-dir", str(tmp_path), "--commands=typos", "--no-archive", "--no-cache", "--no-gitignore"]
+    )
 
     # typos は単一実行（モノレポでもサブ分割されない）。
     # ここでは run_subprocess が複数回呼ばれていないことを検証する代わりに、
@@ -157,7 +168,9 @@ def test_monorepo_respects_per_subproject_on_off(
     proc = subprocess.CompletedProcess(["pytest"], returncode=0, stdout="")
     mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
-    pyfltr.cli.main.run(["run", "--work-dir", str(tmp_path), "--commands=pytest", "--no-archive", "--no-cache"])
+    pyfltr.cli.main.run(
+        ["run", "--work-dir", str(tmp_path), "--commands=pytest", "--no-archive", "--no-cache", "--no-gitignore"]
+    )
 
     name_to_path = {
         "root": tmp_path.resolve(),
@@ -180,7 +193,9 @@ def test_monorepo_all_children_disabled_does_not_run_at_start_cwd(tmp_path: path
     proc = subprocess.CompletedProcess(["pytest"], returncode=0, stdout="")
     mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
-    pyfltr.cli.main.run(["run", "--work-dir", str(tmp_path), "--commands=pytest", "--no-archive", "--no-cache"])
+    pyfltr.cli.main.run(
+        ["run", "--work-dir", str(tmp_path), "--commands=pytest", "--no-archive", "--no-cache", "--no-gitignore"]
+    )
 
     # 0件フォールバックと無効スキップを区別し、起点cwdでの誤実行を抑止する。
     assert _pytest_call_count(mock_run) == 0
@@ -204,7 +219,9 @@ def test_monorepo_applies_per_subproject_exclude(tmp_path: pathlib.Path, mocker)
     proc = subprocess.CompletedProcess(["pytest"], returncode=0, stdout="")
     mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
-    pyfltr.cli.main.run(["run", "--work-dir", str(tmp_path), "--commands=pytest", "--no-archive", "--no-cache"])
+    pyfltr.cli.main.run(
+        ["run", "--work-dir", str(tmp_path), "--commands=pytest", "--no-archive", "--no-cache", "--no-gitignore"]
+    )
 
     cwds = _pytest_cwds(mock_run)
     # pkg_a は固有除外で対象0件となり起動されない。root と pkg_b は通常通り実行する。
@@ -226,7 +243,9 @@ def test_monorepo_repo_level_tool_fixed_by_start_config(tmp_path: pathlib.Path, 
     proc = subprocess.CompletedProcess(["typos"], returncode=0, stdout="")
     mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
-    pyfltr.cli.main.run(["run", "--work-dir", str(tmp_path), "--commands=typos", "--no-archive", "--no-cache"])
+    pyfltr.cli.main.run(
+        ["run", "--work-dir", str(tmp_path), "--commands=typos", "--no-archive", "--no-cache", "--no-gitignore"]
+    )
 
     typos_calls = [
         call
@@ -268,7 +287,9 @@ def test_monorepo_hybrid_cargo_only_subproject_runs_at_crate_cwd(tmp_path: pathl
     proc = subprocess.CompletedProcess(["cargo"], returncode=0, stdout="")
     mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
-    pyfltr.cli.main.run(["run", "--work-dir", str(tmp_path), "--commands=cargo-clippy", "--no-archive", "--no-cache"])
+    pyfltr.cli.main.run(
+        ["run", "--work-dir", str(tmp_path), "--commands=cargo-clippy", "--no-archive", "--no-cache", "--no-gitignore"]
+    )
 
     cwds = _cargo_clippy_cwds(mock_run)
     assert cwds == {(tmp_path / "rust" / "crate_a").resolve()}
@@ -287,7 +308,9 @@ def test_monorepo_cargo_workspace_root_only(tmp_path: pathlib.Path, mocker) -> N
     proc = subprocess.CompletedProcess(["cargo"], returncode=0, stdout="")
     mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
-    pyfltr.cli.main.run(["run", "--work-dir", str(tmp_path), "--commands=cargo-clippy", "--no-archive", "--no-cache"])
+    pyfltr.cli.main.run(
+        ["run", "--work-dir", str(tmp_path), "--commands=cargo-clippy", "--no-archive", "--no-cache", "--no-gitignore"]
+    )
 
     cwds = _cargo_clippy_cwds(mock_run)
     assert cwds == {ws_root.resolve()}
@@ -311,7 +334,9 @@ def test_monorepo_nested_pyproject_inherits_nearest_ancestor(tmp_path: pathlib.P
     proc = subprocess.CompletedProcess(["cargo"], returncode=0, stdout="")
     mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
-    pyfltr.cli.main.run(["run", "--work-dir", str(tmp_path), "--commands=cargo-clippy", "--no-archive", "--no-cache"])
+    pyfltr.cli.main.run(
+        ["run", "--work-dir", str(tmp_path), "--commands=cargo-clippy", "--no-archive", "--no-cache", "--no-gitignore"]
+    )
 
     cwds = _cargo_clippy_cwds(mock_run)
     assert cwds == set()  # 孫は`rust = false`継承でスキップ

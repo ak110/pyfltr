@@ -154,8 +154,10 @@ RUN mkdir -p /home/pyfltr/.config/uv \
 #   Node.js は前段 (root レイヤー) の ``mise use --global node@lts`` で導入済みのため
 #   ここでは追加ツールのみを宣言する (重複指定しても害は無いが冗長になるため省く)。
 # - pnpm 設定: ``minimum-release-age=1440`` 分 = 24 時間で公開直後の新バージョン導入を抑止。
-#   ``store-dir`` は ``PNPM_STORE_DIR`` env でも反映されるが、CI から pnpm を直接呼ぶ場合の
-#   一貫性のため設定にも明示する。
+#   ``store-dir`` は明示しないと cwd のドライブ (ルート) 依存で決まるため設定へ固定する。
+#   pnpm 11 は ``PNPM_STORE_DIR`` を設定として解釈しない (設定用の環境変数は
+#   ``pnpm_config_`` プレフィックスを要する)。下の ``pnpm config set`` では
+#   ``PNPM_STORE_DIR`` を単なるシェル変数として参照している。
 # - pnpm グローバル経由 (js-runner=pnpx 既定): JS / TS 系ツール。pnpx 経由でも同一ストアを
 #   参照するため初回起動コストが下がる。
 # - uv tool install: pyfltr[python] に含まれない Python 単独ツール。

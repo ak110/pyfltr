@@ -86,6 +86,13 @@ jobs:
       - name: Configure pnpm security
         run: pnpm config set minimum-release-age 1440 --global
 
+      - name: Configure pnpm store location
+        # `pnpm store path`はcwdのドライブ（ルート）に依存して決まる。
+        # チェックアウト先はDドライブ、pytestの一時ディレクトリはCドライブのため、
+        # 明示しないとキャッシュ対象パスとテスト実行時の使用パスが別ドライブへ分裂し、
+        # ストアが保存されないまま毎回ダウンロードが発生する。
+        run: pnpm config set store-dir "${{ runner.temp }}\pnpm-store" --global
+
       - name: Get pnpm store path
         id: pnpm-store-win
         shell: bash
@@ -94,8 +101,9 @@ jobs:
       - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: ${{ steps.pnpm-store-win.outputs.STORE_PATH }}
-          key: pnpm-store-${{ runner.os }}
-          restore-keys: pnpm-store-${{ runner.os }}
+          # 固定キーでは一度保存されると更新されないため、run_idを含めて毎回保存させる。
+          key: pnpm-store-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: pnpm-store-${{ runner.os }}-
 
       - name: Setup mise
         uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
