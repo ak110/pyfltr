@@ -2718,6 +2718,32 @@ def test_parse_errors_markdownlint_extracts_rule() -> None:
     assert errors[0].rule_url == "https://github.com/DavidAnson/markdownlint/blob/main/doc/MD001.md"
 
 
+def test_parse_errors_markdownlint_with_column() -> None:
+    """markdownlint: 列番号を報告するルールでもfile・lineを正しく抽出する。
+
+    列番号を許容しないと`_FILE`のドライブレター表記がファイル名の末尾へ侵入し、
+    file・lineともに架空の値になる。
+    """
+    output = 'docs/index.md:3:32 MD059/descriptive-link-text Link text should be descriptive [Context: "[here]"]'
+    errors = pyfltr.command.error_parser.parse_errors("markdownlint", output)
+    assert len(errors) == 1
+    assert errors[0].file == "docs/index.md"
+    assert errors[0].line == 3
+    assert errors[0].col == 32
+    assert errors[0].rule == "MD059"
+
+
+def test_parse_errors_markdownlint_with_column_and_severity() -> None:
+    """markdownlint: 列番号とseverityが同時に介在する形でも正しく抽出する。"""
+    output = "docs/index.md:5:1 error MD009/no-trailing-spaces Trailing spaces [Expected: 0; Actual: 1]"
+    errors = pyfltr.command.error_parser.parse_errors("markdownlint", output)
+    assert len(errors) == 1
+    assert errors[0].file == "docs/index.md"
+    assert errors[0].line == 5
+    assert errors[0].col == 1
+    assert errors[0].rule == "MD009"
+
+
 def test_parse_errors_ruff_rule_url_from_entry() -> None:
     """ruff JSONの`url`フィールドを最優先で採用する。"""
     output = json.dumps(

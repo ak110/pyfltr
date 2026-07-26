@@ -204,8 +204,11 @@ _BUILTIN_PATTERNS: dict[str, str] = {
     "ty": rf"(?P<file>{_FILE}):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>(?:error|warning)\[.+?\]\s+.+)",
     # markdownlint-cli2出力例: file.md:3 MD001/heading-increment Heading levels ...
     # 実行環境により file.md:3 error MD001/... のように severity が介在する。
+    # 列を報告するルール（MD059・MD009等）は file.md:3:32 MD059/... のように列番号が介在する。
+    # 列番号を任意グループとして許容しないと、`_FILE`のドライブレター表記が
+    # `file.md:3`の末尾へ侵入する形でマッチし、file・lineともに架空の値になる。
     # 先頭のMDxxxをruleグループとして抽出する（スラッシュ以降のシンボルはmessageに残す）。
-    "markdownlint": rf"(?P<file>{_FILE}):(?P<line>\d+)\s+(?:\w+\s+)?(?P<rule>MD\d+)(?P<message>\S*\s+.+)",
+    "markdownlint": rf"(?P<file>{_FILE}):(?P<line>\d+)(?::(?P<col>\d+))?\s+(?:\w+\s+)?(?P<rule>MD\d+)(?P<message>\S*\s+.+)",
     # textlint --format compact出力例: /path/file.md: line 1, col 1, Error - message (rule)
     "textlint": rf"(?P<file>{_FILE}):\s*line\s+(?P<line>\d+),\s*col\s+(?P<col>\d+),\s*\w+\s*-\s*(?P<message>.+)",
     # biome --reporter=github出力例（実機確認済み、lineとcolの間にendLineが介在する）:
