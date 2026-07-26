@@ -1380,7 +1380,7 @@ def _parse_vitest_json(output: str) -> list[ErrorLocation]:
 
 
 _PYTEST_SUMMARY_RE = re.compile(
-    rf"^FAILED\s+(?P<file>{_FILE})::(?P<test>\S+?(?:\[[^\]]*\])?)(?:\s+-\s+(?P<message>.+))?$",
+    rf"^FAILED\s+(?P<file>{_FILE})::(?P<test>[^\s\[]+(?:\[.*?\])?)(?:\s+-\s+(?P<message>.+))?$",
     re.MULTILINE,
 )
 _PYTEST_CRASH_RE = re.compile(rf"worker '(?P<worker>[^']+)' crashed while running '(?P<file>{_FILE})::(?P<test>[^']+)'")
@@ -1393,11 +1393,15 @@ _PYTEST_TB_LINE_RE = re.compile(
 def _parse_pytest_summary(output: str) -> dict[tuple[str, str], str | None]:
     r"""`short test summary info`の`FAILED <file>::<test> - <message>`行を解析する。
 
-    キーは`(file, test)`。`test`部分は`(?P<test>\S+?(?:\[[^\]]*\])?)`で、パラメータ化テストの
-    角括弧内のみ空白・ハイフンを許容する（`test_a[param with space]`・`test_param[b - c]`のように
-    IDに空白やハイフンを含む場合に対応するため）。角括弧の外側は空白を含まないnodeidの制約を
-    利用し、`\S+?`で区切ることで` - `を含むIDでも失敗一覧行のメッセージ区切りと誤って
-    分割されないようにする。`test`は`::`区切り（`TestX::test_y`形式、pytestのnodeid表記）を
+    キーは`(file, test)`。`test`部分は`(?P<test>[^\s\[]+(?:\[.*?\])?)`で、パラメータ化テストの
+    角括弧内には空白・ハイフン・角括弧の入れ子を許容する（`test_a[param with space]`・
+    `test_param[b - c]`・`test_listid[['a', 'b']]`・`test_nested[list[int] and str]`のように、
+    `ids`へリストや型注釈風の文字列を渡すと実際に生成されるIDである）。角括弧の外側は
+    空白と`[`を含まないnodeidの制約を`[^\s\[]+`で表し、角括弧内は`\[.*?\]`の非貪欲マッチと
+    後続文脈（`\s+-\s+`または行末）へのバックトラックで閉じ位置を確定する。
+    `[^\]]*`のように閉じ括弧を越えられない表現にすると、閉じ括弧や入れ子を含むIDの行が
+    一切マッチせず、失敗一覧のみが情報源となる`--tb=no`等で当該失敗が診断から消える。
+    `test`は`::`区切り（`TestX::test_y`形式、pytestのnodeid表記）を
     `.`区切り（`TestX.test_y`形式、`= FAILURES =`セクションのブロック見出しの表記）へ
     `.replace("::", ".")`で正規化する。両表記が一致しないとテスト名突合（`consumed`集合）が
     成立せず、summary残余補完で同一テストの診断が二重生成されるため。値は`message`
@@ -1407,7 +1411,7 @@ def _parse_pytest_summary(output: str) -> dict[tuple[str, str], str | None]:
     実在しない失敗として誤検出しないため）。見出しを欠く一部pytest構成では従来どおり出力全体を
     走査する（見出しを欠く構成への耐性を維持するため）。
     """
-    summary_start = output.find("short test summary info")
+    summary_start = output.rfind("short test summary info")
     scan_target = output[summary_start:] if summary_start >= 0 else output
     summary: dict[tuple[str, str], str | None] = {}
     for match in _PYTEST_SUMMARY_RE.finditer(scan_target):
@@ -1505,8 +1509,12 @@ def _parse_pytest(output: str) -> list[ErrorLocation]:
     summary = _parse_pytest_summary(output)
     consumed: set[tuple[str, str]] = set()
 
+    # 開始位置は先頭側、終了位置は末尾側を探す。子プロセスのpytestを起動して出力を取り込む
+    # テストでは捕捉出力の中にも同じ見出しが現れるため、失敗欄の開始は自プロセスのものが
+    # 先に現れる先頭一致を採用し、終了は末尾一致を採用する。終了側を先頭一致にすると、捕捉出力に
+    # 混入した集計見出しで解析範囲が打ち切られ、それ以降の実在する失敗が行番号を失う。
     failures_start = output.find("= FAILURES =")
-    summary_start = output.find("short test summary info")
+    summary_start = output.rfind("short test summary info")
     if failures_start < 0:
         return _parse_pytest_from_summary(summary, consumed)
 
@@ -1601,7 +1609,10 @@ def _parse_pytest(output: str) -> list[ErrorLocation]:
                 ),
             )
         )
-        _consume_summary_test(summary, consumed, crashed_test, file_path)
+        # クラッシュ行のテスト名はnodeid表記（`TestX::test_y`）のため、summaryキーと同じ
+        # `.`区切りへ正規化してから突合する（正規化しないとクラスベーステストで突合が失敗し
+        # summary残余補完で同一テストの診断が二重生成される）。
+        _consume_summary_test(summary, consumed, crashed_test.replace("::", "."), file_path)
 
     results.extend(_parse_pytest_from_summary(summary, consumed))
     return results

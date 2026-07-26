@@ -1126,6 +1126,86 @@ def test_parse_pytest_parametrized_id_with_hyphen_not_double_counted() -> None:
     assert errors[0].message.startswith("test_param[b - c]: ")
 
 
+def test_parse_pytest_parametrized_id_with_brackets_is_not_dropped() -> None:
+    """pytest: パラメータIDが閉じ角括弧・入れ子の角括弧を含んでも失敗が取りこぼされないことを検証する。
+
+    `ids`へリストや型注釈風の文字列を渡すと`test_listid[['a', 'b']]`・`test_nested[list[int] and str]`
+    のようなIDが生成される。`_PYTEST_SUMMARY_RE`の角括弧部分を`\\[[^\\]]*\\]`のように閉じ括弧を
+    越えられない表現にすると、これらのsummary行が一切マッチせず、summary行のみが情報源となる
+    `--tb=no`等では当該失敗が診断から完全に消える。
+    """
+    output = (
+        "========================= short test summary info ==========================\n"
+        "FAILED tests/e_test.py::test_listid[['a', 'b']] - AssertionError: assert ['a', 'b'] == ['x']\n"
+        "FAILED tests/e_test.py::test_nested[list[int] and str] - AssertionError: assert 'z' == 'x'\n"
+        "FAILED tests/e_test.py::test_deep[[[x y]]] - AssertionError: deep\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 3
+    messages = sorted(e.message for e in errors)
+    assert messages[0].startswith("test_deep[[[x y]]]: ")
+    assert messages[1].startswith("test_listid[['a', 'b']]: ")
+    assert messages[2].startswith("test_nested[list[int] and str]: ")
+    assert all(e.file == "tests/e_test.py" for e in errors)
+
+
+def test_parse_pytest_worker_crash_class_based_not_double_counted() -> None:
+    """pytest: クラスベーステストのxdistワーカークラッシュで診断が二重生成されないことを検証する。
+
+    クラッシュ行のテスト名はpytestのnodeid表記（`TestCrash::test_method_crash`）だが、summary辞書の
+    キーは`.`区切りへ正規化済みである。突合前に同じ正規化を施さないとキーが一致せず、
+    summary残余補完で同一テストの診断が二重生成される。
+    """
+    output = (
+        "================================= FAILURES =================================\n"
+        "_______________________________ tests/c_test.py ________________________________\n"
+        "[gw0] linux -- Python 3.14.0 /path/to/python3\n"
+        "worker 'gw0' crashed while running 'tests/c_test.py::TestCrash::test_method_crash'\n"
+        "_______________________________ tests/c_test.py ________________________________\n"
+        "[gw1] linux -- Python 3.14.0 /path/to/python3\n"
+        "worker 'gw1' crashed while running 'tests/c_test.py::test_plain_crash'\n"
+        "========================= short test summary info ==========================\n"
+        "FAILED tests/c_test.py::TestCrash::test_method_crash - worker 'gw0' crashed while running "
+        "'tests/c_test.py::TestCrash::test_method_crash'\n"
+        "FAILED tests/c_test.py::test_plain_crash - worker 'gw1' crashed while running "
+        "'tests/c_test.py::test_plain_crash'\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 2
+    assert all(e.file == "tests/c_test.py" for e in errors)
+    assert all(e.line == 0 for e in errors)
+    assert any(e.message.startswith("TestCrash::test_method_crash: ") for e in errors)
+    assert any(e.message.startswith("test_plain_crash: ") for e in errors)
+
+
+def test_parse_pytest_keeps_line_numbers_when_child_summary_is_captured() -> None:
+    """pytest: 捕捉出力に子プロセスの集計見出しが混入しても実在失敗の行番号を失わないことを検証する。
+
+    pytestを子プロセスとして起動し出力を取り込むテストでは、親の失敗欄の内側に子の
+    `short test summary info`見出しが現れる。失敗欄の終端を先頭一致で決めると解析範囲が
+    そこで打ち切られ、以降の実在失敗がブロック解析されず行番号を失う。
+    """
+    output = (
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_runs_child ________________________________\n"
+        "tests/d_test.py:11: in test_runs_child\n"
+        "E   AssertionError: assert 1 == 0\n"
+        "-------------------------- Captured stdout call ---------------------------\n"
+        "========================= short test summary info ==========================\n"
+        "FAILED child/z_test.py::test_child - assert 1 == 2\n"
+        "_______________________________ test_later_real ________________________________\n"
+        "tests/d_test.py:15: in test_later_real\n"
+        "E   AssertionError: later\n"
+        "========================= short test summary info ==========================\n"
+        "FAILED tests/d_test.py::test_runs_child - AssertionError: assert 1 == 0\n"
+        "FAILED tests/d_test.py::test_later_real - AssertionError: later\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    by_test = {e.message.split(":")[0]: e for e in errors}
+    assert by_test["test_runs_child"].line == 11
+    assert by_test["test_later_real"].line == 15
+
+
 def test_parse_pytest_tb_line_external_frame_not_double_counted() -> None:
     """pytest --tb=line: 位置行がプロジェクト外パス（site-packages等）へ落ちる失敗でも、
     ファイル不一致時はメッセージのみでsummaryと突合し診断が二重生成されないことを検証する。
