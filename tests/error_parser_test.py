@@ -2422,6 +2422,109 @@ def test_parse_pytest_warnings_summary_after_summary_list_keeps_parent_summary()
     assert errors[0].message.startswith("test_w: ")
 
 
+def test_parse_pytest_child_summary_is_not_taken_without_parent_tail_line() -> None:
+    """pytest: 親の最終集計行が無い出力で子の見出しを親のものと誤認しないことを検証する。
+
+    親の実行が途中で終わると最終集計行が出ない。所属判定の上限は出力中で最後に現れる
+    集計行を採るため、当該構成では捕捉出力へ混入した子の集計行が上限になる。上限より前の
+    子の見出しは標識を伴わず親のものとして採られ、以降にある親の失敗が診断から消える。
+    上限として採った集計行より後に標識が現れる場合は上限を出力の末尾へ広げて探し直すため、
+    当該構成では子の見出しが標識を伴うようになり、いずれの見出しも親のものと判定されない。
+    """
+    output = (
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_runs_child ________________________________\n"
+        "tests/p_test.py:13: in test_runs_child\n"
+        "E   AssertionError: assert 1 == 0\n"
+        "-------------------------- Captured stdout call ---------------------------\n"
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_inner ________________________________\n"
+        "child/inner_test.py:3: in test_inner\n"
+        "E   assert 1 == 2\n"
+        "========================= short test summary info ==========================\n"
+        "FAILED child/inner_test.py::test_inner - assert 1 == 2\n"
+        "1 failed in 0.03s\n"
+        "_______________________________ test_parent_later ________________________________\n"
+        "tests/p_test.py:17: in test_parent_later\n"
+        "E   AssertionError: assert 'a' == 'b'\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    parent_errors = [e for e in errors if e.file == "tests/p_test.py"]
+    assert {e.line for e in parent_errors} == {13, 17}
+    # 親が失敗一覧を持たないため安全網が働かず、子の失敗欄は診断として残る。当該構成の縮退を固定する。
+    assert [e.file for e in errors if e.file not in {"tests/p_test.py"}] == ["child/inner_test.py"]
+
+
+def test_parse_pytest_parent_summary_without_tail_line_keeps_safety_net() -> None:
+    """pytest: 親が失敗一覧を持ち最終集計行を欠く出力で安全網が働くことを検証する。
+
+    上限として採る集計行が捕捉出力へ混入した子のものになる構成でも、親自身の失敗一覧は
+    出力の末尾側に存在する。上限を確定できないことを理由に判別を諦めると失敗一覧が空となり、
+    親の失敗一覧に載らないテスト名の失敗欄を除外する安全網が働かず、子の失敗が
+    架空の診断として残る。子の失敗一覧の見出しを検体へ含め、上限より前の子の見出しと
+    上限より後の親の見出しが競合する構成で後者を採ることを固定する。
+    """
+    output = (
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_a ________________________________\n"
+        "tests/p_test.py:3: in test_a\n"
+        "E   assert 1 == 2\n"
+        "-------------------------- Captured stdout call ---------------------------\n"
+        "================================= test session starts =================================\n"
+        "collected 1 item\n"
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_inner ________________________________\n"
+        "child/inner_test.py:2: in test_inner\n"
+        "E   assert 1 == 2\n"
+        "========================= short test summary info ==========================\n"
+        "FAILED child/inner_test.py::test_inner - assert 1 == 2\n"
+        "================================= 1 failed in 0.04s =================================\n"
+        "_______________________________ test_b ________________________________\n"
+        "tests/p_test.py:7: in test_b\n"
+        "E   assert 3 == 4\n"
+        "========================= short test summary info ==========================\n"
+        "FAILED tests/p_test.py::test_a - assert 1 == 2\n"
+        "FAILED tests/p_test.py::test_b - assert 3 == 4\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 2
+    assert all(e.file == "tests/p_test.py" for e in errors)
+    assert {e.line for e in errors} == {3, 7}
+
+
+@pytest.mark.parametrize("with_failures_section", [False, True])
+def test_parse_pytest_run_after_parent_tail_line_keeps_parent_failures(with_failures_section: bool) -> None:
+    """pytest: 親の最終集計行の後に別の実行が続いても親の失敗を失わないことを検証する。
+
+    pyfltrは子孫プロセスの出力をストリームの終端まで読むため、親の実行が終わった後に
+    打ち切られた孫プロセスの実行が同じ出力へ続くことがある。当該実行の標識を根拠に
+    上限を無効と判定すると、失敗一覧のみを情報源とする構成（`with_failures_section=False`）で
+    親の失敗をすべて失う。
+    """
+    failures_section = (
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_a ________________________________\n"
+        "tests/p_test.py:3: in test_a\n"
+        "E   assert 1 == 2\n"
+        "_______________________________ test_b ________________________________\n"
+        "tests/p_test.py:7: in test_b\n"
+        "E   assert 3 == 4\n"
+    )
+    output = (
+        (failures_section if with_failures_section else "")
+        + "========================= short test summary info ==========================\n"
+        "FAILED tests/p_test.py::test_a - assert 1 == 2\n"
+        "FAILED tests/p_test.py::test_b - assert 3 == 4\n"
+        "================================= 2 failed in 0.50s =================================\n"
+        "================================= test session starts =================================\n"
+        "collected 1 item\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pytest", output)
+    assert len(errors) == 2
+    assert all(e.file == "tests/p_test.py" for e in errors)
+    assert {e.line for e in errors} == ({3, 7} if with_failures_section else {0})
+
+
 def test_parse_pytest_parent_failure_in_shared_test_file_is_kept() -> None:
     """pytest: 親が子と同じテストファイルの同名テストで失敗しても失わないことを検証する。
 

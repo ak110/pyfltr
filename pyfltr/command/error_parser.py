@@ -1457,12 +1457,29 @@ def _pytest_parent_summary_start(output: str) -> int:
     出力するため、標識が後続する見出しは親のものではない。候補は親の最終集計行より前の
     見出しに限り、末尾側から順に判定して最初に条件を満たしたものを採用する。
 
+    上限として採った集計行より後に標識が現れる場合、当該集計行は親自身の最終集計行ではなく
+    捕捉出力へ混入した子のものである。親が最終集計行を持たないまま出力が終わる構成で起こる。
+    この場合は上限を出力の末尾へ広げて探し直す。上限を確定できないことを理由に判別を諦めると、
+    親自身の失敗一覧を持つ構成でも失敗一覧が空となり、捕捉出力へ残った子の失敗を除外する
+    安全網が働かなくなる。
+
+    上限より後の走査は実行の開始行に達した時点で打ち切る。pyfltrは子孫プロセスの出力を
+    ストリームの終端まで読むため、親の実行が終わった後に打ち切られた孫プロセスの実行が
+    同じ出力へ続くことがある。当該実行の標識で上限を広げると、失敗一覧のみを情報源とする
+    構成（`--tb=no`等）で親の失敗をすべて失う。
+
     子プロセスが終了集計行も後続の親の失敗欄も持たないまま出力の末尾に達する構成では、
     子の見出しが条件を満たし親のものとして採られる。当該構成は除外の主経路も安全網も
     成立しない既知の縮退であり、判別条件の追加で新たに生じるものではない。
     """
     lines = output.split("\n")
     limit = _pytest_parent_tail_index(lines)
+    for following in range(limit + 1, len(lines)):
+        if _PYTEST_SESSION_START_RE.fullmatch(lines[following].rstrip("\r")):
+            break
+        if _is_pytest_nested_run_marker(lines[following]):
+            limit = len(lines)
+            break
     heads = [index for index, line in enumerate(lines[:limit]) if _PYTEST_SUMMARY_HEAD_RE.fullmatch(line.rstrip())]
     for index in reversed(heads):
         if any(_is_pytest_nested_run_marker(lines[following]) for following in range(index + 1, limit)):
