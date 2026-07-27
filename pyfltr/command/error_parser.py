@@ -1391,7 +1391,14 @@ _PYTEST_TB_LINE_RE = re.compile(
     rf"^(?P<file>{_FILE}):(?P<line>\d+):\s*(?P<message>.+)$",
     re.MULTILINE,
 )
-_PYTEST_BLOCK_HEAD_RE = re.compile(r"^_+ (?P<test_name>.+?) _+$", re.MULTILINE)
+# 失敗欄のブロック見出し（`_____ <テスト名> _____`）。
+# 見出し名へ`_`・空白以外の文字を1つ以上要求する。既定のトレースバック形式が例外の連鎖の
+# エントリー間へ出力する区切り行は`_ `の反復で、`_pytest/_io/terminalwriter.py`の`sep`が
+# 行幅の余りへ`_`を1文字足すため、行幅が奇数だと`_ _ ... _ _`の形になる。
+# 見出し名を`.+?`のままにすると当該区切り行がブロック見出しとして一致し、多段フレームの失敗が
+# 区切り行で分割されて診断が水増しされる。行幅はWindowsで常に奇数側へ寄る
+# （同ファイルの`sep`が`win32`で`fullwidth`を1減らす）ため、例外的な条件ではない。
+_PYTEST_BLOCK_HEAD_RE = re.compile(r"^_+ (?P<test_name>.*?[^\s_].*?) _+$", re.MULTILINE)
 _PYTEST_CAPTURED_SECTION_RE = re.compile(r"^-+ Captured .+ -+$", re.MULTILINE)
 # 既定のトレースバック形式（`--tb=auto`・`--tb=long`）が各エントリーの末尾へ出力する位置行。
 # 例外を送出したエントリーは例外名を伴い（`sample_test.py:6: AssertionError`）、
@@ -1413,6 +1420,72 @@ _PYTEST_SESSION_END_RE = re.compile(r"^=+ .* in \d+(?:\.\d+)?s.*=+$")
 _PYTEST_QUIET_SESSION_END_RE = re.compile(
     r"^(?:\d+ \w+(?:, \d+ \w+)*|no tests ran) in \d+(?:\.\d+)?s(?: \((?:\d+ days?, )?\d+:\d{2}:\d{2}\))?$"
 )
+# 失敗一覧の見出し。`_pytest/terminal.py`の`short_test_summary`が`write_sep("=", ...)`で
+# 出力するため常に`=`の埋めを伴う。部分文字列の探索にすると、テストの捕捉出力が
+# 当該語句を含むだけの行を見出しとして採る。
+_PYTEST_SUMMARY_HEAD_RE = re.compile(r"^=+ short test summary info =+$")
+# 失敗一覧の見出しより後に現れると、当該見出しが親自身のものではないことを示す標識。
+# `_pytest/terminal.py`は失敗欄・失敗一覧・最終集計行をこの順で出力し、失敗一覧と
+# 最終集計行の間には追加分の警告の集計（`=+ warnings summary =+`とその本文）と、
+# 中断・停止の報告（`_report_keyboardinterrupt`が出力する`!+ KeyboardInterrupt !+`と
+# そのトレースバック）以外は現れない。したがって、失敗欄のブロック見出し・捕捉出力の節見出し・
+# 実行の開始行と終了集計行・別の失敗一覧の見出しのいずれかが後続する見出しは、
+# 捕捉出力へ混入した子プロセスのものである。
+# 警告の集計と中断・停止の報告の見出し・本文は標識に含めない。含めると、これらを伴う実出力で
+# 親自身の失敗一覧を子のものと誤判定し、失敗一覧のみを情報源とする失敗を丸ごと失う。
+_PYTEST_NESTED_RUN_MARKER_RES = (
+    _PYTEST_BLOCK_HEAD_RE,
+    _PYTEST_CAPTURED_SECTION_RE,
+    _PYTEST_SESSION_START_RE,
+    _PYTEST_SESSION_END_RE,
+    _PYTEST_QUIET_SESSION_END_RE,
+    _PYTEST_SUMMARY_HEAD_RE,
+)
+
+
+def _pytest_parent_summary_start(output: str) -> int:
+    """親プロセス自身の失敗一覧の見出しの開始位置を返す。見出しを持たない場合は-1を返す。
+
+    pytestを子プロセスとして起動し出力を取り込むテストでは、捕捉出力の内側へ子プロセスの
+    失敗一覧の見出しがそのまま現れる。出力中で最後に現れる見出しを無条件に採ると、親が
+    失敗一覧を出力しない構成（`-rN`等）で子の見出しを親のものとして採用し、失敗欄の解析範囲が
+    そこで打ち切られる。打ち切り以降にある親の実在する失敗は診断から消え、代わりに子の失敗が
+    親の失敗として報告される。
+
+    判別は、当該見出しより後・親の最終集計行より前に入れ子の実行を示す標識
+    （`_PYTEST_NESTED_RUN_MARKER_RES`）が現れないことによる。親は失敗一覧を最後の節として
+    出力するため、標識が後続する見出しは親のものではない。候補は親の最終集計行より前の
+    見出しに限り、末尾側から順に判定して最初に条件を満たしたものを採用する。
+
+    子プロセスが終了集計行も後続の親の失敗欄も持たないまま出力の末尾に達する構成では、
+    子の見出しが条件を満たし親のものとして採られる。当該構成は除外の主経路も安全網も
+    成立しない既知の縮退であり、判別条件の追加で新たに生じるものではない。
+    """
+    lines = output.split("\n")
+    limit = _pytest_parent_tail_index(lines)
+    heads = [index for index, line in enumerate(lines[:limit]) if _PYTEST_SUMMARY_HEAD_RE.fullmatch(line.rstrip())]
+    for index in reversed(heads):
+        if any(_is_pytest_nested_run_marker(lines[following]) for following in range(index + 1, limit)):
+            continue
+        return sum(len(line) + 1 for line in lines[:index])
+    return -1
+
+
+def _is_pytest_nested_run_marker(line: str) -> bool:
+    """行が入れ子の実行を示す標識かを返す。
+
+    末尾の空白を除去せずに照合する。既定のトレースバック形式が例外の連鎖のエントリー間へ
+    出力する区切り行（`_ _ _ ... _ `）は末尾に空白を伴い、ブロック見出しの照合
+    （`_PYTEST_BLOCK_HEAD_RE`の行末の`$`）では一致しない。空白を除去すると当該区切り行が
+    ブロック見出しとして一致し、`--full-trace`付きの中断のように失敗一覧より後へ完全な
+    トレースバックが続く出力で、親自身の失敗一覧を子のものと誤判定する。
+    """
+    return any(pattern.fullmatch(line.rstrip("\r")) for pattern in _PYTEST_NESTED_RUN_MARKER_RES)
+
+
+def _has_pytest_summary_head(output: str) -> bool:
+    """出力が失敗一覧の見出しを含むかを返す。親のものか子のものかは区別しない。"""
+    return any(_PYTEST_SUMMARY_HEAD_RE.fullmatch(line.rstrip()) for line in output.split("\n"))
 
 
 def _parse_pytest_summary(output: str) -> dict[tuple[str, str], str | None]:
@@ -1431,15 +1504,13 @@ def _parse_pytest_summary(output: str) -> dict[tuple[str, str], str | None]:
     `.replace("::", ".")`で正規化する。両表記が一致しないとテスト名突合（`consumed`集合）が
     成立せず、summary残余補完で同一テストの診断が二重生成されるため。値は`message`
     （省略時はNone、`--tb=line`経路の値と突合できるよう前後の空白・改行文字を`.strip()`で
-    除去して統一する）。`short test summary info`見出しが出力中に存在する場合は当該見出し以降
-    のみを走査対象にする（テストの捕捉出力に子プロセスpytestの`FAILED ...`行が混入していても、
-    実在しない失敗として誤検出しないため）。見出しを欠く一部pytest構成では従来どおり出力全体を
-    走査する（見出しを欠く構成への耐性を維持するため）。
+    除去して統一する）。走査範囲の決定は呼び出し側が担う（`_parse_pytest`が
+    `_pytest_parent_summary_start`で親自身の失敗一覧の見出しを特定し、当該見出し以降のみを
+    渡す）。テストの捕捉出力に子プロセスpytestの`FAILED ...`行が混入していても、
+    実在しない失敗として誤検出しないため。
     """
-    summary_start = output.rfind("short test summary info")
-    scan_target = output[summary_start:] if summary_start >= 0 else output
     summary: dict[tuple[str, str], str | None] = {}
-    for match in _PYTEST_SUMMARY_RE.finditer(scan_target):
+    for match in _PYTEST_SUMMARY_RE.finditer(output):
         file_path = pyfltr.paths.to_cwd_relative(match.group("file"))
         test_name = match.group("test").replace("::", ".")
         raw_message = match.group("message")
@@ -1702,7 +1773,8 @@ def _parse_pytest(output: str) -> list[ErrorLocation]:
 
     1. `short test summary info`の`FAILED <file>::<test> - <message>`行を
        `(file, test) -> message`辞書として先に収集する（メッセージ補完・突合用）。
-       `test`は`.`区切りへ正規化する
+       `test`は`.`区切りへ正規化する。見出しは`_pytest_parent_summary_start`で
+       親自身のものを特定し、当該見出し以降のみを走査する
     2. `= FAILURES =`セクションをテスト名区切り（`_ 名前 _`）でブロック分割し、
        既定のトレースバック形式（`--tb=auto`・`--tb=long`）の位置行
        （`<file>:<line>: <例外名>`、フレーム行より後にあるもの）を優先し、
@@ -1720,6 +1792,9 @@ def _parse_pytest(output: str) -> list[ErrorLocation]:
     除外しないと子プロセス側の失敗を親プロセスの実在する失敗として診断化する。
     当該除外が成立しない構成に備え、経路2〜3では親の失敗一覧に載らないテスト名のブロックを
     除外する安全網を併用する（失敗一覧の見出しを持たない構成・失敗一覧が空の構成では働かせない）。
+    親が失敗一覧を出力しない構成では当該安全網も働かないため、捕捉出力へ残った子の失敗が
+    親の失敗として診断化される。子の失敗一覧との突合で除外する案は、親が子と同じテストファイルの
+    同名テストを実行する構成において親の実在する失敗を除外するため採らない。
 
     経路2〜4でテスト名を確定できたつど`_consume_summary_test`で`consumed`
     （summary辞書のキー`(file, test)`の集合）へ登録し、経路5の二重生成を防ぐ。
@@ -1731,15 +1806,25 @@ def _parse_pytest(output: str) -> list[ErrorLocation]:
     判別性を得るため。
     """
     output = _mask_pytest_captured_child_runs(output)
-    summary = _parse_pytest_summary(output)
+
+    # 失敗欄の開始位置は先頭側を探す。子プロセスのpytestを起動して出力を取り込むテストでは
+    # 捕捉出力の中にも同じ見出しが現れるため、自プロセスのものが先に現れる先頭一致を採用する。
+    # 失敗一覧の見出しは`_pytest_parent_summary_start`で親自身のものを特定する。
+    failures_start = output.find("= FAILURES =")
+    summary_start = _pytest_parent_summary_start(output)
+
+    # 親自身の失敗一覧を持たず子プロセスのものだけが混入している場合、出力中の`FAILED`行は
+    # すべて子のものであり親の失敗一覧は存在しない。当該行を親の失敗一覧として扱うと
+    # 実在しない失敗を診断化するため、親の失敗一覧は空とする。
+    # 見出しが1つも無い構成では出力全体を走査する（見出しを欠く構成への耐性を維持するため）。
+    if summary_start >= 0:
+        summary = _parse_pytest_summary(output[summary_start:])
+    elif _has_pytest_summary_head(output):
+        summary = {}
+    else:
+        summary = _parse_pytest_summary(output)
     consumed: set[tuple[str, str]] = set()
 
-    # 開始位置は先頭側、終了位置は末尾側を探す。子プロセスのpytestを起動して出力を取り込む
-    # テストでは捕捉出力の中にも同じ見出しが現れるため、失敗欄の開始は自プロセスのものが
-    # 先に現れる先頭一致を採用し、終了は末尾一致を採用する。終了側を先頭一致にすると、捕捉出力に
-    # 混入した集計見出しで解析範囲が打ち切られ、それ以降の実在する失敗が行番号を失う。
-    failures_start = output.find("= FAILURES =")
-    summary_start = output.rfind("short test summary info")
     if failures_start < 0:
         return _parse_pytest_from_summary(summary, consumed)
 
