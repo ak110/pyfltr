@@ -210,6 +210,16 @@ class TestScanText:
             pytest.skip(f"denylistと重複しないエントリ: {raw_pattern}")
         assert not pyfltr.colloquial.check.first_hit(sample, deny_patterns, allow_patterns)
 
+    @pytest.mark.parametrize("text", ["蓄積も", "集積も", "面積も"])
+    def test_compound_followed_by_particle_is_not_detected(
+        self,
+        deny_patterns: _PatternList,
+        allow_patterns: _PatternList,
+        text: str,
+    ) -> None:
+        """検出側は全denylistの自己一致テストで網羅し、熟語と助詞の連結は検出しない。"""
+        assert not pyfltr.colloquial.check.scan_text(text, deny_patterns, allow_patterns)
+
 
 class TestMaskAllowed:
     """`mask_allowed` のテスト。"""
