@@ -681,7 +681,7 @@ def test_reconfigure_stdio_to_utf8_tolerates_missing_or_failing_streams(monkeypa
     pyfltr.cli.main._reconfigure_stdio_to_utf8()  # pylint: disable=protected-access
 
 
-# configサブコマンドのテストは`tests/main_config_test.py`へ分離済み（pylintのtoo-many-lines対策）。
+# configサブコマンドのテストは、対象サブコマンド単位で見通しを保つため`tests/main_config_test.py`へ分離済み。
 
 
 # ---------------------------------------------------------------------------

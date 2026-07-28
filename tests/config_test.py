@@ -2061,7 +2061,7 @@ hints = [
             config_dir=root_dir,
             global_config_path=global_path,
             for_subproject=True,
-            suppressed_warning_keys=origin_config.warned_global_only_keys,
+            suppressed_warning_entries=origin_config.warned_global_only_entries,
         )
 
         # 起点ロード分の1件のみで、サブプロジェクト分の再発行が無いことを確認する。
@@ -2083,7 +2083,7 @@ hints = [
             config_dir=sub_dir,
             global_config_path=global_path,
             for_subproject=True,
-            suppressed_warning_keys=origin_config.warned_global_only_keys,
+            suppressed_warning_entries=origin_config.warned_global_only_entries,
         )
 
         # 起点分1件 + サブプロジェクト固有分1件で計2件になることを確認する。
@@ -2093,8 +2093,8 @@ hints = [
         """起点がglobalの不正値を正常値で上書きした場合、最初のサブプロジェクトで警告が残る。
 
         起点project側が`preset`を正常値へ上書きすると、起点自身の検証は正常値を対象にするため
-        警告が出ない。このとき起点`local_warned_keys`に`preset`は含まれず
-        `warned_global_only_keys`にも含まれないため抑止対象に入らず、サブプロジェクト側
+        警告が出ない。このとき起点では`preset`の警告自体が発行されず
+        `warned_global_only_entries`にも含まれないため抑止対象に入らず、サブプロジェクト側
         （`preset`を上書きしない）で改めて不正なglobal値が検証され警告が1件出る。
         """
         global_path, root_dir = self._setup(
@@ -2104,7 +2104,7 @@ hints = [
         )
         origin_config = pyfltr.config.config.load_config(config_dir=root_dir, global_config_path=global_path)
         assert _count_config_warnings("preset") == 0
-        assert "preset" not in origin_config.warned_global_only_keys
+        assert not any(key == "preset" for key, _ in origin_config.warned_global_only_entries)
 
         sub_dir = tmp_path / "pkg"
         sub_dir.mkdir()
@@ -2114,7 +2114,7 @@ hints = [
             config_dir=sub_dir,
             global_config_path=global_path,
             for_subproject=True,
-            suppressed_warning_keys=origin_config.warned_global_only_keys,
+            suppressed_warning_entries=origin_config.warned_global_only_entries,
         )
 
         assert _count_config_warnings("preset") == 1
@@ -2125,7 +2125,7 @@ hints = [
         """起点がglobalの不正値を上書きしていても、非上書きの複数サブプロジェクトに
         またがって警告が重複発行されない（`resolve_subproject_configs`の累積ループを模擬する）。
 
-        `suppressed_warning_keys`を起点1回のロード結果だけから静的に決める設計では、
+        `suppressed_warning_entries`を起点1回のロード結果だけから静的に決める設計では、
         非上書きのサブプロジェクトが2件以上ある場合にそれぞれが独立して不正なglobal値を
         再検証し重複発行する。ここでは`already_warned`集合をロードのたびに統合する
         呼び出し側の実装（設計）を模擬し、全体でちょうど1件になることを確認する。
@@ -2136,7 +2136,7 @@ hints = [
             project_text='[tool.pyfltr]\npreset = "latest"\n',
         )
         origin_config = pyfltr.config.config.load_config(config_dir=root_dir, global_config_path=global_path)
-        already_warned: set[str] = set(origin_config.warned_global_only_keys)
+        already_warned: set[pyfltr.config.config.ConfigWarningEntry] = set(origin_config.warned_global_only_entries)
 
         for name in ("pkg_a", "pkg_b"):
             sub_dir = tmp_path / name
@@ -2146,9 +2146,9 @@ hints = [
                 config_dir=sub_dir,
                 global_config_path=global_path,
                 for_subproject=True,
-                suppressed_warning_keys=frozenset(already_warned),
+                suppressed_warning_entries=frozenset(already_warned),
             )
-            already_warned |= sub_config.warned_global_only_keys
+            already_warned |= sub_config.warned_global_only_entries
 
         # 起点0件 + 最初のサブプロジェクトで1件 + 2件目は抑止されて0件、で計1件になることを確認する。
         assert _count_config_warnings("preset") == 1
@@ -2157,7 +2157,7 @@ hints = [
         """globalのみ由来のカスタムコマンドでも、projectが派生キーを個別上書きすれば警告する。
 
         同一ロード内で複数のカスタムコマンド警告を発行し、それらがすべて
-        `warned_global_only_keys`に記録されることで、契約「同一ロード内の複数警告を失わない」を検証する。
+        `warned_global_only_entries`に記録されることで、契約「同一ロード内の複数警告を失わない」を検証する。
         その上で、サブプロジェクトがprojectフラットキー`my-tool-severity`を個別上書きした場合、
         派生キーの機械的抑止（却下案）とは異なり誤って抑止されず警告が発行されることを確認する。
         """
@@ -2176,7 +2176,7 @@ hints = [
         )
         origin_config = pyfltr.config.config.load_config(config_dir=root_dir, global_config_path=global_path)
         # 同一ロード内で複数の不正カスタムコマンドに対して複数の警告が記録される。
-        assert "custom-commands" in origin_config.warned_global_only_keys
+        assert any(key == "custom-commands" for key, _ in origin_config.warned_global_only_entries)
         # 同一ロード内の複数警告をすべて記録していることを確認するため、個別の警告件数で検証する。
         assert _count_config_warnings("invalid-a") == 1
         assert _count_config_warnings("invalid-b") == 1
@@ -2189,11 +2189,81 @@ hints = [
             config_dir=sub_dir,
             global_config_path=global_path,
             for_subproject=True,
-            suppressed_warning_keys=origin_config.warned_global_only_keys,
+            suppressed_warning_entries=origin_config.warned_global_only_entries,
         )
 
         # サブプロジェクトの個別上書き`my-tool-severity`は`custom-commands`の抑止対象に含まれず警告が発行される。
         assert _count_config_warnings("my-tool-severity") == 1
+
+    def test_same_key_with_different_cause_is_not_suppressed(self, tmp_path: pathlib.Path) -> None:
+        """同一キーでも警告の原因が異なれば抑止せず発行する。
+
+        globalがカスタムコマンド`my-tool`とその派生フラットキー`my-tool-severity`（不正値）を
+        持つ場合、起点では「値が不正」警告が出る。サブプロジェクトが独自の`custom-commands`を
+        定義するとglobalのカスタムコマンド定義ごと置き換わり、`my-tool-severity`は
+        「認識できないキー」という別原因の警告対象になる。
+        抑止単位がキー名だけだとこの別原因の警告まで失われるため、
+        `(キー名, 警告本文)`の組で抑止することを検証する。
+        """
+        global_path, root_dir = self._setup(
+            tmp_path,
+            global_text=(
+                '[tool.pyfltr]\nmy-tool-severity = "invalid"\n'
+                '[tool.pyfltr.custom-commands.my-tool]\ntype = "linter"\ncommandline = ["echo"]\n'
+            ),
+            project_text="[tool.pyfltr]\n",
+        )
+        origin_config = pyfltr.config.config.load_config(config_dir=root_dir, global_config_path=global_path)
+        assert _count_config_warnings("値が不正") == 1
+
+        sub_dir = tmp_path / "pkg"
+        sub_dir.mkdir()
+        (sub_dir / "pyproject.toml").write_text(
+            '[tool.pyfltr.custom-commands.other-tool]\ntype = "linter"\ncommandline = ["echo"]\n', encoding="utf-8"
+        )
+
+        pyfltr.config.config.load_config(
+            config_dir=sub_dir,
+            global_config_path=global_path,
+            for_subproject=True,
+            suppressed_warning_entries=origin_config.warned_global_only_entries,
+        )
+
+        # 原因が異なるため抑止されず、「認識できません」の警告が発行される。
+        assert _count_config_warnings("認識できません") == 1
+        # 一方、原因まで同一の「値が不正」は起点の1件のままで重複しない。
+        assert _count_config_warnings("値が不正") == 1
+
+    def test_independent_project_misconfigurations_warn_per_subproject(self, tmp_path: pathlib.Path) -> None:
+        """由来判定との併用が保たれ、独立した複数のproject設定の同一誤設定は個別に警告する。
+
+        抑止の粒度をキー名から`(キー名, 警告本文)`へ細かくしても、由来判定
+        （`key_sources`が`{"global"}`）との併用は維持される。
+        globalに存在せず各サブプロジェクトが独自に持つ誤設定は、警告本文が完全一致しても
+        サブプロジェクトごとに警告が発行される（警告本文の完全一致だけで大域的に重複排除する
+        却下案との差異）。
+        """
+        global_path, root_dir = self._setup(
+            tmp_path,
+            global_text="[tool.pyfltr]\n",
+            project_text="[tool.pyfltr]\n",
+        )
+        origin_config = pyfltr.config.config.load_config(config_dir=root_dir, global_config_path=global_path)
+        already_warned: set[pyfltr.config.config.ConfigWarningEntry] = set(origin_config.warned_global_only_entries)
+
+        for name in ("pkg_a", "pkg_b"):
+            sub_dir = tmp_path / name
+            sub_dir.mkdir()
+            (sub_dir / "pyproject.toml").write_text("[tool.pyfltr]\nunknown-key-xyz = true\n", encoding="utf-8")
+            sub_config = pyfltr.config.config.load_config(
+                config_dir=sub_dir,
+                global_config_path=global_path,
+                for_subproject=True,
+                suppressed_warning_entries=frozenset(already_warned),
+            )
+            already_warned |= sub_config.warned_global_only_entries
+
+        assert _count_config_warnings("unknown-key-xyz") == 2
 
 
 # conftest.count_config_warningsを再エクスポート（同モジュール内の参照を統一するため）

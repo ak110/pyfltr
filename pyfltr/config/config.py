@@ -922,6 +922,25 @@ def resolve_retry_kwargs(values: dict[str, typing.Any]) -> dict[str, typing.Any]
     }
 
 
+ConfigWarningEntry = tuple[str, str]
+"""設定検証警告1件を識別する`(設定キー名, 警告本文)`の組。
+
+キー名だけでは同一キーに対する原因の異なる警告
+（例: `my-tool-severity`の「値が不正」と「認識できないキー」）を区別できず、
+モノレポでの重複抑止が別原因の警告まで巻き込むため、本文まで含めて識別する。
+"""
+
+
+class _ConfigWarningEmitter(typing.Protocol):
+    """設定検証警告を発行する呼び出し規約。
+
+    `_make_config_warning_emitter`が生成し、各検証関数へ渡される。
+    """
+
+    def __call__(self, key: str, *, message: str) -> None:
+        """`key`に紐づく検証警告`message`を発行する（抑止対象なら何もしない）。"""
+
+
 @dataclasses.dataclass(frozen=True)
 class Config:
     """pyfltr設定。"""
@@ -931,13 +950,10 @@ class Config:
     """ビルトイン + カスタムの統合コマンドレジストリ"""
     command_names: list[str]
     """コマンドの並び順リスト（ビルトイン順 → カスタムコマンド順）"""
-    key_sources: dict[str, set[str]] = dataclasses.field(default_factory=dict)
-    """`[tool.pyfltr]`の各キーがglobal / projectのどちらに由来するか。
-    `load_config`が`_merge_global_and_project`の戻り値で埋める。空dictは未ロード状態を示す。"""
-    warned_global_only_keys: frozenset[str] = frozenset()
-    """このロードで実際に検証警告を発行し、かつ`key_sources`が`{"global"}`（project側で
-    上書きしていない）だったキーの集合。`resolve_subproject_configs`が次のロードへの
-    抑止対象として引き継ぐために参照する。"""
+    warned_global_only_entries: frozenset[ConfigWarningEntry] = frozenset()
+    """このロードで実際に発行し、かつ対象キーの由来が`{"global"}`（project側で上書きして
+    いない）だった検証警告の集合。`resolve_subproject_configs`が次のロードへの抑止対象として
+    引き継ぐために参照する。"""
 
     def __getitem__(self, key: str) -> typing.Any:
         """設定値を取得。"""
@@ -1052,18 +1068,21 @@ def _merge_global_and_project(
 
 
 def _make_config_warning_emitter(
-    suppressed_warning_keys: frozenset[str],
-    warned_keys: set[str],
-) -> typing.Callable[..., None]:
-    """抑止対象外の設定キーに対して警告を発行するクロージャーを生成する。
+    suppressed_warning_entries: frozenset[ConfigWarningEntry],
+    warned_entries: set[ConfigWarningEntry],
+) -> _ConfigWarningEmitter:
+    """抑止対象外の設定検証警告を発行するクロージャーを生成する。
 
-    発行したキーは`warned_keys`（呼び出し側が用意した可変集合）へ追加する。
+    抑止判定は`(key, message)`の組の一致で行う。同一キーでも原因（警告本文）が
+    異なる警告は抑止しない。
+    発行した組は`warned_entries`（呼び出し側が用意した可変集合）へ追加する。
     """
 
     def emit(key: str, *, message: str) -> None:
-        if key in suppressed_warning_keys:
+        entry = (key, message)
+        if entry in suppressed_warning_entries:
             return
-        warned_keys.add(key)
+        warned_entries.add(entry)
         pyfltr.warnings_.emit_warning(source="config", message=message)
 
     return emit
@@ -1074,7 +1093,7 @@ def load_config(
     *,
     global_config_path: pathlib.Path | None = None,
     for_subproject: bool = False,
-    suppressed_warning_keys: frozenset[str] = frozenset(),
+    suppressed_warning_entries: frozenset[ConfigWarningEntry] = frozenset(),
 ) -> Config:
     """pyproject.tomlとglobal設定ファイルから設定を読み込む。
 
@@ -1096,8 +1115,8 @@ def load_config(
         既定値を維持する。カスタムコマンド定義が不正なら当該定義の登録自体をスキップする。
         `custom-commands`配下がテーブル以外の場合はカスタムコマンド登録処理全体をスキップする。
         由来（global / project）による差は無く、両方に対し同じ警告経路を適用する。
-        ただし`suppressed_warning_keys`と本ロード自身の由来判定の両方が
-        「globalのみ由来」と示すキーの検証警告は発行しない。
+        ただし`suppressed_warning_entries`と本ロード自身の由来判定の両方が
+        「globalのみ由来」と示す警告は発行しない。
         複数バージョンのpyfltrが同じ設定ファイルを参照する状況での停止回避を主目的とする。
       - TOML構文エラーは続行不能のため`ValueError`で停止する。
       - CLI入力経路（`parse_config_value`相当）の値検証は単一バージョン内の対話入力を
@@ -1114,14 +1133,20 @@ def load_config(
             サブプロジェクトのディレクトリを基準にした設定ファイル不在の警告
             （`_warn_config_files`）とリポジトリ単位ツールの衝突警告
             （`_warn_precommit_prek_conflict`）は誤検知になる。`True`のとき両者を抑止する。
-        suppressed_warning_keys: 検証警告の抑止候補キー集合。モノレポのサブプロジェクト解決では、
-            `resolve_subproject_configs`がそのロード開始時点までに実際に発行済みの
-            グローバル由来警告キー集合のスナップショットを渡す。実際に抑止するのは、
-            この集合と本ロード自身の由来判定の両方が「globalのみ由来」と一致したキーだけである
-            （積集合。本ロード自身のproject側がそのキーを独自に上書きしている場合は
+        suppressed_warning_entries: 検証警告の抑止候補`(キー名, 警告本文)`集合。
+            モノレポのサブプロジェクト解決では、`resolve_subproject_configs`がそのロード
+            開始時点までに実際に発行済みのグローバル由来警告のスナップショットを渡す。
+            実際に抑止するのは、この集合に含まれ、かつ本ロード自身の由来判定でも
+            「globalのみ由来」となるキーの警告だけである
+            （本ロード自身のproject側がそのキーを独自に上書きしている場合は
             抑止対象から外れ検証警告が発行される）。
+            抑止の単位をキー名単独ではなく本文まで含めた組にするのは、同一キーに対して
+            原因の異なる警告（値が不正 / キーを認識できない 等）が生じ得るためで、
+            キー名一致だけで抑止すると別原因の警告まで失われる。
+            一方で由来判定との併用は維持しており、独立した複数のproject設定が
+            同じ誤設定を持つ場合の警告は抑止されない。
             起点cwdのロード（`for_subproject=False`）では通常渡さない
-            （既定値`frozenset()`のため積集合は常に空になり、全キーを検証する）。
+            （既定値`frozenset()`のため抑止対象は常に空になり、全キーを検証する）。
     """
     config = create_default_config()
     base = config_dir or pathlib.Path.cwd()
@@ -1149,10 +1174,11 @@ def load_config(
 
     # global / projectをマージ。各キーの由来も記録する。
     tool_pyfltr, key_sources = _merge_global_and_project(global_data, project_data)
-    config.key_sources.update(key_sources)
-    effective_suppressed_warning_keys = frozenset(key for key in suppressed_warning_keys if key_sources.get(key) == {"global"})
-    warned_keys: set[str] = set()
-    emit_config_warning = _make_config_warning_emitter(effective_suppressed_warning_keys, warned_keys)
+    effective_suppressed_entries = frozenset(
+        entry for entry in suppressed_warning_entries if key_sources.get(entry[0]) == {"global"}
+    )
+    warned_entries: set[ConfigWarningEntry] = set()
+    emit_config_warning = _make_config_warning_emitter(effective_suppressed_entries, warned_entries)
 
     # archive/cache系がproject側に書かれていた場合の警告。
     # global側にも当該キーがある場合のみ警告対象（global側に無ければproject値が
@@ -1174,19 +1200,19 @@ def load_config(
     _apply_language_gate(config, tool_pyfltr, emit_config_warning)
     _normalize_config_values(config, tool_pyfltr, emit_config_warning)
     _validate_config(config, emit_config_warning)
-    warned_global_only_keys = frozenset(key for key in warned_keys if key_sources.get(key) == {"global"})
+    warned_global_only_entries = frozenset(entry for entry in warned_entries if key_sources.get(entry[0]) == {"global"})
     _recompute_fast_aliases(config)
     if not for_subproject:
         _warn_config_files(config, base)
         _warn_precommit_prek_conflict(config)
 
-    return dataclasses.replace(config, warned_global_only_keys=warned_global_only_keys)
+    return dataclasses.replace(config, warned_global_only_entries=warned_global_only_entries)
 
 
 def _apply_preset(
     config: Config,
     tool_pyfltr: dict[str, typing.Any],
-    emit_config_warning: typing.Callable[..., None],
+    emit_config_warning: _ConfigWarningEmitter,
 ) -> None:
     """presetキーを読み取り、対応するプリセット設定をconfigに反映する。
 
@@ -1220,7 +1246,7 @@ def _apply_preset(
 def _register_custom_commands(
     config: Config,
     tool_pyfltr: dict[str, typing.Any],
-    emit_config_warning: typing.Callable[..., None],
+    emit_config_warning: _ConfigWarningEmitter,
 ) -> None:
     """custom-commandsエントリを読み取り、各カスタムコマンドをconfigに登録する。
 
@@ -1242,7 +1268,7 @@ def _register_custom_commands(
 def _apply_language_gate(
     config: Config,
     tool_pyfltr: dict[str, typing.Any],
-    emit_config_warning: typing.Callable[..., None],
+    emit_config_warning: _ConfigWarningEmitter,
 ) -> None:
     """言語カテゴリgateを適用する（preset < 言語カテゴリgate < 個別設定）。
 
@@ -1278,7 +1304,7 @@ def _apply_language_gate(
 def _normalize_config_values(
     config: Config,
     tool_pyfltr: dict[str, typing.Any],
-    emit_config_warning: typing.Callable[..., None],
+    emit_config_warning: _ConfigWarningEmitter,
 ) -> None:
     """プリセット・言語カテゴリ以外の設定を適用し、targets/extend-targetsを反映する。
 
@@ -1380,7 +1406,7 @@ def _normalize_config_values(
         config.commands[cmd_name] = dataclasses.replace(config.commands[cmd_name], targets=existing)
 
 
-def _validate_config(config: Config, emit_config_warning: typing.Callable[..., None]) -> None:
+def _validate_config(config: Config, emit_config_warning: _ConfigWarningEmitter) -> None:
     """Runner / severity / hintsのバリデーションを行う。
 
     値が不正な場合は警告を発行し、当該キーの値を既定値（`DEFAULT_CONFIG`）に
@@ -1487,7 +1513,7 @@ def _register_custom_command(
     config: Config,
     name: str,
     definition: dict[str, typing.Any],
-    emit_config_warning: typing.Callable[..., None],
+    emit_config_warning: _ConfigWarningEmitter,
 ) -> None:
     """カスタムコマンドをConfigに登録する。
 
@@ -1687,7 +1713,7 @@ def _extract_removed_command(key: str) -> str | None:
 def _validate_targets_value(
     key: str,
     value: typing.Any,
-    emit_config_warning: typing.Callable[..., None],
+    emit_config_warning: _ConfigWarningEmitter,
 ) -> str | list[str] | None:
     """Targets / extend-targets の値をバリデーション。
 

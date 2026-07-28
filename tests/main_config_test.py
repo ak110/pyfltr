@@ -1,6 +1,6 @@
 """`pyfltr config`サブコマンドのテストコード。
 
-`tests/main_test.py`から分離した（pylintのtoo-many-lines対策）。
+対象サブコマンド単位で見通しを保つため`tests/main_test.py`から分離した。
 """
 
 import json
