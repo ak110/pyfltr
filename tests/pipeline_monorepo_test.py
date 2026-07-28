@@ -372,3 +372,124 @@ def test_monorepo_subproject_config_does_not_warn_missing_repo_level_config(tmp_
 
     messages = [warning["message"] for warning in pyfltr.warnings_.collected_warnings()]
     assert not [message for message in messages if ".pre-commit-config.yaml" in message]
+
+
+def test_monorepo_global_config_warning_is_emitted_once(
+    tmp_path: pathlib.Path,
+    mocker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """モノレポではglobal設定由来の警告を起点cwdのロード時に1回だけ発行する。"""
+    global_path = tmp_path / "global_config.toml"
+    global_path.write_text("[tool.pyfltr]\nunknown-key-xyz = true\n", encoding="utf-8")
+    monkeypatch.setenv("PYFLTR_GLOBAL_CONFIG", str(global_path))
+    _write_pyproject(tmp_path, "root", typos_on=True)
+    _write_pyproject(tmp_path / "pkg_a", "pkg_a", typos_on=True)
+    _write_pyproject(tmp_path / "pkg_b", "pkg_b", typos_on=True)
+    (tmp_path / "root.txt").write_text("root\n", encoding="utf-8")
+    (tmp_path / "pkg_a" / "a.txt").write_text("a\n", encoding="utf-8")
+    (tmp_path / "pkg_b" / "b.txt").write_text("b\n", encoding="utf-8")
+    proc = subprocess.CompletedProcess(["typos"], returncode=0, stdout="")
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
+
+    pyfltr.cli.main.run(
+        [
+            "run",
+            "--work-dir",
+            str(tmp_path),
+            "--commands=typos",
+            "--no-archive",
+            "--no-cache",
+            "--no-gitignore",
+        ]
+    )
+
+    messages = [
+        warning["message"] for warning in pyfltr.warnings_.collected_warnings() if "unknown-key-xyz" in warning["message"]
+    ]
+    assert len(messages) == 1
+
+
+def test_monorepo_global_config_warning_with_origin_override_is_emitted_once(
+    tmp_path: pathlib.Path,
+    mocker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """起点projectがglobalの不正値を正常値で上書きしていても、上書きしない複数の
+    サブプロジェクトにまたがって同じglobal由来の検証警告が重複発行されない。
+
+    `_write_pyproject`は`preset`個別指定に対応しないため、本テストは
+    `pyproject.toml`を直接書き込む。
+    """
+    global_path = tmp_path / "global_config.toml"
+    global_path.write_text("[tool.pyfltr]\npreset = 42\n", encoding="utf-8")
+    monkeypatch.setenv("PYFLTR_GLOBAL_CONFIG", str(global_path))
+    (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latest"\n', encoding="utf-8")
+    for name in ("pkg_a", "pkg_b"):
+        sub_dir = tmp_path / name
+        sub_dir.mkdir()
+        (sub_dir / "pyproject.toml").write_text("[tool.pyfltr]\n", encoding="utf-8")
+        (sub_dir / f"{name}.txt").write_text(f"{name}\n", encoding="utf-8")
+    (tmp_path / "root.txt").write_text("root\n", encoding="utf-8")
+    proc = subprocess.CompletedProcess(["typos"], returncode=0, stdout="")
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
+
+    pyfltr.cli.main.run(
+        [
+            "run",
+            "--work-dir",
+            str(tmp_path),
+            "--commands=typos",
+            "--no-archive",
+            "--no-cache",
+            "--no-gitignore",
+        ]
+    )
+
+    messages = [warning["message"] for warning in pyfltr.warnings_.collected_warnings() if "preset" in warning["message"]]
+    assert len(messages) == 1
+
+
+def test_monorepo_root_project_own_validation_warning_is_emitted_once(
+    tmp_path: pathlib.Path,
+    mocker,
+) -> None:
+    """起点cwd自身がサブプロジェクトとして検出される場合、起点project固有の誤設定に
+    由来する検証警告が起点ロード分と`resolve_subproject_configs`の再ロード分で
+    重複発行されない。
+
+    起点cwd自身のマーカー（`pyproject.toml`）検出によりサブプロジェクト一覧へ
+    起点自身（`relative == "."`）が含まれる場合、`resolve_subproject_configs`が
+    起点configを再ロードすると、global由来ではない起点project固有の誤設定
+    （global設定には存在しないキー）まで再検証され重複発行される。
+    `already_warned`によるglobal由来キーの累積抑止はこのケースへ対応できないため、
+    起点cwd自身は再ロードせず`config`引数をそのまま再利用する必要がある。
+    """
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "root"\n[tool.pyfltr]\nunknown-root-only-key-xyz = true\ntypos = true\n',
+        encoding="utf-8",
+    )
+    _write_pyproject(tmp_path / "pkg_a", "pkg_a", typos_on=True)
+    (tmp_path / "root.txt").write_text("root\n", encoding="utf-8")
+    (tmp_path / "pkg_a" / "a.txt").write_text("a\n", encoding="utf-8")
+    proc = subprocess.CompletedProcess(["typos"], returncode=0, stdout="")
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
+
+    pyfltr.cli.main.run(
+        [
+            "run",
+            "--work-dir",
+            str(tmp_path),
+            "--commands=typos",
+            "--no-archive",
+            "--no-cache",
+            "--no-gitignore",
+        ]
+    )
+
+    messages = [
+        warning["message"]
+        for warning in pyfltr.warnings_.collected_warnings()
+        if "unknown-root-only-key-xyz" in warning["message"]
+    ]
+    assert len(messages) == 1

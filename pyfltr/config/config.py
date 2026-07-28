@@ -931,6 +931,13 @@ class Config:
     """ビルトイン + カスタムの統合コマンドレジストリ"""
     command_names: list[str]
     """コマンドの並び順リスト（ビルトイン順 → カスタムコマンド順）"""
+    key_sources: dict[str, set[str]] = dataclasses.field(default_factory=dict)
+    """`[tool.pyfltr]`の各キーがglobal / projectのどちらに由来するか。
+    `load_config`が`_merge_global_and_project`の戻り値で埋める。空dictは未ロード状態を示す。"""
+    warned_global_only_keys: frozenset[str] = frozenset()
+    """このロードで実際に検証警告を発行し、かつ`key_sources`が`{"global"}`（project側で
+    上書きしていない）だったキーの集合。`resolve_subproject_configs`が次のロードへの
+    抑止対象として引き継ぐために参照する。"""
 
     def __getitem__(self, key: str) -> typing.Any:
         """設定値を取得。"""
@@ -1044,11 +1051,30 @@ def _merge_global_and_project(
     return merged, key_sources
 
 
+def _make_config_warning_emitter(
+    suppressed_warning_keys: frozenset[str],
+    warned_keys: set[str],
+) -> typing.Callable[..., None]:
+    """抑止対象外の設定キーに対して警告を発行するクロージャーを生成する。
+
+    発行したキーは`warned_keys`（呼び出し側が用意した可変集合）へ追加する。
+    """
+
+    def emit(key: str, *, message: str) -> None:
+        if key in suppressed_warning_keys:
+            return
+        warned_keys.add(key)
+        pyfltr.warnings_.emit_warning(source="config", message=message)
+
+    return emit
+
+
 def load_config(
     config_dir: pathlib.Path | None = None,
     *,
     global_config_path: pathlib.Path | None = None,
     for_subproject: bool = False,
+    suppressed_warning_keys: frozenset[str] = frozenset(),
 ) -> Config:
     """pyproject.tomlとglobal設定ファイルから設定を読み込む。
 
@@ -1070,6 +1096,8 @@ def load_config(
         既定値を維持する。カスタムコマンド定義が不正なら当該定義の登録自体をスキップする。
         `custom-commands`配下がテーブル以外の場合はカスタムコマンド登録処理全体をスキップする。
         由来（global / project）による差は無く、両方に対し同じ警告経路を適用する。
+        ただし`suppressed_warning_keys`と本ロード自身の由来判定の両方が
+        「globalのみ由来」と示すキーの検証警告は発行しない。
         複数バージョンのpyfltrが同じ設定ファイルを参照する状況での停止回避を主目的とする。
       - TOML構文エラーは続行不能のため`ValueError`で停止する。
       - CLI入力経路（`parse_config_value`相当）の値検証は単一バージョン内の対話入力を
@@ -1086,6 +1114,14 @@ def load_config(
             サブプロジェクトのディレクトリを基準にした設定ファイル不在の警告
             （`_warn_config_files`）とリポジトリ単位ツールの衝突警告
             （`_warn_precommit_prek_conflict`）は誤検知になる。`True`のとき両者を抑止する。
+        suppressed_warning_keys: 検証警告の抑止候補キー集合。モノレポのサブプロジェクト解決では、
+            `resolve_subproject_configs`がそのロード開始時点までに実際に発行済みの
+            グローバル由来警告キー集合のスナップショットを渡す。実際に抑止するのは、
+            この集合と本ロード自身の由来判定の両方が「globalのみ由来」と一致したキーだけである
+            （積集合。本ロード自身のproject側がそのキーを独自に上書きしている場合は
+            抑止対象から外れ検証警告が発行される）。
+            起点cwdのロード（`for_subproject=False`）では通常渡さない
+            （既定値`frozenset()`のため積集合は常に空になり、全キーを検証する）。
     """
     config = create_default_config()
     base = config_dir or pathlib.Path.cwd()
@@ -1113,6 +1149,10 @@ def load_config(
 
     # global / projectをマージ。各キーの由来も記録する。
     tool_pyfltr, key_sources = _merge_global_and_project(global_data, project_data)
+    config.key_sources.update(key_sources)
+    effective_suppressed_warning_keys = frozenset(key for key in suppressed_warning_keys if key_sources.get(key) == {"global"})
+    warned_keys: set[str] = set()
+    emit_config_warning = _make_config_warning_emitter(effective_suppressed_warning_keys, warned_keys)
 
     # archive/cache系がproject側に書かれていた場合の警告。
     # global側にも当該キーがある場合のみ警告対象（global側に無ければproject値が
@@ -1129,20 +1169,25 @@ def load_config(
             message=(f"archive/cache系のキーはglobal設定が優先されるため、project側の値は無視されます: {keys_str}"),
         )
 
-    _apply_preset(config, tool_pyfltr)
-    _register_custom_commands(config, tool_pyfltr)
-    _apply_language_gate(config, tool_pyfltr)
-    _normalize_config_values(config, tool_pyfltr)
-    _validate_config(config)
+    _apply_preset(config, tool_pyfltr, emit_config_warning)
+    _register_custom_commands(config, tool_pyfltr, emit_config_warning)
+    _apply_language_gate(config, tool_pyfltr, emit_config_warning)
+    _normalize_config_values(config, tool_pyfltr, emit_config_warning)
+    _validate_config(config, emit_config_warning)
+    warned_global_only_keys = frozenset(key for key in warned_keys if key_sources.get(key) == {"global"})
     _recompute_fast_aliases(config)
     if not for_subproject:
         _warn_config_files(config, base)
         _warn_precommit_prek_conflict(config)
 
-    return config
+    return dataclasses.replace(config, warned_global_only_keys=warned_global_only_keys)
 
 
-def _apply_preset(config: Config, tool_pyfltr: dict[str, typing.Any]) -> None:
+def _apply_preset(
+    config: Config,
+    tool_pyfltr: dict[str, typing.Any],
+    emit_config_warning: typing.Callable[..., None],
+) -> None:
     """presetキーを読み取り、対応するプリセット設定をconfigに反映する。
 
     値が不正な場合（型不一致・未知名・削除済みpreset）は警告して未指定扱いに戻し、
@@ -1150,8 +1195,8 @@ def _apply_preset(config: Config, tool_pyfltr: dict[str, typing.Any]) -> None:
     """
     raw = tool_pyfltr.get("preset", "")
     if not isinstance(raw, str):
-        pyfltr.warnings_.emit_warning(
-            source="config",
+        emit_config_warning(
+            "preset",
             message=f"設定値 `preset` の型が不正です: 期待 文字列、実値 {_japanese_type_label(raw)}",
         )
         return
@@ -1160,18 +1205,23 @@ def _apply_preset(config: Config, tool_pyfltr: dict[str, typing.Any]) -> None:
         return
     if preset in _PRESETS:
         config.values.update(_PRESETS[preset])
+        config.values["preset"] = preset
         return
     if preset in _REMOVED_PRESETS:
-        pyfltr.warnings_.emit_warning(source="config", message=_REMOVED_PRESETS[preset])
+        emit_config_warning("preset", message=_REMOVED_PRESETS[preset])
         return
     suggestions = _close_matches(preset, _PRESETS.keys())
     message = f"`preset` の値が不正です: {preset!r}（許容値: {', '.join(_PRESETS.keys())}）"
     if suggestions:
         message = f"{message}。もしかして: {', '.join(suggestions)}"
-    pyfltr.warnings_.emit_warning(source="config", message=message)
+    emit_config_warning("preset", message=message)
 
 
-def _register_custom_commands(config: Config, tool_pyfltr: dict[str, typing.Any]) -> None:
+def _register_custom_commands(
+    config: Config,
+    tool_pyfltr: dict[str, typing.Any],
+    emit_config_warning: typing.Callable[..., None],
+) -> None:
     """custom-commandsエントリを読み取り、各カスタムコマンドをconfigに登録する。
 
     `custom-commands`配下がテーブル以外の場合は警告してカスタムコマンド登録処理全体を
@@ -1179,17 +1229,21 @@ def _register_custom_commands(config: Config, tool_pyfltr: dict[str, typing.Any]
     """
     custom_commands = tool_pyfltr.get("custom-commands", {})
     if not isinstance(custom_commands, dict):
-        pyfltr.warnings_.emit_warning(
-            source="config",
+        emit_config_warning(
+            "custom-commands",
             message="`custom-commands` はテーブルで指定してください: 例 [tool.pyfltr.custom-commands.svelte-check]",
         )
         return
     for name, definition in custom_commands.items():
         name = name.replace("_", "-")
-        _register_custom_command(config, name, definition)
+        _register_custom_command(config, name, definition, emit_config_warning)
 
 
-def _apply_language_gate(config: Config, tool_pyfltr: dict[str, typing.Any]) -> None:
+def _apply_language_gate(
+    config: Config,
+    tool_pyfltr: dict[str, typing.Any],
+    emit_config_warning: typing.Callable[..., None],
+) -> None:
     """言語カテゴリgateを適用する（preset < 言語カテゴリgate < 個別設定）。
 
     v3.0.0でpython / javascript / rust / dotnetを同じ枠組みのカテゴリキーに統一した。
@@ -1208,8 +1262,8 @@ def _apply_language_gate(config: Config, tool_pyfltr: dict[str, typing.Any]) -> 
         if isinstance(raw, bool):
             enabled = raw
         else:
-            pyfltr.warnings_.emit_warning(
-                source="config",
+            emit_config_warning(
+                category_key,
                 message=f"設定値 `{category_key}` の型が不正です: 期待 真偽値、実値 {_japanese_type_label(raw)}",
             )
             enabled = False
@@ -1224,6 +1278,7 @@ def _apply_language_gate(config: Config, tool_pyfltr: dict[str, typing.Any]) -> 
 def _normalize_config_values(
     config: Config,
     tool_pyfltr: dict[str, typing.Any],
+    emit_config_warning: typing.Callable[..., None],
 ) -> None:
     """プリセット・言語カテゴリ以外の設定を適用し、targets/extend-targetsを反映する。
 
@@ -1232,7 +1287,7 @@ def _normalize_config_values(
     キーは警告して既定値を維持する。由来（global / project）に依らず同じ警告経路を
     適用する（複数バージョン混在時の停止回避が目的）。
     """
-    skip_keys = ("custom-commands", *(key for key, _ in LANGUAGE_CATEGORIES))
+    skip_keys = ("preset", "custom-commands", *(key for key, _ in LANGUAGE_CATEGORIES))
     targets_overrides: dict[str, str | list[str]] = {}
     extend_targets_map: dict[str, str | list[str]] = {}
 
@@ -1243,8 +1298,8 @@ def _normalize_config_values(
         # "pyupgrade" / "pyupgrade-path" / "pyupgrade-args" / "pyupgrade-fast"などを網羅する。
         removed_owner = _extract_removed_command(key)
         if removed_owner is not None:
-            pyfltr.warnings_.emit_warning(
-                source="config",
+            emit_config_warning(
+                key,
                 message=(
                     f'"{key}" は v3.0.0 で削除されたツール "{removed_owner}" 向けの設定である。'
                     "5 ツール (pyupgrade / autoflake / isort / black / pflake8) は ruff への統合により削除された。"
@@ -1257,8 +1312,8 @@ def _normalize_config_values(
             cmd_name = key.removesuffix("-exclude")
             if cmd_name in config.commands:
                 if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
-                    pyfltr.warnings_.emit_warning(
-                        source="config",
+                    emit_config_warning(
+                        key,
                         message=f'`{key}` はstr型のリストで指定してください: 例 ["vendor", "gen_*.py"]',
                     )
                     continue
@@ -1268,7 +1323,7 @@ def _normalize_config_values(
         if key.endswith("-extend-targets"):
             cmd_name = key.removesuffix("-extend-targets")
             if cmd_name in config.commands:
-                validated = _validate_targets_value(key, value)
+                validated = _validate_targets_value(key, value, emit_config_warning)
                 if validated is not None:
                     extend_targets_map[cmd_name] = validated
                 continue
@@ -1280,8 +1335,8 @@ def _normalize_config_values(
             cmd_name = key.removesuffix("-extend-args")
             if cmd_name in config.commands:
                 if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
-                    pyfltr.warnings_.emit_warning(
-                        source="config",
+                    emit_config_warning(
+                        key,
                         message=f'`{key}` はstr型のリストで指定してください: 例 ["--exclude=foo"]',
                     )
                     continue
@@ -1291,21 +1346,21 @@ def _normalize_config_values(
         if key.endswith("-targets"):
             cmd_name = key.removesuffix("-targets")
             if cmd_name in config.commands:
-                validated = _validate_targets_value(key, value)
+                validated = _validate_targets_value(key, value, emit_config_warning)
                 if validated is not None:
                     targets_overrides[cmd_name] = validated
                 continue
         if key not in config.values:
-            pyfltr.warnings_.emit_warning(
-                source="config",
+            emit_config_warning(
+                key,
                 message=format_unknown_key_message(key, config.values.keys()),
             )
             continue
         if not isinstance(value, type(config.values[key])):  # 簡易チェック
             expected_label = _japanese_type_label(config.values[key])
             actual_label = _japanese_type_label(value)
-            pyfltr.warnings_.emit_warning(
-                source="config",
+            emit_config_warning(
+                key,
                 message=f"設定値 `{key}` の型が不正です: 期待 {expected_label}、実値 {actual_label}",
             )
             continue
@@ -1325,7 +1380,7 @@ def _normalize_config_values(
         config.commands[cmd_name] = dataclasses.replace(config.commands[cmd_name], targets=existing)
 
 
-def _validate_config(config: Config) -> None:
+def _validate_config(config: Config, emit_config_warning: typing.Callable[..., None]) -> None:
     """Runner / severity / hintsのバリデーションを行う。
 
     値が不正な場合は警告を発行し、当該キーの値を既定値（`DEFAULT_CONFIG`）に
@@ -1342,8 +1397,8 @@ def _validate_config(config: Config) -> None:
     for runner_key, allowed in _global_runner_specs:
         runner_value = config.values[runner_key]
         if runner_value not in allowed:
-            pyfltr.warnings_.emit_warning(
-                source="config",
+            emit_config_warning(
+                runner_key,
                 message=f"`{runner_key}` の値が不正です: {runner_value!r}（許容値: {', '.join(allowed)}）",
             )
             config.values[runner_key] = DEFAULT_CONFIG[runner_key]
@@ -1356,8 +1411,8 @@ def _validate_config(config: Config) -> None:
         if not key.endswith("-runner") or key in _global_runner_keys:
             continue
         if value not in COMMAND_RUNNERS:
-            pyfltr.warnings_.emit_warning(
-                source="config",
+            emit_config_warning(
+                key,
                 message=f"`{key}` の値が不正です: {value!r}（許容値: {', '.join(COMMAND_RUNNERS)}）",
             )
             config.values[key] = DEFAULT_CONFIG.get(key, "direct")
@@ -1370,8 +1425,8 @@ def _validate_config(config: Config) -> None:
         if not key.endswith("-severity"):
             continue
         if value not in SEVERITY_VALUES:
-            pyfltr.warnings_.emit_warning(
-                source="config",
+            emit_config_warning(
+                key,
                 message=f"`{key}` の値が不正です: {value!r}（許容値: {', '.join(SEVERITY_VALUES)}）",
             )
             config.values[key] = "error"
@@ -1384,8 +1439,8 @@ def _validate_config(config: Config) -> None:
         if not key.endswith("-hints"):
             continue
         if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-            pyfltr.warnings_.emit_warning(
-                source="config",
+            emit_config_warning(
+                key,
                 message=f'`{key}` は文字列のリストで指定してください: 例 ["注意1", "注意2"]、実値 {value!r}',
             )
             config.values[key] = []
@@ -1428,7 +1483,12 @@ def _warn_precommit_prek_conflict(config: Config) -> None:
         )
 
 
-def _register_custom_command(config: Config, name: str, definition: dict[str, typing.Any]) -> None:
+def _register_custom_command(
+    config: Config,
+    name: str,
+    definition: dict[str, typing.Any],
+    emit_config_warning: typing.Callable[..., None],
+) -> None:
     """カスタムコマンドをConfigに登録する。
 
     定義のいずれかが不正と判定された場合は警告を発行して当該カスタムコマンドの登録自体を
@@ -1437,8 +1497,8 @@ def _register_custom_command(config: Config, name: str, definition: dict[str, ty
     """
     # 名前衝突チェック
     if name in BUILTIN_COMMANDS:
-        pyfltr.warnings_.emit_warning(
-            source="config",
+        emit_config_warning(
+            "custom-commands",
             message=f"カスタムコマンド `{name}` がビルトインコマンドと衝突しています",
         )
         return
@@ -1446,8 +1506,8 @@ def _register_custom_command(config: Config, name: str, definition: dict[str, ty
     # type (必須)
     cmd_type = definition.get("type")
     if cmd_type not in ("formatter", "linter", "tester"):
-        pyfltr.warnings_.emit_warning(
-            source="config",
+        emit_config_warning(
+            "custom-commands",
             message=f"カスタムコマンド `{name}` の `type` が不正です: {cmd_type!r}（許容値: formatter, linter, tester）",
         )
         return
@@ -1455,8 +1515,8 @@ def _register_custom_command(config: Config, name: str, definition: dict[str, ty
     # path (省略時はコマンド名)
     path = definition.get("path", name)
     if not isinstance(path, str):
-        pyfltr.warnings_.emit_warning(
-            source="config",
+        emit_config_warning(
+            "custom-commands",
             message=f"カスタムコマンド `{name}` の `path` は文字列で指定してください",
         )
         return
@@ -1464,8 +1524,8 @@ def _register_custom_command(config: Config, name: str, definition: dict[str, ty
     # args (省略時は空リスト)
     args = definition.get("args", [])
     if not isinstance(args, list):
-        pyfltr.warnings_.emit_warning(
-            source="config",
+        emit_config_warning(
+            "custom-commands",
             message=f"カスタムコマンド `{name}` の `args` はリストで指定してください",
         )
         return
@@ -1474,8 +1534,8 @@ def _register_custom_command(config: Config, name: str, definition: dict[str, ty
     # 既定値の`args`を保ったまま末尾へ追加する引数。ビルトインコマンドと同じ意味づけ。
     extend_args = definition.get("extend-args", definition.get("extend_args", []))
     if not isinstance(extend_args, list) or not all(isinstance(item, str) for item in extend_args):
-        pyfltr.warnings_.emit_warning(
-            source="config",
+        emit_config_warning(
+            "custom-commands",
             message=f"カスタムコマンド `{name}` の `extend-args` は文字列のリストで指定してください",
         )
         return
@@ -1483,8 +1543,8 @@ def _register_custom_command(config: Config, name: str, definition: dict[str, ty
     # fix-args（省略可。省略時はfixモード非対応として扱う）
     fix_args = definition.get("fix-args", definition.get("fix_args"))
     if fix_args is not None and not isinstance(fix_args, list):
-        pyfltr.warnings_.emit_warning(
-            source="config",
+        emit_config_warning(
+            "custom-commands",
             message=f"カスタムコマンド `{name}` の `fix-args` はリストで指定してください",
         )
         return
@@ -1500,8 +1560,8 @@ def _register_custom_command(config: Config, name: str, definition: dict[str, ty
         # list[str]を構築する。
         targets = [str(item) for item in raw_targets]
     else:
-        pyfltr.warnings_.emit_warning(
-            source="config",
+        emit_config_warning(
+            "custom-commands",
             message=f"カスタムコマンド `{name}` の `targets` は文字列または文字列のリストで指定してください",
         )
         return
@@ -1510,23 +1570,23 @@ def _register_custom_command(config: Config, name: str, definition: dict[str, ty
     error_pattern = definition.get("error-pattern", definition.get("error_pattern"))
     if error_pattern is not None:
         if not isinstance(error_pattern, str):
-            pyfltr.warnings_.emit_warning(
-                source="config",
+            emit_config_warning(
+                "custom-commands",
                 message=f"カスタムコマンド `{name}` の `error-pattern` は文字列で指定してください",
             )
             return
         try:
             compiled = re.compile(error_pattern)
         except re.error as e:
-            pyfltr.warnings_.emit_warning(
-                source="config",
+            emit_config_warning(
+                "custom-commands",
                 message=f"カスタムコマンド `{name}` の `error-pattern` が不正な正規表現です: {e}",
             )
             return
         missing_group = next((g for g in ("file", "line", "message") if g not in compiled.groupindex), None)
         if missing_group is not None:
-            pyfltr.warnings_.emit_warning(
-                source="config",
+            emit_config_warning(
+                "custom-commands",
                 message=f"カスタムコマンド `{name}` の `error-pattern` に `{missing_group}` 名前付きグループが必要です",
             )
             return
@@ -1534,8 +1594,8 @@ def _register_custom_command(config: Config, name: str, definition: dict[str, ty
     # config-files（省略可。設定ファイル候補のglobパターン）
     raw_config_files: typing.Any = definition.get("config-files", definition.get("config_files", []))
     if not isinstance(raw_config_files, list) or not all(isinstance(item, str) for item in raw_config_files):
-        pyfltr.warnings_.emit_warning(
-            source="config",
+        emit_config_warning(
+            "custom-commands",
             message=f"カスタムコマンド `{name}` の `config-files` は文字列のリストで指定してください",
         )
         return
@@ -1544,8 +1604,8 @@ def _register_custom_command(config: Config, name: str, definition: dict[str, ty
     # fast（省略時はFalse）
     fast = definition.get("fast", False)
     if not isinstance(fast, bool):
-        pyfltr.warnings_.emit_warning(
-            source="config",
+        emit_config_warning(
+            "custom-commands",
             message=f"カスタムコマンド `{name}` の `fast` は真偽値で指定してください",
         )
         return
@@ -1553,8 +1613,8 @@ def _register_custom_command(config: Config, name: str, definition: dict[str, ty
     # pass-filenames（省略時はTrue）
     pass_filenames = definition.get("pass-filenames", definition.get("pass_filenames", True))
     if not isinstance(pass_filenames, bool):
-        pyfltr.warnings_.emit_warning(
-            source="config",
+        emit_config_warning(
+            "custom-commands",
             message=f"カスタムコマンド `{name}` の `pass-filenames` は真偽値で指定してください",
         )
         return
@@ -1562,8 +1622,8 @@ def _register_custom_command(config: Config, name: str, definition: dict[str, ty
     # severity（省略時は "error"）。許容値以外は警告して登録スキップ。
     raw_severity: typing.Any = definition.get("severity", "error")
     if raw_severity not in SEVERITY_VALUES:
-        pyfltr.warnings_.emit_warning(
-            source="config",
+        emit_config_warning(
+            "custom-commands",
             message=(
                 f"カスタムコマンド `{name}` の `severity` の値が不正です: "
                 f"{raw_severity!r}（許容値: {', '.join(SEVERITY_VALUES)}）"
@@ -1575,8 +1635,8 @@ def _register_custom_command(config: Config, name: str, definition: dict[str, ty
     # hints（省略時は空リスト。要素はstr）。
     raw_hints: typing.Any = definition.get("hints", [])
     if not isinstance(raw_hints, list) or not all(isinstance(item, str) for item in raw_hints):
-        pyfltr.warnings_.emit_warning(
-            source="config",
+        emit_config_warning(
+            "custom-commands",
             message=f"カスタムコマンド `{name}` の `hints` は文字列のリストで指定してください",
         )
         return
@@ -1624,7 +1684,11 @@ def _extract_removed_command(key: str) -> str | None:
     return None
 
 
-def _validate_targets_value(key: str, value: typing.Any) -> str | list[str] | None:
+def _validate_targets_value(
+    key: str,
+    value: typing.Any,
+    emit_config_warning: typing.Callable[..., None],
+) -> str | list[str] | None:
     """Targets / extend-targets の値をバリデーション。
 
     値が不正な場合は警告を発行し、`None`を返す。呼び出し側は`None`を受け取ったら
@@ -1634,8 +1698,8 @@ def _validate_targets_value(key: str, value: typing.Any) -> str | list[str] | No
         return value
     if isinstance(value, list) and all(isinstance(item, str) for item in value):
         return [str(item) for item in value]
-    pyfltr.warnings_.emit_warning(
-        source="config",
+    emit_config_warning(
+        key,
         message=f"`{key}` は文字列または文字列のリストで指定してください",
     )
     return None

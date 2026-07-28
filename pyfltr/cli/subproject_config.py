@@ -7,6 +7,17 @@
 `for_subproject=True`を渡すのは、設定ファイル不在の警告をサブプロジェクトのディレクトリ
 基準で発行させないため（`.pre-commit-config.yaml`等はリポジトリルートに配置され、
 `config_arg_template`による設定注入も起点cwd直下から解決される）。
+
+`suppressed_warning_keys`には、ループ開始時点までに実際に発行済みのグローバル由来警告キー集合の
+スナップショットを渡す。起点`config`（本モジュールが引数として受け取る、起点cwdで
+既にロード済みのConfig）が保持する`warned_global_only_keys`を初期値とし、各サブプロジェクトの
+`load_config`呼び出し後に戻り値の`warned_global_only_keys`を統合して更新する。
+起点projectがglobalの不正値を正常値で上書きしていた場合、起点では警告が発行されないため
+初期値には含まれないが、その後最初に不正値へ遭遇したサブプロジェクトが警告を発行し、
+以降のサブプロジェクトへ抑止対象として引き継がれる。これにより実行全体で警告が
+ちょうど1回だけ発行される（1個のロード結果だけを基準にする静的な積集合方式は、
+複数の非上書きサブプロジェクトが並ぶ場合に重複警告を防げないため採らない。詳細は
+「却下した代替案」参照）。
 """
 
 from __future__ import annotations
@@ -47,11 +58,26 @@ def resolve_subproject_configs(
     再適用してから返す（継承時は継承元の値をそのまま使う）。
     """
     subproject_configs: dict[pathlib.Path, pyfltr.config.config.Config] = {}
+    already_warned: set[str] = set(config.warned_global_only_keys)
     # `pyproject.toml`を持つサブプロジェクトを先に解決して継承元候補にする（最近接判定に使うため）。
     pyproject_configs: dict[pathlib.Path, pyfltr.config.config.Config] = {}
     for sub in subprojects:
-        if (sub.cwd / "pyproject.toml").is_file():
-            pyproject_configs[sub.cwd] = pyfltr.config.config.load_config(config_dir=sub.cwd, for_subproject=True)
+        if not (sub.cwd / "pyproject.toml").is_file():
+            continue
+        if sub.relative == ".":
+            # 起点cwd自身は`config`引数として既にロード済みのため再ロードしない。
+            # 再ロードすると、起点project自身の誤設定に由来する検証警告が起点ロード分と
+            # 合わせて重複発行される（global由来キーの累積抑止は`already_warned`が担うが、
+            # project由来の警告はこの累積の対象外のため別途の対処が要る）。
+            pyproject_configs[sub.cwd] = config
+            continue
+        sub_config = pyfltr.config.config.load_config(
+            config_dir=sub.cwd,
+            for_subproject=True,
+            suppressed_warning_keys=frozenset(already_warned),
+        )
+        already_warned |= sub_config.warned_global_only_keys
+        pyproject_configs[sub.cwd] = sub_config
     for sub in subprojects:
         if sub.cwd in pyproject_configs:
             base_config = pyproject_configs[sub.cwd]
