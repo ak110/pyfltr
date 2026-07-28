@@ -21,7 +21,9 @@ def _flatten_comma_separated(values: list[str]) -> list[str]:
     return flattened
 
 
-def apply_cli_overrides(config: pyfltr.config.config.Config, args: argparse.Namespace) -> None:
+def apply_cli_overrides(
+    config: pyfltr.config.config.Config, args: argparse.Namespace, *, warn_unknown_command: bool = True
+) -> None:
     """CLIオプションによるconfig上書きを適用する。
 
     起点configとサブプロジェクト別configの双方へ同一に適用し、`--jobs`・`--no-exclude`・
@@ -30,7 +32,17 @@ def apply_cli_overrides(config: pyfltr.config.config.Config, args: argparse.Name
     `--no-fix`・`--ci` は `config.values` ではなく `args` 側に作用するためここでは扱わない。
 
     `--enable` と `--disable` が同一コマンドに指定された場合は `--enable` を優先する。
-    未知のコマンド名を指定された場合は警告のうえ無視する。
+    未知のコマンド名を指定された場合は当該指定を無視する。
+
+    Args:
+        config: 上書き対象のconfig。`config.values`を直接書き換える。
+        args: パース済みのCLI引数。
+        warn_unknown_command: 未知のコマンド名に対する警告を発行するか。
+            モノレポでは本関数が起点1回とサブプロジェクトごとに1回ずつ呼ばれるため、
+            既定の`True`で呼ぶのは起点だけとし、サブプロジェクトへの再適用
+            （`resolve_subproject_configs`）は`False`を渡して値の反映のみ行う。
+            CLI引数はサブプロジェクト間で共通であり、警告内容も同一になるため、
+            発行を起点へ集約してもサブプロジェクト固有の情報は失われない。
     """
     if args.jobs is not None:
         config.values["jobs"] = args.jobs
@@ -54,6 +66,9 @@ def apply_cli_overrides(config: pyfltr.config.config.Config, args: argparse.Name
                 if not name:
                     continue
                 if name not in config.commands:
-                    pyfltr.warnings_.emit_warning(source="cli", message=f"`--{flag}={name}` は未知のコマンド名のため無視します")
+                    if warn_unknown_command:
+                        pyfltr.warnings_.emit_warning(
+                            source="cli", message=f"`--{flag}={name}` は未知のコマンド名のため無視します"
+                        )
                     continue
                 config.values[name] = enabled

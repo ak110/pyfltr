@@ -493,3 +493,41 @@ def test_monorepo_root_project_own_validation_warning_is_emitted_once(
         if "unknown-root-only-key-xyz" in warning["message"]
     ]
     assert len(messages) == 1
+
+
+def test_monorepo_unknown_command_name_warning_is_emitted_once(
+    tmp_path: pathlib.Path,
+    mocker,
+) -> None:
+    """`--enable`に未知のコマンド名を渡したときの警告を起点で1回だけ発行する。
+
+    `apply_cli_overrides`は起点（`run_pipeline`）と各サブプロジェクト
+    （`resolve_subproject_configs`）の双方から呼ばれる。CLI引数はサブプロジェクト間で
+    共通のため、サブプロジェクトごとに警告を発行するとサブプロジェクト数だけ
+    同一メッセージが重複する。
+    """
+    _write_pyproject(tmp_path, "root", typos_on=True)
+    for name in ("pkg_a", "pkg_b", "pkg_c"):
+        _write_pyproject(tmp_path / name, name, typos_on=True)
+        (tmp_path / name / f"{name}.txt").write_text(f"{name}\n", encoding="utf-8")
+    (tmp_path / "root.txt").write_text("root\n", encoding="utf-8")
+    proc = subprocess.CompletedProcess(["typos"], returncode=0, stdout="")
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
+
+    pyfltr.cli.main.run(
+        [
+            "run",
+            "--work-dir",
+            str(tmp_path),
+            "--commands=typos",
+            "--enable=no-such-command-xyz",
+            "--no-archive",
+            "--no-cache",
+            "--no-gitignore",
+        ]
+    )
+
+    messages = [
+        warning["message"] for warning in pyfltr.warnings_.collected_warnings() if "no-such-command-xyz" in warning["message"]
+    ]
+    assert len(messages) == 1

@@ -90,6 +90,8 @@ def resolve_subproject_configs(
             else:
                 base_config = config  # 起点config
         sub_config = dataclasses.replace(base_config, values=copy.deepcopy(base_config.values))
-        pyfltr.cli.overrides.apply_cli_overrides(sub_config, args)
+        # 未知コマンド名の警告は起点（`run_pipeline`）で既に発行済み。CLI引数はサブプロジェクト間で
+        # 共通のため、ここで再発行するとサブプロジェクト数だけ同一メッセージが重複する。
+        pyfltr.cli.overrides.apply_cli_overrides(sub_config, args, warn_unknown_command=False)
         subproject_configs[sub.cwd] = sub_config
     return subproject_configs
