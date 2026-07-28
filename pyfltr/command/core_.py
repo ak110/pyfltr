@@ -67,8 +67,8 @@ class ExecutionBaseContext:
     subproject_configs: "dict[pathlib.Path, pyfltr.config.config.Config]" = dataclasses.field(default_factory=dict)
     """サブプロジェクト cwd（絶対パス）からそのサブプロジェクト配下の `Config` への辞書。
 
-    各サブプロジェクトで `load_config(config_dir=cwd)` を解決し、起点と同一のCLIオーバーライドを
-    再適用した結果を `run_pipeline` が事前構築して格納する。
+    各サブプロジェクトで `load_config(config_dir=cwd, for_subproject=True)` を解決し、
+    起点と同一のCLIオーバーライドを再適用した結果を `run_pipeline` が事前構築して格納する。
     `subproject_aware=True` のツール起動時に当該サブプロジェクトの設定（ツールのON/OFF・除外・
     targets 等）を参照し、親子でON/OFFが異なる両方向を尊重する。
     """

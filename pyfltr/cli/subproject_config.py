@@ -1,8 +1,12 @@
 """サブプロジェクト別configの解決。
 
 `run_pipeline`から呼び出される。各サブプロジェクトの`pyproject.toml`を
-`load_config(config_dir=cwd)`で個別解決し、`pyproject.toml`を持たないサブプロジェクト
-（`Cargo.toml`単独・`*.csproj`単独等）は最近接祖先の設定を継承する。
+`load_config(config_dir=cwd, for_subproject=True)`で個別解決し、`pyproject.toml`を持たない
+サブプロジェクト（`Cargo.toml`単独・`*.csproj`単独等）は最近接祖先の設定を継承する。
+
+`for_subproject=True`を渡すのは、設定ファイル不在の警告をサブプロジェクトのディレクトリ
+基準で発行させないため（`.pre-commit-config.yaml`等はリポジトリルートに配置され、
+`config_arg_template`による設定注入も起点cwd直下から解決される）。
 """
 
 from __future__ import annotations
@@ -35,7 +39,8 @@ def resolve_subproject_configs(
 ) -> dict[pathlib.Path, pyfltr.config.config.Config]:
     """サブプロジェクト別configを解決して返す。
 
-    `pyproject.toml`を持つサブプロジェクトは`load_config(config_dir=cwd)`で個別解決する。
+    `pyproject.toml`を持つサブプロジェクトは`load_config(config_dir=cwd, for_subproject=True)`で
+    個別解決する。
     持たないサブプロジェクトは、真の祖先で`pyproject.toml`を持つサブプロジェクトのうち
     深度最深のものを継承元とする。該当祖先が無ければ起点configを継承する。
     いずれの経路でも起点と同一のCLIオーバーライド（`--jobs`・`--no-exclude` 等）を
@@ -46,7 +51,7 @@ def resolve_subproject_configs(
     pyproject_configs: dict[pathlib.Path, pyfltr.config.config.Config] = {}
     for sub in subprojects:
         if (sub.cwd / "pyproject.toml").is_file():
-            pyproject_configs[sub.cwd] = pyfltr.config.config.load_config(config_dir=sub.cwd)
+            pyproject_configs[sub.cwd] = pyfltr.config.config.load_config(config_dir=sub.cwd, for_subproject=True)
     for sub in subprojects:
         if sub.cwd in pyproject_configs:
             base_config = pyproject_configs[sub.cwd]

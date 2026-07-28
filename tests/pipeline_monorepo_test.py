@@ -17,6 +17,7 @@ import subprocess
 import pytest
 
 import pyfltr.cli.main
+import pyfltr.warnings_
 
 
 def _make_subproject(path: pathlib.Path, *, name: str = "pkg") -> None:
@@ -348,3 +349,26 @@ def test_monorepo_nested_pyproject_inherits_nearest_ancestor(tmp_path: pathlib.P
 # CI環境で不在のため成立せず（`runner._resolve_direct_executable`/`_is_tool_active_in_mise_config`
 # の解決経路が環境依存で分岐する）、集約フィルターの言語非依存動作は
 # `test_monorepo_cargo_workspace_root_only`で代表検証している。
+
+
+def test_monorepo_subproject_config_does_not_warn_missing_repo_level_config(tmp_path: pathlib.Path, mocker) -> None:
+    """リポジトリルートにのみ`.pre-commit-config.yaml`を置いた構成で、
+    子で`prek`を有効化しても設定ファイル不在の警告を発行しない。
+
+    `prek`は`subproject_aware=False`で起点cwdでのみ実行されるため、
+    サブプロジェクトのディレクトリを基準にした設定ファイル探索は誤検知になる。
+    """
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "root"\n[tool.pyfltr]\n', encoding="utf-8")
+    (tmp_path / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
+    _write_pyproject(tmp_path / "pkg_a", "pkg_a", extra="prek = true\n")
+    (tmp_path / "pkg_a" / "a.txt").write_text("hello world\n", encoding="utf-8")
+
+    proc = subprocess.CompletedProcess(["typos"], returncode=0, stdout="")
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
+
+    pyfltr.cli.main.run(
+        ["run", "--work-dir", str(tmp_path), "--commands=typos", "--no-archive", "--no-cache", "--no-gitignore"]
+    )
+
+    messages = [warning["message"] for warning in pyfltr.warnings_.collected_warnings()]
+    assert not [message for message in messages if ".pre-commit-config.yaml" in message]

@@ -805,6 +805,41 @@ class TestConfigFilesWarning:
         assert len(entries) == 1
         assert "prek" in entries[0]["message"]
 
+    def test_for_subproject_suppresses_missing_config_warning(self, tmp_path: pathlib.Path) -> None:
+        """`for_subproject=True`では設定ファイル不在の警告を発行しない。
+
+        設定ファイルの探索起点は常に起点cwdのため、サブプロジェクトのディレクトリを
+        基準にした不在判定は誤検知になる。
+        """
+        (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\nprek = true\n", encoding="utf-8")
+
+        pyfltr.config.config.load_config(config_dir=tmp_path, for_subproject=True)
+
+        entries = [
+            warning
+            for warning in pyfltr.warnings_.collected_warnings()
+            if warning["source"] == "config" and ".pre-commit-config.yaml" in warning["message"]
+        ]
+        assert not entries
+
+    def test_for_subproject_suppresses_precommit_prek_conflict_warning(self, tmp_path: pathlib.Path) -> None:
+        """`for_subproject=True`ではpre-commitとprekの同時有効化の警告を発行しない。
+
+        双方とも`subproject_aware=False`で起点configのみが実行可否を決めるため、
+        サブプロジェクトの設定に基づく衝突警告は誤検知になる。
+        """
+        (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\npre-commit = true\nprek = true\n", encoding="utf-8")
+        (tmp_path / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
+
+        pyfltr.config.config.load_config(config_dir=tmp_path, for_subproject=True)
+
+        entries = [
+            warning
+            for warning in pyfltr.warnings_.collected_warnings()
+            if warning["source"] == "config" and "二重実行" in warning["message"]
+        ]
+        assert not entries
+
     def test_custom_command_missing_config_file_emits_warning(self, tmp_path: pathlib.Path) -> None:
         """カスタムコマンドにconfig-filesを指定し不在なら警告。"""
         pyproject_content = """

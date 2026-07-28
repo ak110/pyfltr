@@ -1050,6 +1050,7 @@ def load_config(
     config_dir: pathlib.Path | None = None,
     *,
     global_config_path: pathlib.Path | None = None,
+    for_subproject: bool = False,
 ) -> Config:
     """pyproject.tomlとglobal設定ファイルから設定を読み込む。
 
@@ -1081,6 +1082,12 @@ def load_config(
             未指定時はカレントディレクトリ。
         global_config_path: global設定ファイルのパス。未指定時は
             `default_global_config_path()`の結果を使用する。
+        for_subproject: モノレポのサブプロジェクト別config解決として呼ばれた場合に`True`。
+            設定ファイルの探索起点は常に起点cwd（`.pre-commit-config.yaml`はリポジトリルート、
+            `config_arg_template`による注入も`dispatcher`が起点cwd直下から解決する）のため、
+            サブプロジェクトのディレクトリを基準にした設定ファイル不在の警告
+            （`_warn_config_files`）とリポジトリ単位ツールの衝突警告
+            （`_warn_precommit_prek_conflict`）は誤検知になる。`True`のとき両者を抑止する。
     """
     config = create_default_config()
     base = config_dir or pathlib.Path.cwd()
@@ -1130,8 +1137,9 @@ def load_config(
     _normalize_config_values(config, tool_pyfltr)
     _validate_config(config)
     _recompute_fast_aliases(config)
-    _warn_config_files(config, base)
-    _warn_precommit_prek_conflict(config)
+    if not for_subproject:
+        _warn_config_files(config, base)
+        _warn_precommit_prek_conflict(config)
 
     return config
 

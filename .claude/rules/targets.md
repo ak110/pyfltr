@@ -54,3 +54,7 @@ paths:
 
 `CommandInfo.config_files`は`load_config`の設定不在時の警告とキャッシュキー算出に専用で、
 `--config`注入候補（`config_inject_candidates`）とは責務を分離する。
+設定不在時の警告は起点cwd直下のみを判定対象とし、サブプロジェクト別config解決
+（`load_config(for_subproject=True)`）では発行しない。
+`config_inject_candidates`の解決も起点cwd直下を基準とするため、
+サブプロジェクトのディレクトリを基準にした不在判定は誤検知になる。
