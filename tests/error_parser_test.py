@@ -1,7 +1,5 @@
 """error_parserのテストコード。"""
 
-# pylint: disable=too-many-lines
-
 import json
 import pathlib
 

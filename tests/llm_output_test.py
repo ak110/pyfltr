@@ -1,7 +1,5 @@
 """llm_outputのテストコード。"""
 
-# pylint: disable=too-many-lines
-
 import json
 
 import pytest

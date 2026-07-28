@@ -5,8 +5,6 @@ TOMLの読み書きはコメント・セクション順を保持できる`tomlki
 ユーザーが手書きしたコメントを維持するために必要。
 """
 
-# pylint: disable=too-many-lines
-
 import copy
 import dataclasses
 import difflib

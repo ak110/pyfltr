@@ -4,8 +4,6 @@ dispatcher・共通処理・環境変数・コマンドライン解決・`run_su
 キャッシュ・only_failed・プロセス管理を検証する。
 """
 
-# pylint: disable=too-many-lines
-
 import argparse
 import contextlib
 import logging

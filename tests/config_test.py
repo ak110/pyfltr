@@ -1,7 +1,5 @@
 """config.py のテストコード。"""
 
-# pylint: disable=too-many-lines
-
 import pathlib
 
 import pytest

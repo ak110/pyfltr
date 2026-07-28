@@ -1,5 +1,4 @@
 """出力フォーマットのテストコード。"""
-# pylint: disable=too-many-lines
 
 import dataclasses
 import json

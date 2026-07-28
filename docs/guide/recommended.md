@@ -56,6 +56,7 @@ disable = [
     "too-many-boolean-expressions",
     "too-many-branches",
     "too-many-instance-attributes",
+    "too-many-lines",
     "too-many-locals",
     "too-many-nested-blocks",
     "too-many-positional-arguments",

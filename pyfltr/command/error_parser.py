@@ -4,8 +4,6 @@
 ビルトインパーサーとカスタム正規表現の両方に対応。
 """
 
-# pylint: disable=too-many-lines
-
 import contextlib
 import dataclasses
 import json
