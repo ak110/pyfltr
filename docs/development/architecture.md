@@ -246,6 +246,18 @@ commandレコードの`effective_runner` / `runner_source` / `runner_fallback`�
   cwd依存処理（mise・git・ファイル走査・snapshot等）は明示引数で起点cwdを取得する形に統一する
 - `uv workspace` のmemberではcwd直下に `uv.lock` がない場合のみworkspace rootまで
   親方向探索を許可する。無関係な祖先ディレクトリは越境しない
+- サブプロジェクトループ全体を警告重複の抑止スコープとする。
+  スコープ内では`emit_warning`の同一`source`・`message`組と、
+  `add_filtered_direct_file`の同一`path`・`reason`組を1件だけ保持する。
+  独立project間で同一文言を発行する既存仕様と、
+  不在ターゲット件数に基づく終了判定を維持するため、スコープ外は重複を許容する
+
+サブプロジェクト単位で繰り返す処理へ警告を追加する場合は、次の手順で件数を実測する。
+
+1. 同じツールを有効化したサブプロジェクトを2件以上用意する
+2. 起点と複数のサブプロジェクトで、同一の`source`と`message`を持つ警告を意図的に発生させる
+3. `collected_warnings()`から対象組を抽出し、件数が1件であることを確認する
+4. 外部パス除外を伴う場合は、`filtered_direct_files(reason="external")`の同一パスも1件であることを確認する
 
 却下した代替案:
 
@@ -255,6 +267,10 @@ commandレコードの`effective_runner` / `runner_source` / `runner_fallback`�
   利用者指示「サブプロジェクト情報を全面表示しない」「現行の表示に近い」を満たさない
 - `[tool.pyfltr]` セクションを持つ `pyproject.toml` のみを検出する案。
   既存モノレポを移行する際に各サブプロジェクトに設定追加を強いる
+- 1個の設定ロード結果から警告組の静的な積集合を作成し、
+  後続サブプロジェクトの抑止対象へ固定する案。
+  起点projectがglobalの不正値を正常値で上書きした場合は起点の結果に警告組が現れず、
+  不正値を上書きしない複数サブプロジェクト間の重複を防げない
 
 ### `ExecutionParams.targets`と`CommandResult.target_files`の下流経路
 

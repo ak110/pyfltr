@@ -531,3 +531,63 @@ def test_monorepo_unknown_command_name_warning_is_emitted_once(
         warning["message"] for warning in pyfltr.warnings_.collected_warnings() if "no-such-command-xyz" in warning["message"]
     ]
     assert len(messages) == 1
+
+
+def test_monorepo_tool_resolution_warning_is_emitted_once(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """複数サブプロジェクトの同一ツール解決失敗警告を1件だけ発行する。"""
+    config_extra = 'mypy = true\nmypy-runner = "direct"\n'
+    _write_pyproject(tmp_path, "root", extra=config_extra)
+    _write_pyproject(tmp_path / "pkg_a", "pkg_a", extra=config_extra)
+    _write_pyproject(tmp_path / "pkg_b", "pkg_b", extra=config_extra)
+    (tmp_path / "root.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "pkg_a" / "a.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "pkg_b" / "b.py").write_text("x = 1\n", encoding="utf-8")
+
+    def _missing_tool(_name: str, **_kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr("pyfltr.command.runner.shutil.which", _missing_tool)
+    pyfltr.cli.main.run(["run", "--work-dir", str(tmp_path), "--commands=mypy", "--no-archive", "--no-cache", "--no-gitignore"])
+
+    messages = [
+        warning["message"]
+        for warning in pyfltr.warnings_.collected_warnings()
+        if warning["source"] == "tool-resolve" and warning["message"].startswith("mypy:")
+    ]
+    assert len(messages) == 1
+
+
+def test_monorepo_external_only_warning_and_record_are_emitted_once(
+    tmp_path: pathlib.Path,
+) -> None:
+    """外部パスだけの0件フォールバックで同一警告と除外記録を1件だけ保持する。"""
+    _write_pyproject(tmp_path, "root", pytest_on=True)
+    _write_pyproject(tmp_path / "pkg_a", "pkg_a", pytest_on=True)
+    external_dir = tmp_path.parent / f"external-{tmp_path.name}"
+    external_dir.mkdir()
+    external = (external_dir / "external_test.py").resolve()
+    external.write_text("def test_external(): pass\n", encoding="utf-8")
+
+    pyfltr.cli.main.run(
+        [
+            "run",
+            "--work-dir",
+            str(tmp_path),
+            "--commands=pytest",
+            "--no-archive",
+            "--no-cache",
+            "--no-gitignore",
+            str(external),
+        ]
+    )
+
+    messages = [
+        warning["message"]
+        for warning in pyfltr.warnings_.collected_warnings()
+        if warning["source"] == "external-path" and str(external) in warning["message"]
+    ]
+    assert pyfltr.warnings_.filtered_direct_files(reason="external") == [str(external)]
+    assert len(messages) == 1

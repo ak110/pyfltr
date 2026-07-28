@@ -68,6 +68,58 @@ def test_emit_warning_without_hint_omitted() -> None:
     assert "hint" not in entries[0]
 
 
+def test_suppress_duplicates_is_scoped() -> None:
+    """重複抑止はスコープ内の同一組だけに適用し、異なる組とスコープ外の重複を保持する。"""
+    pyfltr.warnings_.emit_warning(source="config", message="same")
+    pyfltr.warnings_.emit_warning(source="config", message="same")
+    assert len(pyfltr.warnings_.collected_warnings()) == 2
+
+    pyfltr.warnings_.clear()
+    with pyfltr.warnings_.suppress_duplicates():
+        pyfltr.warnings_.emit_warning(source="config", message="same")
+        pyfltr.warnings_.emit_warning(source="config", message="same")
+        pyfltr.warnings_.emit_warning(source="git", message="same")
+        pyfltr.warnings_.add_filtered_direct_file("outside.py", reason="external")
+        pyfltr.warnings_.add_filtered_direct_file("outside.py", reason="external")
+        pyfltr.warnings_.add_filtered_direct_file("outside.py", reason="missing")
+
+    assert pyfltr.warnings_.collected_warnings() == [
+        {"source": "config", "message": "same"},
+        {"source": "git", "message": "same"},
+    ]
+    assert pyfltr.warnings_.filtered_direct_files() == [
+        "outside.py",
+        "outside.py",
+    ]
+
+    pyfltr.warnings_.emit_warning(source="config", message="same")
+    pyfltr.warnings_.add_filtered_direct_file("outside.py", reason="external")
+    assert len(pyfltr.warnings_.collected_warnings()) == 3
+    assert len(pyfltr.warnings_.filtered_direct_files()) == 3
+
+
+def test_suppress_duplicates_nested_scope_shares_outer_state() -> None:
+    """内側スコープは外側の既出組を共有し、外側の重複抑止契約を壊さない。"""
+    pyfltr.warnings_.clear()
+    with pyfltr.warnings_.suppress_duplicates():
+        pyfltr.warnings_.emit_warning(source="config", message="same")
+        with pyfltr.warnings_.suppress_duplicates():
+            pyfltr.warnings_.emit_warning(source="config", message="same")
+        pyfltr.warnings_.emit_warning(source="config", message="same")
+
+    assert len(pyfltr.warnings_.collected_warnings()) == 1
+
+
+def test_suppress_duplicates_restores_state_after_exception() -> None:
+    """スコープ内の例外後は抑止状態を復元し、後続の同一警告を保持する。"""
+    with pytest.raises(RuntimeError, match="stop"), pyfltr.warnings_.suppress_duplicates():
+        pyfltr.warnings_.emit_warning(source="config", message="same")
+        raise RuntimeError("stop")
+
+    pyfltr.warnings_.emit_warning(source="config", message="same")
+    assert len(pyfltr.warnings_.collected_warnings()) == 2
+
+
 def test_filtered_direct_files_accumulates_with_reason() -> None:
     """add_filtered_direct_file はreason別に蓄積し、reasonフィルタ・全件取得の双方が正しく返る。"""
     pyfltr.warnings_.add_filtered_direct_file("docs/a.md", reason="excluded")

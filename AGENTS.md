@@ -40,6 +40,10 @@ format別のlogger stream/level切替の詳細は[docs/development/architecture.
   一時パスへの差し替えが必要な用途は`ExecutionParams.cache_commandline`と
   `ExecutionParams.file_path_remap`で表現する
   （両フィールドの下流経路は[docs/development/architecture.md](docs/development/architecture.md)を参照する）
+- サブプロジェクトごとに繰り返す処理が警告を発行する場合は、
+  起点実行分を含めて同一の`source`と`message`の組が1件に収まることを確認する。
+  モノレポ構成での実測手順は[docs/development/architecture.md](docs/development/architecture.md)の
+  「モノレポ対応」節を参照する
 
 ## 注意点
 
