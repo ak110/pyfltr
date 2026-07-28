@@ -24,13 +24,15 @@
 
 - `uv.lock` を尊重するため `UV_FROZEN=1` を常時有効化している（Makefile・CI・pre-commitフック経由）。
   適用経路の詳細はMakefile側コメントに委ねる
-- `uv.toml` の `exclude-newer` で公開直後パッケージを一定期間除外し、サプライチェーン汚染リスクを低減する
+- `pyproject.toml` の `exclude-newer` で公開直後パッケージを一定期間除外し、サプライチェーン汚染リスクを低減する
 - GitHub Actionsのサードパーティアクションはハッシュピン留めで固定する（`make update-actions`で更新）
 
 依存パッケージの脆弱性検知はDependabot alertsと定期監査ワークフロー（`audit.yaml`）の2経路で行う。
 本リポジトリはPyPI配布のコマンドラインツールであり、利用者は`uvx`等で依存を解決したうえで実行するため、
 依存の脆弱性が利用者の実行環境へ波及する。ライブラリとは利用形態が異なるため検知の仕組みを設ける。
 Dependabotによる自動修正PRの作成は無効とし、更新は`make update`の依存更新へ集約する。
+上流パッケージの厳密ピンにより依存更新だけでは解消できない場合は`pyproject.toml`の
+`[tool.uv] override-dependencies`でピンを迂回し、迂回の理由と解除条件を該当箇所のコメントへ残す。
 
 ## ドキュメントサイト運用
 
