@@ -627,8 +627,9 @@ MCPサーバー・`--only-failed`からも再利用する。
 
 ### 提供ツール構成
 
-読み取り系4ツール（`list_runs`・`show_run`・`show_run_diagnostics`・`show_run_output`）と
-実行系1ツール（`run_for_agent`）の計5ツールを公開する。
+読み取り系4ツール（`list_runs`・`show_run`・`show_run_diagnostics`・`show_run_output`）・
+実行系1ツール（`run_for_agent`）・grep/replace系3ツール（`grep`・`replace`・`replace_undo`）の
+計8ツールを公開する。
 実行系を1本に限定したのは、エージェント連携用途では`ci`/`run`/`fast`の差分を露出する必要が薄く、
 パラメーター数を抑えてMCPスキーマを単純化するため。
 
