@@ -400,7 +400,7 @@ pyfltr generate-shell-completion powershell | Out-String | Invoke-Expression
 起点cwd（`--work-dir`適用後の作業ディレクトリ）配下にない絶対パスを「外部パス」と呼ぶ。
 ツールの性質に応じて以下の3分類で扱う。
 
-- `--config`明示注入: `markdownlint` ・ `textlint`（内部パスのみ実行時に適用）
+- `--config`明示注入: `markdownlint` ・ `textlint`
 - 外部パス除外＋警告: `markdownlint`・`textlint`・`pre-commit`・`prek`・`uv-audit`・
   `pnpm-audit`・`npm-audit`・`yarn-audit`・`pytest`・`vitest`・`cargo-test`・
   `dotnet-test`・`gitleaks`・`semgrep`
@@ -416,8 +416,20 @@ pyfltr generate-shell-completion powershell | Out-String | Invoke-Expression
 除外時は1ファイルにつき1件の警告を発行する。
 `markdownlint` ・ `textlint` は`--config`注入対象でありながら除外対象でもある。
 外部パスを直接渡すと `textlint` ・ `markdownlint-cli2` の対象探索エラーが未整形のまま出力されるためである。
-リポジトリ外のMarkdownファイルを検査したい場合は、対象ファイルを起点cwd配下へ移動するか、
-対象ファイルの直下ディレクトリでpyfltrを起動する（起点cwd配下として扱われるため）。
+
+既定では、除外対象ツールへ外部パスを渡すと対象から除外し、1ファイルにつき1件の警告を発行する。
+`--allow-external-paths`を指定するとこの分類を上書きし、外部パスを対象へ保持して除外警告を発行しない。
+
+`markdownlint` ・ `textlint` では、起点cwd直下から解決した設定ファイルを
+`--config <絶対パス>`形式で明示注入する。
+フラグ指定時も設定探索の基準は外部ファイルの配置先へ移らず、起点cwdの設定を外部ファイルへ適用する。
+
+外部のMarkdownファイルだけを検査する場合は、対象外のtesterや監査ツールへ外部パスを渡さないよう
+`--commands`で実行ツールを限定する。
+
+```shell
+pyfltr run --allow-external-paths --commands=textlint,markdownlint ~/.claude/plans/example.md
+```
 
 ### `fast` / `run` / `run-for-agent` / `ci`の動作の違いと自動修正（fixステージ）
 
@@ -512,6 +524,14 @@ VSCodeのターミナルからクリックして該当箇所にジャンプで�
 - `--stream`: 非TUIモード時に各コマンドの完了時点で即時出力する（既定は全コマンド完了後にまとめて出力）
 - `--no-exclude`: exclude/extend-excludeパターンによるファイル除外を無効化する
 - `--no-gitignore`: `.gitignore`によるファイル除外を無効化する
+- `--allow-external-paths`: 起点ディレクトリ外の絶対パスを検査対象へ含める。
+  既定では`markdownlint`・`textlint`・`prek`・`pre-commit`・`pytest`・`vitest`・`cargo-test`・
+  `dotnet-test`・`gitleaks`・`semgrep`・各種`*-audit`が起点外パスを除外して警告を発行するが、
+  本オプション指定時は分類にかかわらず対象へ含める。
+  `markdownlint`・`textlint`の設定ファイル（`.markdownlint-cli2.yaml`・`.textlintrc.yaml`等）は
+  起点ディレクトリ直下から解決して`--config`で明示的に渡すため、起点外ファイルでも
+  プロジェクトの設定が適用される。
+  起点外パスを扱えないツールへ渡した場合の結果は利用者の責任とする
 - `--no-archive`: 実行アーカイブ（ユーザーキャッシュ配下への全実行の保存）を無効化する
 - `--no-cache`: [ファイルhashキャッシュ](#file-hash-cache)を無効化する
 - `--fail-fast`: 1ツールでもエラーが発生した時点で残りのジョブを打ち切る

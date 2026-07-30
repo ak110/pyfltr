@@ -58,6 +58,26 @@ prekでは`prek-auto-skip = false`を設定する。
 引数なしの実行系が行う未ステージ変更の退避・復元（`git stash`相当の作業ツリー操作）は発生しない。
 対象ファイルが0件の場合は実行系自体を起動しない。
 
+## 起点ディレクトリ外のファイルが検査されない場合
+
+起点ディレクトリの外にある絶対パスを指定すると、
+`{command}: 起点cwd外のパスは対象から除外しました: {path}`という警告が出て
+`markdownlint`・`textlint`・`prek`等が実行されないことがある。
+
+これらのツールは設定ファイルの解決やリポジトリ単位の走査を前提とするため、
+既定では起点ディレクトリ外のパスを対象から除外する。
+
+起点外のファイルを検査したい場合は`--allow-external-paths`を指定する。
+
+```sh
+pyfltr run --allow-external-paths --commands=textlint,markdownlint ~/.claude/plans/example.md
+```
+
+`markdownlint`・`textlint`の設定ファイルは起点ディレクトリ直下から解決して`--config`で
+明示的に渡すため、起点外のファイルにもプロジェクトの設定が適用される。
+`pytest`等のテスト実行ツールへ起点外パスが渡る構成では想定外の動作になり得るため、
+`--commands`で対象ツールを限定して実行する。
+
 ## `--changed-since`で対象ファイルが空になる場合
 
 `--changed-since <REF>`を指定したのに実行対象が0件になることがある。

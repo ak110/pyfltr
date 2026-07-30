@@ -132,5 +132,7 @@ pyfltr設定の`exclude`/`extend-exclude`/`respect-gitignore`を尊重するた�
 - 各種ツールをまとめて並列で呼び出し、実行時間を短縮する
 - 各種ツールのバージョンには極力依存しない（各ツール固有の設定には対応しない）
 - excludeの指定方法が各ツールで異なる問題を、pyfltr側で解決してツールに渡すことで吸収する
+- `--allow-external-paths`を指定すると、起点ディレクトリ外のファイルを起点配下へ
+  一時複製せず検査できる。外部ファイルだけを検査する場合は`--commands`で対象ツールを限定する
 - formatterはファイルを修正しつつエラーとしても扱う（`pyfltr ci`ではformatterによる変更も失敗と判定する）
 - 設定は極力`pyproject.toml`に集約する

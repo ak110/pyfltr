@@ -52,6 +52,12 @@ plugins:
         - `pyfltr mcp`: MCPサーバー起動
 
         `--commands=<tool>`で個別ツールのみ実行できる（例: `pyfltr run --commands=textlint docs/`）。
+
+        `pyfltr run`・`pyfltr fast`・`pyfltr ci`・`pyfltr run-for-agent`は
+        `--allow-external-paths`で起点cwd外の絶対パスを検査対象へ含められる。
+        `markdownlint`・`textlint`の設定は起点cwd基準で注入される。
+        外部ファイルだけを検査する場合は`--commands=<tool>`で対象ツールを限定する。
+
         詳細は[CLIの使い方](guide/usage.md)を参照。
 
         ## 対応ツール

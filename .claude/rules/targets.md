@@ -3,7 +3,10 @@ paths:
   - "pyfltr/command/targets.py"
   - "pyfltr/command/dispatcher.py"
   - "pyfltr/command/subproject_loop.py"
+  - "pyfltr/cli/parser.py"
+  - "pyfltr/command/builtin.py"
   - "tests/command_core_test.py"
+  - "tests/external_paths_test.py"
 ---
 
 # pyfltrの対象ファイル収集方針
@@ -58,3 +61,9 @@ paths:
 （`load_config(for_subproject=True)`）では発行しない。
 `config_inject_candidates`の解決も起点cwd直下を基準とするため、
 サブプロジェクトのディレクトリを基準にした不在判定は誤検知になる。
+
+CLIの`--allow-external-paths`（`args.allow_external_paths`）を指定した場合、上記の分類にかかわらず
+外部パスを除外せず警告も発行しない。判定を参照するのは`dispatcher._prepare_execution_params`の
+外部パス除外ブロックと`subproject_loop.run_subproject_loop`の外部パス追加実行分岐の2箇所である。
+専用のヘルパー関数は設けず`args`を直接参照する（`args.no_exclude`と同じ流儀）。
+`--config`明示注入は外部パスにも適用されるため、起点cwd直下の設定ファイルが起点外ファイルへも渡る。
