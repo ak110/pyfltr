@@ -1,6 +1,7 @@
 """シェル補完スクリプトの生成。"""
 
 import argparse
+import typing
 
 import pyfltr.config.config
 
@@ -49,7 +50,11 @@ def _collect_completions(
                 output_format_choices = list(action.choices)
             # サブパーサーを再帰的に walk
             if isinstance(action, argparse._SubParsersAction):  # noqa: SLF001  # pylint: disable=protected-access
-                for sub in action.choices.values():
+                # `isinstance`による型の限定では型引数が定まらず`choices`の値型を解決できない。
+                # `_SubParsersAction`は実行時にはGenericでなく添字指定できないため、
+                # 文字列形式の`typing.cast`で型引数を補い`ArgumentParser`として扱う。
+                sub_action = typing.cast("argparse._SubParsersAction[argparse.ArgumentParser]", action)
+                for sub in sub_action.choices.values():
                     _walk(sub)
 
     _walk(parser)
