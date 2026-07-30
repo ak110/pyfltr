@@ -86,6 +86,7 @@ def run_subproject_loop(
         # 外部パスへの追加実行・警告は起点設定のON/OFFで固定する（起点で無効なら何も行わない）。
         # `allows_external_paths=True`のツールは起点cwdで外部パス専用に追加実行し、注入対象では
         # `config_arg_template`の自動注入が適用される。それ以外は除外して警告のみ発行する。
+        # `--allow-external-paths`指定時は分類にかかわらず追加実行の対象とする。
         info = ctx.config.commands.get(command)
         external_files = base.external_files
         if external_files and info is not None and start_enabled:
@@ -93,7 +94,7 @@ def run_subproject_loop(
             # （サブプロジェクト経路と同じ`filter_by_globs`基準）。
             relevant_external = pyfltr.command.targets.filter_by_globs(external_files, info.target_globs())
             if relevant_external:
-                if info.allows_external_paths:
+                if info.allows_external_paths or args.allow_external_paths:
                     ext_base = dataclasses.replace(
                         base, all_files=relevant_external, subprojects=[], subproject_files={}, external_files=[]
                     )

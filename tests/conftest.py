@@ -223,9 +223,14 @@ def make_archive_store(tmp_path: pathlib.Path) -> pyfltr.state.archive.ArchiveSt
     return pyfltr.state.archive.ArchiveStore(cache_root=tmp_path)
 
 
-def make_args(*, no_exclude: bool = False) -> argparse.Namespace:
+def make_args(*, no_exclude: bool = False, allow_external_paths: bool = False) -> argparse.Namespace:
     """`execute_command`に渡す`argparse.Namespace`を生成する。"""
-    return argparse.Namespace(shuffle=False, verbose=False, no_exclude=no_exclude)
+    return argparse.Namespace(
+        shuffle=False,
+        verbose=False,
+        no_exclude=no_exclude,
+        allow_external_paths=allow_external_paths,
+    )
 
 
 @pytest.fixture

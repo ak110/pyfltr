@@ -55,7 +55,11 @@ class CommandInfo:
     対象ファイルが起点cwd配下のみのときも一律で注入経路を通し、
     内部パス／外部パス混在で挙動差が出ないようにする。
     `allows_external_paths=False`を併用するツール（`markdownlint`・`textlint`）では
-    外部パスが本経路へ到達する前に除外されるため、内部パス実行時のみ本注入が働く。
+    既定で外部パスが本経路へ到達する前に除外される。
+    利用者がCLIの`--allow-external-paths`を指定した場合は外部パスが除外されず、
+    外部パスに対しても起点cwd基準で解決した設定ファイルを注入する。
+    非モノレポ経路では`_prepare_execution_params`が、モノレポ経路では
+    `run_subproject_loop`が起点cwdで行う外部パス専用の追加実行が、同じ注入経路を通る。
     """
     config_inject_candidates: list[str] = dataclasses.field(default_factory=list)
     """`--config`引数として渡せる設定ファイル候補（順序＝探索優先順）。
@@ -76,6 +80,12 @@ class CommandInfo:
     リポジトリ全体走査型（`gitleaks`・`semgrep`）・
     プロジェクト単位で起動する依存の脆弱性監査ツール（`uv-audit`・`pnpm-audit`・`npm-audit`・`yarn-audit`）等、
     リポジトリ外ファイルを渡すと想定外動作となるツールで`False`を指定する。
+
+    利用者がCLIの`--allow-external-paths`を指定した場合、本フィールドの値にかかわらず
+    除外と警告を行わず外部パスを対象へ含める。既定の安全側動作を利用者責任で外す
+    エスケープハッチとして`--no-exclude`と同格に扱う。非モノレポ経路では
+    `_prepare_execution_params`が外部パスを保持し、モノレポ経路では
+    `run_subproject_loop`が起点cwdで外部パス専用の追加実行を行う。
     """
     cacheable: bool = False
     """ファイル hash キャッシュの対象にするか否か。

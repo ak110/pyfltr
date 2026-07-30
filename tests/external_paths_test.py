@@ -1,13 +1,19 @@
 """外部パス指定時のツール別挙動のテスト。
 
 外部パス（起点cwd配下にない絶対パス）を3分類で扱う実装の境界確認。
+既定時の外部パス除外と`--allow-external-paths`指定時の上書きを、
+非モノレポ経路とモノレポ経路の双方で確認する。
+`--config`明示注入は起点cwdを基準とし、フラグ指定時は外部パスにも適用する。
 `--config`明示注入と外部パス除外＋警告は排他ではなく、注入対象ツールが外部パスを扱えない場合は併用する。
 
-- `--config`明示注入（内部パスのみ実行時に適用）: `markdownlint` / `textlint` / `bandit`
+- `--config`明示注入: `markdownlint` / `textlint` / `bandit`
 - 除外対象（`allows_external_paths=False`）: `markdownlint` / `textlint` / `prek` / `pre-commit` / `pytest` /
   `vitest` / `cargo-test` / `dotnet-test` / `gitleaks` / `semgrep` /
   `uv-audit` / `pnpm-audit` / `npm-audit` / `yarn-audit`
 - 素通し対象（既定）: 上記以外（`ruff-check` を代表として確認）
+
+`--allow-external-paths`（`args.allow_external_paths`）を指定した場合、上記の分類にかかわらず
+除外と警告を行わず外部パスを対象へ含める。
 
 テストは`execute_command`経由で実行し、`run_subprocess_with_timeout`をfakeで差し替えて
 subprocess起動を回避する。
@@ -19,6 +25,7 @@ import typing
 
 import pytest
 
+import pyfltr.cli.main
 import pyfltr.command.core_
 import pyfltr.command.dispatcher
 import pyfltr.command.process
@@ -615,6 +622,107 @@ def test_external_only_results_in_zero_targets(monkeypatch: pytest.MonkeyPatch, 
     assert result.files == 0
 
 
+# --- `--allow-external-paths` 指定時 --------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "command,target_pattern",
+    [
+        ("markdownlint", "doc.md"),
+        ("textlint", "doc.md"),
+        ("prek", "doc.md"),
+        ("pytest", "x_test.py"),
+    ],
+)
+def test_allow_external_paths_keeps_external(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    command: str,
+    target_pattern: str,
+) -> None:
+    """`--allow-external-paths`指定時は除外対象ツールでも外部パスが対象へ残り、警告も出ない。"""
+    internal = tmp_path / target_pattern
+    internal.write_text("", encoding="utf-8")
+    ext_dir = tmp_path.parent / f"ext-{tmp_path.name}-allow-{command}"
+    ext_dir.mkdir(parents=True, exist_ok=True)
+    external = (ext_dir / target_pattern).resolve()
+    external.write_text("", encoding="utf-8")
+
+    config = pyfltr.config.config.create_default_config()
+    _enable(config, [command])
+    _patch_build_commandline(monkeypatch)
+    _patch_subprocess(monkeypatch)
+
+    ctx = _testconf.make_execution_context(config, [internal, external], start_cwd=tmp_path)
+    result = pyfltr.command.dispatcher.execute_command(command, _testconf.make_args(allow_external_paths=True), ctx)
+
+    assert str(external) in result.commandline
+    assert pyfltr.warnings_.filtered_direct_files(reason="external") == []
+    assert not [w for w in pyfltr.warnings_.collected_warnings() if w["source"] == "external-path"]
+
+
+def test_allow_external_paths_injects_config_for_external(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """`--allow-external-paths`指定時、外部パスに対しても起点cwd基準の`--config`注入が働く。"""
+    config_file = tmp_path / ".textlintrc.yaml"
+    config_file.write_text("rules: {}\n", encoding="utf-8")
+    ext_dir = tmp_path.parent / f"ext-{tmp_path.name}-inject"
+    ext_dir.mkdir(parents=True, exist_ok=True)
+    external = (ext_dir / "doc.md").resolve()
+    external.write_text("", encoding="utf-8")
+
+    config = pyfltr.config.config.create_default_config()
+    _enable(config, ["textlint"])
+    _patch_build_commandline(monkeypatch)
+    _patch_subprocess(monkeypatch)
+
+    ctx = _testconf.make_execution_context(config, [external], start_cwd=tmp_path)
+    result = pyfltr.command.dispatcher.execute_command("textlint", _testconf.make_args(allow_external_paths=True), ctx)
+
+    assert "--config" in result.commandline
+    assert str(config_file.resolve()) in result.commandline
+    assert str(external) in result.commandline
+
+
+def test_allow_external_paths_via_cli(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """CLI経路で`--allow-external-paths`を渡すと外部パスが検査され設定が注入される。
+
+    argparseへのオプション登録、CLI引数からパイプラインへの伝播、起点cwd基準の設定注入、
+    外部パスの実行対象化を一連で検証する。
+    """
+    config_file = tmp_path / ".textlintrc.yaml"
+    config_file.write_text("rules: {}\n", encoding="utf-8")
+    ext_dir = tmp_path.parent / f"ext-{tmp_path.name}-cli"
+    ext_dir.mkdir(parents=True, exist_ok=True)
+    external = (ext_dir / "doc.md").resolve()
+    external.write_text("# doc\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    _patch_build_commandline(monkeypatch)
+    captured = _patch_subprocess(monkeypatch)
+
+    exit_code = pyfltr.cli.main.run(
+        [
+            "run",
+            "--allow-external-paths",
+            "--enable=textlint",
+            "--commands=textlint",
+            "--no-fix",
+            "--no-archive",
+            "--no-cache",
+            str(external),
+        ]
+    )
+
+    assert exit_code == 0
+    assert len(captured) == 1
+    commandline = captured[0]
+    assert str(external) in commandline
+    assert "--config" in commandline
+    assert str(config_file.resolve()) in commandline
+    assert pyfltr.warnings_.filtered_direct_files(reason="external") == []
+    assert not [w for w in pyfltr.warnings_.collected_warnings() if w["source"] == "external-path"]
+
+
 # --- 素通し対象（既定: allows_external_paths=True） -----------------------------
 
 
@@ -792,3 +900,47 @@ def test_monorepo_mixed_excluded_tool_warns_only(monkeypatch: pytest.MonkeyPatch
     assert calls == [sub_a_cwd]
     # 警告は1件発行されている
     assert str(external_test) in pyfltr.warnings_.filtered_direct_files(reason="external")
+
+
+def test_monorepo_allow_external_paths_runs_external(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """モノレポ経路でも`--allow-external-paths`指定時は除外対象ツールが外部パス専用の追加実行へ入る。"""
+    start_cwd, sub_a, _sub_b = _make_monorepo(tmp_path)
+    file_a = sub_a / "doc.md"
+    file_a.write_text("# a\n", encoding="utf-8")
+    external = _make_external(tmp_path)
+    (start_cwd / ".markdownlint.json").write_text("{}", encoding="utf-8")
+
+    config = pyfltr.config.config.create_default_config()
+    _enable(config, ["markdownlint"])
+    _patch_build_commandline(monkeypatch)
+
+    subs = pyfltr.command.subprojects.discover_subprojects(start_cwd, config, git_check_ignore=lambda _s, _c: set())
+    sub_a_cwd = next(s.cwd for s in subs if s.relative == "pkg_a")
+    base = pyfltr.command.core_.ExecutionBaseContext(
+        config=config,
+        all_files=[pathlib.Path("pkg_a/doc.md"), external],
+        cache_store=None,
+        cache_run_id=None,
+        start_cwd=start_cwd,
+        subprojects=subs,
+        subproject_files={s.cwd: ([pathlib.Path("pkg_a/doc.md")] if s.cwd == sub_a_cwd else []) for s in subs},
+        external_files=[external],
+        subproject_configs={s.cwd: config for s in subs},
+    )
+    ctx = pyfltr.command.core_.ExecutionContext(base=base)
+
+    calls: list[pathlib.Path | None] = []
+
+    def _capture(command: str, args: argparse.Namespace, c: pyfltr.command.core_.ExecutionContext) -> object:
+        del command, args
+        calls.append(c.subproject_cwd)
+        return _testconf.make_succeeded_result(command="markdownlint")
+
+    monkeypatch.setattr(pyfltr.command.dispatcher, "_dispatch_command", _capture)
+    pyfltr.command.dispatcher.execute_command("markdownlint", _testconf.make_args(allow_external_paths=True), ctx)
+
+    # pkg_aの1回に加えて、起点cwd（None）での外部パス専用の追加実行が発生する
+    assert calls == [sub_a_cwd, None]
+    # 除外蓄積と警告は発生しない
+    assert pyfltr.warnings_.filtered_direct_files(reason="external") == []
+    assert not [w for w in pyfltr.warnings_.collected_warnings() if w["source"] == "external-path"]

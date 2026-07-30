@@ -28,6 +28,7 @@ def _make_args(tmp_path: pathlib.Path, *, commands: list[str] | None) -> argpars
         jobs=None,
         no_exclude=False,
         no_gitignore=True,
+        allow_external_paths=False,
         human_readable=False,
         shuffle=False,
         verbose=False,

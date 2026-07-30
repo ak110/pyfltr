@@ -256,6 +256,7 @@ async def tool_run_for_agent(
         human_readable=False,
         no_exclude=False,
         no_gitignore=False,
+        allow_external_paths=False,
         jobs=None,
         work_dir=None,
         exit_zero_even_if_formatted=True,

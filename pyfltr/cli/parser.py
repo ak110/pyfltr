@@ -210,6 +210,13 @@ def make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> "
         help=".gitignore によるファイル除外を無効化します。",
     )
     common.add_argument(
+        "--allow-external-paths",
+        default=False,
+        action="store_true",
+        help="起点ディレクトリ外の絶対パスを検査対象へ含めます。"
+        "既定で除外されるツール(markdownlint・textlint・prek 等)にも対象として渡します。",
+    )
+    common.add_argument(
         "--no-archive",
         default=False,
         action="store_true",
