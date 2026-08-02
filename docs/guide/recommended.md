@@ -546,7 +546,7 @@ jobs:
     - キーへ`github.run_id`と`github.run_attempt`を併記し、`restore-keys`で直近のキャッシュへフォールバックする
     - `github.run_id`はワークフローの再実行（Re-run）で変化しないため、`github.run_id`だけでは
       再実行時にキーが完全一致し、`actions/cache`が新しい内容を保存しない。
-      上流ツールの更新で失敗した実行を再実行する場面こそキャッシュの更新が要るため、`github.run_attempt`を併記する
+      当該再実行中に変化した`/cache`の内容を後続の実行へ引き継ぐため、`github.run_attempt`を併記する
     - 実行のたびに新しいエントリが増えるため、リポジトリのキャッシュ上限（既定10GB）と、
       7日間アクセスのないエントリが自動削除される仕様を前提に運用する
 - `pyfltr ci`: イメージ同梱のpyfltrをそのまま使う

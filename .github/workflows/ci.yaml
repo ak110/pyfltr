@@ -54,8 +54,7 @@ jobs:
           # コンテナーイメージ側でツールが更新されても復元内容が古い版のまま据え置かれ、
           # 上流ツールの変更をLinuxジョブで検知できなくなる。
           # run_idは再実行（Re-run）で変化しないため、run_attemptを併記する。
-          # 上流ツールの更新で失敗した実行を再実行する場面こそキャッシュの更新が要るため、
-          # run_idのみでは意図が達成されない。
+          # run_idだけでは再実行時にキーが完全一致し、当該再実行中に変化した/cacheの内容が保存されない。
           key: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}-
 
