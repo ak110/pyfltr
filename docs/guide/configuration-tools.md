@@ -676,8 +676,8 @@ mise registryに無いツールへ切り替えたい場合や、既定backendを
 [tool.pyfltr]
 # aquaレジストリ経由で取得（cargo-denyの既定値）
 cargo-deny-version = "aqua:EmbarkStudios/cargo-deny@0.16.0"
-# 既定backend（aqua）を上書きしてmise registry経由を維持する
-cargo-deny-version = "cargo-deny@latest"
+# 既定backend（aqua）を上書きしてmise registry経由を維持する場合は次を指定する
+# cargo-deny-version = "cargo-deny@latest"
 ```
 
 ### {command}-runnerによる個別ツール切替 {#command-runner}

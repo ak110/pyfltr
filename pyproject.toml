@@ -248,6 +248,8 @@ addopts = [
     "--durations-min=0.5",
     "--timeout=60",
     "-n", "4",
+    # 未実行テストを動的分配し、特定ファイルへの偏りによる律速を回避する
+    "--dist=worksteal",
     "--ignore=tests/smoke_data",
 ]
 log_level = "DEBUG"

@@ -119,10 +119,18 @@ show_error_codes = true
 
 [tool.pytest.ini_options]
 # https://docs.pytest.org/en/latest/reference/reference.html#ini-options-ref
-# --dist=worksteal は未実行テストを動的分配し、特定ファイルへの偏りによる律速を回避する
-# -n 4 はコア数追従（-n auto 等）を採用せず固定値とする（CI環境での逆効果とメモリ消費増を避けるため）
-addopts = "--showlocals -p no:cacheprovider --maxfail=5 --durations=30 --durations-min=0.5 --timeout=60 -n 4 \
-  --dist=worksteal"
+addopts = [
+    "--showlocals",
+    "-p", "no:cacheprovider",
+    "--maxfail=5",
+    "--durations=30",
+    "--durations-min=0.5",
+    "--timeout=60",
+    # コア数追従（-n auto 等）を採用せず固定値とする（CI環境での逆効果とメモリ消費増を避けるため）
+    "-n", "4",
+    # 未実行テストを動的分配し、特定ファイルへの偏りによる律速を回避する
+    "--dist=worksteal",
+]
 log_level = "DEBUG"
 xfail_strict = true
 asyncio_mode = "strict"
@@ -232,6 +240,7 @@ colloquial-check = true
 
 `colloquial-check-severity`の既定は`warning`のため、有効化してもCI・pre-commitは失敗しない。
 既存の文書に口語表現が残っている場合は有効化した時点から警告が出るため、一度まとめて是正する。
+検査対象の既定は全ファイル（`*`）であり、日本語Markdownだけでなくソースコードや設定ファイルに含まれる日本語も検査する。
 辞書に一致する正当な用法を含むファイルは`colloquial-check-exclude`で除外し、
 対象を特定の拡張子へ限定する場合は`colloquial-check-targets`を指定する。
 
@@ -335,7 +344,7 @@ setup:
 
 # 依存パッケージをアップグレードし全テスト実行
 update:
-	env --unset UV_FROZEN uv sync --upgrade --all-groups
+	env --unset UV_FROZEN uv sync --upgrade --all-groups --all-extras
 	uvx prek --config=.pre-commit-config.yaml autoupdate
 	$(MAKE) test
 
@@ -360,7 +369,7 @@ test:
 
 ```toml
 [tools]
-...
+# 既存のツール指定は残したまま追記する
 uv = "latest"
 
 [tasks.setup]
@@ -525,7 +534,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
     container:
       image: ghcr.io/ak110/pyfltr:latest
     defaults:
