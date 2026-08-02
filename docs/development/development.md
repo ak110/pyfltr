@@ -40,14 +40,32 @@ Dependabotによる自動修正PRの作成は無効とし、更新は`make updat
 `pyproject.toml`の`dependencies`または`override-dependencies`でパッケージの版指定を変更した場合、
 `uv lock`・`uv sync`・`uv run`の成功だけでは配布経路の成立を確認できない。
 上書き設定が適用されない状態で依存解決が成立することを
-`uvx --from . pyfltr --version`で実測する。
+`uvx --exclude-newer "1 day" --from . pyfltr --version`で実測する。
 当該コマンドは利用者環境と同じ経路で配布物の依存を解決するため、
 上書き設定に依存した版指定を検出できる。
+`uvx`は`pyproject.toml`の`[tool.uv]`を読まず`exclude-newer`が適用されない。
+公開待機を維持するため`--exclude-newer`を明示する。
+当該コマンドが解決するのは配布物のメタデータが宣言する実行時依存に限る。
+開発用の依存グループだけに適用される上書きは観測できない。
 `make test`は本リポジトリの依存解決のみを用いるため当該不整合を検出しない。
 実測が失敗した場合は原因を確認する。
 通信障害・パッケージ索引の障害・ビルド環境の不備など、版指定以外の原因を解消して再実測する。
 変更した版指定に起因する依存解決不能を確認した場合は、配布物のインストールを不能にするため
 当該版指定を採用しない。
+
+定期監査ワークフロー（`audit.yaml`）はLinux単独構成とし、プラットフォーム軸のmatrixを設けない。
+`uv audit`は`--python-platform`を受理するが、ロックファイルを持つプロジェクトでは
+監査対象を当該プラットフォームの依存へ限定しない。
+2026-08-02にuv 0.11.7で実測したところ、`--python-platform linux`と`--python-platform windows`は
+いずれも`in 150 packages`を返した。
+一方`uv tree`は限定する。同じ実測で`--python-platform windows`にのみ`pywin32`・`colorama`が現れ、
+`--python-platform linux`にのみ`h11`が現れる。
+すなわちロックファイルにWindows固有依存は実在するが、`uv audit`はそれを除外も追加もしない。
+そのためmatrixを追加しても監査対象は広がらず、CI実行時間だけが増える。
+`uv audit`は実験的機能であり、公式のCLIリファレンスは`--python-platform`を
+対象プラットフォームの依存を監査するオプションとして説明する。
+実装の挙動は当該説明と一致しないため、uv側の更新で挙動が変わる可能性がある。
+本節の根拠を更新する際は上記の実測を再実行し、実測日と使用したuvのバージョンを併記する。
 
 ## ドキュメントサイト運用
 
