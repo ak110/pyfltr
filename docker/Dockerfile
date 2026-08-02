@@ -58,7 +58,7 @@ FROM python:3.14-slim-trixie@sha256:33ef7446e8c14b21cb247e23afbcdc90e98853b70812
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # uv 側のサプライチェーン攻撃対策は ``~/.config/uv/uv.toml`` で
-# ``exclude-newer = "1 day"`` を指定する (USER pyfltr 切り替え後に配置)。
+# ``exclude-newer = "1 day"`` を指定する (非 root ユーザーへの切り替え後に配置)。
 # 実行時はユーザーが ``UV_EXCLUDE_NEWER`` 環境変数で上書きできる。
 # PATH 先頭の ``/home/pyfltr/.local/bin`` は ``uv tool install`` が配置する CLI shim を解決する。
 # 続く ``/home/pyfltr/.local/share/uv/tools/pyfltr/bin`` は ``uv tool install pyfltr[python]``
@@ -133,7 +133,11 @@ RUN useradd --create-home --shell /bin/bash --uid 1001 pyfltr \
     && mkdir -p /cache/uv /cache/pnpm /cache/mise/data /cache/mise/cache /usr/local/pnpm/bin \
     && chown -R pyfltr:pyfltr /cache /usr/local/pnpm
 
-USER pyfltr
+# ユーザー名ではなく数値 UID で切り替える (hadolint DL3066 対応)。
+# ホスト側がコンテナー内のユーザー名を解決できない環境（Kubernetes 等）でも実行 UID が定まる。
+# ``/etc/passwd`` に UID 1001 のエントリがあるため ``HOME`` は ``/home/pyfltr`` に解決され、
+# 名前指定時と実行時の uid・gid・``HOME`` は一致する。
+USER 1001
 WORKDIR /workspace
 
 # uv のサプライチェーン保護設定を ``~/.config/uv/uv.toml`` に配置する。
@@ -165,7 +169,7 @@ RUN mkdir -p /home/pyfltr/.config/uv \
 # 未指定時（ローカルビルド等）も動くよう required=false とする。
 # GITHUB_TOKEN なしだと未認証 API 呼び出し（60 req/h）でレート制限に達するため必須。
 # `env=GITHUB_TOKEN` 修飾子（Dockerfile syntax 1.10+）で BuildKit が直接環境変数として
-# 注入するため、`USER pyfltr` 切り替え後でも secret ファイルの uid/mode に依存せず参照できる。
+# 注入するため、非 root ユーザーへの切り替え後でも secret ファイルの uid/mode に依存せず参照できる。
 # （ファイルマウント方式では既定の uid=0/mode=0400 のため非 root ユーザーから読めず、
 # 旧実装の `cat` 経由は permission denied を黙殺して空文字を渡していた。）
 RUN --mount=type=secret,id=GITHUB_TOKEN,env=GITHUB_TOKEN,required=false \
