@@ -16,6 +16,8 @@ TypeScript/JS・Rust・.NETプロジェクト向けの推奨構成例。
 - 言語固有のツール + ドキュメント系lint（textlint / markdownlint / prettier）を組み合わせる
     - textlint / markdownlintの設定例（`.textlintrc.yaml`・`.markdownlint-cli2.yaml`）は
       [推奨設定例](recommended.md)を参照
+- 日本語のMarkdownを含む場合は`[tool.pyfltr]`へ`colloquial-check = true`を追加する
+    - 導入時の注意は[推奨設定例](recommended.md)の「日本語Markdownを含むプロジェクトでの推奨設定」を参照
 - `bin-runner`の既定は`"mise"`。actionlint等のネイティブバイナリツールはmise経由で呼び出されるため、mise導入を推奨
 - 個別ツールをPATH直接実行へ戻すには`{command}-runner = "direct"`または`{command}-path`を指定する
  （[ツール別設定](configuration-tools.md#command-runner)を参照）

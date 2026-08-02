@@ -220,6 +220,23 @@ textlintのプリセットやルールも`package.json`の`devDependencies`で�
 
 詳細は[設定項目（ツール別）](configuration-tools.md)の「js-runner経由で実行するツール」を参照。
 
+### 日本語Markdownを含むプロジェクトでの推奨設定
+
+日本語のMarkdownを含むプロジェクトでは`colloquial-check`を有効化する。
+LLMが頻繁に出力する口語的な日本語表現を検出する内蔵linterで、既定では無効（opt-in）。
+
+```toml
+[tool.pyfltr]
+colloquial-check = true
+```
+
+`colloquial-check-severity`の既定は`warning`のため、有効化してもCI・pre-commitは失敗しない。
+既存の文書に口語表現が残っている場合は有効化した時点から警告が出るため、一度まとめて是正する。
+辞書に一致する正当な用法を含むファイルは`colloquial-check-exclude`で除外し、
+対象を特定の拡張子へ限定する場合は`colloquial-check-targets`を指定する。
+
+詳細は[設定項目（ツール別）](configuration-tools.md)の「colloquial-check」を参照。
+
 ## .pre-commit-config.yaml
 
 ```yaml
