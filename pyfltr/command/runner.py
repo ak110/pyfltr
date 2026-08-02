@@ -17,16 +17,18 @@ import dataclasses
 import functools
 import os
 import pathlib
+import re
 import shutil
 
 import pyfltr.command.mise
+import pyfltr.command.process
 import pyfltr.command.structured_output
 import pyfltr.config.config
 from pyfltr.command.builtin import AUTO_ARGS, COMMAND_RUNNERS, JS_RUNNERS
 
 # `build_mise_subprocess_env`はpyfltr.command内部APIだがサブパッケージ全域で共有する。
 # 同じサブパッケージ内の`mise.py`もfrom-importで取り込んでおり、本モジュールも倣う。
-from pyfltr.command.env import build_mise_subprocess_env
+from pyfltr.command.env import build_mise_subprocess_env, build_subprocess_env
 
 logger = __import__("logging").getLogger(__name__)
 
@@ -76,6 +78,94 @@ PACKAGE_MANAGER_TOOL_BIN: dict[str, str] = {
     "npm-audit": "npm",
     "yarn-audit": "yarn",
 }
+
+# pyfltrのコマンド名から、期待する機能が成立する最低版と要件の理由を引く。
+# 版の選択はパッケージマネージャーへ委ねる既存方針を維持し、機能成立の検証だけを担う。
+PACKAGE_MANAGER_MIN_VERSION: dict[str, tuple[tuple[int, ...], str]] = {
+    "uv-audit": (
+        (0, 10, 10),
+        "0.10.10未満のuvは監査を実施せず終了コード0で終わるため、未検査の状態が成功として扱われる",
+    ),
+}
+
+
+# 版らしいトークンの判定。先頭の`v`を任意で許し、ドット区切りの数値が2要素以上続く形を版とみなす。
+# ビルドメタデータ（`+build`）やプレリリース（`-rc1`）は数値要素の途中で一致が終わるため除外される。
+_VERSION_TOKEN_PATTERN = re.compile(r"^v?(\d+(?:\.\d+)+)")
+
+# `--version`の応答を待つ上限秒数。応答しない実行ファイルでpyfltr全体が停止するのを防ぐ。
+# 超過時はreturncodeが非0となり、版を判別できない場合と同じ拒否へ倒れる。
+_VERSION_PROBE_TIMEOUT = 30.0
+
+
+def _extract_tool_version(output: str) -> tuple[int, ...] | None:
+    """`--version`の出力から数値版を取り出す。
+
+    ツールごとに`uv 0.11.7 (...)`・`pnpm 10.2.0`・`2026.7.1 linux-x64`と形が異なり、
+    警告行が版行より先に出る実装もある。行頭固定・2トークン目固定では取りこぼすため、
+    全行を順に走査して最初に見つかった版らしいトークンを採用する。
+    `0.10.10+build`のような付随情報は数値要素のみへ切り詰める。
+    見つからない場合は`None`を返し、呼び出し側が検証不能として扱えるようにする。
+    """
+    for line in output.splitlines():
+        for token in line.split():
+            matched = _VERSION_TOKEN_PATTERN.match(token)
+            if matched is not None:
+                return tuple(int(n) for n in matched.group(1).split("."))
+    return None
+
+
+def _format_version(version: tuple[int, ...]) -> str:
+    """数値版をドット区切りの文字列へ整形する。"""
+    return ".".join(str(n) for n in version)
+
+
+@functools.lru_cache(maxsize=1)
+def _get_tool_version(
+    commandline: tuple[str, ...], env_items: tuple[tuple[str, str], ...], cwd: pathlib.Path | None
+) -> tuple[int, ...] | None:
+    """解決済みコマンドラインへ`--version`を渡して数値版を取得する。
+
+    `commandline`は`ResolvedCommandline.commandline`（`[executable, *prefix]`）を渡す。
+    実行ファイルだけを渡すと、mise等のラッパー経由で解決された場合にラッパー自身の版を
+    測ってしまうため、起動と同じ形へ`--version`を付けて問い合わせる。
+    取得または解釈に失敗した場合は`None`を返す。
+    """
+    proc = pyfltr.command.process.run_subprocess_with_timeout(
+        [*commandline, "--version"], dict(env_items), cwd=cwd, timeout=_VERSION_PROBE_TIMEOUT
+    )
+    if proc.returncode != 0:
+        return None
+    return _extract_tool_version(proc.stdout)
+
+
+def ensure_package_manager_version(
+    resolved: "ResolvedCommandline",
+    config: pyfltr.config.config.Config,
+    command: str,
+    *,
+    cwd: pathlib.Path | None = None,
+) -> None:
+    """パッケージマネージャー系コマンドの最低版要件を確認する。"""
+    requirement = PACKAGE_MANAGER_MIN_VERSION.get(command)
+    if requirement is None:
+        return
+    minimum, reason = requirement
+    minimum_text = _format_version(minimum)
+    env = build_subprocess_env(config, command)
+    version = _get_tool_version(tuple(resolved.commandline), tuple(sorted(env.items())), cwd)
+    shown = " ".join(resolved.commandline)
+    hint = f"`{command}-path`で要件を満たす実行ファイルを指定することもできます。"
+    if version is None:
+        raise ValueError(
+            f"{shown}のバージョンを判別できませんでした。{command}には{minimum_text}以降が必要です。{reason}。{hint}"
+        )
+    if version < minimum:
+        version_text = _format_version(version)
+        raise ValueError(
+            f"{shown}のバージョンは{version_text}です。{command}には{minimum_text}以降が必要です。{reason}。{hint}"
+        )
+
 
 # pnpx経由で解決するときに `--package` に渡すspec。
 # 通常はbin名をそのまま渡すだけだが、上流の既知バグで動かないバージョンを

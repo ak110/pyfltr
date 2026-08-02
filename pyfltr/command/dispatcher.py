@@ -265,6 +265,8 @@ def _prepare_execution_params(
         # `mise-auto-trust` に従ったtrust→再実行を可能にする。
         resolved = pyfltr.command.runner.build_commandline(command, config, allow_side_effects=True, cwd=subproject_cwd)
         resolved = pyfltr.command.runner.ensure_mise_available(resolved, config, command=command, cwd=subproject_cwd)
+        # 監査を実施しない旧版が終了コード0を返すため、機能が成立する最低版を起動前に確認する。
+        pyfltr.command.runner.ensure_package_manager_version(resolved, config, command, cwd=subproject_cwd)
     except ValueError as e:
         message = str(e)
         # `{command}-runner = "uv"` または `"uvx"` をPython系以外のツールに指定した場合、`build_commandline` が
