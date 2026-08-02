@@ -190,6 +190,16 @@ SARIF出力（`--output-format=sarif`）と`github/codeql-action/upload-sarif`�
 組み合わせると、GitHub Code Scanningにアラート管理を委ねられる。
 同一の脆弱性は1件のアラートに集約され、解消後の定期実行で自動クローズされる。
 
+この構成は公開リポジトリで利用できる。
+非公開リポジトリでCode Scanningを使うにはGitHub Code Securityライセンスを要する
+（[公式ドキュメント](https://docs.github.com/en/code-security/code-scanning/introduction-to-code-scanning/about-code-scanning)）。
+非公開リポジトリでは、追加費用なく有効化できるDependabot alertsを脆弱性通知の主経路とする。
+そのうえでSARIFはファイルへ出力し、監査ツールの実行有無と検出結果の判別に用いる。
+`pyfltr`はツール実行の失敗をすべて終了コード1へ正規化するため、終了コードだけでは脆弱性の検出とツールの異常を区別できない。
+SARIF内に当該ツールの`runs`要素が存在するかで無言スキップを検出する。
+終了コードが非0の場合に限り、`results`が空かどうかで脆弱性の検出とツールの異常を区別する。
+脆弱性を検出した場合はワークフローを失敗させて通知する。
+
 ### JS/TSを併用するプロジェクトでの推奨設定
 
 JS/TSを併用するプロジェクトでは、`js-runner`をプロジェクトのパッケージマネージャーに合わせる。

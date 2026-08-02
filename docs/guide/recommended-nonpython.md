@@ -90,6 +90,10 @@ yarn berry（2+）利用時は`yarn-audit-args = ["npm", "audit", "--json"]`へ�
 SARIF出力と`github/codeql-action/upload-sarif`を組み合わせると、
 同一の脆弱性が1件のアラートに集約され、重複通知を回避できる。
 
+Code Scanningへのアップロードは公開リポジトリで利用できる構成である。
+非公開リポジトリではGitHub Code Securityライセンスを要するため、Dependabot alertsとSARIFのファイル出力による代替構成を採用する。
+詳細は[推奨設定例](recommended.md)の「依存の脆弱性監査の有効化（任意）」を参照。
+
 ## Rustプロジェクト
 
 `cargo fmt` / `cargo clippy` / `cargo test` / `cargo deny`と、
