@@ -73,6 +73,7 @@ pyfltr = "pyfltr.cli.main:main"
 # mdformat は mkdocs-llmstxt の間接依存。mdformat 1.0 系では mdformat-tables が未対応のため、
 # mkdocs-llmstxt 0.5 系を維持できるよう <1.0 へ制約する。mdformat-tables 側の追従後に解除する。
 dev = [
+    "markdown-it-py>=3.0.0",
     "mdformat<1.0",
     "mkdocs-llmstxt>=0.5",
     "mkdocs-material>=9.6",
@@ -143,6 +144,18 @@ colloquial-check-exclude = [
     "tests/colloquial_cli_test.py",
 ]
 subproject-exclude = ["smoke_data"]
+
+# 利用者がそのまま写す前提のドキュメント内コード例が、その言語として解析できることを検査する。
+# 組み込みのtaploとpre-commitのcheck-tomlはいずれも`*.toml`ファイルのみを対象とし、
+# Markdownのフェンス内は検査しないため、カスタムコマンドとして補う。
+[tool.pyfltr.custom-commands.doc-codeblock-check]
+type = "linter"
+path = "uv"
+args = ["run", "--frozen", "python", "scripts/check_doc_codeblocks.py"]
+targets = "*.md"
+pass-filenames = false
+error-pattern = '(?P<file>.+):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>.+)'
+fast = true
 
 [tool.pylint."messages control"]
 disable = [

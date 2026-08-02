@@ -13,7 +13,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-08-01T13:22:16.314823459Z"
+exclude-newer = "2026-08-01T22:59:49.622118292Z"
 exclude-newer-span = "P1D"
 
 [options.exclude-newer-package]
@@ -1354,6 +1354,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "markdown-it-py" },
     { name = "mdformat" },
     { name = "mkdocs" },
     { name = "mkdocs-llmstxt" },
@@ -1395,6 +1396,7 @@ provides-extras = ["python"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "markdown-it-py", specifier = ">=3.0.0" },
     { name = "mdformat", specifier = "<1.0" },
     { name = "mkdocs", specifier = ">=1.6" },
     { name = "mkdocs-llmstxt", specifier = ">=0.5" },

@@ -12,6 +12,11 @@ JSON Lines出力（`--output-format=jsonl`）とMCPサーバー（`pyfltr mcp`�
     - ピンが変わった場合は、利用者向けドキュメントのCI設定例も確認する
       - 対象は`docs/guide/recommended.md`と`docs/guide/configuration-tools.md`
       - アクションのメジャー版表記がピン版と一致しなければ、同じ変更に含めて更新する
+- 推奨ガイド（`docs/guide/recommended.md`・`docs/guide/recommended-nonpython.md`）と本リポジトリの設定は、
+  双方の変更時に対応する既存設定へ同じ変更を反映する
+  - 推奨ガイドを変更した場合は、設定例が提示する対象のうち本リポジトリに存在するものへ反映する
+  - 本リポジトリを変更した場合は、対応する設定例が推奨ガイドに存在するとき、その例へ反映する
+  - 本リポジトリ固有の事情で反映しない場合は、当該設定ファイルへ理由をコメントで残す
 - リリース手順: `gh workflow run release.yaml --field=bump=PATCH`（`PATCH`は`MINOR`・`MAJOR`に変更可）
 - Docker再ビルド単発起動: `gh workflow run docker-build.yaml`
   - `ghcr.io/ak110/pyfltr:latest`をリリースを伴わず更新する
