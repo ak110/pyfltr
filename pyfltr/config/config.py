@@ -519,10 +519,14 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # `pass-filenames = false`で対象ファイルは渡さずプロジェクト単位で実行する。
     # bin-runner系ではないため`{command}-version`キーは設けない。
     # uv-auditは`--frozen`でロック解決によるuv.lock書き換えを防ぐ（linterは検査のみで副作用を持たない原則）。
+    # `uv audit`はuv側の実験的機能であり、既定では実行のたびに実験的機能である旨の警告を標準エラーへ出力する。
+    # 警告は監査結果と無関係でCIログの可読性を下げるため、`--preview-features audit`で抑止する。
+    # 抑止により実験的機能である旨の注意喚起が利用者の目に触れなくなるため、
+    # uv側の仕様変更で監査の挙動が変わる可能性がある点をガイドの版要件記述で補う。
     "uv-audit": False,
     "uv-audit-path": "",
     "uv-audit-runner": "direct",
-    "uv-audit-args": ["audit", "--frozen", "--no-progress"],
+    "uv-audit-args": ["audit", "--preview-features", "audit", "--frozen", "--no-progress"],
     "uv-audit-pass-filenames": False,
     "uv-audit-fast": False,
     "pnpm-audit": False,

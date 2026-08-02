@@ -168,7 +168,8 @@ hte = "hte"
 ### 依存の脆弱性監査の有効化（任意）
 
 依存パッケージの脆弱性を`pyfltr`の枠組みでまとめて監査したい場合は`uv-audit`を有効化する。
-`uv audit`（uv 0.10.8以降）が`pyproject.toml`を対象にPython依存の既知脆弱性を検査する。
+`uv audit`（uv 0.10.10以降）が`pyproject.toml`を対象にPython依存の既知脆弱性を検査する。
+0.10.8・0.10.9は監査対象の件数を報告するのみで脆弱性を検出しない。
 外部脆弱性データベースへ問い合わせるためネットワーク接続が必須で結果が変動する。
 ネットワークが不安定なCIで失敗扱いを避けたい場合は`uv-audit-severity = "warning"`で警告扱いに切り替える。
 
@@ -179,7 +180,9 @@ uv-audit = true
 # uv-audit-severity = "warning"
 ```
 
-既定引数`uv-audit-args = ["audit", "--frozen", "--no-progress"]`は`--frozen`を含み、監査時に`uv.lock`を書き換えない。
+既定引数`uv-audit-args = ["audit", "--preview-features", "audit", "--frozen", "--no-progress"]`は
+`--frozen`を含み、監査時に`uv.lock`を書き換えない。
+`--preview-features audit`は`uv audit`が実験的機能である旨の警告を抑止する。
 
 脆弱性監査の結果はコード変更と無関係に外部データベースの更新で変動する。
 このためコミット毎やpre-commitではなく、日次・週次の定期実行に向く。

@@ -337,11 +337,15 @@ npm-audit = true    # JavaScript依存をnpm auditで監査する
 
 既定引数は次のとおり。
 
-- `uv-audit-args = ["audit", "--frozen", "--no-progress"]`。`--frozen`で監査時に`uv.lock`を書き換えない
+- `uv-audit-args = ["audit", "--preview-features", "audit", "--frozen", "--no-progress"]`。
+  `--frozen`で監査時に`uv.lock`を書き換えない。`--preview-features audit`は
+  `uv audit`が実験的機能である旨の警告を抑止する
 - `pnpm-audit-args`・`npm-audit-args`・`yarn-audit-args`はいずれも既定値`["audit", "--json"]`。
   `--json`はpyfltrが脆弱性情報を構造化して抽出するために必須
 
-`uv audit`はuv 0.10.8以降のサブコマンド。`uv-audit`利用時はuv 0.10.8以降が必要。
+`uv audit`はuv 0.10.8で追加されたサブコマンドだが、0.10.8・0.10.9は監査対象の件数を報告するのみで
+脆弱性を検出しない。`uv-audit`利用時はuv 0.10.10以降が必要。
+`uv audit`はuv側の実験的機能であり、仕様が予告なく変わる可能性がある。
 
 `yarn-audit`はyarn classic（1.x）のJSON Lines出力を前提とする。
 yarn berry（2+）はサブコマンド体系が異なるため、利用時は引数を上書きする。

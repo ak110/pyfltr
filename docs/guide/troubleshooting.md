@@ -125,7 +125,7 @@ gitが不在またはrefが存在しない場合は警告を出力して全体�
 --only-failed: <tool>: 直前 run の失敗ファイル N 件は指定 targets と交差しません。本ツールは対象から除外します。
 ```
 
-## mise関連のトラブル
+## mise関連のトラブル {#mise-troubleshooting}
 
 `bin-runner = "mise"`（既定）でcargo系・dotnet系・shellcheck等のツール実行が失敗する場合の対処。
 
@@ -294,7 +294,7 @@ js-runner=direct で `textlint` がローカル node_modules に見つかりま�
 - `{command}-path = "/path/to/bin"`で実行ファイルを直接指定する
 
 mise経由で発生する未信頼エラー・registry解決失敗等の追加対処は
-[mise関連のトラブル](#mise関連のトラブル)節を参照。
+[mise関連のトラブル](#mise-troubleshooting)節を参照。
 
 ## `--commands`で指定したコマンドが実行されない {#commands-not-run}
 
