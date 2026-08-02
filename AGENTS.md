@@ -51,6 +51,15 @@ format別のlogger stream/level切替の詳細は[docs/development/architecture.
   起点実行分を含めて同一の`source`と`message`の組が1件に収まることを確認する。
   モノレポ構成での実測手順は[docs/development/architecture.md](docs/development/architecture.md)の
   「モノレポ対応」節を参照する
+- 外部ツールの成否は`pyfltr/command/core_.py`の`CommandResult.status`が終了コードから導出する。
+  終了コード0は`errors`・`has_error`を参照せず`succeeded`となるため、
+  `pyfltr/command/error_parser.py`が抽出した診断は正常終了したツールの成否を変えない
+  （`has_error`が`status`へ影響するのは終了コードが非0のformatter分岐に限る）。
+  ツールが期待する処理を実施しないまま正常終了する事象への対策は、出力解析ではなく
+  `pyfltr/command/dispatcher.py`の`_prepare_execution_params`が呼ぶ実行前検査で
+  `resolution_failed`へ倒す経路を採用する。
+  `resolution_failed`は`status`の最優先分岐で確定するため、
+  `{command}-severity = "warning"`による格下げの対象外とする
 
 ## 注意点
 

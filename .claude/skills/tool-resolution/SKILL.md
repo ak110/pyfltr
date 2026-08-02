@@ -91,6 +91,10 @@ JSONLフィールドの追加・名称変更は[.claude/skills/output-format/SKI
 `runner = "direct"`でPATH上のバイナリを直接呼び出す。
 Python系ツール解決表（`PYTHON_TOOL_BIN`）へ相乗りさせると、未検出時の案内文がuv経由起動を案内する構造になるため分離する。
 `{command}-version`キーは設けない（バージョン固定はパッケージマネージャー側に委ねる）。
+機能が成立する最低版の要件は`pyfltr/command/runner.py`の`PACKAGE_MANAGER_MIN_VERSION`へ登録し、
+`ensure_package_manager_version`が起動前に検査して`resolution_failed`へ倒す。
+旧版が処理を実施しないまま終了コード0を返す事象は、終了コード0が無条件に成功となり
+出力解析の結果が成否へ関与しないため、出力解析では検知できない。
 
 ## pnpx経路でのplugin解決workaround
 
