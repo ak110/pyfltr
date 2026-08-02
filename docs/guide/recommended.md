@@ -320,6 +320,10 @@ test:
 .PHONY: help setup update format test
 ```
 
+`update`ターゲットが用いる`autoupdate`は、`prek --help`のコマンド一覧に現れないエイリアスである。
+正規名は`update`で、どちらの名前を指定しても同じ動作をする（prek 0.4.11で確認）。
+例が`autoupdate`を採用するのは、pre-commitから移行する際の書き換えが実行ファイル名の置換だけで済むためである。
+
 ### mise.toml
 
 言語を問わず利用可能。
