@@ -94,17 +94,16 @@ exclude-newer = "1 day"
 # overrideでピンを無視してmcpを修正済みバージョンへ更新する。
 # 上限`<2`は、2.0で高レベルAPIが改称され`pyfltr/cli/mcp_server.py`のimportが解決できなくなるため。
 # 配布経路ではsemgrepのピンにより1.x系しか入らず、開発環境だけ2.0系にすると実行環境と乖離する。
-# semgrep側のピンが1.28.1以上へ追従したら`mcp>=1.28.1,<2`の指定を削除する。
+# semgrep側のピンが1.28.1以上へ追従したら本行を削除する。
 #
-# clickはsemgrepが`click~=8.1.8`（=`>=8.1.8, ==8.1.*`）を厳密ピンしており、そのままでは
-# `click 8.1.8`のPYSEC-2026-2132（修正版8.3.3）を解消できない。overrideでピンを無視して
-# 修正版以降へ更新する。semgrep 1.170.1がclick 8.4.2下で正常動作することを実測済み。
-# semgrep側のピンが8.3.3以上へ追従したら`click>=8.3.3`の指定を削除する。
-# この上書きは本リポジトリの依存解決にのみ適用され、配布物のメタデータには含まれない。
-# semgrepは`[project] dependencies`の本体依存であるため、`uvx pyfltr`等で導入した
-# 利用者環境ではsemgrepのピンにより`click 8.1.8`が解決され当該脆弱性は残る。
-# 本リポジトリの監査が緑になることを利用者環境での解消と読み替えないこと。
-override-dependencies = ["mcp>=1.28.1,<2", "click>=8.3.3"]
+# clickはsemgrepが`click~=8.1.8`（=`>=8.1.8, ==8.1.*`）を厳密ピンしており、
+# `click 8.1.8`のPYSEC-2026-2132（修正版8.3.3）が`uv audit`で検出される。
+# semgrepは`[project] dependencies`の本体依存であり、overrideは配布物のメタデータへ波及しない。
+# 迂回しても`uvx pyfltr`等で導入した利用者環境では当該脆弱性が残り、
+# 本リポジトリの監査結果だけが緑になる。検知の抑止として働くため迂回しない。
+# semgrepが`click`のピンを8.3.3以降へ追従するのを待つ。
+# 迂回しない判断の根拠は`docs/development/development.md`のサプライチェーン攻撃対策節による。
+override-dependencies = ["mcp>=1.28.1,<2"]
 
 [tool.bandit]
 # pyfltrは各種ツールを起動するCLI（subprocess経由のwrapper）であり、
