@@ -20,18 +20,21 @@ requires-python = ">=3.11,<4.0"
 dependencies = [
     "bandit>=1.7",
     "dill>=0.3",
-    # GHSA-vj7q-gjh5-988w・GHSA-jpw9-pfvf-9f58・GHSA-hvrp-rf83-w775は1.28.1で修正済み。
-    # 2.0で高レベルAPI`FastMCP`が`mcp.server.mcpserver.MCPServer`へ改称され旧importパスが削除された。
-    # 上限`<2`は`pyfltr/cli/mcp_server.py`のimportパスを守るためのもので、2.0系への移行は
-    # 当該モジュールの改修を伴うため別途対応する。
-    "mcp>=1.28.1,<2",
+    # 2.0で高レベルAPIのクラスが`mcp.server.mcpserver.MCPServer`へ改称され、1.x系のimportパスは削除された。
+    # `pyfltr/cli/mcp_server.py`は2.0系のAPIのみを用いるため下限を2.0.0とする。
+    # 上限は設けない。1.x系では当該APIが存在せず下限指定だけで要件を表現できるため。
+    # かつて下限を1.28.1としていたGHSA-vj7q-gjh5-988w・GHSA-jpw9-pfvf-9f58・GHSA-hvrp-rf83-w775は
+    # いずれも2.0.0が包含するため、当該下限指定は不要になった。
+    "mcp>=2.0.0",
     "mypy>=1.0",
     "natsort>=8.0",
     "platformdirs>=4.0",
     "pre-commit>=4.0",
     "prek>=0.4.11",
     "psutil>=6.0",
-    # MCP公開スキーマのモデル定義が直接使用する。MCP SDKの解決失敗時もCLI起動を維持するため明示する。
+    # MCP公開スキーマのモデル定義（`pyfltr/cli/mcp_models.py`）が用いる。
+    # `mcp`の推移依存でもあるが、`mcp`が解決できない環境でも当該モジュールのimportを
+    # 成立させてCLI全体の起動を保つため、明示的に宣言する。
     "pydantic>=2.0",
     "pylint-pydantic>=0.4",
     # `--output-format=json2`レポーターの対応起点が3.2.0のため下限を3.2に固定する。

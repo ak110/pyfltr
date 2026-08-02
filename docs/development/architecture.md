@@ -651,10 +651,10 @@ MCPサーバー・`--only-failed`からも再利用する。
 
 ### MCPライブラリ
 
-`mcp.server.fastmcp.FastMCP`を採用する。
+`mcp.server.mcpserver.MCPServer`を採用する。
 高レベルDSLで記述量が最小、型ヒントからinputSchemaとoutputSchemaを自動生成可能、
 stdioトランスポート起動が`mcp.run(transport="stdio")`の一行で済む点が決め手となった。
-低レベルAPI（`mcp.server.Server`）の利点が必要となる動的capability交渉は不要。
+低レベルAPI（`mcp.server.lowlevel`）の利点が必要となる動的capability交渉は不要。
 
 ### stdio隔離
 

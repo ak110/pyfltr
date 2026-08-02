@@ -1,7 +1,7 @@
 """MCPツールスキーマ用Pydanticモデル群。
 
 `mcp_server.py`が公開する8ツールの引数・戻り値スキーマをまとめて定義する。
-FastMCPはこれらのモデルからJSONスキーマを自動生成してMCPクライアントへ公開する。
+MCPServerはこれらのモデルからJSONスキーマを自動生成してMCPクライアントへ公開する。
 """
 
 from __future__ import annotations

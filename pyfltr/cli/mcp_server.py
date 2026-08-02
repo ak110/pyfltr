@@ -1,7 +1,7 @@
 """MCPサーバー本体。
 
 `pyfltr mcp`サブコマンドでstdioトランスポートのMCPサーバーを起動する。
-FastMCPを用いて8ツール（読み取り系4件・実行系1件・grep/replace系3件）を公開し、
+MCPServerを用いて8ツール（読み取り系4件・実行系1件・grep/replace系3件）を公開し、
 LLMエージェントがpyfltrの実行と実行アーカイブ参照を直接利用できるようにする。
 
 実行系を`run-for-agent`相当1本に限定しているのは、エージェント連携用途では
@@ -16,8 +16,8 @@ MCPスキーマを単純化するため。`no-archive`/`no-cache`/`config`/
 公開スキーマには`subproject`識別フィールドを追加しないため、利用者が観測する
 レコード構造は単一プロジェクト時と同じになる。
 
-サフィックス付きモジュール名（`mcp_.py`）はサードパーティ`mcp`パッケージ
-とのimport衝突事故を予防するため（`warnings_.py`と同じ方針）。
+サーバー実装を`mcp_server.py`へ分離し、サードパーティ`mcp`パッケージとの
+import衝突を避けながらCLI入口から遅延なく参照できる構成にする。
 """
 
 from __future__ import annotations
@@ -37,12 +37,12 @@ import typing
 # 配布物の版指定は下流プロジェクトの依存解決で上書きされる場合がある。
 # MCP専用依存のimport失敗を捕捉し、他サブコマンドとヘルプの起動を維持する。
 try:
-    import mcp.server.fastmcp as _imported_fastmcp
+    import mcp.server.mcpserver as _imported_mcpserver
 except ImportError as e:  # 依存解決が配布物の宣言と異なる環境で到達する。
-    _fastmcp: types_module.ModuleType | None = None
+    _mcpserver: types_module.ModuleType | None = None
     _MCP_IMPORT_ERROR: ImportError | None = e
 else:
-    _fastmcp = _imported_fastmcp
+    _mcpserver = _imported_mcpserver
     _MCP_IMPORT_ERROR = None
 
 import pyfltr.cli.pipeline
@@ -73,7 +73,7 @@ from pyfltr.cli.mcp_models import (
 from pyfltr.grep_.types import MatchRecord, ReplaceCommandMeta
 
 if typing.TYPE_CHECKING:
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server.mcpserver import MCPServer
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +86,7 @@ logger = logging.getLogger(__name__)
 def _raise_mcp_error(msg: str) -> typing.Never:
     """MCPクライアントへエラーとして返すための例外を送出する。
 
-    FastMCPは`ValueError`をツールエラーとしてJSON-RPCエラーレスポンスに変換する。
+    MCPServerは`ValueError`をツールエラーとしてJSON-RPCエラーレスポンスに変換する。
     """
     raise ValueError(msg)
 
@@ -100,14 +100,14 @@ def _resolve_run_id_or_raise(store: pyfltr.state.archive.ArchiveStore, raw: str)
 
 
 # ---------------------------------------------------------------------------
-# FastMCPツール関数群（公開名は@mcp.tool(name=...)で明示）
+# MCPServerツール関数群（公開名は@mcp.tool(name=...)で明示）
 # ---------------------------------------------------------------------------
 
 # build_server()内で登録するため、ここではデコレーターを付けない。
 # 公開名はbuild_server()で@mcp.tool(name="...")によって明示的に設定する。
 # 公開名はアンダースコア区切り（`list_runs`等）を採用する。CLIサブコマンドの
 # ハイフン形式（`list-runs`）とは異なるが、`@mcp.tool()`のスキーマ名規則上
-# ハイフンは非推奨で互換性のあるFastMCP経路もアンダースコア前提のため。
+# ハイフンは非推奨で互換性のあるMCPServer経路もアンダースコア前提のため。
 
 
 async def tool_list_runs(limit: int = 20) -> list[RunSummaryModel]:
@@ -716,19 +716,19 @@ async def tool_replace_undo(replace_id: str, force: bool = False) -> ReplaceUndo
 
 
 # ---------------------------------------------------------------------------
-# FastMCPサーバー組み立て
+# MCPServer組み立て
 # ---------------------------------------------------------------------------
 
 
-def build_server() -> FastMCP:
-    """FastMCPサーバーインスタンスを生成し、8ツールを登録して返す。
+def build_server() -> MCPServer:
+    """MCPServerインスタンスを生成し、8ツールを登録して返す。
 
     公開名は`@mcp.tool(name=...)`で明示し、Python側の関数名（`tool_*`）
     とは独立したスキーマ名（`list_runs`等）を維持する。
     """
-    if _fastmcp is None:
+    if _mcpserver is None:
         raise RuntimeError("MCPサーバー機能に必要な依存を読み込めません") from _MCP_IMPORT_ERROR
-    mcp = _fastmcp.FastMCP("pyfltr")
+    mcp = _mcpserver.MCPServer("pyfltr")
 
     mcp.tool(name="list_runs", description="実行アーカイブに保存された run 一覧を新しい順で返す。")(tool_list_runs)
     mcp.tool(
@@ -793,7 +793,7 @@ def execute_mcp(args: argparse.Namespace) -> int:
 
     stdioトランスポートでMCPサーバーを起動する。
     起動直後にroot loggerをstderrへ向けてJSON-RPCフレームのstdout汚染を防ぐ。
-    FastMCPの`run(transport="stdio")`はstdin EOFで終了する。
+    MCPServerの`run(transport="stdio")`はstdin EOFで終了する。
     """
     del args  # サブコマンド呼び出し規約上受け取るのみ（mcpは追加引数を持たない）
 
@@ -801,7 +801,7 @@ def execute_mcp(args: argparse.Namespace) -> int:
     # ロギングは必ずstderrへ向ける。
     logging.basicConfig(stream=sys.stderr, level=logging.WARNING, format="%(levelname)s: %(message)s")
 
-    if _fastmcp is None:
+    if _mcpserver is None:
         logger.error(
             "MCPサーバー機能に必要な依存が解決されていません。pyproject.tomlが宣言する版指定を満たす環境で実行してください: %s",
             _MCP_IMPORT_ERROR,
