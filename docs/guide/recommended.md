@@ -534,7 +534,7 @@ jobs:
     env:
       UV_PYTHON: ${{ matrix.python-version }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Cache /cache
         uses: actions/cache@v6
@@ -614,7 +614,7 @@ PDFを画像化する`pdf2image`が必要とする`poppler-utils`の導入と`sa
       image: ghcr.io/ak110/pyfltr:latest
       options: --user root
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: safe.directory の設定
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: システムパッケージ導入
@@ -641,12 +641,12 @@ jobs:
       matrix:
         python-version: ["3.11", "3.12", "3.13", "3.14"]
     steps:
-      - uses: actions/checkout@v6
-      - uses: astral-sh/setup-uv@v8
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v9
         with:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: "lts/*"
       - uses: pnpm/action-setup@v6

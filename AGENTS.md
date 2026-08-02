@@ -8,6 +8,10 @@ JSON Lines出力（`--output-format=jsonl`）とMCPサーバー（`pyfltr mcp`�
 
 - `make update`: 依存更新 + prek autoupdate + pinactアクション更新 + 全テスト実行
   - `make update-actions`: GitHub Actionsのハッシュピン更新のみ（mise経由でpinact実行）
+    - pinactは`.github/workflows/`配下だけを更新する
+    - ピンが変わった場合は、利用者向けドキュメントのCI設定例も確認する
+      - 対象は`docs/guide/recommended.md`と`docs/guide/configuration-tools.md`
+      - アクションのメジャー版表記がピン版と一致しなければ、同じ変更に含めて更新する
 - リリース手順: `gh workflow run release.yaml --field=bump=PATCH`（`PATCH`は`MINOR`・`MAJOR`に変更可）
 - Docker再ビルド単発起動: `gh workflow run docker-build.yaml`
   - `ghcr.io/ak110/pyfltr:latest`をリリースを伴わず更新する

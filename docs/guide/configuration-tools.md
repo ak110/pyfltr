@@ -598,7 +598,7 @@ jobs:
       # mise・pinact等がGitHub APIを呼び出す際のレート制限（403）回避。
       GITHUB_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: jdx/mise-action@v4
       - run: uvx pyfltr ci
 ```
