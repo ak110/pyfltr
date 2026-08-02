@@ -95,6 +95,8 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     #   Python系（mypy・pylint・pyright・ruff-* 等）は `"python-runner"` 委譲、
     #   JS系（textlint・eslint・biome 等）は `"js-runner"` 委譲、
     #   ネイティブ系（shellcheck・shfmt・cargo-* 等）は `"bin-runner"` 委譲。
+    #   ただし、既定値がfalseで他依存へ厳密ピンまたは上限制約を課すツールは本体依存から除外し、
+    #   `"uvx"` で別環境へ直接解決する。
     #   これによりグローバル `python-runner` / `js-runner` / `bin-runner` の切り替え1箇所で
     #   ツール群の起動経路を一括変更できる。
     # - グローバル既定値は `python-runner = "uv"`・`js-runner = "pnpx"`・`bin-runner = "mise"`。
@@ -487,12 +489,15 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "gitleaks-version": "latest",
     "gitleaks-fast": False,
     # semgrep: 多言語SAST。ルールセット指定が必須のため既定で無効（opt-in）。
+    # semgrepは`mcp`を厳密ピンし`click`にも強い制約を課すため本体依存から外した。
+    # `uvx`既定により別環境で解決し、pyfltrの依存グラフから切り離す。
+    # 利用者が版を固定したい場合は`semgrep-path`または`semgrep-runner`で上書きする。
     # 既定argsは空とする（ルールセット既定はsemgrep側の意図と衝突するため）。
     # 利用者は`semgrep-args = ["scan", "--json", "--error", "--config=auto"]`等で
     # サブコマンド・出力形式・ルールセットをまとめて指定する。
     "semgrep": False,
     "semgrep-path": "",
-    "semgrep-runner": "python-runner",
+    "semgrep-runner": "uvx",
     "semgrep-args": [],
     "semgrep-fast": False,
     # bandit: Python専用source-level SAST。既定で無効（opt-in）。
@@ -505,10 +510,13 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "bandit-args": ["--quiet", "--recursive", "--format=json"],
     "bandit-fast": False,
     # sqlfluff: SQL専用linter。dialect指定が必須のため利用者の`.sqlfluff`配置を前提とするopt-in。
+    # `click`へ上限を課し他ツールの更新を妨げるため本体依存から外した。
+    # `uvx`既定により別環境で解決し、pyfltrの依存グラフから切り離す。
+    # 利用者が版を固定したい場合は`sqlfluff-path`または`sqlfluff-runner`で上書きする。
     # `sqlfluff lint`サブコマンドをlinterとして起動する（`sqlfluff format`サブコマンドは対象外）。
     "sqlfluff": False,
     "sqlfluff-path": "",
-    "sqlfluff-runner": "python-runner",
+    "sqlfluff-runner": "uvx",
     "sqlfluff-args": ["lint", "--format=json"],
     "sqlfluff-fast": False,
     # 依存の脆弱性監査ツール群（uv audit / pnpm audit / npm audit / yarn audit）。

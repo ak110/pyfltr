@@ -1,18 +1,21 @@
 # 設定項目（ツール別）
 
-ツールごとの起動方式（python-runner / js-runner / bin-runner / 直接実行）・2段階実行・カスタムコマンドを扱う。
+ツールごとの起動方式（python-runner / uvx既定 / js-runner / bin-runner / 直接実行）・2段階実行・カスタムコマンドを扱う。
 基本設定（プリセット・言語カテゴリゲート・並列実行等）は[設定項目](configuration.md)を参照。
 導入手順は[はじめに](getting-started.md)を参照。
 
-pyfltrは対応ツールを実行方式の観点から4カテゴリに分けて扱う。
-カテゴリ委譲を採用する3カテゴリでは既定値が対応するカテゴリ委譲値になっており、
-直接実行カテゴリのみ既定値が`"direct"`（直接指定値）となる（共通の委譲先が無いため）。
+pyfltrは対応ツールを実行方式の観点から5カテゴリに分けて扱う。
+カテゴリ委譲を採用する3カテゴリでは既定値が対応するカテゴリ委譲値になっている。
+残る2カテゴリは共通の委譲先を持たず、`"uvx"`または`"direct"`を既定値とする。
 
 - python-runner経由（既定`{command}-runner = "python-runner"`）。
-  対象はPython系ツール一式に加え、semgrep / sqlfluff / banditが該当する。
+  対象はPython系ツール一式に加え、banditが該当する。
   Python系ツール一式はmypy / pylint / pyright / ty / pytest / ruff-format / ruff-check / uv-sortを指す。
   グローバル`python-runner`設定（`"uv"` / `"uvx"` / `"direct"`）へ委譲する。
   既定`"uv"`ではcwdに`uv.lock`があり`uv`バイナリが利用可能な場合に`uv run --frozen <bin>`でプロジェクトのvenv経由で起動する
+- uvx既定のPython製ツール（既定`{command}-runner = "uvx"`）。
+  対象はsemgrep / sqlfluff。
+  本体依存から分離し、`uvx <bin>`で別環境へ解決する
 - js-runner経由（既定`{command}-runner = "js-runner"`）。
   対象はeslint / prettier / biome / oxlint / tsc / vitest / markdownlint-cli2 / textlint / designmd。
   npm / pnpm / yarn等のJavaScriptパッケージマネージャー経由で起動する
@@ -124,8 +127,7 @@ pass-filenames = false
 
 ## python-runner経由実行ツール（Python系）
 
-対象はmypy / pylint / pyright / ty / pytest / ruff-format / ruff-check / uv-sortのPython系ツールと、
-semgrep / sqlfluff / bandit。
+対象はmypy / pylint / pyright / ty / pytest / ruff-format / ruff-check / uv-sortのPython系ツールとbandit。
 これらの`{command}-runner`既定値は`"python-runner"`（カテゴリ委譲値）で、
 グローバル`python-runner`設定（既定`"uv"`）へ委譲して起動方式を解決する。
 
@@ -190,45 +192,6 @@ uv-sort = true
 Python系ツールとして扱われ、`python = true`のゲート対象となる（プリセット`20260411`以降に含まれる）。
 `mypy` / `pylint` / `pytest`も全プリセットに含まれ、`python = true`だけでゲートを通過する。
 
-### semgrep
-
-`semgrep`は多言語SAST。pyfltr本体依存（`pyproject.toml`の`[project].dependencies`）に同梱されるため、
-`uvx pyfltr`単発でも利用できる。ルールセット指定が必須のため既定で無効（opt-in）。
-
-```toml
-[tool.pyfltr]
-semgrep = true
-# 公開ルールセットを使う場合
-semgrep-args = ["scan", "--json", "--error", "--config=auto"]
-# 個別ルールセットを使う場合
-# semgrep-args = ["scan", "--json", "--error", "--config=p/python", "--config=p/typescript"]
-```
-
-`semgrep-args`の既定値は空。利用者は`scan`サブコマンド・出力形式・ルールセットをまとめて指定する。
-`--json`は出力パースの前提条件で、含めないとpyfltrの違反抽出が機能しない。
-`--error`は違反検出時にsemgrepを非0終了させる指定で、含めないとsemgrep側がexit 0を返しpyfltr側でfailed検出できない。
-
-### sqlfluff
-
-`sqlfluff`はSQL専用linter。pyfltr本体依存に同梱されるため、`uvx pyfltr`単発でも利用できる。
-dialect指定が必須のため、`.sqlfluff`をプロジェクトルートに配置する前提のopt-in。
-`sqlfluff lint`サブコマンドをlinterとして起動する（`sqlfluff format`サブコマンドは対象外）。
-
-```toml
-[tool.pyfltr]
-sqlfluff = true
-```
-
-`.sqlfluff`例:
-
-```ini
-[sqlfluff]
-dialect = postgres
-```
-
-pyfltr既定の`sqlfluff-args = ["lint", "--format=json"]`は出力パースのため必須引数を含む。
-変更する場合も`lint`サブコマンドと`--format=json`は維持する。
-
 ### bandit
 
 `bandit`はPython専用source-level SAST。pyfltr本体依存に同梱されるため、`uvx pyfltr`単発でも利用できる。
@@ -253,6 +216,67 @@ pyfltrが起点cwd直下の`pyproject.toml`・`.bandit.yaml`・`.bandit.toml`を
 INI形式の`.bandit`はbandit本体の`--recursive`時自動探索に委ねるため、pyfltr側からの注入対象外とする。
 pyfltr既定の`bandit-args = ["--quiet", "--recursive", "--format=json"]`は出力パースのため必須引数を含む。
 `--format=json`はJSON出力指定、`--quiet`は非JSONノイズ抑制、`--recursive`はディレクトリ指定時の再帰探索を行う。
+
+## uvx既定のPython製ツール
+
+semgrep / sqlfluffは既定で無効（opt-in）で、`{command}-runner`既定値は`"uvx"`。
+これらが課す依存制約をpyfltr本体と他ツールの依存グラフから切り離すため、本体依存には同梱しない。
+`uvx`と対象ツールのPATH上の実行ファイルがともに見つからない場合は`resolution_failed`になる。
+利用者が版を固定する場合は、対象パッケージを利用者プロジェクトへ個別に追加して
+`{command}-runner = "direct"`へ切り替えるか、`{command}-path`で実行ファイルを明示する。
+
+### semgrep
+
+`semgrep`は多言語SAST。他の依存へ厳密ピンを課すためpyfltr本体依存には同梱せず、
+`semgrep-runner = "uvx"`既定で実行時に別環境へ解決する。
+`uvx`が利用できる環境なら`uvx pyfltr`単発でも利用できる。
+`uv tool install semgrep`で導入済みの環境がある場合は`uvx`が当該環境を再利用するため、
+実行のたびの解決は発生しない。公式Dockerイメージは当該手順で導入済みである。
+導入済み環境が無い場合は実行のたびに依存を解決するため、版を固定したい場合や
+解決コストを避けたい場合は`uv tool install semgrep`で導入するか、
+`semgrep-path`または`semgrep-runner`で上書きする。
+ルールセット指定が必須のため既定で無効（opt-in）。
+
+```toml
+[tool.pyfltr]
+semgrep = true
+# 公開ルールセットを使う場合
+semgrep-args = ["scan", "--json", "--error", "--config=auto"]
+# 個別ルールセットを使う場合
+# semgrep-args = ["scan", "--json", "--error", "--config=p/python", "--config=p/typescript"]
+```
+
+`semgrep-args`の既定値は空。利用者は`scan`サブコマンド・出力形式・ルールセットをまとめて指定する。
+`--json`は出力パースの前提条件で、含めないとpyfltrの違反抽出が機能しない。
+`--error`は違反検出時にsemgrepを非0終了させる指定で、含めないとsemgrep側がexit 0を返しpyfltr側でfailed検出できない。
+
+### sqlfluff
+
+`sqlfluff`はSQL専用linter。他の依存へ上限制約を課すためpyfltr本体依存には同梱せず、
+`sqlfluff-runner = "uvx"`既定で実行時に別環境へ解決する。
+`uvx`が利用できる環境なら`uvx pyfltr`単発でも利用できる。
+`uv tool install sqlfluff`で導入済みの環境がある場合は`uvx`が当該環境を再利用するため、
+実行のたびの解決は発生しない。公式Dockerイメージは当該手順で導入済みである。
+導入済み環境が無い場合は実行のたびに依存を解決するため、版を固定したい場合や
+解決コストを避けたい場合は`uv tool install sqlfluff`で導入するか、
+`sqlfluff-path`または`sqlfluff-runner`で上書きする。
+dialect指定が必須のため、`.sqlfluff`をプロジェクトルートに配置する前提のopt-in。
+`sqlfluff lint`サブコマンドをlinterとして起動する（`sqlfluff format`サブコマンドは対象外）。
+
+```toml
+[tool.pyfltr]
+sqlfluff = true
+```
+
+`.sqlfluff`例:
+
+```ini
+[sqlfluff]
+dialect = postgres
+```
+
+pyfltr既定の`sqlfluff-args = ["lint", "--format=json"]`は出力パースのため必須引数を含む。
+変更する場合も`lint`サブコマンドと`--format=json`は維持する。
 
 ## 直接実行ツール
 

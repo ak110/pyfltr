@@ -23,7 +23,8 @@
 #
 # 同梱ツール一覧 (新ツール追加時は本リストと該当 RUN 層を更新する):
 #   - Python (pyfltr 本体依存に同梱): ruff / mypy / pylint / pyright / ty / pytest / uv-sort /
-#     typos / yamllint / pre-commit / prek / semgrep / sqlfluff / bandit
+#     typos / yamllint / pre-commit / prek / bandit
+#   - uv tool の独立環境: semgrep / sqlfluff
 #   - mise 経由のネイティブバイナリ: node (LTS) / shfmt / actionlint /
 #     editorconfig-checker / glab / taplo / hadolint / pinact / gitleaks / lychee
 #     (Node.js は APT 由来の旧バージョンを避けて mise 管理に一本化する。
@@ -195,7 +196,9 @@ RUN --mount=type=secret,id=GITHUB_TOKEN,env=GITHUB_TOKEN,required=false \
         oxlint \
         typescript \
         vitest \
-    && uv tool install yamllint
+    && uv tool install yamllint \
+    && uv tool install semgrep \
+    && uv tool install sqlfluff
 
 # Stage 2: pyfltr 本体導入。
 # このステージは ``PYFLTR_VERSION`` の更新ごとに再実行されるため、``base`` のキャッシュを

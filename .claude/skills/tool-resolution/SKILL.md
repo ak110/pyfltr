@@ -25,6 +25,10 @@ pyfltrが対応するformatter/linter/testerの依存指定および実行時の
     `python-runner = "uv"`へ委譲し、cwdの`uv.lock`検出時は利用者プロジェクトの登録版へ切り替える。
     `pyright[nodejs]` extrasはNode.jsランタイム取得を伴うが、Python系ツール一式を`uvx pyfltr`単発で
     揃える利便性を優先して同梱する
+- uvx分離: 他の依存へ厳密ピンまたは上限制約を課し、pyfltr本体や他ツールの更新を妨げるもの
+  - `{command}-runner`既定値を`"uvx"`とし、実行時に別環境で解決してpyfltrの依存グラフから切り離す
+  - `semgrep`は`mcp`を厳密ピンし、`sqlfluff`は`click`へ上限を課すため本分類とする
+  - 既定無効（opt-in）のツールに限り採用し、`python = true`ゲート対象のツールには適用しない
 - 依存指定なし: 本家から独立した個人または別組織のメンテに依存するもの、
   インストール時に外部バイナリを取得するもの、Node.js等のランタイムを伴うもの
 

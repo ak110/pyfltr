@@ -44,8 +44,6 @@ Dependabotによる自動修正PRの作成は無効とし、更新は`make updat
 迂回しない判断とその根拠・解除条件を該当箇所のコメントへ残す。
 開発時にのみ用いる依存で利用者環境へ波及しないものは、
 上書き設定でピンを迂回し、迂回の理由と解除条件を該当箇所のコメントへ残す。
-なお現行の`override-dependencies`が持つ`mcp`の指定は本方針の確定前に導入したものであり、
-扱いは別途確定する。
 
 `pyproject.toml`の`dependencies`または`override-dependencies`でパッケージの版指定を変更した場合、
 `uv lock`・`uv sync`・`uv run`の成功だけでは配布経路の成立を確認できない。

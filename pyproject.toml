@@ -20,10 +20,11 @@ requires-python = ">=3.11,<4.0"
 dependencies = [
     "bandit>=1.7",
     "dill>=0.3",
+    # GHSA-vj7q-gjh5-988w・GHSA-jpw9-pfvf-9f58・GHSA-hvrp-rf83-w775は1.28.1で修正済み。
     # 2.0で高レベルAPI`FastMCP`が`mcp.server.mcpserver.MCPServer`へ改称され旧importパスが削除された。
-    # semgrepが`mcp==1.23.3`を厳密ピンしているため配布経路（`uvx pyfltr`等）では1.x系しか解決できず、
-    # 2.0系のAPIを前提にすると依存解決自体が失敗する。semgrepのピンが2.0系へ追従するまで1.x系に留める。
-    "mcp>=1.0,<2",
+    # 上限`<2`は`pyfltr/cli/mcp_server.py`のimportパスを守るためのもので、2.0系への移行は
+    # 当該モジュールの改修を伴うため別途対応する。
+    "mcp>=1.28.1,<2",
     "mypy>=1.0",
     "natsort>=8.0",
     "platformdirs>=4.0",
@@ -41,9 +42,6 @@ dependencies = [
     "python-ulid>=3.0",
     "pyyaml>=6.0",
     "ruff>=0.12",
-    # Python 3.14対応wheelが揃う最古バージョンが1.140.0のため下限を1.140に固定する。
-    "semgrep>=1.140.0",
-    "sqlfluff>=4.0",
     "textual>=7.0.0",
     "tomlkit>=0.13",
     "ty>=0.0.26",
@@ -87,23 +85,6 @@ source = "vcs"
 
 [tool.uv]
 exclude-newer = "1 day"
-# semgrepが`mcp==1.23.3`を厳密ピンしており（1.171.0時点）、そのままではmcpの
-# GHSA-vj7q-gjh5-988w / GHSA-jpw9-pfvf-9f58 / GHSA-hvrp-rf83-w775に相当する
-# 3件のDependabotアラート（いずれも1.28.1で修正済み）を解消できない。
-# pyfltrはsemgrepをCLIとして起動するのみでsemgrepのMCPサーバー機能を使わないため、
-# overrideでピンを無視してmcpを修正済みバージョンへ更新する。
-# 上限`<2`は、2.0で高レベルAPIが改称され`pyfltr/cli/mcp_server.py`のimportが解決できなくなるため。
-# 配布経路ではsemgrepのピンにより1.x系しか入らず、開発環境だけ2.0系にすると実行環境と乖離する。
-# semgrep側のピンが1.28.1以上へ追従したら本行を削除する。
-#
-# clickはsemgrepが`click~=8.1.8`（=`>=8.1.8, ==8.1.*`）を厳密ピンしており、
-# `click 8.1.8`のPYSEC-2026-2132（修正版8.3.3）が`uv audit`で検出される。
-# semgrepは`[project] dependencies`の本体依存であり、overrideは配布物のメタデータへ波及しない。
-# 迂回しても`uvx pyfltr`等で導入した利用者環境では当該脆弱性が残り、
-# 本リポジトリの監査結果だけが緑になる。検知の抑止として働くため迂回しない。
-# semgrepが`click`のピンを8.3.3以降へ追従するのを待つ。
-# 迂回しない判断の根拠は`docs/development/development.md`のサプライチェーン攻撃対策節による。
-override-dependencies = ["mcp>=1.28.1,<2"]
 
 [tool.bandit]
 # pyfltrは各種ツールを起動するCLI（subprocess経由のwrapper）であり、

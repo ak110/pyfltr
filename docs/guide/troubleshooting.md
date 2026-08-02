@@ -242,7 +242,7 @@ ruffへ統合済みのため当該設定をすべて削除する。
 
 `pyfltr run`実行時に`resolution_failed`扱いで停止する場合、ツールカテゴリ別に対処を選ぶ。
 
-### Python系ツール（mypy・pylint・pyright・ty・pytest・ruff-format・ruff-check・uv-sort・semgrep・sqlfluff・bandit）
+### Python系ツール（mypy・pylint・pyright・ty・pytest・ruff-format・ruff-check・uv-sort・bandit）
 
 メッセージ例。
 
@@ -259,6 +259,22 @@ ruffへ統合済みのため当該設定をすべて削除する。
 - `{command}-runner = "uvx"`へ切り替える。
   PyPI最新版をその都度取得する（`uv.lock`は参照せず、再現性は犠牲になる）
 - `{command}-path = "/path/to/bin"`で実行ファイルを直接指定する
+
+### uvx既定のPython製ツール（semgrep・sqlfluff）
+
+semgrep / sqlfluffは本体依存から分離され、既定の`{command}-runner = "uvx"`で別環境へ解決する。
+`uvx`が利用できず、対象ツールの実行ファイルもPATH上にない場合は`resolution_failed`になる。
+
+対処方法。
+
+- `uv tool install semgrep`または`uv tool install sqlfluff`で独立環境へ導入する。
+  `uvx`は導入済み環境を再利用するため、実行のたびの解決も版の揺れも避けられる
+- `uv add --dev semgrep`または`uv add --dev sqlfluff`で利用者プロジェクトへ個別に追加し、
+  `{command}-runner = "direct"`へ切り替える
+- `{command}-path = "/path/to/bin"`で実行ファイルを直接指定する
+
+uv / uvx経路の実行後に未登録エラーが出た場合は、`uvx semgrep`または`uvx sqlfluff`で直接実行するか、
+`{command}-runner = "direct"`へ切り替える。
 
 ### JS系ツール（textlint・markdownlint・eslint・biome・oxlint・prettier・tsc・vitest・designmd）
 

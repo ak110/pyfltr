@@ -638,15 +638,17 @@ def test_textlint_markdownlint_path_default_empty() -> None:
         ("designmd", True, "js-runner"),
         ("lychee", True, "bin-runner"),
         # semgrep / sqlfluff / banditはルールセット・dialect・SAST用途のため既定無効（opt-in）。
-        ("semgrep", False, "python-runner"),
-        ("sqlfluff", False, "python-runner"),
+        ("semgrep", False, "uvx"),
+        ("sqlfluff", False, "uvx"),
         ("bandit", False, "python-runner"),
         # colloquial-checkは検出結果をwarning扱いに限定するopt-inツールのため既定無効。
         ("colloquial-check", False, "direct"),
     ],
 )
-def test_new_tools_defaults(command: str, expected_enabled: bool, expected_runner: str) -> None:
-    """designmd / lychee / semgrep / sqlfluff / bandit / colloquial-checkの既定有効/無効と既定ランナーを検証する。"""
+def test_representative_tools_defaults_by_runner_classification(
+    command: str, expected_enabled: bool, expected_runner: str
+) -> None:
+    """代表的な対応ツールの既定有効状態と依存分類に応じたrunnerを検証する。"""
     config = pyfltr.config.config.create_default_config()
     assert config[command] is expected_enabled, f"{command} の既定値が想定と異なる"
     assert config[f"{command}-runner"] == expected_runner

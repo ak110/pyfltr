@@ -173,7 +173,8 @@ mise経由のsubprocessにはmiseが注入したtoolパスを除外したPATHを
 ### Python系ツールのpython-runner経由解決
 
 Python系ツールの`{command}-runner`既定値は`"python-runner"`とする。
-対象はruff-format / ruff-check / mypy / pylint / pyright / ty / uv-sort / pytestの8ツール。
+対象は`python = true`ゲートで有効化されるruff-format / ruff-check / mypy / pylint / pyright / ty / uv-sort / pytestの8ツールに、
+既定無効のbanditを加えた9ツールとする。
 `"python-runner"`はグローバル`python-runner`設定（既定`"uv"`、許容値`direct` / `uv` / `uvx`の3値）へ委譲する。
 `uv`経路ではcwdに`uv.lock`があり`uv`が利用可能な場合にプロジェクトのvenv経由で起動する。
 いずれかが欠ける場合は本体依存に同梱されたバイナリへdirectフォールバックする。
@@ -186,6 +187,18 @@ commandレコードの`effective_runner` / `runner_source` / `runner_fallback`�
 `pyfltr command-info`の責務とする。
 利用者プロジェクトに当該ツールが未登録の状態で`uv run --frozen`が失敗した場合は、
 `uv add --dev "pyfltr[python]"`を案内する警告を発行する。
+
+### uvx既定のPython製ツール
+
+`DEFAULT_CONFIG`で`{command}-runner = "uvx"`を既定とするPython製ツールは、
+python-runnerへ委譲せず`uvx <bin>`で別環境へ解決する。
+対象はsemgrepとsqlfluffで、pyfltr本体の依存グラフには含めない。
+解決失敗時の分類は`DEFAULT_CONFIG`から導出し、runner既定値と独立したツール一覧を持たない。
+
+本分類は、既定で無効であり`python = true`ゲート対象外となるツールに適用する。
+さらに、他の依存へ厳密ピンまたは上限制約を課すことを採用条件とする。
+利用者が版を固定する場合は対象パッケージを利用者プロジェクトへ追加してdirect経路へ切り替えるか、
+`{command}-path`で実行ファイルを明示する。
 
 ### モノレポ対応
 

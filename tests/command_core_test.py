@@ -28,6 +28,7 @@ import pyfltr.command.mise
 import pyfltr.command.process
 import pyfltr.command.runner
 import pyfltr.command.targets
+import pyfltr.command.tool_resolution
 import pyfltr.command.two_step.base
 import pyfltr.command.two_step.prettier
 import pyfltr.command.two_step.ruff
@@ -379,6 +380,34 @@ def test_execute_command_python_tool_missing_emits_runner_guidance(
         assert "mypy-path" in result.output
     finally:
         os.chdir(original_cwd)
+
+
+@pytest.mark.parametrize("command", ["semgrep", "sqlfluff"])
+def test_uvx_default_tool_missing_returns_resolution_failed_with_individual_package_guidance(
+    command: str,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """uvx既定ツールをuvxとPATHの双方で解決できない場合は個別パッケージ導入を案内する。"""
+    suffix = ".sql" if command == "sqlfluff" else ".py"
+    target = tmp_path / f"sample{suffix}"
+    target.write_text("SELECT 1;\n" if command == "sqlfluff" else "x = 1\n")
+    config = pyfltr.config.config.create_default_config()
+    config.values[command] = True
+    monkeypatch.setattr(pyfltr.command.runner, "ensure_uvx_available", lambda: False)
+    monkeypatch.setattr("pyfltr.command.runner.shutil.which", lambda _name: None)
+
+    result = pyfltr.command.dispatcher.execute_command(
+        command,
+        _testconf.make_args(allow_external_paths=True),
+        _testconf.make_execution_context(config, [target]),
+    )
+
+    assert result.status == "resolution_failed"
+    assert f"uv add --dev {command}" in result.output
+    assert f'{command}-runner = "direct"' in result.output
+    assert "pyfltr[python]" not in result.output
+    assert f'{command}-runner = "uvx"' not in result.output
 
 
 def test_execute_command_mise_not_registered_emits_switch_guidance(
@@ -2696,7 +2725,7 @@ def test_resolve_runner_default_for_direct_tools() -> None:
 
 
 def test_resolve_runner_default_for_python_tools() -> None:
-    """Python系ツール（既存8ツール + semgrep / sqlfluff / bandit）の既定は"python-runner"（カテゴリ委譲値）。"""
+    """本体依存のPython系ツールとbanditの既定は"python-runner"（カテゴリ委譲値）。"""
     config = pyfltr.config.config.create_default_config()
     for command in (
         "mypy",
@@ -2707,12 +2736,19 @@ def test_resolve_runner_default_for_python_tools() -> None:
         "ruff-format",
         "pytest",
         "uv-sort",
-        "semgrep",
-        "sqlfluff",
         "bandit",
     ):
         runner, source = pyfltr.command.runner.resolve_runner(command, config)
         assert runner == "python-runner", f"{command}のrunnerは'python-runner'であるべき"
+        assert source == "default"
+
+
+def test_resolve_runner_default_for_uvx_tools() -> None:
+    """本体依存から分離したsemgrepとsqlfluffの既定は"uvx"（直接指定値）。"""
+    config = pyfltr.config.config.create_default_config()
+    for command in ("semgrep", "sqlfluff"):
+        runner, source = pyfltr.command.runner.resolve_runner(command, config)
+        assert runner == "uvx", f"{command}のrunnerは'uvx'であるべき"
         assert source == "default"
 
 
@@ -3627,3 +3663,37 @@ def test_execute_command_uv_path_does_not_have_emits_uv_add_hint(
     hint = uv_warnings[0].get("hint", "")
     assert "uv add --dev" in hint
     assert "pyfltr[python]" in hint
+
+
+@pytest.mark.parametrize("command", ["semgrep", "sqlfluff"])
+@pytest.mark.parametrize("runner", ["uv", "uvx"])
+def test_execute_command_isolated_tool_missing_emits_uvx_direct_hint(
+    command: str,
+    runner: str,
+) -> None:
+    """分離ツールのuv/uvx起動失敗ではuvx直接実行とdirect切替だけを案内する。"""
+    result = pyfltr.command.core_.CommandResult(
+        command=command,
+        command_type="linter",
+        commandline=[runner, command],
+        returncode=2,
+        has_error=True,
+        files=1,
+        output=f"error: project 'sample' does not have '{command}' as a dependency\n",
+        elapsed=0.1,
+        effective_runner=runner,
+    )
+    pyfltr.command.tool_resolution.maybe_emit_uv_missing_tool_warning(result)
+
+    warnings = pyfltr.warnings_.collected_warnings()
+    uv_warnings = [
+        warning
+        for warning in warnings
+        if warning["source"] == "tool-resolve" and "経路でのツール起動に失敗" in warning["message"]
+    ]
+    assert len(uv_warnings) == 1
+    hint = uv_warnings[0].get("hint", "")
+    assert f"uvx {command}" in hint
+    assert f'{command}-runner = "direct"' in hint
+    assert "pyfltr[python]" not in hint
+    assert "uv add --dev" not in hint

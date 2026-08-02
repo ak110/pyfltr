@@ -2,12 +2,18 @@
 
 ツール解決失敗時の利用者向け文面組み立てと`CommandResult`生成、uv経路でのツール未登録警告を担う。
 `pyfltr.command.runner`から送出される`FileNotFoundError`のcatch側として動作する。
+`PYTHON_TOOL_BIN`登録ツールのうちrunner既定値が`uvx`のものは別環境へ解決する。
 """
 
 import pyfltr.command.runner
 import pyfltr.config.config
 import pyfltr.warnings_
 from pyfltr.command.core_ import CommandResult
+
+
+def _uses_uvx_by_default(command: str) -> bool:
+    """uvx分離ツールの案内分類をrunner既定値のSSOTから導出する。"""
+    return pyfltr.config.config.DEFAULT_CONFIG.get(f"{command}-runner") == "uvx"
 
 
 def format_tool_resolution_failure(
@@ -24,6 +30,7 @@ def format_tool_resolution_failure(
 
     - パッケージマネージャーのサブコマンド系（`PACKAGE_MANAGER_TOOL_BIN`）:
       対象のパッケージマネージャー（`uv` / `pnpm` / `npm` / `yarn`）導入または `{command}-path` 明示を案内する
+    - uvx既定のPython製ツール（semgrep / sqlfluff）: 利用者プロジェクトへの個別導入を案内する
     - Python系（`PYTHON_TOOL_BIN`）: `uv` / `uvx` への切り替えまたは `{command}-path` 明示を案内する
     - JS系（`JS_TOOL_BIN`）でdirect指定: `node_modules` 探索失敗として `pnpm install` / `pnpx` 切り替えを案内する
     - JS系（`JS_TOOL_BIN`）でdirect以外: PATH探索失敗として `{command}-path` 明示を案内する
@@ -47,6 +54,13 @@ def format_tool_resolution_failure(
             f"`{bin_name}` を導入するか、`{command}-path` で実行ファイルを明示してください"
         )
     if command in pyfltr.command.runner.PYTHON_TOOL_BIN:
+        if _uses_uvx_by_default(command):
+            return (
+                f"ツールが見つかりません: uvx既定のPython製ツール `{raw_identifier}` が PATH 上にありません。"
+                f"`uv add --dev {command}`で利用者プロジェクトへ個別に追加するか、"
+                f'`{command}-runner = "direct"`へ切り替えるか、'
+                f"`{command}-path`で実行ファイルを明示してください"
+            )
         return (
             f"ツールが見つかりません: Python系ツール `{raw_identifier}` が PATH 上にありません。"
             f'`{command}-runner = "uv"`（cwdに uv.lock が必要、`uv add --dev "pyfltr[python]"` で依存追加）'
@@ -118,7 +132,8 @@ _UV_TOOL_MISSING_PATTERNS: tuple[str, ...] = ("does not have",)
 def maybe_emit_uv_missing_tool_warning(result: CommandResult) -> None:
     """uv / uvx経路でツール未登録の出力を検出した場合に登録手順の案内警告を発行する。
 
-    Python系ツール一式は本体依存に同梱されているため `uvx pyfltr` 単発で動作するが、
+    semgrepとsqlfluffを除くPython系ツール一式は本体依存に同梱されているため
+    `uvx pyfltr` 単発で動作するが、
     利用者プロジェクトに `uv.lock` が存在すると既定の `python-runner = "uv"` により
     `uv run --frozen <bin>` 経由でプロジェクトのvenvに登録されたツールを呼び出す。
     プロジェクト側に未登録の場合は `uv run` がエラーで失敗するため、登録手順を案内する。
@@ -131,14 +146,18 @@ def maybe_emit_uv_missing_tool_warning(result: CommandResult) -> None:
         return
     if not any(pattern in result.output for pattern in _UV_TOOL_MISSING_PATTERNS):
         return
+    if _uses_uvx_by_default(result.command):
+        hint = f'`uvx {result.command}`で直接実行するか、`{result.command}-runner = "direct"`へ切り替えてください。'
+    else:
+        hint = (
+            '`uv add --dev "pyfltr[python]"` でPython系ツール一式をdev依存に追加してください。'
+            f' 当該ツールを利用者プロジェクトで使わない場合は `{result.command}-runner = "direct"` への切り替えで回避できます。'
+        )
     pyfltr.warnings_.emit_warning(
         source="tool-resolve",
         message=(
             f"{result.command}: {result.effective_runner}経路でのツール起動に失敗しました。"
             "利用者プロジェクトに当該ツールが未登録の可能性があります。"
         ),
-        hint=(
-            '`uv add --dev "pyfltr[python]"` でPython系ツール一式をdev依存に追加してください。'
-            f' 当該ツールを利用者プロジェクトで使わない場合は `{result.command}-runner = "direct"` への切り替えで回避できます。'
-        ),
+        hint=hint,
     )
