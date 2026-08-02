@@ -49,7 +49,12 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /cache
-          key: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}
+          # 固定キーでは一度保存されると更新されないため、run_idを含めて毎回保存させる。
+          # /cache配下にはmiseの導入済みツール実体（MISE_DATA_DIR）が含まれるため、固定キーのままでは
+          # コンテナーイメージ側でツールが更新されても復元内容が古い版のまま据え置かれ、
+          # 上流ツールの変更をLinuxジョブで検知できなくなる。
+          key: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}-${{ github.run_id }}
+          restore-keys: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}-
 
       - name: Install dependencies
         run: uv sync --all-groups --all-extras

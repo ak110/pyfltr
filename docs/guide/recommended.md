@@ -523,7 +523,8 @@ jobs:
         uses: actions/cache@v5
         with:
           path: /cache
-          key: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}
+          key: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}-${{ github.run_id }}
+          restore-keys: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}-
 
       - name: Run pyfltr
         run: pyfltr ci --output-format=github-annotations
@@ -541,7 +542,8 @@ jobs:
     - 単一バージョンで十分な場合は`strategy.matrix`と`UV_PYTHON`を省ける
 - `actions/cache`: `/cache`配下を一括キャッシュする
     - uv / pnpm / miseのキャッシュは内容アドレス指定のため、ロックファイル変更時も追加分がそのまま蓄積される
-    - キーはOSのみで足り、ロックファイルhashなどの細かい無効化は不要
+    - 固定キーは最初の保存後に更新されず、導入済みツールが初回保存時点の版で据え置かれる
+    - キーへ実行ごとに変化する`github.run_id`を含め、`restore-keys`で直近のキャッシュへフォールバックする
 - `pyfltr ci`: イメージ同梱のpyfltrをそのまま使う
     - uvキャッシュを介した解決を毎回経由せず、コンテナビルド時に確定したバージョンで実行できる
     - 特定バージョンに固定したい場合は`image:`のタグ（`vX.Y.Z`）で揃える
