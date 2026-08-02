@@ -520,10 +520,10 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Cache /cache
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: /cache
-          key: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}-${{ github.run_id }}
+          key: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}-
 
       - name: Run pyfltr
@@ -543,7 +543,12 @@ jobs:
 - `actions/cache`: `/cache`配下を一括キャッシュする
     - uv / pnpm / miseのキャッシュは内容アドレス指定のため、ロックファイル変更時も追加分がそのまま蓄積される
     - 固定キーは最初の保存後に更新されず、導入済みツールが初回保存時点の版で据え置かれる
-    - キーへ実行ごとに変化する`github.run_id`を含め、`restore-keys`で直近のキャッシュへフォールバックする
+    - キーへ`github.run_id`と`github.run_attempt`を併記し、`restore-keys`で直近のキャッシュへフォールバックする
+    - `github.run_id`はワークフローの再実行（Re-run）で変化しないため、`github.run_id`だけでは
+      再実行時にキーが完全一致し、`actions/cache`が新しい内容を保存しない。
+      上流ツールの更新で失敗した実行を再実行する場面こそキャッシュの更新が要るため、`github.run_attempt`を併記する
+    - 実行のたびに新しいエントリが増えるため、リポジトリのキャッシュ上限（既定10GB）と、
+      7日間アクセスのないエントリが自動削除される仕様を前提に運用する
 - `pyfltr ci`: イメージ同梱のpyfltrをそのまま使う
     - uvキャッシュを介した解決を毎回経由せず、コンテナビルド時に確定したバージョンで実行できる
     - 特定バージョンに固定したい場合は`image:`のタグ（`vX.Y.Z`）で揃える
