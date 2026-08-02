@@ -6,12 +6,14 @@ import argparse
 import json
 import pathlib
 import subprocess
+import typing
 
 import pytest
 
 import pyfltr.cli.command_info
 import pyfltr.cli.output_format
 import pyfltr.command.mise
+import pyfltr.command.process
 import pyfltr.command.runner
 import pyfltr.config.config
 
@@ -85,6 +87,75 @@ def test_command_info_no_check_passes_allow_side_effects_false(capsys: pytest.Ca
     # 副作用なし契約のため `allow_side_effects=True` での呼び出しが発生しないこと。
     assert all(call.kwargs.get("allow_side_effects") is False for call in spy.call_args_list)
     assert spy.call_count >= 1
+
+
+def _fake_version_run(
+    version_output: str,
+) -> typing.Callable[..., pyfltr.command.process.CompletedProcessWithTimeoutInfo]:
+    """`--version`起動を差し替えて任意の版文字列を返すヘルパー。"""
+
+    def _run_version(
+        commandline: list[str], *_args: typing.Any, **_kwargs: typing.Any
+    ) -> pyfltr.command.process.CompletedProcessWithTimeoutInfo:
+        return pyfltr.command.process.CompletedProcessWithTimeoutInfo(
+            args=list(commandline), returncode=0, stdout=version_output, timeout_exceeded=False
+        )
+
+    return _run_version
+
+
+def test_command_info_check_rejects_below_minimum_package_manager_version(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """最低版未満のuvでは`uv-audit --check`が`check_passed: false`を報告する。
+
+    実行経路（`dispatcher._prepare_execution_params`）は最低版未満を解決失敗へ倒すため、
+    事前確認手段である`--check`も同じ検査を通す必要がある。
+    """
+    pyfltr.command.runner._get_tool_version.cache_clear()  # pylint: disable=protected-access  # テスト間の隔離
+    monkeypatch.setattr(pyfltr.command.process, "run_subprocess_with_timeout", _fake_version_run("uv 0.10.9"))
+    monkeypatch.setattr("shutil.which", lambda name: f"/usr/bin/{name}")
+
+    out = _run("uv-audit", do_check=True, capsys=capsys)
+
+    assert "check_passed: False" in out
+    assert "0.10.10以降" in out
+
+
+def test_command_info_check_passes_with_sufficient_package_manager_version(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """最低版以上のuvでは`uv-audit --check`が`check_passed: true`を報告する。"""
+    pyfltr.command.runner._get_tool_version.cache_clear()  # pylint: disable=protected-access  # テスト間の隔離
+    monkeypatch.setattr(pyfltr.command.process, "run_subprocess_with_timeout", _fake_version_run("uv 0.11.7"))
+    monkeypatch.setattr("shutil.which", lambda name: f"/usr/bin/{name}")
+
+    out = _run("uv-audit", do_check=True, capsys=capsys)
+
+    assert "check_passed: True" in out
+
+
+def test_command_info_no_check_skips_package_manager_version_probe(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--check`なしでは版取得のsubprocessを起動しない（副作用なし契約）。"""
+    pyfltr.command.runner._get_tool_version.cache_clear()  # pylint: disable=protected-access  # テスト間の隔離
+    calls: list[list[str]] = []
+
+    def _record(
+        commandline: list[str], *_args: typing.Any, **_kwargs: typing.Any
+    ) -> pyfltr.command.process.CompletedProcessWithTimeoutInfo:
+        calls.append(list(commandline))
+        return pyfltr.command.process.CompletedProcessWithTimeoutInfo(
+            args=list(commandline), returncode=0, stdout="uv 0.11.7", timeout_exceeded=False
+        )
+
+    monkeypatch.setattr(pyfltr.command.process, "run_subprocess_with_timeout", _record)
+    monkeypatch.setattr("shutil.which", lambda name: f"/usr/bin/{name}")
+
+    _run("uv-audit", capsys=capsys)
+
+    assert not calls
 
 
 def test_command_info_text_textlint_includes_fix_step(capsys: pytest.CaptureFixture[str]) -> None:

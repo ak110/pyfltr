@@ -159,7 +159,8 @@ directにフォールバックせず`failed`として扱う。
 ツールがどの経路で起動されるかは`pyfltr command-info <tool>`で確認できる。
 `runner` / `effective_runner` / `executable` / `commandline`を見れば、`{command}-runner`設定や
 グローバル`bin-runner`の効果が想定どおりかが分かる。
-`--check`オプションを付けると`mise exec --version`の事前チェック（`mise install`が起動する場合あり）まで実施する。
+`--check`オプションを付けると、実行時と同じ事前チェック（mise経由ツールの`mise exec --version`と、
+パッケージマネージャー系ツールの最低版確認）まで実施する。`mise install`や`--version`の起動が発生する場合がある。
 
 ## PATHが重複していてmiseのtools解決が有効にならない
 

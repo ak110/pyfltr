@@ -355,8 +355,9 @@ check段では`textlint-json`設定（既定`true`）により出力フォーマ
 - `--output-format=text|json|jsonl`: 出力形式を切り替える（既定`text`）。
   未指定時は環境変数`PYFLTR_OUTPUT_FORMAT`を、`AI_AGENT` / `CODEX_CI` / `CLAUDECODE` / `CURSOR_AGENT`の
   いずれかが設定されていれば`jsonl`を採用する
-- `--check`: mise経由ツールに対して`mise exec --version`での事前チェックを行う
- （`mise install` / `mise trust`が発生する場合があるため、既定では行わない）
+- `--check`: 実行時と同じ事前チェックを行う
+ （mise経由ツールは`mise exec --version`での可用性確認、パッケージマネージャー系ツールは最低版の確認）
+ （`mise install` / `mise trust` / `--version`の起動が発生する場合があるため、既定では行わない）
 
 未知のコマンド名や`{command}-runner = "mise"`を未登録ツールに指定した場合などは終了コード1で失敗する。
 

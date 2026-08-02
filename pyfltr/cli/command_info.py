@@ -2,7 +2,8 @@
 
 設定済みツールの起動方式（runner種別・実行ファイルパス・最終起動コマンドライン）を
 副作用無しで参照するための導入経路。`mise install` / `mise trust`等は引き起こさない。
-`--check`を明示指定したときのみ`ensure_mise_available`を呼んで可用性確認する。
+`--check`を明示指定したときのみ`ensure_mise_available`と`ensure_package_manager_version`を
+呼び、実行経路（`dispatcher._prepare_execution_params`）と同じ検査を通す。
 """
 
 from __future__ import annotations
@@ -52,8 +53,9 @@ def register_subparsers(subparsers: typing.Any) -> None:
         "--check",
         default=False,
         action="store_true",
-        help="mise 経由ツールについて事前可用性確認 (mise exec --version) を行う。"
-        "副作用 (mise install / mise trust) が発生する場合がある。",
+        help="実行経路と同じ事前確認を行う"
+        " (mise 経由ツールの可用性確認 mise exec --version と、パッケージマネージャー系ツールの最低版確認)。"
+        "副作用 (mise install / mise trust / --version 起動) が発生する場合がある。",
     )
 
 
@@ -206,7 +208,11 @@ def _collect_info(command: str, config: pyfltr.config.config.Config, *, do_check
     if do_check:
         try:
             checked = pyfltr.command.runner.ensure_mise_available(resolved, config, command=command)
-        except FileNotFoundError as e:
+            # 実行経路（`dispatcher._prepare_execution_params`）と同じ検査を並べ、事前確認と実行の
+            # 成否を一致させる。最低版未満・版判別不能はValueErrorとなる。
+            # `--check` 偽時は副作用なし契約のため呼ばない（版取得は`--version`のsubprocess起動を伴う）。
+            pyfltr.command.runner.ensure_package_manager_version(checked, config, command)
+        except (FileNotFoundError, ValueError) as e:
             base["check_passed"] = False
             base["check_error"] = str(e)
         else:
