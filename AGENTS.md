@@ -19,6 +19,13 @@ JSON Lines出力（`--output-format=jsonl`）とMCPサーバー（`pyfltr mcp`�
     設定で無効化しているツールも直接起動すれば動作するため、設定による無効化は直接起動への防御にならない
   - 特定ファイルのみを対象にする場合は`uv run pyfltr run <path>`にパスを渡す
   - 修正後の再実行時は`--commands=mypy,ruff-check`等で限定して実行する（最終検証はCIに委ねる前提）
+  - CIとローカルではmiseが解決する対応ツールの版が異なる場合がある
+    - CIでのみ再現した指摘を検証する場合は、`pyproject.toml`の`[tool.pyfltr]`へ
+        `{command}-version = "<版>"`を一時的に指定して`uv run pyfltr run <path> --commands=<command>`を実行し、
+        確認後に設定を元へ戻す
+    - この手順でもツールの実行ファイル・コンテナーイメージの直接起動は避け、pyfltr経由での実行を保つ
+    - 版を指定できるのはbin-runner対応ツールに限られる
+        （[docs/guide/configuration-tools.md](docs/guide/configuration-tools.md)の「バージョン指定」を参照）
   - エージェント検出用の環境変数が設定された環境では`run`の出力形式が`jsonl`、
     静音モードが既定で有効になるため、`run-for-agent`を明示指定する必要はない
 
