@@ -31,6 +31,8 @@ dependencies = [
     "pre-commit>=4.0",
     "prek>=0.4.11",
     "psutil>=6.0",
+    # MCP公開スキーマのモデル定義が直接使用する。MCP SDKの解決失敗時もCLI起動を維持するため明示する。
+    "pydantic>=2.0",
     "pylint-pydantic>=0.4",
     # `--output-format=json2`レポーターの対応起点が3.2.0のため下限を3.2に固定する。
     "pylint>=3.2",

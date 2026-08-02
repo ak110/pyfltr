@@ -13,7 +13,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-08-01T11:01:21.023453551Z"
+exclude-newer = "2026-08-01T13:17:47.274543858Z"
 exclude-newer-span = "P1D"
 
 [options.exclude-newer-package]
@@ -1330,6 +1330,7 @@ dependencies = [
     { name = "pre-commit" },
     { name = "prek" },
     { name = "psutil" },
+    { name = "pydantic" },
     { name = "pylint" },
     { name = "pylint-pydantic" },
     { name = "pyright", extra = ["nodejs"] },
@@ -1369,6 +1370,7 @@ requires-dist = [
     { name = "pre-commit", specifier = ">=4.0" },
     { name = "prek", specifier = ">=0.4.11" },
     { name = "psutil", specifier = ">=6.0" },
+    { name = "pydantic", specifier = ">=2.0" },
     { name = "pylint", specifier = ">=3.2" },
     { name = "pylint-pydantic", specifier = ">=0.4" },
     { name = "pyright", extras = ["nodejs"], specifier = ">=1.1" },

@@ -5,6 +5,7 @@
 （`default_cache_root()` 解決）が同一キャッシュを参照する。
 """
 
+import argparse
 import inspect
 import json
 import pathlib
@@ -281,6 +282,16 @@ async def test_build_server_registers_eight_tools() -> None:
         "replace_undo",
     }
     assert tool_names == expected
+
+
+def test_execute_mcp_reports_missing_dependency(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
+    """MCPサーバー機能の依存が解決できない場合は終了コード1と説明を返す。"""
+    monkeypatch.setattr(pyfltr.cli.mcp_server, "_fastmcp", None)
+    monkeypatch.setattr(pyfltr.cli.mcp_server, "_MCP_IMPORT_ERROR", ImportError("missing API"))
+    with caplog.at_level("ERROR", logger="pyfltr.cli.mcp_server"):
+        result = pyfltr.cli.mcp_server.execute_mcp(argparse.Namespace())
+    assert result == 1
+    assert "必要な依存が解決されていません" in caplog.text
 
 
 # ---------------------------------------------------------------------------

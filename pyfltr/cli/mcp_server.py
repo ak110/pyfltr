@@ -28,9 +28,22 @@ import logging
 import pathlib
 import sys
 import tempfile
+
+# 本モジュールは`types`をgrep系ツール関数の引数名に使うため、標準ライブラリ側を別名で取り込む。
+# 同名のままではモジュール名を引数が覆い、pylintの`redefined-outer-name`に抵触する。
+import types as types_module
 import typing
 
-from mcp.server.fastmcp import FastMCP
+# 配布物の版指定は下流プロジェクトの依存解決で上書きされる場合がある。
+# MCP専用依存のimport失敗を捕捉し、他サブコマンドとヘルプの起動を維持する。
+try:
+    import mcp.server.fastmcp as _imported_fastmcp
+except ImportError as e:  # 依存解決が配布物の宣言と異なる環境で到達する。
+    _fastmcp: types_module.ModuleType | None = None
+    _MCP_IMPORT_ERROR: ImportError | None = e
+else:
+    _fastmcp = _imported_fastmcp
+    _MCP_IMPORT_ERROR = None
 
 import pyfltr.cli.pipeline
 import pyfltr.command.targets
@@ -58,6 +71,9 @@ from pyfltr.cli.mcp_models import (
     RunSummaryModel,
 )
 from pyfltr.grep_.types import MatchRecord, ReplaceCommandMeta
+
+if typing.TYPE_CHECKING:
+    from mcp.server.fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 
@@ -710,7 +726,9 @@ def build_server() -> FastMCP:
     公開名は`@mcp.tool(name=...)`で明示し、Python側の関数名（`tool_*`）
     とは独立したスキーマ名（`list_runs`等）を維持する。
     """
-    mcp = FastMCP("pyfltr")
+    if _fastmcp is None:
+        raise RuntimeError("MCPサーバー機能に必要な依存を読み込めません") from _MCP_IMPORT_ERROR
+    mcp = _fastmcp.FastMCP("pyfltr")
 
     mcp.tool(name="list_runs", description="実行アーカイブに保存された run 一覧を新しい順で返す。")(tool_list_runs)
     mcp.tool(
@@ -782,6 +800,13 @@ def execute_mcp(args: argparse.Namespace) -> int:
     # stdioトランスポートではstdoutをJSON-RPCフレームが専有するため、
     # ロギングは必ずstderrへ向ける。
     logging.basicConfig(stream=sys.stderr, level=logging.WARNING, format="%(levelname)s: %(message)s")
+
+    if _fastmcp is None:
+        logger.error(
+            "MCPサーバー機能に必要な依存が解決されていません。pyproject.tomlが宣言する版指定を満たす環境で実行してください: %s",
+            _MCP_IMPORT_ERROR,
+        )
+        return 1
 
     try:
         server = build_server()

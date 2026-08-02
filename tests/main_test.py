@@ -5,6 +5,7 @@ import logging
 import os
 import pathlib
 import subprocess
+import sys
 
 import pytest
 
@@ -624,6 +625,47 @@ def test_help_contains_description(capsys):
     out = capsys.readouterr().out
     assert "並列実行" in out
     assert "コーディングエージェント" in out
+
+
+def _run_pyfltr_without_mcp(tmp_path: pathlib.Path, args: list[str]) -> subprocess.CompletedProcess[str]:
+    """MCPサーバー機能の依存を欠いた環境でpyfltr CLIを起動する。"""
+    stub_root = tmp_path / "mcpstub"
+    (stub_root / "mcp" / "server").mkdir(parents=True)
+    (stub_root / "mcp" / "__init__.py").write_text("")
+    (stub_root / "mcp" / "server" / "__init__.py").write_text("")
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join([str(stub_root), env.get("PYTHONPATH", "")])
+    return subprocess.run(
+        [sys.executable, "-m", "pyfltr", *args],
+        cwd=pathlib.Path(__file__).parent.parent,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_help_succeeds_without_mcp_server_module(tmp_path: pathlib.Path) -> None:
+    """MCPサーバー機能の依存が解決できない環境でも`--help`は成功する。"""
+    result = _run_pyfltr_without_mcp(tmp_path, ["--help"])
+    assert result.returncode == 0
+    # サブコマンド名だけでなく説明文も出ることを確かめ、登録自体が成立していることを示す。
+    assert "mcp" in result.stdout
+    assert "MCP サーバー" in result.stdout
+
+
+def test_other_subcommand_succeeds_without_mcp_server_module(tmp_path: pathlib.Path) -> None:
+    """MCPサーバー機能の依存が解決できない環境でも他サブコマンドは起動する。"""
+    result = _run_pyfltr_without_mcp(tmp_path, ["list-runs", "--help"])
+    assert result.returncode == 0
+    assert "list-runs" in result.stdout
+
+
+def test_mcp_subcommand_reports_missing_dependency(tmp_path: pathlib.Path) -> None:
+    """MCPサーバー機能の依存が解決できない環境では説明を表示して終了する。"""
+    result = _run_pyfltr_without_mcp(tmp_path, ["mcp"])
+    assert result.returncode == 1
+    assert "必要な依存が解決されていません" in result.stderr
 
 
 def test_precommit_guidance_skipped_for_jsonl_and_sarif_stdout_only(mocker, capsys):
