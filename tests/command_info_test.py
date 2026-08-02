@@ -158,6 +158,38 @@ def test_command_info_no_check_skips_package_manager_version_probe(
     assert not calls
 
 
+def test_command_info_check_commandline_matches_final_argv(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """起動経路が変化しない`uv-audit --check`では`check_commandline`が通常段の`commandline`と一致する。
+
+    確認値だけが起動プレフィックスのままだと、設定引数が確認後の実行経路から欠落したように表示される。
+    """
+    pyfltr.command.runner._get_tool_version.cache_clear()  # pylint: disable=protected-access  # テスト間の隔離
+    monkeypatch.setattr(pyfltr.command.process, "run_subprocess_with_timeout", _fake_version_run("uv 0.11.7"))
+    monkeypatch.setattr("shutil.which", lambda name: f"/usr/bin/{name}")
+
+    info = json.loads(_run("uv-audit", output_format="json", do_check=True, capsys=capsys))
+
+    assert info["check_passed"] is True
+    assert info["check_commandline"] == info["commandline"]
+    assert "--frozen" in info["check_commandline"]
+
+
+def test_command_info_check_commandline_keeps_configured_args_on_fallback(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """mise不在でdirectへフォールバックした場合も`check_commandline`が設定引数を保持する。"""
+    monkeypatch.setattr("shutil.which", lambda name: None if pathlib.Path(name).stem == "mise" else f"/usr/bin/{name}")
+
+    info = json.loads(_run("cargo-fmt", output_format="json", do_check=True, capsys=capsys))
+
+    assert info["check_passed"] is True
+    assert info["check_effective_runner"] == "direct"
+    assert info["check_commandline"] == ["/usr/bin/cargo", "fmt"]
+    assert info["check_commandline"] != info["commandline"]
+
+
 def test_command_info_text_textlint_includes_fix_step(capsys: pytest.CaptureFixture[str]) -> None:
     """fix-args定義済みコマンド（textlint）ではfix step / check stepが併記される。"""
     out = _run("textlint", capsys=capsys)

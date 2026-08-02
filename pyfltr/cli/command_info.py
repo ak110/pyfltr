@@ -218,7 +218,11 @@ def _collect_info(command: str, config: pyfltr.config.config.Config, *, do_check
         else:
             base["check_passed"] = True
             # mise不在時のフォールバックなどでcommandlineが変化している可能性がある。
-            base["check_commandline"] = checked.commandline
+            # `_print_text`が通常段の`commandline`との不一致だけを差分として表示するため、
+            # 確認段も`build_invocation_argv`を経由させて同じ抽象化段階（対象ファイル抜きの最終argv）へ揃える。
+            base["check_commandline"] = pyfltr.command.runner.build_invocation_argv(
+                command, config, list(checked.commandline), additional_args=[], fix_stage=False
+            )
             base["check_effective_runner"] = checked.effective_runner
 
     return base
