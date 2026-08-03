@@ -37,7 +37,7 @@ def test_build_sarif_basic() -> None:
     assert entry["ruleIndex"] == 0
     loc = entry["locations"][0]["physicalLocation"]
     assert loc["artifactLocation"]["uri"] == "src/foo.py"
-    assert loc["region"]["startLine"] == 10
+    assert loc["region"] == {"startLine": 10}
     # retry_commandはinvocationsに入る
     assert run["invocations"][0]["commandLine"] == "pyfltr run --commands ruff-check -- src/foo.py"
     # executionSuccessfulはhas_errorの反対
@@ -88,3 +88,45 @@ def test_build_sarif_without_rule_url() -> None:
     sarif = pyfltr.output.sarif.build_sarif([result], config, exit_code=1, commands=["tool"], files=1)
     rules = sarif["runs"][0]["tool"]["driver"]["rules"]
     assert rules == [{"id": "X1"}]
+
+
+def test_build_sarif_with_end_position() -> None:
+    """開始位置と終端排他の終了位置がregionへ反映される。"""
+    error = _make_error("ruff-check", "src/foo.py", 10, "unused import", col=3)
+    error.end_line = 11
+    error.end_col = 7
+    result = _make_result("ruff-check", returncode=1, errors=[error])
+
+    config = pyfltr.config.config.create_default_config()
+    sarif = pyfltr.output.sarif.build_sarif([result], config, exit_code=1)
+
+    region = sarif["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["region"]
+    assert region == {"startLine": 10, "startColumn": 3, "endLine": 11, "endColumn": 7}
+
+
+def test_build_sarif_omits_columns_less_than_one() -> None:
+    """1未満の開始列・終了列は不明な列として省略される。"""
+    error = _make_error("tool", "src/foo.py", 10, "bad position", col=0)
+    error.end_line = 10
+    error.end_col = 0
+    result = _make_result("tool", returncode=1, errors=[error])
+
+    config = pyfltr.config.config.create_default_config()
+    sarif = pyfltr.output.sarif.build_sarif([result], config, exit_code=1)
+
+    region = sarif["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["region"]
+    assert region == {"startLine": 10, "endLine": 10}
+
+
+def test_build_sarif_omits_textlint_columns() -> None:
+    """textlintの列は行内位置を保証できないため、終了行だけを反映する。"""
+    error = _make_error("textlint", "docs/index.md", 1, "word", col=9)
+    error.end_line = 2
+    error.end_col = 14
+    result = _make_result("textlint", returncode=1, errors=[error])
+
+    config = pyfltr.config.config.create_default_config()
+    sarif = pyfltr.output.sarif.build_sarif([result], config, exit_code=1)
+
+    region = sarif["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["region"]
+    assert region == {"startLine": 1, "endLine": 2}

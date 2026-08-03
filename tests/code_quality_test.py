@@ -1,7 +1,9 @@
 """code_quality のテストコード。"""
 
 import hashlib
+import json
 
+import pyfltr.command.error_parser
 import pyfltr.output.code_quality
 from tests.conftest import make_command_result as _make_result
 from tests.conftest import make_error_location as _make_error
@@ -82,6 +84,55 @@ def test_build_payload_fingerprint_differs_by_rule() -> None:
 
     payload = pyfltr.output.code_quality.build_code_quality_payload([r])
     assert payload[0]["fingerprint"] != payload[1]["fingerprint"]
+
+
+def test_build_payload_fingerprint_uses_normalized_parser_columns() -> None:
+    """bandit・pylintのフィンガープリントは1起点へ補正された列を用いる。"""
+    cases = [
+        (
+            "bandit",
+            {
+                "results": [
+                    {
+                        "filename": "src/foo.py",
+                        "line_number": 12,
+                        "col_offset": 0,
+                        "test_id": "B101",
+                        "issue_text": "Use of assert detected.",
+                    }
+                ]
+            },
+            "bandit\tsrc/foo.py\t12\t1\tB101\tUse of assert detected.",
+        ),
+        (
+            "pylint",
+            {
+                "messages": [
+                    {
+                        "messageId": "C0114",
+                        "symbol": "missing-module-docstring",
+                        "message": "Missing module docstring",
+                        "path": "src/foo.py",
+                        "line": 1,
+                        "column": 0,
+                        "type": "convention",
+                    }
+                ]
+            },
+            "pylint\tsrc/foo.py\t1\t1\tmissing-module-docstring\tC0114: Missing module docstring",
+        ),
+    ]
+
+    for command, raw_output, fingerprint_source in cases:
+        errors = pyfltr.command.error_parser.parse_errors(command, json.dumps(raw_output))
+        assert len(errors) == 1
+        assert errors[0].col == 1
+        result = _make_result(command, returncode=1, errors=errors)
+
+        payload = pyfltr.output.code_quality.build_code_quality_payload([result])
+
+        expected = hashlib.sha256(fingerprint_source.encode()).hexdigest()
+        assert payload[0]["fingerprint"] == expected
 
 
 def test_build_payload_begin_defaults_to_one() -> None:

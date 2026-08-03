@@ -100,10 +100,18 @@ def _build_result_record(
     error: pyfltr.command.error_parser.ErrorLocation,
     rule_index: dict[str, int],
 ) -> dict[str, typing.Any]:
-    """1 diagnostic 分の SARIF result を生成する。"""
+    """1 diagnostic 分の SARIF result を生成する。
+
+    SARIFの列は1起点で、終了列は終端排他として扱う。1未満の列と、行内位置を
+    保証できないtextlintの列は省略する。
+    """
     region: dict[str, typing.Any] = {"startLine": error.line}
-    if error.col is not None:
+    if error.command != "textlint" and error.col is not None and error.col >= 1:
         region["startColumn"] = error.col
+    if error.end_line is not None:
+        region["endLine"] = error.end_line
+    if error.command != "textlint" and error.end_col is not None and error.end_col >= 1:
+        region["endColumn"] = error.end_col
     record: dict[str, typing.Any] = {
         "level": _SEVERITY_TO_LEVEL.get(error.severity, "warning"),
         "message": {"text": error.message},

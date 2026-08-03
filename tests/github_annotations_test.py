@@ -6,6 +6,9 @@
 ruleが判読できる契約とする。
 """
 
+import json
+
+import pyfltr.command.error_parser
 import pyfltr.output.github_annotations
 from tests.conftest import make_error_location as _make_error
 
@@ -67,3 +70,52 @@ def test_build_workflow_command_col_optional() -> None:
     assert "col=" not in line
     # プレフィックスも `a.py:3:` （col 無し）
     assert "::a.py:3: [tool] msg" in line
+
+
+def test_build_workflow_command_uses_normalized_parser_columns() -> None:
+    """bandit・pylintのプロパティとプレフィックスは1起点へ補正された列を用いる。"""
+    cases = [
+        (
+            "bandit",
+            {
+                "results": [
+                    {
+                        "filename": "src/foo.py",
+                        "line_number": 12,
+                        "col_offset": 0,
+                        "test_id": "B101",
+                        "issue_text": "Use of assert detected.",
+                    }
+                ]
+            },
+            "::src/foo.py:12:1: [bandit:B101] Use of assert detected.",
+        ),
+        (
+            "pylint",
+            {
+                "messages": [
+                    {
+                        "messageId": "C0114",
+                        "symbol": "missing-module-docstring",
+                        "message": "Missing module docstring",
+                        "path": "src/foo.py",
+                        "line": 1,
+                        "column": 0,
+                        "type": "convention",
+                    }
+                ]
+            },
+            "::src/foo.py:1:1: [pylint:missing-module-docstring] C0114: Missing module docstring",
+        ),
+    ]
+
+    for command, raw_output, expected_prefix in cases:
+        errors = pyfltr.command.error_parser.parse_errors(command, json.dumps(raw_output))
+        assert len(errors) == 1
+        assert errors[0].col == 1
+
+        line = pyfltr.output.github_annotations.build_workflow_command(errors[0])
+
+        assert "col=1" in line
+        assert "col=0" not in line
+        assert expected_prefix in line
