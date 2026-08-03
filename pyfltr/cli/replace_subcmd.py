@@ -226,7 +226,10 @@ def execute_replace(parser: argparse.ArgumentParser, args: argparse.Namespace) -
     if excluded:
         expanded = [p for p in expanded if p.resolve() not in excluded]
     if args.from_grep is not None:
-        allowed = _read_from_grep(parser, args.from_grep)
+        try:
+            allowed = read_from_grep(args.from_grep)
+        except ValueError as exc:
+            parser.error(str(exc))
         expanded = [p for p in expanded if p.resolve() in allowed]
 
     files_count = len(expanded)
@@ -406,12 +409,15 @@ def execute_replace(parser: argparse.ArgumentParser, args: argparse.Namespace) -
     return exit_code
 
 
-def _read_from_grep(parser: argparse.ArgumentParser, jsonl_path: pathlib.Path) -> set[pathlib.Path]:
-    """grep出力JSONLから`kind=match`のファイル集合を抽出する。"""
+def read_from_grep(jsonl_path: pathlib.Path) -> set[pathlib.Path]:
+    """grep出力JSONLから`kind=match`のファイル集合を抽出する。
+
+    CLIとMCPの双方から利用できるよう、エラー表現を呼び出し側へ委ねる。
+    """
     try:
         text = jsonl_path.read_text(encoding="utf-8")
     except OSError as exc:
-        parser.error(f"--from-grep の読み込みに失敗しました: {jsonl_path}: {exc}")
+        raise ValueError(f"--from-grep の読み込みに失敗しました: {jsonl_path}: {exc}") from exc
     files: set[pathlib.Path] = set()
     for line in text.splitlines():
         line = line.strip()

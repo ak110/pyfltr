@@ -447,37 +447,3 @@ def build_parser(custom_commands: collections.abc.Iterable[str] = ()) -> "_HelpO
     pyfltr.cli.replace_subcmd.register_subparsers(subparsers)
 
     return parser
-
-
-def apply_subcommand_defaults(args: argparse.Namespace) -> None:
-    """サブコマンドごとの既定値を `args` に反映する。
-
-    `subparsers.add_parser(..., parents=[common])` で共通オプションを継承する
-    構造上、`sub_parser.set_defaults(...)` は他サブパーサーのdefaultまで
-    上書きしてしまうため （argparseの既知挙動）、argparse本体の既定値機構は
-    使わずここで手動解決する。CLI明示値 （`store_true` や値指定） は
-    事前にargsに載っているため、既定値注入は「未指定扱いの値」を上書きする
-    形にとどめる。
-
-    サブコマンド挙動:
-        - `ci`: fixステージ無効。exit_zero_even_if_formattedは明示時のみTrue
-        - `run`: fixステージ有効。exit_zero_even_if_formattedをTrueに
-        - `fast`: runと同じ + `--commands` 未指定なら `"fast"`
-        - `run-for-agent`: runと同じ。`--output-format`の既定値は`_resolve_output_format`側で
-          サブコマンド既定値`"jsonl"`として注入し、`PYFLTR_OUTPUT_FORMAT`での変更を許容する。
-          互換維持のためのサブコマンドで、通常は`run`を使う。
-
-    `--quiet`の既定値は`run-for-agent`のとき、または`detect_agent_indicator()`が
-    エージェント実行を示す環境変数を検出したときに`True`とする。
-    エージェント検出環境下では出力形式も`jsonl`へ切り替わるため、`run`と`run-for-agent`が
-    等価に振る舞う。CLIで`--quiet` / `--no-quiet`を明示した場合はそちらを優先する。
-    """
-    subcommand = args.subcommand
-    args.include_fix_stage = subcommand in ("run", "fast", "run-for-agent")
-    if subcommand in ("run", "fast", "run-for-agent"):
-        args.exit_zero_even_if_formatted = True
-    if subcommand == "fast" and args.commands is None:
-        # `--commands` は `action="append"` 化によりリストで保持する。
-        args.commands = ["fast"]
-    if getattr(args, "quiet", None) is None:
-        args.quiet = subcommand == "run-for-agent" or pyfltr.cli.output_format.detect_agent_indicator() is not None

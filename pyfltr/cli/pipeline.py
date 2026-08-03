@@ -11,7 +11,6 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import dataclasses
-import difflib
 import importlib.metadata
 import logging
 import os
@@ -461,6 +460,7 @@ def run_pipeline(
     commands: list[str],
     config: pyfltr.config.config.Config,
     *,
+    start_cwd: pathlib.Path | None = None,
     original_cwd: str | None = None,
     original_sys_args: list[str] | None = None,
     force_text_on_stderr: bool = False,
@@ -523,11 +523,12 @@ def run_pipeline(
         subprocess.run(clear_cmd, check=False)
 
     # モノレポ対応: 起点 cwd と検出したサブプロジェクト一覧を確定する。
-    # `--work-dir` 適用後の現在の cwd を起点とする（`original_cwd` は retry_command 用に別経路で扱う）。
+    # `--work-dir`適用後の現在のcwdを起点とする（`original_cwd`はretry_command用に別経路で扱う）。
+    # MCP経路はプロセスのcwdを変更せず、`start_cwd`で起点を明示する。
     # `discover_subprojects` は起点 cwd 配下のマーカー
     # （`pyproject.toml`・`Cargo.toml`・`*.csproj`・`*.sln`）持ちディレクトリを再帰探索し、
     # uv workspace member も含めて返す。検出0/1件は単一プロジェクトとして従来通り動作する。
-    start_cwd_path = pathlib.Path.cwd()
+    start_cwd_path = start_cwd if start_cwd is not None else pathlib.Path.cwd()
     subprojects = pyfltr.command.subprojects.discover_subprojects(start_cwd_path, config)
     if len(subprojects) < 2:
         # モノレポモード非適用: subprojects を空集合として扱う（dispatcher 側で単一経路）。
@@ -567,7 +568,7 @@ def run_pipeline(
     # --only-failedよりも先に適用し、以後のフィルタはフィルタリング済みリストを受け取る。
     changed_since_ref: str | None = getattr(args, "changed_since", None)
     if changed_since_ref is not None:
-        all_files = pyfltr.command.targets.filter_by_changed_since(all_files, changed_since_ref)
+        all_files = pyfltr.command.targets.filter_by_changed_since(all_files, changed_since_ref, cwd=start_cwd_path)
 
     # --only-failed指定時は直前runからツール別の失敗ファイル集合を構築する。
     # archive / cache初期化より前に実行し、早期終了の場合はそれらの副作用を発生させない。
@@ -977,11 +978,10 @@ def run_impl(
     commands: list[str] = pyfltr.config.config.resolve_aliases(
         pyfltr.cli.command_selection.flatten_commands_arg(args.commands, config), config
     )
-    for command in commands:
-        if command not in config.values:
-            suggestions = difflib.get_close_matches(command, list(config.command_names), n=3, cutoff=0.6)
-            suffix = f"。もしかして: {', '.join(suggestions)}" if suggestions else ""
-            parser.error(f"コマンドが見つかりません: {command}{suffix}")
+    try:
+        pyfltr.cli.command_selection.validate_commands(commands, config)
+    except ValueError as e:
+        parser.error(str(e))
 
     exit_code, _run_id = run_pipeline(
         args, commands, config, original_cwd=original_cwd, original_sys_args=list(original_sys_args)

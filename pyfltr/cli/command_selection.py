@@ -1,13 +1,50 @@
-"""`--commands`指定の展開と、未有効化コマンド警告の判定。
+"""実行系サブコマンドの既定値解決と`--commands`指定の検証。
 
-実行系サブコマンドが受け取る`--commands`の生値（`action="append"`のリスト）を
-コマンド名列へ展開する`flatten_commands_arg`と、
-そのうち有効化されておらず実行されないものを警告対象として抽出する
-`compute_unmet_commands`を担う。エイリアス指定時の抑止仕様は
-`compute_unmet_commands`のdocstringをSSOTとする。
+実行系サブコマンドの既定値を解決する`apply_subcommand_defaults`、
+`--commands`の生値をコマンド名列へ展開する`flatten_commands_arg`、
+登録済みコマンド名を検証する`validate_commands`、有効化されておらず
+実行されないコマンドを抽出する`compute_unmet_commands`を担う。
 """
 
+import argparse
+import difflib
+
+import pyfltr.cli.output_format
 import pyfltr.config.config
+
+
+def apply_subcommand_defaults(args: argparse.Namespace) -> None:
+    """サブコマンドごとの既定値を`args`に反映する。
+
+    `subparsers.add_parser(..., parents=[common])`で共通オプションを継承する
+    構造上、`sub_parser.set_defaults(...)`は他サブパーサーのdefaultまで
+    上書きしてしまうため（argparseの既知挙動）、argparse本体の既定値機構は
+    使わずここで手動解決する。CLI明示値（`store_true`や値指定）は
+    事前にargsに載っているため、既定値注入は「未指定扱いの値」を上書きする
+    形にとどめる。
+
+    サブコマンド挙動:
+        - `ci`: fixステージ無効。exit_zero_even_if_formattedは明示時のみTrue
+        - `run`: fixステージ有効。exit_zero_even_if_formattedをTrueに
+        - `fast`: runと同じ + `--commands`未指定なら`"fast"`
+        - `run-for-agent`: runと同じ。`--output-format`の既定値は`_resolve_output_format`側で
+          サブコマンド既定値`"jsonl"`として注入し、`PYFLTR_OUTPUT_FORMAT`での変更を許容する。
+          互換維持のためのサブコマンドで、通常は`run`を使う。
+
+    `--quiet`の既定値は`run-for-agent`のとき、または`detect_agent_indicator()`が
+    エージェント実行を示す環境変数を検出したときに`True`とする。
+    エージェント検出環境下では出力形式も`jsonl`へ切り替わるため、`run`と`run-for-agent`が
+    等価に振る舞う。CLIで`--quiet` / `--no-quiet`を明示した場合はそちらを優先する。
+    """
+    subcommand = args.subcommand
+    args.include_fix_stage = subcommand in ("run", "fast", "run-for-agent")
+    if subcommand in ("run", "fast", "run-for-agent"):
+        args.exit_zero_even_if_formatted = True
+    if subcommand == "fast" and args.commands is None:
+        # `--commands`は`action="append"`化によりリストで保持する。
+        args.commands = ["fast"]
+    if getattr(args, "quiet", None) is None:
+        args.quiet = subcommand == "run-for-agent" or pyfltr.cli.output_format.detect_agent_indicator() is not None
 
 
 def flatten_commands_arg(values: list[str] | None, config: pyfltr.config.config.Config) -> list[str]:
@@ -28,6 +65,20 @@ def flatten_commands_arg(values: list[str] | None, config: pyfltr.config.config.
             seen.add(name)
             result.append(name)
     return result
+
+
+def validate_commands(commands: list[str], config: pyfltr.config.config.Config) -> None:
+    """コマンド名が設定へ登録済みであることを検証する。
+
+    未知のコマンド名を検出した場合は、`difflib`による候補提示を含む
+    メッセージで`ValueError`を送出する。CLI経路は`parser.error`へ、
+    MCP経路はMCPエラーへ変換する。
+    """
+    for command in commands:
+        if command not in config.commands:
+            suggestions = difflib.get_close_matches(command, list(config.commands), n=3, cutoff=0.6)
+            suffix = f"。もしかして: {', '.join(suggestions)}" if suggestions else ""
+            raise ValueError(f"コマンドが見つかりません: {command}{suffix}")
 
 
 def compute_unmet_commands(

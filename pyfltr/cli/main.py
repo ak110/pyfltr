@@ -16,6 +16,7 @@ import sys
 import typing
 
 import pyfltr.cli.command_info
+import pyfltr.cli.command_selection
 import pyfltr.cli.config_subcmd
 import pyfltr.cli.grep_subcmd
 import pyfltr.cli.mcp_server
@@ -118,7 +119,7 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
         return non_run_dispatch[subcommand]()
 
     # サブコマンド別の既定値を注入する （CLI明示値が優先）。
-    pyfltr.cli.parser.apply_subcommand_defaults(args)
+    pyfltr.cli.command_selection.apply_subcommand_defaults(args)
 
     # --no-fix指定時はinclude_fix_stageをFalseに差し戻す。
     if getattr(args, "no_fix", False):
@@ -140,7 +141,7 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
     def _reparse_with_custom(custom_commands: list[str]) -> tuple[argparse.ArgumentParser, argparse.Namespace]:
         p = pyfltr.cli.parser.build_parser(custom_commands)
         a = p.parse_args(list(sys_args))
-        pyfltr.cli.parser.apply_subcommand_defaults(a)
+        pyfltr.cli.command_selection.apply_subcommand_defaults(a)
         return p, a
 
     try:
