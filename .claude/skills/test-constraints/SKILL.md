@@ -55,6 +55,10 @@ description: >
 - テストでツール解決パス（`shutil.which`戻り値・`commandline[0]`等）と特定ツール名を文字列比較するときは、
   `pathlib.Path(<path>).stem == "<tool>"`の形で比較する。
   Windows runnerでは`.EXE`等の拡張子が付いて返るためである
+- `scripts/`配下のスクリプトを`tests/`配下から参照する場合は`scripts/__init__.py`を設置する。
+  mypyは`__init__.py`の有無でファイルパスからモジュール名を決めるため、
+  設置しないと同一ファイルがトップレベル名とパッケージ配下名の双方へ割り当たり検査が停止する。
+  `[tool.pytest.ini_options]`の`pythonpath`は型検査器が参照しないため代替にならない
 - テストコードからの実装参照には2系統があり、リファクタリング時は両方を漏れなく追従させる。
   `import`文・`from ... import ...`は静的解析で検出できるが、
   `monkeypatch.setattr("pyfltr.command.xxx....")` / `mocker.patch("pyfltr.command.xxx....")` /
