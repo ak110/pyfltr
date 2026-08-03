@@ -1,7 +1,7 @@
 """MCPツールスキーマ用Pydanticモデル群。
 
-`mcp_server.py`が公開する8ツールの引数・戻り値スキーマをまとめて定義する。
-MCPServerはこれらのモデルからJSONスキーマを自動生成してMCPクライアントへ公開する。
+`mcp_server.py`が公開する11ツールの戻り値スキーマをまとめて定義する。
+入力側は各ツール関数の型注釈とdocstringからJSONスキーマを自動生成する。
 """
 
 from __future__ import annotations
@@ -231,3 +231,61 @@ class ReplaceUndoModel(pydantic.BaseModel):
         description="ハッシュ不一致でスキップされたファイルパスの一覧（force=False時）。",
     )
     exit_code: int = pydantic.Field(description="終了コード。skippedあり=1、全件復元=0。")
+
+
+class ReplaceHistoryFileModel(pydantic.BaseModel):
+    """replace履歴の対象ファイル1件分。"""
+
+    file: str = pydantic.Field(description="対象ファイルパス。")
+    records_count: int = pydantic.Field(description="当該ファイルの置換件数。")
+
+
+class ReplaceHistoryEntryModel(pydantic.BaseModel):
+    """replace履歴の1件分。`before_content`と`records`は応答に含めない。"""
+
+    replace_id: str = pydantic.Field(description="replace識別子（ULID）。")
+    saved_at: str | None = pydantic.Field(default=None, description="保存日時（ISO 8601形式）。")
+    command: dict[str, typing.Any] = pydantic.Field(
+        default_factory=dict,
+        description="実行時のパターン・置換式・エンコーディング等。",
+    )
+    files: list[ReplaceHistoryFileModel] = pydantic.Field(
+        default_factory=list,
+        description="対象ファイルと置換件数の一覧。",
+    )
+
+
+class ReplaceHistoryModel(pydantic.BaseModel):
+    """`replace_history`ツールの戻り値。"""
+
+    action: str = pydantic.Field(description="実行したaction（list / show）。")
+    entries: list[ReplaceHistoryEntryModel] = pydantic.Field(
+        default_factory=list,
+        description='履歴一覧。`action="show"`時は1件のみ。',
+    )
+
+
+class CommandInfoModel(pydantic.BaseModel):
+    """`command_info`ツールの戻り値。"""
+
+    command: str = pydantic.Field(description="対象のツール名。")
+    resolved: bool = pydantic.Field(description="起動方式の解決に成功したか否か。")
+    info: dict[str, typing.Any] = pydantic.Field(
+        description="解決結果の詳細。解決失敗時は`error`キーを含む。",
+    )
+
+
+class ConfigResultModel(pydantic.BaseModel):
+    """`config`ツールの戻り値。actionごとに使うフィールドが異なる。"""
+
+    action: str = pydantic.Field(description="実行したaction（get / set / delete / list）。")
+    path: str = pydantic.Field(description="操作対象の設定ファイルパス。")
+    key: str | None = pydantic.Field(default=None, description="対象の設定キー名。listでは未使用。")
+    value: typing.Any = pydantic.Field(default=None, description="getまたはsetの設定値。")
+    is_default: bool | None = pydantic.Field(default=None, description="getの値が既定値由来か否か。")
+    existed: bool | None = pydantic.Field(default=None, description="deleteで対象キーが書かれていたか否か。")
+    values: dict[str, typing.Any] = pydantic.Field(
+        default_factory=dict,
+        description="listの設定値一覧。include_defaults=True時は値と既定値由来か否かを含む。",
+    )
+    warnings: list[str] = pydantic.Field(default_factory=list, description="操作中に発行された警告メッセージ。")

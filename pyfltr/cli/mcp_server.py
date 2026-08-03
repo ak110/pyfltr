@@ -1,7 +1,7 @@
 """MCPサーバー本体。
 
 `pyfltr mcp`サブコマンドでstdioトランスポートのMCPサーバーを起動する。
-MCPServerを用いて8ツール（読み取り系4件・実行系1件・grep/replace系3件）を公開し、
+MCPServerを用いて11ツールを公開し、
 LLMエージェントがpyfltrの実行と実行アーカイブ参照を直接利用できるようにする。
 
 MCPをコーディングエージェントの常用経路と位置づけ、CLIで可能な操作を原則として露出する。
@@ -47,6 +47,7 @@ else:
     _mcpserver = _imported_mcpserver
     _MCP_IMPORT_ERROR = None
 
+import pyfltr.cli.command_info
 import pyfltr.cli.command_selection
 import pyfltr.cli.overrides
 import pyfltr.cli.pipeline
@@ -62,7 +63,9 @@ import pyfltr.state.runs
 import pyfltr.warnings_
 from pyfltr.cli.mcp_models import (
     CommandDiagnosticsModel,
+    CommandInfoModel,
     CommandSummaryModel,
+    ConfigResultModel,
     DiagnosticMessageModel,
     DiagnosticModel,
     GrepFileCountModel,
@@ -70,6 +73,9 @@ from pyfltr.cli.mcp_models import (
     GrepResultModel,
     ReplaceChangeRecordModel,
     ReplaceFileChangeModel,
+    ReplaceHistoryEntryModel,
+    ReplaceHistoryFileModel,
+    ReplaceHistoryModel,
     ReplaceResultModel,
     ReplaceUndoModel,
     RunForAgentResult,
@@ -858,13 +864,225 @@ async def tool_replace_undo(replace_id: str, force: bool = False) -> ReplaceUndo
     )
 
 
+async def tool_replace_history(
+    action: str = "list",
+    replace_id: str | None = None,
+    limit: int | None = None,
+) -> ReplaceHistoryModel:
+    """replace履歴を一覧または単体で参照する。
+
+    対応CLI: `pyfltr replace --list-history` / `pyfltr replace --show-history <ID>`
+
+    Args:
+        action: `"list"`（一覧、既定）または`"show"`（単体）。
+        replace_id: `action="show"`時に必須のreplace識別子。
+        limit: `action="list"`時の最大件数。省略時は全件。
+    """
+    pyfltr.warnings_.clear()
+    if action not in ("list", "show"):
+        _raise_mcp_error("action は list / show のいずれかを指定してください。")
+    if action == "show" and replace_id is None:
+        _raise_mcp_error('action="show"では replace_id を指定してください。')
+
+    store = pyfltr.grep_.history.ReplaceHistoryStore()
+    if action == "list":
+        raw_entries = store.list_replaces(limit=limit)
+    else:
+        try:
+            raw_entries = [store.load_replace(typing.cast(str, replace_id))]
+        except FileNotFoundError:
+            _raise_mcp_error(f"replace_id が見つかりません: {replace_id}")
+
+    entries = [
+        ReplaceHistoryEntryModel(
+            replace_id=str(entry["replace_id"]),
+            saved_at=entry.get("saved_at"),
+            command=dict(entry.get("command", {})),
+            files=[
+                ReplaceHistoryFileModel(
+                    file=str(file_entry["file"]),
+                    records_count=int(file_entry.get("records_count", 0)),
+                )
+                for file_entry in entry.get("files", [])
+            ],
+        )
+        for entry in raw_entries
+    ]
+    return ReplaceHistoryModel(action=action, entries=entries)
+
+
+async def tool_command_info(command: str, check: bool = False) -> CommandInfoModel:
+    """ツールの起動方式の解決結果を返す。
+
+    対応CLI: `pyfltr command-info <command> [--check]`
+
+    Args:
+        command: 対象のツール名。
+        check: Trueの場合、実行経路と同じ事前確認を行う。miseのtrust試行や
+            パッケージマネージャーの版確認などの副作用が発生し得るため、既定はFalse。
+    """
+    pyfltr.warnings_.clear()
+    try:
+        config = pyfltr.config.config.load_config()
+    except (ValueError, OSError) as exc:
+        _raise_mcp_error(f"設定エラー: {exc}")
+    try:
+        pyfltr.cli.command_selection.validate_commands([command], config)
+    except ValueError as exc:
+        _raise_mcp_error(str(exc))
+    info = pyfltr.cli.command_info.collect_info(command, config, do_check=check)
+    return CommandInfoModel(command=command, resolved=bool(info.get("resolved", True)), info=info)
+
+
+async def tool_config(
+    action: str,
+    key: str | None = None,
+    value: str | None = None,
+    use_global: bool = False,
+    include_defaults: bool = False,
+) -> ConfigResultModel:
+    """pyfltr設定ファイルを操作する。
+
+    対応CLI: `pyfltr config get|set|delete|list`
+
+    Args:
+        action: `"get"` / `"set"` / `"delete"` / `"list"`のいずれか。
+        key: get、set、deleteで必須の設定キー名。
+        value: setで必須の設定値。キーの型に応じて変換する。
+        use_global: Trueの場合、グローバル設定ファイルを対象にする。
+        include_defaults: listで既定値のままのキーも含める。
+    """
+    pyfltr.warnings_.clear()
+    if action not in ("get", "set", "delete", "list"):
+        _raise_mcp_error("action は get / set / delete / list のいずれかを指定してください。")
+    if action in ("get", "delete"):
+        if key is None:
+            _raise_mcp_error(f'action="{action}"では key を指定してください。')
+        if value is not None:
+            _raise_mcp_error(f'action="{action}"では value を指定できません。')
+    elif action == "set":
+        if key is None or value is None:
+            _raise_mcp_error('action="set"では key と value を指定してください。')
+    elif key is not None or value is not None:
+        _raise_mcp_error('action="list"では key と value を指定できません。')
+    if include_defaults and action != "list":
+        _raise_mcp_error('include_defaults は action="list"のときのみ指定できます。')
+
+    path = pyfltr.config.config.default_global_config_path() if use_global else pathlib.Path("pyproject.toml").absolute()
+    if action == "get":
+        try:
+            values = pyfltr.config.config.read_config_values(path)
+        except (ValueError, OSError) as exc:
+            _raise_mcp_error(str(exc))
+        requested_key = typing.cast(str, key)
+        result_value: typing.Any = None
+        is_default = False
+        if requested_key in values:
+            result_value = values[requested_key]
+        elif requested_key in pyfltr.config.config.DEFAULT_CONFIG:
+            result_value = pyfltr.config.config.DEFAULT_CONFIG[requested_key]
+            is_default = True
+        else:
+            _raise_mcp_error(
+                pyfltr.config.config.format_unknown_key_message(
+                    requested_key,
+                    pyfltr.config.config.DEFAULT_CONFIG.keys(),
+                )
+            )
+        return ConfigResultModel(
+            action=action,
+            path=str(path),
+            key=requested_key,
+            value=result_value,
+            is_default=is_default,
+        )
+
+    if action == "set":
+        requested_key = typing.cast(str, key)
+        raw_value = typing.cast(str, value)
+        if requested_key not in pyfltr.config.config.DEFAULT_CONFIG:
+            _raise_mcp_error(
+                pyfltr.config.config.format_unknown_key_message(
+                    requested_key,
+                    pyfltr.config.config.DEFAULT_CONFIG.keys(),
+                )
+            )
+        try:
+            parsed_value = pyfltr.config.config.parse_config_value(requested_key, raw_value)
+        except ValueError as exc:
+            _raise_mcp_error(str(exc))
+        if requested_key in pyfltr.config.config.GLOBAL_PRIORITY_KEYS and not use_global:
+            pyfltr.warnings_.emit_warning(
+                source="config",
+                message=(
+                    f"{requested_key} はarchive/cache系のキーです。マシン共通設定として"
+                    " --global での設定を推奨します（global側があればglobal優先になります）。"
+                ),
+            )
+        elif requested_key not in pyfltr.config.config.GLOBAL_PRIORITY_KEYS and use_global:
+            pyfltr.warnings_.emit_warning(
+                source="config",
+                message=(
+                    f"{requested_key} は通常キーのためproject側のpyproject.tomlが優先されます。"
+                    " globalに書いてもproject側に同じキーがあれば上書きされます。"
+                ),
+            )
+        try:
+            pyfltr.config.config.set_config_value(
+                path,
+                requested_key,
+                parsed_value,
+                create_if_missing=use_global,
+            )
+        except (ValueError, OSError) as exc:
+            _raise_mcp_error(str(exc))
+        return ConfigResultModel(
+            action=action,
+            path=str(path),
+            key=requested_key,
+            value=parsed_value,
+            warnings=[str(entry["message"]) for entry in pyfltr.warnings_.collected_warnings()],
+        )
+
+    if action == "delete":
+        requested_key = typing.cast(str, key)
+        if requested_key not in pyfltr.config.config.DEFAULT_CONFIG:
+            _raise_mcp_error(
+                pyfltr.config.config.format_unknown_key_message(
+                    requested_key,
+                    pyfltr.config.config.DEFAULT_CONFIG.keys(),
+                )
+            )
+        try:
+            existed = pyfltr.config.config.delete_config_value(path, requested_key)
+        except (ValueError, OSError) as exc:
+            _raise_mcp_error(str(exc))
+        return ConfigResultModel(action=action, path=str(path), key=requested_key, existed=existed)
+
+    try:
+        explicit_values = pyfltr.config.config.read_config_values(path)
+    except (ValueError, OSError) as exc:
+        _raise_mcp_error(str(exc))
+    if include_defaults:
+        listed_values: dict[str, typing.Any] = {
+            item_key: {
+                "value": explicit_values.get(item_key, default_value),
+                "default": item_key not in explicit_values,
+            }
+            for item_key, default_value in sorted(pyfltr.config.config.DEFAULT_CONFIG.items())
+        }
+    else:
+        listed_values = explicit_values
+    return ConfigResultModel(action=action, path=str(path), values=listed_values)
+
+
 # ---------------------------------------------------------------------------
 # MCPServer組み立て
 # ---------------------------------------------------------------------------
 
 
 def build_server() -> MCPServer:
-    """MCPServerインスタンスを生成し、8ツールを登録して返す。
+    """MCPServerインスタンスを生成し、11ツールを登録して返す。
 
     公開名は`@mcp.tool(name=...)`で明示し、Python側の関数名（`tool_*`）
     とは独立したスキーマ名（`list_runs`等）を維持する。
@@ -911,6 +1129,21 @@ def build_server() -> MCPServer:
             " Set force=True to override hash mismatch (when files were edited after the replace)."
         ),
     )(tool_replace_undo)
+    mcp.tool(
+        name="replace_history",
+        description="replace履歴を一覧（action=list）または単体（action=show）で返す。",
+    )(tool_replace_history)
+    mcp.tool(
+        name="command_info",
+        description=(
+            "ツールの起動方式（runner・実行ファイル・最終コマンドライン等）の解決結果を返す。"
+            " check=Trueはmiseの実行や版確認の副作用を伴う。"
+        ),
+    )(tool_command_info)
+    mcp.tool(
+        name="config",
+        description="pyfltr設定ファイルを操作する（action=get / set / delete / list）。",
+    )(tool_config)
 
     return mcp
 

@@ -268,7 +268,7 @@ async def test_tool_show_run_output_tool_not_found(tmp_path: pathlib.Path) -> No
 
 
 @pytest.mark.asyncio
-async def test_build_server_registers_eight_tools() -> None:
+async def test_build_server_registers_eleven_tools() -> None:
     server = pyfltr.cli.mcp_server.build_server()
     tools = await server.list_tools()
     tool_names = {t.name for t in tools}
@@ -281,6 +281,9 @@ async def test_build_server_registers_eight_tools() -> None:
         "grep",
         "replace",
         "replace_undo",
+        "replace_history",
+        "command_info",
+        "config",
     }
     assert tool_names == expected
 
@@ -1214,3 +1217,221 @@ async def test_tool_replace_undo_not_found_raises() -> None:
     """`replace_id`が存在しない場合`ValueError`が発生すること。"""
     with pytest.raises(ValueError, match="replace_id"):
         await pyfltr.cli.mcp_server.tool_replace_undo(replace_id="NONEXISTENTID00000000000000")
+
+
+# ---------------------------------------------------------------------------
+# replace_history ツールのテスト
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_tool_replace_history_lists_and_shows_without_file_contents(tmp_path: pathlib.Path) -> None:
+    """保存済み履歴を一覧・単体参照し、変更前本文と置換レコードを応答から除外する。"""
+    target = tmp_path / "sample.txt"
+    target.write_text("hello world\n", encoding="utf-8")
+    replaced = await pyfltr.cli.mcp_server.tool_replace(
+        pattern="hello",
+        replacement="goodbye",
+        paths=[str(target)],
+        dry_run=False,
+    )
+    assert replaced.replace_id is not None
+
+    listed = await pyfltr.cli.mcp_server.tool_replace_history()
+    assert listed.action == "list"
+    assert len(listed.entries) == 1
+    assert listed.entries[0].replace_id == replaced.replace_id
+    assert listed.entries[0].files[0].file == str(target)
+    assert listed.entries[0].files[0].records_count == 1
+
+    shown = await pyfltr.cli.mcp_server.tool_replace_history(action="show", replace_id=replaced.replace_id)
+    payload = shown.model_dump()
+    assert shown.action == "show"
+    assert len(shown.entries) == 1
+    assert "before_content" not in json.dumps(payload)
+    assert "records" not in payload["entries"][0]["files"][0]
+
+
+@pytest.mark.asyncio
+async def test_tool_replace_history_empty() -> None:
+    """履歴が存在しない場合は空の一覧を返す。"""
+    result = await pyfltr.cli.mcp_server.tool_replace_history()
+    assert result.action == "list"
+    assert not result.entries
+
+
+@pytest.mark.asyncio
+async def test_tool_replace_history_rejects_invalid_requests() -> None:
+    """未対応actionと識別子のない単体参照を拒否する。"""
+    with pytest.raises(ValueError, match="action"):
+        await pyfltr.cli.mcp_server.tool_replace_history(action="invalid")
+    with pytest.raises(ValueError, match="replace_id"):
+        await pyfltr.cli.mcp_server.tool_replace_history(action="show")
+
+
+@pytest.mark.asyncio
+async def test_tool_replace_history_show_rejects_unknown_id() -> None:
+    """存在しないreplace識別子を拒否する。"""
+    with pytest.raises(ValueError, match="replace_id"):
+        await pyfltr.cli.mcp_server.tool_replace_history(action="show", replace_id="unknown")
+
+
+# ---------------------------------------------------------------------------
+# command_info ツールのテスト
+# ---------------------------------------------------------------------------
+
+
+def test_tool_command_info_check_default_is_false() -> None:
+    """副作用を伴う事前確認を既定では実行しない。"""
+    signature = inspect.signature(pyfltr.cli.mcp_server.tool_command_info)
+    assert signature.parameters["check"].default is False
+
+
+@pytest.mark.asyncio
+async def test_tool_command_info_resolves_known_command() -> None:
+    """既知ツールの起動方式を公開関数経由で解決する。"""
+    result = await pyfltr.cli.mcp_server.tool_command_info("ec")
+    assert result.command == "ec"
+    assert result.resolved is True
+    assert result.info["command"] == "ec"
+    assert result.info["resolved"] is True
+
+
+@pytest.mark.asyncio
+async def test_tool_command_info_rejects_unknown_command() -> None:
+    """未知ツールを共通のコマンド検証経路で拒否する。"""
+    with pytest.raises(ValueError, match="コマンドが見つかりません"):
+        await pyfltr.cli.mcp_server.tool_command_info("unknown-command")
+
+
+# ---------------------------------------------------------------------------
+# config ツールのテスト
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_tool_config_crud_and_list(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """プロジェクト設定の一覧・既定値参照・設定・削除を一連の操作として実行する。"""
+    monkeypatch.chdir(tmp_path)
+    config_path = tmp_path / "pyproject.toml"
+    config_path.write_text("[tool.pyfltr]\njobs = 2\n", encoding="utf-8")
+
+    listed = await pyfltr.cli.mcp_server.tool_config(action="list")
+    assert listed.path == str(config_path)
+    assert listed.values == {"jobs": 2}
+
+    default_value = await pyfltr.cli.mcp_server.tool_config(action="get", key="archive")
+    assert default_value.value is True
+    assert default_value.is_default is True
+
+    set_result = await pyfltr.cli.mcp_server.tool_config(action="set", key="jobs", value="4")
+    assert set_result.value == 4
+    explicit_value = await pyfltr.cli.mcp_server.tool_config(action="get", key="jobs")
+    assert explicit_value.value == 4
+    assert explicit_value.is_default is False
+
+    deleted = await pyfltr.cli.mcp_server.tool_config(action="delete", key="jobs")
+    assert deleted.existed is True
+    deleted_again = await pyfltr.cli.mcp_server.tool_config(action="delete", key="jobs")
+    assert deleted_again.existed is False
+
+
+@pytest.mark.asyncio
+async def test_tool_config_lists_defaults(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """既定値を含む一覧では明示値と既定値を区別する。"""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\njobs = 3\n", encoding="utf-8")
+
+    result = await pyfltr.cli.mcp_server.tool_config(action="list", include_defaults=True)
+
+    assert result.values["jobs"] == {"value": 3, "default": False}
+    assert result.values["archive"] == {"value": True, "default": True}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"action": "invalid"}, "action"),
+        ({"action": "get"}, "key"),
+        ({"action": "get", "key": "jobs", "value": "1"}, "value"),
+        ({"action": "set", "key": "jobs"}, "key と value"),
+        ({"action": "delete"}, "key"),
+        ({"action": "delete", "key": "jobs", "value": "1"}, "value"),
+        ({"action": "list", "key": "jobs"}, "key と value"),
+        ({"action": "get", "key": "jobs", "include_defaults": True}, "include_defaults"),
+    ],
+)
+async def test_tool_config_rejects_invalid_parameter_combinations(
+    kwargs: dict[str, typing.Any],
+    message: str,
+) -> None:
+    """actionごとの必須引数と禁止引数を実行時に検証する。"""
+    with pytest.raises(ValueError, match=message):
+        await pyfltr.cli.mcp_server.tool_config(**kwargs)
+
+
+@pytest.mark.asyncio
+async def test_tool_config_rejects_unknown_key(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """未知設定キーを候補案内付きの共通文面で拒否する。"""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="認識できません"):
+        await pyfltr.cli.mcp_server.tool_config(action="get", key="unknown-key")
+
+
+@pytest.mark.asyncio
+async def test_tool_config_returns_current_request_warnings_only(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """設定警告を戻り値へ収集し、後続リクエストへ持ち越さない。"""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\n", encoding="utf-8")
+
+    warned = await pyfltr.cli.mcp_server.tool_config(action="set", key="archive", value="false")
+    assert len(warned.warnings) == 1
+    assert "archive/cache系" in warned.warnings[0]
+
+    clean = await pyfltr.cli.mcp_server.tool_config(action="set", key="jobs", value="2")
+    assert not clean.warnings
+
+
+@pytest.mark.asyncio
+async def test_tool_config_global_set_creates_file_and_warns(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """グローバル設定を新規作成し、通常キーの優先順位に関する警告を返す。"""
+    global_path = tmp_path / "config" / "config.toml"
+    monkeypatch.setenv("PYFLTR_GLOBAL_CONFIG", str(global_path))
+
+    result = await pyfltr.cli.mcp_server.tool_config(
+        action="set",
+        key="jobs",
+        value="3",
+        use_global=True,
+    )
+
+    assert result.path == str(global_path)
+    assert global_path.is_file()
+    assert len(result.warnings) == 1
+    assert "通常キー" in result.warnings[0]
+
+
+@pytest.mark.asyncio
+async def test_new_tools_keep_stdout_clean(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """新設3ツールはstdioトランスポート用のstdoutへ出力しない。"""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\n", encoding="utf-8")
+
+    await pyfltr.cli.mcp_server.tool_replace_history()
+    await pyfltr.cli.mcp_server.tool_command_info("ec")
+    await pyfltr.cli.mcp_server.tool_config(action="list")
+
+    captured = capsys.readouterr()
+    assert captured.out == ""

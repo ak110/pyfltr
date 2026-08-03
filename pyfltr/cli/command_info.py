@@ -74,7 +74,7 @@ def execute_command_info(parser: argparse.ArgumentParser, args: argparse.Namespa
         sys.stderr.write(f"エラー: 未知のコマンドです: {command}{suffix}\n")
         return 1
 
-    info = _collect_info(command, config, do_check=bool(args.check))
+    info = collect_info(command, config, do_check=bool(args.check))
 
     output_format = pyfltr.cli.output_format.resolve_output_format(
         parser,
@@ -92,9 +92,10 @@ def execute_command_info(parser: argparse.ArgumentParser, args: argparse.Namespa
     return 0 if info.get("resolved", True) else 1
 
 
-def _collect_info(command: str, config: pyfltr.config.config.Config, *, do_check: bool) -> dict[str, typing.Any]:
+def collect_info(command: str, config: pyfltr.config.config.Config, *, do_check: bool) -> dict[str, typing.Any]:
     """ツール解決情報を辞書で組み立てる。
 
+    MCPの`command_info`ツールからも呼び出す。
     解決自体に失敗した場合も例外は外へ伝播させず、`error`キーを含めたdictを返す
     （`command-info`は調査用途のため、解決失敗そのものも観測したいケースが多い）。
     mise active tools取得状況（status/detail/active_keys）と、tool spec省略採用フラグ・
