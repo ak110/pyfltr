@@ -119,7 +119,7 @@ def test_command_info_check_rejects_below_minimum_package_manager_version(
     out = _run("uv-audit", do_check=True, capsys=capsys)
 
     assert "check_passed: False" in out
-    assert "0.10.10以降" in out
+    assert "0.11.2以降" in out
 
 
 def test_command_info_check_passes_with_sufficient_package_manager_version(

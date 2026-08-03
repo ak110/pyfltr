@@ -500,7 +500,9 @@ def test_build_commandline_package_manager_audit_resolves_direct(
     [
         ("uv 0.10.8 (x86_64-unknown-linux-gnu)", True),
         ("uv 0.10.9 (x86_64-unknown-linux-gnu)", True),
-        ("uv 0.10.10 (x86_64-unknown-linux-gnu)", False),
+        ("uv 0.10.10 (x86_64-unknown-linux-gnu)", True),
+        ("uv 0.11.1 (x86_64-unknown-linux-gnu)", True),
+        ("uv 0.11.2 (x86_64-unknown-linux-gnu)", False),
         ("uv 0.11.7 (x86_64-unknown-linux-gnu)", False),
     ],
 )
@@ -521,7 +523,7 @@ def test_ensure_package_manager_version_rejects_below_minimum(
     config = pyfltr.config.config.create_default_config()
     resolved = pyfltr.command.runner.ResolvedCommandline("/usr/bin/uv", [], "direct", "default", "direct")
     if expect_error:
-        with pytest.raises(ValueError, match="0.10.10以降"):
+        with pytest.raises(ValueError, match="0.11.2以降"):
             pyfltr.command.runner.ensure_package_manager_version(resolved, config, "uv-audit")
     else:
         pyfltr.command.runner.ensure_package_manager_version(resolved, config, "uv-audit")
