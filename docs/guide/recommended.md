@@ -683,6 +683,11 @@ PR（プルリクエスト）で変更したファイルだけを対象に実行
 ベースブランチとの差分ファイルのみにチェック対象を限定し、大規模リポジトリでの実行時間を短縮できる。
 
 ```yaml
+      - uses: actions/checkout@v7
+        with:
+          # 既定の単一コミット取得ではorigin/mainのリモート追跡refを生成しないため全履歴を取得する
+          fetch-depth: 0
+
       - name: Test with pyfltr (changed files only)
         run: uvx pyfltr ci --changed-since=origin/main --output-format=github-annotations
 ```
@@ -691,6 +696,11 @@ PR（プルリクエスト）で変更したファイルだけを対象に実行
 対象は`git diff --name-only`が返すコミット差分・trackedファイルの作業ツリー差分・staged差分の和集合となり、
 untrackedの新規ファイルは対象外。
 gitが不在またはrefが解決できない場合は警告を出力して全体実行へフォールバックする。
+
+`actions/checkout`の既定は`fetch-depth: 1`で、リモート追跡refはトリガーとなったref分だけを生成する。
+pull_requestイベントでは`refs/remotes/pull/`配下だけを生成し`origin/main`が存在しないため、
+`fetch-depth: 0`を指定しないと差分の基準refを解決できない。
+この場合もジョブは失敗せず全体実行へフォールバックするため、短縮効果が失われた状態に気付きにくい。
 
 ### GitLab CIでMerge Requestへ表示する
 
@@ -724,6 +734,12 @@ pyfltr:
     - Merge Request画面のCode Quality widget（全tier）とMR diffインライン表示（Ultimate tier）に反映される
 - `when: always`: ジョブが失敗してもアーティファクトを残す指定
     - lintエラーで`exit 1`したときもレポートを取り込めるようにする
+- `image: ghcr.io/astral-sh/uv:python3.13-bookworm`: Node.js・pnpmを含まないため、
+  JavaScript系以外のツールの扱いに注意する
+    - `textlint`・`markdownlint`は言語カテゴリゲートの対象外で、`preset`を指定すると有効になる
+    - `js-runner`の既定値`pnpx`はPATH上の解決だけを試み、miseへのフォールバックを持たない
+    - Markdownを含むリポジトリでは起動に失敗してジョブが`exit 1`となるため、
+    `before_script`でNode.jsとpnpmを導入するか、当該ツールを`false`に設定する
 
 ---
 

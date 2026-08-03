@@ -99,6 +99,10 @@ pyfltr run --allow-external-paths --commands=textlint,markdownlint ~/.claude/pla
 gitが不在またはrefが存在しない場合は警告を出力して全体実行へフォールバックする。
 `pyfltr run --verbose --changed-since=<REF>`を実行すると警告メッセージを確認できる。
 
+CI上で`origin/main`等のリモート追跡refを指定して毎回全体実行になる場合は、チェックアウトが浅い可能性がある。
+`actions/checkout`の既定は`fetch-depth: 1`で、リモート追跡refはトリガーとなったref分だけを生成する。
+pull_requestイベントでは`refs/remotes/pull/`配下だけを生成するため、`fetch-depth: 0`の指定が必要となる。
+
 ## `--only-failed`が想定どおり動かない場合
 
 `--only-failed`で再実行しているのに失敗ツールが拾われない、または全体実行になることがある。
