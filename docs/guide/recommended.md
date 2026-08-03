@@ -158,6 +158,13 @@ asyncio_default_test_loop_scope = "session"
   当該環境側への`pytest-timeout`・`pytest-xdist`の導入が別途必要
 - pytest-xdistの並列実行下では、ポート番号・一時ファイル名・グローバル状態の競合に注意する
     - 間欠失敗するテストは並列前提に修正するか`-p no:xdist`等でxdist対象外へ退避させる
+    - 各workerは自身へ割り当たったテストだけを実行するため、
+    1つのモジュールが複数workerへまたがるとworkerごとにモジュールスコープのfixtureが実行される
+    - 初期化を1回しか許さないプロセス内のグローバル状態は、
+    モジュールスコープのfixtureで初期化せずsessionスコープへ移す
+    - sessionスコープのfixtureもworkerごとに1回実行されるため、
+    プロセス外の共有資源をworker間で1回だけ初期化する用途には別途排他が必要となる
+    - モジュール単位で同一workerへ割り当てたい場合は`--dist=loadfile`・`--dist=loadscope`を選ぶ
 
 ### typosの許可語設定
 
