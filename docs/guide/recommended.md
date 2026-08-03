@@ -23,8 +23,10 @@ pyfltr本体の設定（`[tool.pyfltr]`）と、呼び出される各ツール�
 - `[tool.pylint."messages control"]`のdisableリストから`"duplicate-code"`（R0801）を除去し重複検出を有効化する。
   `[tool.pylint.similarities]`は有効化済みの検査に対し`min-similarity-lines = 10`で閾値を設定する
     - 閾値10は4プロジェクトの既存コード計測に基づき、ノイズ抑制と実重複の捕捉を両立する規模として選定した
-    - 閾値4の検出件数はdotfiles 225件 / pyfltr 109件 / pytilpack 41件 / smpr 0件である
-    - 閾値10の検出件数はdotfiles 31件 / pyfltr 9件 / pytilpack 12件 / smpr 0件である
+    - 選定時の計測では、検出のあったプロジェクトで閾値4の検出件数が閾値10の場合の数倍から十数倍に達し、
+      閾値10ではいずれも数十件以下に収まった。両閾値とも0件のプロジェクトもあった
+    - 検出件数はコードベースの内容とpylintの版で変動する。
+      閾値を自プロジェクト向けに見直す場合は手元で計測し直す
     - 検出時は実重複か否かを判別する。実重複であれば共通化のリファクタリングを第一候補とし、
       意図的な並行実装や共通化すべきでない類似は理由コメント付き`# pylint: disable=duplicate-code`で個別抑制する。
       disableリストへの再追加や根拠を示さない閾値変更はしない
@@ -160,10 +162,21 @@ loopを閉じるテストや解放されない非同期資源は同じworkerの�
 設定を削除せず値を変更する。
 
 `-p no:cacheprovider`はpytestのcacheproviderプラグインを無効化する。
-このプラグインは`--lf`・`--ff`・`--nf`・`--lfnf`・`--sw`・`--sw-skip`・`--sw-reset`・
-`--cache-show`・`--cache-clear`の各オプションと、ini設定`cache_dir`および`cache` fixtureを提供する。
-無効化するとこれらのオプションは登録されないため、指定すると`unrecognized arguments`でエラー終了する。
-`cache` fixtureを要求するテストもfixture不存在で失敗する。
+このプラグインは`--lf`・`--ff`・`--nf`・`--lfnf`・`--cache-show`・`--cache-clear`の各オプションと、
+ini設定`cache_dir`および`cache` fixtureを提供する。
+stepwiseプラグインは`--sw`・`--sw-skip`・`--sw-reset`を提供する。
+pytestはcacheproviderを無効化した場合、これに依存するstepwiseも連動して無効化する。
+上記の例のように`addopts`へ書いた場合、両プラグインが提供する上記のオプションは引数として受理されるが効果を持たない。
+`--lf`を指定しても対象は全件実行となり、`--cache-show`を指定してもキャッシュ内容を表示せずテストを実行する。
+pytestは組み込みプラグインを読み込むかどうかをコマンドラインの`-p`指定だけで決めるため、
+`addopts`へ書いた無効化は読み込みより後に評価される。
+このとき無効化が取り消すのはプラグインの登録だけで、定義済みのオプションは残る。
+コマンドラインで`-p no:cacheprovider`を直接渡した場合は、読み込みより前に評価されるため
+オプションが定義されず、`--lf`等を併せて指定すると`unrecognized arguments`でエラー終了する。
+この差は組み込みプラグインに限る。`pytest-xdist`のように外部パッケージとして読み込むプラグインは
+`addopts`の評価より後に読み込まれるため、`addopts`へ書いた無効化でもオプションが定義されない。
+`cache` fixtureを要求するテストは、`addopts`へ書いた場合は`AttributeError`で、
+コマンドラインで渡した場合はfixture不存在で、いずれも失敗する。
 これらを利用する場合は当該指定を外す。
 
 `--timeout=60`は`pytest-timeout`プラグインが必要。
@@ -190,7 +203,10 @@ loopを閉じるテストや解放されない非同期資源は同じworkerの�
 - `uvx`経路（per-tool直接指定でpytest用の独立環境が生成される場合）は、
   当該環境側への`pytest-timeout`・`pytest-xdist`の導入が別途必要
 - pytest-xdistの並列実行下では、ポート番号・一時ファイル名・グローバル状態の競合に注意する
-    - 間欠失敗するテストは並列前提に修正するか`-p no:xdist`等でxdist対象外へ退避させる
+    - 間欠失敗するテストは並列前提に修正する。
+      切り分けのため一時的に並列を止める場合は`-n 0`で`addopts`の並列度を上書きする
+    - `-p no:xdist`はプラグイン自体を無効化するため`-n`・`--dist`が未定義となる。
+      上記の例のように`addopts`へ両者を書いた構成では`unrecognized arguments`でエラー終了する
     - 各workerは自身へ割り当たったテストだけを実行するため、
     1つのモジュールが複数workerへまたがるとworkerごとにモジュールスコープのfixtureが実行される
     - 初期化を1回しか許さないプロセス内のグローバル状態は、
