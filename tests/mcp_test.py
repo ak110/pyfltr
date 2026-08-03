@@ -675,6 +675,87 @@ async def test_tool_grep_finds_matches(tmp_path: pathlib.Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_tool_grep_combines_multiple_patterns(tmp_path: pathlib.Path) -> None:
+    """複数パターンをOR条件として検索する。"""
+    target = tmp_path / "sample.txt"
+    target.write_text("alpha\nbeta\ngamma\n", encoding="utf-8")
+
+    result = await pyfltr.cli.mcp_server.tool_grep(
+        paths=[str(target)],
+        patterns=["alpha", "beta"],
+    )
+
+    assert result.total_matches == 2
+    assert {match.match_text for match in result.matches} == {"alpha", "beta"}
+
+
+@pytest.mark.asyncio
+async def test_tool_grep_reads_pattern_file(tmp_path: pathlib.Path) -> None:
+    """パターンファイルの各行を検索パターンとして使用する。"""
+    target = tmp_path / "sample.txt"
+    target.write_text("alpha\nbeta\ngamma\n", encoding="utf-8")
+    pattern_file = tmp_path / "patterns.txt"
+    pattern_file.write_text("alpha\ngamma\n", encoding="utf-8")
+
+    result = await pyfltr.cli.mcp_server.tool_grep(
+        paths=[str(target)],
+        pattern_file=str(pattern_file),
+    )
+
+    assert result.total_matches == 2
+    assert {match.match_text for match in result.matches} == {"alpha", "gamma"}
+
+
+@pytest.mark.asyncio
+async def test_tool_grep_rejects_missing_pattern_file(tmp_path: pathlib.Path) -> None:
+    """実在しないパターンファイルを拒否する。"""
+    with pytest.raises(ValueError, match="パターンファイル"):
+        await pyfltr.cli.mcp_server.tool_grep(
+            paths=[str(tmp_path)],
+            pattern_file=str(tmp_path / "missing.txt"),
+        )
+
+
+def test_tool_grep_max_total_default_is_none() -> None:
+    """全体上限の未指定状態を明示値と区別する。"""
+    signature = inspect.signature(pyfltr.cli.mcp_server.tool_grep)
+    assert signature.parameters["max_total"].default is None
+
+
+@pytest.mark.asyncio
+async def test_tool_grep_context_applies_to_both_directions(tmp_path: pathlib.Path) -> None:
+    """一括コンテキスト値をマッチ行の前後へ適用する。"""
+    target = tmp_path / "sample.txt"
+    target.write_text("before 2\nbefore 1\nmatch\nafter 1\nafter 2\n", encoding="utf-8")
+
+    result = await pyfltr.cli.mcp_server.tool_grep(
+        paths=[str(target)],
+        pattern="match",
+        context=2,
+    )
+
+    assert result.matches[0].before == ["before 2", "before 1"]
+    assert result.matches[0].after == ["after 1", "after 2"]
+
+
+@pytest.mark.asyncio
+async def test_tool_grep_context_merges_with_individual_values(tmp_path: pathlib.Path) -> None:
+    """一括コンテキスト値を未指定の方向だけへ適用する。"""
+    target = tmp_path / "sample.txt"
+    target.write_text("before 2\nbefore 1\nmatch\nafter 1\nafter 2\n", encoding="utf-8")
+
+    result = await pyfltr.cli.mcp_server.tool_grep(
+        paths=[str(target)],
+        pattern="match",
+        context=2,
+        before_context=1,
+    )
+
+    assert result.matches[0].before == ["before 1"]
+    assert result.matches[0].after == ["after 1", "after 2"]
+
+
+@pytest.mark.asyncio
 async def test_tool_grep_no_match_returns_exit_code_1(tmp_path: pathlib.Path) -> None:
     """`tool_grep`がマッチ0件のとき`exit_code=1`を返すこと。"""
     target = tmp_path / "sample.txt"
@@ -732,6 +813,71 @@ async def test_tool_grep_max_total_limits_results(tmp_path: pathlib.Path) -> Non
 
     assert result.total_matches <= 5
     assert len(result.matches) <= 5
+
+
+@pytest.mark.asyncio
+async def test_tool_grep_summary_files_with_matches(tmp_path: pathlib.Path) -> None:
+    """マッチを含むファイルだけを集計して個別マッチを省略する。"""
+    matched = tmp_path / "matched.txt"
+    matched.write_text("hello\n", encoding="utf-8")
+    unmatched = tmp_path / "unmatched.txt"
+    unmatched.write_text("goodbye\n", encoding="utf-8")
+
+    result = await pyfltr.cli.mcp_server.tool_grep(
+        paths=[str(tmp_path)],
+        pattern="hello",
+        summary_mode="files_with_matches",
+    )
+
+    assert result.summary_mode == "files_with_matches"
+    assert result.files_with_matches == [str(matched)]
+    assert not result.matches
+
+
+@pytest.mark.asyncio
+async def test_tool_grep_summary_count_is_unlimited_by_default(tmp_path: pathlib.Path) -> None:
+    """件数集計では未指定の全体上限を無制限として扱う。"""
+    target = tmp_path / "matched.txt"
+    target.write_text("hello\n" * 1001, encoding="utf-8")
+
+    result = await pyfltr.cli.mcp_server.tool_grep(
+        paths=[str(target)],
+        pattern="hello",
+        summary_mode="count",
+    )
+
+    assert result.total_matches == 1001
+    assert [(entry.file, entry.count) for entry in result.file_counts] == [(str(target), 1001)]
+    assert not result.matches
+
+
+@pytest.mark.asyncio
+async def test_tool_grep_summary_files_without_match(tmp_path: pathlib.Path) -> None:
+    """走査対象のうちマッチを含まないファイルだけを集計する。"""
+    matched = tmp_path / "matched.txt"
+    matched.write_text("hello\n", encoding="utf-8")
+    unmatched = tmp_path / "unmatched.txt"
+    unmatched.write_text("goodbye\n", encoding="utf-8")
+
+    result = await pyfltr.cli.mcp_server.tool_grep(
+        paths=[str(tmp_path)],
+        pattern="hello",
+        summary_mode="files_without_match",
+    )
+
+    assert result.files_without_match == [str(unmatched)]
+    assert not result.matches
+
+
+@pytest.mark.asyncio
+async def test_tool_grep_rejects_invalid_summary_mode(tmp_path: pathlib.Path) -> None:
+    """未対応の集計モードを拒否する。"""
+    with pytest.raises(ValueError, match="summary_mode"):
+        await pyfltr.cli.mcp_server.tool_grep(
+            paths=[str(tmp_path)],
+            pattern="hello",
+            summary_mode="invalid",
+        )
 
 
 @pytest.mark.asyncio
@@ -838,6 +984,23 @@ async def test_tool_replace_within_limits_region(tmp_path: pathlib.Path) -> None
 
 
 @pytest.mark.asyncio
+async def test_tool_replace_context_expands_within_region(tmp_path: pathlib.Path) -> None:
+    """一括コンテキスト値でアンカー行の前後を置換対象へ含める。"""
+    target = tmp_path / "sample.txt"
+    target.write_text("foo before\nKEY\nfoo after\n", encoding="utf-8")
+
+    result = await pyfltr.cli.mcp_server.tool_replace(
+        pattern="foo",
+        replacement="X",
+        paths=[str(target)],
+        within="KEY",
+        context=1,
+    )
+
+    assert result.total_replacements == 2
+
+
+@pytest.mark.asyncio
 async def test_tool_replace_within_with_multiline_raises(tmp_path: pathlib.Path) -> None:
     """`within`と`multiline`の併用はValueErrorになる。"""
     target = tmp_path / "sample.txt"
@@ -855,6 +1018,53 @@ async def test_tool_replace_context_without_within_raises(tmp_path: pathlib.Path
     target.write_text("foo\n", encoding="utf-8")
     with pytest.raises(ValueError, match="within"):
         await pyfltr.cli.mcp_server.tool_replace(pattern="foo", replacement="X", paths=[str(target)], after_context=1)
+
+
+@pytest.mark.asyncio
+async def test_tool_replace_combined_context_without_within_raises(tmp_path: pathlib.Path) -> None:
+    """`within`未指定の一括コンテキスト値を拒否する。"""
+    target = tmp_path / "sample.txt"
+    target.write_text("foo\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="within"):
+        await pyfltr.cli.mcp_server.tool_replace(
+            pattern="foo",
+            replacement="X",
+            paths=[str(target)],
+            context=1,
+        )
+
+
+@pytest.mark.asyncio
+async def test_tool_replace_from_grep_limits_files(tmp_path: pathlib.Path) -> None:
+    """grepのJSONL出力に現れるファイルだけを置換対象にする。"""
+    allowed = tmp_path / "allowed.txt"
+    allowed.write_text("foo\n", encoding="utf-8")
+    omitted = tmp_path / "omitted.txt"
+    omitted.write_text("foo\n", encoding="utf-8")
+    grep_output = tmp_path / "grep.jsonl"
+    grep_output.write_text(json.dumps({"kind": "match", "file": str(allowed)}) + "\n", encoding="utf-8")
+
+    result = await pyfltr.cli.mcp_server.tool_replace(
+        pattern="foo",
+        replacement="X",
+        paths=[str(tmp_path)],
+        from_grep=str(grep_output),
+    )
+
+    assert result.files_changed == 1
+    assert [entry.file for entry in result.file_changes] == [str(allowed)]
+
+
+@pytest.mark.asyncio
+async def test_tool_replace_rejects_missing_from_grep_file(tmp_path: pathlib.Path) -> None:
+    """読み込めないgrep出力を拒否する。"""
+    with pytest.raises(ValueError, match="from-grep"):
+        await pyfltr.cli.mcp_server.tool_replace(
+            pattern="foo",
+            replacement="X",
+            paths=[str(tmp_path)],
+            from_grep=str(tmp_path / "missing.jsonl"),
+        )
 
 
 @pytest.mark.asyncio

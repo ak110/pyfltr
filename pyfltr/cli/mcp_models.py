@@ -137,6 +137,13 @@ class GrepMatchModel(pydantic.BaseModel):
     after: list[str] = pydantic.Field(default_factory=list, description="`-A`コンテキストの後行群。")
 
 
+class GrepFileCountModel(pydantic.BaseModel):
+    """`grep`の集計モード`count`の1ファイル分。"""
+
+    file: str = pydantic.Field(description="対象ファイルパス。")
+    count: int = pydantic.Field(description="当該ファイルのマッチ件数。")
+
+
 class GrepResultModel(pydantic.BaseModel):
     """`grep`ツールの戻り値。"""
 
@@ -151,6 +158,22 @@ class GrepResultModel(pydantic.BaseModel):
     missing_targets: list[str] = pydantic.Field(
         default_factory=list,
         description="直接指定したが存在しなかったファイル一覧。",
+    )
+    summary_mode: str | None = pydantic.Field(
+        default=None,
+        description="集計モード（files_with_matches / count / files_without_match）。未指定時はNone。",
+    )
+    files_with_matches: list[str] = pydantic.Field(
+        default_factory=list,
+        description='`summary_mode="files_with_matches"`時のマッチを含むファイル一覧。',
+    )
+    file_counts: list[GrepFileCountModel] = pydantic.Field(
+        default_factory=list,
+        description='`summary_mode="count"`時のファイル別マッチ件数。',
+    )
+    files_without_match: list[str] = pydantic.Field(
+        default_factory=list,
+        description='`summary_mode="files_without_match"`時のマッチを含まないファイル一覧。',
     )
 
 

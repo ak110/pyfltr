@@ -50,6 +50,7 @@ else:
 import pyfltr.cli.command_selection
 import pyfltr.cli.overrides
 import pyfltr.cli.pipeline
+import pyfltr.cli.replace_subcmd
 import pyfltr.command.targets
 import pyfltr.config.config
 import pyfltr.grep_.history
@@ -64,6 +65,7 @@ from pyfltr.cli.mcp_models import (
     CommandSummaryModel,
     DiagnosticMessageModel,
     DiagnosticModel,
+    GrepFileCountModel,
     GrepMatchModel,
     GrepResultModel,
     ReplaceChangeRecordModel,
@@ -432,8 +434,10 @@ async def tool_run_for_agent(
 
 
 async def tool_grep(
-    pattern: str,
     paths: list[str],
+    pattern: str | None = None,
+    patterns: list[str] | None = None,
+    pattern_file: str | None = None,
     ignore_case: bool = False,
     smart_case: bool = False,
     fixed_strings: bool = False,
@@ -442,8 +446,10 @@ async def tool_grep(
     multiline: bool = False,
     before_context: int = 0,
     after_context: int = 0,
+    context: int | None = None,
     max_count: int = 0,
-    max_total: int = 1000,
+    max_total: int | None = None,
+    summary_mode: str | None = None,
     types: list[str] | None = None,
     globs: list[str] | None = None,
     encoding: str = "utf-8",
@@ -454,11 +460,13 @@ async def tool_grep(
     """指定ファイル群から正規表現パターンを検索し、マッチ一覧を返す。
 
     pyfltrの`exclude`/`extend-exclude`/`respect-gitignore`設定を尊重する。
-    `max_total`の既定値は1000でCLI既定（無制限）より安全側に設定する。
+    通常検索で未指定の`max_total`は1000とし、CLI既定の無制限より安全側に設定する。
 
     Args:
-        pattern: 検索パターン（正規表現、または`fixed_strings=True`で固定文字列）。
         paths: 検索対象のファイルまたはディレクトリパスの一覧。
+        pattern: 検索パターン。`patterns`または`pattern_file`のみを指定する場合は省略できる。
+        patterns: 追加の検索パターン一覧。`pattern`と連結してOR条件で検索する。
+        pattern_file: 1行1パターンのパターンファイルパス。
         ignore_case: 大文字小文字を区別しない。
         smart_case: パターンに大文字を含まない場合のみignore_caseを有効化する。
         fixed_strings: パターンを固定文字列として扱う。
@@ -467,8 +475,12 @@ async def tool_grep(
         multiline: マルチラインマッチを有効化する。
         before_context: マッチ行の前に含める行数。
         after_context: マッチ行の後に含める行数。
+        context: `before_context`と`after_context`の一括指定。個別指定が0の方向だけへ適用する。
         max_count: ファイル単位の最大マッチ件数（0で無制限）。
-        max_total: 全体の最大マッチ件数（既定1000）。
+        max_total: 全体の最大マッチ件数。未指定時は通常検索で1000、集計モードで無制限。
+            0を明示した場合は常に無制限となる。
+        summary_mode: 集計モード。`files_with_matches`、`count`、`files_without_match`のいずれか。
+            指定時は`matches`を空で返し、対応する集計フィールドを返す。
         types: 対象言語タイプの一覧（例: ["python", "ts"]）。
         globs: globパターンでの対象限定一覧。
         encoding: ファイル読み込み時のエンコーディング（既定: utf-8）。
@@ -478,9 +490,15 @@ async def tool_grep(
     """
     # warnings_はモジュールグローバルに蓄積するため、リクエスト開始時に初期化する
     pyfltr.warnings_.clear()
+    collected = ([pattern] if pattern else []) + list(patterns or [])
+    if pattern_file is not None:
+        try:
+            collected.extend(pyfltr.grep_.matcher.read_pattern_file(pathlib.Path(pattern_file)))
+        except OSError as exc:
+            _raise_mcp_error(f"パターンファイルの読み込みに失敗しました: {exc}")
     try:
         compiled = pyfltr.grep_.matcher.compile_pattern(
-            [pattern],
+            collected,
             fixed_strings=fixed_strings,
             ignore_case=ignore_case,
             smart_case=smart_case,
@@ -490,6 +508,19 @@ async def tool_grep(
         )
     except ValueError as exc:
         _raise_mcp_error(str(exc))
+
+    after_ctx = after_context
+    before_ctx = before_context
+    if context is not None:
+        if after_ctx == 0:
+            after_ctx = context
+        if before_ctx == 0:
+            before_ctx = context
+
+    valid_summary_modes = ("files_with_matches", "count", "files_without_match")
+    if summary_mode is not None and summary_mode not in valid_summary_modes:
+        _raise_mcp_error("summary_mode は files_with_matches / count / files_without_match のいずれかを指定してください。")
+    effective_max_total = (0 if summary_mode is not None else 1000) if max_total is None else max_total
 
     try:
         config = pyfltr.config.config.load_config()
@@ -511,32 +542,45 @@ async def tool_grep(
 
     files_scanned = len(expanded)
     matches: list[GrepMatchModel] = []
+    per_file_counts: dict[pathlib.Path, int] = {}
+    total_matches = 0
     for record in pyfltr.grep_.scanner.scan_files(
         expanded,
         compiled,
-        before_context=before_context,
-        after_context=after_context,
+        before_context=before_ctx,
+        after_context=after_ctx,
         max_per_file=max_count,
-        max_total=max_total,
+        max_total=effective_max_total,
         encoding=encoding,
         max_filesize=max_filesize,
         multiline=multiline,
     ):
         if isinstance(record, MatchRecord):
-            matches.append(
-                GrepMatchModel(
-                    file=str(record.file),
-                    line=record.line,
-                    col=record.col,
-                    end_col=record.end_col,
-                    match_text=record.match_text,
-                    line_text=record.line_text,
-                    before=list(record.before_lines),
-                    after=list(record.after_lines),
+            total_matches += 1
+            per_file_counts[record.file] = per_file_counts.get(record.file, 0) + 1
+            if summary_mode is None:
+                matches.append(
+                    GrepMatchModel(
+                        file=str(record.file),
+                        line=record.line,
+                        col=record.col,
+                        end_col=record.end_col,
+                        match_text=record.match_text,
+                        line_text=record.line_text,
+                        before=list(record.before_lines),
+                        after=list(record.after_lines),
+                    )
                 )
-            )
 
-    total_matches = len(matches)
+    files_with_matches = [str(file) for file in per_file_counts] if summary_mode == "files_with_matches" else []
+    file_counts = (
+        [GrepFileCountModel(file=str(file), count=count) for file, count in per_file_counts.items()]
+        if summary_mode == "count"
+        else []
+    )
+    files_without_match = (
+        [str(file) for file in expanded if file not in per_file_counts] if summary_mode == "files_without_match" else []
+    )
     return GrepResultModel(
         matches=matches,
         total_matches=total_matches,
@@ -544,6 +588,10 @@ async def tool_grep(
         exit_code=0 if total_matches > 0 else 1,
         fully_excluded_files=pyfltr.warnings_.filtered_direct_files(reason="excluded"),
         missing_targets=pyfltr.warnings_.filtered_direct_files(reason="missing"),
+        summary_mode=summary_mode,
+        files_with_matches=files_with_matches,
+        file_counts=file_counts,
+        files_without_match=files_without_match,
     )
 
 
@@ -561,11 +609,13 @@ async def tool_replace(
     within: str | None = None,
     before_context: int = 0,
     after_context: int = 0,
+    context: int | None = None,
     types: list[str] | None = None,
     globs: list[str] | None = None,
     encoding: str = "utf-8",
     max_filesize: int | None = None,
     exclude_files: list[str] | None = None,
+    from_grep: str | None = None,
     no_exclude: bool = False,
     no_gitignore: bool = False,
     show_changes: bool = False,
@@ -594,11 +644,14 @@ async def tool_replace(
             `within`なしで指定した場合はエラーとなる。
         after_context: `within`領域でアンカー行の後に含める行数（CLIの`-A`相当、既定0でアンカー行のみ）。
             `within`なしで指定した場合はエラーとなる。
+        context: `within`領域でアンカー行の前後に含める行数の一括指定。
+            `within`なしで指定した場合はエラーとなる。
         types: 対象言語タイプの一覧。
         globs: globパターンでの対象限定一覧。
         encoding: ファイル読み込み・書き込み時のエンコーディング（既定: utf-8）。
         max_filesize: 走査対象ファイルサイズの上限（バイト単位）。
         exclude_files: 置換対象から除外するファイルパスの一覧。
+        from_grep: grepのJSONL出力パス。当該出力に現れるファイル集合へ対象を限定する。
         no_exclude: exclude/extend-excludeによる除外を無効化する。
         no_gitignore: .gitignoreによる除外を無効化する。
         show_changes: Trueの場合、`changes`フィールドに各置換箇所の変更前後を含める。
@@ -607,11 +660,19 @@ async def tool_replace(
         _raise_mcp_error("paths を 1 件以上指定してください。")
 
     # CLIの`-A`/`-B`/`-C`拒否方針と対称に、`within`なしのコンテキスト指定を拒否する。
-    if within is None and (before_context or after_context):
-        _raise_mcp_error("before_context / after_context は within と併用してください。")
+    if within is None and (before_context or after_context or context is not None):
+        _raise_mcp_error("before_context / after_context / context は within と併用してください。")
     # `within`は行範囲で領域を定めるためマルチラインとは併用不可。
     if within is not None and multiline:
         _raise_mcp_error("within と multiline は併用できません。")
+
+    before_ctx = before_context
+    after_ctx = after_context
+    if within is not None and context is not None:
+        if after_ctx == 0:
+            after_ctx = context
+        if before_ctx == 0:
+            before_ctx = context
 
     # warnings_はモジュールグローバルに蓄積するため、リクエスト開始時に初期化する
     pyfltr.warnings_.clear()
@@ -663,6 +724,12 @@ async def tool_replace(
     if exclude_files:
         excluded = {pathlib.Path(p).resolve() for p in exclude_files}
         expanded = [p for p in expanded if p.resolve() not in excluded]
+    if from_grep is not None:
+        try:
+            allowed = pyfltr.cli.replace_subcmd.read_from_grep(pathlib.Path(from_grep))
+        except ValueError as exc:
+            _raise_mcp_error(str(exc))
+        expanded = [path for path in expanded if path.resolve() in allowed]
 
     replace_id = pyfltr.grep_.history.generate_replace_id() if not dry_run else None
     history_entries: list[dict[str, typing.Any]] = []
@@ -685,8 +752,8 @@ async def tool_replace(
                     compiled,
                     replacement,
                     anchor,
-                    before_context=before_context,
-                    after_context=after_context,
+                    before_context=before_ctx,
+                    after_context=after_ctx,
                     encoding=encoding,
                 )
             else:
