@@ -8,6 +8,9 @@ URL体系が揃わないため未サポート。biomeは診断カテゴリーが
 `assist/source/<action>`の2体系を持ち、それぞれ`/linter/rules/`と
 `/assist/actions/`へ分岐する。`format`・`parse`のように階層を持たないカテゴリーは
 ドキュメントページを持たないためURLを返さない。
+tyはルールドキュメントを単一ページ上のアンカーとして公開し、アンカー名がrule識別子と
+一致するため、識別子をそのままフラグメントへ用いる。actionlintは公式ドキュメントの
+見出しとrule識別子が多対多で対応し機械的に導けないため未サポート。
 """
 
 import re
@@ -78,6 +81,15 @@ def _build_biome_url(rule: str, category: str | None) -> str | None:
     return None
 
 
+def _build_ty_url(rule: str, category: str | None) -> str | None:
+    del category  # シグネチャ互換のため受け取るのみ
+    # tyのルールドキュメントは単一ページ上でrule識別子と同名のid属性を持つ。
+    # `invalid-syntax`のようなlintルール以外の診断コードはページに項目を持たず
+    # アンカーが解決しないが、判別にはルール一覧の保持を要する。
+    # biomeと同じく版別対応表は持たず、現行ドキュメントの規則でURLを生成する。
+    return f"https://docs.astral.sh/ty/reference/rules/#{rule}"
+
+
 _BUILDERS: dict[str, _RuleUrlBuilder] = {
     "ruff-check": _build_ruff_url,
     "pylint": _build_pylint_url,
@@ -87,6 +99,7 @@ _BUILDERS: dict[str, _RuleUrlBuilder] = {
     "eslint": _build_eslint_url,
     "markdownlint": _build_markdownlint_url,
     "biome": _build_biome_url,
+    "ty": _build_ty_url,
 }
 
 

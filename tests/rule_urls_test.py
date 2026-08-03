@@ -79,6 +79,17 @@ def test_build_rule_url_biome_without_category_hierarchy() -> None:
     assert pyfltr.output.rule_urls.build_rule_url("biome", "parse") is None
 
 
+def test_build_rule_url_ty() -> None:
+    """tyはルール一覧ページのアンカーへ解決する。"""
+    url = pyfltr.output.rule_urls.build_rule_url("ty", "invalid-argument-type")
+    assert url == "https://docs.astral.sh/ty/reference/rules/#invalid-argument-type"
+
+
+def test_build_rule_url_actionlint_unsupported() -> None:
+    """actionlintは公式ドキュメントの見出しとrule識別子が多対多のため未サポート。"""
+    assert pyfltr.output.rule_urls.build_rule_url("actionlint", "expression") is None
+
+
 def test_build_rule_url_textlint_unsupported() -> None:
     """textlint は未サポートで常に None を返す。"""
     assert pyfltr.output.rule_urls.build_rule_url("textlint", "ja-technical-writing/ja-no-mixed-period") is None

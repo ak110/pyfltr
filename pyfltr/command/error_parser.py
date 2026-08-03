@@ -201,7 +201,14 @@ _BUILTIN_PATTERNS: dict[str, str] = {
     # pyright出力例: src/foo.py:10:5 - error: xxx
     "pyright": rf"(?P<file>{_FILE}):(?P<line>\d+):(?P<col>\d+)\s*-\s*error:\s*(?P<message>.+)",
     # ty check --output-format concise 出力例: src/foo.py:10:5: error[rule-name] Message text
-    "ty": rf"(?P<file>{_FILE}):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>(?:error|warning)\[.+?\]\s+.+)",
+    # 診断種別をseverity、角括弧内をruleとして抽出し、messageは診断本文のみとする
+    # （mypy・markdownlintと同じくrule識別子をmessageへ残さない）。
+    # 実測した全診断行が当該表記を持つため必須グループとする。
+    # 診断種別はerror・warning・infoの3値を取る（infoは`reveal_type()`が返すrevealed-type等）。
+    "ty": (
+        rf"(?P<file>{_FILE}):(?P<line>\d+):(?P<col>\d+):"
+        r"\s*(?P<severity>error|warning|info)\[(?P<rule>[^\]]+)\]\s+(?P<message>.+)"
+    ),
     # markdownlint-cli2出力例: file.md:3 MD001/heading-increment Heading levels ...
     # 実行環境により file.md:3 error MD001/... のように severity が介在する。
     # 列を報告するルール（MD059・MD009等）は file.md:3:32 MD059/... のように列番号が介在する。
@@ -240,7 +247,11 @@ _BUILTIN_PATTERNS: dict[str, str] = {
     # typos --format brief 出力例: src/foo.py:10:5: `typo` -> `correction`
     "typos": r"(?P<file>[^\s:]+):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>.+)",
     # actionlint 出力例: .github/workflows/ci.yaml:10:5: xxx [rule-name]
-    "actionlint": r"(?P<file>[^\s:]+):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>.+)",
+    # 末尾の[rule-name]をruleグループとして抽出する（mypyと同形式）。
+    # rule識別子は空白と角括弧を含まないため、当該文字を除外した文字クラスとし、
+    # 診断本文中の角括弧への誤一致を避ける。
+    # 公式ドキュメントの見出しはrule識別子と多対多で対応するため、URLは生成しない。
+    "actionlint": r"(?P<file>[^\s:]+):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>.+?)(?:\s*\[(?P<rule>[^\[\]\s]+)\])?\s*$",
     # colloquial-check出力例: src/foo.md:10:5: [match] -> [replacement] excerpt
     # 置換候補が無い場合は矢印以降を省略した`src/foo.md:10:5: [match] excerpt`形式。
     "colloquial-check": rf"(?P<file>{_FILE}):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>.+)",
@@ -2108,7 +2119,7 @@ def _parse_optional_int(value: str | None) -> int | None:
     """任意の整数グループの値を変換する。
 
     グループが存在しない場合と整数として解釈できない場合はNoneを返す。
-    位置情報を持たない診断でも他フィールドの抽出結果を捨てないため、変換失敗を無視する。
+    位置情報を持たない診断でも他フィールドの抽出結果を保持するため、変換失敗を無視する。
     """
     if value is None:
         return None

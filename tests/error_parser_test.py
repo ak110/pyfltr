@@ -70,10 +70,18 @@ import pyfltr.command.error_parser
         # ty check --output-format concise (warning)
         (
             "ty",
-            "src/foo.py:3:1: warning[unused-variable] Variable `x` is unused",
+            "src/foo.py:3:1: warning[unused-ignore-comment] Unused `ty: ignore` directive",
             1,
             "src/foo.py",
             3,
+        ),
+        # ty check --output-format concise (info)
+        (
+            "ty",
+            "src/reveal.py:2:13: info[revealed-type] Revealed type: `Literal[1]`",
+            1,
+            "src/reveal.py",
+            2,
         ),
         # pytest
         (
@@ -257,6 +265,98 @@ def test_parse_errors_biome_col_does_not_match_parameter_suffix() -> None:
     """colは別パラメーター名の末尾へ一致しない。"""
     output = "::error title=lint/style/useConst,file=src/bar.ts,line=5,protocol=3::message\n"
     assert pyfltr.command.error_parser.parse_errors("biome", output) == []
+
+
+def test_parse_errors_ty_rule_and_url() -> None:
+    """tyのrule識別子とドキュメントURLを抽出し、messageは診断本文のみとする。"""
+    output = "src/foo.py:10:5: error[invalid-argument-type] Argument is incorrect\n"
+    errors = pyfltr.command.error_parser.parse_errors("ty", output)
+    assert len(errors) == 1
+    assert errors[0].rule == "invalid-argument-type"
+    assert errors[0].rule_url == "https://docs.astral.sh/ty/reference/rules/#invalid-argument-type"
+    assert errors[0].severity == "error"
+    assert errors[0].message == "Argument is incorrect"
+
+
+def test_parse_errors_ty_warning_severity() -> None:
+    """tyのwarning診断はseverityをwarningとして抽出する。"""
+    output = "src/warn.py:1:13: warning[unused-ignore-comment] Unused `ty: ignore` directive\n"
+    errors = pyfltr.command.error_parser.parse_errors("ty", output)
+    assert len(errors) == 1
+    assert errors[0].rule == "unused-ignore-comment"
+    assert errors[0].severity == "warning"
+    assert errors[0].message == "Unused `ty: ignore` directive"
+
+
+def test_parse_errors_ty_info_severity() -> None:
+    """tyのinfo診断を取りこぼさずseverityをinfoとして抽出する。"""
+    output = "src/reveal.py:2:17: info[revealed-type] Revealed type: `int`\n"
+    errors = pyfltr.command.error_parser.parse_errors("ty", output)
+    assert len(errors) == 1
+    assert errors[0].rule == "revealed-type"
+    assert errors[0].severity == "info"
+    assert errors[0].message == "Revealed type: `int`"
+    # URL生成経路がseverityに依らないことを固定する。
+    assert errors[0].rule_url == "https://docs.astral.sh/ty/reference/rules/#revealed-type"
+
+
+def test_parse_errors_ty_message_starting_with_info_keeps_severity() -> None:
+    """診断本文の先頭が`info`でもseverityは角括弧直前の語から決まる。"""
+    output = "src/a.py:1:1: error[invalid-assignment] info about the assignment\n"
+    errors = pyfltr.command.error_parser.parse_errors("ty", output)
+    assert len(errors) == 1
+    assert errors[0].severity == "error"
+    assert errors[0].message == "info about the assignment"
+
+
+def test_parse_errors_ty_info_like_prefix_is_ignored() -> None:
+    """`info`で始まる別語は診断種別として扱わない。"""
+    output = "src/a.py:5:5: infomercial[foo] not a severity\n"
+    errors = pyfltr.command.error_parser.parse_errors("ty", output)
+    assert len(errors) == 0
+
+
+def test_parse_errors_ty_summary_line_is_ignored() -> None:
+    """tyの集計行は診断として扱わない。"""
+    output = "Found 4 diagnostics\n"
+    errors = pyfltr.command.error_parser.parse_errors("ty", output)
+    assert len(errors) == 0
+
+
+def test_parse_errors_actionlint_rule() -> None:
+    """actionlintの末尾角括弧をruleとして抽出し、messageから除く。"""
+    output = '.github/workflows/ci.yaml:7:24: property "nonexistent" is not defined in object type {} [expression]\n'
+    errors = pyfltr.command.error_parser.parse_errors("actionlint", output)
+    assert len(errors) == 1
+    assert errors[0].rule == "expression"
+    assert errors[0].message == 'property "nonexistent" is not defined in object type {}'
+    # 公式ドキュメントの見出しがrule識別子と多対多で対応するためURLは生成しない。
+    assert errors[0].rule_url is None
+
+
+def test_parse_errors_actionlint_rule_with_brackets_in_message() -> None:
+    """診断本文中の空白を含む角括弧はruleとして扱わない。"""
+    output = ".github/workflows/ci.yaml:16:14: label is unknown. available labels are [a b] [runner-label]\n"
+    errors = pyfltr.command.error_parser.parse_errors("actionlint", output)
+    assert len(errors) == 1
+    assert errors[0].rule == "runner-label"
+    assert errors[0].message == "label is unknown. available labels are [a b]"
+
+
+def test_parse_errors_actionlint_without_rule() -> None:
+    """末尾に角括弧を持たない診断行でも本文を保持する。"""
+    output = ".github/workflows/ci.yaml:10:5: something went wrong\n"
+    errors = pyfltr.command.error_parser.parse_errors("actionlint", output)
+    assert len(errors) == 1
+    assert errors[0].rule is None
+    assert errors[0].message == "something went wrong"
+
+
+def test_parse_errors_actionlint_snippet_line_is_ignored() -> None:
+    """スニペット行は診断として扱わない。"""
+    output = '  |\n7 |       - run: echo "${{ matrix.nonexistent }}"\n'
+    errors = pyfltr.command.error_parser.parse_errors("actionlint", output)
+    assert len(errors) == 0
 
 
 def test_parse_errors_eslint_json() -> None:
