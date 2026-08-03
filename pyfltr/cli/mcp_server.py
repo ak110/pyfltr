@@ -4,11 +4,13 @@
 MCPServerを用いて8ツール（読み取り系4件・実行系1件・grep/replace系3件）を公開し、
 LLMエージェントがpyfltrの実行と実行アーカイブ参照を直接利用できるようにする。
 
-実行系を`run-for-agent`相当1本に限定しているのは、エージェント連携用途では
-`ci`/`run`/`fast`の差分を露出する必要が薄く、パラメーター数を抑えて
-MCPスキーマを単純化するため。`no-archive`/`no-cache`/`config`/
-`output-format`などの実行制御フラグもMCP側へは露出させず、エージェント側の
-スキーマ肥大化とstdio隔離の複雑化を避ける。
+MCPをコーディングエージェントの常用経路と位置づけ、CLIで可能な操作を原則として露出する。
+端末表示と出力先の制御は、MCPが構造化データを戻り値で返すため対象外とする。
+`--no-archive`も`run_id`を返す戻り値契約と両立しないため露出しない。
+ビルトインツールごとの`--{tool}-args`群は、スキーマの肥大化に見合う用途がないため対象外とする。
+
+引数解決はCLIと共通化する。サブコマンド既定値の注入、カンマ区切りの展開、
+未知コマンドの検証には`pyfltr.cli.command_selection`の公開関数を用いる。
 
 動作: `run_for_agent`は`pyfltr.cli.pipeline.run_pipeline`を直接呼ぶため、
 モノレポモード（起点cwd配下に複数の`pyproject.toml`を検出した場合）の
@@ -45,6 +47,8 @@ else:
     _mcpserver = _imported_mcpserver
     _MCP_IMPORT_ERROR = None
 
+import pyfltr.cli.command_selection
+import pyfltr.cli.overrides
 import pyfltr.cli.pipeline
 import pyfltr.command.targets
 import pyfltr.config.config
@@ -214,51 +218,84 @@ async def tool_show_run_output(run_id: str, commands: list[str]) -> dict[str, st
 
 async def tool_run_for_agent(
     paths: list[str],
+    mode: str = "run",
     commands: list[str] | None = None,
+    enable: list[str] | None = None,
+    disable: list[str] | None = None,
+    exclude_fence_under: list[str] | None = None,
+    no_fix: bool = False,
     fail_fast: bool = False,
     only_failed: bool = False,
     from_run: str | None = None,
+    changed_since: str | None = None,
+    work_dir: str | None = None,
+    allow_external_paths: bool = False,
+    no_exclude: bool = False,
+    no_gitignore: bool = False,
+    no_cache: bool = False,
+    human_readable: bool = False,
+    jobs: int | None = None,
 ) -> RunForAgentResult:
     """指定パスに対してlint/format/testを実行し、結果を返す。
 
-    `run-for-agent`サブコマンド相当（JSONL出力既定・fixステージ有効・
-    formatter書き換えは成功扱い）で動作する。
+    `run`・`fast`・`ci`の各実行モードをCLIと同じ既定値で扱う。
     実行アーカイブは常に有効化され、`run_id`を戻り値に含む。
     early exit（直前runなし・失敗ツールなし・対象ファイル交差が空）の場合は
     `run_id=None`・`skipped_reason`に理由を設定して返す。
 
-    対応CLI: `pyfltr run-for-agent`
+    対応CLI: `pyfltr run` / `pyfltr fast` / `pyfltr ci`
 
     Args:
         paths: 実行対象のファイルまたはディレクトリのパス一覧。
+        mode: 実行モード。`run`はfixステージを有効化し、formatter変更を成功扱いにする。
+            `fast`はfast設定が有効なツールだけを対象にする。`ci`はfixステージを無効化し、
+            formatter変更を失敗扱いにする。
         commands: 実行するコマンド名のリスト。省略時はプロジェクト設定の全コマンドを使用する。
+        enable: 一時的に有効化するコマンド名のリスト。カンマ区切りも受理する。
+        disable: 一時的に無効化するコマンド名のリスト。カンマ区切りも受理する。
+        exclude_fence_under: フェンス内側を検査対象から除外するH2見出しのリスト。
+        no_fix: Trueの場合、`run`と`fast`のfixステージを抑止する。`ci`は元から無効となる。
         fail_fast: Trueの場合、1ツールでもエラーが発生した時点で残りを打ち切る。
         only_failed: Trueの場合、直前runの失敗ツール・失敗ファイルのみ再実行する。
         from_run: `only_failed=True`時の参照run_id（前方一致・`latest`可）。
             `only_failed=False`かつ`from_run`指定はValueError。
+        changed_since: 指定したgit参照から変更されたファイルだけを対象にする。
+        work_dir: 実行の起点ディレクトリ。設定探索と相対パス解決の基準を兼ねる。
+            省略時はMCPサーバープロセスのカレントディレクトリを用いる。
+            指定時は診断のファイルパスを絶対パスで返す場合がある。
+        allow_external_paths: Trueの場合、実行起点の外側にあるパスを許可する。
+        no_exclude: Trueの場合、設定の除外パターンを無効化する。
+        no_gitignore: Trueの場合、`.gitignore`による除外を無効化する。
+        no_cache: Trueの場合、ファイルhashキャッシュを無効化する。
+        human_readable: Trueの場合、対応ツールの機械可読出力を抑止する。
+        jobs: 並列実行するツール数の上限。
     """
+    if mode not in ("run", "fast", "ci"):
+        _raise_mcp_error("mode は run / fast / ci のいずれかを指定してください。")
     if from_run is not None and not only_failed:
         _raise_mcp_error("from_run は only_failed=True のときのみ指定できます。")
 
-    # run-for-agentサブコマンド相当の既定値でNamespaceを構築する。
-    # _apply_subcommand_defaultsの結果と同等になるよう各フラグを設定する。
-    # `run(sys_args=[...])`経由でargparseに渡す案は不採用。argparseの
-    # エラーメッセージ出力先（stderr）をMCPツール側で整形する制御が困難で、
-    # 引数検証に失敗してもクライアントへエラーを返せない。`Namespace`を
-    # 直接組み立てれば、引数検証はMCPツール側（Pydanticスキーマ）に
-    # 任せられる。
-    # 外部プロセス起動（`subprocess.run(["pyfltr", "run-for-agent", ...])`）
-    # 案も不採用。stdio隔離は自然になるが、プロセス管理・`PYFLTR_CACHE_DIR`
-    # 伝搬・`TERM`シグナル・テスト安定性の面で同一プロセスより不利。
+    work_dir_path = pathlib.Path(work_dir).expanduser().resolve() if work_dir is not None else None
+    if work_dir_path is not None and not work_dir_path.is_dir():
+        _raise_mcp_error(f"work_dir が存在するディレクトリではありません: {work_dir}")
+
+    base = work_dir_path if work_dir_path is not None else pathlib.Path.cwd()
+    targets = [path if (path := pathlib.Path(raw)).is_absolute() else base / path for raw in paths]
+
     args = argparse.Namespace(
-        targets=[pathlib.Path(p) for p in paths],
+        targets=targets,
         # CLI経路（`--commands`はaction="append"）と同じ`list[str] | None`で保持する。
         commands=list(commands) if commands else None,
+        enable=list(enable) if enable else None,
+        disable=list(disable) if disable else None,
+        exclude_fence_under=list(exclude_fence_under) if exclude_fence_under else None,
+        no_fix=no_fix,
         fail_fast=fail_fast,
         only_failed=only_failed,
         from_run=from_run,
+        changed_since=changed_since,
         no_archive=False,  # アーカイブ必須化のため明示的にFalse
-        no_cache=False,
+        no_cache=no_cache,
         verbose=False,
         output_format="jsonl",
         output_file=None,  # 後で一時ファイルで上書きする
@@ -268,22 +305,49 @@ async def tool_run_for_agent(
         stream=False,
         shuffle=False,
         keep_ui=False,
-        ci=False,
-        human_readable=False,
-        no_exclude=False,
-        no_gitignore=False,
-        allow_external_paths=False,
-        jobs=None,
-        work_dir=None,
-        exit_zero_even_if_formatted=True,
-        include_fix_stage=True,
-        no_fix=False,
+        ci=mode == "ci",
+        human_readable=human_readable,
+        no_exclude=no_exclude,
+        no_gitignore=no_gitignore,
+        allow_external_paths=allow_external_paths,
+        jobs=jobs,
+        work_dir=work_dir_path,
+        exit_zero_even_if_formatted=False,
         version=False,
-        subcommand="run-for-agent",
+        subcommand=mode,
         # MCPの戻り値は実行アーカイブから組み立てるためJSONL縮約の影響を受けない。
         # quiet=Trueはstderrへのprecommitガイダンス抑止のみに作用する。
         quiet=True,
     )
+    pyfltr.cli.command_selection.apply_subcommand_defaults(args)
+    if no_fix:
+        args.include_fix_stage = False
+
+    retry_sys_args = [mode]
+    if work_dir_path is not None:
+        retry_sys_args.append(f"--work-dir={work_dir_path}")
+    if no_fix:
+        retry_sys_args.append("--no-fix")
+    if commands:
+        retry_sys_args.append("--commands=" + ",".join(commands))
+    for name in enable or []:
+        retry_sys_args.append(f"--enable={name}")
+    for name in disable or []:
+        retry_sys_args.append(f"--disable={name}")
+    for heading in exclude_fence_under or []:
+        retry_sys_args.append(f"--exclude-fence-under={heading}")
+    if allow_external_paths:
+        retry_sys_args.append("--allow-external-paths")
+    if no_exclude:
+        retry_sys_args.append("--no-exclude")
+    if no_gitignore:
+        retry_sys_args.append("--no-gitignore")
+    if no_cache:
+        retry_sys_args.append("--no-cache")
+    if human_readable:
+        retry_sys_args.append("--human-readable")
+    if jobs is not None:
+        retry_sys_args.append(f"--jobs={jobs}")
 
     # 構造化出力を一時ファイルへ誘導してstdout汚染を防ぐ。
     # NamedTemporaryFileをコンテキストマネージャーで使い、close後もパスを残す（delete=False）。
@@ -295,16 +359,28 @@ async def tool_run_for_agent(
     # 構造化出力は一時ファイル経由（FileHandler）となりstdoutを汚染しない。
     args.output_file = tmp_path
     try:
-        config = pyfltr.config.config.load_config()
+        config = pyfltr.config.config.load_config(config_dir=work_dir_path)
         # アーカイブを強制有効化する。MCPツールはrun_idを返す契約を保証する。
         config.values["archive"] = True
+        pyfltr.cli.overrides.apply_cli_overrides(config, args)
 
         commands_list: list[str] = pyfltr.config.config.resolve_aliases(
-            args.commands if args.commands is not None else list(config.command_names),
-            config,
+            pyfltr.cli.command_selection.flatten_commands_arg(args.commands, config), config
         )
+        try:
+            pyfltr.cli.command_selection.validate_commands(commands_list, config)
+        except ValueError as exc:
+            _raise_mcp_error(str(exc))
 
-        exit_code, run_id = pyfltr.cli.pipeline.run_pipeline(args, commands_list, config, force_text_on_stderr=True)
+        exit_code, run_id = pyfltr.cli.pipeline.run_pipeline(
+            args,
+            commands_list,
+            config,
+            start_cwd=work_dir_path,
+            original_cwd=str(work_dir_path) if work_dir_path is not None else None,
+            original_sys_args=retry_sys_args,
+            force_text_on_stderr=True,
+        )
     finally:
         # 一時ファイルを削除する（存在しない場合はそのまま無視する）
         with contextlib.suppress(OSError):
@@ -741,7 +817,8 @@ def build_server() -> MCPServer:
     mcp.tool(
         name="run_for_agent",
         description=(
-            "指定パスに対して lint/format/test を実行し、run_id・終了コード・失敗コマンド名を返す。"
+            "指定パスに対してlint/format/testを実行し、run_id・終了コード・失敗コマンド名を返す。"
+            " modeでrun・fast・ciを選択し、CLIと同じ対象制御オプションを利用できる。"
             " only_failed=True で直前 run の失敗ツール・失敗ファイルのみ再実行する（from_run で参照 run を指定可）。"
             " 戻り値に retry_commands（失敗コマンドの再実行シェルコマンド）を含む。"
         ),

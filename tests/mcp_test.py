@@ -10,6 +10,7 @@ import inspect
 import json
 import pathlib
 import shutil
+import typing
 
 import pytest
 
@@ -300,6 +301,140 @@ def test_execute_mcp_reports_missing_dependency(monkeypatch: pytest.MonkeyPatch,
 
 
 @pytest.mark.asyncio
+async def test_tool_run_for_agent_rejects_invalid_mode() -> None:
+    """未対応の実行モードを拒否する。"""
+    with pytest.raises(ValueError, match="mode"):
+        await pyfltr.cli.mcp_server.tool_run_for_agent(paths=["dummy"], mode="invalid")
+
+
+@pytest.mark.asyncio
+async def test_tool_run_for_agent_rejects_missing_work_dir(tmp_path: pathlib.Path) -> None:
+    """実在しない作業ディレクトリを拒否する。"""
+    with pytest.raises(ValueError, match="work_dir"):
+        await pyfltr.cli.mcp_server.tool_run_for_agent(
+            paths=["dummy"],
+            work_dir=str(tmp_path / "missing"),
+        )
+
+
+@pytest.mark.asyncio
+async def test_tool_run_for_agent_resolves_cli_parameters(tmp_path: pathlib.Path, mocker) -> None:
+    """実行モード、対象パス、設定上書き、再実行引数をCLIと同じ形へ解決する。"""
+    target = tmp_path / "src" / "sample.py"
+    target.parent.mkdir()
+    target.write_text("value = 1\n", encoding="utf-8")
+    mock_run = mocker.patch("pyfltr.cli.pipeline.run_pipeline", return_value=(0, None))
+
+    await pyfltr.cli.mcp_server.tool_run_for_agent(
+        paths=["src/sample.py"],
+        mode="ci",
+        commands=["mypy"],
+        enable=["mypy"],
+        disable=["ec"],
+        no_fix=True,
+        fail_fast=True,
+        only_failed=True,
+        changed_since="HEAD",
+        work_dir=str(tmp_path),
+        jobs=2,
+    )
+
+    args, commands, config = mock_run.call_args.args
+    kwargs = mock_run.call_args.kwargs
+    assert args.include_fix_stage is False
+    assert args.targets == [target]
+    assert commands == ["mypy"]
+    assert config.values["mypy"] is True
+    assert config.values["ec"] is False
+    assert kwargs["start_cwd"] == tmp_path.resolve()
+    assert kwargs["original_cwd"] == str(tmp_path.resolve())
+    assert kwargs["original_sys_args"] == [
+        "ci",
+        f"--work-dir={tmp_path.resolve()}",
+        "--no-fix",
+        "--commands=mypy",
+        "--enable=mypy",
+        "--disable=ec",
+        "--jobs=2",
+    ]
+    assert "--only-failed" not in kwargs["original_sys_args"]
+    assert "--changed-since=HEAD" not in kwargs["original_sys_args"]
+    assert "--fail-fast" not in kwargs["original_sys_args"]
+
+
+@pytest.mark.asyncio
+async def test_tool_run_for_agent_flattens_commands(tmp_path: pathlib.Path, mocker) -> None:
+    """複数回指定とカンマ区切りを同じコマンド一覧へ展開する。"""
+    target = tmp_path / "sample.txt"
+    target.write_text("hello\n", encoding="utf-8")
+    mock_run = mocker.patch("pyfltr.cli.pipeline.run_pipeline", return_value=(0, None))
+
+    await pyfltr.cli.mcp_server.tool_run_for_agent(
+        paths=[str(target)],
+        commands=["ec,typos", "ec"],
+    )
+
+    assert mock_run.call_args.args[1] == ["ec", "typos"]
+
+
+@pytest.mark.asyncio
+async def test_tool_run_for_agent_no_fix_disables_run_fix_stage(tmp_path: pathlib.Path, mocker) -> None:
+    """runモードでもno_fix指定時はfixステージを無効化する。"""
+    target = tmp_path / "sample.txt"
+    target.write_text("hello\n", encoding="utf-8")
+    mock_run = mocker.patch("pyfltr.cli.pipeline.run_pipeline", return_value=(0, None))
+
+    await pyfltr.cli.mcp_server.tool_run_for_agent(
+        paths=[str(target)],
+        mode="run",
+        commands=["ec"],
+        no_fix=True,
+    )
+
+    assert mock_run.call_args.args[0].include_fix_stage is False
+
+
+@pytest.mark.asyncio
+async def test_tool_run_for_agent_rejects_unknown_command(tmp_path: pathlib.Path) -> None:
+    """未知コマンドを共通の検証経路で拒否する。"""
+    target = tmp_path / "sample.txt"
+    target.write_text("hello\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="コマンドが見つかりません"):
+        await pyfltr.cli.mcp_server.tool_run_for_agent(paths=[str(target)], commands=["unknown-command"])
+
+
+@pytest.mark.asyncio
+async def test_tool_run_for_agent_changed_since_uses_work_dir(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mocker,
+) -> None:
+    """差分抽出用のgit実行ディレクトリへ作業ディレクトリを渡す。"""
+    work_dir = tmp_path / "project"
+    work_dir.mkdir()
+    target = work_dir / "sample.txt"
+    target.write_text("hello\n", encoding="utf-8")
+    server_cwd = tmp_path / "server"
+    server_cwd.mkdir()
+    monkeypatch.chdir(server_cwd)
+    filter_changed = mocker.patch(
+        "pyfltr.command.targets.filter_by_changed_since",
+        return_value=[target],
+    )
+    mocker.patch("pyfltr.cli.pipeline.run_commands_with_cli", return_value=[])
+
+    await pyfltr.cli.mcp_server.tool_run_for_agent(
+        paths=["sample.txt"],
+        commands=["ec"],
+        changed_since="HEAD",
+        work_dir=str(work_dir),
+    )
+
+    assert filter_changed.call_args.kwargs["cwd"] == work_dir.resolve()
+
+
+@pytest.mark.asyncio
 @pytest.mark.skipif(not shutil.which("typos"), reason="typos コマンドが環境にない")
 async def test_tool_run_for_agent_with_typos(tmp_path: pathlib.Path) -> None:
     sample = tmp_path / "sample.txt"
@@ -417,6 +552,41 @@ async def test_tool_run_for_agent_returns_retry_commands(tmp_path: pathlib.Path)
     # 成功したコマンドはキーに含まれない
     for key in result.retry_commands:
         assert key in result.failed
+
+
+@pytest.mark.asyncio
+async def test_tool_run_for_agent_retry_command_uses_cli_arguments(tmp_path: pathlib.Path, mocker) -> None:
+    """再実行コマンドをMCPサーバー起動引数ではなくCLI引数から生成する。"""
+    sample = tmp_path / "failure.txt"
+    sample.write_text("failure\n", encoding="utf-8")
+    failed = _make_result(
+        "ec",
+        returncode=1,
+        has_error=True,
+        archived=False,
+        target_files=[sample],
+    )
+
+    def fake_run_commands(*_args: typing.Any, **kwargs: typing.Any) -> list[typing.Any]:
+        kwargs["archive_hook"](failed)
+        kwargs["on_result"](failed)
+        return [failed]
+
+    mocker.patch("pyfltr.cli.pipeline.run_commands_with_cli", side_effect=fake_run_commands)
+
+    result = await pyfltr.cli.mcp_server.tool_run_for_agent(
+        paths=[str(sample)],
+        mode="ci",
+        commands=["ec"],
+        no_fix=True,
+    )
+
+    assert result.failed == ["ec"]
+    retry_command = result.retry_commands["ec"]
+    assert " ci " in retry_command
+    assert "--commands=ec" in retry_command
+    assert "--no-fix" in retry_command
+    assert " mcp " not in retry_command
 
 
 @pytest.mark.asyncio
