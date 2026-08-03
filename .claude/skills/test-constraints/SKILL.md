@@ -46,7 +46,8 @@ description: >
   pre-commit・prekは一致するファイルがコミットに含まれないとhook自体を起動しないため、
   欠けた種別だけを変更したコミットでは当該ツールが実行されない。
   `[tool.pyfltr]`でツールを追加で有効化した場合は`types_or`の追随要否を確認する。
-  `ec`・`gitleaks`・`typos`のような全ファイル対象のツールは列挙では網羅できず、`make test`で担保する
+  `prek`・`ec`・`typos`・`colloquial-check`のような全ファイル対象のツールは列挙では網羅できず、
+  `make test`で担保する
 - pyfltrテストでは`AGENT_INDICATOR_ENVS`のいずれかまたは`PYFLTR_OUTPUT_FORMAT`が
   予期せず設定されているとjsonl既定へ切り替わる。
   `tests/conftest.py`のautouseフィクスチャ`_isolate_output_format_envs`で一律に未設定化する。

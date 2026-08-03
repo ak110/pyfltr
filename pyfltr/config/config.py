@@ -1698,6 +1698,10 @@ def _register_custom_command(
     config.values[f"{name}-pass-filenames"] = pass_filenames
     config.values[f"{name}-severity"] = severity
     config.values[f"{name}-hints"] = hints
+    # ビルトインコマンドは`_register_command_subproject_aware_defaults`が既定値を登録する。
+    # カスタムコマンドは登録時点でしか既定値を用意できないため、ここで併せて登録する。
+    # 登録しないと利用者が`{name}-subproject-aware`を指定したとき未知キーとして警告される。
+    config.values[f"{name}-subproject-aware"] = config.commands[name].subproject_aware
     # fix-argsは定義されている場合のみ登録する（キーの有無でfix対応可否を判別）
     if fix_args is not None:
         config.values[f"{name}-fix-args"] = fix_args

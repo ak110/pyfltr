@@ -155,7 +155,7 @@ subproject-exclude = ["smoke_data"]
 # 実行時cwdが当該サブプロジェクトへ切り替わり、リポジトリルート基準の当該パスを解決できない。
 # 本リポジトリは subproject-exclude により候補がルート1件となり分割実行が発生せず、
 # 実行時cwdが起点cwd（リポジトリルート）と一致するため成立している。
-# 当該除外を解除する場合は絶対パス化か doc-codeblock-check-subproject-aware = false を要する。
+# 当該除外を解除する場合は絶対パス化するか、doc-codeblock-check-subproject-aware = false を指定する。
 [tool.pyfltr.custom-commands.doc-codeblock-check]
 type = "linter"
 path = "uv"

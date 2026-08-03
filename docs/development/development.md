@@ -111,9 +111,9 @@ Markdownの除外は、editorconfig-checkerがコードブロック内のタブ�
 誤検知するためである。
 `IndentSize`の無効化はMarkdown以外のファイルのために必要である。
 無効化を外して`--commands=ec`を実行すると184件を検出し、
-その内訳はruff-formatが整形したPythonの継続行と、YAMLの折り返し行のインデントである。
-いずれも`.editorconfig`が指定する`indent_size`の倍数から外れるために検出されるものであり、
-整形結果として正当な記述である。
+その内訳はPythonのdocstring本文の継続行と、YAMLのブロックスカラー内のシェル継続行である。
+いずれも`.editorconfig`が指定する`indent_size`の倍数から外れるが、
+構造を読み取れるように意図した字下げであり、整形の対象でもない。
 
 `.python-version`の値は`pyproject.toml`の`requires-python`の下限に一致させる。
 ローカル開発環境を最小サポート版とし、新しい版でのみ通る記述の混入を開発時点で検出するためである。

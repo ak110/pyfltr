@@ -425,6 +425,37 @@ path = "plain-linter"
     assert not result
 
 
+def test_custom_command_subproject_aware_default_registered(tmp_path: pathlib.Path) -> None:
+    """カスタムコマンドにも`{name}-subproject-aware`の既定値が登録される。
+
+    登録されないと利用者が当該キーを指定したとき未知キー警告が出る。
+    """
+    pyproject_content = """
+[tool.pyfltr.custom-commands.mylinter]
+type = "linter"
+path = "mylinter"
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    config = pyfltr.config.config.load_config(config_dir=tmp_path)
+    assert config["mylinter-subproject-aware"] is True
+
+
+def test_custom_command_subproject_aware_override(tmp_path: pathlib.Path) -> None:
+    """カスタムコマンドの`{name}-subproject-aware`を上書きしても警告が出ない。"""
+    pyproject_content = """
+[tool.pyfltr]
+mylinter-subproject-aware = false
+
+[tool.pyfltr.custom-commands.mylinter]
+type = "linter"
+path = "mylinter"
+"""
+    (tmp_path / "pyproject.toml").write_text(pyproject_content)
+    config = pyfltr.config.config.load_config(config_dir=tmp_path)
+    assert config["mylinter-subproject-aware"] is False
+    assert _testconf.count_config_warnings("mylinter-subproject-aware") == 0
+
+
 def test_severity_default_is_error() -> None:
     """severityの既定値は "error" で、ビルトイン全コマンドに登録されている。
 
