@@ -28,6 +28,12 @@ pyfltr本体の設定（`[tool.pyfltr]`）と、呼び出される各ツール�
     - 検出時は実重複か否かを判別する。実重複であれば共通化のリファクタリングを第一候補とし、
       意図的な並行実装や共通化すべきでない類似は理由コメント付き`# pylint: disable=duplicate-code`で個別抑制する。
       disableリストへの再追加や根拠を示さない閾値変更はしない
+    - `pylint-args`へ`--jobs=4`を指定した状態で`duplicate-code`を有効化すると、
+      報告される重複の組み合わせが`--jobs=1`の場合と一致しないことがある。
+      pyfltr本体での実測（pylint 4.0.6・対象134ファイル・`min-similarity-lines = 4`）では、
+      検出件数は`--jobs=1`・`--jobs=4`ともに88件で一致した一方、
+      同一の重複箇所に対して報告されるファイルの組が3件で異なった。
+      重複箇所を特定する場合は`--jobs=1`で再実行する
 - ruffの `per-file-ignores`: テストコード（`**_test.py`）とpackage init（`__init__.py`）のdocstring要求を除外する実用的な調整
 
 `uvx pyfltr`での実行では`pyproject.toml`にpyfltrを記述する必要はなく、`[tool.pyfltr]`セクションのみで完結する。
@@ -138,7 +144,32 @@ asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
 ```
 
+`[tool.mypy]`のうち`ignore_missing_imports`と`allow_redefinition`は検査を緩和する指定である。
+`ignore_missing_imports = true`は解決できないimportのエラーを抑止するため、
+型スタブの欠落や誤ったモジュール名を検出しない。
+`allow_redefinition = true`は注釈のない変数を無関係な型で再定義することを許容するため、
+変数の使い回しによる型の取り違えを検出しない。
+いずれも検査は通過するが欠陥は残りうる。厳格さを優先する場合は`false`とする。
+
+`asyncio_default_fixture_loop_scope`・`asyncio_default_test_loop_scope`の`"session"`は、
+pytest-asyncioの既定（それぞれfixtureスコープ・functionスコープ）より分離を弱める指定である。
+上記の例は`-n 4`でpytest-xdistの並列実行を行うため、workerごとに別プロセスのevent loopとなる。
+同一worker内では割り当てられたテストが1つのevent loopを共有し、
+loopを閉じるテストや解放されない非同期資源は同じworkerの後続テストへ波及する。
+テスト間の独立性を優先する場合は既定のfunctionスコープを用いる。
+
+`-p no:cacheprovider`はpytestのcacheproviderプラグインを無効化する。
+このプラグインは`--lf`・`--ff`・`--nf`・`--sw`の各オプションと`cache` fixtureを提供する。
+無効化してもこれらのオプションは引数として受理されるが効果を持たず、対象は全件実行となる。
+`cache` fixtureを要求するテストはfixture不存在で失敗する。
+これらを利用する場合は当該指定を外す。
+
 `--timeout=60`は`pytest-timeout`プラグインが必要。
+値60は個々のテストが1分以内に完了する前提に基づく。
+統合テストや低速なrunnerでは間欠失敗の原因となるため、
+個別のテストで上書きする場合は`@pytest.mark.timeout(秒数)`を、無効化する場合は`@pytest.mark.timeout(0)`を指定する。
+マーカーは`--timeout`より優先される。
+
 `-n 4`は`pytest-xdist`プラグインが必要で、4プロセス並列でテストを実行する。
 コア数追従（`-n auto`等）は採用せず固定値とする（CI環境で逆効果になり得ることと、メモリ消費の増大を避けるため）。
 `--dist=worksteal`は`pytest-xdist`のwork-stealingスケジューラを有効化し、
@@ -272,8 +303,11 @@ PEP 695型パラメーター構文（`def f[T](): ...`）を使用するプロ�
 
 ポイント。
 
-- `uvx pyfltr fast`: uvがキャッシュするため2回目以降は実用速度で動作し、毎回最新版を取得して実行する
+- `uvx pyfltr fast`: uvがキャッシュするため2回目以降は実用速度で動作する
     - dev依存にpyfltrを加えている場合は`entry: uv run --frozen pyfltr fast`に置き換えてもよい
+    - `uvx`が最新版を解決するのは初回だけで、以降はキャッシュ済みの版を再利用する。常に最新版を使う場合は`entry: uvx pyfltr@latest fast`と指定する
+    - キャッシュが更新されて版が上がると、コードを変更していなくても新版のルール追加によりコミットが失敗しうる。版の変化に伴う失敗を避ける場合はdev依存へ固定し、上記の置き換えを採用する
+    - `uvx`は`pyproject.toml`の`[tool.uv]`を読まないため、`exclude-newer`による公開直後版の回避はこの経路へ適用されない
 - `fast`: mypy / pylint / pytestなど重いコマンドを除外した高速サブセット
     - formatterがファイルを修正しただけではフックを失敗と判定しない
 - `types_or`: 必要な種別を列挙する
@@ -323,7 +357,9 @@ pre-commitへ置き換える場合は、この指定を削除する。
 
 ### Makefile
 
-`uvx`方式ではuvがキャッシュするため2回目以降は実用速度で動作し、毎回最新版を取得して実行できる。
+`uvx`方式ではuvがキャッシュするため2回目以降は実用速度で動作する。
+最新版を解決するのは初回だけで、以降はキャッシュ済みの版を再利用する。
+常に最新版を使う場合は`uvx pyfltr@latest ...`と指定する。
 
 ```makefile
 .PHONY: format test
@@ -517,13 +553,14 @@ pyfltrはfix段の起動コマンドから`--format`ペアを自動除去する�
 ## 呼び出し方の使い分け {#calling-style}
 
 状況に応じて`pyfltr`の呼び出し方を以下のいずれかから選ぶ。
-コンテナ外では「常に最新版を使う」（`uvx pyfltr ...`）か「dev依存にバージョンを固定する」
-（`uv run pyfltr ...`）かをプロジェクト判断で選択する。
+コンテナ外では「キャッシュ済みの版を使う」（`uvx pyfltr ...`）、「常に最新版を使う」（`uvx pyfltr@latest ...`）、
+「dev依存にバージョンを固定する」（`uv run pyfltr ...`）のいずれかをプロジェクト判断で選択する。
 
 | 状況 | 呼び出し方 | 補足 |
 | --- | --- | --- |
 | 公式Dockerイメージ内（CI推奨構成） | `pyfltr ...` | イメージ同梱の本体を直接呼ぶ。uvキャッシュ経由の解決を経由しない |
-| コンテナ外・常に最新版を使う | `uvx pyfltr ...` | uvが毎回最新を解決する。ローカル開発・軽量CIで使用 |
+| コンテナ外・キャッシュ済みの版を使う | `uvx pyfltr ...` | 初回のみ最新を解決し、以降はキャッシュを再利用する。ローカル開発で使用 |
+| コンテナ外・常に最新版を使う | `uvx pyfltr@latest ...` | 毎回キャッシュをリフレッシュして最新を解決する。軽量CIで使用 |
 | コンテナ外・dev依存に固定する | `uv run pyfltr ...` | `uv add --dev "pyfltr[python]"`済みのプロジェクトで使う。`UV_FROZEN`との併用が有効 |
 
 ## CI
@@ -586,6 +623,11 @@ jobs:
       コンテナーイメージ側で更新されたツールも、旧キャッシュに同名パスがあれば上書きされる。
       上記のキー構成は実行ごとに新しいキーを生成するだけであり、
       イメージ同梱ツールの更新をCIで検知する用途には応えない
+    - 固定キーからこの構成へ移行する場合、`restore-keys`は前方一致で照合するため
+      移行前の固定キー（末尾のハイフンを持たない）には一致しない。
+      移行後の初回実行だけがキャッシュ無しで実行される。
+      移行前の固定キーを`restore-keys`の2行目へ併記すると当該の1回を避けられる。
+      ただし効果は移行時の1回に限られ、以降は1行目が一致するため併記した行は使われない
     - 実行のたびに新しいエントリが増えるため、リポジトリのキャッシュ上限（既定10GB）と、
       7日間アクセスのないエントリが自動削除される仕様を前提に運用する
 - `pyfltr ci`: イメージ同梱のpyfltrをそのまま使う

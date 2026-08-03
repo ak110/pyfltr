@@ -47,6 +47,14 @@ extend-exclude = [
 ]
 ```
 
+`exclude-newer = "1 day"`は、公開から1日を経過していないパッケージを依存解決の候補から除く。
+公開直後のパッケージの取り込みを遅らせ、サプライチェーン汚染のリスクを下げる目的で指定する。
+`"1 day"`は固定日付ではなく実行時刻からの相対値であるため、解決結果は実行日によって変わる。
+このため直近に公開された緊急の修正版は、指定した期間が経過するまで取り込めない。
+即時に取り込む必要がある場合は、当該の解決に限り値を短縮するか`false`を指定する。
+解決結果を実行日によらず一定にする場合は、RFC 3339のタイムスタンプ（例: `2026-04-13T00:00:00Z`）を指定する。
+以降のRust・.NETの例に現れる`exclude-newer`も同じ指定である。
+
 TypeScript/JS用の`.pre-commit-config.yaml`の例を以下に示す。
 
 ```yaml
@@ -67,9 +75,14 @@ TypeScript/JS用の`.pre-commit-config.yaml`の例を以下に示す。
 - `js-runner = "pnpm"`: pnpmワークスペース経由でJS系ツールを呼ぶ
     - `textlint-packages`は無視される
 - eslintとoxlintを併用すると、eslint非対応のルールをoxlintが補完できる（oxlintはRust製で高速）
+    - 両者は多くのルールを共有するため、既定のままでは同一の指摘が二重に報告され、
+    自動修正が競合しうる。併用する場合は`eslint-plugin-oxlint`でeslint側の重複ルールを無効化する
 - tsc: TypeScript型チェックを実行する
     - svelte-checkなどフレームワーク固有のチェッカーと併用する場合は、いずれか一方のみ有効化する
 - vitest: `vitest-args = ["run", "--passWithNoTests"]`が既定のため追加引数を指定する必要はない
+    - `--passWithNoTests`はvitestの既定（テスト0件で失敗）を反転させる指定である
+    テストファイルの配置誤りやglobの不一致で1件も収集されない場合も成功扱いとなる。
+    テストの存在をCIで担保する場合は`vitest-args = ["run"]`へ上書きする
 - 使わないツールは個別に`{command} = false`で無効化できる
 - svelte-checkなどフレームワーク固有のツールはカスタムコマンドで追加する
  （[プロジェクト固有チェックの追加](custom-commands.md)の「svelte-check」を参照）
