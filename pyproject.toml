@@ -278,9 +278,10 @@ xfail_strict = true
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
-# リソース解放漏れの検出。GC時のResourceWarningはunraisableexceptionプラグインが
-# PytestUnraisableExceptionWarningへ包み直すため、両方をエラー化しないと失敗しない。
-# RuntimeWarningは未awaitのコルーチンを検出する。当該の警告は包み直されないため個別に要する。
+# 資源解放漏れの検出。未クローズのファイルはResourceWarning、未awaitのコルーチンは
+# RuntimeWarningを送出する。いずれもGC時の__del__内で送出されるため、エラー化した結果は
+# unraisableexceptionプラグインがPytestUnraisableExceptionWarningへ包み直す。
+# 3件は相互に依存し、いずれを欠いてもテストが失敗しない。
 filterwarnings = [
     "error::ResourceWarning",
     "error::pytest.PytestUnraisableExceptionWarning",

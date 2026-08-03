@@ -2568,9 +2568,18 @@ def _spawn_parent_with_child(script: str) -> tuple[subprocess.Popen[str], int, i
         text=True,
         start_new_session=True,
     )
-    assert proc.stdout is not None
-    line = proc.stdout.readline().strip()
-    parent_pid_str, child_pid_str = line.split()
+    try:
+        assert proc.stdout is not None
+        line = proc.stdout.readline().strip()
+        parent_pid_str, child_pid_str = line.split()
+    except BaseException:
+        # 起動直後の読み取りに失敗した場合、呼び出し側はprocを受け取れず解放できない。
+        # ここでプロセスとパイプの双方を解放してから送出し直す。
+        proc.kill()
+        if proc.stdout is not None:
+            proc.stdout.close()
+        proc.wait(timeout=2.0)
+        raise
     return proc, int(parent_pid_str), int(child_pid_str)
 
 
@@ -2646,11 +2655,12 @@ def test_terminate_active_processes_kills_grandchild() -> None:
             # 型チェッカー（pyright / ty）のattr-defined誤検知は局所コメントで抑止する。
             with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
                 os.killpg(os.getpgid(proc.pid), 9)  # type: ignore[attr-defined,unused-ignore]  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore  # pylint: disable=no-member
-        proc.wait(timeout=2.0)
         # Popen.wait()はパイプを閉じないため、stdoutを明示的に閉じる。
         # 閉じないとGC時にFileIOが未クローズのままfinalizeされResourceWarningとなる。
+        # wait()がTimeoutExpiredを送出しても解放されるよう、wait()より前に置く。
         if proc.stdout is not None:
             proc.stdout.close()
+        proc.wait(timeout=2.0)
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX 前提の killpg 経路を検証する")

@@ -45,8 +45,10 @@ def execute_textlint_fix(
     （`@textlint/linter-formatter` と `@textlint/fixer-formatter`）、fixer側は
     `compact` フォーマッタをサポートしない。このため `textlint --format compact --fix`
     がクラッシュする。また `textlint --fix` の既定出力 （stylish） は本ツールの
-    builtinパーサ （compact前提） で解析できないため、残存違反を取得するには
-    別途lint実行を行う必要がある。
+    パーサーで解析できないため、残存違反を取得するには別途lint実行を行う必要がある。
+    lint段の出力形式は`textlint-lint-args`の既定値が`compact`を指定するが、
+    既定で有効な`textlint-json`が`--format json`を注入して当該指定を除去するため、
+    既定構成ではJSONとなる。いずれの形式もパーサーが解析する。
 
     上記を両立させるため本関数では次の2段階を直列実行する。
 
@@ -54,7 +56,7 @@ def execute_textlint_fix(
         commandline_prefix + （textlint-argsから--formatペアを除去） + fix-args
         + additional_args + targets
 
-    Step2: lintチェック （残存違反をcompact形式で取得）
+    Step2: lintチェック （残存違反を取得）
         commandline_prefix + textlint-args + textlint-lint-args + additional_args + targets
 
     ステータス判定:
@@ -141,7 +143,7 @@ def execute_textlint_fix(
     output = (step1_proc.stdout + step2_proc.stdout).strip()
     elapsed = time.perf_counter() - start_time
 
-    # Step2出力 （compact形式） から残存違反をパースする
+    # Step2出力から残存違反をパースする
     errors = pyfltr.command.error_parser.parse_errors(command, output, command_info.error_pattern)
 
     # ステータス判定

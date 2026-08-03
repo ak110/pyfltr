@@ -188,19 +188,21 @@ pytestは組み込みプラグインを読み込むかどうかをコマンド�
 これらを利用する場合は当該指定を外す。
 
 `filterwarnings`の3件はテストの資源解放漏れを検出する指定である。
-ファイルやソケットを閉じないままGCされると`ResourceWarning`が発生する。
-ただしpytestのunraisableexceptionプラグインが`PytestUnraisableExceptionWarning`へ
-包み直すため、`ResourceWarning`だけをエラー化してもテストは失敗しない。
-両方をエラー化して初めて当該のテストが失敗する。
-`RuntimeWarning`はawaitされないまま破棄されたコルーチンを検出する。
-当該の警告は包み直されないため、前2件とは別に指定する。
+ファイルやソケットを閉じないままGCされると`ResourceWarning`が、
+awaitされないまま破棄されたコルーチンでは`RuntimeWarning`が送出される。
+いずれもGC時の`__del__`内で送出されるため、エラー化した結果は例外として送出できない。
+pytestのunraisableexceptionプラグインがこれを`PytestUnraisableExceptionWarning`へ包み直す。
+テストの成否を決めるのは包み直した後の当該の警告であり、
+`ResourceWarning`・`RuntimeWarning`だけをエラー化しても失敗しない。
+3件は相互に依存し、いずれを欠いても検出できない。
 全警告をエラー化する`filterwarnings = ["error"]`でも検出できるが、
 外部ライブラリの`DeprecationWarning`まで失敗へ変えるため、除外エントリの継続的な保守を要する。
 上記の3件へ限定すると、エラー化の対象は資源解放と非同期呼び出しの取りこぼしに限られる。
-依存ライブラリが同じ3カテゴリの警告を送出する場合は当該のテストも失敗する。
+依存ライブラリが同じカテゴリの警告を送出する場合は当該のテストも失敗する。
 導入時はまず全件を実行し、失敗するテストの警告の発生元を確認する。
 自プロジェクトの解放漏れはテスト側の資源解放で是正し、
 依存ライブラリ由来のものは`ignore`エントリで個別に除外する。
+pytestは`filterwarnings`を後勝ちで適用するため、`ignore`エントリは上記の3件より後ろへ置く。
 
 `--timeout=60`は`pytest-timeout`プラグインが必要。
 値60は個々のテストが1分以内に完了する前提に基づく。
@@ -260,8 +262,11 @@ hte = "hte"
 脆弱性を検出しない。
 0.10.10以降は検出するが、0.11.1までは検出時も終了コード0を返す。
 非0の終了コードを返すのは0.11.2以降である
-（[uv PR #18512](https://github.com/astral-sh/uv/pull/18512)。CHANGELOG本体には未掲載）。
+（[uv 0.11.2のリリースノート](https://github.com/astral-sh/uv/releases/tag/0.11.2)と
+[uv PR #18512](https://github.com/astral-sh/uv/pull/18512)）。
 pyfltrは終了コード0のツールを出力によらず成功として扱うため、0.11.2未満は実行前検査で拒否する。
+0.10.10以上0.11.1以下で`uv-audit`を利用していた場合は、uvを0.11.2以降へ更新する。
+更新しないまま実行すると解決失敗として扱われ、`uv-audit-severity`による警告への格下げもできない。
 外部脆弱性データベースへ問い合わせるためネットワーク接続が必須で結果が変動する。
 ネットワークが不安定なCIで失敗扱いを避けたい場合は`uv-audit-severity = "warning"`で警告扱いに切り替える。
 
@@ -334,9 +339,14 @@ colloquial-check = true
 
 ```yaml
 default_language_version:
-  python: python3.12
+  python: python3
 
 repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-ast
+      - id: debug-statements
   - repo: local
     hooks:
       - id: pyfltr
@@ -347,13 +357,17 @@ repos:
         language: system
 ```
 
-注意: 上記の`default_language_version`にはプロジェクトが要求するPythonバージョンを指定する。
+注意: `default_language_version`にはプロジェクトが要求するPythonバージョンを指定する。
+`python3`は実行環境が解決するPythonを使う指定であり、版を固定する場合は`python3.12`のように書く。
+当該の指定が適用されるのは`language: python`のフックに限る。
+上記の例では`pre-commit/pre-commit-hooks`側の2件が対象で、`language: system`のpyfltrは対象外である。
 PEP 695型パラメーター構文（`def f[T](): ...`）を使用するプロジェクトではPython 3.12以上が必要となる。
 指定した版が古いと、`check-ast`や`debug-statements`などPythonで実装されたフックがSyntaxErrorで失敗する。
-失敗の形は指定版がローカルへ導入済みかで分かれる。
-導入済みの場合はprek・pre-commitとも`SyntaxError: expected '('`となり終了コード1で終わる。
-未導入の場合、prekは当該版を自動取得したうえで同じSyntaxErrorとなるが、
-pre-commitはフックの実行前に`failed to find interpreter`で終了コード3となる。
+メッセージは版により異なり、Python 3.11では`SyntaxError: expected '('`、
+3.9・3.10では`SyntaxError: invalid syntax`となる。いずれも終了コード1で終わる。
+指定した版をprek・pre-commitのいずれも解決できない場合は、フックの実行前に
+`failed to find interpreter`で終了コード3となる。
+prekは当該版を自動取得するため、この形になるのはuv管理のPythonも見つからない場合に限る。
 
 ポイント。
 

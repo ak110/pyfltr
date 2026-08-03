@@ -371,7 +371,8 @@ npm-audit = true    # JavaScript依存をnpm auditで監査する
 脆弱性を検出しない。
 0.10.10以降は検出するが、0.11.1までは検出時も終了コード0を返す。
 非0の終了コードを返すのは0.11.2以降であり、`uv-audit`利用時はuv 0.11.2以降が必要
-（[uv PR #18512](https://github.com/astral-sh/uv/pull/18512)。CHANGELOG本体には未掲載）。
+（[uv 0.11.2のリリースノート](https://github.com/astral-sh/uv/releases/tag/0.11.2)と
+[uv PR #18512](https://github.com/astral-sh/uv/pull/18512)）。
 この要件はpyfltr側でも強制する。`uv-audit`の起動前にuvの版を取得し、0.11.2未満の場合と
 版を判別できなかった場合は実行せず解決失敗として扱う。
 解決失敗は`{command}-severity = "warning"`を設定しても格下げされない。
@@ -543,19 +544,20 @@ javascript = true
     - `biome-fix-args = ["--write", "--unsafe"]`（ruffの`--unsafe-fixes`採用方針に準拠）
     - safe fixのみに戻したい場合は`biome-fix-args = ["--write"]`に上書き
     - 注: `biome-args`の先頭からサブコマンド（`check` / `lint` / `format`）を外すと、
-      biomeは`Error: flag --reporter is not valid in this context`をstderrへ出力し、
+      biomeは``flag `--reporter` is not valid in this context``で始まるエラーをstderrへ出力し、
       終了コード1で失敗する。
       引数が完全に空の場合はヘルプ本文を表示して終了コード0を返すが、
       pyfltrは対象ファイルを必ず末尾へ付与するためその形にはならない。
       いずれも検査は行われないため、必ずサブコマンド名を残すこと
-    - 注: biomeの診断severityは各ルールの既定値で決まり、fixのsafe / unsafeとは独立である。
-      `useLiteralKeys`はunsafe fixを持つがinfo、`noDoubleEquals`はunsafe fixを持つがerror、
-      `organizeImports`はsafe fixを持つがerrorとなる。
+    - 注: biomeの診断severityは各lintルールの既定値で決まり、fixのsafe / unsafeとは独立である。
+      `useLiteralKeys`と`noDoubleEquals`はいずれもunsafe fixを持つが、既定severityは前者がinfo、
+      後者がerrorとなる。
       `--reporter=github`ではinfoの診断が`::notice`として出力され、
       pyfltrの出力（JSONL・github-annotations等）にもinfoとして反映する。
       [biome公式ドキュメント](https://biomejs.dev/linter/)のとおり、infoは`--error-on-warnings`を
       渡しても終了コードに影響しないためCIの失敗扱いにはならない。
-      `--diagnostic-level`は表示対象の限定のみに作用し、コマンドラインからinfoを昇格させる手段は無い。
+      `--diagnostic-level`は表示対象の限定のみに作用する。
+      既定severityがinfoのルールをコマンドラインから昇格させる手段は無い。
       個別ルールをCIの失敗対象に変更したい場合は`biome.json`の`linter.rules.*`でseverityを上げる
 
 ### oxlint / tsc / vitest
