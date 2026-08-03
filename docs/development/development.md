@@ -25,6 +25,8 @@
 - `uv.lock` を尊重するため `UV_FROZEN=1` を常時有効化している（Makefile・CI・pre-commitフック経由）。
   適用経路の詳細はMakefile側コメントに委ねる
 - `pyproject.toml` の `exclude-newer` で公開直後パッケージを一定期間除外し、サプライチェーン汚染リスクを低減する
+    - `.npmrc` の `minimum-release-age` で、pnpm経由で解決するパッケージにも同じ公開待機（1440分）を適用する。
+      JS系ツールをmise・pnpm経由で起動するため、Python系の `exclude-newer` と対で必要となる
 - GitHub Actionsのサードパーティアクションはハッシュピン留めで固定する（`make update-actions`で更新）
 
 依存パッケージの脆弱性検知はDependabot alertsと定期監査ワークフロー（`audit.yaml`）の2経路で行う。
@@ -99,6 +101,23 @@ Dependabotによる自動修正PRの作成は無効とし、更新は`make updat
 対象プラットフォームの依存を監査するオプションとして説明する。
 実装の挙動は当該説明と一致しないため、uv側の更新で挙動が変わる可能性がある。
 本節の根拠を更新する際は上記の実測を再実行し、実測日と使用したuvのバージョンを併記する。
+
+## 設定ファイルの判断根拠
+
+値のみのファイルやJSON形式のファイルは、判断根拠を当該ファイルへ残せないため本節へ記録する。
+
+`.editorconfig-checker.json`はMarkdown（`\.md$`）を除外し`IndentSize`を無効化する。
+Markdownの除外は、editorconfig-checkerがコードブロック内のタブ等を`.editorconfig`違反として
+誤検知するためである。
+`IndentSize`の無効化はMarkdown以外のファイルのために必要である。
+無効化を外して`--commands=ec`を実行すると184件を検出し、
+その内訳はruff-formatが整形したPythonの継続行と、YAMLの折り返し行のインデントである。
+いずれも`.editorconfig`が指定する`indent_size`の倍数から外れるために検出されるものであり、
+整形結果として正当な記述である。
+
+`.python-version`の値は`pyproject.toml`の`requires-python`の下限に一致させる。
+ローカル開発環境を最小サポート版とし、新しい版でのみ通る記述の混入を開発時点で検出するためである。
+`requires-python`の下限を引き上げる場合は`.python-version`とCIマトリクスの下限も同時に更新する。
 
 ## ドキュメントサイト運用
 
