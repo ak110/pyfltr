@@ -339,12 +339,16 @@ async def test_tool_run_for_agent_resolves_cli_parameters(tmp_path: pathlib.Path
         only_failed=True,
         changed_since="HEAD",
         work_dir=str(tmp_path),
+        shuffle=True,
+        exit_zero_even_if_formatted=True,
         jobs=2,
     )
 
     args, commands, config = mock_run.call_args.args
     kwargs = mock_run.call_args.kwargs
     assert args.include_fix_stage is False
+    assert args.shuffle is True
+    assert args.exit_zero_even_if_formatted is True
     assert args.targets == [target]
     assert commands == ["mypy"]
     assert config.values["mypy"] is True
@@ -358,6 +362,8 @@ async def test_tool_run_for_agent_resolves_cli_parameters(tmp_path: pathlib.Path
         "--commands=mypy",
         "--enable=mypy",
         "--disable=ec",
+        "--shuffle",
+        "--exit-zero-even-if-formatted",
         "--jobs=2",
     ]
     assert "--only-failed" not in kwargs["original_sys_args"]
@@ -435,6 +441,51 @@ async def test_tool_run_for_agent_changed_since_uses_work_dir(
     )
 
     assert filter_changed.call_args.kwargs["cwd"] == work_dir.resolve()
+
+
+@pytest.mark.asyncio
+async def test_tool_run_for_agent_scans_and_deduplicates_from_work_dir(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mocker,
+) -> None:
+    """サーバーcwdと異なる作業ディレクトリを基準に走査し、同一実体を重複排除する。"""
+    work_dir = tmp_path / "project"
+    source_dir = work_dir / "src"
+    source_dir.mkdir(parents=True)
+    included = source_dir / "included.txt"
+    included.write_text("included\n", encoding="utf-8")
+    excluded = source_dir / "excluded.txt"
+    excluded.write_text("excluded\n", encoding="utf-8")
+    (work_dir / "src_alias").symlink_to("src", target_is_directory=True)
+    (work_dir / "pyproject.toml").write_text(
+        '[tool.pyfltr]\nec = true\nextend-exclude = ["*/excluded.txt"]\n',
+        encoding="utf-8",
+    )
+    server_cwd = tmp_path / "server"
+    server_cwd.mkdir()
+    monkeypatch.chdir(server_cwd)
+    scanned: list[pathlib.Path] = []
+
+    def capture_files(
+        _commands: list[str],
+        _args: argparse.Namespace,
+        base_ctx: typing.Any,
+        **_kwargs: typing.Any,
+    ) -> list[typing.Any]:
+        scanned.extend(base_ctx.all_files)
+        return []
+
+    mocker.patch("pyfltr.cli.pipeline.run_commands_with_cli", side_effect=capture_files)
+
+    await pyfltr.cli.mcp_server.tool_run_for_agent(
+        paths=["src", "src_alias"],
+        commands=["ec"],
+        work_dir=str(work_dir),
+        no_gitignore=True,
+    )
+
+    assert scanned == [pathlib.Path("src/included.txt")]
 
 
 @pytest.mark.asyncio
@@ -693,6 +744,18 @@ async def test_tool_grep_combines_multiple_patterns(tmp_path: pathlib.Path) -> N
 
 
 @pytest.mark.asyncio
+async def test_tool_grep_accepts_empty_pattern(tmp_path: pathlib.Path) -> None:
+    """空文字列を有効な正規表現として検索する。"""
+    target = tmp_path / "sample.txt"
+    target.write_text("alpha\n", encoding="utf-8")
+
+    result = await pyfltr.cli.mcp_server.tool_grep(paths=[str(target)], pattern="")
+
+    assert result.total_matches > 0
+    assert result.matches[0].match_text == ""
+
+
+@pytest.mark.asyncio
 async def test_tool_grep_reads_pattern_file(tmp_path: pathlib.Path) -> None:
     """パターンファイルの各行を検索パターンとして使用する。"""
     target = tmp_path / "sample.txt"
@@ -870,6 +933,21 @@ async def test_tool_grep_summary_files_without_match(tmp_path: pathlib.Path) -> 
 
     assert result.files_without_match == [str(unmatched)]
     assert not result.matches
+
+
+@pytest.mark.asyncio
+async def test_tool_grep_rejects_limited_files_without_match_summary(tmp_path: pathlib.Path) -> None:
+    """未走査ファイルを不一致扱いしないよう正の全体上限との併用を拒否する。"""
+    target = tmp_path / "sample.txt"
+    target.write_text("hello\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="max_total"):
+        await pyfltr.cli.mcp_server.tool_grep(
+            paths=[str(target)],
+            pattern="hello",
+            summary_mode="files_without_match",
+            max_total=1,
+        )
 
 
 @pytest.mark.asyncio

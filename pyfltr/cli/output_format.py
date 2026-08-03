@@ -82,7 +82,7 @@ def detect_agent_indicator() -> str | None:
     設定された変数名を返す。値の中身は問わない。該当が無ければ`None`を返す。
 
     出力形式の既定値解決（`resolve_output_format`）と`--quiet`の既定値解決
-    （`pyfltr.cli.parser.apply_subcommand_defaults`）の双方が本関数を参照する。
+    （`pyfltr.cli.command_selection.apply_subcommand_defaults`）の双方が本関数を参照する。
     エージェント検出判定のSSOTは本関数とする。
     """
     for env_name in AGENT_INDICATOR_ENVS:

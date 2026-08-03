@@ -1,7 +1,8 @@
 # 検索と置換
 
 pyfltrの`grep`/`replace`サブコマンドの使い方を扱う。
-コーディングエージェント向けには`pyfltr mcp`の`grep`/`replace`/`replace_undo`ツールも公開する。
+コーディングエージェント向けには`pyfltr mcp`の
+`grep`/`replace`/`replace_undo`/`replace_history`ツールも公開する。
 
 ## 概要
 
@@ -142,14 +143,22 @@ pyfltr replace "old" "new" config.toml --within "\[section\]" -C 2
 
 ## MCP公開ツール
 
-`pyfltr mcp`サーバーは`grep`・`replace`・`replace_undo`の3ツールを公開する。
+`pyfltr mcp`サーバーは`grep`・`replace`・`replace_undo`・`replace_history`の4ツールを公開する。
 
-- `grep(pattern, paths, ...)`: ファイル横断検索
-- `replace(pattern, replacement, paths, dry_run=True, within=None, ...)`: 横断置換。
+- `grep(paths, pattern=None, patterns=None, pattern_file=None, context=None, summary_mode=None, ...)`:
+  ファイル横断検索。`patterns`は複数パターン、`pattern_file`は1行1パターンのファイルを受け取り、
+  `pattern`とOR条件で検索する。`context`は前後文脈の一括指定に使う。
+  `summary_mode`は`files_with_matches`・`count`・`files_without_match`のいずれかを受け取り、
+  マッチ明細を空にして対応する集計結果を返す。
+  `files_without_match`では全ファイルの確認が必要なため、正の`max_total`を併用できない
+- `replace(pattern, replacement, paths, dry_run=True, within=None, from_grep=None, context=None, ...)`:
+  横断置換。`from_grep`はgrepのJSONL出力から対象ファイルを限定する。
+  `context`は`within`で指定したアンカーの前後幅を一括指定する。
   **`dry_run`の既定値は`True`**（CLI既定の`False`と異なり、LLM暴発防止）。
   `within`にアンカー正規表現を渡すと、`before_context`/`after_context`で定まる領域内のみ置換する（CLIの`--within`相当）
 - `replace_undo(replace_id, force=False)`: 取り消し
+- `replace_history(action, replace_id=None)`: `action=list`で履歴一覧、`action=show`で指定履歴の詳細を返す
 
 LLMエージェントは`replace`を呼ぶ際、明示的に`dry_run=False`を指定しない限り実書き込みされない。
-`within`なしで`before_context`/`after_context`を渡した場合と、
+`within`なしで`before_context`/`after_context`/`context`を渡した場合と、
 `within`と`multiline`を併用した場合は、いずれもエラーを返す。

@@ -249,7 +249,7 @@ stdioトランスポートでMCPサーバーを起動する。
 追加オプションはなく、起動後はstdin/stdoutをJSON-RPCフレームが専有する。
 MCPクライアントがstdinを閉じた時点でサーバーが終了する。
 
-提供するMCPツール（8件）:
+提供するMCPツール（11件）:
 
 | ツール名 | 対応CLI | 説明 |
 | --- | --- | --- |
@@ -257,10 +257,13 @@ MCPクライアントがstdinを閉じた時点でサーバーが終了する。
 | `show_run` | `pyfltr show-run <run_id>` | 指定runのmetaとツール別サマリを返す。前方一致・`latest`エイリアス可 |
 | `show_run_diagnostics` | `pyfltr show-run <run_id> --commands=<name>` | 指定runのtool.jsonとdiagnostics全件を返す（複数指定可） |
 | `show_run_output` | `pyfltr show-run <run_id> --commands=<name> --output` | 指定runのoutput.log全文を返す（単一指定のみ） |
-| `run_for_agent` | `pyfltr run-for-agent` | lint/format/testを実行しrun_id・失敗ツール名・retry_commands等を返す |
+| `run_for_agent` | `pyfltr run` / `fast` / `ci` | lint/format/testを実行しrun_id・失敗ツール名・retry_commands等を返す。`mode`で実行モードを選ぶ |
 | `grep` | `pyfltr grep` | ファイル横断の正規表現検索（pyfltr exclude/.gitignore尊重） |
 | `replace` | `pyfltr replace` | 横断置換。`dry_run`の既定値は`True`（CLI既定の`False`と異なりLLM暴発防止） |
 | `replace_undo` | `pyfltr replace --undo` | 過去のreplaceを取り消す |
+| `replace_history` | `pyfltr replace --list-history` / `--show-history <ID>` | replace履歴を一覧または単体で返す |
+| `command_info` | `pyfltr command-info <command>` | ツール起動方式の解決結果を返す。`check=True`は副作用を伴う |
+| `config` | `pyfltr config <action>` | 設定ファイルを操作する（get / set / delete / list） |
 
 コーディングエージェント側へのMCPサーバー登録例（JSON形式で設定ファイルに記載する場合）:
 
@@ -652,20 +655,37 @@ pyfltrは`kind:"command"`かつ`status:"running"`のheartbeatレコードを出�
 
 コーディングエージェントから`pyfltr`を呼び出す方法は2種類ある。
 
-#### 直接呼び出し（推奨）
+#### 直接呼び出し
 
 エージェントがシェルコマンドを実行できる環境では、`pyfltr run`を直接呼ぶ。
 エージェント検出用の環境変数が設定されていれば出力形式は自動的にJSON Linesとなり、
 そのまま読み込むことができる。
+直接呼び出しでは、呼び出し元がシェル実行のタイムアウトとstdout・stderrからの出力取得を扱う必要がある。
 
-#### MCP経由
+#### MCP経由（推奨）
 
-`pyfltr mcp`でMCPサーバーを起動すると、コーディングエージェントが`run_for_agent`ツールとして呼び出せる。
-CLIの直接呼び出しとは異なりJSONL出力がstdoutに流れないため、
-エージェントのMCPクライアントが結果を構造化データとして受け取れる。
+`pyfltr mcp`でMCPサーバーを起動すると、コーディングエージェントがCLIで可能な操作を
+原則としてMCPツールから呼び出せる。
+端末表示・出力先の制御と`--no-archive`はMCPへ露出せず、ツール固有の引数を任意の文字列で
+上書きする`--{tool}-args`も露出しない。
+CLIの直接呼び出しとは異なりJSONL出力がstdoutに流れず、
+MCPクライアントは結果を構造化データとして受け取れる。
 ただし`pyfltr mcp`起動後は同一プロセスのstdin/stdoutがJSON-RPCに専有されるため、
 他のコマンドと組み合わせた場合に出力が混ざる事故に注意する
 （詳細は[トラブルシューティング](troubleshooting.md)を参照）。
+
+`run_for_agent`の主要パラメーターとCLI相当オプションは次のとおり。
+
+| MCPパラメーター | CLI相当 |
+| --- | --- |
+| `mode` | サブコマンドの`run` / `fast` / `ci` |
+| `work_dir` | `--work-dir` |
+| `commands` | `--commands` |
+| `no_fix` | `--no-fix` |
+| `only_failed` | `--only-failed` |
+| `changed_since` | `--changed-since` |
+| `shuffle` | `--shuffle` |
+| `exit_zero_even_if_formatted` | `--exit-zero-even-if-formatted` |
 
 コーディングエージェントが`pyfltr run`を活用する基本的な流れ:
 

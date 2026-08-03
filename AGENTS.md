@@ -53,6 +53,8 @@ JSON Lines出力（`--output-format=jsonl`）とMCPサーバー（`pyfltr mcp`�
         （[docs/guide/configuration-tools.md](docs/guide/configuration-tools.md)の「バージョン指定」を参照）
   - エージェント検出用の環境変数が設定された環境では`run`の出力形式が`jsonl`、
     静音モードが既定で有効になるため、`run-for-agent`を明示指定する必要はない
+  - MCPサーバー（`pyfltr mcp`）を登録している環境では、CLI直接実行よりMCPツールを優先する。
+    CLIで可能な操作は端末表示・出力先の制御、`--no-archive`、`--{tool}-args`群を除きMCPへ露出している
 
 ## アーキテクチャの参照先
 

@@ -1,6 +1,7 @@
 """対象ファイル選定。"""
 
 import contextlib
+import functools
 import pathlib
 import subprocess
 import typing
@@ -95,6 +96,7 @@ def expand_all_files(
 
     def _expand_target(target: pathlib.Path, *, is_direct: bool) -> None:
         try:
+            filesystem_target = target if target.is_absolute() else cwd_base / target
             if _is_in_excluded_subdir(target):
                 return
             match = excluded(target, config)
@@ -107,16 +109,16 @@ def expand_all_files(
                     )
                     pyfltr.warnings_.add_filtered_direct_file(str(target), reason="excluded")
                 return
-            if target.is_dir():
+            if filesystem_target.is_dir():
                 # シンボリックリンクディレクトリ自身が.gitignore対象なら配下を辿らない。
                 # 末尾`/`を付けない単一パス指定で問い合わせるため、
                 # ファイル形式パターン（`name`・`*pattern*`等）に限り判定が成立する。
                 # `link/`形式のディレクトリ専用パターンは`git check-ignore`が
                 # symlink越えのpathspecを拒否するため判定不可となり、早期スキップは機能しない。
-                if respect_gitignore and target.is_symlink() and _is_ignored_single_path(target, cwd=cwd_base):
+                if respect_gitignore and filesystem_target.is_symlink() and _is_ignored_single_path(target, cwd=cwd_base):
                     return
-                for child in target.iterdir():
-                    _expand_target(child, is_direct=False)
+                for child in filesystem_target.iterdir():
+                    _expand_target(target / child.name, is_direct=False)
             else:
                 expanded.append(target)
                 if is_direct:
@@ -163,7 +165,7 @@ def expand_all_files(
                 )
                 pyfltr.warnings_.add_filtered_direct_file(str(target), reason="excluded")
 
-    return _dedup_and_sort(expanded)
+    return _dedup_and_sort(expanded, cwd_base=cwd_base)
 
 
 def _is_subpath(path: pathlib.Path, ancestor: pathlib.Path) -> bool:
@@ -175,7 +177,7 @@ def _is_subpath(path: pathlib.Path, ancestor: pathlib.Path) -> bool:
     return True
 
 
-def _dedup_and_sort(paths: list[pathlib.Path]) -> list[pathlib.Path]:
+def _dedup_and_sort(paths: list[pathlib.Path], *, cwd_base: pathlib.Path) -> list[pathlib.Path]:
     """実体パス単位で重複排除し、パス文字列で安定ソートして返す。
 
     同一実体に複数パスが紐付く場合は非シンボリックリンクのパスを優先して残す。
@@ -190,23 +192,26 @@ def _dedup_and_sort(paths: list[pathlib.Path]) -> list[pathlib.Path]:
     """
     candidates: dict[pathlib.Path, list[pathlib.Path]] = {}
     for p in paths:
+        filesystem_path = p if p.is_absolute() else cwd_base / p
         try:
-            real = p.resolve()
+            real = filesystem_path.resolve()
         except OSError:
-            real = p.absolute()
+            real = filesystem_path.absolute()
         candidates.setdefault(real, []).append(p)
-    deduped = [min(group, key=_dedup_selection_key) for group in candidates.values()]
+    selection_key = functools.partial(_dedup_selection_key, cwd_base=cwd_base)
+    deduped = [min(group, key=selection_key) for group in candidates.values()]
     deduped.sort(key=str)
     return deduped
 
 
-def _dedup_selection_key(path: pathlib.Path) -> tuple[bool, str]:
+def _dedup_selection_key(path: pathlib.Path, *, cwd_base: pathlib.Path) -> tuple[bool, str]:
     """`_dedup_and_sort`の選定キー。非シンボリックリンクを優先し、同点はパス文字列で安定化する。
 
     `is_symlink()`のOSErrorはsymlink扱いに分類し、非シンボリックリンクを最大限残す。
     """
+    filesystem_path = path if path.is_absolute() else cwd_base / path
     try:
-        is_link = path.is_symlink()
+        is_link = filesystem_path.is_symlink()
     except OSError:
         is_link = True
     return (is_link, str(path))

@@ -242,6 +242,8 @@ async def tool_run_for_agent(
     no_gitignore: bool = False,
     no_cache: bool = False,
     human_readable: bool = False,
+    shuffle: bool = False,
+    exit_zero_even_if_formatted: bool = False,
     jobs: int | None = None,
 ) -> RunForAgentResult:
     """指定パスに対してlint/format/testを実行し、結果を返す。
@@ -276,6 +278,8 @@ async def tool_run_for_agent(
         no_gitignore: Trueの場合、`.gitignore`による除外を無効化する。
         no_cache: Trueの場合、ファイルhashキャッシュを無効化する。
         human_readable: Trueの場合、対応ツールの機械可読出力を抑止する。
+        shuffle: Trueの場合、実行対象ファイルの順序をシャッフルする。
+        exit_zero_even_if_formatted: Trueの場合、formatterによる変更だけなら成功扱いにする。
         jobs: 並列実行するツール数の上限。
     """
     if mode not in ("run", "fast", "ci"):
@@ -328,6 +332,9 @@ async def tool_run_for_agent(
         quiet=True,
     )
     pyfltr.cli.command_selection.apply_subcommand_defaults(args)
+    args.shuffle = shuffle
+    if exit_zero_even_if_formatted:
+        args.exit_zero_even_if_formatted = True
     if no_fix:
         args.include_fix_stage = False
 
@@ -354,6 +361,10 @@ async def tool_run_for_agent(
         retry_sys_args.append("--no-cache")
     if human_readable:
         retry_sys_args.append("--human-readable")
+    if shuffle:
+        retry_sys_args.append("--shuffle")
+    if exit_zero_even_if_formatted:
+        retry_sys_args.append("--exit-zero-even-if-formatted")
     if jobs is not None:
         retry_sys_args.append(f"--jobs={jobs}")
 
@@ -487,6 +498,7 @@ async def tool_grep(
             0を明示した場合は常に無制限となる。
         summary_mode: 集計モード。`files_with_matches`、`count`、`files_without_match`のいずれか。
             指定時は`matches`を空で返し、対応する集計フィールドを返す。
+            `files_without_match`では正の`max_total`を併用できない。
         types: 対象言語タイプの一覧（例: ["python", "ts"]）。
         globs: globパターンでの対象限定一覧。
         encoding: ファイル読み込み時のエンコーディング（既定: utf-8）。
@@ -496,7 +508,7 @@ async def tool_grep(
     """
     # warnings_はモジュールグローバルに蓄積するため、リクエスト開始時に初期化する
     pyfltr.warnings_.clear()
-    collected = ([pattern] if pattern else []) + list(patterns or [])
+    collected = ([pattern] if pattern is not None else []) + list(patterns or [])
     if pattern_file is not None:
         try:
             collected.extend(pyfltr.grep_.matcher.read_pattern_file(pathlib.Path(pattern_file)))
@@ -526,6 +538,8 @@ async def tool_grep(
     valid_summary_modes = ("files_with_matches", "count", "files_without_match")
     if summary_mode is not None and summary_mode not in valid_summary_modes:
         _raise_mcp_error("summary_mode は files_with_matches / count / files_without_match のいずれかを指定してください。")
+    if summary_mode == "files_without_match" and max_total is not None and max_total > 0:
+        _raise_mcp_error("summary_mode=files_without_match では max_total に正の値を指定できません。")
     effective_max_total = (0 if summary_mode is not None else 1000) if max_total is None else max_total
 
     try:

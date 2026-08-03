@@ -7,6 +7,7 @@ pyfltrの実装構造と主要な設計判断をまとめる。
 ## 実行パイプライン
 
 `pyfltr.cli.pipeline.run_pipeline()`がCLI/MCPの双方から呼び出される最上位エントリ。
+CLIはプロセスのcwd、MCPは`start_cwd`引数で明示したディレクトリを実行起点として渡す。
 TUI/非TUIの分岐はこの関数の内側で行い、パイプライン共通の前処理（ファイル展開・`--only-failed`フィルタリング・
 アーカイブ初期化など）はTUI起動より前に集約する。
 
@@ -91,7 +92,7 @@ flowchart LR
 ## サブコマンドとargparse
 
 subparsersを`required=True`で必須化し、引数なし実行時のフォールバック挙動は持たない。
-サブコマンド別の既定値は`_apply_subcommand_defaults()`で手動注入する。
+サブコマンド別の既定値は`apply_subcommand_defaults()`で手動注入する。
 `set_defaults()`を避けたのは、共通親パーサーを継承したサブパーサーに対して
 他サブパーサーのdefaultが書き換わる既知挙動を回避するため。
 
@@ -641,10 +642,10 @@ MCPサーバー・`--only-failed`からも再利用する。
 ### 提供ツール構成
 
 読み取り系4ツール（`list_runs`・`show_run`・`show_run_diagnostics`・`show_run_output`）・
-実行系1ツール（`run_for_agent`）・grep/replace系3ツール（`grep`・`replace`・`replace_undo`）の
-計8ツールを公開する。
-実行系を1本に限定したのは、エージェント連携用途では`ci`/`run`/`fast`の差分を露出する必要が薄く、
-パラメーター数を抑えてMCPスキーマを単純化するため。
+実行系1ツール（`run_for_agent`）を公開する。
+grep/replace系4ツール（`grep`・`replace`・`replace_undo`・`replace_history`）と
+情報/設定系2ツール（`command_info`・`config`）を加え、公開ツールは計11件となる。
+実行系は`run_for_agent`の`mode`で`ci`/`run`/`fast`を選択し、同一の入力・出力モデルで扱う。
 
 ツール名はCLIサブコマンドのハイフン形式と異なりアンダースコア形式（`list_runs`/`show_run`等）とする。
 ハイフンはPythonの`@mcp.tool()`名として非推奨のため。
@@ -673,10 +674,23 @@ MCP経路の`stdin/stdout`専有を守れる。
 ### `run_for_agent`の実装経路
 
 内部で`argparse.Namespace`を構築し、`run_pipeline`を直接呼び出す。
+Namespaceの組み立てはMCP側に残す一方、サブコマンド既定値は`apply_subcommand_defaults`、
+`commands`の平坦化は`flatten_commands_arg`へ委ねる。
+未知コマンドの検証は`validate_commands`、CLI指定による設定上書きは`apply_cli_overrides`を使い、
+CLIと同じ解決経路を通す。
 `run(sys_args=[...])`経由でargparseに渡す案ではエラーメッセージのstderr出力制御が困難で、
 MCPツール側でのエラー整形ができないため不採用。
 外部プロセス起動（`subprocess.run(["pyfltr", "run-for-agent", ...])`）案も検討した。
 プロセス管理・`PYFLTR_CACHE_DIR`伝搬・`TERM`シグナル・テスト安定性の面で同一プロセス方式より不利のため不採用。
+
+`work_dir`は`os.chdir()`でプロセスのcwdを変更せず、設定探索では
+`load_config(config_dir=work_dir)`、実行パイプラインでは`run_pipeline(start_cwd=work_dir)`へ渡す。
+プロセスグローバルなcwdに干渉しないため、`ThreadPoolExecutor`によるツールの並列実行や
+MCPクライアントからの並行ツール呼び出しでも実行起点を呼び出し単位で維持できる。
+
+`work_dir`指定時は診断のファイルパスが絶対パスで返る場合がある。
+`pyfltr.paths.to_cwd_relative()`はプロセスのcwdだけを相対化の基準とし、
+`work_dir`を基準ディレクトリとして注入する経路を持たないためである。
 
 ### `run_pipeline()`戻り値
 

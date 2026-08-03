@@ -81,17 +81,18 @@ uvx pyfltr run --commands=mypy,pyright path/to/file.py
 
 JSON Lines出力（`--output-format=jsonl`）とMCPサーバー（`pyfltr mcp`）でコーディングエージェント運用に対応する。
 
-### 直接呼び出し（推奨）
+### 直接呼び出し
 
 エージェントがシェルコマンドを実行できる環境では`pyfltr run`を直接呼ぶ。
 `AI_AGENT` / `CODEX_CI` / `CLAUDECODE` / `CURSOR_AGENT`のいずれかが設定された環境では
 出力形式がJSON Linesとなり、そのまま読み込める。
+呼び出し元はシェル実行のタイムアウトとstdout・stderrからの出力取得を扱う必要がある。
 
 ```shell
 uvx pyfltr run
 ```
 
-### MCP経由
+### MCP経由（推奨）
 
 `pyfltr mcp`でMCPサーバーを起動すると、エージェントが`run_for_agent`等のMCPツールとして呼び出せる。
 
