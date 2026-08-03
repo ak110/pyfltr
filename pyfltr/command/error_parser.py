@@ -2112,6 +2112,79 @@ def _parse_with_pattern(command: str, output: str, pattern: str) -> list[ErrorLo
     return results
 
 
+_PYTEST_CONFIG_CONFLICT_RE = re.compile(
+    r"^configfile: (?P<used>.+?) \(WARNING: ignoring pytest config in (?P<ignored>.+?)!\)\s*$"
+)
+"""pytestのヘッダー行が示す設定ファイル競合。
+
+pytestは設定ファイルを`pytest.toml`・`.pytest.toml`・`pytest.ini`・`.pytest.ini`・
+`pyproject.toml`・`tox.ini`・`setup.cfg`の順で探索し、最初に見つかったものだけを採用する。
+採用したものより後ろの候補に設定が含まれる場合、当該ヘッダー行で無視した旨を通知する。
+この通知は`warnings`機構を通らず終了コードにも影響しないため、pyfltr側で拾わないと
+設定が適用されないままテストが完走する。
+"""
+
+_ANSI_SGR_RE = re.compile(r"\x1b\[[0-9;]*m")
+"""端末装飾のSGRシーケンス。色付き出力のヘッダー行を素の文字列として突き合わせるために除去する。"""
+
+_PYTEST_COLLECTION_RE = re.compile(r"^(?:collecting |collected \d+ items?)")
+"""pytestの収集開始行。ヘッダー領域の終端であり、以降はテスト自身の標準出力が混在しうる。"""
+
+_PYTEST_SECTION_RE = re.compile(r"^=+ .+ =+$")
+"""pytestの節見出し。実行開始行もこの書式を取るため、実行開始行の判定を先に行う。"""
+
+
+def detect_pytest_config_conflict(output: str) -> str | None:
+    """pytestの出力から設定ファイル競合を検出し、警告メッセージを返す。
+
+    競合がない場合、およびヘッダー行を含まない出力（`-q`・`--no-header`指定時）は`None`を返す。
+    副作用を持たせず、警告の発行は呼び出し側が担う。
+
+    探索対象は親プロセス自身のヘッダー領域に限る。pytestを子プロセスとして起動するテストでは
+    子のヘッダーがそのまま捕捉出力へ現れるため、出力中のどこにある実行開始行も
+    ヘッダーの始まりとして扱うと、親が`-q`・`--no-header`で動く場合に
+    子側の競合を親の競合として報告してしまう。
+    実行開始行より前に節見出しまたは捕捉出力の節見出しが現れた場合は、
+    既にテスト実行の段階へ入っているため親のヘッダーを持たない出力として扱う。
+    実行開始行そのものより前に警告等の前置きが出る構成（標準エラー出力の併合など）があるため、
+    出力の先頭行であることは要求しない。
+
+    親が`-q`と`-s`を併用し、かつ子プロセスとしてpytestを起動する構成では、
+    子の競合を親の競合として報告する。`-q`で親のヘッダーが出ず、`-s`で子の出力が
+    捕捉されないため、子のヘッダーが出力の先頭の行群となり、その前に打ち切りの根拠となる
+    節見出しが現れない。親子のヘッダーは書式が同一で、テキストだけでは判別できない。
+    `--no-header`は単独では該当しない。当該指定でも実行開始行自体は出力されるため、
+    親のヘッダー開始行が常に先に見つかる。
+    """
+    lines = [_ANSI_SGR_RE.sub("", line).strip() for line in output.splitlines()]
+    header_start: int | None = None
+    for index, line in enumerate(lines):
+        if _PYTEST_SESSION_START_RE.fullmatch(line):
+            header_start = index
+            break
+        if _PYTEST_CAPTURED_SECTION_RE.fullmatch(line) or _PYTEST_SECTION_RE.fullmatch(line):
+            return None
+    if header_start is None:
+        return None
+    previous_line = ""
+    for line in lines[header_start + 1 :]:
+        if _PYTEST_COLLECTION_RE.match(line):
+            return None
+        match = _PYTEST_CONFIG_CONFLICT_RE.match(line)
+        if match is None:
+            previous_line = line
+            continue
+        if not previous_line.startswith("rootdir: "):
+            # pytestは`rootdir:`と`configfile:`を同一のヘッダー行群として隣接出力する。
+            # 直前行での限定により、ヘッダー領域へ紛れ込んだ同形の行を競合と誤認しない。
+            previous_line = line
+            continue
+        used = match.group("used")
+        ignored = match.group("ignored")
+        return f"pytest: 設定ファイルが競合しています。採用: {used} / 無視: {ignored}"
+    return None
+
+
 def _extract_last_line(output: str) -> str | None:
     """テキスト出力の末尾から意味のある行を抽出する。
 

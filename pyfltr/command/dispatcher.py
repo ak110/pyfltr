@@ -480,6 +480,16 @@ def _run_plain_command(
     errors = pyfltr.command.error_parser.parse_errors(
         command, output, command_info.error_pattern, file_path_remap=file_path_remap
     )
+    # pytestは設定ファイル競合をヘッダー1行で通知するだけで終了コードへ反映しない。
+    # 拾わないと設定が適用されないまま完走した実行を成功として報告してしまう。
+    if command == "pytest":
+        conflict_message = pyfltr.command.error_parser.detect_pytest_config_conflict(output)
+        if conflict_message is not None:
+            pyfltr.warnings_.emit_warning(
+                source="config-conflict",
+                message=conflict_message,
+                hint="採用された設定ファイルへ設定を集約するか、不要な設定ファイルを削除する",
+            )
 
     result = CommandResult.from_run(
         command=command,

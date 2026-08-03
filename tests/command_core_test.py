@@ -1521,6 +1521,38 @@ def test_execute_command_propagates_severity_to_result(mocker, tmp_path: pathlib
     assert result.status == "warning"
 
 
+def test_execute_command_pytest_config_conflict_emits_warning(mocker, tmp_path: pathlib.Path) -> None:
+    """pytest設定競合を公開実行経路で検出し、成功状態のまま警告する。"""
+    target = tmp_path / "sample_test.py"
+    target.write_text("def test_sample():\n    assert True\n")
+    proc = pyfltr.command.process.CompletedProcessWithTimeoutInfo(
+        args=["pytest"],
+        returncode=0,
+        stdout="""============================= test session starts ==============================
+rootdir: /tmp/project
+configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
+""",
+    )
+    mocker.patch("pyfltr.command.process.run_configured_subprocess", return_value=proc)
+    config = pyfltr.config.config.create_default_config()
+    config.values["pytest"] = True
+    pyfltr.warnings_.clear()
+    try:
+        result = pyfltr.command.dispatcher.execute_command(
+            "pytest",
+            _testconf.make_args(),
+            _testconf.make_execution_context(config, [target], start_cwd=tmp_path),
+        )
+        warnings = [warning for warning in pyfltr.warnings_.collected_warnings() if warning["source"] == "config-conflict"]
+        assert result.status == "succeeded"
+        assert len(warnings) == 1
+        assert "pytest.ini" in warnings[0]["message"]
+        assert "pyproject.toml" in warnings[0]["message"]
+        assert "設定を集約" in warnings[0]["hint"]
+    finally:
+        pyfltr.warnings_.clear()
+
+
 # --- bin-runnerテスト ---
 
 
