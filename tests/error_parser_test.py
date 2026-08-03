@@ -8,6 +8,24 @@ import pytest
 import pyfltr.command.error_parser
 
 
+def _diagnostic_fields(
+    error: pyfltr.command.error_parser.ErrorLocation,
+) -> tuple[str, int, int | None, str, str, str | None, str | None, str | None, int | None, int | None]:
+    """位置取り込み前から存在する診断情報と終了位置を比較用タプルで返す。"""
+    return (
+        error.file,
+        error.line,
+        error.col,
+        error.command,
+        error.message,
+        error.rule,
+        error.severity,
+        error.fix,
+        error.end_line,
+        error.end_col,
+    )
+
+
 @pytest.mark.parametrize(
     "command,output,expected_count,expected_first_file,expected_first_line",
     [
@@ -370,6 +388,8 @@ def test_parse_errors_eslint_json() -> None:
                     {
                         "line": 10,
                         "column": 5,
+                        "endLine": 11,
+                        "endColumn": 6,
                         "message": "'x' is defined but never used.",
                         "ruleId": "no-unused-vars",
                         "severity": 2,
@@ -391,11 +411,18 @@ def test_parse_errors_eslint_json() -> None:
     )
     errors = pyfltr.command.error_parser.parse_errors("eslint", output)
     assert len(errors) == 2
-    assert errors[0].file == "src/foo.js"  # cwd配下は相対パスに正規化される
-    assert errors[0].line == 10
-    assert errors[0].col == 5
-    assert "no-unused-vars" in errors[0].message
-    assert errors[0].command == "eslint"
+    assert _diagnostic_fields(errors[0]) == (
+        "src/foo.js",
+        10,
+        5,
+        "eslint",
+        "'x' is defined but never used. (no-unused-vars)",
+        "no-unused-vars",
+        "error",
+        "none",
+        11,
+        6,
+    )
     assert errors[1].line == 20
 
 
@@ -533,7 +560,7 @@ def test_parse_ruff_check_json() -> None:
                 "message": "`os` imported but unused",
                 "filename": "src/foo.py",
                 "location": {"row": 1, "column": 8},
-                "end_location": {"row": 1, "column": 10},
+                "end_location": {"row": 2, "column": 10},
                 "severity": "error",
                 "fix": {"applicability": "safe", "edits": []},
             },
@@ -541,13 +568,18 @@ def test_parse_ruff_check_json() -> None:
     )
     errors = pyfltr.command.error_parser.parse_errors("ruff-check", output)
     assert len(errors) == 1
-    assert errors[0].file == "src/foo.py"
-    assert errors[0].line == 1
-    assert errors[0].col == 8
-    assert errors[0].rule == "F401"
-    assert errors[0].severity == "error"
-    assert errors[0].fix == "safe"
-    assert errors[0].message == "`os` imported but unused"
+    assert _diagnostic_fields(errors[0]) == (
+        "src/foo.py",
+        1,
+        8,
+        "ruff-check",
+        "`os` imported but unused",
+        "F401",
+        "error",
+        "safe",
+        2,
+        10,
+    )
 
 
 def test_parse_ruff_check_json_fallback() -> None:
@@ -557,6 +589,11 @@ def test_parse_ruff_check_json_fallback() -> None:
     assert len(errors) == 1
     assert errors[0].file == "src/foo.py"
     assert errors[0].line == 10
+    assert errors[0].col == 5
+    assert errors[0].command == "ruff-check"
+    assert errors[0].message == "F401 `os` imported but unused"
+    assert errors[0].end_line is None
+    assert errors[0].end_col is None
 
 
 def test_parse_ruff_check_json_fix_none() -> None:
@@ -624,6 +661,8 @@ def test_parse_pylint_json() -> None:
                     "path": "src/foo.py",
                     "line": 1,
                     "column": 0,
+                    "endLine": 2,
+                    "endColumn": 7,
                     "type": "convention",
                 },
             ],
@@ -632,9 +671,18 @@ def test_parse_pylint_json() -> None:
     )
     errors = pyfltr.command.error_parser.parse_errors("pylint", output)
     assert len(errors) == 1
-    assert errors[0].rule == "missing-module-docstring"
-    assert errors[0].severity == "warning"
-    assert errors[0].message == "C0114: Missing module docstring"
+    assert _diagnostic_fields(errors[0]) == (
+        "src/foo.py",
+        1,
+        1,
+        "pylint",
+        "C0114: Missing module docstring",
+        "missing-module-docstring",
+        "warning",
+        None,
+        2,
+        8,
+    )
     assert errors[0].rule_url == (
         "https://pylint.readthedocs.io/en/stable/user_guide/messages/convention/missing-module-docstring.html"
     )
@@ -677,6 +725,77 @@ def test_parse_pylint_json_fallback() -> None:
     errors = pyfltr.command.error_parser.parse_errors("pylint", output)
     assert len(errors) == 1
     assert errors[0].line == 10
+    assert errors[0].col == 6
+    assert errors[0].end_line is None
+    assert errors[0].end_col is None
+
+
+@pytest.mark.parametrize(
+    ("command", "output", "expected"),
+    [
+        (
+            "pylint",
+            json.dumps(
+                {
+                    "messages": [
+                        {
+                            "messageId": "C0103",
+                            "symbol": "invalid-name",
+                            "message": "変数éの名前が不正です",
+                            "path": "src/non_ascii.py",
+                            "line": 1,
+                            "column": 4,
+                            "endLine": 1,
+                            "endColumn": 6,
+                            "type": "convention",
+                        }
+                    ]
+                }
+            ),
+            (
+                "src/non_ascii.py",
+                1,
+                5,
+                "pylint",
+                "C0103: 変数éの名前が不正です",
+                "invalid-name",
+                "warning",
+                None,
+                1,
+                7,
+            ),
+        ),
+        (
+            "bandit",
+            json.dumps(
+                {
+                    "results": [
+                        {
+                            "filename": "src/non_ascii.py",
+                            "line_number": 1,
+                            "col_offset": 4,
+                            "end_col_offset": 6,
+                            "line_range": [1],
+                            "issue_text": "変数éを検出",
+                            "code": "é = 1",
+                        }
+                    ]
+                }
+            ),
+            ("src/non_ascii.py", 1, 5, "bandit", "変数éを検出", None, None, None, 1, 7),
+        ),
+    ],
+)
+def test_parse_non_ascii_byte_offsets_remain_approximate(
+    command: str,
+    output: str,
+    expected: tuple[str, int, int | None, str, str, str | None, str | None, str | None, int | None, int | None],
+) -> None:
+    """非ASCII行のUTF-8バイトオフセットは文字列を参照せず1起点へ補正する。"""
+    errors = pyfltr.command.error_parser.parse_errors(command, output)
+
+    assert len(errors) == 1
+    assert _diagnostic_fields(errors[0]) == expected
 
 
 def test_parse_pyright_json() -> None:
@@ -687,7 +806,7 @@ def test_parse_pyright_json() -> None:
             "generalDiagnostics": [
                 {
                     "file": "src/foo.py",
-                    "range": {"start": {"line": 9, "character": 4}, "end": {"line": 9, "character": 10}},
+                    "range": {"start": {"line": 9, "character": 4}, "end": {"line": 10, "character": 10}},
                     "severity": "error",
                     "rule": "reportAssignmentType",
                     "message": "Type mismatch",
@@ -698,10 +817,18 @@ def test_parse_pyright_json() -> None:
     )
     errors = pyfltr.command.error_parser.parse_errors("pyright", output)
     assert len(errors) == 1
-    assert errors[0].line == 10  # 0-based→1-based
-    assert errors[0].col == 5  # 0-based→1-based
-    assert errors[0].rule == "reportAssignmentType"
-    assert errors[0].severity == "error"
+    assert _diagnostic_fields(errors[0]) == (
+        "src/foo.py",
+        10,
+        5,
+        "pyright",
+        "Type mismatch",
+        "reportAssignmentType",
+        "error",
+        None,
+        11,
+        11,
+    )
 
 
 def test_parse_pyright_json_fallback() -> None:
@@ -709,7 +836,13 @@ def test_parse_pyright_json_fallback() -> None:
     output = '  src/foo.py:10:5 - error: Type "int" is not assignable'
     errors = pyfltr.command.error_parser.parse_errors("pyright", output)
     assert len(errors) == 1
+    assert errors[0].file == "src/foo.py"
     assert errors[0].line == 10
+    assert errors[0].col == 5
+    assert errors[0].command == "pyright"
+    assert errors[0].message == 'Type "int" is not assignable'
+    assert errors[0].end_line is None
+    assert errors[0].end_col is None
 
 
 def test_parse_shellcheck_json() -> None:
@@ -720,6 +853,8 @@ def test_parse_shellcheck_json() -> None:
                 "file": "src/foo.sh",
                 "line": 10,
                 "column": 5,
+                "endLine": 11,
+                "endColumn": 12,
                 "level": "warning",
                 "code": 2086,
                 "message": "Double quote to prevent globbing",
@@ -728,9 +863,176 @@ def test_parse_shellcheck_json() -> None:
     )
     errors = pyfltr.command.error_parser.parse_errors("shellcheck", output)
     assert len(errors) == 1
-    assert errors[0].rule == "SC2086"
-    assert errors[0].severity == "warning"
-    assert errors[0].message == "Double quote to prevent globbing"
+    assert _diagnostic_fields(errors[0]) == (
+        "src/foo.sh",
+        10,
+        5,
+        "shellcheck",
+        "Double quote to prevent globbing",
+        "SC2086",
+        "warning",
+        "none",
+        11,
+        12,
+    )
+
+
+def test_parse_shellcheck_json_fallback() -> None:
+    """shellcheck: JSONでない出力でも既存位置を保ち、終了位置は設定しない。"""
+    output = "src/foo.sh:10:5: warning: Double quote to prevent globbing [SC2086]"
+    errors = pyfltr.command.error_parser.parse_errors("shellcheck", output)
+
+    assert len(errors) == 1
+    assert errors[0].file == "src/foo.sh"
+    assert errors[0].line == 10
+    assert errors[0].col == 5
+    assert errors[0].command == "shellcheck"
+    assert errors[0].message == "Double quote to prevent globbing [SC2086]"
+    assert errors[0].end_line is None
+    assert errors[0].end_col is None
+
+
+@pytest.mark.parametrize(
+    ("command", "output"),
+    [
+        (
+            "ruff-check",
+            json.dumps(
+                [
+                    {"filename": "a.py", "location": {"row": 1, "column": 1}},
+                    {"filename": "b.py", "location": {"row": 1, "column": 1}, "end_location": None},
+                    {
+                        "filename": "c.py",
+                        "location": {"row": 1, "column": 1},
+                        "end_location": {"row": "bad", "column": []},
+                    },
+                ]
+            ),
+        ),
+        (
+            "pylint",
+            json.dumps(
+                {
+                    "messages": [
+                        {"path": "a.py", "line": 1, "column": 0},
+                        {"path": "b.py", "line": 1, "column": 0, "endLine": None, "endColumn": None},
+                        {"path": "c.py", "line": 1, "column": 0, "endLine": "bad", "endColumn": []},
+                    ]
+                }
+            ),
+        ),
+        (
+            "pyright",
+            json.dumps(
+                {
+                    "generalDiagnostics": [
+                        {"file": "a.py", "range": {"start": {"line": 0, "character": 0}}},
+                        {"file": "b.py", "range": {"start": {"line": 0, "character": 0}, "end": None}},
+                        {
+                            "file": "c.py",
+                            "range": {
+                                "start": {"line": 0, "character": 0},
+                                "end": {"line": "bad", "character": []},
+                            },
+                        },
+                    ]
+                }
+            ),
+        ),
+        (
+            "shellcheck",
+            json.dumps(
+                [
+                    {"file": "a.sh", "line": 1, "column": 1},
+                    {"file": "b.sh", "line": 1, "column": 1, "endLine": None, "endColumn": None},
+                    {"file": "c.sh", "line": 1, "column": 1, "endLine": "bad", "endColumn": []},
+                ]
+            ),
+        ),
+        (
+            "eslint",
+            json.dumps(
+                [
+                    {
+                        "filePath": "a.js",
+                        "messages": [
+                            {"line": 1, "column": 1},
+                            {"line": 2, "column": 1, "endLine": None, "endColumn": None},
+                            {"line": 3, "column": 1, "endLine": "bad", "endColumn": []},
+                        ],
+                    }
+                ]
+            ),
+        ),
+        (
+            "semgrep",
+            json.dumps(
+                {
+                    "results": [
+                        {"path": "a.py", "start": {"line": 1, "col": 1}},
+                        {"path": "b.py", "start": {"line": 1, "col": 1}, "end": None},
+                        {"path": "c.py", "start": {"line": 1, "col": 1}, "end": {"line": "bad", "col": []}},
+                    ]
+                }
+            ),
+        ),
+        (
+            "bandit",
+            json.dumps(
+                {
+                    "results": [
+                        {"filename": "a.py", "line_number": 1, "col_offset": 0},
+                        {
+                            "filename": "b.py",
+                            "line_number": 1,
+                            "col_offset": 0,
+                            "line_range": None,
+                            "end_col_offset": None,
+                        },
+                        {
+                            "filename": "c.py",
+                            "line_number": 1,
+                            "col_offset": 0,
+                            "line_range": ["bad"],
+                            "end_col_offset": "bad",
+                        },
+                    ]
+                }
+            ),
+        ),
+        (
+            "sqlfluff",
+            json.dumps(
+                [
+                    {
+                        "filepath": "a.sql",
+                        "violations": [
+                            {"start_line_no": 1, "start_line_pos": 1},
+                            {
+                                "start_line_no": 2,
+                                "start_line_pos": 1,
+                                "end_line_no": None,
+                                "end_line_pos": None,
+                            },
+                            {
+                                "start_line_no": 3,
+                                "start_line_pos": 1,
+                                "end_line_no": "bad",
+                                "end_line_pos": [],
+                            },
+                        ],
+                    }
+                ]
+            ),
+        ),
+    ],
+)
+def test_parse_json_end_position_missing_null_and_invalid(command: str, output: str) -> None:
+    """終了位置の欠落・null・非数値は診断を落とさずNoneへ縮退する。"""
+    errors = pyfltr.command.error_parser.parse_errors(command, output)
+
+    assert len(errors) == 3
+    assert all(error.end_line is None and error.end_col is None for error in errors)
 
 
 def test_parse_textlint_json() -> None:
@@ -3256,7 +3558,7 @@ def test_parse_semgrep_json() -> None:
                     "check_id": "rules.python.security.sql-injection",
                     "path": "src/foo.py",
                     "start": {"line": 18, "col": 9, "offset": 300},
-                    "end": {"line": 18, "col": 82, "offset": 373},
+                    "end": {"line": 19, "col": 82, "offset": 373},
                     "extra": {
                         "severity": "ERROR",
                         "message": "Using variable interpolation could allow SQL injection",
@@ -3275,13 +3577,18 @@ def test_parse_semgrep_json() -> None:
     )
     errors = pyfltr.command.error_parser.parse_errors("semgrep", output)
     assert len(errors) == 2
-    assert errors[0].command == "semgrep"
-    assert errors[0].file == "src/foo.py"
-    assert errors[0].line == 18
-    assert errors[0].col == 9
-    assert errors[0].rule == "rules.python.security.sql-injection"
-    assert errors[0].severity == "error"
-    assert "SQL injection" in errors[0].message
+    assert _diagnostic_fields(errors[0]) == (
+        "src/foo.py",
+        18,
+        9,
+        "semgrep",
+        "Using variable interpolation could allow SQL injection",
+        "rules.python.security.sql-injection",
+        "error",
+        None,
+        19,
+        82,
+    )
     assert errors[1].severity == "warning"
 
 
@@ -3289,6 +3596,31 @@ def test_parse_semgrep_json_empty() -> None:
     """results空・無効JSONはいずれも空リストを返す。"""
     assert pyfltr.command.error_parser.parse_errors("semgrep", json.dumps({"results": [], "errors": []})) == []
     assert pyfltr.command.error_parser.parse_errors("semgrep", "not json") == []
+
+
+def test_parse_semgrep_json_with_progress_output() -> None:
+    """JSON前後に進捗表示が混在してもfindingを保持する。"""
+    payload = json.dumps(
+        {
+            "results": [
+                {
+                    "check_id": "rules.example",
+                    "path": "src/foo.py",
+                    "start": {"line": 1, "col": 1},
+                    "end": {"line": 2, "col": 3},
+                    "extra": {"severity": "ERROR", "message": "Example finding"},
+                }
+            ]
+        }
+    )
+    output = f"Scanning 1 file.\n{payload}\nRan 1 rule on 1 file: 1 finding.\n"
+
+    errors = pyfltr.command.error_parser.parse_errors("semgrep", output)
+
+    assert len(errors) == 1
+    assert errors[0].rule == "rules.example"
+    assert errors[0].end_line == 2
+    assert errors[0].end_col == 3
 
 
 def test_parse_bandit_json() -> None:
@@ -3303,6 +3635,8 @@ def test_parse_bandit_json() -> None:
                     "filename": "src/foo.py",
                     "line_number": 12,
                     "col_offset": 0,
+                    "end_col_offset": 4,
+                    "line_range": [12],
                     "test_id": "B602",
                     "test_name": "subprocess_popen_with_shell_equals_true",
                     "issue_severity": "HIGH",
@@ -3313,6 +3647,8 @@ def test_parse_bandit_json() -> None:
                     "filename": "src/bar.py",
                     "line_number": 3,
                     "col_offset": 4,
+                    "end_col_offset": 12,
+                    "line_range": [3, 4],
                     "test_id": "B105",
                     "test_name": "hardcoded_password_string",
                     "issue_severity": "MEDIUM",
@@ -3323,6 +3659,8 @@ def test_parse_bandit_json() -> None:
                     "filename": "src/baz.py",
                     "line_number": 7,
                     "col_offset": 8,
+                    "end_col_offset": 14,
+                    "line_range": [7],
                     "test_id": "B101",
                     "test_name": "assert_used",
                     "issue_severity": "LOW",
@@ -3334,20 +3672,66 @@ def test_parse_bandit_json() -> None:
     )
     errors = pyfltr.command.error_parser.parse_errors("bandit", output)
     assert len(errors) == 3
-    assert errors[0].command == "bandit"
-    assert errors[0].file == "src/foo.py"
-    assert errors[0].line == 12
-    assert errors[0].col == 0
-    assert errors[0].rule == "B602"
-    assert errors[0].severity == "error"
-    assert "shell=True" in errors[0].message
-    assert "(see https://bandit.readthedocs.io/.../b602.html)" in errors[0].message
+    assert _diagnostic_fields(errors[0]) == (
+        "src/foo.py",
+        12,
+        1,
+        "bandit",
+        "subprocess call with shell=True identified. (see https://bandit.readthedocs.io/.../b602.html)",
+        "B602",
+        "error",
+        None,
+        12,
+        5,
+    )
     assert errors[1].severity == "warning"
     assert errors[1].rule == "B105"
+    assert errors[1].col == 5
+    assert errors[1].end_line == 4
+    assert errors[1].end_col == 13
     assert errors[2].severity == "info"
     assert errors[2].rule == "B101"
     # more_info欠落時はメッセージ末尾に`(see ...)`が付かない
     assert "(see " not in errors[2].message
+
+
+def test_parse_bandit_json_line_range_shapes_and_negative_columns() -> None:
+    """line_rangeの空・単一・複数要素と、負の列オフセットを正規化する。"""
+    output = json.dumps(
+        {
+            "results": [
+                {
+                    "filename": "src/empty.py",
+                    "line_number": 1,
+                    "line_range": [],
+                    "col_offset": -1,
+                    "end_col_offset": -1,
+                },
+                {
+                    "filename": "src/single.py",
+                    "line_number": 2,
+                    "line_range": [2],
+                    "col_offset": 0,
+                    "end_col_offset": 3,
+                },
+                {
+                    "filename": "src/multiple.py",
+                    "line_number": 3,
+                    "line_range": [3, 4, 5],
+                    "col_offset": 2,
+                    "end_col_offset": 8,
+                },
+            ]
+        }
+    )
+
+    errors = pyfltr.command.error_parser.parse_errors("bandit", output)
+
+    assert [(error.col, error.end_line, error.end_col) for error in errors] == [
+        (None, None, None),
+        (1, 2, 4),
+        (3, 5, 9),
+    ]
 
 
 def test_parse_bandit_json_empty() -> None:
@@ -3366,6 +3750,8 @@ def test_parse_sqlfluff_json() -> None:
                     {
                         "start_line_no": 10,
                         "start_line_pos": 5,
+                        "end_line_no": 11,
+                        "end_line_pos": 12,
                         "code": "L001",
                         "name": "layout.trailing_whitespace",
                         "description": "Unnecessary trailing whitespace.",
@@ -3389,12 +3775,18 @@ def test_parse_sqlfluff_json() -> None:
     )
     errors = pyfltr.command.error_parser.parse_errors("sqlfluff", output)
     assert len(errors) == 2
-    assert errors[0].command == "sqlfluff"
-    assert errors[0].file == "src/foo.sql"
-    assert errors[0].line == 10
-    assert errors[0].col == 5
-    assert errors[0].rule == "L001"
-    assert errors[0].severity == "error"
+    assert _diagnostic_fields(errors[0]) == (
+        "src/foo.sql",
+        10,
+        5,
+        "sqlfluff",
+        "Unnecessary trailing whitespace.",
+        "L001",
+        "error",
+        None,
+        11,
+        12,
+    )
     assert errors[1].severity == "warning"
 
 

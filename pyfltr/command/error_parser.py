@@ -22,10 +22,9 @@ class ErrorLocation:
     file: str
     line: int
     col: int | None
-    """違反箇所の列（Noneはツールが列情報を返さない場合）。
+    """診断の開始列。原則として1起点の行内位置である。
 
-    textlintの`column`はノード先頭からの累積位置を返す仕様のため、textlint由来の
-    `col`は累積位置として扱う。他ツールは行内オフセットを返す。
+    textlintは文を切り出すライブラリを用いるルールで行内位置にならない場合がある。
     """
     command: str
     message: str
@@ -48,17 +47,11 @@ class ErrorLocation:
     messages[]要素への個別出力は行わない。
     """
     end_line: int | None = None
-    """違反範囲の終端行（Noneはツールが範囲を返さない場合）。
-
-    textlint v12+の`loc.end.line`とbiomeの`endLine`が値を格納する。
-    終了位置を返す他ツールへも、正規表現へ`end_line`グループを追加するか
-    カスタムパーサーで同フィールドへ格納する形で拡張できる。
-    """
+    """診断範囲の終了行。終了位置を出力するツールで設定される。"""
     end_col: int | None = None
-    """違反範囲の終端列（Noneはツールが範囲を返さない場合）。
+    """診断範囲の終了列。原則として1起点・終端排他の行内位置である。
 
-    textlintの`column`系はノード先頭からの累積位置を返す仕様のため、`col`/`end_col`の
-    双方とも同様の系で出力する。行内オフセットへの正規化はファイル本文の参照を要するため行わない。
+    textlintは文を切り出すライブラリを用いるルールで行内位置にならない場合がある。
     """
 
 
@@ -264,7 +257,8 @@ def _try_json_loads(output: str) -> typing.Any:
     一部ツール（例: pylint）は`PYTHONDEVMODE=1`環境で読み込んだプラグインの
     `DeprecationWarning`などをJSON本体の前にテキストとして出力する。そのままでは
     パースが必ず失敗するため、先頭の`{`または`[`を見つけて、それ以前の
-    不要文字列を除去してから再試行する。
+    不要文字列を除去してから再試行する。JSON本体の後ろに進捗表示が続く場合も、
+    デコーダーが読み取ったJSON部分だけを採用する。
     """
     stripped = output.strip()
     if not stripped:
@@ -273,15 +267,19 @@ def _try_json_loads(output: str) -> typing.Any:
         return json.loads(stripped)
     except json.JSONDecodeError:
         pass
-    # 先頭がJSON以外の行で汚染されているケースを救済する。
-    for start_char in ("{", "["):
-        index = stripped.find(start_char)
-        if index > 0:
-            try:
-                return json.loads(stripped[index:])
-            except json.JSONDecodeError:
-                continue
-    return None
+    # JSON前後が進捗表示で汚染されたケースを救済する。入れ子の開始位置からも
+    # decodeできるため、最も後ろまで読み取れた候補をJSON本体として採用する。
+    decoder = json.JSONDecoder()
+    candidates: list[tuple[int, typing.Any]] = []
+    for match in re.finditer(r"[\{\[]", stripped):
+        try:
+            value, end_index = decoder.raw_decode(stripped[match.start() :])
+        except json.JSONDecodeError:
+            continue
+        candidates.append((match.start() + end_index, value))
+    if not candidates:
+        return None
+    return max(candidates, key=lambda candidate: candidate[0])[1]
 
 
 def _normalize_severity(value: typing.Any) -> str | None:
@@ -316,6 +314,17 @@ def _eslint_severity(value: typing.Any) -> str | None:
     if value == 1:
         return "warning"
     return None
+
+
+def _json_int(value: typing.Any) -> int | None:
+    """JSONの値が整数の場合だけ返す。"""
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _one_based_offset(value: typing.Any) -> int | None:
+    """非負の0起点オフセットを1起点へ変換する。"""
+    offset = _json_int(value)
+    return offset + 1 if offset is not None and offset >= 0 else None
 
 
 _AUDIT_SEVERITY_MAP: dict[str, str] = {
@@ -396,6 +405,8 @@ def _parse_eslint_json(output: str) -> list[ErrorLocation]:
             return None
         raw_col = msg.get("column")
         col = raw_col if isinstance(raw_col, int) else None
+        end_line = _json_int(msg.get("endLine"))
+        end_col = _json_int(msg.get("endColumn"))
         rule_id = str(msg.get("ruleId") or "")
         text = str(msg.get("message", ""))
         message = f"{text} ({rule_id})" if rule_id else text
@@ -414,6 +425,8 @@ def _parse_eslint_json(output: str) -> list[ErrorLocation]:
             severity=_normalize_severity(msg.get("severity")),
             fix=fix_value,
             rule_url=pyfltr.output.rule_urls.build_rule_url("eslint", rule),
+            end_line=end_line,
+            end_col=end_col,
         )
 
     return _parse_file_messages_format(data, _msg_to_location)
@@ -436,6 +449,9 @@ def _parse_ruff_check_json(output: str) -> list[ErrorLocation]:
             continue
         raw_col = loc.get("column")
         col = raw_col if isinstance(raw_col, int) else None
+        end_loc = entry.get("end_location")
+        end_line = _json_int(end_loc.get("row")) if isinstance(end_loc, dict) else None
+        end_col = _json_int(end_loc.get("column")) if isinstance(end_loc, dict) else None
         fix_obj = entry.get("fix")
         # ruffは自動修正情報の有無を明示的に返すツール。`fix`欠落時は
         # 自動修正不可として`"none"`を出力する。
@@ -454,8 +470,18 @@ def _parse_ruff_check_json(output: str) -> list[ErrorLocation]:
                 severity=_normalize_severity(entry.get("severity")) or "error",
                 fix=fix_value,
                 rule_url=pyfltr.output.rule_urls.build_rule_url("ruff-check", rule, existing_url=existing_url),
+                end_line=end_line,
+                end_col=end_col,
             )
         )
+    return results
+
+
+def _parse_pylint_pattern(output: str) -> list[ErrorLocation]:
+    """Pylintのテキスト出力を解析し、0起点列を1起点へ変換する。"""
+    results = _parse_with_pattern("pylint", output, _BUILTIN_PATTERNS["pylint"])
+    for result in results:
+        result.col = _one_based_offset(result.col)
     return results
 
 
@@ -468,10 +494,10 @@ def _parse_pylint_json(output: str) -> list[ErrorLocation]:
     """
     data = _try_json_loads(output)
     if not isinstance(data, dict) or "messages" not in data:
-        return _parse_with_pattern("pylint", output, _BUILTIN_PATTERNS["pylint"])
+        return _parse_pylint_pattern(output)
     messages = data.get("messages", [])
     if not isinstance(messages, list):
-        return _parse_with_pattern("pylint", output, _BUILTIN_PATTERNS["pylint"])
+        return _parse_pylint_pattern(output)
 
     # pylintのmessagesはファイルごとにネストしない平坦な配列のため、直接ループしてErrorLocationを構築する。
     results: list[ErrorLocation] = []
@@ -481,8 +507,9 @@ def _parse_pylint_json(output: str) -> list[ErrorLocation]:
         line = msg.get("line")
         if not isinstance(line, int):
             continue
-        raw_col = msg.get("column")
-        col = raw_col if isinstance(raw_col, int) else None
+        col = _one_based_offset(msg.get("column"))
+        end_line = _json_int(msg.get("endLine"))
+        end_col = _one_based_offset(msg.get("endColumn"))
         msg_type = str(msg.get("type", "")).lower()
         severity = "error" if msg_type in ("error", "fatal") else "warning"
         symbol = str(msg.get("symbol") or "") or None
@@ -503,6 +530,8 @@ def _parse_pylint_json(output: str) -> list[ErrorLocation]:
                 rule=symbol,
                 severity=severity,
                 rule_url=pyfltr.output.rule_urls.build_rule_url("pylint", symbol, category=category),
+                end_line=end_line,
+                end_col=end_col,
             )
         )
     return results
@@ -532,6 +561,9 @@ def _parse_pyright_json(output: str) -> list[ErrorLocation]:
             continue
         raw_char = start.get("character")
         col = (raw_char + 1) if isinstance(raw_char, int) else None
+        end = range_obj.get("end")
+        end_line = _one_based_offset(end.get("line")) if isinstance(end, dict) else None
+        end_col = _one_based_offset(end.get("character")) if isinstance(end, dict) else None
         rule = str(diag.get("rule", "")) or None
         results.append(
             ErrorLocation(
@@ -543,6 +575,8 @@ def _parse_pyright_json(output: str) -> list[ErrorLocation]:
                 rule=rule,
                 severity=_normalize_severity(diag.get("severity")),
                 rule_url=pyfltr.output.rule_urls.build_rule_url("pyright", rule),
+                end_line=end_line,
+                end_col=end_col,
             )
         )
     return results
@@ -562,6 +596,8 @@ def _parse_shellcheck_json(output: str) -> list[ErrorLocation]:
             continue
         raw_col = entry.get("column")
         col = raw_col if isinstance(raw_col, int) else None
+        end_line = _json_int(entry.get("endLine"))
+        end_col = _json_int(entry.get("endColumn"))
         code = entry.get("code")
         rule = f"SC{code}" if isinstance(code, int) else None
         # shellcheckはJSON出力で自動修正情報の有無を明示する。
@@ -577,6 +613,8 @@ def _parse_shellcheck_json(output: str) -> list[ErrorLocation]:
                 severity=_normalize_severity(entry.get("level")),
                 fix=fix_value,
                 rule_url=pyfltr.output.rule_urls.build_rule_url("shellcheck", rule),
+                end_line=end_line,
+                end_col=end_col,
             )
         )
     return results
@@ -883,6 +921,9 @@ def _parse_semgrep_json(output: str) -> list[ErrorLocation]:
             continue
         raw_col = start.get("col")
         col = raw_col if isinstance(raw_col, int) else None
+        end = entry.get("end")
+        end_line = _json_int(end.get("line")) if isinstance(end, dict) else None
+        end_col = _json_int(end.get("col")) if isinstance(end, dict) else None
         extra = entry.get("extra", {}) if isinstance(entry.get("extra"), dict) else {}
         rule = str(entry.get("check_id", "") or "") or None
         results.append(
@@ -894,6 +935,8 @@ def _parse_semgrep_json(output: str) -> list[ErrorLocation]:
                 message=str(extra.get("message", "") or ""),
                 rule=rule,
                 severity=_normalize_severity(extra.get("severity")),
+                end_line=end_line,
+                end_col=end_col,
             )
         )
     return results
@@ -934,8 +977,10 @@ def _parse_bandit_json(output: str) -> list[ErrorLocation]:
         line = entry.get("line_number")
         if not isinstance(line, int):
             continue
-        raw_col = entry.get("col_offset")
-        col = raw_col if isinstance(raw_col, int) else None
+        col = _one_based_offset(entry.get("col_offset"))
+        line_range = entry.get("line_range")
+        end_line = _json_int(line_range[-1]) if isinstance(line_range, list) and line_range else None
+        end_col = _one_based_offset(entry.get("end_col_offset"))
         message = str(entry.get("issue_text", "") or "")
         more_info = entry.get("more_info")
         if isinstance(more_info, str) and more_info:
@@ -950,6 +995,8 @@ def _parse_bandit_json(output: str) -> list[ErrorLocation]:
                 message=message,
                 rule=rule,
                 severity=_normalize_severity(entry.get("issue_severity")),
+                end_line=end_line,
+                end_col=end_col,
             )
         )
     return results
@@ -997,6 +1044,8 @@ def _parse_sqlfluff_json(output: str) -> list[ErrorLocation]:
                 continue
             raw_col = violation.get("start_line_pos")
             col = raw_col if isinstance(raw_col, int) else None
+            end_line = _json_int(violation.get("end_line_no"))
+            end_col = _json_int(violation.get("end_line_pos"))
             rule = str(violation.get("code", "") or "") or None
             severity = "warning" if violation.get("warning") else "error"
             results.append(
@@ -1008,6 +1057,8 @@ def _parse_sqlfluff_json(output: str) -> list[ErrorLocation]:
                     message=str(violation.get("description", "") or ""),
                     rule=rule,
                     severity=severity,
+                    end_line=end_line,
+                    end_col=end_col,
                 )
             )
     return results
