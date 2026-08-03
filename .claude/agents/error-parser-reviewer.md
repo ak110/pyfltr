@@ -34,9 +34,21 @@ tools: Read, Grep, Glob, Bash
 
 2. 対象ツール全てに検体を渡す
    - 影響範囲が局所的でも、退行検知のため全ツールを対象とする
-   - 各ツールについて、エラーを発生させる `.py` / `.md` ファイルを `/tmp` に作成
-   - `uv run <tool> /tmp/<file>` 等で実行し、stdout/stderrを取得
+   - 各ツールについて、エラーを発生させる `.py` / `.md` ファイルを作業用の一時ディレクトリに作成する
+   - 次のコマンドで出力保存先を作成し、検体を実行する
+
+     ```sh
+     run_log="$(mktemp)"
+     uv run pyfltr run --enable=<tool> --commands=<tool> --output-format=jsonl --allow-external-paths <検体パス> | tee "$run_log"
+     printf 'run_log=%s\n' "$run_log"
+     ```
+
+   - JSON Lines全体を保存し、`header`レコード（`{"kind": "header", "run_id": "..."}`形式）の`run_id`を記録する。`head`等で先頭行だけを読むパイプは、後続レコードの保存を打ち切るため使わない
+   - 並行実行時に別のpyfltr実行がrun IDを奪う可能性があるため、`latest`を使わず記録済みrun IDを明示的に指定する
+   - `uv run pyfltr show-run <run_id> --commands=<tool> --output --output-format=text`へ記録済みrun IDを明示し、JSON Linesの`output`レコードへラップされていない当該ツールの生出力全文を取得する
+   - 実行アーカイブには生出力（`output.log`）に加えて現行実装の解析結果（`diagnostics.jsonl`）と実際の起動コマンドライン（`tool.json`）が保存される。三者を突き合わせて照合する
    - 取得した出力を `pyfltr/command/error_parser.py` の正規表現と手動で照合
+   - 対応ツールを直接起動して検体を収集してはならない。pyfltrは構造化出力引数を注入し、stderrをstdoutへ統合したうえでパーサーへ渡すため、直接起動で得た出力はパーサーが実際に受け取る入力と一致しない。`AGENTS.md`「開発手順」章の直接起動禁止規定にも反する
 
 3. 変更前後の同一検体での比較
    - 手順2で取得した出力を検体としてファイルへ保存する
@@ -77,6 +89,12 @@ tools: Read, Grep, Glob, Bash
 
 形態8は`COLUMNS`の桁数が偶数の場合と奇数の場合の双方を生成する。
 例外の連鎖の区切り行は末尾の文字が桁数の偶奇で変わるため、片方の桁数だけでは区切り行の判定漏れを検出できない。
+
+- `--tb=auto` 形態は `pytest-tb-line` が既定で有効なため `--pytest-args` では得られない。
+  `pyproject.toml` の `[tool.pyfltr]` へ `pytest-tb-line = false` を一時的に指定して実行し、
+  確認後に設定を元へ戻す
+- `COLUMNS` を80未満とする形態は、pyfltrが端末幅を80以上128以下へクランプするため再現できない。
+  当該形態は照合対象から外す
 
 形態11は次の派生をすべて生成する。既定の形式はエントリー数により出力の構造が変わる。
 
