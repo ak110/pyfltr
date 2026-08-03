@@ -267,13 +267,13 @@ def test_parse_errors_biome_col_does_not_match_parameter_suffix() -> None:
     assert pyfltr.command.error_parser.parse_errors("biome", output) == []
 
 
-def test_parse_errors_ty_rule_and_url() -> None:
-    """tyのrule識別子とドキュメントURLを抽出し、messageは診断本文のみとする。"""
+def test_parse_errors_ty_rule_without_url() -> None:
+    """tyのrule識別子を抽出し、messageは診断本文のみとする。URLは生成しない。"""
     output = "src/foo.py:10:5: error[invalid-argument-type] Argument is incorrect\n"
     errors = pyfltr.command.error_parser.parse_errors("ty", output)
     assert len(errors) == 1
     assert errors[0].rule == "invalid-argument-type"
-    assert errors[0].rule_url == "https://docs.astral.sh/ty/reference/rules/#invalid-argument-type"
+    assert errors[0].rule_url is None
     assert errors[0].severity == "error"
     assert errors[0].message == "Argument is incorrect"
 
@@ -296,8 +296,9 @@ def test_parse_errors_ty_info_severity() -> None:
     assert errors[0].rule == "revealed-type"
     assert errors[0].severity == "info"
     assert errors[0].message == "Revealed type: `int`"
-    # URL生成経路がseverityに依らないことを固定する。
-    assert errors[0].rule_url == "https://docs.astral.sh/ty/reference/rules/#revealed-type"
+    # `revealed-type`はtyのルールに当たらずドキュメントのアンカーを持たない。
+    # 識別子の字面からルールと区別できないため、tyはURLを生成しない。
+    assert errors[0].rule_url is None
 
 
 def test_parse_errors_ty_message_starting_with_info_keeps_severity() -> None:

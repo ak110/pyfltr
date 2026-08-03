@@ -79,10 +79,12 @@ def test_build_rule_url_biome_without_category_hierarchy() -> None:
     assert pyfltr.output.rule_urls.build_rule_url("biome", "parse") is None
 
 
-def test_build_rule_url_ty() -> None:
-    """tyはルール一覧ページのアンカーへ解決する。"""
-    url = pyfltr.output.rule_urls.build_rule_url("ty", "invalid-argument-type")
-    assert url == "https://docs.astral.sh/ty/reference/rules/#invalid-argument-type"
+def test_build_rule_url_ty_unsupported() -> None:
+    """tyはルールでない診断コードを識別子の字面から区別できないため未サポート。"""
+    # ルールに当たる識別子でもURLを返さない。`revealed-type`のようなルールでない
+    # 診断コードへ存在しないアンカーを与えないことを優先する。
+    assert pyfltr.output.rule_urls.build_rule_url("ty", "invalid-argument-type") is None
+    assert pyfltr.output.rule_urls.build_rule_url("ty", "revealed-type") is None
 
 
 def test_build_rule_url_actionlint_unsupported() -> None:

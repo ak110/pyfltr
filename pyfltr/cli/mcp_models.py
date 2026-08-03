@@ -41,13 +41,14 @@ class DiagnosticMessageModel(pydantic.BaseModel):
     col: int | None = pydantic.Field(default=None, description="列番号。")
     end_line: int | None = pydantic.Field(
         default=None,
-        description="違反範囲の終端行。範囲を返すツール（現状textlintのみ）で設定される。",
+        description="違反範囲の終端行。範囲を返すツール（現状textlintとbiome）で設定される。",
     )
     end_col: int | None = pydantic.Field(
         default=None,
         description=(
-            "違反範囲の終端列。範囲を返すツール（現状textlintのみ）で設定される。"
+            "違反範囲の終端列。範囲を返すツール（現状textlintとbiome）で設定される。"
             "textlintはノード先頭からの累積位置を返す仕様で、行内オフセットではない。"
+            "biomeは行内オフセットを返す。"
         ),
     )
     rule: str | None = pydantic.Field(default=None, description="ルール識別子。")
