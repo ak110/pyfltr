@@ -1,6 +1,7 @@
 """UI関連のテストコード。"""
 
 import argparse
+import inspect
 import unittest.mock
 
 import pyfltr.command.core_
@@ -251,7 +252,24 @@ def test_tester_failure_writes_raw_output_in_addition_to_diagnostics(monkeypatch
     app = pyfltr.output.ui.UIApp(["pytest"], args, base_ctx)
 
     written: list[tuple[str, str]] = []
-    monkeypatch.setattr(app, "call_from_thread", lambda fn, *a, **kw: fn(*a, **kw))
+
+    def _call_from_thread(fn, *a, **kw):
+        """Textualの`call_from_thread`は戻り値がawaitableなら実行する。
+
+        同期呼び出しへ差し替えるだけではコルーチンがawaitされないまま破棄され、
+        `RuntimeWarning: coroutine ... was never awaited`となる。
+        本テストは戻り値を参照しないため、生成されたコルーチンを閉じて破棄する。
+        `inspect.isawaitable`の判定対象は`Awaitable`であり`close`を持たない型を含むため、
+        型検査を通過しない。`close`を持つ`Coroutine`を判定対象とする
+        `inspect.iscoroutine`を使う。
+        """
+        result = fn(*a, **kw)
+        if inspect.iscoroutine(result):
+            result.close()
+            return None
+        return result
+
+    monkeypatch.setattr(app, "call_from_thread", _call_from_thread)
     monkeypatch.setattr(app, "_write_log", lambda log_id, text: written.append((log_id, text)))
 
     error = pyfltr.command.error_parser.ErrorLocation(

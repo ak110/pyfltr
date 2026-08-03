@@ -2558,7 +2558,7 @@ def _spawn_parent_with_child(script: str) -> tuple[subprocess.Popen[str], int, i
     """
     # pylint: disable=consider-using-with
     # テスト対象の`active_processes`へ外から登録するため、`with`構文では
-    # スコープ外でprocを扱えない。各テストのfinallyで解放する。
+    # スコープ外でprocを扱えない。各テストのfinallyでprocとstdoutを解放する。
     proc = subprocess.Popen(
         [sys.executable, "-u", "-c", script],
         stdout=subprocess.PIPE,
@@ -2645,6 +2645,10 @@ def test_terminate_active_processes_kills_grandchild() -> None:
             with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
                 os.killpg(os.getpgid(proc.pid), 9)  # type: ignore[attr-defined,unused-ignore]  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore  # pylint: disable=no-member
         proc.wait(timeout=2.0)
+        # Popen.wait()はパイプを閉じないため、stdoutを明示的に閉じる。
+        # 閉じないとGC時にFileIOが未クローズのままfinalizeされResourceWarningとなる。
+        if proc.stdout is not None:
+            proc.stdout.close()
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX 前提の killpg 経路を検証する")
@@ -2687,6 +2691,9 @@ def test_terminate_active_processes_parent_exited_grandchild_remains() -> None:
         if psutil.pid_exists(child_pid):
             with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
                 os.kill(child_pid, 9)
+        # Popen.wait()はパイプを閉じないため、stdoutを明示的に閉じる。
+        if proc.stdout is not None:
+            proc.stdout.close()
 
 
 def _make_glab_ci_lint_args() -> argparse.Namespace:

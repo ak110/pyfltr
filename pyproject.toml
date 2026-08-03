@@ -278,6 +278,14 @@ xfail_strict = true
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
+# リソース解放漏れの検出。GC時のResourceWarningはunraisableexceptionプラグインが
+# PytestUnraisableExceptionWarningへ包み直すため、両方をエラー化しないと失敗しない。
+# RuntimeWarningは未awaitのコルーチンを検出する。当該の警告は包み直されないため個別に要する。
+filterwarnings = [
+    "error::ResourceWarning",
+    "error::pytest.PytestUnraisableExceptionWarning",
+    "error::RuntimeWarning",
+]
 markers = [
     "smoke: 対応ツール群を実起動して終了確認するスモークテスト。pnpm 11のような外部ツール側の既定変更検知が目的。",
 ]

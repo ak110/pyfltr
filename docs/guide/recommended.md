@@ -143,6 +143,11 @@ xfail_strict = true
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
+filterwarnings = [
+    "error::ResourceWarning",
+    "error::pytest.PytestUnraisableExceptionWarning",
+    "error::RuntimeWarning",
+]
 ```
 
 `[tool.mypy]`のうち`ignore_missing_imports`と`allow_redefinition`は検査を緩和する指定である。
@@ -178,6 +183,21 @@ pytestは組み込みプラグインを読み込むかどうかをコマンド�
 `cache` fixtureを要求するテストは、`addopts`へ書いた場合は`AttributeError`で、
 コマンドラインで渡した場合はfixture不存在で、いずれも失敗する。
 これらを利用する場合は当該指定を外す。
+
+`filterwarnings`の3件はテストの資源解放漏れを検出する指定である。
+ファイルやソケットを閉じないままGCされると`ResourceWarning`が発生する。
+ただしpytestのunraisableexceptionプラグインが`PytestUnraisableExceptionWarning`へ
+包み直すため、`ResourceWarning`だけをエラー化してもテストは失敗しない。
+両方をエラー化して初めて当該のテストが失敗する。
+`RuntimeWarning`はawaitされないまま破棄されたコルーチンを検出する。
+当該の警告は包み直されないため、前2件とは別に指定する。
+全警告をエラー化する`filterwarnings = ["error"]`でも検出できるが、
+外部ライブラリの`DeprecationWarning`まで失敗へ変えるため、除外エントリの継続的な保守を要する。
+上記の3件へ限定すると、エラー化の対象は資源解放と非同期呼び出しの取りこぼしに限られる。
+依存ライブラリが同じ3カテゴリの警告を送出する場合は当該のテストも失敗する。
+導入時はまず全件を実行し、失敗するテストの警告の発生元を確認する。
+自プロジェクトの解放漏れはテスト側の資源解放で是正し、
+依存ライブラリ由来のものは`ignore`エントリで個別に除外する。
 
 `--timeout=60`は`pytest-timeout`プラグインが必要。
 値60は個々のテストが1分以内に完了する前提に基づく。
