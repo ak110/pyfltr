@@ -163,8 +163,11 @@ pytest-asyncioの既定（それぞれfixtureスコープ・functionスコープ
 同一worker内では割り当てられたテストが1つのevent loopを共有し、
 loopを閉じるテストや解放されない非同期資源は同じworkerの後続テストへ波及する。
 テスト間の独立性を優先する場合は、両設定へ`"function"`を明示指定する。
-`asyncio_default_fixture_loop_scope`は未設定にすると非推奨警告が出るため、
-設定を削除せず値を変更する。
+`asyncio_default_fixture_loop_scope`を未設定にすると、pytest-asyncioが非推奨警告を送出する。
+この警告が表示されるかはpytest本体の版で決まり、pytest 8.3.5では表示され、8.4.0以降は表示されない。
+pytestがconfig段階の警告収集コンテキストを`record=False`で開くためである。
+コマンドラインの`-W always`では復活せず、環境変数`PYTHONWARNINGS=always`を与えた場合のみ表示される。
+警告の送出自体は版によらず続くため、設定を削除せず値を変更する。
 
 `-p no:cacheprovider`はpytestのcacheproviderプラグインを無効化する。
 このプラグインは`--lf`・`--ff`・`--nf`・`--lfnf`・`--cache-show`・`--cache-clear`の各オプションと、
@@ -330,6 +333,10 @@ colloquial-check = true
 ## .pre-commit-config.yaml
 
 ```yaml
+default_language_version:
+  python: python3.12
+
+repos:
   - repo: local
     hooks:
       - id: pyfltr
@@ -340,9 +347,13 @@ colloquial-check = true
         language: system
 ```
 
-注意: `default_language_version`にはプロジェクトが要求するPythonバージョンを指定する。
-PEP 695型パラメーター構文（`def f[T](): ...`）を使用するプロジェクトではPython 3.12以上が必要。
-バージョンが不一致だと`check-ast`や`debug-statements`フックがSyntaxErrorで失敗する。
+注意: 上記の`default_language_version`にはプロジェクトが要求するPythonバージョンを指定する。
+PEP 695型パラメーター構文（`def f[T](): ...`）を使用するプロジェクトではPython 3.12以上が必要となる。
+指定した版が古いと、`check-ast`や`debug-statements`などPythonで実装されたフックがSyntaxErrorで失敗する。
+失敗の形は指定版がローカルへ導入済みかで分かれる。
+導入済みの場合はprek・pre-commitとも`SyntaxError: expected '('`となり終了コード1で終わる。
+未導入の場合、prekは当該版を自動取得したうえで同じSyntaxErrorとなるが、
+pre-commitはフックの実行前に`failed to find interpreter`で終了コード3となる。
 
 ポイント。
 
@@ -822,12 +833,16 @@ pyfltr:
     - Merge Request画面のCode Quality widget（全tier）とMR diffインライン表示（Ultimate tier）に反映される
 - `when: always`: ジョブが失敗してもアーティファクトを残す指定
     - lintエラーで`exit 1`したときもレポートを取り込めるようにする
-- `image: ghcr.io/astral-sh/uv:python3.13-bookworm`: Node.js・pnpmを含まないため、
-  JavaScript系以外のツールの扱いに注意する
+- `image: ghcr.io/astral-sh/uv:python3.13-bookworm`: Node.js・pnpm・miseのいずれも含まないため、
+  Python以外のツールの扱いに注意する
     - `textlint`・`markdownlint`は言語カテゴリゲートの対象外で、`preset`を指定すると有効になる
     - `js-runner`の既定値`pnpx`はPATH上の解決だけを試み、miseへのフォールバックを持たない
-    - Markdownを含むリポジトリでは起動に失敗してジョブが`exit 1`となるため、
-    `before_script`でNode.jsとpnpmを導入するか、当該ツールを`false`に設定する
+    - Markdownを含むリポジトリでは`pnpx`が見つからず、当該ツールは終了コード127の`failed`となる
+    （解決失敗ではないため`{command}-severity = "warning"`で警告へ格下げできる）
+    - 当該イメージはmiseも含まないため、既定で有効な`lychee`はbin-runnerでの解決に失敗し
+    `resolution_failed`となる。解決失敗は`{command}-severity`による格下げの対象外のため、
+    `markdownlint`・`textlint`を`false`にしてもジョブは`exit 1`のままとなる
+    - `before_script`でNode.js・pnpm・miseを導入するか、`lychee`を含む該当ツールを`false`に設定する
 
 ---
 

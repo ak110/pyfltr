@@ -100,7 +100,7 @@ import pyfltr.command.error_parser
             "src/bar.ts",
             5,
         ),
-        # biome --reporter=github (notice = info)。unsafe fix提案はnoticeとして出力される
+        # biome --reporter=github (notice = info)。severity infoのルールがnoticeとして出力される
         (
             "biome",
             "::notice title=lint/complexity/useLiteralKeys,file=src/baz.ts,"
@@ -154,8 +154,9 @@ def test_parse_errors(
 def test_parse_errors_biome_severity(raw_severity: str, expected_severity: str) -> None:
     """biome `--reporter=github`のseverity（error/warning/notice）を3値モデルへ正規化する。
 
-    `::notice`はbiomeがunsafe fix適用可能な診断に付与するseverityで、pyfltr側ではinfoとして公開する。
-    あわせてmessage本文（unsafe fix提案文を含む）が欠落せず保持されることを全ケースで確認する。
+    `::notice`はbiomeがseverity infoの診断へ用いる出力形式で、pyfltr側ではinfoとして公開する。
+    severityは各ルールの既定値で決まり、fixのsafe/unsafeとは独立である。
+    あわせてmessage本文が欠落せず保持されることを全ケースで確認する。
     """
     message_text = "Use a literal key instead."
     output = (

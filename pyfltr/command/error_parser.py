@@ -212,7 +212,8 @@ _BUILTIN_PATTERNS: dict[str, str] = {
     # biome --reporter=github出力例（実機確認済み、lineとcolの間にendLineが介在する）:
     # ::error title=lint/suspicious/noDoubleEquals,file=src/foo.ts,line=1,endLine=1,col=7,endColumn=9::Use === instead of ==
     # [^:]*?で順序非依存かつ`::`終端を跨がないようマッチする。
-    # biomeはunsafe fix可能なinfo診断を`::notice`として出力する。pyfltr側ではinfoとして公開し、
+    # severity infoの診断は`::notice`として出力される。severityは各ルールの既定値で決まり、
+    # fixのsafe/unsafeとは独立である。pyfltr側ではinfoとして公開し、
     # CIの失敗扱いには昇格させない（biome公式設計でinfoは終了コードに影響しない）。
     "biome": (
         r"::(?P<severity>error|warning|notice)\s+[^:]*?file=(?P<file>[^,]+)"

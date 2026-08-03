@@ -244,7 +244,8 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # compactフォーマッタが存在しないため、--format compactを共通argsに含めるとfixが失敗する。
     "textlint-args": [],
     # 非fixモード（およびfixモードの後段lintチェック）でのみ付与する引数。
-    # 既定はcompactフォーマッタ指定（builtinパーサがcompact出力をパースする前提のため）。
+    # 既定はcompactフォーマッタ指定。ただし既定で有効なtextlint-jsonが--format jsonを
+    # 注入して既存の--format指定を除去するため、既定構成ではこの値は実効しない。
     "textlint-lint-args": ["--format", "compact"],
     # textlint向けルール / プリセットパッケージの列挙。pnpx / npxモードでは
     # --package / -p展開される。pnpm / npm / yarn / directモードでは
@@ -321,7 +322,8 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "biome-fast": True,
     # fixモード時に通常argsの後に追加する引数。
     # ruffの`--unsafe-fixes`採用方針と揃え、safe/unsafe両方のfixを自動適用する。
-    # unsafe fix適用可能な診断はbiomeが`::notice`（info）として出力するが、
+    # biomeのseverityは各ルールの既定値で決まり、fixのsafe/unsafeとは独立である。
+    # severity infoの診断は`::notice`として出力されるが、
     # biome公式設計でinfoは終了コードに影響しない。
     # 個別ルールをCIの失敗対象に変更したい場合は`biome.json`の`linter.rules.*`で
     # severityを上げる（pyfltr側はinfoを失敗扱いに昇格させない）。

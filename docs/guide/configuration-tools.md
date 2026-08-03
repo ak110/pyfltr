@@ -424,18 +424,24 @@ js-runner = "pnpm"
 textlint-path = "textlint"
 # 共通引数 (lint/fix 両モードで付与)
 textlint-args = []
-# lint モード専用の引数 (既定で --format=compact。builtin パーサが compact 出力を想定している)
+# lint モード専用の引数 (既定値は ["--format", "compact"]。ただし textlint-json = true の間は
+# --format json へ差し替わるため、この既定値は実効しない)
 textlint-lint-args = ["--format", "compact"]
 ```
 
+`textlint-lint-args`の既定値は`["--format", "compact"]`だが、既定で有効な`textlint-json`設定が
+lint段へ`--format json`を注入し、既存の`--format`指定を除去する。
+このため既定の構成ではcompactではなくJSON出力が使われ、pyfltrはJSONを解析して違反を取得する。
+compact出力を使う場合は`textlint-json = false`を設定する。
+
 textlintのfix実行 (`textlint --fix`) では `@textlint/fixer-formatter` が使われ、`compact` フォーマッタを解決できない。
-このため `--format=compact` は `textlint-args`（共通）ではなく `textlint-lint-args`（lintモード専用）に分離している。
+このため `--format` 指定は `textlint-args`（共通）ではなく `textlint-lint-args`（lintモード専用）に分離している。
 
 fix段では、pyfltrはtextlintを2段階で実行する（fix適用 → lintチェック）ため、
-残存違反はcompact形式で正しく取得される。
+残存違反は後段のlintチェックで取得される。
 `textlint-args`（共通）に `--format` ペアを書いた場合、pyfltrはfixステップの起動コマンドから
 `--format` ペアを自動除去するためクラッシュしない。
-`--format=compact` は `textlint-lint-args`（lintモード専用）に書くことを推奨する。
+`--format` 指定は `textlint-lint-args`（lintモード専用）に書くことを推奨する。
 
 ### prettier の 2 段階実行
 
@@ -523,7 +529,8 @@ javascript = true
 必要に応じて上書きできる。
 
 - eslint:
-    - `eslint-args = ["--format", "json"]`（lint / fix両モードで有効にするため共通argsに配置）
+    - `eslint-args = []`（既定は空。`--format json`は`eslint-json`設定（既定`true`）が
+      lint / fix両モードへ注入する）
     - `eslint-fix-args = ["--fix"]`
     - 注: ESLint 9系以降で`compact` / `unix` / `tap`等のコアフォーマッタは除去されたため、コア標準の`json`を採用している
     - `eslint-args`を上書きする際は非コアフォーマッタを使わないこと
@@ -531,14 +538,24 @@ javascript = true
     - `prettier-check-args = ["--check"]` / `prettier-write-args = ["--write"]`
     - 2段階実行の詳細は「prettierの2段階実行」を参照
 - biome:
-    - `biome-args = ["check", "--reporter=github"]`（`check`サブコマンドと機械可読出力を共通argsで常時適用）
+    - `biome-args = ["check"]`（`check`サブコマンドを共通argsで常時適用。
+      `--reporter=github`は`biome-json`設定（既定`true`）が注入する）
     - `biome-fix-args = ["--write", "--unsafe"]`（ruffの`--unsafe-fixes`採用方針に準拠）
     - safe fixのみに戻したい場合は`biome-fix-args = ["--write"]`に上書き
-    - 注: `biome-args`の先頭からサブコマンド（`check` / `lint` / `format`）を外すとbiomeがhelp表示で失敗する。
-      必ずサブコマンド名を残すこと
-    - 注: unsafe fix適用可能な診断はbiomeが`::notice`（info）として出力する。
+    - 注: `biome-args`の先頭からサブコマンド（`check` / `lint` / `format`）を外すと、
+      biomeは`Error: flag --reporter is not valid in this context`をstderrへ出力し、
+      終了コード1で失敗する。
+      引数が完全に空の場合はヘルプ本文を表示して終了コード0を返すが、
+      pyfltrは対象ファイルを必ず末尾へ付与するためその形にはならない。
+      いずれも検査は行われないため、必ずサブコマンド名を残すこと
+    - 注: biomeの診断severityは各ルールの既定値で決まり、fixのsafe / unsafeとは独立である。
+      `useLiteralKeys`はunsafe fixを持つがinfo、`noDoubleEquals`はunsafe fixを持つがerror、
+      `organizeImports`はsafe fixを持つがerrorとなる。
+      `--reporter=github`ではinfoの診断が`::notice`として出力され、
       pyfltrの出力（JSONL・github-annotations等）にもinfoとして反映する。
-      biome公式設計でinfoは終了コードに影響しないため、CIの失敗扱いにはならない。
+      [biome公式ドキュメント](https://biomejs.dev/linter/)のとおり、infoは`--error-on-warnings`を
+      渡しても終了コードに影響しないためCIの失敗扱いにはならない。
+      `--diagnostic-level`は表示対象の限定のみに作用し、コマンドラインからinfoを昇格させる手段は無い。
       個別ルールをCIの失敗対象に変更したい場合は`biome.json`の`linter.rules.*`でseverityを上げる
 
 ### oxlint / tsc / vitest
