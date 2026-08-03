@@ -236,7 +236,9 @@ class ReplaceUndoModel(pydantic.BaseModel):
 class ReplaceHistoryFileModel(pydantic.BaseModel):
     """replace履歴の対象ファイル1件分。"""
 
-    file: str = pydantic.Field(description="対象ファイルパス。")
+    file: str = pydantic.Field(
+        description="対象ファイルパス。区切りは保存時に`/`へ統一するため、Windowsでも`C:/...`形式となる。"
+    )
     records_count: int = pydantic.Field(description="当該ファイルの置換件数。")
 
 

@@ -1319,7 +1319,9 @@ async def test_tool_replace_history_lists_and_shows_without_file_contents(tmp_pa
     assert listed.action == "list"
     assert len(listed.entries) == 1
     assert listed.entries[0].replace_id == replaced.replace_id
-    assert listed.entries[0].files[0].file == str(target)
+    # 履歴の`file`は保存時に区切りを`/`へ統一した表現である。
+    # Windowsでも`C:/...`形式になるため、`as_posix()`での文字列比較で一致を検証する。
+    assert listed.entries[0].files[0].file == target.as_posix()
     assert listed.entries[0].files[0].records_count == 1
 
     shown = await pyfltr.cli.mcp_server.tool_replace_history(action="show", replace_id=replaced.replace_id)
