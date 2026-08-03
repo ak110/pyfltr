@@ -21,6 +21,7 @@ import pyfltr.grep_.matcher
 import pyfltr.grep_.replacer
 import pyfltr.grep_.scanner
 import pyfltr.grep_.text_render
+import pyfltr.paths
 import pyfltr.warnings_
 from pyfltr.grep_.types import ReplaceCommandMeta
 
@@ -316,7 +317,7 @@ def execute_replace(parser: argparse.ArgumentParser, args: argparse.Namespace) -
                     pyfltr.grep_.text_render.render_change_diff(record)
         else:  # json
             entry: dict[str, typing.Any] = {
-                "file": str(file),
+                "file": pyfltr.paths.normalize_separators(file),
                 "count": count,
                 "before_hash": before_hash,
                 "after_hash": after_hash,
@@ -552,8 +553,8 @@ def _execute_undo(parser: argparse.ArgumentParser, args: argparse.Namespace, out
         pyfltr.cli.grep_replace_common.print_json(
             {
                 "replace_id": replace_id,
-                "restored": [str(p) for p in restored],
-                "skipped": [str(p) for p in skipped],
+                "restored": [pyfltr.paths.normalize_separators(p) for p in restored],
+                "skipped": [pyfltr.paths.normalize_separators(p) for p in skipped],
                 "exit": exit_code,
             },
             args.output_file,

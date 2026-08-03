@@ -41,12 +41,12 @@ class DiagnosticMessageModel(pydantic.BaseModel):
     col: int | None = pydantic.Field(default=None, description="列番号。")
     end_line: int | None = pydantic.Field(
         default=None,
-        description="違反範囲の終端行。範囲を返すツール（現状textlintとbiome）で設定される。",
+        description="診断範囲の終了行。終了位置を出力するツールで設定される。",
     )
     end_col: int | None = pydantic.Field(
         default=None,
         description=(
-            "違反範囲の終端列。範囲を返すツール（現状textlintとbiome）で設定される。"
+            "診断範囲の終了列。終了位置を出力するツールで設定される。"
             "textlintはノード先頭からの累積位置を返す仕様で、行内オフセットではない。"
             "biomeは行内オフセットを返す。"
         ),
@@ -128,7 +128,9 @@ class RunForAgentResult(pydantic.BaseModel):
 class GrepMatchModel(pydantic.BaseModel):
     """`grep`ツールの1マッチ分。"""
 
-    file: str = pydantic.Field(description="マッチを検出したファイルパス。")
+    file: str = pydantic.Field(
+        description="マッチを検出したファイルパス。区切りは`/`へ統一するため、Windowsでも`C:/...`形式となる。"
+    )
     line: int = pydantic.Field(description="マッチ開始行番号（1-origin）。")
     col: int = pydantic.Field(description="マッチ開始列番号（1-origin、文字単位）。")
     end_col: int | None = pydantic.Field(default=None, description="マッチ終了列番号（1-origin）。")
@@ -141,7 +143,7 @@ class GrepMatchModel(pydantic.BaseModel):
 class GrepFileCountModel(pydantic.BaseModel):
     """`grep`の集計モード`count`の1ファイル分。"""
 
-    file: str = pydantic.Field(description="対象ファイルパス。")
+    file: str = pydantic.Field(description="対象ファイルパス。区切りは`/`へ統一するため、Windowsでも`C:/...`形式となる。")
     count: int = pydantic.Field(description="当該ファイルのマッチ件数。")
 
 
@@ -166,7 +168,7 @@ class GrepResultModel(pydantic.BaseModel):
     )
     files_with_matches: list[str] = pydantic.Field(
         default_factory=list,
-        description='`summary_mode="files_with_matches"`時のマッチを含むファイル一覧。',
+        description=('`summary_mode="files_with_matches"`時のマッチを含むファイル一覧。区切りは`/`へ統一する。'),
     )
     file_counts: list[GrepFileCountModel] = pydantic.Field(
         default_factory=list,
@@ -174,14 +176,14 @@ class GrepResultModel(pydantic.BaseModel):
     )
     files_without_match: list[str] = pydantic.Field(
         default_factory=list,
-        description='`summary_mode="files_without_match"`時のマッチを含まないファイル一覧。',
+        description=('`summary_mode="files_without_match"`時のマッチを含まないファイル一覧。区切りは`/`へ統一する。'),
     )
 
 
 class ReplaceFileChangeModel(pydantic.BaseModel):
     """`replace`ツールの1ファイル変更分。"""
 
-    file: str = pydantic.Field(description="変更対象ファイルパス。")
+    file: str = pydantic.Field(description="変更対象ファイルパス。区切りは`/`へ統一するため、Windowsでも`C:/...`形式となる。")
     count: int = pydantic.Field(description="置換箇所数。")
     before_hash: str | None = pydantic.Field(default=None, description="変更前内容のSHA-256ハッシュ。")
     after_hash: str | None = pydantic.Field(default=None, description="変更後内容のSHA-256ハッシュ。")
@@ -190,7 +192,7 @@ class ReplaceFileChangeModel(pydantic.BaseModel):
 class ReplaceChangeRecordModel(pydantic.BaseModel):
     """`replace`ツールの1置換箇所。`show_changes=True`時に`ReplaceResultModel.changes`へ含まれる。"""
 
-    file: str = pydantic.Field(description="対象ファイルパス。")
+    file: str = pydantic.Field(description="対象ファイルパス。区切りは`/`へ統一するため、Windowsでも`C:/...`形式となる。")
     line: int = pydantic.Field(description="置換対象行番号（1-origin）。")
     col: int = pydantic.Field(description="置換開始列番号（1-origin）。")
     before_line: str = pydantic.Field(description="置換前の行本文。")
@@ -227,9 +229,9 @@ class ReplaceUndoModel(pydantic.BaseModel):
     """`replace_undo`ツールの戻り値。"""
 
     replace_id: str = pydantic.Field(description="undo対象のreplace識別子（ULID）。")
-    restored: list[str] = pydantic.Field(description="復元に成功したファイルパスの一覧。")
+    restored: list[str] = pydantic.Field(description="復元に成功したファイルパスの一覧。区切りは`/`へ統一する。")
     skipped: list[str] = pydantic.Field(
-        description="ハッシュ不一致でスキップされたファイルパスの一覧（force=False時）。",
+        description="ハッシュ不一致でスキップされたファイルパスの一覧（force=False時）。区切りは`/`へ統一する。",
     )
     exit_code: int = pydantic.Field(description="終了コード。skippedあり=1、全件復元=0。")
 

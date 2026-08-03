@@ -11,6 +11,7 @@ import typing
 
 import pyfltr.command.targets
 import pyfltr.config.config
+import pyfltr.paths
 import pyfltr.warnings_
 from pyfltr.command.core_ import CommandResult, ExecutionContext
 
@@ -105,11 +106,12 @@ def run_subproject_loop(
                     subproject_results.append(ext_result)
                 else:
                     for t in relevant_external:
+                        normalized_target = pyfltr.paths.normalize_separators(t)
                         pyfltr.warnings_.emit_warning(
                             source="external-path",
-                            message=f"{command}: 起点cwd外のパスは対象から除外しました: {t}",
+                            message=(f"{command}: 起点cwd外のパスは対象から除外しました: {normalized_target}"),
                         )
-                        pyfltr.warnings_.add_filtered_direct_file(str(t), reason="external")
+                        pyfltr.warnings_.add_filtered_direct_file(normalized_target, reason="external")
 
         if subproject_results:
             if len(subproject_results) == 1:

@@ -32,6 +32,7 @@ import pyfltr.command.process
 import pyfltr.command.runner
 import pyfltr.command.subprojects
 import pyfltr.config.config
+import pyfltr.paths
 import pyfltr.warnings_
 from tests import conftest as _testconf
 
@@ -584,8 +585,12 @@ def test_external_path_filtered_with_warning(
     internal.write_text("", encoding="utf-8")
     ext_dir = tmp_path.parent / f"ext-{tmp_path.name}"
     ext_dir.mkdir(parents=True, exist_ok=True)
-    external = (ext_dir / target_pattern).resolve()
+    audit_commands = {"uv-audit", "pnpm-audit", "npm-audit", "yarn-audit"}
+    external_name = target_pattern if command in audit_commands else f"nested\\{target_pattern}"
+    external = (ext_dir / pathlib.Path(external_name)).resolve()
+    external.parent.mkdir(parents=True, exist_ok=True)
     external.write_text("", encoding="utf-8")
+    normalized_external = pyfltr.paths.normalize_separators(external)
 
     config = pyfltr.config.config.create_default_config()
     _enable(config, [command])
@@ -597,10 +602,10 @@ def test_external_path_filtered_with_warning(
 
     # 警告蓄積
     filtered = pyfltr.warnings_.filtered_direct_files(reason="external")
-    assert str(external) in filtered
+    assert normalized_external in filtered
     # warningレコードも発行されている
     warnings = pyfltr.warnings_.collected_warnings()
-    assert any(command in w["message"] and str(external) in w["message"] for w in warnings)
+    assert any(command in w["message"] and normalized_external in w["message"] for w in warnings)
 
 
 def test_external_only_results_in_zero_targets(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
@@ -817,7 +822,11 @@ def test_monorepo_mixed_inject_target_warns_only(monkeypatch: pytest.MonkeyPatch
     start_cwd, sub_a, _sub_b = _make_monorepo(tmp_path)
     file_a = sub_a / "doc.md"
     file_a.write_text("# a\n", encoding="utf-8")
-    external = _make_external(tmp_path)
+    ext_dir = tmp_path.parent / f"ext-{tmp_path.name}-markdownlint"
+    external = (ext_dir / pathlib.Path(r"nested\doc.md")).resolve()
+    external.parent.mkdir(parents=True, exist_ok=True)
+    external.write_text("# external\n", encoding="utf-8")
+    normalized_external = pyfltr.paths.normalize_separators(external)
     (start_cwd / ".markdownlint.json").write_text("{}", encoding="utf-8")
 
     config = pyfltr.config.config.create_default_config()
@@ -853,7 +862,9 @@ def test_monorepo_mixed_inject_target_warns_only(monkeypatch: pytest.MonkeyPatch
     assert calls == [sub_a_cwd]
     # 警告と`reason="external"`蓄積が発生する
     filtered = pyfltr.warnings_.filtered_direct_files(reason="external")
-    assert str(external) in filtered
+    assert normalized_external in filtered
+    warnings = pyfltr.warnings_.collected_warnings()
+    assert any(normalized_external in warning["message"] for warning in warnings)
 
 
 def test_monorepo_mixed_excluded_tool_warns_only(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
@@ -864,8 +875,10 @@ def test_monorepo_mixed_excluded_tool_warns_only(monkeypatch: pytest.MonkeyPatch
     # 外部パスにテスト対象拡張子の.pyを置く
     ext_dir = tmp_path.parent / f"ext-{tmp_path.name}-pytest"
     ext_dir.mkdir(parents=True, exist_ok=True)
-    external_test = (ext_dir / "ext_test.py").resolve()
+    external_test = (ext_dir / pathlib.Path(r"nested\ext_test.py")).resolve()
+    external_test.parent.mkdir(parents=True, exist_ok=True)
     external_test.write_text("def test(): pass\n", encoding="utf-8")
+    normalized_external = pyfltr.paths.normalize_separators(external_test)
 
     config = pyfltr.config.config.create_default_config()
     _enable(config, ["pytest"])
@@ -899,7 +912,9 @@ def test_monorepo_mixed_excluded_tool_warns_only(monkeypatch: pytest.MonkeyPatch
     # pkg_aの1回のみで、外部パス用の追加実行は無い（subproject_cwd=Noneでの呼び出しが無い）
     assert calls == [sub_a_cwd]
     # 警告は1件発行されている
-    assert str(external_test) in pyfltr.warnings_.filtered_direct_files(reason="external")
+    assert normalized_external in pyfltr.warnings_.filtered_direct_files(reason="external")
+    warnings = pyfltr.warnings_.collected_warnings()
+    assert any(normalized_external in warning["message"] for warning in warnings)
 
 
 def test_monorepo_allow_external_paths_runs_external(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:

@@ -103,11 +103,14 @@ def expand_all_files(
             if match is not None:
                 if is_direct:
                     key, pattern = match
+                    normalized_target = pyfltr.paths.normalize_separators(target)
                     pyfltr.warnings_.emit_warning(
                         source="file-resolver",
-                        message=(f'指定されたファイルが除外設定により無視されました: {target} ({key}="{pattern}" による)'),
+                        message=(
+                            f'指定されたファイルが除外設定により無視されました: {normalized_target} ({key}="{pattern}" による)'
+                        ),
                     )
-                    pyfltr.warnings_.add_filtered_direct_file(str(target), reason="excluded")
+                    pyfltr.warnings_.add_filtered_direct_file(normalized_target, reason="excluded")
                 return
             if filesystem_target.is_dir():
                 # シンボリックリンクディレクトリ自身が.gitignore対象なら配下を辿らない。
@@ -124,9 +127,10 @@ def expand_all_files(
                 if is_direct:
                     directly_specified.add(target)
         except OSError:
+            normalized_target = pyfltr.paths.normalize_separators(target)
             pyfltr.warnings_.emit_warning(
                 source="file-resolver",
-                message=f"I/O Error: {target}",
+                message=f"I/O Error: {normalized_target}",
                 exc_info=True,
             )
 
@@ -142,11 +146,12 @@ def expand_all_files(
         # 起点 cwd と異なる cwd で起動した場合に備え、相対パスは起点 cwd 基準で存在確認する。
         check_path = target if target.is_absolute() else (cwd_base / target)
         if not check_path.exists():
+            normalized_target = pyfltr.paths.normalize_separators(target)
             pyfltr.warnings_.emit_warning(
                 source="file-resolver",
-                message=f"指定されたパスが見つかりません: {target}",
+                message=f"指定されたパスが見つかりません: {normalized_target}",
             )
-            pyfltr.warnings_.add_filtered_direct_file(str(target), reason="missing")
+            pyfltr.warnings_.add_filtered_direct_file(normalized_target, reason="missing")
             continue
         is_direct = not check_path.is_dir()
         _expand_target(target, is_direct=is_direct)
@@ -159,11 +164,12 @@ def expand_all_files(
         after_set = set(expanded)
         for target in directly_specified:
             if target in before_gitignore and target not in after_set:
+                normalized_target = pyfltr.paths.normalize_separators(target)
                 pyfltr.warnings_.emit_warning(
                     source="file-resolver",
-                    message=f"指定されたファイルが .gitignore により無視されました: {target}",
+                    message=f"指定されたファイルが .gitignore により無視されました: {normalized_target}",
                 )
-                pyfltr.warnings_.add_filtered_direct_file(str(target), reason="excluded")
+                pyfltr.warnings_.add_filtered_direct_file(normalized_target, reason="excluded")
 
     return _dedup_and_sort(expanded, cwd_base=cwd_base)
 

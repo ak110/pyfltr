@@ -38,9 +38,9 @@ def changed_files(
     """ハッシュスナップショット前後で内容が変化したファイルのパス文字列リストを返す。
 
     `snapshot_file_digests` の戻り値を2点渡し、ハッシュが変化したキーを抽出する。
-    結果は文字列化してソートして返す（summary.applied_fixesの安定ソート用）。
+    結果は区切り文字を`/`へ統一してソートして返す（summary.applied_fixesの安定ソート用）。
     """
-    return sorted(str(p) for p, digest in after.items() if before.get(p) != digest)
+    return sorted(pyfltr.paths.normalize_separators(p) for p, digest in after.items() if before.get(p) != digest)
 
 
 def snapshot_file_texts(targets: list[pathlib.Path], *, base_cwd: pathlib.Path | None = None) -> dict[pathlib.Path, str]:

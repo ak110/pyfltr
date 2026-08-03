@@ -724,7 +724,7 @@ async def test_tool_grep_finds_matches(tmp_path: pathlib.Path) -> None:
     assert result.exit_code == 0
     assert len(result.matches) == 2
     for match in result.matches:
-        assert match.file == str(target)
+        assert match.file == target.as_posix()
         assert "hello" in match.line_text
 
 
@@ -896,7 +896,7 @@ async def test_tool_grep_summary_files_with_matches(tmp_path: pathlib.Path) -> N
     )
 
     assert result.summary_mode == "files_with_matches"
-    assert result.files_with_matches == [str(matched)]
+    assert result.files_with_matches == [matched.as_posix()]
     assert not result.matches
 
 
@@ -913,7 +913,7 @@ async def test_tool_grep_summary_count_is_unlimited_by_default(tmp_path: pathlib
     )
 
     assert result.total_matches == 1001
-    assert [(entry.file, entry.count) for entry in result.file_counts] == [(str(target), 1001)]
+    assert [(entry.file, entry.count) for entry in result.file_counts] == [(target.as_posix(), 1001)]
     assert not result.matches
 
 
@@ -931,7 +931,7 @@ async def test_tool_grep_summary_files_without_match(tmp_path: pathlib.Path) -> 
         summary_mode="files_without_match",
     )
 
-    assert result.files_without_match == [str(unmatched)]
+    assert result.files_without_match == [unmatched.as_posix()]
     assert not result.matches
 
 
@@ -1133,7 +1133,7 @@ async def test_tool_replace_from_grep_limits_files(tmp_path: pathlib.Path) -> No
     )
 
     assert result.files_changed == 1
-    assert [entry.file for entry in result.file_changes] == [str(allowed)]
+    assert [entry.file for entry in result.file_changes] == [allowed.as_posix()]
 
 
 @pytest.mark.asyncio
@@ -1186,6 +1186,7 @@ async def test_tool_replace_show_changes(tmp_path: pathlib.Path) -> None:
 
     assert len(result.changes) == 2
     for change in result.changes:
+        assert change.file == target.as_posix()
         assert "hello" in change.before_line
         assert "goodbye" in change.after_line
 
@@ -1229,7 +1230,7 @@ async def test_tool_replace_undo_restores_file(tmp_path: pathlib.Path) -> None:
     )
 
     assert target.read_text(encoding="utf-8") == original
-    assert str(target) in undo_result.restored
+    assert target.as_posix() in undo_result.restored
     assert not undo_result.skipped
     assert undo_result.exit_code == 0
 
@@ -1256,7 +1257,7 @@ async def test_tool_replace_undo_hash_mismatch_skips_without_force(tmp_path: pat
         force=False,
     )
 
-    assert str(target) in undo_result.skipped
+    assert target.as_posix() in undo_result.skipped
     assert not undo_result.restored
     assert undo_result.exit_code == 1
 
@@ -1285,7 +1286,7 @@ async def test_tool_replace_undo_hash_mismatch_force_restores(tmp_path: pathlib.
     )
 
     assert target.read_text(encoding="utf-8") == original
-    assert str(target) in undo_result.restored
+    assert target.as_posix() in undo_result.restored
     assert not undo_result.skipped
     assert undo_result.exit_code == 0
 

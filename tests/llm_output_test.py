@@ -1,12 +1,14 @@
 """llm_outputのテストコード。"""
 
 import json
+import pathlib
 
 import pytest
 
 import pyfltr.command.core_
 import pyfltr.command.error_parser
 import pyfltr.command.mise
+import pyfltr.command.snapshot
 import pyfltr.config.config
 import pyfltr.output.jsonl
 
@@ -1402,6 +1404,30 @@ def test_build_summary_record_includes_applied_fixes() -> None:
     summary_line = next(line for line in lines if json.loads(line).get("kind") == "summary")
     record = json.loads(summary_line)
     assert record["applied_fixes"] == ["src/a.py", "src/b.py", "src/c.py"]
+
+
+def test_build_summary_record_normalizes_applied_fixes_separators() -> None:
+    """変更検知からsummaryへ渡る公開パスの区切りを`/`へ統一する。"""
+    target = pathlib.Path(r"src\nested\fixed.py")
+    fixed_files = pyfltr.command.snapshot.changed_files({target: b"before"}, {target: b"after"})
+    result = pyfltr.command.core_.CommandResult(
+        command="ruff-format",
+        command_type="formatter",
+        commandline=["ruff"],
+        returncode=1,
+        has_error=False,
+        files=1,
+        output="",
+        elapsed=0.1,
+        fixed_files=fixed_files,
+    )
+
+    config = pyfltr.config.config.create_default_config()
+    lines = pyfltr.output.jsonl.build_lines([result], config, exit_code=0)
+    summary_line = next(line for line in lines if json.loads(line).get("kind") == "summary")
+    record = json.loads(summary_line)
+
+    assert record["applied_fixes"] == ["src/nested/fixed.py"]
 
 
 def test_build_summary_record_omits_applied_fixes_when_empty() -> None:

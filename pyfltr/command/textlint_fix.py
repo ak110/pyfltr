@@ -9,6 +9,7 @@ import typing
 import pyfltr.command.error_parser
 import pyfltr.command.process
 import pyfltr.config.config
+import pyfltr.paths
 from pyfltr.command.core_ import CommandResult
 from pyfltr.command.runner import build_invocation_argv
 from pyfltr.command.snapshot import (
@@ -194,5 +195,5 @@ def _relative_to_cwd(target: pathlib.Path, *, cwd: pathlib.Path, start_cwd: path
     try:
         rel = abs_path.resolve().relative_to(cwd.resolve())
     except (OSError, ValueError):
-        return str(target).replace("\\", "/")
-    return str(rel).replace("\\", "/")
+        return pyfltr.paths.normalize_separators(target)
+    return pyfltr.paths.normalize_separators(rel)

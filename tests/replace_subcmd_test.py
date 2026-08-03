@@ -136,6 +136,7 @@ def test_replace_show_changes_emits_before_after(
     file_change_records = [line for line in lines if line["kind"] == "file_change"]
     assert len(file_change_records) == 1
     record = file_change_records[0]
+    assert record["file"] == target.relative_to(tmp_path).as_posix()
     assert "changes" in record
     assert record["changes"][0]["before_line"] == "foo bar"
     assert record["changes"][0]["after_line"] == "baz bar"
@@ -417,9 +418,56 @@ def test_replace_within_show_changes_limits_to_region(
     rc = pyfltr.cli.main.run(["replace", "foo", "X", str(target), "--within", "KEY", "--show-changes", "--output-format=json"])
 
     assert rc == 0
-    changes = json.loads(capsys.readouterr().out)["changes"][0]["changes"]
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["changes"][0]["file"] == target.relative_to(tmp_path).as_posix()
+    changes = payload["changes"][0]["changes"]
     # 領域はKEY行（2行目）のみ。レコードも2行目1件に限定される。
     assert [c["line"] for c in changes] == [2]
+
+
+def test_replace_undo_json_normalizes_restored_file(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """undoのJSON出力で復元ファイル位置の区切り文字を`/`へ統一する。"""
+    target = tmp_path / "sub" / "a.txt"
+    target.parent.mkdir()
+    target.write_text("foo\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    rc = pyfltr.cli.main.run(["replace", "foo", "X", "--output-format=json", str(target)])
+    assert rc == 0
+    replace_id = json.loads(capsys.readouterr().out)["summary"]["replace_id"]
+
+    rc = pyfltr.cli.main.run(["replace", "--undo", replace_id, "--output-format=json"])
+
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["restored"] == [target.relative_to(tmp_path).as_posix()]
+    assert payload["skipped"] == []
+
+
+def test_replace_undo_json_normalizes_skipped_file(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """undoのJSON出力でスキップファイル位置の区切り文字を`/`へ統一する。"""
+    target = tmp_path / "sub" / "a.txt"
+    target.parent.mkdir()
+    target.write_text("foo\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    rc = pyfltr.cli.main.run(["replace", "foo", "X", "--output-format=json", str(target)])
+    assert rc == 0
+    replace_id = json.loads(capsys.readouterr().out)["summary"]["replace_id"]
+    target.write_text("手動編集\n", encoding="utf-8")
+
+    rc = pyfltr.cli.main.run(["replace", "--undo", replace_id, "--output-format=json"])
+
+    assert rc == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["restored"] == []
+    assert payload["skipped"] == [target.relative_to(tmp_path).as_posix()]
 
 
 def test_replace_within_excludes_match_crossing_region_boundary(

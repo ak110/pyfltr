@@ -110,6 +110,7 @@ def test_grep_context_options(
     lines = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
     matches = [line for line in lines if line["kind"] == "match"]
     assert len(matches) == 1
+    assert matches[0]["file"] == target.relative_to(tmp_path).as_posix()
     assert matches[0]["before"] == ["line2"]
     assert matches[0]["after"] == ["line4"]
 
@@ -143,6 +144,45 @@ def test_grep_json_output(
     assert "summary" in payload
     assert payload["summary"]["total_matches"] >= 3
     assert "guidance" in payload["summary"]
+
+
+@pytest.mark.parametrize(
+    "summary_flag,summary_key",
+    [
+        (None, None),
+        ("--files-with-matches", "files"),
+        ("--count", "counts"),
+    ],
+)
+def test_grep_json_normalizes_file_separators(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    summary_flag: str | None,
+    summary_key: str | None,
+) -> None:
+    """JSONのマッチと集計でファイル位置の区切り文字を`/`へ統一する。"""
+    target = pathlib.Path(r"sub\target.py")
+    filesystem_target = tmp_path / target
+    filesystem_target.parent.mkdir(parents=True, exist_ok=True)
+    filesystem_target.write_text("foo\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    args = ["grep", "foo", "--output-format=json"]
+    if summary_flag is not None:
+        args.append(summary_flag)
+    args.append(str(target))
+
+    rc = pyfltr.cli.main.run(args)
+
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    normalized_target = target.as_posix().replace("\\", "/")
+    if summary_key is None:
+        assert [match["file"] for match in payload["matches"]] == [normalized_target]
+    elif summary_key == "files":
+        assert payload[summary_key] == [normalized_target]
+    else:
+        assert payload[summary_key] == [{"file": normalized_target, "count": 1}]
 
 
 def test_grep_includes_hidden_files(

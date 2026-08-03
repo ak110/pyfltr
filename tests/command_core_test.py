@@ -33,6 +33,7 @@ import pyfltr.command.two_step.base
 import pyfltr.command.two_step.prettier
 import pyfltr.command.two_step.ruff
 import pyfltr.config.config
+import pyfltr.paths
 import pyfltr.state.cache
 import pyfltr.state.only_failed
 import pyfltr.warnings_
@@ -1183,28 +1184,62 @@ def test_expand_all_files_no_git_repo(tmp_path: pathlib.Path) -> None:
 
 def test_expand_all_files_warns_excluded_file(tmp_path: pathlib.Path, caplog) -> None:
     """直接指定されたファイルがexclude設定で除外された場合に警告が出る。"""
-    target = tmp_path / "sample.py"
-    target.write_text("x = 1\n")
+    target = pathlib.Path(r"nested\sample.py")
+    filesystem_target = tmp_path / target
+    filesystem_target.parent.mkdir(parents=True, exist_ok=True)
+    filesystem_target.write_text("x = 1\n")
+    normalized_target = pyfltr.paths.normalize_separators(target)
 
     original_cwd = pathlib.Path.cwd()
     try:
         os.chdir(tmp_path)
         config = pyfltr.config.config.create_default_config()
-        config.values["extend-exclude"] = ["sample.py"]
+        pyfltr.warnings_.clear()
+        config.values["extend-exclude"] = ["*sample.py"]
         with caplog.at_level(logging.WARNING):
             result = pyfltr.command.targets.expand_all_files([target], config)
         assert len(result) == 0
         assert "除外設定により無視されました" in caplog.text
-        assert 'extend-exclude="sample.py"' in caplog.text
+        assert normalized_target in caplog.text
+        assert pyfltr.warnings_.filtered_direct_files(reason="excluded") == [normalized_target]
     finally:
+        pyfltr.warnings_.clear()
         os.chdir(original_cwd)
+
+
+def test_expand_all_files_warns_io_error(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """ディレクトリ走査のI/Oエラー警告でも区切り文字を`/`へ統一する。"""
+    target = pathlib.Path(r"nested\unreadable")
+    filesystem_target = tmp_path / target
+    filesystem_target.mkdir(parents=True)
+    normalized_target = pyfltr.paths.normalize_separators(target)
+    original_iterdir = pathlib.Path.iterdir
+
+    def _raise_for_target(path: pathlib.Path) -> typing.Iterator[pathlib.Path]:
+        if path == filesystem_target:
+            raise OSError("test I/O error")
+        return original_iterdir(path)
+
+    monkeypatch.setattr(pathlib.Path, "iterdir", _raise_for_target)
+    config = pyfltr.config.config.create_default_config()
+    config.values["respect-gitignore"] = False
+
+    with caplog.at_level(logging.WARNING):
+        result = pyfltr.command.targets.expand_all_files([target], config, start_cwd=tmp_path)
+
+    assert result == []
+    assert f"I/O Error: {normalized_target}" in caplog.text
 
 
 def test_expand_all_files_warns_missing_file(tmp_path: pathlib.Path, caplog) -> None:
     """直接指定されたパスが存在しない場合、警告が出て reason="missing" で蓄積される。"""
     # 絶対パス指定はcwd起点の相対パスへ変換されるため、cwd配下の相対パスとして検証する。
-    target_name = "does_not_exist.py"
-    target = pathlib.Path(target_name)
+    target = pathlib.Path(r"nested\does_not_exist.py")
+    normalized_target = pyfltr.paths.normalize_separators(target)
 
     original_cwd = pathlib.Path.cwd()
     try:
@@ -1216,7 +1251,8 @@ def test_expand_all_files_warns_missing_file(tmp_path: pathlib.Path, caplog) -> 
         assert len(result) == 0
         assert "指定されたパスが見つかりません" in caplog.text
         # 非存在は reason="missing" に蓄積され、reason="excluded" とは別系統
-        assert pyfltr.warnings_.filtered_direct_files(reason="missing") == [target_name]
+        assert normalized_target in caplog.text
+        assert pyfltr.warnings_.filtered_direct_files(reason="missing") == [normalized_target]
         assert not pyfltr.warnings_.filtered_direct_files(reason="excluded")
     finally:
         pyfltr.warnings_.clear()
@@ -1226,9 +1262,12 @@ def test_expand_all_files_warns_missing_file(tmp_path: pathlib.Path, caplog) -> 
 def test_expand_all_files_warns_gitignored_file(tmp_path: pathlib.Path, caplog) -> None:
     """直接指定されたファイルが.gitignoreで除外された場合に警告が出る。"""
     subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True, check=True)
-    target = tmp_path / "ignored.py"
-    target.write_text("x = 1\n")
-    (tmp_path / ".gitignore").write_text("ignored.py\n")
+    target = pathlib.Path(r"nested\ignored.py")
+    filesystem_target = tmp_path / target
+    filesystem_target.parent.mkdir(parents=True, exist_ok=True)
+    filesystem_target.write_text("x = 1\n")
+    (tmp_path / ".gitignore").write_text("*ignored.py\n")
+    normalized_target = pyfltr.paths.normalize_separators(target)
 
     original_cwd = pathlib.Path.cwd()
     try:
@@ -1238,7 +1277,10 @@ def test_expand_all_files_warns_gitignored_file(tmp_path: pathlib.Path, caplog) 
             result = pyfltr.command.targets.expand_all_files([target], config)
         assert len(result) == 0
         assert ".gitignore により無視されました" in caplog.text
+        assert normalized_target in caplog.text
+        assert pyfltr.warnings_.filtered_direct_files(reason="excluded") == [normalized_target]
     finally:
+        pyfltr.warnings_.clear()
         os.chdir(original_cwd)
 
 

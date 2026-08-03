@@ -16,6 +16,7 @@ import pyfltr.command.error_parser
 import pyfltr.command.process
 import pyfltr.command.runner
 import pyfltr.config.config
+import pyfltr.paths
 from pyfltr.command.core_ import CommandResult
 from pyfltr.command.snapshot import changed_files, snapshot_file_digests
 
@@ -114,8 +115,8 @@ def _relative_to_cwd(target: pathlib.Path, *, cwd: pathlib.Path, start_cwd: path
     try:
         rel = abs_path.resolve().relative_to(cwd.resolve())
     except (OSError, ValueError):
-        return str(target).replace("\\", "/")
-    return str(rel).replace("\\", "/")
+        return pyfltr.paths.normalize_separators(target)
+    return pyfltr.paths.normalize_separators(rel)
 
 
 def _prepare_check_write_execution(

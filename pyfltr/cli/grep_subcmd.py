@@ -17,6 +17,7 @@ import pyfltr.grep_.jsonl_records
 import pyfltr.grep_.matcher
 import pyfltr.grep_.scanner
 import pyfltr.grep_.text_render
+import pyfltr.paths
 import pyfltr.warnings_
 from pyfltr.grep_.types import MatchRecord
 
@@ -315,7 +316,7 @@ def _build_grep_guidance(total_matches: int) -> list[str]:
 def _match_to_dict(record: MatchRecord) -> dict[str, typing.Any]:
     """MatchRecordをjson形式の辞書へ変換する。"""
     payload: dict[str, typing.Any] = {
-        "file": str(record.file),
+        "file": pyfltr.paths.normalize_separators(record.file),
         "line": record.line,
         "col": record.col,
         "match_text": record.match_text,
@@ -344,17 +345,17 @@ def _build_summary_only_json(
     if args.files_without_match:
         return {
             "summary_only_mode": "files-without-match",
-            "files": [str(p) for p in scanned if p not in per_file_counts],
+            "files": [pyfltr.paths.normalize_separators(p) for p in scanned if p not in per_file_counts],
         }
     if args.files_with_matches:
         return {
             "summary_only_mode": "files-with-matches",
-            "files": [str(p) for p in per_file_counts],
+            "files": [pyfltr.paths.normalize_separators(p) for p in per_file_counts],
         }
     # `--count` / `--count-matches`
     return {
         "summary_only_mode": "count",
-        "counts": [{"file": str(p), "count": c} for p, c in per_file_counts.items()],
+        "counts": [{"file": pyfltr.paths.normalize_separators(p), "count": c} for p, c in per_file_counts.items()],
     }
 
 
@@ -371,7 +372,7 @@ def _emit_summary_only(
         if output_format == "text":
             with pyfltr.cli.output_format.text_output_lock:
                 for path in files:
-                    pyfltr.cli.output_format.text_logger.info(str(path))
+                    pyfltr.cli.output_format.text_logger.info(pyfltr.paths.normalize_separators(path))
         elif output_format == "jsonl":
             for path in files:
                 pyfltr.grep_.jsonl_records.emit_file_without_match(path)
@@ -381,7 +382,7 @@ def _emit_summary_only(
         if output_format == "text":
             with pyfltr.cli.output_format.text_output_lock:
                 for path in per_file_counts:
-                    pyfltr.cli.output_format.text_logger.info(str(path))
+                    pyfltr.cli.output_format.text_logger.info(pyfltr.paths.normalize_separators(path))
         elif output_format == "jsonl":
             for path, count in per_file_counts.items():
                 pyfltr.grep_.jsonl_records.emit_file_with_matches(path, count)
@@ -392,7 +393,7 @@ def _emit_summary_only(
         if output_format == "text":
             with pyfltr.cli.output_format.text_output_lock:
                 for path, count in per_file_counts.items():
-                    pyfltr.cli.output_format.text_logger.info(f"{path}:{count}")
+                    pyfltr.cli.output_format.text_logger.info(f"{pyfltr.paths.normalize_separators(path)}:{count}")
         elif output_format == "jsonl":
             for path, count in per_file_counts.items():
                 pyfltr.grep_.jsonl_records.emit_file_count(path, count)

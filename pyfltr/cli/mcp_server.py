@@ -58,6 +58,7 @@ import pyfltr.grep_.history
 import pyfltr.grep_.matcher
 import pyfltr.grep_.replacer
 import pyfltr.grep_.scanner
+import pyfltr.paths
 import pyfltr.state.archive
 import pyfltr.state.runs
 import pyfltr.warnings_
@@ -581,7 +582,7 @@ async def tool_grep(
             if summary_mode is None:
                 matches.append(
                     GrepMatchModel(
-                        file=str(record.file),
+                        file=pyfltr.paths.normalize_separators(record.file),
                         line=record.line,
                         col=record.col,
                         end_col=record.end_col,
@@ -592,14 +593,21 @@ async def tool_grep(
                     )
                 )
 
-    files_with_matches = [str(file) for file in per_file_counts] if summary_mode == "files_with_matches" else []
+    files_with_matches = (
+        [pyfltr.paths.normalize_separators(file) for file in per_file_counts] if summary_mode == "files_with_matches" else []
+    )
     file_counts = (
-        [GrepFileCountModel(file=str(file), count=count) for file, count in per_file_counts.items()]
+        [
+            GrepFileCountModel(file=pyfltr.paths.normalize_separators(file), count=count)
+            for file, count in per_file_counts.items()
+        ]
         if summary_mode == "count"
         else []
     )
     files_without_match = (
-        [str(file) for file in expanded if file not in per_file_counts] if summary_mode == "files_without_match" else []
+        [pyfltr.paths.normalize_separators(file) for file in expanded if file not in per_file_counts]
+        if summary_mode == "files_without_match"
+        else []
     )
     return GrepResultModel(
         matches=matches,
@@ -795,7 +803,7 @@ async def tool_replace(
 
         file_changes.append(
             ReplaceFileChangeModel(
-                file=str(file),
+                file=pyfltr.paths.normalize_separators(file),
                 count=count,
                 before_hash=before_hash,
                 after_hash=after_hash,
@@ -806,7 +814,7 @@ async def tool_replace(
             for record in records:
                 change_records.append(
                     ReplaceChangeRecordModel(
-                        file=str(record.file),
+                        file=pyfltr.paths.normalize_separators(record.file),
                         line=record.line,
                         col=record.col,
                         before_line=record.before_line,
@@ -872,8 +880,8 @@ async def tool_replace_undo(replace_id: str, force: bool = False) -> ReplaceUndo
     exit_code = 1 if skipped else 0
     return ReplaceUndoModel(
         replace_id=replace_id,
-        restored=[str(p) for p in restored],
-        skipped=[str(p) for p in skipped],
+        restored=[pyfltr.paths.normalize_separators(p) for p in restored],
+        skipped=[pyfltr.paths.normalize_separators(p) for p in skipped],
         exit_code=exit_code,
     )
 

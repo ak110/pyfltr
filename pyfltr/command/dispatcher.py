@@ -216,11 +216,12 @@ def _prepare_execution_params(
         kept: list[pathlib.Path] = []
         for t in targets:
             if _is_external_path(t, start_cwd=start_for_filter):
+                normalized_target = pyfltr.paths.normalize_separators(t)
                 pyfltr.warnings_.emit_warning(
                     source="external-path",
-                    message=f"{command}: 起点cwd外のパスは対象から除外しました: {t}",
+                    message=f"{command}: 起点cwd外のパスは対象から除外しました: {normalized_target}",
                 )
-                pyfltr.warnings_.add_filtered_direct_file(str(t), reason="external")
+                pyfltr.warnings_.add_filtered_direct_file(normalized_target, reason="external")
             else:
                 kept.append(t)
         targets = kept
