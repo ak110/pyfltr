@@ -4,9 +4,13 @@
 ruffはJSON出力に含まれる`url`フィールドを最優先で採用し、なければテンプレートで
 補完する。pylintは公式ドキュメントが`.../messages/<category>/<symbol>.html`の
 symbol基準のため、`category`引数で経路を分岐する。textlintはプラグインごとに
-URL体系が揃わないため未サポート。
+URL体系が揃わないため未サポート。biomeは診断カテゴリーが`lint/<group>/<rule>`と
+`assist/source/<action>`の2体系を持ち、それぞれ`/linter/rules/`と
+`/assist/actions/`へ分岐する。`format`・`parse`のように階層を持たないカテゴリーは
+ドキュメントページを持たないためURLを返さない。
 """
 
+import re
 import typing
 
 _RuleUrlBuilder = typing.Callable[[str, str | None], str | None]
@@ -53,6 +57,26 @@ def _build_markdownlint_url(rule: str, category: str | None) -> str | None:
     return f"https://github.com/DavidAnson/markdownlint/blob/main/doc/{rule}.md"
 
 
+def _build_biome_url(rule: str, category: str | None) -> str | None:
+    del category  # シグネチャ互換のため受け取るのみ
+    # biomeの診断カテゴリーは`lint/<group>/<rule>`・`assist/source/<action>`・
+    # `format`・`parse`の4形態を取る。ドキュメントページを持つのは前2者のみ。
+    # ルール名はキャメルケースで、公式ドキュメントのslugはケバブケースとなる。
+    # biome 2.1.1のスキーマが定義する333ルールに数字・連続大文字は含まれないため、
+    # 大文字の直前へハイフンを挿入する変換で全件のslugを再現できる。
+    # biomejs.devは版別パスを持たず、旧版のnurseryルールが改名・削除された場合は404となりうる。
+    # 版別対応表は実行版の判定と継続更新を要するため持たず、現行ドキュメントの規則でURLを生成する。
+    group, _, name = rule.rpartition("/")
+    if not name:
+        return None
+    slug = re.sub(r"(?<!^)(?=[A-Z])", "-", name).lower()
+    if group.startswith("lint/"):
+        return f"https://biomejs.dev/linter/rules/{slug}/"
+    if group == "assist/source":
+        return f"https://biomejs.dev/assist/actions/{slug}/"
+    return None
+
+
 _BUILDERS: dict[str, _RuleUrlBuilder] = {
     "ruff-check": _build_ruff_url,
     "pylint": _build_pylint_url,
@@ -61,6 +85,7 @@ _BUILDERS: dict[str, _RuleUrlBuilder] = {
     "shellcheck": _build_shellcheck_url,
     "eslint": _build_eslint_url,
     "markdownlint": _build_markdownlint_url,
+    "biome": _build_biome_url,
 }
 
 

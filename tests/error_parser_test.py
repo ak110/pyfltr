@@ -169,6 +169,48 @@ def test_parse_errors_biome_severity(raw_severity: str, expected_severity: str) 
     assert errors[0].message == message_text
 
 
+def test_parse_errors_biome_rule_and_url() -> None:
+    """biomeのtitleを診断カテゴリーとして抽出しURLを補完する。"""
+    output = (
+        "::error title=lint/suspicious/noDoubleEquals,file=src/foo.ts,"
+        "line=1,endLine=1,col=7,endColumn=9::Use === instead of ==\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("biome", output)
+    assert len(errors) == 1
+    assert errors[0].rule == "lint/suspicious/noDoubleEquals"
+    assert errors[0].rule_url == "https://biomejs.dev/linter/rules/no-double-equals/"
+
+
+def test_parse_errors_biome_assist_rule_and_url() -> None:
+    """biomeのassistカテゴリーを抽出しアクションURLを補完する。"""
+    output = (
+        "::error title=assist/source/organizeImports,file=src/foo.ts,line=1,endLine=1,col=1,endColumn=2::Organize imports\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("biome", output)
+    assert len(errors) == 1
+    assert errors[0].rule == "assist/source/organizeImports"
+    assert errors[0].rule_url == "https://biomejs.dev/assist/actions/organize-imports/"
+
+
+@pytest.mark.parametrize("category", ["format", "parse"])
+def test_parse_errors_biome_non_rule_category_has_no_url(category: str) -> None:
+    """format・parseは診断カテゴリーとして保持しURLを持たない。"""
+    output = f"::error title={category},file=package.json,line=1,endLine=1,col=2,endColumn=2::Diagnostic message\n"
+    errors = pyfltr.command.error_parser.parse_errors("biome", output)
+    assert len(errors) == 1
+    assert errors[0].rule == category
+    assert errors[0].rule_url is None
+
+
+def test_parse_errors_biome_without_title_is_not_dropped() -> None:
+    """title欄を持たない出力形態でも診断を保持する。"""
+    output = "::error file=src/foo.ts,line=1,endLine=1,col=7,endColumn=9::message\n"
+    errors = pyfltr.command.error_parser.parse_errors("biome", output)
+    assert len(errors) == 1
+    assert errors[0].rule is None
+    assert errors[0].file.endswith("foo.ts")
+
+
 def test_parse_errors_eslint_json() -> None:
     """ESLint --format json出力のパース。"""
     output = json.dumps(

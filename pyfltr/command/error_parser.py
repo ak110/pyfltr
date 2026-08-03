@@ -215,8 +215,13 @@ _BUILTIN_PATTERNS: dict[str, str] = {
     # severity infoの診断は`::notice`として出力される。severityは各ルールの既定値で決まり、
     # fixのsafe/unsafeとは独立である。pyfltr側ではinfoとして公開し、
     # CIの失敗扱いには昇格させない（biome公式設計でinfoは終了コードに影響しない）。
+    # titleはbiomeの診断カテゴリーで、`lint/<group>/<rule>`のほか`format`・`parse`・
+    # `assist/source/<action>`を取る。ruleにはカテゴリー全体を格納する
+    # （末尾要素だけでは`lint`配下と`assist`配下で同名の識別子が衝突しうるため）。
+    # titleを持たない出力形態でも診断を保持できるよう、当該グループは任意とする。
     "biome": (
-        r"::(?P<severity>error|warning|notice)\s+[^:]*?file=(?P<file>[^,]+)"
+        r"::(?P<severity>error|warning|notice)\s+(?:[^:]*?title=(?P<rule>[^,]+))?"
+        r"[^:]*?file=(?P<file>[^,]+)"
         r"[^:]*?line=(?P<line>\d+)"
         r"[^:]*?col=(?P<col>\d+)"
         r"[^:]*?::(?P<message>.+)"

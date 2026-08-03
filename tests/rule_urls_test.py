@@ -61,6 +61,24 @@ def test_build_rule_url_markdownlint() -> None:
     assert url == "https://github.com/DavidAnson/markdownlint/blob/main/doc/MD001.md"
 
 
+def test_build_rule_url_biome_lint() -> None:
+    """biomeのlintカテゴリーはlinter/rulesへケバブケースで解決する。"""
+    url = pyfltr.output.rule_urls.build_rule_url("biome", "lint/complexity/useLiteralKeys")
+    assert url == "https://biomejs.dev/linter/rules/use-literal-keys/"
+
+
+def test_build_rule_url_biome_assist() -> None:
+    """biomeのassistカテゴリーはassist/actionsへ解決する。"""
+    url = pyfltr.output.rule_urls.build_rule_url("biome", "assist/source/organizeImports")
+    assert url == "https://biomejs.dev/assist/actions/organize-imports/"
+
+
+def test_build_rule_url_biome_without_category_hierarchy() -> None:
+    """format・parseのように階層を持たないカテゴリーはURLを持たない。"""
+    assert pyfltr.output.rule_urls.build_rule_url("biome", "format") is None
+    assert pyfltr.output.rule_urls.build_rule_url("biome", "parse") is None
+
+
 def test_build_rule_url_textlint_unsupported() -> None:
     """textlint は未サポートで常に None を返す。"""
     assert pyfltr.output.rule_urls.build_rule_url("textlint", "ja-technical-writing/ja-no-mixed-period") is None
