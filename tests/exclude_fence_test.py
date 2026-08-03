@@ -94,5 +94,5 @@ def test_markdownlint_diagnostic_file_is_restored_from_temporary_path(
     )
 
     assert len(errors) == 1
-    assert errors[0].file == str(original_path)
+    assert errors[0].file == original_path.as_posix()
     assert errors[0].rule == "MD001"

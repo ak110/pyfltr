@@ -7,7 +7,7 @@ import pathlib
 
 
 def normalize_separators(path: str | pathlib.Path) -> str:
-    r"""相対パス前提のWindows区切り`\\`をUnix区切り`/`へ統一するヘルパー。絶対パス・正規化は扱わない。"""
+    r"""Windows区切り`\\`をUnix区切り`/`へ統一する。絶対パスと相対パスの双方を扱う。"""
     return str(path).replace("\\", "/")
 
 
@@ -24,17 +24,18 @@ def sanitize_command_name(name: str) -> str:
 
 
 def to_cwd_relative(path: str | pathlib.Path) -> str:
-    """パスをcwd基準の相対パスに正規化する。区切り文字はスラッシュに統一する。
+    """パスをcwd基準の相対パスへ変換する。
 
-    絶対パスがcwd配下にあるときは相対パスへ変換する。cwd配下でなければ入力文字列を
-    そのまま返す（文字列化と区切り文字正規化のみ）。相対パスは`normalize_separators`
-    と同じ扱いで、区切り文字のみ`/`へ統一する。
+    区切り文字は全分岐で`/`へ統一する。cwd配下の絶対パスはcwd基準の相対パスへ、
+    相対パスはそのままの構成で返す。cwd配下でない絶対パスは相対化できないため
+    絶対パスのまま返すが、区切り文字は同様に`/`へ統一する。
+    表現を揃えるのは、返り値がプロジェクト内外の判定・診断の突合キー・
+    利用者向け出力のいずれにも用いられ、経路ごとの表現差が判定の誤りを招くためである。
     """
     as_path = pathlib.Path(path)
     if as_path.is_absolute():
         try:
-            result = str(as_path.relative_to(pathlib.Path.cwd()))
+            return normalize_separators(as_path.relative_to(pathlib.Path.cwd()))
         except ValueError:
-            return str(path)
-        return normalize_separators(result)
+            return normalize_separators(path)
     return normalize_separators(path)

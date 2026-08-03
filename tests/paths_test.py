@@ -49,16 +49,38 @@ def test_to_cwd_relative_normalizes_windows_separators() -> None:
     assert pyfltr.paths.to_cwd_relative("pyfltr\\paths.py") == "pyfltr/paths.py"
 
 
-def test_to_cwd_relative_outside_cwd_returns_original(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """cwd配下にない絶対パスは入力文字列を変換せずそのまま返す。"""
+def test_to_cwd_relative_outside_cwd_keeps_absolute(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """cwd配下でない絶対パスは絶対パスのまま返す。"""
     other_root = tmp_path / "outside"
     other_root.mkdir()
     sub_cwd = tmp_path / "inside"
     sub_cwd.mkdir()
     monkeypatch.chdir(sub_cwd)
 
-    outside_abs = str(other_root / "file.txt")
-    assert pyfltr.paths.to_cwd_relative(outside_abs) == outside_abs
+    outside_abs = other_root / "file.txt"
+    assert pyfltr.paths.to_cwd_relative(outside_abs) == outside_abs.as_posix()
+
+
+def test_to_cwd_relative_outside_cwd_normalizes_separators(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """cwd配下でない絶対パスでも区切り文字を`/`へ統一する。"""
+    sub_cwd = tmp_path / "inside"
+    sub_cwd.mkdir()
+    monkeypatch.chdir(sub_cwd)
+
+    outside_abs = f"{tmp_path}/outside\\file.txt"
+    expected = f"{tmp_path.as_posix()}/outside/file.txt"
+    assert pyfltr.paths.to_cwd_relative(outside_abs) == expected
+
+
+def test_to_cwd_relative_cwd_returns_dot() -> None:
+    """cwd自身は`.`を返す。"""
+    assert pyfltr.paths.to_cwd_relative(pathlib.Path.cwd()) == "."
 
 
 def test_to_cwd_relative_accepts_pathlib_input() -> None:

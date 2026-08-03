@@ -228,8 +228,8 @@ def filter_failed_files(result: pyfltr.command.core_.CommandResult) -> list[path
 
     `retry_command`のターゲットを「当該ツールで失敗したファイルのみ」に限定する用途
     （パートG A案）。パス比較は文字列化した相対パス（スラッシュ区切り）で行う。
-    `ErrorLocation.file`は`_normalize_path`経由でcwd基準の相対パス（区切り
-    文字は`/`）に正規化されているため、`result.target_files`側も同じ表現へ
+    `ErrorLocation.file`は`pyfltr.paths.to_cwd_relative`経由でcwd基準へ揃えられ、
+    区切り文字は`/`に統一されている。`result.target_files`側も同じ表現へ
     揃えたうえで比較する。並び順は`result.target_files`の順序を保つ。
 
     `result.errors`が空、または`ErrorLocation.file`集合と`result.target_files`

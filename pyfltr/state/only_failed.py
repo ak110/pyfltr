@@ -229,7 +229,7 @@ def _extract_failed_files_for_tool(
         return ToolTargets.fallback_default()
 
     # all_filesを正規化済み相対パス文字列でキーに持つ辞書にしておき、
-    # 診断側の`file`（`_normalize_path`済み）とそのまま比較する。
+    # 診断側の`file`（`pyfltr.paths.to_cwd_relative`済み）とそのまま比較する。
     # all_files_mapを基準に走査することでtarget側の並び順を保つ
     # （failed_filesを直接反復するとセット由来の順序不定が混入する）。
     all_files_map = {pyfltr.paths.normalize_separators(p): p for p in all_files}
