@@ -41,6 +41,12 @@ description: >
   同一抑止が複数箇所で必要になる場合は設定ファイル側での扱いをユーザーと相談する
 - pre-commit hookの`entry:`で`uv run`を起動する場合、必ず`--frozen`を明示する。
   pre-commitは親の環境変数を引き継がない構成のため`UV_FROZEN`が未設定で到達する可能性がある
+- `.pre-commit-config.yaml`の`types_or`は、`fast`サブセットに含まれ対象種別を特定できるツールの
+  種別を漏らさず列挙する。
+  pre-commit・prekは一致するファイルがコミットに含まれないとhook自体を起動しないため、
+  欠けた種別だけを変更したコミットでは当該ツールが実行されない。
+  `[tool.pyfltr]`でツールを追加で有効化した場合は`types_or`の追随要否を確認する。
+  `ec`・`gitleaks`・`typos`のような全ファイル対象のツールは列挙では網羅できず、`make test`で担保する
 - pyfltrテストでは`AGENT_INDICATOR_ENVS`のいずれかまたは`PYFLTR_OUTPUT_FORMAT`が
   予期せず設定されているとjsonl既定へ切り替わる。
   `tests/conftest.py`のautouseフィクスチャ`_isolate_output_format_envs`で一律に未設定化する。

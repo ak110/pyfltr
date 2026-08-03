@@ -261,7 +261,7 @@ colloquial-check = true
       - id: pyfltr
         name: pyfltr
         entry: uvx pyfltr fast
-        types_or: [python, markdown, toml]
+        types_or: [python, markdown, toml, yaml]
         require_serial: true
         language: system
 ```
@@ -277,7 +277,9 @@ PEP 695型パラメーター構文（`def f[T](): ...`）を使用するプロ�
 - `fast`: mypy / pylint / pytestなど重いコマンドを除外した高速サブセット
     - formatterがファイルを修正しただけではフックを失敗と判定しない
 - `types_or`: 必要な種別を列挙する
-    - markdownはtextlint / markdownlint、TOML（pyproject.toml）でuv-sort
+    - markdownはtextlint / markdownlint、TOML（pyproject.toml）でuv-sort、YAMLはactionlint
+    - pre-commit・prekは`types_or`に一致するファイルがコミットに含まれない限りhook自体が起動されない。有効化したツールの対象種別が欠けていると、当該種別だけを変更したコミットで検査が実行されない
+    - 有効化するツールを増やした場合は`types_or`の追随要否を確認する。`hadolint`（Dockerfile）・`shellcheck`・`shfmt`（シェル）などは`preset`に含まれないため、個別に有効化したときは対応する種別を追加する
 - `require_serial: true`: pyfltr自身が内部で並列化するため、pre-commit側での多重起動を抑止する
 
 pre-commit・prek統合の自動スキップなど双方向の挙動は[トラブルシューティング](troubleshooting.md)を参照。

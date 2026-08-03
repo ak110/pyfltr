@@ -32,7 +32,14 @@ repos:
       - id: pyfltr
         name: pyfltr
         entry: uv run --frozen --with-editable=. pyfltr fast
-        types_or: [python, markdown, toml]
+        # `fast`に含まれ対象種別を特定できるツールの種別を漏らさず列挙する。
+        # yamlはactionlint・yamllint、shellはshellcheck・shfmt、dockerfileはhadolintが対象とする。
+        # pre-commit・prekは一致するファイルがコミットに含まれないとhook自体を起動しないため、
+        # 欠けた種別だけを変更したコミットでは当該ツールが実行されない。
+        # `ec`・`gitleaks`・`typos`は全ファイルを対象とするため列挙では網羅できない。
+        # コミット時の起動範囲を抑えるため列挙を維持し、全体は`make test`で担保する。
+        # `[tool.pyfltr]`でツールを追加で有効化した場合は当該種別の追加要否を確認する。
+        types_or: [python, markdown, toml, yaml, shell, dockerfile]
         require_serial: true
         language: system
       - id: mkdocs-build
