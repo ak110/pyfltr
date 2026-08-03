@@ -84,8 +84,9 @@ format別のlogger stream/level切替の詳細は[docs/development/architecture.
   `pyfltr/command/dispatcher.py`の`_prepare_execution_params`が呼ぶ実行前検査で
   `resolution_failed`へ倒す経路を採用する。
   `resolution_failed`は`status`の最優先分岐で確定するため、
-  `{command}-severity = "warning"`による格下げの対象外とする
-  ツールの成否を変えず警告の発行に留める対策は本規定の対象外とし、出力解析を採用してよい。
+  `{command}-severity = "warning"`による格下げの対象外とする。
+  ツールの成否を変えず警告の発行に留める対策は、
+  「実行前検査で`resolution_failed`へ倒す経路を採用する」規定の対象外とし、出力解析を採用してよい。
   ツール自身が競合や設定の無効化を出力へ明示する場合は、当該出力を読む方が
   pyfltr側で判定条件を再実装するより誤検出が生じにくい
 

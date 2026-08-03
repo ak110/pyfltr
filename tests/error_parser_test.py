@@ -3968,6 +3968,63 @@ collected 1 item
     assert "pyproject.toml" in message
 
 
+def test_detect_pytest_config_conflict_xdist_ignores_nested_child_run() -> None:
+    """収集開始行を出さないpytest-xdistでも、子の競合を親の競合として扱わない。"""
+    output = """============================= test session starts ==============================
+platform linux -- Python 3.11.12, pytest-9.1.1, pluggy-1.6.0
+rootdir: /tmp/project
+configfile: pyproject.toml
+plugins: xdist-3.8.0
+created: 2/2 workers
+2 workers [1 item]
+
+F                                                                        [100%]
+=================================== FAILURES ===================================
+________________________________ test_sample ___________________________________
+----------------------------- Captured stdout call -----------------------------
+============================= test session starts ==============================
+rootdir: /tmp/child
+configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
+"""
+    assert pyfltr.command.error_parser.detect_pytest_config_conflict(output) is None
+
+
+def test_detect_pytest_config_conflict_xdist_no_header_ignores_nested_child_run() -> None:
+    """親が`rootdir:`・`configfile:`を一切出さない場合でもヘッダー領域の終端判定が成立する。
+
+    `--no-header`のxdist実行では親のヘッダー行が出ないため、子の競合を親の競合として
+    扱わないことを、親のヘッダー行が存在する検体とは別に固定する。
+    """
+    output = """============================= test session starts ==============================
+created: 2/2 workers
+2 workers [1 item]
+
+F                                                                        [100%]
+=================================== FAILURES ===================================
+________________________________ test_sample ___________________________________
+----------------------------- Captured stdout call -----------------------------
+============================= test session starts ==============================
+rootdir: /tmp/child
+configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
+"""
+    assert pyfltr.command.error_parser.detect_pytest_config_conflict(output) is None
+
+
+def test_detect_pytest_config_conflict_xdist_detects_own_conflict() -> None:
+    """pytest-xdistでも親自身のヘッダーにある競合は検出する。"""
+    output = """============================= test session starts ==============================
+platform linux -- Python 3.11.12, pytest-9.1.1, pluggy-1.6.0
+rootdir: /tmp/project
+configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
+plugins: xdist-3.8.0
+created: 2/2 workers
+2 workers [1 item]
+"""
+    message = pyfltr.command.error_parser.detect_pytest_config_conflict(output)
+    assert message is not None
+    assert "pytest.ini" in message
+
+
 def test_detect_pytest_config_conflict_quiet_and_no_capture_reports_child_run() -> None:
     """親が`-q`と`-s`を併用する構成では子の競合を親の競合として報告する既知の縮退。
 

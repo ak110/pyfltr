@@ -1445,6 +1445,37 @@ _PYTEST_NESTED_RUN_MARKER_RES = (
     _PYTEST_QUIET_SESSION_END_RE,
     _PYTEST_SUMMARY_HEAD_RE,
 )
+# 設定ファイル競合の検出（`detect_pytest_config_conflict`）で用いる。
+# ヘッダー領域の終端判定は`_is_pytest_header_end`が上の標識群と併せて担う。
+_PYTEST_CONFIG_CONFLICT_RE = re.compile(
+    r"^configfile: (?P<used>.+?) \(WARNING: ignoring pytest config in (?P<ignored>.+?)!\)\s*$"
+)
+"""pytestのヘッダー行が示す設定ファイル競合。
+
+pytest 9.0以降は設定ファイルを`pytest.toml`・`.pytest.toml`・`pytest.ini`・`.pytest.ini`・
+`pyproject.toml`・`tox.ini`・`setup.cfg`の順で探索し、最初に見つかったものだけを採用する。
+採用したものより後ろの候補に設定が含まれる場合、当該ヘッダー行で無視した旨を通知する。
+8系以前は無視した候補を追跡する仕組みを持たず、後続候補の設定を無言で無視するため
+当該の通知を出力しない（探索対象も`pytest.ini`以降の5種に限る）。
+この通知は`warnings`機構を通らず終了コードにも影響しないため、pyfltr側で拾わないと
+設定が適用されないままテストが完走する。
+"""
+
+_ANSI_SGR_RE = re.compile(r"\x1b\[[0-9;]*m")
+"""端末装飾のSGRシーケンス。色付き出力のヘッダー行を素の文字列として突き合わせるために除去する。"""
+
+_PYTEST_COLLECTION_RE = re.compile(r"^(?:collecting |collected \d+ items?)")
+"""pytestの収集開始行。ヘッダー領域の終端の1つ。pytest-xdistでは当該行を出力しない。"""
+
+_PYTEST_SECTION_RE = re.compile(r"^=+ .+ =+$")
+"""`=`で囲む節見出し全般。
+
+`_PYTEST_NESTED_RUN_MARKER_RES`は失敗一覧の帰属判定に用いるため、警告の集計
+（`=+ warnings summary =+`）と中断・停止の報告を意図的に標識から除いている。
+ヘッダー領域の終端判定では当該の節見出しも終端として扱う必要があるため、
+より広く一致する本パターンを併用する。実行開始行も同じ書式を取るため、
+実行開始行の判定を先に行う。
+"""
 
 
 def _pytest_parent_summary_start(output: str) -> int:
@@ -2112,26 +2143,20 @@ def _parse_with_pattern(command: str, output: str, pattern: str) -> list[ErrorLo
     return results
 
 
-_PYTEST_CONFIG_CONFLICT_RE = re.compile(
-    r"^configfile: (?P<used>.+?) \(WARNING: ignoring pytest config in (?P<ignored>.+?)!\)\s*$"
-)
-"""pytestのヘッダー行が示す設定ファイル競合。
+def _is_pytest_header_end(line: str) -> bool:
+    """与えられた行がpytestのヘッダー領域の終端に当たるかを判定する。
 
-pytestは設定ファイルを`pytest.toml`・`.pytest.toml`・`pytest.ini`・`.pytest.ini`・
-`pyproject.toml`・`tox.ini`・`setup.cfg`の順で探索し、最初に見つかったものだけを採用する。
-採用したものより後ろの候補に設定が含まれる場合、当該ヘッダー行で無視した旨を通知する。
-この通知は`warnings`機構を通らず終了コードにも影響しないため、pyfltr側で拾わないと
-設定が適用されないままテストが完走する。
-"""
-
-_ANSI_SGR_RE = re.compile(r"\x1b\[[0-9;]*m")
-"""端末装飾のSGRシーケンス。色付き出力のヘッダー行を素の文字列として突き合わせるために除去する。"""
-
-_PYTEST_COLLECTION_RE = re.compile(r"^(?:collecting |collected \d+ items?)")
-"""pytestの収集開始行。ヘッダー領域の終端であり、以降はテスト自身の標準出力が混在しうる。"""
-
-_PYTEST_SECTION_RE = re.compile(r"^=+ .+ =+$")
-"""pytestの節見出し。実行開始行もこの書式を取るため、実行開始行の判定を先に行う。"""
+    ヘッダー領域は実行開始行から始まり、収集開始行・節見出し・入れ子実行の標識のいずれかで終わる。
+    収集開始行だけを終端とすると、当該行を出力しない構成でヘッダー領域が閉じない。
+    pytest-xdistは収集開始行の代わりに`created: N/M workers`と`N workers [M items]`を出力するため、
+    実際に生じる構成である。閉じないまま走査を続けると、捕捉出力へ混入した子プロセスの
+    `rootdir:`と`configfile:`の対を親のヘッダーとして読み、子側の競合を親の競合として報告する。
+    """
+    return (
+        _PYTEST_COLLECTION_RE.match(line) is not None
+        or _PYTEST_SECTION_RE.fullmatch(line) is not None
+        or _is_pytest_nested_run_marker(line)
+    )
 
 
 def detect_pytest_config_conflict(output: str) -> str | None:
@@ -2140,11 +2165,14 @@ def detect_pytest_config_conflict(output: str) -> str | None:
     競合がない場合、およびヘッダー行を含まない出力（`-q`・`--no-header`指定時）は`None`を返す。
     副作用を持たせず、警告の発行は呼び出し側が担う。
 
+    競合の通知はpytest 9.0以降が出力する。それより前の版は後続候補の設定ファイルを
+    無言で無視するため、本関数は何も検出しない。
+
     探索対象は親プロセス自身のヘッダー領域に限る。pytestを子プロセスとして起動するテストでは
     子のヘッダーがそのまま捕捉出力へ現れるため、出力中のどこにある実行開始行も
     ヘッダーの始まりとして扱うと、親が`-q`・`--no-header`で動く場合に
     子側の競合を親の競合として報告してしまう。
-    実行開始行より前に節見出しまたは捕捉出力の節見出しが現れた場合は、
+    実行開始行より前にヘッダー領域の終端に当たる行が現れた場合は、
     既にテスト実行の段階へ入っているため親のヘッダーを持たない出力として扱う。
     実行開始行そのものより前に警告等の前置きが出る構成（標準エラー出力の併合など）があるため、
     出力の先頭行であることは要求しない。
@@ -2152,7 +2180,7 @@ def detect_pytest_config_conflict(output: str) -> str | None:
     親が`-q`と`-s`を併用し、かつ子プロセスとしてpytestを起動する構成では、
     子の競合を親の競合として報告する。`-q`で親のヘッダーが出ず、`-s`で子の出力が
     捕捉されないため、子のヘッダーが出力の先頭の行群となり、その前に打ち切りの根拠となる
-    節見出しが現れない。親子のヘッダーは書式が同一で、テキストだけでは判別できない。
+    行が現れない。親子のヘッダーは書式が同一で、テキストだけでは判別できない。
     `--no-header`は単独では該当しない。当該指定でも実行開始行自体は出力されるため、
     親のヘッダー開始行が常に先に見つかる。
     """
@@ -2162,13 +2190,13 @@ def detect_pytest_config_conflict(output: str) -> str | None:
         if _PYTEST_SESSION_START_RE.fullmatch(line):
             header_start = index
             break
-        if _PYTEST_CAPTURED_SECTION_RE.fullmatch(line) or _PYTEST_SECTION_RE.fullmatch(line):
+        if _is_pytest_header_end(line):
             return None
     if header_start is None:
         return None
     previous_line = ""
     for line in lines[header_start + 1 :]:
-        if _PYTEST_COLLECTION_RE.match(line):
+        if _is_pytest_header_end(line):
             return None
         match = _PYTEST_CONFIG_CONFLICT_RE.match(line)
         if match is None:
