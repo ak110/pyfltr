@@ -4,7 +4,8 @@ description: >
   pyfltrのテスト・実装制約の方針。
   tomlkit統一・functools.lru_cacheによる実行内キャッシュ・関数内ローカルimportの制限・
   pyright誤検知回避・monkeypatchによる設定差し替え・エージェント検出変数およびPYFLTR_OUTPUT_FORMATの環境変数隔離・
-  pre-commit hookでのuv runの--frozen指定・テストとモジュールパス参照の同期などの制約を集約する。
+  pre-commit hookでのuv runの--frozen指定・テストとモジュールパス参照の同期・
+  パス比較の区切り表現などの制約を集約する。
   pyfltr配下のPythonファイル・tests配下のPythonファイル・
   .pre-commit-config.yaml を編集する際に使用する。
 ---
@@ -62,6 +63,11 @@ description: >
 - テストでツール解決パス（`shutil.which`戻り値・`commandline[0]`等）と特定ツール名を文字列比較するときは、
   `pathlib.Path(<path>).stem == "<tool>"`の形で比較する。
   Windows runnerでは`.EXE`等の拡張子が付いて返るためである
+- テストでパスを比較する場合、比較対象の値が区切り正規化を経ているかを実装で確認してから比較方法を選ぶ。
+  正規化を経た値は`as_posix()`との文字列比較で契約を固定し、経ていない値は`str()`によるOSネイティブ表現と比較する。
+  値の生成経路を確認できない場合は`pathlib.Path`同士の比較を用いず、生成箇所の実装を読んで確定する。
+  `pathlib.Path`同士の比較はWindowsで区切りの差を吸収するため、契約からの退行を検出できない。
+  公開する`file`値の区切り表現は`docs/development/architecture.md`が定める
 - `scripts/`配下のスクリプトを`tests/`配下から参照する場合は`scripts/__init__.py`を設置する。
   mypyは`__init__.py`の有無でファイルパスからモジュール名を決めるため、
   設置しないと同一ファイルがトップレベル名とパッケージ配下名の双方へ割り当たり検査が停止する。

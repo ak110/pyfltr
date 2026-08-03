@@ -411,6 +411,24 @@ heartbeatは長時間実行中の生存確認をJSONLストリームへ追加す
 利用者向けのレコード書式は[CLIコマンド](../guide/usage.md#jsonl)を参照。
 本節では設計判断を中心に扱う。
 
+### 公開するファイル位置の表現
+
+利用者へ公開するファイル位置の値は、生成経路によらず区切りを`/`へ統一する。
+対象はJSON Lines出力・CLIテキスト出力・CLIのJSON出力・MCPツール応答・SARIF・Code Quality・
+GitHub Annotationsの各経路で返すファイルパスである。
+除外対象や欠落対象として警告へ載せるパスも含む。
+生成時は`pyfltr.paths.normalize_separators`または`pyfltr.paths.to_cwd_relative`を経由する。
+公開値を`str()`で直接文字列化しない。
+利用者や対話するエージェントが値を別の入力へ再利用するため、経路ごとの表現差は突合を失敗させる。
+
+環境情報として提示する絶対パスはこの契約の対象外とし、OSネイティブ表現のまま返す。
+該当する値はJSON Linesの`header.cwd`、実行アーカイブのメタ情報の`cwd`、
+`config`サブコマンドが返す設定ファイルパス、`command-info`が返す実行ファイルパスである。
+これらの値は利用者が実行環境を把握するために読み、経路をまたいだ突合には用いない。
+
+コマンドライン引数、キャッシュキー、並び順キー、ファイルパスのremap辞書のキーなど、
+内部処理で用いるパス文字列もこの契約の対象外とする。
+
 ### LLM向けガイダンス
 
 JSONLはLLMエージェントが入力として読むケースが多いため、失敗時の次アクションと修正ヒントを明示的に同梱する。
@@ -514,6 +532,10 @@ fixステージと通常ステージを区別する必要があるため、判�
 - SARIF level: `error`→`"error"` / `warning`→`"warning"` / `info`→`"note"` / 未設定→`"warning"`
 - GitHub Annotation: `error`→`::error` / `warning`→`::warning` / `info`→`::notice` / 未設定→`::warning`
 - Code Quality: `error`→`"major"` / `warning`→`"minor"` / `info`→`"info"` / 未設定→`"minor"`
+
+SARIFの`region`は正規化済みの開始位置に加え、診断が保持する終了行・終了列を
+`endLine`・`endColumn`へ反映する。列は1起点・終端排他とし、1未満の列は出力しない。
+textlintの列は行内位置を保証できないため、開始列・終了列の双方を省略して行範囲だけを出力する。
 
 Code Qualityの仕様は5段階（`info` / `minor` / `major` / `critical` / `blocker`）だが、
 pyfltr側に対応情報が無く過大評価を避けるため上位2段階は使わない。
