@@ -576,7 +576,7 @@ def _build_message_dict(error: pyfltr.command.error_parser.ErrorLocation) -> dic
     `severity` → `fix` → `msg`。
     `rule_url`・`hint`は含めず、それぞれtoolレコードの`hint_urls`・`hints`へ集約する。
     Noneのフィールドは出力しない（`msg`は常に出力）。
-    現状`end_line`/`end_col`を格納するのはtextlintのみ。
+    `end_line`/`end_col`を格納するのはtextlintとbiomeである。
     """
     record: dict[str, typing.Any] = {"line": error.line}
     if error.col is not None:

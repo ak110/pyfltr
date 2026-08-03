@@ -4,7 +4,6 @@
 ビルトインパーサーとカスタム正規表現の両方に対応。
 """
 
-import contextlib
 import dataclasses
 import json
 import pathlib
@@ -51,7 +50,9 @@ class ErrorLocation:
     end_line: int | None = None
     """違反範囲の終端行（Noneはツールが範囲を返さない場合）。
 
-    現状はtextlint v12+の`loc.end.line`のみが値を格納する。pyright・biome等にも将来拡張可。
+    textlint v12+の`loc.end.line`とbiomeの`endLine`が値を格納する。
+    終了位置を返す他ツールへも、正規表現へ`end_line`グループを追加するか
+    カスタムパーサーで同フィールドへ格納する形で拡張できる。
     """
     end_col: int | None = None
     """違反範囲の終端列（Noneはツールが範囲を返さない場合）。
@@ -185,7 +186,8 @@ def parse_summary(command: str, output: str) -> str | None:
 
 # ビルトインパーサー用の正規表現パターン
 # 各パターンはfile, line, messageの名前付きグループが必須。colは任意。
-# ruleグループが存在する場合はErrorLocation.ruleに取り込まれる（_parse_with_patternで対応）。
+# rule, severity, end_line, end_colの各グループが存在する場合はErrorLocationの
+# 同名フィールドへ取り込まれる（_parse_with_patternで対応）。
 # ファイルパスのパターンは(?:[A-Za-z]:)?でWindowsドライブレターに対応する。
 _FILE = r"(?:[A-Za-z]:)?[^\s:]+"
 _BUILTIN_PATTERNS: dict[str, str] = {
@@ -219,11 +221,16 @@ _BUILTIN_PATTERNS: dict[str, str] = {
     # `assist/source/<action>`を取る。ruleにはカテゴリー全体を格納する
     # （末尾要素だけでは`lint`配下と`assist`配下で同名の識別子が衝突しうるため）。
     # titleを持たない出力形態でも診断を保持できるよう、当該グループは任意とする。
+    # endLine・endColumnはErrorLocationのend_line・end_colへ取り込む。
+    # 当該フィールドを持たない出力形態でも診断を保持できるよう任意グループとする。
+    # line=・col=には前方境界を付け、endLine=・endColumn=の内部へ一致しないことを明示する。
     "biome": (
         r"::(?P<severity>error|warning|notice)\s+(?:[^:]*?title=(?P<rule>[^,]+))?"
         r"[^:]*?file=(?P<file>[^,]+)"
-        r"[^:]*?line=(?P<line>\d+)"
-        r"[^:]*?col=(?P<col>\d+)"
+        r"[^:]*?(?<![A-Za-z])line=(?P<line>\d+)"
+        r"(?:[^:]*?endLine=(?P<end_line>\d+))?"
+        r"[^:]*?(?<![A-Za-z])col=(?P<col>\d+)"
+        r"(?:[^:]*?endColumn=(?P<end_col>\d+))?"
         r"[^:]*?::(?P<message>.+)"
     ),
     # ec (editorconfig-checker) -format gcc 出力例: src/foo.py:10:0: error: xxx
@@ -2097,6 +2104,20 @@ _SUMMARY_PARSERS: dict[str, typing.Callable[[str], str | None]] = {
 }
 
 
+def _parse_optional_int(value: str | None) -> int | None:
+    """任意の整数グループの値を変換する。
+
+    グループが存在しない場合と整数として解釈できない場合はNoneを返す。
+    位置情報を持たない診断でも他フィールドの抽出結果を捨てないため、変換失敗を無視する。
+    """
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
 def _parse_with_pattern(command: str, output: str, pattern: str) -> list[ErrorLocation]:
     """正規表現パターンでエラー箇所をパースする。
 
@@ -2104,6 +2125,8 @@ def _parse_with_pattern(command: str, output: str, pattern: str) -> list[ErrorLo
     `ErrorLocation.rule`に格納し、`rule_urls.build_rule_url()`でURLも補完する。
     名前付きグループ`severity`を含む場合は`_normalize_severity`で正規化した値を
     `ErrorLocation.severity`へ格納する（biome `::notice`→`"info"`等）。
+    名前付きグループ`end_line`・`end_col`を含む場合は同名フィールドへ格納する
+    （biomeの`endLine`・`endColumn`等）。
     """
     compiled = re.compile(pattern)
     results: list[ErrorLocation] = []
@@ -2114,16 +2137,14 @@ def _parse_with_pattern(command: str, output: str, pattern: str) -> list[ErrorLo
         groups = match.groupdict()
         file_path = groups.get("file", "")
         line_str = groups.get("line", "0")
-        col_str = groups.get("col")
         message = groups.get("message") or ""
         try:
             line_num = int(line_str)
         except ValueError:
             continue
-        col_num: int | None = None
-        if col_str is not None:
-            with contextlib.suppress(ValueError):
-                col_num = int(col_str)
+        col_num = _parse_optional_int(groups.get("col"))
+        end_line_num = _parse_optional_int(groups.get("end_line"))
+        end_col_num = _parse_optional_int(groups.get("end_col"))
         rule_raw = groups.get("rule")
         rule = rule_raw.strip() if isinstance(rule_raw, str) and rule_raw.strip() else None
         rule_url = pyfltr.output.rule_urls.build_rule_url(command, rule) if rule is not None else None
@@ -2138,6 +2159,8 @@ def _parse_with_pattern(command: str, output: str, pattern: str) -> list[ErrorLo
                 rule=rule,
                 severity=severity,
                 rule_url=rule_url,
+                end_line=end_line_num,
+                end_col=end_col_num,
             )
         )
     return results

@@ -211,6 +211,54 @@ def test_parse_errors_biome_without_title_is_not_dropped() -> None:
     assert errors[0].file.endswith("foo.ts")
 
 
+def test_parse_errors_biome_end_position() -> None:
+    """biomeのendLine・endColumnをend_line・end_colへ取り込む。"""
+    output = (
+        "::error title=lint/suspicious/noDoubleEquals,file=src/foo.ts,"
+        "line=1,endLine=2,col=7,endColumn=9::Use === instead of ==\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("biome", output)
+    assert len(errors) == 1
+    assert errors[0].line == 1
+    assert errors[0].end_line == 2
+    assert errors[0].col == 7
+    assert errors[0].end_col == 9
+
+
+def test_parse_errors_biome_end_position_without_title() -> None:
+    """titleを持たない出力形態でも終了位置を取り込む。"""
+    output = "::error file=src/foo.ts,line=1,endLine=1,col=7,endColumn=9::message\n"
+    errors = pyfltr.command.error_parser.parse_errors("biome", output)
+    assert len(errors) == 1
+    assert errors[0].rule is None
+    assert errors[0].end_line == 1
+    assert errors[0].end_col == 9
+
+
+def test_parse_errors_biome_without_end_position() -> None:
+    """endLine・endColumnを持たない出力形態でも診断を保持する。"""
+    output = "::error title=lint/style/useConst,file=src/bar.ts,line=5,col=3::Use const instead of let\n"
+    errors = pyfltr.command.error_parser.parse_errors("biome", output)
+    assert len(errors) == 1
+    assert errors[0].line == 5
+    assert errors[0].col == 3
+    assert errors[0].end_line is None
+    assert errors[0].end_col is None
+    assert errors[0].rule == "lint/style/useConst"
+
+
+def test_parse_errors_biome_line_does_not_match_parameter_suffix() -> None:
+    """lineは別パラメーター名の末尾へ一致しない。"""
+    output = "::error title=lint/style/useConst,file=src/bar.ts,baseline=5,col=3::message\n"
+    assert pyfltr.command.error_parser.parse_errors("biome", output) == []
+
+
+def test_parse_errors_biome_col_does_not_match_parameter_suffix() -> None:
+    """colは別パラメーター名の末尾へ一致しない。"""
+    output = "::error title=lint/style/useConst,file=src/bar.ts,line=5,protocol=3::message\n"
+    assert pyfltr.command.error_parser.parse_errors("biome", output) == []
+
+
 def test_parse_errors_eslint_json() -> None:
     """ESLint --format json出力のパース。"""
     output = json.dumps(
