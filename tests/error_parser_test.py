@@ -1258,11 +1258,11 @@ def test_end_position_paths_keep_in_line_end(command: str, output: str) -> None:
     assert errors[0].end_col == 4
 
 
-def test_parse_eslint_json_normalizes_padded_blocks_end_position() -> None:
-    """ESLintの実出力で観測した次行先頭終端を包含行へ補正する。
+def test_parse_eslint_json_normalizes_real_world_end_position() -> None:
+    """ESLintの実出力で観測した次行先頭終端の形を包含行へ補正する。
 
-    13行のJavaScriptファイルに対する`padded-blocks`の報告を検体とする。
-    補正前は範囲外の13行目が終了行に入っていた。
+    ブロック末尾の空行を対象とするルールは、範囲が行末で終わるため
+    `endLine`が次行・`endColumn`が1となる報告を返す。補正前は範囲外の行が終了行に入っていた。
     """
     output = json.dumps(
         [
@@ -1274,9 +1274,9 @@ def test_parse_eslint_json_normalizes_padded_blocks_end_position() -> None:
                         "column": 4,
                         "endLine": 13,
                         "endColumn": 1,
-                        "ruleId": "padded-blocks",
+                        "ruleId": "no-multiple-empty-lines",
                         "severity": 2,
-                        "message": "Block must not be padded by blank lines.",
+                        "message": "More than 1 blank line not allowed.",
                     }
                 ],
             }
@@ -1289,6 +1289,57 @@ def test_parse_eslint_json_normalizes_padded_blocks_end_position() -> None:
     assert errors[0].line == 12
     assert errors[0].end_line == 12
     assert errors[0].end_col is None
+
+
+def test_parse_eslint_json_keeps_line_head_end_on_same_line() -> None:
+    """終了行が開始行と同じ場合は終了列が行頭でも補正しない。"""
+    output = json.dumps(
+        [
+            {
+                "filePath": "src/a.js",
+                "messages": [{"line": 1, "column": 1, "endLine": 1, "endColumn": 1, "message": "msg"}],
+            }
+        ]
+    )
+
+    errors = pyfltr.command.error_parser.parse_errors("eslint", output)
+
+    assert len(errors) == 1
+    assert errors[0].line == 1
+    assert errors[0].end_line == 1
+    assert errors[0].end_col == 1
+
+
+def test_parse_eslint_json_keeps_line_head_end_without_end_line() -> None:
+    """終了行が無い場合は終了列が行頭でも補正せず値を保持する。"""
+    output = json.dumps(
+        [
+            {
+                "filePath": "src/a.js",
+                "messages": [{"line": 1, "column": 2, "endColumn": 1, "message": "msg"}],
+            }
+        ]
+    )
+
+    errors = pyfltr.command.error_parser.parse_errors("eslint", output)
+
+    assert len(errors) == 1
+    assert errors[0].end_line is None
+    assert errors[0].end_col == 1
+
+
+def test_parse_errors_custom_pattern_normalizes_end_position() -> None:
+    """利用者定義のerror-pattern経由でも終了位置を包含行へ補正する。"""
+    pattern = r"(?P<file>[^:]+):(?P<line>\d+):(?P<col>\d+)-(?P<end_line>\d+):(?P<end_col>\d+):\s*(?P<message>.+)"
+    output = "src/a.py:5:2-6:1: next line head\nsrc/b.py:5:2-5:9: in line"
+
+    errors = pyfltr.command.error_parser.parse_errors("custom-tool", output, error_pattern=pattern)
+
+    assert len(errors) == 2
+    assert errors[0].end_line == 5
+    assert errors[0].end_col is None
+    assert errors[1].end_line == 5
+    assert errors[1].end_col == 9
 
 
 def test_parse_eslint_json_keeps_end_line_before_start() -> None:
