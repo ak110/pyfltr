@@ -47,7 +47,11 @@ class ErrorLocation:
     messages[]要素への個別出力は行わない。
     """
     end_line: int | None = None
-    """診断範囲の終了行。終了位置を出力するツールで設定される。"""
+    """診断範囲の最終行。終了位置を出力するツールで設定される。
+
+    範囲の最終行を含む値である。ツールが返す終了位置は範囲末尾の次の位置を指す場合があり、
+    範囲が行末で終わると次行の行番号が渡される。`_to_inclusive_end_line`で当該分を補正して格納する。
+    """
     end_col: int | None = None
     """診断範囲の終了列。原則として1起点・終端排他の行内位置である。
 
@@ -307,6 +311,25 @@ def _normalize_severity(value: typing.Any) -> str | None:
     return None
 
 
+def _to_inclusive_end_line(line: int, end_line: int | None, end_col: int | None) -> int | None:
+    """終了位置から診断範囲の最終行を求める。
+
+    ツールが返す終了位置は範囲末尾の次の位置を指す場合がある。範囲が行末で終わると
+    終了位置は次行の先頭となり、終了列が行頭（1起点で1）を指す。この場合の終了行は
+    範囲に含まれないため直前の行へ補正する。
+
+    終了行が開始行と同じか前の場合は補正しない。開始と終了が同じ位置を指すゼロ幅の範囲で、
+    終了行を開始行より前へ動かさないためである。
+    終了行が最終行そのものを指すツール（pylint・bandit）では終了列が行頭を指す範囲が
+    成立しないため、本関数を一律に適用しても値は変わらない。
+    """
+    if end_line is None:
+        return None
+    if end_col == 1 and end_line > line:
+        return end_line - 1
+    return end_line
+
+
 def _eslint_severity(value: typing.Any) -> str | None:
     """ESLint/textlint の severity 数値を文字列に変換する。"""
     if value == 2:
@@ -425,7 +448,7 @@ def _parse_eslint_json(output: str) -> list[ErrorLocation]:
             severity=_normalize_severity(msg.get("severity")),
             fix=fix_value,
             rule_url=pyfltr.output.rule_urls.build_rule_url("eslint", rule),
-            end_line=end_line,
+            end_line=_to_inclusive_end_line(line, end_line, end_col),
             end_col=end_col,
         )
 
@@ -470,7 +493,7 @@ def _parse_ruff_check_json(output: str) -> list[ErrorLocation]:
                 severity=_normalize_severity(entry.get("severity")) or "error",
                 fix=fix_value,
                 rule_url=pyfltr.output.rule_urls.build_rule_url("ruff-check", rule, existing_url=existing_url),
-                end_line=end_line,
+                end_line=_to_inclusive_end_line(line, end_line, end_col),
                 end_col=end_col,
             )
         )
@@ -530,7 +553,7 @@ def _parse_pylint_json(output: str) -> list[ErrorLocation]:
                 rule=symbol,
                 severity=severity,
                 rule_url=pyfltr.output.rule_urls.build_rule_url("pylint", symbol, category=category),
-                end_line=end_line,
+                end_line=_to_inclusive_end_line(line, end_line, end_col),
                 end_col=end_col,
             )
         )
@@ -575,7 +598,7 @@ def _parse_pyright_json(output: str) -> list[ErrorLocation]:
                 rule=rule,
                 severity=_normalize_severity(diag.get("severity")),
                 rule_url=pyfltr.output.rule_urls.build_rule_url("pyright", rule),
-                end_line=end_line,
+                end_line=_to_inclusive_end_line(line + 1, end_line, end_col),
                 end_col=end_col,
             )
         )
@@ -613,7 +636,7 @@ def _parse_shellcheck_json(output: str) -> list[ErrorLocation]:
                 severity=_normalize_severity(entry.get("level")),
                 fix=fix_value,
                 rule_url=pyfltr.output.rule_urls.build_rule_url("shellcheck", rule),
-                end_line=end_line,
+                end_line=_to_inclusive_end_line(line, end_line, end_col),
                 end_col=end_col,
             )
         )
@@ -663,7 +686,7 @@ def _parse_textlint_json(output: str) -> list[ErrorLocation]:
             severity=_normalize_severity(msg.get("severity")),
             fix=fix_value,
             hint=hint,
-            end_line=end_line,
+            end_line=_to_inclusive_end_line(line, end_line, end_col),
             end_col=end_col,
         )
 
@@ -935,7 +958,7 @@ def _parse_semgrep_json(output: str) -> list[ErrorLocation]:
                 message=str(extra.get("message", "") or ""),
                 rule=rule,
                 severity=_normalize_severity(extra.get("severity")),
-                end_line=end_line,
+                end_line=_to_inclusive_end_line(line, end_line, end_col),
                 end_col=end_col,
             )
         )
@@ -995,7 +1018,7 @@ def _parse_bandit_json(output: str) -> list[ErrorLocation]:
                 message=message,
                 rule=rule,
                 severity=_normalize_severity(entry.get("issue_severity")),
-                end_line=end_line,
+                end_line=_to_inclusive_end_line(line, end_line, end_col),
                 end_col=end_col,
             )
         )
@@ -1057,7 +1080,7 @@ def _parse_sqlfluff_json(output: str) -> list[ErrorLocation]:
                     message=str(violation.get("description", "") or ""),
                     rule=rule,
                     severity=severity,
-                    end_line=end_line,
+                    end_line=_to_inclusive_end_line(line, end_line, end_col),
                     end_col=end_col,
                 )
             )
@@ -2221,7 +2244,7 @@ def _parse_with_pattern(command: str, output: str, pattern: str) -> list[ErrorLo
                 rule=rule,
                 severity=severity,
                 rule_url=rule_url,
-                end_line=end_line_num,
+                end_line=_to_inclusive_end_line(line_num, end_line_num, end_col_num),
                 end_col=end_col_num,
             )
         )

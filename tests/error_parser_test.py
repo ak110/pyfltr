@@ -719,6 +719,32 @@ def test_parse_pylint_json_with_stderr_prefix() -> None:
     assert errors[0].rule == "missing-module-docstring"
 
 
+def test_parse_pylint_json_keeps_inclusive_end_line() -> None:
+    """終了行が最終行を指すツールでは値が変わらない。"""
+    output = json.dumps(
+        {
+            "messages": [
+                {
+                    "messageId": "C0301",
+                    "symbol": "line-too-long",
+                    "message": "Line too long",
+                    "path": "src/a.py",
+                    "line": 3,
+                    "column": 0,
+                    "endLine": 5,
+                    "endColumn": 4,
+                    "type": "convention",
+                }
+            ]
+        }
+    )
+
+    errors = pyfltr.command.error_parser.parse_errors("pylint", output)
+
+    assert len(errors) == 1
+    assert errors[0].end_line == 5
+
+
 def test_parse_pylint_json_fallback() -> None:
     """pylint: JSONでない出力はregexにフォールバックする。"""
     output = "src/foo.py:10:5: C0114: Missing module docstring (missing-module-docstring)"
@@ -843,6 +869,74 @@ def test_parse_pyright_json_fallback() -> None:
     assert errors[0].message == 'Type "int" is not assignable'
     assert errors[0].end_line is None
     assert errors[0].end_col is None
+
+
+def test_parse_pyright_json_normalizes_exclusive_end_line() -> None:
+    """行末で終わる範囲の終了行は直前の行へ補正される。"""
+    output = json.dumps(
+        {
+            "generalDiagnostics": [
+                {
+                    "file": "src/a.py",
+                    "range": {"start": {"line": 0, "character": 4}, "end": {"line": 2, "character": 0}},
+                    "message": "String literal is unterminated",
+                    "severity": "error",
+                }
+            ]
+        }
+    )
+
+    errors = pyfltr.command.error_parser.parse_errors("pyright", output)
+
+    assert len(errors) == 1
+    assert errors[0].line == 1
+    assert errors[0].end_line == 2
+    assert errors[0].end_col == 1
+
+
+def test_parse_pyright_json_keeps_inclusive_end_line() -> None:
+    """行内で終わる範囲の終了行はそのまま保持される。"""
+    output = json.dumps(
+        {
+            "generalDiagnostics": [
+                {
+                    "file": "src/a.py",
+                    "range": {"start": {"line": 4, "character": 9}, "end": {"line": 8, "character": 1}},
+                    "message": "Operator error",
+                    "severity": "error",
+                }
+            ]
+        }
+    )
+
+    errors = pyfltr.command.error_parser.parse_errors("pyright", output)
+
+    assert len(errors) == 1
+    assert errors[0].line == 5
+    assert errors[0].end_line == 9
+    assert errors[0].end_col == 2
+
+
+def test_parse_pyright_json_keeps_zero_width_range() -> None:
+    """開始行と終了行が同じゼロ幅の範囲は補正しない。"""
+    output = json.dumps(
+        {
+            "generalDiagnostics": [
+                {
+                    "file": "src/a.py",
+                    "range": {"start": {"line": 2, "character": 0}, "end": {"line": 2, "character": 0}},
+                    "message": "Expected indented block",
+                    "severity": "error",
+                }
+            ]
+        }
+    )
+
+    errors = pyfltr.command.error_parser.parse_errors("pyright", output)
+
+    assert len(errors) == 1
+    assert errors[0].line == 3
+    assert errors[0].end_line == 3
 
 
 def test_parse_shellcheck_json() -> None:
