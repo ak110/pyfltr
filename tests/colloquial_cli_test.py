@@ -9,6 +9,7 @@ import subprocess
 import sys
 
 import pyfltr.colloquial.check
+import pyfltr.paths
 
 
 def _run(*paths: pathlib.Path) -> subprocess.CompletedProcess[str]:
@@ -62,7 +63,7 @@ def test_detection_exits_one_with_expected_format(tmp_path: pathlib.Path) -> Non
     assert result.returncode == 1
     lines = result.stdout.splitlines()
     assert len(lines) == 1
-    assert lines[0].startswith(f"{target}:1:")
+    assert lines[0].startswith(f"{pyfltr.paths.normalize_separators(target)}:1:")
     assert f"[{deny_line}]" in lines[0]
 
 
@@ -89,8 +90,8 @@ def test_multiple_files_report_all_hits(tmp_path: pathlib.Path) -> None:
     assert result.returncode == 1
     lines = result.stdout.splitlines()
     assert len(lines) == 2
-    assert any(line.startswith(f"{target1}:") for line in lines)
-    assert any(line.startswith(f"{target2}:") for line in lines)
+    assert any(line.startswith(f"{pyfltr.paths.normalize_separators(target1)}:") for line in lines)
+    assert any(line.startswith(f"{pyfltr.paths.normalize_separators(target2)}:") for line in lines)
 
 
 def test_missing_file_is_skipped(tmp_path: pathlib.Path) -> None:
@@ -104,4 +105,24 @@ def test_missing_file_is_skipped(tmp_path: pathlib.Path) -> None:
     assert result.returncode == 1
     lines = result.stdout.splitlines()
     assert len(lines) == 1
-    assert lines[0].startswith(f"{target}:")
+    assert lines[0].startswith(f"{pyfltr.paths.normalize_separators(target)}:")
+
+
+def test_cli_normalizes_backslash_in_filename(tmp_path: pathlib.Path) -> None:
+    """バックスラッシュを含む実ファイル名も公開CLI出力では`/`へ正規化する。
+
+    POSIX環境ではバックスラッシュが実ファイル名の一部として保持されるため、
+    正規化の適用有無を公開経路から観測できる。
+    """
+    deny_line, _ = _deny_sample()
+    assert deny_line
+    target = tmp_path / r"nested\hit.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(f"本文に{deny_line}該当する。\n", encoding="utf-8")
+    result = _run(target)
+    assert result.returncode == 1
+    lines = result.stdout.splitlines()
+    assert len(lines) == 1
+    normalized = pyfltr.paths.normalize_separators(target)
+    assert lines[0].startswith(f"{normalized}:1:")
+    assert "\\" not in lines[0]
