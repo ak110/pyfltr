@@ -140,10 +140,10 @@ def _unknown_document_tokens(line: str, external_options: frozenset[str]) -> set
     stripped = line.strip()
     if not code_spans and re.search(r"\bpyfltr\s+", stripped):
         command = _command_path(stripped)
-        assert command is not None
-        command_path, commandline = command
-        unknown.update(_unknown_tokens(commandline, options_by_command[command_path]))
-        has_command_context = True
+        if command is not None:
+            command_path, commandline = command
+            unknown.update(_unknown_tokens(commandline, options_by_command[command_path]))
+            has_command_context = True
 
     separate_unknown, has_separate_context = _unknown_separate_inline_tokens(line, code_spans)
     unknown.update(separate_unknown)
@@ -193,13 +193,17 @@ def _unknown_command_segments(value: str, external_options: frozenset[str]) -> s
     """コマンド区切り単位でCLI文脈を判定して未知のオプション名を返す。"""
     unknown: set[str] = set()
     for segment in _split_command_segments(value):
-        if re.search(r"\bpyfltr\s+", segment):
-            command = _command_path(segment)
-            assert command is not None
-            command_path, commandline = command
-            unknown.update(_unknown_tokens(commandline, _get_options_by_command()[command_path]))
-        else:
+        # `_command_path`は先頭で`strip()`するため、ガードも正規化済みの断片へ適用する。
+        # 揃えないと、f-stringのリテラル部が生む`pyfltr `のような断片で判定結果が異なる。
+        # ガード自体は外せない。`_command_path`は`pyfltr`の表記が無くてもサブコマンド名で
+        # 始まる断片に一致するため、戻り値だけで分岐すると外部ツールの引数まで
+        # pyfltrのコマンド文脈と誤認する。
+        command = _command_path(segment) if re.search(r"\bpyfltr\s+", segment.strip()) else None
+        if command is None:
             unknown.update(_unknown_tokens(segment, _get_known_options()) - external_options)
+            continue
+        command_path, commandline = command
+        unknown.update(_unknown_tokens(commandline, _get_options_by_command()[command_path]))
     return unknown
 
 
@@ -397,6 +401,26 @@ def test_command_segments_respect_quotes_and_escapes() -> None:
         "pyfltr run --commands=pytest ",
         " textlint --format",
     ]
+
+
+def test_command_segments_without_subcommand_are_not_command_context() -> None:
+    """コマンド名だけで終わる断片を外部文脈として扱い、例外を送出しないことを検査する。"""
+    # f-stringのリテラル部はPython 3.12以降で独立したトークンとなり、
+    # `f"pyfltr {...}"`から`pyfltr `のように末尾空白で終わる断片が生じる。
+    for segment in ("pyfltr ", " pyfltr ", "pyfltr"):
+        assert _unknown_command_segments(segment, frozenset()) == set()
+    # コマンド文脈（pyfltrで始まる）ではコマンド階層のオプションをチェックする。
+    assert _unknown_command_segments("pyfltr --unknown-option", frozenset()) == {"--unknown-option"}
+    assert _unknown_command_segments("pyfltr --unknown-option", frozenset({"--unknown-option"})) == {"--unknown-option"}
+    # 外部文脈（pyfltrで始まらない）では外部ツール引数の許可が適用される。
+    assert _unknown_command_segments("textlint --unknown-option", frozenset()) == {"--unknown-option"}
+    assert _unknown_command_segments("textlint --unknown-option", frozenset({"--unknown-option"})) == set()
+    # コマンド名が続く断片は従来どおりコマンド文脈として扱う。
+    assert _unknown_command_segments("pyfltr run --commands=pytest", frozenset()) == set()
+    # 断片抽出から判定までの経路でも同じ入力を検証する。
+    # 是正前はいずれも`_unknown_command_segments`の`assert`で例外となる。
+    assert _unknown_text_tokens("pyfltr ", frozenset()) == set()
+    assert not _find_unknown_options("pyfltr \n", _REPO_ROOT / "pyfltr" / "cli" / "main.py", document=False)
 
 
 def test_python_text_fragments_strip_python_quotes() -> None:
