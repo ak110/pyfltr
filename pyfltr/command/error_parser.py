@@ -50,12 +50,12 @@ class ErrorLocation:
     """診断範囲の最終行。終了位置を出力するツールで設定される。
 
     範囲の最終行を含む値である。ツールが返す終了位置は範囲末尾の次の位置を指す場合があり、
-    範囲が行末で終わると次行の行番号が渡される。`_to_inclusive_end_line`で当該分を補正して格納する。
+    範囲が行末で終わると次行の行番号が渡される。`_to_inclusive_end_position`で当該分を補正して格納する。
     """
     end_col: int | None = None
     """診断範囲の終了列。原則として1起点・終端排他の行内位置である。
 
-    `_to_inclusive_end_line`が終了行を直前の行へ補正する場合、直前行の終端列は
+    `_to_inclusive_end_position`が終了行を直前の行へ補正する場合、直前行の終端列は
     ツール出力だけでは算出できないため`None`へ正規化する。
     textlintは文を切り出すライブラリを用いるルールで行内位置にならない場合がある。
     """
@@ -313,35 +313,30 @@ def _normalize_severity(value: typing.Any) -> str | None:
     return None
 
 
-def _to_inclusive_end_line(line: int, end_line: int | None, end_col: int | None) -> int | None:
-    """終了位置から診断範囲の最終行を求める。
+def _to_inclusive_end_position(line: int, end_line: int | None, end_col: int | None) -> tuple[int | None, int | None]:
+    """終了位置を診断範囲の最終行と、その行における終了列の組へ揃える。
 
     ツールが返す終了位置は範囲末尾の次の位置を指す場合がある。範囲が行末で終わると
     終了位置は次行の先頭となり、終了列が行頭（1起点で1）を指す。この場合の終了行は
-    範囲に含まれないため直前の行へ補正する。
+    範囲に含まれないため直前の行へ補正する。あわせて終了列を省略する。
+    元の終了列は次行上の値であり、直前行の終端排他列はツール出力から算出できないためである。
 
     終了行が開始行と同じか前の場合は補正しない。開始と終了が同じ位置を指すゼロ幅の範囲で、
     終了行を開始行より前へ動かさないためである。
     終了行が最終行そのものを指すツール（pylint・bandit）では終了列が行頭を指す範囲が
     成立しないため、本関数を一律に適用しても値は変わらない。
-    """
-    if end_line is None:
-        return None
-    if end_col == 1 and end_line > line:
-        return end_line - 1
-    return end_line
 
+    textlintは文を切り出すライブラリを用いるルールで列が行内位置にならない場合があり、
+    判定材料の確からしさが他ツールより低い。実出力では終了列が行頭へずれる事象を
+    観測していないため補正対象から外していないが、行と列を1箇所で決める本関数の形を保ち、
+    判定が変わる場合に両者が同時に追随するようにする。
 
-def _to_inclusive_end_col(line: int, end_line: int | None, end_col: int | None) -> int | None:
-    """包含的な終了行と同じ行を指す終了列を返す。
-
-    排他的な終了位置が次行の先頭を指す場合、`_to_inclusive_end_line`は終了行を
-    直前の行へ補正する。元の終了列は次行上の値であり、補正後の行には適用できない。
-    直前行の終端排他列はツール出力だけでは算出できないため、この場合は省略する。
+    行と列を別々の関数で決めると、呼び出し側が異なる開始行を渡した場合に
+    両者が別の行を指しうる。組で返すことで当該の不整合が成立しないようにする。
     """
     if end_col == 1 and end_line is not None and end_line > line:
-        return None
-    return end_col
+        return end_line - 1, None
+    return end_line, end_col
 
 
 def _eslint_severity(value: typing.Any) -> str | None:
@@ -452,6 +447,7 @@ def _parse_eslint_json(output: str) -> list[ErrorLocation]:
         # 「自動修正不可」を明示する（`None`省略との区別を維持）。
         fix_value = "safe" if msg.get("fix") else "none"
         rule = rule_id or None
+        end_line, end_col = _to_inclusive_end_position(line, end_line, end_col)
         return ErrorLocation(
             file=pyfltr.paths.to_cwd_relative(file_path),
             line=line,
@@ -462,8 +458,8 @@ def _parse_eslint_json(output: str) -> list[ErrorLocation]:
             severity=_normalize_severity(msg.get("severity")),
             fix=fix_value,
             rule_url=pyfltr.output.rule_urls.build_rule_url("eslint", rule),
-            end_line=_to_inclusive_end_line(line, end_line, end_col),
-            end_col=_to_inclusive_end_col(line, end_line, end_col),
+            end_line=end_line,
+            end_col=end_col,
         )
 
     return _parse_file_messages_format(data, _msg_to_location)
@@ -496,6 +492,7 @@ def _parse_ruff_check_json(output: str) -> list[ErrorLocation]:
         rule = str(entry.get("code", "")) or None
         entry_url = entry.get("url")
         existing_url = str(entry_url) if isinstance(entry_url, str) and entry_url else None
+        end_line, end_col = _to_inclusive_end_position(line, end_line, end_col)
         results.append(
             ErrorLocation(
                 file=pyfltr.paths.to_cwd_relative(str(entry.get("filename", ""))),
@@ -507,8 +504,8 @@ def _parse_ruff_check_json(output: str) -> list[ErrorLocation]:
                 severity=_normalize_severity(entry.get("severity")) or "error",
                 fix=fix_value,
                 rule_url=pyfltr.output.rule_urls.build_rule_url("ruff-check", rule, existing_url=existing_url),
-                end_line=_to_inclusive_end_line(line, end_line, end_col),
-                end_col=_to_inclusive_end_col(line, end_line, end_col),
+                end_line=end_line,
+                end_col=end_col,
             )
         )
     return results
@@ -557,6 +554,7 @@ def _parse_pylint_json(output: str) -> list[ErrorLocation]:
         # 公式ドキュメントURLはカテゴリー名（`convention` / `warning` / `error` / `refactor` /
         # `information` / `fatal`）を必要とする。`type`フィールドをそのまま渡す。
         category = msg_type or None
+        end_line, end_col = _to_inclusive_end_position(line, end_line, end_col)
         results.append(
             ErrorLocation(
                 file=pyfltr.paths.to_cwd_relative(str(msg.get("path", ""))),
@@ -567,8 +565,8 @@ def _parse_pylint_json(output: str) -> list[ErrorLocation]:
                 rule=symbol,
                 severity=severity,
                 rule_url=pyfltr.output.rule_urls.build_rule_url("pylint", symbol, category=category),
-                end_line=_to_inclusive_end_line(line, end_line, end_col),
-                end_col=_to_inclusive_end_col(line, end_line, end_col),
+                end_line=end_line,
+                end_col=end_col,
             )
         )
     return results
@@ -602,6 +600,7 @@ def _parse_pyright_json(output: str) -> list[ErrorLocation]:
         end_line = _one_based_offset(end.get("line")) if isinstance(end, dict) else None
         end_col = _one_based_offset(end.get("character")) if isinstance(end, dict) else None
         rule = str(diag.get("rule", "")) or None
+        end_line, end_col = _to_inclusive_end_position(line + 1, end_line, end_col)
         results.append(
             ErrorLocation(
                 file=pyfltr.paths.to_cwd_relative(str(diag.get("file", ""))),
@@ -612,8 +611,8 @@ def _parse_pyright_json(output: str) -> list[ErrorLocation]:
                 rule=rule,
                 severity=_normalize_severity(diag.get("severity")),
                 rule_url=pyfltr.output.rule_urls.build_rule_url("pyright", rule),
-                end_line=_to_inclusive_end_line(line + 1, end_line, end_col),
-                end_col=_to_inclusive_end_col(line + 1, end_line, end_col),
+                end_line=end_line,
+                end_col=end_col,
             )
         )
     return results
@@ -639,6 +638,7 @@ def _parse_shellcheck_json(output: str) -> list[ErrorLocation]:
         rule = f"SC{code}" if isinstance(code, int) else None
         # shellcheckはJSON出力で自動修正情報の有無を明示する。
         fix_value = "safe" if entry.get("fix") else "none"
+        end_line, end_col = _to_inclusive_end_position(line, end_line, end_col)
         results.append(
             ErrorLocation(
                 file=pyfltr.paths.to_cwd_relative(str(entry.get("file", ""))),
@@ -650,8 +650,8 @@ def _parse_shellcheck_json(output: str) -> list[ErrorLocation]:
                 severity=_normalize_severity(entry.get("level")),
                 fix=fix_value,
                 rule_url=pyfltr.output.rule_urls.build_rule_url("shellcheck", rule),
-                end_line=_to_inclusive_end_line(line, end_line, end_col),
-                end_col=_to_inclusive_end_col(line, end_line, end_col),
+                end_line=end_line,
+                end_col=end_col,
             )
         )
     return results
@@ -690,6 +690,7 @@ def _parse_textlint_json(output: str) -> list[ErrorLocation]:
             range_text = _format_textlint_loc(msg.get("loc"))
             if range_text:
                 message = f"{message} {range_text}"
+        end_line, end_col = _to_inclusive_end_position(line, end_line, end_col)
         return ErrorLocation(
             file=pyfltr.paths.to_cwd_relative(file_path),
             line=line,
@@ -700,8 +701,8 @@ def _parse_textlint_json(output: str) -> list[ErrorLocation]:
             severity=_normalize_severity(msg.get("severity")),
             fix=fix_value,
             hint=hint,
-            end_line=_to_inclusive_end_line(line, end_line, end_col),
-            end_col=_to_inclusive_end_col(line, end_line, end_col),
+            end_line=end_line,
+            end_col=end_col,
         )
 
     return _parse_file_messages_format(data, _msg_to_location)
@@ -965,6 +966,7 @@ def _parse_semgrep_json(output: str) -> list[ErrorLocation]:
         end_col = _json_int(end.get("col")) if isinstance(end, dict) else None
         extra = entry.get("extra", {}) if isinstance(entry.get("extra"), dict) else {}
         rule = str(entry.get("check_id", "") or "") or None
+        end_line, end_col = _to_inclusive_end_position(line, end_line, end_col)
         results.append(
             ErrorLocation(
                 file=pyfltr.paths.to_cwd_relative(str(entry.get("path", ""))),
@@ -974,8 +976,8 @@ def _parse_semgrep_json(output: str) -> list[ErrorLocation]:
                 message=str(extra.get("message", "") or ""),
                 rule=rule,
                 severity=_normalize_severity(extra.get("severity")),
-                end_line=_to_inclusive_end_line(line, end_line, end_col),
-                end_col=_to_inclusive_end_col(line, end_line, end_col),
+                end_line=end_line,
+                end_col=end_col,
             )
         )
     return results
@@ -1025,6 +1027,7 @@ def _parse_bandit_json(output: str) -> list[ErrorLocation]:
         if isinstance(more_info, str) and more_info:
             message = f"{message} (see {more_info})" if message else f"(see {more_info})"
         rule = str(entry.get("test_id", "") or "") or None
+        end_line, end_col = _to_inclusive_end_position(line, end_line, end_col)
         results.append(
             ErrorLocation(
                 file=pyfltr.paths.to_cwd_relative(str(entry.get("filename", ""))),
@@ -1034,8 +1037,8 @@ def _parse_bandit_json(output: str) -> list[ErrorLocation]:
                 message=message,
                 rule=rule,
                 severity=_normalize_severity(entry.get("issue_severity")),
-                end_line=_to_inclusive_end_line(line, end_line, end_col),
-                end_col=_to_inclusive_end_col(line, end_line, end_col),
+                end_line=end_line,
+                end_col=end_col,
             )
         )
     return results
@@ -1087,6 +1090,7 @@ def _parse_sqlfluff_json(output: str) -> list[ErrorLocation]:
             end_col = _json_int(violation.get("end_line_pos"))
             rule = str(violation.get("code", "") or "") or None
             severity = "warning" if violation.get("warning") else "error"
+            end_line, end_col = _to_inclusive_end_position(line, end_line, end_col)
             results.append(
                 ErrorLocation(
                     file=pyfltr.paths.to_cwd_relative(file_path),
@@ -1096,8 +1100,8 @@ def _parse_sqlfluff_json(output: str) -> list[ErrorLocation]:
                     message=str(violation.get("description", "") or ""),
                     rule=rule,
                     severity=severity,
-                    end_line=_to_inclusive_end_line(line, end_line, end_col),
-                    end_col=_to_inclusive_end_col(line, end_line, end_col),
+                    end_line=end_line,
+                    end_col=end_col,
                 )
             )
     return results
@@ -2227,7 +2231,11 @@ def _parse_with_pattern(command: str, output: str, pattern: str) -> list[ErrorLo
     名前付きグループ`severity`を含む場合は`_normalize_severity`で正規化した値を
     `ErrorLocation.severity`へ格納する（biome `::notice`→`"info"`等）。
     名前付きグループ`end_line`・`end_col`を含む場合は同名フィールドへ格納する
-    （biomeの`endLine`・`endColumn`等）。
+    （biomeの`endLine`・`endColumn`等）。格納前に`_to_inclusive_end_position`を通し、
+    終了位置が次行の先頭を指す場合は終了行を直前の行へ補正する。
+    本経路は利用者定義の`error_pattern`にも適用されるため、終了行が最終行そのものを指すツールを
+    取り込む場合も同じ補正の対象となる。当該補正は終了列が行頭を指す場合だけ発火し、
+    そのようなツールでは当該の組が成立しないため値は変わらない。
     """
     compiled = re.compile(pattern)
     results: list[ErrorLocation] = []
@@ -2250,6 +2258,7 @@ def _parse_with_pattern(command: str, output: str, pattern: str) -> list[ErrorLo
         rule = rule_raw.strip() if isinstance(rule_raw, str) and rule_raw.strip() else None
         rule_url = pyfltr.output.rule_urls.build_rule_url(command, rule) if rule is not None else None
         severity = _normalize_severity(groups.get("severity"))
+        end_line_num, end_col_num = _to_inclusive_end_position(line_num, end_line_num, end_col_num)
         results.append(
             ErrorLocation(
                 file=pyfltr.paths.to_cwd_relative(file_path),
@@ -2260,8 +2269,8 @@ def _parse_with_pattern(command: str, output: str, pattern: str) -> list[ErrorLo
                 rule=rule,
                 severity=severity,
                 rule_url=rule_url,
-                end_line=_to_inclusive_end_line(line_num, end_line_num, end_col_num),
-                end_col=_to_inclusive_end_col(line_num, end_line_num, end_col_num),
+                end_line=end_line_num,
+                end_col=end_col_num,
             )
         )
     return results

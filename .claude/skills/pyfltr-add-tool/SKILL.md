@@ -38,8 +38,7 @@ description: >
 - `error_parser` のカスタム関数パーサーは `_CUSTOM_PARSERS` 辞書に登録しないと有効化されない
 - 終了位置を出力するツールでは、終了行が範囲の最終行を指すか範囲末尾の次の位置を指すかを公式仕様で確認する
   - `ErrorLocation.end_line`は最終行を含む値として扱う
-  - `_to_inclusive_end_line`へ開始行・終了行・終了列を渡して格納する
-  - 終了行を直前の行へ補正する場合は、元の終了列を`_to_inclusive_end_col`で省略する
+  - `_to_inclusive_end_position`へ開始行・終了行・終了列を渡し、返る組をそのまま格納する
 - 依存追加は `uv add` を使う（`uv.lock` の直接編集はPreToolUse hookでブロックされる）
 - 外部パス対応分類を決定する。
   対象は`allows_external_paths`・`config_arg_template`・`config_inject_candidates`とする。

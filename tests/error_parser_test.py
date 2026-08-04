@@ -1099,6 +1099,217 @@ def test_end_position_paths_normalize_next_line_start(command: str, output: str)
     assert errors[0].end_col is None
 
 
+@pytest.mark.parametrize(
+    ("command", "output"),
+    [
+        pytest.param(
+            "eslint",
+            json.dumps(
+                [
+                    {
+                        "filePath": "src/a.js",
+                        "messages": [{"line": 1, "column": 2, "endLine": 3, "endColumn": 4, "message": "msg"}],
+                    }
+                ]
+            ),
+            id="eslint",
+        ),
+        pytest.param(
+            "ruff-check",
+            json.dumps(
+                [
+                    {
+                        "filename": "src/a.py",
+                        "location": {"row": 1, "column": 2},
+                        "end_location": {"row": 3, "column": 4},
+                        "message": "msg",
+                    }
+                ]
+            ),
+            id="ruff-check",
+        ),
+        pytest.param(
+            "pylint",
+            json.dumps(
+                {
+                    "messages": [
+                        {
+                            "path": "src/a.py",
+                            "line": 1,
+                            "column": 1,
+                            "endLine": 3,
+                            "endColumn": 3,
+                            "message": "msg",
+                        }
+                    ]
+                }
+            ),
+            id="pylint",
+        ),
+        pytest.param(
+            "pyright",
+            json.dumps(
+                {
+                    "generalDiagnostics": [
+                        {
+                            "file": "src/a.py",
+                            "range": {
+                                "start": {"line": 0, "character": 1},
+                                "end": {"line": 2, "character": 3},
+                            },
+                            "message": "msg",
+                        }
+                    ]
+                }
+            ),
+            id="pyright",
+        ),
+        pytest.param(
+            "shellcheck",
+            json.dumps([{"file": "src/a.sh", "line": 1, "column": 2, "endLine": 3, "endColumn": 4, "message": "msg"}]),
+            id="shellcheck",
+        ),
+        pytest.param(
+            "textlint",
+            json.dumps(
+                [
+                    {
+                        "filePath": "docs/a.md",
+                        "messages": [
+                            {
+                                "line": 1,
+                                "column": 2,
+                                "loc": {"end": {"line": 3, "column": 4}},
+                                "message": "msg",
+                            }
+                        ],
+                    }
+                ]
+            ),
+            id="textlint",
+        ),
+        pytest.param(
+            "semgrep",
+            json.dumps(
+                {
+                    "results": [
+                        {
+                            "path": "src/a.py",
+                            "start": {"line": 1, "col": 2},
+                            "end": {"line": 3, "col": 4},
+                            "extra": {"message": "msg"},
+                        }
+                    ]
+                }
+            ),
+            id="semgrep",
+        ),
+        pytest.param(
+            "bandit",
+            json.dumps(
+                {
+                    "results": [
+                        {
+                            "filename": "src/a.py",
+                            "line_number": 1,
+                            "col_offset": 1,
+                            "line_range": [1, 2, 3],
+                            "end_col_offset": 3,
+                            "issue_text": "msg",
+                        }
+                    ]
+                }
+            ),
+            id="bandit",
+        ),
+        pytest.param(
+            "sqlfluff",
+            json.dumps(
+                [
+                    {
+                        "filepath": "src/a.sql",
+                        "violations": [
+                            {
+                                "start_line_no": 1,
+                                "start_line_pos": 2,
+                                "end_line_no": 3,
+                                "end_line_pos": 4,
+                                "description": "msg",
+                            }
+                        ],
+                    }
+                ]
+            ),
+            id="sqlfluff",
+        ),
+        pytest.param(
+            "biome",
+            "::error file=src/a.ts,line=1,endLine=3,col=2,endColumn=4::msg\n",
+            id="pattern",
+        ),
+    ],
+)
+def test_end_position_paths_keep_in_line_end(command: str, output: str) -> None:
+    """終了列が行内を指す複数行範囲は全経路で終了行・終了列を保持する。"""
+    errors = pyfltr.command.error_parser.parse_errors(command, output)
+
+    assert len(errors) == 1
+    assert errors[0].end_line == 3
+    assert errors[0].end_col == 4
+
+
+def test_parse_eslint_json_normalizes_padded_blocks_end_position() -> None:
+    """ESLintの実出力で観測した次行先頭終端を包含行へ補正する。
+
+    13行のJavaScriptファイルに対する`padded-blocks`の報告を検体とする。
+    補正前は範囲外の13行目が終了行に入っていた。
+    """
+    output = json.dumps(
+        [
+            {
+                "filePath": "src/a.js",
+                "messages": [
+                    {
+                        "line": 12,
+                        "column": 4,
+                        "endLine": 13,
+                        "endColumn": 1,
+                        "ruleId": "padded-blocks",
+                        "severity": 2,
+                        "message": "Block must not be padded by blank lines.",
+                    }
+                ],
+            }
+        ]
+    )
+
+    errors = pyfltr.command.error_parser.parse_errors("eslint", output)
+
+    assert len(errors) == 1
+    assert errors[0].line == 12
+    assert errors[0].end_line == 12
+    assert errors[0].end_col is None
+
+
+def test_parse_eslint_json_keeps_end_line_before_start() -> None:
+    """終了行が開始行より前の退化入力では補正せず値を保持する。"""
+    output = json.dumps(
+        [
+            {
+                "filePath": "src/a.js",
+                "messages": [{"line": 5, "column": 2, "endLine": 3, "endColumn": 1, "message": "msg"}],
+            }
+        ]
+    )
+
+    errors = pyfltr.command.error_parser.parse_errors("eslint", output)
+
+    assert len(errors) == 1
+    assert errors[0].line == 5
+    assert errors[0].end_line == 3
+    assert errors[0].end_col == 1
+
+
 def test_parse_shellcheck_json() -> None:
     """shellcheck -f json出力のパース。"""
     output = json.dumps(
