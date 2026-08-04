@@ -45,6 +45,15 @@ JSON Lines出力（`--output-format=jsonl`）とMCPサーバー（`pyfltr mcp`�
     - 例外は利用者向け文書の挙動記述を裏付ける場合に限る（本章の挙動裏付けに関する規定を参照）
   - 特定ファイルのみを対象にする場合は`uv run pyfltr run <path>`にパスを渡す
   - 修正後の再実行時は`--commands=mypy,ruff-check`等で限定して実行する（最終検証はCIに委ねる前提）
+  - 診断内容の調査・検体収集を目的として対応ツールを実行する場合は、
+    自動修正を抑止する`--no-fix`（MCPでは`no_fix`）を併せて渡す。
+    修正を目的としない実行で対象ファイルが書き換わると、調査対象の診断が消え、
+    利用者の未コミット変更との切り分けも要する
+    - `--no-fix`が抑止するのはfixステージ（`{command}-fix-args`を持つlinter）だけであり、
+      formatterは通常ステージで対象ファイルを書き込む。
+      `ruff-format-by-check`が既定で有効なため、`ruff-format`は`--no-fix`の指定時も
+      `check --fix --unsafe-fixes`を先に実行し、未使用importの削除など整形以外の修正まで及ぶ
+    - 書き換えを避けたい場合は`--no-fix`に加えて`--commands`で対象をlinterへ限定する
   - CIとローカルではmiseが解決する対応ツールの版が異なる場合がある
     - CIでのみ再現した指摘を検証する場合は、`pyproject.toml`の`[tool.pyfltr]`へ
         `{command}-version = "<版>"`を一時的に指定して`uv run pyfltr run <path> --commands=<command>`を実行し、
