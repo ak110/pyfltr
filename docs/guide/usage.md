@@ -474,6 +474,22 @@ fixステージでは`{command}-fix-args`が定義された有効なlinterを`--
 カスタムコマンドでも`pyproject.toml`の`[tool.pyfltr.custom-commands.<name>]`に`fix-args = [...]`を定義すれば
 fixステージの対象になる。
 
+#### fixステージの抑止（`--no-fix`）
+
+`--no-fix`（MCPでは`no_fix`）を指定するとfixステージを実行しない。
+診断内容の確認だけを目的に実行する場合など、自動修正で診断が消えると困るときに使う。
+
+```shell
+pyfltr run --no-fix --commands=ruff-check [files and/or directories ...]
+```
+
+抑止の対象はfixステージ（`{command}-fix-args`を持つlinter）だけである。
+formatterは通常ステージで対象ファイルを書き込むため、`--no-fix`を指定しても整形は行われる。
+特に`ruff-format-by-check`が既定で有効なため、`ruff-format`は`--no-fix`の指定時も
+`ruff check --fix --unsafe-fixes`を先に実行し、未使用importの削除など整形以外の修正まで及ぶ。
+
+対象ファイルの書き換えを避けたい場合は、`--no-fix`に加えて`--commands`で対象をlinterへ限定する。
+
 ## 特定のツールのみ実行
 
 ```shell
