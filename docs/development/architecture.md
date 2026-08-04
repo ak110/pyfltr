@@ -540,7 +540,14 @@ textlintの列は行内位置を保証できないため、開始列・終了列
 Code Qualityの仕様は5段階（`info` / `minor` / `major` / `critical` / `blocker`）だが、
 pyfltr側に対応情報が無く過大評価を避けるため上位2段階は使わない。
 
-GitHub Annotationの`title`は`{tool}: {rule}`形式（ruleが無ければtool名のみ）。
+GitHub Annotationのプロパティは`file` / `line` / `endLine` / `col` / `endColumn` / `title`の順に積む。
+終了位置は診断が保持する場合のみ出力する。列はSARIFと同じ規則を用い、1起点・終端排他の値を
+無変換で渡し、1未満の列とtextlintの列は開始列・終了列の双方を省略する。
+GitHubの仕様は列の起点だけを定め終端の包含・非包含を明示しないため、SARIFと同じ保持値を
+渡して形式間の突合を成立させる。
+生ログ視認用に本文へ前置する`{file}:{line}[:{col}]:`はログビューアーでの判読を目的とする
+別契約であり、列ガードと終了位置を適用しない。
+`title`は`{tool}: {rule}`形式（ruleが無ければtool名のみ）。
 本文は仕様に沿って`%`/改行をパーセントエンコードする。
 
 Code Qualityの`fingerprint`はtool・file・line・col・rule・msgをタブ区切りで連結した文字列の

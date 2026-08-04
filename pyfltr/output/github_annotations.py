@@ -33,19 +33,42 @@ def build_workflow_command(error: pyfltr.command.error_parser.ErrorLocation) -> 
 
     severityが`error`→`::error`、`warning`→`::warning`、`info`→
     `::notice`。未設定は`::warning`にフォールバックする。
+    プロパティは`file` / `line` / `endLine` / `col` / `endColumn` / `title`の順に積む。
+    終了位置は診断が保持する場合のみ出力し、無い場合は当該プロパティを省略する。
+    列は1起点・終端排他の値をそのまま渡す。GitHubの仕様は列の起点だけを
+    "starting at 1"と定め、終端の包含・非包含を明示しないため、SARIF出力と同じ
+    保持値を無変換で渡して形式間の突合を成立させる。
+    列プロパティにはSARIF出力と同じ2つのガードを適用する。1未満の列は出力せず、
+    textlintの列は行内位置を保証できないため開始列・終了列の双方を省略する。
     メッセージ本体には生ログ視認用のプレフィックス
     `{file}:{line}[:{col}]: [{tool}[:{rule}]] {message}`を埋め込む。
+    プレフィックスはログビューアーでの判読を目的とする別契約であり、
+    ツールの元出力に近い形を保つため列ガードと終了位置を適用しない。
     GitHub仕様に従い`%`/ 改行はパーセントエンコードする。
     """
     kind = _SEVERITY_TO_KIND.get(error.severity, "warning")
     props = [f"file={_escape_property(error.file)}", f"line={error.line}"]
-    if error.col is not None:
+    if error.end_line is not None:
+        props.append(f"endLine={error.end_line}")
+    if _is_publishable_column(error, error.col):
         props.append(f"col={error.col}")
+    if _is_publishable_column(error, error.end_col):
+        props.append(f"endColumn={error.end_col}")
     title = f"{error.command}: {error.rule}" if error.rule else error.command
     props.append(f"title={_escape_property(title)}")
     prefix = _build_plain_prefix(error)
     message_text = _escape_message(f"{prefix} {error.message}")
     return f"::{kind} {','.join(props)}::{message_text}"
+
+
+def _is_publishable_column(error: pyfltr.command.error_parser.ErrorLocation, col: int | None) -> bool:
+    """列をワークフローコマンドのプロパティへ出力してよいかを判定する。
+
+    SARIF出力（`pyfltr.output.sarif`）と同じ規則を用いる。値が無い場合と1未満の場合は
+    行内位置として成立しないため出力しない。textlintは文を切り出すライブラリを用いる
+    ルールで列が行内位置にならないため、コマンド単位で一律に省略する。
+    """
+    return col is not None and col >= 1 and error.command != "textlint"
 
 
 def _build_plain_prefix(error: pyfltr.command.error_parser.ErrorLocation) -> str:

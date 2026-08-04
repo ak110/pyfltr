@@ -119,3 +119,54 @@ def test_build_workflow_command_uses_normalized_parser_columns() -> None:
         assert "col=1" in line
         assert "col=0" not in line
         assert expected_prefix in line
+
+
+def test_build_workflow_command_includes_end_position() -> None:
+    """終了位置を持つ診断は`endLine`・`endColumn`を出力する。"""
+    error = _make_error("eslint", "src/a.ts", 3, "msg", col=5)
+    error.end_line = 4
+    error.end_col = 9
+    line = pyfltr.output.github_annotations.build_workflow_command(error)
+    assert "line=3" in line
+    assert "endLine=4" in line
+    assert "col=5" in line
+    assert "endColumn=9" in line
+
+
+def test_build_workflow_command_omits_missing_end_position() -> None:
+    """終了位置を持たない診断は`endLine`・`endColumn`を出力しない。"""
+    error = _make_error("mypy", "src/a.py", 3, "msg", col=5)
+    line = pyfltr.output.github_annotations.build_workflow_command(error)
+    assert "endLine=" not in line
+    assert "endColumn=" not in line
+
+
+def test_build_workflow_command_end_line_without_end_col() -> None:
+    """終了行だけを持つ診断は`endLine`のみを出力する。"""
+    error = _make_error("textlint-like", "docs/a.md", 3, "msg", col=5)
+    error.end_line = 5
+    line = pyfltr.output.github_annotations.build_workflow_command(error)
+    assert "endLine=5" in line
+    assert "endColumn=" not in line
+
+
+def test_build_workflow_command_omits_non_positive_columns() -> None:
+    """1未満の列は開始列・終了列とも出力しない。"""
+    error = _make_error("bandit", "src/a.py", 3, "msg", col=0)
+    error.end_line = 3
+    error.end_col = 0
+    line = pyfltr.output.github_annotations.build_workflow_command(error)
+    assert "col=" not in line
+    assert "endColumn=" not in line
+    assert "endLine=3" in line
+
+
+def test_build_workflow_command_omits_textlint_columns() -> None:
+    """textlintの列は行内位置を保証できないため開始列・終了列とも省略する。"""
+    error = _make_error("textlint", "docs/a.md", 3, "msg", col=12)
+    error.end_line = 3
+    error.end_col = 20
+    line = pyfltr.output.github_annotations.build_workflow_command(error)
+    assert "col=" not in line
+    assert "endColumn=" not in line
+    assert "endLine=3" in line
