@@ -584,10 +584,13 @@ def test_monorepo_external_only_warning_and_record_are_emitted_once(
         ]
     )
 
+    # 外部パスの記録と警告本文は公開値であり、区切りを`/`へ統一した表現で保持される。
+    # 検体がWindows区切りを含まないため、実装と独立した`as_posix()`で期待値を生成する。
+    normalized_external = external.as_posix()
     messages = [
         warning["message"]
         for warning in pyfltr.warnings_.collected_warnings()
-        if warning["source"] == "external-path" and str(external) in warning["message"]
+        if warning["source"] == "external-path" and normalized_external in warning["message"]
     ]
-    assert pyfltr.warnings_.filtered_direct_files(reason="external") == [str(external)]
+    assert pyfltr.warnings_.filtered_direct_files(reason="external") == [normalized_external]
     assert len(messages) == 1

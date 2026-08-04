@@ -201,7 +201,9 @@ def test_is_external_path_absolute_outside_is_external(
     ctx = _testconf.make_execution_context(config, [outside], start_cwd=tmp_path)
     pyfltr.command.dispatcher.execute_command("pytest", _testconf.make_args(), ctx)
 
-    assert str(outside) in pyfltr.warnings_.filtered_direct_files(reason="external")
+    # 外部パスの記録は公開値であり、区切りを`/`へ統一した表現で保持される。
+    # 検体がWindows区切りを含まないため、実装と独立した`as_posix()`で期待値を生成する。
+    assert outside.as_posix() in pyfltr.warnings_.filtered_direct_files(reason="external")
 
 
 # --- _resolve_config_inject_path の境界を execute_command 経由で検証 --------------
