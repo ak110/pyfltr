@@ -54,6 +54,13 @@ JSON Lines出力（`--output-format=jsonl`）とMCPサーバー（`pyfltr mcp`�
       `ruff-format-by-check`が既定で有効なため、`ruff-format`は`--no-fix`の指定時も
       `check --fix --unsafe-fixes`を先に実行し、未使用importの削除など整形以外の修正まで及ぶ
     - 書き換えを避けたい場合は`--no-fix`に加えて`--commands`で対象をlinterへ限定する
+  - `make test`・`uv run pyfltr run`が実行するPythonは開発環境の単一バージョン（`.python-version`）であり、
+    CIが実行するバージョンの範囲（`.github/workflows/ci.yaml`のマトリクス）とは一致しない。
+    これらのコマンドの成功はCIの通過を意味しない
+    - `tokenize`・`ast`などPythonのバージョンにより解析結果が変わる標準ライブラリを用いる処理を
+      新設または変更する場合は、開発環境での実行成功を検証の完了条件としない
+    - 当該処理へ与える入力を関数へ直接渡す検体をテストへ用意し、
+      実行環境のバージョンに依存せず判定できる形にする
   - CIとローカルではmiseが解決する対応ツールの版が異なる場合がある
     - CIでのみ再現した指摘を検証する場合は、`pyproject.toml`の`[tool.pyfltr]`へ
         `{command}-version = "<版>"`を一時的に指定して`uv run pyfltr run <path> --commands=<command>`を実行し、
