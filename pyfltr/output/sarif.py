@@ -13,6 +13,7 @@ import typing
 import pyfltr.command.core_
 import pyfltr.command.error_parser
 import pyfltr.config.config
+import pyfltr.output.positions
 
 _SARIF_VERSION = "2.1.0"
 _SARIF_SCHEMA = "https://schemastore.azurewebsites.net/schemas/json/sarif-2.1.0-rtm.5.json"
@@ -102,15 +103,15 @@ def _build_result_record(
 ) -> dict[str, typing.Any]:
     """1 diagnostic 分の SARIF result を生成する。
 
-    SARIFの列は1起点で、終了列は終端排他として扱う。1未満の列と、行内位置を
-    保証できないtextlintの列は省略する。
+    SARIFの列は1起点で、終了列は終端排他として扱う。列の出力可否は
+    `pyfltr.output.positions.is_publishable_column`が判定する。
     """
     region: dict[str, typing.Any] = {"startLine": error.line}
-    if error.command != "textlint" and error.col is not None and error.col >= 1:
+    if pyfltr.output.positions.is_publishable_column(error, error.col):
         region["startColumn"] = error.col
     if error.end_line is not None:
         region["endLine"] = error.end_line
-    if error.command != "textlint" and error.end_col is not None and error.end_col >= 1:
+    if pyfltr.output.positions.is_publishable_column(error, error.end_col):
         region["endColumn"] = error.end_col
     record: dict[str, typing.Any] = {
         "level": _SEVERITY_TO_LEVEL.get(error.severity, "warning"),
