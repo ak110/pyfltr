@@ -420,7 +420,7 @@ GitHub Annotationsの各経路で返すファイルパスである。
 生成時は`pyfltr.paths.normalize_separators`または`pyfltr.paths.to_cwd_relative`を経由する。
 公開値を`str()`で直接文字列化しない。
 pyfltr自身が実装するツール（`colloquial-check`など）の標準出力に含めるファイル位置も、
-生成時点で同じ正規化を経由する。当該の生標準出力は`show-run --tool <name> --output`と
+生成時点で同じ正規化を経由する。当該の生標準出力は`show-run --commands <name> --output`と
 MCPツール応答へ解析を経ずに載るため、`pyfltr.command.error_parser`の解析経路による
 正規化だけでは契約を満たさない。
 利用者や対話するエージェントが値を別の入力へ再利用するため、経路ごとの表現差は突合を失敗させる。

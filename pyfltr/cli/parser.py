@@ -167,7 +167,9 @@ def make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> "
     )
     common.add_argument("--shuffle", default=False, action="store_true", help="ファイル順をシャッフルします。")
     common.add_argument("--keep-ui", default=False, action="store_true", help="正常終了後も TUI を閉じずに維持します。")
-    common.add_argument("--ci", default=False, action="store_true", help="CI モードで動作します(--no-shuffle --no-ui 相当)。")
+    common.add_argument(
+        "--ci", default=False, action="store_true", help="CI モードで動作します(ファイル順のシャッフルと UI を無効化します)。"
+    )
     common.add_argument(
         "--output-format",
         choices=sorted(pyfltr.output.formatters.FORMATTERS.keys()),

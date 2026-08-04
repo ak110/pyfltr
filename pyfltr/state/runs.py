@@ -345,7 +345,7 @@ def _print_tool_detail_text(
     tool_meta: dict[str, typing.Any],
     diagnostics: list[dict[str, typing.Any]],
 ) -> None:
-    """`--tool`モードのtext出力。
+    """`--commands`モードのtext出力。
 
     `diagnostics`は`(command, file)`単位の集約形式を想定し、各file見出しの下に
     `messages[]`内の個別指摘をインデント付きで並べる。
@@ -405,7 +405,7 @@ def _show_tool_output(
     tool: str,
     output_format: str,
 ) -> int:
-    """`--tool <name> --output`モード: output.log全文を表示する。"""
+    """`--commands <name> --output`モード: output.log全文を表示する。"""
     try:
         output = store.read_tool_output(run_id, tool)
     except FileNotFoundError:

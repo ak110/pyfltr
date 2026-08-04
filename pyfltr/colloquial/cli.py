@@ -6,7 +6,7 @@ dispatcherが対象ファイルをフィルタして渡すため、
 
 診断行のファイルパスは`pyfltr.paths.normalize_separators`を経由して区切りを`/`へ統一する。
 本CLIの標準出力は`pyfltr.command.error_parser`の解析を経て正規化される経路のほかに、
-`show-run --tool colloquial-check --output`とMCPツール応答へ生のまま載る経路を持つ。
+`show-run --commands colloquial-check --output`とMCPツール応答へ生のまま載る経路を持つ。
 後者は解析を経ないため、生成時点での正規化が公開するファイル位置の表現の契約
 （`docs/development/architecture.md`）を満たす唯一の手段となる。
 """
