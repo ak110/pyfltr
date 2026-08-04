@@ -465,6 +465,9 @@ pyfltr run --allow-external-paths --commands=textlint,markdownlint ~/.claude/pla
 （注）`AI_AGENT` / `CODEX_CI` / `CLAUDECODE` / `CURSOR_AGENT`のいずれかが設定された環境では、
 `fast` / `run` / `ci`の既定の出力形式は`jsonl`、`--quiet`既定は有効となり、`run`は`run-for-agent`と等価になる。
 
+`ci`で「Formatterによる変更時の終了コード」を`0`（成功扱い）へ変更する場合は
+`--exit-zero-even-if-formatted`を指定する（`UI`節のオプション一覧を参照）。
+
 `fast` / `run` / `run-for-agent` サブコマンドは、formatter段の前にfixステージを内蔵する。
 
 fixステージでは`{command}-fix-args`が定義された有効なlinterを`--fix`付きで順次実行する。
@@ -581,7 +584,16 @@ VSCodeのターミナルからクリックして該当箇所にジャンプで�
 - `--from-run <RUN_ID>`: `--only-failed`の参照対象runを明示指定する（前方一致・`latest`対応）。
   未指定時は直前runを自動選択。`--only-failed`との併用が前提で、単独指定はargparseエラーで拒否する。
   指定した`<RUN_ID>`が存在しない場合は警告を出力して`rc=0`で早期終了する
-- `--ci`: CI環境向け（`--no-shuffle --no-ui` 相当）
+- `--shuffle`: 検査対象ファイルの並び順をシャッフルする（既定は自然順ソート）。
+  ファイル順に依存して結果が変わる検査を洗い出す用途で使う。
+  乱数シードを指定する手段は無く、シャッフル後の順序を再現する手段も無い。
+  fixステージでは再現性を優先して指定時も自然順ソートとなる。
+  `--ci`と併用した場合は`--ci`側の設定が優先され、シャッフルは行われない
+- `--exit-zero-even-if-formatted`: formatterが対象ファイルを書き換えただけでは終了コードを`1`にせず、`0`を返す。
+  ツールがエラーで終了した場合と、ツールの解決に失敗した場合は、コマンドの種別を問わず`1`となる。
+  `run` / `fast` / `run-for-agent`はサブコマンドの既定値として常に有効なため、
+  明示指定が意味を持つのは`ci`サブコマンドとなる
+- `--ci`: CI環境向け。ファイル順のシャッフルとUIを無効化する
 - `-j N` / `--jobs N`: linters/testersの最大並列数を指定（既定: 4、`pyproject.toml`でも設定可能）
 - `--verbose`: デバッグレベルのログを出力する
 - `--keep-ui`: TUI終了後にTextual画面を保持する（ログ確認用）
