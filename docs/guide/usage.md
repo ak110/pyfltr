@@ -334,6 +334,17 @@ version: latest
 tool specを省略した`mise exec -- cargo fmt`形になり、mise設定の解決済み内容（バージョン固定・components等）が反映される。
 mise設定に`rust`記述が無い場合は`mise exec rust@latest -- cargo fmt`形になる。
 
+応答フィールドの接頭辞は値の出所を表す。
+`configured_`で始まるものは既定値・グローバル設定・プロジェクト設定を統合した
+パス・引数系の実効設定値である。
+`check_`で始まるものは`--check`指定時のみ得られる実測値である。
+接頭辞を持たない設定由来フィールドは`enabled`・`severity`・`hints`・`version`である。
+このほかの接頭辞を持たないフィールドは解決状態または環境情報を表す。
+`version`は`{command}-version`設定値であり、実際にインストールされている版ではない。
+実行版は`--check`指定時かつ事前確認に成功した場合の`check_installed_version`が返す。
+この値は解決済みコマンドラインへ`--version`を渡した結果である。
+`cargo-fmt`などのサブコマンド型ツールでは基底ツールの版となる。
+
 `{command}-fix-args`が定義されているコマンド（textlint・markdownlintなど）では、
 `commandline (fix step):`と`commandline (check step):`を併記する。
 fix段とcheck段の二度実行が異なる引数を必要とするためである。
@@ -360,6 +371,8 @@ check段では`textlint-json`設定（既定`true`）により出力フォーマ
   いずれかが設定されていれば`jsonl`を採用する
 - `--check`: 実行時と同じ事前チェックを行う
  （mise経由ツールは`mise exec --version`での可用性確認、パッケージマネージャー系ツールは最低版の確認）
+  事前確認に成功した場合は解決済みコマンドラインへ`--version`を渡し、実行版を`check_installed_version`として返す。
+  取得できなかった場合は`null`を返す。`--check`未指定時と事前確認失敗時は当該フィールドを出力しない。
  （`mise install` / `mise trust` / `--version`の起動が発生する場合があるため、既定では行わない）
 
 未知のコマンド名や`{command}-runner = "mise"`を未登録ツールに指定した場合などは終了コード1で失敗する。

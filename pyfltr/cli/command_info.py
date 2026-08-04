@@ -4,6 +4,15 @@
 副作用無しで参照するための導入経路。`mise install` / `mise trust`等は引き起こさない。
 `--check`を明示指定したときのみ`ensure_mise_available`と`ensure_package_manager_version`を
 呼び、実行経路（`dispatcher._prepare_execution_params`）と同じ検査を通す。
+事前確認に成功した場合は`probe_tool_version_text`で実行版を取得し、
+`check_installed_version`へ載せる。
+
+応答フィールドの接頭辞は値の出所を表す。`configured_`は既定値・グローバル設定・
+プロジェクト設定を統合したパス・引数系の実効設定値、`check_`は`--check`指定時のみ得られる実測値である。
+接頭辞を持たない設定由来フィールドは`enabled`・`severity`・`hints`・`version`である。
+このほかの接頭辞を持たないフィールドは解決状態または環境情報を表す。
+既存の`version`は`{command}-version`設定値であり、実行版は事前確認に成功した場合の
+`check_installed_version`が返す。
 """
 
 from __future__ import annotations
@@ -55,6 +64,7 @@ def register_subparsers(subparsers: typing.Any) -> None:
         action="store_true",
         help="実行経路と同じ事前確認を行う"
         " (mise 経由ツールの可用性確認 mise exec --version と、パッケージマネージャー系ツールの最低版確認)。"
+        "事前確認に成功した場合は実行版を取得し check_installed_version へ出力する。"
         "副作用 (mise install / mise trust / --version 起動) が発生する場合がある。",
     )
 
@@ -100,6 +110,10 @@ def collect_info(command: str, config: pyfltr.config.config.Config, *, do_check:
     （`command-info`は調査用途のため、解決失敗そのものも観測したいケースが多い）。
     mise active tools取得状況（status/detail/active_keys）と、tool spec省略採用フラグ・
     判定キーをまとめて露出し、自己診断や名称ずれ検出に利用できるようにする。
+    `do_check`が真かつ事前確認に成功したときは実行版を`check_installed_version`へ載せる。
+    取得できなかった場合は`None`を載せる。`do_check`が偽の場合と事前確認に失敗した場合は
+    キーごと省略する。実行版の取得は`--version`のsubprocess起動を伴うため、
+    副作用なし契約の下では行わない。
     """
     enabled = bool(config.values.get(command, False))
     runner, source = pyfltr.command.runner.resolve_runner(command, config)
@@ -225,6 +239,10 @@ def collect_info(command: str, config: pyfltr.config.config.Config, *, do_check:
                 command, config, list(checked.commandline), additional_args=[], fix_stage=False
             )
             base["check_effective_runner"] = checked.effective_runner
+            # 実行版は可用性確認とは別目的のため、`ensure_mise_available`が可用性判定で
+            # 起動した`--version`の結果を再利用せず改めて取得する。同関数の戻り値は
+            # `ResolvedCommandline`であり、版文字列を返すには実行経路も含む戻り値型の変更を要する。
+            base["check_installed_version"] = pyfltr.command.runner.probe_tool_version_text(checked, config, command)
 
     return base
 
@@ -264,6 +282,8 @@ def _print_text(info: dict[str, typing.Any]) -> None:
         elif info.get("check_commandline") and info["check_commandline"] != info.get("commandline"):
             runner_lines.append(f"check_commandline: {' '.join(info['check_commandline'])}")
             runner_lines.append(f"check_effective_runner: {info.get('check_effective_runner')}")
+        if info.get("check_installed_version"):
+            runner_lines.append(f"check_installed_version: {info['check_installed_version']}")
     sections.append(("## ランナー解決", runner_lines))
 
     # ## uv診断: uv経路ツールのmode・uv/uvx可用性・uv.lock検出・フォールバック状態。uv_infoがある場合のみ表示。

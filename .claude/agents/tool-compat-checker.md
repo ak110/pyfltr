@@ -30,11 +30,12 @@ pyfltrは各ツールのバージョン追従が必要なため、差分検査�
    - 入力で `ALL` 指定なら全ツール、個別指定ならそのツールのみを対象とする
 
 2. インストール済みバージョンの確認
-   - `uv run pyfltr command-info <tool> --output-format=json`を実行し、解決済みの`commandline`・`effective_runner`・`version`を取得する
-   - インストール済みの版は対応ツールを直接起動せず、`effective_runner`に応じた依存定義から確認する。`mise`は`mise.toml`と`mise list`、`uv`は`uv.lock`、JavaScript系runnerは`package.json`と対応するロックファイルを参照する。`direct`は解決済み実行ファイルに対応する依存定義がある場合だけ、その定義を版の根拠とする
-   - `effective_runner`が`uvx`の場合、`command-info`の`version`が設定されていれば当該指定を記録する。`version`が`null`なら実行版を依存定義から確定できないため「版不明」とし、引数・出力形式の乖離検査を公式ドキュメントの最新仕様との照合で代替する。semgrep・sqlfluff等を版不明のまま検査した場合は、その旨を報告へ明記する
-   - JavaScript系runnerで対象リポジトリに`package.json`と対応するロックファイルが存在しない場合、および`direct`で対応する依存定義がない場合も「版不明」とする。版不明の場合は当該ツールの引数・出力形式の乖離検査を公式ドキュメント最新仕様との照合で代替し、検査報告へ「版不明」と明記する
-   - pyfltr経由で実行版を取得する機能は未実装であり、フィードバック`20260804-061842-001`として登録済みである旨を報告へ注記する
+   - `uv run pyfltr command-info <tool> --output-format=json --check`を実行し、解決済みの`commandline`・`effective_runner`・`check_installed_version`を取得する
+   - `check_installed_version`は解決済みコマンドラインへ`--version`を渡して得た実行版である。当該値が得られた場合はこれを版の根拠とする
+   - `cargo-fmt`などのサブコマンド型ツールでは基底ツールの版が返る。当該条件に該当する場合は、取得値が基底ツールの版である事実を報告へ明記する
+   - `check_installed_version`が`null`の場合は、`effective_runner`に応じた依存定義から確認する。`mise`は`mise.toml`と`mise list`、`uv`は`uv.lock`、JavaScript系runnerは`package.json`と対応するロックファイルを参照する。`direct`は解決済み実行ファイルに対応する依存定義がある場合だけ、その定義を版の根拠とする
+   - 依存定義からも確定できない場合は「版不明」とし、引数・出力形式の乖離検査を公式ドキュメントの最新仕様との照合で代替する。版不明のまま検査したツールは、その旨を報告へ明記する
+   - `command-info`の`version`は`{command}-version`設定値であり実行版ではない。版の根拠に用いない
 
 3. 最新ドキュメントの参照
    - 各ツールの公式ドキュメント / リリースノートを `WebFetch` で取得

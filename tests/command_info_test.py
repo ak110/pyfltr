@@ -72,9 +72,14 @@ def test_command_info_check_passes_allow_side_effects_true(capsys: pytest.Captur
     # ensure_mise_available 内のsubprocess.runは成功扱いに固定する（FileNotFoundErrorで失敗しないため）。
     mocker.patch("shutil.which", return_value="/usr/local/bin/mise")
     mocker.patch("subprocess.run", return_value=subprocess.CompletedProcess(["mise"], returncode=0, stdout="", stderr=""))
+    version_probe = mocker.patch(
+        "pyfltr.command.process.run_subprocess_with_timeout",
+        side_effect=_fake_version_run("cargo 1.90.0"),
+    )
     _run("cargo-fmt", do_check=True, capsys=capsys)
     # 少なくとも1回は allow_side_effects=True で呼ばれている。
     assert any(call.kwargs.get("allow_side_effects") is True for call in spy.call_args_list)
+    assert version_probe.call_count == 1
 
 
 def test_command_info_no_check_passes_allow_side_effects_false(capsys: pytest.CaptureFixture[str], mocker) -> None:
@@ -180,7 +185,10 @@ def test_command_info_check_commandline_keeps_configured_args_on_fallback(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """mise不在でdirectへフォールバックした場合も`check_commandline`が設定引数を保持する。"""
-    monkeypatch.setattr("shutil.which", lambda name: None if pathlib.Path(name).stem == "mise" else f"/usr/bin/{name}")
+    monkeypatch.setattr(
+        "shutil.which",
+        lambda name, path=None: None if pathlib.Path(name).stem == "mise" else f"/usr/bin/{name}",
+    )
 
     info = json.loads(_run("cargo-fmt", output_format="json", do_check=True, capsys=capsys))
 
@@ -188,6 +196,73 @@ def test_command_info_check_commandline_keeps_configured_args_on_fallback(
     assert info["check_effective_runner"] == "direct"
     assert info["check_commandline"] == ["/usr/bin/cargo", "fmt"]
     assert info["check_commandline"] != info["commandline"]
+
+
+def test_command_info_check_includes_installed_version(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--check`指定時は実行版が`check_installed_version`へ載る。"""
+    pyfltr.command.runner._get_tool_version.cache_clear()  # pylint: disable=protected-access  # テスト間の隔離
+    monkeypatch.setattr(pyfltr.command.process, "run_subprocess_with_timeout", _fake_version_run("uv 0.11.7"))
+    monkeypatch.setattr("shutil.which", lambda name: f"/usr/bin/{name}")
+
+    info = json.loads(_run("uv-audit", output_format="json", do_check=True, capsys=capsys))
+
+    assert info["check_installed_version"] == "uv 0.11.7"
+
+
+def test_command_info_check_installed_version_none_when_unavailable(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """版を取得できない場合は`check_installed_version`が`None`になる。"""
+    pyfltr.command.runner._get_tool_version.cache_clear()  # pylint: disable=protected-access  # テスト間の隔離
+    probe_outputs = iter(("uv 0.11.7", "ready"))
+
+    def _run_version(
+        commandline: list[str], *_args: typing.Any, **_kwargs: typing.Any
+    ) -> pyfltr.command.process.CompletedProcessWithTimeoutInfo:
+        return pyfltr.command.process.CompletedProcessWithTimeoutInfo(
+            args=list(commandline), returncode=0, stdout=next(probe_outputs), timeout_exceeded=False
+        )
+
+    monkeypatch.setattr(pyfltr.command.process, "run_subprocess_with_timeout", _run_version)
+    monkeypatch.setattr("shutil.which", lambda name: f"/usr/bin/{name}")
+
+    info = json.loads(_run("uv-audit", output_format="json", do_check=True, capsys=capsys))
+
+    assert info["check_installed_version"] is None
+
+
+def test_command_info_without_check_omits_installed_version(capsys: pytest.CaptureFixture[str]) -> None:
+    """`--check`未指定時は`check_installed_version`キー自体を出力しない。"""
+    info = json.loads(_run("uv-audit", output_format="json", capsys=capsys))
+
+    assert "check_installed_version" not in info
+
+
+def test_command_info_check_failure_omits_installed_version(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """事前確認に失敗した場合は`check_installed_version`キー自体を出力しない。"""
+    pyfltr.command.runner._get_tool_version.cache_clear()  # pylint: disable=protected-access  # テスト間の隔離
+    monkeypatch.setattr(pyfltr.command.process, "run_subprocess_with_timeout", _fake_version_run("uv 0.10.9"))
+    monkeypatch.setattr("shutil.which", lambda name: f"/usr/bin/{name}")
+
+    info = json.loads(_run("uv-audit", output_format="json", do_check=True, capsys=capsys))
+
+    assert info["check_passed"] is False
+    assert "check_installed_version" not in info
+
+
+def test_command_info_text_shows_installed_version(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+    """text出力の`## ランナー解決`セクションへ実行版の行が出る。"""
+    pyfltr.command.runner._get_tool_version.cache_clear()  # pylint: disable=protected-access  # テスト間の隔離
+    monkeypatch.setattr(pyfltr.command.process, "run_subprocess_with_timeout", _fake_version_run("uv 0.11.7"))
+    monkeypatch.setattr("shutil.which", lambda name: f"/usr/bin/{name}")
+
+    out = _run("uv-audit", do_check=True, capsys=capsys)
+
+    assert "check_installed_version: uv 0.11.7" in out
 
 
 def test_command_info_text_textlint_includes_fix_step(capsys: pytest.CaptureFixture[str]) -> None:

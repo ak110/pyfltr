@@ -688,6 +688,85 @@ def test_ensure_package_manager_version_probes_resolved_commandline(monkeypatch:
     assert captured == [["mise", "exec", "--", "uv", "--version"]]
 
 
+@pytest.mark.parametrize(
+    ("stdout", "expected"),
+    [
+        ("ruff 0.14.2\n", "ruff 0.14.2"),
+        ("\n\n  shellcheck 0.11.0  \n", "shellcheck 0.11.0"),
+        ("ShellCheck - shell script analysis tool\nversion: 0.11.0\n", "version: 0.11.0"),
+        ("warning: runtime 3.14.0 is unsupported\nruff 0.14.2\n", "ruff 0.14.2"),
+        ("warning: runtime 3.14.0 is unsupported\n", None),
+        ("ready\n", None),
+        ("", None),
+    ],
+)
+def test_probe_tool_version_text_prefers_line_with_numeric_version(
+    monkeypatch: pytest.MonkeyPatch, stdout: str, expected: str | None
+) -> None:
+    """数値版を含む最初の非警告行を採用し、該当しなければ`None`を返す。"""
+
+    def _fake_run(
+        commandline: list[str], *_args: typing.Any, **_kwargs: typing.Any
+    ) -> pyfltr.command.process.CompletedProcessWithTimeoutInfo:
+        return pyfltr.command.process.CompletedProcessWithTimeoutInfo(
+            args=list(commandline), returncode=0, stdout=stdout, timeout_exceeded=False
+        )
+
+    monkeypatch.setattr(pyfltr.command.process, "run_subprocess_with_timeout", _fake_run)
+    config = pyfltr.config.config.create_default_config()
+    resolved = pyfltr.command.runner.ResolvedCommandline("ruff", [], "direct", "explicit", "direct")
+
+    assert pyfltr.command.runner.probe_tool_version_text(resolved, config, "ruff-check") == expected
+
+
+def test_probe_tool_version_text_returns_none_on_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`--version`が非0終了した場合は`None`を返す。"""
+
+    def _fake_run(
+        commandline: list[str], *_args: typing.Any, **_kwargs: typing.Any
+    ) -> pyfltr.command.process.CompletedProcessWithTimeoutInfo:
+        return pyfltr.command.process.CompletedProcessWithTimeoutInfo(
+            args=list(commandline), returncode=1, stdout="error", timeout_exceeded=False
+        )
+
+    monkeypatch.setattr(pyfltr.command.process, "run_subprocess_with_timeout", _fake_run)
+    config = pyfltr.config.config.create_default_config()
+    resolved = pyfltr.command.runner.ResolvedCommandline("ruff", [], "direct", "explicit", "direct")
+
+    assert pyfltr.command.runner.probe_tool_version_text(resolved, config, "ruff-check") is None
+
+
+def test_probe_tool_version_text_strips_mise_tool_paths_for_mise_runner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """mise経路ではPATHからmise toolエントリを除外したenvを渡す。"""
+    captured: dict[str, typing.Any] = {}
+
+    def _fake_env(_config: pyfltr.config.config.Config, _command: str, *, via_mise: bool = False) -> dict[str, str]:
+        captured["via_mise"] = via_mise
+        return {"PATH": "/clean"}
+
+    def _fake_run(
+        commandline: list[str], env: dict[str, str], **_kwargs: typing.Any
+    ) -> pyfltr.command.process.CompletedProcessWithTimeoutInfo:
+        captured["env"] = env
+        return pyfltr.command.process.CompletedProcessWithTimeoutInfo(
+            args=list(commandline), returncode=0, stdout="shellcheck 0.11.0", timeout_exceeded=False
+        )
+
+    monkeypatch.setattr(pyfltr.command.runner, "build_subprocess_env", _fake_env)
+    monkeypatch.setattr(pyfltr.command.process, "run_subprocess_with_timeout", _fake_run)
+    config = pyfltr.config.config.create_default_config()
+    resolved = pyfltr.command.runner.ResolvedCommandline(
+        "mise", ["exec", "shellcheck@latest", "--", "shellcheck"], "mise", "explicit", "mise"
+    )
+
+    result = pyfltr.command.runner.probe_tool_version_text(resolved, config, "shellcheck")
+
+    assert result == "shellcheck 0.11.0"
+    assert captured == {"via_mise": True, "env": {"PATH": "/clean"}}
+
+
 def test_run_subprocess_file_not_found_returns_127() -> None:
     """存在しない実行ファイルを指定しても例外を送出せずrc=127を返す。"""
     result = pyfltr.command.process.run_subprocess(

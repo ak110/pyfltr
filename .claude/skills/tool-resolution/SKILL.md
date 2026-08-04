@@ -6,6 +6,7 @@ description: >
   fallback検出と~展開対象キー・対応ツールの依存方針を集約する。
   pyfltr/command/runner.py・pyfltr/command/mise.py・pyfltr/config/config.py・
   pyfltr/command/builtin.py・pyfltr/command/dispatcher.py・pyfltr/command/tool_resolution.py・
+  pyfltr/cli/command_info.py・docs/guide/usage.md・
   docs/guide/recommended*.md・docs/guide/configuration*.md・
   tests/config_test.py・tests/command_info_test.py を編集する際に使用する。
 ---
@@ -78,7 +79,9 @@ runner値体系（許容値・既定値）の網羅は`pyfltr/config/config.py`�
 - JSONL header（`uv.lock`・`uv.available`・`uv.x_available`）: プロセス全体のuv経路前提条件
 - JSONL commandレコード: fallback発生時のみ`effective_runner`・`runner_source`・`runner_fallback`を出力する。
   通常経路では省略しトークン消費を抑える
-- `pyfltr command-info <command>`: 通常経路を含む詳細な解決状態（runner・effective_runner・mise/uv診断）を取得する
+- `pyfltr command-info <command>`: 通常経路を含む詳細な解決状態（runner・effective_runner・mise/uv診断）を取得する。
+  `--check`指定時は実行経路と同じ事前確認を実施し、成功した場合は実行版を取得して`check_installed_version`として返す。
+  設定値の`version`（`{command}-version`）とは別のフィールドである
 
 JSONLレコードでfallbackを能動通知し、必要時にcommand-infoで詳細確認するという責務分担とする。
 JSONLフィールドの追加・名称変更は[.claude/skills/output-format/SKILL.md](../output-format/SKILL.md)に従う。

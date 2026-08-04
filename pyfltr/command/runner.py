@@ -141,6 +141,49 @@ def _get_tool_version(
     return _extract_tool_version(proc.stdout)
 
 
+def probe_tool_version_text(
+    resolved: "ResolvedCommandline",
+    config: pyfltr.config.config.Config,
+    command: str,
+    *,
+    cwd: pathlib.Path | None = None,
+) -> str | None:
+    """解決済みコマンドラインへ`--version`を渡して版文字列をそのまま取得する。
+
+    `command-info --check`が実行版を表示するために用いる。`_get_tool_version`は
+    数値タプルへ変換して付随情報を失うため、表示用途にはこちらを使う。
+    `cargo-fmt`などのサブコマンド型ツールでは基底ツールの版となる。
+    採用するのは統合済み標準出力のうち数値版を含む最初の非警告行とする。
+    数値版を含む非警告行がない場合は`None`を返す。
+    非0終了・標準出力が空・起動失敗のいずれでも`None`を返す。
+
+    envは`build_subprocess_env`をmise経路の判定付きで呼んで構築する。
+    PATH上にmiseのtoolエントリが見えているとmiseがtools解決をスキップしてPATH解決へ
+    フォールバックし、指定版と異なる実行ファイルの版を測るためである。
+    """
+    env = build_subprocess_env(config, command, via_mise=resolved.effective_runner == "mise")
+    try:
+        proc = pyfltr.command.process.run_subprocess_with_timeout(
+            [*resolved.commandline, "--version"], env, cwd=cwd, timeout=_VERSION_PROBE_TIMEOUT
+        )
+    except OSError:
+        return None
+    if proc.returncode != 0:
+        return None
+    return _preferred_version_line(proc.stdout)
+
+
+def _preferred_version_line(output: str) -> str | None:
+    """数値版を含む最初の非警告行を返す。"""
+    for line in output.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.casefold().startswith("warning"):
+            continue
+        if any(_VERSION_TOKEN_PATTERN.match(token) is not None for token in stripped.split()):
+            return stripped
+    return None
+
+
 def ensure_package_manager_version(
     resolved: "ResolvedCommandline",
     config: pyfltr.config.config.Config,
