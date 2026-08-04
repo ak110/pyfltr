@@ -186,6 +186,7 @@ def _extract_command_record(records: list[dict], command: str) -> dict | None:
 # pytest全体の既定は`--timeout=60`だが、`_run_pyfltr`内部の`subprocess.run`は180秒を許容する。
 # 外側が先に発火すると内部タイムアウトの明確なエラーが失われるため、外側を内側より長く取る。
 @pytest.mark.timeout(300)
+@pytest.mark.usefixtures("_disable_faulthandler_timeout")
 @pytest.mark.parametrize("case", _CASES, ids=lambda c: c.tool)
 def test_tool_smoke(case: _Case, tmp_path: pathlib.Path) -> None:
     """対応ツールがpyfltr経由で実起動し、起動成立を示すステータスを返す。"""

@@ -278,6 +278,9 @@ xfail_strict = true
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
+# pytest-timeout（`addopts`の`--timeout=60`）がワーカープロセスを終了させる前に
+# 全スレッドのスタックをダンプさせ、タイムアウト時の診断材料を残す。
+faulthandler_timeout = 45
 # 資源解放漏れの検出。未クローズのファイルはResourceWarning、未awaitのコルーチンは
 # RuntimeWarningを送出する。いずれもGC時の__del__内で送出されるため、エラー化した結果は
 # unraisableexceptionプラグインがPytestUnraisableExceptionWarningへ包み直す。
@@ -289,4 +292,5 @@ filterwarnings = [
 ]
 markers = [
     "smoke: 対応ツール群を実起動して終了確認するスモークテスト。pnpm 11のような外部ツール側の既定変更検知が目的。",
+    "real_mise_subprocess: mise解決経路の実挙動を検証するテスト。`tests/conftest.py`のautouseフィクスチャ`_default_mise_exec_check_success`による既定モックを外す。",
 ]

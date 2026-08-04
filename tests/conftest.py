@@ -7,6 +7,7 @@ pre-commit の name-tests-test フックから除外される。
 """
 
 import argparse
+import faulthandler
 import pathlib
 import time
 import typing
@@ -32,6 +33,18 @@ def _clear_warnings_between_tests() -> None:
     クリアしないとテスト間でリークが発生し、順序依存や並列実行での非決定性を招く。
     """
     pyfltr.warnings_.clear()
+
+
+@pytest.fixture
+def _disable_faulthandler_timeout() -> None:
+    """長時間テストではpytest組み込みfaulthandlerのダンプ予約を解除する。
+
+    `faulthandler_timeout`はテスト単位の`timeout`マーカーを参照せず、全テストへ同じ秒数を適用する。
+    pytest組み込みプラグインはフィクスチャのセットアップ前に予約するため、長い制限時間を意図して
+    設定したテストが通常実行中に失敗時相当のスタックを出力しないよう、本フィクスチャで解除する。
+    次のテストでは同プラグインが改めて予約するため、解除の影響は当該テストだけに留まる。
+    """
+    faulthandler.cancel_dump_traceback_later()
 
 
 @pytest.fixture(autouse=True)
@@ -68,6 +81,27 @@ def _default_mise_active_tools_empty(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "pyfltr.command.mise.get_mise_active_tools",
         lambda config, *, allow_side_effects=False, cwd=None: pyfltr.command.mise.MiseActiveToolsResult(status="ok"),
+    )
+
+
+@pytest.fixture(autouse=True)
+def _default_mise_exec_check_success(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """bin-runner経路の可用性判定を成功へ固定するフィクスチャ。
+
+    `pyfltr.command.runner.ensure_mise_available` は bin-runner 経路の解決時に
+    `run_mise_with_trust` 経由で `mise exec <tool spec> -- <bin> --version` を実起動する。
+    同経路は `pyfltr.command.process.run_subprocess` を通らないため、`run_subprocess` のモックでは
+    抑止できず、モックしないテストは実行環境のツール導入状態とネットワークへ依存する。
+    対象ツールが未導入の環境ではツール解決がバージョン解決を伴い、1テストあたり数十秒へ達して
+    pytest全体の `--timeout` へ接近する。既定で成功を返して実プロセス起動を止め、
+    mise解決経路の実挙動を検証するテストだけが `@pytest.mark.real_mise_subprocess` で本フィクスチャを外す。
+    外した側では実装本体がモックされないまま残るため、復元用の参照は設けない。
+    """
+    if "real_mise_subprocess" in request.keywords:
+        return
+    monkeypatch.setattr(
+        "pyfltr.command.mise.run_mise_with_trust",
+        lambda args, mise_env, config, *, allow_side_effects, cwd=None: (0, "", "", False),
     )
 
 

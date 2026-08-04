@@ -1718,10 +1718,11 @@ def test_resolve_bin_commandline_direct_not_found(mocker) -> None:
         pyfltr.command.runner.build_commandline("shellcheck", config)
 
 
+@pytest.mark.real_mise_subprocess
 def test_resolve_bin_commandline_mise_success(mocker) -> None:
     """miseモードでツールが利用可能な場合、mise exec形式のコマンドラインを返す。"""
     mocker.patch("shutil.which", return_value="/usr/local/bin/mise")
-    mocker.patch(
+    mock_run = mocker.patch(
         "subprocess.run",
         return_value=subprocess.CompletedProcess(
             ["mise", "exec", "shellcheck@latest", "--", "shellcheck", "--version"],
@@ -1738,12 +1739,15 @@ def test_resolve_bin_commandline_mise_success(mocker) -> None:
 
     assert path == "mise"
     assert prefix == ["exec", "shellcheck@latest", "--", "shellcheck"]
+    assert mock_run.call_count == 1
+    assert mock_run.call_args.args[0] == ["mise", "exec", "shellcheck@latest", "--", "shellcheck", "--version"]
 
 
+@pytest.mark.real_mise_subprocess
 def test_resolve_bin_commandline_mise_custom_version(mocker) -> None:
     """miseモードでカスタムバージョンが指定された場合のテスト。"""
     mocker.patch("shutil.which", return_value="/usr/local/bin/mise")
-    mocker.patch(
+    mock_run = mocker.patch(
         "subprocess.run",
         return_value=subprocess.CompletedProcess(
             ["mise"],
@@ -1761,6 +1765,8 @@ def test_resolve_bin_commandline_mise_custom_version(mocker) -> None:
 
     assert path == "mise"
     assert prefix == ["exec", "shellcheck@0.9.0", "--", "shellcheck"]
+    assert mock_run.call_count == 1
+    assert mock_run.call_args.args[0] == ["mise", "exec", "shellcheck@0.9.0", "--", "shellcheck", "--version"]
 
 
 def test_resolve_bin_commandline_mise_not_installed_fallback(mocker) -> None:
@@ -1795,6 +1801,7 @@ def test_resolve_bin_commandline_mise_not_installed_no_fallback(mocker) -> None:
         _resolve_bin_commandline_via_two_step("actionlint", config)
 
 
+@pytest.mark.real_mise_subprocess
 def test_resolve_bin_commandline_glab_ci_lint_mise(mocker) -> None:
     """glab-ci-lintはmiseバックエンド経由でglabバイナリを解決する。
 
@@ -1802,7 +1809,7 @@ def test_resolve_bin_commandline_glab_ci_lint_mise(mocker) -> None:
     プレフィクスにはサブコマンドが含まれない（commandline組み立て段で付与される）。
     """
     mocker.patch("shutil.which", return_value="/usr/local/bin/mise")
-    mocker.patch(
+    mock_run = mocker.patch(
         "subprocess.run",
         return_value=subprocess.CompletedProcess(["mise"], returncode=0, stdout="", stderr=""),
     )
@@ -1814,6 +1821,8 @@ def test_resolve_bin_commandline_glab_ci_lint_mise(mocker) -> None:
 
     assert path == "mise"
     assert prefix == ["exec", "glab@latest", "--", "glab"]
+    assert mock_run.call_count == 1
+    assert mock_run.call_args.args[0] == ["mise", "exec", "glab@latest", "--", "glab", "--version"]
     # args既定値にサブコマンドが含まれていることを確認（明示path指定時にも有効化させるため）
     assert config["glab-ci-lint-args"] == ["ci", "lint"]
 
@@ -1831,6 +1840,7 @@ def test_resolve_bin_commandline_glab_ci_lint_direct(mocker) -> None:
     assert not resolved.prefix
 
 
+@pytest.mark.real_mise_subprocess
 def test_resolve_bin_commandline_mise_tool_not_installed(mocker) -> None:
     """miseモードでツールが未インストールの場合、FileNotFoundErrorをstderr付きで送出する。"""
     mocker.patch("shutil.which", return_value="/usr/local/bin/mise")
@@ -1851,6 +1861,7 @@ def test_resolve_bin_commandline_mise_tool_not_installed(mocker) -> None:
         _resolve_bin_commandline_via_two_step("ec", config)
 
 
+@pytest.mark.real_mise_subprocess
 def test_resolve_bin_commandline_mise_untrusted_auto_trust_success(mocker) -> None:
     """未信頼エラー→trust成功→再チェック成功の3段で最終的に通常成功扱いになる。"""
     mocker.patch("shutil.which", return_value="/usr/local/bin/mise")
@@ -1893,6 +1904,7 @@ def test_resolve_bin_commandline_mise_untrusted_auto_trust_success(mocker) -> No
     assert mock_run.call_count == 3
 
 
+@pytest.mark.real_mise_subprocess
 def test_resolve_bin_commandline_mise_untrusted_auto_trust_disabled(mocker) -> None:
     """mise-auto-trust=Falseのときtrustが呼ばれず、stderr含むエラーメッセージで失敗する。"""
     mocker.patch("shutil.which", return_value="/usr/local/bin/mise")
@@ -1917,6 +1929,7 @@ def test_resolve_bin_commandline_mise_untrusted_auto_trust_disabled(mocker) -> N
     assert mock_run.call_count == 1
 
 
+@pytest.mark.real_mise_subprocess
 def test_resolve_bin_commandline_mise_other_error_no_retry(mocker) -> None:
     """未信頼以外のエラー（plugin not found等）ではtrustを呼ばずそのまま失敗する。"""
     mocker.patch("shutil.which", return_value="/usr/local/bin/mise")
@@ -1941,6 +1954,7 @@ def test_resolve_bin_commandline_mise_other_error_no_retry(mocker) -> None:
     assert mock_run.call_count == 1
 
 
+@pytest.mark.real_mise_subprocess
 def test_resolve_bin_commandline_mise_untrusted_auto_trust_retry_failure(mocker) -> None:
     """trust後の再チェックも失敗する場合、リトライが1回で打ち切られ通常失敗扱いになる。"""
     mocker.patch("shutil.which", return_value="/usr/local/bin/mise")
@@ -1979,6 +1993,7 @@ def test_resolve_bin_commandline_mise_untrusted_auto_trust_retry_failure(mocker)
         _resolve_bin_commandline_via_two_step("shellcheck", config)
 
 
+@pytest.mark.real_mise_subprocess
 def test_resolve_bin_commandline_mise_untrusted_auto_trust_trust_failure(mocker) -> None:
     """mise trustコマンド自体が失敗した場合、trust.stderrを含むエラーで即座に失敗する。"""
     mocker.patch("shutil.which", return_value="/usr/local/bin/mise")
@@ -2010,6 +2025,7 @@ def test_resolve_bin_commandline_mise_untrusted_auto_trust_trust_failure(mocker)
         _resolve_bin_commandline_via_two_step("shellcheck", config)
 
 
+@pytest.mark.real_mise_subprocess
 def test_ensure_mise_available_passes_stripped_env_to_subprocess(mocker, monkeypatch) -> None:
     """`mise exec --version`呼び出し時にPATHからmise toolパスが除外されたenvが渡る。
 
@@ -2049,6 +2065,7 @@ def test_ensure_mise_available_passes_stripped_env_to_subprocess(mocker, monkeyp
     assert "/usr/bin" in entries
 
 
+@pytest.mark.real_mise_subprocess
 def test_ensure_mise_available_resolution_failure_includes_direct_hint(mocker) -> None:
     """`mise exec`解決失敗時のエラー文面に`{command}-runner = "direct"`への切替案内が含まれる。
 
@@ -2079,6 +2096,7 @@ def test_ensure_mise_available_resolution_failure_includes_direct_hint(mocker) -
     assert 'cargo-deny-runner = "direct"' in message
 
 
+@pytest.mark.real_mise_subprocess
 def test_ensure_mise_available_passes_stripped_env_to_trust(mocker, monkeypatch) -> None:
     """`mise trust`呼び出し時にもPATHからmise toolパスが除外されたenvが渡る。"""
     monkeypatch.setenv(
@@ -3338,6 +3356,7 @@ def test_build_commandline_allow_side_effects_propagates_to_active_tools(monkeyp
 # --- ensure_mise_available のtool spec有無分岐 ---
 
 
+@pytest.mark.real_mise_subprocess
 def test_ensure_mise_available_check_args_with_tool_spec(mocker) -> None:
     """tool spec組立形は `mise exec <tool_spec> -- <bin> --version` を呼び出す。"""
     mocker.patch("shutil.which", return_value="/usr/local/bin/mise")
@@ -3357,6 +3376,7 @@ def test_ensure_mise_available_check_args_with_tool_spec(mocker) -> None:
     assert mock_run.call_args.args[0] == ["mise", "exec", "rust@latest", "--", "cargo", "--version"]
 
 
+@pytest.mark.real_mise_subprocess
 def test_ensure_mise_available_check_args_without_tool_spec(mocker) -> None:
     """tool spec省略形は `mise exec -- <bin> --version` を呼び出す。"""
     mocker.patch("shutil.which", return_value="/usr/local/bin/mise")
@@ -3376,6 +3396,7 @@ def test_ensure_mise_available_check_args_without_tool_spec(mocker) -> None:
     assert mock_run.call_args.args[0] == ["mise", "exec", "--", "cargo", "--version"]
 
 
+@pytest.mark.real_mise_subprocess
 def test_ensure_mise_available_error_message_without_tool_spec(mocker) -> None:
     """tool spec省略形での失敗時、エラー文面が `mise exec -- <bin>: ...` 形になる。"""
     mocker.patch("shutil.which", return_value="/usr/local/bin/mise")

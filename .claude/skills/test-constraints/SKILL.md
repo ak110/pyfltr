@@ -91,13 +91,12 @@ description: >
 - monkeypatchの個別事例は`tests/command_core_test.py`等の該当テストコード内コメントに集約する。
   対象は`lru_cache`付き判定関数の差し替え方法・`shutil.which`mockのモジュールパス指定・
   `run_subprocess_with_timeout`戻り値型の構築・副作用検証2段呼び出しヘルパー再利用などである
-- モノレポ統合テストで対象ツールがCI環境で利用できない可能性がある場合、
-  `run_subprocess`単独モックでは実行対象からドロップされ`AssertionError`となる
-  - 既定の`bin-runner = "mise"`経路では`ensure_mise_available`が`mise exec -- <bin> --version`を
-    実環境で実行して可用性判定する。
-    `run_subprocess`のモックだけでは同判定を制御できない
-  - 対象コマンドの`{command}-runner`をテスト設定で`direct`に固定したうえで
-    `shutil.which`をモックし、mise経路が実環境に依存して判定する動作を回避する
+- bin-runner経路の可用性判定（`ensure_mise_available`が起動する`mise exec <tool spec> -- <bin> --version`）は、
+  `tests/conftest.py`のautouseフィクスチャ`_default_mise_exec_check_success`が既定で成功へ固定する。
+  同判定は`pyfltr.command.process.run_subprocess`を通らないため`run_subprocess`のモックでは抑止できず、
+  既定モックが無い状態では実行環境のツール導入状態とネットワークへ依存して所要時間が変動する
+  - mise解決経路の実挙動を検証するテストは`@pytest.mark.real_mise_subprocess`を付けて既定モックを外す。
+    同フィクスチャはマーカー判定で早期returnするため、外した側では実装本体がそのまま呼ばれる
   - 集約フィルターなど言語非依存の動作は、既存テストで検証済みの言語（現状は`cargo`系統合テスト）1件で
     代表検証し、他言語は`discover_subprojects`単体テストで検証する
 - pyfltrテストで`pyfltr.cli.main.run([subcmd, <target>])`のスモークテストを`--commands`未指定で書く場合、
@@ -107,3 +106,6 @@ description: >
   `@pytest.mark.timeout`で個別に上限を指定する。
   外側のpytestタイムアウトはテスト内部の`subprocess.run(timeout=...)`より長く保つ。
   外側が先に発火すると内部タイムアウトの明確なエラーが得られず、原因不明の失敗として現れる
+  - pytest組み込みの`faulthandler_timeout`は全テスト共通の秒数を使い、個別の`timeout`マーカーとは独立して動作する。
+    `faulthandler_timeout`より長い正常実行を許容するテストでは、
+    `@pytest.mark.usefixtures("_disable_faulthandler_timeout")`を付けて通常実行中のダンプ予約を解除する
