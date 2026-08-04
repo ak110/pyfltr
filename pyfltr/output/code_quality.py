@@ -8,6 +8,13 @@ severityはpyfltr内部の3値（error / warning / info）をCode Quality 5段�
 マップする（`critical` / `blocker`は使わない）。pyfltr側に対応情報が無く、過大評価を
 避けるためerror→major、warning→minor、info→info、未設定→minorとする。
 
+`location`は`lines.begin`に加え、診断が終了行を保持する場合に`lines.end`を出力する。
+Code Climate仕様の行範囲は両端を含むため、`begin`補正後の値より前の終了行は範囲として
+成立せず出力しない。列は出力しない。GitLabの取り込み実装は`location.lines.begin`と
+`location.positions.begin.line`だけを参照し、列を保持するフィールドを読まないためである。
+列を伝えるには`lines`を`positions`へ置き換える必要があり、読まれない情報のために
+開始行の表現をフォールバック側へ移すことになるため採らない。
+
 `fingerprint`はtool・file・line・col・rule・msgをタブ区切りで連結した文字列の
 SHA-256全桁を採用する。同一指摘の重複統合に足るユニーク性を確保しつつ、配置順の変化に
 対して頑強にする。
@@ -49,6 +56,10 @@ def _build_issue(error: pyfltr.command.error_parser.ErrorLocation) -> dict[str, 
     check_name = f"{error.command}:{error.rule}" if error.rule else error.command
     # GitLab Code Qualityはline=0を許容せず、message.lineがNoneまたは0のときは1に補正する。
     begin = error.line if error.line else 1
+    lines: dict[str, int] = {"begin": begin}
+    # Code Climate仕様の行範囲は両端を含むため、begin補正後の値より前の終了行は出力しない。
+    if error.end_line is not None and error.end_line >= begin:
+        lines["end"] = error.end_line
     return {
         "description": error.message,
         "check_name": check_name,
@@ -56,7 +67,7 @@ def _build_issue(error: pyfltr.command.error_parser.ErrorLocation) -> dict[str, 
         "severity": _SEVERITY_MAP.get(error.severity, "minor"),
         "location": {
             "path": error.file,
-            "lines": {"begin": begin},
+            "lines": lines,
         },
     }
 

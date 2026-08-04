@@ -891,7 +891,7 @@ def test_parse_pyright_json_normalizes_exclusive_end_line() -> None:
     assert len(errors) == 1
     assert errors[0].line == 1
     assert errors[0].end_line == 2
-    assert errors[0].end_col == 1
+    assert errors[0].end_col is None
 
 
 def test_parse_pyright_json_keeps_inclusive_end_line() -> None:
@@ -937,6 +937,166 @@ def test_parse_pyright_json_keeps_zero_width_range() -> None:
     assert len(errors) == 1
     assert errors[0].line == 3
     assert errors[0].end_line == 3
+    assert errors[0].end_col == 1
+
+
+@pytest.mark.parametrize(
+    ("command", "output"),
+    [
+        pytest.param(
+            "eslint",
+            json.dumps(
+                [
+                    {
+                        "filePath": "src/a.js",
+                        "messages": [{"line": 1, "column": 2, "endLine": 3, "endColumn": 1, "message": "msg"}],
+                    }
+                ]
+            ),
+            id="eslint",
+        ),
+        pytest.param(
+            "ruff-check",
+            json.dumps(
+                [
+                    {
+                        "filename": "src/a.py",
+                        "location": {"row": 1, "column": 2},
+                        "end_location": {"row": 3, "column": 1},
+                        "message": "msg",
+                    }
+                ]
+            ),
+            id="ruff-check",
+        ),
+        pytest.param(
+            "pylint",
+            json.dumps(
+                {
+                    "messages": [
+                        {
+                            "path": "src/a.py",
+                            "line": 1,
+                            "column": 1,
+                            "endLine": 3,
+                            "endColumn": 0,
+                            "message": "msg",
+                        }
+                    ]
+                }
+            ),
+            id="pylint",
+        ),
+        pytest.param(
+            "pyright",
+            json.dumps(
+                {
+                    "generalDiagnostics": [
+                        {
+                            "file": "src/a.py",
+                            "range": {
+                                "start": {"line": 0, "character": 1},
+                                "end": {"line": 2, "character": 0},
+                            },
+                            "message": "msg",
+                        }
+                    ]
+                }
+            ),
+            id="pyright",
+        ),
+        pytest.param(
+            "shellcheck",
+            json.dumps([{"file": "src/a.sh", "line": 1, "column": 2, "endLine": 3, "endColumn": 1, "message": "msg"}]),
+            id="shellcheck",
+        ),
+        pytest.param(
+            "textlint",
+            json.dumps(
+                [
+                    {
+                        "filePath": "docs/a.md",
+                        "messages": [
+                            {
+                                "line": 1,
+                                "column": 2,
+                                "loc": {"end": {"line": 3, "column": 1}},
+                                "message": "msg",
+                            }
+                        ],
+                    }
+                ]
+            ),
+            id="textlint",
+        ),
+        pytest.param(
+            "semgrep",
+            json.dumps(
+                {
+                    "results": [
+                        {
+                            "path": "src/a.py",
+                            "start": {"line": 1, "col": 2},
+                            "end": {"line": 3, "col": 1},
+                            "extra": {"message": "msg"},
+                        }
+                    ]
+                }
+            ),
+            id="semgrep",
+        ),
+        pytest.param(
+            "bandit",
+            json.dumps(
+                {
+                    "results": [
+                        {
+                            "filename": "src/a.py",
+                            "line_number": 1,
+                            "col_offset": 1,
+                            "line_range": [1, 2, 3],
+                            "end_col_offset": 0,
+                            "issue_text": "msg",
+                        }
+                    ]
+                }
+            ),
+            id="bandit",
+        ),
+        pytest.param(
+            "sqlfluff",
+            json.dumps(
+                [
+                    {
+                        "filepath": "src/a.sql",
+                        "violations": [
+                            {
+                                "start_line_no": 1,
+                                "start_line_pos": 2,
+                                "end_line_no": 3,
+                                "end_line_pos": 1,
+                                "description": "msg",
+                            }
+                        ],
+                    }
+                ]
+            ),
+            id="sqlfluff",
+        ),
+        pytest.param(
+            "biome",
+            "::error file=src/a.ts,line=1,endLine=3,col=2,endColumn=1::msg\n",
+            id="pattern",
+        ),
+    ],
+)
+def test_end_position_paths_normalize_next_line_start(command: str, output: str) -> None:
+    """終了位置を格納する全経路で次行先頭を包含行と列不明へ正規化する。"""
+    errors = pyfltr.command.error_parser.parse_errors(command, output)
+
+    assert len(errors) == 1
+    assert errors[0].end_line == 2
+    assert errors[0].end_col is None
 
 
 def test_parse_shellcheck_json() -> None:

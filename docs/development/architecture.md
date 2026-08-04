@@ -45,7 +45,7 @@ pyfltrはCLIツールであり、Pythonモジュールパスは内部実装と�
   `config/config.py`内のロジックでも参照するため`from pyfltr.command.builtin import ...`で取り込みつつ、
   利用側コードの便宜のため`__all__`にも含めて再エクスポート扱いとする
 - `pyfltr/output/`: text・JSONL・SARIF・GitHub Annotations・GitLab Code Quality・Textual UIの
-  出力フォーマット群とツール別ルールURL生成を担う
+  出力フォーマット群とツール別ルールURL生成、出力形式が共有する診断位置の判定を担う
 - `pyfltr/grep_/`: 横断検索・置換のコアロジック。
   パターンコンパイル・ファイル走査・マッチ抽出・置換適用・replace履歴世代管理・
   JSONLレコード生成・人間向け出力を担う
@@ -537,16 +537,36 @@ fixステージと通常ステージを区別する必要があるため、判�
 - GitHub Annotation: `error`→`::error` / `warning`→`::warning` / `info`→`::notice` / 未設定→`::warning`
 - Code Quality: `error`→`"major"` / `warning`→`"minor"` / `info`→`"info"` / 未設定→`"minor"`
 
+診断位置の契約は`pyfltr.command.error_parser.ErrorLocation`が持つ。
+`line`と`col`は1起点、`end_line`は診断範囲の最終行を含む値、`end_col`は1起点・終端排他とする。
+ツールが返す終了位置は範囲末尾の次の位置を指す場合があり、範囲が行末で終わると次行が渡される。
+`_to_inclusive_end_line`が終了列の行頭判定で当該分を補正し、格納時点で最終行へ揃える。
+補正前の終了列は次行上の値であり、直前行の終端列をツール出力から算出できないため、
+終了行を補正する場合は`end_col`を省略する。
+各出力形式は補正済みの値を消費するため、形式側で行の包含・排他を変換しない。
+
+列を出力してよいかの判定は`pyfltr.output.positions.is_publishable_column`へ集約する。
+SARIFとGitHub Annotationsが同じ関数を用いるため、両形式の列ガードは常に一致する。
+Code Qualityは列を出力しないため当該関数を使わない。
+
 SARIFの`region`は正規化済みの開始位置に加え、診断が保持する終了行・終了列を
-`endLine`・`endColumn`へ反映する。列は1起点・終端排他とし、1未満の列は出力しない。
-textlintの列は行内位置を保証できないため、開始列・終了列の双方を省略して行範囲だけを出力する。
+`endLine`・`endColumn`へ反映する。列は1起点・終端排他とする。
 
 Code Qualityの仕様は5段階（`info` / `minor` / `major` / `critical` / `blocker`）だが、
 pyfltr側に対応情報が無く過大評価を避けるため上位2段階は使わない。
 
+Code Qualityの`location`は`lines.begin`に加え、診断が終了行を保持する場合に`lines.end`を出力する。
+Code Climate仕様の行範囲は両端を含むため、`begin`補正後の値より前の終了行は範囲として成立せず出力しない。
+列は開始列・終了列とも出力しない。GitLabの取り込み実装は`location.lines.begin`と
+`location.positions.begin.line`だけを参照し、列を保持するフィールドを読まないためである
+（`lines`が優先され、欠落時のみ`positions`へフォールバックする）。
+列を伝えるには`lines`を`positions`へ置き換える必要があり、読まれない情報のために
+開始行の表現をフォールバック側へ移すことになるため採らない。
+`lines.end`もGitLabは読まないが、Code Climate仕様が定める行範囲の表現であり、
+`lines.begin`の表現を変えずに追加できる。
+
 GitHub Annotationのプロパティは`file` / `line` / `endLine` / `col` / `endColumn` / `title`の順に積む。
-終了位置は診断が保持する場合のみ出力する。列はSARIFと同じ規則を用い、1起点・終端排他の値を
-無変換で渡し、1未満の列とtextlintの列は開始列・終了列の双方を省略する。
+終了位置は診断が保持する場合のみ出力する。列は1起点・終端排他の値を無変換で渡す。
 GitHubの仕様は列の起点だけを定め終端の包含・非包含を明示しないため、SARIFと同じ保持値を
 渡して形式間の突合を成立させる。
 生ログ視認用に本文へ前置する`{file}:{line}[:{col}]:`はログビューアーでの判読を目的とする

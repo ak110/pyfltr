@@ -144,6 +144,47 @@ def test_build_payload_begin_defaults_to_one() -> None:
     assert payload[0]["location"]["lines"]["begin"] == 1
 
 
+def test_build_payload_includes_end_line() -> None:
+    """終了行を持つ診断は`location.lines.end`を出力する。"""
+    errors = [_make_error("eslint", "src/a.ts", 3, "msg", col=5)]
+    errors[0].end_line = 7
+    errors[0].end_col = 9
+    result = _make_result("eslint", returncode=1, errors=errors)
+
+    payload = pyfltr.output.code_quality.build_code_quality_payload([result])
+    assert payload[0]["location"]["lines"] == {"begin": 3, "end": 7}
+
+
+def test_build_payload_omits_missing_end_line() -> None:
+    """終了行を持たない診断は`location.lines.end`を出力しない。"""
+    errors = [_make_error("mypy", "src/a.py", 3, "msg", col=5)]
+    result = _make_result("mypy", returncode=1, errors=errors)
+
+    payload = pyfltr.output.code_quality.build_code_quality_payload([result])
+    assert payload[0]["location"]["lines"] == {"begin": 3}
+
+
+def test_build_payload_omits_end_line_before_begin() -> None:
+    """補正後のbeginより前の終了行は範囲として成立しないため出力しない。"""
+    errors = [_make_error("pytest", "tests/a.py", 0, "FAIL")]
+    errors[0].end_line = 0
+    result = _make_result("pytest", returncode=1, errors=errors)
+
+    payload = pyfltr.output.code_quality.build_code_quality_payload([result])
+    assert payload[0]["location"]["lines"] == {"begin": 1}
+
+
+def test_build_payload_omits_columns() -> None:
+    """列は開始列・終了列とも`location`へ出力しない。"""
+    errors = [_make_error("ruff-check", "src/a.py", 3, "msg", col=5)]
+    errors[0].end_line = 3
+    errors[0].end_col = 12
+    result = _make_result("ruff-check", returncode=1, errors=errors)
+
+    payload = pyfltr.output.code_quality.build_code_quality_payload([result])
+    assert payload[0]["location"] == {"path": "src/a.py", "lines": {"begin": 3, "end": 3}}
+
+
 def test_build_payload_empty() -> None:
     """エラー無しなら空配列。"""
     result = _make_result("mypy", returncode=0)

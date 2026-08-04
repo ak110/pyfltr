@@ -1,5 +1,8 @@
 """sarif_outputのテストコード。"""
 
+import json
+
+import pyfltr.command.error_parser
 import pyfltr.config.config
 import pyfltr.output.sarif
 from tests.conftest import make_command_result as _make_result
@@ -102,6 +105,30 @@ def test_build_sarif_with_end_position() -> None:
 
     region = sarif["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["region"]
     assert region == {"startLine": 10, "startColumn": 3, "endLine": 11, "endColumn": 7}
+
+
+def test_build_sarif_omits_end_column_when_end_line_is_normalized() -> None:
+    """排他的な次行先頭を包含行へ補正した場合は異なる行の終了列を出力しない。"""
+    output = json.dumps(
+        {
+            "generalDiagnostics": [
+                {
+                    "file": "src/a.py",
+                    "range": {"start": {"line": 0, "character": 4}, "end": {"line": 2, "character": 0}},
+                    "message": "String literal is unterminated",
+                    "severity": "error",
+                }
+            ]
+        }
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pyright", output)
+    result = _make_result("pyright", returncode=1, errors=errors)
+
+    config = pyfltr.config.config.create_default_config()
+    sarif = pyfltr.output.sarif.build_sarif([result], config, exit_code=1)
+
+    region = sarif["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["region"]
+    assert region == {"startLine": 1, "startColumn": 5, "endLine": 2}
 
 
 def test_build_sarif_omits_columns_less_than_one() -> None:
