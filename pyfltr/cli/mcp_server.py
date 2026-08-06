@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import importlib.metadata
 import logging
 import pathlib
 import sys
@@ -1111,10 +1112,15 @@ def build_server() -> MCPServer:
 
     公開名は`@mcp.tool(name=...)`で明示し、Python側の関数名（`tool_*`）
     とは独立したスキーマ名（`list_runs`等）を維持する。
+
+    `version`は初期化応答の`serverInfo.version`としてクライアントへ返る
+    MCPプロトコルの必須フィールドであり、省略するとSDKの既定値である空文字列が入る。
+    値は`importlib.metadata`から取得し、JSONL headerレコード・SARIF出力と取得元を揃える
+    （実行中の版と配布物の版を一致させるため）。
     """
     if _mcpserver is None:
         raise RuntimeError("MCPサーバー機能に必要な依存を読み込めません") from _MCP_IMPORT_ERROR
-    mcp = _mcpserver.MCPServer("pyfltr")
+    mcp = _mcpserver.MCPServer("pyfltr", version=importlib.metadata.version("pyfltr"))
 
     mcp.tool(name="list_runs", description="実行アーカイブに保存された run 一覧を新しい順で返す。")(tool_list_runs)
     mcp.tool(

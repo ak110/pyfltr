@@ -7,6 +7,7 @@
 
 import argparse
 import dataclasses
+import importlib.metadata
 import inspect
 import json
 import pathlib
@@ -326,6 +327,18 @@ async def test_build_server_registers_eleven_tools() -> None:
         "config",
     }
     assert tool_names == expected
+
+
+def test_build_server_reports_name_and_version() -> None:
+    """初期化応答へ返すサーバー名と版が欠落しないことを検証する。
+
+    `version`はMCPプロトコルの必須フィールドだが、SDKのコンストラクタは既定値を
+    空文字列としており、指定を忘れても起動もツール呼び出しも成立する。
+    配布パッケージの版と一致することを確かめ、既定値のまま公開される状態を検出する。
+    """
+    server = pyfltr.cli.mcp_server.build_server()
+    assert server.name == "pyfltr"
+    assert server.version == importlib.metadata.version("pyfltr")
 
 
 def test_execute_mcp_reports_missing_dependency(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
