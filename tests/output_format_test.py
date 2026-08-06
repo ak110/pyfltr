@@ -12,6 +12,7 @@ import pyfltr.cli.main
 import pyfltr.cli.output_format
 import pyfltr.cli.parser
 import pyfltr.cli.pipeline
+import pyfltr.command.slow_tests
 import pyfltr.config.config
 import pyfltr.output.jsonl
 import pyfltr.state.archive
@@ -1010,19 +1011,35 @@ def _quiet_case(default_config, kind):
     if kind == "diagnostics":
         errors = [_make_error("mypy", "src/a.py", 10, "bad type")]
         return _make_result("mypy", returncode=1, errors=errors), True, True
+    if kind == "slow_tests":
+        base = _make_result("pytest", returncode=0, command_type="tester")
+        slow = [pyfltr.command.slow_tests.SlowTest("tests/a_test.py::test_x", "call", 1.5)]
+        return dataclasses.replace(base, slow_tests=slow), True, False
     assert kind == "truncated"
     errors = [_make_error("mypy", "src/a.py", i, f"err{i}") for i in range(5)]
     default_config.values["jsonl-diagnostic-limit"] = 2
     return _make_result("mypy", returncode=1, errors=errors), True, True
 
 
-@pytest.mark.parametrize("kind", ["suppress_succeeded", "runner_fallback", "failed", "diagnostics", "truncated"])
+@pytest.mark.parametrize("kind", ["suppress_succeeded", "runner_fallback", "failed", "diagnostics", "truncated", "slow_tests"])
 def test_build_command_lines_quiet(default_config, kind):
     """quiet時のcommandレコード抑止・保持条件を分岐別に検証する（SSOT: build_command_lines docstring）。"""
     result, keep_command, has_diagnostic = _quiet_case(default_config, kind)
     parsed = [json.loads(line) for line in pyfltr.output.jsonl.build_command_lines(result, default_config, quiet=True)]
     assert any(r["kind"] == "command" for r in parsed) is keep_command
     assert any(r["kind"] == "diagnostic" for r in parsed) is has_diagnostic
+
+
+def test_build_command_lines_preserves_slow_tests(default_config) -> None:
+    """commandレコードが正規化済みの遅いテスト一覧を変更せず出力する。"""
+    slow_tests = [
+        pyfltr.command.slow_tests.SlowTest("tests/a_test.py::test_x", "call", 2.0),
+        pyfltr.command.slow_tests.SlowTest("tests/b_test.py::test_y", "setup", 1.5),
+    ]
+    result = dataclasses.replace(_make_result("pytest", returncode=0, command_type="tester"), slow_tests=slow_tests)
+    records = [json.loads(line) for line in pyfltr.output.jsonl.build_command_lines(result, default_config)]
+    command = next(record for record in records if record["kind"] == "command")
+    assert command["slow_tests"] == [test.to_dict() for test in slow_tests]
 
 
 @pytest.mark.parametrize(

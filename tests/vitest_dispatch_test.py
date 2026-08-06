@@ -1,9 +1,10 @@
 """vitest専用経路の引数注入動作テスト。
 
 `execute_vitest`が`--reporter=default --reporter=json --outputFile.json=<tmpfile>`を
-注入する条件と、利用者指定がある場合の注入スキップ、tmpfile後始末を検証する。
+注入する条件、利用者指定がある場合の注入スキップ、遅いテスト一覧の抽出、tmpfile後始末を検証する。
 """
 
+import json
 import pathlib
 import subprocess
 
@@ -96,3 +97,58 @@ def test_vitest_outputfile_user_override_skips_injection(mocker, tmp_path: pathl
     assert not any(isinstance(a, str) and a.startswith("--outputFile.json=") for a in cmdline)
     assert "--outputFile=custom-result.json" in cmdline
     assert not captured
+
+
+def test_vitest_sets_slow_tests_from_json(mocker, tmp_path: pathlib.Path) -> None:
+    """JSON reporter出力から遅いテスト一覧を設定する。"""
+    target = tmp_path / "sample.test.ts"
+    target.write_text("// vitest target\n")
+
+    def fake_run(cmdline, env, on_output, **_kwargs):
+        del env, on_output
+        output_path = next(
+            pathlib.Path(arg.split("=", 1)[1])
+            for arg in cmdline
+            if isinstance(arg, str) and arg.startswith("--outputFile.json=")
+        )
+        output_path.write_text(
+            json.dumps(
+                {
+                    "testResults": [
+                        {
+                            "name": str(target),
+                            "assertionResults": [{"fullName": "suite test", "duration": 1500}],
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
+
+    mocker.patch("pyfltr.command.process.run_subprocess", side_effect=fake_run)
+    config = pyfltr.config.config.create_default_config()
+    config.values["vitest"] = True
+    result = pyfltr.command.dispatcher.execute_command(
+        "vitest", _testconf.make_args(), _testconf.make_execution_context(config, [target], start_cwd=tmp_path)
+    )
+    assert [test.to_dict() for test in result.slow_tests] == [
+        {"nodeid": "sample.test.ts::suite test", "phase": "test", "seconds": 1.5}
+    ]
+
+
+def test_vitest_slow_tests_empty_on_stdout_fallback(mocker, tmp_path: pathlib.Path) -> None:
+    """JSON出力を取得できない経路では遅いテスト一覧が空になる。"""
+    target = tmp_path / "sample.test.ts"
+    target.write_text("// vitest target\n")
+    mocker.patch(
+        "pyfltr.command.process.run_subprocess",
+        return_value=subprocess.CompletedProcess(["vitest"], returncode=0, stdout="1 passed"),
+    )
+    config = pyfltr.config.config.create_default_config()
+    config.values["vitest"] = True
+    config.values["vitest-args"] = ["run", "--reporter=verbose"]
+    result = pyfltr.command.dispatcher.execute_command(
+        "vitest", _testconf.make_args(), _testconf.make_execution_context(config, [target], start_cwd=tmp_path)
+    )
+    assert not result.slow_tests

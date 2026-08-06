@@ -9,6 +9,7 @@ import typing
 
 import pyfltr.command.error_parser
 import pyfltr.command.process
+import pyfltr.command.slow_tests
 import pyfltr.config.config
 from pyfltr.command.core_ import CommandResult
 from pyfltr.command.runner import build_invocation_argv
@@ -49,6 +50,7 @@ def execute_vitest(
     on_subprocess_start: typing.Callable[[], None] | None = None,
     on_subprocess_end: typing.Callable[[], None] | None = None,
     cwd: pathlib.Path | None = None,
+    nodeid_base_cwd: pathlib.Path,
 ) -> CommandResult:
     """vitestをJSON reporter併用で実行し、失敗を構造化diagnosticへ変換する。
 
@@ -65,6 +67,8 @@ def execute_vitest(
 
     JSON出力からのdiagnostic生成は `_parse_vitest_json` が担い、失敗の `assertionResult` 単位で
     1つの `ErrorLocation` を生成する。
+    `cwd`はsubprocessの起動先、`nodeid_base_cwd`はJSON中の絶対パスを相対化する基準として
+    別々に受け取る。
     """
     user_args = list(config.values.get(f"{command}-args", []))
     if _has_user_reporter_override(user_args) or _has_user_reporter_override(additional_args):
@@ -83,6 +87,7 @@ def execute_vitest(
             on_subprocess_start=on_subprocess_start,
             on_subprocess_end=on_subprocess_end,
             cwd=cwd,
+            nodeid_base_cwd=nodeid_base_cwd,
         )
 
     # tmpfileは `delete=False` で確保し、後始末をfinallyで明示する。
@@ -117,6 +122,7 @@ def execute_vitest(
             on_subprocess_start=on_subprocess_start,
             on_subprocess_end=on_subprocess_end,
             cwd=cwd,
+            nodeid_base_cwd=nodeid_base_cwd,
         )
     finally:
         json_path.unlink(missing_ok=True)
@@ -138,12 +144,17 @@ def _run_vitest_subprocess(
     on_subprocess_start: typing.Callable[[], None] | None,
     on_subprocess_end: typing.Callable[[], None] | None,
     cwd: pathlib.Path | None = None,
+    nodeid_base_cwd: pathlib.Path,
 ) -> CommandResult:
     """vitestをsubprocess起動し、JSON reporter出力をparse_errorsへ渡す。
 
     `json_output_path` が指定された場合は実行後に当該ファイルを読み込み、
     その内容を `parse_errors` のoutputとして渡す。指定が無い場合は
     stdoutを従来通り `parse_errors` に渡す。
+    JSON reporter出力を取得できた場合は、各テストの所要時間から遅いテスト一覧を抽出して
+    `CommandResult.slow_tests`へ設定する。利用者が`--reporter`等を自前指定して注入が
+    スキップされた経路ではstdoutが解析対象となり、抽出結果は空になる。
+    subprocessの起動先には`cwd`、nodeidの相対化には`nodeid_base_cwd`を用いる。
     """
     if args.verbose and on_output is not None:
         on_output(f"commandline: {shlex.join(commandline)}\n")
@@ -158,7 +169,6 @@ def _run_vitest_subprocess(
         cwd=cwd,
         **pyfltr.config.config.resolve_retry_kwargs(config.values),
     )
-    returncode = proc.returncode
     output = proc.stdout.strip()
     elapsed = time.perf_counter() - start_time
 
@@ -172,15 +182,16 @@ def _run_vitest_subprocess(
             parse_source = output
 
     errors = pyfltr.command.error_parser.parse_errors(command, parse_source, command_info.error_pattern)
-    return CommandResult.from_run(
+    slow_tests = pyfltr.command.slow_tests.parse_vitest_durations(parse_source, base_cwd=nodeid_base_cwd)
+    result = CommandResult.from_process(
+        process=proc,
         command=command,
         command_info=command_info,
         commandline=commandline,
-        returncode=returncode,
         output=output,
         elapsed=elapsed,
         files=len(targets),
         errors=errors,
-        timeout_exceeded=proc.timeout_exceeded,
-        retry_count=proc.retry_count,
+        slow_tests=slow_tests,
     )
+    return result

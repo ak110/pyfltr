@@ -671,7 +671,7 @@ JSONLヘッダーの`format_source`には検出した変数名（例: `env.CODEX
 
 - 成功時commandレコード
     - `status`が`succeeded`・`formatted`・`skipped`のいずれか
-    - 診断が0件・切り詰め無し・runner_fallback未発火
+    - 診断が0件・切り詰め無し・runner_fallback未発火・遅いテスト一覧が空
     - 上記全条件を満たす場合、当該commandレコードを出力しない
 - headerレコードを`run_id`・`commands`・`files`の3つのフィールドのみへ縮約する
 - pre-commit・prek経由でformatter修正が発生したときのstderrガイダンスも抑止する

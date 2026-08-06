@@ -249,21 +249,33 @@ def collect_tool_summaries(
     store: pyfltr.state.archive.ArchiveStore,
     run_id: str,
 ) -> list[dict[str, typing.Any]]:
-    """`tools/`配下から各ツールの要約（status / has_error / diagnostics）を集める。"""
+    """`tools/`配下から各ツールの要約（status / has_error / diagnostics / elapsed / slow_tests）を集める。
+
+    `elapsed`は当該ツールの実行に要した秒数である。実行アーカイブはキャッシュヒットした
+    ツールを書き込まないため（`pipeline`・`ui`が`not result.cached`で分岐する）、
+    本関数の戻り値へキャッシュ由来の値が現れることはない。復元値と実測値の区別が要る
+    JSONL経路では`cached_elapsed`へのキー名切替で表現する。
+
+    `slow_tests`はテスターが報告した遅いテスト一覧で、`tool.json`の保存時点で正規化済みである。
+    pytestの全件は`show-run --commands`が返す生出力から参照できる。
+    """
     summaries: list[dict[str, typing.Any]] = []
     for tool in store.list_tools(run_id):
         try:
             tool_meta = store.read_tool_meta(run_id, tool)
         except FileNotFoundError:
             continue
-        summaries.append(
-            {
-                "command": tool_meta.get("command", tool_meta.get("tool", tool)),
-                "status": tool_meta.get("status"),
-                "has_error": tool_meta.get("has_error"),
-                "diagnostics": tool_meta.get("diagnostics"),
-            }
-        )
+        summary: dict[str, typing.Any] = {
+            "command": tool_meta.get("command", tool_meta.get("tool", tool)),
+            "status": tool_meta.get("status"),
+            "has_error": tool_meta.get("has_error"),
+            "diagnostics": tool_meta.get("diagnostics"),
+            "elapsed": tool_meta.get("elapsed"),
+        }
+        slow_tests = tool_meta.get("slow_tests")
+        if slow_tests:
+            summary["slow_tests"] = slow_tests
+        summaries.append(summary)
     return summaries
 
 

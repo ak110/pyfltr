@@ -82,6 +82,7 @@ from pyfltr.cli.mcp_models import (
     RunForAgentResult,
     RunOverviewModel,
     RunSummaryModel,
+    SlowTestModel,
 )
 from pyfltr.grep_.types import MatchRecord, ReplaceCommandMeta
 
@@ -163,6 +164,8 @@ async def tool_show_run(run_id: str) -> RunOverviewModel:
             status=entry.get("status"),
             has_error=entry.get("has_error"),
             diagnostics=entry.get("diagnostics"),
+            elapsed=entry.get("elapsed"),
+            slow_tests=[SlowTestModel.model_validate(test) for test in entry.get("slow_tests", [])],
         )
         for entry in command_summaries
     ]

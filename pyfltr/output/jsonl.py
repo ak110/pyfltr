@@ -145,6 +145,7 @@ def build_command_lines(
     - `result.status`が`succeeded`・`formatted`・`skipped`のいずれか
     - `diagnostic_records`が空
     - `diagnostics_truncated`が`False`
+    - `result.slow_tests`が空
     - `result.runner_fallback`が`None`（fallback検知は静音時も残す）
 
     上記いずれかを満たさない場合は通常どおりcommandレコードを出力する。
@@ -200,6 +201,8 @@ def _should_suppress_command_record(
     if diagnostic_records:
         return False
     if diagnostics_truncated:
+        return False
+    if result.slow_tests:
         return False
     return result.runner_fallback is None
 
@@ -700,6 +703,8 @@ def _build_command_record(
     添付する。retry_commandは`CommandResult.retry_command`が設定されていれば含める。
     `hint_urls`が非空なら`hint_urls`キーで埋め込む。
     `hints`が非空なら`hints`キーで埋め込む。
+    `result.slow_tests`が非空のときは`slow_tests`キーへ出力する
+    （入力は秒数降順の上位`SLOW_TEST_LIMIT`件へ正規化済みである）。
     hintは「対応する指摘や状態が実際に該当するときのみ付与する」方針で扱い、
     textlintコマンドの`messages[].col`仕様注記は`diagnostics > 0`のときに限り追加する
     （指摘ゼロの実行で固定的なhintを残してLLMトークンを浪費しないため）。
@@ -732,6 +737,8 @@ def _build_command_record(
         record["rc"] = result.returncode
     if result.retry_count:
         record["retry_count"] = result.retry_count
+    if result.slow_tests:
+        record["slow_tests"] = [test.to_dict() for test in result.slow_tests]
 
     truncated, message = _build_truncated_meta(
         result, diagnostics=diagnostics, diagnostic_total=diagnostic_total, config=config

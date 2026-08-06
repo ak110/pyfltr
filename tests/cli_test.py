@@ -14,6 +14,7 @@ import pyfltr.cli.render
 import pyfltr.command.core_
 import pyfltr.command.dispatcher
 import pyfltr.command.error_parser
+import pyfltr.command.slow_tests
 import pyfltr.config.config
 import pyfltr.warnings_
 from tests.conftest import make_command_result as _make_result
@@ -83,6 +84,25 @@ def test_write_log_failed(text_logs):
     pyfltr.cli.render.write_log(result)
     # 失敗時は@マークが使われる
     assert "@ returncode: 1" in "\n".join(text_logs)
+
+
+@pytest.mark.parametrize("returncode", [0, 1])
+def test_write_log_shows_slow_tests_on_success_and_failure(text_logs, returncode: int) -> None:
+    """端末表示は成功時と失敗時の双方で遅いテスト一覧を出力する。"""
+    slow_test = pyfltr.command.slow_tests.SlowTest("tests/a_test.py::test_slow", "call", 1.5)
+    result = pyfltr.command.core_.CommandResult(
+        command="pytest",
+        command_type="tester",
+        commandline=["pytest"],
+        returncode=returncode,
+        has_error=returncode != 0,
+        files=1,
+        output="FAILED" if returncode else "1 passed in 1.50s",
+        elapsed=1.5,
+        slow_tests=[slow_test],
+    )
+    pyfltr.cli.render.write_log(result)
+    assert "1.50s call tests/a_test.py::test_slow" in "\n".join(text_logs)
 
 
 def test_write_log_tester_with_errors_also_writes_raw_output(text_logs):

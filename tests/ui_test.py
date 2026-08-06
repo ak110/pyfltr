@@ -7,6 +7,7 @@ import unittest.mock
 import pyfltr.command.core_
 import pyfltr.command.error_parser
 import pyfltr.command.process
+import pyfltr.command.slow_tests
 import pyfltr.config.config
 import pyfltr.output.ui
 import pyfltr.state.stage_runner
@@ -290,6 +291,7 @@ def test_tester_failure_writes_raw_output_in_addition_to_diagnostics(monkeypatch
             output="RAW CRASH OUTPUT",
             elapsed=0.1,
             errors=[error],
+            slow_tests=[pyfltr.command.slow_tests.SlowTest("tests/a.py::test_a", "call", 1.5)],
         )
 
     monkeypatch.setattr("pyfltr.command.dispatcher.execute_command", _fake_execute_command)
@@ -298,6 +300,39 @@ def test_tester_failure_writes_raw_output_in_addition_to_diagnostics(monkeypatch
     log_texts = [text for log_id, text in written if log_id == "#output-pytest"]
     assert any("RAW CRASH OUTPUT" in t for t in log_texts)
     assert any("test_a: crashed" in t for t in log_texts)
+    assert any("1.50s call tests/a.py::test_a" in t for t in log_texts)
+
+
+def test_tester_success_writes_slow_tests(monkeypatch) -> None:
+    """TUIはテスター成功時にも遅いテスト一覧をコマンドタブへ書き込む。"""
+    args = argparse.Namespace(targets=[], verbose=False, keep_ui=False, include_fix_stage=False)
+    config = pyfltr.config.config.create_default_config()
+    for name in config.command_names:
+        config.values[name] = name == "pytest"
+    config.values["jobs"] = 1
+    base_ctx = pyfltr.command.core_.ExecutionBaseContext(config=config, all_files=[], cache_store=None, cache_run_id=None)
+    app = pyfltr.output.ui.UIApp(["pytest"], args, base_ctx)
+    written: list[tuple[str, str]] = []
+
+    monkeypatch.setattr(app, "call_from_thread", lambda fn, *args, **kwargs: fn(*args, **kwargs))
+    monkeypatch.setattr(app, "_write_log", lambda log_id, text: written.append((log_id, text)))
+    result = pyfltr.command.core_.CommandResult(
+        command="pytest",
+        command_type="tester",
+        commandline=[],
+        returncode=0,
+        has_error=False,
+        files=1,
+        output="1 passed in 1.50s",
+        elapsed=1.5,
+        slow_tests=[pyfltr.command.slow_tests.SlowTest("tests/a.py::test_a", "call", 1.5)],
+    )
+    monkeypatch.setattr("pyfltr.command.dispatcher.execute_command", lambda *_args, **_kwargs: result)
+
+    app._run_in_background()  # pylint: disable=protected-access  # Textual起動無しで完了表示を検証する
+
+    log_texts = [text for log_id, text in written if log_id == "#output-pytest"]
+    assert any("1.50s call tests/a.py::test_a" in text for text in log_texts)
 
 
 def test_can_use_ui() -> None:

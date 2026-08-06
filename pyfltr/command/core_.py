@@ -6,6 +6,8 @@ import pathlib
 import tempfile
 import typing
 
+import pyfltr.command.process
+import pyfltr.command.slow_tests
 import pyfltr.config.config
 
 if typing.TYPE_CHECKING:
@@ -251,6 +253,15 @@ class CommandResult:
     """
     retry_count: int = 0
     """OOM起因で再試行した回数。0はリトライなしを意味する。"""
+    slow_tests: "list[pyfltr.command.slow_tests.SlowTest]" = dataclasses.field(default_factory=list)
+    """テスターが報告した遅いテスト一覧（秒数降順、最大`SLOW_TEST_LIMIT`件）。
+
+    抽出時点とサブプロジェクトのマージ時点で件数を制限するため、下流の各経路は追加の件数制限をしない。
+    露出先は実行アーカイブの`tool.json`、JSONL commandレコード、MCPの`commands[]`、
+    text成功時表示、TUI表示である。
+    設定する経路はpytest（`dispatcher`）とvitest（`command/vitest.py`）で、
+    他のツールでは常に空。
+    """
 
     @classmethod
     # from_run は各コマンド実行モジュール（linter_fix / textlint_fix 等）で同様の引数転送パターンを持つため重複検知される
@@ -270,6 +281,7 @@ class CommandResult:
         resolution_failed: bool = False,
         timeout_exceeded: bool = False,
         retry_count: int = 0,
+        slow_tests: "list[pyfltr.command.slow_tests.SlowTest] | None" = None,
     ) -> "CommandResult":
         """実行結果からCommandResultを組み立てるファクトリメソッド。
 
@@ -278,6 +290,7 @@ class CommandResult:
         `errors` を省略した場合は空リストを使う（parse_errorsの呼び出しは呼び出し側で行う）。
         `timeout_exceeded=True` を指定すると当該結果がtimeout由来の失敗であることを示す。
         `retry_count` はOOM起因の再試行回数（0はリトライなし、複数回subprocessを呼ぶ経路では合算値）。
+        `slow_tests`を省略した場合は空リストを使う。
         """
         resolved_type: str
         if command_type is None:
@@ -298,6 +311,38 @@ class CommandResult:
             resolution_failed=resolution_failed,
             timeout_exceeded=timeout_exceeded,
             retry_count=retry_count,
+            slow_tests=slow_tests if slow_tests is not None else [],
+        )
+
+    @classmethod
+    def from_process(
+        cls,
+        *,
+        process: "pyfltr.command.process.CompletedProcessWithTimeoutInfo",
+        command: str,
+        command_info: "pyfltr.config.config.CommandInfo",
+        commandline: list[str],
+        output: str,
+        elapsed: float,
+        files: int,
+        has_error: bool = False,
+        errors: "list[pyfltr.command.error_parser.ErrorLocation] | None" = None,
+        slow_tests: "list[pyfltr.command.slow_tests.SlowTest] | None" = None,
+    ) -> "CommandResult":
+        """プロセス実行結果と解析済み情報からCommandResultを組み立てる。"""
+        return cls.from_run(
+            command=command,
+            command_info=command_info,
+            commandline=commandline,
+            returncode=process.returncode,
+            output=output,
+            elapsed=elapsed,
+            files=files,
+            has_error=has_error,
+            errors=errors,
+            timeout_exceeded=process.timeout_exceeded,
+            retry_count=process.retry_count,
+            slow_tests=slow_tests,
         )
 
     @property
@@ -428,6 +473,9 @@ class CommandResult:
         total_elapsed = sum(r.elapsed for r in results)
         total_files = sum(r.files for r in results)
         total_retry_count = sum(r.retry_count for r in results)
+        merged_slow_tests: list[pyfltr.command.slow_tests.SlowTest] = []
+        for result in results:
+            merged_slow_tests.extend(result.slow_tests)
         any_has_error = any(r.has_error for r in results)
         any_timeout = any(r.timeout_exceeded for r in results)
         any_resolution_failed = any(r.resolution_failed for r in results)
@@ -456,6 +504,7 @@ class CommandResult:
             timeout_exceeded=any_timeout,
             severity=head.severity,
             retry_count=total_retry_count,
+            slow_tests=pyfltr.command.slow_tests.take_slowest(merged_slow_tests),
         )
 
     def get_status_text(self) -> str:

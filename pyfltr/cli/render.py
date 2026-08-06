@@ -15,6 +15,7 @@ import uuid
 import pyfltr.cli.output_format
 import pyfltr.command.core_
 import pyfltr.command.error_parser
+import pyfltr.command.slow_tests
 import pyfltr.config.config
 import pyfltr.warnings_
 
@@ -54,6 +55,8 @@ def write_log(result: pyfltr.command.core_.CommandResult, *, use_github_annotati
     False（既定）のときは従来のテキスト形式（`file:line:col: [tool:rule] msg`）で出力する。
     枠線・区切り線・進捗ラベルは常にtext記法を維持する
     （GAはエラー箇所の解釈だけを切り替え、レイアウトはtextと同じにする設計）。
+    成否にかかわらず、診断・生出力・成功要約の後へ遅いテスト一覧の上位
+    `SLOW_TEST_LIMIT`件を表示する（対象外のツールでは一覧が空のため表示は増えない）。
     """
     mark = "@" if result.alerted else "*"
     with lock:
@@ -74,6 +77,8 @@ def write_log(result: pyfltr.command.core_.CommandResult, *, use_github_annotati
             summary = pyfltr.command.error_parser.parse_summary(result.command, result.output)
             if summary:
                 text_logger.info(f"{mark} {summary}")
+        for line in pyfltr.command.slow_tests.format_slow_tests(result.slow_tests):
+            text_logger.info(f"{mark} {line}")
         text_logger.info(mark)
         text_logger.info(f"{mark} returncode: {result.returncode}")
         text_logger.info(mark * NCOLS)

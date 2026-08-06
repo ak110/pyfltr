@@ -22,6 +22,16 @@ class RunSummaryModel(pydantic.BaseModel):
     files: int | None = pydantic.Field(default=None, description="対象ファイル数。")
 
 
+class SlowTestModel(pydantic.BaseModel):
+    """遅いテスト1件分。`CommandSummaryModel.slow_tests`の要素。"""
+
+    nodeid: str = pydantic.Field(
+        description="テスター共通の識別子。pytestはnodeid、vitestはファイルパスとテスト名を連結した形式。"
+    )
+    phase: str = pydantic.Field(description="計測区間。pytestはsetup / call / teardown、区間を区別しないvitestはtest。")
+    seconds: float = pydantic.Field(description="当該フェーズの所要秒数。")
+
+
 class CommandSummaryModel(pydantic.BaseModel):
     """コマンドごとのサマリ。`show_run`ツールの戻り値内要素。"""
 
@@ -32,6 +42,16 @@ class CommandSummaryModel(pydantic.BaseModel):
     )
     has_error: bool | None = pydantic.Field(default=None, description="エラーが発生したか否か。")
     diagnostics: int | None = pydantic.Field(default=None, description="diagnosticの件数。")
+    elapsed: float | None = pydantic.Field(
+        default=None,
+        description=(
+            "当該コマンドの実行に要した秒数。キャッシュヒットしたコマンドは実行アーカイブへ記録されないため本一覧に現れない。"
+        ),
+    )
+    slow_tests: list[SlowTestModel] = pydantic.Field(
+        default_factory=list,
+        description="テスターが報告した遅いテストの上位一覧（秒数降順）。",
+    )
 
 
 class DiagnosticMessageModel(pydantic.BaseModel):

@@ -27,6 +27,7 @@ import pyfltr.command.glab
 import pyfltr.command.mise
 import pyfltr.command.process
 import pyfltr.command.runner
+import pyfltr.command.slow_tests
 import pyfltr.command.targets
 import pyfltr.command.tool_resolution
 import pyfltr.command.two_step.base
@@ -2286,6 +2287,26 @@ def test_command_result_merge_retry_count() -> None:
     r2 = _make_result(retry_count=2)
     merged = pyfltr.command.core_.CommandResult.merge([r1, r2])
     assert merged.retry_count == 3
+
+
+def test_merge_limits_slow_tests_across_subprojects() -> None:
+    """複数結果の遅いテストを秒数降順の上位件数へ正規化する。"""
+
+    def _make_result(seconds: list[float]) -> pyfltr.command.core_.CommandResult:
+        return pyfltr.command.core_.CommandResult(
+            command="pytest",
+            command_type="tester",
+            commandline=["pytest"],
+            returncode=0,
+            has_error=False,
+            files=1,
+            output="",
+            elapsed=0.1,
+            slow_tests=[pyfltr.command.slow_tests.SlowTest(f"tests/test_{second}.py", "call", second) for second in seconds],
+        )
+
+    merged = pyfltr.command.core_.CommandResult.merge([_make_result([1.0, 6.0, 3.0]), _make_result([2.0, 5.0, 4.0])])
+    assert [test.seconds for test in merged.slow_tests] == [6.0, 5.0, 4.0, 3.0, 2.0]
 
 
 def test_execute_command_cache_hit_skips_subprocess(mocker, tmp_path: pathlib.Path) -> None:

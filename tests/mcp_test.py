@@ -6,6 +6,7 @@
 """
 
 import argparse
+import dataclasses
 import inspect
 import json
 import pathlib
@@ -16,7 +17,9 @@ import pytest
 
 import pyfltr.cli.mcp_models
 import pyfltr.cli.mcp_server
+import pyfltr.command.slow_tests
 import pyfltr.state.archive
+import pyfltr.state.runs
 from tests import conftest as _testconf
 from tests.conftest import make_command_result as _make_result
 from tests.conftest import make_error_location as _make_error
@@ -120,6 +123,43 @@ async def test_tool_show_run_overview(tmp_path: pathlib.Path) -> None:
     command_names = [c.command for c in result.commands]
     assert "ruff-check" in command_names
     assert "mypy" in command_names
+
+
+@pytest.mark.asyncio
+async def test_show_run_includes_elapsed_and_slow_tests(tmp_path: pathlib.Path) -> None:
+    """show_runの戻り値へ所要時間と遅いテスト一覧が現れる。"""
+    store = pyfltr.state.archive.ArchiveStore(cache_root=tmp_path)
+    run_id = store.start_run(commands=["pytest"])
+    slow_tests = [pyfltr.command.slow_tests.SlowTest("tests/a_test.py::test_x", "call", 1.5)]
+    result = _make_result("pytest", returncode=0, command_type="tester")
+    result = dataclasses.replace(result, elapsed=2.3456, slow_tests=slow_tests)
+    store.write_tool_result(run_id, result)
+    store.finalize_run(run_id, exit_code=0)
+
+    overview = await pyfltr.cli.mcp_server.tool_show_run(run_id)
+    assert len(overview.commands) == 1
+    command = overview.commands[0]
+    assert command.elapsed == 2.346
+    assert [test.model_dump() for test in command.slow_tests] == [test.to_dict() for test in slow_tests]
+
+
+def test_collect_tool_summaries_includes_elapsed(tmp_path: pathlib.Path) -> None:
+    """collect_tool_summariesがtool.jsonのelapsedを読み取る。"""
+    store = pyfltr.state.archive.ArchiveStore(cache_root=tmp_path)
+    run_id = store.start_run(commands=["pytest"])
+    result = dataclasses.replace(_make_result("pytest", returncode=0, command_type="tester"), elapsed=1.2345)
+    store.write_tool_result(run_id, result)
+    summaries = pyfltr.state.runs.collect_tool_summaries(store, run_id)
+    assert summaries[0]["elapsed"] == 1.234
+
+
+def test_collect_tool_summaries_omits_slow_tests_when_absent(tmp_path: pathlib.Path) -> None:
+    """slow_testsを持たないtool.jsonでは当該キーを付けない。"""
+    store = pyfltr.state.archive.ArchiveStore(cache_root=tmp_path)
+    run_id = store.start_run(commands=["pytest"])
+    store.write_tool_result(run_id, _make_result("pytest", returncode=0, command_type="tester"))
+    summaries = pyfltr.state.runs.collect_tool_summaries(store, run_id)
+    assert "slow_tests" not in summaries[0]
 
 
 @pytest.mark.asyncio

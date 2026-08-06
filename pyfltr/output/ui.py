@@ -16,6 +16,7 @@ import pyfltr.command.core_
 import pyfltr.command.dispatcher
 import pyfltr.command.error_parser
 import pyfltr.command.process
+import pyfltr.command.slow_tests
 import pyfltr.command.targets
 import pyfltr.config.config
 import pyfltr.state.executor
@@ -565,6 +566,9 @@ class UIApp(App):
                     summary = pyfltr.command.error_parser.parse_summary(command, result.output)
                     if summary:
                         self._safe_call_from_thread(self._write_log, f"#output-{command}", summary)
+                slow_lines = pyfltr.command.slow_tests.format_slow_tests(result.slow_tests)
+                if slow_lines:
+                    self._safe_call_from_thread(self._write_log, f"#output-{command}", "\n".join(slow_lines))
 
             # フッター情報を追記
             footer = f"{'-' * 40}\n終了コード: {result.returncode}\nステータス: {result.get_status_text()}\n"

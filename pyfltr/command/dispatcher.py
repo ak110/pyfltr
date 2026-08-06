@@ -16,6 +16,7 @@ import pyfltr.command.linter_fix
 import pyfltr.command.precommit
 import pyfltr.command.process
 import pyfltr.command.runner
+import pyfltr.command.slow_tests
 import pyfltr.command.structured_output
 import pyfltr.command.subproject_loop
 import pyfltr.command.targets
@@ -483,6 +484,7 @@ def _run_plain_command(
     )
     # pytestは設定ファイル競合をヘッダー1行で通知するだけで終了コードへ反映しない。
     # 拾わないと設定が適用されないまま完走した実行を成功として報告してしまう。
+    slow_tests: list[pyfltr.command.slow_tests.SlowTest] = []
     if command == "pytest":
         conflict_message = pyfltr.command.error_parser.detect_pytest_config_conflict(output)
         if conflict_message is not None:
@@ -491,19 +493,19 @@ def _run_plain_command(
                 message=conflict_message,
                 hint="採用された設定ファイルへ設定を集約するか、不要な設定ファイルを削除する",
             )
+        slow_tests = pyfltr.command.slow_tests.parse_pytest_durations(output)
 
-    result = CommandResult.from_run(
+    result = CommandResult.from_process(
+        process=proc,
         command=command,
         command_info=command_info,
         commandline=commandline,
-        returncode=returncode,
         has_error=has_error,
         files=len(targets),
         output=output,
         elapsed=elapsed,
         errors=errors,
-        timeout_exceeded=proc.timeout_exceeded,
-        retry_count=proc.retry_count,
+        slow_tests=slow_tests,
     )
 
     # キャッシュ書き込み （成功rc=0のみ）。失敗結果を記録すると再試行で同じ失敗が
@@ -722,6 +724,7 @@ def _dispatch_command(
                 on_subprocess_start=on_subprocess_start,
                 on_subprocess_end=on_subprocess_end,
                 cwd=subproject_cwd,
+                nodeid_base_cwd=subproject_cwd or start_cwd,
             )
         )
 

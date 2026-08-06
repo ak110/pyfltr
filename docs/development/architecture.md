@@ -37,7 +37,7 @@ pyfltrはCLIツールであり、Pythonモジュールパスは内部実装と�
 - `pyfltr/command/`: コマンド実行コア。
   実行コンテキスト型・プロセス管理・mise統合・subprocess環境構築・runner解決を担う。
   対象ファイル選定・ファイル変更検知・ビルトインコマンド定義・エラーパーサー・
-  2段階処理（ruff/prettier/taplo/shfmt）も含む。
+  テスターが報告する遅いテスト一覧の解析・2段階処理（ruff/prettier/taplo/shfmt）も含む。
   コマンドのディスパッチは`dispatcher`本体に置き、ツール解決失敗ハンドリングは`tool_resolution`、サブプロジェクト単位の走査ループは`subproject_loop`へ分離する。
   `subproject_loop`は循環importを避けるため、ディスパッチ関数と無効スキップ結果生成関数をコールバックで受け取る方式を採用する
 - `pyfltr/config/`: 設定の読み書き・解決とプリセット定義を担う。
