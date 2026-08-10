@@ -32,7 +32,9 @@ jobs:
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           python-version: "3.14"
-          enable-cache: true
+          # 同一pushで先行するDocsと両matrixが同じキーを保存するとreservation警告になるため、
+          # 小規模な互換性jobではキャッシュを無効化する。
+          enable-cache: false
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
