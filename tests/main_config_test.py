@@ -220,6 +220,60 @@ class TestConfigSubcommand:
         assert lines
         assert all(line.endswith(" (default)") for line in lines)
 
+    def test_config_list_all_includes_colloquial_dynamic_defaults(self, monkeypatch, tmp_path, capsys) -> None:
+        """`config list --all`は口語表現検査の動的設定キーと既定値を返す。"""
+        (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        rc = pyfltr.cli.main.run(["config", "list", "--all", "--output-format", "json"])
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out.strip())
+        values = data["values"]
+        assert values["colloquial-check-exclude"] == {
+            "value": [],
+            "default": True,
+        }
+        assert values["colloquial-check-targets"] == {
+            "value": "*",
+            "default": True,
+        }
+
+    @pytest.mark.parametrize(
+        ("key", "expected"),
+        [
+            ("colloquial-check-exclude", ""),
+            ("colloquial-check-targets", "*"),
+        ],
+    )
+    def test_config_get_colloquial_dynamic_default(self, monkeypatch, tmp_path, capsys, key: str, expected: str) -> None:
+        """口語表現検査の動的設定キーは未設定でも既定値を取得できる。"""
+        (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        rc = pyfltr.cli.main.run(["config", "get", key])
+        assert rc == 0
+        assert capsys.readouterr().out.strip() == expected
+
+    @pytest.mark.parametrize(
+        ("key", "value", "default"),
+        [
+            ("colloquial-check-exclude", "docs/generated.md", ""),
+            ("colloquial-check-targets", "*.md", "*"),
+        ],
+    )
+    def test_config_set_get_delete_colloquial_dynamic_key(
+        self, monkeypatch, tmp_path, capsys, key: str, value: str, default: str
+    ) -> None:
+        """口語表現検査の動的設定キーは設定・取得・削除後の既定値復帰が一貫して動作する。"""
+        (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        assert pyfltr.cli.main.run(["config", "set", key, value]) == 0
+        capsys.readouterr()
+        assert pyfltr.cli.main.run(["config", "get", key]) == 0
+        assert capsys.readouterr().out.strip() == value
+        assert pyfltr.cli.main.run(["config", "delete", key]) == 0
+        capsys.readouterr()
+        assert pyfltr.cli.main.run(["config", "get", key]) == 0
+        assert capsys.readouterr().out.strip() == default
+
     def test_config_set_unknown_key_errors(self, monkeypatch, tmp_path, capsys) -> None:
         """未知キーへのsetはexit 1。"""
         (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\n", encoding="utf-8")

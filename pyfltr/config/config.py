@@ -802,6 +802,24 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
 """デフォルト設定。"""
 
 
+def _register_command_dynamic_defaults(
+    defaults: dict[str, typing.Any],
+    builtin_commands: dict[str, CommandInfo],
+) -> None:
+    """全ビルトインコマンドへ実行時に受理する動的設定キーの既定値を登録する。
+
+    ツール固有の固定既定値が先に登録されている場合は、その値を保持する。
+    """
+    for command, info in builtin_commands.items():
+        defaults.setdefault(f"{command}-targets", copy.deepcopy(info.targets))
+        defaults.setdefault(f"{command}-extend-targets", [])
+        defaults.setdefault(f"{command}-exclude", [])
+        defaults.setdefault(f"{command}-extend-args", [])
+
+
+_register_command_dynamic_defaults(DEFAULT_CONFIG, BUILTIN_COMMANDS)
+
+
 # per-tool `{command}-timeout` キーをビルトインコマンドぶん追加する。
 # 既定値 `-1` は「未設定」を意味するsentinelで、解決時にグローバル `command-timeout` 値へフォールバックする。
 # `0` 以下を明示指定した場合は当該コマンドのtimeoutを無効化する。
@@ -1365,6 +1383,7 @@ def _normalize_config_values(
             if cmd_name in config.commands:
                 validated = _validate_targets_value(key, value, emit_config_warning)
                 if validated is not None:
+                    config.values[key] = validated
                     extend_targets_map[cmd_name] = validated
                 continue
         # {command}-extend-argsの検出。サフィックス`-args`より長いため、後段の
@@ -1388,6 +1407,7 @@ def _normalize_config_values(
             if cmd_name in config.commands:
                 validated = _validate_targets_value(key, value, emit_config_warning)
                 if validated is not None:
+                    config.values[key] = validated
                     targets_overrides[cmd_name] = validated
                 continue
         if key not in config.values:

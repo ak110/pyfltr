@@ -765,6 +765,26 @@ def test_command_info_target_globs_list() -> None:
     assert info.targets == ["*.ts", "*.tsx"]
 
 
+def test_builtin_dynamic_config_defaults() -> None:
+    """全ビルトインの動的設定キーがCommandInfo由来の既定値とともに登録される。"""
+    expected_keys = {
+        f"{command}-{suffix}"
+        for command in pyfltr.config.config.BUILTIN_COMMAND_NAMES
+        for suffix in ("targets", "extend-targets", "exclude", "extend-args")
+    }
+    assert len(expected_keys) == 4 * len(pyfltr.config.config.BUILTIN_COMMANDS)
+    assert expected_keys <= pyfltr.config.config.DEFAULT_CONFIG.keys()
+
+    for command, info in pyfltr.config.config.BUILTIN_COMMANDS.items():
+        targets = pyfltr.config.config.DEFAULT_CONFIG[f"{command}-targets"]
+        assert targets == info.targets
+        if isinstance(info.targets, list):
+            assert targets is not info.targets
+        assert pyfltr.config.config.DEFAULT_CONFIG[f"{command}-extend-targets"] == []
+        assert pyfltr.config.config.DEFAULT_CONFIG[f"{command}-exclude"] == []
+        assert pyfltr.config.config.DEFAULT_CONFIG[f"{command}-extend-args"] == []
+
+
 def test_custom_command_targets_list(tmp_path: pathlib.Path) -> None:
     """カスタムコマンドのtargetsにlistを指定できる。"""
     pyproject_content = """
@@ -787,6 +807,7 @@ def test_builtin_targets_invalid_type_warns(tmp_path: pathlib.Path) -> None:
     assert _testconf.count_config_warnings("shfmt-targets") >= 1
     # 既定値（BUILTIN_COMMANDS["shfmt"].targets）を維持する
     assert config.commands["shfmt"].targets == original
+    assert config.values["shfmt-targets"] == original
 
 
 class TestConfigFilesWarning:
@@ -1545,6 +1566,7 @@ def test_builtin_targets_override_str(tmp_path: pathlib.Path) -> None:
     """ビルトインコマンドのtargetsを文字列で完全上書きできる。"""
     (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\nshfmt-targets = "*.bash"\n')
     config = pyfltr.config.config.load_config(config_dir=tmp_path)
+    assert config.values["shfmt-targets"] == "*.bash"
     assert config.commands["shfmt"].targets == "*.bash"
     assert config.commands["shfmt"].target_globs() == ["*.bash"]
 
@@ -1553,6 +1575,7 @@ def test_builtin_targets_override_list(tmp_path: pathlib.Path) -> None:
     """ビルトインコマンドのtargetsをリストで完全上書きできる。"""
     (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\nshfmt-targets = ["*.sh", "*.bash"]\n')
     config = pyfltr.config.config.load_config(config_dir=tmp_path)
+    assert config.values["shfmt-targets"] == ["*.sh", "*.bash"]
     assert config.commands["shfmt"].targets == ["*.sh", "*.bash"]
     assert config.commands["shfmt"].target_globs() == ["*.sh", "*.bash"]
 
@@ -1561,6 +1584,7 @@ def test_builtin_extend_targets_str(tmp_path: pathlib.Path) -> None:
     """ビルトインコマンドのtargetsに文字列で追加できる。"""
     (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\nshfmt-extend-targets = "*.bash"\n')
     config = pyfltr.config.config.load_config(config_dir=tmp_path)
+    assert config.values["shfmt-extend-targets"] == "*.bash"
     # デフォルトの"*.sh"に"*.bash"が追加される
     assert config.commands["shfmt"].target_globs() == ["*.sh", "*.bash"]
 
@@ -1569,6 +1593,7 @@ def test_builtin_extend_targets_list(tmp_path: pathlib.Path) -> None:
     """ビルトインコマンドのtargetsにリストで追加できる。"""
     (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\nshfmt-extend-targets = ["*.bash", "dot_bashrc"]\n')
     config = pyfltr.config.config.load_config(config_dir=tmp_path)
+    assert config.values["shfmt-extend-targets"] == ["*.bash", "dot_bashrc"]
     assert config.commands["shfmt"].target_globs() == [
         "*.sh",
         "*.bash",
@@ -1649,8 +1674,7 @@ def test_builtin_extend_args_invalid_type_warns(tmp_path: pathlib.Path, value_re
     (tmp_path / "pyproject.toml").write_text(f"[tool.pyfltr]\nlychee-extend-args = {value_repr}\n")
     config = pyfltr.config.config.load_config(config_dir=tmp_path)
     assert _testconf.count_config_warnings("lychee-extend-args") >= 1
-    # 既定値（未設定）が維持される
-    assert "lychee-extend-args" not in config.values
+    assert config.values["lychee-extend-args"] == []
 
 
 def test_builtin_extend_args_preserves_tilde(tmp_path: pathlib.Path) -> None:
@@ -1853,12 +1877,11 @@ def test_tool_exclude_unknown_command_warns(tmp_path: pathlib.Path) -> None:
 
 
 def test_tool_exclude_invalid_type_warns(tmp_path: pathlib.Path) -> None:
-    """`{tool}-exclude`に文字列リスト以外を指定すると警告を発行し、既定値（未設定）を維持する。"""
+    """`{tool}-exclude`に文字列リスト以外を指定すると警告を発行し、空リストの既定値を維持する。"""
     (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\nmypy-exclude = 42\n")
     config = pyfltr.config.config.load_config(config_dir=tmp_path)
     assert _testconf.count_config_warnings("str型のリスト") >= 1
-    # 既定値はキー未登録（mypy-excludeはDEFAULT_CONFIGに存在せず、設定時のみ追加される）
-    assert "mypy-exclude" not in config.values
+    assert config.values["mypy-exclude"] == []
 
 
 # --- グローバル設定（XDG準拠 + archive/cache global優先） ---
