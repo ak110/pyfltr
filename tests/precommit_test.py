@@ -1,14 +1,18 @@
 """pre-commit・prek統合のテストコード。"""
 
 import pathlib
+import re
 import textwrap
 
 import psutil
 import pytest
+import yaml
 
 import pyfltr.cli.precommit_guidance
 import pyfltr.config.config
 from tests import conftest as _testconf
+
+_REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 def test_pre_commit_fast_default_is_true() -> None:
@@ -30,6 +34,24 @@ def test_prek_args_default_pins_config_path() -> None:
     """
     args = pyfltr.config.config.DEFAULT_CONFIG["prek-args"]
     assert "--config=.pre-commit-config.yaml" in args
+
+
+@pytest.mark.parametrize(
+    ("path", "excluded"),
+    [
+        (".agents/skills", True),
+        ("sample/.agents/skills", True),
+        (".agents/skills-extra", False),
+        (".agents/skills/file", False),
+        (".agents/other", False),
+    ],
+)
+def test_end_of_file_fixer_excludes_git_symlink(path: str, excluded: bool) -> None:
+    """通常ファイル化するGit symlinkだけを末尾改行修正から除外する。"""
+    config = yaml.safe_load((_REPO_ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8"))
+    hook = next(hook for repository in config["repos"] for hook in repository["hooks"] if hook["id"] == "end-of-file-fixer")
+
+    assert bool(re.search(hook["exclude"], path)) is excluded
 
 
 @pytest.mark.parametrize(

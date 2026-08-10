@@ -20,6 +20,9 @@ repos:
       - id: debug-statements
       - id: detect-private-key
       - id: end-of-file-fixer
+        # core.symlinks=falseではGit symlinkが通常ファイルになり、
+        # 末尾改行の追加でリンク先文字列が変わるため除外する。
+        exclude: '(^|/)\.agents/skills$'
       - id: mixed-line-ending
       - id: name-tests-test
         # tests/smoke_data/ 配下は smoke テスト用の入力サンプル群。

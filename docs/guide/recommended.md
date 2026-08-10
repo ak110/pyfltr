@@ -384,6 +384,33 @@ prekは当該版を自動取得するため、この形になるのはuv管理�
     - 有効化するツールを増やした場合は`types_or`の追随要否を確認する。`hadolint`（Dockerfile）・`shellcheck`・`shfmt`（シェル）などは`preset`に含まれないため、個別に有効化したときは対応する種別を追加する
 - `require_serial: true`: pyfltr自身が内部で並列化するため、pre-commit側での多重起動を抑止する
 
+### Windowsで通常ファイル化するGit symlinkを保護する
+
+Git indexで`.agents/skills`をsymlinkとして管理するプロジェクトでは、
+`git ls-files --stage .agents/skills`の先頭が`120000`となる。
+Windowsなどの`core.symlinks=false`環境では、このsymlinkはリンク先文字列を内容とする通常ファイルとしてcheckoutされる。
+詳細はGit公式資料の[`core.symlinks`](https://git-scm.com/docs/git-config/2.50.0#Documentation/git-config.txt-coresymlinks)を参照。
+
+同じプロジェクトで`end-of-file-fixer`を採用する場合は、次のhook単位の除外を追加する。
+通常ファイル化したリンク先文字列へ末尾改行が追加され、Git symlinkのblob相当と異なる内容になることを防ぐ。
+
+```yaml
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: end-of-file-fixer
+        exclude: '(^|/)\.agents/skills$'
+```
+
+pre-commitは`exclude`をPython正規表現の`re.search`で照合する。
+prekはRustの`fancy-regex`を検索形式で照合し、高度な正規表現機能はPythonの`re`と異なる場合がある。
+ここで示した指定は両方で利用でき、リポジトリ直下と入れ子の`.agents/skills`へ一致する。
+類似名や配下のファイルには一致しない。
+詳細はpre-commit公式資料の[正規表現](https://pre-commit.com/#regular-expressions)と、
+prek公式資料の[`files`・`exclude`設定](https://github.com/j178/prek/blob/v0.4.12/docs/reference/configuration.md#files)を参照。
+実測で同じ通常ファイルを変更しなかった`trailing-whitespace`と`mixed-line-ending`は除外しない。
+
 pre-commit・prek統合の自動スキップなど双方向の挙動は[トラブルシューティング](troubleshooting.md)を参照。
 
 ## pyfltrとpre-commit・prekの呼び出し経路
