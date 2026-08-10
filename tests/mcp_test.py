@@ -1581,17 +1581,18 @@ async def test_tool_run_for_agent_propagates_work_dir_to_command_archive_and_log
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """公開MCP経路の外部コマンド・archive・textログがwork_dirを使う。"""
-    pwd = shutil.which("pwd")
-    if pwd is None:
-        pytest.skip("pwdコマンドが環境にない")
     work_dir = tmp_path / "project"
     work_dir.mkdir()
+    helper = work_dir / "cwd_helper.py"
+    # 同じPython runtimeからnative path表現を得て、外部プロセスのcwd契約をOS横断で検証する。
+    helper.write_text("import pathlib\nprint(pathlib.Path.cwd())\n", encoding="utf-8")
     target = work_dir / "sample.txt"
     target.write_text("value\n", encoding="utf-8")
     (work_dir / "pyproject.toml").write_text(
         "[tool.pyfltr]\nrespect-gitignore = false\n\n"
         "[tool.pyfltr.custom-commands.cwd-check]\n"
-        f"path = {json.dumps(pwd)}\n"
+        f"path = {json.dumps(sys.executable)}\n"
+        f"args = [{json.dumps(str(helper))}]\n"
         'type = "linter"\ntargets = ["*.txt"]\npass-filenames = false\n',
         encoding="utf-8",
     )
