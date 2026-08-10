@@ -197,8 +197,9 @@ def collect_info(command: str, config: pyfltr.config.config.Config, *, do_check:
         base["fix_commandline"] = pyfltr.command.runner.build_invocation_argv(
             command, config, list(resolved.commandline), additional_args=[], fix_stage=True
         )
-    # directモードではshutil.whichで絶対パスへ解決済み。それ以外（mise / pnpx等）は
-    # 起動コマンド名（`mise` / `pnpx`等）がPATH上に存在するかどうかも参考情報として返す。
+    # directモードではshutil.whichで絶対パスへ解決済み。それ以外は、論理runner名ではなく
+    # `resolved.executable`の実値がPATH上に存在するかを確認する。
+    # 公開論理値pnpxは互換なpnpm dlx形式へ写像されるため、確認対象の実行ファイルはpnpmとなる。
     base["executable_resolved"] = shutil.which(resolved.executable) or resolved.executable
 
     # mise経路（effective_runner == "mise"）のときのみ、取得状況を露出する。

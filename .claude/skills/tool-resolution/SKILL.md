@@ -99,11 +99,12 @@ Python系ツール解決表（`PYTHON_TOOL_BIN`）へ相乗りさせると、未
 旧版が処理を実施しないまま終了コード0を返す事象は、終了コード0が無条件に成功となり
 出力解析の結果が成否へ関与しないため、出力解析では検知できない。
 
-## pnpx経路でのplugin解決workaround
+## pnpx論理値のpnpm dlx解決
 
-pnpx経路で`{command}-packages`によりplugin/rule packageを並べるとき、
-pnpx prefix先頭に`--config.enableGlobalVirtualStore=false`を付与する。
-pnpm 11対応のための対症療法で、pnpm 10では未知キーとして無視されるため後方互換性を保つ。
+公開設定値と`effective_runner`の`pnpx`は維持し、実行ファイルを`pnpm`へ写像する。
+設定オプション、主パッケージ、`{command}-packages`の全パッケージを`dlx`より前へ置く。
+この`pnpm --package ... dlx ...`形式はpnpm 10.0.0から同じ形で成立することを実測済みとする。
+追加パッケージがある場合はprefix先頭に`--config.enableGlobalVirtualStore=false`を付与する。
 背景（pnpm 11既定変更・textlintのrequire解決失敗）と適用条件は
 `pyfltr/command/runner.py`の`_resolve_js_commandline`内コメントに集約する。
 

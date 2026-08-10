@@ -163,8 +163,8 @@ RUN mkdir -p /home/pyfltr/.config/uv \
 #   pnpm 11 は ``PNPM_STORE_DIR`` を設定として解釈しない (設定用の環境変数は
 #   ``pnpm_config_`` プレフィックスを要する)。下の ``pnpm config set`` では
 #   ``PNPM_STORE_DIR`` を単なるシェル変数として参照している。
-# - pnpm グローバル経由 (js-runner=pnpx 既定): JS / TS 系ツール。pnpx 経由でも同一ストアを
-#   参照するため初回起動コストが下がる。
+# - pnpm グローバル経由 (js-runner=pnpx 既定): JS / TS 系ツール。pnpx は公開論理値であり、
+#   実行時は pnpm dlx 形式へ写像して同一ストアを参照するため初回起動コストが下がる。
 # - uv tool install: pyfltr[python] に含まれない Python 単独ツール。
 # GitHub Actions では GITHUB_TOKEN をシークレットで受け取り mise に渡す。
 # 未指定時（ローカルビルド等）も動くよう required=false とする。

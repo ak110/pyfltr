@@ -355,8 +355,8 @@ $ pyfltr command-info textlint
 
 ## 実行コマンド
 
-commandline (fix step): pnpx --package textlint --package ... textlint --fix
-commandline (check step): pnpx --package textlint --package ... textlint --format json
+commandline (fix step): pnpm --config.enableGlobalVirtualStore=false --package textlint --package ... dlx textlint --fix
+commandline (check step): pnpm --config.enableGlobalVirtualStore=false --package textlint --package ... dlx textlint --format json
 ...
 ```
 

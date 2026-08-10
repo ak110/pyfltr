@@ -212,7 +212,7 @@ def ensure_package_manager_version(
         )
 
 
-# pnpx経由で解決するときに `--package` に渡すspec。
+# pnpx論理runnerをpnpm dlx形式へ解決するときに`--package`へ渡すspec。
 # 通常はbin名をそのまま渡すだけだが、上流の既知バグで動かないバージョンを
 # 除外したい場合やスコープ付きパッケージの場合にここで差し替える。
 # - textlint 15.5.3には起動不能のバグがあるため除外している （15.5.4で修正済み）。
@@ -513,15 +513,17 @@ def _resolve_js_commandline(
         # パッケージ実体がグローバル仮想ストアからsymlinkされる構造に変わった結果、
         # textlintのようにrule packageを `require()` で動的解決するツールが
         # dlx temp dirの `node_modules/` へ到達できず `No rules found` で失敗する。
-        # plugin/rule packageを `--package` で並べる経路に限り、pnpm公式opt-outで
-        # dlxローカル仮想ストア配置（旧既定）へ戻す。pnpm 10では未知キーとして無視される。
+        # plugin/rule packageを`--package`で並べる経路に限り、pnpm公式opt-outで
+        # dlxローカル仮想ストア配置（旧既定）へ戻す。
+        # 公開設定値とeffective_runnerはpnpxを維持するが、版によってオプション解釈が異なる
+        # pnpxラッパーを避け、pnpm 10.0.0から成立するpnpm本体のdlx形式で起動する。
         if packages:
             prefix.append("--config.enableGlobalVirtualStore=false")
         prefix.extend(["--package", main_spec])
         for pkg in packages:
             prefix.extend(["--package", pkg])
-        prefix.append(bin_name)
-        return "pnpx", prefix
+        prefix.extend(["dlx", bin_name])
+        return "pnpm", prefix
     if runner == "pnpm":
         return "pnpm", ["exec", bin_name]
     if runner == "npm":
@@ -717,7 +719,7 @@ def build_commandline(
     """ツール起動コマンドラインを構築する（副作用は `allow_side_effects` で制御）。
 
     `{command}-runner` および `{command}-path` の設定に従い、`mise exec ... --` 形式・
-    `pnpx --package ...` 形式・`uv run --frozen` 形式・`uvx <bin>` 形式・直接実行（PATH解決）のいずれかを返す。
+    `pnpm --package ... dlx ...`形式・`uv run --frozen`形式・`uvx <bin>`形式・直接実行（PATH解決）のいずれかを返す。
 
     `{command}-runner` 値はカテゴリ委譲値（`python-runner` / `js-runner` / `bin-runner`）と
     直接指定値（`direct` / `mise` / `uv` / `uvx` / `pnpx` / `pnpm` / `npm` / `npx` / `yarn`）の2分類で扱い、

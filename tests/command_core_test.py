@@ -117,40 +117,41 @@ def test_build_subprocess_env_default_keeps_mise_tool_paths(monkeypatch: pytest.
     assert "/usr/bin" in entries
 
 
+@pytest.mark.parametrize(
+    ("command", "package_spec", "bin_name"),
+    [
+        ("textlint", "textlint@<15.5.3 || >15.5.3", "textlint"),
+        ("markdownlint", "markdownlint-cli2", "markdownlint-cli2"),
+        ("eslint", "eslint", "eslint"),
+        ("prettier", "prettier", "prettier"),
+        ("biome", "@biomejs/biome", "biome"),
+        ("vitest", "vitest", "vitest"),
+        ("oxlint", "oxlint", "oxlint"),
+        ("tsc", "typescript", "tsc"),
+        ("designmd", "@google/design.md", "design.md"),
+    ],
+)
+def test_build_commandline_pnpx_js_tools(command: str, package_spec: str, bin_name: str) -> None:
+    """pnpx論理runnerは全JSツールをpnpm本体のdlx形式へ解決する。"""
+    config = pyfltr.config.config.create_default_config()
+    config.values["js-runner"] = "pnpx"
+    config.values[f"{command}-packages"] = []
+
+    resolved = pyfltr.command.runner.build_commandline(command, config)
+
+    assert pathlib.PurePath(resolved.executable).stem == "pnpm"
+    assert resolved.prefix == ["--package", package_spec, "dlx", bin_name]
+    assert resolved.effective_runner == "pnpx"
+
+
 def test_build_commandline_pnpx_with_textlint_packages() -> None:
-    """pnpx runnerではtextlint-packagesが--packageで展開される。
-
-    textlint本体のspecは`_JS_TOOL_PNPX_PACKAGE_SPEC`によって
-    既知バグのあるバージョンを除外した形で指定される。
-    pnpm 11のグローバル仮想ストア既定を回避するopt-outが先頭に付く。
-    """
+    """pnpx論理runnerでは設定と全パッケージがdlxより前に展開される。"""
     config = pyfltr.config.config.create_default_config()
-    config.values["js-runner"] = "pnpx"
-    config.values["textlint-packages"] = ["textlint-rule-preset-ja-technical-writing", "textlint-rule-ja-no-abusage"]
+    config.values["textlint-runner"] = "pnpx"
 
     resolved = pyfltr.command.runner.build_commandline("textlint", config)
 
-    assert pathlib.PurePath(resolved.executable).stem == "pnpx"
-    assert resolved.prefix == [
-        "--config.enableGlobalVirtualStore=false",
-        "--package",
-        "textlint@<15.5.3 || >15.5.3",
-        "--package",
-        "textlint-rule-preset-ja-technical-writing",
-        "--package",
-        "textlint-rule-ja-no-abusage",
-        "textlint",
-    ]
-
-
-def test_build_commandline_pnpx_textlint_default_excludes_buggy_version() -> None:
-    """pnpx runnerの既定状態でもtextlint 15.5.3が除外specで指定される。"""
-    config = pyfltr.config.config.create_default_config()
-    config.values["js-runner"] = "pnpx"
-
-    resolved = pyfltr.command.runner.build_commandline("textlint", config)
-
-    assert pathlib.PurePath(resolved.executable).stem == "pnpx"
+    assert pathlib.PurePath(resolved.executable).stem == "pnpm"
     assert resolved.prefix == [
         "--config.enableGlobalVirtualStore=false",
         "--package",
@@ -161,38 +162,10 @@ def test_build_commandline_pnpx_textlint_default_excludes_buggy_version() -> Non
         "textlint-rule-preset-jtf-style",
         "--package",
         "textlint-rule-ja-no-abusage",
+        "dlx",
         "textlint",
     ]
-
-
-def test_build_commandline_pnpx_markdownlint_unchanged() -> None:
-    """markdownlintは除外対象外で、従来どおりbin名がそのまま渡される。
-
-    `markdownlint-packages` 未指定経路ではplugin解決が不要なため、
-    pnpm 11対応のopt-outも付かない（境界値ケース）。
-    """
-    config = pyfltr.config.config.create_default_config()
-    config.values["js-runner"] = "pnpx"
-
-    resolved = pyfltr.command.runner.build_commandline("markdownlint", config)
-
-    assert pathlib.PurePath(resolved.executable).stem == "pnpx"
-    assert resolved.prefix == ["--package", "markdownlint-cli2", "markdownlint-cli2"]
-
-
-def test_build_commandline_pnpx_no_packages_omits_global_store_optout() -> None:
-    """`*-packages` 未指定のpnpx tool（biome等）にはopt-outフラグが付かない。
-
-    `len(packages) > 0` 条件分岐の境界値ケース。
-    plugin解決を伴わない経路にopt-outを付けないことで影響範囲を最小化する設計。
-    """
-    config = pyfltr.config.config.create_default_config()
-    config.values["js-runner"] = "pnpx"
-
-    resolved = pyfltr.command.runner.build_commandline("biome", config)
-
-    assert pathlib.PurePath(resolved.executable).stem == "pnpx"
-    assert resolved.prefix == ["--package", "@biomejs/biome", "biome"]
+    assert resolved.effective_runner == "pnpx"
 
 
 def test_build_commandline_pnpm_ignores_packages() -> None:
@@ -216,40 +189,6 @@ def test_build_commandline_markdownlint_uses_cli2_binary() -> None:
 
     assert pathlib.PurePath(resolved.executable).stem == "pnpm"
     assert resolved.prefix == ["exec", "markdownlint-cli2"]
-
-
-def test_build_commandline_pnpx_eslint() -> None:
-    """pnpx runnerでeslintが通常通り（bin名 = パッケージ名）解決される。"""
-    config = pyfltr.config.config.create_default_config()
-    config.values["js-runner"] = "pnpx"
-
-    resolved = pyfltr.command.runner.build_commandline("eslint", config)
-
-    assert pathlib.PurePath(resolved.executable).stem == "pnpx"
-    assert resolved.prefix == ["--package", "eslint", "eslint"]
-
-
-def test_build_commandline_pnpx_prettier() -> None:
-    """pnpx runnerでprettierが通常通り解決される。"""
-    config = pyfltr.config.config.create_default_config()
-    config.values["js-runner"] = "pnpx"
-
-    resolved = pyfltr.command.runner.build_commandline("prettier", config)
-
-    assert pathlib.PurePath(resolved.executable).stem == "pnpx"
-    assert resolved.prefix == ["--package", "prettier", "prettier"]
-
-
-def test_build_commandline_pnpx_biome_uses_scoped_package() -> None:
-    """pnpx runnerでbiomeはスコープ付きパッケージ@biomejs/biomeで解決される。"""
-    config = pyfltr.config.config.create_default_config()
-    config.values["js-runner"] = "pnpx"
-
-    resolved = pyfltr.command.runner.build_commandline("biome", config)
-
-    assert pathlib.PurePath(resolved.executable).stem == "pnpx"
-    # --packageには@biomejs/biome、bin名はbiome
-    assert resolved.prefix == ["--package", "@biomejs/biome", "biome"]
 
 
 def test_build_commandline_pnpm_prettier() -> None:

@@ -850,8 +850,8 @@ pyfltr:
 - `image: ghcr.io/astral-sh/uv:python3.13-bookworm`: Node.js・pnpm・miseのいずれも含まないため、
   Python以外のツールの扱いに注意する
     - `textlint`・`markdownlint`は言語カテゴリゲートの対象外で、`preset`を指定すると有効になる
-    - `js-runner`の既定値`pnpx`はPATH上の解決だけを試み、miseへのフォールバックを持たない
-    - Markdownを含むリポジトリでは`pnpx`が見つからず、当該ツールは終了コード127の`failed`となる
+    - `js-runner`の既定値`pnpx`は論理設定値であり、PATH上の`pnpm`を使う`pnpm dlx`形式へ解決される
+    - Markdownを含むリポジトリでは`pnpm`が見つからず、当該ツールは終了コード127の`failed`となる
     （解決失敗ではないため`{command}-severity = "warning"`で警告へ格下げできる）
     - 当該イメージはmiseも含まないため、既定で有効な`lychee`はbin-runnerでの解決に失敗し
     `resolution_failed`となる。解決失敗は`{command}-severity`による格下げの対象外のため、

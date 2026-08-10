@@ -394,6 +394,9 @@ yarn-audit-args = ["npm", "audit", "--json"]
 markdownlint-cli2 / textlint / designmd / eslint / prettier / biome / oxlint / tsc / vitestは
 `js-runner`設定で起動方式を切り替える。
 既定は`pnpx`で、グローバル/キャッシュから都度取得する挙動となる。
+`pnpx`は公開設定名であり、実行時はPATH上の`pnpm`を使って
+`pnpm --package <パッケージ> dlx <コマンド>`形式へ解決される。
+`textlint-packages`などの追加パッケージも`dlx`より前の`--package`へ展開される。
 
 プロジェクトの`package.json`で既にこれらのツールをインストール済みの場合は、
 `js-runner`を`pnpm` / `npm` / `npx` / `yarn` / `direct`に切り替えるとよい。
@@ -410,7 +413,7 @@ js-runner = "pnpm"
 
 | `js-runner` | 挙動 |
 | --- | --- |
-| `pnpx` | `pnpx`経由で起動する (既定)。`textlint-packages`は`--package`で展開される |
+| `pnpx` | `pnpm --package ... dlx ...`経由で一時取得して起動する（既定）。`textlint-packages`は`--package`で展開される |
 | `pnpm` | `pnpm exec`経由で起動する。パッケージは`package.json`側で管理する |
 | `npm` | `npm exec --no --`経由で起動する |
 | `npx` | `npx --no-install`経由で起動する。`textlint-packages`は`-p`で展開される |

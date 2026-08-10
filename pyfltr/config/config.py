@@ -182,7 +182,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # textlint / markdownlintの起動方式。
     # textlint-path / markdownlint-pathが空のときに、以下の値に従って
     # 実際の起動コマンドを組み立てる。
-    # - pnpx: グローバル / キャッシュから実行（既定。従来互換）
+    # - pnpx: 公開論理値を維持し、互換なpnpm --package ... dlx形式で一時取得して実行（既定）
     # - pnpm: pnpm exec <cmd>（プロジェクトのnode_modulesを利用）
     # - npm:  npm exec --no -- <cmd>
     # - npx:  npx --no-install -- <cmd>
