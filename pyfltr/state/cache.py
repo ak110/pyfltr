@@ -94,6 +94,7 @@ class CacheStore:
         structured_output: bool,
         target_files: list[pathlib.Path],
         config_files: list[pathlib.Path],
+        target_base_cwd: pathlib.Path | None = None,
         subproject_cwd: pathlib.Path | None = None,
     ) -> str:
         """キャッシュキー (sha256 hex) を計算する。
@@ -122,10 +123,12 @@ class CacheStore:
             hasher.update(token.encode("utf-8"))
             hasher.update(b"\0")
         hasher.update(b"targets:\n")
+        target_base = target_base_cwd if target_base_cwd is not None else pathlib.Path.cwd()
         for target in target_files:
             hasher.update(str(target).encode("utf-8"))
             hasher.update(b"\0")
-            hasher.update(_file_sha256(target).encode("ascii"))
+            target_path = target if target.is_absolute() else target_base / target
+            hasher.update(_file_sha256(target_path).encode("ascii"))
             hasher.update(b"\n")
         hasher.update(b"configs:\n")
         for config_path in config_files:
@@ -231,6 +234,8 @@ def resolve_config_files(
     command: str,
     config: pyfltr.config.config.Config,
     base: pathlib.Path | None = None,
+    *,
+    injected_config_path: pathlib.Path | None = None,
 ) -> list[pathlib.Path]:
     """コマンドの設定ファイル候補のうち、プロジェクトルートに実在するものを列挙する。
 
@@ -246,7 +251,11 @@ def resolve_config_files(
     if info is None or not info.config_files:
         return []
     root = base if base is not None else pathlib.Path.cwd()
-    return [root / name for name in info.config_files]
+    if injected_config_path is None:
+        return [root / name for name in info.config_files]
+    injected_names = set(info.config_inject_candidates)
+    implicit_files = [root / name for name in info.config_files if name not in injected_names]
+    return [injected_config_path, *implicit_files]
 
 
 def _pyfltr_major_version() -> str:

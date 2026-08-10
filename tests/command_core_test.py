@@ -28,6 +28,7 @@ import pyfltr.command.mise
 import pyfltr.command.process
 import pyfltr.command.runner
 import pyfltr.command.slow_tests
+import pyfltr.command.subprojects
 import pyfltr.command.targets
 import pyfltr.command.tool_resolution
 import pyfltr.command.two_step.base
@@ -307,7 +308,7 @@ def test_execute_command_python_tool_missing_emits_runner_guidance(
     monkeypatch.setattr("shutil.which", lambda *_a, **_k: None)
     monkeypatch.setattr("pyfltr.command.runner.ensure_uv_available", lambda: False)
     monkeypatch.setattr("pyfltr.command.runner.ensure_uvx_available", lambda: False)
-    monkeypatch.setattr("pyfltr.command.runner.cwd_has_uv_lock", lambda: False)
+    monkeypatch.setattr("pyfltr.command.runner.cwd_has_uv_lock", lambda *_args: False)
 
     original_cwd = pathlib.Path.cwd()
     try:
@@ -3717,7 +3718,7 @@ def _setup_uv_runner(monkeypatch: pytest.MonkeyPatch) -> typing.Callable[..., No
     """
 
     def _apply(*, uv_lock: bool, uv_available: bool, python_bin_dir: str | None = None) -> None:
-        monkeypatch.setattr(pyfltr.command.runner, "cwd_has_uv_lock", lambda: uv_lock)
+        monkeypatch.setattr(pyfltr.command.runner, "cwd_has_uv_lock", lambda *_args: uv_lock)
         monkeypatch.setattr(pyfltr.command.runner, "ensure_uv_available", lambda: uv_available)
         if python_bin_dir is not None:
             monkeypatch.setattr(
@@ -4040,3 +4041,72 @@ def test_execute_command_isolated_tool_missing_emits_uvx_direct_hint(
     assert f'{command}-runner = "direct"' in hint
     assert "pyfltr[python]" not in hint
     assert "uv add --dev" not in hint
+
+
+def test_execution_context_resolves_effective_cwd_and_workspace_root(tmp_path: pathlib.Path) -> None:
+    """実効cwdとuv workspace rootをサブプロジェクト情報から導出する。"""
+    start_cwd = tmp_path / "repo"
+    workspace_root = start_cwd
+    subproject_cwd = start_cwd / "packages" / "app"
+    other_cwd = start_cwd / "packages" / "other"
+    subprojects = [
+        pyfltr.command.subprojects.Subproject(
+            cwd=subproject_cwd,
+            relative="packages/app",
+            uv_workspace_root=workspace_root,
+        ),
+        pyfltr.command.subprojects.Subproject(cwd=other_cwd, relative="packages/other"),
+    ]
+    config = pyfltr.config.config.create_default_config()
+    base = pyfltr.command.core_.ExecutionBaseContext(
+        config=config,
+        all_files=[],
+        cache_store=None,
+        cache_run_id=None,
+        start_cwd=start_cwd,
+        subprojects=subprojects,
+    )
+
+    root_context = pyfltr.command.core_.ExecutionContext(base=base)
+    subproject_context = pyfltr.command.core_.ExecutionContext(base=base, subproject_cwd=subproject_cwd)
+
+    assert root_context.effective_cwd == start_cwd
+    assert root_context.uv_workspace_root is None
+    assert subproject_context.effective_cwd == subproject_cwd
+    assert subproject_context.uv_workspace_root == workspace_root
+
+
+def test_build_commandline_uv_finds_workspace_root_lock(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """uv runnerはmember cwdからworkspace rootのlockへ到達する。"""
+    workspace_root = tmp_path / "workspace"
+    member = workspace_root / "packages" / "app"
+    member.mkdir(parents=True)
+    (workspace_root / "uv.lock").write_text("", encoding="utf-8")
+    monkeypatch.setattr(pyfltr.command.runner, "ensure_uv_available", lambda: True)
+    config = pyfltr.config.config.create_default_config()
+
+    resolved = pyfltr.command.runner.build_commandline(
+        "mypy",
+        config,
+        cwd=member,
+        uv_workspace_root=workspace_root,
+    )
+
+    assert resolved.commandline == ["uv", "run", "--frozen", "mypy"]
+
+
+def test_build_commandline_direct_js_uses_explicit_cwd(tmp_path: pathlib.Path) -> None:
+    """JS direct runnerは明示cwd配下のローカル実行ファイルを使う。"""
+    work_dir = tmp_path / "project"
+    local_bin = work_dir / "node_modules" / ".bin" / "textlint"
+    local_bin.parent.mkdir(parents=True)
+    local_bin.write_text("", encoding="utf-8")
+    config = pyfltr.config.config.create_default_config()
+    config.values["textlint-runner"] = "direct"
+
+    resolved = pyfltr.command.runner.build_commandline("textlint", config, cwd=work_dir)
+
+    assert resolved.commandline == [str(local_bin)]

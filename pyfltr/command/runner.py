@@ -23,6 +23,7 @@ import shutil
 import pyfltr.command.mise
 import pyfltr.command.process
 import pyfltr.command.structured_output
+import pyfltr.command.subprojects
 import pyfltr.config.config
 from pyfltr.command.builtin import AUTO_ARGS, COMMAND_RUNNERS, JS_RUNNERS
 
@@ -401,18 +402,21 @@ def ensure_uvx_available() -> bool:
 
 
 @functools.lru_cache(maxsize=1)
-def cwd_has_uv_lock() -> bool:
-    """カレントディレクトリに `uv.lock` が存在するかを判定する（実行内キャッシュつき）。
+def cwd_has_uv_lock(
+    cwd: pathlib.Path | None = None,
+    workspace_root: pathlib.Path | None = None,
+) -> bool:
+    """実効cwdから探索上限までに`uv.lock`が存在するかを判定する。
 
-    テスト差し替えは `monkeypatch.setattr("pyfltr.command.runner.cwd_has_uv_lock", lambda: True)`
+    テスト差し替えは `monkeypatch.setattr("pyfltr.command.runner.cwd_has_uv_lock", lambda *_args: True)`
     の形で関数自体を置換する。`lru_cache` 付き判定関数群（`ensure_uv_available`・
     `ensure_uvx_available` 等）に共通する制約。
 
-    モノレポでサブプロジェクト cwd 別に `uv.lock` を判定したい場合は
-    `pyfltr.command.subprojects.find_uv_lock_for_cwd(cwd, workspace_root=...)` を使う
-    （workspace root までの親方向探索を含む）。
+    `cwd`未指定時はプロセスcwd直下だけを確認し、従来の呼び出し契約を維持する。
+    `workspace_root`指定時は当該rootまで親方向へ探索し、workspace外へ越境しない。
     """
-    return pathlib.Path("uv.lock").is_file()
+    effective_cwd = cwd if cwd is not None else pathlib.Path.cwd()
+    return pyfltr.command.subprojects.find_uv_lock_for_cwd(effective_cwd, workspace_root=workspace_root) is not None
 
 
 def _resolve_python_tool_direct(command: str) -> str:
@@ -453,6 +457,9 @@ def _resolve_direct_executable(bin_name: str) -> str:
 def _resolve_python_commandline(
     command: str,
     effective: str,
+    *,
+    cwd: pathlib.Path | None = None,
+    uv_workspace_root: pathlib.Path | None = None,
 ) -> tuple[str, str, list[str], str | None]:
     """Python系ツールの実行ファイルと引数prefixを決定する。
 
@@ -470,7 +477,10 @@ def _resolve_python_commandline(
     """
     bin_name = PYTHON_TOOL_BIN[command]
     if effective == "uv":
-        if cwd_has_uv_lock() and ensure_uv_available():
+        uv_lock_present = (
+            cwd_has_uv_lock() if cwd is None and uv_workspace_root is None else cwd_has_uv_lock(cwd, uv_workspace_root)
+        )
+        if uv_lock_present and ensure_uv_available():
             return "uv", "uv", ["run", "--frozen", bin_name], None
         # uv不在 or uv.lock不在 → direct PATH解決へフォールバック。
         executable = _resolve_python_tool_direct(command)
@@ -492,6 +502,7 @@ def _resolve_js_commandline(
     config: pyfltr.config.config.Config,
     *,
     effective: str | None = None,
+    cwd: pathlib.Path | None = None,
 ) -> tuple[str, list[str]]:
     """JSツール（textlint / markdownlint等）の実行ファイルと引数prefixを決定する。
 
@@ -537,7 +548,8 @@ def _resolve_js_commandline(
     if runner == "yarn":
         return "yarn", ["run", bin_name]
     if runner == "direct":
-        bin_dir = pathlib.Path("node_modules") / ".bin"
+        base = cwd if cwd is not None else pathlib.Path.cwd()
+        bin_dir = base / "node_modules" / ".bin"
         # Windowsでは `.cmd` 付きのラッパーを優先する。pyrightの静的評価では
         # Linux上だと `sys.platform == "win32"` 側の分岐をunreachableとみなすため、
         # `os.name` を経由して静的分岐とみなされないようにする。
@@ -647,6 +659,8 @@ def _resolve_direct_runner_commandline(
     runner: str,
     source: str,
     effective: str,
+    *,
+    cwd: pathlib.Path | None = None,
 ) -> ResolvedCommandline:
     """direct経路のコマンドラインを構築する。
 
@@ -687,7 +701,7 @@ def _resolve_direct_runner_commandline(
         )
     if command in JS_TOOL_BIN:
         # JSツールのdirectはnode_modules/.bin/<cmd> 解決に委譲。
-        executable, prefix = _resolve_js_commandline(command, config, effective="direct")
+        executable, prefix = _resolve_js_commandline(command, config, effective="direct", cwd=cwd)
         return ResolvedCommandline(
             executable=executable,
             prefix=prefix,
@@ -714,6 +728,7 @@ def build_commandline(
     config: pyfltr.config.config.Config,
     *,
     allow_side_effects: bool = False,
+    uv_workspace_root: pathlib.Path | None = None,
     cwd: pathlib.Path | None = None,
 ) -> ResolvedCommandline:
     """ツール起動コマンドラインを構築する（副作用は `allow_side_effects` で制御）。
@@ -774,7 +789,7 @@ def build_commandline(
                 f"{command}: js-runner 対応ツールではないため "
                 f'`{command}-runner = "{runner}"`（解決後 "{effective}"）は指定できません'
             )
-        executable, prefix = _resolve_js_commandline(command, config, effective=effective)
+        executable, prefix = _resolve_js_commandline(command, config, effective=effective, cwd=cwd)
         return ResolvedCommandline(
             executable=executable,
             prefix=prefix,
@@ -789,7 +804,12 @@ def build_commandline(
                 f"{command}: PYTHON_TOOL_BINに登録されていないため "
                 f'`{command}-runner = "{runner}"`（解決後 "{effective}"）は指定できません'
             )
-        resolved_effective, executable, prefix, runner_fallback = _resolve_python_commandline(command, effective)
+        resolved_effective, executable, prefix, runner_fallback = _resolve_python_commandline(
+            command,
+            effective,
+            cwd=cwd,
+            uv_workspace_root=uv_workspace_root,
+        )
         return ResolvedCommandline(
             executable=executable,
             prefix=prefix,
@@ -800,7 +820,7 @@ def build_commandline(
         )
 
     # effective == "direct"
-    return _resolve_direct_runner_commandline(command, config, runner, source, effective)
+    return _resolve_direct_runner_commandline(command, config, runner, source, effective, cwd=cwd)
 
 
 def ensure_mise_available(

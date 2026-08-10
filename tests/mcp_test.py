@@ -6,12 +6,15 @@
 """
 
 import argparse
+import asyncio
+import concurrent.futures
 import dataclasses
 import importlib.metadata
 import inspect
 import json
 import pathlib
 import shutil
+import sys
 import typing
 
 import pytest
@@ -1569,3 +1572,121 @@ async def test_new_tools_keep_stdout_clean(
 
     captured = capsys.readouterr()
     assert captured.out == ""
+
+
+@pytest.mark.asyncio
+async def test_tool_run_for_agent_propagates_work_dir_to_command_archive_and_log(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """公開MCP経路の外部コマンド・archive・textログがwork_dirを使う。"""
+    pwd = shutil.which("pwd")
+    if pwd is None:
+        pytest.skip("pwdコマンドが環境にない")
+    work_dir = tmp_path / "project"
+    work_dir.mkdir()
+    target = work_dir / "sample.txt"
+    target.write_text("value\n", encoding="utf-8")
+    (work_dir / "pyproject.toml").write_text(
+        "[tool.pyfltr]\nrespect-gitignore = false\n\n"
+        "[tool.pyfltr.custom-commands.cwd-check]\n"
+        f"path = {json.dumps(pwd)}\n"
+        'type = "linter"\ntargets = ["*.txt"]\npass-filenames = false\n',
+        encoding="utf-8",
+    )
+    server_cwd = tmp_path / "server"
+    server_cwd.mkdir()
+    monkeypatch.chdir(server_cwd)
+
+    result = await pyfltr.cli.mcp_server.tool_run_for_agent(
+        paths=["sample.txt"],
+        commands=["cwd-check"],
+        work_dir=str(work_dir),
+        no_cache=True,
+    )
+
+    assert result.exit_code == 0
+    assert result.run_id is not None
+    store = pyfltr.state.archive.ArchiveStore()
+    assert store.read_meta(result.run_id)["cwd"] == str(work_dir)
+    assert store.read_tool_output(result.run_id, "cwd-check") == str(work_dir)
+    assert f"cwd:            {work_dir}" in capsys.readouterr().err
+    assert pathlib.Path.cwd() == server_cwd
+
+
+def test_tool_run_for_agent_parallel_work_dirs_do_not_interfere(tmp_path: pathlib.Path) -> None:
+    """異なるwork_dirの公開MCP呼び出しを重ねてもcwdが混線しない。"""
+    server_cwd = pathlib.Path.cwd()
+    work_dirs = [tmp_path / "first", tmp_path / "second"]
+    for index, work_dir in enumerate(work_dirs):
+        work_dir.mkdir()
+        other = work_dirs[1 - index]
+        helper = work_dir / "cwd_helper.py"
+        helper.write_text(
+            "import pathlib\nimport sys\nimport time\n"
+            "other = pathlib.Path(sys.argv[1])\n"
+            "pathlib.Path('started').write_text('1', encoding='utf-8')\n"
+            "deadline = time.monotonic() + 10\n"
+            "while not other.exists():\n"
+            "    if time.monotonic() >= deadline:\n"
+            "        raise TimeoutError(other)\n"
+            "    time.sleep(0.01)\n"
+            "pathlib.Path('cwd.txt').write_text(str(pathlib.Path.cwd()), encoding='utf-8')\n",
+            encoding="utf-8",
+        )
+        (work_dir / "sample.txt").write_text("value\n", encoding="utf-8")
+        (work_dir / "pyproject.toml").write_text(
+            "[tool.pyfltr]\nrespect-gitignore = false\n\n"
+            "[tool.pyfltr.custom-commands.cwd-check]\n"
+            f"path = {json.dumps(sys.executable)}\n"
+            f"args = [{json.dumps(str(helper))}, {json.dumps(str(other / 'started'))}]\n"
+            'type = "linter"\ntargets = ["*.txt"]\npass-filenames = false\n',
+            encoding="utf-8",
+        )
+
+    def _run(work_dir: pathlib.Path) -> pyfltr.cli.mcp_models.RunForAgentResult:
+        return asyncio.run(
+            pyfltr.cli.mcp_server.tool_run_for_agent(
+                paths=["sample.txt"],
+                commands=["cwd-check"],
+                work_dir=str(work_dir),
+                no_cache=True,
+            )
+        )
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(_run, work_dirs))
+
+    assert [result.exit_code for result in results] == [0, 0]
+    assert [(work_dir / "cwd.txt").read_text(encoding="utf-8") for work_dir in work_dirs] == [
+        str(work_dir) for work_dir in work_dirs
+    ]
+    assert pathlib.Path.cwd() == server_cwd
+
+
+@pytest.mark.skipif(sys.platform != "linux" or shutil.which("pnpm") is None, reason="Linux上のpnpmが必要")
+@pytest.mark.asyncio
+async def test_tool_run_for_agent_pnpm_prettier_uses_work_dir(tmp_path: pathlib.Path) -> None:
+    """公開MCP経路のpnpm execがwork_dirのローカルPrettierを起動する。"""
+    work_dir = tmp_path / "project"
+    shim = work_dir / "node_modules" / ".bin" / "prettier"
+    shim.parent.mkdir(parents=True)
+    shim.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    shim.chmod(shim.stat().st_mode | 0o111)
+    (work_dir / "package.json").write_text('{"name": "cwd-test", "private": true}\n', encoding="utf-8")
+    (work_dir / "pyproject.toml").write_text(
+        '[tool.pyfltr]\nprettier = true\njs-runner = "pnpm"\nrespect-gitignore = false\n',
+        encoding="utf-8",
+    )
+
+    result = await pyfltr.cli.mcp_server.tool_run_for_agent(
+        paths=["package.json"],
+        commands=["prettier"],
+        work_dir=str(work_dir),
+        no_fix=True,
+        no_cache=True,
+    )
+
+    assert result.exit_code == 0
+    assert not result.failed

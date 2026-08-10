@@ -64,8 +64,9 @@ def _patch_build_commandline(monkeypatch: pytest.MonkeyPatch) -> None:
         *,
         allow_side_effects: bool = False,
         cwd: pathlib.Path | None = None,
+        uv_workspace_root: pathlib.Path | None = None,
     ) -> pyfltr.command.runner.ResolvedCommandline:
-        del config, allow_side_effects, cwd
+        del config, allow_side_effects, cwd, uv_workspace_root
         prefix = _DEFAULT_PREFIXES.get(command, [command])
         return pyfltr.command.runner.ResolvedCommandline(
             executable=prefix[0],

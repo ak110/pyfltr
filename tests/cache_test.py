@@ -225,3 +225,59 @@ def test_cache_policy_respects_override() -> None:
     config.values["cache-max-age-hours"] = 24
     policy = pyfltr.state.cache.cache_policy_from_config(config)
     assert policy.max_age_hours == 24
+
+
+def test_compute_key_reads_relative_target_from_explicit_base(tmp_path: pathlib.Path) -> None:
+    """相対targetの内容は明示した起点cwdから読み込む。"""
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    target = pathlib.Path("sample.md")
+    (first / target).write_text("first\n", encoding="utf-8")
+    (second / target).write_text("second\n", encoding="utf-8")
+    store = _make_store(tmp_path / "cache")
+
+    first_key = store.compute_key(
+        command="textlint",
+        commandline=["textlint", str(target)],
+        fix_stage=False,
+        structured_output=False,
+        target_files=[target],
+        config_files=[],
+        target_base_cwd=first,
+    )
+    second_key = store.compute_key(
+        command="textlint",
+        commandline=["textlint", str(target)],
+        fix_stage=False,
+        structured_output=False,
+        target_files=[target],
+        config_files=[],
+        target_base_cwd=second,
+    )
+
+    assert first_key != second_key
+
+
+def test_resolve_config_files_separates_injected_and_implicit_bases(tmp_path: pathlib.Path) -> None:
+    """注入設定は実在パス、暗黙設定は実効cwdを基準に列挙する。"""
+    start_cwd = tmp_path / "start"
+    effective_cwd = tmp_path / "effective"
+    start_cwd.mkdir()
+    effective_cwd.mkdir()
+    injected = start_cwd / ".textlintrc"
+    injected.write_text('{"rules": {}}\n', encoding="utf-8")
+    config = pyfltr.config.config.create_default_config()
+
+    files = pyfltr.state.cache.resolve_config_files(
+        "textlint",
+        config,
+        base=effective_cwd,
+        injected_config_path=injected,
+    )
+
+    assert files[0] == injected
+    assert effective_cwd / ".textlintignore" in files
+    assert effective_cwd / "package.json" in files
+    assert effective_cwd / ".textlintrc" not in files

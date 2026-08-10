@@ -631,7 +631,7 @@ def run_pipeline(
     if archive_enabled:
         try:
             archive_store = pyfltr.state.archive.ArchiveStore()
-            run_id = archive_store.start_run(commands=commands, files=len(all_files))
+            run_id = archive_store.start_run(commands=commands, files=len(all_files), cwd=str(start_cwd_path))
             removed = archive_store.cleanup(pyfltr.state.archive.policy_from_config(config))
             if removed:
                 logger.debug("archive: 自動削除で %d 件の古い run を削除", len(removed))
@@ -645,7 +645,7 @@ def run_pipeline(
     text_logger.info(f"version:        {importlib.metadata.version('pyfltr')}")
     text_logger.info(f"sys.executable: {sys.executable}")
     text_logger.info(f"sys.version:    {sys.version}")
-    text_logger.info(f"cwd:            {os.getcwd()}")
+    text_logger.info(f"cwd:            {start_cwd_path}")
     if run_id is not None:
         launcher_cmd = shlex.join(launcher_prefix)
         text_logger.info("run_id:         %s(`%s show-run %s` で詳細を確認可能)", run_id, launcher_cmd, run_id)

@@ -348,7 +348,7 @@ def _isolated_target(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) ->
     `git check-ignore`呼び出しが`fatal: not a git repository`で失敗し警告が蓄積する。
     `pyproject.toml`へ`respect-gitignore = false`を明示し、実I/O経路の隔離を完結させる。
     """
-    monkeypatch.setattr("pyfltr.command.runner.cwd_has_uv_lock", lambda: True)
+    monkeypatch.setattr("pyfltr.command.runner.cwd_has_uv_lock", lambda *_args: True)
     (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latest"\npython = true\nrespect-gitignore = false\n')
     (tmp_path / "sample.py").write_text("x = 1\n")
     return tmp_path

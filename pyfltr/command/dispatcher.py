@@ -190,6 +190,8 @@ def _prepare_execution_params(
     fix_stage: bool,
     only_failed_targets: "pyfltr.state.only_failed.ToolTargets | None",
     subproject_cwd: pathlib.Path | None = None,
+    cwd: pathlib.Path | None = None,
+    uv_workspace_root: pathlib.Path | None = None,
     start_cwd: pathlib.Path | None = None,
     temporary_dir_factory: typing.Callable[[], pathlib.Path] | None = None,
 ) -> "ExecutionParams | CommandResult":
@@ -265,10 +267,16 @@ def _prepare_execution_params(
     try:
         # 実コマンド実行経路はmise副作用を許可し、mise設定判定の `mise ls --current --json` でも
         # `mise-auto-trust` に従ったtrust→再実行を可能にする。
-        resolved = pyfltr.command.runner.build_commandline(command, config, allow_side_effects=True, cwd=subproject_cwd)
-        resolved = pyfltr.command.runner.ensure_mise_available(resolved, config, command=command, cwd=subproject_cwd)
+        resolved = pyfltr.command.runner.build_commandline(
+            command,
+            config,
+            allow_side_effects=True,
+            cwd=cwd,
+            uv_workspace_root=uv_workspace_root,
+        )
+        resolved = pyfltr.command.runner.ensure_mise_available(resolved, config, command=command, cwd=cwd)
         # 監査を実施しない旧版が終了コード0を返すため、機能が成立する最低版を起動前に確認する。
-        pyfltr.command.runner.ensure_package_manager_version(resolved, config, command, cwd=subproject_cwd)
+        pyfltr.command.runner.ensure_package_manager_version(resolved, config, command, cwd=cwd)
     except ValueError as e:
         message = str(e)
         # `{command}-runner = "uv"` または `"uvx"` をPython系以外のツールに指定した場合、`build_commandline` が
@@ -314,6 +322,7 @@ def _prepare_execution_params(
     # 利用者が`{command}-args`で同等フラグを指定済みのときは重複指定を避けるため注入をスキップする。
     # 設定ファイルが起点cwd直下に見つからないときも注入をスキップしてツールの既定動作に委ねる。
     # 挿入位置は`commandline_prefix`直後。
+    injected_config_path: pathlib.Path | None = None
     if command_info.config_arg_template and command_info.config_inject_candidates:
         user_args_list: list[str] = list(config.values.get(f"{command}-args", []))
         extend_args_list: list[str] = list(config.values.get(f"{command}-extend-args", []))
@@ -322,6 +331,7 @@ def _prepare_execution_params(
             start_for_inject = start_cwd if start_cwd is not None else pathlib.Path.cwd()
             config_path = _resolve_config_inject_path(start_for_inject, command_info.config_inject_candidates)
             if config_path is not None:
+                injected_config_path = config_path
                 injection = [tok.format(path=str(config_path)) for tok in command_info.config_arg_template]
                 prefix_len = len(commandline_prefix)
                 commandline = commandline[:prefix_len] + injection + commandline[prefix_len:]
@@ -368,6 +378,7 @@ def _prepare_execution_params(
         runner_source=resolved.runner_source,
         runner_fallback=resolved.runner_fallback,
         file_path_remap=file_path_remap,
+        injected_config_path=injected_config_path,
     )
 
 
@@ -381,6 +392,9 @@ def _prepare_cache_context(
     *,
     fix_args: list[str] | None,
     cache_store: "pyfltr.state.cache.CacheStore | None",
+    target_base_cwd: pathlib.Path,
+    config_base_cwd: pathlib.Path,
+    injected_config_path: pathlib.Path | None,
     subproject_cwd: pathlib.Path | None = None,
 ) -> CacheContext | None:
     """キャッシュ参照用のキー算出。対象外の場合はNoneを返す。
@@ -399,7 +413,13 @@ def _prepare_cache_context(
         fix_stage=False,
         structured_output=structured_spec is not None,
         target_files=targets,
-        config_files=pyfltr.state.cache.resolve_config_files(command, config),
+        config_files=pyfltr.state.cache.resolve_config_files(
+            command,
+            config,
+            base=config_base_cwd,
+            injected_config_path=injected_config_path,
+        ),
+        target_base_cwd=target_base_cwd,
         subproject_cwd=subproject_cwd,
     )
     return CacheContext(cache_store=cache_store, command=command, key=key)
@@ -421,6 +441,9 @@ def _run_plain_command(
     fix_args: list[str] | None,
     cache_store: "pyfltr.state.cache.CacheStore | None",
     cache_run_id: str | None,
+    start_cwd: pathlib.Path,
+    subproject_cwd: pathlib.Path | None,
+    injected_config_path: pathlib.Path | None,
     is_interrupted: typing.Callable[[], bool] | None = None,
     on_subprocess_start: typing.Callable[[], None] | None = None,
     on_subprocess_end: typing.Callable[[], None] | None = None,
@@ -446,7 +469,10 @@ def _run_plain_command(
         additional_args,
         fix_args=fix_args,
         cache_store=cache_store,
-        subproject_cwd=cwd,
+        target_base_cwd=start_cwd,
+        config_base_cwd=cwd if cwd is not None else start_cwd,
+        injected_config_path=injected_config_path,
+        subproject_cwd=subproject_cwd,
     )
     if cache_context is not None:
         cached_result = cache_context.lookup()
@@ -603,6 +629,8 @@ def _dispatch_command(
         fix_stage=ctx.fix_stage,
         only_failed_targets=ctx.only_failed_targets,
         subproject_cwd=ctx.subproject_cwd,
+        cwd=ctx.effective_cwd,
+        uv_workspace_root=ctx.uv_workspace_root,
         start_cwd=ctx.base.start_cwd,
         temporary_dir_factory=ctx.base.ensure_temporary_directory,
     )
@@ -652,8 +680,8 @@ def _dispatch_command(
     start_time = time.perf_counter()
     env = pyfltr.command.env.build_subprocess_env(config, command, via_mise=params.via_mise)
 
-    # サブプロジェクト分割実行で各helperへ伝搬する cwd 引数。
-    # 単一プロジェクト経路では None となり、subprocess.Popen は親プロセスの cwd で起動する。
+    # 外部コマンドの解決と実行は、呼び出し単位で確定したcwdへ統一する。
+    effective_cwd = ctx.effective_cwd
     subproject_cwd = ctx.subproject_cwd
     start_cwd = ctx.base.start_cwd
 
@@ -676,7 +704,7 @@ def _dispatch_command(
                 is_interrupted=is_interrupted,
                 on_subprocess_start=on_subprocess_start,
                 on_subprocess_end=on_subprocess_end,
-                cwd=subproject_cwd,
+                cwd=effective_cwd,
             )
         )
 
@@ -699,7 +727,7 @@ def _dispatch_command(
                 is_interrupted=is_interrupted,
                 on_subprocess_start=on_subprocess_start,
                 on_subprocess_end=on_subprocess_end,
-                cwd=subproject_cwd,
+                cwd=effective_cwd,
             )
         )
 
@@ -723,8 +751,8 @@ def _dispatch_command(
                 is_interrupted=is_interrupted,
                 on_subprocess_start=on_subprocess_start,
                 on_subprocess_end=on_subprocess_end,
-                cwd=subproject_cwd,
-                nodeid_base_cwd=subproject_cwd or start_cwd,
+                cwd=effective_cwd,
+                nodeid_base_cwd=effective_cwd,
             )
         )
 
@@ -747,7 +775,7 @@ def _dispatch_command(
                 is_interrupted=is_interrupted,
                 on_subprocess_start=on_subprocess_start,
                 on_subprocess_end=on_subprocess_end,
-                cwd=subproject_cwd,
+                cwd=effective_cwd,
                 start_cwd=start_cwd,
             )
         )
@@ -769,7 +797,7 @@ def _dispatch_command(
                 is_interrupted=is_interrupted,
                 on_subprocess_start=on_subprocess_start,
                 on_subprocess_end=on_subprocess_end,
-                cwd=subproject_cwd,
+                cwd=effective_cwd,
                 start_cwd=start_cwd,
             )
         )
@@ -794,7 +822,7 @@ def _dispatch_command(
                 is_interrupted=is_interrupted,
                 on_subprocess_start=on_subprocess_start,
                 on_subprocess_end=on_subprocess_end,
-                cwd=subproject_cwd,
+                cwd=effective_cwd,
                 start_cwd=start_cwd,
             )
         )
@@ -819,7 +847,7 @@ def _dispatch_command(
                 is_interrupted=is_interrupted,
                 on_subprocess_start=on_subprocess_start,
                 on_subprocess_end=on_subprocess_end,
-                cwd=subproject_cwd,
+                cwd=effective_cwd,
                 start_cwd=start_cwd,
             )
         )
@@ -842,7 +870,7 @@ def _dispatch_command(
                 is_interrupted=is_interrupted,
                 on_subprocess_start=on_subprocess_start,
                 on_subprocess_end=on_subprocess_end,
-                cwd=subproject_cwd,
+                cwd=effective_cwd,
                 start_cwd=start_cwd,
             )
         )
@@ -868,7 +896,7 @@ def _dispatch_command(
                 is_interrupted=is_interrupted,
                 on_subprocess_start=on_subprocess_start,
                 on_subprocess_end=on_subprocess_end,
-                cwd=subproject_cwd,
+                cwd=effective_cwd,
                 start_cwd=start_cwd,
             )
         )
@@ -890,10 +918,13 @@ def _dispatch_command(
             fix_args=fix_args,
             cache_store=ctx.cache_store,
             cache_run_id=ctx.cache_run_id,
+            start_cwd=start_cwd,
+            subproject_cwd=subproject_cwd,
+            injected_config_path=params.injected_config_path,
             is_interrupted=is_interrupted,
             on_subprocess_start=on_subprocess_start,
             on_subprocess_end=on_subprocess_end,
-            cwd=subproject_cwd,
+            cwd=effective_cwd,
             file_path_remap=params.file_path_remap,
         )
     )

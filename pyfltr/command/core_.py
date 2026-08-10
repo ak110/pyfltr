@@ -122,9 +122,24 @@ class ExecutionContext:
     `subproject_aware=True` のツールでサブプロジェクトループ内から実行されるとき、
     対応するサブプロジェクトの cwd を保持する。`None` の場合は起点 cwd で実行する
     （単一プロジェクトまたは `subproject_aware=False` のツール）。
-    `subprocess.Popen(cwd=subproject_cwd)` や `load_config(config_dir=subproject_cwd)` の
-    引数として渡す。
+    対象パスの相対化とキャッシュのサブプロジェクト識別に使う。
+    外部コマンドの実行cwdは`effective_cwd`で一意に導出する。
     """
+
+    @property
+    def effective_cwd(self) -> pathlib.Path:
+        """外部コマンドの解決と実行に使うcwdを返す。"""
+        return self.subproject_cwd if self.subproject_cwd is not None else self.base.start_cwd
+
+    @property
+    def uv_workspace_root(self) -> pathlib.Path | None:
+        """現在のサブプロジェクトに対応するuv workspace rootを返す。"""
+        if self.subproject_cwd is None:
+            return None
+        for subproject in self.base.subprojects:
+            if subproject.cwd == self.subproject_cwd:
+                return subproject.uv_workspace_root
+        return None
 
     @property
     def config(self) -> pyfltr.config.config.Config:
@@ -587,3 +602,5 @@ class ExecutionParams:
     """
     file_path_remap: dict[str, str] | None = None
     """一時ファイルパスから元ファイルパスへ戻すための辞書。"""
+    injected_config_path: pathlib.Path | None = None
+    """コマンドラインへ自動注入した設定ファイルの絶対パス。"""
