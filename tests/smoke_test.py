@@ -175,11 +175,29 @@ def _run_pyfltr(workspace: pathlib.Path, command: str, targets: tuple[str, ...])
 
 
 def _extract_command_record(records: list[dict], command: str) -> dict | None:
-    """JSONLレコード列から指定コマンドのcommandレコードを取得する。"""
-    for record in records:
+    """JSONLレコード列から指定コマンドの最後のcommandレコードを取得する。"""
+    for record in reversed(records):
         if record.get("kind") == "command" and record.get("command") == command:
             return record
     return None
+
+
+def test_extract_command_record_returns_last_matching_record() -> None:
+    """heartbeatより後の終端レコードをコマンドの確定結果として返す。"""
+    records = [
+        {"kind": "command", "command": "other", "status": "succeeded"},
+        {"kind": "command", "command": "target", "status": "running"},
+        {"kind": "command", "command": "target", "status": "succeeded"},
+    ]
+
+    assert _extract_command_record(records, "target") == records[-1]
+
+
+def test_extract_command_record_returns_none_without_matching_record() -> None:
+    """指定コマンドのレコードが無い場合はNoneを返す。"""
+    records = [{"kind": "command", "command": "other", "status": "succeeded"}]
+
+    assert _extract_command_record(records, "target") is None
 
 
 @pytest.mark.smoke
