@@ -41,6 +41,10 @@ pyfltr本体の設定（`[tool.pyfltr]`）と、呼び出される各ツール�
 dev依存に固定する場合のみ`[dependency-groups] dev`に`"pyfltr[python]"`を追加する（後置の併記例）。
 
 ```toml
+[tool.uv]
+exclude-newer = "1 day"
+exclude-newer-package = { project-package = false, release-tool = false }
+
 [tool.pyfltr]
 preset = "latest"
 python = true
@@ -502,6 +506,22 @@ test:
 `update`ターゲットが用いる`autoupdate`は、`prek --help`のコマンド一覧に現れないエイリアスである。
 正規名は`update`で、どちらの名前を指定しても同じ動作をする（prek 0.4.11で確認）。
 例が`autoupdate`を採用するのは、pre-commitから移行する際の書き換えが実行ファイル名の置換だけで済むためである。
+
+uv 0.12.3では、プロジェクト設定と利用者設定にあるmap型の`exclude-newer-package`がキー単位で合成される。
+同じパッケージ名を両方へ記述した場合は、プロジェクト設定の値が優先される。
+これはuv 0.12.3での実測結果であり、uv公式文書は辞書のキー単位での合成を明記していない。
+
+利用者設定から追加されたキーも`uv.lock`の`[options]`へ記録される場合がある。
+追跡する`uv.lock`の生成に必要なキーは、利用者設定へ依存させずプロジェクトの`[tool.uv]`へ全て列挙する。
+上記の`project-package`と`release-tool`は例であるため、各プロジェクトで公開待機の対象外にするパッケージ名へ読み替える。
+
+利用者設定を含まない環境でもロックを再現できることは、空の一時ディレクトリを指定して確認できる。
+
+```bash
+empty_xdg="$(mktemp -d)"
+env --unset UV_FROZEN XDG_CONFIG_HOME="$empty_xdg" uv lock --check
+rmdir "$empty_xdg"
+```
 
 ### mise.toml
 

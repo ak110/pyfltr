@@ -53,7 +53,9 @@ extend-exclude = [
 このため直近に公開された緊急の修正版は、指定した期間が経過するまで取り込めない。
 即時に取り込む必要がある場合は、当該の解決に限りコマンドラインで
 `--exclude-newer="0 days"`を指定するか、`--exclude-newer-package <パッケージ>=<日付>`で個別に緩和する。
-`false`は受理されず、`pyproject.toml`へ書くと設定の解析が失敗して`[tool.uv]`全体が無視される。
+コマンドラインの`--exclude-newer-package <パッケージ>=<日付>`は、値として日付を受け取る。
+一方、`pyproject.toml`の`exclude-newer-package`は、パッケージ名から日付または`false`へのmapである。
+TOML内の`false`は有効な値であり、該当するパッケージを公開待機の対象外にする。
 解決結果を実行日によらず一定にする場合は、RFC 3339のタイムスタンプ（例: `2026-04-13T00:00:00Z`）を指定する。
 以降のRust・.NETの例に現れる`exclude-newer`も同じ指定である。
 
