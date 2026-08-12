@@ -527,6 +527,9 @@ empty_xdg="$(mktemp -d)"
 )
 ```
 
+この手作業による隔離検査は、任意の時点でロックの再現性を診断するために使う。
+後掲のCI例では、matrixの最小Python版でワークフロー実行ごとに同じ条件を継続して検査する。
+
 ### mise.toml
 
 言語を問わず利用可能。
@@ -710,6 +713,15 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: 利用者設定に依存しないロック検証
+        if: ${{ matrix.python-version == '3.11' }}
+        run: |
+          set -euo pipefail
+          config_dir="$(mktemp -d)"
+          trap 'rmdir "$config_dir"' EXIT
+          # UV_FROZENではlockfileの最新性を検査しないため、この検査だけ解除する。
+          env --unset=UV_FROZEN XDG_CONFIG_HOME="$config_dir" uv lock --check
+
       - name: Cache /cache
         uses: actions/cache@v6
         with:
@@ -726,6 +738,7 @@ jobs:
 - `image: ghcr.io/ak110/pyfltr:latest`: `vX.Y.Z`タグも併発行されるため、再現性を重視する場合は固定タグを指定する
     - イメージには`UV_FROZEN=1`と`pnpm config set minimum-release-age 1440`が事前設定されているため、
     CIワークフロー側で同じ環境変数や設定を再指定する必要はない
+    - 依存同期では`UV_FROZEN=1`を維持し、ロックの最新性を調べる追加ステップの`uv`子プロセスだけで解除する
 - `defaults.run.shell: bash`: GitHub Actionsの`container:`既定シェルは`sh`であり、
   既存ワークフローで多用される`set -euo pipefail`等のbash前提の記述を通すために指定する
 - `UV_PYTHON`: `uv run`が必要なCPythonをロックファイルとmatrix値に従って自動取得する

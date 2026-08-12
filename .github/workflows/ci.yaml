@@ -81,6 +81,15 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: 利用者設定に依存しないロック検証
+        if: ${{ matrix.python-version == '3.11' }}
+        run: |
+          set -euo pipefail
+          config_dir="$(mktemp -d)"
+          trap 'rmdir "$config_dir"' EXIT
+          # UV_FROZENではlockfileの最新性を検査しないため、この検査だけ解除する。
+          env --unset=UV_FROZEN XDG_CONFIG_HOME="$config_dir" uv lock --check
+
       - name: GitHub Actionsのピン留め検証
         run: pinact run --check
 
