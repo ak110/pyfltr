@@ -519,8 +519,12 @@ uv 0.12.3では、プロジェクト設定と利用者設定にあるmap型の`e
 
 ```bash
 empty_xdg="$(mktemp -d)"
-env --unset UV_FROZEN XDG_CONFIG_HOME="$empty_xdg" uv lock --check
-rmdir "$empty_xdg"
+(
+  env --unset UV_FROZEN XDG_CONFIG_HOME="$empty_xdg" uv lock --check
+  lock_status=$?
+  rmdir "$empty_xdg"
+  exit "$lock_status"
+)
 ```
 
 ### mise.toml
