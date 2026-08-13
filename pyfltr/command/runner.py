@@ -25,7 +25,7 @@ import pyfltr.command.process
 import pyfltr.command.structured_output
 import pyfltr.command.subprojects
 import pyfltr.config.config
-from pyfltr.command.builtin import AUTO_ARGS, COMMAND_RUNNERS, JS_RUNNERS
+from pyfltr.command.builtin import AUTO_ARGS, AUTO_VALUE_ARGS, COMMAND_RUNNERS, JS_RUNNERS
 
 # `build_mise_subprocess_env`はpyfltr.command内部APIだがサブパッケージ全域で共有する。
 # 同じサブパッケージ内の`mise.py`もfrom-importで取り込んでおり、本モジュールも倣う。
@@ -916,10 +916,13 @@ def _build_auto_args(command: str, config: pyfltr.config.config.Config, user_arg
     """自動引数を構築する。
 
     AUTO_ARGSで定義されたフラグがTrueの場合、対応する引数を返す。
-    ユーザーが *-argsやCLI引数で既に同じ文字列を指定している場合はスキップする。
+    AUTO_VALUE_ARGSで定義された数値設定は正の値のときテンプレートを展開して返す。
+    ユーザーが *-argsやCLI引数で既に同じ文字列（数値引数はフラグ名）を
+    指定している場合はスキップする。
     """
     auto_entries = AUTO_ARGS.get(command, [])
-    if not auto_entries:
+    value_entries = AUTO_VALUE_ARGS.get(command, [])
+    if not auto_entries and not value_entries:
         return []
     user_args_joined = " ".join(user_args)
     result: list[str] = []
@@ -929,6 +932,17 @@ def _build_auto_args(command: str, config: pyfltr.config.config.Config, user_arg
         for arg in args:
             if arg not in user_args_joined:
                 result.append(arg)
+    for value_key, template in value_entries:
+        try:
+            value = int(config.values.get(value_key, 0))
+        except (TypeError, ValueError):
+            continue
+        if value <= 0:
+            continue
+        flag = template.split("=", maxsplit=1)[0]
+        if flag in user_args_joined:
+            continue
+        result.append(template.format(value=value))
     return result
 
 

@@ -1143,6 +1143,14 @@ def test_auto_option_defaults() -> None:
     config = pyfltr.config.config.create_default_config()
     assert config["pylint-pydantic"] is True
     assert config["mypy-unused-awaitable"] is True
+    assert config["lychee-max-concurrency"] == 4
+
+
+def test_lychee_max_concurrency_override(tmp_path: pathlib.Path) -> None:
+    """`lychee-max-concurrency`は整数で上書きできる。"""
+    (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\nlychee-max-concurrency = 0\n")
+    config = pyfltr.config.config.load_config(config_dir=tmp_path)
+    assert config["lychee-max-concurrency"] == 0
 
 
 def test_auto_option_disable(tmp_path: pathlib.Path) -> None:

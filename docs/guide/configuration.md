@@ -173,6 +173,7 @@ pyfltr config list --all
 - {command}-version : bin-runner対応ツールのバージョン指定（既定: `"latest"`）
 - pylint-pydantic : pylint実行時に`--load-plugins=pylint_pydantic`を自動追加するか（既定: `true`、後述）
 - mypy-unused-awaitable : mypy実行時に`--enable-error-code=unused-awaitable`を自動追加するか（既定: `true`、後述）
+- lychee-max-concurrency : lychee実行時の同時接続数（既定: `4`。`0`以下でlychee既定値へ委ねる、後述）
 - jobs : linters/testersの最大並列数（既定: 4。CLIの`-j`オプションでも指定可能）
 - command-timeout : コマンド単体のタイムアウト秒数のグローバル既定値（既定: 600秒。0で無効化）
 - {command}-timeout : per-toolのタイムアウト秒数。未指定時は`command-timeout`のグローバル値にフォールバックする。
@@ -321,14 +322,16 @@ mypy-exclude = ["vendor", "gen_*.py"]
 | --- | --- | --- |
 | `pylint-pydantic` | `true` | `--load-plugins=pylint_pydantic` |
 | `mypy-unused-awaitable` | `true` | `--enable-error-code=unused-awaitable` |
+| `lychee-max-concurrency` | `4` | `--max-concurrency=4` |
 
 自動引数は`{command}-args`やCLI引数と重複しないよう排除される。
-不要な場合は`false`に設定する。
+真偽値の設定は不要な場合に`false`を、数値の設定はツール側の既定値へ委ねる場合に`0`以下を指定する。
 
 ```toml
 [tool.pyfltr]
 pylint-pydantic = false
 mypy-unused-awaitable = false
+lychee-max-concurrency = 0
 ```
 
 ## 並列実行

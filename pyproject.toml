@@ -128,11 +128,6 @@ hadolint = true
 bandit = true
 colloquial-check = true
 pylint-args = ["--jobs=4"]
-# GitHub Actions上のlycheeがgithub.com宛リンクで`HTTP/2 protocol error`を返して失敗する事象の緩和。
-# ローカルでは再現せず同時接続数が原因という裏付けは取れていないが、GitHub側が接続を拒否している
-# 観測と整合するため、既定の128から4へ減らす。
-# 既定引数（`--format json`・`--no-progress`）は出力解析に必須のため、置き換えではなく追加で指定する。
-lychee-extend-args = ["--max-concurrency=4"]
 # tests/smoke_data/ 配下にはツール毎の最小サンプル（GitHub Actionsワークフロー・
 # Dockerfile・shellスクリプト等）を含むため、本リポのpyfltr対象から外す。
 # 当該ディレクトリの起動確認は tests/smoke_test.py が pyfltr CLIをsubprocess経由で呼んで実施する。

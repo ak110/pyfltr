@@ -1508,6 +1508,35 @@ def test_build_invocation_argv_auto_args_mypy_unused_awaitable() -> None:
     assert "--enable-error-code=unused-awaitable" in argv
 
 
+def test_build_invocation_argv_auto_value_args_lychee() -> None:
+    """lychee-max-concurrencyの既定値が`--max-concurrency=4`として挿入される。"""
+    config = pyfltr.config.config.create_default_config()
+    argv = pyfltr.command.runner.build_invocation_argv(
+        "lychee", config, commandline_prefix=["lychee"], additional_args=[], fix_stage=False
+    )
+    assert "--max-concurrency=4" in argv
+
+
+def test_build_invocation_argv_auto_value_args_disabled() -> None:
+    """lychee-max-concurrencyが0以下なら`--max-concurrency`を挿入しない。"""
+    config = pyfltr.config.config.create_default_config()
+    config.values["lychee-max-concurrency"] = 0
+    argv = pyfltr.command.runner.build_invocation_argv(
+        "lychee", config, commandline_prefix=["lychee"], additional_args=[], fix_stage=False
+    )
+    assert not any(arg.startswith("--max-concurrency") for arg in argv)
+
+
+def test_build_invocation_argv_auto_value_args_user_override() -> None:
+    """利用者が`--max-concurrency`を指定済みなら自動追加しない。"""
+    config = pyfltr.config.config.create_default_config()
+    config.values["lychee-extend-args"] = ["--max-concurrency=16"]
+    argv = pyfltr.command.runner.build_invocation_argv(
+        "lychee", config, commandline_prefix=["lychee"], additional_args=[], fix_stage=False
+    )
+    assert [arg for arg in argv if arg.startswith("--max-concurrency")] == ["--max-concurrency=16"]
+
+
 def test_build_invocation_argv_auto_args_disabled() -> None:
     """自動オプションをfalseにすると引数が挿入されない。"""
     config = pyfltr.config.config.create_default_config()

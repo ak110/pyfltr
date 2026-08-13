@@ -876,6 +876,8 @@ Markdown・HTML中の外部URL到達性を検証するため、ネットワー�
 [tool.pyfltr]
 # 既定で有効。
 lychee = true
+# 同時接続数（既定: 4）。0以下でlychee既定値（128）へ委ねる
+lychee-max-concurrency = 4
 # 外部URL到達失敗を警告扱いに切り替える例
 lychee-severity = "warning"
 # 非公開リポジトリ等で特定URLが認証なしで404になる場合の除外例
@@ -885,6 +887,12 @@ lychee-extend-args = ["--exclude=github\\.com/owner/repo/actions"]
 ```
 
 既定対象は`*.md`・`*.html`。`lychee-extend-targets`で対象を追加できる。
+
+`lychee-max-concurrency`の既定値`4`は、CI環境でgithub.com宛リンクの検査が
+`Network error: HTTP/2 protocol error. Server may not support HTTP/2 properly`で
+失敗する事象を緩和するための値。検査所要時間を優先する場合は大きな値、または`0`以下
+（lychee既定値の128）を指定する。`lychee-args`・`lychee-extend-args`で
+`--max-concurrency`を指定した場合は自動追加せず、指定値をそのまま使う。
 
 ### colloquial-check
 

@@ -281,6 +281,14 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "lychee-args": ["--format", "json", "--no-progress"],
     "lychee-version": "latest",
     "lychee-fast": False,
+    # lycheeの同時接続数（`--max-concurrency`）。0以下でlychee既定値（128）へ委ねる。
+    # GitHub Actions上のlycheeがgithub.com宛リンクに対して
+    # `Network error: HTTP/2 protocol error. Server may not support HTTP/2 properly`で
+    # 失敗する事象を観測したため、既定値を4へ抑える。
+    # 同時接続数が原因であるという一次資料上の裏付けは無いが、
+    # 同時接続数を抑えた実行では当該失敗が再現していないため緩和策として採用する。
+    # 利用者側の`{command}-extend-args`での個別対処を不要にする目的でpyfltr既定に置く。
+    "lychee-max-concurrency": 4,
     # colloquial-check: 日本語文書の口語表現を検出する内蔵linter。既定で無効（opt-in）。
     # 検出結果はseverity既定"warning"によりCI/pre-commitを失敗させない。
     # `{command}-path`は実行ファイルパス（文字列）を1件のみ許容するため、`python -m`起動は
