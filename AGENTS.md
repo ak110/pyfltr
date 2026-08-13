@@ -44,6 +44,9 @@ JSON Lines出力（`--output-format=jsonl`）とMCPサーバー（`pyfltr mcp`�
     設定で無効化しているツールも直接起動すれば動作するため、設定による無効化は直接起動への防御にならない
     - 例外は利用者向け文書の挙動記述を裏付ける場合に限る（本章の挙動裏付けに関する規定を参照）
   - 特定ファイルのみを対象にする場合は`uv run pyfltr run <path>`にパスを渡す
+  - テストだけを部分実行する場合も`uv run pyfltr run tests/xxx_test.py --commands=pytest`を使い、
+    `uv run pytest`を直接起動しない。直接起動では本リポジトリの設定（並列実行・タイムアウト等）が
+    `make test`と揃わず、結果を`make test`の成否の根拠にできない
   - 修正後の再実行時は`--commands=mypy,ruff-check`等で限定して実行する（最終検証はCIに委ねる前提）
   - 診断内容の調査・検体収集を目的として対応ツールを実行する場合は、
     自動修正を抑止する`--no-fix`（MCPでは`no_fix`）を併せて渡す。
