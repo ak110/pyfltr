@@ -78,6 +78,9 @@ class TestLoadPatterns:
         assert deny_patterns, "denylist 辞書が空"
         assert allow_patterns, "allowlist 辞書が空"
 
+    def test_all_deny_patterns_have_nonempty_replacements(self, deny_patterns: _PatternList) -> None:
+        assert all(replacement is not None and replacement.strip() for _, replacement in deny_patterns)
+
     def test_skips_comments_and_blanks(self, tmp_path: pathlib.Path) -> None:
         f = tmp_path / "p.txt"
         f.write_text("# header\n\n[xy]\n   \n# tail\n", encoding="utf-8")
