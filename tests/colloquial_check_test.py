@@ -116,6 +116,19 @@ class TestLoadPatterns:
         assert compiled.search("x")
         assert replacement == expected_replacement
 
+    def test_allow_patterns_never_equal_deny_patterns(self) -> None:
+        """allowlistのパターン文字列がdenylistのパターン文字列と完全一致しない。
+
+        完全一致するエントリーは当該denyエントリーをいかなる入力に対しても発火しない状態にするため、
+        allowlistが担う部分的な除外の範囲を超える。
+        """
+        deny_texts = set(_read_patterns_text(pyfltr.colloquial.check.DENY_PATH))
+        allow_texts = set(_read_patterns_text(pyfltr.colloquial.check.ALLOW_PATH))
+        duplicated = sorted(deny_texts & allow_texts)
+        assert not duplicated, (
+            f"denylistと同一文字列のallowlistエントリーは当該denyエントリーを恒久的に無効化する: {duplicated}"
+        )
+
 
 class TestFirstHit:
     """`first_hit` のテスト。"""
@@ -220,7 +233,98 @@ class TestScanText:
         allow_patterns: _PatternList,
         text: str,
     ) -> None:
-        """検出側は全denylistの自己一致テストで網羅し、熟語と助詞の連結は検出しない。"""
+        """熟語と助詞が連なる形に対し、denylistのパターン自体が一致しない。
+
+        本検体はallowlistの登録に依存せず成立する。
+        allowlist登録によって抑止される複合形は
+        `test_allowlisted_compound_forms_are_not_detected`が固定する。
+        """
+        assert not pyfltr.colloquial.check.scan_text(text, deny_patterns, allow_patterns)
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "部品を海外へ輸出する手順を整理した。",
+            "予算から支出する費目を分類する。",
+            "基金へ拠出する金額を決める。",
+            "式典を演出する担当を決めた。",
+            "新しい市場へ進出する計画を検討する。",
+            "二酸化炭素を排出する量を計測する。",
+            "鉱山から産出する資源を調べる。",
+            "新たな価値を創出する取り組みを進める。",
+            "遭難者を救出する体制を整える。",
+            "作業時間を捻出する工夫が要る。",
+            "代表を選出する手続きを定める。",
+            "異物を摘出する処置を行った。",
+            "一部の値だけが突出する傾向がある。",
+            "閉じた画面から脱出する操作を案内する。",
+            "同種の不具合が続出する状況になった。",
+            "別の部署へ転出する人員を把握する。",
+            "個人情報が流出する事故を防ぐ。",
+            "確保した資源を放出する判断を下す。",
+            "不満が噴出する場面もあった。",
+            "必要な資材を供出する側の負担を考える。",
+            "溶液から結晶が析出する条件を調べる。",
+            "担当者が外出する時間帯を避ける。",
+            "機材を貸出する窓口を設ける。",
+            "この設定が有効かどうかを確認する。",
+            "指定した項目が無効かどうかを判定する。",
+            "提案が実効かどうかは運用次第である。",
+            "新しい規約の発効から一年が経過した。",
+            "証明書の失効から復旧するまでの手順を示す。",
+            "請求権の時効から起算して判断する。",
+            "他部門と交流する機会を設ける。",
+            "別の作業班と合流する地点を決める。",
+            "排水が逆流する事象を防ぐ。",
+            "資金が還流する仕組みを説明する。",
+            "空気が対流する経路を図示する。",
+            "議論が漂流する状況を避ける。",
+            "貯水池から放流する量を調整する。",
+            "交流を整流する回路を組む。",
+            "経路を分流する仕組みを導入する。",
+            "上流しか対象にしない設計は破綻する。",
+            "下流しか変更できない制約がある。",
+            "主流しか想定しない実装は脆い。",
+            "本流しか追跡していない。",
+            "源流そのものを辿って原因を探す。",
+            "支流そのものは対象外とする。",
+            "電流そのものを測定する必要がある。",
+            "直流そのものを扱う回路である。",
+            "気流そのものの変化を記録する。",
+            "業界の潮流そのものを読み違えた。",
+            "海流そのものの向きを観測する。",
+            "乱流そのものを数値的に解く。",
+            "層流そのものの安定性を検討する。",
+            "水流そのものの強さを調整する。",
+            "不要な登録を抹消する処理を追加した。",
+            "予備費を費消する前に承認を得る。",
+            "これまでの成果が帳消しになる。",
+            "必須項目の欠落として記録する。",
+            "手順の脱落として扱い再実行する。",
+            "順位の転落として説明できる。",
+            "価格の下落として観測された。",
+            "利用者数の急落として現れた。",
+            "相場の暴落として記録に残る。",
+            "地盤の崩落として報告された。",
+            "機体の墜落として調査が始まった。",
+            "拠点の陥落として記述されている。",
+            "周辺の集落として地図に載る。",
+            "産業の没落として語られる。",
+            "組織の堕落として批判された。",
+            "品質の低落として現れる。",
+            "植物の群落として観察される。",
+        ],
+    )
+    def test_allowlisted_compound_forms_are_not_detected(
+        self, deny_patterns: _PatternList, allow_patterns: _PatternList, text: str
+    ) -> None:
+        """熟語とdenylistの語幹と助詞が連なる形が、allowlist登録により検出されない。
+
+        denylistのパターンは単語境界を持たず部分一致で適用されるため、
+        語幹を末尾に持つ熟語へ助詞が続く形にも一致する。
+        `words_allow.txt`への登録が当該形をマスクすることで検出が消える。
+        語幹単独形の検出は`test_every_deny_entry_self_matches`が担保する。
+        """
         assert not pyfltr.colloquial.check.scan_text(text, deny_patterns, allow_patterns)
 
 
