@@ -218,7 +218,9 @@ def test_grep_notifies_excluded_explicit_file(
     assert rc == 1  # 除外され対象0件のためマッチ無し
     out = capsys.readouterr().out
     if output_format == "jsonl":
-        summary = [json.loads(line) for line in out.splitlines() if line.strip()][-1]
+        records = [json.loads(line) for line in out.splitlines() if line.strip()]
+        summary = records[-1]
+        assert summary["warnings"] == len([r for r in records if r["kind"] == "warning"])
     else:
         summary = json.loads(out)["summary"]
     assert summary["fully_excluded_files"] == ["uv.lock"]
@@ -237,10 +239,28 @@ def test_grep_notifies_missing_explicit_file(
     assert rc == 1
     out = capsys.readouterr().out
     if output_format == "jsonl":
-        summary = [json.loads(line) for line in out.splitlines() if line.strip()][-1]
+        records = [json.loads(line) for line in out.splitlines() if line.strip()]
+        summary = records[-1]
+        assert summary["warnings"] == len([r for r in records if r["kind"] == "warning"])
     else:
         summary = json.loads(out)["summary"]
     assert summary["missing_targets"] == ["nope.py"]
+
+
+def test_grep_jsonl_summary_omits_warnings_when_none(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """警告が1件も発生しない実行ではsummaryに`warnings`キーが現れない。"""
+    _make_sample_files(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    # 一時ディレクトリはgit管理外のため、`.gitignore`判定を無効化して当該警告の発生を避ける。
+    rc = pyfltr.cli.main.run(["grep", "foo", "--output-format=jsonl", "--no-gitignore", str(tmp_path / "a.py")])
+    assert rc == 0
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
+    assert not [r for r in records if r["kind"] == "warning"]
+    assert "warnings" not in records[-1]
 
 
 def test_grep_text_notifies_excluded(

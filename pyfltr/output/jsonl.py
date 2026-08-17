@@ -342,6 +342,7 @@ def build_lines(
                 subcommand=subcommand,
                 fully_excluded_files=fully_excluded_files,
                 missing_targets=missing_targets,
+                warning_count=len(warnings or []),
             )
         )
     )
@@ -473,6 +474,7 @@ def write_jsonl_footer(
     `subcommand`は`summary.guidance`の再実行例に埋め込む実行系サブコマンド名。
     `fully_excluded_files`を渡すと`summary.fully_excluded_files`キーとして埋め込む。
     `missing_targets`を渡すと`summary.missing_targets`キーとして埋め込む。
+    `warnings`の件数は`summary.warnings`としても集計する。
     """
     with _write_lock:
         for warning in warnings or []:
@@ -487,6 +489,7 @@ def write_jsonl_footer(
                     subcommand=subcommand,
                     fully_excluded_files=fully_excluded_files,
                     missing_targets=missing_targets,
+                    warning_count=len(warnings or []),
                 )
             )
         )
@@ -829,6 +832,7 @@ def _build_summary_record(
     subcommand: str | None = None,
     fully_excluded_files: list[str] | None = None,
     missing_targets: list[str] | None = None,
+    warning_count: int = 0,
 ) -> dict[str, typing.Any]:
     """ordered_resultsから集計してsummaryレコードdictを生成する。
 
@@ -849,13 +853,19 @@ def _build_summary_record(
     `missing_targets`が非空のとき、直接指定されたが存在しないファイル一覧を
     `missing_targets`キーに埋め込む（exclude/.gitignore全除外と原因を区別するため
     別フィールドで併存させる）。
+    `warning_count`が1以上のとき、当該実行で出力した`kind:"warning"`レコードの件数を
+    `warnings`キーに埋め込む。同キーは実行時警告の件数であり、
+    `commands_summary.needs_action.warning`（`{command}-severity`によるコマンド結果の
+    格下げ件数）とは集計対象が異なる。呼び出し側はwarningレコードの生成元と同一の引数から
+    件数を導出して渡し、レコード件数とsummaryの値を構造的に一致させる。
 
     フィールド順序ルール:
 
     - 必須キー順は`kind` → `exit` → `commands_summary` → `diagnostics`。
       結論を上位に置きLLMが読み下しやすい流れに揃える。
-    - 条件付きキー順は`guidance` → `applied_fixes` → `fully_excluded_files` → `missing_targets`。
-      解釈支援（次に取るべき行動）→ 自動適用結果 → 除外検知 → 不在検知の流れに揃える。
+    - 条件付きキー順は`warnings` → `guidance` → `applied_fixes` → `fully_excluded_files` →
+      `missing_targets`。
+      警告件数 → 解釈支援（次に取るべき行動）→ 自動適用結果 → 除外検知 → 不在検知の流れに揃える。
     - コマンド総数`total`は`commands_summary`配下の末尾（`no_issues` / `needs_action`の後）に置く。
       カテゴリ集計を読んでから総数を確認できる順序とするため。
     - 指摘総件数`diagnostics`はコマンド単位の集計ではないため`commands_summary`の外に置く。
@@ -894,6 +904,8 @@ def _build_summary_record(
         },
         "diagnostics": total_diagnostics,
     }
+    if warning_count > 0:
+        record["warnings"] = warning_count
     guidance = _build_summary_guidance(
         failure_present=counts["failed"] + counts["resolution_failed"] > 0,
         applied_fixes_present=bool(fixed_files_union),

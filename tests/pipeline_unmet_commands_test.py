@@ -65,6 +65,12 @@ def _run_and_read_jsonl(
     return [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
 
 
+def _summary_warning_count(records: list[dict]) -> int:
+    """summaryレコードの`warnings`値を返す（キー不在は0件とみなす）。"""
+    summary = next(record for record in records if record.get("kind") == "summary")
+    return summary.get("warnings", 0)
+
+
 def test_unmet_commands_warning_emitted_when_commands_explicit(monkeypatch, capsys, tmp_path) -> None:
     """明示指定された未有効化コマンドはJSONL警告として出力される。"""
     records = _run_and_read_jsonl(
@@ -86,6 +92,7 @@ def test_unmet_commands_warning_emitted_when_commands_explicit(monkeypatch, caps
             ),
         }
     ]
+    assert _summary_warning_count(records) == len(warnings)
 
 
 def test_unmet_commands_warning_not_emitted_without_explicit_commands(monkeypatch, capsys, tmp_path) -> None:
@@ -93,6 +100,8 @@ def test_unmet_commands_warning_not_emitted_without_explicit_commands(monkeypatc
     records = _run_and_read_jsonl(monkeypatch, capsys, tmp_path, ["textlint"], args_commands=None)
 
     assert not [record for record in records if record.get("source") == "commands"]
+    warnings = [record for record in records if record.get("kind") == "warning"]
+    assert _summary_warning_count(records) == len(warnings)
 
 
 def test_unmet_commands_warning_not_emitted_when_all_enabled(monkeypatch, capsys, tmp_path) -> None:

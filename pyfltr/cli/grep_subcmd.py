@@ -236,7 +236,8 @@ def execute_grep(parser: argparse.ArgumentParser, args: argparse.Namespace) -> i
     if output_format == "jsonl":
         # スキャン中に蓄積された警告（エンコーディングエラー・読み込み失敗等）を
         # summaryの直前に出力し、pipelineのwarning出力位置と挙動を揃える
-        for warning_entry in pyfltr.warnings_.collected_warnings():
+        warning_entries = pyfltr.warnings_.collected_warnings()
+        for warning_entry in warning_entries:
             pyfltr.grep_.jsonl_records.emit_warning(warning_entry)
         pyfltr.grep_.jsonl_records.emit_grep_summary(
             total_matches=total_matches,
@@ -245,6 +246,7 @@ def execute_grep(parser: argparse.ArgumentParser, args: argparse.Namespace) -> i
             guidance=guidance if total_matches > 0 else None,
             fully_excluded_files=fully_excluded,
             missing_targets=missing_targets,
+            warning_count=len(warning_entries),
         )
     elif output_format == "json":
         summary: dict[str, typing.Any] = {

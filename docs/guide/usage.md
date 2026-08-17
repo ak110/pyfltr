@@ -740,6 +740,11 @@ MCPクライアントは結果を構造化データとして受け取れる。
     問題がなければ完了する。
     `commands_summary.needs_action`配下の`failed` / `resolution_failed`がいずれも0であれば残作業は無く、
     `commands_summary.no_issues`配下の内訳は確認不要。
+    summary行に`warnings`キーがある場合は実行時の警告が発生している。
+    `"kind":"warning"`行を読み、要求した検査が実際に実行されたかを確認する
+    （未有効化のコマンドを`--commands`で指定した場合など、検査が実行されないまま`exit`が0になることがある）。
+    `missing_targets`・`fully_excluded_files`がある場合も、指定したファイルが不在・除外で
+    対象外になっていないかを確認する。
     `applied_fixes`が非空でも`summary.guidance`に注記が出るが、formatter/fix-stageによる書き換えのみで
     再実行は不要なため、そのまま完了してよい。
 

@@ -74,14 +74,29 @@ def test_build_lines_warnings_prepended(default_config, tool: str):
     assert parsed[2] == {"kind": "warning", "source": "git", "msg": "git が見つからない"}
     # warningsの後にtoolレコード、最後にsummaryが並ぶ
     assert [r["kind"] for r in parsed[3:]] == ["command", "summary"]
+    # summaryはwarningレコードの件数を`warnings`として保持する
+    assert parsed[-1]["warnings"] == 2
 
 
 def test_build_lines_no_warnings_when_omitted(default_config):
-    """warnings引数を省略するとwarningレコードは出ない。"""
+    """warnings引数を省略するとwarningレコードは出ず、summaryにも`warnings`キーが現れない。"""
     result = _make_result("ruff-format", returncode=0, command_type="formatter")
     lines = pyfltr.output.jsonl.build_lines([result], default_config, exit_code=0)
     parsed = [json.loads(line) for line in lines]
     assert all(r["kind"] != "warning" for r in parsed)
+    assert "warnings" not in parsed[-1]
+
+
+def test_build_lines_summary_conditional_key_order(default_config):
+    """summaryの条件付きキーが`warnings`→`guidance`の順で並ぶこと。"""
+    result = _make_result("mypy", returncode=1, errors=[_make_error("mypy", "a.py", 1, "bad")])
+    warnings = [{"source": "config", "message": "設定ファイル不在"}]
+    lines = pyfltr.output.jsonl.build_lines([result], default_config, exit_code=1, warnings=warnings)
+    summary = json.loads(lines[-1])
+
+    keys = list(summary)
+    assert keys[keys.index("diagnostics") + 1] == "warnings"
+    assert keys[keys.index("warnings") + 1] == "guidance"
 
 
 def test_build_lines_unsupported_tool_only(default_config):
@@ -807,10 +822,11 @@ def test_write_jsonl_footer_with_warnings(capsys):
     assert parsed[0]["msg"] == "test warning"
     assert parsed[1]["kind"] == "summary"
     assert parsed[1]["exit"] == 1
+    assert parsed[1]["warnings"] == 1
 
 
 def test_write_jsonl_footer_no_warnings(capsys):
-    """warningがない場合はsummary行のみ。"""
+    """warningがない場合はsummary行のみで、`warnings`キーも出力しない。"""
     _configure_structured_stdout()
     result = _make_result("mypy", returncode=0)
     pyfltr.output.jsonl.write_jsonl_footer([result], exit_code=0)
@@ -820,6 +836,7 @@ def test_write_jsonl_footer_no_warnings(capsys):
     assert len(parsed) == 1
     assert parsed[0]["kind"] == "summary"
     assert parsed[0]["commands_summary"]["no_issues"]["succeeded"] == 1
+    assert "warnings" not in parsed[0]
 
 
 # ---------------------------------------------------------------------------

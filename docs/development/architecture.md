@@ -481,13 +481,16 @@ JSON consumerが`record["hint_urls"]`等へドット記法アクセスできる�
 `warning`は`{command}-severity = "warning"`設定下で従来`failed`扱いだった結果が
 `status="warning"`に格下げされたものを集計する（パイプライン全体exit codeには影響しない）。
 ツール起動自体に失敗したケース（`resolution_failed` / `timeout_exceeded`）は`severity`の影響を受けない。
+実行時警告（`kind:"warning"`レコード）の件数は`commands_summary`の外の条件付きキー`warnings`で表し、
+1件以上のときだけ出力する。`commands_summary.needs_action.warning`とは集計対象が異なる。
 
 ### summaryレコードのフィールド順序
 
-LLMが上から読み下したときに「結論→集計→指摘総数→ガイダンス→ファイル情報」の流れで把握できる順序に揃える。
+LLMが上から読み下したときに「結論→集計→指摘総数→警告件数→ガイダンス→ファイル情報」の流れで
+把握できる順序に揃える。
 
 - 必須キー: `kind` → `exit` → `commands_summary` → `diagnostics`
-- 条件付きキー: `guidance` → `applied_fixes` → `fully_excluded_files` → `missing_targets`
+- 条件付きキー: `warnings` → `guidance` → `applied_fixes` → `fully_excluded_files` → `missing_targets`
 
 コマンド単位の集計（statusカテゴリ別件数およびコマンド総数 `total`）は `commands_summary` 配下に集約し、
 `total` は `no_issues` / `needs_action` の末尾へ置く。

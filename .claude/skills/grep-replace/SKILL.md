@@ -21,7 +21,7 @@ pyfltrの既存ファイル収集機構（`expand_all_files`）とignore設定�
 ファイル収集の除外はrun系（`expand_all_files`のexclude / extend-exclude / respect-gitignore）と統一する。
 grep / replace固有の追加除外は設けず、ドット始まりのファイルやディレクトリも対象に含める。
 直接指定したパスがexcludeパターンや`.gitignore`で対象外になった場合は、
-warningとsummaryの`fully_excluded_files` / `missing_targets`で通知し、無言のスキップを避ける。
+warningとsummaryの`warnings` / `fully_excluded_files` / `missing_targets`で通知し、無言のスキップを避ける。
 
 ## 引数体系の同一性
 

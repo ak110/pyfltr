@@ -41,6 +41,9 @@ JSONL出力経路は`pyfltr/output/jsonl.py`の公開ヘルパー（`emit_record
 - JSONL `command.status` 語彙のSSOTは`pyfltr/command/core_.py`の`CommandResult.status`プロパティのdocstring。
   新規status値追加時は当該docstringと判定分岐を併せて更新する
 - `summary`レコードのフィールド順序仕様のSSOTは`pyfltr/output/jsonl.py`の`_build_summary_record`のdocstring
+- summary以外のレコードで通知する実行時の異常（`kind:"warning"`など）は、summary単体で存在を判別できるよう
+  条件付きキーで件数を露出する。件数は当該レコードの生成元と同一の入力から導出し、
+  summaryの値とレコード件数を構造的に一致させる
 - JSONL commandレコードの`effective_runner`・`runner_source`・`runner_fallback`は
  「期待した経路と実際の経路が乖離した場合」に限り出力する（fallback検出用）。
   通常経路は3フィールドとも省略してLLM入力のトークン消費を抑える方針。
