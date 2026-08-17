@@ -256,7 +256,7 @@ hte = "hte"
 ```
 
 識別子（変数名・関数名）単位で許可したい場合は`[tool.typos.default.extend-identifiers]`を使う。
-詳細は[typos公式ドキュメント](https://github.com/crate-ci/typos/blob/master/docs/reference.md)を参照。
+詳細は[typos公式ドキュメント](https://github.com/crate-ci/typos/tree/master/docs)を参照。
 
 ### 依存の脆弱性監査の有効化（任意）
 
