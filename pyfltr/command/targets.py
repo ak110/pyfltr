@@ -246,6 +246,43 @@ def _is_ignored_single_path(path: pathlib.Path, *, cwd: pathlib.Path | None = No
     return result.returncode == 0
 
 
+def _work_tree_state(cwd: pathlib.Path) -> typing.Literal["inside", "outside", "unknown"]:
+    """`cwd`がGit作業ツリーの内側か外側か、判定できないかを返す。
+
+    `git rev-parse --is-inside-work-tree`の終了コードが0のときは、標準出力`true`を`inside`、
+    `false`（bareリポジトリ）を`outside`とする。
+    終了コードが非0のときは、リポジトリを発見できない状態と、発見したうえで利用を拒否した状態
+    （別所有者の`detected dubious ownership`など）の双方があり、gitの終了コードでは区別できない。
+    後者では`.git`が祖先に存在するため、祖先探索で`outside`と`unknown`へ分ける。
+    git 2.43.0の実測では、作業ツリー内は終了コード0と`true`、bareリポジトリは終了コード0と
+    `false`、非リポジトリは終了コード128と空の標準出力、所有者検査に失敗する作業ツリー内は
+    終了コード128と`detected dubious ownership`のエラーを返す。
+    `GIT_DIR`だけでリポジトリを指定し、かつgitが利用を拒否する構成は`.git`が祖先に無いため
+    `outside`と判定する。タイムアウトで実行できない場合は`unknown`とする。
+    """
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=10,
+            check=False,
+            cwd=str(cwd),
+        )
+    except subprocess.TimeoutExpired:
+        return "unknown"
+    if result.returncode == 0:
+        return "inside" if result.stdout.strip() == "true" else "outside"
+    try:
+        current = cwd.resolve()
+    except OSError:
+        current = cwd.absolute()
+    if any((candidate / ".git").exists() for candidate in [current, *current.parents]):
+        return "unknown"
+    return "outside"
+
+
 def _filter_by_gitignore(paths: list[pathlib.Path], *, cwd: pathlib.Path | None = None) -> list[pathlib.Path]:
     """Git check-ignoreで .gitignoreに該当するファイルを除外する。
 
@@ -258,10 +295,12 @@ def _filter_by_gitignore(paths: list[pathlib.Path], *, cwd: pathlib.Path | None 
     `cwd` を指定すると `git` の作業ディレクトリと相対パス基準として使う。
     `None` の場合は親プロセスの cwd を使う（既存挙動）。
 
-    サブプロセスのreturncodeが0でも1でもない場合は`emit_warning`でstderrを通知する。
+    サブプロセスのreturncodeが0でも1でもない場合は、returncodeが128かつ起点cwdがGit作業ツリー外と
+    確定できた場合に限り、警告を発行せずフィルター適用を省略して入力パスをそのまま返す。
+    作業ツリー内の128、内外を判定できない128、128以外の終了コードでは`emit_warning`でstderrを通知し、
+    stdoutで返ってきた部分結果をignored判定として活用する。
     `logger.debug`のみで全パスを素通しさせるサイレントなフォールバックは
     .gitignore除外スキップを隠蔽する不具合の原因となるため採用しない。
-    stdoutで返ってきた部分結果はignored判定として活用する。
     """
     if not paths:
         return paths
@@ -305,9 +344,14 @@ def _filter_by_gitignore(paths: list[pathlib.Path], *, cwd: pathlib.Path | None 
         pyfltr.warnings_.emit_warning(source="git", message="git check-ignore がタイムアウトしたためスキップする")
         return paths
     if result.returncode not in (0, 1):
-        # 0: 1つ以上ignored, 1: 全てnot ignored, 128等: fatal error。
-        # サイレント素通しは.gitignore除外スキップを隠蔽するため emit_warning で通知し、
-        # stdoutで返ってきた部分結果はignored判定として活用する。
+        # 0: 1つ以上ignored, 1: 全てnot ignored, 128: fatal error（gitの公開仕様はこの3値）。
+        # 終了コード128で起点cwdがGit作業ツリーの外側と確定できた場合は、適用対象の`.gitignore`が
+        # 存在せず除外漏れが生じないため、警告を発行せずフィルター適用を省略して入力パスをそのまま返す。
+        # 作業ツリーの内側の128、内外を判定できない場合、公開仕様に無い終了コードは、サイレント
+        # 素通しが.gitignore除外スキップを隠蔽するため emit_warning で通知し、stdoutで返ってきた
+        # 部分結果はignored判定として活用する。
+        if result.returncode == 128 and _work_tree_state(cwd_base) == "outside":
+            return paths
         stderr_msg = result.stderr.strip() if result.stderr else ""
         detail = f": {stderr_msg}" if stderr_msg else ""
         pyfltr.warnings_.emit_warning(

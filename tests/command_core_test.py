@@ -1368,6 +1368,113 @@ def test_expand_all_files_warns_on_check_ignore_failure(tmp_path: pathlib.Path, 
         os.chdir(original_cwd)
 
 
+def test_expand_all_files_keeps_files_outside_git_worktree(tmp_path: pathlib.Path) -> None:
+    """Git作業ツリー外でgit check-ignoreが終了コード128を返しても対象ファイルを保持する。"""
+    (tmp_path / "ok.py").write_text("x = 1\n")
+    (tmp_path / "other.py").write_text("y = 2\n")
+
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        pyfltr.warnings_.clear()
+        config = pyfltr.config.config.create_default_config()
+        all_files = pyfltr.command.targets.expand_all_files([], config)
+        names = {p.name for p in pyfltr.command.targets.filter_by_globs(all_files, ["*.py"])}
+        git_warnings = [w for w in pyfltr.warnings_.collected_warnings() if w["source"] == "git"]
+        assert not git_warnings
+        assert names == {"ok.py", "other.py"}
+    finally:
+        pyfltr.warnings_.clear()
+        os.chdir(original_cwd)
+
+
+def test_expand_all_files_warns_on_unexpected_check_ignore_failure_outside_worktree(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Git作業ツリー外でも128以外の異常終了では警告を発行し部分結果を除外する。"""
+    (tmp_path / "ok.py").write_text("x = 1\n")
+    (tmp_path / "ignored.py").write_text("y = 2\n")
+    fake_result = subprocess.CompletedProcess(
+        args=["git", "check-ignore"],
+        returncode=2,
+        stdout="ignored.py\0",
+        stderr="fatal: unexpected failure\n",
+    )
+    original_run = subprocess.run
+
+    def fake_run(args: list[str], **kwargs: typing.Any) -> typing.Any:
+        if args[:2] == ["git", "check-ignore"] and "--stdin" in args:
+            return fake_result
+        kwargs.pop("check", None)
+        return original_run(args, check=False, **kwargs)
+
+    monkeypatch.setattr("pyfltr.command.targets.subprocess.run", fake_run)
+
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        pyfltr.warnings_.clear()
+        config = pyfltr.config.config.create_default_config()
+        all_files = pyfltr.command.targets.expand_all_files([], config)
+        names = {p.name for p in pyfltr.command.targets.filter_by_globs(all_files, ["*.py"])}
+        collected = pyfltr.warnings_.collected_warnings()
+        assert "ok.py" in names
+        assert "ignored.py" not in names
+        assert any(w["source"] == "git" and "2" in w["message"] for w in collected)
+    finally:
+        pyfltr.warnings_.clear()
+        os.chdir(original_cwd)
+
+
+def test_expand_all_files_warns_when_git_worktree_state_is_unknown(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Git作業ツリーの内外を判定できない場合は警告を発行し部分結果を除外する。"""
+    subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True, check=True)
+    (tmp_path / "ok.py").write_text("x = 1\n")
+    (tmp_path / "ignored.py").write_text("y = 2\n")
+    check_ignore_result = subprocess.CompletedProcess(
+        args=["git", "check-ignore"],
+        returncode=128,
+        stdout="ignored.py\0",
+        stderr="fatal: pathspec rejected\n",
+    )
+    rev_parse_result = subprocess.CompletedProcess(
+        args=["git", "rev-parse", "--is-inside-work-tree"],
+        returncode=128,
+        stdout="",
+        stderr="fatal: detected dubious ownership\n",
+    )
+    original_run = subprocess.run
+
+    def fake_run(args: list[str], **kwargs: typing.Any) -> typing.Any:
+        if args[:2] == ["git", "check-ignore"] and "--stdin" in args:
+            return check_ignore_result
+        if args == ["git", "rev-parse", "--is-inside-work-tree"]:
+            return rev_parse_result
+        kwargs.pop("check", None)
+        return original_run(args, check=False, **kwargs)
+
+    monkeypatch.setattr("pyfltr.command.targets.subprocess.run", fake_run)
+
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        pyfltr.warnings_.clear()
+        config = pyfltr.config.config.create_default_config()
+        all_files = pyfltr.command.targets.expand_all_files([], config)
+        names = {p.name for p in pyfltr.command.targets.filter_by_globs(all_files, ["*.py"])}
+        collected = pyfltr.warnings_.collected_warnings()
+        assert "ok.py" in names
+        assert "ignored.py" not in names
+        assert any(w["source"] == "git" and "128" in w["message"] for w in collected)
+    finally:
+        pyfltr.warnings_.clear()
+        os.chdir(original_cwd)
+
+
 def test_expand_all_files_keeps_outside_repo_symlink_target(tmp_path: pathlib.Path) -> None:
     """cwdリポジトリ外に解決されるシンボリックリンク先はgitignore判定対象外として残る。"""
     repo = tmp_path / "repo"

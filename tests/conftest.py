@@ -344,9 +344,8 @@ def _isolated_target(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) ->
     先行呼び出し結果が使い回され判定を反映しない。`.claude/skills/test-constraints/SKILL.md`が
     定める確立済みの差し替え方式（`monkeypatch.setattr`で関数自体を置換）に従い直接固定する。
 
-    `tmp_path`には`.git`が存在しないため、`respect-gitignore`（既定`True`）が有効なままだと
-    `git check-ignore`呼び出しが`fatal: not a git repository`で失敗し警告が蓄積する。
-    `pyproject.toml`へ`respect-gitignore = false`を明示し、実I/O経路の隔離を完結させる。
+    `tmp_path`配下の実I/O経路をGitの状態から分離するため、`pyproject.toml`へ
+    `respect-gitignore = false`を明示する。この設定により、フィクスチャの対象条件を固定する。
     """
     monkeypatch.setattr("pyfltr.command.runner.cwd_has_uv_lock", lambda *_args: True)
     (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latest"\npython = true\nrespect-gitignore = false\n')

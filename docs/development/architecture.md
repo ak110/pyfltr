@@ -133,7 +133,7 @@ pre-commitとprekは同じ設定形式を使う代替実行系である。
 
 subprocess起動は`subprocess.Popen`ベースに統一する。
 `--fail-fast`の中断処理（外部スレッドからの`terminate()`呼び出し）が成立する基盤として必要。
-パイプライン外で動く`mise --version`・`git check-ignore`・`cls`/`clear`はこの方針の対象外とする。
+パイプライン外で動く`mise --version`・`git check-ignore`・`git rev-parse`・`cls`/`clear`はこの方針の対象外とする。
 
 ### `cli/pipeline.py`/`output/ui.py`の共通化はヘルパーに限定する
 
