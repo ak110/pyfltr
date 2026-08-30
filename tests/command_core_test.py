@@ -1330,6 +1330,67 @@ def test_expand_all_files_filters_symlinked_files_against_gitignore(tmp_path: pa
         os.chdir(original_cwd)
 
 
+@pytest.mark.parametrize(
+    ("stdout", "expected"),
+    [("true\n", "inside"), ("false\n", "outside")],
+)
+def test_work_tree_state_classifies_successful_git_result(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    stdout: str,
+    expected: str,
+) -> None:
+    """git rev-parseが正常終了した場合、標準出力に応じて作業ツリー状態を返す。"""
+    result = subprocess.CompletedProcess(
+        args=["git", "rev-parse", "--is-inside-work-tree"],
+        returncode=0,
+        stdout=stdout,
+        stderr="",
+    )
+    monkeypatch.setattr("pyfltr.command.targets.subprocess.run", lambda *args, **kwargs: result)
+
+    assert pyfltr.command.targets._work_tree_state(tmp_path) == expected  # pylint: disable=protected-access  # 分類境界を直接検証する
+
+
+def test_work_tree_state_returns_unknown_on_timeout(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """git rev-parseがタイムアウトした場合は判定不能を返す。"""
+
+    def timeout_run(args: list[str], **kwargs: typing.Any) -> typing.NoReturn:
+        raise subprocess.TimeoutExpired(cmd=args, timeout=kwargs["timeout"])
+
+    monkeypatch.setattr("pyfltr.command.targets.subprocess.run", timeout_run)
+
+    assert pyfltr.command.targets._work_tree_state(tmp_path) == "unknown"  # pylint: disable=protected-access  # タイムアウト時の分類を直接検証する
+
+
+def test_work_tree_state_returns_unknown_on_git_dir_probe_timeout(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GIT_DIRの解決確認がタイムアウトした場合は判定不能を返す。"""
+    git_dir = tmp_path / "git-dir"
+    git_dir.mkdir()
+    monkeypatch.setenv("GIT_DIR", str(git_dir))
+    main_result = subprocess.CompletedProcess(
+        args=["git", "rev-parse", "--is-inside-work-tree"],
+        returncode=128,
+        stdout="",
+        stderr="fatal: not a git repository\n",
+    )
+
+    def timeout_probe(args: list[str], **kwargs: typing.Any) -> typing.Any:
+        if args == ["git", "rev-parse", "--is-inside-work-tree"]:
+            return main_result
+        raise subprocess.TimeoutExpired(cmd=args, timeout=kwargs["timeout"])
+
+    monkeypatch.setattr("pyfltr.command.targets.subprocess.run", timeout_probe)
+
+    assert pyfltr.command.targets._work_tree_state(tmp_path) == "unknown"  # pylint: disable=protected-access  # 解決確認のタイムアウト分類を直接検証する
+
+
 def test_expand_all_files_warns_on_check_ignore_failure(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """git check-ignoreが想定外の終了コードを返した場合にwarningが出て部分結果が活用される。"""
     subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True, check=True)
@@ -1487,8 +1548,12 @@ def test_expand_all_files_warns_when_git_env_overrides_worktree_state(
     worktree.mkdir()
     (worktree / "ok.py").write_text("x = 1\n")
     (worktree / "ignored.py").write_text("y = 2\n")
+    bad_config = tmp_path / "bad.gitconfig"
+    bad_config.write_text("[broken\n")
     monkeypatch.setenv("GIT_DIR", str(repo / ".git"))
     monkeypatch.setenv("GIT_WORK_TREE", str(worktree))
+    monkeypatch.setenv("GIT_CONFIG_SYSTEM", str(bad_config))
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
     check_ignore_result = subprocess.CompletedProcess(
         args=["git", "check-ignore"],
         returncode=128,
@@ -1537,6 +1602,56 @@ def test_expand_all_files_keeps_files_with_git_work_tree_only(
     (tmp_path / "ok.py").write_text("x = 1\n")
     (tmp_path / "ignored.py").write_text("y = 2\n")
     monkeypatch.delenv("GIT_DIR", raising=False)
+    monkeypatch.setenv("GIT_WORK_TREE", str(tmp_path))
+    check_ignore_result = subprocess.CompletedProcess(
+        args=["git", "check-ignore"],
+        returncode=128,
+        stdout="ignored.py\0",
+        stderr="fatal: not a git repository\n",
+    )
+    rev_parse_result = subprocess.CompletedProcess(
+        args=["git", "rev-parse", "--is-inside-work-tree"],
+        returncode=128,
+        stdout="",
+        stderr="fatal: not a git repository\n",
+    )
+    original_run = subprocess.run
+
+    def fake_run(args: list[str], **kwargs: typing.Any) -> typing.Any:
+        if args[:2] == ["git", "check-ignore"] and "--stdin" in args:
+            return check_ignore_result
+        if args == ["git", "rev-parse", "--is-inside-work-tree"]:
+            return rev_parse_result
+        kwargs.pop("check", None)
+        return original_run(args, check=False, **kwargs)
+
+    monkeypatch.setattr("pyfltr.command.targets.subprocess.run", fake_run)
+
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        pyfltr.warnings_.clear()
+        config = pyfltr.config.config.create_default_config()
+        all_files = pyfltr.command.targets.expand_all_files([], config)
+        names = {p.name for p in pyfltr.command.targets.filter_by_globs(all_files, ["*.py"])}
+        collected = pyfltr.warnings_.collected_warnings()
+        assert names == {"ok.py", "ignored.py"}
+        assert not [w for w in collected if w["source"] == "git"]
+    finally:
+        pyfltr.warnings_.clear()
+        os.chdir(original_cwd)
+
+
+def test_expand_all_files_keeps_files_with_invalid_git_dir(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """実在するがGitディレクトリではないGIT_DIRでは128の警告を抑止する。"""
+    (tmp_path / "ok.py").write_text("x = 1\n")
+    (tmp_path / "ignored.py").write_text("y = 2\n")
+    invalid_git_dir = tmp_path / "not-a-git-dir"
+    invalid_git_dir.mkdir()
+    monkeypatch.setenv("GIT_DIR", str(invalid_git_dir))
     monkeypatch.setenv("GIT_WORK_TREE", str(tmp_path))
     check_ignore_result = subprocess.CompletedProcess(
         args=["git", "check-ignore"],

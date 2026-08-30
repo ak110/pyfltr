@@ -255,9 +255,9 @@ def _work_tree_state(cwd: pathlib.Path) -> typing.Literal["inside", "outside", "
     終了コードが非0のときは、リポジトリを発見できない状態と、発見したうえで利用を拒否した状態
     （別所有者の`detected dubious ownership`など）の双方があり、gitの終了コードでは区別できない。
     後者では`.git`が祖先に存在するため、祖先探索で`outside`と`unknown`へ分ける。
-    `GIT_DIR`で指定されたパスが存在する場合は、Gitの対象が祖先の`.git`に限られないため、終了コード128では
-    `unknown`とする。`GIT_WORK_TREE`だけの指定や、存在しない`GIT_DIR`の指定は、Gitディレクトリを追加で
-    成立させないため祖先探索へ進む。
+    `GIT_DIR`で指定されたパスを`git rev-parse --resolve-git-dir`で解決できる場合は、Gitの対象が祖先の`.git`に
+    限られないため、終了コード128では`unknown`とする。解決できない`GIT_DIR`や`GIT_WORK_TREE`だけの指定は、
+    Gitディレクトリを追加で成立させないため祖先探索へ進む。
     git 2.43.0の実測では、作業ツリー内は終了コード0と`true`、bareリポジトリは終了コード0と
     `false`、非リポジトリは終了コード128と空の標準出力、所有者検査に失敗する作業ツリー内は
     終了コード128と`detected dubious ownership`のエラーを返す。
@@ -282,11 +282,27 @@ def _work_tree_state(cwd: pathlib.Path) -> typing.Literal["inside", "outside", "
         git_dir_path = pathlib.Path(git_dir)
         if not git_dir_path.is_absolute():
             git_dir_path = cwd / git_dir_path
+        probe_env = os.environ.copy()
+        probe_env.pop("GIT_DIR", None)
+        probe_env.pop("GIT_WORK_TREE", None)
+        # 主判定の設定エラーでGitディレクトリの解決確認まで失敗しないよう、設定読込を隔離する。
+        probe_env["GIT_CONFIG_NOSYSTEM"] = "1"
+        probe_env["GIT_CONFIG_GLOBAL"] = os.devnull
         try:
-            if git_dir_path.exists():
-                # 実在するGitディレクトリを環境変数で指定している場合、cwdの祖先だけでは作業ツリー外を証明できない。
-                return "unknown"
-        except OSError:
+            resolve_result = subprocess.run(
+                ["git", "rev-parse", "--resolve-git-dir", str(git_dir_path)],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=10,
+                check=False,
+                cwd=str(cwd),
+                env=probe_env,
+            )
+        except subprocess.TimeoutExpired:
+            return "unknown"
+        if resolve_result.returncode == 0:
+            # Gitの対象を環境変数で指定している場合、cwdの祖先だけでは作業ツリー外を証明できない。
             return "unknown"
     try:
         current = cwd.resolve()
