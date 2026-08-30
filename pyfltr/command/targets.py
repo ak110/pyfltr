@@ -255,8 +255,9 @@ def _work_tree_state(cwd: pathlib.Path) -> typing.Literal["inside", "outside", "
     終了コードが非0のときは、リポジトリを発見できない状態と、発見したうえで利用を拒否した状態
     （別所有者の`detected dubious ownership`など）の双方があり、gitの終了コードでは区別できない。
     後者では`.git`が祖先に存在するため、祖先探索で`outside`と`unknown`へ分ける。
-    `GIT_DIR`または`GIT_WORK_TREE`が環境変数で指定されている場合は、Gitの対象が祖先の`.git`に
-    限られないため、終了コード128では`unknown`とする。
+    `GIT_DIR`で指定されたパスが存在する場合は、Gitの対象が祖先の`.git`に限られないため、終了コード128では
+    `unknown`とする。`GIT_WORK_TREE`だけの指定や、存在しない`GIT_DIR`の指定は、Gitディレクトリを追加で
+    成立させないため祖先探索へ進む。
     git 2.43.0の実測では、作業ツリー内は終了コード0と`true`、bareリポジトリは終了コード0と
     `false`、非リポジトリは終了コード128と空の標準出力、所有者検査に失敗する作業ツリー内は
     終了コード128と`detected dubious ownership`のエラーを返す。
@@ -276,9 +277,17 @@ def _work_tree_state(cwd: pathlib.Path) -> typing.Literal["inside", "outside", "
         return "unknown"
     if result.returncode == 0:
         return "inside" if result.stdout.strip() == "true" else "outside"
-    if any(name in os.environ for name in ("GIT_DIR", "GIT_WORK_TREE")):
-        # Gitの対象を環境変数で指定している場合、cwdの祖先だけでは作業ツリー外を証明できない。
-        return "unknown"
+    git_dir = os.environ.get("GIT_DIR")
+    if git_dir:
+        git_dir_path = pathlib.Path(git_dir)
+        if not git_dir_path.is_absolute():
+            git_dir_path = cwd / git_dir_path
+        try:
+            if git_dir_path.exists():
+                # 実在するGitディレクトリを環境変数で指定している場合、cwdの祖先だけでは作業ツリー外を証明できない。
+                return "unknown"
+        except OSError:
+            return "unknown"
     try:
         current = cwd.resolve()
     except OSError:

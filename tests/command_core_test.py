@@ -1480,10 +1480,15 @@ def test_expand_all_files_warns_when_git_env_overrides_worktree_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Gitの環境指定がある場合、祖先外の判定不能な128を警告なしで外側としない。"""
-    (tmp_path / "ok.py").write_text("x = 1\n")
-    (tmp_path / "ignored.py").write_text("y = 2\n")
-    monkeypatch.setenv("GIT_DIR", str(tmp_path / "external.git"))
-    monkeypatch.setenv("GIT_WORK_TREE", str(tmp_path / "worktree"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, capture_output=True, check=True)
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+    (worktree / "ok.py").write_text("x = 1\n")
+    (worktree / "ignored.py").write_text("y = 2\n")
+    monkeypatch.setenv("GIT_DIR", str(repo / ".git"))
+    monkeypatch.setenv("GIT_WORK_TREE", str(worktree))
     check_ignore_result = subprocess.CompletedProcess(
         args=["git", "check-ignore"],
         returncode=128,
@@ -1510,7 +1515,7 @@ def test_expand_all_files_warns_when_git_env_overrides_worktree_state(
 
     original_cwd = pathlib.Path.cwd()
     try:
-        os.chdir(tmp_path)
+        os.chdir(worktree)
         pyfltr.warnings_.clear()
         config = pyfltr.config.config.create_default_config()
         all_files = pyfltr.command.targets.expand_all_files([], config)
@@ -1519,6 +1524,54 @@ def test_expand_all_files_warns_when_git_env_overrides_worktree_state(
         assert "ok.py" in names
         assert "ignored.py" not in names
         assert any(w["source"] == "git" and "128" in w["message"] for w in collected)
+    finally:
+        pyfltr.warnings_.clear()
+        os.chdir(original_cwd)
+
+
+def test_expand_all_files_keeps_files_with_git_work_tree_only(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GIT_WORK_TREEだけが指定された非Gitディレクトリでは128の警告を抑止しない。"""
+    (tmp_path / "ok.py").write_text("x = 1\n")
+    (tmp_path / "ignored.py").write_text("y = 2\n")
+    monkeypatch.delenv("GIT_DIR", raising=False)
+    monkeypatch.setenv("GIT_WORK_TREE", str(tmp_path))
+    check_ignore_result = subprocess.CompletedProcess(
+        args=["git", "check-ignore"],
+        returncode=128,
+        stdout="ignored.py\0",
+        stderr="fatal: not a git repository\n",
+    )
+    rev_parse_result = subprocess.CompletedProcess(
+        args=["git", "rev-parse", "--is-inside-work-tree"],
+        returncode=128,
+        stdout="",
+        stderr="fatal: not a git repository\n",
+    )
+    original_run = subprocess.run
+
+    def fake_run(args: list[str], **kwargs: typing.Any) -> typing.Any:
+        if args[:2] == ["git", "check-ignore"] and "--stdin" in args:
+            return check_ignore_result
+        if args == ["git", "rev-parse", "--is-inside-work-tree"]:
+            return rev_parse_result
+        kwargs.pop("check", None)
+        return original_run(args, check=False, **kwargs)
+
+    monkeypatch.setattr("pyfltr.command.targets.subprocess.run", fake_run)
+
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        pyfltr.warnings_.clear()
+        config = pyfltr.config.config.create_default_config()
+        all_files = pyfltr.command.targets.expand_all_files([], config)
+        names = {p.name for p in pyfltr.command.targets.filter_by_globs(all_files, ["*.py"])}
+        collected = pyfltr.warnings_.collected_warnings()
+        assert names == {"ok.py", "ignored.py"}
+        assert not [w for w in collected if w["source"] == "git"]
     finally:
         pyfltr.warnings_.clear()
         os.chdir(original_cwd)
