@@ -2,6 +2,7 @@
 
 import contextlib
 import functools
+import os
 import pathlib
 import subprocess
 import typing
@@ -254,11 +255,12 @@ def _work_tree_state(cwd: pathlib.Path) -> typing.Literal["inside", "outside", "
     終了コードが非0のときは、リポジトリを発見できない状態と、発見したうえで利用を拒否した状態
     （別所有者の`detected dubious ownership`など）の双方があり、gitの終了コードでは区別できない。
     後者では`.git`が祖先に存在するため、祖先探索で`outside`と`unknown`へ分ける。
+    `GIT_DIR`または`GIT_WORK_TREE`が環境変数で指定されている場合は、Gitの対象が祖先の`.git`に
+    限られないため、終了コード128では`unknown`とする。
     git 2.43.0の実測では、作業ツリー内は終了コード0と`true`、bareリポジトリは終了コード0と
     `false`、非リポジトリは終了コード128と空の標準出力、所有者検査に失敗する作業ツリー内は
     終了コード128と`detected dubious ownership`のエラーを返す。
-    `GIT_DIR`だけでリポジトリを指定し、かつgitが利用を拒否する構成は`.git`が祖先に無いため
-    `outside`と判定する。タイムアウトで実行できない場合は`unknown`とする。
+    タイムアウトで実行できない場合は`unknown`とする。
     """
     try:
         result = subprocess.run(
@@ -274,6 +276,9 @@ def _work_tree_state(cwd: pathlib.Path) -> typing.Literal["inside", "outside", "
         return "unknown"
     if result.returncode == 0:
         return "inside" if result.stdout.strip() == "true" else "outside"
+    if any(name in os.environ for name in ("GIT_DIR", "GIT_WORK_TREE")):
+        # Gitの対象を環境変数で指定している場合、cwdの祖先だけでは作業ツリー外を証明できない。
+        return "unknown"
     try:
         current = cwd.resolve()
     except OSError:

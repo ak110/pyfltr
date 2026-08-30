@@ -1475,6 +1475,55 @@ def test_expand_all_files_warns_when_git_worktree_state_is_unknown(
         os.chdir(original_cwd)
 
 
+def test_expand_all_files_warns_when_git_env_overrides_worktree_state(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Gitの環境指定がある場合、祖先外の判定不能な128を警告なしで外側としない。"""
+    (tmp_path / "ok.py").write_text("x = 1\n")
+    (tmp_path / "ignored.py").write_text("y = 2\n")
+    monkeypatch.setenv("GIT_DIR", str(tmp_path / "external.git"))
+    monkeypatch.setenv("GIT_WORK_TREE", str(tmp_path / "worktree"))
+    check_ignore_result = subprocess.CompletedProcess(
+        args=["git", "check-ignore"],
+        returncode=128,
+        stdout="ignored.py\0",
+        stderr="fatal: bad config\n",
+    )
+    rev_parse_result = subprocess.CompletedProcess(
+        args=["git", "rev-parse", "--is-inside-work-tree"],
+        returncode=128,
+        stdout="",
+        stderr="fatal: bad config\n",
+    )
+    original_run = subprocess.run
+
+    def fake_run(args: list[str], **kwargs: typing.Any) -> typing.Any:
+        if args[:2] == ["git", "check-ignore"] and "--stdin" in args:
+            return check_ignore_result
+        if args == ["git", "rev-parse", "--is-inside-work-tree"]:
+            return rev_parse_result
+        kwargs.pop("check", None)
+        return original_run(args, check=False, **kwargs)
+
+    monkeypatch.setattr("pyfltr.command.targets.subprocess.run", fake_run)
+
+    original_cwd = pathlib.Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        pyfltr.warnings_.clear()
+        config = pyfltr.config.config.create_default_config()
+        all_files = pyfltr.command.targets.expand_all_files([], config)
+        names = {p.name for p in pyfltr.command.targets.filter_by_globs(all_files, ["*.py"])}
+        collected = pyfltr.warnings_.collected_warnings()
+        assert "ok.py" in names
+        assert "ignored.py" not in names
+        assert any(w["source"] == "git" and "128" in w["message"] for w in collected)
+    finally:
+        pyfltr.warnings_.clear()
+        os.chdir(original_cwd)
+
+
 def test_expand_all_files_keeps_outside_repo_symlink_target(tmp_path: pathlib.Path) -> None:
     """cwdリポジトリ外に解決されるシンボリックリンク先はgitignore判定対象外として残る。"""
     repo = tmp_path / "repo"
