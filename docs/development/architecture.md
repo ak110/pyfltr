@@ -652,6 +652,9 @@ MCPサーバー・`--only-failed`からも再利用する。
 - 直前runが存在しない、失敗ツールが無い、ターゲット交差が空となった場合はメッセージを出力して
   成功終了（rc=0）する
 - 位置引数`targets`との併用時は、直前runの失敗ファイル集合と`targets`を交差させる
+- モノレポ分割実行では、`ToolTargets.resolve_files()`が当該サブプロジェクトの対象ファイル一覧
+  （`ExecutionContext.all_files`）とも交差させる。起点cwd全体で抽出した失敗ファイル集合を
+  所属しないサブプロジェクトへ渡さないため
 
 フィルタリングは`run_pipeline`内のファイル展開直後・archive/cache初期化前に行う。
 今回のrunのrun_id/cache_storeに影響させないため。

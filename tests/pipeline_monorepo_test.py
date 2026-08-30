@@ -18,6 +18,8 @@ import pytest
 
 import pyfltr.cli.main
 import pyfltr.warnings_
+from tests.conftest import make_error_location as _make_error
+from tests.conftest import seed_archive_run as _seed_run
 
 
 def _make_subproject(path: pathlib.Path, *, name: str = "pkg") -> None:
@@ -68,6 +70,29 @@ def _pytest_call_count(mock_run) -> int:
     for call in mock_run.call_args_list:
         commandline = call.args[0] if call.args else []
         if commandline and "pytest" in " ".join(commandline):
+            count += 1
+    return count
+
+
+def _mypy_cwds(mock_run) -> set[pathlib.Path]:
+    """`run_subprocess` モックから mypy が起動された cwd 集合を抽出する。"""
+    cwds: set[pathlib.Path] = set()
+    for call in mock_run.call_args_list:
+        commandline = call.args[0] if call.args else []
+        if not commandline or "mypy" not in " ".join(commandline):
+            continue
+        cwd_value = call.kwargs.get("cwd")
+        if cwd_value is not None:
+            cwds.add(pathlib.Path(cwd_value).resolve())
+    return cwds
+
+
+def _mypy_call_count(mock_run) -> int:
+    """`run_subprocess` モックから mypy 起動回数を数える。"""
+    count = 0
+    for call in mock_run.call_args_list:
+        commandline = call.args[0] if call.args else []
+        if commandline and "mypy" in " ".join(commandline):
             count += 1
     return count
 
@@ -558,6 +583,55 @@ def test_monorepo_tool_resolution_warning_is_emitted_once(
         if warning["source"] == "tool-resolve" and warning["message"].startswith("mypy:")
     ]
     assert len(messages) == 1
+
+
+def test_monorepo_only_failed_targets_are_limited_to_subproject(
+    tmp_path: pathlib.Path,
+    mocker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """モノレポの `--only-failed` は失敗ファイルが所属するサブプロジェクトだけで実行する。"""
+    config_extra = 'mypy = true\nmypy-runner = "direct"\n'
+    _write_pyproject(tmp_path, "root", extra=config_extra)
+    _write_pyproject(tmp_path / "pkg_a", "pkg_a", extra=config_extra)
+    _write_pyproject(tmp_path / "pkg_b", "pkg_b", extra=config_extra)
+    (tmp_path / "root.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "pkg_a" / "a.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "pkg_b" / "b.py").write_text("x = 1\n", encoding="utf-8")
+
+    cache_root = tmp_path / "cache"
+    monkeypatch.setenv("PYFLTR_CACHE_DIR", str(cache_root))
+    _seed_run(
+        cache_root,
+        commands=["mypy"],
+        files=3,
+        exit_code=1,
+        tool_results=[("mypy", 1, "", [_make_error("mypy", "pkg_a/a.py", 1, "e")])],
+    )
+
+    proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
+
+    pyfltr.cli.main.run(
+        [
+            "run",
+            "--work-dir",
+            str(tmp_path),
+            "--commands=mypy",
+            "--only-failed",
+            "--no-cache",
+            "--no-gitignore",
+        ]
+    )
+
+    assert _mypy_call_count(mock_run) == 1
+    assert _mypy_cwds(mock_run) == {(tmp_path / "pkg_a").resolve()}
+    mypy_calls = [
+        call
+        for call in mock_run.call_args_list
+        if call.args and isinstance(call.args[0], list) and "mypy" in " ".join(call.args[0])
+    ]
+    assert mypy_calls[0].args[0][-1] == pathlib.Path("a.py").as_posix()
 
 
 def test_monorepo_external_only_warning_and_record_are_emitted_once(

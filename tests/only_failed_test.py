@@ -53,12 +53,14 @@ def test_tool_targets_resolve_files_fallback_returns_all_files(tmp_path: pathlib
 
 
 def test_tool_targets_resolve_files_files_mode(tmp_path: pathlib.Path) -> None:
-    """filesモードはself.filesのリストを返す。"""
+    """filesモードはall_filesとの交差をall_filesの順序で返し、交差空では空リストを返す。"""
     a = tmp_path / "a.py"
     b = tmp_path / "b.py"
-    t = pyfltr.state.only_failed.ToolTargets.with_files([a])
-    # b は含まれない
-    assert t.resolve_files([a, b]) == [a]
+    c = tmp_path / "c.py"
+    d = tmp_path / "d.py"
+    t = pyfltr.state.only_failed.ToolTargets.with_files([a, c, b])
+    assert t.resolve_files([b, a]) == [b, a]
+    assert not t.resolve_files([d])
 
 
 def test_tool_targets_is_frozen() -> None:

@@ -95,7 +95,12 @@ format別のlogger stream/level切替の詳細は[docs/development/architecture.
 ## 実装上の不変条件
 
 - `subproject_aware=True`ツールはサブプロジェクトループの内側で動く前提で実装する。
-  ツール起動時のcwdは`ExecutionContext.subproject_cwd`（指定時）または起点cwdを採用する
+  ツール起動時のcwdは`ExecutionContext.subproject_cwd`（指定時）または起点cwdを採用する。
+  対象ファイル集合は`ExecutionContext.all_files`から取得する。
+  同プロパティはサブプロジェクト分割実行時に当該サブプロジェクト分だけを返すため、
+  起点cwd全体を母数として構築した集合をそのまま対象へ渡さない。
+  `ExecutionContext`へファイル集合を保持する状態を追加する場合は、
+  当該集合を`all_files`と交差させる経路を持たせる
 - subprocess・git・mise・ファイル走査などcwd依存処理はプロセスのcwdに依存しない実装にする。
   `subprocess.Popen(cwd=...)`の引数、または`start_cwd`・`base_cwd`・`cwd`等の
   明示引数でcwdを渡す。`os.chdir()`でグローバル状態を変更しない
