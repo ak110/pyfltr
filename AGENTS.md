@@ -60,6 +60,10 @@ JSON Lines出力（`--output-format=jsonl`）とMCPサーバー（`pyfltr mcp`�
   - `make test`・`uv run pyfltr run`が実行するPythonは開発環境の単一バージョン（`.python-version`）であり、
     CIが実行するバージョンの範囲（`.github/workflows/ci.yaml`のマトリクス）とは一致しない。
     これらのコマンドの成功はCIの通過を意味しない
+    - Linuxのマトリクスは、基準とする1つの版だけが`pyfltr ci`による全検査を担い、
+      他の版は`--commands=pytest`で実行時互換性だけを検証する
+      （対象の版は`.github/workflows/ci.yaml`を参照）。
+      静的解析とカスタムチェックの指摘は、基準版のジョブとWindowsのジョブにだけ現れる
     - `tokenize`・`ast`などPythonのバージョンにより解析結果が変わる標準ライブラリを用いる処理を
       新設または変更する場合は、開発環境での実行成功を検証の完了条件としない
     - 当該処理へ与える入力を関数へ直接渡す検体をテストへ用意し、

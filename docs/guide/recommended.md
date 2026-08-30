@@ -729,8 +729,14 @@ jobs:
           key: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}-
 
-      - name: Run pyfltr
+      # 静的解析は基準とする1つの版だけで実行し、他の版はpytestで実行時互換性だけを検証する。
+      - name: Run pyfltr（全検査）
+        if: ${{ matrix.python-version == '3.14' }}
         run: pyfltr ci --output-format=github-annotations
+
+      - name: Run pyfltr（pytestのみ）
+        if: ${{ matrix.python-version != '3.14' }}
+        run: pyfltr ci --commands=pytest --output-format=github-annotations
 ```
 
 ポイント。
@@ -766,6 +772,15 @@ jobs:
 - `pyfltr ci`: イメージ同梱のpyfltrをそのまま使う
     - uvキャッシュを介した解決を毎回経由せず、コンテナビルド時に確定したバージョンで実行できる
     - 特定バージョンに固定したい場合は`image:`のタグ（`vX.Y.Z`）で揃える
+- 基準版だけの全検査: 静的解析（型検査・pylint・文書検査など）はPythonの版により結果が変わり得るが、
+  対応版ごとに重複実行すると所要時間が版数に比例して増える。
+  利用比重が最も高い最新安定版だけで`pyfltr ci`を実行し、
+  他の版は`--commands=pytest`で実行時互換性だけを検証する
+    - `tokenize`・`ast`などPythonの版で解析結果が変わる標準ライブラリを使うプロジェクトでは、
+      pytestを全対応版で実行して版差を検出する
+    - 対応版を追加・変更する場合は、全検査を担う版が1つだけになるよう両ステップの`if`を更新する
+    - 全対応版で静的解析まで実行する場合は、pytestのみのステップを削除し、
+      全検査ステップの`if`を外す
 - `--output-format=github-annotations`: `::error file=...` / `::warning file=...`形式の行を標準出力へ出力する
     - プル要求の該当ファイル行にコメントとして表示される
 
@@ -775,10 +790,11 @@ CIログのみでは失敗原因を切り分けられない場合（手元で再
 実行アーカイブを失敗時のジョブ成果物として保存する構成を追加できる。
 
 ````yaml
-      - name: Run pyfltr
-        env:
-          PYFLTR_CACHE_DIR: /tmp/pyfltr-ci-archive
-        run: pyfltr ci --output-format=github-annotations
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
+      PYFLTR_CACHE_DIR: /tmp/pyfltr-ci-archive
+    steps:
+      # pyfltrを実行するステップは前掲の構成のまま
 
       - name: 失敗時に実行アーカイブを保存
         if: failure()
@@ -792,6 +808,7 @@ CIログのみでは失敗原因を切り分けられない場合（手元で再
 `PYFLTR_CACHE_DIR`を明示するのは、既定の保存先（`platformdirs.user_cache_dir`）が
 `container:`ジョブでは`$HOME`上書きの影響を受け不安定になり得るため。依存キャッシュ
 （`/cache`配下）とは別パスを選び、アーカイブが依存キャッシュへ混入しないようにする。
+保存先をジョブの`env`へ置くのは、pyfltrを実行するステップが版ごとに分かれても保存先の指定を1箇所に保つためである。
 
 ### 追加のシステムパッケージが必要な場合
 
@@ -846,7 +863,10 @@ jobs:
         with:
           version: latest
       - run: pnpm config set minimum-release-age 1440 --global
-      - run: uvx pyfltr ci --output-format=github-annotations
+      - if: ${{ matrix.python-version == '3.14' }}
+        run: uvx pyfltr ci --output-format=github-annotations
+      - if: ${{ matrix.python-version != '3.14' }}
+        run: uvx pyfltr ci --commands=pytest --output-format=github-annotations
       - run: uv cache prune --ci
 ```
 

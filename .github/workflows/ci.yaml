@@ -107,11 +107,22 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-groups --all-extras
 
-      - name: Test with pyfltr
+      # 静的解析はPythonの版により結果が変わり得るが、対応版ごとに重複実行すると所要時間が版数に比例して増える。
+      # 利用比重が最も高い最新安定版（3.14）を基準とし、当該版だけで全検査を実行する。
+      # 他の版は`tokenize`・`ast`等の版差を検証するpytestだけを実行する。
+      # 対応版を追加・変更する場合は、全検査を実行する版が1つだけになるよう両ステップの条件を更新する。
+      - name: Test with pyfltr (全検査)
+        if: ${{ matrix.python-version == '3.14' }}
         # `CI=true` を明示し、smoke test がツール不在時にスキップせず失敗扱いとなるようにする。
         env:
           CI: "true"
         run: uv run pyfltr ci --output-format=github-annotations
+
+      - name: Test with pyfltr (pytestのみ)
+        if: ${{ matrix.python-version != '3.14' }}
+        env:
+          CI: "true"
+        run: uv run pyfltr ci --commands=pytest --output-format=github-annotations
 
       - name: 失敗時に実行アーカイブを成果物として保存
         if: failure()
