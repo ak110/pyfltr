@@ -44,6 +44,7 @@ pyfltr grep -F "exact_string" docs/
 - `-g/--glob PAT`: globフィルタ
 - `--encoding ENC`: ファイル読み込みエンコーディング
 - `--max-filesize BYTES`: ファイルサイズ上限
+- `--max-preview-chars N`: 返却する本文1件あたりの文字数上限（既定200、0で無制限）
 - `--no-exclude`/`--no-gitignore`: pyfltr設定の無効化
 - `--output-format text|json|jsonl`: 出力形式
 
@@ -54,6 +55,54 @@ pyfltr grep -F "exact_string" docs/
 - `jsonl`: header → match行 → summary行のストリーム
 
 `AI_AGENT` / `CODEX_CI` / `CLAUDECODE` / `CURSOR_AGENT`環境変数のいずれかが設定されている場合は`jsonl`が既定値となる。
+
+### マッチ本文のプレビュー上限
+
+grepが返す本文（マッチ行`line_text`・マッチ文字列`match_text`・前後コンテキスト）は、
+1件あたり既定200文字までのプレビューとして返る。
+minifiedファイルやsource mapのような巨大な単一行に一致した場合でも、
+1件のマッチが応答全体を占有しない。
+この上限はCLIのtext・json・jsonlとMCPの`grep`ツールへ同じ値で適用する。
+
+検索・件数上限（`-m`/`--max-total`）・集計（`-l`/`-c`/`--files-without-match`）は
+切り詰め前の全文を対象とするため、上限を変えてもマッチ件数と集計結果は変わらない。
+
+`--max-preview-chars=0`を指定すると切り詰めを行わず、この上限を導入する前と同じ本文が返る。
+返るのは`splitlines()`が返す行本文であり、行末の改行文字は従来どおり含まない。
+
+切り詰めが1件でも発生した実行では、経路を問わず警告を返す。
+text形式はwarningsセクション、jsonl形式は`kind:"warning"`レコードとsummaryの`warnings`件数、
+json形式はpayloadの`warnings`配列とsummaryの`warnings`件数、MCPは戻り値の`warnings`で受け取る。
+
+json形式の`warnings`要素は`source`と`msg`を持ち、対処の手掛かりを伴う警告だけが`hint`を持つ。
+jsonl形式の`kind:"warning"`レコードから`kind`を除いたキー集合と同じで、summaryの`warnings`はその要素数を示す。
+MCPの`warnings`は警告本文だけを並べた文字列の配列となる。
+
+json形式とjsonl形式のマッチには、切り詰めが発生した場合だけ次のキーが付く。
+
+- `truncated`: 切り詰めが発生したフィールド名の一覧（`line_text`・`match_text`・`before`・`after`）
+- `line_text_offset`: `line_text`を切り出した開始位置（0-origin文字数）。
+  行頭から切り出した場合は付かない
+
+通常の文字から始まる一致では、`line_text`をマッチ開始位置を含む範囲で切り出すため、
+行のどこに一致した場合でも一致箇所が範囲内に入る。
+`col`は切り出し前の行における位置を示す。
+
+マルチライン検索で一致が改行から始まる場合、`line`・`col`は正規表現の一致開始位置をそのまま示す。
+`line_text`は行末の改行を含まないため、この場合の`col`は`line_text`の行末直後を指し、
+切り詰め時は`col - line_text_offset`がプレビュー長より1大きくなる。
+実際に一致した改行と後続文字は`match_text`が保持する。
+
+text形式は、マッチ行`line_text`を切り詰めた場合だけ本文の前へ切り出し開始位置を付ける。
+
+```text
+src/app.min.js:1:20010:[+19909] ...(200文字のプレビュー)...
+```
+
+通常の文字から始まる一致では、`col`から`[+N]`の値を引くと、プレビュー内の位置（1-origin）が求まる。
+マッチ行が上限以下の場合は従来どおり`path:line:col:line_text`の形式で、
+改行以外から始まる一致の`col`はそのまま`line_text`内の位置を指す。
+マッチ文字列や前後の行だけが切り詰められた場合もマッチ行の表示は変わらず、切り詰めは警告で通知する。
 
 ### grep→replace連携
 
@@ -151,6 +200,8 @@ pyfltr replace "old" "new" config.toml --within "\[section\]" -C 2
   `summary_mode`は`files_with_matches`・`count`・`files_without_match`のいずれかを受け取り、
   マッチ明細を空にして対応する集計結果を返す。
   `files_without_match`では全ファイルの確認が必要なため、正の`max_total`を併用できない
+  `max_preview_chars`は返却する本文1件あたりの文字数上限（既定200、0で無制限）で、
+  切り詰めが発生した場合は`matches[].truncated`・`matches[].line_text_offset`と戻り値の`warnings`で通知する
 - `replace(pattern, replacement, paths, dry_run=True, within=None, from_grep=None, context=None, ...)`:
   横断置換。`from_grep`はgrepのJSONL出力から対象ファイルを限定する。
   `context`は`within`で指定したアンカーの前後幅を一括指定する。

@@ -158,6 +158,13 @@ class GrepMatchModel(pydantic.BaseModel):
     line_text: str = pydantic.Field(description="マッチを含む行の本文（改行除く）。")
     before: list[str] = pydantic.Field(default_factory=list, description="`-B`コンテキストの前行群。")
     after: list[str] = pydantic.Field(default_factory=list, description="`-A`コンテキストの後行群。")
+    line_text_offset: int = pydantic.Field(
+        default=0, description="`line_text`を切り出した開始位置（0-origin文字数）。行頭から切り出した場合は0。"
+    )
+    truncated: list[str] = pydantic.Field(
+        default_factory=list,
+        description="切り詰めが発生したフィールド名の一覧（line_text / match_text / before / after）。",
+    )
 
 
 class GrepFileCountModel(pydantic.BaseModel):
@@ -174,6 +181,7 @@ class GrepResultModel(pydantic.BaseModel):
     total_matches: int = pydantic.Field(description="全マッチ件数。")
     files_scanned: int = pydantic.Field(description="走査したファイル数。")
     exit_code: int = pydantic.Field(description="終了コード。マッチあり=0、マッチなし=1。")
+    warnings: list[str] = pydantic.Field(default_factory=list, description="実行中に発行された警告メッセージ。")
     fully_excluded_files: list[str] = pydantic.Field(
         default_factory=list,
         description="直接指定がexclude / .gitignoreで対象外になったファイル一覧。",

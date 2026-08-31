@@ -57,6 +57,7 @@ import pyfltr.command.targets
 import pyfltr.config.config
 import pyfltr.grep_.history
 import pyfltr.grep_.matcher
+import pyfltr.grep_.preview
 import pyfltr.grep_.replacer
 import pyfltr.grep_.scanner
 import pyfltr.paths
@@ -476,6 +477,7 @@ async def tool_grep(
     globs: list[str] | None = None,
     encoding: str = "utf-8",
     max_filesize: int | None = None,
+    max_preview_chars: int = pyfltr.grep_.preview.DEFAULT_MAX_PREVIEW_CHARS,
     no_exclude: bool = False,
     no_gitignore: bool = False,
 ) -> GrepResultModel:
@@ -508,6 +510,7 @@ async def tool_grep(
         globs: globパターンでの対象限定一覧。
         encoding: ファイル読み込み時のエンコーディング（既定: utf-8）。
         max_filesize: 走査対象ファイルサイズの上限（バイト単位）。
+        max_preview_chars: 返却する本文1件あたりの文字数上限（0で無制限）。
         no_exclude: exclude/extend-excludeによる除外を無効化する。
         no_gitignore: .gitignoreによる除外を無効化する。
     """
@@ -569,6 +572,7 @@ async def tool_grep(
     matches: list[GrepMatchModel] = []
     per_file_counts: dict[pathlib.Path, int] = {}
     total_matches = 0
+    truncated_matches = 0
     for record in pyfltr.grep_.scanner.scan_files(
         expanded,
         compiled,
@@ -584,16 +588,21 @@ async def tool_grep(
             total_matches += 1
             per_file_counts[record.file] = per_file_counts.get(record.file, 0) + 1
             if summary_mode is None:
+                preview = pyfltr.grep_.preview.build_match_preview(record, max_chars=max_preview_chars)
+                if preview.truncated:
+                    truncated_matches += 1
                 matches.append(
                     GrepMatchModel(
                         file=pyfltr.paths.normalize_separators(record.file),
                         line=record.line,
                         col=record.col,
                         end_col=record.end_col,
-                        match_text=record.match_text,
-                        line_text=record.line_text,
-                        before=list(record.before_lines),
-                        after=list(record.after_lines),
+                        match_text=preview.match_text,
+                        line_text=preview.line_text,
+                        before=list(preview.before_lines),
+                        after=list(preview.after_lines),
+                        line_text_offset=preview.line_text_offset,
+                        truncated=list(preview.truncated_fields),
                     )
                 )
 
@@ -613,11 +622,21 @@ async def tool_grep(
         if summary_mode == "files_without_match"
         else []
     )
+    if truncated_matches > 0:
+        pyfltr.warnings_.emit_warning(
+            source="grep",
+            message=pyfltr.grep_.preview.build_truncation_warning(
+                truncated_matches=truncated_matches,
+                max_chars=max_preview_chars,
+                full_text_hint="`max_preview_chars=0`",
+            ),
+        )
     return GrepResultModel(
         matches=matches,
         total_matches=total_matches,
         files_scanned=files_scanned,
         exit_code=0 if total_matches > 0 else 1,
+        warnings=[str(entry["message"]) for entry in pyfltr.warnings_.collected_warnings()],
         fully_excluded_files=pyfltr.warnings_.filtered_direct_files(reason="excluded"),
         missing_targets=pyfltr.warnings_.filtered_direct_files(reason="missing"),
         summary_mode=summary_mode,

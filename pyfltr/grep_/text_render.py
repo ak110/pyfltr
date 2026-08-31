@@ -12,16 +12,18 @@ import typing
 
 import pyfltr.cli.output_format
 import pyfltr.paths
+from pyfltr.grep_.preview import MatchPreview
 from pyfltr.grep_.types import MatchRecord, ReplaceRecord
 
 
-def render_match(record: MatchRecord) -> None:
+def render_match(record: MatchRecord, preview: MatchPreview) -> None:
     """grepの1マッチを`path:line:col:line_text`形式で1行出力する。
 
     `before`・`after`コンテキストは省略する（テキスト出力ではマッチ本体のみで十分）。
     """
     path = pyfltr.paths.normalize_separators(str(record.file))
-    line = f"{path}:{record.line}:{record.col}:{record.line_text}"
+    preview_prefix = f"[+{preview.line_text_offset}] " if preview.line_text_truncated else ""
+    line = f"{path}:{record.line}:{record.col}:{preview_prefix}{preview.line_text}"
     with pyfltr.cli.output_format.text_output_lock:
         pyfltr.cli.output_format.text_logger.info(line)
 

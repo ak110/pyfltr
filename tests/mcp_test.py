@@ -22,6 +22,7 @@ import pytest
 import pyfltr.cli.mcp_models
 import pyfltr.cli.mcp_server
 import pyfltr.command.slow_tests
+import pyfltr.grep_.preview
 import pyfltr.state.archive
 import pyfltr.state.runs
 from tests import conftest as _testconf
@@ -844,6 +845,12 @@ def test_tool_grep_max_total_default_is_none() -> None:
     assert signature.parameters["max_total"].default is None
 
 
+def test_tool_grep_max_preview_chars_default_is_shared_constant() -> None:
+    """本文プレビュー上限の既定値をCLIと共通の定数から解決する。"""
+    signature = inspect.signature(pyfltr.cli.mcp_server.tool_grep)
+    assert signature.parameters["max_preview_chars"].default == pyfltr.grep_.preview.DEFAULT_MAX_PREVIEW_CHARS
+
+
 @pytest.mark.asyncio
 async def test_tool_grep_context_applies_to_both_directions(tmp_path: pathlib.Path) -> None:
     """一括コンテキスト値をマッチ行の前後へ適用する。"""
@@ -935,6 +942,114 @@ async def test_tool_grep_max_total_limits_results(tmp_path: pathlib.Path) -> Non
 
     assert result.total_matches <= 5
     assert len(result.matches) <= 5
+
+
+@pytest.mark.asyncio
+async def test_tool_grep_truncates_long_line_and_warns(tmp_path: pathlib.Path) -> None:
+    """巨大な単一行を有界化し、切り詰め情報と警告を返す。"""
+    target = tmp_path / "long.txt"
+    target.write_text("x" * 250 + "needle" + "y" * 250 + "\n", encoding="utf-8")
+
+    result = await pyfltr.cli.mcp_server.tool_grep(
+        pattern="needle",
+        paths=[str(target)],
+    )
+
+    match = result.matches[0]
+    assert len(match.line_text) <= pyfltr.grep_.preview.DEFAULT_MAX_PREVIEW_CHARS
+    assert match.truncated == ["line_text"]
+    assert match.line_text_offset > 0
+    assert len(result.warnings) == 1
+    assert "max_preview_chars=0" in result.warnings[0]
+
+
+@pytest.mark.asyncio
+async def test_tool_grep_zero_preview_limit_returns_full_text(tmp_path: pathlib.Path) -> None:
+    """`max_preview_chars=0`は本文を切り詰めず警告も返さない。"""
+    target = tmp_path / "long.txt"
+    line_text = "x" * 250 + "needle" + "y" * 250
+    target.write_text(line_text + "\n", encoding="utf-8")
+
+    result = await pyfltr.cli.mcp_server.tool_grep(
+        pattern="needle",
+        paths=[str(target)],
+        max_preview_chars=0,
+    )
+
+    assert result.matches[0].line_text == line_text
+    assert not result.matches[0].truncated
+    assert result.matches[0].line_text_offset == 0
+    assert not result.warnings
+
+
+@pytest.mark.asyncio
+async def test_tool_grep_summary_count_is_independent_of_preview_limit(tmp_path: pathlib.Path) -> None:
+    """集計は本文プレビュー上限を適用せず全文のマッチ件数を返す。"""
+    target = tmp_path / "long.txt"
+    target.write_text(("x" * 300 + "needle\n") * 3, encoding="utf-8")
+
+    limited = await pyfltr.cli.mcp_server.tool_grep(
+        pattern="needle",
+        paths=[str(target)],
+        summary_mode="count",
+        max_preview_chars=10,
+    )
+    unlimited = await pyfltr.cli.mcp_server.tool_grep(
+        pattern="needle",
+        paths=[str(target)],
+        summary_mode="count",
+        max_preview_chars=0,
+    )
+
+    assert limited.file_counts == unlimited.file_counts
+    assert limited.total_matches == unlimited.total_matches == 3
+    assert not limited.warnings
+    assert not unlimited.warnings
+
+
+@pytest.mark.asyncio
+async def test_tool_grep_truncates_multiline_match_text(tmp_path: pathlib.Path) -> None:
+    """マルチライン一致の`match_text`を上限以内にし、対象フィールドを通知する。"""
+    target = tmp_path / "multiline.txt"
+    target.write_text("start\n" + "x" * 300 + "\nend\n", encoding="utf-8")
+
+    result = await pyfltr.cli.mcp_server.tool_grep(
+        pattern="start.*end",
+        paths=[str(target)],
+        multiline=True,
+        max_preview_chars=20,
+    )
+
+    match = result.matches[0]
+    assert len(match.match_text) == 20
+    assert match.line_text == "start"
+    assert match.truncated == ["match_text"]
+    assert match.line_text_offset == 0
+    assert len(result.warnings) == 1
+
+
+@pytest.mark.asyncio
+async def test_tool_grep_preserves_newline_started_match_origin(tmp_path: pathlib.Path) -> None:
+    """改行から始まるマッチの原位置・本文上限・一致文字列・警告を返す。"""
+    target = tmp_path / "multiline.txt"
+    target.write_text("x" * 500 + "\nneedle\n", encoding="utf-8")
+
+    result = await pyfltr.cli.mcp_server.tool_grep(
+        pattern="\nneedle",
+        paths=[str(target)],
+        multiline=True,
+        max_preview_chars=200,
+    )
+
+    match = result.matches[0]
+    assert match.line == 1
+    assert match.col == 501
+    assert len(match.line_text) == 200
+    assert match.line_text_offset == 300
+    assert match.col - match.line_text_offset == len(match.line_text) + 1
+    assert match.match_text == "\nneedle"
+    assert match.truncated == ["line_text"]
+    assert len(result.warnings) == 1
 
 
 @pytest.mark.asyncio

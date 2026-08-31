@@ -13,6 +13,7 @@ import typing
 
 import pyfltr.output.jsonl
 import pyfltr.paths
+from pyfltr.grep_.preview import MatchPreview
 from pyfltr.grep_.types import MatchRecord, ReplaceRecord
 
 
@@ -58,7 +59,7 @@ def emit_grep_header(
     _emit(record)
 
 
-def emit_match(record: MatchRecord) -> None:
+def emit_match(record: MatchRecord, preview: MatchPreview) -> None:
     """grepの1マッチをJSONLレコードとして出力する。
 
     `before`・`after`は`-B`・`-A`コンテキストで取得した行群を指定する。
@@ -69,15 +70,19 @@ def emit_match(record: MatchRecord) -> None:
         "file": pyfltr.paths.normalize_separators(str(record.file)),
         "line": record.line,
         "col": record.col,
-        "match_text": record.match_text,
-        "line_text": record.line_text,
+        "match_text": preview.match_text,
+        "line_text": preview.line_text,
     }
     if record.end_col is not None:
         payload["end_col"] = record.end_col
-    if record.before_lines:
-        payload["before"] = list(record.before_lines)
-    if record.after_lines:
-        payload["after"] = list(record.after_lines)
+    if preview.before_lines:
+        payload["before"] = list(preview.before_lines)
+    if preview.after_lines:
+        payload["after"] = list(preview.after_lines)
+    if preview.line_text_offset != 0:
+        payload["line_text_offset"] = preview.line_text_offset
+    if preview.truncated_fields:
+        payload["truncated"] = list(preview.truncated_fields)
     _emit(payload)
 
 
