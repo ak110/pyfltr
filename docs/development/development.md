@@ -15,7 +15,7 @@
 | --- | --- |
 | `make format` | 整形 + 軽量lint（開発時の手動実行用） |
 | `make test` | 全チェック実行（コミット前に通過させる。コーディングエージェントからの検証もこれを使う） |
-| `make update` | 依存更新 + prek autoupdate + アクション更新 + 全テスト |
+| `make update` | 依存更新 + prek autoupdate + アクション更新 + Dockerベースイメージdigest更新 + 全テスト |
 | `uv run mkdocs serve` | ドキュメントのローカルプレビュー |
 
 ## サプライチェーン攻撃対策
@@ -28,6 +28,7 @@
     - `.npmrc` の `minimum-release-age` で、pnpm経由で解決するパッケージにも同じ公開待機（1440分）を適用する。
       JS系ツールをmise・pnpm経由で起動するため、Python系の `exclude-newer` と対で必要となる
 - GitHub Actionsのサードパーティアクションはハッシュピン留めで固定する（`make update-actions`で更新）
+- 公式Dockerイメージのベースイメージはdigestで固定する（`make update-docker-base`で更新し、`make update`から呼び出す）
 
 依存パッケージの脆弱性検知はDependabot alertsと定期監査ワークフロー（`audit.yaml`）の2経路で行う。
 本リポジトリはPyPI配布のコマンドラインツールであり、利用者は`uvx`等で依存を解決したうえで実行するため、

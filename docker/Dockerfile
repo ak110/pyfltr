@@ -48,11 +48,12 @@
 
 # Stage 1: 基盤構築。
 # Python 3.14 (slim) の digest を固定する。
-# Renovate / Dependabot 等が更新しやすいよう ``image:tag@sha256`` の素直な形にする。
+# Renovate・Dependabot等の外部ツールと ``make update-docker-base`` が更新しやすいよう ``image:tag@sha256`` の素直な形にする。
+# ``make update-docker-base`` は ``AS base`` のdigestピン付きFROM行1件を対象とするため、この書式と行末の識別子を保つ。
 # base OS は CI 同梱バイナリ (mise 経由の lychee 等) の glibc 要件を満たす
 # Debian stable を採用する。glibc 要件が満たされず CI 同梱バイナリが起動しない事象が
 # 発生した場合は、当該バイナリのバージョン固定よりも先に base OS 更新を検討する。
-FROM python:3.14-slim-trixie@sha256:33ef7446e8c14b21cb247e23afbcdc90e98853b70812ca46b2265e769a7dfb8b AS base
+FROM python:3.14-slim-trixie@sha256:cae66f2ef0ec51a9891263eeee7f987dacf0a9879e8aa9353d5606e0530619a5 AS base
 
 # パイプを使う RUN で `set -o pipefail` 相当の挙動を得るため、SHELL を明示する
 # (hadolint DL4006 対応)。

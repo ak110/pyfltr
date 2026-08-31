@@ -6,12 +6,14 @@ JSON Lines出力（`--output-format=jsonl`）とMCPサーバー（`pyfltr mcp`�
 
 ## 開発手順
 
-- `make update`: 依存更新 + prek autoupdate + pinactアクション更新 + 全テスト実行
+- `make update`: 依存更新 + prek autoupdate + pinactアクション更新 + Dockerベースイメージdigest更新 + 全テスト実行
   - `make update-actions`: GitHub Actionsのハッシュピン更新のみ（mise経由でpinact実行）
     - pinactは`.github/workflows/`配下だけを更新する
     - ピンが変わった場合は、利用者向けドキュメントのCI設定例も確認する
       - 対象は`docs/guide/recommended.md`と`docs/guide/configuration-tools.md`
       - アクションのメジャー版表記がピン版と一致しなければ、同じ変更に含めて更新する
+  - `make update-docker-base`: `docker/Dockerfile`のベースイメージdigest更新のみ（docker未導入時はスキップ）
+    - `FROM python:<タグ>@sha256:<digest>`のdigestを、同じタグが現時点で指す値へ書き換える
 - 推奨ガイド（`docs/guide/recommended.md`・`docs/guide/recommended-nonpython.md`）と本リポジトリの設定は、
   双方の変更時に対応する既存設定へ同じ変更を反映する
   - 推奨ガイドを変更した場合は、設定例が提示する対象のうち本リポジトリに存在するものへ反映する。
