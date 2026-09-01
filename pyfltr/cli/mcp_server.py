@@ -67,6 +67,7 @@ import pyfltr.warnings_
 from pyfltr.cli.mcp_models import (
     CommandDiagnosticsModel,
     CommandInfoModel,
+    CommandMetaModel,
     CommandSummaryModel,
     ConfigResultModel,
     DiagnosticMessageModel,
@@ -175,10 +176,12 @@ async def tool_show_run(run_id: str) -> RunOverviewModel:
 
 
 async def tool_show_run_diagnostics(run_id: str, commands: list[str]) -> list[CommandDiagnosticsModel]:
-    """指定run・コマンドのtool.jsonとdiagnostics.jsonl全件を返す。
+    """指定run・コマンドのdiagnostics全件とコマンドのmeta情報を返す。
 
     `diagnostics`は`(command, file)`単位の集約形式で、個別指摘は`messages`に並ぶ。
-    rule→URL辞書`hint_urls`はtool.json由来でそのまま返す。
+    rule→URL辞書`hint_urls`とrule→ヒント辞書`hints`はtool.json由来でそのまま返す。
+    `command_meta`はtool.jsonから`commandline`を除いた項目で、検査対象ファイルの引数列を含めない。
+    完全な引数列は`pyfltr show-run <run_id> --commands=<name>`で取得する。
     `commands`に複数を指定すると、要素ごとの結果を入力順で返す。
 
     対応CLI: `pyfltr show-run <run_id> --commands <name1>,<name2>`
@@ -190,7 +193,7 @@ async def tool_show_run_diagnostics(run_id: str, commands: list[str]) -> list[Co
     results: list[CommandDiagnosticsModel] = []
     for command in commands:
         try:
-            command_meta = store.read_tool_meta(resolved, command)
+            tool_meta = store.read_tool_meta(resolved, command)
             diagnostics_raw = store.read_tool_diagnostics(resolved, command)
         except FileNotFoundError:
             _raise_mcp_error(f"run {resolved} にコマンド {command!r} の結果が保存されていません。")
@@ -202,10 +205,15 @@ async def tool_show_run_diagnostics(run_id: str, commands: list[str]) -> list[Co
             )
             for d in diagnostics_raw
         ]
-        hint_urls = command_meta.get("hint_urls") if isinstance(command_meta.get("hint_urls"), dict) else None
-        hints = command_meta.get("hints") if isinstance(command_meta.get("hints"), dict) else None
+        hint_urls = tool_meta.get("hint_urls") if isinstance(tool_meta.get("hint_urls"), dict) else None
+        hints = tool_meta.get("hints") if isinstance(tool_meta.get("hints"), dict) else None
         results.append(
-            CommandDiagnosticsModel(command_meta=command_meta, diagnostics=diagnostics, hint_urls=hint_urls, hints=hints)
+            CommandDiagnosticsModel(
+                command_meta=CommandMetaModel.model_validate(tool_meta),
+                diagnostics=diagnostics,
+                hint_urls=hint_urls,
+                hints=hints,
+            )
         )
     return results
 
@@ -1145,9 +1153,12 @@ def build_server() -> MCPServer:
     mcp.tool(
         name="show_run", description="指定 run の meta 情報とコマンド別サマリを返す。run_id は前方一致・latest エイリアス可。"
     )(tool_show_run)
-    mcp.tool(name="show_run_diagnostics", description="指定 run・コマンドの tool.json と diagnostics 全件を返す。")(
-        tool_show_run_diagnostics
-    )
+    mcp.tool(
+        name="show_run_diagnostics",
+        description=(
+            "指定run・コマンドのdiagnostics全件とコマンドのmeta情報を返す。meta情報は検査対象ファイルの引数列を含まない。"
+        ),
+    )(tool_show_run_diagnostics)
     mcp.tool(name="show_run_output", description="指定 run・コマンドの output.log 全文を返す。")(tool_show_run_output)
     mcp.tool(
         name="run_for_agent",

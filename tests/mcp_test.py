@@ -226,7 +226,14 @@ async def test_tool_show_run_diagnostics(tmp_path: pathlib.Path) -> None:
     results = await pyfltr.cli.mcp_server.tool_show_run_diagnostics(run_id, ["mypy"])
     assert len(results) == 1
     result = results[0]
-    assert result.command_meta["command"] == "mypy"
+    assert result.command_meta.command == "mypy"
+    assert result.command_meta.type == "linter"
+    assert result.command_meta.status == "failed"
+    assert result.command_meta.returncode == 1
+    assert result.command_meta.files == 1
+    assert result.command_meta.elapsed == 0.1
+    assert result.command_meta.diagnostics == 1
+    assert result.command_meta.has_error is True
     assert len(result.diagnostics) == 1
     diagnostic = result.diagnostics[0]
     assert diagnostic.file == "src/a.py"
@@ -238,11 +245,29 @@ async def test_tool_show_run_diagnostics(tmp_path: pathlib.Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_tool_show_run_diagnostics_restores_hints(tmp_path: pathlib.Path) -> None:
-    """tool.jsonにhintsが含まれる場合、`show_run_diagnostics`の戻り値に復元される。"""
-    # hintを持つErrorLocationでアーカイブを作成する
+async def test_tool_show_run_diagnostics_omits_commandline(tmp_path: pathlib.Path) -> None:
+    """検査対象ファイルの引数列を`command_meta`へ含めない。"""
+    store = pyfltr.state.archive.ArchiveStore(cache_root=tmp_path)
+    run_id = store.start_run(commands=["mypy"])
+    result = dataclasses.replace(
+        _make_result("mypy", returncode=1),
+        commandline=["mypy", "src/first.py", "src/second.py"],
+    )
+    store.write_tool_result(run_id, result)
+
+    results = await pyfltr.cli.mcp_server.tool_show_run_diagnostics(run_id, ["mypy"])
+    command_meta = results[0].command_meta.model_dump()
+    assert "commandline" not in command_meta
+    assert "src/first.py" not in json.dumps(command_meta)
+    assert "src/second.py" not in json.dumps(command_meta)
+
+
+@pytest.mark.asyncio
+async def test_tool_show_run_diagnostics_restores_hint_urls_and_hints(tmp_path: pathlib.Path) -> None:
+    """`hint_urls`と`hints`を専用フィールドだけへ復元する。"""
     error = _make_error("textlint", "a.md", 1, "長い文", col=1)
     error.rule = "ja-technical-writing/sentence-length"
+    error.rule_url = "https://example.com/sentence-length"
     error.hint = "句点で文を区切る"
     store = pyfltr.state.archive.ArchiveStore(cache_root=tmp_path)
     run_id = store.start_run(commands=["textlint"])
@@ -250,17 +275,43 @@ async def test_tool_show_run_diagnostics_restores_hints(tmp_path: pathlib.Path) 
     store.write_tool_result(run_id, result)
     store.finalize_run(run_id, exit_code=1)
 
-    # hintsがtool.jsonに保存されているか確認する
-    tool_json_path = tmp_path / "runs" / run_id / "tools" / "textlint" / "tool.json"
-    tool_meta = json.loads(tool_json_path.read_text(encoding="utf-8"))
-    assert "hints" in tool_meta
-    assert "ja-technical-writing/sentence-length" in tool_meta["hints"]
-
-    # show_run_diagnosticsでhintsが復元されることを確認する
     results = await pyfltr.cli.mcp_server.tool_show_run_diagnostics(run_id, ["textlint"])
     assert len(results) == 1
-    assert results[0].hints is not None
-    assert "ja-technical-writing/sentence-length" in results[0].hints
+    command_diagnostics = results[0]
+    assert command_diagnostics.hint_urls == {"ja-technical-writing/sentence-length": "https://example.com/sentence-length"}
+    assert command_diagnostics.hints == {"ja-technical-writing/sentence-length": "句点で文を区切る"}
+    assert "hint_urls" not in command_diagnostics.command_meta.model_dump()
+    assert "hints" not in command_diagnostics.command_meta.model_dump()
+
+
+@pytest.mark.asyncio
+async def test_tool_show_run_diagnostics_restores_optional_meta(tmp_path: pathlib.Path) -> None:
+    """遅いテスト一覧と再実行コマンドを`command_meta`へ復元する。"""
+    store = pyfltr.state.archive.ArchiveStore(cache_root=tmp_path)
+    run_id = store.start_run(commands=["pytest"])
+    slow_tests = [pyfltr.command.slow_tests.SlowTest("tests/a_test.py::test_x", "call", 1.5)]
+    result = dataclasses.replace(
+        _make_result("pytest", returncode=1, command_type="tester"),
+        slow_tests=slow_tests,
+        retry_command="pyfltr run --commands=pytest tests/a_test.py",
+    )
+    store.write_tool_result(run_id, result)
+
+    results = await pyfltr.cli.mcp_server.tool_show_run_diagnostics(run_id, ["pytest"])
+    command_meta = results[0].command_meta
+    assert [test.model_dump() for test in command_meta.slow_tests] == [test.to_dict() for test in slow_tests]
+    assert command_meta.retry_command == "pyfltr run --commands=pytest tests/a_test.py"
+
+
+@pytest.mark.asyncio
+async def test_tool_show_run_diagnostics_skipped_command(tmp_path: pathlib.Path) -> None:
+    """起動しなかったコマンドのNone終了コードを復元する。"""
+    store = pyfltr.state.archive.ArchiveStore(cache_root=tmp_path)
+    run_id = store.start_run(commands=["mypy"])
+    store.write_tool_result(run_id, _make_result("mypy", returncode=None, files=0))
+
+    results = await pyfltr.cli.mcp_server.tool_show_run_diagnostics(run_id, ["mypy"])
+    assert results[0].command_meta.returncode is None
 
 
 @pytest.mark.asyncio
@@ -291,13 +342,14 @@ async def test_tool_show_run_output(tmp_path: pathlib.Path) -> None:
         tmp_path,
         tool_results=[
             ("ruff-check", 0, "raw output line 1\nraw output line 2\n", []),
+            ("mypy", 1, "mypy output\n", [_make_error("mypy", "src/a.py", 1, "型エラー")]),
         ],
     )
 
-    result = await pyfltr.cli.mcp_server.tool_show_run_output(run_id, ["ruff-check"])
-    assert "ruff-check" in result
-    assert "raw output line 1" in result["ruff-check"]
-    assert "raw output line 2" in result["ruff-check"]
+    result = await pyfltr.cli.mcp_server.tool_show_run_output(run_id, ["ruff-check", "mypy"])
+    assert list(result) == ["ruff-check", "mypy"]
+    assert result["ruff-check"] == "raw output line 1\nraw output line 2\n"
+    assert result["mypy"] == "mypy output\n"
 
 
 @pytest.mark.asyncio
@@ -331,6 +383,32 @@ async def test_build_server_registers_eleven_tools() -> None:
         "config",
     }
     assert tool_names == expected
+
+
+@pytest.mark.asyncio
+async def test_show_run_diagnostics_publishes_projected_contract() -> None:
+    """公開説明と出力スキーマが射影後の`command_meta`契約を示す。"""
+    tools = await pyfltr.cli.mcp_server.build_server().list_tools()
+    tool = next(entry for entry in tools if entry.name == "show_run_diagnostics")
+    assert tool.description is not None
+    assert "検査対象ファイルの引数列を含まない" in tool.description
+    assert tool.output_schema is not None
+    command_meta_schema = tool.output_schema["$defs"]["CommandMetaModel"]
+    assert set(command_meta_schema["properties"]) == {
+        "command",
+        "type",
+        "status",
+        "returncode",
+        "files",
+        "elapsed",
+        "diagnostics",
+        "has_error",
+        "slow_tests",
+        "retry_command",
+    }
+    assert "commandline" not in command_meta_schema["properties"]
+    assert "hint_urls" not in command_meta_schema["properties"]
+    assert "hints" not in command_meta_schema["properties"]
 
 
 def test_build_server_reports_name_and_version() -> None:

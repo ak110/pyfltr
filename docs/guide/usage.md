@@ -255,8 +255,8 @@ MCPクライアントがstdinを閉じた時点でサーバーが終了する。
 | --- | --- | --- |
 | `list_runs` | `pyfltr list-runs` | run一覧を新しい順で返す。`limit`で件数制御（既定20件） |
 | `show_run` | `pyfltr show-run <run_id>` | 指定runのmetaとツール別サマリを返す。前方一致・`latest`エイリアス可 |
-| `show_run_diagnostics` | `pyfltr show-run <run_id> --commands=<name>` | 指定runのtool.jsonとdiagnostics全件を返す（複数指定可） |
-| `show_run_output` | `pyfltr show-run <run_id> --commands=<name> --output` | 指定runのoutput.log全文を返す（単一指定のみ） |
+| `show_run_diagnostics` | `pyfltr show-run <run_id> --commands=<name>` | 指定runのコマンドmeta情報とdiagnostics全件を返す（複数指定可）。検査対象ファイルの引数列は含めない |
+| `show_run_output` | `pyfltr show-run <run_id> --commands=<name> --output` | 指定runのoutput.log全文を返す（複数指定可） |
 | `run_for_agent` | `pyfltr run` / `fast` / `ci` | lint/format/testを実行しrun_id・失敗ツール名・retry_commands等を返す。`mode`で実行モードを選ぶ |
 | `grep` | `pyfltr grep` | ファイル横断の正規表現検索（pyfltr exclude/.gitignore尊重） |
 | `replace` | `pyfltr replace` | 横断置換。`dry_run`の既定値は`True`（CLI既定の`False`と異なりLLM暴発防止） |

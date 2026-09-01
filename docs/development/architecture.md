@@ -710,6 +710,19 @@ grep/replace系4ツール（`grep`・`replace`・`replace_undo`・`replace_histo
 ツール名はCLIサブコマンドのハイフン形式と異なりアンダースコア形式（`list_runs`/`show_run`等）とする。
 ハイフンはPythonの`@mcp.tool()`名として非推奨のため。
 
+### 応答スキーマの方針
+
+実行アーカイブの保存メタデータを構造化して返すツールは、値の長さが検査対象ファイル数に比例する項目を応答へ含めない。
+`show_run_diagnostics`の`command_meta`は`tool.json`から`commandline`を除いた項目を返す。
+対象ファイルを引数へ展開するツールでは`commandline`の長さが対象ファイル数に比例し、
+大規模な対象では応答の大半を占めて診断本体の読み取りを妨げるためである。
+完全な引数列は`pyfltr show-run <run_id> --commands=<name>`と実行アーカイブの`tool.json`から取得する。
+
+保存ファイルの全文取得を目的とする`show_run_output`は本方針の対象外とし、`output.log`をそのまま返す。
+`show_run`が返す`meta`も対象外とする。
+`meta.json`の`argv`は利用者が起動時に渡した引数を保持し、
+pyfltrが対象ファイルへ展開した結果を含まないためである。
+
 ### MCPライブラリ
 
 `mcp.server.mcpserver.MCPServer`を採用する。

@@ -23,7 +23,7 @@ class RunSummaryModel(pydantic.BaseModel):
 
 
 class SlowTestModel(pydantic.BaseModel):
-    """遅いテスト1件分。`CommandSummaryModel.slow_tests`の要素。"""
+    """遅いテスト1件分。`CommandSummaryModel.slow_tests`と`CommandMetaModel.slow_tests`の要素。"""
 
     nodeid: str = pydantic.Field(
         description="テスター共通の識別子。pytestはnodeid、vitestはファイルパスとテスト名を連結した形式。"
@@ -102,15 +102,52 @@ class RunOverviewModel(pydantic.BaseModel):
     commands: list[CommandSummaryModel] = pydantic.Field(description="コマンド別サマリ一覧。")
 
 
+class CommandMetaModel(pydantic.BaseModel):
+    """コマンドのmeta情報。`CommandDiagnosticsModel.command_meta`の値。
+
+    実行アーカイブの`tool.json`から`commandline`を除いた項目を保持する。
+    `commandline`は対象ファイルを引数へ展開するツールで長さが対象ファイル数に比例し、
+    大規模な対象では応答の大半を占めて診断本体の読み取りを妨げるため含めない。
+    完全な引数列は`pyfltr show-run <run_id> --commands=<name>`と実行アーカイブの
+    `tool.json`から取得する。`show_run_output`が返す`output.log`は引数列を含まない。
+
+    `hint_urls`・`hints`は`CommandDiagnosticsModel`の同名フィールドが返すため本モデルへ含めない。
+    """
+
+    command: str = pydantic.Field(description="コマンド名。")
+    type: str = pydantic.Field(description="コマンドの種別（formatter / linter / tester）。")
+    status: str = pydantic.Field(
+        description=("実行ステータス（succeeded / formatted / skipped / failed / warning / resolution_failed）。"),
+    )
+    returncode: int | None = pydantic.Field(
+        default=None,
+        description="ツールの終了コード。対象ファイル0件等で起動しなかった場合はNone。",
+    )
+    files: int = pydantic.Field(description="対象ファイル数。")
+    elapsed: float = pydantic.Field(description="当該コマンドの実行に要した秒数。")
+    diagnostics: int = pydantic.Field(description="diagnosticの件数。")
+    has_error: bool = pydantic.Field(description="エラーが発生したか否か。")
+    slow_tests: list[SlowTestModel] = pydantic.Field(
+        default_factory=list,
+        description="テスターが報告した遅いテストの上位一覧（秒数降順）。",
+    )
+    retry_command: str | None = pydantic.Field(
+        default=None,
+        description="当該コマンドを失敗ファイルのみに限定して再実行するシェルコマンド。",
+    )
+
+
 class CommandDiagnosticsModel(pydantic.BaseModel):
-    """コマンドの詳細情報（tool.json + diagnostics.jsonl全件）。`show_run_diagnostics`ツールの戻り値。
+    """コマンドの詳細情報（`tool.json`のmeta情報 + diagnostics.jsonl全件）。`show_run_diagnostics`ツールの戻り値。
+
+    `command_meta`は`tool.json`から`commandline`を除いた項目を`CommandMetaModel`として返す。
 
     JSONL本体・`tool.json`の双方で`hint_urls`キー（アンダースコア区切り）を採用するため、
     Pydantic側でも属性名・出力キー名ともに`hint_urls`で揃える。
     同様に`hints`キーも`tool.json`と同名で揃える。
     """
 
-    command_meta: dict[str, typing.Any] = pydantic.Field(description="コマンドのmeta情報（`tool.json`の内容）。")
+    command_meta: CommandMetaModel = pydantic.Field(description="コマンドのmeta情報。")
     diagnostics: list[DiagnosticModel] = pydantic.Field(description="diagnosticの全件一覧。")
     hint_urls: dict[str, str] | None = pydantic.Field(
         default=None,
