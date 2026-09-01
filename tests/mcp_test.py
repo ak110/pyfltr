@@ -17,6 +17,7 @@ import shutil
 import sys
 import typing
 
+import mcp_types
 import pytest
 
 import pyfltr.cli.mcp_models
@@ -301,6 +302,37 @@ async def test_tool_show_run_diagnostics_restores_optional_meta(tmp_path: pathli
     command_meta = results[0].command_meta
     assert [test.model_dump() for test in command_meta.slow_tests] == [test.to_dict() for test in slow_tests]
     assert command_meta.retry_command == "pyfltr run --commands=pytest tests/a_test.py"
+
+
+@pytest.mark.asyncio
+async def test_show_run_diagnostics_serializes_optional_meta_conditionally(tmp_path: pathlib.Path) -> None:
+    """保存元にある任意meta項目だけをMCP公開応答へ含める。"""
+    store = pyfltr.state.archive.ArchiveStore(cache_root=tmp_path)
+    run_id = store.start_run(commands=["mypy", "pytest"])
+    store.write_tool_result(run_id, _make_result("mypy", returncode=0))
+    slow_tests = [pyfltr.command.slow_tests.SlowTest("tests/a_test.py::test_x", "call", 1.5)]
+    pytest_result = dataclasses.replace(
+        _make_result("pytest", returncode=1, command_type="tester"),
+        slow_tests=slow_tests,
+        retry_command="pyfltr run --commands=pytest tests/a_test.py",
+    )
+    store.write_tool_result(run_id, pytest_result)
+    store.finalize_run(run_id, exit_code=1)
+
+    result = await pyfltr.cli.mcp_server.build_server().call_tool(
+        "show_run_diagnostics",
+        {"run_id": run_id, "commands": ["mypy", "pytest"]},
+    )
+    assert isinstance(result, mcp_types.CallToolResult)
+    assert result.structured_content is not None
+    serialized_commands = result.structured_content["result"]
+    assert isinstance(serialized_commands, list)
+    mypy_meta = serialized_commands[0]["command_meta"]
+    assert "slow_tests" not in mypy_meta
+    assert "retry_command" not in mypy_meta
+    pytest_meta = serialized_commands[1]["command_meta"]
+    assert pytest_meta["slow_tests"] == [test.to_dict() for test in slow_tests]
+    assert pytest_meta["retry_command"] == "pyfltr run --commands=pytest tests/a_test.py"
 
 
 @pytest.mark.asyncio

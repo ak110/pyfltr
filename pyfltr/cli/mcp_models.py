@@ -112,6 +112,7 @@ class CommandMetaModel(pydantic.BaseModel):
     `tool.json`から取得する。`show_run_output`が返す`output.log`は引数列を含まない。
 
     `hint_urls`・`hints`は`CommandDiagnosticsModel`の同名フィールドが返すため本モデルへ含めない。
+    `slow_tests`・`retry_command`は`tool.json`に保存されている場合だけ直列化する。
     """
 
     command: str = pydantic.Field(description="コマンド名。")
@@ -135,6 +136,18 @@ class CommandMetaModel(pydantic.BaseModel):
         default=None,
         description="当該コマンドを失敗ファイルのみに限定して再実行するシェルコマンド。",
     )
+
+    @pydantic.model_serializer(mode="wrap")
+    def _omit_unsaved_optional_fields(
+        self,
+        handler: pydantic.SerializerFunctionWrapHandler,
+    ) -> dict[str, typing.Any]:
+        """保存元に無い任意項目を直列化結果から省く。"""
+        serialized = typing.cast(dict[str, typing.Any], handler(self))
+        for field_name in ("slow_tests", "retry_command"):
+            if field_name not in self.model_fields_set:
+                serialized.pop(field_name, None)
+        return serialized
 
 
 class CommandDiagnosticsModel(pydantic.BaseModel):
