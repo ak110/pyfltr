@@ -588,7 +588,8 @@ javascript = true
 bin-runner経由で起動するツールはページ冒頭の「3カテゴリ」節で示した通り。
 グローバル`bin-runner`設定（既定`"mise"`）で起動方式を切り替える。
 
-ecはeditorconfig-checkerの略称。既定は`mise`で、[mise](https://mise.jdx.dev/)によるバージョン管理付きの実行となる。
+ecはeditorconfig-checkerの略称。既定は`mise`で、GitHub Releasesから取得した
+`editorconfig-checker`実行ファイルをバージョン管理付きで実行する。
 PATH上の`cargo` / `dotnet` / `cargo-deny`等をPATH直接実行したい場合は、
 個別ツールに`{command}-runner = "direct"`を設定するか`{command}-path`に明示的なパスを指定する。
 

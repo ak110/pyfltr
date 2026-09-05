@@ -251,7 +251,10 @@ class BinToolSpec:
 
 # bin-runnerで解決するネイティブバイナリツールの定義テーブル。各値は `BinToolSpec` 参照。
 _BIN_TOOL_SPEC: dict[str, BinToolSpec] = {
-    "ec": BinToolSpec(bin_name="ec", mise_backend="editorconfig-checker"),
+    "ec": BinToolSpec(
+        bin_name="editorconfig-checker",
+        mise_backend="github:editorconfig-checker/editorconfig-checker",
+    ),
     "shellcheck": BinToolSpec(bin_name="shellcheck"),
     "shfmt": BinToolSpec(bin_name="shfmt"),
     "actionlint": BinToolSpec(bin_name="actionlint"),

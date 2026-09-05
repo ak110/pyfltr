@@ -178,7 +178,7 @@ RUN --mount=type=secret,id=GITHUB_TOKEN,env=GITHUB_TOKEN,required=false \
     mise use --global \
         shfmt@latest \
         actionlint@latest \
-        editorconfig-checker@latest \
+        github:editorconfig-checker/editorconfig-checker@latest \
         glab@latest \
         taplo@latest \
         hadolint@latest \

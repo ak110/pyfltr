@@ -197,7 +197,7 @@ jobs:
         # tests/smoke_test.py が起動するmise経由ツールをWindows runnerでも揃える。
         # Linux jobは公式pyfltrイメージに同梱済みのため不要。
         # 既定シェル（PowerShell）でもbash継続`\`に依存せず動くよう単一行で記述する。
-        run: mise use --global shfmt@latest actionlint@latest editorconfig-checker@latest taplo@latest hadolint@latest gitleaks@latest
+        run: mise use --global shfmt@latest actionlint@latest github:editorconfig-checker/editorconfig-checker@latest taplo@latest hadolint@latest gitleaks@latest
 
       - name: Install shellcheck via chocolatey
         # shellcheckはmise registryでもインストールできるが、Windowsではzip内サブディレクトリ

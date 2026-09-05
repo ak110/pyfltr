@@ -2523,12 +2523,12 @@ def test_bin_tool_spec_structure() -> None:
     """`build_commandline`経由でec・shellcheck・cargo-denyのコマンドライン構造を検証する。"""
     config = pyfltr.config.config.create_default_config()
 
-    # ecはmise_backend="editorconfig-checker"のため、tool specに"editorconfig-checker"が含まれる。
+    # ecはGitHub backendを使い、v4以降の実行ファイル名editorconfig-checkerを起動する。
     config.values["ec-runner"] = "mise"
     result_ec = pyfltr.command.runner.build_commandline("ec", config)
     assert result_ec.executable == "mise"
     assert any("editorconfig-checker" in p for p in result_ec.prefix)
-    assert result_ec.prefix[-1] == "ec"
+    assert result_ec.prefix[-1] == "editorconfig-checker"
 
     # shellcheckはmise_backendなしのため、tool specに"shellcheck"が含まれる。
     config.values["shellcheck-runner"] = "mise"

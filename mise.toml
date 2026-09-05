@@ -1,6 +1,6 @@
 [tools]
 actionlint = "latest"
-editorconfig-checker = "latest"
+"github:editorconfig-checker/editorconfig-checker" = "latest"
 gitleaks = "latest"
 glab = "latest"
 hadolint = "latest"
