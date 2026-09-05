@@ -117,9 +117,14 @@ format別のlogger stream/level切替の詳細は[docs/development/architecture.
   モノレポ構成での実測手順は[docs/development/architecture.md](docs/development/architecture.md)の
   「モノレポ対応」節を参照する
 - 外部ツールの成否は`pyfltr/command/core_.py`の`CommandResult.status`が終了コードから導出する。
-  終了コード0は`errors`・`has_error`を参照せず`succeeded`となるため、
-  `pyfltr/command/error_parser.py`が抽出した診断は正常終了したツールの成否を変えない
-  （`has_error`が`status`へ影響するのは終了コードが非0のformatter分岐に限る）。
+  終了コード0は`errors`を参照せず`succeeded`となるため、
+  `pyfltr/command/error_parser.py`が抽出した診断は正常終了したツールの成否を変えない。
+  成否を判断する処理は`pyfltr/command/core_.py`が公開する成否述語だけを参照する。
+  `CommandResult`を扱う経路は`CommandResult.failed`と`CommandResult.needs_rerun`を、
+  実行アーカイブから読んだstatus文字列を扱う経路は`is_failed_status`を用いる。
+  status値の比較を各経路へ書かず、成否と同じ事実を表す別のフィールドも新設しない。
+  `CommandResult.formatter_failed`はformatter型の非ゼロ終了が書き換えではなく失敗であることだけを表し、
+  linterとtesterの成否判断に用いない。
   ツールが期待する処理を実施しないまま正常終了する事象への対策は、出力解析ではなく
   `pyfltr/command/dispatcher.py`の`_prepare_execution_params`が呼ぶ実行前検査で
   `resolution_failed`へ倒す経路を採用する。
@@ -129,6 +134,14 @@ format別のlogger stream/level切替の詳細は[docs/development/architecture.
   「実行前検査で`resolution_failed`へ倒す経路を採用する」規定の対象外とし、出力解析を採用してよい。
   ツール自身が競合や設定の無効化を出力へ明示する場合は、当該出力を読む方が
   pyfltr側で判定条件を再実装するより誤検出が生じにくい
+- 実行アーカイブの`tool.json`の取得は`pyfltr/state/archive.py`の`ArchiveStore.read_tool_meta`だけが行い、
+  同メソッドは撤去済みのフィールドだけを除いた結果を返す。
+  除去の対象は`TOOL_META_REMOVED_KEYS`が定め、当該集合に無いキーは、
+  別の版が保存した未知のキーを含めて呼び出し元へそのまま渡す。
+  表示・直列化・MCPの各経路は同メソッドの戻り値だけを扱い、
+  当該ファイルを直接参照する経路と、除去を経ないメタデータを出力へ展開する経路を設けない
+- `show-run`が未知のキーを外部へ出力する範囲は`--commands`のjson形式とjsonl形式に限る。
+  既定表示と`--commands`のtext形式は、表示するキーを列挙する現行動作を保ち、未知のキーを新たに表示しない
 
 ## 注意点
 

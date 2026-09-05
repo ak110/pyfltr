@@ -112,7 +112,7 @@ class CacheStore:
         # JSONL / archiveスキーマを変えた際の一括無効化用識別子。
         # `pyproject.toml`の版数は`hatch-vcs`管理でMAJORを手動更新できないため、
         # 互換性を破棄する際はこの定数を更新してキャッシュを一括無効化する。
-        hasher.update(b"schema=v4\n")
+        hasher.update(b"schema=v5\n")
         hasher.update(f"command={command}\n".encode())
         hasher.update(f"fix_stage={int(fix_stage)}\n".encode())
         hasher.update(f"structured={int(structured_output)}\n".encode())
@@ -290,7 +290,6 @@ def _serialize_result(result: pyfltr.command.core_.CommandResult, *, source_run_
         "command_type": result.command_type,
         "commandline": list(result.commandline),
         "returncode": result.returncode,
-        "has_error": result.has_error,
         "files": result.files,
         "output": result.output,
         "elapsed": result.elapsed,
@@ -308,7 +307,6 @@ def _deserialize_result(data: dict[str, typing.Any]) -> pyfltr.command.core_.Com
         command_type=data["command_type"],
         commandline=list(data["commandline"]),
         returncode=data["returncode"],
-        has_error=data["has_error"],
         files=data["files"],
         output=data["output"],
         elapsed=data["elapsed"],

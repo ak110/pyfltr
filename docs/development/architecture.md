@@ -509,6 +509,7 @@ LLMが上から読み下したときに「結論→集計→指摘総数→警�
 
 このため`pyfltr ci`失敗時の`retry_command`に`pyfltr run`が混入してfixステージが暴発することは無い。
 キャッシュ復元結果（`cached=True`）では`retry_command`を埋めない。
+生成対象は`CommandResult.needs_rerun`が真の結果（`status`が`failed`・`warning`・`resolution_failed`のいずれか）に限る。
 
 ### smart truncationとアーカイブ復元
 

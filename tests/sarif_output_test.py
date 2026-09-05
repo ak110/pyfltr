@@ -43,7 +43,7 @@ def test_build_sarif_basic() -> None:
     assert loc["region"] == {"startLine": 10}
     # retry_commandはinvocationsに入る
     assert run["invocations"][0]["commandLine"] == "pyfltr run --commands ruff-check -- src/foo.py"
-    # executionSuccessfulはhas_errorの反対
+    # executionSuccessfulはstatus由来の成否の反対
     assert run["invocations"][0]["executionSuccessful"] is False
     # pyfltrプロパティにメタ情報
     assert sarif["properties"]["pyfltr"]["run_id"] == "01ABC"

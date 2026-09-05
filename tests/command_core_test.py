@@ -281,7 +281,7 @@ def test_execute_command_direct_missing_returns_failed_result(tmp_path: pathlib.
             "textlint", _testconf.make_args(), _testconf.make_execution_context(config, [target])
         )
         assert result.status == "resolution_failed"
-        assert result.has_error is True
+        assert result.failed is True
         # 新文面: 探索先（node_modules）の明示・`pnpm install` 案内・`pnpx`切り替え案内を全て含む。
         assert "node_modules" in result.output
         assert "pnpm install" in result.output
@@ -2551,7 +2551,7 @@ def test_command_result_cached_defaults() -> None:
         command_type="linter",
         commandline=["mypy"],
         returncode=0,
-        has_error=False,
+        formatter_failed=False,
         files=1,
         output="",
         elapsed=0.1,
@@ -2569,7 +2569,7 @@ def test_command_result_merge_retry_count() -> None:
             command_type="linter",
             commandline=["mypy"],
             returncode=0,
-            has_error=False,
+            formatter_failed=False,
             files=1,
             output="",
             elapsed=0.1,
@@ -2591,7 +2591,7 @@ def test_merge_limits_slow_tests_across_subprojects() -> None:
             command_type="tester",
             commandline=["pytest"],
             returncode=0,
-            has_error=False,
+            formatter_failed=False,
             files=1,
             output="",
             elapsed=0.1,
@@ -4374,7 +4374,6 @@ def test_execute_command_isolated_tool_missing_emits_uvx_direct_hint(
         command_type="linter",
         commandline=[runner, command],
         returncode=2,
-        has_error=True,
         files=1,
         output=f"error: project 'sample' does not have '{command}' as a dependency\n",
         elapsed=0.1,

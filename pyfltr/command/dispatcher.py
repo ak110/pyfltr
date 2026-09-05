@@ -455,8 +455,6 @@ def _run_plain_command(
     ファイルhashキャッシュの参照・書き込みを担う。cacheable=Trueの非fix実行のみ
     キャッシュを扱い、textlint fixなど特殊経路はこの関数を通らない。
     """
-    has_error = False
-
     # ファイルhashキャッシュの参照 （cacheable=Trueの非fix実行のみ）。
     # キャッシュ対象判定 / キー算出 / 書き込みをbreak/resumeできるよう、結果を
     # 後段で差し替える設計とする。
@@ -526,7 +524,6 @@ def _run_plain_command(
         command=command,
         command_info=command_info,
         commandline=commandline,
-        has_error=has_error,
         files=len(targets),
         output=output,
         elapsed=elapsed,
@@ -536,7 +533,7 @@ def _run_plain_command(
 
     # キャッシュ書き込み （成功rc=0のみ）。失敗結果を記録すると再試行で同じ失敗が
     # 復元されて修正確認できなくなるため、成功時に限定する。
-    if cache_context is not None and returncode == 0 and not has_error:
+    if cache_context is not None and returncode == 0:
         cache_context.store(result, run_id=cache_run_id)
 
     return result
@@ -557,7 +554,7 @@ def execute_command(
     `cache_store` が指定され、かつ当該コマンドが `CommandInfo.cacheable=True` の
     非fixモード実行なら、ファイルhashキャッシュを参照して一致があれば実行を
     スキップし、過去の結果を復元して `cached=True` で返す。キャッシュミス時は
-    通常実行のうえ、成功 （rc=0, has_error=False） に限り `cache_run_id` をソースとして
+    通常実行のうえ、成功 （rc=0） に限り `cache_run_id` をソースとして
     書き込む。`cache_run_id` が `None` の場合はキャッシュ書き込みをスキップする
     （アーカイブ無効時に `cached_from` で参照させる元runが無いため）。
 

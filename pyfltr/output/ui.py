@@ -59,7 +59,7 @@ def run_commands_with_ui(
     `on_result`が指定されている場合、通常ステージ（formatter / linter / tester）の
     各コマンド完了時にarchive_hookの後に呼ぶ。fixステージでは呼ばない。
 
-    `fail_fast=True`のとき、いずれかのツールが`has_error=True`で完了した時点で
+    `fail_fast=True`のとき、いずれかのツールが`status`として`failed`または`resolution_failed`を返した時点で
     未実行ジョブを`future.cancel()`で打ち切り、起動済みサブプロセスに
     `terminate()`を送る。
 
@@ -320,7 +320,7 @@ class UIApp(App):
                     )
                     aborted = True
                     break
-                if self._fail_fast and fix_result.has_error:
+                if self._fail_fast and fix_result.failed:
                     aborted = True
                     self._skip_remaining([*formatters, *linters_and_testers])
                     break
@@ -354,7 +354,7 @@ class UIApp(App):
                         self._archive_hook(fmt_result)
                     if self._on_result is not None:
                         self._on_result(fmt_result)
-                    if self._fail_fast and fmt_result.has_error:
+                    if self._fail_fast and fmt_result.failed:
                         aborted = True
                         self._skip_remaining([*formatters[idx + 1 :], *linters_and_testers])
                         break
@@ -388,7 +388,7 @@ class UIApp(App):
                             self._archive_hook(lt_result)
                         if self._on_result is not None:
                             self._on_result(lt_result)
-                        if self._fail_fast and not aborted and lt_result.has_error:
+                        if self._fail_fast and not aborted and lt_result.failed:
                             aborted = True
                             pyfltr.state.stage_runner.cancel_pending_futures(future_to_command, aborted_commands)
                             pyfltr.command.process.terminate_active_processes()
@@ -448,7 +448,7 @@ class UIApp(App):
             # 自動終了判定
             statuses = [result.status for result in self.results]
             overall_status: typing.Literal["SUCCESS", "FORMATTED", "FAILED"]
-            if any(status in {"failed", "resolution_failed"} for status in statuses):
+            if any(result.failed for result in self.results):
                 overall_status = "FAILED"
             elif any(status == "formatted" for status in statuses):
                 overall_status = "FORMATTED"
@@ -578,7 +578,7 @@ class UIApp(App):
                 footer,
             )
             # コマンド失敗時のタブタイトル更新
-            if result.status in {"failed", "resolution_failed"}:
+            if result.failed:
                 self._safe_call_from_thread(self._update_tab_title, result.command)
 
             # エラーまたは警告があればErrorsタブを即時追加/更新

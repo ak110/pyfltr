@@ -32,7 +32,7 @@ def test_prettier_two_step_check_clean(mocker, tmp_path: pathlib.Path) -> None:
     assert "--check" in cmdline
     assert "--write" not in cmdline
     assert result.status == "succeeded"
-    assert result.has_error is False
+    assert result.formatter_failed is False
 
 
 def test_prettier_two_step_check_needs_write(mocker, tmp_path: pathlib.Path) -> None:
@@ -56,7 +56,7 @@ def test_prettier_two_step_check_needs_write(mocker, tmp_path: pathlib.Path) -> 
     )
 
     assert result.status == "formatted"
-    assert result.has_error is False
+    assert result.formatter_failed is False
 
 
 def test_prettier_two_step_check_rc2_fails_without_write(mocker, tmp_path: pathlib.Path) -> None:
@@ -80,7 +80,7 @@ def test_prettier_two_step_check_rc2_fails_without_write(mocker, tmp_path: pathl
     )
 
     assert result.status == "failed"
-    assert result.has_error is True
+    assert result.formatter_failed is True
     # Step2 は実行されない
     assert len(calls) == 1
     assert "--check" in calls[0]
@@ -106,7 +106,7 @@ def test_prettier_two_step_step2_failure_marks_failed(mocker, tmp_path: pathlib.
     )
 
     assert result.status == "failed"
-    assert result.has_error is True
+    assert result.formatter_failed is True
 
 
 def test_prettier_fix_mode_skips_check_step(mocker, tmp_path: pathlib.Path) -> None:

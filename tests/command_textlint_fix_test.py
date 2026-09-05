@@ -147,7 +147,7 @@ def test_textlint_fix_mode_touch_without_content_change_marks_succeeded(mocker, 
     )
 
     assert result.status == "succeeded"
-    assert result.has_error is False
+    assert result.formatter_failed is False
 
 
 def test_textlint_fix_mode_all_fixed_marks_formatted(mocker, tmp_path: pathlib.Path) -> None:
@@ -180,7 +180,7 @@ def test_textlint_fix_mode_all_fixed_marks_formatted(mocker, tmp_path: pathlib.P
     )
 
     assert result.status == "formatted"
-    assert result.has_error is False
+    assert result.formatter_failed is False
 
 
 def test_textlint_fix_mode_emits_warning_when_protected_identifier_corrupted(mocker, tmp_path: pathlib.Path) -> None:
@@ -297,7 +297,7 @@ def test_textlint_fix_mode_residual_violations_mark_failed(mocker, tmp_path: pat
     )
 
     assert result.status == "failed"
-    assert result.has_error is True
+    assert result.failed is True
     assert len(result.errors) == 1
     assert result.errors[0].line == 3
     assert result.errors[0].col == 5
@@ -326,4 +326,4 @@ def test_textlint_fix_mode_step1_fatal_error_fails(mocker, tmp_path: pathlib.Pat
     )
 
     assert result.status == "failed"
-    assert result.has_error is True
+    assert result.failed is True

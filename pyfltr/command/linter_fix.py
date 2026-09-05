@@ -70,8 +70,8 @@ def execute_linter_fix(
     digests_after = snapshot_file_digests(targets, base_cwd=start_cwd)
     changed = digests_after != digests_before
 
-    has_error = returncode != 0
-    if not has_error and changed:
+    step_failed = returncode != 0
+    if not step_failed and changed:
         # fixが適用されたのでformatter扱いでformattedにする
         result_command_type: str = "formatter"
         returncode = 1
@@ -85,7 +85,6 @@ def execute_linter_fix(
         command_type=result_command_type,
         commandline=commandline,
         returncode=returncode,
-        has_error=has_error,
         files=len(targets),
         output=output,
         elapsed=elapsed,
@@ -93,6 +92,6 @@ def execute_linter_fix(
         timeout_exceeded=proc.timeout_exceeded,
         retry_count=proc.retry_count,
     )
-    if not has_error and changed:
+    if not step_failed and changed:
         result.fixed_files = changed_files(digests_before, digests_after)
     return result

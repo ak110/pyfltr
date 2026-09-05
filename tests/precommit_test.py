@@ -3,12 +3,15 @@
 import pathlib
 import re
 import textwrap
+import typing
 
 import psutil
 import pytest
 import yaml
 
 import pyfltr.cli.precommit_guidance
+import pyfltr.command.dispatcher
+import pyfltr.command.process
 import pyfltr.config.config
 from tests import conftest as _testconf
 
@@ -34,6 +37,49 @@ def test_prek_args_default_pins_config_path() -> None:
     """
     args = pyfltr.config.config.DEFAULT_CONFIG["prek-args"]
     assert "--config=.pre-commit-config.yaml" in args
+
+
+@pytest.mark.parametrize("command", ["pre-commit", "prek"])
+def test_pre_commit_integration_persistent_failure_is_rerunnable(
+    command: str,
+    mocker: typing.Any,
+    tmp_path: pathlib.Path,
+) -> None:
+    """2段階で失敗が残る場合は再実行対象のformatter失敗として返す。"""
+    (tmp_path / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
+    target = tmp_path / "sample.py"
+    target.write_text("x = 1\n", encoding="utf-8")
+    processes = [
+        pyfltr.command.process.CompletedProcessWithTimeoutInfo(
+            args=[command],
+            returncode=1,
+            stdout="hook failed",
+        ),
+        pyfltr.command.process.CompletedProcessWithTimeoutInfo(
+            args=[command],
+            returncode=1,
+            stdout="hook still failing",
+        ),
+    ]
+    run_subprocess = mocker.patch(
+        "pyfltr.command.process.run_subprocess_with_timeout",
+        side_effect=processes,
+    )
+    mocker.patch("pyfltr.cli.precommit_guidance.is_running_under_precommit", return_value=False)
+    config = pyfltr.config.config.create_default_config()
+    config.values[command] = True
+
+    result = pyfltr.command.dispatcher.execute_command(
+        command,
+        _testconf.make_args(),
+        _testconf.make_execution_context(config, [target], start_cwd=tmp_path),
+    )
+
+    assert run_subprocess.call_count == 2
+    assert result.formatter_failed is True
+    assert result.status == "failed"
+    assert result.failed is True
+    assert result.needs_rerun is True
 
 
 @pytest.mark.parametrize(

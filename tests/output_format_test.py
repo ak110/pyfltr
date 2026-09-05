@@ -101,7 +101,7 @@ def test_build_lines_summary_conditional_key_order(default_config):
 
 def test_build_lines_unsupported_tool_only(default_config):
     """error_parser非対応ツール（ruff-format）はtoolレコードのみ（header省略時）。"""
-    result = _make_result("ruff-format", returncode=1, command_type="formatter", has_error=False)
+    result = _make_result("ruff-format", returncode=1, command_type="formatter", formatter_failed=False)
     lines = pyfltr.output.jsonl.build_lines([result], default_config, exit_code=1)
     parsed = [json.loads(line) for line in lines]
 
@@ -175,7 +175,7 @@ def test_build_lines_ensure_ascii_false(default_config):
 
 def test_build_lines_skipped_status(default_config):
     """returncode=None（skipped）はrcキーを省略しdiagnostics=0のtoolレコードを出力する。"""
-    result = _make_result("mypy", returncode=None, has_error=False)
+    result = _make_result("mypy", returncode=None, formatter_failed=False)
     lines = pyfltr.output.jsonl.build_lines([result], default_config, exit_code=0)
     parsed = [json.loads(line) for line in lines]
 
@@ -239,7 +239,7 @@ def test_command_record_message_present_for_tester_with_diagnostics(default_conf
 def test_command_record_no_message_on_success(default_config):
     """status=succeeded/formattedではmessageを出力しない。"""
     ok = _make_result("mypy", returncode=0, output="all ok")
-    fmt = _make_result("ruff-format", returncode=1, command_type="formatter", output="reformatted", has_error=False)
+    fmt = _make_result("ruff-format", returncode=1, command_type="formatter", output="reformatted", formatter_failed=False)
     lines = pyfltr.output.jsonl.build_lines([ok, fmt], default_config, exit_code=0)
     for line in lines:
         record = json.loads(line)
@@ -649,7 +649,7 @@ def test_run_cli_header_format_source_env_pyfltr(mocker, capsys, monkeypatch):
 
 def test_command_record_formatted_status_hint(default_config):
     """`status="formatted"`のcommandレコードには再実行不要を示すhintが入る。"""
-    result = _make_result("ruff-format", returncode=1, command_type="formatter", has_error=False)
+    result = _make_result("ruff-format", returncode=1, command_type="formatter", formatter_failed=False)
     lines = pyfltr.output.jsonl.build_command_lines(result, default_config)
     parsed = [json.loads(line) for line in lines]
     command_record = parsed[-1]
@@ -670,7 +670,7 @@ def test_command_record_non_formatted_no_status_hint(default_config):
 
 def test_get_status_text_formatted_includes_no_rerun_needed():
     """text出力サマリー行のformatted行末尾に`; no rerun needed`が付く。"""
-    result = _make_result("ruff-format", returncode=1, command_type="formatter", has_error=False)
+    result = _make_result("ruff-format", returncode=1, command_type="formatter", formatter_failed=False)
     text = result.get_status_text()
     assert text.startswith("formatted (")
     assert text.endswith("; no rerun needed")

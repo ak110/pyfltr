@@ -184,7 +184,7 @@ pyfltr show-run <run_id> [--commands NAME[,NAME...]] [--output] [--output-format
 - `<run_id>`: ULID完全一致のほか、先頭一意な前方一致と`latest`エイリアスを受け付ける。
   前方一致で複数該当した場合は曖昧エラー（終了コード1）
 - 既定: `meta`（`run_id`・`started_at`・`finished_at`・`exit_code`・`files`・`commands`）と
-  ツール別サマリ（`status` / `has_error` / `diagnostics`）を表示
+  ツール別サマリ（`status` / `diagnostics`）を表示
 - `--commands NAME[,NAME...]`: 指定ツールの`tool.json`と`diagnostics.jsonl`全件を表示。
   カンマ区切りで複数指定可（入力順で並ぶ）
 - `--commands NAME --output`: 指定ツールの生出力（`output.log`）全文を表示（単一指定のみ）

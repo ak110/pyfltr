@@ -131,8 +131,8 @@ def _run_ruff_two_step(
 
     # 最終判定
     timeout_exceeded = step1_proc.timeout_exceeded or step2_proc.timeout_exceeded
-    has_error = step1_failed or step2_failed
-    if has_error:
+    formatter_failed = step1_failed or step2_failed
+    if formatter_failed:
         returncode: int = step1_rc if step1_failed else step2_rc
     elif step1_changed or step2_formatted:
         returncode = 1
@@ -148,7 +148,7 @@ def _run_ruff_two_step(
         command_info=command_info,
         commandline=format_commandline,
         returncode=returncode,
-        has_error=has_error,
+        formatter_failed=formatter_failed,
         files=len(targets),
         output=output,
         elapsed=elapsed,
@@ -156,7 +156,7 @@ def _run_ruff_two_step(
         timeout_exceeded=timeout_exceeded,
         retry_count=step1_proc.retry_count + step2_proc.retry_count,
     )
-    if not has_error and (step1_changed or step2_formatted):
+    if not formatter_failed and (step1_changed or step2_formatted):
         # digests_beforeはStep1前のスナップショット（関数冒頭で取得済み）。
         # Step1（ruff --checkによる暗黙fix）とStep2（ruff format）の累積差分を一括で取る。
         digests_after_step2 = snapshot_file_digests(targets, base_cwd=start_cwd)

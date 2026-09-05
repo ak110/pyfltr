@@ -234,7 +234,6 @@ async def test_tool_show_run_diagnostics(tmp_path: pathlib.Path) -> None:
     assert result.command_meta.files == 1
     assert result.command_meta.elapsed == 0.1
     assert result.command_meta.diagnostics == 1
-    assert result.command_meta.has_error is True
     assert len(result.diagnostics) == 1
     diagnostic = result.diagnostics[0]
     assert diagnostic.file == "src/a.py"
@@ -434,7 +433,6 @@ async def test_show_run_diagnostics_publishes_projected_contract() -> None:
         "files",
         "elapsed",
         "diagnostics",
-        "has_error",
         "slow_tests",
         "retry_command",
     }
@@ -783,7 +781,6 @@ async def test_tool_run_for_agent_retry_command_uses_cli_arguments(tmp_path: pat
     failed = _make_result(
         "ec",
         returncode=1,
-        has_error=True,
         archived=False,
         target_files=[sample],
     )

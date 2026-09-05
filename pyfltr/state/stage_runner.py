@@ -25,7 +25,6 @@ def make_skipped_result(
         command_type=command_info.type,
         commandline=[],
         returncode=None,
-        has_error=False,
         files=0,
         output=output,
         elapsed=0.0,

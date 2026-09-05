@@ -10,6 +10,15 @@ import pyfltr.command.process
 import pyfltr.command.slow_tests
 import pyfltr.config.config
 
+FAILED_STATUSES: frozenset[str] = frozenset({"failed", "resolution_failed"})
+RERUN_STATUSES: frozenset[str] = frozenset({"failed", "warning", "resolution_failed"})
+
+
+def is_failed_status(status: str | None) -> bool:
+    """失敗を表すstatusなら真を返す。"""
+    return status in FAILED_STATUSES
+
+
 if typing.TYPE_CHECKING:
     import pyfltr.command.error_parser
     import pyfltr.command.subprojects
@@ -177,10 +186,14 @@ class CommandResult:
     command_type: str
     commandline: list[str]
     returncode: int | None
-    has_error: bool
     files: int
     output: str
     elapsed: float
+    formatter_failed: bool = False
+    """formatter型の非ゼロ終了が書き換えではなく失敗であることを示す。
+
+    linter・testerでは`status`が終了コードから失敗を導出するため設定しない。
+    """
     errors: "list[pyfltr.command.error_parser.ErrorLocation]" = dataclasses.field(default_factory=list)
     target_files: list[pathlib.Path] = dataclasses.field(default_factory=list)
     """当該ツールに渡したターゲットファイル一覧 （retry_commandの位置引数復元に使用）。
@@ -290,7 +303,7 @@ class CommandResult:
         output: str,
         elapsed: float,
         files: int,
-        has_error: bool = False,
+        formatter_failed: bool = False,
         errors: "list[pyfltr.command.error_parser.ErrorLocation] | None" = None,
         command_type: str | None = None,
         resolution_failed: bool = False,
@@ -318,7 +331,7 @@ class CommandResult:
             command_type=resolved_type,
             commandline=commandline,
             returncode=returncode,
-            has_error=has_error,
+            formatter_failed=formatter_failed,
             files=files,
             output=output,
             elapsed=elapsed,
@@ -340,7 +353,7 @@ class CommandResult:
         output: str,
         elapsed: float,
         files: int,
-        has_error: bool = False,
+        formatter_failed: bool = False,
         errors: "list[pyfltr.command.error_parser.ErrorLocation] | None" = None,
         slow_tests: "list[pyfltr.command.slow_tests.SlowTest] | None" = None,
     ) -> "CommandResult":
@@ -353,7 +366,7 @@ class CommandResult:
             output=output,
             elapsed=elapsed,
             files=files,
-            has_error=has_error,
+            formatter_failed=formatter_failed,
             errors=errors,
             timeout_exceeded=process.timeout_exceeded,
             retry_count=process.retry_count,
@@ -362,7 +375,11 @@ class CommandResult:
 
     @property
     def alerted(self) -> bool:
-        """skipped/succeeded以外ならTrue"""
+        """text・TUIの表示分岐で非ゼロ終了なら真を返す。
+
+        成否判断には用いない。formatterの書き換え結果と`severity`による格下げ結果では
+        `status`が成功または警告を表しても真になる。
+        """
         return self.returncode is not None and self.returncode != 0
 
     @property
@@ -390,7 +407,7 @@ class CommandResult:
         ツール起動自体に失敗したケース（`resolution_failed` / `timeout_exceeded`）は
         ツール起動自体の異常で警告扱いに馴染まないため、`severity` の影響を受けない。
 
-        `status` は `resolution_failed`・`returncode`・`has_error`・`command_type`・
+        `status` は `resolution_failed`・`returncode`・`formatter_failed`・`command_type`・
         `timeout_exceeded`・`severity` から導出する計算プロパティとして実装する。
         """
         if self.resolution_failed:
@@ -401,13 +418,23 @@ class CommandResult:
             status = "succeeded"
         elif self.timeout_exceeded:
             status = "failed"
-        elif self.command_type == "formatter" and not self.has_error:
+        elif self.command_type == "formatter" and not self.formatter_failed:
             status = "formatted"
         elif self.severity == "warning":
             status = "warning"
         else:
             status = "failed"
         return status
+
+    @property
+    def failed(self) -> bool:
+        """statusが失敗を表す場合に真を返す。"""
+        return is_failed_status(self.status)
+
+    @property
+    def needs_rerun(self) -> bool:
+        """statusが再実行対象を表す場合に真を返す。"""
+        return self.status in RERUN_STATUSES
 
     @classmethod
     def merge(cls, results: "list[CommandResult]") -> "CommandResult":
@@ -491,7 +518,7 @@ class CommandResult:
         merged_slow_tests: list[pyfltr.command.slow_tests.SlowTest] = []
         for result in results:
             merged_slow_tests.extend(result.slow_tests)
-        any_has_error = any(r.has_error for r in results)
+        any_formatter_failed = any(r.formatter_failed for r in results)
         any_timeout = any(r.timeout_exceeded for r in results)
         any_resolution_failed = any(r.resolution_failed for r in results)
         any_archived = any(r.archived for r in results)
@@ -501,7 +528,7 @@ class CommandResult:
             command_type=worst.command_type,
             commandline=head.commandline,
             returncode=merged_returncode,
-            has_error=any_has_error,
+            formatter_failed=any_formatter_failed,
             files=total_files,
             output=merged_output,
             elapsed=total_elapsed,

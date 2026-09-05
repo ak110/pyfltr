@@ -408,8 +408,8 @@ def run_subprocess_with_timeout(
 
     timeout超過時は `returncode=TIMEOUT_RETURNCODE` (=124) と `timeout_exceeded=True` をセットし、
     途中まで蓄積したstdout末尾に英文の `Timeout exceeded after Ns` 注記を1行追記して返す。
-    既存の各 `run_subprocess` 呼び出し経路では `returncode != 0 → has_error=True/failed`
-    に分岐する流れを変えずにtimeout検知を取り込めるようにする。
+    既存の各 `run_subprocess` 呼び出し経路では、`returncode != 0` から `CommandResult.status` が
+    失敗を導出する流れを変えずにtimeout検知を取り込めるようにする。
     `InterruptedExecution` は捕捉せずに上位へ伝播させる（TUI協調停止の責務は呼び出し側）。
 
     `_kill_process_tree` でsubprocessを停止した後の経過秒数は途中outputに数値として残らないため、

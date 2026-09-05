@@ -623,7 +623,7 @@ def _build_truncated_meta(
         truncated["diagnostics_total"] = diagnostic_total
         truncated["archive"] = f"tools/{archive_command_dir}/diagnostics.jsonl"
 
-    if result.status in {"failed", "resolution_failed"} and (diagnostics == 0 or result.command_type == "tester"):
+    if result.failed and (diagnostics == 0 or result.command_type == "tester"):
         message_max_lines, message_max_chars = _resolve_message_limits(config)
         msg, msg_truncated, head_chars, tail_chars = _truncate_message(
             result.output,

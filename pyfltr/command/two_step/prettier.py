@@ -84,8 +84,8 @@ def execute_prettier_two_step(
     if fix_mode:
         # fixモードのみ: returncode==1（changed）のときcommand_typeを"formatter"に切り替える。
         # 通常モードのcommand_infoから取得する型がformatter以外の場合に備えた固有ロジック。
-        def _prettier_type_override(has_error: bool, returncode: int) -> str:
-            if not has_error and returncode == 1:
+        def _prettier_type_override(formatter_failed: bool, returncode: int) -> str:
+            if not formatter_failed and returncode == 1:
                 return "formatter"
             return command_info.type
 
@@ -162,7 +162,7 @@ def _run_prettier_check_then_write(
             command_info=command_info,
             commandline=check_commandline,
             returncode=step1_rc,
-            has_error=True,
+            formatter_failed=True,
             files=len(targets),
             output=output,
             elapsed=elapsed,
@@ -179,10 +179,10 @@ def _run_prettier_check_then_write(
     elapsed = time.perf_counter() - start_time
 
     if step2_rc == 0:
-        has_error = False
+        formatter_failed = False
         returncode: int = 1  # formatted扱い
     else:
-        has_error = True
+        formatter_failed = True
         returncode = step2_rc
 
     errors = pyfltr.command.error_parser.parse_errors(command, output, command_info.error_pattern)
@@ -191,7 +191,7 @@ def _run_prettier_check_then_write(
         command_info=command_info,
         commandline=write_commandline,
         returncode=returncode,
-        has_error=has_error,
+        formatter_failed=formatter_failed,
         files=len(targets),
         output=output,
         elapsed=elapsed,
@@ -199,7 +199,7 @@ def _run_prettier_check_then_write(
         timeout_exceeded=step2_proc.timeout_exceeded,
         retry_count=step1_proc.retry_count + step2_proc.retry_count,
     )
-    if not has_error:
+    if not formatter_failed:
         prettier_digests_after = snapshot_file_digests(targets, base_cwd=start_cwd)
         changed = prettier_digests_after != prettier_digests_before
         if changed:

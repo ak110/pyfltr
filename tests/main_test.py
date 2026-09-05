@@ -539,7 +539,7 @@ def test_run_pipeline_does_not_log_run_id_when_archive_disabled(mocker, capsys, 
 
 def test_precommit_guidance_emitted_when_formatted_under_git(mocker, capsys):
     """formatted結果がありgit commit経由のときガイダンスがstderrに出る。"""
-    # ruff-formatがformatted（returncode=1, has_error=False）になるよう制御する。
+    # ruff-formatがformattedになるようreturncode=1を返す。
     proc_formatted = subprocess.CompletedProcess(["ruff"], returncode=1, stdout="")
     mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc_formatted)
     mocker.patch("pyfltr.cli.precommit_guidance.is_invoked_from_git_commit", return_value=True)

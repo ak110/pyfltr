@@ -457,3 +457,37 @@ def test_show_run_jsonl_overview(
     assert kinds[0] == "meta"
     assert kinds[1:] == ["command", "command"]
     assert lines[0]["run_id"] == run_id
+
+
+@pytest.mark.parametrize("detail", [False, True], ids=["overview", "detail"])
+@pytest.mark.parametrize("output_format", ["text", "json", "jsonl"])
+def test_show_run_filters_retired_meta_without_hiding_unknown_detail(
+    detail: bool,
+    output_format: str,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """旧メタ情報の表示契約を2経路と3形式の組合せで検証する。"""
+    run_id = _seed_run(
+        tmp_path,
+        commands=["ruff-check"],
+        tool_results=[("ruff-check", 1, "out", [])],
+    )
+    meta_path = tmp_path / "runs" / run_id / "tools" / "ruff-check" / "tool.json"
+    stored = json.loads(meta_path.read_text(encoding="utf-8"))
+    stored["has_error"] = True
+    stored["future_key"] = "preserved"
+    meta_path.write_text(json.dumps(stored), encoding="utf-8")
+
+    args = ["show-run", run_id, f"--output-format={output_format}"]
+    if detail:
+        args.extend(["--commands", "ruff-check"])
+    returncode = pyfltr.cli.main.run(args)
+
+    assert returncode == 0
+    output = capsys.readouterr().out
+    assert "has_error" not in output
+    if output_format == "text" or not detail:
+        assert "future_key" not in output
+    else:
+        assert "future_key" in output

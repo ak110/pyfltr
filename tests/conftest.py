@@ -182,7 +182,7 @@ def make_command_result(
     files: int = 1,
     elapsed: float = 0.1,
     errors: list[pyfltr.command.error_parser.ErrorLocation] | None = None,
-    has_error: bool | None = None,
+    formatter_failed: bool = False,
     archived: bool = True,
     retry_command: str | None = None,
     cached: bool = False,
@@ -193,20 +193,18 @@ def make_command_result(
 ) -> pyfltr.command.core_.CommandResult:
     """テスト用の CommandResult を生成する。
 
-    `has_error` を省略した場合、`returncode` が 0/None 以外なら True とする。
+    `formatter_failed`の既定値はFalseとし、formatter型の失敗検体だけがTrueを指定する。
     `errors` は `ErrorLocation` のリスト（省略時は空）。
     `target_files` は `retry_command` フィルタリングのテスト用（省略時は空）。
     `archived` のテスト既定は True（smart truncation 適用側）。
     実運用の `CommandResult()` 生成時の既定（False）とは異なるため注意する。
     """
-    if has_error is None:
-        has_error = returncode is not None and returncode != 0
     return pyfltr.command.core_.CommandResult(
         command=command,
         command_type=command_type,
         commandline=[command],
         returncode=returncode,
-        has_error=has_error,
+        formatter_failed=formatter_failed,
         files=files,
         output=output,
         elapsed=elapsed,
@@ -241,14 +239,14 @@ def make_error_location(
 def make_formatted_result(command: str = "ruff-format") -> pyfltr.command.core_.CommandResult:
     """`status == "formatted"` になる最小の CommandResult を生成する。"""
     return pyfltr.command.core_.CommandResult(
-        command, "formatter", [command], returncode=1, has_error=False, files=1, output="", elapsed=0.01
+        command, "formatter", [command], returncode=1, formatter_failed=False, files=1, output="", elapsed=0.01
     )
 
 
 def make_succeeded_result(command: str = "ruff-check") -> pyfltr.command.core_.CommandResult:
     """`status == "succeeded"` になる最小の CommandResult を生成する。"""
     return pyfltr.command.core_.CommandResult(
-        command, "linter", [command], returncode=0, has_error=False, files=1, output="", elapsed=0.01
+        command, "linter", [command], returncode=0, formatter_failed=False, files=1, output="", elapsed=0.01
     )
 
 

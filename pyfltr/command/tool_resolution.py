@@ -111,7 +111,6 @@ def failed_resolution_result(
         command_info=command_info,
         commandline=[],
         returncode=1,
-        has_error=True,
         files=files,
         output=message,
         elapsed=0.0,

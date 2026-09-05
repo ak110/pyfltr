@@ -40,7 +40,7 @@ def execute_pre_commit(
 
     stage 1で変更ファイル指定で実行し、fixer系hookがファイルを修正しただけなら
     再実行で成功する（"formatted"）。checker系hookのエラーが残る場合は "failed"
-    （has_error=True）として返す。
+    （formatter_failed=True）として返す。
     """
     # pre-commit・prek配下から起動された場合は自身を再帰実行しない。
     # git commitからフックを経由してpyfltr fastを起動した際の二重実行を防ぐ。
@@ -100,11 +100,11 @@ def execute_pre_commit(
         **retry_kwargs,
     )
     returncode = proc.returncode
-    has_error = False
+    formatter_failed = False
     timeout_exceeded = proc.timeout_exceeded
     total_retry_count = proc.retry_count
     if timeout_exceeded:
-        has_error = True
+        formatter_failed = True
 
     # stage 2: 失敗時は再実行（fixerが修正しただけなら2回目で成功する）
     # ただしstage 1でtimeout超過した場合は再実行しない（同じハングが再現する確率が高く時間を浪費するため）。
@@ -124,7 +124,7 @@ def execute_pre_commit(
         )
         if proc.returncode != 0:
             returncode = proc.returncode
-            has_error = True
+            formatter_failed = True
         if proc.timeout_exceeded:
             timeout_exceeded = True
         total_retry_count += proc.retry_count
@@ -137,7 +137,7 @@ def execute_pre_commit(
         command_info=command_info,
         commandline=commandline,
         returncode=returncode,
-        has_error=has_error,
+        formatter_failed=formatter_failed,
         files=len(targets),
         output=output,
         elapsed=elapsed,

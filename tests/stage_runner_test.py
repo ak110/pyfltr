@@ -30,11 +30,11 @@ def test_make_skipped_result_preserves_command_name():
     assert result.command == "ruff-check"
 
 
-def test_make_skipped_result_has_no_error():
-    """has_error=False であること（skipped は error 扱いしない）。"""
+def test_make_skipped_result_is_not_failed():
+    """skippedは失敗扱いしない。"""
     config = pyfltr.config.config.create_default_config()
     result = pyfltr.state.stage_runner.make_skipped_result("mypy", config)
-    assert result.has_error is False
+    assert result.failed is False
 
 
 def _make_pending_future() -> concurrent.futures.Future:

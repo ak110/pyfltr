@@ -53,6 +53,7 @@ import pyfltr.cli.command_selection
 import pyfltr.cli.overrides
 import pyfltr.cli.pipeline
 import pyfltr.cli.replace_subcmd
+import pyfltr.command.core_
 import pyfltr.command.targets
 import pyfltr.config.config
 import pyfltr.grep_.history
@@ -165,7 +166,6 @@ async def tool_show_run(run_id: str) -> RunOverviewModel:
         CommandSummaryModel(
             command=entry.get("command"),
             status=entry.get("status"),
-            has_error=entry.get("has_error"),
             diagnostics=entry.get("diagnostics"),
             elapsed=entry.get("elapsed"),
             slow_tests=[SlowTestModel.model_validate(test) for test in entry.get("slow_tests", [])],
@@ -440,13 +440,13 @@ async def tool_run_for_agent(
         command_summaries = []
 
     commands_model = [CommandSummaryModel.model_validate(entry) for entry in command_summaries]
-    failed_commands = [c.command for c in commands_model if c.has_error and c.command]
+    failed_commands = [c.command for c in commands_model if pyfltr.command.core_.is_failed_status(c.status) and c.command]
 
     # 失敗コマンドのretry_commandをアーカイブから収集する（F7）。
     retry_commands: dict[str, str] = {}
     for summary_entry in command_summaries:
         cmd_name = summary_entry.get("command")
-        if summary_entry.get("has_error") and cmd_name:
+        if cmd_name:
             try:
                 tool_meta = store.read_tool_meta(run_id, cmd_name)
                 rc = tool_meta.get("retry_command")

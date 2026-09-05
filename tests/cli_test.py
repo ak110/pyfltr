@@ -58,7 +58,7 @@ def test_write_log(text_logs):
         command_type="tester",
         commandline=["pytest", "test.py"],
         returncode=0,
-        has_error=False,
+        formatter_failed=False,
         files=3,
         output="ok",
         elapsed=1.5,
@@ -76,7 +76,6 @@ def test_write_log_failed(text_logs):
         command_type="tester",
         commandline=["pytest", "test.py"],
         returncode=1,
-        has_error=True,
         files=2,
         output="FAILED",
         elapsed=0.8,
@@ -95,7 +94,6 @@ def test_write_log_shows_slow_tests_on_success_and_failure(text_logs, returncode
         command_type="tester",
         commandline=["pytest"],
         returncode=returncode,
-        has_error=returncode != 0,
         files=1,
         output="FAILED" if returncode else "1 passed in 1.50s",
         elapsed=1.5,
@@ -115,7 +113,6 @@ def test_write_log_tester_with_errors_also_writes_raw_output(text_logs):
         command_type="tester",
         commandline=["pytest"],
         returncode=1,
-        has_error=True,
         files=1,
         output="RAW PYTEST OUTPUT crash detail",
         elapsed=1.0,
@@ -137,7 +134,6 @@ def test_write_log_tester_github_annotations_wraps_raw_output_with_stop_commands
         command_type="tester",
         commandline=["pytest"],
         returncode=1,
-        has_error=True,
         files=1,
         output="::error:: this looks like a workflow command",
         elapsed=1.0,
@@ -325,7 +321,7 @@ def test_run_commands_with_cli_fail_fast_aborts_remaining_fixers(mocker):
     config.values["ruff-check"] = True
     config.values["ruff-format"] = True
     config.values["mypy"] = True
-    # fixステージでruff-checkがhas_error=Trueで返る想定
+    # fixステージでruff-checkがfailedを返る想定
     fix_fail = _make_result("ruff-check", returncode=1, command_type="linter")
     mocker.patch("pyfltr.command.dispatcher.execute_command", return_value=fix_fail)
     mock_args = mocker.MagicMock()
@@ -350,7 +346,7 @@ def test_run_commands_with_cli_without_fail_fast_continues(mocker):
     config = pyfltr.config.config.create_default_config()
     config.values["ruff-format"] = True
     config.values["mypy"] = True
-    fail_result = _make_result("ruff-format", returncode=1, command_type="formatter", has_error=True)
+    fail_result = _make_result("ruff-format", returncode=1, command_type="formatter", formatter_failed=True)
     success = _make_result("mypy", returncode=0)
 
     def _fake_execute(command, *_args, **_kwargs):

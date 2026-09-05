@@ -221,7 +221,7 @@ def _run_check_then_write(
             command_info=command_info,
             commandline=check_commandline,
             returncode=check_rc,
-            has_error=True,
+            formatter_failed=True,
             files=len(targets),
             output=output,
             elapsed=elapsed,
@@ -234,22 +234,22 @@ def _run_check_then_write(
     output = write_proc.stdout.strip()
     elapsed = time.perf_counter() - start_time
 
-    has_error = write_proc.returncode != 0
-    returncode = write_proc.returncode if has_error else 1
+    formatter_failed = write_proc.returncode != 0
+    returncode = write_proc.returncode if formatter_failed else 1
 
     result = CommandResult.from_run(
         command=command,
         command_info=command_info,
         commandline=write_commandline,
         returncode=returncode,
-        has_error=has_error,
+        formatter_failed=formatter_failed,
         files=len(targets),
-        output=check_proc.stdout.strip() if not has_error else output,
+        output=check_proc.stdout.strip() if not formatter_failed else output,
         elapsed=elapsed,
         timeout_exceeded=write_proc.timeout_exceeded,
         retry_count=check_proc.retry_count + write_proc.retry_count,
     )
-    if not has_error:
+    if not formatter_failed:
         digests_after = snapshot_file_digests(targets, base_cwd=start_cwd)
         changed = digests_after != digests_before
         if changed:
@@ -276,9 +276,9 @@ def _run_fix_mode(
     `run_step`は`_prepare_check_write_execution`が組み立てたcallableで、env・on_output・
     timeout・retry設定を既に束縛済み（commandlineのみ差し替えて呼び出す）。
 
-    command_type_override: `(has_error, returncode) -> command_type`の関数。
+    command_type_override: `(formatter_failed, returncode) -> command_type`の関数。
     Noneの場合は `command_info.type` を使う。
-    prettierのfixモードはreturncode/has_errorに応じてtypeを切り替えるためこのcallbackで吸収する。
+    prettierのfixモードはreturncode/formatter_failedに応じてtypeを切り替えるためこのcallbackで吸収する。
     parse_errors: Trueのとき `error_parser.parse_errors` を呼び出す。
     """
     digests_before = snapshot_file_digests(targets, base_cwd=start_cwd)
@@ -290,24 +290,26 @@ def _run_fix_mode(
     changed = digests_after != digests_before
 
     if write_rc != 0:
-        has_error = True
+        formatter_failed = True
         returncode: int = write_rc
     elif changed:
-        has_error = False
+        formatter_failed = False
         returncode = 1
     else:
-        has_error = False
+        formatter_failed = False
         returncode = 0
 
     errors = pyfltr.command.error_parser.parse_errors(command, output, command_info.error_pattern) if parse_errors else []
 
-    resolved_type = command_type_override(has_error, returncode) if command_type_override is not None else command_info.type
+    resolved_type = (
+        command_type_override(formatter_failed, returncode) if command_type_override is not None else command_info.type
+    )
     result = CommandResult.from_run(
         command=command,
         command_type=resolved_type,
         commandline=write_commandline,
         returncode=returncode,
-        has_error=has_error,
+        formatter_failed=formatter_failed,
         files=len(targets),
         output=output,
         elapsed=elapsed,
@@ -315,7 +317,7 @@ def _run_fix_mode(
         timeout_exceeded=write_proc.timeout_exceeded,
         retry_count=write_proc.retry_count,
     )
-    if not has_error and changed:
+    if not formatter_failed and changed:
         result.fixed_files = changed_files(digests_before, digests_after)
     return result
 

@@ -182,6 +182,23 @@ def test_read_tool_meta(tmp_path: pathlib.Path) -> None:
     assert tool_meta["returncode"] == 0
 
 
+def test_read_tool_meta_removes_retired_key_and_preserves_unknown_key(tmp_path: pathlib.Path) -> None:
+    """旧書式の撤去済みキーだけを除き、未知のキーを保持する。"""
+    store = _make_store(tmp_path)
+    run_id = store.start_run(commands=["ruff-check"])
+    store.write_tool_result(run_id, _make_result("ruff-check", returncode=1))
+    meta_path = tmp_path / "runs" / run_id / "tools" / "ruff-check" / "tool.json"
+    stored = json.loads(meta_path.read_text(encoding="utf-8"))
+    stored["has_error"] = True
+    stored["future_key"] = "preserved"
+    meta_path.write_text(json.dumps(stored), encoding="utf-8")
+
+    tool_meta = store.read_tool_meta(run_id, "ruff-check")
+
+    assert "has_error" not in tool_meta
+    assert tool_meta["future_key"] == "preserved"
+
+
 def test_read_tool_output(tmp_path: pathlib.Path) -> None:
     """read_tool_output が生出力を返す。"""
     store = _make_store(tmp_path)

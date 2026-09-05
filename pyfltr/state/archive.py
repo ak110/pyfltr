@@ -47,6 +47,8 @@ _META_FILENAME = "meta.json"
 _TOOL_OUTPUT_FILENAME = "output.log"
 _TOOL_DIAGNOSTICS_FILENAME = "diagnostics.jsonl"
 _TOOL_META_FILENAME = "tool.json"
+TOOL_META_REMOVED_KEYS: frozenset[str] = frozenset({"has_error"})
+"""保存済みのツールメタ情報から読み取り時に除去するフィールド。"""
 
 
 def default_cache_root() -> pathlib.Path:
@@ -176,7 +178,6 @@ class ArchiveStore:
             "files": result.files,
             "elapsed": round(result.elapsed, 3),
             "diagnostics": len(result.errors),
-            "has_error": result.has_error,
             "commandline": result.commandline,
         }
         if hint_urls:
@@ -264,11 +265,12 @@ class ArchiveStore:
         return sorted(entry.name for entry in tools_dir.iterdir() if entry.is_dir())
 
     def read_tool_meta(self, run_id: str, tool: str) -> dict[str, typing.Any]:
-        """指定 run / tool のメタ情報を読み取る。"""
+        """指定run / toolのメタ情報から撤去済みフィールドだけを除いて返す。"""
         path = self._runs_dir / run_id / "tools" / pyfltr.paths.sanitize_command_name(tool) / _TOOL_META_FILENAME
         if not path.exists():
             raise FileNotFoundError(f"{run_id}/{tool}")
-        return json.loads(path.read_text(encoding="utf-8"))
+        meta = json.loads(path.read_text(encoding="utf-8"))
+        return {key: value for key, value in meta.items() if key not in TOOL_META_REMOVED_KEYS}
 
     def read_tool_output(self, run_id: str, tool: str) -> str:
         """指定 run / tool の生出力を読み取る。"""

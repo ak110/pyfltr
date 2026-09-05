@@ -32,7 +32,7 @@ def test_taplo_two_step_check_clean(mocker, tmp_path: pathlib.Path) -> None:
     assert "check" in cmdline
     assert "format" not in cmdline
     assert result.status == "succeeded"
-    assert result.has_error is False
+    assert result.formatter_failed is False
 
 
 def test_taplo_two_step_check_needs_format(mocker, tmp_path: pathlib.Path) -> None:
@@ -61,7 +61,7 @@ def test_taplo_two_step_check_needs_format(mocker, tmp_path: pathlib.Path) -> No
     )
 
     assert result.status == "formatted"
-    assert result.has_error is False
+    assert result.formatter_failed is False
     assert result.fixed_files is not None and target.as_posix() in result.fixed_files
 
 
@@ -85,7 +85,7 @@ def test_taplo_two_step_step2_failure_marks_failed(mocker, tmp_path: pathlib.Pat
     )
 
     assert result.status == "failed"
-    assert result.has_error is True
+    assert result.formatter_failed is True
 
 
 def test_taplo_fix_mode_skips_check_step(mocker, tmp_path: pathlib.Path) -> None:
@@ -152,4 +152,4 @@ def test_taplo_fix_mode_process_error_fails(mocker, tmp_path: pathlib.Path) -> N
     )
 
     assert result.status == "failed"
-    assert result.has_error is True
+    assert result.formatter_failed is True

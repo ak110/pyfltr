@@ -40,7 +40,6 @@ class CommandSummaryModel(pydantic.BaseModel):
         default=None,
         description="実行ステータス（succeeded / formatted / failed / skipped）。",
     )
-    has_error: bool | None = pydantic.Field(default=None, description="エラーが発生したか否か。")
     diagnostics: int | None = pydantic.Field(default=None, description="diagnosticの件数。")
     elapsed: float | None = pydantic.Field(
         default=None,
@@ -127,7 +126,6 @@ class CommandMetaModel(pydantic.BaseModel):
     files: int = pydantic.Field(description="対象ファイル数。")
     elapsed: float = pydantic.Field(description="当該コマンドの実行に要した秒数。")
     diagnostics: int = pydantic.Field(description="diagnosticの件数。")
-    has_error: bool = pydantic.Field(description="エラーが発生したか否か。")
     slow_tests: list[SlowTestModel] = pydantic.Field(
         default_factory=list,
         description="テスターが報告した遅いテストの上位一覧（秒数降順）。",
@@ -183,7 +181,7 @@ class RunForAgentResult(pydantic.BaseModel):
     failed: list[str] = pydantic.Field(description="失敗したコマンド名の一覧。")
     commands: list[CommandSummaryModel] = pydantic.Field(
         default_factory=list,
-        description="コマンド別サマリ一覧（status・has_error・diagnostics件数）。",
+        description="コマンド別サマリ一覧（status・diagnostics件数）。",
     )
     skipped_reason: str | None = pydantic.Field(
         default=None,

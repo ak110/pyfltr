@@ -270,7 +270,7 @@ def run_commands_with_cli(
     `base_ctx`はパイプライン全体で不変のコンテキスト（config・all_files・cache_store・
     cache_run_idを含む）。各コマンド実行前に`ExecutionContext`を組み立てて渡す。
 
-    `fail_fast=True`のとき、いずれかのツール完了時に`has_error=True`を検出した
+    `fail_fast=True`のとき、いずれかのツールが`status`として`failed`または`resolution_failed`を返した
     時点で未開始のジョブを`future.cancel()`で打ち切り、起動済みサブプロセスに
     `terminate()`を送る。formatterの`formatted`はfailureに含めない。
 
@@ -304,7 +304,7 @@ def run_commands_with_cli(
         )
         if archive_hook is not None and not fix_result.cached:
             archive_hook(fix_result)
-        if fail_fast and fix_result.has_error:
+        if fail_fast and fix_result.failed:
             return _emit_skipped_results(
                 results,
                 remaining=[*formatters, *linters_and_testers],
@@ -328,7 +328,7 @@ def run_commands_with_cli(
             archive_hook(result)
         if on_result is not None:
             on_result(result)
-        if fail_fast and result.has_error:
+        if fail_fast and result.failed:
             remaining = [*formatters[idx + 1 :], *linters_and_testers]
             return _emit_skipped_results(
                 results,
@@ -366,7 +366,7 @@ def run_commands_with_cli(
                     archive_hook(result)
                 if on_result is not None:
                     on_result(result)
-                if fail_fast and not aborted and result.has_error:
+                if fail_fast and not aborted and result.failed:
                     aborted = True
                     # 未開始ジョブをまとめてキャンセルし、起動済みサブプロセスを中断する。
                     pyfltr.state.stage_runner.cancel_pending_futures(future_to_command, aborted_commands)
@@ -860,7 +860,7 @@ def _maybe_emit_precommit_guidance(
 def calculate_returncode(results: list[pyfltr.command.core_.CommandResult], exit_zero_even_if_formatted: bool) -> int:
     """終了コードを計算。"""
     statuses = [result.status for result in results]
-    if any(status in {"failed", "resolution_failed"} for status in statuses):
+    if any(result.failed for result in results):
         return 1
     if not exit_zero_even_if_formatted and any(status == "formatted" for status in statuses):
         return 1

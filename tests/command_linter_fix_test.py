@@ -94,7 +94,7 @@ def test_fix_mode_mtime_change_marks_formatted(mocker, tmp_path: pathlib.Path) -
     )
 
     assert result.status == "formatted"
-    assert result.has_error is False
+    assert result.formatter_failed is False
 
 
 def test_fix_mode_non_zero_rc_is_failed(mocker, tmp_path: pathlib.Path) -> None:
@@ -121,7 +121,7 @@ def test_fix_mode_non_zero_rc_is_failed(mocker, tmp_path: pathlib.Path) -> None:
 
     # rc != 0なのでmtime変化があってもfailed
     assert result.status == "failed"
-    assert result.has_error is True
+    assert result.failed is True
 
 
 def test_fix_mode_formatter_is_not_filtered_in(tmp_path: pathlib.Path) -> None:

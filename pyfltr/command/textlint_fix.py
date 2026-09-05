@@ -150,20 +150,20 @@ def execute_textlint_fix(
     # ステータス判定
     timeout_exceeded = step1_proc.timeout_exceeded or step2_proc.timeout_exceeded
     if step1_fatal or step2_fatal:
-        has_error = True
+        step_failed = True
         returncode: int = step1_rc if step1_fatal else step2_rc
         result_command_type: str = "linter"
     elif step2_rc != 0:
-        has_error = True
+        step_failed = True
         returncode = step2_rc
         result_command_type = "linter"
     elif step1_changed:
         # fix適用済み、残存違反なし → formatted扱いにする
-        has_error = False
+        step_failed = False
         returncode = 1
         result_command_type = "formatter"
     else:
-        has_error = False
+        step_failed = False
         returncode = 0
         result_command_type = "linter"
 
@@ -172,7 +172,6 @@ def execute_textlint_fix(
         command_type=result_command_type,
         commandline=step2_commandline,
         returncode=returncode,
-        has_error=has_error,
         files=len(targets),
         output=output,
         elapsed=elapsed,
@@ -180,7 +179,7 @@ def execute_textlint_fix(
         timeout_exceeded=timeout_exceeded,
         retry_count=step1_proc.retry_count + step2_proc.retry_count,
     )
-    if not has_error and step1_changed:
+    if not step_failed and step1_changed:
         result.fixed_files = changed_files(digests_before, digests_after_step1)
     return result
 

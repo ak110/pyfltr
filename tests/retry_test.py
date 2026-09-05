@@ -205,7 +205,7 @@ def test_populate_retry_command_skips_for_cached(tmp_path):
 
 
 def test_populate_retry_command_skips_for_success(tmp_path):
-    """成功（has_error=False）のCommandResultではretry_commandを埋めない。"""
+    """成功したCommandResultではretry_commandを埋めない。"""
     result = _make_result("mypy", returncode=0)
     template = pyfltr.state.retry.build_retry_args_template(["run", "--commands", "mypy"])
     pyfltr.state.retry.populate_retry_command(
@@ -218,9 +218,9 @@ def test_populate_retry_command_skips_for_success(tmp_path):
 
 
 def test_populate_retry_command_skips_for_formatted(tmp_path):
-    """formatterによるファイル修正のみ（returncode!=0だがhas_error=False）では埋めない。"""
-    # 例: ruff-formatが差分を検出しreturncode=1を返すが、書き込み済みのためhas_error=False
-    result = _make_result("ruff-format", returncode=1, has_error=False, command_type="formatter")
+    """formatterによるファイル修正のみ（returncode!=0だがformatter_failed=False）では埋めない。"""
+    # 例: ruff-formatが差分を検出しreturncode=1を返すが、書き込み済みのためformatter_failed=False
+    result = _make_result("ruff-format", returncode=1, formatter_failed=False, command_type="formatter")
     template = pyfltr.state.retry.build_retry_args_template(["run", "--commands", "ruff-format"])
     pyfltr.state.retry.populate_retry_command(
         result,

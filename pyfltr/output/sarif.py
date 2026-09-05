@@ -81,7 +81,7 @@ def _build_run(result: pyfltr.command.core_.CommandResult) -> dict[str, typing.A
     for error in result.errors:
         sarif_results.append(_build_result_record(error, rule_index))
 
-    invocation: dict[str, typing.Any] = {"executionSuccessful": not result.has_error}
+    invocation: dict[str, typing.Any] = {"executionSuccessful": not result.failed}
     if result.retry_command is not None:
         invocation["commandLine"] = result.retry_command
 

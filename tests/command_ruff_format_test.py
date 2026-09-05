@@ -84,7 +84,7 @@ def test_ruff_format_step1_lint_violation_ignored(mocker, tmp_path: pathlib.Path
 
     # ステップ1の exit 1 は無視され、ステップ2の exit 0 が反映されて succeeded
     assert result.status == "succeeded"
-    assert result.has_error is False
+    assert result.formatter_failed is False
 
 
 def test_ruff_format_step1_internal_error_fails(mocker, tmp_path: pathlib.Path) -> None:
@@ -107,7 +107,7 @@ def test_ruff_format_step1_internal_error_fails(mocker, tmp_path: pathlib.Path) 
     )
 
     assert result.status == "failed"
-    assert result.has_error is True
+    assert result.formatter_failed is True
 
 
 def test_ruff_format_step2_internal_error_fails(mocker, tmp_path: pathlib.Path) -> None:
@@ -130,7 +130,7 @@ def test_ruff_format_step2_internal_error_fails(mocker, tmp_path: pathlib.Path) 
     )
 
     assert result.status == "failed"
-    assert result.has_error is True
+    assert result.formatter_failed is True
 
 
 def test_ruff_format_step1_mtime_change_marks_formatted(mocker, tmp_path: pathlib.Path) -> None:
@@ -160,4 +160,4 @@ def test_ruff_format_step1_mtime_change_marks_formatted(mocker, tmp_path: pathli
 
     # mtime が変化したので formatted
     assert result.status == "formatted"
-    assert result.has_error is False
+    assert result.formatter_failed is False

@@ -200,8 +200,8 @@ def populate_retry_command(
     """CommandResult に retry_command を埋める (パートG A案のフィルタリングを適用)。
 
     `retry_command`は「当該ツールを失敗ファイルのみに限定して再実行する文字列」である。
-    成功時（`has_error == False`）やformatterによる修正適用のみ（returncode != 0
-    でもhas_error False）のケースでは再実行動機が無いため埋めない。
+    `status`が`succeeded`・`formatted`・`skipped`のいずれかである結果には
+    再実行動機が無いため埋めない。
     キャッシュ復元結果（`result.cached == True`）も対象外（再実行不要のため）。
 
     失敗時は`filter_failed_files`で失敗ファイルのみに限定したターゲットを
@@ -211,7 +211,7 @@ def populate_retry_command(
     """
     if result.cached:
         return
-    if not result.has_error:
+    if not result.needs_rerun:
         return
     filtered_targets = filter_failed_files(result)
     result.retry_command = build_retry_command(

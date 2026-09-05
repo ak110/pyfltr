@@ -249,7 +249,7 @@ def collect_tool_summaries(
     store: pyfltr.state.archive.ArchiveStore,
     run_id: str,
 ) -> list[dict[str, typing.Any]]:
-    """`tools/`配下から各ツールの要約（status / has_error / diagnostics / elapsed / slow_tests）を集める。
+    """`tools/`配下から各ツールの要約（status / diagnostics / elapsed / slow_tests）を集める。
 
     `elapsed`は当該ツールの実行に要した秒数である。実行アーカイブはキャッシュヒットした
     ツールを書き込まないため（`pipeline`・`ui`が`not result.cached`で分岐する）、
@@ -268,7 +268,6 @@ def collect_tool_summaries(
         summary: dict[str, typing.Any] = {
             "command": tool_meta.get("command", tool_meta.get("tool", tool)),
             "status": tool_meta.get("status"),
-            "has_error": tool_meta.get("has_error"),
             "diagnostics": tool_meta.get("diagnostics"),
             "elapsed": tool_meta.get("elapsed"),
         }
@@ -298,12 +297,7 @@ def _print_run_overview_text(
         print("  (no archived commands)")
         return
     for entry in tool_summaries:
-        print(
-            f"  {entry['command']}: "
-            f"status={entry.get('status')} "
-            f"has_error={entry.get('has_error')} "
-            f"diagnostics={entry.get('diagnostics')}"
-        )
+        print(f"  {entry['command']}: status={entry.get('status')} diagnostics={entry.get('diagnostics')}")
 
 
 def _show_tools_detail(
@@ -362,7 +356,7 @@ def _print_tool_detail_text(
     `diagnostics`は`(command, file)`単位の集約形式を想定し、各file見出しの下に
     `messages[]`内の個別指摘をインデント付きで並べる。
     """
-    for key in ("command", "type", "status", "returncode", "files", "elapsed", "diagnostics", "has_error"):
+    for key in ("command", "type", "status", "returncode", "files", "elapsed", "diagnostics"):
         if key in tool_meta and tool_meta[key] is not None:
             print(f"{key}: {tool_meta[key]}")
     if tool_meta.get("commandline"):

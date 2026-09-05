@@ -12,6 +12,7 @@ import pathlib
 import typing
 
 import pyfltr.cli.output_format
+import pyfltr.command.core_
 import pyfltr.paths
 import pyfltr.state.archive
 import pyfltr.state.runs
@@ -207,7 +208,7 @@ def _collect_failed_tools(
             meta = store.read_tool_meta(run_id, tool)
         except OSError:
             continue
-        if meta.get("status") in {"failed", "resolution_failed"}:
+        if pyfltr.command.core_.is_failed_status(meta.get("status")):
             failed.append(tool)
     return failed
 
