@@ -147,7 +147,10 @@ def make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> "
         default=False,
         action="store_true",
         help="run / fast / run-for-agent サブコマンドで自動付与される fix ステージを抑止します"
-        "(ci サブコマンドは元から fix ステージを持ちません)。",
+        "(ci サブコマンドは元から fix ステージを持ちません)。"
+        "抑止する対象は fix ステージだけで、通常ステージの formatter は対象ファイルを書き換えます。"
+        "ruff-format-by-check が既定で有効なため、本オプションの指定時も ruff-format による整形は行われます。"
+        "書き換えを避ける場合は --commands で対象を linter へ限定してください。",
     )
     common.add_argument(
         "--quiet",
@@ -216,7 +219,10 @@ def make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> "
         default=False,
         action="store_true",
         help="起点ディレクトリ外の絶対パスを検査対象へ含めます。"
-        "既定で除外されるツール(markdownlint・textlint・prek 等)にも対象として渡します。",
+        "既定で除外されるツール(markdownlint・textlint・prek 等)にも対象として渡します。"
+        "--work-dir には検査設定を持つプロジェクトのルートを指定してください。"
+        "--work-dir は設定探索と相対パス解決の基準を兼ねるため、検査設定を持たないディレクトリを起点にすると、"
+        "適用される除外設定と検査対象の範囲が変わります。",
     )
     common.add_argument(
         "--no-archive",

@@ -279,6 +279,9 @@ async def tool_run_for_agent(
         disable: 一時的に無効化するコマンド名のリスト。カンマ区切りも受理する。
         exclude_fence_under: フェンス内側を検査対象から除外するH2見出しのリスト。
         no_fix: Trueの場合、`run`と`fast`のfixステージを抑止する。`ci`は元から無効となる。
+            抑止する対象はfixステージだけで、通常ステージのformatterは対象ファイルを書き換える。
+            `ruff-format-by-check`が既定で有効なため、本引数の指定時も`ruff-format`による整形は行われる。
+            書き換えを避ける場合は`commands`で対象をlinterへ限定する。
         fail_fast: Trueの場合、1ツールでもエラーが発生した時点で残りを打ち切る。
         only_failed: Trueの場合、直前runの失敗ツール・失敗ファイルのみ再実行する。
         from_run: `only_failed=True`時の参照run_id（前方一致・`latest`可）。
@@ -288,6 +291,9 @@ async def tool_run_for_agent(
             省略時はMCPサーバープロセスのカレントディレクトリを用いる。
             指定時は診断のファイルパスを絶対パスで返す場合がある。
         allow_external_paths: Trueの場合、実行起点の外側にあるパスを許可する。
+            `work_dir`には検査設定を持つプロジェクトのルートを指定する。
+            `work_dir`は設定探索と相対パス解決の基準を兼ねるため、検査設定を持たないディレクトリを
+            起点にすると、適用される除外設定と検査対象の範囲が変わる。
         no_exclude: Trueの場合、設定の除外パターンを無効化する。
         no_gitignore: Trueの場合、`.gitignore`による除外を無効化する。
         no_cache: Trueの場合、ファイルhashキャッシュを無効化する。
@@ -1167,6 +1173,12 @@ def build_server() -> MCPServer:
             " modeでrun・fast・ciを選択し、CLIと同じ対象制御オプションを利用できる。"
             " only_failed=True で直前 run の失敗ツール・失敗ファイルのみ再実行する（from_run で参照 run を指定可）。"
             " 戻り値に retry_commands（失敗コマンドの再実行シェルコマンド）を含む。"
+            " no_fix=True が抑止するのは fix ステージだけで、通常ステージの formatter は対象ファイルを書き換える"
+            "（ruff-format-by-check が既定で有効なため ruff-format による整形は行われる）。"
+            " 書き換えを避ける場合は commands で対象を linter へ限定する。"
+            " allow_external_paths=True で起点外の絶対パスを検査する場合は、work_dir へ検査設定を持つ"
+            "プロジェクトのルートを指定する。work_dir は設定探索と相対パス解決の基準を兼ねるため、"
+            "検査設定を持たないディレクトリを起点にすると適用される除外設定と検査対象の範囲が変わる。"
         ),
     )(tool_run_for_agent)
     mcp.tool(
