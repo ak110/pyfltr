@@ -88,17 +88,21 @@ def execute_pre_commit(
     # stage 1: 実行
     timeout = pyfltr.config.config.resolve_command_timeout(config.values, command)
     retry_kwargs: dict[str, typing.Any] = pyfltr.config.config.resolve_retry_kwargs(config.values)
-    proc = pyfltr.command.process.run_subprocess_with_timeout(
-        commandline,
-        pre_commit_env,
-        on_output,
-        is_interrupted=is_interrupted,
-        on_subprocess_start=on_subprocess_start,
-        on_subprocess_end=on_subprocess_end,
-        timeout=timeout,
-        cwd=cwd,
-        **retry_kwargs,
-    )
+
+    def _run_stage() -> pyfltr.command.process.CompletedProcessWithTimeoutInfo:
+        return pyfltr.command.process.run_subprocess_with_timeout(
+            commandline,
+            pre_commit_env,
+            on_output,
+            is_interrupted=is_interrupted,
+            on_subprocess_start=on_subprocess_start,
+            on_subprocess_end=on_subprocess_end,
+            timeout=timeout,
+            cwd=cwd,
+            **retry_kwargs,
+        )
+
+    proc = _run_stage()
     returncode = proc.returncode
     formatter_failed = False
     timeout_exceeded = proc.timeout_exceeded
@@ -111,17 +115,7 @@ def execute_pre_commit(
     if returncode != 0 and not timeout_exceeded:
         if args.verbose and on_output is not None:
             on_output(f"{command}: stage 2 再実行\n")
-        proc = pyfltr.command.process.run_subprocess_with_timeout(
-            commandline,
-            pre_commit_env,
-            on_output,
-            is_interrupted=is_interrupted,
-            on_subprocess_start=on_subprocess_start,
-            on_subprocess_end=on_subprocess_end,
-            timeout=timeout,
-            cwd=cwd,
-            **retry_kwargs,
-        )
+        proc = _run_stage()
         if proc.returncode != 0:
             returncode = proc.returncode
             formatter_failed = True

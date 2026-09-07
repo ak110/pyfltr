@@ -68,7 +68,7 @@ def execute_check_write_two_step(
     # taplo/shfmt向けの本呼び出しとprettier.py側のexecute_prettier_two_stepは、
     # 分岐先ヘルパー（_run_check_then_write / _run_prettier_check_then_write）が異なる別実装のため
     # 統合できないが、_prepare_check_write_executionへの引数受け渡し部分は完全一致する。
-    # pylint: disable=duplicate-code
+    # arid: disable
     check_commandline, write_commandline, run_step = _prepare_check_write_execution(
         command,
         commandline_prefix,
@@ -84,7 +84,7 @@ def execute_check_write_two_step(
         cwd=cwd,
         start_cwd=start_cwd,
     )
-    # pylint: enable=duplicate-code
+    # arid: enable
     if fix_mode:
         return _run_fix_mode(
             command=command,

@@ -470,6 +470,29 @@ async def tool_run_for_agent(
     )
 
 
+def _expand_grep_targets(
+    paths: list[str],
+    types: list[str] | None,
+    globs: list[str] | None,
+    *,
+    no_exclude: bool,
+    no_gitignore: bool,
+) -> tuple[pyfltr.config.config.Config, list[pathlib.Path]]:
+    """grepとreplaceに共通する設定を適用して対象ファイルを展開する。"""
+    try:
+        config = pyfltr.config.config.load_config()
+    except (ValueError, OSError) as exc:
+        _raise_mcp_error(f"設定エラー: {exc}")
+    if no_exclude:
+        config.values["exclude"] = []
+        config.values["extend-exclude"] = []
+    if no_gitignore:
+        config.values["respect-gitignore"] = False
+    expanded = pyfltr.command.targets.expand_all_files([pathlib.Path(path) for path in paths], config)
+    expanded = pyfltr.grep_.scanner.filter_files_by_type(expanded, types or [])
+    return config, pyfltr.grep_.scanner.filter_by_globs(expanded, globs or [])
+
+
 async def tool_grep(
     paths: list[str],
     pattern: str | None = None,
@@ -564,23 +587,13 @@ async def tool_grep(
         _raise_mcp_error("summary_mode=files_without_match では max_total に正の値を指定できません。")
     effective_max_total = (0 if summary_mode is not None else 1000) if max_total is None else max_total
 
-    try:
-        config = pyfltr.config.config.load_config()
-    except (ValueError, OSError) as exc:
-        _raise_mcp_error(f"設定エラー: {exc}")
-
-    if no_exclude:
-        config.values["exclude"] = []
-        config.values["extend-exclude"] = []
-    if no_gitignore:
-        config.values["respect-gitignore"] = False
-
-    expanded = pyfltr.command.targets.expand_all_files(
-        [pathlib.Path(p) for p in paths],
-        config,
+    _config, expanded = _expand_grep_targets(
+        paths,
+        types,
+        globs,
+        no_exclude=no_exclude,
+        no_gitignore=no_gitignore,
     )
-    expanded = pyfltr.grep_.scanner.filter_files_by_type(expanded, types or [])
-    expanded = pyfltr.grep_.scanner.filter_by_globs(expanded, globs or [])
 
     files_scanned = len(expanded)
     matches: list[GrepMatchModel] = []
@@ -767,23 +780,13 @@ async def tool_replace(
     except ValueError as exc:
         _raise_mcp_error(str(exc))
 
-    try:
-        config = pyfltr.config.config.load_config()
-    except (ValueError, OSError) as exc:
-        _raise_mcp_error(f"設定エラー: {exc}")
-
-    if no_exclude:
-        config.values["exclude"] = []
-        config.values["extend-exclude"] = []
-    if no_gitignore:
-        config.values["respect-gitignore"] = False
-
-    expanded = pyfltr.command.targets.expand_all_files(
-        [pathlib.Path(p) for p in paths],
-        config,
+    config, expanded = _expand_grep_targets(
+        paths,
+        types,
+        globs,
+        no_exclude=no_exclude,
+        no_gitignore=no_gitignore,
     )
-    expanded = pyfltr.grep_.scanner.filter_files_by_type(expanded, types or [])
-    expanded = pyfltr.grep_.scanner.filter_by_globs(expanded, globs or [])
 
     # exclude_filesによる対象限定
     if exclude_files:

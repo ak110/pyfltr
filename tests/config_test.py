@@ -59,8 +59,8 @@ preset が直接 True/False を決め、言語カテゴリキーの影響を受�
 
 
 # preset別・言語カテゴリ別の期待有効ツール集合（gate開時）。詳細は pyfltr/config/presets.py を参照。
-_PYTHON_ENABLED_20260330 = frozenset({"ruff-format", "ruff-check", "mypy", "pylint", "pytest", "pyright"})
-_PYTHON_ENABLED_LATEST = frozenset({"ruff-format", "ruff-check", "mypy", "pylint", "pytest", "pyright", "uv-sort"})
+_PYTHON_ENABLED_20260330 = frozenset({"ruff-format", "ruff-check", "mypy", "pylint", "arid", "pytest", "pyright"})
+_PYTHON_ENABLED_LATEST = frozenset({"ruff-format", "ruff-check", "mypy", "pylint", "arid", "pytest", "pyright", "uv-sort"})
 # javascript/rust/dotnet は全presetで同じ構成。
 _JAVASCRIPT_ENABLED = frozenset({"eslint", "biome", "oxlint", "prettier", "tsc", "vitest"})
 _RUST_ENABLED = frozenset({"cargo-fmt", "cargo-clippy", "cargo-check", "cargo-test", "cargo-deny"})
@@ -313,6 +313,7 @@ def test_fast_alias_dynamic(tmp_path: pathlib.Path) -> None:
     fast = config["aliases"]["fast"]
     # ruff-format-fast=Trueなのでfastに含まれる
     assert "ruff-format" in fast
+    assert "arid" in fast
     # mypy-fast=Falseなのでfastに含まれない
     assert "mypy" not in fast
     assert "pylint" not in fast
@@ -695,7 +696,7 @@ def test_lychee_version_default_exists() -> None:
     assert config["lychee-version"] == "latest"
 
 
-@pytest.mark.parametrize("command", ["designmd", "lychee", "semgrep", "sqlfluff", "bandit", "colloquial-check"])
+@pytest.mark.parametrize("command", ["designmd", "lychee", "semgrep", "sqlfluff", "bandit", "colloquial-check", "arid"])
 def test_new_tools_registered_in_lint_alias(command: str) -> None:
     """新規ツール群が`lint`エイリアスに登録されている。"""
     config = pyfltr.config.config.create_default_config()
@@ -783,6 +784,18 @@ def test_builtin_dynamic_config_defaults() -> None:
         assert pyfltr.config.config.DEFAULT_CONFIG[f"{command}-extend-targets"] == []
         assert pyfltr.config.config.DEFAULT_CONFIG[f"{command}-exclude"] == []
         assert pyfltr.config.config.DEFAULT_CONFIG[f"{command}-extend-args"] == []
+
+
+def test_arid_config_defaults() -> None:
+    """aridの組込み設定は実行と構造化出力に必要な既定値を持つ。"""
+    config = pyfltr.config.config.create_default_config()
+
+    assert config["arid"] is False
+    assert config["arid-path"] == ""
+    assert config["arid-args"] == ["--project-root", "."]
+    assert config["arid-runner"] == "python-runner"
+    assert config["arid-fast"] is True
+    assert config["arid-json"] is True
 
 
 def test_custom_command_targets_list(tmp_path: pathlib.Path) -> None:
@@ -1211,6 +1224,7 @@ python = true
     assert config["mypy"] is True
     assert config["pylint"] is True
     assert config["pyright"] is True
+    assert config["arid"] is True
     assert config["pytest"] is True
     assert config["uv-sort"] is True
     # tyはpreset非収録のため個別指定が必要
@@ -1741,7 +1755,7 @@ extend-args = "not-a-list"
 # Rust / .NET言語ツール向けのテスト群。
 # 全ツール既定False、pass-filenames=False、formatterは常時書き込みモード、
 # cargo-clippyのみlint-args / fix-argsを持つ。
-# pylint duplicate-code（R0801）を避けるため、config側の定義をそのまま再利用する。
+# aridの重複コード検出を避けるため、config側の定義をそのまま再利用する。
 _NATIVE_LANG_TOOLS: tuple[str, ...] = pyfltr.command.builtin.RUST_COMMANDS + pyfltr.command.builtin.DOTNET_COMMANDS
 
 

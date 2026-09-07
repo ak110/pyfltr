@@ -485,7 +485,7 @@ def _run_plain_command(
     # linter_fix.execute_linter_fixもこの単発実行の骨格（run_configured_subprocess呼び出し +
     # returncode/output/elapsedの取り出し）を共有するが、本関数はキャッシュ参照・書き込みを
     # 担う別責務のため統合しない。
-    # pylint: disable=duplicate-code
+    # arid: disable
     proc = pyfltr.command.process.run_configured_subprocess(
         command,
         commandline,
@@ -502,9 +502,13 @@ def _run_plain_command(
 
     output = proc.stdout.strip()
     elapsed = time.perf_counter() - start_time
-    # pylint: enable=duplicate-code
+    # arid: enable
     errors = pyfltr.command.error_parser.parse_errors(
-        command, output, command_info.error_pattern, file_path_remap=file_path_remap
+        command,
+        output,
+        command_info.error_pattern,
+        file_path_remap=file_path_remap,
+        path_base=cwd,
     )
     # pytestは設定ファイル競合をヘッダー1行で通知するだけで終了コードへ反映しない。
     # 拾わないと設定が適用されないまま完走した実行を成功として報告してしまう。
@@ -687,6 +691,8 @@ def _dispatch_command(
     # stage 1でファイル修正のみ （fixer系） なら "formatted"、
     # checker系hookが残存エラーを報告すれば "failed" となる。
     if command in ("pre-commit", "prek"):
+        # 専用executorの位置引数契約と共通コールバックを呼出箇所で明示する。
+        # arid: disable
         return _with_targets(
             pyfltr.command.precommit.execute_pre_commit(
                 command,
@@ -704,12 +710,15 @@ def _dispatch_command(
                 cwd=effective_cwd,
             )
         )
+        # arid: enable
 
     # glab-ci-lintはGitLab API経由のlintで、GitLab remote未登録の環境では
     # glab自身が非ゼロ終了しメッセージを返す。pyfltr利用者にとっては環境的事情のため、
     # failedではなくskipped相当へ書き換える。判定はglabの英語ロケール出力に
     # 依存するためLC_ALL/LANG=Cを強制する。
     if command == "glab-ci-lint":
+        # 専用executorの位置引数契約と共通コールバックを呼出箇所で明示する。
+        # arid: disable
         return _with_targets(
             pyfltr.command.glab.execute_glab_ci_lint(
                 command,
@@ -727,6 +736,7 @@ def _dispatch_command(
                 cwd=effective_cwd,
             )
         )
+        # arid: enable
 
     # vitestはJSON reporter併用で失敗を構造化diagnosticへ変換する。
     # 利用者の`vitest-args`に`--reporter`または`--outputFile`指定がある場合は
@@ -780,6 +790,8 @@ def _dispatch_command(
     # fixモードでlinterにfix-argsを適用する経路。
     # mtime変化でformatted判定を行い、rc != 0はそのままfailed扱いとする。
     if fix_args is not None and command_info.type != "formatter":
+        # 専用executorの位置引数契約と共通コールバックを呼出箇所で明示する。
+        # arid: disable
         return _with_targets(
             pyfltr.command.linter_fix.execute_linter_fix(
                 command,
@@ -798,12 +810,15 @@ def _dispatch_command(
                 start_cwd=start_cwd,
             )
         )
+        # arid: enable
 
     # ruff-formatでruff-format-by-checkが有効な場合は、
     # 先にruff check --fix --unsafe-fixesを実行してからruff formatを実行する。
     # ステップ1（check）のlint violation （exit 1） は無視する （lintはruff-checkで検出）。
     # ただしexit >= 2 （設定エラー等） は失敗扱いする。
     if command == "ruff-format" and config["ruff-format-by-check"]:
+        # 専用executorの位置引数契約と共通コールバックを呼出箇所で明示する。
+        # arid: disable
         return _with_targets(
             pyfltr.command.two_step.ruff.execute_ruff_format_two_step(
                 command,
@@ -823,62 +838,18 @@ def _dispatch_command(
                 start_cwd=start_cwd,
             )
         )
+        # arid: enable
 
-    # taploはcheckとformatが排他のためshfmt同様の2段階実行。
-    # taplo/shfmtは`execute_check_write_two_step`の薄いラッパー専用モジュールを持たず直接呼び出す
-    # （両者のラッパーはdocstring以外が同一のためduplicate-code是正で統合した）。
-    if command == "taplo":
-        return _with_targets(
-            pyfltr.command.two_step.base.execute_check_write_two_step(
-                command,
-                command_info,
-                commandline_prefix,
-                config,
-                targets,
-                additional_args,
-                fix_mode=fix_mode,
-                env=env,
-                on_output=on_output,
-                start_time=start_time,
-                args=args,
-                is_interrupted=is_interrupted,
-                on_subprocess_start=on_subprocess_start,
-                on_subprocess_end=on_subprocess_end,
-                cwd=effective_cwd,
-                start_cwd=start_cwd,
-            )
+    # taplo/shfmt/prettierは確認と書き込みの引数が排他のため2段階実行する。
+    # prettierだけlock取得時機が異なる専用executorへ委ね、共通の引数受け渡しはここへ集約する。
+    if command in ("taplo", "shfmt", "prettier"):
+        executor = (
+            pyfltr.command.two_step.prettier.execute_prettier_two_step
+            if command == "prettier"
+            else pyfltr.command.two_step.base.execute_check_write_two_step
         )
-
-    # shfmtは-l （確認） と-w （書き込み） が排他のためprettier同様の2段階実行。
-    if command == "shfmt":
         return _with_targets(
-            pyfltr.command.two_step.base.execute_check_write_two_step(
-                command,
-                command_info,
-                commandline_prefix,
-                config,
-                targets,
-                additional_args,
-                fix_mode=fix_mode,
-                env=env,
-                on_output=on_output,
-                start_time=start_time,
-                args=args,
-                is_interrupted=is_interrupted,
-                on_subprocess_start=on_subprocess_start,
-                on_subprocess_end=on_subprocess_end,
-                cwd=effective_cwd,
-                start_cwd=start_cwd,
-            )
-        )
-
-    # prettierは--check （read-only） と--write （書き込み） が排他のため2段階実行する。
-    # ruff-formatと同じ位置・スタイルで分岐する。
-    # prettierには {cmd}-fix-argsを定義していないためfix判定はfix_stage由来の
-    # fix_mode変数を使う （filter_fix_commandsではformatterとして常にfix対象となる）。
-    if command == "prettier":
-        return _with_targets(
-            pyfltr.command.two_step.prettier.execute_prettier_two_step(
+            executor(
                 command,
                 command_info,
                 commandline_prefix,

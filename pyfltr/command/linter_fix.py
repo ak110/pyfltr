@@ -49,7 +49,7 @@ def execute_linter_fix(
     # dispatcher._run_plain_commandもこの単発実行の骨格（run_configured_subprocess呼び出し +
     # returncode/output/elapsedの取り出し）を共有するが、本関数はハッシュ差分によるfix検知を
     # 担う別責務のため統合しない。
-    # pylint: disable=duplicate-code
+    # arid: disable
     proc = pyfltr.command.process.run_configured_subprocess(
         command,
         commandline,
@@ -65,7 +65,7 @@ def execute_linter_fix(
     returncode = proc.returncode
     output = proc.stdout.strip()
     elapsed = time.perf_counter() - start_time
-    # pylint: enable=duplicate-code
+    # arid: enable
 
     digests_after = snapshot_file_digests(targets, base_cwd=start_cwd)
     changed = digests_after != digests_before

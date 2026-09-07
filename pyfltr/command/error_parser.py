@@ -91,17 +91,26 @@ def parse_errors(
     error_pattern: str | None = None,
     *,
     file_path_remap: dict[str, str] | None = None,
+    path_base: pathlib.Path | None = None,
 ) -> list[ErrorLocation]:
     """コマンド出力からエラー箇所をパースする。
 
     優先順位:
         1. error_pattern（カスタム正規表現）が指定されていればそれを使用
-        2. コマンド専用の関数ベースパーサー（JSON出力などregexで扱いにくいもの）
-        3. ビルトイン正規表現パーサー
-        4. いずれもなければ空リスト
+        2. `path_base`を要するコマンド専用の関数ベースパーサー（`_PATH_BASE_PARSERS`）
+        3. コマンド専用の関数ベースパーサー（JSON出力などregexで扱いにくいもの）
+        4. ビルトイン正規表現パーサー
+        5. いずれもなければ空リスト
+
+    `path_base`は、ツールが出力する相対パスの基準ディレクトリである。
+    サブプロジェクト分割実行では当該サブプロジェクトのcwdを渡し、
+    パーサーが起点cwd相対へ変換するために使う。
     """
     if error_pattern is not None:
         return _apply_file_path_remap(_parse_with_pattern(command, output, error_pattern), file_path_remap)
+    path_base_parser = _PATH_BASE_PARSERS.get(command)
+    if path_base_parser is not None:
+        return _apply_file_path_remap(path_base_parser(output, path_base=path_base), file_path_remap)
     custom_parser = _CUSTOM_PARSERS.get(command)
     if custom_parser is not None:
         return _apply_file_path_remap(custom_parser(output), file_path_remap)
@@ -146,8 +155,12 @@ def sort_errors(errors: list[ErrorLocation], command_names: list[str]) -> list[E
 
 
 def get_custom_parser_commands() -> set[str]:
-    """カスタムパーサーが登録されているコマンド名の集合を返す。"""
-    return set(_CUSTOM_PARSERS.keys())
+    """カスタムパーサーが登録されているコマンド名の集合を返す。
+
+    `path_base`を要するパーサーも含める。呼び出し元（`pyfltr/output/ui.py`）は
+    構造化出力を逐次表示しない対象の判定に使うため、パーサーの引数の別を問わない。
+    """
+    return set(_CUSTOM_PARSERS.keys()) | set(_PATH_BASE_PARSERS.keys())
 
 
 def format_error(error: ErrorLocation) -> str:
@@ -286,6 +299,15 @@ def _try_json_loads(output: str) -> typing.Any:
     if not candidates:
         return None
     return max(candidates, key=lambda candidate: candidate[0])[1]
+
+
+def _json_list_field(output: str, field: str) -> list[typing.Any] | None:
+    """トップレベルJSONオブジェクトのリストフィールドを返す。"""
+    data = _try_json_loads(output)
+    if not isinstance(data, dict):
+        return None
+    value = data.get(field, [])
+    return value if isinstance(value, list) else None
 
 
 def _normalize_severity(value: typing.Any) -> str | None:
@@ -618,6 +640,79 @@ def _parse_pyright_json(output: str) -> list[ErrorLocation]:
     return results
 
 
+def _parse_arid_json(output: str, *, path_base: pathlib.Path | None = None) -> list[ErrorLocation]:
+    """aridのJSON出力に含まれる全重複位置を診断へ変換する。
+
+    `findings`の各要素が`lines`・`occurrences`・`context`・`scope`・`distribution`・`locations`を
+    必ず持つことを前提とする（arid 2.2.2のreport schema_version 4で実測）。
+    致命エラー時のaridは`findings`を持たない別スキーマ（`schema_version` 1）を返すため、
+    本関数は空リストを返し、生出力が`CommandResult.message`へ入る経路へ委ねる。
+    `end_line`はaridが返す包含の最終行であり、`_to_inclusive_end_position`は値を変えない。
+    """
+    findings = _json_list_field(output, "findings")
+    if findings is None:
+        return []
+    results: list[ErrorLocation] = []
+    for finding in findings:
+        if not isinstance(finding, dict):
+            continue
+        lines = _json_int(finding.get("lines"))
+        occurrences = _json_int(finding.get("occurrences"))
+        context = finding.get("context")
+        scope = finding.get("scope")
+        distribution = finding.get("distribution")
+        if (
+            lines is None
+            or occurrences is None
+            or not isinstance(context, str)
+            or not isinstance(scope, str)
+            or not isinstance(distribution, str)
+        ):
+            continue
+        raw_locations = finding.get("locations")
+        if not isinstance(raw_locations, list):
+            continue
+        locations: list[tuple[str, int, int]] = []
+        for location in raw_locations:
+            if not isinstance(location, dict):
+                continue
+            path = location.get("path")
+            start_line = _json_int(location.get("start_line"))
+            end_line = _json_int(location.get("end_line"))
+            if isinstance(path, str) and path and start_line is not None and end_line is not None:
+                path_value = pathlib.Path(path)
+                if path_base is not None:
+                    # `pathlib`の結合は右辺が絶対パスの場合に左辺を無視するため、
+                    # aridが絶対パスを返す`--allow-external-paths`の経路でも当該パスを維持する。
+                    path_value = path_base / path_value
+                locations.append((pyfltr.paths.to_cwd_relative(path_value), start_line, end_line))
+        for index, (path, start_line, raw_end_line) in enumerate(locations):
+            other_locations = [
+                f"{other_path}:{other_start}-{other_end}"
+                for other_index, (other_path, other_start, other_end) in enumerate(locations)
+                if other_index != index
+            ]
+            message = f"{lines} duplicated lines ({context}/{scope}, {distribution}, {occurrences} occurrences)"
+            if other_locations:
+                message += f"; other locations: {', '.join(other_locations)}"
+            end_line, end_col = _to_inclusive_end_position(start_line, raw_end_line, None)
+            results.append(
+                ErrorLocation(
+                    file=path,
+                    line=start_line,
+                    col=None,
+                    command="arid",
+                    message=message,
+                    rule=str(finding.get("code", "")) or None,
+                    severity="error",
+                    rule_url=None,
+                    end_line=end_line,
+                    end_col=end_col,
+                )
+            )
+    return results
+
+
 def _parse_shellcheck_json(output: str) -> list[ErrorLocation]:
     """Shellcheck -f json出力をパース。JSON解析失敗時はregexにフォールバック。"""
     data = _try_json_loads(output)
@@ -841,11 +936,8 @@ def _parse_designmd_json(output: str) -> list[ErrorLocation]:
     JSONパスは`message`先頭へ併記する。`line`は仕様上提供されないため`0`を格納する。
     JSON解析失敗時は空リストを返す。
     """
-    data = _try_json_loads(output)
-    if not isinstance(data, dict):
-        return []
-    findings = data.get("findings", [])
-    if not isinstance(findings, list):
+    findings = _json_list_field(output, "findings")
+    if findings is None:
         return []
     results: list[ErrorLocation] = []
     for entry in findings:
@@ -943,11 +1035,8 @@ def _parse_semgrep_json(output: str) -> list[ErrorLocation]:
 
     JSON解析失敗時は空リストを返す。
     """
-    data = _try_json_loads(output)
-    if not isinstance(data, dict):
-        return []
-    raw_results = data.get("results", [])
-    if not isinstance(raw_results, list):
+    raw_results = _json_list_field(output, "results")
+    if raw_results is None:
         return []
     results: list[ErrorLocation] = []
     for entry in raw_results:
@@ -1005,11 +1094,8 @@ def _parse_bandit_json(output: str) -> list[ErrorLocation]:
 
     JSON解析失敗時は空リストを返す。
     """
-    data = _try_json_loads(output)
-    if not isinstance(data, dict):
-        return []
-    raw_results = data.get("results", [])
-    if not isinstance(raw_results, list):
+    raw_results = _json_list_field(output, "results")
+    if raw_results is None:
         return []
     results: list[ErrorLocation] = []
     for entry in raw_results:
@@ -1449,11 +1535,8 @@ def _parse_vitest_json(output: str) -> list[ErrorLocation]:
     JSON解析失敗時は空リストを返す。`command.message` フォールバック経路で従来通り
     stdout末尾が `command.message` へ格納される。
     """
-    data = _try_json_loads(output)
-    if not isinstance(data, dict):
-        return []
-    test_results = data.get("testResults", [])
-    if not isinstance(test_results, list):
+    test_results = _json_list_field(output, "testResults")
+    if test_results is None:
         return []
     results: list[ErrorLocation] = []
     for entry in test_results:
@@ -2155,6 +2238,13 @@ _CUSTOM_PARSERS: dict[str, typing.Callable[[str], list[ErrorLocation]]] = {
     "pnpm-audit": _parse_pnpm_audit_json,
     "npm-audit": _parse_npm_audit_json,
     "yarn-audit": _parse_yarn_audit_jsonl,
+}
+
+# コマンド名 -> `path_base`を要する関数ベースパーサー。
+# ツールが出力する相対パスの基準ディレクトリを受け取る点だけが`_CUSTOM_PARSERS`と異なる。
+# `parse_errors`は本表を先に引くため、同じコマンドを両表へ登録しない。
+_PATH_BASE_PARSERS: dict[str, typing.Callable[..., list[ErrorLocation]]] = {
+    "arid": _parse_arid_json,
 }
 
 

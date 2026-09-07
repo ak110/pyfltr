@@ -172,7 +172,8 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "typos-json": True,
     "eslint-json": True,
     "biome-json": True,
-    # Python系ツール（mypy / pylint / pyright / ty / pytest / ruff-format / ruff-check / uv-sort）の
+    "arid-json": True,
+    # Python系ツール（mypy / pylint / pyright / ty / arid / pytest / ruff-format / ruff-check / uv-sort）の
     # 起動方式。{command}-path / {command}-runner明示が無いときに、以下の値に従って起動コマンドを組み立てる。
     # - direct: shutil.whichで本体依存に同梱されたバイナリを直接起動
     # - uv:     cwdにuv.lockがあり、かつuvが利用可能ならuv run --frozen <bin>経由で起動。
@@ -227,6 +228,11 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "ty-args": ["check", "--output-format", "concise", "--error-on-warning"],
     "ty-runner": "python-runner",
     "ty-fast": True,
+    "arid": False,
+    "arid-path": "",
+    "arid-args": ["--project-root", "."],
+    "arid-runner": "python-runner",
+    "arid-fast": True,
     "markdownlint": False,
     # ユーザーが明示的にpathを設定した場合はその値をそのまま使い、args先頭に自動prefixを追加しない。
     "markdownlint-path": "",
@@ -771,6 +777,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
             "pylint",
             "pyright",
             "ty",
+            "arid",
             "markdownlint",
             "textlint",
             "designmd",

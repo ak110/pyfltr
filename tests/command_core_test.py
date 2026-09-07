@@ -6,6 +6,7 @@ dispatcher・共通処理・環境変数・コマンドライン解決・`run_su
 
 import argparse
 import contextlib
+import json
 import logging
 import os
 import pathlib
@@ -40,6 +41,26 @@ import pyfltr.state.cache
 import pyfltr.state.only_failed
 import pyfltr.warnings_
 from tests import conftest as _testconf
+
+_EXPECTED_BIN_TOOLS = (
+    "ec",
+    "shellcheck",
+    "shfmt",
+    "actionlint",
+    "glab-ci-lint",
+    "taplo",
+    "hadolint",
+    "gitleaks",
+    "lychee",
+    "cargo-fmt",
+    "cargo-clippy",
+    "cargo-check",
+    "cargo-test",
+    "cargo-deny",
+    "dotnet-format",
+    "dotnet-build",
+    "dotnet-test",
+)
 
 
 def test_build_subprocess_env_sets_supply_chain_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -896,6 +917,26 @@ def test_build_invocation_argv_appends_extend_args() -> None:
     assert argv == ["mypy", "--strict", "--no-warn-unused-ignores", "-p", "pkg"]
 
 
+@pytest.mark.parametrize(
+    ("configured_args", "expected_prefix"),
+    [
+        (["--format", "text"], ["arid", "--project-root", "."]),
+        (["--format=text"], ["arid", "--project-root", "."]),
+        (["--json", "--project-root", "src"], ["arid", "--project-root", ".", "--project-root", "src"]),
+    ],
+)
+def test_build_invocation_argv_applies_arid_json(configured_args: list[str], expected_prefix: list[str]) -> None:
+    """aridの競合する出力指定を除去し、JSON形式を1件だけ注入する。"""
+    config = pyfltr.config.config.create_default_config()
+    config.values["arid-args"] = ["--project-root", ".", *configured_args]
+
+    argv = pyfltr.command.runner.build_invocation_argv(
+        "arid", config, commandline_prefix=["arid"], additional_args=[], fix_stage=False
+    )
+
+    assert argv == [*expected_prefix, "--format=json"]
+
+
 def test_build_invocation_argv_fix_stage_includes_extend_args() -> None:
     """fix段でも`{command}-extend-args`が`args`直後に結合される。"""
     config = pyfltr.config.config.create_default_config()
@@ -1488,25 +1529,13 @@ def test_expand_all_files_warns_on_unexpected_check_ignore_failure_outside_workt
         os.chdir(original_cwd)
 
 
-def test_expand_all_files_warns_when_git_worktree_state_is_unknown(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Git作業ツリーの内外を判定できない場合は警告を発行し部分結果を除外する。"""
-    subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True, check=True)
-    (tmp_path / "ok.py").write_text("x = 1\n")
-    (tmp_path / "ignored.py").write_text("y = 2\n")
+def _mock_git_ignore_failure(monkeypatch: pytest.MonkeyPatch, stderr: str) -> None:
+    """gitignore判定と作業ツリー判定を同じ失敗へ固定する。"""
     check_ignore_result = subprocess.CompletedProcess(
-        args=["git", "check-ignore"],
-        returncode=128,
-        stdout="ignored.py\0",
-        stderr="fatal: pathspec rejected\n",
+        args=["git", "check-ignore"], returncode=128, stdout="ignored.py\0", stderr=stderr
     )
     rev_parse_result = subprocess.CompletedProcess(
-        args=["git", "rev-parse", "--is-inside-work-tree"],
-        returncode=128,
-        stdout="",
-        stderr="fatal: detected dubious ownership\n",
+        args=["git", "rev-parse", "--is-inside-work-tree"], returncode=128, stdout="", stderr=stderr
     )
     original_run = subprocess.run
 
@@ -1520,20 +1549,37 @@ def test_expand_all_files_warns_when_git_worktree_state_is_unknown(
 
     monkeypatch.setattr("pyfltr.command.targets.subprocess.run", fake_run)
 
+
+def _expand_python_names(cwd: pathlib.Path) -> tuple[set[str], list[dict[str, typing.Any]]]:
+    """指定cwdでPython対象名と警告を取得し、プロセス状態を復元する。"""
     original_cwd = pathlib.Path.cwd()
     try:
-        os.chdir(tmp_path)
+        os.chdir(cwd)
         pyfltr.warnings_.clear()
         config = pyfltr.config.config.create_default_config()
         all_files = pyfltr.command.targets.expand_all_files([], config)
-        names = {p.name for p in pyfltr.command.targets.filter_by_globs(all_files, ["*.py"])}
-        collected = pyfltr.warnings_.collected_warnings()
-        assert "ok.py" in names
-        assert "ignored.py" not in names
-        assert any(w["source"] == "git" and "128" in w["message"] for w in collected)
+        names = {path.name for path in pyfltr.command.targets.filter_by_globs(all_files, ["*.py"])}
+        return names, pyfltr.warnings_.collected_warnings()
     finally:
         pyfltr.warnings_.clear()
         os.chdir(original_cwd)
+
+
+def test_expand_all_files_warns_when_git_worktree_state_is_unknown(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Git作業ツリーの内外を判定できない場合は警告を発行し部分結果を除外する。"""
+    subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True, check=True)
+    (tmp_path / "ok.py").write_text("x = 1\n")
+    (tmp_path / "ignored.py").write_text("y = 2\n")
+    _mock_git_ignore_failure(monkeypatch, "fatal: detected dubious ownership\n")
+
+    names, collected = _expand_python_names(tmp_path)
+
+    assert "ok.py" in names
+    assert "ignored.py" not in names
+    assert any(w["source"] == "git" and "128" in w["message"] for w in collected)
 
 
 def test_expand_all_files_warns_when_git_env_overrides_worktree_state(
@@ -1603,43 +1649,12 @@ def test_expand_all_files_keeps_files_with_git_work_tree_only(
     (tmp_path / "ignored.py").write_text("y = 2\n")
     monkeypatch.delenv("GIT_DIR", raising=False)
     monkeypatch.setenv("GIT_WORK_TREE", str(tmp_path))
-    check_ignore_result = subprocess.CompletedProcess(
-        args=["git", "check-ignore"],
-        returncode=128,
-        stdout="ignored.py\0",
-        stderr="fatal: not a git repository\n",
-    )
-    rev_parse_result = subprocess.CompletedProcess(
-        args=["git", "rev-parse", "--is-inside-work-tree"],
-        returncode=128,
-        stdout="",
-        stderr="fatal: not a git repository\n",
-    )
-    original_run = subprocess.run
+    _mock_git_ignore_failure(monkeypatch, "fatal: not a git repository\n")
 
-    def fake_run(args: list[str], **kwargs: typing.Any) -> typing.Any:
-        if args[:2] == ["git", "check-ignore"] and "--stdin" in args:
-            return check_ignore_result
-        if args == ["git", "rev-parse", "--is-inside-work-tree"]:
-            return rev_parse_result
-        kwargs.pop("check", None)
-        return original_run(args, check=False, **kwargs)
+    names, collected = _expand_python_names(tmp_path)
 
-    monkeypatch.setattr("pyfltr.command.targets.subprocess.run", fake_run)
-
-    original_cwd = pathlib.Path.cwd()
-    try:
-        os.chdir(tmp_path)
-        pyfltr.warnings_.clear()
-        config = pyfltr.config.config.create_default_config()
-        all_files = pyfltr.command.targets.expand_all_files([], config)
-        names = {p.name for p in pyfltr.command.targets.filter_by_globs(all_files, ["*.py"])}
-        collected = pyfltr.warnings_.collected_warnings()
-        assert names == {"ok.py", "ignored.py"}
-        assert not [w for w in collected if w["source"] == "git"]
-    finally:
-        pyfltr.warnings_.clear()
-        os.chdir(original_cwd)
+    assert names == {"ok.py", "ignored.py"}
+    assert not [w for w in collected if w["source"] == "git"]
 
 
 def test_expand_all_files_keeps_files_with_invalid_git_dir(
@@ -1653,43 +1668,12 @@ def test_expand_all_files_keeps_files_with_invalid_git_dir(
     invalid_git_dir.mkdir()
     monkeypatch.setenv("GIT_DIR", str(invalid_git_dir))
     monkeypatch.setenv("GIT_WORK_TREE", str(tmp_path))
-    check_ignore_result = subprocess.CompletedProcess(
-        args=["git", "check-ignore"],
-        returncode=128,
-        stdout="ignored.py\0",
-        stderr="fatal: not a git repository\n",
-    )
-    rev_parse_result = subprocess.CompletedProcess(
-        args=["git", "rev-parse", "--is-inside-work-tree"],
-        returncode=128,
-        stdout="",
-        stderr="fatal: not a git repository\n",
-    )
-    original_run = subprocess.run
+    _mock_git_ignore_failure(monkeypatch, "fatal: not a git repository\n")
 
-    def fake_run(args: list[str], **kwargs: typing.Any) -> typing.Any:
-        if args[:2] == ["git", "check-ignore"] and "--stdin" in args:
-            return check_ignore_result
-        if args == ["git", "rev-parse", "--is-inside-work-tree"]:
-            return rev_parse_result
-        kwargs.pop("check", None)
-        return original_run(args, check=False, **kwargs)
+    names, collected = _expand_python_names(tmp_path)
 
-    monkeypatch.setattr("pyfltr.command.targets.subprocess.run", fake_run)
-
-    original_cwd = pathlib.Path.cwd()
-    try:
-        os.chdir(tmp_path)
-        pyfltr.warnings_.clear()
-        config = pyfltr.config.config.create_default_config()
-        all_files = pyfltr.command.targets.expand_all_files([], config)
-        names = {p.name for p in pyfltr.command.targets.filter_by_globs(all_files, ["*.py"])}
-        collected = pyfltr.warnings_.collected_warnings()
-        assert names == {"ok.py", "ignored.py"}
-        assert not [w for w in collected if w["source"] == "git"]
-    finally:
-        pyfltr.warnings_.clear()
-        os.chdir(original_cwd)
+    assert names == {"ok.py", "ignored.py"}
+    assert not [w for w in collected if w["source"] == "git"]
 
 
 def test_expand_all_files_keeps_outside_repo_symlink_target(tmp_path: pathlib.Path) -> None:
@@ -1934,6 +1918,50 @@ def test_execute_command_propagates_severity_to_result(mocker, tmp_path: pathlib
     )
     assert result.severity == "warning"
     assert result.status == "warning"
+
+
+def test_execute_command_resolves_arid_paths_from_subproject_cwd(
+    mocker, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """aridの診断パスはサブプロジェクトcwdから起点cwd相対へ変換する。"""
+    monkeypatch.chdir(tmp_path)
+    subproject_cwd = tmp_path / "packages" / "app"
+    target = subproject_cwd / "src" / "sample.py"
+    target.parent.mkdir(parents=True)
+    target.write_text("x = 1\n")
+    output = json.dumps(
+        {
+            "findings": [
+                {
+                    "code": "DUP001",
+                    "lines": 12,
+                    "context": "function",
+                    "scope": "module",
+                    "occurrences": 1,
+                    "distribution": "same-file",
+                    "locations": [{"path": "src/sample.py", "start_line": 1, "end_line": 12}],
+                }
+            ]
+        }
+    )
+    proc = pyfltr.command.process.CompletedProcessWithTimeoutInfo(args=["arid"], returncode=1, stdout=output)
+    mocker.patch("pyfltr.command.process.run_configured_subprocess", return_value=proc)
+    config = pyfltr.config.config.create_default_config()
+    config.values["arid"] = True
+    relative_target = target.relative_to(tmp_path)
+    base = pyfltr.command.core_.ExecutionBaseContext(
+        config=config,
+        all_files=[relative_target],
+        cache_store=None,
+        cache_run_id=None,
+        start_cwd=tmp_path,
+        subproject_files={subproject_cwd: [relative_target]},
+    )
+    ctx = pyfltr.command.core_.ExecutionContext(base=base, subproject_cwd=subproject_cwd)
+
+    result = pyfltr.command.dispatcher.execute_command("arid", _testconf.make_args(), ctx)
+
+    assert [error.file for error in result.errors] == ["packages/app/src/sample.py"]
 
 
 def test_execute_command_pytest_config_conflict_emits_warning(mocker, tmp_path: pathlib.Path) -> None:
@@ -2490,30 +2518,9 @@ def test_bin_tool_spec_all_tools_defined() -> None:
     """全bin系ツールが`build_commandline`経由で解決可能（`mise` runner登録済み）。"""
     # mise runner登録済みのツール一覧。これらすべてに build_commandline を呼んでエラーが出ないことで
     # _BIN_TOOL_SPEC への登録完全性を確認する。
-    expected_tools = [
-        # 既存のネイティブバイナリツール
-        "ec",
-        "shellcheck",
-        "shfmt",
-        "actionlint",
-        "glab-ci-lint",
-        "taplo",
-        "hadolint",
-        "gitleaks",
-        "lychee",
-        # cargo系・dotnet系もbin-runner経路へ統合済み（mise backend経由で解決）。
-        "cargo-fmt",
-        "cargo-clippy",
-        "cargo-check",
-        "cargo-test",
-        "cargo-deny",
-        "dotnet-format",
-        "dotnet-build",
-        "dotnet-test",
-    ]
     config = pyfltr.config.config.create_default_config()
     # bin-runner既定がmiseのため、各ツールをmise runner経路でbuild_commandlineが通ることを確認する。
-    for tool in expected_tools:
+    for tool in _EXPECTED_BIN_TOOLS:
         config.values[f"{tool}-runner"] = "mise"
         result = pyfltr.command.runner.build_commandline(tool, config)
         assert result.executable == "mise", f"{tool}: mise経路で解決されるべき"
@@ -3202,19 +3209,13 @@ def _make_glab_ci_lint_command_info() -> pyfltr.config.config.CommandInfo:
     return pyfltr.config.config.BUILTIN_COMMANDS["glab-ci-lint"]
 
 
-def test_execute_glab_ci_lint_skips_on_host_missing(mocker, tmp_path: pathlib.Path) -> None:
-    """ホスト未検出stderrを検出したらreturncode=Noneでスキップ扱いに書き換える。"""
-    pyfltr.warnings_.clear()
-    proc = subprocess.CompletedProcess(
-        args=["glab", "ci", "lint"],
-        returncode=1,
-        stdout="Error: none of the git remotes configured for this repository point to a known GitLab host.\n",
-    )
+def _execute_glab_ci_lint_case(mocker, tmp_path: pathlib.Path, output: str) -> pyfltr.command.core_.CommandResult:
+    """glabの出力だけを変えて同じlint実行経路を検証する。"""
+    proc = subprocess.CompletedProcess(args=["glab", "ci", "lint"], returncode=1, stdout=output)
     mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
     target = tmp_path / ".gitlab-ci.yml"
     target.write_text("stages: [test]\n", encoding="utf-8")
-
-    result = pyfltr.command.glab.execute_glab_ci_lint(
+    return pyfltr.command.glab.execute_glab_ci_lint(
         "glab-ci-lint",
         _make_glab_ci_lint_command_info(),
         ["glab", "ci", "lint"],
@@ -3224,6 +3225,16 @@ def test_execute_glab_ci_lint_skips_on_host_missing(mocker, tmp_path: pathlib.Pa
         None,
         time.perf_counter(),
         _make_glab_ci_lint_args(),
+    )
+
+
+def test_execute_glab_ci_lint_skips_on_host_missing(mocker, tmp_path: pathlib.Path) -> None:
+    """ホスト未検出stderrを検出したらreturncode=Noneでスキップ扱いに書き換える。"""
+    pyfltr.warnings_.clear()
+    result = _execute_glab_ci_lint_case(
+        mocker,
+        tmp_path,
+        "Error: none of the git remotes configured for this repository point to a known GitLab host.\n",
     )
 
     assert result.returncode is None
@@ -3236,10 +3247,10 @@ def test_execute_glab_ci_lint_skips_on_host_missing(mocker, tmp_path: pathlib.Pa
 def test_execute_glab_ci_lint_skips_on_wrapped_host_missing(mocker, tmp_path: pathlib.Path) -> None:
     """端末幅で折り返された文言（Windows runner相当）でもスキップ扱いに書き換える。"""
     pyfltr.warnings_.clear()
-    proc = subprocess.CompletedProcess(
-        args=["glab", "ci", "lint"],
-        returncode=1,
-        stdout=(
+    result = _execute_glab_ci_lint_case(
+        mocker,
+        tmp_path,
+        (
             "ERROR  \n"
             "          \n"
             "  You must be in a GitLab project repository for this action: none of"
@@ -3247,21 +3258,6 @@ def test_execute_glab_ci_lint_skips_on_wrapped_host_missing(mocker, tmp_path: pa
             "  point to a known GitLab host. Please use `glab auth login` to"
             " authenticate and configure a new host for glab.       \n"
         ),
-    )
-    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
-    target = tmp_path / ".gitlab-ci.yml"
-    target.write_text("stages: [test]\n", encoding="utf-8")
-
-    result = pyfltr.command.glab.execute_glab_ci_lint(
-        "glab-ci-lint",
-        _make_glab_ci_lint_command_info(),
-        ["glab", "ci", "lint"],
-        [target],
-        pyfltr.config.config.create_default_config(),
-        {"PATH": os.environ.get("PATH", "")},
-        None,
-        time.perf_counter(),
-        _make_glab_ci_lint_args(),
     )
 
     assert result.returncode is None
@@ -3272,26 +3268,7 @@ def test_execute_glab_ci_lint_skips_on_wrapped_host_missing(mocker, tmp_path: pa
 def test_execute_glab_ci_lint_skips_on_not_authenticated(mocker, tmp_path: pathlib.Path) -> None:
     """大文字の未認証文言 "NOT AUTHENTICATED" も大小文字差を吸収してスキップ扱いに書き換える。"""
     pyfltr.warnings_.clear()
-    proc = subprocess.CompletedProcess(
-        args=["glab", "ci", "lint"],
-        returncode=1,
-        stdout="you are NOT AUTHENTICATED to glab\n",
-    )
-    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
-    target = tmp_path / ".gitlab-ci.yml"
-    target.write_text("stages: [test]\n", encoding="utf-8")
-
-    result = pyfltr.command.glab.execute_glab_ci_lint(
-        "glab-ci-lint",
-        _make_glab_ci_lint_command_info(),
-        ["glab", "ci", "lint"],
-        [target],
-        pyfltr.config.config.create_default_config(),
-        {"PATH": os.environ.get("PATH", "")},
-        None,
-        time.perf_counter(),
-        _make_glab_ci_lint_args(),
-    )
+    result = _execute_glab_ci_lint_case(mocker, tmp_path, "you are NOT AUTHENTICATED to glab\n")
 
     assert result.returncode is None
     assert result.status == "skipped"
@@ -3372,26 +3349,7 @@ def test_execute_glab_ci_lint_passes_through_success(mocker, tmp_path: pathlib.P
 def test_resolve_runner_default_for_existing_bin_tools() -> None:
     """既存のbin-runner対応8ツール・lychee・cargo / dotnet系の{command}-runner既定値は"bin-runner"。"""
     config = pyfltr.config.config.create_default_config()
-    expected_bin = (
-        "ec",
-        "shellcheck",
-        "shfmt",
-        "actionlint",
-        "glab-ci-lint",
-        "taplo",
-        "hadolint",
-        "gitleaks",
-        "lychee",
-        "cargo-fmt",
-        "cargo-clippy",
-        "cargo-check",
-        "cargo-test",
-        "cargo-deny",
-        "dotnet-format",
-        "dotnet-build",
-        "dotnet-test",
-    )
-    for command in expected_bin:
+    for command in _EXPECTED_BIN_TOOLS:
         runner, source = pyfltr.command.runner.resolve_runner(command, config)
         assert runner == "bin-runner", f"{command}のrunnerは'bin-runner'であるべき"
         assert source == "default"
@@ -3426,6 +3384,7 @@ def test_resolve_runner_default_for_python_tools() -> None:
         "pylint",
         "pyright",
         "ty",
+        "arid",
         "ruff-check",
         "ruff-format",
         "pytest",

@@ -940,6 +940,224 @@ def test_parse_pyright_json_keeps_zero_width_range() -> None:
     assert errors[0].end_col == 1
 
 
+def test_parse_arid_json_expands_all_locations() -> None:
+    """aridの1つのfindingが持つ全locationを診断へ展開する。"""
+    output = json.dumps(
+        {
+            "findings": [
+                {
+                    "code": "DUP001",
+                    "lines": 12,
+                    "context": "function",
+                    "scope": "module",
+                    "occurrences": 2,
+                    "distribution": "cross-file",
+                    "locations": [
+                        {"path": "src/a.py", "start_line": 10, "end_line": 21},
+                        {"path": "src/b.py", "start_line": 30, "end_line": 41},
+                    ],
+                }
+            ]
+        }
+    )
+
+    errors = pyfltr.command.error_parser.parse_errors("arid", output)
+
+    assert [_diagnostic_fields(error) for error in errors] == [
+        (
+            "src/a.py",
+            10,
+            None,
+            "arid",
+            "12 duplicated lines (function/module, cross-file, 2 occurrences); other locations: src/b.py:30-41",
+            "DUP001",
+            "error",
+            None,
+            21,
+            None,
+        ),
+        (
+            "src/b.py",
+            30,
+            None,
+            "arid",
+            "12 duplicated lines (function/module, cross-file, 2 occurrences); other locations: src/a.py:10-21",
+            "DUP001",
+            "error",
+            None,
+            41,
+            None,
+        ),
+    ]
+
+
+def test_parse_arid_json_resolves_paths_from_subproject_cwd(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """aridの相対診断パスを実行したサブプロジェクトcwdから解決する。"""
+    monkeypatch.chdir(tmp_path)
+    output = json.dumps(
+        {
+            "findings": [
+                {
+                    "code": "DUP001",
+                    "lines": 12,
+                    "context": "function",
+                    "scope": "module",
+                    "occurrences": 2,
+                    "distribution": "cross-file",
+                    "locations": [
+                        {"path": "src/a.py", "start_line": 10, "end_line": 21},
+                        {"path": "src/b.py", "start_line": 30, "end_line": 41},
+                    ],
+                }
+            ]
+        }
+    )
+
+    errors = pyfltr.command.error_parser.parse_errors("arid", output, path_base=tmp_path / "packages" / "app")
+
+    assert [error.file for error in errors] == ["packages/app/src/a.py", "packages/app/src/b.py"]
+    assert "other locations: packages/app/src/b.py:30-41" in errors[0].message
+    assert "other locations: packages/app/src/a.py:10-21" in errors[1].message
+
+
+@pytest.mark.parametrize(
+    "output",
+    [
+        "not json",
+        "[]",
+        '{"findings": {}}',
+        '{"findings": [{"lines": 12, "context": "function", "occurrences": 2, "distribution": "same-file"}]}',
+        '{"findings": ["not a dict"]}',
+        '{"findings": [{"lines": 12, "context": "function", "scope": "module",'
+        ' "occurrences": 2, "distribution": "same-file", "locations": {}}]}',
+        # 致命エラー時のaridは`findings`を持たない別スキーマを返す。
+        '{"schema_version": 1, "tool_version": "2.2.2",'
+        ' "error": {"kind": "parse", "message": "invalid Python syntax at line 1, column 7"}}',
+    ],
+)
+def test_parse_arid_json_ignores_invalid_input(output: str) -> None:
+    """aridのJSON構造が不正な場合は診断を生成しない。"""
+    assert not pyfltr.command.error_parser.parse_errors("arid", output)
+
+
+def test_parse_arid_json_keeps_absolute_location_path(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """aridが絶対パスを返した場合は`path_base`と結合しない。"""
+    monkeypatch.chdir(tmp_path)
+    absolute_target = tmp_path / "external" / "sample.py"
+    output = json.dumps(
+        {
+            "findings": [
+                {
+                    "code": "DUP001",
+                    "lines": 12,
+                    "context": "function",
+                    "scope": "module",
+                    "occurrences": 1,
+                    "distribution": "same-file",
+                    "locations": [{"path": str(absolute_target), "start_line": 10, "end_line": 21}],
+                }
+            ]
+        }
+    )
+
+    errors = pyfltr.command.error_parser.parse_errors("arid", output, path_base=tmp_path / "packages" / "app")
+
+    assert [error.file for error in errors] == ["external/sample.py"]
+
+
+def test_parse_arid_json_single_location_omits_other_locations() -> None:
+    """locationが1つだけのfindingでは他location一覧を付けない。"""
+    output = json.dumps(
+        {
+            "findings": [
+                {
+                    "code": "DUP001",
+                    "lines": 12,
+                    "context": "function",
+                    "scope": "module",
+                    "occurrences": 1,
+                    "distribution": "same-file",
+                    "locations": [{"path": "src/a.py", "start_line": 10, "end_line": 21}],
+                }
+            ]
+        }
+    )
+
+    errors = pyfltr.command.error_parser.parse_errors("arid", output)
+
+    assert len(errors) == 1
+    assert errors[0].message == "12 duplicated lines (function/module, same-file, 1 occurrences)"
+
+
+def test_parse_arid_json_skips_invalid_locations_only() -> None:
+    """不正なlocationだけを除外し、同じfindingの有効なlocationは診断へ変換する。"""
+    output = json.dumps(
+        {
+            "findings": [
+                {
+                    "code": "DUP001",
+                    "lines": 12,
+                    "context": "function",
+                    "scope": "module",
+                    "occurrences": 3,
+                    "distribution": "cross-file",
+                    "locations": [
+                        "not a dict",
+                        {"path": "src/a.py", "start_line": 10},
+                        {"path": "", "start_line": 10, "end_line": 21},
+                        {"path": "src/b.py", "start_line": 30, "end_line": 41},
+                    ],
+                }
+            ]
+        }
+    )
+
+    errors = pyfltr.command.error_parser.parse_errors("arid", output)
+
+    assert [error.file for error in errors] == ["src/b.py"]
+
+
+def test_parse_arid_json_ignores_unknown_fields_of_real_output() -> None:
+    """aridの実出力に含まれる未知フィールドを無視して診断へ変換する。
+
+    検体はarid 2.2.2のreport schema_version 4の実出力構造から採る。
+    """
+    output = json.dumps(
+        {
+            "schema_version": 4,
+            "tool_version": "2.2.2",
+            "complete": True,
+            "analysis": {"min_lines": 10, "same_file": True, "exclude": []},
+            "errors": [],
+            "files": 2,
+            "duplicate_groups": 1,
+            "duplication_percent": 50.0,
+            "findings": [
+                {
+                    "code": "DUP001",
+                    "fingerprint": "arid-finding-v1:sha256:fa2c",
+                    "lines": 10,
+                    "context": "executable",
+                    "scope": "function",
+                    "occurrences": 2,
+                    "files": 2,
+                    "distribution": "cross-file",
+                    "locations": [
+                        {"path": "pkg/a.py", "start_line": 2, "end_line": 11},
+                        {"path": "pkg/b.py", "start_line": 2, "end_line": 11},
+                    ],
+                }
+            ],
+        }
+    )
+
+    errors = pyfltr.command.error_parser.parse_errors("arid", output)
+
+    assert [error.file for error in errors] == ["pkg/a.py", "pkg/b.py"]
+    assert [error.rule for error in errors] == ["DUP001", "DUP001"]
+    assert [(error.line, error.end_line) for error in errors] == [(2, 11), (2, 11)]
+
+
 @pytest.mark.parametrize(
     ("command", "output"),
     [
@@ -3378,6 +3596,8 @@ def test_parse_pytest_quiet_child_summary_is_not_taken_as_parent_summary() -> No
     子の失敗一覧が親のものとして扱われ、子の失敗が親の失敗として報告される。
     検体はpytest 9.1.1で親を`-rN --tb=short`、子を`-q`で起動した実出力の構造から採る。
     """
+    # 入れ子のpytest実出力を逐語的な検体として維持し、親子の境界条件を固定する。
+    # arid: disable
     output = (
         "================================= FAILURES =================================\n"
         "_______________________________ test_runs_child ________________________________\n"
@@ -3396,6 +3616,7 @@ def test_parse_pytest_quiet_child_summary_is_not_taken_as_parent_summary() -> No
         "E   AssertionError: assert 'a' == 'b'\n"
         "================================= 2 failed in 0.89s =================================\n"
     )
+    # arid: enable
     errors = pyfltr.command.error_parser.parse_errors("pytest", output)
     parent_errors = [e for e in errors if e.file == "tests/p_test.py"]
     assert {e.line for e in parent_errors} == {13, 17}
@@ -3439,6 +3660,8 @@ def test_parse_pytest_child_summary_is_not_taken_without_parent_tail_line() -> N
     上限として採った集計行より後に標識が現れる場合は上限を出力の末尾へ広げて探し直すため、
     当該構成では子の見出しが標識を伴うようになり、いずれの見出しも親のものと判定されない。
     """
+    # 入れ子のpytest実出力を逐語的な検体として維持し、親子の境界条件を固定する。
+    # arid: disable
     output = (
         "================================= FAILURES =================================\n"
         "_______________________________ test_runs_child ________________________________\n"
@@ -3456,6 +3679,7 @@ def test_parse_pytest_child_summary_is_not_taken_without_parent_tail_line() -> N
         "tests/p_test.py:17: in test_parent_later\n"
         "E   AssertionError: assert 'a' == 'b'\n"
     )
+    # arid: enable
     errors = pyfltr.command.error_parser.parse_errors("pytest", output)
     parent_errors = [e for e in errors if e.file == "tests/p_test.py"]
     assert {e.line for e in parent_errors} == {13, 17}
@@ -4594,7 +4818,24 @@ def test_get_custom_parser_commands() -> None:
     assert "yarn-audit" in commands
     assert "semgrep" in commands
     assert "sqlfluff" in commands
+    # aridは`_PATH_BASE_PARSERS`側の登録だが、UIのストリーミング抑止判定では同じ集合に含める。
+    assert "arid" in commands
     assert "mypy" not in commands
+    # 2つのパーサー表は`parse_errors`が順に引くため、同じコマンドを両方へ登録しない。
+    # 表の排他性は公開関数の戻り値へ現れないため直接検証する。
+    assert not (
+        pyfltr.command.error_parser._CUSTOM_PARSERS.keys()  # noqa: SLF001  # pylint: disable=protected-access
+        & pyfltr.command.error_parser._PATH_BASE_PARSERS.keys()  # noqa: SLF001  # pylint: disable=protected-access
+    )
+
+
+def test_parse_errors_error_pattern_precedes_path_base_parser() -> None:
+    """`error_pattern`の指定は`path_base`を要するパーサーより優先する。"""
+    output = "src/a.py:12: 重複を検出しました"
+
+    errors = pyfltr.command.error_parser.parse_errors("arid", output, r"(?P<file>[^:]+):(?P<line>\d+): (?P<message>.+)")
+
+    assert [(error.file, error.line, error.message) for error in errors] == [("src/a.py", 12, "重複を検出しました")]
 
 
 def test_parse_summary_pyright_json() -> None:

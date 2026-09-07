@@ -507,7 +507,7 @@ pyfltr ci --commands=ruff-check,markdownlint [files and/or directories ...]
 
 - `format`: `prettier` `ruff-format` `uv-sort` `shfmt` `taplo` `cargo-fmt` `dotnet-format` `prek` `pre-commit`
 - `lint`:
-    - Python系: `ruff-check` `mypy` `pylint` `pyright` `ty`
+    - Python系: `ruff-check` `mypy` `pylint` `pyright` `ty` `arid`
     - Markdown系: `markdownlint` `textlint`
     - JS/TS系: `eslint` `biome` `oxlint` `tsc`
     - Rust系: `cargo-clippy` `cargo-check` `cargo-deny`

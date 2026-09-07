@@ -352,7 +352,7 @@ ruffへ統合済みのため当該設定をすべて削除する。
 
 `pyfltr run`実行時に`resolution_failed`扱いで停止する場合、ツールカテゴリ別に対処を選ぶ。
 
-### Python系ツール（mypy・pylint・pyright・ty・pytest・ruff-format・ruff-check・uv-sort・bandit）
+### Python系ツール（mypy・pylint・pyright・ty・arid・pytest・ruff-format・ruff-check・uv-sort・bandit）
 
 メッセージ例。
 

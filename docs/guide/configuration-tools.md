@@ -10,7 +10,7 @@ pyfltrは対応ツールを実行方式の観点から5カテゴリに分けて�
 
 - python-runner経由（既定`{command}-runner = "python-runner"`）。
   対象はPython系ツール一式に加え、banditが該当する。
-  Python系ツール一式はmypy / pylint / pyright / ty / pytest / ruff-format / ruff-check / uv-sortを指す。
+  Python系ツール一式はmypy / pylint / pyright / ty / arid / pytest / ruff-format / ruff-check / uv-sortを指す。
   グローバル`python-runner`設定（`"uv"` / `"uvx"` / `"direct"`）へ委譲する。
   既定`"uv"`ではcwdに`uv.lock`があり`uv`バイナリが利用可能な場合に`uv run --frozen <bin>`でプロジェクトのvenv経由で起動する
 - uvx既定のPython製ツール（既定`{command}-runner = "uvx"`）。
@@ -127,7 +127,7 @@ pass-filenames = false
 
 ## python-runner経由実行ツール（Python系）
 
-対象はmypy / pylint / pyright / ty / pytest / ruff-format / ruff-check / uv-sortのPython系ツールとbandit。
+対象はmypy / pylint / pyright / ty / arid / pytest / ruff-format / ruff-check / uv-sortのPython系ツールとbandit。
 これらの`{command}-runner`既定値は`"python-runner"`（カテゴリ委譲値）で、
 グローバル`python-runner`設定（既定`"uv"`）へ委譲して起動方式を解決する。
 
@@ -216,6 +216,35 @@ pyfltrが起点cwd直下の`pyproject.toml`・`.bandit.yaml`・`.bandit.toml`を
 INI形式の`.bandit`はbandit本体の`--recursive`時自動探索に委ねるため、pyfltr側からの注入対象外とする。
 pyfltr既定の`bandit-args = ["--quiet", "--recursive", "--format=json"]`は出力パースのため必須引数を含む。
 `--format=json`はJSON出力指定、`--quiet`は非JSONノイズ抑制、`--recursive`はディレクトリ指定時の再帰探索を行う。
+
+### arid
+
+`arid`はPython専用の重複コード検査。Rust実装で、pylintの`duplicate-code`（R0801）と同じ目的の検査を担う。
+pyfltr本体依存に同梱されるため追加の導入手順は不要で、`preset`と`python = true`のゲートで有効化される。
+
+検査条件は`pyproject.toml`の`[tool.arid]`へ書く。
+
+```toml
+[tool.arid]
+min-lines = 10
+```
+
+- `min-lines`は重複とみなす最小の実効行数で、既定値は4
+- コメント・docstring・import・関数シグネチャは既定で正規化の対象となり、行数の判定から除かれる
+- 同一ファイル内の重複も既定で検出する（`same-file = false`で無効化できる）
+- 設定の優先順位はコマンドライン引数・`[tool.arid]`・aridの組込み既定の順
+
+pyfltr既定の`arid-args = ["--project-root", "."]`は出力パースのために必須の引数を含む。
+aridは`--project-root`を省略すると、渡されたパスの共通の親ディレクトリを基準として検査結果のパスを組み立てる。
+pyfltrは対象ファイルを明示して渡すため、省略した場合のパスは起点cwd基準にならない。
+`arid-args`を上書きする場合は`--project-root`の指定を残す。
+
+意図的な重複は`# arid: disable`と`# arid: enable`で囲んで抑制する。
+
+対象ファイルを限定する実行（パスを明示指定した実行や`--changed-since`）では、
+限定の対象外となったファイルとの間の重複は検出されない。
+重複はファイルを横断して集約する検査であり、渡されたファイルの範囲だけで判定するためである。
+リポジトリ全体を対象とする検出は引数なしの`run`・`ci`で行う。
 
 ## uvx既定のPython製ツール
 

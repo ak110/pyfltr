@@ -39,7 +39,7 @@ linter/tester群の実行順はLPT並列（推定実行時間の降順スケジ�
 
 実行順はLPT並列で別管理されるため、表示順のみを「モダン順（後ろほど新しい）」に並べる。
 
-- Python: `pylint`→`mypy`→`ruff-check`→`pyright`→`ty`
+- Python: `pylint`→`mypy`→`ruff-check`→`pyright`→`ty`→`arid`
 - JS/TS: `tsc`→`eslint`→`biome`→`oxlint`
 - tester: `pytest`→`vitest`→`cargo-test`→`dotnet-test`
 

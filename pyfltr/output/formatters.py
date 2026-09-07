@@ -120,16 +120,35 @@ def command_index(config: pyfltr.config.config.Config, command: str) -> int:
     return len(config.command_names)
 
 
+def _configure_text_loggers(ctx: RunOutputContext) -> None:
+    """text系の出力先を設定し、構造化出力を無効化する。"""
+    stream = sys.stderr if ctx.force_text_on_stderr else sys.stdout
+    pyfltr.cli.output_format.configure_text_output(stream, level=logging.INFO)
+    pyfltr.cli.output_format.configure_structured_output(None)
+
+
+def _finish_text_output(
+    ctx: RunOutputContext,
+    results: list[pyfltr.command.core_.CommandResult],
+    warnings: list[dict[str, typing.Any]],
+    output_format: typing.Literal["text", "github-annotations"],
+) -> None:
+    """text系の詳細とsummaryを指定形式で出力する。"""
+    pyfltr.cli.render.render_results(
+        results,
+        ctx.config,
+        include_details=ctx.include_details,
+        output_format=output_format,
+        warnings=warnings,
+    )
+
+
 class TextFormatter:
     """text形式の出力を担うformatter。"""
 
     def configure_loggers(self, ctx: RunOutputContext) -> None:
         """Text / github-annotations → stdout/INFO。構造化出力は無効。"""
-        if ctx.force_text_on_stderr:
-            pyfltr.cli.output_format.configure_text_output(sys.stderr, level=logging.INFO)
-        else:
-            pyfltr.cli.output_format.configure_text_output(sys.stdout, level=logging.INFO)
-        pyfltr.cli.output_format.configure_structured_output(None)
+        _configure_text_loggers(ctx)
 
     def on_start(self, ctx: RunOutputContext) -> None:
         """text形式の開始時処理。ヘッダー出力は`main.py`が担うため何もしない。"""
@@ -146,13 +165,7 @@ class TextFormatter:
     ) -> None:
         """詳細ログ（include_detailsがTrueの場合）+ summaryを出力する。"""
         del exit_code
-        pyfltr.cli.render.render_results(
-            results,
-            ctx.config,
-            include_details=ctx.include_details,
-            output_format="text",
-            warnings=warnings,
-        )
+        _finish_text_output(ctx, results, warnings, "text")
 
 
 class GitHubAnnotationsFormatter:
@@ -163,11 +176,7 @@ class GitHubAnnotationsFormatter:
 
     def configure_loggers(self, ctx: RunOutputContext) -> None:
         """github-annotations → stdout/INFO。構造化出力は無効。"""
-        if ctx.force_text_on_stderr:
-            pyfltr.cli.output_format.configure_text_output(sys.stderr, level=logging.INFO)
-        else:
-            pyfltr.cli.output_format.configure_text_output(sys.stdout, level=logging.INFO)
-        pyfltr.cli.output_format.configure_structured_output(None)
+        _configure_text_loggers(ctx)
 
     def on_start(self, ctx: RunOutputContext) -> None:
         """github-annotations形式の開始時処理。何もしない。"""
@@ -184,13 +193,7 @@ class GitHubAnnotationsFormatter:
     ) -> None:
         """詳細ログ（GA記法）+ summaryを出力する。"""
         del exit_code
-        pyfltr.cli.render.render_results(
-            results,
-            ctx.config,
-            include_details=ctx.include_details,
-            output_format="github-annotations",
-            warnings=warnings,
-        )
+        _finish_text_output(ctx, results, warnings, "github-annotations")
 
 
 class JSONLFormatter:

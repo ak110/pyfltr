@@ -830,6 +830,8 @@ def test_monorepo_mixed_inject_target_warns_only(monkeypatch: pytest.MonkeyPatch
     external.parent.mkdir(parents=True, exist_ok=True)
     external.write_text("# external\n", encoding="utf-8")
     normalized_external = pyfltr.paths.normalize_separators(external)
+    # 許可指定の有無だけが異なる対称な検体として、準備から実行までを各テストに明示する。
+    # arid: disable
     (start_cwd / ".markdownlint.json").write_text("{}", encoding="utf-8")
 
     config = pyfltr.config.config.create_default_config()
@@ -860,6 +862,7 @@ def test_monorepo_mixed_inject_target_warns_only(monkeypatch: pytest.MonkeyPatch
 
     monkeypatch.setattr(pyfltr.command.dispatcher, "_dispatch_command", _capture)
     pyfltr.command.dispatcher.execute_command("markdownlint", _testconf.make_args(), ctx)
+    # arid: enable
 
     # pkg_aの1回のみで、外部パス用の追加実行は無い（subproject_cwd=Noneでの呼び出しが無い）
     assert calls == [sub_a_cwd]
@@ -926,6 +929,8 @@ def test_monorepo_allow_external_paths_runs_external(monkeypatch: pytest.MonkeyP
     file_a = sub_a / "doc.md"
     file_a.write_text("# a\n", encoding="utf-8")
     external = _make_external(tmp_path)
+    # 許可指定の有無だけが異なる対称な検体として、準備から実行までを各テストに明示する。
+    # arid: disable
     (start_cwd / ".markdownlint.json").write_text("{}", encoding="utf-8")
 
     config = pyfltr.config.config.create_default_config()
@@ -956,6 +961,7 @@ def test_monorepo_allow_external_paths_runs_external(monkeypatch: pytest.MonkeyP
 
     monkeypatch.setattr(pyfltr.command.dispatcher, "_dispatch_command", _capture)
     pyfltr.command.dispatcher.execute_command("markdownlint", _testconf.make_args(allow_external_paths=True), ctx)
+    # arid: enable
 
     # pkg_aの1回に加えて、起点cwd（None）での外部パス専用の追加実行が発生する
     assert calls == [sub_a_cwd, None]

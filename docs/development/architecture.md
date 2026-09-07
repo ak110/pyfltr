@@ -139,7 +139,7 @@ subprocess起動は`subprocess.Popen`ベースに統一する。
 
 `cli/pipeline.py`は直接呼び出し、`output/ui.py`はRich UIへの`call_from_thread`埋め込みという構造差がある。
 完全共通化はlock取得タイミング差で実装が複雑になるため、共通化は`state/stage_runner.py`の小さなヘルパーへの抽出に留める。
-残余重複は`# pylint: disable=duplicate-code`を理由コメント付きで維持する。
+残余重複は`# arid: disable`と`# arid: enable`で囲み、理由コメントを添えて維持する。
 
 ### ツール解決の失敗扱い
 
@@ -174,8 +174,8 @@ mise経由のsubprocessにはmiseが注入したtoolパスを除外したPATHを
 ### Python系ツールのpython-runner経由解決
 
 Python系ツールの`{command}-runner`既定値は`"python-runner"`とする。
-対象は`python = true`ゲートで有効化されるruff-format / ruff-check / mypy / pylint / pyright / ty / uv-sort / pytestの8ツールに、
-既定無効のbanditを加えた9ツールとする。
+対象は`python = true`ゲートで有効化されるruff-format / ruff-check / mypy / pylint / pyright / ty / arid / uv-sort / pytestの9ツールに、
+既定無効のbanditを加えた10ツールとする。
 `"python-runner"`はグローバル`python-runner`設定（既定`"uv"`、許容値`direct` / `uv` / `uvx`の3値）へ委譲する。
 `uv`経路ではcwdに`uv.lock`があり`uv`が利用可能な場合にプロジェクトのvenv経由で起動する。
 いずれかが欠ける場合は本体依存に同梱されたバイナリへdirectフォールバックする。

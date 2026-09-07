@@ -64,7 +64,7 @@ def execute_prettier_two_step(
     # taplo/shfmt向けのbase.execute_check_write_two_stepと本関数は、分岐先ヘルパー
     # （_run_check_then_write / _run_prettier_check_then_write）が異なる別実装のため
     # 統合できないが、_prepare_check_write_executionへの引数受け渡し部分は完全一致する。
-    # pylint: disable=duplicate-code
+    # arid: disable
     check_commandline, write_commandline, run_step = _prepare_check_write_execution(
         command,
         commandline_prefix,
@@ -80,7 +80,7 @@ def execute_prettier_two_step(
         cwd=cwd,
         start_cwd=start_cwd,
     )
-    # pylint: enable=duplicate-code
+    # arid: enable
     if fix_mode:
         # fixモードのみ: returncode==1（changed）のときcommand_typeを"formatter"に切り替える。
         # 通常モードのcommand_infoから取得する型がformatter以外の場合に備えた固有ロジック。

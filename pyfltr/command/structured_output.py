@@ -93,6 +93,13 @@ _STRUCTURED_OUTPUT_SPECS: dict[str, tuple[str, StructuredOutputSpec]] = {
             conflicts=["--reporter"],
         ),
     ),
+    "arid-json": (
+        "arid",
+        StructuredOutputSpec(
+            inject=["--format=json"],
+            conflicts=["--format", "--json"],
+        ),
+    ),
 }
 
 

@@ -62,6 +62,7 @@ _CASES: tuple[_Case, ...] = (
     _Case("mypy", "basic", ("sample.py",)),
     _Case("pyright", "basic", ("sample.py",)),
     _Case("ty", "basic", ("sample.py",)),
+    _Case("arid", "basic", ("sample.py",)),
     _Case("pytest", "basic", ("sample_test.py",)),
     _Case("uv-sort", "uv_sort_workspace", ("pyproject.toml",)),
     # JS/TS系: pnpm経路で解決

@@ -1,7 +1,7 @@
 """pytest 共通定義。
 
 `CommandResult`・`ErrorLocation`・`ArchiveStore`のテストデータ生成ヘルパーを集約する。
-各テストファイルに同種ビルダーを個別定義すると pylint の duplicate-code（R0801）に
+各テストファイルに同種ビルダーを個別定義するとaridの重複コード検出に
 抵触するため、conftest.py に集約する。conftest.py に置くことで
 pre-commit の name-tests-test フックから除外される。
 """

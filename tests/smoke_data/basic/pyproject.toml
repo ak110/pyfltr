@@ -9,6 +9,7 @@ pylint = true
 mypy = true
 pyright = true
 ty = true
+arid = true
 pytest = true
 shfmt = true
 taplo = true

@@ -266,6 +266,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
     "ruff-check": CommandInfo(type="linter", fixed_cost=0.01),
     "pyright": CommandInfo(type="linter", fixed_cost=0.8, per_file_cost=0.155),
     "ty": CommandInfo(type="linter", fixed_cost=0.05, per_file_cost=0.01),
+    "arid": CommandInfo(type="linter", fixed_cost=0.05, per_file_cost=0.0002),
     "markdownlint": CommandInfo(
         type="linter",
         targets="*.md",
@@ -501,6 +502,7 @@ PYTHON_COMMANDS: tuple[str, ...] = (
     "pylint",
     "pyright",
     "ty",
+    "arid",
     "pytest",
     "uv-sort",
 )

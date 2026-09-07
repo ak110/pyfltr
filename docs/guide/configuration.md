@@ -109,7 +109,7 @@ python = true
 
 各言語カテゴリキーとゲート対象ツールは次の通り。
 
-- `python`: ruff-format・ruff-check・mypy・pylint・pyright・ty・pytest・uv-sort
+- `python`: ruff-format・ruff-check・mypy・pylint・pyright・ty・arid・pytest・uv-sort
 - `javascript`: eslint・biome・oxlint・prettier・tsc・vitest（TypeScriptも同一カテゴリ）
 - `rust`: cargo-fmt・cargo-clippy・cargo-check・cargo-test・cargo-deny
 - `dotnet`: dotnet-format・dotnet-build・dotnet-test
@@ -119,7 +119,7 @@ python = true
 Python系ツール一式は本体依存に同梱されているため、`uvx pyfltr`単発で利用できる。
 JavaScript系・Rust系・.NET系は各言語のツールチェイン（Node.js・cargo・dotnet CLI）が前提となる。
 
-対応するPython系ツールはruff-format / ruff-check / mypy / pylint / pyright / ty / pytest / uv-sortの8種。
+対応するPython系ツールはruff-format / ruff-check / mypy / pylint / pyright / ty / arid / pytest / uv-sortの9種。
 このうちtyのみpreset非収録のため、必要に応じて個別に`ty = true`を指定する（ゲートを越えて最優先）。
 
 ```toml

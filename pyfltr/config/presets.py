@@ -14,6 +14,7 @@ _PRESET_BASE: dict[str, bool] = {
     "ruff-check": True,
     "mypy": True,
     "pylint": True,
+    "arid": True,
     "pytest": True,
     # JavaScript / TypeScript
     "eslint": True,

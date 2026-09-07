@@ -37,6 +37,34 @@ def _make_record(file: pathlib.Path) -> pyfltr.grep_.types.ReplaceRecord:
     )
 
 
+def _prepare_saved_replacement(
+    tmp_path: pathlib.Path,
+) -> tuple[pyfltr.grep_.history.ReplaceHistoryStore, str, pathlib.Path]:
+    """undoテスト用に置換履歴と置換後の対象ファイルを準備する。"""
+    history_root = tmp_path / "history"
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+    target = work_dir / "a.txt"
+    target.write_text("after content", encoding="utf-8")
+    after_hash = pyfltr.grep_.replacer.compute_hash("after content")
+
+    store = pyfltr.grep_.history.ReplaceHistoryStore(history_root=history_root)
+    replace_id = pyfltr.grep_.history.generate_replace_id()
+    store.save_replace(
+        replace_id,
+        command_meta=_make_command_meta(replace_id=replace_id),
+        file_changes=[
+            {
+                "file": target,
+                "before_content": "before content",
+                "after_hash": after_hash,
+                "records": [_make_record(target)],
+            }
+        ],
+    )
+    return store, replace_id, target
+
+
 def test_save_and_load_round_trip(tmp_path: pathlib.Path) -> None:
     """save_replace と load_replace の往復で内容が保持される。"""
     store = pyfltr.grep_.history.ReplaceHistoryStore(history_root=tmp_path)
@@ -70,27 +98,7 @@ def test_save_and_load_round_trip(tmp_path: pathlib.Path) -> None:
 
 def test_undo_replace_restores_when_hash_matches(tmp_path: pathlib.Path) -> None:
     """ハッシュ一致時にbefore_contentで復元される。"""
-    history_root = tmp_path / "history"
-    work_dir = tmp_path / "work"
-    work_dir.mkdir()
-    target = work_dir / "a.txt"
-    target.write_text("after content", encoding="utf-8")
-    after_hash = pyfltr.grep_.replacer.compute_hash("after content")
-
-    store = pyfltr.grep_.history.ReplaceHistoryStore(history_root=history_root)
-    replace_id = pyfltr.grep_.history.generate_replace_id()
-    store.save_replace(
-        replace_id,
-        command_meta=_make_command_meta(replace_id=replace_id),
-        file_changes=[
-            {
-                "file": target,
-                "before_content": "before content",
-                "after_hash": after_hash,
-                "records": [_make_record(target)],
-            }
-        ],
-    )
+    store, replace_id, target = _prepare_saved_replacement(tmp_path)
 
     metadata = json.loads((store.history_root / replace_id / "meta.json").read_text(encoding="utf-8"))
     assert [entry["file"] for entry in metadata["files"]] == [target.as_posix()]
@@ -104,27 +112,7 @@ def test_undo_replace_restores_when_hash_matches(tmp_path: pathlib.Path) -> None
 
 def test_undo_replace_skips_when_hash_mismatch(tmp_path: pathlib.Path) -> None:
     """ハッシュ不一致時はforce未指定でスキップされる。"""
-    history_root = tmp_path / "history"
-    work_dir = tmp_path / "work"
-    work_dir.mkdir()
-    target = work_dir / "a.txt"
-    target.write_text("after content", encoding="utf-8")
-    after_hash = pyfltr.grep_.replacer.compute_hash("after content")
-
-    store = pyfltr.grep_.history.ReplaceHistoryStore(history_root=history_root)
-    replace_id = pyfltr.grep_.history.generate_replace_id()
-    store.save_replace(
-        replace_id,
-        command_meta=_make_command_meta(replace_id=replace_id),
-        file_changes=[
-            {
-                "file": target,
-                "before_content": "before content",
-                "after_hash": after_hash,
-                "records": [_make_record(target)],
-            }
-        ],
-    )
+    store, replace_id, target = _prepare_saved_replacement(tmp_path)
 
     metadata = json.loads((store.history_root / replace_id / "meta.json").read_text(encoding="utf-8"))
     assert [entry["file"] for entry in metadata["files"]] == [target.as_posix()]
@@ -142,27 +130,7 @@ def test_undo_replace_skips_when_hash_mismatch(tmp_path: pathlib.Path) -> None:
 
 def test_undo_replace_force_overrides_mismatch(tmp_path: pathlib.Path) -> None:
     """force=True ならハッシュ不一致でも復元する。"""
-    history_root = tmp_path / "history"
-    work_dir = tmp_path / "work"
-    work_dir.mkdir()
-    target = work_dir / "a.txt"
-    target.write_text("after content", encoding="utf-8")
-    after_hash = pyfltr.grep_.replacer.compute_hash("after content")
-
-    store = pyfltr.grep_.history.ReplaceHistoryStore(history_root=history_root)
-    replace_id = pyfltr.grep_.history.generate_replace_id()
-    store.save_replace(
-        replace_id,
-        command_meta=_make_command_meta(replace_id=replace_id),
-        file_changes=[
-            {
-                "file": target,
-                "before_content": "before content",
-                "after_hash": after_hash,
-                "records": [_make_record(target)],
-            }
-        ],
-    )
+    store, replace_id, target = _prepare_saved_replacement(tmp_path)
 
     metadata = json.loads((store.history_root / replace_id / "meta.json").read_text(encoding="utf-8"))
     assert [entry["file"] for entry in metadata["files"]] == [target.as_posix()]

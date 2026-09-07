@@ -9,7 +9,7 @@ pyfltr本体の設定（`[tool.pyfltr]`）と、呼び出される各ツール�
 
 - `preset = "latest"`: 各時点での推奨ツール構成。詳細は[プリセット設定](configuration.md#preset)を参照
 - `python = true`: Python系ツールのゲートを開ける。推奨ツール（ruff-format / ruff-check / mypy /
-  pylint / pyright / pytest / uv-sort）を一式有効化する
+  pylint / pyright / pytest / uv-sort / arid）を一式有効化する
     - Python系ツール一式は本体依存に同梱されているため、`uvx pyfltr`単発で利用できる
     - dev依存に固定する場合は`uv add --dev "pyfltr[python]"`（pip環境では`pip install pyfltr`）を使う
 - `pylint-args`: pylintに追加で渡す引数。`--load-plugins=pylint_pydantic`と
@@ -20,21 +20,26 @@ pyfltr本体の設定（`[tool.pyfltr]`）と、呼び出される各ツール�
     pylint側の同系ルールは無効化しても品質低下は招かない
     - `missing-class-docstring`はテストクラスに対する儀礼的docstring付与を無効化する
     - `missing-module-docstring`は`__init__.py`等でモジュールdocstring要求を緩和する目的で無効化する
-- `[tool.pylint."messages control"]`のdisableリストから`"duplicate-code"`（R0801）を除去し重複検出を有効化する。
-  `[tool.pylint.similarities]`は有効化済みの検査に対し`min-similarity-lines = 10`で閾値を設定する
-    - 閾値10は4プロジェクトの既存コード計測に基づき、ノイズ抑制と実重複の捕捉を両立する規模として選定した
-    - 選定時の計測では、検出のあったプロジェクトで閾値4の検出件数が閾値10の場合の数倍から十数倍に達し、
-      閾値10ではいずれも数十件以下に収まった。両閾値とも0件のプロジェクトもあった
-    - 検出件数はコードベースの内容とpylintの版で変動する。
+- `[tool.pylint."messages control"]`のdisableリストへ`"duplicate-code"`（R0801）を追加し、
+  重複コードの検出はaridへ委ねる
+    - aridはRust実装の重複コード検査で、R0801と同じ目的の検査を大幅に短い所要時間で実行する。
+      Python系ツール一式と同じくpyfltr本体依存に同梱されるため、追加の導入手順は不要である
+    - 検出範囲はR0801と一致しない。R0801はファイルをまたぐ重複だけを対象とするのに対し、
+      aridは同一ファイル内の重複も既定で検出する
+- `[tool.arid]`: aridの検査条件を`pyproject.toml`へ集約する。
+  `min-lines`は重複とみなす最小の実効行数を指し、
+  コメント・docstring・import・関数シグネチャを除いた行数で判定する
+    - aridの既定値は4であり、そのままでは短い定型的な一致まで報告される。
+      閾値10はpylintのR0801で運用していた値と同じで、ノイズ抑制と実重複の捕捉を両立する規模として選定した
+    - 検出件数はコードベースの内容と閾値で変動する。
       閾値を自プロジェクト向けに見直す場合は手元で計測し直す
     - 検出時は実重複か否かを判別する。実重複であれば共通化のリファクタリングを第一候補とし、
-      意図的な並行実装や共通化すべきでない類似は理由コメント付き`# pylint: disable=duplicate-code`で個別抑制する。
-      disableリストへの再追加や根拠を示さない閾値変更はしない
-    - `pylint-args`へ`--jobs=4`を指定した状態で`duplicate-code`を有効化すると、
-      同一の重複箇所に対して報告されるファイルの組が`--jobs=1`の場合と一致しないことがある。
-      重複はモジュール横断で集約する検査であり、並列実行では分割されたプロセス単位で
-      代表となる組が選ばれるためである。
-      重複箇所を特定する場合は`--jobs=1`で再実行する
+      意図的な並行実装や共通化すべきでない類似は理由コメントを添えて
+      `# arid: disable`と`# arid: enable`で囲んで個別抑制する。
+      disableリストからの`"duplicate-code"`の除去や、根拠を示さない閾値変更はしない
+- 実装コードとテストコードを分けず、対象全体を`min-lines = 10`で検査する構成を第一推奨とする。
+  テストコードの定型的な重複が多く当該構成を維持できない場合は、
+  [テストコードを別系統で検査する妥協案](#arid-split)へ切り替える
 - ruffの `per-file-ignores`: テストコード（`**_test.py`）とpackage init（`__init__.py`）のdocstring要求を除外する実用的な調整
 
 `uvx pyfltr`での実行では`pyproject.toml`にpyfltrを記述する必要はなく、`[tool.pyfltr]`セクションのみで完結する。
@@ -53,6 +58,7 @@ pylint-args = ["--jobs=4"]
 [tool.pylint."messages control"]
 disable = [
     "broad-exception-caught",
+    "duplicate-code",
     "fixme",
     "invalid-name",
     "line-too-long",
@@ -76,8 +82,8 @@ disable = [
     "too-many-statements",
 ]
 
-[tool.pylint.similarities]
-min-similarity-lines = 10
+[tool.arid]
+min-lines = 10
 
 [tool.ruff]
 # https://docs.astral.sh/ruff/configuration/
@@ -243,6 +249,57 @@ pytestは`filterwarnings`を後勝ちで適用するため、`ignore`エント�
     - sessionスコープのfixtureもworkerごとに1回実行されるため、
     プロセス外の共有資源をworker間で1回だけ初期化する用途には別途排他が必要となる
     - モジュール単位で同一workerへ割り当てたい場合は`--dist=loadfile`・`--dist=loadscope`を選ぶ
+
+### テストコードを別系統で検査する妥協案 {#arid-split}
+
+テストコードには、同じ組み立てを並べる定型的な重複が実装コードより多く現れる。
+第一推奨（対象全体を`min-lines = 10`で検査する構成）を維持できない場合は、
+実装コードとテストコードを別系統で検査し、テストコード側の閾値だけを緩める。
+
+aridはパスごとに閾値を変える設定を持たないため、2回の実行へ分けて実現する。
+組込みの`arid`は`arid-exclude`でテストコードを対象から外し、
+テストコード向けにはカスタムコマンドを登録する。
+
+```toml
+[tool.pyfltr]
+preset = "latest"
+python = true
+pylint-args = ["--jobs=4"]
+# 組込みのaridは実装コードだけを対象とする
+arid-exclude = ["tests"]
+
+# テストコード向けのarid。実装コードより緩い閾値で検査する
+[tool.pyfltr.custom-commands.arid-tests]
+type = "linter"
+path = "uv"
+args = ["run", "--frozen", "arid", "--project-root", ".", "--min-lines", "15"]
+targets = "tests/*.py"
+fast = true
+
+[tool.arid]
+min-lines = 10
+```
+
+前提条件と制約は次の通り。
+
+- カスタムコマンドは`uv run --frozen arid`でaridを起動するため、
+  プロジェクトのuv環境へpyfltrをdev依存として導入しておく（`uv add --dev pyfltr`）。
+  `uvx pyfltr`単発で実行する構成では当該環境にaridが無く、カスタムコマンドの起動が失敗する
+- `arid-exclude`とカスタムコマンドの`targets`は、テストコードを`tests`直下へ置く構成を前提とする。
+  別のディレクトリ構成では両方の値を合わせて変更する
+- 実行を2回へ分けるため、実装コードとテストコードにまたがる重複は検出されなくなる
+- カスタムコマンドへ`error-pattern`は指定しない。
+  aridのテキスト出力は重複の要約と位置を別々の行へ出力するため、
+  1行から`file`・`line`・`message`を取り出せないためである。
+  重複の位置はツールの出力そのものから読む
+- 前項の結果として、テストコード側の検出は構造化された診断にならない。
+  終了コードは重複の検出を反映するため検査の成否は変わらないが、
+  `--output-format=github-annotations`と`--output-format=sarif`には当該重複が現れず、
+  重複の位置はツール出力のテキストとしてのみ得られる。
+  出力が長い場合は当該テキストが末尾で切り詰められる。
+  CIで重複の位置を機械的に扱う必要がある場合は、第一推奨の単一系統の構成を選ぶ
+- テストコード側の閾値15はR0801の閾値10より緩い。
+  R0801が検出していたテストコードの重複のうち、10行以上15行未満のものは検出されなくなる
 
 ### typosの許可語設定
 

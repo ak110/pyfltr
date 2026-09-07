@@ -11,12 +11,12 @@ pyfltrが対応するformatter / linter / testerを言語・用途別に示す�
 
 ## Python系
 
-対応するPython系ツールはruff-format / uv-sort / pylint / mypy / ruff-check / pyright / ty / pytestの8種。
+対応するPython系ツールはruff-format / uv-sort / pylint / mypy / ruff-check / pyright / ty / arid / pytestの9種。
 このうちtyのみpreset非収録のため、必要に応じて`ty = true`を個別指定する。
 Python系ツール一式は本体依存に同梱されているため、`uvx pyfltr`単発で利用できる。
 
 - Formatters: ruff format / uv-sort（依存定義のソート）
-- Linters: pylint / mypy / ruff check / pyright / ty
+- Linters: pylint / mypy / ruff check / pyright / ty / arid（重複コード検出）
 - Testers: pytest
 
 ## JS/TS系

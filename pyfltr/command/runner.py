@@ -59,6 +59,7 @@ PYTHON_TOOL_BIN: dict[str, str] = {
     "pylint": "pylint",
     "pyright": "pyright",
     "ty": "ty",
+    "arid": "arid",
     "pytest": "pytest",
     "uv-sort": "uv-sort",
     "semgrep": "semgrep",

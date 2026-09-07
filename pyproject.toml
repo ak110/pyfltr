@@ -18,6 +18,9 @@ classifiers = [
 ]
 requires-python = ">=3.11,<4.0"
 dependencies = [
+    # JSON出力（`--format=json`の`findings`構造）と`--project-root`・`--min-lines`に依存するため、
+    # 当該インターフェースを検証済みの版を下限とする。
+    "arid>=2.2.2",
     "bandit>=1.7",
     "dill>=0.3",
     # 2.0で高レベルAPIのクラスが`mcp.server.mcpserver.MCPServer`へ改称され、1.x系のimportパスは削除された。
@@ -110,7 +113,7 @@ exclude_dirs = ["tests"]
 [tool.pyfltr]
 preset = "latest"
 # preset = "latest" + Python 系本体依存により、`uvx pyfltr` 単発で
-# Python 系推奨構成 (ruff-format / ruff-check / mypy / pylint / pyright / pytest / uv-sort)
+# Python 系推奨構成 (ruff-format / ruff-check / mypy / pylint / pyright / arid / pytest / uv-sort)
 # が gate 通過で有効化される。`ty` のみ preset 非収録のため個別 true で追加する。
 python = true
 ty = true
@@ -128,6 +131,7 @@ hadolint = true
 bandit = true
 colloquial-check = true
 pylint-args = ["--jobs=4"]
+arid-exclude = ["tests"]
 # tests/smoke_data/ 配下にはツール毎の最小サンプル（GitHub Actionsワークフロー・
 # Dockerfile・shellスクリプト等）を含むため、本リポのpyfltr対象から外す。
 # 当該ディレクトリの起動確認は tests/smoke_test.py が pyfltr CLIをsubprocess経由で呼んで実施する。
@@ -147,6 +151,18 @@ colloquial-check-exclude = [
     "tests/colloquial_cli_test.py",
 ]
 subproject-exclude = ["smoke_data"]
+
+# docs/guide/recommended.md の第一推奨は実装コードとテストコードを分けない全体検査だが、
+# 本リポジトリのテストコードには検体データの逐語的な並記など定型的な重複が多く、
+# 第一推奨の閾値では抑制コメントが過大になるため、同ガイドの妥協案（テストコードだけ緩い閾値）を採用する。
+# 組込みのaridは実装コードだけを対象とし、テストコードは緩い閾値の別系統で検査する。
+# aridはパス別の閾値設定を持たないため、2回の実行へ分けて実現する。
+[tool.pyfltr.custom-commands.arid-tests]
+type = "linter"
+path = "uv"
+args = ["run", "--frozen", "arid", "--project-root", ".", "--min-lines", "15"]
+targets = "tests/*.py"
+fast = true
 
 # 利用者がそのまま写す前提のドキュメント内コード例が、その言語として解析できることを検査する。
 # 組み込みのtaploとpre-commitのcheck-tomlはいずれも`*.toml`ファイルのみを対象とし、
@@ -169,6 +185,7 @@ fast = true
 [tool.pylint."messages control"]
 disable = [
     "broad-exception-caught",
+    "duplicate-code",
     "fixme",
     "invalid-name",
     "line-too-long",
@@ -192,8 +209,8 @@ disable = [
     "too-many-statements",
 ]
 
-[tool.pylint.similarities]
-min-similarity-lines = 10
+[tool.arid]
+min-lines = 10
 
 [tool.ruff]
 # https://docs.astral.sh/ruff/configuration/

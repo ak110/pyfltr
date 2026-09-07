@@ -22,7 +22,7 @@
 # 非 root ユーザー) のキャッシュを最大限再利用する。
 #
 # 同梱ツール一覧 (新ツール追加時は本リストと該当 RUN 層を更新する):
-#   - Python (pyfltr 本体依存に同梱): ruff / mypy / pylint / pyright / ty / pytest / uv-sort /
+#   - Python (pyfltr 本体依存に同梱): ruff / mypy / pylint / pyright / ty / arid / pytest / uv-sort /
 #     typos / yamllint / pre-commit / prek / bandit
 #   - uv tool の独立環境: semgrep / sqlfluff
 #   - mise 経由のネイティブバイナリ: node (LTS) / shfmt / actionlint /
@@ -53,7 +53,7 @@
 # base OS は CI 同梱バイナリ (mise 経由の lychee 等) の glibc 要件を満たす
 # Debian stable を採用する。glibc 要件が満たされず CI 同梱バイナリが起動しない事象が
 # 発生した場合は、当該バイナリのバージョン固定よりも先に base OS 更新を検討する。
-FROM python:3.14-slim-trixie@sha256:cae66f2ef0ec51a9891263eeee7f987dacf0a9879e8aa9353d5606e0530619a5 AS base
+FROM python:3.14-slim-trixie@sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6 AS base
 
 # パイプを使う RUN で `set -o pipefail` 相当の挙動を得るため、SHELL を明示する
 # (hadolint DL4006 対応)。
