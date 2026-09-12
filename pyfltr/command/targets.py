@@ -85,6 +85,14 @@ def expand_all_files(
     directly_specified: set[pathlib.Path] = set()
     expanded: list[pathlib.Path] = []
     respect_gitignore = bool(config["respect-gitignore"])
+    exclude_matchers = {key: _make_exclude_matcher(tuple(config[key])) for key in ("exclude", "extend-exclude")}
+
+    def _excluded_for_run(path: pathlib.Path) -> tuple[str, str] | None:
+        for key, matcher in exclude_matchers.items():
+            matched = matcher(path)
+            if matched is not None:
+                return (key, matched)
+        return None
 
     def _is_in_excluded_subdir(path: pathlib.Path) -> bool:
         if not excluded_real:
@@ -100,7 +108,7 @@ def expand_all_files(
             filesystem_target = target if target.is_absolute() else cwd_base / target
             if _is_in_excluded_subdir(target):
                 return
-            match = excluded(target, config)
+            match = _excluded_for_run(target)
             if match is not None:
                 if is_direct:
                     key, pattern = match
@@ -484,6 +492,22 @@ def matches_exclude_patterns(path: pathlib.Path, patterns: list[str]) -> str | N
                 return glob
         part = part.parent
     return None
+
+
+def _make_exclude_matcher(patterns: tuple[str, ...]) -> typing.Callable[[pathlib.Path], str | None]:
+    """同一走査内で親階層の除外照合結果を再利用するmatcherを返す。"""
+
+    @functools.cache
+    def _match(path: pathlib.Path) -> str | None:
+        for glob in patterns:
+            if path.match(glob):
+                return glob
+        parent = path.parent
+        if parent == path or str(parent) == ".":
+            return None
+        return _match(parent)
+
+    return _match
 
 
 def excluded(path: pathlib.Path, config: pyfltr.config.config.Config) -> tuple[str, str] | None:

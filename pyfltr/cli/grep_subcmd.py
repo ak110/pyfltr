@@ -8,11 +8,13 @@ ripgrep流儀のオプション群を受理する。
 from __future__ import annotations
 
 import argparse
+import contextlib
 import pathlib
 import typing
 
 import pyfltr.cli.grep_replace_common
 import pyfltr.cli.output_format
+import pyfltr.grep_.adaptive
 import pyfltr.grep_.jsonl_records
 import pyfltr.grep_.matcher
 import pyfltr.grep_.preview
@@ -92,14 +94,20 @@ def register_subparsers(subparsers: typing.Any) -> None:
         metavar="N",
         help="マッチ行の前後N行を出力する（`-A`/`-B`を一括指定）。",
     )
-    parser.add_argument("-m", "--max-count", type=int, default=0, metavar="N", help="ファイル単位の最大マッチ件数。")
-    parser.add_argument("--max-total", type=int, default=0, metavar="N", help="全体での最大マッチ件数（pyfltr独自）。")
+    parser.add_argument("-m", "--max-count", type=int, default=None, metavar="N", help="ファイル単位の最大マッチ件数。")
+    parser.add_argument("--max-total", type=int, default=None, metavar="N", help="全体での最大マッチ件数（pyfltr独自）。")
     parser.add_argument(
         "--max-preview-chars",
         type=int,
-        default=pyfltr.grep_.preview.DEFAULT_MAX_PREVIEW_CHARS,
+        default=None,
         metavar="N",
         help="返却する本文1件あたりの文字数上限（0で無制限）。",
+    )
+    parser.add_argument(
+        "--auto-summary",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="検索結果が大きい場合にファイル単位の混在表示などへ自動縮約する。",
     )
 
     # ファイル選定オプション
@@ -149,6 +157,19 @@ def execute_grep(parser: argparse.ArgumentParser, args: argparse.Namespace) -> i
     # 出力形式の解決とtext logger / structured loggerの出力先設定
     resolution = pyfltr.cli.grep_replace_common.setup_output(parser, args)
     output_format = resolution.format
+    warning_scope = pyfltr.warnings_.defer_stderr() if output_format == "jsonl" else contextlib.nullcontext()
+    with warning_scope:
+        return _execute_grep(parser, args, resolution=resolution)
+
+
+def _execute_grep(
+    parser: argparse.ArgumentParser,
+    args: argparse.Namespace,
+    *,
+    resolution: pyfltr.cli.output_format.OutputFormatResolution,
+) -> int:
+    """警告配送スコープ内でgrepを実行する。"""
+    output_format = resolution.format
 
     # パターン群の収集
     patterns = _collect_patterns(parser, args)
@@ -186,30 +207,21 @@ def execute_grep(parser: argparse.ArgumentParser, args: argparse.Namespace) -> i
 
     files_scanned = len(expanded)
 
-    # JSONL header
     pattern_repr = "|".join(patterns) if len(patterns) > 1 else patterns[0]
-    if output_format == "jsonl":
-        pyfltr.grep_.jsonl_records.emit_grep_header(
-            pattern=pattern_repr,
-            files=files_scanned,
-            format_source=resolution.source,
-        )
 
     # サマリ系オプションの処理（`--files-with-matches`等）
     summary_only_mode = args.files_with_matches or args.count or args.count_matches or args.files_without_match
 
     # スキャン実行
     matches: list[MatchRecord] = []
-    previews: list[pyfltr.grep_.preview.MatchPreview] = []
-    truncated_matches = 0
     per_file_counts: dict[pathlib.Path, int] = {}
     for record in pyfltr.grep_.scanner.scan_files(
         expanded,
         compiled,
         before_context=before_ctx,
         after_context=after_ctx,
-        max_per_file=args.max_count,
-        max_total=args.max_total,
+        max_per_file=args.max_count or 0,
+        max_total=args.max_total or 0,
         encoding=args.encoding,
         max_filesize=args.max_filesize,
         multiline=args.multiline,
@@ -218,30 +230,66 @@ def execute_grep(parser: argparse.ArgumentParser, args: argparse.Namespace) -> i
             continue  # FileMatchSummaryは現状未使用
         matches.append(record)
         per_file_counts[record.file] = per_file_counts.get(record.file, 0) + 1
-        if not summary_only_mode:
-            preview = pyfltr.grep_.preview.build_match_preview(record, max_chars=args.max_preview_chars)
-            previews.append(preview)
-            if preview.truncated:
-                truncated_matches += 1
-            if output_format == "jsonl":
-                pyfltr.grep_.jsonl_records.emit_match(record, preview)
-            elif output_format == "text":
-                pyfltr.grep_.text_render.render_match(record, preview)
-
     total_matches = len(matches)
     files_with_matches = len(per_file_counts)
+
+    preview_limit = pyfltr.grep_.preview.DEFAULT_MAX_PREVIEW_CHARS if args.max_preview_chars is None else args.max_preview_chars
+    previews = (
+        []
+        if summary_only_mode
+        else [pyfltr.grep_.preview.build_match_preview(record, max_chars=preview_limit) for record in matches]
+    )
+    match_payloads = (
+        []
+        if summary_only_mode
+        else [
+            pyfltr.grep_.jsonl_records.match_payload(record, preview) for record, preview in zip(matches, previews, strict=True)
+        ]
+    )
+    explicit_output_control = summary_only_mode or any(
+        value is not None for value in (args.max_count, args.max_total, args.max_preview_chars)
+    )
+    auto_summary = (
+        pyfltr.cli.output_format.detect_agent_indicator() is not None if args.auto_summary is None else args.auto_summary
+    )
+    adaptive_format: pyfltr.grep_.adaptive.OutputFormat
+    if output_format == "text":
+        adaptive_format = "text"
+    elif output_format == "json":
+        adaptive_format = "json"
+    elif output_format == "jsonl":
+        adaptive_format = "jsonl"
+    else:
+        adaptive_format = "mcp"
+    if auto_summary and not explicit_output_control:
+        selection = pyfltr.grep_.adaptive.select_output(match_payloads, output_format=adaptive_format)
+    else:
+        selection = pyfltr.grep_.adaptive.full_output(match_payloads)
+
+    returned_payloads = list(selection.matches)
+    for file_result in selection.file_results:
+        returned_payloads.extend(typing.cast(list[dict[str, typing.Any]], file_result.get("matches", [])))
+    truncated_matches = sum(bool(payload.get("truncated")) for payload in returned_payloads)
 
     if truncated_matches > 0:
         pyfltr.warnings_.emit_warning(
             source="grep",
             message=pyfltr.grep_.preview.build_truncation_warning(
                 truncated_matches=truncated_matches,
-                max_chars=args.max_preview_chars,
+                max_chars=preview_limit,
                 full_text_hint="`--max-preview-chars=0`",
             ),
         )
 
     # サマリ系オプション出力（text / jsonl）
+    if output_format == "jsonl":
+        pyfltr.grep_.jsonl_records.emit_grep_header(
+            pattern=pattern_repr,
+            files=files_scanned,
+            format_source=resolution.source,
+            output_mode=None if summary_only_mode else selection.output_mode,
+        )
+
     if summary_only_mode:
         _emit_summary_only(
             output_format,
@@ -249,9 +297,15 @@ def execute_grep(parser: argparse.ArgumentParser, args: argparse.Namespace) -> i
             per_file_counts=per_file_counts,
             scanned=expanded,
         )
+    elif output_format == "jsonl":
+        pyfltr.grep_.jsonl_records.emit_records(pyfltr.grep_.adaptive.jsonl_result_records(selection))
+    elif output_format == "text":
+        with pyfltr.cli.output_format.text_output_lock:
+            for line in pyfltr.grep_.adaptive.text_result_lines(selection):
+                pyfltr.cli.output_format.text_logger.info(line)
 
     # ガイダンス文（replace起動コマンド案内）
-    guidance = _build_grep_guidance(total_matches)
+    guidance = _build_grep_guidance(total_matches, output_mode=selection.output_mode)
 
     # 直接指定が除外・不在で対象外になった一覧をsummaryへ載せる。
     fully_excluded = pyfltr.warnings_.filtered_direct_files(reason="excluded")
@@ -263,6 +317,17 @@ def execute_grep(parser: argparse.ArgumentParser, args: argparse.Namespace) -> i
         warning_entries = pyfltr.warnings_.collected_warnings()
         for warning_entry in warning_entries:
             pyfltr.grep_.jsonl_records.emit_warning(warning_entry)
+        adaptive_summary: dict[str, typing.Any] = (
+            {}
+            if summary_only_mode
+            else {
+                "files_with_matches": files_with_matches,
+                "returned_matches": selection.returned_matches,
+                "omitted_matches": selection.omitted_matches,
+                "omitted_files": selection.omitted_files,
+                "output_mode": selection.output_mode,
+            }
+        )
         pyfltr.grep_.jsonl_records.emit_grep_summary(
             total_matches=total_matches,
             files_scanned=files_scanned,
@@ -271,7 +336,9 @@ def execute_grep(parser: argparse.ArgumentParser, args: argparse.Namespace) -> i
             fully_excluded_files=fully_excluded,
             missing_targets=missing_targets,
             warning_count=len(warning_entries),
+            **adaptive_summary,
         )
+        pyfltr.warnings_.mark_delivered(warning_entries)
     elif output_format == "json":
         warning_entries = pyfltr.warnings_.collected_warnings()
         warning_records: list[dict[str, typing.Any]] = []
@@ -286,6 +353,13 @@ def execute_grep(parser: argparse.ArgumentParser, args: argparse.Namespace) -> i
             "files_scanned": files_scanned,
             "files_with_matches": files_with_matches,
         }
+        if not summary_only_mode:
+            summary.update(
+                returned_matches=selection.returned_matches,
+                omitted_matches=selection.omitted_matches,
+                omitted_files=selection.omitted_files,
+                output_mode=selection.output_mode,
+            )
         if total_matches > 0 and guidance:
             summary["guidance"] = guidance
         if fully_excluded:
@@ -299,7 +373,9 @@ def execute_grep(parser: argparse.ArgumentParser, args: argparse.Namespace) -> i
             payload["summary"] = summary
         else:
             payload = {
-                "matches": [_match_to_dict(record, preview) for record, preview in zip(matches, previews, strict=True)],
+                "matches": selection.matches,
+                "file_results": selection.file_results,
+                "output_mode": selection.output_mode,
                 "summary": summary,
             }
         if warning_records:
@@ -338,37 +414,22 @@ def _collect_patterns(parser: argparse.ArgumentParser, args: argparse.Namespace)
     return patterns
 
 
-def _build_grep_guidance(total_matches: int) -> list[str]:
+def _build_grep_guidance(total_matches: int, *, output_mode: str = "full") -> list[str]:
     """grep完了時のガイダンス文（英語）を組み立てる。
 
     `total_matches > 0`時のみreplace起動コマンドを案内する。マッチ0件時は呼び出し側で省略する。
     """
     if total_matches <= 0:
         return []
+    if output_mode != "full":
+        return [
+            "Narrow the search by file path, --glob, or --type to inspect omitted matches.",
+            "Use --no-auto-summary to return every match in the selected search range.",
+        ]
     return [
         "Use 'pyfltr replace <pattern> <replacement> [paths...]' with the same arguments to apply replacements.",
         "Use --dry-run to preview, or --from-grep=<jsonl-file> to limit replacement to files emitted by this grep.",
     ]
-
-
-def _match_to_dict(
-    record: MatchRecord,
-    preview: pyfltr.grep_.preview.MatchPreview,
-) -> dict[str, typing.Any]:
-    """MatchRecordをjson形式の辞書へ変換する。"""
-    payload: dict[str, typing.Any] = {
-        "file": pyfltr.paths.normalize_separators(record.file),
-        "line": record.line,
-        "col": record.col,
-        "match_text": preview.match_text,
-        "line_text": preview.line_text,
-        **({"end_col": record.end_col} if record.end_col is not None else {}),
-        **({"before": list(preview.before_lines)} if preview.before_lines else {}),
-        **({"after": list(preview.after_lines)} if preview.after_lines else {}),
-        **({"line_text_offset": preview.line_text_offset} if preview.line_text_offset != 0 else {}),
-        **({"truncated": list(preview.truncated_fields)} if preview.truncated_fields else {}),
-    }
-    return payload
 
 
 def _build_summary_only_json(

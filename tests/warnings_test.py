@@ -40,6 +40,49 @@ def test_emit_warning_logs_via_logger(caplog: pytest.LogCaptureFixture) -> None:
     assert any("please fix" in record.message for record in caplog.records)
 
 
+def test_defer_stderr_suppresses_delivered_warning(caplog: pytest.LogCaptureFixture) -> None:
+    """JSONLへ配送済みとした警告はstderrへ重複通知しない。"""
+    with caplog.at_level(logging.WARNING, logger="pyfltr.warnings_"), pyfltr.warnings_.defer_stderr():
+        pyfltr.warnings_.emit_warning(source="config", message="delivered")
+        pyfltr.warnings_.mark_delivered(pyfltr.warnings_.collected_warnings())
+
+    assert not [record for record in caplog.records if "delivered" in record.message]
+
+
+def test_defer_stderr_flushes_undelivered_warning(caplog: pytest.LogCaptureFixture) -> None:
+    """JSONLへ配送できなかった警告はスコープ終了時にstderrへ通知する。"""
+    with caplog.at_level(logging.WARNING, logger="pyfltr.warnings_"), pyfltr.warnings_.defer_stderr():
+        pyfltr.warnings_.emit_warning(source="config", message="not delivered")
+
+    records = [record for record in caplog.records if "not delivered" in record.message]
+    assert len(records) == 1
+
+
+def test_defer_stderr_nested_scope_flushes_once(caplog: pytest.LogCaptureFixture) -> None:
+    """入れ子の配送スコープは最外終了時に未配送警告を1回だけ通知する。"""
+    with (
+        caplog.at_level(logging.WARNING, logger="pyfltr.warnings_"),
+        pyfltr.warnings_.defer_stderr(),
+        pyfltr.warnings_.defer_stderr(),
+    ):
+        pyfltr.warnings_.emit_warning(source="config", message="nested")
+
+    records = [record for record in caplog.records if "nested" in record.message]
+    assert len(records) == 1
+
+
+def test_defer_stderr_restores_after_exception(caplog: pytest.LogCaptureFixture) -> None:
+    """例外終了でも未配送警告を通知し、後続の即時通知状態を復元する。"""
+    with caplog.at_level(logging.WARNING, logger="pyfltr.warnings_"):
+        with pytest.raises(RuntimeError, match="stop"), pyfltr.warnings_.defer_stderr():
+            pyfltr.warnings_.emit_warning(source="config", message="before stop")
+            raise RuntimeError("stop")
+        pyfltr.warnings_.emit_warning(source="config", message="after stop")
+
+    assert len([record for record in caplog.records if "before stop" in record.message]) == 1
+    assert len([record for record in caplog.records if "after stop" in record.message]) == 1
+
+
 def test_emit_warning_with_exc_info_captures_traceback() -> None:
     """exc_info=True でスタックトレースが message 末尾に連結される。"""
     try:

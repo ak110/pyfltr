@@ -42,9 +42,10 @@ pyfltr grep -F "exact_string" docs/
 - `--max-total N`: 全体上限（暴発防止用、pyfltr独自）
 - `--type TYPE`: 言語タイプフィルタ（python/rust/ts/js/md/json/toml/yaml/shell）
 - `-g/--glob PAT`: globフィルタ
-- `--encoding ENC`: ファイル読み込みエンコーディング
+- `--encoding ENC`: ファイル読み込みエンコーディング。UTF-8の復号に失敗した場合はCP932を試す
 - `--max-filesize BYTES`: ファイルサイズ上限
 - `--max-preview-chars N`: 返却する本文1件あたりの文字数上限（既定200、0で無制限）
+- `--auto-summary`/`--no-auto-summary`: 結果量に応じた自動省略の有効化・無効化
 - `--no-exclude`/`--no-gitignore`: pyfltr設定の無効化
 - `--output-format text|json|jsonl`: 出力形式
 
@@ -52,9 +53,34 @@ pyfltr grep -F "exact_string" docs/
 
 - `text`（既定）: `path:line:col:line_text` 形式
 - `json`: 単一JSONとしてmatches配列とsummaryを返す
-- `jsonl`: header → match行 → summary行のストリーム
+- `jsonl`: 検索完了後にheader、検索結果、警告、summaryの順で出力
 
 `AI_AGENT` / `CODEX_CI` / `CLAUDECODE` / `CURSOR_AGENT`環境変数のいずれかが設定されている場合は`jsonl`が既定値となる。
+
+### 結果量に応じた自動省略
+
+コーディングエージェント環境では`--auto-summary`が既定で有効となり、MCPの`grep`でも既定で有効となる。
+CLIを通常の端末から実行する場合は従来どおり全マッチを表示する。
+
+自動省略は検索結果全体を取得してから、結果部分の直列化後の長さが10,000文字以内に収まる形式を選ぶ。
+特定のファイル名や拡張子は判定に用いない。
+1ファイルのヒットが多い場合は、まず当該ファイルだけを`file_result`へまとめ、本文を省略して件数を返す。
+低密度ファイルのマッチ本文は予算内で維持する。
+それでも収まらない場合は、全ファイルの件数表示、各ファイルの代表マッチを均等に返す表示の順に縮約する。
+
+`output_mode`は選択された形式を示し、`full`・`mixed`・`grouped`・`counts`・`sampled`のいずれかとなる。
+summaryには`returned_matches`・`omitted_matches`・`omitted_files`が含まれる。
+省略が無い場合は`output_mode: "full"`となる。
+
+`-m`・`--max-total`・`--max-preview-chars`・集計オプションを明示した場合は、その指定を優先して自動省略しない。
+`--no-auto-summary`でも全マッチ表示へ復元できる。
+JSONLは検索結果をバッファリングし、出力形式を確定してからheader以降を出力する。
+
+### 読み込みエンコーディング
+
+既定のUTF-8読み込みに失敗したファイルは、厳密なCP932として再度読み込む。
+CP932でも読み込めない場合は警告して当該ファイルをスキップする。
+`--encoding`でUTF-8以外を明示した場合は、指定したエンコーディングだけを使用する。
 
 ### マッチ本文のプレビュー上限
 
@@ -106,8 +132,9 @@ src/app.min.js:1:20010:[+19909] ...(200文字のプレビュー)...
 
 ### grep→replace連携
 
-grep実行結果のsummary（jsonl形式時）には、同じ引数で`replace`へ切り替える際の案内が含まれる。
-誤爆ゼロを確認した引数列をそのまま`replace`へコピーして利用できる。
+全一致を出力したgrep結果のsummary（jsonl形式時）には、replaceへの切り替え案内が含まれる。
+集約・省略されたJSONLは`replace --from-grep`へ入力できない。
+`--no-auto-summary`を指定して対象を絞り込み、全一致のJSONLを保存してから置換内容を確認する。
 
 ## replace
 
@@ -177,7 +204,7 @@ pyfltr replace "old" "new" config.toml --within "\[section\]" -C 2
 
 ### 誤爆除外フロー
 
-1. `pyfltr grep --output-format=jsonl ... > matches.jsonl` でgrepの結果を保存
+1. `pyfltr grep --no-auto-summary --output-format=jsonl ... > matches.jsonl` でgrepの結果を保存
 2. matches.jsonlをエディタで開き、置換対象外のmatch行（の`file`フィールド）を確認
 3. 不要ファイルを `--exclude-file=path/to/file.py` で個別除外するか、
    matches.jsonl自体を編集して `--from-grep=matches.jsonl` で渡す
@@ -187,6 +214,10 @@ pyfltr replace "old" "new" config.toml --within "\[section\]" -C 2
 1件もマッチしなくなる事象を避けるため）。
 複数プロジェクト横断や別ディレクトリからの呼び出しが必要な場合は、`--exclude-file`で個別の
 絶対パスを指定する運用へ切り替える。
+
+`--from-grep`は`output_mode`が`full`のJSONLと、`output_mode`導入前のJSONLだけを受理する。
+自動省略されたJSONLは対象ファイルを網羅しない可能性があるため拒否する。
+置換対象一覧として保存するgrepでは`--no-auto-summary`を指定する。
 
 マッチ単位除外（`path:line`単位）は当面スコープ外で、ファイル単位で十分な精度を狙う設計。
 
@@ -200,6 +231,7 @@ pyfltr replace "old" "new" config.toml --within "\[section\]" -C 2
   `summary_mode`は`files_with_matches`・`count`・`files_without_match`のいずれかを受け取り、
   マッチ明細を空にして対応する集計結果を返す。
   `files_without_match`では全ファイルの確認が必要なため、正の`max_total`を併用できない
+  `max_total`を省略した場合も全マッチを走査し、`auto_summary=True`による適応的な出力縮約で応答量を抑える。
   `max_preview_chars`は返却する本文1件あたりの文字数上限（既定200、0で無制限）で、
   切り詰めが発生した場合は`matches[].truncated`・`matches[].line_text_offset`と戻り値の`warnings`で通知する
 - `replace(pattern, replacement, paths, dry_run=True, within=None, from_grep=None, context=None, ...)`:

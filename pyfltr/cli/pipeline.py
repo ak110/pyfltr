@@ -464,6 +464,43 @@ def run_pipeline(
     original_cwd: str | None = None,
     original_sys_args: list[str] | None = None,
     force_text_on_stderr: bool = False,
+    jsonl_warnings_reach_consumer: bool = True,
+) -> tuple[int, str | None]:
+    """出力形式に応じた警告配送スコープを設定してパイプラインを実行する。"""
+    if (args.output_format or "text") == "jsonl":
+        with pyfltr.warnings_.defer_stderr():
+            return _run_pipeline(
+                args,
+                commands,
+                config,
+                start_cwd=start_cwd,
+                original_cwd=original_cwd,
+                original_sys_args=original_sys_args,
+                force_text_on_stderr=force_text_on_stderr,
+                jsonl_warnings_reach_consumer=jsonl_warnings_reach_consumer,
+            )
+    return _run_pipeline(
+        args,
+        commands,
+        config,
+        start_cwd=start_cwd,
+        original_cwd=original_cwd,
+        original_sys_args=original_sys_args,
+        force_text_on_stderr=force_text_on_stderr,
+        jsonl_warnings_reach_consumer=jsonl_warnings_reach_consumer,
+    )
+
+
+def _run_pipeline(
+    args: argparse.Namespace,
+    commands: list[str],
+    config: pyfltr.config.config.Config,
+    *,
+    start_cwd: pathlib.Path | None = None,
+    original_cwd: str | None = None,
+    original_sys_args: list[str] | None = None,
+    force_text_on_stderr: bool = False,
+    jsonl_warnings_reach_consumer: bool = True,
 ) -> tuple[int, str | None]:
     """実行パイプライン。
 
@@ -559,6 +596,7 @@ def run_pipeline(
             format_source=format_source,
             quiet=quiet,
             subcommand=getattr(args, "subcommand", None),
+            jsonl_warnings_reach_consumer=jsonl_warnings_reach_consumer,
         )
         formatter.on_start(early_run_ctx)
         formatter.on_finish(early_run_ctx, [], 1, pyfltr.warnings_.collected_warnings())
@@ -718,6 +756,7 @@ def run_pipeline(
         format_source=format_source,
         quiet=quiet,
         subcommand=getattr(args, "subcommand", None),
+        jsonl_warnings_reach_consumer=jsonl_warnings_reach_consumer,
     )
 
     formatter.on_start(ctx)

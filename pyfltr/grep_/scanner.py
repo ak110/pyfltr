@@ -3,9 +3,10 @@
 `expand_all_files()`で展開済みのファイル群に対して、`re.Pattern`を適用して
 `MatchRecord`/`FileMatchSummary`を逐次生成する。
 前後コンテキスト（`-A`/`-B`/`-C`）の重複統合とper-file/全体件数上限の打ち切り、
-ファイルタイプ・globフィルタ、エンコーディングデコードエラー時のスキップを担う。
+ファイルタイプ・globフィルタ、UTF-8失敗時のCP932再試行とデコードエラー時のスキップを担う。
 """
 
+import codecs
 import collections.abc
 import pathlib
 import re
@@ -85,7 +86,8 @@ def scan_files(
         `MatchRecord`を逐次生成する。本実装では`FileMatchSummary`は生成しないが、
         ファイル単位サマリー出力経路（`--count`等）の拡張余地として戻り値型に含める
 
-    エンコーディングデコードエラーが発生したファイルはスキップし、
+    UTF-8指定時はデコード失敗後にCP932で再試行する。
+    再試行後もエンコーディングデコードエラーが発生したファイルはスキップし、
     `pyfltr.warnings_`へ警告を蓄積する。
     """
     total = 0
@@ -99,7 +101,7 @@ def scan_files(
             except OSError:
                 continue
         try:
-            text = file.read_text(encoding=encoding)
+            text = _read_search_text(file, encoding)
         except UnicodeDecodeError:
             pyfltr.warnings_.emit_warning(
                 source="grep",
@@ -129,6 +131,16 @@ def scan_files(
             total += 1
             if 0 < max_total <= total:
                 return
+
+
+def _read_search_text(file: pathlib.Path, encoding: str) -> str:
+    """検索用本文を読み、UTF-8の復号失敗時だけCP932をstrictで再試行する。"""
+    try:
+        return file.read_text(encoding=encoding)
+    except UnicodeDecodeError:
+        if codecs.lookup(encoding).name != "utf-8":
+            raise
+    return file.read_text(encoding="cp932")
 
 
 def _scan_text(

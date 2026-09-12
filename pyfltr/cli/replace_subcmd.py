@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import pathlib
 import re
@@ -160,6 +161,19 @@ def execute_replace(parser: argparse.ArgumentParser, args: argparse.Namespace) -
     # 出力形式の解決とtext logger / structured loggerの出力先設定
     resolution = pyfltr.cli.grep_replace_common.setup_output(parser, args)
     output_format = resolution.format
+    warning_scope = pyfltr.warnings_.defer_stderr() if output_format == "jsonl" else contextlib.nullcontext()
+    with warning_scope:
+        return _execute_replace(parser, args, resolution=resolution)
+
+
+def _execute_replace(
+    parser: argparse.ArgumentParser,
+    args: argparse.Namespace,
+    *,
+    resolution: pyfltr.cli.output_format.OutputFormatResolution,
+) -> int:
+    """警告配送スコープ内でreplaceを実行する。"""
+    output_format = resolution.format
 
     # 履歴照会・undo モードを先に捌く（位置引数の意味が変わるため）
     if args.list_history:
@@ -280,7 +294,10 @@ def execute_replace(parser: argparse.ArgumentParser, args: argparse.Namespace) -
                     encoding=args.encoding,
                 )
         except (UnicodeDecodeError, OSError) as exc:
-            sys.stderr.write(f"warning: 読み込みに失敗したためスキップしました: {file}: {exc}\n")
+            pyfltr.warnings_.emit_warning(
+                source="replace",
+                message=f"読み込みに失敗したためスキップしました: {file}: {exc}",
+            )
             read_failures += 1
             continue
         if count == 0:
@@ -375,6 +392,7 @@ def execute_replace(parser: argparse.ArgumentParser, args: argparse.Namespace) -
             missing_targets=missing_targets,
             warning_count=len(warning_entries),
         )
+        pyfltr.warnings_.mark_delivered(warning_entries)
     elif output_format == "json":
         replace_summary: dict[str, typing.Any] = {
             "files_changed": files_changed,
@@ -422,6 +440,7 @@ def read_from_grep(jsonl_path: pathlib.Path) -> set[pathlib.Path]:
     except OSError as exc:
         raise ValueError(f"--from-grep の読み込みに失敗しました: {jsonl_path}: {exc}") from exc
     files: set[pathlib.Path] = set()
+    output_modes: set[str] = set()
     for line in text.splitlines():
         line = line.strip()
         if not line:
@@ -430,11 +449,18 @@ def read_from_grep(jsonl_path: pathlib.Path) -> set[pathlib.Path]:
             record = json.loads(line)
         except json.JSONDecodeError:
             continue
+        output_mode = record.get("output_mode")
+        if isinstance(output_mode, str):
+            output_modes.add(output_mode)
         if record.get("kind") != "match":
             continue
         file = record.get("file")
         if isinstance(file, str):
             files.add(pathlib.Path(file).resolve())
+    unsupported_modes = output_modes - {"full"}
+    if unsupported_modes:
+        modes = ", ".join(sorted(unsupported_modes))
+        raise ValueError(f"--from-grep には省略を含まないfull出力を指定してください（検出したoutput_mode: {modes}）。")
     return files
 
 
@@ -539,18 +565,24 @@ def _execute_undo(parser: argparse.ArgumentParser, args: argparse.Namespace, out
 
     exit_code = 1 if skipped else 0
     if skipped:
-        sys.stderr.write(
-            f"warning: undo で {len(skipped)} 件のファイルが手動編集後の状態のためスキップされました。"
-            " --force で強制復元できます。\n"
+        pyfltr.warnings_.emit_warning(
+            source="replace-undo",
+            message=(
+                f"undo で {len(skipped)} 件のファイルが手動編集後の状態のためスキップされました。 --force で強制復元できます。"
+            ),
         )
 
     if output_format == "jsonl":
+        warning_entries = pyfltr.warnings_.collected_warnings()
+        for warning_entry in warning_entries:
+            pyfltr.grep_.jsonl_records.emit_warning(warning_entry)
         pyfltr.grep_.jsonl_records.emit_replace_undo_summary(
             replace_id=replace_id,
             restored=restored,
             skipped=skipped,
             exit_code=exit_code,
         )
+        pyfltr.warnings_.mark_delivered(warning_entries)
     elif output_format == "json":
         pyfltr.cli.grep_replace_common.print_json(
             {

@@ -7,7 +7,9 @@
 import collections.abc
 import contextlib
 import contextvars
+import dataclasses
 import logging
+import threading
 import traceback
 import typing
 
@@ -22,6 +24,19 @@ _DuplicateSuppressionState = tuple[
 
 _warnings: list[dict[str, typing.Any]] = []
 _filtered_direct_files: list[tuple[str, FilteredReason]] = []
+_delivery_lock = threading.RLock()
+
+
+@dataclasses.dataclass
+class _DeliveryState:
+    """stderrへの警告配送を保留するスコープの共有状態。"""
+
+    depth: int = 0
+    deferred: list[dict[str, typing.Any]] = dataclasses.field(default_factory=list)
+    delivered_ids: set[int] = dataclasses.field(default_factory=set)
+
+
+_delivery_state = _DeliveryState()
 _duplicate_suppression_state: contextvars.ContextVar[_DuplicateSuppressionState | None] = contextvars.ContextVar(
     "duplicate_suppression_state",
     default=None,
@@ -45,8 +60,39 @@ def suppress_duplicates() -> collections.abc.Iterator[None]:
         _duplicate_suppression_state.reset(token)
 
 
+@contextlib.contextmanager
+def defer_stderr() -> collections.abc.Iterator[None]:
+    """JSONLへの配送結果が確定するまで警告のstderr通知を保留する。
+
+    正常にJSONLへ含めた警告は`mark_delivered`で通知済みにする。
+    例外や早期終了により配送されなかった警告は、最外スコープの終了時にstderrへ1回だけ通知する。
+    """
+    with _delivery_lock:
+        _delivery_state.depth += 1
+    try:
+        yield
+    finally:
+        pending: list[dict[str, typing.Any]] = []
+        with _delivery_lock:
+            _delivery_state.depth -= 1
+            if _delivery_state.depth == 0:
+                pending = [entry for entry in _delivery_state.deferred if id(entry) not in _delivery_state.delivered_ids]
+                _delivery_state.deferred.clear()
+                _delivery_state.delivered_ids.clear()
+        for entry in pending:
+            logger.warning(entry["message"])
+
+
+def mark_delivered(entries: collections.abc.Iterable[dict[str, typing.Any]]) -> None:
+    """消費主体へ正常に配送した警告をstderr通知済みとして記録する。"""
+    with _delivery_lock:
+        if _delivery_state.depth == 0:
+            return
+        _delivery_state.delivered_ids.update(id(entry) for entry in entries)
+
+
 def emit_warning(source: str, message: str, *, exc_info: bool = False, hint: str | None = None) -> None:
-    """警告を発行し、ログ出力と内部蓄積を同時に行う。
+    """警告を蓄積し、配送保留スコープ外ではstderrへ即時通知する。
 
     `exc_info=True`を指定すると`traceback.format_exc()`の内容を`message`末尾に
     連結して蓄積する（JSONLなどloggerを通さない経路でもスタックトレースを参照できるように）。
@@ -63,7 +109,6 @@ def emit_warning(source: str, message: str, *, exc_info: bool = False, hint: str
         if key in warning_keys:
             return
         _duplicate_suppression_state.set((warning_keys | {key}, suppression_state[1]))
-    logger.warning(message, exc_info=exc_info)
     stored = message
     if exc_info:
         tb = traceback.format_exc().rstrip()
@@ -72,7 +117,12 @@ def emit_warning(source: str, message: str, *, exc_info: bool = False, hint: str
     entry: dict[str, typing.Any] = {"source": source, "message": stored}
     if hint is not None:
         entry["hint"] = hint
-    _warnings.append(entry)
+    with _delivery_lock:
+        _warnings.append(entry)
+        if _delivery_state.depth > 0:
+            _delivery_state.deferred.append(entry)
+            return
+    logger.warning(message, exc_info=exc_info)
 
 
 def collected_warnings() -> list[dict[str, typing.Any]]:

@@ -62,7 +62,12 @@ def _run_and_read_jsonl(
 
     pyfltr.cli.pipeline.run_pipeline(_make_args(tmp_path, commands=args_commands), commands, config)
 
-    return [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
+    captured = capsys.readouterr()
+    records = [json.loads(line) for line in captured.out.splitlines() if line.strip()]
+    for record in records:
+        if record.get("kind") == "warning":
+            assert record["msg"] not in captured.err
+    return records
 
 
 def _summary_warning_count(records: list[dict]) -> int:

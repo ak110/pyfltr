@@ -1,9 +1,3 @@
 {
-  "recommendations": [
-    "EditorConfig.EditorConfig",
-    "charliermarsh.ruff",
-    "ms-python.mypy-type-checker",
-    "ms-python.pylint",
-    "ms-python.python"
-  ]
+  "recommendations": []
 }

@@ -18,6 +18,8 @@ description: >
 pyfltrは3系統のlogger（root system / `pyfltr.textout` / `pyfltr.structured`）を使い分ける。
 役割と切替手段は`pyfltr/cli/output_format.py`の`configure_text_output` /
 `configure_structured_output` のdocstringに集約する。
+JSONLの`warning`レコードとして最終消費主体へ配送した実行時警告は、root loggerからstderrへ重複出力しない。
+配送が完了しなかった警告と、MCP内部の一時JSONLにだけ書いた警告はstderrへ通知する。
 
 ## JSONL公開ヘルパー方針
 

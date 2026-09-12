@@ -48,7 +48,7 @@ pyfltrはCLIツールであり、Pythonモジュールパスは内部実装と�
   出力フォーマット群とツール別ルールURL生成、出力形式が共有する診断位置の判定を担う
 - `pyfltr/grep_/`: 横断検索・置換のコアロジック。
   パターンコンパイル・ファイル走査・マッチ抽出・置換適用・replace履歴世代管理・
-  JSONLレコード生成・人間向け出力を担う
+  直列化後の結果量に応じた適応的出力・JSONLレコード生成・人間向け出力を担う
 - `pyfltr/state/`: アーカイブ・キャッシュ・履歴・再実行制御の永続化系。
   実行アーカイブ読み書き・ファイルhashキャッシュ・`list-runs`/`show-run`サブコマンド・
   `--only-failed`フィルター処理・`retry_command`生成・コマンド実行順制御・ステージ実行ヘルパーを担う
@@ -58,7 +58,8 @@ pyfltrはCLIツールであり、Pythonモジュールパスは内部実装と�
 ### トップレベルモジュール
 
 - `pyfltr/paths.py`: パスユーティリティ
-- `pyfltr/warnings_.py`: 警告蓄積
+- `pyfltr/warnings_.py`: 警告蓄積。
+  構造化出力へ配送する間はstderr出力を保留し、配送されなかった警告だけをスコープ終了時にstderrへ出力する
 
 ### サブパッケージ間依存
 
@@ -587,7 +588,7 @@ SHA-256全桁を採用する。
 
 pyfltrは3系統のloggerを使い分ける。
 
-- root（system logger）: 常にstderr。抑止しない。設定エラー・アーカイブ初期化失敗などを送出する
+- root（system logger）: stderrへ設定エラー・アーカイブ初期化失敗などを送出する
 - `pyfltr.textout`: 人間向けテキスト出力（進捗・詳細・summary・warnings・`--only-failed`案内）
 - `pyfltr.structured`: 構造化出力（JSONL / SARIF / Code Quality）
 
@@ -611,10 +612,27 @@ pyfltrは3系統のloggerを使い分ける。
 - `jsonl` / `sarif` / `code-quality` + `--output-file`指定 → `FileHandler(output_file, mode="w", encoding="utf-8")`
 - `text` / `github-annotations` → handler未設定（構造化出力は発生しない）
 
+JSONL出力へ`warning`レコードとして配送した警告はroot loggerからstderrへ重複出力しない。
+構造化出力への書き込みが完了しなかった警告は保留スコープの終了時にstderrへ出力し、警告自体を失わない。
+MCPの`run_for_agent`が内部一時ファイルへ生成するJSONLは利用者への配送ではないため、配送済みとして扱わない。
+
 stdout占有が起きるのは`jsonl` / `sarif` / `code-quality`かつ`--output-file`未指定時のみ。
 MCP経路（`pyfltr.cli.mcp_server.run_for_agent`）は同一プロセス内で`run_pipeline`を直接呼ぶ。
 `force_text_on_stderr=True`を渡してtextloggerをstderrに強制する。
 構造化出力は一時ファイル経由（FileHandler）となりstdoutを汚染しない。
+
+## grepの適応的出力
+
+`pyfltr.grep_.adaptive`は全マッチを受け取り、text・json・jsonl・MCPごとの実際の直列化長を測って結果表現を選ぶ。
+結果部分の既定予算は10,000文字とし、header・warning・summary・guidanceは予算へ含めない。
+ファイル名や拡張子には依存せず、ファイル単位の件数表示へ切り替えたときの削減量が大きい順に高密度ファイルを縮約する。
+予算内の低密度ファイルはマッチ本文を維持し、全ファイルを件数だけへ縮約する前に混在形式を選ぶ。
+混在形式でも収まらない場合は、全ファイルの件数表示、各ファイルからラウンドロビンで代表マッチを選ぶ形式の順に縮約する。
+
+CLIのエージェント検出環境とMCPでは自動縮約を既定で有効にする。
+通常のCLI表示と、明示された件数・プレビュー・集計指定は従来の意味を維持する。
+JSONLは選択した`output_mode`をheaderへ確定してから出力する必要があるため、grepに限り全検索結果をバッファリングする。
+`replace --from-grep`は対象集合の完全性を必要とするため、`output_mode`が`full`以外のJSONLを拒否する。
 
 ## 詳細参照サブコマンドと再実行支援 {#subcommands}
 

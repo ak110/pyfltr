@@ -56,7 +56,9 @@ import pyfltr.cli.replace_subcmd
 import pyfltr.command.core_
 import pyfltr.command.targets
 import pyfltr.config.config
+import pyfltr.grep_.adaptive
 import pyfltr.grep_.history
+import pyfltr.grep_.jsonl_records
 import pyfltr.grep_.matcher
 import pyfltr.grep_.preview
 import pyfltr.grep_.replacer
@@ -74,6 +76,7 @@ from pyfltr.cli.mcp_models import (
     DiagnosticMessageModel,
     DiagnosticModel,
     GrepFileCountModel,
+    GrepFileResultModel,
     GrepMatchModel,
     GrepResultModel,
     ReplaceChangeRecordModel,
@@ -419,6 +422,7 @@ async def tool_run_for_agent(
             original_cwd=str(work_dir_path) if work_dir_path is not None else None,
             original_sys_args=retry_sys_args,
             force_text_on_stderr=True,
+            jsonl_warnings_reach_consumer=False,
         )
     finally:
         # 一時ファイルを削除する（存在しない場合はそのまま無視する）
@@ -507,21 +511,22 @@ async def tool_grep(
     before_context: int = 0,
     after_context: int = 0,
     context: int | None = None,
-    max_count: int = 0,
+    max_count: int | None = None,
     max_total: int | None = None,
     summary_mode: str | None = None,
     types: list[str] | None = None,
     globs: list[str] | None = None,
     encoding: str = "utf-8",
     max_filesize: int | None = None,
-    max_preview_chars: int = pyfltr.grep_.preview.DEFAULT_MAX_PREVIEW_CHARS,
+    max_preview_chars: int | None = None,
+    auto_summary: bool = True,
     no_exclude: bool = False,
     no_gitignore: bool = False,
 ) -> GrepResultModel:
     """指定ファイル群から正規表現パターンを検索し、マッチ一覧を返す。
 
     pyfltrの`exclude`/`extend-exclude`/`respect-gitignore`設定を尊重する。
-    通常検索で未指定の`max_total`は1000とし、CLI既定の無制限より安全側に設定する。
+    通常検索でも未指定の`max_total`は走査を制限せず、全結果から返却形式を選択する。
 
     Args:
         paths: 検索対象のファイルまたはディレクトリパスの一覧。
@@ -537,9 +542,8 @@ async def tool_grep(
         before_context: マッチ行の前に含める行数。
         after_context: マッチ行の後に含める行数。
         context: `before_context`と`after_context`の一括指定。個別指定が0の方向だけへ適用する。
-        max_count: ファイル単位の最大マッチ件数（0で無制限）。
-        max_total: 全体の最大マッチ件数。未指定時は通常検索で1000、集計モードで無制限。
-            0を明示した場合は常に無制限となる。
+        max_count: ファイル単位の最大マッチ件数。未指定又は0で無制限。
+        max_total: 全体の最大マッチ件数。未指定又は0で無制限。
         summary_mode: 集計モード。`files_with_matches`、`count`、`files_without_match`のいずれか。
             指定時は`matches`を空で返し、対応する集計フィールドを返す。
             `files_without_match`では正の`max_total`を併用できない。
@@ -547,7 +551,8 @@ async def tool_grep(
         globs: globパターンでの対象限定一覧。
         encoding: ファイル読み込み時のエンコーディング（既定: utf-8）。
         max_filesize: 走査対象ファイルサイズの上限（バイト単位）。
-        max_preview_chars: 返却する本文1件あたりの文字数上限（0で無制限）。
+        max_preview_chars: 返却する本文1件あたりの文字数上限。未指定時は既定値、0で無制限。
+        auto_summary: Trueの場合、明示上限がない大きな結果を適応的に縮約する。
         no_exclude: exclude/extend-excludeによる除外を無効化する。
         no_gitignore: .gitignoreによる除外を無効化する。
     """
@@ -585,7 +590,9 @@ async def tool_grep(
         _raise_mcp_error("summary_mode は files_with_matches / count / files_without_match のいずれかを指定してください。")
     if summary_mode == "files_without_match" and max_total is not None and max_total > 0:
         _raise_mcp_error("summary_mode=files_without_match では max_total に正の値を指定できません。")
-    effective_max_total = (0 if summary_mode is not None else 1000) if max_total is None else max_total
+    effective_max_total = 0 if max_total is None else max_total
+    effective_max_count = 0 if max_count is None else max_count
+    effective_preview_chars = pyfltr.grep_.preview.DEFAULT_MAX_PREVIEW_CHARS if max_preview_chars is None else max_preview_chars
 
     _config, expanded = _expand_grep_targets(
         paths,
@@ -596,7 +603,7 @@ async def tool_grep(
     )
 
     files_scanned = len(expanded)
-    matches: list[GrepMatchModel] = []
+    match_payloads: list[dict[str, typing.Any]] = []
     per_file_counts: dict[pathlib.Path, int] = {}
     total_matches = 0
     truncated_matches = 0
@@ -605,7 +612,7 @@ async def tool_grep(
         compiled,
         before_context=before_ctx,
         after_context=after_ctx,
-        max_per_file=max_count,
+        max_per_file=effective_max_count,
         max_total=effective_max_total,
         encoding=encoding,
         max_filesize=max_filesize,
@@ -615,23 +622,23 @@ async def tool_grep(
             total_matches += 1
             per_file_counts[record.file] = per_file_counts.get(record.file, 0) + 1
             if summary_mode is None:
-                preview = pyfltr.grep_.preview.build_match_preview(record, max_chars=max_preview_chars)
-                if preview.truncated:
-                    truncated_matches += 1
-                matches.append(
-                    GrepMatchModel(
-                        file=pyfltr.paths.normalize_separators(record.file),
-                        line=record.line,
-                        col=record.col,
-                        end_col=record.end_col,
-                        match_text=preview.match_text,
-                        line_text=preview.line_text,
-                        before=list(preview.before_lines),
-                        after=list(preview.after_lines),
-                        line_text_offset=preview.line_text_offset,
-                        truncated=list(preview.truncated_fields),
-                    )
-                )
+                preview = pyfltr.grep_.preview.build_match_preview(record, max_chars=effective_preview_chars)
+                match_payloads.append(pyfltr.grep_.jsonl_records.match_payload(record, preview))
+
+    explicit_output_control = summary_mode is not None or any(
+        value is not None for value in (max_count, max_total, max_preview_chars)
+    )
+    selection = (
+        pyfltr.grep_.adaptive.select_output(match_payloads, output_format="mcp")
+        if auto_summary and not explicit_output_control
+        else pyfltr.grep_.adaptive.full_output(match_payloads)
+    )
+    returned_payloads = list(selection.matches)
+    for file_result in selection.file_results:
+        returned_payloads.extend(typing.cast(list[dict[str, typing.Any]], file_result.get("matches", [])))
+    truncated_matches = sum(bool(payload.get("truncated")) for payload in returned_payloads)
+    matches = [GrepMatchModel.model_validate(payload) for payload in selection.matches]
+    adaptive_file_results = [GrepFileResultModel.model_validate(result) for result in selection.file_results]
 
     files_with_matches = (
         [pyfltr.paths.normalize_separators(file) for file in per_file_counts] if summary_mode == "files_with_matches" else []
@@ -654,15 +661,28 @@ async def tool_grep(
             source="grep",
             message=pyfltr.grep_.preview.build_truncation_warning(
                 truncated_matches=truncated_matches,
-                max_chars=max_preview_chars,
+                max_chars=effective_preview_chars,
                 full_text_hint="`max_preview_chars=0`",
             ),
         )
     return GrepResultModel(
         matches=matches,
+        file_results=adaptive_file_results,
+        output_mode=selection.output_mode,
         total_matches=total_matches,
         files_scanned=files_scanned,
         exit_code=0 if total_matches > 0 else 1,
+        returned_matches=selection.returned_matches,
+        omitted_matches=selection.omitted_matches,
+        omitted_files=selection.omitted_files,
+        guidance=(
+            [
+                "Narrow the search by file path, globs, or types to inspect omitted matches.",
+                "Set auto_summary=false to return every match in the selected search range.",
+            ]
+            if selection.output_mode != "full"
+            else []
+        ),
         warnings=[str(entry["message"]) for entry in pyfltr.warnings_.collected_warnings()],
         fully_excluded_files=pyfltr.warnings_.filtered_direct_files(reason="excluded"),
         missing_targets=pyfltr.warnings_.filtered_direct_files(reason="missing"),

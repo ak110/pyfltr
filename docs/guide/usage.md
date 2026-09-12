@@ -206,6 +206,7 @@ pyfltr grep <pattern> [paths...]
 正規表現でファイルを横断検索する。
 pyfltr設定の`exclude`/`extend-exclude`/`respect-gitignore`を尊重するため、
 `node_modules`や`build`配下のノイズが混入しない。
+コーディングエージェント環境では、多数の一致を持つファイルだけを件数表示へ縮約し、低密度ファイルの本文を維持する。
 
 例:
 
@@ -647,6 +648,7 @@ pyfltr run
 `--output-format=jsonl`かつ`--output-file`未指定時、stdoutにはJSONLのみを書き、
 text整形出力（進捗・詳細・summary）はstderrのWARN以上に抑止される。
 TUIや`--stream`、`--ui`も暗黙に無効化される。
+JSONLの`warning`レコードとして配送された実行時警告はstderrへ重複出力されない。
 
 `--output-file=path`を指定するとJSONLはファイルへ出力され、stdoutには従来どおりの`text`出力が並行して出力される
 （ローカル実行時も開発者が進捗を把握できる）。

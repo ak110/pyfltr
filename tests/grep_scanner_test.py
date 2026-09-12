@@ -151,7 +151,7 @@ def test_scan_files_max_filesize_skips_large(tmp_path: pathlib.Path) -> None:
 def test_scan_files_decode_error_emits_warning(tmp_path: pathlib.Path) -> None:
     """デコードエラー発生時はスキップしつつwarningを発行する。"""
     target = tmp_path / "a.bin"
-    target.write_bytes(b"\xff\xfe foo \xfd")
+    target.write_bytes(b"\x81")
     pattern = re.compile(r"foo")
 
     records = _scan([target], pattern, encoding="utf-8")
@@ -159,6 +159,22 @@ def test_scan_files_decode_error_emits_warning(tmp_path: pathlib.Path) -> None:
     assert not records
     warnings = pyfltr.warnings_.collected_warnings()
     assert any(w["source"] == "grep" for w in warnings)
+
+
+def test_scan_files_falls_back_to_cp932(tmp_path: pathlib.Path) -> None:
+    """UTF-8で復号できないCP932本文も検索対象に含める。"""
+    target = tmp_path / "cp932.txt"
+    target.write_bytes("日本語 foo\r\n".encode("cp932"))
+
+    records = _scan([target], re.compile(r"foo"), encoding="utf-8")
+
+    assert len(records) == 1
+    record = records[0]
+    assert isinstance(record, pyfltr.grep_.types.MatchRecord)
+    assert record.line == 1
+    assert record.col == 5
+    assert record.line_text == "日本語 foo"
+    assert not pyfltr.warnings_.collected_warnings()
 
 
 @pytest.mark.parametrize(

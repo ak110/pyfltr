@@ -6,6 +6,7 @@ import pathlib
 import pytest
 
 import pyfltr.cli.main
+import pyfltr.cli.replace_subcmd
 
 
 @pytest.fixture(autouse=True)
@@ -103,7 +104,10 @@ def test_replace_undo_warns_when_manually_edited(
     rc = pyfltr.cli.main.run(["replace", "--undo", replace_id, "--output-format=jsonl"])
     assert rc == 1
     captured = capsys.readouterr()
-    assert "--force" in captured.err
+    records = [json.loads(line) for line in captured.out.splitlines() if line.strip()]
+    warning = next(record for record in records if record["kind"] == "warning")
+    assert "--force" in warning["msg"]
+    assert "--force" not in captured.err
     assert target.read_text(encoding="utf-8") == "manually edited\n"
 
     # --force で強制復元
@@ -175,6 +179,25 @@ def test_replace_from_grep_filters_files(
     # b.txt は対象外なのでそのまま
     assert target_b.read_text(encoding="utf-8") == "foo\n"
     capsys.readouterr()
+
+
+def test_replace_from_grep_rejects_adaptively_compressed_output(tmp_path: pathlib.Path) -> None:
+    """省略済みgrep出力を置換対象の完全な一覧として扱わない。"""
+    grep_jsonl = tmp_path / "grep.jsonl"
+    grep_jsonl.write_text(
+        "\n".join(
+            [
+                json.dumps({"kind": "header", "output_mode": "mixed"}),
+                json.dumps({"kind": "file", "file": "dense.txt", "count": 300, "matches": []}),
+                json.dumps({"kind": "summary", "output_mode": "mixed"}),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="full出力"):
+        pyfltr.cli.replace_subcmd.read_from_grep(grep_jsonl)
 
 
 def test_replace_text_dry_run_summary(

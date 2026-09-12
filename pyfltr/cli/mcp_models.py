@@ -222,13 +222,36 @@ class GrepFileCountModel(pydantic.BaseModel):
     count: int = pydantic.Field(description="当該ファイルのマッチ件数。")
 
 
+class GrepFileResultModel(pydantic.BaseModel):
+    """適応出力における1ファイル分の件数と返却対象マッチ。"""
+
+    file: str = pydantic.Field(description="対象ファイルパス。")
+    count: int = pydantic.Field(description="省略前の当該ファイルの全マッチ件数。")
+    matches: list[dict[str, typing.Any]] = pydantic.Field(
+        default_factory=list,
+        description="返却するマッチ。fileは外側のfileフィールドを参照する。空なら件数だけを返す。",
+    )
+
+
 class GrepResultModel(pydantic.BaseModel):
     """`grep`ツールの戻り値。"""
 
     matches: list[GrepMatchModel] = pydantic.Field(description="マッチ一覧。")
+    file_results: list[GrepFileResultModel] = pydantic.Field(
+        default_factory=list,
+        description="mixed/grouped/countsモードのファイル別結果。",
+    )
+    output_mode: str = pydantic.Field(
+        default="full",
+        description="出力モード（full / mixed / grouped / counts / sampled）。",
+    )
     total_matches: int = pydantic.Field(description="全マッチ件数。")
     files_scanned: int = pydantic.Field(description="走査したファイル数。")
     exit_code: int = pydantic.Field(description="終了コード。マッチあり=0、マッチなし=1。")
+    returned_matches: int = pydantic.Field(default=0, description="本文を返したマッチ件数。")
+    omitted_matches: int = pydantic.Field(default=0, description="本文を省略したマッチ件数。")
+    omitted_files: int = pydantic.Field(default=0, description="ファイル名も返さなかった該当ファイル数。")
+    guidance: list[str] = pydantic.Field(default_factory=list, description="再検索又は置換へ進むための案内。")
     warnings: list[str] = pydantic.Field(default_factory=list, description="実行中に発行された警告メッセージ。")
     fully_excluded_files: list[str] = pydantic.Field(
         default_factory=list,

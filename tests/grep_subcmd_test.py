@@ -338,7 +338,7 @@ def test_grep_json_exposes_decode_and_truncation_warnings(
 ) -> None:
     target = tmp_path / "long.txt"
     target.write_text("x" * 250 + "needle" + "y" * 250 + "\n", encoding="utf-8")
-    (tmp_path / "invalid.txt").write_bytes(b"\xff")
+    (tmp_path / "invalid.txt").write_bytes(b"\x81")
     monkeypatch.chdir(tmp_path)
 
     rc = pyfltr.cli.main.run(

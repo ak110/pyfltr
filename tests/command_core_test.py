@@ -1186,6 +1186,51 @@ def test_excluded_disabled_by_empty_config() -> None:
     assert not pyfltr.command.targets.excluded(pathlib.Path(".serena/memories/foo.md"), config)
 
 
+def test_expand_all_files_reuses_shared_parent_exclude_match(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """同一走査内では共有する親ディレクトリの除外照合を1回だけ行う。"""
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    (shared / "a.py").write_text("", encoding="utf-8")
+    (shared / "b.py").write_text("", encoding="utf-8")
+    config = pyfltr.config.config.create_default_config()
+    config.values["exclude"] = ["never-match"]
+    config.values["extend-exclude"] = []
+    config.values["respect-gitignore"] = False
+    calls: dict[pathlib.Path, int] = {}
+    original_match = pathlib.Path.match
+
+    def counting_match(path: pathlib.Path, pattern: str) -> bool:
+        calls[path] = calls.get(path, 0) + 1
+        return original_match(path, pattern)
+
+    monkeypatch.setattr(pathlib.Path, "match", counting_match)
+
+    result = pyfltr.command.targets.expand_all_files([pathlib.Path("shared")], config, start_cwd=tmp_path)
+
+    assert result == [pathlib.Path("shared/a.py"), pathlib.Path("shared/b.py")]
+    assert calls[pathlib.Path("shared")] == 1
+
+
+def test_expand_all_files_does_not_reuse_exclude_cache_between_configs(tmp_path: pathlib.Path) -> None:
+    """連続実行で変更した除外設定へ前回の照合結果を持ち越さない。"""
+    target = tmp_path / "sample.txt"
+    target.write_text("sample\n", encoding="utf-8")
+    config = pyfltr.config.config.create_default_config()
+    config.values["extend-exclude"] = []
+    config.values["respect-gitignore"] = False
+    config.values["exclude"] = ["*.txt"]
+
+    excluded_result = pyfltr.command.targets.expand_all_files([pathlib.Path("sample.txt")], config, start_cwd=tmp_path)
+    config.values["exclude"] = []
+    included_result = pyfltr.command.targets.expand_all_files([pathlib.Path("sample.txt")], config, start_cwd=tmp_path)
+
+    assert excluded_result == []
+    assert included_result == [pathlib.Path("sample.txt")]
+
+
 def test_expand_all_files_respects_gitignore(tmp_path: pathlib.Path) -> None:
     """.gitignoreに記載されたファイルがexpand_all_filesから除外される。"""
     subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True, check=True)

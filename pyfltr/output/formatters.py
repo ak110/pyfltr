@@ -60,6 +60,8 @@ class RunOutputContext:
     # `summary.guidance`の再実行コマンド例をサブコマンド名込みで組み立てるために参照する。
     # 参照系・直接呼び出し経路では`None`のままとし、jsonl側で既定値`run`へフォールバックする。
     subcommand: str | None = None
+    # JSONLが最終消費主体へ渡る場合だけTrue。MCP内部の一時JSONLではFalseを指定する。
+    jsonl_warnings_reach_consumer: bool = True
 
 
 class OutputFormatter(typing.Protocol):
@@ -247,13 +249,15 @@ class JSONLFormatter:
             fully_excluded_files=pyfltr.warnings_.filtered_direct_files(reason="excluded"),
             missing_targets=pyfltr.warnings_.filtered_direct_files(reason="missing"),
         )
+        if ctx.jsonl_warnings_reach_consumer:
+            pyfltr.warnings_.mark_delivered(warnings)
         # 構造化出力の出力と並行して、常にtext整形を実行する。
         pyfltr.cli.render.render_results(
             results,
             ctx.config,
             include_details=ctx.include_details,
             output_format="jsonl",
-            warnings=warnings,
+            warnings=warnings if ctx.output_file is not None else [],
         )
 
 

@@ -952,10 +952,10 @@ def test_tool_grep_max_total_default_is_none() -> None:
     assert signature.parameters["max_total"].default is None
 
 
-def test_tool_grep_max_preview_chars_default_is_shared_constant() -> None:
-    """本文プレビュー上限の既定値をCLIと共通の定数から解決する。"""
+def test_tool_grep_max_preview_chars_default_is_none() -> None:
+    """本文上限の未指定状態を明示した既定値200と区別する。"""
     signature = inspect.signature(pyfltr.cli.mcp_server.tool_grep)
-    assert signature.parameters["max_preview_chars"].default == pyfltr.grep_.preview.DEFAULT_MAX_PREVIEW_CHARS
+    assert signature.parameters["max_preview_chars"].default is None
 
 
 @pytest.mark.asyncio
@@ -1412,6 +1412,28 @@ async def test_tool_replace_from_grep_limits_files(tmp_path: pathlib.Path) -> No
 
     assert result.files_changed == 1
     assert [entry.file for entry in result.file_changes] == [allowed.as_posix()]
+
+
+@pytest.mark.asyncio
+async def test_tool_replace_rejects_adaptively_compressed_from_grep(tmp_path: pathlib.Path) -> None:
+    """省略済みgrep出力をMCP置換でも拒否する。"""
+    target = tmp_path / "target.txt"
+    target.write_text("foo\n", encoding="utf-8")
+    grep_output = tmp_path / "grep.jsonl"
+    grep_output.write_text(
+        json.dumps({"kind": "summary", "output_mode": "counts"}) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="full出力"):
+        await pyfltr.cli.mcp_server.tool_replace(
+            pattern="foo",
+            replacement="X",
+            paths=[str(tmp_path)],
+            from_grep=str(grep_output),
+        )
+
+    assert target.read_text(encoding="utf-8") == "foo\n"
 
 
 @pytest.mark.asyncio

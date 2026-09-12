@@ -41,6 +41,7 @@ def emit_grep_header(
     files: int,
     run_id: str | None = None,
     format_source: str | None = None,
+    output_mode: str | None = None,
 ) -> None:
     """grep開始時のheaderレコードを1件出力する。
 
@@ -56,7 +57,14 @@ def emit_grep_header(
         record["run_id"] = run_id
     if format_source is not None:
         record["format_source"] = format_source
+    if output_mode is not None:
+        record["output_mode"] = output_mode
     _emit(record)
+
+
+def emit_records(records: typing.Iterable[dict[str, typing.Any]]) -> None:
+    """grepの選択済み結果レコードを1回のロック内で出力する。"""
+    pyfltr.output.jsonl.emit_records(_serialize(record) for record in records)
 
 
 def emit_match(record: MatchRecord, preview: MatchPreview) -> None:
@@ -65,8 +73,12 @@ def emit_match(record: MatchRecord, preview: MatchPreview) -> None:
     `before`・`after`は`-B`・`-A`コンテキストで取得した行群を指定する。
     どちらも空の場合はキーを省略してトークン消費を抑える。
     """
+    _emit({"kind": "match", **match_payload(record, preview)})
+
+
+def match_payload(record: MatchRecord, preview: MatchPreview) -> dict[str, typing.Any]:
+    """検索結果1件を出力形式間で共有する辞書へ変換する。"""
     payload: dict[str, typing.Any] = {
-        "kind": "match",
         "file": pyfltr.paths.normalize_separators(str(record.file)),
         "line": record.line,
         "col": record.col,
@@ -83,7 +95,7 @@ def emit_match(record: MatchRecord, preview: MatchPreview) -> None:
         payload["line_text_offset"] = preview.line_text_offset
     if preview.truncated_fields:
         payload["truncated"] = list(preview.truncated_fields)
-    _emit(payload)
+    return payload
 
 
 def emit_grep_summary(
@@ -95,6 +107,11 @@ def emit_grep_summary(
     fully_excluded_files: list[str] | None = None,
     missing_targets: list[str] | None = None,
     warning_count: int = 0,
+    files_with_matches: int | None = None,
+    returned_matches: int | None = None,
+    omitted_matches: int | None = None,
+    omitted_files: int | None = None,
+    output_mode: str | None = None,
 ) -> None:
     """grep完了時のsummaryレコードを1件出力する。
 
@@ -112,6 +129,16 @@ def emit_grep_summary(
         "total_matches": total_matches,
         "files_scanned": files_scanned,
     }
+    if files_with_matches is not None:
+        record["files_with_matches"] = files_with_matches
+    if returned_matches is not None:
+        record["returned_matches"] = returned_matches
+    if omitted_matches is not None:
+        record["omitted_matches"] = omitted_matches
+    if omitted_files is not None:
+        record["omitted_files"] = omitted_files
+    if output_mode is not None:
+        record["output_mode"] = output_mode
     if warning_count > 0:
         record["warnings"] = warning_count
     if guidance:
@@ -294,7 +321,11 @@ def _emit(record: dict[str, typing.Any]) -> None:
 
     `pyfltr.output.jsonl.emit_record`の公開ヘルパー経由で書き込み、
     SSOTのwrite経路（`_write_lock`保護・最終出力時刻更新）を共有する。
-    grep / replaceの出力は逐次的でグルーピング不要のため、1レコード単位の発行で十分。
+    replaceは1レコード単位、grepは適応形式の確定後に複数レコードをまとめて発行する。
     """
-    line = json.dumps(record, ensure_ascii=False, separators=(",", ":"))
-    pyfltr.output.jsonl.emit_record(line)
+    pyfltr.output.jsonl.emit_record(_serialize(record))
+
+
+def _serialize(record: dict[str, typing.Any]) -> str:
+    """JSONLレコードを公開形式で直列化する。"""
+    return json.dumps(record, ensure_ascii=False, separators=(",", ":"))
