@@ -22,7 +22,7 @@ def _match(file: str, index: int, *, width: int = 80) -> dict[str, typing.Any]:
     }
 
 
-@pytest.mark.parametrize("dense_name", ["many.txt", "uv.lock"])
+@pytest.mark.parametrize("dense_name", ["many.txt", "uv.lock", "nested/" * 20 + "many.txt"])
 def test_select_output_collapses_only_high_density_file(dense_name: str) -> None:
     """300・1・2・1件の分布では高密度ファイルだけを件数表示へ縮約する。"""
     matches = [*[_match(dense_name, index) for index in range(300)]]
@@ -53,6 +53,80 @@ def test_select_output_keeps_full_result_at_budget_boundary() -> None:
 
     assert selection.output_mode == "full"
     assert selection.matches == matches
+
+    below_boundary = pyfltr.grep_.adaptive.select_output(
+        matches * 10,
+        output_format="jsonl",
+        budget=pyfltr.grep_.adaptive.serialized_length("full", matches * 10, [], output_format="jsonl") - 1,
+    )
+
+    assert below_boundary.output_mode != "full"
+    assert (
+        pyfltr.grep_.adaptive.serialized_length(
+            below_boundary.output_mode,
+            below_boundary.matches,
+            below_boundary.file_results,
+            output_format="jsonl",
+        )
+        <= pyfltr.grep_.adaptive.serialized_length("full", matches * 10, [], output_format="jsonl") - 1
+    )
+
+
+@pytest.mark.parametrize("output_format", ["text", "json", "jsonl", "mcp"])
+def test_select_output_limits_matches_distributed_across_many_files(
+    output_format: pyfltr.grep_.adaptive.OutputFormat,
+) -> None:
+    """多数ファイルへ分散した一致も決定的に予算内へ縮約する。"""
+    matches = [_match(f"nested/{index:04d}/result.txt", index, width=40) for index in range(300)]
+    budget = 2_000
+
+    selection = pyfltr.grep_.adaptive.select_output(matches, output_format=output_format, budget=budget)
+    repeated = pyfltr.grep_.adaptive.select_output(matches, output_format=output_format, budget=budget)
+
+    assert selection == repeated
+    assert selection.output_mode != "full"
+    assert (
+        pyfltr.grep_.adaptive.serialized_length(
+            selection.output_mode,
+            selection.matches,
+            selection.file_results,
+            output_format=output_format,
+        )
+        <= budget
+    )
+    assert selection.total_matches == len(matches)
+    assert selection.returned_matches == len(matches) - selection.omitted_matches
+    represented_files = {
+        *[match["file"] for match in selection.matches],
+        *[result["file"] for result in selection.file_results],
+    }
+    assert selection.omitted_files == len(matches) - len(represented_files)
+
+
+def test_select_output_serialization_work_grows_linearly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """多数ファイルの候補選択で直列化対象の累計要素数を線形に保つ。"""
+    original = pyfltr.grep_.adaptive.serialized_length
+    serialized_items = 0
+
+    def measured_serialized_length(
+        mode: pyfltr.grep_.adaptive.OutputMode,
+        matches: list[dict[str, typing.Any]],
+        file_results: list[dict[str, typing.Any]],
+        *,
+        output_format: pyfltr.grep_.adaptive.OutputFormat,
+    ) -> int:
+        nonlocal serialized_items
+        serialized_items += len(matches) + len(file_results)
+        return original(mode, matches, file_results, output_format=output_format)
+
+    monkeypatch.setattr(pyfltr.grep_.adaptive, "serialized_length", measured_serialized_length)
+    matches = [_match(f"file-{index:04d}.txt", index, width=40) for index in range(300)]
+
+    pyfltr.grep_.adaptive.select_output(matches, output_format="json", budget=2_000)
+
+    assert serialized_items <= 12 * len(matches)
 
 
 def test_text_grouped_reports_count_and_representative_rows() -> None:

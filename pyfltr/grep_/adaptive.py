@@ -11,6 +11,13 @@ OutputFormat = typing.Literal["text", "json", "jsonl", "mcp"]
 
 DEFAULT_RESULT_BUDGET = 10_000
 
+_SERIALIZATION_MATCH_SENTINEL: dict[str, typing.Any] = {
+    "file": "",
+    "line": 0,
+    "col": 0,
+    "line_text": "",
+}
+
 
 @dataclasses.dataclass(frozen=True)
 class Selection:
@@ -53,13 +60,14 @@ def select_output(
     savings.sort(key=lambda item: (-item[0], item[1]))
 
     mixed = list(grouped_full)
+    mixed_length = grouped_length
     collapsed: set[int] = set()
     for saving, index in savings:
         if saving <= 0:
             continue
         mixed[index] = _file_result(groups[index][0], [], count=len(groups[index][1]))
         collapsed.add(index)
-        mixed_length = serialized_length("mixed", [], mixed, output_format=output_format)
+        mixed_length -= saving
         if mixed_length <= budget and mixed_length <= full_length and len(collapsed) < len(groups):
             return _selection("mixed", [], mixed, groups)
 
@@ -143,8 +151,10 @@ def _representative_file_results(
     if not groups:
         return []
     selected = [_file_result(file, group[:1], count=len(group)) for file, group in groups]
-    if serialized_length("grouped", [], selected, output_format=output_format) > budget:
+    selected_length = serialized_length("grouped", [], selected, output_format=output_format)
+    if selected_length > budget:
         return None
+    item_lengths = [serialized_length("grouped", [], [item], output_format=output_format) for item in selected]
     next_indexes = [1] * len(groups)
     while True:
         added = False
@@ -152,10 +162,13 @@ def _representative_file_results(
             next_index = next_indexes[group_index]
             if next_index >= len(group):
                 continue
-            candidate = list(selected)
-            candidate[group_index] = _file_result(file, group[: next_index + 1], count=len(group))
-            if serialized_length("grouped", [], candidate, output_format=output_format) <= budget:
-                selected = candidate
+            candidate = _file_result(file, group[: next_index + 1], count=len(group))
+            candidate_item_length = serialized_length("grouped", [], [candidate], output_format=output_format)
+            candidate_length = selected_length + candidate_item_length - item_lengths[group_index]
+            if candidate_length <= budget:
+                selected[group_index] = candidate
+                selected_length = candidate_length
+                item_lengths[group_index] = candidate_item_length
                 next_indexes[group_index] += 1
                 added = True
         if not added:
@@ -169,6 +182,7 @@ def _sample_matches(
     budget: int,
 ) -> list[dict[str, typing.Any]]:
     selected: list[dict[str, typing.Any]] = []
+    selected_length = serialized_length("sampled", [], [], output_format=output_format)
     depth = 0
     while True:
         added = False
@@ -176,15 +190,33 @@ def _sample_matches(
             if depth >= len(group):
                 continue
             candidate_match = {"file": file, **group[depth]}
-            candidate = [*selected, candidate_match]
-            if serialized_length("sampled", candidate, [], output_format=output_format) <= budget:
-                selected = candidate
+            candidate_length = selected_length + _match_addition_length(
+                candidate_match,
+                output_format=output_format,
+                has_existing=bool(selected),
+            )
+            if candidate_length <= budget:
+                selected.append(candidate_match)
+                selected_length = candidate_length
                 added = True
             elif not selected:
                 return [candidate_match]
         if not added:
             return selected
         depth += 1
+
+
+def _match_addition_length(
+    match: dict[str, typing.Any],
+    *,
+    output_format: OutputFormat,
+    has_existing: bool,
+) -> int:
+    """sampled候補へ1件追加したときの直列化文字数差を返す。"""
+    prefix = [_SERIALIZATION_MATCH_SENTINEL] if has_existing else []
+    before = serialized_length("sampled", prefix, [], output_format=output_format)
+    after = serialized_length("sampled", [*prefix, match], [], output_format=output_format)
+    return after - before
 
 
 def _selection(
