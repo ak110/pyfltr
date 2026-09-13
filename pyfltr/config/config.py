@@ -260,6 +260,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
         "textlint-rule-preset-ja-technical-writing",
         "textlint-rule-preset-jtf-style",
         "textlint-rule-ja-no-abusage",
+        "textlint-rule-preset-ai-words-ja",
     ],
     "textlint-fast": True,
     # fixモード時に通常argsの後に追加する引数。

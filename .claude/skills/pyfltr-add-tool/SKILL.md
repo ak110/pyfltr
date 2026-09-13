@@ -16,7 +16,7 @@ description: >
   特定言語専用ツールはあわせて `PYTHON_COMMANDS` 等の言語カテゴリ定数にも追加する
 - `pyfltr/config/config.py`: `DEFAULT_CONFIG` への設定キー追加と、`aliases` への登録
 - `pyfltr/command/dispatcher.py`（および必要に応じて `pyfltr/command/` 配下の関連モジュール）:
-  実行ロジック。共通ヘルパーを優先利用し、独自経路は最小限に抑える
+  実行ロジック。共通ヘルパーを優先利用し、独自の実装は最小限に抑える
 - `pyfltr/command/error_parser.py`: 出力パーサー（regexまたは関数ベース）
 - `tests/`: `config_test.py`・`command_*_test.py`・`error_parser_test.py` に対応するテストを追加
 - `tests/smoke_test.py`: 新ツールのsmoke testケースを追加
@@ -24,10 +24,10 @@ description: >
 - `.github/workflows/ci.yaml`: CIで新ツールを利用できるようインストール手順を追加
 - `docs/guide/index.md`:「対応ツール」一覧へ追記（`README.md`には書かない）
 - `mkdocs.yml`: `plugins.llmstxt.markdown_description` の対応ツール一覧へ新ツール名を追記する
-  - ベタ書きで自動同期されないため、追記漏れは
+  - ベタ書きで自動同期されないため、追記の抜けは
     `tests/llmstxt_test.py::test_llmstxt_contains_all_builtin_commands` の失敗につながる
 - `docker/Dockerfile`: 対応ツールは公式Dockerイメージ（`ghcr.io/ak110/pyfltr`）に事前同梱する。
-  導入経路の区分は冒頭コメントの「同梱ツール一覧」を参照する。
+  導入方法の区分は冒頭コメントの「同梱ツール一覧」を参照する。
   Rust / .NETツールチェイン依存は対象外
 
 ## 気付きにくい注意点
@@ -57,17 +57,17 @@ description: >
 - 新ツールの並び順は `.claude/rules/order.md` の「並び順を揃える箇所」「領域別の末尾追加方針」に従う
   - 新しい領域を設ける場合はorder.mdへ配置順も追記する
 
-## 既存ツールと専用実行経路を共有する新ツールの追加
+## 既存ツールと専用の実行処理を共有する新ツールの追加
 
-`pre-commit`と`prek`のように、既存ツールと同一の専用実行経路を共有する新ツールを扱う。
-専用実行経路は`command/dispatcher.py`の専用分岐と`command/precommit.py`等の専用実行モジュールを指す。
+`pre-commit`と`prek`のように、既存ツールと同一の専用の実行処理を共有する新ツールを扱う。
+専用の実行処理は`command/dispatcher.py`の専用分岐と`command/precommit.py`等の専用実行モジュールを指す。
 この形の新ツールを追加する場合は以下の正規フローを適用する。
 
 - 専用実行モジュールの出力メッセージと設定キー参照をツール名でパラメーター化する
 - `{ツール名}-`接頭辞の設定キー群一式（`-path`・`-args`・`-fast`等）を新ツール用に複製する。
   新ツールが既存ツールと同じ設定値を参照する仕様の場合は複製しない
 - 専用テストをツール名でパラメーター化する。
-  入力・期待値・実行経路が異なり、単一テストの分岐が必要になる場合はテストを複製する
+  入力・期待値・実行処理が異なり、単一テストの分岐が必要になる場合はテストを複製する
 - 同時有効化で同一処理を重複実行する場合は設定警告を発行する。
   実行対象または設定ファイルが異なり競合しない場合は警告を追加しない
 
@@ -81,7 +81,7 @@ uv run pyfltr run
 
 ## fast 判定の計測手順
 
-`{command}-fast` の既定値は実測値で判断する。最終判断はユーザーが行うため、計測結果のみを提示する。
+`{command}-fast` の既定値は計測値で判断する。最終判断はユーザーが行うため、計測結果のみを提示する。
 
 `fast` はpre-commitフックなどで実行しても作業に支障が出にくい高速ツールを示す。
 固定コスト（起動オーバーヘッド）と可変コスト（ファイルあたりの処理時間）の両方に加え、

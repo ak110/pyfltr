@@ -8,7 +8,7 @@ pyfltrの`grep`/`replace`サブコマンドの使い方を扱う。
 
 - `pyfltr grep`: 正規表現でファイル横断検索する。
   pyfltr設定の`exclude`/`extend-exclude`/`respect-gitignore`を尊重するため`node_modules`や`build`配下のノイズが混入しない
-- `pyfltr replace`: 横断置換する。書き込みが既定で、世代管理付きの`--undo`で取り消せる
+- `pyfltr replace`: 横断置換する。書き込みが既定の動作であり、世代管理付きの`--undo`で取り消せる
 - 両者は共通オプション名（`-i`/`-w`/`-x`/`-F`/`--type`/`-g`等）を共有し、
   `grep`で誤爆ゼロを確認した引数列をそのまま`replace`へ切り替えられる
 
@@ -59,7 +59,7 @@ pyfltr grep -F "exact_string" docs/
 
 ### 結果量に応じた自動省略
 
-コーディングエージェント環境では`--auto-summary`が既定で有効となり、MCPの`grep`でも既定で有効となる。
+コーディングエージェント環境では`--auto-summary`が既定値として有効となり、MCPの`grep`でも同様に有効となる。
 CLIを通常の端末から実行する場合は従来どおり全マッチを表示する。
 
 自動省略は検索結果全体を取得してから、結果部分の直列化後の長さが10,000文字以内に収まる形式を選ぶ。
@@ -96,7 +96,7 @@ minifiedファイルやsource mapのような巨大な単一行に一致した�
 `--max-preview-chars=0`を指定すると切り詰めを行わず、この上限を導入する前と同じ本文が返る。
 返るのは`splitlines()`が返す行本文であり、行末の改行文字は従来どおり含まない。
 
-切り詰めが1件でも発生した実行では、経路を問わず警告を返す。
+切り詰めが1件でも発生した実行では、実行方法を問わず警告を返す。
 text形式はwarningsセクション、jsonl形式は`kind:"warning"`レコードとsummaryの`warnings`件数、
 json形式はpayloadの`warnings`配列とsummaryの`warnings`件数、MCPは戻り値の`warnings`で受け取る。
 

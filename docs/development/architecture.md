@@ -33,7 +33,7 @@ pyfltrはCLIツールであり、Pythonモジュールパスは内部実装と�
 ### サブパッケージ
 
 - `pyfltr/cli/`: CLIエントリポイントと各サブコマンドのハンドラー。
-  argparse構築・パイプライン本体・text整形描画・出力形式解決・ログ設定・MCP経路を担う
+  argparse構築・パイプライン本体・text整形描画・出力形式解決・ログ設定・MCP対応を担う
 - `pyfltr/command/`: コマンド実行コア。
   実行コンテキスト型・プロセス管理・mise統合・subprocess環境構築・runner解決を担う。
   対象ファイル選定・ファイル変更検知・ビルトインコマンド定義・エラーパーサー・
@@ -103,7 +103,7 @@ subparsersを`required=True`で必須化し、引数なし実行時のフォー�
 
 ### 言語カテゴリはゲートとして働く
 
-`python` / `javascript` / `rust` / `dotnet`の各言語カテゴリに属するツールは既定で無効（カテゴリキーが既定`false`）。
+`python` / `javascript` / `rust` / `dotnet`の各言語カテゴリに属するツールは既定は無効（カテゴリキーが既定`false`）。
 対象外プロジェクトで意図しないツール実行が起こることを避けるため、対応する言語カテゴリキー（例: `python = true`）で
 ゲートを開けるか、`{command} = true`の個別明示が必要。
 
@@ -168,7 +168,7 @@ mise経由のsubprocessにはmiseが注入したtoolパスを除外したPATHを
 ステータスは`ok` / `mise-not-found` / `untrusted-no-side-effects`等の7値を取る。
 プロセス内キャッシュも本構造体のまま保持する。
 これによりtool spec省略判定（`_is_tool_active_in_mise_config`）・JSONL header露出・`command-info`出力の
-3経路で同じ結果を共有する。
+3つの呼び出し方法で同じ結果を共有する。
 取得時刻のずれによる不整合を排除する目的。
 利用者が「tool spec省略未発動の理由」を診断できるようにする。
 
@@ -178,14 +178,14 @@ Python系ツールの`{command}-runner`既定値は`"python-runner"`とする。
 対象は`python = true`ゲートで有効化されるruff-format / ruff-check / mypy / pylint / pyright / ty / arid / uv-sort / pytestの9ツールに、
 既定無効のbanditを加えた10ツールとする。
 `"python-runner"`はグローバル`python-runner`設定（既定`"uv"`、許容値`direct` / `uv` / `uvx`の3値）へ委譲する。
-`uv`経路ではcwdに`uv.lock`があり`uv`が利用可能な場合にプロジェクトのvenv経由で起動する。
+`uv`指定ではcwdに`uv.lock`があり`uv`が利用可能な場合にプロジェクトのvenv経由で起動する。
 いずれかが欠ける場合は本体依存に同梱されたバイナリへdirectフォールバックする。
-`uvx`経路は`uv.lock`を参照せず`{command}-version`設定とも連動しない。
+`uvx`指定は`uv.lock`を参照せず`{command}-version`設定とも連動しない。
 
-uv / uvx経路の追跡情報はJSONL headerと各commandレコードに出力する。
+uv / uvx指定の追跡情報はJSONL headerと各commandレコードに出力する。
 commandレコードの`effective_runner` / `runner_source` / `runner_fallback`は
-「期待した経路と実際の経路が乖離した場合」のみ出力する（fallback検出用）。
-通常経路では省略してLLM入力のトークン消費を抑え、通常時の解決状況の確認は
+「期待した解決先と実際の解決先が乖離した場合」のみ出力する（fallback検出用）。
+通常の解決では省略してLLM入力のトークン消費を抑え、通常時の解決状況の確認は
 `pyfltr command-info`の責務とする。
 利用者プロジェクトに当該ツールが未登録の状態で`uv run --frozen`が失敗した場合は、
 `uv add --dev "pyfltr[python]"`を案内する警告を発行する。
@@ -197,9 +197,9 @@ python-runnerへ委譲せず`uvx <bin>`で別環境へ解決する。
 対象はsemgrepとsqlfluffで、pyfltr本体の依存グラフには含めない。
 解決失敗時の分類は`DEFAULT_CONFIG`から導出し、runner既定値と独立したツール一覧を持たない。
 
-本分類は、既定で無効であり`python = true`ゲート対象外となるツールに適用する。
+本分類の対象は、既定値が無効であり`python = true`ゲート対象外となるツールである。
 さらに、他の依存へ厳密ピンまたは上限制約を課すことを採用条件とする。
-利用者が版を固定する場合は対象パッケージを利用者プロジェクトへ追加してdirect経路へ切り替えるか、
+利用者が版を固定する場合は対象パッケージを利用者プロジェクトへ追加してdirect指定へ切り替えるか、
 `{command}-path`で実行ファイルを明示する。
 
 ### モノレポ対応
@@ -267,7 +267,7 @@ python-runnerへ委譲せず`uvx <bin>`で別環境へ解決する。
   独立project間で同一文言を発行する既存仕様と、
   不在ターゲット件数に基づく終了判定を維持するため、スコープ外は重複を許容する
 
-サブプロジェクト単位で繰り返す処理へ警告を追加する場合は、次の手順で件数を実測する。
+サブプロジェクト単位で繰り返す処理へ警告を追加する場合は、次の手順で件数を計測する。
 
 1. 同じツールを有効化したサブプロジェクトを2件以上用意する
 2. 起点と複数のサブプロジェクトで、同一の`source`と`message`を持つ警告を意図的に発生させる
@@ -287,15 +287,15 @@ python-runnerへ委譲せず`uvx <bin>`で別環境へ解決する。
   起点projectがglobalの不正値を正常値で上書きした場合は起点の結果に警告組が現れず、
   不正値を上書きしない複数サブプロジェクト間の重複を防げない
 
-### `ExecutionParams.targets`と`CommandResult.target_files`の下流経路
+### `ExecutionParams.targets`と`CommandResult.target_files`の下流の流れ
 
 両フィールドは実際に処理対象となったファイル集合を表す。
 値の意味を変える差し替えを禁じ、意味論的な整合性を保つ必要がある。
-下流経路は次のとおり。
+下流の流れは次のとおり。
 
 - `ExecutionParams.targets`
     - キャッシュキー計算（`state/cache.py`の`compute_key`）
-    - fix経路のargv組み立て（`command/textlint_fix.py`）
+    - fix時のargv組み立て（`command/textlint_fix.py`）
 - `CommandResult.target_files`
     - キャッシュエントリのシリアライズ・復元（`state/cache.py`）
     - `retry_command`再構成と失敗集合との交差（`state/retry.py`の`build_retry_command`・`filter_failed_files`）
@@ -342,11 +342,11 @@ run_idにはULIDを採用する。タイムスタンプ由来で辞書順ソー�
 いずれかの閾値を超過した時点で古い順（run_id昇順）に削除する。
 各設定値に0以下を指定すると当該軸の自動削除が無効化される。
 
-書き込みはツール実行結果を受け取った直後の独立フックとして提供し、TUI経路・非TUI経路・
+書き込みはツール実行結果を受け取った直後の独立フックとして提供し、TUI・非TUI・
 JSONL stdout有無のいずれでも発生する。
-JSONL stdoutストリーミングとは独立した経路にすることで、どちらか一方を切り替えても他方が失われない。
+JSONL stdoutストリーミングとは独立した仕組みにすることで、どちらか一方を切り替えても他方が失われない。
 
-既定で有効。`--no-archive`または`archive = false`設定で無効化できる。
+既定は有効。`--no-archive`または`archive = false`設定で無効化できる。
 オプトイン化（既定無効）は却下した。
 エージェント連携時のUXを損なうため、既定有効＋自動削除で肥大化を抑える設計とした。
 
@@ -358,7 +358,7 @@ JSONL stdoutストリーミングとは独立した経路にすることで、�
 
 テスター（`command_type == "tester"`）はリンター・フォーマッターと異なり、診断1件が
 `assert`の等価比較や例外メッセージの要約に留まり、失敗原因の特定に生出力（スタックトレース・
-xdistワーカークラッシュの詳細等）を要することが多い。このためtext/TUI/JSONLの3出力経路
+xdistワーカークラッシュの詳細等）を要することが多い。このためtext/TUI/JSONLの3出力方式
 いずれも、テスター失敗時は診断一覧の有無にかかわらず生出力を併記する設計とする
 （linter・formatterは従来どおり診断が有れば生出力を省略する）。
 
@@ -393,7 +393,7 @@ JSONL側のsmart truncationで長大な出力が切り詰められる場合が�
 クリーンアップは期間軸（既定`cache-max-age-hours=12`）のみ。
 サイズ・世代数の軸は採用しない（短期破棄前提でストレージ暴発リスクが小さいため）。
 
-既定で有効。`--no-cache`または`cache = false`設定で無効化できる。
+既定は有効。`--no-cache`または`cache = false`設定で無効化できる。
 
 カテゴリ別の対象外判定とその根拠は`pyfltr/state/cache.py`モジュール冒頭docstringを参照。
 formatter・tester・依存型linter・外部参照linter・階層型設定linterの5分類を扱う。
@@ -414,22 +414,22 @@ heartbeatは長時間実行中の生存確認をJSONLストリームへ追加す
 
 ### 公開するファイル位置の表現
 
-利用者へ公開するファイル位置の値は、生成経路によらず区切りを`/`へ統一する。
+利用者へ公開するファイル位置の値は、生成方法によらず区切りを`/`へ統一する。
 対象はJSON Lines出力・CLIテキスト出力・CLIのJSON出力・MCPツール応答・SARIF・Code Quality・
-GitHub Annotationsの各経路で返すファイルパスである。
+GitHub Annotationsの各出力で返すファイルパスである。
 除外対象や欠落対象として警告へ載せるパスも含む。
 生成時は`pyfltr.paths.normalize_separators`または`pyfltr.paths.to_cwd_relative`を経由する。
 公開値を`str()`で直接文字列化しない。
 pyfltr自身が実装するツール（`colloquial-check`など）の標準出力に含めるファイル位置も、
 生成時点で同じ正規化を経由する。当該の生標準出力は`show-run --commands <name> --output`と
-MCPツール応答へ解析を経ずに載るため、`pyfltr.command.error_parser`の解析経路による
+MCPツール応答へ解析を経ずに載るため、`pyfltr.command.error_parser`の解析による
 正規化だけでは契約を満たさない。
-利用者や対話するエージェントが値を別の入力へ再利用するため、経路ごとの表現差は突合を失敗させる。
+利用者や対話するエージェントが値を別の入力へ再利用するため、出力ごとの表現差は突合を失敗させる。
 
 環境情報として提示する絶対パスはこの契約の対象外とし、OSネイティブ表現のまま返す。
 該当する値はJSON Linesの`header.cwd`、実行アーカイブのメタ情報の`cwd`、
 `config`サブコマンドが返す設定ファイルパス、`command-info`が返す実行ファイルパスである。
-これらの値は利用者が実行環境を把握するために読み、経路をまたいだ突合には用いない。
+これらの値は利用者が実行環境を把握するために読み、出力をまたいだ突合には用いない。
 
 コマンドライン引数、キャッシュキー、並び順キー、ファイルパスのremap辞書のキーなど、
 内部処理で用いるパス文字列もこの契約の対象外とする。
@@ -604,7 +604,7 @@ pyfltrは3系統のloggerを使い分ける。
 | `sarif` | 指定 | stdout | INFO |
 | `code-quality` | 未指定 | stderr | INFO |
 | `code-quality` | 指定 | stdout | INFO |
-| 任意 | 任意（MCP経路） | stderr | INFO |
+| 任意 | 任意（MCP実行） | stderr | INFO |
 
 `pyfltr.structured`のhandler設定（`pyfltr.cli.output_format.configure_structured_output`で設定）。
 
@@ -617,7 +617,7 @@ JSONL出力へ`warning`レコードとして配送した警告はroot loggerか�
 MCPの`run_for_agent`が内部一時ファイルへ生成するJSONLは利用者への配送ではないため、配送済みとして扱わない。
 
 stdout占有が起きるのは`jsonl` / `sarif` / `code-quality`かつ`--output-file`未指定時のみ。
-MCP経路（`pyfltr.cli.mcp_server.run_for_agent`）は同一プロセス内で`run_pipeline`を直接呼ぶ。
+MCP実行（`pyfltr.cli.mcp_server.run_for_agent`）は同一プロセス内で`run_pipeline`を直接呼ぶ。
 `force_text_on_stderr=True`を渡してtextloggerをstderrに強制する。
 構造化出力は一時ファイル経由（FileHandler）となりstdoutを汚染しない。
 
@@ -629,7 +629,7 @@ MCP経路（`pyfltr.cli.mcp_server.run_for_agent`）は同一プロセス内で`
 予算内の低密度ファイルはマッチ本文を維持し、全ファイルを件数だけへ縮約する前に混在形式を選ぶ。
 混在形式でも収まらない場合は、全ファイルの件数表示、各ファイルからラウンドロビンで代表マッチを選ぶ形式の順に縮約する。
 
-CLIのエージェント検出環境とMCPでは自動縮約を既定で有効にする。
+CLIのエージェント検出環境とMCPでは自動縮約を既定値として有効にする。
 通常のCLI表示と、明示された件数・プレビュー・集計指定は従来の意味を維持する。
 JSONLは選択した`output_mode`をheaderへ確定してから出力する必要があるため、grepに限り全検索結果をバッファリングする。
 `replace --from-grep`は対象集合の完全性を必要とするため、`output_mode`が`full`以外のJSONLを拒否する。
@@ -646,7 +646,7 @@ JSONLは選択した`output_mode`をheaderへ確定してから出力する必�
 `cli/main.py`は`config`/`generate-shell-completion`と同じ「非実行系サブパーサー」として
 サブパーサー登録とディスパッチのみを行い、出力ロジックは持たない。
 
-読み取り経路は`ArchiveStore`の既存APIを直接利用し、`load_config()`は呼ばない。
+読み取りは`ArchiveStore`の既存APIを直接利用し、`load_config()`は呼ばない。
 キャッシュルートの上書きは環境変数`PYFLTR_CACHE_DIR`のみで完結させて依存を最小化する。
 
 「指定runの実保存ツール一覧」は`tools/`ディレクトリ走査をSSOTとする。
@@ -731,7 +731,7 @@ grep/replace系4ツール（`grep`・`replace`・`replace_undo`・`replace_histo
 
 ### 応答スキーマの方針
 
-実行アーカイブの保存メタデータを構造化して返すツールは、値の長さが検査対象ファイル数に比例する項目を応答へ含めない。
+実行アーカイブの保存メタデータを構造化して返すツールは、値の長さがチェック対象ファイル数に比例する項目を応答へ含めない。
 `show_run_diagnostics`の`command_meta`は`tool.json`から`commandline`を除いた項目を返す。
 対象ファイルを引数へ展開するツールでは`commandline`の長さが対象ファイル数に比例し、
 大規模な対象では応答の大半を占めて診断本体の読み取りを妨げるためである。
@@ -752,24 +752,24 @@ stdioトランスポート起動が`mcp.run(transport="stdio")`の一行で済�
 ### stdio隔離
 
 stdioトランスポートはstdin/stdoutをJSON-RPCフレームに専有するため、
-どの経路であれstdoutへの書き込みはプロトコル破壊を引き起こす。
+どの実装であれstdoutへの書き込みはプロトコル破壊を引き起こす。
 3層で隔離を実施する。
 
 1. 起動直後にroot loggerの出力先をstderrへ強制する
 2. `run_for_agent`ツール内では`run_pipeline`に`force_text_on_stderr=True`を渡し、
    人間向けtext整形loggerをstderrへ向ける。構造化出力は一時ファイルへFileHandler経由で出力する
-3. TUI起動経路（`subprocess.run("clear")`やTextual UI）はargs構築時に遮断する
+3. TUIの起動（`subprocess.run("clear")`やTextual UI）はargs構築時に遮断する
 
-logger初期化は全format共通経路に集約されているため、`force_text_on_stderr`の1フラグだけで
-MCP経路の`stdin/stdout`専有を守れる。
+logger初期化は全formatで共通の処理に集約されているため、`force_text_on_stderr`の1フラグだけで
+MCP実行の`stdin/stdout`専有を守れる。
 
-### `run_for_agent`の実装経路
+### `run_for_agent`の実装の流れ
 
 内部で`argparse.Namespace`を構築し、`run_pipeline`を直接呼び出す。
 Namespaceの組み立てはMCP側に残す一方、サブコマンド既定値は`apply_subcommand_defaults`、
 `commands`の平坦化は`flatten_commands_arg`へ委ねる。
 未知コマンドの検証は`validate_commands`、CLI指定による設定上書きは`apply_cli_overrides`を使い、
-CLIと同じ解決経路を通す。
+CLIと同じ解決処理を通す。
 `run(sys_args=[...])`経由でargparseに渡す案ではエラーメッセージのstderr出力制御が困難で、
 MCPツール側でのエラー整形ができないため不採用。
 外部プロセス起動（`subprocess.run(["pyfltr", "run-for-agent", ...])`）案も検討した。
@@ -782,7 +782,7 @@ MCPクライアントからの並行ツール呼び出しでも実行起点を�
 
 `work_dir`指定時は診断のファイルパスが絶対パスで返る場合がある。
 `pyfltr.paths.to_cwd_relative()`はプロセスのcwdだけを相対化の基準とし、
-`work_dir`を基準ディレクトリとして注入する経路を持たないためである。
+`work_dir`を基準ディレクトリとして注入する仕組みを持たないためである。
 
 ### `run_pipeline()`戻り値
 

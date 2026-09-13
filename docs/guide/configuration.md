@@ -92,7 +92,7 @@ Rust（`rust = true`で通過）
 
 ## 言語カテゴリによるゲート制御
 
-各言語カテゴリに属するツールは既定で無効（opt-in）。
+各言語カテゴリに属するツールの既定値は無効（opt-in）。
 プロジェクトで利用する言語カテゴリキーを`true`にすると、プリセットで推奨された当該言語ツールがゲートを通過して有効化される。
 カテゴリキーを`false`（既定）にすると、プリセットで`true`になっていてもゲートで`false`に上書きされる。
 
@@ -206,7 +206,7 @@ pyfltr config list --all
   既定値は`[".NET", "Node.js", "Vue.js", "Next.js", "Nuxt.js"]`。
   詳細は[ツール別設定](configuration-tools.md#textlint-protected-identifiers)を参照
 - subproject-exclude : モノレポ検出時に走査・サブプロジェクト集合から除外するディレクトリ名の追加リスト。
-  既定値は空。既定で`.venv`・`node_modules`・`target`・`build`・`dist`・`.git`は常に除外する
+  既定値は空。`.venv`・`node_modules`・`target`・`build`・`dist`・`.git`は常に除外する
 - subproject-use-gitignore : モノレポ検出で`.gitignore`を尊重するか否か（既定: `true`）。
   `.gitignore`の対象と判定された候補は検出集合から除外する
 - subproject-uv-workspace : `[tool.uv.workspace] members`を読み取ってサブプロジェクトに含めるか否か（既定: `true`）
@@ -227,7 +227,7 @@ LinuxのOOM killerによってツールプロセスが強制終了された場�
 `retry-max-attempts`はOOM検知時の最大リトライ回数を指定する。既定値は`1`（最大1回リトライ）。
 `0`を指定するとリトライを無効化する（`retry-on-oom: false`と同じ効果）。
 
-JSONL出力（`--output-format=jsonl`）では、`command`レコードの`retry_count`フィールドにリトライ回数が記録される。
+JSONL出力（`--output-format=jsonl`）では`command`レコードの`retry_count`フィールドにリトライ回数が記録される。
 `retry_count`が`0`のときはフィールド自体が省略される。
 
 Windows環境ではOOM killerが存在せずreturncodeが`-9`または`137`にならないため、本機能のリトライは実行されない。
@@ -363,7 +363,7 @@ textlint-fast = false
 
 ## 出力順序
 
-非TUIモード（`--no-ui`、`--ci`、または非対話端末）では、既定で全コマンドの完了後に
+非TUIモード（`--no-ui`、`--ci`、または非対話端末）では、既定の動作として全コマンドの完了後に
 成功コマンド詳細 → 失敗コマンド詳細 → `summary`の順でまとめて出力する。
 `pyfltr ... | tail -N`のようにパイプで末尾だけ切り出してもsummaryと失敗情報が末尾に残るため、
 Claude Codeなど末尾だけを読み取るツールでも実行結果を把握できる。

@@ -11,7 +11,7 @@ paths:
 # pyfltrのsubprocess関連の方針
 
 - CLI起動時に`os.environ["PATH"]`を順序先勝ちで重複排除する。
-  CLI経路でのみ実行し、ライブラリ用途では実行しない。詳細は`pyfltr/cli/main.py`の`main()`docstring
+  CLIからの実行時に限って実行し、ライブラリ用途では実行しない。詳細は`pyfltr/cli/main.py`の`main()`docstring
   および`pyfltr/command/env.py`の`dedupe_environ_path`に集約する
 - mise経由のsubprocess（`bin-runner = "mise"`等）に限り、PATHからmiseが注入したtoolパスを除外したenvを渡す。
   `ensure_mise_available`内の`mise exec --version` / `mise trust`にも同じ除外envを明示的に渡す。

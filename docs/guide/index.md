@@ -3,7 +3,7 @@
 pyfltrが対応するformatter / linter / testerを言語・用途別に示す。
 初めて使う場合は[はじめに](getting-started.md)を参照。設定から実行までの導入手順を確認できる。
 
-言語カテゴリ（Python / JS/TS / Rust / .NET）に属するツールはすべて既定で無効（opt-in）。
+言語カテゴリ（Python / JS/TS / Rust / .NET）に属するツールはすべて既定は無効（opt-in）。
 `preset = "latest"` + 言語カテゴリキー（`python` / `javascript` / `rust` / `dotnet`）の`true`指定だけで、
 当該言語の推奨ツール一式がゲートを通過して有効化される。
 追加ツールや個別の無効化が必要な場合のみ`{command} = true` / `{command} = false`を書き足す。
@@ -70,41 +70,41 @@ bin-runner経由（既定はmise）で起動する。
 
 ## その他
 
-- Formatters: shfmt（既定で無効）/ taplo（TOML formatter、既定で無効）
+- Formatters: shfmt（既定は無効）/ taplo（TOML formatter、既定は無効）
 - Linters
-    - 一般: typos（PyPI依存）/ actionlint / ec（editorconfig-checker、既定で無効）/
-      shellcheck（既定で無効）/ glab-ci-lint（既定で無効）
-    - 日本語文体: colloquial-check（既定で無効）
-    - YAML / Dockerfile / シークレット系: yamllint（既定で無効）/ hadolint（Dockerfile、既定で無効）
-    - シークレット検出・SAST: gitleaks（既定で無効）/ semgrep（既定で無効）/ bandit（既定で無効）
-    - SQL: sqlfluff（既定で無効）
-    - 依存の脆弱性監査: uv-audit / pnpm-audit / npm-audit / yarn-audit（いずれも既定で無効）
+    - 一般: typos（PyPI依存）/ actionlint / ec（editorconfig-checker、既定は無効）/
+      shellcheck（既定は無効）/ glab-ci-lint（既定は無効）
+    - 日本語文体: colloquial-check（既定は無効）
+    - YAML / Dockerfile / シークレット系: yamllint（既定は無効）/ hadolint（Dockerfile、既定は無効）
+    - シークレット検出・SAST: gitleaks（既定は無効）/ semgrep（既定は無効）/ bandit（既定は無効）
+    - SQL: sqlfluff（既定は無効）
+    - 依存の脆弱性監査: uv-audit / pnpm-audit / npm-audit / yarn-audit（いずれも既定は無効）
 - 統合: pre-commit・prek（`.pre-commit-config.yaml`のhookを統合実行する代替系統。prekはRust製）
     - `preset = "latest"`ではprekが有効、pre-commitが無効になる
     - 両方を有効にすると、同一フックの二重実行についてpyfltrが警告を発行する
 
-既定で無効（opt-in）のツールは、利用時に`pyproject.toml`で`{command} = true`を設定する。
+既定は無効（opt-in）のツールは、利用時に`pyproject.toml`で`{command} = true`を設定する。
 特記事項を以下に示す。
 
 - `taplo`: Rust製のTOMLフォーマッター/リンター。bin-runner経由で実行し、shfmtと同様の2段階実行（check→format）を行う
 - `yamllint`: Python製のYAMLリンター。PATH上または`yamllint-path`で指定した実行ファイルを直接呼び出す
 - `hadolint`: Dockerfileに特化したリンター。bin-runner経由で実行する
 - `gitleaks`: Goバイナリのシークレット検出ツール。`gitleaks detect`でリポジトリ全体を対象に実行する
-- `semgrep`: Python製の多言語SAST。ルールセット指定が必須のため既定で無効。
+- `semgrep`: Python製の多言語SAST。ルールセット指定が必須のため既定は無効。
   利用時は`semgrep-args = ["scan", "--json", "--error", "--config=auto"]`等で実際のルールセットを指定する
 - `sqlfluff`: Python製のSQL専用linter。dialect指定が必須のため`.sqlfluff`配置を前提とする。
   `sqlfluff lint`サブコマンドをlinterとして起動する（`sqlfluff format`サブコマンドは対象外）
-- `bandit`: Python製のsource-level SAST。既定で無効（opt-in）。
+- `bandit`: Python製のsource-level SAST。既定は無効（opt-in）。
   検出された違反は`test_id`（B101等）とseverity（LOW/MEDIUM/HIGH）で識別する。
   起点cwd直下の設定ファイルを`--configfile <絶対パス>`形式でbanditへ渡す（bandit本体は自動読み込みしない）。
   探索対象は`pyproject.toml`・`.bandit.yaml`・`.bandit.toml`。
   `.bandit`（INI形式）はbandit本体の`--recursive`時自動探索に委ねる
 - `glab-ci-lint`: `glab ci lint`経由でGitLab CI設定を構文検証する。
-  GitLab API認証とネットワーク接続が必須なため、CIや初学者環境で誤って失敗しないよう既定で無効化している
+  GitLab API認証とネットワーク接続が必須なため、CIや初学者環境で誤って失敗しないよう既定値で無効化している
 - `uv-audit` / `pnpm-audit` / `npm-audit` / `yarn-audit`: 依存パッケージの脆弱性を監査する。
-  それぞれパッケージマネージャーのauditサブコマンドを起動し、外部脆弱性データベースへの問い合わせを伴うため既定で無効
+  それぞれパッケージマネージャーのauditサブコマンドを起動し、外部脆弱性データベースへの問い合わせを伴うため既定は無効
 - `colloquial-check`: LLMが頻繁に出力する口語的な日本語表現を検出する内蔵linter。
-  既定で無効（opt-in）。有効化時も`colloquial-check-severity = "warning"`既定により
+  既定は無効（opt-in）。有効化時も`colloquial-check-severity = "warning"`既定により
   CI/pre-commitを失敗させない。対象ファイルは全種別（`*`）とし、pyfltr既定のexclude・`.gitignore`尊重に従う。
   辞書ファイル（denylist・allowlist）はpyfltrに同梱する
 
@@ -133,6 +133,6 @@ pyfltr設定の`exclude`/`extend-exclude`/`respect-gitignore`を尊重するた�
 - 各種ツールのバージョンには極力依存しない（各ツール固有の設定には対応しない）
 - excludeの指定方法が各ツールで異なる問題を、pyfltr側で解決してツールに渡すことで吸収する
 - `--allow-external-paths`を指定すると、起点ディレクトリ外のファイルを起点配下へ
-  一時複製せず検査できる。外部ファイルだけを検査する場合は`--commands`で対象ツールを限定する
+  一時複製せずチェックできる。外部ファイルだけをチェックする場合は`--commands`で対象ツールを限定する
 - formatterはファイルを修正しつつエラーとしても扱う（`pyfltr ci`ではformatterによる変更も失敗と判定する）
 - 設定は極力`pyproject.toml`に集約する

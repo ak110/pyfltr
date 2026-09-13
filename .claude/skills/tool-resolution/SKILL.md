@@ -22,7 +22,7 @@ pyfltrが対応するformatter/linter/testerの依存指定および実行時の
 - 本体依存（`dependencies`）: 本家公式かつ自己完結なPyPIパッケージ
   - 汎用的に有用なもの（例: `typos`、`pre-commit`）
   - Python系ツール一式（例: `ruff`、`mypy`、`pylint`、`pyright`、`ty`、`pytest`、`uv-sort`）。
-    `uvx pyfltr`単発で揃うようにし、`{command}-runner = "python-runner"`既定でグローバル
+    `uvx pyfltr`単発で揃うようにし、`{command}-runner = "python-runner"`の既定値によりグローバル
     `python-runner = "uv"`へ委譲し、cwdの`uv.lock`検出時は利用者プロジェクトの登録版へ切り替える。
     `pyright[nodejs]` extrasはNode.jsランタイム取得を伴うが、Python系ツール一式を`uvx pyfltr`単発で
     揃える利便性を優先して同梱する
@@ -33,9 +33,9 @@ pyfltrが対応するformatter/linter/testerの依存指定および実行時の
 - 依存指定なし: 本家から独立した個人または別組織のメンテに依存するもの、
   インストール時に外部バイナリを取得するもの、Node.js等のランタイムを伴うもの
 
-サードパーティの非公式PyPIラッパー（例: `shfmt-py`・`actionlint-py`・`shellcheck-py`）は、
+サードパーティの非公式PyPIラッパー（例: `shfmt-py`・`actionlint-py`・`shellcheck-py`）は
 本家から独立した個人または別組織のメンテに依存するため本体依存に組み込まない。
-本家公式であってもインストール時に外部バイナリを取得するパッケージ（例: `editorconfig-checker`）は、
+本家公式であってもインストール時に外部バイナリを取得するパッケージ（例: `editorconfig-checker`）は
 オフライン・プロキシ環境での導入失敗リスクを避けるため本体依存から除外する。
 Node.js等のランタイムを伴うパッケージも、ランタイム導入とサプライチェーンの広さの観点から本体依存に含めない。
 
@@ -70,17 +70,17 @@ extrasの空エイリアスは過去版からの利用者環境の`pyfltr[python
 直接指定値のカテゴリ横断バリデーション（例: `mypy-runner = "pnpm"`）は拒否しない。
 無意味な組み合わせは実行時に解決ロジックがエラー終了する（実装簡潔さ優先）。
 
-各値の解決経路と各runner（カテゴリ委譲値・直接指定値）の優先順位は
+各値の解決方法と各runner（カテゴリ委譲値・直接指定値）の優先順位は
 `pyfltr/command/runner.py`の`build_commandline`のdocstringに集約する。
 runner値体系（許容値・既定値）の網羅は`pyfltr/config/config.py`の`DEFAULT_CONFIG`冒頭docstringを参照する。
 
-ツール解決経路の追跡情報は次の3系統で確認できる。
+ツール解決の追跡情報は次の3系統で確認できる。
 
-- JSONL header（`uv.lock`・`uv.available`・`uv.x_available`）: プロセス全体のuv経路前提条件
+- JSONL header（`uv.lock`・`uv.available`・`uv.x_available`）: プロセス全体のuv指定の前提条件
 - JSONL commandレコード: fallback発生時のみ`effective_runner`・`runner_source`・`runner_fallback`を出力する。
-  通常経路では省略しトークン消費を抑える
-- `pyfltr command-info <command>`: 通常経路を含む詳細な解決状態（runner・effective_runner・mise/uv診断）を取得する。
-  `--check`指定時は実行経路と同じ事前確認を実施し、成功した場合は実行版を取得して`check_installed_version`として返す。
+  通常の解決では省略しトークン消費を抑える
+- `pyfltr command-info <command>`: 通常の解決を含む詳細な解決状態（runner・effective_runner・mise/uv診断）を取得する。
+  `--check`指定時は実行時と同じ事前確認を実施し、成功した場合は実行版を取得して`check_installed_version`として返す。
   設定値の`version`（`{command}-version`）とは別のフィールドである
 
 JSONLレコードでfallbackを能動通知し、必要時にcommand-infoで詳細確認するという責務分担とする。
@@ -88,14 +88,14 @@ JSONLフィールドの追加・名称変更は[.claude/skills/output-format/SKI
 
 ### パッケージマネージャーのサブコマンドを呼ぶツール
 
-`uv audit`・`pnpm audit`・`npm audit`・`yarn audit`は、ツール単体のバイナリではなく
+`uv audit`・`pnpm audit`・`npm audit`・`yarn audit`はツール単体のバイナリではなく
 パッケージマネージャー自体のサブコマンドを起動する。
 これらは専用の解決表（`pyfltr/command/runner.py`の`PACKAGE_MANAGER_TOOL_BIN`）でバイナリ名へ対応付け、
 `runner = "direct"`でPATH上のバイナリを直接呼び出す。
 Python系ツール解決表（`PYTHON_TOOL_BIN`）へ相乗りさせると、未検出時の案内文がuv経由起動を案内する構造になるため分離する。
 `{command}-version`キーは設けない（バージョン固定はパッケージマネージャー側に委ねる）。
 機能が成立する最低版の要件は`pyfltr/command/runner.py`の`PACKAGE_MANAGER_MIN_VERSION`へ登録し、
-`ensure_package_manager_version`が起動前に検査して`resolution_failed`へ倒す。
+`ensure_package_manager_version`が起動前にチェックして`resolution_failed`へ倒す。
 旧版が処理を実施しないまま終了コード0を返す事象は、終了コード0が無条件に成功となり
 出力解析の結果が成否へ関与しないため、出力解析では検知できない。
 
@@ -103,7 +103,7 @@ Python系ツール解決表（`PYTHON_TOOL_BIN`）へ相乗りさせると、未
 
 公開設定値と`effective_runner`の`pnpx`は維持し、実行ファイルを`pnpm`へ写像する。
 設定オプション、主パッケージ、`{command}-packages`の全パッケージを`dlx`より前へ置く。
-この`pnpm --package ... dlx ...`形式はpnpm 10.0.0から同じ形で成立することを実測済みとする。
+この`pnpm --package ... dlx ...`形式はpnpm 10.0.0から同じ形で成立することを確認済みとする。
 追加パッケージがある場合はprefix先頭に`--config.enableGlobalVirtualStore=false`を付与する。
 背景（pnpm 11既定変更・textlintのrequire解決失敗）と適用条件は
 `pyfltr/command/runner.py`の`_resolve_js_commandline`内コメントに集約する。

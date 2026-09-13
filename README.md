@@ -48,7 +48,7 @@ pip環境では`pip install pyfltr`を使う。
 
 `pyfltr run`をエージェントから直接呼び出すか、`pyfltr mcp`でMCPサーバーとして登録する。
 `AI_AGENT` / `CODEX_CI` / `CLAUDECODE` / `CURSOR_AGENT`のいずれかが設定された環境では、
-`run`の出力形式がJSON Lines、静音モードが既定で有効になる。
+`run`の出力形式がJSON Lines、静音モードが既定値として有効になる。
 
 ```shell
 # 直接呼び出し（JSONL出力）

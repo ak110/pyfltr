@@ -1,9 +1,9 @@
 # プロジェクト固有チェックの追加
 
 `[tool.pyfltr.custom-commands]`で任意のツール・独自スクリプトを追加できる。
-追加したカスタムコマンドは組み込みのformatter・linter・testerと同じ実行経路で動作する。
+追加したカスタムコマンドは組み込みのformatter・linter・testerと同じ実行の流れで動作する。
 pyfltrは並列実行・fixステージ・severity・hints・JSON Lines出力を組み込みツールと同一に扱う。
-コーディングエージェント向けの実行基盤へ、プロジェクト固有の検査を統合する場合に利用する。
+コーディングエージェント向けの実行基盤へ、プロジェクト固有のチェックを統合する場合に利用する。
 
 カスタムコマンドの仕様は[ツール別設定](configuration-tools.md)の「カスタムコマンド」セクションを参照。
 導入手順は[はじめに](getting-started.md)を参照。
@@ -13,9 +13,9 @@ pyfltrは並列実行・fixステージ・severity・hints・JSON Lines出力を
 
 ## 実運用例（リポジトリ固有スクリプトの統合）
 
-生成ファイルの同期・エンコーディング・リンク切れなどを検査する独自スクリプトを、
+生成ファイルの同期・エンコーディング・リンク切れなどをチェックする独自スクリプトを、
 組み込みツールと並列に実行するカスタムコマンドとして登録できる。
-`type = "linter"`かつ`pass-filenames = false`を指定すると、対象ファイル引数を渡さずにリポジトリ全体を検査する。
+`type = "linter"`かつ`pass-filenames = false`を指定すると、対象ファイル引数を渡さずにリポジトリ全体をチェックする。
 
 ```toml
 [tool.pyfltr.custom-commands.project-check]

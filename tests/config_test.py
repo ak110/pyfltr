@@ -628,12 +628,13 @@ js-runner = "bogus"
 
 
 def test_textlint_packages_default() -> None:
-    """textlint-packagesのデフォルトに3パッケージが含まれる。"""
+    """textlint-packagesのデフォルトに推奨プリセット一式が含まれる。"""
     config = pyfltr.config.config.create_default_config()
     assert config["textlint-packages"] == [
         "textlint-rule-preset-ja-technical-writing",
         "textlint-rule-preset-jtf-style",
         "textlint-rule-ja-no-abusage",
+        "textlint-rule-preset-ai-words-ja",
     ]
 
 

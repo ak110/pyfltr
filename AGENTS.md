@@ -17,15 +17,15 @@ JSON Lines出力（`--output-format=jsonl`）とMCPサーバー（`pyfltr mcp`�
 - 推奨ガイド（`docs/guide/recommended.md`・`docs/guide/recommended-nonpython.md`）と本リポジトリの設定は、
   双方の変更時に対応する既存設定へ同じ変更を反映する
   - 推奨ガイドを変更した場合は、設定例が提示する対象のうち本リポジトリに存在するものへ反映する。
-    設定例の新規追加でも、`before_script`等の準備手順を含めて本リポジトリの設定と差分を照合する
+    設定例の新規追加でも、`before_script`等の準備手順を含めて本リポジトリの設定との差分を確認する
   - 本リポジトリを変更した場合は、対応する設定例が推奨ガイドに存在するとき、その例へ反映する
   - 本リポジトリ固有の事情で反映しない場合は、当該設定ファイルへ理由をコメントで残す
   - 推奨ガイドへ設定例を追加・変更する際、本リポジトリに対応する設定が存在しない場合は、
     当該例が成立するために必要な実行環境の前提条件を本文へ明示する
     - 前提条件には実行イメージへ用意すべきランタイム、チェックアウトの深度、必要な認証情報などを含める
     - 前提条件を確定できない場合は設定例を追加しない
-- `docs/guide/`配下の利用者向け文書へ対応ツールの挙動を記述する場合は、記述する挙動を実測で裏付ける
-  - 設定例を伴う記述は当該設定例と同じ経路で再現して確認する。
+- `docs/guide/`配下の利用者向け文書へ対応ツールの挙動を記述する場合は、記述する挙動を実行して確認した結果で裏付ける
+  - 設定例を伴う記述は当該設定例と同じ手順で再現して確認する。
     設定例を伴わない記述は、当該挙動が生じる最小の構成を用意して再現する
   - 同一の指定でも、設定ファイルへ書く場合とコマンドラインで渡す場合とで挙動が変わることがある
   - 本リポジトリが同じ設定を採用している項目は、本リポジトリでの実行結果を裏付けの第一候補とする
@@ -56,13 +56,13 @@ JSON Lines出力（`--output-format=jsonl`）とMCPサーバー（`pyfltr mcp`�
     利用者の未コミット変更との切り分けも要する
     - `--no-fix`が抑止するのはfixステージ（`{command}-fix-args`を持つlinter）だけであり、
       formatterは通常ステージで対象ファイルを書き込む。
-      `ruff-format-by-check`が既定で有効なため、`ruff-format`は`--no-fix`の指定時も
+      `ruff-format-by-check`が既定値として有効なため、`ruff-format`は`--no-fix`の指定時も
       `check --fix --unsafe-fixes`を先に実行し、未使用importの削除など整形以外の修正まで及ぶ
     - 書き換えを避けたい場合は`--no-fix`に加えて`--commands`で対象をlinterへ限定する
   - `make test`・`uv run pyfltr run`が実行するPythonは開発環境の単一バージョン（`.python-version`）であり、
     CIが実行するバージョンの範囲（`.github/workflows/ci.yaml`のマトリクス）とは一致しない。
     これらのコマンドの成功はCIの通過を意味しない
-    - Linuxのマトリクスは、基準とする1つの版だけが`pyfltr ci`による全検査を担い、
+    - Linuxのマトリクスは、基準とする1つの版だけが`pyfltr ci`による全チェックを担い、
       他の版は`--commands=pytest`で実行時互換性だけを検証する
       （対象の版は`.github/workflows/ci.yaml`を参照）。
       静的解析とカスタムチェックの指摘は、基準版のジョブとWindowsのジョブにだけ現れる
@@ -74,7 +74,7 @@ JSON Lines出力（`--output-format=jsonl`）とMCPサーバー（`pyfltr mcp`�
     pyfltrは成功したツールについて要約1行だけを表示するため、
     pytestの所要時間一覧（`--durations`）のような測定値はログから取得できない
     - 実行アーカイブは成功時も生出力を保存するが、`.github/workflows/ci.yaml`は
-      成果物のアップロードを`if: failure()`へ限定するため、成功した実行から事後取得する経路も無い
+      成果物のアップロードを`if: failure()`へ限定するため、成功した実行から事後取得する手段も無い
     - CI上の測定値を検証手段として計画へ書く場合は、当該測定値が成功時のログに現れるかを先に確認する。
       失敗時にのみ取得できる測定値は、失敗を再現させる前提で検証手順を組む
   - CIとローカルではmiseが解決する対応ツールの版が異なる場合がある
@@ -85,7 +85,7 @@ JSON Lines出力（`--output-format=jsonl`）とMCPサーバー（`pyfltr mcp`�
     - 版を指定できるのはbin-runner対応ツールに限られる
         （[docs/guide/configuration-tools.md](docs/guide/configuration-tools.md)の「バージョン指定」を参照）
   - エージェント検出用の環境変数が設定された環境では`run`の出力形式が`jsonl`、
-    静音モードが既定で有効になるため、`run-for-agent`を明示指定する必要はない
+    静音モードが既定値として有効になるため、`run-for-agent`を明示指定する必要はない
   - MCPサーバー（`pyfltr mcp`）を登録している環境では、CLI直接実行よりMCPツールを優先する。
     CLIで可能な操作は端末表示・出力先の制御、`--no-archive`、`--{tool}-args`群を除きMCPへ露出している
 
@@ -102,7 +102,7 @@ format別のlogger stream/level切替の詳細は[docs/development/architecture.
   同プロパティはサブプロジェクト分割実行時に当該サブプロジェクト分だけを返すため、
   起点cwd全体を母数として構築した集合をそのまま対象へ渡さない。
   `ExecutionContext`へファイル集合を保持する状態を追加する場合は、
-  当該集合を`all_files`と交差させる経路を持たせる
+  当該集合を`all_files`と交差させる処理を持たせる
 - subprocess・git・mise・ファイル走査などcwd依存処理はプロセスのcwdに依存しない実装にする。
   `subprocess.Popen(cwd=...)`の引数、または`start_cwd`・`base_cwd`・`cwd`等の
   明示引数でcwdを渡す。`os.chdir()`でグローバル状態を変更しない
@@ -111,35 +111,35 @@ format別のlogger stream/level切替の詳細は[docs/development/architecture.
   マスク済み一時パスなど値の意味を変える差し替えをしない。
   一時パスへの差し替えが必要な用途は`ExecutionParams.cache_commandline`と
   `ExecutionParams.file_path_remap`で表現する
-  （両フィールドの下流経路は[docs/development/architecture.md](docs/development/architecture.md)を参照する）
+  （両フィールドの下流の流れは[docs/development/architecture.md](docs/development/architecture.md)を参照する）
 - サブプロジェクトごとに繰り返す処理が警告を発行する場合は、
   起点実行分を含めて同一の`source`と`message`の組が1件に収まることを確認する。
-  モノレポ構成での実測手順は[docs/development/architecture.md](docs/development/architecture.md)の
+  モノレポ構成での確認手順は[docs/development/architecture.md](docs/development/architecture.md)の
   「モノレポ対応」節を参照する
 - 外部ツールの成否は`pyfltr/command/core_.py`の`CommandResult.status`が終了コードから導出する。
   終了コード0は`errors`を参照せず`succeeded`となるため、
   `pyfltr/command/error_parser.py`が抽出した診断は正常終了したツールの成否を変えない。
   成否を判断する処理は`pyfltr/command/core_.py`が公開する成否述語だけを参照する。
-  `CommandResult`を扱う経路は`CommandResult.failed`と`CommandResult.needs_rerun`を、
-  実行アーカイブから読んだstatus文字列を扱う経路は`is_failed_status`を用いる。
-  status値の比較を各経路へ書かず、成否と同じ事実を表す別のフィールドも新設しない。
+  `CommandResult`を扱う処理は`CommandResult.failed`と`CommandResult.needs_rerun`を、
+  実行アーカイブから読んだstatus文字列を扱う処理は`is_failed_status`を用いる。
+  status値の比較を各処理へ書かず、成否と同じ事実を表す別のフィールドも新設しない。
   `CommandResult.formatter_failed`はformatter型の非ゼロ終了が書き換えではなく失敗であることだけを表し、
   linterとtesterの成否判断に用いない。
   ツールが期待する処理を実施しないまま正常終了する事象への対策は、出力解析ではなく
-  `pyfltr/command/dispatcher.py`の`_prepare_execution_params`が呼ぶ実行前検査で
-  `resolution_failed`へ倒す経路を採用する。
+  `pyfltr/command/dispatcher.py`の`_prepare_execution_params`が呼ぶ実行前チェックで
+  `resolution_failed`へ倒す実装を採用する。
   `resolution_failed`は`status`の最優先分岐で確定するため、
   `{command}-severity = "warning"`による格下げの対象外とする。
   ツールの成否を変えず警告の発行に留める対策は、
-  「実行前検査で`resolution_failed`へ倒す経路を採用する」規定の対象外とし、出力解析を採用してよい。
+  「実行前チェックで`resolution_failed`へ倒す実装を採用する」規定の対象外とし、出力解析を採用してよい。
   ツール自身が競合や設定の無効化を出力へ明示する場合は、当該出力を読む方が
   pyfltr側で判定条件を再実装するより誤検出が生じにくい
 - 実行アーカイブの`tool.json`の取得は`pyfltr/state/archive.py`の`ArchiveStore.read_tool_meta`だけが行い、
   同メソッドは撤去済みのフィールドだけを除いた結果を返す。
   除去の対象は`TOOL_META_REMOVED_KEYS`が定め、当該集合に無いキーは、
   別の版が保存した未知のキーを含めて呼び出し元へそのまま渡す。
-  表示・直列化・MCPの各経路は同メソッドの戻り値だけを扱い、
-  当該ファイルを直接参照する経路と、除去を経ないメタデータを出力へ展開する経路を設けない
+  表示・直列化・MCPの各処理は同メソッドの戻り値だけを扱い、
+  当該ファイルを直接参照する処理と、除去を経ないメタデータを出力へ展開する処理を設けない
 - `show-run`が未知のキーを外部へ出力する範囲は`--commands`のjson形式とjsonl形式に限る。
   既定表示と`--commands`のtext形式は、表示するキーを列挙する現行動作を保ち、未知のキーを新たに表示しない
 
@@ -165,6 +165,6 @@ format別のlogger stream/level切替の詳細は[docs/development/architecture.
     `sed -i '<コメント終端行>a<挿入行>' <パス>`のように行番号を指定した挿入で編集する
   - コメント終端行は`grep -vn '^#' <パス> | head -1 | cut -d: -f1`が返す行番号から1を引いた値とする
   - 変更の確認では`sed -n '1,<コメント終端行>p' <パス>`でコメント範囲へ限定して表示し、
-    `grep -c '' <パス>`で行数を照合する。辞書エントリー本体は表示させない
+    `grep -c '' <パス>`で行数を確認する。辞書エントリー本体は表示させない
   - 読み込みを避ける理由は、辞書の検出語がコンテキストへ入るとエージェントの生成傾向へ混入し、
     口語表現の生成抑止という本チェッカーの目的と逆方向に作用するためである

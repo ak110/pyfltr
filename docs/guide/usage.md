@@ -40,7 +40,7 @@ Formattersによるファイル変更があってもLinters/Testersでのエラ�
 pyfltr run-for-agent [files and/or directories ...]
 ```
 
-`run`と同じ動作で出力形式の既定値を`jsonl`に切り替え、`--quiet`を既定で有効にしたサブコマンド。
+`run`と同じ動作で出力形式の既定値を`jsonl`に切り替え、`--quiet`を既定値として有効にしたサブコマンド。
 互換維持のために残しており、通常は`run`を使う。
 `AI_AGENT` / `CODEX_CI` / `CLAUDECODE` / `CURSOR_AGENT`のいずれかが設定された環境では
 `run`も同じ既定値になるため、両者は等価に振る舞う。
@@ -166,7 +166,7 @@ pyfltr list-runs [--limit N] [--output-format text|json|jsonl]
 
 実行アーカイブに保存されたrun一覧を新しい順で表示する。
 
-- 既定で直近20件（`--limit`で変更可能）
+- 既定は直近20件（`--limit`で変更可能）
 - `text`: 固定幅テーブル。列は`RUN_ID` / `STARTED_AT` / `EXIT` / `FILES` / `COMMANDS`
 - `json`: `{"runs":[{...}, ...]}`の単発出力
 - `jsonl`: 1件1行ストリーム（`kind: "run"`）
@@ -256,7 +256,7 @@ MCPクライアントがstdinを閉じた時点でサーバーが終了する。
 | --- | --- | --- |
 | `list_runs` | `pyfltr list-runs` | run一覧を新しい順で返す。`limit`で件数制御（既定20件） |
 | `show_run` | `pyfltr show-run <run_id>` | 指定runのmetaとツール別サマリを返す。前方一致・`latest`エイリアス可 |
-| `show_run_diagnostics` | `pyfltr show-run <run_id> --commands=<name>` | 指定runのコマンドmeta情報とdiagnostics全件を返す（複数指定可）。検査対象ファイルの引数列は含めない |
+| `show_run_diagnostics` | `pyfltr show-run <run_id> --commands=<name>` | 指定runのコマンドmeta情報とdiagnostics全件を返す（複数指定可）。チェック対象ファイルの引数列は含めない |
 | `show_run_output` | `pyfltr show-run <run_id> --commands=<name> --output` | 指定runのoutput.log全文を返す（複数指定可） |
 | `run_for_agent` | `pyfltr run` / `fast` / `ci` | lint/format/testを実行しrun_id・失敗ツール名・retry_commands等を返す。`mode`で実行モードを選ぶ |
 | `grep` | `pyfltr grep` | ファイル横断の正規表現検索（pyfltr exclude/.gitignore尊重） |
@@ -338,7 +338,7 @@ mise設定に`rust`記述が無い場合は`mise exec rust@latest -- cargo fmt`�
 応答フィールドの接頭辞は値の出所を表す。
 `configured_`で始まるものは既定値・グローバル設定・プロジェクト設定を統合した
 パス・引数系の実効設定値である。
-`check_`で始まるものは`--check`指定時のみ得られる実測値である。
+`check_`で始まるものは`--check`指定時のみ得られる計測値である。
 接頭辞を持たない設定由来フィールドは`enabled`・`severity`・`hints`・`version`である。
 このほかの接頭辞を持たないフィールドは解決状態または環境情報を表す。
 `version`は`{command}-version`設定値であり、実際にインストールされている版ではない。
@@ -374,7 +374,7 @@ check段では`textlint-json`設定（既定`true`）により出力フォーマ
  （mise経由ツールは`mise exec --version`での可用性確認、パッケージマネージャー系ツールは最低版の確認）
   事前確認に成功した場合は解決済みコマンドラインへ`--version`を渡し、実行版を`check_installed_version`として返す。
   取得できなかった場合は`null`を返す。`--check`未指定時と事前確認失敗時は当該フィールドを出力しない。
- （`mise install` / `mise trust` / `--version`の起動が発生する場合があるため、既定では行わない）
+ （`mise install` / `mise trust` / `--version`の起動が発生する場合があるため、既定の動作では行わない）
 
 未知のコマンド名や`{command}-runner = "mise"`を未登録ツールに指定した場合などは終了コード1で失敗する。
 
@@ -435,14 +435,14 @@ pyfltr generate-shell-completion powershell | Out-String | Invoke-Expression
 `markdownlint` ・ `textlint` は`--config`注入対象でありながら除外対象でもある。
 外部パスを直接渡すと `textlint` ・ `markdownlint-cli2` の対象探索エラーが未整形のまま出力されるためである。
 
-既定では、除外対象ツールへ外部パスを渡すと対象から除外し、1ファイルにつき1件の警告を発行する。
+既定の動作では除外対象ツールへ外部パスを渡すと対象から除外し、1ファイルにつき1件の警告を発行する。
 `--allow-external-paths`を指定するとこの分類を上書きし、外部パスを対象へ保持して除外警告を発行しない。
 
 `markdownlint` ・ `textlint` では、起点cwd直下から解決した設定ファイルを
 `--config <絶対パス>`形式で明示注入する。
 フラグ指定時も設定探索の基準は外部ファイルの配置先へ移らず、起点cwdの設定を外部ファイルへ適用する。
 
-外部のMarkdownファイルだけを検査する場合は、対象外のtesterや監査ツールへ外部パスを渡さないよう
+外部のMarkdownファイルだけをチェックする場合は、対象外のtesterや監査ツールへ外部パスを渡さないよう
 `--commands`で実行ツールを限定する。
 
 ```shell
@@ -489,7 +489,7 @@ pyfltr run --no-fix --commands=ruff-check [files and/or directories ...]
 
 抑止の対象はfixステージ（`{command}-fix-args`を持つlinter）だけである。
 formatterは通常ステージで対象ファイルを書き込むため、`--no-fix`を指定しても整形は行われる。
-特に`ruff-format-by-check`が既定で有効なため、`ruff-format`は`--no-fix`の指定時も
+特に`ruff-format-by-check`が既定値として有効なため、`ruff-format`は`--no-fix`の指定時も
 `ruff check --fix --unsafe-fixes`を先に実行し、未使用importの削除など整形以外の修正まで及ぶ。
 
 対象ファイルの書き換えを避けたい場合は、`--no-fix`に加えて`--commands`で対象をlinterへ限定する。
@@ -561,8 +561,8 @@ VSCodeのターミナルからクリックして該当箇所にジャンプで�
 - `--stream`: 非TUIモード時に各コマンドの完了時点で即時出力する（既定は全コマンド完了後にまとめて出力）
 - `--no-exclude`: exclude/extend-excludeパターンによるファイル除外を無効化する
 - `--no-gitignore`: `.gitignore`によるファイル除外を無効化する
-- `--allow-external-paths`: 起点ディレクトリ外の絶対パスを検査対象へ含める。
-  既定では`markdownlint`・`textlint`・`prek`・`pre-commit`・`pytest`・`vitest`・`cargo-test`・
+- `--allow-external-paths`: 起点ディレクトリ外の絶対パスをチェック対象へ含める。
+  既定の設定では`markdownlint`・`textlint`・`prek`・`pre-commit`・`pytest`・`vitest`・`cargo-test`・
   `dotnet-test`・`gitleaks`・`semgrep`・各種`*-audit`が起点外パスを除外して警告を発行するが、
   本オプション指定時は分類にかかわらず対象へ含める。
   `markdownlint`・`textlint`の設定ファイル（`.markdownlint-cli2.yaml`・`.textlintrc.yaml`等）は
@@ -585,8 +585,8 @@ VSCodeのターミナルからクリックして該当箇所にジャンプで�
 - `--from-run <RUN_ID>`: `--only-failed`の参照対象runを明示指定する（前方一致・`latest`対応）。
   未指定時は直前runを自動選択。`--only-failed`との併用が前提で、単独指定はargparseエラーで拒否する。
   指定した`<RUN_ID>`が存在しない場合は警告を出力して`rc=0`で早期終了する
-- `--shuffle`: 検査対象ファイルの並び順をシャッフルする（既定は自然順ソート）。
-  ファイル順に依存して結果が変わる検査を洗い出す用途で使う。
+- `--shuffle`: チェック対象ファイルの並び順をシャッフルする（既定は自然順ソート）。
+  ファイル順に依存して結果が変わるチェックを洗い出す用途で使う。
   乱数シードを指定する手段は無く、シャッフル後の順序を再現する手段も無い。
   fixステージでは再現性を優先して指定時も自然順ソートとなる。
   `--ci`と併用した場合は`--ci`側の設定が優先され、シャッフルは行われない
@@ -678,10 +678,10 @@ JSONLヘッダーの`format_source`には検出した変数名（例: `env.CODEX
 - headerレコードを`run_id`・`commands`・`files`の3つのフィールドのみへ縮約する
 - pre-commit・prek経由でformatter修正が発生したときのstderrガイダンスも抑止する
 
-`run-for-agent`サブコマンドでは常に既定で`--quiet`が有効。
+`run-for-agent`サブコマンドでは常に既定値として`--quiet`が有効。
 `AI_AGENT` / `CODEX_CI` / `CLAUDECODE` / `CURSOR_AGENT`のいずれかが設定された環境では
-`run`・`ci`・`fast`でも既定で有効になる。いずれも`--no-quiet`で無効化できる。
-これらの環境変数が無い環境では`run-for-agent`以外は既定で無効。
+`run`・`ci`・`fast`でも既定値として有効になる。いずれも`--no-quiet`で無効化できる。
+これらの環境変数が無い環境では`run-for-agent`以外の既定値は無効。
 summaryレコード・warningレコード・diagnosticレコード・`status:"running"`のheartbeatイベントは
 `--quiet`の影響を受けず常に出力する。
 
@@ -714,7 +714,7 @@ pyfltrは`kind:"command"`かつ`status:"running"`のheartbeatレコードを出�
 CLIの直接呼び出しとは異なりJSONL出力がstdoutに流れず、
 MCPクライアントは結果を構造化データとして受け取れる。
 ただし`pyfltr mcp`起動後は同一プロセスのstdin/stdoutがJSON-RPCに専有されるため、
-他のコマンドと組み合わせた場合に出力が混ざる事故に注意する
+他のコマンドと組み合わせた場合に出力が混在する不具合に注意する
 （詳細は[トラブルシューティング](troubleshooting.md)を参照）。
 
 `run_for_agent`の主要パラメーターとCLI相当オプションは次のとおり。
@@ -743,8 +743,8 @@ MCPクライアントは結果を構造化データとして受け取れる。
     `commands_summary.needs_action`配下の`failed` / `resolution_failed`がいずれも0であれば残作業は無く、
     `commands_summary.no_issues`配下の内訳は確認不要。
     summary行に`warnings`キーがある場合は実行時の警告が発生している。
-    `"kind":"warning"`行を読み、要求した検査が実際に実行されたかを確認する
-    （未有効化のコマンドを`--commands`で指定した場合など、検査が実行されないまま`exit`が0になることがある）。
+    `"kind":"warning"`行を読み、要求したチェックが実際に実行されたかを確認する
+    （未有効化のコマンドを`--commands`で指定した場合など、チェックが実行されないまま`exit`が0になることがある）。
     `missing_targets`・`fully_excluded_files`がある場合も、指定したファイルが不在・除外で
     対象外になっていないかを確認する。
     `applied_fixes`が非空でも`summary.guidance`に注記が出るが、formatter/fix-stageによる書き換えのみで
@@ -767,11 +767,11 @@ MCPクライアントは結果を構造化データとして受け取れる。
     `--only-failed`は直前runのアーカイブから失敗ツール・失敗ファイルを自動抽出して再実行する。
     直前runが無い・失敗ツールが無い・対象との交差が空の場合は終了コード0で成功終了する。
 
-### 事前検査領域からの除外 {#exclude-fence-under}
+### 事前チェック領域からの除外 {#exclude-fence-under}
 
 `--exclude-fence-under=<H2見出し>`オプションを指定すると、Markdownファイル内で指定H2見出し配下の
-フェンス内側行をtextlint・markdownlintの検査対象から除外する。
-フィードバック原文の転記領域などlint違反が原文由来で不可避な区間の検査除外を想定する。
+フェンス内側行をtextlint・markdownlintのチェック対象から除外する。
+フィードバック原文の転記領域などlint違反が原文由来で不可避な区間のチェック除外を想定する。
 改行数は保存されるため診断出力の行番号は元ファイル基準となる。
 行内文字数は保存されず、フェンス内側行は空行化する（markdownlint MD013 line-lengthなど
 長さ由来ルールの発火を防ぐため）。
@@ -835,7 +835,7 @@ pyfltrからprekのhookを呼び出す統合は`prek = true`で有効化する�
 現時点の対象はtextlintのみである。
 対象ファイル群・ツール固有設定ファイル群のハッシュとツール固有情報からキャッシュキーを構築する。
 ヒット時はツール実行をスキップして前回結果を復元する。
-既定で有効であり、`--no-cache`または`cache = false`設定で実行単位に無効化できる。
+既定は有効であり、`--no-cache`または`cache = false`設定で実行単位に無効化できる。
 保存期間は`cache-max-age-hours`（既定12時間）で制御する。
 設計判断の詳細は[アーキテクチャ概要](../development/architecture.md)を参照。
 

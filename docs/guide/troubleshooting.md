@@ -3,7 +3,7 @@
 pyfltr運用中に発生しがちな事象と対処法を症状別にまとめる。
 導入手順は[はじめに](getting-started.md)を参照。
 
-## MCP起動時のstdout占有事故
+## MCP起動時のstdout占有
 
 `pyfltr mcp`起動後に他のコマンド出力やlogが端末に表示されず、
 コーディングエージェントに返る結果が文字化けするまたは解析エラーになる場合がある。
@@ -27,7 +27,7 @@ MCPクライアントから`pyfltr mcp`を登録しても`run_for_agent`等の�
 確認手順。
 
 - pyfltrを最新版へ更新する。古いMCPプロトコルバージョンでは互換性問題が発生する場合がある
-- `command`には、PATHで解決できる`uvx`か、`uv tool install`で事前導入したpyfltr実行ファイルの絶対パスを使う
+- `command`にはPATHで解決できる`uvx`か、`uv tool install`で事前導入したpyfltr実行ファイルの絶対パスを使う
 - クライアント側のMCPサーバーログ（Claude Codeであれば設定UIから確認可能）でJSON-RPCエラーの詳細を確認する
 - stdoutに非JSON出力が混じっていないかをstderrへリダイレクトして確認する
  （`uvx pyfltr mcp 2>/tmp/pyfltr-mcp.err`のように手動起動して観察できる）
@@ -41,14 +41,14 @@ MCP client for `pyfltr` failed to start: MCP startup failed:
 handshaking with MCP server failed: connection closed: initialize response
 ```
 
-`connection closed`は、MCPサーバーのプロセスが初期化応答を返す前に終了したことを示す。
-原因はpyfltrの外側にある場合と内側にある場合の双方があるため、次の順で切り分ける。
+`connection closed`はMCPサーバーのプロセスが初期化応答を返す前に終了したことを示す。
+原因はpyfltrの外側にある場合と内側にある場合の双方があるため、次の順で特定する。
 
 ### 切り分け手順
 
 まず標準出力の汚染を除外する。`pyfltr mcp`の標準出力をJSON-RPC以外の内容が共有していると、
 サーバーが起動していてもクライアントはフレームを解釈できない。
-確認方法と対処は「MCP起動時のstdout占有事故」を参照する。
+確認方法と対処は「MCP起動時のstdout占有」を参照する。
 
 次に、クライアントへ登録しているコマンドをそのまま端末で起動し、終了コードと標準エラーを確かめる。
 
@@ -79,7 +79,7 @@ echo "exit=$?"
 通信の要否は版の指定方法に依存しない。
 `--from "pyfltr==3.17.0"`のような完全一致指定でも、インデックス応答のキャッシュが無ければ問い合わせが発生する。
 
-対処は、pyfltrをツール環境へ事前に導入し、起動のたびにパッケージを解決しない形へ変更することである。
+対処はpyfltrをツール環境へ事前に導入し、起動のたびにパッケージを解決しない形へ変更することである。
 通信できる状態で次のコマンドを実行し、実行ファイルの格納先を確認する。
 
 ```sh
@@ -87,7 +87,7 @@ uv tool install "pyfltr==3.17.0"
 uv tool dir --bin
 ```
 
-MCPクライアントの`command`には、表示されたディレクトリ内にあるpyfltr実行ファイルの絶対パスを指定する。
+MCPクライアントの`command`には表示されたディレクトリ内にあるpyfltr実行ファイルの絶対パスを指定する。
 Windowsでは実行ファイル名が`pyfltr.exe`になる。
 
 ```json
@@ -109,7 +109,7 @@ pyfltrを起動する。このときの所要時間は回線速度とキャッ�
 
 範囲指定を使っている場合は、新しいpyfltrが公開された直後の起動が該当しやすい。
 解決先が新しい版へ移り、その版の環境を構築するためである。
-版を固定している場合も、キャッシュを削除した後の初回起動は同じ経路を通る。
+版を固定している場合も、キャッシュを削除した後の初回起動は同じ処理を通る。
 
 環境の構築が実行されているかは`uvx -v`の出力で確かめる。
 構築済みの環境で起動した場合は解決結果の報告だけが出るが、
@@ -151,7 +151,7 @@ pre-commitとprekは、いずれもこの環境変数を設定する。
 
 - 実行系の`entry`設定が`pyfltr fast`になっているか確認する
 - `{command}-fast`の設定を`pyproject.toml`で確認する
- （既定では重いツール、mypy・pylint・pytestなどはfastに含まれない）
+ （既定の設定では重いツール、mypy・pylint・pytestなどはfastに含まれない）
 - `pyfltr fast --verbose`で実行対象コマンドの一覧を確認する
 
 `make test`等から`pyfltr run`を呼び出すと、pyfltrは`SKIP=pyfltr`付きで有効な実行系を
@@ -163,16 +163,16 @@ prekでは`prek-auto-skip = false`を設定する。
 引数なしの実行系が行う未ステージ変更の退避・復元（`git stash`相当の作業ツリー操作）は発生しない。
 対象ファイルが0件の場合は実行系自体を起動しない。
 
-## 起点ディレクトリ外のファイルが検査されない場合
+## 起点ディレクトリ外のファイルがチェックされない場合
 
 起点ディレクトリの外にある絶対パスを指定すると、
 `{command}: 起点cwd外のパスは対象から除外しました: {path}`という警告が出て
 `markdownlint`・`textlint`・`prek`等が実行されないことがある。
 
 これらのツールは設定ファイルの解決やリポジトリ単位の走査を前提とするため、
-既定では起点ディレクトリ外のパスを対象から除外する。
+既定の動作では起点ディレクトリ外のパスを対象から除外する。
 
-起点外のファイルを検査したい場合は`--allow-external-paths`を指定する。
+起点外のファイルをチェックしたい場合は`--allow-external-paths`を指定する。
 
 ```sh
 pyfltr run --allow-external-paths --commands=textlint,markdownlint ~/.claude/plans/example.md
@@ -242,7 +242,7 @@ pull_requestイベントでは`refs/remotes/pull/`配下だけを生成するた
 
 worktreeやdotfiles配下では`mise.toml`が未信頼扱いとなり`mise exec`が失敗することがある。
 
-- 既定では`mise-auto-trust = true`が`mise trust --yes --all`を自動実行する。
+- 既定値の`mise-auto-trust = true`が`mise trust --yes --all`を自動実行する。
   `--all`はcwdおよび親ディレクトリ全configを信頼するため、プロジェクト外のmise.tomlも対象になる点に注意
 - 自動信頼を無効化したい場合は`mise-auto-trust = false`を設定し、手動で`mise trust`を実行する
 
@@ -265,7 +265,7 @@ directにフォールバックせず`failed`として扱う。
 
 ### `pyfltr command-info <tool>`での確認
 
-ツールがどの経路で起動されるかは`pyfltr command-info <tool>`で確認できる。
+ツールがどの方法で起動されるかは`pyfltr command-info <tool>`で確認できる。
 `runner` / `effective_runner` / `executable` / `commandline`を見れば、`{command}-runner`設定や
 グローバル`bin-runner`の効果が想定どおりかが分かる。
 `--check`オプションを付けると、実行時と同じ事前チェック（mise経由ツールの`mise exec --version`と、
@@ -273,7 +273,7 @@ directにフォールバックせず`failed`として扱う。
 
 ## PATHが重複していてmiseのtools解決が有効にならない
 
-`mise exec`が想定外の経路でツール解決する場合は次を試す。
+`mise exec`が想定外の対象へツール解決する場合は次を試す。
 
 - `mise --version`でmise本体が更新済みか確認する
 - `pyfltr command-info <tool> --check`で実際の起動コマンドラインを観察する
@@ -383,7 +383,7 @@ semgrep / sqlfluffは本体依存から分離され、既定の`{command}-runner
   `{command}-runner = "direct"`へ切り替える
 - `{command}-path = "/path/to/bin"`で実行ファイルを直接指定する
 
-uv / uvx経路の実行後に未登録エラーが出た場合は、`uvx semgrep`または`uvx sqlfluff`で直接実行するか、
+uv / uvx指定の実行後に未登録エラーが出た場合は、`uvx semgrep`または`uvx sqlfluff`で直接実行するか、
 `{command}-runner = "direct"`へ切り替える。
 
 ### JS系ツール（textlint・markdownlint・eslint・biome・oxlint・prettier・tsc・vitest・designmd）
@@ -400,7 +400,7 @@ js-runner=direct で `textlint` がローカル node_modules に見つかりま�
 
 - `pnpm install`等でローカル`node_modules`へ対象パッケージを導入する
 - `js-runner = "pnpx"`へ切り替えてpnpmグローバルキャッシュ経由で起動する。
-  この経路は`node_modules`を必要としない
+  この方法は`node_modules`を必要としない
 - `{command}-path = "..."`で実行ファイルを直接指定する
 
 ### ネイティブ系ツール（shellcheck・shfmt・cargo-*・dotnet-*・lychee・taplo・hadolint等）
@@ -415,7 +415,7 @@ js-runner=direct で `textlint` がローカル node_modules に見つかりま�
 
 対処方法。
 
-- `mise install`で対応ツールを導入する（既定の`bin-runner = "mise"`経路）
+- `mise install`で対応ツールを導入する（既定の`bin-runner = "mise"`の指定）
 - `{command}-runner = "direct"`へ切り替えてPATH上のバイナリを直接実行する
 - `{command}-path = "/path/to/bin"`で実行ファイルを直接指定する
 
@@ -437,7 +437,7 @@ mise経由で発生する未信頼エラー・registry解決失敗等の追加�
       検出していない場合、モノレポモードは適用されない（単一プロジェクトとして従来通り動作）
     - `.gitignore` に記載されたディレクトリは除外される。検出させたい場合は `.gitignore` の見直しか
       `subproject-use-gitignore = false` の設定で除外を解除する
-    - `.venv`・`node_modules`・`target`・`build`・`dist`・`.git` は既定で常に除外する。
+    - `.venv`・`node_modules`・`target`・`build`・`dist`・`.git` は常に除外する。
       除外対象を追加・変更したい場合は `subproject-exclude` で名前を指定する
 - 特定ツールをサブプロジェクト分割の対象から外したい
     - `{command}-subproject-aware = false` を `pyproject.toml` に追加する。

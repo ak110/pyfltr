@@ -47,13 +47,13 @@ extend-exclude = [
 ]
 ```
 
-`exclude-newer = "1 day"`は、公開から1日を経過していないパッケージを依存解決の候補から除く。
+`exclude-newer = "1 day"`は公開から1日を経過していないパッケージを依存解決の候補から除く。
 公開直後のパッケージの取り込みを遅らせ、サプライチェーン汚染のリスクを下げる目的で指定する。
 `"1 day"`は固定日付ではなく実行時刻からの相対値であるため、解決結果は実行日によって変わる。
 このため直近に公開された緊急の修正版は、指定した期間が経過するまで取り込めない。
 即時に取り込む必要がある場合は、当該の解決に限りコマンドラインで
 `--exclude-newer="0 days"`を指定するか、`--exclude-newer-package <パッケージ>=<値>`で個別に緩和する。
-コマンドラインと`pyproject.toml`の`exclude-newer-package`は、いずれもパッケージごとの値に日付または`false`を受け取る。
+コマンドラインと`pyproject.toml`の`exclude-newer-package`はいずれもパッケージごとの値に日付または`false`を受け取る。
 一時的な緩和では、コマンドラインで日付を指定する運用が一般的である。
 公開待機から恒常的に除外するパッケージは、`pyproject.toml`で`false`を指定する。
 解決結果を実行日によらず一定にする場合は、RFC 3339のタイムスタンプ（例: `2026-04-13T00:00:00Z`）を指定する。
@@ -102,7 +102,7 @@ pnpm-audit = true
 # pnpm-audit-severity = "warning"
 ```
 
-`pnpm audit` / `npm audit` / `yarn audit`が`package.json`を対象にJavaScript依存の既知脆弱性を検査する。
+`pnpm audit` / `npm audit` / `yarn audit`が`package.json`を対象にJavaScript依存の既知脆弱性を調べる。
 外部脆弱性データベースへ問い合わせるためネットワーク接続が必須で結果が変動する。
 yarn berry（2+）利用時は`yarn-audit-args = ["npm", "audit", "--json"]`へ上書きする。
 

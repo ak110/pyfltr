@@ -23,7 +23,7 @@ JSONLの`warning`レコードとして最終消費主体へ配送した実行時
 
 ## JSONL公開ヘルパー方針
 
-JSONL出力経路は`pyfltr/output/jsonl.py`の公開ヘルパー（`emit_record` / `emit_records`）経由に統一する。
+JSONLの出力処理は`pyfltr/output/jsonl.py`の公開ヘルパー（`emit_record` / `emit_records`）経由に統一する。
 モジュール外から`_write_lock`・`_emit_structured`を直接参照しない（`pylint: disable=protected-access`の常態化を避けるため）。
 
 ## LLM出力スキーマ
@@ -43,12 +43,12 @@ JSONL出力経路は`pyfltr/output/jsonl.py`の公開ヘルパー（`emit_record
 - JSONL `command.status` 語彙のSSOTは`pyfltr/command/core_.py`の`CommandResult.status`プロパティのdocstring。
   新規status値追加時は当該docstringと判定分岐を併せて更新する
 - `summary`レコードのフィールド順序仕様のSSOTは`pyfltr/output/jsonl.py`の`_build_summary_record`のdocstring
-- summary以外のレコードで通知する実行時の異常（`kind:"warning"`など）は、summary単体で存在を判別できるよう
+- summary以外のレコードで通知する実行時の異常（`kind:"warning"`など）はsummary単体で存在を判別できるよう
   条件付きキーで件数を露出する。件数は当該レコードの生成元と同一の入力から導出し、
   summaryの値とレコード件数を構造的に一致させる
 - JSONL commandレコードの`effective_runner`・`runner_source`・`runner_fallback`は
- 「期待した経路と実際の経路が乖離した場合」に限り出力する（fallback検出用）。
-  通常経路は3フィールドとも省略してLLM入力のトークン消費を抑える方針。
+ 「期待した解決先と実際の解決先が乖離した場合」に限り出力する（fallback検出用）。
+  通常の解決では3フィールドとも省略してLLM入力のトークン消費を抑える方針。
   通常時の解決状況の確認は`pyfltr command-info`サブコマンドの責務とする
 - `--quiet`は成功時commandレコード省略・headerレコード縮約・
   precommitガイダンス（stderr）抑止をまとめて制御する。抑止・縮約条件のSSOTは

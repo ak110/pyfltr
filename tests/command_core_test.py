@@ -184,6 +184,8 @@ def test_build_commandline_pnpx_with_textlint_packages() -> None:
         "textlint-rule-preset-jtf-style",
         "--package",
         "textlint-rule-ja-no-abusage",
+        "--package",
+        "textlint-rule-preset-ai-words-ja",
         "dlx",
         "textlint",
     ]

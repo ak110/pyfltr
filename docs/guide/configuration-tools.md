@@ -31,7 +31,7 @@ pyfltrは対応ツールを実行方式の観点から5カテゴリに分けて�
 
 `{command}-runner`はカテゴリ委譲値と直接指定値の対称12値を許容する（per-toolオーバーライドと委譲を対等に並べる設計）。
 
-| 種別 | 値 | 解決経路 |
+| 種別 | 値 | 解決方法 |
 | --- | --- | --- |
 | カテゴリ委譲 | `"python-runner"` | グローバル`python-runner`設定（`"uv"` / `"uvx"` / `"direct"`）へ委譲する |
 | カテゴリ委譲 | `"js-runner"` | グローバル`js-runner`設定（`"pnpx"` / `"pnpm"` / `"npm"` / `"npx"` / `"yarn"` / `"direct"`）へ委譲する |
@@ -48,7 +48,7 @@ pyfltrは対応ツールを実行方式の観点から5カテゴリに分けて�
 カテゴリ横断の無意味な組み合わせ（例: Python系ツールに`pnpm`を指定）は実行時エラーになる。
 
 `{command}-path`を非空に指定するとあらゆる`{command}-runner`設定より優先され、その値で直接実行する。
-個別パスを指定して使っている場合の後方互換経路として機能する。
+個別パスを指定して使っている場合の後方互換の手段として機能する。
 
 PATHの解決はpyfltrが自動で管理する。利用者側の追加設定は不要。
 
@@ -150,24 +150,24 @@ cwdのuvプロジェクトに対象ツールが登録されていない場合、
 ツール単位で個別に切り替えたい場合は`{command}-runner`へ直接指定値を書く
 （例: `mypy-runner = "uvx"`でmypyだけuvx経由に切り替える）。
 
-### uvx経路の特徴
+### uvx指定の特徴
 
-`uvx`経路は他経路と異なり、`uv.lock`を参照せず`{command}-version`設定とも連動しない。
+`uvx`指定は他の指定と異なり、`uv.lock`を参照せず`{command}-version`設定とも連動しない。
 `uvx`の特性（PyPI最新版の都度取得）に合わせた仕様で、利用者プロジェクトの依存固定とは独立に動作する。
 バージョン固定が必要な場合は既定のまま（`{command}-runner = "python-runner"`×グローバル`python-runner = "uv"`）で
 利用者プロジェクトの`uv.lock`管理に乗せることができる。
-個別ツールだけ別経路へ切り替えたい場合は`{command}-runner`に直接指定値を書くか、
-`{command}-path`で明示パスを指定する経路を使う。
+個別ツールだけ別の指定へ切り替えたい場合は`{command}-runner`に直接指定値を書くか、
+`{command}-path`で明示パスを指定する方法を使う。
 
 ### ruff-format の 2 段階実行
 
-`ruff-format` は既定で `ruff check --fix --unsafe-fixes` と `ruff format` の2ステップを連続実行する。
+`ruff-format` は既定の動作として `ruff check --fix --unsafe-fixes` と `ruff format` の2ステップを連続実行する。
 importソートや自動修正可能なlint違反を整形と同時に処理するための挙動。
 
 ステップ1のlint違反（ruff checkのexit 1）は無視され、別途 `ruff-check` コマンドで検出される。
 設定ミス等によるruffの異常終了（exit 2以上）は失敗と判定する。
 
-ステップ1に`--unsafe-fixes`を既定で含めているため、自動修正可能な違反を幅広く整形できる。
+ステップ1に`--unsafe-fixes`を既定の引数へ含めているため、自動修正可能な違反を幅広く整形できる。
 保守的に運用したい場合は後述のとおり`ruff-format-check-args`で上書きする。
 
 fix段で使う`ruff-check-fix-args`（既定値`["--fix", "--unsafe-fixes"]`）も同様に`--unsafe-fixes`を含めている。
@@ -182,7 +182,7 @@ ruff-format-check-args = ["check", "--fix"]
 
 ### uv-sort
 
-`uv-sort`は`pyproject.toml`の依存定義をソートするformatter。既定で無効。
+`uv-sort`は`pyproject.toml`の依存定義をソートするformatter。既定は無効。
 
 ```toml
 [tool.pyfltr]
@@ -195,7 +195,7 @@ Python系ツールとして扱われ、`python = true`のゲート対象とな�
 ### bandit
 
 `bandit`はPython専用source-level SAST。pyfltr本体依存に同梱されるため、`uvx pyfltr`単発でも利用できる。
-既定で無効（opt-in）。
+既定は無効（opt-in）。
 
 ```toml
 [tool.pyfltr]
@@ -219,10 +219,10 @@ pyfltr既定の`bandit-args = ["--quiet", "--recursive", "--format=json"]`は出
 
 ### arid
 
-`arid`はPython専用の重複コード検査。Rust実装で、pylintの`duplicate-code`（R0801）と同じ目的の検査を担う。
+`arid`はPython専用の重複コードチェッカー。Rust実装で、pylintの`duplicate-code`（R0801）と同じ目的のチェックを担う。
 pyfltr本体依存に同梱されるため追加の導入手順は不要で、`preset`と`python = true`のゲートで有効化される。
 
-検査条件は`pyproject.toml`の`[tool.arid]`へ書く。
+チェック条件は`pyproject.toml`の`[tool.arid]`へ書く。
 
 ```toml
 [tool.arid]
@@ -230,25 +230,25 @@ min-lines = 10
 ```
 
 - `min-lines`は重複とみなす最小の実効行数で、既定値は4
-- コメント・docstring・import・関数シグネチャは既定で正規化の対象となり、行数の判定から除かれる
-- 同一ファイル内の重複も既定で検出する（`same-file = false`で無効化できる）
+- コメント・docstring・import・関数シグネチャは既定の動作として正規化の対象となり、行数の判定から除かれる
+- 同一ファイル内の重複も既定の対象に含める（`same-file = false`で無効化できる）
 - 設定の優先順位はコマンドライン引数・`[tool.arid]`・aridの組込み既定の順
 
 pyfltr既定の`arid-args = ["--project-root", "."]`は出力パースのために必須の引数を含む。
-aridは`--project-root`を省略すると、渡されたパスの共通の親ディレクトリを基準として検査結果のパスを組み立てる。
+aridは`--project-root`を省略すると、渡されたパスの共通の親ディレクトリを基準としてチェック結果のパスを組み立てる。
 pyfltrは対象ファイルを明示して渡すため、省略した場合のパスは起点cwd基準にならない。
 `arid-args`を上書きする場合は`--project-root`の指定を残す。
 
 意図的な重複は`# arid: disable`と`# arid: enable`で囲んで抑制する。
 
-対象ファイルを限定する実行（パスを明示指定した実行や`--changed-since`）では、
+対象ファイルを限定する実行（パスを明示指定した実行や`--changed-since`）では
 限定の対象外となったファイルとの間の重複は検出されない。
-重複はファイルを横断して集約する検査であり、渡されたファイルの範囲だけで判定するためである。
+重複はファイルを横断して集約するチェックであり、渡されたファイルの範囲だけで判定するためである。
 リポジトリ全体を対象とする検出は引数なしの`run`・`ci`で行う。
 
 ## uvx既定のPython製ツール
 
-semgrep / sqlfluffは既定で無効（opt-in）で、`{command}-runner`既定値は`"uvx"`。
+semgrep / sqlfluffは既定は無効（opt-in）で、`{command}-runner`既定値は`"uvx"`。
 これらが課す依存制約をpyfltr本体と他ツールの依存グラフから切り離すため、本体依存には同梱しない。
 `uvx`と対象ツールのPATH上の実行ファイルがともに見つからない場合は`resolution_failed`になる。
 利用者が版を固定する場合は、対象パッケージを利用者プロジェクトへ個別に追加して
@@ -257,14 +257,14 @@ semgrep / sqlfluffは既定で無効（opt-in）で、`{command}-runner`既定�
 ### semgrep
 
 `semgrep`は多言語SAST。他の依存へ厳密ピンを課すためpyfltr本体依存には同梱せず、
-`semgrep-runner = "uvx"`既定で実行時に別環境へ解決する。
+`semgrep-runner = "uvx"`の既定値により実行時に別環境へ解決する。
 `uvx`が利用できる環境なら`uvx pyfltr`単発でも利用できる。
 `uv tool install semgrep`で導入済みの環境がある場合は`uvx`が当該環境を再利用するため、
 実行のたびの解決は発生しない。公式Dockerイメージは当該手順で導入済みである。
 導入済み環境が無い場合は実行のたびに依存を解決するため、版を固定したい場合や
 解決コストを避けたい場合は`uv tool install semgrep`で導入するか、
 `semgrep-path`または`semgrep-runner`で上書きする。
-ルールセット指定が必須のため既定で無効（opt-in）。
+ルールセット指定が必須のため既定は無効（opt-in）。
 
 ```toml
 [tool.pyfltr]
@@ -282,7 +282,7 @@ semgrep-args = ["scan", "--json", "--error", "--config=auto"]
 ### sqlfluff
 
 `sqlfluff`はSQL専用linter。他の依存へ上限制約を課すためpyfltr本体依存には同梱せず、
-`sqlfluff-runner = "uvx"`既定で実行時に別環境へ解決する。
+`sqlfluff-runner = "uvx"`の既定値により実行時に別環境へ解決する。
 `uvx`が利用できる環境なら`uvx pyfltr`単発でも利用できる。
 `uv tool install sqlfluff`で導入済みの環境がある場合は`uvx`が当該環境を再利用するため、
 実行のたびの解決は発生しない。公式Dockerイメージは当該手順で導入済みである。
@@ -335,7 +335,7 @@ typos-path = "/path/to/typos"
 ### yamllint
 
 `yamllint`はPython製のYAMLリンター。PyPI経由でインストールされるため、`uv add pyfltr`だけで利用可能。
-直接実行経路（PATH上または`yamllint-path`で指定した実行ファイル）で動作する。
+直接実行（PATH上または`yamllint-path`で指定した実行ファイル）で動作する。
 actionlintの`.github/workflows/*.yaml`対象とは独立して、YAML全般を対象とする。
 
 ```toml
@@ -345,7 +345,7 @@ yamllint = true
 yamllint-args = ["-c", ".yamllint.yml"]
 ```
 
-既定では`yamllint`コマンドを直接呼び出す。パスを変更したい場合は`yamllint-path`を指定する。
+無指定時は`yamllint`コマンドを直接呼び出す。パスを変更したい場合は`yamllint-path`を指定する。
 
 ```toml
 [tool.pyfltr]
@@ -369,7 +369,7 @@ prek = true
 ```
 
 既定の引数は`prek-args = ["run", "--config=.pre-commit-config.yaml", "--files"]`。
-`--config`明示指定は、prekによるworkspace rootからの設定ファイル探索を抑止する。
+`--config`明示指定はprekによるworkspace rootからの設定ファイル探索を抑止する。
 prekの除外機能には依存せず、pyfltrが対象ファイルを選別して`--files`で渡す。
 `pre-commit`と同時に有効化すると同一フックを二重実行するため、pyfltrが警告を発行する。
 
@@ -378,7 +378,7 @@ prekの除外機能には依存せず、pyfltrが対象ファイルを選別し�
 依存パッケージの脆弱性を監査するツール群。
 それぞれパッケージマネージャー自体（uv / pnpm / npm / yarn）を直接実行し、`audit`サブコマンドを引数で付与する。
 マニフェスト（`pyproject.toml` / `package.json`）の存在をトリガーにプロジェクト単位で実行し、対象ファイルは渡さない。
-外部脆弱性データベースへの問い合わせでネットワーク接続が必須かつ結果が変動するため、いずれも既定で無効（opt-in）。
+外部脆弱性データベースへの問い合わせでネットワーク接続が必須かつ結果が変動するため、いずれも既定は無効（opt-in）。
 
 ```toml
 [tool.pyfltr]
@@ -462,7 +462,7 @@ textlint-args = []
 textlint-lint-args = ["--format", "compact"]
 ```
 
-`textlint-lint-args`の既定値は`["--format", "compact"]`だが、既定で有効な`textlint-json`設定が
+`textlint-lint-args`の既定値は`["--format", "compact"]`だが、初期状態で有効な`textlint-json`設定が
 lint段へ`--format json`を注入し、既存の`--format`指定を除去する。
 このため既定の構成ではcompactではなくJSON出力が使われ、pyfltrはJSONを解析して違反を取得する。
 compact出力を使う場合は`textlint-json = false`を設定する。
@@ -499,7 +499,7 @@ prettier-args = ["--cache"]
 ### textlintのプリセット/ルール指定
 
 textlintで利用するルール/プリセットパッケージは`textlint-packages`に列挙する。
-既定では以下の3パッケージが含まれる。
+既定値として次のパッケージを持つ。
 
 ```toml
 [tool.pyfltr]
@@ -507,6 +507,7 @@ textlint-packages = [
     "textlint-rule-preset-ja-technical-writing",
     "textlint-rule-preset-jtf-style",
     "textlint-rule-ja-no-abusage",
+    "textlint-rule-preset-ai-words-ja",
 ]
 ```
 
@@ -516,7 +517,7 @@ textlint-packages = [
 #### 保護対象の識別子の破損検知 {#textlint-protected-identifiers}
 
 `textlint --fix`の自動修正が、コードブロック外の`.NET` / `Node.js`などの識別子を破損させることがある。
-pyfltrは`textlint --fix`のステップ直後に識別子の減少を検査する。
+pyfltrは`textlint --fix`のステップ直後に識別子の減少を調べる。
 破損の疑いがあれば`textlint-identifier-corruption`ソースの警告を発行する。
 識別子リストは`textlint-protected-identifiers`で上書きでき、空リスト`[]`を指定すると検知を無効化できる。
 警告は注意喚起のみで、ツールの成否判定には影響しない。
@@ -530,7 +531,7 @@ textlint-protected-identifiers = [".NET", "Node.js", "Vue.js", "Next.js", "Nuxt.
 
 `designmd`は`@google/design.md`によるDESIGN.md形式仕様チェック。js-runner経由で起動する。
 対象ファイル名は仕様上`DESIGN.md`固定であり、リポジトリ内にDESIGN.mdが無い場合は自動的にスキップされる。
-既定で有効化されているが、対象ファイル不在のプロジェクトでは実行されない。
+既定値として有効化されているが、対象ファイル不在のプロジェクトでは実行されない。
 
 設定キー名・コマンド名は内部識別子`designmd`を採用する
 （`@google/design.md`はpyproject.tomlのドット区切りキーと衝突するため）。
@@ -547,7 +548,7 @@ designmd = false
 
 ### eslint / prettier / biomeの設定
 
-eslint / prettier / biomeはすべて既定で無効（opt-in）。
+eslint / prettier / biomeはすべて既定は無効（opt-in）。
 全プリセットにJS/TS系ツールが含まれるため、`preset = "latest"` + `javascript = true`だけで一式が有効化される。
 プラグインは`package.json`管理が前提のため、通常は`js-runner = "pnpm"`と併用する。
 
@@ -580,7 +581,7 @@ javascript = true
       終了コード1で失敗する。
       引数が完全に空の場合はヘルプ本文を表示して終了コード0を返すが、
       pyfltrは対象ファイルを必ず末尾へ付与するためその形にはならない。
-      いずれも検査は行われないため、必ずサブコマンド名を残すこと
+      いずれもチェックは行われないため、必ずサブコマンド名を残すこと
     - 注: biomeの診断severityは各lintルールの既定値で決まり、fixのsafe / unsafeとは独立である。
       `useLiteralKeys`と`noDoubleEquals`はいずれもunsafe fixを持つが、既定severityは前者がinfo、
       後者がerrorとなる。
@@ -594,7 +595,7 @@ javascript = true
 
 ### oxlint / tsc / vitest
 
-oxlint / tsc / vitestもjs-runner対応のツール。すべて既定で無効（opt-in）。
+oxlint / tsc / vitestもjs-runner対応のツール。すべて既定は無効（opt-in）。
 全プリセットに含まれるため、`preset = "latest"` + `javascript = true`でeslint / prettier / biomeと同時に一式が有効化される。
 
 ```toml
@@ -669,9 +670,9 @@ miseを使わず、PATH上のバイナリを直接使う場合は`bin-runner = "
 
 ### mise-auto-trust
 
-`mise`モードでは、worktreeやdotfiles配下のディレクトリなど、`mise.toml`が未信頼扱いになっている場合に
+`mise`モードではworktreeやdotfiles配下のディレクトリなど、`mise.toml`が未信頼扱いになっている場合に
 事前チェックが失敗することがある。
-既定では`mise-auto-trust = true`となっており、未信頼configを検出すると`mise trust --yes --all`を自動実行して
+`mise-auto-trust`の既定値は`true`であり、未信頼configを検出すると`mise trust --yes --all`を自動実行して
 信頼を確立してからリトライする。
 `--all`オプションはcwdおよびその親ディレクトリにある全configを対象とするため、
 プロジェクト外の親ディレクトリに`mise.toml`が存在する場合もまとめて信頼される点に注意する。
@@ -758,7 +759,7 @@ miseモードでは`DOTNET_ROOT`は参照せず、miseが管理する環境に�
 
 ### bin-runner対応ツールの設定
 
-各ツールはすべて既定で無効。有効化には`pyproject.toml`で切り替える。
+各ツールの既定値はすべて無効。有効化には`pyproject.toml`で切り替える。
 
 ```toml
 [tool.pyfltr]
@@ -793,7 +794,7 @@ dotnet-test = true
 - gitleaks: `gitleaks-args = ["detect", "--no-banner"]`（`detect`サブコマンドを既定値として保持）。
   `pass-filenames = false`によりリポジトリ全体を対象とする
 - lychee: `lychee-args = ["--format", "json", "--no-progress"]`（出力パースのためJSON必須、`--no-progress`で
-  プログレスバーを抑止）。既定で有効。
+  プログレスバーを抑止）。既定は有効。
   外部URL到達失敗による判定変動を抑えたい場合は`lychee-severity = "warning"`で警告扱いに切り替えられる
 - cargo-fmt: `cargo-fmt-args = ["fmt"]`（常時書き込みモード。pyfltr規約によりformatterは`--fix`なしでも強制修正する）
 - cargo-clippy:
@@ -809,7 +810,7 @@ dotnet-test = true
 
 cargo系・dotnet系はそれぞれ`serial_group = "cargo"` / `serial_group = "dotnet"`で自動的に直列化される
 （同一ワークスペース・solutionを操作する競合を避けるため）。利用者が`--jobs=1`などを指定する必要はない。
-mise backendは既定でcargo系が`rust`、cargo-denyが`aqua:EmbarkStudios/cargo-deny`、dotnet系が`dotnet`に設定されている。
+mise backendの既定値は、cargo系が`rust`、cargo-denyが`aqua:EmbarkStudios/cargo-deny`、dotnet系が`dotnet`である。
 cargo-denyはmise registryから消失したため本家[aqua](https://aquaproj.github.io/)レジストリ経由を既定とする。
 
 `{command}-path`を明示的に設定した場合はその値が優先され、bin-runnerによる自動解決は無効化される。
@@ -918,16 +919,16 @@ lychee-extend-args = ["--exclude=github\\.com/owner/repo/actions"]
 
 既定対象は`*.md`・`*.html`。`lychee-extend-targets`で対象を追加できる。
 
-`lychee-max-concurrency`の既定値`4`は、CI環境でgithub.com宛リンクの検査が
+`lychee-max-concurrency`の既定値`4`はCI環境でgithub.com宛リンクのチェックが
 `Network error: HTTP/2 protocol error. Server may not support HTTP/2 properly`で
-失敗する事象を緩和するための値。検査所要時間を優先する場合は大きな値、または`0`以下
+失敗する事象を緩和するための値。チェックの所要時間を優先する場合は大きな値、または`0`以下
 （lychee既定値の128）を指定する。`lychee-args`・`lychee-extend-args`で
 `--max-concurrency`を指定した場合は自動追加せず、指定値をそのまま使う。
 
 ### colloquial-check
 
 `colloquial-check`はLLMが頻繁に出力する口語的な日本語表現を検出する内蔵linter。
-起動経路は`python -m pyfltr.colloquial`。既定で無効（opt-in）とし、
+起動方法は`python -m pyfltr.colloquial`。既定は無効（opt-in）とし、
 `colloquial-check-severity = "warning"`が既定のため有効化してもCI/pre-commitを失敗させない。
 
 ```toml

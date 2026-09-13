@@ -29,17 +29,17 @@ paths:
 ## 外部パス（起点cwd配下にない絶対パス）の分類方針
 
 `CommandInfo`の3フィールドで分類を表現する。
-分類ロジックの集約先は2つの経路に分かれる。
+分類ロジックの集約先は2つに分かれる。
 
-- 非モノレポ経路: `pyfltr/command/dispatcher.py`の`_prepare_execution_params`で外部パスフィルタと
+- 非モノレポ構成: `pyfltr/command/dispatcher.py`の`_prepare_execution_params`で外部パスフィルタと
   `--config`注入を担う
-- モノレポ経路: `subproject_loop.run_subproject_loop`で注入対象・素通し対象の追加実行と、除外対象ツールの警告発行を行う
+- モノレポ構成: `subproject_loop.run_subproject_loop`で注入対象・素通し対象の追加実行と、除外対象ツールの警告発行を行う
 
 - `--config`明示注入: `config_arg_template`と`config_inject_candidates`を指定するツール
  （`markdownlint`・`textlint`）。
   起点cwd直下を`config_inject_candidates`順に走査し、最初に見つかった設定ファイルの絶対パスを
   `commandline_prefix`直後に挿入する
-  - 内部パスのみの実行でも一律で注入経路を通す
+  - 内部パスのみの実行でも一律で注入処理を通す
   - 利用者が`{command}-args`・`{command}-extend-args`・CLI`--{command}-args`のいずれかで
       `--config`を指定済みのときは注入をスキップする
   - `--config`明示注入と外部パス除外＋警告は排他ではなく、注入対象ツールが外部パスを扱えない場合は併用する

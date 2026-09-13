@@ -103,7 +103,7 @@ plugins:
 
       sections:
         ホーム:
-          - index.md: ドキュメント入口
+          - index.md: ドキュメントの読み方
         使い方:
           - guide/getting-started.md: インストール・設定・実行・コーディングエージェント連携
           - guide/index.md: 対応ツール一覧・コンセプト

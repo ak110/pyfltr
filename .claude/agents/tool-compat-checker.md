@@ -9,19 +9,19 @@ tools: Read, Grep, Glob, WebFetch, Bash, mcp__plugin_context7_context7__resolve-
 
 # tool-compat-checker
 
-pyfltrの対応ツールがバージョンアップで挙動を変えていないかを検査する。
+pyfltrの対応ツールがバージョンアップで挙動を変えていないかをチェックする。
 
 ## 役割
 
-pyfltrは各ツールのバージョン追従が必要なため、差分検査を定期的に行う。
+pyfltrは各ツールのバージョン追従が必要なため、差分の確認を定期的に行う。
 対応ツールの集合は `pyfltr/command/builtin.py` の `BUILTIN_COMMANDS` を典拠とする。
-検査対象は `pyfltr/config/config.py` の `DEFAULT_CONFIG` にハードコードされた引数と、
+チェック対象は `pyfltr/config/config.py` の `DEFAULT_CONFIG` にハードコードされた引数と、
 `pyfltr/command/error_parser.py` の正規表現。
 
 ## 入力
 
-- `ALL`: 対応ツール全てを検査
-- 個別ツール名（例： `ruff`, `mypy`）: そのツールのみ検査
+- `ALL`: 対応ツール全てをチェック
+- 個別ツール名（例： `ruff`, `mypy`）: そのツールのみチェック
 
 ## 手順
 
@@ -33,8 +33,8 @@ pyfltrは各ツールのバージョン追従が必要なため、差分検査�
    - `uv run pyfltr command-info <tool> --output-format=json --check`を実行し、解決済みの`commandline`・`effective_runner`・`check_installed_version`を取得する
    - `check_installed_version`は解決済みコマンドラインへ`--version`を渡して得た実行版である。当該値が得られた場合はこれを版の根拠とする
    - `cargo-fmt`などのサブコマンド型ツールでは基底ツールの版が返る。当該条件に該当する場合は、取得値が基底ツールの版である事実を報告へ明記する
-   - `check_installed_version`が`null`の場合は、`effective_runner`に応じた依存定義から確認する。`mise`は`mise.toml`と`mise list`、`uv`は`uv.lock`、JavaScript系runnerは`package.json`と対応するロックファイルを参照する。`direct`は解決済み実行ファイルに対応する依存定義がある場合だけ、その定義を版の根拠とする
-   - 依存定義からも確定できない場合は「版不明」とし、引数・出力形式の乖離検査を公式ドキュメントの最新仕様との照合で代替する。版不明のまま検査したツールは、その旨を報告へ明記する
+   - `check_installed_version`が`null`の場合は`effective_runner`に応じた依存定義から確認する。`mise`は`mise.toml`と`mise list`、`uv`は`uv.lock`、JavaScript系runnerは`package.json`と対応するロックファイルを参照する。`direct`は解決済み実行ファイルに対応する依存定義がある場合だけ、その定義を版の根拠とする
+   - 依存定義からも確定できない場合は「版不明」とし、引数・出力形式の乖離の確認を公式ドキュメントの最新仕様との突き合わせで代替する。版不明のまま確認したツールは、その旨を報告へ明記する
    - `command-info`の`version`は`{command}-version`設定値であり実行版ではない。版の根拠に用いない
 
 3. 最新ドキュメントの参照
@@ -68,4 +68,4 @@ pyfltrは各ツールのバージョン追従が必要なため、差分検査�
 - コード変更は行わない（報告のみ。修正は呼び出し元Claudeが担当）
 - ツールの実行はpyfltr経由に限定する。対応ツールを直接起動しない
   （`AGENTS.md`「開発手順」章の直接起動禁止規定に従う）
-- 検査は時間がかかるため、不要な反復を避ける
+- 確認は時間がかかるため、不要な反復を避ける

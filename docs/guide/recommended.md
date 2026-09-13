@@ -22,11 +22,11 @@ pyfltr本体の設定（`[tool.pyfltr]`）と、呼び出される各ツール�
     - `missing-module-docstring`は`__init__.py`等でモジュールdocstring要求を緩和する目的で無効化する
 - `[tool.pylint."messages control"]`のdisableリストへ`"duplicate-code"`（R0801）を追加し、
   重複コードの検出はaridへ委ねる
-    - aridはRust実装の重複コード検査で、R0801と同じ目的の検査を大幅に短い所要時間で実行する。
+    - aridはRust実装の重複コードチェッカーで、R0801と同じ目的のチェックを大幅に短い所要時間で実行する。
       Python系ツール一式と同じくpyfltr本体依存に同梱されるため、追加の導入手順は不要である
     - 検出範囲はR0801と一致しない。R0801はファイルをまたぐ重複だけを対象とするのに対し、
-      aridは同一ファイル内の重複も既定で検出する
-- `[tool.arid]`: aridの検査条件を`pyproject.toml`へ集約する。
+      aridは同一ファイル内の重複も既定の対象に含める
+- `[tool.arid]`: aridのチェック条件を`pyproject.toml`へ集約する。
   `min-lines`は重複とみなす最小の実効行数を指し、
   コメント・docstring・import・関数シグネチャを除いた行数で判定する
     - aridの既定値は4であり、そのままでは短い定型的な一致まで報告される。
@@ -37,9 +37,9 @@ pyfltr本体の設定（`[tool.pyfltr]`）と、呼び出される各ツール�
       意図的な並行実装や共通化すべきでない類似は理由コメントを添えて
       `# arid: disable`と`# arid: enable`で囲んで個別抑制する。
       disableリストからの`"duplicate-code"`の除去や、根拠を示さない閾値変更はしない
-- 実装コードとテストコードを分けず、対象全体を`min-lines = 10`で検査する構成を第一推奨とする。
+- 実装コードとテストコードを分けず、対象全体を`min-lines = 10`でチェックする構成を第一推奨とする。
   テストコードの定型的な重複が多く当該構成を維持できない場合は、
-  [テストコードを別系統で検査する妥協案](#arid-split)へ切り替える
+  [テストコードを別系統でチェックする妥協案](#arid-split)へ切り替える
 - ruffの `per-file-ignores`: テストコード（`**_test.py`）とpackage init（`__init__.py`）のdocstring要求を除外する実用的な調整
 
 `uvx pyfltr`での実行では`pyproject.toml`にpyfltrを記述する必要はなく、`[tool.pyfltr]`セクションのみで完結する。
@@ -160,14 +160,14 @@ filterwarnings = [
 ]
 ```
 
-`[tool.mypy]`のうち`ignore_missing_imports`と`allow_redefinition`は検査を緩和する指定である。
+`[tool.mypy]`のうち`ignore_missing_imports`と`allow_redefinition`はチェックを緩和する指定である。
 `ignore_missing_imports = true`は解決できないimportのエラーを抑止するため、
 型スタブの欠落や誤ったモジュール名を検出しない。
 `allow_redefinition = true`は注釈のない変数を無関係な型で再定義することを許容するため、
 変数の使い回しによる型の取り違えを検出しない。
-いずれも検査は通過するが欠陥は残りうる。厳格さを優先する場合は`false`とする。
+いずれもチェックは通過するが欠陥は残りうる。厳格さを優先する場合は`false`とする。
 
-`asyncio_default_fixture_loop_scope`・`asyncio_default_test_loop_scope`の`"session"`は、
+`asyncio_default_fixture_loop_scope`・`asyncio_default_test_loop_scope`の`"session"`は
 pytest-asyncioの既定（それぞれfixtureスコープ・functionスコープ）より分離を弱める指定である。
 上記の例は`-n 4`でpytest-xdistの並列実行を行うため、workerごとに別プロセスのevent loopとなる。
 同一worker内では割り当てられたテストが1つのevent loopを共有し、
@@ -197,7 +197,7 @@ pytestは組み込みプラグインを読み込むかどうかをコマンド�
 コマンドラインで渡した場合はfixture不存在で、いずれも失敗する。
 これらを利用する場合は当該指定を外す。
 
-`filterwarnings`の3件はテストの資源解放漏れを検出する指定である。
+`filterwarnings`の3件はテストの資源解放の抜けを検出する指定である。
 ファイルやソケットを閉じないままGCされると`ResourceWarning`が、
 awaitされないまま破棄されたコルーチンでは`RuntimeWarning`が送出される。
 いずれもGC時の`__del__`内で送出されるため、エラー化した結果は例外として送出できない。
@@ -210,7 +210,7 @@ pytestのunraisableexceptionプラグインがこれを`PytestUnraisableExceptio
 上記の3件へ限定すると、エラー化の対象は資源解放と非同期呼び出しの取りこぼしに限られる。
 依存ライブラリが同じカテゴリの警告を送出する場合は当該のテストも失敗する。
 導入時はまず全件を実行し、失敗するテストの警告の発生元を確認する。
-自プロジェクトの解放漏れはテスト側の資源解放で是正し、
+自プロジェクトの解放の抜けはテスト側の資源解放で是正し、
 依存ライブラリ由来のものは`ignore`エントリで個別に除外する。
 pytestは`filterwarnings`を後勝ちで適用するため、`ignore`エントリは上記の3件より後ろへ置く。
 
@@ -226,16 +226,16 @@ pytestは`filterwarnings`を後勝ちで適用するため、`ignore`エント�
 テストファイル間の実行時間差が大きい場合でも特定workerへ偏らせない。
 ランナー別の有効条件は次の通り。
 
-- `python-runner = "direct"`経路では、pyfltrのvenv配下のpytestを直接起動するため
+- `python-runner = "direct"`の指定ではpyfltrのvenv配下のpytestを直接起動するため
   本体依存の`pytest-timeout`・`pytest-xdist`がそのまま利用できる
-- `uvx pyfltr`を`uv.lock`不在のディレクトリで実行する標準シナリオでは、`uv`経路の前提が満たされず
+- `uvx pyfltr`を`uv.lock`不在のディレクトリで実行する標準シナリオでは、`uv`指定の前提が満たされず
   `shutil.which`によるdirectフォールバックが発生する
     - この場合もpyfltrの本体venv同梱のpytestが採用されるため本体依存のプラグインが有効
-- `uv`経路（既定）でcwdの`uv.lock`にpytestが登録されている場合は、
+- `uv`指定（既定）でcwdの`uv.lock`にpytestが登録されている場合は、
   利用者プロジェクトのvenvでpytestが解決される
     - プロジェクト側に`pytest-timeout`・`pytest-xdist`を導入する
     （`uv add --dev pytest-timeout pytest-xdist`等）
-- `uvx`経路（per-tool直接指定でpytest用の独立環境が生成される場合）は、
+- `uvx`指定（per-tool直接指定でpytest用の独立環境が生成される場合）は、
   当該環境側への`pytest-timeout`・`pytest-xdist`の導入が別途必要
 - pytest-xdistの並列実行下では、ポート番号・一時ファイル名・グローバル状態の競合に注意する
     - 間欠失敗するテストは並列前提に修正する。
@@ -250,11 +250,11 @@ pytestは`filterwarnings`を後勝ちで適用するため、`ignore`エント�
     プロセス外の共有資源をworker間で1回だけ初期化する用途には別途排他が必要となる
     - モジュール単位で同一workerへ割り当てたい場合は`--dist=loadfile`・`--dist=loadscope`を選ぶ
 
-### テストコードを別系統で検査する妥協案 {#arid-split}
+### テストコードを別系統でチェックする妥協案 {#arid-split}
 
 テストコードには、同じ組み立てを並べる定型的な重複が実装コードより多く現れる。
-第一推奨（対象全体を`min-lines = 10`で検査する構成）を維持できない場合は、
-実装コードとテストコードを別系統で検査し、テストコード側の閾値だけを緩める。
+第一推奨（対象全体を`min-lines = 10`でチェックする構成）を維持できない場合は、
+実装コードとテストコードを別系統でチェックし、テストコード側の閾値だけを緩める。
 
 aridはパスごとに閾値を変える設定を持たないため、2回の実行へ分けて実現する。
 組込みの`arid`は`arid-exclude`でテストコードを対象から外し、
@@ -285,7 +285,7 @@ min-lines = 10
 - カスタムコマンドは`uv run --frozen arid`でaridを起動するため、
   プロジェクトのuv環境へpyfltrをdev依存として導入しておく（`uv add --dev pyfltr`）。
   `uvx pyfltr`単発で実行する構成では当該環境にaridが無く、カスタムコマンドの起動が失敗する
-- `arid-exclude`とカスタムコマンドの`targets`は、テストコードを`tests`直下へ置く構成を前提とする。
+- `arid-exclude`とカスタムコマンドの`targets`はテストコードを`tests`直下へ置く構成を前提とする。
   別のディレクトリ構成では両方の値を合わせて変更する
 - 実行を2回へ分けるため、実装コードとテストコードにまたがる重複は検出されなくなる
 - カスタムコマンドへ`error-pattern`は指定しない。
@@ -293,7 +293,7 @@ min-lines = 10
   1行から`file`・`line`・`message`を取り出せないためである。
   重複の位置はツールの出力そのものから読む
 - 前項の結果として、テストコード側の検出は構造化された診断にならない。
-  終了コードは重複の検出を反映するため検査の成否は変わらないが、
+  終了コードは重複の検出を反映するためチェックの成否は変わらないが、
   `--output-format=github-annotations`と`--output-format=sarif`には当該重複が現れず、
   重複の位置はツール出力のテキストとしてのみ得られる。
   出力が長い場合は当該テキストが末尾で切り詰められる。
@@ -318,14 +318,14 @@ hte = "hte"
 ### 依存の脆弱性監査の有効化（任意）
 
 依存パッケージの脆弱性を`pyfltr`の枠組みでまとめて監査したい場合は`uv-audit`を有効化する。
-`uv audit`（uv 0.11.2以降）が`pyproject.toml`を対象にPython依存の既知脆弱性を検査する。
+`uv audit`（uv 0.11.2以降）が`pyproject.toml`を対象にPython依存の既知脆弱性を調べる。
 サブコマンド自体は0.10.8で追加されたが、0.10.8・0.10.9は監査対象の件数を報告するのみで
 脆弱性を検出しない。
 0.10.10以降は検出するが、0.11.1までは検出時も終了コード0を返す。
 非0の終了コードを返すのは0.11.2以降である
 （[uv 0.11.2のリリースノート](https://github.com/astral-sh/uv/releases/tag/0.11.2)と
 [uv PR #18512](https://github.com/astral-sh/uv/pull/18512)）。
-pyfltrは終了コード0のツールを出力によらず成功として扱うため、0.11.2未満は実行前検査で拒否する。
+pyfltrは終了コード0のツールを出力によらず成功として扱うため、0.11.2未満は実行前チェックで拒否する。
 0.10.10以上0.11.1以下で`uv-audit`を利用していた場合は、uvを0.11.2以降へ更新する。
 更新しないまま実行すると解決失敗として扱われ、`uv-audit-severity`による警告への格下げもできない。
 外部脆弱性データベースへ問い合わせるためネットワーク接続が必須で結果が変動する。
@@ -354,7 +354,7 @@ SARIF出力（`--output-format=sarif`）と`github/codeql-action/upload-sarif`�
 この構成は公開リポジトリで利用できる。
 非公開リポジトリでCode Scanningを使うにはGitHub Code Securityライセンスを要する
 （[公式ドキュメント](https://docs.github.com/en/code-security/code-scanning/introduction-to-code-scanning/about-code-scanning)）。
-非公開リポジトリでは、追加費用なく有効化できるDependabot alertsを脆弱性通知の主経路とする。
+非公開リポジトリでは、追加費用なく有効化できるDependabot alertsを脆弱性通知の主な手段とする。
 そのうえでSARIFはファイルへ出力し、監査ツールの実行有無と検出結果の判別に用いる。
 `pyfltr`はツール実行の失敗をすべて終了コード1へ正規化するため、終了コードだけでは脆弱性の検出とツールの異常を区別できない。
 SARIF内に当該ツールの`runs`要素が存在するかで無言スキップを検出する。
@@ -381,7 +381,7 @@ textlintのプリセットやルールも`package.json`の`devDependencies`で�
 ### 日本語Markdownを含むプロジェクトでの推奨設定
 
 日本語のMarkdownを含むプロジェクトでは`colloquial-check`を有効化する。
-LLMが頻繁に出力する口語的な日本語表現を検出する内蔵linterで、既定では無効（opt-in）。
+LLMが頻繁に出力する口語的な日本語表現を検出する内蔵linterで、既定は無効（opt-in）。
 
 ```toml
 [tool.pyfltr]
@@ -390,7 +390,7 @@ colloquial-check = true
 
 `colloquial-check-severity`の既定は`warning`のため、有効化してもCI・pre-commitは失敗しない。
 既存の文書に口語表現が残っている場合は有効化した時点から警告が出るため、一度まとめて是正する。
-検査対象の既定は全ファイル（`*`）であり、日本語Markdownだけでなくソースコードや設定ファイルに含まれる日本語も検査する。
+チェック対象の既定は全ファイル（`*`）であり、日本語Markdownだけでなくソースコードや設定ファイルに含まれる日本語もチェックする。
 辞書に一致する正当な用法を含むファイルは`colloquial-check-exclude`で除外し、
 対象を特定の拡張子へ限定する場合は`colloquial-check-targets`を指定する。
 
@@ -436,12 +436,12 @@ prekは当該版を自動取得するため、この形になるのはuv管理�
     - dev依存にpyfltrを加えている場合は`entry: uv run --frozen pyfltr fast`に置き換えてもよい
     - `uvx`が最新版を解決するのは初回だけで、以降はキャッシュ済みの版を再利用する。常に最新版を使う場合は`entry: uvx pyfltr@latest fast`と指定する
     - キャッシュが更新されて版が上がると、コードを変更していなくても新版のルール追加によりコミットが失敗しうる。版の変化に伴う失敗を避ける場合はdev依存へ固定し、上記の置き換えを採用する
-    - `uvx`は`pyproject.toml`の`[tool.uv]`を読まないため、`exclude-newer`による公開直後版の回避はこの経路へ適用されない
+    - `uvx`は`pyproject.toml`の`[tool.uv]`を読まないため、`exclude-newer`による公開直後版の回避はこの起動方法へ適用されない
 - `fast`: mypy / pylint / pytestなど重いコマンドを除外した高速サブセット
     - formatterがファイルを修正しただけではフックを失敗と判定しない
 - `types_or`: 必要な種別を列挙する
     - markdownはtextlint / markdownlint、TOML（pyproject.toml）でuv-sort、YAMLはactionlint
-    - pre-commit・prekは`types_or`に一致するファイルがコミットに含まれない限りhook自体が起動されない。有効化したツールの対象種別が欠けていると、当該種別だけを変更したコミットで検査が実行されない
+    - pre-commit・prekは`types_or`に一致するファイルがコミットに含まれない限りhook自体が起動されない。有効化したツールの対象種別が欠けていると、当該種別だけを変更したコミットでチェックが実行されない
     - 有効化するツールを増やした場合は`types_or`の追随要否を確認する。`hadolint`（Dockerfile）・`shellcheck`・`shfmt`（シェル）などは`preset`に含まれないため、個別に有効化したときは対応する種別を追加する
 - `require_serial: true`: pyfltr自身が内部で並列化するため、pre-commit側での多重起動を抑止する
 
@@ -449,7 +449,7 @@ prekは当該版を自動取得するため、この形になるのはuv管理�
 
 Git indexで`.agents/skills`をsymlinkとして管理するプロジェクトでは、
 `git ls-files --stage .agents/skills`の先頭が`120000`となる。
-Windowsなどの`core.symlinks=false`環境では、このsymlinkはリンク先文字列を内容とする通常ファイルとしてcheckoutされる。
+Windowsなどの`core.symlinks=false`環境ではこのsymlinkはリンク先文字列を内容とする通常ファイルとしてcheckoutされる。
 詳細はGit公式資料の[`core.symlinks`](https://git-scm.com/docs/git-config/2.50.0#Documentation/git-config.txt-coresymlinks)を参照。
 
 同じプロジェクトで`end-of-file-fixer`を採用する場合は、次のhook単位の除外を追加する。
@@ -464,17 +464,17 @@ repos:
         exclude: '(^|/)\.agents/skills$'
 ```
 
-pre-commitは`exclude`をPython正規表現の`re.search`で照合する。
-prekはRustの`fancy-regex`を検索形式で照合し、高度な正規表現機能はPythonの`re`と異なる場合がある。
+pre-commitは`exclude`をPython正規表現の`re.search`で判定する。
+prekはRustの`fancy-regex`を検索形式で判定し、高度な正規表現機能はPythonの`re`と異なる場合がある。
 ここで示した指定は両方で利用でき、リポジトリ直下と入れ子の`.agents/skills`へ一致する。
 類似名や配下のファイルには一致しない。
 詳細はpre-commit公式資料の[正規表現](https://pre-commit.com/#regular-expressions)と、
 prek公式資料の[`files`・`exclude`設定](https://github.com/j178/prek/blob/v0.4.12/docs/reference/configuration.md#files)を参照。
-実測で同じ通常ファイルを変更しなかった`trailing-whitespace`と`mixed-line-ending`は除外しない。
+実行して確認した結果、同じ通常ファイルを変更しなかった`trailing-whitespace`と`mixed-line-ending`は除外しない。
 
 pre-commit・prek統合の自動スキップなど双方向の挙動は[トラブルシューティング](troubleshooting.md)を参照。
 
-## pyfltrとpre-commit・prekの呼び出し経路
+## pyfltrとpre-commit・prekの呼び出し方法
 
 pyfltrはpre-commit・prekのうち有効な方を内部で呼び出し、pre-commit・prekはpyfltrをフックとして呼び出す。
 git commit経由でpre-commit・prekのいずれかが起動した場合、pyfltrは`PRE_COMMIT=1`を検出する。
@@ -560,13 +560,13 @@ test:
 .PHONY: help setup update format test
 ```
 
-`update`ターゲットが用いる`autoupdate`は、`prek --help`のコマンド一覧に現れないエイリアスである。
+`update`ターゲットが用いる`autoupdate`は`prek --help`のコマンド一覧に現れないエイリアスである。
 正規名は`update`で、どちらの名前を指定しても同じ動作をする（prek 0.4.11で確認）。
 例が`autoupdate`を採用するのは、pre-commitから移行する際の書き換えが実行ファイル名の置換だけで済むためである。
 
 uv 0.12.3では、プロジェクト設定と利用者設定にあるmap型の`exclude-newer-package`がキー単位で合成される。
 同じパッケージ名を両方へ記述した場合は、プロジェクト設定の値が優先される。
-これはuv 0.12.3での実測結果であり、uv公式文書は辞書のキー単位での合成を明記していない。
+これはuv 0.12.3で実行して確認した結果であり、uv公式文書は辞書のキー単位での合成を明記していない。
 
 利用者設定から追加されたキーも`uv.lock`の`[options]`へ記録される場合がある。
 追跡する`uv.lock`の生成に必要なキーは、利用者設定へ依存させずプロジェクトの`[tool.uv]`へ全て列挙する。
@@ -584,8 +584,8 @@ empty_xdg="$(mktemp -d)"
 )
 ```
 
-この手作業による隔離検査は、任意の時点でロックの再現性を診断するために使う。
-後掲のCI例では、matrixの最小Python版でワークフロー実行ごとに同じ条件を継続して検査する。
+この手作業による隔離チェックは、任意の時点でロックの再現性を診断するために使う。
+後掲のCI例では、matrixの最小Python版でワークフロー実行ごとに同じ条件を継続してチェックする。
 
 ### mise.toml
 
@@ -626,7 +626,7 @@ run = [
 
 - `setup`: 開発環境のセットアップ
 - `format`: `pyfltr fast`（fix段→formatter段→軽量linter段 + 内部prek・pre-commit統合）を実行する
-    - `prek-fast`と`pre-commit-fast`が既定で`true`のため、有効化しているprekまたはpre-commitのhookもこの1コマンドで実行される
+    - `prek-fast`と`pre-commit-fast`が既定値`true`のため、有効化しているprekまたはpre-commitのhookもこの1コマンドで実行される
 - `test`: ローカル開発用
     - `pyfltr run`が有効なprekまたはpre-commitを内部で呼び出すため、1コマンドで全チェックが完結する
 - `ci`: CI用
@@ -656,6 +656,10 @@ textlintで技術文書向けの複数プリセットと誤用語チェックを
 他のルールまたは文書側の規範と同一の観点を重複して扱うもの。
 専門用語の複合語や技術文の記述量で機械的な閾値超過が頻発するもの。
 文書側で採る記法や自然な表現を誤って検出するもの。
+
+言い換えの適否を文脈ごとに判断するルールは、無効化せずseverityを`warning`へ下げて残す。
+textlintは警告だけの場合に終了コード0で終わり、pyfltrも当該ツールを`succeeded`として扱ったうえで指摘を表示する。
+AIが書いた日本語に出やすい語を検出する`preset-ai-words-ja`がこれに当たる。
 
 ```yaml
 rules:
@@ -700,6 +704,13 @@ rules:
     # コロン終端のラベル記法を多用するため無効化する
     "4.2.7.コロン(：)": false
   ja-no-abusage: true
+  preset-ai-words-ja:
+    # 言い換えの適否は文脈ごとに書き手が判断するため、検査を止めない警告として扱う
+    no-ai-words:
+      severity: warning
+    # プリセットの説明と異なりpresetの有効化だけで動作し、severityを明示しないとerrorのまま残る
+    no-short-topic-comma:
+      severity: warning
 ```
 
 ## textlint-packagesのカスタマイズ
@@ -713,6 +724,7 @@ textlint-packages = [
     "textlint-rule-preset-ja-technical-writing",
     "textlint-rule-preset-jtf-style",
     "textlint-rule-ja-no-abusage",
+    "textlint-rule-preset-ai-words-ja",
 ]
 ```
 
@@ -818,7 +830,7 @@ jobs:
       コンテナーイメージ側で更新されたツールも、旧キャッシュに同名パスがあれば上書きされる。
       上記のキー構成は実行ごとに新しいキーを生成するだけであり、
       イメージ同梱ツールの更新をCIで検知する用途には応えない
-    - 固定キーからこの構成へ移行する場合、`restore-keys`は前方一致で照合するため
+    - 固定キーからこの構成へ移行する場合、`restore-keys`は前方一致で判定するため
       移行前の固定キー（末尾のハイフンを持たない）には一致しない。
       移行後、当該ブランチかつ同一`path`での初回実行だけがキャッシュ無しで実行される。
       移行前の固定キーを`restore-keys`の2行目へ併記すると当該の1回を避けられる。
@@ -829,21 +841,21 @@ jobs:
 - `pyfltr ci`: イメージ同梱のpyfltrをそのまま使う
     - uvキャッシュを介した解決を毎回経由せず、コンテナビルド時に確定したバージョンで実行できる
     - 特定バージョンに固定したい場合は`image:`のタグ（`vX.Y.Z`）で揃える
-- 基準版だけの全検査: 静的解析（型検査・pylint・文書検査など）はPythonの版により結果が変わり得るが、
+- 基準版だけの全チェック: 静的解析（型チェック・pylint・文書チェックなど）はPythonの版により結果が変わり得るが、
   対応版ごとに重複実行すると所要時間が版数に比例して増える。
   利用比重が最も高い最新安定版だけで`pyfltr ci`を実行し、
   他の版は`--commands=pytest`で実行時互換性だけを検証する
     - `tokenize`・`ast`などPythonの版で解析結果が変わる標準ライブラリを使うプロジェクトでは、
       pytestを全対応版で実行して版差を検出する
-    - 対応版を追加・変更する場合は、全検査を担う版が1つだけになるよう両ステップの`if`を更新する
+    - 対応版を追加・変更する場合は、全チェックを担う版が1つだけになるよう両ステップの`if`を更新する
     - 全対応版で静的解析まで実行する場合は、pytestのみのステップを削除し、
-      全検査ステップの`if`を外す
+      全チェックステップの`if`を外す
 - `--output-format=github-annotations`: `::error file=...` / `::warning file=...`形式の行を標準出力へ出力する
     - プル要求の該当ファイル行にコメントとして表示される
 
 ### 失敗時のログ保存（任意）
 
-CIログのみでは失敗原因を切り分けられない場合（手元で再現しづらい環境固有の失敗等）に備え、
+CIログのみでは失敗原因を特定できない場合（手元で再現しづらい環境固有の失敗等）に備え、
 実行アーカイブを失敗時のジョブ成果物として保存する構成を追加できる。
 
 ````yaml
@@ -865,13 +877,13 @@ CIログのみでは失敗原因を切り分けられない場合（手元で再
 `PYFLTR_CACHE_DIR`を明示するのは、既定の保存先（`platformdirs.user_cache_dir`）が
 `container:`ジョブでは`$HOME`上書きの影響を受け不安定になり得るため。依存キャッシュ
 （`/cache`配下）とは別パスを選び、アーカイブが依存キャッシュへ混入しないようにする。
-保存先をジョブの`env`へ置くのは、pyfltrを実行するステップが版ごとに分かれても保存先の指定を1箇所に保つためである。
+保存先をジョブの`env`へ置くのはpyfltrを実行するステップが版ごとに分かれても保存先の指定を1箇所に保つためである。
 
 ### 追加のシステムパッケージが必要な場合
 
 公式Dockerイメージの既定ユーザーは非root（sudo無し）のため、`apt`でシステムパッケージを追加するには
 `container.options`で`--user root`を指定する。
-ただし`--user root`実行時は、checkoutステップが用意したワークスペースの所有者と、コンテナ実行ユーザー（root）が一致しない。
+ただし`--user root`実行時はcheckoutステップが用意したワークスペースの所有者と、コンテナ実行ユーザー（root）が一致しない。
 この不一致により`pre-commit`等の`git`操作が`dubious ownership`で停止する。
 `git config --global --add safe.directory`で対象ワークスペースを信頼対象に追加して回避する。
 PDFを画像化する`pdf2image`が必要とする`poppler-utils`の導入と`safe.directory`設定を含めた例を次に示す。
@@ -994,7 +1006,7 @@ pyfltr:
     - `js-runner`の既定値`pnpx`は論理設定値であり、PATH上の`pnpm`を使う`pnpm dlx`形式へ解決される
     - Markdownを含むリポジトリでは`pnpm`が見つからず、当該ツールは終了コード127の`failed`となる
     （解決失敗ではないため`{command}-severity = "warning"`で警告へ格下げできる）
-    - 当該イメージはmiseも含まないため、既定で有効な`lychee`はbin-runnerでの解決に失敗し
+    - 当該イメージはmiseも含まないため、初期状態で有効な`lychee`はbin-runnerでの解決に失敗し
     `resolution_failed`となる。解決失敗は`{command}-severity`による格下げの対象外のため、
     `markdownlint`・`textlint`を`false`にしてもジョブは`exit 1`のままとなる
     - `before_script`でNode.js・pnpm・miseを導入するか、`lychee`を含む該当ツールを`false`に設定する
