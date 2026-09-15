@@ -46,6 +46,8 @@ def apply_cli_overrides(
     """
     if args.jobs is not None:
         config.values["jobs"] = args.jobs
+    if args.subproject_jobs is not None:
+        config.values["subproject-jobs"] = args.subproject_jobs
     if args.no_exclude:
         config.values["exclude"] = []
         config.values["extend-exclude"] = []

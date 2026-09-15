@@ -280,6 +280,15 @@ def make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> "
         default=None,
         help="linters/testers の最大並列数を指定します(既定: 4、pyproject.toml でも設定可能です)。",
     )
+    common.add_argument(
+        "--subproject-jobs",
+        type=int,
+        default=None,
+        help=(
+            "モノレポ検出時に同一ツールのサブプロジェクト実行を同時に開始する件数の上限を指定します"
+            "(既定: 0 = --jobs とツール自身の並列度から自動決定、1 で逐次実行)。"
+        ),
+    )
 
     # 各コマンド用の引数追加オプション （ビルトイン + カスタム）
     registered: set[str] = set()

@@ -175,6 +175,7 @@ pyfltr config list --all
 - mypy-unused-awaitable : mypy実行時に`--enable-error-code=unused-awaitable`を自動追加するか（既定: `true`、後述）
 - lychee-max-concurrency : lychee実行時の同時接続数（既定: `4`。`0`以下でlychee既定値へ委ねる、後述）
 - jobs : linters/testersの最大並列数（既定: 4。CLIの`-j`オプションでも指定可能）
+- subproject-jobs : モノレポ検出時に同一ツールのサブプロジェクト実行を同時に開始する件数の上限（既定: 0 = 自動決定。CLIの`--subproject-jobs`オプションでも指定可能）
 - command-timeout : コマンド単体のタイムアウト秒数のグローバル既定値（既定: 600秒。0で無効化）
 - {command}-timeout : per-toolのタイムアウト秒数。未指定時は`command-timeout`のグローバル値にフォールバックする。
   正の秒数を指定すると当該コマンドのみその値で上書きし、`0`を指定すると当該コマンドのtimeoutのみ無効化する。
@@ -346,6 +347,26 @@ jobs = 8
 CLIオプション`-j`でも指定でき、`pyproject.toml`より優先される。
 
 実行順は`fast`フラグに基づいて最適化され、`fast = false`のツール（mypy、pylint、pytest等）が先に開始される。
+
+モノレポ構成では、同一ツールをサブプロジェクトごとに実行する分も`subproject-jobs`で並列化する。
+
+```toml
+[tool.pyfltr]
+subproject-jobs = 0
+```
+
+既定の`0`は自動決定で、ホストの論理CPU数を当該ツール自身のワーカー数の推定値で割った件数を同時に開始する。
+推定には`pytest-args`・`pylint-args`などの`-n`・`--jobs`指定と、各サブプロジェクトの`pyproject.toml`の
+`[tool.pytest.ini_options]`の`addopts`・`[tool.pylint]`の`jobs`を用いる。
+論理CPU数が8のホストで`pytest`へ`-n 4`を指定している場合は2件ずつ実行され、
+ツール自身のワーカー数との積が論理CPU数を超えない。
+
+予算に`jobs`を用いないのは、`jobs`が異なるツールを同時に起動する件数の上限であり、
+ツール自身のワーカー数を含むホスト全体の負荷を表さないためである。
+
+`1`を指定すると現行どおりサブプロジェクトを1件ずつ順に実行する。
+2以上の整数を指定すると、ツール側の並列度にかかわらず当該件数を上限とする。
+並列化しても報告順はサブプロジェクトの相対パスの昇順で安定する。
 
 ## fastエイリアス
 

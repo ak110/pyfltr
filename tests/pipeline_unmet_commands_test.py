@@ -26,6 +26,7 @@ def _make_args(tmp_path: pathlib.Path, *, commands: list[str] | None) -> argpars
         include_fix_stage=False,
         fail_fast=False,
         jobs=None,
+        subproject_jobs=None,
         no_exclude=False,
         no_gitignore=True,
         allow_external_paths=False,

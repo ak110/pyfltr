@@ -6,10 +6,12 @@ dispatcher側のディスパッチ関数と無効スキップ結果生成関数�
 """
 
 import argparse
+import concurrent.futures
 import dataclasses
 import typing
 
 import pyfltr.command.targets
+import pyfltr.command.tool_parallelism
 import pyfltr.config.config
 import pyfltr.paths
 import pyfltr.warnings_
@@ -41,6 +43,50 @@ def should_run_subproject_loop(command: str, ctx: ExecutionContext) -> bool:
     return pyfltr.config.config.resolve_subproject_aware(ctx.config.values, command, default_aware)
 
 
+def _run_one(
+    command: str,
+    args: argparse.Namespace,
+    ctx: ExecutionContext,
+    sub: typing.Any,
+    sub_config: typing.Any,
+    *,
+    dispatch_fn: typing.Callable[[str, argparse.Namespace, ExecutionContext], CommandResult],
+) -> CommandResult:
+    """1つのサブプロジェクトで当該コマンドを実行し、区切り行を付けた結果を返す。"""
+    sub_base = dataclasses.replace(ctx.base, config=sub_config)
+    sub_ctx = dataclasses.replace(ctx, base=sub_base, subproject_cwd=sub.cwd)
+    sub_result = dispatch_fn(command, args, sub_ctx)
+    # output 冒頭にサブプロジェクト区切り行を挿入する（人間向け識別のため）
+    if sub_result.output:
+        sub_result.output = f"# subproject: {sub.relative}\n{sub_result.output}"
+    return sub_result
+
+
+def resolve_subproject_workers(command: str, ctx: ExecutionContext, cwds: typing.Sequence[typing.Any]) -> int:
+    """サブプロジェクトを同時に実行する上限を決める。
+
+    `subproject-jobs`へ1以上の整数を指定した場合は当該値をそのまま用いる。
+    既定の`0`では、ホストの論理CPU数を当該ツール自身のワーカー数の推定値で割った値とする。
+    推定値はサブプロジェクトごとに異なりうるため最大値を基準とし、
+    ツール側の並列度との積がホストの論理CPU数を超えないようにする。
+
+    予算に`jobs`を用いないのは、`jobs`が異なるツールを同時に起動する件数の上限であり、
+    ツール自身のワーカー数を含むホスト全体の負荷を表さないためである。
+    """
+    values = ctx.config.values
+    configured = values.get("subproject-jobs", 0)
+    if isinstance(configured, int) and configured >= 1:
+        return configured
+    budget = pyfltr.command.tool_parallelism.cpu_count()
+    tool_workers = 1
+    for cwd in cwds:
+        tool_workers = max(
+            tool_workers,
+            pyfltr.command.tool_parallelism.estimate_tool_workers(command, values, cwd),
+        )
+    return max(1, budget // tool_workers)
+
+
 def run_subproject_loop(
     command: str,
     args: argparse.Namespace,
@@ -55,6 +101,9 @@ def run_subproject_loop(
     無効のサブプロジェクト（親ON・子OFF）とファイル0件のサブプロジェクトは実行から除外する。
     外部パス（`base.external_files`）への適用は起点設定のON/OFFで固定し、起点で無効なら何も行わない。
 
+    有効なサブプロジェクトは `subproject-jobs` が定める上限まで同時に実行する。
+    実行順が非決定になっても報告順を変えないよう、`relative` の昇順で並べてから集約する。
+
     結果は `CommandResult.merge` で集約する（1件のみならそのまま返す）。
     いずれのサブプロジェクトでも実行されず、設定による無効スキップが発生したか起点でも無効な場合は、
     起点cwdでの全ファイル誤実行を避けて skipped 結果を返す。
@@ -67,6 +116,7 @@ def run_subproject_loop(
         subproject_results: list[CommandResult] = []
         # 設定で無効化してスキップしたサブプロジェクトの有無。0件スキップと区別し誤実行を抑止する。
         skipped_by_config = False
+        targets: list[tuple[typing.Any, typing.Any]] = []
         for sub in base.subprojects:
             sub_files = base.subproject_files.get(sub.cwd, [])
             if not sub_files:
@@ -76,13 +126,28 @@ def run_subproject_loop(
                 # 親ON・子OFF: 当該サブプロジェクトの設定で無効化されているため実行しない。
                 skipped_by_config = True
                 continue
-            sub_base = dataclasses.replace(base, config=sub_config)
-            sub_ctx = dataclasses.replace(ctx, base=sub_base, subproject_cwd=sub.cwd)
-            sub_result = dispatch_fn(command, args, sub_ctx)
-            # output 冒頭にサブプロジェクト区切り行を挿入する（人間向け識別のため）
-            if sub_result.output:
-                sub_result.output = f"# subproject: {sub.relative}\n{sub_result.output}"
-            subproject_results.append(sub_result)
+            targets.append((sub, sub_config))
+
+        if targets:
+            workers = min(len(targets), resolve_subproject_workers(command, ctx, [sub.cwd for sub, _ in targets]))
+            # 実行順が非決定になっても報告順を変えないため、`relative`の昇順で集約する。
+            ordered = sorted(targets, key=lambda item: item[0].relative)
+            if workers <= 1:
+                subproject_results.extend(
+                    [_run_one(command, args, ctx, sub, sub_config, dispatch_fn=dispatch_fn) for sub, sub_config in ordered]
+                )
+            else:
+                # ワーカースレッドは既定で空のコンテキストを持つため、警告の重複抑止スコープを引き継ぐ。
+                with concurrent.futures.ThreadPoolExecutor(
+                    max_workers=workers,
+                    initializer=pyfltr.warnings_.adopt_suppression_state,
+                    initargs=(pyfltr.warnings_.current_suppression_state(),),
+                ) as executor:
+                    futures = [
+                        executor.submit(_run_one, command, args, ctx, sub, sub_config, dispatch_fn=dispatch_fn)
+                        for sub, sub_config in ordered
+                    ]
+                    subproject_results.extend([future.result() for future in futures])
 
         # 外部パスへの追加実行・警告は起点設定のON/OFFで固定する（起点で無効なら何も行わない）。
         # `allows_external_paths=True`のツールは起点cwdで外部パス専用に追加実行し、注入対象では

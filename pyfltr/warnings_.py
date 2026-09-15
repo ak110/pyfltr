@@ -17,10 +17,21 @@ logger = logging.getLogger(__name__)
 
 FilteredReason = typing.Literal["excluded", "missing", "external"]
 
-_DuplicateSuppressionState = tuple[
-    frozenset[tuple[str, str]],
-    frozenset[tuple[str, FilteredReason]],
-]
+
+@dataclasses.dataclass
+class DuplicateSuppressionState:
+    """同一警告・同一除外記録の2回目以降を抑止するスコープの共有状態。
+
+    可変の集合を保持し、`contextvars.copy_context()`で複製したコンテキストからも
+    同一のインスタンスを参照させる。サブプロジェクト単位の並列実行では
+    ワーカースレッドごとに別のコンテキストを用いるため、状態を不変値で置き換える形にすると
+    ワーカー間で既出組を共有できず、同じ警告がサブプロジェクト数だけ重複する。
+    集合の更新は`_delivery_lock`の内側で行う。
+    """
+
+    warning_keys: set[tuple[str, str]] = dataclasses.field(default_factory=set)
+    filtered_file_keys: set[tuple[str, "FilteredReason"]] = dataclasses.field(default_factory=set)
+
 
 _warnings: list[dict[str, typing.Any]] = []
 _filtered_direct_files: list[tuple[str, FilteredReason]] = []
@@ -37,7 +48,7 @@ class _DeliveryState:
 
 
 _delivery_state = _DeliveryState()
-_duplicate_suppression_state: contextvars.ContextVar[_DuplicateSuppressionState | None] = contextvars.ContextVar(
+_duplicate_suppression_state: contextvars.ContextVar[DuplicateSuppressionState | None] = contextvars.ContextVar(
     "duplicate_suppression_state",
     default=None,
 )
@@ -53,11 +64,29 @@ def suppress_duplicates() -> collections.abc.Iterator[None]:
     if _duplicate_suppression_state.get() is not None:
         yield
         return
-    token = _duplicate_suppression_state.set((frozenset(), frozenset()))
+    token = _duplicate_suppression_state.set(DuplicateSuppressionState())
     try:
         yield
     finally:
         _duplicate_suppression_state.reset(token)
+
+
+def current_suppression_state() -> DuplicateSuppressionState | None:
+    """現在の重複抑止スコープの状態を返す。
+
+    スコープを開始したスレッドから別のスレッドへ状態を引き継ぐために使う。
+    """
+    return _duplicate_suppression_state.get()
+
+
+def adopt_suppression_state(state: DuplicateSuppressionState | None) -> None:
+    """別スレッドで開始した重複抑止スコープの状態を現在のスレッドへ引き継ぐ。
+
+    `contextvars.ContextVar`はスレッドごとに独立するため、ワーカースレッドの開始時に呼ぶ。
+    引き継がないと、ワーカーごとに既出組が空の状態で始まり、同じ警告が重複する。
+    """
+    if state is not None:
+        _duplicate_suppression_state.set(state)
 
 
 @contextlib.contextmanager
@@ -104,11 +133,11 @@ def emit_warning(source: str, message: str, *, exc_info: bool = False, hint: str
     """
     suppression_state = _duplicate_suppression_state.get()
     if suppression_state is not None:
-        warning_keys, _ = suppression_state
         key = (source, message)
-        if key in warning_keys:
-            return
-        _duplicate_suppression_state.set((warning_keys | {key}, suppression_state[1]))
+        with _delivery_lock:
+            if key in suppression_state.warning_keys:
+                return
+            suppression_state.warning_keys.add(key)
     stored = message
     if exc_info:
         tb = traceback.format_exc().rstrip()
@@ -146,13 +175,13 @@ def add_filtered_direct_file(path: str, *, reason: FilteredReason) -> None:
     警告ログ出力は呼び出し側で`emit_warning`が既に担うため、本関数では蓄積のみ行う。
     """
     suppression_state = _duplicate_suppression_state.get()
-    if suppression_state is not None:
-        _, filtered_file_keys = suppression_state
-        key = (path, reason)
-        if key in filtered_file_keys:
-            return
-        _duplicate_suppression_state.set((suppression_state[0], filtered_file_keys | {key}))
-    _filtered_direct_files.append((path, reason))
+    key = (path, reason)
+    with _delivery_lock:
+        if suppression_state is not None:
+            if key in suppression_state.filtered_file_keys:
+                return
+            suppression_state.filtered_file_keys.add(key)
+        _filtered_direct_files.append((path, reason))
 
 
 def filtered_direct_files(*, reason: FilteredReason | None = None) -> list[str]:

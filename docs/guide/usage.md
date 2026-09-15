@@ -596,6 +596,7 @@ VSCodeのターミナルからクリックして該当箇所にジャンプで�
   明示指定が意味を持つのは`ci`サブコマンドとなる
 - `--ci`: CI環境向け。ファイル順のシャッフルとUIを無効化する
 - `-j N` / `--jobs N`: linters/testersの最大並列数を指定（既定: 4、`pyproject.toml`でも設定可能）
+- `--subproject-jobs N`: モノレポ検出時に同一ツールのサブプロジェクト実行を同時に開始する件数の上限を指定（既定: 0 = ホストの論理CPU数とツール自身の並列度から自動決定、`1`で逐次実行）
 - `--verbose`: デバッグレベルのログを出力する
 - `--keep-ui`: TUI終了後にTextual画面を保持する（ログ確認用）
 - `--work-dir DIR`: pyfltrの作業ディレクトリを指定する（既定はカレントディレクトリ）
@@ -871,7 +872,9 @@ pyfltrからprekのhookを呼び出す統合は`prek = true`で有効化する�
   `# subproject: <相対パス>` の区切り行を挿入する
 - 個別設定: 各サブプロジェクトの `[tool.pyfltr]` 設定（ツールのON/OFF・除外・targets等）を
   当該ディレクトリで個別に解決して尊重する。
-  CLIオプション（`--jobs`・`--no-exclude`・`--no-gitignore`・`--human-readable`）は起点と同一に再適用する
+  CLIオプション（`--jobs`・`--subproject-jobs`・`--no-exclude`・`--no-gitignore`・`--human-readable`）は起点と同一に再適用する
+- サブプロジェクトの並列実行: 同一ツールのサブプロジェクト実行は`subproject-jobs`が定める件数まで同時に開始する。
+  報告順はサブプロジェクトの相対パスの昇順で安定し、実行順に依存しない
 - 設定ファイルの探索起点: `config-files`（設定ファイル不在の警告）と`--config`系の自動注入は
   常に起点cwd直下を基準に判定する。`.pre-commit-config.yaml`等をリポジトリルートに置く構成で、
   サブプロジェクト側に同名ファイルが無いことを理由に警告することはない
