@@ -775,7 +775,7 @@ Namespaceの組み立てはMCP側に残す一方、サブコマンド既定値�
 CLIと同じ解決処理を通す。
 `run(sys_args=[...])`経由でargparseに渡す案ではエラーメッセージのstderr出力制御が困難で、
 MCPツール側でのエラー整形ができないため不採用。
-外部プロセス起動（`subprocess.run(["pyfltr", "run-for-agent", ...])`）案も検討した。
+外部プロセス起動（`subprocess.run(["pyfltr", "run", ...])`）案も検討した。
 プロセス管理・`PYFLTR_CACHE_DIR`伝搬・`TERM`シグナル・テスト安定性の面で同一プロセス方式より不利のため不採用。
 
 `work_dir`は`os.chdir()`でプロセスのcwdを変更せず、設定探索では

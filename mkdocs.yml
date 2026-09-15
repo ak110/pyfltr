@@ -42,7 +42,6 @@ plugins:
         - `pyfltr ci`: CI向け全チェック（formatterの変更も失敗扱い）
         - `pyfltr run`: ローカル向け全チェック（fix→format→lint/test）
         - `pyfltr fast`: 軽量チェック（pre-commit向け。重いツールを除外）
-        - `pyfltr run-for-agent`: `run`の互換用別名（出力形式既定値を`jsonl`に変更し`--quiet`を既定で有効化）
         - `pyfltr config <action>`: 設定ファイル操作（`get` / `set` / `delete` / `list`）
         - `pyfltr generate-shell-completion <shell>`: シェル補完スクリプト生成
         - `pyfltr list-runs` / `pyfltr show-run <run_id>`: 実行履歴参照
@@ -53,7 +52,7 @@ plugins:
 
         `--commands=<tool>`で個別ツールのみ実行できる（例: `pyfltr run --commands=textlint docs/`）。
 
-        `pyfltr run`・`pyfltr fast`・`pyfltr ci`・`pyfltr run-for-agent`は
+        `pyfltr run`・`pyfltr fast`・`pyfltr ci`は
         `--allow-external-paths`で起点cwd外の絶対パスを検査対象へ含められる。
         `markdownlint`・`textlint`の設定は起点cwd基準で注入される。
         外部ファイルだけを検査する場合は`--commands=<tool>`で対象ツールを限定する。
