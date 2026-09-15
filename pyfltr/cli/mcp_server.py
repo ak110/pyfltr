@@ -12,7 +12,7 @@ MCPをコーディングエージェントの常用経路と位置づけ、CLI�
 引数解決はCLIと共通化する。サブコマンド既定値の注入、カンマ区切りの展開、
 未知コマンドの検証には`pyfltr.cli.command_selection`の公開関数を用いる。
 
-動作: `run_for_agent`は`pyfltr.cli.pipeline.run_pipeline`を直接呼ぶため、
+動作: `run`ツールは`pyfltr.cli.pipeline.run_pipeline`を直接呼ぶため、
 モノレポモード（起点cwd配下に複数の`pyproject.toml`を検出した場合）の
 サブプロジェクト分割実行をMCP経由でも自動的に継承する。
 公開スキーマには`subproject`識別フィールドを追加しないため、利用者が観測する
@@ -86,8 +86,8 @@ from pyfltr.cli.mcp_models import (
     ReplaceHistoryModel,
     ReplaceResultModel,
     ReplaceUndoModel,
-    RunForAgentResult,
     RunOverviewModel,
+    RunResult,
     RunSummaryModel,
     SlowTestModel,
 )
@@ -241,7 +241,7 @@ async def tool_show_run_output(run_id: str, commands: list[str]) -> dict[str, st
     return outputs
 
 
-async def tool_run_for_agent(
+async def tool_run(
     paths: list[str],
     mode: str = "run",
     commands: list[str] | None = None,
@@ -262,7 +262,7 @@ async def tool_run_for_agent(
     shuffle: bool = False,
     exit_zero_even_if_formatted: bool = False,
     jobs: int | None = None,
-) -> RunForAgentResult:
+) -> RunResult:
     """指定パスに対してlint/format/testを実行し、結果を返す。
 
     `run`・`fast`・`ci`の各実行モードをCLIと同じ既定値で扱う。
@@ -431,7 +431,7 @@ async def tool_run_for_agent(
 
     # only_failedによるearly exit: run_idがNoneのとき実行がスキップされた。
     if run_id is None:
-        return RunForAgentResult(
+        return RunResult(
             run_id=None,
             exit_code=exit_code,
             failed=[],
@@ -465,7 +465,7 @@ async def tool_run_for_agent(
             except Exception:  # tool.json読み取り失敗は非致命的
                 logger.debug("retry_command取得失敗: command=%s", cmd_name, exc_info=True)
 
-    return RunForAgentResult(
+    return RunResult(
         run_id=run_id,
         exit_code=exit_code,
         failed=failed_commands,
@@ -1190,7 +1190,7 @@ def build_server() -> MCPServer:
     )(tool_show_run_diagnostics)
     mcp.tool(name="show_run_output", description="指定 run・コマンドの output.log 全文を返す。")(tool_show_run_output)
     mcp.tool(
-        name="run_for_agent",
+        name="run",
         description=(
             "指定パスに対してlint/format/testを実行し、run_id・終了コード・失敗コマンド名を返す。"
             " modeでrun・fast・ciを選択し、CLIと同じ対象制御オプションを利用できる。"
@@ -1203,7 +1203,7 @@ def build_server() -> MCPServer:
             "プロジェクトのルートを指定する。work_dir は設定探索と相対パス解決の基準を兼ねるため、"
             "検査設定を持たないディレクトリを起点にすると適用される除外設定と検査対象の範囲が変わる。"
         ),
-    )(tool_run_for_agent)
+    )(tool_run)
     mcp.tool(
         name="grep",
         description=(

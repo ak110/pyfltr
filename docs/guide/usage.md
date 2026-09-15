@@ -34,21 +34,6 @@ pyfltr run [files and/or directories ...]
 Formattersによるファイル変更があってもLinters/Testersでのエラー無しなら終了コードは0になる。
 ローカルでの全チェック実行に適する。
 
-### サブコマンド: run-for-agent
-
-```shell
-pyfltr run-for-agent [files and/or directories ...]
-```
-
-`run`と同じ動作で出力形式の既定値を`jsonl`に切り替え、`--quiet`を既定値として有効にしたサブコマンド。
-互換維持のために残しており、通常は`run`を使う。
-`AI_AGENT` / `CODEX_CI` / `CLAUDECODE` / `CURSOR_AGENT`のいずれかが設定された環境では
-`run`も同じ既定値になるため、両者は等価に振る舞う。
-これらの環境変数が無い環境で明示的にJSON Lines出力と静音モードを得たい場合に指定する。
-`PYFLTR_OUTPUT_FORMAT=text`で`text`へ戻すことができ、`--no-quiet`で静音モードを解除できる。
-
-出力形式の詳細は[jsonl形式の使い方](#jsonl)を参照。
-
 ### サブコマンド: fast
 
 ```shell
@@ -67,6 +52,21 @@ Formattersによるファイル変更があっても終了コードは0になる
 - その他: `pre-commit`・`prek`（`.pre-commit-config.yaml`のhookを統合実行）
 
 含まれるコマンドは各コマンドの`{command}-fast`設定で制御できる（[設定](configuration.md)を参照）。
+
+### サブコマンド: run-for-agent
+
+```shell
+pyfltr run-for-agent [files and/or directories ...]
+```
+
+`run`と同じ動作で出力形式の既定値を`jsonl`に切り替え、`--quiet`を既定値として有効にしたサブコマンド。
+互換維持のために残しており、通常は`run`を使う。
+`AI_AGENT` / `CODEX_CI` / `CLAUDECODE` / `CURSOR_AGENT`のいずれかが設定された環境では
+`run`も同じ既定値になるため、両者は等価に振る舞う。
+これらの環境変数が無い環境で明示的にJSON Lines出力と静音モードを得たい場合に指定する。
+`PYFLTR_OUTPUT_FORMAT=text`で`text`へ戻すことができ、`--no-quiet`で静音モードを解除できる。
+
+出力形式の詳細は[jsonl形式の使い方](#jsonl)を参照。
 
 ### サブコマンド: config {#config}
 
@@ -258,7 +258,7 @@ MCPクライアントがstdinを閉じた時点でサーバーが終了する。
 | `show_run` | `pyfltr show-run <run_id>` | 指定runのmetaとツール別サマリを返す。前方一致・`latest`エイリアス可 |
 | `show_run_diagnostics` | `pyfltr show-run <run_id> --commands=<name>` | 指定runのコマンドmeta情報とdiagnostics全件を返す（複数指定可）。チェック対象ファイルの引数列は含めない |
 | `show_run_output` | `pyfltr show-run <run_id> --commands=<name> --output` | 指定runのoutput.log全文を返す（複数指定可） |
-| `run_for_agent` | `pyfltr run` / `fast` / `ci` | lint/format/testを実行しrun_id・失敗ツール名・retry_commands等を返す。`mode`で実行モードを選ぶ |
+| `run` | `pyfltr run` / `fast` / `ci` | lint/format/testを実行しrun_id・失敗ツール名・retry_commands等を返す。`mode`で実行モードを選ぶ |
 | `grep` | `pyfltr grep` | ファイル横断の正規表現検索（pyfltr exclude/.gitignore尊重） |
 | `replace` | `pyfltr replace` | 横断置換。`dry_run`の既定値は`True`（CLI既定の`False`と異なりLLM暴発防止） |
 | `replace_undo` | `pyfltr replace --undo` | 過去のreplaceを取り消す |
@@ -449,27 +449,27 @@ pyfltr generate-shell-completion powershell | Out-String | Invoke-Expression
 pyfltr run --allow-external-paths --commands=textlint,markdownlint ~/.claude/plans/example.md
 ```
 
-### `fast` / `run` / `run-for-agent` / `ci`の動作の違いと自動修正（fixステージ）
+### `fast` / `run` / `ci`の動作の違いと自動修正（fixステージ）
 
 各サブコマンドの主な違いを以下に示す（軽い順）。
 
-| 項目 | `fast` | `run` | `run-for-agent` | `ci` |
-| --- | --- | --- | --- | --- |
-| 対象コマンド | `{command}-fast = true`のツールのみ | 有効な全ツール | 有効な全ツール | 有効な全ツール |
-| fixステージ（自動修正） | 有効 | 有効 | 有効 | 無効 |
-| Formatterによる変更時の終了コード | `0`（成功扱い） | `0`（成功扱い） | `0`（成功扱い） | `1`（失敗扱い） |
-| Linters / Testersのエラー時の終了コード | `1` | `1` | `1` | `1` |
-| 既定の出力形式 | `text`（注） | `text`（注） | `jsonl` | `text`（注） |
-| `--quiet`既定 | 無効（注） | 無効（注） | 有効 | 無効（注） |
-| 主な用途 | pre-commitフック等 | ローカルで全チェック | `run`の互換用別名 | CI・コミット前 |
+| 項目 | `fast` | `run` | `ci` |
+| --- | --- | --- | --- |
+| 対象コマンド | `{command}-fast = true`のツールのみ | 有効な全ツール | 有効な全ツール |
+| fixステージ（自動修正） | 有効 | 有効 | 無効 |
+| Formatterによる変更時の終了コード | `0`（成功扱い） | `0`（成功扱い） | `1`（失敗扱い） |
+| Linters / Testersのエラー時の終了コード | `1` | `1` | `1` |
+| 既定の出力形式 | `text`（注） | `text`（注） | `text`（注） |
+| `--quiet`既定 | 無効（注） | 無効（注） | 無効（注） |
+| 主な用途 | pre-commitフック等 | ローカルで全チェック | CI・コミット前 |
 
 （注）`AI_AGENT` / `CODEX_CI` / `CLAUDECODE` / `CURSOR_AGENT`のいずれかが設定された環境では、
-`fast` / `run` / `ci`の既定の出力形式は`jsonl`、`--quiet`既定は有効となり、`run`は`run-for-agent`と等価になる。
+`fast` / `run` / `ci`の既定の出力形式は`jsonl`、`--quiet`既定は有効となる。
 
 `ci`で「Formatterによる変更時の終了コード」を`0`（成功扱い）へ変更する場合は
 `--exit-zero-even-if-formatted`を指定する（`UI`節のオプション一覧を参照）。
 
-`fast` / `run` / `run-for-agent` サブコマンドは、formatter段の前にfixステージを内蔵する。
+`fast` / `run` サブコマンドは、formatter段の前にfixステージを内蔵する。
 
 fixステージでは`{command}-fix-args`が定義された有効なlinterを`--fix`付きで順次実行する。
 対象ツールは`ruff-check` / `textlint` / `markdownlint` / `eslint` / `biome` / `cargo-clippy`など。
@@ -592,7 +592,7 @@ VSCodeのターミナルからクリックして該当箇所にジャンプで�
   `--ci`と併用した場合は`--ci`側の設定が優先され、シャッフルは行われない
 - `--exit-zero-even-if-formatted`: formatterが対象ファイルを書き換えただけでは終了コードを`1`にせず、`0`を返す。
   ツールがエラーで終了した場合と、ツールの解決に失敗した場合は、コマンドの種別を問わず`1`となる。
-  `run` / `fast` / `run-for-agent`はサブコマンドの既定値として常に有効なため、
+  `run` / `fast`はサブコマンドの既定値として常に有効なため、
   明示指定が意味を持つのは`ci`サブコマンドとなる
 - `--ci`: CI環境向け。ファイル順のシャッフルとUIを無効化する
 - `-j N` / `--jobs N`: linters/testersの最大並列数を指定（既定: 4、`pyproject.toml`でも設定可能）
@@ -678,10 +678,9 @@ JSONLヘッダーの`format_source`には検出した変数名（例: `env.CODEX
 - headerレコードを`run_id`・`commands`・`files`の3つのフィールドのみへ縮約する
 - pre-commit・prek経由でformatter修正が発生したときのstderrガイダンスも抑止する
 
-`run-for-agent`サブコマンドでは常に既定値として`--quiet`が有効。
 `AI_AGENT` / `CODEX_CI` / `CLAUDECODE` / `CURSOR_AGENT`のいずれかが設定された環境では
-`run`・`ci`・`fast`でも既定値として有効になる。いずれも`--no-quiet`で無効化できる。
-これらの環境変数が無い環境では`run-for-agent`以外の既定値は無効。
+`run`・`ci`・`fast`で既定値として有効になり、`--no-quiet`で無効化できる。
+これらの環境変数が無い環境での既定値は無効。
 summaryレコード・warningレコード・diagnosticレコード・`status:"running"`のheartbeatイベントは
 `--quiet`の影響を受けず常に出力する。
 
@@ -717,7 +716,7 @@ MCPクライアントは結果を構造化データとして受け取れる。
 他のコマンドと組み合わせた場合に出力が混在する不具合に注意する
 （詳細は[トラブルシューティング](troubleshooting.md)を参照）。
 
-`run_for_agent`の主要パラメーターとCLI相当オプションは次のとおり。
+`run`の主要パラメーターとCLI相当オプションは次のとおり。
 
 | MCPパラメーター | CLI相当 |
 | --- | --- |

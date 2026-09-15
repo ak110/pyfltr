@@ -614,10 +614,10 @@ pyfltrは3系統のloggerを使い分ける。
 
 JSONL出力へ`warning`レコードとして配送した警告はroot loggerからstderrへ重複出力しない。
 構造化出力への書き込みが完了しなかった警告は保留スコープの終了時にstderrへ出力し、警告自体を失わない。
-MCPの`run_for_agent`が内部一時ファイルへ生成するJSONLは利用者への配送ではないため、配送済みとして扱わない。
+MCPの`run`が内部一時ファイルへ生成するJSONLは利用者への配送ではないため、配送済みとして扱わない。
 
 stdout占有が起きるのは`jsonl` / `sarif` / `code-quality`かつ`--output-file`未指定時のみ。
-MCP実行（`pyfltr.cli.mcp_server.run_for_agent`）は同一プロセス内で`run_pipeline`を直接呼ぶ。
+MCP実行（`pyfltr.cli.mcp_server.run`）は同一プロセス内で`run_pipeline`を直接呼ぶ。
 `force_text_on_stderr=True`を渡してtextloggerをstderrに強制する。
 構造化出力は一時ファイル経由（FileHandler）となりstdoutを汚染しない。
 
@@ -721,12 +721,15 @@ MCPサーバー・`--only-failed`からも再利用する。
 ### 提供ツール構成
 
 読み取り系4ツール（`list_runs`・`show_run`・`show_run_diagnostics`・`show_run_output`）・
-実行系1ツール（`run_for_agent`）を公開する。
+実行系1ツール（`run`）を公開する。
 grep/replace系4ツール（`grep`・`replace`・`replace_undo`・`replace_history`）と
 情報/設定系2ツール（`command_info`・`config`）を加え、公開ツールは計11件となる。
-実行系は`run_for_agent`の`mode`で`ci`/`run`/`fast`を選択し、同一の入力・出力モデルで扱う。
+実行系は`run`の`mode`で`ci`/`run`/`fast`を選択し、同一の入力・出力モデルで扱う。
 
-ツール名はCLIサブコマンドのハイフン形式と異なりアンダースコア形式（`list_runs`/`show_run`等）とする。
+ツール名は対応するCLIサブコマンド名と一致させる。
+利用者とエージェントが同じ操作を2つの名前で覚える状態を避けるため、
+実行系ツールはCLIの`run`サブコマンドと同じ`run`とし、CLI側の互換用別名`run-for-agent`をツール名へ持ち込まない。
+区切り文字だけはCLIのハイフン形式と異なりアンダースコア形式（`list_runs`/`show_run`等）とする。
 ハイフンはPythonの`@mcp.tool()`名として非推奨のため。
 
 ### 応答スキーマの方針
@@ -756,14 +759,14 @@ stdioトランスポートはstdin/stdoutをJSON-RPCフレームに専有する�
 3層で隔離を実施する。
 
 1. 起動直後にroot loggerの出力先をstderrへ強制する
-2. `run_for_agent`ツール内では`run_pipeline`に`force_text_on_stderr=True`を渡し、
+2. `run`ツール内では`run_pipeline`に`force_text_on_stderr=True`を渡し、
    人間向けtext整形loggerをstderrへ向ける。構造化出力は一時ファイルへFileHandler経由で出力する
 3. TUIの起動（`subprocess.run("clear")`やTextual UI）はargs構築時に遮断する
 
 logger初期化は全formatで共通の処理に集約されているため、`force_text_on_stderr`の1フラグだけで
 MCP実行の`stdin/stdout`専有を守れる。
 
-### `run_for_agent`の実装の流れ
+### `run`の実装の流れ
 
 内部で`argparse.Namespace`を構築し、`run_pipeline`を直接呼び出す。
 Namespaceの組み立てはMCP側に残す一方、サブコマンド既定値は`apply_subcommand_defaults`、
@@ -791,7 +794,7 @@ MCPクライアントからの並行ツール呼び出しでも実行起点を�
 
 `only_failed`有効時に「直前runなし」「失敗ツールなし」「対象ファイル交差が空」のいずれかに該当した場合、
 `run_pipeline`はearly exit（`(0, None)`）を返す。
-このとき`run_for_agent`はエラーではなく「実行スキップ」（`skipped_reason`に理由文字列）を返す。
+このとき`run`はエラーではなく「実行スキップ」（`skipped_reason`に理由文字列）を返す。
 
 戻り値変更を採用したのは並行プロセス対策。
 MCPツール側で`ArchiveStore.list_runs(limit=1)`を引く案では、同一ユーザーキャッシュを参照する

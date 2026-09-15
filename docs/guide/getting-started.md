@@ -94,7 +94,7 @@ uvx pyfltr run
 
 ### MCP経由（推奨）
 
-`pyfltr mcp`でMCPサーバーを起動すると、エージェントが`run_for_agent`等のMCPツールとして呼び出せる。
+`pyfltr mcp`でMCPサーバーを起動すると、エージェントが`run`等のMCPツールとして呼び出せる。
 
 ```shell
 # Claude Codeへの登録例

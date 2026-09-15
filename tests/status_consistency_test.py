@@ -232,7 +232,7 @@ async def test_plain_linter_failure_listed_in_mcp_failed(
     work_dir, target = plain_linter_project
     monkeypatch.setenv("PYFLTR_CACHE_DIR", str(work_dir / "cache"))
 
-    result = await pyfltr.cli.mcp_server.tool_run_for_agent(
+    result = await pyfltr.cli.mcp_server.tool_run(
         paths=[str(target)],
         mode="ci",
         commands=["plain-linter"],

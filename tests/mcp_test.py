@@ -405,7 +405,7 @@ async def test_build_server_registers_eleven_tools() -> None:
         "show_run",
         "show_run_diagnostics",
         "show_run_output",
-        "run_for_agent",
+        "run",
         "grep",
         "replace",
         "replace_undo",
@@ -469,31 +469,31 @@ def test_execute_mcp_reports_missing_dependency(monkeypatch: pytest.MonkeyPatch,
 
 
 @pytest.mark.asyncio
-async def test_tool_run_for_agent_rejects_invalid_mode() -> None:
+async def test_tool_run_rejects_invalid_mode() -> None:
     """未対応の実行モードを拒否する。"""
     with pytest.raises(ValueError, match="mode"):
-        await pyfltr.cli.mcp_server.tool_run_for_agent(paths=["dummy"], mode="invalid")
+        await pyfltr.cli.mcp_server.tool_run(paths=["dummy"], mode="invalid")
 
 
 @pytest.mark.asyncio
-async def test_tool_run_for_agent_rejects_missing_work_dir(tmp_path: pathlib.Path) -> None:
+async def test_tool_run_rejects_missing_work_dir(tmp_path: pathlib.Path) -> None:
     """実在しない作業ディレクトリを拒否する。"""
     with pytest.raises(ValueError, match="work_dir"):
-        await pyfltr.cli.mcp_server.tool_run_for_agent(
+        await pyfltr.cli.mcp_server.tool_run(
             paths=["dummy"],
             work_dir=str(tmp_path / "missing"),
         )
 
 
 @pytest.mark.asyncio
-async def test_tool_run_for_agent_resolves_cli_parameters(tmp_path: pathlib.Path, mocker) -> None:
+async def test_tool_run_resolves_cli_parameters(tmp_path: pathlib.Path, mocker) -> None:
     """実行モード、対象パス、設定上書き、再実行引数をCLIと同じ形へ解決する。"""
     target = tmp_path / "src" / "sample.py"
     target.parent.mkdir()
     target.write_text("value = 1\n", encoding="utf-8")
     mock_run = mocker.patch("pyfltr.cli.pipeline.run_pipeline", return_value=(0, None))
 
-    await pyfltr.cli.mcp_server.tool_run_for_agent(
+    await pyfltr.cli.mcp_server.tool_run(
         paths=["src/sample.py"],
         mode="ci",
         commands=["mypy"],
@@ -537,13 +537,13 @@ async def test_tool_run_for_agent_resolves_cli_parameters(tmp_path: pathlib.Path
 
 
 @pytest.mark.asyncio
-async def test_tool_run_for_agent_flattens_commands(tmp_path: pathlib.Path, mocker) -> None:
+async def test_tool_run_flattens_commands(tmp_path: pathlib.Path, mocker) -> None:
     """複数回指定とカンマ区切りを同じコマンド一覧へ展開する。"""
     target = tmp_path / "sample.txt"
     target.write_text("hello\n", encoding="utf-8")
     mock_run = mocker.patch("pyfltr.cli.pipeline.run_pipeline", return_value=(0, None))
 
-    await pyfltr.cli.mcp_server.tool_run_for_agent(
+    await pyfltr.cli.mcp_server.tool_run(
         paths=[str(target)],
         commands=["ec,typos", "ec"],
     )
@@ -552,13 +552,13 @@ async def test_tool_run_for_agent_flattens_commands(tmp_path: pathlib.Path, mock
 
 
 @pytest.mark.asyncio
-async def test_tool_run_for_agent_no_fix_disables_run_fix_stage(tmp_path: pathlib.Path, mocker) -> None:
+async def test_tool_run_no_fix_disables_run_fix_stage(tmp_path: pathlib.Path, mocker) -> None:
     """runモードでもno_fix指定時はfixステージを無効化する。"""
     target = tmp_path / "sample.txt"
     target.write_text("hello\n", encoding="utf-8")
     mock_run = mocker.patch("pyfltr.cli.pipeline.run_pipeline", return_value=(0, None))
 
-    await pyfltr.cli.mcp_server.tool_run_for_agent(
+    await pyfltr.cli.mcp_server.tool_run(
         paths=[str(target)],
         mode="run",
         commands=["ec"],
@@ -569,17 +569,17 @@ async def test_tool_run_for_agent_no_fix_disables_run_fix_stage(tmp_path: pathli
 
 
 @pytest.mark.asyncio
-async def test_tool_run_for_agent_rejects_unknown_command(tmp_path: pathlib.Path) -> None:
+async def test_tool_run_rejects_unknown_command(tmp_path: pathlib.Path) -> None:
     """未知コマンドを共通の検証経路で拒否する。"""
     target = tmp_path / "sample.txt"
     target.write_text("hello\n", encoding="utf-8")
 
     with pytest.raises(ValueError, match="コマンドが見つかりません"):
-        await pyfltr.cli.mcp_server.tool_run_for_agent(paths=[str(target)], commands=["unknown-command"])
+        await pyfltr.cli.mcp_server.tool_run(paths=[str(target)], commands=["unknown-command"])
 
 
 @pytest.mark.asyncio
-async def test_tool_run_for_agent_changed_since_uses_work_dir(
+async def test_tool_run_changed_since_uses_work_dir(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     mocker,
@@ -598,7 +598,7 @@ async def test_tool_run_for_agent_changed_since_uses_work_dir(
     )
     mocker.patch("pyfltr.cli.pipeline.run_commands_with_cli", return_value=[])
 
-    await pyfltr.cli.mcp_server.tool_run_for_agent(
+    await pyfltr.cli.mcp_server.tool_run(
         paths=["sample.txt"],
         commands=["ec"],
         changed_since="HEAD",
@@ -609,7 +609,7 @@ async def test_tool_run_for_agent_changed_since_uses_work_dir(
 
 
 @pytest.mark.asyncio
-async def test_tool_run_for_agent_scans_and_deduplicates_from_work_dir(
+async def test_tool_run_scans_and_deduplicates_from_work_dir(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     mocker,
@@ -643,7 +643,7 @@ async def test_tool_run_for_agent_scans_and_deduplicates_from_work_dir(
 
     mocker.patch("pyfltr.cli.pipeline.run_commands_with_cli", side_effect=capture_files)
 
-    await pyfltr.cli.mcp_server.tool_run_for_agent(
+    await pyfltr.cli.mcp_server.tool_run(
         paths=["src", "src_alias"],
         commands=["ec"],
         work_dir=str(work_dir),
@@ -655,11 +655,11 @@ async def test_tool_run_for_agent_scans_and_deduplicates_from_work_dir(
 
 @pytest.mark.asyncio
 @pytest.mark.skipif(not shutil.which("typos"), reason="typos コマンドが環境にない")
-async def test_tool_run_for_agent_with_typos(tmp_path: pathlib.Path) -> None:
+async def test_tool_run_with_typos(tmp_path: pathlib.Path) -> None:
     sample = tmp_path / "sample.txt"
     sample.write_text("hello world\n", encoding="utf-8")
 
-    result = await pyfltr.cli.mcp_server.tool_run_for_agent(
+    result = await pyfltr.cli.mcp_server.tool_run(
         paths=[str(sample)],
         commands=["typos"],
     )
@@ -672,10 +672,10 @@ async def test_tool_run_for_agent_with_typos(tmp_path: pathlib.Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_tool_run_for_agent_keeps_stdout_clean_and_text_on_stderr(
+async def test_tool_run_keeps_stdout_clean_and_text_on_stderr(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`run_for_agent`実行中はstdoutがJSON-RPC用に空のまま、text整形出力はstderrに出力される。
+    """`run`ツールの実行中はstdoutがJSON-RPC用に空のまま、text整形出力はstderrに出力される。
 
     `force_text_on_stderr=True`がrun_pipeline側で有効化されてtext_loggerがstderrに向き、
     構造化出力は一時ファイルへ退避するためstdoutへは何も書かれない契約を固定する。
@@ -684,7 +684,7 @@ async def test_tool_run_for_agent_keeps_stdout_clean_and_text_on_stderr(
     sample.write_text("hello\n", encoding="utf-8")
 
     # typos が利用可能なら 1 件だけ実行する。未導入環境でも ec で確実に通す。
-    await pyfltr.cli.mcp_server.tool_run_for_agent(paths=[str(sample)], commands=["ec"])
+    await pyfltr.cli.mcp_server.tool_run(paths=[str(sample)], commands=["ec"])
 
     captured = capsys.readouterr()
     assert captured.out == "", f"stdout に漏れている: {captured.out!r}"
@@ -693,8 +693,8 @@ async def test_tool_run_for_agent_keeps_stdout_clean_and_text_on_stderr(
 
 
 @pytest.mark.asyncio
-async def test_tool_run_for_agent_returns_run_id(tmp_path: pathlib.Path) -> None:
-    """`run_for_agent`がrun_idを含む結果を返すことを確認する。
+async def test_tool_run_returns_run_id(tmp_path: pathlib.Path) -> None:
+    """`run`ツールがrun_idを含む結果を返すことを確認する。
 
     `commands=None`でプロジェクト設定のコマンドを使用し、アーカイブに記録されることを検証する。
     実際のツール実行を避けるため`commands=[]`に近いケースとして`typos`を条件付きで使用するか、
@@ -706,7 +706,7 @@ async def test_tool_run_for_agent_returns_run_id(tmp_path: pathlib.Path) -> None
 
     # typosが利用できない環境でも動作させるため、利用可能なコマンドを選ぶ。
     # ecは設定不要で動作するため使用する。
-    result = await pyfltr.cli.mcp_server.tool_run_for_agent(
+    result = await pyfltr.cli.mcp_server.tool_run(
         paths=[str(sample)],
         commands=["ec"],
     )
@@ -723,13 +723,13 @@ async def test_tool_run_for_agent_returns_run_id(tmp_path: pathlib.Path) -> None
 
 
 # ---------------------------------------------------------------------------
-# RunForAgentResult モデルの新フィールドのテスト
+# RunResult モデルの新フィールドのテスト
 # ---------------------------------------------------------------------------
 
 
-def test_run_for_agent_result_new_fields_defaults() -> None:
-    """RunForAgentResultの新フィールドのデフォルト値を確認する。"""
-    result = pyfltr.cli.mcp_models.RunForAgentResult(
+def test_run_result_new_fields_defaults() -> None:
+    """RunResultの新フィールドのデフォルト値を確認する。"""
+    result = pyfltr.cli.mcp_models.RunResult(
         run_id="01TESTULID1234567890123456",
         exit_code=0,
         failed=[],
@@ -741,9 +741,9 @@ def test_run_for_agent_result_new_fields_defaults() -> None:
     assert not hasattr(result, "schema_hints")
 
 
-def test_run_for_agent_result_nullable_run_id() -> None:
-    """RunForAgentResultのrun_idがNoneを許容する（early exit時）。"""
-    result = pyfltr.cli.mcp_models.RunForAgentResult(
+def test_run_result_nullable_run_id() -> None:
+    """RunResultのrun_idがNoneを許容する（early exit時）。"""
+    result = pyfltr.cli.mcp_models.RunResult(
         run_id=None,
         exit_code=0,
         failed=[],
@@ -757,12 +757,12 @@ def test_run_for_agent_result_nullable_run_id() -> None:
 
 
 @pytest.mark.asyncio
-async def test_tool_run_for_agent_returns_retry_commands(tmp_path: pathlib.Path) -> None:
-    """run_for_agentの戻り値にretry_commandsが含まれることを確認する（失敗なしの場合は空辞書）。"""
+async def test_tool_run_returns_retry_commands(tmp_path: pathlib.Path) -> None:
+    """`run`ツールの戻り値にretry_commandsが含まれることを確認する（失敗なしの場合は空辞書）。"""
     sample = tmp_path / "input.txt"
     sample.write_text("hello\n", encoding="utf-8")
 
-    result = await pyfltr.cli.mcp_server.tool_run_for_agent(
+    result = await pyfltr.cli.mcp_server.tool_run(
         paths=[str(sample)],
         commands=["ec"],
     )
@@ -774,7 +774,7 @@ async def test_tool_run_for_agent_returns_retry_commands(tmp_path: pathlib.Path)
 
 
 @pytest.mark.asyncio
-async def test_tool_run_for_agent_retry_command_uses_cli_arguments(tmp_path: pathlib.Path, mocker) -> None:
+async def test_tool_run_retry_command_uses_cli_arguments(tmp_path: pathlib.Path, mocker) -> None:
     """再実行コマンドをMCPサーバー起動引数ではなくCLI引数から生成する。"""
     sample = tmp_path / "failure.txt"
     sample.write_text("failure\n", encoding="utf-8")
@@ -792,7 +792,7 @@ async def test_tool_run_for_agent_retry_command_uses_cli_arguments(tmp_path: pat
 
     mocker.patch("pyfltr.cli.pipeline.run_commands_with_cli", side_effect=fake_run_commands)
 
-    result = await pyfltr.cli.mcp_server.tool_run_for_agent(
+    result = await pyfltr.cli.mcp_server.tool_run(
         paths=[str(sample)],
         mode="ci",
         commands=["ec"],
@@ -808,7 +808,7 @@ async def test_tool_run_for_agent_retry_command_uses_cli_arguments(tmp_path: pat
 
 
 @pytest.mark.asyncio
-async def test_tool_run_for_agent_retry_commands_includes_failed(tmp_path: pathlib.Path) -> None:
+async def test_tool_run_retry_commands_includes_failed(tmp_path: pathlib.Path) -> None:
     """失敗コマンドが存在する場合にretry_commandsにキーが入る経路をカバーする。
 
     ruff-checkでエラーのあるPythonファイルを実行し、失敗した場合に
@@ -820,7 +820,7 @@ async def test_tool_run_for_agent_retry_commands_includes_failed(tmp_path: pathl
     bad_py = tmp_path / "bad.py"
     bad_py.write_text("import os\n", encoding="utf-8")  # F401: imported but unused
 
-    result = await pyfltr.cli.mcp_server.tool_run_for_agent(
+    result = await pyfltr.cli.mcp_server.tool_run(
         paths=[str(bad_py)],
         commands=["ruff-check"],
     )
@@ -837,22 +837,22 @@ async def test_tool_run_for_agent_retry_commands_includes_failed(tmp_path: pathl
 
 
 @pytest.mark.asyncio
-async def test_tool_run_for_agent_from_run_without_only_failed_raises() -> None:
+async def test_tool_run_from_run_without_only_failed_raises() -> None:
     """only_failed=Falseのままfrom_runを指定するとValueErrorが発生する。"""
     with pytest.raises(ValueError, match="only_failed"):
-        await pyfltr.cli.mcp_server.tool_run_for_agent(
+        await pyfltr.cli.mcp_server.tool_run(
             paths=["dummy"],
             from_run="latest",
         )
 
 
 @pytest.mark.asyncio
-async def test_tool_run_for_agent_only_failed_no_previous_run(tmp_path: pathlib.Path) -> None:
+async def test_tool_run_only_failed_no_previous_run(tmp_path: pathlib.Path) -> None:
     """only_failed=Trueで直前runがない場合はearly exit（run_id=None・skipped_reasonあり）。"""
     sample = tmp_path / "input.txt"
     sample.write_text("hello\n", encoding="utf-8")
 
-    result = await pyfltr.cli.mcp_server.tool_run_for_agent(
+    result = await pyfltr.cli.mcp_server.tool_run(
         paths=[str(sample)],
         commands=["ec"],
         only_failed=True,
@@ -1819,7 +1819,7 @@ async def test_new_tools_keep_stdout_clean(
 
 
 @pytest.mark.asyncio
-async def test_tool_run_for_agent_propagates_work_dir_to_command_archive_and_log(
+async def test_tool_run_propagates_work_dir_to_command_archive_and_log(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -1844,7 +1844,7 @@ async def test_tool_run_for_agent_propagates_work_dir_to_command_archive_and_log
     server_cwd.mkdir()
     monkeypatch.chdir(server_cwd)
 
-    result = await pyfltr.cli.mcp_server.tool_run_for_agent(
+    result = await pyfltr.cli.mcp_server.tool_run(
         paths=["sample.txt"],
         commands=["cwd-check"],
         work_dir=str(work_dir),
@@ -1860,7 +1860,7 @@ async def test_tool_run_for_agent_propagates_work_dir_to_command_archive_and_log
     assert pathlib.Path.cwd() == server_cwd
 
 
-def test_tool_run_for_agent_parallel_work_dirs_do_not_interfere(tmp_path: pathlib.Path) -> None:
+def test_tool_run_parallel_work_dirs_do_not_interfere(tmp_path: pathlib.Path) -> None:
     """異なるwork_dirの公開MCP呼び出しを重ねてもcwdが混線しない。"""
     server_cwd = pathlib.Path.cwd()
     work_dirs = [tmp_path / "first", tmp_path / "second"]
@@ -1890,9 +1890,9 @@ def test_tool_run_for_agent_parallel_work_dirs_do_not_interfere(tmp_path: pathli
             encoding="utf-8",
         )
 
-    def _run(work_dir: pathlib.Path) -> pyfltr.cli.mcp_models.RunForAgentResult:
+    def _run(work_dir: pathlib.Path) -> pyfltr.cli.mcp_models.RunResult:
         return asyncio.run(
-            pyfltr.cli.mcp_server.tool_run_for_agent(
+            pyfltr.cli.mcp_server.tool_run(
                 paths=["sample.txt"],
                 commands=["cwd-check"],
                 work_dir=str(work_dir),
@@ -1912,7 +1912,7 @@ def test_tool_run_for_agent_parallel_work_dirs_do_not_interfere(tmp_path: pathli
 
 @pytest.mark.skipif(sys.platform != "linux" or shutil.which("pnpm") is None, reason="Linux上のpnpmが必要")
 @pytest.mark.asyncio
-async def test_tool_run_for_agent_pnpm_prettier_uses_work_dir(tmp_path: pathlib.Path) -> None:
+async def test_tool_run_pnpm_prettier_uses_work_dir(tmp_path: pathlib.Path) -> None:
     """公開MCP経路のpnpm execがwork_dirのローカルPrettierを起動する。"""
     work_dir = tmp_path / "project"
     shim = work_dir / "node_modules" / ".bin" / "prettier"
@@ -1925,7 +1925,7 @@ async def test_tool_run_for_agent_pnpm_prettier_uses_work_dir(tmp_path: pathlib.
         encoding="utf-8",
     )
 
-    result = await pyfltr.cli.mcp_server.tool_run_for_agent(
+    result = await pyfltr.cli.mcp_server.tool_run(
         paths=["package.json"],
         commands=["prettier"],
         work_dir=str(work_dir),

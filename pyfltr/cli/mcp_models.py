@@ -170,8 +170,8 @@ class CommandDiagnosticsModel(pydantic.BaseModel):
     )
 
 
-class RunForAgentResult(pydantic.BaseModel):
-    """`run_for_agent`ツールの戻り値。"""
+class RunResult(pydantic.BaseModel):
+    """`run`ツールの戻り値。"""
 
     run_id: str | None = pydantic.Field(
         default=None,
