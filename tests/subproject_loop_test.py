@@ -145,6 +145,37 @@ class TestRunSubprojectLoop:
         )
         assert barrier.n_waiting == 0
 
+    def test_concurrency_is_capped_by_target_count(self, tmp_path: pathlib.Path) -> None:
+        """上限が対象サブプロジェクト数を上回る場合は、同時実行数が対象件数で収まる。"""
+        ctx = _make_context(tmp_path, ["a", "b"], values={"jobs": 6})
+        active = 0
+        max_active = 0
+        lock = threading.Lock()
+        started = threading.Barrier(2, timeout=30)
+
+        def _dispatch(
+            command: str, args: argparse.Namespace, c: pyfltr.command.core_.ExecutionContext
+        ) -> pyfltr.command.core_.CommandResult:
+            del args, c
+            nonlocal active, max_active
+            with lock:
+                active += 1
+                max_active = max(max_active, active)
+            # 双方が起動するまで待ち、同時に進行する区間を確実に発生させる。
+            started.wait()
+            with lock:
+                active -= 1
+            return _testconf.make_succeeded_result(command=command)
+
+        pyfltr.command.subproject_loop.run_subproject_loop(
+            "ruff-check",
+            _testconf.make_args(),
+            ctx,
+            dispatch_fn=_dispatch,
+            disabled_skip_fn=_disabled_skip,
+        )
+        assert max_active == 2
+
     def test_output_order_follows_relative_path(self, tmp_path: pathlib.Path) -> None:
         """完了順が逆でも、区切り行の順序は相対パスの昇順で安定する。"""
         ctx = _make_context(tmp_path, ["b", "a"], values={"jobs": 2})
