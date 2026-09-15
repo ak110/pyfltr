@@ -159,7 +159,6 @@ def _make_pipeline_args(*, stream: bool) -> argparse.Namespace:
         include_fix_stage=False,
         fail_fast=False,
         jobs=None,
-        subproject_jobs=None,
         no_exclude=False,
         no_gitignore=False,
         allow_external_paths=False,
@@ -414,7 +413,6 @@ def _make_overrides_args(
     """`apply_cli_overrides` 呼び出し用の最小Namespaceを生成する。"""
     return argparse.Namespace(
         jobs=None,
-        subproject_jobs=None,
         no_exclude=False,
         no_gitignore=False,
         allow_external_paths=False,

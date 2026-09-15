@@ -346,7 +346,6 @@ async def tool_run(
         no_gitignore=no_gitignore,
         allow_external_paths=allow_external_paths,
         jobs=jobs,
-        subproject_jobs=None,
         work_dir=work_dir_path,
         exit_zero_even_if_formatted=False,
         version=False,

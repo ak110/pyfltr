@@ -14,7 +14,6 @@ import pytest
 import pyfltr.command.core_
 import pyfltr.command.subproject_loop
 import pyfltr.command.subprojects
-import pyfltr.command.tool_parallelism
 import pyfltr.config.config
 import pyfltr.warnings_
 import tests.conftest as _testconf
@@ -61,43 +60,33 @@ def _disabled_skip(command: str, ctx: pyfltr.command.core_.ExecutionContext) -> 
 class TestResolveSubprojectWorkers:
     """`resolve_subproject_workers`のテスト。"""
 
-    def test_explicit_value_is_used_as_is(self, tmp_path: pathlib.Path) -> None:
-        ctx = _make_context(tmp_path, ["a", "b"], values={"subproject-jobs": 3})
-        cwds = [s.cwd for s in ctx.base.subprojects]
-        assert pyfltr.command.subproject_loop.resolve_subproject_workers("ruff-check", ctx, cwds) == 3
+    def test_default_jobs_is_eight(self) -> None:
+        """`jobs`の既定値は8とする。"""
+        assert pyfltr.config.config.DEFAULT_CONFIG["jobs"] == 8
 
-    def test_one_means_sequential(self, tmp_path: pathlib.Path) -> None:
-        ctx = _make_context(tmp_path, ["a", "b"], values={"subproject-jobs": 1})
+    def test_uses_whole_budget_for_single_worker_tool(self, tmp_path: pathlib.Path) -> None:
+        """ツール自身が並列化しない場合は`jobs`をそのまま同時実行数の上限にする。"""
+        ctx = _make_context(tmp_path, ["a", "b"], values={"jobs": 6})
         cwds = [s.cwd for s in ctx.base.subprojects]
-        assert pyfltr.command.subproject_loop.resolve_subproject_workers("ruff-check", ctx, cwds) == 1
+        assert pyfltr.command.subproject_loop.resolve_subproject_workers("ruff-check", ctx, cwds) == 6
 
-    def test_auto_uses_whole_budget_for_single_worker_tool(self, tmp_path: pathlib.Path) -> None:
-        """ツール自身が並列化しない場合はホストの論理CPU数をそのまま同時実行数の上限にする。"""
-        ctx = _make_context(tmp_path, ["a", "b"], values={"subproject-jobs": 0})
+    def test_divides_budget_by_tool_workers(self, tmp_path: pathlib.Path) -> None:
+        """ツール側の並列度との積が`jobs`を超えないようにする。"""
+        ctx = _make_context(tmp_path, ["a", "b"], values={"jobs": 8, "pytest-args": ["-n", "2"]})
         cwds = [s.cwd for s in ctx.base.subprojects]
-        expected = pyfltr.command.tool_parallelism.cpu_count()
-        assert pyfltr.command.subproject_loop.resolve_subproject_workers("ruff-check", ctx, cwds) == expected
+        assert pyfltr.command.subproject_loop.resolve_subproject_workers("pytest", ctx, cwds) == 4
 
-    def test_auto_divides_budget_by_tool_workers(self, tmp_path: pathlib.Path) -> None:
-        """ツール側の並列度との積がホストの論理CPU数を超えないようにする。"""
-        ctx = _make_context(tmp_path, ["a", "b"], values={"subproject-jobs": 0, "pytest-args": ["-n", "2"]})
-        cwds = [s.cwd for s in ctx.base.subprojects]
-        expected = max(1, pyfltr.command.tool_parallelism.cpu_count() // 2)
-        assert pyfltr.command.subproject_loop.resolve_subproject_workers("pytest", ctx, cwds) == expected
-
-    def test_auto_never_returns_zero(self, tmp_path: pathlib.Path) -> None:
-        """ツール側の並列度がホストの論理CPU数以上でも1件は実行する。"""
-        huge = str(pyfltr.command.tool_parallelism.cpu_count() * 4)
-        ctx = _make_context(tmp_path, ["a", "b"], values={"subproject-jobs": 0, "pytest-args": ["-n", huge]})
+    def test_never_returns_zero(self, tmp_path: pathlib.Path) -> None:
+        """ツール側の並列度が`jobs`以上でも1件は実行する。"""
+        ctx = _make_context(tmp_path, ["a", "b"], values={"jobs": 4, "pytest-args": ["-n", "8"]})
         cwds = [s.cwd for s in ctx.base.subprojects]
         assert pyfltr.command.subproject_loop.resolve_subproject_workers("pytest", ctx, cwds) == 1
 
-    def test_auto_uses_max_estimate_across_subprojects(self, tmp_path: pathlib.Path) -> None:
+    def test_uses_max_estimate_across_subprojects(self, tmp_path: pathlib.Path) -> None:
         """サブプロジェクトごとの推定値が異なる場合は大きい方を基準にする。"""
-        ctx = _make_context(tmp_path, ["a", "b"], values={"subproject-jobs": 0})
-        workers = pyfltr.command.tool_parallelism.cpu_count() * 2
+        ctx = _make_context(tmp_path, ["a", "b"], values={"jobs": 8})
         (tmp_path / "b" / "pyproject.toml").write_text(
-            f'[project]\nname = "x"\nversion = "0"\n\n[tool.pytest.ini_options]\naddopts = "-n {workers}"\n',
+            '[project]\nname = "x"\nversion = "0"\n\n[tool.pytest.ini_options]\naddopts = "-n 8"\n',
             encoding="utf-8",
         )
         cwds = [s.cwd for s in ctx.base.subprojects]
@@ -108,8 +97,8 @@ class TestRunSubprojectLoop:
     """`run_subproject_loop`の実行順と並列度のテスト。"""
 
     def test_sequential_when_workers_is_one(self, tmp_path: pathlib.Path) -> None:
-        """`subproject-jobs = 1`ではサブプロジェクトが同時に進行しない。"""
-        ctx = _make_context(tmp_path, ["a", "b", "c"], values={"subproject-jobs": 1})
+        """`jobs = 1`ではサブプロジェクトが同時に進行しない。"""
+        ctx = _make_context(tmp_path, ["a", "b", "c"], values={"jobs": 1})
         active = 0
         max_active = 0
         lock = threading.Lock()
@@ -136,8 +125,8 @@ class TestRunSubprojectLoop:
         assert max_active == 1
 
     def test_parallel_when_workers_is_greater_than_one(self, tmp_path: pathlib.Path) -> None:
-        """`subproject-jobs = 2`では2件のサブプロジェクト実行が同時に進行する区間がある。"""
-        ctx = _make_context(tmp_path, ["a", "b"], values={"subproject-jobs": 2})
+        """`jobs = 2`では2件のサブプロジェクト実行が同時に進行する区間がある。"""
+        ctx = _make_context(tmp_path, ["a", "b"], values={"jobs": 2})
         barrier = threading.Barrier(2, timeout=30)
 
         def _dispatch(
@@ -158,7 +147,7 @@ class TestRunSubprojectLoop:
 
     def test_output_order_follows_relative_path(self, tmp_path: pathlib.Path) -> None:
         """完了順が逆でも、区切り行の順序は相対パスの昇順で安定する。"""
-        ctx = _make_context(tmp_path, ["b", "a"], values={"subproject-jobs": 2})
+        ctx = _make_context(tmp_path, ["b", "a"], values={"jobs": 2})
         started = threading.Event()
 
         def _dispatch(
@@ -186,7 +175,7 @@ class TestRunSubprojectLoop:
     def test_duplicate_warnings_are_suppressed_across_workers(self, tmp_path: pathlib.Path) -> None:
         """並列実行でも、同一の`source`と`message`の警告は1件に収まる。"""
         pyfltr.warnings_.clear()
-        ctx = _make_context(tmp_path, ["a", "b", "c"], values={"subproject-jobs": 3})
+        ctx = _make_context(tmp_path, ["a", "b", "c"], values={"jobs": 3})
 
         def _dispatch(
             command: str, args: argparse.Namespace, c: pyfltr.command.core_.ExecutionContext
@@ -207,10 +196,10 @@ class TestRunSubprojectLoop:
         assert len(collected) == 1
 
 
-@pytest.mark.parametrize("subproject_jobs", [1, 2])
-def test_all_subprojects_are_dispatched(tmp_path: pathlib.Path, subproject_jobs: int) -> None:
+@pytest.mark.parametrize("jobs", [1, 2])
+def test_all_subprojects_are_dispatched(tmp_path: pathlib.Path, jobs: int) -> None:
     """同時実行数にかかわらず、対象の全サブプロジェクトを1回ずつ実行する。"""
-    ctx = _make_context(tmp_path, ["a", "b", "c"], values={"subproject-jobs": subproject_jobs})
+    ctx = _make_context(tmp_path, ["a", "b", "c"], values={"jobs": jobs})
     seen: list[str] = []
     lock = threading.Lock()
 

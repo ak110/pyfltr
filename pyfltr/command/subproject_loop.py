@@ -63,21 +63,18 @@ def _run_one(
 
 
 def resolve_subproject_workers(command: str, ctx: ExecutionContext, cwds: typing.Sequence[typing.Any]) -> int:
-    """サブプロジェクトを同時に実行する上限を決める。
+    """サブプロジェクトを同時に実行する上限を`jobs`から決める。
 
-    `subproject-jobs`へ1以上の整数を指定した場合は当該値をそのまま用いる。
-    既定の`0`では、ホストの論理CPU数を当該ツール自身のワーカー数の推定値で割った値とする。
+    `jobs`を当該ツール自身のワーカー数の推定値で割った値とする。
     推定値はサブプロジェクトごとに異なりうるため最大値を基準とし、
-    ツール側の並列度との積がホストの論理CPU数を超えないようにする。
+    ツール側の並列度との積が`jobs`を超えないようにする。
 
-    予算に`jobs`を用いないのは、`jobs`が異なるツールを同時に起動する件数の上限であり、
-    ツール自身のワーカー数を含むホスト全体の負荷を表さないためである。
+    `jobs`が推定値以下の場合は1を返し、サブプロジェクトを1件ずつ実行する。
     """
     values = ctx.config.values
-    configured = values.get("subproject-jobs", 0)
-    if isinstance(configured, int) and configured >= 1:
-        return configured
-    budget = pyfltr.command.tool_parallelism.cpu_count()
+    budget = values.get("jobs", 1)
+    if not isinstance(budget, int) or budget < 1:
+        budget = 1
     tool_workers = 1
     for cwd in cwds:
         tool_workers = max(
@@ -101,7 +98,7 @@ def run_subproject_loop(
     無効のサブプロジェクト（親ON・子OFF）とファイル0件のサブプロジェクトは実行から除外する。
     外部パス（`base.external_files`）への適用は起点設定のON/OFFで固定し、起点で無効なら何も行わない。
 
-    有効なサブプロジェクトは `subproject-jobs` が定める上限まで同時に実行する。
+    有効なサブプロジェクトは `jobs` から導いた上限まで同時に実行する。
     実行順が非決定になっても報告順を変えないよう、`relative` の昇順で並べてから集約する。
 
     結果は `CommandResult.merge` で集約する（1件のみならそのまま返す）。

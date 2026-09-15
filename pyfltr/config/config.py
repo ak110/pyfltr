@@ -652,13 +652,9 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # 0以下で期間軸のクリーンアップを無効化する。
     "cache": True,
     "cache-max-age-hours": 12,
-    # 最大並列数（linters/testersの並列実行数の上限）
-    "jobs": 4,
-    # モノレポ検出時に、同一ツールのサブプロジェクト実行を同時に開始する件数の上限。
-    # 既定の`0`は自動決定で、ホストの論理CPU数を当該ツール自身のワーカー数の推定値で割った値を用いる
-    # （`pytest -n`や`pylint --jobs`の指定を`{command}-args`系と各サブプロジェクトの
-    # `pyproject.toml`から推定する）。`1`で現行どおりの逐次実行に戻る。
-    "subproject-jobs": 0,
+    # 最大並列数（linters/testersの並列実行数の上限）。
+    # モノレポ検出時は、同一ツールのサブプロジェクト実行を同時に開始する件数の算出にも用いる。
+    "jobs": 8,
     # 各コマンドのsubprocess実行に対する壁時計タイムアウト（秒）。
     # 既定値10分（600秒）。0以下を指定すると無効化される（無制限）。
     # per-tool `{command}-timeout` が `-1`（既定。「未設定」を意味するsentinel）のとき
