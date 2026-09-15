@@ -46,7 +46,7 @@ def _read_patterns_text(path: pathlib.Path) -> list[str]:
 
 @pytest.fixture(name="deny_patterns", scope="module")
 def _deny_patterns() -> _PatternList:
-    return pyfltr.colloquial.check.load_patterns(pyfltr.colloquial.check.DENY_PATH)
+    return pyfltr.colloquial.check.load_patterns(pyfltr.colloquial.check.DENY_PATH, kanji_left_boundary=True)
 
 
 @pytest.fixture(name="allow_patterns", scope="module")
@@ -115,6 +115,65 @@ class TestLoadPatterns:
         compiled, replacement = patterns[0]
         assert compiled.search("x")
         assert replacement == expected_replacement
+
+    def test_kanji_leading_pattern_does_not_match_after_kanji(self, tmp_path: pathlib.Path) -> None:
+        """先頭が漢字のパターンは、直前が漢字である位置で一致しない。
+
+        辞書の語幹は語境界を持たない部分一致で適用されるため、条件が無いと
+        当該漢字を末尾に持つ漢語複合語の内部で一致する。
+        """
+        f = tmp_path / "p.txt"
+        f.write_text("甲[あいう]\t候補\n", encoding="utf-8")
+        patterns = pyfltr.colloquial.check.load_patterns(f, kanji_left_boundary=True)
+        assert len(patterns) == 1
+        compiled, _ = patterns[0]
+        assert compiled.search("乙甲あその他の処理") is None
+
+    def test_kanji_leading_pattern_still_matches_after_non_kanji(self, tmp_path: pathlib.Path) -> None:
+        """先頭が漢字のパターンは、直前が漢字でない位置では従来どおり一致する。"""
+        f = tmp_path / "p.txt"
+        f.write_text("甲[あいう]\t候補\n", encoding="utf-8")
+        patterns = pyfltr.colloquial.check.load_patterns(f, kanji_left_boundary=True)
+        compiled, _ = patterns[0]
+        assert compiled.search("値を甲あ") is not None
+        assert compiled.search("甲あ") is not None
+
+    def test_explicit_boundary_pattern_is_not_wrapped_again(self, tmp_path: pathlib.Path) -> None:
+        """境界条件を明示した行へ二重に条件を前置しない。"""
+        f = tmp_path / "p.txt"
+        f.write_text("(?<!丙)甲[あいう]\t候補\n(?!丙)甲[あいう]\t候補\n", encoding="utf-8")
+        patterns = pyfltr.colloquial.check.load_patterns(f, kanji_left_boundary=True)
+        assert [compiled.pattern for compiled, _ in patterns] == ["(?<!丙)甲[あいう]", "(?!丙)甲[あいう]"]
+
+    def test_non_kanji_leading_pattern_is_not_wrapped(self, tmp_path: pathlib.Path) -> None:
+        """先頭が漢字でない行へは条件を前置しない。"""
+        f = tmp_path / "p.txt"
+        f.write_text("[xy]\t候補\n", encoding="utf-8")
+        patterns = pyfltr.colloquial.check.load_patterns(f, kanji_left_boundary=True)
+        assert [compiled.pattern for compiled, _ in patterns] == ["[xy]"]
+
+    def test_multi_kanji_stem_is_not_wrapped(self, tmp_path: pathlib.Path) -> None:
+        """語幹が2文字以上の漢字である行へは条件を前置しない。
+
+        接頭辞が直前に付く形で検出すべき真陽性が存在するため。
+        """
+        f = tmp_path / "p.txt"
+        f.write_text("甲乙[あいう]\t候補\n甲乙丙\t候補\n", encoding="utf-8")
+        patterns = pyfltr.colloquial.check.load_patterns(f, kanji_left_boundary=True)
+        assert [compiled.pattern for compiled, _ in patterns] == ["甲乙[あいう]", "甲乙丙"]
+
+    def test_boundary_is_not_applied_by_default(self, tmp_path: pathlib.Path) -> None:
+        """allowlistの読み込みでは条件を前置しない。
+
+        allowlistは漢語複合語の側を一致させてマスクする役割を持つため、
+        同じ条件を与えると当該役割が成立しない。
+        """
+        f = tmp_path / "p.txt"
+        f.write_text("甲[あいう]\n", encoding="utf-8")
+        patterns = pyfltr.colloquial.check.load_patterns(f)
+        compiled, _ = patterns[0]
+        assert compiled.pattern == "甲[あいう]"
+        assert compiled.search("乙甲あ") is not None
 
     def test_allow_patterns_never_equal_deny_patterns(self) -> None:
         """allowlistのパターン文字列がdenylistのパターン文字列と完全一致しない。

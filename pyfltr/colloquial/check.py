@@ -21,7 +21,33 @@ DENY_PATH = _DICT_DIR / "words.txt"
 ALLOW_PATH = _DICT_DIR / "words_allow.txt"
 
 
-def load_patterns(path: pathlib.Path) -> list[tuple[re.Pattern[str], str | None]]:
+_KANJI_CLASS = r"[一-鿿]"
+_KANJI_LEFT_BOUNDARY = rf"(?<!{_KANJI_CLASS})"
+# 漢字1文字の語幹に活用形の文字クラスが続く形。この形だけが漢語複合語の接尾と衝突する。
+_SINGLE_KANJI_STEM_RE = re.compile(rf"\A{_KANJI_CLASS}\[")
+
+
+def _with_kanji_left_boundary(pattern: str) -> str:
+    """漢字1文字の語幹で始まるパターンへ、直前が漢字である位置での一致を禁じる条件を前置する。
+
+    denylistのパターンは語境界を持たない部分一致で適用される。
+    語幹が漢字1文字の場合、当該漢字を末尾に持つ漢語複合語の内部でも一致が成立する。
+    条件を行ごとに手書きさせると書き漏らしが辞書へ混入するため、読込時に一律で与える。
+
+    対象を漢字1文字＋活用形の文字クラスの形に限るのは、
+    語幹が2文字以上の漢字である場合は、当該語幹が別の漢語複合語の接尾になりにくく、
+    かつ接頭辞が直前に付く形で検出すべき真陽性が存在するためである。
+
+    既に否定先読み・否定後読みで始まる行は、記述者が境界条件を明示した行として扱い変更しない。
+    """
+    if pattern.startswith(("(?<!", "(?!")):
+        return pattern
+    if _SINGLE_KANJI_STEM_RE.match(pattern) is None:
+        return pattern
+    return _KANJI_LEFT_BOUNDARY + pattern
+
+
+def load_patterns(path: pathlib.Path, *, kanji_left_boundary: bool = False) -> list[tuple[re.Pattern[str], str | None]]:
     r"""辞書ファイルから1行1正規表現を読み込んでコンパイルする。
 
     各行は`pattern`または`pattern\treplacement`形式。タブが含まれる場合は
@@ -30,6 +56,11 @@ def load_patterns(path: pathlib.Path) -> list[tuple[re.Pattern[str], str | None]
 
     `#`で始まる行と空行は無視する。
     不正な正規表現はチェッカーを破損させないためスキップする。
+
+    `kanji_left_boundary`が真の場合、漢字1文字の語幹で始まるパターンへ左境界条件を前置する
+    （対象の判定は`_with_kanji_left_boundary`が持つ）。
+    denylistの読み込みでのみ真を指定する。allowlistは漢語複合語の側を一致させる役割を
+    持つため、同じ条件を与えると当該役割が成立しない。
     """
     if not path.is_file():
         return []
@@ -42,6 +73,8 @@ def load_patterns(path: pathlib.Path) -> list[tuple[re.Pattern[str], str | None]
         # `strip()`で末尾の空白文字（タブ含む）は除去済みのため、タブが無い行は`replacement=None`になる。
         head, sep, tail = stripped.partition("\t")
         replacement = tail if sep else None
+        if kanji_left_boundary:
+            head = _with_kanji_left_boundary(head)
         try:
             patterns.append((re.compile(head), replacement))
         except re.error:

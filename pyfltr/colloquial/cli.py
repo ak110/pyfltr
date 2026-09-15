@@ -29,7 +29,7 @@ def main() -> int:
     parser.add_argument("paths", nargs="+", type=pathlib.Path, help="検査対象ファイル")
     args = parser.parse_args()
 
-    deny_patterns = colloquial_check.load_patterns(colloquial_check.DENY_PATH)
+    deny_patterns = colloquial_check.load_patterns(colloquial_check.DENY_PATH, kanji_left_boundary=True)
     allow_patterns = colloquial_check.load_patterns(colloquial_check.ALLOW_PATH)
     if not deny_patterns:
         return 0
