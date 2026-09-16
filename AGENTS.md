@@ -45,7 +45,12 @@ JSON Lines出力（`--output-format=jsonl`）とMCPサーバー（`pyfltr mcp`�
     `make test`または`uv run pyfltr run <path>`を使う。
     設定で無効化しているツールも直接起動すれば動作するため、設定による無効化は直接起動への防御にならない
     - 例外は利用者向け文書の挙動記述を裏付ける場合に限る（本章の挙動裏付けに関する規定を参照）
-  - 特定ファイルのみを対象にする場合は`uv run pyfltr run <path>`にパスを渡す
+  - 対象を絞って実行する場合は`uv run pyfltr run <path>`にパスを渡す。
+    渡すパスは変更したファイルに限定せず、その場で必要十分な範囲を決める
+    - 変更したファイルを入力として消費するテストと、変更が期待値を変えるテストは、
+      当該テストファイル自体を変更していなくても対象へ含める
+    - 例えば`mkdocs.yml`・`pyfltr/cli/parser.py`・`pyfltr/command/builtin.py`のいずれかを
+      変更した場合は、`tests/llmstxt_test.py`を対象へ含める
   - テストだけを部分実行する場合も`uv run pyfltr run tests/xxx_test.py --commands=pytest`を使い、
     `uv run pytest`を直接起動しない。直接起動では本リポジトリの設定（並列実行・タイムアウト等）が
     `make test`と揃わず、結果を`make test`の成否の根拠にできない

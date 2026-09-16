@@ -73,6 +73,11 @@ description: >
   `markdown_description`・`pyproject.toml`の`description`・`AGENTS.md`冒頭・
   `pyfltr/cli/parser.py`の`description`を人手同期する。
   `site_description`は表示幅に収める短縮形を用いる
+- `mkdocs.yml`内llmstxtの`markdown_description`:
+  全サブコマンド名・全ビルトインコマンド名の案内。`pyfltr/cli/parser.py`のサブコマンド定義と
+  `pyfltr/command/builtin.py`のビルトインコマンド定義の変更時に追随する。
+  内容は`tests/llmstxt_test.py`が機械的に判定するため、これら3ファイルのいずれかを変更した場合は
+  同テストのパスを部分実行の対象へ含める
 
 `mkdocs.yml`内llmstxtの`markdown_description`にはLLMが利用する際に有用な情報のみ記載する
 （全サブコマンド名・主要オプションなど）。
