@@ -1,7 +1,7 @@
 r"""口語表現検査の純粋ロジック。
 
 denylist・allowlistの正規表現を辞書ファイルから読み込み、
-Markdownの引用ブロック・フェンス付きコードブロック・allowlist該当箇所を
+Markdownの引用ブロック・フェンス付きコードブロック・インラインコード・allowlist該当箇所を
 同長空白マスクで除外したうえでdenylistに一致する箇所を列挙する。
 
 denylistの内容をソースコード（`.py`ファイル）へ静的に埋め込まない設計のため、
@@ -145,12 +145,29 @@ def mask_fenced_code_blocks(text: str) -> str:
     return "".join(out)
 
 
+_INLINE_CODE_RE = re.compile(r"(`+)([^`\n]+)\1")
+
+
+def mask_inline_code(text: str) -> str:
+    """Markdownのインラインコード（`` `…` ``）の中身を同長の空白で置き換える。
+
+    フェンス付きコードブロックと同じく、コード片・識別子・構文例が口語表現として
+    誤検出される事態を避ける。開始と終了で同じ長さのバッククォート列に囲まれ、
+    内側にバッククォートと改行を含まない範囲を対象とする。
+    バッククォート自体は`mask_fenced_code_blocks`がフェンス行を維持するのと同様に残し、
+    内側だけを置換する。オフセット・行番号は変更しない。
+    """
+    return _INLINE_CODE_RE.sub(lambda m: m.group(1) + " " * len(m.group(2)) + m.group(1), text)
+
+
 def _mask_all(text: str, allow_patterns: list[tuple[re.Pattern[str], str | None]]) -> str:
-    """引用ブロック・フェンス付きコードブロック・allowlist該当箇所を順にマスクする。
+    """引用ブロック・フェンス付きコードブロック・インラインコード・allowlist該当箇所を順にマスクする。
 
     `scan_text`と`first_hit`で共通の前処理として使う。
+    インラインコードはフェンス付きコードブロックの後にマスクする。
+    フェンス行の判定が先に済んでいる状態で処理するため、フェンスのマーカー行を巻き込まない。
     """
-    return mask_allowed(mask_fenced_code_blocks(mask_blockquote_lines(text)), allow_patterns)
+    return mask_allowed(mask_inline_code(mask_fenced_code_blocks(mask_blockquote_lines(text))), allow_patterns)
 
 
 def scan_text(

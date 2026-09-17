@@ -1,6 +1,7 @@
 """pyfltr.colloquial.check のテストコード。
 
-load_patterns / scan_text / first_hit / mask_allowed / mask_blockquote_lines / mask_fenced_code_blocksの検証。
+load_patterns / scan_text / first_hit / mask_allowed / mask_blockquote_lines / mask_fenced_code_blocks /
+mask_inline_codeの検証。
 テスト本体に口語表現を直接書かないため、辞書ファイルから動的にサンプルを構築する。
 """
 
@@ -570,6 +571,93 @@ class TestMaskFencedCodeBlocks:
 
     def test_empty_text(self) -> None:
         assert pyfltr.colloquial.check.mask_fenced_code_blocks("") == ""
+
+
+class TestMaskInlineCode:
+    """`mask_inline_code` のテスト。"""
+
+    def test_replaces_inline_code_content(self) -> None:
+        text = "本文1 `内側の文` 本文2\n"
+        masked = pyfltr.colloquial.check.mask_inline_code(text)
+        assert len(masked) == len(text)
+        assert masked == "本文1 `" + " " * len("内側の文") + "` 本文2\n"
+
+    def test_replaces_multiple_spans_in_one_line(self) -> None:
+        text = "`前` と `後`\n"
+        masked = pyfltr.colloquial.check.mask_inline_code(text)
+        assert masked == "`" + " " * len("前") + "` と `" + " " * len("後") + "`\n"
+
+    def test_double_backtick_span(self) -> None:
+        text = "``内側``\n"
+        masked = pyfltr.colloquial.check.mask_inline_code(text)
+        assert masked == "``" + " " * len("内側") + "``\n"
+
+    def test_unclosed_backtick_unchanged(self) -> None:
+        text = "閉じない `内側\n次行\n"
+        assert pyfltr.colloquial.check.mask_inline_code(text) == text
+
+    def test_does_not_span_lines(self) -> None:
+        text = "前の行 `開始\n終了` 次の行\n"
+        assert pyfltr.colloquial.check.mask_inline_code(text) == text
+
+    def test_fence_marker_line_unchanged(self) -> None:
+        text = "```\n本文\n```\n"
+        assert pyfltr.colloquial.check.mask_inline_code(text) == text
+
+    def test_empty_text(self) -> None:
+        assert pyfltr.colloquial.check.mask_inline_code("") == ""
+
+
+class TestInlineCodeSkipIntegration:
+    """`scan_text` / `first_hit` でのインラインコードスキップ統合テスト。"""
+
+    def test_first_hit_skips_inside_inline_code(
+        self, deny_patterns: _PatternList, allow_patterns: _PatternList, overlap_sample: tuple[str, str]
+    ) -> None:
+        _, deny_sub = overlap_sample
+        text = f"説明 `{deny_sub}` の解説\n"
+        assert pyfltr.colloquial.check.first_hit(text, deny_patterns, allow_patterns) is False
+
+    def test_scan_text_detects_outside_inline_code(
+        self, deny_patterns: _PatternList, allow_patterns: _PatternList, overlap_sample: tuple[str, str]
+    ) -> None:
+        _, deny_sub = overlap_sample
+        text = f"`{deny_sub}`の説明\n本文の{deny_sub}該当\n"
+        hits = pyfltr.colloquial.check.scan_text(text, deny_patterns, allow_patterns)
+        assert hits, "インラインコード外側の検出が必要"
+        # インラインコード内（1行目）はスキップされ、本文（2行目）のみ検出される
+        assert all(line_no == 2 for line_no, _, _, _, _ in hits)
+
+
+class TestPotentialFormPolicy:
+    """五段動詞の可能形を辞書へ登録しない方針の検証。"""
+
+    @pytest.mark.parametrize(
+        "sentence",
+        [
+            "この設定は全ての環境で使える",
+            "手順書は誰でも書ける",
+            "設定ファイルは人が読める",
+            "この経路で目的の状態まで行ける",
+        ],
+    )
+    def test_potential_forms_are_not_detected(
+        self, deny_patterns: _PatternList, allow_patterns: _PatternList, sentence: str
+    ) -> None:
+        assert not pyfltr.colloquial.check.scan_text(sentence, deny_patterns, allow_patterns)
+
+    def test_remaining_entries_keep_detection(self, deny_patterns: _PatternList, allow_patterns: _PatternList) -> None:
+        """辞書に残る各エントリーの自己マッチサンプルが検出されることを確認する。
+
+        可能形の削除と文字クラスの縮小が、意図しないエントリーまで無効化していないことを確認する。
+        テスト本体へ口語表現を書かないため、サンプルは辞書から動的に展開する。
+        """
+        undetected = [
+            raw
+            for raw in _read_patterns_text(pyfltr.colloquial.check.DENY_PATH)
+            if (sample := _expand_pattern(raw)) and not pyfltr.colloquial.check.first_hit(sample, deny_patterns, allow_patterns)
+        ]
+        assert not undetected, f"自己マッチサンプルが検出されないdenylistエントリー: {undetected}"
 
 
 class TestBlockquoteSkipIntegration:
