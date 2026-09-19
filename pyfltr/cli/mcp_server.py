@@ -269,6 +269,9 @@ async def tool_run(
     実行アーカイブは常に有効化され、`run_id`を戻り値に含む。
     early exit（直前runなし・失敗ツールなし・対象ファイル交差が空）の場合は
     `run_id=None`・`skipped_reason`に理由を設定して返す。
+    `commands`へ指定した検査が設定で無効化されているために実行されなかった場合も、
+    当該検査名と理由を`skipped_reason`へ設定する。無効化の判定は`run_pipeline`が
+    発行する`source="commands"`の警告を入力とし、MCP側では再判定しない。
 
     対応CLI: `pyfltr run` / `pyfltr fast` / `pyfltr ci`
 
@@ -305,6 +308,10 @@ async def tool_run(
         exit_zero_even_if_formatted: Trueの場合、formatterによる変更だけなら成功扱いにする。
         jobs: 並列実行するツール数の上限。
     """
+    # `run_pipeline`は警告を初期化しないため、当該呼び出しが発行した警告だけを
+    # `skipped_reason`の入力にできるよう、ここで蓄積を初期化する。
+    pyfltr.warnings_.clear()
+
     if mode not in ("run", "fast", "ci"):
         _raise_mcp_error("mode は run / fast / ci のいずれかを指定してください。")
     if from_run is not None and not only_failed:
@@ -465,11 +472,18 @@ async def tool_run(
             except Exception:  # tool.json読み取り失敗は非致命的
                 logger.debug("retry_command取得失敗: command=%s", cmd_name, exc_info=True)
 
+    unmet_reasons = [
+        f"{entry['message']} {entry['hint']}" if entry.get("hint") else str(entry["message"])
+        for entry in pyfltr.warnings_.collected_warnings()
+        if entry.get("source") == "commands"
+    ]
+
     return RunResult(
         run_id=run_id,
         exit_code=exit_code,
         failed=failed_commands,
         commands=commands_model,
+        skipped_reason=" / ".join(unmet_reasons) or None,
         retry_commands=retry_commands,
     )
 

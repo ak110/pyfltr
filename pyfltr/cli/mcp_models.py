@@ -185,7 +185,9 @@ class RunResult(pydantic.BaseModel):
     )
     skipped_reason: str | None = pydantic.Field(
         default=None,
-        description="early exitが発生した理由。runが実行されなかった場合に設定される。",
+        description=(
+            "指定した検査が実行されなかった理由。early exit時と、設定で無効化された検査を`commands`へ指定した場合に設定される。"
+        ),
     )
     retry_commands: dict[str, str] = pydantic.Field(
         default_factory=dict,

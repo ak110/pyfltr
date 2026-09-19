@@ -796,6 +796,14 @@ MCPクライアントからの並行ツール呼び出しでも実行起点を�
 `run_pipeline`はearly exit（`(0, None)`）を返す。
 このとき`run`はエラーではなく「実行スキップ」（`skipped_reason`に理由文字列）を返す。
 
+`skipped_reason`はearly exit以外でも値を持つ。`commands`へ指定した検査が設定で無効化されて実行されなかった場合、
+`tool_run`は`run_pipeline`が`source="commands"`で発行した警告から理由を組み立てて同フィールドへ返す。
+無効化の判定は`run_pipeline`の`is_command_enabled_anywhere`と`compute_unmet_commands`が担い、MCP側では再判定しない。
+
+MCPツールは冒頭で`pyfltr.warnings_.clear()`を呼び、当該呼び出しが発行した警告だけを応答の入力にする。
+`run_pipeline`自身は警告を初期化せず、初期化は`pyfltr/cli/pipeline.py`の`run()`内部実装が担うため、
+`run_pipeline`を直接呼ぶMCP経路では呼び出し側が初期化する。
+
 戻り値変更を採用したのは並行プロセス対策。
 MCPツール側で`ArchiveStore.list_runs(limit=1)`を引く案では、同一ユーザーキャッシュを参照する
 並行プロセスがあると別runの`run_id`を誤って拾うリスクがあるため戻り値経由とした。

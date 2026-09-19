@@ -774,6 +774,43 @@ async def test_tool_run_returns_retry_commands(tmp_path: pathlib.Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_tool_run_reports_disabled_command(tmp_path: pathlib.Path) -> None:
+    """設定で無効化された検査を指定した実行は、当該検査名と理由をskipped_reasonへ返す。"""
+    sample = tmp_path / "input.txt"
+    sample.write_text("hello\n", encoding="utf-8")
+
+    result = await pyfltr.cli.mcp_server.tool_run(paths=[str(sample)], commands=["ec"], disable=["ec"])
+
+    assert result.skipped_reason is not None
+    assert "ec" in result.skipped_reason
+    assert not result.commands
+
+
+@pytest.mark.asyncio
+async def test_tool_run_keeps_skipped_reason_none_when_all_enabled(tmp_path: pathlib.Path) -> None:
+    """指定した検査が全て有効な実行では、skipped_reasonがNoneのままとなる。"""
+    sample = tmp_path / "input.txt"
+    sample.write_text("hello\n", encoding="utf-8")
+
+    result = await pyfltr.cli.mcp_server.tool_run(paths=[str(sample)], commands=["ec"])
+
+    assert result.skipped_reason is None
+
+
+@pytest.mark.asyncio
+async def test_tool_run_does_not_carry_over_skipped_reason(tmp_path: pathlib.Path) -> None:
+    """前回実行の未有効化警告を、後続実行のskipped_reasonへ持ち越さない。"""
+    sample = tmp_path / "input.txt"
+    sample.write_text("hello\n", encoding="utf-8")
+
+    skipped = await pyfltr.cli.mcp_server.tool_run(paths=[str(sample)], commands=["ec"], disable=["ec"])
+    assert skipped.skipped_reason is not None
+
+    result = await pyfltr.cli.mcp_server.tool_run(paths=[str(sample)], commands=["ec"])
+    assert result.skipped_reason is None
+
+
+@pytest.mark.asyncio
 async def test_tool_run_retry_command_uses_cli_arguments(tmp_path: pathlib.Path, mocker) -> None:
     """再実行コマンドをMCPサーバー起動引数ではなくCLI引数から生成する。"""
     sample = tmp_path / "failure.txt"
