@@ -17,6 +17,11 @@ paths:
   `ensure_mise_available`内の`mise exec --version` / `mise trust`にも同じ除外envを明示的に渡す。
   対症療法であり、mise側の修正後は撤去または維持を再検討する余地がある。
   詳細は`pyfltr/command/env.py`の`build_subprocess_env` / `build_mise_subprocess_env`に集約する
+- subprocessの出力をテキストで取得する場合は`encoding`と`errors`を明示する。
+  実行ホストの既定文字コードへ委ねると、CP932環境ではreader thread内の`UnicodeDecodeError`が
+  検査の成功と同時に表面化する。指定は`encoding="utf-8"` / `errors="backslashreplace"`で揃え、
+  実装は`pyfltr/command/process.py`の`run_subprocess`と`pyfltr/command/mise.py`の
+  `run_mise_with_trust`に集約する
 - subprocess経過時間ベースのtimeout監視は`threading.Timer`分離方式で組む。
   本体ループの非ブロック化は不要、停止後はEOF到達で解放される標準パターンに揃える。
   実装パターンは`pyfltr/command/process.py`の`run_subprocess` / `_on_timeout` / `_kill_process_tree`を参照する

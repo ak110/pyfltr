@@ -161,11 +161,27 @@ def run_mise_with_trust(
     呼び出し側でエラーメッセージを切り替えるために使う。
     `OSError` は呼び出し側へ伝播する。
     `allow_side_effects=False` 時はtrust試行を行わず、未信頼エラーも含めてそのまま返す。
+
+    出力はmiseの出力文字コード契約に合わせてUTF-8で復号する。
+    指定しない場合は実行ホストの既定文字コードが使われ、CP932環境では
+    `subprocess` のreader thread内で `UnicodeDecodeError` が発生する。
+    復号できないバイトは `errors="backslashreplace"` で可視化し、検査結果を成功扱いのまま
+    未処理例外だけが送出される状態を避ける。指定は `pyfltr/command/process.py` の
+    `run_subprocess` と揃える。
     """
     cwd_arg = str(cwd) if cwd is not None else None
     trusted = False
     while True:
-        check = subprocess.run(args, capture_output=True, text=True, check=False, env=mise_env, cwd=cwd_arg)
+        check = subprocess.run(
+            args,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="backslashreplace",
+            check=False,
+            env=mise_env,
+            cwd=cwd_arg,
+        )
         if check.returncode == 0:
             return check.returncode, check.stdout, check.stderr, False
         stderr = check.stderr
@@ -174,6 +190,8 @@ def run_mise_with_trust(
                 ["mise", "trust", "--yes", "--all"],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="backslashreplace",
                 check=False,
                 env=mise_env,
                 cwd=cwd_arg,

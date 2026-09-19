@@ -4032,6 +4032,40 @@ def test_get_mise_active_tools_status_ok_with_tools(monkeypatch: pytest.MonkeyPa
     assert result.tools == {"shellcheck": [{"version": "0.9.0"}]}
 
 
+@pytest.mark.real_mise_subprocess
+def test_run_mise_with_trust_decodes_utf8_output(tmp_path: pathlib.Path) -> None:
+    """miseの出力をUTF-8として復号し、非ASCII文字を欠落なく返す。"""
+    config = pyfltr.config.config.create_default_config()
+    script = "import sys; sys.stdout.buffer.write('日本語の出力'.encode('utf-8'))"
+    returncode, stdout, _stderr, trust_failed = pyfltr.command.mise.run_mise_with_trust(
+        [sys.executable, "-c", script], dict(os.environ), config, allow_side_effects=False, cwd=tmp_path
+    )
+    assert returncode == 0
+    assert stdout == "日本語の出力"
+    assert not trust_failed
+
+
+@pytest.mark.real_mise_subprocess
+def test_run_mise_with_trust_passes_utf8_decoding(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """実行ホストの既定文字コードに依存しないよう、subprocessへUTF-8の復号指定を渡す。
+
+    CP932が既定の環境では、指定が無いとsubprocessのreader thread内でUnicodeDecodeErrorが生じ、
+    検査自体は成功したまま未処理例外だけが残る。
+    """
+    captured: list[dict[str, typing.Any]] = []
+
+    def fake_run(args: list[str], **kwargs: typing.Any) -> subprocess.CompletedProcess[str]:
+        captured.append(kwargs)
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr("pyfltr.command.mise.subprocess.run", fake_run)
+    config = pyfltr.config.config.create_default_config()
+    pyfltr.command.mise.run_mise_with_trust(["mise", "ls"], {}, config, allow_side_effects=False, cwd=tmp_path)
+    assert len(captured) == 1
+    assert captured[0]["encoding"] == "utf-8"
+    assert captured[0]["errors"] == "backslashreplace"
+
+
 # --- get_mise_active_tool_key 公開API ---
 
 
