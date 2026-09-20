@@ -81,10 +81,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # コンテナ作成後にcheckoutしたmise.tomlのsymlink_bins設定を既存導入へ反映する。
-      - name: Reinstall actionlint with project mise settings
-        run: mise install --force actionlint
-
       - name: 利用者設定に依存しないロック検証
         if: ${{ matrix.python-version == '3.11' }}
         run: |
