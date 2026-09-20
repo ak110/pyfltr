@@ -159,6 +159,12 @@ RUN mkdir -p /home/pyfltr/.config/uv \
 #   ``MISE_DATA_DIR=/cache/mise/data`` に集約され、レイヤーに持続する。
 #   Node.js は前段 (root レイヤー) の ``mise use --global node@lts`` で導入済みのため
 #   ここでは追加ツールのみを宣言する (重複指定しても害は無いが冗長になるため省く)。
+# - actionlint だけ別呼び出し: 配布物がインストール root へ実行ファイルと並べて ``man``・``docs``
+#   を展開するため、``symlink_bins`` で実行ファイルだけを ``.mise-bins`` へ集める。
+#   この設定は導入の時点でだけ配置を生成するため、イメージ側で適用して
+#   利用側の CI 定義から再インストール工程 (``mise install --force actionlint``) を不要にする。
+#   ``--tool-option`` は直後のツールへ適用する指定であり、後続の何件目までに及ぶかは定義されていない。
+#   呼び出しを分けて適用範囲を 1 ツールへ確定させる (同じ RUN の内側のためレイヤーは増えない)。
 # - pnpm 設定: ``minimum-release-age=1440`` 分 = 24 時間で公開直後の新バージョン導入を抑止。
 #   ``store-dir`` は明示しないと cwd のドライブ (ルート) 依存で決まるため設定へ固定する。
 #   pnpm 11 は ``PNPM_STORE_DIR`` を設定として解釈しない (設定用の環境変数は
@@ -177,7 +183,6 @@ RUN mkdir -p /home/pyfltr/.config/uv \
 RUN --mount=type=secret,id=GITHUB_TOKEN,env=GITHUB_TOKEN,required=false \
     mise use --global \
         shfmt@latest \
-        actionlint@latest \
         github:editorconfig-checker/editorconfig-checker@latest \
         glab@latest \
         taplo@latest \
@@ -185,6 +190,7 @@ RUN --mount=type=secret,id=GITHUB_TOKEN,env=GITHUB_TOKEN,required=false \
         pinact@latest \
         gitleaks@latest \
         lychee@latest \
+    && mise use --global --tool-option symlink_bins=true actionlint@latest \
     && pnpm config set store-dir "${PNPM_STORE_DIR}" --global \
     && pnpm config set minimum-release-age 1440 --global \
     && pnpm add -g \
