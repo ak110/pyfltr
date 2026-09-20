@@ -1,5 +1,4 @@
 [tools]
-actionlint = "latest"
 "github:editorconfig-checker/editorconfig-checker" = "latest"
 gitleaks = "latest"
 glab = "latest"
@@ -7,3 +6,13 @@ hadolint = "latest"
 shellcheck = "latest"
 shfmt = "latest"
 taplo = "latest"
+
+# actionlintの配布物はインストールrootへ実行ファイルと並べて`man`・`docs`を展開する。
+# `symlink_bins`で実行ファイルだけを`.mise-bins`へ集め、`man`がPATH上で先に解決される事象を防ぐ。
+# 詳細と全プロジェクトで宣言をそろえる条件はdocs/guide/recommended-nonpython.mdの
+# 「miseで配置を変えるツール設定」に書いている。
+# `mise upgrade --bump`がinline tableのoptionsを失うため別テーブル形式で書き、
+# `[tools]`の最後のキーより後に置く。
+[tools.actionlint]
+version = "latest"
+symlink_bins = true
