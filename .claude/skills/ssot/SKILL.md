@@ -6,7 +6,7 @@ description: >
   SSOT俯瞰（連動更新先の一覧）・機能追加時の文書露出判断を集約する。
   pyfltr/config/config.py・pyfltr/cli/output_format.py・pyfltr/command/runner.py・
   pyfltr/command/mise.py・pyfltr/state/archive.py・pyfltr/state/cache.py・
-  docs/guide/*.md・docs/development/*.md・mkdocs.yml・README.md・CLAUDE.md・
+  docs/guide/*.md・docs/development/*.md・mkdocs.yml・README.md・AGENTS.md・
   .claude/skills/*/SKILL.md・.claude/rules/*.md を編集する際に使用する。
 ---
 
