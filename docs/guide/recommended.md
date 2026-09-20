@@ -632,6 +632,10 @@ run = [
 - `ci`: CI用
     - `pyfltr ci`はformatter差分も含めて失敗扱いにする
 
+actionlintのようにインストールrootへ実行ファイル以外を展開するツールの配置設定は、
+[推奨設定例（非Pythonプロジェクト）](recommended-nonpython.md)の「miseで配置を変えるツール設定」を参照。
+インストール実体は同一マシンの全プロジェクトで共有されるため、言語を問わず同じ方針をとる。
+
 ## .markdownlint-cli2.yaml
 
 markdownlint-cli2が読み込む設定ファイル。`$schema`を指定してエディタ補完を有効化する。

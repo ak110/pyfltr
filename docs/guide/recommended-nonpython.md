@@ -26,6 +26,36 @@ TypeScript/JS・Rust・.NETプロジェクト向けの推奨構成例。
 以下の`.pre-commit-config.yaml`はpre-commit・prekの双方で利用できる。
 各言語節では、対象言語に応じた`types_or`を指定する。
 
+## miseで配置を変えるツール設定
+
+actionlintのように、配布物がインストールrootへ実行ファイルと並べて`man`や`docs`を展開するツールがある。
+miseは`bin`サブディレクトリを持たないツールのインストールrootをそのままPATHへ加えるため、
+展開された`man`がPATH上で先に解決され、mise経由の`man`がディレクトリを実行しようとして失敗する。
+このようなツールには`symlink_bins = true`を宣言し、実行ファイルだけを集めたディレクトリをPATHへ加える。
+
+```toml
+[tools.actionlint]
+version = "latest"
+symlink_bins = true
+```
+
+宣言はinline tableではなく別テーブル形式で書く。
+`mise upgrade --bump`はinline tableを単一の文字列へ平坦化し、optionsを失うためである。
+別テーブルは`[tools]`の最後のキーより後に置く。
+より前へ移すと、後続のキーが`[tools]`ではなく`[tools.actionlint]`のキーとして解釈される。
+
+この設定には次の2つの性質がある。
+
+- 配置の生成は導入時にだけ働き、導入済みの版へ遡及しない
+- インストール実体は同一マシンの全プロジェクトで共有される
+
+導入済みの環境へ後から宣言を加える場合は、同じ変更で`mise install --force <ツール名>`を1回成立させる。
+遡及しないため、宣言だけを加えるとそのツールの解決が失敗する。
+
+同じツールを使う全プロジェクトで宣言の有無をそろえる。
+宣言を持たないプロジェクトの設定から再インストールが起きると、その時点で配置が失われる。
+宣言した側のプロジェクトも、以降はそのツールを解決できなくなる。
+
 ## TypeScript/JS専用プロジェクト
 
 TypeScript/JS用の`pyproject.toml`の例を以下に示す。
