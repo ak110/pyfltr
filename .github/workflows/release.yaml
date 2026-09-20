@@ -116,7 +116,7 @@ jobs:
       # ベースイメージ消失・APT パッケージ削除・Dockerfile 構文エラー等の構造起因事故を
       # PyPI publish 前に止められる (publish 後の失敗は手動リカバリーが必要なため)。
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003 # v4.4.0
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Pre-flight Docker build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -153,7 +153,7 @@ jobs:
           uv publish --check-url=https://pypi.org/simple/
 
       - name: Generate release notes
-        uses: orhun/git-cliff-action@3d96a18cc4ec17e9dc69ddcc424ccafaf1f78ce2 # v4.9.0
+        uses: orhun/git-cliff-action@a9a95522b26fe6403f7bb24031f21fb573d0f5ff # v4.9.1
         with:
           args: --latest --strip header
         env:
