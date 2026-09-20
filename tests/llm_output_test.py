@@ -1303,8 +1303,8 @@ def test_build_command_record_hints_key_omitted_when_empty() -> None:
 def test_build_command_record_textlint_col_hint_only_when_diagnostics() -> None:
     """textlintの`messages[].col`hintは指摘ある時のみ付与され、col/end_colを1個に統合する。
 
-    hint方針（AGENTS.md「JSONL出力の`command.hints`は対応する指摘やステータスが
-    実際に該当するときのみ付与する」）に従い、指摘0件ではhintsキー自体が省略される。
+    hint方針（`pyfltr/output/jsonl.py`の「対応する指摘や状態が実際に該当するときのみ
+    付与する」）に従い、指摘0件ではhintsキー自体が省略される。
     類似文言の重複を避けるため代表キー`messages[].col`の単一hintで両フィールドを説明する。
     """
     # 指摘0件: hintsキー自体を出力しない
