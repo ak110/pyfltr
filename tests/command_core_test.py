@@ -139,6 +139,77 @@ def test_build_subprocess_env_default_keeps_mise_tool_paths(monkeypatch: pytest.
     assert "/usr/bin" in entries
 
 
+def test_build_subprocess_env_uv_runner_drops_virtual_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """実効runnerが`uv`なら継承した`VIRTUAL_ENV`を子プロセスへ渡さない。
+
+    uvは実効cwdからプロジェクト環境を解決するため、実効cwdと結び付かない
+    親の`VIRTUAL_ENV`が残ると環境不一致警告が出る。
+    """
+    monkeypatch.setenv("VIRTUAL_ENV", "/repo/.venv")
+
+    config = pyfltr.config.config.create_default_config()
+    env = pyfltr.command.env.build_subprocess_env(config, "pytest", effective_runner="uv")
+
+    assert "VIRTUAL_ENV" not in env
+
+
+@pytest.mark.parametrize("effective_runner", [None, "direct", "uvx", "mise", "pnpm"])
+def test_build_subprocess_env_keeps_virtual_env_for_other_runners(
+    monkeypatch: pytest.MonkeyPatch, effective_runner: str | None
+) -> None:
+    """`uv`以外の実効runnerでは`VIRTUAL_ENV`の継承を維持する。"""
+    monkeypatch.setenv("VIRTUAL_ENV", "/repo/.venv")
+
+    config = pyfltr.config.config.create_default_config()
+    env = pyfltr.command.env.build_subprocess_env(config, "pytest", effective_runner=effective_runner)
+
+    assert env["VIRTUAL_ENV"] == "/repo/.venv"
+
+
+def test_probe_tool_version_text_drops_virtual_env_for_uv_runner(monkeypatch: pytest.MonkeyPatch) -> None:
+    """uv経路のversion probeも`VIRTUAL_ENV`を除いた環境で起動する。"""
+    monkeypatch.setenv("VIRTUAL_ENV", "/repo/.venv")
+    captured: dict[str, dict[str, str]] = {}
+
+    def _fake_run(
+        commandline: list[str], env: dict[str, str], **_kwargs: typing.Any
+    ) -> pyfltr.command.process.CompletedProcessWithTimeoutInfo:
+        captured["env"] = env
+        return pyfltr.command.process.CompletedProcessWithTimeoutInfo(
+            args=list(commandline), returncode=0, stdout="arid 1.0.0", timeout_exceeded=False
+        )
+
+    monkeypatch.setattr(pyfltr.command.process, "run_subprocess_with_timeout", _fake_run)
+    config = pyfltr.config.config.create_default_config()
+    resolved = pyfltr.command.runner.ResolvedCommandline("uv", ["run", "--frozen", "arid"], "uv", "explicit", "uv")
+
+    assert pyfltr.command.runner.probe_tool_version_text(resolved, config, "arid") == "arid 1.0.0"
+    assert "VIRTUAL_ENV" not in captured["env"]
+
+
+def test_ensure_package_manager_version_drops_virtual_env_for_uv_runner(monkeypatch: pytest.MonkeyPatch) -> None:
+    """uv経路の最低版検査も`VIRTUAL_ENV`を除いた環境で起動する。"""
+    pyfltr.command.runner._get_tool_version.cache_clear()  # pylint: disable=protected-access  # テスト間の隔離
+    monkeypatch.setenv("VIRTUAL_ENV", "/repo/.venv")
+    captured: dict[str, dict[str, str]] = {}
+
+    def _fake_run(
+        commandline: list[str], env: dict[str, str], **_kwargs: typing.Any
+    ) -> pyfltr.command.process.CompletedProcessWithTimeoutInfo:
+        captured["env"] = env
+        return pyfltr.command.process.CompletedProcessWithTimeoutInfo(
+            args=list(commandline), returncode=0, stdout="uv 0.11.7", timeout_exceeded=False
+        )
+
+    monkeypatch.setattr(pyfltr.command.process, "run_subprocess_with_timeout", _fake_run)
+    config = pyfltr.config.config.create_default_config()
+    resolved = pyfltr.command.runner.ResolvedCommandline("uv", ["run", "--frozen", "uv"], "uv", "explicit", "uv")
+
+    pyfltr.command.runner.ensure_package_manager_version(resolved, config, "uv-audit")
+
+    assert "VIRTUAL_ENV" not in captured["env"]
+
+
 @pytest.mark.parametrize(
     ("command", "package_spec", "bin_name"),
     [
@@ -706,8 +777,15 @@ def test_probe_tool_version_text_strips_mise_tool_paths_for_mise_runner(
     """mise経路ではPATHからmise toolエントリを除外したenvを渡す。"""
     captured: dict[str, typing.Any] = {}
 
-    def _fake_env(_config: pyfltr.config.config.Config, _command: str, *, via_mise: bool = False) -> dict[str, str]:
+    def _fake_env(
+        _config: pyfltr.config.config.Config,
+        _command: str,
+        *,
+        via_mise: bool = False,
+        effective_runner: str | None = None,
+    ) -> dict[str, str]:
         captured["via_mise"] = via_mise
+        captured["effective_runner"] = effective_runner
         return {"PATH": "/clean"}
 
     def _fake_run(
@@ -728,7 +806,7 @@ def test_probe_tool_version_text_strips_mise_tool_paths_for_mise_runner(
     result = pyfltr.command.runner.probe_tool_version_text(resolved, config, "shellcheck")
 
     assert result == "shellcheck 0.11.0"
-    assert captured == {"via_mise": True, "env": {"PATH": "/clean"}}
+    assert captured == {"via_mise": True, "effective_runner": "mise", "env": {"PATH": "/clean"}}
 
 
 def test_run_subprocess_file_not_found_returns_127() -> None:

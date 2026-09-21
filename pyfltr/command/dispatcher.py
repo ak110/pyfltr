@@ -679,7 +679,9 @@ def _dispatch_command(
         )
 
     start_time = time.perf_counter()
-    env = pyfltr.command.env.build_subprocess_env(config, command, via_mise=params.via_mise)
+    env = pyfltr.command.env.build_subprocess_env(
+        config, command, via_mise=params.via_mise, effective_runner=params.effective_runner
+    )
 
     # 外部コマンドの解決と実行は、呼び出し単位で確定したcwdへ統一する。
     effective_cwd = ctx.effective_cwd

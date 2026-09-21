@@ -143,8 +143,14 @@ def build_subprocess_env(
     command: str,
     *,
     via_mise: bool = False,
+    effective_runner: str | None = None,
 ) -> dict[str, str]:
     """サブプロセス実行用の環境変数を構築。
+
+    子プロセスの実行コンテキスト（実効cwdと実効runner）に結び付く親由来の環境変数は、
+    起動箇所ごとに加工せず本関数へ集約して正規化する。起動箇所で個別に加工すると、
+    子プロセスを起動する箇所を追加するたびに同じ判断が必要になり、
+    正規化しないまま起動する箇所が残る。
 
     `config` は `pyfltr.config.config.Config` のインスタンスを渡す。
     `via_mise=True` の場合、PATHからmiseが注入したtoolパス（`mise/installs/` 配下・
@@ -161,10 +167,22 @@ def build_subprocess_env(
     なお `ensure_mise_available` 内の事前チェック（`mise exec --version`）と `mise trust`
     も同じ除外envが必要なため、本関数を経由せず `build_mise_subprocess_env` を直接呼んで
     明示的に渡す。
+
+    `effective_runner` は `ResolvedCommandline.effective_runner` の事後値
+    （`ensure_mise_available` 通過後の値）を渡す。`"uv"` の場合は継承した `VIRTUAL_ENV`
+    を削除する。uvは実効cwdからプロジェクト環境（`.venv`・workspace・
+    `UV_PROJECT_ENVIRONMENT`）を自ら解決するため、実効cwdと結び付かない親の
+    `VIRTUAL_ENV` が残ると、正常終了した実行にも環境不一致警告が出る。
+    pyfltr側で環境パスを算出せず削除だけを行うのは、uvの解決規則を重複実装すると
+    設定の追加時に不一致が再発するためである。
+    `uvx` はプロジェクト環境を解決せず、`direct` / `mise` などは親の仮想環境を
+    そのまま使うため、いずれも `VIRTUAL_ENV` を保持する。
     """
     env = os.environ.copy()
     if via_mise:
         env = build_mise_subprocess_env(env)
+    if effective_runner == "uv":
+        env.pop("VIRTUAL_ENV", None)
     # サプライチェーン攻撃対策: パッケージ取得系ツールの最小待機期間を既定で設定する。
     # ユーザーが既に設定している場合はその値を尊重する。
     # pnpmはnpm互換のconfig環境変数方式 （NPM_CONFIG_<SNAKE_CASE>） を採用する。

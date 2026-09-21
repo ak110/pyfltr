@@ -159,11 +159,17 @@ def probe_tool_version_text(
     数値版を含む非警告行がない場合は`None`を返す。
     非0終了・標準出力が空・起動失敗のいずれでも`None`を返す。
 
-    envは`build_subprocess_env`をmise経路の判定付きで呼んで構築する。
+    envは`build_subprocess_env`へ実効runnerを渡して構築する。
     PATH上にmiseのtoolエントリが見えているとmiseがtools解決をスキップしてPATH解決へ
     フォールバックし、指定版と異なる実行ファイルの版を測るためである。
+    uv経路では`VIRTUAL_ENV`の除外も同じ環境生成で行い、実ツール起動と同じ環境で版を測る。
     """
-    env = build_subprocess_env(config, command, via_mise=resolved.effective_runner == "mise")
+    env = build_subprocess_env(
+        config,
+        command,
+        via_mise=resolved.effective_runner == "mise",
+        effective_runner=resolved.effective_runner,
+    )
     try:
         proc = pyfltr.command.process.run_subprocess_with_timeout(
             [*resolved.commandline, "--version"], env, cwd=cwd, timeout=_VERSION_PROBE_TIMEOUT
@@ -199,7 +205,7 @@ def ensure_package_manager_version(
         return
     minimum, reason = requirement
     minimum_text = _format_version(minimum)
-    env = build_subprocess_env(config, command)
+    env = build_subprocess_env(config, command, effective_runner=resolved.effective_runner)
     version = _get_tool_version(tuple(resolved.commandline), tuple(sorted(env.items())), cwd)
     shown = " ".join(resolved.commandline)
     hint = f"`{command}-path`で要件を満たす実行ファイルを指定することもできます。"
