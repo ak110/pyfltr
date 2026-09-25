@@ -3732,6 +3732,49 @@ def test_build_commandline_keeps_tool_spec_when_version_explicit(monkeypatch: py
     assert resolved.tool_spec_omitted is False
 
 
+@pytest.mark.parametrize(
+    ("target_platform", "architecture", "expected_tool"),
+    [
+        (
+            "linux",
+            "x86_64",
+            "github:lycheeverse/lychee[asset_pattern=lychee-x86_64-unknown-linux-musl.tar.gz]@latest",
+        ),
+        ("linux", "aarch64", "github:lycheeverse/lychee@latest"),
+        ("darwin", "x86_64", "github:lycheeverse/lychee@latest"),
+    ],
+)
+def test_lychee_mise_asset_selection(mocker, target_platform: str, architecture: str, expected_tool: str) -> None:
+    """既定のLinux x64だけmiseのmusl配布物を選ぶ。"""
+    mocker.patch.object(sys, "platform", target_platform)
+    mocker.patch("pyfltr.command.runner.platform.machine", return_value=architecture)
+    mocker.patch(
+        "pyfltr.command.mise.get_mise_active_tools",
+        return_value=pyfltr.command.mise.MiseActiveToolsResult(status="ok"),
+    )
+    config = pyfltr.config.config.create_default_config()
+    result = pyfltr.command.runner.build_commandline("lychee", config)
+    assert result.commandline == ["mise", "exec", expected_tool, "--", "lychee"]
+
+
+def test_lychee_mise_keeps_complete_version_and_configured_tool(mocker) -> None:
+    """完全指定と利用者mise設定を優先する。"""
+    mocker.patch.object(sys, "platform", "linux")
+    mocker.patch("pyfltr.command.runner.platform.machine", return_value="x86_64")
+    active_tools = mocker.patch("pyfltr.command.mise.get_mise_active_tools")
+    config = pyfltr.config.config.create_default_config()
+    config.values["lychee-version"] = "github:lycheeverse/lychee@0.24.2"
+    explicit = pyfltr.command.runner.build_commandline("lychee", config)
+    assert explicit.commandline == ["mise", "exec", "github:lycheeverse/lychee@0.24.2", "--", "lychee"]
+
+    config.values["lychee-version"] = "latest"
+    active_tools.return_value = pyfltr.command.mise.MiseActiveToolsResult(
+        status="ok", tools={"github:lycheeverse/lychee": [{"version": "0.24.2"}]}
+    )
+    configured = pyfltr.command.runner.build_commandline("lychee", config)
+    assert configured.commandline == ["mise", "exec", "--", "lychee"]
+
+
 def test_build_commandline_allow_side_effects_propagates_to_active_tools(monkeypatch: pytest.MonkeyPatch) -> None:
     """`build_commandline` の `allow_side_effects` が `get_mise_active_tools` に連動して渡る。"""
     received: list[bool] = []

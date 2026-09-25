@@ -17,8 +17,10 @@ import dataclasses
 import functools
 import os
 import pathlib
+import platform
 import re
 import shutil
+import sys
 
 import pyfltr.command.mise
 import pyfltr.command.process
@@ -652,6 +654,8 @@ def _resolve_mise_runner_commandline(
         tool_spec_omitted = True
     else:
         tool_name = spec.mise_backend or spec.bin_name
+        if command == "lychee" and sys.platform == "linux" and platform.machine().lower() in {"x86_64", "amd64"}:
+            tool_name += "[asset_pattern=lychee-x86_64-unknown-linux-musl.tar.gz]"
         prefix = ["exec", f"{tool_name}@{version}", "--", spec.bin_name]
     return ResolvedCommandline(
         executable="mise",

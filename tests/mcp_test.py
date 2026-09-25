@@ -8,6 +8,7 @@
 import argparse
 import asyncio
 import concurrent.futures
+import contextlib
 import dataclasses
 import importlib.metadata
 import inspect
@@ -17,6 +18,8 @@ import shutil
 import sys
 import typing
 
+import mcp
+import mcp.client.stdio
 import mcp_types
 import pytest
 
@@ -393,6 +396,22 @@ async def test_tool_show_run_output_tool_not_found(tmp_path: pathlib.Path) -> No
 # ---------------------------------------------------------------------------
 # MCPServerのサーバー登録確認
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_mcp_cli_starts_server_and_lists_tools() -> None:
+    """CLIからstdioサーバーを起動して公開ツールを取得する。"""
+    params = mcp.client.stdio.StdioServerParameters(
+        command=sys.executable,
+        args=["-m", "pyfltr", "mcp"],
+        cwd=pathlib.Path(__file__).parents[1],
+    )
+    async with contextlib.AsyncExitStack() as stack:
+        read_stream, write_stream = await stack.enter_async_context(mcp.client.stdio.stdio_client(params))
+        session = await stack.enter_async_context(mcp.ClientSession(read_stream, write_stream))
+        await session.initialize()
+        result = await session.list_tools()
+    assert "command_info" in {tool.name for tool in result.tools}
 
 
 @pytest.mark.asyncio

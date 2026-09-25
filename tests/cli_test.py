@@ -2,6 +2,7 @@
 
 import argparse
 import collections.abc
+import json
 import logging
 
 import pytest
@@ -19,6 +20,21 @@ import pyfltr.config.config
 import pyfltr.warnings_
 from tests.conftest import make_command_result as _make_result
 from tests.conftest import make_execution_context as _make_ctx
+
+
+def test_cli_command_info_check_modes(capsys: pytest.CaptureFixture[str], mocker) -> None:
+    """CLIの`--check`指定だけが実行ファイルを起動して確認する。"""
+    with mocker.patch("subprocess.run", side_effect=AssertionError("確認なしで外部プロセスを起動した")):
+        assert pyfltr.cli.main.run(["command-info", "typos", "--output-format=json"]) == 0
+    without_check = json.loads(capsys.readouterr().out)
+    assert without_check["command"] == "typos"
+    assert "check_passed" not in without_check
+
+    assert pyfltr.cli.main.run(["command-info", "typos", "--output-format=json", "--check"]) == 0
+    checked = json.loads(capsys.readouterr().out)
+    assert checked["command"] == "typos"
+    assert checked["check_passed"] is True
+    assert checked["check_installed_version"].startswith("typos-cli ")
 
 
 @pytest.fixture(name="text_logs")
