@@ -1120,7 +1120,7 @@ def test_parse_arid_json_skips_invalid_locations_only() -> None:
 def test_parse_arid_json_ignores_unknown_fields_of_real_output() -> None:
     """aridの実出力に含まれる未知フィールドを無視して診断へ変換する。
 
-    検体はarid 2.2.2のreport schema_version 4の実出力構造から採る。
+    テスト入力はarid 2.2.2のreport schema_version 4の実出力構造から採る。
     """
     output = json.dumps(
         {
@@ -2381,7 +2381,7 @@ def test_parse_pytest_default_traceback_single_frame_has_line_number() -> None:
     既定のトレースバック形式はフレーム行（`<file>:<line>: in <func>`）を出さず、
     エントリーの末尾へ`<file>:<line>: <例外名>`の位置行を出力する。位置行を拾わないと
     集計行由来の`line=0`へ落ち、継続的インテグレーションの注釈が該当行を指さない。
-    検体はpytest 9.1.1の実出力から採る。
+    テスト入力はpytest 9.1.1の実出力から採る。
     """
     output = (
         "================================= FAILURES =================================\n"
@@ -2792,7 +2792,7 @@ def _pytest_child_run(*, file: str, test: str, line: int, message: str, terminat
     """捕捉出力へ混入する子プロセスのpytest実行1回分を組み立てる。
 
     実出力と同じく`test session starts`見出しで始まり、終了集計行で終わる形とする。
-    除外の判定は当該2つのマーカーに依存するため、検体からいずれも省略しない。
+    除外の判定は当該2つのマーカーに依存するため、テスト入力からいずれも省略しない。
     `terminated=False`は子プロセスが異常終了・打ち切りで終了集計行を欠く形を表す。
     """
     body = "================================= test session starts =================================\ncollected 1 item\n\n"
@@ -3056,7 +3056,7 @@ def _pytest_two_child_runs_output(*, tb_line: bool, summary_list: bool) -> str:
     """子プロセスの実行が2回現れ、1回目が終了集計行を欠く形の出力を組み立てる。
 
     1回目の実行の開始位置を保持したままにすると2回目の終了集計行と対になり、
-    その間にある親の失敗まで除外される。当該構成の検体を共通化する。
+    その間にある親の失敗まで除外される。当該構成のテスト入力を共通化する。
     """
     crashed = _pytest_child_run(file="child/dies_test.py", test="test_dies", line=0, message="", terminated=False)
     completed = _pytest_child_run(file="child/fails_test.py", test="test_fails", line=2, message="assert 1 == 2")
@@ -3594,9 +3594,9 @@ def test_parse_pytest_quiet_child_summary_is_not_taken_as_parent_summary() -> No
     出力中で最後に現れる失敗一覧の見出しが子のものになる。見出しを無条件に採ると失敗欄の
     解析範囲がそこで打ち切られ、以降にある親の実在する失敗が診断から消える。あわせて
     子の失敗一覧が親のものとして扱われ、子の失敗が親の失敗として報告される。
-    検体はpytest 9.1.1で親を`-rN --tb=short`、子を`-q`で起動した実出力の構造から採る。
+    テスト入力はpytest 9.1.1で親を`-rN --tb=short`、子を`-q`で起動した実出力の構造から採る。
     """
-    # 入れ子のpytest実出力を逐語的な検体として維持し、親子の境界条件を固定する。
+    # 入れ子のpytest実出力を逐語的なテスト入力として維持し、親子の境界条件を固定する。
     # arid: disable
     output = (
         "================================= FAILURES =================================\n"
@@ -3630,7 +3630,7 @@ def test_parse_pytest_warnings_summary_after_summary_list_keeps_parent_summary()
 
     `_pytest/terminal.py`は失敗一覧の出力後にも後追いの警告の集計を出力する。当該見出しと
     本文を入れ子の実行の標識に含めると、親自身の失敗一覧を子のものと誤判定し、失敗一覧のみを
-    情報源とする失敗が診断から消える。検体はpytest 9.1.1で`pytest_terminal_summary`フックから
+    情報源とする失敗が診断から消える。テスト入力はpytest 9.1.1で`pytest_terminal_summary`フックから
     警告を送出した実出力から採る。
     """
     output = (
@@ -3660,7 +3660,7 @@ def test_parse_pytest_child_summary_is_not_taken_without_parent_tail_line() -> N
     上限として採った集計行より後に標識が現れる場合は上限を出力の末尾へ広げて探し直すため、
     当該構成では子の見出しが標識を伴うようになり、いずれの見出しも親のものと判定されない。
     """
-    # 入れ子のpytest実出力を逐語的な検体として維持し、親子の境界条件を固定する。
+    # 入れ子のpytest実出力を逐語的なテスト入力として維持し、親子の境界条件を固定する。
     # arid: disable
     output = (
         "================================= FAILURES =================================\n"
@@ -3693,7 +3693,7 @@ def test_parse_pytest_parent_summary_without_tail_line_keeps_safety_net() -> Non
     上限として採る集計行が捕捉出力へ混入した子のものになる構成でも、親自身の失敗一覧は
     出力の末尾側に存在する。上限を確定できないことを理由に判別を諦めると失敗一覧が空となり、
     親の失敗一覧に載らないテスト名の失敗欄を除外する安全網が働かず、子の失敗が
-    架空の診断として残る。子の失敗一覧の見出しを検体へ含め、上限より前の子の見出しと
+    架空の診断として残る。子の失敗一覧の見出しをテスト入力へ含め、上限より前の子の見出しと
     上限より後の親の見出しが競合する構成で後者を採ることを固定する。
     """
     output = (
@@ -3806,7 +3806,7 @@ def test_parse_pytest_interrupt_traceback_after_summary_keeps_parent_summary(
     失敗一覧のみを情報源とする失敗が消え（`with_failures_section=False`）、失敗欄を持つ場合も
     解析範囲が中断のトレースバックまで延びて行番号と本文が別の失敗のものへ差し替わる
     （`with_failures_section=True`）。区切り行の2形をいずれも検証する。
-    検体はpytest 9.1.1で`--full-trace`付きの中断を起こした実出力の構造から採る。
+    テスト入力はpytest 9.1.1で`--full-trace`付きの中断を起こした実出力の構造から採る。
     """
     failures_section = (
         "====================================== FAILURES ======================================\n"
@@ -5291,7 +5291,7 @@ def test_detect_pytest_config_conflict_xdist_no_header_ignores_nested_child_run(
     """親が`rootdir:`・`configfile:`を一切出さない場合でもヘッダー領域の終端判定が成立する。
 
     `--no-header`のxdist実行では親のヘッダー行が出ないため、子の競合を親の競合として
-    扱わないことを、親のヘッダー行が存在する検体とは別に固定する。
+    扱わないことを、親のヘッダー行が存在するテストケースとは別に固定する。
     """
     output = """============================= test session starts ==============================
 created: 2/2 workers

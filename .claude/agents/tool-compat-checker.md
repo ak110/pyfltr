@@ -45,12 +45,12 @@ pyfltrは各ツールのバージョン追従が必要なため、差分の確�
      `mcp__plugin_context7_context7__query-docs` を呼ぶ
 
 4. `error_parser.py` の正規表現検証
-   - 最小のエラー検体を作業用の一時ディレクトリに作成する
-   - 次のコマンドで出力保存先を作成し、検体を実行する
+   - エラーを発生させる最小のサンプルファイルを作業用の一時ディレクトリに作成する
+   - 次のコマンドで出力保存先を作成し、サンプルファイルを対象として実行する
 
      ```sh
      run_log="$(mktemp)"
-     uv run pyfltr run --enable=<tool> --commands=<tool> --output-format=jsonl --allow-external-paths <検体パス> | tee "$run_log"
+     uv run pyfltr run --enable=<tool> --commands=<tool> --output-format=jsonl --allow-external-paths <サンプルファイルのパス> | tee "$run_log"
      printf 'run_log=%s\n' "$run_log"
      ```
 

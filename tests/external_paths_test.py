@@ -203,7 +203,7 @@ def test_is_external_path_absolute_outside_is_external(
     pyfltr.command.dispatcher.execute_command("pytest", _testconf.make_args(), ctx)
 
     # 外部パスの記録は公開値であり、区切りを`/`へ統一した表現で保持される。
-    # 検体がWindows区切りを含まないため、実装と独立した`as_posix()`で期待値を生成する。
+    # テストで使うパスがWindows区切りを含まないため、実装と独立した`as_posix()`で期待値を生成する。
     assert outside.as_posix() in pyfltr.warnings_.filtered_direct_files(reason="external")
 
 
@@ -830,7 +830,7 @@ def test_monorepo_mixed_inject_target_warns_only(monkeypatch: pytest.MonkeyPatch
     external.parent.mkdir(parents=True, exist_ok=True)
     external.write_text("# external\n", encoding="utf-8")
     normalized_external = pyfltr.paths.normalize_separators(external)
-    # 許可指定の有無だけが異なる対称な検体として、準備から実行までを各テストに明示する。
+    # 許可指定の有無だけが異なる対称なテストケースとして、準備から実行までを各テストに明示する。
     # arid: disable
     (start_cwd / ".markdownlint.json").write_text("{}", encoding="utf-8")
 
@@ -929,7 +929,7 @@ def test_monorepo_allow_external_paths_runs_external(monkeypatch: pytest.MonkeyP
     file_a = sub_a / "doc.md"
     file_a.write_text("# a\n", encoding="utf-8")
     external = _make_external(tmp_path)
-    # 許可指定の有無だけが異なる対称な検体として、準備から実行までを各テストに明示する。
+    # 許可指定の有無だけが異なる対称なテストケースとして、準備から実行までを各テストに明示する。
     # arid: disable
     (start_cwd / ".markdownlint.json").write_text("{}", encoding="utf-8")
 

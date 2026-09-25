@@ -68,7 +68,7 @@ description: >
   値の生成箇所を確認できない場合は`pathlib.Path`同士の比較を用いず、生成箇所の実装を読んで確定する。
   `pathlib.Path`同士の比較はWindowsで区切りの差を吸収するため、契約からの退行を検出できない。
   公開する`file`値の区切り表現は`docs/development/architecture.md`が定める。
-  ただし検体のパス自体がWindows区切りを含む場合（`pathlib.Path(r"nested\x.py")`のような検体）は、
+  ただしテストで使うパス自体がWindows区切りを含む場合（`pathlib.Path(r"nested\x.py")`のようなテスト入力）は、
   POSIX環境で`as_posix()`が当該区切りをファイル名の一部として扱い正規化しないため、
   期待値を`pyfltr.paths.normalize_separators()`で生成する。
   この場合は実装と同じ関数を用いるため、当該関数自体の退行は`tests/paths_test.py`が担保する

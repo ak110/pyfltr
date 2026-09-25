@@ -659,7 +659,7 @@ def test_monorepo_external_only_warning_and_record_are_emitted_once(
     )
 
     # 外部パスの記録と警告本文は公開値であり、区切りを`/`へ統一した表現で保持される。
-    # 検体がWindows区切りを含まないため、実装と独立した`as_posix()`で期待値を生成する。
+    # テストで使うパスがWindows区切りを含まないため、実装と独立した`as_posix()`で期待値を生成する。
     normalized_external = external.as_posix()
     messages = [
         warning["message"]

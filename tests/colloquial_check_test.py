@@ -295,7 +295,7 @@ class TestScanText:
     ) -> None:
         """熟語と助詞が連なる形に対し、denylistのパターン自体が一致しない。
 
-        本検体はallowlistの登録に依存せず成立する。
+        本テストはallowlistの登録に依存せず成立する。
         allowlist登録によって抑止される複合形は
         `test_allowlisted_compound_forms_are_not_detected`が固定する。
         """

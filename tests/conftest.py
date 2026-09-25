@@ -193,7 +193,7 @@ def make_command_result(
 ) -> pyfltr.command.core_.CommandResult:
     """テスト用の CommandResult を生成する。
 
-    `formatter_failed`の既定値はFalseとし、formatter型の失敗検体だけがTrueを指定する。
+    `formatter_failed`の既定値はFalseとし、formatter型の失敗を表すテストデータだけがTrueを指定する。
     `errors` は `ErrorLocation` のリスト（省略時は空）。
     `target_files` は `retry_command` フィルタリングのテスト用（省略時は空）。
     `archived` のテスト既定は True（smart truncation 適用側）。
