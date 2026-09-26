@@ -856,6 +856,11 @@ jobs:
       全チェックステップの`if`を外す
 - `--output-format=github-annotations`: `::error file=...` / `::warning file=...`形式の行を標準出力へ出力する
     - プル要求の該当ファイル行にコメントとして表示される
+- GitHub Actionsのピン留め検査: `preset = "latest"`で有効になる`pinact`が`pyfltr ci`の中で実行する
+    - `pinact run --check`をworkflowの独立したstepとして置かない。
+      同じ検査を`pyfltr run`・`pyfltr fast`がpush前にも実行するため、ピン留めの漏れをpush前に見つけられる
+    - 本ページの設定例は読みやすさのため`uses:`をタグで書いている。
+      そのまま写すと`pinact`が失敗するため、写した後に`pinact run`を実行してSHAへピン留めする
 
 ### 失敗時のログ保存（任意）
 

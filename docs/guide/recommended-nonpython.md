@@ -6,7 +6,7 @@ TypeScript/JS・Rust・.NETプロジェクト向けの推奨構成例。
 共通のポイントは以下のとおり。
 
 - `preset = "latest"`: 各時点での推奨ツール構成。
-  ドキュメント系（textlint / markdownlint / actionlint / typos）と統合系（prek / pre-commit）は
+  ドキュメント系（textlint / markdownlint / actionlint / pinact / typos）と統合系（prek / pre-commit）は
   言語カテゴリゲートに属さない。
   プリセットでtrueになっているツールがそのまま有効化される。
   `preset = "20260413"`を指定し続ける場合は、追加設定なしでpre-commitを利用できる。

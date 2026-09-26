@@ -1,0 +1,5 @@
+# pinactのスモークテスト用設定。
+# preset = "latest"だけでpinactが有効になることを、組み込みの既定経路のまま確かめる。
+[tool.pyfltr]
+preset = "latest"
+respect-gitignore = false

@@ -72,7 +72,7 @@ bin-runner経由（既定はmise）で起動する。
 
 - Formatters: shfmt（既定は無効）/ taplo（TOML formatter、既定は無効）
 - Linters
-    - 一般: typos（PyPI依存）/ actionlint / ec（editorconfig-checker、既定は無効）/
+    - 一般: typos（PyPI依存）/ actionlint / pinact / ec（editorconfig-checker、既定は無効）/
       shellcheck（既定は無効）/ glab-ci-lint（既定は無効）
     - 日本語文体: colloquial-check（既定は無効）
     - YAML / Dockerfile / シークレット系: yamllint（既定は無効）/ hadolint（Dockerfile、既定は無効）

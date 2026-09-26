@@ -4338,6 +4338,62 @@ def test_parse_semgrep_json_empty() -> None:
     assert pyfltr.command.error_parser.parse_errors("semgrep", "not json") == []
 
 
+def _pinact_sarif_result(uri: str, line: int, text: str) -> dict:
+    return {
+        "ruleId": "parse-error",
+        "level": "error",
+        "message": {"text": text},
+        "locations": [{"physicalLocation": {"artifactLocation": {"uri": uri}, "region": {"startLine": line}}}],
+    }
+
+
+def test_parse_pinact_sarif() -> None:
+    """pinactのSARIFから、標準エラーの行が前置されていても全resultsを抽出する。
+
+    前置行に`[`・`{`を含めても、JSONの断片としてSARIF本体と取り違えないことを確かめる。
+    """
+    sarif = {
+        "version": "2.1.0",
+        "runs": [
+            {
+                "tool": {"driver": {"name": "pinact", "rules": [{"id": "parse-error"}]}},
+                "results": [
+                    _pinact_sarif_result(".github/workflows/ci.yaml", 7, "failed to handle a line: action can't be pinned"),
+                    _pinact_sarif_result(
+                        ".github/workflows/ci.yaml",
+                        9,
+                        "failed to handle a line: SHA-pinned action requires a version comment for verifiability",
+                    ),
+                ],
+            }
+        ],
+    }
+    output = (
+        "ERROR failed to handle a line: action can't be pinned\n"
+        ".github/workflows/ci.yaml:7\n"
+        "      - uses: actions/checkout@v4  # [note] {x} ${{ matrix.os }}\n" + json.dumps(sarif, indent=2)
+    )
+    errors = pyfltr.command.error_parser.parse_errors("pinact", output)
+    assert [(e.file, e.line, e.rule, e.severity, e.message) for e in errors] == [
+        (".github/workflows/ci.yaml", 7, "parse-error", "error", "failed to handle a line: action can't be pinned"),
+        (
+            ".github/workflows/ci.yaml",
+            9,
+            "parse-error",
+            "error",
+            "failed to handle a line: SHA-pinned action requires a version comment for verifiability",
+        ),
+    ]
+    assert all(e.command == "pinact" for e in errors)
+
+
+def test_parse_pinact_sarif_empty() -> None:
+    """results空・無効JSONはいずれも空リストを返す。"""
+    empty = json.dumps({"version": "2.1.0", "runs": [{"tool": {"driver": {"name": "pinact"}}, "results": []}]})
+    assert pyfltr.command.error_parser.parse_errors("pinact", empty) == []
+    assert pyfltr.command.error_parser.parse_errors("pinact", "not json") == []
+
+
 def test_parse_semgrep_json_with_progress_output() -> None:
     """JSON前後に進捗表示が混在してもfindingを保持する。"""
     payload = json.dumps(
@@ -4818,6 +4874,7 @@ def test_get_custom_parser_commands() -> None:
     assert "yarn-audit" in commands
     assert "semgrep" in commands
     assert "sqlfluff" in commands
+    assert "pinact" in commands
     # aridは`_PATH_BASE_PARSERS`側の登録だが、UIのストリーミング抑止判定では同じ集合に含める。
     assert "arid" in commands
     assert "mypy" not in commands

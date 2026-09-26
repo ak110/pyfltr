@@ -69,8 +69,19 @@ _PRESETS: dict[str, dict[str, bool]] = {
         "uv-sort": True,
         "prek": True,
     },
+    "20260926": {
+        **_PRESET_BASE,
+        "pyright": True,
+        "textlint": True,
+        "markdownlint": True,
+        "actionlint": True,
+        "typos": True,
+        "uv-sort": True,
+        "prek": True,
+        "pinact": True,
+    },
 }
-_PRESETS["latest"] = _PRESETS["20260726"]
+_PRESETS["latest"] = _PRESETS["20260926"]
 
 # v3.0.0で削除されたプリセット名と、移行先を示すメッセージの対応表。
 # `load_config`が該当プリセット指定を検知したら案内付きValueErrorを送出する。

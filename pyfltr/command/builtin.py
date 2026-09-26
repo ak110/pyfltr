@@ -201,6 +201,13 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         targets=[".github/workflows/*.yaml", ".github/workflows/*.yml"],
         fixed_cost=0.2,
     ),
+    # pinact: GitHub Actionsの`uses:`がSHAと版コメントでピン留めされているかを検査する。
+    # 既定引数の`--no-api`によりGitHub APIを呼ばない構文上の検査に限る。
+    "pinact": CommandInfo(
+        type="linter",
+        targets=[".github/workflows/*.yaml", ".github/workflows/*.yml"],
+        fixed_cost=0.1,
+    ),
     # GitLab CI設定の構文検証。GitLab API経由でlintするためネットワーク・認証が必須。
     # 既定で無効（opt-in）とし、CIや初学者環境で誤って失敗しないようにする。
     "glab-ci-lint": CommandInfo(

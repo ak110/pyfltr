@@ -73,7 +73,7 @@ plugins:
         - ドキュメント: `markdownlint` / `textlint` / `designmd` / `lychee` / `colloquial-check`
         - シェル: `shfmt` / `shellcheck`
         - YAML/TOML: `yamllint` / `taplo`
-        - CI/Docker/EditorConfig: `actionlint` / `glab-ci-lint` / `hadolint` / `ec`
+        - CI/Docker/EditorConfig: `actionlint` / `pinact` / `glab-ci-lint` / `hadolint` / `ec`
         - セキュリティ/スペル: `gitleaks` / `typos` / `semgrep` / `bandit`
         - SQL: `sqlfluff`
         - 依存の脆弱性監査: `uv-audit` / `pnpm-audit` / `npm-audit` / `yarn-audit`

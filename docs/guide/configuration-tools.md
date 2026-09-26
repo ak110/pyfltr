@@ -20,7 +20,7 @@ pyfltrは対応ツールを実行方式の観点から5カテゴリに分けて�
   対象はeslint / prettier / biome / oxlint / tsc / vitest / markdownlint-cli2 / textlint / designmd。
   npm / pnpm / yarn等のJavaScriptパッケージマネージャー経由で起動する
 - bin-runner経由（既定`{command}-runner = "bin-runner"`）。
-  対象はec / shellcheck / shfmt / actionlint / glab-ci-lint / taplo / hadolint / gitleaks / lychee。
+  対象はec / shellcheck / shfmt / actionlint / pinact / glab-ci-lint / taplo / hadolint / gitleaks / lychee。
   さらにcargo系（cargo-fmt / cargo-clippy / cargo-check / cargo-test / cargo-deny）も対象。
   dotnet系（dotnet-format / dotnet-build / dotnet-test）も含む。
   グローバル`bin-runner`設定（既定`"mise"`）に従ってmiseまたはPATH経由でネイティブバイナリを解決する
@@ -651,7 +651,7 @@ jobs:
   ci:
     runs-on: ubuntu-latest
     env:
-      # mise・pinact等がGitHub APIを呼び出す際のレート制限（403）回避。
+      # mise等がGitHub APIを呼び出す際のレート制限（403）回避。
       GITHUB_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v7
@@ -767,6 +767,7 @@ ec = true
 shellcheck = true
 shfmt = true
 actionlint = true
+pinact = true
 glab-ci-lint = true
 taplo = true
 hadolint = true
@@ -787,6 +788,11 @@ dotnet-test = true
 - shellcheck: `shellcheck-args = ["-f", "gcc"]`
 - shfmt: `shfmt-check-args = ["-l"]` / `shfmt-write-args = ["-w"]`（2段階実行。共通引数は`shfmt-args`で指定）
 - actionlint: `actionlint-args = []`
+- pinact: `pinact-args = ["run", "--no-api", "--format", "sarif"]`（`.github/workflows/`配下のworkflowを対象とする）。
+  `uses:`が40文字のSHAと版コメントでピン留めされているかだけを確かめ、GitHub APIを呼ばないため`GITHUB_TOKEN`を要しない。
+  検査だけを行いファイルを書き換えない。
+  タグからSHAへの書き換えはGitHub APIを要し、結果が実行時点の最新リリースで変わるため、pyfltrの自動修正の対象にしない。
+  ピン留めは`pinact run`を直接実行して行う
 - glab-ci-lint: `glab-ci-lint-args = ["ci", "lint"]`（`glab ci lint`サブコマンドを既定値として保持）。
   GitLabリモートが未登録または未認証の環境では`glab`自身がエラー終了するため、pyfltrが自動でスキップ扱いに変換する
 - taplo: `taplo-check-args = ["check"]` / `taplo-write-args = ["format"]`（2段階実行。共通引数は`taplo-args`で指定）

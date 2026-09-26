@@ -71,7 +71,7 @@ jobs:
         python-version: ["3.11", "3.12", "3.13", "3.14"]
     env:
       UV_PYTHON: ${{ matrix.python-version }}
-      # mise・pinact等がGitHub APIを呼び出す際のレート制限（403）回避
+      # mise等がGitHub APIを呼び出す際のレート制限（403）回避
       # container jobでは明示しないとsecrets.GITHUB_TOKENがコンテナへ渡らない
       GITHUB_TOKEN: ${{ github.token }}
       # 実行アーカイブの保存先。container job配下では$HOMEがGitHub Actionsに上書きされ
@@ -89,9 +89,6 @@ jobs:
           trap 'rmdir "$config_dir"' EXIT
           # UV_FROZENではlockfileの最新性を検査しないため、この検査だけ解除する。
           env --unset=UV_FROZEN XDG_CONFIG_HOME="$config_dir" uv lock --check
-
-      - name: GitHub Actionsのピン留め検証
-        run: pinact run --check
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -138,7 +135,7 @@ jobs:
   test-windows:
     runs-on: windows-latest
     env:
-      # mise・pinact等がGitHub APIを呼び出す際のレート制限（403）回避。
+      # mise等がGitHub APIを呼び出す際のレート制限（403）回避。
       GITHUB_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -197,7 +194,7 @@ jobs:
         # tests/smoke_test.py が起動するmise経由ツールをWindows runnerでも揃える。
         # Linux jobは公式pyfltrイメージに同梱済みのため不要。
         # 既定シェル（PowerShell）でもbash継続`\`に依存せず動くよう単一行で記述する。
-        run: mise use --global shfmt@latest actionlint@latest github:editorconfig-checker/editorconfig-checker@latest taplo@latest hadolint@latest gitleaks@latest
+        run: mise use --global shfmt@latest actionlint@latest pinact@latest github:editorconfig-checker/editorconfig-checker@latest taplo@latest hadolint@latest gitleaks@latest
 
       - name: Install shellcheck via chocolatey
         # shellcheckはmise registryでもインストールできるが、Windowsではzip内サブディレクトリ

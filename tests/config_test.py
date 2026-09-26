@@ -51,7 +51,7 @@ def _assert_language_gate(
         assert config[cmd] is expected, f"{category_key} gate開: {cmd} expected {expected}, got {config[cmd]}"
 
 
-_DOCS_ORTHOGONAL_KEYS = ("textlint", "markdownlint", "actionlint", "typos", "prek", "pre-commit")
+_DOCS_ORTHOGONAL_KEYS = ("textlint", "markdownlint", "actionlint", "pinact", "typos", "prek", "pre-commit")
 """言語カテゴリ gate の対象外となるドキュメント系ツールキー。
 
 preset が直接 True/False を決め、言語カテゴリキーの影響を受けない。
@@ -78,6 +78,7 @@ _DOTNET_ENABLED = frozenset({"dotnet-format", "dotnet-build", "dotnet-test"})
                 "textlint": False,
                 "markdownlint": False,
                 "actionlint": False,
+                "pinact": False,
                 "typos": False,
                 "prek": False,
                 "pre-commit": False,
@@ -92,6 +93,7 @@ _DOTNET_ENABLED = frozenset({"dotnet-format", "dotnet-build", "dotnet-test"})
                 "textlint": True,
                 "markdownlint": True,
                 "actionlint": False,
+                "pinact": False,
                 "typos": False,
                 "prek": False,
                 "pre-commit": False,
@@ -106,6 +108,7 @@ _DOTNET_ENABLED = frozenset({"dotnet-format", "dotnet-build", "dotnet-test"})
                 "textlint": True,
                 "markdownlint": True,
                 "actionlint": True,
+                "pinact": False,
                 "typos": True,
                 "prek": False,
                 "pre-commit": False,
@@ -120,6 +123,7 @@ _DOTNET_ENABLED = frozenset({"dotnet-format", "dotnet-build", "dotnet-test"})
                 "textlint": True,
                 "markdownlint": True,
                 "actionlint": True,
+                "pinact": False,
                 "typos": True,
                 "prek": False,
                 "pre-commit": True,
@@ -134,13 +138,29 @@ _DOTNET_ENABLED = frozenset({"dotnet-format", "dotnet-build", "dotnet-test"})
                 "textlint": True,
                 "markdownlint": True,
                 "actionlint": True,
+                "pinact": False,
                 "typos": True,
                 "prek": True,
                 "pre-commit": False,
             },
             {"python": _PYTHON_ENABLED_LATEST, "javascript": False, "rust": False, "dotnet": False},
         ),
-        # latest = 20260726と同じ構成。
+        # 20260926はpinactが追加される。
+        (
+            "20260926",
+            "python = true\n",
+            {
+                "textlint": True,
+                "markdownlint": True,
+                "actionlint": True,
+                "pinact": True,
+                "typos": True,
+                "prek": True,
+                "pre-commit": False,
+            },
+            {"python": _PYTHON_ENABLED_LATEST, "javascript": False, "rust": False, "dotnet": False},
+        ),
+        # latest = 20260926と同じ構成。
         (
             "latest",
             "python = true\n",
@@ -148,6 +168,7 @@ _DOTNET_ENABLED = frozenset({"dotnet-format", "dotnet-build", "dotnet-test"})
                 "textlint": True,
                 "markdownlint": True,
                 "actionlint": True,
+                "pinact": True,
                 "typos": True,
                 "prek": True,
                 "pre-commit": False,
@@ -1509,7 +1530,7 @@ def test_bin_tool_default_config_values() -> None:
     """bin-runner対応ツールのデフォルト設定値が正しく定義されている。"""
     config = pyfltr.config.config.create_default_config()
     # bin-runner経由ツールの有効/無効とバージョン設定を確認（fast=True系列）
-    bin_tools = ["ec", "shellcheck", "shfmt", "actionlint", "taplo", "hadolint"]
+    bin_tools = ["ec", "shellcheck", "shfmt", "actionlint", "pinact", "taplo", "hadolint"]
     for tool in bin_tools:
         assert config[tool] is False, f"{tool}は既定で無効"
         assert config[f"{tool}-path"] == "", f"{tool}-pathは空文字"

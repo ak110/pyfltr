@@ -47,7 +47,7 @@ Formattersによるファイル変更があっても終了コードは0になる
 有効化しているツールのうち`{command}-fast = true`のものが対象で、内訳は以下。
 
 - Formatters: `prettier` `ruff-format` `uv-sort` `shfmt` `taplo` `cargo-fmt` `dotnet-format`
-- Linters（言語非依存）: `ec` `shellcheck` `typos` `actionlint` `yamllint` `hadolint` `colloquial-check`
+- Linters（言語非依存）: `ec` `shellcheck` `typos` `actionlint` `pinact` `yamllint` `hadolint` `colloquial-check`
 - Linters（言語・記法別）: `ruff-check` `ty` `markdownlint` `textlint` `biome` `oxlint` `cargo-clippy`
 - その他: `pre-commit`・`prek`（`.pre-commit-config.yaml`のhookを統合実行）
 
@@ -514,7 +514,7 @@ pyfltr ci --commands=ruff-check,markdownlint [files and/or directories ...]
     - Rust系: `cargo-clippy` `cargo-check` `cargo-deny`
     - .NET系: `dotnet-build`
     - 監査系: `uv-audit` `pnpm-audit` `npm-audit` `yarn-audit`
-    - その他: `ec` `shellcheck` `typos` `actionlint`
+    - その他: `ec` `shellcheck` `typos` `actionlint` `pinact`
 - `test`: `pytest` `vitest` `cargo-test` `dotnet-test`
 - `audit`: `uv-audit` `pnpm-audit` `npm-audit` `yarn-audit`
 - `fast`: per-commandの`{cmd}-fast`フラグがtrueのコマンド

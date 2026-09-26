@@ -47,6 +47,7 @@ _EXPECTED_BIN_TOOLS = (
     "shellcheck",
     "shfmt",
     "actionlint",
+    "pinact",
     "glab-ci-lint",
     "taplo",
     "hadolint",

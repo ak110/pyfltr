@@ -463,6 +463,17 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "actionlint-args": [],
     "actionlint-version": "latest",
     "actionlint-fast": True,
+    # pinact: `--no-api`でGitHub APIを呼ばない構文上の検査（40文字SHAと版コメントの有無）に限定し、
+    # `GITHUB_TOKEN`を不要にする。`--format sarif`の指定時は`--fix`が既定で無効となりファイルを書き換えない。
+    # `--check`は`--no-api`と併用すると終了コード3で失敗するため含めない。
+    # 自動修正（タグからSHAへの解決）はGitHub APIを要し結果が実行時点の最新リリースで変わるため、
+    # `pinact-fix-args`は定義せずfix段へ載せない。修正は利用者が`pinact run`を直接実行する。
+    "pinact": False,
+    "pinact-path": "",
+    "pinact-runner": "bin-runner",
+    "pinact-args": ["run", "--no-api", "--format", "sarif"],
+    "pinact-version": "latest",
+    "pinact-fast": True,
     # glab ci lint は GitLab API 経由で .gitlab-ci.yml を検証する。
     # 認証・ネットワーク必須のため既定で無効 (opt-in)。
     # サブコマンド `ci lint` は args 既定値として持たせ、明示 path 指定経路でも適用されるようにする。
@@ -791,6 +802,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
             "shellcheck",
             "typos",
             "actionlint",
+            "pinact",
             "glab-ci-lint",
             "yamllint",
             "hadolint",

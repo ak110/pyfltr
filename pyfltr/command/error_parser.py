@@ -915,6 +915,72 @@ def _parse_typos_jsonl(output: str) -> list[ErrorLocation]:
     return results
 
 
+def _parse_pinact_sarif(output: str) -> list[ErrorLocation]:
+    """`pinact run --format sarif`のSARIF出力をパースする。
+
+    出力例::
+
+        {
+          "runs": [
+            {
+              "results": [
+                {
+                  "ruleId": "parse-error",
+                  "level": "error",
+                  "message": {"text": "failed to handle a line: action can't be pinned"},
+                  "locations": [
+                    {"physicalLocation": {"artifactLocation": {"uri": ".github/workflows/ci.yaml"},
+                                          "region": {"startLine": 7}}}
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+
+    pinactは標準エラーへ人間向けの行を書き、pyfltrは標準エラーを標準出力へ合流させるため、
+    SARIFの前に別の行が並ぶ。JSON本体は`_try_json_loads`で取り出す。
+    JSON解析失敗時は空リストを返す。
+    """
+    runs = _json_list_field(output, "runs")
+    if runs is None:
+        return []
+    results: list[ErrorLocation] = []
+    for run in runs:
+        if not isinstance(run, dict) or not isinstance(run.get("results"), list):
+            continue
+        for entry in run["results"]:
+            if not isinstance(entry, dict):
+                continue
+            locations = entry.get("locations")
+            if not isinstance(locations, list) or not locations or not isinstance(locations[0], dict):
+                continue
+            physical = locations[0].get("physicalLocation")
+            if not isinstance(physical, dict):
+                continue
+            artifact = physical.get("artifactLocation")
+            region = physical.get("region")
+            if not isinstance(artifact, dict) or not isinstance(region, dict):
+                continue
+            line = _json_int(region.get("startLine"))
+            if line is None:
+                continue
+            message = entry.get("message")
+            rule = str(entry.get("ruleId", "") or "") or None
+            results.append(
+                ErrorLocation(
+                    file=pyfltr.paths.to_cwd_relative(str(artifact.get("uri", ""))),
+                    line=line,
+                    col=_json_int(region.get("startColumn")),
+                    command="pinact",
+                    message=str(message.get("text", "") or "") if isinstance(message, dict) else "",
+                    rule=rule,
+                    severity=_normalize_severity(entry.get("level")),
+                )
+            )
+    return results
+
+
 def _parse_designmd_json(output: str) -> list[ErrorLocation]:
     """`@google/design.md lint`のJSON出力をパースする。
 
@@ -2226,6 +2292,7 @@ _CUSTOM_PARSERS: dict[str, typing.Callable[[str], list[ErrorLocation]]] = {
     "shellcheck": _parse_shellcheck_json,
     "textlint": _parse_textlint_json,
     "typos": _parse_typos_jsonl,
+    "pinact": _parse_pinact_sarif,
     "pytest": _parse_pytest,
     "vitest": _parse_vitest_json,
     "glab-ci-lint": _parse_glab_ci_lint,

@@ -79,6 +79,7 @@ _CASES: tuple[_Case, ...] = (
     _Case("shfmt", "basic", ("sample.sh",), required_bins=("mise",)),
     _Case("taplo", "basic", ("sample.toml",), required_bins=("mise",)),
     _Case("actionlint", "basic", (".github/workflows/ci.yaml",), required_bins=("mise",)),
+    _Case("pinact", "pinact_workspace", (".github/workflows/pinned.yaml",), required_bins=("mise",)),
     _Case("ec", "basic", ("sample.txt",), required_bins=("mise",)),
     _Case("hadolint", "basic", ("Dockerfile",), required_bins=("mise",)),
     _Case("gitleaks", "basic", ("sample.txt",), required_bins=("mise",), git_required=True),
@@ -137,8 +138,13 @@ def _prepare_workspace(case: _Case, tmp_path: pathlib.Path) -> pathlib.Path:
     return dst
 
 
-def _run_pyfltr(workspace: pathlib.Path, command: str, targets: tuple[str, ...]) -> list[dict]:
-    """pyfltr CLIをsubprocess起動し、JSONL出力をパースして返す。"""
+def _run_pyfltr(
+    workspace: pathlib.Path, command: str, targets: tuple[str, ...], env: dict[str, str] | None = None
+) -> list[dict]:
+    """pyfltr CLIをsubprocess起動し、JSONL出力をパースして返す。
+
+    `env`を省略した場合は現在の環境変数を引き継ぐ。
+    """
     cmd = [
         sys.executable,
         "-m",
@@ -159,6 +165,7 @@ def _run_pyfltr(workspace: pathlib.Path, command: str, targets: tuple[str, ...])
         text=True,
         encoding="utf-8",
         timeout=180,
+        env=env,
     )
     records: list[dict] = []
     for line in proc.stdout.splitlines():
@@ -216,3 +223,49 @@ def test_tool_smoke(case: _Case, tmp_path: pathlib.Path) -> None:
     assert record is not None, f"{case.tool}: command record not found in JSONL output: {records}"
     status = record.get("status")
     assert status in _OK_STATUSES, f"{case.tool}: unexpected status={status!r} record={record}"
+
+
+def _env_without_github_token() -> dict[str, str]:
+    """GitHub APIの認証情報を除いた環境変数を返す。"""
+    return {key: value for key, value in os.environ.items() if key not in ("GITHUB_TOKEN", "GH_TOKEN")}
+
+
+@pytest.mark.smoke
+@pytest.mark.timeout(300)
+@pytest.mark.usefixtures("_disable_faulthandler_timeout")
+def test_pinact_passes_pinned_workflow_without_token(tmp_path: pathlib.Path) -> None:
+    """ピン留め済みのworkflowは、認証情報なしでも成功し、ファイルを書き換えない。"""
+    case = _Case("pinact", "pinact_workspace", (".github/workflows/pinned.yaml",), required_bins=("mise",))
+    _ensure_required_bins(case)
+    workspace = _prepare_workspace(case, tmp_path)
+    target = workspace / ".github" / "workflows" / "pinned.yaml"
+    before = target.read_bytes()
+    records = _run_pyfltr(workspace, case.tool, case.targets, env=_env_without_github_token())
+    record = _extract_command_record(records, "pinact")
+    assert record is not None, records
+    assert record.get("status") == "succeeded", record
+    assert target.read_bytes() == before
+
+
+@pytest.mark.smoke
+@pytest.mark.timeout(300)
+@pytest.mark.usefixtures("_disable_faulthandler_timeout")
+def test_pinact_reports_unpinned_actions(tmp_path: pathlib.Path) -> None:
+    """タグやブランチで書いた`uses:`を、ファイルと行番号付きの診断として報告して失敗する。"""
+    case = _Case("pinact", "pinact_workspace", (".github/workflows/unpinned.yaml",), required_bins=("mise",))
+    _ensure_required_bins(case)
+    workspace = _prepare_workspace(case, tmp_path)
+    target = workspace / ".github" / "workflows" / "unpinned.yaml"
+    before = target.read_bytes()
+    records = _run_pyfltr(workspace, case.tool, case.targets, env=_env_without_github_token())
+    record = _extract_command_record(records, "pinact")
+    assert record is not None, records
+    assert record.get("status") == "failed", record
+    locations = sorted(
+        (diagnostic["file"], message["line"])
+        for diagnostic in records
+        if diagnostic.get("kind") == "diagnostic" and diagnostic.get("command") == "pinact"
+        for message in diagnostic["messages"]
+    )
+    assert locations == [(".github/workflows/unpinned.yaml", 7), (".github/workflows/unpinned.yaml", 8)]
+    assert target.read_bytes() == before
