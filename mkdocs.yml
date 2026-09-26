@@ -112,7 +112,7 @@ plugins:
           - guide/grep-replace.md: grep/replaceの使い方・オプション・誤爆除外フロー・undo運用・MCP公開ツール
           - guide/troubleshooting.md: MCP stdout占有・PRE_COMMIT検出・対象ファイル空・アーカイブ容量確認
         設定:
-          - guide/configuration.md: プリセット・言語カテゴリゲート・設定項目一覧・グローバル設定・並列実行
+          - guide/configuration.md: プリセット・言語カテゴリによる有効化の限定・設定項目一覧・グローバル設定・並列実行
           - guide/configuration-tools.md: ツール別設定（python-runner / js-runner / bin-runnerのカテゴリ委譲と直接指定値の対称12値設定・2段階実行・カスタムコマンド）
           - guide/recommended.md: Pythonプロジェクトの推奨設定例・タスクランナー・CI設定
           - guide/recommended-nonpython.md: TypeScript/JS・Rust・.NETプロジェクトの推奨設定例

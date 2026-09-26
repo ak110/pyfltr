@@ -1,7 +1,7 @@
 # 設定項目
 
 `pyproject.toml`で設定する。
-このページは設定項目のリファレンスで、最小例 → プリセット設定 → 言語カテゴリゲート → 設定項目一覧 →
+このページは設定項目のリファレンスで、最小例 → プリセット設定 → 言語カテゴリによる有効化の限定 → 設定項目一覧 →
 グローバル設定 → ツール別除外・自動オプション・並列実行などの補助機能、の順に並ぶ。
 導入手順は[はじめに](getting-started.md)を参照。
 
@@ -28,7 +28,7 @@ preset = "latest"
 `preset = "latest"`はpyfltrの更新に伴って対象ツールの追加や既定値の変更が予告なく入ることがある。
 破壊的変更を避ける場合は日付指定プリセットで固定すると、当該日時点の構成をそのまま維持できる。
 
-プリセットで`true`になっているツールも、次節の言語カテゴリキーがゲートを開けた言語分だけが実際に実行される。
+プリセットで`true`になっているツールも、次節の言語カテゴリキーが`true`の言語分だけが実際に実行される。
 `preset = "latest"` + `{language} = true`だけで当該言語の推奨ツール一式が有効化される運用を意図している。
 
 ### preset "20260926"
@@ -77,7 +77,7 @@ Rust（`rust = true`で通過）
 - `dotnet-build = true`
 - `dotnet-test = true`
 
-ドキュメント系と統合系（カテゴリゲート非対象、常時通過）
+ドキュメント系と統合系（言語カテゴリに属さず、言語カテゴリキーの影響を受けない）
 
 - `textlint = true`
 - `markdownlint = true`
@@ -94,16 +94,16 @@ Rust（`rust = true`で通過）
 
 `"20260411"`から`actionlint = true` / `typos = true` / `uv-sort = true`を除いた構成。
 
-## 言語カテゴリによるゲート制御
+## 言語カテゴリによる有効化の限定
 
 各言語カテゴリに属するツールの既定値は無効（opt-in）。
-プロジェクトで利用する言語カテゴリキーを`true`にすると、プリセットで推奨された当該言語ツールがゲートを通過して有効化される。
-カテゴリキーを`false`（既定）にすると、プリセットで`true`になっていてもゲートで`false`に上書きされる。
+プロジェクトで利用する言語カテゴリキーを`true`にすると、プリセットで推奨された当該言語ツールが有効化される。
+カテゴリキーを`false`（既定）にすると、プリセットで`true`になっていても`false`に上書きされる。
 
 `preset = "latest"` + `{language} = true`の組み合わせだけで当該言語の推奨ツール一式が有効化される。
 
 個別のツール単位では`{command} = true`での有効化・`{command} = false`での無効化も可能で、
-適用優先度は`preset < 言語カテゴリゲート < 個別設定`。
+適用優先度は`preset < 言語カテゴリによる限定 < 個別設定`。
 
 ```toml
 [tool.pyfltr]
@@ -111,7 +111,7 @@ preset = "latest"
 python = true
 ```
 
-各言語カテゴリキーとゲート対象ツールは次の通り。
+各言語カテゴリキーと対象ツールは次の通り。
 
 - `python`: ruff-format・ruff-check・mypy・pylint・pyright・ty・arid・pytest・uv-sort
 - `javascript`: eslint・biome・oxlint・prettier・tsc・vitest（TypeScriptも同一カテゴリ）
@@ -124,7 +124,7 @@ Python系ツール一式は本体依存に同梱されているため、`uvx pyf
 JavaScript系・Rust系・.NET系は各言語のツールチェイン（Node.js・cargo・dotnet CLI）が前提となる。
 
 対応するPython系ツールはruff-format / ruff-check / mypy / pylint / pyright / ty / arid / pytest / uv-sortの9種。
-このうちtyのみpreset非収録のため、必要に応じて個別に`ty = true`を指定する（ゲートを越えて最優先）。
+このうちtyのみpreset非収録のため、必要に応じて個別に`ty = true`を指定する（個別設定が最優先）。
 
 ```toml
 [tool.pyfltr]
@@ -153,10 +153,10 @@ pyfltr config list --all
 `{command}`系の項目およびツール固有の項目（`prettier-check-args`など）の詳細はツール別設定ページを参照。
 
 - preset : プリセット設定（前述）
-- python : Python系ツールのゲート開閉（前述）
-- javascript : JavaScript / TypeScript系ツールのゲート開閉（前述）
-- rust : Rust系ツールのゲート開閉（前述）
-- dotnet : .NET系ツールのゲート開閉（前述）
+- python : Python系ツールの有効化（前述）
+- javascript : JavaScript / TypeScript系ツールの有効化（前述）
+- rust : Rust系ツールの有効化（前述）
+- dotnet : .NET系ツールの有効化（前述）
 - {command} : 各コマンドの有効/無効
 - {command}-path : 実行するコマンド
 - {command}-args : 追加のコマンドライン引数（lint/fix両モードで常に付与）
@@ -279,9 +279,9 @@ cache-max-age-hours = 24
    - archive/cache系はマージ時にグローバル側を優先する（project側に同じキーがあっても上書きされる）
    - それ以外のキーは後勝ち（project側が優先）
 3. マージ結果にプリセット（`preset`）を反映する
-4. 言語カテゴリゲート（`python` / `javascript` / `rust` / `dotnet`）を適用する
+4. 言語カテゴリによる限定（`python` / `javascript` / `rust` / `dotnet`）を適用する
 
-適用優先度は`preset < 言語カテゴリゲート < 個別設定`。
+適用優先度は`preset < 言語カテゴリによる限定 < 個別設定`。
 `pyproject.toml`が存在しないディレクトリでもグローバル設定は反映される。
 
 ### 設定操作

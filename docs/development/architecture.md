@@ -101,15 +101,15 @@ subparsersを`required=True`で必須化し、引数なし実行時のフォー�
 
 ## 主要な設計判断
 
-### 言語カテゴリはゲートとして働く
+### 言語カテゴリによる有効化の限定
 
-`python` / `javascript` / `rust` / `dotnet`の各言語カテゴリに属するツールは既定は無効（カテゴリキーが既定`false`）。
+`python` / `javascript` / `rust` / `dotnet`の各言語カテゴリに属するツールの既定値は無効（カテゴリキーの既定値も`false`）。
 対象外プロジェクトで意図しないツール実行が起こることを避けるため、対応する言語カテゴリキー（例: `python = true`）で
-ゲートを開けるか、`{command} = true`の個別明示が必要。
+有効化するか、`{command} = true`の個別明示が必要。
 
 プリセットは各時点の推奨ツール構成を示すスナップショットで言語別ツールも含むが、
-カテゴリキーが`false`のままだとプリセット由来の該当ツール`true`はゲート処理で`false`に上書きされる。
-個別`{command} = true`はゲートを越えて最優先される。
+カテゴリキーが`false`のままだとプリセット由来の該当ツール`true`は`false`に上書きされる。
+個別`{command} = true`は言語カテゴリ設定に関わらず最優先される。
 Python系ツール一式は本体依存に同梱されており、`uvx pyfltr`単発で利用できる。
 JavaScript / Rust / .NET系は各言語のツールチェイン（Node.js・cargo・dotnet CLI）が前提のため、
 pyfltr本体はこれらの依存を抱えない。
@@ -184,7 +184,7 @@ uvは実効cwdからプロジェクト環境を解決するため、実効cwdと
 ### Python系ツールのpython-runner経由解決
 
 Python系ツールの`{command}-runner`既定値は`"python-runner"`とする。
-対象は`python = true`ゲートで有効化されるruff-format / ruff-check / mypy / pylint / pyright / ty / arid / uv-sort / pytestの9ツールに、
+対象は`python = true`で有効化されるruff-format / ruff-check / mypy / pylint / pyright / ty / arid / uv-sort / pytestの9ツールに、
 既定無効のbanditを加えた10ツールとする。
 `"python-runner"`はグローバル`python-runner`設定（既定`"uv"`、許容値`direct` / `uv` / `uvx`の3値）へ委譲する。
 `uv`指定ではcwdに`uv.lock`があり`uv`が利用可能な場合にプロジェクトのvenv経由で起動する。
@@ -206,7 +206,7 @@ python-runnerへ委譲せず`uvx <bin>`で別環境へ解決する。
 対象はsemgrepとsqlfluffで、pyfltr本体の依存グラフには含めない。
 解決失敗時の分類は`DEFAULT_CONFIG`から導出し、runner既定値と独立したツール一覧を持たない。
 
-本分類の対象は、既定値が無効であり`python = true`ゲート対象外となるツールである。
+本分類の対象は、既定値が無効であり`python = true`でも有効化されないツールである。
 さらに、他の依存へ厳密ピンまたは上限制約を課すことを採用条件とする。
 利用者が版を固定する場合は対象パッケージを利用者プロジェクトへ追加してdirect指定へ切り替えるか、
 `{command}-path`で実行ファイルを明示する。
@@ -805,13 +805,13 @@ MCPクライアントからの並行ツール呼び出しでも実行起点を�
 `run_pipeline`はearly exit（`(0, None)`）を返す。
 このとき`run`はエラーではなく「実行スキップ」（`skipped_reason`に理由文字列）を返す。
 
-`skipped_reason`はearly exit以外でも値を持つ。`commands`へ指定した検査が設定で無効化されて実行されなかった場合、
+`skipped_reason`はearly exit以外でも値を持つ。`commands`へ指定したツールが設定で無効化されて実行されなかった場合、
 `tool_run`は`run_pipeline`が`source="commands"`で発行した警告から理由を組み立てて同フィールドへ返す。
 無効化の判定は`run_pipeline`の`is_command_enabled_anywhere`と`compute_unmet_commands`が担い、MCP側では再判定しない。
 
 MCPツールは冒頭で`pyfltr.warnings_.clear()`を呼び、当該呼び出しが発行した警告だけを応答の入力にする。
 `run_pipeline`自身は警告を初期化せず、初期化は`pyfltr/cli/pipeline.py`の`run()`内部実装が担うため、
-`run_pipeline`を直接呼ぶMCP経路では呼び出し側が初期化する。
+`run_pipeline`を直接呼ぶMCPの処理では呼び出し側が初期化する。
 
 戻り値変更を採用したのは並行プロセス対策。
 MCPツール側で`ArchiveStore.list_runs(limit=1)`を引く案では、同一ユーザーキャッシュを参照する

@@ -3,9 +3,9 @@
 pyfltrが対応するformatter / linter / testerを言語・用途別に示す。
 初めて使う場合は[はじめに](getting-started.md)を参照。設定から実行までの導入手順を確認できる。
 
-言語カテゴリ（Python / JS/TS / Rust / .NET）に属するツールはすべて既定は無効（opt-in）。
+言語カテゴリ（Python / JS/TS / Rust / .NET）に属するツールの既定値はいずれも無効（opt-in）。
 `preset = "latest"` + 言語カテゴリキー（`python` / `javascript` / `rust` / `dotnet`）の`true`指定だけで、
-当該言語の推奨ツール一式がゲートを通過して有効化される。
+当該言語の推奨ツール一式が有効化される。
 追加ツールや個別の無効化が必要な場合のみ`{command} = true` / `{command} = false`を書き足す。
 詳細は[設定項目](configuration.md)を参照。
 
@@ -83,7 +83,7 @@ bin-runner経由（既定はmise）で起動する。
     - `preset = "latest"`ではprekが有効、pre-commitが無効になる
     - 両方を有効にすると、同一フックの二重実行についてpyfltrが警告を発行する
 
-既定は無効（opt-in）のツールは、利用時に`pyproject.toml`で`{command} = true`を設定する。
+既定値が無効（opt-in）のツールは、利用時に`pyproject.toml`で`{command} = true`を設定する。
 特記事項を以下に示す。
 
 - `taplo`: Rust製のTOMLフォーマッター/リンター。bin-runner経由で実行し、shfmtと同様の2段階実行（check→format）を行う
@@ -108,7 +108,7 @@ bin-runner経由（既定はmise）で起動する。
   CI/pre-commitを失敗させない。対象ファイルは全種別（`*`）とし、pyfltr既定のexclude・`.gitignore`尊重に従う。
   辞書ファイル（denylist・allowlist）はpyfltrに同梱する
 
-プリセット指定と言語カテゴリゲートによる有効化の詳細は[設定項目](configuration.md)を参照。
+プリセット指定と言語カテゴリによる限定の詳細は[設定項目](configuration.md)を参照。
 
 個別に有効化・無効化する方法や`python-runner`/`js-runner`/`bin-runner`などの補助設定は
 [設定項目（ツール別）](configuration-tools.md)を参照。

@@ -21,7 +21,7 @@ pip環境では`pip install pyfltr`を使う。
 ## 設定
 
 pyfltrの実行内容は`pyproject.toml`の`[tool.pyfltr]`セクションで指定する。
-プリセットと言語カテゴリゲートの2行で設定が完結する。
+プリセットと言語カテゴリキーの2行で設定が完結する。
 
 ```toml
 [tool.pyfltr]
@@ -33,8 +33,8 @@ python = true
 
 - `preset = "latest"`: 各時点での推奨ツール構成のスナップショット。
   Python系一式（ruff-format / ruff-check / mypy / pylint / pyright / pytest / uv-sortなど）を取り込む
-- `python = true`: Python系ツールの言語カテゴリゲートを開ける。
-  プリセットで`true`になっているツールはこのゲートを通過した分だけ実際に有効化される
+- `python = true`: 言語カテゴリ`python`に属するPython系ツールを有効化の対象にする。
+  プリセットで`true`になっているツールのうち、言語カテゴリキーが`true`の言語に属するものだけが実際に有効化される
 
 JS/TS・Rust・.NETを併用する場合は対応する言語カテゴリキー（`javascript` / `rust` / `dotnet`）を追加する。
 
@@ -45,13 +45,13 @@ python = true
 javascript = true
 ```
 
-ドキュメント系（textlint / markdownlint / actionlint / typos）と統合系（prek / pre-commit）は
-言語カテゴリゲートに属さない。
+ドキュメント系（textlint / markdownlint / actionlint / pinact / typos）と統合系（prek / pre-commit）は
+言語カテゴリに属さない。
 プリセットで`true`になっているものがそのまま有効化される。
 `preset = "20260413"`を指定し続ける場合は、追加設定なしでpre-commitを利用できる。
 `preset = "latest"`のままpre-commitを使う場合は、`prek = false`と`pre-commit = true`を指定する。
 
-プリセット・言語カテゴリゲートの詳細は[設定項目](configuration.md)を参照。
+プリセット・言語カテゴリによる限定の詳細は[設定項目](configuration.md)を参照。
 
 ## 実行
 

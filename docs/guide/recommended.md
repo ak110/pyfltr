@@ -8,7 +8,7 @@ Pythonプロジェクト向けの推奨構成例（pyproject.toml・prek・タ�
 pyfltr本体の設定（`[tool.pyfltr]`）と、呼び出される各ツール（ruff / mypy / pytest）の設定を1つの`pyproject.toml`にまとめた例。
 
 - `preset = "latest"`: 各時点での推奨ツール構成。詳細は[プリセット設定](configuration.md#preset)を参照
-- `python = true`: Python系ツールのゲートを開ける。推奨ツール（ruff-format / ruff-check / mypy /
+- `python = true`: 言語カテゴリ`python`に属する推奨ツール（ruff-format / ruff-check / mypy /
   pylint / pyright / pytest / uv-sort / arid）を一式有効化する
     - Python系ツール一式は本体依存に同梱されているため、`uvx pyfltr`単発で利用できる
     - dev依存に固定する場合は`uv add --dev "pyfltr[python]"`（pip環境では`pip install pyfltr`）を使う
@@ -357,7 +357,7 @@ SARIF出力（`--output-format=sarif`）と`github/codeql-action/upload-sarif`�
 非公開リポジトリでは、追加費用なく有効化できるDependabot alertsを脆弱性通知の主な手段とする。
 そのうえでSARIFはファイルへ出力し、監査ツールの実行有無と検出結果の判別に用いる。
 `pyfltr`はツール実行の失敗をすべて終了コード1へ正規化するため、終了コードだけでは脆弱性の検出とツールの異常を区別できない。
-SARIF内に当該ツールの`runs`要素が存在するかで無言スキップを検出する。
+SARIF内に当該ツールの`runs`要素が存在するかで実行がスキップされたかを検出する。
 終了コードが非0の場合に限り、`results`が空かどうかで脆弱性の検出とツールの異常を区別する。
 脆弱性を検出した場合はワークフローを失敗させて通知する。
 
@@ -856,9 +856,9 @@ jobs:
       全チェックステップの`if`を外す
 - `--output-format=github-annotations`: `::error file=...` / `::warning file=...`形式の行を標準出力へ出力する
     - プル要求の該当ファイル行にコメントとして表示される
-- GitHub Actionsのピン留め検査: `preset = "latest"`で有効になる`pinact`が`pyfltr ci`の中で実行する
+- GitHub Actionsのピン留め: `preset = "latest"`で有効になる`pinact`が、`pyfltr ci`の中で`uses:`のピン留めを確かめる
     - `pinact run --check`をworkflowの独立したstepとして置かない。
-      同じ検査を`pyfltr run`・`pyfltr fast`がpush前にも実行するため、ピン留めの漏れをpush前に見つけられる
+      `pyfltr run`・`pyfltr fast`もpush前に同じ内容を確かめるため、ピン留めしていない`uses:`をpush前に見つけられる
     - 本ページの設定例は読みやすさのため`uses:`をタグで書いている。
       そのまま写すと`pinact`が失敗するため、写した後に`pinact run`を実行してSHAへピン留めする
 
@@ -1011,7 +1011,7 @@ pyfltr:
     - lintエラーで`exit 1`したときもレポートを取り込めるようにする
 - `image: ghcr.io/astral-sh/uv:python3.13-bookworm`: Node.js・pnpm・miseのいずれも含まないため、
   Python以外のツールの扱いに注意する
-    - `textlint`・`markdownlint`は言語カテゴリゲートの対象外で、`preset`を指定すると有効になる
+    - `textlint`・`markdownlint`は言語カテゴリに属さず、`preset`を指定すると有効になる
     - `js-runner`の既定値`pnpx`は論理設定値であり、PATH上の`pnpm`を使う`pnpm dlx`形式へ解決される
     - Markdownを含むリポジトリでは`pnpm`が見つからず、当該ツールは終了コード127の`failed`となる
     （解決失敗ではないため`{command}-severity = "warning"`で警告へ格下げできる）

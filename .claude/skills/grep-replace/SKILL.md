@@ -21,7 +21,7 @@ pyfltrの既存ファイル収集機構（`expand_all_files`）とignore設定�
 ファイル収集の除外はrun系（`expand_all_files`のexclude / extend-exclude / respect-gitignore）と統一する。
 grep / replace固有の追加除外は設けず、ドット始まりのファイルやディレクトリも対象に含める。
 直接指定したパスがexcludeパターンや`.gitignore`で対象外になった場合は、
-warningとsummaryの`warnings` / `fully_excluded_files` / `missing_targets`で通知し、無言のスキップを避ける。
+warningとsummaryの`warnings` / `fully_excluded_files` / `missing_targets`で通知し、何も知らせずにスキップすることを避ける。
 
 ## 引数体系の同一性
 
@@ -95,7 +95,7 @@ replaceの実行アーカイブは`pyfltr/state/archive.py`と同じくユーザ
 
 `pyfltr replace --undo`は対象ファイルの現状ハッシュと保存された変更後ハッシュを照らし合わせる。
 不一致時は警告を発して中断し、`--force`指定時のみ強制復元する。
-replace後に手動編集された変更を意図せず巻き戻す不具合を防ぐ。
+replace後に手動編集された変更を意図せず巻き戻す事態を防ぐ。
 
 ## 除外指定の粒度
 

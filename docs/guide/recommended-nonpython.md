@@ -7,11 +7,11 @@ TypeScript/JS・Rust・.NETプロジェクト向けの推奨構成例。
 
 - `preset = "latest"`: 各時点での推奨ツール構成。
   ドキュメント系（textlint / markdownlint / actionlint / pinact / typos）と統合系（prek / pre-commit）は
-  言語カテゴリゲートに属さない。
+  言語カテゴリに属さない。
   プリセットでtrueになっているツールがそのまま有効化される。
   `preset = "20260413"`を指定し続ける場合は、追加設定なしでpre-commitを利用できる。
   `preset = "latest"`のままpre-commitを使う場合は、`prek = false`と`pre-commit = true`を指定する
-- 言語カテゴリゲートの詳細は[設定項目](configuration.md)を参照
+- 言語カテゴリによる限定の詳細は[設定項目](configuration.md)を参照
 - `uvx pyfltr`: pyfltrをdev依存に含めないため、`uvx`で都度取得して実行する
 - 言語固有のツール + ドキュメント系lint（textlint / markdownlint / prettier）を組み合わせる
     - textlint / markdownlintの設定例（`.textlintrc.yaml`・`.markdownlint-cli2.yaml`）は
@@ -119,7 +119,7 @@ TypeScript/JS用の`.pre-commit-config.yaml`の例を以下に示す。
 ポイント:
 
 - `javascript = true`: JS/TS系ツール一式（eslint / biome / oxlint / prettier / tsc / vitest）が
-  プリセットのゲートを通過して有効化される
+  有効化される
 - `js-runner = "pnpm"`: pnpmワークスペース経由でJS系ツールを呼ぶ
     - `textlint-packages`は無視される
 - oxlintはeslintコアおよび主要eslintプラグイン由来のルールをRust実装で高速に実行する
@@ -176,7 +176,7 @@ preset = "latest"
 rust = true
 js-runner = "pnpm"
 # prettier はドキュメント系を pnpm で実行するために個別に opt-in する
-# (javascript ゲートは開けず、Rust 専用プロジェクトで不要な JS 系 linter / tester を実行しない)
+# (javascript は有効化せず、Rust 専用プロジェクトで不要な JS 系 linter / tester を実行しない)
 prettier = true
 
 extend-exclude = [
@@ -297,7 +297,7 @@ preset = "latest"
 dotnet = true
 js-runner = "pnpm"
 # prettier はドキュメント系を pnpm で実行するために個別に opt-in する
-# (javascript ゲートは開けず、.NET 専用プロジェクトで不要な JS 系 linter / tester を実行しない)
+# (javascript は有効化せず、.NET 専用プロジェクトで不要な JS 系 linter / tester を実行しない)
 prettier = true
 
 extend-exclude = [

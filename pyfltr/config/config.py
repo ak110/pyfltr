@@ -1161,7 +1161,7 @@ def load_config(
     `config_dir`配下の`pyproject.toml`の`[tool.pyfltr]`と、
     XDG準拠のglobal設定ファイル`~/.config/pyfltr/config.toml`の`[tool.pyfltr]`を
     1つの入力dictへマージしてから、preset反映・custom-commands登録・
-    言語カテゴリゲート・通常設定適用の順で処理する。
+    言語カテゴリによる限定・通常設定適用の順で処理する。
 
     マージ仕様:
       - 通常キーはproject優先（後勝ち）

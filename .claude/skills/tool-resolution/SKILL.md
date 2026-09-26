@@ -29,7 +29,7 @@ pyfltrが対応するformatter/linter/testerの依存指定および実行時の
 - uvx分離: 他の依存へ厳密ピンまたは上限制約を課し、pyfltr本体や他ツールの更新を妨げるもの
   - `{command}-runner`既定値を`"uvx"`とし、実行時に別環境で解決してpyfltrの依存グラフから切り離す
   - `semgrep`は`mcp`を厳密ピンし、`sqlfluff`は`click`へ上限を課すため本分類とする
-  - 既定無効（opt-in）のツールに限り採用し、`python = true`ゲート対象のツールには適用しない
+  - 既定無効（opt-in）のツールに限り採用し、言語カテゴリ`python`に属するツールには適用しない
 - 依存指定なし: 本家から独立した個人または別組織のメンテに依存するもの、
   インストール時に外部バイナリを取得するもの、Node.js等のランタイムを伴うもの
 
@@ -76,7 +76,7 @@ runner値体系（許容値・既定値）の網羅は`pyfltr/config/config.py`�
 
 ツール解決の追跡情報は次の3系統で確認できる。
 
-- JSONL header（`uv.lock`・`uv.available`・`uv.x_available`）: プロセス全体のuv指定の前提条件
+- JSONL header（`uv.lock`・`uv.available`・`uv.x_available`）: プロセス全体でuvを用いて起動するための前提条件
 - JSONL commandレコード: fallback発生時のみ`effective_runner`・`runner_source`・`runner_fallback`を出力する。
   通常の解決では省略しトークン消費を抑える
 - `pyfltr command-info <command>`: 通常の解決を含む詳細な解決状態（runner・effective_runner・mise/uv診断）を取得する。

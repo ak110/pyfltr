@@ -11,7 +11,7 @@ paths:
 # pyfltrのsubprocess関連の方針
 
 - CLI起動時に`os.environ["PATH"]`を順序先勝ちで重複排除する。
-  CLIからの実行時に限って実行し、ライブラリ用途では実行しない。詳細は`pyfltr/cli/main.py`の`main()`docstring
+  CLIからの呼び出し時に限って実行し、ライブラリ用途では実行しない。詳細は`pyfltr/cli/main.py`の`main()`docstring
   および`pyfltr/command/env.py`の`dedupe_environ_path`に集約する
 - mise経由のsubprocess（`bin-runner = "mise"`等）に限り、PATHからmiseが注入したtoolパスを除外したenvを渡す。
   `ensure_mise_available`内の`mise exec --version` / `mise trust`にも同じ除外envを明示的に渡す。
@@ -19,7 +19,7 @@ paths:
   詳細は`pyfltr/command/env.py`の`build_subprocess_env` / `build_mise_subprocess_env`に集約する
 - subprocessの出力をテキストで取得する場合は`encoding`と`errors`を明示する。
   実行ホストの既定文字コードへ委ねると、CP932環境ではreader thread内の`UnicodeDecodeError`が
-  検査の成功と同時に表面化する。指定は`encoding="utf-8"` / `errors="backslashreplace"`で揃え、
+  ツールの実行が成功したときに表面化する。指定は`encoding="utf-8"` / `errors="backslashreplace"`で揃え、
   実装は`pyfltr/command/process.py`の`run_subprocess`と`pyfltr/command/mise.py`の
   `run_mise_with_trust`に集約する
 - subprocess経過時間ベースのtimeout監視は`threading.Timer`分離方式で組む。

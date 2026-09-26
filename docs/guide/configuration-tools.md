@@ -1,7 +1,7 @@
 # 設定項目（ツール別）
 
 ツールごとの起動方式（python-runner / uvx既定 / js-runner / bin-runner / 直接実行）・2段階実行・カスタムコマンドを扱う。
-基本設定（プリセット・言語カテゴリゲート・並列実行等）は[設定項目](configuration.md)を参照。
+基本設定（プリセット・言語カテゴリによる限定・並列実行等）は[設定項目](configuration.md)を参照。
 導入手順は[はじめに](getting-started.md)を参照。
 
 pyfltrは対応ツールを実行方式の観点から5カテゴリに分けて扱う。
@@ -189,8 +189,8 @@ ruff-format-check-args = ["check", "--fix"]
 uv-sort = true
 ```
 
-Python系ツールとして扱われ、`python = true`のゲート対象となる（プリセット`20260411`以降に含まれる）。
-`mypy` / `pylint` / `pytest`も全プリセットに含まれ、`python = true`だけでゲートを通過する。
+Python系ツールとして扱われ、`python = true`で有効化される（プリセット`20260411`以降に含まれる）。
+`mypy` / `pylint` / `pytest`も全プリセットに含まれ、`python = true`だけで有効化される。
 
 ### bandit
 
@@ -220,7 +220,7 @@ pyfltr既定の`bandit-args = ["--quiet", "--recursive", "--format=json"]`は出
 ### arid
 
 `arid`はPython専用の重複コードチェッカー。Rust実装で、pylintの`duplicate-code`（R0801）と同じ目的のチェックを担う。
-pyfltr本体依存に同梱されるため追加の導入手順は不要で、`preset`と`python = true`のゲートで有効化される。
+pyfltr本体依存に同梱されるため追加の導入手順は不要で、`preset`と`python = true`の指定で有効化される。
 
 チェック条件は`pyproject.toml`の`[tool.arid]`へ書く。
 
@@ -248,7 +248,7 @@ pyfltrは対象ファイルを明示して渡すため、省略した場合の�
 
 ## uvx既定のPython製ツール
 
-semgrep / sqlfluffは既定は無効（opt-in）で、`{command}-runner`既定値は`"uvx"`。
+semgrep / sqlfluffの既定値は無効（opt-in）で、`{command}-runner`の既定値は`"uvx"`。
 これらが課す依存制約をpyfltr本体と他ツールの依存グラフから切り離すため、本体依存には同梱しない。
 `uvx`と対象ツールのPATH上の実行ファイルがともに見つからない場合は`resolution_failed`になる。
 利用者が版を固定する場合は、対象パッケージを利用者プロジェクトへ個別に追加して
@@ -548,7 +548,7 @@ designmd = false
 
 ### eslint / prettier / biomeの設定
 
-eslint / prettier / biomeはすべて既定は無効（opt-in）。
+eslint / prettier / biomeの既定値はいずれも無効（opt-in）。
 全プリセットにJS/TS系ツールが含まれるため、`preset = "latest"` + `javascript = true`だけで一式が有効化される。
 プラグインは`package.json`管理が前提のため、通常は`js-runner = "pnpm"`と併用する。
 
@@ -595,7 +595,7 @@ javascript = true
 
 ### oxlint / tsc / vitest
 
-oxlint / tsc / vitestもjs-runner対応のツール。すべて既定は無効（opt-in）。
+oxlint / tsc / vitestもjs-runner対応のツールで、既定値はいずれも無効（opt-in）。
 全プリセットに含まれるため、`preset = "latest"` + `javascript = true`でeslint / prettier / biomeと同時に一式が有効化される。
 
 ```toml
@@ -790,7 +790,7 @@ dotnet-test = true
 - actionlint: `actionlint-args = []`
 - pinact: `pinact-args = ["run", "--no-api", "--format", "sarif"]`（`.github/workflows/`配下のworkflowを対象とする）。
   `uses:`が40文字のSHAと版コメントでピン留めされているかだけを確かめ、GitHub APIを呼ばないため`GITHUB_TOKEN`を要しない。
-  検査だけを行いファイルを書き換えない。
+  ピン留めの有無を報告するだけで、ファイルを書き換えない。
   タグからSHAへの書き換えはGitHub APIを要し、結果が実行時点の最新リリースで変わるため、pyfltrの自動修正の対象にしない。
   ピン留めは`pinact run`を直接実行して行う
 - glab-ci-lint: `glab-ci-lint-args = ["ci", "lint"]`（`glab ci lint`サブコマンドを既定値として保持）。

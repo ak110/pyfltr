@@ -1,6 +1,6 @@
 # スモークテスト用の最小pyfltr設定。
 # 各ツールはテスト側から `--commands=<tool>` で個別に起動し、ターゲットも明示するため
-# pyproject.toml では全有効化のみ宣言する。preset 系は使わずデフォルトの言語ゲートに
+# pyproject.toml では全有効化のみ宣言する。preset 系は使わずデフォルトの言語カテゴリによる限定に
 # 引きずられないようにする。
 [tool.pyfltr]
 ruff-format = true

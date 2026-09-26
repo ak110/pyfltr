@@ -338,7 +338,7 @@ mise設定に`rust`記述が無い場合は`mise exec rust@latest -- cargo fmt`�
 応答フィールドの接頭辞は値の出所を表す。
 `configured_`で始まるものは既定値・グローバル設定・プロジェクト設定を統合した
 パス・引数系の実効設定値である。
-`check_`で始まるものは`--check`指定時のみ得られる計測値である。
+`check_`で始まるものは`--check`指定時のみ実行して得られる値である。
 接頭辞を持たない設定由来フィールドは`enabled`・`severity`・`hints`・`version`である。
 このほかの接頭辞を持たないフィールドは解決状態または環境情報を表す。
 `version`は`{command}-version`設定値であり、実際にインストールされている版ではない。
@@ -713,7 +713,7 @@ pyfltrは`kind:"command"`かつ`status:"running"`のheartbeatレコードを出�
 CLIの直接呼び出しとは異なりJSONL出力がstdoutに流れず、
 MCPクライアントは結果を構造化データとして受け取れる。
 ただし`pyfltr mcp`起動後は同一プロセスのstdin/stdoutがJSON-RPCに専有されるため、
-他のコマンドと組み合わせた場合に出力が混在する不具合に注意する
+他のコマンドと組み合わせた場合に出力が混在する点に注意する
 （詳細は[トラブルシューティング](troubleshooting.md)を参照）。
 
 `run`の主要パラメーターとCLI相当オプションは次のとおり。
