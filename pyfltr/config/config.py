@@ -173,6 +173,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "eslint-json": True,
     "biome-json": True,
     "arid-json": True,
+    "yamllint-parsable": True,
     # Python系ツール（mypy / pylint / pyright / ty / arid / pytest / ruff-format / ruff-check / uv-sort）の
     # 起動方式。{command}-path / {command}-runner明示が無いときに、以下の値に従って起動コマンドを組み立てる。
     # - direct: shutil.whichで本体依存に同梱されたバイナリを直接起動

@@ -269,3 +269,59 @@ def test_pinact_reports_unpinned_actions(tmp_path: pathlib.Path) -> None:
     )
     assert locations == [(".github/workflows/unpinned.yaml", 7), (".github/workflows/unpinned.yaml", 8)]
     assert target.read_bytes() == before
+
+
+# 違反3件（error 2件・warning 1件）を生む入力。ルールを明示列挙し、yamllintの既定ルールの変更に依存させない。
+_YAMLLINT_CONFIG = "rules:\n  colons: enable\n  commas: enable\n  truthy:\n    level: warning\n"
+_YAMLLINT_BAD_YAML = "a:  1\nb: [1,2]\nc: yes\n"
+_YAMLLINT_EXPECTED_MESSAGES = [
+    (1, 4, "colons", "error"),
+    (2, 7, "commas", "error"),
+    (3, 4, "truthy", "warning"),
+]
+
+
+def _prepare_yamllint_workspace(tmp_path: pathlib.Path, *, config_via_args: bool) -> pathlib.Path:
+    """yamllintの違反を含む作業ディレクトリを用意する。
+
+    `config_via_args`が真なら自動探索されない名前で設定ファイルを置き、`yamllint-args`の`-c`で渡す。
+    偽なら自動探索される`.yamllint.yml`へ置き、`yamllint-args`を指定しない。
+    """
+    workspace = tmp_path / "yamllint_workspace"
+    workspace.mkdir()
+    pyproject = "[tool.pyfltr]\nyamllint = true\nrespect-gitignore = false\n"
+    if config_via_args:
+        (workspace / "custom-yamllint.yml").write_text(_YAMLLINT_CONFIG, encoding="utf-8")
+        pyproject += 'yamllint-args = ["-c", "custom-yamllint.yml"]\n'
+    else:
+        (workspace / ".yamllint.yml").write_text(_YAMLLINT_CONFIG, encoding="utf-8")
+    (workspace / "pyproject.toml").write_text(pyproject, encoding="utf-8")
+    (workspace / "bad.yaml").write_text(_YAMLLINT_BAD_YAML, encoding="utf-8")
+    return workspace
+
+
+@pytest.mark.smoke
+@pytest.mark.timeout(300)
+@pytest.mark.usefixtures("_disable_faulthandler_timeout")
+@pytest.mark.parametrize("config_via_args", [False, True], ids=["default-args", "yamllint-args"])
+def test_yamllint_reports_violations_as_diagnostics(tmp_path: pathlib.Path, config_via_args: bool) -> None:
+    """yamllintの違反を位置・ルール・重大度付きの診断として報告する。
+
+    yamllintの既定出力はGitHub Actions上で`::error`形式へ切り替わるため、同環境の変数を設定しても
+    同じ診断になることを併せて確認する。`yamllint-args`を上書きしても出力形式の注入は保たれる。
+    """
+    _ensure_required_bins(_Case("yamllint", "yamllint_workspace", ("bad.yaml",), required_bins=("yamllint",)))
+    workspace = _prepare_yamllint_workspace(tmp_path, config_via_args=config_via_args)
+    env = {**os.environ, "GITHUB_ACTIONS": "true", "GITHUB_WORKFLOW": "ci"}
+    records = _run_pyfltr(workspace, "yamllint", ("bad.yaml",), env=env)
+    record = _extract_command_record(records, "yamllint")
+    assert record is not None, records
+    assert record.get("status") == "failed", record
+    assert record.get("diagnostics") == len(_YAMLLINT_EXPECTED_MESSAGES), record
+    messages = sorted(
+        (diagnostic["file"], message["line"], message["col"], message["rule"], message["severity"])
+        for diagnostic in records
+        if diagnostic.get("kind") == "diagnostic" and diagnostic.get("command") == "yamllint"
+        for message in diagnostic["messages"]
+    )
+    assert messages == [("bad.yaml", *expected) for expected in _YAMLLINT_EXPECTED_MESSAGES]

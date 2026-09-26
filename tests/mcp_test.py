@@ -723,6 +723,43 @@ async def test_tool_run_with_typos(tmp_path: pathlib.Path) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(not shutil.which("yamllint"), reason="yamllint コマンドが環境にない")
+async def test_tool_run_yamllint_returns_diagnostics(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """MCPクライアントが`run`と`show_run_diagnostics`でyamllintの違反を診断として受け取る。
+
+    yamllintの既定出力はGitHub Actions上で`::error`形式へ切り替わるため、同環境の変数を設定して実行する。
+    """
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("GITHUB_WORKFLOW", "ci")
+    work_dir = tmp_path / "workspace"
+    work_dir.mkdir()
+    (work_dir / "pyproject.toml").write_text("[tool.pyfltr]\nyamllint = true\nrespect-gitignore = false\n", encoding="utf-8")
+    # ルールを明示列挙し、yamllintの既定ルールの変更に依存させない。
+    (work_dir / ".yamllint.yml").write_text(
+        "rules:\n  colons: enable\n  commas: enable\n  truthy:\n    level: warning\n", encoding="utf-8"
+    )
+    (work_dir / "bad.yaml").write_text("a:  1\nb: [1,2]\nc: yes\n", encoding="utf-8")
+
+    result = await pyfltr.cli.mcp_server.tool_run(paths=["bad.yaml"], commands=["yamllint"], work_dir=str(work_dir))
+
+    assert result.run_id is not None
+    assert [(summary.command, summary.status, summary.diagnostics) for summary in result.commands] == [
+        ("yamllint", "failed", 3)
+    ]
+    diagnostics = await pyfltr.cli.mcp_server.tool_show_run_diagnostics(result.run_id, ["yamllint"])
+    messages = sorted(
+        (diagnostic.file, message.line, message.col, message.rule, message.severity)
+        for diagnostic in diagnostics[0].diagnostics
+        for message in diagnostic.messages
+    )
+    assert messages == [
+        ("bad.yaml", 1, 4, "colons", "error"),
+        ("bad.yaml", 2, 7, "commas", "error"),
+        ("bad.yaml", 3, 4, "truthy", "warning"),
+    ]
+
+
+@pytest.mark.asyncio
 async def test_tool_run_keeps_stdout_clean_and_text_on_stderr(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

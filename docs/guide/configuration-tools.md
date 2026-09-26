@@ -352,6 +352,12 @@ yamllint-args = ["-c", ".yamllint.yml"]
 yamllint-path = "/path/to/yamllint"
 ```
 
+違反を位置・ルール・重大度付きの診断として抽出するため、pyfltrは`yamllint-parsable`設定（初期値`true`）により`-f parsable`を注入する。
+この注入は`yamllint-args`とは独立しており、`yamllint-args`を上書きしても出力形式は変わらない。
+`yamllint-args`へ指定した`-f`・`--format`は注入時に取り除かれる。
+`yamllint-parsable = false`とすると注入せず、yamllintの既定の出力形式になる。
+この場合もyamllintの終了コードによる成否は変わらないが、違反は診断として抽出されない。
+
 ### pre-commit
 
 既定の引数は`pre-commit-args = ["run", "--files"]`。

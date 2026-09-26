@@ -100,6 +100,16 @@ _STRUCTURED_OUTPUT_SPECS: dict[str, tuple[str, StructuredOutputSpec]] = {
             conflicts=["--format", "--json"],
         ),
     ),
+    "yamllint-parsable": (
+        "yamllint",
+        StructuredOutputSpec(
+            # 既定の`-f auto`はGitHub Actions上で`::error`形式へ切り替わり、
+            # 標準形式は見出し行と字下げした違反行の複数行となるため、
+            # 環境によらず1違反1行となる`parsable`へ固定する。
+            inject=["-f", "parsable"],
+            conflicts=["-f", "--format"],
+        ),
+    ),
 }
 
 

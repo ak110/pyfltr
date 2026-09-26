@@ -264,6 +264,13 @@ _BUILTIN_PATTERNS: dict[str, str] = {
     # 診断本文中の角括弧への誤一致を避ける。
     # 公式ドキュメントの見出しはrule識別子と多対多で対応するため、URLは生成しない。
     "actionlint": r"(?P<file>[^\s:]+):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>.+?)(?:\s*\[(?P<rule>[^\[\]\s]+)\])?\s*$",
+    # yamllint -f parsable 出力例: src/foo.yaml:2:5: [error] too many spaces after colon (colons)
+    # 重大度はerror・warningの2値を取る。末尾の丸括弧内をruleグループとして抽出する。
+    # 診断本文も丸括弧を含み得るため、ruleは行末に置かれた空白を含まない丸括弧内に限る。
+    "yamllint": (
+        rf"(?P<file>{_FILE}):(?P<line>\d+):(?P<col>\d+):\s*\[(?P<severity>error|warning)\]"
+        r"\s+(?P<message>.+?)(?:\s+\((?P<rule>[^()\s]+)\))?\s*$"
+    ),
     # colloquial-check出力例: src/foo.md:10:5: [match] -> [replacement] excerpt
     # 置換候補が無い場合は矢印以降を省略した`src/foo.md:10:5: [match] excerpt`形式。
     "colloquial-check": rf"(?P<file>{_FILE}):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>.+)",

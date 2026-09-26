@@ -5,6 +5,7 @@ import pathlib
 
 import pytest
 
+import pyfltr.command.builtin
 import pyfltr.command.error_parser
 
 
@@ -376,6 +377,40 @@ def test_parse_errors_actionlint_snippet_line_is_ignored() -> None:
     output = '  |\n7 |       - run: echo "${{ matrix.nonexistent }}"\n'
     errors = pyfltr.command.error_parser.parse_errors("actionlint", output)
     assert len(errors) == 0
+
+
+def test_parse_errors_yamllint_parsable() -> None:
+    """yamllint -f parsableの各行から位置・重大度・ruleを抽出し、messageからruleを除く。"""
+    # yamllint 1.38.0の実出力。構文エラーはrule`syntax`として出力される。
+    output = (
+        "bad.yaml:1:4: [error] too many spaces after colon (colons)\n"
+        "bad.yaml:3:4: [warning] truthy value should be one of [false, true] (truthy)\n"
+        "syn.yaml:3:1: [error] syntax error: expected the node content, but found '<stream end>' (syntax)\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("yamllint", output)
+    assert [(e.file, e.line, e.col, e.severity, e.rule, e.message) for e in errors] == [
+        ("bad.yaml", 1, 4, "error", "colons", "too many spaces after colon"),
+        ("bad.yaml", 3, 4, "warning", "truthy", "truthy value should be one of [false, true]"),
+        ("syn.yaml", 3, 1, "error", "syntax", "syntax error: expected the node content, but found '<stream end>'"),
+    ]
+
+
+def test_parse_errors_yamllint_parentheses_in_message() -> None:
+    """診断本文中の丸括弧はruleとして扱わず、行末の丸括弧だけをruleとする。"""
+    output = "a.yaml:2:41: [error] line too long (65 > 40 characters) (line-length)\n"
+    errors = pyfltr.command.error_parser.parse_errors("yamllint", output)
+    assert len(errors) == 1
+    assert errors[0].rule == "line-length"
+    assert errors[0].message == "line too long (65 > 40 characters)"
+
+
+def test_parse_errors_yamllint_standard_format_is_ignored() -> None:
+    """parsable以外の標準形式（見出し行と字下げした違反行）は診断として扱わない。
+
+    `yamllint-parsable = false`で注入を無効化した場合の挙動を固定する。
+    """
+    output = "bad.yaml\n  1:4       error    too many spaces after colon  (colons)\n"
+    assert not pyfltr.command.error_parser.parse_errors("yamllint", output)
 
 
 def test_parse_errors_eslint_json() -> None:
@@ -4884,6 +4919,74 @@ def test_get_custom_parser_commands() -> None:
         pyfltr.command.error_parser._CUSTOM_PARSERS.keys()  # noqa: SLF001  # pylint: disable=protected-access
         & pyfltr.command.error_parser._PATH_BASE_PARSERS.keys()  # noqa: SLF001  # pylint: disable=protected-access
     )
+
+
+# パーサーを持たない組み込みlinter・testerのうち、既知のもの。
+# いずれも失敗時の診断が0件となる既存の欠陥であり、パーサーの追加には各ツールの出力形式の調査と
+# 実測（cargo系・dotnet系はRust・.NETツールチェーン）を個別に要するため未対応のまま登録している。
+# パーサーを追加した場合は本集合から削除する。
+_COMMANDS_WITHOUT_PARSER_KNOWN: frozenset[str] = frozenset(
+    {
+        "hadolint",
+        "gitleaks",
+        "tsc",
+        "oxlint",
+        "cargo-clippy",
+        "cargo-check",
+        "cargo-deny",
+        "dotnet-build",
+        "cargo-test",
+        "dotnet-test",
+    }
+)
+
+
+def _commands_without_parser(commands: dict[str, pyfltr.command.builtin.CommandInfo]) -> set[str]:
+    """診断を抽出する手段を持たないlinter・tester型コマンドの集合を返す。
+
+    formatterは2段階実行の経路で成否を扱うため対象から外す。
+    """
+    registered = (
+        pyfltr.command.error_parser._BUILTIN_PATTERNS.keys()  # noqa: SLF001  # pylint: disable=protected-access
+        | pyfltr.command.error_parser._CUSTOM_PARSERS.keys()  # noqa: SLF001  # pylint: disable=protected-access
+        | pyfltr.command.error_parser._PATH_BASE_PARSERS.keys()  # noqa: SLF001  # pylint: disable=protected-access
+    )
+    return {
+        name
+        for name, info in commands.items()
+        if info.type in ("linter", "tester") and info.error_pattern is None and name not in registered
+    }
+
+
+def test_builtin_linters_and_testers_have_parser() -> None:
+    """組み込みlinter・testerはパーサーを持つか、既知の未対応として登録されている。
+
+    パーサーを登録しない組み込みコマンドは、失敗しても診断が常に0件となる。
+    `error-parser-reviewer`は`error_parser.py`を変更しない追加では起動しないため、本テストで検出する。
+    """
+    actual = _commands_without_parser(pyfltr.command.builtin.BUILTIN_COMMANDS)
+    assert actual == _COMMANDS_WITHOUT_PARSER_KNOWN, (
+        "パーサー未登録の組み込みlinter・testerが既知の集合と一致しない。"
+        "新規追加分は`pyfltr/command/error_parser.py`へパーサーを登録するか、理由を添えて"
+        "`_COMMANDS_WITHOUT_PARSER_KNOWN`へ加える。パーサーを追加した既知分は同集合から削除する。"
+        f" 追加: {sorted(actual - _COMMANDS_WITHOUT_PARSER_KNOWN)}"
+        f" 削除: {sorted(_COMMANDS_WITHOUT_PARSER_KNOWN - actual)}"
+    )
+
+
+def test_commands_without_parser_detects_unregistered_linter() -> None:
+    """パーサー未登録のlinter・testerを検出し、formatterと`error_pattern`指定を対象外とする。"""
+    commands = {
+        **pyfltr.command.builtin.BUILTIN_COMMANDS,
+        "dummy-linter": pyfltr.command.builtin.CommandInfo(type="linter"),
+        "dummy-tester": pyfltr.command.builtin.CommandInfo(type="tester"),
+        "dummy-formatter": pyfltr.command.builtin.CommandInfo(type="formatter"),
+        "dummy-pattern": pyfltr.command.builtin.CommandInfo(type="linter", error_pattern=r"(?P<file>.+)"),
+    }
+
+    actual = _commands_without_parser(commands)
+
+    assert actual - _COMMANDS_WITHOUT_PARSER_KNOWN == {"dummy-linter", "dummy-tester"}
 
 
 def test_parse_errors_error_pattern_precedes_path_base_parser() -> None:
