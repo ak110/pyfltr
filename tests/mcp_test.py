@@ -20,6 +20,7 @@ import typing
 
 import mcp
 import mcp.client.stdio
+import mcp.server.mcpserver.exceptions
 import mcp_types
 import pytest
 
@@ -33,6 +34,9 @@ from tests import conftest as _testconf
 from tests.conftest import make_command_result as _make_result
 from tests.conftest import make_error_location as _make_error
 from tests.conftest import seed_archive_run as _seed_run
+
+# ツール関数が想定内の失敗を伝える例外。MCPServerはこの型の本文だけをクライアントへ届ける。
+_ToolError = mcp.server.mcpserver.exceptions.ToolError
 
 
 @pytest.fixture(autouse=True)
@@ -189,13 +193,13 @@ async def test_tool_show_run_prefix(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.asyncio
 async def test_tool_show_run_not_found() -> None:
-    with pytest.raises(ValueError, match="run_id"):
+    with pytest.raises(_ToolError, match="run_id"):
         await pyfltr.cli.mcp_server.tool_show_run("nonexistent")
 
 
 @pytest.mark.asyncio
 async def test_tool_show_run_latest_empty() -> None:
-    with pytest.raises(ValueError, match="run"):
+    with pytest.raises(_ToolError, match="run"):
         await pyfltr.cli.mcp_server.tool_show_run("latest")
 
 
@@ -209,7 +213,7 @@ async def test_tool_show_run_ambiguous_prefix(tmp_path: pathlib.Path) -> None:
         pytest.skip("shared prefixが無いケースでは曖昧判定にならない")
     prefix = run_ids[0][:shared]
 
-    with pytest.raises(ValueError, match="曖昧"):
+    with pytest.raises(_ToolError, match="曖昧"):
         await pyfltr.cli.mcp_server.tool_show_run(prefix)
 
 
@@ -366,7 +370,7 @@ async def test_tool_show_run_diagnostics_hints_none_when_absent(tmp_path: pathli
 @pytest.mark.asyncio
 async def test_tool_show_run_diagnostics_tool_not_found(tmp_path: pathlib.Path) -> None:
     run_id = _seed_run(tmp_path)
-    with pytest.raises(ValueError, match="nonexistent"):
+    with pytest.raises(_ToolError, match="nonexistent"):
         await pyfltr.cli.mcp_server.tool_show_run_diagnostics(run_id, ["nonexistent"])
 
 
@@ -389,8 +393,36 @@ async def test_tool_show_run_output(tmp_path: pathlib.Path) -> None:
 @pytest.mark.asyncio
 async def test_tool_show_run_output_tool_not_found(tmp_path: pathlib.Path) -> None:
     run_id = _seed_run(tmp_path)
-    with pytest.raises(ValueError, match="nonexistent"):
+    with pytest.raises(_ToolError, match="nonexistent"):
         await pyfltr.cli.mcp_server.tool_show_run_output(run_id, ["nonexistent"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("tool_name", "use_existing_run", "expected_message"),
+    [
+        ("show_run_diagnostics", False, "run_id が見つかりません"),
+        ("show_run_diagnostics", True, "にコマンド 'textlint' の結果が保存されていません"),
+        ("show_run_output", False, "run_id が見つかりません"),
+        ("show_run_output", True, "にコマンド 'textlint' の結果が保存されていません"),
+    ],
+    ids=["diagnostics-unknown-run", "diagnostics-unsaved-command", "output-unknown-run", "output-unsaved-command"],
+)
+async def test_tool_error_message_reaches_client(
+    tmp_path: pathlib.Path, tool_name: str, use_existing_run: bool, expected_message: str
+) -> None:
+    """想定内のエラーでは、pyfltrのエラー文言が応答本文としてクライアントへ届く。
+
+    ツール関数を直接呼ぶ検査は例外型しか確かめられず、
+    SDKが本文を`Error executing tool <ツール名>`へ置き換える事象を検出できないため、
+    クライアント経由で応答本文を確かめる。
+    """
+    run_id = _seed_run(tmp_path) if use_existing_run else "nonexistent"
+    async with mcp.Client(pyfltr.cli.mcp_server.build_server()) as client:
+        result = await client.call_tool(tool_name, {"run_id": run_id, "commands": ["textlint"]})
+    assert result.is_error
+    texts = [content.text for content in result.content if isinstance(content, mcp_types.TextContent)]
+    assert any(expected_message in text for text in texts), texts
 
 
 # ---------------------------------------------------------------------------
@@ -490,14 +522,14 @@ def test_execute_mcp_reports_missing_dependency(monkeypatch: pytest.MonkeyPatch,
 @pytest.mark.asyncio
 async def test_tool_run_rejects_invalid_mode() -> None:
     """未対応の実行モードを拒否する。"""
-    with pytest.raises(ValueError, match="mode"):
+    with pytest.raises(_ToolError, match="mode"):
         await pyfltr.cli.mcp_server.tool_run(paths=["dummy"], mode="invalid")
 
 
 @pytest.mark.asyncio
 async def test_tool_run_rejects_missing_work_dir(tmp_path: pathlib.Path) -> None:
     """実在しない作業ディレクトリを拒否する。"""
-    with pytest.raises(ValueError, match="work_dir"):
+    with pytest.raises(_ToolError, match="work_dir"):
         await pyfltr.cli.mcp_server.tool_run(
             paths=["dummy"],
             work_dir=str(tmp_path / "missing"),
@@ -593,7 +625,7 @@ async def test_tool_run_rejects_unknown_command(tmp_path: pathlib.Path) -> None:
     target = tmp_path / "sample.txt"
     target.write_text("hello\n", encoding="utf-8")
 
-    with pytest.raises(ValueError, match="コマンドが見つかりません"):
+    with pytest.raises(_ToolError, match="コマンドが見つかりません"):
         await pyfltr.cli.mcp_server.tool_run(paths=[str(target)], commands=["unknown-command"])
 
 
@@ -895,7 +927,7 @@ async def test_tool_run_retry_commands_includes_failed(tmp_path: pathlib.Path) -
 @pytest.mark.asyncio
 async def test_tool_run_from_run_without_only_failed_raises() -> None:
     """only_failed=Falseのままfrom_runを指定するとValueErrorが発生する。"""
-    with pytest.raises(ValueError, match="only_failed"):
+    with pytest.raises(_ToolError, match="only_failed"):
         await pyfltr.cli.mcp_server.tool_run(
             paths=["dummy"],
             from_run="latest",
@@ -995,7 +1027,7 @@ async def test_tool_grep_reads_pattern_file(tmp_path: pathlib.Path) -> None:
 @pytest.mark.asyncio
 async def test_tool_grep_rejects_missing_pattern_file(tmp_path: pathlib.Path) -> None:
     """実在しないパターンファイルを拒否する。"""
-    with pytest.raises(ValueError, match="パターンファイル"):
+    with pytest.raises(_ToolError, match="パターンファイル"):
         await pyfltr.cli.mcp_server.tool_grep(
             paths=[str(tmp_path)],
             pattern_file=str(tmp_path / "missing.txt"),
@@ -1275,7 +1307,7 @@ async def test_tool_grep_rejects_limited_files_without_match_summary(tmp_path: p
     target = tmp_path / "sample.txt"
     target.write_text("hello\n", encoding="utf-8")
 
-    with pytest.raises(ValueError, match="max_total"):
+    with pytest.raises(_ToolError, match="max_total"):
         await pyfltr.cli.mcp_server.tool_grep(
             paths=[str(target)],
             pattern="hello",
@@ -1287,7 +1319,7 @@ async def test_tool_grep_rejects_limited_files_without_match_summary(tmp_path: p
 @pytest.mark.asyncio
 async def test_tool_grep_rejects_invalid_summary_mode(tmp_path: pathlib.Path) -> None:
     """未対応の集計モードを拒否する。"""
-    with pytest.raises(ValueError, match="summary_mode"):
+    with pytest.raises(_ToolError, match="summary_mode"):
         await pyfltr.cli.mcp_server.tool_grep(
             paths=[str(tmp_path)],
             pattern="hello",
@@ -1420,7 +1452,7 @@ async def test_tool_replace_within_with_multiline_raises(tmp_path: pathlib.Path)
     """`within`と`multiline`の併用はValueErrorになる。"""
     target = tmp_path / "sample.txt"
     target.write_text("KEY foo\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="multiline"):
+    with pytest.raises(_ToolError, match="multiline"):
         await pyfltr.cli.mcp_server.tool_replace(
             pattern="foo", replacement="X", paths=[str(target)], within="KEY", multiline=True
         )
@@ -1431,7 +1463,7 @@ async def test_tool_replace_context_without_within_raises(tmp_path: pathlib.Path
     """`within`未指定で`before_context`/`after_context`指定はValueErrorになる。"""
     target = tmp_path / "sample.txt"
     target.write_text("foo\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="within"):
+    with pytest.raises(_ToolError, match="within"):
         await pyfltr.cli.mcp_server.tool_replace(pattern="foo", replacement="X", paths=[str(target)], after_context=1)
 
 
@@ -1440,7 +1472,7 @@ async def test_tool_replace_combined_context_without_within_raises(tmp_path: pat
     """`within`未指定の一括コンテキスト値を拒否する。"""
     target = tmp_path / "sample.txt"
     target.write_text("foo\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="within"):
+    with pytest.raises(_ToolError, match="within"):
         await pyfltr.cli.mcp_server.tool_replace(
             pattern="foo",
             replacement="X",
@@ -1481,7 +1513,7 @@ async def test_tool_replace_rejects_adaptively_compressed_from_grep(tmp_path: pa
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="full出力"):
+    with pytest.raises(_ToolError, match="full出力"):
         await pyfltr.cli.mcp_server.tool_replace(
             pattern="foo",
             replacement="X",
@@ -1495,7 +1527,7 @@ async def test_tool_replace_rejects_adaptively_compressed_from_grep(tmp_path: pa
 @pytest.mark.asyncio
 async def test_tool_replace_rejects_missing_from_grep_file(tmp_path: pathlib.Path) -> None:
     """読み込めないgrep出力を拒否する。"""
-    with pytest.raises(ValueError, match="from-grep"):
+    with pytest.raises(_ToolError, match="from-grep"):
         await pyfltr.cli.mcp_server.tool_replace(
             pattern="foo",
             replacement="X",
@@ -1550,7 +1582,7 @@ async def test_tool_replace_show_changes(tmp_path: pathlib.Path) -> None:
 @pytest.mark.asyncio
 async def test_tool_replace_paths_empty_raises() -> None:
     """`paths=[]`のとき`ValueError`が発生すること。"""
-    with pytest.raises(ValueError, match="paths"):
+    with pytest.raises(_ToolError, match="paths"):
         await pyfltr.cli.mcp_server.tool_replace(
             pattern="hello",
             replacement="goodbye",
@@ -1650,7 +1682,7 @@ async def test_tool_replace_undo_hash_mismatch_force_restores(tmp_path: pathlib.
 @pytest.mark.asyncio
 async def test_tool_replace_undo_not_found_raises() -> None:
     """`replace_id`が存在しない場合`ValueError`が発生すること。"""
-    with pytest.raises(ValueError, match="replace_id"):
+    with pytest.raises(_ToolError, match="replace_id"):
         await pyfltr.cli.mcp_server.tool_replace_undo(replace_id="NONEXISTENTID00000000000000")
 
 
@@ -1700,16 +1732,16 @@ async def test_tool_replace_history_empty() -> None:
 @pytest.mark.asyncio
 async def test_tool_replace_history_rejects_invalid_requests() -> None:
     """未対応actionと識別子のない単体参照を拒否する。"""
-    with pytest.raises(ValueError, match="action"):
+    with pytest.raises(_ToolError, match="action"):
         await pyfltr.cli.mcp_server.tool_replace_history(action="invalid")
-    with pytest.raises(ValueError, match="replace_id"):
+    with pytest.raises(_ToolError, match="replace_id"):
         await pyfltr.cli.mcp_server.tool_replace_history(action="show")
 
 
 @pytest.mark.asyncio
 async def test_tool_replace_history_show_rejects_unknown_id() -> None:
     """存在しないreplace識別子を拒否する。"""
-    with pytest.raises(ValueError, match="replace_id"):
+    with pytest.raises(_ToolError, match="replace_id"):
         await pyfltr.cli.mcp_server.tool_replace_history(action="show", replace_id="unknown")
 
 
@@ -1737,7 +1769,7 @@ async def test_tool_command_info_resolves_known_command() -> None:
 @pytest.mark.asyncio
 async def test_tool_command_info_rejects_unknown_command() -> None:
     """未知ツールを共通のコマンド検証経路で拒否する。"""
-    with pytest.raises(ValueError, match="コマンドが見つかりません"):
+    with pytest.raises(_ToolError, match="コマンドが見つかりません"):
         await pyfltr.cli.mcp_server.tool_command_info("unknown-command")
 
 
@@ -1804,7 +1836,7 @@ async def test_tool_config_rejects_invalid_parameter_combinations(
     message: str,
 ) -> None:
     """actionごとの必須引数と禁止引数を実行時に検証する。"""
-    with pytest.raises(ValueError, match=message):
+    with pytest.raises(_ToolError, match=message):
         await pyfltr.cli.mcp_server.tool_config(**kwargs)
 
 
@@ -1813,7 +1845,7 @@ async def test_tool_config_rejects_unknown_key(tmp_path: pathlib.Path, monkeypat
     """未知設定キーを候補案内付きの共通文面で拒否する。"""
     monkeypatch.chdir(tmp_path)
     (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="認識できません"):
+    with pytest.raises(_ToolError, match="認識できません"):
         await pyfltr.cli.mcp_server.tool_config(action="get", key="unknown-key")
 
 

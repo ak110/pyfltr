@@ -41,11 +41,14 @@ import typing
 # MCP専用依存のimport失敗を捕捉し、他サブコマンドとヘルプの起動を維持する。
 try:
     import mcp.server.mcpserver as _imported_mcpserver
+    import mcp.server.mcpserver.exceptions as _imported_mcp_exceptions
 except ImportError as e:  # 依存解決が配布物の宣言と異なる環境で到達する。
     _mcpserver: types_module.ModuleType | None = None
+    _mcp_exceptions: types_module.ModuleType | None = None
     _MCP_IMPORT_ERROR: ImportError | None = e
 else:
     _mcpserver = _imported_mcpserver
+    _mcp_exceptions = _imported_mcp_exceptions
     _MCP_IMPORT_ERROR = None
 
 import pyfltr.cli.command_info
@@ -107,9 +110,15 @@ logger = logging.getLogger(__name__)
 def _raise_mcp_error(msg: str) -> typing.Never:
     """MCPクライアントへエラーとして返すための例外を送出する。
 
-    MCPServerは`ValueError`をツールエラーとしてJSON-RPCエラーレスポンスに変換する。
+    想定内の失敗はmcp SDKの`ToolError`で送出する。
+    MCPServerは`ToolError`だけを本文付きの`is_error`応答へ変換し、
+    それ以外の例外（`ValueError`など）はクラッシュとして扱い、
+    本文を`Error executing tool <ツール名>`へ置き換える（mcp 2.1.0以降）。
     """
-    raise ValueError(msg)
+    if _mcp_exceptions is None:
+        # ツール関数はbuild_server経由で呼ばれ、mcpを読み込めない環境ではbuild_serverが先に停止する。
+        raise RuntimeError("MCPサーバー機能に必要な依存を読み込めません") from _MCP_IMPORT_ERROR
+    raise _mcp_exceptions.ToolError(msg)
 
 
 def _resolve_run_id_or_raise(store: pyfltr.state.archive.ArchiveStore, raw: str) -> str:
@@ -291,7 +300,7 @@ async def tool_run(
         fail_fast: Trueの場合、1ツールでもエラーが発生した時点で残りを打ち切る。
         only_failed: Trueの場合、直前runの失敗ツール・失敗ファイルのみ再実行する。
         from_run: `only_failed=True`時の参照run_id（前方一致・`latest`可）。
-            `only_failed=False`かつ`from_run`指定はValueError。
+            `only_failed=False`かつ`from_run`指定はツールエラー（`ToolError`）。
         changed_since: 指定したgit参照から変更されたファイルだけを対象にする。
         work_dir: 実行の起点ディレクトリ。設定探索と相対パス解決の基準を兼ねる。
             省略時はMCPサーバープロセスのカレントディレクトリを用いる。
