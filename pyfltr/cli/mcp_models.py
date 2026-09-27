@@ -335,6 +335,7 @@ class ReplaceUndoModel(pydantic.BaseModel):
         description="ハッシュ不一致でスキップされたファイルパスの一覧（force=False時）。区切りは`/`へ統一する。",
     )
     exit_code: int = pydantic.Field(description="終了コード。skippedあり=1、全件復元=0。")
+    warnings: list[str] = pydantic.Field(default_factory=list, description="取り消し時に発行された警告メッセージ。")
 
 
 class ReplaceHistoryFileModel(pydantic.BaseModel):

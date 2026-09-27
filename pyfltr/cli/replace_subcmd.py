@@ -277,7 +277,7 @@ def _execute_replace(
                 continue
         try:
             if anchor is not None:
-                before, after, count, records = pyfltr.grep_.replacer.apply_block_replace_to_file(
+                result = pyfltr.grep_.replacer.apply_block_replace_to_file(
                     file,
                     compiled,
                     args.replacement,
@@ -287,7 +287,7 @@ def _execute_replace(
                     encoding=args.encoding,
                 )
             else:
-                before, after, count, records = pyfltr.grep_.replacer.apply_replace_to_file(
+                result = pyfltr.grep_.replacer.apply_replace_to_file(
                     file,
                     compiled,
                     args.replacement,
@@ -300,42 +300,42 @@ def _execute_replace(
             )
             read_failures += 1
             continue
-        if count == 0:
+        if result.count == 0:
             continue
         files_changed += 1
-        total_replacements += count
-        before_hash = pyfltr.grep_.replacer.compute_hash(before)
-        after_hash = pyfltr.grep_.replacer.compute_hash(after)
+        total_replacements += result.count
+        before_hash = pyfltr.grep_.replacer.compute_hash(result.before_content)
+        after_hash = pyfltr.grep_.replacer.compute_hash(result.after_content)
         if not dry_run:
-            file.write_text(after, encoding=args.encoding)
+            file.write_bytes(result.after_bytes)
             file_changes.append(
                 {
                     "file": file,
-                    "before_content": before,
-                    "after_hash": after_hash,
-                    "records": list(records),
+                    "before_bytes": result.before_bytes,
+                    "after_bytes": result.after_bytes,
+                    "records": list(result.records),
                 }
             )
 
         if output_format == "jsonl":
             pyfltr.grep_.jsonl_records.emit_file_change(
                 file=file,
-                count=count,
+                count=result.count,
                 before_hash=before_hash,
                 after_hash=after_hash,
                 dry_run=dry_run,
-                records=list(records),
+                records=list(result.records),
                 show_changes=args.show_changes,
             )
         elif output_format == "text":
-            pyfltr.grep_.text_render.render_file_change(file=file, count=count, dry_run=dry_run)
+            pyfltr.grep_.text_render.render_file_change(file=file, count=result.count, dry_run=dry_run)
             if args.show_changes:
-                for record in records:
+                for record in result.records:
                     pyfltr.grep_.text_render.render_change_diff(record)
         else:  # json
             entry: dict[str, typing.Any] = {
                 "file": pyfltr.paths.normalize_separators(file),
-                "count": count,
+                "count": result.count,
                 "before_hash": before_hash,
                 "after_hash": after_hash,
                 "dry_run": dry_run,
@@ -348,7 +348,7 @@ def _execute_replace(
                         "before_line": r.before_line,
                         "after_line": r.after_line,
                     }
-                    for r in records
+                    for r in result.records
                 ]
             json_records.append(entry)
 
@@ -546,7 +546,7 @@ def _execute_undo(parser: argparse.ArgumentParser, args: argparse.Namespace, out
     replace_id = args.pattern
     store = pyfltr.grep_.history.ReplaceHistoryStore()
     try:
-        restored, skipped = store.undo_replace(replace_id, force=args.force)
+        restored, skipped, history_warnings = store.undo_replace(replace_id, force=args.force)
     except FileNotFoundError:
         sys.stderr.write(
             f"エラー: replace_id が見つかりません: {replace_id}。"
@@ -564,6 +564,8 @@ def _execute_undo(parser: argparse.ArgumentParser, args: argparse.Namespace, out
         return 1
 
     exit_code = 1 if skipped else 0
+    for warning in history_warnings:
+        pyfltr.warnings_.emit_warning(source="replace-undo", message=warning)
     if skipped:
         pyfltr.warnings_.emit_warning(
             source="replace-undo",

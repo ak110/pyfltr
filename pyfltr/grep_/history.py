@@ -1,7 +1,7 @@
 """replace履歴の世代管理。
 
 `pyfltr/state/archive.py`と同じ世代管理パターン（ULID採番・XDG準拠キャッシュ・
-3軸自動クリーンアップ）を踏襲する。保存内容は計画通り「変更前全文・変更後ハッシュ・
+3軸自動クリーンアップ）を踏襲する。保存内容は「変更前バイト列・変更後ハッシュ・
 各置換箇所の前後行」の3点で、変更後全文を別途保存しない。
 
 `FileNotFoundError`の契約: 本モジュールが送出する`FileNotFoundError`の引数は
@@ -11,7 +11,7 @@
 ディレクトリ構造（`<cache_root> = pyfltr.state.archive.default_cache_root()`）::
 
     <cache_root>/replaces/<replace_id>/meta.json
-    <cache_root>/replaces/<replace_id>/files/<sanitized_path>/before.txt
+    <cache_root>/replaces/<replace_id>/files/<sanitized_path>/before.bin
     <cache_root>/replaces/<replace_id>/files/<sanitized_path>/changes.json
 
 `<sanitized_path>`はファイルパス由来の安定識別子で、衝突回避のため
@@ -40,7 +40,9 @@ _REPLACES_DIRNAME = "replaces"
 _META_FILENAME = "meta.json"
 _FILES_DIRNAME = "files"
 _BEFORE_FILENAME = "before.txt"
+_BEFORE_BYTES_FILENAME = "before.bin"
 _CHANGES_FILENAME = "changes.json"
+_LEGACY_WARNING = "旧形式の履歴には元の改行情報がないため、取り消し後のバイト列は置換前と完全に一致しない場合があります。"
 
 
 def default_history_root() -> pathlib.Path:
@@ -109,12 +111,13 @@ class ReplaceHistoryStore:
         `file_changes`は各ファイル変更の辞書列。期待キーは次の通り。
 
         - `file` (`pathlib.Path` または `str`): 対象ファイル
-        - `before_content` (`str`): 変更前全文
-        - `after_hash` (`str`): 変更後全文のSHA-256ハッシュ
+        - `before_bytes` (`bytes`): 新形式の変更前バイト列
+        - `after_bytes` (`bytes`): 新形式の実書き込みバイト列
+        - `before_content` / `after_hash`: 旧形式の履歴を構築する場合の値
         - `records` (`list[ReplaceRecord]`): 各置換箇所のレコード
 
         `meta.json`には実行コマンドメタとファイル一覧（相対パス・after_hash）を保存する。
-        各ファイル本体は`files/<sanitized_path>/before.txt`へ保存し、
+        新形式の元バイト列は`files/<sanitized_path>/before.bin`へ保存し、
         `changes.json`へ`ReplaceRecord`相当のJSON配列を保存する。
         """
         run_dir = self._history_root / replace_id
@@ -124,13 +127,20 @@ class ReplaceHistoryStore:
         files_meta: list[dict[str, typing.Any]] = []
         for change in file_changes:
             file_path = pathlib.Path(change["file"])
-            before_content: str = change["before_content"]
-            after_hash: str = change["after_hash"]
+            new_format = "before_bytes" in change
+            if new_format:
+                after_bytes: bytes = change["after_bytes"]
+                after_hash = hashlib.sha256(after_bytes).hexdigest()
+            else:
+                after_hash = change["after_hash"]
             records: list[ReplaceRecord] = change.get("records", [])
             sanitized = _sanitize_file_key(file_path)
             file_dir = files_dir / sanitized
             file_dir.mkdir(parents=True, exist_ok=True)
-            (file_dir / _BEFORE_FILENAME).write_text(before_content, encoding="utf-8")
+            if new_format:
+                (file_dir / _BEFORE_BYTES_FILENAME).write_bytes(change["before_bytes"])
+            else:
+                (file_dir / _BEFORE_FILENAME).write_text(change["before_content"], encoding="utf-8")
             (file_dir / _CHANGES_FILENAME).write_text(
                 json.dumps([_record_to_dict(r) for r in records], ensure_ascii=False, indent=2),
                 encoding="utf-8",
@@ -164,7 +174,11 @@ class ReplaceHistoryStore:
         for entry in meta.get("files", []):
             sanitized = entry["sanitized"]
             file_dir = files_dir / sanitized
-            entry["before_content"] = (file_dir / _BEFORE_FILENAME).read_text(encoding="utf-8")
+            before_bytes_path = file_dir / _BEFORE_BYTES_FILENAME
+            if before_bytes_path.exists():
+                entry["before_content"] = before_bytes_path.read_bytes().decode(meta["command"]["encoding"])
+            else:
+                entry["before_content"] = (file_dir / _BEFORE_FILENAME).read_text(encoding="utf-8")
             changes_raw = (file_dir / _CHANGES_FILENAME).read_text(encoding="utf-8")
             entry["records"] = json.loads(changes_raw)
         return meta
@@ -174,21 +188,25 @@ class ReplaceHistoryStore:
         replace_id: str,
         *,
         force: bool = False,
-    ) -> tuple[list[pathlib.Path], list[pathlib.Path]]:
+    ) -> tuple[list[pathlib.Path], list[pathlib.Path], list[str]]:
         """履歴を読み込んでファイルを変更前内容へ復元する。
 
         まず全ファイルについて保存済み`after_hash`と現在ファイルのハッシュを照合する。
         force未指定で不一致が1件でも検出された場合は警告として全件をスキップ扱いとし、
-        書き戻しを行わずに`(restored=[], skipped=[...])`を返す。
+        書き戻しを行わずに復元0件・スキップ全件を返す。
         force指定時、または全件一致時のみ実際の書き戻しを実施する。
 
         Returns:
-            `(restored_files, skipped_files)`のタプル。force未指定で不一致が
+            `(restored_files, skipped_files, warnings)`のタプル。force未指定で不一致が
             含まれる場合は`restored`は空、`skipped`は対象全件となる
             （手動編集を巻き戻す事故を避ける一括中断の方針）
         """
         meta = self.load_replace(replace_id)
         entries = list(meta.get("files", []))
+        encoding = str(meta["command"]["encoding"])
+        files_dir = self._history_root / replace_id / _FILES_DIRNAME
+        legacy = any(not (files_dir / entry["sanitized"] / _BEFORE_BYTES_FILENAME).exists() for entry in entries)
+        warnings = [_LEGACY_WARNING] if legacy else []
 
         # 不一致検出パス: force未指定時は1件でも不一致があれば全件スキップへ倒す
         if not force:
@@ -198,22 +216,29 @@ class ReplaceHistoryStore:
                 saved_after_hash: str = entry["after_hash"]
                 current_hash: str | None = None
                 if file_path.exists():
-                    current_hash = hashlib.sha256(file_path.read_text(encoding="utf-8").encode("utf-8")).hexdigest()
+                    before_bytes_path = files_dir / entry["sanitized"] / _BEFORE_BYTES_FILENAME
+                    if before_bytes_path.exists():
+                        current_hash = hashlib.sha256(file_path.read_bytes()).hexdigest()
+                    else:
+                        current_hash = hashlib.sha256(file_path.read_text(encoding=encoding).encode("utf-8")).hexdigest()
                 if current_hash != saved_after_hash:
                     mismatched.append(file_path)
             if mismatched:
                 # 計画方針（grep-replace.md）に従い、不一致時は中断して全件スキップ扱いとする
-                return [], [pathlib.Path(entry["file"]) for entry in entries]
+                return [], [pathlib.Path(entry["file"]) for entry in entries], warnings
 
         # 書き戻しパス: force指定時または全件一致時のみ実際に書き戻す
         restored: list[pathlib.Path] = []
         for entry in entries:
             file_path = pathlib.Path(entry["file"])
-            before_content: str = entry["before_content"]
+            before_bytes_path = files_dir / entry["sanitized"] / _BEFORE_BYTES_FILENAME
             file_path.parent.mkdir(parents=True, exist_ok=True)
-            file_path.write_text(before_content, encoding="utf-8")
+            if before_bytes_path.exists():
+                file_path.write_bytes(before_bytes_path.read_bytes())
+            else:
+                file_path.write_text(entry["before_content"], encoding=encoding)
             restored.append(file_path)
-        return restored, []
+        return restored, [], warnings
 
     def list_replaces(self, *, limit: int | None = None) -> list[dict[str, typing.Any]]:
         """保存済み履歴を新しい順（`replace_id`降順）で返す。

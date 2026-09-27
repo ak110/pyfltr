@@ -103,10 +103,11 @@ def test_undo_replace_restores_when_hash_matches(tmp_path: pathlib.Path) -> None
     metadata = json.loads((store.history_root / replace_id / "meta.json").read_text(encoding="utf-8"))
     assert [entry["file"] for entry in metadata["files"]] == [target.as_posix()]
 
-    restored, skipped = store.undo_replace(replace_id)
+    restored, skipped, warnings = store.undo_replace(replace_id)
 
     assert restored == [target]
     assert not skipped
+    assert len(warnings) == 1
     assert target.read_text(encoding="utf-8") == "before content"
 
 
@@ -120,10 +121,11 @@ def test_undo_replace_skips_when_hash_mismatch(tmp_path: pathlib.Path) -> None:
     # 手動編集を再現
     target.write_text("manually edited content", encoding="utf-8")
 
-    restored, skipped = store.undo_replace(replace_id)
+    restored, skipped, warnings = store.undo_replace(replace_id)
 
     assert not restored
     assert skipped == [target]
+    assert len(warnings) == 1
     # 上書きされず手動編集が残る
     assert target.read_text(encoding="utf-8") == "manually edited content"
 
@@ -137,10 +139,11 @@ def test_undo_replace_force_overrides_mismatch(tmp_path: pathlib.Path) -> None:
 
     # 手動編集後にforce=Trueで復元
     target.write_text("manually edited content", encoding="utf-8")
-    restored, skipped = store.undo_replace(replace_id, force=True)
+    restored, skipped, warnings = store.undo_replace(replace_id, force=True)
 
     assert restored == [target]
     assert not skipped
+    assert len(warnings) == 1
     assert target.read_text(encoding="utf-8") == "before content"
 
 

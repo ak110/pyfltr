@@ -858,7 +858,7 @@ async def tool_replace(
                 continue
         try:
             if anchor is not None:
-                before, after, count, records = pyfltr.grep_.replacer.apply_block_replace_to_file(
+                result = pyfltr.grep_.replacer.apply_block_replace_to_file(
                     file,
                     compiled,
                     replacement,
@@ -868,7 +868,7 @@ async def tool_replace(
                     encoding=encoding,
                 )
             else:
-                before, after, count, records = pyfltr.grep_.replacer.apply_replace_to_file(
+                result = pyfltr.grep_.replacer.apply_replace_to_file(
                     file,
                     compiled,
                     replacement,
@@ -876,25 +876,25 @@ async def tool_replace(
                 )
         except (UnicodeDecodeError, OSError):
             continue
-        if count == 0:
+        if result.count == 0:
             continue
 
         files_changed += 1
-        total_replacements += count
-        before_hash = pyfltr.grep_.replacer.compute_hash(before)
-        after_hash = pyfltr.grep_.replacer.compute_hash(after)
+        total_replacements += result.count
+        before_hash = pyfltr.grep_.replacer.compute_hash(result.before_content)
+        after_hash = pyfltr.grep_.replacer.compute_hash(result.after_content)
 
         file_changes.append(
             ReplaceFileChangeModel(
                 file=pyfltr.paths.normalize_separators(file),
-                count=count,
+                count=result.count,
                 before_hash=before_hash,
                 after_hash=after_hash,
             )
         )
 
         if show_changes:
-            for record in records:
+            for record in result.records:
                 change_records.append(
                     ReplaceChangeRecordModel(
                         file=pyfltr.paths.normalize_separators(record.file),
@@ -906,13 +906,13 @@ async def tool_replace(
                 )
 
         if not dry_run:
-            file.write_text(after, encoding=encoding)
+            file.write_bytes(result.after_bytes)
             history_entries.append(
                 {
                     "file": file,
-                    "before_content": before,
-                    "after_hash": after_hash,
-                    "records": list(records),
+                    "before_bytes": result.before_bytes,
+                    "after_bytes": result.after_bytes,
+                    "records": list(result.records),
                 }
             )
 
@@ -956,7 +956,7 @@ async def tool_replace_undo(replace_id: str, force: bool = False) -> ReplaceUndo
     """
     store = pyfltr.grep_.history.ReplaceHistoryStore()
     try:
-        restored, skipped = store.undo_replace(replace_id, force=force)
+        restored, skipped, warnings = store.undo_replace(replace_id, force=force)
     except FileNotFoundError:
         _raise_mcp_error(f"replace_id が見つかりません: {replace_id}")
 
@@ -966,6 +966,7 @@ async def tool_replace_undo(replace_id: str, force: bool = False) -> ReplaceUndo
         restored=[pyfltr.paths.normalize_separators(p) for p in restored],
         skipped=[pyfltr.paths.normalize_separators(p) for p in skipped],
         exit_code=exit_code,
+        warnings=warnings,
     )
 
 

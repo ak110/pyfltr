@@ -5,6 +5,8 @@
 「置換後内容と各置換箇所のレコードを返却する」ところまでに閉じる。
 """
 
+import codecs
+import dataclasses
 import hashlib
 import pathlib
 import re
@@ -13,13 +15,37 @@ import pyfltr.grep_.scanner
 from pyfltr.grep_.types import ReplaceRecord
 
 
+@dataclasses.dataclass(frozen=True)
+class ReplacementResult:
+    """検索・公開ハッシュ用の文字列と復元・書き込み用バイト列を分けて保持する。"""
+
+    before_content: str
+    after_content: str
+    before_bytes: bytes
+    after_bytes: bytes
+    count: int
+    records: list[ReplaceRecord]
+
+
+@dataclasses.dataclass(frozen=True)
+class _ReplacementInput:
+    """デコード後の文字位置と元バイト位置の対応を保持する。"""
+
+    original: bytes
+    body: bytes
+    text: str
+    byte_offsets: list[int]
+    encoding: str
+    bom: bytes
+
+
 def apply_replace_to_file(
     file: pathlib.Path,
     pattern: re.Pattern[str],
     replacement: str,
     *,
     encoding: str,
-) -> tuple[str, str, int, list[ReplaceRecord]]:
+) -> ReplacementResult:
     r"""単一ファイルへ置換を適用する。
 
     Args:
@@ -28,19 +54,19 @@ def apply_replace_to_file(
             マルチライン要否のフラグ（`re.DOTALL | re.MULTILINE`）は
             `compile_pattern`側で組み込まれており、本関数では追加の指定を取らない
         replacement: `re.sub`互換の置換式（`\\1`/`\\g<name>`参照可）
-        encoding: ファイル読み込み時のエンコーディング（書き込みは呼び出し側の責務）
+        encoding: ファイルの読み込みと置換結果の符号化に使うエンコーディング
 
     Returns:
-        `(before_content, after_content, count, records)`の4要素タプル。
-        `count`は実際に置換された箇所数、`records`は各置換箇所のレコード。
+        置換前後の文字列・バイト列、置換件数及び各置換箇所のレコード。
 
     Note:
         マッチが行を跨ぐ場合（マルチラインモード）は、開始行を基準にした`ReplaceRecord`を生成し
         `before_line`に「マッチ開始行の置換前テキスト」、`after_line`に「マッチ開始行の置換後テキスト」を
         格納する。
     """
-    before_content = file.read_text(encoding=encoding)
-    after_content, count = pattern.subn(replacement, before_content)
+    source = _read_content(file, encoding)
+    before_content, raw_offsets = _search_view(source.text)
+    after_content, after_bytes, count = _replace_matches(before_content, source, raw_offsets, pattern, replacement)
     records: list[ReplaceRecord] = []
     if count > 0:
         records = _build_replace_records(
@@ -49,7 +75,7 @@ def apply_replace_to_file(
             replacement=replacement,
             before_content=before_content,
         )
-    return before_content, after_content, count, records
+    return ReplacementResult(before_content, after_content, source.original, source.bom + after_bytes, count, records)
 
 
 def apply_block_replace_to_file(
@@ -61,17 +87,16 @@ def apply_block_replace_to_file(
     before_context: int,
     after_context: int,
     encoding: str,
-) -> tuple[str, str, int, list[ReplaceRecord]]:
+) -> ReplacementResult:
     r"""アンカーで定めた行範囲集合へ限定して単一ファイルへ置換を適用する。
 
     `replace --within`のブロック内限定置換の本体。アンカーにマッチした行の前後
     コンテキストで定まる領域（`compute_block_ranges`）の内側に完全包含される
     検索マッチだけを置換する。
 
-    領域を切り出してから`subn`するのではなく、ファイル全文に対して`finditer`し、
-    マッチ範囲が許可文字範囲へ完全包含されるもののみ採用してオフセットベースで
-    再構成する。これにより`^`/`$`/`\\A`/`\\Z`/前後読みの評価対象がファイル全体置換
-    （`apply_replace_to_file`）と一致し、領域切り出しによる挙動差が生じない。
+    領域を切り出してから`subn`するのではなく、通常置換と同じ検索用ビューから
+    マッチ範囲が許可文字範囲へ完全包含されるものだけを採用する。
+    このため`^`/`$`/`\\A`/`\\Z`/前後読みの評価対象は通常置換と一致する。
 
     Args:
         file: 対象ファイル
@@ -80,13 +105,13 @@ def apply_block_replace_to_file(
         anchor: 領域の起点を決めるアンカーパターン（`compile_pattern()`生成済み）
         before_context: アンカー行の前に含める行数（`-B`、0以上）
         after_context: アンカー行の後に含める行数（`-A`、0以上）
-        encoding: ファイル読み込み時のエンコーディング（書き込みは呼び出し側の責務）
+        encoding: ファイルの読み込みと置換結果の符号化に使うエンコーディング
 
     Returns:
-        `(before_content, after_content, count, records)`の4要素タプル。
-        `count`は領域内で実置換した件数で、領域外のマッチは含めない。
+        置換前後の文字列・バイト列、領域内の置換件数及び各置換箇所のレコード。
     """
-    before_content = file.read_text(encoding=encoding)
+    source = _read_content(file, encoding)
+    before_content, raw_offsets = _search_view(source.text)
     line_ranges = pyfltr.grep_.scanner.compute_block_ranges(
         before_content,
         anchor,
@@ -95,18 +120,9 @@ def apply_block_replace_to_file(
     )
     char_ranges = _line_ranges_to_char_ranges(before_content, line_ranges)
 
-    pieces: list[str] = []
-    cursor = 0
-    count = 0
-    for m in search_pattern.finditer(before_content):
-        if not _offset_in_ranges(m.start(), m.end(), char_ranges):
-            continue
-        pieces.append(before_content[cursor : m.start()])
-        pieces.append(m.expand(replacement))
-        cursor = m.end()
-        count += 1
-    pieces.append(before_content[cursor:])
-    after_content = "".join(pieces)
+    after_content, after_bytes, count = _replace_matches(
+        before_content, source, raw_offsets, search_pattern, replacement, char_ranges=char_ranges
+    )
 
     records: list[ReplaceRecord] = []
     if count > 0:
@@ -117,7 +133,88 @@ def apply_block_replace_to_file(
             before_content=before_content,
             char_ranges=char_ranges,
         )
-    return before_content, after_content, count, records
+    return ReplacementResult(before_content, after_content, source.original, source.bom + after_bytes, count, records)
+
+
+def _read_content(file: pathlib.Path, encoding: str) -> _ReplacementInput:
+    """BOMと元のバイト位置を保持して対象をデコードする。"""
+    content = file.read_bytes()
+    codec = codecs.lookup(encoding).name
+    bom = b""
+    if codec == "utf-16":
+        if content.startswith(codecs.BOM_UTF16_LE):
+            bom = codecs.BOM_UTF16_LE
+            codec = "utf-16-le"
+        elif content.startswith(codecs.BOM_UTF16_BE):
+            bom = codecs.BOM_UTF16_BE
+            codec = "utf-16-be"
+        else:
+            content.decode(encoding)
+    elif codec == "utf-8-sig":
+        bom = codecs.BOM_UTF8 if content.startswith(codecs.BOM_UTF8) else b""
+        codec = "utf-8"
+    body = content[len(bom) :]
+    decoder = codecs.getincrementaldecoder(codec)(errors="strict")
+    characters: list[str] = []
+    byte_offsets = [0]
+    for index, byte in enumerate(body, start=1):
+        decoded = decoder.decode(bytes((byte,)))
+        if decoded:
+            characters.append(decoded)
+            byte_offsets.extend([index] * len(decoded))
+    final = decoder.decode(b"", final=True)
+    if final:
+        characters.append(final)
+        byte_offsets.extend([len(body)] * len(final))
+    return _ReplacementInput(content, body, "".join(characters), byte_offsets, codec, bom)
+
+
+def _search_view(content: str) -> tuple[str, list[int]]:
+    """従来と同じ改行変換後の検索文字列と、元文字列への境界位置を返す。"""
+    search_chars: list[str] = []
+    raw_offsets = [0]
+    index = 0
+    while index < len(content):
+        if content[index] == "\r":
+            index += 2 if content[index : index + 2] == "\r\n" else 1
+            search_chars.append("\n")
+        else:
+            search_chars.append(content[index])
+            index += 1
+        raw_offsets.append(index)
+    return "".join(search_chars), raw_offsets
+
+
+def _replace_matches(
+    content: str,
+    source: _ReplacementInput,
+    raw_offsets: list[int],
+    pattern: re.Pattern[str],
+    replacement: str,
+    *,
+    char_ranges: list[tuple[int, int]] | None = None,
+) -> tuple[str, bytes, int]:
+    """従来の検索文字列で照合し、非置換部分は元バイト列からつなぐ。"""
+    content_parts: list[str] = []
+    byte_parts: list[bytes] = []
+    cursor = 0
+    count = 0
+    for match in pattern.finditer(content):
+        if char_ranges is not None and not _offset_in_ranges(match.start(), match.end(), char_ranges):
+            continue
+        expanded = match.expand(replacement)
+        content_parts.extend((content[cursor : match.start()], expanded))
+        byte_parts.extend(
+            (
+                source.body[source.byte_offsets[raw_offsets[cursor]] : source.byte_offsets[raw_offsets[match.start()]]],
+                expanded.encode(source.encoding),
+            )
+        )
+        cursor = match.end()
+        count += 1
+    content_parts.append(content[cursor:])
+    byte_parts.append(source.body[source.byte_offsets[raw_offsets[cursor]] :])
+    return "".join(content_parts), b"".join(byte_parts), count
 
 
 def compute_hash(content: str) -> str:
@@ -186,9 +283,11 @@ def _build_replace_records(
 def _line_start_offsets(text: str) -> list[int]:
     """各論理行の開始オフセットを返す（0-origin、行0は0）。"""
     offsets = [0]
-    for i, ch in enumerate(text):
-        if ch == "\n":
-            offsets.append(i + 1)
+    position = 0
+    for line in text.splitlines(keepends=True):
+        position += len(line)
+        if line[-1] in "\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029":
+            offsets.append(position)
     return offsets
 
 

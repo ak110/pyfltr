@@ -10,6 +10,7 @@ import asyncio
 import concurrent.futures
 import contextlib
 import dataclasses
+import hashlib
 import importlib.metadata
 import inspect
 import json
@@ -27,7 +28,10 @@ import pytest
 import pyfltr.cli.mcp_models
 import pyfltr.cli.mcp_server
 import pyfltr.command.slow_tests
+import pyfltr.grep_.history
 import pyfltr.grep_.preview
+import pyfltr.grep_.replacer
+import pyfltr.grep_.types
 import pyfltr.state.archive
 import pyfltr.state.runs
 from tests import conftest as _testconf
@@ -1630,6 +1634,292 @@ async def test_tool_replace_paths_empty_raises() -> None:
 # ---------------------------------------------------------------------------
 # replace_undo ツールのテスト
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_replace_undo_publishes_warnings_schema() -> None:
+    """公開MCPスキーマが取り消し時の警告を応答に含める。"""
+    tools = await pyfltr.cli.mcp_server.build_server().list_tools()
+    tool = next(entry for entry in tools if entry.name == "replace_undo")
+    assert tool.output_schema is not None
+    assert "warnings" in tool.output_schema["properties"]
+    assert tool.output_schema["properties"]["warnings"]["type"] == "array"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("original", "expected", "encoding"),
+    [
+        ("foo 日本語\r\n".encode("cp932"), "bar 日本語\r\n".encode("cp932"), "cp932"),
+        (b"\xef\xbb\xbffoo\r\n", b"\xef\xbb\xbfbar\r\n", "utf-8-sig"),
+    ],
+)
+async def test_tool_replace_preserves_bytes_round_trip(
+    tmp_path: pathlib.Path, original: bytes, expected: bytes, encoding: str
+) -> None:
+    """MCP置換と取り消しで文字コード・BOM・改行を保持する。"""
+    target = tmp_path / "sample.txt"
+    target.write_bytes(original)
+    replaced = await pyfltr.cli.mcp_server.tool_replace(
+        pattern="foo", replacement="bar", paths=[str(target)], encoding=encoding, dry_run=False
+    )
+    assert target.read_bytes() == expected
+    assert replaced.replace_id is not None
+    undone = await pyfltr.cli.mcp_server.tool_replace_undo(replaced.replace_id)
+    assert target.read_bytes() == original
+    assert undone.exit_code == 0
+    assert not undone.warnings
+
+
+@pytest.mark.asyncio
+async def test_tool_replace_within_preserves_bytes_round_trip(tmp_path: pathlib.Path) -> None:
+    """MCPのブロック内置換は範囲外と混在改行を保持する。"""
+    target = tmp_path / "sample.txt"
+    original = b"foo\r\nanchor foo\nfoo\r"
+    target.write_bytes(original)
+    replaced = await pyfltr.cli.mcp_server.tool_replace(
+        pattern="foo", replacement="bar", paths=[str(target)], within="anchor", dry_run=False
+    )
+    assert target.read_bytes() == b"foo\r\nanchor bar\nfoo\r"
+    assert replaced.replace_id is not None
+    undone = await pyfltr.cli.mcp_server.tool_replace_undo(replaced.replace_id)
+    assert undone.exit_code == 0
+    assert target.read_bytes() == original
+
+
+@pytest.mark.parametrize(
+    ("original", "pattern", "expected"),
+    [
+        (b"keep\r\nfoo\r\nlast\r", "foo\n", b"keep\r\nbar\nlast\r"),
+        (b"keep\r\nfoo\rlast\r\n", "foo\n", b"keep\r\nbar\nlast\r\n"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_tool_replace_searches_normalized_newlines(
+    tmp_path: pathlib.Path, original: bytes, pattern: str, expected: bytes
+) -> None:
+    """MCPの通常置換はCRLFと単独CRをLFとして検索し、対象外の改行を保つ。"""
+    target = tmp_path / "sample.txt"
+    target.write_bytes(original)
+    replaced = await pyfltr.cli.mcp_server.tool_replace(
+        pattern=pattern, replacement="bar\n", paths=[str(target)], dry_run=False
+    )
+    assert target.read_bytes() == expected
+    assert replaced.replace_id is not None
+    undone = await pyfltr.cli.mcp_server.tool_replace_undo(replaced.replace_id)
+    assert undone.exit_code == 0
+    assert target.read_bytes() == original
+
+
+@pytest.mark.asyncio
+async def test_tool_replace_carriage_return_pattern_does_not_match(tmp_path: pathlib.Path) -> None:
+    """MCPも従来どおりLF正規化後に照合し、CRを探す式は一致しない。"""
+    target = tmp_path / "sample.txt"
+    target.write_bytes(b"foo\r\n")
+    result = await pyfltr.cli.mcp_server.tool_replace(pattern=r"\r", replacement="X", paths=[str(target)], dry_run=False)
+    assert result.files_changed == 0
+    assert target.read_bytes() == b"foo\r\n"
+
+
+@pytest.mark.parametrize(
+    ("original", "pattern", "ignore_case", "multiline", "line_regexp", "within", "after_context", "expected"),
+    [
+        (b"foo\r\n", "foo.*", False, False, False, None, 0, b"bar\r\n"),
+        (b"FOO\r\nkeep\r\n", "foo", True, False, False, None, 0, b"bar\r\nkeep\r\n"),
+        (b"foo\r\nkeep\r\n", "^foo$", False, True, False, None, 0, b"bar\r\nkeep\r\n"),
+        (b"FOO\rkeep\r", "^foo$", True, True, False, None, 0, b"bar\rkeep\r"),
+        (b"FOO\r\n", "foo", True, False, True, None, 0, b"bar\r\n"),
+        (b"foo\rkeep\r", "foo", False, True, True, None, 0, b"bar\rkeep\r"),
+        (b"lead\r\nANCHOR\r\nFOO\r\n", "foo", True, False, False, "anchor", 1, b"lead\r\nANCHOR\r\nbar\r\n"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_tool_replace_legacy_regex_option_results(
+    tmp_path: pathlib.Path,
+    original: bytes,
+    pattern: str,
+    ignore_case: bool,
+    multiline: bool,
+    line_regexp: bool,
+    within: str | None,
+    after_context: int,
+    expected: bytes,
+) -> None:
+    """MCPの主要オプションも従来のLF正規化後と同じ対象を置換する。"""
+    target = tmp_path / "sample.txt"
+    target.write_bytes(original)
+    replaced = await pyfltr.cli.mcp_server.tool_replace(
+        pattern=pattern,
+        replacement="bar",
+        paths=[str(target)],
+        ignore_case=ignore_case,
+        multiline=multiline,
+        line_regexp=line_regexp,
+        within=within,
+        after_context=after_context,
+        dry_run=False,
+    )
+    assert target.read_bytes() == expected
+    assert replaced.replace_id is not None
+    undone = await pyfltr.cli.mcp_server.tool_replace_undo(replaced.replace_id)
+    assert undone.exit_code == 0
+    assert target.read_bytes() == original
+
+
+@pytest.mark.asyncio
+async def test_tool_replace_matched_newline_uses_replacement_representation(tmp_path: pathlib.Path) -> None:
+    """MCPで一致した元のCRLFは、置換式に明記したCRLFへ置き換わる。"""
+    target = tmp_path / "sample.txt"
+    original = b"head\r\nfoo\r\nbar\rkeep\r\n"
+    target.write_bytes(original)
+    replaced = await pyfltr.cli.mcp_server.tool_replace(
+        pattern="foo.bar", replacement="X\r\nY", paths=[str(target)], multiline=True, dry_run=False
+    )
+    assert target.read_bytes() == b"head\r\nX\r\nY\rkeep\r\n"
+    assert replaced.replace_id is not None
+    undone = await pyfltr.cli.mcp_server.tool_replace_undo(replaced.replace_id)
+    assert undone.exit_code == 0
+    assert target.read_bytes() == original
+
+
+@pytest.mark.asyncio
+async def test_tool_replace_public_hashes_keep_logical_text_meaning(tmp_path: pathlib.Path) -> None:
+    """MCPの公開ハッシュは従来の改行正規化後文字列を表す。"""
+    target = tmp_path / "sample.txt"
+    target.write_bytes(b"foo\r\nkeep\r\n")
+    result = await pyfltr.cli.mcp_server.tool_replace(pattern="foo", replacement="bar", paths=[str(target)], dry_run=False)
+    assert result.file_changes[0].before_hash == hashlib.sha256(b"foo\nkeep\n").hexdigest()
+    assert result.file_changes[0].after_hash == hashlib.sha256(b"bar\nkeep\n").hexdigest()
+
+
+@pytest.mark.parametrize(
+    ("original", "pattern", "expected"),
+    [
+        (b"foo\r\nanchor\r\nfoo\r\nfoo\r", "foo\n", b"foo\r\nanchor\r\nbar\nfoo\r"),
+        (b"foo\ranchor\rfoo\rfoo\r\n", "foo\n", b"foo\ranchor\rbar\nfoo\r\n"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_tool_replace_within_searches_normalized_newlines(
+    tmp_path: pathlib.Path, original: bytes, pattern: str, expected: bytes
+) -> None:
+    """MCPの行範囲は検索用のLFで区切り、範囲外の改行バイトを保つ。"""
+    target = tmp_path / "sample.txt"
+    target.write_bytes(original)
+    replaced = await pyfltr.cli.mcp_server.tool_replace(
+        pattern=pattern, replacement="bar\n", paths=[str(target)], within="anchor", after_context=1, dry_run=False
+    )
+    assert target.read_bytes() == expected
+    assert replaced.replace_id is not None
+    undone = await pyfltr.cli.mcp_server.tool_replace_undo(replaced.replace_id)
+    assert undone.exit_code == 0
+    assert target.read_bytes() == original
+
+
+@pytest.mark.parametrize(
+    ("original", "pattern", "expected"),
+    [
+        (b"foo\r\nkeep\r\n", "foo", b"bar\r\nkeep\r\n"),
+        (b"foo\rkeep\r", "foo", b"bar\rkeep\r"),
+        (b"foo\r\nkeep\r\n", "foo.*", b"bar\r\nkeep\r\n"),
+        (b"foo\rkeep\r", "foo.*", b"bar\rkeep\r"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_tool_replace_line_regexp_preserves_original_newlines(
+    tmp_path: pathlib.Path, original: bytes, pattern: str, expected: bytes
+) -> None:
+    """MCPのline_regexpはCRLFと単独CRの行全体へ一致する。"""
+    target = tmp_path / "sample.txt"
+    target.write_bytes(original)
+    replaced = await pyfltr.cli.mcp_server.tool_replace(
+        pattern=pattern, replacement="bar", paths=[str(target)], line_regexp=True, dry_run=False
+    )
+    assert target.read_bytes() == expected
+    assert replaced.replace_id is not None
+    undone = await pyfltr.cli.mcp_server.tool_replace_undo(replaced.replace_id)
+    assert undone.exit_code == 0
+    assert target.read_bytes() == original
+
+
+@pytest.mark.parametrize(
+    ("original", "expected"),
+    [
+        (b"foo\r\nanchor\r\nfoo\r\nkeep\r\n", b"foo\r\nanchor\r\nbar\r\nkeep\r\n"),
+        (b"foo\ranchor\rfoo\rkeep\r", b"foo\ranchor\rbar\rkeep\r"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_tool_replace_within_line_regexp_preserves_original_newlines(
+    tmp_path: pathlib.Path, original: bytes, expected: bytes
+) -> None:
+    """MCPのline_regexp付きwithinはCRLFと単独CRのアンカーを見失わない。"""
+    target = tmp_path / "sample.txt"
+    target.write_bytes(original)
+    replaced = await pyfltr.cli.mcp_server.tool_replace(
+        pattern="foo", replacement="bar", paths=[str(target)], line_regexp=True, within="anchor", after_context=1, dry_run=False
+    )
+    assert target.read_bytes() == expected
+    assert replaced.replace_id is not None
+    undone = await pyfltr.cli.mcp_server.tool_replace_undo(replaced.replace_id)
+    assert undone.exit_code == 0
+    assert target.read_bytes() == original
+
+
+@pytest.mark.asyncio
+async def test_tool_replace_dry_run_preserves_bytes(tmp_path: pathlib.Path) -> None:
+    """MCPのdry-runはBOMと改行を含むファイルを変更しない。"""
+    target = tmp_path / "sample.txt"
+    original = b"\xef\xbb\xbffoo\r\n"
+    target.write_bytes(original)
+    result = await pyfltr.cli.mcp_server.tool_replace(pattern="foo", replacement="bar", paths=[str(target)])
+    assert result.dry_run
+    assert result.replace_id is None
+    assert target.read_bytes() == original
+
+
+@pytest.mark.asyncio
+async def test_tool_replace_undo_detects_byte_only_edit(tmp_path: pathlib.Path) -> None:
+    """BOMだけの手動編集を検出し、force時に元バイトへ戻す。"""
+    target = tmp_path / "sample.txt"
+    original = b"\xef\xbb\xbffoo\r\n"
+    target.write_bytes(original)
+    replaced = await pyfltr.cli.mcp_server.tool_replace(pattern="foo", replacement="bar", paths=[str(target)], dry_run=False)
+    assert replaced.replace_id is not None
+    target.write_bytes(b"bar\r\n")
+    skipped = await pyfltr.cli.mcp_server.tool_replace_undo(replaced.replace_id)
+    assert skipped.exit_code == 1
+    assert target.read_bytes() == b"bar\r\n"
+    restored = await pyfltr.cli.mcp_server.tool_replace_undo(replaced.replace_id, force=True)
+    assert restored.exit_code == 0
+    assert target.read_bytes() == original
+
+
+@pytest.mark.asyncio
+async def test_tool_replace_legacy_history_warning(tmp_path: pathlib.Path) -> None:
+    """旧履歴は保存encodingで復元し、その操作だけへ警告を返す。"""
+    target = tmp_path / "sample.txt"
+    target.write_bytes("bar 日本語\n".encode("cp932"))
+    store = pyfltr.grep_.history.ReplaceHistoryStore()
+    replace_id = pyfltr.grep_.history.generate_replace_id()
+    store.save_replace(
+        replace_id,
+        command_meta=pyfltr.grep_.types.ReplaceCommandMeta(
+            replace_id=replace_id, dry_run=False, fixed_strings=False, pattern="foo", replacement="bar", encoding="cp932"
+        ),
+        file_changes=[
+            {"file": target, "before_content": "foo 日本語\n", "after_hash": pyfltr.grep_.replacer.compute_hash("bar 日本語\n")}
+        ],
+    )
+    listed = await pyfltr.cli.mcp_server.tool_replace_history(action="list")
+    assert any(entry.replace_id == replace_id for entry in listed.entries)
+    shown = await pyfltr.cli.mcp_server.tool_replace_history(action="show", replace_id=replace_id)
+    assert shown.entries[0].replace_id == replace_id
+    undone = await pyfltr.cli.mcp_server.tool_replace_undo(replace_id)
+    assert undone.exit_code == 0
+    assert target.read_bytes() == "foo 日本語\n".encode("cp932")
+    assert len(undone.warnings) == 1
+    assert "旧形式" in undone.warnings[0]
 
 
 @pytest.mark.asyncio
