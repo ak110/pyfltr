@@ -415,7 +415,7 @@ def test_replace_legacy_history_warning(
     shown = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
     assert any(record.get("replace_id") == replace_id for record in shown)
     assert pyfltr.cli.main.run(["replace", "--undo", replace_id, "--output-format=jsonl"]) == 0
-    assert target.read_bytes() == "foo 日本語\n".encode("cp932")
+    assert target.read_text(encoding="cp932") == "foo 日本語\n"
     undone = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
     assert any(record["kind"] == "warning" and "旧形式" in record["msg"] for record in undone)
 

@@ -1917,7 +1917,7 @@ async def test_tool_replace_legacy_history_warning(tmp_path: pathlib.Path) -> No
     assert shown.entries[0].replace_id == replace_id
     undone = await pyfltr.cli.mcp_server.tool_replace_undo(replace_id)
     assert undone.exit_code == 0
-    assert target.read_bytes() == "foo 日本語\n".encode("cp932")
+    assert target.read_text(encoding="cp932") == "foo 日本語\n"
     assert len(undone.warnings) == 1
     assert "旧形式" in undone.warnings[0]
 
