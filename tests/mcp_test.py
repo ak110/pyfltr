@@ -472,6 +472,18 @@ async def test_build_server_registers_eleven_tools() -> None:
 
 
 @pytest.mark.asyncio
+async def test_tool_grep_publishes_summary_mode_enum() -> None:
+    """集計モードの許容値をMCP入力スキーマから選択できる。"""
+    tools = await pyfltr.cli.mcp_server.build_server().list_tools()
+    grep_tool = next(tool for tool in tools if tool.name == "grep")
+    summary_mode_schema = grep_tool.input_schema["properties"]["summary_mode"]
+    assert summary_mode_schema["anyOf"] == [
+        {"enum": ["files_with_matches", "count", "files_without_match"], "type": "string"},
+        {"type": "null"},
+    ]
+
+
+@pytest.mark.asyncio
 async def test_show_run_diagnostics_publishes_projected_contract() -> None:
     """公開説明と出力スキーマが射影後の`command_meta`契約を示す。"""
     tools = await pyfltr.cli.mcp_server.build_server().list_tools()
@@ -1364,7 +1376,7 @@ async def test_tool_grep_rejects_invalid_summary_mode(tmp_path: pathlib.Path) ->
         await pyfltr.cli.mcp_server.tool_grep(
             paths=[str(tmp_path)],
             pattern="hello",
-            summary_mode="invalid",
+            summary_mode=typing.cast(typing.Any, "invalid"),
         )
 
 

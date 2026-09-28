@@ -536,7 +536,7 @@ async def tool_grep(
     context: int | None = None,
     max_count: int | None = None,
     max_total: int | None = None,
-    summary_mode: str | None = None,
+    summary_mode: typing.Literal["files_with_matches", "count", "files_without_match"] | None = None,
     types: list[str] | None = None,
     globs: list[str] | None = None,
     encoding: str = "utf-8",
