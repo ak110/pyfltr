@@ -121,7 +121,7 @@ class TestLoadPatterns:
         """先頭が漢字のパターンは、直前が漢字である位置で一致しない。
 
         辞書の語幹は語境界を持たない部分一致で適用されるため、条件が無いと
-        当該漢字を末尾に持つ漢語複合語の内部で一致する。
+        対象の漢字を末尾に持つ漢語複合語の内部で一致する。
         """
         f = tmp_path / "p.txt"
         f.write_text("甲[あいう]\t候補\n", encoding="utf-8")
@@ -167,7 +167,7 @@ class TestLoadPatterns:
         """allowlistの読み込みでは条件を前置しない。
 
         allowlistは漢語複合語の側を一致させてマスクする役割を持つため、
-        同じ条件を与えると当該役割が成立しない。
+        同じ条件を与えると対象の役割が成立しない。
         """
         f = tmp_path / "p.txt"
         f.write_text("甲[あいう]\n", encoding="utf-8")
@@ -179,14 +179,14 @@ class TestLoadPatterns:
     def test_allow_patterns_never_equal_deny_patterns(self) -> None:
         """allowlistのパターン文字列がdenylistのパターン文字列と完全一致しない。
 
-        完全一致するエントリーは当該denyエントリーをいかなる入力に対しても発火しない状態にするため、
+        完全一致するエントリーは対象のdenyエントリーをいかなる入力に対しても発火しない状態にするため、
         allowlistが担う部分的な除外の範囲を超える。
         """
         deny_texts = set(_read_patterns_text(pyfltr.colloquial.check.DENY_PATH))
         allow_texts = set(_read_patterns_text(pyfltr.colloquial.check.ALLOW_PATH))
         duplicated = sorted(deny_texts & allow_texts)
         assert not duplicated, (
-            f"denylistと同一文字列のallowlistエントリーは当該denyエントリーを恒久的に無効化する: {duplicated}"
+            f"denylistと同一文字列のallowlistエントリーは対象のdenyエントリーを恒久的に無効化する: {duplicated}"
         )
 
 
@@ -244,7 +244,7 @@ class TestScanText:
     ) -> None:
         """denylist各エントリが自身の展開サンプルで必ず検出される。
 
-        辞書再編・文字クラス展開規則の変更で当該パターンが意図せず無効化されても
+        辞書再編・文字クラス展開規則の変更で対象のパターンが意図せず無効化されても
         本テストが回帰を検出する。
         """
         sample = _expand_pattern(raw_pattern)
@@ -389,7 +389,7 @@ class TestScanText:
 
         denylistのパターンは単語境界を持たず部分一致で適用されるため、
         語幹を末尾に持つ熟語へ助詞が続く形にも一致する。
-        `words_allow.txt`への登録が当該形をマスクすることで検出が消える。
+        `words_allow.txt`への登録が対象の形をマスクすることで検出が消える。
         語幹単独形の検出は`test_every_deny_entry_self_matches`が担保する。
         """
         assert not pyfltr.colloquial.check.scan_text(text, deny_patterns, allow_patterns)

@@ -57,7 +57,7 @@ def apply_replace_to_file(
         encoding: ファイルの読み込みと置換結果の符号化に使うエンコーディング
 
     Returns:
-        置換前後の文字列・バイト列、置換件数及び各置換箇所のレコード。
+        置換前後の文字列・バイト列、置換件数および各置換箇所のレコード。
 
     Note:
         マッチが行を跨ぐ場合（マルチラインモード）は、開始行を基準にした`ReplaceRecord`を生成し
@@ -108,7 +108,7 @@ def apply_block_replace_to_file(
         encoding: ファイルの読み込みと置換結果の符号化に使うエンコーディング
 
     Returns:
-        置換前後の文字列・バイト列、領域内の置換件数及び各置換箇所のレコード。
+        置換前後の文字列・バイト列、領域内の置換件数および各置換箇所のレコード。
     """
     source = _read_content(file, encoding)
     before_content, raw_offsets = _search_view(source.text)
@@ -234,9 +234,9 @@ def _build_replace_records(
 
     `pattern.finditer(before_content)`でマッチ位置を再走査し、
     `Match.expand(replacement)`で実際に挿入される文字列を取り出す。
-    `before_line`/`after_line`は当該マッチを含む論理行の置換前後本文（改行を除く）を格納する。
+    `before_line`/`after_line`は対象のマッチを含む論理行の置換前後本文（改行を除く）を格納する。
 
-    `after_line`は当該マッチ箇所のみを置換した行（他のマッチによる影響を受けない）を表現するため、
+    `after_line`は対象のマッチ箇所のみを置換した行（他のマッチによる影響を受けない）を表現するため、
     1マッチごとに`Match.string[start:end]`部分を`replacement`で差し替えた行テキストで構築する。
 
     `char_ranges`を渡すと、ブロック内限定置換（`apply_block_replace_to_file`）と同じく
@@ -257,7 +257,7 @@ def _build_replace_records(
         before_text = m.group(0)
         after_text = m.expand(replacement)
         # 行内置換のみを反映したafter_lineを構築する。
-        # マルチラインマッチで行を跨ぐ場合は、置換前行のうち当該行に属する範囲のみ差し替える
+        # マルチラインマッチで行を跨ぐ場合は、置換前行のうち対象の行に属する範囲のみ差し替える
         end_line_index = _line_of(line_starts, max(end_pos - 1, start_pos))
         if end_line_index == line_index:
             within_start = col - 1

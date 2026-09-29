@@ -330,7 +330,7 @@ class UIApp(App):
                 for idx, command in enumerate(formatters):
                     fmt_result = self._execute_command(command)
                     if self._interrupted:
-                        # 当該formatter結果自体が非skippedならskippedに置き換える。
+                        # 対象のformatter結果自体が非skippedならskippedに置き換える。
                         if fmt_result.status != "skipped":
                             fmt_result = pyfltr.state.stage_runner.make_skipped_result(
                                 command, self.config, reason="Ctrl+C により中断しました。"

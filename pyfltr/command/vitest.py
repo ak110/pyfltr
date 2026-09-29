@@ -148,7 +148,7 @@ def _run_vitest_subprocess(
 ) -> CommandResult:
     """vitestをsubprocess起動し、JSON reporter出力をparse_errorsへ渡す。
 
-    `json_output_path` が指定された場合は実行後に当該ファイルを読み込み、
+    `json_output_path` が指定された場合は実行後に対象のファイルを読み込み、
     その内容を `parse_errors` のoutputとして渡す。指定が無い場合は
     stdoutを従来通り `parse_errors` に渡す。
     JSON reporter出力を取得できた場合は、各テストの所要時間から遅いテスト一覧を抽出して

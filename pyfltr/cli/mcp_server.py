@@ -279,7 +279,7 @@ async def tool_run(
     early exit（直前runなし・失敗ツールなし・対象ファイル交差が空）の場合は
     `run_id=None`・`skipped_reason`に理由を設定して返す。
     `commands`へ指定した検査が設定で無効化されているために実行されなかった場合も、
-    当該検査名と理由を`skipped_reason`へ設定する。無効化の判定は`run_pipeline`が
+    対象の検査名と理由を`skipped_reason`へ設定する。無効化の判定は`run_pipeline`が
     発行する`source="commands"`の警告を入力とし、MCP側では再判定しない。
 
     対応CLI: `pyfltr run` / `pyfltr fast` / `pyfltr ci`
@@ -317,7 +317,7 @@ async def tool_run(
         exit_zero_even_if_formatted: Trueの場合、formatterによる変更だけなら成功扱いにする。
         jobs: 並列実行するツール数の上限。
     """
-    # `run_pipeline`は警告を初期化しないため、当該呼び出しが発行した警告だけを
+    # `run_pipeline`は警告を初期化しないため、対象の呼び出しが発行した警告だけを
     # `skipped_reason`の入力にできるよう、ここで蓄積を初期化する。
     pyfltr.warnings_.clear()
 
@@ -565,8 +565,8 @@ async def tool_grep(
         before_context: マッチ行の前に含める行数。
         after_context: マッチ行の後に含める行数。
         context: `before_context`と`after_context`の一括指定。個別指定が0の方向だけへ適用する。
-        max_count: ファイル単位の最大マッチ件数。未指定又は0で無制限。
-        max_total: 全体の最大マッチ件数。未指定又は0で無制限。
+        max_count: ファイル単位の最大マッチ件数。未指定または0で無制限。
+        max_total: 全体の最大マッチ件数。未指定または0で無制限。
         summary_mode: 集計モード。`files_with_matches`、`count`、`files_without_match`のいずれか。
             指定時は`matches`を空で返し、対応する集計フィールドを返す。
             `files_without_match`では正の`max_total`を併用できない。
@@ -772,7 +772,7 @@ async def tool_replace(
         encoding: ファイル読み込み・書き込み時のエンコーディング（既定: utf-8）。
         max_filesize: 走査対象ファイルサイズの上限（バイト単位）。
         exclude_files: 置換対象から除外するファイルパスの一覧。
-        from_grep: grepのJSONL出力パス。当該出力に現れるファイル集合へ対象を限定する。
+        from_grep: grepのJSONL出力パス。対象の出力に現れるファイル集合へ対象を限定する。
         no_exclude: exclude/extend-excludeによる除外を無効化する。
         no_gitignore: .gitignoreによる除外を無効化する。
         show_changes: Trueの場合、`changes`フィールドに各置換箇所の変更前後を含める。

@@ -60,7 +60,7 @@ def build_retry_args_template(sys_args: list[str]) -> list[str]:
     """起動時 argv (サブコマンド以降) を retry_command 用テンプレートとして整形する。
 
     `--commands`の値は後段のper-tool差し替え用に空文字プレースホルダへ置換し、
-    位置引数（ターゲット）は末尾から除去する（後段で当該ツールのファイル一覧で
+    位置引数（ターゲット）は末尾から除去する（後段で対象のツールのファイル一覧で
     置換される前提）。`--no-fix`や`--output-format`等は保持する。
     `--only-failed`フラグおよび`--from-run`オプション（値あり・=付き両形式）は
     再実行時に直前runを暗黙参照しないよう除去する。
@@ -72,7 +72,7 @@ def build_retry_args_template(sys_args: list[str]) -> list[str]:
     while i < len(sys_args):
         arg = sys_args[i]
         if arg == "--commands":
-            # 後段で当該ツール1件に差し替えるためプレースホルダを置く。
+            # 後段で対象のツール1件に差し替えるためプレースホルダを置く。
             result.extend([arg, ""])
             i += 2
             continue
@@ -107,7 +107,7 @@ def build_retry_command(
 ) -> str:
     """Tool レコードへ埋め込む retry_command 文字列を生成する。
 
-    `args_template`の`--commands`プレースホルダを当該ツールに差し替え、
+    `args_template`の`--commands`プレースホルダを対象のツールに差し替え、
     位置引数（ターゲット）を`target_files`で末尾に再配置する。ターゲットは
     `original_cwd`基準の絶対パスに変換することで、`--work-dir`とcwdの
     二重解釈を避ける。
@@ -146,7 +146,7 @@ def build_retry_command(
         # それ以降の位置引数（=ターゲット）は破棄する。後段でtarget_filesで差し替える。
         i += 1
 
-    # --commands プレースホルダを当該ツールで埋める。
+    # --commands プレースホルダを対象のツールで埋める。
     replaced: list[str] = []
     j = 0
     commands_replaced = False
@@ -199,7 +199,7 @@ def populate_retry_command(
 ) -> None:
     """CommandResult に retry_command を埋める (パートG A案のフィルタリングを適用)。
 
-    `retry_command`は「当該ツールを失敗ファイルのみに限定して再実行する文字列」である。
+    `retry_command`は「対象のツールを失敗ファイルのみに限定して再実行する文字列」である。
     `status`が`succeeded`・`formatted`・`skipped`のいずれかである結果には
     再実行動機が無いため埋めない。
     キャッシュ復元結果（`result.cached == True`）も対象外（再実行不要のため）。
@@ -207,7 +207,7 @@ def populate_retry_command(
     失敗時は`filter_failed_files`で失敗ファイルのみに限定したターゲットを
     `build_retry_command`へ渡す。フィルタリング結果が空の場合（診断ファイルなし・
     全体失敗のみのケース）は`retry_command`のターゲット位置引数が空になる
-    （当該ツールの単体再実行文字列として機能する）。
+    （対象のツールの単体再実行文字列として機能する）。
     """
     if result.cached:
         return
@@ -226,7 +226,7 @@ def populate_retry_command(
 def filter_failed_files(result: pyfltr.command.core_.CommandResult) -> list[pathlib.Path]:
     """`result.errors`から失敗ファイル集合を抽出し`result.target_files`と交差させる。
 
-    `retry_command`のターゲットを「当該ツールで失敗したファイルのみ」に限定する用途
+    `retry_command`のターゲットを「対象のツールで失敗したファイルのみ」に限定する用途
     （パートG A案）。パス比較は文字列化した相対パス（スラッシュ区切り）で行う。
     `ErrorLocation.file`は`pyfltr.paths.to_cwd_relative`経由でcwd基準へ揃えられ、
     区切り文字は`/`に統一されている。`result.target_files`側も同じ表現へ

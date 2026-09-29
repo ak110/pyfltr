@@ -228,7 +228,7 @@ def test_monorepo_all_children_disabled_does_not_run_at_start_cwd(tmp_path: path
 
 
 def test_monorepo_applies_per_subproject_exclude(tmp_path: pathlib.Path, mocker) -> None:
-    """サブプロジェクト固有のツール別除外設定が、当該サブプロジェクトの実行へ反映される。"""
+    """サブプロジェクト固有のツール別除外設定が、対象のサブプロジェクトの実行へ反映される。"""
     _write_pyproject(tmp_path, "root", pytest_on=True)
     # pkg_a は pytest 有効だが固有の pytest-exclude で唯一の対象ファイルを除外する。
     _write_pyproject(

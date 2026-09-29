@@ -5,7 +5,7 @@ pyfltrの起動経路を破壊していないことをCI上で早期検出する
 コマンドライン組立だけを検証する既存テストと異なり、実バイナリを起動してJSONL出力の
 ステータス（`skipped`以外）を確認する。
 
-ローカル実行時、対象ツールが未インストールの場合は当該ケースをスキップする。
+ローカル実行時、対象ツールが未インストールの場合は対象のケースをスキップする。
 CI実行時（環境変数`CI`が設定されているとき）は失敗扱いとし、ツール群の同梱抜けを検知する。
 
 除外ツール（理由付き）:
@@ -49,7 +49,7 @@ class _Case:
     """
 
     git_required: bool = False
-    """テスト実行前に当該workspaceで`git init`が必要か否か。
+    """テスト実行前に対象のworkspaceで`git init`が必要か否か。
     pre-commitやgitleaksのようにgit管理を前提とするツール向け。
     """
 
@@ -110,7 +110,7 @@ def _ensure_required_bins(case: _Case) -> None:
     """必要バイナリが揃っているか確認する。
 
     CI実行時は揃っていない＝環境構築不備として失敗させる。
-    ローカル実行時は当該ケースをスキップする。
+    ローカル実行時は対象のケースをスキップする。
     """
     missing = [name for name in case.required_bins if shutil.which(name) is None]
     if not missing:

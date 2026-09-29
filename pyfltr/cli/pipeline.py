@@ -650,7 +650,7 @@ def _run_pipeline(
                 message="--commandsで指定されたが有効化されていないため未実行のコマンドがあります: " + ", ".join(unmet),
                 hint="--enable="
                 + ",".join(unmet)
-                + " または pyproject.toml [tool.pyfltr] で当該コマンドを true に設定して有効化してください。",
+                + " または pyproject.toml [tool.pyfltr] で指定したコマンドを true に設定して有効化してください。",
             )
 
     # retry_command再構成用のベース情報を確定する。original_cwdはrun() が保存した

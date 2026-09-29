@@ -64,7 +64,7 @@ plugins:
 
         Python系・JS/TS系・Rust系・.NET系・ドキュメント系・その他を横断的にサポート。
         Python系ツール一式は本体依存に同梱されており追加インストール不要。
-        `preset = "latest"` + 言語カテゴリキーの`true`指定で当該言語の推奨ツール一式が有効化される。
+        `preset = "latest"` + 言語カテゴリキーの`true`指定で対象の言語の推奨ツール一式が有効化される。
 
         - Python: `ruff-format` / `uv-sort` / `pylint` / `mypy` / `ruff-check` / `pyright` / `ty` / `arid` / `pytest`
         - JS/TS: `prettier` / `tsc` / `eslint` / `biome` / `oxlint` / `vitest`

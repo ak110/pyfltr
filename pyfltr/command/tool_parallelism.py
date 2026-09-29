@@ -6,7 +6,7 @@
 同時に起動すると、利用者が`jobs`で指定した並列度を大きく超える。
 
 本モジュールは、pyfltrの`{command}-args`系設定と、対象ディレクトリのツール設定ファイルから
-当該ツールのワーカー数を推定する。推定は見積りであり、解釈できない指定は1件として扱う。
+対象のツールのワーカー数を推定する。推定は見積りであり、解釈できない指定は1件として扱う。
 誤った推定は同時実行数の上下にとどまり、検査の成否を変えないため、警告は発行しない。
 """
 
@@ -101,7 +101,7 @@ def _read_pyproject_workers(cwd: pathlib.Path, command: str, options: tuple[str,
 
 
 def estimate_tool_workers(command: str, values: dict[str, typing.Any], cwd: pathlib.Path) -> int:
-    """当該ツールが1回の起動で使うワーカー数を推定する。
+    """対象のツールが1回の起動で使うワーカー数を推定する。
 
     `{command}-args`と`{command}-extend-args`の指定を優先し、
     指定が無い場合に`cwd`のツール設定ファイルを読む。いずれも持たないツールは1を返す。

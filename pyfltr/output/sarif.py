@@ -2,7 +2,7 @@
 
 `--output-format=sarif`で呼ばれ、CommandResult群をSARIF 2.1.0スキーマに沿った
 dictに変換する。1つのrunオブジェクトあたり1ツールを対応付け、`rules`に
-重複なしで当該ツールが検出したルールを列挙する。`results`配列にdiagnosticを
+重複なしで対象のツールが検出したルールを列挙する。`results`配列にdiagnosticを
 配置し、`level`をpyfltrのseverity 3値からSARIFの3値（`error` / `warning`
 / `note`）に変換する。
 """

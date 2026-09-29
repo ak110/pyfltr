@@ -38,7 +38,7 @@ update-actions:
 	GITHUB_TOKEN=$$(gh auth token) mise exec -- pinact run --update --min-age=1
 
 # Dockerベースイメージのdigestピンを最新化（docker未導入時はスキップ）
-# 更新対象は ``AS base`` のdigestピン付きFROM行1件に限定し、当該行のタグを取得して当該行だけを置換する
+# 更新対象は ``AS base`` のdigestピン付きFROM行1件に限定し、対象の行のタグを取得して対象の行だけを置換する
 # 対象行が1件でない場合、digestを取得できない場合、置換後の行が期待と一致しない場合は書き換えずに失敗させる
 update-docker-base:
 	@command -v docker >/dev/null 2>&1 || { echo "docker未検出、スキップ"; exit 0; }; \

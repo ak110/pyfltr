@@ -118,7 +118,7 @@ project側（`--global`なし）で`pyproject.toml`が存在しない場合は�
 `set`時の警告条件:
 
 - archive/cache系のキー（`archive` / `archive-max-runs`等）をproject側にsetした場合:
-  globalで集約することを推奨する旨の警告を出力する。
+  globalで集約するよう促す警告を出力する。
 - archive/cache以外のキーをglobal側にsetした場合:
   通常はproject側が優先されるため、globalで設定しても上書きされる旨の警告を出力する。
 
@@ -373,7 +373,7 @@ check段では`textlint-json`設定（既定`true`）により出力フォーマ
 - `--check`: 実行時と同じ事前チェックを行う
  （mise経由ツールは`mise exec --version`での可用性確認、パッケージマネージャー系ツールは最低版の確認）
   事前確認に成功した場合は解決済みコマンドラインへ`--version`を渡し、実行版を`check_installed_version`として返す。
-  取得できなかった場合は`null`を返す。`--check`未指定時と事前確認失敗時は当該フィールドを出力しない。
+  取得できなかった場合は`null`を返す。`--check`未指定時と事前確認失敗時はそのフィールドを出力しない。
  （`mise install` / `mise trust` / `--version`の起動が発生する場合があるため、既定の動作では行わない）
 
 未知のコマンド名や`{command}-runner = "mise"`を未登録ツールに指定した場合などは終了コード1で失敗する。
@@ -537,7 +537,7 @@ pyfltr run --disable=mypy
 
 `--commands`で指定したコマンドのうち、`pyproject.toml`側で有効化されていないため実行されないものがある場合は
 警告レコード（`source: "commands"`）が出力される。
-`--enable`または`pyproject.toml`の`[tool.pyfltr]`で当該コマンドを`true`に設定すると実行される。
+`--enable`または`pyproject.toml`の`[tool.pyfltr]`で指定したコマンドを`true`に設定すると実行される。
 
 エイリアス名（`format`・`lint`・`test`・`audit`・`fast`）で指定した場合は、
 展開結果に有効化済みのコマンドが1件以上あれば未有効化コマンドの警告を出力しない。
@@ -674,7 +674,7 @@ JSONLヘッダーの`format_source`には検出した変数名（例: `env.CODEX
 - 成功時commandレコード
     - `status`が`succeeded`・`formatted`・`skipped`のいずれか
     - 診断が0件・切り詰め無し・runner_fallback未発火・遅いテスト一覧が空
-    - 上記全条件を満たす場合、当該commandレコードを出力しない
+    - 上記全条件を満たす場合、そのcommandレコードを出力しない
 - headerレコードを`run_id`・`commands`・`files`の3つのフィールドのみへ縮約する
 - pre-commit・prek経由でformatter修正が発生したときのstderrガイダンスも抑止する
 
@@ -761,7 +761,7 @@ MCPクライアントは結果を構造化データとして受け取れる。
 
     `--commands`で特定ツールに限定することで出力量を抑えつつ、
     `diagnostic`行から修正対象のファイル・行番号・メッセージを取得する。
-    `command.retry_command`フィールドには当該ツールだけを失敗ファイルに限定した再実行コマンドが既に生成されているため、
+    `command.retry_command`フィールドには、そのツールだけを失敗ファイルに限定した再実行コマンドが既に生成されているため、
     そのまま貼り付けて実行できる。
     `--only-failed`は直前runのアーカイブから失敗ツール・失敗ファイルを自動抽出して再実行する。
     直前runが無い・失敗ツールが無い・対象との交差が空の場合は終了コード0で成功終了する。
@@ -858,7 +858,7 @@ pyfltrからprekのhookを呼び出す統合は`prek = true`で有効化する�
   workspace root・solution所在ディレクトリで一括実行する。
   ただし登録member・登録projectであっても、他のマーカー（`pyproject.toml`・
   登録csproj所在ディレクトリの`Cargo.toml`）を併有するディレクトリは、
-  当該ディレクトリ固有の設定を尊重するため独立サブプロジェクトとして検出する
+  そのディレクトリ固有の設定を尊重するため独立サブプロジェクトとして検出する
   （この場合はworkspace・solution側の一括実行と重複し得る）
 - `package.json`は汎用ファイルのため単独ではサブプロジェクトとして検出しない
 - 適用範囲: プロジェクトローカル設定・モジュール解決・lockfileをcwd起点で読むツール
@@ -870,9 +870,9 @@ pyfltrからprekのhookを呼び出す統合は`prek = true`で有効化する�
   公開スキーマは変更しない。サブプロジェクト境界をまたぐ実行結果は1件にマージし、人間向け`output`には
   `# subproject: <相対パス>` の区切り行を挿入する
 - 個別設定: 各サブプロジェクトの `[tool.pyfltr]` 設定（ツールのON/OFF・除外・targets等）を
-  当該ディレクトリで個別に解決して尊重する。
+  そのディレクトリで個別に解決して尊重する。
   CLIオプション（`--jobs`・`--no-exclude`・`--no-gitignore`・`--human-readable`）は起点と同一に再適用する
-- サブプロジェクトの並列実行: 同一ツールのサブプロジェクト実行は、`jobs`を当該ツール自身のワーカー数の推定値で割った件数まで同時に開始する。
+- サブプロジェクトの並列実行: 同一ツールのサブプロジェクト実行は、`jobs`をそのツール自身のワーカー数の推定値で割った件数まで同時に開始する。
   報告順はサブプロジェクトの相対パスの昇順で安定し、実行順に依存しない
 - 設定ファイルの探索起点: `config-files`（設定ファイル不在の警告）と`--config`系の自動注入は
   常に起点cwd直下を基準に判定する。`.pre-commit-config.yaml`等をリポジトリルートに置く構成で、

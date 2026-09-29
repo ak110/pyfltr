@@ -5,7 +5,7 @@ pyfltrが対応するformatter / linter / testerを言語・用途別に示す�
 
 言語カテゴリ（Python / JS/TS / Rust / .NET）に属するツールの既定値はいずれも無効（opt-in）。
 `preset = "latest"` + 言語カテゴリキー（`python` / `javascript` / `rust` / `dotnet`）の`true`指定だけで、
-当該言語の推奨ツール一式が有効化される。
+その言語の推奨ツール一式が有効化される。
 追加ツールや個別の無効化が必要な場合のみ`{command} = true` / `{command} = false`を書き足す。
 詳細は[設定項目](configuration.md)を参照。
 

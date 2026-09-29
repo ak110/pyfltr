@@ -80,7 +80,7 @@ class ExecutionBaseContext:
 
     各サブプロジェクトで `load_config(config_dir=cwd, for_subproject=True)` を解決し、
     起点と同一のCLIオーバーライドを再適用した結果を `run_pipeline` が事前構築して格納する。
-    `subproject_aware=True` のツール起動時に当該サブプロジェクトの設定（ツールのON/OFF・除外・
+    `subproject_aware=True` のツール起動時に対象のサブプロジェクトの設定（ツールのON/OFF・除外・
     targets 等）を参照し、親子でON/OFFが異なる両方向を尊重する。
     """
     _temporary_directory_stack: contextlib.ExitStack | None = dataclasses.field(default=None, init=False, repr=False)
@@ -126,7 +126,7 @@ class ExecutionContext:
     on_subprocess_end: "typing.Callable[[], None] | None" = None
     """サブプロセス終了直前のフック。`on_subprocess_start` と対になる。"""
     subproject_cwd: pathlib.Path | None = None
-    """サブプロジェクト分割実行時の当該サブプロジェクト cwd（絶対パス）。
+    """サブプロジェクト分割実行時の対象のサブプロジェクト cwd（絶対パス）。
 
     `subproject_aware=True` のツールでサブプロジェクトループ内から実行されるとき、
     対応するサブプロジェクトの cwd を保持する。`None` の場合は起点 cwd で実行する
@@ -157,10 +157,10 @@ class ExecutionContext:
 
     @property
     def all_files(self) -> "list[pathlib.Path]":
-        """対象ファイル一覧。サブプロジェクト分割実行時は当該サブプロジェクト分のみ返す。
+        """対象ファイル一覧。サブプロジェクト分割実行時は対象のサブプロジェクト分のみ返す。
 
         `subproject_cwd` が設定されている場合は `base.subproject_files` から
-        当該サブプロジェクトのファイル集合を返す。設定されていない場合は
+        対象のサブプロジェクトのファイル集合を返す。設定されていない場合は
         `base.all_files` 全体を返す（既存挙動）。
         """
         if self.subproject_cwd is not None:
@@ -196,7 +196,7 @@ class CommandResult:
     """
     errors: "list[pyfltr.command.error_parser.ErrorLocation]" = dataclasses.field(default_factory=list)
     target_files: list[pathlib.Path] = dataclasses.field(default_factory=list)
-    """当該ツールに渡したターゲットファイル一覧 （retry_commandの位置引数復元に使用）。
+    """対象のツールに渡したターゲットファイル一覧 （retry_commandの位置引数復元に使用）。
 
     `pass-filenames=False` のツールでは `commandline` にファイルが含まれないため、
     retry_commandでターゲットを差し替えるには実行時点のリストを別途保持する必要がある。
@@ -209,7 +209,7 @@ class CommandResult:
     失敗時は `False` のままとなり、切り詰めをスキップして全文をJSONLに出力する。
     """
     retry_command: str | None = None
-    """当該ツール1件を再実行するためのshellコマンド文字列 （toolレコード用）。
+    """対象のツール1件を再実行するためのshellコマンド文字列 （toolレコード用）。
 
     `run_pipeline` がツール完了時に埋める。未設定 （`None`） のときはtoolレコードから
     省略する （テスト等、パイプライン外でCommandResultを生成する場合）。
@@ -217,14 +217,14 @@ class CommandResult:
     cached: bool = False
     """ファイルhashキャッシュから復元された結果か否か。
 
-    `True` のとき、当該ツールは実際には実行されておらず、過去の実行結果を復元して
+    `True` のとき、対象のツールは実際には実行されておらず、過去の実行結果を復元して
     返されている。`--no-cache` またはキャッシュ未ヒットの場合は `False`。
     """
     cached_from: str | None = None
     """キャッシュヒット時の復元元run_id （ULID）。
 
     `cached=True` のときに限り設定される。JSONL toolレコードで参照誘導用に出力する
-    （`show-run` / MCPの詳細参照経路で当該runの全文を確認できる）。
+    （`show-run` / MCPの詳細参照経路で対象のrunの全文を確認できる）。
     """
     fixed_files: list[str] = dataclasses.field(default_factory=list)
     """fixステージ・formatterステージで実際にファイル内容が変化した対象のパス一覧。
@@ -271,7 +271,7 @@ class CommandResult:
     区別できるようにするためのフラグ。
     """
     severity: str = "error"
-    """当該ツールの失敗時の扱い。`{command}-severity` 設定値を結果生成時に転記する。
+    """対象のツールの失敗時の扱い。`{command}-severity` 設定値を結果生成時に転記する。
 
     - `"error"`（既定）: 通常失敗を `status="failed"` で扱う（従来挙動）
     - `"warning"`: 通常失敗を `status="warning"` に格下げし、パイプラインのexit codeに影響させない
@@ -316,7 +316,7 @@ class CommandResult:
         `command_type` を省略した場合は `command_info.type` を使う。
         `command_type` と `command_info` の両方を省略することはできない。
         `errors` を省略した場合は空リストを使う（parse_errorsの呼び出しは呼び出し側で行う）。
-        `timeout_exceeded=True` を指定すると当該結果がtimeout由来の失敗であることを示す。
+        `timeout_exceeded=True` を指定すると対象の結果がtimeout由来の失敗であることを示す。
         `retry_count` はOOM起因の再試行回数（0はリトライなし、複数回subprocessを呼ぶ経路では合算値）。
         `slow_tests`を省略した場合は空リストを使う。
         """

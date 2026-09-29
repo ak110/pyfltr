@@ -53,7 +53,7 @@ class ToolTargets:
         mode="fallback"のときall_filesをそのまま返す。
         mode="files"のときself.filesとall_filesの交差をall_filesの順序で返す。
 
-        交差を取るのは、モノレポ分割実行で`ExecutionContext.all_files`が当該サブプロジェクト
+        交差を取るのは、モノレポ分割実行で`ExecutionContext.all_files`が対象のサブプロジェクト
         所属のファイルだけを返すためである。`self.files`は起点cwd全体から抽出した失敗ファイル
         集合であり、そのまま返すと所属しないサブプロジェクトのツールへ起点相対パスが渡り、
         対象不在や解決不能で失敗する。

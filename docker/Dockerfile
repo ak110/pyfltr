@@ -52,7 +52,7 @@
 # ``make update-docker-base`` は ``AS base`` のdigestピン付きFROM行1件を対象とするため、この書式と行末の識別子を保つ。
 # base OS は CI 同梱バイナリ (mise 経由の lychee 等) の glibc 要件を満たす
 # Debian stable を採用する。glibc 要件が満たされず CI 同梱バイナリが起動しない事象が
-# 発生した場合は、当該バイナリのバージョン固定よりも先に base OS 更新を検討する。
+# 発生した場合は、対象のバイナリのバージョン固定よりも先に base OS 更新を検討する。
 FROM python:3.14-slim-trixie@sha256:51dafde81dbdb6ebde285137a295cf18a47ca95234fe388a343719cb97305b3d AS base
 
 # パイプを使う RUN で `set -o pipefail` 相当の挙動を得るため、SHELL を明示する
@@ -215,7 +215,7 @@ FROM base AS final
 ARG PYFLTR_VERSION=""
 
 # pyfltr 本体を ``uv tool install`` で導入する。
-# ``PYFLTR_VERSION`` が空の場合はリリース最新版、指定時は当該バージョンを固定する。
+# ``PYFLTR_VERSION`` が空の場合はリリース最新版、指定時は対象のバージョンを固定する。
 # 非 root ユーザー ``pyfltr`` 配下に配置されるため、所有権の調整は不要。
 RUN if [ -n "${PYFLTR_VERSION}" ]; then \
         uv tool install "pyfltr==${PYFLTR_VERSION}" ; \

@@ -29,7 +29,7 @@ class SlowTestModel(pydantic.BaseModel):
         description="テスター共通の識別子。pytestはnodeid、vitestはファイルパスとテスト名を連結した形式。"
     )
     phase: str = pydantic.Field(description="計測区間。pytestはsetup / call / teardown、区間を区別しないvitestはtest。")
-    seconds: float = pydantic.Field(description="当該フェーズの所要秒数。")
+    seconds: float = pydantic.Field(description="対象のフェーズの所要秒数。")
 
 
 class CommandSummaryModel(pydantic.BaseModel):
@@ -44,7 +44,7 @@ class CommandSummaryModel(pydantic.BaseModel):
     elapsed: float | None = pydantic.Field(
         default=None,
         description=(
-            "当該コマンドの実行に要した秒数。キャッシュヒットしたコマンドは実行アーカイブへ記録されないため本一覧に現れない。"
+            "対象のコマンドの実行に要した秒数。キャッシュヒットしたコマンドは実行アーカイブへ記録されないため本一覧に現れない。"
         ),
     )
     slow_tests: list[SlowTestModel] = pydantic.Field(
@@ -124,7 +124,7 @@ class CommandMetaModel(pydantic.BaseModel):
         description="ツールの終了コード。対象ファイル0件等で起動しなかった場合はNone。",
     )
     files: int = pydantic.Field(description="対象ファイル数。")
-    elapsed: float = pydantic.Field(description="当該コマンドの実行に要した秒数。")
+    elapsed: float = pydantic.Field(description="対象のコマンドの実行に要した秒数。")
     diagnostics: int = pydantic.Field(description="diagnosticの件数。")
     slow_tests: list[SlowTestModel] = pydantic.Field(
         default_factory=list,
@@ -132,7 +132,7 @@ class CommandMetaModel(pydantic.BaseModel):
     )
     retry_command: str | None = pydantic.Field(
         default=None,
-        description="当該コマンドを失敗ファイルのみに限定して再実行するシェルコマンド。",
+        description="対象のコマンドを失敗ファイルのみに限定して再実行するシェルコマンド。",
     )
 
     @pydantic.model_serializer(mode="wrap")
@@ -221,14 +221,14 @@ class GrepFileCountModel(pydantic.BaseModel):
     """`grep`の集計モード`count`の1ファイル分。"""
 
     file: str = pydantic.Field(description="対象ファイルパス。区切りは`/`へ統一するため、Windowsでも`C:/...`形式となる。")
-    count: int = pydantic.Field(description="当該ファイルのマッチ件数。")
+    count: int = pydantic.Field(description="対象のファイルのマッチ件数。")
 
 
 class GrepFileResultModel(pydantic.BaseModel):
     """適応出力における1ファイル分の件数と返却対象マッチ。"""
 
     file: str = pydantic.Field(description="対象ファイルパス。")
-    count: int = pydantic.Field(description="省略前の当該ファイルの全マッチ件数。")
+    count: int = pydantic.Field(description="省略前の対象のファイルの全マッチ件数。")
     matches: list[dict[str, typing.Any]] = pydantic.Field(
         default_factory=list,
         description="返却するマッチ。fileは外側のfileフィールドを参照する。空なら件数だけを返す。",
@@ -253,7 +253,7 @@ class GrepResultModel(pydantic.BaseModel):
     returned_matches: int = pydantic.Field(default=0, description="本文を返したマッチ件数。")
     omitted_matches: int = pydantic.Field(default=0, description="本文を省略したマッチ件数。")
     omitted_files: int = pydantic.Field(default=0, description="ファイル名も返さなかった該当ファイル数。")
-    guidance: list[str] = pydantic.Field(default_factory=list, description="再検索又は置換へ進むための案内。")
+    guidance: list[str] = pydantic.Field(default_factory=list, description="再検索または置換へ進むための案内。")
     warnings: list[str] = pydantic.Field(default_factory=list, description="実行中に発行された警告メッセージ。")
     fully_excluded_files: list[str] = pydantic.Field(
         default_factory=list,
@@ -344,7 +344,7 @@ class ReplaceHistoryFileModel(pydantic.BaseModel):
     file: str = pydantic.Field(
         description="対象ファイルパス。区切りは保存時に`/`へ統一するため、Windowsでも`C:/...`形式となる。"
     )
-    records_count: int = pydantic.Field(description="当該ファイルの置換件数。")
+    records_count: int = pydantic.Field(description="対象のファイルの置換件数。")
 
 
 class ReplaceHistoryEntryModel(pydantic.BaseModel):

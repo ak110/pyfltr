@@ -74,7 +74,7 @@ class InterruptedExecution(Exception):
     """TUIから協調停止が要求されたことを示す例外。
 
     `run_subprocess` が `is_interrupted` コールバックで中断指示を検知した際に送出する。
-    呼び出し側（`ui._execute_command`）で捕捉し、当該コマンドを `skipped` 結果として置き換える。
+    呼び出し側（`ui._execute_command`）で捕捉し、対象のコマンドを `skipped` 結果として置き換える。
     """
 
 
@@ -226,7 +226,7 @@ def run_subprocess(
 
     `is_interrupted` が指定された場合、（1） `Popen` 呼び出し直前、（2） `Popen` 生成直後、
     （3） stdout読み取りループの各イテレーション冒頭の3点で中断指示を確認し、真の場合は
-    当該procを確実に終了させてから `InterruptedExecution` を送出する。TUI協調停止経路で
+    対象のprocを確実に終了させてから `InterruptedExecution` を送出する。TUI協調停止経路で
     使う。`on_subprocess_start` / `on_subprocess_end` はsubprocessが実際に動いている
     区間を追跡するためのフック（UI側で「実行中コマンド集合」を正確に保つのに使う）。
     start後は必ずfinallyでendを呼ぶため、Ctrl+Cスナップショットにフック外の時間帯が

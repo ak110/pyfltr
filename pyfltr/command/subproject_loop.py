@@ -23,7 +23,7 @@ def should_run_subproject_loop(command: str, ctx: ExecutionContext) -> bool:
 
     判定条件:
     - モノレポモード有効（`base.subprojects` が2件以上）
-    - 当該コマンドの `subproject_aware` が True（既定は `CommandInfo.subproject_aware`、
+    - 対象のコマンドの `subproject_aware` が True（既定は `CommandInfo.subproject_aware`、
       利用者が `{command}-subproject-aware` で上書き可能）
     - `ctx.subproject_cwd` が未設定（既にサブループ内側ならネストさせない）
 
@@ -52,7 +52,7 @@ def _run_one(
     *,
     dispatch_fn: typing.Callable[[str, argparse.Namespace, ExecutionContext], CommandResult],
 ) -> CommandResult:
-    """1つのサブプロジェクトで当該コマンドを実行し、区切り行を付けた結果を返す。"""
+    """1つのサブプロジェクトで対象のコマンドを実行し、区切り行を付けた結果を返す。"""
     sub_base = dataclasses.replace(ctx.base, config=sub_config)
     sub_ctx = dataclasses.replace(ctx, base=sub_base, subproject_cwd=sub.cwd)
     sub_result = dispatch_fn(command, args, sub_ctx)
@@ -65,7 +65,7 @@ def _run_one(
 def resolve_subproject_workers(command: str, ctx: ExecutionContext, cwds: typing.Sequence[typing.Any]) -> int:
     """サブプロジェクトを同時に実行する上限を`jobs`から決める。
 
-    `jobs`を当該ツール自身のワーカー数の推定値で割った値とする。
+    `jobs`を対象のツール自身のワーカー数の推定値で割った値とする。
     推定値はサブプロジェクトごとに異なりうるため最大値を基準とし、
     ツール側の並列度との積が`jobs`を超えないようにする。
 
@@ -94,7 +94,7 @@ def run_subproject_loop(
 ) -> CommandResult:
     """サブプロジェクト別ループでツールを実行し `CommandResult` をマージする。
 
-    各サブプロジェクトの設定（`base.subproject_configs`）で当該コマンドのON/OFFを再判定し、
+    各サブプロジェクトの設定（`base.subproject_configs`）で対象のコマンドのON/OFFを再判定し、
     無効のサブプロジェクト（親ON・子OFF）とファイル0件のサブプロジェクトは実行から除外する。
     外部パス（`base.external_files`）への適用は起点設定のON/OFFで固定し、起点で無効なら何も行わない。
 
@@ -108,7 +108,7 @@ def run_subproject_loop(
     """
     with pyfltr.warnings_.suppress_duplicates():
         base = ctx.base
-        # 起点設定での当該コマンドのON/OFF。外部パス追加実行とフォールバックの採否に用いる。
+        # 起点設定での対象のコマンドのON/OFF。外部パス追加実行とフォールバックの採否に用いる。
         start_enabled = base.config.values.get(command) is True
         subproject_results: list[CommandResult] = []
         # 設定で無効化してスキップしたサブプロジェクトの有無。0件スキップと区別し誤実行を抑止する。
@@ -120,7 +120,7 @@ def run_subproject_loop(
                 continue
             sub_config = base.subproject_configs.get(sub.cwd, base.config)
             if sub_config.values.get(command) is not True:
-                # 親ON・子OFF: 当該サブプロジェクトの設定で無効化されているため実行しない。
+                # 親ON・子OFF: 対象のサブプロジェクトの設定で無効化されているため実行しない。
                 skipped_by_config = True
                 continue
             targets.append((sub, sub_config))
@@ -153,7 +153,7 @@ def run_subproject_loop(
         info = ctx.config.commands.get(command)
         external_files = base.external_files
         if external_files and info is not None and start_enabled:
-            # 当該ツールのglob条件にマッチする外部パスのみを対象とする
+            # 対象のツールのglob条件にマッチする外部パスのみを対象とする
             # （サブプロジェクト経路と同じ`filter_by_globs`基準）。
             relevant_external = pyfltr.command.targets.filter_by_globs(external_files, info.target_globs())
             if relevant_external:

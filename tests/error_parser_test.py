@@ -2393,7 +2393,7 @@ def test_parse_pytest_parametrized_id_with_brackets_is_not_dropped() -> None:
     `ids`へリストや型注釈風の文字列を渡すと`test_listid[['a', 'b']]`・`test_nested[list[int] and str]`
     のようなIDが生成される。`_PYTEST_SUMMARY_RE`の角括弧部分を`\\[[^\\]]*\\]`のように閉じ括弧を
     越えられない表現にすると、これらのsummary行が一切マッチせず、summary行のみが情報源となる
-    `--tb=no`等では当該失敗が診断から完全に消える。
+    `--tb=no`等では対象の失敗が診断から完全に消える。
     """
     output = (
         "========================= short test summary info ==========================\n"
@@ -2827,7 +2827,7 @@ def _pytest_child_run(*, file: str, test: str, line: int, message: str, terminat
     """捕捉出力へ混入する子プロセスのpytest実行1回分を組み立てる。
 
     実出力と同じく`test session starts`見出しで始まり、終了集計行で終わる形とする。
-    除外の判定は当該2つのマーカーに依存するため、テスト入力からいずれも省略しない。
+    除外の判定は対象の2つのマーカーに依存するため、テスト入力からいずれも省略しない。
     `terminated=False`は子プロセスが異常終了・打ち切りで終了集計行を欠く形を表す。
     """
     body = "================================= test session starts =================================\ncollected 1 item\n\n"
@@ -2956,7 +2956,7 @@ def test_parse_pytest_tb_line_ignores_child_failure_block_in_captured_output() -
 def test_parse_pytest_tb_line_captured_output_keeps_following_line_numbers() -> None:
     """pytest --tb=line: 子プロセスを含まない捕捉出力で後続の行番号を失わないことを検証する。
 
-    `--tb=line`形式では位置行が当該テストの捕捉出力より後に現れる。
+    `--tb=line`形式では位置行が対象のテストの捕捉出力より後に現れる。
     子プロセスの実行を含まない捕捉出力を除外対象にすると、失敗した本人の位置行まで失う。
     """
     output = (
@@ -2981,7 +2981,7 @@ def test_parse_pytest_tb_line_captured_output_keeps_following_line_numbers() -> 
 def test_parse_pytest_worker_crash_after_captured_output_keeps_message() -> None:
     """pytest -n: 捕捉出力の後に続くワーカー異常終了のブロックを失わないことを検証する。
 
-    当該ブロックの見出しはテスト名ではなくファイルパスであり、テスト名の突合では
+    対象のブロックの見出しはテスト名ではなくファイルパスであり、テスト名の突合では
     除外の終端を判定できない。除外を子プロセスの実行マーカーで判定することで
     失敗理由の全文が保持される。
     """
@@ -3091,7 +3091,7 @@ def _pytest_two_child_runs_output(*, tb_line: bool, summary_list: bool) -> str:
     """子プロセスの実行が2回現れ、1回目が終了集計行を欠く形の出力を組み立てる。
 
     1回目の実行の開始位置を保持したままにすると2回目の終了集計行と対になり、
-    その間にある親の失敗まで除外される。当該構成のテスト入力を共通化する。
+    その間にある親の失敗まで除外される。対象の構成のテスト入力を共通化する。
     """
     crashed = _pytest_child_run(file="child/dies_test.py", test="test_dies", line=0, message="", terminated=False)
     completed = _pytest_child_run(file="child/fails_test.py", test="test_fails", line=2, message="assert 1 == 2")
@@ -3204,7 +3204,7 @@ def _pytest_unterminated_then_tail_output(*, summary_list: bool) -> str:
     """未終端の子の実行の後に、開始行を持たない終了集計行が現れる形の出力を組み立てる。
 
     親テストが子の出力の末尾だけを表示した場合に生じる。未終端の実行の開始位置を
-    節をまたいで保持すると、当該終了集計行と対になり間の親の失敗を除外する。
+    節をまたいで保持すると、対象の終了集計行と対になり間の親の失敗を除外する。
     """
     captured = "-------------------------- Captured stdout call ---------------------------\n"
     unterminated = "================================= test session starts =================================\ncollected 1 item\n"
@@ -3353,7 +3353,7 @@ def test_parse_pytest_captured_text_is_not_taken_as_parent_summary_line() -> Non
 def test_mask_pytest_captured_child_runs_keeps_line_structure() -> None:
     """pytest: 除外処理が`\\n`以外の制御文字で行を切らないことを検証する。
 
-    `str.splitlines`はフォームフィード等でも分割するため、除外時に当該位置へ改行が入り、
+    `str.splitlines`はフォームフィード等でも分割するため、除外時に対象の位置へ改行が入り、
     以降の正規表現探索（`re.MULTILINE`は`\\n`のみを行区切りとする）と行の対応が崩れる。
     制御文字は除外対象の範囲の内側へ置く。範囲の外では除外時の置換が起こらず、
     分割の基準が違っても元の文字列が復元されるため、退行を検知できない。
@@ -3540,7 +3540,7 @@ def test_parse_pytest_quiet_child_failure_block_is_dropped_by_summary_safety_net
 def test_parse_pytest_quiet_child_crash_block_is_dropped_by_summary_safety_net() -> None:
     """pytest: 子のワーカー異常終了のブロックも失敗一覧との突合で除外することを検証する。
 
-    当該ブロックの見出しはテスト名ではなくファイルパスのため、突合には異常終了行の
+    対象のブロックの見出しはテスト名ではなくファイルパスのため、突合には異常終了行の
     テスト名を用いる。親の失敗一覧に載らない場合は親の失敗ではない。
     """
     output = (
@@ -3597,7 +3597,7 @@ def test_parse_pytest_unterminated_child_run_is_not_masked() -> None:
     """pytest: 子プロセスの出力が途中で欠けている場合に除外しないことを検証する。
 
     終了集計行を欠く領域を除外すると、以降の親の失敗をすべて失う。
-    安全側へ倒し、当該領域は除外しない。
+    安全側へ倒し、対象の領域は除外しない。
     """
     output = (
         "================================= FAILURES =================================\n"
@@ -3656,14 +3656,14 @@ def test_parse_pytest_quiet_child_summary_is_not_taken_as_parent_summary() -> No
     parent_errors = [e for e in errors if e.file == "tests/p_test.py"]
     assert {e.line for e in parent_errors} == {13, 17}
     # 親が失敗一覧を持たない構成では失敗一覧との突合による安全網も働かないため、
-    # 子の失敗欄は診断として残る。当該構成の縮退を仕様として固定する。
+    # 子の失敗欄は診断として残る。対象の構成の縮退を仕様として固定する。
     assert any(e.file == "child/inner_test.py" for e in errors)
 
 
 def test_parse_pytest_warnings_summary_after_summary_list_keeps_parent_summary() -> None:
     """pytest: 失敗一覧の後に警告の集計が続いても親の失敗一覧を採ることを検証する。
 
-    `_pytest/terminal.py`は失敗一覧の出力後にも後追いの警告の集計を出力する。当該見出しと
+    `_pytest/terminal.py`は失敗一覧の出力後にも後追いの警告の集計を出力する。対象の見出しと
     本文を入れ子の実行の標識に含めると、親自身の失敗一覧を子のものと誤判定し、失敗一覧のみを
     情報源とする失敗が診断から消える。テスト入力はpytest 9.1.1で`pytest_terminal_summary`フックから
     警告を送出した実出力から採る。
@@ -3690,10 +3690,10 @@ def test_parse_pytest_child_summary_is_not_taken_without_parent_tail_line() -> N
     """pytest: 親の最終集計行が無い出力で子の見出しを親のものと誤認しないことを検証する。
 
     親の実行が途中で終わると最終集計行が出ない。所属判定の上限は出力中で最後に現れる
-    集計行を採るため、当該構成では捕捉出力へ混入した子の集計行が上限になる。上限より前の
+    集計行を採るため、対象の構成では捕捉出力へ混入した子の集計行が上限になる。上限より前の
     子の見出しは標識を伴わず親のものとして採られ、以降にある親の失敗が診断から消える。
     上限として採った集計行より後に標識が現れる場合は上限を出力の末尾へ広げて探し直すため、
-    当該構成では子の見出しが標識を伴うようになり、いずれの見出しも親のものと判定されない。
+    対象の構成では子の見出しが標識を伴うようになり、いずれの見出しも親のものと判定されない。
     """
     # 入れ子のpytest実出力を逐語的なテスト入力として維持し、親子の境界条件を固定する。
     # arid: disable
@@ -3718,7 +3718,7 @@ def test_parse_pytest_child_summary_is_not_taken_without_parent_tail_line() -> N
     errors = pyfltr.command.error_parser.parse_errors("pytest", output)
     parent_errors = [e for e in errors if e.file == "tests/p_test.py"]
     assert {e.line for e in parent_errors} == {13, 17}
-    # 親が失敗一覧を持たないため安全網が働かず、子の失敗欄は診断として残る。当該構成の縮退を固定する。
+    # 親が失敗一覧を持たないため安全網が働かず、子の失敗欄は診断として残る。対象の構成の縮退を固定する。
     assert [e.file for e in errors if e.file not in {"tests/p_test.py"}] == ["child/inner_test.py"]
 
 
@@ -3764,7 +3764,7 @@ def test_parse_pytest_run_after_parent_tail_line_keeps_parent_failures(with_fail
     """pytest: 親の最終集計行の後に別の実行が続いても親の失敗を失わないことを検証する。
 
     pyfltrは子孫プロセスの出力をストリームの終端まで読むため、親の実行が終わった後に
-    打ち切られた孫プロセスの実行が同じ出力へ続くことがある。当該実行の標識を根拠に
+    打ち切られた孫プロセスの実行が同じ出力へ続くことがある。対象の実行の標識を根拠に
     上限を無効と判定すると、失敗一覧のみを情報源とする構成（`with_failures_section=False`）で
     親の失敗をすべて失う。
     """
@@ -3797,7 +3797,7 @@ def test_parse_pytest_parent_failure_in_shared_test_file_is_kept() -> None:
 
     捕捉出力へ残った子の失敗一覧に載る`(ファイル, テスト名)`の失敗欄を除外する案は、
     子プロセスへ渡すテストファイルを親自身も収集する構成において、親の実在する失敗を
-    除外する。当該案を採らないことを固定する。
+    除外する。対象の案を採らないことを固定する。
     """
     output = (
         "================================= FAILURES =================================\n"
@@ -3836,7 +3836,7 @@ def test_parse_pytest_interrupt_traceback_after_summary_keeps_parent_summary(
     """pytest --full-trace: 失敗一覧の後に中断のトレースバックが続いても親の一覧を採ることを検証する。
 
     `_pytest/terminal.py`は失敗一覧の出力後に中断・停止の報告を出す。`--full-trace`では
-    完全なトレースバックが続き、例外の連鎖のエントリー間へ区切り行が現れる。当該区切り行を
+    完全なトレースバックが続き、例外の連鎖のエントリー間へ区切り行が現れる。対象の区切り行を
     ブロック見出しとして採ると、親自身の失敗一覧を子のものと誤判定する。誤判定すると
     失敗一覧のみを情報源とする失敗が消え（`with_failures_section=False`）、失敗欄を持つ場合も
     解析範囲が中断のトレースバックまで延びて行番号と本文が別の失敗のものへ差し替わる
@@ -5140,7 +5140,7 @@ def test_parse_errors_markdownlint_with_column() -> None:
 def test_parse_errors_markdownlint_with_column_on_windows_path() -> None:
     """markdownlint: Windowsドライブレター表記でも列番号付きの位置を正しく抽出する。
 
-    ドライブレター表記の侵入が本不具合の根本原因のため、当該表記そのものを検証する。
+    ドライブレター表記の侵入が本不具合の根本原因のため、対象の表記そのものを検証する。
     """
     output = "C:/proj/docs/index.md:5:45 MD009/no-trailing-spaces Trailing spaces [Expected: 0; Actual: 1]"
     errors = pyfltr.command.error_parser.parse_errors("markdownlint", output)

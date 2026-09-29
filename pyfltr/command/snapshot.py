@@ -70,7 +70,7 @@ def warn_protected_identifier_corruption(
     """Textlint fix後に保護対象識別子が失われていた場合、警告を発行する。
 
     fix前のファイル内容に含まれていた識別子がfix後に1件でも減っていれば、
-    当該識別子が `preset-jtf-style` などの機械変換で破損した可能性が高い。
+    対象の識別子が `preset-jtf-style` などの機械変換で破損した可能性が高い。
     検知は出現回数ベース （等号比較） で行い、単純な減少も破損として扱う。
     """
     for path, before_text in before.items():

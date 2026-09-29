@@ -85,7 +85,7 @@ PACKAGE_MANAGER_TOOL_BIN: dict[str, str] = {
 
 # pyfltrのコマンド名から、期待する機能が成立する最低版と要件の理由を引く。
 # 版の選択はパッケージマネージャーへ委ねる既存方針を維持し、機能成立の検証だけを担う。
-# 閾値は当該のサブコマンドが追加された版ではなく、期待する観測結果が得られる最初の版とする。
+# 閾値はサブコマンドが追加された版ではなく、期待する観測結果が得られる最初の版とする。
 # uv auditは0.10.8で追加され0.10.10で検出を開始したが、終了コードへ反映するのは0.11.2以降である。
 PACKAGE_MANAGER_MIN_VERSION: dict[str, tuple[tuple[int, ...], str]] = {
     "uv-audit": (
@@ -376,7 +376,7 @@ def _is_tool_active_in_mise_config(
     allow_side_effects: bool,
     cwd: pathlib.Path | None = None,
 ) -> bool:
-    """mise設定で当該ツールが活性化されているかを判定する。
+    """mise設定で対象のツールが活性化されているかを判定する。
 
     判定キーは `spec.mise_backend or spec.bin_name`（mise.toml記述に合わせた形）。
     例えばcargo系なら `rust`、cargo-denyなら `aqua:EmbarkStudios/cargo-deny`、
@@ -426,7 +426,7 @@ def cwd_has_uv_lock(
     `ensure_uvx_available` 等）に共通する制約。
 
     `cwd`未指定時はプロセスcwd直下だけを確認し、従来の呼び出し契約を維持する。
-    `workspace_root`指定時は当該rootまで親方向へ探索し、workspace外へ越境しない。
+    `workspace_root`指定時は対象のrootまで親方向へ探索し、workspace外へ越境しない。
     """
     effective_cwd = cwd if cwd is not None else pathlib.Path.cwd()
     return pyfltr.command.subprojects.find_uv_lock_for_cwd(effective_cwd, workspace_root=workspace_root) is not None
@@ -520,7 +520,7 @@ def _resolve_js_commandline(
     """JSツール（textlint / markdownlint等）の実行ファイルと引数prefixを決定する。
 
     `{command}-path` が空のときに呼び出される。
-    `effective` を明示すると当該値を採用し、省略時は `js-runner` 設定値を採用する
+    `effective` を明示すると対象の値を採用し、省略時は `js-runner` 設定値を採用する
     （per-tool直接指定値（`pnpx` / `pnpm` 等）を委譲経路と同一ロジックで解決するため）。
     `direct` モードで `node_modules/.bin/<cmd>` が存在しない場合は `FileNotFoundError` を送出する。
     """
@@ -649,7 +649,7 @@ def _resolve_mise_runner_commandline(
     elif version == spec.default_version and _is_tool_active_in_mise_config(
         command, spec, config, allow_side_effects=allow_side_effects, cwd=cwd
     ):
-        # mise設定に当該ツール記述があり、かつversionが既定値（"latest"）の場合のみtool specを省略する。
+        # mise設定に対象のツール記述があり、かつversionが既定値（"latest"）の場合のみtool specを省略する。
         # version明示時（"latest"以外）は利用者の意図を尊重して従来通りtool spec組み立てに留める。
         prefix = ["exec", "--", spec.bin_name]
         tool_spec_omitted = True

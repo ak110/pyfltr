@@ -53,7 +53,7 @@ logger = logging.getLogger(__name__)
 
 _CACHE_DIRNAME = "cache"
 # ツール固有設定ファイルの外部参照を伴うフラグ。--{command}-argsにこれらが含まれる場合は
-# 当該実行でキャッシュを無効化する（動的パスを解釈する複雑さを避けるため安全側に倒す）。
+# 対象の実行でキャッシュを無効化する（動的パスを解釈する複雑さを避けるため安全側に倒す）。
 _EXTERNAL_REF_ARGS: frozenset[str] = frozenset({"--config", "--ignore-path"})
 
 
@@ -103,7 +103,7 @@ class CacheStore:
         相対パス・設定ファイル群の内容・サブプロジェクト cwd の実体パス・pyfltr MAJORバージョンを
         連結してhash化する。
 
-        `subproject_cwd` を指定すると、当該パスの `os.path.realpath` 結果をキー要素に含める。
+        `subproject_cwd` を指定すると、対象のパスの `os.path.realpath` 結果をキー要素に含める。
         モノレポで同一相対パスがサブプロジェクトをまたいで存在する場合の誤ヒットを防ぐ。
         `None` の場合はサブプロジェクト要素を含めず、単一プロジェクト時と同じキーになる。
         """
@@ -204,7 +204,7 @@ def is_cacheable(
     config: pyfltr.config.config.Config,
     additional_args: list[str],
 ) -> bool:
-    """当該実行がキャッシュ対象になるかを判定する。
+    """対象の実行がキャッシュ対象になるかを判定する。
 
     条件:
         - `CommandInfo.cacheable=True`である

@@ -45,7 +45,7 @@ tools: Read, Grep, Glob, Bash
 
    - JSON Lines全体を保存し、`header`レコード（`{"kind": "header", "run_id": "..."}`形式）の`run_id`を記録する。`head`等で先頭行だけを読むパイプは、後続レコードの保存を打ち切るため使わない
    - 並行実行時に別のpyfltr実行がrun IDを奪う可能性があるため、`latest`を使わず記録済みrun IDを明示的に指定する
-   - `uv run pyfltr show-run <run_id> --commands=<tool> --output --output-format=text`へ記録済みrun IDを明示し、JSON Linesの`output`レコードへラップされていない当該ツールの生出力全文を取得する
+   - `uv run pyfltr show-run <run_id> --commands=<tool> --output --output-format=text`へ記録済みrun IDを明示し、JSON Linesの`output`レコードへラップされていない対象のツールの生出力全文を取得する
    - 実行アーカイブには生出力（`output.log`）に加えて現行実装の解析結果（`diagnostics.jsonl`）と実際の起動コマンドライン（`tool.json`）が保存される。三者を並べて確認する
    - 取得した出力が `pyfltr/command/error_parser.py` の正規表現と一致するか手動で確かめる
    - 対応ツールを直接起動してツール出力のサンプルを収集してはならない。pyfltrは構造化出力引数を注入し、stderrをstdoutへ統合したうえでパーサーへ渡すため、直接起動で得た出力はパーサーが実際に受け取る入力と一致しない。`AGENTS.md`「開発手順」章の直接起動禁止規定にも反する
@@ -94,7 +94,7 @@ tools: Read, Grep, Glob, Bash
   `pyproject.toml` の `[tool.pyfltr]` へ `pytest-tb-line = false` を一時的に指定して実行し、
   確認後に設定を元へ戻す
 - `COLUMNS` を80未満とする形態は、pyfltrが端末幅を80以上128以下へクランプするため再現できない。
-  当該形態は確認対象から外す
+  対象の形態は確認対象から外す
 
 形態11は次の派生をすべて生成する。既定の形式はエントリー数により出力の構造が変わる。
 

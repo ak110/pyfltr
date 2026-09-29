@@ -795,7 +795,7 @@ def test_build_summary_record_guidance_falls_back_when_unspecified() -> None:
 
 
 def test_build_summary_record_guidance_uses_given_subcommand() -> None:
-    """`subcommand`指定時は`--only-failed`案内が当該サブコマンド名で組み立てられる。"""
+    """`subcommand`指定時は`--only-failed`案内が対象のサブコマンド名で組み立てられる。"""
     result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",

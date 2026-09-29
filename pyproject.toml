@@ -19,15 +19,15 @@ classifiers = [
 requires-python = ">=3.11,<4.0"
 dependencies = [
     # JSON出力（`--format=json`の`findings`構造）と`--project-root`・`--min-lines`に依存するため、
-    # 当該インターフェースを検証済みの版を下限とする。
+    # 対象のインターフェースを検証済みの版を下限とする。
     "arid>=2.2.2",
     "bandit>=1.7",
     "dill>=0.3",
     # 2.0で高レベルAPIのクラスが`mcp.server.mcpserver.MCPServer`へ改称され、1.x系のimportパスは削除された。
     # `pyfltr/cli/mcp_server.py`は2.0系のAPIのみを用いるため下限を2.0.0とする。
-    # 上限は設けない。1.x系では当該APIが存在せず下限指定だけで要件を表現できるため。
+    # 上限は設けない。1.x系では対象のAPIが存在せず下限指定だけで要件を表現できるため。
     # かつて下限を1.28.1としていたGHSA-vj7q-gjh5-988w・GHSA-jpw9-pfvf-9f58・GHSA-hvrp-rf83-w775は
-    # いずれも2.0.0が包含するため、当該下限指定は不要になった。
+    # いずれも2.0.0が包含するため、対象の下限指定は不要になった。
     "mcp>=2.0.0",
     "mypy>=1.0",
     "natsort>=8.0",
@@ -36,7 +36,7 @@ dependencies = [
     "prek>=0.4.11",
     "psutil>=6.0",
     # MCP公開スキーマのモデル定義（`pyfltr/cli/mcp_models.py`）が用いる。
-    # `mcp`の推移依存でもあるが、`mcp`が解決できない環境でも当該モジュールのimportを
+    # `mcp`の推移依存でもあるが、`mcp`が解決できない環境でも対象のモジュールのimportを
     # 成立させてCLI全体の起動を保つため、明示的に宣言する。
     "pydantic>=2.0",
     "pylint-pydantic>=0.4",
@@ -134,7 +134,7 @@ pylint-args = ["--jobs=4"]
 arid-exclude = ["tests"]
 # tests/smoke_data/ 配下にはツール毎の最小サンプル（GitHub Actionsワークフロー・
 # Dockerfile・shellスクリプト等）を含むため、本リポのpyfltr対象から外す。
-# 当該ディレクトリの起動確認は tests/smoke_test.py が pyfltr CLIをsubprocess経由で呼んで実施する。
+# 対象のディレクトリの起動確認は tests/smoke_test.py が pyfltr CLIをsubprocess経由で呼んで実施する。
 # `extend-exclude`はファイル走査経路の除外、`subproject-exclude`はサブプロジェクト検出経路
 # （`pyproject.toml`存在の機械的検出）の除外で別仕組み。配下に複数の`pyproject.toml`を含むため、
 # モノレポ検出時に意図しないサブプロジェクトとして列挙されないよう両方に登録する。
@@ -169,10 +169,10 @@ fast = true
 # Markdownのフェンス内は検査しないため、カスタムコマンドとして補う。
 # args のスクリプトパスは実行時cwdからの相対として解決される。カスタムコマンドは
 # subproject_aware 既定値 true で登録されるため、サブプロジェクトを2件以上検出すると
-# 実行時cwdが当該サブプロジェクトへ切り替わり、リポジトリルート基準の当該パスを解決できない。
+# 実行時cwdが対象のサブプロジェクトへ切り替わり、リポジトリルート基準の対象のパスを解決できない。
 # 本リポジトリは subproject-exclude により候補がルート1件となり分割実行が発生せず、
 # 実行時cwdが起点cwd（リポジトリルート）と一致するため成立している。
-# 当該除外を解除する場合は絶対パス化するか、doc-codeblock-check-subproject-aware = false を指定する。
+# 対象の除外を解除する場合は絶対パス化するか、doc-codeblock-check-subproject-aware = false を指定する。
 [tool.pyfltr.custom-commands.doc-codeblock-check]
 type = "linter"
 path = "uv"
@@ -278,7 +278,7 @@ latset = "latset"
 [tool.pytest.ini_options]
 # https://docs.pytest.org/en/latest/reference/reference.html#ini-options-ref
 # `tests/smoke_data/` 配下にはツール毎のサンプル `*_test.py` を含むためpytest collectionから除外する。
-# スモークテスト本体は `tests/smoke_test.py` で、内部から pyfltr 経由で当該サンプルを呼び出す。
+# スモークテスト本体は `tests/smoke_test.py` で、内部から pyfltr 経由で対象のサンプルを呼び出す。
 addopts = [
     "--showlocals",
     "-p", "no:cacheprovider",

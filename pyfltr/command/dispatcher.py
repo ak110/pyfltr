@@ -235,7 +235,7 @@ def _prepare_execution_params(
     else:
         targets = natsort.natsorted(targets, key=str)
 
-    # fixステージでは当該コマンドのfix-argsを引用してfix経路に分岐する。
+    # fixステージでは対象のコマンドのfix-argsを引用してfix経路に分岐する。
     # fix-args未定義のformatterは通常経路を通る（通常実行でもファイルを書き換えるため挙動は同じ）。
     fix_mode = fix_stage
     fix_args: list[str] | None = None
@@ -550,12 +550,12 @@ def execute_command(
 ) -> CommandResult:
     """コマンドの実行。
 
-    `fix_stage=True` の場合、当該コマンドがfix-argsを持っていればfix経路
+    `fix_stage=True` の場合、対象のコマンドがfix-argsを持っていればfix経路
     （`--fix` 付きの単発実行）で動作する。fix-args未定義のformatterでは
     通常経路と挙動が変わらないため、呼び出し側はfixステージで実行する対象を
     `split_commands_for_execution()` でフィルタリングしたうえで指定する前提。
 
-    `cache_store` が指定され、かつ当該コマンドが `CommandInfo.cacheable=True` の
+    `cache_store` が指定され、かつ対象のコマンドが `CommandInfo.cacheable=True` の
     非fixモード実行なら、ファイルhashキャッシュを参照して一致があれば実行を
     スキップし、過去の結果を復元して `cached=True` で返す。キャッシュミス時は
     通常実行のうえ、成功 （rc=0） に限り `cache_run_id` をソースとして
@@ -567,7 +567,7 @@ def execute_command(
     渡す用途）。その後の `target_extensions` / `pass_filenames=False` の分岐は
     通常通り適用される。`None` の場合は既定の `all_files` を使用する。
 
-    モノレポモード（`base.subprojects` が2件以上）で当該コマンドが `subproject_aware=True`
+    モノレポモード（`base.subprojects` が2件以上）で対象のコマンドが `subproject_aware=True`
     の場合、サブプロジェクト別ループで実行して `CommandResult.merge` で集約する。
     `subproject_aware=False` または単一プロジェクト時は従来通り起点 cwd で1回実行する。
 
@@ -648,7 +648,7 @@ def _dispatch_command(
     fix_mode = params.fix_mode
     fix_args = params.fix_args
 
-    # 各CommandResultに当該ツールのターゲットファイル一覧とrunner解決情報を埋めるためのヘルパー。
+    # 各CommandResultに対象のツールのターゲットファイル一覧とrunner解決情報を埋めるためのヘルパー。
     # retry_commandで差し替え可能なターゲットを復元するのに使う（特にpass-filenames=False
     # のツールではcommandlineからも復元できないため、ここで明示的に保持する）。
     # runner情報（effective_runner / runner_source）は `build_commandline` が成功した経路でのみ

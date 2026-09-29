@@ -144,7 +144,7 @@ python-runner = "uvx"
 | `"direct"` | `shutil.which`で本体依存に同梱されたバイナリを直接呼ぶ |
 
 cwdのuvプロジェクトに対象ツールが登録されていない場合、`uv run`側がエラーで失敗する。
-その場合は当該ツールをプロジェクトに追加するか、`{command}-path`で明示するか、
+その場合はツールをプロジェクトに追加するか、`{command}-path`で明示するか、
 `{command}-runner`を`"direct"`へ切り替えて対応する。
 
 ツール単位で個別に切り替えたい場合は`{command}-runner`へ直接指定値を書く
@@ -259,8 +259,8 @@ semgrep / sqlfluffの既定値は無効（opt-in）で、`{command}-runner`の�
 `semgrep`は多言語SAST。他の依存へ厳密ピンを課すためpyfltr本体依存には同梱せず、
 `semgrep-runner = "uvx"`の既定値により実行時に別環境へ解決する。
 `uvx`が利用できる環境なら`uvx pyfltr`単発でも利用できる。
-`uv tool install semgrep`で導入済みの環境がある場合は`uvx`が当該環境を再利用するため、
-実行のたびの解決は発生しない。公式Dockerイメージは当該手順で導入済みである。
+`uv tool install semgrep`で導入済みの環境がある場合は`uvx`がその環境を再利用するため、
+実行のたびの解決は発生しない。公式Dockerイメージはこの手順で導入済みである。
 導入済み環境が無い場合は実行のたびに依存を解決するため、版を固定したい場合や
 解決コストを避けたい場合は`uv tool install semgrep`で導入するか、
 `semgrep-path`または`semgrep-runner`で上書きする。
@@ -284,8 +284,8 @@ semgrep-args = ["scan", "--json", "--error", "--config=auto"]
 `sqlfluff`はSQL専用linter。他の依存へ上限制約を課すためpyfltr本体依存には同梱せず、
 `sqlfluff-runner = "uvx"`の既定値により実行時に別環境へ解決する。
 `uvx`が利用できる環境なら`uvx pyfltr`単発でも利用できる。
-`uv tool install sqlfluff`で導入済みの環境がある場合は`uvx`が当該環境を再利用するため、
-実行のたびの解決は発生しない。公式Dockerイメージは当該手順で導入済みである。
+`uv tool install sqlfluff`で導入済みの環境がある場合は`uvx`がその環境を再利用するため、
+実行のたびの解決は発生しない。公式Dockerイメージはこの手順で導入済みである。
 導入済み環境が無い場合は実行のたびに依存を解決するため、版を固定したい場合や
 解決コストを避けたい場合は`uv tool install sqlfluff`で導入するか、
 `sqlfluff-path`または`sqlfluff-runner`で上書きする。
@@ -712,7 +712,7 @@ miseモードでの起動コマンドの優先順位は次のとおり（`{comma
 
 1. `{command}-version`に具体値を明示（`"latest"`以外）→
    `mise exec <tool>@<version> -- <command>`を組み立てる
-2. `{command}-version`が既定`"latest"`のまま、かつmise設定に当該ツールの記述がある →
+2. `{command}-version`が既定`"latest"`のまま、かつmise設定にそのツールの記述がある →
    tool specを省略し`mise exec -- <command>`を組み立てる。
    mise設定の対象はプロジェクトmise.tomlとグローバル設定の両方
 3. いずれも該当しない → `mise exec <backend>@latest -- <command>`を組み立てる
@@ -1016,7 +1016,7 @@ fixモードでは`args`の後に`fix-args`が追加され、`my-linter --check 
 
 ### severityによる失敗の警告化 {#severity}
 
-`{command}-severity`を`"warning"`に設定すると、当該ツールの失敗をJSONL `command.status="warning"` で記録し、
+`{command}-severity`を`"warning"`に設定すると、そのツールの失敗をJSONL `command.status="warning"` で記録し、
 パイプライン全体のexit codeに影響させない扱いに切り替えられる。
 口語表現検出など「警告で十分」な用途で、エージェントを止めずに通知だけしたい場合に使う。
 カスタムコマンド・ビルトイン共通で利用できる。

@@ -51,7 +51,7 @@ class _HelpOnErrorArgumentParser(argparse.ArgumentParser):
     argparse既定のerror() はエラー文のみを出力してexit 2するため、利用者が正しい書式を
     取り違えたまま同じミスを繰り返しやすい。本サブクラスではエラー文の前に
     `self.print_help(sys.stderr)` を呼び、該当parserのヘルプを併記する。
-    サブコマンド側のエラーでは当該サブコマンドのparser、メインの誤サブコマンドでは
+    サブコマンド側のエラーでは対象のサブコマンドのparser、メインの誤サブコマンドでは
     メインのparserのヘルプが出る（argparseの階層別parser_classで継承させるため）。
     """
 

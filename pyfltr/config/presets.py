@@ -1,7 +1,7 @@
 """プリセット定義。"""
 
 # 全プリセットで共通の推奨ツール（Python核 + JavaScript / TypeScript + Rust + .NET）を
-# 集約する。preset = "latest" + `{language} = true`だけで当該言語の推奨ツール一式が
+# 集約する。preset = "latest" + `{language} = true`だけで対象の言語の推奨ツール一式が
 # gateを通過して有効化される運用を実現するため、歴史的presetも含めて全バージョンに
 # 同じ言語別推奨ツールを収録する。
 # カテゴリキー（`python` / `javascript` / `rust` / `dotnet`）がgateとして働き、
@@ -89,7 +89,7 @@ _REMOVED_PRESETS: dict[str, str] = {
     "20250710": (
         'preset "20250710" は v3.0.0 で削除された。'
         "5 ツール削除 (pyupgrade / autoflake / isort / black / pflake8) に伴い、"
-        '当該プリセットは実質的に内容を失ったため廃止された。代わりに `preset = "latest"` を使い、'
+        'このプリセットは実質的に内容を失ったため廃止された。代わりに `preset = "latest"` を使い、'
         "必要なPython系ツールを`python = true`または個別設定で有効化すること"
     ),
 }

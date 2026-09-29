@@ -21,11 +21,11 @@ def pick_targets(
     only_failed_targets: "dict[str, pyfltr.state.only_failed.ToolTargets] | None",
     command: str,
 ) -> "pyfltr.state.only_failed.ToolTargets | None":
-    """`only_failed_targets` から当該ツールのToolTargetsを取り出す。
+    """`only_failed_targets` から対象のツールのToolTargetsを取り出す。
 
     `only_failed_targets` 自体が `None` の場合（`--only-failed` 未指定）は常に
     `None` を返し、`execute_command` で既定の `all_files` に委ねる。指定あり時は
-    dictから当該コマンドのエントリを返す（存在しない場合はNone）。
+    dictから対象のコマンドのエントリを返す（存在しない場合はNone）。
     `cli` と `ui` の両経路から同一挙動で引ける共通ヘルパー。
     """
     if only_failed_targets is None:
@@ -55,7 +55,7 @@ def expand_all_files(
     走査効率を上げる補助手段に留める。`None` の場合は除外なし。
 
     シンボリックリンクディレクトリは原則として配下を辿る。
-    `respect-gitignore=True` 下では走査前に当該ディレクトリ自身の `is_symlink()` を判定し、
+    `respect-gitignore=True` 下では走査前に対象のディレクトリ自身の `is_symlink()` を判定し、
     末尾 `/` を付けない単一パス指定で `git check-ignore` へ問い合わせ、ignoredなら配下を辿らない。
     早期スキップが機能するのは `.gitignore` のファイル形式パターン（`name`・`*pattern*` 等）に
     限定される。`link/` 形式のディレクトリ専用パターンは `git check-ignore` がシンボリックリンク越え

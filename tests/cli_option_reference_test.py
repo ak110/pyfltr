@@ -1,7 +1,7 @@
 """コマンドラインオプション名の参照が実装の定義と一致することを検査する。
 
 実装に定義が無いオプション名を説明文が参照していると、記述どおりに実行しても失敗する。
-argparse から実オプション名の集合を取得し、説明文中の参照が当該集合に含まれることを検査する。
+argparse から実オプション名の集合を取得し、説明文中の参照が対象の集合に含まれることを検査する。
 """
 
 import argparse
@@ -74,7 +74,7 @@ def _get_known_options() -> frozenset[str]:
 
 
 def _command_path(value: str) -> tuple[tuple[str, ...], str] | None:
-    """CLI参照からコマンド階層と当該階層以降の文字列を返す。"""
+    """CLI参照からコマンド階層と対象の階層以降の文字列を返す。"""
     stripped = value.strip()
     pyfltr_match = re.search(r"\bpyfltr\s+", stripped)
     commandline = stripped[pyfltr_match.end() :] if pyfltr_match else stripped

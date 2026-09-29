@@ -97,7 +97,7 @@ def test_subproject_overrides_start_cwd(
     tmp_path: pathlib.Path,
     captured_calls: list[_CapturedCall],
 ) -> None:
-    """サブプロジェクト実行は当該サブプロジェクトcwdを使う。"""
+    """サブプロジェクト実行は対象のサブプロジェクトcwdを使う。"""
     start_cwd = tmp_path / "repo"
     subproject_cwd = start_cwd / "package"
     subproject_cwd.mkdir(parents=True)

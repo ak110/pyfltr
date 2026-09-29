@@ -97,7 +97,7 @@ jobs:
           # restore-keysで直近のキャッシュを初期値として復元し、ジョブ中に変化した/cacheの内容を
           # 新しいキーで保存して次の実行へ引き継ぐ。
           # run_idは再実行（Re-run）で変化しないため、run_attemptを併記する。
-          # run_idだけでは再実行時にキーが完全一致し、当該再実行中に変化した/cacheの内容が保存されない。
+          # run_idだけでは再実行時にキーが完全一致し、対象の再実行中に変化した/cacheの内容が保存されない。
           key: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}-
 
@@ -105,7 +105,7 @@ jobs:
         run: uv sync --all-groups --all-extras
 
       # 静的解析はPythonの版により結果が変わり得るが、対応版ごとに重複実行すると所要時間が版数に比例して増える。
-      # 利用比重が最も高い最新安定版（3.14）を基準とし、当該版だけで全検査を実行する。
+      # 利用比重が最も高い最新安定版（3.14）を基準とし、対象の版だけで全検査を実行する。
       # 他の版は`tokenize`・`ast`等の版差を検証するpytestだけを実行する。
       # 対応版を追加・変更する場合は、全検査を実行する版が1つだけになるよう両ステップの条件を更新する。
       - name: Test with pyfltr (全検査)

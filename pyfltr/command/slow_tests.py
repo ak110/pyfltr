@@ -42,7 +42,7 @@ class SlowTest:
     pytestは`setup` / `call` / `teardown`、vitestは区間の区別を持たないため`test`を用いる。
     """
     seconds: float
-    """当該区間の所要秒数。"""
+    """対象の区間の所要秒数。"""
 
     def to_dict(self) -> dict[str, typing.Any]:
         """JSON化可能なdictへ変換する。"""
@@ -58,7 +58,7 @@ def parse_pytest_durations(output: str) -> list[SlowTest]:
     """pytest出力からdurations節を抽出する。
 
     見出し行（`===== slowest N durations =====`または`===== slowest durations =====`）以降の
-    duration行を収集し、次の区切り行で当該節の収集を終える。
+    duration行を収集し、次の区切り行で対象の節の収集を終える。
     捕捉出力へ子pytestのdurations節が混入する場合は、親pytestが末尾に出力する最後の節を採用する。
     節が無い場合・閾値未満で項目が隠された場合（`(N durations < Xs hidden.)`）は空リストを返す。
     行書式はpytestの`_pytest/runner.py`が生成する`f"{duration:02.2f}s {when:<8} {nodeid}"`に対応する。

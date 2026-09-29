@@ -48,7 +48,7 @@ def execute_textlint_fix(
     がクラッシュする。また `textlint --fix` の既定出力 （stylish） は本ツールの
     パーサーで解析できないため、残存違反を取得するには別途lint実行を行う必要がある。
     lint段の出力形式は`textlint-lint-args`の既定値が`compact`を指定するが、
-    既定で有効な`textlint-json`が`--format json`を注入して当該指定を除去するため、
+    既定で有効な`textlint-json`が`--format json`を注入して対象の指定を除去するため、
     既定構成ではJSONとなる。いずれの形式もパーサーが解析する。
 
     上記を両立させるため本関数では次の2段階を直列実行する。

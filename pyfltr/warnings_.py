@@ -126,7 +126,7 @@ def emit_warning(source: str, message: str, *, exc_info: bool = False, hint: str
     `exc_info=True`を指定すると`traceback.format_exc()`の内容を`message`末尾に
     連結して蓄積する（JSONLなどloggerを通さない経路でもスタックトレースを参照できるように）。
 
-    `hint`は当該警告に固有の対処手順（例: 「識別子をバックティックで囲む」）を
+    `hint`は対象の警告に固有の対処手順（例: 「識別子をバックティックで囲む」）を
     短く示す文字列。指定時のみ蓄積dictに`hint`キーとして含める。
     `summary.guidance`は失敗時の包括的な案内を担うのに対し、本フィールドは
     個別warning単位のヒントとして分離する。
@@ -187,7 +187,7 @@ def add_filtered_direct_file(path: str, *, reason: FilteredReason) -> None:
 def filtered_direct_files(*, reason: FilteredReason | None = None) -> list[str]:
     """蓄積された直接指定フィルタ対象ファイル一覧の浅いコピーを返す。
 
-    `reason`を指定すると当該理由のものだけに限定する。
+    `reason`を指定すると対象の理由のものだけに限定する。
     未指定時は理由を問わず全件を順序通りに返す。
     """
     if reason is None:

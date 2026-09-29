@@ -251,7 +251,7 @@ def collect_tool_summaries(
 ) -> list[dict[str, typing.Any]]:
     """`tools/`配下から各ツールの要約（status / diagnostics / elapsed / slow_tests）を集める。
 
-    `elapsed`は当該ツールの実行に要した秒数である。実行アーカイブはキャッシュヒットした
+    `elapsed`は対象のツールの実行に要した秒数である。実行アーカイブはキャッシュヒットした
     ツールを書き込まないため（`pipeline`・`ui`が`not result.cached`で分岐する）、
     本関数の戻り値へキャッシュ由来の値が現れることはない。復元値と実測値の区別が要る
     JSONL経路では`cached_elapsed`へのキー名切替で表現する。
@@ -318,7 +318,7 @@ def _show_tools_detail(
         except FileNotFoundError:
             sys.stderr.write(
                 f"エラー: run {run_id} にツール {tool!r} の結果が保存されていません。"
-                f"`pyfltr show-run {run_id}` で当該runに保存されたツール一覧を確認できます\n"
+                f"`pyfltr show-run {run_id}` でrun {run_id}に保存されたツール一覧を確認できます\n"
             )
             return 1
         entries.append((tool, tool_meta, diagnostics))
@@ -417,7 +417,7 @@ def _show_tool_output(
     except FileNotFoundError:
         sys.stderr.write(
             f"エラー: run {run_id} にツール {tool!r} の結果が保存されていません。"
-            f"`pyfltr show-run {run_id}` で当該runに保存されたツール一覧を確認できます\n"
+            f"`pyfltr show-run {run_id}` でrun {run_id}に保存されたツール一覧を確認できます\n"
         )
         return 1
     if output_format == "text":

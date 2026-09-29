@@ -26,10 +26,10 @@ preset = "latest"
 ```
 
 `preset = "latest"`はpyfltrの更新に伴って対象ツールの追加や既定値の変更が予告なく入ることがある。
-破壊的変更を避ける場合は日付指定プリセットで固定すると、当該日時点の構成をそのまま維持できる。
+破壊的変更を避ける場合は日付指定プリセットで固定すると、指定した日時点の構成をそのまま維持できる。
 
 プリセットで`true`になっているツールも、次節の言語カテゴリキーが`true`の言語分だけが実際に実行される。
-`preset = "latest"` + `{language} = true`だけで当該言語の推奨ツール一式が有効化される運用を意図している。
+`preset = "latest"` + `{language} = true`だけで、その言語の推奨ツール一式が有効化される運用を意図している。
 
 ### preset "20260926"
 
@@ -97,10 +97,10 @@ Rust（`rust = true`で通過）
 ## 言語カテゴリによる有効化の限定
 
 各言語カテゴリに属するツールの既定値は無効（opt-in）。
-プロジェクトで利用する言語カテゴリキーを`true`にすると、プリセットで推奨された当該言語ツールが有効化される。
+プロジェクトで利用する言語カテゴリキーを`true`にすると、プリセットで推奨されたその言語のツールが有効化される。
 カテゴリキーを`false`（既定）にすると、プリセットで`true`になっていても`false`に上書きされる。
 
-`preset = "latest"` + `{language} = true`の組み合わせだけで当該言語の推奨ツール一式が有効化される。
+`preset = "latest"` + `{language} = true`の組み合わせだけで、その言語の推奨ツール一式が有効化される。
 
 個別のツール単位では`{command} = true`での有効化・`{command} = false`での無効化も可能で、
 適用優先度は`preset < 言語カテゴリによる限定 < 個別設定`。
@@ -181,7 +181,7 @@ pyfltr config list --all
 - jobs : linters/testersの最大並列数（既定: 8。CLIの`-j`オプションでも指定可能）。モノレポ検出時は同一ツールのサブプロジェクト実行を同時に開始する件数の算出にも使われる
 - command-timeout : コマンド単体のタイムアウト秒数のグローバル既定値（既定: 600秒。0で無効化）
 - {command}-timeout : per-toolのタイムアウト秒数。未指定時は`command-timeout`のグローバル値にフォールバックする。
-  正の秒数を指定すると当該コマンドのみその値で上書きし、`0`を指定すると当該コマンドのtimeoutのみ無効化する。
+  正の秒数を指定すると指定したコマンドのみその値で上書きし、`0`を指定すると同じコマンドのtimeoutのみ無効化する。
   内部的には負値を「未指定」のsentinelとして扱うため、誤って負値を設定した場合もグローバル値へフォールバックする
 - retry-on-oom : LinuxのOOM killer起因でツールが強制終了された場合に自動リトライするか（既定: `true`。後述）
 - retry-max-attempts : OOM検知時の最大リトライ回数（既定: `1`。`0`でリトライ無効。後述）
@@ -214,7 +214,7 @@ pyfltr config list --all
 - subproject-use-gitignore : モノレポ検出で`.gitignore`を尊重するか否か（既定: `true`）。
   `.gitignore`の対象と判定された候補は検出集合から除外する
 - subproject-uv-workspace : `[tool.uv.workspace] members`を読み取ってサブプロジェクトに含めるか否か（既定: `true`）
-- {command}-subproject-aware : 当該ツールをサブプロジェクト単位で分割実行するか否か（per-tool）。
+- {command}-subproject-aware : 指定したツールをサブプロジェクト単位で分割実行するか否か（per-tool）。
   既定値はビルトイン定義に従う。
   `mypy`・`pylint`・`pytest`・`textlint`等は`true`、`typos`・`shellcheck`・`shfmt`・`pre-commit`・`prek`等は`false`
 
@@ -355,7 +355,7 @@ CLIオプション`-j`でも指定でき、`pyproject.toml`より優先される
 プロセスの起動やファイルの読み書きで待つ時間があるためである。
 
 モノレポ構成では、同一ツールをサブプロジェクトごとに実行する分も`jobs`から並列化する。
-`jobs`を当該ツール自身のワーカー数の推定値で割った件数を同時に開始する。
+`jobs`をそのツール自身のワーカー数の推定値で割った件数を同時に開始する。
 推定には`pytest-args`・`pylint-args`などの`-n`・`--jobs`指定と、各サブプロジェクトの`pyproject.toml`の
 `[tool.pytest.ini_options]`の`addopts`・`[tool.pylint]`の`jobs`を用いる。
 `jobs = 8`のもとで`pytest`へ`-n 4`を指定している場合は2件ずつ実行され、

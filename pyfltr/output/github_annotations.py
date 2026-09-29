@@ -36,7 +36,7 @@ def build_workflow_command(error: pyfltr.command.error_parser.ErrorLocation) -> 
     severityが`error`→`::error`、`warning`→`::warning`、`info`→
     `::notice`。未設定は`::warning`にフォールバックする。
     プロパティは`file` / `line` / `endLine` / `col` / `endColumn` / `title`の順に積む。
-    終了位置は診断が保持する場合のみ出力し、無い場合は当該プロパティを省略する。
+    終了位置は診断が保持する場合のみ出力し、無い場合は対象のプロパティを省略する。
     列は1起点・終端排他の値をそのまま渡す。GitHubの仕様は列の起点だけを
     "starting at 1"と定め、終端の包含・非包含を明示しないため、SARIF出力と同じ
     保持値を無変換で渡して形式間の突合を成立させる。

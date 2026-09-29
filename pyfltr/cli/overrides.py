@@ -32,7 +32,7 @@ def apply_cli_overrides(
     `--no-fix`・`--ci` は `config.values` ではなく `args` 側に作用するためここでは扱わない。
 
     `--enable` と `--disable` が同一コマンドに指定された場合は `--enable` を優先する。
-    未知のコマンド名を指定された場合は当該指定を無視する。
+    未知のコマンド名を指定された場合は対象の指定を無視する。
 
     Args:
         config: 上書き対象のconfig。`config.values`を直接書き換える。

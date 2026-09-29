@@ -93,7 +93,7 @@ def test_unmet_commands_warning_emitted_when_commands_explicit(monkeypatch, caps
             "source": "commands",
             "msg": "--commandsで指定されたが有効化されていないため未実行のコマンドがあります: textlint",
             "hint": (
-                "--enable=textlint または pyproject.toml [tool.pyfltr] で当該コマンドを true に設定して有効化してください。"
+                "--enable=textlint または pyproject.toml [tool.pyfltr] で指定したコマンドを true に設定して有効化してください。"
             ),
         }
     ]

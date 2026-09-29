@@ -87,7 +87,7 @@ def select_output(
 
 
 def full_output(matches: list[dict[str, typing.Any]]) -> Selection:
-    """明示指定又は通常CLI向けの全件出力を返す。"""
+    """明示指定または通常CLI向けの全件出力を返す。"""
     return _selection("full", matches, [], _group_matches(matches))
 
 

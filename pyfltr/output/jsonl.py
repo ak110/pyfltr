@@ -853,7 +853,7 @@ def _build_summary_record(
     `missing_targets`が非空のとき、直接指定されたが存在しないファイル一覧を
     `missing_targets`キーに埋め込む（exclude/.gitignore全除外と原因を区別するため
     別フィールドで併存させる）。
-    `warning_count`が1以上のとき、当該実行で出力した`kind:"warning"`レコードの件数を
+    `warning_count`が1以上のとき、対象の実行で出力した`kind:"warning"`レコードの件数を
     `warnings`キーに埋め込む。同キーは実行時警告の件数であり、
     `commands_summary.needs_action.warning`（`{command}-severity`によるコマンド結果の
     格下げ件数）とは集計対象が異なる。呼び出し側はwarningレコードの生成元と同一の引数から
@@ -868,7 +868,7 @@ def _build_summary_record(
       警告件数 → 解釈支援（次に取るべき行動）→ 自動適用結果 → 除外検知 → 不在検知の流れに揃える。
     - コマンド総数`total`は`commands_summary`配下の末尾（`no_issues` / `needs_action`の後）に置く。
       カテゴリ集計を読んでから総数を確認できる順序とするため。
-    - 指摘総件数`diagnostics`はコマンド単位の集計ではないため`commands_summary`の外に置く。
+    - 指摘総件数`diagnostics`はコマンド単位の集計ではないため`commands_summary`には含めない。
       集計の意味分類が混ざらないようにするため。
     - `applied_fixes`はfixステージ・formatterステージで実際に内容変化したファイルパスを
       全コマンドにわたってユニオンしソートした一覧。変化なしの場合は省略する。
@@ -944,7 +944,7 @@ def _truncate_message(
     末尾側にエラー詳細を出力するツール（pytest・mypy等）の双方を取りこぼさないことを意図する。
     `max_chars`を`head : tail = 1 : 4`（`_DEFAULT_HEAD_RATIO`）で配分し、
     `max_lines`は末尾側に対してのみ適用する（先頭側は文字数で十分に制限されるため）。
-    `max_lines`/`max_chars`が0以下の場合は当該軸の切り詰めを行わない。
+    `max_lines`/`max_chars`が0以下の場合は対象の軸の切り詰めを行わない。
     """
     if not output:
         return "", False, 0, 0

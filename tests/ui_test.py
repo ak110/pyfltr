@@ -259,8 +259,8 @@ def test_tester_failure_writes_raw_output_in_addition_to_diagnostics(monkeypatch
 
         同期呼び出しへ差し替えるだけではコルーチンがawaitされないまま破棄され、
         `RuntimeWarning: coroutine ... was never awaited`となる。
-        本テストで当該の経路を通るのは`UIApp._update_errors_tab`である。
-        検証対象は`_write_log`への書き込み内容であり当該コルーチンの戻り値を
+        本テストでこの経路を通るのは`UIApp._update_errors_tab`である。
+        検証対象は`_write_log`への書き込み内容であり対象のコルーチンの戻り値を
         参照しないため、生成されたコルーチンを閉じて破棄する。
         `inspect.isawaitable`の判定対象は`Awaitable`であり`close`を持たない型を含むため、
         型検査を通過しない。`close`を持つ`Coroutine`を判定対象とする

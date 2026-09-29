@@ -171,7 +171,7 @@ def test_collect_tool_summaries_includes_elapsed(tmp_path: pathlib.Path) -> None
 
 
 def test_collect_tool_summaries_omits_slow_tests_when_absent(tmp_path: pathlib.Path) -> None:
-    """slow_testsを持たないtool.jsonでは当該キーを付けない。"""
+    """slow_testsを持たないtool.jsonでは対象のキーを付けない。"""
     store = pyfltr.state.archive.ArchiveStore(cache_root=tmp_path)
     run_id = store.start_run(commands=["pytest"])
     store.write_tool_result(run_id, _make_result("pytest", returncode=0, command_type="tester"))
@@ -879,7 +879,7 @@ async def test_tool_run_returns_retry_commands(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.asyncio
 async def test_tool_run_reports_disabled_command(tmp_path: pathlib.Path) -> None:
-    """設定で無効化された検査を指定した実行は、当該検査名と理由をskipped_reasonへ返す。"""
+    """設定で無効化された検査を指定した実行は、対象の検査名と理由をskipped_reasonへ返す。"""
     sample = tmp_path / "input.txt"
     sample.write_text("hello\n", encoding="utf-8")
 

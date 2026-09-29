@@ -556,7 +556,7 @@ def test_replace_list_history_returns_saved_id(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """履歴を1件保存後、`--list-history`が当該replace_idを返す。"""
+    """履歴を1件保存後、`--list-history`が対象のreplace_idを返す。"""
     target = tmp_path / "a.txt"
     target.write_text("foo bar\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
@@ -605,7 +605,7 @@ def test_replace_show_history_returns_meta(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """履歴を1件保存後、`--show-history <id>`が当該履歴のmeta情報を返す。"""
+    """履歴を1件保存後、`--show-history <id>`が対象の履歴のmeta情報を返す。"""
     target = tmp_path / "a.txt"
     target.write_text("foo bar\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
@@ -699,7 +699,7 @@ def test_replace_jsonl_summary_omits_warnings_when_none(
     target = tmp_path / "a.txt"
     target.write_text("foo bar\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
-    # 一時ディレクトリはgit管理外のため、`.gitignore`判定を無効化して当該警告の発生を避ける。
+    # 一時ディレクトリはgit管理外のため、`.gitignore`判定を無効化して対象の警告の発生を避ける。
     rc = pyfltr.cli.main.run(["replace", "foo", "baz", "--dry-run", "--output-format=jsonl", "--no-gitignore", str(target)])
     assert rc == 0
     records = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]

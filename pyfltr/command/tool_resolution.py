@@ -80,7 +80,7 @@ def format_tool_resolution_failure(
         )
     # ネイティブ系（mise経路の事前チェック失敗）は`ensure_mise_available`が
     # mise stderrとhint文を改行区切りで連結した文面を例外引数に保持する契約。
-    # 当該複数行文面は素通し採用し、mise stderrを欠落させない（runner.pyのmodule docstring参照）。
+    # 対象の複数行文面は素通し採用し、mise stderrを欠落させない（runner.pyのmodule docstring参照）。
     # `mise trust`失敗時の単行文面（`mise trust --yes --all: <stderr>`）は本ヘルパーの
     # 末尾分岐の汎用文面組み立てを通過させ、`mise trust`プレフィクスで原因種別を利用者へ伝える。
     if "\n" in raw_identifier:
@@ -150,13 +150,14 @@ def maybe_emit_uv_missing_tool_warning(result: CommandResult) -> None:
     else:
         hint = (
             '`uv add --dev "pyfltr[python]"` でPython系ツール一式をdev依存に追加してください。'
-            f' 当該ツールを利用者プロジェクトで使わない場合は `{result.command}-runner = "direct"` への切り替えで回避できます。'
+            f" {result.command}を利用者プロジェクトで使わない場合は"
+            f' `{result.command}-runner = "direct"` への切り替えで回避できます。'
         )
     pyfltr.warnings_.emit_warning(
         source="tool-resolve",
         message=(
             f"{result.command}: {result.effective_runner}経路でのツール起動に失敗しました。"
-            "利用者プロジェクトに当該ツールが未登録の可能性があります。"
+            "利用者プロジェクトにこのツールが未登録の可能性があります。"
         ),
         hint=hint,
     )

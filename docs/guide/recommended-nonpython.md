@@ -95,7 +95,7 @@ extend-exclude = [
 公開直後のパッケージの取り込みを遅らせ、サプライチェーン汚染のリスクを下げる目的で指定する。
 `"1 day"`は固定日付ではなく実行時刻からの相対値であるため、解決結果は実行日によって変わる。
 このため直近に公開された緊急の修正版は、指定した期間が経過するまで取り込めない。
-即時に取り込む必要がある場合は、当該の解決に限りコマンドラインで
+即時に取り込む必要がある場合は、そのパッケージの解決に限りコマンドラインで
 `--exclude-newer="0 days"`を指定するか、`--exclude-newer-package <パッケージ>=<値>`で個別に緩和する。
 コマンドラインと`pyproject.toml`の`exclude-newer-package`はいずれもパッケージごとの値に日付または`false`を受け取る。
 一時的な緩和では、コマンドラインで日付を指定する運用が一般的である。
@@ -234,7 +234,7 @@ Pythonプロジェクトルート直下に`rust/<crate>/Cargo.toml`のようなR
 サブプロジェクト検出はマーカー（`pyproject.toml`・`Cargo.toml`・`*.csproj`・`*.sln`）の
 存在で判定する。
 そのため`Cargo.toml`単独ディレクトリもサブプロジェクトとして認識し、
-`cargo-clippy`・`cargo-check`・`cargo-test`・`cargo-deny`は当該ディレクトリを
+`cargo-clippy`・`cargo-check`・`cargo-test`・`cargo-deny`はそのディレクトリを
 cwdとして起動する。
 同じ仕組みはPythonルート＋`.NET`のプロジェクトファイル
 （`*.csproj`・`*.sln`）単独ディレクトリにも適用される。
@@ -265,7 +265,7 @@ PythonとRustの両方を対象にする`.pre-commit-config.yaml`の例を以下
 
 `package.json`は汎用ファイルのため単独ではサブプロジェクトとして検出しない。
 JS専用サブディレクトリを独立サブプロジェクトとして分離したい場合は、
-当該ディレクトリへ`pyproject.toml`（`[tool.pyfltr] javascript = true`等）を
+そのディレクトリへ`pyproject.toml`（`[tool.pyfltr] javascript = true`等）を
 追加配置する。
 
 ## .NETプロジェクト

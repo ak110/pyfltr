@@ -255,7 +255,7 @@ def test_grep_jsonl_summary_omits_warnings_when_none(
     """警告が1件も発生しない実行ではsummaryに`warnings`キーが現れない。"""
     _make_sample_files(tmp_path)
     monkeypatch.chdir(tmp_path)
-    # 一時ディレクトリはgit管理外のため、`.gitignore`判定を無効化して当該警告の発生を避ける。
+    # 一時ディレクトリはgit管理外のため、`.gitignore`判定を無効化して対象の警告の発生を避ける。
     rc = pyfltr.cli.main.run(["grep", "foo", "--output-format=jsonl", "--no-gitignore", str(tmp_path / "a.py")])
     assert rc == 0
     records = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]

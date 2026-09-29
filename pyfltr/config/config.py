@@ -294,7 +294,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # `Network error: HTTP/2 protocol error. Server may not support HTTP/2 properly`で
     # 失敗する事象を観測したため、既定値を4へ抑える。
     # 同時接続数が原因であるという一次資料上の裏付けは無いが、
-    # 同時接続数を抑えた実行では当該失敗が再現していないため緩和策として採用する。
+    # 同時接続数を抑えた実行では対象の失敗が再現していないため緩和策として採用する。
     # 利用者側の`{command}-extend-args`での個別対処を不要にする目的でpyfltr既定に置く。
     "lychee-max-concurrency": 4,
     # colloquial-check: 日本語文書の口語表現を検出する内蔵linter。既定で無効（opt-in）。
@@ -650,7 +650,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     # tool.message（生出力末尾）を切り詰める閾値。
     # 切り詰めが発生しても、アーカイブ書き込みに成功していれば全文は`tools/<tool>/output.log`
     # / `tools/<tool>/diagnostics.jsonl`から復元できる。アーカイブ無効時 / 初期化失敗時 /
-    # 当該ツールの書き込み失敗時は切り詰めをスキップしJSONLに全文を出力する。
+    # 対象のツールの書き込み失敗時は切り詰めをスキップしJSONLに全文を出力する。
     "jsonl-diagnostic-limit": 0,
     "jsonl-message-max-lines": 30,
     "jsonl-message-max-chars": 2000,
@@ -852,7 +852,7 @@ _register_command_dynamic_defaults(DEFAULT_CONFIG, BUILTIN_COMMANDS)
 
 # per-tool `{command}-timeout` キーをビルトインコマンドぶん追加する。
 # 既定値 `-1` は「未設定」を意味するsentinelで、解決時にグローバル `command-timeout` 値へフォールバックする。
-# `0` 以下を明示指定した場合は当該コマンドのtimeoutを無効化する。
+# `0` 以下を明示指定した場合は対象のコマンドのtimeoutを無効化する。
 # `>0` の場合は秒数を指定する。`per-tool` 値が `-1` 以外なら本値を優先する。
 # 命名は既存の `{command}-args` / `{command}-fast` 系と同パターンに揃える。
 # 別のper-toolキーで「未指定でグローバル値へフォールバック」を表現する場合も同じ `-1`
@@ -945,8 +945,8 @@ def resolve_command_timeout(values: dict[str, typing.Any], command: str) -> floa
 
     - `-1`（既定sentinel）または負値: 「未設定」を意味し、グローバル `command-timeout`
       の値へフォールバックする。利用者向けドキュメントでは「未指定」と表現する
-    - `0`: 当該per-toolのtimeoutを明示的に無効化する（戻り値`None`）
-    - 正の整数: 当該秒数で監視する
+    - `0`: 対象のper-toolのtimeoutを明示的に無効化する（戻り値`None`）
+    - 正の整数: 対象の秒数で監視する
 
     グローバル`command-timeout`は次の通り。
 
@@ -954,7 +954,7 @@ def resolve_command_timeout(values: dict[str, typing.Any], command: str) -> floa
     - 正の整数: per-tool未設定時の既定秒数として採用される
 
     `None` を返した場合 `pyfltr.command.process.run_subprocess` はtimeout監視を行わない。
-    `float` を返した場合は当該秒数で監視する。
+    `float` を返した場合は対象の秒数で監視する。
     """
     per_tool_raw = values.get(f"{command}-timeout", -1)
     try:
@@ -1173,8 +1173,8 @@ def load_config(
     検証の例外送出ポリシー:
       - 設定ファイル経由の検証（未知キー・型不一致・値不正・削除済みコマンド向けキー・
         preset値不正・カスタムコマンド定義の各項目・言語カテゴリキーの真偽値以外）は
-        `pyfltr.warnings_.emit_warning(source="config")`で警告し、当該キーは無視して
-        既定値を維持する。カスタムコマンド定義が不正なら当該定義の登録自体をスキップする。
+        `pyfltr.warnings_.emit_warning(source="config")`で警告し、対象のキーは無視して
+        既定値を維持する。カスタムコマンド定義が不正なら対象の定義の登録自体をスキップする。
         `custom-commands`配下がテーブル以外の場合はカスタムコマンド登録処理全体をスキップする。
         由来（global / project）による差は無く、両方に対し同じ警告経路を適用する。
         ただし`suppressed_warning_entries`と本ロード自身の由来判定の両方が
@@ -1243,7 +1243,7 @@ def load_config(
     emit_config_warning = _make_config_warning_emitter(effective_suppressed_entries, warned_entries)
 
     # archive/cache系がproject側に書かれていた場合の警告。
-    # global側にも当該キーがある場合のみ警告対象（global側に無ければproject値が
+    # global側にも対象のキーがある場合のみ警告対象（global側に無ければproject値が
     # そのまま採用されるので警告不要）。
     priority_keys_overridden_by_global = sorted(
         key
@@ -1473,7 +1473,7 @@ def _normalize_config_values(
 def _validate_config(config: Config, emit_config_warning: _ConfigWarningEmitter) -> None:
     """Runner / severity / hintsのバリデーションを行う。
 
-    値が不正な場合は警告を発行し、当該キーの値を既定値（`DEFAULT_CONFIG`）に
+    値が不正な場合は警告を発行し、対象のキーの値を既定値（`DEFAULT_CONFIG`）に
     巻き戻して処理を続行する。複数バージョン混在時に新しい値が旧バージョンへ
     波及してもパイプライン全体は停止しない方針。
     """
@@ -1581,7 +1581,7 @@ def _register_custom_command(
 ) -> None:
     """カスタムコマンドをConfigに登録する。
 
-    定義のいずれかが不正と判定された場合は警告を発行して当該カスタムコマンドの登録自体を
+    定義のいずれかが不正と判定された場合は警告を発行して対象のカスタムコマンドの登録自体を
     スキップする。値の部分採用（一部のみ反映）は行わない。
     検証はすべての項目を `config.commands` / `config.values` 更新前に完了させる。
     """
@@ -1786,7 +1786,7 @@ def _validate_targets_value(
     """Targets / extend-targets の値をバリデーション。
 
     値が不正な場合は警告を発行し、`None`を返す。呼び出し側は`None`を受け取ったら
-    当該キーの反映をスキップして既定値（`CommandInfo.targets`）を維持する。
+    対象のキーの反映をスキップして既定値（`CommandInfo.targets`）を維持する。
     """
     if isinstance(value, str):
         return value
@@ -1806,7 +1806,7 @@ def is_command_enabled_anywhere(
 ) -> bool:
     """コマンドを実行対象として有効化するかを、起点と各サブプロジェクトの和集合で判定する。
 
-    起点 config で有効なら常に `True`。モノレポで当該コマンドが `subproject_aware=True` の場合に限り、
+    起点 config で有効なら常に `True`。モノレポで対象のコマンドが `subproject_aware=True` の場合に限り、
     いずれかのサブプロジェクト config で有効なら `True` を返す（親OFF・子ON対応）。
     `subproject_aware` 判定はツール特性を表すメタ設定のため起点 config で固定し、
     `subproject_aware=False` のリポジトリ単位ツールは起点設定のみで判定する。

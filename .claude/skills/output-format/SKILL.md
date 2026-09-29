@@ -34,17 +34,17 @@ JSONLの出力処理は`pyfltr/output/jsonl.py`の公開ヘルパー（`emit_rec
 - JSONL出力の`command.hints`は「対応する指摘やステータスが実際に該当するときのみ付与する」方針。
   指摘0件の実行で固定的なhintが残るとLLM入力のトークンを浪費するため、
   `aggregate_diagnostics`由来のhintは指摘ある時のみ集約し、
-  ツール固有のhint（`messages[].col`等）も付与条件に当該指摘・状態の存在を含める。
+  ツール固有のhint（`messages[].col`等）も付与条件に対象の指摘・状態の存在を含める。
   per-tool `{command}-hints`は指摘1件以上のときに限り`user.<n>`連番キーで追加する。
   複数の関連フィールドに同じ説明文が及ぶ場合は代表キー1つに統合し、キー数・文言数を抑える
 - 個別ルールの`command.hints`とパイプライン全体の`summary.guidance`は粒度・性質が異なるため命名を分ける
 - `command.hints`・`summary.guidance`はLLM入力前提のため英語で記述する。
   トークン効率と汎用性を優先し、「全文章は日本語」方針より優先する例外として扱う
 - JSONL `command.status` 語彙のSSOTは`pyfltr/command/core_.py`の`CommandResult.status`プロパティのdocstring。
-  新規status値追加時は当該docstringと判定分岐を併せて更新する
+  新規status値追加時は対象のdocstringと判定分岐を併せて更新する
 - `summary`レコードのフィールド順序仕様のSSOTは`pyfltr/output/jsonl.py`の`_build_summary_record`のdocstring
 - summary以外のレコードで通知する実行時の異常（`kind:"warning"`など）はsummary単体で存在を判別できるよう
-  条件付きキーで件数を露出する。件数は当該レコードの生成元と同一の入力から導出し、
+  条件付きキーで件数を露出する。件数は対象のレコードの生成元と同一の入力から導出し、
   summaryの値とレコード件数を構造的に一致させる
 - JSONL commandレコードの`effective_runner`・`runner_source`・`runner_fallback`は
  「期待した解決先と実際の解決先が乖離した場合」に限り出力する（fallback検出用）。

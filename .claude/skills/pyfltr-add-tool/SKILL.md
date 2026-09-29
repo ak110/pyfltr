@@ -50,7 +50,7 @@ description: >
   - 上記以外は既定値（素通し）のままとする
   - `allows_external_paths=False` を新規指定した場合は、
     `tests/external_paths_test.py::test_external_path_filtered_with_warning` の対象一覧へ
-    当該ツール名と境界確認用の対象パターンを1件追加する
+    対象のツール名と境界確認用の対象パターンを1件追加する
 - `error_parser` の正規表現には英単語を完全な形で書く
   - 単語の一部だけの文字列はtyposが既知の誤記と判定しpre-commitがブロックする
   - 前方一致が必要でも `(?:vulnerability|vulnerabilities)` のように単語を完結させる

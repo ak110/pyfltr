@@ -38,7 +38,7 @@ pyfltr本体の設定（`[tool.pyfltr]`）と、呼び出される各ツール�
       `# arid: disable`と`# arid: enable`で囲んで個別抑制する。
       disableリストからの`"duplicate-code"`の除去や、根拠を示さない閾値変更はしない
 - 実装コードとテストコードを分けず、対象全体を`min-lines = 10`でチェックする構成を第一推奨とする。
-  テストコードの定型的な重複が多く当該構成を維持できない場合は、
+  テストコードの定型的な重複が多くこの構成を維持できない場合は、
   [テストコードを別系統でチェックする妥協案](#arid-split)へ切り替える
 - ruffの `per-file-ignores`: テストコード（`**_test.py`）とpackage init（`__init__.py`）のdocstring要求を除外する実用的な調整
 
@@ -195,20 +195,20 @@ pytestは組み込みプラグインを読み込むかどうかをコマンド�
 `addopts`の評価より後に読み込まれるため、`addopts`へ書いた無効化でもオプションが定義されない。
 `cache` fixtureを要求するテストは、`addopts`へ書いた場合は`AttributeError`で、
 コマンドラインで渡した場合はfixture不存在で、いずれも失敗する。
-これらを利用する場合は当該指定を外す。
+これらを利用する場合は、この指定を外す。
 
 `filterwarnings`の3件はテストの資源解放の抜けを検出する指定である。
 ファイルやソケットを閉じないままGCされると`ResourceWarning`が、
 awaitされないまま破棄されたコルーチンでは`RuntimeWarning`が送出される。
 いずれもGC時の`__del__`内で送出されるため、エラー化した結果は例外として送出できない。
 pytestのunraisableexceptionプラグインがこれを`PytestUnraisableExceptionWarning`へ包み直す。
-テストの成否を決めるのは包み直した後の当該の警告であり、
+テストの成否を決めるのは包み直した後の`PytestUnraisableExceptionWarning`であり、
 `ResourceWarning`・`RuntimeWarning`だけをエラー化しても失敗しない。
 3件は相互に依存し、いずれを欠いても検出できない。
 全警告をエラー化する`filterwarnings = ["error"]`でも検出できるが、
 外部ライブラリの`DeprecationWarning`まで失敗へ変えるため、除外エントリの継続的な保守を要する。
 上記の3件へ限定すると、エラー化の対象は資源解放と非同期呼び出しの取りこぼしに限られる。
-依存ライブラリが同じカテゴリの警告を送出する場合は当該のテストも失敗する。
+依存ライブラリが同じカテゴリの警告を送出する場合は、その警告が出たテストも失敗する。
 導入時はまず全件を実行し、失敗するテストの警告の発生元を確認する。
 自プロジェクトの解放の抜けはテスト側の資源解放で是正し、
 依存ライブラリ由来のものは`ignore`エントリで個別に除外する。
@@ -236,7 +236,7 @@ pytestは`filterwarnings`を後勝ちで適用するため、`ignore`エント�
     - プロジェクト側に`pytest-timeout`・`pytest-xdist`を導入する
     （`uv add --dev pytest-timeout pytest-xdist`等）
 - `uvx`指定（per-tool直接指定でpytest用の独立環境が生成される場合）は、
-  当該環境側への`pytest-timeout`・`pytest-xdist`の導入が別途必要
+  その環境側への`pytest-timeout`・`pytest-xdist`の導入が別途必要
 - pytest-xdistの並列実行下では、ポート番号・一時ファイル名・グローバル状態の競合に注意する
     - 間欠失敗するテストは並列前提に修正する。
       切り分けのため一時的に並列を止める場合は`-n 0`で`addopts`の並列度を上書きする
@@ -284,7 +284,7 @@ min-lines = 10
 
 - カスタムコマンドは`uv run --frozen arid`でaridを起動するため、
   プロジェクトのuv環境へpyfltrをdev依存として導入しておく（`uv add --dev pyfltr`）。
-  `uvx pyfltr`単発で実行する構成では当該環境にaridが無く、カスタムコマンドの起動が失敗する
+  `uvx pyfltr`単発で実行する構成では、その環境にaridが無く、カスタムコマンドの起動が失敗する
 - `arid-exclude`とカスタムコマンドの`targets`はテストコードを`tests`直下へ置く構成を前提とする。
   別のディレクトリ構成では両方の値を合わせて変更する
 - 実行を2回へ分けるため、実装コードとテストコードにまたがる重複は検出されなくなる
@@ -294,9 +294,9 @@ min-lines = 10
   重複の位置はツールの出力そのものから読む
 - 前項の結果として、テストコード側の検出は構造化された診断にならない。
   終了コードは重複の検出を反映するためチェックの成否は変わらないが、
-  `--output-format=github-annotations`と`--output-format=sarif`には当該重複が現れず、
+  `--output-format=github-annotations`と`--output-format=sarif`にはこの重複が現れず、
   重複の位置はツール出力のテキストとしてのみ得られる。
-  出力が長い場合は当該テキストが末尾で切り詰められる。
+  出力が長い場合はそのテキストが末尾で切り詰められる。
   CIで重複の位置を機械的に扱う必要がある場合は、第一推奨の単一系統の構成を選ぶ
 - テストコード側の閾値15はR0801の閾値10より緩い。
   R0801が検出していたテストコードの重複のうち、10行以上15行未満のものは検出されなくなる
@@ -357,7 +357,7 @@ SARIF出力（`--output-format=sarif`）と`github/codeql-action/upload-sarif`�
 非公開リポジトリでは、追加費用なく有効化できるDependabot alertsを脆弱性通知の主な手段とする。
 そのうえでSARIFはファイルへ出力し、監査ツールの実行有無と検出結果の判別に用いる。
 `pyfltr`はツール実行の失敗をすべて終了コード1へ正規化するため、終了コードだけでは脆弱性の検出とツールの異常を区別できない。
-SARIF内に当該ツールの`runs`要素が存在するかで実行がスキップされたかを検出する。
+SARIF内にそのツールの`runs`要素が存在するかで実行がスキップされたかを検出する。
 終了コードが非0の場合に限り、`results`が空かどうかで脆弱性の検出とツールの異常を区別する。
 脆弱性を検出した場合はワークフローを失敗させて通知する。
 
@@ -420,7 +420,7 @@ repos:
 
 注意: `default_language_version`にはプロジェクトが要求するPythonバージョンを指定する。
 `python3`は実行環境が解決するPythonを使う指定であり、版を固定する場合は`python3.12`のように書く。
-当該の指定が適用されるのは`language: python`のフックに限る。
+この指定が適用されるのは`language: python`のフックに限る。
 上記の例では`pre-commit/pre-commit-hooks`側の2件が対象で、`language: system`のpyfltrは対象外である。
 PEP 695型パラメーター構文（`def f[T](): ...`）を使用するプロジェクトではPython 3.12以上が必要となる。
 指定した版が古いと、`check-ast`や`debug-statements`などPythonで実装されたフックがSyntaxErrorで失敗する。
@@ -428,7 +428,7 @@ PEP 695型パラメーター構文（`def f[T](): ...`）を使用するプロ�
 3.9・3.10では`SyntaxError: invalid syntax`となる。いずれも終了コード1で終わる。
 指定した版をprek・pre-commitのいずれも解決できない場合は、フックの実行前に
 `failed to find interpreter`で終了コード3となる。
-prekは当該版を自動取得するため、この形になるのはuv管理のPythonも見つからない場合に限る。
+prekは指定した版を自動取得するため、この形になるのはuv管理のPythonも見つからない場合に限る。
 
 ポイント。
 
@@ -441,7 +441,7 @@ prekは当該版を自動取得するため、この形になるのはuv管理�
     - formatterがファイルを修正しただけではフックを失敗と判定しない
 - `types_or`: 必要な種別を列挙する
     - markdownはtextlint / markdownlint、TOML（pyproject.toml）でuv-sort、YAMLはactionlint
-    - pre-commit・prekは`types_or`に一致するファイルがコミットに含まれない限りhook自体が起動されない。有効化したツールの対象種別が欠けていると、当該種別だけを変更したコミットでチェックが実行されない
+    - pre-commit・prekは`types_or`に一致するファイルがコミットに含まれない限りhook自体が起動されない。有効化したツールの対象種別が欠けていると、その種別だけを変更したコミットでチェックが実行されない
     - 有効化するツールを増やした場合は`types_or`の追随要否を確認する。`hadolint`（Dockerfile）・`shellcheck`・`shfmt`（シェル）などは`preset`に含まれないため、個別に有効化したときは対応する種別を追加する
 - `require_serial: true`: pyfltr自身が内部で並列化するため、pre-commit側での多重起動を抑止する
 
@@ -662,7 +662,7 @@ textlintで技術文書向けの複数プリセットと誤用語チェックを
 文書側で採る記法や自然な表現を誤って検出するもの。
 
 言い換えの適否を文脈ごとに判断するルールは、無効化せずseverityを`warning`へ下げて残す。
-textlintは警告だけの場合に終了コード0で終わり、pyfltrも当該ツールを`succeeded`として扱ったうえで指摘を表示する。
+textlintは警告だけの場合に終了コード0で終わり、pyfltrもtextlintを`succeeded`として扱ったうえで指摘を表示する。
 AIが書いた日本語に出やすい語を検出する`preset-ai-words-ja`がこれに当たる。
 
 ```yaml
@@ -829,17 +829,17 @@ jobs:
     - キーへ`github.run_id`と`github.run_attempt`を併記し、`restore-keys`で直近のキャッシュへフォールバックする
     - `github.run_id`はワークフローの再実行（Re-run）で変化しないため、`github.run_id`だけでは
       再実行時にキーが完全一致し、`actions/cache`が新しい内容を保存しない。
-      当該再実行中に変化した`/cache`の内容を後続の実行へ引き継ぐため、`github.run_attempt`を併記する
+      同じワークフローの再実行中に変化した`/cache`の内容を後続の実行へ引き継ぐため、`github.run_attempt`を併記する
     - 復元は`tar -xf`による展開で、既存ファイルを保持するオプションを指定しない。
       コンテナーイメージ側で更新されたツールも、旧キャッシュに同名パスがあれば上書きされる。
       上記のキー構成は実行ごとに新しいキーを生成するだけであり、
       イメージ同梱ツールの更新をCIで検知する用途には応えない
     - 固定キーからこの構成へ移行する場合、`restore-keys`は前方一致で判定するため
       移行前の固定キー（末尾のハイフンを持たない）には一致しない。
-      移行後、当該ブランチかつ同一`path`での初回実行だけがキャッシュ無しで実行される。
-      移行前の固定キーを`restore-keys`の2行目へ併記すると当該の1回を避けられる。
+      移行後、そのブランチかつ同一`path`での初回実行だけがキャッシュ無しで実行される。
+      移行前の固定キーを`restore-keys`の2行目へ併記すると、この初回のキャッシュ不使用を避けられる。
       ただし効果は移行時の1回に限られる。
-      当該prefixのキャッシュが保存された以降は1行目が一致するため、併記した行は使われない
+      このprefixのキャッシュが保存された後は1行目が一致するため、併記した行は使われない
     - 実行のたびに新しいエントリが増えるため、リポジトリのキャッシュ上限（既定10GB）と、
       7日間アクセスのないエントリが自動削除される仕様を前提に運用する
 - `pyfltr ci`: イメージ同梱のpyfltrをそのまま使う
@@ -1013,9 +1013,9 @@ pyfltr:
   Python以外のツールの扱いに注意する
     - `textlint`・`markdownlint`は言語カテゴリに属さず、`preset`を指定すると有効になる
     - `js-runner`の既定値`pnpx`は論理設定値であり、PATH上の`pnpm`を使う`pnpm dlx`形式へ解決される
-    - Markdownを含むリポジトリでは`pnpm`が見つからず、当該ツールは終了コード127の`failed`となる
+    - Markdownを含むリポジトリでは`pnpm`が見つからず、textlintは終了コード127の`failed`となる
     （解決失敗ではないため`{command}-severity = "warning"`で警告へ格下げできる）
-    - 当該イメージはmiseも含まないため、初期状態で有効な`lychee`はbin-runnerでの解決に失敗し
+    - このイメージはmiseも含まないため、初期状態で有効な`lychee`はbin-runnerでの解決に失敗し
     `resolution_failed`となる。解決失敗は`{command}-severity`による格下げの対象外のため、
     `markdownlint`・`textlint`を`false`にしてもジョブは`exit 1`のままとなる
     - `before_script`でNode.js・pnpm・miseを導入するか、`lychee`を含む該当ツールを`false`に設定する

@@ -196,7 +196,7 @@ commandレコードの`effective_runner` / `runner_source` / `runner_fallback`�
 「期待した解決先と実際の解決先が乖離した場合」のみ出力する（fallback検出用）。
 通常の解決では省略してLLM入力のトークン消費を抑え、通常時の解決状況の確認は
 `pyfltr command-info`の責務とする。
-利用者プロジェクトに当該ツールが未登録の状態で`uv run --frozen`が失敗した場合は、
+利用者プロジェクトに対象のツールが未登録の状態で`uv run --frozen`が失敗した場合は、
 `uv add --dev "pyfltr[python]"`を案内する警告を発行する。
 
 ### uvx既定のPython製ツール
@@ -230,7 +230,7 @@ python-runnerへ委譲せず`uvx <bin>`で別環境へ解決する。
   プロジェクトローカル設定・モジュール解決・lockfileをcwd起点で読むツール
  （Python系・JS系・Rust系・.NET系のlinter/testerなど）は既定`True`。
   リポジトリ単位で動作するツール（`typos`・`shellcheck`・`shfmt`・`pre-commit`・`prek`）は既定`False`
-- サブプロジェクト別の設定は当該ディレクトリで `load_config(config_dir=cwd)` を解決する。
+- サブプロジェクト別の設定は対象のディレクトリで `load_config(config_dir=cwd)` を解決する。
   `pyproject.toml`を持たないサブプロジェクト（`Cargo.toml`単独・`*.csproj`単独等）は
   `[tool.pyfltr]`の記述先が存在しない。
   この場合、最も近い祖先の`pyproject.toml`から継承元configを決定する。
@@ -247,9 +247,9 @@ python-runnerへ委譲せず`uvx <bin>`で別環境へ解決する。
   無登録csprojは独立サブプロジェクトとして残す。
   登録member・登録projectであっても、他のマーカー（`pyproject.toml`・
   登録csproj所在ディレクトリの`Cargo.toml`）を併有するディレクトリは、
-  当該ディレクトリ固有の設定を尊重するため除外せず独立サブプロジェクトとして残す
-  （この場合はworkspace・solutionルート側の一括実行と当該ディレクトリの個別実行が重複し得る。
-  重複を避けたい場合は当該ディレクトリへ他のマーカーを配置しない運用とする）
+  対象のディレクトリ固有の設定を尊重するため除外せず独立サブプロジェクトとして残す
+  （この場合はworkspace・solutionルート側の一括実行と対象のディレクトリの個別実行が重複し得る。
+  重複を避けたい場合は対象のディレクトリへ他のマーカーを配置しない運用とする）
 - 実行対象コマンドは起点と各サブプロジェクトの有効集合の和で確定する。
   `subproject_aware=True` のツールは起点またはいずれかのサブプロジェクトで有効なら対象に含め、
   ループ内で各サブプロジェクトの設定によりON/OFFを再判定する（親OFF・子ON、親ON・子OFFの両方向に対応）。
@@ -349,7 +349,7 @@ run_idにはULIDを採用する。タイムスタンプ由来で辞書順ソー�
 自動クリーンアップは世代数（`archive-max-runs`）・合計サイズ（`archive-max-size-mb`）・
 保存期間（`archive-max-age-days`）の3軸で制御する。
 いずれかの閾値を超過した時点で古い順（run_id昇順）に削除する。
-各設定値に0以下を指定すると当該軸の自動削除が無効化される。
+各設定値に0以下を指定すると対象の軸の自動削除が無効化される。
 
 書き込みはツール実行結果を受け取った直後の独立フックとして提供し、TUI・非TUI・
 JSONL stdout有無のいずれでも発生する。
@@ -430,7 +430,7 @@ GitHub Annotationsの各出力で返すファイルパスである。
 生成時は`pyfltr.paths.normalize_separators`または`pyfltr.paths.to_cwd_relative`を経由する。
 公開値を`str()`で直接文字列化しない。
 pyfltr自身が実装するツール（`colloquial-check`など）の標準出力に含めるファイル位置も、
-生成時点で同じ正規化を経由する。当該の生標準出力は`show-run --commands <name> --output`と
+生成時点で同じ正規化を経由する。これらのツールの生標準出力は`show-run --commands <name> --output`と
 MCPツール応答へ解析を経ずに載るため、`pyfltr.command.error_parser`の解析による
 正規化だけでは契約を満たさない。
 利用者や対話するエージェントが値を別の入力へ再利用するため、出力ごとの表現差は突合を失敗させる。
@@ -508,13 +508,13 @@ LLMが上から読み下したときに「結論→集計→指摘総数→警�
 
 ### retry_command
 
-当該ツール1件を再実行するshellコマンド文字列で、`command`レコードに埋め込む。
+対象のツール1件を再実行するshellコマンド文字列で、`command`レコードに埋め込む。
 構成要素は次の3点。
 
 - 起動プレフィックス: 親プロセスから`uv run pyfltr`/`uvx pyfltr`/`pyfltr`を判定する。
   Linuxでは`/proc/self/status`経由、macOS/Windowsではargv basenameへフォールバックする
-- ベーステンプレート: 起動時のargvをコピーし、`--commands`値を当該ツールへ差し替え、位置引数を除去する
-- ターゲット: 当該ツールで失敗したファイルを絶対パス化して末尾に追加する。
+- ベーステンプレート: 起動時のargvをコピーし、`--commands`値を対象のツールへ差し替え、位置引数を除去する
+- ターゲット: 対象のツールで失敗したファイルを絶対パス化して末尾に追加する。
   `--work-dir`適用前の元cwdを基準とすることで、再実行時のcwd二重解釈を避ける
 
 このため`pyfltr ci`失敗時の`retry_command`に`pyfltr run`が混入してfixステージが暴発することは無い。
@@ -554,7 +554,8 @@ fixステージと通常ステージを区別する必要があるため、判�
 診断位置の契約は`pyfltr.command.error_parser.ErrorLocation`が持つ。
 `line`と`col`は1起点、`end_line`は診断範囲の最終行を含む値、`end_col`は1起点・終端排他とする。
 ツールが返す終了位置は範囲末尾の次の位置を指す場合があり、範囲が行末で終わると次行が渡される。
-`_to_inclusive_end_position`が終了列の行頭判定で当該分を補正し、格納時点で最終行へ揃える。
+終了列が次行の先頭（1起点で1）を指し、終了行が開始行より後にある場合、
+`_to_inclusive_end_position`が終了行を直前の行へ補正し、診断範囲の最終行として格納する。
 補正前の終了列は次行上の値であり、直前行の終端列をツール出力から算出できないため、
 終了行を補正する場合は`end_col`を省略する。
 行と列を1つの関数が組で返すため、開始行の渡し違いで両者が別の行を指す事態が成立しない。
@@ -562,7 +563,7 @@ fixステージと通常ステージを区別する必要があるため、判�
 
 列を出力してよいかの判定は`pyfltr.output.positions.is_publishable_column`へ集約する。
 SARIFとGitHub Annotationsが同じ関数を用いるため、両形式の列ガードは常に一致する。
-Code Qualityは列を出力しないため当該関数を使わない。
+Code Qualityは列を出力しないため対象の関数を使わない。
 
 SARIFの`region`は正規化済みの開始位置に加え、診断が保持する終了行・終了列を
 `endLine`・`endColumn`へ反映する。列は1起点・終端排他とする。
@@ -680,7 +681,7 @@ MCPサーバー・`--only-failed`からも再利用する。
 - 直前runが存在しない、失敗ツールが無い、ターゲット交差が空となった場合はメッセージを出力して
   成功終了（rc=0）する
 - 位置引数`targets`との併用時は、直前runの失敗ファイル集合と`targets`を交差させる
-- モノレポ分割実行では、`ToolTargets.resolve_files()`が当該サブプロジェクトの対象ファイル一覧
+- モノレポ分割実行では、`ToolTargets.resolve_files()`が対象のサブプロジェクトの対象ファイル一覧
   （`ExecutionContext.all_files`）とも交差させる。起点cwd全体で抽出した失敗ファイル集合を
   所属しないサブプロジェクトへ渡さないため
 
@@ -697,7 +698,7 @@ MCPサーバー・`--only-failed`からも再利用する。
 - 値および`--only-failed`フラグは`retry_command`へ伝播させない
 
 `--from-run`値は`retry_command`へ伝播させない方針を採用する。
-生成する`retry_command`は「当該ツール＋失敗ファイル」に固定されているため、
+生成する`retry_command`は「対象のツール＋失敗ファイル」に固定されているため、
 アーカイブ参照フラグを引き継ぐと再実行時に古いrunを暗黙参照し続けるリスクがある。
 
 `--from-run`を`--only-failed`なしで単独利用可能にする案も却下した。
@@ -809,7 +810,7 @@ MCPクライアントからの並行ツール呼び出しでも実行起点を�
 `tool_run`は`run_pipeline`が`source="commands"`で発行した警告から理由を組み立てて同フィールドへ返す。
 無効化の判定は`run_pipeline`の`is_command_enabled_anywhere`と`compute_unmet_commands`が担い、MCP側では再判定しない。
 
-MCPツールは冒頭で`pyfltr.warnings_.clear()`を呼び、当該呼び出しが発行した警告だけを応答の入力にする。
+MCPツールは冒頭で`pyfltr.warnings_.clear()`を呼び、対象の呼び出しが発行した警告だけを応答の入力にする。
 `run_pipeline`自身は警告を初期化せず、初期化は`pyfltr/cli/pipeline.py`の`run()`内部実装が担うため、
 `run_pipeline`を直接呼ぶMCPの処理では呼び出し側が初期化する。
 

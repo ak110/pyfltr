@@ -32,7 +32,7 @@ def _assert_language_gate(
 
     `passed=True`: gate 開放側。`enabled`に含まれるツールが True、それ以外が False になることを確認する
     （個別 `{command} = true` が無い前提）。`passed=True` 時は `enabled` の指定が必須。
-    `passed=False`: gate 閉じ側。当該カテゴリの全ツールが False（preset 由来 True を
+    `passed=False`: gate 閉じ側。対象のカテゴリの全ツールが False（preset 由来 True を
     gate が上書きする）になっていることを確認する。`passed=False` 時は `enabled` を省略できる。
 
     個別 `{command} = true` / `{command} = false` の上書きがあるテストでは、
@@ -311,7 +311,7 @@ fast = true
     ],
 )
 def test_custom_command_invalid_definition_warns(tmp_path: pathlib.Path, name: str, definition: str, needle: str) -> None:
-    """カスタムコマンド定義の不正項目は警告を発行し、当該コマンドの登録自体をスキップする。"""
+    """カスタムコマンド定義の不正項目は警告を発行し、対象のコマンドの登録自体をスキップする。"""
     pyproject_content = f"[tool.pyfltr.custom-commands.{name}]\n{definition}"
     (tmp_path / "pyproject.toml").write_text(pyproject_content)
     config = pyfltr.config.config.load_config(config_dir=tmp_path)
@@ -450,7 +450,7 @@ path = "plain-linter"
 def test_custom_command_subproject_aware_default_registered(tmp_path: pathlib.Path) -> None:
     """カスタムコマンドにも`{name}-subproject-aware`の既定値が登録される。
 
-    登録されないと利用者が当該キーを指定したとき未知キー警告が出る。
+    登録されないと利用者が対象のキーを指定したとき未知キー警告が出る。
     """
     pyproject_content = """
 [tool.pyfltr.custom-commands.mylinter]
@@ -584,7 +584,7 @@ def test_language_category_non_bool_warns(tmp_path: pathlib.Path, category_key: 
     (tmp_path / "pyproject.toml").write_text(f'[tool.pyfltr]\npreset = "latest"\n{category_key} = "yes"\n')
     config = pyfltr.config.config.load_config(config_dir=tmp_path)
     assert _testconf.count_config_warnings(category_key) >= 1
-    # gate閉鎖が保たれ、当該カテゴリのツールはFalseのまま
+    # gate閉鎖が保たれ、対象のカテゴリのツールはFalseのまま
     _assert_language_gate(config, category_key, passed=False)
 
 
@@ -1023,7 +1023,7 @@ def test_removed_preset_20250710_warns(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.parametrize("removed_tool", ["pyupgrade", "autoflake", "isort", "black", "pflake8"])
 def test_removed_tool_config_key_warns(tmp_path: pathlib.Path, removed_tool: str) -> None:
-    """削除ツールの設定キーは警告を発行し、当該キーは無視されて既定値で続行する。"""
+    """削除ツールの設定キーは警告を発行し、対象のキーは無視されて既定値で続行する。"""
     (tmp_path / "pyproject.toml").write_text(f"[tool.pyfltr]\n{removed_tool} = true\n")
     config = pyfltr.config.config.load_config(config_dir=tmp_path)
     assert _testconf.count_config_warnings(removed_tool) >= 1
