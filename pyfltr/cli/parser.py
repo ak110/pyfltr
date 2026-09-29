@@ -221,8 +221,9 @@ def make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> "
         help="起点ディレクトリ外の絶対パスを検査対象へ含めます。"
         "既定で除外されるツール(markdownlint・textlint・prek 等)にも対象として渡します。"
         "--work-dir には検査設定を持つプロジェクトのルートを指定してください。"
-        "--work-dir は設定探索と相対パス解決の基準を兼ねるため、検査設定を持たないディレクトリを起点にすると、"
-        "適用される除外設定と検査対象の範囲が変わります。",
+        "--work-dir は設定探索・サブプロジェクト検出・起点外判定の基準となるため、"
+        "検査設定を持たないディレクトリを起点にすると、適用される除外設定と検査対象の範囲が変わります。"
+        "相対パスで渡した対象は --work-dir ではなく、コマンドを起動したディレクトリを基準に解決されます。",
     )
     common.add_argument(
         "--no-archive",
@@ -271,7 +272,9 @@ def make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> "
         "--work-dir",
         type=pathlib.Path,
         default=None,
-        help="実行前に作業ディレクトリを変更します(既定: カレントディレクトリ)。",
+        help="実行前に作業ディレクトリを変更します(既定: カレントディレクトリ)。"
+        "変更後のディレクトリが設定探索・サブプロジェクト検出・起点外判定の基準となります。"
+        "相対パスで渡した対象は、コマンドを起動したディレクトリを基準に解決されます。",
     )
     common.add_argument(
         "-j",
