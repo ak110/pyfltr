@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import json
 import pathlib
 import subprocess
 
@@ -668,3 +669,45 @@ def test_monorepo_external_only_warning_and_record_are_emitted_once(
     ]
     assert pyfltr.warnings_.filtered_direct_files(reason="external") == [normalized_external]
     assert len(messages) == 1
+
+
+@pytest.mark.parametrize("extra_targets", [[], ["no_such_test.py"]])
+def test_monorepo_mixed_targets_keep_succeeded_status(
+    tmp_path: pathlib.Path, mocker, capsys: pytest.CaptureFixture[str], extra_targets: list[str]
+) -> None:
+    """起点へ対象外のファイル、サブプロジェクトへ対象ファイルを渡しても、実行した成功をsucceededとして報告する。
+
+    起点（相対パス`.`）は報告順で先に並び、対象0件のskipped結果になる。
+    集約がこのskippedを代表値にすると、`command`レコードがskippedとなり、
+    存在しないパスを併せて渡した場合は全結果skipped扱いで終了コード1になる。
+    """
+    _write_pyproject(tmp_path, "root", pytest_on=True)
+    _write_pyproject(tmp_path / "pkg_b", "pkg_b", pytest_on=True)
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "index.md").write_text("# doc\n", encoding="utf-8")
+    (tmp_path / "pkg_b" / "b_test.py").write_text("def test_b(): pass\n", encoding="utf-8")
+
+    proc = subprocess.CompletedProcess(["pytest"], returncode=0, stdout="")
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
+
+    exit_code = pyfltr.cli.main.run(
+        [
+            "run",
+            "--work-dir",
+            str(tmp_path),
+            "--commands=pytest",
+            "--output-format=jsonl",
+            "--no-archive",
+            "--no-cache",
+            "--no-gitignore",
+            str(tmp_path / "docs" / "index.md"),
+            str(tmp_path / "pkg_b" / "b_test.py"),
+            *[str(tmp_path / name) for name in extra_targets],
+        ]
+    )
+
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    command = next(record for record in records if record["kind"] == "command" and record["command"] == "pytest")
+    assert _pytest_cwds(mock_run) == {(tmp_path / "pkg_b").resolve()}
+    assert command["status"] == "succeeded"
+    assert exit_code == 0

@@ -454,7 +454,11 @@ class CommandResult:
           `running` は heartbeat 由来の途中状態で `merge` の入力には来ない前提のため `status_weight` に含めない
         - `command_type`: 最も重い結果の値を採用（`status` と同じく `worst` 由来）。
           textlint fix のように同一コマンドが `linter` ・ `formatter` を切り替える結果を扱うため
-        - `returncode`: 最初に発生した非ゼロ値を採用
+        - `returncode`: 最初に発生した非ゼロ値を採用し、無ければ代表結果の値を採用する。
+          代表結果は `returncode` が `None` でない（実行済みの）最初の結果とし、全件 `None` なら先頭結果とする。
+          対象0件で起動しなかった結果（`returncode=None`）が先頭に並んでも、実行済みの成功を `skipped` へ化けさせないため
+        - `commandline` ・ `effective_runner` ・ `runner_source` ・ `runner_fallback`: 代表結果から引き継ぐ。
+          対象0件の結果はこれらを持たないため、実行した結果の起動コマンドとrunner情報を残す
         - `fixed_files`: 全実行の和集合
         - その他のフィールドは先頭結果から引き継ぐ
 
@@ -504,13 +508,13 @@ class CommandResult:
                     seen_fixed.add(fp)
                     merged_fixed_files.append(fp)
 
-        # returncode: 最初の非ゼロ値、無ければ最初の値
+        representative = next((r for r in results if r.returncode is not None), head)
         first_nonzero: int | None = None
         for r in results:
             if r.returncode is not None and r.returncode != 0:
                 first_nonzero = r.returncode
                 break
-        merged_returncode = first_nonzero if first_nonzero is not None else head.returncode
+        merged_returncode = first_nonzero if first_nonzero is not None else representative.returncode
 
         total_elapsed = sum(r.elapsed for r in results)
         total_files = sum(r.files for r in results)
@@ -526,7 +530,7 @@ class CommandResult:
         return cls(
             command=head.command,
             command_type=worst.command_type,
-            commandline=head.commandline,
+            commandline=representative.commandline,
             returncode=merged_returncode,
             formatter_failed=any_formatter_failed,
             files=total_files,
@@ -540,9 +544,9 @@ class CommandResult:
             cached_from=head.cached_from,
             fixed_files=merged_fixed_files,
             resolution_failed=any_resolution_failed,
-            effective_runner=head.effective_runner,
-            runner_source=head.runner_source,
-            runner_fallback=head.runner_fallback,
+            effective_runner=representative.effective_runner,
+            runner_source=representative.runner_source,
+            runner_fallback=representative.runner_fallback,
             timeout_exceeded=any_timeout,
             severity=head.severity,
             retry_count=total_retry_count,

@@ -250,3 +250,30 @@ def test_all_subprojects_are_dispatched(tmp_path: pathlib.Path, jobs: int) -> No
         disabled_skip_fn=_disabled_skip,
     )
     assert sorted(seen) == ["a", "b", "c"]
+
+
+def test_merge_prefers_executed_subproject_result(tmp_path: pathlib.Path) -> None:
+    """相対パスが先のサブプロジェクトが対象0件でも、後のサブプロジェクトの成功を集約結果へ残す。"""
+    ctx = _make_context(tmp_path, ["a", "b"], values={"jobs": 1})
+
+    def _dispatch(
+        command: str, args: argparse.Namespace, c: pyfltr.command.core_.ExecutionContext
+    ) -> pyfltr.command.core_.CommandResult:
+        del args
+        assert c.subproject_cwd is not None
+        if c.subproject_cwd.name == "a":
+            # 渡したファイルがツールの対象globに一致せず、起動しなかった結果を模す。
+            return pyfltr.command.core_.CommandResult(
+                command, "linter", [], returncode=None, formatter_failed=False, files=0, output="", elapsed=0.0
+            )
+        return _testconf.make_succeeded_result(command=command)
+
+    merged = pyfltr.command.subproject_loop.run_subproject_loop(
+        "ruff-check",
+        _testconf.make_args(),
+        ctx,
+        dispatch_fn=_dispatch,
+        disabled_skip_fn=_disabled_skip,
+    )
+    assert merged.status == "succeeded"
+    assert merged.returncode == 0

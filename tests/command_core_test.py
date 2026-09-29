@@ -2735,6 +2735,56 @@ def test_merge_limits_slow_tests_across_subprojects() -> None:
     assert [test.seconds for test in merged.slow_tests] == [6.0, 5.0, 4.0, 3.0, 2.0]
 
 
+def _make_merge_input(returncode: int | None) -> pyfltr.command.core_.CommandResult:
+    """`merge`へ渡すサブプロジェクト別の結果を生成する。
+
+    `returncode=None`は対象0件で起動しなかった結果（`dispatcher`の早期返却）を模し、
+    起動コマンドとrunner情報を持たない。それ以外は実行済みの結果として値を持つ。
+    """
+    executed = returncode is not None
+    return pyfltr.command.core_.CommandResult(
+        command="ruff-check",
+        command_type="linter",
+        commandline=["uv", "run", "ruff", "check"] if executed else [],
+        returncode=returncode,
+        formatter_failed=False,
+        files=1 if executed else 0,
+        output="",
+        elapsed=0.1,
+        effective_runner="uv" if executed else None,
+        runner_source="python-runner" if executed else None,
+        runner_fallback="uvx" if executed else None,
+    )
+
+
+@pytest.mark.parametrize(
+    ("returncodes", "expected_status", "expected_returncode"),
+    [
+        ([None, 0], "succeeded", 0),
+        ([0, None], "succeeded", 0),
+        ([None, 1], "failed", 1),
+        ([None, None], "skipped", None),
+    ],
+)
+def test_merge_status_prefers_executed_result(
+    returncodes: list[int | None], expected_status: str, expected_returncode: int | None
+) -> None:
+    """先頭が対象0件のskippedでも、実行済みの結果が集約後の`status`へ反映される。"""
+    merged = pyfltr.command.core_.CommandResult.merge([_make_merge_input(rc) for rc in returncodes])
+    assert merged.status == expected_status
+    assert merged.returncode == expected_returncode
+
+
+@pytest.mark.parametrize("executed_returncode", [0, 1])
+def test_merge_inherits_commandline_from_executed_result(executed_returncode: int) -> None:
+    """先頭が対象0件のskippedでも、起動コマンドとrunner情報は実行済みの結果から引き継ぐ。"""
+    merged = pyfltr.command.core_.CommandResult.merge([_make_merge_input(None), _make_merge_input(executed_returncode)])
+    assert merged.commandline == ["uv", "run", "ruff", "check"]
+    assert merged.effective_runner == "uv"
+    assert merged.runner_source == "python-runner"
+    assert merged.runner_fallback == "uvx"
+
+
 def test_execute_command_cache_hit_skips_subprocess(mocker, tmp_path: pathlib.Path) -> None:
     """キャッシュヒット時はsubprocess実行をスキップしてcached=Trueを返す。"""
     target = tmp_path / "foo.md"
