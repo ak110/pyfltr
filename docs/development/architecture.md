@@ -636,7 +636,7 @@ MCPの`run`は代わりに、応答の`warnings`へ含めた警告を配送済�
 stderrへ出力する警告は、`hint`を持つ場合に本文へ対処を連結した形で出力する。
 
 stdout占有が起きるのは`jsonl` / `sarif` / `code-quality`かつ`--output-file`未指定時のみ。
-MCP実行（`pyfltr.cli.mcp_server.run`）は同一プロセス内で`run_pipeline`を直接呼ぶ。
+MCPの`run`は要求固有のworkerプロセス内で`run_pipeline`を呼ぶ。
 `force_text_on_stderr=True`を渡してtextloggerをstderrに強制する。
 構造化出力は一時ファイル経由（FileHandler）となりstdoutを汚染しない。
 
@@ -788,15 +788,25 @@ MCP実行の`stdin/stdout`専有を守れる。
 
 ### `run`の実装の流れ
 
-内部で`argparse.Namespace`を構築し、`run_pipeline`を直接呼び出す。
+公開ツールは`pyfltr.cli.mcp_transport.isolate_tool`を経由し、要求ごとに
+`pyfltr.cli.mcp_worker`を起動する。同期のファイル走査やツール実行を受信ループから分離し、
+処理中もpingとキャンセル通知を受信できるようにする。
+警告収集とloggerの出力先もworker固有となり、他要求へ混入しない。
+キャンセル時は起動handleが返したworkerとその子孫だけを停止・回収してから取り消しを返す。
+ツールが別のprocess groupを作成するため、workerのgroupだけでなく子孫のPIDを照会して停止する。
+
+worker内の`run`は`argparse.Namespace`を構築し、`run_pipeline`を直接呼び出す。
 Namespaceの組み立てはMCP側に残す一方、サブコマンド既定値は`apply_subcommand_defaults`、
 `commands`の平坦化は`flatten_commands_arg`へ委ねる。
 未知コマンドの検証は`validate_commands`、CLI指定による設定上書きは`apply_cli_overrides`を使い、
 CLIと同じ解決処理を通す。
 `run(sys_args=[...])`経由でargparseに渡す案ではエラーメッセージのstderr出力制御が困難で、
 MCPツール側でのエラー整形ができないため不採用。
-外部プロセス起動（`subprocess.run(["pyfltr", "run", ...])`）案も検討した。
-プロセス管理・`PYFLTR_CACHE_DIR`伝搬・`TERM`シグナル・テスト安定性の面で同一プロセス方式より不利のため不採用。
+workerへはJSONで引数を渡し、既存のPydanticモデルへ結果を復元する。
+CLI引数への変換は行わないため、公開スキーマとCLIの解析・出力形式を二重に管理しない。
+別スレッドだけで実行する案は、共有loggerの排他と、mise/gitの直接起動を含む
+実行固有の停止登録簿の伝播が必要となるため採用しない。
+worker方式は起動費用を持つが、共有状態を分離し、子孫をまとめて停止できる。
 
 `work_dir`は`os.chdir()`でプロセスのcwdを変更せず、設定探索では
 `load_config(config_dir=work_dir)`、実行パイプラインでは`run_pipeline(start_cwd=work_dir)`へ渡す。

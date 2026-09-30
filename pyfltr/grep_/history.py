@@ -29,9 +29,11 @@ import typing
 import ulid
 
 import pyfltr.config.config
+import pyfltr.grep_.transaction
 import pyfltr.paths
 import pyfltr.state.archive
 import pyfltr.state.retention
+import pyfltr.warnings_
 from pyfltr.grep_.types import ReplaceCommandMeta, ReplaceRecord
 
 logger = logging.getLogger(__name__)
@@ -43,6 +45,20 @@ _BEFORE_FILENAME = "before.txt"
 _BEFORE_BYTES_FILENAME = "before.bin"
 _CHANGES_FILENAME = "changes.json"
 _LEGACY_WARNING = "旧形式の履歴には元の改行情報がないため、取り消し後のバイト列は置換前と完全に一致しない場合があります。"
+
+
+class ReplaceFailure(OSError):
+    """履歴保存または対象更新の失敗を、両公開入口へ同じ文面で届ける。"""
+
+    def __init__(self, message: str, *, replace_id: str | None = None) -> None:
+        super().__init__(message)
+        self.replace_id = replace_id
+
+    def describe(self, *, undo: str) -> str:
+        """履歴を使える場合に復旧操作を添える。"""
+        if self.replace_id is None:
+            return str(self)
+        return f"{self} 変更前内容の履歴は保持しています。対象の編集内容を確認し、必要なら {undo} で復元してください。"
 
 
 def format_replace_id_not_found(replace_id: str, *, list_history: str) -> str:
@@ -211,6 +227,39 @@ class ReplaceHistoryStore:
             entry["records"] = json.loads(changes_raw)
         return meta
 
+    def apply_replace(
+        self,
+        replace_id: str,
+        *,
+        command_meta: ReplaceCommandMeta,
+        file_changes: list[dict[str, typing.Any]],
+        policy: ReplaceHistoryPolicy,
+    ) -> None:
+        """変更前内容を全件保存してから書き込み、途中失敗時には開始前へ戻す。"""
+        try:
+            self.save_replace(replace_id, command_meta=command_meta, file_changes=file_changes)
+        except OSError as exc:
+            raise ReplaceFailure(
+                f"置換履歴を保存できないため、対象ファイルは変更していません。原因: {exc}。"
+                f"保存先 {self.history_root} の権限と空き容量を確認して再実行してください。"
+            ) from exc
+        updates = [
+            pyfltr.grep_.transaction.FileUpdate(pathlib.Path(change["file"]), change["before_bytes"], change["after_bytes"])
+            for change in file_changes
+        ]
+        try:
+            pyfltr.grep_.transaction.write_updates(updates)
+        except pyfltr.grep_.transaction.WriteFailure as exc:
+            raise ReplaceFailure(exc.describe(), replace_id=replace_id) from exc
+        try:
+            self.cleanup(policy)
+        except OSError as exc:
+            pyfltr.warnings_.emit_warning(
+                source="replace-history",
+                message=f"置換と履歴保存は完了しましたが、古い履歴を削除できませんでした: {exc}。",
+                hint=f"保存先 {self.history_root} の権限を確認してください。置換の再実行は不要です。",
+            )
+
     def undo_replace(
         self,
         replace_id: str,
@@ -255,18 +304,21 @@ class ReplaceHistoryStore:
                 # 計画方針（grep-replace.md）に従い、不一致時は中断して全件スキップ扱いとする
                 return [], [pathlib.Path(entry["file"]) for entry in entries], warnings
 
-        # 書き戻しパス: force指定時または全件一致時のみ実際に書き戻す
-        restored: list[pathlib.Path] = []
+        # 全復元元と開始前状態の読み込み後に書き込む。途中失敗後も通常のundoを再試行できる。
+        updates: list[pyfltr.grep_.transaction.FileUpdate] = []
         for entry in entries:
             file_path = pathlib.Path(entry["file"])
             before_bytes_path = files_dir / entry["sanitized"] / _BEFORE_BYTES_FILENAME
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-            if before_bytes_path.exists():
-                file_path.write_bytes(before_bytes_path.read_bytes())
-            else:
-                file_path.write_text(entry["before_content"], encoding=encoding)
-            restored.append(file_path)
-        return restored, [], warnings
+            restored_bytes = (
+                before_bytes_path.read_bytes() if before_bytes_path.exists() else entry["before_content"].encode(encoding)
+            )
+            current = file_path.read_bytes() if file_path.exists() else None
+            updates.append(pyfltr.grep_.transaction.FileUpdate(file_path, current, restored_bytes))
+        try:
+            pyfltr.grep_.transaction.write_updates(updates)
+        except pyfltr.grep_.transaction.WriteFailure as exc:
+            raise ReplaceFailure(exc.describe(), replace_id=replace_id) from exc
+        return [update.file for update in updates], [], warnings
 
     def list_replaces(self, *, limit: int | None = None) -> list[dict[str, typing.Any]]:
         """保存済み履歴を新しい順（`replace_id`降順）で返す。

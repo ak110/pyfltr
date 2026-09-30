@@ -134,6 +134,22 @@ masterブランチへのpush時にdocs/配下やmkdocs.ymlの変更があると�
 
 ## リリース手順
 
+CIの`distribution`ジョブではwheelとsource distributionを、それぞれ開発環境から独立した環境へ導入する。
+CLI起動、内蔵辞書による診断、MCP接続と最小のチェック実行を確認する。
+同じ確認手順はカスタムtesterの`distribution-check`としてローカルでも実行できる。
+
+```bash
+uv run --frozen pyfltr ci --commands=distribution-check --enable=distribution-check --no-cache
+```
+
+通常は一時領域へ候補をビルドする。
+`PYFLTR_DISTRIBUTION_DIR`を指定すると、そのディレクトリにあるwheelとsource distributionを使用する。
+依存は配布メタデータから解決し、開発用lockfileや利用者のuv設定を参照しない。
+ネットワークを使う独立した工程のため、通常のチェックでは無効とし、CI・リリースから明示実行する。
+
+リリースworkflowは候補版を指定して配布物をビルドし、上記の動作確認が成功してからタグを作成する。
+PyPIへ公開するのは動作確認済みの同じ配布物であり、再ビルドしない。
+
 事前に`gh`コマンドをインストールして`gh auth login`でログインし、以下のいずれかを実行する。
 
 ```bash

@@ -1507,6 +1507,7 @@ wheels = [
 name = "pyfltr"
 source = { editable = "." }
 dependencies = [
+    { name = "anyio" },
     { name = "arid" },
     { name = "bandit" },
     { name = "dill" },
@@ -1549,6 +1550,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "anyio", specifier = ">=4.0" },
     { name = "arid", specifier = ">=2.2.2" },
     { name = "bandit", specifier = ">=1.7" },
     { name = "dill", specifier = ">=0.3" },

@@ -139,7 +139,7 @@ def _prepare_workspace(case: _Case, tmp_path: pathlib.Path) -> pathlib.Path:
 
 
 def _run_pyfltr(
-    workspace: pathlib.Path, command: str, targets: tuple[str, ...], env: dict[str, str] | None = None
+    workspace: pathlib.Path, command: str, targets: tuple[str, ...], env: dict[str, str] | None = None, *, no_fix: bool = False
 ) -> list[dict]:
     """pyfltr CLIをsubprocess起動し、JSONL出力をパースして返す。
 
@@ -153,6 +153,7 @@ def _run_pyfltr(
         f"--commands={command}",
         "--no-archive",
         "--no-cache",
+        *(["--no-fix"] if no_fix else []),
         "--no-clear",
         "--output-format=jsonl",
         *targets,
@@ -174,11 +175,12 @@ def _run_pyfltr(
             continue
         try:
             records.append(json.loads(line))
-        except json.JSONDecodeError:
-            # text混入があればスキップする（pyfltr側のバグ検出時は他assertで失敗させる）。
-            continue
+        except json.JSONDecodeError as exc:
+            pytest.fail(f"JSONLへ非JSON行が混入しました: {line!r}: {exc}. stderr=\n{proc.stderr}")
     if not records:
         pytest.fail(f"pyfltr produced no JSONL output. stderr=\n{proc.stderr}\nstdout=\n{proc.stdout}")
+    assert records[-1].get("kind") == "summary", f"終端summaryがありません: {records} stderr={proc.stderr}"
+    assert records[-1]["exit"] == proc.returncode, f"終了コードとsummaryが一致しません: {proc.stderr}"
     return records
 
 
@@ -223,6 +225,44 @@ def test_tool_smoke(case: _Case, tmp_path: pathlib.Path) -> None:
     assert record is not None, f"{case.tool}: command record not found in JSONL output: {records}"
     status = record.get("status")
     assert status in _OK_STATUSES, f"{case.tool}: unexpected status={status!r} record={record}"
+
+
+@pytest.mark.smoke
+@pytest.mark.timeout(300)
+@pytest.mark.usefixtures("_disable_faulthandler_timeout")
+@pytest.mark.parametrize(
+    ("tool", "source", "rule", "column", "severity"),
+    [
+        ("ruff-check", "print(missing_name)\n", "F821", 7, "error"),
+        # mypyのテキスト解析は任意のseverityを保持しない。JSON出力のruffはerrorを保持する。
+        ("mypy", 'value: int = "wrong"\n', "assignment", None, None),
+    ],
+)
+def test_python_tools_report_real_failure_diagnostics(
+    tmp_path: pathlib.Path, tool: str, source: str, rule: str, column: int | None, severity: str | None
+) -> None:
+    """実ツールの違反出力が終了状態と位置・ルール・重大度付き診断へ届く。"""
+    case = _Case(tool, "basic", ("sample.py",))
+    workspace = _prepare_workspace(case, tmp_path)
+    target = workspace / "sample.py"
+    target.write_text(source, encoding="utf-8")
+    records = _run_pyfltr(workspace, tool, case.targets, no_fix=True)
+    assert records[-1]["exit"] != 0
+    command = _extract_command_record(records, tool)
+    assert command is not None and command["status"] == "failed"
+    messages = [
+        (record["file"], message)
+        for record in records
+        if record.get("kind") == "diagnostic" and record.get("command") == tool
+        for message in record["messages"]
+    ]
+    assert len(messages) == 1
+    file, message = messages[0]
+    assert file == "sample.py"
+    assert (message["line"], message["rule"], message.get("severity")) == (1, rule, severity)
+    if column is not None:
+        assert message["col"] == column
+    assert target.read_text(encoding="utf-8") == source
 
 
 def _env_without_github_token() -> dict[str, str]:

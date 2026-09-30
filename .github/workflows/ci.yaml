@@ -21,6 +21,23 @@ env:
   UV_FROZEN: "1"
 
 jobs:
+  # pyfltr自身を公開する配布物の検査。利用者向けの品質チェック設定例には含めない。
+  distribution:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/ak110/pyfltr:latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Install dependencies
+        run: uv sync --all-groups --all-extras
+      - name: 配布物の独立環境検査
+        run: uv run pyfltr ci --commands=distribution-check --enable=distribution-check --no-cache --output-format=github-annotations
+
   pnpx-compatibility:
     runs-on: ubuntu-latest
     strategy:

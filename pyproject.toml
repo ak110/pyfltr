@@ -18,6 +18,7 @@ classifiers = [
 ]
 requires-python = ">=3.11,<4.0"
 dependencies = [
+    "anyio>=4.0",
     # JSON出力（`--format=json`の`findings`構造）と`--project-root`・`--min-lines`に依存するため、
     # 対象のインターフェースを検証済みの版を下限とする。
     "arid>=2.2.2",
@@ -151,6 +152,9 @@ colloquial-check-exclude = [
     "tests/colloquial_cli_test.py",
 ]
 subproject-exclude = ["smoke_data"]
+# 配布物の独立導入はネットワークを使う専用工程であり、CI・リリースから明示実行する。
+distribution-check = false
+distribution-check-subproject-aware = false
 
 # docs/guide/recommended.md の第一推奨は実装コードとテストコードを分けない全体検査だが、
 # 本リポジトリのテストコードにはテストデータの逐語的な並記など定型的な重複が多く、
@@ -181,6 +185,16 @@ targets = "*.md"
 pass-filenames = false
 error-pattern = '(?P<file>.+):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>.+)'
 fast = true
+
+# 開発環境のlockfileとは独立した依存解決・導入を含むため、通常のチェックから分けて
+# CIの配布物検査jobとリリースの公開前検査で明示実行する。
+[tool.pyfltr.custom-commands.distribution-check]
+type = "tester"
+path = "uv"
+args = ["run", "--frozen", "python", "scripts/check_distribution.py"]
+targets = "*"
+pass-filenames = false
+fast = false
 
 [tool.pylint."messages control"]
 disable = [

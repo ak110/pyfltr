@@ -42,13 +42,17 @@ import typing
 try:
     import mcp.server.mcpserver as _imported_mcpserver
     import mcp.server.mcpserver.exceptions as _imported_mcp_exceptions
+
+    import pyfltr.cli.mcp_transport as _imported_mcp_transport
 except ImportError as e:  # 依存解決が配布物の宣言と異なる環境で到達する。
     _mcpserver: types_module.ModuleType | None = None
     _mcp_exceptions: types_module.ModuleType | None = None
+    _mcp_transport: types_module.ModuleType | None = None
     _MCP_IMPORT_ERROR: ImportError | None = e
 else:
     _mcpserver = _imported_mcpserver
     _mcp_exceptions = _imported_mcp_exceptions
+    _mcp_transport = _imported_mcp_transport
     _MCP_IMPORT_ERROR = None
 
 import pyfltr.cli.command_info
@@ -946,7 +950,6 @@ async def tool_replace(
                 )
 
         if not dry_run:
-            file.write_bytes(result.after_bytes)
             history_entries.append(
                 {
                     "file": file,
@@ -956,7 +959,7 @@ async def tool_replace(
                 }
             )
 
-    # 実書き込み時に履歴を保存する
+    # 全履歴の保存完了後に書き、失敗時の復旧はCLIと同じ共通境界へ委ねる。
     if not dry_run and history_entries and replace_id is not None:
         meta = ReplaceCommandMeta(
             replace_id=replace_id,
@@ -967,8 +970,15 @@ async def tool_replace(
             encoding=encoding,
         )
         store = pyfltr.grep_.history.ReplaceHistoryStore()
-        store.save_replace(replace_id, command_meta=meta, file_changes=history_entries)
-        store.cleanup(pyfltr.grep_.history.policy_from_config(config))
+        try:
+            store.apply_replace(
+                replace_id,
+                command_meta=meta,
+                file_changes=history_entries,
+                policy=pyfltr.grep_.history.policy_from_config(config),
+            )
+        except pyfltr.grep_.history.ReplaceFailure as exc:
+            _raise_mcp_error(exc.describe(undo=f"`replace_undo(replace_id={exc.replace_id!r}, force=True)`"))
 
     return ReplaceResultModel(
         replace_id=replace_id,
@@ -998,6 +1008,8 @@ async def tool_replace_undo(replace_id: str, force: bool = False) -> ReplaceUndo
     store = pyfltr.grep_.history.ReplaceHistoryStore()
     try:
         restored, skipped, warnings = store.undo_replace(replace_id, force=force)
+    except pyfltr.grep_.history.ReplaceFailure as exc:
+        _raise_mcp_error(exc.describe(undo=f"`replace_undo(replace_id={replace_id!r}, force=True)`"))
     except FileNotFoundError:
         _raise_mcp_error(pyfltr.grep_.history.format_replace_id_not_found(replace_id, list_history="`replace_history`ツール"))
     except (UnicodeDecodeError, OSError) as exc:
@@ -1239,6 +1251,23 @@ async def tool_config(
 # MCPServer組み立て
 # ---------------------------------------------------------------------------
 
+TOOL_HANDLERS = {
+    handler.__name__: handler
+    for handler in (
+        tool_list_runs,
+        tool_show_run,
+        tool_show_run_diagnostics,
+        tool_show_run_output,
+        tool_run,
+        tool_grep,
+        tool_replace,
+        tool_replace_undo,
+        tool_replace_history,
+        tool_command_info,
+        tool_config,
+    )
+}
+
 
 def build_server() -> MCPServer:
     """MCPServerインスタンスを生成し、11ツールを登録して返す。
@@ -1253,19 +1282,24 @@ def build_server() -> MCPServer:
     """
     if _mcpserver is None:
         raise RuntimeError("MCPサーバー機能に必要な依存を読み込めません") from _MCP_IMPORT_ERROR
+    assert _mcp_transport is not None
     mcp = _mcpserver.MCPServer("pyfltr", version=importlib.metadata.version("pyfltr"))
 
-    mcp.tool(name="list_runs", description="実行アーカイブに保存された run 一覧を新しい順で返す。")(tool_list_runs)
+    mcp.tool(name="list_runs", description="実行アーカイブに保存された run 一覧を新しい順で返す。")(
+        _mcp_transport.isolate_tool(tool_list_runs, _raise_mcp_error)
+    )
     mcp.tool(
         name="show_run", description="指定 run の meta 情報とコマンド別サマリを返す。run_id は前方一致・latest エイリアス可。"
-    )(tool_show_run)
+    )(_mcp_transport.isolate_tool(tool_show_run, _raise_mcp_error))
     mcp.tool(
         name="show_run_diagnostics",
         description=(
             "指定run・コマンドのdiagnostics全件とコマンドのmeta情報を返す。meta情報は検査対象ファイルの引数列を含まない。"
         ),
-    )(tool_show_run_diagnostics)
-    mcp.tool(name="show_run_output", description="指定 run・コマンドの output.log 全文を返す。")(tool_show_run_output)
+    )(_mcp_transport.isolate_tool(tool_show_run_diagnostics, _raise_mcp_error))
+    mcp.tool(name="show_run_output", description="指定 run・コマンドの output.log 全文を返す。")(
+        _mcp_transport.isolate_tool(tool_show_run_output, _raise_mcp_error)
+    )
     mcp.tool(
         name="run",
         description=(
@@ -1280,13 +1314,13 @@ def build_server() -> MCPServer:
             "プロジェクトのルートを指定する。work_dir は設定探索と相対パス解決の基準を兼ねるため、"
             "検査設定を持たないディレクトリを起点にすると適用される除外設定と検査対象の範囲が変わる。"
         ),
-    )(tool_run)
+    )(_mcp_transport.isolate_tool(tool_run, _raise_mcp_error))
     mcp.tool(
         name="grep",
         description=(
             "Search for a regex pattern across files. Honors pyfltr exclude/.gitignore by default. Returns match records."
         ),
-    )(tool_grep)
+    )(_mcp_transport.isolate_tool(tool_grep, _raise_mcp_error))
     mcp.tool(
         name="replace",
         description=(
@@ -1294,29 +1328,29 @@ def build_server() -> MCPServer:
             " dry_run=True (default) previews changes without writing."
             " Pass dry_run=False to write and save undo history."
         ),
-    )(tool_replace)
+    )(_mcp_transport.isolate_tool(tool_replace, _raise_mcp_error))
     mcp.tool(
         name="replace_undo",
         description=(
             "Undo a previous replace by replace_id."
             " Set force=True to override hash mismatch (when files were edited after the replace)."
         ),
-    )(tool_replace_undo)
+    )(_mcp_transport.isolate_tool(tool_replace_undo, _raise_mcp_error))
     mcp.tool(
         name="replace_history",
         description="replace履歴を一覧（action=list）または単体（action=show）で返す。",
-    )(tool_replace_history)
+    )(_mcp_transport.isolate_tool(tool_replace_history, _raise_mcp_error))
     mcp.tool(
         name="command_info",
         description=(
             "ツールの起動方式（runner・実行ファイル・最終コマンドライン等）の解決結果を返す。"
             " check=Trueはmiseの実行や版確認の副作用を伴う。"
         ),
-    )(tool_command_info)
+    )(_mcp_transport.isolate_tool(tool_command_info, _raise_mcp_error))
     mcp.tool(
         name="config",
         description="pyfltr設定ファイルを操作する（action=get / set / delete / list）。",
-    )(tool_config)
+    )(_mcp_transport.isolate_tool(tool_config, _raise_mcp_error))
 
     return mcp
 

@@ -128,6 +128,24 @@ jobs:
           secrets: |
             GITHUB_TOKEN=${{ github.token }}
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          python-version: "3.14"
+          enable-cache: true
+
+      # タグ作成前に候補版を指定してビルドし、検査した同じ配布物を公開する。
+      # 本リポジトリ固有の配布工程であり、利用者向けCI設定例には含めない。
+      - name: Build release candidates
+        env:
+          SETUPTOOLS_SCM_PRETEND_VERSION: ${{ steps.next.outputs.version }}
+        run: uv build --no-sources --clear
+
+      - name: 配布物の独立環境検査
+        env:
+          PYFLTR_DISTRIBUTION_DIR: ${{ github.workspace }}/dist
+        run: uv run --frozen pyfltr ci --commands=distribution-check --enable=distribution-check --no-cache --output-format=github-annotations
+
       - name: Create tag and push
         run: |
           git config user.name "github-actions[bot]"
@@ -139,18 +157,11 @@ jobs:
             git push origin "${{ steps.next.outputs.next }}"
           fi
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-        with:
-          python-version: "3.14"
-          enable-cache: true
-
-      - name: Build and publish to PyPI
+      - name: Publish verified distributions to PyPI
         env:
           UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
         run: |
-          uv build
-          uv publish --check-url=https://pypi.org/simple/
+          uv publish --check-url=https://pypi.org/simple/ dist/pyfltr-*.whl dist/pyfltr-*.tar.gz
 
       - name: Generate release notes
         uses: orhun/git-cliff-action@a9a95522b26fe6403f7bb24031f21fb573d0f5ff # v4.9.1

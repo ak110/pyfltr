@@ -266,6 +266,7 @@ def _execute_replace(
     files_changed = 0
     read_failures = 0
     json_records: list[dict[str, typing.Any]] = []
+    prepared: list[tuple[pathlib.Path, pyfltr.grep_.replacer.ReplacementResult]] = []
     for file in expanded:
         # MCP側の_tool_replace（mcp_server.py）と挙動を揃える目的で、
         # `--max-filesize`超過ファイルは読み込み前にスキップする。
@@ -299,12 +300,8 @@ def _execute_replace(
             continue
         if result.count == 0:
             continue
-        files_changed += 1
-        total_replacements += result.count
-        before_hash = pyfltr.grep_.replacer.compute_hash(result.before_content)
-        after_hash = pyfltr.grep_.replacer.compute_hash(result.after_content)
+        prepared.append((file, result))
         if not dry_run:
-            file.write_bytes(result.after_bytes)
             file_changes.append(
                 {
                     "file": file,
@@ -314,6 +311,33 @@ def _execute_replace(
                 }
             )
 
+    if file_changes and replace_id is not None:
+        meta = ReplaceCommandMeta(
+            replace_id=replace_id,
+            dry_run=False,
+            fixed_strings=args.fixed_strings,
+            pattern=args.pattern,
+            replacement=args.replacement,
+            encoding=args.encoding,
+        )
+        store = pyfltr.grep_.history.ReplaceHistoryStore()
+        try:
+            store.apply_replace(
+                replace_id,
+                command_meta=meta,
+                file_changes=file_changes,
+                policy=pyfltr.grep_.history.policy_from_config(config),
+            )
+        except pyfltr.grep_.history.ReplaceFailure as exc:
+            message = exc.describe(undo=f"`pyfltr replace --undo {exc.replace_id} --force`")
+            sys.stderr.write(f"エラー: {message}\n")
+            return 1
+
+    for file, result in prepared:
+        files_changed += 1
+        total_replacements += result.count
+        before_hash = pyfltr.grep_.replacer.compute_hash(result.before_content)
+        after_hash = pyfltr.grep_.replacer.compute_hash(result.after_content)
         if output_format == "jsonl":
             pyfltr.grep_.jsonl_records.emit_file_change(
                 file=file,
@@ -349,23 +373,8 @@ def _execute_replace(
                 ]
             json_records.append(entry)
 
-    # 履歴保存
-    if not dry_run and file_changes and replace_id is not None:
-        meta = ReplaceCommandMeta(
-            replace_id=replace_id,
-            dry_run=False,
-            fixed_strings=args.fixed_strings,
-            pattern=args.pattern,
-            replacement=args.replacement,
-            encoding=args.encoding,
-        )
-        store = pyfltr.grep_.history.ReplaceHistoryStore()
-        store.save_replace(replace_id, command_meta=meta, file_changes=file_changes)
-        store.cleanup(pyfltr.grep_.history.policy_from_config(config))
-
     guidance = _build_replace_guidance(replace_id=replace_id, files_changed=files_changed, dry_run=dry_run)
     # 失敗判定は「ファイル読み込み失敗が1件以上発生したか」で行う。
-    # 書き込みエラーは現状捕捉対象外で、呼び出し側のOSError例外として上位へ伝播する。
     exit_code = 1 if read_failures > 0 else 0
 
     # 直接指定が除外・不在で対象外になった一覧をsummaryへ載せる。
@@ -545,6 +554,9 @@ def _execute_undo(parser: argparse.ArgumentParser, args: argparse.Namespace, out
     store = pyfltr.grep_.history.ReplaceHistoryStore()
     try:
         restored, skipped, history_warnings = store.undo_replace(replace_id, force=args.force)
+    except pyfltr.grep_.history.ReplaceFailure as exc:
+        sys.stderr.write(f"エラー: {exc.describe(undo=f'`pyfltr replace --undo {replace_id} --force`')}\n")
+        return 1
     except FileNotFoundError:
         sys.stderr.write(
             "エラー: "
