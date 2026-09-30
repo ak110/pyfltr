@@ -66,6 +66,7 @@ import pyfltr.grep_.matcher
 import pyfltr.grep_.preview
 import pyfltr.grep_.replacer
 import pyfltr.grep_.scanner
+import pyfltr.output.jsonl
 import pyfltr.paths
 import pyfltr.state.archive
 import pyfltr.state.runs
@@ -92,6 +93,7 @@ from pyfltr.cli.mcp_models import (
     RunOverviewModel,
     RunResult,
     RunSummaryModel,
+    RunWarningModel,
     SlowTestModel,
 )
 from pyfltr.grep_.types import MatchRecord, ReplaceCommandMeta
@@ -172,7 +174,7 @@ async def tool_show_run(run_id: str) -> RunOverviewModel:
     try:
         meta = store.read_meta(resolved)
     except FileNotFoundError:
-        _raise_mcp_error(f"run_id が見つかりません: {resolved}")
+        _raise_mcp_error(pyfltr.state.runs.format_run_not_found(resolved, list_runs="`list_runs`ツール"))
     command_summaries = pyfltr.state.runs.collect_tool_summaries(store, resolved)
     commands = [
         CommandSummaryModel(
@@ -208,7 +210,7 @@ async def tool_show_run_diagnostics(run_id: str, commands: list[str]) -> list[Co
             tool_meta = store.read_tool_meta(resolved, command)
             diagnostics_raw = store.read_tool_diagnostics(resolved, command)
         except FileNotFoundError:
-            _raise_mcp_error(f"run {resolved} にコマンド {command!r} の結果が保存されていません。")
+            _raise_mcp_error(pyfltr.state.runs.format_tool_result_missing(resolved, command, show_run="`show_run`ツール"))
         diagnostics = [
             DiagnosticModel(
                 command=d.get("command", d.get("tool")),
@@ -246,7 +248,7 @@ async def tool_show_run_output(run_id: str, commands: list[str]) -> dict[str, st
         try:
             outputs[command] = store.read_tool_output(resolved, command)
         except FileNotFoundError:
-            _raise_mcp_error(f"run {resolved} にコマンド {command!r} の結果が保存されていません。")
+            _raise_mcp_error(pyfltr.state.runs.format_tool_result_missing(resolved, command, show_run="`show_run`ツール"))
     return outputs
 
 
@@ -276,11 +278,14 @@ async def tool_run(
 
     `run`・`fast`・`ci`の各実行モードをCLIと同じ既定値で扱う。
     実行アーカイブは常に有効化され、`run_id`を戻り値に含む。
-    early exit（直前runなし・失敗ツールなし・対象ファイル交差が空）の場合は
-    `run_id=None`・`skipped_reason`に理由を設定して返す。
+    `only_failed`による早期終了（直前runなし・失敗ツールなし・対象ファイル交差が空・
+    `from_run`の解決失敗・アーカイブの読み取り失敗）の場合は`run_id=None`とし、
+    実際の理由と対処を`skipped_reason`へ設定して返す。
     `commands`へ指定した検査が設定で無効化されているために実行されなかった場合も、
-    対象の検査名と理由を`skipped_reason`へ設定する。無効化の判定は`run_pipeline`が
-    発行する`source="commands"`の警告を入力とし、MCP側では再判定しない。
+    対象の検査名と理由を`skipped_reason`へ設定する。いずれも`run_pipeline`が発行する
+    `source="only-failed"`・`source="commands"`の警告を入力とし、MCP側では再判定しない。
+    実行中の警告は`warnings`へ、失敗時などの次の操作は`guidance`へ設定する。
+    返却へ含めた警告はサーバーのstderrへ重ねて出力しない。
 
     対応CLI: `pyfltr run` / `pyfltr fast` / `pyfltr ci`
 
@@ -321,180 +326,208 @@ async def tool_run(
     # `skipped_reason`の入力にできるよう、ここで蓄積を初期化する。
     pyfltr.warnings_.clear()
 
-    if mode not in ("run", "fast", "ci"):
-        _raise_mcp_error("mode は run / fast / ci のいずれかを指定してください。")
-    if from_run is not None and not only_failed:
-        _raise_mcp_error("from_run は only_failed=True のときのみ指定できます。")
+    # 返却へ含めた警告を配送済みとして扱い、サーバーのstderrへ重ねて出力しないよう、
+    # 返却の組み立てまでを配送保留スコープに含める。例外で返却に至らなかった警告は
+    # スコープの終了時にstderrへ通知される。
+    with pyfltr.warnings_.defer_stderr():
+        if mode not in ("run", "fast", "ci"):
+            _raise_mcp_error("mode は run / fast / ci のいずれかを指定してください。")
+        if from_run is not None and not only_failed:
+            _raise_mcp_error("from_run は only_failed=True のときのみ指定できます。")
 
-    work_dir_path = pathlib.Path(work_dir).expanduser().resolve() if work_dir is not None else None
-    if work_dir_path is not None and not work_dir_path.is_dir():
-        _raise_mcp_error(f"work_dir が存在するディレクトリではありません: {work_dir}")
+        work_dir_path = pathlib.Path(work_dir).expanduser().resolve() if work_dir is not None else None
+        if work_dir_path is not None and not work_dir_path.is_dir():
+            _raise_mcp_error(f"work_dir が存在するディレクトリではありません: {work_dir}")
 
-    base = work_dir_path if work_dir_path is not None else pathlib.Path.cwd()
-    targets = [path if (path := pathlib.Path(raw)).is_absolute() else base / path for raw in paths]
+        base = work_dir_path if work_dir_path is not None else pathlib.Path.cwd()
+        targets = [path if (path := pathlib.Path(raw)).is_absolute() else base / path for raw in paths]
 
-    args = argparse.Namespace(
-        targets=targets,
-        # CLI経路（`--commands`はaction="append"）と同じ`list[str] | None`で保持する。
-        commands=list(commands) if commands else None,
-        enable=list(enable) if enable else None,
-        disable=list(disable) if disable else None,
-        exclude_fence_under=list(exclude_fence_under) if exclude_fence_under else None,
-        no_fix=no_fix,
-        fail_fast=fail_fast,
-        only_failed=only_failed,
-        from_run=from_run,
-        changed_since=changed_since,
-        no_archive=False,  # アーカイブ必須化のため明示的にFalse
-        no_cache=no_cache,
-        verbose=False,
-        output_format="jsonl",
-        output_file=None,  # 後で一時ファイルで上書きする
-        ui=None,
-        no_ui=True,
-        no_clear=True,
-        stream=False,
-        shuffle=False,
-        keep_ui=False,
-        ci=mode == "ci",
-        human_readable=human_readable,
-        no_exclude=no_exclude,
-        no_gitignore=no_gitignore,
-        allow_external_paths=allow_external_paths,
-        jobs=jobs,
-        work_dir=work_dir_path,
-        exit_zero_even_if_formatted=False,
-        version=False,
-        subcommand=mode,
-        # MCPの戻り値は実行アーカイブから組み立てるためJSONL縮約の影響を受けない。
-        # quiet=Trueはstderrへのprecommitガイダンス抑止のみに作用する。
-        quiet=True,
-    )
-    pyfltr.cli.command_selection.apply_subcommand_defaults(args)
-    args.shuffle = shuffle
-    if exit_zero_even_if_formatted:
-        args.exit_zero_even_if_formatted = True
-    if no_fix:
-        args.include_fix_stage = False
-
-    retry_sys_args = [mode]
-    if work_dir_path is not None:
-        retry_sys_args.append(f"--work-dir={work_dir_path}")
-    if no_fix:
-        retry_sys_args.append("--no-fix")
-    if commands:
-        retry_sys_args.append("--commands=" + ",".join(commands))
-    for name in enable or []:
-        retry_sys_args.append(f"--enable={name}")
-    for name in disable or []:
-        retry_sys_args.append(f"--disable={name}")
-    for heading in exclude_fence_under or []:
-        retry_sys_args.append(f"--exclude-fence-under={heading}")
-    if allow_external_paths:
-        retry_sys_args.append("--allow-external-paths")
-    if no_exclude:
-        retry_sys_args.append("--no-exclude")
-    if no_gitignore:
-        retry_sys_args.append("--no-gitignore")
-    if no_cache:
-        retry_sys_args.append("--no-cache")
-    if human_readable:
-        retry_sys_args.append("--human-readable")
-    if shuffle:
-        retry_sys_args.append("--shuffle")
-    if exit_zero_even_if_formatted:
-        retry_sys_args.append("--exit-zero-even-if-formatted")
-    if jobs is not None:
-        retry_sys_args.append(f"--jobs={jobs}")
-
-    # 構造化出力を一時ファイルへ誘導してstdout汚染を防ぐ。
-    # NamedTemporaryFileをコンテキストマネージャーで使い、close後もパスを残す（delete=False）。
-    with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False) as tmp:
-        tmp_path = pathlib.Path(tmp.name)
-
-    # MCPのstdoutはJSON-RPCフレームが占有するため、text_loggerはrun_pipeline側で
-    # stderrに強制する（force_text_on_stderr=True）。
-    # 構造化出力は一時ファイル経由（FileHandler）となりstdoutを汚染しない。
-    args.output_file = tmp_path
-    try:
-        config = pyfltr.config.config.load_config(config_dir=work_dir_path)
-        # アーカイブを強制有効化する。MCPツールはrun_idを返す契約を保証する。
-        config.values["archive"] = True
-        pyfltr.cli.overrides.apply_cli_overrides(config, args)
-
-        commands_list: list[str] = pyfltr.config.config.resolve_aliases(
-            pyfltr.cli.command_selection.flatten_commands_arg(args.commands, config), config
+        args = argparse.Namespace(
+            targets=targets,
+            # CLI経路（`--commands`はaction="append"）と同じ`list[str] | None`で保持する。
+            commands=list(commands) if commands else None,
+            enable=list(enable) if enable else None,
+            disable=list(disable) if disable else None,
+            exclude_fence_under=list(exclude_fence_under) if exclude_fence_under else None,
+            no_fix=no_fix,
+            fail_fast=fail_fast,
+            only_failed=only_failed,
+            from_run=from_run,
+            changed_since=changed_since,
+            no_archive=False,  # アーカイブ必須化のため明示的にFalse
+            no_cache=no_cache,
+            verbose=False,
+            output_format="jsonl",
+            output_file=None,  # 後で一時ファイルで上書きする
+            ui=None,
+            no_ui=True,
+            no_clear=True,
+            stream=False,
+            shuffle=False,
+            keep_ui=False,
+            ci=mode == "ci",
+            human_readable=human_readable,
+            no_exclude=no_exclude,
+            no_gitignore=no_gitignore,
+            allow_external_paths=allow_external_paths,
+            jobs=jobs,
+            work_dir=work_dir_path,
+            exit_zero_even_if_formatted=False,
+            version=False,
+            subcommand=mode,
+            # MCPの戻り値は実行アーカイブから組み立てるためJSONL縮約の影響を受けない。
+            # quiet=Trueはstderrへのprecommitガイダンス抑止のみに作用する。
+            quiet=True,
         )
+        pyfltr.cli.command_selection.apply_subcommand_defaults(args)
+        args.shuffle = shuffle
+        if exit_zero_even_if_formatted:
+            args.exit_zero_even_if_formatted = True
+        if no_fix:
+            args.include_fix_stage = False
+
+        retry_sys_args = [mode]
+        if work_dir_path is not None:
+            retry_sys_args.append(f"--work-dir={work_dir_path}")
+        if no_fix:
+            retry_sys_args.append("--no-fix")
+        if commands:
+            retry_sys_args.append("--commands=" + ",".join(commands))
+        for name in enable or []:
+            retry_sys_args.append(f"--enable={name}")
+        for name in disable or []:
+            retry_sys_args.append(f"--disable={name}")
+        for heading in exclude_fence_under or []:
+            retry_sys_args.append(f"--exclude-fence-under={heading}")
+        if allow_external_paths:
+            retry_sys_args.append("--allow-external-paths")
+        if no_exclude:
+            retry_sys_args.append("--no-exclude")
+        if no_gitignore:
+            retry_sys_args.append("--no-gitignore")
+        if no_cache:
+            retry_sys_args.append("--no-cache")
+        if human_readable:
+            retry_sys_args.append("--human-readable")
+        if shuffle:
+            retry_sys_args.append("--shuffle")
+        if exit_zero_even_if_formatted:
+            retry_sys_args.append("--exit-zero-even-if-formatted")
+        if jobs is not None:
+            retry_sys_args.append(f"--jobs={jobs}")
+
+        # 構造化出力を一時ファイルへ誘導してstdout汚染を防ぐ。
+        # NamedTemporaryFileをコンテキストマネージャーで使い、close後もパスを残す（delete=False）。
+        with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False) as tmp:
+            tmp_path = pathlib.Path(tmp.name)
+
+        # MCPのstdoutはJSON-RPCフレームが占有するため、text_loggerはrun_pipeline側で
+        # stderrに強制する（force_text_on_stderr=True）。
+        # 構造化出力は一時ファイル経由（FileHandler）となりstdoutを汚染しない。
+        args.output_file = tmp_path
         try:
-            pyfltr.cli.command_selection.validate_commands(commands_list, config)
-        except ValueError as exc:
-            _raise_mcp_error(str(exc))
+            config = pyfltr.config.config.load_config(config_dir=work_dir_path)
+            # アーカイブを強制有効化する。MCPツールはrun_idを返す契約を保証する。
+            config.values["archive"] = True
+            pyfltr.cli.overrides.apply_cli_overrides(config, args)
 
-        exit_code, run_id = pyfltr.cli.pipeline.run_pipeline(
-            args,
-            commands_list,
-            config,
-            start_cwd=work_dir_path,
-            original_cwd=str(work_dir_path) if work_dir_path is not None else None,
-            original_sys_args=retry_sys_args,
-            force_text_on_stderr=True,
-            jsonl_warnings_reach_consumer=False,
-        )
-    finally:
-        # 一時ファイルを削除する（存在しない場合はそのまま無視する）
-        with contextlib.suppress(OSError):
-            tmp_path.unlink(missing_ok=True)
-
-    # only_failedによるearly exit: run_idがNoneのとき実行がスキップされた。
-    if run_id is None:
-        return RunResult(
-            run_id=None,
-            exit_code=exit_code,
-            failed=[],
-            commands=[],
-            skipped_reason=(
-                "only_failed が有効ですが実行対象がありませんでした（直前 run なし・失敗ツールなし・対象ファイル交差なし）。"
-            ),
-            retry_commands={},
-        )
-
-    # コマンド別サマリを最新アーカイブから集計する。
-    store = pyfltr.state.archive.ArchiveStore()
-    try:
-        command_summaries = pyfltr.state.runs.collect_tool_summaries(store, run_id)
-    except Exception:  # MCPツール戻り値の組み立て継続を優先するため全例外を吸収する
-        command_summaries = []
-
-    commands_model = [CommandSummaryModel.model_validate(entry) for entry in command_summaries]
-    failed_commands = [c.command for c in commands_model if pyfltr.command.core_.is_failed_status(c.status) and c.command]
-
-    # 失敗コマンドのretry_commandをアーカイブから収集する（F7）。
-    retry_commands: dict[str, str] = {}
-    for summary_entry in command_summaries:
-        cmd_name = summary_entry.get("command")
-        if cmd_name:
+            commands_list: list[str] = pyfltr.config.config.resolve_aliases(
+                pyfltr.cli.command_selection.flatten_commands_arg(args.commands, config), config
+            )
             try:
-                tool_meta = store.read_tool_meta(run_id, cmd_name)
-                rc = tool_meta.get("retry_command")
-                if rc:
-                    retry_commands[cmd_name] = rc
-            except Exception:  # tool.json読み取り失敗は非致命的
-                logger.debug("retry_command取得失敗: command=%s", cmd_name, exc_info=True)
+                pyfltr.cli.command_selection.validate_commands(
+                    commands_list, config, list_commands=pyfltr.cli.command_selection.MCP_LIST_COMMANDS
+                )
+            except ValueError as exc:
+                _raise_mcp_error(str(exc))
 
-    unmet_reasons = [
-        f"{entry['message']} {entry['hint']}" if entry.get("hint") else str(entry["message"])
-        for entry in pyfltr.warnings_.collected_warnings()
-        if entry.get("source") == "commands"
+            exit_code, run_id = pyfltr.cli.pipeline.run_pipeline(
+                args,
+                commands_list,
+                config,
+                start_cwd=work_dir_path,
+                original_cwd=str(work_dir_path) if work_dir_path is not None else None,
+                original_sys_args=retry_sys_args,
+                force_text_on_stderr=True,
+                jsonl_warnings_reach_consumer=False,
+            )
+        finally:
+            # 一時ファイルを削除する（存在しない場合はそのまま無視する）
+            with contextlib.suppress(OSError):
+                tmp_path.unlink(missing_ok=True)
+
+        # run_idがNoneのときは実行がスキップされたか、アーカイブを使えなかった。
+        # スキップの理由は`--only-failed`の判定が`source="only-failed"`の警告として発行しており、
+        # 固定文ではなく実際の理由を返す。
+        if run_id is None:
+            warning_entries = pyfltr.warnings_.collected_warnings()
+            pyfltr.warnings_.mark_delivered(warning_entries)
+            return RunResult(
+                run_id=None,
+                exit_code=exit_code,
+                failed=[],
+                commands=[],
+                skipped_reason=_join_warning_texts(warning_entries, source="only-failed"),
+                retry_commands={},
+                warnings=_build_run_warnings(warning_entries),
+            )
+
+        # コマンド別サマリを最新アーカイブから集計する。
+        store = pyfltr.state.archive.ArchiveStore()
+        try:
+            command_summaries = pyfltr.state.runs.collect_tool_summaries(store, run_id)
+        except Exception:  # MCPツール戻り値の組み立て継続を優先するため全例外を吸収する
+            command_summaries = []
+
+        commands_model = [CommandSummaryModel.model_validate(entry) for entry in command_summaries]
+        failed_commands = [c.command for c in commands_model if pyfltr.command.core_.is_failed_status(c.status) and c.command]
+
+        # 失敗コマンドのretry_commandをアーカイブから収集する（F7）。
+        retry_commands: dict[str, str] = {}
+        for summary_entry in command_summaries:
+            cmd_name = summary_entry.get("command")
+            if cmd_name:
+                try:
+                    tool_meta = store.read_tool_meta(run_id, cmd_name)
+                    rc = tool_meta.get("retry_command")
+                    if rc:
+                        retry_commands[cmd_name] = rc
+                except Exception:  # tool.json読み取り失敗は非致命的
+                    logger.debug("retry_command取得失敗: command=%s", cmd_name, exc_info=True)
+
+        warning_entries = pyfltr.warnings_.collected_warnings()
+        pyfltr.warnings_.mark_delivered(warning_entries)
+        guidance = pyfltr.output.jsonl.build_summary_guidance(
+            failure_present=bool(failed_commands),
+            resolution_failed_present=any(c.status == "resolution_failed" for c in commands_model),
+            applied_fixes_present=any(c.status == "formatted" for c in commands_model),
+            run_id=run_id,
+            launcher_prefix=None,
+            subcommand=mode,
+        )
+        return RunResult(
+            run_id=run_id,
+            exit_code=exit_code,
+            failed=failed_commands,
+            commands=commands_model,
+            skipped_reason=_join_warning_texts(warning_entries, source="commands"),
+            retry_commands=retry_commands,
+            warnings=_build_run_warnings(warning_entries),
+            guidance=guidance,
+        )
+
+
+def _build_run_warnings(entries: list[dict[str, typing.Any]]) -> list[RunWarningModel]:
+    """蓄積された警告を`RunResult.warnings`の要素へ変換する。"""
+    return [
+        RunWarningModel(source=str(entry["source"]), message=str(entry["message"]), hint=entry.get("hint")) for entry in entries
     ]
 
-    return RunResult(
-        run_id=run_id,
-        exit_code=exit_code,
-        failed=failed_commands,
-        commands=commands_model,
-        skipped_reason=" / ".join(unmet_reasons) or None,
-        retry_commands=retry_commands,
-    )
+
+def _join_warning_texts(entries: list[dict[str, typing.Any]], *, source: str) -> str | None:
+    """指定した発生源の警告を対処込みの文字列へ整形して連結する。該当が無ければNoneを返す。"""
+    texts = [pyfltr.warnings_.format_warning_text(entry) for entry in entries if entry.get("source") == source]
+    return " / ".join(texts) or None
 
 
 def _expand_grep_targets(
@@ -586,7 +619,13 @@ async def tool_grep(
         try:
             collected.extend(pyfltr.grep_.matcher.read_pattern_file(pathlib.Path(pattern_file)))
         except OSError as exc:
-            _raise_mcp_error(f"パターンファイルの読み込みに失敗しました: {exc}")
+            _raise_mcp_error(
+                f"パターンファイルの読み込みに失敗しました: {exc}。`pattern_file`のパスと読み取り権限を確認してください"
+            )
+    if not collected:
+        _raise_mcp_error(
+            "パターンが指定されていません。`pattern`・`patterns`・`pattern_file`のいずれかで検索パターンを指定してください"
+        )
     try:
         compiled = pyfltr.grep_.matcher.compile_pattern(
             collected,
@@ -706,7 +745,7 @@ async def tool_grep(
             if selection.output_mode != "full"
             else []
         ),
-        warnings=[str(entry["message"]) for entry in pyfltr.warnings_.collected_warnings()],
+        warnings=[pyfltr.warnings_.format_warning_text(entry) for entry in pyfltr.warnings_.collected_warnings()],
         fully_excluded_files=pyfltr.warnings_.filtered_direct_files(reason="excluded"),
         missing_targets=pyfltr.warnings_.filtered_direct_files(reason="missing"),
         summary_mode=summary_mode,
@@ -874,7 +913,8 @@ async def tool_replace(
                     replacement,
                     encoding=encoding,
                 )
-        except (UnicodeDecodeError, OSError):
+        except (UnicodeDecodeError, OSError) as exc:
+            pyfltr.grep_.scanner.emit_read_failure_warning("replace", file, exc, encoding=encoding)
             continue
         if result.count == 0:
             continue
@@ -940,6 +980,7 @@ async def tool_replace(
         exit_code=0,
         fully_excluded_files=pyfltr.warnings_.filtered_direct_files(reason="excluded"),
         missing_targets=pyfltr.warnings_.filtered_direct_files(reason="missing"),
+        warnings=[pyfltr.warnings_.format_warning_text(entry) for entry in pyfltr.warnings_.collected_warnings()],
     )
 
 
@@ -958,9 +999,13 @@ async def tool_replace_undo(replace_id: str, force: bool = False) -> ReplaceUndo
     try:
         restored, skipped, warnings = store.undo_replace(replace_id, force=force)
     except FileNotFoundError:
-        _raise_mcp_error(f"replace_id が見つかりません: {replace_id}")
+        _raise_mcp_error(pyfltr.grep_.history.format_replace_id_not_found(replace_id, list_history="`replace_history`ツール"))
+    except (UnicodeDecodeError, OSError) as exc:
+        _raise_mcp_error(pyfltr.grep_.history.format_history_unreadable(replace_id, store.history_root / replace_id, exc))
 
     exit_code = 1 if skipped else 0
+    if skipped:
+        warnings = [*warnings, pyfltr.grep_.history.format_undo_skipped(len(skipped), force="`force=True`")]
     return ReplaceUndoModel(
         replace_id=replace_id,
         restored=[pyfltr.paths.normalize_separators(p) for p in restored],
@@ -997,7 +1042,11 @@ async def tool_replace_history(
         try:
             raw_entries = [store.load_replace(typing.cast(str, replace_id))]
         except FileNotFoundError:
-            _raise_mcp_error(f"replace_id が見つかりません: {replace_id}")
+            _raise_mcp_error(
+                pyfltr.grep_.history.format_replace_id_not_found(
+                    typing.cast(str, replace_id), list_history='`replace_history`ツールの`action="list"`'
+                )
+            )
 
     entries = [
         ReplaceHistoryEntryModel(
@@ -1033,7 +1082,9 @@ async def tool_command_info(command: str, check: bool = False) -> CommandInfoMod
     except (ValueError, OSError) as exc:
         _raise_mcp_error(f"設定エラー: {exc}")
     try:
-        pyfltr.cli.command_selection.validate_commands([command], config)
+        pyfltr.cli.command_selection.validate_commands(
+            [command], config, list_commands=pyfltr.cli.command_selection.MCP_LIST_COMMANDS
+        )
     except ValueError as exc:
         _raise_mcp_error(str(exc))
     info = pyfltr.cli.command_info.collect_info(command, config, do_check=check)
@@ -1106,6 +1157,8 @@ async def tool_config(
     if action == "set":
         requested_key = typing.cast(str, key)
         raw_value = typing.cast(str, value)
+        if not use_global and not path.exists():
+            _raise_mcp_error(pyfltr.config.config.format_project_config_missing(path, use_global="`use_global=True`"))
         if requested_key not in pyfltr.config.config.DEFAULT_CONFIG:
             _raise_mcp_error(
                 pyfltr.config.config.format_unknown_key_message(
@@ -1147,7 +1200,7 @@ async def tool_config(
             path=str(path),
             key=requested_key,
             value=parsed_value,
-            warnings=[str(entry["message"]) for entry in pyfltr.warnings_.collected_warnings()],
+            warnings=[pyfltr.warnings_.format_warning_text(entry) for entry in pyfltr.warnings_.collected_warnings()],
         )
 
     if action == "delete":
@@ -1310,5 +1363,9 @@ def execute_mcp(args: argparse.Namespace) -> int:
         server.run(transport="stdio")
         return 0
     except Exception as e:  # MCPサーバー起動失敗をエージェント側へ非ゼロ終了で通知するため全例外を捕捉する
-        logger.error("MCP サーバーの起動に失敗した: %s", e)
+        logger.error(
+            "MCP サーバーの起動に失敗しました: %s。"
+            "https://ak110.github.io/pyfltr/guide/troubleshooting/ のMCP関連の節で切り分け手順を確認してください",
+            e,
+        )
         return 1

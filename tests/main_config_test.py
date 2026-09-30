@@ -79,6 +79,7 @@ class TestConfigSubcommand:
         err = capsys.readouterr().err
         assert "pyproject.toml" in err
         assert "--global" in err
+        assert "プロジェクトのルートで実行する" in err
 
     def test_config_set_global_creates_file(self, monkeypatch, tmp_path) -> None:
         """`--global`指定時にglobal config.tomlが自動作成される。"""

@@ -244,7 +244,8 @@ def aggregate_diagnostics(
             if existing is None:
                 hint_urls[error.rule] = error.rule_url
             elif existing != error.rule_url:
-                logger.warning(
+                # 利用者が行う操作は無く、解析ルールの不整合を開発者へ通知するだけのためdebugとする。
+                logger.debug(
                     "aggregate_diagnostics: rule %r に複数のrule_urlが存在する。先勝ち採用: %s (後続 %s を無視)",
                     error.rule,
                     existing,
@@ -255,7 +256,7 @@ def aggregate_diagnostics(
             if existing_hint is None:
                 hints[error.rule] = error.hint
             elif existing_hint != error.hint:
-                logger.warning(
+                logger.debug(
                     "aggregate_diagnostics: rule %r に複数のhintが存在する。先勝ち採用: %s (後続 %s を無視)",
                     error.rule,
                     existing_hint,
@@ -779,10 +780,11 @@ def _resolve_message_limits(config: pyfltr.config.config.Config | None) -> tuple
     return max_lines, max_chars
 
 
-def _build_summary_guidance(
+def build_summary_guidance(
     *,
     failure_present: bool,
     applied_fixes_present: bool,
+    resolution_failed_present: bool = False,
     run_id: str | None,
     launcher_prefix: list[str] | None,
     subcommand: str | None,
@@ -795,6 +797,9 @@ def _build_summary_guidance(
     - `summary.applied_fixes`が非空（formatter/fix-stageが書き換えた）
 
     両方該当する場合は失敗時の4項目に続けてformatter書き換えの注記1項目を追記する。
+    `resolution_failed_present`が真のときは、ツール解決失敗の対処（`tool-resolve`警告の本文と`hint`）を
+    読む案内を失敗時の項目の先頭へ置く。解決失敗は再実行だけでは解消しないため。
+    MCPの`run`ツールも同じ文面を返すため本関数を呼ぶ。
     `run_id`と`launcher_prefix`が指定されていれば、起動コマンド表記と実run_idを埋め込む。
     `subcommand`は`--only-failed`の再実行例に埋め込む実行系サブコマンド名で、
     実際に起動されたサブコマンドをそのまま反映する。
@@ -807,6 +812,12 @@ def _build_summary_guidance(
     items: list[str] = []
     if failure_present:
         run_id_token = run_id if run_id is not None else "<run_id>"
+        if resolution_failed_present:
+            items.append(
+                "resolution_failed means the tool could not be started;"
+                " follow the tool-resolve warning to install the tool or change its runner setting,"
+                " then re-run."
+            )
         items.extend(
             [
                 "Inspect command.retry_command in failed command records to re-run only failing files.",
@@ -906,8 +917,9 @@ def _build_summary_record(
     }
     if warning_count > 0:
         record["warnings"] = warning_count
-    guidance = _build_summary_guidance(
+    guidance = build_summary_guidance(
         failure_present=counts["failed"] + counts["resolution_failed"] > 0,
+        resolution_failed_present=counts["resolution_failed"] > 0,
         applied_fixes_present=bool(fixed_files_union),
         run_id=run_id,
         launcher_prefix=launcher_prefix,

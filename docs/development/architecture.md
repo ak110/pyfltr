@@ -463,8 +463,14 @@ JSONLはLLMエージェントが入力として読むケースが多いため、
   パイプライン全体の次アクションをbullet配列で示す。
   失敗時は`command.retry_command`の参照、`--only-failed`再実行、`diagnostic.fix`の解釈、
   `pyfltr show-run <run_id>`の案内の4項目を並べる。
+  `resolution_failed`が1件以上ある場合は、再実行だけでは解消しないため、`tool-resolve`警告に従って
+  ツールを導入するか設定を変える旨を先頭に加える。
   `applied_fixes`非空時はformatter/fix-stageの書き換えだけでは再実行が不要である旨の注記を末尾に追加する。
-  `warning`のみで`failed`/`resolution_failed`が0件のケースでは付与しない（警告はパイプライン失敗を伴わないため）
+  `warning`のみで`failed`/`resolution_failed`が0件のケースでは付与しない（警告はパイプライン失敗を伴わないため）。
+  MCPの`run`ツールも同じ生成関数（`pyfltr.output.jsonl.build_summary_guidance`）から`RunResult.guidance`を返す
+- `warning`レコードの`hint`: 個別の警告の対処。警告の本文（`msg`）とは別のキーで持つ。
+  テキスト表示のwarnings節・stderr・MCPの応答では`pyfltr.warnings_.format_warning_text`が本文に続けて
+  対処を連結した文字列を用い、どの出力先でも対処が欠けないようにする
 
 ### command.hints / hint_urls 集約
 
@@ -625,6 +631,9 @@ pyfltrは3系統のloggerを使い分ける。
 JSONL出力へ`warning`レコードとして配送した警告はroot loggerからstderrへ重複出力しない。
 構造化出力への書き込みが完了しなかった警告は保留スコープの終了時にstderrへ出力し、警告自体を失わない。
 MCPの`run`が内部一時ファイルへ生成するJSONLは利用者への配送ではないため、配送済みとして扱わない。
+MCPの`run`は代わりに、応答の`warnings`へ含めた警告を配送済みとして扱う。
+配送保留スコープを応答の組み立てまで広げ、例外で応答に至らなかった警告だけをstderrへ出力する。
+stderrへ出力する警告は、`hint`を持つ場合に本文へ対処を連結した形で出力する。
 
 stdout占有が起きるのは`jsonl` / `sarif` / `code-quality`かつ`--output-file`未指定時のみ。
 MCP実行（`pyfltr.cli.mcp_server.run`）は同一プロセス内で`run_pipeline`を直接呼ぶ。
@@ -678,8 +687,9 @@ MCPサーバー・`--only-failed`からも再利用する。
 - 直前runは`ArchiveStore.list_runs(limit=1)`の先頭を採用する
 - 失敗ツール・失敗ファイルはアーカイブのtoolメタとdiagnosticsから抽出する
 - フィルタリング結果はツール別の`ToolTargets` dataclass（`pyfltr/only_failed.py`）として保持する
-- 直前runが存在しない、失敗ツールが無い、ターゲット交差が空となった場合はメッセージを出力して
-  成功終了（rc=0）する
+- 直前runが存在しない、失敗ツールが無い、ターゲット交差が空となった場合は、理由と対処を
+  `source="only-failed"`の警告として発行して成功終了（rc=0）する。JSONL出力でもheader・warning・summaryを出力する。
+  text_loggerのINFOだけではJSONL出力（textはWARN以上）とMCPへ理由が届かないため、警告として発行する
 - 位置引数`targets`との併用時は、直前runの失敗ファイル集合と`targets`を交差させる
 - モノレポ分割実行では、`ToolTargets.resolve_files()`が対象のサブプロジェクトの対象ファイル一覧
   （`ExecutionContext.all_files`）とも交差させる。起点cwd全体で抽出した失敗ファイル集合を
@@ -694,7 +704,7 @@ MCPサーバー・`--only-failed`からも再利用する。
 
 - `--from-run <RUN_ID>`は`--only-failed`との併用のみを受け付け、単独指定はargparseエラーで拒否する
 - `<RUN_ID>`の解決は`pyfltr/runs.py`の`resolve_run_id()`を再利用する
-- 指定`<RUN_ID>`が存在しない場合は警告を出力してrc=0で早期終了する
+- 指定`<RUN_ID>`が存在しない場合は`source="only-failed"`の警告を出力してrc=0で早期終了する
 - 値および`--only-failed`フラグは`retry_command`へ伝播させない
 
 `--from-run`値は`retry_command`へ伝播させない方針を採用する。
@@ -802,9 +812,10 @@ MCPクライアントからの並行ツール呼び出しでも実行起点を�
 `run_pipeline()`の戻り値は`(exit_code, run_id_or_None)`の2要素タプルとする。
 2要素目はアーカイブ無効時・early exit時に`None`、それ以外では採番済みULIDが入る。
 
-`only_failed`有効時に「直前runなし」「失敗ツールなし」「対象ファイル交差が空」のいずれかに該当した場合、
-`run_pipeline`はearly exit（`(0, None)`）を返す。
-このとき`run`はエラーではなく「実行スキップ」（`skipped_reason`に理由文字列）を返す。
+`only_failed`有効時に「直前runなし」「失敗ツールなし」「対象ファイル交差が空」「`from_run`の解決失敗」
+「アーカイブの読み取り失敗」のいずれかに該当した場合、`run_pipeline`はearly exit（`(0, None)`）を返す。
+このとき`run`はエラーではなく「実行スキップ」を返し、`skipped_reason`には
+`run_pipeline`が`source="only-failed"`で発行した警告の本文と対処を入れる。固定文は返さない。
 
 `skipped_reason`はearly exit以外でも値を持つ。`commands`へ指定したツールが設定で無効化されて実行されなかった場合、
 `tool_run`は`run_pipeline`が`source="commands"`で発行した警告から理由を組み立てて同フィールドへ返す。

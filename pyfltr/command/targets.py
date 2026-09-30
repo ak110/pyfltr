@@ -118,6 +118,7 @@ def expand_all_files(
                         message=(
                             f'指定されたファイルが除外設定により無視されました: {normalized_target} ({key}="{pattern}" による)'
                         ),
+                        hint="除外設定を無視して検査する場合は `--no-exclude`（MCPでは`no_exclude=True`）を指定してください。",
                     )
                     pyfltr.warnings_.add_filtered_direct_file(normalized_target, reason="excluded")
                 return
@@ -135,12 +136,14 @@ def expand_all_files(
                 expanded.append(target)
                 if is_direct:
                     directly_specified.add(target)
-        except OSError:
+        except OSError as e:
             normalized_target = pyfltr.paths.normalize_separators(target)
+            # 利用者向けには例外の要約だけを示し、トレースバックは調査用にdebugログへ残す。
+            logger.debug("対象ファイルの展開に失敗: %s", normalized_target, exc_info=True)
             pyfltr.warnings_.emit_warning(
                 source="file-resolver",
-                message=f"I/O Error: {normalized_target}",
-                exc_info=True,
+                message=f"指定されたパスを読み取れないため対象から除外しました: {normalized_target}: {e.strerror or e}",
+                hint="パスの存在と読み取り権限を確認してください。",
             )
 
     for target in targets:
@@ -159,6 +162,7 @@ def expand_all_files(
             pyfltr.warnings_.emit_warning(
                 source="file-resolver",
                 message=f"指定されたパスが見つかりません: {normalized_target}",
+                hint="パスの綴りと、相対パスの基準になる起動したディレクトリを確認してください。",
             )
             pyfltr.warnings_.add_filtered_direct_file(normalized_target, reason="missing")
             continue
@@ -177,6 +181,9 @@ def expand_all_files(
                 pyfltr.warnings_.emit_warning(
                     source="file-resolver",
                     message=f"指定されたファイルが .gitignore により無視されました: {normalized_target}",
+                    hint=(
+                        ".gitignoreを無視して検査する場合は `--no-gitignore`（MCPでは`no_gitignore=True`）を指定してください。"
+                    ),
                 )
                 pyfltr.warnings_.add_filtered_direct_file(normalized_target, reason="excluded")
 
@@ -396,8 +403,10 @@ def _filter_by_gitignore(paths: list[pathlib.Path], *, cwd: pathlib.Path | None 
             source="git",
             message=(
                 f"git check-ignore が終了コード {result.returncode} を返したため "
-                f"一部の .gitignore 判定がスキップされました{detail}"
+                f"一部の .gitignore 判定がスキップされました{detail}。"
+                "判定できなかったファイルは、.gitignoreの対象であっても検査対象に含めました"
             ),
+            hint="`git status`でリポジトリの状態を確認し、`git check-ignore -v <パス>`で個別の判定を確認してください。",
         )
     ignored_set: set[str] = set()
     if result.stdout:
@@ -477,6 +486,23 @@ def _get_changed_files(ref: str, *, cwd: pathlib.Path | None = None) -> list[str
         return None
     # NUL区切りでパースし、空文字列エントリを除去する。
     return [p for p in result.stdout.split("\0") if p]
+
+
+def emit_external_path_warning(command: str, normalized_target: str) -> None:
+    """起点cwd外のパスをツールの対象から除外したことを警告し、除外記録へ加える。
+
+    単一プロジェクトの経路（`pyfltr.command.dispatcher`）とサブプロジェクトの経路
+    （`pyfltr.command.subproject_loop`）で同じ文面と対処を返すために集約する。
+    """
+    pyfltr.warnings_.emit_warning(
+        source="external-path",
+        message=f"{command}: 起点cwd外のパスは対象から除外しました: {normalized_target}",
+        hint=(
+            "起点cwd外のパスを検査する場合は `--allow-external-paths`（MCPでは`allow_external_paths=True`）を指定し、"
+            "`--work-dir`（MCPでは`work_dir`）へ検査設定を持つプロジェクトのルートを渡してください。"
+        ),
+    )
+    pyfltr.warnings_.add_filtered_direct_file(normalized_target, reason="external")
 
 
 def matches_exclude_patterns(path: pathlib.Path, patterns: list[str]) -> str | None:

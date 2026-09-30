@@ -1,6 +1,7 @@
 """config.py のテストコード。"""
 
 import pathlib
+import typing
 
 import pytest
 
@@ -859,6 +860,9 @@ class TestConfigFilesWarning:
         ]
         assert len(entries) == 1
         assert "pre-commit" in entries[0]["message"]
+        # 影響に加えて、作成するか無効化する操作を案内する
+        assert "失敗します" in entries[0]["message"]
+        assert "`pre-commit = false`" in entries[0]["hint"]
 
     def test_pre_commit_enabled_with_config_no_warning(self, tmp_path: pathlib.Path) -> None:
         """設定ファイルが存在すれば警告は出ない。"""
@@ -1978,6 +1982,9 @@ class TestGlobalConfig:
         config = pyfltr.config.config.load_config(config_dir=project_dir, global_config_path=global_path)
         assert config["archive-max-age-days"] == 7
         assert _count_config_warnings("archive-max-age-days") == 1
+        # project側を削除するか、global側を変更する操作を案内する
+        priority_warning = next(w for w in pyfltr.warnings_.collected_warnings() if "archive-max-age-days" in w["message"])
+        assert "pyfltr config set --global" in priority_warning["hint"]
 
     def test_project_wins_normal_key_no_warning(self, tmp_path: pathlib.Path) -> None:
         """globalとproject両方にarchive/cache以外の同じキーがあるとき、project値が勝ち警告は出ない。"""
@@ -2471,6 +2478,8 @@ class TestErrorMessages:
         message = _find_config_warning("preset")
         assert message is not None
         assert "もしかして: latest" in message
+        # 処理を続けた結果（presetを適用しなかったこと）も示す
+        assert "presetを適用せずに続行しました" in message
 
     def test_runner_invalid_value_contains_allowed_values(self, tmp_path: pathlib.Path) -> None:
         """python-runner不正値の警告文面に許容値列挙が含まれる。"""
@@ -2480,3 +2489,51 @@ class TestErrorMessages:
         assert message is not None
         assert "許容値:" in message
         assert "uv" in message and "uvx" in message and "direct" in message
+        # 処理を続けた結果（既定値への巻き戻し）も示す
+        assert f"既定値 {pyfltr.config.config.DEFAULT_CONFIG['python-runner']!r} で続行しました" in message
+
+    def test_custom_command_name_collision_guides_alternatives(self, tmp_path: pathlib.Path) -> None:
+        """ビルトインと衝突するカスタムコマンドは、登録のスキップと回避手段を示す。"""
+        (tmp_path / "pyproject.toml").write_text('[tool.pyfltr.custom-commands.mypy]\ntype = "linter"\n', encoding="utf-8")
+        config = pyfltr.config.config.load_config(config_dir=tmp_path)
+        message = _find_config_warning("カスタムコマンド `mypy`")
+        assert message is not None
+        assert "登録をスキップしました" in message
+        assert "`mypy-args`" in message
+        assert config.commands["mypy"].builtin is True
+
+    def test_custom_command_invalid_definition_reports_skip(self, tmp_path: pathlib.Path) -> None:
+        """カスタムコマンド定義の項目が不正な場合は、登録をスキップしたことを示す。"""
+        (tmp_path / "pyproject.toml").write_text(
+            '[tool.pyfltr.custom-commands.mylinter]\ntype = "linter"\nargs = "not-a-list"\n', encoding="utf-8"
+        )
+        config = pyfltr.config.config.load_config(config_dir=tmp_path)
+        message = _find_config_warning("カスタムコマンド `mylinter`")
+        assert message is not None
+        assert "このカスタムコマンドの登録をスキップしました" in message
+        assert "mylinter" not in config.commands
+
+    def test_unreadable_pyproject_reports_path_and_permission(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """設定ファイルを読み込めない場合は、対象のパスと権限の確認を案内する。"""
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text("[tool.pyfltr]\n", encoding="utf-8")
+        original_read_text = pathlib.Path.read_text
+
+        def _raise_for_pyproject(path: pathlib.Path, *args: typing.Any, **kwargs: typing.Any) -> str:
+            if path == pyproject:
+                raise PermissionError(13, "Permission denied")
+            return original_read_text(path, *args, **kwargs)
+
+        monkeypatch.setattr(pathlib.Path, "read_text", _raise_for_pyproject)
+        with pytest.raises(ValueError) as exc_info:
+            pyfltr.config.config.load_config(config_dir=tmp_path)
+        message = str(exc_info.value)
+        assert str(pyproject) in message
+        assert "読み取り権限を確認してください" in message
+
+    def test_parse_config_value_dict_key_guides_manual_edit(self) -> None:
+        """CLIから設定できない値型のキーは、pyproject.tomlを直接編集するよう案内する。"""
+        with pytest.raises(ValueError, match="pyproject.tomlを直接編集してください"):
+            pyfltr.config.config.parse_config_value("aliases", "x")

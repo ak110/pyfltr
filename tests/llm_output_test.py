@@ -770,6 +770,26 @@ def test_build_summary_record_emits_guidance_on_failure() -> None:
     assert "uvx pyfltr show-run 01JABCDEFGH" in joined
     # プレースホルダーが残っていないこと
     assert "<run_id>" not in joined
+    # 解決失敗が無い実行では、ツール導入の案内を含めない
+    assert "tool-resolve" not in joined
+
+
+def test_build_summary_record_guidance_leads_with_resolution_failure_action() -> None:
+    """resolution_failedがあるときは、再実行より先にツール解決の対処を読む案内を置く。"""
+    result = pyfltr.command.core_.CommandResult(
+        command="mypy",
+        command_type="linter",
+        commandline=[],
+        returncode=1,
+        files=1,
+        output="",
+        elapsed=0.0,
+        resolution_failed=True,
+    )
+    config = pyfltr.config.config.create_default_config()
+    lines = pyfltr.output.jsonl.build_lines([result], config, exit_code=1, run_id="01JABCDEFGH")
+    record = json.loads(next(line for line in lines if json.loads(line).get("kind") == "summary"))
+    assert "tool-resolve" in record["guidance"][0]
 
 
 def test_build_summary_record_guidance_falls_back_when_unspecified() -> None:

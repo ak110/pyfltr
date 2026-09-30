@@ -18,13 +18,13 @@
 from __future__ import annotations
 
 import argparse
-import difflib
 import json
 import os
 import shutil
 import sys
 import typing
 
+import pyfltr.cli.command_selection
 import pyfltr.cli.output_format
 import pyfltr.command.dispatcher
 import pyfltr.command.mise
@@ -79,9 +79,7 @@ def execute_command_info(parser: argparse.ArgumentParser, args: argparse.Namespa
 
     command: str = args.command
     if command not in config.commands:
-        suggestions = difflib.get_close_matches(command, list(config.commands.keys()), n=3, cutoff=0.6)
-        suffix = f"。もしかして: {', '.join(suggestions)}" if suggestions else ""
-        sys.stderr.write(f"エラー: 未知のコマンドです: {command}{suffix}\n")
+        sys.stderr.write(f"エラー: {pyfltr.cli.command_selection.format_unknown_command_message(command, config)}\n")
         return 1
 
     info = collect_info(command, config, do_check=bool(args.check))

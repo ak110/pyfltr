@@ -80,10 +80,7 @@ def _config_set(args: argparse.Namespace) -> int:
     path = _config_target_path(args)
     use_global = bool(args.global_)
     if not use_global and not path.exists():
-        print(
-            f"pyproject.tomlが見つかりません: {path}。global設定（XDG準拠）に書く場合は `--global` を併用してください",
-            file=sys.stderr,
-        )
+        print(pyfltr.config.config.format_project_config_missing(path, use_global="`--global`"), file=sys.stderr)
         return 1
     key = args.key
     if key not in pyfltr.config.config.DEFAULT_CONFIG:

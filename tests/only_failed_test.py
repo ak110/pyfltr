@@ -5,13 +5,17 @@ skip → commands フィルタリングで除外）を検証する。
 """
 
 import argparse
+import json
 import logging
 import pathlib
 
 import pytest
 
+import pyfltr.cli.main
 import pyfltr.cli.output_format
+import pyfltr.state.archive
 import pyfltr.state.only_failed
+import pyfltr.warnings_
 from tests import conftest as _testconf
 from tests.conftest import make_error_location as _make_error
 from tests.conftest import seed_archive_run as _seed_run
@@ -325,3 +329,56 @@ def test_apply_filter_from_run_ambiguous_prefix(_only_failed_cache: pathlib.Path
     assert exit_early is True
     assert targets is None
     assert "--from-run" in caplog.text
+
+
+def test_only_failed_early_exit_emits_jsonl_summary_with_reason(
+    _only_failed_cache: pathlib.Path,
+    _isolated_target: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """直前runが無い状態の`--only-failed`は、JSONLでheader・理由付きwarning・summaryを出力して0で終わる。
+
+    理由をINFOでしか出力しないと、WARN以上だけを出力するJSONL経路では何も出力されず、
+    エージェントはスキップの理由も次の操作も受け取れない。
+    """
+    returncode = pyfltr.cli.main.run(
+        [
+            "run",
+            "--only-failed",
+            "--output-format=jsonl",
+            "--work-dir",
+            str(_isolated_target),
+            str(_isolated_target / "sample.py"),
+        ]
+    )
+
+    assert returncode == 0
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
+    kinds = [record["kind"] for record in records]
+    assert kinds[0] == "header"
+    assert kinds[-1] == "summary"
+    only_failed_warnings = [r for r in records if r["kind"] == "warning" and r["source"] == "only-failed"]
+    assert len(only_failed_warnings) == 1
+    assert "直前の run が無い" in only_failed_warnings[0]["msg"]
+    assert "--only-failed を外して" in only_failed_warnings[0]["hint"]
+    assert records[-1]["exit"] == 0
+    assert records[-1]["warnings"] == kinds.count("warning")
+
+
+def test_apply_filter_archive_unreadable_guides_permission_and_full_run(
+    _only_failed_cache: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """実行アーカイブを読めない場合は、スキップした理由と権限確認・全体実行の案内を警告する。"""
+
+    def _raise(*_args: object, **_kwargs: object) -> None:
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(pyfltr.state.archive.ArchiveStore, "__init__", _raise)
+    args = argparse.Namespace(only_failed=True)
+    _, _, exit_early = pyfltr.state.only_failed.apply_filter(args, ["ruff-check"], [pathlib.Path("a.py")])
+    assert exit_early is True
+    warnings = [w for w in pyfltr.warnings_.collected_warnings() if w["source"] == "only-failed"]
+    assert len(warnings) == 1
+    assert "スキップしました" in warnings[0]["message"]
+    assert "読み取り権限を確認してください" in warnings[0]["hint"]
+    assert "--only-failed を外して全体を実行" in warnings[0]["hint"]

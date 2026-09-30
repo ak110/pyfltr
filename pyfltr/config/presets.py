@@ -84,7 +84,7 @@ _PRESETS: dict[str, dict[str, bool]] = {
 _PRESETS["latest"] = _PRESETS["20260926"]
 
 # v3.0.0で削除されたプリセット名と、移行先を示すメッセージの対応表。
-# `load_config`が該当プリセット指定を検知したら案内付きValueErrorを送出する。
+# `load_config`が該当プリセット指定を検知したら案内付きの警告を発行し、presetを適用せずに続行する。
 _REMOVED_PRESETS: dict[str, str] = {
     "20250710": (
         'preset "20250710" は v3.0.0 で削除された。'

@@ -210,7 +210,9 @@ pull_requestイベントでは`refs/remotes/pull/`配下だけを生成するた
 
 ## `--only-failed`が想定どおり動かない場合
 
-`--only-failed`で再実行しているのに失敗ツールが拾われない、または全体実行になることがある。
+`--only-failed`で再実行しているのに失敗ツールが拾われない、または実行がスキップされることがある。
+実行をスキップした場合は、理由と対処を`[only-failed]`の警告として表示し、終了コード0で終わる。
+JSONL出力では`warning`レコードに理由と対処（`hint`）を載せ、続けて`summary`を出力する。
 
 主な原因と対処。
 
@@ -221,7 +223,7 @@ pull_requestイベントでは`refs/remotes/pull/`配下だけを生成するた
   位置引数を外す、または対象ディレクトリを広げる
 - `pass-filenames=False`のツール（tsc・cargo-\*・dotnet-\*等）で全体失敗のみだった場合、診断ファイルが
   取得できないため既定対象でフォールバック実行する。これは仕様である
-- `--from-run <RUN_ID>`に存在しないrunを指定した場合は警告を出力してrc=0で早期終了する。
+- `--from-run <RUN_ID>`に存在しないrunを指定した場合も、警告を出力して終了コード0で早期終了する。
   `pyfltr list-runs`で実在のrun_idを確認する
 
 補足。`--only-failed`はファイル変更検出・テスト関数の存在確認・モジュール依存追跡を行わない。
@@ -329,7 +331,7 @@ pyfltr list-runs --output-format=jsonl
 ## 設定キーのtypoと未知キー
 
 `pyproject.toml`の`[tool.pyfltr]`に未知の設定キーを書いた場合、
-pyfltrは原因と対処を1つのエラーメッセージにまとめて返す。
+pyfltrは原因と対処を1つの警告にまとめて表示し、そのキーを無視して処理を続ける。
 
 ```text
 設定キー `lychee` は認識できません。もしかして: lychee-args, lychee-runner, lychee-fast。
@@ -341,11 +343,11 @@ pyfltrは原因と対処を1つのエラーメッセージにまとめて返す�
 - 表示されたサジェストの中に意図したキーがあればそれへ書き換える
 - サジェストが無い場合は`pyfltr config list --all`で全キー一覧を確認する。
   一覧上で`(default)`の注記が付くキーは既定値で動作中であり、上書きしたい場合のみpyproject.tomlへ追記する
-- global設定（`~/.config/pyfltr/config.toml`）の未知キーはValueErrorではなく警告で無視される。
-  古いpyfltrで新版設定を読み込んでも停止させないための前方互換の挙動である
+- project側（`pyproject.toml`）とglobal設定（`~/.config/pyfltr/config.toml`）のどちらの未知キーも、
+  停止せず警告して無視する。古いpyfltrで新版設定を読み込んでも停止させないための前方互換の挙動である
 
 v3.0.0で削除されたツール（pyupgrade・autoflake・isort・black・pflake8）の
-設定キーを残している場合は移行案内付きの`ValueError`で停止する。
+設定キーを残している場合も、移行案内付きの警告を表示してそのキーを無視し、処理を続ける。
 ruffへ統合済みのため、これらの設定をすべて削除する。
 
 ## ツール解決失敗時の対処

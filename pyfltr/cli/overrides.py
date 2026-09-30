@@ -6,6 +6,7 @@
 
 import argparse
 
+import pyfltr.cli.command_selection
 import pyfltr.config.config
 import pyfltr.warnings_
 
@@ -68,7 +69,9 @@ def apply_cli_overrides(
                 if name not in config.commands:
                     if warn_unknown_command:
                         pyfltr.warnings_.emit_warning(
-                            source="cli", message=f"`--{flag}={name}` は未知のコマンド名のため無視します"
+                            source="cli",
+                            message=f"`--{flag}={name}` は未知のコマンド名のため無視しました",
+                            hint=pyfltr.cli.command_selection.format_unknown_command_message(name, config),
                         )
                     continue
                 config.values[name] = enabled

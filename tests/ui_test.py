@@ -4,6 +4,8 @@ import argparse
 import inspect
 import unittest.mock
 
+import pytest
+
 import pyfltr.command.core_
 import pyfltr.command.error_parser
 import pyfltr.command.process
@@ -353,3 +355,22 @@ def test_can_use_ui() -> None:
         unittest.mock.patch("sys.stdout.isatty", return_value=False),
     ):
         assert pyfltr.output.ui.can_use_ui() is False
+
+
+def test_run_commands_with_ui_failure_guides_no_ui(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    """UIアプリケーションの実行に失敗した場合は、UIを使わずに実行する`--no-ui`を案内して終了する。"""
+
+    def _raise(_self: object, *_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("terminal unsupported")
+
+    monkeypatch.setattr(pyfltr.output.ui.UIApp, "run", _raise)
+    args = argparse.Namespace(targets=[], verbose=False)
+    base_ctx = pyfltr.command.core_.ExecutionBaseContext(
+        config=pyfltr.config.config.create_default_config(), all_files=[], cache_store=None, cache_run_id=None
+    )
+    with pytest.raises(SystemExit) as exc_info:
+        pyfltr.output.ui.run_commands_with_ui(["mypy"], args, base_ctx)
+    assert exc_info.value.code == 1
+    err = capsys.readouterr().err
+    assert "terminal unsupported" in err
+    assert "`--no-ui`" in err

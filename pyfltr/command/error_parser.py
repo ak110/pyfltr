@@ -273,7 +273,7 @@ _BUILTIN_PATTERNS: dict[str, str] = {
         r"\s+(?P<message>.+?)(?:\s+\((?P<rule>[^()\s]+)\))?\s*$"
     ),
     # colloquial-check出力例: src/foo.md:10:5: [match] -> [replacement] excerpt
-    # 置換候補が無い場合は矢印以降を省略した`src/foo.md:10:5: [match] excerpt`形式。
+    # 置換候補が無い場合は`src/foo.md:10:5: [match] -> (言い換えの方針) excerpt`形式。
     "colloquial-check": rf"(?P<file>{_FILE}):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>.+)",
 }
 

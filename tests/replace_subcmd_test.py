@@ -600,6 +600,30 @@ def test_replace_undo_missing_id_emits_guidance(
     assert "pyfltr replace --list-history" in err
 
 
+def test_replace_undo_unreadable_history_reports_directory(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """履歴を読み込めない`--undo`は、履歴ディレクトリの場所と取り消しに使えないことを示す。"""
+    target = tmp_path / "a.txt"
+    target.write_text("foo bar\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    rc = pyfltr.cli.main.run(["replace", "foo", "baz", "--output-format=jsonl", str(target)])
+    assert rc == 0
+    lines = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
+    saved_id = lines[-1]["replace_id"]
+    history_dir = pyfltr.grep_.history.ReplaceHistoryStore().history_root / saved_id
+    (history_dir / "meta.json").write_bytes(b"\xff\xfe broken")
+
+    rc = pyfltr.cli.main.run(["replace", "--undo", saved_id, "--output-format=jsonl"])
+
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert str(history_dir) in err
+    assert "取り消しに使えない" in err
+
+
 def test_replace_show_history_returns_meta(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

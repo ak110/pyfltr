@@ -147,7 +147,7 @@ def _write_warnings_section(warnings: list[dict[str, typing.Any]]) -> None:
     with lock:
         text_logger.info(f"{'-' * 10} warnings {'-' * (72 - 10 - 10)}")
         for entry in warnings:
-            text_logger.info(f"    [{entry['source']}] {entry['message']}")
+            text_logger.info(f"    [{entry['source']}] {pyfltr.warnings_.format_warning_text(entry)}")
 
 
 def _write_missing_targets_section(files: list[str]) -> None:

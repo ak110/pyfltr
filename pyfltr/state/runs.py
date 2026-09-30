@@ -144,7 +144,7 @@ def execute_show_run(parser: argparse.ArgumentParser, args: argparse.Namespace) 
         try:
             meta = store.read_meta(run_id)
         except FileNotFoundError:
-            sys.stderr.write(f"エラー: run_id が見つかりません: {run_id}。`pyfltr list-runs` で有効な run_id を確認できます\n")
+            sys.stderr.write(f"エラー: {format_run_not_found(run_id, list_runs='`pyfltr list-runs`')}\n")
             return 1
 
         if output_mode and tools:
@@ -152,6 +152,25 @@ def execute_show_run(parser: argparse.ArgumentParser, args: argparse.Namespace) 
         if tools:
             return _show_tools_detail(store, run_id, tools, output_fmt)
         return _show_run_overview(store, run_id, meta, output_fmt)
+
+
+def format_run_not_found(run_id: str, *, list_runs: str) -> str:
+    """run_idのmeta情報が見つからない場合の案内文を返す。
+
+    CLIとMCPで同じ文面を使い、run一覧を確認する操作名（`list_runs`）だけを呼び出し側が渡す。
+    """
+    return f"run_id が見つかりません: {run_id}。{list_runs} で有効な run_id を確認できます"
+
+
+def format_tool_result_missing(run_id: str, tool: str, *, show_run: str) -> str:
+    """指定runに指定ツールの結果が保存されていない場合の案内文を返す。
+
+    CLIとMCPで同じ文面を使い、run内のツール一覧を確認する操作名（`show_run`）だけを呼び出し側が渡す。
+    """
+    return (
+        f"run {run_id} にツール {tool!r} の結果が保存されていません。"
+        f"{show_run} でrun {run_id}に保存されたツール一覧を確認できます"
+    )
 
 
 class RunIdError(Exception):
@@ -316,10 +335,7 @@ def _show_tools_detail(
             tool_meta = store.read_tool_meta(run_id, tool)
             diagnostics = store.read_tool_diagnostics(run_id, tool)
         except FileNotFoundError:
-            sys.stderr.write(
-                f"エラー: run {run_id} にツール {tool!r} の結果が保存されていません。"
-                f"`pyfltr show-run {run_id}` でrun {run_id}に保存されたツール一覧を確認できます\n"
-            )
+            sys.stderr.write(f"エラー: {format_tool_result_missing(run_id, tool, show_run=f'`pyfltr show-run {run_id}`')}\n")
             return 1
         entries.append((tool, tool_meta, diagnostics))
 
@@ -415,10 +431,7 @@ def _show_tool_output(
     try:
         output = store.read_tool_output(run_id, tool)
     except FileNotFoundError:
-        sys.stderr.write(
-            f"エラー: run {run_id} にツール {tool!r} の結果が保存されていません。"
-            f"`pyfltr show-run {run_id}` でrun {run_id}に保存されたツール一覧を確認できます\n"
-        )
+        sys.stderr.write(f"エラー: {format_tool_result_missing(run_id, tool, show_run=f'`pyfltr show-run {run_id}`')}\n")
         return 1
     if output_format == "text":
         sys.stdout.write(output)

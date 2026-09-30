@@ -170,6 +170,14 @@ class CommandDiagnosticsModel(pydantic.BaseModel):
     )
 
 
+class RunWarningModel(pydantic.BaseModel):
+    """実行中に発行された警告1件。`RunResult.warnings`の要素。"""
+
+    source: str = pydantic.Field(description="警告の発生源（config / tool-resolve / only-failed など）。")
+    message: str = pydantic.Field(description="警告の本文。原因と、処理を続行した場合はその結果を含む。")
+    hint: str | None = pydantic.Field(default=None, description="次に行う操作。発生源が対処を持つ場合だけ設定される。")
+
+
 class RunResult(pydantic.BaseModel):
     """`run`ツールの戻り値。"""
 
@@ -192,6 +200,17 @@ class RunResult(pydantic.BaseModel):
     retry_commands: dict[str, str] = pydantic.Field(
         default_factory=dict,
         description="失敗コマンドの再実行シェルコマンド辞書（コマンド名 → shell文字列）。成功・cachedは省略。",
+    )
+    warnings: list[RunWarningModel] = pydantic.Field(
+        default_factory=list,
+        description="実行中に発行された警告。`hint`があれば対処に従う。",
+    )
+    guidance: list[str] = pydantic.Field(
+        default_factory=list,
+        description=(
+            "次に行う操作の案内（英語、CLIのJSONL `summary.guidance`と同じ文面）。"
+            "失敗またはformatterによる書き換えがあった場合だけ設定される。"
+        ),
     )
 
 
@@ -254,7 +273,10 @@ class GrepResultModel(pydantic.BaseModel):
     omitted_matches: int = pydantic.Field(default=0, description="本文を省略したマッチ件数。")
     omitted_files: int = pydantic.Field(default=0, description="ファイル名も返さなかった該当ファイル数。")
     guidance: list[str] = pydantic.Field(default_factory=list, description="再検索または置換へ進むための案内。")
-    warnings: list[str] = pydantic.Field(default_factory=list, description="実行中に発行された警告メッセージ。")
+    warnings: list[str] = pydantic.Field(
+        default_factory=list,
+        description="実行中に発行された警告メッセージ。対処がある警告は本文に続けて対処を含む。",
+    )
     fully_excluded_files: list[str] = pydantic.Field(
         default_factory=list,
         description="直接指定がexclude / .gitignoreで対象外になったファイル一覧。",
@@ -323,6 +345,10 @@ class ReplaceResultModel(pydantic.BaseModel):
     missing_targets: list[str] = pydantic.Field(
         default_factory=list,
         description="直接指定したが存在しなかったファイル一覧。",
+    )
+    warnings: list[str] = pydantic.Field(
+        default_factory=list,
+        description="実行中に発行された警告メッセージ。対処がある警告は本文に続けて対処を含む。",
     )
 
 
@@ -395,4 +421,7 @@ class ConfigResultModel(pydantic.BaseModel):
         default_factory=dict,
         description="listの設定値一覧。include_defaults=True時は値と既定値由来か否かを含む。",
     )
-    warnings: list[str] = pydantic.Field(default_factory=list, description="操作中に発行された警告メッセージ。")
+    warnings: list[str] = pydantic.Field(
+        default_factory=list,
+        description="操作中に発行された警告メッセージ。対処がある警告は本文に続けて対処を含む。",
+    )

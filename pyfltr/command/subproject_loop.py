@@ -169,11 +169,7 @@ def run_subproject_loop(
                 else:
                     for t in relevant_external:
                         normalized_target = pyfltr.paths.normalize_separators(t)
-                        pyfltr.warnings_.emit_warning(
-                            source="external-path",
-                            message=(f"{command}: 起点cwd外のパスは対象から除外しました: {normalized_target}"),
-                        )
-                        pyfltr.warnings_.add_filtered_direct_file(normalized_target, reason="external")
+                        pyfltr.command.targets.emit_external_path_warning(command, normalized_target)
 
         if subproject_results:
             if len(subproject_results) == 1:

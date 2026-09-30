@@ -190,6 +190,12 @@ def _heartbeat_text_emit(message: str) -> None:
         text_logger.warning(message)
 
 
+_ARCHIVE_FAILURE_HINT = (
+    "キャッシュディレクトリの書き込み権限と空き容量を確認してください。"
+    "実行アーカイブが不要なら `--no-archive` を指定すると警告を抑止できます。"
+)
+
+
 def _make_archive_hook(
     archive_store: pyfltr.state.archive.ArchiveStore,
     run_id: str,
@@ -205,7 +211,14 @@ def _make_archive_hook(
             archive_store.write_tool_result(run_id, result)
         except OSError as e:
             # ハンドラ内でwarningを通知してもsummary末尾にまとまる。
-            pyfltr.warnings_.emit_warning(source="archive", message=f"{result.command} のアーカイブ書き込みに失敗: {e}")
+            pyfltr.warnings_.emit_warning(
+                source="archive",
+                message=(
+                    f"{result.command} の結果を実行アーカイブへ書き込めませんでした: {e}。"
+                    "このコマンドの結果は `show-run` と `--only-failed` から参照できません"
+                ),
+                hint=_ARCHIVE_FAILURE_HINT,
+            )
             return
         # 書き込み成功時のみarchived=Trueに更新。smart truncationの可否判定に使う。
         result.archived = True
@@ -586,18 +599,18 @@ def _run_pipeline(
     # 多重に出力する前段で打ち切り、非ゼロ終了する。warning自体は`expand_all_files`内で発行済み。
     # 部分一致（一部のみ不在）は処理継続、対象未指定（カレント走査）も対象外として扱う。
     quiet = bool(getattr(args, "quiet", False))
+    early_run_ctx = pyfltr.output.formatters.RunOutputContext(
+        config=config,
+        output_file=output_file,
+        force_text_on_stderr=force_text_on_stderr,
+        commands=[],
+        all_files=0,
+        format_source=format_source,
+        quiet=quiet,
+        subcommand=getattr(args, "subcommand", None),
+        jsonl_warnings_reach_consumer=jsonl_warnings_reach_consumer,
+    )
     if args.targets and len(pyfltr.warnings_.filtered_direct_files(reason="missing")) == len(args.targets):
-        early_run_ctx = pyfltr.output.formatters.RunOutputContext(
-            config=config,
-            output_file=output_file,
-            force_text_on_stderr=force_text_on_stderr,
-            commands=[],
-            all_files=0,
-            format_source=format_source,
-            quiet=quiet,
-            subcommand=getattr(args, "subcommand", None),
-            jsonl_warnings_reach_consumer=jsonl_warnings_reach_consumer,
-        )
         formatter.on_start(early_run_ctx)
         formatter.on_finish(early_run_ctx, [], 1, pyfltr.warnings_.collected_warnings())
         return 1, None
@@ -614,6 +627,10 @@ def _run_pipeline(
         args, commands, all_files, from_run=getattr(args, "from_run", None)
     )
     if only_failed_exit_early:
+        # スキップの理由は`apply_filter`が警告として発行済み。JSONLでもheader・warning・summaryを
+        # 出力し、何も出力せずに終了コード0で終わる状態（理由が消費主体へ届かない）を避ける。
+        formatter.on_start(early_run_ctx)
+        formatter.on_finish(early_run_ctx, [], 0, pyfltr.warnings_.collected_warnings())
         return 0, None
 
     # モノレポ用のサブプロジェクト分類とサブプロジェクト別 config を準備する。
@@ -674,7 +691,14 @@ def _run_pipeline(
             if removed:
                 logger.debug("archive: 自動削除で %d 件の古い run を削除", len(removed))
         except OSError as e:
-            pyfltr.warnings_.emit_warning(source="archive", message=f"実行アーカイブを初期化できません: {e}")
+            pyfltr.warnings_.emit_warning(
+                source="archive",
+                message=(
+                    f"実行アーカイブを初期化できないため、アーカイブ無しで続行しました: {e}。"
+                    "この実行にはrun_idが付かず、`show-run` と次回の `--only-failed` から参照できません"
+                ),
+                hint=_ARCHIVE_FAILURE_HINT,
+            )
             archive_store = None
             run_id = None
 
@@ -701,7 +725,17 @@ def _run_pipeline(
             if cache_removed:
                 logger.debug("cache: 期間超過で %d 件のエントリを削除", len(cache_removed))
         except OSError as e:
-            pyfltr.warnings_.emit_warning(source="cache", message=f"ファイル hash キャッシュを初期化できません: {e}")
+            pyfltr.warnings_.emit_warning(
+                source="cache",
+                message=(
+                    f"ファイル hash キャッシュを初期化できないため、キャッシュ無しで続行しました: {e}。"
+                    "検査結果は変わりませんが、変更の無いファイルも再検査します"
+                ),
+                hint=(
+                    "キャッシュディレクトリの書き込み権限と空き容量を確認してください。"
+                    "キャッシュが不要なら `--no-cache` を指定すると警告を抑止できます。"
+                ),
+            )
             cache_store = None
 
     archive_hook: typing.Callable[[pyfltr.command.core_.CommandResult], None] | None = None
@@ -854,7 +888,14 @@ def _run_pipeline(
         try:
             archive_store.finalize_run(run_id, exit_code=returncode, commands=commands, files=len(all_files))
         except OSError as e:
-            pyfltr.warnings_.emit_warning(source="archive", message=f"meta.json の更新に失敗: {e}")
+            pyfltr.warnings_.emit_warning(
+                source="archive",
+                message=(
+                    f"実行アーカイブの meta.json を更新できませんでした: {e}。"
+                    "`list-runs` にこの実行の終了コードと完了時刻が表示されません"
+                ),
+                hint=_ARCHIVE_FAILURE_HINT,
+            )
 
     # pre-commit経由かつformatter自動修正発生時のMM状態ガイダンスを必要に応じて出力する。
     _maybe_emit_precommit_guidance(results, structured_stdout=structured_stdout, quiet=quiet)

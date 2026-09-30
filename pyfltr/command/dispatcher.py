@@ -220,11 +220,7 @@ def _prepare_execution_params(
         for t in targets:
             if _is_external_path(t, start_cwd=start_for_filter):
                 normalized_target = pyfltr.paths.normalize_separators(t)
-                pyfltr.warnings_.emit_warning(
-                    source="external-path",
-                    message=f"{command}: 起点cwd外のパスは対象から除外しました: {normalized_target}",
-                )
-                pyfltr.warnings_.add_filtered_direct_file(normalized_target, reason="external")
+                pyfltr.command.targets.emit_external_path_warning(command, normalized_target)
             else:
                 kept.append(t)
         targets = kept
@@ -278,19 +274,11 @@ def _prepare_execution_params(
         # 監査を実施しない旧版が終了コード0を返すため、機能が成立する最低版を起動前に確認する。
         pyfltr.command.runner.ensure_package_manager_version(resolved, config, command, cwd=cwd)
     except ValueError as e:
-        message = str(e)
-        # `{command}-runner = "uv"` または `"uvx"` をPython系以外のツールに指定した場合、`build_commandline` が
-        # `PYTHON_TOOL_BIN` 未登録の旨を含むValueErrorを送出する。利用者向けに `runner` 設定の
-        # 切り替え先を案内するヒントを併記する（uv / uvx経路で動かすdev依存追加は本ケースでは無関係）。
-        # 列挙する`"direct"` / `"mise"` / `"bin-runner"` / `"js-runner"`は、Python系以外でも安全に動く代替値の集合。
-        hint: str | None = None
-        if "PYTHON_TOOL_BIN" in message:
-            hint = (
-                f'`{command}-runner` に `"direct"` / `"mise"` / `"bin-runner"` / `"js-runner"` '
-                "などのいずれかを指定してください。"
-            )
+        # `{command}-runner`の指定がツールの系統と合わない場合は、`RunnerMismatchError`が
+        # 代替の設定値を`hint`として持つため、警告の対処として併記する。
+        hint = e.hint if isinstance(e, pyfltr.command.runner.RunnerMismatchError) else None
         return pyfltr.command.tool_resolution.failed_resolution_result(
-            command, command_info, message, files=len(targets), hint=hint
+            command, command_info, str(e), files=len(targets), hint=hint
         )
     except FileNotFoundError as e:
         # runner.pyは識別子のみを送出する契約のため、利用者向け文面はここで組み立てる。

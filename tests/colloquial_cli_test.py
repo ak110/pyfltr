@@ -8,7 +8,10 @@ import pathlib
 import subprocess
 import sys
 
+import pytest
+
 import pyfltr.colloquial.check
+import pyfltr.colloquial.cli
 import pyfltr.paths
 
 
@@ -106,6 +109,29 @@ def test_missing_file_is_skipped(tmp_path: pathlib.Path) -> None:
     lines = result.stdout.splitlines()
     assert len(lines) == 1
     assert lines[0].startswith(f"{pyfltr.paths.normalize_separators(target)}:")
+    # 検査できなかったファイルを伏せず、確認事項とともに標準エラーへ通知する
+    assert pyfltr.paths.normalize_separators(missing) in result.stderr
+    assert "読み取り権限を確認してください" in result.stderr
+
+
+def test_no_replacement_candidate_shows_rewrite_guidance(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """置換候補の無い辞書行に一致した場合は、候補の位置に言い換えの方針を示す。
+
+    同梱の辞書は全行が置換候補を持つため、候補を持たない行だけの辞書へ差し替えて検証する。
+    """
+    deny = tmp_path / "deny.txt"
+    deny.write_text("ぶっちゃけ\n", encoding="utf-8")
+    monkeypatch.setattr(pyfltr.colloquial.check, "DENY_PATH", deny)
+    monkeypatch.setattr(pyfltr.colloquial.check, "ALLOW_PATH", tmp_path / "missing-allow.txt")
+    target = tmp_path / "hit.md"
+    target.write_text("本文でぶっちゃけ述べる。\n", encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["pyfltr.colloquial", str(target)])
+    assert pyfltr.colloquial.cli.main() == 1
+    out = capsys.readouterr().out
+    assert "[ぶっちゃけ] -> (" in out
+    assert "書き言葉" in out
 
 
 def test_cli_normalizes_backslash_in_filename(tmp_path: pathlib.Path) -> None:

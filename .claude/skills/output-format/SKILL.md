@@ -9,6 +9,7 @@ description: >
   tests/llm_output_test.py・tests/output_format_test.py・tests/pipeline_heartbeat_test.py・tests/main_test.py・
   tests/main_config_test.py・tests/sarif_output_test.py・tests/code_quality_test.py・tests/llmstxt_test.py・
   docs/guide/usage.md・docs/development/architecture.md・mkdocs.yml を編集する際に使用する。
+  ファイルを問わず、pyfltrがCLIとMCPで返すエラー・警告・案内の文面を書く際にも使用する。
 ---
 
 # pyfltrの出力形式とlogger・LLM出力スキーマ
@@ -20,6 +21,20 @@ pyfltrは3系統のlogger（root system / `pyfltr.textout` / `pyfltr.structured`
 `configure_structured_output` のdocstringに集約する。
 JSONLの`warning`レコードとして最終消費主体へ配送した実行時警告は、root loggerからstderrへ重複出力しない。
 配送が完了しなかった警告と、MCP内部の一時JSONLにだけ書いた警告はstderrへ通知する。
+
+## エラー・警告の文面
+
+pyfltrの出力は人間とコーディングエージェントの双方が読み、読んだ主体は出力だけから次の操作を決める。
+事実だけの文面は、読み手に原因の推測と対処の探索を強いて誤った操作を招く。
+
+- エラーと警告には、原因に加えて次に行う操作を書く。続行してよいか、何を実行・設定するか、
+  実行できない場合の代替手段を、読み手の状況に合わせて選ぶ
+- 処理を続行した警告には、続行した結果（既定値で続行した、キーを無視した、スキップした）も書く
+- 同じ事象の案内は、CLIとMCPで同じ共通関数から生成する。操作名（CLIのオプションとMCPの引数・ツール名）
+  だけが異なる場合は、共通関数の引数で渡す
+- JSONL・テキスト表示・stderr・TUI・MCPの応答のすべてへ`emit_warning`の`hint`を届ける。
+  文字列で返す出力先では`pyfltr.warnings_.format_warning_text`で本文と対処を連結する
+- 外部ツールが出力する診断の本文は対象外とする
 
 ## JSONL公開ヘルパー方針
 

@@ -102,7 +102,7 @@ json形式はpayloadの`warnings`配列とsummaryの`warnings`件数、MCPは戻
 
 json形式の`warnings`要素は`source`と`msg`を持ち、対処の手掛かりを伴う警告だけが`hint`を持つ。
 jsonl形式の`kind:"warning"`レコードから`kind`を除いたキー集合と同じで、summaryの`warnings`はその要素数を示す。
-MCPの`warnings`は警告本文だけを並べた文字列の配列となる。
+MCPの`warnings`は文字列の配列で、対処を伴う警告は本文に続けて`対処:`以降に対処を含む。
 
 json形式とjsonl形式のマッチには、切り詰めが発生した場合だけ次のキーが付く。
 
@@ -254,8 +254,9 @@ CLIでは既存の警告出力、MCPの`replace_undo`では`warnings`に通知�
   横断置換。`from_grep`はgrepのJSONL出力から対象ファイルを限定する。
   `context`は`within`で指定したアンカーの前後幅を一括指定する。
   **`dry_run`の既定値は`True`**（CLI既定の`False`と異なり、LLM暴発防止）。
-  `within`にアンカー正規表現を渡すと、`before_context`/`after_context`で定まる領域内のみ置換する（CLIの`--within`相当）
-- `replace_undo(replace_id, force=False)`: 取り消し。旧履歴の復元限界は応答の`warnings`で通知する
+  `within`にアンカー正規表現を渡すと、`before_context`/`after_context`で定まる領域内のみ置換する（CLIの`--within`相当）。
+  読み込めずにスキップしたファイルは、原因と対処を`warnings`で通知する
+- `replace_undo(replace_id, force=False)`: 取り消し。旧履歴の復元限界と、手動編集によるスキップ（`force=True`での強制復元の案内）は応答の`warnings`で通知する
 - `replace_history(action, replace_id=None)`: `action=list`で履歴一覧、`action=show`で指定履歴の詳細を返す
 
 LLMエージェントは`replace`を呼ぶ際、明示的に`dry_run=False`を指定しない限り実書き込みされない。

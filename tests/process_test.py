@@ -59,6 +59,8 @@ def test_run_subprocess_with_timeout_wrapper_returns_failed_completed_process() 
     assert proc.returncode == 124
     assert proc.timeout_exceeded is True
     assert "Timeout exceeded after 0.1s" in proc.stdout
+    # 生出力だけを読む経路（text表示・MCPのshow_run_output）でも上限の変更方法が分かる
+    assert "command-timeout" in proc.stdout
 
 
 def test_run_subprocess_with_timeout_wrapper_passthrough_normal() -> None:
@@ -270,3 +272,30 @@ def test_run_subprocess_with_timeout_oom_then_timeout(monkeypatch: pytest.Monkey
     assert proc.returncode == pyfltr.command.process.TIMEOUT_RETURNCODE
     assert proc.timeout_exceeded is True
     assert proc.retry_count == 1
+
+
+def test_timeout_reports_remaining_processes_with_action(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """停止を試みても残るプロセスがある場合は、そのPIDと停止を促す案内を出力する。"""
+
+    class _RemainingProcess:
+        pid = 424242
+
+        def kill(self) -> None:
+            pass
+
+    def _wait_procs(procs: typing.Any, timeout: float | None = None) -> tuple[list[typing.Any], list[typing.Any]]:
+        del procs, timeout
+        return [], [_RemainingProcess()]
+
+    monkeypatch.setattr(pyfltr.command.process.psutil, "wait_procs", _wait_procs)
+    with caplog.at_level("WARNING", logger="pyfltr.command.process"):
+        proc = pyfltr.command.process.run_subprocess_with_timeout(
+            [sys.executable, "-c", "import time; time.sleep(2)"],
+            _make_env(),
+            timeout=0.1,
+        )
+    assert proc.timeout_exceeded is True
+    assert "424242" in caplog.text
+    assert "表示したPIDのプロセスを停止してください" in caplog.text

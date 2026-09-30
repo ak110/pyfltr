@@ -89,7 +89,10 @@ def run_commands_with_ui(
         # 詳細traceback全文の画面表示は避け、利用者には1行サマリのみを示す。
         # 詳細はlogger経由（exc_info=True）でログハンドラー側に記録させる。
         logging.error("UI アプリケーションの実行に失敗しました: %s", exc, exc_info=True)
-        print(f"エラー: UI アプリケーションの実行に失敗しました: {exc}", file=sys.stderr)
+        print(
+            f"エラー: UI アプリケーションの実行に失敗しました: {exc}。`--no-ui` を指定するとUIを使わずに実行できます",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
 
@@ -461,7 +464,7 @@ class UIApp(App):
 
         except Exception as exc:
             # Textualエラー時の処理。詳細はlogger（exc_info=True）に記録し、画面側は1行サマリのみ。
-            error_msg = f"UI 処理中に致命的エラーが発生しました: {exc}"
+            error_msg = f"UI 処理中に致命的エラーが発生しました: {exc}。`--no-ui` を指定するとUIを使わずに実行できます"
             logging.error("UI 処理中に致命的エラーが発生しました: %s", exc, exc_info=True)
             # call_from_thread自体が失敗した場合は既にlogging済みのため追加処理不要。
             with contextlib.suppress(Exception):

@@ -8,7 +8,7 @@ catch側（`pyfltr/command/dispatcher.py`・`pyfltr/command/tool_resolution.py`�
 - `mise exec --version`事前チェック失敗時: miseが返す`stderr`にhint文を
   改行区切りで連結した複数行文面（先頭は`mise exec [tool_spec] -- <bin>: <stderr>`、
   続いて`<bin>-runner = "direct"`への切替案内）
-- `mise trust`失敗時: `mise trust --yes --all: <stderr>`の単行文面
+- `mise trust`失敗時: `MISE_TRUST_FAILURE_PREFIX`に`<stderr>`を続けた単行文面
 
 いずれも、mise由来の生エラー出力を欠落させずに利用者へ伝える目的で引数に含める。
 """
@@ -34,6 +34,30 @@ from pyfltr.command.builtin import AUTO_ARGS, AUTO_VALUE_ARGS, COMMAND_RUNNERS, 
 from pyfltr.command.env import build_mise_subprocess_env, build_subprocess_env
 
 logger = __import__("logging").getLogger(__name__)
+
+MISE_TRUST_FAILURE_PREFIX = "mise trust --yes --all: "
+"""`ensure_mise_available`がtrust失敗時に送出する`FileNotFoundError`の引数の接頭辞。
+
+catch側（`pyfltr.command.tool_resolution.format_tool_resolution_failure`）が原因種別の判定に使う。
+"""
+
+
+class RunnerMismatchError(ValueError):
+    """`{command}-runner`の指定がツールの系統（Python系・JS系）と合わない場合の例外。
+
+    `hint`は利用者が選べる代替の設定値を示す。catch側は`hint`を警告の対処として発行する。
+    """
+
+    def __init__(self, command: str, runner: str, effective: str, *, category: str, alternatives: str) -> None:
+        resolved_text = f'（`{runner}`の設定値 "{effective}" に解決）' if runner != effective else ""
+        default = pyfltr.config.config.DEFAULT_CONFIG.get(f"{command}-runner", "direct")
+        super().__init__(
+            f'{command}は{category}のツールではないため、`{command}-runner = "{runner}"`{resolved_text}では起動できません'
+        )
+        self.hint = (
+            f'`{command}-runner`を削除して既定値 "{default}" に戻すか、'
+            f"{alternatives} などツールの系統に合う値を指定してください。"
+        )
 
 
 # pyfltrのコマンド名 -> 実際に起動するパッケージのbin名の対応表。
@@ -507,7 +531,7 @@ def _resolve_python_commandline(
     if effective == "direct":
         executable = _resolve_python_tool_direct(command)
         return "direct", executable, [], None
-    raise ValueError(f"python-runnerの設定値が正しくありません: {effective=}")
+    raise ValueError(f"python-runnerの設定値が正しくありません: {effective!r}（許容値: uv, uvx, direct）")
 
 
 def _resolve_js_commandline(
@@ -574,7 +598,7 @@ def _resolve_js_commandline(
             if candidate.is_file():
                 return str(candidate), []
         raise FileNotFoundError(str(candidates[0]))
-    raise ValueError(f"js-runnerの設定値が正しくありません: {runner=}")
+    raise ValueError(f"js-runnerの設定値が正しくありません: {runner!r}（許容値: {', '.join(JS_RUNNERS)}）")
 
 
 # `{command}-runner`値の体系をbuiltin.py側のtuple定数から派生させ、
@@ -598,7 +622,7 @@ def resolve_effective_runner(command: str, runner: str, config: pyfltr.config.co
         return str(config[runner])
     if runner in _DIRECT_RUNNER_VALUES:
         return runner
-    raise ValueError(f"{command}-runnerの設定値が正しくありません: {runner=}")
+    raise ValueError(f"{command}-runnerの設定値が正しくありません: {runner!r}（許容値: {', '.join(COMMAND_RUNNERS)}）")
 
 
 # JSランナーのeffective値集合（直接指定値・グローバル委譲後の値の両方を判定するため）。
@@ -800,9 +824,12 @@ def build_commandline(
 
     if effective in _JS_EFFECTIVE_VALUES:
         if command not in JS_TOOL_BIN:
-            raise ValueError(
-                f"{command}: js-runner 対応ツールではないため "
-                f'`{command}-runner = "{runner}"`（解決後 "{effective}"）は指定できません'
+            raise RunnerMismatchError(
+                command,
+                runner,
+                effective,
+                category="JS系（pnpm・npmなどで起動する）",
+                alternatives='"direct" / "mise" / "bin-runner" / "python-runner"',
             )
         executable, prefix = _resolve_js_commandline(command, config, effective=effective, cwd=cwd)
         return ResolvedCommandline(
@@ -815,9 +842,12 @@ def build_commandline(
 
     if effective in ("uv", "uvx"):
         if command not in PYTHON_TOOL_BIN:
-            raise ValueError(
-                f"{command}: PYTHON_TOOL_BINに登録されていないため "
-                f'`{command}-runner = "{runner}"`（解決後 "{effective}"）は指定できません'
+            raise RunnerMismatchError(
+                command,
+                runner,
+                effective,
+                category="Python系（uv・uvxで起動する）",
+                alternatives='"direct" / "mise" / "bin-runner" / "js-runner"',
             )
         resolved_effective, executable, prefix, runner_fallback = _resolve_python_commandline(
             command,
@@ -895,7 +925,7 @@ def ensure_mise_available(
     if returncode == 0:
         return resolved
     if trust_failed:
-        raise FileNotFoundError(f"mise trust --yes --all: {stderr.strip()}")
+        raise FileNotFoundError(f"{MISE_TRUST_FAILURE_PREFIX}{stderr.strip()}")
     # mise registryからのツール消失・バージョン解決失敗などで起動できない場合に、
     # 利用者がpyfltr設定だけで救済できるようdirect経路への切替を案内する。
     hint_command = command if command is not None else bin_name

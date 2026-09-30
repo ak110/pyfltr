@@ -45,6 +45,34 @@ _CHANGES_FILENAME = "changes.json"
 _LEGACY_WARNING = "旧形式の履歴には元の改行情報がないため、取り消し後のバイト列は置換前と完全に一致しない場合があります。"
 
 
+def format_replace_id_not_found(replace_id: str, *, list_history: str) -> str:
+    """replace_idが見つからない場合の案内文を返す。
+
+    CLIとMCPで同じ文面を使い、履歴一覧を確認する操作名（`list_history`）だけを呼び出し側が渡す。
+    """
+    return f"replace_id が見つかりません: {replace_id}。{list_history} で有効な replace_id を確認できます。"
+
+
+def format_undo_skipped(count: int, *, force: str) -> str:
+    """手動編集によりundoをスキップした場合の案内文を返す。
+
+    CLIとMCPで同じ文面を使い、強制復元の指定方法（`force`）だけを呼び出し側が渡す。
+    """
+    return (
+        f"undo で {count} 件のファイルが手動編集後の状態のためスキップされました。"
+        f"手動編集を破棄してよい場合は {force} で強制復元できます。"
+    )
+
+
+def format_history_unreadable(replace_id: str, history_dir: pathlib.Path, exc: Exception) -> str:
+    """履歴の読み込み・デコードに失敗した場合の案内文を返す。"""
+    return (
+        f"履歴を読み込めません: {replace_id}: {exc}。"
+        f"履歴ディレクトリ {history_dir} の権限と内容を確認してください。"
+        "読み込めない状態が続く場合、この履歴は取り消しに使えないため、対象ファイルは手動で戻してください。"
+    )
+
+
 def default_history_root() -> pathlib.Path:
     """履歴ディレクトリのルートパスを返す。
 

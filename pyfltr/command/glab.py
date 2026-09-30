@@ -81,8 +81,13 @@ def execute_glab_ci_lint(
 
     if returncode != 0 and _looks_like_glab_host_missing(output):
         message = "glab がGitLabホストを検出できなかったためスキップしました。"
-        pyfltr.warnings_.emit_warning(source=command, message=message)
-        skip_output = f"{message}\n\n{output}" if output else message
+        hint = (
+            "環境変数 `GITLAB_HOST` を設定するか `glab auth login` を実行してください。"
+            f"GitLab CIの検査が不要なら `{command} = false` で無効化してください。"
+        )
+        pyfltr.warnings_.emit_warning(source=command, message=message, hint=hint)
+        skip_text = f"{message}{hint}"
+        skip_output = f"{skip_text}\n\n{output}" if output else skip_text
         return CommandResult.from_run(
             command=command,
             command_info=command_info,

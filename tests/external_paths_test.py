@@ -205,6 +205,10 @@ def test_is_external_path_absolute_outside_is_external(
     # 外部パスの記録は公開値であり、区切りを`/`へ統一した表現で保持される。
     # テストで使うパスがWindows区切りを含まないため、実装と独立した`as_posix()`で期待値を生成する。
     assert outside.as_posix() in pyfltr.warnings_.filtered_direct_files(reason="external")
+    # 除外した事実に加えて、外部パスを検査する指定方法を案内する
+    external_warnings = [w for w in pyfltr.warnings_.collected_warnings() if w["source"] == "external-path"]
+    assert external_warnings
+    assert "--allow-external-paths" in external_warnings[0]["hint"]
 
 
 # --- _resolve_config_inject_path の境界を execute_command 経由で検証 --------------

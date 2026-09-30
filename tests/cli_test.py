@@ -4,6 +4,8 @@ import argparse
 import collections.abc
 import json
 import logging
+import pathlib
+import typing
 
 import pytest
 
@@ -17,6 +19,8 @@ import pyfltr.command.dispatcher
 import pyfltr.command.error_parser
 import pyfltr.command.slow_tests
 import pyfltr.config.config
+import pyfltr.state.archive
+import pyfltr.state.cache
 import pyfltr.warnings_
 from tests.conftest import make_command_result as _make_result
 from tests.conftest import make_execution_context as _make_ctx
@@ -288,6 +292,62 @@ def test_render_results_writes_warnings_section_before_summary(text_logs, tool: 
     assert "[config]" in text
 
 
+def test_run_text_output_shows_warning_hint_in_section_and_stderr(
+    _isolated_target: pathlib.Path, capsys: pytest.CaptureFixture[str], caplog: pytest.LogCaptureFixture
+) -> None:
+    """テキスト表示では、hintを持つ警告の対処がwarnings節と標準エラーの双方に出る。"""
+    returncode = pyfltr.cli.main.run(
+        [
+            "run",
+            "--output-format=text",
+            "--no-clear",
+            "--no-archive",
+            "--commands=ruff-format",
+            "--disable=ruff-format",
+            "--work-dir",
+            str(_isolated_target),
+            str(_isolated_target / "sample.py"),
+        ]
+    )
+
+    assert returncode == 0
+    out = capsys.readouterr().out
+    section = out[out.index("-- warnings") :]
+    assert "[commands]" in section
+    assert "対処: --enable=ruff-format" in section
+    # stderrへはroot logger経由で出力されるため、ログ記録で対処の有無を確かめる
+    assert "対処: --enable=ruff-format" in caplog.text
+
+
+def test_run_archive_and_cache_init_failures_guide_actions(
+    _isolated_target: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """アーカイブ・キャッシュを初期化できない場合は、続行した結果と権限確認・無効化の指定を案内する。"""
+
+    def _raise(*_args: object, **_kwargs: object) -> typing.NoReturn:
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(pyfltr.state.archive.ArchiveStore, "start_run", _raise)
+    monkeypatch.setattr(pyfltr.state.cache.CacheStore, "cleanup", _raise)
+    pyfltr.cli.main.run(
+        [
+            "run",
+            "--output-format=jsonl",
+            "--commands=ruff-format",
+            "--disable=ruff-format",
+            "--work-dir",
+            str(_isolated_target),
+            str(_isolated_target / "sample.py"),
+        ]
+    )
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
+    warnings = {r["source"]: r for r in records if r["kind"] == "warning" and r["source"] in ("archive", "cache")}
+    assert "アーカイブ無しで続行しました" in warnings["archive"]["msg"]
+    assert "`--no-archive`" in warnings["archive"]["hint"]
+    assert "キャッシュ無しで続行しました" in warnings["cache"]["msg"]
+    assert "`--no-cache`" in warnings["cache"]["hint"]
+
+
 def test_render_results_skips_warnings_section_when_empty(text_logs):
     """warningsが空のときはwarnings見出しを出力しない。"""
     config = pyfltr.config.config.create_default_config()
@@ -489,7 +549,11 @@ def test_apply_cli_overrides_unknown_command_emits_warning():
     pyfltr.cli.overrides.apply_cli_overrides(config, _make_overrides_args(enable=["nonexistent"]))
     assert config.values == before
     warnings = pyfltr.warnings_.collected_warnings()
-    assert any("nonexistent" in w["message"] for w in warnings)
+    unknown = [w for w in warnings if "nonexistent" in w["message"]]
+    assert unknown
+    # 無視した結果に加えて、登録済みコマンド名を確認する手段を案内する
+    assert "無視しました" in unknown[0]["message"]
+    assert "pyfltr config list --all" in unknown[0]["hint"]
 
 
 def test_apply_cli_overrides_none_leaves_config_unchanged():

@@ -4295,14 +4295,26 @@ def test_parse_lychee_json_invalid() -> None:
 
 
 def test_parse_colloquial_check_without_replacement() -> None:
-    """colloquial-check: 置換候補なしの`path:line:col: [match] excerpt`形式をパースする。"""
-    output = "docs/index.md:3:5: [ちょっと] 本文にちょっと該当する"
+    """colloquial-check: 置換候補なしの`path:line:col: [match] -> (言い換えの方針) excerpt`形式をパースする。"""
+    output = "docs/index.md:3:5: [ちょっと] -> (文意を保ったまま書き言葉の表現へ言い換える) 本文にちょっと該当する"
     errors = pyfltr.command.error_parser.parse_errors("colloquial-check", output)
     assert len(errors) == 1
     assert errors[0].file == "docs/index.md"
     assert errors[0].line == 3
     assert errors[0].col == 5
-    assert errors[0].message == "[ちょっと] 本文にちょっと該当する"
+    assert errors[0].message == "[ちょっと] -> (文意を保ったまま書き言葉の表現へ言い換える) 本文にちょっと該当する"
+
+
+def test_parse_colloquial_check_ignores_skip_notice() -> None:
+    """colloquial-check: 読み込めないファイルのスキップ通知（標準エラー由来）を診断として拾わない。"""
+    output = (
+        "C:/work/bad.md: 読み込めないため口語表現の検査をスキップしました:"
+        " 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte。"
+        "UTF-8で保存されていることと読み取り権限を確認してください\n"
+        "docs/a.md:3:1: [唐突感] -> [論理の飛躍] 唐突感が否めない。\n"
+    )
+    errors = pyfltr.command.error_parser.parse_errors("colloquial-check", output)
+    assert [(e.file, e.line, e.col) for e in errors] == [("docs/a.md", 3, 1)]
 
 
 def test_parse_colloquial_check_with_replacement() -> None:

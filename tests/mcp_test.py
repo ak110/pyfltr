@@ -406,16 +406,16 @@ async def test_tool_show_run_output_tool_not_found(tmp_path: pathlib.Path) -> No
     ("tool_name", "use_existing_run", "expected_message"),
     [
         ("show_run_diagnostics", False, "run_id が見つかりません"),
-        ("show_run_diagnostics", True, "にコマンド 'textlint' の結果が保存されていません"),
+        ("show_run_diagnostics", True, "`show_run`ツール でrun"),
         ("show_run_output", False, "run_id が見つかりません"),
-        ("show_run_output", True, "にコマンド 'textlint' の結果が保存されていません"),
+        ("show_run_output", True, "`show_run`ツール でrun"),
     ],
     ids=["diagnostics-unknown-run", "diagnostics-unsaved-command", "output-unknown-run", "output-unsaved-command"],
 )
 async def test_tool_error_message_reaches_client(
     tmp_path: pathlib.Path, tool_name: str, use_existing_run: bool, expected_message: str
 ) -> None:
-    """想定内のエラーでは、pyfltrのエラー文言が応答本文としてクライアントへ届く。
+    """想定内のエラーでは、pyfltrのエラー文言が次の操作を含む応答本文としてクライアントへ届く。
 
     ツール関数を直接呼ぶ検査は例外型しか確かめられず、
     SDKが本文を`Error executing tool <ツール名>`へ置き換える事象を検出できないため、
@@ -432,6 +432,22 @@ async def test_tool_error_message_reaches_client(
 # ---------------------------------------------------------------------------
 # MCPServerのサーバー登録確認
 # ---------------------------------------------------------------------------
+
+
+def test_execute_mcp_start_failure_guides_troubleshooting(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """MCPサーバーの起動に失敗した場合は、原因とトラブルシューティングの参照先を示して1で終わる。"""
+
+    def _raise() -> typing.NoReturn:
+        raise RuntimeError("port busy")
+
+    monkeypatch.setattr(pyfltr.cli.mcp_server, "build_server", _raise)
+    with caplog.at_level("ERROR"):
+        rc = pyfltr.cli.mcp_server.execute_mcp(argparse.Namespace())
+    assert rc == 1
+    assert "port busy" in caplog.text
+    assert "guide/troubleshooting/" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -887,7 +903,52 @@ async def test_tool_run_reports_disabled_command(tmp_path: pathlib.Path) -> None
 
     assert result.skipped_reason is not None
     assert "ec" in result.skipped_reason
+    # 理由に続けて、有効化する操作を案内する
+    assert "--enable=ec" in result.skipped_reason
     assert not result.commands
+
+
+@pytest.mark.asyncio
+async def test_tool_run_returns_warnings_without_stderr_duplication(
+    tmp_path: pathlib.Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """実行時の警告を対処込みで返却へ含め、サーバーのstderrへは重ねて出力しない。"""
+    sample = tmp_path / "input.txt"
+    sample.write_text("hello\n", encoding="utf-8")
+
+    with caplog.at_level("WARNING"):
+        result = await pyfltr.cli.mcp_server.tool_run(paths=[str(sample)], commands=["ec"], disable=["ec"])
+
+    commands_warnings = [warning for warning in result.warnings if warning.source == "commands"]
+    assert len(commands_warnings) == 1
+    assert "ec" in commands_warnings[0].message
+    assert commands_warnings[0].hint is not None
+    assert "--enable=ec" in commands_warnings[0].hint
+    assert not [record for record in caplog.records if commands_warnings[0].message in record.getMessage()]
+
+
+@pytest.mark.asyncio
+async def test_tool_run_returns_guidance_on_failure(tmp_path: pathlib.Path) -> None:
+    """失敗したコマンドがある実行では、次の操作の案内を返却へ含める。"""
+    work_dir = tmp_path / "project"
+    work_dir.mkdir()
+    (work_dir / "sample.txt").write_text("value\n", encoding="utf-8")
+    (work_dir / "pyproject.toml").write_text(
+        "[tool.pyfltr]\nrespect-gitignore = false\n\n"
+        "[tool.pyfltr.custom-commands.always-fail]\n"
+        f"path = {json.dumps(sys.executable)}\n"
+        'args = ["-c", "import sys; sys.exit(1)"]\n'
+        'type = "linter"\ntargets = ["*.txt"]\npass-filenames = false\n',
+        encoding="utf-8",
+    )
+
+    result = await pyfltr.cli.mcp_server.tool_run(
+        paths=["sample.txt"], commands=["always-fail"], work_dir=str(work_dir), no_cache=True
+    )
+
+    assert result.failed == ["always-fail"]
+    assert any("--only-failed" in item for item in result.guidance)
+    assert any(result.run_id is not None and result.run_id in item for item in result.guidance)
 
 
 @pytest.mark.asyncio
@@ -1004,8 +1065,27 @@ async def test_tool_run_only_failed_no_previous_run(tmp_path: pathlib.Path) -> N
     assert result.exit_code == 0
     assert not result.failed
     assert not result.commands
+    # 固定文ではなく、直前のrunが無いという実際の理由と次の操作を返す
     assert result.skipped_reason is not None
-    assert len(result.skipped_reason) > 0
+    assert "直前の run が無い" in result.skipped_reason
+    assert "--only-failed を外して" in result.skipped_reason
+    assert [warning.source for warning in result.warnings] == ["only-failed"]
+
+
+@pytest.mark.asyncio
+async def test_tool_run_only_failed_unresolved_from_run(tmp_path: pathlib.Path) -> None:
+    """from_runを解決できない場合は、直前runが無い場合と区別できる理由を返す。"""
+    _seed_run(tmp_path)
+    sample = tmp_path / "input.txt"
+    sample.write_text("hello\n", encoding="utf-8")
+
+    result = await pyfltr.cli.mcp_server.tool_run(paths=[str(sample)], commands=["ec"], only_failed=True, from_run="ZZZZZZ")
+
+    assert result.run_id is None
+    assert result.exit_code == 0
+    assert result.skipped_reason is not None
+    assert "--from-run 'ZZZZZZ' を解決できない" in result.skipped_reason
+    assert "直前の run が無い" not in result.skipped_reason
 
 
 # ---------------------------------------------------------------------------
@@ -1075,6 +1155,13 @@ async def test_tool_grep_reads_pattern_file(tmp_path: pathlib.Path) -> None:
 
     assert result.total_matches == 2
     assert {match.match_text for match in result.matches} == {"alpha", "gamma"}
+
+
+@pytest.mark.asyncio
+async def test_tool_grep_rejects_missing_pattern_with_argument_names(tmp_path: pathlib.Path) -> None:
+    """パターン未指定の拒否では、指定に使える引数名を案内する。"""
+    with pytest.raises(_ToolError, match="`pattern`・`patterns`・`pattern_file`"):
+        await pyfltr.cli.mcp_server.tool_grep(paths=[str(tmp_path)])
 
 
 @pytest.mark.asyncio
@@ -1987,6 +2074,8 @@ async def test_tool_replace_undo_hash_mismatch_skips_without_force(tmp_path: pat
     assert target.as_posix() in undo_result.skipped
     assert not undo_result.restored
     assert undo_result.exit_code == 1
+    # CLIと同じく、スキップの理由と強制復元の指定方法を応答の警告で示す
+    assert any("`force=True`" in warning for warning in undo_result.warnings)
 
 
 @pytest.mark.asyncio
@@ -2019,9 +2108,23 @@ async def test_tool_replace_undo_hash_mismatch_force_restores(tmp_path: pathlib.
 
 
 @pytest.mark.asyncio
+async def test_tool_replace_reports_unreadable_file_warning_without_changing_exit_code(tmp_path: pathlib.Path) -> None:
+    """読み込めないファイルは対処付きの警告で通知し、`exit_code`の意味は変えない。"""
+    (tmp_path / "ok.txt").write_text("needle\n", encoding="utf-8")
+    (tmp_path / "bad.txt").write_bytes(b"\x81needle\n")
+
+    result = await pyfltr.cli.mcp_server.tool_replace(
+        pattern="needle", replacement="x", paths=[str(tmp_path)], dry_run=True, no_gitignore=True
+    )
+
+    assert result.exit_code == 0
+    assert any("bad.txt" in warning and "対処:" in warning and "`encoding`" in warning for warning in result.warnings)
+
+
+@pytest.mark.asyncio
 async def test_tool_replace_undo_not_found_raises() -> None:
-    """`replace_id`が存在しない場合`ValueError`が発生すること。"""
-    with pytest.raises(_ToolError, match="replace_id"):
+    """`replace_id`が存在しない場合は、有効なIDを確認する手段を示してエラーにすること。"""
+    with pytest.raises(_ToolError, match="`replace_history`ツール"):
         await pyfltr.cli.mcp_server.tool_replace_undo(replace_id="NONEXISTENTID00000000000000")
 
 
@@ -2186,6 +2289,16 @@ async def test_tool_config_rejects_unknown_key(tmp_path: pathlib.Path, monkeypat
     (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\n", encoding="utf-8")
     with pytest.raises(_ToolError, match="認識できません"):
         await pyfltr.cli.mcp_server.tool_config(action="get", key="unknown-key")
+
+
+@pytest.mark.asyncio
+async def test_tool_config_set_without_pyproject_guides_use_global(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """project側のpyproject.tomlが無いsetは、CLIと同じ文面でglobal設定の指定方法を案内する。"""
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(_ToolError, match="`use_global=True` を指定してください"):
+        await pyfltr.cli.mcp_server.tool_config(action="set", key="jobs", value="2")
 
 
 @pytest.mark.asyncio

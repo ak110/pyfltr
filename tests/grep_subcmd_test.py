@@ -348,7 +348,10 @@ def test_grep_json_exposes_decode_and_truncation_warnings(
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
     assert len(payload["warnings"]) == 2
-    assert all(set(warning) == {"source", "msg"} for warning in payload["warnings"])
+    # 対処を持つ警告（デコード失敗）だけが`hint`を持ち、切り詰めの警告は本文だけを持つ
+    assert sorted(set(warning) for warning in payload["warnings"]) == sorted([{"source", "msg"}, {"source", "msg", "hint"}])
+    decode_warning = next(warning for warning in payload["warnings"] if "hint" in warning)
+    assert "--encoding" in decode_warning["hint"]
     assert all("message" not in warning for warning in payload["warnings"])
     assert payload["summary"]["warnings"] == len(payload["warnings"])
 

@@ -64,7 +64,11 @@ def execute_pre_commit(
             command_info=command_info,
             commandline=commandline,
             returncode=None,
-            output=".pre-commit-config.yaml が見つかりません。",
+            output=(
+                f".pre-commit-config.yaml が見つからないため{command}統合をスキップしました。"
+                "フックを使う場合は .pre-commit-config.yaml を作成し、"
+                f"使わない場合は `{command} = false` で無効化してください。"
+            ),
             files=len(targets),
             elapsed=time.perf_counter() - start_time,
         )

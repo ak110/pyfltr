@@ -352,7 +352,9 @@ def test_command_info_unknown_command(capsys: pytest.CaptureFixture[str]) -> Non
     rc = pyfltr.cli.command_info.execute_command_info(parser, args)
     captured = capsys.readouterr()
     assert rc == 1
-    assert "未知のコマンド" in captured.err
+    assert "コマンドが見つかりません: not-a-tool" in captured.err
+    # 候補が無い場合も、登録済みのコマンド名を確認する手段を案内する
+    assert "pyfltr config list --all" in captured.err
 
 
 @pytest.mark.parametrize(

@@ -67,18 +67,43 @@ def flatten_commands_arg(values: list[str] | None, config: pyfltr.config.config.
     return result
 
 
-def validate_commands(commands: list[str], config: pyfltr.config.config.Config) -> None:
+CLI_LIST_COMMANDS = "`pyfltr config list --all`"
+"""CLI利用者へ示す、登録済みコマンド名の確認手段。"""
+
+MCP_LIST_COMMANDS = '`config`ツールの`action="list", include_defaults=True`'
+"""MCP利用者へ示す、登録済みコマンド名の確認手段。"""
+
+
+def format_unknown_command_message(
+    command: str, config: pyfltr.config.config.Config, *, list_commands: str = CLI_LIST_COMMANDS
+) -> str:
+    """未知のコマンド名を検出したときの文面を組み立てる。
+
+    候補があれば「もしかして: ...」を併記し、候補の有無にかかわらず登録済みコマンド名の確認手段を案内する。
+    確認手段はCLIとMCPで異なるため`list_commands`で呼び出し側が渡す。
+    """
+    suggestions = difflib.get_close_matches(command, list(config.commands), n=3, cutoff=0.6)
+    parts = [f"コマンドが見つかりません: {command}"]
+    if suggestions:
+        parts.append(f"もしかして: {', '.join(suggestions)}")
+    parts.append(
+        f"ビルトインのコマンド名は {list_commands} で、カスタムコマンドは"
+        " pyproject.tomlの `[tool.pyfltr.custom-commands]` で確認できます"
+    )
+    return "。".join(parts)
+
+
+def validate_commands(
+    commands: list[str], config: pyfltr.config.config.Config, *, list_commands: str = CLI_LIST_COMMANDS
+) -> None:
     """コマンド名が設定へ登録済みであることを検証する。
 
-    未知のコマンド名を検出した場合は、`difflib`による候補提示を含む
-    メッセージで`ValueError`を送出する。CLI経路は`parser.error`へ、
-    MCP経路はMCPエラーへ変換する。
+    未知のコマンド名を検出した場合は、`format_unknown_command_message`の文面で
+    `ValueError`を送出する。CLI経路は`parser.error`へ、MCP経路はMCPエラーへ変換する。
     """
     for command in commands:
         if command not in config.commands:
-            suggestions = difflib.get_close_matches(command, list(config.commands), n=3, cutoff=0.6)
-            suffix = f"。もしかして: {', '.join(suggestions)}" if suggestions else ""
-            raise ValueError(f"コマンドが見つかりません: {command}{suffix}")
+            raise ValueError(format_unknown_command_message(command, config, list_commands=list_commands))
 
 
 def compute_unmet_commands(

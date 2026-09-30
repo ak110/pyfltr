@@ -294,10 +294,7 @@ def _execute_replace(
                     encoding=args.encoding,
                 )
         except (UnicodeDecodeError, OSError) as exc:
-            pyfltr.warnings_.emit_warning(
-                source="replace",
-                message=f"読み込みに失敗したためスキップしました: {file}: {exc}",
-            )
+            pyfltr.grep_.scanner.emit_read_failure_warning("replace", file, exc, encoding=args.encoding)
             read_failures += 1
             continue
         if result.count == 0:
@@ -517,8 +514,9 @@ def _execute_show_history(replace_id: str, output_format: str, output_file: path
         meta = store.load_replace(replace_id)
     except FileNotFoundError:
         sys.stderr.write(
-            f"エラー: replace_id が見つかりません: {replace_id}。"
-            "`pyfltr replace --list-history` で有効な replace_id を確認できます\n"
+            "エラー: "
+            + pyfltr.grep_.history.format_replace_id_not_found(replace_id, list_history="`pyfltr replace --list-history`")
+            + "\n"
         )
         return 1
     if output_format == "jsonl":
@@ -549,18 +547,16 @@ def _execute_undo(parser: argparse.ArgumentParser, args: argparse.Namespace, out
         restored, skipped, history_warnings = store.undo_replace(replace_id, force=args.force)
     except FileNotFoundError:
         sys.stderr.write(
-            f"エラー: replace_id が見つかりません: {replace_id}。"
-            "`pyfltr replace --list-history` で有効な replace_id を確認できます\n"
+            "エラー: "
+            + pyfltr.grep_.history.format_replace_id_not_found(replace_id, list_history="`pyfltr replace --list-history`")
+            + "\n"
         )
         return 1
-    except UnicodeDecodeError as exc:
+    except (UnicodeDecodeError, OSError) as exc:
         # 履歴メタJSONや保存済み変更前ファイルのデコード失敗（保存後にディレクトリ構造を
-        # 直接破壊された場合等）を捕捉する
-        sys.stderr.write(f"エラー: 履歴のデコードに失敗しました: {replace_id}: {exc}\n")
-        return 1
-    except OSError as exc:
-        # 履歴ディレクトリへのアクセス失敗（権限エラー・ストレージ障害等）を捕捉する
-        sys.stderr.write(f"エラー: 履歴の読み込みに失敗しました: {replace_id}: {exc}\n")
+        # 直接破壊された場合等）と、履歴ディレクトリへのアクセス失敗（権限エラー・ストレージ障害等）を捕捉する
+        message = pyfltr.grep_.history.format_history_unreadable(replace_id, store.history_root / replace_id, exc)
+        sys.stderr.write(f"エラー: {message}\n")
         return 1
 
     exit_code = 1 if skipped else 0
@@ -569,9 +565,7 @@ def _execute_undo(parser: argparse.ArgumentParser, args: argparse.Namespace, out
     if skipped:
         pyfltr.warnings_.emit_warning(
             source="replace-undo",
-            message=(
-                f"undo で {len(skipped)} 件のファイルが手動編集後の状態のためスキップされました。 --force で強制復元できます。"
-            ),
+            message=pyfltr.grep_.history.format_undo_skipped(len(skipped), force="--force"),
         )
 
     if output_format == "jsonl":

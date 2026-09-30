@@ -109,7 +109,7 @@ def defer_stderr() -> collections.abc.Iterator[None]:
                 _delivery_state.deferred.clear()
                 _delivery_state.delivered_ids.clear()
         for entry in pending:
-            logger.warning(entry["message"])
+            logger.warning(format_warning_text(entry))
 
 
 def mark_delivered(entries: collections.abc.Iterable[dict[str, typing.Any]]) -> None:
@@ -151,7 +151,21 @@ def emit_warning(source: str, message: str, *, exc_info: bool = False, hint: str
         if _delivery_state.depth > 0:
             _delivery_state.deferred.append(entry)
             return
-    logger.warning(message, exc_info=exc_info)
+    logger.warning(format_warning_text({"message": message, "hint": hint}), exc_info=exc_info)
+
+
+def format_warning_text(entry: dict[str, typing.Any]) -> str:
+    """警告1件を人間向けの1つの文字列へ整形する。
+
+    `hint`を持つ警告は本文に続けて対処を示す。テキスト表示のwarnings節・stderr・
+    MCPの`warnings`（文字列の一覧）はいずれも本関数を通し、対処が経路によって欠けないようにする。
+    JSONLの`warning`レコードは`hint`を独立したキーで持つため本関数を使わない。
+    """
+    message = str(entry["message"])
+    hint = entry.get("hint")
+    if not hint:
+        return message
+    return f"{message} 対処: {hint}"
 
 
 def collected_warnings() -> list[dict[str, typing.Any]]:

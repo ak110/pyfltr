@@ -1388,6 +1388,8 @@ def test_expand_all_files_warns_excluded_file(tmp_path: pathlib.Path, caplog) ->
         assert len(result) == 0
         assert "除外設定により無視されました" in caplog.text
         assert normalized_target in caplog.text
+        # stderrにも、除外を無視して検査する指定方法が対処として出る
+        assert "対処: 除外設定を無視して検査する場合は `--no-exclude`" in caplog.text
         assert pyfltr.warnings_.filtered_direct_files(reason="excluded") == [normalized_target]
     finally:
         pyfltr.warnings_.clear()
@@ -1419,7 +1421,9 @@ def test_expand_all_files_warns_io_error(
         result = pyfltr.command.targets.expand_all_files([target], config, start_cwd=tmp_path)
 
     assert result == []
-    assert f"I/O Error: {normalized_target}" in caplog.text
+    assert f"指定されたパスを読み取れないため対象から除外しました: {normalized_target}: test I/O error" in caplog.text
+    # 例外の要約に続けて、利用者が確かめる対象（存在と権限）を案内する
+    assert "読み取り権限を確認してください" in caplog.text
 
 
 def test_expand_all_files_warns_missing_file(tmp_path: pathlib.Path, caplog) -> None:
@@ -2469,8 +2473,16 @@ def test_resolve_bin_commandline_mise_untrusted_auto_trust_trust_failure(mocker)
     config.values["bin-runner"] = "mise"
     config.values["mise-auto-trust"] = True
 
-    with pytest.raises(FileNotFoundError, match="permission denied"):
+    with pytest.raises(FileNotFoundError, match="permission denied") as exc_info:
         _resolve_bin_commandline_via_two_step("shellcheck", config)
+
+    # ツール不在ではなくmise設定の信頼が原因と分かる文面にし、手動の信頼・設定・direct切り替えを案内する
+    message = pyfltr.command.tool_resolution.format_tool_resolution_failure("shellcheck", str(exc_info.value), config)
+    assert "ツールが見つかりません" not in message
+    assert "mise trust --yes --all" in message
+    assert "permission denied" in message
+    assert "`mise-auto-trust`" in message
+    assert 'shellcheck-runner = "direct"' in message
 
 
 @pytest.mark.real_mise_subprocess
@@ -3416,8 +3428,13 @@ def test_execute_glab_ci_lint_skips_on_host_missing(mocker, tmp_path: pathlib.Pa
     assert result.returncode is None
     assert result.status == "skipped"
     assert "スキップしました" in result.output
+    # スキップの結果だけでなく、ホストを設定する操作と無効化する操作を案内する
+    assert "GITLAB_HOST" in result.output
     warnings = pyfltr.warnings_.collected_warnings()
-    assert any(w.get("source") == "glab-ci-lint" for w in warnings)
+    glab_warnings = [w for w in warnings if w.get("source") == "glab-ci-lint"]
+    assert glab_warnings
+    assert "glab auth login" in glab_warnings[0]["hint"]
+    assert "glab-ci-lint = false" in glab_warnings[0]["hint"]
 
 
 def test_execute_glab_ci_lint_skips_on_wrapped_host_missing(mocker, tmp_path: pathlib.Path) -> None:
@@ -4383,7 +4400,7 @@ def test_build_commandline_uv_runner_on_non_python_tool_raises() -> None:
     """`typos-runner = "uv"` × path未指定でエラー。"""
     config = pyfltr.config.config.create_default_config()
     config.values["typos-runner"] = "uv"
-    with pytest.raises(ValueError, match="PYTHON_TOOL_BINに登録されていない"):
+    with pytest.raises(pyfltr.command.runner.RunnerMismatchError, match="Python系"):
         pyfltr.command.runner.build_commandline("typos", config)
 
 
@@ -4391,7 +4408,7 @@ def test_build_commandline_uvx_runner_on_non_python_tool_raises() -> None:
     """`typos-runner = "uvx"` × path未指定でエラー。"""
     config = pyfltr.config.config.create_default_config()
     config.values["typos-runner"] = "uvx"
-    with pytest.raises(ValueError, match="PYTHON_TOOL_BINに登録されていない"):
+    with pytest.raises(pyfltr.command.runner.RunnerMismatchError, match="Python系"):
         pyfltr.command.runner.build_commandline("typos", config)
 
 
@@ -4539,8 +4556,10 @@ def test_execute_command_uv_runner_on_non_python_tool_emits_runner_change_hint(
     )
     assert result.status == "resolution_failed"
     warnings = pyfltr.warnings_.collected_warnings()
-    runner_warnings = [w for w in warnings if w["source"] == "tool-resolve" and "PYTHON_TOOL_BIN" in w["message"]]
+    runner_warnings = [w for w in warnings if w["source"] == "tool-resolve" and "Python系" in w["message"]]
     assert len(runner_warnings) == 1
+    # 内部の登録表の名前ではなく、利用者が選べる設定値を案内する
+    assert "PYTHON_TOOL_BIN" not in runner_warnings[0]["message"]
     assert "typos-runner" in runner_warnings[0].get("hint", "")
     assert "direct" in runner_warnings[0]["hint"]
 

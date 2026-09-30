@@ -12,6 +12,7 @@ import typing
 
 import pyfltr.cli.output_format
 import pyfltr.paths
+import pyfltr.warnings_
 from pyfltr.grep_.preview import MatchPreview
 from pyfltr.grep_.types import MatchRecord, ReplaceRecord
 
@@ -42,7 +43,9 @@ def render_filtered_sections(
         if warnings:
             pyfltr.cli.output_format.text_logger.info(f"{'-' * 10} warnings {'-' * (72 - 10 - 10)}")
             for entry in warnings:
-                pyfltr.cli.output_format.text_logger.info(f"    [{entry['source']}] {entry['message']}")
+                pyfltr.cli.output_format.text_logger.info(
+                    f"    [{entry['source']}] {pyfltr.warnings_.format_warning_text(entry)}"
+                )
         if missing_targets:
             pyfltr.cli.output_format.text_logger.info(f"{'-' * 10} missing-targets {'-' * (72 - 10 - 17)}")
             for path in missing_targets:

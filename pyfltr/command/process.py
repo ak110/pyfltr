@@ -158,7 +158,11 @@ def _kill_process_tree(proc: "subprocess.Popen[str]", *, timeout: float) -> None
         _, still_alive = psutil.wait_procs(alive, timeout=timeout)
         if still_alive:
             remaining_pids = [p.pid for p in still_alive]
-            logger.warning("プロセスツリー停止後に残存するプロセスあり: pids=%s", remaining_pids)
+            logger.warning(
+                "プロセスツリーの停止を試みましたが終了しないプロセスが残っています: pids=%s。"
+                "必要に応じて表示したPIDのプロセスを停止してください",
+                remaining_pids,
+            )
 
 
 atexit.register(_DEFAULT_REGISTRY.cleanup)
@@ -407,7 +411,8 @@ def run_subprocess_with_timeout(
     """`run_subprocess` のtimeout例外を捕捉して`CompletedProcess`相当に変換する共通wrapper。
 
     timeout超過時は `returncode=TIMEOUT_RETURNCODE` (=124) と `timeout_exceeded=True` をセットし、
-    途中まで蓄積したstdout末尾に英文の `Timeout exceeded after Ns` 注記を1行追記して返す。
+    途中まで蓄積したstdout末尾に英文の `Timeout exceeded after Ns` 注記と上限の変更方法を1行追記して返す。
+    注記はtext表示の生出力・実行アーカイブの`output.log`（MCPの`show_run_output`）へ届く。
     既存の各 `run_subprocess` 呼び出し経路では、`returncode != 0` から `CommandResult.status` が
     失敗を導出する流れを変えずにtimeout検知を取り込めるようにする。
     `InterruptedExecution` は捕捉せずに上位へ伝播させる（TUI協調停止の責務は呼び出し側）。
@@ -433,7 +438,11 @@ def run_subprocess_with_timeout(
                 cwd=cwd,
             )
         except TimeoutExceededExecution as e:
-            message = f"\nTimeout exceeded after {e.timeout:.1f}s (elapsed={e.elapsed:.1f}s)\n"
+            message = (
+                f"\nTimeout exceeded after {e.timeout:.1f}s (elapsed={e.elapsed:.1f}s)."
+                " If the tool legitimately needs more time, raise `command-timeout`"
+                " or the per-tool `<command>-timeout` in [tool.pyfltr].\n"
+            )
             if on_output is not None:
                 on_output(message)
             combined_output = e.output + message

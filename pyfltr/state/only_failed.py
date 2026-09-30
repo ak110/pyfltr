@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
-import logging
 import pathlib
 import typing
 
@@ -18,7 +17,9 @@ import pyfltr.state.archive
 import pyfltr.state.runs
 import pyfltr.warnings_
 
-logger = logging.getLogger(__name__)
+_ARCHIVE_UNREADABLE_HINT = (
+    "キャッシュディレクトリの読み取り権限を確認してください。解消できない場合は --only-failed を外して全体を実行してください。"
+)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -85,9 +86,10 @@ def apply_filter(
     Returns:
         `(フィルタリング後commands, per_tool_targets, exit_early)`
         - `args.only_failed`が偽の場合は`(commands, None, False)`を返す（未適用）
-        - 直前runが存在しない / アーカイブ読み取り失敗 / 失敗ツールが無い / 全ツールで
-          targets交差が空の場合は`(commands, None, True)`を返し、呼び出し側で
-          rc=0の早期終了を促す
+        - 直前runが存在しない / アーカイブ読み取り失敗 / `from_run`の解決失敗 / 失敗ツールが無い /
+          全ツールでtargets交差が空の場合は`(commands, None, True)`を返し、呼び出し側で
+          rc=0の早期終了を促す。理由と対処は`source="only-failed"`の警告として発行し、
+          JSONL・テキスト表示・MCPの`skipped_reason`がいずれも同じ警告から理由を得る
         - それ以外はフィルタリング後commandsとToolTargets dictを返す（exit_early=False）
 
     `all_files`は`expand_all_files`の結果（`args.targets`指定があれば既に
@@ -106,7 +108,8 @@ def apply_filter(
     except OSError as e:
         pyfltr.warnings_.emit_warning(
             source="only-failed",
-            message=f"実行アーカイブを読み取れません: {e}",
+            message=f"実行アーカイブを読み取れないため、再実行の対象を決められず実行をスキップしました: {e}",
+            hint=_ARCHIVE_UNREADABLE_HINT,
         )
         return commands, None, True
 
@@ -117,17 +120,28 @@ def apply_filter(
         try:
             resolved_run_id = pyfltr.state.runs.resolve_run_id(store, from_run)
         except pyfltr.state.runs.RunIdError as e:
-            logger.warning(f"--from-run {from_run!r}: {e}")
+            pyfltr.warnings_.emit_warning(
+                source="only-failed",
+                message=f"--from-run {from_run!r} を解決できないため実行をスキップしました: {e}",
+            )
             return commands, None, True
 
     last_run = _load_run_summary(store, resolved_run_id=resolved_run_id)
     if last_run is None:
-        _log_skip_reason("参照可能な直前 run が見つかりません。対象なしでスキップします。")
+        _emit_skip_warning(
+            "参照可能な直前の run が無いため、再実行の対象が無く実行をスキップしました。",
+            hint=(
+                "--only-failed を外して一度実行してください。失敗があれば、その後 --only-failed で失敗分だけを再実行できます。"
+            ),
+        )
         return commands, None, True
 
     failed_tools = _collect_failed_tools(store, last_run.run_id, commands)
     if not failed_tools:
-        _log_skip_reason(f"直前 run ({last_run.run_id}) に失敗ツールがありません。対象なしでスキップします。")
+        _emit_skip_warning(
+            f"直前の run ({last_run.run_id}) に失敗したツールが無いため、実行をスキップしました。",
+            hint="再実行は不要です。全体を確認し直す場合は --only-failed を外して実行してください。",
+        )
         return commands, None, True
 
     # ツール別のターゲットを構築する。交差空のツールはtargets dictから除外し、
@@ -140,8 +154,9 @@ def apply_filter(
 
     filtered_commands = _filter_commands_with_targets(commands, targets)
     if not filtered_commands:
-        _log_skip_reason(
-            f"直前 run ({last_run.run_id}) の失敗ツールはすべて指定 targets と交差しません。対象なしでスキップします。"
+        _emit_skip_warning(
+            f"直前の run ({last_run.run_id}) の失敗ファイルはいずれも指定した対象に含まれないため、実行をスキップしました。",
+            hint="失敗したファイルを対象に含めるか、対象の指定を外して実行してください。",
         )
         return commands, None, True
 
@@ -169,6 +184,7 @@ def _load_run_summary(
             pyfltr.warnings_.emit_warning(
                 source="only-failed",
                 message=f"実行アーカイブを読み取れません: {e}",
+                hint=_ARCHIVE_UNREADABLE_HINT,
             )
             return None
         return next((r for r in all_runs if r.run_id == resolved_run_id), None)
@@ -179,6 +195,7 @@ def _load_run_summary(
         pyfltr.warnings_.emit_warning(
             source="only-failed",
             message=f"実行アーカイブを読み取れません: {e}",
+            hint=_ARCHIVE_UNREADABLE_HINT,
         )
         return None
     return runs[0] if runs else None
@@ -196,6 +213,7 @@ def _collect_failed_tools(
         pyfltr.warnings_.emit_warning(
             source="only-failed",
             message=f"直前 run のツール一覧を読み取れません: {e}",
+            hint=_ARCHIVE_UNREADABLE_HINT,
         )
         return []
 
@@ -260,10 +278,19 @@ def _filter_commands_with_targets(
     return [cmd for cmd in commands if cmd in targets]
 
 
-def _log_skip_reason(reason: str) -> None:
-    """`--only-failed`によるスキップ・除外理由をログ出力する。
+def _emit_skip_warning(message: str, *, hint: str) -> None:
+    """`--only-failed`による全体スキップの理由と対処を警告として発行する。
 
-    早期終了（全体スキップ）と個別ツール除外の双方で同じ`--only-failed:`
-    プレフィックス付き形式で発行する共通ヘルパー。
+    JSONL出力ではtext_loggerのINFOが出力されないため、INFOだけではエージェントへ理由が届かない。
+    警告にすることでJSONLの`warning`レコード・テキスト表示・MCPの`skipped_reason`へ同じ理由を届ける。
+    """
+    pyfltr.warnings_.emit_warning(source="only-failed", message=message, hint=hint)
+
+
+def _log_skip_reason(reason: str) -> None:
+    """`--only-failed`による個別ツールの除外理由をログ出力する。
+
+    全体スキップではなく一部ツールだけを除外する場合は、残りのツールの実行結果が
+    利用者へ届くため、INFOでの通知に留める。
     """
     pyfltr.cli.output_format.text_logger.info(f"--only-failed: {reason}")

@@ -35,6 +35,7 @@ def format_tool_resolution_failure(
     - JS系（`JS_TOOL_BIN`）でdirect指定: `node_modules` 探索失敗として `pnpm install` / `pnpx` 切り替えを案内する
     - JS系（`JS_TOOL_BIN`）でdirect以外: PATH探索失敗として `{command}-path` 明示を案内する
     - ネイティブ系（`_BIN_TOOL_SPEC`）: `direct` への切り替えまたは `{command}-path` 明示を案内する
+    - `mise trust`の自動実行の失敗: 手動の`mise trust`・`mise-auto-trust`の確認・`direct`への切り替えを案内する
     - その他（カスタムコマンド等）: 汎用案内（PATH探索失敗）
     """
     # 効果値（resolve_effective_runner適用後）を判定し、direct分岐との切り分けに使う。
@@ -81,8 +82,14 @@ def format_tool_resolution_failure(
     # ネイティブ系（mise経路の事前チェック失敗）は`ensure_mise_available`が
     # mise stderrとhint文を改行区切りで連結した文面を例外引数に保持する契約。
     # 対象の複数行文面は素通し採用し、mise stderrを欠落させない（runner.pyのmodule docstring参照）。
-    # `mise trust`失敗時の単行文面（`mise trust --yes --all: <stderr>`）は本ヘルパーの
-    # 末尾分岐の汎用文面組み立てを通過させ、`mise trust`プレフィクスで原因種別を利用者へ伝える。
+    # `mise trust`の自動実行の失敗は、ツール不在ではなくmise設定の信頼が原因のため専用の文面にする。
+    if raw_identifier.startswith(pyfltr.command.runner.MISE_TRUST_FAILURE_PREFIX):
+        stderr = raw_identifier.removeprefix(pyfltr.command.runner.MISE_TRUST_FAILURE_PREFIX)
+        return (
+            f"mise設定の信頼（`mise trust --yes --all`）の自動実行に失敗したため、{command}を起動できません: {stderr}。"
+            "`mise trust`を手動で実行するか、`mise-auto-trust`の設定を確認するか、"
+            f'`{command}-runner = "direct"`を指定してPATH上の実行ファイルを直接起動してください'
+        )
     if "\n" in raw_identifier:
         return f"ツールが見つかりません: {raw_identifier}"
     return (

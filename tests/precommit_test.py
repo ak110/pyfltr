@@ -1,5 +1,6 @@
 """pre-commit・prek統合のテストコード。"""
 
+import argparse
 import pathlib
 import re
 import textwrap
@@ -11,6 +12,7 @@ import yaml
 
 import pyfltr.cli.precommit_guidance
 import pyfltr.command.dispatcher
+import pyfltr.command.precommit
 import pyfltr.command.process
 import pyfltr.config.config
 from tests import conftest as _testconf
@@ -445,3 +447,26 @@ class TestBuildPrekSkipValue:
         result = pyfltr.cli.precommit_guidance.build_skip_value(config, tmp_path, command="prek")
 
         assert result == "pyfltr"
+
+
+def test_execute_pre_commit_without_config_guides_create_or_disable(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """.pre-commit-config.yamlが無い場合は、スキップした結果と作成・無効化の操作を示す。"""
+    monkeypatch.delenv("PRE_COMMIT", raising=False)
+    config = pyfltr.config.config.create_default_config()
+    result = pyfltr.command.precommit.execute_pre_commit(
+        "pre-commit",
+        config.commands["pre-commit"],
+        ["pre-commit"],
+        [],
+        config,
+        argparse.Namespace(verbose=False),
+        None,
+        None,
+        0.0,
+        cwd=tmp_path,
+    )
+    assert result.status == "skipped"
+    assert "スキップしました" in result.output
+    assert "`pre-commit = false`" in result.output

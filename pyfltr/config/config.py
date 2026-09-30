@@ -1052,6 +1052,25 @@ def default_global_config_path() -> pathlib.Path:
     return pathlib.Path(platformdirs.user_config_dir("pyfltr", appauthor=False)) / "config.toml"
 
 
+def _read_config_text(path: pathlib.Path) -> str:
+    """設定ファイルを読み込む。読み込めない場合は対象のパスと対処を含む`ValueError`を送出する。"""
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError as e:
+        raise ValueError(f"設定ファイルを読み込めません: {path}: {e}。ファイルの読み取り権限を確認してください") from e
+
+
+def format_project_config_missing(path: pathlib.Path, *, use_global: str) -> str:
+    """project側のpyproject.tomlが無い状態で設定を書き込もうとした場合の案内文を返す。
+
+    CLIとMCPで同じ文面を使い、global設定を対象にする指定方法（`use_global`）だけを呼び出し側が渡す。
+    """
+    return (
+        f"pyproject.tomlが見つかりません: {path}。"
+        f"プロジェクトのルートで実行するか、global設定（XDG準拠）に書く場合は {use_global} を指定してください"
+    )
+
+
 def _read_global_config(path: pathlib.Path) -> dict[str, typing.Any]:
     """globalのconfig.tomlを読み込み、`[tool.pyfltr]`配下を返す。
 
@@ -1060,7 +1079,7 @@ def _read_global_config(path: pathlib.Path) -> dict[str, typing.Any]:
     if not path.exists():
         return {}
     try:
-        text = path.read_text(encoding="utf-8")
+        text = _read_config_text(path)
         data = tomlkit.parse(text)
     except tomlkit.exceptions.TOMLKitError as e:
         raise ValueError(f"global設定ファイルのTOML構文が不正です: {path}: {e}") from e
@@ -1225,7 +1244,7 @@ def load_config(
     pyproject_path = (base / "pyproject.toml").absolute()
     project_data: dict[str, typing.Any] = {}
     if pyproject_path.exists():
-        text = pyproject_path.read_text(encoding="utf-8")
+        text = _read_config_text(pyproject_path)
         try:
             pyproject_doc = tomlkit.parse(text)
         except tomlkit.exceptions.TOMLKitError as e:
@@ -1255,6 +1274,7 @@ def load_config(
         pyfltr.warnings_.emit_warning(
             source="config",
             message=(f"archive/cache系のキーはglobal設定が優先されるため、project側の値は無視されます: {keys_str}"),
+            hint="project側から該当キーを削除するか、global側の値を `pyfltr config set --global` で変更してください。",
         )
 
     _apply_preset(config, tool_pyfltr, emit_config_warning)
@@ -1285,7 +1305,9 @@ def _apply_preset(
     if not isinstance(raw, str):
         emit_config_warning(
             "preset",
-            message=f"設定値 `preset` の型が不正です: 期待 文字列、実値 {_japanese_type_label(raw)}",
+            message=(
+                f"設定値 `preset` の型が不正です: 期待 文字列、実値 {_japanese_type_label(raw)}。presetを適用せずに続行しました"
+            ),
         )
         return
     preset = raw
@@ -1302,7 +1324,7 @@ def _apply_preset(
     message = f"`preset` の値が不正です: {preset!r}（許容値: {', '.join(_PRESETS.keys())}）"
     if suggestions:
         message = f"{message}。もしかして: {', '.join(suggestions)}"
-    emit_config_warning("preset", message=message)
+    emit_config_warning("preset", message=f"{message}。presetを適用せずに続行しました")
 
 
 def _register_custom_commands(
@@ -1352,7 +1374,10 @@ def _apply_language_gate(
         else:
             emit_config_warning(
                 category_key,
-                message=f"設定値 `{category_key}` の型が不正です: 期待 真偽値、実値 {_japanese_type_label(raw)}",
+                message=(
+                    f"設定値 `{category_key}` の型が不正です: 期待 真偽値、実値 {_japanese_type_label(raw)}。"
+                    "既定値 false（無効）として続行しました"
+                ),
             )
             enabled = False
         if enabled:
@@ -1402,7 +1427,7 @@ def _normalize_config_values(
                 if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
                     emit_config_warning(
                         key,
-                        message=f'`{key}` はstr型のリストで指定してください: 例 ["vendor", "gen_*.py"]',
+                        message=f'`{key}` はstr型のリストで指定してください: 例 ["vendor", "gen_*.py"]。このキーは無視しました',
                     )
                     continue
                 config.values[key] = value
@@ -1426,7 +1451,7 @@ def _normalize_config_values(
                 if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
                     emit_config_warning(
                         key,
-                        message=f'`{key}` はstr型のリストで指定してください: 例 ["--exclude=foo"]',
+                        message=f'`{key}` はstr型のリストで指定してください: 例 ["--exclude=foo"]。このキーは無視しました',
                     )
                     continue
                 config.values[key] = value
@@ -1451,7 +1476,10 @@ def _normalize_config_values(
             actual_label = _japanese_type_label(value)
             emit_config_warning(
                 key,
-                message=f"設定値 `{key}` の型が不正です: 期待 {expected_label}、実値 {actual_label}",
+                message=(
+                    f"設定値 `{key}` の型が不正です: 期待 {expected_label}、実値 {actual_label}。"
+                    "このキーは無視し、既定値で続行しました"
+                ),
             )
             continue
         config.values[key] = value
@@ -1489,7 +1517,10 @@ def _validate_config(config: Config, emit_config_warning: _ConfigWarningEmitter)
         if runner_value not in allowed:
             emit_config_warning(
                 runner_key,
-                message=f"`{runner_key}` の値が不正です: {runner_value!r}（許容値: {', '.join(allowed)}）",
+                message=(
+                    f"`{runner_key}` の値が不正です: {runner_value!r}（許容値: {', '.join(allowed)}）。"
+                    f"既定値 {DEFAULT_CONFIG[runner_key]!r} で続行しました"
+                ),
             )
             config.values[runner_key] = DEFAULT_CONFIG[runner_key]
 
@@ -1501,11 +1532,15 @@ def _validate_config(config: Config, emit_config_warning: _ConfigWarningEmitter)
         if not key.endswith("-runner") or key in _global_runner_keys:
             continue
         if value not in COMMAND_RUNNERS:
+            fallback = DEFAULT_CONFIG.get(key, "direct")
             emit_config_warning(
                 key,
-                message=f"`{key}` の値が不正です: {value!r}（許容値: {', '.join(COMMAND_RUNNERS)}）",
+                message=(
+                    f"`{key}` の値が不正です: {value!r}（許容値: {', '.join(COMMAND_RUNNERS)}）。"
+                    f"既定値 {fallback!r} で続行しました"
+                ),
             )
-            config.values[key] = DEFAULT_CONFIG.get(key, "direct")
+            config.values[key] = fallback
 
     # per-tool {command}-severityの値バリデーション。
     # ビルトイン分は既定値 "error" が登録済みでも、利用者が pyproject.toml で
@@ -1517,7 +1552,9 @@ def _validate_config(config: Config, emit_config_warning: _ConfigWarningEmitter)
         if value not in SEVERITY_VALUES:
             emit_config_warning(
                 key,
-                message=f"`{key}` の値が不正です: {value!r}（許容値: {', '.join(SEVERITY_VALUES)}）",
+                message=(
+                    f"`{key}` の値が不正です: {value!r}（許容値: {', '.join(SEVERITY_VALUES)}）。既定値 'error' で続行しました"
+                ),
             )
             config.values[key] = "error"
 
@@ -1531,7 +1568,9 @@ def _validate_config(config: Config, emit_config_warning: _ConfigWarningEmitter)
         if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
             emit_config_warning(
                 key,
-                message=f'`{key}` は文字列のリストで指定してください: 例 ["注意1", "注意2"]、実値 {value!r}',
+                message=(
+                    f'`{key}` は文字列のリストで指定してください: 例 ["注意1", "注意2"]、実値 {value!r}。このキーは無視しました'
+                ),
             )
             config.values[key] = []
 
@@ -1553,7 +1592,11 @@ def _warn_config_files(config: Config, base: pathlib.Path) -> None:
         candidates = ", ".join(info.config_files)
         pyfltr.warnings_.emit_warning(
             source="config",
-            message=f"{command} が有効化されていますが、設定ファイルが見つかりません: {candidates}",
+            message=(
+                f"{command} が有効化されていますが、設定ファイルが見つかりません: {candidates}。"
+                "ツールは設定ファイル無しで起動するため、既定の設定で検査されるか、設定不足で失敗します"
+            ),
+            hint=f"候補のいずれかを作成するか、不要なら `{command} = false` で無効化してください。",
         )
 
 
@@ -1585,38 +1628,42 @@ def _register_custom_command(
     スキップする。値の部分採用（一部のみ反映）は行わない。
     検証はすべての項目を `config.commands` / `config.values` 更新前に完了させる。
     """
+
+    def _skip_registration(message: str) -> None:
+        emit_config_warning("custom-commands", message=f"{message}。このカスタムコマンドの登録をスキップしました")
+
     # 名前衝突チェック
     if name in BUILTIN_COMMANDS:
         emit_config_warning(
             "custom-commands",
-            message=f"カスタムコマンド `{name}` がビルトインコマンドと衝突しています",
+            message=(
+                f"カスタムコマンド `{name}` がビルトインコマンドと衝突するため、登録をスキップしました。"
+                f"別名へ変更するか、ビルトインの `{name}-args` などでビルトイン側の設定を上書きしてください"
+            ),
         )
         return
 
     # type (必須)
     cmd_type = definition.get("type")
     if cmd_type not in ("formatter", "linter", "tester"):
-        emit_config_warning(
-            "custom-commands",
-            message=f"カスタムコマンド `{name}` の `type` が不正です: {cmd_type!r}（許容値: formatter, linter, tester）",
+        _skip_registration(
+            f"カスタムコマンド `{name}` の `type` が不正です: {cmd_type!r}（許容値: formatter, linter, tester）",
         )
         return
 
     # path (省略時はコマンド名)
     path = definition.get("path", name)
     if not isinstance(path, str):
-        emit_config_warning(
-            "custom-commands",
-            message=f"カスタムコマンド `{name}` の `path` は文字列で指定してください",
+        _skip_registration(
+            f"カスタムコマンド `{name}` の `path` は文字列で指定してください",
         )
         return
 
     # args (省略時は空リスト)
     args = definition.get("args", [])
     if not isinstance(args, list):
-        emit_config_warning(
-            "custom-commands",
-            message=f"カスタムコマンド `{name}` の `args` はリストで指定してください",
+        _skip_registration(
+            f"カスタムコマンド `{name}` の `args` はリストで指定してください",
         )
         return
 
@@ -1624,18 +1671,16 @@ def _register_custom_command(
     # 既定値の`args`を保ったまま末尾へ追加する引数。ビルトインコマンドと同じ意味づけ。
     extend_args = definition.get("extend-args", definition.get("extend_args", []))
     if not isinstance(extend_args, list) or not all(isinstance(item, str) for item in extend_args):
-        emit_config_warning(
-            "custom-commands",
-            message=f"カスタムコマンド `{name}` の `extend-args` は文字列のリストで指定してください",
+        _skip_registration(
+            f"カスタムコマンド `{name}` の `extend-args` は文字列のリストで指定してください",
         )
         return
 
     # fix-args（省略可。省略時はfixモード非対応として扱う）
     fix_args = definition.get("fix-args", definition.get("fix_args"))
     if fix_args is not None and not isinstance(fix_args, list):
-        emit_config_warning(
-            "custom-commands",
-            message=f"カスタムコマンド `{name}` の `fix-args` はリストで指定してください",
+        _skip_registration(
+            f"カスタムコマンド `{name}` の `fix-args` はリストで指定してください",
         )
         return
 
@@ -1650,9 +1695,8 @@ def _register_custom_command(
         # list[str]を構築する。
         targets = [str(item) for item in raw_targets]
     else:
-        emit_config_warning(
-            "custom-commands",
-            message=f"カスタムコマンド `{name}` の `targets` は文字列または文字列のリストで指定してください",
+        _skip_registration(
+            f"カスタムコマンド `{name}` の `targets` は文字列または文字列のリストで指定してください",
         )
         return
 
@@ -1660,33 +1704,29 @@ def _register_custom_command(
     error_pattern = definition.get("error-pattern", definition.get("error_pattern"))
     if error_pattern is not None:
         if not isinstance(error_pattern, str):
-            emit_config_warning(
-                "custom-commands",
-                message=f"カスタムコマンド `{name}` の `error-pattern` は文字列で指定してください",
+            _skip_registration(
+                f"カスタムコマンド `{name}` の `error-pattern` は文字列で指定してください",
             )
             return
         try:
             compiled = re.compile(error_pattern)
         except re.error as e:
-            emit_config_warning(
-                "custom-commands",
-                message=f"カスタムコマンド `{name}` の `error-pattern` が不正な正規表現です: {e}",
+            _skip_registration(
+                f"カスタムコマンド `{name}` の `error-pattern` が不正な正規表現です: {e}",
             )
             return
         missing_group = next((g for g in ("file", "line", "message") if g not in compiled.groupindex), None)
         if missing_group is not None:
-            emit_config_warning(
-                "custom-commands",
-                message=f"カスタムコマンド `{name}` の `error-pattern` に `{missing_group}` 名前付きグループが必要です",
+            _skip_registration(
+                f"カスタムコマンド `{name}` の `error-pattern` に `{missing_group}` 名前付きグループが必要です",
             )
             return
 
     # config-files（省略可。設定ファイル候補のglobパターン）
     raw_config_files: typing.Any = definition.get("config-files", definition.get("config_files", []))
     if not isinstance(raw_config_files, list) or not all(isinstance(item, str) for item in raw_config_files):
-        emit_config_warning(
-            "custom-commands",
-            message=f"カスタムコマンド `{name}` の `config-files` は文字列のリストで指定してください",
+        _skip_registration(
+            f"カスタムコマンド `{name}` の `config-files` は文字列のリストで指定してください",
         )
         return
     config_files: list[str] = [str(item) for item in raw_config_files]
@@ -1694,27 +1734,24 @@ def _register_custom_command(
     # fast（省略時はFalse）
     fast = definition.get("fast", False)
     if not isinstance(fast, bool):
-        emit_config_warning(
-            "custom-commands",
-            message=f"カスタムコマンド `{name}` の `fast` は真偽値で指定してください",
+        _skip_registration(
+            f"カスタムコマンド `{name}` の `fast` は真偽値で指定してください",
         )
         return
 
     # pass-filenames（省略時はTrue）
     pass_filenames = definition.get("pass-filenames", definition.get("pass_filenames", True))
     if not isinstance(pass_filenames, bool):
-        emit_config_warning(
-            "custom-commands",
-            message=f"カスタムコマンド `{name}` の `pass-filenames` は真偽値で指定してください",
+        _skip_registration(
+            f"カスタムコマンド `{name}` の `pass-filenames` は真偽値で指定してください",
         )
         return
 
     # severity（省略時は "error"）。許容値以外は警告して登録スキップ。
     raw_severity: typing.Any = definition.get("severity", "error")
     if raw_severity not in SEVERITY_VALUES:
-        emit_config_warning(
-            "custom-commands",
-            message=(
+        _skip_registration(
+            (
                 f"カスタムコマンド `{name}` の `severity` の値が不正です: "
                 f"{raw_severity!r}（許容値: {', '.join(SEVERITY_VALUES)}）"
             ),
@@ -1725,9 +1762,8 @@ def _register_custom_command(
     # hints（省略時は空リスト。要素はstr）。
     raw_hints: typing.Any = definition.get("hints", [])
     if not isinstance(raw_hints, list) or not all(isinstance(item, str) for item in raw_hints):
-        emit_config_warning(
-            "custom-commands",
-            message=f"カスタムコマンド `{name}` の `hints` は文字列のリストで指定してください",
+        _skip_registration(
+            f"カスタムコマンド `{name}` の `hints` は文字列のリストで指定してください",
         )
         return
     hints: list[str] = [str(item) for item in raw_hints]
@@ -1794,7 +1830,7 @@ def _validate_targets_value(
         return [str(item) for item in value]
     emit_config_warning(
         key,
-        message=f"`{key}` は文字列または文字列のリストで指定してください",
+        message=f"`{key}` は文字列または文字列のリストで指定してください。このキーは無視し、既定の対象で続行しました",
     )
     return None
 
@@ -1896,7 +1932,7 @@ def read_config_values(path: pathlib.Path) -> dict[str, typing.Any]:
     if not path.exists():
         return {}
     try:
-        text = path.read_text(encoding="utf-8")
+        text = _read_config_text(path)
         data = tomlkit.parse(text)
     except tomlkit.exceptions.TOMLKitError as e:
         raise ValueError(f"設定ファイルのTOML構文が不正です: {path}: {e}") from e
@@ -1919,7 +1955,7 @@ def set_config_value(
     `create_if_missing=False`でファイル不在なら`FileNotFoundError`を送出する。
     """
     if path.exists():
-        text = path.read_text(encoding="utf-8")
+        text = _read_config_text(path)
         try:
             doc = tomlkit.parse(text)
         except tomlkit.exceptions.TOMLKitError as e:
@@ -1952,7 +1988,7 @@ def delete_config_value(path: pathlib.Path, key: str) -> bool:
     """
     if not path.exists():
         return False
-    text = path.read_text(encoding="utf-8")
+    text = _read_config_text(path)
     try:
         doc = tomlkit.parse(text)
     except tomlkit.exceptions.TOMLKitError as e:
@@ -2003,7 +2039,9 @@ def parse_config_value(key: str, raw: str) -> typing.Any:
         return raw.split(",") if raw else []
     if isinstance(default, dict):
         raise ValueError(f"`{key}` は辞書型のためCLIから直接設定できません。pyproject.tomlを直接編集してください")
-    raise ValueError(f"`{key}` の値型はCLI経由では設定できません: {type(default).__name__}")
+    raise ValueError(
+        f"`{key}` の値型はCLI経由では設定できません: {type(default).__name__}。pyproject.tomlを直接編集してください"
+    )
 
 
 # `_close_matches`/`_japanese_type_label`/`format_unknown_key_message` はconfig.py内で

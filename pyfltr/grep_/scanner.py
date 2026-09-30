@@ -11,6 +11,7 @@ import collections.abc
 import pathlib
 import re
 
+import pyfltr.paths
 import pyfltr.warnings_
 from pyfltr.grep_.types import FileMatchSummary, MatchRecord
 
@@ -28,6 +29,26 @@ _TYPE_PATTERNS: dict[str, tuple[str, ...]] = {
     "yaml": ("*.yaml", "*.yml"),
     "shell": ("*.sh", "*.bash", "*.zsh"),
 }
+
+
+def emit_read_failure_warning(source: str, file: pathlib.Path, exc: Exception, *, encoding: str) -> None:
+    """grep・replaceで対象ファイルを読めずにスキップしたことを、原因と対処付きで警告する。
+
+    CLIとMCPの双方の走査経路から呼び、同じ事象に同じ文面を返す。
+    """
+    path = pyfltr.paths.normalize_separators(file)
+    if isinstance(exc, UnicodeDecodeError):
+        pyfltr.warnings_.emit_warning(
+            source=source,
+            message=f"文字コード {encoding} で読めないためスキップしました: {path}",
+            hint="ファイルの文字コードを `--encoding`（MCPでは`encoding`）で指定してください。",
+        )
+        return
+    pyfltr.warnings_.emit_warning(
+        source=source,
+        message=f"ファイルを読み込めないためスキップしました: {path}: {getattr(exc, 'strerror', None) or exc}",
+        hint="ファイルの存在と読み取り権限を確認してください。",
+    )
 
 
 def filter_files_by_type(files: list[pathlib.Path], types: list[str]) -> list[pathlib.Path]:
@@ -102,18 +123,8 @@ def scan_files(
                 continue
         try:
             text = _read_search_text(file, encoding)
-        except UnicodeDecodeError:
-            pyfltr.warnings_.emit_warning(
-                source="grep",
-                message=f"エンコーディングエラーのためスキップしました: {file}",
-            )
-            continue
-        except OSError:
-            pyfltr.warnings_.emit_warning(
-                source="grep",
-                message=f"ファイル読み込みに失敗したためスキップしました: {file}",
-                exc_info=True,
-            )
+        except (UnicodeDecodeError, OSError) as exc:
+            emit_read_failure_warning("grep", file, exc, encoding=encoding)
             continue
         for per_file, record in enumerate(
             _scan_text(
