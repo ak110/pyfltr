@@ -11,8 +11,14 @@ import threading
 import time
 import typing
 
+import anyio
+import mcp
+import mcp_types
 import psutil
+import pytest
 import tomlkit
+
+import pyfltr.cli.mcp_server
 
 
 class _Client:
@@ -226,3 +232,44 @@ def test_stdio_remains_responsive_and_cancels_only_owned_process_tree(tmp_path: 
         client.send("tools/call", {"name": "list_runs", "arguments": {}}, 6)
         assert "result" in client.receive(6)
         assert 2 not in client.pending
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("encoding", ["cp1252", "cp932"])
+async def test_mcp_worker_uses_utf8_with_non_utf8_standard_streams(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, encoding: str
+) -> None:
+    """標準入出力が非UTF-8でも、公開MCPの日本語入力・結果・エラーを失わない。"""
+    monkeypatch.setenv("PYFLTR_CACHE_DIR", str(tmp_path / "cache"))
+    sample = tmp_path / "sample.txt"
+    sample.write_text("日本語\n", encoding="utf-8")
+    wrapper = tmp_path / "worker_streams.py"
+    wrapper.write_text(
+        "import sys\nimport pyfltr.cli.mcp_worker\n"
+        f"sys.stdin.reconfigure(encoding={encoding!r})\n"
+        f"sys.stdout.reconfigure(encoding={encoding!r})\n"
+        "sys.exit(pyfltr.cli.mcp_worker.main())\n",
+        encoding="utf-8",
+    )
+    open_process = anyio.open_process
+
+    async def _open(command: list[str], **kwargs: typing.Any) -> anyio.abc.Process:
+        # OSの標準ストリームを差し替えた実インタプリタで、同じworker入口を実行する。
+        return await open_process([command[0], "-I", str(wrapper), command[-1]], **kwargs)
+
+    monkeypatch.setattr(anyio, "open_process", _open)
+    async with mcp.Client(pyfltr.cli.mcp_server.build_server()) as client:
+        result = await client.call_tool(
+            "grep",
+            {"paths": [str(sample)], "pattern": "日本語", "no_exclude": True, "no_gitignore": True},
+        )
+        assert not result.is_error
+        assert result.structured_content is not None
+        assert result.structured_content["matches"][0]["match_text"] == "日本語"
+        failure = await client.call_tool("show_run_output", {"run_id": "nonexistent", "commands": ["ruff-check"]})
+        assert failure.is_error
+        assert any(
+            "run_id が見つかりません" in content.text
+            for content in failure.content
+            if isinstance(content, mcp_types.TextContent)
+        )

@@ -20,7 +20,8 @@ def main() -> int:
         sys.stderr.write("MCP workerの処理名が不正です。サーバーから起動してください。\n")
         return 1
     handler = pyfltr.cli.mcp_server.TOOL_HANDLERS[sys.argv[1]]
-    arguments = json.load(sys.stdin)
+    # IPCは親がUTF-8のバイト列で送る。Windowsの標準入出力の既定文字コードへ委ねない。
+    arguments = json.loads(sys.stdin.buffer.read().decode("utf-8"))
     try:
         # ライブラリ由来のprintもIPCのJSONへ混ぜず、診断用stderrへ届ける。
         with contextlib.redirect_stdout(sys.stderr):
@@ -32,7 +33,7 @@ def main() -> int:
     except Exception:  # worker境界の異常はstderrへ残し、内部例外を応答に展開しない。
         logging.exception("MCP workerの処理に失敗しました")
         return 1
-    sys.stdout.write(json.dumps(response, ensure_ascii=False) + "\n")
+    sys.stdout.buffer.write((json.dumps(response, ensure_ascii=False) + "\n").encode("utf-8"))
     return 0
 
 
