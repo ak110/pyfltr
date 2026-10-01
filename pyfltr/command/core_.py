@@ -394,7 +394,7 @@ class CommandResult:
         - `formatted`: formatterがファイルを書き換えた成功（再実行不要）
         - `skipped`: 対象ファイル0件等で起動しなかった
         - `failed`: 通常の失敗。`severity` が既定値 `"error"` のとき採用する
-        - `warning`: per-tool `{command}-severity = "warning"` 設定下での失敗格下げ。
+        - `warning`: per-tool `{command}-severity = "warning"` 設定またはツール固有の一時障害分類による失敗格下げ。
           パイプライン全体exit codeに影響しない。`commands_summary.needs_action.warning` へ集計し、
           `summary.guidance` のfailure系文言は出力しない
         - `resolution_failed`: ツール起動コマンドの解決に失敗した
@@ -460,6 +460,7 @@ class CommandResult:
         - `commandline` ・ `effective_runner` ・ `runner_source` ・ `runner_fallback`: 代表結果から引き継ぐ。
           対象0件の結果はこれらを持たないため、実行した結果の起動コマンドとrunner情報を残す
         - `fixed_files`: 全実行の和集合
+        - `severity`: 最も重い結果から引き継ぎ、警告と通常失敗の混在でも失敗を保持する
         - その他のフィールドは先頭結果から引き継ぐ
 
         `results` が1件のみの場合はそのまま返す（フィールドのコピー含む）。
@@ -548,7 +549,7 @@ class CommandResult:
             runner_source=representative.runner_source,
             runner_fallback=representative.runner_fallback,
             timeout_exceeded=any_timeout,
-            severity=head.severity,
+            severity=worst.severity,
             retry_count=total_retry_count,
             slow_tests=pyfltr.command.slow_tests.take_slowest(merged_slow_tests),
         )

@@ -10,6 +10,7 @@ import pathlib
 import re
 import typing
 
+import pyfltr.command.lychee
 import pyfltr.output.github_annotations
 import pyfltr.output.rule_urls
 import pyfltr.paths
@@ -1051,18 +1052,24 @@ def _parse_lychee_json(output: str) -> list[ErrorLocation]:
           }
         }
 
-    `error_map`は「ファイルパス → エラーレスポンス配列」のmap。各エラーから`url`/`status.text`を抽出し、
+    `error_map`と`timeout_map`は「ファイルパス → 失敗レスポンス配列」のmap。各失敗から`url`/`status.text`を抽出し、
     `ErrorLocation.message`へ整形する。lycheeのJSONには行情報を含まないため`line=1`固定とする。
+    HTTP(S)の5xxと応答タイムアウトだけをwarning、その他をerrorとして取り込む。
     JSON解析失敗時は空リストを返す。
     """
     data = _try_json_loads(output)
     if not isinstance(data, dict):
         return []
     error_map = data.get("error_map", {})
+    timeout_map = data.get("timeout_map", {})
     if not isinstance(error_map, dict):
         return []
+    if not isinstance(timeout_map, dict):
+        timeout_map = {}
     results: list[ErrorLocation] = []
-    for file_path, entries in error_map.items():
+    for file_path, entries, is_timeout in [(path, items, False) for path, items in error_map.items()] + [
+        (path, items, True) for path, items in timeout_map.items()
+    ]:
         if not isinstance(entries, list):
             continue
         for entry in entries:
@@ -1083,7 +1090,7 @@ def _parse_lychee_json(output: str) -> list[ErrorLocation]:
                     col=None,
                     command="lychee",
                     message=message,
-                    severity="error",
+                    severity="warning" if pyfltr.command.lychee.is_transient_failure(entry, timeout=is_timeout) else "error",
                 )
             )
     return results

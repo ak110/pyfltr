@@ -39,9 +39,10 @@ Dependabotによる自動修正PRの作成は無効とし、更新は`make updat
 そのため`uvx`等で配布物を取得して依存を解決する利用者環境と、
 同じ方式でpyfltrを導入する公式Dockerイメージには波及しない。
 上流パッケージの厳密ピンにより依存更新だけでは解消できない場合の上書きによる迂回の採否は、
-`agent-toolkit:coding-standards`の「依存管理」の項を参照する。
-参照先の項は`~/dotfiles/agent-toolkit/skills/coding-standards/SKILL.md`の
-「コーディング品質（全言語共通）」節にある。
+[共通規範の「バージョン指定と更新」](https://github.com/ak110/dotfiles/blob/master/agent-toolkit/skills/writing-standards/references/dependency-management.md#バージョン指定と更新)を参照する。
+利用者へ波及する脆弱性は上書きで迂回せず、上流の追従を待つ。
+開発時のみ用いる依存の上書きは、共通規範の条件に従って判断する。
+上書きが依存の要求を置き換える仕様は、[uvのDependency overrides](https://docs.astral.sh/uv/concepts/resolution/#dependency-overrides)を参照する。
 `[project] dependencies`と`[project.optional-dependencies]`が宣言する依存、および
 それらから推移的に解決される依存は利用者環境へ波及する。
 開発用の依存グループ経由でのみ入る依存は波及しない。

@@ -807,7 +807,7 @@ dotnet-test = true
   `pass-filenames = false`によりリポジトリ全体を対象とする
 - lychee: `lychee-args = ["--format", "json", "--no-progress"]`（出力パースのためJSON必須、`--no-progress`で
   プログレスバーを抑止）。既定は有効。
-  外部URL到達失敗による判定変動を抑えたい場合は`lychee-severity = "warning"`で警告扱いに切り替えられる
+  5xx・応答タイムアウトは有限回の再試行後に警告として扱い、404等のリンク切れは失敗として扱う
 - cargo-fmt: `cargo-fmt-args = ["fmt"]`（常時書き込みモード。pyfltr規約によりformatterは`--fix`なしでも強制修正する）
 - cargo-clippy:
     - `cargo-clippy-args = ["clippy", "--all-targets"]`（共通前半部）
@@ -921,8 +921,8 @@ Markdown・HTML中の外部URL到達性を検証するため、ネットワー�
 lychee = true
 # 同時接続数（既定: 4）。0以下でlychee既定値（128）へ委ねる
 lychee-max-concurrency = 4
-# 外部URL到達失敗を警告扱いに切り替える例
-lychee-severity = "warning"
+# 404等も含め全失敗を警告にしたい場合だけ指定する
+# lychee-severity = "warning"
 # 非公開リポジトリ等で特定URLが認証なしで404になる場合の除外例
 lychee-extend-args = ["--exclude=github\\.com/owner/repo/actions"]
 # 外部URLを検証せずローカルリンクのみ検査する例（CI環境などで利用）
@@ -930,6 +930,14 @@ lychee-extend-args = ["--exclude=github\\.com/owner/repo/actions"]
 ```
 
 既定対象は`*.md`・`*.html`。`lychee-extend-targets`で対象を追加できる。
+
+HTTP(S)リンクの5xxは初回に加えて最大3回再試行し、応答タイムアウトはlychee自身の再試行を使う。
+最後まで残った失敗がこれらだけなら、URLと原因を警告として表示し、pyfltrは正常終了する。
+追加設定は不要で、途中で復旧したリンクは成功として扱う。
+警告が残ったリンクは、次回のチェックまたは`pyfltr run --commands=lychee`で再確認する。
+404等のリンク切れが混在すれば失敗として扱う。
+結果のJSONを完全に分類できない場合と、ツール起動やpyfltr側の実行時間上限に関する異常も失敗のまま保持する。
+再試行と待機は`lychee-timeout`（省略時は`command-timeout`）の時間上限に含まれる。
 
 `lychee-max-concurrency`の既定値`4`はCI環境でgithub.com宛リンクのチェックが
 `Network error: HTTP/2 protocol error. Server may not support HTTP/2 properly`で

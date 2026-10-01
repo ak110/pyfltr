@@ -494,7 +494,7 @@ JSON consumerが`record["hint_urls"]`等へドット記法アクセスできる�
   特に`failed`/`warning`は0件であること自体がエラーなし / 警告なし判定に直結するため、省略は不可
 - 0件で省略する: `resolution_failed`。ツール解決が成功する通常プロジェクトでは常に0件となる付加情報のため
 
-`warning`は`{command}-severity = "warning"`設定下で従来`failed`扱いだった結果が
+`warning`は`{command}-severity = "warning"`設定またはツール固有の一時障害分類によって失敗結果が
 `status="warning"`に格下げされたものを集計する（パイプライン全体exit codeには影響しない）。
 ツール起動自体に失敗したケース（`resolution_failed` / `timeout_exceeded`）は`severity`の影響を受けない。
 実行時警告（`kind:"warning"`レコード）の件数は`commands_summary`の外の条件付きキー`warnings`で表し、
@@ -677,7 +677,7 @@ JSONLは選択した`output_mode`をheaderへ確定してから出力する必�
 `show-run`は各ツールの最終保存結果のみを参照可能で、ステージ別保存への拡張は対象外とする。
 
 run_id解決は完全一致に加えて前方一致と`latest`エイリアスを許容する。
-解決ロジックは`pyfltr/runs.py`の`resolve_run_id()`に集約し、
+解決ロジックは`pyfltr/state/runs.py`の`resolve_run_id()`に集約し、
 MCPサーバー・`--only-failed`からも再利用する。
 
 ### `--only-failed`
@@ -686,7 +686,7 @@ MCPサーバー・`--only-failed`からも再利用する。
 
 - 直前runは`ArchiveStore.list_runs(limit=1)`の先頭を採用する
 - 失敗ツール・失敗ファイルはアーカイブのtoolメタとdiagnosticsから抽出する
-- フィルタリング結果はツール別の`ToolTargets` dataclass（`pyfltr/only_failed.py`）として保持する
+- フィルタリング結果はツール別の`ToolTargets` dataclass（`pyfltr/state/only_failed.py`）として保持する
 - 直前runが存在しない、失敗ツールが無い、ターゲット交差が空となった場合は、理由と対処を
   `source="only-failed"`の警告として発行して成功終了（rc=0）する。JSONL出力でもheader・warning・summaryを出力する。
   text_loggerのINFOだけではJSONL出力（textはWARN以上）とMCPへ理由が届かないため、警告として発行する
@@ -703,7 +703,7 @@ MCPサーバー・`--only-failed`からも再利用する。
 `--only-failed`の参照対象runをアーカイブの前方一致・`latest`エイリアスで明示指定する。
 
 - `--from-run <RUN_ID>`は`--only-failed`との併用のみを受け付け、単独指定はargparseエラーで拒否する
-- `<RUN_ID>`の解決は`pyfltr/runs.py`の`resolve_run_id()`を再利用する
+- `<RUN_ID>`の解決は`pyfltr/state/runs.py`の`resolve_run_id()`を再利用する
 - 指定`<RUN_ID>`が存在しない場合は`source="only-failed"`の警告を出力してrc=0で早期終了する
 - 値および`--only-failed`フラグは`retry_command`へ伝播させない
 

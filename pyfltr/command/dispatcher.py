@@ -1,6 +1,7 @@
 """ディスパッチャー。"""
 
 import argparse
+import functools
 import pathlib
 import random
 import shlex
@@ -13,6 +14,7 @@ import pyfltr.command.env
 import pyfltr.command.error_parser
 import pyfltr.command.glab
 import pyfltr.command.linter_fix
+import pyfltr.command.lychee
 import pyfltr.command.precommit
 import pyfltr.command.process
 import pyfltr.command.runner
@@ -474,8 +476,12 @@ def _run_plain_command(
     # returncode/output/elapsedの取り出し）を共有するが、本関数はキャッシュ参照・書き込みを
     # 担う別責務のため統合しない。
     # arid: disable
-    proc = pyfltr.command.process.run_configured_subprocess(
-        command,
+    run_process = (
+        pyfltr.command.lychee.run_lychee
+        if command == "lychee"
+        else functools.partial(pyfltr.command.process.run_configured_subprocess, command)
+    )
+    proc = run_process(
         commandline,
         config,
         env,
@@ -522,6 +528,11 @@ def _run_plain_command(
         errors=errors,
         slow_tests=slow_tests,
     )
+
+    if command == "lychee" and proc.returncode == 2 and not proc.timeout_exceeded:
+        classification = pyfltr.command.lychee.classify_failures(output)
+        if classification is not None and classification[0]:
+            result.severity = "warning"
 
     # キャッシュ書き込み （成功rc=0のみ）。失敗結果を記録すると再試行で同じ失敗が
     # 復元されて修正確認できなくなるため、成功時に限定する。
@@ -650,7 +661,8 @@ def _dispatch_command(
         result.effective_runner = params.effective_runner
         result.runner_source = params.runner_source
         result.runner_fallback = params.runner_fallback
-        result.severity = severity
+        if severity == "warning":
+            result.severity = severity
         return result
 
     if len(targets) <= 0:

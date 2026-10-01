@@ -282,7 +282,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "designmd-fast": False,
     # lychee: Rust製リンク切れチェッカー。bin-runner経由（mise）。既定で有効。
     # 既定argsに`--offline`は加えない（外部URL検証が本来の用途のため）。
-    # ネットワーク到達性に依存する懸念がある場合は`lychee-severity = "warning"`への切替を案内する。
+    # 5xx・応答タイムアウトだけの失敗は有限再試行後に警告化し、404等は失敗を維持する。
     "lychee": True,
     "lychee-path": "",
     "lychee-runner": "bin-runner",
