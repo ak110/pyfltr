@@ -1053,7 +1053,7 @@ def _parse_lychee_json(output: str) -> list[ErrorLocation]:
         }
 
     `error_map`と`timeout_map`は「ファイルパス → 失敗レスポンス配列」のmap。各失敗から`url`/`status.text`を抽出し、
-    `ErrorLocation.message`へ整形する。lycheeのJSONには行情報を含まないため`line=1`固定とする。
+    `ErrorLocation.message`へ整形する。本パーサーは`line=1`固定とし、JSONの`span`による位置を取り込まない。
     HTTP(S)の5xxと応答タイムアウトだけをwarning、その他をerrorとして取り込む。
     JSON解析失敗時は空リストを返す。
     """
