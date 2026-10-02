@@ -287,10 +287,9 @@ def run_commands_with_cli(
     時点で未開始のジョブを`future.cancel()`で打ち切り、起動済みサブプロセスに
     `terminate()`を送る。formatterの`formatted`はfailureに含めない。
 
-    `only_failed_targets`が指定された場合、ツール別の失敗ファイル集合を
-    `execute_command`へ渡す（`--only-failed`経路で直前runの失敗ファイルのみを
-    対象とする）。値が`None`のツールは通常の`all_files`で実行し、`list`の
-    ツールはその集合のみを対象にする。
+    `only_failed_targets`が指定された場合、ツール別の`ToolTargets`を
+    `execute_command`へ渡す（`--only-failed`経路）。実対象の決め方は
+    `ToolTargets.resolve_files()`に従う。
     """
     config = base_ctx.config
     results: list[pyfltr.command.core_.CommandResult] = []

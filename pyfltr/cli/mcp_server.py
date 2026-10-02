@@ -307,7 +307,8 @@ async def tool_run(
             `ruff-format-by-check`が既定で有効なため、本引数の指定時も`ruff-format`による整形は行われる。
             書き換えを避ける場合は`commands`で対象をlinterへ限定する。
         fail_fast: Trueの場合、1ツールでもエラーが発生した時点で残りを打ち切る。
-        only_failed: Trueの場合、直前runの失敗ツール・失敗ファイルのみ再実行する。
+        only_failed: Trueの場合、直前runの失敗ツールを失敗ファイルに限定して再実行する。
+            診断にファイルを持たない失敗ツールは現在の対象全体で再実行する。
         from_run: `only_failed=True`時の参照run_id（前方一致・`latest`可）。
             `only_failed=False`かつ`from_run`指定はツールエラー（`ToolError`）。
         changed_since: 指定したgit参照から変更されたファイルだけを対象にする。
@@ -1305,7 +1306,8 @@ def build_server() -> MCPServer:
         description=(
             "指定パスに対してlint/format/testを実行し、run_id・終了コード・失敗コマンド名を返す。"
             " modeでrun・fast・ciを選択し、CLIと同じ対象制御オプションを利用できる。"
-            " only_failed=True で直前 run の失敗ツール・失敗ファイルのみ再実行する（from_run で参照 run を指定可）。"
+            " only_failed=True で直前 run の失敗ツールを失敗ファイルに限定して再実行する"
+            "（診断にファイルを持たない失敗ツールは現在の対象全体で再実行する。from_run で参照 run を指定可）。"
             " 戻り値に retry_commands（失敗コマンドの再実行シェルコマンド）を含む。"
             " no_fix=True が抑止するのは fix ステージだけで、通常ステージの formatter は対象ファイルを書き換える"
             "（ruff-format-by-check が既定で有効なため ruff-format による整形は行われる）。"

@@ -63,9 +63,9 @@ def run_commands_with_ui(
     未実行ジョブを`future.cancel()`で打ち切り、起動済みサブプロセスに
     `terminate()`を送る。
 
-    `only_failed_targets`が指定された場合、ツール別の失敗ファイル集合を
-    `execute_command`へ渡す（`--only-failed`経路）。値が`None`のツールは通常の
-    `all_files`で実行し、`list`のツールはその集合のみを対象にする。
+    `only_failed_targets`が指定された場合、ツール別の`ToolTargets`を
+    `execute_command`へ渡す（`--only-failed`経路）。実対象の決め方は
+    `ToolTargets.resolve_files()`に従う。
     """
     app = UIApp(
         commands,

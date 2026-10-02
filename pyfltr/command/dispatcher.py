@@ -562,8 +562,8 @@ def execute_command(
     （アーカイブ無効時に `cached_from` で参照させる元runが無いため）。
 
     `only_failed_targets` が指定された場合、`ToolTargets.resolve_files(all_files)`
-    経由で実対象ファイルを取得する（`--only-failed` 経路でツール別の失敗ファイル集合を
-    渡す用途）。その後の `target_extensions` / `pass_filenames=False` の分岐は
+    経由で実対象ファイルを取得する（`--only-failed` 経路。実対象の決め方は
+    `ToolTargets.resolve_files()` に従う）。その後の `target_extensions` / `pass_filenames=False` の分岐は
     通常通り適用される。`None` の場合は既定の `all_files` を使用する。
 
     モノレポモード（`base.subprojects` が2件以上）で対象のコマンドが `subproject_aware=True`

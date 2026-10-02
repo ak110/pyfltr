@@ -682,18 +682,24 @@ MCPサーバー・`--only-failed`からも再利用する。
 
 ### `--only-failed`
 
-直前runから失敗ツールと失敗ファイルを抽出し、ツール別に失敗ファイル集合のみを対象として再実行する。
+直前runから失敗ツールを抽出し、ツール別に対象ファイルを限定して再実行する。
+対象の決め方は直前runの診断がファイルを持つかで分かれ、
+`pyfltr/state/only_failed.py`の`_extract_failed_files_for_tool()`が判定し、`ToolTargets.resolve_files()`が対象を返す。
 
+- 診断に`file`を持つ失敗ツールは`mode="files"`とし、失敗ファイル集合と現在の対象ファイル一覧の交差を対象とする。
+  交差が空のツールは対象から除く
+- 診断に`file`を持たない失敗ツール（pytestなど`pass-filenames=False`系）は`mode="fallback"`とし、
+  現在の対象ファイル一覧（`all_files`）をそのまま対象とする
+- 現在の対象ファイル一覧は位置引数`targets`と`--changed-since`を適用した後の一覧である
 - 直前runは`ArchiveStore.list_runs(limit=1)`の先頭を採用する
 - 失敗ツール・失敗ファイルはアーカイブのtoolメタとdiagnosticsから抽出する
-- フィルタリング結果はツール別の`ToolTargets` dataclass（`pyfltr/state/only_failed.py`）として保持する
 - 直前runが存在しない、失敗ツールが無い、ターゲット交差が空となった場合は、理由と対処を
   `source="only-failed"`の警告として発行して成功終了（rc=0）する。JSONL出力でもheader・warning・summaryを出力する。
   text_loggerのINFOだけではJSONL出力（textはWARN以上）とMCPへ理由が届かないため、警告として発行する
-- 位置引数`targets`との併用時は、直前runの失敗ファイル集合と`targets`を交差させる
 - モノレポ分割実行では、`ToolTargets.resolve_files()`が対象のサブプロジェクトの対象ファイル一覧
-  （`ExecutionContext.all_files`）とも交差させる。起点cwd全体で抽出した失敗ファイル集合を
-  所属しないサブプロジェクトへ渡さないため
+  （`ExecutionContext.all_files`）を受け取る。`files`モードではこの一覧と交差させ、
+  起点cwd全体で抽出した失敗ファイル集合を所属しないサブプロジェクトへ渡さない。
+  `fallback`モードではサブプロジェクト単位の一覧をそのまま返す
 
 フィルタリングは`run_pipeline`内のファイル展開直後・archive/cache初期化前に行う。
 今回のrunのrun_id/cache_storeに影響させないため。

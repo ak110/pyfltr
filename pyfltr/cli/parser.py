@@ -249,7 +249,8 @@ def make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> "
         default=False,
         action="store_true",
         help="直前 run のアーカイブから失敗ツールと失敗ファイルを抽出し、"
-        "ツール別に失敗ファイル集合のみを対象として再実行します。"
+        "ツール別に失敗ファイルのみを対象として再実行します"
+        "(診断にファイルを持たない失敗ツールは現在の対象全体で再実行します)。"
         "直前 run が存在しない/失敗ツールが無い場合はメッセージを出力して成功終了します。"
         "想定どおり動かない場合の対処は docs/guide/troubleshooting.md を参照してください。",
     )

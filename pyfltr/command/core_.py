@@ -116,7 +116,10 @@ class ExecutionContext:
     fix_stage: bool = False
     """fixステージとして実行するか（fix-argsを適用して単発fix経路で動作する）。"""
     only_failed_targets: "pyfltr.state.only_failed.ToolTargets | None" = None
-    """`--only-failed` 経路でのツール別失敗ファイル集合。`None` の場合は `all_files` を使用。"""
+    """`--only-failed` 経路でのツール別実行対象。
+
+    実対象は `ToolTargets.resolve_files()` が決める。`None` の場合は `all_files` を使用。
+    """
     on_output: "typing.Callable[[str], None] | None" = None
     """サブプロセス出力の逐次コールバック。TUI経路でリアルタイム表示に使用。"""
     is_interrupted: "typing.Callable[[], bool] | None" = None
