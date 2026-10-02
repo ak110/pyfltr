@@ -53,7 +53,7 @@
 # base OS は CI 同梱バイナリ (mise 経由の lychee 等) の glibc 要件を満たす
 # Debian stable を採用する。glibc 要件が満たされず CI 同梱バイナリが起動しない事象が
 # 発生した場合は、対象のバイナリのバージョン固定よりも先に base OS 更新を検討する。
-FROM python:3.14-slim-trixie@sha256:51dafde81dbdb6ebde285137a295cf18a47ca95234fe388a343719cb97305b3d AS base
+FROM python:3.14-slim-trixie@sha256:0741d101873c12ab927e6f8653feb8862b9bd58771177acb1b885b95141f91b4 AS base
 
 # パイプを使う RUN で `set -o pipefail` 相当の挙動を得るため、SHELL を明示する
 # (hadolint DL4006 対応)。

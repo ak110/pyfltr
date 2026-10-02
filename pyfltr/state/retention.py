@@ -106,7 +106,7 @@ def cleanup_generational_directory(
                 entries.remove(entry)
 
     # 世代数超過の削除
-    if policy.max_entries > 0 and len(entries) > policy.max_entries:
+    if 0 < policy.max_entries < len(entries):
         overflow = len(entries) - policy.max_entries
         for entry in entries[:overflow]:
             rmtree_silent(entry)
