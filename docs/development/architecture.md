@@ -124,7 +124,7 @@ pyfltr本体はこれらの依存を抱えない。
 - 骨組み: `textual`（TUI）・`natsort`（自然順ソート）・`pyyaml`（pre-commit・prek設定）
 - run_id生成: `python-ulid`
 - MCP同梱: `mcp`・`platformdirs`
-- プロセス判定: `psutil`（`git commit`経由起動を親系列で検出してMM状態ガイダンスを出力する用途）
+- プロセス判定: `psutil`（`git commit`経由起動を親系列で検出し、formatterの修正がワークツリーには書き込まれる一方でindexには反映されない状態（MM状態）の案内を出力する用途）
 
 `mcp`を本体必須に含めるのはサーバー同梱体験（`pyfltr mcp`が即座に起動できる）を保つため。
 pre-commitとprekは同じ設定形式を使う代替実行系である。
@@ -288,7 +288,7 @@ python-runnerへ委譲せず`uvx <bin>`で別環境へ解決する。
 - サブプロジェクトごとに別プロセスで `pyfltr` を起動する案。
   mise再解決・起動コスト・出力統合の複雑化が、得られる独立性に見合わない
 - archive・JSONL・show-run・MCP読み取り系に `subproject` 識別フィールドを新設する案。
-  利用者指示「サブプロジェクト情報を全面表示しない」「現行の表示に近い」を満たさない
+  出力スキーマへサブプロジェクトの識別情報を出さず、現行の表示に近い形を保つという要件を満たさない
 - `[tool.pyfltr]` セクションを持つ `pyproject.toml` のみを検出する案。
   既存モノレポを移行する際に各サブプロジェクトに設定追加を強いる
 - 1個の設定ロード結果から警告組の静的な積集合を作成し、
@@ -749,9 +749,8 @@ MCPサーバー・`--only-failed`からも再利用する。
 
 エイリアス名で指定した場合は、展開結果に有効化済みコマンドが1件以上あれば警告しない。
 エイリアスは該当するものを実行する意味で使い、言語構成によって一部のみ有効となるのが正常な状態のためである。
-推奨ガイド（`docs/guide/recommended-nonpython.md`）が監査ツールの定期実行に`--commands=audit`を
-案内している一方、JavaScriptのみのプロジェクトでは`uv-audit`等が未有効であり、
-案内どおりの操作が必ず警告を伴っていた事象への対処にあたる。
+例えば推奨ガイド（`docs/guide/recommended-nonpython.md`）は監査ツールの定期実行に`--commands=audit`を案内している。
+JavaScriptのみのプロジェクトでは`uv-audit`等が未有効であり、未有効のコマンドを警告すると案内どおりの操作が必ず警告を伴う。
 展開結果が全て未有効の場合は実行対象が空になるため警告を残す。
 個別コマンド名の指定はエイリアスとの併記の有無を問わず警告対象とする。
 判定本体は`pyfltr/cli/command_selection.py`の`compute_unmet_commands`のdocstringをSSOTとする。

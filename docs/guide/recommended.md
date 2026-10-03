@@ -12,8 +12,8 @@ pyfltr本体の設定（`[tool.pyfltr]`）と、呼び出される各ツール�
   pylint / pyright / pytest / uv-sort / arid）を一式有効化する
     - Python系ツール一式は本体依存に同梱されているため、`uvx pyfltr`単発で利用できる
     - dev依存に固定する場合は`uv add --dev "pyfltr[python]"`（pip環境では`pip install pyfltr`）を使う
-- `pylint-args`: pylintに追加で渡す引数。`--load-plugins=pylint_pydantic`と
-  `--enable-error-code=unused-awaitable`（mypy）は自動オプションで既定有効のため個別指定不要
+- `pylint-args`: pylintに追加で渡す引数。`--load-plugins=pylint_pydantic`はpyfltrが自動で追加するため個別指定不要
+    - mypyの`--enable-error-code=unused-awaitable`もpyfltrが自動で追加するため、`mypy-args`への個別指定は不要
 - `[tool.pylint."messages control"]`: pylintのdisableリストを`pyproject.toml`に集約することで、
   `.pylintrc`を別途配置する必要がなくなり設定の所在が`pyproject.toml`1ファイルにまとまる
     - ruffの`D`カテゴリが`missing-*-docstring`相当を検出するため、
