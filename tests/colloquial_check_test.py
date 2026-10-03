@@ -380,6 +380,11 @@ class TestScanText:
             "小数点以下を切り上げる処理を追加した。",
             "指定したポートで待ち受ける処理を開始する。",
             "常駐プロセスが8080番で待ち受けた。",
+            "出力が`該当0件:`の行から成る。",
+            "次の行から読む。",
+            "次の行こそ重要。",
+            "この行くらいは残す。",
+            "対象がどの行かを示す。",
         ],
     )
     def test_allowlisted_compound_forms_are_not_detected(
@@ -436,6 +441,11 @@ class TestScanText:
             "地に足のついた設計を選ぶ。",
             "地に足が着いた運用へ移行する。",
             "受けが良い構成を選ぶ。",
+            "行かない。",
+            "行かせる。",
+            "行きます。",
+            "行こう。",
+            "行くらしい。",
         ],
     )
     def test_added_entries_detect_positive_boundary_samples(

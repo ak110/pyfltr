@@ -70,6 +70,33 @@ def test_detection_exits_one_with_expected_format(tmp_path: pathlib.Path) -> Non
     assert f"[{deny_line}]" in lines[0]
 
 
+def test_noun_gyou_followed_by_particles_exits_zero(tmp_path: pathlib.Path) -> None:
+    """名詞の行に助詞が続く文を、動詞として検出しない。"""
+    target = tmp_path / "noun.md"
+    target.write_text(
+        "出力が`該当0件:`の行から成る。\n次の行から読む。\n次の行こそ重要。\nこの行くらいは残す。\n対象がどの行かを示す。\n",
+        encoding="utf-8",
+    )
+    result = _run(target)
+    assert result.returncode == 0
+    assert not result.stdout
+    assert not result.stderr
+
+
+@pytest.mark.parametrize(
+    ("sentence", "expected_match"),
+    [("行かない。", "行か"), ("行きます。", "行き"), ("行こう。", "行こ"), ("行くらしい。", "行く")],
+)
+def test_verb_iku_keeps_detection(tmp_path: pathlib.Path, sentence: str, expected_match: str) -> None:
+    """名詞用法を許容しても、動詞の活用形の警告を維持する。"""
+    target = tmp_path / "verb.md"
+    target.write_text(sentence + "\n", encoding="utf-8")
+    result = _run(target)
+    assert result.returncode == 1
+    assert f"[{expected_match}]" in result.stdout
+    assert not result.stderr
+
+
 def test_replacement_candidate_included(tmp_path: pathlib.Path) -> None:
     """置換候補があるとき`-> [replacement]`がstdoutに含まれる。"""
     deny_line, replacement = _deny_sample(require_replacement=True)
