@@ -296,6 +296,23 @@ python-runnerへ委譲せず`uvx <bin>`で別環境へ解決する。
   起点projectがglobalの不正値を正常値で上書きした場合は起点の結果に警告組が現れず、
   不正値を上書きしない複数サブプロジェクト間の重複を防げない
 
+### fast実行時のpytest対象
+
+`pytest-fast-targets`を持つ設定がある場合、fast実行ではpytestだけが位置引数・`--changed-since`に依らない母集合を使う。
+fast実行は`fast`サブコマンドと、`--commands`にfastトークンを含む実行を指す。
+`run_pipeline`はプロジェクト全域を走査した集合でpytest用の`ExecutionBaseContext`を別に作成し、
+`ExecutionBaseContext.pytest_fast_base`へ保持する。
+`dispatcher.execute_command`はpytestの実行時だけ`ExecutionContext.base`をこの基盤へ差し替える。
+`_prepare_execution_params`は`pytest_fast_targets_active`が真の基盤で、対象globを`pytest-fast-targets`へ置き換える。
+`ExecutionContext.all_files`がサブプロジェクト分だけを返す契約は差し替え後の基盤でも保たれる。
+指定を持たない設定（起点か各サブプロジェクト）の集合は差し替え前と同じものを保持する。
+
+却下した代替案:
+
+- dispatcherの対象globだけを差し替える案。母集合が変更ファイルのままのため、Markdownだけの変更や
+  変更ファイルの無いサブプロジェクトで対象テストを取りこぼす
+- 全コマンドへ全域の集合を渡す案。formatterとlinterの範囲まで広がる
+
 ### `ExecutionParams.targets`と`CommandResult.target_files`の下流の流れ
 
 両フィールドは実際に処理対象となったファイル集合を表す。

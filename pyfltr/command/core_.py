@@ -83,6 +83,18 @@ class ExecutionBaseContext:
     `subproject_aware=True` のツール起動時に対象のサブプロジェクトの設定（ツールのON/OFF・除外・
     targets 等）を参照し、親子でON/OFFが異なる両方向を尊重する。
     """
+    pytest_fast_base: "ExecutionBaseContext | None" = None
+    """fast選択時にpytestだけへ使う実行基盤。`None` の場合はpytestも本コンテキストで実行する。
+
+    `pytest-fast-targets`を持つ設定（起点または各サブプロジェクト）について、位置引数・差分指定に
+    依らずプロジェクト全域を走査したファイル集合へ`all_files`・`subproject_files`を差し替えたもの。
+    `run_pipeline`が構築し、`dispatcher.execute_command`がpytestの実行時に差し替える。
+    """
+    pytest_fast_targets_active: bool = False
+    """本コンテキストがfast選択時のpytest用実行基盤であるか。
+
+    真のとき、`pytest-fast-targets`が非空の設定ではpytestの対象globをその値で置き換える。
+    """
     _temporary_directory_stack: contextlib.ExitStack | None = dataclasses.field(default=None, init=False, repr=False)
     _temporary_directory_path: pathlib.Path | None = dataclasses.field(default=None, init=False, repr=False)
     """一時的に生成する検査用ファイルのライフタイムを保持する。"""

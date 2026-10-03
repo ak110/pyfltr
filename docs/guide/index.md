@@ -136,3 +136,4 @@ pyfltr設定の`exclude`/`extend-exclude`/`respect-gitignore`を尊重するた�
   一時複製せずチェックできる。外部ファイルだけをチェックする場合は`--commands`で対象ツールを限定する
 - formatterはファイルを修正しつつエラーとしても扱う（`pyfltr ci`ではformatterによる変更も失敗と判定する）
 - 設定は極力`pyproject.toml`に集約する
+- `pyfltr fast`はpytestなど重いツールを含めない。変更ファイルに依らず毎回確かめたいテストは`pytest-fast-targets`で対象を指定してfastへ含められる（[設定](configuration.md#pytest-fast-targets)）

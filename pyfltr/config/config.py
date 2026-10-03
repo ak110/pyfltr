@@ -593,6 +593,9 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "pytest-args": [],
     "pytest-devmode": True,  # PYTHONDEVMODE=1をするか否か
     "pytest-fast": False,
+    # fast選択時だけpytestの対象を置き換えるglob（文字列または配列）。
+    # 非空ならpytest-fast=falseでもfastへ参加し、位置引数・差分指定に依らずプロジェクト全域から一致ファイルを選ぶ。
+    "pytest-fast-targets": [],
     "vitest": False,
     "vitest-path": "",
     "vitest-runner": "js-runner",
@@ -1420,6 +1423,12 @@ def _normalize_config_values(
                 ),
             )
             continue
+        # pytest-fast-targetsは`-targets`接尾辞を持つがコマンド別targetsではないため先に扱う。
+        if key == "pytest-fast-targets":
+            validated = _validate_targets_value(key, value, emit_config_warning)
+            if validated is not None:
+                config.values[key] = validated
+            continue
         # {command}-excludeの検出
         if key.endswith("-exclude"):
             cmd_name = key.removesuffix("-exclude")
@@ -1796,8 +1805,23 @@ def _register_custom_command(
 
 
 def _build_fast_alias(config: Config) -> list[str]:
-    """per-command fastフラグからfastエイリアスを動的構築。"""
-    return [name for name in config.command_names if config.values.get(f"{name}-fast", False)]
+    """per-command fastフラグからfastエイリアスを動的構築。
+
+    pytestは`pytest-fast-targets`が非空なら`pytest-fast`の値に依らず含める。
+    """
+    return [
+        name
+        for name in config.command_names
+        if config.values.get(f"{name}-fast", False) or (name == "pytest" and pytest_fast_target_globs(config.values))
+    ]
+
+
+def pytest_fast_target_globs(values: dict[str, typing.Any]) -> list[str]:
+    """`pytest-fast-targets`の値をglobのリストとして返す（未指定・空なら空リスト）。"""
+    raw = values.get("pytest-fast-targets", [])
+    if isinstance(raw, str):
+        return [raw] if raw else []
+    return [str(item) for item in raw]
 
 
 def _extract_removed_command(key: str) -> str | None:

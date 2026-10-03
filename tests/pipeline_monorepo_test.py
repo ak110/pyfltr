@@ -711,3 +711,39 @@ def test_monorepo_mixed_targets_keep_succeeded_status(
     assert _pytest_cwds(mock_run) == {(tmp_path / "pkg_b").resolve()}
     assert command["status"] == "succeeded"
     assert exit_code == 0
+
+
+def test_monorepo_fast_targets_run_per_subproject_globs(tmp_path: pathlib.Path, mocker) -> None:
+    """起点に指定が無くても、サブプロジェクトごとの`pytest-fast-targets`でfastのpytestを実行する。
+
+    変更ファイルの無いサブプロジェクトも、各設定のglobに一致するファイルだけを各cwdで検査し、
+    指定の無いサブプロジェクトでは従来どおり位置引数の対象（ここでは0件）に留まる。
+    """
+    _write_pyproject(tmp_path, "root")
+    _write_pyproject(tmp_path / "pkg_a", "pkg_a", pytest_on=True, extra='pytest-fast-targets = ["*_invariant_test.py"]\n')
+    _write_pyproject(tmp_path / "pkg_b", "pkg_b", pytest_on=True, extra='pytest-fast-targets = "check_*.py"\n')
+    _write_pyproject(tmp_path / "pkg_c", "pkg_c", pytest_on=True)
+    (tmp_path / "README.md").write_text("# doc\n", encoding="utf-8")
+    (tmp_path / "pkg_a" / "repo_invariant_test.py").write_text("def test_a(): pass\n", encoding="utf-8")
+    (tmp_path / "pkg_a" / "other_test.py").write_text("def test_o(): pass\n", encoding="utf-8")
+    (tmp_path / "pkg_b" / "check_layout.py").write_text("def test_b(): pass\n", encoding="utf-8")
+    (tmp_path / "pkg_b" / "repo_invariant_test.py").write_text("def test_b2(): pass\n", encoding="utf-8")
+    (tmp_path / "pkg_c" / "c_test.py").write_text("def test_c(): pass\n", encoding="utf-8")
+
+    proc = subprocess.CompletedProcess(["pytest"], returncode=0, stdout="")
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
+
+    pyfltr.cli.main.run(
+        ["fast", "--work-dir", str(tmp_path), "--no-archive", "--no-cache", "--no-gitignore", str(tmp_path / "README.md")]
+    )
+
+    files_by_cwd: dict[pathlib.Path, list[str]] = {}
+    for call in mock_run.call_args_list:
+        commandline = call.args[0] if call.args else []
+        if commandline and "pytest" in " ".join(commandline):
+            cwd = pathlib.Path(call.kwargs["cwd"]).resolve()
+            files_by_cwd[cwd] = [pathlib.PurePath(arg).as_posix() for arg in commandline if str(arg).endswith(".py")]
+    assert files_by_cwd == {
+        (tmp_path / "pkg_a").resolve(): ["repo_invariant_test.py"],
+        (tmp_path / "pkg_b").resolve(): ["check_layout.py"],
+    }

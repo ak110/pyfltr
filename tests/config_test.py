@@ -355,6 +355,40 @@ ruff-format-fast = false
     assert "ruff-format" not in fast
 
 
+@pytest.mark.parametrize(
+    ("value", "expected_globs", "in_fast"),
+    [
+        ("[]", [], False),
+        ('"*_invariant_test.py"', ["*_invariant_test.py"], True),
+        ('["a_test.py", "b/*_test.py"]', ["a_test.py", "b/*_test.py"], True),
+    ],
+)
+def test_pytest_fast_targets_values_and_fast_alias(
+    tmp_path: pathlib.Path, value: str, expected_globs: list[str], in_fast: bool
+) -> None:
+    """`pytest-fast-targets`は文字列か配列を受理し、非空なら`pytest-fast = false`でもfastへ参加する。"""
+    (tmp_path / "pyproject.toml").write_text(
+        f"[tool.pyfltr]\npytest = true\npytest-fast = false\npytest-fast-targets = {value}\n", encoding="utf-8"
+    )
+    config = pyfltr.config.config.load_config(config_dir=tmp_path)
+    assert pyfltr.config.config.pytest_fast_target_globs(config.values) == expected_globs
+    assert ("pytest" in config["aliases"]["fast"]) is in_fast
+    # 通常実行の対象globは変えない
+    assert config.commands["pytest"].targets == pyfltr.config.config.BUILTIN_COMMANDS["pytest"].targets
+    assert _find_config_warning("pytest-fast-targets") is None
+
+
+def test_pytest_fast_targets_invalid_type_warns_and_keeps_default(tmp_path: pathlib.Path) -> None:
+    """不正な型は既存のtargets設定と同じ警告で無視し、既定値（空）を保つ。"""
+    (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\npytest = true\npytest-fast-targets = 42\n", encoding="utf-8")
+    config = pyfltr.config.config.load_config(config_dir=tmp_path)
+    assert pyfltr.config.config.pytest_fast_target_globs(config.values) == []
+    assert "pytest" not in config["aliases"]["fast"]
+    message = _find_config_warning("pytest-fast-targets")
+    assert message is not None
+    assert "文字列または文字列のリスト" in message
+
+
 def test_ruff_format_by_check_default() -> None:
     """ruff-format-by-checkのデフォルト値テスト。"""
     config = pyfltr.config.config.create_default_config()

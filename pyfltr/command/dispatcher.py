@@ -1,6 +1,7 @@
 """ディスパッチャー。"""
 
 import argparse
+import dataclasses
 import functools
 import pathlib
 import random
@@ -196,6 +197,7 @@ def _prepare_execution_params(
     uv_workspace_root: pathlib.Path | None = None,
     start_cwd: pathlib.Path | None = None,
     temporary_dir_factory: typing.Callable[[], pathlib.Path] | None = None,
+    pytest_fast_targets_active: bool = False,
 ) -> "ExecutionParams | CommandResult":
     """実行前の共通前処理を行い `ExecutionParams` を返す。
 
@@ -205,6 +207,9 @@ def _prepare_execution_params(
     """
     command_info = config.commands[command]
     globs = command_info.target_globs()
+    if pytest_fast_targets_active and command == "pytest":
+        # fast選択時は`pytest-fast-targets`をpytestの対象globとして使う（空なら従来の対象glob）。
+        globs = pyfltr.config.config.pytest_fast_target_globs(config.values) or globs
     source_files = only_failed_targets.resolve_files(all_files) if only_failed_targets is not None else all_files
     targets: list[pathlib.Path] = pyfltr.command.targets.filter_by_globs(source_files, globs)
 
@@ -572,7 +577,11 @@ def execute_command(
 
     実行結果に対してuv経路でのツール未登録パターンを判定し、検出時には
     利用者向けの登録手順案内を `pyfltr.warnings_.emit_warning` 経由で発行する。
+
+    fast選択時のpytest用実行基盤（`base.pytest_fast_base`）があれば、pytestはその基盤で実行する。
     """
+    if command == "pytest" and ctx.base.pytest_fast_base is not None:
+        ctx = dataclasses.replace(ctx, base=ctx.base.pytest_fast_base)
     if pyfltr.command.subproject_loop.should_run_subproject_loop(command, ctx):
         result = pyfltr.command.subproject_loop.run_subproject_loop(
             command,
@@ -633,6 +642,7 @@ def _dispatch_command(
         uv_workspace_root=ctx.uv_workspace_root,
         start_cwd=ctx.base.start_cwd,
         temporary_dir_factory=ctx.base.ensure_temporary_directory,
+        pytest_fast_targets_active=ctx.base.pytest_fast_targets_active,
     )
     if isinstance(params_or_error, CommandResult):
         # ツールパス解決失敗

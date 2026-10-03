@@ -651,6 +651,9 @@ def _run_pipeline(
     # モノレポでは `subproject_aware=True` ツールに限り「起点またはいずれかのサブプロジェクトで有効」
     # の和集合で対象に含める（親OFF・子ONを子でのみ実行できるようにするため）。
     # `subproject_aware=False`（リポジトリ単位ツール）と `subproject_aware` 判定自体は起点 config で固定する。
+    fast_selected = _is_fast_selection(args, config)
+    if fast_selected and not getattr(args, "only_failed", False):
+        commands = _add_subproject_fast_pytest(commands, args, config, subproject_configs)
     requested_commands = list(commands)
     commands = [c for c in commands if pyfltr.config.config.is_command_enabled_anywhere(c, config, subproject_configs)]
     if getattr(args, "commands", None) is not None:
@@ -767,6 +770,8 @@ def _run_pipeline(
         external_files=external_files,
         subproject_configs=subproject_configs,
     )
+    if fast_selected and "pytest" in commands:
+        base_ctx.pytest_fast_base = _build_pytest_fast_base(base_ctx)
 
     # 各ツール完了時のフック: retry_command付与 → archive書き込み → formatter.on_result （ストリーミング等）。
     # retry_commandはarchiveとJSONL streamingの双方で必要になるため、archive_hookより前に挿入する。
@@ -908,6 +913,74 @@ _PRECOMMIT_MM_MESSAGE: str = (
     "formatterによる自動修正が発生しました。"
     "`git status`で変更を確認し、必要なら`git add`してから`git commit`を再実行してください。"
 )
+
+
+def _is_fast_selection(args: argparse.Namespace, config: pyfltr.config.config.Config) -> bool:
+    """fastサブコマンド、または`--commands`にfastエイリアスを含む実行かを返す。"""
+    if getattr(args, "subcommand", None) == "fast":
+        return True
+    raw_commands = getattr(args, "commands", None)
+    if raw_commands is None:
+        return False
+    return "fast" in pyfltr.cli.command_selection.flatten_commands_arg(raw_commands, config)
+
+
+def _add_subproject_fast_pytest(
+    commands: list[str],
+    args: argparse.Namespace,
+    config: pyfltr.config.config.Config,
+    subproject_configs: dict[pathlib.Path, pyfltr.config.config.Config],
+) -> list[str]:
+    """起点設定がpytestをfastへ含めない場合に、サブプロジェクトの`pytest-fast-targets`からpytestを加える。
+
+    fastエイリアスは起点設定から展開されるため、起点に指定が無くサブプロジェクトだけが
+    `pytest-fast-targets`を持つモノレポでは、展開結果にpytestが入らない。
+    fastエイリアスを指定した実行に限り、pytestを有効にして非空の指定を持つサブプロジェクトがあれば加える。
+    """
+    if "pytest" in commands or "fast" not in pyfltr.cli.command_selection.flatten_commands_arg(args.commands, config):
+        return commands
+    if not any(
+        sub_config.values.get("pytest") is True and pyfltr.config.config.pytest_fast_target_globs(sub_config.values)
+        for sub_config in subproject_configs.values()
+    ):
+        return commands
+    order = {name: index for index, name in enumerate(config.command_names)}
+    return sorted([*commands, "pytest"], key=lambda name: order.get(name, len(order)))
+
+
+def _build_pytest_fast_base(
+    base_ctx: pyfltr.command.core_.ExecutionBaseContext,
+) -> pyfltr.command.core_.ExecutionBaseContext | None:
+    """fast選択時にpytestだけへ使う実行基盤を構築する。
+
+    `pytest-fast-targets`を持つ設定（起点または各サブプロジェクト）では、位置引数・差分指定に
+    依らずプロジェクト全域を走査したファイル集合を母集合とする。指定の無い設定は従来の集合を保つ。
+    いずれの設定も指定を持たない場合は`None`を返し、pytestも通常の実行基盤で動かす。
+    """
+    config = base_ctx.config
+    root_has_globs = bool(pyfltr.config.config.pytest_fast_target_globs(config.values))
+    subs_with_globs = [
+        sub.cwd
+        for sub in base_ctx.subprojects
+        if pyfltr.config.config.pytest_fast_target_globs(base_ctx.subproject_configs.get(sub.cwd, config).values)
+    ]
+    if not root_has_globs and not subs_with_globs:
+        return None
+    full_files = pyfltr.command.targets.expand_all_files([], config, start_cwd=base_ctx.start_cwd)
+    subproject_files = dict(base_ctx.subproject_files)
+    if subs_with_globs:
+        full_subproject_files, _ = pyfltr.command.subprojects.classify_files_by_subproject(
+            full_files, base_ctx.subprojects, base_ctx.start_cwd
+        )
+        for cwd in subs_with_globs:
+            subproject_files[cwd] = full_subproject_files.get(cwd, [])
+    return dataclasses.replace(
+        base_ctx,
+        all_files=full_files if root_has_globs else base_ctx.all_files,
+        subproject_files=subproject_files,
+        pytest_fast_base=None,
+        pytest_fast_targets_active=True,
+    )
 
 
 def _maybe_emit_precommit_guidance(

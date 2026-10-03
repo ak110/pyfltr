@@ -438,6 +438,7 @@ prekは指定した版を自動取得するため、この形になるのはuv�
     - キャッシュが更新されて版が上がると、コードを変更していなくても新版のルール追加によりコミットが失敗しうる。版の変化に伴う失敗を避ける場合はdev依存へ固定し、上記の置き換えを採用する
     - `uvx`は`pyproject.toml`の`[tool.uv]`を読まないため、`exclude-newer`による公開直後版の回避はこの起動方法へ適用されない
 - `fast`: mypy / pylint / pytestなど重いコマンドを除外した高速サブセット
+    - 変更ファイルに依らず毎回確かめたいテストがある場合は、任意で`pytest-fast-targets = ["*_invariant_test.py"]`のように対象のテストファイルを指定すると、そのテストだけをfastで実行できる（[設定](configuration.md#pytest-fast-targets)）
     - formatterがファイルを修正しただけではフックを失敗と判定しない
 - `types_or`: 必要な種別を列挙する
     - markdownはtextlint / markdownlint、TOML（pyproject.toml）でuv-sort、YAMLはactionlint

@@ -162,6 +162,7 @@ pyfltr config list --all
 - {command}-args : 追加のコマンドライン引数（lint/fix両モードで常に付与）
 - {command}-lint-args : 非fixモードで付与する引数（既定はtextlintのみ`["--format", "compact"]`）
 - {command}-fast : `fast`サブコマンドに含めるか否か（後述）
+- pytest-fast-targets : fast実行時だけpytestの対象を置き換えるglob（既定: 空。[後述](#pytest-fast-targets)）
 - {command}-fix-args : fix段で`{command}-args`の後に追加する引数
  （既定値はtextlint / markdownlint / ruff-check / eslint / biomeのみ定義）
 - {command}-targets : 対象ファイルパターンの完全上書き
@@ -377,6 +378,26 @@ textlint-fast = false
 ```
 
 カスタムコマンドも`fast = true`でfastエイリアスに追加できる。
+
+### fast実行時のpytest対象 {#pytest-fast-targets}
+
+`pytest-fast-targets`へglob（文字列または文字列の配列）を指定すると、fast実行時のpytestは一致するテストファイルだけを実行する。
+変更ファイルに依らず毎回確かめたいテスト（リポジトリ全体の不変条件を検査するテストなど）を、全テストを収集せずにpre-commitから実行する用途を想定する。
+
+```toml
+[tool.pyfltr]
+pytest = true
+pytest-fast-targets = ["*_invariant_test.py"]
+```
+
+- 値が空でなければ、`pytest-fast = false`でもpytestはfastエイリアスに含まれる。`pytest = false`の場合は実行しない
+- fast実行は`pyfltr fast`と、`--commands`へ`fast`を含む実行（`pyfltr run --commands=fast`など）を指す。`pyfltr fast --commands=pytest`も含む
+- 対象は位置引数と`--changed-since`に依らず、プロジェクト全域から選ぶ。Markdownだけを変更したコミットでも指定したテストが動く
+- globの一致は`pytest-targets`と同じ規則で判定し、`pytest-targets`の代わりに使う。`exclude`・`extend-exclude`・`.gitignore`・`pytest-exclude`による除外はそのまま適用する
+- 一致するファイルが無い場合はpytestを起動せず、対象ファイル0件として扱う（全テストの収集へは戻らない）
+- `pytest-args`などの引数は通常どおり渡す。マーカー式は追加しない
+- fast以外の実行（`pyfltr run`・`pyfltr ci`、`--commands=pytest`など）の対象は変わらない。値が空（既定）の場合もfastの対象と参加判定は従来どおりとなる
+- モノレポでは各サブプロジェクトの設定に従い、そのサブプロジェクトのファイルだけをそのディレクトリで実行する。起点に指定が無くても、指定を持つサブプロジェクトがあればfastでpytestを実行する
 
 ## 出力順序
 
