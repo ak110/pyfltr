@@ -390,12 +390,12 @@ class TestScanText:
     def test_allowlisted_compound_forms_are_not_detected(
         self, deny_patterns: _PatternList, allow_patterns: _PatternList, text: str
     ) -> None:
-        """熟語とdenylistの語幹と助詞が連なる形が、allowlist登録により検出されない。
+        """熟語や単独の名詞に助詞が続く許容形を、allowlist登録により検出しない。
 
         denylistのパターンは単語境界を持たず部分一致で適用されるため、
-        語幹を末尾に持つ熟語へ助詞が続く形にも一致する。
+        語幹を末尾に持つ熟語や、語幹と同じ漢字の名詞へ助詞が続く形にも一致する。
         `words_allow.txt`への登録が対象の形をマスクすることで検出が消える。
-        語幹単独形の検出は`test_every_deny_entry_self_matches`が担保する。
+        動詞などの検出対象の検出は`test_every_deny_entry_self_matches`が担保する。
         """
         assert not pyfltr.colloquial.check.scan_text(text, deny_patterns, allow_patterns)
 
