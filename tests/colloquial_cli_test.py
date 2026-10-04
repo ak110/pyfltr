@@ -85,7 +85,14 @@ def test_noun_gyou_followed_by_particles_exits_zero(tmp_path: pathlib.Path) -> N
 
 @pytest.mark.parametrize(
     ("sentence", "expected_match"),
-    [("行かない。", "行か"), ("行きます。", "行き"), ("行こう。", "行こ"), ("行くらしい。", "行く")],
+    [
+        ("行かない。", "行か"),
+        ("行きます。", "行き"),
+        ("行こう。", "行こ"),
+        ("行くらしい。", "行く"),
+        ("行かん。", "行か"),
+        ("行かざるを得ない。", "行か"),
+    ],
 )
 def test_verb_iku_keeps_detection(tmp_path: pathlib.Path, sentence: str, expected_match: str) -> None:
     """名詞用法を許容しても、動詞の活用形の警告を維持する。"""
