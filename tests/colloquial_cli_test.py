@@ -74,7 +74,8 @@ def test_noun_gyou_followed_by_particles_exits_zero(tmp_path: pathlib.Path) -> N
     """名詞の行に助詞が続く文を、動詞として検出しない。"""
     target = tmp_path / "noun.md"
     target.write_text(
-        "出力が`該当0件:`の行から成る。\n次の行から読む。\n次の行こそ重要。\nこの行くらいは残す。\n対象がどの行かを示す。\n",
+        "出力が`該当0件:`の行から成る。\n次の行から読む。\n次の行こそ重要。\nこの行くらいは残す。\n"
+        "対象がどの行かを示す。\nどの行か、確認する。\nこの行かあの行。\nどの行かによる。\n",
         encoding="utf-8",
     )
     result = _run(target)
@@ -92,6 +93,16 @@ def test_noun_gyou_followed_by_particles_exits_zero(tmp_path: pathlib.Path) -> N
         ("行くらしい。", "行く"),
         ("行かん。", "行か"),
         ("行かざるを得ない。", "行か"),
+        ("行かにゃならん。", "行か"),
+        ("行かへん。", "行か"),
+        ("行かしめる。", "行か"),
+        ("行かば、", "行か"),
+        ("行かむ。", "行か"),
+        ("行かじ。", "行か"),
+        ("行かう。", "行か"),
+        ("行かっしゃい。", "行か"),
+        ("行かい。", "行か"),
+        ("行かー。", "行か"),
     ],
 )
 def test_verb_iku_keeps_detection(tmp_path: pathlib.Path, sentence: str, expected_match: str) -> None:
