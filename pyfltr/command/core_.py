@@ -278,6 +278,14 @@ class CommandResult:
     通常経路では `None`。JSONL commandレコードでは値ありの場合のみ
     `effective_runner` / `runner_source` / `runner_fallback` の3点をまとめて出力する判定キー。
     """
+    not_applicable: bool = False
+    """この実行に対象が無いため起動しなかったか。
+
+    対象ファイルが0件だった場合と、サブプロジェクト設定で無効化されていた場合に`True`を設定する。
+    `status`は`skipped`のまま変えない。`--fail-fast`・中断によるskipや、
+    対象があるのにツールを起動できなかったskipでは`False`のまま残し、完了判定
+    （`pyfltr.command.completion`）が両者を区別する。
+    """
     timeout_exceeded: bool = False
     """`{command}-timeout` で指定された壁時計上限を超過してsubprocessが停止されたか。
 
@@ -476,6 +484,7 @@ class CommandResult:
           対象0件の結果はこれらを持たないため、実行した結果の起動コマンドとrunner情報を残す
         - `fixed_files`: 全実行の和集合
         - `severity`: 最も重い結果から引き継ぎ、警告と通常失敗の混在でも失敗を保持する
+        - `not_applicable`: 全実行が対象なしの場合だけ真とする
         - その他のフィールドは先頭結果から引き継ぐ
 
         `results` が1件のみの場合はそのまま返す（フィールドのコピー含む）。
@@ -563,6 +572,7 @@ class CommandResult:
             effective_runner=representative.effective_runner,
             runner_source=representative.runner_source,
             runner_fallback=representative.runner_fallback,
+            not_applicable=all(r.not_applicable for r in results),
             timeout_exceeded=any_timeout,
             severity=worst.severity,
             retry_count=total_retry_count,

@@ -25,8 +25,11 @@ import mcp.server.mcpserver.exceptions
 import mcp_types
 import pytest
 
+import pyfltr.cli.main
 import pyfltr.cli.mcp_models
 import pyfltr.cli.mcp_server
+import pyfltr.cli.pipeline
+import pyfltr.command.completion
 import pyfltr.command.slow_tests
 import pyfltr.grep_.history
 import pyfltr.grep_.preview
@@ -41,6 +44,30 @@ from tests.conftest import seed_archive_run as _seed_run
 
 # ツール関数が想定内の失敗を伝える例外。MCPServerはこの型の本文だけをクライアントへ届ける。
 _ToolError = mcp.server.mcpserver.exceptions.ToolError
+
+# `run_pipeline`を差し替えるテストが返す、何も実行しなかった結果。
+_NOT_REACHED_OUTCOME = pyfltr.cli.pipeline.PipelineOutcome(
+    0,
+    None,
+    pyfltr.command.completion.RunCompletion(
+        completion="not_reached",
+        files_reached=0,
+        completed_commands=(),
+        incomplete_commands=(),
+        missing_targets=(),
+        fully_excluded_files=(),
+    ),
+)
+
+# `RunResult`を直接組み立てるテストで使う完了判定の6項目。
+_COMPLETION_FIELDS: dict[str, typing.Any] = {
+    "completion": "not_reached",
+    "files_reached": 0,
+    "completed_commands": [],
+    "incomplete_commands": [],
+    "missing_targets": [],
+    "fully_excluded_files": [],
+}
 
 
 @pytest.fixture(autouse=True)
@@ -574,7 +601,7 @@ async def test_tool_run_resolves_cli_parameters(tmp_path: pathlib.Path, mocker) 
     target = tmp_path / "src" / "sample.py"
     target.parent.mkdir()
     target.write_text("value = 1\n", encoding="utf-8")
-    mock_run = mocker.patch("pyfltr.cli.pipeline.run_pipeline", return_value=(0, None))
+    mock_run = mocker.patch("pyfltr.cli.pipeline.run_pipeline", return_value=_NOT_REACHED_OUTCOME)
 
     await pyfltr.cli.mcp_server.tool_run(
         paths=["src/sample.py"],
@@ -624,7 +651,7 @@ async def test_tool_run_flattens_commands(tmp_path: pathlib.Path, mocker) -> Non
     """複数回指定とカンマ区切りを同じコマンド一覧へ展開する。"""
     target = tmp_path / "sample.txt"
     target.write_text("hello\n", encoding="utf-8")
-    mock_run = mocker.patch("pyfltr.cli.pipeline.run_pipeline", return_value=(0, None))
+    mock_run = mocker.patch("pyfltr.cli.pipeline.run_pipeline", return_value=_NOT_REACHED_OUTCOME)
 
     await pyfltr.cli.mcp_server.tool_run(
         paths=[str(target)],
@@ -639,7 +666,7 @@ async def test_tool_run_no_fix_disables_run_fix_stage(tmp_path: pathlib.Path, mo
     """runモードでもno_fix指定時はfixステージを無効化する。"""
     target = tmp_path / "sample.txt"
     target.write_text("hello\n", encoding="utf-8")
-    mock_run = mocker.patch("pyfltr.cli.pipeline.run_pipeline", return_value=(0, None))
+    mock_run = mocker.patch("pyfltr.cli.pipeline.run_pipeline", return_value=_NOT_REACHED_OUTCOME)
 
     await pyfltr.cli.mcp_server.tool_run(
         paths=[str(target)],
@@ -853,6 +880,7 @@ def test_run_result_new_fields_defaults() -> None:
         run_id="01TESTULID1234567890123456",
         exit_code=0,
         failed=[],
+        **_COMPLETION_FIELDS,
     )
     assert result.run_id is not None
     assert result.skipped_reason is None
@@ -868,6 +896,7 @@ def test_run_result_nullable_run_id() -> None:
         exit_code=0,
         failed=[],
         skipped_reason="失敗ツールなし",
+        **_COMPLETION_FIELDS,
     )
     assert result.run_id is None
     assert result.skipped_reason == "失敗ツールなし"
@@ -906,6 +935,10 @@ async def test_tool_run_reports_disabled_command(tmp_path: pathlib.Path) -> None
     # 理由に続けて、有効化する操作を案内する
     assert "--enable=ec" in result.skipped_reason
     assert not result.commands
+    # 指定した検査が1件も実行されていないため、到達していない区分と未完了の検査名を返す
+    assert result.completion == "not_reached"
+    assert result.incomplete_commands == ["ec"]
+    assert not result.completed_commands
 
 
 @pytest.mark.asyncio
@@ -1070,6 +1103,10 @@ async def test_tool_run_only_failed_no_previous_run(tmp_path: pathlib.Path) -> N
     assert "直前の run が無い" in result.skipped_reason
     assert "--only-failed を外して" in result.skipped_reason
     assert [warning.source for warning in result.warnings] == ["only-failed"]
+    # early exitでも完了判定の項目を省略せず、何も実行していない状態を返す
+    assert result.completion == "not_reached"
+    assert result.files_reached == 0
+    assert not result.completed_commands
 
 
 @pytest.mark.asyncio
@@ -1086,6 +1123,224 @@ async def test_tool_run_only_failed_unresolved_from_run(tmp_path: pathlib.Path) 
     assert result.skipped_reason is not None
     assert "--from-run 'ZZZZZZ' を解決できない" in result.skipped_reason
     assert "直前の run が無い" not in result.skipped_reason
+
+
+# ---------------------------------------------------------------------------
+# run ツールの完了判定
+# ---------------------------------------------------------------------------
+
+
+def _write_custom_commands_project(work_dir: pathlib.Path, scripts: dict[str, str], *, extra: str = "") -> None:
+    """Pythonの1行スクリプトをcustom commandとして登録したプロジェクトを作成する。"""
+    work_dir.mkdir()
+    (work_dir / "sample.txt").write_text("value\n", encoding="utf-8")
+    lines = ["[tool.pyfltr]", "respect-gitignore = false", extra, ""]
+    for name, code in scripts.items():
+        lines.extend(
+            [
+                f"[tool.pyfltr.custom-commands.{name}]",
+                f"path = {json.dumps(sys.executable)}",
+                f"args = {json.dumps(['-c', code])}",
+                'type = "linter"',
+                'targets = ["*.txt"]',
+                "pass-filenames = false",
+                "fast = true",
+                "",
+            ]
+        )
+    (work_dir / "pyproject.toml").write_text("\n".join(lines), encoding="utf-8")
+
+
+@pytest.mark.asyncio
+async def test_tool_run_completion_completed(tmp_path: pathlib.Path) -> None:
+    """診断0件で対象を評価し終えた実行は`completed`となり、到達ファイル数と完了コマンドを返す。"""
+    work_dir = tmp_path / "project"
+    _write_custom_commands_project(work_dir, {"always-ok": "pass"})
+
+    result = await pyfltr.cli.mcp_server.tool_run(
+        paths=["sample.txt"], commands=["always-ok"], work_dir=str(work_dir), no_cache=True
+    )
+
+    assert result.exit_code == 0
+    assert result.completion == "completed"
+    assert result.files_reached == 1
+    assert result.completed_commands == ["always-ok"]
+    assert not result.incomplete_commands
+    assert not result.missing_targets
+    assert not result.fully_excluded_files
+
+
+@pytest.mark.asyncio
+async def test_tool_run_completion_completed_with_failure(tmp_path: pathlib.Path) -> None:
+    """診断を検出して終了コード1となった実行も、対象を評価し終えていれば`completed`となる。"""
+    work_dir = tmp_path / "project"
+    _write_custom_commands_project(work_dir, {"always-fail": "import sys; sys.exit(1)"})
+
+    result = await pyfltr.cli.mcp_server.tool_run(
+        paths=["sample.txt"], commands=["always-fail"], work_dir=str(work_dir), no_cache=True
+    )
+
+    assert result.exit_code == 1
+    assert result.failed == ["always-fail"]
+    assert result.completion == "completed"
+    assert result.completed_commands == ["always-fail"]
+
+
+@pytest.mark.asyncio
+async def test_tool_run_completion_partial_missing(tmp_path: pathlib.Path) -> None:
+    """一部の直接指定対象が不在で終了コード0となる実行は`incomplete`として不在対象を返す。"""
+    work_dir = tmp_path / "project"
+    _write_custom_commands_project(work_dir, {"always-ok": "pass"})
+
+    result = await pyfltr.cli.mcp_server.tool_run(
+        paths=["sample.txt", "missing.txt"], commands=["always-ok"], work_dir=str(work_dir), no_cache=True
+    )
+
+    assert result.exit_code == 0
+    assert result.completion == "incomplete"
+    assert result.completed_commands == ["always-ok"]
+    assert len(result.missing_targets) == 1
+    assert result.missing_targets[0].endswith("missing.txt")
+
+
+@pytest.mark.asyncio
+async def test_tool_run_completion_early_exit_missing(tmp_path: pathlib.Path) -> None:
+    """全指定対象が不在のearly exitでも6項目を返し、`not_reached`となる。"""
+    work_dir = tmp_path / "project"
+    _write_custom_commands_project(work_dir, {"always-ok": "pass"})
+
+    result = await pyfltr.cli.mcp_server.tool_run(
+        paths=["missing.txt"], commands=["always-ok"], work_dir=str(work_dir), no_cache=True
+    )
+
+    assert result.run_id is None
+    assert result.exit_code == 1
+    assert result.completion == "not_reached"
+    assert result.files_reached == 0
+    assert not result.completed_commands
+    assert len(result.missing_targets) == 1
+
+
+@pytest.mark.asyncio
+async def test_tool_run_completion_timeout(tmp_path: pathlib.Path) -> None:
+    """時間上限を超えたコマンドを含む実行は、他のコマンドが完了していても`incomplete`となる。"""
+    work_dir = tmp_path / "project"
+    _write_custom_commands_project(
+        work_dir,
+        {"always-ok": "pass", "too-slow": "import time; time.sleep(30)"},
+        extra="command-timeout = 1",
+    )
+
+    result = await pyfltr.cli.mcp_server.tool_run(
+        paths=["sample.txt"], commands=["always-ok", "too-slow"], work_dir=str(work_dir), no_cache=True
+    )
+
+    assert result.completion == "incomplete"
+    assert result.completed_commands == ["always-ok"]
+    assert result.incomplete_commands == ["too-slow"]
+
+
+@pytest.mark.parametrize("mode", ["run", "fast", "ci"])
+@pytest.mark.asyncio
+async def test_tool_run_completion_same_across_modes(tmp_path: pathlib.Path, mode: str) -> None:
+    """`mode`によらず同じ入力から同じ完了判定を返す。"""
+    work_dir = tmp_path / "project"
+    _write_custom_commands_project(work_dir, {"always-ok": "pass"})
+
+    result = await pyfltr.cli.mcp_server.tool_run(
+        paths=["sample.txt", "missing.txt"], mode=mode, commands=["always-ok"], work_dir=str(work_dir), no_cache=True
+    )
+
+    assert result.completion == "incomplete"
+    assert result.files_reached == 1
+    assert result.completed_commands == ["always-ok"]
+    assert not result.incomplete_commands
+    assert len(result.missing_targets) == 1
+
+
+@pytest.mark.parametrize(
+    ("commands", "expected", "expected_incomplete"),
+    [
+        (None, "completed", []),
+        (["ec", "typos"], "incomplete", ["typos"]),
+    ],
+    ids=["コマンド未指定", "コマンド明示"],
+)
+@pytest.mark.asyncio
+async def test_tool_run_completion_no_target_skip(
+    tmp_path: pathlib.Path,
+    mocker,
+    commands: list[str] | None,
+    expected: str,
+    expected_incomplete: list[str],
+) -> None:
+    """対象ファイルが無いためskipしたコマンドは、`commands`で明示した場合だけ未完了として扱う。
+
+    未指定時の全コマンド実行では対象を持たないツールのskipが常に生じるため、
+    これを未完了に数えると対象の言語を含まない実行が常に`incomplete`となる。
+    """
+    sample = tmp_path / "sample.txt"
+    sample.write_text("hello\n", encoding="utf-8")
+    evaluated = _make_result("ec", returncode=0, archived=False)
+    no_target = _make_result("typos", returncode=None, files=0, archived=False)
+    no_target.not_applicable = True
+
+    def fake_run_commands(*_args: typing.Any, **kwargs: typing.Any) -> list[typing.Any]:
+        for result in (evaluated, no_target):
+            kwargs["on_result"](result)
+        return [evaluated, no_target]
+
+    mocker.patch("pyfltr.cli.pipeline.run_commands_with_cli", side_effect=fake_run_commands)
+
+    result = await pyfltr.cli.mcp_server.tool_run(paths=[str(sample)], commands=commands, enable=["ec", "typos"], no_cache=True)
+
+    assert result.completion == expected
+    assert result.completed_commands == ["ec"]
+    assert result.incomplete_commands == expected_incomplete
+
+
+@pytest.mark.asyncio
+async def test_tool_run_completion_matches_cli_jsonl_summary(tmp_path: pathlib.Path) -> None:
+    """同じ部分到達の実行で、CLI JSONLの`summary`がMCPと同じ完了判定4項目を返す。
+
+    CLIは静音モードの`run-for-agent`で実行し、成功した`command`レコードが省略されても
+    `summary`だけで完了区分を取得できることも確かめる。
+    """
+    work_dir = tmp_path / "project"
+    _write_custom_commands_project(work_dir, {"always-ok": "pass", "disabled-check": "pass"})
+    destination = tmp_path / "out.jsonl"
+
+    mcp_result = await pyfltr.cli.mcp_server.tool_run(
+        paths=["sample.txt", "missing.txt"],
+        commands=["always-ok", "disabled-check"],
+        disable=["disabled-check"],
+        work_dir=str(work_dir),
+        no_cache=True,
+    )
+    cli_exit = pyfltr.cli.main.run(
+        [
+            "run-for-agent",
+            "--work-dir",
+            str(work_dir),
+            f"--output-file={destination}",
+            "--commands=always-ok,disabled-check",
+            "--disable=disabled-check",
+            "--no-cache",
+            # CLIは相対パスを`--work-dir`ではなく起動時のディレクトリから解決するため、絶対パスで渡す
+            str(work_dir / "sample.txt"),
+            str(work_dir / "missing.txt"),
+        ]
+    )
+
+    records = [json.loads(line) for line in destination.read_text(encoding="utf-8").splitlines() if line.strip()]
+    summary = records[-1]
+    assert summary["kind"] == "summary"
+    assert not [record for record in records if record["kind"] == "command"]
+    assert cli_exit == mcp_result.exit_code
+    assert summary["completion"] == mcp_result.completion == "incomplete"
+    assert summary["files_reached"] == mcp_result.files_reached == 1
+    assert summary["completed_commands"] == mcp_result.completed_commands == ["always-ok"]
+    assert summary["incomplete_commands"] == mcp_result.incomplete_commands == ["disabled-check"]
 
 
 # ---------------------------------------------------------------------------

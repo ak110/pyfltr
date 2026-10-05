@@ -5,8 +5,9 @@ description: >
   JSONL公開ヘルパー・logger役割分担・command.hints/summary.guidance・heartbeat段階出力・
   summaryレコードフィールド順序・effective_runner/runner_sourceなど出力スキーマの設計を集約する。
   pyfltr/output/配下・pyfltr/cli/output_format.py・pyfltr/cli/pipeline.py・pyfltr/cli/parser.py・
+  pyfltr/cli/mcp_models.py・pyfltr/command/completion.py・
   pyfltr/command/core_.py・pyfltr/command/dispatcher.py・
-  tests/llm_output_test.py・tests/output_format_test.py・tests/pipeline_heartbeat_test.py・tests/main_test.py・
+  tests/completion_test.py・tests/llm_output_test.py・tests/output_format_test.py・tests/pipeline_heartbeat_test.py・tests/main_test.py・
   tests/main_config_test.py・tests/sarif_output_test.py・tests/code_quality_test.py・tests/llmstxt_test.py・
   docs/guide/usage.md・docs/development/architecture.md・mkdocs.yml を編集する際に使用する。
   ファイルを問わず、pyfltrがCLIとMCPで返すエラー・警告・案内の文面を書く際にも使用する。
@@ -58,6 +59,10 @@ JSONLの出力処理は`pyfltr/output/jsonl.py`の公開ヘルパー（`emit_rec
 - JSONL `command.status` 語彙のSSOTは`pyfltr/command/core_.py`の`CommandResult.status`プロパティのdocstring。
   新規status値追加時は対象のdocstringと判定分岐を併せて更新する
 - `summary`レコードのフィールド順序仕様のSSOTは`pyfltr/output/jsonl.py`の`_build_summary_record`のdocstring
+- 対象到達と実行完了の判定（`completion`ほか）のSSOTは`pyfltr/command/completion.py`の`evaluate_completion`とする。
+  MCP `run`とCLI JSONLの`summary`は`run_pipeline`が導出した同じ値を返し、出力側で判定条件を書かない。
+  エージェントが主に使う呼び出し手段はMCP `run`とし、CLI JSONLはシェルしか使えない消費側向けの代替手段とする。
+  数値終了コードは診断・書き換え・ツール失敗の契約として維持し、完了判定と役割を分ける
 - summary以外のレコードで通知する実行時の異常（`kind:"warning"`など）はsummary単体で存在を判別できるよう
   条件付きキーで件数を露出する。件数は対象のレコードの生成元と同一の入力から導出し、
   summaryの値とレコード件数を構造的に一致させる

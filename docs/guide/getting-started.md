@@ -84,7 +84,7 @@ JSON Lines出力（`--output-format=jsonl`）とMCPサーバー（`pyfltr mcp`�
 ### 直接呼び出し
 
 エージェントがシェルコマンドを実行できる環境では`pyfltr run`を直接呼ぶ。
-`AI_AGENT` / `CODEX_CI` / `CLAUDECODE` / `CURSOR_AGENT`のいずれかが設定された環境では
+`AI_AGENT` / `CODEX_CI` / `CLAUDECODE` / `CURSOR_AGENT`のいずれかが設定され、`PYFLTR_OUTPUT_FORMAT`が未指定の環境では
 出力形式がJSON Linesとなり、そのまま読み込める。
 呼び出し元はシェル実行のタイムアウトとstdout・stderrからの出力取得を扱う必要がある。
 

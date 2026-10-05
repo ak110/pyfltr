@@ -2,9 +2,11 @@
 
 import json
 import pathlib
+import sys
 
 import pytest
 
+import pyfltr.cli.main
 import pyfltr.command.core_
 import pyfltr.command.error_parser
 import pyfltr.command.mise
@@ -1620,3 +1622,57 @@ def test_build_command_record_omits_user_hints_when_no_diagnostics() -> None:
     record = json.loads(lines[-1])
     hints = record.get("hints", {})
     assert all(not key.startswith("user.") for key in hints)
+
+
+def test_summary_completion_fields(tmp_path: pathlib.Path) -> None:
+    """CLI JSONLの`summary`が完了判定の4項目を`exit`の直後へ常に出力する。
+
+    空一覧も省略せず、全指定対象が不在のearly exitでも同じ4項目を返す。
+    """
+    work_dir = tmp_path / "project"
+    work_dir.mkdir()
+    (work_dir / "sample.txt").write_text("value\n", encoding="utf-8")
+    (work_dir / "pyproject.toml").write_text(
+        "[tool.pyfltr]\nrespect-gitignore = false\n\n"
+        "[tool.pyfltr.custom-commands.always-ok]\n"
+        f"path = {json.dumps(sys.executable)}\n"
+        'args = ["-c", "pass"]\ntype = "linter"\ntargets = ["*.txt"]\npass-filenames = false\n',
+        encoding="utf-8",
+    )
+
+    def run_summary(target: pathlib.Path) -> dict:
+        destination = tmp_path / f"{target.stem}.jsonl"
+        pyfltr.cli.main.run(
+            [
+                "run",
+                "--work-dir",
+                str(work_dir),
+                "--output-format=jsonl",
+                f"--output-file={destination}",
+                "--commands=always-ok",
+                "--no-cache",
+                str(target),
+            ]
+        )
+        return json.loads(destination.read_text(encoding="utf-8").splitlines()[-1])
+
+    summary = run_summary(work_dir / "sample.txt")
+    assert list(summary)[:7] == [
+        "kind",
+        "exit",
+        "completion",
+        "files_reached",
+        "completed_commands",
+        "incomplete_commands",
+        "commands_summary",
+    ]
+    assert summary["completion"] == "completed"
+    assert summary["files_reached"] == 1
+    assert summary["completed_commands"] == ["always-ok"]
+    assert not summary["incomplete_commands"]
+
+    early_exit = run_summary(work_dir / "missing.txt")
+    assert early_exit["completion"] == "not_reached"
+    assert early_exit["files_reached"] == 0
+    assert not early_exit["completed_commands"]
+    assert not early_exit["incomplete_commands"]

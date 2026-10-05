@@ -17,6 +17,7 @@ import typing
 
 import pyfltr.cli.output_format
 import pyfltr.cli.render
+import pyfltr.command.completion
 import pyfltr.command.core_
 import pyfltr.config.config
 import pyfltr.output.code_quality
@@ -62,6 +63,8 @@ class RunOutputContext:
     subcommand: str | None = None
     # JSONLが最終消費主体へ渡る場合だけTrue。MCP内部の一時JSONLではFalseを指定する。
     jsonl_warnings_reach_consumer: bool = True
+    # 完了判定。`run_pipeline`が`on_finish`の直前に設定し、JSONL `summary`へ出力する。
+    completion: pyfltr.command.completion.RunCompletion | None = None
 
 
 class OutputFormatter(typing.Protocol):
@@ -248,6 +251,7 @@ class JSONLFormatter:
             subcommand=ctx.subcommand,
             fully_excluded_files=pyfltr.warnings_.filtered_direct_files(reason="excluded"),
             missing_targets=pyfltr.warnings_.filtered_direct_files(reason="missing"),
+            completion=ctx.completion,
         )
         if ctx.jsonl_warnings_reach_consumer:
             pyfltr.warnings_.mark_delivered(warnings)

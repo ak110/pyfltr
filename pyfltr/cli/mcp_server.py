@@ -291,6 +291,11 @@ async def tool_run(
     実行中の警告は`warnings`へ、失敗時などの次の操作は`guidance`へ設定する。
     返却へ含めた警告はサーバーのstderrへ重ねて出力しない。
 
+    結果は`completion`を最初に読む。`completed`以外なら`incomplete_commands`・
+    `missing_targets`・`fully_excluded_files`・`skipped_reason`・`warnings`で未完了の理由を、
+    `failed`が空でなければ`show_run_diagnostics`で診断を確認する。
+    完了判定は`run_pipeline`が導出した値をそのまま返し、CLI JSONLの`summary`と同じ値になる。
+
     対応CLI: `pyfltr run` / `pyfltr fast` / `pyfltr ci`
 
     Args:
@@ -446,7 +451,7 @@ async def tool_run(
             except ValueError as exc:
                 _raise_mcp_error(str(exc))
 
-            exit_code, run_id = pyfltr.cli.pipeline.run_pipeline(
+            outcome = pyfltr.cli.pipeline.run_pipeline(
                 args,
                 commands_list,
                 config,
@@ -461,6 +466,18 @@ async def tool_run(
             with contextlib.suppress(OSError):
                 tmp_path.unlink(missing_ok=True)
 
+        exit_code = outcome.exit_code
+        run_id = outcome.run_id
+        completion = outcome.completion
+        completion_fields: dict[str, typing.Any] = {
+            "completion": completion.completion,
+            "files_reached": completion.files_reached,
+            "completed_commands": list(completion.completed_commands),
+            "incomplete_commands": list(completion.incomplete_commands),
+            "missing_targets": list(completion.missing_targets),
+            "fully_excluded_files": list(completion.fully_excluded_files),
+        }
+
         # run_idがNoneのときは実行がスキップされたか、アーカイブを使えなかった。
         # スキップの理由は`--only-failed`の判定が`source="only-failed"`の警告として発行しており、
         # 固定文ではなく実際の理由を返す。
@@ -470,6 +487,7 @@ async def tool_run(
             return RunResult(
                 run_id=None,
                 exit_code=exit_code,
+                **completion_fields,
                 failed=[],
                 commands=[],
                 skipped_reason=_join_warning_texts(warning_entries, source="only-failed"),
@@ -513,6 +531,7 @@ async def tool_run(
         return RunResult(
             run_id=run_id,
             exit_code=exit_code,
+            **completion_fields,
             failed=failed_commands,
             commands=commands_model,
             skipped_reason=_join_warning_texts(warning_entries, source="commands"),

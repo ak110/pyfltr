@@ -42,8 +42,8 @@ pyfltrはCLIツールであり、Pythonモジュールパスは内部実装と�
   `subproject_loop`は循環importを避けるため、ディスパッチ関数と無効スキップ結果生成関数をコールバックで受け取る方式を採用する
 - `pyfltr/config/`: 設定の読み書き・解決とプリセット定義を担う。
   ビルトインツール定義の実体は`command/builtin.py`が持つが、
-  `config/config.py`内のロジックでも参照するため`from pyfltr.command.builtin import ...`で取り込みつつ、
-  利用側コードの便宜のため`__all__`にも含めて再エクスポート扱いとする
+  `config/config.py`内のロジックでも参照するため`from pyfltr.command.builtin import ...`で取り込む。
+  利用側コードも`pyfltr.config.config`経由で同じ名前を参照するため、取り込んだ名前を再エクスポートとして扱う（`__all__`は定義しない）
 - `pyfltr/output/`: text・JSONL・SARIF・GitHub Annotations・GitLab Code Quality・Textual UIの
   出力フォーマット群とツール別ルールURL生成、出力形式が共有する診断位置の判定を担う
 - `pyfltr/grep_/`: 横断検索・置換のコアロジック。
@@ -288,7 +288,7 @@ python-runnerへ委譲せず`uvx <bin>`で別環境へ解決する。
 - サブプロジェクトごとに別プロセスで `pyfltr` を起動する案。
   mise再解決・起動コスト・出力統合の複雑化が、得られる独立性に見合わない
 - archive・JSONL・show-run・MCP読み取り系に `subproject` 識別フィールドを新設する案。
-  出力スキーマへサブプロジェクトの識別情報を出さず、現行の表示に近い形を保つという要件を満たさない
+  出力スキーマへサブプロジェクトの識別情報を含めず、現行の表示に近い形を保つという要件を満たさない
 - `[tool.pyfltr]` セクションを持つ `pyproject.toml` のみを検出する案。
   既存モノレポを移行する際に各サブプロジェクトに設定追加を強いる
 - 1個の設定ロード結果から警告組の静的な積集合を作成し、
@@ -522,12 +522,43 @@ JSON consumerが`record["hint_urls"]`等へドット記法アクセスできる�
 LLMが上から読み下したときに「結論→集計→指摘総数→警告件数→ガイダンス→ファイル情報」の流れで
 把握できる順序に揃える。
 
-- 必須キー: `kind` → `exit` → `commands_summary` → `diagnostics`
+- 必須キー: `kind` → `exit` → `completion` → `files_reached` → `completed_commands` → `incomplete_commands` →
+  `commands_summary` → `diagnostics`
 - 条件付きキー: `warnings` → `guidance` → `applied_fixes` → `fully_excluded_files` → `missing_targets`
 
 コマンド単位の集計（statusカテゴリ別件数およびコマンド総数 `total`）は `commands_summary` 配下に集約し、
 `total` は `no_issues` / `needs_action` の末尾へ置く。
 指摘総件数 `diagnostics` はコマンド単位の集計ではなく `commands_summary` の外に並べる。
+完了判定の4キーは終了コードと並ぶ結論として`exit`の直後に置く（定義は[完了判定](#completion)を参照）。
+
+### 完了判定 {#completion}
+
+対象到達と実行完了の判定は、`pyfltr/command/completion.py`の`evaluate_completion`が1回の実行につき1度だけ導出する。
+`summary`の`completion`・`files_reached`・`completed_commands`・`incomplete_commands`はこの値を返す。
+MCP `run`の同名4項目と`missing_targets`・`fully_excluded_files`も同じ値を返す。
+`run_pipeline`がearly exitを含む全ての終了箇所で導出し、JSONLへは出力文脈を通して、MCPへは戻り値として渡す。
+出力側では判定条件を書かず、同じ入力から2つの出力が別々の結論を返す状態を構造的に防ぐ。
+区分の導出条件は同関数のdocstringに置く。
+
+対象ファイルが無いためのskip（`CommandResult.not_applicable`）を未完了に数えるのは、`--commands`でコマンド名を明示した場合だけとする。
+未指定時の全コマンド実行では対象の言語を持たないツールのskipが常に生じ、未完了に数えると区分が常に`incomplete`となって判断に使えないためである。
+`--fail-fast`・中断によるskipと、対象があるのにツールを起動できなかったskipは明示の有無によらず未完了とする。
+
+数値終了コードと完了区分は役割を分ける。
+終了コードは診断・formatterによる書き換え・ツール失敗を表す既存の契約である。
+完了区分は指定したチェックが対象へ到達して評価を終えたかを表す。
+診断を検出して終了コードが1になった実行も完了区分は`completed`となり、
+一部の対象が不在のまま他の対象のチェックが成功した実行は終了コード0でも`incomplete`となる。
+
+判定の入力は実行アーカイブではなく、パイプラインが保持する最終`CommandResult`列とする。
+キャッシュから復元した結果は実行アーカイブへ記録されないため、MCPの`commands`のように
+アーカイブから組み立てると、キャッシュヒットしたコマンドが完了一覧から欠ける。
+
+コーディングエージェントが主に使う呼び出し手段はMCP `run`とする。
+CLI JSONLでは`header`・`command`・`summary`・`warning`の複数レコードと不在・全除外の情報を組み合わせないと
+完了を判断できず、エージェントが同じ再集計をシェルで繰り返していたためである。
+CLI JSONLはシェルしか使えない消費側向けの代替手段として残す。
+同じ判定値を`summary`へ加えるため、CLI専用の判定分岐を持たずに同じ結論を返す。
 
 ### retry_command
 
@@ -841,11 +872,12 @@ MCPクライアントからの並行ツール呼び出しでも実行起点を�
 
 ### `run_pipeline()`戻り値
 
-`run_pipeline()`の戻り値は`(exit_code, run_id_or_None)`の2要素タプルとする。
-2要素目はアーカイブ無効時・early exit時に`None`、それ以外では採番済みULIDが入る。
+`run_pipeline()`の戻り値は`PipelineOutcome`（`exit_code`・`run_id`・`completion`の名前付きタプル）とする。
+`run_id`はアーカイブ無効時・early exit時に`None`、それ以外では採番済みULIDが入る。
+`completion`は全ての終了箇所で確定した[完了判定](#completion)で、MCPの`run`はその6項目をそのまま応答へ転記する。
 
 `only_failed`有効時に「直前runなし」「失敗ツールなし」「対象ファイル交差が空」「`from_run`の解決失敗」
-「アーカイブの読み取り失敗」のいずれかに該当した場合、`run_pipeline`はearly exit（`(0, None)`）を返す。
+「アーカイブの読み取り失敗」のいずれかに該当した場合、`run_pipeline`はearly exit（`exit_code=0`・`run_id=None`）を返す。
 このとき`run`はエラーではなく「実行スキップ」を返し、`skipped_reason`には
 `run_pipeline`が`source="only-failed"`で発行した警告の本文と対処を入れる。固定文は返さない。
 

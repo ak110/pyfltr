@@ -51,6 +51,7 @@ plugins:
         - `pyfltr grep <pattern> [paths...]`: ファイル横断の正規表現検索（pyfltr exclude/.gitignore尊重）
         - `pyfltr replace <pattern> <replacement> [paths...]`: 横断置換（既定で書き込み・`--undo`で取消）
         - `pyfltr mcp`: MCPサーバー起動
+          - コーディングエージェントはMCPの`run`を主経路とし、応答の`completion`で指定したチェックが対象へ到達して完了したかを最初に判定する（CLI JSONLでは`summary`の同名キー）
 
         `--commands=<tool>`で個別ツールのみ実行できる（例: `pyfltr run --commands=textlint docs/`）。
 

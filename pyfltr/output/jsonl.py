@@ -20,6 +20,7 @@ import time
 import typing
 
 import pyfltr.cli.output_format
+import pyfltr.command.completion
 import pyfltr.command.core_
 import pyfltr.command.error_parser
 import pyfltr.command.mise
@@ -467,6 +468,7 @@ def write_jsonl_footer(
     subcommand: str | None = None,
     fully_excluded_files: list[str] | None = None,
     missing_targets: list[str] | None = None,
+    completion: pyfltr.command.completion.RunCompletion | None = None,
 ) -> None:
     """warning行+summary行を構造化出力loggerに出力する。
 
@@ -475,6 +477,7 @@ def write_jsonl_footer(
     `subcommand`は`summary.guidance`の再実行例に埋め込む実行系サブコマンド名。
     `fully_excluded_files`を渡すと`summary.fully_excluded_files`キーとして埋め込む。
     `missing_targets`を渡すと`summary.missing_targets`キーとして埋め込む。
+    `completion`を渡すと完了判定の4項目を`summary`へ埋め込む。
     `warnings`の件数は`summary.warnings`としても集計する。
     """
     with _write_lock:
@@ -491,6 +494,7 @@ def write_jsonl_footer(
                     fully_excluded_files=fully_excluded_files,
                     missing_targets=missing_targets,
                     warning_count=len(warnings or []),
+                    completion=completion,
                 )
             )
         )
@@ -844,6 +848,7 @@ def _build_summary_record(
     fully_excluded_files: list[str] | None = None,
     missing_targets: list[str] | None = None,
     warning_count: int = 0,
+    completion: pyfltr.command.completion.RunCompletion | None = None,
 ) -> dict[str, typing.Any]:
     """ordered_resultsから集計してsummaryレコードdictを生成する。
 
@@ -869,11 +874,17 @@ def _build_summary_record(
     `commands_summary.needs_action.warning`（`{command}-severity`によるコマンド結果の
     格下げ件数）とは集計対象が異なる。呼び出し側はwarningレコードの生成元と同一の引数から
     件数を導出して渡し、レコード件数とsummaryの値を構造的に一致させる。
+    `completion`が渡された場合は`completion`・`files_reached`・`completed_commands`・
+    `incomplete_commands`を空一覧も含めて常に埋め込む。値は`pyfltr.command.completion`が導出し、
+    MCP `run`の応答と同じ値になる。`run_pipeline`は全経路で渡すため、
+    省略されるのはパイプライン外からの直接呼び出しだけとなる。
 
     フィールド順序ルール:
 
     - 必須キー順は`kind` → `exit` → `commands_summary` → `diagnostics`。
       結論を上位に置きLLMが読み下しやすい流れに揃える。
+    - 完了判定の4キーは`exit`の直後に`completion` → `files_reached` → `completed_commands` →
+      `incomplete_commands`の順で置く。終了コードと並ぶ結論として最初に読めるようにするため。
     - 条件付きキー順は`warnings` → `guidance` → `applied_fixes` → `fully_excluded_files` →
       `missing_targets`。
       警告件数 → 解釈支援（次に取るべき行動）→ 自動適用結果 → 除外検知 → 不在検知の流れに揃える。
@@ -904,17 +915,22 @@ def _build_summary_record(
     record: dict[str, typing.Any] = {
         "kind": "summary",
         "exit": exit_code,
-        "commands_summary": {
-            "no_issues": {
-                "succeeded": counts["succeeded"],
-                "formatted": counts["formatted"],
-                "skipped": counts["skipped"],
-            },
-            "needs_action": needs_action,
-            "total": len(ordered_results),
-        },
-        "diagnostics": total_diagnostics,
     }
+    if completion is not None:
+        record["completion"] = completion.completion
+        record["files_reached"] = completion.files_reached
+        record["completed_commands"] = list(completion.completed_commands)
+        record["incomplete_commands"] = list(completion.incomplete_commands)
+    record["commands_summary"] = {
+        "no_issues": {
+            "succeeded": counts["succeeded"],
+            "formatted": counts["formatted"],
+            "skipped": counts["skipped"],
+        },
+        "needs_action": needs_action,
+        "total": len(ordered_results),
+    }
+    record["diagnostics"] = total_diagnostics
     if warning_count > 0:
         record["warnings"] = warning_count
     guidance = build_summary_guidance(

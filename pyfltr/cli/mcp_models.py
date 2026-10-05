@@ -179,13 +179,46 @@ class RunWarningModel(pydantic.BaseModel):
 
 
 class RunResult(pydantic.BaseModel):
-    """`run`ツールの戻り値。"""
+    """`run`ツールの戻り値。
+
+    完了判定の6項目は`pyfltr.command.completion.RunCompletion`の値をそのまま転記する。
+    CLI JSONLの`summary`も同じ値を返す。
+    """
 
     run_id: str | None = pydantic.Field(
         default=None,
         description="実行アーカイブの参照キー（ULID）。early exit時はNone。",
     )
-    exit_code: int = pydantic.Field(description="終了コード。0 = 成功、1 = 失敗。")
+    exit_code: int = pydantic.Field(
+        description=(
+            "終了コード。0 = 成功、1 = 診断・formatterによる書き換え・ツール失敗のいずれかがある。"
+            "対象へ到達してチェックを完了したかは`completion`で判定する。"
+        )
+    )
+    completion: typing.Literal["completed", "incomplete", "not_reached"] = pydantic.Field(
+        description=(
+            "対象到達と実行完了の区分。最初に読む項目。"
+            "`completed`は指定した全対象へ到達し、全コマンドが対象を評価し終えたことを示し、診断の有無は問わない。"
+            "`incomplete`は一部のコマンドまたは対象が未完了であり、`incomplete_commands`・`missing_targets`・"
+            "`fully_excluded_files`・`skipped_reason`・`warnings`で理由を確認する。"
+            "`not_reached`はどのコマンドも対象を評価しなかったことを示す。"
+        )
+    )
+    files_reached: int = pydantic.Field(description="対象解決後に実行へ渡したファイル数。early exit時は0。")
+    completed_commands: list[str] = pydantic.Field(
+        description="1件以上の対象を評価し、skip・ツール解決失敗・時間上限超過ではない結果を返したコマンド名。",
+    )
+    incomplete_commands: list[str] = pydantic.Field(
+        description=(
+            "対象のチェックを完了しなかったコマンド名。"
+            "skip、ツール解決失敗、時間上限超過、および`commands`へ指定したが設定で無効化されたコマンドを含む。"
+            "対象ファイルが無いためのskipは、`commands`でコマンド名を明示した場合だけ含む。"
+        ),
+    )
+    missing_targets: list[str] = pydantic.Field(description="`paths`へ直接指定したが存在しなかった対象。")
+    fully_excluded_files: list[str] = pydantic.Field(
+        description="`paths`へ直接指定したが除外設定・`.gitignore`で全て対象外になった対象。",
+    )
     failed: list[str] = pydantic.Field(description="失敗したコマンド名の一覧。")
     commands: list[CommandSummaryModel] = pydantic.Field(
         default_factory=list,

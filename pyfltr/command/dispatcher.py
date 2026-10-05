@@ -600,7 +600,7 @@ def _make_disabled_skip_result(command: str, ctx: ExecutionContext) -> CommandRe
     """設定で無効化してスキップしたか起点でも無効な場合に、起点cwd誤実行を避けて返す skipped 結果。"""
     info = ctx.config.commands.get(command)
     assert info is not None, "サブプロジェクトループは CommandInfo 非Noneの経路でのみ実行される"
-    return CommandResult.from_run(
+    result = CommandResult.from_run(
         command=command,
         command_info=info,
         commandline=[],
@@ -609,6 +609,8 @@ def _make_disabled_skip_result(command: str, ctx: ExecutionContext) -> CommandRe
         files=0,
         elapsed=0.0,
     )
+    result.not_applicable = True
+    return result
 
 
 def _dispatch_command(
@@ -676,17 +678,17 @@ def _dispatch_command(
         return result
 
     if len(targets) <= 0:
-        return _with_targets(
-            CommandResult.from_run(
-                command=command,
-                command_info=command_info,
-                commandline=commandline,
-                returncode=None,
-                output="対象ファイルが見つかりません。",
-                files=0,
-                elapsed=0,
-            )
+        no_target_result = CommandResult.from_run(
+            command=command,
+            command_info=command_info,
+            commandline=commandline,
+            returncode=None,
+            output="対象ファイルが見つかりません。",
+            files=0,
+            elapsed=0,
         )
+        no_target_result.not_applicable = True
+        return _with_targets(no_target_result)
 
     start_time = time.perf_counter()
     env = pyfltr.command.env.build_subprocess_env(

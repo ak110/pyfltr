@@ -644,7 +644,7 @@ formatterによる書き換えはそれ自体が成功扱いで、再実行を�
 
 ```shell
 pyfltr run --output-format=jsonl
-# エージェント検出用の環境変数がある環境では --output-format の指定なしで jsonl になる
+# エージェント検出用の環境変数があり PYFLTR_OUTPUT_FORMAT が未指定の環境では --output-format の指定なしで jsonl になる
 pyfltr run
 ```
 
@@ -699,13 +699,8 @@ pyfltrは`kind:"command"`かつ`status:"running"`のheartbeatレコードを出�
 ### コーディングエージェント連携
 
 コーディングエージェントから`pyfltr`を呼び出す方法は2種類ある。
-
-#### 直接呼び出し
-
-エージェントがシェルコマンドを実行できる環境では、`pyfltr run`を直接呼ぶ。
-エージェント検出用の環境変数が設定されていれば出力形式は自動的にJSON Linesとなり、
-そのまま読み込むことができる。
-直接呼び出しでは、呼び出し元がシェル実行のタイムアウトとstdout・stderrからの出力取得を扱う必要がある。
+MCPを利用できる環境ではMCP経由で呼び出し、シェルコマンドしか使えない環境では直接呼び出しを使う。
+どちらの方法でも、指定したチェックが対象へ到達して完了したかを同じ判定で返す。
 
 #### MCP経由（推奨）
 
@@ -714,7 +709,7 @@ pyfltrは`kind:"command"`かつ`status:"running"`のheartbeatレコードを出�
 端末表示・出力先の制御と`--no-archive`はMCPへ露出せず、ツール固有の引数を任意の文字列で
 上書きする`--{tool}-args`も露出しない。
 CLIの直接呼び出しとは異なりJSONL出力がstdoutに流れず、
-MCPクライアントは結果を構造化データとして受け取れる。
+MCPクライアントは結果を構造化データとして1件の応答で受け取れる。
 ただし`pyfltr mcp`起動後は同一プロセスのstdin/stdoutがJSON-RPCに専有されるため、
 他のコマンドと組み合わせた場合に出力が混在する点に注意する
 （詳細は[トラブルシューティング](troubleshooting.md)を参照）。
@@ -732,23 +727,41 @@ MCPクライアントは結果を構造化データとして受け取れる。
 | `shuffle` | `--shuffle` |
 | `exit_zero_even_if_formatted` | `--exit-zero-even-if-formatted` |
 
-コーディングエージェントが`pyfltr run`を活用する基本的な流れ:
+`run`の応答は次の順に読む。
+
+1. `completion`を読む。
+   `completed`なら、指定した全対象へ到達し、全コマンドが対象を評価し終えている。
+   `incomplete`は一部のコマンドまたは対象が未完了、`not_reached`はどのコマンドも対象を評価しなかったことを示す
+2. `completed`以外の場合は、`incomplete_commands`・`missing_targets`・`fully_excluded_files`・
+   `skipped_reason`・`warnings`から未完了の理由を確認し、指定したパスやコマンドを直して再実行する
+3. `failed`が空でなければ、`show_run_diagnostics`で診断を取得して修正する。
+   `retry_commands`と`only_failed`で失敗したコマンドだけを再実行できる
+
+`exit_code`は診断・formatterによる書き換え・ツール失敗の有無を表し、対象へ到達したかは表さない。
+診断を検出して`exit_code`が1になった実行でも、チェックが対象を評価し終えていれば`completion`は`completed`となる。
+一部の対象が不在でも他の対象のチェックが成功すれば`exit_code`は0となるが、`completion`は`incomplete`となる。
+
+#### 直接呼び出し
+
+MCPを利用できず、エージェントがシェルコマンドを実行できる環境では、`pyfltr run`を直接呼ぶ。
+エージェント検出用の環境変数が設定され`PYFLTR_OUTPUT_FORMAT`が未指定であれば、出力形式は自動的にJSON Linesとなる。
+以下の手順は環境によらずJSON Linesを得るため`--output-format=jsonl`を明示する。
+直接呼び出しでは、呼び出し元がシェル実行のタイムアウトとstdout・stderrからの出力取得を扱う必要がある。
+
+コーディングエージェントが`pyfltr run`を直接呼び出す基本的な流れ:
 
 1. 全体実行でsummaryを確認する
 
     ```shell
-    pyfltr run
+    pyfltr run --output-format=jsonl
     ```
 
-    末尾のsummary行（`"kind":"summary"`）の`commands_summary.needs_action`配下を参照して対応要件数の有無を確認し、
-    問題がなければ完了する。
-    `commands_summary.needs_action`配下の`failed` / `resolution_failed`がいずれも0であれば残作業は無く、
+    末尾のsummary行（`"kind":"summary"`）の`completion`を最初に読む。
+    値の意味はMCPの`run`の応答と同じで、静音モードで成功したcommand行が省略されてもsummary行だけで判定できる。
+    `completion`が`completed`以外の場合は、summary行の`incomplete_commands`・`missing_targets`・
+    `fully_excluded_files`と`"kind":"warning"`行から未完了の理由を確認する。
+    `commands_summary.needs_action`配下の`failed` / `resolution_failed`がいずれも0であれば対応を要する指摘は無く、
     `commands_summary.no_issues`配下の内訳は確認不要。
-    summary行に`warnings`キーがある場合は実行時の警告が発生している。
-    `"kind":"warning"`行を読み、要求したチェックが実際に実行されたかを確認する
-    （未有効化のコマンドを`--commands`で指定した場合など、チェックが実行されないまま`exit`が0になることがある）。
-    `missing_targets`・`fully_excluded_files`がある場合も、指定したファイルが不在・除外で
-    対象外になっていないかを確認する。
     `applied_fixes`が非空でも`summary.guidance`に注記が出るが、formatter/fix-stageによる書き換えのみで
     再実行は不要なため、そのまま完了してよい。
 
@@ -756,10 +769,10 @@ MCPクライアントは結果を構造化データとして受け取れる。
 
     ```shell
     # 失敗ツールを --commands で限定する
-    pyfltr run --commands=mypy path/to/file.py
+    pyfltr run --output-format=jsonl --commands=mypy path/to/file.py
 
     # または直前runの失敗ツール・失敗ファイルをまとめて再実行
-    pyfltr run --only-failed
+    pyfltr run --output-format=jsonl --only-failed
     ```
 
     `--commands`で特定ツールに限定することで出力量を抑えつつ、

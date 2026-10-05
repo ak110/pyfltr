@@ -28,6 +28,7 @@ import pyfltr.cli.overrides
 import pyfltr.cli.precommit_guidance
 import pyfltr.cli.render
 import pyfltr.cli.subproject_config
+import pyfltr.command.completion
 import pyfltr.command.core_
 import pyfltr.command.dispatcher
 import pyfltr.command.process
@@ -52,6 +53,17 @@ logger = logging.getLogger(__name__)
 text_logger = pyfltr.cli.output_format.text_logger
 structured_logger = pyfltr.cli.output_format.structured_logger
 lock = pyfltr.cli.output_format.text_output_lock
+
+
+class PipelineOutcome(typing.NamedTuple):
+    """`run_pipeline`の戻り値。"""
+
+    exit_code: int
+    """終了コード。0 = 成功、1 = 失敗。"""
+    run_id: str | None
+    """実行アーカイブの`run_id`。アーカイブ無効・採番失敗・early exit時は`None`。"""
+    completion: pyfltr.command.completion.RunCompletion
+    """完了判定。全経路で確定し、MCP応答とJSONL `summary`の両方へ同じ値を渡す。"""
 
 
 # heartbeat監視の発火しきい値（秒）。
@@ -477,7 +489,7 @@ def run_pipeline(
     original_sys_args: list[str] | None = None,
     force_text_on_stderr: bool = False,
     jsonl_warnings_reach_consumer: bool = True,
-) -> tuple[int, str | None]:
+) -> PipelineOutcome:
     """出力形式に応じた警告配送スコープを設定してパイプラインを実行する。"""
     if (args.output_format or "text") == "jsonl":
         with pyfltr.warnings_.defer_stderr():
@@ -513,7 +525,7 @@ def _run_pipeline(
     original_sys_args: list[str] | None = None,
     force_text_on_stderr: bool = False,
     jsonl_warnings_reach_consumer: bool = True,
-) -> tuple[int, str | None]:
+) -> PipelineOutcome:
     """実行パイプライン。
 
     `force_text_on_stderr=True` を渡すと、人間向けtext整形ログの出力先を
@@ -521,15 +533,17 @@ def _run_pipeline(
     占有するケース用）。
 
     Returns:
-        `(exit_code, run_id)` のタプル。
+        `PipelineOutcome`（`exit_code`・`run_id`・`completion`）。
         `exit_code` は0 = 成功、1 = 失敗。
         `run_id` は実行アーカイブが有効で採番に成功した場合のULID文字列、
         無効・採番失敗・early exit時は `None`。
         `--only-failed` 指定で「直前runなし」「失敗ツールなし」「対象ファイル
-        交差が空」のいずれかに該当する場合はearly exitとして `(0, None)` を
+        交差が空」のいずれかに該当する場合はearly exitとして `exit_code=0`・`run_id=None` を
         返す。MCP経路はこの `run_id is None` を「実行スキップ」として識別する。
+        `completion` はearly exitを含む全経路で確定し、`formatter.on_finish` より前に
+        出力文脈へ渡してJSONL `summary` と同じ値にする。
 
-    タプル戻り値を採用したのはMCP経路がrun_idを確実に取得するため。
+    戻り値で`run_id`を返すのはMCP経路がrun_idを確実に取得するため。
     代替案としてMCP側で `ArchiveStore.list_runs(limit=1)` を引く案も検討
     したが、同一ユーザーキャッシュを参照する並行プロセスがあると別runの
     `run_id` を誤って拾うリスクがあるため戻り値経由とした。
@@ -610,9 +624,11 @@ def _run_pipeline(
         jsonl_warnings_reach_consumer=jsonl_warnings_reach_consumer,
     )
     if args.targets and len(pyfltr.warnings_.filtered_direct_files(reason="missing")) == len(args.targets):
+        completion = _evaluate_completion([], args, config, files_reached=0, unmet_commands=[])
+        early_run_ctx = dataclasses.replace(early_run_ctx, completion=completion)
         formatter.on_start(early_run_ctx)
         formatter.on_finish(early_run_ctx, [], 1, pyfltr.warnings_.collected_warnings())
-        return 1, None
+        return PipelineOutcome(1, None, completion)
 
     # --changed-since指定時はgit差分ファイルとの交差でフィルタリングする。
     # --only-failedよりも先に適用し、以後のフィルタはフィルタリング済みリストを受け取る。
@@ -628,9 +644,11 @@ def _run_pipeline(
     if only_failed_exit_early:
         # スキップの理由は`apply_filter`が警告として発行済み。JSONLでもheader・warning・summaryを
         # 出力し、何も出力せずに終了コード0で終わる状態（理由が消費主体へ届かない）を避ける。
+        completion = _evaluate_completion([], args, config, files_reached=0, unmet_commands=[])
+        early_run_ctx = dataclasses.replace(early_run_ctx, completion=completion)
         formatter.on_start(early_run_ctx)
         formatter.on_finish(early_run_ctx, [], 0, pyfltr.warnings_.collected_warnings())
-        return 0, None
+        return PipelineOutcome(0, None, completion)
 
     # モノレポ用のサブプロジェクト分類とサブプロジェクト別 config を準備する。
     # `subproject_aware=True` ツールが各サブプロジェクト cwd で実行する際に参照する。
@@ -656,6 +674,7 @@ def _run_pipeline(
         commands = _add_subproject_fast_pytest(commands, args, config, subproject_configs)
     requested_commands = list(commands)
     commands = [c for c in commands if pyfltr.config.config.is_command_enabled_anywhere(c, config, subproject_configs)]
+    unmet: list[str] = []
     if getattr(args, "commands", None) is not None:
         unmet = pyfltr.cli.command_selection.compute_unmet_commands(
             pyfltr.cli.command_selection.flatten_commands_arg(args.commands, config),
@@ -885,6 +904,8 @@ def _run_pipeline(
     ):
         returncode = 1
 
+    completion = _evaluate_completion(results, args, config, files_reached=len(all_files), unmet_commands=unmet)
+    ctx = dataclasses.replace(ctx, completion=completion)
     formatter.on_finish(ctx, results, returncode, pyfltr.warnings_.collected_warnings())
 
     # アーカイブ終端: meta.jsonにexit_code / finished_atを書き込む。
@@ -906,7 +927,33 @@ def _run_pipeline(
 
     base_ctx.cleanup()
 
-    return (returncode, run_id)
+    return PipelineOutcome(returncode, run_id, completion)
+
+
+def _evaluate_completion(
+    results: list[pyfltr.command.core_.CommandResult],
+    args: argparse.Namespace,
+    config: pyfltr.config.config.Config,
+    *,
+    files_reached: int,
+    unmet_commands: list[str],
+) -> pyfltr.command.completion.RunCompletion:
+    """`--commands`の明示指定と、蓄積された直接指定の不在・全除外と合わせて完了判定を導出する。"""
+    raw_commands = getattr(args, "commands", None)
+    requested = (
+        [name for name in pyfltr.cli.command_selection.flatten_commands_arg(raw_commands, config) if name in config.commands]
+        if raw_commands is not None
+        else []
+    )
+    return pyfltr.command.completion.evaluate_completion(
+        results,
+        config,
+        files_reached=files_reached,
+        requested_commands=requested,
+        unmet_commands=unmet_commands,
+        missing_targets=pyfltr.warnings_.filtered_direct_files(reason="missing"),
+        fully_excluded_files=pyfltr.warnings_.filtered_direct_files(reason="excluded"),
+    )
 
 
 _PRECOMMIT_MM_MESSAGE: str = (
@@ -1135,7 +1182,5 @@ def run_impl(
     except ValueError as e:
         parser.error(str(e))
 
-    exit_code, _run_id = run_pipeline(
-        args, commands, config, original_cwd=original_cwd, original_sys_args=list(original_sys_args)
-    )
-    return exit_code
+    outcome = run_pipeline(args, commands, config, original_cwd=original_cwd, original_sys_args=list(original_sys_args))
+    return outcome.exit_code
