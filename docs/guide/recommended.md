@@ -519,7 +519,11 @@ pre-commitへ置き換える場合は、この指定を削除する。
 常に最新版を使う場合は`uvx pyfltr@latest ...`と指定する。
 
 ```makefile
-.PHONY: format test
+.PHONY: setup format test
+
+# 開発環境のセットアップ
+setup:
+	uvx prek --config=.pre-commit-config.yaml install
 
 # フォーマット + 軽量lint（開発時の手動実行用。自動修正あり）
 format:
