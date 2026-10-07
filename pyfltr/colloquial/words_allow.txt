@@ -22,8 +22,8 @@
 #   - エントリー追加・変更時は、許容ケース（denylist側にマッチしつつマスクされる文脈）と、
 #     検出を維持するケースを併せて検証する。検出例は許容パターンの文字クラスから作らず、
 #     語の用法や活用から独立に選び、変更前後で検出結果を比較する
-#     固定ケースはtests/colloquial_check_test.pyとtests/colloquial_cli_test.pyへ追加し、
-#     `uv run --frozen pyfltr run tests/colloquial_check_test.py tests/colloquial_cli_test.py`で検証する
+#     固定ケースはtests/colloquial/check_test.pyとtests/colloquial/cli_test.pyへ追加し、
+#     `uv run --frozen pyfltr run tests/colloquial/check_test.py tests/colloquial/cli_test.py`で検証する
 #   - 活用形は文字クラスで漏れなく列挙する（例: `送出[しすさせず]`のように主要活用形を網羅する）。
 #     未然形・連用形などの漏れがあると誤検出が頻発するため
 #   - 他動詞形を登録する際は対応する自動詞形も合わせて登録する

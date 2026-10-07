@@ -53,8 +53,7 @@ import pyfltr.warnings_
 
 logger = logging.getLogger(__name__)
 
-# text_logger / structured_logger / text_output_lock は cli/output_format.py で定義する。
-# 本モジュールでは output_format から参照して使う。
+# text_logger / structured_logger / text_output_lock は output/logging_.py から参照する。
 text_logger = pyfltr.output.logging_.text_logger
 structured_logger = pyfltr.output.logging_.structured_logger
 lock = pyfltr.output.logging_.text_output_lock
@@ -460,6 +459,62 @@ def _run_pipeline(
     `text` 等のJSONLレコードが流れない出力形式ではheartbeatの観測対象が成立しない。
     TUI経路はUIに進捗表示があるためheartbeat不要。
     """
+    start_cwd_path = start_cwd if start_cwd is not None else pathlib.Path.cwd()
+    formatter, early_ctx, structured_stdout = _initialize_output(
+        args,
+        config,
+        force_text_on_stderr=force_text_on_stderr,
+        jsonl_warnings_reach_consumer=jsonl_warnings_reach_consumer,
+    )
+    prepared = _prepare_execution_targets(args, commands, config, start_cwd_path, formatter, early_ctx)
+    if isinstance(prepared, PipelineOutcome):
+        return prepared
+
+    effective_cwd = original_cwd if original_cwd is not None else os.getcwd()
+    effective_sys_args = list(original_sys_args) if original_sys_args is not None else list(sys.argv[1:])
+    launcher_prefix = pyfltr.state.retry.detect_launcher_prefix()
+    retry_args_template = pyfltr.state.retry.build_retry_args_template(effective_sys_args)
+    archive_store, run_id = _initialize_archive(args, config, prepared.commands, prepared.all_files, start_cwd_path)
+    _log_runtime(start_cwd_path, run_id, launcher_prefix)
+    cache_store = _initialize_cache(args, config)
+    archive_hook = _make_archive_hook(archive_store, run_id) if archive_store is not None and run_id is not None else None
+    attach_retry_command = _make_attach_retry_command(
+        retry_args_template=retry_args_template,
+        launcher_prefix=launcher_prefix,
+        original_cwd=effective_cwd,
+    )
+    base_ctx = _prepare_execution_context(config, prepared, start_cwd_path, cache_store, run_id)
+    ctx = _prepare_run_output(
+        args,
+        formatter,
+        early_ctx,
+        prepared,
+        run_id,
+        launcher_prefix,
+        retry_args_template,
+        structured_stdout,
+    )
+    results, returncode, ctx = _execute_pipeline_commands(
+        args,
+        prepared.commands,
+        base_ctx,
+        formatter,
+        ctx,
+        archive_hook=archive_hook,
+        attach_retry_command=attach_retry_command,
+        only_failed_targets=prepared.only_failed_targets,
+    )
+    return _finish_pipeline(args, base_ctx, formatter, ctx, results, returncode, archive_store, prepared.unmet)
+
+
+def _initialize_output(
+    args: pyfltr.run_options.RunOptions,
+    config: pyfltr.config.model.Config,
+    *,
+    force_text_on_stderr: bool,
+    jsonl_warnings_reach_consumer: bool,
+) -> tuple[pyfltr.output.formatters.OutputFormatter, pyfltr.output.formatters.RunOutputContext, bool]:
+    """出力形式・logger・early exit時の出力文脈を初期化する。"""
     output_format = args.output_format or "text"
     format_source: str | None = getattr(args, "format_source", None)
     output_file: pathlib.Path | None = args.output_file
@@ -492,13 +547,6 @@ def _run_pipeline(
         clear_cmd = ["cmd", "/c", "cls"] if os.name == "nt" else ["clear"]
         subprocess.run(clear_cmd, check=False)
 
-    # モノレポ対応: 起点 cwd と検出したサブプロジェクト一覧を確定する。
-    # `--work-dir`適用後の現在のcwdを起点とする（`original_cwd`はretry_command用に別経路で扱う）。
-    # MCP経路はプロセスのcwdを変更せず、`start_cwd`で起点を明示する。
-    # `discover_subprojects` は起点 cwd 配下のマーカー
-    # （`pyproject.toml`・`Cargo.toml`・`*.csproj`・`*.sln`）持ちディレクトリを再帰探索し、
-    # uv workspace member も含めて返す。検出0/1件は単一プロジェクトとして従来通り動作する。
-    start_cwd_path = start_cwd if start_cwd is not None else pathlib.Path.cwd()
     quiet = bool(getattr(args, "quiet", False))
     early_run_ctx = pyfltr.output.formatters.RunOutputContext(
         config=config,
@@ -511,28 +559,11 @@ def _run_pipeline(
         subcommand=getattr(args, "subcommand", None),
         jsonl_warnings_reach_consumer=jsonl_warnings_reach_consumer,
     )
-    prepared = _prepare_execution_targets(args, commands, config, start_cwd_path, formatter, early_run_ctx)
-    if isinstance(prepared, PipelineOutcome):
-        return prepared
-    commands = prepared.commands
-    all_files = prepared.all_files
-    subprojects = prepared.subprojects
-    subproject_files = prepared.subproject_files
-    subproject_configs = prepared.subproject_configs
-    external_files = prepared.external_files
-    only_failed_targets = prepared.only_failed_targets
-    fast_selected = prepared.fast_selected
-    unmet = prepared.unmet
+    return formatter, early_run_ctx, structured_stdout
 
-    # retry_command再構成用のベース情報を確定する。original_cwdはrun() が保存した
-    # --work-dir適用前のcwd、original_sys_argsは起動時のsys.argv[1:] のコピー。
-    effective_cwd = original_cwd if original_cwd is not None else os.getcwd()
-    effective_sys_args = list(original_sys_args) if original_sys_args is not None else list(sys.argv[1:])
-    launcher_prefix = pyfltr.state.retry.detect_launcher_prefix()
-    retry_args_template = pyfltr.state.retry.build_retry_args_template(effective_sys_args)
 
-    archive_store, run_id = _initialize_archive(args, config, commands, all_files, start_cwd_path)
-
+def _log_runtime(start_cwd_path: pathlib.Path, run_id: str | None, launcher_prefix: list[str]) -> None:
+    """実行環境を採番したrun_idとともにtext出力へ通知する。"""
     # 実行環境の情報を出力（run_id採番後にまとめて出力することで区切り線内に含める）。
     text_logger.info(f"{'-' * 10} pyfltr {'-' * (72 - 10 - 8)}")
     text_logger.info(f"version:        {importlib.metadata.version('pyfltr')}")
@@ -544,67 +575,81 @@ def _run_pipeline(
         text_logger.info("run_id:         %s(`%s show-run %s` で詳細を確認可能)", run_id, launcher_cmd, run_id)
     text_logger.info("-" * 72)
 
-    cache_store = _initialize_cache(args, config)
 
-    archive_hook: typing.Callable[[pyfltr.command.core_.CommandResult], None] | None = None
-    if archive_store is not None and run_id is not None:
-        archive_hook = _make_archive_hook(archive_store, run_id)
-
-    # retry_commandをCommandResultに埋めるためのヘルパー。
-    # archive_hookと同じタイミング （各ツール完了時） に呼ばれるon_result経路へ挿入する。
-    # 実装本体は `populate_retry_command` （失敗ファイルフィルタリング・cached判定を含む） に
-    # 委譲し、コンテキスト変数をファクトリ引数で引き渡す。
-    _attach_retry_command = _make_attach_retry_command(
-        retry_args_template=retry_args_template,
-        launcher_prefix=launcher_prefix,
-        original_cwd=effective_cwd,
-    )
-
-    # UIの判定
-    use_ui = not args.no_ui and (args.ui or pyfltr.output.ui.can_use_ui())
-
+def _prepare_execution_context(
+    config: pyfltr.config.model.Config,
+    prepared: PreparedTargets,
+    start_cwd_path: pathlib.Path,
+    cache_store: pyfltr.state.cache.CacheStore | None,
+    run_id: str | None,
+) -> pyfltr.command.core_.ExecutionBaseContext:
+    """対象解決の結果から通常実行とfast pytestの実行基盤を構築する。"""
     # run_pipelineが1回だけ組み立てる不変コンテキスト。
     # archive_storeはhook経由で渡すためContextには含めない。
     base_ctx = pyfltr.command.core_.ExecutionBaseContext(
         config=config,
-        all_files=all_files,
+        all_files=prepared.all_files,
         cache_store=cache_store,
         cache_run_id=run_id,
         start_cwd=start_cwd_path,
-        subprojects=subprojects,
-        subproject_files=subproject_files,
-        external_files=external_files,
-        subproject_configs=subproject_configs,
+        subprojects=prepared.subprojects,
+        subproject_files=prepared.subproject_files,
+        external_files=prepared.external_files,
+        subproject_configs=prepared.subproject_configs,
     )
-    if fast_selected and "pytest" in commands:
+    if prepared.fast_selected and "pytest" in prepared.commands:
         base_ctx.pytest_fast_base = _build_pytest_fast_base(base_ctx)
 
+    return base_ctx
+
+
+def _prepare_run_output(
+    args: pyfltr.run_options.RunOptions,
+    formatter: pyfltr.output.formatters.OutputFormatter,
+    early_ctx: pyfltr.output.formatters.RunOutputContext,
+    prepared: PreparedTargets,
+    run_id: str | None,
+    launcher_prefix: list[str],
+    retry_args_template: list[str],
+    structured_stdout: bool,
+) -> pyfltr.output.formatters.RunOutputContext:
+    """対象とアーカイブ情報を出力文脈へ渡し、開始を通知する。"""
     # 各ツール完了時のフック: retry_command付与 → archive書き込み → formatter.on_result （ストリーミング等）。
     # retry_commandはarchiveとJSONL streamingの双方で必要になるため、archive_hookより前に挿入する。
     # formatter.on_resultはarchive_hookの後に呼ぶ（result.archived=Trueが設定された後）。
     # on_start / on_result / on_finishで使う完全なctxを構築する。
     per_command_log = bool(args.stream)
     include_details_from_stream = not per_command_log
-    ctx = pyfltr.output.formatters.RunOutputContext(
-        config=config,
-        output_file=output_file,
-        force_text_on_stderr=force_text_on_stderr,
-        commands=commands,
-        all_files=len(all_files),
+    ctx = dataclasses.replace(
+        early_ctx,
+        commands=prepared.commands,
+        all_files=len(prepared.all_files),
         run_id=run_id,
         launcher_prefix=launcher_prefix,
         retry_args_template=retry_args_template,
         stream=per_command_log,
         include_details=include_details_from_stream,
         structured_stdout=structured_stdout,
-        format_source=format_source,
-        quiet=quiet,
-        subcommand=getattr(args, "subcommand", None),
-        jsonl_warnings_reach_consumer=jsonl_warnings_reach_consumer,
     )
 
     formatter.on_start(ctx)
 
+    return ctx
+
+
+def _execute_pipeline_commands(
+    args: pyfltr.run_options.RunOptions,
+    commands: list[str],
+    base_ctx: pyfltr.command.core_.ExecutionBaseContext,
+    formatter: pyfltr.output.formatters.OutputFormatter,
+    ctx: pyfltr.output.formatters.RunOutputContext,
+    *,
+    archive_hook: typing.Callable[[pyfltr.command.core_.CommandResult], None] | None,
+    attach_retry_command: typing.Callable[[pyfltr.command.core_.CommandResult], None],
+    only_failed_targets: dict[str, pyfltr.command.only_failed.ToolTargets] | None,
+) -> tuple[list[pyfltr.command.core_.CommandResult], int, pyfltr.output.formatters.RunOutputContext]:
+    """CLI/TUIの実行と結果フックを接続し、heartbeatの生存期間を管理する。"""
+    use_ui = not args.no_ui and (args.ui or pyfltr.output.ui.can_use_ui())
     # heartbeat監視の起動。
     # `jsonl`形式のときに限定して起動する。
     # `sarif`・`code-quality`はbufferingformatter（`on_finish`で単一JSONドキュメントを一括出力）のため、
@@ -613,26 +658,26 @@ def _run_pipeline(
     # `text`等のJSONLレコードが流れない出力形式ではheartbeatの観測対象が成立しない。
     # TUI経路はUIに進捗表示があるため別途heartbeat不要。
     heartbeat: HeartbeatMonitor | None = None
-    if output_format == "jsonl" and not use_ui and jsonl_warnings_reach_consumer:
+    if args.output_format == "jsonl" and not use_ui and ctx.jsonl_warnings_reach_consumer:
         heartbeat = HeartbeatMonitor()
         heartbeat.start()
 
     # 各ツール完了時のフック順序:
-    #   1. _attach_retry_command(result) → retry_commandをresultに付与
+    #   1. attach_retry_command(result) → retry_commandをresultに付与
     #   2. archive_hook(result) → アーカイブ書き込み（cachedの場合はスキップ）
     #   3. formatter.on_result(ctx, result) → JSONL streamingなど（cachedでも呼ばれる）
     # 上記1+2をcomposed_hookにまとめ、3はrun_commands_with_cliのon_result引数として渡す。
-    # これによりcachedの場合でもformatter.on_resultが呼ばれる（cli.pyの設計を踏襲）。
+    # これによりcachedの場合でもformatter.on_resultが呼ばれる（CLIとMCPで共通）。
     composed_hook: typing.Callable[[pyfltr.command.core_.CommandResult], None] | None = None
     if archive_hook is not None:
 
         def _composed_archive_hook(result: pyfltr.command.core_.CommandResult) -> None:
-            _attach_retry_command(result)
+            attach_retry_command(result)
             archive_hook(result)
 
         composed_hook = _composed_archive_hook
     else:
-        composed_hook = _attach_retry_command
+        composed_hook = attach_retry_command
 
     def _on_result_callback(result: pyfltr.command.core_.CommandResult) -> None:
         formatter.on_result(ctx, result)
@@ -640,38 +685,52 @@ def _run_pipeline(
     # run
     include_fix_stage = bool(getattr(args, "include_fix_stage", False))
     fail_fast = bool(getattr(args, "fail_fast", False))
-    if use_ui:
-        results, returncode = pyfltr.output.ui.run_commands_with_ui(
-            commands,
-            args,
-            base_ctx,
-            archive_hook=composed_hook,
-            on_result=_on_result_callback,
-            fail_fast=fail_fast,
-            only_failed_targets=only_failed_targets,
-        )
-        # TUI経路では常にinclude_details=True（ストリーミングしていないため）。
-        ctx = dataclasses.replace(ctx, stream=False, include_details=True)
-    else:
-        # 非TUIモード: 既定はバッファリング （最後にまとめて出力）、`--stream` で従来の即時出力。
-        results = run_commands_with_cli(
-            commands,
-            args,
-            base_ctx,
-            per_command_log=per_command_log,
-            include_fix_stage=include_fix_stage,
-            on_result=_on_result_callback,
-            archive_hook=composed_hook,
-            fail_fast=fail_fast,
-            only_failed_targets=only_failed_targets,
-            heartbeat=heartbeat,
-        )
-        returncode = 0
+    try:
+        if use_ui:
+            results, returncode = pyfltr.output.ui.run_commands_with_ui(
+                commands,
+                args,
+                base_ctx,
+                archive_hook=composed_hook,
+                on_result=_on_result_callback,
+                fail_fast=fail_fast,
+                only_failed_targets=only_failed_targets,
+            )
+            # TUI経路では常にinclude_details=True（ストリーミングしていないため）。
+            ctx = dataclasses.replace(ctx, stream=False, include_details=True)
+        else:
+            # 非TUIモード: 既定はバッファリング （最後にまとめて出力）、`--stream` で従来の即時出力。
+            results = run_commands_with_cli(
+                commands,
+                args,
+                base_ctx,
+                per_command_log=ctx.stream,
+                include_fix_stage=include_fix_stage,
+                on_result=_on_result_callback,
+                archive_hook=composed_hook,
+                fail_fast=fail_fast,
+                only_failed_targets=only_failed_targets,
+                heartbeat=heartbeat,
+            )
+            returncode = 0
 
-    # heartbeat監視の停止（成果物書き込み前に確実に停止する）。
-    if heartbeat is not None:
-        heartbeat.stop()
+    finally:
+        if heartbeat is not None:
+            heartbeat.stop()
+    return results, returncode, ctx
 
+
+def _finish_pipeline(
+    args: pyfltr.run_options.RunOptions,
+    base_ctx: pyfltr.command.core_.ExecutionBaseContext,
+    formatter: pyfltr.output.formatters.OutputFormatter,
+    ctx: pyfltr.output.formatters.RunOutputContext,
+    results: list[pyfltr.command.core_.CommandResult],
+    returncode: int,
+    archive_store: pyfltr.state.archive.ArchiveStore | None,
+    unmet: list[str],
+) -> PipelineOutcome:
+    """完了判定・出力・アーカイブ保存・一時資源の解放を行う。"""
     # returncodeを先に確定させる （render_resultsに渡してJSONL summary.exitに埋めるため）
     # TUIのCtrl+C協調停止は `run_commands_with_ui` から130 （SIGINT慣例） を返す。
     # この場合は `calculate_returncode` で上書きせず、そのまま採用する。
@@ -691,18 +750,20 @@ def _run_pipeline(
     ):
         returncode = 1
 
-    completion = _evaluate_completion(results, args, config, files_reached=len(all_files), unmet_commands=unmet)
+    completion = _evaluate_completion(
+        results, args, base_ctx.config, files_reached=len(base_ctx.all_files), unmet_commands=unmet
+    )
     ctx = dataclasses.replace(ctx, completion=completion)
     formatter.on_finish(ctx, results, returncode, pyfltr.warnings_.collected_warnings())
 
-    _finalize_archive(archive_store, run_id, returncode, commands, len(all_files))
+    _finalize_archive(archive_store, ctx.run_id, returncode, ctx.commands, ctx.all_files)
 
     # pre-commit経由かつformatter自動修正発生時のMM状態ガイダンスを必要に応じて出力する。
-    _maybe_emit_precommit_guidance(results, structured_stdout=structured_stdout, quiet=quiet)
+    _maybe_emit_precommit_guidance(results, structured_stdout=ctx.structured_stdout, quiet=ctx.quiet)
 
     base_ctx.cleanup()
 
-    return PipelineOutcome(returncode, run_id, completion, tuple(results))
+    return PipelineOutcome(returncode, ctx.run_id, completion, tuple(results))
 
 
 @dataclasses.dataclass
@@ -1055,6 +1116,36 @@ def calculate_returncode(results: list[pyfltr.command.core_.CommandResult], exit
 _VALID_OUTPUT_FORMATS: frozenset[str] = frozenset(pyfltr.output.formatters.FORMATTERS.keys())
 
 
+def load_run_config(config_dir: pathlib.Path | None = None, *, archive_required: bool = False) -> pyfltr.config.model.Config:
+    """実行起点の設定を読み、応答がrun_idを要する入口ではアーカイブを有効化する。"""
+    config = pyfltr.config.config.load_config(config_dir=config_dir)
+    if archive_required:
+        config.values["archive"] = True
+    return config
+
+
+def prepare_run(
+    options: pyfltr.run_options.RunOptions,
+    *,
+    config: pyfltr.config.model.Config | None = None,
+    archive_required: bool = False,
+    list_commands: str = pyfltr.cli.command_selection.CLI_LIST_COMMANDS,
+) -> tuple[pyfltr.config.model.Config, list[str]]:
+    """CLIとMCPに共通の設定読込・上書き・エイリアス展開・コマンド検証を行う。
+
+    CLIはカスタム引数の登録に使った設定を渡し、同じ設定を再読込しない。
+    公開入力の解析と、ValueErrorを各入口のエラーへ変換する処理は呼び出し側が担う。
+    """
+    if config is None:
+        config = load_run_config(options.work_dir, archive_required=archive_required)
+    pyfltr.cli.overrides.apply_cli_overrides(config, options)
+    commands = pyfltr.config.selection.resolve_aliases(
+        pyfltr.cli.command_selection.flatten_commands_arg(options.commands, config), config
+    )
+    pyfltr.cli.command_selection.validate_commands(commands, config, list_commands=list_commands)
+    return config, commands
+
+
 def _resolve_output_format(
     parser: argparse.ArgumentParser, args: argparse.Namespace
 ) -> pyfltr.cli.output_format.OutputFormatResolution:
@@ -1122,7 +1213,7 @@ def run_impl(
 
     # pyproject.toml
     try:
-        config = pyfltr.config.config.load_config(config_dir=args.work_dir)
+        config = load_run_config(args.work_dir)
     except (ValueError, OSError) as e:
         logger.error(f"設定エラー: {e}")
         return 1
@@ -1130,6 +1221,7 @@ def run_impl(
     args.output_format = output_format
     args.format_source = format_source
     args.output_file = output_file
+    work_dir = args.work_dir
 
     # カスタムコマンド用のCLI引数を動的追加して再パース。
     # reparse_fnはcli/main.pyが渡すコールバックで、cli/parserへの直接依存を持たずに済む。
@@ -1140,6 +1232,7 @@ def run_impl(
         args.output_format = output_format
         args.format_source = format_source
         args.output_file = output_file
+        args.work_dir = work_dir
         if getattr(args, "no_fix", False):
             args.include_fix_stage = False
         if args.ci:
@@ -1152,7 +1245,6 @@ def run_impl(
 
     # CLIオプションでconfigを上書き（サブプロジェクト別configにも同一に再適用するため共通ヘルパーへ集約）
     options = pyfltr.run_options.RunOptions.from_values(vars(args))
-    pyfltr.cli.overrides.apply_cli_overrides(config, options)
 
     # --commands未指定時はカスタムコマンドを含む全登録コマンドを対象にする。
     # argparseのデフォルト評価時点ではpyproject.tomlを読み込んでいないため、
@@ -1161,11 +1253,8 @@ def run_impl(
     # （例: svelte-check） も `run` / `ci` サブコマンドのデフォルト動作で実行されるようにする。
     # `--commands` は `action="append"` によりリストで渡るため、各要素を
     # カンマ区切りで再分割して平坦化する。重複は先出を優先して除去する。
-    commands: list[str] = pyfltr.config.selection.resolve_aliases(
-        pyfltr.cli.command_selection.flatten_commands_arg(args.commands, config), config
-    )
     try:
-        pyfltr.cli.command_selection.validate_commands(commands, config)
+        config, commands = prepare_run(options, config=config)
     except ValueError as e:
         parser.error(str(e))
 

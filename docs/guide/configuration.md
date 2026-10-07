@@ -377,12 +377,9 @@ pass-filenames = false
 カスタムコマンド・ビルトイン共通で利用できる。
 
 ```toml
-[tool.pyfltr.custom-commands.colloquial]
-type = "linter"
-path = "uv"
-args = ["run", "--script", "~/dotfiles/agent-toolkit/skills/writing-standards/scripts/check_colloquial.py"]
-targets = ["*"]
-severity = "warning"
+[tool.pyfltr]
+colloquial-check = true
+colloquial-check-severity = "warning"
 ```
 
 許容値は`"error"`（既定）と`"warning"`の2値。
@@ -399,12 +396,10 @@ LLMエージェントへ修正方針や参考文献を渡したいときに使�
 配列要素は英語推奨（`command.hints` / `summary.guidance` と同じくLLM入力前提のため）。
 
 ```toml
-[tool.pyfltr.custom-commands.colloquial]
-type = "linter"
-# ...
-hints = [
-    "Colloquial Japanese expressions detected. Replace with formal written-language equivalents.",
-    "See ~/dotfiles/agent-toolkit/skills/writing-standards/SKILL.md for guidance.",
+[tool.pyfltr]
+colloquial-check = true
+colloquial-check-hints = [
+    "Replace colloquial Japanese expressions with formal written-language equivalents.",
 ]
 ```
 

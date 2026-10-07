@@ -69,7 +69,7 @@ JSON Lines出力（`--output-format=jsonl`）とMCPサーバー（`pyfltr mcp`�
       対象のテストファイル自体を変更していなくても対象へ含める
     - 例えば`mkdocs.yml`・`pyfltr/cli/parser.py`・`pyfltr/tools.py`のいずれかを
       変更した場合は、`tests/integration/llmstxt_test.py`を対象へ含める
-  - テストだけを部分実行する場合も`uv run pyfltr run tests/xxx_test.py --commands=pytest`を使い、
+  - テストだけを部分実行する場合も`uv run pyfltr run tests/warnings_test.py --commands=pytest`を使い、
     `uv run pytest`を直接起動しない。直接起動では本リポジトリの設定（並列実行・タイムアウト等）が
     `make test`と揃わず、結果を`make test`の成否の根拠にできない
   - 修正後の再実行時は`--commands=mypy,ruff-check`等で限定して実行する（最終検証はCIに委ねる前提）

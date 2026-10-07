@@ -72,7 +72,7 @@ class RunOutputContext:
 class OutputFormatter(typing.Protocol):
     """出力フォーマットを担うProtocol。
 
-    各メソッドは`main.run_pipeline`から呼ばれる。実装クラスは`FORMATTERS`
+    各メソッドは`cli.pipeline.run_pipeline`から呼ばれる。実装クラスは`FORMATTERS`
     レジストリに登録し、`FORMATTERS[output_format]()`でインスタンス化して使う。
     """
 
@@ -89,7 +89,7 @@ class OutputFormatter(typing.Protocol):
 
         - JSONL: header行を出力する
         - SARIF / Code Quality: 準備のみ（何もしない）
-        - text / github-annotations: 何もしない（ヘッダー出力はmain.pyが担う）
+        - text / github-annotations: 何もしない（ヘッダー出力はcli/pipeline.pyが担う）
         """
 
     def on_result(self, ctx: RunOutputContext, result: pyfltr.command.core_.CommandResult) -> None:
@@ -147,7 +147,7 @@ class TextFormatter:
         _configure_text_loggers(ctx)
 
     def on_start(self, ctx: RunOutputContext) -> None:
-        """text形式の開始時処理。ヘッダー出力は`main.py`が担うため何もしない。"""
+        """text形式の開始時処理。ヘッダー出力は`cli/pipeline.py`が担うため何もしない。"""
 
     def on_result(self, ctx: RunOutputContext, result: pyfltr.command.core_.CommandResult) -> None:
         """text形式のon_result。即時ログはcli._run_one_command（per_command_log経路）が担うため何もしない。"""
@@ -356,5 +356,5 @@ FORMATTERS: dict[str, type[OutputFormatter]] = {
 """出力フォーマット名 → formatterクラスのレジストリ。
 
 `FORMATTERS[output_format]()`でインスタンス化して使う。
-新フォーマット追加時は本レジストリに追加するだけで、`main.py` / `cli.py`は変更不要。
+新フォーマット追加時は本レジストリに追加するだけで、`cli/pipeline.py`は変更不要。
 """

@@ -84,7 +84,7 @@ description: >
   `monkeypatch.setattr("pyfltr.command.xxx....")` / `mocker.patch("pyfltr.command.xxx....")` /
   `caplog`等のlogger名指定の文字列引数は静的解析で検出できない。
   サブパッケージ移動・リネームのたびに`grep -rn 'pyfltr\.<旧パス>'`で全文検索して網羅置換する
-- monkeypatchの個別事例は`tests/command_core_test.py`等の該当テストコード内コメントに集約する。
+- monkeypatchの個別事例は`tests/command/runner_test.py`等の該当テストコード内コメントに集約する。
   対象は`lru_cache`付き判定関数の差し替え方法・`shutil.which`mockのモジュールパス指定・
   `run_subprocess_with_timeout`戻り値型の構築・副作用検証2段呼び出しヘルパー再利用などである
 - bin-runnerの可用性判定（`ensure_mise_available`が起動する`mise exec <tool spec> -- <bin> --version`）は

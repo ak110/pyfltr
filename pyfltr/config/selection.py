@@ -83,7 +83,7 @@ def resolve_aliases(commands: list[str], config: Config) -> list[str]:
     """エイリアスを展開する。
 
     展開後のコマンド列は`config.command_names`の登録順でソートする。
-    未知コマンドは末尾扱いとし、`command_names.index`の`ValueError`を発生させない。
+    未知コマンドは共通の`command_index`により末尾へ置く。
     """
     # 最大10回まで再帰的に展開
     result: list[str] = []
@@ -104,15 +104,6 @@ def resolve_aliases(commands: list[str], config: Config) -> list[str]:
             break
         commands = result
 
-    # 未知コマンドは末尾扱いとし、`command_names.index`の`ValueError`を発生させない。
-    # 検出は呼び出し側（pipeline.py側のparser.error整形）に委ねる方針。
-    unknown_index = len(config.command_names)
-
-    def _sort_key(name: str) -> int:
-        try:
-            return config.command_names.index(name)
-        except ValueError:
-            return unknown_index
-
-    result.sort(key=_sort_key)
+    # 未知コマンドの検出とエラー整形は呼び出し側へ委ねる。
+    result.sort(key=lambda name: pyfltr.tools.command_index(config.command_names, name))
     return result

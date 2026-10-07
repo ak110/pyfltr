@@ -33,19 +33,17 @@ class SlowTestModel(pydantic.BaseModel):
 
 
 class CommandSummaryModel(pydantic.BaseModel):
-    """コマンドごとのサマリ。`show_run`ツールの戻り値内要素。"""
+    """コマンドごとのサマリ。`run`と`show_run`ツールの戻り値内要素。"""
 
     command: str | None = pydantic.Field(default=None, description="コマンド名。")
     status: str | None = pydantic.Field(
         default=None,
-        description="実行ステータス（succeeded / formatted / failed / skipped）。",
+        description="実行ステータス（succeeded / formatted / failed / skipped / warning / resolution_failed）。",
     )
     diagnostics: int | None = pydantic.Field(default=None, description="diagnosticの件数。")
     elapsed: float | None = pydantic.Field(
         default=None,
-        description=(
-            "対象のコマンドの実行に要した秒数。キャッシュヒットしたコマンドは実行アーカイブへ記録されないため本一覧に現れない。"
-        ),
+        description=("対象のコマンドの実行に要した秒数。runのキャッシュ復元結果では、保存元の実行に要した秒数を返す。"),
     )
     slow_tests: list[SlowTestModel] = pydantic.Field(
         default_factory=list,

@@ -10,14 +10,15 @@ description: >
 
 ## 触るべきファイル
 
-用途が近い既存ツールを1つ雛形として選び、その変更箇所をすべて踏襲する。
+用途が近い既存ツールを1つ雛形として選ぶ。既存の実行・解析方式で扱える通常の追加では、
+実装の登録変更は`BUILTIN_COMMANDS`の1件で完結する。テスト・導入設定・利用者文書は以下に従って追随する。
 
 - `pyfltr/tools.py`: `BUILTIN_COMMANDS`の1件の`CommandInfo`へ登録する。
   既定値、言語カテゴリ、runnerと標準版、専用実行種別、解析・構造化出力・ルールURLを同じ定義に置く。
   設定・カテゴリ・エイリアス・解析登録はここから導出され、別の表へ転記しない
-- `pyfltr/command/dispatcher.py`（および必要に応じて `pyfltr/command/` 配下の関連モジュール）:
-  実行ロジック。共通ヘルパーを優先利用し、独自の実装は最小限に抑える
-- `pyfltr/parsing/tools.py`: 共通のregex解析で扱えないツール固有パーサーを実装し、
+- 新しい実行方式が必要な場合は`docs/development/architecture.md`の「専用実行方式の追加」に従い、
+  `pyfltr/command/dispatcher.py`と担当実行モジュールを更新する
+- `pyfltr/parsing/tools.py`: 既存の解析方式で扱えない場合にツール固有パーサーを実装し、
   `tools.py`の`CommandInfo.parser`へ登録する。regexだけの場合は定義内の`diagnostic_pattern`へ置く
 - `tests/`: 実装と同じ相対位置の`config/`・`command/`・`parsing/`に対応するテストを追加
 - `tests/integration/smoke_test.py`: 新ツールのsmoke testケースを追加

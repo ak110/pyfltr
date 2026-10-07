@@ -39,9 +39,9 @@ pyfltrが対応するformatter/linter/testerの依存指定および実行時の
 オフライン・プロキシ環境での導入失敗リスクを避けるため本体依存から除外する。
 Node.js等のランタイムを伴うパッケージも、ランタイム導入とサプライチェーンの広さの観点から本体依存に含めない。
 
-ネイティブバイナリツール（cargo系・dotnet系を含む）は`pyfltr/command/runner.py`の`_BIN_TOOL_SPEC`に
-mise backend付きで登録する。
-あわせて`pyfltr/config/config.py`の`{command}-runner`既定値を`"bin-runner"`に揃える。
+ネイティブバイナリツール（cargo系・dotnet系を含む）は`pyfltr/tools.py`の対象`CommandInfo`へ
+mise backend付きの`runner`を登録する。
+同じ定義の`defaults`で`{command}-runner`既定値を`"bin-runner"`に揃える。
 グローバル`bin-runner`既定値`"mise"`へ委譲することで、追加ツール導入時もmise経由の自動セットアップが既定動作となる。
 利用者は`{command}-runner = "direct"`または`{command}-path`の明示で個別に上書きできる。
 
@@ -72,7 +72,8 @@ extrasの空エイリアスは過去版からの利用者環境の`pyfltr[python
 
 各値の解決方法と各runner（カテゴリ委譲値・直接指定値）の優先順位は
 `pyfltr/command/runner.py`の`build_commandline`のdocstringに集約する。
-runner値体系（許容値・既定値）の網羅は`pyfltr/config/config.py`の`DEFAULT_CONFIG`冒頭docstringを参照する。
+runnerの許容値は`pyfltr/tools.py`の`COMMAND_RUNNERS`・`PYTHON_RUNNERS`・`JS_RUNNERS`・`BIN_RUNNERS`を参照する。
+グローバル既定値は`pyfltr/config/model.py`の`DEFAULT_CONFIG`、ツール別既定値は対象`CommandInfo.defaults`を参照する。
 
 ツール解決の追跡情報は次の3系統で確認できる。
 
@@ -112,5 +113,5 @@ Python系ツール解決表（`PYTHON_TOOL_BIN`）へ相乗りさせると、未
 
 利用者ホームディレクトリ依存のパス（例: `~/dotfiles/.../tool.py`）を設定値として記述できるよう、
 特定のper-toolキーに限り`~`展開を適用する。
-対象キー範囲・適用タイミング・展開規則のSSOTは`pyfltr/config/config.py`の
+対象キー範囲・適用タイミング・展開規則のSSOTは`pyfltr/config/model.py`の
 `EXPAND_USER_KEY_SUFFIXES`定数のdocstringに集約する。

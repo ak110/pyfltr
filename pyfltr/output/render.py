@@ -19,6 +19,7 @@ import pyfltr.config.model
 import pyfltr.output.diagnostics
 import pyfltr.output.logging_
 import pyfltr.parsing.entry
+import pyfltr.tools
 import pyfltr.warnings_
 
 NCOLS = 128
@@ -114,7 +115,7 @@ def render_results(
     切替（`github-annotations`時のみGA記法）に使う。
     """
     del exit_code, commands, files, run_id, launcher_prefix  # 構造化出力への委譲が無くなり未使用
-    ordered = sorted(results, key=lambda r: config.command_names.index(r.command))
+    ordered = sorted(results, key=lambda r: pyfltr.tools.command_index(config.command_names, r.command))
     warnings = warnings or []
 
     use_ga = output_format == "github-annotations"

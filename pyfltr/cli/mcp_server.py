@@ -55,9 +55,7 @@ else:
 
 import pyfltr.cli.command_info
 import pyfltr.cli.command_selection
-import pyfltr.cli.overrides
 import pyfltr.cli.pipeline
-import pyfltr.cli.replace_subcmd
 import pyfltr.command.core_
 import pyfltr.command.targets
 import pyfltr.config.config
@@ -400,17 +398,9 @@ async def tool_run(
         if no_fix:
             args.include_fix_stage = False
 
-        config = pyfltr.config.config.load_config(config_dir=work_dir_path)
-        # アーカイブを強制有効化する。MCPツールはrun_idを返す契約を保証する。
-        config.values["archive"] = True
-        pyfltr.cli.overrides.apply_cli_overrides(config, args)
-
-        commands_list: list[str] = pyfltr.config.selection.resolve_aliases(
-            pyfltr.cli.command_selection.flatten_commands_arg(args.commands, config), config
-        )
         try:
-            pyfltr.cli.command_selection.validate_commands(
-                commands_list, config, list_commands=pyfltr.cli.command_selection.MCP_LIST_COMMANDS
+            config, commands_list = pyfltr.cli.pipeline.prepare_run(
+                args, archive_required=True, list_commands=pyfltr.cli.command_selection.MCP_LIST_COMMANDS
             )
         except ValueError as exc:
             _raise_mcp_error(str(exc))
@@ -472,8 +462,8 @@ async def tool_run(
         pyfltr.warnings_.mark_delivered(warning_entries)
         guidance = pyfltr.output.jsonl.build_summary_guidance(
             failure_present=bool(failed_commands),
-            resolution_failed_present=any(c.status == "resolution_failed" for c in commands_model),
-            applied_fixes_present=any(c.status == "formatted" for c in commands_model),
+            resolution_failed_present=any(result.resolution_failed for result in outcome.results),
+            applied_fixes_present=any(result.formatted for result in outcome.results),
             run_id=run_id,
             launcher_prefix=None,
             subcommand=mode,

@@ -200,7 +200,7 @@ def _should_suppress_command_record(
 
     抑止条件は`build_command_lines`のdocstringを参照する（SSOT）。
     """
-    if result.status not in {"succeeded", "formatted", "skipped"}:
+    if result.needs_rerun:
         return False
     if diagnostic_records:
         return False
@@ -674,7 +674,7 @@ def _build_hints_dict(
             merged[f"user.{index}"] = hint_text
     # formatterによる書き換えはそれ自体が成功扱いで、利用者・LLMエージェントが
     # 「再実行して直さなければならない」と誤解しないようコマンド単独の文脈ヒントを添える。
-    if result.status == "formatted":
+    if result.formatted:
         merged["status.formatted"] = (
             "formatter rewrote files; rerun is not required because the rewrite itself counts as success"
         )

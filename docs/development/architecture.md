@@ -305,6 +305,21 @@ fast実行は`fast`サブコマンドと、`--commands`にfastトークンを含
 
 両フィールドは元パス基準でキャッシュキーとJSONL診断出力を安定化させるために設ける。
 
+### 専用実行方式の追加
+
+通常のツール追加は`tools.py`の`BUILTIN_COMMANDS`へ`CommandInfo`を1件登録し、
+既存の`execution_kind`と解析方式を選ぶ。実行方式そのものを追加する場合は、次の接続を更新する。
+
+1. `tools.py`の`ExecutionKind`へ種別を追加する。
+2. `command/`の担当モジュールに`ExecutionRequest`を受け取り`CommandResult`を返す実行関数を実装する。
+   要求にある設定・対象・実行文脈を使い、対象展開と共通の完了判定を再定義しない。
+3. `command/dispatcher.py`の`_EXECUTORS`へ種別と実行関数を登録する。
+4. 対象`CommandInfo.execution_kind`へ種別を指定する。fix段階の方式を追加した場合は
+   `fix_execution_kind`へ指定する。
+5. 担当実行モジュールに対応する`tests/command/`で要求の受渡しと結果を検証する。
+
+dispatcherの`execute_command`はこの登録表を使い、通常実行とfix段階を同じ要求型で接続する。
+
 ### 完了判定 {#completion}
 
 対象到達と実行完了の判定は、`pyfltr/command/completion.py`の`evaluate_completion`が1回の実行につき1度だけ導出する。
@@ -484,7 +499,7 @@ xdistワーカークラッシュの詳細等）を要することが多い。こ
 CI（GitHub Actions）では`--output-format=github-annotations`使用時、text出力の生出力
 併記部分に`::`を含む行があるとワークフローコマンドとして誤解釈される恐れがある。
 そのためGitHub公式の`::stop-commands::<token>` / `::<token>::`で該当ブロックを囲む
-（`pyfltr/cli/render.py`の`_write_raw_output`）。
+（`pyfltr/output/render.py`の`_write_raw_output`）。
 
 CIワークフロー側では実行アーカイブ（`PYFLTR_CACHE_DIR`配下）を`if: failure()`条件で
 `actions/upload-artifact`によりジョブ成果物として保存する構成を推奨する。生出力併記だけでは
@@ -642,7 +657,7 @@ JSONL stdoutストリーミングとは独立した仕組みにすることで�
 オプトイン化（既定無効）は却下した。
 エージェント連携時のUXを損なうため、既定有効＋自動削除で肥大化を抑える設計とした。
 
-アーカイブ用のシリアライズはLLM向け出力（`llm_output.py`）と独立した最小構造とし、
+アーカイブ用のシリアライズはLLM向け出力（`output/jsonl.py`）と独立した最小構造とし、
 `ErrorLocation`の全フィールドを保存する。
 `rule_url`等のフィールドが追加された際の追従コストを抑える狙い。
 
@@ -765,9 +780,9 @@ JavaScriptのみのプロジェクトでは`uv-audit`等が未有効であり、
 
 #### 提供ツール構成
 
-読み取り系4ツール（`list_runs`・`show_run`・`show_run_diagnostics`・`show_run_output`）・
+読み取り系ツール（`list_runs`・`show_run`・`show_run_diagnostics`・`show_run_output`）・
 実行系1ツール（`run`）を公開する。
-grep/replace系4ツール（`grep`・`replace`・`replace_undo`・`replace_history`）と
+grep/replace系ツール（`grep`・`replace`・`replace_undo`・`replace_history`）と
 情報/設定系2ツール（`command_info`・`config`）を加え、公開ツールは計11件となる。
 実行系は`run`の`mode`で`ci`/`run`/`fast`を選択し、同一の入力・出力モデルで扱う。
 

@@ -113,7 +113,7 @@ def evaluate_completion(
 
 def _is_completed(result: pyfltr.command.core_.CommandResult) -> bool:
     """結果が対象を評価し終えたことを表すなら真を返す。"""
-    if result.timeout_exceeded or result.status in ("skipped", "resolution_failed"):
+    if result.timeout_exceeded or result.skipped or result.resolution_failed:
         return False
     return result.files >= 1
 
