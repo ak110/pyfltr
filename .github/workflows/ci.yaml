@@ -69,12 +69,12 @@ jobs:
       - name: Test markdownlint with pnpx runner
         env:
           CI: "true"
-        run: uv run pyfltr run tests/smoke_test.py --commands=pytest --no-fix --no-archive --no-cache "--pytest-args=-k=test_tool_smoke[markdownlint]"
+        run: uv run pyfltr run tests/integration/smoke_test.py --commands=pytest --no-fix --no-archive --no-cache "--pytest-args=-k=test_tool_smoke[markdownlint]"
 
       - name: Test textlint with pnpx runner
         env:
           CI: "true"
-        run: uv run pyfltr run tests/smoke_test.py --commands=pytest --no-fix --no-archive --no-cache "--pytest-args=-k=test_tool_smoke[textlint]"
+        run: uv run pyfltr run tests/integration/smoke_test.py --commands=pytest --no-fix --no-archive --no-cache "--pytest-args=-k=test_tool_smoke[textlint]"
 
   test:
     runs-on: ubuntu-latest
@@ -208,7 +208,7 @@ jobs:
         run: echo "PYFLTR_CACHE_DIR=${{ runner.temp }}/pyfltr-cache" >> "$GITHUB_ENV"
 
       - name: Install smoke test tooling via mise
-        # tests/smoke_test.py が起動するmise経由ツールをWindows runnerでも揃える。
+        # tests/integration/smoke_test.py が起動するmise経由ツールをWindows runnerでも揃える。
         # Linux jobは公式pyfltrイメージに同梱済みのため不要。
         # 既定シェル（PowerShell）でもbash継続`\`に依存せず動くよう単一行で記述する。
         run: mise use --global shfmt@latest actionlint@latest pinact@latest github:editorconfig-checker/editorconfig-checker@latest taplo@latest hadolint@latest gitleaks@latest

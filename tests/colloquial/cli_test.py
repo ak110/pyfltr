@@ -1,0 +1,193 @@
+import pathlib
+import subprocess
+import sys
+
+import pytest
+
+import pyfltr.colloquial.check
+import pyfltr.colloquial.cli
+import pyfltr.paths
+
+
+def _run(*paths: pathlib.Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, "-m", "pyfltr.colloquial", *(str(p) for p in paths)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+_REGEX_METACHARS = "[]()?*+{}|\\^$."
+
+
+def _deny_sample(*, require_replacement: bool = False) -> tuple[str, str | None]:
+    """denylistから正規表現記号を含まない単純なリテラル行を探して返す。
+
+    `words.txt`は正規表現の集合であり、記号を含む行はそのままテキストへ埋め込めない。
+    戻り値は`(パターン文字列, 置換候補)`のタプル。
+    `require_replacement=True`のときは置換候補列（タブ区切り）を持つ行に限定する。
+    """
+    for line in pyfltr.colloquial.check.DENY_PATH.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        head, sep, tail = stripped.partition("\t")
+        if any(c in head for c in _REGEX_METACHARS):
+            continue
+        if require_replacement and not (sep and tail):
+            continue
+        return head, (tail or None)
+    return "", None
+
+
+def test_no_detection_exits_zero(tmp_path: pathlib.Path) -> None:
+    """検出なしのときexit 0でstdoutが空になる。"""
+    target = tmp_path / "clean.md"
+    target.write_text("plain ASCII content without any flagged phrase.\n", encoding="utf-8")
+    result = _run(target)
+    assert result.returncode == 0
+    assert result.stdout == ""
+
+
+def test_detection_exits_one_with_expected_format(tmp_path: pathlib.Path) -> None:
+    """検出ありのときexit 1でstdoutに`path:line:col: [match] excerpt`形式の行が出る。"""
+    deny_line, _ = _deny_sample()
+    assert deny_line, "denylistから単純なリテラル行を取得できなかった"
+    target = tmp_path / "hit.md"
+    target.write_text(f"本文に{deny_line}該当する。\n", encoding="utf-8")
+    result = _run(target)
+    assert result.returncode == 1
+    lines = result.stdout.splitlines()
+    assert len(lines) == 1
+    assert lines[0].startswith(f"{pyfltr.paths.normalize_separators(target)}:1:")
+    assert f"[{deny_line}]" in lines[0]
+
+
+def test_noun_gyou_followed_by_particles_exits_zero(tmp_path: pathlib.Path) -> None:
+    """名詞の行に助詞が続く文を、動詞として検出しない。"""
+    target = tmp_path / "noun.md"
+    target.write_text(
+        "出力が`該当0件:`の行から成る。\n次の行から読む。\n次の行こそ重要。\nこの行くらいは残す。\n"
+        "対象がどの行かを示す。\nどの行か、確認する。\nこの行かあの行。\nどの行かによる。\n",
+        encoding="utf-8",
+    )
+    result = _run(target)
+    assert result.returncode == 0
+    assert not result.stdout
+    assert not result.stderr
+
+
+@pytest.mark.parametrize(
+    ("sentence", "expected_match"),
+    [
+        ("行かない。", "行か"),
+        ("行きます。", "行き"),
+        ("行こう。", "行こ"),
+        ("行くらしい。", "行く"),
+        ("行かん。", "行か"),
+        ("行かざるを得ない。", "行か"),
+        ("行かにゃならん。", "行か"),
+        ("行かへん。", "行か"),
+        ("行かしめる。", "行か"),
+        ("行かば、", "行か"),
+        ("行かむ。", "行か"),
+        ("行かじ。", "行か"),
+        ("行かう。", "行か"),
+        ("行かっしゃい。", "行か"),
+        ("行かい。", "行か"),
+        ("行かー。", "行か"),
+    ],
+)
+def test_verb_iku_keeps_detection(tmp_path: pathlib.Path, sentence: str, expected_match: str) -> None:
+    """名詞用法を許容しても、動詞の活用形の警告を維持する。"""
+    target = tmp_path / "verb.md"
+    target.write_text(sentence + "\n", encoding="utf-8")
+    result = _run(target)
+    assert result.returncode == 1
+    assert f"[{expected_match}]" in result.stdout
+    assert not result.stderr
+
+
+def test_replacement_candidate_included(tmp_path: pathlib.Path) -> None:
+    """置換候補があるとき`-> [replacement]`がstdoutに含まれる。"""
+    deny_line, replacement = _deny_sample(require_replacement=True)
+    assert deny_line and replacement, "置換候補付きの単純なリテラル行を取得できなかった"
+    target = tmp_path / "hit.md"
+    target.write_text(f"本文に{deny_line}該当する。\n", encoding="utf-8")
+    result = _run(target)
+    assert result.returncode == 1
+    assert f"-> [{replacement}]" in result.stdout
+
+
+def test_multiple_files_report_all_hits(tmp_path: pathlib.Path) -> None:
+    """複数ファイル指定時、全ての違反が列挙される。"""
+    deny_line, _ = _deny_sample()
+    assert deny_line
+    target1 = tmp_path / "hit1.md"
+    target2 = tmp_path / "hit2.md"
+    target1.write_text(f"本文に{deny_line}該当する。\n", encoding="utf-8")
+    target2.write_text(f"本文に{deny_line}該当する。\n", encoding="utf-8")
+    result = _run(target1, target2)
+    assert result.returncode == 1
+    lines = result.stdout.splitlines()
+    assert len(lines) == 2
+    assert any(line.startswith(f"{pyfltr.paths.normalize_separators(target1)}:") for line in lines)
+    assert any(line.startswith(f"{pyfltr.paths.normalize_separators(target2)}:") for line in lines)
+
+
+def test_missing_file_is_skipped(tmp_path: pathlib.Path) -> None:
+    """存在しないファイルはスキップされ、他ファイルの検出結果は出力される。"""
+    deny_line, _ = _deny_sample()
+    assert deny_line
+    missing = tmp_path / "missing.md"
+    target = tmp_path / "hit.md"
+    target.write_text(f"本文に{deny_line}該当する。\n", encoding="utf-8")
+    result = _run(missing, target)
+    assert result.returncode == 1
+    lines = result.stdout.splitlines()
+    assert len(lines) == 1
+    assert lines[0].startswith(f"{pyfltr.paths.normalize_separators(target)}:")
+    # 検査できなかったファイルを伏せず、確認事項とともに標準エラーへ通知する
+    assert pyfltr.paths.normalize_separators(missing) in result.stderr
+    assert "読み取り権限を確認してください" in result.stderr
+
+
+def test_no_replacement_candidate_shows_rewrite_guidance(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """置換候補の無い辞書行に一致した場合は、候補の位置に言い換えの方針を示す。
+
+    同梱の辞書は全行が置換候補を持つため、候補を持たない行だけの辞書へ差し替えて検証する。
+    """
+    deny = tmp_path / "deny.txt"
+    deny.write_text("ぶっちゃけ\n", encoding="utf-8")
+    monkeypatch.setattr(pyfltr.colloquial.check, "DENY_PATH", deny)
+    monkeypatch.setattr(pyfltr.colloquial.check, "ALLOW_PATH", tmp_path / "missing-allow.txt")
+    target = tmp_path / "hit.md"
+    target.write_text("本文でぶっちゃけ述べる。\n", encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["pyfltr.colloquial", str(target)])
+    assert pyfltr.colloquial.cli.main() == 1
+    out = capsys.readouterr().out
+    assert "[ぶっちゃけ] -> (" in out
+    assert "書き言葉" in out
+
+
+def test_cli_normalizes_backslash_in_filename(tmp_path: pathlib.Path) -> None:
+    """バックスラッシュを含む実ファイル名も公開CLI出力では`/`へ正規化する。
+
+    POSIX環境ではバックスラッシュが実ファイル名の一部として保持されるため、
+    正規化の適用有無を公開経路から観測できる。
+    """
+    deny_line, _ = _deny_sample()
+    assert deny_line
+    target = tmp_path / r"nested\hit.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(f"本文に{deny_line}該当する。\n", encoding="utf-8")
+    result = _run(target)
+    assert result.returncode == 1
+    lines = result.stdout.splitlines()
+    assert len(lines) == 1
+    normalized = pyfltr.paths.normalize_separators(target)
+    assert lines[0].startswith(f"{normalized}:1:")
+    assert "\\" not in lines[0]

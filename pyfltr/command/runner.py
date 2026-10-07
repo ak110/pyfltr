@@ -27,11 +27,13 @@ import pyfltr.command.process
 import pyfltr.command.structured_output
 import pyfltr.command.subprojects
 import pyfltr.config.config
-from pyfltr.command.builtin import AUTO_ARGS, AUTO_VALUE_ARGS, COMMAND_RUNNERS, JS_RUNNERS
+import pyfltr.config.model
+import pyfltr.tools
 
 # `build_mise_subprocess_env`はpyfltr.command内部APIだがサブパッケージ全域で共有する。
 # 同じサブパッケージ内の`mise.py`もfrom-importで取り込んでおり、本モジュールも倣う。
 from pyfltr.command.env import build_mise_subprocess_env, build_subprocess_env
+from pyfltr.tools import AUTO_ARGS, AUTO_VALUE_ARGS, COMMAND_RUNNERS, JS_RUNNERS, BinToolSpec
 
 logger = __import__("logging").getLogger(__name__)
 
@@ -50,7 +52,7 @@ class RunnerMismatchError(ValueError):
 
     def __init__(self, command: str, runner: str, effective: str, *, category: str, alternatives: str) -> None:
         resolved_text = f'（`{runner}`の設定値 "{effective}" に解決）' if runner != effective else ""
-        default = pyfltr.config.config.DEFAULT_CONFIG.get(f"{command}-runner", "direct")
+        default = pyfltr.config.model.command_setting(pyfltr.config.model.DEFAULT_CONFIG, command, "runner", "direct")
         super().__init__(
             f'{command}は{category}のツールではないため、`{command}-runner = "{runner}"`{resolved_text}では起動できません'
         )
@@ -62,35 +64,12 @@ class RunnerMismatchError(ValueError):
 
 # pyfltrのコマンド名 -> 実際に起動するパッケージのbin名の対応表。
 # markdownlintコマンドは実体がmarkdownlint-cli2である点に注意。
-JS_TOOL_BIN: dict[str, str] = {
-    "textlint": "textlint",
-    "markdownlint": "markdownlint-cli2",
-    "eslint": "eslint",
-    "prettier": "prettier",
-    "biome": "biome",
-    "vitest": "vitest",
-    "oxlint": "oxlint",
-    "tsc": "tsc",
-    # designmdの実行ファイル名は`design.md`。npmパッケージ`@google/design.md`が
-    # `bin: { "design.md": "..." }`として配布する命名に合わせる。
-    "designmd": "design.md",
-}
+JS_TOOL_BIN = {command: info.js_bin for command, info in pyfltr.tools.BUILTIN_COMMANDS.items() if info.js_bin is not None}
 
 # pyfltrのコマンド名 -> uv経由およびdirect経路で起動する実行ファイル名。
 # ruff-format / ruff-check は実行ファイル名が `ruff` なので別名解決が必要。
-PYTHON_TOOL_BIN: dict[str, str] = {
-    "ruff-format": "ruff",
-    "ruff-check": "ruff",
-    "mypy": "mypy",
-    "pylint": "pylint",
-    "pyright": "pyright",
-    "ty": "ty",
-    "arid": "arid",
-    "pytest": "pytest",
-    "uv-sort": "uv-sort",
-    "semgrep": "semgrep",
-    "bandit": "bandit",
-    "sqlfluff": "sqlfluff",
+PYTHON_TOOL_BIN = {
+    command: info.python_bin for command, info in pyfltr.tools.BUILTIN_COMMANDS.items() if info.python_bin is not None
 }
 
 # pyfltrのコマンド名 -> 起動するパッケージマネージャーのbin名。
@@ -100,22 +79,18 @@ PYTHON_TOOL_BIN: dict[str, str] = {
 # `PYTHON_TOOL_BIN` へ相乗りさせると、未検出時の案内
 # （`pyfltr.command.tool_resolution.format_tool_resolution_failure`）がuv経由起動を促す
 # 誤誘導になるため別表へ分離する。
-PACKAGE_MANAGER_TOOL_BIN: dict[str, str] = {
-    "uv-audit": "uv",
-    "pnpm-audit": "pnpm",
-    "npm-audit": "npm",
-    "yarn-audit": "yarn",
+PACKAGE_MANAGER_TOOL_BIN = {
+    command: info.package_manager_bin
+    for command, info in pyfltr.tools.BUILTIN_COMMANDS.items()
+    if info.package_manager_bin is not None
 }
 
 # pyfltrのコマンド名から、期待する機能が成立する最低版と要件の理由を引く。
 # 版の選択はパッケージマネージャーへ委ねる既存方針を維持し、機能成立の検証だけを担う。
 # 閾値はサブコマンドが追加された版ではなく、期待する観測結果が得られる最初の版とする。
 # uv auditは0.10.8で追加され0.10.10で検出を開始したが、終了コードへ反映するのは0.11.2以降である。
-PACKAGE_MANAGER_MIN_VERSION: dict[str, tuple[tuple[int, ...], str]] = {
-    "uv-audit": (
-        (0, 11, 2),
-        "0.11.2未満のuvは脆弱性の検出を終了コードへ反映しないため、未検査または未解消の状態が成功として扱われる",
-    ),
+PACKAGE_MANAGER_MIN_VERSION = {
+    command: info.minimum_version for command, info in pyfltr.tools.BUILTIN_COMMANDS.items() if info.minimum_version is not None
 }
 
 
@@ -161,7 +136,7 @@ def _get_tool_version(
     測ってしまうため、起動と同じ形へ`--version`を付けて問い合わせる。
     取得または解釈に失敗した場合は`None`を返す。
     """
-    proc = pyfltr.command.process.run_subprocess_with_timeout(
+    proc = pyfltr.command.process.run_process_loop(
         [*commandline, "--version"], dict(env_items), cwd=cwd, timeout=_VERSION_PROBE_TIMEOUT
     )
     if proc.returncode != 0:
@@ -171,7 +146,7 @@ def _get_tool_version(
 
 def probe_tool_version_text(
     resolved: "ResolvedCommandline",
-    config: pyfltr.config.config.Config,
+    config: pyfltr.config.model.Config,
     command: str,
     *,
     cwd: pathlib.Path | None = None,
@@ -197,7 +172,7 @@ def probe_tool_version_text(
         effective_runner=resolved.effective_runner,
     )
     try:
-        proc = pyfltr.command.process.run_subprocess_with_timeout(
+        proc = pyfltr.command.process.run_process_loop(
             [*resolved.commandline, "--version"], env, cwd=cwd, timeout=_VERSION_PROBE_TIMEOUT
         )
     except OSError:
@@ -220,7 +195,7 @@ def _preferred_version_line(output: str) -> str | None:
 
 def ensure_package_manager_version(
     resolved: "ResolvedCommandline",
-    config: pyfltr.config.config.Config,
+    config: pyfltr.config.model.Config,
     command: str,
     *,
     cwd: pathlib.Path | None = None,
@@ -251,77 +226,14 @@ def ensure_package_manager_version(
 # 除外したい場合やスコープ付きパッケージの場合にここで差し替える。
 # - textlint 15.5.3には起動不能のバグがあるため除外している （15.5.4で修正済み）。
 # - biomeはbin名が "biome" だがnpmパッケージは "@biomejs/biome" （スコープ付き）。
-_JS_TOOL_PNPX_PACKAGE_SPEC: dict[str, str] = {
-    "textlint": "textlint@<15.5.3 || >15.5.3",
-    "biome": "@biomejs/biome",
-    "oxlint": "oxlint",
-    "tsc": "typescript",  # tscコマンドはtypescriptパッケージに含まれる
-    # designmdのnpmパッケージはスコープ付き`@google/design.md`。
-    # 内部コマンドIDがTOMLキー衝突回避のため`designmd`であるのに対し、実際の配布パッケージ名は別。
-    "designmd": "@google/design.md",
+_JS_TOOL_PNPX_PACKAGE_SPEC = {
+    command: info.pnpx_package for command, info in pyfltr.tools.BUILTIN_COMMANDS.items() if info.pnpx_package is not None
 }
 
 
-@dataclasses.dataclass(frozen=True)
-class BinToolSpec:
-    """bin-runner対応ツール（ネイティブバイナリ）の解決情報。
-
-    `_BIN_TOOL_SPEC` テーブルでpyfltrコマンド名と対応付けて登録する。
-    `{command}-runner` が `"bin-runner"`（グローバル `bin-runner` へ委譲）または `"mise"` のとき、
-    本specの `mise_backend` と `bin_name` から `mise exec ... -- <bin>` 形式のコマンドラインを組み立てる。
-    `{command}-path` が非空ならその値が優先され、本テーブルは参照しない。
-    新ツール追加時は `_BIN_TOOL_SPEC` への登録と `pyfltr.config.config.DEFAULT_CONFIG` の
-    `{command}-runner` 既定値（`"bin-runner"`）・`{command}-version` 既定値の追加をセットで行う。
-    """
-
-    bin_name: str
-    """実行ファイル名"""
-    mise_backend: str | None = None
-    """mise exec用のbackend指定（省略時は `bin_name`）"""
-    default_version: str = "latest"
-    """既定バージョン"""
-
-
 # bin-runnerで解決するネイティブバイナリツールの定義テーブル。各値は `BinToolSpec` 参照。
-_BIN_TOOL_SPEC: dict[str, BinToolSpec] = {
-    "ec": BinToolSpec(
-        bin_name="editorconfig-checker",
-        mise_backend="github:editorconfig-checker/editorconfig-checker",
-    ),
-    "shellcheck": BinToolSpec(bin_name="shellcheck"),
-    "shfmt": BinToolSpec(bin_name="shfmt"),
-    "actionlint": BinToolSpec(bin_name="actionlint"),
-    "pinact": BinToolSpec(bin_name="pinact"),
-    # glab本体は単一バイナリで `glab ci lint` のサブコマンドを必要とするが、
-    # サブコマンド注入は-args既定値 （["ci", "lint"]） 側に持たせて、
-    # bin-runnerを経由しない明示path指定でも自然にサブコマンドが付く設計とする。
-    "glab-ci-lint": BinToolSpec(bin_name="glab"),
-    "taplo": BinToolSpec(bin_name="taplo"),
-    "hadolint": BinToolSpec(bin_name="hadolint"),
-    # gitleaksは `detect` サブコマンドが必須だが、サブコマンド注入は
-    # -args既定値側に持たせる（glab-ci-lintと同じ設計）。
-    "gitleaks": BinToolSpec(bin_name="gitleaks"),
-    # lychee: Rust製リンク切れチェッカー。
-    # mise registryには未登録のためgithub backend経由で解決する。
-    # aqua backendも候補だが、`lychee-x86_64-unknown-linux-musl/lychee`のサブディレクトリ構造で
-    # 抽出されmise側のbinパス（`lychee/lychee`）と一致せず起動できないため採用しない。
-    "lychee": BinToolSpec(bin_name="lychee", mise_backend="github:lycheeverse/lychee"),
-    # cargo系は `cargo` バイナリを呼ぶ。miseのrust toolchain backendで解決し、
-    # cargo-fmt / cargo-clippy / cargo-check / cargo-testはサブコマンドを `-args`
-    # 既定値側に持たせる設計とする。
-    "cargo-fmt": BinToolSpec(bin_name="cargo", mise_backend="rust"),
-    "cargo-clippy": BinToolSpec(bin_name="cargo", mise_backend="rust"),
-    "cargo-check": BinToolSpec(bin_name="cargo", mise_backend="rust"),
-    "cargo-test": BinToolSpec(bin_name="cargo", mise_backend="rust"),
-    # cargo-denyは単独バイナリ。mise registryから消失したためaquaレジストリ経由を既定とする。
-    # 利用者がregistry経由などへ切り替えたい場合は `cargo-deny-version` に
-    # `cargo-deny@latest` のように `:` または `@` を含む値を渡せばtool spec全体として扱う
-    # （build_commandline側の分岐を参照）。
-    "cargo-deny": BinToolSpec(bin_name="cargo-deny", mise_backend="aqua:EmbarkStudios/cargo-deny"),
-    # dotnet系はいずれも `dotnet` バイナリを呼ぶ。miseのdotnet backendで解決する。
-    "dotnet-format": BinToolSpec(bin_name="dotnet", mise_backend="dotnet"),
-    "dotnet-build": BinToolSpec(bin_name="dotnet", mise_backend="dotnet"),
-    "dotnet-test": BinToolSpec(bin_name="dotnet", mise_backend="dotnet"),
+_BIN_TOOL_SPEC = {
+    command: info.bin_spec for command, info in pyfltr.tools.BUILTIN_COMMANDS.items() if info.bin_spec is not None
 }
 
 
@@ -358,7 +270,7 @@ class ResolvedCommandline:
         return [self.executable, *self.prefix]
 
 
-def resolve_runner(command: str, config: pyfltr.config.config.Config) -> tuple[str, str]:
+def resolve_runner(command: str, config: pyfltr.config.model.Config) -> tuple[str, str]:
     """`{command}-runner` 設定値とその決定経緯を返す。
 
     返り値は `(runner, source)` で、`source` は次のいずれか。
@@ -369,11 +281,11 @@ def resolve_runner(command: str, config: pyfltr.config.config.Config) -> tuple[s
     pyproject.toml由来か既定値かを区別するために `Config.values` のフラグでは
     検出できないため、現状は `DEFAULT_CONFIG` との同一性で判定する近似を使う。
     """
-    runner = config.values.get(f"{command}-runner")
+    runner = pyfltr.config.model.command_setting(config.values, command, "runner", None)
     if runner is None:
         # 既定値が登録されていないコマンド（カスタムコマンド等）はdirect扱い。
         return "direct", "default"
-    default_runner = pyfltr.config.config.DEFAULT_CONFIG.get(f"{command}-runner")
+    default_runner = pyfltr.config.model.command_setting(pyfltr.config.model.DEFAULT_CONFIG, command, "runner", None)
     source = "default" if runner == default_runner else "explicit"
     return str(runner), source
 
@@ -395,7 +307,7 @@ def get_mise_active_tool_key(command: str) -> str | None:
 def _is_tool_active_in_mise_config(
     command: str,
     spec: BinToolSpec,
-    config: pyfltr.config.config.Config,
+    config: pyfltr.config.model.Config,
     *,
     allow_side_effects: bool,
     cwd: pathlib.Path | None = None,
@@ -536,7 +448,7 @@ def _resolve_python_commandline(
 
 def _resolve_js_commandline(
     command: str,
-    config: pyfltr.config.config.Config,
+    config: pyfltr.config.model.Config,
     *,
     effective: str | None = None,
     cwd: pathlib.Path | None = None,
@@ -552,7 +464,7 @@ def _resolve_js_commandline(
     runner = effective if effective is not None else config["js-runner"]
     # 汎用化: `{command}-packages` キーを参照することで任意のJSツールで
     # `--package` / `-p` 展開を利用可能にする。未定義キーは空リスト扱い。
-    packages: list[str] = list(config.values.get(f"{command}-packages", []))
+    packages: list[str] = list(pyfltr.config.model.command_setting(config.values, command, "packages", []))
 
     if runner == "pnpx":
         main_spec = _JS_TOOL_PNPX_PACKAGE_SPEC.get(command, bin_name)
@@ -609,7 +521,7 @@ _DELEGATE_RUNNER_VALUES: frozenset[str] = frozenset(v for v in COMMAND_RUNNERS i
 _DIRECT_RUNNER_VALUES: frozenset[str] = frozenset(COMMAND_RUNNERS) - _DELEGATE_RUNNER_VALUES
 
 
-def resolve_effective_runner(command: str, runner: str, config: pyfltr.config.config.Config) -> str:
+def resolve_effective_runner(command: str, runner: str, config: pyfltr.config.model.Config) -> str:
     """`{command}-runner` per-tool値からeffective値を解決する。
 
     カテゴリ委譲値（`python-runner` / `js-runner` / `bin-runner`）はグローバル設定値に置換し、
@@ -633,7 +545,7 @@ _JS_EFFECTIVE_VALUES: frozenset[str] = frozenset(JS_RUNNERS) - {"direct"}
 
 def _resolve_mise_runner_commandline(
     command: str,
-    config: pyfltr.config.config.Config,
+    config: pyfltr.config.model.Config,
     runner: str,
     source: str,
     *,
@@ -666,11 +578,12 @@ def _resolve_mise_runner_commandline(
             f' `{command}-runner = "direct"` への切り替えを検討してください'
         )
     spec = _BIN_TOOL_SPEC[command]
-    version = config.values.get(f"{command}-version", spec.default_version)
+    default_version: str = pyfltr.tools.BUILTIN_COMMANDS[command].defaults[f"{command}-version"]
+    version = pyfltr.config.model.command_setting(config.values, command, "version", default_version)
     tool_spec_omitted = False
     if ":" in version or "@" in version:
         prefix = ["exec", version, "--", spec.bin_name]
-    elif version == spec.default_version and _is_tool_active_in_mise_config(
+    elif version == default_version and _is_tool_active_in_mise_config(
         command, spec, config, allow_side_effects=allow_side_effects, cwd=cwd
     ):
         # mise設定に対象のツール記述があり、かつversionが既定値（"latest"）の場合のみtool specを省略する。
@@ -694,7 +607,7 @@ def _resolve_mise_runner_commandline(
 
 def _resolve_direct_runner_commandline(
     command: str,
-    config: pyfltr.config.config.Config,
+    config: pyfltr.config.model.Config,
     runner: str,
     source: str,
     effective: str,
@@ -764,7 +677,7 @@ def _resolve_direct_runner_commandline(
 
 def build_commandline(
     command: str,
-    config: pyfltr.config.config.Config,
+    config: pyfltr.config.model.Config,
     *,
     allow_side_effects: bool = False,
     uv_workspace_root: pathlib.Path | None = None,
@@ -810,9 +723,9 @@ def build_commandline(
     # でもエラー扱いせずpath値を採用する。利用者が明示的にパスを示している以上、起動経路の整合性より
     # 利用者の意図を優先する判断。明示runner × 未登録ツール × path未指定の場合のみ後段の分岐でエラー化する。
     # `~` を含む利用者ホーム依存のパス指定を許すため、`os.path.expanduser` で展開してから採用する。
-    if config.values.get(f"{command}-path", "") != "":
+    if pyfltr.config.model.command_setting(config.values, command, "path", "") != "":
         return ResolvedCommandline(
-            executable=os.path.expanduser(config[f"{command}-path"]),
+            executable=os.path.expanduser(pyfltr.config.model.command_setting(config.values, command, "path", "")),
             prefix=[],
             runner=runner,
             runner_source="path-override",
@@ -870,7 +783,7 @@ def build_commandline(
 
 def ensure_mise_available(
     resolved: ResolvedCommandline,
-    config: pyfltr.config.config.Config,
+    config: pyfltr.config.model.Config,
     *,
     command: str | None = None,
     cwd: pathlib.Path | None = None,
@@ -957,7 +870,7 @@ def _strip_format_option(args: list[str]) -> list[str]:
     return result
 
 
-def _build_auto_args(command: str, config: pyfltr.config.config.Config, user_args: list[str]) -> list[str]:
+def _build_auto_args(command: str, config: pyfltr.config.model.Config, user_args: list[str]) -> list[str]:
     """自動引数を構築する。
 
     AUTO_ARGSで定義されたフラグがTrueの場合、対応する引数を返す。
@@ -999,7 +912,7 @@ def expanduser_args(values: list[str]) -> list[str]:
     `{command}-write-args` / `ruff-format-check-args` 経路に書かれた利用者ホームディレクトリ
     依存のパス（例: `~/dotfiles/.../tool.py`）。subprocess引数組み立て直前に展開する。
     展開対象キー一覧と適用タイミングのSSOTは
-    `pyfltr.config.config.EXPAND_USER_KEY_SUFFIXES` を参照する。
+    `pyfltr.config.model.EXPAND_USER_KEY_SUFFIXES` を参照する。
     `config-files` / `targets` 等のglobパターンは意図しない展開を防ぐため対象外で、
     本ヘルパーを通さない。
 
@@ -1027,21 +940,21 @@ def _expanduser_arg(value: str) -> str:
     return prefix + expanded_rest
 
 
-def resolve_user_args(command: str, config: pyfltr.config.config.Config) -> list[str]:
+def resolve_user_args(command: str, config: pyfltr.config.model.Config) -> list[str]:
     """`{command}-args` と `{command}-extend-args` を `~` 展開した上で連結して返す。
 
     `{command}-extend-args` は既定値の `{command}-args` を保ったまま末尾へ要素を追加する用途。
     両キーとも未設定なら空リストを返す。`build_invocation_argv` と `two_step` 経路の双方が
     本ヘルパーを経由することで、結合順序・展開タイミングのSSOTを確保する。
     """
-    args = expanduser_args(list(config.values.get(f"{command}-args", [])))
-    extend_args = expanduser_args(list(config.values.get(f"{command}-extend-args", [])))
+    args = expanduser_args(list(pyfltr.config.model.command_setting(config.values, command, "args", [])))
+    extend_args = expanduser_args(list(pyfltr.config.model.command_setting(config.values, command, "extend-args", [])))
     return args + extend_args
 
 
 def build_invocation_argv(
     command: str,
-    config: pyfltr.config.config.Config,
+    config: pyfltr.config.model.Config,
     commandline_prefix: list[str],
     additional_args: list[str],
     *,
@@ -1071,7 +984,7 @@ def build_invocation_argv(
     # ユーザー指定の `--format` ペアを一律で除去したうえでfix-argsを結合する特殊経路。
     # auto_args・構造化出力引数も適用しない（fixer出力の解析は本ステップでは行わないため）。
     if fix_stage and command == "textlint":
-        fix_args: list[str] = expanduser_args(list(config.values.get(f"{command}-fix-args", [])))
+        fix_args: list[str] = expanduser_args(list(pyfltr.config.model.command_setting(config.values, command, "fix-args", [])))
         return [
             *commandline_prefix,
             *_strip_format_option(user_args),
@@ -1081,7 +994,7 @@ def build_invocation_argv(
 
     fix_args_value: list[str] | None = None
     if fix_stage:
-        raw = config.values.get(f"{command}-fix-args")
+        raw = pyfltr.config.model.command_setting(config.values, command, "fix-args", None)
         fix_args_value = expanduser_args(list(raw)) if raw is not None else None
 
     auto_args = _build_auto_args(command, config, user_args + extra)
@@ -1089,7 +1002,7 @@ def build_invocation_argv(
     if fix_args_value is not None:
         commandline.extend(fix_args_value)
     else:
-        commandline.extend(expanduser_args(list(config.values.get(f"{command}-lint-args", []))))
+        commandline.extend(expanduser_args(list(pyfltr.config.model.command_setting(config.values, command, "lint-args", []))))
     commandline.extend(extra)
     structured_spec = pyfltr.command.structured_output.get_structured_output_spec(command, config)
     if structured_spec is not None and not (structured_spec.lint_only and fix_args_value is not None):

@@ -1,7 +1,5 @@
 """Textual UI関連の処理。"""
 
-import argparse
-import concurrent.futures
 import contextlib
 import logging
 import sys
@@ -14,14 +12,19 @@ from textual.widgets import DataTable, Log, TabbedContent, TabPane
 
 import pyfltr.command.core_
 import pyfltr.command.dispatcher
-import pyfltr.command.error_parser
+import pyfltr.command.executor
+import pyfltr.command.only_failed
 import pyfltr.command.process
 import pyfltr.command.slow_tests
+import pyfltr.command.stage_runner
 import pyfltr.command.targets
 import pyfltr.config.config
-import pyfltr.state.executor
-import pyfltr.state.only_failed
-import pyfltr.state.stage_runner
+import pyfltr.config.selection
+import pyfltr.diagnostics
+import pyfltr.output.diagnostics
+import pyfltr.parsing.entry
+import pyfltr.run_options
+import pyfltr.tools
 import pyfltr.warnings_
 
 
@@ -39,13 +42,13 @@ def _format_errors_tab_label(error_count: int, warning_count: int) -> str:
 
 def run_commands_with_ui(
     commands: list[str],
-    args: argparse.Namespace,
+    args: pyfltr.run_options.RunOptions,
     base_ctx: pyfltr.command.core_.ExecutionBaseContext,
     *,
     archive_hook: typing.Callable[[pyfltr.command.core_.CommandResult], None] | None = None,
     on_result: typing.Callable[[pyfltr.command.core_.CommandResult], None] | None = None,
     fail_fast: bool = False,
-    only_failed_targets: dict[str, pyfltr.state.only_failed.ToolTargets] | None = None,
+    only_failed_targets: dict[str, pyfltr.command.only_failed.ToolTargets] | None = None,
 ) -> tuple[list[pyfltr.command.core_.CommandResult], int]:
     """UI付きでコマンドを実行。
 
@@ -123,13 +126,13 @@ class UIApp(App):
     def __init__(
         self,
         commands: list[str],
-        args: argparse.Namespace,
+        args: pyfltr.run_options.RunOptions,
         base_ctx: pyfltr.command.core_.ExecutionBaseContext,
         *,
         archive_hook: typing.Callable[[pyfltr.command.core_.CommandResult], None] | None = None,
         on_result: typing.Callable[[pyfltr.command.core_.CommandResult], None] | None = None,
         fail_fast: bool = False,
-        only_failed_targets: dict[str, pyfltr.state.only_failed.ToolTargets] | None = None,
+        only_failed_targets: dict[str, pyfltr.command.only_failed.ToolTargets] | None = None,
     ) -> None:
         super().__init__()
         self.commands = commands
@@ -164,7 +167,7 @@ class UIApp(App):
         self._interrupt_running_snapshot: set[str] = set()
         self._interrupted_commands: dict[str, None] = {}
         # エラー蓄積用（Errorsタブの即時更新に使用）
-        self._all_errors: list[pyfltr.command.error_parser.ErrorLocation] = []
+        self._all_errors: list[pyfltr.diagnostics.ErrorLocation] = []
         self._errors_tab_exists = False
 
     def _enabled_commands(self) -> list[str]:
@@ -175,7 +178,7 @@ class UIApp(App):
         return [
             cmd
             for cmd in self.commands
-            if pyfltr.config.config.is_command_enabled_anywhere(cmd, self.config, self._base_ctx.subproject_configs)
+            if pyfltr.config.selection.is_command_enabled_anywhere(cmd, self.config, self._base_ctx.subproject_configs)
         ]
 
     def compose(self) -> ComposeResult:
@@ -293,138 +296,36 @@ class UIApp(App):
     def _run_in_background(self):
         """バックグラウンド処理。"""
         try:
-            include_fix_stage = bool(getattr(self.args, "include_fix_stage", False))
-            fixers, formatters, linters_and_testers = pyfltr.state.executor.split_commands_for_execution(
+
+            def execute(command: str, fix_stage: bool) -> pyfltr.command.core_.CommandResult:
+                return self._execute_command(command, fix_stage=fix_stage)
+
+            pyfltr.command.stage_runner.run_stages(
                 self.commands,
-                self.config,
-                self._all_files,
-                include_fix_stage=include_fix_stage,
-                subproject_configs=self._base_ctx.subproject_configs,
+                self._base_ctx,
+                execute,
+                include_fix_stage=self.args.include_fix_stage,
+                fail_fast=self._fail_fast,
+                callbacks=pyfltr.command.stage_runner.StageCallbacks(
+                    archive=self._archive_hook,
+                    on_result=self._on_result,
+                    is_interrupted=lambda: self._interrupted,
+                    on_interrupted=self._record_interrupted,
+                    replace_result=self._replace_interrupted_result,
+                    on_skipped=self._show_skipped,
+                ),
+                results=self.results,
             )
-            aborted = False
-
-            # fixステージ（serial）。結果はsummaryに含めず、後段の通常ステージに委ねる。
-            # アーカイブにはfixステージも含めて全実行を保存する。
-            for command in fixers:
-                fix_result = self._execute_command(command, fix_stage=True)
-                # 中断検知。fix結果はsummary対象外なのでresultsには追加しない。
-                # アーカイブへの記録は途中中断の診断情報として有用なので通常のフック条件を維持する。
-                if self._archive_hook is not None and not fix_result.cached:
-                    self._archive_hook(fix_result)
-                if self._interrupted:
-                    with self.lock:
-                        self._interrupted_commands[command] = None
-                    # 現在のfixコマンドも通常ステージで同名skippedとして再登録する
-                    # （summaryは通常ステージ側にだけ出る）。
-                    self._skip_remaining(
-                        [*formatters, *linters_and_testers],
-                        reason="Ctrl+C により中断しました。",
-                        register_interrupted=True,
-                    )
-                    aborted = True
-                    break
-                if self._fail_fast and fix_result.failed:
-                    aborted = True
-                    self._skip_remaining([*formatters, *linters_and_testers])
-                    break
-
-            # formatters（serial）
-            if not aborted:
-                for idx, command in enumerate(formatters):
-                    fmt_result = self._execute_command(command)
-                    if self._interrupted:
-                        # 対象のformatter結果自体が非skippedならskippedに置き換える。
-                        if fmt_result.status != "skipped":
-                            fmt_result = pyfltr.state.stage_runner.make_skipped_result(
-                                command, self.config, reason="Ctrl+C により中断しました。"
-                            )
-                        self.results.append(fmt_result)
-                        if self._archive_hook is not None and not fmt_result.cached:
-                            self._archive_hook(fmt_result)
-                        if self._on_result is not None:
-                            self._on_result(fmt_result)
-                        with self.lock:
-                            self._interrupted_commands[command] = None
-                        self._skip_remaining(
-                            [*formatters[idx + 1 :], *linters_and_testers],
-                            reason="Ctrl+C により中断しました。",
-                            register_interrupted=True,
-                        )
-                        aborted = True
-                        break
-                    self.results.append(fmt_result)
-                    if self._archive_hook is not None and not fmt_result.cached:
-                        self._archive_hook(fmt_result)
-                    if self._on_result is not None:
-                        self._on_result(fmt_result)
-                    if self._fail_fast and fmt_result.failed:
-                        aborted = True
-                        self._skip_remaining([*formatters[idx + 1 :], *linters_and_testers])
-                        break
-
-            # linters/testers（parallel）
-            if not aborted and len(linters_and_testers) > 0:
-                aborted_commands: set[str] = set()
-                with concurrent.futures.ThreadPoolExecutor(max_workers=self.config["jobs"]) as executor:
-                    future_to_command = {
-                        executor.submit(self._execute_command, command): command for command in linters_and_testers
-                    }
-                    for future in concurrent.futures.as_completed(future_to_command):
-                        command = future_to_command[future]
-                        try:
-                            lt_result = future.result()
-                        except concurrent.futures.CancelledError:
-                            aborted_commands.add(command)
-                            continue
-                        # 中断時に実行中だったコマンド、またはskippedで返ってきたコマンドは
-                        # まとめて「Ctrl+Cにより中断しました。」扱いに揃える。完了済み結果は
-                        # そのまま残してsummaryに反映する（中断でも進捗を確認できるようにするため）。
-                        if self._interrupted and (command in self._interrupt_running_snapshot or lt_result.status == "skipped"):
-                            lt_result = pyfltr.state.stage_runner.make_skipped_result(
-                                command, self.config, reason="Ctrl+C により中断しました。"
-                            )
-                            with self.lock:
-                                self._interrupted_commands[command] = None
-                            self._safe_call_from_thread(self._update_summary, command, "skipped", 0, 0.0)
-                        self.results.append(lt_result)
-                        if self._archive_hook is not None and not lt_result.cached:
-                            self._archive_hook(lt_result)
-                        if self._on_result is not None:
-                            self._on_result(lt_result)
-                        if self._fail_fast and not aborted and lt_result.failed:
-                            aborted = True
-                            pyfltr.state.stage_runner.cancel_pending_futures(future_to_command, aborted_commands)
-                            pyfltr.command.process.terminate_active_processes()
-                    # 中断済みの場合は未開始futureをまとめてキャンセルする（終端処理）。
-                    if self._interrupted:
-                        pyfltr.state.stage_runner.cancel_pending_futures(future_to_command, aborted_commands)
-                if aborted_commands:
-                    reason = "Ctrl+C により中断しました。" if self._interrupted else None
-                    for pending_command in aborted_commands:
-                        skipped = pyfltr.state.stage_runner.make_skipped_result(pending_command, self.config, reason=reason)
-                        self.results.append(skipped)
-                        if self._archive_hook is not None:
-                            self._archive_hook(skipped)
-                        if self._on_result is not None:
-                            self._on_result(skipped)
-                        if self._interrupted:
-                            with self.lock:
-                                self._interrupted_commands[pending_command] = None
-                        self._safe_call_from_thread(
-                            self._update_summary,
-                            pending_command,
-                            "skipped",
-                            0,
-                            0.0,
-                        )
 
             # 中断時はwarnings欄に中断通知を1行出力する。
             if self._interrupted:
                 with self.lock:
                     interrupted_ordered = list(self._interrupted_commands)
                 # config.command_names順に並べ替えて一意化（UI定義順）。
-                index_map = {name: i for i, name in enumerate(self.config.command_names)}
-                interrupted_sorted = sorted(interrupted_ordered, key=lambda c: index_map.get(c, len(index_map)))
+                interrupted_sorted = sorted(
+                    interrupted_ordered,
+                    key=lambda command: pyfltr.tools.command_index(self.config.command_names, command),
+                )
                 if interrupted_sorted:
                     names = ", ".join(interrupted_sorted)
                     pyfltr.warnings_.emit_warning(
@@ -449,14 +350,7 @@ class UIApp(App):
                 return
 
             # 自動終了判定
-            statuses = [result.status for result in self.results]
-            overall_status: typing.Literal["SUCCESS", "FORMATTED", "FAILED"]
-            if any(result.failed for result in self.results):
-                overall_status = "FAILED"
-            elif any(status == "formatted" for status in statuses):
-                overall_status = "FORMATTED"
-            else:
-                overall_status = "SUCCESS"
+            overall_status = pyfltr.command.core_.overall_status(self.results)
 
             # FORMATTED/SUCCESSの場合は自動終了（--keep-ui時は終了しない）
             if overall_status != "FAILED" and not self.args.keep_ui:
@@ -476,17 +370,19 @@ class UIApp(App):
         if self._interrupted:
             with self.lock:
                 self._interrupted_commands[command] = None
-            return pyfltr.state.stage_runner.make_skipped_result(command, self.config, reason="Ctrl+C により中断しました。")
+            return pyfltr.command.stage_runner.make_skipped_result(command, self.config, reason="Ctrl+C により中断しました。")
 
         # serial_groupを持つコマンドは同一グループ内で排他実行される（cargo / dotnet等）。
         # ロック取得前は「待機中」の表示に留め、running表示はロック取得後に切り替える。
-        with pyfltr.state.executor.serial_group_lock(self.config.commands[command].serial_group):
+        with pyfltr.command.executor.serial_group_lock(self.config.commands[command].serial_group):
             # ロック取得後の再チェック。serial_group待機中にCtrl+Cを受け取った場合、
             # ロック取得後にsubprocessを起動せずskippedで返すことで協調停止前提を保つ。
             if self._interrupted:
                 with self.lock:
                     self._interrupted_commands[command] = None
-                return pyfltr.state.stage_runner.make_skipped_result(command, self.config, reason="Ctrl+C により中断しました。")
+                return pyfltr.command.stage_runner.make_skipped_result(
+                    command, self.config, reason="Ctrl+C により中断しました。"
+                )
 
             # Summaryを「running」に更新
             self._start_times[command] = time.perf_counter()
@@ -501,7 +397,7 @@ class UIApp(App):
 
             # JSONパーサー対応ツールではストリーミング出力を抑制し、
             # 完了後にErrorLocationベースの表示に切り替える。
-            has_custom_parser = command in pyfltr.command.error_parser.get_custom_parser_commands()
+            has_custom_parser = command in pyfltr.parsing.entry.get_custom_parser_commands()
             callback: typing.Callable[[str], None] | None = None
             if not has_custom_parser:
 
@@ -534,7 +430,7 @@ class UIApp(App):
                 # execute_command 内部の多段実行経路で Ctrl+C が発生した場合の協調停止。
                 with self.lock:
                     self._interrupted_commands[command] = None
-                result = pyfltr.state.stage_runner.make_skipped_result(
+                result = pyfltr.command.stage_runner.make_skipped_result(
                     command, self.config, reason="Ctrl+C により中断しました。"
                 )
         # ここ以降は結果のUI反映のみなのでserial_groupロックの外で行う。
@@ -557,7 +453,7 @@ class UIApp(App):
             if has_custom_parser:
                 self._safe_call_from_thread(self._clear_log, f"#output-{command}")
                 if result.errors:
-                    lines = [pyfltr.command.error_parser.format_error(e) for e in result.errors]
+                    lines = [pyfltr.output.diagnostics.format_error(e) for e in result.errors]
                     self._safe_call_from_thread(self._write_log, f"#output-{command}", "\n".join(lines))
                     # テスター失敗時は診断一覧に加えて生出力も併記する（text側と同じ設計判断）。
                     # TUIはGitHub Actions注釈記法を使わないためstop-commands保護は不要。
@@ -566,7 +462,7 @@ class UIApp(App):
                 elif result.alerted:
                     self._safe_call_from_thread(self._write_log, f"#output-{command}", result.output)
                 else:
-                    summary = pyfltr.command.error_parser.parse_summary(command, result.output)
+                    summary = pyfltr.parsing.entry.parse_summary(command, result.output)
                     if summary:
                         self._safe_call_from_thread(self._write_log, f"#output-{command}", summary)
                 slow_lines = pyfltr.command.slow_tests.format_slow_tests(result.slow_tests)
@@ -587,7 +483,7 @@ class UIApp(App):
             # エラーまたは警告があればErrorsタブを即時追加/更新
             if result.errors:
                 self._all_errors.extend(result.errors)
-            sorted_errors = pyfltr.command.error_parser.sort_errors(self._all_errors, self.config.command_names)
+            sorted_errors = pyfltr.parsing.entry.sort_errors(self._all_errors, self.config.command_names)
             current_warnings = pyfltr.warnings_.collected_warnings()
             if sorted_errors or current_warnings:
                 self._safe_call_from_thread(self._update_errors_tab, sorted_errors, current_warnings)
@@ -596,7 +492,7 @@ class UIApp(App):
 
     async def _update_errors_tab(
         self,
-        errors: list[pyfltr.command.error_parser.ErrorLocation],
+        errors: list[pyfltr.diagnostics.ErrorLocation],
         warnings: list[dict[str, typing.Any]],
     ) -> None:
         """Errorsタブを追加または更新。初回のみアクティブに切り替え。
@@ -604,7 +500,7 @@ class UIApp(App):
         警告はerrorsの後ろに「warnings:」セクションとして追記する。
         """
         tc = self.query_one(TabbedContent)
-        sections: list[str] = [pyfltr.command.error_parser.format_error(e) for e in errors]
+        sections: list[str] = [pyfltr.output.diagnostics.format_error(e) for e in errors]
         if warnings:
             if sections:
                 sections.append("")
@@ -667,28 +563,39 @@ class UIApp(App):
         # アプリケーションを終了
         self.exit(return_code=1)
 
-    def _skip_remaining(
-        self,
-        commands: list[str],
-        *,
-        reason: str | None = None,
-        register_interrupted: bool = False,
-    ) -> None:
-        """中断経路で未実行ツールをskippedとして登録する（fix/formatter段から）。
+    def _record_interrupted(self, command: str) -> None:
+        """中断されたコマンドを表示用の集合へ記録する。"""
+        with self.lock:
+            self._interrupted_commands[command] = None
 
-        `reason`は`make_skipped_result`へそのまま渡す（省略時は--fail-fastの既定文言）。
-        `register_interrupted=True`のとき、各コマンド名を`self._interrupted_commands`にも
-        登録する（Ctrl+C経路限定。fail-fastでは登録しない）。
-        """
-        pyfltr.command.process.terminate_active_processes()
-        for command in commands:
-            skipped = pyfltr.state.stage_runner.make_skipped_result(command, self.config, reason=reason)
-            self.results.append(skipped)
-            if self._archive_hook is not None:
-                self._archive_hook(skipped)
-            if self._on_result is not None:
-                self._on_result(skipped)
-            if register_interrupted:
-                with self.lock:
-                    self._interrupted_commands[command] = None
-            self._safe_call_from_thread(self._update_summary, command, "skipped", 0, 0.0)
+    def _show_skipped(self, command: str) -> None:
+        """共通実行器が確定したスキップを画面へ反映する。"""
+        if self._interrupted:
+            self._record_interrupted(command)
+        self._safe_call_from_thread(self._update_summary, command, "skipped", 0, 0.0)
+
+    def _replace_interrupted_result(
+        self,
+        result: pyfltr.command.core_.CommandResult,
+        stage: str,
+    ) -> pyfltr.command.core_.CommandResult:
+        """中断時点の実行中集合に従い、表示・保存する結果を差し替える。"""
+        if not self._interrupted:
+            return result
+        if stage == "formatter":
+            self._record_interrupted(result.command)
+            if not result.skipped:
+                return pyfltr.command.stage_runner.make_skipped_result(
+                    result.command,
+                    self.config,
+                    reason="Ctrl+C により中断しました。",
+                )
+        elif stage == "parallel" and (result.command in self._interrupt_running_snapshot or result.skipped):
+            self._record_interrupted(result.command)
+            self._safe_call_from_thread(self._update_summary, result.command, "skipped", 0, 0.0)
+            return pyfltr.command.stage_runner.make_skipped_result(
+                result.command,
+                self.config,
+                reason="Ctrl+C により中断しました。",
+            )
+        return result

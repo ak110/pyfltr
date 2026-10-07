@@ -6,121 +6,22 @@
 （ruff / typosは重複指定でエラーになるため）。
 """
 
-import dataclasses
-
 import pyfltr.config.config
-
-
-@dataclasses.dataclass(frozen=True)
-class StructuredOutputSpec:
-    """構造化出力用の引数注入仕様。"""
-
-    inject: list[str]
-    """注入する引数"""
-    conflicts: list[str]
-    """commandlineから除去する引数プレフィクス"""
-    lint_only: bool = False
-    """Trueのときfixモードでは注入しない"""
-
+import pyfltr.config.model
+import pyfltr.tools
+from pyfltr.tools import StructuredOutputSpec
 
 # 各ツールの構造化出力用引数。設定キー → 注入仕様のマッピング。
 # 設定キー（例: "ruff-check-json"）がTrueのとき有効になる。
-_STRUCTURED_OUTPUT_SPECS: dict[str, tuple[str, StructuredOutputSpec]] = {
-    "ruff-check-json": (
-        "ruff-check",
-        StructuredOutputSpec(
-            inject=["--output-format=json"],
-            conflicts=["--output-format"],
-        ),
-    ),
-    "pylint-json": (
-        "pylint",
-        StructuredOutputSpec(
-            inject=["--output-format=json2"],
-            conflicts=["--output-format"],
-        ),
-    ),
-    "pyright-json": (
-        "pyright",
-        StructuredOutputSpec(
-            inject=["--outputjson"],
-            conflicts=["--outputjson"],
-        ),
-    ),
-    "pytest-tb-line": (
-        "pytest",
-        StructuredOutputSpec(
-            # 設定キー名は`--tb=line`を示唆するが、実際に注入するのは`--tb=short`である。
-            # `--tb=short`はプロジェクト内フレームを含みつつ出力量を抑えられるため既定採用としており、
-            # キー名は初期実装時の名残。設定互換性維持のため改名しない
-            inject=["--tb=short"],
-            conflicts=["--tb"],
-        ),
-    ),
-    "shellcheck-json": (
-        "shellcheck",
-        StructuredOutputSpec(
-            inject=["-f", "json"],
-            conflicts=["-f"],
-        ),
-    ),
-    "textlint-json": (
-        "textlint",
-        StructuredOutputSpec(
-            inject=["--format", "json"],
-            conflicts=["--format"],
-            lint_only=True,
-        ),
-    ),
-    "typos-json": (
-        "typos",
-        StructuredOutputSpec(
-            inject=["--format=json"],
-            conflicts=["--format"],
-        ),
-    ),
-    "eslint-json": (
-        "eslint",
-        StructuredOutputSpec(
-            inject=["--format", "json"],
-            conflicts=["--format"],
-        ),
-    ),
-    "biome-json": (
-        "biome",
-        StructuredOutputSpec(
-            inject=["--reporter=github"],
-            conflicts=["--reporter"],
-        ),
-    ),
-    "arid-json": (
-        "arid",
-        StructuredOutputSpec(
-            inject=["--format=json"],
-            conflicts=["--format", "--json"],
-        ),
-    ),
-    "yamllint-parsable": (
-        "yamllint",
-        StructuredOutputSpec(
-            # 既定の`-f auto`はGitHub Actions上で`::error`形式へ切り替わり、
-            # 標準形式は見出し行と字下げした違反行の複数行となるため、
-            # 環境によらず1違反1行となる`parsable`へ固定する。
-            inject=["-f", "parsable"],
-            conflicts=["-f", "--format"],
-        ),
-    ),
-}
 
 
-def get_structured_output_spec(command: str, config: pyfltr.config.config.Config) -> StructuredOutputSpec | None:
-    """コマンドに対応する構造化出力仕様を返す。無効化されていればNone。"""
-    for config_key, entry in _STRUCTURED_OUTPUT_SPECS.items():
-        cmd = entry[0]
-        spec = entry[1]
-        if cmd == command and config.values.get(config_key, False):
-            return spec
-    return None
+def get_structured_output_spec(command: str, config: pyfltr.config.model.Config) -> StructuredOutputSpec | None:
+    """有効な構造化出力仕様をツール定義から返す。"""
+    info = pyfltr.tools.BUILTIN_COMMANDS.get(command)
+    if info is None or info.structured_output is None:
+        return None
+    config_key, spec = info.structured_output
+    return spec if config.values.get(config_key, False) else None
 
 
 def apply_structured_output(commandline: list[str], spec: StructuredOutputSpec) -> list[str]:

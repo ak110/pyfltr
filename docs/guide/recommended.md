@@ -477,29 +477,8 @@ pre-commit・prek統合の自動スキップなど双方向の挙動は[トラ�
 
 ## pyfltrとpre-commit・prekの呼び出し方法
 
-pyfltrはpre-commit・prekのうち有効な方を内部で呼び出し、pre-commit・prekはpyfltrをフックとして呼び出す。
-git commit経由でpre-commit・prekのいずれかが起動した場合、pyfltrは`PRE_COMMIT=1`を検出する。
-pyfltrは内部の統合を自動スキップし、二重実行を防ぐ。
-
-```mermaid
-sequenceDiagram
-    participant U as git commit
-    participant PC as pre-commit / prek
-    participant PH as pre-commit-hooks
-    participant PF as pyfltr fast
-
-    U->>PC: フック起動
-    PC->>PH: check-yaml, trailing-whitespace等
-    PC->>PF: pyfltr fast（local hook）
-    Note over PF: PRE_COMMIT=1 検出で<br/>統合をスキップ
-    PF->>PF: ruff-format, ruff-check等
-```
-
-逆に`make test`等から`pyfltr run`を呼び出した場合、pyfltr側が`SKIP=pyfltr`付きで有効なpre-commitまたはprekを起動する。
-pre-commitとprekは、いずれも変更ファイル指定（`--files <対象>`）で起動する。
-各hook内部の`types`・`types_or`・`files`・`exclude`フィルタはファイル指定起動でも適用されるため、関係するhookのみ動作する。
-これによりpre-commit-hooks（check-yaml等）を統合実行できる。
-詳細な挙動と無効化手順は[トラブルシューティング](troubleshooting.md)を参照。
+推奨構成はpyfltrをlocal hookとして登録し、通常実行ではpre-commit・prekのhookも統合する。
+呼出し機構、再帰抑制、SKIPの設定は[CLIコマンドの統合説明](usage.md#precommit-integration)を参照。
 
 ## タスクランナー
 

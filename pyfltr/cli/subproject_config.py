@@ -22,7 +22,6 @@
 
 from __future__ import annotations
 
-import argparse
 import copy
 import dataclasses
 import pathlib
@@ -30,6 +29,8 @@ import pathlib
 import pyfltr.cli.overrides
 import pyfltr.command.subprojects
 import pyfltr.config.config
+import pyfltr.config.model
+import pyfltr.run_options
 
 
 def _is_ancestor_path(ancestor: pathlib.Path, descendant: pathlib.Path) -> bool:
@@ -45,9 +46,9 @@ def _is_ancestor_path(ancestor: pathlib.Path, descendant: pathlib.Path) -> bool:
 
 def resolve_subproject_configs(
     subprojects: list[pyfltr.command.subprojects.Subproject],
-    config: pyfltr.config.config.Config,
-    args: argparse.Namespace,
-) -> dict[pathlib.Path, pyfltr.config.config.Config]:
+    config: pyfltr.config.model.Config,
+    args: pyfltr.run_options.RunOptions,
+) -> dict[pathlib.Path, pyfltr.config.model.Config]:
     """サブプロジェクト別configを解決して返す。
 
     `pyproject.toml`を持つサブプロジェクトは`load_config(config_dir=cwd, for_subproject=True)`で
@@ -57,10 +58,10 @@ def resolve_subproject_configs(
     いずれの経路でも起点と同一のCLIオーバーライド（`--jobs`・`--no-exclude` 等）を
     再適用してから返す（継承時は継承元の値をそのまま使う）。
     """
-    subproject_configs: dict[pathlib.Path, pyfltr.config.config.Config] = {}
-    already_warned: set[pyfltr.config.config.ConfigWarningEntry] = set(config.warned_global_only_entries)
+    subproject_configs: dict[pathlib.Path, pyfltr.config.model.Config] = {}
+    already_warned: set[pyfltr.config.model.ConfigWarningEntry] = set(config.warned_global_only_entries)
     # `pyproject.toml`を持つサブプロジェクトを先に解決して継承元候補にする（最近接判定に使うため）。
-    pyproject_configs: dict[pathlib.Path, pyfltr.config.config.Config] = {}
+    pyproject_configs: dict[pathlib.Path, pyfltr.config.model.Config] = {}
     for sub in subprojects:
         if not (sub.cwd / "pyproject.toml").is_file():
             continue

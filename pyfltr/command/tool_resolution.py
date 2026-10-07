@@ -7,19 +7,21 @@
 
 import pyfltr.command.runner
 import pyfltr.config.config
+import pyfltr.config.model
+import pyfltr.tools
 import pyfltr.warnings_
 from pyfltr.command.core_ import CommandResult
 
 
 def _uses_uvx_by_default(command: str) -> bool:
     """uvx分離ツールの案内分類をrunner既定値のSSOTから導出する。"""
-    return pyfltr.config.config.DEFAULT_CONFIG.get(f"{command}-runner") == "uvx"
+    return pyfltr.config.model.command_setting(pyfltr.config.model.DEFAULT_CONFIG, command, "runner", None) == "uvx"
 
 
 def format_tool_resolution_failure(
     command: str,
     raw_identifier: str,
-    config: pyfltr.config.config.Config,
+    config: pyfltr.config.model.Config,
 ) -> str:
     """ツール解決失敗時の利用者向け文面を組み立てる。
 
@@ -100,7 +102,7 @@ def format_tool_resolution_failure(
 
 def failed_resolution_result(
     command: str,
-    command_info: pyfltr.config.config.CommandInfo,
+    command_info: pyfltr.tools.CommandInfo,
     message: str,
     *,
     files: int,

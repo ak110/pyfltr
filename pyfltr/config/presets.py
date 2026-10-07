@@ -93,3 +93,19 @@ _REMOVED_PRESETS: dict[str, str] = {
         "必要なPython系ツールを`python = true`または個別設定で有効化すること"
     ),
 }
+
+
+def get_preset(name: str) -> dict[str, bool] | None:
+    """定義を変更できないよう、プリセットの複製を返す。"""
+    preset = _PRESETS.get(name)
+    return dict(preset) if preset is not None else None
+
+
+def preset_names() -> tuple[str, ...]:
+    """登録順にプリセット名を返す。"""
+    return tuple(_PRESETS)
+
+
+def get_removed_preset_message(name: str) -> str | None:
+    """廃止したプリセットの移行案内を返す。"""
+    return _REMOVED_PRESETS.get(name)

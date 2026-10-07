@@ -1,26 +1,26 @@
 ---
 name: error-parser-reviewer
 description: >-
-  pyfltr/command/error_parser.py を変更した PR / コミットに対して、対応ツール全てのエラー出力例に対してパースが
-  正常に動作しているか網羅レビューする。error_parser.py の変更検知時に呼び出し、変更のコミット前に完了させる。
+  pyfltr/parsing/の解析処理またはtools.pyの解析定義を変更した PR / コミットに対して、対応ツール全てのエラー出力例に対してパースが
+  正常に動作しているか網羅レビューする。解析の変更検知時に呼び出し、変更のコミット前に完了させる。
   変更内容のサマリを引数として与えること。
 tools: Read, Grep, Glob, Bash
 ---
 
 # error-parser-reviewer
 
-`pyfltr/command/error_parser.py`は対応ツールの出力フォーマットを正規表現でパースする箇所で、
+`pyfltr/parsing/`は対応ツールの出力フォーマットを正規表現や関数でパースする箇所で、
 変更時に退行が発生しやすい。
-`pyfltr/command/error_parser.py`を変更したPR / コミットに対し、対応ツール全てを網羅レビューする。
+同パッケージの解析処理または`pyfltr/tools.py`の解析定義を変更したPR / コミットに対し、対応ツール全てを網羅レビューする。
 
 ## 役割
 
-1. `pyfltr/command/error_parser.py` の変更前後を `git diff` で把握
-2. `pyfltr/command/builtin.py` の `BUILTIN_COMMANDS` から対応ツール一覧を抽出
+1. `pyfltr/parsing/`と`pyfltr/tools.py`の解析定義の変更前後を`git diff`で把握
+2. `pyfltr/tools.py` の `BUILTIN_COMMANDS` から対応ツール一覧を抽出
 3. 各対応ツールに対し、エラーを発生させる小さなサンプルファイルを `Bash` で作成して実行
 4. その出力が変更後の正規表現で正しくパースされるか確認
 5. 同じツール出力を変更前の実装でも解析し、変更後の結果と全件比較して退行の有無を判定
-6. `tests/error_parser_test.py` のカバレッジを評価し、不足するケースを指摘
+6. 解析の各責務に対応するテストのカバレッジを評価し、不足するケースを指摘
 
 ## 入力
 
@@ -29,7 +29,7 @@ tools: Read, Grep, Glob, Bash
 ## 手順
 
 1. 変更内容の確認
-   - `Bash` で `git diff HEAD pyfltr/command/error_parser.py` を実行
+   - `Bash`で`git diff HEAD -- pyfltr/parsing pyfltr/tools.py`を実行
    - 影響を受けるツール（regexを変えたツール）を特定
 
 2. 対象ツール全てにサンプルファイルを渡す
@@ -47,17 +47,23 @@ tools: Read, Grep, Glob, Bash
    - 並行実行時に別のpyfltr実行がrun IDを奪う可能性があるため、`latest`を使わず記録済みrun IDを明示的に指定する
    - `uv run pyfltr show-run <run_id> --commands=<tool> --output --output-format=text`へ記録済みrun IDを明示し、JSON Linesの`output`レコードへラップされていない対象のツールの生出力全文を取得する
    - 実行アーカイブには生出力（`output.log`）に加えて現行実装の解析結果（`diagnostics.jsonl`）と実際の起動コマンドライン（`tool.json`）が保存される。三者を並べて確認する
-   - 取得した出力が `pyfltr/command/error_parser.py` の正規表現と一致するか手動で確かめる
+   - 取得した出力が`pyfltr/tools.py`の解析定義と`pyfltr/parsing/`の関数で正しく解析されるか確かめる
    - 対応ツールを直接起動してツール出力のサンプルを収集してはならない。pyfltrは構造化出力引数を注入し、stderrをstdoutへ統合したうえでパーサーへ渡すため、直接起動で得た出力はパーサーが実際に受け取る入力と一致しない。`AGENTS.md`「開発手順」章の直接起動禁止規定にも反する
 
 3. 変更前後の同一ツール出力での比較
    - 手順2で取得した出力をファイルへ保存する
-   - 変更前の実装を`git show HEAD:pyfltr/command/error_parser.py`で取り出す
+   - 変更前の解析定義と関数を`git show HEAD:<対象ファイル>`で取り出す
    - 保存した全出力を変更前の実装と変更後の実装の双方で解析し、結果を全件比較する
    - 差分が生じた出力ごとに改善・退行・同等のいずれかを判定する
 
 4. テストカバレッジの評価
-   - `tests/error_parser_test.py` を読む
+   - 次のテストを読む。
+     - `tests/integration/parser_registration_test.py`
+     - `tests/output/diagnostics_test.py`
+     - `tests/parsing/common_test.py`
+     - `tests/parsing/entry_test.py`
+     - `tests/parsing/pytest_test.py`
+     - `tests/parsing/tools_test.py`
    - 変更されたregexに対応するテストケースが存在するか確認
    - 手順2で使ったサンプルファイルと出力のうち、テストケースとして再利用できるものを提案
 
@@ -123,4 +129,4 @@ tools: Read, Grep, Glob, Bash
 - コード変更は行わない（報告のみ。修正は呼び出し元Claudeが担当）
 - サンプルファイルは最小限（1ファイルあたり数行）
 - `Bash` で生成する一時ファイルは必ず後始末する
-- `tests/error_parser_test.py` の既存パターンを尊重（新しい命名規則を持ち込まない）
+- 各解析テストの既存パターンを尊重（新しい命名規則を持ち込まない）

@@ -8,9 +8,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import json
 import pathlib
-import re
 import sys
 import typing
 
@@ -19,12 +17,13 @@ import pyfltr.cli.output_format
 import pyfltr.grep_.history
 import pyfltr.grep_.jsonl_records
 import pyfltr.grep_.matcher
+import pyfltr.grep_.operations
 import pyfltr.grep_.replacer
 import pyfltr.grep_.scanner
 import pyfltr.grep_.text_render
+import pyfltr.output.logging_
 import pyfltr.paths
 import pyfltr.warnings_
-from pyfltr.grep_.types import ReplaceCommandMeta
 
 
 def register_subparsers(subparsers: typing.Any) -> None:
@@ -195,143 +194,44 @@ def _execute_replace(
     if args.within is not None and args.multiline:
         parser.error("`--within` と `-U/--multiline` は併用できません。")
 
+    def emit_header(replace_id: str | None, files_count: int) -> None:
+        if output_format == "jsonl":
+            pyfltr.grep_.jsonl_records.emit_replace_header(
+                pattern=args.pattern,
+                replacement=args.replacement,
+                files=files_count,
+                replace_id=replace_id,
+                dry_run=args.dry_run,
+                format_source=resolution.source,
+            )
+
+    request = pyfltr.grep_.operations.ReplaceRequest(
+        pattern=args.pattern,
+        replacement=args.replacement,
+        dry_run=args.dry_run,
+        within=args.within,
+        exclude_files=[pathlib.Path(path) for path in args.exclude_file],
+        from_grep=args.from_grep,
+        **pyfltr.cli.grep_replace_common.pattern_arguments(args),
+    )
     try:
-        compiled = pyfltr.grep_.matcher.compile_pattern(
-            [args.pattern],
-            fixed_strings=args.fixed_strings,
-            ignore_case=args.ignore_case,
-            smart_case=args.smart_case,
-            word_regexp=args.word_regexp,
-            line_regexp=args.line_regexp,
-            multiline=args.multiline,
-        )
+        operation = pyfltr.grep_.operations.execute_replace(request, on_start=emit_header)
+    except pyfltr.grep_.operations.TargetConfigError as exc:
+        sys.stderr.write(f"{exc}\n")
+        return 1
+    except pyfltr.grep_.history.ReplaceFailure as exc:
+        message = exc.describe(undo=f"`pyfltr replace --undo {exc.replace_id} --force`")
+        sys.stderr.write(f"エラー: {message}\n")
+        return 1
     except ValueError as exc:
         parser.error(str(exc))
-
-    # `--within`指定時はアンカーを検索側フラグ共用でコンパイルする。アンカー専用フラグは設けない。
-    anchor: re.Pattern[str] | None = None
-    before_ctx = args.before_context
-    after_ctx = args.after_context
-    if args.within is not None:
-        if args.context is not None:
-            if after_ctx == 0:
-                after_ctx = args.context
-            if before_ctx == 0:
-                before_ctx = args.context
-        try:
-            anchor = pyfltr.grep_.matcher.compile_pattern(
-                [args.within],
-                fixed_strings=args.fixed_strings,
-                ignore_case=args.ignore_case,
-                smart_case=args.smart_case,
-                word_regexp=args.word_regexp,
-                line_regexp=args.line_regexp,
-                multiline=False,
-            )
-        except ValueError as exc:
-            parser.error(str(exc))
-
-    loaded = pyfltr.cli.grep_replace_common.load_config_and_expand_targets(args)
-    if loaded is None:
-        return 1
-    config, expanded = loaded
-
-    # `--exclude-file` / `--from-grep` での対象限定
-    excluded = {pathlib.Path(p).resolve() for p in args.exclude_file}
-    if excluded:
-        expanded = [p for p in expanded if p.resolve() not in excluded]
-    if args.from_grep is not None:
-        try:
-            allowed = read_from_grep(args.from_grep)
-        except ValueError as exc:
-            parser.error(str(exc))
-        expanded = [p for p in expanded if p.resolve() in allowed]
-
-    files_count = len(expanded)
     dry_run = args.dry_run
-    replace_id = pyfltr.grep_.history.generate_replace_id() if not dry_run else None
-
-    if output_format == "jsonl":
-        pyfltr.grep_.jsonl_records.emit_replace_header(
-            pattern=args.pattern,
-            replacement=args.replacement,
-            files=files_count,
-            replace_id=replace_id,
-            dry_run=dry_run,
-            format_source=resolution.source,
-        )
-
-    file_changes: list[dict[str, typing.Any]] = []
-    total_replacements = 0
+    replace_id = operation.replace_id
+    prepared = operation.prepared
+    read_failures = operation.read_failures
     files_changed = 0
-    read_failures = 0
+    total_replacements = 0
     json_records: list[dict[str, typing.Any]] = []
-    prepared: list[tuple[pathlib.Path, pyfltr.grep_.replacer.ReplacementResult]] = []
-    for file in expanded:
-        # MCP側の_tool_replace（mcp_server.py）と挙動を揃える目的で、
-        # `--max-filesize`超過ファイルは読み込み前にスキップする。
-        if args.max_filesize is not None and args.max_filesize > 0:
-            try:
-                if file.stat().st_size > args.max_filesize:
-                    continue
-            except OSError:
-                continue
-        try:
-            if anchor is not None:
-                result = pyfltr.grep_.replacer.apply_block_replace_to_file(
-                    file,
-                    compiled,
-                    args.replacement,
-                    anchor,
-                    before_context=before_ctx,
-                    after_context=after_ctx,
-                    encoding=args.encoding,
-                )
-            else:
-                result = pyfltr.grep_.replacer.apply_replace_to_file(
-                    file,
-                    compiled,
-                    args.replacement,
-                    encoding=args.encoding,
-                )
-        except (UnicodeDecodeError, OSError) as exc:
-            pyfltr.grep_.scanner.emit_read_failure_warning("replace", file, exc, encoding=args.encoding)
-            read_failures += 1
-            continue
-        if result.count == 0:
-            continue
-        prepared.append((file, result))
-        if not dry_run:
-            file_changes.append(
-                {
-                    "file": file,
-                    "before_bytes": result.before_bytes,
-                    "after_bytes": result.after_bytes,
-                    "records": list(result.records),
-                }
-            )
-
-    if file_changes and replace_id is not None:
-        meta = ReplaceCommandMeta(
-            replace_id=replace_id,
-            dry_run=False,
-            fixed_strings=args.fixed_strings,
-            pattern=args.pattern,
-            replacement=args.replacement,
-            encoding=args.encoding,
-        )
-        store = pyfltr.grep_.history.ReplaceHistoryStore()
-        try:
-            store.apply_replace(
-                replace_id,
-                command_meta=meta,
-                file_changes=file_changes,
-                policy=pyfltr.grep_.history.policy_from_config(config),
-            )
-        except pyfltr.grep_.history.ReplaceFailure as exc:
-            message = exc.describe(undo=f"`pyfltr replace --undo {exc.replace_id} --force`")
-            sys.stderr.write(f"エラー: {message}\n")
-            return 1
 
     for file, result in prepared:
         files_changed += 1
@@ -436,40 +336,6 @@ def _execute_replace(
     return exit_code
 
 
-def read_from_grep(jsonl_path: pathlib.Path) -> set[pathlib.Path]:
-    """grep出力JSONLから`kind=match`のファイル集合を抽出する。
-
-    CLIとMCPの双方から利用できるよう、エラー表現を呼び出し側へ委ねる。
-    """
-    try:
-        text = jsonl_path.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise ValueError(f"--from-grep の読み込みに失敗しました: {jsonl_path}: {exc}") from exc
-    files: set[pathlib.Path] = set()
-    output_modes: set[str] = set()
-    for line in text.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            record = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        output_mode = record.get("output_mode")
-        if isinstance(output_mode, str):
-            output_modes.add(output_mode)
-        if record.get("kind") != "match":
-            continue
-        file = record.get("file")
-        if isinstance(file, str):
-            files.add(pathlib.Path(file).resolve())
-    unsupported_modes = output_modes - {"full"}
-    if unsupported_modes:
-        modes = ", ".join(sorted(unsupported_modes))
-        raise ValueError(f"--from-grep には省略を含まないfull出力を指定してください（検出したoutput_mode: {modes}）。")
-    return files
-
-
 def _build_replace_guidance(
     *,
     replace_id: str | None,
@@ -505,12 +371,12 @@ def _execute_list_history(output_format: str, output_file: pathlib.Path | None) 
         return 0
     # text
     if not entries:
-        with pyfltr.cli.output_format.text_output_lock:
-            pyfltr.cli.output_format.text_logger.info("(no replace history)")
+        with pyfltr.output.logging_.text_output_lock:
+            pyfltr.output.logging_.text_logger.info("(no replace history)")
         return 0
-    with pyfltr.cli.output_format.text_output_lock:
+    with pyfltr.output.logging_.text_output_lock:
         for entry in entries:
-            pyfltr.cli.output_format.text_logger.info(
+            pyfltr.output.logging_.text_logger.info(
                 f"{entry.get('replace_id')}\t{entry.get('saved_at')}\tfiles={len(entry.get('files') or [])}"
             )
     return 0
@@ -534,15 +400,15 @@ def _execute_show_history(replace_id: str, output_format: str, output_file: path
     if output_format == "json":
         pyfltr.cli.grep_replace_common.print_json(meta, output_file)
         return 0
-    with pyfltr.cli.output_format.text_output_lock:
-        pyfltr.cli.output_format.text_logger.info(f"replace_id: {meta.get('replace_id')}")
-        pyfltr.cli.output_format.text_logger.info(f"saved_at: {meta.get('saved_at')}")
+    with pyfltr.output.logging_.text_output_lock:
+        pyfltr.output.logging_.text_logger.info(f"replace_id: {meta.get('replace_id')}")
+        pyfltr.output.logging_.text_logger.info(f"saved_at: {meta.get('saved_at')}")
         cmd = meta.get("command") or {}
-        pyfltr.cli.output_format.text_logger.info(
+        pyfltr.output.logging_.text_logger.info(
             f"command: pattern={cmd.get('pattern')!r} replacement={cmd.get('replacement')!r}"
         )
         for file_entry in meta.get("files", []):
-            pyfltr.cli.output_format.text_logger.info(f"  {file_entry.get('file')} (records={file_entry.get('records_count')})")
+            pyfltr.output.logging_.text_logger.info(f"  {file_entry.get('file')} (records={file_entry.get('records_count')})")
     return 0
 
 

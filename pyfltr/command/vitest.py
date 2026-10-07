@@ -1,16 +1,19 @@
 """vitest実行。"""
 
-import argparse
+import dataclasses
 import pathlib
 import shlex
 import tempfile
 import time
 import typing
 
-import pyfltr.command.error_parser
+import pyfltr.command.core_
 import pyfltr.command.process
 import pyfltr.command.slow_tests
 import pyfltr.config.config
+import pyfltr.config.model
+import pyfltr.parsing.entry
+import pyfltr.tools
 from pyfltr.command.core_ import CommandResult
 from pyfltr.command.runner import build_invocation_argv
 
@@ -33,32 +36,14 @@ def _has_user_reporter_override(args_list: typing.Iterable[str]) -> bool:
     return False
 
 
-def execute_vitest(
-    command: str,
-    command_info: pyfltr.config.config.CommandInfo,
-    commandline: list[str],
-    commandline_prefix: list[str],
-    targets: list[pathlib.Path],
-    config: pyfltr.config.config.Config,
-    additional_args: list[str],
-    env: dict[str, str],
-    on_output: typing.Callable[[str], None] | None,
-    start_time: float,
-    args: argparse.Namespace,
-    *,
-    is_interrupted: typing.Callable[[], bool] | None = None,
-    on_subprocess_start: typing.Callable[[], None] | None = None,
-    on_subprocess_end: typing.Callable[[], None] | None = None,
-    cwd: pathlib.Path | None = None,
-    nodeid_base_cwd: pathlib.Path,
-) -> CommandResult:
+def execute_vitest(request: pyfltr.command.core_.ExecutionRequest) -> pyfltr.command.core_.CommandResult:
     """vitestをJSON reporter併用で実行し、失敗を構造化diagnosticへ変換する。
 
     Vitestはデフォルトで `command.message` フォールバック経路（stdout末尾のtruncate）に倒れ、
     複数のテスト失敗が1つの文字列に結合されてエージェント側で個別解釈できない。
     `--reporter=default --reporter=json --outputFile.json=<tmpfile>` を末尾注入することで、
     利用者向けのデフォルトreporter出力（人間可読のテスト進捗・サマリ）を維持しつつ、
-    Jest互換JSONをtmpfile経由で取得して `pyfltr.command.error_parser.parse_errors`
+    Jest互換JSONをtmpfile経由で取得して `pyfltr.parsing.entry.parse_errors`
     に渡せるようにする。
 
     利用者の `vitest-args` または `additional_args` に `--reporter` または `--outputFile`
@@ -70,25 +55,9 @@ def execute_vitest(
     `cwd`はsubprocessの起動先、`nodeid_base_cwd`はJSON中の絶対パスを相対化する基準として
     別々に受け取る。
     """
-    user_args = list(config.values.get(f"{command}-args", []))
-    if _has_user_reporter_override(user_args) or _has_user_reporter_override(additional_args):
-        return _run_vitest_subprocess(
-            command,
-            command_info,
-            commandline,
-            targets,
-            config,
-            env,
-            on_output,
-            start_time,
-            args,
-            json_output_path=None,
-            is_interrupted=is_interrupted,
-            on_subprocess_start=on_subprocess_start,
-            on_subprocess_end=on_subprocess_end,
-            cwd=cwd,
-            nodeid_base_cwd=nodeid_base_cwd,
-        )
+    user_args: list[str] = list(pyfltr.config.model.command_setting(request.ctx.config.values, request.command, "args", []))
+    if _has_user_reporter_override(user_args) or _has_user_reporter_override(request.params.additional_args):
+        return _run_vitest_subprocess(request, commandline=request.params.commandline, json_output_path=None)
 
     # tmpfileは `delete=False` で確保し、後始末をfinallyで明示する。
     # vitest側がtmpfileを書き込めるよう、Pythonからは開きっぱなしにしない。
@@ -103,48 +72,23 @@ def execute_vitest(
         # `build_invocation_argv` で組み立てたargv末尾に注入引数とtargetsを追加する。
         # `_prepare_execution_params` で構築済みの `commandline` はtarget混入後のため、
         # 注入引数をtargetsより前に置く目的で再構築する。
-        argv = build_invocation_argv(command, config, commandline_prefix, additional_args, fix_stage=False)
-        argv.extend(injection_args)
-        if config.values.get(f"{command}-pass-filenames", True):
-            argv.extend(str(t) for t in targets)
-        return _run_vitest_subprocess(
-            command,
-            command_info,
-            argv,
-            targets,
-            config,
-            env,
-            on_output,
-            start_time,
-            args,
-            json_output_path=json_path,
-            is_interrupted=is_interrupted,
-            on_subprocess_start=on_subprocess_start,
-            on_subprocess_end=on_subprocess_end,
-            cwd=cwd,
-            nodeid_base_cwd=nodeid_base_cwd,
+        argv = build_invocation_argv(
+            request.command,
+            request.ctx.config,
+            request.params.commandline_prefix,
+            request.params.additional_args,
+            fix_stage=False,
         )
+        argv.extend(injection_args)
+        if pyfltr.config.model.command_setting(request.ctx.config.values, request.command, "pass-filenames", True):
+            argv.extend(str(t) for t in request.params.targets)
+        return _run_vitest_subprocess(request, commandline=argv, json_output_path=json_path)
     finally:
         json_path.unlink(missing_ok=True)
 
 
 def _run_vitest_subprocess(
-    command: str,
-    command_info: pyfltr.config.config.CommandInfo,
-    commandline: list[str],
-    targets: list[pathlib.Path],
-    config: pyfltr.config.config.Config,
-    env: dict[str, str],
-    on_output: typing.Callable[[str], None] | None,
-    start_time: float,
-    args: argparse.Namespace,
-    *,
-    json_output_path: pathlib.Path | None,
-    is_interrupted: typing.Callable[[], bool] | None,
-    on_subprocess_start: typing.Callable[[], None] | None,
-    on_subprocess_end: typing.Callable[[], None] | None,
-    cwd: pathlib.Path | None = None,
-    nodeid_base_cwd: pathlib.Path,
+    request: pyfltr.command.core_.ExecutionRequest, *, commandline: list[str], json_output_path: pathlib.Path | None
 ) -> CommandResult:
     """vitestをsubprocess起動し、JSON reporter出力をparse_errorsへ渡す。
 
@@ -156,21 +100,11 @@ def _run_vitest_subprocess(
     スキップされた経路ではstdoutが解析対象となり、抽出結果は空になる。
     subprocessの起動先には`cwd`、nodeidの相対化には`nodeid_base_cwd`を用いる。
     """
-    if args.verbose and on_output is not None:
-        on_output(f"commandline: {shlex.join(commandline)}\n")
-    proc = pyfltr.command.process.run_subprocess_with_timeout(
-        commandline,
-        env,
-        on_output,
-        is_interrupted=is_interrupted,
-        on_subprocess_start=on_subprocess_start,
-        on_subprocess_end=on_subprocess_end,
-        timeout=pyfltr.config.config.resolve_command_timeout(config.values, command),
-        cwd=cwd,
-        **pyfltr.config.config.resolve_retry_kwargs(config.values),
-    )
+    if request.verbose and request.ctx.on_output is not None:
+        request.ctx.on_output(f"commandline: {shlex.join(commandline)}\n")
+    proc = pyfltr.command.process.run_process(dataclasses.replace(request, verbose=False), commandline)
     output = proc.stdout.strip()
-    elapsed = time.perf_counter() - start_time
+    elapsed = time.perf_counter() - request.start_time
 
     parse_source = output
     if json_output_path is not None:
@@ -181,16 +115,18 @@ def _run_vitest_subprocess(
             # 早期終了）はstdoutベースのフォールバックを使う。
             parse_source = output
 
-    errors = pyfltr.command.error_parser.parse_errors(command, parse_source, command_info.error_pattern)
-    slow_tests = pyfltr.command.slow_tests.parse_vitest_durations(parse_source, base_cwd=nodeid_base_cwd)
+    errors = pyfltr.parsing.entry.parse_errors(request.command, parse_source, request.params.command_info.error_pattern)
+    slow_tests = pyfltr.command.slow_tests.parse_vitest_durations(
+        parse_source, base_cwd=(request.nodeid_base_cwd or request.ctx.effective_cwd)
+    )
     result = CommandResult.from_process(
         process=proc,
-        command=command,
-        command_info=command_info,
+        command=request.command,
+        command_info=request.params.command_info,
         commandline=commandline,
         output=output,
         elapsed=elapsed,
-        files=len(targets),
+        files=len(request.params.targets),
         errors=errors,
         slow_tests=slow_tests,
     )

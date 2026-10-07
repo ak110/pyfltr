@@ -3,13 +3,12 @@
 非TUI経路でのコマンド実行（`run_commands_with_cli`）と、
 パイプライン全体を駆動する`run_impl`・`run_pipeline`・
 `calculate_returncode`を担う。
-text整形描画（`render_results` / `write_log`）は`cli/render.py`に分離している。
+text整形描画（`render_results` / `write_log`）は`output/render.py`に分離している。
 """
 
 from __future__ import annotations
 
 import argparse
-import concurrent.futures
 import dataclasses
 import importlib.metadata
 import logging
@@ -25,34 +24,40 @@ import typing
 import pyfltr.cli.command_selection
 import pyfltr.cli.output_format
 import pyfltr.cli.overrides
-import pyfltr.cli.precommit_guidance
-import pyfltr.cli.render
 import pyfltr.cli.subproject_config
 import pyfltr.command.completion
 import pyfltr.command.core_
 import pyfltr.command.dispatcher
+import pyfltr.command.executor
+import pyfltr.command.only_failed
+import pyfltr.command.precommit_guidance
 import pyfltr.command.process
+import pyfltr.command.stage_runner
 import pyfltr.command.subprojects
 import pyfltr.command.targets
 import pyfltr.config.config
+import pyfltr.config.model
+import pyfltr.config.selection
 import pyfltr.output.formatters
 import pyfltr.output.jsonl
+import pyfltr.output.logging_
+import pyfltr.output.render
 import pyfltr.output.ui
+import pyfltr.run_options
 import pyfltr.state.archive
 import pyfltr.state.cache
-import pyfltr.state.executor
 import pyfltr.state.only_failed
 import pyfltr.state.retry
-import pyfltr.state.stage_runner
+import pyfltr.tools
 import pyfltr.warnings_
 
 logger = logging.getLogger(__name__)
 
 # text_logger / structured_logger / text_output_lock は cli/output_format.py で定義する。
 # 本モジュールでは output_format から参照して使う。
-text_logger = pyfltr.cli.output_format.text_logger
-structured_logger = pyfltr.cli.output_format.structured_logger
-lock = pyfltr.cli.output_format.text_output_lock
+text_logger = pyfltr.output.logging_.text_logger
+structured_logger = pyfltr.output.logging_.structured_logger
+lock = pyfltr.output.logging_.text_output_lock
 
 
 class PipelineOutcome(typing.NamedTuple):
@@ -64,6 +69,8 @@ class PipelineOutcome(typing.NamedTuple):
     """実行アーカイブの`run_id`。アーカイブ無効・採番失敗・early exit時は`None`。"""
     completion: pyfltr.command.completion.RunCompletion
     """完了判定。全経路で確定し、MCP応答とJSONL `summary`の両方へ同じ値を渡す。"""
+    results: tuple[pyfltr.command.core_.CommandResult, ...] = ()
+    """キャッシュ復元を含む通常ステージの最終結果。"""
 
 
 # heartbeat監視の発火しきい値（秒）。
@@ -263,7 +270,7 @@ def _make_attach_retry_command(
 
 def run_commands_with_cli(
     commands: list[str],
-    args: argparse.Namespace,
+    args: pyfltr.run_options.RunOptions,
     base_ctx: pyfltr.command.core_.ExecutionBaseContext,
     *,
     per_command_log: bool,
@@ -271,7 +278,7 @@ def run_commands_with_cli(
     on_result: typing.Callable[[pyfltr.command.core_.CommandResult], None] | None = None,
     archive_hook: typing.Callable[[pyfltr.command.core_.CommandResult], None] | None = None,
     fail_fast: bool = False,
-    only_failed_targets: dict[str, pyfltr.state.only_failed.ToolTargets] | None = None,
+    only_failed_targets: dict[str, pyfltr.command.only_failed.ToolTargets] | None = None,
     heartbeat: HeartbeatMonitor | None = None,
 ) -> list[pyfltr.command.core_.CommandResult]:
     """コマンドを実行する (非 TUI)。
@@ -303,138 +310,36 @@ def run_commands_with_cli(
     `execute_command`へ渡す（`--only-failed`経路）。実対象の決め方は
     `ToolTargets.resolve_files()`に従う。
     """
-    config = base_ctx.config
-    results: list[pyfltr.command.core_.CommandResult] = []
-    fixers, formatters, linters_and_testers = pyfltr.state.executor.split_commands_for_execution(
+
+    def execute(command: str, fix_stage: bool) -> pyfltr.command.core_.CommandResult:
+        return _run_one_command(
+            command,
+            args,
+            base_ctx,
+            per_command_log=per_command_log,
+            fix_stage=fix_stage,
+            only_failed_targets=pyfltr.command.targets.pick_targets(only_failed_targets, command),
+            heartbeat=heartbeat,
+        )
+
+    return pyfltr.command.stage_runner.run_stages(
         commands,
-        config,
-        base_ctx.all_files,
+        base_ctx,
+        execute,
         include_fix_stage=include_fix_stage,
-        subproject_configs=base_ctx.subproject_configs,
+        fail_fast=fail_fast,
+        callbacks=pyfltr.command.stage_runner.StageCallbacks(archive=archive_hook, on_result=on_result),
     )
-
-    # fixステージ: 同一ファイルへの書き込み競合を避けるため直列実行する。
-    # 結果はsummary / jsonlには含めない（後段の通常ステージで同一コマンドが
-    # 再度実行して最終状態を報告するため。ruff-formatの2段階と同じ位置づけ）。
-    for command in fixers:
-        fix_result = _run_one_command(
-            command,
-            args,
-            base_ctx,
-            per_command_log=per_command_log,
-            fix_stage=True,
-            only_failed_targets=pyfltr.command.targets.pick_targets(only_failed_targets, command),
-            heartbeat=heartbeat,
-        )
-        if archive_hook is not None and not fix_result.cached:
-            archive_hook(fix_result)
-        if fail_fast and fix_result.failed:
-            return _emit_skipped_results(
-                results,
-                remaining=[*formatters, *linters_and_testers],
-                config=config,
-                on_result=on_result,
-                archive_hook=archive_hook,
-            )
-
-    # formattersを順序実行
-    for idx, command in enumerate(formatters):
-        result = _run_one_command(
-            command,
-            args,
-            base_ctx,
-            per_command_log=per_command_log,
-            only_failed_targets=pyfltr.command.targets.pick_targets(only_failed_targets, command),
-            heartbeat=heartbeat,
-        )
-        results.append(result)
-        if archive_hook is not None and not result.cached:
-            archive_hook(result)
-        if on_result is not None:
-            on_result(result)
-        if fail_fast and result.failed:
-            remaining = [*formatters[idx + 1 :], *linters_and_testers]
-            return _emit_skipped_results(
-                results,
-                remaining=remaining,
-                config=config,
-                on_result=on_result,
-                archive_hook=archive_hook,
-            )
-
-    # linters/testersを並列実行
-    if len(linters_and_testers) > 0:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=config["jobs"]) as executor:
-            future_to_command = {
-                executor.submit(
-                    _run_one_command,
-                    command,
-                    args,
-                    base_ctx,
-                    per_command_log=per_command_log,
-                    only_failed_targets=pyfltr.command.targets.pick_targets(only_failed_targets, command),
-                    heartbeat=heartbeat,
-                ): command
-                for command in linters_and_testers
-            }
-            aborted = False
-            aborted_commands: set[str] = set()
-            for future in concurrent.futures.as_completed(future_to_command):
-                try:
-                    result = future.result()
-                except concurrent.futures.CancelledError:
-                    aborted_commands.add(future_to_command[future])
-                    continue
-                results.append(result)
-                if archive_hook is not None and not result.cached:
-                    archive_hook(result)
-                if on_result is not None:
-                    on_result(result)
-                if fail_fast and not aborted and result.failed:
-                    aborted = True
-                    # 未開始ジョブをまとめてキャンセルし、起動済みサブプロセスを中断する。
-                    pyfltr.state.stage_runner.cancel_pending_futures(future_to_command, aborted_commands)
-                    pyfltr.command.process.terminate_active_processes()
-            if aborted_commands:
-                for pending_command in aborted_commands:
-                    skipped = pyfltr.state.stage_runner.make_skipped_result(pending_command, config)
-                    results.append(skipped)
-                    if archive_hook is not None:
-                        archive_hook(skipped)
-                    if on_result is not None:
-                        on_result(skipped)
-
-    return results
-
-
-def _emit_skipped_results(
-    results: list[pyfltr.command.core_.CommandResult],
-    *,
-    remaining: list[str],
-    config: pyfltr.config.config.Config,
-    on_result: typing.Callable[[pyfltr.command.core_.CommandResult], None] | None,
-    archive_hook: typing.Callable[[pyfltr.command.core_.CommandResult], None] | None,
-) -> list[pyfltr.command.core_.CommandResult]:
-    """--fail-fast中断時、未実行ツールをskipped扱いで追加する（fix/formatter段から）。"""
-    pyfltr.command.process.terminate_active_processes()
-    for command in remaining:
-        skipped = pyfltr.state.stage_runner.make_skipped_result(command, config)
-        results.append(skipped)
-        if archive_hook is not None:
-            archive_hook(skipped)
-        if on_result is not None:
-            on_result(skipped)
-    return results
 
 
 def _run_one_command(
     command: str,
-    args: argparse.Namespace,
+    args: pyfltr.run_options.RunOptions,
     base_ctx: pyfltr.command.core_.ExecutionBaseContext,
     *,
     per_command_log: bool,
     fix_stage: bool = False,
-    only_failed_targets: pyfltr.state.only_failed.ToolTargets | None = None,
+    only_failed_targets: pyfltr.command.only_failed.ToolTargets | None = None,
     heartbeat: HeartbeatMonitor | None = None,
 ) -> pyfltr.command.core_.CommandResult:
     """1 コマンドの実行。
@@ -445,7 +350,7 @@ def _run_one_command(
     パイプラインheartbeatの追跡対象に含める。
     """
     # serial_groupを持つコマンドは同一グループ内で排他実行される（cargo / dotnet等）
-    with pyfltr.state.executor.serial_group_lock(base_ctx.config.commands[command].serial_group):
+    with pyfltr.command.executor.serial_group_lock(base_ctx.config.commands[command].serial_group):
         with lock:
             suffix = " (fix)" if fix_stage else ""
             text_logger.info(f"{command}{suffix} 実行中です...")
@@ -472,7 +377,7 @@ def _run_one_command(
         result = pyfltr.command.dispatcher.execute_command(command, args, ctx)
         if per_command_log:
             use_ga = (getattr(args, "output_format", "text") or "text") == "github-annotations"
-            pyfltr.cli.render.write_log(result, use_github_annotations=use_ga)
+            pyfltr.output.render.write_log(result, use_github_annotations=use_ga)
         else:
             with lock:
                 text_logger.info(f"{command}{suffix} 完了 ({result.get_status_text()})")
@@ -480,9 +385,9 @@ def _run_one_command(
 
 
 def run_pipeline(
-    args: argparse.Namespace,
+    args: pyfltr.run_options.RunOptions,
     commands: list[str],
-    config: pyfltr.config.config.Config,
+    config: pyfltr.config.model.Config,
     *,
     start_cwd: pathlib.Path | None = None,
     original_cwd: str | None = None,
@@ -516,9 +421,9 @@ def run_pipeline(
 
 
 def _run_pipeline(
-    args: argparse.Namespace,
+    args: pyfltr.run_options.RunOptions,
     commands: list[str],
-    config: pyfltr.config.config.Config,
+    config: pyfltr.config.model.Config,
     *,
     start_cwd: pathlib.Path | None = None,
     original_cwd: str | None = None,
@@ -579,6 +484,8 @@ def _run_pipeline(
         force_text_on_stderr=force_text_on_stderr,
     )
     formatter.configure_loggers(early_ctx)
+    if not jsonl_warnings_reach_consumer:
+        pyfltr.output.logging_.configure_structured_output(None)
 
     # ターミナルをクリア
     if not args.no_clear:
@@ -592,25 +499,6 @@ def _run_pipeline(
     # （`pyproject.toml`・`Cargo.toml`・`*.csproj`・`*.sln`）持ちディレクトリを再帰探索し、
     # uv workspace member も含めて返す。検出0/1件は単一プロジェクトとして従来通り動作する。
     start_cwd_path = start_cwd if start_cwd is not None else pathlib.Path.cwd()
-    subprojects = pyfltr.command.subprojects.discover_subprojects(start_cwd_path, config)
-    if len(subprojects) < 2:
-        # モノレポモード非適用: subprojects を空集合として扱う（dispatcher 側で単一経路）。
-        subprojects = []
-
-    # 対象ファイルを一括展開（ディレクトリ走査・exclude・gitignoreフィルタリングを1回だけ実行）
-    # TUI起動前に実行することで、除外警告がログに表示される。
-    # `start_cwd` を明示してプロセスグローバルな cwd 干渉を避ける。
-    # サブプロジェクトの最終的な所属判定は `classify_files_by_subproject` の最深一致で行うため、
-    # `exclude_subdirs` は渡さず全ファイルを一度収集する。
-    all_files = pyfltr.command.targets.expand_all_files(
-        args.targets,
-        config,
-        start_cwd=start_cwd_path,
-    )
-
-    # ユーザー指定パスが全て非存在の場合は、各ツールが個別に「ファイルが見つからない」エラーを
-    # 多重に出力する前段で打ち切り、非ゼロ終了する。warning自体は`expand_all_files`内で発行済み。
-    # 部分一致（一部のみ不在）は処理継続、対象未指定（カレント走査）も対象外として扱う。
     quiet = bool(getattr(args, "quiet", False))
     early_run_ctx = pyfltr.output.formatters.RunOutputContext(
         config=config,
@@ -623,73 +511,18 @@ def _run_pipeline(
         subcommand=getattr(args, "subcommand", None),
         jsonl_warnings_reach_consumer=jsonl_warnings_reach_consumer,
     )
-    if args.targets and len(pyfltr.warnings_.filtered_direct_files(reason="missing")) == len(args.targets):
-        completion = _evaluate_completion([], args, config, files_reached=0, unmet_commands=[])
-        early_run_ctx = dataclasses.replace(early_run_ctx, completion=completion)
-        formatter.on_start(early_run_ctx)
-        formatter.on_finish(early_run_ctx, [], 1, pyfltr.warnings_.collected_warnings())
-        return PipelineOutcome(1, None, completion)
-
-    # --changed-since指定時はgit差分ファイルとの交差でフィルタリングする。
-    # --only-failedよりも先に適用し、以後のフィルタはフィルタリング済みリストを受け取る。
-    changed_since_ref: str | None = getattr(args, "changed_since", None)
-    if changed_since_ref is not None:
-        all_files = pyfltr.command.targets.filter_by_changed_since(all_files, changed_since_ref, cwd=start_cwd_path)
-
-    # --only-failed指定時は直前runからツール別の失敗ファイル集合を構築する。
-    # archive / cache初期化より前に実行し、早期終了の場合はそれらの副作用を発生させない。
-    commands, only_failed_targets, only_failed_exit_early = pyfltr.state.only_failed.apply_filter(
-        args, commands, all_files, from_run=getattr(args, "from_run", None)
-    )
-    if only_failed_exit_early:
-        # スキップの理由は`apply_filter`が警告として発行済み。JSONLでもheader・warning・summaryを
-        # 出力し、何も出力せずに終了コード0で終わる状態（理由が消費主体へ届かない）を避ける。
-        completion = _evaluate_completion([], args, config, files_reached=0, unmet_commands=[])
-        early_run_ctx = dataclasses.replace(early_run_ctx, completion=completion)
-        formatter.on_start(early_run_ctx)
-        formatter.on_finish(early_run_ctx, [], 0, pyfltr.warnings_.collected_warnings())
-        return PipelineOutcome(0, None, completion)
-
-    # モノレポ用のサブプロジェクト分類とサブプロジェクト別 config を準備する。
-    # `subproject_aware=True` ツールが各サブプロジェクト cwd で実行する際に参照する。
-    # config解決（`pyproject.toml`不在時の最近接祖先継承を含む）は
-    # `pyfltr.cli.subproject_config.resolve_subproject_configs` に集約する。
-    # 実行対象コマンドの確定（和集合判定）より前に構築する必要があるため、ここで行う。
-    subproject_files: dict[pathlib.Path, list[pathlib.Path]] = {}
-    subproject_configs: dict[pathlib.Path, pyfltr.config.config.Config] = {}
-    external_files: list[pathlib.Path] = []
-    if subprojects:
-        subproject_files, external_files = pyfltr.command.subprojects.classify_files_by_subproject(
-            all_files, subprojects, start_cwd_path
-        )
-        subproject_configs = pyfltr.cli.subproject_config.resolve_subproject_configs(subprojects, config, args)
-
-    # 実行対象として有効化されていないコマンドはパイプラインから除外する。
-    # 単一プロジェクトでは起点 config のON/OFF（`config.values.get(cmd) is True`）で判定する。
-    # モノレポでは `subproject_aware=True` ツールに限り「起点またはいずれかのサブプロジェクトで有効」
-    # の和集合で対象に含める（親OFF・子ONを子でのみ実行できるようにするため）。
-    # `subproject_aware=False`（リポジトリ単位ツール）と `subproject_aware` 判定自体は起点 config で固定する。
-    fast_selected = _is_fast_selection(args, config)
-    if fast_selected and not getattr(args, "only_failed", False):
-        commands = _add_subproject_fast_pytest(commands, args, config, subproject_configs)
-    requested_commands = list(commands)
-    commands = [c for c in commands if pyfltr.config.config.is_command_enabled_anywhere(c, config, subproject_configs)]
-    unmet: list[str] = []
-    if getattr(args, "commands", None) is not None:
-        unmet = pyfltr.cli.command_selection.compute_unmet_commands(
-            pyfltr.cli.command_selection.flatten_commands_arg(args.commands, config),
-            requested_commands,
-            commands,
-            config,
-        )
-        if unmet:
-            pyfltr.warnings_.emit_warning(
-                source="commands",
-                message="--commandsで指定されたが有効化されていないため未実行のコマンドがあります: " + ", ".join(unmet),
-                hint="--enable="
-                + ",".join(unmet)
-                + " または pyproject.toml [tool.pyfltr] で指定したコマンドを true に設定して有効化してください。",
-            )
+    prepared = _prepare_execution_targets(args, commands, config, start_cwd_path, formatter, early_run_ctx)
+    if isinstance(prepared, PipelineOutcome):
+        return prepared
+    commands = prepared.commands
+    all_files = prepared.all_files
+    subprojects = prepared.subprojects
+    subproject_files = prepared.subproject_files
+    subproject_configs = prepared.subproject_configs
+    external_files = prepared.external_files
+    only_failed_targets = prepared.only_failed_targets
+    fast_selected = prepared.fast_selected
+    unmet = prepared.unmet
 
     # retry_command再構成用のベース情報を確定する。original_cwdはrun() が保存した
     # --work-dir適用前のcwd、original_sys_argsは起動時のsys.argv[1:] のコピー。
@@ -698,30 +531,7 @@ def _run_pipeline(
     launcher_prefix = pyfltr.state.retry.detect_launcher_prefix()
     retry_args_template = pyfltr.state.retry.build_retry_args_template(effective_sys_args)
 
-    # 実行アーカイブの初期化 （既定で有効）。
-    # `--no-archive` または `archive = false` で無効化できる。クリーンアップ失敗や
-    # 書き込み失敗はパイプライン本体を止めないようwarningsへ転送する。
-    archive_enabled = bool(config.values.get("archive", True)) and not getattr(args, "no_archive", False)
-    archive_store: pyfltr.state.archive.ArchiveStore | None = None
-    run_id: str | None = None
-    if archive_enabled:
-        try:
-            archive_store = pyfltr.state.archive.ArchiveStore()
-            run_id = archive_store.start_run(commands=commands, files=len(all_files), cwd=str(start_cwd_path))
-            removed = archive_store.cleanup(pyfltr.state.archive.policy_from_config(config))
-            if removed:
-                logger.debug("archive: 自動削除で %d 件の古い run を削除", len(removed))
-        except OSError as e:
-            pyfltr.warnings_.emit_warning(
-                source="archive",
-                message=(
-                    f"実行アーカイブを初期化できないため、アーカイブ無しで続行しました: {e}。"
-                    "この実行にはrun_idが付かず、`show-run` と次回の `--only-failed` から参照できません"
-                ),
-                hint=_ARCHIVE_FAILURE_HINT,
-            )
-            archive_store = None
-            run_id = None
+    archive_store, run_id = _initialize_archive(args, config, commands, all_files, start_cwd_path)
 
     # 実行環境の情報を出力（run_id採番後にまとめて出力することで区切り線内に含める）。
     text_logger.info(f"{'-' * 10} pyfltr {'-' * (72 - 10 - 8)}")
@@ -734,30 +544,7 @@ def _run_pipeline(
         text_logger.info("run_id:         %s(`%s show-run %s` で詳細を確認可能)", run_id, launcher_cmd, run_id)
     text_logger.info("-" * 72)
 
-    # ファイルhashキャッシュの初期化 （既定で有効）。
-    # `--no-cache` または `cache = false` で無効化できる。期間超過エントリの削除失敗や
-    # 書き込み失敗はパイプライン本体を止めないためwarningsへ転送する。
-    cache_enabled = bool(config.values.get("cache", True)) and not getattr(args, "no_cache", False)
-    cache_store: pyfltr.state.cache.CacheStore | None = None
-    if cache_enabled:
-        try:
-            cache_store = pyfltr.state.cache.CacheStore()
-            cache_removed = cache_store.cleanup(pyfltr.state.cache.cache_policy_from_config(config))
-            if cache_removed:
-                logger.debug("cache: 期間超過で %d 件のエントリを削除", len(cache_removed))
-        except OSError as e:
-            pyfltr.warnings_.emit_warning(
-                source="cache",
-                message=(
-                    f"ファイル hash キャッシュを初期化できないため、キャッシュ無しで続行しました: {e}。"
-                    "検査結果は変わりませんが、変更の無いファイルも再検査します"
-                ),
-                hint=(
-                    "キャッシュディレクトリの書き込み権限と空き容量を確認してください。"
-                    "キャッシュが不要なら `--no-cache` を指定すると警告を抑止できます。"
-                ),
-            )
-            cache_store = None
+    cache_store = _initialize_cache(args, config)
 
     archive_hook: typing.Callable[[pyfltr.command.core_.CommandResult], None] | None = None
     if archive_store is not None and run_id is not None:
@@ -826,7 +613,7 @@ def _run_pipeline(
     # `text`等のJSONLレコードが流れない出力形式ではheartbeatの観測対象が成立しない。
     # TUI経路はUIに進捗表示があるため別途heartbeat不要。
     heartbeat: HeartbeatMonitor | None = None
-    if output_format == "jsonl" and not use_ui:
+    if output_format == "jsonl" and not use_ui and jsonl_warnings_reach_consumer:
         heartbeat = HeartbeatMonitor()
         heartbeat.start()
 
@@ -900,7 +687,7 @@ def _run_pipeline(
         and args.targets
         and pyfltr.warnings_.filtered_direct_files(reason="missing")
         and results
-        and all(result.status == "skipped" for result in results)
+        and all(result.skipped for result in results)
     ):
         returncode = 1
 
@@ -908,10 +695,221 @@ def _run_pipeline(
     ctx = dataclasses.replace(ctx, completion=completion)
     formatter.on_finish(ctx, results, returncode, pyfltr.warnings_.collected_warnings())
 
+    _finalize_archive(archive_store, run_id, returncode, commands, len(all_files))
+
+    # pre-commit経由かつformatter自動修正発生時のMM状態ガイダンスを必要に応じて出力する。
+    _maybe_emit_precommit_guidance(results, structured_stdout=structured_stdout, quiet=quiet)
+
+    base_ctx.cleanup()
+
+    return PipelineOutcome(returncode, run_id, completion, tuple(results))
+
+
+@dataclasses.dataclass
+class PreparedTargets:
+    """設定と対象展開を確定した実行準備の結果。"""
+
+    commands: list[str]
+    all_files: list[pathlib.Path]
+    subprojects: list[pyfltr.command.subprojects.Subproject]
+    subproject_files: dict[pathlib.Path, list[pathlib.Path]]
+    subproject_configs: dict[pathlib.Path, pyfltr.config.model.Config]
+    external_files: list[pathlib.Path]
+    only_failed_targets: dict[str, pyfltr.command.only_failed.ToolTargets] | None
+    fast_selected: bool
+    unmet: list[str]
+
+
+def _prepare_execution_targets(
+    args: pyfltr.run_options.RunOptions,
+    commands: list[str],
+    config: pyfltr.config.model.Config,
+    start_cwd_path: pathlib.Path,
+    formatter: pyfltr.output.formatters.OutputFormatter,
+    early_run_ctx: pyfltr.output.formatters.RunOutputContext,
+) -> PreparedTargets | PipelineOutcome:
+    """対象展開、差分・失敗対象の限定とコマンド選択を行う。"""
+    subprojects = pyfltr.command.subprojects.discover_subprojects(start_cwd_path, config)
+    if len(subprojects) < 2:
+        # モノレポモード非適用: subprojects を空集合として扱う（dispatcher 側で単一経路）。
+        subprojects = []
+
+    # 対象ファイルを一括展開（ディレクトリ走査・exclude・gitignoreフィルタリングを1回だけ実行）
+    # TUI起動前に実行することで、除外警告がログに表示される。
+    # `start_cwd` を明示してプロセスグローバルな cwd 干渉を避ける。
+    # サブプロジェクトの最終的な所属判定は `classify_files_by_subproject` の最深一致で行うため、
+    # `exclude_subdirs` は渡さず全ファイルを一度収集する。
+    all_files = pyfltr.command.targets.expand_all_files(
+        args.targets,
+        config,
+        start_cwd=start_cwd_path,
+    )
+
+    # ユーザー指定パスが全て非存在の場合は、各ツールが個別に「ファイルが見つからない」エラーを
+    # 多重に出力する前段で打ち切り、非ゼロ終了する。warning自体は`expand_all_files`内で発行済み。
+    # 部分一致（一部のみ不在）は処理継続、対象未指定（カレント走査）も対象外として扱う。
+    if args.targets and len(pyfltr.warnings_.filtered_direct_files(reason="missing")) == len(args.targets):
+        completion = _evaluate_completion([], args, config, files_reached=0, unmet_commands=[])
+        early_run_ctx = dataclasses.replace(early_run_ctx, completion=completion)
+        formatter.on_start(early_run_ctx)
+        formatter.on_finish(early_run_ctx, [], 1, pyfltr.warnings_.collected_warnings())
+        return PipelineOutcome(1, None, completion)
+
+    # --changed-since指定時はgit差分ファイルとの交差でフィルタリングする。
+    # --only-failedよりも先に適用し、以後のフィルタはフィルタリング済みリストを受け取る。
+    changed_since_ref: str | None = getattr(args, "changed_since", None)
+    if changed_since_ref is not None:
+        all_files = pyfltr.command.targets.filter_by_changed_since(all_files, changed_since_ref, cwd=start_cwd_path)
+
+    # --only-failed指定時は直前runからツール別の失敗ファイル集合を構築する。
+    # archive / cache初期化より前に実行し、早期終了の場合はそれらの副作用を発生させない。
+    commands, only_failed_targets, only_failed_exit_early = pyfltr.state.only_failed.apply_filter(
+        args, commands, all_files, from_run=getattr(args, "from_run", None)
+    )
+    if only_failed_exit_early:
+        # スキップの理由は`apply_filter`が警告として発行済み。JSONLでもheader・warning・summaryを
+        # 出力し、何も出力せずに終了コード0で終わる状態（理由が消費主体へ届かない）を避ける。
+        completion = _evaluate_completion([], args, config, files_reached=0, unmet_commands=[])
+        early_run_ctx = dataclasses.replace(early_run_ctx, completion=completion)
+        formatter.on_start(early_run_ctx)
+        formatter.on_finish(early_run_ctx, [], 0, pyfltr.warnings_.collected_warnings())
+        return PipelineOutcome(0, None, completion)
+
+    # モノレポ用のサブプロジェクト分類とサブプロジェクト別 config を準備する。
+    # `subproject_aware=True` ツールが各サブプロジェクト cwd で実行する際に参照する。
+    # config解決（`pyproject.toml`不在時の最近接祖先継承を含む）は
+    # `pyfltr.cli.subproject_config.resolve_subproject_configs` に集約する。
+    # 実行対象コマンドの確定（和集合判定）より前に構築する必要があるため、ここで行う。
+    subproject_files: dict[pathlib.Path, list[pathlib.Path]] = {}
+    subproject_configs: dict[pathlib.Path, pyfltr.config.model.Config] = {}
+    external_files: list[pathlib.Path] = []
+    if subprojects:
+        subproject_files, external_files = pyfltr.command.subprojects.classify_files_by_subproject(
+            all_files, subprojects, start_cwd_path
+        )
+        subproject_configs = pyfltr.cli.subproject_config.resolve_subproject_configs(subprojects, config, args)
+
+    # 実行対象として有効化されていないコマンドはパイプラインから除外する。
+    # 単一プロジェクトでは起点 config のON/OFF（`config.values.get(cmd) is True`）で判定する。
+    # モノレポでは `subproject_aware=True` ツールに限り「起点またはいずれかのサブプロジェクトで有効」
+    # の和集合で対象に含める（親OFF・子ONを子でのみ実行できるようにするため）。
+    # `subproject_aware=False`（リポジトリ単位ツール）と `subproject_aware` 判定自体は起点 config で固定する。
+    fast_selected = _is_fast_selection(args, config)
+    if fast_selected and not getattr(args, "only_failed", False):
+        commands = _add_subproject_fast_pytest(commands, args, config, subproject_configs)
+    requested_commands = list(commands)
+    commands = [c for c in commands if pyfltr.config.selection.is_command_enabled_anywhere(c, config, subproject_configs)]
+    unmet: list[str] = []
+    if getattr(args, "commands", None) is not None:
+        unmet = pyfltr.cli.command_selection.compute_unmet_commands(
+            pyfltr.cli.command_selection.flatten_commands_arg(args.commands, config),
+            requested_commands,
+            commands,
+            config,
+        )
+        if unmet:
+            pyfltr.warnings_.emit_warning(
+                source="commands",
+                message="--commandsで指定されたが有効化されていないため未実行のコマンドがあります: " + ", ".join(unmet),
+                hint="--enable="
+                + ",".join(unmet)
+                + " または pyproject.toml [tool.pyfltr] で指定したコマンドを true に設定して有効化してください。",
+            )
+
+    return PreparedTargets(
+        commands=commands,
+        all_files=all_files,
+        subprojects=subprojects,
+        subproject_files=subproject_files,
+        subproject_configs=subproject_configs,
+        external_files=external_files,
+        only_failed_targets=only_failed_targets,
+        fast_selected=fast_selected,
+        unmet=unmet,
+    )
+
+
+def _initialize_archive(
+    args: pyfltr.run_options.RunOptions,
+    config: pyfltr.config.model.Config,
+    commands: list[str],
+    all_files: list[pathlib.Path],
+    start_cwd_path: pathlib.Path,
+) -> tuple[pyfltr.state.archive.ArchiveStore | None, str | None]:
+    """実行アーカイブを初期化し、失敗時は警告とともに無効化する。"""
+    # 実行アーカイブの初期化 （既定で有効）。
+    # `--no-archive` または `archive = false` で無効化できる。クリーンアップ失敗や
+    # 書き込み失敗はパイプライン本体を止めないようwarningsへ転送する。
+    archive_enabled = bool(config.values.get("archive", True)) and not getattr(args, "no_archive", False)
+    archive_store: pyfltr.state.archive.ArchiveStore | None = None
+    run_id: str | None = None
+    if archive_enabled:
+        try:
+            archive_store = pyfltr.state.archive.ArchiveStore()
+            run_id = archive_store.start_run(commands=commands, files=len(all_files), cwd=str(start_cwd_path))
+            removed = archive_store.cleanup(pyfltr.state.archive.policy_from_config(config))
+            if removed:
+                logger.debug("archive: 自動削除で %d 件の古い run を削除", len(removed))
+        except OSError as e:
+            pyfltr.warnings_.emit_warning(
+                source="archive",
+                message=(
+                    f"実行アーカイブを初期化できないため、アーカイブ無しで続行しました: {e}。"
+                    "この実行にはrun_idが付かず、`show-run` と次回の `--only-failed` から参照できません"
+                ),
+                hint=_ARCHIVE_FAILURE_HINT,
+            )
+            archive_store = None
+            run_id = None
+
+    return archive_store, run_id
+
+
+def _initialize_cache(
+    args: pyfltr.run_options.RunOptions,
+    config: pyfltr.config.model.Config,
+) -> pyfltr.state.cache.CacheStore | None:
+    """ファイルキャッシュを初期化し、失敗時は警告とともに無効化する。"""
+    # ファイルhashキャッシュの初期化 （既定で有効）。
+    # `--no-cache` または `cache = false` で無効化できる。期間超過エントリの削除失敗や
+    # 書き込み失敗はパイプライン本体を止めないためwarningsへ転送する。
+    cache_enabled = bool(config.values.get("cache", True)) and not getattr(args, "no_cache", False)
+    cache_store: pyfltr.state.cache.CacheStore | None = None
+    if cache_enabled:
+        try:
+            cache_store = pyfltr.state.cache.CacheStore()
+            cache_removed = cache_store.cleanup(pyfltr.state.cache.cache_policy_from_config(config))
+            if cache_removed:
+                logger.debug("cache: 期間超過で %d 件のエントリを削除", len(cache_removed))
+        except OSError as e:
+            pyfltr.warnings_.emit_warning(
+                source="cache",
+                message=(
+                    f"ファイル hash キャッシュを初期化できないため、キャッシュ無しで続行しました: {e}。"
+                    "検査結果は変わりませんが、変更の無いファイルも再検査します"
+                ),
+                hint=(
+                    "キャッシュディレクトリの書き込み権限と空き容量を確認してください。"
+                    "キャッシュが不要なら `--no-cache` を指定すると警告を抑止できます。"
+                ),
+            )
+            cache_store = None
+
+    return cache_store
+
+
+def _finalize_archive(
+    archive_store: pyfltr.state.archive.ArchiveStore | None,
+    run_id: str | None,
+    returncode: int,
+    commands: list[str],
+    files: int,
+) -> None:
+    """終了コードと完了時刻を保存する。保存失敗は検査結果を変えない。"""
     # アーカイブ終端: meta.jsonにexit_code / finished_atを書き込む。
     if archive_store is not None and run_id is not None:
         try:
-            archive_store.finalize_run(run_id, exit_code=returncode, commands=commands, files=len(all_files))
+            archive_store.finalize_run(run_id, exit_code=returncode, commands=commands, files=files)
         except OSError as e:
             pyfltr.warnings_.emit_warning(
                 source="archive",
@@ -922,18 +920,11 @@ def _run_pipeline(
                 hint=_ARCHIVE_FAILURE_HINT,
             )
 
-    # pre-commit経由かつformatter自動修正発生時のMM状態ガイダンスを必要に応じて出力する。
-    _maybe_emit_precommit_guidance(results, structured_stdout=structured_stdout, quiet=quiet)
-
-    base_ctx.cleanup()
-
-    return PipelineOutcome(returncode, run_id, completion)
-
 
 def _evaluate_completion(
     results: list[pyfltr.command.core_.CommandResult],
-    args: argparse.Namespace,
-    config: pyfltr.config.config.Config,
+    args: pyfltr.run_options.RunOptions,
+    config: pyfltr.config.model.Config,
     *,
     files_reached: int,
     unmet_commands: list[str],
@@ -962,7 +953,7 @@ _PRECOMMIT_MM_MESSAGE: str = (
 )
 
 
-def _is_fast_selection(args: argparse.Namespace, config: pyfltr.config.config.Config) -> bool:
+def _is_fast_selection(args: pyfltr.run_options.RunOptions, config: pyfltr.config.model.Config) -> bool:
     """fastサブコマンド、または`--commands`にfastエイリアスを含む実行かを返す。"""
     if getattr(args, "subcommand", None) == "fast":
         return True
@@ -974,9 +965,9 @@ def _is_fast_selection(args: argparse.Namespace, config: pyfltr.config.config.Co
 
 def _add_subproject_fast_pytest(
     commands: list[str],
-    args: argparse.Namespace,
-    config: pyfltr.config.config.Config,
-    subproject_configs: dict[pathlib.Path, pyfltr.config.config.Config],
+    args: pyfltr.run_options.RunOptions,
+    config: pyfltr.config.model.Config,
+    subproject_configs: dict[pathlib.Path, pyfltr.config.model.Config],
 ) -> list[str]:
     """起点設定がpytestをfastへ含めない場合に、サブプロジェクトの`pytest-fast-targets`からpytestを加える。
 
@@ -987,12 +978,11 @@ def _add_subproject_fast_pytest(
     if "pytest" in commands or "fast" not in pyfltr.cli.command_selection.flatten_commands_arg(args.commands, config):
         return commands
     if not any(
-        sub_config.values.get("pytest") is True and pyfltr.config.config.pytest_fast_target_globs(sub_config.values)
+        sub_config.values.get("pytest") is True and pyfltr.config.selection.pytest_fast_target_globs(sub_config.values)
         for sub_config in subproject_configs.values()
     ):
         return commands
-    order = {name: index for index, name in enumerate(config.command_names)}
-    return sorted([*commands, "pytest"], key=lambda name: order.get(name, len(order)))
+    return sorted([*commands, "pytest"], key=lambda name: pyfltr.tools.command_index(config.command_names, name))
 
 
 def _build_pytest_fast_base(
@@ -1005,11 +995,11 @@ def _build_pytest_fast_base(
     いずれの設定も指定を持たない場合は`None`を返し、pytestも通常の実行基盤で動かす。
     """
     config = base_ctx.config
-    root_has_globs = bool(pyfltr.config.config.pytest_fast_target_globs(config.values))
+    root_has_globs = bool(pyfltr.config.selection.pytest_fast_target_globs(config.values))
     subs_with_globs = [
         sub.cwd
         for sub in base_ctx.subprojects
-        if pyfltr.config.config.pytest_fast_target_globs(base_ctx.subproject_configs.get(sub.cwd, config).values)
+        if pyfltr.config.selection.pytest_fast_target_globs(base_ctx.subproject_configs.get(sub.cwd, config).values)
     ]
     if not root_has_globs and not subs_with_globs:
         return None
@@ -1049,21 +1039,17 @@ def _maybe_emit_precommit_guidance(
     """
     if quiet or structured_stdout:
         return
-    if not any(result.status == "formatted" for result in results):
+    if not any(result.formatted for result in results):
         return
-    if not pyfltr.cli.precommit_guidance.is_invoked_from_git_commit():
+    if not pyfltr.command.precommit_guidance.is_invoked_from_git_commit():
         return
     print(_PRECOMMIT_MM_MESSAGE, file=sys.stderr)
 
 
 def calculate_returncode(results: list[pyfltr.command.core_.CommandResult], exit_zero_even_if_formatted: bool) -> int:
     """終了コードを計算。"""
-    statuses = [result.status for result in results]
-    if any(result.failed for result in results):
-        return 1
-    if not exit_zero_even_if_formatted and any(status == "formatted" for status in statuses):
-        return 1
-    return 0
+    status = pyfltr.command.core_.overall_status(results)
+    return int(status == "FAILED" or (status == "FORMATTED" and not exit_zero_even_if_formatted))
 
 
 _VALID_OUTPUT_FORMATS: frozenset[str] = frozenset(pyfltr.output.formatters.FORMATTERS.keys())
@@ -1094,7 +1080,7 @@ def _resolve_output_format(
 def run_impl(
     parser: argparse.ArgumentParser,
     args: argparse.Namespace,
-    original_sys_args: typing.Sequence[str],
+    _original_sys_args: typing.Sequence[str],
     resolved_targets: list[pathlib.Path] | None,
     *,
     original_cwd: str,
@@ -1136,7 +1122,7 @@ def run_impl(
 
     # pyproject.toml
     try:
-        config = pyfltr.config.config.load_config()
+        config = pyfltr.config.config.load_config(config_dir=args.work_dir)
     except (ValueError, OSError) as e:
         logger.error(f"設定エラー: {e}")
         return 1
@@ -1165,7 +1151,8 @@ def run_impl(
         args.targets = resolved_targets
 
     # CLIオプションでconfigを上書き（サブプロジェクト別configにも同一に再適用するため共通ヘルパーへ集約）
-    pyfltr.cli.overrides.apply_cli_overrides(config, args)
+    options = pyfltr.run_options.RunOptions.from_values(vars(args))
+    pyfltr.cli.overrides.apply_cli_overrides(config, options)
 
     # --commands未指定時はカスタムコマンドを含む全登録コマンドを対象にする。
     # argparseのデフォルト評価時点ではpyproject.tomlを読み込んでいないため、
@@ -1174,7 +1161,7 @@ def run_impl(
     # （例: svelte-check） も `run` / `ci` サブコマンドのデフォルト動作で実行されるようにする。
     # `--commands` は `action="append"` によりリストで渡るため、各要素を
     # カンマ区切りで再分割して平坦化する。重複は先出を優先して除去する。
-    commands: list[str] = pyfltr.config.config.resolve_aliases(
+    commands: list[str] = pyfltr.config.selection.resolve_aliases(
         pyfltr.cli.command_selection.flatten_commands_arg(args.commands, config), config
     )
     try:
@@ -1182,5 +1169,12 @@ def run_impl(
     except ValueError as e:
         parser.error(str(e))
 
-    outcome = run_pipeline(args, commands, config, original_cwd=original_cwd, original_sys_args=list(original_sys_args))
+    outcome = run_pipeline(
+        options,
+        commands,
+        config,
+        start_cwd=options.work_dir if options.work_dir is not None else pathlib.Path(original_cwd),
+        original_cwd=original_cwd,
+        original_sys_args=options.retry_arguments(),
+    )
     return outcome.exit_code

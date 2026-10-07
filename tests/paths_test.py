@@ -1,5 +1,3 @@
-"""paths モジュールのテストコード。"""
-
 import pathlib
 
 import pytest

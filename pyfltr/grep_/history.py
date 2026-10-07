@@ -29,6 +29,7 @@ import typing
 import ulid
 
 import pyfltr.config.config
+import pyfltr.config.model
 import pyfltr.grep_.transaction
 import pyfltr.paths
 import pyfltr.state.archive
@@ -115,7 +116,7 @@ class ReplaceHistoryPolicy:
     """保存期間の上限（日数）。"""
 
 
-def policy_from_config(config: pyfltr.config.config.Config) -> ReplaceHistoryPolicy:
+def policy_from_config(config: pyfltr.config.model.Config) -> ReplaceHistoryPolicy:
     """`Config`から`ReplaceHistoryPolicy`を組み立てる。
 
     既定値は`max_entries=100` / `max_size_bytes=200MB` / `max_age_days=30`。

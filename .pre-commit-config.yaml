@@ -27,7 +27,7 @@ repos:
       - id: name-tests-test
         # tests/smoke_data/ 配下は smoke テスト用の入力サンプル群。
         # pytest対象はsmoke_test.py本体のみで、サンプル側は単独実行されないため命名規則の対象外とする。
-        exclude: ^tests/smoke_data/
+        exclude: ^tests/(smoke_data/|execution_request_helper\.py$|command/runner_helpers\.py$)
       - id: trailing-whitespace
 
   - repo: local

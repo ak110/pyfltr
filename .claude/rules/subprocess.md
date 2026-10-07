@@ -5,7 +5,7 @@ paths:
   - "pyfltr/command/runner.py"
   - "pyfltr/command/mise.py"
   - "pyfltr/cli/main.py"
-  - "tests/process_test.py"
+  - "tests/command/process_test.py"
 ---
 
 # pyfltrのsubprocess関連の方針

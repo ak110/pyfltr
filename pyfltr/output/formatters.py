@@ -15,14 +15,16 @@ import pathlib
 import sys
 import typing
 
-import pyfltr.cli.output_format
-import pyfltr.cli.render
 import pyfltr.command.completion
 import pyfltr.command.core_
 import pyfltr.config.config
+import pyfltr.config.model
 import pyfltr.output.code_quality
 import pyfltr.output.jsonl
+import pyfltr.output.logging_
+import pyfltr.output.render
 import pyfltr.output.sarif
+import pyfltr.tools
 import pyfltr.warnings_
 
 
@@ -39,7 +41,7 @@ class RunOutputContext:
     完全なctxを渡す。
     """
 
-    config: pyfltr.config.config.Config
+    config: pyfltr.config.model.Config
     output_file: pathlib.Path | None
     force_text_on_stderr: bool
     commands: list[str] = dataclasses.field(default_factory=list)
@@ -77,7 +79,7 @@ class OutputFormatter(typing.Protocol):
     def configure_loggers(self, ctx: RunOutputContext) -> None:
         """`text_logger` / `structured_logger`の出力先・レベルを初期化する。
 
-        `pyfltr.cli.output_format.configure_text_output` / `pyfltr.cli.output_format.configure_structured_output`
+        `pyfltr.output.logging_.configure_text_output` / `pyfltr.output.logging_.configure_structured_output`
         を呼んで、フォーマット・output_file・force_text_on_stderrの組み合わせに応じた
         向き先を確定する。
         """
@@ -114,22 +116,11 @@ class OutputFormatter(typing.Protocol):
         """
 
 
-def command_index(config: pyfltr.config.config.Config, command: str) -> int:
-    """`config.command_names`内での位置を返す（未登録コマンドは末尾扱い）。
-
-    `llm_output.py` / `sarif_output.py`の重複実装を本モジュールへ集約したヘルパー。
-    両モジュールは本関数をimportして使う。
-    """
-    if command in config.command_names:
-        return config.command_names.index(command)
-    return len(config.command_names)
-
-
 def _configure_text_loggers(ctx: RunOutputContext) -> None:
     """text系の出力先を設定し、構造化出力を無効化する。"""
     stream = sys.stderr if ctx.force_text_on_stderr else sys.stdout
-    pyfltr.cli.output_format.configure_text_output(stream, level=logging.INFO)
-    pyfltr.cli.output_format.configure_structured_output(None)
+    pyfltr.output.logging_.configure_text_output(stream, level=logging.INFO)
+    pyfltr.output.logging_.configure_structured_output(None)
 
 
 def _finish_text_output(
@@ -139,7 +130,7 @@ def _finish_text_output(
     output_format: typing.Literal["text", "github-annotations"],
 ) -> None:
     """text系の詳細とsummaryを指定形式で出力する。"""
-    pyfltr.cli.render.render_results(
+    pyfltr.output.render.render_results(
         results,
         ctx.config,
         include_details=ctx.include_details,
@@ -211,13 +202,13 @@ class JSONLFormatter:
         jsonl + output_file → textはstdout/INFO、構造化はFileHandler。
         """
         if ctx.force_text_on_stderr:
-            pyfltr.cli.output_format.configure_text_output(sys.stderr, level=logging.INFO)
+            pyfltr.output.logging_.configure_text_output(sys.stderr, level=logging.INFO)
         elif ctx.output_file is None:
-            pyfltr.cli.output_format.configure_text_output(sys.stderr, level=logging.WARNING)
+            pyfltr.output.logging_.configure_text_output(sys.stderr, level=logging.WARNING)
         else:
-            pyfltr.cli.output_format.configure_text_output(sys.stdout, level=logging.INFO)
+            pyfltr.output.logging_.configure_text_output(sys.stdout, level=logging.INFO)
         destination: typing.TextIO | pathlib.Path = ctx.output_file if ctx.output_file is not None else sys.stdout
-        pyfltr.cli.output_format.configure_structured_output(destination)
+        pyfltr.output.logging_.configure_structured_output(destination)
 
     def on_start(self, ctx: RunOutputContext) -> None:
         """header行を出力する。"""
@@ -256,7 +247,7 @@ class JSONLFormatter:
         if ctx.jsonl_warnings_reach_consumer:
             pyfltr.warnings_.mark_delivered(warnings)
         # 構造化出力の出力と並行して、常にtext整形を実行する。
-        pyfltr.cli.render.render_results(
+        pyfltr.output.render.render_results(
             results,
             ctx.config,
             include_details=ctx.include_details,
@@ -275,11 +266,11 @@ class SARIFFormatter:
         sarif + output_file → textはstdout/INFO、構造化はFileHandler。
         """
         if ctx.force_text_on_stderr or ctx.output_file is None:
-            pyfltr.cli.output_format.configure_text_output(sys.stderr, level=logging.INFO)
+            pyfltr.output.logging_.configure_text_output(sys.stderr, level=logging.INFO)
         else:
-            pyfltr.cli.output_format.configure_text_output(sys.stdout, level=logging.INFO)
+            pyfltr.output.logging_.configure_text_output(sys.stdout, level=logging.INFO)
         destination: typing.TextIO | pathlib.Path = ctx.output_file if ctx.output_file is not None else sys.stdout
-        pyfltr.cli.output_format.configure_structured_output(destination)
+        pyfltr.output.logging_.configure_structured_output(destination)
 
     def on_start(self, ctx: RunOutputContext) -> None:
         """SARIFは事前準備なし。"""
@@ -303,8 +294,8 @@ class SARIFFormatter:
             files=ctx.all_files,
             run_id=ctx.run_id,
         )
-        pyfltr.cli.output_format.structured_logger.info(json.dumps(sarif, ensure_ascii=False, indent=2))
-        pyfltr.cli.render.render_results(
+        pyfltr.output.logging_.structured_logger.info(json.dumps(sarif, ensure_ascii=False, indent=2))
+        pyfltr.output.render.render_results(
             results,
             ctx.config,
             include_details=ctx.include_details,
@@ -323,11 +314,11 @@ class CodeQualityFormatter:
         code-quality + output_file → textはstdout/INFO、構造化はFileHandler。
         """
         if ctx.force_text_on_stderr or ctx.output_file is None:
-            pyfltr.cli.output_format.configure_text_output(sys.stderr, level=logging.INFO)
+            pyfltr.output.logging_.configure_text_output(sys.stderr, level=logging.INFO)
         else:
-            pyfltr.cli.output_format.configure_text_output(sys.stdout, level=logging.INFO)
+            pyfltr.output.logging_.configure_text_output(sys.stdout, level=logging.INFO)
         destination: typing.TextIO | pathlib.Path = ctx.output_file if ctx.output_file is not None else sys.stdout
-        pyfltr.cli.output_format.configure_structured_output(destination)
+        pyfltr.output.logging_.configure_structured_output(destination)
 
     def on_start(self, ctx: RunOutputContext) -> None:
         """Code Qualityは事前準備なし。"""
@@ -345,8 +336,8 @@ class CodeQualityFormatter:
         """Code Quality JSON配列を構造化出力loggerに出力し、text整形も出力する。"""
         del exit_code
         payload = pyfltr.output.code_quality.build_code_quality_payload(results)
-        pyfltr.cli.output_format.structured_logger.info(json.dumps(payload, ensure_ascii=False, indent=2))
-        pyfltr.cli.render.render_results(
+        pyfltr.output.logging_.structured_logger.info(json.dumps(payload, ensure_ascii=False, indent=2))
+        pyfltr.output.render.render_results(
             results,
             ctx.config,
             include_details=ctx.include_details,

@@ -1,36 +1,19 @@
 """fixモードでのlinter実行。"""
 
-import argparse
-import pathlib
 import time
-import typing
 
-import pyfltr.command.error_parser
+import pyfltr.command.core_
 import pyfltr.command.process
 import pyfltr.config.config
+import pyfltr.config.model
+import pyfltr.parsing.entry
 from pyfltr.command.core_ import CommandResult
 from pyfltr.command.snapshot import changed_files, snapshot_file_digests
 
 logger = __import__("logging").getLogger(__name__)
 
 
-def execute_linter_fix(
-    command: str,
-    command_info: "typing.Any",
-    commandline: list[str],
-    targets: list[pathlib.Path],
-    config: pyfltr.config.config.Config,
-    env: dict[str, str],
-    on_output: typing.Callable[[str], None] | None,
-    start_time: float,
-    args: argparse.Namespace,
-    *,
-    is_interrupted: typing.Callable[[], bool] | None = None,
-    on_subprocess_start: typing.Callable[[], None] | None = None,
-    on_subprocess_end: typing.Callable[[], None] | None = None,
-    cwd: pathlib.Path | None = None,
-    start_cwd: pathlib.Path | None = None,
-) -> CommandResult:
+def execute_linter_fix(request: pyfltr.command.core_.ExecutionRequest) -> pyfltr.command.core_.CommandResult:
     """Fixモードでのlinter実行 （fix-argsを適用して単発実行）。
 
     ステータス判定:
@@ -42,32 +25,17 @@ def execute_linter_fix(
     ruff-checkは残存違反があるとrc=1を返すが、この設計ではfailedとして扱う。
     未修正の違反はユーザーが後段で認識すべき情報であり、成功へ統合しない方針。
     """
-    del command_info  # 呼び出し側との引数形式揃えで受け取るのみ（使用しない）
-
-    digests_before = snapshot_file_digests(targets, base_cwd=start_cwd)
+    digests_before = snapshot_file_digests(request.params.targets, base_cwd=request.ctx.base.start_cwd)
 
     # dispatcher._run_plain_commandもこの単発実行の骨格（run_configured_subprocess呼び出し +
     # returncode/output/elapsedの取り出し）を共有するが、本関数はハッシュ差分によるfix検知を
     # 担う別責務のため統合しない。
-    # arid: disable
-    proc = pyfltr.command.process.run_configured_subprocess(
-        command,
-        commandline,
-        config,
-        env,
-        on_output,
-        verbose=args.verbose,
-        is_interrupted=is_interrupted,
-        on_subprocess_start=on_subprocess_start,
-        on_subprocess_end=on_subprocess_end,
-        cwd=cwd,
-    )
+    proc = pyfltr.command.process.run_process(request)
     returncode = proc.returncode
     output = proc.stdout.strip()
-    elapsed = time.perf_counter() - start_time
-    # arid: enable
+    elapsed = time.perf_counter() - request.start_time
 
-    digests_after = snapshot_file_digests(targets, base_cwd=start_cwd)
+    digests_after = snapshot_file_digests(request.params.targets, base_cwd=request.ctx.base.start_cwd)
     changed = digests_after != digests_before
 
     step_failed = returncode != 0
@@ -78,14 +46,14 @@ def execute_linter_fix(
     else:
         result_command_type = "linter"
 
-    errors = pyfltr.command.error_parser.parse_errors(command, output, None)
+    errors = pyfltr.parsing.entry.parse_errors(request.command, output, None)
 
     result = CommandResult.from_run(
-        command=command,
+        command=request.command,
         command_type=result_command_type,
-        commandline=commandline,
+        commandline=request.params.commandline,
         returncode=returncode,
-        files=len(targets),
+        files=len(request.params.targets),
         output=output,
         elapsed=elapsed,
         errors=errors,

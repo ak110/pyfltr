@@ -125,6 +125,11 @@ Markdownの除外は、editorconfig-checkerがコードブロック内のタブ�
 
 ドキュメントはMkDocsで管理し、GitHub Pagesでホスティングする。
 
+`docs/guide/index.md`のH1は共通の文書分類である「利用者向けガイド」とする。
+そのページの用途を表す「対応ツール」は、nav・リンクラベル・一覧の案内に使う。
+分類を表す見出しと用途を表すラベルは役割が異なるため、同じ名前へ統一しない。
+ページの配置は`guide/index.md`を保ち、公開URLの`guide/`とH1のアンカー`_1`を維持する。
+
 ### mkdocs.yml編集時の注意
 
 `mkdocs.yml`の`nav`を変更した場合は`uv run mkdocs build --strict`で
@@ -133,7 +138,7 @@ Markdownの除外は、editorconfig-checkerがコードブロック内のタブ�
 
 masterブランチへのpush時にdocs/配下やmkdocs.ymlの変更があると自動デプロイする。
 
-## リリース手順
+## リリース手順 {#release}
 
 CIの`distribution`ジョブではwheelとsource distributionを、それぞれ開発環境から独立した環境へ導入する。
 CLI起動、内蔵辞書による診断、MCP接続と最小のチェック実行を確認する。

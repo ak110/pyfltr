@@ -6,7 +6,6 @@
 pre-commit の name-tests-test フックから除外される。
 """
 
-import argparse
 import faulthandler
 import pathlib
 import time
@@ -16,9 +15,13 @@ import pytest
 
 import pyfltr.cli.output_format
 import pyfltr.command.core_
-import pyfltr.command.error_parser
 import pyfltr.command.mise
+import pyfltr.command.only_failed
 import pyfltr.config.config
+import pyfltr.config.model
+import pyfltr.diagnostics
+import pyfltr.parsing.entry
+import pyfltr.run_options
 import pyfltr.state.archive
 import pyfltr.state.cache
 import pyfltr.state.only_failed
@@ -138,13 +141,13 @@ CARGO_CLIPPY_FIX_CMDLINE: list[str] = ["cargo", *CARGO_CLIPPY_ARGS, *CARGO_CLIPP
 
 
 def make_execution_context(
-    config: pyfltr.config.config.Config,
+    config: pyfltr.config.model.Config,
     all_files: list[pathlib.Path],
     *,
     cache_store: pyfltr.state.cache.CacheStore | None = None,
     cache_run_id: str | None = None,
     fix_stage: bool = False,
-    only_failed_targets: pyfltr.state.only_failed.ToolTargets | None = None,
+    only_failed_targets: pyfltr.command.only_failed.ToolTargets | None = None,
     start_cwd: pathlib.Path | None = None,
 ) -> pyfltr.command.core_.ExecutionContext:
     """テスト用の ExecutionContext を生成する。
@@ -181,7 +184,7 @@ def make_command_result(
     output: str = "",
     files: int = 1,
     elapsed: float = 0.1,
-    errors: list[pyfltr.command.error_parser.ErrorLocation] | None = None,
+    errors: list[pyfltr.diagnostics.ErrorLocation] | None = None,
     formatter_failed: bool = False,
     archived: bool = True,
     retry_command: str | None = None,
@@ -225,9 +228,9 @@ def make_error_location(
     line: int,
     message: str,
     col: int | None = None,
-) -> pyfltr.command.error_parser.ErrorLocation:
+) -> pyfltr.diagnostics.ErrorLocation:
     """テスト用の ErrorLocation を生成する。"""
-    return pyfltr.command.error_parser.ErrorLocation(
+    return pyfltr.diagnostics.ErrorLocation(
         file=file,
         line=line,
         col=col,
@@ -255,9 +258,9 @@ def make_archive_store(tmp_path: pathlib.Path) -> pyfltr.state.archive.ArchiveSt
     return pyfltr.state.archive.ArchiveStore(cache_root=tmp_path)
 
 
-def make_args(*, no_exclude: bool = False, allow_external_paths: bool = False) -> argparse.Namespace:
-    """`execute_command`に渡す`argparse.Namespace`を生成する。"""
-    return argparse.Namespace(
+def make_args(*, no_exclude: bool = False, allow_external_paths: bool = False) -> pyfltr.run_options.RunOptions:
+    """`execute_command`に渡す実行オプションを生成する。"""
+    return pyfltr.run_options.RunOptions(
         shuffle=False,
         verbose=False,
         no_exclude=no_exclude,
@@ -339,7 +342,7 @@ def _isolated_target(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) ->
 
     `pyfltr.command.runner.cwd_has_uv_lock`は`@functools.lru_cache(maxsize=1)`付きでプロセス内
     メモ化されるため、`tmp_path`配下への`uv.lock`ファイル配置だけでは同一pytestワーカー内の
-    先行呼び出し結果が使い回され判定を反映しない。`.claude/skills/test-constraints/SKILL.md`が
+    先行呼び出し結果が使い回され判定を反映しない。`.claude/skills/implementation-test-constraints/SKILL.md`が
     定める確立済みの差し替え方式（`monkeypatch.setattr`で関数自体を置換）に従い直接固定する。
 
     `tmp_path`配下の実I/O経路をGitの状態から分離するため、`pyproject.toml`へ
@@ -348,4 +351,11 @@ def _isolated_target(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) ->
     monkeypatch.setattr("pyfltr.command.runner.cwd_has_uv_lock", lambda *_args: True)
     (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latest"\npython = true\nrespect-gitignore = false\n')
     (tmp_path / "sample.py").write_text("x = 1\n")
+    return tmp_path
+
+
+@pytest.fixture(name="_only_failed_cache")
+def _only_failed_cache_fixture(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
+    """--only-failed テスト用に PYFLTR_CACHE_DIR を tmp_path に固定する。"""
+    monkeypatch.setenv("PYFLTR_CACHE_DIR", str(tmp_path))
     return tmp_path

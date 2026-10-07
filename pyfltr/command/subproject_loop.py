@@ -5,7 +5,6 @@
 dispatcher側のディスパッチ関数と無効スキップ結果生成関数をコールバックで受け取り、循環importを避ける。
 """
 
-import argparse
 import concurrent.futures
 import dataclasses
 import typing
@@ -13,7 +12,9 @@ import typing
 import pyfltr.command.targets
 import pyfltr.command.tool_parallelism
 import pyfltr.config.config
+import pyfltr.config.model
 import pyfltr.paths
+import pyfltr.run_options
 import pyfltr.warnings_
 from pyfltr.command.core_ import CommandResult, ExecutionContext
 
@@ -40,17 +41,17 @@ def should_run_subproject_loop(command: str, ctx: ExecutionContext) -> bool:
     if info is None:
         return False
     default_aware = info.subproject_aware
-    return pyfltr.config.config.resolve_subproject_aware(ctx.config.values, command, default_aware)
+    return pyfltr.config.model.resolve_subproject_aware(ctx.config.values, command, default_aware)
 
 
 def _run_one(
     command: str,
-    args: argparse.Namespace,
+    args: pyfltr.run_options.RunOptions,
     ctx: ExecutionContext,
     sub: typing.Any,
     sub_config: typing.Any,
     *,
-    dispatch_fn: typing.Callable[[str, argparse.Namespace, ExecutionContext], CommandResult],
+    dispatch_fn: typing.Callable[[str, pyfltr.run_options.RunOptions, ExecutionContext], CommandResult],
 ) -> CommandResult:
     """1つのサブプロジェクトで対象のコマンドを実行し、区切り行を付けた結果を返す。"""
     sub_base = dataclasses.replace(ctx.base, config=sub_config)
@@ -86,10 +87,10 @@ def resolve_subproject_workers(command: str, ctx: ExecutionContext, cwds: typing
 
 def run_subproject_loop(
     command: str,
-    args: argparse.Namespace,
+    args: pyfltr.run_options.RunOptions,
     ctx: ExecutionContext,
     *,
-    dispatch_fn: typing.Callable[[str, argparse.Namespace, ExecutionContext], CommandResult],
+    dispatch_fn: typing.Callable[[str, pyfltr.run_options.RunOptions, ExecutionContext], CommandResult],
     disabled_skip_fn: typing.Callable[[str, ExecutionContext], CommandResult],
 ) -> CommandResult:
     """サブプロジェクト別ループでツールを実行し `CommandResult` をマージする。

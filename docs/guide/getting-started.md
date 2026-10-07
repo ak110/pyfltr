@@ -101,7 +101,8 @@ uvx pyfltr run
 claude mcp add pyfltr -- uvx pyfltr mcp
 ```
 
-提供するMCPツールやJSONL出力の解釈方法は[CLIコマンド](usage.md#jsonl)の「コーディングエージェント連携」を参照。
+提供するMCPツールと応答の読み方は[CLIコマンドのMCP参照](usage.md#mcp)、
+直接CLIを呼ぶ場合の出力の読み方は[JSONL形式の使い方](usage.md#jsonl)を参照。
 
 ## 次のステップ
 

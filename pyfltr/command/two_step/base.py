@@ -7,39 +7,24 @@ taplo / shfmtはdocstring以外が同一のラッパーだったためduplicate-
 ruff-format専用処理は `ruff.py`、prettier専用処理は `prettier.py` に分離している。
 """
 
-import argparse
+import functools
 import pathlib
 import time
 import typing
 
-import pyfltr.command.error_parser
+import pyfltr.command.core_
 import pyfltr.command.process
 import pyfltr.command.runner
 import pyfltr.config.config
+import pyfltr.config.model
+import pyfltr.parsing.entry
 import pyfltr.paths
+import pyfltr.tools
 from pyfltr.command.core_ import CommandResult
 from pyfltr.command.snapshot import changed_files, snapshot_file_digests
 
 
-def execute_check_write_two_step(
-    command: str,
-    command_info: pyfltr.config.config.CommandInfo,
-    commandline_prefix: list[str],
-    config: pyfltr.config.config.Config,
-    targets: list[pathlib.Path],
-    additional_args: list[str],
-    *,
-    fix_mode: bool,
-    env: dict[str, str],
-    on_output: typing.Callable[[str], None] | None,
-    start_time: float,
-    args: argparse.Namespace,
-    is_interrupted: typing.Callable[[], bool] | None = None,
-    on_subprocess_start: typing.Callable[[], None] | None = None,
-    on_subprocess_end: typing.Callable[[], None] | None = None,
-    cwd: pathlib.Path | None = None,
-    start_cwd: pathlib.Path | None = None,
-) -> CommandResult:
+def execute_check_write_two_step(request: pyfltr.command.core_.ExecutionRequest) -> pyfltr.command.core_.CommandResult:
     """Taplo / shfmt用の2段階実行共通処理（check→writeパターン）。
 
     checkとwriteが排他のサブコマンド構成を持つツール向け。
@@ -68,44 +53,12 @@ def execute_check_write_two_step(
     # taplo/shfmt向けの本呼び出しとprettier.py側のexecute_prettier_two_stepは、
     # 分岐先ヘルパー（_run_check_then_write / _run_prettier_check_then_write）が異なる別実装のため
     # 統合できないが、_prepare_check_write_executionへの引数受け渡し部分は完全一致する。
-    # arid: disable
-    check_commandline, write_commandline, run_step = _prepare_check_write_execution(
-        command,
-        commandline_prefix,
-        config,
-        targets,
-        additional_args,
-        env,
-        on_output,
-        args,
-        is_interrupted=is_interrupted,
-        on_subprocess_start=on_subprocess_start,
-        on_subprocess_end=on_subprocess_end,
-        cwd=cwd,
-        start_cwd=start_cwd,
-    )
-    # arid: enable
-    if fix_mode:
-        return _run_fix_mode(
-            command=command,
-            command_info=command_info,
-            write_commandline=write_commandline,
-            targets=targets,
-            run_step=run_step,
-            start_time=start_time,
-            parse_errors=False,
-            start_cwd=start_cwd,
-        )
+    check_commandline, write_commandline, run_step = _prepare_check_write_execution(request)
+    if request.params.fix_mode:
+        return _run_fix_mode(request, write_commandline=write_commandline, run_step=run_step, parse_errors=False)
 
     return _run_check_then_write(
-        command=command,
-        command_info=command_info,
-        check_commandline=check_commandline,
-        write_commandline=write_commandline,
-        targets=targets,
-        run_step=run_step,
-        start_time=start_time,
-        start_cwd=start_cwd,
+        request, check_commandline=check_commandline, write_commandline=write_commandline, run_step=run_step
     )
 
 
@@ -120,67 +73,37 @@ def _relative_to_cwd(target: pathlib.Path, *, cwd: pathlib.Path, start_cwd: path
 
 
 def _prepare_check_write_execution(
-    command: str,
-    commandline_prefix: list[str],
-    config: pyfltr.config.config.Config,
-    targets: list[pathlib.Path],
-    additional_args: list[str],
-    env: dict[str, str],
-    on_output: typing.Callable[[str], None] | None,
-    args: argparse.Namespace,
-    *,
-    is_interrupted: typing.Callable[[], bool] | None = None,
-    on_subprocess_start: typing.Callable[[], None] | None = None,
-    on_subprocess_end: typing.Callable[[], None] | None = None,
-    cwd: pathlib.Path | None = None,
-    start_cwd: pathlib.Path | None = None,
-) -> tuple[list[str], list[str], typing.Callable[[list[str]], "pyfltr.command.process.CompletedProcessWithTimeoutInfo"]]:
-    """check/writeコマンドラインと、それらを実行する`run_step`callableを組み立てる（taplo/shfmt/prettier共通）。
-
-    `execute_check_write_two_step`（taplo/shfmt向け）と`execute_prettier_two_step`は
-    通常モード・fixモードいずれの分岐先ヘルパーも異なるため`execute_check_write_two_step`自体は
-    共通化できないが、コマンドライン・timeout・retry設定・`run_step`の組み立て部分は
-    完全に同一のためここへ集約する。
-    """
-    common_args: list[str] = pyfltr.command.runner.resolve_user_args(command, config)
-    if cwd is not None and start_cwd is not None:
-        external_targets = [_relative_to_cwd(t, cwd=cwd, start_cwd=start_cwd) for t in targets]
+    request: pyfltr.command.core_.ExecutionRequest,
+) -> tuple[list[str], list[str], typing.Callable[[list[str]], pyfltr.command.process.CompletedProcessWithTimeoutInfo]]:
+    """同じ要求からcheck/writeの引数と実行器を組み立てる。"""
+    common_args = pyfltr.command.runner.resolve_user_args(request.command, request.ctx.config)
+    if request.cwd is not None:
+        external_targets = [
+            _relative_to_cwd(t, cwd=request.cwd, start_cwd=request.ctx.base.start_cwd) for t in request.params.targets
+        ]
     else:
-        external_targets = [str(t) for t in targets]
+        external_targets = [str(t) for t in request.params.targets]
     check_commandline, write_commandline = _build_commandlines(
-        commandline_prefix,
+        request.params.commandline_prefix,
         common_args,
-        pyfltr.command.runner.expanduser_args(list(config[f"{command}-check-args"])),
-        pyfltr.command.runner.expanduser_args(list(config[f"{command}-write-args"])),
-        additional_args,
+        pyfltr.command.runner.expanduser_args(
+            list(pyfltr.config.model.required_command_setting(request.ctx.config.values, request.command, "check-args"))
+        ),
+        pyfltr.command.runner.expanduser_args(
+            list(pyfltr.config.model.required_command_setting(request.ctx.config.values, request.command, "write-args"))
+        ),
+        request.params.additional_args,
         external_targets,
     )
-    timeout = pyfltr.config.config.resolve_command_timeout(config.values, command)
-    retry_kwargs: dict[str, typing.Any] = pyfltr.config.config.resolve_retry_kwargs(config.values)
-    run_step = pyfltr.command.process.traced_subprocess_runner(
-        env,
-        on_output,
-        verbose=args.verbose,
-        is_interrupted=is_interrupted,
-        on_subprocess_start=on_subprocess_start,
-        on_subprocess_end=on_subprocess_end,
-        timeout=timeout,
-        cwd=cwd,
-        **retry_kwargs,
-    )
-    return check_commandline, write_commandline, run_step
+    return check_commandline, write_commandline, functools.partial(pyfltr.command.process.run_process, request)
 
 
 def _run_check_then_write(
-    command: str,
-    command_info: pyfltr.config.config.CommandInfo,
+    request: pyfltr.command.core_.ExecutionRequest,
+    *,
     check_commandline: list[str],
     write_commandline: list[str],
-    targets: list[pathlib.Path],
     run_step: typing.Callable[[list[str]], "pyfltr.command.process.CompletedProcessWithTimeoutInfo"],
-    start_time: float,
-    *,
-    start_cwd: pathlib.Path | None = None,
 ) -> CommandResult:
     """Taplo / shfmt用の通常モード共通処理。
 
@@ -191,20 +114,20 @@ def _run_check_then_write(
     timeout・retry設定を既に束縛済み（commandlineのみ差し替えて呼び出す）。
     """
     # Step1はread-onlyのため内容変化なし。変化検知のためStep1前にスナップショットを取る。
-    digests_before = snapshot_file_digests(targets, base_cwd=start_cwd)
+    digests_before = snapshot_file_digests(request.params.targets, base_cwd=request.ctx.base.start_cwd)
     check_proc = run_step(check_commandline)
     check_rc = check_proc.returncode
 
     if check_rc == 0:
         # 整形不要
         output = check_proc.stdout.strip()
-        elapsed = time.perf_counter() - start_time
+        elapsed = time.perf_counter() - request.start_time
         return CommandResult.from_run(
-            command=command,
-            command_info=command_info,
+            command=request.command,
+            command_info=request.params.command_info,
             commandline=check_commandline,
             returncode=0,
-            files=len(targets),
+            files=len(request.params.targets),
             output=output,
             elapsed=elapsed,
             timeout_exceeded=check_proc.timeout_exceeded,
@@ -215,14 +138,14 @@ def _run_check_then_write(
     # （同じハングが再現する確率が高く、検証時間を浪費するため）。
     if check_proc.timeout_exceeded:
         output = check_proc.stdout.strip()
-        elapsed = time.perf_counter() - start_time
+        elapsed = time.perf_counter() - request.start_time
         return CommandResult.from_run(
-            command=command,
-            command_info=command_info,
+            command=request.command,
+            command_info=request.params.command_info,
             commandline=check_commandline,
             returncode=check_rc,
             formatter_failed=True,
-            files=len(targets),
+            files=len(request.params.targets),
             output=output,
             elapsed=elapsed,
             timeout_exceeded=True,
@@ -232,25 +155,25 @@ def _run_check_then_write(
     # Step2: 書き込み
     write_proc = run_step(write_commandline)
     output = write_proc.stdout.strip()
-    elapsed = time.perf_counter() - start_time
+    elapsed = time.perf_counter() - request.start_time
 
     formatter_failed = write_proc.returncode != 0
     returncode = write_proc.returncode if formatter_failed else 1
 
     result = CommandResult.from_run(
-        command=command,
-        command_info=command_info,
+        command=request.command,
+        command_info=request.params.command_info,
         commandline=write_commandline,
         returncode=returncode,
         formatter_failed=formatter_failed,
-        files=len(targets),
+        files=len(request.params.targets),
         output=check_proc.stdout.strip() if not formatter_failed else output,
         elapsed=elapsed,
         timeout_exceeded=write_proc.timeout_exceeded,
         retry_count=check_proc.retry_count + write_proc.retry_count,
     )
     if not formatter_failed:
-        digests_after = snapshot_file_digests(targets, base_cwd=start_cwd)
+        digests_after = snapshot_file_digests(request.params.targets, base_cwd=request.ctx.base.start_cwd)
         changed = digests_after != digests_before
         if changed:
             result.fixed_files = changed_files(digests_before, digests_after)
@@ -258,16 +181,12 @@ def _run_check_then_write(
 
 
 def _run_fix_mode(
-    command: str,
-    command_info: pyfltr.config.config.CommandInfo,
-    write_commandline: list[str],
-    targets: list[pathlib.Path],
-    run_step: typing.Callable[[list[str]], "pyfltr.command.process.CompletedProcessWithTimeoutInfo"],
-    start_time: float,
+    request: pyfltr.command.core_.ExecutionRequest,
     *,
+    write_commandline: list[str],
+    run_step: typing.Callable[[list[str]], "pyfltr.command.process.CompletedProcessWithTimeoutInfo"],
     parse_errors: bool,
     command_type_override: typing.Callable[[bool, int], str] | None = None,
-    start_cwd: pathlib.Path | None = None,
 ) -> CommandResult:
     """fixモードの共通処理。
 
@@ -281,12 +200,12 @@ def _run_fix_mode(
     prettierのfixモードはreturncode/formatter_failedに応じてtypeを切り替えるためこのcallbackで吸収する。
     parse_errors: Trueのとき `error_parser.parse_errors` を呼び出す。
     """
-    digests_before = snapshot_file_digests(targets, base_cwd=start_cwd)
+    digests_before = snapshot_file_digests(request.params.targets, base_cwd=request.ctx.base.start_cwd)
     write_proc = run_step(write_commandline)
     write_rc = write_proc.returncode
     output = write_proc.stdout.strip()
-    elapsed = time.perf_counter() - start_time
-    digests_after = snapshot_file_digests(targets, base_cwd=start_cwd)
+    elapsed = time.perf_counter() - request.start_time
+    digests_after = snapshot_file_digests(request.params.targets, base_cwd=request.ctx.base.start_cwd)
     changed = digests_after != digests_before
 
     if write_rc != 0:
@@ -299,18 +218,24 @@ def _run_fix_mode(
         formatter_failed = False
         returncode = 0
 
-    errors = pyfltr.command.error_parser.parse_errors(command, output, command_info.error_pattern) if parse_errors else []
+    errors = (
+        pyfltr.parsing.entry.parse_errors(request.command, output, request.params.command_info.error_pattern)
+        if parse_errors
+        else []
+    )
 
     resolved_type = (
-        command_type_override(formatter_failed, returncode) if command_type_override is not None else command_info.type
+        command_type_override(formatter_failed, returncode)
+        if command_type_override is not None
+        else request.params.command_info.type
     )
     result = CommandResult.from_run(
-        command=command,
+        command=request.command,
         command_type=resolved_type,
         commandline=write_commandline,
         returncode=returncode,
         formatter_failed=formatter_failed,
-        files=len(targets),
+        files=len(request.params.targets),
         output=output,
         elapsed=elapsed,
         errors=errors,

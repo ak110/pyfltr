@@ -19,20 +19,23 @@ import threading
 import time
 import typing
 
-import pyfltr.cli.output_format
 import pyfltr.command.completion
 import pyfltr.command.core_
-import pyfltr.command.error_parser
 import pyfltr.command.mise
 import pyfltr.command.runner
 import pyfltr.config.config
+import pyfltr.config.model
+import pyfltr.diagnostics
+import pyfltr.output.logging_
+import pyfltr.parsing.entry
 import pyfltr.paths
+import pyfltr.tools
 
 logger = logging.getLogger(__name__)
 
 # streaming出力時に複数行（diagnostic行+tool行）をアトミックに出力するためのロック。
 # 並列実行されるlinters/testersから同時にコールバックが呼ばれる可能性がある。
-# 出力先は`pyfltr.cli.output_format.structured_logger`のhandlerに委ねるが、ログ1件 = 1行の
+# 出力先は`pyfltr.output.logging_.structured_logger`のhandlerに委ねるが、ログ1件 = 1行の
 # 粒度では複数行のグルーピングを保証できないためモジュール側でロックする。
 _write_lock = threading.Lock()
 
@@ -71,7 +74,7 @@ def _emit_structured(line: str) -> None:
 
     呼び出し元はあらかじめ `_write_lock` を取得していること（複数行のアトミック書き込みを担保するため）。
     """
-    pyfltr.cli.output_format.structured_logger.info(line)
+    pyfltr.output.logging_.structured_logger.info(line)
     _output_time_state.monotonic_time = time.monotonic()
 
 
@@ -123,7 +126,7 @@ _DEFAULT_HEAD_RATIO = 0.2
 
 def build_command_lines(
     result: pyfltr.command.core_.CommandResult,
-    config: pyfltr.config.config.Config,
+    config: pyfltr.config.model.Config,
     *,
     quiet: bool = False,
 ) -> list[str]:
@@ -152,7 +155,7 @@ def build_command_lines(
     上記いずれかを満たさない場合は通常どおりcommandレコードを出力する。
     `diagnostic_records`自体は`quiet`の影響を受けず、非空なら常に出力する。
     """
-    sorted_errors = pyfltr.command.error_parser.sort_errors(result.errors, config.command_names)
+    sorted_errors = pyfltr.parsing.entry.sort_errors(result.errors, config.command_names)
     diagnostic_total = len(sorted_errors)
     diagnostic_limit = int(config.values.get("jsonl-diagnostic-limit", 0) or 0)
 
@@ -209,7 +212,7 @@ def _should_suppress_command_record(
 
 
 def aggregate_diagnostics(
-    errors: typing.Iterable[pyfltr.command.error_parser.ErrorLocation],
+    errors: typing.Iterable[pyfltr.diagnostics.ErrorLocation],
 ) -> tuple[list[dict[str, typing.Any]], dict[str, str], dict[str, str]]:
     """`ErrorLocation`列を`(command, file)`単位の集約dictへ変換する。
 
@@ -230,7 +233,7 @@ def aggregate_diagnostics(
     少ないため。逸脱はwarningログで気付ける余地を残す。
     集約のキー順は入力順（`sort_errors()`済み）を尊重する。
     """
-    groups: dict[tuple[str, str], list[pyfltr.command.error_parser.ErrorLocation]] = {}
+    groups: dict[tuple[str, str], list[pyfltr.diagnostics.ErrorLocation]] = {}
     group_order: list[tuple[str, str]] = []
     hint_urls: dict[str, str] = {}
     hints: dict[str, str] = {}
@@ -284,7 +287,7 @@ def aggregate_diagnostics(
 
 def build_lines(
     results: list[pyfltr.command.core_.CommandResult],
-    config: pyfltr.config.config.Config,
+    config: pyfltr.config.model.Config,
     *,
     exit_code: int,
     commands: list[str] | None = None,
@@ -311,7 +314,7 @@ def build_lines(
     `launcher_prefix`が指定されていれば`summary.guidance`内の起動コマンド表記に反映する。
     `subcommand`は`summary.guidance`の再実行例に埋め込む実行系サブコマンド名。
     """
-    ordered = sorted(results, key=lambda r: _command_index(config, r.command))
+    ordered = sorted(results, key=lambda r: pyfltr.tools.command_index(config.command_names, r.command))
 
     lines: list[str] = []
 
@@ -351,19 +354,12 @@ def build_lines(
     return lines
 
 
-def _command_index(config: pyfltr.config.config.Config, command: str) -> int:
-    """config.command_names 内での位置を返す（未登録コマンドは末尾扱い）。"""
-    if command in config.command_names:
-        return config.command_names.index(command)
-    return len(config.command_names)
-
-
 def write_jsonl_header(
     commands: list[str],
     files: int,
     *,
     run_id: str | None = None,
-    config: pyfltr.config.config.Config | None = None,
+    config: pyfltr.config.model.Config | None = None,
     format_source: str | None = None,
     quiet: bool = False,
 ) -> None:
@@ -371,7 +367,7 @@ def write_jsonl_header(
 
     パイプライン開始直後、diagnostic行より前に1回だけ呼ぶ。`run_id`が指定されていれば
     headerレコードに含める（アーカイブ参照時の識別キー）。
-    出力先は`pyfltr.cli.output_format.configure_structured_output()`が設定したhandlerに従う
+    出力先は`pyfltr.output.logging_.configure_structured_output()`が設定したhandlerに従う
     （stdoutもしくは`--output-file`のFileHandler）。
     `config`が渡された場合、mise経路を使うrunに限り
     `mise_active_tools`フィールドへ取得状況を露出する。
@@ -399,7 +395,7 @@ def write_jsonl_header(
 
 
 def collect_mise_active_tools_for_header(
-    commands: list[str], config: pyfltr.config.config.Config
+    commands: list[str], config: pyfltr.config.model.Config
 ) -> dict[str, typing.Any] | None:
     """header露出用のmise active tools取得状況dictを組み立てる。
 
@@ -421,7 +417,7 @@ def collect_mise_active_tools_for_header(
 
 def write_jsonl_streaming(
     result: pyfltr.command.core_.CommandResult,
-    config: pyfltr.config.config.Config,
+    config: pyfltr.config.model.Config,
     *,
     quiet: bool = False,
 ) -> None:
@@ -580,7 +576,7 @@ def _build_warning_record(entry: dict[str, typing.Any]) -> dict[str, typing.Any]
     return record
 
 
-def _build_message_dict(error: pyfltr.command.error_parser.ErrorLocation) -> dict[str, typing.Any]:
+def _build_message_dict(error: pyfltr.diagnostics.ErrorLocation) -> dict[str, typing.Any]:
     """ErrorLocationを集約`messages[]`要素のdictに変換する。
 
     フィールド順は`line` → `col` → `end_line` → `end_col` → `rule` →
@@ -611,7 +607,7 @@ def _build_truncated_meta(
     *,
     diagnostics: int,
     diagnostic_total: int | None,
-    config: pyfltr.config.config.Config | None,
+    config: pyfltr.config.model.Config | None,
 ) -> tuple[dict[str, typing.Any], str | None]:
     """commandレコードの`truncated`メタdictと、付与すべき`message`文字列を返す。
 
@@ -653,7 +649,7 @@ def _build_hints_dict(
     *,
     diagnostics: int,
     hints: dict[str, str] | None,
-    config: pyfltr.config.config.Config | None,
+    config: pyfltr.config.model.Config | None,
 ) -> dict[str, str]:
     """commandレコードの`hints`dictを組み立てる。
 
@@ -673,7 +669,7 @@ def _build_hints_dict(
     # 追加する。連番キーは `aggregate_diagnostics` 由来のrule名キーや `messages[].col` 等の
     # ツール固有キーと衝突しないよう `user.` プレフィクスを付ける。
     if config is not None and diagnostics > 0:
-        user_hints: list[str] = list(config.values.get(f"{result.command}-hints", []))
+        user_hints: list[str] = list(pyfltr.config.model.command_setting(config.values, result.command, "hints", []))
         for index, hint_text in enumerate(user_hints):
             merged[f"user.{index}"] = hint_text
     # formatterによる書き換えはそれ自体が成功扱いで、利用者・LLMエージェントが
@@ -698,7 +694,7 @@ def _build_command_record(
     *,
     diagnostics: int,
     diagnostic_total: int | None = None,
-    config: pyfltr.config.config.Config | None = None,
+    config: pyfltr.config.model.Config | None = None,
     hint_urls: dict[str, str] | None = None,
     hints: dict[str, str] | None = None,
 ) -> dict[str, typing.Any]:
@@ -772,7 +768,7 @@ def _build_command_record(
     return record
 
 
-def _resolve_message_limits(config: pyfltr.config.config.Config | None) -> tuple[int, int]:
+def _resolve_message_limits(config: pyfltr.config.model.Config | None) -> tuple[int, int]:
     """tool.messageの行数・文字数上限をconfigから取得する。
 
     設定未指定時はパートC以前のハードコード値（30行 / 2000文字）を踏襲する。

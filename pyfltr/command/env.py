@@ -4,6 +4,8 @@ import os
 import shutil
 import typing
 
+import pyfltr.config.model
+
 logger = __import__("logging").getLogger(__name__)
 
 
@@ -152,7 +154,7 @@ def build_subprocess_env(
     子プロセスを起動する箇所を追加するたびに同じ判断が必要になり、
     正規化しないまま起動する箇所が残る。
 
-    `config` は `pyfltr.config.config.Config` のインスタンスを渡す。
+    `config` は `pyfltr.config.model.Config` のインスタンスを渡す。
     `via_mise=True` の場合、PATHからmiseが注入したtoolパス（`mise/installs/` 配下・
     `mise/dotnet-root`・`mise/shims` の3種）を除外する。
     親PATHにmise自身のtoolエントリが見えていると、miseがtools解決をスキップして
@@ -195,7 +197,7 @@ def build_subprocess_env(
     # 例: uv-sortがpyproject.tomlをエンコーディング未指定で読み込む箇所で発生する
     # UnicodeDecodeErrorを回避する。
     env["PYTHONUTF8"] = "1"
-    if config.values.get(f"{command}-devmode", False):
+    if pyfltr.config.model.command_setting(config.values, command, "devmode", False):
         env["PYTHONDEVMODE"] = "1"
     # 表示幅を適切な範囲に制限する
     # （pytestなどは一部の表示が右寄せになるのであまり大きいと見づらい）

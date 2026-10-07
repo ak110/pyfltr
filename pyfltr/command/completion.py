@@ -17,6 +17,8 @@ import typing
 
 import pyfltr.command.core_
 import pyfltr.config.config
+import pyfltr.config.model
+import pyfltr.tools
 
 CompletionStatus = typing.Literal["completed", "incomplete", "not_reached"]
 
@@ -50,7 +52,7 @@ class RunCompletion:
 
 def evaluate_completion(
     results: list[pyfltr.command.core_.CommandResult],
-    config: pyfltr.config.config.Config,
+    config: pyfltr.config.model.Config,
     *,
     files_reached: int,
     requested_commands: list[str],
@@ -116,7 +118,6 @@ def _is_completed(result: pyfltr.command.core_.CommandResult) -> bool:
     return result.files >= 1
 
 
-def _ordered(names: set[str], config: pyfltr.config.config.Config) -> tuple[str, ...]:
+def _ordered(names: set[str], config: pyfltr.config.model.Config) -> tuple[str, ...]:
     """コマンド名を設定の定義順へ並べる。未登録の名前は末尾へ名前順で置く。"""
-    order = {name: index for index, name in enumerate(config.command_names)}
-    return tuple(sorted(names, key=lambda name: (order.get(name, len(order)), name)))
+    return tuple(sorted(names, key=lambda name: (pyfltr.tools.command_index(config.command_names, name), name)))

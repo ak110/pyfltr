@@ -1,24 +1,23 @@
 ---
 paths:
-  - "pyfltr/command/builtin.py"
-  - "pyfltr/command/error_parser.py"
-  - "pyfltr/config/config.py"
+  - "pyfltr/tools.py"
+  - "pyfltr/parsing/entry.py"
+  - "pyfltr/config/model.py"
 ---
 
 # pyfltrのコマンド並び順方針
 
-`pyfltr/command/builtin.py`の`BUILTIN_COMMANDS`登録順はTUI・JSONL・command-info等の表示順と、
+`pyfltr/tools.py`の`BUILTIN_COMMANDS`登録順はTUI・JSONL・command-info等の表示順と、
 formatter群の実行順を兼ねる。
 linter/tester群の実行順はLPT並列（推定実行時間の降順スケジューリング）で別管理されるため、
 登録順は表示順としてのみ作用する。
 
 ## 並び順を揃える箇所
 
-`BUILTIN_COMMANDS`登録順を基準に、以下を同順へ揃える。
-
-- `pyfltr/config/config.py`の`DEFAULT_CONFIG`の設定キー順
-- `pyfltr/config/config.py`の`DEFAULT_CONFIG["aliases"]`の`format` / `lint` / `test`各リスト
-- `pyfltr/command/error_parser.py`の`_CUSTOM_PARSERS`登録順
+`BUILTIN_COMMANDS`登録順を基準に、設定キー・言語カテゴリ・エイリアス・解析登録を導出する。
+各ツールの既定値、カテゴリ、パーサーは`pyfltr/tools.py`の同じ`CommandInfo`へ記録する。
+`pyfltr/config/model.py`の`DEFAULT_CONFIG`と`aliases`、`pyfltr/parsing/entry.py`の解析処理は
+この登録を参照し、別の登録表を更新しない。表示順の算出は`command_index()`を共用する。
 
 `resolve_aliases()`が`command_names.index`で再ソートするため実行順への影響は無いが、SSOT観点で揃える。
 新しい領域を設ける場合は「領域別の末尾追加方針」へ配置順も追記する。

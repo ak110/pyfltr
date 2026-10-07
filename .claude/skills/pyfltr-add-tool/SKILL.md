@@ -2,7 +2,7 @@
 name: pyfltr-add-tool
 description: >
   pyfltr に新しい formatter / linter / tester を追加する際の定型手順チェックリスト。
-  command/builtin.py / config/config.py / command/dispatcher.py / command/error_parser.py /
+  tools.py / config/model.py / command/dispatcher.py / parsing/tools.py /
   docs/guide/index.md / tests / .github/workflows などを一貫して更新する。
 ---
 
@@ -12,20 +12,21 @@ description: >
 
 用途が近い既存ツールを1つ雛形として選び、その変更箇所をすべて踏襲する。
 
-- `pyfltr/command/builtin.py`: `BUILTIN_COMMANDS` への登録（順序が実行順と出力順を決める）。
-  特定言語専用ツールはあわせて `PYTHON_COMMANDS` 等の言語カテゴリ定数にも追加する
-- `pyfltr/config/config.py`: `DEFAULT_CONFIG` への設定キー追加と、`aliases` への登録
+- `pyfltr/tools.py`: `BUILTIN_COMMANDS`の1件の`CommandInfo`へ登録する。
+  既定値、言語カテゴリ、runnerと標準版、専用実行種別、解析・構造化出力・ルールURLを同じ定義に置く。
+  設定・カテゴリ・エイリアス・解析登録はここから導出され、別の表へ転記しない
 - `pyfltr/command/dispatcher.py`（および必要に応じて `pyfltr/command/` 配下の関連モジュール）:
   実行ロジック。共通ヘルパーを優先利用し、独自の実装は最小限に抑える
-- `pyfltr/command/error_parser.py`: 出力パーサー（regexまたは関数ベース）
-- `tests/`: `config_test.py`・`command_*_test.py`・`error_parser_test.py` に対応するテストを追加
-- `tests/smoke_test.py`: 新ツールのsmoke testケースを追加
+- `pyfltr/parsing/tools.py`: 共通のregex解析で扱えないツール固有パーサーを実装し、
+  `tools.py`の`CommandInfo.parser`へ登録する。regexだけの場合は定義内の`diagnostic_pattern`へ置く
+- `tests/`: 実装と同じ相対位置の`config/`・`command/`・`parsing/`に対応するテストを追加
+- `tests/integration/smoke_test.py`: 新ツールのsmoke testケースを追加
 - `tests/smoke_data/<tool>_workspace/`: 最小の実行対象と設定を含むsmoke test用workspace一式を追加
 - `.github/workflows/ci.yaml`: CIで新ツールを利用できるようインストール手順を追加
 - `docs/guide/index.md`:「対応ツール」一覧へ追記（`README.md`には書かない）
 - `mkdocs.yml`: `plugins.llmstxt.markdown_description` の対応ツール一覧へ新ツール名を追記する
   - ベタ書きで自動同期されないため、追記の抜けは
-    `tests/llmstxt_test.py::test_llmstxt_contains_all_builtin_commands` の失敗につながる
+    `tests/integration/llmstxt_test.py::test_llmstxt_contains_all_builtin_commands` の失敗につながる
 - `docker/Dockerfile`: 対応ツールは公式Dockerイメージ（`ghcr.io/ak110/pyfltr`）に事前同梱する。
   導入方法の区分は冒頭コメントの「同梱ツール一覧」を参照する。
   Rust / .NETツールチェイン依存は対象外
@@ -35,10 +36,10 @@ description: >
 - `aliases` の `format` / `lint` / `test` への登録を忘れると、`--commands=lint` 等で対象から漏れる
 - bin-runner対応ツール（miseバックエンド経由のネイティブバイナリ）は、通常の4キーに加えて
   `-version` キーを必須とし、`-path` の既定値は空文字列にする
-- `error_parser` のカスタム関数パーサーは `_CUSTOM_PARSERS` 辞書に登録しないと有効化されない
+- カスタム関数パーサーは`CommandInfo.parser`へ登録しないと有効化されない
 - 終了位置を出力するツールでは、終了行が範囲の最終行を指すか範囲末尾の次の位置を指すかを公式仕様で確認する
   - `ErrorLocation.end_line`は最終行を含む値として扱う
-  - `_to_inclusive_end_position`へ開始行・終了行・終了列を渡し、返る組をそのまま格納する
+  - `parsing/common.py`の`to_inclusive_end_position`へ開始行・終了行・終了列を渡し、返る組をそのまま格納する
 - 依存追加は `uv add` を使う（`uv.lock` の直接編集はPreToolUse hookでブロックされる）
 - 外部パス対応分類を決定する。
   対象は`allows_external_paths`・`config_arg_template`・`config_inject_candidates`とする。
@@ -49,7 +50,7 @@ description: >
     `config_arg_template=["--config", "{path}"]` と `config_inject_candidates=[...]` を指定する
   - 上記以外は既定値（素通し）のままとする
   - `allows_external_paths=False` を新規指定した場合は、
-    `tests/external_paths_test.py::test_external_path_filtered_with_warning` の対象一覧へ
+    `tests/integration/external_paths_test.py::test_external_path_filtered_with_warning` の対象一覧へ
     対象のツール名と境界確認用の対象パターンを1件追加する
 - `error_parser` の正規表現には英単語を完全な形で書く
   - 単語の一部だけの文字列はtyposが既知の誤記と判定しpre-commitがブロックする
@@ -60,10 +61,12 @@ description: >
 ## 既存ツールと専用の実行処理を共有する新ツールの追加
 
 `pre-commit`と`prek`のように、既存ツールと同一の専用の実行処理を共有する新ツールを扱う。
-専用の実行処理は`command/dispatcher.py`の専用分岐と`command/precommit.py`等の専用実行モジュールを指す。
+専用の実行処理は`command/dispatcher.py`の登録表と`command/precommit.py`等の専用実行モジュールを指す。
 この形の新ツールを追加する場合は以下の正規フローを適用する。
 
 - 専用実行モジュールの出力メッセージと設定キー参照をツール名でパラメーター化する
+- `CommandInfo.execution_kind`へ既存の種別を指定する。新しい実行方式が必要な場合だけ
+  実行要求型とdispatcherの種別登録を追加する
 - `{ツール名}-`接頭辞の設定キー群一式（`-path`・`-args`・`-fast`等）を新ツール用に複製する。
   新ツールが既存ツールと同じ設定値を参照する仕様の場合は複製しない
 - 専用テストをツール名でパラメーター化する。

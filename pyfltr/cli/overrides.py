@@ -4,10 +4,10 @@
 `apply_cli_overrides`を担う。
 """
 
-import argparse
-
 import pyfltr.cli.command_selection
 import pyfltr.config.config
+import pyfltr.config.model
+import pyfltr.run_options
 import pyfltr.warnings_
 
 
@@ -23,7 +23,7 @@ def _flatten_comma_separated(values: list[str]) -> list[str]:
 
 
 def apply_cli_overrides(
-    config: pyfltr.config.config.Config, args: argparse.Namespace, *, warn_unknown_command: bool = True
+    config: pyfltr.config.model.Config, args: pyfltr.run_options.RunOptions, *, warn_unknown_command: bool = True
 ) -> None:
     """CLIオプションによるconfig上書きを適用する。
 
@@ -56,7 +56,7 @@ def apply_cli_overrides(
         for key in list(config.values):
             if key.endswith("-json") or key == "pytest-tb-line":
                 config.values[key] = False
-    if getattr(args, "exclude_fence_under", None) is not None:
+    if args.exclude_fence_under is not None:
         cli_values = _flatten_comma_separated(args.exclude_fence_under)
         existing = list(config.values.get("exclude-fence-under", []))
         config.values["exclude-fence-under"] = existing + [value for value in cli_values if value not in existing]

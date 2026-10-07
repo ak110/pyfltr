@@ -36,6 +36,8 @@ import natsort
 import tomlkit
 import tomlkit.exceptions
 
+import pyfltr.config.model
+
 if typing.TYPE_CHECKING:
     import pyfltr.config.config
 
@@ -195,7 +197,7 @@ def _filter_aggregate_children(candidates: set[pathlib.Path]) -> set[pathlib.Pat
 
 def discover_subprojects(
     start_cwd: pathlib.Path,
-    config: pyfltr.config.config.Config,
+    config: pyfltr.config.model.Config,
     *,
     git_check_ignore: typing.Callable[[pathlib.Path, list[pathlib.Path]], set[pathlib.Path]] | None = None,
 ) -> list[Subproject]:

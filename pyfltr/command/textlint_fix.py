@@ -1,15 +1,17 @@
 """textlintのfixモード実行。"""
 
-import argparse
+import dataclasses
 import pathlib
 import shlex
 import time
-import typing
 
-import pyfltr.command.error_parser
+import pyfltr.command.core_
 import pyfltr.command.process
 import pyfltr.config.config
+import pyfltr.config.model
+import pyfltr.parsing.entry
 import pyfltr.paths
+import pyfltr.tools
 from pyfltr.command.core_ import CommandResult
 from pyfltr.command.runner import build_invocation_argv
 from pyfltr.command.snapshot import (
@@ -22,24 +24,7 @@ from pyfltr.command.snapshot import (
 logger = __import__("logging").getLogger(__name__)
 
 
-def execute_textlint_fix(
-    command: str,
-    command_info: pyfltr.config.config.CommandInfo,
-    commandline_prefix: list[str],
-    config: pyfltr.config.config.Config,
-    targets: list[pathlib.Path],
-    additional_args: list[str],
-    env: dict[str, str],
-    on_output: typing.Callable[[str], None] | None,
-    start_time: float,
-    args: argparse.Namespace,
-    *,
-    is_interrupted: typing.Callable[[], bool] | None = None,
-    on_subprocess_start: typing.Callable[[], None] | None = None,
-    on_subprocess_end: typing.Callable[[], None] | None = None,
-    cwd: pathlib.Path | None = None,
-    start_cwd: pathlib.Path | None = None,
-) -> CommandResult:
+def execute_textlint_fix(request: pyfltr.command.core_.ExecutionRequest) -> pyfltr.command.core_.CommandResult:
     """Textlint fixモードの2段階実行 （fix適用 → lintチェック）。
 
     textlintはlint実行とfix実行でフォーマッタ解決に使うパッケージが異なり
@@ -73,79 +58,76 @@ def execute_textlint_fix(
     # ツール起動コマンドラインに渡すパスはサブプロジェクト cwd 相対へ変換する。
     # pyfltr 内部の `snapshot_file_digests` 等は起点 cwd 相対のまま読み込むため、
     # 引数は外部用と内部用で別経路で扱う。
-    if cwd is not None and start_cwd is not None:
-        target_strs = [_relative_to_cwd(t, cwd=cwd, start_cwd=start_cwd) for t in targets]
+    if request.cwd is not None and request.ctx.base.start_cwd is not None:
+        target_strs = [
+            _relative_to_cwd(t, cwd=request.cwd, start_cwd=request.ctx.base.start_cwd) for t in request.params.targets
+        ]
     else:
-        target_strs = [str(t) for t in targets]
+        target_strs = [str(t) for t in request.params.targets]
 
     # Step1: --format Xペアを除去した共通args + fix-argsでfix適用
     # `build_invocation_argv` のtextlint fix特殊経路と同じ規則を適用する。
     step1_commandline: list[str] = [
-        *build_invocation_argv(command, config, commandline_prefix, additional_args, fix_stage=True),
+        *build_invocation_argv(
+            request.command,
+            request.ctx.config,
+            request.params.commandline_prefix,
+            request.params.additional_args,
+            fix_stage=True,
+        ),
         *target_strs,
     ]
 
-    digests_before = snapshot_file_digests(targets, base_cwd=start_cwd)
+    digests_before = snapshot_file_digests(request.params.targets, base_cwd=request.ctx.base.start_cwd)
     # 保護対象識別子の事前検出 （Step1で破損するケースを捕捉するため）。
     # 空リスト設定時は計測を省略する。
-    protected_identifiers: list[str] = list(config.values.get("textlint-protected-identifiers", []))
-    contents_before: dict[pathlib.Path, str] = snapshot_file_texts(targets, base_cwd=start_cwd) if protected_identifiers else {}
-
-    if args.verbose and on_output is not None:
-        on_output(f"commandline: {shlex.join(step1_commandline)}\n")
-    timeout = pyfltr.config.config.resolve_command_timeout(config.values, command)
-    retry_kwargs: dict[str, typing.Any] = pyfltr.config.config.resolve_retry_kwargs(config.values)
-    step1_proc = pyfltr.command.process.run_subprocess_with_timeout(
-        step1_commandline,
-        env,
-        on_output,
-        is_interrupted=is_interrupted,
-        on_subprocess_start=on_subprocess_start,
-        on_subprocess_end=on_subprocess_end,
-        timeout=timeout,
-        cwd=cwd,
-        **retry_kwargs,
+    protected_identifiers: list[str] = list(request.ctx.config.values.get("textlint-protected-identifiers", []))
+    contents_before: dict[pathlib.Path, str] = (
+        snapshot_file_texts(request.params.targets, base_cwd=request.ctx.base.start_cwd) if protected_identifiers else {}
     )
+
+    if request.verbose and request.ctx.on_output is not None:
+        request.ctx.on_output(f"commandline: {shlex.join(step1_commandline)}\n")
+
+    step1_proc = pyfltr.command.process.run_process(dataclasses.replace(request, verbose=False), step1_commandline)
     step1_rc = step1_proc.returncode
     # rc=0 （違反なし） / rc=1 （違反残存） は通常終了、rc>=2は致命的エラー扱い
     step1_fatal = step1_rc >= 2
-    digests_after_step1 = snapshot_file_digests(targets, base_cwd=start_cwd)
+    digests_after_step1 = snapshot_file_digests(request.params.targets, base_cwd=request.ctx.base.start_cwd)
     step1_changed = digests_after_step1 != digests_before
 
     if protected_identifiers and step1_changed:
         warn_protected_identifier_corruption(
-            contents_before, snapshot_file_texts(targets, base_cwd=start_cwd), protected_identifiers
+            contents_before,
+            snapshot_file_texts(request.params.targets, base_cwd=request.ctx.base.start_cwd),
+            protected_identifiers,
         )
 
     # Step2: 通常lint実行 （残存違反を取得）
     # `build_invocation_argv` の通常段経路と同じ規則を適用する
     # （auto_argsはtextlintには未登録のため空。構造化出力引数もlint段なので通常通り適用される）。
     step2_commandline: list[str] = [
-        *build_invocation_argv(command, config, commandline_prefix, additional_args, fix_stage=False),
+        *build_invocation_argv(
+            request.command,
+            request.ctx.config,
+            request.params.commandline_prefix,
+            request.params.additional_args,
+            fix_stage=False,
+        ),
         *target_strs,
     ]
 
-    if args.verbose and on_output is not None:
-        on_output(f"commandline: {shlex.join(step2_commandline)}\n")
-    step2_proc = pyfltr.command.process.run_subprocess_with_timeout(
-        step2_commandline,
-        env,
-        on_output,
-        is_interrupted=is_interrupted,
-        on_subprocess_start=on_subprocess_start,
-        on_subprocess_end=on_subprocess_end,
-        timeout=timeout,
-        cwd=cwd,
-        **retry_kwargs,
-    )
+    if request.verbose and request.ctx.on_output is not None:
+        request.ctx.on_output(f"commandline: {shlex.join(step2_commandline)}\n")
+    step2_proc = pyfltr.command.process.run_process(dataclasses.replace(request, verbose=False), step2_commandline)
     step2_rc = step2_proc.returncode
     step2_fatal = step2_rc >= 2
 
     output = (step1_proc.stdout + step2_proc.stdout).strip()
-    elapsed = time.perf_counter() - start_time
+    elapsed = time.perf_counter() - request.start_time
 
     # Step2出力から残存違反をパースする
-    errors = pyfltr.command.error_parser.parse_errors(command, output, command_info.error_pattern)
+    errors = pyfltr.parsing.entry.parse_errors(request.command, output, request.params.command_info.error_pattern)
 
     # ステータス判定
     timeout_exceeded = step1_proc.timeout_exceeded or step2_proc.timeout_exceeded
@@ -168,11 +150,11 @@ def execute_textlint_fix(
         result_command_type = "linter"
 
     result = CommandResult.from_run(
-        command=command,
+        command=request.command,
         command_type=result_command_type,
         commandline=step2_commandline,
         returncode=returncode,
-        files=len(targets),
+        files=len(request.params.targets),
         output=output,
         elapsed=elapsed,
         errors=errors,

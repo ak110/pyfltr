@@ -1,1061 +1,49 @@
-"""設定関連の処理。
-
-TOMLの読み書きはコメント・セクション順を保持できる`tomlkit`に統一する
-（`tomllib`は使用しない）。`pyfltr config set`等での部分編集で
-ユーザーが手書きしたコメントを維持するために必要。
-"""
+"""全体・プロジェクト設定の読込と統合。"""
 
 import copy
 import dataclasses
-import difflib
-import os
 import pathlib
-import re
-import sys
 import typing
 
-import platformdirs
 import tomlkit
 import tomlkit.exceptions
 
+import pyfltr.config.presets
+import pyfltr.tools
 import pyfltr.warnings_
-from pyfltr.command.builtin import (
-    BIN_RUNNERS,
-    BUILTIN_COMMAND_NAMES,
-    BUILTIN_COMMANDS,
-    COMMAND_RUNNERS,
-    JS_RUNNERS,
-    LANGUAGE_CATEGORIES,
-    PYTHON_RUNNERS,
-    REMOVED_COMMANDS,
-    CommandInfo,
+from pyfltr.config.model import (
+    DEFAULT_CONFIG,
+    GLOBAL_PRIORITY_KEYS,
+    Config,
+    ConfigWarningEmitter,
+    ConfigWarningEntry,
+    default_global_config_path,
 )
-from pyfltr.config.presets import _PRESETS, _REMOVED_PRESETS
-
-# global優先キーのSSOT。
-# archive/cache系の設定値はマシン単位で揃えたい性質のため、
-# `~/.config/pyfltr/config.toml`（global設定）に書かれた値をproject側より優先する。
-# 通常キーはproject優先（後勝ち）であるのに対して、本集合は逆向きの優先順を持つ。
-# 範囲拡大時は `docs/guide/configuration.md` と関連テストも併せて更新する（人手同期）。
-ARCHIVE_CONFIG_KEYS: frozenset[str] = frozenset(
-    {
-        "archive",
-        "archive-max-runs",
-        "archive-max-size-mb",
-        "archive-max-age-days",
-    }
+from pyfltr.config.selection import build_fast_alias
+from pyfltr.config.validation import (
+    close_matches,
+    japanese_type_label,
+    normalize_config_values,
+    recompute_fast_aliases,
+    register_custom_commands,
+    validate_config,
+    warn_config_files,
+    warn_precommit_prek_conflict,
 )
-CACHE_CONFIG_KEYS: frozenset[str] = frozenset({"cache", "cache-max-age-hours"})
-GLOBAL_PRIORITY_KEYS: frozenset[str] = ARCHIVE_CONFIG_KEYS | CACHE_CONFIG_KEYS
-
-SEVERITY_VALUES: tuple[str, ...] = ("error", "warning")
-"""`{command}-severity`に指定可能な値。
-
-- `"error"`（既定）: 従来通り。失敗時にJSONL `status="failed"` を返し、パイプライン全体のexit codeも非0となる
-- `"warning"`: 失敗時にJSONL `status="warning"` を返す。`commands_summary.needs_action.warning` に集計するが、
-  `failure_present` 判定からは除外するため `summary.guidance` のfailure系は出力されず、パイプラインのexit codeにも影響しない
-"""
-
-EXPAND_USER_KEY_SUFFIXES: tuple[str, ...] = (
-    "-path",
-    "-args",
-    "-extend-args",
-    "-lint-args",
-    "-fix-args",
-    "-check-args",
-    "-write-args",
-)
-"""`~`展開を適用する設定キーのサフィックス集合。
-
-利用者ホームディレクトリ依存のパス（例: `~/dotfiles/.../tool.py`）を設定値として
-記述できるようにするため、特定のper-toolキーに限り `~` 展開を適用する。
-本集合は対象サフィックスのSSOTで、`ruff-format-check-args` のような固定名キーも
-`-check-args` サフィックスで吸収する。
-
-`config-files` / `targets` / `{command}-extend-targets` 等のglobパターン用キーは
-glob内チルダの意図しない展開を防ぐため対象外とする。
-
-展開規則は要素先頭の `~` に加え、要素内の最初の `=` 直後の `~` も展開する
-（`--config=~/cfg.toml` を `--config=<HOME>/cfg.toml` に展開）。
-`os.path.expanduser` は先頭の `~` のみ展開するため、展開は
-`pyfltr.command.runner.expanduser_args` を経由する。
-
-展開タイミングはsubprocess引数組み立て直前（`pyfltr.command.runner.build_commandline` /
-`build_invocation_argv` および `pyfltr.command.two_step.base` /
-`pyfltr.command.two_step.prettier` の各経路）で、
-`config.values` 読込時点では原文を保持する（`command-info` サブコマンドの
-`configured_path` / `configured_args` / `configured_extend_args` にも原文が露出する）。
-"""
-
-
-DEFAULT_CONFIG: dict[str, typing.Any] = {
-    # キー体系の方針:
-    # - per-toolキーは `{command}-{key}` 形式（例: `ruff-check-args`・`pylint-runner`）。
-    # - `{command}-runner` の既定値は対応するカテゴリ委譲値で揃える。
-    #   Python系（mypy・pylint・pyright・ruff-* 等）は `"python-runner"` 委譲、
-    #   JS系（textlint・eslint・biome 等）は `"js-runner"` 委譲、
-    #   ネイティブ系（shellcheck・shfmt・cargo-* 等）は `"bin-runner"` 委譲。
-    #   ただし、既定値がfalseで他依存へ厳密ピンまたは上限制約を課すツールは本体依存から除外し、
-    #   `"uvx"` で別環境へ直接解決する。
-    #   これによりグローバル `python-runner` / `js-runner` / `bin-runner` の切り替え1箇所で
-    #   ツール群の起動経路を一括変更できる。
-    # - グローバル既定値は `python-runner = "uv"`・`js-runner = "pnpx"`・`bin-runner = "mise"`。
-    # - 利用者は `{command}-runner = "direct"` または `{command}-path` の明示で個別に上書きできる。
-    # - per-tool直接指定値の許容範囲とカテゴリ委譲値の対応詳細は
-    #   `pyfltr.command.runner.build_commandline` のdocstringを参照する。
-    # プリセット
-    "preset": "",
-    # 言語カテゴリキー: presetが示す言語別ツールを通過させるgateとして働く。
-    # Trueならpreset由来で有効化された該当カテゴリのコマンドをそのまま通し、
-    # False（既定）ならpresetでTrueになった該当コマンドを個別指定がない限り
-    # Falseに上書きする。カテゴリキー単独では何も有効化されない（presetか個別
-    # `{command} = true`が必要）。v3.0.0で既定値をFalse（opt-in）に統一。
-    # 対象外プロジェクトで言語別linterが自動で実行されるのを防ぐためで、Python系は
-    # Python系ツール一式が本体依存に同梱済みのため `uvx pyfltr` で揃う。
-    # JavaScript / Rust / .NET系はそれぞれのツールチェインを前提とする。
-    "python": False,
-    "javascript": False,
-    "rust": False,
-    "dotnet": False,
-    # prek統合。pre-commitと同一の.pre-commit-config.yamlを読むRust製の実行系。
-    # 環境変数・段階的実行・出力書式がpre-commitと一致することをprek 0.4.11で実機検証済み。
-    # prekはworkspace rootから再帰的にサブディレクトリの設定ファイルを探索して実行対象へ含めるため、
-    # 既定引数へ--configを明示してworkspace探索を無効化する（.prekignoreによる除外は
-    # 検証バージョンで機能しなかったため採用しない）。
-    "prek": False,
-    "prek-path": "prek",
-    "prek-runner": "direct",
-    "prek-args": ["run", "--config=.pre-commit-config.yaml", "--files"],
-    "prek-pass-filenames": True,
-    "prek-fast": True,
-    "prek-auto-skip": True,
-    "prek-skip": [],
-    # pre-commit統合。有効にするとpyfltr run/ci/fast実行時に
-    # pre-commit runを変更ファイル指定（--files <対象>）で内部実行する。
-    # 各hookの内部フィルタ（types・types_or・files・exclude）はファイル指定起動でも適用されるため、
-    # 関係するhookのみ動作する。pass_filenames=Falseのhook（gitleaks等）はpre-commit側で
-    # リポジトリ全体走査になるため、ファイル指定渡しでも従来通り動作する。
-    # pre-commit-fast = True（既定）によりfastも統合するため、
-    # make format相当の場面でpre-commitを別途呼ぶ必要がなくなる。
-    # pre-commit配下からpyfltrが起動された場合はPRE_COMMIT=1
-    # 環境変数の検出によりpre-commit統合を自動でスキップする。
-    # pre-commitとprekを同時に有効化した場合は_warn_precommit_prek_conflictが警告を発行する。
-    "pre-commit": False,
-    "pre-commit-path": "pre-commit",
-    "pre-commit-runner": "direct",
-    # `pre-commit run`の位置引数はhook IDとして解釈されるため、
-    # ファイル指定には`--files`フラグの前置が必須。
-    # また`--files`へ対象ファイルが渡る既定構成では、引数なしの`pre-commit run`が行う
-    # 未ステージ変更の退避・復元（`git stash`相当の作業ツリー操作）は発生しない。
-    "pre-commit-args": ["run", "--files"],
-    "pre-commit-pass-filenames": True,
-    "pre-commit-fast": True,
-    # .pre-commit-config.yamlからpyfltr関連hookを自動検出してSKIPする
-    "pre-commit-auto-skip": True,
-    # SKIP環境変数に渡すhook IDの手動指定リスト（auto-skipと併用可能）
-    "pre-commit-skip": [],
-    # textlint・markdownlint実行時にフェンス内側行を検査対象から除外するH2見出し。
-    "exclude-fence-under": [],
-    # 自動オプション: 各ツールの望ましい引数を自動挿入する。
-    # *-argsとは独立して動作し、重複排除される。Falseで無効化可能。
-    "pylint-pydantic": True,
-    "mypy-unused-awaitable": True,
-    # 構造化出力: 対応ツールの出力形式をJSON等に切り替え、パーサーで
-    # ルールコード・severity・fix情報を構造化して取得する。
-    # *-argsとは独立した経路で注入されるためpyproject.tomlの上書きに影響されない。
-    "ruff-check-json": True,
-    "pylint-json": True,
-    "pyright-json": True,
-    "pytest-tb-line": True,
-    "shellcheck-json": True,
-    "textlint-json": True,
-    "typos-json": True,
-    "eslint-json": True,
-    "biome-json": True,
-    "arid-json": True,
-    "yamllint-parsable": True,
-    # Python系ツール（mypy / pylint / pyright / ty / arid / pytest / ruff-format / ruff-check / uv-sort）の
-    # 起動方式。{command}-path / {command}-runner明示が無いときに、以下の値に従って起動コマンドを組み立てる。
-    # - direct: shutil.whichで本体依存に同梱されたバイナリを直接起動
-    # - uv:     cwdにuv.lockがあり、かつuvが利用可能ならuv run --frozen <bin>経由で起動。
-    #           いずれかが満たされなければdirectへフォールバック（既定。従来互換）
-    # - uvx:    uvx <bin>形式でPyPI最新版を都度取得して起動（uv.lockは参照せず、{command}-versionとも連動しない）
-    "python-runner": "uv",
-    # textlint / markdownlintの起動方式。
-    # textlint-path / markdownlint-pathが空のときに、以下の値に従って
-    # 実際の起動コマンドを組み立てる。
-    # - pnpx: 公開論理値を維持し、互換なpnpm --package ... dlx形式で一時取得して実行（既定）
-    # - pnpm: pnpm exec <cmd>（プロジェクトのnode_modulesを利用）
-    # - npm:  npm exec --no -- <cmd>
-    # - npx:  npx --no-install -- <cmd>
-    # - yarn: yarn run <cmd>
-    # - direct: node_modules/.bin/<cmd>を直接起動
-    "js-runner": "pnpx",
-    # ネイティブバイナリツール（Go/Rust/Haskell製等）の起動方式:
-    # - mise: mise exec <tool>@<version> -- <cmd>（既定）
-    # - direct: PATH上のバイナリを直接実行
-    "bin-runner": "mise",
-    # mise実行時に対象ディレクトリのconfigが未信頼だった場合、
-    # 自動で`mise trust --yes --all`を実行して再試行するか。
-    # worktreeやdotfiles配下などmise.tomlが未信頼扱いになりやすい
-    # 環境での手動介入を不要にするためのopt-out設定（既定は有効）。
-    "mise-auto-trust": True,
-    # コマンド毎に有効無効、パス、追加の引数を設定
-    # 言語カテゴリ（python / javascript / rust / dotnet）に属するツールはv3.0.0で
-    # opt-in化したため、既定値はFalse。presetで推奨ツールがTrueになり、
-    # カテゴリキー（`python = true`等）がgateを開けて有効化を通す構造。
-    # presetを使わず個別に`{command} = true`を指定するとgateを越えて最優先で有効化される。
-    "mypy": False,
-    # pathが空文字の場合は{command}-runner設定
-    # （既定はツール群に応じてpython-runner/js-runner/bin-runner）に基づいて自動解決する。
-    # python-runner経路の既定（"uv"）によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
-    # {command}-path明示で従来挙動（指定パスを直接実行）に切り替えられる。
-    "mypy-path": "",
-    "mypy-args": [],
-    "mypy-runner": "python-runner",
-    "mypy-fast": False,
-    "pylint": False,
-    "pylint-path": "",
-    "pylint-args": [],
-    "pylint-runner": "python-runner",
-    "pylint-fast": False,
-    "pyright": False,
-    "pyright-path": "",
-    "pyright-args": [],
-    "pyright-runner": "python-runner",
-    "pyright-fast": False,
-    "ty": False,
-    "ty-path": "",
-    "ty-args": ["check", "--output-format", "concise", "--error-on-warning"],
-    "ty-runner": "python-runner",
-    "ty-fast": True,
-    "arid": False,
-    "arid-path": "",
-    "arid-args": ["--project-root", "."],
-    "arid-runner": "python-runner",
-    "arid-fast": True,
-    "markdownlint": False,
-    # ユーザーが明示的にpathを設定した場合はその値をそのまま使い、args先頭に自動prefixを追加しない。
-    "markdownlint-path": "",
-    "markdownlint-args": [],
-    "markdownlint-runner": "js-runner",
-    "markdownlint-fast": True,
-    # fixステージ（pyfltr run / fastの自動修正段）で通常argsの後に追加する引数。
-    # markdownlint-cli2は--fixでファイルをin-place修正する。
-    "markdownlint-fix-args": ["--fix"],
-    "textlint": False,
-    "textlint-path": "",
-    "textlint-runner": "js-runner",
-    # lint / fix共通で常に付与される引数。lint専用オプション（--formatなど）はここではなく
-    # textlint-lint-argsに書くこと。fix時は@textlint/fixer-formatterが使用されるが
-    # compactフォーマッタが存在しないため、--format compactを共通argsに含めるとfixが失敗する。
-    "textlint-args": [],
-    # 非fixモード（およびfixモードの後段lintチェック）でのみ付与する引数。
-    # 既定はcompactフォーマッタ指定。ただし既定で有効なtextlint-jsonが--format jsonを
-    # 注入して既存の--format指定を除去するため、既定構成ではこの値は実効しない。
-    "textlint-lint-args": ["--format", "compact"],
-    # textlint向けルール / プリセットパッケージの列挙。pnpx / npxモードでは
-    # --package / -p展開される。pnpm / npm / yarn / directモードでは
-    # package.json側で管理する前提のため無視される。
-    "textlint-packages": [
-        "textlint-rule-preset-ja-technical-writing",
-        "textlint-rule-preset-jtf-style",
-        "textlint-rule-ja-no-abusage",
-        "textlint-rule-preset-ai-words-ja",
-    ],
-    "textlint-fast": True,
-    # fixモード時に通常argsの後に追加する引数。
-    # textlintは--fixでautofix可能なルールをin-place修正する。
-    "textlint-fix-args": ["--fix"],
-    # fixモード実行で「破損させてはならない識別子」を列挙する。
-    # textlint --fixの自動修正がコードブロック外の`.NET` / `Node.js`等の識別子まで
-    # 変換してしまうことがあるため、fix前後で識別子が失われたケースを検知して警告を発行する。
-    # 空リスト（`[]`）を指定すると検知を無効化できる。
-    "textlint-protected-identifiers": [".NET", "Node.js", "Vue.js", "Next.js", "Nuxt.js"],
-    # designmd: @google/design.md による DESIGN.md 形式仕様チェック。js-runner経由。
-    # 対象ファイルがあれば自動的に有効化される設計のため既定True。
-    "designmd": True,
-    "designmd-path": "",
-    "designmd-runner": "js-runner",
-    # `@google/design.md` の起動形式は `design.md lint <files>`。サブコマンドは共通argsに含める。
-    "designmd-args": ["lint"],
-    "designmd-fast": False,
-    # lychee: Rust製リンク切れチェッカー。bin-runner経由（mise）。既定で有効。
-    # 既定argsに`--offline`は加えない（外部URL検証が本来の用途のため）。
-    # 5xx・応答タイムアウトだけの失敗は有限再試行後に警告化し、404等は失敗を維持する。
-    "lychee": True,
-    "lychee-path": "",
-    "lychee-runner": "bin-runner",
-    "lychee-args": ["--format", "json", "--no-progress"],
-    "lychee-version": "latest",
-    "lychee-fast": False,
-    # lycheeの同時接続数（`--max-concurrency`）。0以下でlychee既定値（128）へ委ねる。
-    # GitHub Actions上のlycheeがgithub.com宛リンクに対して
-    # `Network error: HTTP/2 protocol error. Server may not support HTTP/2 properly`で
-    # 失敗する事象を観測したため、既定値を4へ抑える。
-    # 同時接続数が原因であるという一次資料上の裏付けは無いが、
-    # 同時接続数を抑えた実行では対象の失敗が再現していないため緩和策として採用する。
-    # 利用者側の`{command}-extend-args`での個別対処を不要にする目的でpyfltr既定に置く。
-    "lychee-max-concurrency": 4,
-    # colloquial-check: 日本語文書の口語表現を検出する内蔵linter。既定で無効（opt-in）。
-    # 検出結果はseverity既定"warning"によりCI/pre-commitを失敗させない。
-    # `{command}-path`は実行ファイルパス（文字列）を1件のみ許容するため、`python -m`起動は
-    # `-path`にインタープリターを、`-args`にモジュール指定を分けて渡す。
-    "colloquial-check": False,
-    "colloquial-check-path": sys.executable,
-    "colloquial-check-args": ["-m", "pyfltr.colloquial"],
-    "colloquial-check-runner": "direct",
-    "colloquial-check-fast": True,
-    "eslint": False,
-    "eslint-path": "",
-    "eslint-runner": "js-runner",
-    # ESLint 9系以降でcompact / unix / tapなどのコアフォーマッタが除去されたため、
-    # 構造化出力はeslint-json設定により_STRUCTURED_OUTPUT_SPECS経由で注入する。
-    "eslint-args": [],
-    "eslint-fast": False,
-    # fixモード時に通常argsの後に追加する引数。eslintは--fixでautofixする。
-    "eslint-fix-args": ["--fix"],
-    "prettier": False,
-    "prettier-path": "",
-    "prettier-runner": "js-runner",
-    "prettier-args": [],
-    # prettierは--check（read-only）と--write（書き込み）が排他のため、
-    # pyfltrは2段階で実行する。詳細はcommand.pyの`execute_prettier_two_step`を参照。
-    "prettier-check-args": ["--check"],
-    "prettier-write-args": ["--write"],
-    "prettier-fast": True,
-    "uv-sort": False,
-    "uv-sort-path": "",
-    "uv-sort-args": [],
-    "uv-sort-runner": "python-runner",
-    "uv-sort-fast": True,
-    "biome": False,
-    "biome-path": "",
-    "biome-runner": "js-runner",
-    # "check"サブコマンドは共通argsに置く。--reporter=githubはbiome-json設定
-    # により_STRUCTURED_OUTPUT_SPECS経由で注入する。
-    "biome-args": ["check"],
-    "biome-fast": True,
-    # fixモード時に通常argsの後に追加する引数。
-    # ruffの`--unsafe-fixes`採用方針と揃え、safe/unsafe両方のfixを自動適用する。
-    # biomeのseverityは各ルールの既定値で決まり、fixのsafe/unsafeとは独立である。
-    # severity infoの診断は`::notice`として出力されるが、
-    # biome公式設計でinfoは終了コードに影響しない。
-    # 個別ルールをCIの失敗対象に変更したい場合は`biome.json`の`linter.rules.*`で
-    # severityを上げる（pyfltr側はinfoを失敗扱いに昇格させない）。
-    "biome-fix-args": ["--write", "--unsafe"],
-    # -- js-runner対応ツール（追加分） --
-    "oxlint": False,
-    "oxlint-path": "",
-    "oxlint-runner": "js-runner",
-    "oxlint-args": [],
-    "oxlint-fast": True,
-    "tsc": False,
-    "tsc-path": "",
-    "tsc-runner": "js-runner",
-    "tsc-args": ["--noEmit"],
-    "tsc-pass-filenames": False,
-    "tsc-fast": False,
-    # -- Rust 言語ツール --
-    # いずれも pass-filenames=False で crate 全体を対象とする project-level 実行。
-    # 既定で bin-runner 経路を通り、グローバル `bin-runner` 既定 (mise) により mise exec で
-    # 解決する。従来挙動 (PATH 上の cargo / cargo-deny を直接実行) を維持したい場合は
-    # `cargo-fmt-runner = "direct"` 等の明示指定または `cargo-fmt-path` への明示パス指定で切り替えられる。
-    "cargo-fmt": False,
-    "cargo-fmt-path": "",
-    "cargo-fmt-runner": "bin-runner",
-    "cargo-fmt-version": "latest",
-    # 常時書き込みモード。pyfltr 規約により formatter は --fix 無しでも強制修正する。
-    "cargo-fmt-args": ["fmt"],
-    "cargo-fmt-pass-filenames": False,
-    "cargo-fmt-fast": True,
-    "cargo-clippy": False,
-    "cargo-clippy-path": "",
-    "cargo-clippy-runner": "bin-runner",
-    "cargo-clippy-version": "latest",
-    # args は lint / fix 両モードで共通の前半部分。trailing flag (-- -D warnings)
-    # は lint-args / fix-args の双方に重複して置き、--fix 時には `--fix` を
-    # 中間に挿入できるよう分離している。
-    "cargo-clippy-args": ["clippy", "--all-targets"],
-    "cargo-clippy-lint-args": ["--", "-D", "warnings"],
-    "cargo-clippy-fix-args": ["--fix", "--allow-staged", "--allow-dirty", "--", "-D", "warnings"],
-    "cargo-clippy-pass-filenames": False,
-    "cargo-clippy-fast": True,
-    "cargo-check": False,
-    "cargo-check-path": "",
-    "cargo-check-runner": "bin-runner",
-    "cargo-check-version": "latest",
-    "cargo-check-args": ["check", "--all-targets"],
-    "cargo-check-pass-filenames": False,
-    "cargo-check-fast": False,
-    "cargo-test": False,
-    "cargo-test-path": "",
-    "cargo-test-runner": "bin-runner",
-    "cargo-test-version": "latest",
-    "cargo-test-args": ["test"],
-    "cargo-test-pass-filenames": False,
-    "cargo-test-fast": False,
-    "cargo-deny": False,
-    "cargo-deny-path": "",
-    "cargo-deny-runner": "bin-runner",
-    "cargo-deny-version": "latest",
-    "cargo-deny-args": ["check"],
-    "cargo-deny-pass-filenames": False,
-    "cargo-deny-fast": False,
-    # -- .NET 言語ツール --
-    # 既定で bin-runner 経路を通り、グローバル `bin-runner` 既定 (mise) により mise exec で
-    # 解決する。従来挙動 (PATH 上の dotnet を直接実行) を維持したい場合は
-    # `dotnet-format-runner = "direct"` 等の明示指定または `dotnet-format-path` への
-    # 明示パス指定で切り替えられる。directモードでは`DOTNET_ROOT`環境変数配下にdotnet実行ファイルが
-    # あれば優先採用する。
-    "dotnet-format": False,
-    "dotnet-format-path": "",
-    "dotnet-format-runner": "bin-runner",
-    "dotnet-format-version": "latest",
-    # 常時書き込みモード。pyfltr 規約により formatter は --fix 無しでも強制修正する。
-    "dotnet-format-args": ["format"],
-    "dotnet-format-pass-filenames": False,
-    "dotnet-format-fast": True,
-    "dotnet-build": False,
-    "dotnet-build-path": "",
-    "dotnet-build-runner": "bin-runner",
-    "dotnet-build-version": "latest",
-    "dotnet-build-args": ["build", "--nologo"],
-    "dotnet-build-pass-filenames": False,
-    "dotnet-build-fast": False,
-    "dotnet-test": False,
-    "dotnet-test-path": "",
-    "dotnet-test-runner": "bin-runner",
-    "dotnet-test-version": "latest",
-    "dotnet-test-args": ["test", "--nologo"],
-    "dotnet-test-pass-filenames": False,
-    "dotnet-test-fast": False,
-    # -- bin-runner対応ツール --
-    "shfmt": False,
-    "shfmt-path": "",
-    "shfmt-runner": "bin-runner",
-    "shfmt-args": [],
-    # shfmt は prettier 同様の二段階実行。-l でチェック、-w で書き込み。
-    "shfmt-check-args": ["-l"],
-    "shfmt-write-args": ["-w"],
-    "shfmt-version": "latest",
-    "shfmt-fast": True,
-    "ec": False,
-    "ec-path": "",
-    "ec-runner": "bin-runner",
-    "ec-args": ["-format", "gcc", "-no-color"],
-    "ec-version": "latest",
-    "ec-fast": True,
-    "shellcheck": False,
-    "shellcheck-path": "",
-    "shellcheck-runner": "bin-runner",
-    "shellcheck-args": ["-f", "gcc"],
-    "shellcheck-version": "latest",
-    "shellcheck-fast": True,
-    "typos": False,
-    "typos-path": "",
-    "typos-runner": "direct",
-    "typos-args": ["--format", "brief"],
-    "typos-version": "latest",
-    "typos-fast": True,
-    "actionlint": False,
-    "actionlint-path": "",
-    "actionlint-runner": "bin-runner",
-    "actionlint-args": [],
-    "actionlint-version": "latest",
-    "actionlint-fast": True,
-    # pinact: `--no-api`でGitHub APIを呼ばない構文上の検査（40文字SHAと版コメントの有無）に限定し、
-    # `GITHUB_TOKEN`を不要にする。`--format sarif`の指定時は`--fix`が既定で無効となりファイルを書き換えない。
-    # `--check`は`--no-api`と併用すると終了コード3で失敗するため含めない。
-    # 自動修正（タグからSHAへの解決）はGitHub APIを要し結果が実行時点の最新リリースで変わるため、
-    # `pinact-fix-args`は定義せずfix段へ載せない。修正は利用者が`pinact run`を直接実行する。
-    "pinact": False,
-    "pinact-path": "",
-    "pinact-runner": "bin-runner",
-    "pinact-args": ["run", "--no-api", "--format", "sarif"],
-    "pinact-version": "latest",
-    "pinact-fast": True,
-    # glab ci lint は GitLab API 経由で .gitlab-ci.yml を検証する。
-    # 認証・ネットワーク必須のため既定で無効 (opt-in)。
-    # サブコマンド `ci lint` は args 既定値として持たせ、明示 path 指定経路でも適用されるようにする。
-    "glab-ci-lint": False,
-    "glab-ci-lint-path": "",
-    "glab-ci-lint-runner": "bin-runner",
-    "glab-ci-lint-args": ["ci", "lint"],
-    "glab-ci-lint-version": "latest",
-    "glab-ci-lint-fast": False,
-    # taplo: Rust製TOMLフォーマッター/リンター。bin-runner経由。既定で無効（opt-in）。
-    # shfmtと同様の2段階実行（check → format）。
-    "taplo": False,
-    "taplo-path": "",
-    "taplo-runner": "bin-runner",
-    "taplo-args": [],
-    "taplo-check-args": ["check"],
-    "taplo-write-args": ["format"],
-    "taplo-version": "latest",
-    "taplo-fast": True,
-    # yamllint: Python製YAMLリンター。既定で無効（opt-in）。直接実行経路。
-    "yamllint": False,
-    "yamllint-path": "",
-    "yamllint-runner": "direct",
-    "yamllint-args": [],
-    "yamllint-fast": True,
-    # hadolint: Dockerfile専用リンター。bin-runner経由。既定で無効（opt-in）。
-    "hadolint": False,
-    "hadolint-path": "",
-    "hadolint-runner": "bin-runner",
-    "hadolint-args": [],
-    "hadolint-version": "latest",
-    "hadolint-fast": True,
-    # gitleaks: シークレット検出ツール（Goバイナリ）。bin-runner経由。既定で無効（opt-in）。
-    # `detect` サブコマンドは args 既定値として持たせる（glab-ci-lint と同じ設計）。
-    # pass-filenames=false でリポジトリ全体を対象とする。
-    "gitleaks": False,
-    "gitleaks-path": "",
-    "gitleaks-runner": "bin-runner",
-    "gitleaks-args": ["detect", "--no-banner"],
-    "gitleaks-pass-filenames": False,
-    "gitleaks-version": "latest",
-    "gitleaks-fast": False,
-    # semgrep: 多言語SAST。ルールセット指定が必須のため既定で無効（opt-in）。
-    # semgrepは`mcp`を厳密ピンし`click`にも強い制約を課すため本体依存から外した。
-    # `uvx`既定により別環境で解決し、pyfltrの依存グラフから切り離す。
-    # 利用者が版を固定したい場合は`semgrep-path`または`semgrep-runner`で上書きする。
-    # 既定argsは空とする（ルールセット既定はsemgrep側の意図と衝突するため）。
-    # 利用者は`semgrep-args = ["scan", "--json", "--error", "--config=auto"]`等で
-    # サブコマンド・出力形式・ルールセットをまとめて指定する。
-    "semgrep": False,
-    "semgrep-path": "",
-    "semgrep-runner": "uvx",
-    "semgrep-args": [],
-    "semgrep-fast": False,
-    # bandit: Python専用source-level SAST。既定で無効（opt-in）。
-    # `--quiet --recursive --format=json`で実行し、JSON出力をパースする。
-    # 設定ファイル（pyproject.toml / .bandit.yaml / .bandit.toml）はbandit本体が自動読み込みしないため、
-    # CommandInfoのconfig_arg_template経由で`--configfile <絶対パス>`を注入する。
-    "bandit": False,
-    "bandit-path": "",
-    "bandit-runner": "python-runner",
-    "bandit-args": ["--quiet", "--recursive", "--format=json"],
-    "bandit-fast": False,
-    # sqlfluff: SQL専用linter。dialect指定が必須のため利用者の`.sqlfluff`配置を前提とするopt-in。
-    # `click`へ上限を課し他ツールの更新を妨げるため本体依存から外した。
-    # `uvx`既定により別環境で解決し、pyfltrの依存グラフから切り離す。
-    # 利用者が版を固定したい場合は`sqlfluff-path`または`sqlfluff-runner`で上書きする。
-    # `sqlfluff lint`サブコマンドをlinterとして起動する（`sqlfluff format`サブコマンドは対象外）。
-    "sqlfluff": False,
-    "sqlfluff-path": "",
-    "sqlfluff-runner": "uvx",
-    "sqlfluff-args": ["lint", "--format=json"],
-    "sqlfluff-fast": False,
-    # 依存の脆弱性監査ツール群（uv audit / pnpm audit / npm audit / yarn audit）。
-    # BUILTIN_COMMANDS登録順・lintエイリアス・order.mdに合わせ、sqlfluffの直後へ配置する。
-    # いずれもパッケージマネージャー自体のサブコマンドを直接呼ぶ（`{command}-runner = "direct"`、
-    # 実体の解決はrunner.pyの`PACKAGE_MANAGER_TOOL_BIN`）。ネットワーク必須かつ結果が
-    # 外部脆弱性データベース更新で変動するため既定で無効（opt-in）・fast無効。
-    # `pass-filenames = false`で対象ファイルは渡さずプロジェクト単位で実行する。
-    # bin-runner系ではないため`{command}-version`キーは設けない。
-    # uv-auditは`--frozen`でロック解決によるuv.lock書き換えを防ぐ（linterは検査のみで副作用を持たない原則）。
-    # `uv audit`はuv側の実験的機能であり、既定では実行のたびに実験的機能である旨の警告を標準エラーへ出力する。
-    # 警告は監査結果と無関係でCIログの可読性を下げるため、`--preview-features audit`で抑止する。
-    # 抑止により実験的機能である旨の注意喚起が利用者の目に触れなくなるため、
-    # uv側の仕様変更で監査の挙動が変わる可能性がある点をガイドの版要件記述で補う。
-    "uv-audit": False,
-    "uv-audit-path": "",
-    "uv-audit-runner": "direct",
-    "uv-audit-args": ["audit", "--preview-features", "audit", "--frozen", "--no-progress"],
-    "uv-audit-pass-filenames": False,
-    "uv-audit-fast": False,
-    "pnpm-audit": False,
-    "pnpm-audit-path": "",
-    "pnpm-audit-runner": "direct",
-    "pnpm-audit-args": ["audit", "--json"],
-    "pnpm-audit-pass-filenames": False,
-    "pnpm-audit-fast": False,
-    "npm-audit": False,
-    "npm-audit-path": "",
-    "npm-audit-runner": "direct",
-    "npm-audit-args": ["audit", "--json"],
-    "npm-audit-pass-filenames": False,
-    "npm-audit-fast": False,
-    # yarn classic（1.x）はJSON Lines（auditAdvisory / auditSummary行）を出力する。
-    # yarn berry（2+）は`yarn npm audit --json`等とサブコマンド体系が異なるため、
-    # 利用時は`yarn-audit-args`で上書きする。
-    "yarn-audit": False,
-    "yarn-audit-path": "",
-    "yarn-audit-runner": "direct",
-    "yarn-audit-args": ["audit", "--json"],
-    "yarn-audit-pass-filenames": False,
-    "yarn-audit-fast": False,
-    "pytest": False,
-    "pytest-path": "",
-    "pytest-runner": "python-runner",
-    "pytest-args": [],
-    "pytest-devmode": True,  # PYTHONDEVMODE=1をするか否か
-    "pytest-fast": False,
-    # fast選択時だけpytestの対象を置き換えるglob（文字列または配列）。
-    # 非空ならpytest-fast=falseでもfastへ参加し、位置引数・差分指定に依らずプロジェクト全域から一致ファイルを選ぶ。
-    "pytest-fast-targets": [],
-    "vitest": False,
-    "vitest-path": "",
-    "vitest-runner": "js-runner",
-    # vitestはrunサブコマンドが必須。また、pyfltrがtargets設定で限定したファイル群と
-    # プロジェクト側のvitest include設定が交差せず対象ゼロになるケースでrc=1となり
-    # failed扱いになるのを避けるため、--passWithNoTestsを既定に含める。
-    "vitest-args": ["run", "--passWithNoTests"],
-    "vitest-fast": False,
-    "ruff-format": False,
-    "ruff-format-path": "",
-    "ruff-format-runner": "python-runner",
-    "ruff-format-args": ["format", "--exit-non-zero-on-format"],
-    "ruff-format-fast": True,
-    # ruff-format実行時にruff check --fix --unsafe-fixesを先に実行するか。
-    # 既定では有効とし、未整形のimportソートや安全に自動修正できるlint違反を
-    # フォーマットと一緒に片付ける（ruff公式推奨ワークフローの発展形）。
-    # unsafe fix採用方針はbiome側（`biome-fix-args`）と統一する。
-    # lintエラーは別途ruff-checkで検出される前提のため、ステップ1の
-    # lint violation（exit 1）はruff-format側では失敗扱いしない。
-    "ruff-format-by-check": True,
-    "ruff-format-check-args": ["check", "--fix", "--unsafe-fixes"],
-    "ruff-check": False,
-    "ruff-check-path": "",
-    "ruff-check-runner": "python-runner",
-    "ruff-check-args": ["check"],
-    "ruff-check-fast": True,
-    # fixモード時に通常argsの後に追加する引数。
-    # `ruff check --fix --unsafe-fixes`でautofix可能な違反を修正する。
-    # unsafe fix採用方針はbiome側（`biome-fix-args`）と統一する。
-    # （通常モードのruff-format-by-checkとは別経路で動作する）
-    "ruff-check-fix-args": ["--fix", "--unsafe-fixes"],
-    # 実行アーカイブ（v3.0.0追加）
-    # 全実行のツール生出力・diagnostic全件・実行メタをユーザーキャッシュ
-    # （`platformdirs.user_cache_dir("pyfltr", appauthor=False)`）へ保存する。CLIとは独立した
-    # 詳細参照経路（`show-run` / `list-runs`、MCPツール）からいつでも
-    # 全文を参照できるようにする。
-    # 既定で有効にしている（オプトイン化を却下した）理由: エージェント連携時の
-    # JSONL smart truncationで除外された情報を事後参照できる前提を崩さないため。
-    # 肥大化は`archive-max-*`系の自動削除で抑える。
-    "archive": True,
-    # 自動クリーンアップの閾値。いずれかを超過した時点で古い順に削除する。
-    # 0以下を指定するとその軸の自動削除は無効化される。
-    "archive-max-runs": 100,
-    "archive-max-size-mb": 1024,
-    "archive-max-age-days": 30,
-    # replace履歴の自動クリーンアップ閾値（pyfltr/grep_/history.py）。
-    # 既定値は実行アーカイブと同程度に揃え、世代数100・合計200MB・保存期間30日とする。
-    # `GLOBAL_PRIORITY_KEYS`には含めず、project側設定で上書きできる通常キー扱いとする。
-    "replace-history-max-entries": 100,
-    "replace-history-max-size-bytes": 200 * 1024 * 1024,
-    "replace-history-max-age-days": 30,
-    # JSONL出力のsmart truncation設定（v3.0.0追加）。
-    # `jsonl-diagnostic-limit`はツール単位のdiagnostic出力件数上限。0以下で無制限。
-    # `jsonl-message-max-lines` / `jsonl-message-max-chars`はfailedかつdiagnostics=0のときの
-    # tool.message（生出力末尾）を切り詰める閾値。
-    # 切り詰めが発生しても、アーカイブ書き込みに成功していれば全文は`tools/<tool>/output.log`
-    # / `tools/<tool>/diagnostics.jsonl`から復元できる。アーカイブ無効時 / 初期化失敗時 /
-    # 対象のツールの書き込み失敗時は切り詰めをスキップしJSONLに全文を出力する。
-    "jsonl-diagnostic-limit": 0,
-    "jsonl-message-max-lines": 30,
-    "jsonl-message-max-chars": 2000,
-    # ファイルhashキャッシュ（v3.0.0 パートD）。
-    # `CommandInfo.cacheable=True`のツール（textlint）の実行結果をユーザーキャッシュへ保存し、
-    # 同じ入力（対象ファイル群・設定ファイル・実効コマンドライン等）が繰り返された場合に
-    # ツール実行を省略して結果を復元する。エージェントが同じmarkdownに対してtextlintを
-    # 繰り返し呼び出すワークフローでの待機時間を削減する用途。
-    # `--no-cache`CLIフラグまたは`cache = false`設定で無効化できる。
-    # `cache-max-age-hours`は保存期間（時間）で、短期破棄前提として既定12時間。
-    # 0以下で期間軸のクリーンアップを無効化する。
-    "cache": True,
-    "cache-max-age-hours": 12,
-    # 最大並列数（linters/testersの並列実行数の上限）。
-    # モノレポ検出時は、同一ツールのサブプロジェクト実行を同時に開始する件数の算出にも用いる。
-    "jobs": 8,
-    # 各コマンドのsubprocess実行に対する壁時計タイムアウト（秒）。
-    # 既定値10分（600秒）。0以下を指定すると無効化される（無制限）。
-    # per-tool `{command}-timeout` が `-1`（既定。「未設定」を意味するsentinel）のとき
-    # 本グローバル値を採用し、`0` 以上の値が明示された場合はそちらを優先する。
-    # ハング由来の停止はJSONL `command.hints` の `status.timeout` 注記で識別できる。
-    "command-timeout": 600,
-    # OOM（Out of Memory）検知による自動リトライ。LinuxのOOM killerによる強制終了
-    # （returncodeが-9または137）を検知して指定回数まで自動で再実行する。
-    # 既定で有効にする。リトライは即時実行で、複数回失敗した場合は最後の失敗を返す。
-    # Windowsは強制終了時のreturncodeにOOM固有値がないため対象外。
-    "retry-on-oom": True,
-    # 上記 retry-on-oom でのリトライ最大回数。既定値1で合計2回試行する。
-    # 0以下を指定するとリトライを無効化する。
-    "retry-max-attempts": 1,
-    # flake8風無視パターン。
-    "exclude": [
-        # 値はflake8・blackの既定値および以下のgitignoreテンプレートを参考に選定する。
-        # https://github.com/github/gitignore/blob/master/Python.gitignore
-        # https://github.com/github/gitignore/blob/main/Node.gitignore
-        "*.egg",
-        "*.egg-info",
-        ".aider*",
-        ".bzr",
-        ".cache",
-        ".cursor",
-        ".direnv",
-        ".eggs",
-        ".git",
-        ".hg",
-        ".idea",
-        ".mypy_cache",
-        ".nox",
-        ".pnpm",
-        ".pyre",
-        ".pytest_cache",
-        ".ruff_cache",
-        ".serena",
-        ".svn",
-        ".tox",
-        ".venv",
-        ".vite",
-        ".vscode",
-        ".yarn",
-        "CVS",
-        "__pycache__",
-        "__pypackages__",
-        "_build",
-        "buck-out",
-        "build",
-        "dist",
-        "node_modules",
-        "site",
-        "venv",
-        # バイナリファイル（テキスト系lintの対象外）
-        "*.bmp",
-        "*.dll",
-        "*.dylib",
-        "*.eot",
-        "*.exe",
-        "*.gif",
-        "*.gz",
-        "*.ico",
-        "*.jpeg",
-        "*.jpg",
-        "*.mp3",
-        "*.mp4",
-        "*.otf",
-        "*.pdf",
-        "*.png",
-        "*.so",
-        "*.tar",
-        "*.ttf",
-        "*.wasm",
-        "*.wav",
-        "*.webp",
-        "*.woff",
-        "*.woff2",
-        "*.zip",
-        # ロックファイル
-        "Gemfile.lock",
-        "Pipfile.lock",
-        "composer.lock",
-        "package-lock.json",
-        "pnpm-lock.yaml",
-        "poetry.lock",
-        "uv.lock",
-        "yarn.lock",
-        # 自動生成テキスト（minify済み・source map）
-        "*.map",
-        "*.min.css",
-        "*.min.js",
-    ],
-    "extend-exclude": [],
-    # .gitignoreに記載されたファイルを除外するか否か（git check-ignoreを使用）
-    "respect-gitignore": True,
-    # モノレポ対応: サブプロジェクト検出時に再帰侵入しないディレクトリ名の追加リスト。
-    # 既定で `.venv`・`node_modules`・`target`・`build`・`dist`・`.git` は常に除外し、
-    # 本キーで追加除外を指定できる。文字列リストで指定する。
-    "subproject-exclude": [],
-    # モノレポ対応: サブプロジェクト検出で `.gitignore` を尊重するか否か。
-    # True（既定）の場合 `git check-ignore` でignored判定された候補は検出集合から除外する。
-    "subproject-use-gitignore": True,
-    # モノレポ対応: `[tool.uv.workspace] members` を読み取ってサブプロジェクト集合に
-    # 反映するか否か。True（既定）の場合 uv workspace の member を含めて検出する。
-    "subproject-uv-workspace": True,
-    # コマンド名のエイリアス
-    "aliases": {
-        "format": [
-            "prettier",
-            "ruff-format",
-            "uv-sort",
-            "shfmt",
-            "taplo",
-            "cargo-fmt",
-            "dotnet-format",
-            "prek",
-            "pre-commit",
-        ],
-        "lint": [
-            "ruff-check",
-            "mypy",
-            "pylint",
-            "pyright",
-            "ty",
-            "arid",
-            "markdownlint",
-            "textlint",
-            "designmd",
-            "lychee",
-            "colloquial-check",
-            "eslint",
-            "biome",
-            "ec",
-            "shellcheck",
-            "typos",
-            "actionlint",
-            "pinact",
-            "glab-ci-lint",
-            "yamllint",
-            "hadolint",
-            "gitleaks",
-            "semgrep",
-            "bandit",
-            "oxlint",
-            "tsc",
-            "cargo-clippy",
-            "cargo-check",
-            "cargo-deny",
-            "dotnet-build",
-            "sqlfluff",
-            "uv-audit",
-            "pnpm-audit",
-            "npm-audit",
-            "yarn-audit",
-        ],
-        "test": ["pytest", "vitest", "cargo-test", "dotnet-test"],
-        # 依存の脆弱性監査ツールのみを切り出すグループ。lintエイリアスにも含まれるが、
-        # 監査だけを定期実行する運用（CIスケジュール等）で個別指定の手間を省く。
-        # 並び順は.claude/rules/order.mdの監査ツール配置順に揃える。
-        "audit": ["uv-audit", "pnpm-audit", "npm-audit", "yarn-audit"],
-    },
-}
-"""デフォルト設定。"""
-
-
-def _register_command_dynamic_defaults(
-    defaults: dict[str, typing.Any],
-    builtin_commands: dict[str, CommandInfo],
-) -> None:
-    """全ビルトインコマンドへ実行時に受理する動的設定キーの既定値を登録する。
-
-    ツール固有の固定既定値が先に登録されている場合は、その値を保持する。
-    """
-    for command, info in builtin_commands.items():
-        defaults.setdefault(f"{command}-targets", copy.deepcopy(info.targets))
-        defaults.setdefault(f"{command}-extend-targets", [])
-        defaults.setdefault(f"{command}-exclude", [])
-        defaults.setdefault(f"{command}-extend-args", [])
-
-
-_register_command_dynamic_defaults(DEFAULT_CONFIG, BUILTIN_COMMANDS)
-
-
-# per-tool `{command}-timeout` キーをビルトインコマンドぶん追加する。
-# 既定値 `-1` は「未設定」を意味するsentinelで、解決時にグローバル `command-timeout` 値へフォールバックする。
-# `0` 以下を明示指定した場合は対象のコマンドのtimeoutを無効化する。
-# `>0` の場合は秒数を指定する。`per-tool` 値が `-1` 以外なら本値を優先する。
-# 命名は既存の `{command}-args` / `{command}-fast` 系と同パターンに揃える。
-# 別のper-toolキーで「未指定でグローバル値へフォールバック」を表現する場合も同じ `-1`
-# sentinel運用に揃える。`None` 表現はTOML上の素直な記述方法が無く、整数フィールド
-# としての一貫性も崩れるため採用しない。
-# モジュールトップレベルでの `for` ループ変数のスコープ漏れを避けるため関数経由で適用する
-# （pyrightの `reportPossiblyUnboundVariable` 誤検知も同時に回避）。
-def _register_command_timeout_defaults(defaults: dict[str, typing.Any], command_names: list[str]) -> None:
-    """全ビルトインコマンドへ `{command}-timeout = -1` のsentinel既定値を登録する。"""
-    for command in command_names:
-        defaults[f"{command}-timeout"] = -1
-
-
-_register_command_timeout_defaults(DEFAULT_CONFIG, BUILTIN_COMMAND_NAMES)
-
-
-def _register_command_severity_defaults(defaults: dict[str, typing.Any], command_names: list[str]) -> None:
-    """全ビルトインコマンドへ `{command}-severity = "error"` の既定値を登録する。
-
-    `severity = "warning"` 設定下では従来 `failed` 扱いの結果がJSONL上 `status="warning"` に切り替わる。
-    既定値 `"error"` は従来挙動を維持するためのもので、変更したい場合のみ
-    `pyproject.toml`/global設定で個別に指定する。
-    """
-    for command in command_names:
-        defaults[f"{command}-severity"] = "error"
-
-
-def _register_command_hints_defaults(defaults: dict[str, typing.Any], command_names: list[str]) -> None:
-    """全ビルトインコマンドへ `{command}-hints = []` の既定値を登録する。
-
-    指摘1件以上のときに限りJSONL `command.hints` の `user.<n>` キーへ
-    順番に追加される。既定の空配列はLLM入力にhintを追加しない挙動を意味する。
-    """
-    for command in command_names:
-        defaults[f"{command}-hints"] = []
-
-
-_register_command_severity_defaults(DEFAULT_CONFIG, BUILTIN_COMMAND_NAMES)
-# colloquial-checkは口語表現の指摘であり、CI/pre-commitを止めない`warning`扱いを既定とする。
-DEFAULT_CONFIG["colloquial-check-severity"] = "warning"
-_register_command_hints_defaults(DEFAULT_CONFIG, BUILTIN_COMMAND_NAMES)
-
-
-def _register_command_subproject_aware_defaults(
-    defaults: dict[str, typing.Any],
-    builtin_commands: dict[str, CommandInfo],
-) -> None:
-    """全ビルトインコマンドへ `{command}-subproject-aware` 既定値を登録する。
-
-    既定値は `CommandInfo.subproject_aware` から取得する。利用者は
-    `pyproject.toml` で `{command}-subproject-aware = false` 等と上書きできる。
-    """
-    for command, info in builtin_commands.items():
-        defaults[f"{command}-subproject-aware"] = info.subproject_aware
-
-
-_register_command_subproject_aware_defaults(DEFAULT_CONFIG, BUILTIN_COMMANDS)
-
-
-def resolve_subproject_aware(values: dict[str, typing.Any], command: str, default: bool) -> bool:
-    """per-tool `{command}-subproject-aware` の有効値を返す。
-
-    値が真偽値以外の場合は `default`（`CommandInfo.subproject_aware`）を返す。
-    バリデーションは `load_config` 側で行うため、ここでは型確認のみ行う安全側のヘルパー。
-    """
-    raw = values.get(f"{command}-subproject-aware", default)
-    if isinstance(raw, bool):
-        return raw
-    return default
-
-
-def resolve_severity(values: dict[str, typing.Any], command: str) -> str:
-    """per-tool `{command}-severity` の有効値を返す。
-
-    既定値 `"error"` は従来挙動と同じ。`"warning"` 設定時は
-    `CommandResult.severity` フィールドへ転記され、`status` プロパティが
-    通常失敗を `"warning"` に置き換える。未知の値は `"error"` として扱う
-    （バリデーションは `load_config` 側で行う）。
-    """
-    raw = values.get(f"{command}-severity", "error")
-    if raw in SEVERITY_VALUES:
-        return str(raw)
-    return "error"
-
-
-def resolve_command_timeout(values: dict[str, typing.Any], command: str) -> float | None:
-    """per-tool `{command}-timeout` とグローバル `command-timeout` から有効値を解決する。
-
-    `{command}-timeout`の意味は次の通り。
-
-    - `-1`（既定sentinel）または負値: 「未設定」を意味し、グローバル `command-timeout`
-      の値へフォールバックする。利用者向けドキュメントでは「未指定」と表現する
-    - `0`: 対象のper-toolのtimeoutを明示的に無効化する（戻り値`None`）
-    - 正の整数: 対象の秒数で監視する
-
-    グローバル`command-timeout`は次の通り。
-
-    - `0`: 全コマンドのtimeoutを無効化する
-    - 正の整数: per-tool未設定時の既定秒数として採用される
-
-    `None` を返した場合 `pyfltr.command.process.run_subprocess` はtimeout監視を行わない。
-    `float` を返した場合は対象の秒数で監視する。
-    """
-    per_tool_raw = values.get(f"{command}-timeout", -1)
-    try:
-        per_tool = int(per_tool_raw)
-    except (TypeError, ValueError):
-        per_tool = -1
-    if per_tool >= 0:
-        return float(per_tool) if per_tool > 0 else None
-    # per-tool未設定（sentinel）→グローバル値へフォールバック
-    global_raw = values.get("command-timeout", 0)
-    try:
-        global_value = int(global_raw)
-    except (TypeError, ValueError):
-        global_value = 0
-    return float(global_value) if global_value > 0 else None
-
-
-def resolve_retry_kwargs(values: dict[str, typing.Any]) -> dict[str, typing.Any]:
-    """`run_subprocess_with_timeout()` へ展開するOOMリトライ用キーワード引数を返す。
-
-    各subprocess呼び出し点で `**resolve_retry_kwargs(config.values)` 形で渡し、
-    `retry-on-oom`・`retry-max-attempts` の参照と型変換を集約する。
-    """
-    return {
-        "retry_on_oom": bool(values["retry-on-oom"]),
-        "retry_max_attempts": int(values["retry-max-attempts"]),
-    }
-
-
-ConfigWarningEntry = tuple[str, str]
-"""設定検証警告1件を識別する`(設定キー名, 警告本文)`の組。
-
-キー名だけでは同一キーに対する原因の異なる警告
-（例: `my-tool-severity`の「値が不正」と「認識できないキー」）を区別できず、
-モノレポでの重複抑止が別原因の警告まで巻き込むため、本文まで含めて識別する。
-"""
-
-
-class _ConfigWarningEmitter(typing.Protocol):
-    """設定検証警告を発行する呼び出し規約。
-
-    `_make_config_warning_emitter`が生成し、各検証関数へ渡される。
-    """
-
-    def __call__(self, key: str, *, message: str) -> None:
-        """`key`に紐づく検証警告`message`を発行する（抑止対象なら何もしない）。"""
-
-
-@dataclasses.dataclass(frozen=True)
-class Config:
-    """pyfltr設定。"""
-
-    values: dict[str, typing.Any]
-    commands: dict[str, CommandInfo]
-    """ビルトイン + カスタムの統合コマンドレジストリ"""
-    command_names: list[str]
-    """コマンドの並び順リスト（ビルトイン順 → カスタムコマンド順）"""
-    warned_global_only_entries: frozenset[ConfigWarningEntry] = frozenset()
-    """このロードで実際に発行し、かつ対象キーの由来が`{"global"}`（project側で上書きして
-    いない）だった検証警告の集合。`resolve_subproject_configs`が次のロードへの抑止対象として
-    引き継ぐために参照する。"""
-
-    def __getitem__(self, key: str) -> typing.Any:
-        """設定値を取得。"""
-        return self.values[key]
 
 
 def create_default_config() -> Config:
     """デフォルト設定を生成。"""
     config = Config(
         values=copy.deepcopy(DEFAULT_CONFIG),
-        commands=dict(BUILTIN_COMMANDS),
-        command_names=list(BUILTIN_COMMAND_NAMES),
+        commands=dict(pyfltr.tools.BUILTIN_COMMANDS),
+        command_names=list(pyfltr.tools.BUILTIN_COMMAND_NAMES),
     )
-    config.values["aliases"]["fast"] = _build_fast_alias(config)
+    config.values["aliases"]["fast"] = build_fast_alias(config)
     return config
 
 
-def default_global_config_path() -> pathlib.Path:
-    r"""XDG準拠のグローバル設定ファイルパスを返す。
-
-    Linuxでは`~/.config/pyfltr/config.toml`、macOSでは
-    `~/Library/Application Support/pyfltr/config.toml`、
-    Windowsでは`%LOCALAPPDATA%\pyfltr\config.toml`になる。
-    環境変数`PYFLTR_GLOBAL_CONFIG`が設定されていればそれを優先する
-    （テスト容易性確保とユーザーの強制上書き用。`PYFLTR_CACHE_DIR`と命名対称）。
-
-    `appauthor=False`を渡すのは、未指定時にWindowsで`appname`が
-    appauthorとしても付与され`%LOCALAPPDATA%\pyfltr\pyfltr\config.toml`に
-    なる挙動を回避するため。
-    """
-    override = os.environ.get("PYFLTR_GLOBAL_CONFIG")
-    if override:
-        return pathlib.Path(override)
-    return pathlib.Path(platformdirs.user_config_dir("pyfltr", appauthor=False)) / "config.toml"
-
-
-def _read_config_text(path: pathlib.Path) -> str:
+def read_config_text(path: pathlib.Path) -> str:
     """設定ファイルを読み込む。読み込めない場合は対象のパスと対処を含む`ValueError`を送出する。"""
     try:
         return path.read_text(encoding="utf-8")
@@ -1074,7 +62,7 @@ def format_project_config_missing(path: pathlib.Path, *, use_global: str) -> str
     )
 
 
-def _read_global_config(path: pathlib.Path) -> dict[str, typing.Any]:
+def read_global_config(path: pathlib.Path) -> dict[str, typing.Any]:
     """globalのconfig.tomlを読み込み、`[tool.pyfltr]`配下を返す。
 
     ファイル不在時は空辞書を返す。TOML構文エラー時は`ValueError`で停止する。
@@ -1082,16 +70,16 @@ def _read_global_config(path: pathlib.Path) -> dict[str, typing.Any]:
     if not path.exists():
         return {}
     try:
-        text = _read_config_text(path)
+        text = read_config_text(path)
         data = tomlkit.parse(text)
     except tomlkit.exceptions.TOMLKitError as e:
         raise ValueError(f"global設定ファイルのTOML構文が不正です: {path}: {e}") from e
     raw = data.get("tool", {})
     raw = raw.get("pyfltr", {}) if isinstance(raw, dict) else {}
-    return _unwrap_tomlkit(raw) if isinstance(raw, dict) else {}
+    return unwrap_tomlkit(raw) if isinstance(raw, dict) else {}
 
 
-def _unwrap_tomlkit(value: typing.Any) -> typing.Any:
+def unwrap_tomlkit(value: typing.Any) -> typing.Any:
     """tomlkitの値を素のPython値（dict / list / 基本型）へ再帰的に変換する。
 
     tomlkitはInteger / String / Bool等のラッパー型で値を返す。
@@ -1100,16 +88,16 @@ def _unwrap_tomlkit(value: typing.Any) -> typing.Any:
     入力段で純粋なPython値へ揃えておく。
     """
     if isinstance(value, dict):
-        return {str(k): _unwrap_tomlkit(v) for k, v in value.items()}
+        return {str(k): unwrap_tomlkit(v) for k, v in value.items()}
     if isinstance(value, list):
-        return [_unwrap_tomlkit(item) for item in value]
+        return [unwrap_tomlkit(item) for item in value]
     unwrap = getattr(value, "unwrap", None)
     if callable(unwrap):
         return unwrap()
     return value
 
 
-def _merge_global_and_project(
+def merge_global_and_project(
     global_data: dict[str, typing.Any],
     project_data: dict[str, typing.Any],
 ) -> tuple[dict[str, typing.Any], dict[str, set[str]]]:
@@ -1151,10 +139,10 @@ def _merge_global_and_project(
     return merged, key_sources
 
 
-def _make_config_warning_emitter(
+def make_config_warning_emitter(
     suppressed_warning_entries: frozenset[ConfigWarningEntry],
     warned_entries: set[ConfigWarningEntry],
-) -> _ConfigWarningEmitter:
+) -> ConfigWarningEmitter:
     """抑止対象外の設定検証警告を発行するクロージャーを生成する。
 
     抑止判定は`(key, message)`の組の一致で行う。同一キーでも原因（警告本文）が
@@ -1215,8 +203,8 @@ def load_config(
             設定ファイルの探索起点は常に起点cwd（`.pre-commit-config.yaml`はリポジトリルート、
             `config_arg_template`による注入も`dispatcher`が起点cwd直下から解決する）のため、
             サブプロジェクトのディレクトリを基準にした設定ファイル不在の警告
-            （`_warn_config_files`）とリポジトリ単位ツールの衝突警告
-            （`_warn_precommit_prek_conflict`）は誤検知になる。`True`のとき両者を抑止する。
+            （`warn_config_files`）とリポジトリ単位ツールの衝突警告
+            （`warn_precommit_prek_conflict`）は誤検知になる。`True`のとき両者を抑止する。
         suppressed_warning_entries: 検証警告の抑止候補`(キー名, 警告本文)`集合。
             モノレポのサブプロジェクト解決では、`resolve_subproject_configs`がそのロード
             開始時点までに実際に発行済みのグローバル由来警告のスナップショットを渡す。
@@ -1238,7 +226,7 @@ def load_config(
     # global側の読み込み（不在時は空dict）
     if global_config_path is None:
         global_config_path = default_global_config_path()
-    global_data = _read_global_config(global_config_path)
+    global_data = read_global_config(global_config_path)
 
     # project側の読み込み（不在時は空dict）。
     # 旧実装にあった「pyproject.toml不在時の早期return」は撤廃済み。
@@ -1247,22 +235,22 @@ def load_config(
     pyproject_path = (base / "pyproject.toml").absolute()
     project_data: dict[str, typing.Any] = {}
     if pyproject_path.exists():
-        text = _read_config_text(pyproject_path)
+        text = read_config_text(pyproject_path)
         try:
             pyproject_doc = tomlkit.parse(text)
         except tomlkit.exceptions.TOMLKitError as e:
             raise ValueError(f"pyproject.tomlのTOML構文が不正です: {pyproject_path}: {e}") from e
         raw = pyproject_doc.get("tool", {})
         raw = raw.get("pyfltr", {}) if isinstance(raw, dict) else {}
-        project_data = _unwrap_tomlkit(raw) if isinstance(raw, dict) else {}
+        project_data = unwrap_tomlkit(raw) if isinstance(raw, dict) else {}
 
     # global / projectをマージ。各キーの由来も記録する。
-    tool_pyfltr, key_sources = _merge_global_and_project(global_data, project_data)
+    tool_pyfltr, key_sources = merge_global_and_project(global_data, project_data)
     effective_suppressed_entries = frozenset(
         entry for entry in suppressed_warning_entries if key_sources.get(entry[0]) == {"global"}
     )
     warned_entries: set[ConfigWarningEntry] = set()
-    emit_config_warning = _make_config_warning_emitter(effective_suppressed_entries, warned_entries)
+    emit_config_warning = make_config_warning_emitter(effective_suppressed_entries, warned_entries)
 
     # archive/cache系がproject側に書かれていた場合の警告。
     # global側にも対象のキーがある場合のみ警告対象（global側に無ければproject値が
@@ -1280,24 +268,24 @@ def load_config(
             hint="project側から該当キーを削除するか、global側の値を `pyfltr config set --global` で変更してください。",
         )
 
-    _apply_preset(config, tool_pyfltr, emit_config_warning)
-    _register_custom_commands(config, tool_pyfltr, emit_config_warning)
-    _apply_language_gate(config, tool_pyfltr, emit_config_warning)
-    _normalize_config_values(config, tool_pyfltr, emit_config_warning)
-    _validate_config(config, emit_config_warning)
+    apply_preset(config, tool_pyfltr, emit_config_warning)
+    register_custom_commands(config, tool_pyfltr, emit_config_warning)
+    apply_language_gate(config, tool_pyfltr, emit_config_warning)
+    normalize_config_values(config, tool_pyfltr, emit_config_warning)
+    validate_config(config, emit_config_warning)
     warned_global_only_entries = frozenset(entry for entry in warned_entries if key_sources.get(entry[0]) == {"global"})
-    _recompute_fast_aliases(config)
+    recompute_fast_aliases(config)
     if not for_subproject:
-        _warn_config_files(config, base)
-        _warn_precommit_prek_conflict(config)
+        warn_config_files(config, base)
+        warn_precommit_prek_conflict(config)
 
     return dataclasses.replace(config, warned_global_only_entries=warned_global_only_entries)
 
 
-def _apply_preset(
+def apply_preset(
     config: Config,
     tool_pyfltr: dict[str, typing.Any],
-    emit_config_warning: _ConfigWarningEmitter,
+    emit_config_warning: ConfigWarningEmitter,
 ) -> None:
     """presetキーを読み取り、対応するプリセット設定をconfigに反映する。
 
@@ -1309,53 +297,31 @@ def _apply_preset(
         emit_config_warning(
             "preset",
             message=(
-                f"設定値 `preset` の型が不正です: 期待 文字列、実値 {_japanese_type_label(raw)}。presetを適用せずに続行しました"
+                f"設定値 `preset` の型が不正です: 期待 文字列、実値 {japanese_type_label(raw)}。presetを適用せずに続行しました"
             ),
         )
         return
     preset = raw
     if preset == "":
         return
-    if preset in _PRESETS:
-        config.values.update(_PRESETS[preset])
+    if (preset_values := pyfltr.config.presets.get_preset(preset)) is not None:
+        config.values.update(preset_values)
         config.values["preset"] = preset
         return
-    if preset in _REMOVED_PRESETS:
-        emit_config_warning("preset", message=_REMOVED_PRESETS[preset])
+    if (removed_message := pyfltr.config.presets.get_removed_preset_message(preset)) is not None:
+        emit_config_warning("preset", message=removed_message)
         return
-    suggestions = _close_matches(preset, _PRESETS.keys())
-    message = f"`preset` の値が不正です: {preset!r}（許容値: {', '.join(_PRESETS.keys())}）"
+    suggestions = close_matches(preset, pyfltr.config.presets.preset_names())
+    message = f"`preset` の値が不正です: {preset!r}（許容値: {', '.join(pyfltr.config.presets.preset_names())}）"
     if suggestions:
         message = f"{message}。もしかして: {', '.join(suggestions)}"
     emit_config_warning("preset", message=f"{message}。presetを適用せずに続行しました")
 
 
-def _register_custom_commands(
+def apply_language_gate(
     config: Config,
     tool_pyfltr: dict[str, typing.Any],
-    emit_config_warning: _ConfigWarningEmitter,
-) -> None:
-    """custom-commandsエントリを読み取り、各カスタムコマンドをconfigに登録する。
-
-    `custom-commands`配下がテーブル以外の場合は警告してカスタムコマンド登録処理全体を
-    スキップする。
-    """
-    custom_commands = tool_pyfltr.get("custom-commands", {})
-    if not isinstance(custom_commands, dict):
-        emit_config_warning(
-            "custom-commands",
-            message="`custom-commands` はテーブルで指定してください: 例 [tool.pyfltr.custom-commands.svelte-check]",
-        )
-        return
-    for name, definition in custom_commands.items():
-        name = name.replace("_", "-")
-        _register_custom_command(config, name, definition, emit_config_warning)
-
-
-def _apply_language_gate(
-    config: Config,
-    tool_pyfltr: dict[str, typing.Any],
-    emit_config_warning: _ConfigWarningEmitter,
+    emit_config_warning: ConfigWarningEmitter,
 ) -> None:
     """言語カテゴリgateを適用する（preset < 言語カテゴリgate < 個別設定）。
 
@@ -1370,7 +336,7 @@ def _apply_language_gate(
     厳密に判定する。
     """
     user_keys = set(tool_pyfltr.keys())
-    for category_key, commands in LANGUAGE_CATEGORIES:
+    for category_key, commands in pyfltr.tools.LANGUAGE_CATEGORIES:
         raw = tool_pyfltr.get(category_key, False)
         if isinstance(raw, bool):
             enabled = raw
@@ -1378,7 +344,7 @@ def _apply_language_gate(
             emit_config_warning(
                 category_key,
                 message=(
-                    f"設定値 `{category_key}` の型が不正です: 期待 真偽値、実値 {_japanese_type_label(raw)}。"
+                    f"設定値 `{category_key}` の型が不正です: 期待 真偽値、実値 {japanese_type_label(raw)}。"
                     "既定値 false（無効）として続行しました"
                 ),
             )
@@ -1389,731 +355,3 @@ def _apply_language_gate(
             if cmd in user_keys:
                 continue  # 個別設定による明示指定を保持 (True/False 双方)
             config.values[cmd] = False
-
-
-def _normalize_config_values(
-    config: Config,
-    tool_pyfltr: dict[str, typing.Any],
-    emit_config_warning: _ConfigWarningEmitter,
-) -> None:
-    """プリセット・言語カテゴリ以外の設定を適用し、targets/extend-targetsを反映する。
-
-    プリセットと重複するキーは上書きされる。
-    未知キー・型不一致・excludeのリスト型不一致・targetsの型不一致・削除済みコマンド向け
-    キーは警告して既定値を維持する。由来（global / project）に依らず同じ警告経路を
-    適用する（複数バージョン混在時の停止回避が目的）。
-    """
-    skip_keys = ("preset", "custom-commands", *(key for key, _ in LANGUAGE_CATEGORIES))
-    targets_overrides: dict[str, str | list[str]] = {}
-    extend_targets_map: dict[str, str | list[str]] = {}
-
-    for key, value in tool_pyfltr.items():
-        if key in skip_keys:
-            continue  # 別途処理済み
-        # v3.0.0で削除されたツール名に紐づく設定キーを検出したら移行案内を表示する。
-        # "pyupgrade" / "pyupgrade-path" / "pyupgrade-args" / "pyupgrade-fast"などを網羅する。
-        removed_owner = _extract_removed_command(key)
-        if removed_owner is not None:
-            emit_config_warning(
-                key,
-                message=(
-                    f'"{key}" は v3.0.0 で削除されたツール "{removed_owner}" 向けの設定である。'
-                    "5 ツール (pyupgrade / autoflake / isort / black / pflake8) は ruff への統合により削除された。"
-                    "該当設定をすべて pyproject.toml から除去すること"
-                ),
-            )
-            continue
-        # pytest-fast-targetsは`-targets`接尾辞を持つがコマンド別targetsではないため先に扱う。
-        if key == "pytest-fast-targets":
-            validated = _validate_targets_value(key, value, emit_config_warning)
-            if validated is not None:
-                config.values[key] = validated
-            continue
-        # {command}-excludeの検出
-        if key.endswith("-exclude"):
-            cmd_name = key.removesuffix("-exclude")
-            if cmd_name in config.commands:
-                if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
-                    emit_config_warning(
-                        key,
-                        message=f'`{key}` はstr型のリストで指定してください: 例 ["vendor", "gen_*.py"]。このキーは無視しました',
-                    )
-                    continue
-                config.values[key] = value
-                continue
-        # {command}-extend-targetsの検出（長いサフィックスを先に判定）
-        if key.endswith("-extend-targets"):
-            cmd_name = key.removesuffix("-extend-targets")
-            if cmd_name in config.commands:
-                validated = _validate_targets_value(key, value, emit_config_warning)
-                if validated is not None:
-                    config.values[key] = validated
-                    extend_targets_map[cmd_name] = validated
-                continue
-        # {command}-extend-argsの検出。サフィックス`-args`より長いため、後段の
-        # `key not in config.values`分岐や`-args`相当の汎用一致判定より先に処理する。
-        # `{command}-args`の末尾へ結合する追加引数で、既定値を保ったまま要素を足す用途。
-        # 値はstr型のリストとし、不正な場合は警告して既定値（空リスト）を維持する。
-        if key.endswith("-extend-args"):
-            cmd_name = key.removesuffix("-extend-args")
-            if cmd_name in config.commands:
-                if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
-                    emit_config_warning(
-                        key,
-                        message=f'`{key}` はstr型のリストで指定してください: 例 ["--exclude=foo"]。このキーは無視しました',
-                    )
-                    continue
-                config.values[key] = value
-                continue
-        # {command}-targetsの検出
-        if key.endswith("-targets"):
-            cmd_name = key.removesuffix("-targets")
-            if cmd_name in config.commands:
-                validated = _validate_targets_value(key, value, emit_config_warning)
-                if validated is not None:
-                    config.values[key] = validated
-                    targets_overrides[cmd_name] = validated
-                continue
-        if key not in config.values:
-            emit_config_warning(
-                key,
-                message=format_unknown_key_message(key, config.values.keys()),
-            )
-            continue
-        if not isinstance(value, type(config.values[key])):  # 簡易チェック
-            expected_label = _japanese_type_label(config.values[key])
-            actual_label = _japanese_type_label(value)
-            emit_config_warning(
-                key,
-                message=(
-                    f"設定値 `{key}` の型が不正です: 期待 {expected_label}、実値 {actual_label}。"
-                    "このキーは無視し、既定値で続行しました"
-                ),
-            )
-            continue
-        config.values[key] = value
-
-    # targetsの完全上書き
-    for cmd_name, new_targets in targets_overrides.items():
-        config.commands[cmd_name] = dataclasses.replace(config.commands[cmd_name], targets=new_targets)
-
-    # extend-targetsの追加（targets上書き後に適用）
-    for cmd_name, extra in extend_targets_map.items():
-        existing = config.commands[cmd_name].target_globs()
-        if isinstance(extra, str):
-            existing.append(extra)
-        else:
-            existing.extend(extra)
-        config.commands[cmd_name] = dataclasses.replace(config.commands[cmd_name], targets=existing)
-
-
-def _validate_config(config: Config, emit_config_warning: _ConfigWarningEmitter) -> None:
-    """Runner / severity / hintsのバリデーションを行う。
-
-    値が不正な場合は警告を発行し、対象のキーの値を既定値（`DEFAULT_CONFIG`）に
-    巻き戻して処理を続行する。複数バージョン混在時に新しい値が旧バージョンへ
-    波及してもパイプライン全体は停止しない方針。
-    """
-    # グローバルrunner設定（python-runner / js-runner / bin-runner）の値バリデーション。
-    # カテゴリごとに許容値が異なるため、共通dispatcher構造で1箇所に集約する。
-    _global_runner_specs: tuple[tuple[str, tuple[str, ...]], ...] = (
-        ("python-runner", PYTHON_RUNNERS),
-        ("js-runner", JS_RUNNERS),
-        ("bin-runner", BIN_RUNNERS),
-    )
-    for runner_key, allowed in _global_runner_specs:
-        runner_value = config.values[runner_key]
-        if runner_value not in allowed:
-            emit_config_warning(
-                runner_key,
-                message=(
-                    f"`{runner_key}` の値が不正です: {runner_value!r}（許容値: {', '.join(allowed)}）。"
-                    f"既定値 {DEFAULT_CONFIG[runner_key]!r} で続行しました"
-                ),
-            )
-            config.values[runner_key] = DEFAULT_CONFIG[runner_key]
-
-    # per-tool {command}-runnerの値バリデーション。
-    # 対称12値のいずれかを許容する。カテゴリ横断の組み合わせ（例: Python系ツールに`pnpm`を指定）は
-    # 拒否しない方針（実装簡潔さを優先し、無意味な組み合わせは実行時の解決ロジックがエラー終了する）。
-    _global_runner_keys = frozenset(key for key, _ in _global_runner_specs)
-    for key, value in list(config.values.items()):
-        if not key.endswith("-runner") or key in _global_runner_keys:
-            continue
-        if value not in COMMAND_RUNNERS:
-            fallback = DEFAULT_CONFIG.get(key, "direct")
-            emit_config_warning(
-                key,
-                message=(
-                    f"`{key}` の値が不正です: {value!r}（許容値: {', '.join(COMMAND_RUNNERS)}）。"
-                    f"既定値 {fallback!r} で続行しました"
-                ),
-            )
-            config.values[key] = fallback
-
-    # per-tool {command}-severityの値バリデーション。
-    # ビルトイン分は既定値 "error" が登録済みでも、利用者が pyproject.toml で
-    # 別値を書いた場合は本ループで検出する。カスタムコマンド側は
-    # `_register_custom_command` で登録時に検証済みのため、ここでは値のみ確認する。
-    for key, value in list(config.values.items()):
-        if not key.endswith("-severity"):
-            continue
-        if value not in SEVERITY_VALUES:
-            emit_config_warning(
-                key,
-                message=(
-                    f"`{key}` の値が不正です: {value!r}（許容値: {', '.join(SEVERITY_VALUES)}）。既定値 'error' で続行しました"
-                ),
-            )
-            config.values[key] = "error"
-
-    # per-tool {command}-hintsの要素型バリデーション。
-    # 上位の汎用バリデーション（list型一致）はパスするが、要素がstrでなければ
-    # JSONL出力時に文字列前提のレコード組み立てが失敗するため、ここで明示的に
-    # 文字列リストであることを確認する。
-    for key, value in list(config.values.items()):
-        if not key.endswith("-hints"):
-            continue
-        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-            emit_config_warning(
-                key,
-                message=(
-                    f'`{key}` は文字列のリストで指定してください: 例 ["注意1", "注意2"]、実値 {value!r}。このキーは無視しました'
-                ),
-            )
-            config.values[key] = []
-
-
-def _recompute_fast_aliases(config: Config) -> None:
-    """per-command fastフラグからfastエイリアスを再計算する。"""
-    config.values["aliases"]["fast"] = _build_fast_alias(config)
-
-
-def _warn_config_files(config: Config, base: pathlib.Path) -> None:
-    """有効化されているコマンドで`CommandInfo.config_files`を満たさないものを警告する。"""
-    for command, info in config.commands.items():
-        if not info.config_files:
-            continue
-        if config.values.get(command) is not True:
-            continue
-        if any(list(base.glob(pattern)) for pattern in info.config_files):
-            continue
-        candidates = ", ".join(info.config_files)
-        pyfltr.warnings_.emit_warning(
-            source="config",
-            message=(
-                f"{command} が有効化されていますが、設定ファイルが見つかりません: {candidates}。"
-                "ツールは設定ファイル無しで起動するため、既定の設定で検査されるか、設定不足で失敗します"
-            ),
-            hint=f"候補のいずれかを作成するか、不要なら `{command} = false` で無効化してください。",
-        )
-
-
-def _warn_precommit_prek_conflict(config: Config) -> None:
-    """pre-commitとprekが同時に有効化されている場合に警告する。
-
-    双方が同一の.pre-commit-config.yamlのフックを実行するため、同時有効化は
-    二重実行を招く。実行自体は妨げず警告のみとする。
-    """
-    if config["pre-commit"] and config["prek"]:
-        pyfltr.warnings_.emit_warning(
-            source="config",
-            message=(
-                "pre-commit と prek が両方有効化されています。"
-                "同一の.pre-commit-config.yamlのフックが二重実行されるため、いずれか一方のみを有効化してください。"
-            ),
-        )
-
-
-def _register_custom_command(
-    config: Config,
-    name: str,
-    definition: dict[str, typing.Any],
-    emit_config_warning: _ConfigWarningEmitter,
-) -> None:
-    """カスタムコマンドをConfigに登録する。
-
-    定義のいずれかが不正と判定された場合は警告を発行して対象のカスタムコマンドの登録自体を
-    スキップする。値の部分採用（一部のみ反映）は行わない。
-    検証はすべての項目を `config.commands` / `config.values` 更新前に完了させる。
-    """
-
-    def _skip_registration(message: str) -> None:
-        emit_config_warning("custom-commands", message=f"{message}。このカスタムコマンドの登録をスキップしました")
-
-    # 名前衝突チェック
-    if name in BUILTIN_COMMANDS:
-        emit_config_warning(
-            "custom-commands",
-            message=(
-                f"カスタムコマンド `{name}` がビルトインコマンドと衝突するため、登録をスキップしました。"
-                f"別名へ変更するか、ビルトインの `{name}-args` などでビルトイン側の設定を上書きしてください"
-            ),
-        )
-        return
-
-    # type (必須)
-    cmd_type = definition.get("type")
-    if cmd_type not in ("formatter", "linter", "tester"):
-        _skip_registration(
-            f"カスタムコマンド `{name}` の `type` が不正です: {cmd_type!r}（許容値: formatter, linter, tester）",
-        )
-        return
-
-    # path (省略時はコマンド名)
-    path = definition.get("path", name)
-    if not isinstance(path, str):
-        _skip_registration(
-            f"カスタムコマンド `{name}` の `path` は文字列で指定してください",
-        )
-        return
-
-    # args (省略時は空リスト)
-    args = definition.get("args", [])
-    if not isinstance(args, list):
-        _skip_registration(
-            f"カスタムコマンド `{name}` の `args` はリストで指定してください",
-        )
-        return
-
-    # extend-args（省略可。省略時は空リスト扱い）。
-    # 既定値の`args`を保ったまま末尾へ追加する引数。ビルトインコマンドと同じ意味づけ。
-    extend_args = definition.get("extend-args", definition.get("extend_args", []))
-    if not isinstance(extend_args, list) or not all(isinstance(item, str) for item in extend_args):
-        _skip_registration(
-            f"カスタムコマンド `{name}` の `extend-args` は文字列のリストで指定してください",
-        )
-        return
-
-    # fix-args（省略可。省略時はfixモード非対応として扱う）
-    fix_args = definition.get("fix-args", definition.get("fix_args"))
-    if fix_args is not None and not isinstance(fix_args, list):
-        _skip_registration(
-            f"カスタムコマンド `{name}` の `fix-args` はリストで指定してください",
-        )
-        return
-
-    # targets（省略時は "*.py"。strまたはlist[str]）
-    raw_targets: typing.Any = definition.get("targets", "*.py")
-    targets: str | list[str]
-    if isinstance(raw_targets, str):
-        targets = raw_targets
-    elif isinstance(raw_targets, list) and all(isinstance(item, str) for item in raw_targets):
-        # raw_targetsはtyping.Any経由のためlist(raw_targets)の要素型が縮まらない。
-        # 上記isinstanceで要素がstrであることを検証済みなので、明示的にstr化して
-        # list[str]を構築する。
-        targets = [str(item) for item in raw_targets]
-    else:
-        _skip_registration(
-            f"カスタムコマンド `{name}` の `targets` は文字列または文字列のリストで指定してください",
-        )
-        return
-
-    # error-pattern（省略可）
-    error_pattern = definition.get("error-pattern", definition.get("error_pattern"))
-    if error_pattern is not None:
-        if not isinstance(error_pattern, str):
-            _skip_registration(
-                f"カスタムコマンド `{name}` の `error-pattern` は文字列で指定してください",
-            )
-            return
-        try:
-            compiled = re.compile(error_pattern)
-        except re.error as e:
-            _skip_registration(
-                f"カスタムコマンド `{name}` の `error-pattern` が不正な正規表現です: {e}",
-            )
-            return
-        missing_group = next((g for g in ("file", "line", "message") if g not in compiled.groupindex), None)
-        if missing_group is not None:
-            _skip_registration(
-                f"カスタムコマンド `{name}` の `error-pattern` に `{missing_group}` 名前付きグループが必要です",
-            )
-            return
-
-    # config-files（省略可。設定ファイル候補のglobパターン）
-    raw_config_files: typing.Any = definition.get("config-files", definition.get("config_files", []))
-    if not isinstance(raw_config_files, list) or not all(isinstance(item, str) for item in raw_config_files):
-        _skip_registration(
-            f"カスタムコマンド `{name}` の `config-files` は文字列のリストで指定してください",
-        )
-        return
-    config_files: list[str] = [str(item) for item in raw_config_files]
-
-    # fast（省略時はFalse）
-    fast = definition.get("fast", False)
-    if not isinstance(fast, bool):
-        _skip_registration(
-            f"カスタムコマンド `{name}` の `fast` は真偽値で指定してください",
-        )
-        return
-
-    # pass-filenames（省略時はTrue）
-    pass_filenames = definition.get("pass-filenames", definition.get("pass_filenames", True))
-    if not isinstance(pass_filenames, bool):
-        _skip_registration(
-            f"カスタムコマンド `{name}` の `pass-filenames` は真偽値で指定してください",
-        )
-        return
-
-    # severity（省略時は "error"）。許容値以外は警告して登録スキップ。
-    raw_severity: typing.Any = definition.get("severity", "error")
-    if raw_severity not in SEVERITY_VALUES:
-        _skip_registration(
-            (
-                f"カスタムコマンド `{name}` の `severity` の値が不正です: "
-                f"{raw_severity!r}（許容値: {', '.join(SEVERITY_VALUES)}）"
-            ),
-        )
-        return
-    severity: str = str(raw_severity)
-
-    # hints（省略時は空リスト。要素はstr）。
-    raw_hints: typing.Any = definition.get("hints", [])
-    if not isinstance(raw_hints, list) or not all(isinstance(item, str) for item in raw_hints):
-        _skip_registration(
-            f"カスタムコマンド `{name}` の `hints` は文字列のリストで指定してください",
-        )
-        return
-    hints: list[str] = [str(item) for item in raw_hints]
-
-    # 全検証通過。CommandInfo・values辞書を一括登録する。
-    config.commands[name] = CommandInfo(
-        type=cmd_type,
-        builtin=False,
-        targets=targets,
-        error_pattern=error_pattern,
-        config_files=config_files,
-    )
-    config.command_names.append(name)
-
-    config.values[name] = True
-    config.values[f"{name}-path"] = path
-    config.values[f"{name}-args"] = args
-    config.values[f"{name}-extend-args"] = [str(item) for item in extend_args]
-    config.values[f"{name}-fast"] = fast
-    config.values[f"{name}-pass-filenames"] = pass_filenames
-    config.values[f"{name}-severity"] = severity
-    config.values[f"{name}-hints"] = hints
-    # ビルトインコマンドは`_register_command_subproject_aware_defaults`が既定値を登録する。
-    # カスタムコマンドは登録時点でしか既定値を用意できないため、ここで併せて登録する。
-    # 登録しないと利用者が`{name}-subproject-aware`を指定したとき未知キーとして警告される。
-    config.values[f"{name}-subproject-aware"] = config.commands[name].subproject_aware
-    # fix-argsは定義されている場合のみ登録する（キーの有無でfix対応可否を判別）
-    if fix_args is not None:
-        config.values[f"{name}-fix-args"] = fix_args
-
-
-def _build_fast_alias(config: Config) -> list[str]:
-    """per-command fastフラグからfastエイリアスを動的構築。
-
-    pytestは`pytest-fast-targets`が非空なら`pytest-fast`の値に依らず含める。
-    """
-    return [
-        name
-        for name in config.command_names
-        if config.values.get(f"{name}-fast", False) or (name == "pytest" and pytest_fast_target_globs(config.values))
-    ]
-
-
-def pytest_fast_target_globs(values: dict[str, typing.Any]) -> list[str]:
-    """`pytest-fast-targets`の値をglobのリストとして返す（未指定・空なら空リスト）。"""
-    raw = values.get("pytest-fast-targets", [])
-    if isinstance(raw, str):
-        return [raw] if raw else []
-    return [str(item) for item in raw]
-
-
-def _extract_removed_command(key: str) -> str | None:
-    """設定キーが削除コマンド宛なら該当コマンド名を返す、そうでなければNone。
-
-    `"pyupgrade"`のようなbare keyと、`"pyupgrade-path"` / `"pyupgrade-args"` /
-    `"pyupgrade-fast"`などの派生キーの双方を検出する。
-    """
-    if key in REMOVED_COMMANDS:
-        return key
-    for command in REMOVED_COMMANDS:
-        if key.startswith(f"{command}-"):
-            return command
-    return None
-
-
-def _validate_targets_value(
-    key: str,
-    value: typing.Any,
-    emit_config_warning: _ConfigWarningEmitter,
-) -> str | list[str] | None:
-    """Targets / extend-targets の値をバリデーション。
-
-    値が不正な場合は警告を発行し、`None`を返す。呼び出し側は`None`を受け取ったら
-    対象のキーの反映をスキップして既定値（`CommandInfo.targets`）を維持する。
-    """
-    if isinstance(value, str):
-        return value
-    if isinstance(value, list) and all(isinstance(item, str) for item in value):
-        return [str(item) for item in value]
-    emit_config_warning(
-        key,
-        message=f"`{key}` は文字列または文字列のリストで指定してください。このキーは無視し、既定の対象で続行しました",
-    )
-    return None
-
-
-def is_command_enabled_anywhere(
-    command: str,
-    config: Config,
-    subproject_configs: dict[pathlib.Path, Config] | None = None,
-) -> bool:
-    """コマンドを実行対象として有効化するかを、起点と各サブプロジェクトの和集合で判定する。
-
-    起点 config で有効なら常に `True`。モノレポで対象のコマンドが `subproject_aware=True` の場合に限り、
-    いずれかのサブプロジェクト config で有効なら `True` を返す（親OFF・子ON対応）。
-    `subproject_aware` 判定はツール特性を表すメタ設定のため起点 config で固定し、
-    `subproject_aware=False` のリポジトリ単位ツールは起点設定のみで判定する。
-    `subproject_configs` が空または `None`（単一プロジェクト）のときは起点設定のみで判定する。
-    """
-    if config.values.get(command) is True:
-        return True
-    if not subproject_configs:
-        return False
-    info = config.commands.get(command)
-    if info is None:
-        return False
-    if not resolve_subproject_aware(config.values, command, info.subproject_aware):
-        return False
-    return any(sub_config.values.get(command) is True for sub_config in subproject_configs.values())
-
-
-def filter_fix_commands(
-    commands: list[str],
-    config: Config,
-    subproject_configs: dict[pathlib.Path, Config] | None = None,
-) -> list[str]:
-    """fixステージで実行すべきコマンドに限定する。
-
-    `pyfltr run` / `pyfltr fast`のfixステージはlinterのautofix機能
-    （`{command}-fix-args`）を前段で呼び出すための段で、formatterは対象外。
-    formatter本体は通常ステージで常に書き込みモードで動くため、fixステージで
-    重複して実行する必要はない。
-
-    enabledかつ`{command}-fix-args`が定義されているlinter/testerを返す。
-    モノレポでは起点と各サブプロジェクトの和集合で有効判定する（親OFF・子ON対応）。
-    """
-    result: list[str] = []
-    for command in commands:
-        if not is_command_enabled_anywhere(command, config, subproject_configs):
-            continue
-        if f"{command}-fix-args" in config.values:
-            result.append(command)
-    return result
-
-
-def resolve_aliases(commands: list[str], config: Config) -> list[str]:
-    """エイリアスを展開する。
-
-    展開後のコマンド列は`config.command_names`の登録順でソートする。
-    未知コマンドは末尾扱いとし、`command_names.index`の`ValueError`を発生させない。
-    """
-    # 最大10回まで再帰的に展開
-    result: list[str] = []
-    for _ in range(10):
-        result = []
-        resolved: bool = False
-        for command in commands:
-            command = command.strip()
-            if command in config["aliases"]:
-                for c in config["aliases"][command]:
-                    if c not in result:  # 順番は維持しつつ重複排除
-                        result.append(c)
-                resolved = True
-            else:
-                if command not in result:  # 順番は維持しつつ重複排除
-                    result.append(command)
-        if not resolved:
-            break
-        commands = result
-
-    # 未知コマンドは末尾扱いとし、`command_names.index`の`ValueError`を発生させない。
-    # 検出は呼び出し側（pipeline.py側のparser.error整形）に委ねる方針。
-    unknown_index = len(config.command_names)
-
-    def _sort_key(name: str) -> int:
-        try:
-            return config.command_names.index(name)
-        except ValueError:
-            return unknown_index
-
-    result.sort(key=_sort_key)
-    return result
-
-
-def read_config_values(path: pathlib.Path) -> dict[str, typing.Any]:
-    """pyproject.tomlまたはglobal config.tomlから`[tool.pyfltr]`配下を返す。
-
-    ファイル不在時は空辞書を返す。TOML構文エラー時は`ValueError`で停止する。
-    `pyfltr config get` / `pyfltr config list`の読み取り経路で使用する。
-    """
-    if not path.exists():
-        return {}
-    try:
-        text = _read_config_text(path)
-        data = tomlkit.parse(text)
-    except tomlkit.exceptions.TOMLKitError as e:
-        raise ValueError(f"設定ファイルのTOML構文が不正です: {path}: {e}") from e
-    raw = data.get("tool", {})
-    raw = raw.get("pyfltr", {}) if isinstance(raw, dict) else {}
-    return _unwrap_tomlkit(raw) if isinstance(raw, dict) else {}
-
-
-def set_config_value(
-    path: pathlib.Path,
-    key: str,
-    value: typing.Any,
-    *,
-    create_if_missing: bool = False,
-) -> None:
-    """設定ファイルの`[tool.pyfltr]`配下を更新する。
-
-    既存ファイルはtomlkit経由で読み書きするためコメント・セクション順は保持される。
-    `create_if_missing=True`なら、ファイル不在時にディレクトリ含めて新規作成する。
-    `create_if_missing=False`でファイル不在なら`FileNotFoundError`を送出する。
-    """
-    if path.exists():
-        text = _read_config_text(path)
-        try:
-            doc = tomlkit.parse(text)
-        except tomlkit.exceptions.TOMLKitError as e:
-            raise ValueError(f"設定ファイルのTOML構文が不正です: {path}: {e}") from e
-    else:
-        if not create_if_missing:
-            raise FileNotFoundError(f"設定ファイルが存在しません: {path}")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        doc = tomlkit.document()
-
-    tool_table = doc.get("tool")
-    if tool_table is None:
-        tool_table = tomlkit.table()
-        doc["tool"] = tool_table
-    pyfltr_table = tool_table.get("pyfltr")
-    if pyfltr_table is None:
-        pyfltr_table = tomlkit.table()
-        tool_table["pyfltr"] = pyfltr_table
-
-    pyfltr_table[key] = value
-    path.write_text(tomlkit.dumps(doc), encoding="utf-8")
-
-
-def delete_config_value(path: pathlib.Path, key: str) -> bool:
-    """設定ファイルから`[tool.pyfltr]`配下のキーを削除する。
-
-    存在したかをboolで返す。セクションが空になっても削除しない
-    （手書きコメントを保持するため）。
-    ファイル不在時は`False`を返す。
-    """
-    if not path.exists():
-        return False
-    text = _read_config_text(path)
-    try:
-        doc = tomlkit.parse(text)
-    except tomlkit.exceptions.TOMLKitError as e:
-        raise ValueError(f"設定ファイルのTOML構文が不正です: {path}: {e}") from e
-    tool_table = doc.get("tool")
-    if tool_table is None:
-        return False
-    pyfltr_table = tool_table.get("pyfltr")
-    if pyfltr_table is None:
-        return False
-    if key not in pyfltr_table:
-        return False
-    del pyfltr_table[key]
-    path.write_text(tomlkit.dumps(doc), encoding="utf-8")
-    return True
-
-
-def parse_config_value(key: str, raw: str) -> typing.Any:
-    """文字列値を`DEFAULT_CONFIG[key]`の型に変換する。
-
-    bool / int / str / `list[str]`のみ対応。dict系（`aliases`等）は非対応で
-    `ValueError`を送出する（CLI経由でdict編集はサポートしない方針）。
-
-    - bool: `true`/`false`/`1`/`0`を受理（大文字小文字は無視）
-    - int: `int(raw)`、失敗で`ValueError`
-    - str: そのまま
-    - list[str]: カンマ区切りでsplit、要素のtrimは行わない
-      （`*-args`系で空白を含むケースに対応するため）
-    """
-    if key not in DEFAULT_CONFIG:
-        raise ValueError(format_unknown_key_message(key, DEFAULT_CONFIG.keys()))
-    default = DEFAULT_CONFIG[key]
-    if isinstance(default, bool):
-        lowered = raw.strip().lower()
-        if lowered in ("true", "1"):
-            return True
-        if lowered in ("false", "0"):
-            return False
-        raise ValueError(f"`{key}` には true / false / 1 / 0 のいずれかを指定してください: 実値 {raw!r}")
-    if isinstance(default, int):
-        try:
-            return int(raw)
-        except ValueError as e:
-            raise ValueError(f"`{key}` には整数を指定してください: 実値 {raw!r}") from e
-    if isinstance(default, str):
-        return raw
-    if isinstance(default, list):
-        return raw.split(",") if raw else []
-    if isinstance(default, dict):
-        raise ValueError(f"`{key}` は辞書型のためCLIから直接設定できません。pyproject.tomlを直接編集してください")
-    raise ValueError(
-        f"`{key}` の値型はCLI経由では設定できません: {type(default).__name__}。pyproject.tomlを直接編集してください"
-    )
-
-
-# `_close_matches`/`_japanese_type_label`/`format_unknown_key_message` はconfig.py内で
-# 2箇所以上から再利用するため、共通モジュール新設は行わずプライベートヘルパーとして集約する。
-
-_JAPANESE_TYPE_LABELS: dict[type, str] = {
-    bool: "真偽値",
-    int: "整数",
-    float: "数値",
-    str: "文字列",
-    list: "リスト",
-    tuple: "リスト",
-    dict: "テーブル",
-}
-"""Python型 → エラーメッセージ向け日本語ラベル。
-
-`<class 'bool'>` のような生表示を避け、利用者が型として識別できる語へ揃える。
-未登録型は `type(value).__name__` のフォールバックを使う。
-"""
-
-
-def _japanese_type_label(value: typing.Any) -> str:
-    """値または型から日本語ラベルを返す。
-
-    `value` には実値・型オブジェクトのいずれでも渡せる（呼び分けを揃えるため）。
-    未登録型は型名（`type.__name__`）をそのまま返す。
-    """
-    target_type = value if isinstance(value, type) else type(value)
-    return _JAPANESE_TYPE_LABELS.get(target_type, target_type.__name__)
-
-
-def _close_matches(key: str, candidates: typing.Iterable[str]) -> list[str]:
-    """`key` に近いキー名候補をdifflib由来で最大3件返す。
-
-    呼び出し側は候補が空のときにサジェスト文を出力しない判断を行う。
-    """
-    return difflib.get_close_matches(key, list(candidates), n=3, cutoff=0.6)
-
-
-def format_unknown_key_message(key: str, candidates: typing.Iterable[str]) -> str:
-    """未知設定キー検出時の文面を組み立てる。
-
-    候補があれば「もしかして: ...」を併記し、必ず全キー一覧確認手段を案内する。
-    `config.py` / `cli/config_subcmd.py`の双方から再利用するためpublic名で公開する。
-    """
-    suggestions = _close_matches(key, candidates)
-    parts = [f"設定キー `{key}` は認識できません"]
-    if suggestions:
-        parts.append(f"もしかして: {', '.join(suggestions)}")
-    parts.append("有効なキー一覧は `pyfltr config list --all` で確認できます")
-    return "。".join(parts)

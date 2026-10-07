@@ -18,7 +18,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import shutil
 import sys
@@ -30,9 +29,8 @@ import pyfltr.command.dispatcher
 import pyfltr.command.mise
 import pyfltr.command.runner
 import pyfltr.config.config
-
-_OUTPUT_FORMATS: tuple[str, ...] = ("text", "json", "jsonl")
-_VALID_OUTPUT_FORMATS: frozenset[str] = frozenset(_OUTPUT_FORMATS)
+import pyfltr.config.model
+import pyfltr.output.auxiliary
 
 
 def register_subparsers(subparsers: typing.Any) -> None:
@@ -48,7 +46,7 @@ def register_subparsers(subparsers: typing.Any) -> None:
     parser.add_argument(
         "--output-format",
         dest="output_format",
-        choices=_OUTPUT_FORMATS,
+        choices=pyfltr.output.auxiliary.OUTPUT_FORMATS,
         default=None,
         help=(
             "出力形式を指定する（text / json / jsonl、既定: text）。"
@@ -87,20 +85,19 @@ def execute_command_info(parser: argparse.ArgumentParser, args: argparse.Namespa
     output_format = pyfltr.cli.output_format.resolve_output_format(
         parser,
         args.output_format,
-        valid_values=_VALID_OUTPUT_FORMATS,
+        valid_values=pyfltr.output.auxiliary.VALID_OUTPUT_FORMATS,
         ai_agent_default="jsonl",
     ).format
     if output_format == "json":
-        json.dump(info, sys.stdout, ensure_ascii=False, indent=2)
-        sys.stdout.write("\n")
+        pyfltr.output.auxiliary.print_json(info, indent=2)
     elif output_format == "jsonl":
-        sys.stdout.write(json.dumps(info, ensure_ascii=False) + "\n")
+        pyfltr.output.auxiliary.print_json(info)
     else:
         _print_text(info)
     return 0 if info.get("resolved", True) else 1
 
 
-def collect_info(command: str, config: pyfltr.config.config.Config, *, do_check: bool) -> dict[str, typing.Any]:
+def collect_info(command: str, config: pyfltr.config.model.Config, *, do_check: bool) -> dict[str, typing.Any]:
     """ツール解決情報を辞書で組み立てる。
 
     MCPの`command_info`ツールからも呼び出す。
@@ -121,12 +118,12 @@ def collect_info(command: str, config: pyfltr.config.config.Config, *, do_check:
         "enabled": enabled,
         "runner": runner,
         "runner_source": source,
-        "configured_path": config.values.get(f"{command}-path", ""),
-        "configured_args": list(config.values.get(f"{command}-args", [])),
-        "configured_extend_args": list(config.values.get(f"{command}-extend-args", [])),
-        "severity": pyfltr.config.config.resolve_severity(config.values, command),
-        "hints": list(config.values.get(f"{command}-hints", [])),
-        "version": config.values.get(f"{command}-version"),
+        "configured_path": pyfltr.config.model.command_setting(config.values, command, "path", ""),
+        "configured_args": list(pyfltr.config.model.command_setting(config.values, command, "args", [])),
+        "configured_extend_args": list(pyfltr.config.model.command_setting(config.values, command, "extend-args", [])),
+        "severity": pyfltr.config.model.resolve_severity(config.values, command),
+        "hints": list(pyfltr.config.model.command_setting(config.values, command, "hints", [])),
+        "version": pyfltr.config.model.command_setting(config.values, command, "version", None),
         "dotnet_root": os.environ.get("DOTNET_ROOT"),
     }
 
@@ -191,7 +188,7 @@ def collect_info(command: str, config: pyfltr.config.config.Config, *, do_check:
     )
     # fix-argsが定義されているコマンドでは、fix段でもargvが異なるため併記する。
     # textlintは`--format`ペアを除去する特殊経路となる（`build_invocation_argv`内で処理）。
-    if config.values.get(f"{command}-fix-args"):
+    if pyfltr.config.model.command_setting(config.values, command, "fix-args", []):
         base["fix_commandline"] = pyfltr.command.runner.build_invocation_argv(
             command, config, list(resolved.commandline), additional_args=[], fix_stage=True
         )

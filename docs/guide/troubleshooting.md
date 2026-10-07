@@ -2,6 +2,7 @@
 
 pyfltr運用中に発生しがちな事象と対処法を症状別にまとめる。
 導入手順は[はじめに](getting-started.md)を参照。
+MCPの提供ツールと応答の読み方は[CLIコマンドのMCP参照](usage.md#mcp)を参照。
 
 ## MCP起動時のstdout占有
 
@@ -140,12 +141,8 @@ pyfltrを起動する。このときの所要時間は回線速度とキャッ�
 ## pre-commit・prek統合時の自動スキップ
 
 pre-commit・prek（以下いずれも実行系と呼ぶ）からpyfltrを呼び出しているのに、一部のツールが実行されないことがある。
-これは実行系を経由した起動時の意図的なフィルタリング動作である。
-
-pyfltrは実行系から呼び出されたことを環境変数`PRE_COMMIT=1`で検出する。
-pre-commitとprekは、いずれもこの環境変数を設定する。
-`PRE_COMMIT=1`が設定されている場合、`pyfltr fast`サブコマンドは`{command}-fast = true`のツールのみを対象として実行する。
-`run`サブコマンドは自動スキップを行わないため、`fast`を指定している場合は意図した動作となる。
+`fast`によるツールの絞込みと、再帰呼出しを防ぐ統合のスキップは別の条件である。
+各条件と呼出し方法は[CLIコマンドの統合説明](usage.md#precommit-integration)を参照。
 
 確認方法。
 
@@ -154,14 +151,8 @@ pre-commitとprekは、いずれもこの環境変数を設定する。
  （既定の設定では重いツール、mypy・pylint・pytestなどはfastに含まれない）
 - `pyfltr fast --verbose`で実行対象コマンドの一覧を確認する
 
-`make test`等から`pyfltr run`を呼び出すと、pyfltrは`SKIP=pyfltr`付きで有効な実行系を
-変更ファイル指定（`--files <対象>`）で起動する。
-この自動連携を抑止する場合は`pre-commit-auto-skip = false`を設定する。
+pyfltr関連hookの自動スキップを抑止する場合は`pre-commit-auto-skip = false`を設定する。
 prekでは`prek-auto-skip = false`を設定する。
-
-既定設定では`--files`で対象ファイルを渡して起動するため、
-引数なしの実行系が行う未ステージ変更の退避・復元（`git stash`相当の作業ツリー操作）は発生しない。
-対象ファイルが0件の場合は実行系自体を起動しない。
 
 ## 起点ディレクトリ外のファイルがチェックされない場合
 

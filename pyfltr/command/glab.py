@@ -1,15 +1,16 @@
 """glab関連コマンド実行。"""
 
-import argparse
-import pathlib
+import dataclasses
 import re
 import shlex
 import time
-import typing
 
-import pyfltr.command.error_parser
+import pyfltr.command.core_
 import pyfltr.command.process
 import pyfltr.config.config
+import pyfltr.config.model
+import pyfltr.parsing.entry
+import pyfltr.tools
 import pyfltr.warnings_
 from pyfltr.command.core_ import CommandResult
 
@@ -39,74 +40,51 @@ def _looks_like_glab_host_missing(output: str) -> bool:
     return any(pattern in normalized for pattern in _GLAB_HOST_NOT_FOUND_PATTERNS)
 
 
-def execute_glab_ci_lint(
-    command: str,
-    command_info: pyfltr.config.config.CommandInfo,
-    commandline: list[str],
-    targets: list[pathlib.Path],
-    config: pyfltr.config.config.Config,
-    env: dict[str, str],
-    on_output: typing.Callable[[str], None] | None,
-    start_time: float,
-    args: argparse.Namespace,
-    *,
-    is_interrupted: typing.Callable[[], bool] | None = None,
-    on_subprocess_start: typing.Callable[[], None] | None = None,
-    on_subprocess_end: typing.Callable[[], None] | None = None,
-    cwd: pathlib.Path | None = None,
-) -> CommandResult:
+def execute_glab_ci_lint(request: pyfltr.command.core_.ExecutionRequest) -> pyfltr.command.core_.CommandResult:
     """Glab ci lintをホスト未検出時にスキップ扱いへ変換しつつ実行する。"""
-    glab_env = dict(env)
+    glab_env = dict(request.env)
     # 文言判定がロケール依存にならないよう英語ロケールを強制する。
     glab_env["LC_ALL"] = "C"
     glab_env["LANG"] = "C"
 
-    if args.verbose and on_output is not None:
-        on_output(f"commandline: {shlex.join(commandline)}\n")
+    if request.verbose and request.ctx.on_output is not None:
+        request.ctx.on_output(f"commandline: {shlex.join(request.params.commandline)}\n")
 
-    proc = pyfltr.command.process.run_subprocess_with_timeout(
-        commandline,
-        glab_env,
-        on_output,
-        is_interrupted=is_interrupted,
-        on_subprocess_start=on_subprocess_start,
-        on_subprocess_end=on_subprocess_end,
-        timeout=pyfltr.config.config.resolve_command_timeout(config.values, command),
-        cwd=cwd,
-        **pyfltr.config.config.resolve_retry_kwargs(config.values),
+    proc = pyfltr.command.process.run_process(
+        dataclasses.replace(request, env=glab_env, verbose=False), request.params.commandline
     )
     returncode = proc.returncode
     output = proc.stdout.strip()
-    elapsed = time.perf_counter() - start_time
+    elapsed = time.perf_counter() - request.start_time
 
     if returncode != 0 and _looks_like_glab_host_missing(output):
         message = "glab がGitLabホストを検出できなかったためスキップしました。"
         hint = (
             "環境変数 `GITLAB_HOST` を設定するか `glab auth login` を実行してください。"
-            f"GitLab CIの検査が不要なら `{command} = false` で無効化してください。"
+            f"GitLab CIの検査が不要なら `{request.command} = false` で無効化してください。"
         )
-        pyfltr.warnings_.emit_warning(source=command, message=message, hint=hint)
+        pyfltr.warnings_.emit_warning(source=request.command, message=message, hint=hint)
         skip_text = f"{message}{hint}"
         skip_output = f"{skip_text}\n\n{output}" if output else skip_text
         return CommandResult.from_run(
-            command=command,
-            command_info=command_info,
-            commandline=commandline,
+            command=request.command,
+            command_info=request.params.command_info,
+            commandline=request.params.commandline,
             returncode=None,
             output=skip_output,
-            files=len(targets),
+            files=len(request.params.targets),
             elapsed=elapsed,
         )
 
-    errors = pyfltr.command.error_parser.parse_errors(command, output, command_info.error_pattern)
+    errors = pyfltr.parsing.entry.parse_errors(request.command, output, request.params.command_info.error_pattern)
     result = CommandResult.from_run(
-        command=command,
-        command_info=command_info,
-        commandline=commandline,
+        command=request.command,
+        command_info=request.params.command_info,
+        commandline=request.params.commandline,
         returncode=returncode,
         output=output,
         elapsed=elapsed,
-        files=len(targets),
+        files=len(request.params.targets),
         errors=errors,
         timeout_exceeded=proc.timeout_exceeded,
         retry_count=proc.retry_count,

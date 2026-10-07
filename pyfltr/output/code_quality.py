@@ -26,7 +26,8 @@ import hashlib
 import typing
 
 import pyfltr.command.core_
-import pyfltr.command.error_parser
+import pyfltr.diagnostics
+import pyfltr.parsing.entry
 
 _SEVERITY_MAP: dict[str | None, str] = {
     "error": "major",
@@ -51,7 +52,7 @@ def build_code_quality_payload(
     return payload
 
 
-def _build_issue(error: pyfltr.command.error_parser.ErrorLocation) -> dict[str, typing.Any]:
+def _build_issue(error: pyfltr.diagnostics.ErrorLocation) -> dict[str, typing.Any]:
     """ErrorLocation1件をCode Quality issue 1件に整形する。"""
     check_name = f"{error.command}:{error.rule}" if error.rule else error.command
     # GitLab Code Qualityはline=0を許容せず、message.lineがNoneまたは0のときは1に補正する。
@@ -72,7 +73,7 @@ def _build_issue(error: pyfltr.command.error_parser.ErrorLocation) -> dict[str, 
     }
 
 
-def _build_fingerprint(error: pyfltr.command.error_parser.ErrorLocation) -> str:
+def _build_fingerprint(error: pyfltr.diagnostics.ErrorLocation) -> str:
     """tool・file・line・col・rule・msgのタブ区切り連結からSHA-256を算出する。
 
     位置情報が欠落している（None）場合は空文字として連結する。tabをセパレーターにする

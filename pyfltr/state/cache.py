@@ -45,16 +45,15 @@ import shutil
 import typing
 
 import pyfltr.command.core_
-import pyfltr.command.error_parser
 import pyfltr.config.config
+import pyfltr.config.model
+import pyfltr.diagnostics
+import pyfltr.parsing.entry
 import pyfltr.state.archive
 
 logger = logging.getLogger(__name__)
 
 _CACHE_DIRNAME = "cache"
-# ツール固有設定ファイルの外部参照を伴うフラグ。--{command}-argsにこれらが含まれる場合は
-# 対象の実行でキャッシュを無効化する（動的パスを解釈する複雑さを避けるため安全側に倒す）。
-_EXTERNAL_REF_ARGS: frozenset[str] = frozenset({"--config", "--ignore-path"})
 
 
 @dataclasses.dataclass(frozen=True)
@@ -194,68 +193,9 @@ class CacheStore:
         return self._cache_dir / _sanitize_tool_name(command) / f"{key}.json"
 
 
-def cache_policy_from_config(config: pyfltr.config.config.Config) -> CachePolicy:
+def cache_policy_from_config(config: pyfltr.config.model.Config) -> CachePolicy:
     """pyproject.toml の設定から CachePolicy を組み立てる。"""
     return CachePolicy(max_age_hours=int(config.values.get("cache-max-age-hours", 12)))
-
-
-def is_cacheable(
-    command: str,
-    config: pyfltr.config.config.Config,
-    additional_args: list[str],
-) -> bool:
-    """対象の実行がキャッシュ対象になるかを判定する。
-
-    条件:
-        - `CommandInfo.cacheable=True`である
-        - `--{command}-args`に`--config` / `--ignore-path`など
-          外部ファイル参照を伴うフラグを含まない
-
-    `additional_args`は`--{command}-args`の値をshlex分割したリスト。
-
-    `--config` / `--ignore-path`検知時はキャッシュの読み書きを
-    まとめて無効化する。指定されたパスを動的に解釈してキャッシュキーへ
-    含める実装は複雑度が高く、誤ったhash算出による誤ヒットの方が
-    リスクが高いため、安全側に倒して無効化のみに留める。
-    """
-    info = config.commands.get(command)
-    if info is None or not info.cacheable:
-        return False
-    for arg in additional_args:
-        if arg in _EXTERNAL_REF_ARGS:
-            return False
-        for ref in _EXTERNAL_REF_ARGS:
-            if arg.startswith(f"{ref}="):
-                return False
-    return True
-
-
-def resolve_config_files(
-    command: str,
-    config: pyfltr.config.config.Config,
-    base: pathlib.Path | None = None,
-    *,
-    injected_config_path: pathlib.Path | None = None,
-) -> list[pathlib.Path]:
-    """コマンドの設定ファイル候補のうち、プロジェクトルートに実在するものを列挙する。
-
-    `CommandInfo.config_files`は自動読込対象を完全列挙した静的リストで、
-    存在しないファイルはhash計算時に空文字扱いとなる（`_file_sha256`の挙動に準拠）。
-
-    本関数はキャッシュキー算出専用で、`CommandInfo.config_arg_template`による
-    `--config`引数注入とは別経路。注入経路は`dispatcher._resolve_config_inject_path`が
-    `config_inject_candidates`を順に走査して候補1件を選び、本関数の`config_files`
-    （自動読込候補の完全列挙）とは責務を分離している。
-    """
-    info = config.commands.get(command)
-    if info is None or not info.config_files:
-        return []
-    root = base if base is not None else pathlib.Path.cwd()
-    if injected_config_path is None:
-        return [root / name for name in info.config_files]
-    injected_names = set(info.config_inject_candidates)
-    implicit_files = [root / name for name in info.config_files if name not in injected_names]
-    return [injected_config_path, *implicit_files]
 
 
 def _pyfltr_major_version() -> str:
@@ -317,7 +257,7 @@ def _deserialize_result(data: dict[str, typing.Any]) -> pyfltr.command.core_.Com
     )
 
 
-def _error_to_dict(error: pyfltr.command.error_parser.ErrorLocation) -> dict[str, typing.Any]:
+def _error_to_dict(error: pyfltr.diagnostics.ErrorLocation) -> dict[str, typing.Any]:
     """ErrorLocation をキャッシュ用 dict に変換する。"""
     return {
         "command": error.command,
@@ -333,9 +273,9 @@ def _error_to_dict(error: pyfltr.command.error_parser.ErrorLocation) -> dict[str
     }
 
 
-def _dict_to_error(data: dict[str, typing.Any]) -> pyfltr.command.error_parser.ErrorLocation:
+def _dict_to_error(data: dict[str, typing.Any]) -> pyfltr.diagnostics.ErrorLocation:
     """Dict から ErrorLocation を復元する。"""
-    return pyfltr.command.error_parser.ErrorLocation(
+    return pyfltr.diagnostics.ErrorLocation(
         command=data["command"],
         file=data["file"],
         line=data["line"],

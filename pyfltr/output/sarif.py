@@ -11,9 +11,12 @@ import importlib.metadata
 import typing
 
 import pyfltr.command.core_
-import pyfltr.command.error_parser
 import pyfltr.config.config
+import pyfltr.config.model
+import pyfltr.diagnostics
 import pyfltr.output.positions
+import pyfltr.parsing.entry
+import pyfltr.tools
 
 _SARIF_VERSION = "2.1.0"
 _SARIF_SCHEMA = "https://schemastore.azurewebsites.net/schemas/json/sarif-2.1.0-rtm.5.json"
@@ -27,7 +30,7 @@ _SEVERITY_TO_LEVEL: dict[str | None, str] = {
 
 def build_sarif(
     results: list[pyfltr.command.core_.CommandResult],
-    config: pyfltr.config.config.Config,
+    config: pyfltr.config.model.Config,
     *,
     exit_code: int,
     commands: list[str] | None = None,
@@ -41,7 +44,7 @@ def build_sarif(
     添付する。`commands` / `files` / `run_id`は`pyfltr`プロパティとして
     保存し、SARIF消費側が参考情報として利用できるようにする。
     """
-    ordered = sorted(results, key=lambda r: _command_index(config, r.command))
+    ordered = sorted(results, key=lambda r: pyfltr.tools.command_index(config.command_names, r.command))
 
     sarif_runs: list[dict[str, typing.Any]] = []
     for result in ordered:
@@ -98,7 +101,7 @@ def _build_run(result: pyfltr.command.core_.CommandResult) -> dict[str, typing.A
 
 
 def _build_result_record(
-    error: pyfltr.command.error_parser.ErrorLocation,
+    error: pyfltr.diagnostics.ErrorLocation,
     rule_index: dict[str, int],
 ) -> dict[str, typing.Any]:
     """1 diagnostic 分の SARIF result を生成する。
@@ -130,10 +133,3 @@ def _build_result_record(
         if error.rule in rule_index:
             record["ruleIndex"] = rule_index[error.rule]
     return record
-
-
-def _command_index(config: pyfltr.config.config.Config, command: str) -> int:
-    """`config.command_names`内での位置を返す（未登録コマンドは末尾扱い）。"""
-    if command in config.command_names:
-        return config.command_names.index(command)
-    return len(config.command_names)

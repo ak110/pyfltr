@@ -1,6 +1,6 @@
 # 設定項目（ツール別）
 
-ツールごとの起動方式（python-runner / uvx既定 / js-runner / bin-runner / 直接実行）・2段階実行・カスタムコマンドを扱う。
+ツールごとの起動方式（python-runner / uvx既定 / js-runner / bin-runner / 直接実行）・2段階実行を扱う。
 基本設定（プリセット・言語カテゴリによる限定・並列実行等）は[設定項目](configuration.md)を参照。
 導入手順は[はじめに](getting-started.md)を参照。
 
@@ -52,78 +52,7 @@ pyfltrは対応ツールを実行方式の観点から5カテゴリに分けて�
 
 PATHの解決はpyfltrが自動で管理する。利用者側の追加設定は不要。
 
-本ページではまず全カテゴリ共通の設定を示し、続いて各カテゴリ固有の設定を説明する。
-
-## 対象ファイルパターンのカスタマイズ
-
-各コマンドが処理する対象ファイルパターンを変更できる。
-
-`{command}-targets`でパターンを完全に上書きする。
-
-```toml
-[tool.pyfltr]
-# shfmtの対象を *.bash のみに変更（既定の *.sh は対象外になる）
-shfmt-targets = ["*.bash"]
-```
-
-`{command}-extend-targets`で既存パターンに追加する。
-
-```toml
-[tool.pyfltr]
-# shfmtの対象に *.sh.tmpl と dot_bashrc を追加（既定の *.sh も維持）
-shfmt-extend-targets = ["*.sh.tmpl", "dot_bashrc"]
-shellcheck-extend-targets = ["*.sh.tmpl", "dot_bashrc"]
-```
-
-両方を指定した場合、`targets`で上書きした後に`extend-targets`で追加する。
-
-## 引数の追加
-
-各コマンドの引数を変更したい場合、`{command}-args`で既定値を完全に上書きするか、
-`{command}-extend-args`で既定値を保ったまま末尾へ引数を追加する。
-
-```toml
-[tool.pyfltr]
-# 既定値を完全に上書きする（pyfltr既定の必須引数も含めて全て指定する必要がある）
-lychee-args = ["--format", "json", "--no-progress", "--exclude=github\\.com/owner/repo/actions"]
-
-# 既定値を保ったまま末尾へ引数を追加する
-lychee-extend-args = ["--exclude=github\\.com/owner/repo/actions"]
-```
-
-`{command}-extend-args`の対象は共通引数`{command}-args`のみ。
-`{command}-lint-args`・`{command}-fix-args`・`{command}-check-args`・`{command}-write-args`等の
-モード専用引数には対応しない。モード切替時の引数は既定値を尊重する設計のため。
-
-## pass-filenames設定 {#pass-filenames}
-
-`{command}-pass-filenames = false`を設定すると、コマンド実行時にファイル引数を渡さない。
-プロジェクト全体を一括チェックするツール（`tsc`など）で使用する。
-
-ビルトインでは、プロジェクト全体を単位として動作する以下のツールが`pass-filenames = false`に設定されている。
-
-- `tsc`
-- `cargo-fmt` / `cargo-clippy` / `cargo-check` / `cargo-test` / `cargo-deny`
-- `dotnet-format` / `dotnet-build` / `dotnet-test`
-
-pre-commit・prekは変更ファイル指定（`--files <対象>`）で起動する。
-各hook内部の`types`・`types_or`・`files`・`exclude`フィルタはファイル指定起動でも適用されるため、関係するhookのみ動作する。
-`pass_filenames: false`属性のhook（`gitleaks`等）は双方ともリポジトリ全体走査となる。
-pyfltr関連hookの自動検出と`SKIP`環境変数の構築も共通する。
-
-カスタムコマンドでも同様に設定可能。
-
-```toml
-[tool.pyfltr]
-tsc = true
-# tsc は既定で pass-filenames = false のため明示不要
-
-[tool.pyfltr.custom-commands.commitlint]
-type = "linter"
-path = "commitlint"
-args = ["--from=HEAD~1"]
-pass-filenames = false
-```
+各ツールに共通する設定は[設定項目](configuration.md)、カスタムコマンドの仕様と事例は[プロジェクト固有チェックの追加](custom-commands.md)を参照。
 
 ## python-runner経由実行ツール（Python系）
 
@@ -361,7 +290,7 @@ yamllint-path = "/path/to/yamllint"
 ### pre-commit
 
 既定の引数は`pre-commit-args = ["run", "--files"]`。
-pyfltr関連hookの自動検出と`SKIP`環境変数の構築を含む共通仕様は[pass-filenames設定](#pass-filenames)を参照。
+pyfltr関連hookの自動検出と`SKIP`環境変数の構築を含む共通仕様は[pass-filenames設定](configuration.md#pass-filenames)を参照。
 `prek`と同時に有効化すると同一フックを二重実行するため、pyfltrが警告を発行する。
 
 ### prek
@@ -959,137 +888,6 @@ colloquial-check-exclude = ["pyfltr/colloquial/words.txt"]
 # 対象ファイル種別を絞り込む例（既定は全ファイル`*`）
 colloquial-check-targets = "*.md"
 ```
-
-## カスタムコマンド
-
-`[tool.pyfltr.custom-commands]`で任意のツールを追加できる。
-
-```toml
-[tool.pyfltr.custom-commands.mytool]
-type = "linter"
-path = "mytool"
-args = ["-r", "-f", "custom"]
-targets = "*.py"
-error-pattern = '(?P<file>[^:]+):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>.+)'
-config-files = [".mytoolrc", "pyproject.toml"]
-fast = true
-```
-
-設定項目。
-
-- `type`（必須）: `"formatter"` / `"linter"` / `"tester"`
-    - formatterは直列実行、linter/testerは並列実行
-- `path`: 実行コマンド（省略時はコマンド名）
-- `args`: 追加引数（省略時は空）
-- `extend-args`: `args`の末尾へ追加する引数（省略時は空）。
-  `args`既定値を保ったまま要素を足したい場合に使う
-- `targets`: 対象ファイルパターン（省略時は`"*.py"`）
-- `error-pattern`: エラーパース用正規表現（省略可）
-    - `file`と`line`と`message`の名前付きグループが必須
-    - `col`は任意
-    - 指定するとErrorsタブやエラー一覧に表示される
-- `fast`: `fast`サブコマンドに含めるか否か（省略時は`false`）
-- `fix-args`: fix段で`args`の後ろへ追加する引数（省略時はfix段の対象外）
-- `pass-filenames`: ファイル引数をコマンドに渡すか否か（省略時は`true`）。
-  プロジェクト全体を一括チェックするツールでは`false`に設定する
-- `config-files`: このコマンドの設定ファイル候補のリスト（省略時は空）。globパターン可。
-  有効化時にどれもプロジェクトルート直下に見つからないとpyfltrが警告を発行する（ツール自体は実行する）。
-  pre-commit・prekなどの「設定ファイル無しでは機能しないツール」の設定不備を可視化する用途。
-  判定はモノレポでも起点cwd直下のみを対象とし、サブプロジェクトのディレクトリでは行わない
-- `severity`: `"error"`（既定）または`"warning"`。
-  詳細は[severityによる失敗の警告化](#severity)を参照
-- `hints`: LLM向けの追加文言（文字列の配列、省略時は空）。
-  詳細は[hintsによるLLM向け補足](#hints)を参照
-
-ビルトインコマンド（mypy等）は自動的にエラーパースされる。
-カスタムコマンドに対しても`--{name}-args`やenable/disableを使用できる。
-
-`pyfltr run` / `pyfltr ci` のように`--commands`を省略したサブコマンドでは、
-登録済みの有効なカスタムコマンドもビルトインと同様にデフォルトの実行対象に含まれる。
-特定のツールだけを動かしたい場合は`--commands=svelte-check`のように明示指定する。
-
-### カスタムコマンドでの fix モード対応
-
-autofix機能を持つツールをカスタムコマンドとして登録する場合は、`fix-args`を定義しておくと`run`/`fast`のfix段に含まれる。
-
-```toml
-[tool.pyfltr.custom-commands.my-linter]
-type = "linter"
-path = "my-linter"
-args = ["--check"]
-fix-args = ["--fix"]
-```
-
-fixモードでは`args`の後に`fix-args`が追加され、`my-linter --check --fix <files>`として実行される。
-
-### severityによる失敗の警告化 {#severity}
-
-`{command}-severity`を`"warning"`に設定すると、そのツールの失敗をJSONL `command.status="warning"` で記録し、
-パイプライン全体のexit codeに影響させない扱いに切り替えられる。
-口語表現検出など「警告で十分」な用途で、エージェントを止めずに通知だけしたい場合に使う。
-カスタムコマンド・ビルトイン共通で利用できる。
-
-```toml
-[tool.pyfltr.custom-commands.colloquial]
-type = "linter"
-path = "uv"
-args = ["run", "--script", "~/dotfiles/agent-toolkit/skills/writing-standards/scripts/check_colloquial.py"]
-targets = ["*"]
-severity = "warning"
-```
-
-許容値は`"error"`（既定）と`"warning"`の2値。
-`"warning"`設定下では`commands_summary.needs_action.warning`に集計し、
-`summary.guidance`のfailure系文言は出力しない。
-
-ツール起動自体に失敗するケース（`resolution_failed` / `timeout_exceeded`）は`severity`の影響を受けない。
-ツール起動側の異常で警告扱いに馴染まないため、`failed`/`resolution_failed`のままとなる。
-
-### hintsによるLLM向け補足 {#hints}
-
-`{command}-hints`に文字列配列を指定すると、JSONL `command.hints` に `user.<n>` 連番キーで埋め込む。
-LLMエージェントへ修正方針や参考文献を渡したいときに使う。
-配列要素は英語推奨（`command.hints` / `summary.guidance` と同じくLLM入力前提のため）。
-
-```toml
-[tool.pyfltr.custom-commands.colloquial]
-type = "linter"
-# ...
-hints = [
-    "Colloquial Japanese expressions detected. Replace with formal written-language equivalents.",
-    "See ~/dotfiles/agent-toolkit/skills/writing-standards/SKILL.md for guidance.",
-]
-```
-
-指摘1件以上のときに限り出力する（指摘0件の実行で固定的なhintを残してLLM入力のトークンを浪費しないため）。
-ビルトインコマンドにも同名キーで指定可能で、利用者ごとの運用ノウハウを永続化する用途に利用できる。
-
-### `~`展開
-
-対応キーは以下。
-これらに`~`を含めると、subprocess引数組み立て直前に展開する。
-利用者ホーム配下に置いた個人ツールスクリプトをそのまま参照したい場合に使う。
-
-- `{command}-path`
-- `{command}-args` / `{command}-extend-args` /
-  `{command}-lint-args` / `{command}-fix-args`
-- `{command}-check-args` / `{command}-write-args`
-- `ruff-format-check-args`
-
-```toml
-[tool.pyfltr.custom-commands.my-tool]
-type = "linter"
-path = "uv"
-args = ["run", "--script", "~/dotfiles/scripts/my_tool.py"]
-```
-
-展開規則は2点。
-要素先頭が`~`または`~user`の場合は`os.path.expanduser`で展開する。
-要素内最初の`=`直後の`~`/`~user`も同様に展開する。
-そのため`"--config=~/cfg.toml"`形式と`["--config", "~/cfg.toml"]`の分割形式のどちらでも同じく展開される。
-
-`config-files` / `targets` / `{command}-extend-targets`等のglobパターンには展開を適用しない
-（glob内チルダの意図しない展開を防ぐため）。
 
 ## 起動方式の確認
 

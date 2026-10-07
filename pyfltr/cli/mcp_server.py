@@ -25,12 +25,10 @@ import衝突を避けながらCLI入口から遅延なく参照できる構成�
 from __future__ import annotations
 
 import argparse
-import contextlib
 import importlib.metadata
 import logging
 import pathlib
 import sys
-import tempfile
 
 # 本モジュールは`types`をgrep系ツール関数の引数名に使うため、標準ライブラリ側を別名で取り込む。
 # 同名のままではモジュール名を引数が覆い、pylintの`redefined-outer-name`に抵触する。
@@ -63,15 +61,22 @@ import pyfltr.cli.replace_subcmd
 import pyfltr.command.core_
 import pyfltr.command.targets
 import pyfltr.config.config
+import pyfltr.config.editing
+import pyfltr.config.model
+import pyfltr.config.operations
+import pyfltr.config.selection
+import pyfltr.config.validation
 import pyfltr.grep_.adaptive
 import pyfltr.grep_.history
 import pyfltr.grep_.jsonl_records
 import pyfltr.grep_.matcher
+import pyfltr.grep_.operations
 import pyfltr.grep_.preview
 import pyfltr.grep_.replacer
 import pyfltr.grep_.scanner
 import pyfltr.output.jsonl
 import pyfltr.paths
+import pyfltr.run_options
 import pyfltr.state.archive
 import pyfltr.state.runs
 import pyfltr.warnings_
@@ -100,7 +105,6 @@ from pyfltr.cli.mcp_models import (
     RunWarningModel,
     SlowTestModel,
 )
-from pyfltr.grep_.types import MatchRecord, ReplaceCommandMeta
 
 if typing.TYPE_CHECKING:
     from mcp.server.mcpserver import MCPServer
@@ -352,7 +356,7 @@ async def tool_run(
         base = work_dir_path if work_dir_path is not None else pathlib.Path.cwd()
         targets = [path if (path := pathlib.Path(raw)).is_absolute() else base / path for raw in paths]
 
-        args = argparse.Namespace(
+        args = pyfltr.run_options.RunOptions(
             targets=targets,
             # CLI経路（`--commands`はaction="append"）と同じ`list[str] | None`で保持する。
             commands=list(commands) if commands else None,
@@ -396,75 +400,31 @@ async def tool_run(
         if no_fix:
             args.include_fix_stage = False
 
-        retry_sys_args = [mode]
-        if work_dir_path is not None:
-            retry_sys_args.append(f"--work-dir={work_dir_path}")
-        if no_fix:
-            retry_sys_args.append("--no-fix")
-        if commands:
-            retry_sys_args.append("--commands=" + ",".join(commands))
-        for name in enable or []:
-            retry_sys_args.append(f"--enable={name}")
-        for name in disable or []:
-            retry_sys_args.append(f"--disable={name}")
-        for heading in exclude_fence_under or []:
-            retry_sys_args.append(f"--exclude-fence-under={heading}")
-        if allow_external_paths:
-            retry_sys_args.append("--allow-external-paths")
-        if no_exclude:
-            retry_sys_args.append("--no-exclude")
-        if no_gitignore:
-            retry_sys_args.append("--no-gitignore")
-        if no_cache:
-            retry_sys_args.append("--no-cache")
-        if human_readable:
-            retry_sys_args.append("--human-readable")
-        if shuffle:
-            retry_sys_args.append("--shuffle")
-        if exit_zero_even_if_formatted:
-            retry_sys_args.append("--exit-zero-even-if-formatted")
-        if jobs is not None:
-            retry_sys_args.append(f"--jobs={jobs}")
+        config = pyfltr.config.config.load_config(config_dir=work_dir_path)
+        # アーカイブを強制有効化する。MCPツールはrun_idを返す契約を保証する。
+        config.values["archive"] = True
+        pyfltr.cli.overrides.apply_cli_overrides(config, args)
 
-        # 構造化出力を一時ファイルへ誘導してstdout汚染を防ぐ。
-        # NamedTemporaryFileをコンテキストマネージャーで使い、close後もパスを残す（delete=False）。
-        with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False) as tmp:
-            tmp_path = pathlib.Path(tmp.name)
-
-        # MCPのstdoutはJSON-RPCフレームが占有するため、text_loggerはrun_pipeline側で
-        # stderrに強制する（force_text_on_stderr=True）。
-        # 構造化出力は一時ファイル経由（FileHandler）となりstdoutを汚染しない。
-        args.output_file = tmp_path
+        commands_list: list[str] = pyfltr.config.selection.resolve_aliases(
+            pyfltr.cli.command_selection.flatten_commands_arg(args.commands, config), config
+        )
         try:
-            config = pyfltr.config.config.load_config(config_dir=work_dir_path)
-            # アーカイブを強制有効化する。MCPツールはrun_idを返す契約を保証する。
-            config.values["archive"] = True
-            pyfltr.cli.overrides.apply_cli_overrides(config, args)
-
-            commands_list: list[str] = pyfltr.config.config.resolve_aliases(
-                pyfltr.cli.command_selection.flatten_commands_arg(args.commands, config), config
+            pyfltr.cli.command_selection.validate_commands(
+                commands_list, config, list_commands=pyfltr.cli.command_selection.MCP_LIST_COMMANDS
             )
-            try:
-                pyfltr.cli.command_selection.validate_commands(
-                    commands_list, config, list_commands=pyfltr.cli.command_selection.MCP_LIST_COMMANDS
-                )
-            except ValueError as exc:
-                _raise_mcp_error(str(exc))
+        except ValueError as exc:
+            _raise_mcp_error(str(exc))
 
-            outcome = pyfltr.cli.pipeline.run_pipeline(
-                args,
-                commands_list,
-                config,
-                start_cwd=work_dir_path,
-                original_cwd=str(work_dir_path) if work_dir_path is not None else None,
-                original_sys_args=retry_sys_args,
-                force_text_on_stderr=True,
-                jsonl_warnings_reach_consumer=False,
-            )
-        finally:
-            # 一時ファイルを削除する（存在しない場合はそのまま無視する）
-            with contextlib.suppress(OSError):
-                tmp_path.unlink(missing_ok=True)
+        outcome = pyfltr.cli.pipeline.run_pipeline(
+            args,
+            commands_list,
+            config,
+            start_cwd=base,
+            original_cwd=str(work_dir_path) if work_dir_path is not None else None,
+            original_sys_args=args.retry_arguments(for_mcp=True),
+            force_text_on_stderr=True,
+            jsonl_warnings_reach_consumer=False,
+        )
 
         exit_code = outcome.exit_code
         run_id = outcome.run_id
@@ -495,28 +455,18 @@ async def tool_run(
                 warnings=_build_run_warnings(warning_entries),
             )
 
-        # コマンド別サマリを最新アーカイブから集計する。
-        store = pyfltr.state.archive.ArchiveStore()
-        try:
-            command_summaries = pyfltr.state.runs.collect_tool_summaries(store, run_id)
-        except Exception:  # MCPツール戻り値の組み立て継続を優先するため全例外を吸収する
-            command_summaries = []
-
-        commands_model = [CommandSummaryModel.model_validate(entry) for entry in command_summaries]
-        failed_commands = [c.command for c in commands_model if pyfltr.command.core_.is_failed_status(c.status) and c.command]
-
-        # 失敗コマンドのretry_commandをアーカイブから収集する（F7）。
-        retry_commands: dict[str, str] = {}
-        for summary_entry in command_summaries:
-            cmd_name = summary_entry.get("command")
-            if cmd_name:
-                try:
-                    tool_meta = store.read_tool_meta(run_id, cmd_name)
-                    rc = tool_meta.get("retry_command")
-                    if rc:
-                        retry_commands[cmd_name] = rc
-                except Exception:  # tool.json読み取り失敗は非致命的
-                    logger.debug("retry_command取得失敗: command=%s", cmd_name, exc_info=True)
+        commands_model = [
+            CommandSummaryModel(
+                command=result.command,
+                status=result.status,
+                diagnostics=len(result.errors),
+                elapsed=result.elapsed,
+                slow_tests=[SlowTestModel.model_validate(test.to_dict()) for test in result.slow_tests],
+            )
+            for result in outcome.results
+        ]
+        failed_commands = [result.command for result in outcome.results if result.failed]
+        retry_commands = {result.command: result.retry_command for result in outcome.results if result.retry_command}
 
         warning_entries = pyfltr.warnings_.collected_warnings()
         pyfltr.warnings_.mark_delivered(warning_entries)
@@ -552,29 +502,6 @@ def _join_warning_texts(entries: list[dict[str, typing.Any]], *, source: str) ->
     """指定した発生源の警告を対処込みの文字列へ整形して連結する。該当が無ければNoneを返す。"""
     texts = [pyfltr.warnings_.format_warning_text(entry) for entry in entries if entry.get("source") == source]
     return " / ".join(texts) or None
-
-
-def _expand_grep_targets(
-    paths: list[str],
-    types: list[str] | None,
-    globs: list[str] | None,
-    *,
-    no_exclude: bool,
-    no_gitignore: bool,
-) -> tuple[pyfltr.config.config.Config, list[pathlib.Path]]:
-    """grepとreplaceに共通する設定を適用して対象ファイルを展開する。"""
-    try:
-        config = pyfltr.config.config.load_config()
-    except (ValueError, OSError) as exc:
-        _raise_mcp_error(f"設定エラー: {exc}")
-    if no_exclude:
-        config.values["exclude"] = []
-        config.values["extend-exclude"] = []
-    if no_gitignore:
-        config.values["respect-gitignore"] = False
-    expanded = pyfltr.command.targets.expand_all_files([pathlib.Path(path) for path in paths], config)
-    expanded = pyfltr.grep_.scanner.filter_files_by_type(expanded, types or [])
-    return config, pyfltr.grep_.scanner.filter_by_globs(expanded, globs or [])
 
 
 async def tool_grep(
@@ -650,79 +577,37 @@ async def tool_grep(
         _raise_mcp_error(
             "パターンが指定されていません。`pattern`・`patterns`・`pattern_file`のいずれかで検索パターンを指定してください"
         )
-    try:
-        compiled = pyfltr.grep_.matcher.compile_pattern(
-            collected,
-            fixed_strings=fixed_strings,
-            ignore_case=ignore_case,
-            smart_case=smart_case,
-            word_regexp=word_regexp,
-            line_regexp=line_regexp,
-            multiline=multiline,
-        )
-    except ValueError as exc:
-        _raise_mcp_error(str(exc))
-
-    after_ctx = after_context
-    before_ctx = before_context
-    if context is not None:
-        if after_ctx == 0:
-            after_ctx = context
-        if before_ctx == 0:
-            before_ctx = context
-
     valid_summary_modes = ("files_with_matches", "count", "files_without_match")
     if summary_mode is not None and summary_mode not in valid_summary_modes:
         _raise_mcp_error("summary_mode は files_with_matches / count / files_without_match のいずれかを指定してください。")
     if summary_mode == "files_without_match" and max_total is not None and max_total > 0:
         _raise_mcp_error("summary_mode=files_without_match では max_total に正の値を指定できません。")
-    effective_max_total = 0 if max_total is None else max_total
-    effective_max_count = 0 if max_count is None else max_count
-    effective_preview_chars = pyfltr.grep_.preview.DEFAULT_MAX_PREVIEW_CHARS if max_preview_chars is None else max_preview_chars
-
-    _config, expanded = _expand_grep_targets(
-        paths,
-        types,
-        globs,
-        no_exclude=no_exclude,
-        no_gitignore=no_gitignore,
+    request = pyfltr.grep_.operations.GrepRequest(
+        patterns=collected,
+        summary_only=summary_mode is not None,
+        max_count=max_count,
+        max_total=max_total,
+        max_preview_chars=max_preview_chars,
+        auto_summary=auto_summary,
+        output_format="mcp",
+        full_text_hint="`max_preview_chars=0`",
+        targets=pyfltr.grep_.operations.TargetRequest.from_paths(paths, types or [], globs or [], no_exclude, no_gitignore),
+        **pyfltr.grep_.operations.PatternOptions.arguments(
+            (fixed_strings, ignore_case, smart_case, word_regexp, line_regexp, multiline),
+            (before_context, after_context, context),
+            encoding,
+            max_filesize,
+        ),
     )
-
+    try:
+        operation = pyfltr.grep_.operations.execute_grep(request)
+    except ValueError as exc:
+        _raise_mcp_error(str(exc))
+    expanded = operation.expanded
+    per_file_counts = operation.per_file_counts
+    total_matches = operation.total_matches
+    selection = operation.selection
     files_scanned = len(expanded)
-    match_payloads: list[dict[str, typing.Any]] = []
-    per_file_counts: dict[pathlib.Path, int] = {}
-    total_matches = 0
-    truncated_matches = 0
-    for record in pyfltr.grep_.scanner.scan_files(
-        expanded,
-        compiled,
-        before_context=before_ctx,
-        after_context=after_ctx,
-        max_per_file=effective_max_count,
-        max_total=effective_max_total,
-        encoding=encoding,
-        max_filesize=max_filesize,
-        multiline=multiline,
-    ):
-        if isinstance(record, MatchRecord):
-            total_matches += 1
-            per_file_counts[record.file] = per_file_counts.get(record.file, 0) + 1
-            if summary_mode is None:
-                preview = pyfltr.grep_.preview.build_match_preview(record, max_chars=effective_preview_chars)
-                match_payloads.append(pyfltr.grep_.jsonl_records.match_payload(record, preview))
-
-    explicit_output_control = summary_mode is not None or any(
-        value is not None for value in (max_count, max_total, max_preview_chars)
-    )
-    selection = (
-        pyfltr.grep_.adaptive.select_output(match_payloads, output_format="mcp")
-        if auto_summary and not explicit_output_control
-        else pyfltr.grep_.adaptive.full_output(match_payloads)
-    )
-    returned_payloads = list(selection.matches)
-    for file_result in selection.file_results:
-        returned_payloads.extend(typing.cast(list[dict[str, typing.Any]], file_result.get("matches", [])))
-    truncated_matches = sum(bool(payload.get("truncated")) for payload in returned_payloads)
     matches = [GrepMatchModel.model_validate(payload) for payload in selection.matches]
     adaptive_file_results = [GrepFileResultModel.model_validate(result) for result in selection.file_results]
 
@@ -742,15 +627,6 @@ async def tool_grep(
         if summary_mode == "files_without_match"
         else []
     )
-    if truncated_matches > 0:
-        pyfltr.warnings_.emit_warning(
-            source="grep",
-            message=pyfltr.grep_.preview.build_truncation_warning(
-                truncated_matches=truncated_matches,
-                max_chars=effective_preview_chars,
-                full_text_hint="`max_preview_chars=0`",
-            ),
-        )
     return GrepResultModel(
         matches=matches,
         file_results=adaptive_file_results,
@@ -850,156 +726,55 @@ async def tool_replace(
     if within is not None and multiline:
         _raise_mcp_error("within と multiline は併用できません。")
 
-    before_ctx = before_context
-    after_ctx = after_context
-    if within is not None and context is not None:
-        if after_ctx == 0:
-            after_ctx = context
-        if before_ctx == 0:
-            before_ctx = context
-
-    # warnings_はモジュールグローバルに蓄積するため、リクエスト開始時に初期化する
     pyfltr.warnings_.clear()
+    request = pyfltr.grep_.operations.ReplaceRequest(
+        pattern=pattern,
+        replacement=replacement,
+        dry_run=dry_run,
+        within=within,
+        exclude_files=[pathlib.Path(path) for path in exclude_files or []],
+        from_grep=pathlib.Path(from_grep) if from_grep is not None else None,
+        targets=pyfltr.grep_.operations.TargetRequest.from_paths(paths, types or [], globs or [], no_exclude, no_gitignore),
+        **pyfltr.grep_.operations.PatternOptions.arguments(
+            (fixed_strings, ignore_case, smart_case, word_regexp, line_regexp, multiline),
+            (before_context, after_context, context),
+            encoding,
+            max_filesize,
+        ),
+    )
     try:
-        compiled = pyfltr.grep_.matcher.compile_pattern(
-            [pattern],
-            fixed_strings=fixed_strings,
-            ignore_case=ignore_case,
-            smart_case=smart_case,
-            word_regexp=word_regexp,
-            line_regexp=line_regexp,
-            multiline=multiline,
-        )
-        anchor = (
-            pyfltr.grep_.matcher.compile_pattern(
-                [within],
-                fixed_strings=fixed_strings,
-                ignore_case=ignore_case,
-                smart_case=smart_case,
-                word_regexp=word_regexp,
-                line_regexp=line_regexp,
-                multiline=False,
-            )
-            if within is not None
-            else None
-        )
+        operation = pyfltr.grep_.operations.execute_replace(request)
+    except pyfltr.grep_.history.ReplaceFailure as exc:
+        _raise_mcp_error(exc.describe(undo=f"`replace_undo(replace_id={exc.replace_id!r}, force=True)`"))
     except ValueError as exc:
         _raise_mcp_error(str(exc))
-
-    config, expanded = _expand_grep_targets(
-        paths,
-        types,
-        globs,
-        no_exclude=no_exclude,
-        no_gitignore=no_gitignore,
+    replace_id = operation.replace_id
+    file_changes = [
+        ReplaceFileChangeModel(
+            file=pyfltr.paths.normalize_separators(file),
+            count=result.count,
+            before_hash=pyfltr.grep_.replacer.compute_hash(result.before_content),
+            after_hash=pyfltr.grep_.replacer.compute_hash(result.after_content),
+        )
+        for file, result in operation.prepared
+    ]
+    change_records = (
+        [
+            ReplaceChangeRecordModel(
+                file=pyfltr.paths.normalize_separators(record.file),
+                line=record.line,
+                col=record.col,
+                before_line=record.before_line,
+                after_line=record.after_line,
+            )
+            for _file, result in operation.prepared
+            for record in result.records
+        ]
+        if show_changes
+        else []
     )
-
-    # exclude_filesによる対象限定
-    if exclude_files:
-        excluded = {pathlib.Path(p).resolve() for p in exclude_files}
-        expanded = [p for p in expanded if p.resolve() not in excluded]
-    if from_grep is not None:
-        try:
-            allowed = pyfltr.cli.replace_subcmd.read_from_grep(pathlib.Path(from_grep))
-        except ValueError as exc:
-            _raise_mcp_error(str(exc))
-        expanded = [path for path in expanded if path.resolve() in allowed]
-
-    replace_id = pyfltr.grep_.history.generate_replace_id() if not dry_run else None
-    history_entries: list[dict[str, typing.Any]] = []
-    file_changes: list[ReplaceFileChangeModel] = []
-    change_records: list[ReplaceChangeRecordModel] = []
-    total_replacements = 0
-    files_changed = 0
-
-    for file in expanded:
-        if max_filesize is not None and max_filesize > 0:
-            try:
-                if file.stat().st_size > max_filesize:
-                    continue
-            except OSError:
-                continue
-        try:
-            if anchor is not None:
-                result = pyfltr.grep_.replacer.apply_block_replace_to_file(
-                    file,
-                    compiled,
-                    replacement,
-                    anchor,
-                    before_context=before_ctx,
-                    after_context=after_ctx,
-                    encoding=encoding,
-                )
-            else:
-                result = pyfltr.grep_.replacer.apply_replace_to_file(
-                    file,
-                    compiled,
-                    replacement,
-                    encoding=encoding,
-                )
-        except (UnicodeDecodeError, OSError) as exc:
-            pyfltr.grep_.scanner.emit_read_failure_warning("replace", file, exc, encoding=encoding)
-            continue
-        if result.count == 0:
-            continue
-
-        files_changed += 1
-        total_replacements += result.count
-        before_hash = pyfltr.grep_.replacer.compute_hash(result.before_content)
-        after_hash = pyfltr.grep_.replacer.compute_hash(result.after_content)
-
-        file_changes.append(
-            ReplaceFileChangeModel(
-                file=pyfltr.paths.normalize_separators(file),
-                count=result.count,
-                before_hash=before_hash,
-                after_hash=after_hash,
-            )
-        )
-
-        if show_changes:
-            for record in result.records:
-                change_records.append(
-                    ReplaceChangeRecordModel(
-                        file=pyfltr.paths.normalize_separators(record.file),
-                        line=record.line,
-                        col=record.col,
-                        before_line=record.before_line,
-                        after_line=record.after_line,
-                    )
-                )
-
-        if not dry_run:
-            history_entries.append(
-                {
-                    "file": file,
-                    "before_bytes": result.before_bytes,
-                    "after_bytes": result.after_bytes,
-                    "records": list(result.records),
-                }
-            )
-
-    # 全履歴の保存完了後に書き、失敗時の復旧はCLIと同じ共通境界へ委ねる。
-    if not dry_run and history_entries and replace_id is not None:
-        meta = ReplaceCommandMeta(
-            replace_id=replace_id,
-            dry_run=False,
-            fixed_strings=fixed_strings,
-            pattern=pattern,
-            replacement=replacement,
-            encoding=encoding,
-        )
-        store = pyfltr.grep_.history.ReplaceHistoryStore()
-        try:
-            store.apply_replace(
-                replace_id,
-                command_meta=meta,
-                file_changes=history_entries,
-                policy=pyfltr.grep_.history.policy_from_config(config),
-            )
-        except pyfltr.grep_.history.ReplaceFailure as exc:
-            _raise_mcp_error(exc.describe(undo=f"`replace_undo(replace_id={exc.replace_id!r}, force=True)`"))
-
+    files_changed = len(operation.prepared)
+    total_replacements = sum(result.count for _file, result in operation.prepared)
     return ReplaceResultModel(
         replace_id=replace_id,
         dry_run=dry_run,
@@ -1157,114 +932,27 @@ async def tool_config(
     if include_defaults and action != "list":
         _raise_mcp_error('include_defaults は action="list"のときのみ指定できます。')
 
-    path = pyfltr.config.config.default_global_config_path() if use_global else pathlib.Path("pyproject.toml").absolute()
+    path = pyfltr.config.model.default_global_config_path() if use_global else pathlib.Path("pyproject.toml").absolute()
+    result = pyfltr.config.operations.execute(
+        pyfltr.config.operations.ConfigRequest(
+            action=action,
+            path=path,
+            key=key,
+            value=value,
+            use_global=use_global,
+            include_defaults=include_defaults,
+            global_option="`use_global=True`",
+        )
+    )
+    if result.error is not None:
+        _raise_mcp_error(result.error)
     if action == "get":
-        try:
-            values = pyfltr.config.config.read_config_values(path)
-        except (ValueError, OSError) as exc:
-            _raise_mcp_error(str(exc))
-        requested_key = typing.cast(str, key)
-        result_value: typing.Any = None
-        is_default = False
-        if requested_key in values:
-            result_value = values[requested_key]
-        elif requested_key in pyfltr.config.config.DEFAULT_CONFIG:
-            result_value = pyfltr.config.config.DEFAULT_CONFIG[requested_key]
-            is_default = True
-        else:
-            _raise_mcp_error(
-                pyfltr.config.config.format_unknown_key_message(
-                    requested_key,
-                    pyfltr.config.config.DEFAULT_CONFIG.keys(),
-                )
-            )
-        return ConfigResultModel(
-            action=action,
-            path=str(path),
-            key=requested_key,
-            value=result_value,
-            is_default=is_default,
-        )
-
+        return ConfigResultModel(action=action, path=str(path), key=key, value=result.value, is_default=result.is_default)
     if action == "set":
-        requested_key = typing.cast(str, key)
-        raw_value = typing.cast(str, value)
-        if not use_global and not path.exists():
-            _raise_mcp_error(pyfltr.config.config.format_project_config_missing(path, use_global="`use_global=True`"))
-        if requested_key not in pyfltr.config.config.DEFAULT_CONFIG:
-            _raise_mcp_error(
-                pyfltr.config.config.format_unknown_key_message(
-                    requested_key,
-                    pyfltr.config.config.DEFAULT_CONFIG.keys(),
-                )
-            )
-        try:
-            parsed_value = pyfltr.config.config.parse_config_value(requested_key, raw_value)
-        except ValueError as exc:
-            _raise_mcp_error(str(exc))
-        if requested_key in pyfltr.config.config.GLOBAL_PRIORITY_KEYS and not use_global:
-            pyfltr.warnings_.emit_warning(
-                source="config",
-                message=(
-                    f"{requested_key} はarchive/cache系のキーです。マシン共通設定として"
-                    " --global での設定を推奨します（global側があればglobal優先になります）。"
-                ),
-            )
-        elif requested_key not in pyfltr.config.config.GLOBAL_PRIORITY_KEYS and use_global:
-            pyfltr.warnings_.emit_warning(
-                source="config",
-                message=(
-                    f"{requested_key} は通常キーのためproject側のpyproject.tomlが優先されます。"
-                    " globalに書いてもproject側に同じキーがあれば上書きされます。"
-                ),
-            )
-        try:
-            pyfltr.config.config.set_config_value(
-                path,
-                requested_key,
-                parsed_value,
-                create_if_missing=use_global,
-            )
-        except (ValueError, OSError) as exc:
-            _raise_mcp_error(str(exc))
-        return ConfigResultModel(
-            action=action,
-            path=str(path),
-            key=requested_key,
-            value=parsed_value,
-            warnings=[pyfltr.warnings_.format_warning_text(entry) for entry in pyfltr.warnings_.collected_warnings()],
-        )
-
+        return ConfigResultModel(action=action, path=str(path), key=key, value=result.value, warnings=result.warnings)
     if action == "delete":
-        requested_key = typing.cast(str, key)
-        if requested_key not in pyfltr.config.config.DEFAULT_CONFIG:
-            _raise_mcp_error(
-                pyfltr.config.config.format_unknown_key_message(
-                    requested_key,
-                    pyfltr.config.config.DEFAULT_CONFIG.keys(),
-                )
-            )
-        try:
-            existed = pyfltr.config.config.delete_config_value(path, requested_key)
-        except (ValueError, OSError) as exc:
-            _raise_mcp_error(str(exc))
-        return ConfigResultModel(action=action, path=str(path), key=requested_key, existed=existed)
-
-    try:
-        explicit_values = pyfltr.config.config.read_config_values(path)
-    except (ValueError, OSError) as exc:
-        _raise_mcp_error(str(exc))
-    if include_defaults:
-        listed_values: dict[str, typing.Any] = {
-            item_key: {
-                "value": explicit_values.get(item_key, default_value),
-                "default": item_key not in explicit_values,
-            }
-            for item_key, default_value in sorted(pyfltr.config.config.DEFAULT_CONFIG.items())
-        }
-    else:
-        listed_values = explicit_values
-    return ConfigResultModel(action=action, path=str(path), values=listed_values)
+        return ConfigResultModel(action=action, path=str(path), key=key, existed=result.existed)
+    return ConfigResultModel(action=action, path=str(path), values=result.values)
 
 
 # ---------------------------------------------------------------------------

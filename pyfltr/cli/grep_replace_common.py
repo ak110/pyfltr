@@ -7,7 +7,6 @@
 """
 
 import argparse
-import json
 import logging
 import pathlib
 import sys
@@ -16,10 +15,31 @@ import typing
 import pyfltr.cli.output_format
 import pyfltr.command.targets
 import pyfltr.config.config
+import pyfltr.config.model
+import pyfltr.grep_.operations
 import pyfltr.grep_.scanner
+import pyfltr.output.auxiliary
+import pyfltr.output.logging_
 
-_OUTPUT_FORMATS: tuple[str, ...] = ("text", "json", "jsonl")
-_VALID_OUTPUT_FORMATS: frozenset[str] = frozenset(_OUTPUT_FORMATS)
+
+def target_request(args: argparse.Namespace) -> pyfltr.grep_.operations.TargetRequest:
+    """共通のCLI引数を検索・置換の対象要求へ変換する。"""
+    return pyfltr.grep_.operations.TargetRequest.from_paths(
+        args.paths or [], args.type, args.glob, args.no_exclude, args.no_gitignore
+    )
+
+
+def pattern_arguments(args: argparse.Namespace) -> dict[str, typing.Any]:
+    """両CLI入口の共通設定を要求のキーワード引数へ変換する。"""
+    return {
+        "targets": target_request(args),
+        **pyfltr.grep_.operations.PatternOptions.arguments(
+            (args.fixed_strings, args.ignore_case, args.smart_case, args.word_regexp, args.line_regexp, args.multiline),
+            (args.before_context, args.after_context, args.context),
+            args.encoding,
+            args.max_filesize,
+        ),
+    }
 
 
 def add_common_output_args(parser: argparse.ArgumentParser) -> None:
@@ -36,7 +56,7 @@ def add_common_output_args(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--output-format",
-        choices=_OUTPUT_FORMATS,
+        choices=pyfltr.output.auxiliary.OUTPUT_FORMATS,
         default=None,
         help=(
             "出力形式を指定する（text / json / jsonl、既定: text）。"
@@ -61,59 +81,27 @@ def setup_output(parser: argparse.ArgumentParser, args: argparse.Namespace) -> p
     resolution = pyfltr.cli.output_format.resolve_output_format(
         parser,
         args.output_format,
-        valid_values=_VALID_OUTPUT_FORMATS,
+        valid_values=pyfltr.output.auxiliary.VALID_OUTPUT_FORMATS,
         ai_agent_default="jsonl",
     )
     output_format = resolution.format
 
     if output_format == "text":
-        pyfltr.cli.output_format.configure_text_output(sys.stdout)
+        pyfltr.output.logging_.configure_text_output(sys.stdout)
     else:
-        pyfltr.cli.output_format.configure_text_output(sys.stderr, level=logging.WARNING)
+        pyfltr.output.logging_.configure_text_output(sys.stderr, level=logging.WARNING)
 
     if output_format == "jsonl":
         if args.output_file is not None:
-            pyfltr.cli.output_format.configure_structured_output(args.output_file)
+            pyfltr.output.logging_.configure_structured_output(args.output_file)
         else:
-            pyfltr.cli.output_format.configure_structured_output(sys.stdout)
+            pyfltr.output.logging_.configure_structured_output(sys.stdout)
     else:
-        pyfltr.cli.output_format.configure_structured_output(None)
+        pyfltr.output.logging_.configure_structured_output(None)
 
     return resolution
 
 
 def print_json(payload: dict[str, typing.Any], output_file: pathlib.Path | None) -> None:
     """単発JSONをstdoutまたは`--output-file`に書く。"""
-    text = json.dumps(payload, ensure_ascii=False, indent=2)
-    if output_file is not None:
-        output_file.parent.mkdir(parents=True, exist_ok=True)
-        output_file.write_text(text + "\n", encoding="utf-8")
-    else:
-        sys.stdout.write(text + "\n")
-        sys.stdout.flush()
-
-
-def load_config_and_expand_targets(
-    args: argparse.Namespace,
-) -> tuple[pyfltr.config.config.Config, list[pathlib.Path]] | None:
-    """設定をロードし、`--no-exclude` / `--no-gitignore`適用後に対象ファイルを展開する。
-
-    設定ロード失敗（`ValueError` / `OSError`）時は標準エラーへメッセージを出力し`None`を返す。
-    呼び出し側は戻り値が`None`のとき`return 1`でCLI終了コードへ変換する。
-    """
-    try:
-        config = pyfltr.config.config.load_config()
-    except (ValueError, OSError) as exc:
-        sys.stderr.write(f"設定エラー: {exc}\n")
-        return None
-    if args.no_exclude:
-        config.values["exclude"] = []
-        config.values["extend-exclude"] = []
-    if args.no_gitignore:
-        config.values["respect-gitignore"] = False
-
-    targets = list(args.paths) if args.paths else []
-    expanded = pyfltr.command.targets.expand_all_files(targets, config)
-    expanded = pyfltr.grep_.scanner.filter_files_by_type(expanded, args.type)
-    expanded = pyfltr.grep_.scanner.filter_by_globs(expanded, args.glob)
-    return config, expanded
+    pyfltr.output.auxiliary.print_json(payload, output_file, indent=2)

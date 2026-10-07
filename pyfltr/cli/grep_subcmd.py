@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import pathlib
+import sys
 import typing
 
 import pyfltr.cli.grep_replace_common
@@ -17,12 +18,13 @@ import pyfltr.cli.output_format
 import pyfltr.grep_.adaptive
 import pyfltr.grep_.jsonl_records
 import pyfltr.grep_.matcher
+import pyfltr.grep_.operations
 import pyfltr.grep_.preview
 import pyfltr.grep_.scanner
 import pyfltr.grep_.text_render
+import pyfltr.output.logging_
 import pyfltr.paths
 import pyfltr.warnings_
-from pyfltr.grep_.types import MatchRecord
 
 
 def register_subparsers(subparsers: typing.Any) -> None:
@@ -176,110 +178,33 @@ def _execute_grep(
     if not patterns:
         parser.error("パターンが指定されていません。位置引数または `-e` / `-f` を使ってください。")
 
-    # 正規表現コンパイル
+    summary_only_mode = args.files_with_matches or args.count or args.count_matches or args.files_without_match
+    request = pyfltr.grep_.operations.GrepRequest(
+        patterns=patterns,
+        summary_only=summary_only_mode,
+        max_count=args.max_count,
+        max_total=args.max_total,
+        max_preview_chars=args.max_preview_chars,
+        auto_summary=(
+            pyfltr.cli.output_format.detect_agent_indicator() is not None if args.auto_summary is None else args.auto_summary
+        ),
+        output_format=typing.cast(pyfltr.grep_.adaptive.OutputFormat, output_format),
+        **pyfltr.cli.grep_replace_common.pattern_arguments(args),
+    )
     try:
-        compiled = pyfltr.grep_.matcher.compile_pattern(
-            patterns,
-            fixed_strings=args.fixed_strings,
-            ignore_case=args.ignore_case,
-            smart_case=args.smart_case,
-            word_regexp=args.word_regexp,
-            line_regexp=args.line_regexp,
-            multiline=args.multiline,
-        )
+        result = pyfltr.grep_.operations.execute_grep(request)
+    except pyfltr.grep_.operations.TargetConfigError as exc:
+        sys.stderr.write(f"{exc}\n")
+        return 1
     except ValueError as exc:
         parser.error(str(exc))
-
-    # `-C`は `-A` / `-B` 未指定時の一括指定として作用する
-    after_ctx = args.after_context
-    before_ctx = args.before_context
-    if args.context is not None:
-        if after_ctx == 0:
-            after_ctx = args.context
-        if before_ctx == 0:
-            before_ctx = args.context
-
-    # 設定ロードとファイル展開
-    loaded = pyfltr.cli.grep_replace_common.load_config_and_expand_targets(args)
-    if loaded is None:
-        return 1
-    _config, expanded = loaded
-
+    expanded = result.expanded
+    per_file_counts = result.per_file_counts
+    total_matches = result.total_matches
+    selection = result.selection
     files_scanned = len(expanded)
-
-    pattern_repr = "|".join(patterns) if len(patterns) > 1 else patterns[0]
-
-    # サマリ系オプションの処理（`--files-with-matches`等）
-    summary_only_mode = args.files_with_matches or args.count or args.count_matches or args.files_without_match
-
-    # スキャン実行
-    matches: list[MatchRecord] = []
-    per_file_counts: dict[pathlib.Path, int] = {}
-    for record in pyfltr.grep_.scanner.scan_files(
-        expanded,
-        compiled,
-        before_context=before_ctx,
-        after_context=after_ctx,
-        max_per_file=args.max_count or 0,
-        max_total=args.max_total or 0,
-        encoding=args.encoding,
-        max_filesize=args.max_filesize,
-        multiline=args.multiline,
-    ):
-        if not isinstance(record, MatchRecord):
-            continue  # FileMatchSummaryは現状未使用
-        matches.append(record)
-        per_file_counts[record.file] = per_file_counts.get(record.file, 0) + 1
-    total_matches = len(matches)
     files_with_matches = len(per_file_counts)
-
-    preview_limit = pyfltr.grep_.preview.DEFAULT_MAX_PREVIEW_CHARS if args.max_preview_chars is None else args.max_preview_chars
-    previews = (
-        []
-        if summary_only_mode
-        else [pyfltr.grep_.preview.build_match_preview(record, max_chars=preview_limit) for record in matches]
-    )
-    match_payloads = (
-        []
-        if summary_only_mode
-        else [
-            pyfltr.grep_.jsonl_records.match_payload(record, preview) for record, preview in zip(matches, previews, strict=True)
-        ]
-    )
-    explicit_output_control = summary_only_mode or any(
-        value is not None for value in (args.max_count, args.max_total, args.max_preview_chars)
-    )
-    auto_summary = (
-        pyfltr.cli.output_format.detect_agent_indicator() is not None if args.auto_summary is None else args.auto_summary
-    )
-    adaptive_format: pyfltr.grep_.adaptive.OutputFormat
-    if output_format == "text":
-        adaptive_format = "text"
-    elif output_format == "json":
-        adaptive_format = "json"
-    elif output_format == "jsonl":
-        adaptive_format = "jsonl"
-    else:
-        adaptive_format = "mcp"
-    if auto_summary and not explicit_output_control:
-        selection = pyfltr.grep_.adaptive.select_output(match_payloads, output_format=adaptive_format)
-    else:
-        selection = pyfltr.grep_.adaptive.full_output(match_payloads)
-
-    returned_payloads = list(selection.matches)
-    for file_result in selection.file_results:
-        returned_payloads.extend(typing.cast(list[dict[str, typing.Any]], file_result.get("matches", [])))
-    truncated_matches = sum(bool(payload.get("truncated")) for payload in returned_payloads)
-
-    if truncated_matches > 0:
-        pyfltr.warnings_.emit_warning(
-            source="grep",
-            message=pyfltr.grep_.preview.build_truncation_warning(
-                truncated_matches=truncated_matches,
-                max_chars=preview_limit,
-                full_text_hint="`--max-preview-chars=0`",
-            ),
-        )
+    pattern_repr = "|".join(patterns) if len(patterns) > 1 else patterns[0]
 
     # サマリ系オプション出力（text / jsonl）
     if output_format == "jsonl":
@@ -300,9 +225,9 @@ def _execute_grep(
     elif output_format == "jsonl":
         pyfltr.grep_.jsonl_records.emit_records(pyfltr.grep_.adaptive.jsonl_result_records(selection))
     elif output_format == "text":
-        with pyfltr.cli.output_format.text_output_lock:
+        with pyfltr.output.logging_.text_output_lock:
             for line in pyfltr.grep_.adaptive.text_result_lines(selection):
-                pyfltr.cli.output_format.text_logger.info(line)
+                pyfltr.output.logging_.text_logger.info(line)
 
     # ガイダンス文（replace起動コマンド案内）
     guidance = _build_grep_guidance(total_matches, output_mode=selection.output_mode)
@@ -471,9 +396,9 @@ def _emit_summary_only(
     if args.files_without_match:
         files = [p for p in scanned if p not in per_file_counts]
         if output_format == "text":
-            with pyfltr.cli.output_format.text_output_lock:
+            with pyfltr.output.logging_.text_output_lock:
                 for path in files:
-                    pyfltr.cli.output_format.text_logger.info(pyfltr.paths.normalize_separators(path))
+                    pyfltr.output.logging_.text_logger.info(pyfltr.paths.normalize_separators(path))
         elif output_format == "jsonl":
             for path in files:
                 pyfltr.grep_.jsonl_records.emit_file_without_match(path)
@@ -481,9 +406,9 @@ def _emit_summary_only(
 
     if args.files_with_matches:
         if output_format == "text":
-            with pyfltr.cli.output_format.text_output_lock:
+            with pyfltr.output.logging_.text_output_lock:
                 for path in per_file_counts:
-                    pyfltr.cli.output_format.text_logger.info(pyfltr.paths.normalize_separators(path))
+                    pyfltr.output.logging_.text_logger.info(pyfltr.paths.normalize_separators(path))
         elif output_format == "jsonl":
             for path, count in per_file_counts.items():
                 pyfltr.grep_.jsonl_records.emit_file_with_matches(path, count)
@@ -492,9 +417,9 @@ def _emit_summary_only(
     # `--count` / `--count-matches`
     if args.count or args.count_matches:
         if output_format == "text":
-            with pyfltr.cli.output_format.text_output_lock:
+            with pyfltr.output.logging_.text_output_lock:
                 for path, count in per_file_counts.items():
-                    pyfltr.cli.output_format.text_logger.info(f"{pyfltr.paths.normalize_separators(path)}:{count}")
+                    pyfltr.output.logging_.text_logger.info(f"{pyfltr.paths.normalize_separators(path)}:{count}")
         elif output_format == "jsonl":
             for path, count in per_file_counts.items():
                 pyfltr.grep_.jsonl_records.emit_file_count(path, count)

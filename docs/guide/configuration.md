@@ -301,6 +301,143 @@ cache-max-age-hours = 24
 新しいバージョンが追加したキーを旧バージョンが読み込んだ際の停止を回避するために採用する。
 コマンドラインからの設定上書き（`--config=key=value`等）は対象外で、従来通りエラーで停止する。
 
+## 対象ファイルパターンのカスタマイズ
+
+各コマンドが処理する対象ファイルパターンを変更できる。
+
+`{command}-targets`でパターンを完全に上書きする。
+
+```toml
+[tool.pyfltr]
+# shfmtの対象を *.bash のみに変更（既定の *.sh は対象外になる）
+shfmt-targets = ["*.bash"]
+```
+
+`{command}-extend-targets`で既存パターンに追加する。
+
+```toml
+[tool.pyfltr]
+# shfmtの対象に *.sh.tmpl と dot_bashrc を追加（既定の *.sh も維持）
+shfmt-extend-targets = ["*.sh.tmpl", "dot_bashrc"]
+shellcheck-extend-targets = ["*.sh.tmpl", "dot_bashrc"]
+```
+
+両方を指定した場合、`targets`で上書きした後に`extend-targets`で追加する。
+
+## 引数の追加
+
+各コマンドの引数を変更したい場合、`{command}-args`で既定値を完全に上書きするか、
+`{command}-extend-args`で既定値を保ったまま末尾へ引数を追加する。
+
+```toml
+[tool.pyfltr]
+# 既定値を完全に上書きする（pyfltr既定の必須引数も含めて全て指定する必要がある）
+lychee-args = ["--format", "json", "--no-progress", "--exclude=github\\.com/owner/repo/actions"]
+
+# 既定値を保ったまま末尾へ引数を追加する
+lychee-extend-args = ["--exclude=github\\.com/owner/repo/actions"]
+```
+
+`{command}-extend-args`の対象は共通引数`{command}-args`のみ。
+`{command}-lint-args`・`{command}-fix-args`・`{command}-check-args`・`{command}-write-args`等の
+モード専用引数には対応しない。モード切替時の引数は既定値を尊重する設計のため。
+
+## pass-filenames設定 {#pass-filenames}
+
+`{command}-pass-filenames = false`を設定すると、コマンド実行時にファイル引数を渡さない。
+プロジェクト全体を一括チェックするツール（`tsc`など）で使用する。
+
+ビルトインでは、プロジェクト全体を単位として動作する以下のツールが`pass-filenames = false`に設定されている。
+
+- `tsc`
+- `cargo-fmt` / `cargo-clippy` / `cargo-check` / `cargo-test` / `cargo-deny`
+- `dotnet-format` / `dotnet-build` / `dotnet-test`
+
+pre-commit・prekの呼出しとhookのファイル選定は[CLIコマンドの統合説明](usage.md#precommit-integration)を参照。
+
+カスタムコマンドでも同様に設定可能。
+
+```toml
+[tool.pyfltr]
+tsc = true
+# tsc は既定で pass-filenames = false のため明示不要
+
+[tool.pyfltr.custom-commands.commitlint]
+type = "linter"
+path = "commitlint"
+args = ["--from=HEAD~1"]
+pass-filenames = false
+```
+
+## severityによる失敗の警告化 {#severity}
+
+`{command}-severity`を`"warning"`に設定すると、そのツールの失敗をJSONL `command.status="warning"` で記録し、
+パイプライン全体のexit codeに影響させない扱いに切り替えられる。
+口語表現検出など「警告で十分」な用途で、エージェントを止めずに通知だけしたい場合に使う。
+カスタムコマンド・ビルトイン共通で利用できる。
+
+```toml
+[tool.pyfltr.custom-commands.colloquial]
+type = "linter"
+path = "uv"
+args = ["run", "--script", "~/dotfiles/agent-toolkit/skills/writing-standards/scripts/check_colloquial.py"]
+targets = ["*"]
+severity = "warning"
+```
+
+許容値は`"error"`（既定）と`"warning"`の2値。
+`"warning"`設定下では`commands_summary.needs_action.warning`に集計し、
+`summary.guidance`のfailure系文言は出力しない。
+
+ツール起動自体に失敗するケース（`resolution_failed` / `timeout_exceeded`）は`severity`の影響を受けない。
+ツール起動側の異常で警告扱いに馴染まないため、`failed`/`resolution_failed`のままとなる。
+
+## hintsによるLLM向け補足 {#hints}
+
+`{command}-hints`に文字列配列を指定すると、JSONL `command.hints` に `user.<n>` 連番キーで埋め込む。
+LLMエージェントへ修正方針や参考文献を渡したいときに使う。
+配列要素は英語推奨（`command.hints` / `summary.guidance` と同じくLLM入力前提のため）。
+
+```toml
+[tool.pyfltr.custom-commands.colloquial]
+type = "linter"
+# ...
+hints = [
+    "Colloquial Japanese expressions detected. Replace with formal written-language equivalents.",
+    "See ~/dotfiles/agent-toolkit/skills/writing-standards/SKILL.md for guidance.",
+]
+```
+
+指摘1件以上のときに限り出力する（指摘0件の実行で固定的なhintを残してLLM入力のトークンを浪費しないため）。
+ビルトインコマンドにも同名キーで指定可能で、利用者ごとの運用ノウハウを永続化する用途に利用できる。
+
+## `~`展開
+
+対応キーは以下。
+これらに`~`を含めると、subprocess引数組み立て直前に展開する。
+利用者ホーム配下に置いた個人ツールスクリプトをそのまま参照したい場合に使う。
+
+- `{command}-path`
+- `{command}-args` / `{command}-extend-args` /
+  `{command}-lint-args` / `{command}-fix-args`
+- `{command}-check-args` / `{command}-write-args`
+- `ruff-format-check-args`
+
+```toml
+[tool.pyfltr.custom-commands.my-tool]
+type = "linter"
+path = "uv"
+args = ["run", "--script", "~/dotfiles/scripts/my_tool.py"]
+```
+
+展開規則は2点。
+要素先頭が`~`または`~user`の場合は`os.path.expanduser`で展開する。
+要素内最初の`=`直後の`~`/`~user`も同様に展開する。
+そのため`"--config=~/cfg.toml"`形式と`["--config", "~/cfg.toml"]`の分割形式のどちらでも同じく展開される。
+
+`config-files` / `targets` / `{command}-extend-targets`等のglobパターンには展開を適用しない
+（glob内チルダの意図しない展開を防ぐため）。
+
 ## ツール別除外設定
 
 `{command}-exclude`を設定すると、特定ツールにのみ適用する追加の除外パターンを指定できる。
@@ -410,5 +547,6 @@ Claude Codeなど末尾だけを読み取るツールでも実行結果を把握
 
 ---
 
-個別のツール設定（2段階実行、ファイルパターン、直接実行 / js-runner / bin-runnerのカテゴリ別設定、
-`mise-auto-trust`によるmise未信頼の自動対応、カスタムコマンド等）の詳細は[ツール別設定](configuration-tools.md)を参照。
+個別のツール設定（2段階実行、直接実行 / js-runner / bin-runnerのカテゴリ別設定、
+`mise-auto-trust`によるmise未信頼の自動対応等）の詳細は[ツール別設定](configuration-tools.md)、
+カスタムコマンドの仕様と事例は[プロジェクト固有チェックの追加](custom-commands.md)を参照。

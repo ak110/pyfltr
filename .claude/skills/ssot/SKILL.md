@@ -46,18 +46,18 @@ description: >
   サブコマンド一覧、出力形式解決の優先順位と許容値、`command-info`節
 - `pyfltr/cli/output_format.py`の`resolve_output_format`:
   出力形式解決ロジック本体
-- `pyfltr/config/config.py`の`ARCHIVE_CONFIG_KEYS`・`CACHE_CONFIG_KEYS`・`GLOBAL_PRIORITY_KEYS`:
+- `pyfltr/config/model.py`の`ARCHIVE_CONFIG_KEYS`・`CACHE_CONFIG_KEYS`・`GLOBAL_PRIORITY_KEYS`:
   global優先キーの対象範囲（archive/cache系）
-- `pyfltr/config/config.py`の`default_global_config_path`:
+- `pyfltr/config/model.py`の`default_global_config_path`:
   グローバル設定パスの解決ロジック
 - `pyfltr/state/archive.py`の`default_cache_root`:
   キャッシュルートの解決ロジック
-- `pyfltr/config/config.py`の`DEFAULT_CONFIG`:
+- `pyfltr/config/model.py`の`DEFAULT_CONFIG`と`pyfltr/tools.py`のツール定義:
   設定キー体系・既定値・runner方針
-- `pyfltr/config/config.py`の`is_command_enabled_anywhere`:
+- `pyfltr/config/selection.py`の`is_command_enabled_anywhere`:
   実行対象コマンドの有効（ON/OFF）判定。モノレポでは起点と各サブプロジェクトの和集合で判定する。
-  `cli/pipeline.py`の実行対象フィルタ・`state/executor.py`の`split_commands_for_execution`・
-  `config/config.py`の`filter_fix_commands`・`output/ui.py`のタブ生成とサマリー行追加で共用する。
+  `cli/pipeline.py`の実行対象フィルタ・`command/executor.py`の`split_commands_for_execution`・
+  `config/selection.py`の`filter_fix_commands`・`output/ui.py`のタブ生成とサマリー行追加で共用する。
   これらの箇所で`config.values.get(cmd)`・`config[cmd]`を直接参照せず本関数を経由する
 - `pyfltr/command/runner.py`の`_BIN_TOOL_SPEC` / `build_commandline`:
   mise backend既定値・tool spec組み立て・active tools省略判定
@@ -66,8 +66,7 @@ description: >
 - `.claude/skills/grep-replace/SKILL.md`:
   grep/replace機能の設計判断・undo方式・CLI/MCP既定値差分
 - `docs/guide/custom-commands.md`:
-  カスタムコマンド機能の解説。`README.md`特徴章・`docs/guide/index.md`の
-  カスタムチェック節およびコンセプト節・`mkdocs.yml`内llmstxtとは人手同期
+  カスタムコマンドの仕様と事例。`README.md`特徴章・`docs/index.md`のカスタムチェック節・コンセプト節・`mkdocs.yml`内llmstxtとは人手同期
 - ツールの1行概要:
   `README.md`冒頭・`docs/index.md`冒頭・`mkdocs.yml`の`site_description`とllmstxt内
   `markdown_description`・`pyproject.toml`の`description`・`AGENTS.md`冒頭・
@@ -75,13 +74,13 @@ description: >
   `site_description`は表示幅に収める短縮形を用いる
 - `mkdocs.yml`内llmstxtの`markdown_description`:
   全サブコマンド名・全ビルトインコマンド名の案内。`pyfltr/cli/parser.py`のサブコマンド定義と
-  `pyfltr/command/builtin.py`のビルトインコマンド定義の変更時に追随する。
-  内容は`tests/llmstxt_test.py`が機械的に判定するため、これら3ファイルのいずれかを変更した場合は
+  `pyfltr/tools.py`のビルトインコマンド定義の変更時に追随する。
+  内容は`tests/integration/llmstxt_test.py`が機械的に判定するため、これら3ファイルのいずれかを変更した場合は
   同テストのパスを部分実行の対象へ含める
 
 `mkdocs.yml`内llmstxtの`markdown_description`にはLLMが利用する際に有用な情報のみ記載する
 （全サブコマンド名・主要オプションなど）。
-本文は`tests/llmstxt_test.py`が「全サブコマンド名・全ビルトインコマンド名を含むこと」を機械検証するため、
+本文は`tests/integration/llmstxt_test.py`が「全サブコマンド名・全ビルトインコマンド名を含むこと」を機械検証するため、
 整理時に名前を漏らさず記載する。
 
 ## 機能追加時の文書露出判断
@@ -93,10 +92,10 @@ description: >
 
 - 主要機能はREADMEの特徴章へ掲載する。
   既存機能の内部改善など、利用者が新たに選択・操作する要素が無い場合は掲載しない
-- 利用者が設定または実行する機能は、`docs/guide/index.md`のコンセプト節と関連する利用者向けページへ掲載する。
+- 利用者が設定または実行する機能は、`docs/index.md`のコンセプト節と関連する利用者向けページへ掲載する。
   既存ページの手順や仕様に影響しない内部変更は掲載しない
 - LLMが機能を選択または操作するために必要な情報は、`mkdocs.yml`内llmstxtの`markdown_description`へ掲載する。
-  機能単位の記載の抜けは`tests/llmstxt_test.py`で検出されないため人手で確認する
+  機能単位の記載の抜けは`tests/integration/llmstxt_test.py`で検出されないため人手で確認する
 - navでは機能の用途に対応する区分へページを配置する。
   既存ページ内の説明追加だけで機能を発見できる場合は独立ページを追加しない
 - 既存文書が回避策・代替手順・適用範囲の限定を案内しており、新機能の挙動と照らし合わせた結果、

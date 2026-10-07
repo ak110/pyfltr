@@ -239,7 +239,8 @@ CLIでは既存の警告出力、MCPの`replace_undo`では`warnings`に通知�
 
 ## MCP公開ツール
 
-`pyfltr mcp`サーバーは`grep`・`replace`・`replace_undo`・`replace_history`の4ツールを公開する。
+検索・置換には`grep`・`replace`・`replace_undo`・`replace_history`を使う。
+サーバーが提供する全ツールと共通の応答の読み方は[CLIコマンドのMCP参照](usage.md#mcp)を参照。
 
 - `grep(paths, pattern=None, patterns=None, pattern_file=None, context=None, summary_mode=None, ...)`:
   ファイル横断検索。`patterns`は複数パターン、`pattern_file`は1行1パターンのファイルを受け取り、

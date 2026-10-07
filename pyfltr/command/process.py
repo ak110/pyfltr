@@ -1,8 +1,9 @@
 """プロセス管理。"""
 
+from __future__ import annotations
+
 import atexit
 import contextlib
-import functools
 import os
 import pathlib
 import shlex
@@ -15,7 +16,8 @@ import typing
 
 import psutil
 
-import pyfltr.config.config
+import pyfltr.command.core_
+import pyfltr.config.model
 from pyfltr.command.env import get_env_path
 
 logger = __import__("logging").getLogger(__name__)
@@ -33,17 +35,17 @@ class ProcessRegistry:
         self.processes: list[subprocess.Popen[str]] = []
         self.lock = threading.Lock()
 
-    def add(self, proc: "subprocess.Popen[str]") -> None:
+    def add(self, proc: subprocess.Popen[str]) -> None:
         """ロック下でプロセスをリストに追加する。"""
         with self.lock:
             self.processes.append(proc)
 
-    def remove(self, proc: "subprocess.Popen[str]") -> None:
+    def remove(self, proc: subprocess.Popen[str]) -> None:
         """ロック下でプロセスをリストから削除する。存在しない場合は無視する。"""
         with self.lock, contextlib.suppress(ValueError):
             self.processes.remove(proc)
 
-    def snapshot(self) -> "list[subprocess.Popen[str]]":
+    def snapshot(self) -> list[subprocess.Popen[str]]:
         """ロック下でリストのコピーを返す（terminate_all用）。"""
         with self.lock:
             return list(self.processes)
@@ -94,7 +96,7 @@ class TimeoutExceededExecution(Exception):
         self.timeout = timeout
 
 
-def _kill_process_tree(proc: "subprocess.Popen[str]", *, timeout: float) -> None:
+def _kill_process_tree(proc: subprocess.Popen[str], *, timeout: float) -> None:
     """Procとその子孫をまとめて停止する。
 
     `run_subprocess` はPOSIXでは `start_new_session=True`、Windowsでは
@@ -179,7 +181,7 @@ def terminate_active_processes(*, timeout: float = 5.0) -> None:
     _DEFAULT_REGISTRY.terminate_all(timeout=timeout)
 
 
-def _terminate_and_drop(proc: "subprocess.Popen[str]") -> None:
+def _terminate_and_drop(proc: subprocess.Popen[str]) -> None:
     """実行中procとその子孫を停止し `active_processes` から外す。
 
     TUI協調停止経路で使う。`with subprocess.Popen(...)` の__exit__は子が残っていても
@@ -194,7 +196,7 @@ def _terminate_and_drop(proc: "subprocess.Popen[str]") -> None:
     _DEFAULT_REGISTRY.remove(proc)
 
 
-def _on_timeout(proc: "subprocess.Popen[str]", fired: threading.Event) -> None:
+def _on_timeout(proc: subprocess.Popen[str], fired: threading.Event) -> None:
     """`run_subprocess`のTimerスレッドからsubprocessを強制停止する。
 
     `fired.set()`で本体ループ後のtimeout検知に使うフラグを立て、その後
@@ -395,7 +397,7 @@ class CompletedProcessWithTimeoutInfo(subprocess.CompletedProcess[str]):
         self.retry_count = retry_count
 
 
-def run_subprocess_with_timeout(
+def run_process_loop(
     commandline: list[str],
     env: dict[str, str],
     on_output: typing.Callable[[str], None] | None = None,
@@ -407,6 +409,7 @@ def run_subprocess_with_timeout(
     cwd: pathlib.Path | None = None,
     retry_on_oom: bool = False,
     retry_max_attempts: int = 0,
+    verbose: bool = False,
 ) -> CompletedProcessWithTimeoutInfo:
     """`run_subprocess` のtimeout例外を捕捉して`CompletedProcess`相当に変換する共通wrapper。
 
@@ -424,6 +427,8 @@ def run_subprocess_with_timeout(
     （timeout超過を伴わない `OOM_RETURNCODES` 該当returncode）を検知してリトライする。
     戻り値の `retry_count` にリトライ実施回数を設定する（0はリトライなし）。
     """
+    if verbose and on_output is not None:
+        on_output(f"commandline: {shlex.join(commandline)}\n")
     attempt = 0
     while True:
         try:
@@ -471,106 +476,20 @@ def run_subprocess_with_timeout(
         )
 
 
-def run_traced_subprocess(
-    commandline: list[str],
-    env: dict[str, str],
-    on_output: typing.Callable[[str], None] | None,
-    *,
-    verbose: bool,
-    is_interrupted: typing.Callable[[], bool] | None = None,
-    on_subprocess_start: typing.Callable[[], None] | None = None,
-    on_subprocess_end: typing.Callable[[], None] | None = None,
-    timeout: float | None = None,
-    cwd: pathlib.Path | None = None,
-    retry_on_oom: bool = False,
-    retry_max_attempts: int = 0,
+def run_process(
+    request: pyfltr.command.core_.ExecutionRequest,
+    commandline: list[str] | None = None,
 ) -> CompletedProcessWithTimeoutInfo:
-    """verboseログ出力込みで`run_subprocess_with_timeout`を実行する。
-
-    `verbose and on_output is not None`のとき実行コマンドラインを`on_output`経由で出力してから
-    `run_subprocess_with_timeout`を呼ぶ定型処理（各2段階実行ヘルパー・plain実行経路・
-    fix実行経路で共通）を集約する。
-    """
-    if verbose and on_output is not None:
-        on_output(f"commandline: {shlex.join(commandline)}\n")
-    return run_subprocess_with_timeout(
-        commandline,
-        env,
-        on_output,
-        is_interrupted=is_interrupted,
-        on_subprocess_start=on_subprocess_start,
-        on_subprocess_end=on_subprocess_end,
-        timeout=timeout,
-        cwd=cwd,
-        retry_on_oom=retry_on_oom,
-        retry_max_attempts=retry_max_attempts,
-    )
-
-
-def traced_subprocess_runner(
-    env: dict[str, str],
-    on_output: typing.Callable[[str], None] | None,
-    *,
-    verbose: bool,
-    is_interrupted: typing.Callable[[], bool] | None = None,
-    on_subprocess_start: typing.Callable[[], None] | None = None,
-    on_subprocess_end: typing.Callable[[], None] | None = None,
-    timeout: float | None = None,
-    cwd: pathlib.Path | None = None,
-    retry_on_oom: bool = False,
-    retry_max_attempts: int = 0,
-) -> typing.Callable[[list[str]], CompletedProcessWithTimeoutInfo]:
-    """`commandline`以外を固定した`run_traced_subprocess`呼び出し用callableを返す。
-
-    taplo/shfmt/prettier/ruff-formatの2段階実行（check→write、step1→step2）は
-    2回とも同一の実行時パラメータ（env・on_output・verbose・is_interrupted等）を使うため、
-    呼び出し側で`commandline`のみを差し替えて呼べるようにして重複を避ける。
-    """
-    return functools.partial(
-        run_traced_subprocess,
-        env=env,
-        on_output=on_output,
-        verbose=verbose,
-        is_interrupted=is_interrupted,
-        on_subprocess_start=on_subprocess_start,
-        on_subprocess_end=on_subprocess_end,
-        timeout=timeout,
-        cwd=cwd,
-        retry_on_oom=retry_on_oom,
-        retry_max_attempts=retry_max_attempts,
-    )
-
-
-def run_configured_subprocess(
-    command: str,
-    commandline: list[str],
-    config: pyfltr.config.config.Config,
-    env: dict[str, str],
-    on_output: typing.Callable[[str], None] | None,
-    *,
-    verbose: bool,
-    is_interrupted: typing.Callable[[], bool] | None = None,
-    on_subprocess_start: typing.Callable[[], None] | None = None,
-    on_subprocess_end: typing.Callable[[], None] | None = None,
-    cwd: pathlib.Path | None = None,
-) -> CompletedProcessWithTimeoutInfo:
-    """`config`からtimeout・retry設定を解決したうえで`run_traced_subprocess`を実行する。
-
-    plain実行経路（`dispatcher._run_plain_command`）とfix実行経路
-    （`linter_fix.execute_linter_fix`）で共通の単発実行パターン
-    （`resolve_command_timeout` + `resolve_retry_kwargs` + verboseログ出力込み実行）を集約する。
-    2段階実行系（taplo/shfmt/prettier/ruff-format）はcheck/write二段でtimeout・retry_kwargsを
-    使い回すため`_prepare_check_write_execution`側で解決済みの値を`run_traced_subprocess`へ渡す。
-    """
-    return run_traced_subprocess(
-        commandline,
-        env,
-        on_output,
-        verbose=verbose,
-        is_interrupted=is_interrupted,
-        on_subprocess_start=on_subprocess_start,
-        on_subprocess_end=on_subprocess_end,
-        timeout=pyfltr.config.config.resolve_command_timeout(config.values, command),
-        cwd=cwd,
-        **pyfltr.config.config.resolve_retry_kwargs(config.values),
+    """実行要求を使い、コマンドラインだけを必要に応じて差し替えて実行する。"""
+    return run_process_loop(
+        request.params.commandline if commandline is None else commandline,
+        request.env,
+        request.ctx.on_output,
+        verbose=request.verbose,
+        is_interrupted=request.ctx.is_interrupted,
+        on_subprocess_start=request.ctx.on_subprocess_start,
+        on_subprocess_end=request.ctx.on_subprocess_end,
+        timeout=request.timeout,
+        cwd=request.cwd,
+        **request.retry_options,
     )

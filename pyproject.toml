@@ -135,21 +135,24 @@ pylint-args = ["--jobs=4"]
 arid-exclude = ["tests"]
 # tests/smoke_data/ 配下にはツール毎の最小サンプル（GitHub Actionsワークフロー・
 # Dockerfile・shellスクリプト等）を含むため、本リポのpyfltr対象から外す。
-# 対象のディレクトリの起動確認は tests/smoke_test.py が pyfltr CLIをsubprocess経由で呼んで実施する。
+# 対象のディレクトリの起動確認は tests/integration/smoke_test.py が pyfltr CLIをsubprocess経由で呼んで実施する。
 # `extend-exclude`はファイル走査経路の除外、`subproject-exclude`はサブプロジェクト検出経路
 # （`pyproject.toml`存在の機械的検出）の除外で別仕組み。配下に複数の`pyproject.toml`を含むため、
 # モノレポ検出時に意図しないサブプロジェクトとして列挙されないよう両方に登録する。
 extend-exclude = ["tests/smoke_data"]
 # 辞書ファイル自身（口語表現サンプルを大量に含む）はcolloquial-checkの誤検出対象となるため除外する。
-# テストフィクスチャ（口語表現を意図的に含むテスト入力）は現状tests/error_parser_test.pyのみが
-# 検出対象だが、将来的な追加テストで検出が発生した場合の回帰防止を目的に、
-# 口語表現サンプルを扱う3ファイルまとめて予防的に除外する。
+# 口語表現を意図的に含む解析・口語検査のテスト入力も検査対象から除外する。
 colloquial-check-exclude = [
     "pyfltr/colloquial/words.txt",
     "pyfltr/colloquial/words_allow.txt",
-    "tests/error_parser_test.py",
-    "tests/colloquial_check_test.py",
-    "tests/colloquial_cli_test.py",
+    "tests/integration/parser_registration_test.py",
+    "tests/output/diagnostics_test.py",
+    "tests/parsing/common_test.py",
+    "tests/parsing/entry_test.py",
+    "tests/parsing/pytest_test.py",
+    "tests/parsing/tools_test.py",
+    "tests/colloquial/check_test.py",
+    "tests/colloquial/cli_test.py",
 ]
 subproject-exclude = ["smoke_data"]
 # 配布物の独立導入はネットワークを使う専用工程であり、CI・リリースから明示実行する。
@@ -165,7 +168,7 @@ distribution-check-subproject-aware = false
 type = "linter"
 path = "uv"
 args = ["run", "--frozen", "arid", "--project-root", ".", "--min-lines", "15"]
-targets = "tests/*.py"
+targets = ["tests/*.py", "tests/*/*.py", "tests/*/*/*.py"]
 fast = true
 
 # 利用者がそのまま写す前提のドキュメント内コード例が、その言語として解析できることを検査する。
@@ -286,13 +289,13 @@ unused-ignore-comment = "ignore"
 # テストデータ内の意図的なtypo
 teh = "teh"
 hte = "hte"
-# `tests/config_test.py`内でtypoサジェスト動作を検証するため意図的に書かれているtypo文字列。
+# `tests/config/config_test.py`内でtypoサジェスト動作を検証するため意図的に書かれているtypo文字列。
 latset = "latset"
 
 [tool.pytest.ini_options]
 # https://docs.pytest.org/en/latest/reference/reference.html#ini-options-ref
 # `tests/smoke_data/` 配下にはツール毎のサンプル `*_test.py` を含むためpytest collectionから除外する。
-# スモークテスト本体は `tests/smoke_test.py` で、内部から pyfltr 経由で対象のサンプルを呼び出す。
+# スモークテスト本体は `tests/integration/smoke_test.py` で、内部から pyfltr 経由で対象のサンプルを呼び出す。
 addopts = [
     "--showlocals",
     "-p", "no:cacheprovider",

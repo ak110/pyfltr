@@ -1,5 +1,3 @@
-"""pyfltr.warnings_ のテストコード。"""
-
 import logging
 
 import pytest

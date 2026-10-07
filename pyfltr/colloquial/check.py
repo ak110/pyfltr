@@ -16,6 +16,8 @@ denylistの内容をソースコード（`.py`ファイル）へ静的に埋め�
 import pathlib
 import re
 
+import pyfltr.text.fences
+
 _DICT_DIR = pathlib.Path(__file__).resolve().parent
 DENY_PATH = _DICT_DIR / "words.txt"
 ALLOW_PATH = _DICT_DIR / "words_allow.txt"
@@ -106,9 +108,6 @@ def mask_blockquote_lines(text: str) -> str:
     return _BLOCKQUOTE_LINE_RE.sub(lambda m: " " * len(m.group(0)), text)
 
 
-_FENCE_LINE_RE = re.compile(r"^(`{3,}|~{3,})")
-
-
 def mask_fenced_code_blocks(text: str) -> str:
     """Markdownフェンス付きコードブロック内の行を同長の空白で置き換える。
 
@@ -118,31 +117,7 @@ def mask_fenced_code_blocks(text: str) -> str:
     開閉フェンス行自体は維持し、内側の行のみ同長空白へ置換する。
     オフセット・行番号は変更しない。
     """
-    out: list[str] = []
-    in_fence = False
-    fence_char = ""
-    fence_len = 0
-    for line in text.splitlines(keepends=True):
-        body = line.rstrip("\n").rstrip("\r")
-        tail = line[len(body) :]
-        if not in_fence:
-            m = _FENCE_LINE_RE.match(body)
-            if m:
-                marker = m.group(1)
-                in_fence = True
-                fence_char = marker[0]
-                fence_len = len(marker)
-            out.append(line)
-            continue
-        close = re.match(rf"^{re.escape(fence_char)}{{{fence_len},}}\s*$", body)
-        if close:
-            in_fence = False
-            fence_char = ""
-            fence_len = 0
-            out.append(line)
-        else:
-            out.append(" " * len(body) + tail)
-    return "".join(out)
+    return pyfltr.text.fences.mask_fenced_blocks(text, preserve_columns=True)
 
 
 _INLINE_CODE_RE = re.compile(r"(`+)([^`\n]+)\1")

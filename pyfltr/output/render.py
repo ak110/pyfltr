@@ -1,0 +1,189 @@
+"""実行結果の text 整形描画。
+
+`render_results` / `write_log` および warnings / summary 出力ヘルパーを担う。
+`output/formatters.py` から呼び出され、各 formatter が text 整形を委譲する。
+
+`pipeline.py` からは独立しており、依存方向は
+`pipeline → formatters → render` の順方向に統一する。
+"""
+
+import logging
+import shlex
+import typing
+import uuid
+
+import pyfltr.command.core_
+import pyfltr.command.slow_tests
+import pyfltr.config.config
+import pyfltr.config.model
+import pyfltr.output.diagnostics
+import pyfltr.output.logging_
+import pyfltr.parsing.entry
+import pyfltr.warnings_
+
+NCOLS = 128
+
+logger = logging.getLogger(__name__)
+
+text_logger = pyfltr.output.logging_.text_logger
+lock = pyfltr.output.logging_.text_output_lock
+
+
+def _write_raw_output(output: str, *, use_github_annotations: bool) -> None:
+    """生出力をtext_loggerへ出力する。
+
+    GitHub Actions注釈モードでは、生出力中の`::`行がワークフローコマンドとして
+    誤解釈されるのを防ぐため、GitHub公式の`::stop-commands::<token>` / `::<token>::`で囲む。
+    tokenは実行ごとにランダムかつ一意な値（`uuid.uuid4().hex`）を用いる。
+    """
+    if use_github_annotations:
+        token = uuid.uuid4().hex
+        text_logger.info(f"::stop-commands::{token}")
+        text_logger.info(output)
+        text_logger.info(f"::{token}::")
+    else:
+        text_logger.info(output)
+
+
+def write_log(result: pyfltr.command.core_.CommandResult, *, use_github_annotations: bool = False) -> None:
+    """コマンド実行結果の詳細ログ出力。
+
+    パース済みエラーがある場合は`format_error()`で整形した一覧を表示する。
+    エラーがなく失敗した場合は生出力をフォールバック表示する。
+    テスター（`command_type == "tester"`）が失敗した場合は、診断一覧が有っても
+    生出力を併記する。テスターの診断は要約であり生出力の代替にならないため。
+
+    `use_github_annotations`がTrueのとき、ErrorLocation行をGAワークフローコマンド記法で出力する。
+    False（既定）のときは従来のテキスト形式（`file:line:col: [tool:rule] msg`）で出力する。
+    枠線・区切り線・進捗ラベルは常にtext記法を維持する
+    （GAはエラー箇所の解釈だけを切り替え、レイアウトはtextと同じにする設計）。
+    成否にかかわらず、診断・生出力・成功要約の後へ遅いテスト一覧の上位
+    `SLOW_TEST_LIMIT`件を表示する（対象外のツールでは一覧が空のため表示は増えない）。
+    """
+    mark = "@" if result.alerted else "*"
+    with lock:
+        text_logger.info(f"{mark * 32} {result.command} {mark * (NCOLS - 34 - len(result.command))}")
+        logger.debug(f"{mark} commandline: {shlex.join(result.commandline)}")
+        text_logger.info(mark)
+        if result.errors:
+            for error in result.errors:
+                if use_github_annotations:
+                    text_logger.info(pyfltr.output.diagnostics.format_error_github(error))
+                else:
+                    text_logger.info(pyfltr.output.diagnostics.format_error(error))
+            if result.command_type == "tester" and result.alerted:
+                _write_raw_output(result.output, use_github_annotations=use_github_annotations)
+        elif result.alerted:
+            _write_raw_output(result.output, use_github_annotations=use_github_annotations)
+        else:
+            summary = pyfltr.parsing.entry.parse_summary(result.command, result.output)
+            if summary:
+                text_logger.info(f"{mark} {summary}")
+        for line in pyfltr.command.slow_tests.format_slow_tests(result.slow_tests):
+            text_logger.info(f"{mark} {line}")
+        text_logger.info(mark)
+        text_logger.info(f"{mark} returncode: {result.returncode}")
+        text_logger.info(mark * NCOLS)
+
+
+def render_results(
+    results: list[pyfltr.command.core_.CommandResult],
+    config: pyfltr.config.model.Config,
+    *,
+    include_details: bool,
+    output_format: str = "text",
+    exit_code: int = 0,
+    commands: list[str] | None = None,
+    files: int | None = None,
+    warnings: list[dict[str, typing.Any]] | None = None,
+    run_id: str | None = None,
+    launcher_prefix: list[str] | None = None,
+) -> None:
+    """実行結果を `成功コマンド → 失敗コマンド → summary` の順でまとめて出力する。
+
+    summaryを末尾に出力することで、`tail -N`で末尾だけ読み取るツール
+    （Claude Codeなど）でもsummaryが確実に確認できるようにする。失敗コマンド詳細も
+    summaryの直前に置くため、`tail -N`でエラー情報も捕捉しやすい。
+
+    `include_details=False`のときは、詳細ログは既に出力済みとみなしsummaryのみ表示する
+    （`--stream`モード向け）。
+
+    構造化出力（JSONL / SARIF）はここでは扱わず、呼び出し元（`pyfltr.cli.main`）が
+    `structured_logger`経由で出力する。本関数は常にtext整形ログを
+    `text_logger`へ送出する。`output_format`はErrorLocation行の整形方式の
+    切替（`github-annotations`時のみGA記法）に使う。
+    """
+    del exit_code, commands, files, run_id, launcher_prefix  # 構造化出力への委譲が無くなり未使用
+    ordered = sorted(results, key=lambda r: config.command_names.index(r.command))
+    warnings = warnings or []
+
+    use_ga = output_format == "github-annotations"
+    if include_details:
+        # 1. 成功コマンドの詳細ログ
+        for result in ordered:
+            if not result.alerted:
+                write_log(result, use_github_annotations=use_ga)
+
+        # 2. 失敗コマンドの詳細ログ（summaryの直前に配置しtail -Nでも拾えるようにする）
+        for result in ordered:
+            if result.alerted:
+                write_log(result, use_github_annotations=use_ga)
+
+    # 3. warnings（summaryの直前。先頭だと見過ごされやすいため）
+    _write_warnings_section(warnings)
+
+    # 4. missing targets（summary直前。直接指定されたが存在しないファイルを総覧表示する）
+    _write_missing_targets_section(pyfltr.warnings_.filtered_direct_files(reason="missing"))
+
+    # 5. fully excluded files（summary直前。警告と混ざらないよう独立ブロックで出力する）
+    _write_fully_excluded_files_section(pyfltr.warnings_.filtered_direct_files(reason="excluded"))
+
+    # 6. summary（末尾に出力することでtail -Nで必ず確認できるようにする）
+    _write_summary(ordered)
+
+
+def _write_warnings_section(warnings: list[dict[str, typing.Any]]) -> None:
+    """Warningsセクションをsummary直前に出力する。"""
+    if not warnings:
+        return
+    with lock:
+        text_logger.info(f"{'-' * 10} warnings {'-' * (72 - 10 - 10)}")
+        for entry in warnings:
+            text_logger.info(f"    [{entry['source']}] {pyfltr.warnings_.format_warning_text(entry)}")
+
+
+def _write_missing_targets_section(files: list[str]) -> None:
+    """直接指定されたが存在しないファイルをまとめて表示する。
+
+    警告としては個別のwarning行で既に通知しているが、総覧で見過ごされやすいため
+    summary直前に専用ブロックを置く。
+    """
+    if not files:
+        return
+    with lock:
+        text_logger.info(f"{'-' * 10} missing-targets {'-' * (72 - 10 - 17)}")
+        for path in files:
+            text_logger.info(f"    {path}")
+
+
+def _write_fully_excluded_files_section(files: list[str]) -> None:
+    """直接指定されたが除外設定で全除外されたファイルをまとめて表示する。
+
+    警告としては個別のwarning行で既に通知しているが、総覧で見過ごされやすいため
+    summary直前に専用ブロックを置く。exit コードには影響しない。
+    """
+    if not files:
+        return
+    with lock:
+        text_logger.info(f"{'-' * 10} fully-excluded-files {'-' * (72 - 10 - 22)}")
+        for path in files:
+            text_logger.info(f"    {path}")
+
+
+def _write_summary(ordered_results: list[pyfltr.command.core_.CommandResult]) -> None:
+    """Summary セクションを出力する。"""
+    with lock:
+        text_logger.info(f"{'-' * 10} summary {'-' * (72 - 10 - 9)}")
+        for result in ordered_results:
+            text_logger.info(f"    {result.command:<16s} {result.get_status_text()}")
+        text_logger.info("-" * 72)

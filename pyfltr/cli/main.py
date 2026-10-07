@@ -23,6 +23,7 @@ import pyfltr.cli.mcp_server
 import pyfltr.cli.parser
 import pyfltr.cli.pipeline
 import pyfltr.cli.replace_subcmd
+import pyfltr.cli.runs
 import pyfltr.cli.shell_completion
 import pyfltr.command.env
 import pyfltr.state.runs
@@ -101,22 +102,9 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
     subcommand = args.subcommand
     logging.basicConfig(level=logging.DEBUG if getattr(args, "verbose", False) else logging.INFO, format="%(message)s")
 
-    # 非実行系サブコマンドを辞書駆動でdispatchする。
-    # 辞書値はcallable（lazy importでモジュールロードコストを実行時に先送り）。
-    # 実行系（run/ci/fast/run-for-agent）は従来通り run_impl へ委譲する。
-    non_run_dispatch: dict[str, typing.Callable[[], int]] = {
-        "config": lambda: pyfltr.cli.config_subcmd.execute(parser, args),
-        "generate-shell-completion": lambda: _dispatch_shell_completion(args),
-        "list-runs": lambda: pyfltr.state.runs.execute_list_runs(parser, args),
-        "show-run": lambda: pyfltr.state.runs.execute_show_run(parser, args),
-        "command-info": lambda: _dispatch_command_info(parser, args),
-        "mcp": lambda: _dispatch_mcp(args),
-        "grep": lambda: pyfltr.cli.grep_subcmd.execute_grep(parser, args),
-        "replace": lambda: pyfltr.cli.replace_subcmd.execute_replace(parser, args),
-    }
-
-    if subcommand in non_run_dispatch:
-        return non_run_dispatch[subcommand]()
+    spec = next(spec for spec in pyfltr.cli.parser.SUBCOMMANDS if spec.name == subcommand)
+    if spec.execute is not None:
+        return spec.execute(parser, args)
 
     # サブコマンド別の既定値を注入する （CLI明示値が優先）。
     pyfltr.cli.command_selection.apply_subcommand_defaults(args)
@@ -130,11 +118,9 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
     # os.chdirよりも前のcwdを確実に取得するため、--work-dirの有無を問わず保存する。
     original_cwd = os.getcwd()
     resolved_targets: list[pathlib.Path] | None = None
-    chdir_applied = False
     if args.work_dir is not None:
         resolved_targets = [t.absolute() for t in args.targets]
-        os.chdir(args.work_dir)
-        chdir_applied = True
+        args.work_dir = pathlib.Path(args.work_dir).expanduser().resolve()
 
     # カスタムコマンド用の再パースコールバック。cli/parserへの参照をここで保持することで
     # cli/pipeline→cli/parserの直接依存（循環importの原因）を回避する。
@@ -144,41 +130,9 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
         pyfltr.cli.command_selection.apply_subcommand_defaults(a)
         return p, a
 
-    try:
-        return pyfltr.cli.pipeline.run_impl(
-            parser,
-            args,
-            list(sys_args),
-            resolved_targets,
-            original_cwd=original_cwd,
-            reparse_fn=_reparse_with_custom,
-        )
-    finally:
-        if chdir_applied:
-            os.chdir(original_cwd)
-
-
-def _dispatch_shell_completion(args: argparse.Namespace) -> int:
-    """generate-shell-completionサブコマンドの処理。"""
-    # 補完スクリプト側は「サブコマンド + 共通オプション一式」を列挙する必要があるため、
-    # 実行系サブコマンドの共通parentを渡す （カスタムコマンドは対象外で十分）。
-    script = pyfltr.cli.shell_completion.generate(
-        args.shell,
-        pyfltr.cli.parser.make_common_parent(),
-        frozenset(pyfltr.cli.parser.ALL_SUBCOMMANDS),
+    return pyfltr.cli.pipeline.run_impl(
+        parser, args, list(sys_args), resolved_targets, original_cwd=original_cwd, reparse_fn=_reparse_with_custom
     )
-    print(script, end="")
-    return 0
-
-
-def _dispatch_command_info(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
-    """command-infoサブコマンドの処理。"""
-    return pyfltr.cli.command_info.execute_command_info(parser, args)
-
-
-def _dispatch_mcp(args: argparse.Namespace) -> int:
-    """mcpサブコマンドの処理。"""
-    return pyfltr.cli.mcp_server.execute_mcp(args)
 
 
 if __name__ == "__main__":

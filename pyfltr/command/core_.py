@@ -6,9 +6,11 @@ import pathlib
 import tempfile
 import typing
 
-import pyfltr.command.process
 import pyfltr.command.slow_tests
 import pyfltr.config.config
+import pyfltr.config.model
+import pyfltr.diagnostics
+import pyfltr.tools
 
 FAILED_STATUSES: frozenset[str] = frozenset({"failed", "resolution_failed"})
 RERUN_STATUSES: frozenset[str] = frozenset({"failed", "warning", "resolution_failed"})
@@ -20,10 +22,11 @@ def is_failed_status(status: str | None) -> bool:
 
 
 if typing.TYPE_CHECKING:
-    import pyfltr.command.error_parser
+    import pyfltr.command.cache_policy
+    import pyfltr.command.only_failed
+    import pyfltr.command.process
     import pyfltr.command.subprojects
-    import pyfltr.state.cache
-    import pyfltr.state.only_failed
+    import pyfltr.parsing.entry
 
     Subproject = pyfltr.command.subprojects.Subproject
 
@@ -37,11 +40,11 @@ class ExecutionBaseContext:
     `run_pipeline` が1回だけ組み立て、CLI/TUI各経路へ渡す。
     """
 
-    config: pyfltr.config.config.Config
+    config: pyfltr.config.model.Config
     """実行設定（pyproject.tomlから読み込んだ設定値）。"""
     all_files: "list[pathlib.Path]"
     """対象ファイル一覧（ディレクトリ走査・excludeフィルタリング済み）。"""
-    cache_store: "pyfltr.state.cache.CacheStore | None"
+    cache_store: "pyfltr.command.cache_policy.CacheStore | None"
     """ファイルhashキャッシュストア。`None` の場合はキャッシュ無効。"""
     cache_run_id: str | None
     """キャッシュ書き込み時の参照元run_id。`None` の場合はキャッシュ書き込みをスキップ。"""
@@ -75,7 +78,7 @@ class ExecutionBaseContext:
     起点cwdでの追加実行を行うために参照する。
     モノレポモード非適用時（`subprojects` が空）は空リスト。
     """
-    subproject_configs: "dict[pathlib.Path, pyfltr.config.config.Config]" = dataclasses.field(default_factory=dict)
+    subproject_configs: "dict[pathlib.Path, pyfltr.config.model.Config]" = dataclasses.field(default_factory=dict)
     """サブプロジェクト cwd（絶対パス）からそのサブプロジェクト配下の `Config` への辞書。
 
     各サブプロジェクトで `load_config(config_dir=cwd, for_subproject=True)` を解決し、
@@ -127,7 +130,7 @@ class ExecutionContext:
     """パイプライン全体で不変のコンテキスト。"""
     fix_stage: bool = False
     """fixステージとして実行するか（fix-argsを適用して単発fix経路で動作する）。"""
-    only_failed_targets: "pyfltr.state.only_failed.ToolTargets | None" = None
+    only_failed_targets: "pyfltr.command.only_failed.ToolTargets | None" = None
     """`--only-failed` 経路でのツール別実行対象。
 
     実対象は `ToolTargets.resolve_files()` が決める。`None` の場合は `all_files` を使用。
@@ -166,7 +169,7 @@ class ExecutionContext:
         return None
 
     @property
-    def config(self) -> pyfltr.config.config.Config:
+    def config(self) -> pyfltr.config.model.Config:
         """`base.config` への委譲。"""
         return self.base.config
 
@@ -183,7 +186,7 @@ class ExecutionContext:
         return self.base.all_files
 
     @property
-    def cache_store(self) -> "pyfltr.state.cache.CacheStore | None":
+    def cache_store(self) -> "pyfltr.command.cache_policy.CacheStore | None":
         """`base.cache_store` への委譲。"""
         return self.base.cache_store
 
@@ -209,7 +212,7 @@ class CommandResult:
 
     linter・testerでは`status`が終了コードから失敗を導出するため設定しない。
     """
-    errors: "list[pyfltr.command.error_parser.ErrorLocation]" = dataclasses.field(default_factory=list)
+    errors: "list[pyfltr.diagnostics.ErrorLocation]" = dataclasses.field(default_factory=list)
     target_files: list[pathlib.Path] = dataclasses.field(default_factory=list)
     """対象のツールに渡したターゲットファイル一覧 （retry_commandの位置引数復元に使用）。
 
@@ -320,14 +323,14 @@ class CommandResult:
         cls,
         *,
         command: str,
-        command_info: "pyfltr.config.config.CommandInfo | None" = None,
+        command_info: "pyfltr.tools.CommandInfo | None" = None,
         commandline: list[str],
         returncode: int | None,
         output: str,
         elapsed: float,
         files: int,
         formatter_failed: bool = False,
-        errors: "list[pyfltr.command.error_parser.ErrorLocation] | None" = None,
+        errors: "list[pyfltr.diagnostics.ErrorLocation] | None" = None,
         command_type: str | None = None,
         resolution_failed: bool = False,
         timeout_exceeded: bool = False,
@@ -371,13 +374,13 @@ class CommandResult:
         *,
         process: "pyfltr.command.process.CompletedProcessWithTimeoutInfo",
         command: str,
-        command_info: "pyfltr.config.config.CommandInfo",
+        command_info: "pyfltr.tools.CommandInfo",
         commandline: list[str],
         output: str,
         elapsed: float,
         files: int,
         formatter_failed: bool = False,
-        errors: "list[pyfltr.command.error_parser.ErrorLocation] | None" = None,
+        errors: "list[pyfltr.diagnostics.ErrorLocation] | None" = None,
         slow_tests: "list[pyfltr.command.slow_tests.SlowTest] | None" = None,
     ) -> "CommandResult":
         """プロセス実行結果と解析済み情報からCommandResultを組み立てる。"""
@@ -455,6 +458,16 @@ class CommandResult:
         return is_failed_status(self.status)
 
     @property
+    def formatted(self) -> bool:
+        """formatterによる書き換えを表す場合に真を返す。"""
+        return self.status == "formatted"
+
+    @property
+    def skipped(self) -> bool:
+        """コマンドが起動されなかった場合に真を返す。"""
+        return self.status == "skipped"
+
+    @property
     def needs_rerun(self) -> bool:
         """statusが再実行対象を表す場合に真を返す。"""
         return self.status in RERUN_STATUSES
@@ -513,7 +526,7 @@ class CommandResult:
         outputs: list[str] = [r.output for r in results if r.output]
         merged_output = "\n".join(outputs)
 
-        merged_errors: list[pyfltr.command.error_parser.ErrorLocation] = []
+        merged_errors: list[pyfltr.diagnostics.ErrorLocation] = []
         for r in results:
             merged_errors.extend(r.errors)
 
@@ -600,7 +613,7 @@ class CacheContext:
     `execute_command` のplain経路でのみ使う内部ヘルパー。
     """
 
-    cache_store: "pyfltr.state.cache.CacheStore"
+    cache_store: "pyfltr.command.cache_policy.CacheStore"
     command: str
     key: str
 
@@ -621,7 +634,7 @@ class ExecutionParams:
     dispatcherと各runner関数で参照する。
     """
 
-    command_info: pyfltr.config.config.CommandInfo
+    command_info: pyfltr.tools.CommandInfo
     targets: list[pathlib.Path]
     commandline_prefix: list[str]
     commandline: list[str]
@@ -661,3 +674,43 @@ class ExecutionParams:
     """一時ファイルパスから元ファイルパスへ戻すための辞書。"""
     injected_config_path: pathlib.Path | None = None
     """コマンドラインへ自動注入した設定ファイルの絶対パス。"""
+
+
+class VerboseOptions(typing.Protocol):
+    """実行時に必要な詳細出力の設定。"""
+
+    verbose: bool
+
+
+@dataclasses.dataclass
+class ExecutionRequest:
+    """解決済みの引数・実行基盤・出力と中断の所有を持つ実行要求。"""
+
+    command: str
+    params: ExecutionParams
+    ctx: ExecutionContext
+    env: dict[str, str]
+    start_time: float
+    verbose: bool = False
+    cwd: pathlib.Path | None = None
+    nodeid_base_cwd: pathlib.Path | None = None
+
+    @property
+    def timeout(self) -> float | None:
+        """対象コマンドの実行時間の上限を返す。"""
+        return pyfltr.config.model.resolve_command_timeout(self.ctx.config.values, self.command)
+
+    @property
+    def retry_options(self) -> dict[str, typing.Any]:
+        """同じ実行設定のOOM再試行条件を返す。"""
+        return pyfltr.config.model.resolve_retry_kwargs(self.ctx.config.values)
+
+
+def overall_status(results: "typing.Iterable[CommandResult]") -> typing.Literal["SUCCESS", "FORMATTED", "FAILED"]:
+    """失敗、書き換え、成功の優先順で実行全体の状態を決める。"""
+    formatted = False
+    for result in results:
+        if result.failed:
+            return "FAILED"
+        formatted = formatted or result.formatted
+    return "FORMATTED" if formatted else "SUCCESS"

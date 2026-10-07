@@ -11,9 +11,12 @@ import difflib
 
 import pyfltr.cli.output_format
 import pyfltr.config.config
+import pyfltr.config.model
+import pyfltr.config.selection
+import pyfltr.run_options
 
 
-def apply_subcommand_defaults(args: argparse.Namespace) -> None:
+def apply_subcommand_defaults(args: argparse.Namespace | pyfltr.run_options.RunOptions) -> None:
     """サブコマンドごとの既定値を`args`に反映する。
 
     `subparsers.add_parser(..., parents=[common])`で共通オプションを継承する
@@ -47,7 +50,7 @@ def apply_subcommand_defaults(args: argparse.Namespace) -> None:
         args.quiet = subcommand == "run-for-agent" or pyfltr.cli.output_format.detect_agent_indicator() is not None
 
 
-def flatten_commands_arg(values: list[str] | None, config: pyfltr.config.config.Config) -> list[str]:
+def flatten_commands_arg(values: list[str] | None, config: pyfltr.config.model.Config) -> list[str]:
     """`--commands` で渡されたリスト（複数回指定の集合）をコマンド名配列に展開する。
 
     各要素にはカンマ区切りで複数のコマンドを含められるため、splitした上で
@@ -75,7 +78,7 @@ MCP_LIST_COMMANDS = '`config`ツールの`action="list", include_defaults=True`'
 
 
 def format_unknown_command_message(
-    command: str, config: pyfltr.config.config.Config, *, list_commands: str = CLI_LIST_COMMANDS
+    command: str, config: pyfltr.config.model.Config, *, list_commands: str = CLI_LIST_COMMANDS
 ) -> str:
     """未知のコマンド名を検出したときの文面を組み立てる。
 
@@ -94,7 +97,7 @@ def format_unknown_command_message(
 
 
 def validate_commands(
-    commands: list[str], config: pyfltr.config.config.Config, *, list_commands: str = CLI_LIST_COMMANDS
+    commands: list[str], config: pyfltr.config.model.Config, *, list_commands: str = CLI_LIST_COMMANDS
 ) -> None:
     """コマンド名が設定へ登録済みであることを検証する。
 
@@ -110,7 +113,7 @@ def compute_unmet_commands(
     command_tokens: list[str],
     requested_commands: list[str],
     enabled_commands: list[str],
-    config: pyfltr.config.config.Config,
+    config: pyfltr.config.model.Config,
 ) -> list[str]:
     """`--commands`指定のうち未有効化で未実行となるコマンドを警告対象として抽出する。
 
@@ -135,7 +138,7 @@ def compute_unmet_commands(
     explicit: set[str] = set()
     for token in command_tokens:
         if token in config["aliases"]:
-            expanded = pyfltr.config.config.resolve_aliases([token], config)
+            expanded = pyfltr.config.selection.resolve_aliases([token], config)
             if any(name in enabled for name in expanded):
                 suppressed.update(expanded)
         else:

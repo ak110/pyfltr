@@ -7,8 +7,8 @@ description: >
   pyfltr/output/配下・pyfltr/cli/output_format.py・pyfltr/cli/pipeline.py・pyfltr/cli/parser.py・
   pyfltr/cli/mcp_models.py・pyfltr/command/completion.py・
   pyfltr/command/core_.py・pyfltr/command/dispatcher.py・
-  tests/completion_test.py・tests/llm_output_test.py・tests/output_format_test.py・tests/pipeline_heartbeat_test.py・tests/main_test.py・
-  tests/main_config_test.py・tests/sarif_output_test.py・tests/code_quality_test.py・tests/llmstxt_test.py・
+  tests/command/completion_test.py・tests/output/jsonl_test.py・tests/integration/output_format_test.py・tests/cli/pipeline_test.py・tests/cli/main_test.py・
+  tests/cli/main_test.py・tests/output/sarif_test.py・tests/output/code_quality_test.py・tests/integration/llmstxt_test.py・
   docs/guide/usage.md・docs/development/architecture.md・mkdocs.yml を編集する際に使用する。
   ファイルを問わず、pyfltrがCLIとMCPで返すエラー・警告・案内の文面を書く際にも使用する。
 ---

@@ -4,6 +4,8 @@ import argparse
 import typing
 
 import pyfltr.config.config
+import pyfltr.config.model
+import pyfltr.tools
 
 SUPPORTED_SHELLS: tuple[str, ...] = ("bash", "powershell")
 """対応シェル。"""
@@ -60,8 +62,8 @@ def _collect_completions(
     _walk(parser)
 
     # --commandsの補完候補: ビルトインコマンド名 + 静的エイリアスキー
-    commands_choices = list(pyfltr.config.config.BUILTIN_COMMAND_NAMES)
-    aliases = pyfltr.config.config.DEFAULT_CONFIG.get("aliases", {})
+    commands_choices = list(pyfltr.tools.BUILTIN_COMMAND_NAMES)
+    aliases = pyfltr.config.model.DEFAULT_CONFIG.get("aliases", {})
     assert isinstance(aliases, dict)
     for alias_name in aliases:
         if alias_name not in commands_choices:

@@ -9,6 +9,7 @@ import subprocess
 import typing
 
 import pyfltr.config.config
+import pyfltr.config.model
 from pyfltr.command.env import build_mise_subprocess_env
 
 logger = __import__("logging").getLogger(__name__)
@@ -92,7 +93,7 @@ def _mise_env_signature() -> tuple[tuple[str, str | None], ...]:
 
 
 def get_mise_active_tools(
-    config: pyfltr.config.config.Config,
+    config: pyfltr.config.model.Config,
     *,
     allow_side_effects: bool = False,
     cwd: pathlib.Path | None = None,
@@ -128,7 +129,7 @@ def get_mise_active_tools(
 
 
 def _query_mise_active_tools(
-    config: pyfltr.config.config.Config,
+    config: pyfltr.config.model.Config,
     *,
     allow_side_effects: bool,
     cwd: pathlib.Path | None = None,
@@ -149,7 +150,7 @@ def _query_mise_active_tools(
 def run_mise_with_trust(
     args: list[str],
     mise_env: dict[str, str],
-    config: pyfltr.config.config.Config,
+    config: pyfltr.config.model.Config,
     *,
     allow_side_effects: bool,
     cwd: pathlib.Path | None = None,
@@ -206,7 +207,7 @@ def run_mise_with_trust(
 
 def _run_mise_ls_with_trust_retry(
     ls_args: list[str],
-    config: pyfltr.config.config.Config,
+    config: pyfltr.config.model.Config,
     mise_env: dict[str, str],
     *,
     allow_side_effects: bool,

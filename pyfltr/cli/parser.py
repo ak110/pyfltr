@@ -5,36 +5,25 @@
 
 import argparse
 import collections.abc
+import dataclasses
 import pathlib
 import shlex
 import sys
 import typing
 
 import pyfltr.cli.command_info
+import pyfltr.cli.config_subcmd
 import pyfltr.cli.grep_subcmd
 import pyfltr.cli.mcp_server
 import pyfltr.cli.output_format
 import pyfltr.cli.replace_subcmd
+import pyfltr.cli.runs
 import pyfltr.cli.shell_completion
 import pyfltr.config.config
+import pyfltr.output.auxiliary
 import pyfltr.output.formatters
 import pyfltr.state.runs
-
-_RUN_SUBCOMMANDS: tuple[str, ...] = ("ci", "run", "fast", "run-for-agent")
-"""実行系サブコマンド。パイプラインを起動してformat/lint/testを実行する。"""
-
-ALL_SUBCOMMANDS: tuple[str, ...] = (
-    *_RUN_SUBCOMMANDS,
-    "config",
-    "generate-shell-completion",
-    "list-runs",
-    "show-run",
-    "command-info",
-    "mcp",
-    "grep",
-    "replace",
-)
-"""全サブコマンド。shell completionスクリプト生成時に参照される。"""
+import pyfltr.tools
 
 _STATIC_COMMAND_ALIASES: tuple[str, ...] = ("format", "lint", "test", "audit")
 """組み込みで必ず定義されるコマンドエイリアス。ユーザー設定のカスタムエイリアスは含まない。
@@ -76,7 +65,7 @@ def preflight_tool_name_as_subcommand(sys_args: typing.Sequence[str]) -> None:
     candidate = sys_args[0]
     if candidate in ALL_SUBCOMMANDS:
         return
-    tool_names = frozenset(pyfltr.config.config.BUILTIN_COMMAND_NAMES) | frozenset(_STATIC_COMMAND_ALIASES)
+    tool_names = frozenset(pyfltr.tools.BUILTIN_COMMAND_NAMES) | frozenset(_STATIC_COMMAND_ALIASES)
     if candidate not in tool_names:
         return
     rest_args = " ".join(shlex.quote(a) for a in sys_args[1:]) if len(sys_args) > 1 else "[targets]"
@@ -290,7 +279,7 @@ def make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> "
 
     # 各コマンド用の引数追加オプション （ビルトイン + カスタム）
     registered: set[str] = set()
-    for command in pyfltr.config.config.BUILTIN_COMMANDS:
+    for command in pyfltr.tools.BUILTIN_COMMANDS:
         registered.add(command)
         common.add_argument(
             f"--{command}-args",
@@ -328,29 +317,7 @@ def build_parser(custom_commands: collections.abc.Iterable[str] = ()) -> "_HelpO
             "linter・tester は並列実行する。"
             "JSON Lines 出力と MCP サーバーをコーディングエージェントから利用できる。"
         ),
-        epilog=(
-            "サブコマンド:\n"
-            "  ci               CI モードで実行する。フォーマッターの変更も失敗扱い。\n"
-            "  run              通常実行。フォーマッターの変更は成功扱いで fix ステージ有効。\n"
-            "  fast             高速ツールのみ実行 (--commands=fast 相当)。\n"
-            "  run-for-agent    run の互換用別名 (JSONL 出力と静音モードを既定化)。通常は run を使う。\n"
-            "  config <action>  設定ファイルを操作する (get / set / delete / list)。\n"
-            "  generate-shell-completion <shell>\n"
-            "                   シェル補完スクリプトを出力する (bash / powershell)。\n"
-            "  list-runs        実行アーカイブ内の run 一覧を表示する。\n"
-            "  show-run <run_id>\n"
-            "                   指定 run の詳細 (meta・ツール別サマリ・diagnostic・生出力) を表示する。\n"
-            "  command-info <command>\n"
-            "                   ツール起動方式(runner / 実行ファイル / 最終コマンドライン等)の解決結果を表示する。\n"
-            "  mcp              MCP サーバーを stdio で起動する。\n"
-            "  grep <pattern> [paths...]\n"
-            "                   ファイル群から正規表現に一致する行を検索する (ignore 尊重)。\n"
-            "  replace <pattern> <replacement> [paths...]\n"
-            "                   grep と同じ引数体系で置換する (履歴保存・undo 対応)。\n"
-            "\n"
-            "ドキュメント: https://ak110.github.io/pyfltr/\n"
-            "llms.txt: https://ak110.github.io/pyfltr/llms.txt"
-        ),
+        epilog=(build_epilog()),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("-V", "--version", action="store_true", help="バージョンを表示します。")
@@ -369,11 +336,20 @@ def build_parser(custom_commands: collections.abc.Iterable[str] = ()) -> "_HelpO
     # subparser単位の `set_defaults` は `parents=[common]` で共有された
     # 名前空間を通じて他サブパーサーのdefaultも書き換えてしまうため採用しない
     # （argparseの既知挙動）。
-    subparsers.add_parser("ci", parents=[common], help="CI モードで実行する。")
-    subparsers.add_parser("run", parents=[common], help="通常実行。")
-    subparsers.add_parser("fast", parents=[common], help="高速ツールのみ実行。")
-    subparsers.add_parser("run-for-agent", parents=[common], help="run の互換用別名 (通常は run を使う)。")
+    registered: set[str] = set()
+    for spec in SUBCOMMANDS:
+        if spec.run_help is not None:
+            subparsers.add_parser(spec.name, parents=[common], help=spec.run_help)
+        elif spec.registration_key not in registered:
+            assert spec.register is not None
+            spec.register(subparsers)
+            registered.add(spec.registration_key)
 
+    return parser
+
+
+def register_config(subparsers: typing.Any) -> None:
+    """設定操作の引数を登録する。"""
     # config: 設定ファイル操作（pnpm/npm config互換のget/set/delete/list）
     config_parser = subparsers.add_parser("config", help="設定ファイルを操作する。")
     config_subparsers = config_parser.add_subparsers(
@@ -426,7 +402,7 @@ def build_parser(custom_commands: collections.abc.Iterable[str] = ()) -> "_HelpO
     )
     config_list.add_argument(
         "--output-format",
-        choices=["text", "json", "jsonl"],
+        choices=pyfltr.output.auxiliary.OUTPUT_FORMATS,
         default=None,
         help=(
             "出力形式 (text / json / jsonl、既定: text)。"
@@ -437,6 +413,9 @@ def build_parser(custom_commands: collections.abc.Iterable[str] = ()) -> "_HelpO
         ),
     )
 
+
+def register_shell_completion(subparsers: typing.Any) -> None:
+    """補完生成の引数を登録する。"""
     # generate-shell-completion: 補完スクリプト出力
     gsc_parser = subparsers.add_parser(
         "generate-shell-completion",
@@ -448,17 +427,119 @@ def build_parser(custom_commands: collections.abc.Iterable[str] = ()) -> "_HelpO
         help="出力するシェル種別。",
     )
 
-    # list-runs / show-run: 実行アーカイブの詳細参照サブコマンド
-    pyfltr.state.runs.register_subparsers(subparsers)
 
-    # command-info: ツール起動方式（runner / 実行ファイル / 最終コマンドライン等）の解決結果表示
-    pyfltr.cli.command_info.register_subparsers(subparsers)
+def execute_shell_completion(_parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
+    """登録表から生成した一覧を補完スクリプトへ渡す。"""
+    script = pyfltr.cli.shell_completion.generate(args.shell, make_common_parent(), frozenset(ALL_SUBCOMMANDS))
+    print(script, end="")
+    return 0
 
-    # mcp: MCPサーバーのstdio起動
-    pyfltr.cli.mcp_server.register_subparsers(subparsers)
 
-    # grep / replace: 横断検索・置換系サブコマンド
-    pyfltr.cli.grep_subcmd.register_subparsers(subparsers)
-    pyfltr.cli.replace_subcmd.register_subparsers(subparsers)
+@dataclasses.dataclass(frozen=True)
+class Subcommand:
+    """名前、引数登録、実行入口とhelp文面の共通定義。"""
 
-    return parser
+    name: str
+    epilog: str
+    run_help: str | None = None
+    register: typing.Callable[[typing.Any], None] | None = None
+    execute: typing.Callable[[argparse.ArgumentParser, argparse.Namespace], int] | None = None
+    registration_key: str = ""
+
+
+SUBCOMMANDS: tuple[Subcommand, ...] = (
+    Subcommand(
+        "ci", "  ci               CI モードで実行する。フォーマッターの変更も失敗扱い。\n", run_help="CI モードで実行する。"
+    ),
+    Subcommand(
+        "run", "  run              通常実行。フォーマッターの変更は成功扱いで fix ステージ有効。\n", run_help="通常実行。"
+    ),
+    Subcommand("fast", "  fast             高速ツールのみ実行 (--commands=fast 相当)。\n", run_help="高速ツールのみ実行。"),
+    Subcommand(
+        "run-for-agent",
+        "  run-for-agent    run の互換用別名 (JSONL 出力と静音モードを既定化)。通常は run を使う。\n",
+        run_help="run の互換用別名 (通常は run を使う)。",
+    ),
+    Subcommand(
+        "config",
+        "  config <action>  設定ファイルを操作する (get / set / delete / list)。\n",
+        register=register_config,
+        execute=pyfltr.tools.FunctionRef[[argparse.ArgumentParser, argparse.Namespace], int](
+            "pyfltr.cli.config_subcmd", "execute"
+        ),
+        registration_key="config",
+    ),
+    Subcommand(
+        "generate-shell-completion",
+        "  generate-shell-completion <shell>\n                   シェル補完スクリプトを出力する (bash / powershell)。\n",
+        register=register_shell_completion,
+        execute=execute_shell_completion,
+        registration_key="shell",
+    ),
+    Subcommand(
+        "list-runs",
+        "  list-runs        実行アーカイブ内の run 一覧を表示する。\n",
+        register=pyfltr.cli.runs.register_subparsers,
+        execute=pyfltr.tools.FunctionRef[[argparse.ArgumentParser, argparse.Namespace], int](
+            "pyfltr.cli.runs", "execute_list_runs"
+        ),
+        registration_key="runs",
+    ),
+    Subcommand(
+        "show-run",
+        "  show-run <run_id>\n                   指定 run の詳細 (meta・ツール別サマリ・diagnostic・生出力) を表示する。\n",
+        register=pyfltr.cli.runs.register_subparsers,
+        execute=pyfltr.tools.FunctionRef[[argparse.ArgumentParser, argparse.Namespace], int](
+            "pyfltr.cli.runs", "execute_show_run"
+        ),
+        registration_key="runs",
+    ),
+    Subcommand(
+        "command-info",
+        "  command-info <command>\n"
+        "                   ツール起動方式(runner / 実行ファイル / 最終コマンドライン等)の解決結果を表示する。\n",
+        register=pyfltr.cli.command_info.register_subparsers,
+        execute=pyfltr.tools.FunctionRef[[argparse.ArgumentParser, argparse.Namespace], int](
+            "pyfltr.cli.command_info", "execute_command_info"
+        ),
+        registration_key="command-info",
+    ),
+    Subcommand(
+        "mcp",
+        "  mcp              MCP サーバーを stdio で起動する。\n",
+        register=pyfltr.cli.mcp_server.register_subparsers,
+        execute=lambda _parser, args: pyfltr.cli.mcp_server.execute_mcp(args),
+        registration_key="mcp",
+    ),
+    Subcommand(
+        "grep",
+        "  grep <pattern> [paths...]\n                   ファイル群から正規表現に一致する行を検索する (ignore 尊重)。\n",
+        register=pyfltr.cli.grep_subcmd.register_subparsers,
+        execute=pyfltr.tools.FunctionRef[[argparse.ArgumentParser, argparse.Namespace], int](
+            "pyfltr.cli.grep_subcmd", "execute_grep"
+        ),
+        registration_key="grep",
+    ),
+    Subcommand(
+        "replace",
+        "  replace <pattern> <replacement> [paths...]\n"
+        "                   grep と同じ引数体系で置換する (履歴保存・undo 対応)。\n",
+        register=pyfltr.cli.replace_subcmd.register_subparsers,
+        execute=pyfltr.tools.FunctionRef[[argparse.ArgumentParser, argparse.Namespace], int](
+            "pyfltr.cli.replace_subcmd", "execute_replace"
+        ),
+        registration_key="replace",
+    ),
+)
+
+ALL_SUBCOMMANDS: tuple[str, ...] = tuple(spec.name for spec in SUBCOMMANDS)
+"""補完と入力判定でも使う、登録表から導出した全サブコマンド。"""
+
+
+def build_epilog() -> str:
+    """登録表から従来のサブコマンド案内を生成する。"""
+    return (
+        "サブコマンド:\n"
+        + "".join(spec.epilog for spec in SUBCOMMANDS)
+        + "\nドキュメント: https://ak110.github.io/pyfltr/\nllms.txt: https://ak110.github.io/pyfltr/llms.txt"
+    )

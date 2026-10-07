@@ -1,7 +1,7 @@
 """grep / replaceのtext形式人間向け出力。
 
 色付けは省略し、ripgrep流儀の`path:line:col:line_text`形式で1行ずつ出力する。
-出力先は`pyfltr.cli.output_format.text_logger`（INFO以上をstdoutへ）に揃え、
+出力先は`pyfltr.output.logging_.text_logger`（INFO以上をstdoutへ）に揃え、
 行間の混入を避けるため`text_output_lock`で保護する。
 """
 
@@ -10,7 +10,7 @@ from __future__ import annotations
 import pathlib
 import typing
 
-import pyfltr.cli.output_format
+import pyfltr.output.logging_
 import pyfltr.paths
 import pyfltr.warnings_
 from pyfltr.grep_.preview import MatchPreview
@@ -25,8 +25,8 @@ def render_match(record: MatchRecord, preview: MatchPreview) -> None:
     path = pyfltr.paths.normalize_separators(str(record.file))
     preview_prefix = f"[+{preview.line_text_offset}] " if preview.line_text_truncated else ""
     line = f"{path}:{record.line}:{record.col}:{preview_prefix}{preview.line_text}"
-    with pyfltr.cli.output_format.text_output_lock:
-        pyfltr.cli.output_format.text_logger.info(line)
+    with pyfltr.output.logging_.text_output_lock:
+        pyfltr.output.logging_.text_logger.info(line)
 
 
 def render_filtered_sections(
@@ -37,23 +37,23 @@ def render_filtered_sections(
 ) -> None:
     """summary行の直前にwarnings・missing-targets・fully-excluded-filesの総覧を出力する。
 
-    run系（`pyfltr/cli/render.py`）と同じ見出し・配置で、直接指定したファイルの除外・不在を通知する。
+    run系（`pyfltr/output/render.py`）と同じ見出し・配置で、直接指定したファイルの除外・不在を通知する。
     """
-    with pyfltr.cli.output_format.text_output_lock:
+    with pyfltr.output.logging_.text_output_lock:
         if warnings:
-            pyfltr.cli.output_format.text_logger.info(f"{'-' * 10} warnings {'-' * (72 - 10 - 10)}")
+            pyfltr.output.logging_.text_logger.info(f"{'-' * 10} warnings {'-' * (72 - 10 - 10)}")
             for entry in warnings:
-                pyfltr.cli.output_format.text_logger.info(
+                pyfltr.output.logging_.text_logger.info(
                     f"    [{entry['source']}] {pyfltr.warnings_.format_warning_text(entry)}"
                 )
         if missing_targets:
-            pyfltr.cli.output_format.text_logger.info(f"{'-' * 10} missing-targets {'-' * (72 - 10 - 17)}")
+            pyfltr.output.logging_.text_logger.info(f"{'-' * 10} missing-targets {'-' * (72 - 10 - 17)}")
             for path in missing_targets:
-                pyfltr.cli.output_format.text_logger.info(f"    {path}")
+                pyfltr.output.logging_.text_logger.info(f"    {path}")
         if fully_excluded_files:
-            pyfltr.cli.output_format.text_logger.info(f"{'-' * 10} fully-excluded-files {'-' * (72 - 10 - 22)}")
+            pyfltr.output.logging_.text_logger.info(f"{'-' * 10} fully-excluded-files {'-' * (72 - 10 - 22)}")
             for path in fully_excluded_files:
-                pyfltr.cli.output_format.text_logger.info(f"    {path}")
+                pyfltr.output.logging_.text_logger.info(f"    {path}")
 
 
 def render_grep_summary(
@@ -64,17 +64,17 @@ def render_grep_summary(
 ) -> None:
     """grep完了時の集計行を出力する。"""
     summary = f"-- {total_matches} match(es) in {files_with_matches} file(s) (scanned {files_scanned} file(s))"
-    with pyfltr.cli.output_format.text_output_lock:
-        pyfltr.cli.output_format.text_logger.info(summary)
+    with pyfltr.output.logging_.text_output_lock:
+        pyfltr.output.logging_.text_logger.info(summary)
 
 
 def render_grep_guidance(commands: list[str]) -> None:
     """grep完了時のガイダンス行（replace起動コマンド案内など）を出力する。"""
     if not commands:
         return
-    with pyfltr.cli.output_format.text_output_lock:
+    with pyfltr.output.logging_.text_output_lock:
         for line in commands:
-            pyfltr.cli.output_format.text_logger.info(line)
+            pyfltr.output.logging_.text_logger.info(line)
 
 
 def render_file_change(
@@ -87,8 +87,8 @@ def render_file_change(
     prefix = "(dry-run) " if dry_run else ""
     path = pyfltr.paths.normalize_separators(str(file))
     line = f"{prefix}M {path} ({count} replacement(s))"
-    with pyfltr.cli.output_format.text_output_lock:
-        pyfltr.cli.output_format.text_logger.info(line)
+    with pyfltr.output.logging_.text_output_lock:
+        pyfltr.output.logging_.text_logger.info(line)
 
 
 def render_change_diff(record: ReplaceRecord) -> None:
@@ -96,9 +96,9 @@ def render_change_diff(record: ReplaceRecord) -> None:
 
     `- {before_line}` / `+ {after_line}` の2行で構成し、利用者がbefore / afterを並列に確認できる。
     """
-    with pyfltr.cli.output_format.text_output_lock:
-        pyfltr.cli.output_format.text_logger.info(f"- {record.before_line}")
-        pyfltr.cli.output_format.text_logger.info(f"+ {record.after_line}")
+    with pyfltr.output.logging_.text_output_lock:
+        pyfltr.output.logging_.text_logger.info(f"- {record.before_line}")
+        pyfltr.output.logging_.text_logger.info(f"+ {record.after_line}")
 
 
 def render_replace_summary(
@@ -112,17 +112,17 @@ def render_replace_summary(
     prefix = "(dry-run) " if dry_run else ""
     suffix = f" replace_id={replace_id}" if replace_id else ""
     line = f"-- {prefix}{total_replacements} replacement(s) in {files_changed} file(s){suffix}"
-    with pyfltr.cli.output_format.text_output_lock:
-        pyfltr.cli.output_format.text_logger.info(line)
+    with pyfltr.output.logging_.text_output_lock:
+        pyfltr.output.logging_.text_logger.info(line)
 
 
 def render_replace_guidance(commands: list[str]) -> None:
     """replace完了時のガイダンス行（undoコマンド案内など）を出力する。"""
     if not commands:
         return
-    with pyfltr.cli.output_format.text_output_lock:
+    with pyfltr.output.logging_.text_output_lock:
         for line in commands:
-            pyfltr.cli.output_format.text_logger.info(line)
+            pyfltr.output.logging_.text_logger.info(line)
 
 
 def render_undo_summary(
@@ -132,11 +132,11 @@ def render_undo_summary(
     skipped: list[pathlib.Path],
 ) -> None:
     """undo完了時の集計行を出力する。"""
-    with pyfltr.cli.output_format.text_output_lock:
-        pyfltr.cli.output_format.text_logger.info(
+    with pyfltr.output.logging_.text_output_lock:
+        pyfltr.output.logging_.text_logger.info(
             f"-- undo replace_id={replace_id}: restored={len(restored)} skipped={len(skipped)}"
         )
         for path in restored:
-            pyfltr.cli.output_format.text_logger.info(f"  restored: {pyfltr.paths.normalize_separators(str(path))}")
+            pyfltr.output.logging_.text_logger.info(f"  restored: {pyfltr.paths.normalize_separators(str(path))}")
         for path in skipped:
-            pyfltr.cli.output_format.text_logger.info(f"  skipped: {pyfltr.paths.normalize_separators(str(path))}")
+            pyfltr.output.logging_.text_logger.info(f"  skipped: {pyfltr.paths.normalize_separators(str(path))}")

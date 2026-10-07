@@ -36,6 +36,7 @@ import ulid
 
 import pyfltr.command.core_
 import pyfltr.config.config
+import pyfltr.config.model
 import pyfltr.output.jsonl
 import pyfltr.paths
 import pyfltr.state.retention
@@ -157,7 +158,7 @@ class ArchiveStore:
 
         `diagnostics.jsonl`は`(command, file)`単位の集約形式で保存する。各行は
         `{"kind": "diagnostic", "command": ..., "file": ..., "messages": [...]}`構造で
-        `llm_output.aggregate_diagnostics()`の出力と同形。
+        `output.jsonl.aggregate_diagnostics()`の出力と同形。
         `tool.json`には`hint_urls`・`hints`・`slow_tests`をそれぞれ空でないときに限り含める。
         `slow_tests`は`CommandResult`への設定時点で正規化済みのため、ここでは件数を変えない。
         """
@@ -316,7 +317,7 @@ class ArchiveStore:
         )
 
 
-def policy_from_config(config: pyfltr.config.config.Config) -> ArchivePolicy:
+def policy_from_config(config: pyfltr.config.model.Config) -> ArchivePolicy:
     """pyproject.toml の設定から ArchivePolicy を組み立てる。"""
     return ArchivePolicy(
         max_runs=int(config.values.get("archive-max-runs", 100)),

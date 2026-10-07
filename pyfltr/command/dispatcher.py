@@ -1,8 +1,6 @@
 """ディスパッチャー。"""
 
-import argparse
 import dataclasses
-import functools
 import pathlib
 import random
 import shlex
@@ -11,11 +9,13 @@ import typing
 
 import natsort
 
+import pyfltr.command.cache_policy
+import pyfltr.command.core_
 import pyfltr.command.env
-import pyfltr.command.error_parser
 import pyfltr.command.glab
 import pyfltr.command.linter_fix
 import pyfltr.command.lychee
+import pyfltr.command.only_failed
 import pyfltr.command.precommit
 import pyfltr.command.process
 import pyfltr.command.runner
@@ -30,10 +30,14 @@ import pyfltr.command.two_step.prettier
 import pyfltr.command.two_step.ruff
 import pyfltr.command.vitest
 import pyfltr.config.config
+import pyfltr.config.model
+import pyfltr.config.selection
+import pyfltr.parsing.entry
+import pyfltr.parsing.pytest
 import pyfltr.paths
-import pyfltr.state.cache
-import pyfltr.state.only_failed
+import pyfltr.run_options
 import pyfltr.text.exclude_fence
+import pyfltr.tools
 import pyfltr.warnings_
 from pyfltr.command.core_ import CacheContext, CommandResult, ExecutionContext, ExecutionParams
 
@@ -186,12 +190,12 @@ def _user_overrides_config(config_flag: str, *arg_lists: list[str]) -> bool:
 
 def _prepare_execution_params(
     command: str,
-    args: argparse.Namespace,
-    config: pyfltr.config.config.Config,
+    args: pyfltr.run_options.RunOptions,
+    config: pyfltr.config.model.Config,
     all_files: list[pathlib.Path],
     *,
     fix_stage: bool,
-    only_failed_targets: "pyfltr.state.only_failed.ToolTargets | None",
+    only_failed_targets: "pyfltr.command.only_failed.ToolTargets | None",
     subproject_cwd: pathlib.Path | None = None,
     cwd: pathlib.Path | None = None,
     uv_workspace_root: pathlib.Path | None = None,
@@ -209,13 +213,13 @@ def _prepare_execution_params(
     globs = command_info.target_globs()
     if pytest_fast_targets_active and command == "pytest":
         # fast選択時は`pytest-fast-targets`をpytestの対象globとして使う（空なら従来の対象glob）。
-        globs = pyfltr.config.config.pytest_fast_target_globs(config.values) or globs
+        globs = pyfltr.config.selection.pytest_fast_target_globs(config.values) or globs
     source_files = only_failed_targets.resolve_files(all_files) if only_failed_targets is not None else all_files
     targets: list[pathlib.Path] = pyfltr.command.targets.filter_by_globs(source_files, globs)
 
     # ツール別excludeの適用（--no-excludeが指定された場合はスキップ）
     if not args.no_exclude:
-        tool_excludes: list[str] = config.values.get(f"{command}-exclude", [])
+        tool_excludes: list[str] = pyfltr.config.model.command_setting(config.values, command, "exclude", [])
         if tool_excludes:
             targets = [t for t in targets if not pyfltr.command.targets.matches_exclude_patterns(t, tool_excludes)]
 
@@ -243,7 +247,7 @@ def _prepare_execution_params(
     fix_mode = fix_stage
     fix_args: list[str] | None = None
     if fix_mode:
-        fix_args = config.values.get(f"{command}-fix-args")
+        fix_args = pyfltr.config.model.command_setting(config.values, command, "fix-args", None)
 
     # 対象ファイル0件ならこの後の実行自体が行われないため、ツールパス解決を省略する。
     # mise等のbin-runner解決はネットワークやプラットフォーム制約で失敗し得るため、
@@ -295,7 +299,7 @@ def _prepare_execution_params(
     commandline_prefix = resolved.commandline
 
     # 起動オプションからの追加引数 （--textlint-argsなど） をshlex分割しておく
-    additional_args_str = getattr(args, f"{command.replace('-', '_')}_args", "")
+    additional_args_str = args.tool_arguments(command)
     additional_args = shlex.split(additional_args_str) if additional_args_str else []
 
     # 対象ファイル抜きのargvを共通ヘルパーで組み立てる:
@@ -319,8 +323,8 @@ def _prepare_execution_params(
     # 挿入位置は`commandline_prefix`直後。
     injected_config_path: pathlib.Path | None = None
     if command_info.config_arg_template and command_info.config_inject_candidates:
-        user_args_list: list[str] = list(config.values.get(f"{command}-args", []))
-        extend_args_list: list[str] = list(config.values.get(f"{command}-extend-args", []))
+        user_args_list: list[str] = list(pyfltr.config.model.command_setting(config.values, command, "args", []))
+        extend_args_list: list[str] = list(pyfltr.config.model.command_setting(config.values, command, "extend-args", []))
         config_flag = command_info.config_arg_template[0]
         if not _user_overrides_config(config_flag, user_args_list, extend_args_list, additional_args):
             start_for_inject = start_cwd if start_cwd is not None else pathlib.Path.cwd()
@@ -335,7 +339,7 @@ def _prepare_execution_params(
     cache_commandline = list(commandline)
 
     # pass-filenames = falseのツールはファイル引数を渡さない（tsc等）
-    if config.values.get(f"{command}-pass-filenames", True):
+    if pyfltr.config.model.command_setting(config.values, command, "pass-filenames", True):
         start_for_mask = start_cwd if start_cwd is not None else pathlib.Path.cwd()
         file_args, file_path_remap = _masked_markdown_arguments(
             targets,
@@ -379,14 +383,14 @@ def _prepare_execution_params(
 
 def _prepare_cache_context(
     command: str,
-    command_info: pyfltr.config.config.CommandInfo,
-    config: pyfltr.config.config.Config,
+    command_info: pyfltr.tools.CommandInfo,
+    config: pyfltr.config.model.Config,
     commandline: list[str],
     targets: list[pathlib.Path],
     additional_args: list[str],
     *,
     fix_args: list[str] | None,
-    cache_store: "pyfltr.state.cache.CacheStore | None",
+    cache_store: "pyfltr.command.cache_policy.CacheStore | None",
     target_base_cwd: pathlib.Path,
     config_base_cwd: pathlib.Path,
     injected_config_path: pathlib.Path | None,
@@ -399,7 +403,7 @@ def _prepare_cache_context(
     """
     if cache_store is None or not command_info.cacheable or fix_args is not None:
         return None
-    if not pyfltr.state.cache.is_cacheable(command, config, additional_args):
+    if not pyfltr.command.cache_policy.is_cacheable(command, config, additional_args):
         return None
     structured_spec = pyfltr.command.structured_output.get_structured_output_spec(command, config)
     key = cache_store.compute_key(
@@ -408,7 +412,7 @@ def _prepare_cache_context(
         fix_stage=False,
         structured_output=structured_spec is not None,
         target_files=targets,
-        config_files=pyfltr.state.cache.resolve_config_files(
+        config_files=pyfltr.command.cache_policy.resolve_config_files(
             command,
             config,
             base=config_base_cwd,
@@ -420,31 +424,7 @@ def _prepare_cache_context(
     return CacheContext(cache_store=cache_store, command=command, key=key)
 
 
-def _run_plain_command(
-    command: str,
-    command_info: pyfltr.config.config.CommandInfo,
-    commandline: list[str],
-    cache_commandline: list[str],
-    targets: list[pathlib.Path],
-    additional_args: list[str],
-    env: dict[str, str],
-    on_output: typing.Callable[[str], None] | None,
-    start_time: float,
-    args: argparse.Namespace,
-    config: pyfltr.config.config.Config,
-    *,
-    fix_args: list[str] | None,
-    cache_store: "pyfltr.state.cache.CacheStore | None",
-    cache_run_id: str | None,
-    start_cwd: pathlib.Path,
-    subproject_cwd: pathlib.Path | None,
-    injected_config_path: pathlib.Path | None,
-    is_interrupted: typing.Callable[[], bool] | None = None,
-    on_subprocess_start: typing.Callable[[], None] | None = None,
-    on_subprocess_end: typing.Callable[[], None] | None = None,
-    cwd: pathlib.Path | None = None,
-    file_path_remap: dict[str, str] | None = None,
-) -> CommandResult:
+def _run_plain_command(request: pyfltr.command.core_.ExecutionRequest) -> pyfltr.command.core_.CommandResult:
     """通常のlinter/formatterを単発実行するplain経路。
 
     ファイルhashキャッシュの参照・書き込みを担う。cacheable=Trueの非fix実行のみ
@@ -454,66 +434,64 @@ def _run_plain_command(
     # キャッシュ対象判定 / キー算出 / 書き込みをbreak/resumeできるよう、結果を
     # 後段で差し替える設計とする。
     cache_context = _prepare_cache_context(
-        command,
-        command_info,
-        config,
-        cache_commandline,
-        targets,
-        additional_args,
-        fix_args=fix_args,
-        cache_store=cache_store,
-        target_base_cwd=start_cwd,
-        config_base_cwd=cwd if cwd is not None else start_cwd,
-        injected_config_path=injected_config_path,
-        subproject_cwd=subproject_cwd,
+        request.command,
+        request.params.command_info,
+        request.ctx.config,
+        request.params.cache_commandline,
+        request.params.targets,
+        request.params.additional_args,
+        fix_args=request.params.fix_args,
+        cache_store=request.ctx.cache_store,
+        target_base_cwd=request.ctx.base.start_cwd,
+        config_base_cwd=request.cwd if request.cwd is not None else request.ctx.base.start_cwd,
+        injected_config_path=request.params.injected_config_path,
+        subproject_cwd=request.ctx.subproject_cwd,
     )
     if cache_context is not None:
         cached_result = cache_context.lookup()
         if cached_result is not None:
-            cached_result.target_files = list(targets)
+            cached_result.target_files = list(request.params.targets)
             # 復元値のfiles / elapsedは過去実行時のもの。復元時の実ファイル数は
             # 現在のターゲットリストに合わせ直す （再実行時の対象件数表示のため）。
-            cached_result.files = len(targets)
+            cached_result.files = len(request.params.targets)
             return cached_result
 
     # verbose時のコマンドライン出力・timeout / retry設定の解決はrun_configured_subprocessへ委ねる。
     # linter_fix.execute_linter_fixもこの単発実行の骨格（run_configured_subprocess呼び出し +
     # returncode/output/elapsedの取り出し）を共有するが、本関数はキャッシュ参照・書き込みを
     # 担う別責務のため統合しない。
-    # arid: disable
-    run_process = (
-        pyfltr.command.lychee.run_lychee
-        if command == "lychee"
-        else functools.partial(pyfltr.command.process.run_configured_subprocess, command)
-    )
-    proc = run_process(
-        commandline,
-        config,
-        env,
-        on_output,
-        verbose=args.verbose,
-        is_interrupted=is_interrupted,
-        on_subprocess_start=on_subprocess_start,
-        on_subprocess_end=on_subprocess_end,
-        cwd=cwd,
+
+    proc = (
+        pyfltr.command.lychee.run_lychee(
+            request.params.commandline,
+            request.ctx.config,
+            request.env,
+            request.ctx.on_output,
+            verbose=request.verbose,
+            is_interrupted=request.ctx.is_interrupted,
+            on_subprocess_start=request.ctx.on_subprocess_start,
+            on_subprocess_end=request.ctx.on_subprocess_end,
+            cwd=request.cwd,
+        )
+        if request.command == "lychee"
+        else pyfltr.command.process.run_process(request)
     )
     returncode = proc.returncode
 
     output = proc.stdout.strip()
-    elapsed = time.perf_counter() - start_time
-    # arid: enable
-    errors = pyfltr.command.error_parser.parse_errors(
-        command,
+    elapsed = time.perf_counter() - request.start_time
+    errors = pyfltr.parsing.entry.parse_errors(
+        request.command,
         output,
-        command_info.error_pattern,
-        file_path_remap=file_path_remap,
-        path_base=cwd,
+        request.params.command_info.error_pattern,
+        file_path_remap=request.params.file_path_remap,
+        path_base=request.cwd,
     )
     # pytestは設定ファイル競合をヘッダー1行で通知するだけで終了コードへ反映しない。
     # 拾わないと設定が適用されないまま完走した実行を成功として報告してしまう。
     slow_tests: list[pyfltr.command.slow_tests.SlowTest] = []
-    if command == "pytest":
-        conflict_message = pyfltr.command.error_parser.detect_pytest_config_conflict(output)
+    if request.command == "pytest":
+        conflict_message = pyfltr.parsing.pytest.detect_pytest_config_conflict(output)
         if conflict_message is not None:
             pyfltr.warnings_.emit_warning(
                 source="config-conflict",
@@ -524,17 +502,17 @@ def _run_plain_command(
 
     result = CommandResult.from_process(
         process=proc,
-        command=command,
-        command_info=command_info,
-        commandline=commandline,
-        files=len(targets),
+        command=request.command,
+        command_info=request.params.command_info,
+        commandline=request.params.commandline,
+        files=len(request.params.targets),
         output=output,
         elapsed=elapsed,
         errors=errors,
         slow_tests=slow_tests,
     )
 
-    if command == "lychee" and proc.returncode == 2 and not proc.timeout_exceeded:
+    if request.command == "lychee" and proc.returncode == 2 and not proc.timeout_exceeded:
         classification = pyfltr.command.lychee.classify_failures(output)
         if classification is not None and classification[0]:
             result.severity = "warning"
@@ -542,14 +520,14 @@ def _run_plain_command(
     # キャッシュ書き込み （成功rc=0のみ）。失敗結果を記録すると再試行で同じ失敗が
     # 復元されて修正確認できなくなるため、成功時に限定する。
     if cache_context is not None and returncode == 0:
-        cache_context.store(result, run_id=cache_run_id)
+        cache_context.store(result, run_id=request.ctx.cache_run_id)
 
     return result
 
 
 def execute_command(
     command: str,
-    args: argparse.Namespace,
+    args: pyfltr.run_options.RunOptions,
     ctx: ExecutionContext,
 ) -> CommandResult:
     """コマンドの実行。
@@ -615,7 +593,7 @@ def _make_disabled_skip_result(command: str, ctx: ExecutionContext) -> CommandRe
 
 def _dispatch_command(
     command: str,
-    args: argparse.Namespace,
+    args: pyfltr.run_options.RunOptions,
     ctx: ExecutionContext,
 ) -> CommandResult:
     """コマンドを実行経路へ振り分ける本体実装。
@@ -626,10 +604,6 @@ def _dispatch_command(
     # ctxから各フィールドを展開する。
     config = ctx.config
     all_files = ctx.all_files
-    on_output = ctx.on_output
-    is_interrupted = ctx.is_interrupted
-    on_subprocess_start = ctx.on_subprocess_start
-    on_subprocess_end = ctx.on_subprocess_end
 
     # 共通前処理: ターゲット解決・コマンドライン構築
     params_or_error = _prepare_execution_params(
@@ -653,10 +627,6 @@ def _dispatch_command(
     command_info = params.command_info
     targets = params.targets
     commandline = params.commandline
-    cache_commandline = params.cache_commandline
-    commandline_prefix = params.commandline_prefix
-    additional_args = params.additional_args
-    fix_mode = params.fix_mode
     fix_args = params.fix_args
 
     # 各CommandResultに対象のツールのターゲットファイル一覧とrunner解決情報を埋めるためのヘルパー。
@@ -666,7 +636,7 @@ def _dispatch_command(
     # 値が確定するため、targets空（0件）経路ではNoneのまま残す。
     # severityは `status` プロパティが従来failedとなる結果を `warning` に格下げするか
     # を決めるフラグで、結果生成時にconfigから解決して固定値で持たせる。
-    severity = pyfltr.config.config.resolve_severity(config.values, command)
+    severity = pyfltr.config.model.resolve_severity(config.values, command)
 
     def _with_targets(result: CommandResult) -> CommandResult:
         result.target_files = list(targets)
@@ -696,217 +666,33 @@ def _dispatch_command(
     )
 
     # 外部コマンドの解決と実行は、呼び出し単位で確定したcwdへ統一する。
-    effective_cwd = ctx.effective_cwd
-    subproject_cwd = ctx.subproject_cwd
-    start_cwd = ctx.base.start_cwd
 
-    # pre-commit・prekは共通の.pre-commit-config.yamlを参照してSKIP環境変数を構築し、
-    # pyfltr関連hookを除外したうえで2段階実行する。
-    # stage 1でファイル修正のみ （fixer系） なら "formatted"、
-    # checker系hookが残存エラーを報告すれば "failed" となる。
-    if command in ("pre-commit", "prek"):
-        # 専用executorの位置引数契約と共通コールバックを呼出箇所で明示する。
-        # arid: disable
-        return _with_targets(
-            pyfltr.command.precommit.execute_pre_commit(
-                command,
-                command_info,
-                commandline,
-                targets,
-                config,
-                args,
-                env,
-                on_output,
-                start_time,
-                is_interrupted=is_interrupted,
-                on_subprocess_start=on_subprocess_start,
-                on_subprocess_end=on_subprocess_end,
-                cwd=effective_cwd,
-            )
-        )
-        # arid: enable
-
-    # glab-ci-lintはGitLab API経由のlintで、GitLab remote未登録の環境では
-    # glab自身が非ゼロ終了しメッセージを返す。pyfltr利用者にとっては環境的事情のため、
-    # failedではなくskipped相当へ書き換える。判定はglabの英語ロケール出力に
-    # 依存するためLC_ALL/LANG=Cを強制する。
-    if command == "glab-ci-lint":
-        # 専用executorの位置引数契約と共通コールバックを呼出箇所で明示する。
-        # arid: disable
-        return _with_targets(
-            pyfltr.command.glab.execute_glab_ci_lint(
-                command,
-                command_info,
-                commandline,
-                targets,
-                config,
-                env,
-                on_output,
-                start_time,
-                args,
-                is_interrupted=is_interrupted,
-                on_subprocess_start=on_subprocess_start,
-                on_subprocess_end=on_subprocess_end,
-                cwd=effective_cwd,
-            )
-        )
-        # arid: enable
-
-    # vitestはJSON reporter併用で失敗を構造化diagnosticへ変換する。
-    # 利用者の`vitest-args`に`--reporter`または`--outputFile`指定がある場合は
-    # 注入をスキップし、stdout経由の従来経路で動作する。
-    if command == "vitest":
-        return _with_targets(
-            pyfltr.command.vitest.execute_vitest(
-                command,
-                command_info,
-                commandline,
-                commandline_prefix,
-                targets,
-                config,
-                additional_args,
-                env,
-                on_output,
-                start_time,
-                args,
-                is_interrupted=is_interrupted,
-                on_subprocess_start=on_subprocess_start,
-                on_subprocess_end=on_subprocess_end,
-                cwd=effective_cwd,
-                nodeid_base_cwd=effective_cwd,
-            )
-        )
-
-    # textlintのfixモードは2段階実行 （fix適用 + lintチェック）。
-    # fixer-formatterがcompactをサポートしない問題と、残存違反をcompactで取得する
-    # 要件を両立させるため、他のlinterとは別経路で実行する。
-    if fix_args is not None and command == "textlint":
-        return _with_targets(
-            pyfltr.command.textlint_fix.execute_textlint_fix(
-                command,
-                command_info,
-                commandline_prefix,
-                config,
-                targets,
-                additional_args,
-                env,
-                on_output,
-                start_time,
-                args,
-                is_interrupted=is_interrupted,
-                on_subprocess_start=on_subprocess_start,
-                on_subprocess_end=on_subprocess_end,
-                cwd=effective_cwd,
-                start_cwd=start_cwd,
-            )
-        )
-
-    # fixモードでlinterにfix-argsを適用する経路。
-    # mtime変化でformatted判定を行い、rc != 0はそのままfailed扱いとする。
-    if fix_args is not None and command_info.type != "formatter":
-        # 専用executorの位置引数契約と共通コールバックを呼出箇所で明示する。
-        # arid: disable
-        return _with_targets(
-            pyfltr.command.linter_fix.execute_linter_fix(
-                command,
-                command_info,
-                commandline,
-                targets,
-                config,
-                env,
-                on_output,
-                start_time,
-                args,
-                is_interrupted=is_interrupted,
-                on_subprocess_start=on_subprocess_start,
-                on_subprocess_end=on_subprocess_end,
-                cwd=effective_cwd,
-                start_cwd=start_cwd,
-            )
-        )
-        # arid: enable
-
-    # ruff-formatでruff-format-by-checkが有効な場合は、
-    # 先にruff check --fix --unsafe-fixesを実行してからruff formatを実行する。
-    # ステップ1（check）のlint violation （exit 1） は無視する （lintはruff-checkで検出）。
-    # ただしexit >= 2 （設定エラー等） は失敗扱いする。
-    if command == "ruff-format" and config["ruff-format-by-check"]:
-        # 専用executorの位置引数契約と共通コールバックを呼出箇所で明示する。
-        # arid: disable
-        return _with_targets(
-            pyfltr.command.two_step.ruff.execute_ruff_format_two_step(
-                command,
-                command_info,
-                commandline,
-                commandline_prefix,
-                targets,
-                config,
-                args,
-                env,
-                on_output,
-                start_time,
-                is_interrupted=is_interrupted,
-                on_subprocess_start=on_subprocess_start,
-                on_subprocess_end=on_subprocess_end,
-                cwd=effective_cwd,
-                start_cwd=start_cwd,
-            )
-        )
-        # arid: enable
-
-    # taplo/shfmt/prettierは確認と書き込みの引数が排他のため2段階実行する。
-    # prettierだけlock取得時機が異なる専用executorへ委ね、共通の引数受け渡しはここへ集約する。
-    if command in ("taplo", "shfmt", "prettier"):
-        executor = (
-            pyfltr.command.two_step.prettier.execute_prettier_two_step
-            if command == "prettier"
-            else pyfltr.command.two_step.base.execute_check_write_two_step
-        )
-        return _with_targets(
-            executor(
-                command,
-                command_info,
-                commandline_prefix,
-                config,
-                targets,
-                additional_args,
-                fix_mode=fix_mode,
-                env=env,
-                on_output=on_output,
-                start_time=start_time,
-                args=args,
-                is_interrupted=is_interrupted,
-                on_subprocess_start=on_subprocess_start,
-                on_subprocess_end=on_subprocess_end,
-                cwd=effective_cwd,
-                start_cwd=start_cwd,
-            )
-        )
-
-    # plain経路（通常のlinter・formatter）
-    return _with_targets(
-        _run_plain_command(
-            command,
-            command_info,
-            commandline,
-            cache_commandline,
-            targets,
-            additional_args,
-            env,
-            on_output,
-            start_time,
-            args,
-            config,
-            fix_args=fix_args,
-            cache_store=ctx.cache_store,
-            cache_run_id=ctx.cache_run_id,
-            start_cwd=start_cwd,
-            subproject_cwd=subproject_cwd,
-            injected_config_path=params.injected_config_path,
-            is_interrupted=is_interrupted,
-            on_subprocess_start=on_subprocess_start,
-            on_subprocess_end=on_subprocess_end,
-            cwd=effective_cwd,
-            file_path_remap=params.file_path_remap,
-        )
+    request = pyfltr.command.core_.ExecutionRequest(
+        command=command,
+        params=params,
+        ctx=ctx,
+        env=env,
+        start_time=start_time,
+        verbose=args.verbose,
+        cwd=ctx.effective_cwd,
+        nodeid_base_cwd=ctx.effective_cwd,
     )
+    kind = command_info.execution_kind
+    if command_info.execution_enabled_key is not None and not config[command_info.execution_enabled_key]:
+        kind = "plain"
+    if fix_args is not None and command_info.type != "formatter":
+        kind = command_info.fix_execution_kind
+    return _with_targets(_EXECUTORS[kind](request))
+
+
+_EXECUTORS: dict[pyfltr.tools.ExecutionKind, typing.Callable[[pyfltr.command.core_.ExecutionRequest], CommandResult]] = {
+    "precommit": pyfltr.command.precommit.execute_pre_commit,
+    "glab": pyfltr.command.glab.execute_glab_ci_lint,
+    "vitest": pyfltr.command.vitest.execute_vitest,
+    "textlint-fix": pyfltr.command.textlint_fix.execute_textlint_fix,
+    "linter-fix": pyfltr.command.linter_fix.execute_linter_fix,
+    "ruff-format": pyfltr.command.two_step.ruff.execute_ruff_format_two_step,
+    "prettier": pyfltr.command.two_step.prettier.execute_prettier_two_step,
+    "check-write": pyfltr.command.two_step.base.execute_check_write_two_step,
+    "plain": _run_plain_command,
+}

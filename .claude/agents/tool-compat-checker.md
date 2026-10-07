@@ -14,9 +14,9 @@ pyfltrの対応ツールがバージョンアップで挙動を変えていな�
 ## 役割
 
 pyfltrは各ツールのバージョン追従が必要なため、差分の確認を定期的に行う。
-対応ツールの集合は `pyfltr/command/builtin.py` の `BUILTIN_COMMANDS` を典拠とする。
+対応ツールの集合は `pyfltr/tools.py` の `BUILTIN_COMMANDS` を典拠とする。
 チェック対象は `pyfltr/config/config.py` の `DEFAULT_CONFIG` にハードコードされた引数と、
-`pyfltr/command/error_parser.py` の正規表現。
+`pyfltr/parsing/entry.py` の正規表現。
 
 ## 入力
 
@@ -56,7 +56,7 @@ pyfltrは各ツールのバージョン追従が必要なため、差分の確�
 
    - JSON Lines全体を保存し、`header`レコード（`{"kind": "header", "run_id": "..."}`形式）の`run_id`を記録する。`head`等で先頭行だけを読むパイプは使わない
    - `uv run pyfltr show-run <run_id> --commands=<tool> --output --output-format=text`へ記録済みrun IDを明示し、JSON Linesへラップされていない生出力を取得する。`latest`は使わない
-   - 出力が `pyfltr/command/error_parser.py` の正規表現にマッチするか手動で比較する
+   - 出力が `pyfltr/parsing/entry.py` の正規表現にマッチするか手動で比較する
    - 必須グループ（`file`、`line`、`message`）が正常に取得されるか確認
 
 5. 報告

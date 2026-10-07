@@ -1,6 +1,6 @@
 ---
 paths:
-  - "pyfltr/command/builtin.py"
+  - "pyfltr/tools.py"
   - "pyfltr/config/config.py"
   - "Makefile"
   - ".pre-commit-config.yaml"

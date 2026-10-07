@@ -240,7 +240,7 @@ pyfltr replace --undo <replace_id>
 
 詳細は[検索と置換](grep-replace.md)を参照。
 
-### サブコマンド: mcp
+### サブコマンド: mcp {#mcp}
 
 ```shell
 pyfltr mcp
@@ -286,6 +286,43 @@ Claude Codeから登録する場合は`claude mcp add`コマンドを利用で�
 ```shell
 claude mcp add pyfltr -- uvx pyfltr mcp
 ```
+
+`pyfltr mcp`でMCPサーバーを起動すると、コーディングエージェントがCLIで可能な操作を
+原則としてMCPツールから呼び出せる。
+端末表示・出力先の制御と`--no-archive`はMCPへ露出せず、ツール固有の引数を任意の文字列で
+上書きする`--{tool}-args`も露出しない。
+CLIの直接呼び出しとは異なりJSONL出力がstdoutに流れず、
+MCPクライアントは結果を構造化データとして1件の応答で受け取れる。
+ただし`pyfltr mcp`起動後は同一プロセスのstdin/stdoutがJSON-RPCに専有されるため、
+他のコマンドと組み合わせた場合に出力が混在する点に注意する
+（詳細は[トラブルシューティング](troubleshooting.md)を参照）。
+
+`run`の主要パラメーターとCLI相当オプションは次のとおり。
+
+| MCPパラメーター | CLI相当 |
+| --- | --- |
+| `mode` | サブコマンドの`run` / `fast` / `ci` |
+| `work_dir` | `--work-dir` |
+| `commands` | `--commands` |
+| `no_fix` | `--no-fix` |
+| `only_failed` | `--only-failed` |
+| `changed_since` | `--changed-since` |
+| `shuffle` | `--shuffle` |
+| `exit_zero_even_if_formatted` | `--exit-zero-even-if-formatted` |
+
+`run`の応答は次の順に読む。
+
+1. `completion`を読む。
+   `completed`なら、指定した全対象へ到達し、全コマンドが対象を評価し終えている。
+   `incomplete`は一部のコマンドまたは対象が未完了、`not_reached`はどのコマンドも対象を評価しなかったことを示す
+2. `completed`以外の場合は、`incomplete_commands`・`missing_targets`・`fully_excluded_files`・
+   `skipped_reason`・`warnings`から未完了の理由を確認し、指定したパスやコマンドを直して再実行する
+3. `failed`が空でなければ、`show_run_diagnostics`で診断を取得して修正する。
+   `retry_commands`と`only_failed`で失敗したコマンドだけを再実行できる
+
+`exit_code`は診断・formatterによる書き換え・ツール失敗の有無を表し、対象へ到達したかは表さない。
+診断を検出して`exit_code`が1になった実行でも、チェックが対象を評価し終えていれば`completion`は`completed`となる。
+一部の対象が不在でも他の対象のチェックが成功すれば`exit_code`は0となるが、`completion`は`incomplete`となる。
 
 ### サブコマンド: command-info {#command-info}
 
@@ -449,6 +486,17 @@ pyfltr generate-shell-completion powershell | Out-String | Invoke-Expression
 pyfltr run --allow-external-paths --commands=textlint,markdownlint ~/.claude/plans/example.md
 ```
 
+### 事前チェック領域からの除外 {#exclude-fence-under}
+
+`--exclude-fence-under=<H2見出し>`オプションを指定すると、Markdownファイル内で指定H2見出し配下の
+フェンス内側行をtextlint・markdownlintのチェック対象から除外する。
+フィードバック原文の転記領域などlint違反が原文由来で不可避な区間のチェック除外を想定する。
+改行数は保存されるため診断出力の行番号は元ファイル基準となる。
+行内文字数は保存されず、フェンス内側行は空行化する（markdownlint MD013 line-lengthなど
+長さ由来ルールの発火を防ぐため）。
+改行なしEOF最終行は短い空白へ置換する。
+`[tool.pyfltr]`側でも`exclude-fence-under = ["## 背景"]`形式で指定できる。
+
 ### `fast` / `run` / `ci`の動作の違いと自動修正（fixステージ）
 
 各サブコマンドの主な違いを以下に示す（軽い順）。
@@ -494,7 +542,7 @@ formatterは通常ステージで対象ファイルを書き込むため、`--no
 
 対象ファイルの書き換えを避けたい場合は、`--no-fix`に加えて`--commands`で対象をlinterへ限定する。
 
-## 特定のツールのみ実行
+## 特定のツールのみ実行 {#single-tool}
 
 ```shell
 pyfltr ci --commands=ruff-check,markdownlint [files and/or directories ...]
@@ -506,18 +554,14 @@ pyfltr ci --commands=ruff-check,markdownlint [files and/or directories ...]
 
 以下のエイリアスも使用可能。(例: `--commands=format`)
 
-- `format`: `prettier` `ruff-format` `uv-sort` `shfmt` `taplo` `cargo-fmt` `dotnet-format` `prek` `pre-commit`
-- `lint`:
-    - Python系: `ruff-check` `mypy` `pylint` `pyright` `ty` `arid`
-    - Markdown系: `markdownlint` `textlint`
-    - JS/TS系: `eslint` `biome` `oxlint` `tsc`
-    - Rust系: `cargo-clippy` `cargo-check` `cargo-deny`
-    - .NET系: `dotnet-build`
-    - 監査系: `uv-audit` `pnpm-audit` `npm-audit` `yarn-audit`
-    - その他: `ec` `shellcheck` `typos` `actionlint` `pinact`
-- `test`: `pytest` `vitest` `cargo-test` `dotnet-test`
-- `audit`: `uv-audit` `pnpm-audit` `npm-audit` `yarn-audit`
-- `fast`: per-commandの`{cmd}-fast`フラグがtrueのコマンド
+- `format`: `prettier` `ruff-format` `uv-sort` `shfmt` `taplo` `cargo-fmt` `dotnet-format` `prek` `pre-commit`。
+- `lint`: `ec` `shellcheck` `typos` `actionlint` `pinact` `glab-ci-lint` `yamllint` `hadolint` `gitleaks`。
+    `semgrep` `bandit` `pylint` `mypy` `ruff-check` `pyright` `ty` `arid` `markdownlint`。
+    `textlint` `designmd` `lychee` `colloquial-check` `tsc` `eslint` `biome` `oxlint` `cargo-clippy`。
+    `cargo-check` `cargo-deny` `dotnet-build` `sqlfluff` `uv-audit` `pnpm-audit` `npm-audit` `yarn-audit`。
+- `test`: `pytest` `vitest` `cargo-test` `dotnet-test`。
+- `audit`: `uv-audit` `pnpm-audit` `npm-audit` `yarn-audit`。
+- `fast`: per-commandの`{cmd}-fast`フラグがtrueのコマンド。
 
 ※ `pyproject.toml`の`[tool.pyfltr]`で無効になっているコマンドは無視される。
 
@@ -544,6 +588,20 @@ pyfltr run --disable=mypy
 エイリアスは該当するものを実行する意味で使うため、一部のみ有効な構成を正常とみなす。
 展開結果が全て未有効化の場合は実行対象が空になるため警告を出力する。
 コマンド名を個別に指定した場合は、エイリアスとの併記の有無にかかわらず従来どおり警告を出力する。
+
+特定のツール1件だけを実行したいときは`--commands=<tool>`オプションを使う。
+
+```shell
+pyfltr run --commands=textlint docs/
+pyfltr run --commands=mypy src/
+```
+
+サブコマンドは`run`を利用する。
+`pyfltr textlint docs/`のようにツール名をそのままサブコマンドへ書くことはできない
+（誤入力を検知した場合は実行例付きのエラーメッセージが表示される）。
+
+JSONL出力に含まれる`command.retry_command`も同じ`--commands=<tool>`書式で生成される。
+失敗ツールだけを再実行したい場合は、該当`command`レコードの`retry_command`をそのまま貼り付けて実行できる。
 
 ## UI
 
@@ -701,45 +759,7 @@ pyfltrは`kind:"command"`かつ`status:"running"`のheartbeatレコードを出�
 コーディングエージェントから`pyfltr`を呼び出す方法は2種類ある。
 MCPを利用できる環境ではMCP経由で呼び出し、シェルコマンドしか使えない環境では直接呼び出しを使う。
 どちらの方法でも、指定したチェックが対象へ到達して完了したかを同じ判定で返す。
-
-#### MCP経由（推奨）
-
-`pyfltr mcp`でMCPサーバーを起動すると、コーディングエージェントがCLIで可能な操作を
-原則としてMCPツールから呼び出せる。
-端末表示・出力先の制御と`--no-archive`はMCPへ露出せず、ツール固有の引数を任意の文字列で
-上書きする`--{tool}-args`も露出しない。
-CLIの直接呼び出しとは異なりJSONL出力がstdoutに流れず、
-MCPクライアントは結果を構造化データとして1件の応答で受け取れる。
-ただし`pyfltr mcp`起動後は同一プロセスのstdin/stdoutがJSON-RPCに専有されるため、
-他のコマンドと組み合わせた場合に出力が混在する点に注意する
-（詳細は[トラブルシューティング](troubleshooting.md)を参照）。
-
-`run`の主要パラメーターとCLI相当オプションは次のとおり。
-
-| MCPパラメーター | CLI相当 |
-| --- | --- |
-| `mode` | サブコマンドの`run` / `fast` / `ci` |
-| `work_dir` | `--work-dir` |
-| `commands` | `--commands` |
-| `no_fix` | `--no-fix` |
-| `only_failed` | `--only-failed` |
-| `changed_since` | `--changed-since` |
-| `shuffle` | `--shuffle` |
-| `exit_zero_even_if_formatted` | `--exit-zero-even-if-formatted` |
-
-`run`の応答は次の順に読む。
-
-1. `completion`を読む。
-   `completed`なら、指定した全対象へ到達し、全コマンドが対象を評価し終えている。
-   `incomplete`は一部のコマンドまたは対象が未完了、`not_reached`はどのコマンドも対象を評価しなかったことを示す
-2. `completed`以外の場合は、`incomplete_commands`・`missing_targets`・`fully_excluded_files`・
-   `skipped_reason`・`warnings`から未完了の理由を確認し、指定したパスやコマンドを直して再実行する
-3. `failed`が空でなければ、`show_run_diagnostics`で診断を取得して修正する。
-   `retry_commands`と`only_failed`で失敗したコマンドだけを再実行できる
-
-`exit_code`は診断・formatterによる書き換え・ツール失敗の有無を表し、対象へ到達したかは表さない。
-診断を検出して`exit_code`が1になった実行でも、チェックが対象を評価し終えていれば`completion`は`completed`となる。
-一部の対象が不在でも他の対象のチェックが成功すれば`exit_code`は0となるが、`completion`は`incomplete`となる。
+MCPの提供ツールとパラメーターは[サブコマンド: mcp](#mcp)を参照。
 
 #### 直接呼び出し
 
@@ -782,34 +802,39 @@ MCPを利用できず、エージェントがシェルコマンドを実行で�
     `--only-failed`は直前runのアーカイブから失敗ツール・失敗ファイルを自動抽出して再実行する。
     直前runが無い・失敗ツールが無い・対象との交差が空の場合は終了コード0で成功終了する。
 
-### 事前チェック領域からの除外 {#exclude-fence-under}
+## pre-commit・prekとの統合 {#precommit-integration}
 
-`--exclude-fence-under=<H2見出し>`オプションを指定すると、Markdownファイル内で指定H2見出し配下の
-フェンス内側行をtextlint・markdownlintのチェック対象から除外する。
-フィードバック原文の転記領域などlint違反が原文由来で不可避な区間のチェック除外を想定する。
-改行数は保存されるため診断出力の行番号は元ファイル基準となる。
-行内文字数は保存されず、フェンス内側行は空行化する（markdownlint MD013 line-lengthなど
-長さ由来ルールの発火を防ぐため）。
-改行なしEOF最終行は短い空白へ置換する。
-`[tool.pyfltr]`側でも`exclude-fence-under = ["## 背景"]`形式で指定できる。
+pyfltrはpre-commit・prekのうち有効な方を内部で呼び出し、pre-commit・prekはpyfltrをフックとして呼び出す。
+git commit経由でpre-commit・prekのいずれかが起動した場合、pyfltrは`PRE_COMMIT=1`を検出する。
+pyfltrは内部の統合を自動スキップし、二重実行を防ぐ。
 
-## 個別ツールを限定して実行したい場合 {#single-tool}
+```mermaid
+sequenceDiagram
+    participant U as git commit
+    participant PC as pre-commit / prek
+    participant PH as pre-commit-hooks
+    participant PF as pyfltr fast
 
-特定のツール1件だけを実行したいときは`--commands=<tool>`オプションを使う。
-
-```shell
-pyfltr run --commands=textlint docs/
-pyfltr run --commands=mypy src/
+    U->>PC: フック起動
+    PC->>PH: check-yaml, trailing-whitespace等
+    PC->>PF: pyfltr fast（local hook）
+    Note over PF: PRE_COMMIT=1 検出で<br/>統合をスキップ
+    PF->>PF: ruff-format, ruff-check等
 ```
 
-サブコマンドは`run`を利用する。
-`pyfltr textlint docs/`のようにツール名をそのままサブコマンドへ書くことはできない
-（誤入力を検知した場合は実行例付きのエラーメッセージが表示される）。
+逆に`make test`等から`pyfltr run`を呼び出した場合、pyfltr側が`SKIP=pyfltr`付きで有効なpre-commitまたはprekを起動する。
+pre-commitとprekは、いずれも変更ファイル指定（`--files <対象>`）で起動する。
+各hook内部の`types`・`types_or`・`files`・`exclude`フィルタはファイル指定起動でも適用されるため、関係するhookのみ動作する。
+これによりpre-commit-hooks（check-yaml等）を統合実行できる。
 
-JSONL出力に含まれる`command.retry_command`も同じ`--commands=<tool>`書式で生成される。
-失敗ツールだけを再実行したい場合は、該当`command`レコードの`retry_command`をそのまま貼り付けて実行できる。
+`pass_filenames: false`属性のhook（`gitleaks`等）はリポジトリ全体を走査する。
+pyfltr関連hookは`.pre-commit-config.yaml`から自動検出し、既存の`SKIP`と
+`pre-commit-skip` / `prek-skip`の手動指定と合わせて子プロセスへ渡す。
+自動検出を止めるには`pre-commit-auto-skip = false` / `prek-auto-skip = false`を設定する。
 
-## pre-commit・prekとの統合
+`fast`が`{command}-fast = true`のツールに限定する条件は、統合の再帰抑制とは別である。
+既定の`--files`起動は未ステージ変更を退避・復元せず、対象が0件なら実行系を起動しない。
+実行されないツールの確認方法は[トラブルシューティング](troubleshooting.md)を参照。
 
 pyfltrは`.pre-commit-hooks.yaml`を同梱していない。
 pre-commit・prekいずれから呼び出す場合も、`.pre-commit-config.yaml`の`repo: local`でlocal hookとして登録する。

@@ -1,10 +1,14 @@
 # AGENTS.md: pyfltr
 
+## プロジェクト概要
+
 多言語プロジェクトの品質チェックを一元管理し、コーディングエージェントから扱える形で提供する基盤。
 組み込みのformatter・linter・testerとプロジェクト固有のカスタムチェックを同じ手順で実行できる。
 JSON Lines出力（`--output-format=jsonl`）とMCPサーバー（`pyfltr mcp`）を利用できる。
 
 ## 開発手順
+
+### 開発コマンド
 
 - `make update`: 依存更新 + prek autoupdate + pinactアクション更新 + Dockerベースイメージdigest更新 + 全テスト実行
   - `make update-actions`: GitHub Actionsのハッシュピン更新のみ（mise経由でpinact実行）
@@ -14,6 +18,9 @@ JSON Lines出力（`--output-format=jsonl`）とMCPサーバー（`pyfltr mcp`�
       - アクションのメジャー版表記がピン版と一致しなければ、同じ変更に含めて更新する
   - `make update-docker-base`: `docker/Dockerfile`のベースイメージdigest更新のみ（docker未導入時はスキップ）
     - `FROM python:<タグ>@sha256:<digest>`のdigestを、同じタグが現時点で指す値へ書き換える
+
+### 利用者向け文書と推奨ガイドの記述
+
 - 推奨ガイド（`docs/guide/recommended.md`・`docs/guide/recommended-nonpython.md`）と本リポジトリの設定は、
   双方の変更時に対応する既存設定へ同じ変更を反映する
   - 推奨ガイドを変更した場合は、設定例が提示する対象のうち本リポジトリに存在するものへ反映する。
@@ -35,11 +42,22 @@ JSON Lines出力（`--output-format=jsonl`）とMCPサーバー（`pyfltr mcp`�
   具体値ではなく変動する性質として記述する
   - 変動しない量を具体値で記載する場合は、同一文書内に同種の測定値が既にあるかを確認し、
     条件が重なるときはいずれかへ統一するか測定時点と測定条件を明示する
-- リリース手順: `gh workflow run release.yaml --field=bump=PATCH`（`PATCH`は`MINOR`・`MAJOR`に変更可）
-- Docker再ビルド単発起動: `gh workflow run docker-build.yaml`
-  - `ghcr.io/ak110/pyfltr:latest`をリリースを伴わず更新する
-  - `--field=version=X.Y.Z`で特定バージョンを指定する。未指定時はPyPI最新公開版を採用する
-- テストコードは`pyfltr/xxx_.py`に対して`tests/xxx_test.py`として配置する
+
+### テストの配置
+
+- `pyfltr/<サブパッケージ>/<モジュール>.py`に対して、
+  `tests/<サブパッケージ>/<モジュール>_test.py`として配置する。
+  トップレベルのモジュールは`tests/<モジュール>_test.py`へ配置する。
+  モジュール名の末尾`_`は除く（`command/core_.py`に対して`tests/command/core_test.py`）。
+  単体テストが複数の実装モジュールを混載している場合は、検証対象のモジュールごとに分ける。
+- 複数モジュールを横断する結合・構成検証とスモークテストは`tests/integration/`へ置く。
+  共通補助は`tests/conftest.py`、`tests/execution_request_helper.py`へ置く。
+  同じ層だけが使う補助はその層の`conftest.py`または補助モジュールへ置く。
+  サンプルの`tests/smoke_data/`はpytestの収集対象から除く。
+  テストのサブディレクトリに`__init__.py`を置く。
+
+### 検証
+
 - コミット前の検証方法: `make test`
   - formatter・linter・tester・カスタムチェックなど対応ツール全般を個別に直接起動せず、
     `make test`または`uv run pyfltr run <path>`を使う。
@@ -49,8 +67,8 @@ JSON Lines出力（`--output-format=jsonl`）とMCPサーバー（`pyfltr mcp`�
     渡すパスは変更したファイルに限定せず、その場で必要十分な範囲を決める
     - 変更したファイルを入力として消費するテストと、変更が期待値を変えるテストは、
       対象のテストファイル自体を変更していなくても対象へ含める
-    - 例えば`mkdocs.yml`・`pyfltr/cli/parser.py`・`pyfltr/command/builtin.py`のいずれかを
-      変更した場合は、`tests/llmstxt_test.py`を対象へ含める
+    - 例えば`mkdocs.yml`・`pyfltr/cli/parser.py`・`pyfltr/tools.py`のいずれかを
+      変更した場合は、`tests/integration/llmstxt_test.py`を対象へ含める
   - テストだけを部分実行する場合も`uv run pyfltr run tests/xxx_test.py --commands=pytest`を使い、
     `uv run pytest`を直接起動しない。直接起動では本リポジトリの設定（並列実行・タイムアウト等）が
     `make test`と揃わず、結果を`make test`の成否の根拠にできない
@@ -123,7 +141,7 @@ format別のlogger stream/level切替の詳細は[docs/development/architecture.
   「モノレポ対応」節を参照する
 - 外部ツールの成否は`pyfltr/command/core_.py`の`CommandResult.status`が終了コードから導出する。
   終了コード0は`errors`を参照せず`succeeded`となるため、
-  `pyfltr/command/error_parser.py`が抽出した診断は正常終了したツールの成否を変えない。
+  `pyfltr/parsing/entry.py`が抽出した診断は正常終了したツールの成否を変えない。
   成否を判断する処理は`pyfltr/command/core_.py`が公開する成否述語だけを参照する。
   `CommandResult`を扱う処理は`CommandResult.failed`と`CommandResult.needs_rerun`を、
   実行アーカイブから読んだstatus文字列を扱う処理は`is_failed_status`を用いる。
@@ -148,12 +166,13 @@ format別のlogger stream/level切替の詳細は[docs/development/architecture.
 - `show-run`が未知のキーを外部へ出力する範囲は`--commands`のjson形式とjsonl形式に限る。
   既定表示と`--commands`のtext形式は、表示するキーを列挙する現行動作を保ち、未知のキーを新たに表示しない
 
-## 注意点
+## サブエージェント・スキル連携
 
 - 対象ファイルに応じて`.claude/skills/`配下のpyfltr固有スキル
-  （`test-constraints`・`output-format`・`tool-resolution`・`ssot`・
+  （`implementation-test-constraints`・`output-format`・`tool-resolution`・`ssot`・
   `grep-replace`・`pyfltr-add-tool`）を呼び出す
-- `pyfltr/command/error_parser.py`を変更した場合、`error-parser-reviewer`サブエージェントによる
+- `pyfltr/parsing/`の解析処理、または`pyfltr/tools.py`の解析定義を変更した場合、
+  `error-parser-reviewer`サブエージェントによる
   網羅レビューをコミット前に完了させる。事後レビューにすると不良を含むコミットが記録され、
   是正に追加のリリースを要する
   - 対象ファイルの変更を確定してから網羅レビューを委譲し、
@@ -162,3 +181,7 @@ format別のlogger stream/level切替の詳細は[docs/development/architecture.
     レビュー担当は直前のコミットの実装を変更前、作業ツリーの現物を変更後として比較する
   - 委譲から完了報告の受領までの間は、対象ファイルの変更とコミットを行わない
   - 委譲中に対象ファイルを変更した場合は、変更後の実装を対象として網羅レビューをやり直す
+
+## 注意点
+
+リリースとDockerイメージの再発行は[開発手順](docs/development/development.md#release)を参照する。

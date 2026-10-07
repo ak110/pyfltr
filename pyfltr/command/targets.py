@@ -8,19 +8,20 @@ import subprocess
 import typing
 
 import pyfltr.config.config
+import pyfltr.config.model
 import pyfltr.paths
 import pyfltr.warnings_
 
 if typing.TYPE_CHECKING:
-    import pyfltr.state.only_failed
+    import pyfltr.command.only_failed
 
 logger = __import__("logging").getLogger(__name__)
 
 
 def pick_targets(
-    only_failed_targets: "dict[str, pyfltr.state.only_failed.ToolTargets] | None",
+    only_failed_targets: "dict[str, pyfltr.command.only_failed.ToolTargets] | None",
     command: str,
-) -> "pyfltr.state.only_failed.ToolTargets | None":
+) -> "pyfltr.command.only_failed.ToolTargets | None":
     """`only_failed_targets` から対象のツールのToolTargetsを取り出す。
 
     `only_failed_targets` 自体が `None` の場合（`--only-failed` 未指定）は常に
@@ -35,7 +36,7 @@ def pick_targets(
 
 def expand_all_files(
     targets: list[pathlib.Path],
-    config: pyfltr.config.config.Config,
+    config: pyfltr.config.model.Config,
     *,
     start_cwd: pathlib.Path | None = None,
     exclude_subdirs: list[pathlib.Path] | None = None,
@@ -536,7 +537,7 @@ def _make_exclude_matcher(patterns: tuple[str, ...]) -> typing.Callable[[pathlib
     return _match
 
 
-def excluded(path: pathlib.Path, config: pyfltr.config.config.Config) -> tuple[str, str] | None:
+def excluded(path: pathlib.Path, config: pyfltr.config.model.Config) -> tuple[str, str] | None:
     """無視パターンチェック。一致した場合は（設定キー名, 一致パターン）を、無一致の場合はNoneを返す。"""
     for key in ("exclude", "extend-exclude"):
         matched = matches_exclude_patterns(path, config[key])
