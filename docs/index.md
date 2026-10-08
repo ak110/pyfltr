@@ -21,7 +21,7 @@ formatter・linter・testerを単一コマンドで実行する。
 - 起点ディレクトリ外のファイルもチェックできる（[CLIコマンド](guide/usage.md)の「外部パス指定時の挙動」）
 - formatterはファイルを修正しつつエラーとしても扱う（`pyfltr ci`ではformatterによる変更も失敗と判定する）
 - 設定は極力`pyproject.toml`に集約する
-- `pyfltr fast`はpytestなど重いツールを含めない。変更ファイルに依らず毎回確かめたいテストは`pytest-fast-targets`で対象を指定してfastへ含められる（[設定](guide/configuration.md#pytest-fast-targets)）
+- `pyfltr fast`はpytestなど重いツールを含めない。変更ファイルに依らず毎回確かめたいテストは`pytest-fast-targets`で対象を指定してfastへ含められる（[設定](guide/configuration.md#pytest-fast-targets)）。通常の実行でも同じテストを加えるには`pytest-always-targets`を使う（[設定](guide/configuration.md#pytest-always-targets)）
 
 ## プロジェクト固有のカスタムチェック
 

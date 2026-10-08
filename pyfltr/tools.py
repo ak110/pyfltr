@@ -1392,6 +1392,9 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
             # fast選択時だけpytestの対象を置き換えるglob（文字列または配列）。
             # 非空ならpytest-fast=falseでもfastへ参加し、位置引数・差分指定に依らずプロジェクト全域から一致ファイルを選ぶ。
             "pytest-fast-targets": [],
+            # 全実行でpytestの対象へ加えるglob（文字列または配列）。
+            # 位置引数・差分指定に依らずプロジェクト全域から一致ファイルを選び、通常の対象との和集合を実行する。
+            "pytest-always-targets": [],
         },
     ),
     # vitest のテストファイルパターン（pytest の *_test.py と同じ考え方）

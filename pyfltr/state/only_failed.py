@@ -27,6 +27,7 @@ def apply_filter(
     all_files: list[pathlib.Path],
     *,
     from_run: str | None = None,
+    extra_candidates: dict[str, list[pathlib.Path]] | None = None,
 ) -> tuple[list[str], dict[str, ToolTargets] | None, bool]:
     """`--only-failed`指定時、直前runからツール別の失敗ファイル集合を構築する。
 
@@ -36,6 +37,8 @@ def apply_filter(
         all_files: `expand_all_files`の結果。`args.targets`指定があれば既にフィルタリング済み。
         from_run: 参照対象runを明示指定する（前方一致 / `latest`対応）。
             `None`の場合は直前runを自動選択する。
+        extra_candidates: ツール名から、`all_files`に加えて交差の候補にするファイル一覧への辞書。
+            `pytest-always-targets`で位置引数に依らず対象へ加わるテストを候補に含めるために使う。
 
     Returns:
         `(フィルタリング後commands, per_tool_targets, exit_early)`
@@ -102,7 +105,8 @@ def apply_filter(
     # filtered_commandsでも除外することでskip状態はdictに含めない設計とする。
     targets: dict[str, ToolTargets] = {}
     for tool in failed_tools:
-        tool_targets = _extract_failed_files_for_tool(store, last_run.run_id, tool, all_files)
+        candidates = [*all_files, *(extra_candidates or {}).get(tool, [])]
+        tool_targets = _extract_failed_files_for_tool(store, last_run.run_id, tool, candidates)
         if tool_targets is not None:
             targets[tool] = tool_targets
 

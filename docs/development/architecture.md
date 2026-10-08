@@ -265,16 +265,19 @@ python-runnerへ委譲せず`uvx <bin>`で別環境へ解決する。
   起点projectがglobalの不正値を正常値で上書きした場合は起点の結果に警告組が現れず、
   不正値を上書きしない複数サブプロジェクト間の重複を防げない
 
-### fast実行時のpytest対象
+### pytest用の実行基盤（fast置換と常時追加）
 
 `pytest-fast-targets`を持つ設定がある場合、fast実行ではpytestだけが位置引数・`--changed-since`に依らない母集合を使う。
 fast実行は`fast`サブコマンドと、`--commands`にfastトークンを含む実行を指す。
-`run_pipeline`はプロジェクト全域を走査した集合でpytest用の`ExecutionBaseContext`を別に作成し、
-`ExecutionBaseContext.pytest_fast_base`へ保持する。
+`pytest-always-targets`を持つ設定がある場合は、fastに限らずpytestの母集合へプロジェクト全域から同設定のglobに一致したファイルを加える。
+`run_pipeline`はプロジェクト全域を走査した集合からpytest用の`ExecutionBaseContext`を別に作成し、
+`ExecutionBaseContext.pytest_base`へ保持する。
 `dispatcher.execute_command`はpytestの実行時だけ`ExecutionContext.base`をこの基盤へ差し替える。
 `_prepare_execution_params`は`pytest_fast_targets_active`が真の基盤で、対象globを`pytest-fast-targets`へ置き換える。
+`pytest_always_targets_active`が真の基盤では、対象globの結果へ`pytest-always-targets`に一致するファイルを和集合として加える。
 `ExecutionContext.all_files`がサブプロジェクト分だけを返す契約は差し替え後の基盤でも保たれる。
 指定を持たない設定（起点か各サブプロジェクト）の集合は差し替え前と同じものを保持する。
+`--only-failed`は失敗ファイルと対象の交差で再実行対象を決めるため、`pytest-always-targets`の一致ファイルも交差の候補へ加える。
 
 却下した代替案:
 

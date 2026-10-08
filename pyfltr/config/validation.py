@@ -66,8 +66,8 @@ def normalize_config_values(
                 ),
             )
             continue
-        # pytest-fast-targetsは`-targets`接尾辞を持つがコマンド別targetsではないため先に扱う。
-        if key == "pytest-fast-targets":
+        # pytest-fast-targets・pytest-always-targetsは`-targets`接尾辞を持つがコマンド別targetsではないため先に扱う。
+        if key in ("pytest-fast-targets", "pytest-always-targets"):
             validated = validate_targets_value(key, value, emit_config_warning)
             if validated is not None:
                 config.values[key] = validated

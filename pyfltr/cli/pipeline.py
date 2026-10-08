@@ -597,8 +597,8 @@ def _prepare_execution_context(
         external_files=prepared.external_files,
         subproject_configs=prepared.subproject_configs,
     )
-    if prepared.fast_selected and "pytest" in prepared.commands:
-        base_ctx.pytest_fast_base = _build_pytest_fast_base(base_ctx)
+    if "pytest" in prepared.commands:
+        base_ctx.pytest_base = _build_pytest_base(base_ctx, fast_selected=prepared.fast_selected)
 
     return base_ctx
 
@@ -822,10 +822,23 @@ def _prepare_execution_targets(
     if changed_since_ref is not None:
         all_files = pyfltr.command.targets.filter_by_changed_since(all_files, changed_since_ref, cwd=start_cwd_path)
 
+    # モノレポ用のサブプロジェクト別 config を準備する。
+    # `subproject_aware=True` ツールが各サブプロジェクト cwd で実行する際に参照する。
+    # config解決（`pyproject.toml`不在時の最近接祖先継承を含む）は
+    # `pyfltr.cli.subproject_config.resolve_subproject_configs` に集約する。
+    # `--only-failed`の候補（`pytest-always-targets`）と実行対象コマンドの確定（和集合判定）より前に構築する。
+    subproject_configs: dict[pathlib.Path, pyfltr.config.model.Config] = {}
+    if subprojects:
+        subproject_configs = pyfltr.cli.subproject_config.resolve_subproject_configs(subprojects, config, args)
+
     # --only-failed指定時は直前runからツール別の失敗ファイル集合を構築する。
     # archive / cache初期化より前に実行し、早期終了の場合はそれらの副作用を発生させない。
     commands, only_failed_targets, only_failed_exit_early = pyfltr.state.only_failed.apply_filter(
-        args, commands, all_files, from_run=getattr(args, "from_run", None)
+        args,
+        commands,
+        all_files,
+        from_run=getattr(args, "from_run", None),
+        extra_candidates=_only_failed_extra_candidates(args, commands, config, subproject_configs, start_cwd_path),
     )
     if only_failed_exit_early:
         # スキップの理由は`apply_filter`が警告として発行済み。JSONLでもheader・warning・summaryを
@@ -836,19 +849,13 @@ def _prepare_execution_targets(
         formatter.on_finish(early_run_ctx, [], 0, pyfltr.warnings_.collected_warnings())
         return PipelineOutcome(0, None, completion)
 
-    # モノレポ用のサブプロジェクト分類とサブプロジェクト別 config を準備する。
-    # `subproject_aware=True` ツールが各サブプロジェクト cwd で実行する際に参照する。
-    # config解決（`pyproject.toml`不在時の最近接祖先継承を含む）は
-    # `pyfltr.cli.subproject_config.resolve_subproject_configs` に集約する。
-    # 実行対象コマンドの確定（和集合判定）より前に構築する必要があるため、ここで行う。
+    # モノレポ用のサブプロジェクト分類を準備する。
     subproject_files: dict[pathlib.Path, list[pathlib.Path]] = {}
-    subproject_configs: dict[pathlib.Path, pyfltr.config.model.Config] = {}
     external_files: list[pathlib.Path] = []
     if subprojects:
         subproject_files, external_files = pyfltr.command.subprojects.classify_files_by_subproject(
             all_files, subprojects, start_cwd_path
         )
-        subproject_configs = pyfltr.cli.subproject_config.resolve_subproject_configs(subprojects, config, args)
 
     # 実行対象として有効化されていないコマンドはパイプラインから除外する。
     # 単一プロジェクトでは起点 config のON/OFF（`config.values.get(cmd) is True`）で判定する。
@@ -1046,38 +1053,82 @@ def _add_subproject_fast_pytest(
     return sorted([*commands, "pytest"], key=lambda name: pyfltr.tools.command_index(config.command_names, name))
 
 
-def _build_pytest_fast_base(
-    base_ctx: pyfltr.command.core_.ExecutionBaseContext,
-) -> pyfltr.command.core_.ExecutionBaseContext | None:
-    """fast選択時にpytestだけへ使う実行基盤を構築する。
+def _only_failed_extra_candidates(
+    args: pyfltr.run_options.RunOptions,
+    commands: list[str],
+    config: pyfltr.config.model.Config,
+    subproject_configs: dict[pathlib.Path, pyfltr.config.model.Config],
+    start_cwd_path: pathlib.Path,
+) -> dict[str, list[pathlib.Path]] | None:
+    """`--only-failed`の交差の候補へ、`pytest-always-targets`に一致するプロジェクト全域のファイルを加える。
 
-    `pytest-fast-targets`を持つ設定（起点または各サブプロジェクト）では、位置引数・差分指定に
-    依らずプロジェクト全域を走査したファイル集合を母集合とする。指定の無い設定は従来の集合を保つ。
-    いずれの設定も指定を持たない場合は`None`を返し、pytestも通常の実行基盤で動かす。
+    位置引数・差分指定に依らずpytestの対象へ加わるテストは、前回失敗していれば再実行の対象に残す。
+    """
+    if not getattr(args, "only_failed", False) or "pytest" not in commands:
+        return None
+    globs = [
+        glob
+        for values in [config.values, *(sub.values for sub in subproject_configs.values())]
+        for glob in pyfltr.config.selection.pytest_always_target_globs(values)
+    ]
+    if not globs:
+        return None
+    full_files = pyfltr.command.targets.expand_all_files([], config, start_cwd=start_cwd_path)
+    return {"pytest": pyfltr.command.targets.filter_by_globs(full_files, globs)}
+
+
+def _build_pytest_base(
+    base_ctx: pyfltr.command.core_.ExecutionBaseContext,
+    *,
+    fast_selected: bool,
+) -> pyfltr.command.core_.ExecutionBaseContext | None:
+    """pytestだけへ使う実行基盤を構築する。
+
+    fast選択時に`pytest-fast-targets`を持つ設定（起点または各サブプロジェクト）では、位置引数・差分指定に
+    依らずプロジェクト全域を走査したファイル集合を母集合とする。
+    `pytest-always-targets`を持つ設定では、母集合へプロジェクト全域から同設定のglobに一致したファイルを加える。
+    dispatcherはこの追加分を通常の対象globに依らずpytestの対象へ含めるため、通常の対象との和集合になる。
+    指定の無い設定は従来の集合を保つ。いずれの設定も指定を持たない場合は`None`を返し、
+    pytestも通常の実行基盤で動かす。
     """
     config = base_ctx.config
-    root_has_globs = bool(pyfltr.config.selection.pytest_fast_target_globs(config.values))
-    subs_with_globs = [
-        sub.cwd
-        for sub in base_ctx.subprojects
-        if pyfltr.config.selection.pytest_fast_target_globs(base_ctx.subproject_configs.get(sub.cwd, config).values)
-    ]
-    if not root_has_globs and not subs_with_globs:
+
+    def _fast_globs(values: dict[str, typing.Any]) -> list[str]:
+        return pyfltr.config.selection.pytest_fast_target_globs(values) if fast_selected else []
+
+    def _always_globs(values: dict[str, typing.Any]) -> list[str]:
+        return pyfltr.config.selection.pytest_always_target_globs(values)
+
+    sub_values = {sub.cwd: base_ctx.subproject_configs.get(sub.cwd, config).values for sub in base_ctx.subprojects}
+    root_uses_full = bool(_fast_globs(config.values) or _always_globs(config.values))
+    subs_using_full = [cwd for cwd, values in sub_values.items() if _fast_globs(values) or _always_globs(values)]
+    if not root_uses_full and not subs_using_full:
         return None
     full_files = pyfltr.command.targets.expand_all_files([], config, start_cwd=base_ctx.start_cwd)
+
+    def _merge(current: list[pathlib.Path], full: list[pathlib.Path], values: dict[str, typing.Any]) -> list[pathlib.Path]:
+        base_files = full if _fast_globs(values) else current
+        always_files = pyfltr.command.targets.filter_by_globs(full, _always_globs(values))
+        # 位置引数の絶対パスと全域走査の相対パスが同じ実体を指す場合も1件にする。
+        seen = {(base_ctx.start_cwd / f).resolve() for f in base_files}
+        return [*base_files, *(f for f in always_files if (base_ctx.start_cwd / f).resolve() not in seen)]
+
     subproject_files = dict(base_ctx.subproject_files)
-    if subs_with_globs:
+    if subs_using_full:
         full_subproject_files, _ = pyfltr.command.subprojects.classify_files_by_subproject(
             full_files, base_ctx.subprojects, base_ctx.start_cwd
         )
-        for cwd in subs_with_globs:
-            subproject_files[cwd] = full_subproject_files.get(cwd, [])
+        for cwd in subs_using_full:
+            subproject_files[cwd] = _merge(
+                base_ctx.subproject_files.get(cwd, []), full_subproject_files.get(cwd, []), sub_values[cwd]
+            )
     return dataclasses.replace(
         base_ctx,
-        all_files=full_files if root_has_globs else base_ctx.all_files,
+        all_files=_merge(base_ctx.all_files, full_files, config.values) if root_uses_full else base_ctx.all_files,
         subproject_files=subproject_files,
-        pytest_fast_base=None,
-        pytest_fast_targets_active=True,
+        pytest_base=None,
+        pytest_fast_targets_active=fast_selected,
+        pytest_always_targets_active=True,
     )
 
 

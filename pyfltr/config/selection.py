@@ -24,7 +24,16 @@ def build_fast_alias(config: Config) -> list[str]:
 
 def pytest_fast_target_globs(values: dict[str, typing.Any]) -> list[str]:
     """`pytest-fast-targets`の値をglobのリストとして返す（未指定・空なら空リスト）。"""
-    raw = values.get("pytest-fast-targets", [])
+    return _glob_list(values, "pytest-fast-targets")
+
+
+def pytest_always_target_globs(values: dict[str, typing.Any]) -> list[str]:
+    """`pytest-always-targets`の値をglobのリストとして返す（未指定・空なら空リスト）。"""
+    return _glob_list(values, "pytest-always-targets")
+
+
+def _glob_list(values: dict[str, typing.Any], key: str) -> list[str]:
+    raw = values.get(key, [])
     if isinstance(raw, str):
         return [raw] if raw else []
     return [str(item) for item in raw]

@@ -437,6 +437,25 @@ def test_pytest_fast_targets_invalid_type_warns_and_keeps_default(tmp_path: path
     assert "文字列または文字列のリスト" in message
 
 
+@pytest.mark.parametrize(
+    ("value", "expected_globs", "warned"),
+    [
+        ('"*_invariant_test.py"', ["*_invariant_test.py"], False),
+        ('["a_test.py", "b/*_test.py"]', ["a_test.py", "b/*_test.py"], False),
+        ("42", [], True),
+    ],
+)
+def test_pytest_always_targets_values(tmp_path: pathlib.Path, value: str, expected_globs: list[str], warned: bool) -> None:
+    """`pytest-always-targets`は文字列か配列を受理し、不正な型は警告して既定値（空）を保つ。fastへの参加は変えない。"""
+    (tmp_path / "pyproject.toml").write_text(
+        f"[tool.pyfltr]\npytest = true\npytest-always-targets = {value}\n", encoding="utf-8"
+    )
+    config = pyfltr.config.config.load_config(config_dir=tmp_path)
+    assert pyfltr.config.selection.pytest_always_target_globs(config.values) == expected_globs
+    assert "pytest" not in config["aliases"]["fast"]
+    assert (_find_config_warning("pytest-always-targets") is not None) is warned
+
+
 def test_ruff_format_by_check_default() -> None:
     """ruff-format-by-checkのデフォルト値テスト。"""
     config = pyfltr.config.config.create_default_config()

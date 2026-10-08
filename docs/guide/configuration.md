@@ -163,6 +163,7 @@ pyfltr config list --all
 - {command}-lint-args : 非fixモードで付与する引数（既定はtextlintのみ`["--format", "compact"]`）
 - {command}-fast : `fast`サブコマンドに含めるか否か（後述）
 - pytest-fast-targets : fast実行時だけpytestの対象を置き換えるglob（既定: 空。[後述](#pytest-fast-targets)）
+- pytest-always-targets : すべての実行でpytestの対象へ加えるglob（既定: 空。[後述](#pytest-always-targets)）
 - {command}-fix-args : fix段で`{command}-args`の後に追加する引数
  （既定値はtextlint / markdownlint / ruff-check / eslint / biomeのみ定義）
 - {command}-targets : 対象ファイルパターンの完全上書き
@@ -514,7 +515,7 @@ textlint-fast = false
 ### fast実行時のpytest対象 {#pytest-fast-targets}
 
 `pytest-fast-targets`へglob（文字列または文字列の配列）を指定すると、fast実行時のpytestは一致するテストファイルだけを実行する。
-変更ファイルに依らず毎回確かめたいテスト（リポジトリ全体の不変条件を検査するテストなど）を、全テストを収集せずにpre-commitから実行する用途を想定する。
+変更ファイルに依らず毎回確かめたいテスト（リポジトリ全体の不変条件を確かめるテストなど）を、全テストを収集せずにpre-commitから実行する用途を想定する。
 
 ```toml
 [tool.pyfltr]
@@ -530,6 +531,25 @@ pytest-fast-targets = ["*_invariant_test.py"]
 - `pytest-args`などの引数は通常どおり渡す。マーカー式は追加しない
 - fast以外の実行（`pyfltr run`・`pyfltr ci`、`--commands=pytest`など）の対象は変わらない。値が空（既定）の場合もfastの対象と参加判定は従来どおりとなる
 - モノレポでは各サブプロジェクトの設定に従い、そのサブプロジェクトのファイルだけをそのディレクトリで実行する。起点に指定が無くても、指定を持つサブプロジェクトがあればfastでpytestを実行する
+
+### 常に加えるpytest対象 {#pytest-always-targets}
+
+`pytest-always-targets`へglob（文字列または文字列の配列）を指定すると、pytestを実行するすべての実行で、一致するテストファイルを通常の対象へ加える。
+変更したファイルだけを渡した実行でも、別のファイルに定義した不変条件のテスト（リポジトリ全体の状態を確かめるテストなど）を同じ実行で動かす用途を想定する。
+
+```toml
+[tool.pyfltr]
+pytest = true
+pytest-always-targets = ["*_invariant_test.py"]
+```
+
+- 対象は「位置引数と`--changed-since`で決まる通常の対象」と「プロジェクト全域から指定globに一致したファイル」の和集合になる。同じファイルは1回だけ渡す
+- `pyfltr run`・`run-for-agent`・`ci`・MCPの`run`とfast実行に適用する。fastでは`pytest-fast-targets`で置き換えた対象へ加える
+- `pytest-fast-targets`は置き換え、`pytest-always-targets`は追加という違いがある。fastへの参加は`pytest-fast`と`pytest-fast-targets`が決め、`pytest-always-targets`だけではpytestをfastへ加えない
+- `pytest = false`の場合と、`--commands`でpytestを選ばない実行では実行しない
+- `exclude`・`extend-exclude`・`.gitignore`・`pytest-exclude`による除外と、それらを無効化する`--no-exclude`・`--no-gitignore`はそのまま適用する
+- `--only-failed`では、追加したテストも候補に含めたうえで前回失敗したファイルだけを実行する
+- モノレポでは各サブプロジェクトの設定に従い、そのサブプロジェクトのファイルだけをそのディレクトリで実行する。変更したファイルが別のサブプロジェクトにだけある場合も、指定を持つサブプロジェクトのテストを実行する
 
 ## 出力順序
 
