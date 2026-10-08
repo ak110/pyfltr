@@ -44,7 +44,7 @@ def _run(tmp_path: pathlib.Path, *argv: str) -> int:
     return pyfltr.cli.main.run([*argv, "--work-dir", str(tmp_path), "--no-archive", "--no-cache", "--no-gitignore"])
 
 
-@pytest.mark.parametrize("subcommand", ["run", "run-for-agent"])
+@pytest.mark.parametrize("subcommand", ["run", "run-for-agent", "ci"])
 def test_run_adds_always_targets_and_reports_failure(tmp_path: pathlib.Path, mocker, subcommand: str) -> None:
     """通常対象だけを渡しても横断テストがpytestへ渡り、その失敗が非0終了になる。"""
     _write_project(tmp_path, extra=ALWAYS_CONFIG)
