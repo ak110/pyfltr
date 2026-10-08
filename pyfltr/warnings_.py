@@ -55,7 +55,7 @@ _duplicate_suppression_state: contextvars.ContextVar[DuplicateSuppressionState |
 
 
 @contextlib.contextmanager
-def suppress_duplicates() -> collections.abc.Iterator[None]:
+def suppress_duplicates() -> collections.abc.Generator[None, None, None]:
     """スコープ内で同一の警告と除外記録の2回目以降を抑止する。
 
     既に外側のスコープが有効な場合は状態を再初期化せず、外側の既出組をそのまま共有する
@@ -90,7 +90,7 @@ def adopt_suppression_state(state: DuplicateSuppressionState | None) -> None:
 
 
 @contextlib.contextmanager
-def defer_stderr() -> collections.abc.Iterator[None]:
+def defer_stderr() -> collections.abc.Generator[None, None, None]:
     """JSONLへの配送結果が確定するまで警告のstderr通知を保留する。
 
     正常にJSONLへ含めた警告は`mark_delivered`で通知済みにする。

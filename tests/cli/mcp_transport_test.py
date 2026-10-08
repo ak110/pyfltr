@@ -56,7 +56,7 @@ class _Client:
 
 
 @contextlib.contextmanager
-def _client(root: pathlib.Path) -> typing.Iterator[_Client]:
+def _client(root: pathlib.Path) -> typing.Generator[_Client, None, None]:
     env = dict(os.environ)
     env["PYFLTR_CACHE_DIR"] = str(root / "cache")
     env["PYFLTR_GLOBAL_CONFIG"] = str(root / "global.toml")

@@ -18,7 +18,7 @@ _serial_group_locks_registry_lock = threading.Lock()
 
 
 @contextlib.contextmanager
-def serial_group_lock(group: str | None) -> collections.abc.Iterator[None]:
+def serial_group_lock(group: str | None) -> collections.abc.Generator[None, None, None]:
     """指定された serial_group の排他ロックを取得するコンテキストマネージャー。
 
     `group`がNoneのときはno-opとして振る舞い、呼び出し側は常に
