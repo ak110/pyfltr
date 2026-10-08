@@ -27,7 +27,6 @@ from pyfltr.config.validation import (
     recompute_fast_aliases,
     register_custom_commands,
     validate_config,
-    warn_config_files,
     warn_precommit_prek_conflict,
 )
 
@@ -200,11 +199,11 @@ def load_config(
         global_config_path: global設定ファイルのパス。未指定時は
             `default_global_config_path()`の結果を使用する。
         for_subproject: モノレポのサブプロジェクト別config解決として呼ばれた場合に`True`。
-            設定ファイルの探索起点は常に起点cwd（`.pre-commit-config.yaml`はリポジトリルート、
-            `config_arg_template`による注入も`dispatcher`が起点cwd直下から解決する）のため、
-            サブプロジェクトのディレクトリを基準にした設定ファイル不在の警告
-            （`warn_config_files`）とリポジトリ単位ツールの衝突警告
-            （`warn_precommit_prek_conflict`）は誤検知になる。`True`のとき両者を抑止する。
+            リポジトリ単位ツールの実行可否は起点configだけが決めるため、
+            サブプロジェクトの設定に基づく衝突警告（`warn_precommit_prek_conflict`）は
+            誤検知になる。`True`のとき同警告を抑止する。
+            設定ファイル不在の警告（`warn_config_files`）は本関数では発行せず、
+            実行対象の確定後に実行パイプラインが起点cwdを基準に発行する。
         suppressed_warning_entries: 検証警告の抑止候補`(キー名, 警告本文)`集合。
             モノレポのサブプロジェクト解決では、`resolve_subproject_configs`がそのロード
             開始時点までに実際に発行済みのグローバル由来警告のスナップショットを渡す。
@@ -276,7 +275,6 @@ def load_config(
     warned_global_only_entries = frozenset(entry for entry in warned_entries if key_sources.get(entry[0]) == {"global"})
     recompute_fast_aliases(config)
     if not for_subproject:
-        warn_config_files(config, base)
         warn_precommit_prek_conflict(config)
 
     return dataclasses.replace(config, warned_global_only_entries=warned_global_only_entries)

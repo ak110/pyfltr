@@ -948,72 +948,11 @@ def test_builtin_targets_invalid_type_warns(tmp_path: pathlib.Path) -> None:
 
 
 class TestConfigFilesWarning:
-    """config_files未配置時の警告機構のテスト。"""
+    """設定ロード時に発行する警告のテスト。
 
-    def test_pre_commit_enabled_without_config_emits_warning(self, tmp_path: pathlib.Path) -> None:
-        """pre-commitが有効で.pre-commit-config.yaml不在の場合に警告を発行する。"""
-        (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\npre-commit = true\n", encoding="utf-8")
-        pyfltr.config.config.load_config(config_dir=tmp_path)
-        entries = [
-            w
-            for w in pyfltr.warnings_.collected_warnings()
-            if w["source"] == "config" and ".pre-commit-config.yaml" in w["message"]
-        ]
-        assert len(entries) == 1
-        assert "pre-commit" in entries[0]["message"]
-        # 影響に加えて、作成するか無効化する操作を案内する
-        assert "失敗します" in entries[0]["message"]
-        assert "`pre-commit = false`" in entries[0]["hint"]
-
-    def test_pre_commit_enabled_with_config_no_warning(self, tmp_path: pathlib.Path) -> None:
-        """設定ファイルが存在すれば警告は出ない。"""
-        (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\npre-commit = true\n", encoding="utf-8")
-        (tmp_path / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
-        pyfltr.config.config.load_config(config_dir=tmp_path)
-        entries = [
-            w
-            for w in pyfltr.warnings_.collected_warnings()
-            if w["source"] == "config" and ".pre-commit-config.yaml" in w["message"]
-        ]
-        assert not entries
-
-    def test_pre_commit_disabled_no_warning(self, tmp_path: pathlib.Path) -> None:
-        """pre-commit無効なら設定ファイル不在でも警告は出ない。"""
-        (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\npre-commit = false\n")
-        pyfltr.config.config.load_config(config_dir=tmp_path)
-        entries = [w for w in pyfltr.warnings_.collected_warnings() if w["source"] == "config"]
-        assert not entries
-
-    def test_prek_enabled_without_config_emits_warning(self, tmp_path: pathlib.Path) -> None:
-        """prekが有効で設定ファイル不在の場合に警告を発行する。"""
-        (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\nprek = true\n", encoding="utf-8")
-
-        pyfltr.config.config.load_config(config_dir=tmp_path)
-
-        entries = [
-            warning
-            for warning in pyfltr.warnings_.collected_warnings()
-            if warning["source"] == "config" and ".pre-commit-config.yaml" in warning["message"]
-        ]
-        assert len(entries) == 1
-        assert "prek" in entries[0]["message"]
-
-    def test_for_subproject_suppresses_missing_config_warning(self, tmp_path: pathlib.Path) -> None:
-        """`for_subproject=True`では設定ファイル不在の警告を発行しない。
-
-        設定ファイルの探索起点は常に起点cwdのため、サブプロジェクトのディレクトリを
-        基準にした不在判定は誤検知になる。
-        """
-        (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\nprek = true\n", encoding="utf-8")
-
-        pyfltr.config.config.load_config(config_dir=tmp_path, for_subproject=True)
-
-        entries = [
-            warning
-            for warning in pyfltr.warnings_.collected_warnings()
-            if warning["source"] == "config" and ".pre-commit-config.yaml" in warning["message"]
-        ]
-        assert not entries
+    設定ファイル欠落の警告は実行対象の確定後に発行するため、
+    `tests/integration/pipeline_config_files_warning_test.py`が検証する。
+    """
 
     def test_for_subproject_suppresses_precommit_prek_conflict_warning(self, tmp_path: pathlib.Path) -> None:
         """`for_subproject=True`ではpre-commitとprekの同時有効化の警告を発行しない。
@@ -1031,48 +970,6 @@ class TestConfigFilesWarning:
             for warning in pyfltr.warnings_.collected_warnings()
             if warning["source"] == "config" and "二重実行" in warning["message"]
         ]
-        assert not entries
-
-    def test_custom_command_missing_config_file_emits_warning(self, tmp_path: pathlib.Path) -> None:
-        """カスタムコマンドにconfig-filesを指定し不在なら警告。"""
-        pyproject_content = """
-[tool.pyfltr.custom-commands.mytool]
-type = "linter"
-path = "mytool"
-config-files = [".mytoolrc"]
-"""
-        (tmp_path / "pyproject.toml").write_text(pyproject_content)
-        pyfltr.config.config.load_config(config_dir=tmp_path)
-        entries = [w for w in pyfltr.warnings_.collected_warnings() if w["source"] == "config"]
-        assert len(entries) == 1
-        assert "mytool" in entries[0]["message"]
-
-    def test_custom_command_config_file_present_no_warning(self, tmp_path: pathlib.Path) -> None:
-        """カスタムコマンドのconfig-filesが配置済みなら警告は出ない。"""
-        pyproject_content = """
-[tool.pyfltr.custom-commands.mytool]
-type = "linter"
-path = "mytool"
-config-files = [".mytoolrc"]
-"""
-        (tmp_path / "pyproject.toml").write_text(pyproject_content)
-        (tmp_path / ".mytoolrc").write_text("")
-        pyfltr.config.config.load_config(config_dir=tmp_path)
-        entries = [w for w in pyfltr.warnings_.collected_warnings() if w["source"] == "config"]
-        assert not entries
-
-    def test_config_files_glob_pattern(self, tmp_path: pathlib.Path) -> None:
-        """config-filesにglobを指定し、いずれかがマッチすれば警告は出ない。"""
-        pyproject_content = """
-[tool.pyfltr.custom-commands.mytool]
-type = "linter"
-path = "mytool"
-config-files = [".mytoolrc*"]
-"""
-        (tmp_path / "pyproject.toml").write_text(pyproject_content)
-        (tmp_path / ".mytoolrc.json").write_text("{}")
-        pyfltr.config.config.load_config(config_dir=tmp_path)
-        entries = [w for w in pyfltr.warnings_.collected_warnings() if w["source"] == "config"]
         assert not entries
 
     def test_config_files_invalid_type_warns(self, tmp_path: pathlib.Path) -> None:

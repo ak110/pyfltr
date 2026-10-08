@@ -871,7 +871,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         # 対象探索エラーが未整形のまま出力されるため除外＋警告経路を適用する。
         allows_external_paths=False,
         # `--config`が受け付ける候補（markdownlint-cli2公式README参照）。
-        # `config_files`は登録しない（登録すると`_warn_config_files`が
+        # `config_files`は登録しない（登録すると`warn_config_files`が
         # 設定不在時に警告を発行してしまい、外部パスのみ検査するケースで
         # 「プロジェクト側に設定不要」の運用と矛盾するため）。
         config_arg_template=["--config", "{path}"],

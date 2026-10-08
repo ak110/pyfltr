@@ -232,12 +232,17 @@ def recompute_fast_aliases(config: Config) -> None:
     config.values["aliases"]["fast"] = build_fast_alias(config)
 
 
-def warn_config_files(config: Config, base: pathlib.Path) -> None:
-    """有効化されているコマンドで`pyfltr.tools.CommandInfo.config_files`を満たさないものを警告する。"""
-    for command, info in config.commands.items():
-        if not info.config_files:
-            continue
-        if config.values.get(command) is not True:
+def warn_config_files(config: Config, base: pathlib.Path, commands: typing.Iterable[str]) -> None:
+    """今回の実行対象で`pyfltr.tools.CommandInfo.config_files`を満たさないものを警告する。
+
+    `commands`には有効判定（`is_command_enabled_anywhere`）とエイリアス展開を経た実行対象を渡す。
+    設定上は有効でも今回選択していないコマンドを判定対象から外し、限定実行で無関係な警告を返さないため、
+    設定値だけで判定せず実行対象の確定後に呼び出す。
+    設定ファイルの探索起点`base`はモノレポでも起点cwdとする。
+    """
+    for command in commands:
+        info = config.commands.get(command)
+        if info is None or not info.config_files:
             continue
         if any(list(base.glob(pattern)) for pattern in info.config_files):
             continue

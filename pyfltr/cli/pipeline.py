@@ -38,6 +38,7 @@ import pyfltr.command.targets
 import pyfltr.config.config
 import pyfltr.config.model
 import pyfltr.config.selection
+import pyfltr.config.validation
 import pyfltr.output.formatters
 import pyfltr.output.jsonl
 import pyfltr.output.logging_
@@ -867,6 +868,8 @@ def _prepare_execution_targets(
         commands = _add_subproject_fast_pytest(commands, args, config, subproject_configs)
     requested_commands = list(commands)
     commands = [c for c in commands if pyfltr.config.selection.is_command_enabled_anywhere(c, config, subproject_configs)]
+    # 設定ファイル欠落の警告は確定した実行対象だけを判定する（未選択コマンドの警告を返さない）。
+    pyfltr.config.validation.warn_config_files(config, start_cwd_path, commands)
     unmet: list[str] = []
     if getattr(args, "commands", None) is not None:
         unmet = pyfltr.cli.command_selection.compute_unmet_commands(
