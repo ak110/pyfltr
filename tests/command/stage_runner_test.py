@@ -1,9 +1,13 @@
 import concurrent.futures
+import pathlib
 import threading
+
+import pytest
 
 import pyfltr.command.core_
 import pyfltr.command.stage_runner
 import pyfltr.config.config
+from tests.conftest import StageExecutorControl, make_command_result, make_execution_context
 
 
 def test_make_skipped_result_returns_command_result():
@@ -110,3 +114,59 @@ def test_cancel_pending_futures_does_not_add_failed_cancel():
 
     # running future は cancel() が False を返すため aborted に入らない
     assert "running-cmd" not in aborted
+
+
+def _run_fail_fast_stage(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, run_on_submit: set[str]
+) -> tuple[dict[str, str], list[str]]:
+    """失敗するlinterと後続のlinterを`fail_fast=True`で並列ステージへ渡し、状態と実行順を返す。"""
+    (tmp_path / "pyproject.toml").write_text(
+        """
+[tool.pyfltr]
+jobs = 2
+
+[tool.pyfltr.custom-commands.failing]
+type = "linter"
+path = "failing"
+targets = ["*.txt"]
+
+[tool.pyfltr.custom-commands.follow-up]
+type = "linter"
+path = "follow-up"
+targets = ["*.txt"]
+""".lstrip(),
+        encoding="utf-8",
+    )
+    target = tmp_path / "input.txt"
+    target.write_text("x\n", encoding="utf-8")
+    config = pyfltr.config.config.load_config(config_dir=tmp_path)
+    control = StageExecutorControl(run_on_submit=run_on_submit)
+    control.install(monkeypatch)
+
+    def _execute(command: str, fix_stage: bool) -> pyfltr.command.core_.CommandResult:
+        del fix_stage
+        return make_command_result(command, returncode=1 if command == "failing" else 0)
+
+    results = pyfltr.command.stage_runner.run_stages(
+        ["failing", "follow-up"],
+        make_execution_context(config, [target], start_cwd=tmp_path).base,
+        _execute,
+        fail_fast=True,
+    )
+    return {result.command: result.status for result in results}, control.executed
+
+
+def test_run_stages_fail_fast_skips_pending_follow_up(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """失敗を回収する時点で未開始の後続はキャンセルされ、実行されずにskippedとなる。"""
+    statuses, executed = _run_fail_fast_stage(tmp_path, monkeypatch, run_on_submit={"failing"})
+
+    assert statuses == {"failing": "failed", "follow-up": "skipped"}
+    assert executed == ["failing"]
+
+
+def test_run_stages_fail_fast_keeps_completed_follow_up(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """失敗を回収する時点で完了済みの後続は元の結果を保ち、skippedへ書き換えない。"""
+    statuses, executed = _run_fail_fast_stage(tmp_path, monkeypatch, run_on_submit={"failing", "follow-up"})
+
+    assert statuses == {"failing": "failed", "follow-up": "succeeded"}
+    assert sorted(executed) == ["failing", "follow-up"]

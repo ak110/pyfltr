@@ -6,6 +6,8 @@
 pre-commit の name-tests-test フックから除外される。
 """
 
+import collections.abc
+import concurrent.futures
 import faulthandler
 import pathlib
 import time
@@ -329,6 +331,81 @@ def seed_archive_run(
         store.write_tool_result(run_id, result)
     store.finalize_run(run_id, exit_code=exit_code, commands=commands, files=files)
     return run_id
+
+
+class StageExecutorControl:
+    """`run_stages`の並列ステージの投入と結果回収をテストから固定する。
+
+    スレッドの実スケジューリングでは、先行コマンドの失敗を回収する時点で後続コマンドが
+    未開始か完了済みかが定まらず、fail-fastの結果が実行ごとに変わる。
+    `run_on_submit`に含むコマンドは投入時に実行して完了済みの標準Futureとし、
+    それ以外は未開始の標準Futureとして保持する。
+    結果回収は完了済みを投入順に返した後、未開始を投入順に返す。
+    未開始のFutureは返す直前に開始し、それまでにキャンセルされていれば実行しない。
+    `executed`は実行したコマンド名を実行順に保持する。
+    """
+
+    def __init__(self, run_on_submit: set[str]) -> None:
+        self.run_on_submit = run_on_submit
+        self.executed: list[str] = []
+        self._pending: dict[concurrent.futures.Future, tuple[collections.abc.Callable, tuple]] = {}
+
+    def install(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """`concurrent.futures`の実行器と結果回収をテスト中だけ差し替える。"""
+        monkeypatch.setattr(concurrent.futures, "ThreadPoolExecutor", self._make_executor)
+        monkeypatch.setattr(concurrent.futures, "as_completed", self._as_completed)
+
+    def _make_executor(self, *args: typing.Any, **kwargs: typing.Any) -> "_ControlledExecutor":
+        del args, kwargs
+        return _ControlledExecutor(self)
+
+    def submit(self, fn: collections.abc.Callable, *args: typing.Any) -> concurrent.futures.Future:
+        """先頭の位置引数をコマンド名として、投入時に実行するか未開始で保持するかを決める。"""
+        future: concurrent.futures.Future = concurrent.futures.Future()
+        if args[0] in self.run_on_submit:
+            future.set_running_or_notify_cancel()
+            self._run(future, fn, args)
+        else:
+            self._pending[future] = (fn, args)
+        return future
+
+    def _run(self, future: concurrent.futures.Future, fn: collections.abc.Callable, args: tuple) -> None:
+        self.executed.append(args[0])
+        try:
+            future.set_result(fn(*args))
+        except Exception as e:  # pylint: disable=broad-exception-caught  # 実行器と同じく例外をFutureへ渡す
+            future.set_exception(e)
+
+    def _as_completed(
+        self, fs: collections.abc.Iterable[concurrent.futures.Future]
+    ) -> collections.abc.Iterator[concurrent.futures.Future]:
+        futures = list(fs)
+        yield from [future for future in futures if future not in self._pending]
+        for future in futures:
+            if future not in self._pending:
+                continue
+            fn, args = self._pending.pop(future)
+            # キャンセル済みならFalseを返し、結果の取得がCancelledErrorになる
+            if future.set_running_or_notify_cancel():
+                self._run(future, fn, args)
+            yield future
+
+
+class _ControlledExecutor:
+    """`StageExecutorControl`へ投入を委ねる`ThreadPoolExecutor`の代用。"""
+
+    def __init__(self, control: StageExecutorControl) -> None:
+        self._control = control
+
+    def __enter__(self) -> "_ControlledExecutor":
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        del exc_info
+
+    def submit(self, fn: collections.abc.Callable, *args: typing.Any) -> concurrent.futures.Future:
+        """投入を`StageExecutorControl.submit`へ渡す。"""
+        return self._control.submit(fn, *args)
 
 
 @pytest.fixture

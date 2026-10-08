@@ -16,6 +16,7 @@ import pyfltr.output.jsonl
 import pyfltr.output.sarif
 import pyfltr.state.archive
 import pyfltr.state.retry
+from tests.conftest import StageExecutorControl
 from tests.conftest import make_args as _make_args
 from tests.conftest import make_command_result as _make_result
 from tests.conftest import make_execution_context as _make_ctx
@@ -173,11 +174,15 @@ def test_plain_linter_failure_emits_retry_command_and_archive(
 def test_plain_linter_failure_triggers_fail_fast(
     plain_linter_project: tuple[pathlib.Path, pathlib.Path],
     plain_linter_subprocess: typing.Any,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """plain linterの失敗がCLIのfail-fast処理を起動する。"""
+    """plain linterの失敗がCLIのfail-fast処理を起動し、未開始の後続を実行しない。"""
     del plain_linter_subprocess
     work_dir, target = plain_linter_project
     config = pyfltr.config.config.load_config(config_dir=work_dir)
+    # 失敗を回収する時点で後続を未開始に保つ（実スケジューリングでは後続が先に完了しうる）
+    control = StageExecutorControl(run_on_submit={"plain-linter"})
+    control.install(monkeypatch)
 
     results = pyfltr.cli.pipeline.run_commands_with_cli(
         ["plain-linter", "follow-up"],
@@ -189,6 +194,7 @@ def test_plain_linter_failure_triggers_fail_fast(
 
     statuses = {result.command: result.status for result in results}
     assert statuses == {"plain-linter": "failed", "follow-up": "skipped"}
+    assert control.executed == ["plain-linter"]
 
 
 def test_plain_linter_failure_sarif_execution_unsuccessful(
