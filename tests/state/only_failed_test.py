@@ -1,3 +1,4 @@
+import json
 import logging
 import pathlib
 
@@ -7,6 +8,7 @@ import pyfltr.cli.main
 import pyfltr.cli.output_format
 import pyfltr.command.only_failed
 import pyfltr.output.logging_
+import pyfltr.parsing.entry
 import pyfltr.run_options
 import pyfltr.state.archive
 import pyfltr.state.only_failed
@@ -288,3 +290,41 @@ def test_apply_filter_archive_unreadable_guides_permission_and_full_run(
     assert "スキップしました" in warnings[0]["message"]
     assert "読み取り権限を確認してください" in warnings[0]["hint"]
     assert "--only-failed を外して全体を実行" in warnings[0]["hint"]
+
+
+def test_apply_filter_selects_legacy_subproject_pytest_failure(_only_failed_cache: pathlib.Path) -> None:
+    """サブプロジェクト相対の診断を保存した旧pytestアーカイブでも、所属する子の失敗ファイルだけを選ぶ。
+
+    別の子に同じ相対パスのテストファイルがあっても対象に加えない。
+    """
+    body = (
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_a ________________________________\n"
+        "tests/x_test.py:3: in test_a\n"
+        "    assert value\n"
+        "E   AssertionError: assert 0\n"
+        "========================= short test summary info ==========================\n"
+        "FAILED tests/x_test.py::test_a - AssertionError: assert 0\n"
+    )
+    errors = pyfltr.parsing.entry.parse_errors("pytest", body)
+    assert [error.file for error in errors] == ["tests/x_test.py"]
+    run_id = _seed_run(
+        _only_failed_cache,
+        commands=["pytest"],
+        exit_code=1,
+        tool_results=[("pytest", 1, f"# subproject: pkg_a\n{body}\n# subproject: pkg_b\n", errors)],
+    )
+    # 診断を起点相対へ揃える前の版のrunとして、診断パスの印を`meta.json`から除く。
+    meta_path = _only_failed_cache / "runs" / run_id / "meta.json"
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    del meta[pyfltr.state.archive.DIAGNOSTIC_PATHS_META_KEY]
+    meta_path.write_text(json.dumps(meta), encoding="utf-8")
+    args = pyfltr.run_options.RunOptions.from_values({"only_failed": True})
+    all_files = [pathlib.Path("pkg_a/tests/x_test.py"), pathlib.Path("pkg_b/tests/x_test.py")]
+
+    commands, targets, exit_early = pyfltr.state.only_failed.apply_filter(args, ["pytest"], all_files, from_run=run_id)
+
+    assert exit_early is False
+    assert commands == ["pytest"]
+    assert targets is not None
+    assert targets["pytest"].files == (pathlib.Path("pkg_a/tests/x_test.py"),)

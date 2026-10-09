@@ -6,7 +6,6 @@ import pyfltr.command.core_
 import pyfltr.command.process
 import pyfltr.config.config
 import pyfltr.config.model
-import pyfltr.parsing.entry
 from pyfltr.command.core_ import CommandResult
 from pyfltr.command.snapshot import changed_files, snapshot_file_digests
 
@@ -46,7 +45,7 @@ def execute_linter_fix(request: pyfltr.command.core_.ExecutionRequest) -> pyfltr
     else:
         result_command_type = "linter"
 
-    errors = pyfltr.parsing.entry.parse_errors(request.command, output, None)
+    errors = request.parse_errors(output, None)
 
     result = CommandResult.from_run(
         command=request.command,

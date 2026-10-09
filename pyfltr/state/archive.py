@@ -28,6 +28,8 @@ import json
 import logging
 import os
 import pathlib
+import posixpath
+import re
 import sys
 import typing
 
@@ -38,6 +40,7 @@ import pyfltr.command.core_
 import pyfltr.config.config
 import pyfltr.config.model
 import pyfltr.output.jsonl
+import pyfltr.parsing.entry
 import pyfltr.paths
 import pyfltr.state.retention
 
@@ -50,6 +53,15 @@ _TOOL_DIAGNOSTICS_FILENAME = "diagnostics.jsonl"
 _TOOL_META_FILENAME = "tool.json"
 TOOL_META_REMOVED_KEYS: frozenset[str] = frozenset({"has_error"})
 """保存済みのツールメタ情報から読み取り時に除去するフィールド。"""
+SUBPROJECT_RESTORE_COMMANDS: frozenset[str] = frozenset({"pytest"})
+"""保存済み診断のサブプロジェクト所属を生出力から復元して読むコマンド。"""
+DIAGNOSTIC_PATHS_META_KEY = "diagnostic_paths"
+"""診断の`file`を起点相対で保存した版が`meta.json`へ書くキー。値は`DIAGNOSTIC_PATHS_START_RELATIVE`。
+
+このキーを持たないrunは、サブプロジェクト相対の診断を保存していた版の記録として補正の対象にする。
+"""
+DIAGNOSTIC_PATHS_START_RELATIVE = "start-relative"
+_SECTION_HEADER_RE = re.compile(r"^# (?:subproject: (?P<relative>.+)|external paths)$")
 
 
 def default_cache_root() -> pathlib.Path:
@@ -145,6 +157,7 @@ class ArchiveStore:
             "commands": commands or [],
             "files": files,
             "started_at": pyfltr.state.retention.now_iso(),
+            DIAGNOSTIC_PATHS_META_KEY: DIAGNOSTIC_PATHS_START_RELATIVE,
         }
         (run_dir / _META_FILENAME).write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
         return run_id
@@ -290,7 +303,25 @@ class ArchiveStore:
             if not line:
                 continue
             entries.append(json.loads(line))
+        if tool in SUBPROJECT_RESTORE_COMMANDS and self._saved_subproject_relative_diagnostics(run_id):
+            try:
+                output = self.read_tool_output(run_id, tool)
+            except FileNotFoundError:
+                return entries
+            entries = restore_subproject_paths(tool, output, entries)
         return entries
+
+    def _saved_subproject_relative_diagnostics(self, run_id: str) -> bool:
+        """診断を起点相対へ揃える前の版が保存したrunかを判定する。
+
+        新しい版のrunへ補正を適用すると、起点直下の診断を同じ位置・メッセージを持つ子の診断と取り違えるため、
+        `meta.json`の`DIAGNOSTIC_PATHS_META_KEY`を持たないrunだけを対象にする。
+        """
+        try:
+            meta = self.read_meta(run_id)
+        except (FileNotFoundError, ValueError):
+            return False
+        return meta.get(DIAGNOSTIC_PATHS_META_KEY) != DIAGNOSTIC_PATHS_START_RELATIVE
 
     def cleanup(self, policy: ArchivePolicy) -> list[str]:
         """自動クリーンアップを実施する。削除された run_id のリストを返す。
@@ -315,6 +346,75 @@ class ArchiveStore:
             meta_filename=_META_FILENAME,
             timestamp_key="started_at",
         )
+
+
+def restore_subproject_paths(
+    command: str,
+    output: str,
+    entries: list[dict[str, typing.Any]],
+) -> list[dict[str, typing.Any]]:
+    """サブプロジェクト相対のまま保存された診断を起点相対へ補正する。
+
+    診断パスを解析時点で起点相対へ揃える前の版は、サブプロジェクトのcwdで実行したツールの
+    相対パス診断をそのまま保存していた。保存済み生出力の`# subproject: <相対>`区間ごとに
+    同じ解析を再実行し、`file`・行・メッセージが一致する区間が1件だけの診断を`<相対>/<file>`へ補正する。
+    一致区間が0件または複数件の診断は変えない。
+    呼び出し側（`ArchiveStore.read_tool_diagnostics`）は、起点相対で保存した新しい版のrunへ本関数を適用しない。
+    元の作業ツリーの存在を要求せず、保存ファイルは書き換えない。
+    """
+    owners: dict[tuple[str, typing.Any, typing.Any], set[str]] = {}
+    for relative, body in _split_subproject_sections(output):
+        for error in pyfltr.parsing.entry.parse_errors(command, body):
+            owners.setdefault((error.file, error.line, error.message), set()).add(relative)
+    if not owners:
+        return entries
+    restored: list[dict[str, typing.Any]] = []
+    for entry in entries:
+        file = entry.get("file")
+        messages = entry.get("messages")
+        if not isinstance(file, str) or not isinstance(messages, list) or not _is_plain_relative(file):
+            restored.append(entry)
+            continue
+        groups: dict[str | None, list[typing.Any]] = {}
+        for message in messages:
+            relatives = (
+                owners.get((file, message.get("line"), message.get("msg")), set()) if isinstance(message, dict) else set()
+            )
+            owner = next(iter(relatives)) if len(relatives) == 1 else None
+            groups.setdefault(owner, []).append(message)
+        if list(groups) == [None]:
+            restored.append(entry)
+            continue
+        for owner, owned_messages in groups.items():
+            target = file if owner is None else posixpath.normpath(posixpath.join(owner, file))
+            restored.append({**entry, "file": target, "messages": owned_messages})
+    return restored
+
+
+def _split_subproject_sections(output: str) -> list[tuple[str, str]]:
+    """生出力をサブプロジェクト区間へ分け、`(相対パス, 区間本文)`の一覧を返す。
+
+    区切り行は`pyfltr.command.subproject_loop`が挿入する。外部パス区間と最初の区切り行より前は対象外とする。
+    """
+    sections: list[tuple[str, str]] = []
+    relative: str | None = None
+    lines: list[str] = []
+    for line in [*output.splitlines(), "# external paths"]:
+        match = _SECTION_HEADER_RE.match(line)
+        if match is None:
+            lines.append(line)
+            continue
+        if relative is not None:
+            sections.append((relative, "\n".join(lines)))
+        relative = match.group("relative")
+        lines = []
+    return sections
+
+
+def _is_plain_relative(path: str) -> bool:
+    """起点外を指さない相対パスかを判定する。"""
+    pure = pathlib.PurePosixPath(path)
+    return bool(path) and not pure.is_absolute() and ".." not in pure.parts and not path.startswith("<")
 
 
 def policy_from_config(config: pyfltr.config.model.Config) -> ArchivePolicy:

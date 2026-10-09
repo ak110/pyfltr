@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 import pathlib
+import shlex
 import subprocess
 
 import pytest
 
 import pyfltr.cli.main
+import pyfltr.state.archive
 import pyfltr.warnings_
 from tests.conftest import make_error_location as _make_error
 from tests.conftest import seed_archive_run as _seed_run
@@ -736,3 +738,51 @@ def test_monorepo_fast_targets_run_per_subproject_globs(tmp_path: pathlib.Path, 
         (tmp_path / "pkg_a").resolve(): ["repo_invariant_test.py"],
         (tmp_path / "pkg_b").resolve(): ["check_layout.py"],
     }
+
+
+def test_monorepo_subproject_diagnostics_round_trip_to_only_failed(
+    tmp_path: pathlib.Path,
+    mocker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """子プロジェクト相対の診断が起点相対で保存され、only-failedで失敗ファイルだけを再実行する。
+
+    生成・統合・保存・読取・失敗対象選択の往復を検証する。両方の子に同名の`x.py`を置き、
+    子プロジェクト相対のまま保存されると交差が空になって再実行がスキップされる退行と、
+    別の子の同名ファイルを誤って対象に加える退行を検出する。
+    """
+    config_extra = 'mypy = true\nmypy-runner = "direct"\n'
+    _write_pyproject(tmp_path, "root", extra=config_extra)
+    _write_pyproject(tmp_path / "pkg_a", "pkg_a", extra=config_extra)
+    _write_pyproject(tmp_path / "pkg_b", "pkg_b", extra=config_extra)
+    (tmp_path / "pkg_a" / "x.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "pkg_b" / "x.py").write_text("x = 1\n", encoding="utf-8")
+    cache_root = tmp_path / "cache"
+    monkeypatch.setenv("PYFLTR_CACHE_DIR", str(cache_root))
+
+    def fake_run(commandline, *args, **kwargs):
+        del args  # 未使用
+        cwd = pathlib.Path(kwargs["cwd"]).resolve() if kwargs.get("cwd") is not None else None
+        if "mypy" in " ".join(commandline) and cwd == (tmp_path / "pkg_a").resolve():
+            return subprocess.CompletedProcess(commandline, returncode=1, stdout="x.py:1: error: 型が違う  [assignment]\n")
+        return subprocess.CompletedProcess(commandline, returncode=0, stdout="")
+
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", side_effect=fake_run)
+    base_args = ["run", "--work-dir", str(tmp_path), "--commands=mypy", "--no-cache", "--no-gitignore"]
+    assert pyfltr.cli.main.run(base_args) == 1
+
+    store = pyfltr.state.archive.ArchiveStore(cache_root=cache_root)
+    run_id = store.list_runs(limit=1)[0].run_id
+    diagnostics = store.read_tool_diagnostics(run_id, "mypy")
+    assert [entry["file"] for entry in diagnostics] == ["pkg_a/x.py"]
+    # 再実行コマンドの対象は起動時のcwdではなく実行起点（`--work-dir`）基準で絶対化する。
+    retry_command = store.read_tool_meta(run_id, "mypy")["retry_command"]
+    assert shlex.split(retry_command)[-1] == str((tmp_path / "pkg_a" / "x.py").resolve())
+
+    mock_run.reset_mock()
+    assert pyfltr.cli.main.run([*base_args, "--only-failed", "--from-run", run_id]) == 1
+
+    assert _mypy_cwds(mock_run) == {(tmp_path / "pkg_a").resolve()}
+    mypy_calls = [call for call in mock_run.call_args_list if "mypy" in " ".join(call.args[0])]
+    assert len(mypy_calls) == 1
+    assert mypy_calls[0].args[0][-1] == "x.py"

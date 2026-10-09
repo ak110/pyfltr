@@ -17,7 +17,6 @@ import pyfltr.command.process
 import pyfltr.command.runner
 import pyfltr.config.config
 import pyfltr.config.model
-import pyfltr.parsing.entry
 import pyfltr.paths
 import pyfltr.tools
 from pyfltr.command.core_ import CommandResult
@@ -218,11 +217,7 @@ def _run_fix_mode(
         formatter_failed = False
         returncode = 0
 
-    errors = (
-        pyfltr.parsing.entry.parse_errors(request.command, output, request.params.command_info.error_pattern)
-        if parse_errors
-        else []
-    )
+    errors = request.parse_errors(output, request.params.command_info.error_pattern) if parse_errors else []
 
     resolved_type = (
         command_type_override(formatter_failed, returncode)

@@ -32,7 +32,6 @@ import pyfltr.command.vitest
 import pyfltr.config.config
 import pyfltr.config.model
 import pyfltr.config.selection
-import pyfltr.parsing.entry
 import pyfltr.parsing.pytest
 import pyfltr.paths
 import pyfltr.run_options
@@ -486,13 +485,7 @@ def _run_plain_command(request: pyfltr.command.core_.ExecutionRequest) -> pyfltr
 
     output = proc.stdout.strip()
     elapsed = time.perf_counter() - request.start_time
-    errors = pyfltr.parsing.entry.parse_errors(
-        request.command,
-        output,
-        request.params.command_info.error_pattern,
-        file_path_remap=request.params.file_path_remap,
-        path_base=request.cwd,
-    )
+    errors = request.parse_errors(output, request.params.command_info.error_pattern)
     # pytestは設定ファイル競合をヘッダー1行で通知するだけで終了コードへ反映しない。
     # 拾わないと設定が適用されないまま完走した実行を成功として報告してしまう。
     slow_tests: list[pyfltr.command.slow_tests.SlowTest] = []

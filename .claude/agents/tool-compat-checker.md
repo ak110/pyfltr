@@ -16,8 +16,8 @@ pyfltrの対応ツールがバージョンアップで挙動を変えていな�
 pyfltrは各ツールのバージョン追従が必要なため、差分の確認を定期的に行う。
 対応ツールの集合は `pyfltr/tools.py` の `BUILTIN_COMMANDS` を典拠とする。
 チェック対象は`BUILTIN_COMMANDS`の各`CommandInfo`にある`defaults`の引数と、
-`diagnostic_pattern`、`parser`、`path_base_parser`が参照する解析処理。
-関数パーサーは`pyfltr/parsing/tools.py`等の登録先を読み、`path_base_parser`にはパス基準の文脈が渡ることも確認する。
+`diagnostic_pattern`、`parser`、`path_resolving_parser`が参照する解析処理。
+関数パーサーは`pyfltr/parsing/tools.py`等の登録先を読み、`path_resolving_parser`には解析境界のパス変換関数が渡ることも確認する。
 
 ## 入力
 
@@ -57,7 +57,7 @@ pyfltrは各ツールのバージョン追従が必要なため、差分の確�
 
    - JSON Lines全体を保存し、`header`レコード（`{"kind": "header", "run_id": "..."}`形式）の`run_id`を記録する。`head`等で先頭行だけを読むパイプは使わない
    - `uv run pyfltr show-run <run_id> --commands=<tool> --output --output-format=text`へ記録済みrun IDを明示し、JSON Linesへラップされていない生出力を取得する。`latest`は使わない
-   - 出力が対象`CommandInfo.diagnostic_pattern`、`parser`、`path_base_parser`の登録済み解析処理に対応するか比較する
+   - 出力が対象`CommandInfo.diagnostic_pattern`、`parser`、`path_resolving_parser`の登録済み解析処理に対応するか比較する
    - 必須グループ（`file`、`line`、`message`）が正常に取得されるか確認
 
 5. 報告

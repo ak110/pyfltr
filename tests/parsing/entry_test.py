@@ -4,6 +4,7 @@ import pyfltr.diagnostics
 import pyfltr.output.diagnostics
 import pyfltr.parsing.entry
 import pyfltr.parsing.pytest
+import pyfltr.paths
 import pyfltr.tools
 
 
@@ -50,19 +51,19 @@ def test_get_custom_parser_commands() -> None:
     assert "semgrep" in commands
     assert "sqlfluff" in commands
     assert "pinact" in commands
-    # aridは`_PATH_BASE_PARSERS`側の登録だが、UIのストリーミング抑止判定では同じ集合に含める。
+    # aridは`path_resolving_parser`側の登録だが、UIのストリーミング抑止判定では同じ集合に含める。
     assert "arid" in commands
     assert "mypy" not in commands
     # 2つのパーサー表は`parse_errors`が順に引くため、同じコマンドを両方へ登録しない。
     # 表の排他性は公開関数の戻り値へ現れないため直接検証する。
     assert not (
         {name for name, info in pyfltr.tools.BUILTIN_COMMANDS.items() if info.parser is not None}
-        & {name for name, info in pyfltr.tools.BUILTIN_COMMANDS.items() if info.path_base_parser is not None}
+        & {name for name, info in pyfltr.tools.BUILTIN_COMMANDS.items() if info.path_resolving_parser is not None}
     )
 
 
-def test_parse_errors_error_pattern_precedes_path_base_parser() -> None:
-    """`error_pattern`の指定は`path_base`を要するパーサーより優先する。"""
+def test_parse_errors_error_pattern_precedes_path_resolving_parser() -> None:
+    """`error_pattern`の指定はパス変換関数を受け取るパーサーより優先する。"""
     output = "src/a.py:12: 重複を検出しました"
 
     errors = pyfltr.parsing.entry.parse_errors("arid", output, r"(?P<file>[^:]+):(?P<line>\d+): (?P<message>.+)")
@@ -87,3 +88,67 @@ def test_parse_summary_empty_output() -> None:
     """空出力はNoneを返す。"""
     assert pyfltr.parsing.entry.parse_summary("mypy", "") is None
     assert pyfltr.parsing.entry.parse_summary("mypy", "  \n  ") is None
+
+
+def test_parse_errors_rebases_subproject_relative_output(tmp_path: pathlib.Path) -> None:
+    """子プロジェクトのcwdで実行したツールの相対パス診断を起点相対へ揃える。
+
+    組み込み正規表現・関数パーサー・利用者指定の`error_pattern`の全経路で同じ基準を使う。
+    """
+    sub = tmp_path / "pkg_a"
+    mypy_errors = pyfltr.parsing.entry.parse_errors(
+        "mypy", "x.py:1: error: 型が違う  [assignment]", path_base=sub, start_cwd=tmp_path
+    )
+    pytest_errors = pyfltr.parsing.entry.parse_errors(
+        "pytest",
+        "================================= FAILURES =================================\n"
+        "_______________________________ test_a ________________________________\n"
+        "tests/x_test.py:3: in test_a\n"
+        "    assert value\n"
+        "E   AssertionError: assert 0\n",
+        path_base=sub,
+        start_cwd=tmp_path,
+    )
+    custom_errors = pyfltr.parsing.entry.parse_errors(
+        "custom", "x.py:2: 指摘", r"(?P<file>[^:]+):(?P<line>\d+): (?P<message>.+)", path_base=sub, start_cwd=tmp_path
+    )
+
+    assert [error.file for error in mypy_errors] == ["pkg_a/x.py"]
+    assert [error.file for error in pytest_errors] == ["pkg_a/tests/x_test.py"]
+    assert [error.file for error in custom_errors] == ["pkg_a/x.py"]
+
+
+def test_parse_errors_does_not_double_prefix_absolute_or_remapped_paths(tmp_path: pathlib.Path) -> None:
+    """絶対パス・起点外のパス・一時パスから元ファイルへ戻した診断へ接頭辞を重ねない。"""
+    sub = tmp_path / "pkg_a"
+    inside = sub / "doc.md"
+    outside = tmp_path.parent / "external.md"
+    temporary = tmp_path.parent / "pyfltr-tmp" / "doc.md"
+    output = "\n".join(f"{path}:1:1: 指摘" for path in (inside, outside, temporary))
+
+    errors = pyfltr.parsing.entry.parse_errors(
+        "custom",
+        output,
+        r"(?P<file>.+):(?P<line>\d+):(?P<col>\d+): (?P<message>.+)",
+        file_path_remap={str(temporary): "pkg_a/doc.md"},
+        path_base=sub,
+        start_cwd=tmp_path,
+    )
+
+    assert [error.file for error in errors] == [
+        "pkg_a/doc.md",
+        pyfltr.paths.normalize_separators(outside),
+        "pkg_a/doc.md",
+    ]
+
+
+def test_parse_errors_returns_absolute_path_for_relative_outside_start(tmp_path: pathlib.Path) -> None:
+    """単一プロジェクトでも起点外を指す`../`相対の診断は`/`区切りの絶対パスで返す。
+
+    起点外の対象ファイルは対象集合側でも絶対パスで保持されるため、同じ表現に揃えて突合できるようにする。
+    """
+    errors = pyfltr.parsing.entry.parse_errors(
+        "mypy", "../outside.py:1: error: 型が違う  [assignment]", path_base=tmp_path, start_cwd=tmp_path
+    )
+
+    assert [error.file for error in errors] == [pyfltr.paths.normalize_separators(tmp_path.parent / "outside.py")]

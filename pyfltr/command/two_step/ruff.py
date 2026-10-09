@@ -8,7 +8,6 @@ import pyfltr.command.process
 import pyfltr.command.runner
 import pyfltr.config.config
 import pyfltr.config.model
-import pyfltr.parsing.entry
 import pyfltr.tools
 from pyfltr.command.core_ import CommandResult
 from pyfltr.command.snapshot import changed_files, snapshot_file_digests
@@ -78,7 +77,7 @@ def _run_ruff_two_step(request: pyfltr.command.core_.ExecutionRequest, *, check_
     else:
         returncode = 0
 
-    errors = pyfltr.parsing.entry.parse_errors(request.command, output, request.params.command_info.error_pattern)
+    errors = request.parse_errors(output, request.params.command_info.error_pattern)
 
     # commandlineは代表として「最後に実行したステップ」（= ruff format）を格納。
     # 両ステップ分のcommandlineはverbose出力で確認可能。

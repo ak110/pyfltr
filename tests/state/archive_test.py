@@ -1,3 +1,4 @@
+import dataclasses
 import datetime
 import json
 import pathlib
@@ -329,3 +330,109 @@ def test_default_cache_root_respects_env(monkeypatch: pytest.MonkeyPatch, tmp_pa
     monkeypatch.setenv("PYFLTR_CACHE_DIR", str(tmp_path))
     result = pyfltr.state.archive.default_cache_root()
     assert result == tmp_path
+
+
+def _pytest_failure_output(test_file: str, line: int, test_name: str) -> str:
+    """pytest `--tb=short`の失敗1件分の出力を返す。"""
+    return (
+        "================================= FAILURES =================================\n"
+        f"_______________________________ {test_name} ________________________________\n"
+        f"{test_file}:{line}: in {test_name}\n"
+        "    assert value\n"
+        "E   AssertionError: assert 0\n"
+        "========================= short test summary info ==========================\n"
+        f"FAILED {test_file}::{test_name} - AssertionError: assert 0\n"
+    )
+
+
+def _start_legacy_run(store: pyfltr.state.archive.ArchiveStore, tmp_path: pathlib.Path) -> str:
+    """診断を起点相対へ揃える前の版と同じく、診断パスの印を持たない`meta.json`のrunを作成する。"""
+    run_id = store.start_run(commands=["pytest"])
+    meta_path = tmp_path / "runs" / run_id / "meta.json"
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    del meta[pyfltr.state.archive.DIAGNOSTIC_PATHS_META_KEY]
+    meta_path.write_text(json.dumps(meta), encoding="utf-8")
+    return run_id
+
+
+def _legacy_pytest_result(sections: dict[str, str]) -> pyfltr.command.core_.CommandResult:
+    """サブプロジェクト相対の診断を保存していた版と同じ形のpytest結果を組み立てる。"""
+    output = "\n".join(f"# subproject: {relative}\n{body}" for relative, body in sections.items())
+    errors = [error for body in sections.values() for error in pyfltr.parsing.entry.parse_errors("pytest", body)]
+    return _make_result("pytest", returncode=1, output=output, errors=errors)
+
+
+def test_read_tool_diagnostics_restores_legacy_subproject_paths(tmp_path: pathlib.Path) -> None:
+    """旧版のサブプロジェクト相対の診断を、生出力の所属区間から起点相対へ補正して返す。
+
+    所属区間を持つ旧アーカイブでも`--only-failed --from-run`が失敗ファイルを選べるようにする。
+    保存ファイル自体は書き換えない。
+    """
+    store = _make_store(tmp_path)
+    run_id = _start_legacy_run(store, tmp_path)
+    store.write_tool_result(
+        run_id,
+        _legacy_pytest_result(
+            {
+                "pkg_a": _pytest_failure_output("tests/x_test.py", 3, "test_a"),
+                "pkg_b": _pytest_failure_output("tests/y_test.py", 5, "test_b"),
+            }
+        ),
+    )
+
+    diagnostics = store.read_tool_diagnostics(run_id, "pytest")
+
+    assert sorted(entry["file"] for entry in diagnostics) == ["pkg_a/tests/x_test.py", "pkg_b/tests/y_test.py"]
+    raw = (tmp_path / "runs" / run_id / "tools" / "pytest" / "diagnostics.jsonl").read_text(encoding="utf-8")
+    assert '"file": "tests/x_test.py"' in raw
+
+
+def test_read_tool_diagnostics_keeps_ambiguous_and_current_paths(tmp_path: pathlib.Path) -> None:
+    """所属区間を一意に決められない診断と、起点相対で保存された新しい版の診断は変えない。
+
+    両方の子で同じファイル・行・メッセージの失敗が出た場合はどちらの子か決められない。
+    新しい版の診断は`<子>/<file>`で保存されており、区間の解析結果と一致しないため二重に接頭辞を付けない。
+    """
+    store = _make_store(tmp_path)
+    same_failure = _pytest_failure_output("tests/x_test.py", 3, "test_a")
+    ambiguous_run = _start_legacy_run(store, tmp_path)
+    store.write_tool_result(ambiguous_run, _legacy_pytest_result({"pkg_a": same_failure, "pkg_b": same_failure}))
+
+    current_run = store.start_run(commands=["pytest"])
+    current_errors = [
+        dataclasses.replace(error, file=f"pkg_a/{error.file}")
+        for error in pyfltr.parsing.entry.parse_errors("pytest", same_failure)
+    ]
+    store.write_tool_result(
+        current_run,
+        _make_result("pytest", returncode=1, output=f"# subproject: pkg_a\n{same_failure}", errors=current_errors),
+    )
+
+    assert [entry["file"] for entry in store.read_tool_diagnostics(ambiguous_run, "pytest")] == ["tests/x_test.py"]
+    assert [entry["file"] for entry in store.read_tool_diagnostics(current_run, "pytest")] == ["pkg_a/tests/x_test.py"]
+
+
+def test_read_tool_diagnostics_keeps_current_root_and_subproject_paths(tmp_path: pathlib.Path) -> None:
+    """起点相対で保存した新しい版のrunは、起点直下と子に同じ位置・メッセージの失敗があっても書き換えない。
+
+    旧版の救済を新しい版へ適用すると、起点直下の診断を子の区間の診断と取り違えて起点側の失敗を失う。
+    """
+    store = _make_store(tmp_path)
+    same_failure = _pytest_failure_output("tests/x_test.py", 3, "test_a")
+    root_errors = pyfltr.parsing.entry.parse_errors("pytest", same_failure)
+    child_errors = [dataclasses.replace(error, file=f"pkg_a/{error.file}") for error in root_errors]
+    run_id = store.start_run(commands=["pytest"])
+    store.write_tool_result(
+        run_id,
+        _make_result(
+            "pytest",
+            returncode=1,
+            output=f"{same_failure}\n# subproject: pkg_a\n{same_failure}",
+            errors=[*root_errors, *child_errors],
+        ),
+    )
+
+    assert sorted(entry["file"] for entry in store.read_tool_diagnostics(run_id, "pytest")) == [
+        "pkg_a/tests/x_test.py",
+        "tests/x_test.py",
+    ]

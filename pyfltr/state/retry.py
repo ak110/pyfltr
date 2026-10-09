@@ -103,20 +103,21 @@ def build_retry_command(
     *,
     tool: str,
     target_files: list[pathlib.Path],
-    original_cwd: str,
+    target_base_cwd: str,
 ) -> str:
     """Tool レコードへ埋め込む retry_command 文字列を生成する。
 
     `args_template`の`--commands`プレースホルダを対象のツールに差し替え、
     位置引数（ターゲット）を`target_files`で末尾に再配置する。ターゲットは
-    `original_cwd`基準の絶対パスに変換することで、`--work-dir`とcwdの
+    実行起点（`--work-dir`・MCPの`work_dir`適用後）の相対パスで渡るため、
+    `target_base_cwd`（実行起点）基準の絶対パスに変換し、`--work-dir`と起動時のcwdの
     二重解釈を避ける。
 
     モノレポでサブプロジェクト分割実行が行われた場合は、`CommandResult.merge` で
     マージされた起点 cwd 相対の和集合 `target_files` を受け取る前提で動作する。
     マージ後リストをそのまま絶対パス化して扱う。
     """
-    cwd_path = pathlib.Path(original_cwd)
+    cwd_path = pathlib.Path(target_base_cwd)
     # 位置引数（サブコマンドを除く、`-`で始まらないトークンの末尾側）は除去する。
     # サブコマンドは必ず最初の非オプショントークンのため、それだけ残す。
     filtered: list[str] = []
@@ -195,7 +196,7 @@ def populate_retry_command(
     *,
     retry_args_template: list[str],
     launcher_prefix: list[str],
-    original_cwd: str,
+    target_base_cwd: str,
 ) -> None:
     """CommandResult に retry_command を埋める (パートG A案のフィルタリングを適用)。
 
@@ -219,7 +220,7 @@ def populate_retry_command(
         launcher_prefix,
         tool=result.command,
         target_files=filtered_targets,
-        original_cwd=original_cwd,
+        target_base_cwd=target_base_cwd,
     )
 
 
@@ -228,7 +229,7 @@ def filter_failed_files(result: pyfltr.command.core_.CommandResult) -> list[path
 
     `retry_command`のターゲットを「対象のツールで失敗したファイルのみ」に限定する用途
     （パートG A案）。パス比較は文字列化した相対パス（スラッシュ区切り）で行う。
-    `ErrorLocation.file`は`pyfltr.paths.to_cwd_relative`経由でcwd基準へ揃えられ、
+    `ErrorLocation.file`は`pyfltr.parsing.entry.parse_errors`が実行起点基準へ揃え、
     区切り文字は`/`に統一されている。`result.target_files`側も同じ表現へ
     揃えたうえで比較する。並び順は`result.target_files`の順序を保つ。
 

@@ -410,7 +410,6 @@ async def tool_run(
             commands_list,
             config,
             start_cwd=base,
-            original_cwd=str(work_dir_path) if work_dir_path is not None else None,
             original_sys_args=args.retry_arguments(for_mcp=True),
             force_text_on_stderr=True,
             jsonl_warnings_reach_consumer=False,

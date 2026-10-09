@@ -234,6 +234,22 @@ python-runnerへ委譲せず`uvx <bin>`で別環境へ解決する。
 - 出力スキーマは現行を維持する（JSONL・SARIF・archive・MCP読み取り系APIでサブプロジェクト
   識別フィールドを新設しない）。サブプロジェクト境界をまたぐ実行結果は `CommandResult.merge` で
   1件に集約し、人間向け `output` には `# subproject: <相対パス>` の区切り行のみ挿入する
+- 診断の`file`は解析境界（`pyfltr.parsing.entry.parse_errors`）で起点相対へ揃え、統合時には付け替えない。
+  通常・fix・2段階などの各実行処理は`ExecutionRequest.parse_errors`を通じてツールの実行cwd（`path_base`）と実行起点（`start_cwd`）を渡し、
+  `pyfltr.paths.to_start_relative`が相対パスを実行cwd基準で絶対化してから起点相対へ変換する。
+  起点外を指すパスは`../`相対を含めて`/`区切りの絶対パスで返し、対象集合が保持する外部パスと同じ表現に揃える。
+  各パーサーはツール出力のパスを区切りの統一だけで返し、基準変換を持たない。
+  診断メッセージにもパスを埋め込むaridは`CommandInfo.path_resolving_parser`として同じ変換関数を受け取る。
+  一時ファイルから元ファイルへの付け替え（`file_path_remap`）は変換の後に適用し、付け替え後の値は再変換しない。
+  `--only-failed`と`retry_command`は起点相対の対象集合と診断の`file`を文字列で突合するため、
+  基準が子プロジェクト相対のまま残ると失敗ファイルを選べない
+- 診断を起点相対へ揃える前の版が保存したpytestのアーカイブは、子プロジェクト相対の診断を持つ。
+  `ArchiveStore.read_tool_diagnostics`は保存済み生出力の`# subproject:`区間ごとに解析をやり直し、
+  `file`・行・メッセージが一致する区間が1件だけの診断を起点相対へ補正して返す。
+  区間を一意に決められない診断は変えず、保存ファイルも書き換えない。
+  新しい版はrunの`meta.json`へ`diagnostic_paths: start-relative`を書き、このキーを持たないrunだけを補正の対象にする。
+  新しい版のrunを補正すると、起点直下の診断を同じ位置・メッセージを持つ子の診断と取り違えるためである。
+  診断のbasenameや末尾一致で所属を推測する案は、子プロジェクト間で同じ相対名を持つファイルを誤選択するため採らない
 - `subprocess.Popen` へのcwd切り替えは引数渡しのみで実現する。`os.chdir()` を
   サブプロジェクトループで使うとプロセスcwdが並列実行中の他ツールへ干渉するため、
   cwd依存処理（mise・git・ファイル走査・snapshot等）は明示引数で起点cwdを取得する形に統一する
@@ -404,7 +420,7 @@ CLI JSONLはシェルしか使えない消費側向けの代替手段として�
 対象はJSON Lines出力・CLIテキスト出力・CLIのJSON出力・MCPツール応答・SARIF・Code Quality・
 GitHub Annotationsの各出力で返すファイルパスである。
 除外対象や欠落対象として警告へ載せるパスも含む。
-生成時は`pyfltr.paths.normalize_separators`または`pyfltr.paths.to_cwd_relative`を経由する。
+生成時は`pyfltr.paths.normalize_separators`・`pyfltr.paths.to_cwd_relative`・`pyfltr.paths.to_start_relative`のいずれかを経由する。
 公開値を`str()`で直接文字列化しない。
 pyfltr自身が実装するツール（`colloquial-check`など）の標準出力に含めるファイル位置も、
 生成時点で同じ正規化を経由する。これらのツールの生標準出力は`show-run --commands <name> --output`と
@@ -856,9 +872,9 @@ worker方式は起動費用を持つが、共有状態を分離し、子孫を�
 プロセスグローバルなcwdに干渉しないため、`ThreadPoolExecutor`によるツールの並列実行や
 MCPクライアントからの並行ツール呼び出しでも実行起点を呼び出し単位で維持できる。
 
-`work_dir`指定時は診断のファイルパスが絶対パスで返る場合がある。
-`pyfltr.paths.to_cwd_relative()`はプロセスのcwdだけを相対化の基準とし、
-`work_dir`を基準ディレクトリとして注入する仕組みを持たないためである。
+診断のファイルパスは解析境界で`start_cwd`（`work_dir`）を基準に相対化する（本書「モノレポ対応」を参照）。
+`pyfltr.paths.to_cwd_relative()`はプロセスのcwdだけを相対化の基準とするため、
+診断以外でこの関数を経由する値は`work_dir`指定時に絶対パスで返る場合がある。
 
 #### `run_pipeline()`戻り値
 

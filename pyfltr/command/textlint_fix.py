@@ -9,7 +9,6 @@ import pyfltr.command.core_
 import pyfltr.command.process
 import pyfltr.config.config
 import pyfltr.config.model
-import pyfltr.parsing.entry
 import pyfltr.paths
 import pyfltr.tools
 from pyfltr.command.core_ import CommandResult
@@ -127,7 +126,7 @@ def execute_textlint_fix(request: pyfltr.command.core_.ExecutionRequest) -> pyfl
     elapsed = time.perf_counter() - request.start_time
 
     # Step2出力から残存違反をパースする
-    errors = pyfltr.parsing.entry.parse_errors(request.command, output, request.params.command_info.error_pattern)
+    errors = request.parse_errors(output, request.params.command_info.error_pattern)
 
     # ステータス判定
     timeout_exceeded = step1_proc.timeout_exceeded or step2_proc.timeout_exceeded

@@ -32,7 +32,7 @@ def _commands_without_parser(commands: dict[str, pyfltr.tools.CommandInfo]) -> s
     registered = {
         name
         for name, info in pyfltr.tools.BUILTIN_COMMANDS.items()
-        if info.diagnostic_pattern is not None or info.parser is not None or info.path_base_parser is not None
+        if info.diagnostic_pattern is not None or info.parser is not None or info.path_resolving_parser is not None
     }
     return {
         name

@@ -635,7 +635,6 @@ async def test_tool_run_resolves_cli_parameters(tmp_path: pathlib.Path, mocker) 
     assert config.values["mypy"] is True
     assert config.values["ec"] is False
     assert kwargs["start_cwd"] == tmp_path.resolve()
-    assert kwargs["original_cwd"] == str(tmp_path.resolve())
     assert kwargs["original_sys_args"] == [
         "ci",
         f"--work-dir={tmp_path.resolve()}",

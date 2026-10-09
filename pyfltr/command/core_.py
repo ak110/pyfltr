@@ -10,6 +10,7 @@ import pyfltr.command.slow_tests
 import pyfltr.config.config
 import pyfltr.config.model
 import pyfltr.diagnostics
+import pyfltr.parsing.entry
 import pyfltr.tools
 
 FAILED_STATUSES: frozenset[str] = frozenset({"failed", "resolution_failed"})
@@ -26,7 +27,6 @@ if typing.TYPE_CHECKING:
     import pyfltr.command.only_failed
     import pyfltr.command.process
     import pyfltr.command.subprojects
-    import pyfltr.parsing.entry
 
     Subproject = pyfltr.command.subprojects.Subproject
 
@@ -710,6 +710,21 @@ class ExecutionRequest:
     def retry_options(self) -> dict[str, typing.Any]:
         """同じ実行設定のOOM再試行条件を返す。"""
         return pyfltr.config.model.resolve_retry_kwargs(self.ctx.config.values)
+
+    def parse_errors(self, output: str, error_pattern: str | None) -> "list[pyfltr.diagnostics.ErrorLocation]":
+        """実行cwdと実行起点を基準にしてツール出力を診断へ変換する。
+
+        各実行経路（通常・fix・2段階・個別実行モジュール）が同じパス基準を
+        `pyfltr.parsing.entry.parse_errors`へ渡すための入口である。
+        """
+        return pyfltr.parsing.entry.parse_errors(
+            self.command,
+            output,
+            error_pattern,
+            file_path_remap=self.params.file_path_remap,
+            path_base=self.cwd,
+            start_cwd=self.ctx.base.start_cwd,
+        )
 
 
 def overall_status(results: "typing.Iterable[CommandResult]") -> typing.Literal["SUCCESS", "FORMATTED", "FAILED"]:

@@ -3,6 +3,7 @@
 パス文字列の変換・正規化に関するヘルパーを提供する。
 """
 
+import os
 import pathlib
 
 
@@ -39,3 +40,36 @@ def to_cwd_relative(path: str | pathlib.Path) -> str:
         except ValueError:
             return normalize_separators(path)
     return normalize_separators(path)
+
+
+def to_start_relative(
+    path: str | pathlib.Path,
+    *,
+    path_base: pathlib.Path | None = None,
+    start_cwd: pathlib.Path | None = None,
+) -> str:
+    """ツール出力のパスを実行起点基準の相対パスへ変換する。
+
+    `path_base`はツールが相対パスを出力するときの基準（ツールの実行cwd）、
+    `start_cwd`はpyfltr実行の起点（`--work-dir`・MCPの`work_dir`適用後）である。
+    いずれも省略時はプロセスのcwdを使う。
+
+    相対パスは`path_base`を基準に絶対化し、`..`を字句的に畳み込む（シンボリックリンクは解決しない）。
+    起点配下なら起点相対、起点外なら絶対パスを返す。区切り文字は全分岐で`/`へ統一する。
+    空文字列と`<`で始まる擬似名（`<stdin>`等）はパスとして扱わず区切りの統一だけを行う。
+
+    診断の`file`は`--only-failed`・`retry_command`で起点相対の対象集合と突合するため、
+    サブプロジェクトのcwdで実行したツールの出力も本関数で同じ基準へ揃える。
+    """
+    text = str(path)
+    if not text or text.startswith("<"):
+        return normalize_separators(text)
+    start = start_cwd if start_cwd is not None else pathlib.Path.cwd()
+    as_path = pathlib.Path(text)
+    if not as_path.is_absolute():
+        as_path = (path_base if path_base is not None else start) / as_path
+    normalized = pathlib.Path(os.path.normpath(as_path))
+    try:
+        return normalize_separators(normalized.relative_to(pathlib.Path(os.path.normpath(start))))
+    except ValueError:
+        return normalize_separators(normalized)

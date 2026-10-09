@@ -1,7 +1,6 @@
 """ツール固有の診断解析。"""
 
 import json
-import pathlib
 import re
 import typing
 
@@ -80,7 +79,7 @@ def parse_eslint_json(output: str) -> list[ErrorLocation]:
         rule = rule_id or None
         end_line, end_col = to_inclusive_end_position(line, end_line, end_col)
         return ErrorLocation(
-            file=pyfltr.paths.to_cwd_relative(file_path),
+            file=pyfltr.paths.normalize_separators(file_path),
             line=line,
             col=col,
             command="eslint",
@@ -128,7 +127,7 @@ def parse_ruff_check_json(output: str) -> list[ErrorLocation]:
         end_line, end_col = to_inclusive_end_position(line, end_line, end_col)
         results.append(
             ErrorLocation(
-                file=pyfltr.paths.to_cwd_relative(str(entry.get("filename", ""))),
+                file=pyfltr.paths.normalize_separators(str(entry.get("filename", ""))),
                 line=line,
                 col=col,
                 command="ruff-check",
@@ -190,7 +189,7 @@ def parse_pylint_json(output: str) -> list[ErrorLocation]:
         end_line, end_col = to_inclusive_end_position(line, end_line, end_col)
         results.append(
             ErrorLocation(
-                file=pyfltr.paths.to_cwd_relative(str(msg.get("path", ""))),
+                file=pyfltr.paths.normalize_separators(str(msg.get("path", ""))),
                 line=line,
                 col=col,
                 command="pylint",
@@ -236,7 +235,7 @@ def parse_pyright_json(output: str) -> list[ErrorLocation]:
         end_line, end_col = to_inclusive_end_position(line + 1, end_line, end_col)
         results.append(
             ErrorLocation(
-                file=pyfltr.paths.to_cwd_relative(str(diag.get("file", ""))),
+                file=pyfltr.paths.normalize_separators(str(diag.get("file", ""))),
                 line=line + 1,
                 col=col,
                 command="pyright",
@@ -251,8 +250,12 @@ def parse_pyright_json(output: str) -> list[ErrorLocation]:
     return results
 
 
-def parse_arid_json(output: str, *, path_base: pathlib.Path | None = None) -> list[ErrorLocation]:
+def parse_arid_json(output: str, *, resolve_path: typing.Callable[[str], str] | None = None) -> list[ErrorLocation]:
     """aridのJSON出力に含まれる全重複位置を診断へ変換する。
+
+    `resolve_path`は`pyfltr.parsing.entry.parse_errors`が渡すパス変換関数で、
+    ツール出力のパスを起点相対へ変換する。診断の`file`に加えてメッセージ内の他の重複位置にも
+    同じ値を使うため、本パーサーは変換関数を受け取って自ら適用する。省略時は区切りの統一だけを行う。
 
     `findings`の各要素が`lines`・`occurrences`・`context`・`scope`・`distribution`・`locations`を
     必ず持つことを前提とする（arid 2.2.2のreport schema_version 4で実測）。
@@ -291,12 +294,8 @@ def parse_arid_json(output: str, *, path_base: pathlib.Path | None = None) -> li
             start_line = json_int(location.get("start_line"))
             end_line = json_int(location.get("end_line"))
             if isinstance(path, str) and path and start_line is not None and end_line is not None:
-                path_value = pathlib.Path(path)
-                if path_base is not None:
-                    # `pathlib`の結合は右辺が絶対パスの場合に左辺を無視するため、
-                    # aridが絶対パスを返す`--allow-external-paths`の経路でも対象のパスを維持する。
-                    path_value = path_base / path_value
-                locations.append((pyfltr.paths.to_cwd_relative(path_value), start_line, end_line))
+                resolved = resolve_path(path) if resolve_path is not None else pyfltr.paths.normalize_separators(path)
+                locations.append((resolved, start_line, end_line))
         for index, (path, start_line, raw_end_line) in enumerate(locations):
             other_locations = [
                 f"{other_path}:{other_start}-{other_end}"
@@ -349,7 +348,7 @@ def parse_shellcheck_json(output: str) -> list[ErrorLocation]:
         end_line, end_col = to_inclusive_end_position(line, end_line, end_col)
         results.append(
             ErrorLocation(
-                file=pyfltr.paths.to_cwd_relative(str(entry.get("file", ""))),
+                file=pyfltr.paths.normalize_separators(str(entry.get("file", ""))),
                 line=line,
                 col=col,
                 command="shellcheck",
@@ -400,7 +399,7 @@ def parse_textlint_json(output: str) -> list[ErrorLocation]:
                 message = f"{message} {range_text}"
         end_line, end_col = to_inclusive_end_position(line, end_line, end_col)
         return ErrorLocation(
-            file=pyfltr.paths.to_cwd_relative(file_path),
+            file=pyfltr.paths.normalize_separators(file_path),
             line=line,
             col=col,
             command="textlint",
@@ -514,7 +513,7 @@ def parse_typos_jsonl(output: str) -> list[ErrorLocation]:
             fix_value = "none"
         results.append(
             ErrorLocation(
-                file=pyfltr.paths.to_cwd_relative(str(entry.get("path", ""))),
+                file=pyfltr.paths.normalize_separators(str(entry.get("path", ""))),
                 line=line_num,
                 col=None,
                 command="typos",
@@ -582,7 +581,7 @@ def parse_pinact_sarif(output: str) -> list[ErrorLocation]:
             rule = str(entry.get("ruleId", "") or "") or None
             results.append(
                 ErrorLocation(
-                    file=pyfltr.paths.to_cwd_relative(str(artifact.get("uri", ""))),
+                    file=pyfltr.paths.normalize_separators(str(artifact.get("uri", ""))),
                     line=line,
                     col=json_int(region.get("startColumn")),
                     command="pinact",
@@ -689,7 +688,7 @@ def parse_lychee_json(output: str) -> list[ErrorLocation]:
             message = f"{url} -> {status_text}" if status_text else url
             results.append(
                 ErrorLocation(
-                    file=pyfltr.paths.to_cwd_relative(str(file_path)),
+                    file=pyfltr.paths.normalize_separators(str(file_path)),
                     line=1,
                     col=None,
                     command="lychee",
@@ -743,7 +742,7 @@ def parse_semgrep_json(output: str) -> list[ErrorLocation]:
         end_line, end_col = to_inclusive_end_position(line, end_line, end_col)
         results.append(
             ErrorLocation(
-                file=pyfltr.paths.to_cwd_relative(str(entry.get("path", ""))),
+                file=pyfltr.paths.normalize_separators(str(entry.get("path", ""))),
                 line=line,
                 col=col,
                 command="semgrep",
@@ -801,7 +800,7 @@ def parse_bandit_json(output: str) -> list[ErrorLocation]:
         end_line, end_col = to_inclusive_end_position(line, end_line, end_col)
         results.append(
             ErrorLocation(
-                file=pyfltr.paths.to_cwd_relative(str(entry.get("filename", ""))),
+                file=pyfltr.paths.normalize_separators(str(entry.get("filename", ""))),
                 line=line,
                 col=col,
                 command="bandit",
@@ -864,7 +863,7 @@ def parse_sqlfluff_json(output: str) -> list[ErrorLocation]:
             end_line, end_col = to_inclusive_end_position(line, end_line, end_col)
             results.append(
                 ErrorLocation(
-                    file=pyfltr.paths.to_cwd_relative(file_path),
+                    file=pyfltr.paths.normalize_separators(file_path),
                     line=line,
                     col=col,
                     command="sqlfluff",
@@ -1174,7 +1173,7 @@ def parse_glab_ci_lint(output: str) -> list[ErrorLocation]:
             continue
         results.append(
             ErrorLocation(
-                file=pyfltr.paths.to_cwd_relative(file_path),
+                file=pyfltr.paths.normalize_separators(file_path),
                 line=1,
                 col=None,
                 command="glab-ci-lint",
@@ -1257,7 +1256,7 @@ def parse_vitest_json(output: str) -> list[ErrorLocation]:
             message = f"{test_name}: {raw_message}" if test_name else raw_message
             results.append(
                 ErrorLocation(
-                    file=pyfltr.paths.to_cwd_relative(file_path),
+                    file=pyfltr.paths.normalize_separators(file_path),
                     line=line,
                     col=col,
                     command="vitest",

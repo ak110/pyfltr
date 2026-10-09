@@ -9,7 +9,6 @@ import pyfltr.command.core_
 import pyfltr.command.process
 import pyfltr.config.config
 import pyfltr.config.model
-import pyfltr.parsing.entry
 import pyfltr.tools
 import pyfltr.warnings_
 from pyfltr.command.core_ import CommandResult
@@ -76,7 +75,7 @@ def execute_glab_ci_lint(request: pyfltr.command.core_.ExecutionRequest) -> pyfl
             elapsed=elapsed,
         )
 
-    errors = pyfltr.parsing.entry.parse_errors(request.command, output, request.params.command_info.error_pattern)
+    errors = request.parse_errors(output, request.params.command_info.error_pattern)
     result = CommandResult.from_run(
         command=request.command,
         command_info=request.params.command_info,

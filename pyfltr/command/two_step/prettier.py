@@ -7,7 +7,6 @@ import pyfltr.command.core_
 import pyfltr.command.process
 import pyfltr.config.config
 import pyfltr.config.model
-import pyfltr.parsing.entry
 import pyfltr.tools
 from pyfltr.command.core_ import CommandResult
 from pyfltr.command.snapshot import changed_files, snapshot_file_digests
@@ -89,7 +88,7 @@ def _run_prettier_check_then_write(
     if step1_rc == 0:
         output = step1_proc.stdout.strip()
         elapsed = time.perf_counter() - request.start_time
-        errors = pyfltr.parsing.entry.parse_errors(request.command, output, request.params.command_info.error_pattern)
+        errors = request.parse_errors(output, request.params.command_info.error_pattern)
         return CommandResult.from_run(
             command=request.command,
             command_info=request.params.command_info,
@@ -108,7 +107,7 @@ def _run_prettier_check_then_write(
         # timeout超過は同じハングが再現する確率が高く、検証時間を浪費するためStep2を実行しない。
         output = step1_proc.stdout.strip()
         elapsed = time.perf_counter() - request.start_time
-        errors = pyfltr.parsing.entry.parse_errors(request.command, output, request.params.command_info.error_pattern)
+        errors = request.parse_errors(output, request.params.command_info.error_pattern)
         return CommandResult.from_run(
             command=request.command,
             command_info=request.params.command_info,
@@ -137,7 +136,7 @@ def _run_prettier_check_then_write(
         formatter_failed = True
         returncode = step2_rc
 
-    errors = pyfltr.parsing.entry.parse_errors(request.command, output, request.params.command_info.error_pattern)
+    errors = request.parse_errors(output, request.params.command_info.error_pattern)
     result = CommandResult.from_run(
         command=request.command,
         command_info=request.params.command_info,

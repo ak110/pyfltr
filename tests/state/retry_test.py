@@ -64,7 +64,7 @@ def test_build_retry_args_template_only_failed_not_in_retry_command(tmp_path):
         ["pyfltr"],
         tool="ruff-check",
         target_files=[],
-        original_cwd=str(tmp_path),
+        target_base_cwd=str(tmp_path),
     )
     assert "--only-failed" not in retry
 
@@ -78,7 +78,7 @@ def test_build_retry_args_template_from_run_not_in_retry_command(tmp_path):
         ["pyfltr"],
         tool="ruff-check",
         target_files=[],
-        original_cwd=str(tmp_path),
+        target_base_cwd=str(tmp_path),
     )
     assert "--from-run" not in retry
     assert "01ABCDEF" not in retry
@@ -95,13 +95,13 @@ def test_build_retry_command_replaces_commands_and_targets(tmp_path):
         ["pyfltr"],
         tool="mypy",
         target_files=[pathlib.Path("pkg/bar.py")],
-        original_cwd=str(tmp_path),
+        target_base_cwd=str(tmp_path),
     )
     # --commandsは置換される
     assert " mypy " in f" {retry} "
     # --no-fixは保持
     assert "--no-fix" in retry
-    # ターゲットはoriginal_cwd基準の絶対パス
+    # ターゲットはtarget_base_cwd基準の絶対パス
     assert str(tmp_path) in retry
 
 
@@ -113,7 +113,7 @@ def test_build_retry_command_missing_commands_inserts(tmp_path):
         ["pyfltr"],
         tool="mypy",
         target_files=[],
-        original_cwd=str(tmp_path),
+        target_base_cwd=str(tmp_path),
     )
     assert "--commands" in retry
     assert "mypy" in retry
@@ -182,7 +182,7 @@ def test_populate_retry_command_uses_filtered_files(tmp_path):
         result,
         retry_args_template=template,
         launcher_prefix=["pyfltr"],
-        original_cwd=str(tmp_path),
+        target_base_cwd=str(tmp_path),
     )
     assert result.retry_command is not None
     assert "b.py" in result.retry_command
@@ -197,7 +197,7 @@ def test_populate_retry_command_skips_for_cached(tmp_path):
         result,
         retry_args_template=template,
         launcher_prefix=["pyfltr"],
-        original_cwd=str(tmp_path),
+        target_base_cwd=str(tmp_path),
     )
     assert result.retry_command is None
 
@@ -210,7 +210,7 @@ def test_populate_retry_command_skips_for_success(tmp_path):
         result,
         retry_args_template=template,
         launcher_prefix=["pyfltr"],
-        original_cwd=str(tmp_path),
+        target_base_cwd=str(tmp_path),
     )
     assert result.retry_command is None
 
@@ -224,7 +224,7 @@ def test_populate_retry_command_skips_for_formatted(tmp_path):
         result,
         retry_args_template=template,
         launcher_prefix=["pyfltr"],
-        original_cwd=str(tmp_path),
+        target_base_cwd=str(tmp_path),
     )
     assert result.retry_command is None
 

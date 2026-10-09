@@ -192,7 +192,7 @@ class CommandInfo:
     structured_output: tuple[str, StructuredOutputSpec] | None = None
     diagnostic_pattern: str | None = None
     parser: typing.Callable[[str], list[ErrorLocation]] | None = None
-    path_base_parser: typing.Callable[..., list[ErrorLocation]] | None = None
+    path_resolving_parser: typing.Callable[..., list[ErrorLocation]] | None = None
     summary_parser: typing.Callable[[str], str | None] | None = None
     rule_hints: dict[str, str] = dataclasses.field(default_factory=dict)
     rule_url_builder: typing.Callable[[str, str | None], str | None] | None = None
@@ -844,7 +844,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         fixed_cost=0.05,
         per_file_cost=0.0002,
         python_bin="arid",
-        path_base_parser=FunctionRef[..., list[ErrorLocation]]("pyfltr.parsing.tools", "parse_arid_json"),
+        path_resolving_parser=FunctionRef[..., list[ErrorLocation]]("pyfltr.parsing.tools", "parse_arid_json"),
         structured_output=(
             "arid-json",
             StructuredOutputSpec(

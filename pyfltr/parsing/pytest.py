@@ -155,7 +155,7 @@ def parse_pytest_summary(output: str) -> dict[tuple[str, str], str | None]:
     """
     summary: dict[tuple[str, str], str | None] = {}
     for match in _PYTEST_SUMMARY_RE.finditer(output):
-        file_path = pyfltr.paths.to_cwd_relative(match.group("file"))
+        file_path = pyfltr.paths.normalize_separators(match.group("file"))
         test_name = match.group("test").replace("::", ".")
         raw_message = match.group("message")
         summary[(file_path, test_name)] = raw_message.strip() if raw_message is not None else None
@@ -484,7 +484,7 @@ def parse_pytest(output: str) -> list[ErrorLocation]:
         # （位置行がsite-packages等の外部パスになる失敗はファイルが一致しないため）。
         results: list[ErrorLocation] = []
         for match in _PYTEST_TB_LINE_RE.finditer(failures_section):
-            file_path = pyfltr.paths.to_cwd_relative(match.group("file"))
+            file_path = pyfltr.paths.normalize_separators(match.group("file"))
             message = match.group("message").strip()
             matched_key: tuple[str, str] | None = None
             for key, sum_message in summary.items():
@@ -550,7 +550,7 @@ def parse_pytest(output: str) -> list[ErrorLocation]:
             # 情報源となり、持つ場合も中間エントリーのフレーム行より正確である。
             if is_unlisted_child_block(known_tests, after_captured=after_captured, test_name=test_name):
                 continue
-            file_path = pyfltr.paths.to_cwd_relative(location.group("file"))
+            file_path = pyfltr.paths.normalize_separators(location.group("file"))
             raw_message = pytest_block_message(block, error_re, location)
             results.append(
                 ErrorLocation(
@@ -579,7 +579,7 @@ def parse_pytest(output: str) -> list[ErrorLocation]:
             error_match = error_re.search(block, chosen.end()) or error_re.search(block)
             raw_message = error_match.group("message").strip() if error_match else ""
             message = pytest_join_message(test_name, raw_message)
-            file_path = pyfltr.paths.to_cwd_relative(chosen.group("file"))
+            file_path = pyfltr.paths.normalize_separators(chosen.group("file"))
             results.append(
                 ErrorLocation(file=file_path, line=int(chosen.group("line")), col=None, command="pytest", message=message)
             )
@@ -590,7 +590,7 @@ def parse_pytest(output: str) -> list[ErrorLocation]:
         crash_match = _PYTEST_CRASH_RE.search(block)
         if crash_match is None:
             continue
-        file_path = pyfltr.paths.to_cwd_relative(crash_match.group("file"))
+        file_path = pyfltr.paths.normalize_separators(crash_match.group("file"))
         crashed_test = crash_match.group("test")
         if is_unlisted_child_block(known_tests, after_captured=after_captured, test_name=crashed_test.replace("::", ".")):
             continue

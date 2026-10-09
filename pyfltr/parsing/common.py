@@ -200,7 +200,7 @@ def parse_with_pattern(command: str, output: str, pattern: str) -> list[ErrorLoc
         end_line_num, end_col_num = to_inclusive_end_position(line_num, end_line_num, end_col_num)
         results.append(
             ErrorLocation(
-                file=pyfltr.paths.to_cwd_relative(file_path),
+                file=pyfltr.paths.normalize_separators(file_path),
                 line=line_num,
                 col=col_num,
                 command=command,

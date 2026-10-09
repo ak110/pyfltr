@@ -12,7 +12,6 @@ import pyfltr.command.process
 import pyfltr.command.slow_tests
 import pyfltr.config.config
 import pyfltr.config.model
-import pyfltr.parsing.entry
 import pyfltr.tools
 from pyfltr.command.core_ import CommandResult
 from pyfltr.command.runner import build_invocation_argv
@@ -43,7 +42,7 @@ def execute_vitest(request: pyfltr.command.core_.ExecutionRequest) -> pyfltr.com
     複数のテスト失敗が1つの文字列に結合されてエージェント側で個別解釈できない。
     `--reporter=default --reporter=json --outputFile.json=<tmpfile>` を末尾注入することで、
     利用者向けのデフォルトreporter出力（人間可読のテスト進捗・サマリ）を維持しつつ、
-    Jest互換JSONをtmpfile経由で取得して `pyfltr.parsing.entry.parse_errors`
+    Jest互換JSONをtmpfile経由で取得して `ExecutionRequest.parse_errors`
     に渡せるようにする。
 
     利用者の `vitest-args` または `additional_args` に `--reporter` または `--outputFile`
@@ -115,7 +114,7 @@ def _run_vitest_subprocess(
             # 早期終了）はstdoutベースのフォールバックを使う。
             parse_source = output
 
-    errors = pyfltr.parsing.entry.parse_errors(request.command, parse_source, request.params.command_info.error_pattern)
+    errors = request.parse_errors(parse_source, request.params.command_info.error_pattern)
     slow_tests = pyfltr.command.slow_tests.parse_vitest_durations(
         parse_source, base_cwd=(request.nodeid_base_cwd or request.ctx.effective_cwd)
     )

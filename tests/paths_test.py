@@ -85,3 +85,46 @@ def test_to_cwd_relative_accepts_pathlib_input() -> None:
     """pathlib.Path型の引数を受け付ける。"""
     result = pyfltr.paths.to_cwd_relative(pathlib.Path("pyfltr") / "paths.py")
     assert result == "pyfltr/paths.py"
+
+
+@pytest.mark.parametrize(
+    "path,path_base_parts,expected",
+    [
+        # 子プロジェクトのcwd相対の出力は起点相対へ付け替える
+        ("tests/x_test.py", ("pkg",), "pkg/tests/x_test.py"),
+        # Windows区切りの出力も区切りを`/`へ統一する
+        ("tests\\x_test.py", ("pkg",), "pkg/tests/x_test.py"),
+        # `..`は字句的に畳み込む
+        ("../shared/a.py", ("pkg",), "shared/a.py"),
+        # 基準が起点そのものなら値を変えない
+        ("src/a.py", (), "src/a.py"),
+        # 起点外を指す相対パスは絶対パスで返す（後段で`/`区切りの絶対パスと比較する）
+        ("../../outside.py", ("pkg",), None),
+        # 空文字と擬似名はパスとして扱わない
+        ("", ("pkg",), ""),
+        ("<stdin>", ("pkg",), "<stdin>"),
+    ],
+)
+def test_to_start_relative_rebases_relative_output(
+    tmp_path: pathlib.Path, path: str, path_base_parts: tuple[str, ...], expected: str | None
+) -> None:
+    """ツールの実行cwd相対の出力パスを実行起点相対へ変換する。"""
+    if "\\" in path and pathlib.PurePath("a\\b").name == "a\\b":
+        # POSIXでは`\`をファイル名の一部として扱うため、入力側の区切りを先に統一した値で検証する。
+        path = pyfltr.paths.normalize_separators(path)
+    actual = pyfltr.paths.to_start_relative(path, path_base=tmp_path.joinpath(*path_base_parts), start_cwd=tmp_path)
+    if expected is None:
+        assert actual == pyfltr.paths.normalize_separators(tmp_path.parent / "outside.py")
+    else:
+        assert actual == expected
+
+
+def test_to_start_relative_keeps_absolute_paths_without_double_prefix(tmp_path: pathlib.Path) -> None:
+    """絶対パスの出力は`path_base`と結合せず、起点配下なら起点相対・起点外なら絶対パスで返す。"""
+    inside = tmp_path / "pkg" / "a.md"
+    outside = tmp_path.parent / "external" / "b.md"
+
+    assert pyfltr.paths.to_start_relative(str(inside), path_base=tmp_path / "pkg", start_cwd=tmp_path) == "pkg/a.md"
+    assert pyfltr.paths.to_start_relative(
+        str(outside), path_base=tmp_path / "pkg", start_cwd=tmp_path
+    ) == pyfltr.paths.normalize_separators(outside)

@@ -249,7 +249,7 @@ def _make_attach_retry_command(
     *,
     retry_args_template: list[str],
     launcher_prefix: list[str],
-    original_cwd: str,
+    target_base_cwd: str,
 ) -> typing.Callable[[pyfltr.command.core_.CommandResult], None]:
     """retry_command付与フックを生成する。
 
@@ -262,7 +262,7 @@ def _make_attach_retry_command(
             result,
             retry_args_template=retry_args_template,
             launcher_prefix=launcher_prefix,
-            original_cwd=original_cwd,
+            target_base_cwd=target_base_cwd,
         )
 
     return _hook
@@ -390,7 +390,6 @@ def run_pipeline(
     config: pyfltr.config.model.Config,
     *,
     start_cwd: pathlib.Path | None = None,
-    original_cwd: str | None = None,
     original_sys_args: list[str] | None = None,
     force_text_on_stderr: bool = False,
     jsonl_warnings_reach_consumer: bool = True,
@@ -403,7 +402,6 @@ def run_pipeline(
                 commands,
                 config,
                 start_cwd=start_cwd,
-                original_cwd=original_cwd,
                 original_sys_args=original_sys_args,
                 force_text_on_stderr=force_text_on_stderr,
                 jsonl_warnings_reach_consumer=jsonl_warnings_reach_consumer,
@@ -413,7 +411,6 @@ def run_pipeline(
         commands,
         config,
         start_cwd=start_cwd,
-        original_cwd=original_cwd,
         original_sys_args=original_sys_args,
         force_text_on_stderr=force_text_on_stderr,
         jsonl_warnings_reach_consumer=jsonl_warnings_reach_consumer,
@@ -426,7 +423,6 @@ def _run_pipeline(
     config: pyfltr.config.model.Config,
     *,
     start_cwd: pathlib.Path | None = None,
-    original_cwd: str | None = None,
     original_sys_args: list[str] | None = None,
     force_text_on_stderr: bool = False,
     jsonl_warnings_reach_consumer: bool = True,
@@ -471,7 +467,6 @@ def _run_pipeline(
     if isinstance(prepared, PipelineOutcome):
         return prepared
 
-    effective_cwd = original_cwd if original_cwd is not None else os.getcwd()
     effective_sys_args = list(original_sys_args) if original_sys_args is not None else list(sys.argv[1:])
     launcher_prefix = pyfltr.state.retry.detect_launcher_prefix()
     retry_args_template = pyfltr.state.retry.build_retry_args_template(effective_sys_args)
@@ -482,7 +477,8 @@ def _run_pipeline(
     attach_retry_command = _make_attach_retry_command(
         retry_args_template=retry_args_template,
         launcher_prefix=launcher_prefix,
-        original_cwd=effective_cwd,
+        # 対象ファイルは実行起点相対で保持されるため、起動時のcwdではなく実行起点を基準に絶対化する。
+        target_base_cwd=str(start_cwd_path),
     )
     base_ctx = _prepare_execution_context(config, prepared, start_cwd_path, cache_store, run_id)
     ctx = _prepare_run_output(
@@ -1317,7 +1313,6 @@ def run_impl(
         commands,
         config,
         start_cwd=options.work_dir if options.work_dir is not None else pathlib.Path(original_cwd),
-        original_cwd=original_cwd,
         original_sys_args=options.retry_arguments(),
     )
     return outcome.exit_code

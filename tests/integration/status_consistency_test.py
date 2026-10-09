@@ -117,7 +117,7 @@ def test_status_consumers_are_consistent(
         result,
         retry_args_template=["ci", "--commands", ""],
         launcher_prefix=["pyfltr"],
-        original_cwd=".",
+        target_base_cwd=".",
     )
     sarif = pyfltr.output.sarif.build_sarif(
         [result],
@@ -256,7 +256,7 @@ def test_formatted_result_keeps_no_rerun() -> None:
         result,
         retry_args_template=["ci", "--commands", ""],
         launcher_prefix=["pyfltr"],
-        original_cwd=".",
+        target_base_cwd=".",
     )
 
     assert result.status == "formatted"
@@ -272,7 +272,7 @@ def test_warning_severity_emits_retry_command_without_failing() -> None:
         result,
         retry_args_template=["ci", "--commands", ""],
         launcher_prefix=["pyfltr"],
-        original_cwd=".",
+        target_base_cwd=".",
     )
 
     assert result.status == "warning"
