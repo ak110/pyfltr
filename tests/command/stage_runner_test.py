@@ -7,6 +7,7 @@ import pytest
 import pyfltr.command.core_
 import pyfltr.command.stage_runner
 import pyfltr.config.config
+import pyfltr.diagnostics
 from tests.conftest import StageExecutorControl, make_command_result, make_execution_context
 
 
@@ -170,3 +171,112 @@ def test_run_stages_fail_fast_keeps_completed_follow_up(tmp_path: pathlib.Path, 
 
     assert statuses == {"failing": "failed", "follow-up": "succeeded"}
     assert sorted(executed) == ["failing", "follow-up"]
+
+
+def _run_fix_failure_stages(
+    tmp_path: pathlib.Path,
+    *,
+    fail_fast: bool,
+    normal_returncode: int | None,
+) -> tuple[list[pyfltr.command.core_.CommandResult], list[str], list[str]]:
+    """fix段が失敗するlinterを実行し、最終結果・`on_result`・`archive`へ渡ったコマンド名を返す。"""
+    (tmp_path / "pyproject.toml").write_text(
+        """
+[tool.pyfltr]
+jobs = 1
+
+[tool.pyfltr.custom-commands.fixable]
+type = "linter"
+path = "fixable"
+targets = ["*.txt"]
+fix-args = ["--fix"]
+
+[tool.pyfltr.custom-commands.follow-up]
+type = "linter"
+path = "follow-up"
+targets = ["*.txt"]
+""".lstrip(),
+        encoding="utf-8",
+    )
+    target = tmp_path / "input.txt"
+    target.write_text("x\n", encoding="utf-8")
+    config = pyfltr.config.config.load_config(config_dir=tmp_path)
+
+    def _execute(command: str, fix_stage: bool) -> pyfltr.command.core_.CommandResult:
+        if command == "fixable" and fix_stage:
+            return make_command_result(command, returncode=1, output="fix failed")
+        if command == "fixable":
+            return make_command_result(command, returncode=normal_returncode, output="lint ok")
+        return make_command_result(command, returncode=0)
+
+    notified: list[str] = []
+    archived: list[str] = []
+    results = pyfltr.command.stage_runner.run_stages(
+        ["fixable", "follow-up"],
+        make_execution_context(config, [target], start_cwd=tmp_path).base,
+        _execute,
+        include_fix_stage=True,
+        fail_fast=fail_fast,
+        callbacks=pyfltr.command.stage_runner.StageCallbacks(
+            archive=lambda result: archived.append(f"{result.command}:{result.status}"),
+            on_result=lambda result: notified.append(f"{result.command}:{result.status}"),
+        ),
+    )
+    return results, notified, archived
+
+
+def test_run_stages_keeps_fix_failure_when_normal_stage_succeeds(tmp_path: pathlib.Path) -> None:
+    """fix段の失敗は通常段の成功で消えず、最終結果・通知・保存が同じ1件の失敗になる。"""
+    results, notified, archived = _run_fix_failure_stages(tmp_path, fail_fast=False, normal_returncode=0)
+
+    fixable = [result for result in results if result.command == "fixable"]
+    assert len(fixable) == 1
+    assert fixable[0].status == "failed"
+    assert fixable[0].output == "fix failed\nlint ok"
+    assert notified.count("fixable:failed") == 1
+    assert "fixable:succeeded" not in notified
+    assert archived.count("fixable:failed") == 1
+    assert "fixable:succeeded" not in archived
+
+
+def test_run_stages_fail_fast_records_fix_failure_once(tmp_path: pathlib.Path) -> None:
+    """fail-fastで停止してもfix段の失敗を記録し、同じツールのスキップ結果を重ねない。"""
+    results, notified, archived = _run_fix_failure_stages(tmp_path, fail_fast=True, normal_returncode=0)
+
+    statuses = {result.command: result.status for result in results}
+    assert statuses == {"fixable": "failed", "follow-up": "skipped"}
+    assert [result.command for result in results].count("fixable") == 1
+    assert notified.count("fixable:failed") == 1
+    assert archived.count("fixable:failed") == 1
+
+
+def test_merge_fix_failure_keeps_fix_diagnostics_when_normal_stage_has_none() -> None:
+    """通常段が診断を出力しない（スキップ・診断0件）場合はfix段の診断を最終結果へ残す。
+
+    fail-fastで通常段がスキップされた場合などに、失敗を指すファイルと位置が失われないことを確かめる。
+    """
+    config = pyfltr.config.config.create_default_config()
+    diagnostic = pyfltr.diagnostics.ErrorLocation(file="x.py", line=1, col=None, command="ruff-check", message="F821")
+    fix_result = make_command_result("ruff-check", returncode=1, errors=[diagnostic])
+
+    skipped = pyfltr.command.stage_runner.merge_fix_failure(
+        fix_result, pyfltr.command.stage_runner.make_skipped_result("ruff-check", config)
+    )
+    succeeded = pyfltr.command.stage_runner.merge_fix_failure(fix_result, make_command_result("ruff-check", returncode=0))
+
+    assert skipped.status == "failed"
+    assert skipped.errors == [diagnostic]
+    assert succeeded.status == "failed"
+    assert succeeded.errors == [diagnostic]
+
+
+def test_merge_fix_failure_does_not_duplicate_normal_stage_diagnostics() -> None:
+    """通常段が同じ違反の診断を出力した場合は通常段の診断だけを使い、重複させない。"""
+    diagnostic = pyfltr.diagnostics.ErrorLocation(file="x.py", line=1, col=None, command="ruff-check", message="F821")
+    fix_result = make_command_result("ruff-check", returncode=1, errors=[diagnostic])
+    normal_result = make_command_result("ruff-check", returncode=1, errors=[diagnostic])
+
+    merged = pyfltr.command.stage_runner.merge_fix_failure(fix_result, normal_result)
+
+    assert merged.status == "failed"
+    assert merged.errors == [diagnostic]

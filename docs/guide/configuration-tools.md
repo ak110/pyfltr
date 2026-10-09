@@ -411,6 +411,15 @@ fix段では、pyfltrはtextlintを2段階で実行する（fix適用 → lint�
 `--format` ペアを自動除去するためクラッシュしない。
 `--format` 指定は `textlint-lint-args`（lintモード専用）に書くことを推奨する。
 
+`textlint-args`へ`--cache`を書くと、lint段と後段のlintチェックはtextlintのキャッシュを使う。
+fixステップでは、pyfltrが起動コマンドの末尾へ`--no-cache`を加えてキャッシュを無効化する。
+textlintはキャッシュに一致したファイルを修正しようとすると例外で終了する場合があるためである。
+`command-info textlint`の`fix_commandline`にも同じ引数が現れる。
+
+fixステップが失敗した場合（終了コード1の例外を含む）は、後段のlintチェックが成功しても
+textlintを`failed`として扱い、fixステップの出力を結果へ残す。
+`show-run`やMCPの`show_run_output`でfixステップの出力を確認できる。
+
 ### prettier の 2 段階実行
 
 `prettier`は`--check`（読み取り専用）と`--write`（書き込み）が排他のため、pyfltrは2段階で実行する。

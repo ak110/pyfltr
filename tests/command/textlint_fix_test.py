@@ -322,3 +322,60 @@ def test_textlint_fix_mode_step1_fatal_error_fails(mocker, tmp_path: pathlib.Pat
 
     assert result.status == "failed"
     assert result.failed is True
+
+
+def test_textlint_fix_mode_step1_exit1_with_clean_lint_fails(mocker, tmp_path: pathlib.Path) -> None:
+    """修正段の終了1（例外）は後続lintの終了0で成功へ変換せず、両段の出力を保持する。
+
+    textlintの終了1は予期しない例外も表す。修正段に違反が残れば後続lintも非0になるため、
+    修正1・lint0の組合せは修正処理の失敗であり、成功の誤報を検出する。
+    """
+    target = tmp_path / "sample.md"
+    target.write_text("# title\n")
+
+    def fake_run(cmdline, env, on_output, **_kwargs):
+        del env, on_output  # 引数シグネチャ揃えのため受け取るのみ
+        if "--fix" in cmdline:
+            return subprocess.CompletedProcess(cmdline, returncode=1, stdout="TypeError [ERR_INVALID_ARG_TYPE]")
+        return subprocess.CompletedProcess(cmdline, returncode=0, stdout="[]")
+
+    mocker.patch("pyfltr.command.process.run_subprocess", side_effect=fake_run)
+
+    config = pyfltr.config.config.create_default_config()
+    config.values["textlint"] = True
+    result = pyfltr.command.dispatcher.execute_command(
+        "textlint",
+        _testconf.make_args(),
+        _testconf.make_execution_context(config, [target], fix_stage=True, start_cwd=tmp_path),
+    )
+
+    assert result.status == "failed"
+    assert result.returncode == 1
+    assert "ERR_INVALID_ARG_TYPE" in result.output
+    assert "[]" in result.output
+
+
+def test_textlint_fix_mode_disables_cache_only_in_fix_step(mocker, tmp_path: pathlib.Path) -> None:
+    """利用者の`--cache`指定は通常lint段で保ち、修正段だけ末尾の`--no-cache`で無効化する。"""
+    target = tmp_path / "sample.md"
+    target.write_text("# title\n")
+
+    proc = subprocess.CompletedProcess(["textlint"], returncode=0, stdout="")
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
+
+    config = pyfltr.config.config.create_default_config()
+    config.values["textlint"] = True
+    config.values["textlint-args"] = ["--cache"]
+    pyfltr.command.dispatcher.execute_command(
+        "textlint",
+        _testconf.make_args(),
+        _testconf.make_execution_context(config, [target], fix_stage=True, start_cwd=tmp_path),
+    )
+
+    step1_cmdline = mock_run.call_args_list[0][0][0]
+    step2_cmdline = mock_run.call_args_list[1][0][0]
+    assert step1_cmdline.index("--no-cache") > step1_cmdline.index("--cache")
+    # 対象ファイルの直前（利用者引数の結合後）に置き、後勝ちで適用させる。
+    assert step1_cmdline[-2] == "--no-cache"
+    assert "--cache" in step2_cmdline
+    assert "--no-cache" not in step2_cmdline

@@ -973,7 +973,8 @@ def build_invocation_argv(
     `commandline_prefix` 側（`{command}-path` 由来）の展開は `build_commandline` で済ませている。
 
     textlintのfix段は `execute_textlint_fix` のStep1と同じ規則
-    （`--format` ペアを除去したargs + fix-args、auto_args / 構造化出力引数なし）を適用する。
+    （`--format` ペアを除去したargs + fix-args + additional_args + `--no-cache`、
+    auto_args / 構造化出力引数なし）を適用する。
     実行本体（`_prepare_execution_params` / `execute_textlint_fix`）と
     `command-info` 表示の双方から本ヘルパーへ集約することで、組み立て規則の重複定義を避ける。
     """
@@ -983,6 +984,9 @@ def build_invocation_argv(
     # textlintのfix Step1はfixer-formatterがcompact系をサポートしないため、
     # ユーザー指定の `--format` ペアを一律で除去したうえでfix-argsを結合する特殊経路。
     # auto_args・構造化出力引数も適用しない（fixer出力の解析は本ステップでは行わないため）。
+    # 末尾の`--no-cache`は修正段だけtextlintのキャッシュを無効化する。textlint 15.8.0はキャッシュヒット時に
+    # 修正後の本文を持たない結果を修正処理へ渡して例外終了するため、利用者が通常lint向けに`--cache`を
+    # 設定していても修正段では使わない。後勝ちで適用されるよう利用者引数の結合後に置き、通常段の引数は変えない。
     if fix_stage and command == "textlint":
         fix_args: list[str] = expanduser_args(list(pyfltr.config.model.command_setting(config.values, command, "fix-args", [])))
         return [
@@ -990,6 +994,7 @@ def build_invocation_argv(
             *_strip_format_option(user_args),
             *fix_args,
             *extra,
+            "--no-cache",
         ]
 
     fix_args_value: list[str] | None = None

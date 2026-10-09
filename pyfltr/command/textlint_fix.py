@@ -39,16 +39,22 @@ def execute_textlint_fix(request: pyfltr.command.core_.ExecutionRequest) -> pyfl
 
     Step1: fix適用
         commandline_prefix + （textlint-argsから--formatペアを除去） + fix-args
-        + additional_args + targets
+        + additional_args + `--no-cache` + targets
+        （textlintのキャッシュヒット結果は修正後の本文を持たず修正処理が例外終了するため、
+        修正段だけキャッシュを無効化する。通常lint段は利用者のキャッシュ指定を保つ）
 
     Step2: lintチェック （残存違反を取得）
         commandline_prefix + textlint-args + textlint-lint-args + additional_args + targets
 
     ステータス判定:
-    -いずれかのステップがrc>=2 （致命的エラー） → failed
+    - いずれかのステップがrc>=2 （致命的エラー） → failed
     - Step2 rc != 0 （残存違反あり） → failed （Errorsタブに反映される）
-    - Step2 rc == 0かつStep1で内容ハッシュに変化あり → formatted
-    - Step2 rc == 0かつ変化なし → succeeded
+    - Step1 rc != 0かつStep2 rc == 0 → failed （returncodeはStep1の値）。
+      textlintの終了1は残存違反に加えて予期しない例外も表し、修正段に違反が残れば
+      Step2も非0になるため、この組合せは修正処理の失敗を示す
+    - いずれもrc == 0かつStep1で内容ハッシュに変化あり → formatted
+    - いずれもrc == 0かつ変化なし → succeeded
+    修正段とlint段の出力はいずれも`output`へ保持する。
 
     textlint --fixは残存違反がなくても対象ファイルを書き戻すことがあり、
     mtimeベースの比較では偽陽性になる。このため内容ハッシュ
@@ -90,7 +96,7 @@ def execute_textlint_fix(request: pyfltr.command.core_.ExecutionRequest) -> pyfl
 
     step1_proc = pyfltr.command.process.run_process(dataclasses.replace(request, verbose=False), step1_commandline)
     step1_rc = step1_proc.returncode
-    # rc=0 （違反なし） / rc=1 （違反残存） は通常終了、rc>=2は致命的エラー扱い
+    # rc>=2は致命的エラー扱い。rc=1はStep2の結果と併せて判定する（docstringのステータス判定を参照）
     step1_fatal = step1_rc >= 2
     digests_after_step1 = snapshot_file_digests(request.params.targets, base_cwd=request.ctx.base.start_cwd)
     step1_changed = digests_after_step1 != digests_before
@@ -137,6 +143,10 @@ def execute_textlint_fix(request: pyfltr.command.core_.ExecutionRequest) -> pyfl
     elif step2_rc != 0:
         step_failed = True
         returncode = step2_rc
+        result_command_type = "linter"
+    elif step1_rc != 0:
+        step_failed = True
+        returncode = step1_rc
         result_command_type = "linter"
     elif step1_changed:
         # fix適用済み、残存違反なし → formatted扱いにする

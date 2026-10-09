@@ -320,3 +320,46 @@ def test_mcp_command_models_field_sets() -> None:
         "slow_tests",
         "retry_command",
     }
+
+
+def test_fix_stage_failure_reaches_exit_code_and_archive(
+    tmp_path: pathlib.Path, mocker: typing.Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """修正段の失敗は通常段の成功で消えず、CLIの終了コードとツール単位の保存が失敗を表す。
+
+    修正段が終了1・診断0、通常段が終了0となる外部プロセス境界を与え、
+    利用者がCLIの終了コードと`show-run`の保存内容から修正失敗を認識できることを検証する。
+    """
+    (tmp_path / "pyproject.toml").write_text(
+        """
+[tool.pyfltr]
+jobs = 1
+
+[tool.pyfltr.custom-commands.fixable]
+type = "linter"
+path = "fixable"
+targets = ["*.txt"]
+fix-args = ["--fix"]
+""".lstrip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "input.txt").write_text("x\n", encoding="utf-8")
+    cache_root = tmp_path / "cache"
+    monkeypatch.setenv("PYFLTR_CACHE_DIR", str(cache_root))
+
+    def _run(commandline: list[str], *_args: typing.Any, **_kwargs: typing.Any) -> subprocess.CompletedProcess[str]:
+        if "--fix" in commandline:
+            return subprocess.CompletedProcess(commandline, returncode=1, stdout="fix exception")
+        return subprocess.CompletedProcess(commandline, returncode=0, stdout="lint ok")
+
+    mocker.patch("pyfltr.command.process.run_subprocess", side_effect=_run)
+
+    exit_code = pyfltr.cli.main.run(
+        ["run", "--work-dir", str(tmp_path), "--commands=fixable", "--no-cache", "--no-gitignore", "--output-format=jsonl"]
+    )
+
+    assert exit_code == 1
+    store = pyfltr.state.archive.ArchiveStore(cache_root=cache_root)
+    run_id = store.list_runs(limit=1)[0].run_id
+    assert store.read_tool_meta(run_id, "fixable")["status"] == "failed"
+    assert "fix exception" in store.read_tool_output(run_id, "fixable")

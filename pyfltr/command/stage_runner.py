@@ -76,7 +76,13 @@ def run_stages(
     callbacks: StageCallbacks | None = None,
     results: list[pyfltr.command.core_.CommandResult] | None = None,
 ) -> list[pyfltr.command.core_.CommandResult]:
-    """fix、直列formatter、LPT順の並列lint・testを共通の制御で実行する。"""
+    """fix、直列formatter、LPT順の並列lint・testを共通の制御で実行する。
+
+    fix段の結果は通常段の結果と同じツールの実行であり、成功時は保存だけを行い最終結果へ含めない。
+    fix段が失敗した場合は、同じツールの通常段の結果（成功・スキップを含む）へ失敗と出力を統合した
+    1件を最終結果とし、`collected`・`on_result`・`archive`へ同じ結果を渡す。
+    fail-fastで停止する場合もfix段の失敗結果を記録し、同じツールのスキップ結果を重ねない。
+    """
     hooks = callbacks if callbacks is not None else StageCallbacks()
     collected = results if results is not None else []
     config = base_ctx.config
@@ -92,9 +98,15 @@ def run_stages(
         if hooks.archive is not None and not result.cached:
             hooks.archive(result)
 
+    # fix段で失敗したツールの結果。通常段の結果を記録するときに統合する。
+    fix_failures: dict[str, pyfltr.command.core_.CommandResult] = {}
+
     def record(result: pyfltr.command.core_.CommandResult, stage: str) -> None:
         if hooks.replace_result is not None:
             result = hooks.replace_result(result, stage)
+        fix_failure = fix_failures.pop(result.command, None)
+        if fix_failure is not None:
+            result = merge_fix_failure(fix_failure, result)
         collected.append(result)
         archive(result)
         if hooks.on_result is not None:
@@ -108,16 +120,26 @@ def run_stages(
             if hooks.on_skipped is not None:
                 hooks.on_skipped(command)
 
+    def flush_fix_failures() -> None:
+        # 通常段の対象に含まれないツールのfix段失敗も最終結果へ残す。
+        for command in list(fix_failures):
+            record(make_skipped_result(command, config, reason=""), "skipped")
+
     for command in fixers:
         result = execute(command, True)
-        archive(result)
+        if result.failed:
+            fix_failures[command] = result
+        else:
+            archive(result)
         if hooks.is_interrupted():
             if hooks.on_interrupted is not None:
                 hooks.on_interrupted(command)
             skip([*formatters, *parallel])
+            flush_fix_failures()
             return collected
         if fail_fast and result.failed:
             skip([*formatters, *parallel])
+            flush_fix_failures()
             return collected
 
     for index, command in enumerate(formatters):
@@ -148,4 +170,26 @@ def run_stages(
                     cancel_pending_futures(future_to_command, aborted_commands)
         if aborted_commands:
             skip(list(aborted_commands))
+    flush_fix_failures()
     return collected
+
+
+def merge_fix_failure(
+    fix_result: pyfltr.command.core_.CommandResult,
+    result: pyfltr.command.core_.CommandResult,
+) -> pyfltr.command.core_.CommandResult:
+    """fix段の失敗を同じツールの通常段の結果へ統合する。
+
+    状態と終了コードは`CommandResult.merge`の規則で集約し、fix段の失敗を保持する。
+    再実行コマンドなど通常段で確定した値は通常段の結果から引き継ぐため、通常段を先頭にして集約する。
+    出力は実行順にfix段、通常段の順で連結する。対象件数は同じ対象を2段で数えないよう通常段の値を使う。
+    通常段が診断を出力した場合は通常段の診断だけを使う。fix段の診断は修正後の残存違反であり、通常段の診断と重複するためである。
+    通常段が診断を出力しなかった場合（スキップや診断0件）はfix段の診断を残し、失敗を指すファイルと位置を保持する。
+    """
+    fix_part = dataclasses.replace(fix_result, errors=[]) if result.errors else fix_result
+    merged = pyfltr.command.core_.CommandResult.merge([result, fix_part])
+    return dataclasses.replace(
+        merged,
+        output="\n".join(output for output in (fix_result.output, result.output) if output),
+        files=result.files or fix_result.files,
+    )

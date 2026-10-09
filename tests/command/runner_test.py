@@ -1994,3 +1994,17 @@ def test_build_commandline_direct_js_uses_explicit_cwd(tmp_path: pathlib.Path) -
     resolved = pyfltr.command.runner.build_commandline("textlint", config, cwd=work_dir)
 
     assert resolved.commandline == [str(local_bin)]
+
+
+def test_build_invocation_argv_disables_textlint_cache_only_in_fix_stage() -> None:
+    """textlintの修正段は利用者引数の後ろへ`--no-cache`を置き、通常段は利用者のキャッシュ指定を保つ。"""
+    config = pyfltr.config.config.create_default_config()
+    config.values["textlint-args"] = ["--cache"]
+
+    fix_argv = pyfltr.command.runner.build_invocation_argv("textlint", config, ["textlint"], ["--quiet"], fix_stage=True)
+    lint_argv = pyfltr.command.runner.build_invocation_argv("textlint", config, ["textlint"], [], fix_stage=False)
+
+    assert fix_argv[-1] == "--no-cache"
+    assert fix_argv.index("--cache") < fix_argv.index("--quiet") < fix_argv.index("--no-cache")
+    assert "--cache" in lint_argv
+    assert "--no-cache" not in lint_argv

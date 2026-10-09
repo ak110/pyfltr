@@ -735,6 +735,9 @@ textlint-lint-args = ["--format", "compact"]
 pyfltrはfix段の起動コマンドから`--format`ペアを自動除去するため。
 ただし新規設定では`textlint-lint-args`に書くことを推奨する。
 
+lint段を高速化するために`textlint-args`へ`--cache`を設定してよい。
+pyfltrはfix段の起動コマンドへ`--no-cache`を加えるため、自動修正ではtextlintのキャッシュを使わない。
+
 ## 呼び出し方の使い分け {#calling-style}
 
 状況に応じて`pyfltr`の呼び出し方を以下のいずれかから選ぶ。

@@ -296,8 +296,9 @@ def run_commands_with_cli(
     JSONL stdoutモードでのストリーミング出力に使用する。
 
     `archive_hook`が指定されている場合、各コマンド完了時に実行アーカイブへ書き込む。
-    fixステージの結果はsummaryに含めないが、アーカイブには通常ステージ以外も含めて
-    全実行を保存するためfixステージからも`archive_hook`を呼び出す。
+    成功したfixステージの結果はsummaryに含めず、アーカイブへの保存だけを行う。
+    失敗したfixステージの結果は同じツールの通常ステージの結果へ統合して
+    summary・`on_result`・アーカイブへ渡す（`pyfltr.command.stage_runner.run_stages`を参照）。
 
     `base_ctx`はパイプライン全体で不変のコンテキスト（config・all_files・cache_store・
     cache_run_idを含む）。各コマンド実行前に`ExecutionContext`を組み立てて渡す。
