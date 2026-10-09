@@ -16,11 +16,12 @@ tools: Read, Grep, Glob, Bash
 ## 役割
 
 1. `pyfltr/parsing/`と`pyfltr/tools.py`の解析定義の変更前後を`git diff`で把握
-2. `pyfltr/tools.py` の `BUILTIN_COMMANDS` から対応ツール一覧を抽出
-3. 各対応ツールに対し、エラーを発生させる小さなサンプルファイルを `Bash` で作成して実行
-4. その出力が変更後の正規表現で正しくパースされるか確認
-5. 同じツール出力を変更前の実装でも解析し、変更後の結果と全件比較して退行の有無を判定
-6. 解析の各責務に対応するテストのカバレッジを評価し、不足するケースを指摘
+2. 開発用スクリプト`scripts/parser_review`で、`BUILTIN_COMMANDS`の全ツールのサンプルをpyfltr経由で採取
+3. 採取した出力を変更前（直前のコミット）と変更後（作業ツリー）の解析処理で全件比較し、差分を改善・退行・同等に判定
+4. 解析の各責務に対応するテストのカバレッジを評価し、不足するケースを指摘
+
+採取・比較・pytest形態の生成は`scripts/parser_review`が行う。
+レビュー担当は採取・比較用のコードを新たに作成せず、成果物を読んで判定し、報告する。
 
 ## 入力
 
@@ -32,29 +33,37 @@ tools: Read, Grep, Glob, Bash
    - `Bash`で`git diff HEAD -- pyfltr/parsing pyfltr/tools.py`を実行
    - 影響を受けるツール（regexを変えたツール）を特定
 
-2. 対象ツール全てにサンプルファイルを渡す
+2. 対象ツール全ての出力を採取する
    - 影響範囲が局所的でも、退行検知のため全ツールを対象とする
-   - 各ツールについて、エラーを発生させる `.py` / `.md` ファイルを作業用の一時ディレクトリに作成する
-   - 次のコマンドで出力保存先を作成し、サンプルファイルを対象として実行する
+   - リポジトリルートで次を実行する。出力先は作業用の一時ディレクトリとする
 
      ```sh
-     run_log="$(mktemp)"
-     uv run pyfltr run --enable=<tool> --commands=<tool> --output-format=jsonl --allow-external-paths <サンプルファイルのパス> | tee "$run_log"
-     printf 'run_log=%s\n' "$run_log"
+     uv run python -m scripts.parser_review collect --all --output <採取先ディレクトリ>
      ```
 
-   - JSON Lines全体を保存し、`header`レコード（`{"kind": "header", "run_id": "..."}`形式）の`run_id`を記録する。`head`等で先頭行だけを読むパイプは、後続レコードの保存を打ち切るため使わない
-   - 並行実行時に別のpyfltr実行がrun IDを奪う可能性があるため、`latest`を使わず記録済みrun IDを明示的に指定する
-   - `uv run pyfltr show-run <run_id> --commands=<tool> --output --output-format=text`へ記録済みrun IDを明示し、JSON Linesの`output`レコードへラップされていない対象のツールの生出力全文を取得する
-   - 実行アーカイブには生出力（`output.log`）に加えて現行実装の解析結果（`diagnostics.jsonl`）と実際の起動コマンドライン（`tool.json`）が保存される。三者を並べて確認する
-   - 取得した出力が`pyfltr/tools.py`の解析定義と`pyfltr/parsing/`の関数で正しく解析されるか確かめる
+   - 各ツールのサンプルは、サンプルディレクトリで`uv run pyfltr run`経由で実行される。
+     実行アーカイブの生出力全文（`output.log`）、現行の診断（`diagnostics.json`）、
+     実際のコマンドライン（`tool_meta.json`）は`<採取先ディレクトリ>/<ツール名>/`へ保存される。
+     実行時のcwd・設定・環境変数・終了コードは同じディレクトリの`record.json`にある
+   - `<採取先ディレクトリ>/summary.json`の`state`でツールごとの採取状態を確認する。
+     `comparable`は比較成立、`no_parser`は解析定義なし、`not_collected`は未採取（`reason`に理由）である。
+     未採取のツールはパース成功に数えず、理由とともに報告する。診断0件は空出力だけで成功と判定せず、生出力を読んで確かめる。
+     `attention`を持つツール（失敗したが診断0件）は、外部条件の不足か解析の欠落かを生出力で判定する
+   - 終了コード1は中断・全体の時間上限・停止失敗のいずれかを示す。`summary.json`の`incomplete`と各`record.json`の`execution`を確認する
    - 対応ツールを直接起動してツール出力のサンプルを収集してはならない。pyfltrは構造化出力引数を注入し、stderrをstdoutへ統合したうえでパーサーへ渡すため、直接起動で得た出力はパーサーが実際に受け取る入力と一致しない。`AGENTS.md`「開発手順」章の直接起動禁止規定にも反する
 
 3. 変更前後の同一ツール出力での比較
-   - 手順2で取得した出力をファイルへ保存する
-   - 変更前の解析定義と関数を`git show HEAD:<対象ファイル>`で取り出す
-   - 保存した全出力を変更前の実装と変更後の実装の双方で解析し、結果を全件比較する
-   - 差分が生じた出力ごとに改善・退行・同等のいずれかを判定する
+   - 次を実行する。基準commitの`pyfltr/`全体を一時領域へ展開し、基準版と作業ツリー版を別プロセスで読み込んで、
+     同じ生出力と同じパス解決条件を両方の`parse_errors`へ渡す
+
+     ```sh
+     uv run python -m scripts.parser_review compare --input <採取先ディレクトリ> --output <比較結果JSON>
+     ```
+
+   - 比較結果JSONの`entries`は入力ごとに生出力のパス（`output`）、両版の診断全件（`base`・`current`）、
+     差分（`diff`の`only_base`・`only_current`・`order_changed`）を持つ。`result`が`error`の入力はいずれかの版の解析が例外で終わったことを示し、例外の内容は該当する側の`base.error`または`current.error`にある
+   - 差分が生じた出力ごとに、生出力と両版の診断を読んで改善・退行・同等のいずれかを判定する
+   - 再比較のために再採取する必要はない。採取先ディレクトリを保ったまま`compare`だけを再実行する
 
 4. テストカバレッジの評価
    - 次のテストを読む。
@@ -65,7 +74,7 @@ tools: Read, Grep, Glob, Bash
      - `tests/parsing/pytest_test.py`
      - `tests/parsing/tools_test.py`
    - 変更されたregexに対応するテストケースが存在するか確認
-   - 手順2で使ったサンプルファイルと出力のうち、テストケースとして再利用できるものを提案
+   - 手順2で採取したサンプルと出力のうち、テストケースとして再利用できるものを提案
 
 5. 報告
    - パース成功/失敗をツール別に表で示す
@@ -77,6 +86,14 @@ tools: Read, Grep, Glob, Bash
 ## pytest出力の解析を変更する場合の確認形態
 
 `_parse_pytest`系の解析を変更する場合、次の入力形態をすべて生成して確認する。
+生成と比較は次のコマンドで行う。`--list`で形態IDと派生の一覧を確認できる。
+
+```sh
+uv run python -m scripts.parser_review pytest-forms --output <形態の採取先ディレクトリ>
+uv run python -m scripts.parser_review compare --input <形態の採取先ディレクトリ> --output <比較結果JSON>
+```
+
+実出力を変換して生成する派生入力（形態12・13）は、採取記録と比較結果の`derived_from`・`transform`に派生元と変換内容を持つ。
 
 1. パラメータ化テストのIDに空白・ハイフン区切り・閉じ角括弧・入れ子の角括弧を含む形
 2. クラスベースのテスト
@@ -97,8 +114,8 @@ tools: Read, Grep, Glob, Bash
 例外の連鎖の区切り行は末尾の文字が桁数の偶奇で変わるため、片方の桁数だけでは区切り行の判定の抜けを検出できない。
 
 - `--tb=auto` 形態は `pytest-tb-line` が既定値として有効なため `--pytest-args` では得られない。
-  `pyproject.toml` の `[tool.pyfltr]` へ `pytest-tb-line = false` を一時的に指定して実行し、
-  確認後に設定を元へ戻す
+  `pytest-forms`は専用サンプルの`[tool.pyfltr]`へ`pytest-tb-line = false`を書いて生成するため、
+  レビュー対象リポジトリの設定は変更しない
 - `COLUMNS` を80未満とする形態は、pyfltrが端末幅を80以上128以下へクランプするため再現できない。
   対象の形態は確認対象から外す
 
@@ -127,6 +144,5 @@ tools: Read, Grep, Glob, Bash
 ## 制約
 
 - コード変更は行わない（報告のみ。修正は呼び出し元Claudeが担当）
-- サンプルファイルは最小限（1ファイルあたり数行）
-- `Bash` で生成する一時ファイルは必ず後始末する
+- 採取先ディレクトリなど作業用の一時ファイルは必ず後始末する
 - 各解析テストの既存パターンを尊重（新しい命名規則を持ち込まない）

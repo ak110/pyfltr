@@ -46,18 +46,19 @@ pyfltrは各ツールのバージョン追従が必要なため、差分の確�
      `mcp__plugin_context7_context7__query-docs` を呼ぶ
 
 4. 登録された解析処理の検証
-   - エラーを発生させる最小のサンプルファイルを作業用の一時ディレクトリに作成する
-   - 次のコマンドで出力保存先を作成し、サンプルファイルを対象として実行する
+   - リポジトリルートで次を実行し、対象ツールの出力を採取する。`ALL`指定なら`--tools`の代わりに`--all`を渡す
 
      ```sh
-     run_log="$(mktemp)"
-     uv run pyfltr run --enable=<tool> --commands=<tool> --output-format=jsonl --allow-external-paths <サンプルファイルのパス> | tee "$run_log"
-     printf 'run_log=%s\n' "$run_log"
+     uv run python -m scripts.parser_review collect --tools <tool> --output <採取先ディレクトリ>
      ```
 
-   - JSON Lines全体を保存し、`header`レコード（`{"kind": "header", "run_id": "..."}`形式）の`run_id`を記録する。`head`等で先頭行だけを読むパイプは使わない
-   - `uv run pyfltr show-run <run_id> --commands=<tool> --output --output-format=text`へ記録済みrun IDを明示し、JSON Linesへラップされていない生出力を取得する。`latest`は使わない
-   - 出力が対象`CommandInfo.diagnostic_pattern`、`parser`、`path_resolving_parser`の登録済み解析処理に対応するか比較する
+   - 採取はサンプルディレクトリで`uv run pyfltr run`経由で行われる。採取・比較用のコードを新たに作成しない
+   - 採取の状態は`<採取先ディレクトリ>/summary.json`の`state`で確認する。
+     採取できた場合（`comparable`・`no_parser`）の保存先は`<採取先ディレクトリ>/<tool>/`である。
+     生出力全文（`output.log`）、現行の解析結果（`diagnostics.json`）、実際のコマンドライン（`tool_meta.json`）と実行条件（`record.json`）が保存される
+   - `not_collected`では`output.log`・`diagnostics.json`・`tool_meta.json`は生成されない。状態と理由は`summary.json`と`record.json`にあり、
+     実行段階によってはpyfltrの出力（`run.jsonl`・`run.stderr`）や準備コマンドの出力も残る。`reason`の理由（未導入・外部条件の不足など）を報告へ記す
+   - 生出力と解析結果を比較し、出力が対象`CommandInfo.diagnostic_pattern`、`parser`、`path_resolving_parser`の登録済み解析処理に対応するか確かめる
    - 必須グループ（`file`、`line`、`message`）が正常に取得されるか確認
 
 5. 報告
