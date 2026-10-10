@@ -335,27 +335,6 @@ def test_tester_success_writes_slow_tests(monkeypatch) -> None:
     assert any("1.50s call tests/a.py::test_a" in text for text in log_texts)
 
 
-def test_can_use_ui() -> None:
-    """UIが使用可能かどうかの判定テスト。"""
-    with (
-        unittest.mock.patch("sys.stdin.isatty", return_value=True),
-        unittest.mock.patch("sys.stdout.isatty", return_value=True),
-    ):
-        assert pyfltr.output.ui.can_use_ui() is True
-
-    with (
-        unittest.mock.patch("sys.stdin.isatty", return_value=False),
-        unittest.mock.patch("sys.stdout.isatty", return_value=True),
-    ):
-        assert pyfltr.output.ui.can_use_ui() is False
-
-    with (
-        unittest.mock.patch("sys.stdin.isatty", return_value=True),
-        unittest.mock.patch("sys.stdout.isatty", return_value=False),
-    ):
-        assert pyfltr.output.ui.can_use_ui() is False
-
-
 def test_run_commands_with_ui_failure_guides_no_ui(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     """UIアプリケーションの実行に失敗した場合は、UIを使わずに実行する`--no-ui`を案内して終了する。"""
 

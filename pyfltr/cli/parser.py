@@ -3,6 +3,10 @@
 `build_parser()` / `make_common_parent()` とサブコマンド一覧定数を担う。
 """
 
+# MCPサーバーの実装と依存（mcp SDK）は`mcp`サブコマンドの実行時だけ読み込む。
+# Python 3.15以上で遅延importとなり、それ未満の版では通常のimportとして扱われる（PEP 810）。
+__lazy_modules__ = ["pyfltr.cli.mcp_server"]
+
 import argparse
 import collections.abc
 import dataclasses
@@ -435,6 +439,17 @@ def execute_shell_completion(_parser: argparse.ArgumentParser, args: argparse.Na
     return 0
 
 
+def _register_mcp_subparser(subparsers: typing.Any) -> None:
+    """`mcp`サブパーサーを登録する。
+
+    MCPサーバーの実装を読み込まずにパーサーを構築できるよう、登録だけを本モジュールに置く。
+    """
+    subparsers.add_parser(
+        "mcp",
+        help="MCP サーバーを stdio で起動する。",
+    )
+
+
 @dataclasses.dataclass(frozen=True)
 class Subcommand:
     """名前、引数登録、実行入口とhelp文面の共通定義。"""
@@ -507,7 +522,7 @@ SUBCOMMANDS: tuple[Subcommand, ...] = (
     Subcommand(
         "mcp",
         "  mcp              MCP サーバーを stdio で起動する。\n",
-        register=pyfltr.cli.mcp_server.register_subparsers,
+        register=_register_mcp_subparser,
         execute=lambda _parser, args: pyfltr.cli.mcp_server.execute_mcp(args),
         registration_key="mcp",
     ),

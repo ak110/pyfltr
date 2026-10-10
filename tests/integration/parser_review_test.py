@@ -221,7 +221,9 @@ def test_collect_timeout_is_not_counted_as_success(tmp_path: pathlib.Path) -> No
 @pytest.mark.usefixtures("_disable_faulthandler_timeout")
 def test_collect_total_timeout_marks_incomplete(tmp_path: pathlib.Path) -> None:
     """採取全体の時間上限で打ち切られた実行は、最後の1件でも採取全体を不完全とし終了コード1につながる。"""
-    collector = collect.Collector(output_dir=tmp_path / "collected", timeout=300.0, total_timeout=0.5)
+    # 全体の上限はpyfltrの起動（Pythonインタープリターの起動を含む）より十分短くし、
+    # 起動の高速化で実行が上限内に完了して前提が崩れることを避ける。
+    collector = collect.Collector(output_dir=tmp_path / "collected", timeout=300.0, total_timeout=0.05)
     records = collect.collect(collector, samples.select_samples(["ruff-check"]))
 
     (record,) = records

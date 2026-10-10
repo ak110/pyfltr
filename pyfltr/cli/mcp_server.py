@@ -1058,18 +1058,6 @@ def build_server() -> MCPServer:
 # ---------------------------------------------------------------------------
 
 
-def register_subparsers(subparsers: typing.Any) -> None:
-    """`mcp`サブパーサーを登録する。
-
-    `subparsers`は`ArgumentParser.add_subparsers()`の戻り値
-    （`argparse._SubParsersAction`）を想定する。
-    """
-    subparsers.add_parser(
-        "mcp",
-        help="MCP サーバーを stdio で起動する。",
-    )
-
-
 def execute_mcp(args: argparse.Namespace) -> int:
     """`mcp`サブコマンドの処理本体。
 

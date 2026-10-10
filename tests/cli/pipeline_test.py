@@ -1,6 +1,7 @@
 import json
 import pathlib
 import time
+import unittest.mock
 
 import pyfltr.cli.pipeline
 import pyfltr.config.config
@@ -297,3 +298,24 @@ def test_unmet_commands_warning_emitted_for_explicit_command_with_alias(monkeypa
 
     warning = next(record for record in records if record.get("source") == "commands")
     assert warning["msg"].endswith("uv-audit")
+
+
+def test_can_use_ui() -> None:
+    """UIが使用可能かどうかの判定テスト。"""
+    with (
+        unittest.mock.patch("sys.stdin.isatty", return_value=True),
+        unittest.mock.patch("sys.stdout.isatty", return_value=True),
+    ):
+        assert pyfltr.cli.pipeline.can_use_ui() is True
+
+    with (
+        unittest.mock.patch("sys.stdin.isatty", return_value=False),
+        unittest.mock.patch("sys.stdout.isatty", return_value=True),
+    ):
+        assert pyfltr.cli.pipeline.can_use_ui() is False
+
+    with (
+        unittest.mock.patch("sys.stdin.isatty", return_value=True),
+        unittest.mock.patch("sys.stdout.isatty", return_value=False),
+    ):
+        assert pyfltr.cli.pipeline.can_use_ui() is False

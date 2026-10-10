@@ -32,6 +32,20 @@ from tests.conftest import make_command_result as _make_result
 from tests.conftest import make_execution_context as _make_ctx
 
 
+@pytest.mark.skipif(sys.version_info < (3, 15), reason="`__lazy_modules__`による遅延importはPython 3.15以上で働く")
+def test_startup_does_not_load_mcp_and_textual() -> None:
+    """CLIの起動経路はMCPサーバーとTUIの依存を読み込まない。"""
+    code = (
+        "import sys\n"
+        "import pyfltr.cli.main\n"
+        "pyfltr.cli.parser.build_parser()\n"
+        "loaded = sorted({name.split('.')[0] for name in sys.modules} & {'mcp', 'textual', 'yaml'})\n"
+        "print(','.join(loaded))\n"
+    )
+    proc = subprocess.run([sys.executable, "-c", code], capture_output=True, encoding="utf-8", check=True)
+    assert proc.stdout.strip() == ""
+
+
 def test_cli_command_info_check_modes(capsys: pytest.CaptureFixture[str], mocker) -> None:
     """CLIの`--check`指定だけが実行ファイルを起動して確認する。"""
     run_mock = mocker.patch("subprocess.run", side_effect=AssertionError("確認なしで外部プロセスを起動した"))

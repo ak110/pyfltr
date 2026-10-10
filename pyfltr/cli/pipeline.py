@@ -8,6 +8,10 @@ text整形描画（`render_results` / `write_log`）は`output/render.py`に分�
 
 from __future__ import annotations
 
+# TUI専用のtextualを読み込む`pyfltr.output.ui`は、TUIを使う実行だけで読み込む。
+# Python 3.15以上で遅延importとなり、それ未満の版では通常のimportとして扱われる（PEP 810）。
+__lazy_modules__ = ["pyfltr.output.ui"]
+
 import argparse
 import dataclasses
 import importlib.metadata
@@ -58,6 +62,11 @@ logger = logging.getLogger(__name__)
 text_logger = pyfltr.output.logging_.text_logger
 structured_logger = pyfltr.output.logging_.structured_logger
 lock = pyfltr.output.logging_.text_output_lock
+
+
+def can_use_ui() -> bool:
+    """UIを使用するかどうか判定。"""
+    return sys.stdin.isatty() and sys.stdout.isatty()
 
 
 class PipelineOutcome(typing.NamedTuple):
@@ -647,7 +656,7 @@ def _execute_pipeline_commands(
     only_failed_targets: dict[str, pyfltr.command.only_failed.ToolTargets] | None,
 ) -> tuple[list[pyfltr.command.core_.CommandResult], int, pyfltr.output.formatters.RunOutputContext]:
     """CLI/TUIの実行と結果フックを接続し、heartbeatの生存期間を管理する。"""
-    use_ui = not args.no_ui and (args.ui or pyfltr.output.ui.can_use_ui())
+    use_ui = not args.no_ui and (args.ui or can_use_ui())
     # heartbeat監視の起動。
     # `jsonl`形式のときに限定して起動する。
     # `sarif`・`code-quality`はbufferingformatter（`on_finish`で単一JSONドキュメントを一括出力）のため、

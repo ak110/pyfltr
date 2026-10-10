@@ -19,6 +19,10 @@
 利用者が`changes.json`等を参照する場面で大半はベース名で識別でき、衝突時もハッシュで一意化される。
 """
 
+# ulidは、置換履歴の識別子の採番で初めて使う時に読み込む。
+# Python 3.15以上で遅延importとなり、それ未満の版では通常のimportとして扱われる（PEP 810）。
+__lazy_modules__ = ["ulid"]
+
 import dataclasses
 import hashlib
 import json

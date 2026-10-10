@@ -19,7 +19,6 @@ import pyfltr.cli.command_info
 import pyfltr.cli.command_selection
 import pyfltr.cli.config_subcmd
 import pyfltr.cli.grep_subcmd
-import pyfltr.cli.mcp_server
 import pyfltr.cli.parser
 import pyfltr.cli.pipeline
 import pyfltr.cli.replace_subcmd

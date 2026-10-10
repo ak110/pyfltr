@@ -28,11 +28,6 @@ import pyfltr.tools
 import pyfltr.warnings_
 
 
-def can_use_ui() -> bool:
-    """UIを使用するかどうか判定。"""
-    return sys.stdin.isatty() and sys.stdout.isatty()
-
-
 def _format_errors_tab_label(error_count: int, warning_count: int) -> str:
     """Errors タブのラベル文字列を組み立てる。"""
     if warning_count:
