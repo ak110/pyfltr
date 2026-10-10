@@ -34,8 +34,9 @@ from tests.conftest import make_execution_context as _make_ctx
 
 def test_cli_command_info_check_modes(capsys: pytest.CaptureFixture[str], mocker) -> None:
     """CLIの`--check`指定だけが実行ファイルを起動して確認する。"""
-    with mocker.patch("subprocess.run", side_effect=AssertionError("確認なしで外部プロセスを起動した")):
-        assert pyfltr.cli.main.run(["command-info", "typos", "--output-format=json"]) == 0
+    run_mock = mocker.patch("subprocess.run", side_effect=AssertionError("確認なしで外部プロセスを起動した"))
+    assert pyfltr.cli.main.run(["command-info", "typos", "--output-format=json"]) == 0
+    mocker.stop(run_mock)
     without_check = json.loads(capsys.readouterr().out)
     assert without_check["command"] == "typos"
     assert "check_passed" not in without_check
