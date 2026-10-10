@@ -23,7 +23,7 @@ test:
   image: ghcr.io/astral-sh/uv:python${PYTHON_VERSION}-bookworm
   parallel:
     matrix:
-      # - PYTHON_VERSION: ["3.11", "3.12", "3.13", "3.14"]
+      # - PYTHON_VERSION: ["3.11", "3.12", "3.13", "3.14", "3.15"]
       - PYTHON_VERSION: ["3.13"]
   cache:
     - key: uv-linux-$PYTHON_VERSION

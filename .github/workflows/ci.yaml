@@ -85,7 +85,7 @@ jobs:
         shell: bash
     strategy:
       matrix:
-        python-version: ["3.11", "3.12", "3.13", "3.14"]
+        python-version: ["3.11", "3.12", "3.13", "3.14", "3.15"]
     env:
       UV_PYTHON: ${{ matrix.python-version }}
       # mise等がGitHub APIを呼び出す際のレート制限（403）回避
