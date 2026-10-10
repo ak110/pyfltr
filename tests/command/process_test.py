@@ -572,6 +572,9 @@ def test_timeout_reports_remaining_processes_with_action(
 
     def _wait_procs(procs: typing.Any, timeout: float | None = None) -> tuple[list[typing.Any], list[typing.Any]]:
         del procs, timeout
+        # 停止待ちが親プロセスのEOFより遅れて終わる状況を再現し、
+        # 警告の出力を待たずに戻らないことを確かめる。
+        time.sleep(0.5)
         return [], [_RemainingProcess()]
 
     monkeypatch.setattr(pyfltr.command.process.psutil, "wait_procs", _wait_procs)

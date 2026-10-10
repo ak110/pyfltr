@@ -327,6 +327,11 @@ def run_subprocess(
                 proc.wait()
                 if timeout_fired.is_set():
                     assert timeout is not None
+                    assert timer is not None
+                    # 親プロセスの終了でEOFに達しても、Timerスレッドは子孫の停止待ちと
+                    # 残存プロセスの警告出力を続けている場合がある。
+                    # 停止処理を終えてから戻り、警告が結果の確定後に出るか失われることを防ぐ。
+                    timer.join()
                     raise TimeoutExceededExecution(
                         output="".join(output_lines),
                         elapsed=time.monotonic() - start_monotonic,
