@@ -14,6 +14,8 @@ pyfltr本体の設定（`[tool.pyfltr]`）と、呼び出される各ツール�
     - dev依存に固定する場合は`uv add --dev "pyfltr[python]"`（pip環境では`pip install pyfltr`）を使う
 - `pylint-args`: pylintに追加で渡す引数。`--load-plugins=pylint_pydantic`はpyfltrが自動で追加するため個別指定不要
     - mypyの`--enable-error-code=unused-awaitable`もpyfltrが自動で追加するため、`mypy-args`への個別指定は不要
+    - Python 3.15でpylintを実行する場合は`--jobs=4`を指定しない。
+      並列実行が用いるdill（0.4.1時点）がPython 3.15に対応しておらず、pylintが`co_lnotab`の参照で異常終了する
 - `[tool.pylint."messages control"]`: pylintのdisableリストを`pyproject.toml`に集約することで、
   `.pylintrc`を別途配置する必要がなくなり設定の所在が`pyproject.toml`1ファイルにまとまる
     - ruffの`D`カテゴリが`missing-*-docstring`相当を検出するため、
@@ -797,11 +799,11 @@ jobs:
 
       # 静的解析は基準とする1つの版だけで実行し、他の版はpytestで実行時互換性だけを検証する。
       - name: Run pyfltr（全検査）
-        if: ${{ matrix.python-version == '3.14' }}
+        if: ${{ matrix.python-version == '3.15' }}
         run: pyfltr ci --output-format=github-annotations
 
       - name: Run pyfltr（pytestのみ）
-        if: ${{ matrix.python-version != '3.14' }}
+        if: ${{ matrix.python-version != '3.15' }}
         run: pyfltr ci --commands=pytest --output-format=github-annotations
 ```
 
@@ -934,9 +936,9 @@ jobs:
         with:
           version: latest
       - run: pnpm config set minimum-release-age 1440 --global
-      - if: ${{ matrix.python-version == '3.14' }}
+      - if: ${{ matrix.python-version == '3.15' }}
         run: uvx pyfltr ci --output-format=github-annotations
-      - if: ${{ matrix.python-version != '3.14' }}
+      - if: ${{ matrix.python-version != '3.15' }}
         run: uvx pyfltr ci --commands=pytest --output-format=github-annotations
       - run: uv cache prune --ci
 ```

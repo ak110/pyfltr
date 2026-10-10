@@ -132,7 +132,9 @@ shfmt = true
 hadolint = true
 bandit = true
 colloquial-check = true
-pylint-args = ["--jobs=4"]
+# 推奨ガイドの`pylint-args = ["--jobs=4"]`は指定しない。
+# 全検査の基準版であるPython 3.15では、pylintの並列実行が用いるdill（0.4.1時点）が未対応で、
+# pylintが`co_lnotab`の参照で異常終了するため。dillの対応版の公開後に戻す。
 arid-exclude = ["tests"]
 # tests/smoke_data/ 配下にはツール毎の最小サンプル（GitHub Actionsワークフロー・
 # Dockerfile・shellスクリプト等）を含むため、本リポのpyfltr対象から外す。

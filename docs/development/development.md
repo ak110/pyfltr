@@ -117,9 +117,11 @@ Markdownの除外は、editorconfig-checkerがコードブロック内のタブ�
 いずれも`.editorconfig`が指定する`indent_size`の倍数から外れるが、
 構造を読み取れるように意図した字下げであり、整形の対象でもない。
 
-`.python-version`の値は`pyproject.toml`の`requires-python`の下限に一致させる。
-ローカル開発環境を最小サポート版とし、新しい版でのみ通る記述の混入を開発時点で検出するためである。
-`requires-python`の下限を引き上げる場合は`.python-version`とCIマトリクスの下限も同時に更新する。
+`.python-version`の値はCIで全チェックを担う基準版（対応版のうち最新の版）に一致させる。
+ローカルの`make test`とCIの基準版のジョブが同じ版の静的解析結果を返すようにするためである。
+古い版でのみ失敗する記述の混入は、CIマトリクスが下限の版まで実行するpytestで検出する。
+対応版を追加する場合は`.python-version`とCIマトリクスの基準版も同時に更新する。
+`requires-python`の下限を引き上げる場合はCIマトリクスの下限も同時に更新する。
 
 ## ドキュメントサイト運用
 
