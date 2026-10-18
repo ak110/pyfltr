@@ -1,5 +1,8 @@
 """pnpxで取得するmarkdownlintの依存と配布パッチを所有する。"""
 
+# 取得環境の解決とlockfileの検査で使う依存は、CLIの起動時には読み込まない（PEP 810）。
+__lazy_modules__ = ["platformdirs", "yaml"]
+
 import dataclasses
 import datetime as dt
 import hashlib

@@ -10,6 +10,7 @@ import pyfltr.command.core_
 import pyfltr.command.dispatcher
 import pyfltr.command.env
 import pyfltr.command.glab
+import pyfltr.command.markdownlint_env
 import pyfltr.command.mise
 import pyfltr.command.only_failed
 import pyfltr.command.process
@@ -169,6 +170,33 @@ def test_build_commandline_markdownlint_uses_cli2_binary() -> None:
 
     assert pathlib.PurePath(resolved.executable).stem == "pnpm"
     assert resolved.prefix == ["exec", "markdownlint-cli2"]
+
+
+@pytest.mark.parametrize("allow_side_effects", [False, True])
+def test_build_commandline_markdownlint_pnpx_uses_isolated_environment(
+    mocker, tmp_path: pathlib.Path, allow_side_effects: bool
+) -> None:
+    """pnpxの解決・導入は差し替え、通常表示と実行前準備の境界を確認する。"""
+    environment = pyfltr.command.markdownlint_env.MarkdownlintEnvironment(tmp_path / "cache", {}, tmp_path)
+    resolve = mocker.patch("pyfltr.command.markdownlint_env.resolve_environment", return_value=environment)
+    prepare = mocker.patch("pyfltr.command.markdownlint_env.ensure_environment")
+    config = pyfltr.config.config.create_default_config()
+    config.values["js-runner"] = "pnpx"
+    config.values["command-timeout"] = 17
+
+    resolved = pyfltr.command.runner.build_commandline(
+        "markdownlint", config, allow_side_effects=allow_side_effects, cwd=tmp_path
+    )
+
+    resolve.assert_called_once_with(tmp_path)
+    assert resolved.executable == environment.executable
+    assert pathlib.Path(resolved.executable).stem == "markdownlint-cli2"
+    assert not resolved.prefix
+    assert resolved.effective_runner == "pnpx"
+    if allow_side_effects:
+        prepare.assert_called_once_with(environment, timeout=17.0)
+    else:
+        prepare.assert_not_called()
 
 
 def test_build_commandline_pnpm_prettier() -> None:

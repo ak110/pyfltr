@@ -2,12 +2,26 @@ import os
 import pathlib
 import subprocess
 
+import pytest
+
 import pyfltr.command.dispatcher
+import pyfltr.command.markdownlint_env
 import pyfltr.command.process
 import pyfltr.config.config
 import pyfltr.config.model
 import pyfltr.config.selection
 from tests import conftest as _testconf
+
+
+@pytest.fixture(autouse=True)
+def _isolate_markdownlint_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """fix処理の単体テストでは、取得環境の解決・導入を外部へ接続しない。"""
+    monkeypatch.setattr(
+        pyfltr.command.markdownlint_env,
+        "resolve_environment",
+        lambda cwd: pyfltr.command.markdownlint_env.MarkdownlintEnvironment(tmp_path / "markdownlint-env", {}, cwd),
+    )
+    monkeypatch.setattr(pyfltr.command.markdownlint_env, "ensure_environment", lambda *_args, **_kwargs: None)
 
 
 def test_fix_mode_appends_fix_args_for_linter(mocker, tmp_path: pathlib.Path) -> None:
@@ -28,10 +42,10 @@ def test_fix_mode_appends_fix_args_for_linter(mocker, tmp_path: pathlib.Path) ->
 
     assert mock_run.call_count == 1
     cmdline = mock_run.call_args_list[0][0][0]
-    # 通常args（"markdownlint-cli2"）の後にfix-args（"--fix"）が続く
-    assert "markdownlint-cli2" in cmdline
+    # 解決済み実行ファイルの後にfix-args（"--fix"）が続く。
+    assert pathlib.Path(cmdline[0]).stem == "markdownlint-cli2"
     assert "--fix" in cmdline
-    assert cmdline.index("markdownlint-cli2") < cmdline.index("--fix")
+    assert cmdline.index("--fix") > 0
     # 変更なし + rc=0なのでsucceeded
     assert result.status == "succeeded"
 
