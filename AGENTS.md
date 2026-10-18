@@ -135,7 +135,7 @@ format別のlogger stream/level切替の詳細は[docs/development/architecture.
   一時パスへの差し替えが必要な用途は`ExecutionParams.cache_commandline`と
   `ExecutionParams.file_path_remap`で表現する
   （両フィールドの下流の流れは[docs/development/architecture.md](docs/development/architecture.md)を参照する）
-- 対象ファイル集合のパスを別の出所のパス（診断の`file`、保存済みの記録、外部コマンドの出力など）と照合する処理は、
+- 対象ファイル集合のパスを別の出所のパス（診断の`file`、保存済みの記録、外部コマンドの出力など）と比べる処理は、
   両側を`pyfltr/paths.py`の`to_match_key`で揃えてから比べる。
   対象集合は利用者が渡した起点外の相対パスを保持し、別の出所は異なる基準ディレクトリや正規化を経るため、
   片側だけを正規化済みと前提すると同じ実体を指すパスが一致せず、対象を取りこぼす

@@ -55,12 +55,12 @@ description: >
 
 - pyfltrがユーザー単位の保存先に持つ永続状態（`PYFLTR_CACHE_DIR`配下の実行アーカイブ・結果キャッシュ・置換履歴と、
   `PYFLTR_GLOBAL_CONFIG`のグローバル設定）は、`tests/conftest.py`のautouseフィクスチャ
-  （`_isolate_cache_root`・`_isolate_global_config`）が上書き用の環境変数を試験用一時領域へ固定し、全試験から既定で隔離する。
+  （`_isolate_cache_root`・`_isolate_global_config`）が上書き用の環境変数を試験用一時領域へ固定し、全試験を隔離する。
   試験と、試験から子プロセスとして起動したpyfltrは、試験作成者が隔離を選ばなくても開発者の実環境の状態を読み書きしない。
   隔離が欠けると、試験の実行が開発者の実行アーカイブを自動削除の上限まで埋めて過去の記録を失わせ、
   `--only-failed`が参照する直前runも取り違えさせる
   - ユーザー単位の保存先か上書き用の環境変数を新設する変更では、同じ変更でconftestの既定隔離を加え、
-    新しい保存先の解決関数を`tests/integration/user_state_isolation_test.py`の検査対象へ加える
+    新しい保存先の解決関数を`tests/integration/user_state_isolation_test.py`の対象へ加える
 - pyfltrテストでは`AGENT_INDICATOR_ENVS`のいずれかまたは`PYFLTR_OUTPUT_FORMAT`が
   予期せず設定されているとjsonl既定へ切り替わる。
   `tests/conftest.py`のautouseフィクスチャ`_isolate_output_format_envs`で一律に未設定化する。

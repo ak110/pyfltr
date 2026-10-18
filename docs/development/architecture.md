@@ -282,7 +282,7 @@ pnpmの設定は呼び出し元のcwdで解決し、値を導入プロセスへ�
   基準が子プロジェクト相対のまま残ると、`--only-failed`と`retry_command`が失敗ファイルを選べない
 - 対象ファイル集合（`expand_all_files`の結果）は起点内の`..`を畳み込んだ表現を保持し、起点外を指す相対パスは利用者が渡した表現のまま残す。
   このため対象集合と診断の`file`、Gitの出力などは同じ実体でも表現が異なりうる。
-  `--only-failed`・`retry_command`・`--changed-since`を含め、対象集合のパスを別の出所のパスと照合する処理は、
+  `--only-failed`・`retry_command`・`--changed-since`を含め、対象集合のパスを別の出所のパスと比べる処理は、
   両側を`pyfltr.paths.to_match_key`で揃えてから比べる。`--changed-since`は`git diff --name-only`が返す
   Gitリポジトリroot相対のパスを、`git rev-parse --show-toplevel`のrootで絶対化してからキーへ変換する
 - 診断を起点相対へ揃える前の版が保存したアーカイブは、ツールを問わず子プロジェクト相対の診断を持つ。
