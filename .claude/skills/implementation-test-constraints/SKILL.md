@@ -4,6 +4,7 @@ description: >
   pyfltrのテスト・実装制約の方針。
   tomlkit統一・functools.lru_cacheによる実行内キャッシュ・関数内ローカルimportの制限・
   pyright誤検知回避・monkeypatchによる設定差し替え・エージェント検出変数およびPYFLTR_OUTPUT_FORMATの環境変数隔離・
+  ユーザー単位の永続状態（実行アーカイブ・キャッシュ・置換履歴・グローバル設定）の既定隔離・
   pre-commit hookでのuv runの--frozen指定・テストとモジュールパス参照の同期・
   パス比較の区切り表現などの制約を集約する。
   pyfltr配下のPythonファイル・tests配下のPythonファイル・
@@ -52,6 +53,14 @@ description: >
 
 ## テストの制約
 
+- pyfltrがユーザー単位の保存先に持つ永続状態（`PYFLTR_CACHE_DIR`配下の実行アーカイブ・結果キャッシュ・置換履歴と、
+  `PYFLTR_GLOBAL_CONFIG`のグローバル設定）は、`tests/conftest.py`のautouseフィクスチャ
+  （`_isolate_cache_root`・`_isolate_global_config`）が上書き用の環境変数を試験用一時領域へ固定し、全試験から既定で隔離する。
+  試験と、試験から子プロセスとして起動したpyfltrは、試験作成者が隔離を選ばなくても開発者の実環境の状態を読み書きしない。
+  隔離が欠けると、試験の実行が開発者の実行アーカイブを自動削除の上限まで埋めて過去の記録を失わせ、
+  `--only-failed`が参照する直前runも取り違えさせる
+  - ユーザー単位の保存先か上書き用の環境変数を新設する変更では、同じ変更でconftestの既定隔離を加え、
+    新しい保存先の解決関数を`tests/integration/user_state_isolation_test.py`の検査対象へ加える
 - pyfltrテストでは`AGENT_INDICATOR_ENVS`のいずれかまたは`PYFLTR_OUTPUT_FORMAT`が
   予期せず設定されているとjsonl既定へ切り替わる。
   `tests/conftest.py`のautouseフィクスチャ`_isolate_output_format_envs`で一律に未設定化する。

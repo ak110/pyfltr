@@ -126,6 +126,24 @@ def _isolate_global_config(
     return target
 
 
+@pytest.fixture(autouse=True)
+def _isolate_cache_root(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> pathlib.Path:
+    """`PYFLTR_CACHE_DIR`を試験ごとの専用の一時ディレクトリへ固定するフィクスチャ。
+
+    実行アーカイブ・結果キャッシュ・置換履歴は`PYFLTR_CACHE_DIR`未設定時に開発者の
+    `~/.cache/pyfltr`等へ書かれ、自動削除で開発者自身の記録を失わせる。
+    試験作成者が隔離を選ばなくても全試験（子プロセスとして起動したpyfltrを含む）を隔離する。
+    保存先は`tmp_path`と別のディレクトリにし、`tmp_path`を走査対象として渡す試験へ`runs/`等が混ざらないようにする。
+    保存先を`tmp_path`へ揃える必要がある試験は`_isolated_cache`などで後から上書きする。
+    """
+    cache_root = tmp_path_factory.mktemp("cache_root_isolation")
+    monkeypatch.setenv("PYFLTR_CACHE_DIR", str(cache_root))
+    return cache_root
+
+
 # Rust / .NET 言語ツールの既定値定数。config_test / command_test の両方が
 # cargo-clippy の args / fix-args を参照するため、ここで一元管理する。
 CARGO_CLIPPY_ARGS: list[str] = ["clippy", "--all-targets"]
@@ -284,8 +302,9 @@ def _isolated_cache(
 ) -> pathlib.Path:
     """`PYFLTR_CACHE_DIR`を`tmp_path`に固定するフィクスチャ。
 
-    各テストファイルで`@pytest.fixture(autouse=True)`として再エクスポートするか、
-    conftest から直接参照することで利用できる。
+    全試験の既定の隔離は`_isolate_cache_root`が担う。本フィクスチャは、
+    `seed_archive_run(tmp_path, ...)`で用意した記録をCLIから読む試験など、
+    保存先を`tmp_path`へ揃える必要がある試験だけが要求する。
     """
     monkeypatch.setenv("PYFLTR_CACHE_DIR", str(tmp_path))
     return tmp_path
