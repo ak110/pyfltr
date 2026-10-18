@@ -1,5 +1,5 @@
 import dataclasses
-import datetime
+import datetime as dt
 import json
 import pathlib
 
@@ -300,7 +300,7 @@ def test_cleanup_max_age(tmp_path: pathlib.Path) -> None:
     # meta.jsonのstarted_atを60日前に書き換える
     meta_path = tmp_path / "runs" / run_id / "meta.json"
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
-    past = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=60)
+    past = dt.datetime.now(dt.UTC) - dt.timedelta(days=60)
     meta["started_at"] = past.isoformat()
     meta_path.write_text(json.dumps(meta), encoding="utf-8")
 

@@ -9,7 +9,7 @@ ULID採番ディレクトリを世代数・合計サイズ・保存期間の3軸
 """
 
 import dataclasses
-import datetime
+import datetime as dt
 import json
 import pathlib
 import shutil
@@ -29,10 +29,10 @@ class RetentionPolicy:
 
 def now_iso() -> str:
     """現在時刻をISO 8601（UTC、マイクロ秒付き）で返す。"""
-    return datetime.datetime.now(datetime.UTC).isoformat()
+    return dt.datetime.now(dt.UTC).isoformat()
 
 
-def timestamp_of(entry_dir: pathlib.Path, *, meta_filename: str, timestamp_key: str) -> datetime.datetime | None:
+def timestamp_of(entry_dir: pathlib.Path, *, meta_filename: str, timestamp_key: str) -> dt.datetime | None:
     """世代ディレクトリの`meta_filename`から`timestamp_key`をパースして返す。
 
     `meta.json`が存在しない・破損している・キー未設定・パース不能のいずれの場合も`None`を返す
@@ -49,7 +49,7 @@ def timestamp_of(entry_dir: pathlib.Path, *, meta_filename: str, timestamp_key: 
     if not raw:
         return None
     try:
-        return datetime.datetime.fromisoformat(raw)
+        return dt.datetime.fromisoformat(raw)
     except ValueError:
         return None
 
@@ -91,8 +91,8 @@ def cleanup_generational_directory(
     if not entries:
         return []
     removed: list[str] = []
-    now = datetime.datetime.now(datetime.UTC)
-    age_limit = datetime.timedelta(days=policy.max_age_days) if policy.max_age_days > 0 else None
+    now = dt.datetime.now(dt.UTC)
+    age_limit = dt.timedelta(days=policy.max_age_days) if policy.max_age_days > 0 else None
 
     # 期間超過の削除（最古から）
     if age_limit is not None:

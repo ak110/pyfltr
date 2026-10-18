@@ -34,7 +34,7 @@ serialize/deserializeの辞書構造はarchive.pyの`_error_to_dict`と偶発的
 """
 
 import dataclasses
-import datetime
+import datetime as dt
 import hashlib
 import importlib.metadata
 import json
@@ -168,7 +168,7 @@ class CacheStore:
             return []
         if policy.max_age_hours <= 0:
             return []
-        now = datetime.datetime.now(datetime.UTC).timestamp()
+        now = dt.datetime.now(dt.UTC).timestamp()
         age_limit = policy.max_age_hours * 3600
         removed: list[pathlib.Path] = []
         for entry in self._cache_dir.rglob("*.json"):
