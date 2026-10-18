@@ -985,7 +985,7 @@ async def test_tool_run_returns_guidance_on_failure(tmp_path: pathlib.Path) -> N
     )
 
     assert result.failed == ["always-fail"]
-    assert any("--only-failed" in item for item in result.guidance)
+    assert any("only_failed=True" in item for item in result.guidance)
     assert any(result.run_id is not None and result.run_id in item for item in result.guidance)
 
 
@@ -1106,7 +1106,7 @@ async def test_tool_run_only_failed_no_previous_run(tmp_path: pathlib.Path) -> N
     # 固定文ではなく、直前のrunが無いという実際の理由と次の操作を返す
     assert result.skipped_reason is not None
     assert "直前の run が無い" in result.skipped_reason
-    assert "--only-failed を外して" in result.skipped_reason
+    assert "only_failed=False" in result.skipped_reason
     assert [warning.source for warning in result.warnings] == ["only-failed"]
     # early exitでも完了判定の項目を省略せず、何も実行していない状態を返す
     assert result.completion == "not_reached"
@@ -1126,7 +1126,7 @@ async def test_tool_run_only_failed_unresolved_from_run(tmp_path: pathlib.Path) 
     assert result.run_id is None
     assert result.exit_code == 0
     assert result.skipped_reason is not None
-    assert "--from-run 'ZZZZZZ' を解決できない" in result.skipped_reason
+    assert "from_run 'ZZZZZZ' を解決できない" in result.skipped_reason
     assert "直前の run が無い" not in result.skipped_reason
 
 

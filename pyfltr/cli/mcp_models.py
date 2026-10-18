@@ -173,7 +173,7 @@ class RunWarningModel(pydantic.BaseModel):
 
     source: str = pydantic.Field(description="警告の発生源（config / tool-resolve / only-failed など）。")
     message: str = pydantic.Field(description="警告の本文。原因と、処理を続行した場合はその結果を含む。")
-    hint: str | None = pydantic.Field(default=None, description="次に行う操作。発生源が対処を持つ場合だけ設定される。")
+    hint: str = pydantic.Field(description="次に行う操作。対処が不要な場合は対応不要であることを示す。")
 
 
 class RunResult(pydantic.BaseModel):

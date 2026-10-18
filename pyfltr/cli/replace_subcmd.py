@@ -14,6 +14,7 @@ import typing
 
 import pyfltr.cli.grep_replace_common
 import pyfltr.cli.output_format
+import pyfltr.config.config
 import pyfltr.grep_.history
 import pyfltr.grep_.jsonl_records
 import pyfltr.grep_.matcher
@@ -192,7 +193,7 @@ def _execute_replace(
         parser.error("`-A`/`-B`/`-C` は `--within` と併用してください。")
     # `--within`は行範囲で領域を定めるため、行境界を跨ぐマルチライン検索とは併用不可。
     if args.within is not None and args.multiline:
-        parser.error("`--within` と `-U/--multiline` は併用できません。")
+        parser.error("`--within` と `-U/--multiline` は併用できません。どちらか一方を外してください。")
 
     def emit_header(replace_id: str | None, files_count: int) -> None:
         if output_format == "jsonl":
@@ -217,14 +218,17 @@ def _execute_replace(
     try:
         operation = pyfltr.grep_.operations.execute_replace(request, on_start=emit_header)
     except pyfltr.grep_.operations.TargetConfigError as exc:
-        sys.stderr.write(f"{exc}\n")
+        sys.stderr.write(f"{pyfltr.config.config.format_config_error(exc, retry='`pyfltr replace`')}\n")
         return 1
     except pyfltr.grep_.history.ReplaceFailure as exc:
         message = exc.describe(undo=f"`pyfltr replace --undo {exc.replace_id} --force`")
         sys.stderr.write(f"エラー: {message}\n")
         return 1
     except ValueError as exc:
-        parser.error(str(exc))
+        parser.error(
+            f"{exc}。正規表現の該当位置を修正するか、固定文字列には `-F` を指定してください。"
+            "`--from-grep` の読込失敗時は指定パスと読み取り権限を確認してください。"
+        )
     dry_run = args.dry_run
     replace_id = operation.replace_id
     prepared = operation.prepared
@@ -439,11 +443,14 @@ def _execute_undo(parser: argparse.ArgumentParser, args: argparse.Namespace, out
 
     exit_code = 1 if skipped else 0
     for warning in history_warnings:
-        pyfltr.warnings_.emit_warning(source="replace-undo", message=warning)
+        pyfltr.warnings_.emit_warning(
+            source="replace-undo", message=warning, hint="`git diff`で復元後の内容と改行を確認してください。"
+        )
     if skipped:
         pyfltr.warnings_.emit_warning(
             source="replace-undo",
             message=pyfltr.grep_.history.format_undo_skipped(len(skipped), force="--force"),
+            hint="対象ファイルの変更を確認し、手動変更を上書きしてよい場合に --force を指定して再実行してください。",
         )
 
     if output_format == "jsonl":

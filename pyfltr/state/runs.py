@@ -30,7 +30,9 @@ class RunIdError(Exception):
     """run_id解決に失敗した際の例外。"""
 
 
-def resolve_run_id(store: pyfltr.state.archive.ArchiveStore, raw: str) -> str:
+def resolve_run_id(
+    store: pyfltr.state.archive.ArchiveStore, raw: str, *, list_runs: str = "`pyfltr list-runs`", run: str = "`pyfltr run`"
+) -> str:
     """run_id指定を解決する。
 
     `latest`エイリアス → 完全一致 → 前方一致の順に試す。前方一致が複数
@@ -45,7 +47,7 @@ def resolve_run_id(store: pyfltr.state.archive.ArchiveStore, raw: str) -> str:
     run_ids = [s.run_id for s in store.list_runs()]
     if raw == "latest":
         if not run_ids:
-            raise RunIdError("アーカイブに run が存在しません。`pyfltr run` で実行アーカイブを生成してください")
+            raise RunIdError(f"アーカイブに run が存在しません。{run} で実行アーカイブを生成してください")
         return run_ids[0]
     if raw in run_ids:
         return raw
@@ -59,7 +61,7 @@ def resolve_run_id(store: pyfltr.state.archive.ArchiveStore, raw: str) -> str:
             f"run_id のプレフィックスが曖昧です: {raw!r} に {len(matched)} 件該当 ({sample}{suffix})。"
             "プレフィックスを長くして特定してください"
         )
-    raise RunIdError(f"run_id が見つかりません: {raw!r}。`pyfltr list-runs` で有効な run_id を確認できます")
+    raise RunIdError(f"run_id が見つかりません: {raw!r}。{list_runs} で有効な run_id を確認できます")
 
 
 def collect_tool_summaries(

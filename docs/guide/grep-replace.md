@@ -105,9 +105,9 @@ minifiedファイルやsource mapのような巨大な単一行に一致した�
 text形式はwarningsセクション、jsonl形式は`kind:"warning"`レコードとsummaryの`warnings`件数、
 json形式はpayloadの`warnings`配列とsummaryの`warnings`件数、MCPは戻り値の`warnings`で受け取る。
 
-json形式の`warnings`要素は`source`と`msg`を持ち、対処の手掛かりを伴う警告だけが`hint`を持つ。
+json形式の`warnings`要素は`source`・`msg`・`hint`を持ち、`hint`は次に行う操作（対処が不要な場合はその旨）を示す。
 jsonl形式の`kind:"warning"`レコードから`kind`を除いたキー集合と同じで、summaryの`warnings`はその要素数を示す。
-MCPの`warnings`は文字列の配列で、対処を伴う警告は本文に続けて`対処:`以降に対処を含む。
+MCPの`warnings`は文字列の配列で、各警告は本文に続けて`対処:`以降に次に行う操作を含む。
 
 json形式とjsonl形式のマッチには、切り詰めが発生した場合だけ次のキーが付く。
 

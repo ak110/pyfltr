@@ -62,7 +62,10 @@ def test_build_lines_warnings_prepended(default_config, tool: str):
     """warnings引数の内容がdiagnosticより前にkind="warning"で出力されること。"""
     result = _make_result("ruff-format", returncode=0, command_type="formatter")
     warning_message = f"{tool} 設定ファイル不在"
-    warnings = [{"source": "config", "message": warning_message}, {"source": "git", "message": "git が見つからない"}]
+    warnings = [
+        {"source": "config", "message": warning_message, "hint": "設定を見直してください。"},
+        {"source": "git", "message": "git が見つからない", "hint": "gitを導入してください。"},
+    ]
     lines = pyfltr.output.jsonl.build_lines(
         [result], default_config, exit_code=0, commands=["ruff-format"], files=1, warnings=warnings
     )
@@ -70,8 +73,8 @@ def test_build_lines_warnings_prepended(default_config, tool: str):
 
     assert parsed[0]["kind"] == "header"
     assert [r["kind"] for r in parsed[1:3]] == ["warning", "warning"]
-    assert parsed[1] == {"kind": "warning", "source": "config", "msg": warning_message}
-    assert parsed[2] == {"kind": "warning", "source": "git", "msg": "git が見つからない"}
+    assert parsed[1] == {"kind": "warning", "source": "config", "msg": warning_message, "hint": "設定を見直してください。"}
+    assert parsed[2] == {"kind": "warning", "source": "git", "msg": "git が見つからない", "hint": "gitを導入してください。"}
     # warningsの後にtoolレコード、最後にsummaryが並ぶ
     assert [r["kind"] for r in parsed[3:]] == ["command", "summary"]
     # summaryはwarningレコードの件数を`warnings`として保持する
@@ -90,7 +93,7 @@ def test_build_lines_no_warnings_when_omitted(default_config):
 def test_build_lines_summary_conditional_key_order(default_config):
     """summaryの条件付きキーが`warnings`→`guidance`の順で並ぶこと。"""
     result = _make_result("mypy", returncode=1, errors=[_make_error("mypy", "a.py", 1, "bad")])
-    warnings = [{"source": "config", "message": "設定ファイル不在"}]
+    warnings = [{"source": "config", "message": "設定ファイル不在", "hint": "対応不要です。"}]
     lines = pyfltr.output.jsonl.build_lines([result], default_config, exit_code=1, warnings=warnings)
     summary = json.loads(lines[-1])
 
@@ -806,7 +809,7 @@ def test_write_jsonl_footer_with_warnings(capsys):
     """warning行+summary行がstdoutに出力されること。"""
     _configure_structured_stdout()
     result = _make_result("mypy", returncode=1, errors=[_make_error("mypy", "a.py", 1, "bad")])
-    warnings = [{"source": "config", "message": "test warning"}]
+    warnings = [{"source": "config", "message": "test warning", "hint": "対応不要です。"}]
     pyfltr.output.jsonl.write_jsonl_footer(
         [result],
         exit_code=1,

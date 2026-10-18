@@ -22,6 +22,7 @@ class ConfigRequest:
     use_global: bool = False
     include_defaults: bool = False
     global_option: str = "`--global`"
+    retry_operation: str = "`pyfltr config`"
 
 
 @dataclasses.dataclass
@@ -75,6 +76,7 @@ def execute(request: ConfigRequest) -> ConfigResult:
                         f"{key} はarchive/cache系のキーです。マシン共通設定として"
                         f" {request.global_option.strip('`')} での設定を推奨します（global側があればglobal優先になります）。"
                     ),
+                    hint=f"マシン共通で使う場合は {request.global_option} を指定して同じキーを設定してください。",
                 )
             elif key not in pyfltr.config.model.GLOBAL_PRIORITY_KEYS and request.use_global:
                 pyfltr.warnings_.emit_warning(
@@ -82,6 +84,10 @@ def execute(request: ConfigRequest) -> ConfigResult:
                     message=(
                         f"{key} は通常キーのためproject側のpyproject.tomlが優先されます。"
                         " globalに書いてもproject側に同じキーがあれば上書きされます。"
+                    ),
+                    hint=(
+                        f"project側のpyproject.tomlの `{key}` を確認し、"
+                        "global側の値を使う場合はproject側の同じキーを削除してください。"
                     ),
                 )
             result.error_stage = "write"
@@ -106,7 +112,9 @@ def execute(request: ConfigRequest) -> ConfigResult:
         else:
             raise AssertionError(f"未知のconfig action: {request.action!r}")
     except (ValueError, OSError) as error:
-        result.error = str(error)
+        result.error = pyfltr.config.config.format_config_error(error, retry=request.retry_operation)
+        if isinstance(error, OSError):
+            result.error = f"{error}。対象パス {request.path} の存在と読み書き権限、空き容量を確認して再実行してください"
         result.io_error = isinstance(error, OSError)
     result.warnings = [pyfltr.warnings_.format_warning_text(entry) for entry in pyfltr.warnings_.collected_warnings()]
     return result

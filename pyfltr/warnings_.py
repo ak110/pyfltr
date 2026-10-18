@@ -120,17 +120,19 @@ def mark_delivered(entries: collections.abc.Iterable[dict[str, typing.Any]]) -> 
         _delivery_state.delivered_ids.update(id(entry) for entry in entries)
 
 
-def emit_warning(source: str, message: str, *, exc_info: bool = False, hint: str | None = None) -> None:
+def emit_warning(source: str, message: str, *, hint: str, exc_info: bool = False) -> None:
     """警告を蓄積し、配送保留スコープ外ではstderrへ即時通知する。
 
     `exc_info=True`を指定すると`traceback.format_exc()`の内容を`message`末尾に
     連結して蓄積する（JSONLなどloggerを通さない経路でもスタックトレースを参照できるように）。
 
     `hint`は対象の警告に固有の対処手順（例: 「識別子をバックティックで囲む」）を
-    短く示す文字列。指定時のみ蓄積dictに`hint`キーとして含める。
+    短く示す必須の文字列。対処が不要な警告には「対応不要」を表す操作を渡す。
     `summary.guidance`は失敗時の包括的な案内を担うのに対し、本フィールドは
     個別warning単位のヒントとして分離する。
     """
+    if not hint.strip():
+        raise ValueError("hintには次の操作か「対応不要」を表す空白以外の文字列を指定してください")
     suppression_state = _duplicate_suppression_state.get()
     if suppression_state is not None:
         key = (source, message)
@@ -143,9 +145,7 @@ def emit_warning(source: str, message: str, *, exc_info: bool = False, hint: str
         tb = traceback.format_exc().rstrip()
         if tb and tb != "NoneType: None":
             stored = f"{message}\n{tb}"
-    entry: dict[str, typing.Any] = {"source": source, "message": stored}
-    if hint is not None:
-        entry["hint"] = hint
+    entry: dict[str, typing.Any] = {"source": source, "message": stored, "hint": hint}
     with _delivery_lock:
         _warnings.append(entry)
         if _delivery_state.depth > 0:
@@ -157,15 +157,12 @@ def emit_warning(source: str, message: str, *, exc_info: bool = False, hint: str
 def format_warning_text(entry: dict[str, typing.Any]) -> str:
     """警告1件を人間向けの1つの文字列へ整形する。
 
-    `hint`を持つ警告は本文に続けて対処を示す。テキスト表示のwarnings節・stderr・
+    警告の本文に続けて`hint`の対処を示す。テキスト表示のwarnings節・stderr・
     MCPの`warnings`（文字列の一覧）はいずれも本関数を通し、対処が経路によって欠けないようにする。
     JSONLの`warning`レコードは`hint`を独立したキーで持つため本関数を使わない。
     """
     message = str(entry["message"])
-    hint = entry.get("hint")
-    if not hint:
-        return message
-    return f"{message} 対処: {hint}"
+    return f"{message} 対処: {entry['hint']}"
 
 
 def collected_warnings() -> list[dict[str, typing.Any]]:

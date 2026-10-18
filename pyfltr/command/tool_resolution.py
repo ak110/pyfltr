@@ -114,7 +114,12 @@ def failed_resolution_result(
     通常の実行失敗（`failed`）と区別できるようにする。
     `hint` を指定すると `emit_warning` 経由で利用者向けの追加案内を併記する。
     """
-    pyfltr.warnings_.emit_warning(source="tool-resolve", message=f"{command}: {message}", hint=hint)
+    pyfltr.warnings_.emit_warning(
+        source="tool-resolve",
+        message=f"{command}: {message}",
+        hint=hint
+        or f"`pyfltr command-info {command} --check`（MCPではcommand_infoのcheck=True）で解決設定を確認してください。",
+    )
     return CommandResult.from_run(
         command=command,
         command_info=command_info,

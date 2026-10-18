@@ -47,7 +47,7 @@ jobs:
             echo "Input version is empty; fetching latest pyfltr version from PyPI"
             input_version="$(curl -fsSL "https://pypi.org/pypi/pyfltr/json" | jq -r '.info.version')"
             if [ -z "${input_version}" ] || [ "${input_version}" = "null" ]; then
-              echo "Failed to fetch latest pyfltr version from PyPI" >&2
+              echo "PyPIから最新のpyfltrの版を取得できませんでした。ActionsのRun workflowでversion入力を明示して再実行してください。" >&2
               exit 1
             fi
           fi
@@ -99,7 +99,7 @@ jobs:
             fi
             sleep 10
           done
-          echo "Timeout waiting for PyPI propagation of pyfltr[python]==${version}" >&2
+          echo "PyPIでのpyfltr[python]==${version}の公開反映を待つ時間が上限に達しました。時間をおいてActionsのRe-run jobsで再実行してください。" >&2
           exit 1
 
       # Wait for PyPI propagation を通過しても Docker builder ホストが別エッジを掴んで
@@ -125,7 +125,7 @@ jobs:
       - name: Wait before Docker build retry
         if: steps.docker_build.outcome == 'failure'
         run: |
-          echo "Initial Docker build failed, waiting 30s before retry..."
+          echo "初回のDockerビルドに失敗しました。30秒後に自動で再試行するため対応不要です。"
           sleep 30
 
       - name: Build and push Docker image (retry)

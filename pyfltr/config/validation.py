@@ -267,10 +267,8 @@ def warn_precommit_prek_conflict(config: Config) -> None:
     if config["pre-commit"] and config["prek"]:
         pyfltr.warnings_.emit_warning(
             source="config",
-            message=(
-                "pre-commit と prek が両方有効化されています。"
-                "同一の.pre-commit-config.yamlのフックが二重実行されるため、いずれか一方のみを有効化してください。"
-            ),
+            message=("pre-commit と prek が両方有効化されています。同一の.pre-commit-config.yamlのフックが二重実行されます。"),
+            hint="pyproject.tomlの [tool.pyfltr] で pre-commit または prek のいずれか一方を false にしてください。",
         )
 
 
@@ -370,7 +368,8 @@ def register_custom_command(
             compiled = re.compile(error_pattern)
         except re.error as e:
             _skip_registration(
-                f"カスタムコマンド `{name}` の `error-pattern` が不正な正規表現です: {e}",
+                f"カスタムコマンド `{name}` の `error-pattern` が不正な正規表現です: {e}。"
+                "error-patternの該当位置を修正してください",
             )
             return
         missing_group = next(

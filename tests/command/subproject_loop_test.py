@@ -207,7 +207,7 @@ class TestRunSubprojectLoop:
             command: str, args: pyfltr.run_options.RunOptions, c: pyfltr.command.core_.ExecutionContext
         ) -> pyfltr.command.core_.CommandResult:
             del args, c
-            pyfltr.warnings_.emit_warning(source="dummy", message="同一の警告")
+            pyfltr.warnings_.emit_warning(source="dummy", message="同一の警告", hint="対応不要です。")
             return _testconf.make_succeeded_result(command=command)
 
         pyfltr.command.subproject_loop.run_subproject_loop(

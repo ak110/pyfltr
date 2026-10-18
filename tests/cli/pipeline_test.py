@@ -1,11 +1,34 @@
 import json
+import logging
 import pathlib
 import time
 import unittest.mock
 
+import pytest
+
+import pyfltr.cli.main
 import pyfltr.cli.pipeline
 import pyfltr.config.config
 import pyfltr.run_options
+
+
+def test_run_reports_subproject_toml_error(tmp_path: pathlib.Path, caplog: pytest.LogCaptureFixture) -> None:
+    """不正なサブプロジェクト設定は対象パスと修正操作を表示して終了1になる。"""
+    (tmp_path / "pyproject.toml").write_text(
+        "[tool.pyfltr]\nrespect-gitignore = false\nsubproject-use-gitignore = false\n", encoding="utf-8"
+    )
+    child = tmp_path / "child"
+    child.mkdir()
+    invalid = child / "pyproject.toml"
+    invalid.write_text("[tool.pyfltr\n", encoding="utf-8")
+    target = child / "sample.py"
+    target.write_text("value = 1\n", encoding="utf-8")
+    with caplog.at_level(logging.ERROR):
+        code = pyfltr.cli.main.run(["run", str(target), "--work-dir", str(tmp_path), "--commands=mypy", "--no-cache"])
+    assert code == 1
+    assert str(invalid) in caplog.text
+    assert "該当位置をTOMLの構文に直し" in caplog.text
+    assert "Traceback" not in caplog.text
 
 
 def test_heartbeat_emits_running_for_active_commands() -> None:

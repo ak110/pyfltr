@@ -384,10 +384,18 @@ def _filter_by_gitignore(paths: list[pathlib.Path], *, cwd: pathlib.Path | None 
             cwd=str(cwd_base),
         )
     except FileNotFoundError:
-        pyfltr.warnings_.emit_warning(source="git", message="git が見つからないため respect-gitignore をスキップする")
+        pyfltr.warnings_.emit_warning(
+            source="git",
+            message="git が見つからないため respect-gitignore をスキップする。gitignore対象も検査に含めます",
+            hint="gitを導入して再実行するか、設定の respect-gitignore = false で省略を明示してください。",
+        )
         return paths
     except subprocess.TimeoutExpired:
-        pyfltr.warnings_.emit_warning(source="git", message="git check-ignore がタイムアウトしたためスキップする")
+        pyfltr.warnings_.emit_warning(
+            source="git",
+            message="git check-ignore がタイムアウトしたためスキップする。gitignore対象も検査に含めます",
+            hint="`git check-ignore -v <パス>`で対象の判定が完了することを確認し、再実行してください。",
+        )
         return paths
     if result.returncode not in (0, 1):
         # 0: 1つ以上ignored, 1: 全てnot ignored, 128: fatal error（gitの公開仕様はこの3値）。
@@ -468,12 +476,14 @@ def _get_changed_files(ref: str, *, cwd: pathlib.Path | None = None) -> list[str
         pyfltr.warnings_.emit_warning(
             source="changed-since",
             message=f"git が見つからないため --changed-since={ref!r} をスキップして全体実行します",
+            hint="gitを導入するか、--changed-since（MCPではchanged_since）の指定を外して実行してください。",
         )
         return None
     except subprocess.TimeoutExpired:
         pyfltr.warnings_.emit_warning(
             source="changed-since",
             message=f"git diff --name-only がタイムアウトしたため --changed-since={ref!r} をスキップして全体実行します",
+            hint="`git diff --name-only <ref>`が完了することを確認して再実行してください。全体を検査する場合は対応不要です。",
         )
         return None
     if result.returncode != 0:
@@ -483,6 +493,7 @@ def _get_changed_files(ref: str, *, cwd: pathlib.Path | None = None) -> list[str
         pyfltr.warnings_.emit_warning(
             source="changed-since",
             message=f"--changed-since={ref!r} の ref が解決できないためスキップして全体実行します{detail}",
+            hint="`git rev-parse <ref>`で参照を確認し、--changed-since（MCPではchanged_since）を指定し直してください。",
         )
         return None
     # NUL区切りでパースし、空文字列エントリを除去する。

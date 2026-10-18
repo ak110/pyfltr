@@ -403,6 +403,7 @@ def run_pipeline(
     original_sys_args: list[str] | None = None,
     force_text_on_stderr: bool = False,
     jsonl_warnings_reach_consumer: bool = True,
+    archive_required: bool = False,
 ) -> PipelineOutcome:
     """出力形式に応じた警告配送スコープを設定してパイプラインを実行する。"""
     if (args.output_format or "text") == "jsonl":
@@ -415,6 +416,7 @@ def run_pipeline(
                 original_sys_args=original_sys_args,
                 force_text_on_stderr=force_text_on_stderr,
                 jsonl_warnings_reach_consumer=jsonl_warnings_reach_consumer,
+                archive_required=archive_required,
             )
     return _run_pipeline(
         args,
@@ -424,6 +426,7 @@ def run_pipeline(
         original_sys_args=original_sys_args,
         force_text_on_stderr=force_text_on_stderr,
         jsonl_warnings_reach_consumer=jsonl_warnings_reach_consumer,
+        archive_required=archive_required,
     )
 
 
@@ -436,6 +439,7 @@ def _run_pipeline(
     original_sys_args: list[str] | None = None,
     force_text_on_stderr: bool = False,
     jsonl_warnings_reach_consumer: bool = True,
+    archive_required: bool = False,
 ) -> PipelineOutcome:
     """実行パイプライン。
 
@@ -473,7 +477,9 @@ def _run_pipeline(
         force_text_on_stderr=force_text_on_stderr,
         jsonl_warnings_reach_consumer=jsonl_warnings_reach_consumer,
     )
-    prepared = _prepare_execution_targets(args, commands, config, start_cwd_path, formatter, early_ctx)
+    prepared = _prepare_execution_targets(
+        args, commands, config, start_cwd_path, formatter, early_ctx, archive_required=archive_required
+    )
     if isinstance(prepared, PipelineOutcome):
         return prepared
 
@@ -795,6 +801,8 @@ def _prepare_execution_targets(
     start_cwd_path: pathlib.Path,
     formatter: pyfltr.output.formatters.OutputFormatter,
     early_run_ctx: pyfltr.output.formatters.RunOutputContext,
+    *,
+    archive_required: bool = False,
 ) -> PreparedTargets | PipelineOutcome:
     """対象展開、差分・失敗対象の限定とコマンド選択を行う。"""
     subprojects = pyfltr.command.subprojects.discover_subprojects(start_cwd_path, config)
@@ -836,7 +844,23 @@ def _prepare_execution_targets(
     # `--only-failed`の候補（`pytest-always-targets`）と実行対象コマンドの確定（和集合判定）より前に構築する。
     subproject_configs: dict[pathlib.Path, pyfltr.config.model.Config] = {}
     if subprojects:
-        subproject_configs = pyfltr.cli.subproject_config.resolve_subproject_configs(subprojects, config, args)
+        try:
+            subproject_configs = pyfltr.cli.subproject_config.resolve_subproject_configs(subprojects, config, args)
+        except ValueError as error:
+            if archive_required:
+                # MCPの`run`はサーバーのstderrをクライアントへ届けないため、応答の`warnings`へ原因と操作を収める。
+                pyfltr.warnings_.emit_warning(
+                    source="config",
+                    message=f"サブプロジェクトの設定を読み込めないため、検査を実行しませんでした: {error}",
+                    hint=pyfltr.config.config.config_error_action(error, retry="`run`ツール"),
+                )
+            else:
+                logger.error("設定エラー: %s", pyfltr.config.config.format_config_error(error, retry="元の実行操作"))
+            completion = _evaluate_completion([], args, config, files_reached=0, unmet_commands=[])
+            early_run_ctx = dataclasses.replace(early_run_ctx, completion=completion)
+            formatter.on_start(early_run_ctx)
+            formatter.on_finish(early_run_ctx, [], 1, pyfltr.warnings_.collected_warnings())
+            return PipelineOutcome(1, None, completion)
 
     # --only-failed指定時は直前runからツール別の失敗ファイル集合を構築する。
     # archive / cache初期化より前に実行し、早期終了の場合はそれらの副作用を発生させない。
@@ -846,6 +870,10 @@ def _prepare_execution_targets(
         all_files,
         from_run=getattr(args, "from_run", None),
         extra_candidates=_only_failed_extra_candidates(args, commands, config, subproject_configs, start_cwd_path),
+        only_failed_option="only_failed=True" if archive_required else "--only-failed",
+        from_run_option="from_run" if archive_required else "--from-run",
+        list_runs="`list_runs`ツール" if archive_required else "`pyfltr list-runs`",
+        run="`run`ツール" if archive_required else "`pyfltr run`",
     )
     if only_failed_exit_early:
         # スキップの理由は`apply_filter`が警告として発行済み。JSONLでもheader・warning・summaryを
@@ -1260,7 +1288,7 @@ def run_impl(
 
     # --uiと--no-uiの競合チェック
     if args.ui and args.no_ui:
-        parser.error("--ui と --no-ui は同時に指定できません。")
+        parser.error("--ui と --no-ui は同時に指定できません。どちらか一方を指定してください。")
 
     # --version （実行系サブコマンド下でも許容）
     if args.version:
@@ -1275,7 +1303,7 @@ def run_impl(
     try:
         config = load_run_config(args.work_dir)
     except (ValueError, OSError) as e:
-        logger.error(f"設定エラー: {e}")
+        logger.error(f"設定エラー: {pyfltr.config.config.format_config_error(e, retry='元の実行コマンド')}")
         return 1
 
     args.output_format = output_format

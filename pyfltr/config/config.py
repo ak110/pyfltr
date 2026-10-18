@@ -61,6 +61,33 @@ def format_project_config_missing(path: pathlib.Path, *, use_global: str) -> str
     )
 
 
+def format_config_error(error: Exception, *, retry: str) -> str:
+    """設定エラーへTOMLの修正操作を添える。再実行の操作名は入口が渡す。"""
+    if _is_toml_syntax_error(error):
+        return f"{error}。{config_error_action(error, retry=retry)}"
+    return str(error)
+
+
+def config_error_action(error: Exception, *, retry: str) -> str:
+    """設定エラーに対する次の操作を返す。再実行の操作名は入口が渡す。
+
+    警告の`hint`のように本文と分けて操作を渡す経路で使う。
+    TOML構文エラーでない設定エラーは、本文が受理される値を示すため、値の修正と再実行を案内する。
+    """
+    if _is_toml_syntax_error(error):
+        return f"表示されたファイルの該当位置をTOMLの構文に直し、{retry}を再実行してください"
+    return f"表示された設定値を直し、{retry}を再実行してください"
+
+
+def _is_toml_syntax_error(error: BaseException) -> bool:
+    cause: BaseException | None = error
+    while cause is not None:
+        if isinstance(cause, tomlkit.exceptions.TOMLKitError):
+            return True
+        cause = cause.__cause__
+    return False
+
+
 def read_global_config(path: pathlib.Path) -> dict[str, typing.Any]:
     """globalのconfig.tomlを読み込み、`[tool.pyfltr]`配下を返す。
 
@@ -154,7 +181,11 @@ def make_config_warning_emitter(
         if entry in suppressed_warning_entries:
             return
         warned_entries.add(entry)
-        pyfltr.warnings_.emit_warning(source="config", message=message)
+        pyfltr.warnings_.emit_warning(
+            source="config",
+            message=message,
+            hint=f"設定ファイルの `{key}` を警告に示した形式へ修正するか削除し、再実行してください。",
+        )
 
     return emit
 

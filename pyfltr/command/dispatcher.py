@@ -588,7 +588,10 @@ def _make_disabled_skip_result(command: str, ctx: ExecutionContext) -> CommandRe
         command_info=info,
         commandline=[],
         returncode=None,
-        output="サブプロジェクト設定で無効化されているためスキップしました。",
+        output=(
+            "サブプロジェクト設定で無効化されているためスキップしました。"
+            f"実行する場合は対象のpyproject.tomlで `{command} = true` に設定してください。"
+        ),
         files=0,
         elapsed=0.0,
     )

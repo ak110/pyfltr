@@ -166,7 +166,9 @@ def _kill_process_tree(proc: subprocess.Popen[str], *, timeout: float) -> None:
             remaining_pids = [p.pid for p in still_alive]
             logger.warning(
                 "プロセスツリーの停止を試みましたが終了しないプロセスが残っています: pids=%s。"
-                "必要に応じて表示したPIDのプロセスを停止してください",
+                "表示したPIDをWindowsでは `Get-Process -Id <PID>`、POSIXでは `ps -p <PID> -o pid,args` で確認し、"
+                "この実行のプロセスが残っている場合は `Stop-Process -Id <PID> -Force` または "
+                "`kill -KILL <PID>` で停止してください",
                 remaining_pids,
             )
 
@@ -353,7 +355,10 @@ def run_subprocess(
                     on_subprocess_end()
                 _DEFAULT_REGISTRY.remove(proc)
     except FileNotFoundError as e:
-        message = f"実行ファイルが見つかりません: {commandline[0]} ({e})\n"
+        message = (
+            f"実行ファイルが見つかりません: {commandline[0]} ({e})。PATHと対象ツールの `<command>-path` 設定を確認し、"
+            "実行ファイルを導入するか存在するパスを指定してください。\n"
+        )
         if on_output is not None:
             on_output(message)
         return subprocess.CompletedProcess(
@@ -470,7 +475,8 @@ def run_process_loop(
         if retry_on_oom and attempt < retry_max_attempts and is_oom_returncode(proc.returncode):
             attempt += 1
             logger.warning(
-                "OOM検知のためリトライする。returncode=%s、試行 %d/%d。",
+                "OOM検知のためリトライする。returncode=%s、試行 %d/%d。自動再試行中は対応不要です。"
+                "最終的に失敗した場合はメモリーの空きを確保するか jobs を減らして再実行してください。",
                 proc.returncode,
                 attempt,
                 retry_max_attempts,

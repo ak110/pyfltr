@@ -15,6 +15,7 @@ import typing
 
 import pyfltr.cli.grep_replace_common
 import pyfltr.cli.output_format
+import pyfltr.config.config
 import pyfltr.grep_.adaptive
 import pyfltr.grep_.jsonl_records
 import pyfltr.grep_.matcher
@@ -194,10 +195,10 @@ def _execute_grep(
     try:
         result = pyfltr.grep_.operations.execute_grep(request)
     except pyfltr.grep_.operations.TargetConfigError as exc:
-        sys.stderr.write(f"{exc}\n")
+        sys.stderr.write(f"{pyfltr.config.config.format_config_error(exc, retry='`pyfltr grep`')}\n")
         return 1
     except ValueError as exc:
-        parser.error(str(exc))
+        parser.error(f"{exc}。パターンの該当位置を修正するか、固定文字列の検索には `-F` を指定してください。")
     expanded = result.expanded
     per_file_counts = result.per_file_counts
     total_matches = result.total_matches
@@ -268,11 +269,7 @@ def _execute_grep(
         warning_entries = pyfltr.warnings_.collected_warnings()
         warning_records: list[dict[str, typing.Any]] = []
         for entry in warning_entries:
-            warning_record: dict[str, typing.Any] = {"source": entry["source"], "msg": entry["message"]}
-            hint = entry.get("hint")
-            if hint is not None:
-                warning_record["hint"] = hint
-            warning_records.append(warning_record)
+            warning_records.append({"source": entry["source"], "msg": entry["message"], "hint": entry["hint"]})
         summary: dict[str, typing.Any] = {
             "total_matches": total_matches,
             "files_scanned": files_scanned,
@@ -335,7 +332,7 @@ def _collect_patterns(parser: argparse.ArgumentParser, args: argparse.Namespace)
         try:
             patterns.extend(pyfltr.grep_.matcher.read_pattern_file(args.file))
         except OSError as exc:
-            parser.error(f"パターンファイルを読み込めません: {args.file}: {exc}")
+            parser.error(f"パターンファイルを読み込めません: {args.file}: {exc}。パスと読み取り権限を確認してください。")
     return patterns
 
 

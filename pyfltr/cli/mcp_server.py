@@ -132,7 +132,7 @@ def _raise_mcp_error(msg: str) -> typing.Never:
 def _resolve_run_id_or_raise(store: pyfltr.state.archive.ArchiveStore, raw: str) -> str:
     """`resolve_run_id`の結果を返し、エラー時はMCPエラーへ変換する。"""
     try:
-        return pyfltr.state.runs.resolve_run_id(store, raw)
+        return pyfltr.state.runs.resolve_run_id(store, raw, list_runs="`list_runs`ツール", run="`run`ツール")
     except pyfltr.state.runs.RunIdError as e:
         _raise_mcp_error(str(e))
 
@@ -349,7 +349,9 @@ async def tool_run(
 
         work_dir_path = pathlib.Path(work_dir).expanduser().resolve() if work_dir is not None else None
         if work_dir_path is not None and not work_dir_path.is_dir():
-            _raise_mcp_error(f"work_dir が存在するディレクトリではありません: {work_dir}")
+            _raise_mcp_error(
+                f"work_dir が存在するディレクトリではありません: {work_dir}。存在するディレクトリの絶対パスを指定してください。"
+            )
 
         base = work_dir_path if work_dir_path is not None else pathlib.Path.cwd()
         targets = [path if (path := pathlib.Path(raw)).is_absolute() else base / path for raw in paths]
@@ -403,7 +405,7 @@ async def tool_run(
                 args, archive_required=True, list_commands=pyfltr.cli.command_selection.MCP_LIST_COMMANDS
             )
         except ValueError as exc:
-            _raise_mcp_error(str(exc))
+            _raise_mcp_error(pyfltr.config.config.format_config_error(exc, retry="`run`ツール"))
 
         outcome = pyfltr.cli.pipeline.run_pipeline(
             args,
@@ -413,6 +415,7 @@ async def tool_run(
             original_sys_args=args.retry_arguments(for_mcp=True),
             force_text_on_stderr=True,
             jsonl_warnings_reach_consumer=False,
+            archive_required=True,
         )
 
         exit_code = outcome.exit_code
@@ -466,6 +469,7 @@ async def tool_run(
             run_id=run_id,
             launcher_prefix=None,
             subcommand=mode,
+            for_mcp=True,
         )
         return RunResult(
             run_id=run_id,
@@ -483,7 +487,8 @@ async def tool_run(
 def _build_run_warnings(entries: list[dict[str, typing.Any]]) -> list[RunWarningModel]:
     """蓄積された警告を`RunResult.warnings`の要素へ変換する。"""
     return [
-        RunWarningModel(source=str(entry["source"]), message=str(entry["message"]), hint=entry.get("hint")) for entry in entries
+        RunWarningModel(source=str(entry["source"]), message=str(entry["message"]), hint=str(entry["hint"]))
+        for entry in entries
     ]
 
 
@@ -570,7 +575,10 @@ async def tool_grep(
     if summary_mode is not None and summary_mode not in valid_summary_modes:
         _raise_mcp_error("summary_mode は files_with_matches / count / files_without_match のいずれかを指定してください。")
     if summary_mode == "files_without_match" and max_total is not None and max_total > 0:
-        _raise_mcp_error("summary_mode=files_without_match では max_total に正の値を指定できません。")
+        _raise_mcp_error(
+            "summary_mode=files_without_match では max_total に正の値を指定できません。"
+            "max_totalを省略するか0を指定してください。"
+        )
     request = pyfltr.grep_.operations.GrepRequest(
         patterns=collected,
         summary_only=summary_mode is not None,
@@ -590,8 +598,10 @@ async def tool_grep(
     )
     try:
         operation = pyfltr.grep_.operations.execute_grep(request)
+    except pyfltr.grep_.operations.TargetConfigError as exc:
+        _raise_mcp_error(pyfltr.config.config.format_config_error(exc, retry="`grep`ツール"))
     except ValueError as exc:
-        _raise_mcp_error(str(exc))
+        _raise_mcp_error(f"{exc}。パターンの該当位置を修正するか、固定文字列には fixed_strings=True を指定してください。")
     expanded = operation.expanded
     per_file_counts = operation.per_file_counts
     total_matches = operation.total_matches
@@ -713,7 +723,7 @@ async def tool_replace(
         _raise_mcp_error("before_context / after_context / context は within と併用してください。")
     # `within`は行範囲で領域を定めるためマルチラインとは併用不可。
     if within is not None and multiline:
-        _raise_mcp_error("within と multiline は併用できません。")
+        _raise_mcp_error("within と multiline は併用できません。withinを省略するかmultiline=Falseを指定してください。")
 
     pyfltr.warnings_.clear()
     request = pyfltr.grep_.operations.ReplaceRequest(
@@ -735,8 +745,13 @@ async def tool_replace(
         operation = pyfltr.grep_.operations.execute_replace(request)
     except pyfltr.grep_.history.ReplaceFailure as exc:
         _raise_mcp_error(exc.describe(undo=f"`replace_undo(replace_id={exc.replace_id!r}, force=True)`"))
+    except pyfltr.grep_.operations.TargetConfigError as exc:
+        _raise_mcp_error(pyfltr.config.config.format_config_error(exc, retry="`replace`ツール"))
     except ValueError as exc:
-        _raise_mcp_error(str(exc))
+        _raise_mcp_error(
+            f"{exc}。正規表現の該当位置を修正するか、固定文字列には fixed_strings=True を指定してください。"
+            "from_grepの読込失敗時は指定パスと読み取り権限を確認してください。"
+        )
     replace_id = operation.replace_id
     file_changes = [
         ReplaceFileChangeModel(
@@ -792,6 +807,7 @@ async def tool_replace_undo(replace_id: str, force: bool = False) -> ReplaceUndo
     store = pyfltr.grep_.history.ReplaceHistoryStore()
     try:
         restored, skipped, warnings = store.undo_replace(replace_id, force=force)
+        warnings = [f"{warning}。復元後のファイルを読み直し、内容と改行の差分を確認してください。" for warning in warnings]
     except pyfltr.grep_.history.ReplaceFailure as exc:
         _raise_mcp_error(exc.describe(undo=f"`replace_undo(replace_id={replace_id!r}, force=True)`"))
     except FileNotFoundError:
@@ -876,7 +892,7 @@ async def tool_command_info(command: str, check: bool = False) -> CommandInfoMod
     try:
         config = pyfltr.config.config.load_config()
     except (ValueError, OSError) as exc:
-        _raise_mcp_error(f"設定エラー: {exc}")
+        _raise_mcp_error(f"設定エラー: {pyfltr.config.config.format_config_error(exc, retry='`command_info`ツール')}")
     try:
         pyfltr.cli.command_selection.validate_commands(
             [command], config, list_commands=pyfltr.cli.command_selection.MCP_LIST_COMMANDS
@@ -912,12 +928,12 @@ async def tool_config(
         if key is None:
             _raise_mcp_error(f'action="{action}"では key を指定してください。')
         if value is not None:
-            _raise_mcp_error(f'action="{action}"では value を指定できません。')
+            _raise_mcp_error(f'action="{action}"では value を指定できません。valueを省略して呼び直してください。')
     elif action == "set":
         if key is None or value is None:
             _raise_mcp_error('action="set"では key と value を指定してください。')
     elif key is not None or value is not None:
-        _raise_mcp_error('action="list"では key と value を指定できません。')
+        _raise_mcp_error('action="list"では key と value を指定できません。keyとvalueを省略して呼び直してください。')
     if include_defaults and action != "list":
         _raise_mcp_error('include_defaults は action="list"のときのみ指定できます。')
 
@@ -931,6 +947,7 @@ async def tool_config(
             use_global=use_global,
             include_defaults=include_defaults,
             global_option="`use_global=True`",
+            retry_operation="`config`ツール",
         )
     )
     if result.error is not None:
@@ -1073,7 +1090,9 @@ def execute_mcp(args: argparse.Namespace) -> int:
 
     if _mcpserver is None:
         logger.error(
-            "MCPサーバー機能に必要な依存が解決されていません。pyproject.tomlが宣言する版指定を満たす環境で実行してください: %s",
+            "MCPサーバー機能に必要な依存が解決されていません。"
+            "`uv tool install --reinstall pyfltr` でMCP用の環境を再導入し、"
+            "クライアントのMCPサーバーを再起動してください: %s",
             _MCP_IMPORT_ERROR,
         )
         return 1

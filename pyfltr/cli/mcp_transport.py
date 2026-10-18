@@ -61,7 +61,12 @@ async def _call_worker(name: str, arguments: dict[str, typing.Any]) -> dict[str,
             parts.append(part)
         returncode = await process.wait()
         if returncode != 0:
-            return {"error": f"MCP処理の実行に失敗しました（終了コード {returncode}）。サーバーのstderrを確認してください。"}
+            return {
+                "error": (
+                    f"MCP処理の実行に失敗しました（終了コード {returncode}）。同じ引数で再実行し、"
+                    "再発する場合はツール名・引数・この終了コードをMCPサーバーの管理者へ報告してください。"
+                )
+            }
         return json.loads(b"".join(parts))
     finally:
         # SDKのlevel cancellation中も子孫停止とworker回収を完了してから取り消しを返す。

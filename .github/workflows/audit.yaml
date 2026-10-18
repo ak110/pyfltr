@@ -61,7 +61,7 @@ jobs:
           # 設定読み込み失敗等でuv-auditが無言スキップされた場合はrunが存在しない。
           if ! jq -e '.runs[] | select(.tool.driver.name == "uv-audit")' \
                "${RUNNER_TEMP}/audit.sarif" > /dev/null 2>&1; then
-            echo "::error::uv-audit が実行されませんでした（SARIFにuv-auditのrunが含まれていません）。"
+            echo "::error::uv-audit が実行されませんでした（SARIFにuv-auditのrunが含まれていません）。このステップの前段の設定読込・ツール起動の出力を確認し、原因を修正してActionsのRe-run jobsで再実行してください。"
             exit 1
           fi
           # pyfltrは全失敗をexit 1に正規化するため、終了コードだけでは脆弱性検出と
@@ -71,11 +71,11 @@ jobs:
                  "${RUNNER_TEMP}/audit.sarif" > /dev/null 2>&1; then
               # 脆弱性検出: SARIFをアップロードしCode Scanningに委ねる（次ステップ）。
               # ワークフローは成功扱いとする（Code Scanning側でアラートを管理するため）。
-              echo "脆弱性が検出されました。Code Scanningへアップロードします。"
+              echo "脆弱性が検出されました。Code Scanningへアップロードします。SecurityのCode scanning alertsで対象のアラートを開き、依存を更新してください。"
             else
               # ツール異常: 空のSARIFをアップロードすると既存アラートが誤クローズされるため、
               # アップロードせずワークフローを失敗させる。
-              echo "::error::uv-audit の実行に失敗しました（SARIFに検出結果がありません）。"
+              echo "::error::uv-audit の実行に失敗しました（SARIFに検出結果がありません）。このステップの前段のuv-auditの出力を確認し、原因を修正してActionsのRe-run jobsで再実行してください。"
               exit 1
             fi
           fi

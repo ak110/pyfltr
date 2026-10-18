@@ -72,7 +72,7 @@ jobs:
                 echo "CI passed successfully"
                 exit 0
               fi
-              echo "Error: CI did not succeed (conclusion: ${conclusion})"
+              echo "CIが成功していません（conclusion: ${conclusion}）。CIの指摘を修正して成功を確認し、リリースを再実行してください。"
               exit 1
             fi
 
@@ -81,7 +81,7 @@ jobs:
             elapsed="$((elapsed + wait_interval))"
           done
 
-          echo "Error: Timeout waiting for CI to complete"
+          echo "CIの完了を待つ時間が上限に達しました。CIの成功を確認してリリースを再実行してください。"
           exit 1
 
       - name: Calculate next version
@@ -92,7 +92,7 @@ jobs:
           # 再実行時の冪等性: HEAD を指すリリースタグが既にあれば再利用
           existing_tag="$(git tag --points-at=HEAD | grep -E '^v[0-9]+\.' | head -n1 || true)"
           if [ -n "${existing_tag}" ]; then
-            echo "Found existing tag ${existing_tag} on HEAD, reusing"
+            echo "HEADの既存タグ ${existing_tag} を再利用します。再実行時の処理のため対応不要です。"
             echo "next=${existing_tag}" >> "$GITHUB_OUTPUT"
             echo "version=${existing_tag#v}" >> "$GITHUB_OUTPUT"
             exit 0
@@ -151,7 +151,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           if git rev-parse "${{ steps.next.outputs.next }}" >/dev/null 2>&1; then
-            echo "Tag ${{ steps.next.outputs.next }} already exists, skipping"
+            echo "タグ ${{ steps.next.outputs.next }} は存在するため作成をスキップしました。処理を継続するため対応不要です。"
           else
             git tag "${{ steps.next.outputs.next }}"
             git push origin "${{ steps.next.outputs.next }}"
@@ -181,7 +181,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view "${{ steps.next.outputs.next }}" >/dev/null 2>&1; then
-            echo "Release ${{ steps.next.outputs.next }} already exists, skipping"
+            echo "Release ${{ steps.next.outputs.next }} は存在するため作成をスキップしました。処理を継続するため対応不要です。"
           else
             gh release create "${{ steps.next.outputs.next }}" \
               --title="${{ steps.next.outputs.next }}" --notes-file=CHANGES.md

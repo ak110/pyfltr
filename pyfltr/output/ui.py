@@ -326,11 +326,13 @@ class UIApp(App):
                     pyfltr.warnings_.emit_warning(
                         source="pyfltr",
                         message=f"Ctrl+C により中断しました。中断されたツール: {names}",
+                        hint="中断要求を処理したため対応不要です。検査を完了する場合は再実行してください。",
                     )
                 else:
                     pyfltr.warnings_.emit_warning(
                         source="pyfltr",
                         message="Ctrl+C により中断しました。",
+                        hint="中断要求を処理したため対応不要です。検査を完了する場合は再実行してください。",
                     )
                 # 協調中断の最終段。自身のexitは確実にUIへ伝えたうえで
                 # `_exit_requested`を設定し、以降のworker側`_safe_call_from_thread`を短絡させる。
@@ -502,9 +504,7 @@ class UIApp(App):
             sections.append("warnings:")
             for entry in warnings:
                 sections.append(f"    [{entry['source']}] {entry['message']}")
-                hint = entry.get("hint")
-                if hint is not None:
-                    sections.append(f"        hint: {hint}")
+                sections.append(f"        hint: {entry['hint']}")
         content = "\n".join(sections)
 
         label = _format_errors_tab_label(len(errors), len(warnings))

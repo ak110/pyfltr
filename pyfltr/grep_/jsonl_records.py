@@ -22,16 +22,14 @@ def emit_warning(entry: dict[str, typing.Any]) -> None:
 
     フィールド順は`pyfltr/output/jsonl.py`の`_build_warning_record`と揃え、
     pipeline既存のwarning出力と挙動を一致させる。
-    `entry`は`source`・`message`を必須、`hint`を任意とする。
+    `entry`は`source`・`message`・`hint`を持つ（`hint`は`emit_warning`が必須とする次の操作）。
     """
     record: dict[str, typing.Any] = {
         "kind": "warning",
         "source": entry["source"],
         "msg": entry["message"],
     }
-    hint = entry.get("hint")
-    if hint is not None:
-        record["hint"] = hint
+    record["hint"] = entry["hint"]
     _emit(record)
 
 

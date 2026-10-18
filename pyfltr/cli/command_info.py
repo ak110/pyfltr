@@ -28,6 +28,7 @@ import pyfltr.cli.output_format
 import pyfltr.command.dispatcher
 import pyfltr.command.mise
 import pyfltr.command.runner
+import pyfltr.command.tool_resolution
 import pyfltr.config.config
 import pyfltr.config.model
 import pyfltr.output.auxiliary
@@ -72,7 +73,7 @@ def execute_command_info(parser: argparse.ArgumentParser, args: argparse.Namespa
     try:
         config = pyfltr.config.config.load_config()
     except (ValueError, OSError) as e:
-        sys.stderr.write(f"設定エラー: {e}\n")
+        sys.stderr.write(f"設定エラー: {pyfltr.config.config.format_config_error(e, retry='`pyfltr command-info`')}\n")
         return 1
 
     command: str = args.command
@@ -140,7 +141,13 @@ def collect_info(command: str, config: pyfltr.config.model.Config, *, do_check: 
         resolved = pyfltr.command.runner.build_commandline(command, config, allow_side_effects=do_check)
     except (ValueError, FileNotFoundError) as e:
         base["resolved"] = False
-        base["error"] = str(e)
+        base["error"] = (
+            pyfltr.command.tool_resolution.format_tool_resolution_failure(command, str(e), config)
+            if isinstance(e, FileNotFoundError)
+            else str(e)
+        )
+        if isinstance(e, pyfltr.command.runner.RunnerMismatchError):
+            base["error"] += f"。{e.hint}"
         return base
 
     base["resolved"] = True
@@ -209,6 +216,20 @@ def collect_info(command: str, config: pyfltr.config.model.Config, *, do_check: 
         # 取得成功時のみactive_keysを載せる。失敗時は空であるためノイズになる。
         if active_result.status == "ok":
             mise_info["active_keys"] = sorted(active_result.tools.keys())
+        mise_hints = {
+            "mise-not-found": "miseを導入してPATHへ追加し、再実行してください。",
+            "untrusted-no-side-effects": (
+                "`mise trust`を実行するか、command-infoの --check（MCPではcheck=True）で再確認してください。"
+            ),
+            "trust-failed": "実行起点で `mise trust` を実行し、mise.tomlの読み取り権限を確認して再実行してください。",
+            "exec-error": "実行起点で `mise ls --current --json` を実行し、表示された設定・ツールのエラーを修正してください。",
+            "json-parse-error": "`mise ls --current --json`の出力とmiseの版を確認し、JSONを返すmiseを導入してください。",
+            "unexpected-shape": (
+                "`mise ls --current --json`の出力とmiseの版を確認し、オブジェクト形式を返すmiseを導入してください。"
+            ),
+        }
+        if active_result.status in mise_hints:
+            mise_info["hint"] = mise_hints[active_result.status]
         base["mise_active_tools"] = mise_info
         # `--check`無しかつ未信頼configでフォールバックした場合だけ、trust試行を発動できる旨を案内する。
         # 他のエラー要因では案内せず、ノイズを増やさない。
@@ -225,7 +246,13 @@ def collect_info(command: str, config: pyfltr.config.model.Config, *, do_check: 
             pyfltr.command.runner.ensure_package_manager_version(checked, config, command)
         except (FileNotFoundError, ValueError) as e:
             base["check_passed"] = False
-            base["check_error"] = str(e)
+            base["check_error"] = (
+                pyfltr.command.tool_resolution.format_tool_resolution_failure(command, str(e), config)
+                if isinstance(e, FileNotFoundError)
+                else str(e)
+            )
+            if isinstance(e, pyfltr.command.runner.RunnerMismatchError):
+                base["check_error"] += f"。{e.hint}"
         else:
             base["check_passed"] = True
             # mise不在時のフォールバックなどでcommandlineが変化している可能性がある。
@@ -304,6 +331,8 @@ def _print_text(info: dict[str, typing.Any]) -> None:
         mise_lines.append(f"mise_active_tools.status: {mise_active.get('status')}")
         if mise_active.get("detail"):
             mise_lines.append(f"mise_active_tools.detail: {mise_active['detail']}")
+        if mise_active.get("hint"):
+            mise_lines.append(f"hint: {mise_active['hint']}")
         # 取得成功でキーが空の場合は行ごと省略する（他の任意フィールドの省略慣習と揃えるため）。
         keys = mise_active.get("active_keys")
         if keys:

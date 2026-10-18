@@ -24,7 +24,11 @@ def make_skipped_result(
     渡して出力する。
     """
     command_info = config.commands[command]
-    output = reason if reason is not None else "--fail-fast により実行をスキップしました。"
+    output = (
+        reason
+        if reason is not None
+        else "--fail-fast により実行をスキップしました。先に失敗したコマンドの指摘を修正して再実行してください。"
+    )
     return pyfltr.command.core_.CommandResult(
         command=command,
         command_type=command_info.type,

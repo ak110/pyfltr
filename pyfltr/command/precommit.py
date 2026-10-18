@@ -38,7 +38,7 @@ def execute_pre_commit(request: pyfltr.command.core_.ExecutionRequest) -> pyfltr
             command_info=request.params.command_info,
             commandline=request.params.commandline,
             returncode=None,
-            output=f"pre-commit・prek配下で実行されたため{request.command}統合をスキップしました。",
+            output=f"pre-commit・prek配下で実行されたため{request.command}統合をスキップしました。二重実行を回避したため対応不要です。",
             files=len(request.params.targets),
             elapsed=time.perf_counter() - request.start_time,
         )

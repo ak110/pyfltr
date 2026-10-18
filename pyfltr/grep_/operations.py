@@ -214,6 +214,7 @@ def execute_grep(request: GrepRequest) -> GrepResult:
                 max_chars=preview_limit,
                 full_text_hint=request.full_text_hint,
             ),
+            hint=f"全文を取得する場合は {request.full_text_hint} を指定して再実行してください。",
         )
 
     return GrepResult(expanded, per_file_counts, total_matches, selection)
