@@ -25,7 +25,7 @@ pyfltrは対応ツールを実行方式の観点から5カテゴリに分けて�
   dotnet系（dotnet-format / dotnet-build / dotnet-test）も含む。
   グローバル`bin-runner`設定（既定`"mise"`）に従ってmiseまたはPATH経由でネイティブバイナリを解決する
 - 直接実行（既定`{command}-runner = "direct"`）。
-  対象はtypos・yamllint・pre-commit・prek・依存の脆弱性監査ツール（uv-audit・pnpm-audit・npm-audit・yarn-audit）。
+  対象はtypos・yamllint・pre-commit・prek・colloquial-check・依存の脆弱性監査ツール（uv-audit・pnpm-audit・npm-audit・yarn-audit）。
   PATH上または`{command}-path`で指定した実行ファイルを直接呼び出す。
   監査ツールはパッケージマネージャー（uv・pnpm・npm・yarn）自体を解決し、`audit`サブコマンドを引数で付与する
 
@@ -238,7 +238,7 @@ pyfltr既定の`sqlfluff-args = ["lint", "--format=json"]`は出力パースの�
 
 ## 直接実行ツール
 
-対象はtypos・yamllint・pre-commit・prek・依存の脆弱性監査ツール（uv-audit・pnpm-audit・npm-audit・yarn-audit）。
+対象はtypos・yamllint・pre-commit・prek・colloquial-check・依存の脆弱性監査ツール（uv-audit・pnpm-audit・npm-audit・yarn-audit）。
 `{command}-runner`既定値は`"direct"`で、PATH上または`{command}-path`で指定した実行ファイルをpyfltrが直接呼び出す。
 
 ### typos
@@ -703,7 +703,8 @@ miseモードでは`DOTNET_ROOT`は参照せず、miseが管理する環境に�
 
 ### bin-runner対応ツールの設定
 
-各ツールの既定値はすべて無効。有効化には`pyproject.toml`で切り替える。
+`lychee`の既定値は有効で、ほかのツールは無効。
+有効化には`pyproject.toml`で切り替える。
 
 ```toml
 [tool.pyfltr]
@@ -716,6 +717,7 @@ glab-ci-lint = true
 taplo = true
 hadolint = true
 gitleaks = true
+lychee = true
 cargo-fmt = true
 cargo-clippy = true
 cargo-check = true

@@ -40,6 +40,10 @@ pyfltr grep -F "exact_string" docs/
 - `-A/-B/-C N`: 前後文脈
 - `-m/--max-count N`: ファイル単位の上限
 - `--max-total N`: 全体上限（暴発防止用、pyfltr独自）
+- `-l/--files-with-matches`: 一致したファイル名だけを返す
+- `--files-without-match`: 一致しないファイル名だけを返す
+- `-c/--count`: ファイルごとの一致件数を返す
+- `--count-matches`: `--count`と同等の互換用オプション
 - `--type TYPE`: 言語タイプフィルタ（python/rust/ts/js/md/json/toml/yaml/shell）
 - `-g/--glob PAT`: globフィルタ
 - `--encoding ENC`: ファイル読み込みエンコーディング。UTF-8の復号に失敗した場合はCP932を試す
@@ -48,6 +52,7 @@ pyfltr grep -F "exact_string" docs/
 - `--auto-summary`/`--no-auto-summary`: 結果量に応じた自動省略の有効化・無効化
 - `--no-exclude`/`--no-gitignore`: pyfltr設定の無効化
 - `--output-format text|json|jsonl`: 出力形式
+- `--output-file PATH`: 結果の保存先
 
 ### 出力形式
 
@@ -159,6 +164,8 @@ pyfltr replace --undo <replace_id>
 ### replaceオプション
 
 - grep側と共通: `-F`/`-i`/`-S`/`-w`/`-x`/`-U`/`--type`/`-g`/`--encoding`/`--max-filesize`/`--no-exclude`/`--no-gitignore`
+- `--output-format text|json|jsonl`: 出力形式
+- `--output-file PATH`: 結果の保存先
 - replace固有:
     - `--dry-run`: 書き込みせず差分のみ表示
     - `--show-changes`: 各置換箇所の前後行を表示
@@ -258,7 +265,7 @@ CLIでは既存の警告出力、MCPの`replace_undo`では`warnings`に通知�
   `within`にアンカー正規表現を渡すと、`before_context`/`after_context`で定まる領域内のみ置換する（CLIの`--within`相当）。
   読み込めずにスキップしたファイルは、原因と対処を`warnings`で通知する
 - `replace_undo(replace_id, force=False)`: 取り消し。旧履歴の復元限界と、手動編集によるスキップ（`force=True`での強制復元の案内）は応答の`warnings`で通知する
-- `replace_history(action, replace_id=None)`: `action=list`で履歴一覧、`action=show`で指定履歴の詳細を返す
+- `replace_history(action, replace_id=None, limit=None)`: `action=list`で履歴一覧、`action=show`で指定履歴の詳細を返す
 
 LLMエージェントは`replace`を呼ぶ際、明示的に`dry_run=False`を指定しない限り実書き込みされない。
 `within`なしで`before_context`/`after_context`/`context`を渡した場合と、

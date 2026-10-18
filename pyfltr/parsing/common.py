@@ -1,5 +1,6 @@
 """診断解析の共通処理。"""
 
+import enum
 import json
 import pathlib
 import re
@@ -8,6 +9,23 @@ import typing
 import pyfltr.paths
 import pyfltr.rule_urls
 from pyfltr.diagnostics import ErrorLocation
+
+
+class ErrorPatternGroup(enum.StrEnum):
+    """組み込み・カスタムの正規表現解析で診断へ取り込むグループ名。"""
+
+    FILE = "file"
+    LINE = "line"
+    MESSAGE = "message"
+    COL = "col"
+    END_LINE = "end_line"
+    END_COL = "end_col"
+    RULE = "rule"
+    SEVERITY = "severity"
+
+
+REQUIRED_ERROR_PATTERN_GROUPS = (ErrorPatternGroup.FILE, ErrorPatternGroup.LINE, ErrorPatternGroup.MESSAGE)
+OPTIONAL_ERROR_PATTERN_GROUPS = tuple(group for group in ErrorPatternGroup if group not in REQUIRED_ERROR_PATTERN_GROUPS)
 
 
 def try_json_loads(output: str) -> typing.Any:
@@ -183,20 +201,20 @@ def parse_with_pattern(command: str, output: str, pattern: str) -> list[ErrorLoc
         if match is None:
             continue
         groups = match.groupdict()
-        file_path = groups.get("file", "")
-        line_str = groups.get("line", "0")
-        message = groups.get("message") or ""
+        file_path = groups.get(ErrorPatternGroup.FILE, "")
+        line_str = groups.get(ErrorPatternGroup.LINE, "0")
+        message = groups.get(ErrorPatternGroup.MESSAGE) or ""
         try:
             line_num = int(line_str)
         except ValueError:
             continue
-        col_num = parse_optional_int(groups.get("col"))
-        end_line_num = parse_optional_int(groups.get("end_line"))
-        end_col_num = parse_optional_int(groups.get("end_col"))
-        rule_raw = groups.get("rule")
+        col_num = parse_optional_int(groups.get(ErrorPatternGroup.COL))
+        end_line_num = parse_optional_int(groups.get(ErrorPatternGroup.END_LINE))
+        end_col_num = parse_optional_int(groups.get(ErrorPatternGroup.END_COL))
+        rule_raw = groups.get(ErrorPatternGroup.RULE)
         rule = rule_raw.strip() if isinstance(rule_raw, str) and rule_raw.strip() else None
         rule_url = pyfltr.rule_urls.build_rule_url(command, rule) if rule is not None else None
-        severity = normalize_severity(groups.get("severity"))
+        severity = normalize_severity(groups.get(ErrorPatternGroup.SEVERITY))
         end_line_num, end_col_num = to_inclusive_end_position(line_num, end_line_num, end_col_num)
         results.append(
             ErrorLocation(

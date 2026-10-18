@@ -51,6 +51,7 @@ Python核（`python = true`で通過）
 - `mypy = true`
 - `pylint = true`
 - `pyright = true`
+- `arid = true`
 - `pytest = true`
 - `uv-sort = true`
 
@@ -160,12 +161,12 @@ pyfltr config list --all
 - {command} : 各コマンドの有効/無効
 - {command}-path : 実行するコマンド
 - {command}-args : 追加のコマンドライン引数（lint/fix両モードで常に付与）
-- {command}-lint-args : 非fixモードで付与する引数（既定はtextlintのみ`["--format", "compact"]`）
+- {command}-lint-args : 非fixモードで付与する引数（既定はtextlintとcargo-clippyに定義）
 - {command}-fast : `fast`サブコマンドに含めるか否か（後述）
 - pytest-fast-targets : fast実行時だけpytestの対象を置き換えるglob（既定: 空。[後述](#pytest-fast-targets)）
 - pytest-always-targets : すべての実行でpytestの対象へ加えるglob（既定: 空。[後述](#pytest-always-targets)）
 - {command}-fix-args : fix段で`{command}-args`の後に追加する引数
- （既定値はtextlint / markdownlint / ruff-check / eslint / biomeのみ定義）
+ （既定値はtextlint / markdownlint / ruff-check / eslint / biome / cargo-clippyに定義）
 - {command}-targets : 対象ファイルパターンの完全上書き
 - {command}-extend-targets : 対象ファイルパターンへの追加
 - {command}-exclude : ツール別の追加除外パターン（後述）
@@ -176,6 +177,7 @@ pyfltr config list --all
 - python-runner : `{command}-runner = "python-runner"`の解決先（`"uv"` / `"uvx"` / `"direct"`、既定: `"uv"`）
 - js-runner : `{command}-runner = "js-runner"`の解決先（`"pnpx"` / `"pnpm"` / `"npm"` / `"npx"` / `"yarn"` / `"direct"`、既定: `"pnpx"`）
 - bin-runner : `{command}-runner = "bin-runner"`の解決先（`"mise"` / `"direct"`、既定: `"mise"`）
+- mise-auto-trust : miseの未信頼configを自動的に信頼するか（既定: `true`。[ツール別設定](configuration-tools.md)を参照）
 - {command}-version : bin-runner対応ツールのバージョン指定（既定: `"latest"`）
 - pylint-pydantic : pylint実行時に`--load-plugins=pylint_pydantic`を自動追加するか（既定: `true`、後述）
 - mypy-unused-awaitable : mypy実行時に`--enable-error-code=unused-awaitable`を自動追加するか（既定: `true`、後述）
@@ -189,6 +191,7 @@ pyfltr config list --all
 - retry-max-attempts : OOM検知時の最大リトライ回数（既定: `1`。`0`でリトライ無効。後述）
 - exclude : 除外するファイル名/ディレクトリ名パターン（既定値あり。ロックファイル・minify済みファイル・source mapも含む）
 - extend-exclude : 追加で除外するファイル名/ディレクトリ名パターン（既定は空）
+- exclude-fence-under : Markdownの指定H2見出し配下でフェンス内側行を事前チェックから除く（既定は空。[CLIコマンド](usage.md#exclude-fence-under)を参照）
 - respect-gitignore : `.gitignore`に記載されたファイルを除外するか否か（既定: `true`）。
   gitのルートおよびネストした`.gitignore`、グローバルgitignore、`.git/info/exclude`を全て考慮する。`git`コマンドが必要
 - pre-commit-auto-skip : `.pre-commit-config.yaml`からpyfltr関連hookを自動検出してSKIP環境変数に追加するか（既定: `true`）
@@ -353,6 +356,8 @@ lychee-extend-args = ["--exclude=github\\.com/owner/repo/actions"]
 - `tsc`
 - `cargo-fmt` / `cargo-clippy` / `cargo-check` / `cargo-test` / `cargo-deny`
 - `dotnet-format` / `dotnet-build` / `dotnet-test`
+- `gitleaks`
+- `uv-audit` / `pnpm-audit` / `npm-audit` / `yarn-audit`
 
 pre-commit・prekの呼出しとhookのファイル選定は[CLIコマンドの統合説明](usage.md#precommit-integration)を参照。
 

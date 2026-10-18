@@ -7,8 +7,9 @@ pyfltrは並列実行・fixステージ・severity・hints・JSON Lines出力を
 
 導入手順は[はじめに](getting-started.md)を参照。
 
-`error-pattern`は名前付きグループ`file` / `line` / `message`が必須、`col`は任意。
-正規表現にこれらが含まれない場合は設定エラーとなる。
+`error-pattern`は名前付きグループ`file` / `line` / `message`が必須。
+任意のグループは`col` / `end_line` / `end_col` / `rule` / `severity`である。
+必須グループが欠ける正規表現は設定エラーとなる。
 
 ## カスタムコマンドの仕様
 
@@ -35,8 +36,8 @@ fast = true
   `args`既定値を保ったまま要素を足したい場合に使う
 - `targets`: 対象ファイルパターン（省略時は`"*.py"`）
 - `error-pattern`: エラーパース用正規表現（省略可）
-    - `file`と`line`と`message`の名前付きグループが必須
-    - `col`は任意
+    - 必須の名前付きグループは`file` / `line` / `message`で、診断の同名項目へ格納する
+    - 任意の名前付きグループは次の表を参照
     - 指定するとErrorsタブやエラー一覧に表示される
 - `fast`: `fast`サブコマンドに含めるか否か（省略時は`false`）
 - `fix-args`: fix段で`args`の後ろへ追加する引数（省略時はfix段の対象外）
@@ -51,6 +52,16 @@ fast = true
   詳細は[severityによる失敗の警告化](configuration.md#severity)を参照
 - `hints`: LLM向けの追加文言（文字列の配列、省略時は空）。
   詳細は[hintsによるLLM向け補足](configuration.md#hints)を参照
+
+`error-pattern`の任意グループは、診断の同名項目へ格納する。
+
+| グループ | 診断に格納する値 |
+| --- | --- |
+| `col` | 開始列（1起点。`line`も1起点） |
+| `end_line` | 範囲の最終行（その行を含む）。終了列が次行の先頭を指す場合は直前の行へ補正する |
+| `end_col` | 終了列（1起点・終端排他。範囲の最後の文字の次の列）。終了行を補正した場合は省略する |
+| `rule` | ルール名。カスタムコマンドではルールのURLは付かない |
+| `severity` | `error` / `warning` / `info`へ正規化した重要度。解釈できない値は省略する |
 
 ビルトインコマンド（mypy等）は自動的にエラーパースされる。
 カスタムコマンドに対しても`--{name}-args`やenable/disableを使用できる。

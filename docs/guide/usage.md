@@ -48,7 +48,7 @@ Formattersによるファイル変更があっても終了コードは0になる
 
 - Formatters: `prettier` `ruff-format` `uv-sort` `shfmt` `taplo` `cargo-fmt` `dotnet-format`
 - Linters（言語非依存）: `ec` `shellcheck` `typos` `actionlint` `pinact` `yamllint` `hadolint` `colloquial-check`
-- Linters（言語・記法別）: `ruff-check` `ty` `markdownlint` `textlint` `biome` `oxlint` `cargo-clippy`
+- Linters（言語・記法別）: `ruff-check` `ty` `arid` `markdownlint` `textlint` `biome` `oxlint` `cargo-clippy`
 - その他: `pre-commit`・`prek`（`.pre-commit-config.yaml`のhookを統合実行）
 
 含まれるコマンドは各コマンドの`{command}-fast`設定で制御できる（[設定](configuration.md)を参照）。
@@ -334,7 +334,7 @@ pyfltr command-info <tool> [--output-format text|json|jsonl] [--check]
 `pyproject.toml`の`{command}-runner`設定や`python-runner` / `js-runner` / `bin-runner`の影響を
 実環境で確認する場合に使う。
 
-出力はセクション見出し（`## 実行コマンド` / `## ランナー解決` / `## mise診断` / `## 設定` / `## 環境変数`）
+出力はセクション見出し（`## 実行コマンド` / `## ランナー解決` / `## mise診断` / `## uv診断` / `## 設定` / `## 環境変数`）
 で関連項目をまとめる。
 情報が無いセクションは省略される。
 
@@ -455,17 +455,17 @@ pyfltr generate-shell-completion powershell | Out-String | Invoke-Expression
 起点cwd（`--work-dir`適用後の作業ディレクトリ）配下にない絶対パスを「外部パス」と呼ぶ。
 ツールの性質に応じて以下の3分類で扱う。
 
-- `--config`明示注入: `markdownlint` ・ `textlint`
+- `--config`系の明示注入: `markdownlint` ・ `textlint` ・ `bandit`
 - 外部パス除外＋警告: `markdownlint`・`textlint`・`pre-commit`・`prek`・`uv-audit`・
   `pnpm-audit`・`npm-audit`・`yarn-audit`・`pytest`・`vitest`・`cargo-test`・
   `dotnet-test`・`gitleaks`・`semgrep`
 - 既定（素通し）: 上記以外。各ツールの設定探索仕様に委ねる
 
-注入対象では起点cwd直下の設定ファイル（`.textlintrc.yaml` ・ `.markdownlint-cli2.yaml` 等）を
-`--config <絶対パス>` 形式で明示注入する。
+注入対象では起点cwd直下の設定ファイル（`.textlintrc.yaml` ・ `.markdownlint-cli2.yaml` 等）を明示注入する。
+`markdownlint`・`textlint`には`--config <絶対パス>`、`bandit`には`--configfile <絶対パス>`形式で注入する。
 起点cwd直下に設定ファイルが見つからないときは注入をスキップし、ツールの既定動作で処理する。
 利用者が `{command}-args` ・ `{command}-extend-args` ・ CLI `--{command}-args` のいずれかで
-`--config` を指定している場合は注入をスキップする。
+対応する設定引数（`--config`、`bandit`では`--configfile`）を指定している場合は注入をスキップする。
 
 除外対象では対象ファイル展開後の最終リストから外部パスのみを除いて内部パスは対象として実行し、
 除外時は1ファイルにつき1件の警告を発行する。
@@ -905,7 +905,7 @@ pyfltrからprekのhookを呼び出す統合は`prek = true`で有効化する�
 - 適用範囲: プロジェクトローカル設定・モジュール解決・lockfileをcwd起点で読むツール
   （`mypy`・`pylint`・`pyright`・`pytest`・`textlint`・`eslint`など）はサブプロジェクト別に起動する。
   `cargo-*`・`dotnet-*`・`ruff-*`も同様に扱う。
-  リポジトリ単位のツール（`typos`・`shellcheck`・`shfmt`・`pre-commit`・`prek`）は1回だけ起動する
+  リポジトリ単位のツール（`typos`・`shellcheck`・`shfmt`・`pre-commit`・`prek`・`colloquial-check`）は1回だけ起動する
 - フォールバック: 検出結果が0件または1件の場合は単一プロジェクトとして従来通り動作する
 - 出力スキーマ: モノレポ実行でもJSONL・SARIF・show-run・MCP読み取り系APIの
   公開スキーマは変更しない。サブプロジェクト境界をまたぐ実行結果は1件にマージし、人間向け`output`には
@@ -922,5 +922,5 @@ pyfltrからprekのhookを呼び出す統合は`prek = true`で有効化する�
   起点ディレクトリ自体は1つのサブプロジェクトとして扱い、その設定が有効なら起点自身のファイルは実行する
 - 起点cwdでの一括実行はしない: あるツールが起点で有効でも、対象ファイルを持つサブプロジェクトが全て無効化している場合、
   起点cwdで全ファイルをまとめて実行することはない（サブプロジェクト境界をまたいだ誤実行を避ける）
-- リポジトリ単位のツール（`typos`・`shellcheck`・`shfmt`・`pre-commit`・`prek`）のON/OFFは、
+- リポジトリ単位のツール（`typos`・`shellcheck`・`shfmt`・`pre-commit`・`prek`・`colloquial-check`）のON/OFFは、
   起点 `pyproject.toml` の設定で固定し、子の設定では切り替えない

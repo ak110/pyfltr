@@ -6,6 +6,7 @@ import pathlib
 import re
 import typing
 
+import pyfltr.parsing.common
 import pyfltr.tools
 import pyfltr.warnings_
 from pyfltr.config.model import DEFAULT_CONFIG, SEVERITY_VALUES, Config, ConfigWarningEmitter
@@ -372,7 +373,9 @@ def register_custom_command(
                 f"カスタムコマンド `{name}` の `error-pattern` が不正な正規表現です: {e}",
             )
             return
-        missing_group = next((g for g in ("file", "line", "message") if g not in compiled.groupindex), None)
+        missing_group = next(
+            (g for g in pyfltr.parsing.common.REQUIRED_ERROR_PATTERN_GROUPS if g not in compiled.groupindex), None
+        )
         if missing_group is not None:
             _skip_registration(
                 f"カスタムコマンド `{name}` の `error-pattern` に `{missing_group}` 名前付きグループが必要です",
