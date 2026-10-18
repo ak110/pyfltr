@@ -2295,23 +2295,42 @@ def test_parse_vitest_json(case_id: str, output: str, expected: list[dict]) -> N
         assert want["message_contains"] in actual.message
 
 
-def test_parse_vitest_json_suite_failure() -> None:
+@pytest.mark.parametrize(
+    ("name_form", "base_parts", "expected_prefix"),
+    [
+        ("absolute", (), "tests"),
+        ("relative", (), "tests"),
+        ("absolute", ("pkg",), "pkg/tests"),
+        ("relative", ("pkg",), "pkg/tests"),
+    ],
+)
+def test_parse_vitest_json_suite_failure(
+    tmp_path: pathlib.Path, name_form: str, base_parts: tuple[str, ...], expected_prefix: str
+) -> None:
     """失敗assertionを持たない失敗suite（評価時の例外）をファイル診断にし、二重診断を生じさせない。
 
     suite失敗とassertion失敗の混在、成功suite、pending・skipのsuite、空の失敗本文、
     成功assertionだけを持つ失敗suite（afterAllの例外）、`assertionResults`がリストでない要素、
     ファイル名の無い失敗要素を同じ入力で扱う。位置を持たないsuite失敗は行1・列なしとする。
+    ファイル名は実行OSのネイティブ絶対パスと実行基準からの相対パスの両方で与え、
+    実行基準と実行起点の関係から求めた起点相対パスで比較する。
     """
+    path_base = tmp_path.joinpath(*base_parts)
+
+    def name(file_name: str) -> str:
+        relative = f"tests/{file_name}"
+        return str(path_base / relative) if name_form == "absolute" else relative
+
     output = _vitest_output(
         [
             {
-                "name": "/abs/proj/tests/load.test.ts",
+                "name": name("load.test.ts"),
                 "status": "failed",
                 "message": "Error: sample failure\n    at /abs/proj/tests/load.test.ts:1:7",
                 "assertionResults": [],
             },
             {
-                "name": "/abs/proj/tests/mixed.test.ts",
+                "name": name("mixed.test.ts"),
                 "status": "failed",
                 "message": "",
                 "assertionResults": [
@@ -2323,27 +2342,27 @@ def test_parse_vitest_json_suite_failure() -> None:
                     )
                 ],
             },
-            {"name": "/abs/proj/tests/empty.test.ts", "status": "failed", "message": "", "assertionResults": []},
+            {"name": name("empty.test.ts"), "status": "failed", "message": "", "assertionResults": []},
             {
-                "name": "/abs/proj/tests/hook.test.ts",
+                "name": name("hook.test.ts"),
                 "status": "failed",
                 "message": "hook failure",
                 "assertionResults": [_vitest_assertion(status="passed", full_name="passes", location={"line": 3, "column": 1})],
             },
-            {"name": "/abs/proj/tests/bad.test.ts", "status": "failed", "message": "Error: x", "assertionResults": None},
-            {"name": "/abs/proj/tests/ok.test.ts", "status": "passed", "message": "", "assertionResults": []},
-            {"name": "/abs/proj/tests/todo.test.ts", "status": "pending", "message": "", "assertionResults": []},
-            {"name": "/abs/proj/tests/skip.test.ts", "status": "skipped", "message": "", "assertionResults": []},
+            {"name": name("bad.test.ts"), "status": "failed", "message": "Error: x", "assertionResults": None},
+            {"name": name("ok.test.ts"), "status": "passed", "message": "", "assertionResults": []},
+            {"name": name("todo.test.ts"), "status": "pending", "message": "", "assertionResults": []},
+            {"name": name("skip.test.ts"), "status": "skipped", "message": "", "assertionResults": []},
             {"name": "", "status": "failed", "message": "Error: startup failure", "assertionResults": []},
         ]
     )
-    errors = pyfltr.parsing.entry.parse_errors("vitest", output)
+    errors = pyfltr.parsing.entry.parse_errors("vitest", output, path_base=path_base, start_cwd=tmp_path)
     assert [(error.file, error.line, error.col, error.message) for error in errors] == [
-        ("/abs/proj/tests/load.test.ts", 1, None, "Error: sample failure"),
-        ("/abs/proj/tests/mixed.test.ts", 7, 5, "adds correctly: AssertionError: expected 3 to equal 4"),
-        ("/abs/proj/tests/empty.test.ts", 1, None, ""),
-        ("/abs/proj/tests/hook.test.ts", 1, None, "hook failure"),
-        ("/abs/proj/tests/bad.test.ts", 1, None, "Error: x"),
+        (f"{expected_prefix}/load.test.ts", 1, None, "Error: sample failure"),
+        (f"{expected_prefix}/mixed.test.ts", 7, 5, "adds correctly: AssertionError: expected 3 to equal 4"),
+        (f"{expected_prefix}/empty.test.ts", 1, None, ""),
+        (f"{expected_prefix}/hook.test.ts", 1, None, "hook failure"),
+        (f"{expected_prefix}/bad.test.ts", 1, None, "Error: x"),
     ]
 
 
