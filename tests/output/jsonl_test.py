@@ -175,18 +175,18 @@ def test_dump_roundtrip() -> None:
 
 
 def test_build_warning_record() -> None:
-    """warning dictがkind/source/msgを持つレコードに変換される。"""
+    """warning dictがkind/source/msg/hintを持つレコードに変換される。"""
     config = pyfltr.config.config.create_default_config()
     lines = pyfltr.output.jsonl.build_lines(
         [],
         config,
         exit_code=0,
-        warnings=[{"source": "config", "message": "foo"}],
+        warnings=[{"source": "config", "message": "foo", "hint": "設定値を修正してください。"}],
     )
     # summary行の前にwarning行が出力される
     warning_line = next(line for line in lines if json.loads(line).get("kind") == "warning")
     record = json.loads(warning_line)
-    assert record == {"kind": "warning", "source": "config", "msg": "foo"}
+    assert record == {"kind": "warning", "source": "config", "msg": "foo", "hint": "設定値を修正してください。"}
 
 
 def test_build_warning_record_with_hint() -> None:

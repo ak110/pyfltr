@@ -590,4 +590,5 @@ def test_timeout_reports_remaining_processes_with_action(
         )
     assert proc.timeout_exceeded is True
     assert "424242" in caplog.text
-    assert "表示したPIDのプロセスを停止してください" in caplog.text
+    assert "Get-Process -Id <PID>" in caplog.text
+    assert "kill -KILL <PID>" in caplog.text

@@ -304,7 +304,7 @@ def test_render_results_writes_warnings_section_before_summary(text_logs, tool: 
     config = pyfltr.config.config.create_default_config()
     results = [_make_result("mypy", returncode=0)]
     warning_message = f"{tool} 設定ファイル不在"
-    warnings = [{"source": "config", "message": warning_message}]
+    warnings = [{"source": "config", "message": warning_message, "hint": "設定ファイルを作成してください。"}]
 
     pyfltr.output.render.render_results(results, config, include_details=True, warnings=warnings)
 
@@ -942,7 +942,10 @@ def test_config_io_error_returns_exit_one(action, operation, monkeypatch, tmp_pa
     assert pyfltr.cli.main.run(argv) == 1
     output = capsys.readouterr()
     assert output.out == ""
-    assert output.err == "設定ファイルの操作が拒否されました\n"
+    assert output.err.startswith("設定ファイルの操作が拒否されました。対象パス ")
+    assert str(tmp_path / "pyproject.toml") in output.err
+    assert "読み書き権限" in output.err
+    assert "空き容量" in output.err
 
 
 @pytest.mark.parametrize("mode", ["run", "ci"])

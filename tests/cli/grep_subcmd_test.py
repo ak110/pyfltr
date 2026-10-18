@@ -323,7 +323,7 @@ def test_grep_json_truncates_long_line_and_exposes_warnings(
     assert match["line_text_offset"] > 0
     assert len(payload["warnings"]) == 1
     warning = payload["warnings"][0]
-    assert set(warning) == {"source", "msg"}
+    assert set(warning) == {"source", "msg", "hint"}
     assert warning["source"] == "grep"
     assert "--max-preview-chars=0" in warning["msg"]
     assert payload["summary"]["warnings"] == len(payload["warnings"])
@@ -346,9 +346,9 @@ def test_grep_json_exposes_decode_and_truncation_warnings(
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
     assert len(payload["warnings"]) == 2
-    # 対処を持つ警告（デコード失敗）だけが`hint`を持ち、切り詰めの警告は本文だけを持つ
-    assert sorted(set(warning) for warning in payload["warnings"]) == sorted([{"source", "msg"}, {"source", "msg", "hint"}])
-    decode_warning = next(warning for warning in payload["warnings"] if "hint" in warning)
+    # デコード失敗と切り詰めの双方が次の操作を持つ。
+    assert all(set(warning) == {"source", "msg", "hint"} for warning in payload["warnings"])
+    decode_warning = next(warning for warning in payload["warnings"] if "--encoding" in warning["hint"])
     assert "--encoding" in decode_warning["hint"]
     assert all("message" not in warning for warning in payload["warnings"])
     assert payload["summary"]["warnings"] == len(payload["warnings"])

@@ -28,7 +28,9 @@ _EXTERNAL_OPTIONS_BY_PATH: dict[str, frozenset[str]] = {
     "docs/guide/recommended-nonpython.md": frozenset({"--passWithNoTests"}),
     "docs/guide/recommended.md": frozenset({"--frozen"}),
     "docs/guide/usage.md": frozenset({"--config", "--frozen"}),
-    "pyfltr/cli/command_info.py": frozenset({"--format"}),
+    "pyfltr/cli/command_info.py": frozenset({"--format", "--current", "--json"}),
+    # MCP用環境の再導入で案内するuv tool installの引数。
+    "pyfltr/cli/mcp_server.py": frozenset({"--reinstall"}),
     "pyfltr/cli/pipeline.py": frozenset({"--fix"}),
     "pyfltr/state/cache.py": frozenset({"--config", "--ignore-path"}),
     "pyfltr/state/retry.py": frozenset({"--foo"}),
