@@ -53,8 +53,6 @@ _TOOL_DIAGNOSTICS_FILENAME = "diagnostics.jsonl"
 _TOOL_META_FILENAME = "tool.json"
 TOOL_META_REMOVED_KEYS: frozenset[str] = frozenset({"has_error"})
 """保存済みのツールメタ情報から読み取り時に除去するフィールド。"""
-SUBPROJECT_RESTORE_COMMANDS: frozenset[str] = frozenset({"pytest"})
-"""保存済み診断のサブプロジェクト所属を生出力から復元して読むコマンド。"""
 DIAGNOSTIC_PATHS_META_KEY = "diagnostic_paths"
 """診断の`file`を起点相対で保存した版が`meta.json`へ書くキー。値は`DIAGNOSTIC_PATHS_START_RELATIVE`。
 
@@ -303,7 +301,9 @@ class ArchiveStore:
             if not line:
                 continue
             entries.append(json.loads(line))
-        if tool in SUBPROJECT_RESTORE_COMMANDS and self._saved_subproject_relative_diagnostics(run_id):
+        # 復元の適否はツール名ではなく、保存形式（`_saved_subproject_relative_diagnostics`）と
+        # 区間内の診断の一致（`restore_subproject_paths`）だけで判定する。
+        if self._saved_subproject_relative_diagnostics(run_id):
             try:
                 output = self.read_tool_output(run_id, tool)
             except FileNotFoundError:

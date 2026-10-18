@@ -345,9 +345,9 @@ def _pytest_failure_output(test_file: str, line: int, test_name: str) -> str:
     )
 
 
-def _start_legacy_run(store: pyfltr.state.archive.ArchiveStore, tmp_path: pathlib.Path) -> str:
+def _start_legacy_run(store: pyfltr.state.archive.ArchiveStore, tmp_path: pathlib.Path, command: str = "pytest") -> str:
     """診断を起点相対へ揃える前の版と同じく、診断パスの印を持たない`meta.json`のrunを作成する。"""
-    run_id = store.start_run(commands=["pytest"])
+    run_id = store.start_run(commands=[command])
     meta_path = tmp_path / "runs" / run_id / "meta.json"
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
     del meta[pyfltr.state.archive.DIAGNOSTIC_PATHS_META_KEY]
@@ -357,9 +357,107 @@ def _start_legacy_run(store: pyfltr.state.archive.ArchiveStore, tmp_path: pathli
 
 def _legacy_pytest_result(sections: dict[str, str]) -> pyfltr.command.core_.CommandResult:
     """サブプロジェクト相対の診断を保存していた版と同じ形のpytest結果を組み立てる。"""
+    return _legacy_result("pytest", sections)
+
+
+def _legacy_result(command: str, sections: dict[str, str]) -> pyfltr.command.core_.CommandResult:
+    """サブプロジェクト相対の診断を保存していた版と同じ形の結果を組み立てる。
+
+    旧版は各区間を子プロジェクトのcwdで解析し、子プロジェクト相対の`file`をそのまま保存していた。
+    """
     output = "\n".join(f"# subproject: {relative}\n{body}" for relative, body in sections.items())
-    errors = [error for body in sections.values() for error in pyfltr.parsing.entry.parse_errors("pytest", body)]
-    return _make_result("pytest", returncode=1, output=output, errors=errors)
+    errors = [error for body in sections.values() for error in pyfltr.parsing.entry.parse_errors(command, body)]
+    return _make_result(command, returncode=1, output=output, errors=errors)
+
+
+def _mypy_output(path: str, line: int, message: str = "Incompatible types in assignment") -> str:
+    """mypyの位置付きテキスト出力1件分を返す。"""
+    return f"{path}:{line}: error: {message}  [assignment]\nFound 1 error in 1 file (checked 1 source file)\n"
+
+
+def _bandit_output(path: str, line: int) -> str:
+    """bandit `-f json`の構造化出力1件分を返す。"""
+    return json.dumps(
+        {
+            "results": [
+                {
+                    "filename": path,
+                    "line_number": line,
+                    "col_offset": 0,
+                    "test_id": "B101",
+                    "test_name": "assert_used",
+                    "issue_severity": "LOW",
+                    "issue_text": "Use of assert detected.",
+                }
+            ],
+            "errors": [],
+        }
+    )
+
+
+def test_read_tool_diagnostics_restores_legacy_mypy_paths(tmp_path: pathlib.Path) -> None:
+    """pytest以外の位置付きテキスト（mypy）の旧版診断も、所属区間から起点相対へ補正して返す。
+
+    復元の適否はツール名ではなく保存形式と区間内の診断の一致で決まる。保存ファイルは書き換えない。
+    """
+    store = _make_store(tmp_path)
+    run_id = _start_legacy_run(store, tmp_path, "mypy")
+    store.write_tool_result(
+        run_id, _legacy_result("mypy", {"app": _mypy_output("src/sample.py", 3), "lib": _mypy_output("src/other.py", 5)})
+    )
+
+    diagnostics = store.read_tool_diagnostics(run_id, "mypy")
+
+    assert sorted(entry["file"] for entry in diagnostics) == ["app/src/sample.py", "lib/src/other.py"]
+    raw = (tmp_path / "runs" / run_id / "tools" / "mypy" / "diagnostics.jsonl").read_text(encoding="utf-8")
+    assert '"file": "src/sample.py"' in raw
+
+
+def test_read_tool_diagnostics_restores_legacy_structured_paths(tmp_path: pathlib.Path) -> None:
+    """構造化出力（banditのJSON）の旧版診断も、同じ共通処理で所属を一意に決められれば補正する。"""
+    store = _make_store(tmp_path)
+    run_id = _start_legacy_run(store, tmp_path, "bandit")
+    store.write_tool_result(run_id, _legacy_result("bandit", {"pkg": _bandit_output("src/foo.py", 12)}))
+
+    assert [entry["file"] for entry in store.read_tool_diagnostics(run_id, "bandit")] == ["pkg/src/foo.py"]
+
+
+def test_read_tool_diagnostics_keeps_unrestorable_legacy_mypy_paths(tmp_path: pathlib.Path) -> None:
+    """所属を一意に決められない・補正の必要を確定できない旧版の診断は保存値を保つ。
+
+    対象は曖昧な所属（同じ診断が2区間にある）、絶対パス、所属区間の無い出力、生出力の無いrunである。
+    """
+    store = _make_store(tmp_path)
+    same = _mypy_output("src/sample.py", 3)
+    ambiguous_run = _start_legacy_run(store, tmp_path, "mypy")
+    store.write_tool_result(ambiguous_run, _legacy_result("mypy", {"app": same, "lib": same}))
+    assert [entry["file"] for entry in store.read_tool_diagnostics(ambiguous_run, "mypy")] == ["src/sample.py"]
+
+    absolute = (tmp_path / "abs" / "sample.py").as_posix()
+    absolute_run = _start_legacy_run(store, tmp_path, "mypy")
+    store.write_tool_result(absolute_run, _legacy_result("mypy", {"app": _mypy_output(absolute, 3)}))
+    assert [entry["file"] for entry in store.read_tool_diagnostics(absolute_run, "mypy")] == [absolute]
+
+    no_section_run = _start_legacy_run(store, tmp_path, "mypy")
+    errors = pyfltr.parsing.entry.parse_errors("mypy", same)
+    store.write_tool_result(no_section_run, _make_result("mypy", returncode=1, output=same, errors=errors))
+    assert [entry["file"] for entry in store.read_tool_diagnostics(no_section_run, "mypy")] == ["src/sample.py"]
+
+    no_output_run = _start_legacy_run(store, tmp_path, "mypy")
+    store.write_tool_result(no_output_run, _legacy_result("mypy", {"app": same}))
+    (tmp_path / "runs" / no_output_run / "tools" / "mypy" / "output.log").unlink()
+    assert [entry["file"] for entry in store.read_tool_diagnostics(no_output_run, "mypy")] == ["src/sample.py"]
+
+
+def test_read_tool_diagnostics_keeps_current_mypy_paths(tmp_path: pathlib.Path) -> None:
+    """起点相対で保存した新しい版のmypyのrunは、所属区間があっても再補正しない。"""
+    store = _make_store(tmp_path)
+    run_id = store.start_run(commands=["mypy"])
+    body = _mypy_output("src/sample.py", 3)
+    errors = [dataclasses.replace(error, file=f"app/{error.file}") for error in pyfltr.parsing.entry.parse_errors("mypy", body)]
+    store.write_tool_result(run_id, _make_result("mypy", returncode=1, output=f"# subproject: app\n{body}", errors=errors))
+
+    assert [entry["file"] for entry in store.read_tool_diagnostics(run_id, "mypy")] == ["app/src/sample.py"]
 
 
 def test_read_tool_diagnostics_restores_legacy_subproject_paths(tmp_path: pathlib.Path) -> None:

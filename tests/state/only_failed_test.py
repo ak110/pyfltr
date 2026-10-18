@@ -328,3 +328,33 @@ def test_apply_filter_selects_legacy_subproject_pytest_failure(_only_failed_cach
     assert commands == ["pytest"]
     assert targets is not None
     assert targets["pytest"].files == (pathlib.Path("pkg_a/tests/x_test.py"),)
+
+
+def test_apply_filter_selects_legacy_subproject_mypy_failure(_only_failed_cache: pathlib.Path) -> None:
+    """サブプロジェクト相対の診断を保存した旧mypyアーカイブでも、所属する子の失敗ファイルだけを選ぶ。
+
+    診断の所属復元はツール名で限定しないため、pytest以外のツールでも同じ再実行対象を得る。
+    """
+    body = "src/sample.py:3: error: Incompatible types in assignment  [assignment]\n"
+    errors = pyfltr.parsing.entry.parse_errors("mypy", body)
+    assert [error.file for error in errors] == ["src/sample.py"]
+    run_id = _seed_run(
+        _only_failed_cache,
+        commands=["mypy"],
+        exit_code=1,
+        tool_results=[("mypy", 1, f"# subproject: app\n{body}\n# subproject: lib\n", errors)],
+    )
+    # 診断を起点相対へ揃える前の版のrunとして、診断パスの印を`meta.json`から除く。
+    meta_path = _only_failed_cache / "runs" / run_id / "meta.json"
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    del meta[pyfltr.state.archive.DIAGNOSTIC_PATHS_META_KEY]
+    meta_path.write_text(json.dumps(meta), encoding="utf-8")
+    args = pyfltr.run_options.RunOptions.from_values({"only_failed": True})
+    all_files = [pathlib.Path("app/src/sample.py"), pathlib.Path("lib/src/sample.py")]
+
+    commands, targets, exit_early = pyfltr.state.only_failed.apply_filter(args, ["mypy"], all_files, from_run=run_id)
+
+    assert exit_early is False
+    assert commands == ["mypy"]
+    assert targets is not None
+    assert targets["mypy"].files == (pathlib.Path("app/src/sample.py"),)
