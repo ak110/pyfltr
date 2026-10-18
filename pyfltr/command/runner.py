@@ -754,9 +754,7 @@ def build_commandline(
             if allow_side_effects:
                 pyfltr.command.markdownlint_env.ensure_environment(
                     markdownlint_environment,
-                    timeout=float(
-                        pyfltr.config.model.command_setting(config.values, command, "timeout", config["command-timeout"])
-                    ),
+                    timeout=pyfltr.config.model.resolve_command_timeout(config.values, command),
                 )
             executable = markdownlint_environment.executable
             prefix: list[str] = []

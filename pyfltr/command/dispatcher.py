@@ -291,9 +291,7 @@ def _prepare_execution_params(
         if resolved.markdownlint_environment is not None:
             pyfltr.command.markdownlint_env.ensure_environment(
                 resolved.markdownlint_environment,
-                timeout=float(
-                    pyfltr.config.model.command_setting(config.values, command, "timeout", config["command-timeout"])
-                ),
+                timeout=pyfltr.config.model.resolve_command_timeout(config.values, command),
             )
         # 監査を実施しない旧版が終了コード0を返すため、機能が成立する最低版を起動前に確認する。
         pyfltr.command.runner.ensure_package_manager_version(resolved, config, command, cwd=cwd)
