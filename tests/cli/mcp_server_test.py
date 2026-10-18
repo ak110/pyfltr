@@ -1157,6 +1157,122 @@ def _write_custom_commands_project(work_dir: pathlib.Path, scripts: dict[str, st
 
 
 @pytest.mark.asyncio
+async def test_tool_run_reports_subproject_toml_error_to_client(tmp_path: pathlib.Path) -> None:
+    """サブプロジェクト設定のTOML構文エラーは、対象パスと`run`ツールでの再実行の案内を応答の`warnings`で返す。
+
+    MCPの`run`はサーバーのstderrをクライアントへ届けないため、ログだけでは原因と操作がクライアントへ届かない。
+    """
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "pyproject.toml").write_text(
+        "[tool.pyfltr]\nrespect-gitignore = false\nsubproject-use-gitignore = false\n", encoding="utf-8"
+    )
+    child = project / "child"
+    child.mkdir()
+    invalid = child / "pyproject.toml"
+    invalid.write_text("[tool.pyfltr\n", encoding="utf-8")
+    (child / "sample.py").write_text("value = 1\n", encoding="utf-8")
+
+    result = await pyfltr.cli.mcp_server.tool_run(
+        paths=[str(child / "sample.py")], commands=["mypy"], work_dir=str(project), no_cache=True
+    )
+
+    assert result.exit_code == 1
+    assert result.completion == "not_reached"
+    config_warnings = [warning for warning in result.warnings if warning.source == "config"]
+    assert len(config_warnings) == 1
+    assert str(invalid) in config_warnings[0].message
+    assert "該当位置をTOMLの構文に直し" in config_warnings[0].hint
+    assert "`run`ツール" in config_warnings[0].hint
+
+
+@pytest.mark.asyncio
+async def test_tool_run_only_failed_partial_exclusion_sets_skipped_reason(tmp_path: pathlib.Path) -> None:
+    """only_failed=Trueで一部のツールの失敗ファイルだけが対象と交差しない場合も、除外の理由を`skipped_reason`へ返す。"""
+    project = tmp_path / "project"
+    project.mkdir()
+    for name in ("a.txt", "b.txt"):
+        (project / name).write_text("value\n", encoding="utf-8")
+    lines = ["[tool.pyfltr]", "respect-gitignore = false", ""]
+    for name, failed_file in (("fail-a", "a.txt"), ("fail-b", "b.txt")):
+        # 指定したファイルの位置付き指摘を1件出力して失敗するスクリプト
+        code = f"import sys; print({failed_file + ':1: bad'!r}); sys.exit(1)"
+        lines.extend(
+            [
+                f"[tool.pyfltr.custom-commands.{name}]",
+                f"path = {json.dumps(sys.executable)}",
+                f"args = {json.dumps(['-c', code])}",
+                'type = "linter"',
+                'targets = ["*.txt"]',
+                "pass-filenames = false",
+                'error-pattern = "^(?P<file>[^:]+):(?P<line>\\\\d+): (?P<message>.+)$"',
+                "",
+            ]
+        )
+    (project / "pyproject.toml").write_text("\n".join(lines), encoding="utf-8")
+
+    first = await pyfltr.cli.mcp_server.tool_run(
+        paths=["a.txt", "b.txt"], commands=["fail-a", "fail-b"], work_dir=str(project), no_cache=True
+    )
+    assert sorted(first.failed) == ["fail-a", "fail-b"]
+
+    second = await pyfltr.cli.mcp_server.tool_run(
+        paths=["a.txt"], commands=["fail-a", "fail-b"], work_dir=str(project), no_cache=True, only_failed=True
+    )
+
+    # early exitではない実行で、fail-aは実行され、fail-bだけが交差なしで除外される
+    assert second.run_id is not None
+    assert [command.command for command in second.commands] == ["fail-a"]
+    assert second.skipped_reason is not None
+    assert "fail-b" in second.skipped_reason
+    assert "交差しません" in second.skipped_reason
+
+
+@pytest.mark.parametrize("include_disabled", [False, True])
+@pytest.mark.asyncio
+async def test_tool_run_archive_init_failure_preserves_results(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, include_disabled: bool
+) -> None:
+    """保存先の初期化失敗でも実行結果・未実行理由と実行できる対処を返す。"""
+    project = tmp_path / "project"
+    _write_custom_commands_project(project, {"always-fail": "import sys; sys.exit(1)"}, extra="textlint = false")
+
+    def fail_start(*_args: typing.Any, **_kwargs: typing.Any) -> typing.Never:
+        raise OSError("archive storage unavailable")
+
+    monkeypatch.setattr(pyfltr.state.archive.ArchiveStore, "start_run", fail_start)
+    commands = ["always-fail", "textlint"] if include_disabled else ["always-fail"]
+    result = await pyfltr.cli.mcp_server.tool_run(paths=["sample.txt"], commands=commands, work_dir=str(project), no_cache=True)
+
+    assert result.run_id is None
+    assert result.exit_code == 1
+    assert result.failed == ["always-fail"]
+    assert [(command.command, command.status) for command in result.commands] == [("always-fail", "failed")]
+    assert result.completed_commands == ["always-fail"]
+    assert "always-fail" in result.retry_commands
+    assert any("retry_commands" in item for item in result.guidance)
+    guidance = " ".join(result.guidance)
+    assert "show-run" not in guidance
+    assert "show_run" not in guidance
+    assert "only_failed" not in guidance
+    assert "--only-failed" not in guidance
+    assert "<run_id>" not in guidance
+    archive_warning = next(warning for warning in result.warnings if warning.source == "archive")
+    assert "archive storage unavailable" in archive_warning.message
+    assert "--no-archive" not in archive_warning.hint
+    assert "書き込み権限と空き容量" in archive_warning.hint
+    assert "MCPのrunでは実行アーカイブを無効化できません" in archive_warning.hint
+    if include_disabled:
+        assert result.skipped_reason is not None
+        commands_warning = next(warning for warning in result.warnings if warning.source == "commands")
+        assert commands_warning.message in result.skipped_reason
+        assert commands_warning.hint in result.skipped_reason
+        assert "textlint" in result.skipped_reason
+    else:
+        assert result.skipped_reason is None
+
+
+@pytest.mark.asyncio
 async def test_tool_run_completion_completed(tmp_path: pathlib.Path) -> None:
     """診断0件で対象を評価し終えた実行は`completed`となり、到達ファイル数と完了コマンドを返す。"""
     work_dir = tmp_path / "project"

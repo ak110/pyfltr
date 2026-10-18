@@ -789,8 +789,8 @@ def test_build_summary_record_guidance_leads_with_resolution_failure_action() ->
     assert "tool-resolve" in record["guidance"][0]
 
 
-def test_build_summary_record_guidance_falls_back_when_unspecified() -> None:
-    """run_id / launcher_prefix未指定時はプレースホルダー・既定値にフォールバックする。"""
+def test_build_summary_record_guidance_without_archive() -> None:
+    """アーカイブの無い失敗には、その実行で利用できる対処だけを案内する。"""
     result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
@@ -807,8 +807,11 @@ def test_build_summary_record_guidance_falls_back_when_unspecified() -> None:
     guidance = record.get("guidance")
     assert isinstance(guidance, list)
     joined = " ".join(guidance)
-    assert "pyfltr show-run <run_id>" in joined
-    assert "pyfltr run --only-failed" in joined
+    assert "command.retry_command" in joined
+    assert "diagnostic.fix" in joined
+    assert "show-run" not in joined
+    assert "--only-failed" not in joined
+    assert "<run_id>" not in joined
 
 
 def test_build_summary_record_guidance_uses_given_subcommand() -> None:
@@ -829,6 +832,7 @@ def test_build_summary_record_guidance_uses_given_subcommand() -> None:
         exit_code=1,
         launcher_prefix=["uvx", "pyfltr"],
         subcommand="ci",
+        run_id="01JARCHIVE",
     )
     summary_line = next(line for line in lines if json.loads(line).get("kind") == "summary")
     joined = " ".join(json.loads(summary_line)["guidance"])

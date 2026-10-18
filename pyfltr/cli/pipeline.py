@@ -218,15 +218,19 @@ def _heartbeat_text_emit(message: str) -> None:
         text_logger.warning(message)
 
 
-_ARCHIVE_FAILURE_HINT = (
-    "キャッシュディレクトリの書き込み権限と空き容量を確認してください。"
-    "実行アーカイブが不要なら `--no-archive` を指定すると警告を抑止できます。"
-)
+def _archive_failure_hint(*, can_disable: bool) -> str:
+    """アーカイブを無効化できる呼び出し手段かに応じた対処を返す。"""
+    action = "キャッシュディレクトリの書き込み権限と空き容量を確認してください。"
+    if can_disable:
+        return action + "実行アーカイブが不要なら `--no-archive` を指定すると警告を抑止できます。"
+    return action + "MCPのrunでは実行アーカイブを無効化できません。"
 
 
 def _make_archive_hook(
     archive_store: pyfltr.state.archive.ArchiveStore,
     run_id: str,
+    *,
+    archive_required: bool = False,
 ) -> typing.Callable[[pyfltr.command.core_.CommandResult], None]:
     """アーカイブ書き込みフックを生成する。
 
@@ -245,7 +249,7 @@ def _make_archive_hook(
                     f"{result.command} の結果を実行アーカイブへ書き込めませんでした: {e}。"
                     "このコマンドの結果は `show-run` と `--only-failed` から参照できません"
                 ),
-                hint=_ARCHIVE_FAILURE_HINT,
+                hint=_archive_failure_hint(can_disable=not archive_required),
             )
             return
         # 書き込み成功時のみarchived=Trueに更新。smart truncationの可否判定に使う。
@@ -454,7 +458,8 @@ def _run_pipeline(
         無効・採番失敗・early exit時は `None`。
         `--only-failed` 指定で「直前runなし」「失敗ツールなし」「対象ファイル
         交差が空」のいずれかに該当する場合はearly exitとして `exit_code=0`・`run_id=None` を
-        返す。MCP経路はこの `run_id is None` を「実行スキップ」として識別する。
+        返す。`run_id`はアーカイブの参照キーであり、実行の有無は表さない。
+        アーカイブ初期化に失敗した実行でも`None`になる。
         `completion` はearly exitを含む全経路で確定し、`formatter.on_finish` より前に
         出力文脈へ渡してJSONL `summary` と同じ値にする。
 
@@ -486,10 +491,16 @@ def _run_pipeline(
     effective_sys_args = list(original_sys_args) if original_sys_args is not None else list(sys.argv[1:])
     launcher_prefix = pyfltr.state.retry.detect_launcher_prefix()
     retry_args_template = pyfltr.state.retry.build_retry_args_template(effective_sys_args)
-    archive_store, run_id = _initialize_archive(args, config, prepared.commands, prepared.all_files, start_cwd_path)
+    archive_store, run_id = _initialize_archive(
+        args, config, prepared.commands, prepared.all_files, start_cwd_path, archive_required=archive_required
+    )
     _log_runtime(start_cwd_path, run_id, launcher_prefix)
     cache_store = _initialize_cache(args, config)
-    archive_hook = _make_archive_hook(archive_store, run_id) if archive_store is not None and run_id is not None else None
+    archive_hook = (
+        _make_archive_hook(archive_store, run_id, archive_required=archive_required)
+        if archive_store is not None and run_id is not None
+        else None
+    )
     attach_retry_command = _make_attach_retry_command(
         retry_args_template=retry_args_template,
         launcher_prefix=launcher_prefix,
@@ -517,7 +528,9 @@ def _run_pipeline(
         attach_retry_command=attach_retry_command,
         only_failed_targets=prepared.only_failed_targets,
     )
-    return _finish_pipeline(args, base_ctx, formatter, ctx, results, returncode, archive_store, prepared.unmet)
+    return _finish_pipeline(
+        args, base_ctx, formatter, ctx, results, returncode, archive_store, prepared.unmet, archive_required=archive_required
+    )
 
 
 def _initialize_output(
@@ -742,6 +755,8 @@ def _finish_pipeline(
     returncode: int,
     archive_store: pyfltr.state.archive.ArchiveStore | None,
     unmet: list[str],
+    *,
+    archive_required: bool = False,
 ) -> PipelineOutcome:
     """完了判定・出力・アーカイブ保存・一時資源の解放を行う。"""
     # returncodeを先に確定させる （render_resultsに渡してJSONL summary.exitに埋めるため）
@@ -769,7 +784,7 @@ def _finish_pipeline(
     ctx = dataclasses.replace(ctx, completion=completion)
     formatter.on_finish(ctx, results, returncode, pyfltr.warnings_.collected_warnings())
 
-    _finalize_archive(archive_store, ctx.run_id, returncode, ctx.commands, ctx.all_files)
+    _finalize_archive(archive_store, ctx.run_id, returncode, ctx.commands, ctx.all_files, archive_required=archive_required)
 
     # pre-commit経由かつformatter自動修正発生時のMM状態ガイダンスを必要に応じて出力する。
     _maybe_emit_precommit_guidance(results, structured_stdout=ctx.structured_stdout, quiet=ctx.quiet)
@@ -940,6 +955,8 @@ def _initialize_archive(
     commands: list[str],
     all_files: list[pathlib.Path],
     start_cwd_path: pathlib.Path,
+    *,
+    archive_required: bool = False,
 ) -> tuple[pyfltr.state.archive.ArchiveStore | None, str | None]:
     """実行アーカイブを初期化し、失敗時は警告とともに無効化する。"""
     # 実行アーカイブの初期化 （既定で有効）。
@@ -962,7 +979,7 @@ def _initialize_archive(
                     f"実行アーカイブを初期化できないため、アーカイブ無しで続行しました: {e}。"
                     "この実行にはrun_idが付かず、`show-run` と次回の `--only-failed` から参照できません"
                 ),
-                hint=_ARCHIVE_FAILURE_HINT,
+                hint=_archive_failure_hint(can_disable=not archive_required),
             )
             archive_store = None
             run_id = None
@@ -1009,6 +1026,8 @@ def _finalize_archive(
     returncode: int,
     commands: list[str],
     files: int,
+    *,
+    archive_required: bool = False,
 ) -> None:
     """終了コードと完了時刻を保存する。保存失敗は検査結果を変えない。"""
     # アーカイブ終端: meta.jsonにexit_code / finished_atを書き込む。
@@ -1022,7 +1041,7 @@ def _finalize_archive(
                     f"実行アーカイブの meta.json を更新できませんでした: {e}。"
                     "`list-runs` にこの実行の終了コードと完了時刻が表示されません"
                 ),
-                hint=_ARCHIVE_FAILURE_HINT,
+                hint=_archive_failure_hint(can_disable=not archive_required),
             )
 
 

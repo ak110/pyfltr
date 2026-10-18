@@ -491,12 +491,13 @@ JSONLはLLMエージェントが入力として読むケースが多いため、
 - `summary.guidance`: `failed + resolution_failed > 0`のとき、または`applied_fixes`が非空のときに付与する英語の配列。
   パイプライン全体の次アクションをbullet配列で示す。
   失敗時は`command.retry_command`の参照、`--only-failed`再実行、`diagnostic.fix`の解釈、
-  `pyfltr show-run <run_id>`の案内の4項目を並べる。
+  `pyfltr show-run <run_id>`の案内を並べる。
+  アーカイブを参照する`--only-failed`再実行と`show-run`の2項目は`run_id`がある場合だけ並べる。
   `resolution_failed`が1件以上ある場合は、再実行だけでは解消しないため、`tool-resolve`警告に従って
   ツールを導入するか設定を変える旨を先頭に加える。
   `applied_fixes`非空時はformatter/fix-stageの書き換えだけでは再実行が不要である旨の注記を末尾に追加する。
   `warning`のみで`failed`/`resolution_failed`が0件のケースでは付与しない（警告はパイプライン失敗を伴わないため）。
-  MCPの`run`ツールも同じ生成関数（`pyfltr.output.jsonl.build_summary_guidance`）から`RunResult.guidance`を返す
+  MCPの`run`ツールも同じ生成関数（`pyfltr.output.jsonl.build_summary_guidance`）からMCPの引数・ツール名で`RunResult.guidance`を返す
 - `warning`レコードの`hint`: 個別の警告の対処。警告の本文（`msg`）とは別のキーで持つ。
   テキスト表示のwarnings節・stderr・MCPの応答では`pyfltr.warnings_.format_warning_text`が本文に続けて
   対処を連結した文字列を用い、どの出力先でも対処が欠けないようにする
@@ -917,7 +918,9 @@ MCPクライアントからの並行ツール呼び出しでも実行起点を�
 #### `run_pipeline()`戻り値
 
 `run_pipeline()`の戻り値は`PipelineOutcome`（`exit_code`・`run_id`・`completion`・`results`の名前付きタプル）とする。
-`run_id`はアーカイブ無効時・early exit時に`None`、それ以外では採番済みULIDが入る。
+`run_id`はアーカイブの参照キーであり、実行の有無を表さない。
+アーカイブ無効時・初期化失敗時・early exit時に`None`、それ以外では採番済みULIDが入る。
+初期化失敗でも実行を継続し、MCPの`run`は実行結果と`source="archive"`の警告を返す。
 `completion`は全ての終了箇所で確定した[完了判定](#completion)で、MCPの`run`はその6項目をそのまま応答へ転記する。
 
 `only_failed`有効時に「直前runなし」「失敗ツールなし」「対象ファイル交差が空」「`from_run`の解決失敗」
@@ -925,8 +928,10 @@ MCPクライアントからの並行ツール呼び出しでも実行起点を�
 このとき`run`はエラーではなく「実行スキップ」を返し、`skipped_reason`には
 `run_pipeline`が`source="only-failed"`で発行した警告の本文と対処を入れる。固定文は返さない。
 
-`skipped_reason`はearly exit以外でも値を持つ。`commands`へ指定したツールが設定で無効化されて実行されなかった場合、
-`tool_run`は`run_pipeline`が`source="commands"`で発行した警告から理由を組み立てて同フィールドへ返す。
+`skipped_reason`はearly exit以外でも値を持つ。`tool_run`は`source="only-failed"`と`source="commands"`の警告から理由を組み立てる。
+`only_failed`有効時に一部のツールだけ直前runの失敗ファイルが対象と交差せず除外された場合は、残りのツールを実行しつつ
+`source="only-failed"`の警告が同フィールドへ入る。`commands`へ指定したツールが設定で無効化されて実行されなかった場合は
+`source="commands"`の警告が入る。
 無効化の判定は`run_pipeline`の`is_command_enabled_anywhere`と`compute_unmet_commands`が担い、MCP側では再判定しない。
 
 MCPツールは冒頭で`pyfltr.warnings_.clear()`を呼び、対象の呼び出しが発行した警告だけを応答の入力にする。

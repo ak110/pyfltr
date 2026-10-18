@@ -283,10 +283,12 @@ async def tool_run(
     """指定パスに対してlint/format/testを実行し、結果を返す。
 
     `run`・`fast`・`ci`の各実行モードをCLIと同じ既定値で扱う。
-    実行アーカイブは常に有効化され、`run_id`を戻り値に含む。
+    実行アーカイブは常に有効化する。初期化に失敗した場合は`run_id=None`となり、
+    `warnings`の`source="archive"`が理由と対処を示す。実行結果はアーカイブの成否によらず返す。
     `only_failed`による早期終了（直前runなし・失敗ツールなし・対象ファイル交差が空・
     `from_run`の解決失敗・アーカイブの読み取り失敗）の場合は`run_id=None`とし、
     実際の理由と対処を`skipped_reason`へ設定して返す。
+    早期終了せず、一部の検査だけ直前runの失敗ファイルが対象と交差せず除外された場合と、
     `commands`へ指定した検査が設定で無効化されているために実行されなかった場合も、
     対象の検査名と理由を`skipped_reason`へ設定する。いずれも`run_pipeline`が発行する
     `source="only-failed"`・`source="commands"`の警告を入力とし、MCP側では再判定しない。
@@ -430,23 +432,6 @@ async def tool_run(
             "fully_excluded_files": list(completion.fully_excluded_files),
         }
 
-        # run_idがNoneのときは実行がスキップされたか、アーカイブを使えなかった。
-        # スキップの理由は`--only-failed`の判定が`source="only-failed"`の警告として発行しており、
-        # 固定文ではなく実際の理由を返す。
-        if run_id is None:
-            warning_entries = pyfltr.warnings_.collected_warnings()
-            pyfltr.warnings_.mark_delivered(warning_entries)
-            return RunResult(
-                run_id=None,
-                exit_code=exit_code,
-                **completion_fields,
-                failed=[],
-                commands=[],
-                skipped_reason=_join_warning_texts(warning_entries, source="only-failed"),
-                retry_commands={},
-                warnings=_build_run_warnings(warning_entries),
-            )
-
         commands_model = [
             CommandSummaryModel(
                 command=result.command,
@@ -477,7 +462,7 @@ async def tool_run(
             **completion_fields,
             failed=failed_commands,
             commands=commands_model,
-            skipped_reason=_join_warning_texts(warning_entries, source="commands"),
+            skipped_reason=_join_warning_texts(warning_entries, sources=("only-failed", "commands")),
             retry_commands=retry_commands,
             warnings=_build_run_warnings(warning_entries),
             guidance=guidance,
@@ -492,9 +477,9 @@ def _build_run_warnings(entries: list[dict[str, typing.Any]]) -> list[RunWarning
     ]
 
 
-def _join_warning_texts(entries: list[dict[str, typing.Any]], *, source: str) -> str | None:
+def _join_warning_texts(entries: list[dict[str, typing.Any]], *, sources: tuple[str, ...]) -> str | None:
     """指定した発生源の警告を対処込みの文字列へ整形して連結する。該当が無ければNoneを返す。"""
-    texts = [pyfltr.warnings_.format_warning_text(entry) for entry in entries if entry.get("source") == source]
+    texts = [pyfltr.warnings_.format_warning_text(entry) for entry in entries if entry.get("source") in sources]
     return " / ".join(texts) or None
 
 

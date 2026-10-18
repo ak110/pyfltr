@@ -185,7 +185,10 @@ class RunResult(pydantic.BaseModel):
 
     run_id: str | None = pydantic.Field(
         default=None,
-        description="実行アーカイブの参照キー（ULID）。early exit時はNone。",
+        description=(
+            "実行アーカイブの参照キー（ULID）。early exit・初期化失敗時はNone。"
+            "初期化失敗の理由はwarningsのsource=archiveで示す。実行の有無は表さない。"
+        ),
     )
     exit_code: int = pydantic.Field(
         description=(
@@ -225,7 +228,9 @@ class RunResult(pydantic.BaseModel):
     skipped_reason: str | None = pydantic.Field(
         default=None,
         description=(
-            "指定した検査が実行されなかった理由。early exit時と、設定で無効化された検査を`commands`へ指定した場合に設定される。"
+            "指定した検査の全部または一部が実行されなかった理由。"
+            "`only_failed=True`の対象限定で検査が除外された場合（early exitと、一部の検査だけが除外された場合の双方）と、"
+            "設定で無効化された検査を`commands`へ指定した場合に設定される。"
         ),
     )
     retry_commands: dict[str, str] = pydantic.Field(
