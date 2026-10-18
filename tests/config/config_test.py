@@ -581,24 +581,38 @@ path = "mylinter"
 
 
 def test_severity_default_is_error() -> None:
-    """severityの既定値は "error" で、ビルトイン全コマンドに登録されている。
+    """severityの既定値は、ビルトイン定義が固有値を持つツールではその値、他は "error" となる。
 
-    `colloquial-check`のみCI/pre-commitを止めない意図で"warning"へ個別上書きしているため除外する
-    （詳細は`test_colloquial_check_severity_default_is_warning`）。
+    固有値はビルトイン定義（`CommandInfo.defaults`）から導き、`DEFAULT_CONFIG`生成後に
+    ツール名を指定して再定義しない（現状は`colloquial-check`だけが"warning"を持つ）。
     """
     config = pyfltr.config.config.create_default_config()
-    for name in pyfltr.tools.BUILTIN_COMMAND_NAMES:
-        if name == "colloquial-check":
-            continue
-        assert config.values[f"{name}-severity"] == "error", f"{name}-severity既定値"
+    for name, info in pyfltr.tools.BUILTIN_COMMANDS.items():
+        expected = info.defaults.get(f"{name}-severity", "error")
+        assert config.values[f"{name}-severity"] == expected, f"{name}-severity既定値"
     assert pyfltr.config.model.resolve_severity(config.values, "mypy") == "error"
 
 
 def test_colloquial_check_severity_default_is_warning() -> None:
     """colloquial-checkの検出結果はCI/pre-commitを失敗させないよう既定で"warning"扱い。"""
+    assert pyfltr.tools.BUILTIN_COMMANDS["colloquial-check"].defaults["colloquial-check-severity"] == "warning"
     config = pyfltr.config.config.create_default_config()
     assert config.values["colloquial-check-severity"] == "warning"
     assert pyfltr.config.model.resolve_severity(config.values, "colloquial-check") == "warning"
+
+
+def test_severity_defaults_keep_builtin_specific_value() -> None:
+    """共通severity既定値の登録は、ビルトイン定義から取り込んだツール固有値を上書きしない。"""
+    defaults: dict[str, typing.Any] = {"alpha-severity": "warning"}
+    pyfltr.config.model.register_command_severity_defaults(defaults, ["alpha", "beta"])
+    assert defaults == {"alpha-severity": "warning", "beta-severity": "error"}
+
+
+def test_colloquial_check_severity_explicit_error(tmp_path: pathlib.Path) -> None:
+    """利用者が明示したseverityはビルトイン定義の固有値より優先する。"""
+    (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\ncolloquial-check-severity = "error"\n')
+    config = pyfltr.config.config.load_config(config_dir=tmp_path)
+    assert config.values["colloquial-check-severity"] == "error"
 
 
 def test_severity_warning_resolved(tmp_path: pathlib.Path) -> None:

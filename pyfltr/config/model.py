@@ -244,9 +244,10 @@ def register_command_severity_defaults(defaults: dict[str, typing.Any], command_
     `severity = "warning"` 設定下では従来 `failed` 扱いの結果がJSONL上 `status="warning"` に切り替わる。
     既定値 `"error"` は従来挙動を維持するためのもので、変更したい場合のみ
     `pyproject.toml`/global設定で個別に指定する。
+    ツール固有の既定値（`CommandInfo.defaults`の`{command}-severity`）が先に登録されている場合は、その値を保持する。
     """
     for command in command_names:
-        defaults[f"{command}-severity"] = "error"
+        defaults.setdefault(f"{command}-severity", "error")
 
 
 def register_command_hints_defaults(defaults: dict[str, typing.Any], command_names: list[str]) -> None:
@@ -260,10 +261,6 @@ def register_command_hints_defaults(defaults: dict[str, typing.Any], command_nam
 
 
 register_command_severity_defaults(DEFAULT_CONFIG, pyfltr.tools.BUILTIN_COMMAND_NAMES)
-
-
-# colloquial-checkは口語表現の指摘であり、CI/pre-commitを止めない`warning`扱いを既定とする。
-DEFAULT_CONFIG["colloquial-check-severity"] = "warning"
 
 
 register_command_hints_defaults(DEFAULT_CONFIG, pyfltr.tools.BUILTIN_COMMAND_NAMES)

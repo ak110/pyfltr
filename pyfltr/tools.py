@@ -1067,6 +1067,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
             "colloquial-check-args": ["-m", "pyfltr.colloquial"],
             "colloquial-check-runner": "direct",
             "colloquial-check-fast": True,
+            "colloquial-check-severity": "warning",
         },
     ),
     # JS/TS linter群はモダン順（後ろほど新しい）に並べる。
