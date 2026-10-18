@@ -1,6 +1,7 @@
 import dataclasses
 import datetime as dt
 import json
+import os
 import pathlib
 
 import pytest
@@ -447,6 +448,29 @@ def test_read_tool_diagnostics_keeps_unrestorable_legacy_mypy_paths(tmp_path: pa
     store.write_tool_result(no_output_run, _legacy_result("mypy", {"app": same}))
     (tmp_path / "runs" / no_output_run / "tools" / "mypy" / "output.log").unlink()
     assert [entry["file"] for entry in store.read_tool_diagnostics(no_output_run, "mypy")] == ["src/sample.py"]
+
+
+@pytest.mark.parametrize("tool", ["mypy", "bandit"])
+@pytest.mark.parametrize(
+    "path",
+    ["/outside/sample.py", "C:/Users/test/sample.py", "D:/outside/sample.py", "C:sample.py", "//server/share/sample.py"],
+)
+def test_read_tool_diagnostics_keeps_legacy_paths_of_any_os_form(tmp_path: pathlib.Path, tool: str, path: str) -> None:
+    """別のOSで保存された形式の絶対パス・drive相対・UNCも、実行ホストによらず保存値を保つ。
+
+    同じ区間の通常相対パスだけを所属区間から起点相対へ補正する。
+    期待値は保存値とする（POSIXのホストでは入力の文字列のまま保存されるため、全形式へ到達する）。
+    """
+    store = _make_store(tmp_path)
+    run_id = _start_legacy_run(store, tmp_path, tool)
+    make_output = _mypy_output if tool == "mypy" else _bandit_output
+    sections = {"app": make_output(path, 3), "lib": make_output("src/other.py", 5)}
+    store.write_tool_result(run_id, _legacy_result(tool, sections))
+    [saved] = [error.file for error in pyfltr.parsing.entry.parse_errors(tool, sections["app"])]
+    if os.name != "nt":
+        assert saved == path
+
+    assert sorted(entry["file"] for entry in store.read_tool_diagnostics(run_id, tool)) == sorted([saved, "lib/src/other.py"])
 
 
 def test_read_tool_diagnostics_keeps_current_mypy_paths(tmp_path: pathlib.Path) -> None:

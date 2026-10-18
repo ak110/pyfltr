@@ -412,9 +412,19 @@ def _split_subproject_sections(output: str) -> list[tuple[str, str]]:
 
 
 def _is_plain_relative(path: str) -> bool:
-    """起点外を指さない相対パスかを判定する。"""
+    """起点外を指さない相対パスかを判定する。
+
+    保存値は別のOSで記録された可能性があるため、実行ホストによらず
+    Windowsのdrive・root（drive相対とUNCを含む）を持つパスも相対から除く。
+    """
     pure = pathlib.PurePosixPath(path)
-    return bool(path) and not pure.is_absolute() and ".." not in pure.parts and not path.startswith("<")
+    return (
+        bool(path)
+        and not pure.is_absolute()
+        and not pathlib.PureWindowsPath(path).anchor
+        and ".." not in pure.parts
+        and not path.startswith("<")
+    )
 
 
 def policy_from_config(config: pyfltr.config.model.Config) -> ArchivePolicy:
