@@ -10,6 +10,8 @@ import sys
 
 import pytest
 
+import scripts.check_distribution
+
 
 @dataclasses.dataclass(frozen=True)
 class _Case:
@@ -210,6 +212,8 @@ def test_tool_smoke(case: _Case, tmp_path: pathlib.Path) -> None:
     assert record is not None, f"{case.tool}: command record not found in JSONL output: {records}"
     status = record.get("status")
     assert status in _OK_STATUSES, f"{case.tool}: unexpected status={status!r} record={record}"
+    if case.tool == "markdownlint":
+        scripts.check_distribution.verify_markdownlint_environment(workspace)
 
 
 @pytest.mark.smoke

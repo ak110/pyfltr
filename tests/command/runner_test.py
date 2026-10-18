@@ -100,7 +100,6 @@ def test_ensure_package_manager_version_drops_virtual_env_for_uv_runner(monkeypa
     ("command", "package_spec", "bin_name"),
     [
         ("textlint", "textlint@<15.5.3 || >15.5.3", "textlint"),
-        ("markdownlint", "markdownlint-cli2", "markdownlint-cli2"),
         ("eslint", "eslint", "eslint"),
         ("prettier", "prettier", "prettier"),
         ("biome", "@biomejs/biome", "biome"),
@@ -111,7 +110,7 @@ def test_ensure_package_manager_version_drops_virtual_env_for_uv_runner(monkeypa
     ],
 )
 def test_build_commandline_pnpx_js_tools(command: str, package_spec: str, bin_name: str) -> None:
-    """pnpx論理runnerは全JSツールをpnpm本体のdlx形式へ解決する。"""
+    """pnpxの共通取得経路はpnpm本体のdlx形式へ解決する。"""
     config = pyfltr.config.config.create_default_config()
     config.values["js-runner"] = "pnpx"
     config.values[f"{command}-packages"] = []

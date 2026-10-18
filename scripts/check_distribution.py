@@ -9,8 +9,41 @@ import sys
 import tempfile
 import zipfile
 
+import pyfltr.command.markdownlint_env
 
-def _run(command: list[str], *, cwd: pathlib.Path, env: dict[str, str]) -> None:
+_BRACES_PROBE = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { createRequire } = require('node:module');
+const fromCli = createRequire(fs.realpathSync(path.join(process.argv[1], 'node_modules/markdownlint-cli2/package.json')));
+const fromMicromatch = createRequire(fromCli.resolve('micromatch'));
+const actual = fromMicromatch.resolve('braces');
+const braces = fromMicromatch('braces');
+const lib = path.join(path.dirname(actual), 'lib');
+for (const name of ['compile', 'expand', 'stringify', 'utils']) {
+  const source = fs.readFileSync(path.join(lib, name + '.js'), 'utf8');
+  assert.match(source, /while \(.*\.length\)/);
+}
+assert.deepEqual(braces.expand('x{a,b}'), ['xa', 'xb']);
+assert.deepEqual(braces.expand('a{1..3}'), ['a1', 'a2', 'a3']);
+assert.deepEqual(braces.expand('{a,{b,c}}'), ['a', 'b', 'c']);
+assert.equal(braces.compile(braces.parse('x{a,b}')), 'x(a|b)');
+assert.equal(braces.stringify(braces.parse('x{a,b}')), 'x{a,b}');
+assert.deepEqual(braces.expand({type: 'root', nodes: [{type: 'text', value: ['a', ['b']]}]}), ['a', 'b']);
+const utils = require(path.join(lib, 'utils.js'));
+assert.deepEqual(utils.flatten(['a', [undefined, ['b']], 'c']), ['a', 'b', 'c']);
+console.log(JSON.stringify({braces: actual, publicApis: 'compile,expand,stringify,flatten'}));
+"""
+
+
+def verify_markdownlint_environment(workspace: pathlib.Path) -> None:
+    """通常起動が選んだbracesの実体と浅い公開API・AST入力を検査する。"""
+    environment = pyfltr.command.markdownlint_env.resolve_environment(workspace)
+    _run(["node", "-e", _BRACES_PROBE, str(environment.root)], cwd=workspace, env=dict(os.environ))
+
+
+def _run(command: list[str], *, cwd: pathlib.Path, env: dict[str, str], expected: int = 0) -> None:
     result = subprocess.run(
         command,
         cwd=cwd,
@@ -24,7 +57,7 @@ def _run(command: list[str], *, cwd: pathlib.Path, env: dict[str, str]) -> None:
     )
     sys.stdout.write(result.stdout)
     sys.stderr.write(result.stderr)
-    if result.returncode != 0:
+    if result.returncode != expected:
         raise RuntimeError(f"配布物検査の工程に失敗しました（終了コード {result.returncode}）: {command[0]}")
 
 
@@ -91,6 +124,11 @@ def main() -> int:
                 probe_env["PYFLTR_GLOBAL_CONFIG"] = str(work / "global.toml")
                 probe_env["PATH"] = str(python.parent) + os.pathsep + env.get("PATH", "")
                 _run([str(python), "-I", str(root / "scripts/distribution_probe.py"), version], cwd=work, env=probe_env)
+                _run(
+                    [str(python), "-I", str(root / "scripts/check_distribution.py"), "--markdownlint-probe"],
+                    cwd=work,
+                    env=probe_env,
+                )
                 print(f"配布物検査成功: {artifact.name}")
         return 0
     except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
@@ -99,4 +137,27 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    if sys.argv[1:] == ["--markdownlint-probe"]:
+        probe_workspace = pathlib.Path.cwd()
+        (probe_workspace / "sample.md").write_text("# Sample\n\nText   \n", encoding="utf-8")
+        (probe_workspace / ".npmrc").write_text("minimum-release-age=1440\n", encoding="utf-8")
+        invocation = [
+            sys.executable,
+            "-I",
+            "-m",
+            "pyfltr",
+            "run",
+            "sample.md",
+            "--commands=markdownlint",
+            "--enable=markdownlint",
+            "--no-archive",
+            "--no-cache",
+            "--output-format=jsonl",
+            "--no-quiet",
+        ]
+        _run([*invocation, "--no-fix"], cwd=probe_workspace, env=dict(os.environ), expected=1)
+        _run([*invocation, "--exit-zero-even-if-formatted"], cwd=probe_workspace, env=dict(os.environ))
+        assert (probe_workspace / "sample.md").read_text(encoding="utf-8") == "# Sample\n\nText\n"
+        verify_markdownlint_environment(probe_workspace)
+    else:
+        sys.exit(main())

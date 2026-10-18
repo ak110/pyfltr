@@ -22,6 +22,7 @@ import re
 import shutil
 import sys
 
+import pyfltr.command.markdownlint_env
 import pyfltr.command.mise
 import pyfltr.command.process
 import pyfltr.command.structured_output
@@ -263,6 +264,7 @@ class ResolvedCommandline:
     effective_runner: str
     tool_spec_omitted: bool = False
     runner_fallback: str | None = None
+    markdownlint_environment: pyfltr.command.markdownlint_env.MarkdownlintEnvironment | None = None
 
     @property
     def commandline(self) -> list[str]:
@@ -744,13 +746,29 @@ def build_commandline(
                 category="JS系（pnpm・npmなどで起動する）",
                 alternatives='"direct" / "mise" / "bin-runner" / "python-runner"',
             )
-        executable, prefix = _resolve_js_commandline(command, config, effective=effective, cwd=cwd)
+        markdownlint_environment = None
+        if command == "markdownlint" and effective == "pnpx":
+            markdownlint_environment = pyfltr.command.markdownlint_env.resolve_environment(
+                cwd if cwd is not None else pathlib.Path.cwd()
+            )
+            if allow_side_effects:
+                pyfltr.command.markdownlint_env.ensure_environment(
+                    markdownlint_environment,
+                    timeout=float(
+                        pyfltr.config.model.command_setting(config.values, command, "timeout", config["command-timeout"])
+                    ),
+                )
+            executable = markdownlint_environment.executable
+            prefix: list[str] = []
+        else:
+            executable, prefix = _resolve_js_commandline(command, config, effective=effective, cwd=cwd)
         return ResolvedCommandline(
             executable=executable,
             prefix=prefix,
             runner=runner,
             runner_source=source,
             effective_runner=effective,
+            markdownlint_environment=markdownlint_environment,
         )
 
     if effective in ("uv", "uvx"):

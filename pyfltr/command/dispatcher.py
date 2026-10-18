@@ -15,6 +15,7 @@ import pyfltr.command.env
 import pyfltr.command.glab
 import pyfltr.command.linter_fix
 import pyfltr.command.lychee
+import pyfltr.command.markdownlint_env
 import pyfltr.command.only_failed
 import pyfltr.command.precommit
 import pyfltr.command.process
@@ -287,6 +288,13 @@ def _prepare_execution_params(
             uv_workspace_root=uv_workspace_root,
         )
         resolved = pyfltr.command.runner.ensure_mise_available(resolved, config, command=command, cwd=cwd)
+        if resolved.markdownlint_environment is not None:
+            pyfltr.command.markdownlint_env.ensure_environment(
+                resolved.markdownlint_environment,
+                timeout=float(
+                    pyfltr.config.model.command_setting(config.values, command, "timeout", config["command-timeout"])
+                ),
+            )
         # 監査を実施しない旧版が終了コード0を返すため、機能が成立する最低版を起動前に確認する。
         pyfltr.command.runner.ensure_package_manager_version(resolved, config, command, cwd=cwd)
     except ValueError as e:

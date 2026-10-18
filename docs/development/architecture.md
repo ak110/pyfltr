@@ -186,6 +186,26 @@ python-runnerへ委譲せず`uvx <bin>`で別環境へ解決する。
 利用者が版を固定する場合は対象パッケージを利用者プロジェクトへ追加してdirect指定へ切り替えるか、
 `{command}-path`で実行ファイルを明示する。
 
+### markdownlintのpnpx取得環境
+
+`command/markdownlint_env.py`が取得定義と`command/braces-3.0.3.patch`を所有する。
+両資源はwheelとsource distributionへ含める。
+bracesのcompile・expand・stringifyのAST処理、expandのappend、utilsのflattenを反復処理へ置き換える。
+パッチを更新する場合は、distribution-checkとスモークテストで実際に選ばれたbracesのコードと浅い公開API・AST入力を確認する。
+
+`runner.build_commandline`がpnpxに解決されたmarkdownlintへ専用環境を割り当て、
+`dispatcher._prepare_execution_params`が実行前に導入完了を確認する。
+`command-info --check`も同じ導入を通る。
+公開設定と`effective_runner`はpnpxのままとし、取得はpnpmの通常導入と`patchedDependencies`で行う。
+pnpmの設定は呼び出し元のcwdで解決し、値を導入プロセスへ渡す。
+認証情報を含みうる設定値はキャッシュへ複製しない。
+
+導入先はパッチ・取得パッケージ・実効設定・cwd・日付に対応して区別する。
+導入は別ディレクトリで完了させてから原子的に公開し、公開済みの環境は変更しない。
+既存のdlxキャッシュとは配置を分け、失敗した導入は次回作り直す。
+取得やパッチ適用の失敗は`resolution_failed`へ渡す。
+文書lintのcwd・設定・対象ファイルは既存の実行要求を使い、明示pathとローカルrunnerはその所有先の依存を使う。
+
 ### モノレポ対応
 
 起点cwd配下に複数のマーカー（`pyproject.toml`・`Cargo.toml`・`*.csproj`・`*.sln`）を検出した場合、

@@ -359,7 +359,9 @@ markdownlint-cli2 / textlint / designmd / eslint / prettier / biome / oxlint / t
 `js-runner`設定で起動方式を切り替える。
 既定は`pnpx`で、グローバル/キャッシュから都度取得する挙動となる。
 `pnpx`は公開設定名であり、実行時はPATH上の`pnpm`を使って
-`pnpm --package <パッケージ> dlx <コマンド>`形式へ解決される。
+パッケージを取得する。
+markdownlintはpyfltrが配布するbracesのパッチを適用した専用キャッシュから起動し、
+他のツールは`pnpm --package <パッケージ> dlx <コマンド>`形式へ解決される。
 `textlint-packages`などの追加パッケージも`dlx`より前の`--package`へ展開される。
 
 プロジェクトの`package.json`で既にこれらのツールをインストール済みの場合は、
@@ -377,7 +379,7 @@ js-runner = "pnpm"
 
 | `js-runner` | 挙動 |
 | --- | --- |
-| `pnpx` | `pnpm --package ... dlx ...`経由で一時取得して起動する（既定）。`textlint-packages`は`--package`で展開される |
+| `pnpx` | pnpmで取得して起動する（既定）。markdownlintはパッチ適用済みの専用キャッシュ、他のツールは`pnpm --package ... dlx ...`を使う |
 | `pnpm` | `pnpm exec`経由で起動する。パッケージは`package.json`側で管理する |
 | `npm` | `npm exec --no --`経由で起動する |
 | `npx` | `npx --no-install`経由で起動する。`textlint-packages`は`-p`で展開される |
@@ -386,6 +388,13 @@ js-runner = "pnpm"
 
 `{command}-path`を明示的に設定した場合はその値が優先され、自動解決は無効化される。
 グローバルインストール済みのtextlintを直接使いたい場合などに利用する。
+
+markdownlintの専用キャッシュは、パッチ・取得定義・pnpmの実効設定に対応して選ばれる。
+依存は日ごとに再解決され、導入を終えた環境は再利用される。
+`.npmrc`の`minimum-release-age`などの公開待機設定も取得へ引き継ぐ。
+実際の文書lintは呼び出し元のディレクトリで行う。
+取得やパッチ適用に失敗した場合は`resolution_failed`となるため、出力にあるpnpmの設定・導入エラーを確認して再実行する。
+`markdownlint-path`の明示や`pnpm`などのローカルrunnerを選んだ場合は、指定先の依存管理を使う。
 
 ```toml
 [tool.pyfltr]
