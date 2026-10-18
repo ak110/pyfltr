@@ -123,6 +123,12 @@ def test_documented_subcommands_and_config_actions_match_parser() -> None:
     assert {value.split("[", 1)[0] for value in re.findall(r"^- `([^`]+)`:", types, re.MULTILINE)} == {
         type(value).__name__ for value in pyfltr.config.model.DEFAULT_CONFIG.values()
     }
+    list_section = _between(source, "#### config list", "### サブコマンド:")
+    formats = re.search(r"--output-format ([a-z|]+)", list_section)
+    assert formats is not None
+    format_action = next(action for action in _arguments(actions["list"]) if "--output-format" in action.option_strings)
+    assert format_action.choices is not None
+    assert set(formats.group(1).split("|")) == set(format_action.choices)
 
 
 @pytest.mark.parametrize("command", ["list-runs", "show-run", "command-info", "grep", "replace"])
