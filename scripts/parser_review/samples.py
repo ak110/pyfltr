@@ -338,12 +338,18 @@ def select_samples(tools: list[str] | None) -> list[Sample]:
     """
     missing = missing_samples()
     if missing:
-        raise ValueError(f"サンプル定義の無いツールがあります: {', '.join(missing)}")
+        raise ValueError(
+            f"サンプル定義の無いツールがあります: {', '.join(missing)}。"
+            "scripts/parser_review/samples.pyへ対象ツールのSampleを追加して再実行してください"
+        )
     samples = builtin_samples()
     names = list(pyfltr.tools.BUILTIN_COMMANDS)
     if tools is None:
         return [samples[name] for name in names]
     unknown = [tool for tool in tools if tool not in samples]
     if unknown:
-        raise ValueError(f"未知のツール名です: {', '.join(unknown)}")
+        raise ValueError(
+            f"未知のツール名です: {', '.join(unknown)}。"
+            "pyfltr command-infoで組み込みツール名を確認して--toolsへ指定してください"
+        )
     return [samples[name] for name in names if name in tools]

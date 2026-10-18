@@ -395,7 +395,9 @@ def select_forms(selectors: list[str] | None) -> list[Form]:
             elif selector.isdigit() and any(form.number == int(selector) for form in FORMS):
                 chosen.update(form.id for form in FORMS if form.number == int(selector))
             else:
-                raise ValueError(f"未知の形態です: {selector}")
+                raise ValueError(
+                    f"未知の形態です: {selector}。pytest-forms --listで形態番号とIDを確認して--formsへ指定してください"
+                )
     for form_id in list(chosen):
         derivation = by_id[form_id].derivation
         if derivation is not None:

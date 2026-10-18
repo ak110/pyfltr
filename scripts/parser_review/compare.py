@@ -30,7 +30,10 @@ def _resolve_commit(base: str) -> str:
         check=False,
     )
     if completed.returncode != 0 or not completed.stdout.strip():
-        raise CompareError(f"基準commitを解決できません: {base}: {completed.stderr.strip()}")
+        raise CompareError(
+            f"基準commitを解決できません: {base}: {completed.stderr.strip()}。"
+            "git logで存在するcommitを確認し、--baseへ指定してください"
+        )
     return completed.stdout.strip()
 
 
@@ -45,7 +48,10 @@ def extract_base(commit: str, destination: pathlib.Path) -> None:
             check=False,
         )
     if completed.returncode != 0:
-        raise CompareError(f"git archiveに失敗しました: {completed.stderr.decode(errors='backslashreplace').strip()}")
+        raise CompareError(
+            f"git archiveに失敗しました: {completed.stderr.decode(errors='backslashreplace').strip()}。"
+            "対象リポジトリの読取権限と--baseのcommitを確認してcompareを再実行してください"
+        )
     root = destination / "base"
     root.mkdir()
     with tarfile.open(archive_path) as tar:
@@ -62,10 +68,16 @@ def _run_worker(root: pathlib.Path, inputs: pathlib.Path, output: pathlib.Path) 
         timeout=600,
     )
     if not output.exists():
-        raise CompareError(f"解析プロセスが結果を書きませんでした（root={root}）: {completed.stderr.strip()}")
+        raise CompareError(
+            f"解析プロセスが結果を書きませんでした（root={root}）: {completed.stderr.strip()}。"
+            "stderrの依存・入力エラーを修正してcompareを再実行してください"
+        )
     result = json.loads(output.read_text(encoding="utf-8"))
     if completed.returncode != 0 or result.get("outside_root"):
-        raise CompareError(f"解析プロセスが指定ルート外のpyfltrを読み込みました（root={root}）: {result.get('outside_root')}")
+        raise CompareError(
+            f"解析プロセスが指定ルート外のpyfltrを読み込みました（root={root}）: {result.get('outside_root')}。"
+            "PYTHONPATHと指定ルートのpyfltr配置を確認してcompareを再実行してください"
+        )
     return result
 
 
@@ -103,7 +115,10 @@ def compare(input_dir: pathlib.Path, output: pathlib.Path, *, base: str) -> dict
     """比較を実行して結果をJSONへ書き、集計を返す。"""
     inputs = input_dir / INPUTS_FILENAME
     if not inputs.is_file():
-        raise CompareError(f"比較入力がありません: {inputs}")
+        raise CompareError(
+            f"比較入力がありません: {inputs}。collectまたはpytest-formsを先に実行し、"
+            "その出力ディレクトリを--inputへ指定してください"
+        )
     entries = [json.loads(line) for line in inputs.read_text(encoding="utf-8").splitlines() if line.strip()]
     commit = _resolve_commit(base)
     with tempfile.TemporaryDirectory(prefix="parser-review-") as temp:

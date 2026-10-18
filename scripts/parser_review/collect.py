@@ -137,9 +137,17 @@ def _final_command_record(records: list[dict[str, typing.Any]], tool: str) -> di
     return None
 
 
-def _not_collected(record: dict[str, typing.Any], reason: str) -> dict[str, typing.Any]:
+def _not_collected(
+    record: dict[str, typing.Any], reason: str, action: str = "実行記録で中断・時間上限・停止失敗を確認してください"
+) -> dict[str, typing.Any]:
     record["state"] = STATE_NOT_COLLECTED
     record["reason"] = reason
+    retry = (
+        f"pytest-forms --forms={record['id']}"
+        if str(record["id"]).startswith("pytest-")
+        else f"collect --tools={record['tool']}"
+    )
+    record["hint"] = f"{action}。{retry}へ同じ--outputを指定して再採取してください。"
     return record
 
 
@@ -213,7 +221,9 @@ def collect_sample(collector: Collector, sample: Sample) -> dict[str, typing.Any
         if sample.git:
             _git_init(sample_dir)
     except (OSError, subprocess.SubprocessError) as exc:
-        return _not_collected(record, f"git準備に失敗した: {exc}")
+        return _not_collected(
+            record, f"git準備に失敗した: {exc}", "gitの導入状態とサンプルディレクトリの書込権限を確認してください"
+        )
 
     record["setup"] = []
     for index, argv in enumerate(sample.setup):
@@ -232,7 +242,11 @@ def collect_sample(collector: Collector, sample: Sample) -> dict[str, typing.Any
         if failure is None and result is not None and result.returncode != 0:
             failure = f"終了コード{result.returncode}で失敗した"
         if failure is not None:
-            return _not_collected(record, f"準備コマンド{' '.join(argv)}が成立しなかった（条件不足）: {failure}")
+            return _not_collected(
+                record,
+                f"準備コマンド{' '.join(argv)}が成立しなかった（条件不足）: {failure}",
+                "setupのstdout・stderrを読み、必要なランタイム・ネットワーク・認証の条件を整えてください",
+            )
 
     result = _run_step(
         collector,
@@ -256,7 +270,11 @@ def collect_sample(collector: Collector, sample: Sample) -> dict[str, typing.Any
         record["invalid_jsonl_lines"] = len(invalid)
     header = next((item for item in records if item.get("kind") == "header"), None)
     if header is None or not header.get("run_id"):
-        return _not_collected(record, "JSON Linesにrun_idを持つheaderが無い（pyfltrの異常終了）")
+        return _not_collected(
+            record,
+            "JSON Linesにrun_idを持つheaderが無い（pyfltrの異常終了）",
+            "run.jsonlとrun.stderrを読み、pyfltrの設定・依存関係のエラーを修正してください",
+        )
     run_id = str(header["run_id"])
     record["run_id"] = run_id
     # エージェント環境の静音出力では成功したコマンドのcommandレコードが出ないため、
@@ -270,12 +288,24 @@ def collect_sample(collector: Collector, sample: Sample) -> dict[str, typing.Any
         status = command.get("status") if command is not None else None
         record["status"] = status
         if status in _NOT_RUN_STATUSES:
-            return _not_collected(record, f"ツールが実行されなかった（status={status}。未導入・外部条件の不足など）")
-        return _not_collected(record, f"実行アーカイブに記録が無い: {exc}")
+            return _not_collected(
+                record,
+                f"ツールが実行されなかった（status={status}。未導入・外部条件の不足など）",
+                f"pyfltr command-info {sample.tool} --checkで解決状態を確認し、必要なツールと設定を用意してください",
+            )
+        return _not_collected(
+            record,
+            f"実行アーカイブに記録が無い: {exc}",
+            "run.stderrの初期化エラーを読み、アーカイブ保存先の書込権限と空き容量を確認してください",
+        )
     status = meta.get("status")
     record["status"] = status
     if status in _NOT_RUN_STATUSES:
-        return _not_collected(record, f"ツールが実行されなかった（status={status}。未導入・外部条件の不足など）")
+        return _not_collected(
+            record,
+            f"ツールが実行されなかった（status={status}。未導入・外部条件の不足など）",
+            f"pyfltr command-info {sample.tool} --checkで解決状態を確認し、必要なツールと設定を用意してください",
+        )
     output_path = work_dir / "output.log"
     output_path.write_text(output, encoding="utf-8")
     (work_dir / "diagnostics.json").write_text(json.dumps(diagnostics, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -334,6 +364,7 @@ def write_results(output_dir: pathlib.Path, records: list[dict[str, typing.Any]]
                     "tool",
                     "state",
                     "reason",
+                    "hint",
                     "status",
                     "diagnostic_count",
                     "attention",

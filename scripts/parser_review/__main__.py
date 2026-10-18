@@ -47,6 +47,15 @@ def _finish(collector: collect.Collector, records: list[dict]) -> int:
     print(json.dumps({key: summary[key] for key in ("incomplete", "counts", "total")}, ensure_ascii=False))
     print(f"summary: {collector.output_dir / collect.SUMMARY_FILENAME}")
     print(f"inputs: {collector.output_dir / collect.INPUTS_FILENAME}")
+    if collector.incomplete:
+        for record in records:
+            if record.get("reason"):
+                print(f"未完了: {record['id']}: {record['reason']}。{record.get('hint', '')}", file=sys.stderr)
+        print(
+            "summary.jsonと各record.jsonで中断・時間上限・停止失敗を確認してください。"
+            "残存プロセスがある場合は記録のPIDを確認して停止し、必要な時間上限で同じ採取コマンドを再実行してください。",
+            file=sys.stderr,
+        )
     return 1 if collector.incomplete else 0
 
 
