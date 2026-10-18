@@ -450,7 +450,7 @@ pyfltr generate-shell-completion powershell | Out-String | Invoke-Expression
 - textlint / markdownlint: `*.md`
 - pytest: `*_test.py`
 
-### 外部パス指定時の挙動
+### 外部パス指定時の挙動 {#external-paths}
 
 起点cwd（`--work-dir`適用後の作業ディレクトリ）配下にない絶対パスを「外部パス」と呼ぶ。
 ツールの性質に応じて以下の3分類で扱う。
@@ -892,6 +892,9 @@ pyfltrからprekのhookを呼び出す統合は`prek = true`で有効化する�
   `.gitignore`を尊重する。
   `.venv`・`node_modules`・`target`・`build`・`dist`・`.git`配下は走査しない。
   ファイル展開の除外（`exclude`・`extend-exclude`）に一致するディレクトリと、`subproject-exclude`で指定したディレクトリの配下も走査しない
+- 起点cwd自身がマーカーを持たない場合も、どのサブプロジェクトにも属さない起点cwd内のファイル
+  （起点直下の`README.md`など）は起点cwdの設定で起点cwdから実行する。
+  起点cwd外として扱うのは起点cwd配下にない絶対パス（[外部パス](#external-paths)）だけである
 - `pyproject.toml`を持たないサブプロジェクト（`Cargo.toml`単独・`*.csproj`単独等）は
   `[tool.pyfltr]`の記述先が無いため、最近接祖先の`pyproject.toml`（無ければ起点で解決した設定）を継承する
 - Cargo workspace root配下の登録member crateは重複実行防止のため独立サブプロジェクトとして検出しない。

@@ -73,3 +73,20 @@ def to_start_relative(
         return normalize_separators(normalized.relative_to(pathlib.Path(os.path.normpath(start))))
     except ValueError:
         return normalize_separators(normalized)
+
+
+def is_external_path(target: pathlib.Path, *, start_cwd: pathlib.Path) -> bool:
+    """`target`が起点cwd配下にない絶対パス（外部パス）かを判定する。
+
+    利用者向けの外部パスの定義（`docs/guide/usage.md`「外部パス指定時の挙動」）を実装する唯一の判定であり、
+    単一プロジェクトの外部パス除外とモノレポのファイル分類の双方が使う。
+    相対パスは`..`で起点外を指す場合も含めて起点cwd配下扱いとして`False`を返す。
+    絶対パスは実体パスを起点cwd配下と比較し、配下に含まれないか実体解決に失敗した場合に`True`を返す。
+    """
+    if not target.is_absolute():
+        return False
+    try:
+        target.resolve().relative_to(start_cwd.resolve())
+    except (OSError, ValueError):
+        return True
+    return False

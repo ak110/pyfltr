@@ -662,6 +662,53 @@ def test_monorepo_external_only_warning_and_record_are_emitted_once(
     assert len(messages) == 1
 
 
+@pytest.mark.parametrize("target_root_file", [False, True])
+def test_monorepo_without_root_marker_runs_root_files_at_start_cwd(
+    tmp_path: pathlib.Path, mocker, target_root_file: bool
+) -> None:
+    """マーカーの無い起点の直下ファイルを起点cwdから検査し、起点cwd外として警告しない。
+
+    起点cwd自身がマーカーを持たず配下のサブプロジェクトが2件以上あるとモノレポモードになる。
+    所属の無い起点直下のファイルを外部パスと誤分類すると、除外対象ツール（pytest）では
+    外部パスの警告を出力して検査から外すか、警告に反して実行する。
+    """
+    _write_pyproject(tmp_path / "pkg_a", "pkg_a", pytest_on=True)
+    _write_pyproject(tmp_path / "pkg_b", "pkg_b", pytest_on=True)
+    (tmp_path / "root_test.py").write_text("def test_root(): pass\n", encoding="utf-8")
+    (tmp_path / "pkg_a" / "a_test.py").write_text("def test_a(): pass\n", encoding="utf-8")
+    # 起点直下のファイルだけを渡すと、サブプロジェクトの対象は0件になる。
+    targets = [str(tmp_path / "root_test.py")] if target_root_file else []
+
+    proc = subprocess.CompletedProcess(["pytest"], returncode=0, stdout="")
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
+
+    pyfltr.cli.main.run(
+        [
+            "run",
+            "--work-dir",
+            str(tmp_path),
+            "--commands=pytest",
+            "--enable=pytest",
+            "--no-archive",
+            "--no-cache",
+            "--no-gitignore",
+            *targets,
+        ]
+    )
+
+    assert [w for w in pyfltr.warnings_.collected_warnings() if w["source"] == "external-path"] == []
+    assert pyfltr.warnings_.filtered_direct_files(reason="external") == []
+    root_calls = [
+        call
+        for call in mock_run.call_args_list
+        if call.args
+        and "pytest" in " ".join(call.args[0])
+        and pathlib.Path(call.kwargs.get("cwd") or ".").resolve() == tmp_path.resolve()
+    ]
+    assert len(root_calls) == 1
+    assert "root_test.py" in root_calls[0].args[0]
+
+
 @pytest.mark.parametrize("extra_targets", [[], ["no_such_test.py"]])
 def test_monorepo_mixed_targets_keep_succeeded_status(
     tmp_path: pathlib.Path, mocker, capsys: pytest.CaptureFixture[str], extra_targets: list[str]

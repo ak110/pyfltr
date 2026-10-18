@@ -68,11 +68,13 @@ class ExecutionBaseContext:
     """サブプロジェクト cwd（絶対パス）からそのサブプロジェクトに属するファイル一覧（`start_cwd` 相対）への辞書。
 
     `pyfltr.command.subprojects.classify_files_by_subproject` で算出する。
+    起点cwdの実体パスのキーは起点cwdの区分であり、起点cwdがサブプロジェクトでない場合も
+    どのサブプロジェクトにも属さない起点cwd内のファイルを保持する。
     サブプロジェクト未検出時は空辞書。
     """
     external_files: "list[pathlib.Path]" = dataclasses.field(default_factory=list)
-    """モノレポモードで`classify_files_by_subproject`がいずれのサブプロジェクトにも
-    割り当てなかったファイル一覧（起点cwd配下にない絶対パスを含む）。
+    """モノレポモードで`classify_files_by_subproject`が外部パス（起点cwd配下にない絶対パス）と
+    分類したファイル一覧。所属の無い起点cwd内のファイルは含まず、`subproject_files`の起点cwdの区分へ入る。
 
     `subproject_loop.run_subproject_loop` で注入対象ツールおよび素通し対象ツールへ
     起点cwdでの追加実行を行うために参照する。

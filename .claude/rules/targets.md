@@ -60,9 +60,11 @@ paths:
   対象から外部パスを除外し、各ファイルに`emit_warning` + `add_filtered_direct_file(reason="external")`を発行する
 - 既定（素通し）: 上記以外。各ツールの設定探索仕様に委ねる
 
-外部パス判定基準は「起点cwd配下にない絶対パス」で、`_is_external_path`に集約する。
-モノレポ時は`classify_files_by_subproject`がサブプロジェクト辞書から外部パスを除いた上で
-`ExecutionBaseContext.external_files`へ保持する。
+外部パス判定基準は「起点cwd配下にない絶対パス」で、`pyfltr/paths.py`の`is_external_path`に集約する。
+サブプロジェクトへの所属の不成立など別の分類結果を外部パスの判定に代用しない。
+モノレポ時は`classify_files_by_subproject`が全ファイルを各サブプロジェクト・起点cwd・外部パスの3区分へ分け、
+外部パスだけを`ExecutionBaseContext.external_files`へ保持する。
+所属の無い起点cwd内のファイルは`subproject_files`の起点cwdの区分へ割り当て、起点cwdの設定で起点cwdから実行する。
 注入対象および素通し対象ツールは`subproject_loop.run_subproject_loop`内で起点cwd（`subproject_cwd=None`）を使う。
 外部パス専用の追加実行を行ったうえで結果を`CommandResult.merge`で集約する。
 除外対象ツールでは外部パスを破棄して警告のみ発行する。

@@ -121,6 +121,38 @@ def test_classify_files_by_subproject_deep_first(tmp_path: pathlib.Path) -> None
     assert not external
 
 
+def test_classify_files_by_subproject_unassigned_files_go_to_start_cwd(tmp_path: pathlib.Path) -> None:
+    """所属の無い起点cwd内のファイルは起点cwdの区分へ入り、外部パスは起点cwd配下にない絶対パスだけになる。
+
+    起点cwdがマーカーを持たない場合の起点直下のファイルと、`subproject-exclude`で候補から外した
+    マーカー付きディレクトリ配下のファイルは、どのサブプロジェクトにも属さない。
+    これらを外部パスへ分類すると、除外対象ツールが起点cwd外の警告を出力して検査から外す。
+    """
+    _make_pyproject(tmp_path / "a")
+    _make_pyproject(tmp_path / "b")
+    _make_pyproject(tmp_path / "excluded_pkg")
+    config = pyfltr.config.config.create_default_config()
+    config.values["subproject-exclude"] = ["excluded_pkg"]
+    subs = pyfltr.command.subprojects.discover_subprojects(tmp_path, config, git_check_ignore=lambda _start, _candidates: set())
+    assert [s.relative for s in subs] == ["a", "b"]
+
+    root_file = pathlib.Path("sample.md")
+    excluded_file = pathlib.Path("excluded_pkg") / "doc.md"
+    sub_file = pathlib.Path("a") / "doc.md"
+    outside_dir = tmp_path.parent / f"outside-{tmp_path.name}"
+    outside_dir.mkdir()
+    outside_file = (outside_dir / "out.md").resolve()
+    for path in (tmp_path / root_file, tmp_path / excluded_file, tmp_path / sub_file, outside_file):
+        path.write_text("# doc\n", encoding="utf-8")
+
+    result, external = pyfltr.command.subprojects.classify_files_by_subproject(
+        [root_file, excluded_file, sub_file, outside_file], subs, tmp_path
+    )
+    assert result[tmp_path.resolve()] == [root_file, excluded_file]
+    assert result[(tmp_path / "a").resolve()] == [sub_file]
+    assert external == [outside_file]
+
+
 def test_find_uv_lock_for_cwd_direct(tmp_path: pathlib.Path) -> None:
     """cwd 直下に `uv.lock` があれば返す。"""
     (tmp_path / "uv.lock").write_text("", encoding="utf-8")

@@ -1170,13 +1170,20 @@ def _build_pytest_base(
         return [*base_files, *(f for f in always_files if (base_ctx.start_cwd / f).resolve() not in seen)]
 
     subproject_files = dict(base_ctx.subproject_files)
-    if subs_using_full:
+    # 起点cwdがサブプロジェクトでない場合、所属の無い起点cwd内のファイル（起点cwdの区分）は起点の設定で実行する。
+    start_real = base_ctx.start_cwd.resolve()
+    root_bucket_uses_full = root_uses_full and bool(base_ctx.subprojects) and start_real not in sub_values
+    if subs_using_full or root_bucket_uses_full:
         full_subproject_files, _ = pyfltr.command.subprojects.classify_files_by_subproject(
             full_files, base_ctx.subprojects, base_ctx.start_cwd
         )
         for cwd in subs_using_full:
             subproject_files[cwd] = _merge(
                 base_ctx.subproject_files.get(cwd, []), full_subproject_files.get(cwd, []), sub_values[cwd]
+            )
+        if root_bucket_uses_full:
+            subproject_files[start_real] = _merge(
+                base_ctx.subproject_files.get(start_real, []), full_subproject_files.get(start_real, []), config.values
             )
     return dataclasses.replace(
         base_ctx,

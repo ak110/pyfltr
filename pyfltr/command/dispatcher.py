@@ -65,21 +65,6 @@ def _to_subproject_relative(
     return pyfltr.paths.normalize_separators(str(rel))
 
 
-def _is_external_path(target: pathlib.Path, *, start_cwd: pathlib.Path) -> bool:
-    """`target` が起点cwd配下にない絶対パス（外部パス）かを判定する。
-
-    相対パスは起点cwd配下扱いとして`False`を返す。絶対パスは実体パスを起点cwd配下と
-    比較し、配下に含まれないか実体解決に失敗した場合に`True`を返す。
-    """
-    if not target.is_absolute():
-        return False
-    try:
-        target.resolve().relative_to(start_cwd.resolve())
-    except (OSError, ValueError):
-        return True
-    return False
-
-
 def _resolve_config_inject_path(start_cwd: pathlib.Path, candidates: list[str]) -> pathlib.Path | None:
     """起点cwd直下を`candidates`順に走査し、最初に見つかった設定ファイルの絶対パスを返す。
 
@@ -235,7 +220,7 @@ def _prepare_execution_params(
         start_for_filter = start_cwd if start_cwd is not None else pathlib.Path.cwd()
         kept: list[pathlib.Path] = []
         for t in targets:
-            if _is_external_path(t, start_cwd=start_for_filter):
+            if pyfltr.paths.is_external_path(t, start_cwd=start_for_filter):
                 normalized_target = pyfltr.paths.normalize_separators(t)
                 pyfltr.command.targets.emit_external_path_warning(command, normalized_target)
             else:

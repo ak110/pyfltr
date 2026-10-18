@@ -119,7 +119,7 @@ def _ext_workspace(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, 
     return tmp_path, internal, external
 
 
-# --- _is_external_path の境界を execute_command 経由で検証 -----------------------
+# --- pyfltr.paths.is_external_path の境界を execute_command 経由で検証 -----------------------
 # allows_external_paths=False のツール（pytest）を使い、
 # 相対パス・内部絶対パス・外部絶対パスの3分岐を確認する。
 

@@ -40,6 +40,7 @@ import tomlkit.exceptions
 
 import pyfltr.command.targets
 import pyfltr.config.model
+import pyfltr.paths
 
 if typing.TYPE_CHECKING:
     import pyfltr.config.config
@@ -406,17 +407,22 @@ def classify_files_by_subproject(
     subprojects: list[Subproject],
     start_cwd: pathlib.Path,
 ) -> tuple[dict[pathlib.Path, list[pathlib.Path]], list[pathlib.Path]]:
-    """ファイル一覧をサブプロジェクト別の辞書と外部パス一覧へ分類して返す。
+    """ファイル一覧をサブプロジェクト・起点cwd・外部パスの3区分へ分類して返す。
 
     各ファイルは「実体パスがどのサブプロジェクト cwd 配下に最も深く含まれるか」で
     最深一致のサブプロジェクトに割り当てる。これによりネストする子サブプロジェクト
     配下のファイルは親サブプロジェクトの集合から除外され、子サブプロジェクトの
     集合へ含まれる。
 
+    どのサブプロジェクトにも属さないファイルのうち、外部パス（`pyfltr.paths.is_external_path`。
+    起点cwd配下にない絶対パス）は第2戻り値の外部パス一覧へ割り当て、それ以外は辞書の起点cwdの区分
+    （キーは起点cwdの実体パス）へ入れる。起点cwd自身がマーカーを持たない場合の起点直下のファイルや、
+    `subproject-exclude`等で候補から外れたマーカー付きディレクトリ配下のファイルが起点cwdの区分へ入る。
+    起点cwdがサブプロジェクト`.`として検出された場合は、同じキーがそのサブプロジェクトの区分になる。
+    全ファイルは辞書のいずれかの区分と外部パス一覧の一方だけへ過不足なく入る。
+
     `files` は起点 cwd 相対の `pathlib.Path` を想定する。返り値の辞書値は同じ起点 cwd 相対の
-    ファイルパス一覧。サブプロジェクトに属さない（起点 cwd の外側等）ファイルは
-    辞書からは外し、第2戻り値の外部パス一覧へ保持する。
-    外部パス一覧は注入対象ツール（`config_arg_template`指定のmarkdownlint・textlint等）
+    ファイルパス一覧。外部パス一覧は注入対象ツール（`config_arg_template`指定のmarkdownlint・textlint等）
     の追加実行や、除外対象ツール（`allows_external_paths=False`）の警告発行に使う。
 
     `subprojects` が空の場合は空辞書と空リストを返す（呼び出し側は単一実行経路へフォールバック）。
@@ -443,8 +449,10 @@ def classify_files_by_subproject(
             break
         if chosen is not None:
             result[chosen].append(f)
-        else:
+        elif pyfltr.paths.is_external_path(f, start_cwd=start_real):
             external.append(f)
+        else:
+            result.setdefault(start_real, []).append(f)
     return result, external
 
 

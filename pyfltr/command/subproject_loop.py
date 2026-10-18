@@ -7,8 +7,10 @@ dispatcher側のディスパッチ関数と無効スキップ結果生成関数�
 
 import concurrent.futures
 import dataclasses
+import pathlib
 import typing
 
+import pyfltr.command.subprojects
 import pyfltr.command.targets
 import pyfltr.command.tool_parallelism
 import pyfltr.config.config
@@ -97,7 +99,10 @@ def run_subproject_loop(
 
     各サブプロジェクトの設定（`base.subproject_configs`）で対象のコマンドのON/OFFを再判定し、
     無効のサブプロジェクト（親ON・子OFF）とファイル0件のサブプロジェクトは実行から除外する。
-    外部パス（`base.external_files`）への適用は起点設定のON/OFFで固定し、起点で無効なら何も行わない。
+    起点cwdがサブプロジェクトでなく、どのサブプロジェクトにも属さない起点cwd内のファイル（起点cwdの区分）が
+    ある場合は、起点cwdをサブプロジェクト`.`として加え、起点設定（`base.config`）のON/OFFで起点cwdから実行する。
+    外部パス（`base.external_files`。起点cwd配下にない絶対パスだけ）への適用は起点設定のON/OFFで固定し、
+    起点で無効なら何も行わない。
 
     有効なサブプロジェクトは `jobs` から導いた上限まで同時に実行する。
     実行順が非決定になっても報告順を変えないよう、`relative` の昇順で並べてから集約する。
@@ -107,7 +112,7 @@ def run_subproject_loop(
     集約時にパスを付け替えない。
     いずれのサブプロジェクトでも実行されず、設定による無効スキップが発生したか起点でも無効な場合は、
     起点cwdでの全ファイル誤実行を避けて skipped 結果を返す。
-    全件ファイル0件かつ起点で有効なときのみ通常経路の0件結果を返す（`dispatch_fn` 経由）。
+    全区分でファイル0件かつ起点で有効なときのみ、対象0件の通常経路の結果を返す（`dispatch_fn` 経由）。
     """
     with pyfltr.warnings_.suppress_duplicates():
         base = ctx.base
@@ -117,7 +122,7 @@ def run_subproject_loop(
         # 設定で無効化してスキップしたサブプロジェクトの有無。0件スキップと区別し誤実行を抑止する。
         skipped_by_config = False
         targets: list[tuple[typing.Any, typing.Any]] = []
-        for sub in base.subprojects:
+        for sub in _subprojects_with_start_cwd(base.subprojects, base.start_cwd, base.subproject_files):
             sub_files = base.subproject_files.get(sub.cwd, [])
             if not sub_files:
                 continue
@@ -183,5 +188,22 @@ def run_subproject_loop(
             # 設定で無効化してスキップした、または起点でも無効。
             # 起点cwdで全ファイルを誤実行しないよう、対象0件相当のskipped結果を返す。
             return disabled_skip_fn(command, ctx)
-        # 全サブプロジェクトでファイル0件 → 通常経路の0件結果を返す（`dispatch_fn` 経由）。
-        return dispatch_fn(command, args, ctx)
+        # 全区分でファイル0件 → 通常経路の0件結果を返す（`dispatch_fn` 経由）。
+        # 外部パスは上の分岐で扱い済みのため、対象を空にして警告の重複と誤実行を避ける。
+        empty_base = dataclasses.replace(base, all_files=[], subprojects=[], subproject_files={}, external_files=[])
+        return dispatch_fn(command, args, dataclasses.replace(ctx, base=empty_base))
+
+
+def _subprojects_with_start_cwd(
+    subprojects: list[pyfltr.command.subprojects.Subproject],
+    start_cwd: pathlib.Path,
+    subproject_files: dict[pathlib.Path, list[pathlib.Path]],
+) -> list[pyfltr.command.subprojects.Subproject]:
+    """起点cwdの区分にファイルがあり、起点cwdがサブプロジェクトでない場合に起点cwdを加えた一覧を返す。
+
+    起点cwdの区分のキーは`classify_files_by_subproject`と同じく起点cwdの実体パスとする。
+    """
+    start_real = start_cwd.resolve()
+    if not subproject_files.get(start_real) or any(sub.cwd == start_real for sub in subprojects):
+        return list(subprojects)
+    return [*subprojects, pyfltr.command.subprojects.Subproject(cwd=start_real, relative=".")]
