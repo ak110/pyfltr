@@ -22,6 +22,7 @@ def apply_filter(
     commands: list[str],
     all_files: list[pathlib.Path],
     *,
+    start_cwd: pathlib.Path,
     from_run: str | None = None,
     extra_candidates: dict[str, list[pathlib.Path]] | None = None,
     only_failed_option: str = "--only-failed",
@@ -35,6 +36,7 @@ def apply_filter(
         args: コマンドライン引数。`args.only_failed`が真のとき適用する。
         commands: 実行対象コマンド名のリスト。
         all_files: `expand_all_files`の結果。`args.targets`指定があれば既にフィルタリング済み。
+        start_cwd: 実行起点（`--work-dir`・MCPの`work_dir`適用後）。対象ファイルと診断の`file`の突合キーの基準。
         from_run: 参照対象runを明示指定する（前方一致 / `latest`対応）。
             `None`の場合は直前runを自動選択する。
         extra_candidates: ツール名から、`all_files`に加えて交差の候補にするファイル一覧への辞書。
@@ -119,7 +121,7 @@ def apply_filter(
     targets: dict[str, ToolTargets] = {}
     for tool in failed_tools:
         candidates = [*all_files, *(extra_candidates or {}).get(tool, [])]
-        tool_targets = _extract_failed_files_for_tool(store, last_run.run_id, tool, candidates)
+        tool_targets = _extract_failed_files_for_tool(store, last_run.run_id, tool, candidates, start_cwd=start_cwd)
         if tool_targets is not None:
             targets[tool] = tool_targets
 
@@ -210,6 +212,8 @@ def _extract_failed_files_for_tool(
     run_id: str,
     tool: str,
     all_files: list[pathlib.Path],
+    *,
+    start_cwd: pathlib.Path,
 ) -> ToolTargets | None:
     """ツール別の失敗ファイル集合を抽出する。
 
@@ -227,12 +231,13 @@ def _extract_failed_files_for_tool(
         # 診断ファイル無し（pass-filenames=Falseのツール等）→ 既定対象でフォールバック実行
         return ToolTargets.fallback_default()
 
-    # all_filesを正規化済み相対パス文字列でキーに持つ辞書にしておき、
-    # 診断側の`file`（`pyfltr.parsing.entry.parse_errors`が起点相対へ変換済み）とそのまま比較する。
+    # 対象側は利用者が渡した`..`を含む起点外の相対パスなどを保持し、診断側の`file`は
+    # `pyfltr.parsing.entry.parse_errors`が起点相対へ変換済みの表現を持つため、両側を同じ突合キーへ揃えて比較する。
     # all_files_mapを基準に走査することでtarget側の並び順を保つ
     # （failed_filesを直接反復するとセット由来の順序不定が混入する）。
-    all_files_map = {pyfltr.paths.normalize_separators(p): p for p in all_files}
-    intersected = [path for key, path in all_files_map.items() if key in failed_files]
+    failed_keys = {pyfltr.paths.to_match_key(f, start_cwd=start_cwd) for f in failed_files}
+    all_files_map = {pyfltr.paths.to_match_key(p, start_cwd=start_cwd): p for p in all_files}
+    intersected = [path for key, path in all_files_map.items() if key in failed_keys]
     if not intersected:
         # 交差空 → 除外扱い（Noneを返すことで呼び出し側がtargets dictから除く）
         # 利用者が暗黙除外に気付けるようツール単位で理由を INFO ログへ出力する。

@@ -275,12 +275,16 @@ pnpmの設定は呼び出し元のcwdで解決し、値を導入プロセスへ�
 - 診断の`file`は解析境界（`pyfltr.parsing.entry.parse_errors`）で起点相対へ揃え、統合時には付け替えない。
   通常・fix・2段階などの各実行処理は`ExecutionRequest.parse_errors`を通じてツールの実行cwd（`path_base`）と実行起点（`start_cwd`）を渡し、
   `pyfltr.paths.to_start_relative`が相対パスを実行cwd基準で絶対化してから起点相対へ変換する。
-  起点外を指すパスは`../`相対を含めて`/`区切りの絶対パスで返し、対象集合が保持する外部パスと同じ表現に揃える。
+  起点外を指すパスは`../`相対を含めて`/`区切りの絶対パスで返す。
   各パーサーはツール出力のパスを区切りの統一だけで返し、基準変換を持たない。
   診断メッセージにもパスを埋め込むaridは`CommandInfo.path_resolving_parser`として同じ変換関数を受け取る。
   一時ファイルから元ファイルへの付け替え（`file_path_remap`）は変換の後に適用し、付け替え後の値は再変換しない。
-  `--only-failed`と`retry_command`は起点相対の対象集合と診断の`file`を文字列で突合するため、
-  基準が子プロジェクト相対のまま残ると失敗ファイルを選べない
+  基準が子プロジェクト相対のまま残ると、`--only-failed`と`retry_command`が失敗ファイルを選べない
+- 対象ファイル集合（`expand_all_files`の結果）は起点内の`..`を畳み込んだ表現を保持し、起点外を指す相対パスは利用者が渡した表現のまま残す。
+  このため対象集合と診断の`file`、Gitの出力などは同じ実体でも表現が異なりうる。
+  `--only-failed`・`retry_command`・`--changed-since`を含め、対象集合のパスを別の出所のパスと照合する処理は、
+  両側を`pyfltr.paths.to_match_key`で揃えてから比べる。`--changed-since`は`git diff --name-only`が返す
+  Gitリポジトリroot相対のパスを、`git rev-parse --show-toplevel`のrootで絶対化してからキーへ変換する
 - 診断を起点相対へ揃える前の版が保存したアーカイブは、ツールを問わず子プロジェクト相対の診断を持つ。
   `ArchiveStore.read_tool_diagnostics`は保存済み生出力の`# subproject:`区間ごとに解析をやり直し、
   `file`・行・メッセージが一致する区間が1件だけの診断を起点相対へ補正して返す。

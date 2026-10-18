@@ -110,6 +110,26 @@ def test_filter_by_changed_since_invalid_ref(tmp_path: pathlib.Path, _git_repo: 
     assert "no-such-branch-xyz" in warnings[0]["message"]
 
 
+def test_filter_by_changed_since_from_subdirectory_of_git_root(tmp_path: pathlib.Path, _git_repo: pathlib.Path) -> None:
+    """Gitリポジトリのrootより下の起点でも、変更ファイルを対象に残す。
+
+    `git diff --name-only`はroot相対（`proj/a.md`）を返し、対象は起点相対（`a.md`）である。
+    両者を文字列で比べると変更ファイルも対象から外れ、実行が0件になる。
+    """
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "a.md").write_text("# a\n")
+    (proj / "b.md").write_text("# b\n")
+    subprocess.run(["git", "add", "."], check=True, capture_output=True)
+    subprocess.run(["git", "commit", "--message=initial"], check=True, capture_output=True)
+    (proj / "a.md").write_text("# a  \n")
+
+    all_files = [pathlib.Path("a.md"), pathlib.Path("b.md")]
+    result = pyfltr.command.targets.filter_by_changed_since(all_files, "HEAD", cwd=proj)
+
+    assert result == [pathlib.Path("a.md")]
+
+
 def test_filter_by_changed_since_git_not_found(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """git 不在ケース: PATH 制限で git が見つからない場合にフォールバックする。"""
     # PATH を空にして git を解決不能にする
@@ -268,6 +288,30 @@ def test_expand_all_files_does_not_reuse_exclude_cache_between_configs(tmp_path:
 
     assert excluded_result == []
     assert included_result == [pathlib.Path("sample.txt")]
+
+
+def test_expand_all_files_collapses_dot_dot_in_relative_targets(tmp_path: pathlib.Path) -> None:
+    """起点内で畳み込める`..`を畳み込み、除外名を経由するパスも除外せず、起点外の相対パスの表現は保つ。
+
+    `build/../a.md`を畳み込まずに除外を照合すると、親の`build`が`exclude`に一致して`a.md`を除外する。
+    """
+    start = tmp_path / "proj"
+    (start / "sub").mkdir(parents=True)
+    (start / "build").mkdir()
+    (start / "a.md").write_text("# a\n")
+    (tmp_path / "outside").mkdir()
+    (tmp_path / "outside" / "out.md").write_text("# out\n")
+    config = pyfltr.config.config.create_default_config()
+    config.values["respect-gitignore"] = False
+
+    result = pyfltr.command.targets.expand_all_files(
+        [pathlib.Path("sub/../a.md"), pathlib.Path("build/../a.md"), pathlib.Path("../outside/out.md")],
+        config,
+        start_cwd=start,
+    )
+
+    assert [p.as_posix() for p in result] == ["../outside/out.md", "a.md"]
+    assert pyfltr.warnings_.filtered_direct_files(reason="excluded") == []
 
 
 def test_expand_all_files_respects_gitignore(tmp_path: pathlib.Path) -> None:

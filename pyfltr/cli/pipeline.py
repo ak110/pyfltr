@@ -883,6 +883,7 @@ def _prepare_execution_targets(
         args,
         commands,
         all_files,
+        start_cwd=start_cwd_path,
         from_run=getattr(args, "from_run", None),
         extra_candidates=_only_failed_extra_candidates(args, commands, config, subproject_configs, start_cwd_path),
         only_failed_option="only_failed=True" if archive_required else "--only-failed",

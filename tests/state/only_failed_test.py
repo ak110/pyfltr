@@ -1,6 +1,7 @@
 import json
 import logging
 import pathlib
+import typing
 
 import pytest
 
@@ -22,10 +23,18 @@ from tests.conftest import seed_archive_run as _seed_run
 # ---------------------------------------------------------------------------
 
 
+def _apply_filter(
+    *args: typing.Any, **kwargs: typing.Any
+) -> tuple[list[str], dict[str, pyfltr.command.only_failed.ToolTargets] | None, bool]:
+    """起点を明示して`apply_filter`を呼ぶ。対象と診断はいずれも起点相対の表現で与える。"""
+    kwargs.setdefault("start_cwd", pathlib.Path.cwd())
+    return pyfltr.state.only_failed.apply_filter(*args, **kwargs)
+
+
 def test_apply_filter_not_only_failed(_only_failed_cache: pathlib.Path) -> None:
     """only_failed=False（未指定）のとき、（commands、None、False）を返す。"""
     args = pyfltr.run_options.RunOptions.from_values({"only_failed": False})
-    commands, targets, exit_early = pyfltr.state.only_failed.apply_filter(args, ["ruff-check"], [])
+    commands, targets, exit_early = _apply_filter(args, ["ruff-check"], [])
     assert commands == ["ruff-check"]
     assert targets is None
     assert exit_early is False
@@ -44,7 +53,7 @@ def test_apply_filter_builds_per_tool_targets(_only_failed_cache: pathlib.Path) 
     )
     args = pyfltr.run_options.RunOptions.from_values({"only_failed": True})
     all_files = [pathlib.Path("a.py"), pathlib.Path("b.py")]
-    commands, targets, exit_early = pyfltr.state.only_failed.apply_filter(args, ["ruff-check", "mypy"], all_files)
+    commands, targets, exit_early = _apply_filter(args, ["ruff-check", "mypy"], all_files)
 
     assert exit_early is False
     assert sorted(commands) == ["mypy", "ruff-check"]
@@ -65,7 +74,7 @@ def test_apply_filter_includes_resolution_failed_tools(_only_failed_cache: pathl
         resolution_failed_tools={"shellcheck"},
     )
     args = pyfltr.run_options.RunOptions.from_values({"only_failed": True})
-    commands, targets, exit_early = pyfltr.state.only_failed.apply_filter(args, ["shellcheck"], [pathlib.Path("a.sh")])
+    commands, targets, exit_early = _apply_filter(args, ["shellcheck"], [pathlib.Path("a.sh")])
 
     assert exit_early is False
     assert commands == ["shellcheck"]
@@ -82,7 +91,7 @@ def test_apply_filter_fallback_for_missing_diagnostics(_only_failed_cache: pathl
         tool_results=[("pytest", 1, "test failed", [])],
     )
     args = pyfltr.run_options.RunOptions.from_values({"only_failed": True})
-    commands, targets, exit_early = pyfltr.state.only_failed.apply_filter(args, ["pytest"], [pathlib.Path("tests/t.py")])
+    commands, targets, exit_early = _apply_filter(args, ["pytest"], [pathlib.Path("tests/t.py")])
 
     assert exit_early is False
     assert commands == ["pytest"]
@@ -102,7 +111,7 @@ def test_apply_filter_skip_for_empty_targets_intersection(_only_failed_cache: pa
     )
     args = pyfltr.run_options.RunOptions.from_values({"only_failed": True})
     # all_files（targets由来）にb.pyが含まれない → 交差空で早期終了
-    _, _, exit_early = pyfltr.state.only_failed.apply_filter(args, ["ruff-check"], [pathlib.Path("a.py")])
+    _, _, exit_early = _apply_filter(args, ["ruff-check"], [pathlib.Path("a.py")])
     assert exit_early is True
 
 
@@ -125,7 +134,7 @@ def test_apply_filter_per_tool_exclusion_logs_reason(
     args = pyfltr.run_options.RunOptions.from_values({"only_failed": True})
     all_files = [pathlib.Path("a.py")]  # b.py は含まない → mypy のみ交差空
     with caplog.at_level(logging.INFO, logger="pyfltr.textout"):
-        commands, targets, exit_early = pyfltr.state.only_failed.apply_filter(args, ["ruff-check", "mypy"], all_files)
+        commands, targets, exit_early = _apply_filter(args, ["ruff-check", "mypy"], all_files)
     assert exit_early is False
     assert commands == ["ruff-check"]
     assert targets is not None and "mypy" not in targets
@@ -136,7 +145,7 @@ def test_apply_filter_per_tool_exclusion_logs_reason(
 def test_apply_filter_early_exit_no_runs(_only_failed_cache: pathlib.Path) -> None:
     """直前runが存在しない場合はexit_early=True（commandsは未変更で返す）。"""
     args = pyfltr.run_options.RunOptions.from_values({"only_failed": True})
-    commands, targets, exit_early = pyfltr.state.only_failed.apply_filter(args, ["ruff-check"], [pathlib.Path("a.py")])
+    commands, targets, exit_early = _apply_filter(args, ["ruff-check"], [pathlib.Path("a.py")])
     assert exit_early is True
     assert commands == ["ruff-check"]
     assert targets is None
@@ -151,7 +160,7 @@ def test_apply_filter_early_exit_no_failures(_only_failed_cache: pathlib.Path) -
         tool_results=[("ruff-check", 0, "", [])],
     )
     args = pyfltr.run_options.RunOptions.from_values({"only_failed": True})
-    _, _, exit_early = pyfltr.state.only_failed.apply_filter(args, ["ruff-check"], [pathlib.Path("a.py")])
+    _, _, exit_early = _apply_filter(args, ["ruff-check"], [pathlib.Path("a.py")])
     assert exit_early is True
 
 
@@ -175,7 +184,7 @@ def test_apply_filter_intersects_with_targets(_only_failed_cache: pathlib.Path) 
     )
     args = pyfltr.run_options.RunOptions.from_values({"only_failed": True})
     all_files = [pathlib.Path("a.py")]  # targets指定でb.pyは含まない想定
-    _, targets, exit_early = pyfltr.state.only_failed.apply_filter(args, ["ruff-check"], all_files)
+    _, targets, exit_early = _apply_filter(args, ["ruff-check"], all_files)
 
     assert exit_early is False
     assert targets is not None
@@ -188,6 +197,37 @@ def test_apply_filter_intersects_with_targets(_only_failed_cache: pathlib.Path) 
 # ---------------------------------------------------------------------------
 
 
+def test_apply_filter_matches_targets_with_dot_dot_and_outside_relative(_only_failed_cache: pathlib.Path) -> None:
+    """`..`を含む起点内の対象と起点外の相対パスの対象も、正規化済みの診断の`file`と突き合わせて選ぶ。
+
+    診断の`file`は`a.md`・起点外の絶対パスへ変換済みであり、対象を利用者が渡した表現のまま
+    比べると交差が空になり、失敗が残るのに実行を省いて終了コード0で終わる。
+    """
+    start = _only_failed_cache / "proj"
+    outside = (_only_failed_cache / "outside" / "out.md").as_posix()
+    _seed_run(
+        _only_failed_cache,
+        commands=["markdownlint"],
+        exit_code=1,
+        tool_results=[
+            (
+                "markdownlint",
+                1,
+                "",
+                [_make_error("markdownlint", "a.md", 1, "e"), _make_error("markdownlint", outside, 1, "e")],
+            ),
+        ],
+    )
+    args = pyfltr.run_options.RunOptions.from_values({"only_failed": True})
+    all_files = [pathlib.Path("sub/../a.md"), pathlib.Path("../outside/out.md")]
+    commands, targets, exit_early = _apply_filter(args, ["markdownlint"], all_files, start_cwd=start)
+
+    assert exit_early is False
+    assert commands == ["markdownlint"]
+    assert targets is not None
+    assert targets["markdownlint"].files == tuple(all_files)
+
+
 def test_apply_filter_from_run_full_id(_only_failed_cache: pathlib.Path) -> None:
     """from_runに完全なrun_idを渡すと正しく解決される。"""
     run_id = _seed_run(
@@ -197,9 +237,7 @@ def test_apply_filter_from_run_full_id(_only_failed_cache: pathlib.Path) -> None
         tool_results=[("ruff-check", 1, "", [_make_error("ruff-check", "a.py", 1, "e")])],
     )
     args = pyfltr.run_options.RunOptions.from_values({"only_failed": True})
-    _, targets, exit_early = pyfltr.state.only_failed.apply_filter(
-        args, ["ruff-check"], [pathlib.Path("a.py")], from_run=run_id
-    )
+    _, targets, exit_early = _apply_filter(args, ["ruff-check"], [pathlib.Path("a.py")], from_run=run_id)
     assert exit_early is False
     assert targets is not None
     assert "ruff-check" in targets
@@ -215,9 +253,7 @@ def test_apply_filter_from_run_prefix(_only_failed_cache: pathlib.Path) -> None:
     )
     prefix = run_id[:8]
     args = pyfltr.run_options.RunOptions.from_values({"only_failed": True})
-    _, targets, exit_early = pyfltr.state.only_failed.apply_filter(
-        args, ["ruff-check"], [pathlib.Path("a.py")], from_run=prefix
-    )
+    _, targets, exit_early = _apply_filter(args, ["ruff-check"], [pathlib.Path("a.py")], from_run=prefix)
     assert exit_early is False
     assert targets is not None
     assert "ruff-check" in targets
@@ -233,9 +269,7 @@ def test_apply_filter_from_run_latest(_only_failed_cache: pathlib.Path) -> None:
         tool_results=[("ruff-check", 1, "", [_make_error("ruff-check", "a.py", 1, "e")])],
     )
     args = pyfltr.run_options.RunOptions.from_values({"only_failed": True})
-    _, targets, exit_early = pyfltr.state.only_failed.apply_filter(
-        args, ["ruff-check"], [pathlib.Path("a.py")], from_run="latest"
-    )
+    _, targets, exit_early = _apply_filter(args, ["ruff-check"], [pathlib.Path("a.py")], from_run="latest")
     assert exit_early is False
     assert targets is not None
 
@@ -244,7 +278,7 @@ def test_apply_filter_from_run_not_found(_only_failed_cache: pathlib.Path, caplo
     """存在しないrun_idを指定するとwarningログを発行して早期終了する。"""
     args = pyfltr.run_options.RunOptions.from_values({"only_failed": True})
     with caplog.at_level(logging.WARNING, logger="pyfltr.state.only_failed"):
-        commands, targets, exit_early = pyfltr.state.only_failed.apply_filter(
+        commands, targets, exit_early = _apply_filter(
             args, ["ruff-check"], [pathlib.Path("a.py")], from_run="nonexistent-run-id"
         )
     assert exit_early is True
@@ -265,9 +299,7 @@ def test_apply_filter_from_run_ambiguous_prefix(_only_failed_cache: pathlib.Path
 
     args = pyfltr.run_options.RunOptions.from_values({"only_failed": True})
     with caplog.at_level(logging.WARNING, logger="pyfltr.state.only_failed"):
-        _, targets, exit_early = pyfltr.state.only_failed.apply_filter(
-            args, ["ruff-check"], [pathlib.Path("a.py")], from_run=prefix
-        )
+        _, targets, exit_early = _apply_filter(args, ["ruff-check"], [pathlib.Path("a.py")], from_run=prefix)
     assert exit_early is True
     assert targets is None
     assert "--from-run" in caplog.text
@@ -283,7 +315,7 @@ def test_apply_filter_archive_unreadable_guides_permission_and_full_run(
 
     monkeypatch.setattr(pyfltr.state.archive.ArchiveStore, "__init__", _raise)
     args = pyfltr.run_options.RunOptions.from_values({"only_failed": True})
-    _, _, exit_early = pyfltr.state.only_failed.apply_filter(args, ["ruff-check"], [pathlib.Path("a.py")])
+    _, _, exit_early = _apply_filter(args, ["ruff-check"], [pathlib.Path("a.py")])
     assert exit_early is True
     warnings = [w for w in pyfltr.warnings_.collected_warnings() if w["source"] == "only-failed"]
     assert len(warnings) == 1
@@ -322,7 +354,7 @@ def test_apply_filter_selects_legacy_subproject_pytest_failure(_only_failed_cach
     args = pyfltr.run_options.RunOptions.from_values({"only_failed": True})
     all_files = [pathlib.Path("pkg_a/tests/x_test.py"), pathlib.Path("pkg_b/tests/x_test.py")]
 
-    commands, targets, exit_early = pyfltr.state.only_failed.apply_filter(args, ["pytest"], all_files, from_run=run_id)
+    commands, targets, exit_early = _apply_filter(args, ["pytest"], all_files, from_run=run_id)
 
     assert exit_early is False
     assert commands == ["pytest"]
@@ -352,7 +384,7 @@ def test_apply_filter_selects_legacy_subproject_mypy_failure(_only_failed_cache:
     args = pyfltr.run_options.RunOptions.from_values({"only_failed": True})
     all_files = [pathlib.Path("app/src/sample.py"), pathlib.Path("lib/src/sample.py")]
 
-    commands, targets, exit_early = pyfltr.state.only_failed.apply_filter(args, ["mypy"], all_files, from_run=run_id)
+    commands, targets, exit_early = _apply_filter(args, ["mypy"], all_files, from_run=run_id)
 
     assert exit_early is False
     assert commands == ["mypy"]

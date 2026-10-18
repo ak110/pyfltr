@@ -214,7 +214,7 @@ def populate_retry_command(
         return
     if not result.needs_rerun:
         return
-    filtered_targets = filter_failed_files(result)
+    filtered_targets = filter_failed_files(result, start_cwd=pathlib.Path(target_base_cwd))
     result.retry_command = build_retry_command(
         retry_args_template,
         launcher_prefix,
@@ -224,14 +224,14 @@ def populate_retry_command(
     )
 
 
-def filter_failed_files(result: pyfltr.command.core_.CommandResult) -> list[pathlib.Path]:
+def filter_failed_files(result: pyfltr.command.core_.CommandResult, *, start_cwd: pathlib.Path) -> list[pathlib.Path]:
     """`result.errors`から失敗ファイル集合を抽出し`result.target_files`と交差させる。
 
     `retry_command`のターゲットを「対象のツールで失敗したファイルのみ」に限定する用途
-    （パートG A案）。パス比較は文字列化した相対パス（スラッシュ区切り）で行う。
-    `ErrorLocation.file`は`pyfltr.parsing.entry.parse_errors`が実行起点基準へ揃え、
-    区切り文字は`/`に統一されている。`result.target_files`側も同じ表現へ
-    揃えたうえで比較する。並び順は`result.target_files`の順序を保つ。
+    （パートG A案）。`result.target_files`は利用者が渡した起点外の相対パスなどを保持し、
+    `ErrorLocation.file`は`pyfltr.parsing.entry.parse_errors`が実行起点基準へ揃えた表現を持つ。
+    両側を`pyfltr.paths.to_match_key`で実行起点（`start_cwd`）基準のキーへ変換してから比較する。
+    戻り値は`result.target_files`の要素そのもので、並び順も保つ。
 
     `result.errors`が空、または`ErrorLocation.file`集合と`result.target_files`
     の交差が空の場合は空リストを返す（pytest等のpass-filenames=Falseで全体失敗
@@ -239,15 +239,10 @@ def filter_failed_files(result: pyfltr.command.core_.CommandResult) -> list[path
     """
     if not result.errors:
         return []
-    failed_files = {error.file for error in result.errors if error.file}
-    if not failed_files:
+    failed_keys = {pyfltr.paths.to_match_key(error.file, start_cwd=start_cwd) for error in result.errors if error.file}
+    if not failed_keys:
         return []
-    filtered: list[pathlib.Path] = []
-    for target in result.target_files:
-        normalized = pyfltr.paths.normalize_separators(target)
-        if normalized in failed_files:
-            filtered.append(target)
-    return filtered
+    return [target for target in result.target_files if pyfltr.paths.to_match_key(target, start_cwd=start_cwd) in failed_keys]
 
 
 def _option_takes_value(opt: str) -> bool:

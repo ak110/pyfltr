@@ -58,8 +58,9 @@ def to_start_relative(
     起点配下なら起点相対、起点外なら絶対パスを返す。区切り文字は全分岐で`/`へ統一する。
     空文字列と`<`で始まる擬似名（`<stdin>`等）はパスとして扱わず区切りの統一だけを行う。
 
-    診断の`file`は`--only-failed`・`retry_command`で起点相対の対象集合と突合するため、
-    サブプロジェクトのcwdで実行したツールの出力も本関数で同じ基準へ揃える。
+    診断の`file`は`--only-failed`・`retry_command`で対象集合と突き合わせるため、
+    サブプロジェクトのcwdで実行したツールの出力も本関数で起点基準へ揃える。
+    対象集合側は起点外の相対パスを保持するため、突き合わせる処理は両側を`to_match_key`で変換する。
     """
     text = str(path)
     if not text or text.startswith("<"):
@@ -90,3 +91,17 @@ def is_external_path(target: pathlib.Path, *, start_cwd: pathlib.Path) -> bool:
     except (OSError, ValueError):
         return True
     return False
+
+
+def to_match_key(path: str | pathlib.Path, *, start_cwd: pathlib.Path) -> str:
+    """出所の異なるパスどうしを突き合わせるためのキーを返す。
+
+    対象ファイル集合のパスを診断の`file`・保存済みの記録・外部コマンドの出力など別の出所のパスと
+    比べる処理は、両側を本関数で変換してから比べる。片側だけを正規化済みと前提すると、
+    `sub/../a.md`と`a.md`、起点外の相対パスと絶対パスのように同じ実体を指す表現が一致しない。
+
+    規則は診断の`file`の変換（`to_start_relative`）と同じとし、相対パスは`start_cwd`基準で絶対化して
+    `..`を字句的に畳み込み、起点配下は起点相対、起点外は`/`区切りの絶対パスにする。
+    変換済みの診断の`file`は本関数を通しても同じ値になる。
+    """
+    return to_start_relative(path, path_base=start_cwd, start_cwd=start_cwd)

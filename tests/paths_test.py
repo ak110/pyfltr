@@ -128,3 +128,31 @@ def test_to_start_relative_keeps_absolute_paths_without_double_prefix(tmp_path: 
     assert pyfltr.paths.to_start_relative(
         str(outside), path_base=tmp_path / "pkg", start_cwd=tmp_path
     ) == pyfltr.paths.normalize_separators(outside)
+
+
+@pytest.mark.parametrize(
+    ("left", "right"),
+    [
+        # `..`を含む起点内のパスと畳み込み済みの表現
+        ("a.md", "./sub/../a.md"),
+        # 起点外の相対パスと`/`区切りの絶対パス
+        ("../outside/out.md", "<root>/outside/out.md"),
+        # 起点配下の絶対パスと相対パス
+        ("<root>/proj/a.md", "a.md"),
+    ],
+)
+def test_to_match_key_same_entity_gets_same_key(tmp_path: pathlib.Path, left: str, right: str) -> None:
+    """同じ実体を指す異なる表現が同じ突合キーになる。"""
+    start = tmp_path / "proj"
+    root = tmp_path.as_posix()
+    left_key = pyfltr.paths.to_match_key(left.replace("<root>", root), start_cwd=start)
+    right_key = pyfltr.paths.to_match_key(right.replace("<root>", root), start_cwd=start)
+    assert left_key == right_key
+
+
+def test_to_match_key_keeps_converted_diagnostic_file(tmp_path: pathlib.Path) -> None:
+    """`to_start_relative`で変換済みの診断の`file`は突合キーへ変換しても同じ値になる。"""
+    start = tmp_path / "proj"
+    for raw in ("sub/../a.md", str(tmp_path / "outside" / "out.md")):
+        converted = pyfltr.paths.to_start_relative(raw, path_base=start, start_cwd=start)
+        assert pyfltr.paths.to_match_key(converted, start_cwd=start) == converted

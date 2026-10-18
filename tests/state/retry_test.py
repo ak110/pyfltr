@@ -129,7 +129,7 @@ def test_filter_failed_files_empty_errors_returns_empty():
         returncode=0,
         target_files=[pathlib.Path("src/a.py"), pathlib.Path("src/b.py")],
     )
-    assert not pyfltr.state.retry.filter_failed_files(result)
+    assert not pyfltr.state.retry.filter_failed_files(result, start_cwd=pathlib.Path.cwd())
 
 
 def test_filter_failed_files_intersects_target_files():
@@ -148,7 +148,7 @@ def test_filter_failed_files_intersects_target_files():
             pathlib.Path("src/c.py"),
         ],
     )
-    filtered = pyfltr.state.retry.filter_failed_files(result)
+    filtered = pyfltr.state.retry.filter_failed_files(result, start_cwd=pathlib.Path.cwd())
     # target_filesの並び順（a.py、c.py）を維持する
     assert filtered == [pathlib.Path("src/a.py"), pathlib.Path("src/c.py")]
 
@@ -162,7 +162,24 @@ def test_filter_failed_files_outside_target_files_returns_empty():
         errors=errors,
         target_files=[pathlib.Path("src/a.py")],
     )
-    assert not pyfltr.state.retry.filter_failed_files(result)
+    assert not pyfltr.state.retry.filter_failed_files(result, start_cwd=pathlib.Path.cwd())
+
+
+def test_filter_failed_files_matches_targets_with_dot_dot_and_outside_relative(tmp_path: pathlib.Path) -> None:
+    """`..`を含む起点内の対象と起点外の相対パスの対象も、正規化済みの診断の`file`と突き合わせて返す。
+
+    診断の`file`は`to_start_relative`で`a.md`・起点外の絶対パスへ変換済みであり、
+    対象を利用者が渡した表現のまま文字列で比べると一致せず、`retry_command`が対象を持たなくなる。
+    """
+    start = tmp_path / "proj"
+    outside = (tmp_path / "outside" / "out.md").as_posix()
+    errors = [
+        _make_error("markdownlint", "a.md", 1, "err"),
+        _make_error("markdownlint", outside, 1, "err"),
+    ]
+    targets = [pathlib.Path("sub/../a.md"), pathlib.Path("../outside/out.md")]
+    result = _make_result("markdownlint", returncode=1, errors=errors, target_files=targets)
+    assert pyfltr.state.retry.filter_failed_files(result, start_cwd=start) == targets
 
 
 # --- populate_retry_command ---

@@ -34,7 +34,8 @@ def parse_errors(
     `start_cwd`はpyfltr実行の起点である。各パーサーはツール出力のパスを区切りの統一だけで返し、
     本関数が`pyfltr.paths.to_start_relative`で起点相対へ一括変換する。
     サブプロジェクト分割実行では`path_base`がサブプロジェクトのcwdとなり、
-    相対パスの診断も起点相対の対象集合（`--only-failed`・`retry_command`）と突合できる値になる。
+    相対パスの診断も起点相対の値になり、`--only-failed`・`retry_command`が対象集合と
+    `pyfltr.paths.to_match_key`で揃えて突き合わせられる。
     `path_resolving_parser`は診断メッセージにもパスを埋め込むため同じ変換関数を受け取って自ら変換し、
     その結果には本関数の変換を重ねない。
     一時ファイルから元ファイルへの付け替え（`file_path_remap`）は変換の後に適用し、付け替え後の値は再変換しない。

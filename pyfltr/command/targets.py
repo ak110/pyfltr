@@ -62,6 +62,10 @@ def expand_all_files(
     限定される。`link/` 形式のディレクトリ専用パターンは `git check-ignore` がシンボリックリンク越え
     のpathspecを拒否するため判定不可となり、早期スキップは機能しない。
 
+    位置引数の相対パスは起点内で畳み込める`..`を字句的に畳み込んだ表現へ置き換える（`_collapse_relative_dots`）。
+    返り値は起点内の`..`を持たず、起点外を指す相対パス（`../outside/a.md`など）は利用者が渡した表現を保つ。
+    別の出所のパスと突き合わせる処理は、両側を`pyfltr.paths.to_match_key`で揃えてから比べる。
+
     最終出力は `_dedup_and_sort` が実体パス単位で重複排除し、パス文字列で安定ソートして返す。
     リポジトリ内のシンボリックリンク再配置等で同一実体ファイルが複数パスから列挙される構成でも、
     ツールが同じ内容を多重チェックすることを避ける。
@@ -152,6 +156,7 @@ def expand_all_files(
         if target.is_absolute():
             with contextlib.suppress(ValueError):
                 target = target.relative_to(cwd_base)
+        target = _collapse_relative_dots(target, cwd_base=cwd_base)
         # 非存在パスは前段で検出して対象から外す。
         # 各ツールが個別に「ファイルが見つからない」と失敗してJSONLが多重化するのを防ぐ。
         # exclude/.gitignore除外（reason="excluded"）とは別系統（reason="missing"）で蓄積し、
@@ -189,6 +194,28 @@ def expand_all_files(
                 pyfltr.warnings_.add_filtered_direct_file(normalized_target, reason="excluded")
 
     return _dedup_and_sort(expanded, cwd_base=cwd_base)
+
+
+def _collapse_relative_dots(target: pathlib.Path, *, cwd_base: pathlib.Path) -> pathlib.Path:
+    """相対パスの`..`を字句的に畳み込んだ表現を返す。
+
+    除外とglobのパターン照合（`Path.match`）は対象と各親ディレクトリへ適用するため、
+    `build/../a.md`の親`build`が除外に一致したり、`src/sub/../a.md`が`src/*.md`に一致しなかったりする。
+    展開の入口で起点内の`..`を畳み込み、照合する各処理が同じファイルに同じ判定を返すようにする。
+    先頭の`..`（起点外を指す相対パス）は`os.path.normpath`が保持するため、起点外の相対パスの表現は変わらない。
+    シンボリックリンクを経由する`..`で畳み込み前後の実体が異なる場合は、利用者が指定した実体を保つため置き換えない。
+    """
+    if target.is_absolute():
+        return target
+    collapsed = pathlib.Path(os.path.normpath(target))
+    if collapsed == target:
+        return target
+    try:
+        if (cwd_base / collapsed).resolve() != (cwd_base / target).resolve():
+            return target
+    except OSError:
+        return target
+    return collapsed
 
 
 def _is_subpath(path: pathlib.Path, ancestor: pathlib.Path) -> bool:
@@ -436,7 +463,8 @@ def filter_by_changed_since(all_files: list[pathlib.Path], ref: str, *, cwd: pat
     和集合を取得し、`all_files` との交差を返す。
     untracked（`git add` 未実施の新規ファイル）は対象外となる。
 
-    `cwd` を指定すると `git` の作業ディレクトリに渡す。`None` の場合は親プロセスの cwd を使う。
+    `cwd` を指定すると `git` の作業ディレクトリに渡し、`all_files`の相対パスの基準にも使う。
+    `None` の場合は親プロセスの cwd を使う。
     git不在またはrefが存在しない場合は警告を発行して `all_files` をそのまま返す（全体実行へフォールバック）。
     """
     changed = _get_changed_files(ref, cwd=cwd)
@@ -444,10 +472,38 @@ def filter_by_changed_since(all_files: list[pathlib.Path], ref: str, *, cwd: pat
         return all_files
     if not changed:
         return []
-    # normalize_separatorsを使って区切り文字を統一してから比較する。
-    # all_filesはcwd起点の相対Pathであり、git diffもcwd起点の相対パスを返す。
-    changed_norm: set[str] = {pyfltr.paths.normalize_separators(p) for p in changed}
-    return [f for f in all_files if pyfltr.paths.normalize_separators(f) in changed_norm]
+    # `git rev-parse --show-toplevel`はシンボリックリンクを解決した実体パスを返すため、起点も実体パスへ揃える。
+    start = (cwd if cwd is not None else pathlib.Path.cwd()).resolve()
+    # `git diff --name-only`は起点cwdによらずGitリポジトリroot相対のパスを返す（`diff.relative`未設定時）。
+    # all_filesは起点相対のため、gitの出力をrootで絶対化してから両側を同じ突合キーへ揃えて比較する。
+    root = _get_git_toplevel(start)
+    base = root if root is not None else start
+    changed_keys = {pyfltr.paths.to_match_key(base / p, start_cwd=start) for p in changed}
+    return [f for f in all_files if pyfltr.paths.to_match_key(f, start_cwd=start) in changed_keys]
+
+
+def _get_git_toplevel(cwd: pathlib.Path) -> pathlib.Path | None:
+    """`cwd`を含むGit作業ツリーのrootを返す。取得できない場合は`None`を返す。
+
+    `git diff`が成功した直後に同じcwdで呼ぶため、通常は取得に成功する。
+    取得できない場合の呼び出し元は、gitの出力を起点相対として扱う。
+    """
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=30,
+            check=False,
+            cwd=str(cwd),
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+    toplevel = result.stdout.strip()
+    if result.returncode != 0 or not toplevel:
+        return None
+    return pathlib.Path(toplevel)
 
 
 def _get_changed_files(ref: str, *, cwd: pathlib.Path | None = None) -> list[str] | None:

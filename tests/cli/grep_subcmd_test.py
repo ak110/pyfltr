@@ -81,6 +81,25 @@ def test_grep_type_filter_python(
     assert "b.txt" not in out
 
 
+def test_grep_glob_matches_target_with_dot_dot(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`..`を含む対象も畳み込んだ表現で`--glob`と照合し、走査する。
+
+    `src/sub/../a.md`の末尾から`src/*.md`を照合すると一致せず、`src/a.md`を走査しない。
+    """
+    (tmp_path / "src" / "sub").mkdir(parents=True)
+    (tmp_path / "src" / "a.md").write_text("needle\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    rc = pyfltr.cli.main.run(["grep", "needle", "--output-format=jsonl", "--glob", "src/*.md", "src/sub/../a.md"])
+    assert rc == 0
+    lines = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
+    matches = [line for line in lines if line["kind"] == "match"]
+    assert [m["file"] for m in matches] == ["src/a.md"]
+
+
 def test_grep_glob_filter(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
