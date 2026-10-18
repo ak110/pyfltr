@@ -34,6 +34,10 @@ import pyfltr.state.only_failed
 import pyfltr.tools
 import pyfltr.warnings_
 
+# 時間上限による停止を検証する子プロセスのコード。上限の発火が負荷で遅れても子が先に自ら終了しないよう、
+# 試験の時間上限（pyproject.tomlの`--timeout=60`）より長く眠る。停止はpyfltrの時間上限の処理が行う。
+_SLEEP_BEYOND_TEST_TIMEOUT = "import time; time.sleep(300)"
+
 
 def test_run_subprocess_file_not_found_returns_127() -> None:
     """存在しない実行ファイルを指定しても例外を送出せずrc=127を返す。"""
@@ -318,11 +322,11 @@ def test_run_subprocess_no_timeout_returns_completed_normally() -> None:
 def test_run_subprocess_raises_timeout_when_exceeded() -> None:
     """timeout超過時に `TimeoutExceededExecution` を送出することを確認する。
 
-    `time.sleep(2)` するsubprocessを0.1秒のtimeoutで起動し、Timer発火で停止 → 例外送出に至る経路を検証する。
+    試験の時間上限より長く眠るsubprocessを0.1秒のtimeoutで起動し、Timer発火で停止 → 例外送出に至る経路を検証する。
     """
     with pytest.raises(pyfltr.command.process.TimeoutExceededExecution) as exc_info:
         pyfltr.command.process.run_subprocess(
-            [sys.executable, "-c", "import time; time.sleep(2)"],
+            [sys.executable, "-c", _SLEEP_BEYOND_TEST_TIMEOUT],
             _make_env(),
             timeout=0.1,
         )
@@ -336,7 +340,7 @@ def test_run_subprocess_raises_timeout_when_exceeded() -> None:
 def test_run_process_loop_wrapper_returns_failed_completed_process() -> None:
     """`run_process_loop` がtimeout時に `returncode=124` の `CompletedProcess` を返すことを確認する。"""
     proc = pyfltr.command.process.run_process_loop(
-        [sys.executable, "-c", "import time; time.sleep(2)"],
+        [sys.executable, "-c", _SLEEP_BEYOND_TEST_TIMEOUT],
         _make_env(),
         timeout=0.1,
     )
@@ -580,7 +584,7 @@ def test_timeout_reports_remaining_processes_with_action(
     monkeypatch.setattr(pyfltr.command.process.psutil, "wait_procs", _wait_procs)
     with caplog.at_level("WARNING", logger="pyfltr.command.process"):
         proc = pyfltr.command.process.run_process_loop(
-            [sys.executable, "-c", "import time; time.sleep(2)"],
+            [sys.executable, "-c", _SLEEP_BEYOND_TEST_TIMEOUT],
             _make_env(),
             timeout=0.1,
         )

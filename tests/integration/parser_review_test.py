@@ -8,6 +8,7 @@ import sys
 import textwrap
 import threading
 import time
+import typing
 
 import psutil
 import pytest
@@ -68,30 +69,123 @@ def _run_spawner(tmp_path: pathlib.Path, mode: str, **kwargs) -> process_tree.Tr
     )
 
 
-def _after_grandchild_line(path: pathlib.Path, action) -> None:
-    """孫のpidが出力された後、追跡側の列挙（0.1秒間隔）が十分に巡る時間をおいて`action`を呼ぶ。"""
+# 追跡側が孫を子孫として登録するまで待つ上限秒数。試験の時間上限（120秒）より十分短くする。
+_REGISTRATION_WAIT = 30.0
+
+
+class _RegistrationWatch:
+    """追跡側（`process_tree._Tracker`）が子孫として登録したpidを試験へ通知する。
+
+    `run_tracked`は呼び出しのたびに`process_tree._Tracker`を名前解決して生成するため、
+    登録時に通知する派生クラスへ差し替えれば、公開引数を増やさずに登録の時点を観測できる。
+    """
+
+    def __init__(self) -> None:
+        self._registered: set[int] = set()
+        self._condition = threading.Condition()
+
+    def tracker_class(self) -> type[process_tree._Tracker]:  # pylint: disable=protected-access
+        watch = self
+
+        class _NotifyingTracker(process_tree._Tracker):  # pylint: disable=protected-access
+            def _add(self, process: psutil.Process) -> None:
+                super()._add(process)
+                with watch._condition:  # pylint: disable=protected-access
+                    watch._registered.add(process.pid)  # pylint: disable=protected-access
+                    watch._condition.notify_all()  # pylint: disable=protected-access
+
+        return _NotifyingTracker
+
+    def wait_registered(self, pid: int, timeout: float) -> bool:
+        """`pid`の登録を最大`timeout`秒待ち、登録を観測できたかを返す。"""
+        with self._condition:
+            return self._condition.wait_for(lambda: pid in self._registered, timeout=timeout)
+
+
+@pytest.fixture(name="registration_watch")
+def _registration_watch(monkeypatch: pytest.MonkeyPatch) -> _RegistrationWatch:
+    watch = _RegistrationWatch()
+    monkeypatch.setattr(process_tree, "_Tracker", watch.tracker_class())
+    return watch
+
+
+def _wait_grandchild_pid(path: pathlib.Path, timeout: float) -> int | None:
+    """孫のpidの出力を最大`timeout`秒待って返す。出力されなければNoneを返す。"""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if path.exists():
+            for line in path.read_text(encoding="utf-8").splitlines():
+                if line.startswith("grandchild="):
+                    return int(line.removeprefix("grandchild="))
+        time.sleep(0.05)
+    return None
+
+
+def _after_grandchild_registered(path: pathlib.Path, watch: _RegistrationWatch, action: typing.Callable[[], None]) -> list[str]:
+    """孫のpidが出力され、追跡側が孫を登録したことを観測してから`action`を呼ぶ。
+
+    観測できない場合も、試験の実行を終端へ進めるため`action`を呼び、理由を返り値のリストへ記録する。
+    試験は実行後にこのリストが空であることを確かめる。
+    """
+    failures: list[str] = []
 
     def _watch() -> None:
-        deadline = time.monotonic() + 60
-        while time.monotonic() < deadline:
-            if path.exists() and "grandchild=" in path.read_text(encoding="utf-8"):
-                time.sleep(2.0)
-                action()
-                return
-            time.sleep(0.05)
+        grandchild = _wait_grandchild_pid(path, _REGISTRATION_WAIT)
+        if grandchild is None:
+            failures.append(f"孫のpidが{_REGISTRATION_WAIT}秒以内に出力されなかった")
+        elif not watch.wait_registered(grandchild, _REGISTRATION_WAIT):
+            failures.append(f"追跡側が孫(pid={grandchild})を{_REGISTRATION_WAIT}秒以内に登録しなかった")
+        action()
 
     threading.Thread(target=_watch, daemon=True).start()
+    return failures
+
+
+class _ClockHeldUntilRegistered:
+    """孫の登録を観測するまで進まない`process_tree`用の時計。
+
+    `run_tracked`は時間上限の計時を`time.monotonic()`で行う。登録を観測するまで同じ値を返し、
+    観測後は観測時点からの経過だけを進めることで、孫の起動・出力・登録が負荷で遅れても
+    登録より前に時間上限へ達しない。登録を上限内に観測できない場合は時計を進め、
+    実行を終わらせたうえで理由を`failures`へ記録する。
+    """
+
+    def __init__(self, path: pathlib.Path, watch: _RegistrationWatch) -> None:
+        self._held_at = time.monotonic()
+        self._offset: float | None = None
+        self._lock = threading.Lock()
+
+        def _release() -> None:
+            with self._lock:
+                self._offset = time.monotonic() - self._held_at
+
+        self.failures: list[str] = _after_grandchild_registered(path, watch, _release)
+
+    def monotonic(self) -> float:
+        with self._lock:
+            if self._offset is None:
+                return self._held_at
+            return time.monotonic() - self._offset
+
+    @staticmethod
+    def sleep(seconds: float) -> None:
+        time.sleep(seconds)
 
 
 @pytest.mark.timeout(120)
 @pytest.mark.usefixtures("_disable_faulthandler_timeout")
-def test_timeout_stops_descendants_and_keeps_partial_output(tmp_path: pathlib.Path) -> None:
+def test_timeout_stops_descendants_and_keeps_partial_output(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, registration_watch: _RegistrationWatch
+) -> None:
     """時間上限で停止した実行は別セッションの孫まで終端させ、途中出力と停止の記録を残す。
 
-    時間上限は起動時点から計るため、孫の起動と出力が負荷で遅れても上限前に到達できる長さにする。
+    時間上限の計時は追跡側が孫を登録した時点から進める（`_ClockHeldUntilRegistered`）。
     """
-    result = _run_spawner(tmp_path, "wait", timeout=15)
+    clock = _ClockHeldUntilRegistered(tmp_path / "out.txt", registration_watch)
+    monkeypatch.setattr(process_tree, "time", clock)
+    result = _run_spawner(tmp_path, "wait", timeout=5)
 
+    assert not clock.failures, clock.failures
     assert result.outcome == "timeout"
     grandchild = _grandchild_pid(result.stdout_path)
     assert grandchild in {item["pid"] for item in result.descendants}
@@ -102,12 +196,13 @@ def test_timeout_stops_descendants_and_keeps_partial_output(tmp_path: pathlib.Pa
 
 @pytest.mark.timeout(120)
 @pytest.mark.usefixtures("_disable_faulthandler_timeout")
-def test_interrupt_stops_descendants(tmp_path: pathlib.Path) -> None:
+def test_interrupt_stops_descendants(tmp_path: pathlib.Path, registration_watch: _RegistrationWatch) -> None:
     """中断要求で停止した実行は孫まで終端させ、中断として記録する。"""
     stop_event = threading.Event()
-    _after_grandchild_line(tmp_path / "out.txt", stop_event.set)
+    failures = _after_grandchild_registered(tmp_path / "out.txt", registration_watch, stop_event.set)
     result = _run_spawner(tmp_path, "wait", timeout=90, stop_event=stop_event)
 
+    assert not failures, failures
     assert result.outcome == "interrupted"
     grandchild = _grandchild_pid(result.stdout_path)
     assert grandchild in result.stopped
@@ -117,11 +212,12 @@ def test_interrupt_stops_descendants(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.timeout(120)
 @pytest.mark.usefixtures("_disable_faulthandler_timeout")
-def test_leftover_descendant_after_exit_is_stopped(tmp_path: pathlib.Path) -> None:
+def test_leftover_descendant_after_exit_is_stopped(tmp_path: pathlib.Path, registration_watch: _RegistrationWatch) -> None:
     """親が自然終了した後に残った孫も停止し、停止したことを記録する。"""
-    _after_grandchild_line(tmp_path / "out.txt", (tmp_path / "release").touch)
+    failures = _after_grandchild_registered(tmp_path / "out.txt", registration_watch, (tmp_path / "release").touch)
     result = _run_spawner(tmp_path, "release", timeout=90)
 
+    assert not failures, failures
     assert result.outcome == "exited"
     assert result.returncode == 0
     grandchild = _grandchild_pid(result.stdout_path)

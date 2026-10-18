@@ -1232,7 +1232,8 @@ async def test_tool_run_completion_timeout(tmp_path: pathlib.Path) -> None:
     work_dir = tmp_path / "project"
     _write_custom_commands_project(
         work_dir,
-        {"always-ok": "pass", "too-slow": "import time; time.sleep(30)"},
+        # too-slowは試験の時間上限（`--timeout=60`）より長く眠り、`command-timeout`の停止が遅れても先に自ら終了しない。
+        {"always-ok": "pass", "too-slow": "import time; time.sleep(300)"},
         extra="command-timeout = 1",
     )
 

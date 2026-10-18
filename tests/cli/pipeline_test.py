@@ -114,8 +114,10 @@ def test_heartbeat_thread_lifecycle_starts_and_stops() -> None:
     )
     monitor.on_command_start("pytest")
     monitor.start()
-    # tickが少なくとも1回実行されるのを待つ。tick_intervalの2倍程度sleepすれば確実。
-    time.sleep(0.2)
+    # tickがheartbeatを1回以上発行したことを観測してから停止する。上限内に観測できなければ失敗させる。
+    deadline = time.monotonic() + 30.0
+    while not emitted_running and time.monotonic() < deadline:
+        time.sleep(0.01)
     monitor.stop()
 
     # 1回以上のheartbeatが発行されている。連続発火は抑止される設計のため、件数は1〜数件で揺れる。
