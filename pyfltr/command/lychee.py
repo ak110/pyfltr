@@ -22,9 +22,11 @@ def run_lychee(
     on_subprocess_end: typing.Callable[[], None] | None = None,
     cwd: pathlib.Path | None = None,
 ) -> pyfltr.command.process.CompletedProcessWithTimeoutInfo:
-    """5xxを有限回再試行し、最後の実行だけを返す。
+    """5xxと接続系の失敗を有限回再試行し、最後の実行だけを返す。
 
     lychee v0.24.2はRejectedStatusCodeの429だけを再試行するため5xxを補う。
+    同版は接続エラー（`reqwest::Error::is_connect`）も再試行せず、オプションでも対象にできないため、
+    `Network error`で終わった接続系の失敗も同じ回数・待機で再実行する。
     https://github.com/lycheeverse/lychee/blob/lychee-v0.24.2/lychee-lib/src/retry.rs
     応答タイムアウトの再試行はlychee自身へ委ねる。全試行と待機は同じ
     command-timeout予算を消費し、割込みも待機中に確認する。

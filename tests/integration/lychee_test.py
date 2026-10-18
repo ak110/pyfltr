@@ -18,7 +18,16 @@ def _report(*codes: int | str, scheme: str = "https") -> str:
     errors = []
     timeouts = []
     for index, code in enumerate(codes):
-        status = {"text": "Timeout", "details": "Request timed out"} if code == "Timeout" else {"text": str(code), "code": code}
+        if code == "Timeout":
+            status: dict[str, int | str] = {"text": "Timeout", "details": "Request timed out"}
+        elif code == "Network":
+            # lychee v0.24.2が接続拒否で返す形。HTTPステータスを得ていないため`code`を持たない。
+            status = {
+                "text": "Network error: Connection refused - server may be down or port blocked (error sending request)",
+                "details": "Connection refused - server may be down or port blocked",
+            }
+        else:
+            status = {"text": str(code), "code": code}
         entry = {"url": f"{scheme}://example.com/link-{index}", "status": status}
         if code == "Timeout":
             timeouts.append(entry)
@@ -73,6 +82,10 @@ def _run_cli(project: pathlib.Path, *, output_format: str = "jsonl") -> int:
         ((499,), "https", "failed", 1, ["error"], 1),
         ((599,), "http", "warning", 0, ["warning"], 4),
         ((600,), "https", "failed", 1, ["error"], 1),
+        (("Network",), "https", "failed", 1, ["error"], 4),
+        (("Network", 404), "https", "failed", 1, ["error", "error"], 4),
+        (("Network", "Timeout"), "https", "failed", 1, ["error", "warning"], 4),
+        (("Network",), "file", "failed", 1, ["error"], 1),
         ((503,), "file", "failed", 1, ["error"], 1),
         (("Timeout",), "file", "failed", 1, ["error"], 1),
     ],
@@ -108,11 +121,17 @@ def test_lychee_cli_classification(
     assert process.call_count == attempts
 
 
-def test_lychee_cli_recovers(lychee_project: pathlib.Path, mocker: typing.Any, capsys: pytest.CaptureFixture[str]) -> None:
-    """途中復旧後は古い失敗を診断とアーカイブへ残さない。"""
+@pytest.mark.parametrize("code", [503, "Network"])
+def test_lychee_cli_recovers(
+    lychee_project: pathlib.Path, mocker: typing.Any, capsys: pytest.CaptureFixture[str], code: int | str
+) -> None:
+    """途中復旧後は古い失敗を診断とアーカイブへ残さない。
+
+    5xxに加え、lycheeが自身では再試行しない接続系の失敗も既定設定のまま再実行する。
+    """
     process = mocker.patch(
         "pyfltr.command.process.run_subprocess",
-        side_effect=[subprocess.CompletedProcess([], 2, _report(503)), subprocess.CompletedProcess([], 0, _report())],
+        side_effect=[subprocess.CompletedProcess([], 2, _report(code)), subprocess.CompletedProcess([], 0, _report())],
     )
     assert _run_cli(lychee_project) == 0
     records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
@@ -121,7 +140,7 @@ def test_lychee_cli_recovers(lychee_project: pathlib.Path, mocker: typing.Any, c
     header = next(record for record in records if record["kind"] == "header")
     store = pyfltr.state.archive.ArchiveStore(cache_root=lychee_project / "cache")
     assert not store.read_tool_diagnostics(header["run_id"], "lychee")
-    assert "503" not in store.read_tool_output(header["run_id"], "lychee")
+    assert str(code) not in store.read_tool_output(header["run_id"], "lychee")
     assert process.call_count == 2
 
 
@@ -144,11 +163,13 @@ def test_lychee_cli_text(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("code, expected_status, expected_exit", [(503, "warning", 0), (404, "failed", 1)])
+@pytest.mark.parametrize(
+    "code, expected_status, expected_exit", [(503, "warning", 0), (404, "failed", 1), ("Network", "failed", 1)]
+)
 async def test_lychee_mcp_classification(
     lychee_project: pathlib.Path,
     mocker: typing.Any,
-    code: int,
+    code: int | str,
     expected_status: str,
     expected_exit: int,
 ) -> None:
