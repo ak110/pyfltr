@@ -134,6 +134,17 @@ jobs:
           python-version: "3.14"
           enable-cache: true
 
+      # 配布物検査はmarkdownlintの修正済み依存をpnpmで取得するため、CIのdistributionジョブ（公式イメージ）と同じくNode.jsとpnpmを用意する。
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "lts/*"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: latest
+
       # タグ作成前に候補版を指定してビルドし、検査した同じ配布物を公開する。
       # 本リポジトリ固有の配布工程であり、利用者向けCI設定例には含めない。
       - name: Build release candidates
