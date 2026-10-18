@@ -198,7 +198,8 @@ SAMPLES: tuple[Sample, ...] = (
         "designmd",
         {
             "package.json": _PACKAGE_JSON,
-            "DESIGN.md": '---\nname: sample\ncolors:\n  primary: "{colors.missing}"\n---\n\n# Design\n',
+            "DESIGN.md": "---\nname: sample\ncomponents:\n  button:\n"
+            '    backgroundColor: "#ffffff"\n    textColor: "#ffffff"\n---\n\n# Design\n',
         },
         ("DESIGN.md",),
     ),
@@ -219,7 +220,12 @@ SAMPLES: tuple[Sample, ...] = (
         ("sample.js",),
     ),
     _sample("biome", {"package.json": _PACKAGE_JSON, "sample.ts": "var value = 1;\ndebugger;\n"}, ("sample.ts",)),
-    _sample("oxlint", {"package.json": _PACKAGE_JSON, "sample.js": "const value = 1;\nvalue = 2;\n"}, ("sample.js",)),
+    _sample(
+        "oxlint",
+        {"package.json": _PACKAGE_JSON, "sample.js": "const value = 1;\nvalue = 2;\n"},
+        ("sample.js",),
+        settings={"oxlint-args": ["--deny-warnings"]},
+    ),
     _sample(
         "cargo-clippy",
         {"Cargo.toml": _CARGO_TOML, "src/main.rs": "fn main() {\n    let value = 1;\n    let _ = value == value;\n}\n"},
@@ -282,8 +288,12 @@ SAMPLES: tuple[Sample, ...] = (
     ),
     _sample(
         "vitest",
-        {"package.json": _PACKAGE_JSON, "sample.test.ts": 'throw new Error("sample failure");\n'},
+        {
+            "package.json": _PACKAGE_JSON,
+            "sample.test.ts": 'test("sample failure", () => { throw new Error("sample failure"); });\n',
+        },
         ("sample.test.ts",),
+        settings={"vitest-args": ["run", "--globals"]},
     ),
     _sample(
         "cargo-test",

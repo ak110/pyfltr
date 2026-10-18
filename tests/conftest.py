@@ -138,8 +138,15 @@ CARGO_CLIPPY_FIX_ARGS: list[str] = [
     "-D",
     "warnings",
 ]
-CARGO_CLIPPY_LINT_CMDLINE: list[str] = ["cargo", *CARGO_CLIPPY_ARGS, *CARGO_CLIPPY_LINT_ARGS]
-CARGO_CLIPPY_FIX_CMDLINE: list[str] = ["cargo", *CARGO_CLIPPY_ARGS, *CARGO_CLIPPY_FIX_ARGS]
+CARGO_CLIPPY_OUTPUT_ARGS: list[str] = ["--message-format=short", "--color=never"]
+CARGO_CLIPPY_LINT_CMDLINE: list[str] = ["cargo", *CARGO_CLIPPY_ARGS, *CARGO_CLIPPY_OUTPUT_ARGS, *CARGO_CLIPPY_LINT_ARGS]
+CARGO_CLIPPY_FIX_CMDLINE: list[str] = [
+    "cargo",
+    *CARGO_CLIPPY_ARGS,
+    *CARGO_CLIPPY_FIX_ARGS[:3],
+    *CARGO_CLIPPY_OUTPUT_ARGS,
+    *CARGO_CLIPPY_FIX_ARGS[3:],
+]
 
 
 def make_execution_context(

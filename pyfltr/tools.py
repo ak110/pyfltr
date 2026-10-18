@@ -55,6 +55,8 @@ class StructuredOutputSpec:
     """commandlineから除去する引数プレフィクス"""
     lint_only: bool = False
     """Trueのときfixモードでは注入しない"""
+    before_argument: str | None = None
+    """指定した引数より前へ注入する（Cargoの`--`とcargo-denyの`check`向け）。"""
 
 
 ExecutionKind = typing.Literal[
@@ -192,6 +194,8 @@ class CommandInfo:
     structured_output: tuple[str, StructuredOutputSpec] | None = None
     diagnostic_pattern: str | None = None
     parser: typing.Callable[[str], list[ErrorLocation]] | None = None
+    context_parser: typing.Callable[..., list[ErrorLocation]] | None = None
+    """path_base・start_cwdを受け取り、入力ファイルの根拠も検査するparser。"""
     path_resolving_parser: typing.Callable[..., list[ErrorLocation]] | None = None
     summary_parser: typing.Callable[[str], str | None] | None = None
     rule_hints: dict[str, str] = dataclasses.field(default_factory=dict)
@@ -608,12 +612,15 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
     ),
     # hadolint: Haskell製Dockerfileリンター。bin-runner経由。既定で無効（opt-in）。
     "hadolint": CommandInfo(
+        parser=FunctionRef[[str], list[ErrorLocation]]("pyfltr.parsing.native", "parse_hadolint_json"),
+        structured_output=("hadolint-structured", StructuredOutputSpec(inject=["--format=json"], conflicts=["--format", "-f"])),
         type="linter",
         targets=["Dockerfile", "Dockerfile.*", "*.Dockerfile"],
         fixed_cost=0.2,
         per_file_cost=0.05,
         bin_spec=BinToolSpec(bin_name="hadolint"),
         defaults={
+            "hadolint-structured": True,
             # hadolint: Dockerfile専用リンター。bin-runner経由。既定で無効（opt-in）。
             "hadolint": False,
             "hadolint-path": "",
@@ -626,12 +633,21 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
     # gitleaks: Goバイナリ。リポジトリ全体のシークレット検出。
     # pass-filenames=Falseで全体を対象とする。bin-runner経由。既定で無効（opt-in）。
     "gitleaks": CommandInfo(
+        parser=FunctionRef[[str], list[ErrorLocation]]("pyfltr.parsing.native", "parse_gitleaks_json"),
+        structured_output=(
+            "gitleaks-structured",
+            StructuredOutputSpec(
+                inject=["--report-format=json", "--report-path=-", "--redact"],
+                conflicts=["--report-format", "--report-path", "--redact"],
+            ),
+        ),
         type="linter",
         targets="*",
         fixed_cost=1.0,
         allows_external_paths=False,
         bin_spec=BinToolSpec(bin_name="gitleaks"),
         defaults={
+            "gitleaks-structured": True,
             # gitleaks: シークレット検出ツール（Goバイナリ）。bin-runner経由。既定で無効（opt-in）。
             # `detect` サブコマンドは args 既定値として持たせる（glab-ci-lint と同じ設計）。
             # pass-filenames=false でリポジトリ全体を対象とする。
@@ -1072,12 +1088,16 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
     ),
     # JS/TS linter群はモダン順（後ろほど新しい）に並べる。
     "tsc": CommandInfo(
+        diagnostic_pattern=r"^(?P<file>.+?)\((?P<line>\d+),(?P<col>\d+)\): "
+        r"(?P<severity>error|warning) (?P<rule>TS\d+): (?P<message>.+)$",
+        structured_output=("tsc-plain", StructuredOutputSpec(inject=["--pretty", "false"], conflicts=["--pretty"])),
         type="linter",
         targets=["*.ts", "*.tsx", "*.mts", "*.cts"],
         js_bin="tsc",
         pnpx_package="typescript",
         language="javascript",
         defaults={
+            "tsc-plain": True,
             "tsc": False,
             "tsc-path": "",
             "tsc-runner": "js-runner",
@@ -1156,6 +1176,8 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         },
     ),
     "oxlint": CommandInfo(
+        parser=FunctionRef[[str], list[ErrorLocation]]("pyfltr.parsing.native", "parse_oxlint_json"),
+        structured_output=("oxlint-structured", StructuredOutputSpec(inject=["--format=json"], conflicts=["--format", "-f"])),
         type="linter",
         targets=[*_JS_COMMON_TARGETS, "*.vue", "*.svelte"],
         fixed_cost=0.7,
@@ -1163,6 +1185,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         pnpx_package="oxlint",
         language="javascript",
         defaults={
+            "oxlint-structured": True,
             # -- js-runner対応ツール（追加分） --
             "oxlint": False,
             "oxlint-path": "",
@@ -1173,6 +1196,15 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
     ),
     # Rust / .NETツール（linter）。pass-filenames=FalseでCrate / solution全体を対象とする。
     "cargo-clippy": CommandInfo(
+        parser=FunctionRef[[str], list[ErrorLocation]]("pyfltr.parsing.native", "parse_cargo_clippy"),
+        structured_output=(
+            "cargo-clippy-structured",
+            StructuredOutputSpec(
+                inject=["--message-format=short", "--color=never"],
+                conflicts=["--message-format", "--color"],
+                before_argument="--",
+            ),
+        ),
         type="linter",
         targets=["*.rs", "Cargo.toml"],
         serial_group="cargo",
@@ -1180,6 +1212,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         bin_spec=BinToolSpec(bin_name="cargo", mise_backend="rust"),
         language="rust",
         defaults={
+            "cargo-clippy-structured": True,
             "cargo-clippy": False,
             "cargo-clippy-path": "",
             "cargo-clippy-runner": "bin-runner",
@@ -1195,6 +1228,15 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         },
     ),
     "cargo-check": CommandInfo(
+        parser=FunctionRef[[str], list[ErrorLocation]]("pyfltr.parsing.native", "parse_cargo_check"),
+        structured_output=(
+            "cargo-check-structured",
+            StructuredOutputSpec(
+                inject=["--message-format=short", "--color=never"],
+                conflicts=["--message-format", "--color"],
+                before_argument="--",
+            ),
+        ),
         type="linter",
         targets=["*.rs", "Cargo.toml"],
         serial_group="cargo",
@@ -1202,6 +1244,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         bin_spec=BinToolSpec(bin_name="cargo", mise_backend="rust"),
         language="rust",
         defaults={
+            "cargo-check-structured": True,
             "cargo-check": False,
             "cargo-check-path": "",
             "cargo-check-runner": "bin-runner",
@@ -1212,6 +1255,13 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         },
     ),
     "cargo-deny": CommandInfo(
+        parser=FunctionRef[[str], list[ErrorLocation]]("pyfltr.parsing.native", "parse_cargo_deny"),
+        structured_output=(
+            "cargo-deny-structured",
+            StructuredOutputSpec(
+                inject=["--format=human", "--color=never"], conflicts=["--format", "--color"], before_argument="check"
+            ),
+        ),
         type="linter",
         targets=["Cargo.toml", "Cargo.lock", "deny.toml"],
         serial_group="cargo",
@@ -1219,6 +1269,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         bin_spec=BinToolSpec(bin_name="cargo-deny", mise_backend="aqua:EmbarkStudios/cargo-deny"),
         language="rust",
         defaults={
+            "cargo-deny-structured": True,
             "cargo-deny": False,
             "cargo-deny-path": "",
             "cargo-deny-runner": "bin-runner",
@@ -1229,6 +1280,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         },
     ),
     "dotnet-build": CommandInfo(
+        parser=FunctionRef[[str], list[ErrorLocation]]("pyfltr.parsing.native", "parse_dotnet_build"),
         type="linter",
         targets=["*.cs", "*.csproj", "*.sln", "Directory.Build.props"],
         serial_group="dotnet",
@@ -1438,6 +1490,15 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
     ),
     # Rust / .NETツール（tester）。pass-filenames=FalseでCrate / solution全体を対象とする。
     "cargo-test": CommandInfo(
+        parser=FunctionRef[[str], list[ErrorLocation]]("pyfltr.parsing.native", "parse_cargo_test"),
+        structured_output=(
+            "cargo-test-structured",
+            StructuredOutputSpec(
+                inject=["--message-format=short", "--color=never"],
+                conflicts=["--message-format", "--color"],
+                before_argument="--",
+            ),
+        ),
         type="tester",
         targets=["*.rs", "Cargo.toml"],
         serial_group="cargo",
@@ -1446,6 +1507,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         bin_spec=BinToolSpec(bin_name="cargo", mise_backend="rust"),
         language="rust",
         defaults={
+            "cargo-test-structured": True,
             "cargo-test": False,
             "cargo-test-path": "",
             "cargo-test-runner": "bin-runner",
@@ -1456,6 +1518,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         },
     ),
     "dotnet-test": CommandInfo(
+        parser=FunctionRef[[str], list[ErrorLocation]]("pyfltr.parsing.native", "parse_dotnet_test"),
         type="tester",
         targets=["*.cs", "*.csproj", "*.sln", "Directory.Build.props"],
         serial_group="dotnet",

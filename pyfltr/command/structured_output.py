@@ -6,6 +6,8 @@
 （ruff / typosは重複指定でエラーになるため）。
 """
 
+import pathlib
+
 import pyfltr.config.config
 import pyfltr.config.model
 import pyfltr.tools
@@ -26,6 +28,14 @@ def get_structured_output_spec(command: str, config: pyfltr.config.model.Config)
 
 def apply_structured_output(commandline: list[str], spec: StructuredOutputSpec) -> list[str]:
     """コマンドラインから衝突する引数を除去し、構造化出力引数を注入する。"""
+    # `--`以降はClippyがrustcへ渡す引数など、下位コマンドの名前空間である。
+    start = 0
+    if commandline and pathlib.Path(commandline[0]).stem == "mise" and "--" in commandline:
+        start = commandline.index("--") + 1
+    marker = spec.before_argument
+    separator = commandline.index(marker, start) if marker is not None and marker in commandline[start:] else len(commandline)
+    tail = commandline[separator:]
+    commandline = commandline[:separator]
     filtered: list[str] = []
     skip_next = False
     for i, arg in enumerate(commandline):
@@ -46,4 +56,4 @@ def apply_structured_output(commandline: list[str], spec: StructuredOutputSpec) 
                 break
         if not matched:
             filtered.append(arg)
-    return [*filtered, *spec.inject]
+    return [*filtered, *spec.inject, *tail]
