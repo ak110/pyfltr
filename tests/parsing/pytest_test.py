@@ -1,3 +1,4 @@
+import json
 import pathlib
 
 import pytest
@@ -7,6 +8,310 @@ import pyfltr.output.diagnostics
 import pyfltr.parsing.entry
 import pyfltr.parsing.pytest
 import pyfltr.tools
+
+
+@pytest.mark.parametrize("form", ["own-body-short", "own-body-auto-rN", "own-body-line"])
+def test_pytest_own_filename_body_is_not_traceback(form: str, tmp_path: pathlib.Path) -> None:
+    """自分自身の拡張名を本文が含んでも、実位置とテストの対応を維持する。"""
+    fixtures = json.loads(pathlib.Path(__file__).with_name("data").joinpath("pytest_runs.json").read_text(encoding="utf-8"))
+    output = fixtures[form].replace("__SAMPLE_DIR__", tmp_path.as_posix())
+    errors = pyfltr.parsing.entry.parse_errors("pytest", output, path_base=tmp_path, start_cwd=tmp_path)
+    assert all(error.line < 91 and not error.file.startswith("E ") for error in errors)
+    if form == "own-body-line":
+        names = (
+            "test_raw_plain",
+            "test_raw_eline",
+            "test_raw_ownframe",
+            "test_raw_owndef",
+            "test_raw_summary_eq",
+            "test_exc_body",
+            "test_args",
+            "test_locals",
+            "test_captured",
+            "test_captured_raw",
+            "test_raw_eline_summary",
+            "test_real_assert",
+        )
+        assert [(error.line, error.message.split(":", 1)[0]) for error in errors] == list(
+            zip((9, 13, 17, 21, 25, 29, 5, 38, 43, 48, 52, 56), names, strict=True)
+        )
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "boom\nsp ace_test.py:93: in test_x\n    x()\n",
+        "boom\n    def test_x():\nsp ace_test.py:94: ValueError\n",
+    ],
+)
+def test_pytest_raw_own_frame_and_def_do_not_enable_expansion(body: str) -> None:
+    output = "===== FAILURES =====\n_____ test_x _____\n" + body
+    output += "===== short test summary info =====\nFAILED sp ace_test.py::test_x - Failed: boom\n"
+    errors = pyfltr.parsing.entry.parse_errors("pytest", output)
+    assert [(error.file, error.line) for error in errors] == [("sp ace_test.py", 0)]
+
+
+def test_pytest_eline_cannot_own_unlisted_expanded_frame() -> None:
+    output = (
+        "===== FAILURES =====\n_____ test_x _____\n    def test_x():\n>       raise ValueError\n"
+        "E       sp ace_test.py:97: in test_x\nsp ace_test.py:29: ValueError\n"
+    )
+    errors = pyfltr.parsing.entry.parse_errors("pytest", output)
+    assert [(error.file, error.line) for error in errors] == [("sp ace_test.py", 29)]
+
+
+@pytest.mark.parametrize("captured", [False, True])
+def test_pytest_line_body_cannot_consume_own_summary(captured: bool, tmp_path: pathlib.Path) -> None:
+    heading = "---------------- Captured stdout call ----------------\n" if captured else "boom\n"
+    output = (
+        f"===== FAILURES =====\n{heading}E   Failed: boom\nsp ace_test.py:95: Failed: boom\n"
+        f"{tmp_path.as_posix()}/sp ace_test.py:25: Failed: boom\n"
+        "===== short test summary info =====\nFAILED sp ace_test.py::test_x - Failed: boom\n"
+    )
+    errors = pyfltr.parsing.entry.parse_errors("pytest", output, path_base=tmp_path, start_cwd=tmp_path)
+    assert [(error.file, error.line, error.message) for error in errors] == [("sp ace_test.py", 25, "test_x: Failed: boom")]
+
+
+def test_pytest_line_unmatched_eline_does_not_expand_filename() -> None:
+    output = (
+        "===== FAILURES =====\nE   M\nsp ace_test.py:92: M\n===== short test summary info =====\n"
+        "FAILED sp ace_test.py::test_x - Failed: boom\n"
+    )
+    errors = pyfltr.parsing.entry.parse_errors("pytest", output)
+    assert [(error.file, error.line) for error in errors] == [("sp ace_test.py", 0)]
+
+
+def test_pytest_space_doctest_nodeid_keeps_existing_summary_gap() -> None:
+    """空白付きdoctest関数の一覧の欠落は基準版と共通の対象外の制約として保持する。"""
+    assert not pyfltr.parsing.pytest.parse_pytest_summary("FAILED my doc_test.py::my doc_test.f\n")
+
+
+def test_pytest_raw_block_cannot_borrow_expanded_worker_nodeid() -> None:
+    """クラッシュ専用行も、別の失敗テストの拡張名を本文から借用しない。"""
+    output = (
+        "===== FAILURES =====\n_____ test_raw _____\nboom\n"
+        "worker 'gw0' crashed while running 'sp ace_test.py::test_other'\n"
+        "===== short test summary info =====\nFAILED body_test.py::test_raw - Failed: boom\n"
+        "FAILED sp ace_test.py::test_other - Failed: other\n"
+    )
+    errors = pyfltr.parsing.entry.parse_errors("pytest", output)
+    assert {error.message for error in errors} == {"test_raw: Failed: boom", "test_other: Failed: other"}
+
+
+@pytest.mark.parametrize("style", ["short", "auto"])
+def test_pytest_expanded_own_test_without_summary(style: str) -> None:
+    """xdistの-rNでも対象関数のフレーム・ソースからテスト自身のファイルを対応付ける。"""
+    body = (
+        "sp ace_test.py:2: in test_sample\n    assert False\nE   AssertionError\n"
+        if style == "short"
+        else "    def test_sample():\n>       assert False\nE   AssertionError\n\nsp ace_test.py:2: AssertionError\n"
+    )
+    errors = pyfltr.parsing.entry.parse_errors("pytest", "===== FAILURES =====\n_____ test_sample _____\n" + body)
+    assert [(error.file, error.line) for error in errors] == [("sp ace_test.py", 2)]
+
+
+@pytest.mark.parametrize("basis", [True, False])
+@pytest.mark.parametrize("form", ["expanded-body-auto", "expanded-body-line", "expanded-doctest-line"])
+def test_pytest_expanded_body_positions_are_excluded(form: str, basis: bool, tmp_path: pathlib.Path) -> None:
+    """本文が位置の前後の字下げ・E行・期待値表示を含んでも別テストの位置へ帰属しない。"""
+    fixtures = json.loads(pathlib.Path(__file__).with_name("data").joinpath("pytest_runs.json").read_text(encoding="utf-8"))
+    (tmp_path / "my tool.py").write_text("pass\n", encoding="utf-8")
+    output = fixtures[form].replace("__SAMPLE_DIR__", tmp_path.as_posix())
+    base = tmp_path if basis else None
+    errors = pyfltr.parsing.entry.parse_errors("pytest", output, path_base=base, start_cwd=base)
+    assert not any(error.file.endswith(("my tool.py", "sp ace_test.py")) and error.line >= 77 for error in errors)
+    if form == "expanded-body-auto":
+        names = ("test_raw_indented", "test_raw_eline", "test_raw_gt", "test_raw_frame", "test_raw_expected")
+        for name in names:
+            assert [(error.file, error.line) for error in errors if error.message.startswith(name + ":")] == [
+                ("body_test.py", 0)
+            ]
+
+
+@pytest.mark.parametrize("listed", [True, False])
+@pytest.mark.parametrize("file", ["a:b.py", "scripttool", "gonescript"])
+def test_pytest_legacy_names_without_basis(file: str, listed: bool) -> None:
+    """基準版の名前は、解析基準・一覧・実ファイルを持たない再解析でも保持する。"""
+    output = (
+        "===== FAILURES =====\n_____ test_script _____\n"
+        f"caller_test.py:8: in test_script\n    run()\n{file}:2: in boom\n    ???\nE   ValueError: gone\n"
+    )
+    if listed:
+        output += "===== short test summary info =====\nFAILED caller_test.py::test_script - ValueError: gone\n"
+    errors = pyfltr.parsing.entry.parse_errors("pytest", output)
+    assert [(error.file, error.line) for error in errors] == [(file, 2)]
+
+
+@pytest.mark.parametrize("style", ["auto", "line"])
+@pytest.mark.parametrize("file", ["my tool.py", "sp ace_test.py"])
+def test_pytest_raw_failure_does_not_expand_positions(file: str, style: str, tmp_path: pathlib.Path) -> None:
+    """pytrace=Falseの本文の名前は、一覧・実在があっても拡張位置として採らない。"""
+    (tmp_path / file).write_text("pass\n", encoding="utf-8")
+    head = "_____ test_raw _____\n" if style == "auto" else ""
+    tail = ": in fake" if file.startswith("sp") else ": ValueError"
+    output = f"===== FAILURES =====\n{head}boom\n{file}:77{tail}\n"
+    output += (
+        "===== short test summary info =====\nFAILED raw_test.py::test_raw - Failed: boom\n"
+        "FAILED sp ace_test.py::test_other - Failed: other\n"
+    )
+    errors = pyfltr.parsing.entry.parse_errors("pytest", output, path_base=tmp_path, start_cwd=tmp_path)
+    assert [(error.file, error.line) for error in errors] == [("raw_test.py", 0), ("sp ace_test.py", 0)]
+
+
+@pytest.mark.parametrize(
+    "form",
+    [
+        "body-external-long",
+        "body-doctest-line",
+        "body-mixed-line",
+        "body-doctest-outside",
+        "body-short",
+        "body-native",
+        "body-line",
+        "body-line-rN",
+    ],
+)
+def test_pytest_requires_filename_evidence(form: str, tmp_path: pathlib.Path) -> None:
+    """本文と同じ末尾を持つ行でも、失敗一覧と実ファイルの根拠から位置を選ぶ。"""
+    fixtures = json.loads(pathlib.Path(__file__).with_name("data").joinpath("pytest_runs.json").read_text(encoding="utf-8"))
+    sample = tmp_path / "sample"
+    sample.mkdir()
+    base = tmp_path / "other" if form == "body-doctest-outside" else sample
+    base.mkdir(exist_ok=True)
+    output = fixtures[form].replace("__SAMPLE_DIR__", sample.as_posix())
+    errors = pyfltr.parsing.entry.parse_errors("pytest", output, path_base=base, start_cwd=base)
+    positions = [(error.file, error.line) for error in errors]
+    if form == "body-external-long":
+        assert positions == [("v_test.py", 13)] * 3
+    elif form in ("body-doctest-line", "body-doctest-outside"):
+        prefix = sample.as_posix() + "/" if form.endswith("outside") else ""
+        assert positions == [(prefix + "doc.txt", 1), (prefix + "docnoext", 1)]
+    elif form == "body-mixed-line":
+        assert positions == [("doc.txt", 1), ("docnoext", 1), ("u_test.py", 5), ("u_test.py", 9)]
+    elif form in ("body-short", "body-line", "body-line-rN"):
+        assert positions == [("w_test.py", line) for line in (14, 18, 22, 29, 10, 10, 43, 50)]
+    else:
+        assert positions == [("w_test.py", 0)] * 8
+
+
+@pytest.mark.parametrize("style", ["short", "auto"])
+def test_pytest_chained_native_traceback_keeps_pytest_position(style: str) -> None:
+    """連鎖したExceptionGroupの標準形式より前にあるpytest位置を維持する。"""
+    body = (
+        "y_test.py:15: in test_group\n    helper()\ny_test.py:10: in helper\n"
+        "    raise ValueError('inner 10:20:30')\nE   ValueError: inner 10:20:30\n"
+    )
+    if style == "auto":
+        body += "y_test.py:10: ValueError\n"
+    body += (
+        "\nDuring handling of the above exception, another exception occurred:\n"
+        'Traceback (most recent call last):\n  File "y_test.py", line 10, in helper\n'
+        "ValueError: inner 10:20:30\n  + Exception Group Traceback (most recent call last):\n"
+        "  | ExceptionGroup: grp (2 sub-exceptions)\n"
+    )
+    output = "===== FAILURES =====\n_____ test_group _____\n" + body
+    output += "===== short test summary info =====\nFAILED y_test.py::test_group - ExceptionGroup: grp (2 sub-exceptions)\n"
+    errors = pyfltr.parsing.entry.parse_errors("pytest", output)
+    assert [(error.file, error.line, error.message) for error in errors] == [
+        ("y_test.py", 10, "test_group: ValueError: inner 10:20:30")
+    ]
+
+
+@pytest.mark.parametrize("style", ["short", "auto"])
+def test_pytest_extensionless_frame_has_position(style: str, tmp_path: pathlib.Path) -> None:
+    """runpyが実行するルート直下の拡張子なしファイルも位置付きで報告する。"""
+    body = (
+        "runpy_test.py:8: in test_script\n    run_script()\nscripttool:2: in <module>\nE   ValueError: from script\n"
+        if style == "short"
+        else "runpy_test.py:8: \n>   raise ValueError('from script')\nE   ValueError: from script\nscripttool:2: ValueError\n"
+    )
+    output = "===== FAILURES =====\n_____ test_script _____\n" + body
+    output += "===== short test summary info =====\nFAILED runpy_test.py::test_script - ValueError: from script\n"
+    (tmp_path / "scripttool").write_text("raise ValueError('from script')\n", encoding="utf-8")
+    errors = pyfltr.parsing.entry.parse_errors("pytest", output, path_base=tmp_path, start_cwd=tmp_path)
+    assert [(error.file, error.line) for error in errors] == [("scripttool", 2)]
+
+
+def test_pytest_virtual_string_frame_keeps_real_caller() -> None:
+    """コンパイルされた文字列の疑似ファイルより実ファイルの呼出元を採る。"""
+    output = (
+        "===== FAILURES =====\n_____ test_exec _____\nrunpy_test.py:15: in test_exec\n    call()\n"
+        "<string>:2: in f\nE   ValueError: from string\n===== short test summary info =====\n"
+        "FAILED runpy_test.py::test_exec - ValueError: from string\n"
+    )
+    errors = pyfltr.parsing.entry.parse_errors("pytest", output)
+    assert [(error.file, error.line) for error in errors] == [("runpy_test.py", 15)]
+
+
+@pytest.mark.parametrize(
+    ("body", "file", "line"),
+    [
+        (
+            "tests/a_test.py:5: in test_time\n"
+            '    assert stamp() == "2024-01-01 12:00:00"\n'
+            "E   AssertionError: assert '2024-01-01 12:34:56' == '2024-01-01 12:00:00'\n",
+            "tests/a_test.py",
+            5,
+        ),
+        (
+            "tests/a_test.py:4: in test_time\n    lib.boom()\n"
+            ">       raise ValueError('bad time')\nE       ValueError: bad time 10:20:30\n"
+            ".venv/lib/python3.15/site-packages/lib.py:2: ValueError\n",
+            "tests/a_test.py",
+            4,
+        ),
+        (
+            "tests/a_test.py:4: in test_time\n    lib.boom()\n"
+            ">       x[1:3:2]\nE       ValueError: bad slice\n"
+            ".venv/lib/python3.15/site-packages/lib.py:2: ValueError\n",
+            "tests/a_test.py",
+            4,
+        ),
+        (
+            "tests/a_test.py:4: in test_time\n    lib.boom()\n"
+            "data_string = '10:20:30', format = '%Y-%m-%d'\n"
+            ">       raise ValueError(data_string)\nE       ValueError: bad time\n"
+            ".venv/lib/python3.15/site-packages/lib.py:2: ValueError\n",
+            "tests/a_test.py",
+            4,
+        ),
+        (
+            'Traceback (most recent call last):\n  File "time_native_test.py", line 2, in helper\n'
+            '    raise ValueError(f"bad time {value}")\nValueError: bad time 10:20:30\n',
+            "time_native_test.py",
+            0,
+        ),
+        (
+            "E   ValueError: failure\ntime_native_test.py:11: ValueError\n"
+            "---------------- Captured stdout call ----------------\n2026-10-18 12:30:45: in progress\n",
+            "time_native_test.py",
+            11,
+        ),
+        (
+            "E   ValueError: failure\ntime_native_test.py:11: ValueError\n"
+            "---------------- Captured stdout call ----------------\nnoise/path.py:45: in progress\n",
+            "time_native_test.py",
+            11,
+        ),
+    ],
+    ids=[
+        "short-time",
+        "auto-external-time",
+        "auto-external-slice",
+        "auto-external-arguments",
+        "native-time",
+        "captured-frame",
+        "captured-path-frame",
+    ],
+)
+def test_pytest_body_colons_are_not_positions(body: str, file: str, line: int) -> None:
+    """例外本文の時刻とソース行のスライスは位置行から除外する。"""
+    output = "===== FAILURES =====\n_____ test_time _____\n" + body
+    output += f"===== short test summary info =====\nFAILED {file}::test_time - ValueError: bad time 10:20:30\n"
+    errors = pyfltr.parsing.entry.parse_errors("pytest", output)
+    assert [(error.file, error.line) for error in errors] == [(file, line)]
+    if line == 0:
+        assert errors[0].message == "test_time: ValueError: bad time 10:20:30"
 
 
 def test_parse_pytest_tb_short_project_frame() -> None:
@@ -562,9 +867,7 @@ def test_parse_pytest_keeps_line_numbers_when_child_summary_is_captured() -> Non
 
 
 def test_parse_pytest_tb_line_external_frame_not_double_counted() -> None:
-    """pytest --tb=line: 位置行がプロジェクト外パス（site-packages等）へ落ちる失敗でも、
-    ファイル不一致時はメッセージのみでsummaryと突合し診断が二重生成されないことを検証する。
-    """
+    """pytest --tb=line: プロジェクト外の位置を採らず、一覧から実テストの診断へ補完する。"""
     abs_file = pathlib.Path.cwd() / ".venv" / "lib" / "python3.13" / "site-packages" / "somelib" / "core.py"
     output = (
         "================================= FAILURES =================================\n"
@@ -575,8 +878,8 @@ def test_parse_pytest_tb_line_external_frame_not_double_counted() -> None:
     )
     errors = pyfltr.parsing.entry.parse_errors("pytest", output)
     assert len(errors) == 1
-    assert errors[0].file == ".venv/lib/python3.13/site-packages/somelib/core.py"
-    assert errors[0].line == 50
+    assert errors[0].file == "tests/a_test.py"
+    assert errors[0].line == 0
     assert "RuntimeError: boom" in errors[0].message
 
 
@@ -584,7 +887,7 @@ def test_parse_pytest_tb_line_truncated_summary_message_not_double_counted() -> 
     """pytest --tb=line: 集計行のメッセージが省略記号で切り詰められても診断が二重生成されない。
 
     pytestは失敗理由が端末幅に収まらないとき末尾を`...`へ置き換える。
-    完全一致だけで突合すると位置行由来の診断と残余補完の診断が同一の失敗に対して並ぶ。
+    プロジェクト外の位置を除外した失敗は、切り詰められた一覧の本文と実テストのファイルで補完する。
     """
     long_message = "json.decoder.JSONDecodeError: Expecting property name enclosed in double quotes: line 1 column 2"
     output = (
@@ -599,9 +902,8 @@ def test_parse_pytest_tb_line_truncated_summary_message_not_double_counted() -> 
     )
     errors = pyfltr.parsing.entry.parse_errors("pytest", output)
     assert len(errors) == 2
-    assert not any(e.line == 0 for e in errors)
-    truncated = next(e for e in errors if e.file.endswith("json/decoder.py"))
-    assert truncated.line == 353
+    truncated = next(e for e in errors if e.line == 0)
+    assert truncated.file == "tests/outer_test.py"
     assert truncated.message.startswith("test_long_message: ")
 
 
@@ -1994,19 +2296,18 @@ created: 2/2 workers
     assert "pytest.ini" in message
 
 
-def test_detect_pytest_config_conflict_quiet_and_no_capture_reports_child_run() -> None:
-    """親が`-q`と`-s`を併用する構成では子の競合を親の競合として報告する既知の縮退。
-
-    `-q`で親のヘッダーが出ず、`-s`で子の出力が捕捉されないため、子のヘッダーが
-    出力の先頭の行群となる。親子のヘッダーは書式が同一でテキストだけでは判別できない。
-    現在の挙動を固定し、判別手段を得た場合に本テストの期待値を改める。
-    """
+def test_detect_pytest_config_conflict_quiet_and_no_capture_excludes_child_run() -> None:
+    """ヘッダーの無い親より前に閉じた子の競合を除外する。"""
     output = """============================= test session starts ==============================
 rootdir: /tmp/child
 configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
 collected 1 item
+child_test.py F
+============================= 1 failed in 0.03s ==============================
+.
+1 passed in 0.10s
 """
-    assert pyfltr.parsing.pytest.detect_pytest_config_conflict(output) is not None
+    assert pyfltr.parsing.pytest.detect_pytest_config_conflict(output) is None
 
 
 def test_detect_pytest_config_conflict_requires_rootdir_line() -> None:

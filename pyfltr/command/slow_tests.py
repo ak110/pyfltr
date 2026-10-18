@@ -12,6 +12,8 @@ import pathlib
 import re
 import typing
 
+import pyfltr.parsing.pytest
+
 SLOW_TEST_LIMIT = 5
 """保持・露出する遅いテストの件数上限。
 
@@ -59,14 +61,14 @@ def parse_pytest_durations(output: str) -> list[SlowTest]:
 
     見出し行（`===== slowest N durations =====`または`===== slowest durations =====`）以降の
     duration行を収集し、次の区切り行で対象の節の収集を終える。
-    捕捉出力へ子pytestのdurations節が混入する場合は、親pytestが末尾に出力する最後の節を採用する。
+    共通の実行区間判定で子の実行を除き、親のdurations節だけを採用する。
     節が無い場合・閾値未満で項目が隠された場合（`(N durations < Xs hidden.)`）は空リストを返す。
     行書式はpytestの`_pytest/runner.py`が生成する`f"{duration:02.2f}s {when:<8} {nodeid}"`に対応する。
     xdistの有無で書式は変わらない。
     """
     results: list[SlowTest] = []
     in_section = False
-    for line in output.splitlines():
+    for line in pyfltr.parsing.pytest.mask_pytest_captured_child_runs(output).splitlines():
         stripped = line.strip()
         if _HEADER_RE.match(stripped):
             results = []

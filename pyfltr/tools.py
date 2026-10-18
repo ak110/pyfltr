@@ -5,7 +5,6 @@ import importlib
 import sys
 import typing
 
-from pyfltr.diagnostics import FILE_PATTERN as _FILE
 from pyfltr.diagnostics import ErrorLocation
 
 _P = typing.ParamSpec("_P")
@@ -463,7 +462,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
             bin_name="editorconfig-checker",
             mise_backend="github:editorconfig-checker/editorconfig-checker",
         ),
-        diagnostic_pattern=r"(?P<file>[^\s:]+):(?P<line>\d+):(?P<col>\d+):\s*\w+:\s*(?P<message>.+)",
+        diagnostic_pattern=r"^(?P<file>.+?):(?P<line>\d+):(?P<col>\d+):\s*\w+:\s*(?P<message>.+)",
         defaults={
             "ec": False,
             "ec-path": "",
@@ -479,7 +478,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         per_file_cost=0.03,
         subproject_aware=False,
         bin_spec=BinToolSpec(bin_name="shellcheck"),
-        diagnostic_pattern=r"(?P<file>[^\s:]+):(?P<line>\d+):(?P<col>\d+):\s*\w+:\s*(?P<message>.+)",
+        diagnostic_pattern=r"^(?P<file>.+?):(?P<line>\d+):(?P<col>\d+):\s*\w+:\s*(?P<message>.+)",
         parser=FunctionRef[[str], list[ErrorLocation]]("pyfltr.parsing.tools", "parse_shellcheck_json"),
         rule_url_builder=FunctionRef[[str, str | None], str | None]("pyfltr.rule_urls", "build_shellcheck_url"),
         structured_output=(
@@ -505,7 +504,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         fixed_cost=0.04,
         per_file_cost=0.007,
         subproject_aware=False,
-        diagnostic_pattern=r"(?P<file>[^\s:]+):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>.+)",
+        diagnostic_pattern=r"^(?P<file>.+?):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>.+)",
         parser=FunctionRef[[str], list[ErrorLocation]]("pyfltr.parsing.tools", "parse_typos_jsonl"),
         structured_output=(
             "typos-json",
@@ -529,7 +528,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         targets=[".github/workflows/*.yaml", ".github/workflows/*.yml"],
         fixed_cost=0.2,
         bin_spec=BinToolSpec(bin_name="actionlint"),
-        diagnostic_pattern=r"(?P<file>[^\s:]+):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>.+?)(?:\s*\[(?P<rule>[^\[\]\s]+)\])?\s*$",
+        diagnostic_pattern=r"^(?P<file>.+?):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>.+?)(?:\s*\[(?P<rule>[^\[\]\s]+)\])?\s*$",
         defaults={
             "actionlint": False,
             "actionlint-path": "",
@@ -588,7 +587,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         targets=["*.yaml", "*.yml"],
         fixed_cost=0.1,
         per_file_cost=0.01,
-        diagnostic_pattern=rf"(?P<file>{_FILE}):(?P<line>\d+):(?P<col>\d+):\s*\[(?P<severity>error|warning)\]"
+        diagnostic_pattern=r"^(?P<file>.+?):(?P<line>\d+):(?P<col>\d+):\s*\[(?P<severity>error|warning)\]"
         r"\s+(?P<message>.+?)(?:\s+\((?P<rule>[^()\s]+)\))?\s*$",
         structured_output=(
             "yamllint-parsable",
@@ -728,7 +727,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
             ("pylint-pydantic", ["--load-plugins=pylint_pydantic"]),
         ],
         python_bin="pylint",
-        diagnostic_pattern=rf"(?P<file>{_FILE}):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>[CRWEF]\d+:.+)",
+        diagnostic_pattern=r"^(?P<file>.+?):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>[CRWEF]\d+:.+)",
         parser=FunctionRef[[str], list[ErrorLocation]]("pyfltr.parsing.tools", "parse_pylint_json"),
         summary_parser=FunctionRef[[str], str | None]("pyfltr.parsing.tools", "summarize_pylint_json"),
         rule_url_builder=FunctionRef[[str, str | None], str | None]("pyfltr.rule_urls", "build_pylint_url"),
@@ -760,7 +759,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
             ("mypy-unused-awaitable", ["--enable-error-code=unused-awaitable"]),
         ],
         python_bin="mypy",
-        diagnostic_pattern=rf"(?P<file>{_FILE}):(?P<line>\d+):\s*error:\s*(?P<message>.+?)(?:\s*\[(?P<rule>[^\]]+)\])?\s*$",
+        diagnostic_pattern=r"^(?P<file>.+?):(?P<line>\d+):\s*error:\s*(?P<message>.+?)(?:\s*\[(?P<rule>[^\]]+)\])?\s*$",
         rule_url_builder=FunctionRef[[str, str | None], str | None]("pyfltr.rule_urls", "build_mypy_url"),
         language="python",
         defaults={
@@ -785,7 +784,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         type="linter",
         fixed_cost=0.01,
         python_bin="ruff",
-        diagnostic_pattern=rf"(?P<file>{_FILE}):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>[A-Z]+\d+\s+.+)",
+        diagnostic_pattern=r"^(?P<file>.+?):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>[A-Z]+\d+\s+.+)",
         parser=FunctionRef[[str], list[ErrorLocation]]("pyfltr.parsing.tools", "parse_ruff_check_json"),
         rule_url_builder=FunctionRef[[str, str | None], str | None]("pyfltr.rule_urls", "build_ruff_url"),
         structured_output=(
@@ -818,7 +817,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         fixed_cost=0.8,
         per_file_cost=0.155,
         python_bin="pyright",
-        diagnostic_pattern=rf"(?P<file>{_FILE}):(?P<line>\d+):(?P<col>\d+)\s*-\s*error:\s*(?P<message>.+)",
+        diagnostic_pattern=r"^\s*(?P<file>.+?):(?P<line>\d+):(?P<col>\d+)\s*-\s*error:\s*(?P<message>.+)",
         parser=FunctionRef[[str], list[ErrorLocation]]("pyfltr.parsing.tools", "parse_pyright_json"),
         summary_parser=FunctionRef[[str], str | None]("pyfltr.parsing.tools", "summarize_pyright_json"),
         rule_url_builder=FunctionRef[[str, str | None], str | None]("pyfltr.rule_urls", "build_pyright_url"),
@@ -844,7 +843,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         fixed_cost=0.05,
         per_file_cost=0.01,
         python_bin="ty",
-        diagnostic_pattern=rf"(?P<file>{_FILE}):(?P<line>\d+):(?P<col>\d+):"
+        diagnostic_pattern=r"^(?P<file>.+?):(?P<line>\d+):(?P<col>\d+):"
         r"\s*(?P<severity>error|warning|info)\[(?P<rule>[^\]]+)\]\s+(?P<message>.+)",
         language="python",
         defaults={
@@ -904,7 +903,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
             ".markdownlint.mjs",
         ],
         js_bin="markdownlint-cli2",
-        diagnostic_pattern=rf"(?P<file>{_FILE}):(?P<line>\d+)(?::(?P<col>\d+))?\s+(?:\w+\s+)?(?P<rule>MD\d+)(?P<message>\S*\s+.+)",
+        diagnostic_pattern=r"^(?P<file>.+?):(?P<line>\d+)(?::(?P<col>\d+))?\s+(?:\w+\s+)?(?P<rule>MD\d+)(?P<message>\S*\s+.+)",
         rule_url_builder=FunctionRef[[str, str | None], str | None]("pyfltr.rule_urls", "build_markdownlint_url"),
         defaults={
             "markdownlint": False,
@@ -953,7 +952,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         cacheable=True,
         js_bin="textlint",
         pnpx_package="textlint@<15.5.3 || >15.5.3",
-        diagnostic_pattern=rf"(?P<file>{_FILE}):\s*line\s+(?P<line>\d+),\s*col\s+(?P<col>\d+),\s*\w+\s*-\s*(?P<message>.+)",
+        diagnostic_pattern=r"^(?P<file>.+?):\s*line\s+(?P<line>\d+),\s*col\s+(?P<col>\d+),\s*\w+\s*-\s*(?P<message>.+)",
         parser=FunctionRef[[str], list[ErrorLocation]]("pyfltr.parsing.tools", "parse_textlint_json"),
         structured_output=(
             "textlint-json",
@@ -1072,7 +1071,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         fixed_cost=0.1,
         per_file_cost=0.005,
         subproject_aware=False,
-        diagnostic_pattern=rf"(?P<file>{_FILE}):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>.+)",
+        diagnostic_pattern=r"^(?P<file>.+?):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>.+)",
         defaults={
             # colloquial-check: 日本語文書の口語表現を検出する内蔵linter。既定で無効（opt-in）。
             # 検出結果はseverity既定"warning"によりCI/pre-commitを失敗させない。
@@ -1421,7 +1420,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
         fixed_cost=3.0,
         allows_external_paths=False,
         python_bin="pytest",
-        parser=FunctionRef[[str], list[ErrorLocation]]("pyfltr.parsing.pytest", "parse_pytest"),
+        context_parser=FunctionRef[..., list[ErrorLocation]]("pyfltr.parsing.pytest", "parse_pytest"),
         summary_parser=FunctionRef[[str], str | None]("pyfltr.parsing.pytest", "summarize_pytest"),
         structured_output=(
             "pytest-tb-line",

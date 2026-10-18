@@ -147,7 +147,173 @@ def _width_forms() -> list[Form]:
     return forms
 
 
+def _uncaptured_forms() -> list[Form]:
+    forms = []
+    for label, args in (
+        ("normal", []),
+        ("quiet", ["-q"]),
+        ("xdist", ["-n", "2"]),
+        ("s", ["-s"]),
+        ("q-s", ["-q", "-s"]),
+        ("qq-s", ["-qq", "-s"]),
+        ("q-s-captured", ["-q", "-s"]),
+        ("q-s-parent-durations", ["-q", "-s", "--durations=5", "--durations-min=0"]),
+    ):
+        forms.append(
+            _real(
+                f"pytest-15-child-conflict-{label}",
+                15,
+                f"親{label}、子の設定競合・所要時間・失敗と親の失敗",
+                {
+                    "child/pytest.ini": "[pytest]\n",
+                    "child/pyproject.toml": _PYPROJECT,
+                    "child/child_test.py": (
+                        'def test_child():\n    print("child captured line")\n    assert False\n'
+                        if label == "q-s-captured"
+                        else _CHILD_FAIL
+                    ),
+                    "parent_test.py": (
+                        "import os\nimport subprocess\nimport sys\n\n\ndef test_parent():\n"
+                        "    env = {key: value for key, value in os.environ.items() if not key.startswith('PYTEST_')}\n"
+                        "    subprocess.run([sys.executable, '-m', 'pytest', '--durations=5', '--durations-min=0', "
+                        "'--tb=short'], cwd='child', env=env, check=False)\n"
+                        "    assert False\n"
+                    ),
+                },
+                ("parent_test.py",),
+                settings={"pytest-args": args},
+            )
+        )
+    return forms
+
+
+def _mixed_traceback_forms() -> list[Form]:
+    forms = []
+    group_files = {
+        "group_test.py": 'def helper():\n    raise ValueError("inner 10:20:30")\n\n\ndef test_group():\n'
+        "    try:\n        helper()\n    except ValueError as exc:\n"
+        '        raise ExceptionGroup("grp", [exc, KeyError("k")])\n'
+    }
+    runpy_files = {
+        "runpy_test.py": "import pathlib\nimport runpy\n\nHERE = pathlib.Path(__file__).parent\n\n\n"
+        'def test_extensionless():\n    runpy.run_path(str(HERE / "scripttool"))\n\n\n'
+        'def test_exec_string():\n    code = compile("raise ValueError(\\"in string\\")", "<string>", "exec")\n'
+        "    exec(code, {})\n",
+        "scripttool": "x = 1\nraise ValueError('from script')\n",
+    }
+    for number, label, files, target, modes in (
+        (19, "exception-group", group_files, "group_test.py", ("short", "auto", "long", "native")),
+        (20, "extensionless", runpy_files, "runpy_test.py", ("line", "short", "auto", "long", "native")),
+    ):
+        for mode in modes:
+            forms.append(
+                _real(
+                    f"pytest-{number}-{label}-{mode}",
+                    number,
+                    f"{label}の位置抽出（--tb={mode}）",
+                    files,
+                    (target,),
+                    settings={"pytest-tb-line": False, "pytest-args": [f"--tb={mode}"]},
+                )
+            )
+    return forms
+
+
+def _evidence_forms() -> list[Form]:
+    """行の形を模倣する本文を、外部フレームとdoctestの各経路へ与える。"""
+    forms = []
+    for label, extra in (("long", []), ("long-l", ["-l"])):
+        forms.append(
+            _real(
+                f"pytest-21-repr-{label}",
+                21,
+                f"引数reprの位置風文字列と外部フレーム（{label}）",
+                {
+                    "proof_test.py": "import json\nimport pytest\n\n\nclass Weird:\n"
+                    "    def __init__(self, text):\n        self.text = text\n\n"
+                    "    def __repr__(self):\n        return self.text\n\n\n"
+                    "def helper(obj):\n    json.loads('not json ' + obj.text)\n\n\n"
+                    "@pytest.mark.parametrize('text', ['foo:12: in bar', 'x:3: ValueError'])\n"
+                    "def test_repr(text):\n    helper(Weird(text))\n"
+                },
+                ("proof_test.py",),
+                settings={"pytest-tb-line": False, "pytest-args": ["--tb=long", *extra]},
+            )
+        )
+    for label, extra in (("line", []), ("line-rN", ["-rN"])):
+        forms.append(
+            _real(
+                f"pytest-21-doctest-{label}",
+                21,
+                f"doctestと捕捉出力の位置風文字列（{label}）",
+                {
+                    "doc.txt": '>>> raise ValueError("cfg.toml:3: bad key")\n',
+                    "docnoext": '>>> raise ValueError("foo:12: in bar")\n',
+                    "proof_test.py": "def test_print():\n    print('Error at cfg.toml:3: bad key')\n"
+                    "    print('Error at tool:7: in bar')\n    print('note tool:8: KeyError')\n    assert False\n",
+                },
+                ("proof_test.py",),
+                settings={
+                    "pytest-tb-line": False,
+                    "pytest-args": ["--tb=line", "--doctest-glob=*", *extra],
+                    "pytest-always-targets": ["doc.txt", "docnoext"],
+                },
+            )
+        )
+    return forms
+
+
 FORMS: tuple[Form, ...] = (
+    *_uncaptured_forms(),
+    *_mixed_traceback_forms(),
+    *_evidence_forms(),
+    _real(
+        "pytest-17-native-body",
+        17,
+        "nativeトレースバックで本文が時刻・in句・パス付きの位置区切りで終わる例外",
+        {
+            "time_native_test.py": "import pytest\n\n\ndef helper(value):\n    raise ValueError(value)\n\n\n"
+            '@pytest.mark.parametrize("value", ["bad time 10:20:30", "bad time 10:20:in progress", '
+            '"bad path /tmp/example.py:20:30"])\ndef test_time(value):\n    helper(value)\n'
+        },
+        ("time_native_test.py",),
+        settings={"pytest-tb-line": False, "pytest-args": ["--tb=native"]},
+    ),
+    _real(
+        "pytest-18-doctest-paths",
+        18,
+        "doctestのtxt・rst・任意拡張子・拡張子なしの実ファイル位置",
+        {
+            "trigger_test.py": "def test_trigger():\n    pass\n",
+            "normal.txt": ">>> 1 + 1\n3\n",
+            "bad path:sample.rst": ">>> 1 + 1\n3\n",
+            "sample.custom": ">>> 1 + 1\n3\n",
+            "extensionless": ">>> 1 + 1\n3\n",
+        },
+        ("trigger_test.py",),
+        settings={
+            "pytest-args": ["--doctest-glob=*"],
+            "pytest-always-targets": ["*.txt", "*.rst", "*.custom", "extensionless"],
+        },
+    ),
+    _real(
+        "pytest-16-short-time",
+        16,
+        "簡略トレースバックの例外本文に時刻を含む失敗",
+        {"time_test.py": 'def test_time():\n    assert "2024-01-01 12:34:56" == "2024-01-01 12:00:00"\n'},
+        ("time_test.py",),
+    ),
+    _real(
+        "pytest-16-auto-external-time",
+        16,
+        "例外本文に時刻を含み最後のエントリーが標準ライブラリにある失敗",
+        {
+            "time_test.py": "from datetime import datetime\n\n\ndef helper():\n"
+            '    datetime.strptime("10:20:30", "%Y-%m-%d")\n\n\ndef test_time():\n    helper()\n'
+        },
+        ("time_test.py",),
+        settings={"pytest-tb-line": False},
+    ),
     _real(
         "pytest-01-param-ids",
         1,

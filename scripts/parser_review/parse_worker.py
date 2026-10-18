@@ -21,7 +21,9 @@ def main() -> int:
     args = parser.parse_args()
     root = args.root.resolve()
     sys.path.insert(0, str(root))
+    import pyfltr.command.slow_tests  # pylint: disable=import-outside-toplevel
     import pyfltr.parsing.entry  # pylint: disable=import-outside-toplevel
+    import pyfltr.parsing.pytest  # pylint: disable=import-outside-toplevel
 
     results: dict[str, object] = {}
     for line in args.input.read_text(encoding="utf-8").splitlines():
@@ -39,7 +41,13 @@ def main() -> int:
         except Exception as exc:  # 版ごとの例外も比較結果として残す
             results[entry["id"]] = {"error": f"{type(exc).__name__}: {exc}"}
             continue
-        results[entry["id"]] = {"diagnostics": [dataclasses.asdict(error) for error in errors]}
+        parsed: dict[str, object] = {"diagnostics": [dataclasses.asdict(error) for error in errors]}
+        if entry["tool"] == "pytest":
+            parsed.update(
+                config_conflict=pyfltr.parsing.pytest.detect_pytest_config_conflict(output),
+                slow_tests=[dataclasses.asdict(item) for item in pyfltr.command.slow_tests.parse_pytest_durations(output)],
+            )
+        results[entry["id"]] = parsed
 
     module_files = sorted(
         {

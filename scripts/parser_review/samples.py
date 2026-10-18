@@ -338,7 +338,7 @@ def has_parse_definition(tool: str) -> bool:
     info = pyfltr.tools.BUILTIN_COMMANDS.get(tool)
     if info is None:
         return False
-    return bool(info.diagnostic_pattern or info.parser or info.path_resolving_parser)
+    return bool(info.diagnostic_pattern or info.parser or info.context_parser or info.path_resolving_parser)
 
 
 def select_samples(tools: list[str] | None) -> list[Sample]:

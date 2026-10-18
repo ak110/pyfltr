@@ -1,11 +1,34 @@
 import pathlib
 
+import pytest
+
 import pyfltr.diagnostics
 import pyfltr.output.diagnostics
 import pyfltr.parsing.entry
 import pyfltr.parsing.pytest
 import pyfltr.paths
 import pyfltr.tools
+
+
+@pytest.mark.parametrize("exists", [True, False])
+def test_context_parser_checks_file_from_explicit_base(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, exists: bool
+) -> None:
+    """明示基準に実在しても、拡張名の深いフレームは対象テストの位置へ採用しない。"""
+    project = tmp_path / "project"
+    project.mkdir()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    if exists:
+        (project / "my scripttool").write_text("raise ValueError('sample')\n", encoding="utf-8")
+    monkeypatch.chdir(elsewhere)
+    output = (
+        "===== FAILURES =====\n_____ test_sample _____\nsample_test.py:8: in test_sample\n"
+        "my scripttool:2: in <module>\nE   ValueError: sample\n===== short test summary info =====\n"
+        "FAILED sample_test.py::test_sample - ValueError: sample\n"
+    )
+    errors = pyfltr.parsing.entry.parse_errors("pytest", output, path_base=project, start_cwd=project)
+    assert [(error.file, error.line) for error in errors] == [("sample_test.py", 8)]
 
 
 def test_sort_errors() -> None:
@@ -54,12 +77,16 @@ def test_get_custom_parser_commands() -> None:
     # aridは`path_resolving_parser`側の登録だが、UIのストリーミング抑止判定では同じ集合に含める。
     assert "arid" in commands
     assert "mypy" not in commands
-    # 2つのパーサー表は`parse_errors`が順に引くため、同じコマンドを両方へ登録しない。
+    # parserの3経路は順に引くため、同じコマンドを複数経路へ登録しない。
     # 表の排他性は公開関数の戻り値へ現れないため直接検証する。
     assert not (
         {name for name, info in pyfltr.tools.BUILTIN_COMMANDS.items() if info.parser is not None}
         & {name for name, info in pyfltr.tools.BUILTIN_COMMANDS.items() if info.path_resolving_parser is not None}
     )
+    context_commands = {name for name, info in pyfltr.tools.BUILTIN_COMMANDS.items() if info.context_parser is not None}
+    assert not context_commands & {
+        name for name, info in pyfltr.tools.BUILTIN_COMMANDS.items() if info.parser or info.path_resolving_parser
+    }
 
 
 def test_parse_errors_error_pattern_precedes_path_resolving_parser() -> None:

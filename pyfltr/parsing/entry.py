@@ -25,9 +25,10 @@ def parse_errors(
     優先順位:
         1. error_pattern（カスタム正規表現）が指定されていればそれを使用
         2. パス変換関数を受け取るコマンド専用の関数ベースパーサー（`CommandInfo.path_resolving_parser`）
-        3. コマンド専用の関数ベースパーサー（JSON出力などregexで扱いにくいもの）
-        4. ビルトイン正規表現パーサー
-        5. いずれもなければ空リスト
+        3. 解析基準ディレクトリを受け取る関数ベースパーサー（`CommandInfo.context_parser`）
+        4. コマンド専用の関数ベースパーサー（JSON出力などregexで扱いにくいもの）
+        5. ビルトイン正規表現パーサー
+        6. いずれもなければ空リスト
 
     `path_base`はツールが出力する相対パスの基準ディレクトリ（ツールの実行cwd）、
     `start_cwd`はpyfltr実行の起点である。各パーサーはツール出力のパスを区切りの統一だけで返し、
@@ -48,6 +49,10 @@ def parse_errors(
         errors = rebase_errors(parse_with_pattern(command, output, error_pattern), resolve)
     elif info is not None and info.path_resolving_parser is not None:
         errors = info.path_resolving_parser(output, resolve_path=resolve)
+    elif info is not None and info.context_parser is not None:
+        base = path_base or start_cwd or pathlib.Path.cwd()
+        start = start_cwd or path_base or base
+        errors = rebase_errors(info.context_parser(output, path_base=base, start_cwd=start), resolve)
     elif info is not None and info.parser is not None:
         errors = rebase_errors(info.parser(output), resolve)
     elif info is not None and info.diagnostic_pattern is not None:
@@ -114,7 +119,11 @@ def get_custom_parser_commands() -> set[str]:
     パス変換関数を受け取るパーサーも含める。呼び出し元（`pyfltr/output/ui.py`）は
     構造化出力を逐次表示しない対象の判定に使うため、パーサーの引数の別を問わない。
     """
-    return {command for command, info in pyfltr.tools.BUILTIN_COMMANDS.items() if info.parser or info.path_resolving_parser}
+    return {
+        command
+        for command, info in pyfltr.tools.BUILTIN_COMMANDS.items()
+        if info.parser or info.context_parser or info.path_resolving_parser
+    }
 
 
 def parse_summary(command: str, output: str) -> str | None:

@@ -2,8 +2,6 @@
 
 import dataclasses
 
-FILE_PATTERN = r"(?:[A-Za-z]:)?[^\s:]+"
-
 
 @dataclasses.dataclass
 class ErrorLocation:

@@ -60,12 +60,35 @@ def extract_base(commit: str, destination: pathlib.Path) -> None:
 
 
 def _run_worker(root: pathlib.Path, inputs: pathlib.Path, output: pathlib.Path) -> dict[str, typing.Any]:
+    entries = [json.loads(line) for line in inputs.read_text(encoding="utf-8").splitlines() if line.strip()]
+    grouped: dict[str, list[dict[str, typing.Any]]] = {}
+    for entry in entries:
+        grouped.setdefault(entry["start_cwd"], []).append(entry)
+    merged: dict[str, typing.Any] = {"root": str(root), "modules": [], "outside_root": [], "results": {}}
+    for index, (cwd, rows) in enumerate(grouped.items()):
+        if not pathlib.Path(cwd).is_dir():
+            raise CompareError(f"解析のstart_cwdが存在しません: {cwd}。採取時の作業ディレクトリを保持して再採取してください")
+        group_input = output.with_name(f"{output.stem}-{index}.jsonl")
+        group_output = output.with_name(f"{output.stem}-{index}.json")
+        group_input.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+        result = _run_worker_group(root, group_input, group_output, pathlib.Path(cwd))
+        merged["results"].update(result["results"])
+        merged["modules"].extend(result["modules"])
+    merged["modules"] = sorted(set(merged["modules"]))
+    output.write_text(json.dumps(merged, ensure_ascii=False), encoding="utf-8")
+    return merged
+
+
+def _run_worker_group(
+    root: pathlib.Path, inputs: pathlib.Path, output: pathlib.Path, cwd: pathlib.Path
+) -> dict[str, typing.Any]:
     completed = subprocess.run(
         [sys.executable, str(_WORKER), "--root", str(root), "--input", str(inputs), "--output", str(output)],
         capture_output=True,
         text=True,
         check=False,
         timeout=600,
+        cwd=cwd,
     )
     if not output.exists():
         raise CompareError(
@@ -146,7 +169,16 @@ def compare(input_dir: pathlib.Path, output: pathlib.Path, *, base: str) -> dict
             counts["error"] += 1
         else:
             item["diff"] = diff_diagnostics(base_diagnostics, current_diagnostics)
-            item["result"] = "equal" if item["diff"]["equal"] else "different"
+            if entry["tool"] == "pytest":
+                item["pytest"] = {
+                    key: {
+                        "base": base_result["results"][entry["id"]][key],
+                        "current": current_result["results"][entry["id"]][key],
+                    }
+                    for key in ("config_conflict", "slow_tests")
+                }
+            extra_equal = all(value["base"] == value["current"] for value in item.get("pytest", {}).values())
+            item["result"] = "equal" if item["diff"]["equal"] and extra_equal else "different"
             counts[item["result"]] += 1
         compared.append(item)
     report = {

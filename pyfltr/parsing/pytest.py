@@ -1,24 +1,26 @@
 """pytestの親子出力と診断の解析。"""
 
+import collections.abc
+import dataclasses
+import pathlib
 import re
 
 import pyfltr.paths
 import pyfltr.rule_urls
-from pyfltr.diagnostics import FILE_PATTERN as _FILE
 from pyfltr.diagnostics import ErrorLocation
 from pyfltr.parsing.common import is_project_path
 
 _PYTEST_SUMMARY_RE = re.compile(
-    rf"^FAILED\s+(?P<file>{_FILE})::(?P<test>[^\s\[]+(?:\[.*?\])?)(?:\s+-\s+(?P<message>.+))?$",
+    r"^FAILED\s+(?P<file>\S.*?)::(?P<test>[^\s\[]+(?:\[.*?\])?)(?:\s+-\s+(?P<message>.+))?$",
     re.MULTILINE,
 )
 
 
-_PYTEST_CRASH_RE = re.compile(rf"worker '(?P<worker>[^']+)' crashed while running '(?P<file>{_FILE})::(?P<test>[^']+)'")
+_PYTEST_CRASH_RE = re.compile(r"worker '(?P<worker>[^']+)' crashed while running '(?P<file>\S.*?)::(?P<test>[^']+)'")
 
 
 _PYTEST_TB_LINE_RE = re.compile(
-    rf"^(?P<file>{_FILE}):(?P<line>\d+):\s*(?P<message>.+)$",
+    r"^(?P<file>\S.*?):(?P<line>\d+):[ \t]*(?P<message>.+)$",
     re.MULTILINE,
 )
 
@@ -29,7 +31,180 @@ _PYTEST_BLOCK_HEAD_RE = re.compile(r"^_+ (?P<test_name>.*?[^\s_].*?) _+$", re.MU
 _PYTEST_CAPTURED_SECTION_RE = re.compile(r"^-+ Captured .+ -+$", re.MULTILINE)
 
 
-_PYTEST_LOCATION_LINE_RE = re.compile(rf"^(?P<file>{_FILE}):(?P<line>\d+):(?P<message>.*)$", re.MULTILINE)
+# エントリーの末尾は空欄・例外型名、簡略フレームは`in <関数>`になる。
+# 引数の表示（例: `value = '10:20:30'`）も行頭から始まるため、末尾の構造まで照合する。
+_PYTEST_FUNCTION_NAME = r"(?:[\w.]+|<[\w ]+>)"
+_PYTEST_EXCEPTION_NAME = r"[^\W\d][\w.]*"
+# 基準版で根拠なしに扱っていた名前の集合。削除済みファイルの再解析にも使う。
+_PYTEST_LEGACY_FILE_RE = re.compile(r"(?:[A-Za-z]:)?[^\s:]+")
+_PYTEST_LOCATION_LINE_RE = re.compile(
+    rf"^(?P<file>\S.*?):(?P<line>\d+):"
+    rf"(?P<message>[ \t]*(?:in {_PYTEST_FUNCTION_NAME}|{_PYTEST_EXCEPTION_NAME})?)[ \t]*$",
+    re.MULTILINE,
+)
+
+
+@dataclasses.dataclass
+class _PytestPaths:
+    """同じ実行の一覧・起点・実ファイルに基づく位置候補の根拠。"""
+
+    known_files: set[str]
+    path_base: pathlib.Path | None = None
+    start_cwd: pathlib.Path | None = None
+    reported_root: str | None = None
+    allow_expanded: bool = False
+
+    def reported_relative(self, file: str) -> str | None:
+        """保存出力を移動した場合も、出力に記録されたrootdirとの対応を保つ。"""
+        if self.reported_root is None:
+            return None
+        try:
+            return str(pathlib.PurePosixPath(file).relative_to(self.reported_root))
+        except ValueError:
+            return None
+
+    def known(self, file: str) -> bool:
+        """一覧の相対名と絶対位置の対応を、名前全体で照合する。"""
+        if file in self.known_files:
+            return True
+        relative = self.reported_relative(file)
+        if relative is not None and relative in self.known_files:
+            return True
+        if self.path_base is not None or self.start_cwd is not None:
+            relative = pyfltr.paths.to_start_relative(
+                file, path_base=self.path_base or self.start_cwd, start_cwd=self.start_cwd or self.path_base
+            )
+            return relative in self.known_files
+        return False
+
+    def exists(self, file: str) -> bool:
+        """明示された解析基準から実ファイルを確認する。"""
+        bases = [base for base in (self.path_base, self.start_cwd) if base is not None]
+        if not bases:
+            return False
+        names = [file]
+        if (relative := self.reported_relative(file)) is not None:
+            names.append(relative)
+        try:
+            return any((base / name).is_file() for base in bases for name in names)
+        except (OSError, ValueError):
+            return False
+
+    def accepts(self, file: str) -> bool:
+        """基準版の名前を保持し、拡張名は有効な失敗区間の対象テストへ限定する。"""
+        file = pyfltr.paths.normalize_separators(file)
+        if file.startswith("<"):
+            return False
+        return _PYTEST_LEGACY_FILE_RE.fullmatch(file) is not None or (self.allow_expanded and self.known(file))
+
+    def project(self, file: str) -> bool:
+        """プロセスのcwdを使わず、同じ出力と明示された起点で内外を判定する。"""
+        file = pyfltr.paths.normalize_separators(file)
+        if self.known(file):
+            return True
+        if (relative := self.reported_relative(file)) is not None:
+            return is_project_path(relative)
+        if self.path_base is not None or self.start_cwd is not None:
+            file = pyfltr.paths.to_start_relative(
+                file, path_base=self.path_base or self.start_cwd, start_cwd=self.start_cwd or self.path_base
+            )
+        if pathlib.PureWindowsPath(file).is_absolute():
+            return False
+        return is_project_path(file)
+
+
+def _pytest_paths(output: str, path_base: pathlib.Path | None = None, start_cwd: pathlib.Path | None = None) -> _PytestPaths:
+    root = re.search(r"^rootdir: (.+)$", output, re.MULTILINE)
+    return _PytestPaths(
+        {pyfltr.paths.normalize_separators(file) for file, _ in parse_pytest_summary(output)}
+        | {
+            pyfltr.paths.normalize_separators(match[1])
+            for match in re.finditer(r"^_+ \[doctest\] (.+?) _+$", output, re.MULTILINE)
+        }
+        | {
+            pyfltr.paths.normalize_separators(match[1].split("::", 1)[0])
+            for match in re.finditer(r"^(.+?) +[.FEsxX]+ *(?:\[ *\d+%\])?$", output, re.MULTILINE)
+        },
+        path_base,
+        start_cwd,
+        pyfltr.paths.normalize_separators(root[1]) if root is not None else None,
+    )
+
+
+def _pytest_positions(
+    pattern: re.Pattern[str], output: str, paths: _PytestPaths | None = None
+) -> collections.abc.Iterator[re.Match[str]]:
+    """同じ実行に由来する根拠を持つファイル位置を返す。"""
+    paths = paths or _pytest_paths(output)
+    captured = False
+    for line in re.finditer(r"^\S[^\n]*", output, re.MULTILINE):
+        if _PYTEST_CAPTURED_SECTION_RE.fullmatch(line[0]):
+            captured = True
+            continue
+        if re.match(r"E\s", line[0]) is not None:
+            captured = False
+        for separator in reversed(list(re.finditer(r":\d+:", line[0]))):
+            file = line[0][: separator.start()]
+            if _PYTEST_LEGACY_FILE_RE.fullmatch(file) is None and file.startswith(("E ", "E\t", ">")):
+                continue
+            if not paths.accepts(file):
+                continue
+            # tb=lineの捕捉本文は位置行に先行する。次の実位置かE行で通常の解析へ戻る。
+            if captured and not (paths.known(file) or paths.exists(file) or "." in file or "/" in file or "\\" in file):
+                continue
+            # ファイル名にも数値付きのコロンが入り得るため、根拠のある境界へ固定して照合する。
+            exact = pattern.pattern.replace(r"(?P<file>\S.*?)", rf"(?P<file>{re.escape(file)})", 1)
+            match = re.compile(exact, pattern.flags).match(output, line.start())
+            if match is not None:
+                captured = False
+                yield match
+                break
+
+
+def _pytest_block_paths(
+    paths: _PytestPaths, summary: dict[tuple[str, str], str | None], test_name: str, block: str, *, doctest: bool
+) -> _PytestPaths:
+    """拡張名の所有者を失敗テストへ限定し、そのテストのトレースバックを確認する。"""
+    owned = {file for file, test in summary if test == test_name}
+    if doctest:
+        return dataclasses.replace(paths, known_files=owned | {test_name}, allow_expanded=True)
+    function = test_name.split("[", 1)[0].rsplit(".", 1)[-1]
+    trace = block.lstrip("\r\n")
+    trace = re.sub(r"^\[gw[^\]]+\] [^\n]*\n", "", trace, count=1).lstrip("\r\n")
+    error = re.search(r"^E[ \t]+", trace, re.MULTILINE)
+    if error is None:
+        return dataclasses.replace(paths, known_files=owned, allow_expanded=False)
+    # 例外本文を除いた先頭エントリーだけで、フレームとソースの組を認識する。
+    prefix = trace[: error.start()]
+    frame = re.match(rf"(?P<file>\S.*):\d+: in {re.escape(function)}\n[ \t]+\S", prefix)
+    source = re.search(rf"^ +(?:async )?def {re.escape(function)}\s*\(", prefix, re.MULTILINE)
+    if source is not None and (
+        any(line.strip() and re.match(r"^\w+ = ", line) is None for line in prefix[: source.start()].splitlines())
+        or re.search(r"^>", prefix[source.end() :], re.MULTILINE) is None
+    ):
+        source = None
+    if frame is not None and not owned:
+        owned.add(pyfltr.paths.normalize_separators(frame["file"]))
+    if source is not None and not owned:
+        # xdistの-rNは一覧もファイル単位の進捗も省く。対象関数のソース直後の
+        # 最初の位置行を、そのブロック自身のファイルとして対応付ける。
+        first = next(
+            (
+                item
+                for item in _PYTEST_LOCATION_LINE_RE.finditer(trace, source.end())
+                if not item["file"].startswith(("E ", "E\t", ">"))
+            ),
+            None,
+        )
+        if first is not None:
+            owned.add(pyfltr.paths.normalize_separators(first["file"]))
+    return dataclasses.replace(paths, known_files=owned, allow_expanded=bool(frame or source))
+
+
+def _pytest_traceback(block: str) -> str:
+    """捕捉出力の節より前にあるトレースバックを返す。"""
+    section = _PYTEST_CAPTURED_SECTION_RE.search(block)
+    return block[: section.start()] if section is not None else block
 
 
 _PYTEST_SESSION_START_RE = re.compile(r"^=+ test session starts =+$")
@@ -242,79 +417,82 @@ def match_truncated_summary(
     return matched[0] if len(matched) == 1 else None
 
 
-def mask_pytest_captured_child_runs(output: str) -> str:
-    """テストの捕捉出力へ混入した子プロセスのpytest実行を空行へ置き換える。
+def pytest_child_run_ranges(output: str, *, paths: _PytestPaths | None = None) -> list[tuple[int, int]]:
+    """親の最終集計より前で閉じた子の実行区間（行番号、両端を含む）を返す。
 
-    pytestを子プロセスとして起動し出力を取り込むテストでは、親の失敗欄・集計行の内側へ
-    子プロセスの失敗欄・集計行がそのまま現れる。除外しないと子プロセス側の失敗が
-    親プロセスの実在する失敗として診断化され、存在しないファイル・行番号が報告される。
-
-    除外する領域は、捕捉出力の節見出し（`-+ Captured .+ -+`）より後に現れた
-    子プロセスの実行開始行（`=+ test session starts =+`）から、対応する終了集計行
-    （`=+ ... in <秒数>s ... =+`）までとする。開始・終了の双方をpytest自身が出力する
-    マーカーで判定するため、除外範囲は子プロセスの実行1回分に正確に一致する。
-
-    子プロセスのブロック見出し・位置行・捕捉出力の節見出しは親のものと書式が同一で、
-    構文だけでは判別できない。
-    親の集計行との突合で終端を判定すると、親子で同名のテストが失敗する場合や、
-    ブロック見出しを持たない`--tb=line`形式で終端を決められず、本来の失敗まで除外する。
-    実行マーカーによる判定はこれらの構成に依存しない。
-
-    終了集計行を`pytest_parent_tail_index`が返す上限より前に見つけられない場合、対象の領域は
-    除外しない。子プロセスが異常終了・打ち切りで終了集計行を欠いたまま終わると、親自身の
-    最終集計行を終端として誤採用し、その間にある親の失敗と失敗一覧をすべて失うため、
-    上限を越える終端候補は採用せず旧来の挙動へ縮退させる。
-    捕捉出力が子プロセスのpytest実行を含まない場合も同じ理由で除外しない。
-
-    次の3つの構成では開始・終了のマーカーが成立せず除外できない。いずれも子プロセス側の
-    失敗が親の失敗として混入するが、本処理の導入前と同じ結果であり退行にはあたらない。
-    親が失敗一覧を出力し、かつ子のテスト名が親の失敗一覧に無い場合は`parse_pytest`の
-    安全網（失敗一覧に載らないテスト名の失敗欄を除外する）が働き、架空の診断が残らない。
-    親子で同名のテストが失敗する構成では安全網も働かない。
-
-    - 子プロセスを`-q`で起動した場合。実行開始行を出力しないため開始位置を確定できない
-    - 親プロセスが`-s`で動く場合。子の出力が捕捉されず節見出しが出ないうえ、
-      子の実行開始行が親の進捗行と同一行へ連結される
-    - 子プロセス側の失敗したテストが出力を持つ場合。子自身の捕捉出力の節見出しが
-      親の節見出しと同一書式で現れ、終端未確定の開始位置を破棄する規則が発火する。
-      破棄規則を子の失敗欄より後で止めると、未終端の実行が親のブロック境界を越えて
-      後続の節の終了集計行と対になり、間にある親の失敗を除外する側の誤りへ倒れる
-
-    行を削除せず空行へ置き換えるのは、以降の正規表現探索が扱う行構造を保つためである。
+    開始行をスタックへ積み、終了集計行を直近の開始行と対応付ける。
+    親の進捗行へ連結された開始行と、ヘッダーを持たない親の開始前に閉じる子も扱う。
+    親の失敗一覧と子自身の失敗一覧を照合し、未終端の子が親の失敗ブロックを
+    またいで後続の別の実行の終端と対応することを防ぐ。
+    設定競合・失敗診断・所要時間の帰属は、この判定を共用する。
     """
-    # 行の分割は`\n`のみを区切りとする。`str.splitlines`はフォームフィード等でも分割するため、
-    # 以降の正規表現探索（`re.MULTILINE`は`\n`のみを行区切りとする）と行の対応が崩れる。
+    paths = paths or _pytest_paths(output)
     lines = output.split("\n")
     limit = pytest_parent_tail_index(lines)
-    masked = [False] * len(lines)
-    after_captured = False
-    start: int | None = None
-    for i, line in enumerate(lines):
-        stripped = line.rstrip()
-        if _PYTEST_CAPTURED_SECTION_RE.fullmatch(stripped):
-            after_captured = True
-            # 1回の実行の出力が2つの捕捉出力の節へまたがることはないため、節の切れ目で
-            # 終端未確定の開始位置を破棄する。破棄しないと、別の節に現れた終了集計行
-            # （子の出力の末尾だけを表示した場合など）と対になり、間の親の失敗を除外する。
-            start = None
-            continue
-        if after_captured and _PYTEST_SESSION_START_RE.fullmatch(stripped):
-            # 終端未確定のまま次の実行開始行に達した場合は、そちらへ開始位置を移す。
-            # 終了集計行を欠いた実行の開始位置を保持したままにすると、後続の別の実行の
-            # 終了集計行と対になり、その間にある親の失敗まで除外してしまう。
-            start = i
-            continue
-        if start is None:
-            continue
-        if i >= limit:
-            # 上限へ到達した領域は終端を確定できなかったものとして扱い、除外しない。
-            start = None
-            continue
-        if _PYTEST_SESSION_END_RE.fullmatch(stripped):
-            for j in range(start, i + 1):
-                masked[j] = True
-            start = None
-    return "\n".join("" if is_masked else line for is_masked, line in zip(masked, lines, strict=True))
+    # `-qq`は親の終了集計を省く。末尾の集計より後に親の失敗欄が続けば、
+    # 対象の集計は子の終端であり、除外範囲の上限を出力末尾へ広げる。
+    for following in lines[limit + 1 :]:
+        if re.search(r"=+ test session starts =+$", following.rstrip()):
+            break
+        if is_pytest_nested_run_marker(following):
+            limit = len(lines)
+            break
+    stack: list[int] = []
+    ranges: list[tuple[int, int]] = []
+    summary_start = pytest_parent_summary_start(output)
+    parent_tests = set(parse_pytest_summary(output[summary_start:])) if summary_start >= 0 else set()
+    for index, line in enumerate(lines):
+        clean = _ANSI_SGR_RE.sub("", line).rstrip()
+        if re.search(r"=+ test session starts =+$", clean):
+            stack.append(index)
+        elif (_PYTEST_SESSION_END_RE.fullmatch(clean) or _PYTEST_QUIET_SESSION_END_RE.fullmatch(clean)) and stack:
+            start = stack.pop()
+            if index < limit:
+                candidate = "\n".join(lines[start : index + 1])
+                parent_files = {file for file, _ in parent_tests}
+                if not parent_files:
+                    prefix = "\n".join(lines[:start])
+                    failures_start = prefix.find("= FAILURES =")
+                    if failures_start >= 0:
+                        parent_files = {
+                            pyfltr.paths.normalize_separators(location["file"])
+                            for location in _pytest_positions(_PYTEST_LOCATION_LINE_RE, prefix[failures_start:], paths)
+                        }
+                if not _crosses_pytest_parent_blocks(candidate, parent_tests, parent_files, paths):
+                    ranges.append((start, index))
+    return ranges
+
+
+def _crosses_pytest_parent_blocks(
+    candidate: str, parent_tests: set[tuple[str, str]], parent_files: set[str], paths: _PytestPaths
+) -> bool:
+    """候補の子実行が、子自身の一覧に無い親の失敗ブロックを含むかを返す。"""
+    summary_start = pytest_parent_summary_start(candidate)
+    child_tests = set(parse_pytest_summary(candidate[summary_start:] if summary_start >= 0 else candidate))
+    blocks = list(_PYTEST_BLOCK_HEAD_RE.finditer(candidate))
+    for index, block in enumerate(blocks):
+        end = blocks[index + 1].start() if index + 1 < len(blocks) else len(candidate)
+        test_name = block["test_name"].strip().removeprefix("[doctest] ")
+        for location in _pytest_positions(_PYTEST_LOCATION_LINE_RE, _pytest_traceback(candidate[block.end() : end]), paths):
+            key = (pyfltr.paths.normalize_separators(location["file"]), test_name)
+            if (key in parent_tests or key[0] in parent_files) and key not in child_tests:
+                return True
+    return False
+
+
+def mask_pytest_captured_child_runs(output: str, *, paths: _PytestPaths | None = None) -> str:
+    """共通の実行区間判定で子の実行を空行へ置き換える。
+
+    捕捉出力と親の`-s`系の出力を同じ開始・終了の対応で扱う。
+    行構造を保ち、残る位置行の解析へ渡す。
+
+    開始行を持たない子（`-q`）と、ヘッダーの無い親が子の終了直後に打ち切られた出力は
+    親子を判別できない。後者は通常の冗長度の親1回分と同じ出力になる。
+    """
+    lines = output.split("\n")
+    for start, end in pytest_child_run_ranges(output, paths=paths):
+        lines[start : end + 1] = [""] * (end - start + 1)
+    return "\n".join(lines)
 
 
 def pytest_parent_tail_index(lines: list[str]) -> int:
@@ -337,7 +515,7 @@ def pytest_parent_tail_index(lines: list[str]) -> int:
     return len(lines)
 
 
-def select_pytest_location_line(block: str, *, allow_fallback: bool) -> re.Match[str] | None:
+def select_pytest_location_line(block: str, *, allow_fallback: bool, paths: _PytestPaths | None = None) -> re.Match[str] | None:
     """失敗ブロックから既定のトレースバック形式の位置行を選ぶ。
 
     既定のトレースバック形式（`--tb=auto`・`--tb=long`）は各エントリーの末尾へ位置行を
@@ -358,20 +536,22 @@ def select_pytest_location_line(block: str, *, allow_fallback: bool) -> re.Match
     プロジェクト内の位置行が皆無ならプロジェクト外の位置行まで採る。
     フレーム行を持つ場合は`False`とし、プロジェクト内フレームを優先する選択を崩さない。
     """
-    section = _PYTEST_CAPTURED_SECTION_RE.search(block)
-    scan_target = block[: section.start()] if section is not None else block
+    paths = paths or _pytest_paths(block)
+    scan_target = _pytest_traceback(block)
     typed: list[re.Match[str]] = []
     bare: list[re.Match[str]] = []
-    for match in _PYTEST_LOCATION_LINE_RE.finditer(scan_target):
+    for match in _pytest_positions(_PYTEST_LOCATION_LINE_RE, scan_target, paths):
         (typed if match.group("message").strip() else bare).append(match)
     for candidates in (typed, bare) if allow_fallback else (typed,):
         for match in reversed(candidates):
-            if is_project_path(pyfltr.paths.to_cwd_relative(match.group("file"))):
+            if paths.project(match.group("file")):
                 return match
     return typed[-1] if typed and allow_fallback else None
 
 
-def pytest_block_message(block: str, error_re: re.Pattern[str], location: re.Match[str]) -> str:
+def pytest_block_message(
+    block: str, error_re: re.Pattern[str], location: re.Match[str], paths: _PytestPaths | None = None
+) -> str:
     """位置行に対応するエラー行（`E   <message>`）の本文を返す。
 
     例外の連鎖では複数のエントリーがブロック内に並ぶ。直前の位置行より後にある最初の
@@ -379,7 +559,7 @@ def pytest_block_message(block: str, error_re: re.Pattern[str], location: re.Mat
     （エントリーが1つだけの場合）はブロック先頭から探す。
     """
     previous_end = 0
-    for match in _PYTEST_LOCATION_LINE_RE.finditer(block[: location.start()]):
+    for match in _pytest_positions(_PYTEST_LOCATION_LINE_RE, block[: location.start()], paths):
         previous_end = match.end()
     error_match = error_re.search(block, previous_end) or error_re.search(block)
     return error_match.group("message").strip() if error_match is not None else ""
@@ -410,7 +590,9 @@ def is_unlisted_child_block(known_tests: set[str] | None, *, after_captured: boo
     return known_tests is not None and after_captured and test_name not in known_tests
 
 
-def parse_pytest(output: str) -> list[ErrorLocation]:
+def parse_pytest(
+    output: str, *, path_base: pathlib.Path | None = None, start_cwd: pathlib.Path | None = None
+) -> list[ErrorLocation]:
     """Pytest出力をパース。
 
     次の優先順で情報源を扱い、いずれの経路でも失敗理由の本文を可能な限り保持する。
@@ -449,7 +631,8 @@ def parse_pytest(output: str) -> list[ErrorLocation]:
     判別が難しいケースが多く、location（file/line）と組み合わせて実質的にnodeid相当の
     判別性を得るため。
     """
-    output = mask_pytest_captured_child_runs(output)
+    paths = _pytest_paths(output, path_base, start_cwd)
+    output = mask_pytest_captured_child_runs(output, paths=paths)
 
     # 失敗欄の開始位置は先頭側を探す。子プロセスのpytestを起動して出力を取り込むテストでは
     # 捕捉出力の中にも同じ見出しが現れるため、自プロセスのものが先に現れる先頭一致を採用する。
@@ -468,6 +651,7 @@ def parse_pytest(output: str) -> list[ErrorLocation]:
     else:
         summary = parse_pytest_summary(output)
     consumed: set[tuple[str, str]] = set()
+    paths.known_files = _pytest_paths(output).known_files
 
     if failures_start < 0:
         return parse_pytest_from_summary(summary, consumed)
@@ -483,11 +667,31 @@ def parse_pytest(output: str) -> list[ErrorLocation]:
         # 見つからない場合の2段目はメッセージのみ一致する候補へフォールバックする
         # （位置行がsite-packages等の外部パスになる失敗はファイルが一致しないため）。
         results: list[ErrorLocation] = []
-        for match in _PYTEST_TB_LINE_RE.finditer(failures_section):
+        line_paths = dataclasses.replace(paths, allow_expanded=True)
+        captured = False
+        previous_end = 0
+        for match in _pytest_positions(_PYTEST_TB_LINE_RE, failures_section, line_paths):
+            if _PYTEST_CAPTURED_SECTION_RE.search(failures_section[previous_end : match.start()]) is not None:
+                captured = True
+            previous_end = match.end()
             file_path = pyfltr.paths.normalize_separators(match.group("file"))
+            if not paths.project(file_path):
+                continue
             message = match.group("message").strip()
             matched_key: tuple[str, str] | None = None
+            doctest_location = message in ("DocTestFailure", "UnexpectedException")
+            if doctest_location:
+                matched_key = next(
+                    (
+                        key
+                        for key in summary
+                        if key not in consumed and (file_path == key[0] or file_path.endswith("/" + key[0]))
+                    ),
+                    None,
+                )
             for key, sum_message in summary.items():
+                if matched_key is not None:
+                    break
                 if key in consumed:
                     continue
                 if key[0] == file_path and sum_message == message:
@@ -502,6 +706,25 @@ def parse_pytest(output: str) -> list[ErrorLocation]:
                         break
             if matched_key is None:
                 matched_key = match_truncated_summary(summary, consumed, message)
+            if _PYTEST_LEGACY_FILE_RE.fullmatch(file_path) is None:
+                # doctestの拡張名は[doctest]ブロックの所有者を確定できる経路で扱う。
+                if doctest_location:
+                    continue
+                # 標準収集されたテスト自身のtb=line終端はco_filenameの絶対位置になる。
+                # FAILEDと対応する終端だけを消費し、本文内の相対位置を一覧へ割り当てない。
+                if matched_key is None or not (
+                    pathlib.PurePosixPath(file_path).is_absolute() or pathlib.PureWindowsPath(file_path).is_absolute()
+                ):
+                    continue
+                owner = dataclasses.replace(paths, known_files={matched_key[0]})
+                if not owner.known(file_path):
+                    continue
+                if captured and (
+                    matched_key != next((key for key in summary if key not in consumed), None)
+                    or summary.get(matched_key) != message
+                ):
+                    continue
+            captured = False
             test_name = matched_key[1] if matched_key is not None else None
             if matched_key is not None:
                 consumed.add(matched_key)
@@ -511,14 +734,18 @@ def parse_pytest(output: str) -> list[ErrorLocation]:
                     line=int(match.group("line")),
                     col=None,
                     command="pytest",
-                    message=f"{test_name}: {message}" if test_name else message,
+                    message=test_name
+                    if doctest_location and test_name
+                    else f"{test_name}: {message}"
+                    if test_name
+                    else message,
                 )
             )
         results.extend(parse_pytest_from_summary(summary, consumed))
         return results
 
     # フレーム行: file:line: in func_name
-    frame_re = re.compile(rf"^(?P<file>{_FILE}):(?P<line>\d+): in .+$", re.MULTILINE)
+    frame_re = re.compile(rf"^(?P<file>\S.*?):(?P<line>\d+): (?P<message>in {_PYTEST_FUNCTION_NAME})$", re.MULTILINE)
     # エラー行: E   message
     error_re = re.compile(r"^E\s+(?P<message>.+)$", re.MULTILINE)
 
@@ -542,8 +769,31 @@ def parse_pytest(output: str) -> list[ErrorLocation]:
         test_name = match.group("test_name").strip().removeprefix("[doctest] ")
         after_captured = first_captured is not None and match.start() > first_captured.start()
 
-        frames = list(frame_re.finditer(block))
-        location = select_pytest_location_line(block, allow_fallback=not frames)
+        traceback = _pytest_traceback(block)
+        block_paths = _pytest_block_paths(
+            paths, summary, test_name, traceback, doctest=match["test_name"].startswith("[doctest] ")
+        )
+        if match["test_name"].startswith("[doctest] "):
+            terminal = [
+                item
+                for item in _pytest_positions(_PYTEST_LOCATION_LINE_RE, traceback, block_paths)
+                if item["message"].strip() in ("DocTestFailure", "UnexpectedException")
+            ]
+            if terminal:
+                location = terminal[-1]
+                file_path = pyfltr.paths.normalize_separators(location["file"])
+                results.append(
+                    ErrorLocation(file=file_path, line=int(location["line"]), col=None, command="pytest", message=test_name)
+                )
+                consume_summary_test(summary, consumed, test_name, file_path)
+                continue
+        # 標準traceback以降は異なる位置の文法になる。連鎖したExceptionGroupでは、
+        # その前にあるpytest形式の位置を保つ。先頭からnative形式なら一覧から補完する。
+        native = re.search(r"^Traceback \(most recent call last\):$", traceback, re.MULTILINE)
+        if native is not None:
+            traceback = traceback[: native.start()]
+        frames = list(_pytest_positions(frame_re, traceback, block_paths))
+        location = select_pytest_location_line(traceback, allow_fallback=not frames, paths=block_paths)
         if location is not None and (not frames or location.start() > frames[-1].start()):
             # 既定のトレースバック形式では最終エントリーの位置行がフレーム行より後に現れ、
             # 実際に例外が発生した位置を指す。フレーム行を持たない失敗ではこの行が唯一の
@@ -551,7 +801,7 @@ def parse_pytest(output: str) -> list[ErrorLocation]:
             if is_unlisted_child_block(known_tests, after_captured=after_captured, test_name=test_name):
                 continue
             file_path = pyfltr.paths.normalize_separators(location.group("file"))
-            raw_message = pytest_block_message(block, error_re, location)
+            raw_message = pytest_block_message(block, error_re, location, block_paths)
             results.append(
                 ErrorLocation(
                     file=file_path,
@@ -570,7 +820,7 @@ def parse_pytest(output: str) -> list[ErrorLocation]:
             # フレーム群から最後のプロジェクト内フレームを選択
             chosen = frames[-1]  # フォールバック: 最後のフレーム
             for frame in reversed(frames):
-                if is_project_path(pyfltr.paths.to_cwd_relative(frame.group("file"))):
+                if paths.project(frame.group("file")):
                     chosen = frame
                     break
             # 例外の連鎖では複数のエントリーが並ぶ。選んだフレームより後にある最初のエラー行が
@@ -592,6 +842,16 @@ def parse_pytest(output: str) -> list[ErrorLocation]:
             continue
         file_path = pyfltr.paths.normalize_separators(crash_match.group("file"))
         crashed_test = crash_match.group("test")
+        if _PYTEST_LEGACY_FILE_RE.fullmatch(file_path) is None:
+            crashed_name = crashed_test.replace("::", ".")
+            block_name = pyfltr.paths.normalize_separators(test_name)
+            if block_name not in (file_path, crashed_name):
+                continue
+            owners = {file for file, test in summary if test == crashed_name}
+            if block_name == file_path:
+                owners.add(file_path)
+            if not dataclasses.replace(paths, known_files=owners).known(file_path):
+                continue
         if is_unlisted_child_block(known_tests, after_captured=after_captured, test_name=crashed_test.replace("::", ".")):
             continue
         results.append(
@@ -656,13 +916,11 @@ def detect_pytest_config_conflict(output: str) -> str | None:
     実行開始行そのものより前に警告等の前置きが出る構成（標準エラー出力の併合など）があるため、
     出力の先頭行であることは要求しない。
 
-    親が`-q`と`-s`を併用し、かつ子プロセスとしてpytestを起動する構成では、
-    子の競合を親の競合として報告する。`-q`で親のヘッダーが出ず、`-s`で子の出力が
-    捕捉されないため、子のヘッダーが出力の先頭の行群となり、その前に打ち切りの根拠となる
-    行が現れない。親子のヘッダーは書式が同一で、テキストだけでは判別できない。
-    `--no-header`は単独では該当しない。対象の指定でも実行開始行自体は出力されるため、
-    親のヘッダー開始行が常に先に見つかる。
+    開始・終了の対応で判定した子の区間を探索前に除く。
+    開始行を持たない子（`-q`）と、ヘッダーの無い親が子の終了直後に打ち切られた出力は
+    判別できず、残ったヘッダーを親のものとして扱う。
     """
+    output = mask_pytest_captured_child_runs(output)
     lines = [_ANSI_SGR_RE.sub("", line).strip() for line in output.splitlines()]
     header_start: int | None = None
     for index, line in enumerate(lines):

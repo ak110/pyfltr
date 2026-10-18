@@ -338,6 +338,30 @@ def test_collect_interrupt_marks_remaining_samples(tmp_path: pathlib.Path) -> No
     assert collector.incomplete
 
 
+def test_compare_uses_each_input_start_cwd(tmp_path: pathlib.Path) -> None:
+    """各入力の起点cwdで基準版と現行版を解析し、絶対パスのフレーム選択を揃える。"""
+    rows = []
+    for name in ("first", "second"):
+        cwd = tmp_path / name
+        cwd.mkdir()
+        project = cwd / "sample_test.py"
+        project.write_text("def test_sample():\n    pass\n", encoding="utf-8")
+        output = cwd / "output.log"
+        output.write_text(
+            "===== FAILURES =====\n_____ test_sample _____\n"
+            f"{project.as_posix()}:3: in test_sample\n    call()\n"
+            f"{(tmp_path / 'external/lib.py').as_posix()}:5: in call\nE   ValueError: sample\n",
+            encoding="utf-8",
+        )
+        rows.append({"id": name, "tool": "pytest", "output": str(output), "path_base": str(cwd), "start_cwd": str(cwd)})
+    inputs = tmp_path / "inputs.jsonl"
+    inputs.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+    report = compare.compare(tmp_path, tmp_path / "compare.json", base="HEAD")
+    for entry in report["entries"]:
+        for side in ("base", "current"):
+            assert [(error["file"], error["line"]) for error in entry[side]] == [("sample_test.py", 3)]
+
+
 def test_diff_diagnostics_compares_all_fields() -> None:
     """全フィールドを比較し、片側だけの診断と順序だけの差を区別する。"""
     first = {"file": "a.py", "line": 1, "message": "m", "end_line": None}
@@ -353,9 +377,9 @@ def test_diff_diagnostics_compares_all_fields() -> None:
 
 
 def test_pytest_forms_cover_reviewer_definition() -> None:
-    """形態1〜14と、レビュー担当定義が求める派生を全て生成対象に持つ。"""
+    """形態1〜21と、レビュー担当定義が求める派生を全て生成対象に持つ。"""
     forms = pytest_forms.FORMS
-    assert {form.number for form in forms} == set(range(1, 15))
+    assert {form.number for form in forms} == set(range(1, 22))
     ids = {form.id for form in forms}
     assert len(ids) == len(forms)
     assert sum(1 for form in forms if form.number == 7) == 10
@@ -367,7 +391,9 @@ def test_pytest_forms_cover_reviewer_definition() -> None:
         if form.derivation is not None:
             assert set(form.derivation.sources) <= ids
     tb_auto = [form for form in forms if form.sample and form.sample.settings.get("pytest-tb-line") is False]
-    assert {form.number for form in tb_auto} == {8, 11}
+    assert {form.number for form in tb_auto} == {8, 11, 16, 17, 19, 20, 21}
+    assert sum(form.number == 19 for form in forms) == 4
+    assert sum(form.number == 20 for form in forms) == 5
 
 
 @pytest.mark.timeout(300)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import json
 import os
@@ -10,6 +11,7 @@ import sys
 
 import pytest
 
+import pyfltr.cli.mcp_server
 import scripts.check_distribution
 
 
@@ -126,7 +128,13 @@ def _prepare_workspace(case: _Case, tmp_path: pathlib.Path) -> pathlib.Path:
 
 
 def _run_pyfltr(
-    workspace: pathlib.Path, command: str, targets: tuple[str, ...], env: dict[str, str] | None = None, *, no_fix: bool = False
+    workspace: pathlib.Path,
+    command: str,
+    targets: tuple[str, ...],
+    env: dict[str, str] | None = None,
+    *,
+    no_fix: bool = False,
+    archive: bool = False,
 ) -> list[dict]:
     """pyfltr CLIをsubprocess起動し、JSONL出力をパースして返す。
 
@@ -138,7 +146,7 @@ def _run_pyfltr(
         "pyfltr",
         "run",
         f"--commands={command}",
-        "--no-archive",
+        *([] if archive else ["--no-archive"]),
         "--no-cache",
         *(["--no-fix"] if no_fix else []),
         "--no-clear",
@@ -358,3 +366,19 @@ def test_yamllint_reports_violations_as_diagnostics(tmp_path: pathlib.Path, conf
         for message in diagnostic["messages"]
     )
     assert messages == [("bad.yaml", *expected) for expected in _YAMLLINT_EXPECTED_MESSAGES]
+
+
+@pytest.mark.parametrize("filename", ["bad path.yaml", *(["bad:colon.yaml"] if os.name != "nt" else [])])
+def test_yamllint_special_path_reaches_jsonl_and_mcp(tmp_path: pathlib.Path, filename: str) -> None:
+    """実ファイルの特殊文字をJSONLとアーカイブ経由のMCP診断まで保つ。"""
+    workspace = _prepare_yamllint_workspace(tmp_path, config_via_args=False)
+    (workspace / "bad.yaml").rename(workspace / filename)
+    records = _run_pyfltr(workspace, "yamllint", (filename,), no_fix=True, archive=True)
+    diagnostics = [item for item in records if item.get("kind") == "diagnostic"]
+    assert len(diagnostics) == 1
+    assert diagnostics[0]["file"] == filename
+    assert [(m["line"], m["col"], m["rule"], m["severity"]) for m in diagnostics[0]["messages"]] == _YAMLLINT_EXPECTED_MESSAGES
+    run_id = next(item["run_id"] for item in records if item.get("kind") == "header")
+    stored = asyncio.run(pyfltr.cli.mcp_server.tool_show_run_diagnostics(run_id, ["yamllint"]))
+    assert len(stored) == 1
+    assert stored[0].diagnostics[0].file == filename
