@@ -14,12 +14,17 @@ clean-stale-dist-info:
 		fi; \
 	done
 
+# 仮想環境を、ロックファイルが選ぶ全依存グループ・extrasと`.python-version`の基準Python版へそろえる。
+# `uv sync`は余分なパッケージを除き、`--python`は`UV_PYTHON`などで別の版が指定された環境でも
+# 基準の版で仮想環境を再作成する。`uv run`の自動同期は余分なパッケージを残すため、この同期に代えない（uv 0.13.1で確認）。
+sync:
+	$(MAKE) clean-stale-dist-info
+	uv sync --all-groups --all-extras --python "$$(cat .python-version)"
+
 # 開発環境のセットアップ
 # --config明示指定はprekのworkspace再帰探索（サブディレクトリの.pre-commit-config.yamlも
 # 実行対象へ含める仕様）を無効化するため（prek 0.4.11で確認）。
-setup:
-	$(MAKE) clean-stale-dist-info
-	uv sync --all-groups --all-extras
+setup: sync
 	uvx prek --config=.pre-commit-config.yaml install
 	git config --local commit.template .gitmessage
 
@@ -56,16 +61,14 @@ update-docker-base:
 
 # フォーマット + 軽量lint（開発時の手動実行用。自動修正あり）
 # pyfltr fast は fix ステージを内蔵するため、以前の `pyfltr fix` に相当する自動修正も実行される
-format:
-	$(MAKE) clean-stale-dist-info
+format: sync
 	uv run pyfltr fast
 
 # 全チェック実行（これを通過すればコミット可能）
-test:
-	$(MAKE) clean-stale-dist-info
+test: sync
 	uv run pyfltr run
 
 docs:
 	uv run mkdocs serve
 
-.PHONY: help clean-stale-dist-info setup update update-actions update-docker-base format test docs
+.PHONY: help clean-stale-dist-info sync setup update update-actions update-docker-base format test docs

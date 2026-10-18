@@ -515,8 +515,40 @@ test:
 	uvx pyfltr run
 ```
 
+この例は`uv.lock`を持たず、pyfltr本体が同梱するPython系ツールを使う構成を想定する。
+プロジェクトの仮想環境を使わないため、検証前の同期は要らない。
+
+`uv.lock`を持ち、Python系ツールをdev依存で導入するプロジェクトでは、`uvx pyfltr`で本体を呼んでも、
+Python系ツールは`python-runner`の既定値`uv`により`uv run`経由でそのプロジェクトの仮想環境から起動する。
+`uv run`の自動同期は、ロックファイルが選ばなくなったパッケージを仮想環境から除かない（uv 0.13.1で確認）。
+このため検証の前に`uv sync`で仮想環境をロックファイルへ厳密に同期する。
+`.python-version`で基準のPython版を指定するプロジェクトでは、その値を`--python`へ渡す。
+環境変数`UV_PYTHON`などで別の版が指定された環境でも、基準の版で仮想環境を再作成する。
+
+```makefile
+export UV_FROZEN := 1
+
+# 仮想環境をロックファイルと基準のPython版へそろえる
+sync:
+	uv sync --all-groups --all-extras --python "$$(cat .python-version)"
+
+# 開発環境のセットアップ
+setup: sync
+	uvx prek --config=.pre-commit-config.yaml install
+
+# フォーマット + 軽量lint（開発時の手動実行用。自動修正あり）
+format: sync
+	uvx pyfltr fast
+
+# 全チェック実行（これを通過すればコミット可能）
+test: sync
+	uvx pyfltr run
+
+.PHONY: sync setup format test
+```
+
 dev依存にpyfltrを固定する運用では`UV_FROZEN`でlockfileを尊重しつつ、
-`uv sync`後に`uv run pyfltr ...`を呼び出す形に置き換えることができる。
+同じ同期の後に`uv run pyfltr ...`を呼び出す形に置き換えることができる。
 
 ```makefile
 export UV_FROZEN := 1
@@ -524,9 +556,12 @@ export UV_FROZEN := 1
 help:
 	@cat Makefile
 
+# 仮想環境をロックファイルと基準のPython版へそろえる
+sync:
+	uv sync --all-groups --all-extras --python "$$(cat .python-version)"
+
 # 開発環境のセットアップ
-setup:
-	uv sync --all-groups --all-extras
+setup: sync
 	uvx prek --config=.pre-commit-config.yaml install
 
 # 依存パッケージをアップグレードし全テスト実行
@@ -536,15 +571,17 @@ update:
 	$(MAKE) test
 
 # フォーマット + 軽量lint（開発時の手動実行用。自動修正あり）
-format:
+format: sync
 	uv run pyfltr fast
 
 # 全チェック実行（これを通過すればコミット可能）
-test:
+test: sync
 	uv run pyfltr run
 
-.PHONY: help setup update format test
+.PHONY: help sync setup update format test
 ```
+
+`.python-version`を置かないプロジェクトでは、`sync`ターゲットから`--python`の指定を除く。
 
 pre-commitのフックを導入済みの作業ツリーで`prek install`を実行すると、
 既存のフックは`.git/hooks/pre-commit.legacy`へ退避され、以後のコミットではprekのフックと併せて実行される。
