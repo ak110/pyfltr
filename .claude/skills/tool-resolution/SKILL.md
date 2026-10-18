@@ -109,6 +109,15 @@ Python系ツール解決表（`PYTHON_TOOL_BIN`）へ相乗りさせると、未
 背景（pnpm 11既定変更・textlintのrequire解決失敗）と適用条件は
 `pyfltr/command/runner.py`の`_resolve_js_commandline`内コメントに集約する。
 
+markdownlintは例外とし、`{command}-path`を明示せず`pnpx`に解決された場合は`pnpm dlx`を使わない。
+`pyfltr/command/markdownlint_env.py`が取得定義と配布パッチ（`pyfltr/command/braces-3.0.3.patch`）を所有し、
+pnpmの通常導入と`patchedDependencies`で構築した専用の取得環境から起動する。
+`pnpm dlx`のキャッシュはパッチ内容を区別せず、未修正の依存を再利用しうるためである。
+公開設定値と`effective_runner`の`pnpx`は維持する。
+取得とパッチ適用に失敗した場合は`resolution_failed`へ倒し、未修正の`pnpm dlx`へフォールバックしない。
+明示した`{command}-path`とローカルrunner（`pnpm`・`npm`・`npx`・`yarn`・`direct`）は従来の解決方法を使う。
+取得環境の選択・保持・回収の詳細は`docs/development/architecture.md`の「markdownlintのpnpx取得環境」に集約する。
+
 ## `~`展開の対象キーと適用タイミング
 
 利用者ホームディレクトリ依存のパス（例: `~/dotfiles/.../tool.py`）を設定値として記述できるよう、
