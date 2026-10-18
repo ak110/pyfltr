@@ -139,9 +139,8 @@ arid-exclude = ["tests"]
 # tests/smoke_data/ 配下にはツール毎の最小サンプル（GitHub Actionsワークフロー・
 # Dockerfile・shellスクリプト等）を含むため、本リポのpyfltr対象から外す。
 # 対象のディレクトリの起動確認は tests/integration/smoke_test.py が pyfltr CLIをsubprocess経由で呼んで実施する。
-# `extend-exclude`はファイル走査経路の除外、`subproject-exclude`はサブプロジェクト検出経路
-# （`pyproject.toml`存在の機械的検出）の除外で別仕組み。配下に複数の`pyproject.toml`を含むため、
-# モノレポ検出時に意図しないサブプロジェクトとして列挙されないよう両方に登録する。
+# 配下に複数の`pyproject.toml`を含むが、サブプロジェクト検出も`extend-exclude`に一致する
+# ディレクトリへ侵入しないため、モノレポ検出の候補にも含まれない。
 extend-exclude = ["tests/smoke_data"]
 # 辞書ファイル自身（口語表現サンプルを大量に含む）はcolloquial-checkの誤検出対象となるため除外する。
 # 口語表現を意図的に含む解析・口語検査のテスト入力も検査対象から除外する。
@@ -157,7 +156,6 @@ colloquial-check-exclude = [
     "tests/colloquial/check_test.py",
     "tests/colloquial/cli_test.py",
 ]
-subproject-exclude = ["smoke_data"]
 # 配布物の独立導入はネットワークを使う専用工程であり、CI・リリースから明示実行する。
 distribution-check = false
 distribution-check-subproject-aware = false
@@ -180,7 +178,7 @@ fast = true
 # args のスクリプトパスは実行時cwdからの相対として解決される。カスタムコマンドは
 # subproject_aware 既定値 true で登録されるため、サブプロジェクトを2件以上検出すると
 # 実行時cwdが対象のサブプロジェクトへ切り替わり、リポジトリルート基準の対象のパスを解決できない。
-# 本リポジトリは subproject-exclude により候補がルート1件となり分割実行が発生せず、
+# 本リポジトリは extend-exclude による tests/smoke_data の除外で候補がルート1件となり分割実行が発生せず、
 # 実行時cwdが起点cwd（リポジトリルート）と一致するため成立している。
 # 対象の除外を解除する場合は絶対パス化するか、doc-codeblock-check-subproject-aware = false を指定する。
 [tool.pyfltr.custom-commands.doc-codeblock-check]

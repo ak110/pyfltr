@@ -890,7 +890,8 @@ pyfltrからprekのhookを呼び出す統合は`prek = true`で有効化する�
   `[tool.pyfltr]`の有無は問わない。
   `[tool.uv.workspace] members` glob展開は`pyproject.toml`側のみに適用する。
   `.gitignore`を尊重する。
-  `.venv`・`node_modules`・`target`・`build`・`dist`・`.git`配下は走査しない
+  `.venv`・`node_modules`・`target`・`build`・`dist`・`.git`配下は走査しない。
+  ファイル展開の除外（`exclude`・`extend-exclude`）に一致するディレクトリと、`subproject-exclude`で指定したディレクトリの配下も走査しない
 - `pyproject.toml`を持たないサブプロジェクト（`Cargo.toml`単独・`*.csproj`単独等）は
   `[tool.pyfltr]`の記述先が無いため、最近接祖先の`pyproject.toml`（無ければ起点で解決した設定）を継承する
 - Cargo workspace root配下の登録member crateは重複実行防止のため独立サブプロジェクトとして検出しない。

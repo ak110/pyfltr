@@ -431,7 +431,8 @@ mise経由で発生する未信頼エラー・registry解決失敗等の追加�
     - `.gitignore` に記載されたディレクトリは除外される。検出させたい場合は `.gitignore` の見直しか
       `subproject-use-gitignore = false` の設定で除外を解除する
     - `.venv`・`node_modules`・`target`・`build`・`dist`・`.git` は常に除外する。
-      除外対象を追加・変更したい場合は `subproject-exclude` で名前を指定する
+      `exclude`・`extend-exclude`に一致するディレクトリ（既定値の`venv`・`.tox`など）も走査しない。
+      除外対象を追加したい場合は `extend-exclude` または `subproject-exclude` で指定する
 - 特定ツールをサブプロジェクト分割の対象から外したい
     - `{command}-subproject-aware = false` を `pyproject.toml` に追加する。
       リポジトリ単位で1回だけ起動する形に切り替わる

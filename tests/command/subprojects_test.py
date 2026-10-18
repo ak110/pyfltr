@@ -71,6 +71,25 @@ def test_discover_subprojects_extra_excludes(tmp_path: pathlib.Path) -> None:
     assert [s.relative for s in subs] == ["."]
 
 
+def test_discover_subprojects_skips_file_expansion_excludes(tmp_path: pathlib.Path) -> None:
+    """ファイル展開の除外（`exclude`・`extend-exclude`）に一致するディレクトリ配下のマーカーは検出しない。
+
+    `venv`・`.tox`は`exclude`の既定値にあり既定の除外名（`.venv`等）には無い名前である。
+    マーカーの無い起点で配下の同梱`pyproject.toml`を数えると、モノレポモードを誤って適用する。
+    """
+    _make_pyproject(tmp_path / "venv" / "lib" / "python3.12" / "site-packages" / "pkg" / "example")
+    _make_pyproject(tmp_path / "venv" / "lib" / "python3.12" / "site-packages" / "pkg" / "example2")
+    _make_pyproject(tmp_path / ".tox" / "py312" / "lib" / "python3.12" / "site-packages" / "pkg" / "example")
+    _make_pyproject(tmp_path / "vendor" / "libs" / "one")
+    _make_pyproject(tmp_path / "vendor" / "libs" / "two")
+    config = pyfltr.config.config.create_default_config()
+    assert "venv" in config.values["exclude"]
+    assert ".tox" in config.values["exclude"]
+    config.values["extend-exclude"] = ["vendor/libs"]
+    subs = pyfltr.command.subprojects.discover_subprojects(tmp_path, config, git_check_ignore=lambda _start, _candidates: set())
+    assert [s.relative for s in subs] == []
+
+
 def test_classify_files_by_subproject_deep_first(tmp_path: pathlib.Path) -> None:
     """最深一致でファイルをサブプロジェクトに割り当てる（親と子の境界）。"""
     _make_pyproject(tmp_path)

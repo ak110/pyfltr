@@ -14,8 +14,10 @@
   `package.json`はプロジェクト境界を持たない汎用ファイルとして誤検出リスクが高いため
   対象外とする
 - 検出結果が0件または1件の場合はモノレポモード非適用（呼び出し側で扱う）
-- 除外パターンは `subproject-exclude` 設定で拡張可能（既定で `.venv`・`node_modules`・
-  `target`・`build`・`dist`・`.git` を除外）
+- ファイル展開の除外（`exclude`・`extend-exclude`の実効値）に一致するディレクトリへは侵入しない。
+  除外の定義をファイル展開と共有し、片方へ加えた除外がもう片方へ適用されない二重定義を避ける
+- ファイル展開の除外に加え、`.venv`・`node_modules`・`target`・`build`・`dist`・`.git` と
+  `subproject-exclude` 設定の名前を常に除外する
 - `.gitignore` を尊重しつつ（`subproject-use-gitignore`）、規定ブラックリストも除外する
 - uv workspace の `[tool.uv.workspace]` は `pyproject.toml` の解釈に限定し、
   他のマーカーのみを持つディレクトリには適用しない
@@ -36,6 +38,7 @@ import natsort
 import tomlkit
 import tomlkit.exceptions
 
+import pyfltr.command.targets
 import pyfltr.config.model
 
 if typing.TYPE_CHECKING:
@@ -64,6 +67,7 @@ class Subproject:
 _DEFAULT_EXCLUDE_NAMES: tuple[str, ...] = (".venv", "node_modules", "target", "build", "dist", ".git")
 """サブプロジェクト探索時に再帰侵入しないディレクトリ名の規定リスト。
 
+ファイル展開の除外（`exclude`・`extend-exclude`）に加えて常に適用する。
 `subproject-exclude` 設定キーで追加除外できる。
 """
 
@@ -208,7 +212,8 @@ def discover_subprojects(
     2. uv workspace の `[tool.uv.workspace] members` glob を展開して候補に加える
        （`pyproject.toml`側のみ対象）
     3. 残りのサブディレクトリを再帰探索し、マーカーを持つディレクトリを候補に加える
-    4. 除外パターン（規定ブラックリスト + `subproject-exclude`）と `.gitignore` を尊重する
+    4. ファイル展開の除外（`exclude`・`extend-exclude`）、規定ブラックリスト、`subproject-exclude`に
+       一致するディレクトリへは侵入せず候補にも加えない。`.gitignore` も尊重する
     5. 集約ルート（Cargo workspace root・`.sln`所在ディレクトリ）配下の下位マーカー
        （`Cargo.toml`単独・`*.csproj`単独）は候補から除外する（重複実行防止）
 
@@ -242,7 +247,7 @@ def discover_subprojects(
                 workspace_members[resolved] = workspace_root_real
 
     # 再帰探索
-    for path in _walk_subproject_candidates(start_cwd, exclude_names):
+    for path in _walk_subproject_candidates(start_cwd, exclude_names, config):
         candidates.add(path.resolve())
 
     # gitignore 除外
@@ -276,16 +281,19 @@ def discover_subprojects(
 def _walk_subproject_candidates(
     start: pathlib.Path,
     exclude_names: set[str],
+    config: pyfltr.config.model.Config,
 ) -> typing.Iterator[pathlib.Path]:
     """再帰探索でマーカー（固定ファイル名またはglobパターン）を持つディレクトリを列挙する。
 
     探索中にマーカーを見つけた場合、対象のディレクトリは候補に加えるが
     配下への再帰侵入は継続する（ネストするサブプロジェクトを全て列挙するため）。
-    `exclude_names` に名前一致するディレクトリは侵入しない。シンボリックリンクは辿らない。
+    `exclude_names` に名前一致するディレクトリと、起点からの相対パスがファイル展開の除外
+    （`pyfltr.command.targets.excluded`）に一致するディレクトリは、候補にも加えず侵入もしない。
+    シンボリックリンクは辿らない。
     """
-    stack: list[pathlib.Path] = [start]
+    stack: list[tuple[pathlib.Path, pathlib.Path]] = [(start, pathlib.Path())]
     while stack:
-        current = stack.pop()
+        current, current_rel = stack.pop()
         try:
             entries = list(current.iterdir())
         except OSError:
@@ -300,9 +308,12 @@ def _walk_subproject_candidates(
                     continue
             except OSError:
                 continue
+            entry_rel = current_rel / entry.name
+            if pyfltr.command.targets.excluded(entry_rel, config) is not None:
+                continue
             if is_subproject_dir(entry):
                 yield entry
-            stack.append(entry)
+            stack.append((entry, entry_rel))
 
 
 def _read_uv_workspace_members(root: pathlib.Path) -> list[pathlib.Path]:

@@ -215,7 +215,8 @@ pyfltr config list --all
   既定値は`[".NET", "Node.js", "Vue.js", "Next.js", "Nuxt.js"]`。
   詳細は[ツール別設定](configuration-tools.md#textlint-protected-identifiers)を参照
 - subproject-exclude : モノレポ検出時に走査・サブプロジェクト集合から除外するディレクトリ名の追加リスト。
-  既定値は空。`.venv`・`node_modules`・`target`・`build`・`dist`・`.git`は常に除外する
+  既定値は空。`.venv`・`node_modules`・`target`・`build`・`dist`・`.git`は常に除外する。
+  `exclude`・`extend-exclude`に一致するディレクトリもファイル展開と同じく走査しないため、同じディレクトリを本キーへ重ねて登録する必要は無い
 - subproject-use-gitignore : モノレポ検出で`.gitignore`を尊重するか否か（既定: `true`）。
   `.gitignore`の対象と判定された候補は検出集合から除外する
 - subproject-uv-workspace : `[tool.uv.workspace] members`を読み取ってサブプロジェクトに含めるか否か（既定: `true`）
