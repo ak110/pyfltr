@@ -85,7 +85,11 @@ def check_file(path: pathlib.Path) -> list[str]:
             parser(body)
         except (tomllib.TOMLDecodeError, yaml.YAMLError, json.JSONDecodeError) as error:
             message = " ".join(str(error).split())
-            errors.append(f"{diagnostic_path}:{lineno}:1: {lang}コードブロックを解析できない: {message}")
+            errors.append(
+                f"{diagnostic_path}:{lineno}:1: {lang}コードブロックを解析できない: {message}"
+                f" 対処: コードブロックを{lang}として正しい構文に直す。{lang}として解析させない内容なら、"
+                "フェンスの言語指定を内容に合う言語へ変える"
+            )
     return errors
 
 

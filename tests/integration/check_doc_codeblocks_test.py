@@ -150,6 +150,9 @@ def test_supported_parser_errors_are_reported(
 
     assert len(errors) == 1
     assert f"{language}コードブロックを解析できない" in errors[0]
+    # 読み手が次の操作（構文の修正か言語指定の変更）を選べる
+    assert f"対処: コードブロックを{language}として正しい構文に直す" in errors[0]
+    assert "フェンスの言語指定を内容に合う言語へ変える" in errors[0]
 
 
 def test_multiple_yaml_documents_are_parsed(tmp_path: pathlib.Path) -> None:
