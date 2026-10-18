@@ -146,3 +146,42 @@ def test_vitest_slow_tests_empty_on_stdout_fallback(mocker, tmp_path: pathlib.Pa
         "vitest", _testconf.make_args(), _testconf.make_execution_context(config, [target], start_cwd=tmp_path)
     )
     assert not result.slow_tests
+
+
+def test_vitest_suite_load_failure_becomes_file_diagnostic(mocker, tmp_path: pathlib.Path) -> None:
+    """テストファイルの評価時の例外で失敗assertionが無いsuiteも、失敗ファイルの診断として結果へ届く。"""
+    target = tmp_path / "sample.test.ts"
+    target.write_text('throw new Error("sample failure");\n')
+
+    def fake_run(cmdline, env, on_output, **_kwargs):
+        del env, on_output
+        output_path = next(
+            pathlib.Path(arg.split("=", 1)[1])
+            for arg in cmdline
+            if isinstance(arg, str) and arg.startswith("--outputFile.json=")
+        )
+        output_path.write_text(
+            json.dumps(
+                {
+                    "testResults": [
+                        {
+                            "name": str(target),
+                            "status": "failed",
+                            "message": "sample failure",
+                            "assertionResults": [],
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(cmdline, returncode=1, stdout=" FAIL  sample.test.ts\n")
+
+    mocker.patch("pyfltr.command.process.run_subprocess", side_effect=fake_run)
+    config = pyfltr.config.config.create_default_config()
+    config.values["vitest"] = True
+    result = pyfltr.command.dispatcher.execute_command(
+        "vitest", _testconf.make_args(), _testconf.make_execution_context(config, [target], start_cwd=tmp_path)
+    )
+    assert result.failed
+    assert [(error.file, error.line, error.message) for error in result.errors] == [("sample.test.ts", 1, "sample failure")]

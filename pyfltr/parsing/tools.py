@@ -1217,6 +1217,12 @@ def parse_vitest_json(output: str) -> list[ErrorLocation]:
     （Vitestの新しいランナー以外では `includeTaskLocation` 設定次第で欠落するため）。
     `failureMessages` が空のときも空メッセージで1件を生成し、失敗の存在自体を保持する。
 
+    テストファイルの評価時の例外（import・setupの失敗など）では、`testResults` 要素自体の
+    `status` が `failed` で、失敗した `assertionResult` を持たない。この場合は要素の
+    `message` 先頭行（空なら空文字列）を本文とするファイル診断を `line=1` で1件生成する。
+    失敗 `assertionResult` を持つ要素では同じ失敗を二重に数えないよう要素単位の診断を追加しない。
+    `name` を持たない要素はファイルを推定せず、元出力に失敗を委ねる。
+
     JSON解析失敗時は空リストを返す。`command.message` フォールバック経路で従来通り
     stdout末尾が `command.message` へ格納される。
     """
@@ -1230,12 +1236,14 @@ def parse_vitest_json(output: str) -> list[ErrorLocation]:
         file_path = str(entry.get("name", "") or "")
         assertions = entry.get("assertionResults", [])
         if not isinstance(assertions, list):
-            continue
+            assertions = []
+        has_failed_assertion = False
         for assertion in assertions:
             if not isinstance(assertion, dict):
                 continue
             if assertion.get("status") != "failed":
                 continue
+            has_failed_assertion = True
             location = assertion.get("location")
             line: int = 1
             col: int | None = None
@@ -1261,6 +1269,18 @@ def parse_vitest_json(output: str) -> list[ErrorLocation]:
                     col=col,
                     command="vitest",
                     message=message,
+                )
+            )
+        if entry.get("status") == "failed" and file_path and not has_failed_assertion:
+            suite_message = entry.get("message")
+            first_line = suite_message.splitlines()[0] if isinstance(suite_message, str) and suite_message else ""
+            results.append(
+                ErrorLocation(
+                    file=pyfltr.paths.normalize_separators(file_path),
+                    line=1,
+                    col=None,
+                    command="vitest",
+                    message=first_line,
                 )
             )
     return results

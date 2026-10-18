@@ -2295,6 +2295,58 @@ def test_parse_vitest_json(case_id: str, output: str, expected: list[dict]) -> N
         assert want["message_contains"] in actual.message
 
 
+def test_parse_vitest_json_suite_failure() -> None:
+    """失敗assertionを持たない失敗suite（評価時の例外）をファイル診断にし、二重診断を生じさせない。
+
+    suite失敗とassertion失敗の混在、成功suite、pending・skipのsuite、空の失敗本文、
+    成功assertionだけを持つ失敗suite（afterAllの例外）、`assertionResults`がリストでない要素、
+    ファイル名の無い失敗要素を同じ入力で扱う。位置を持たないsuite失敗は行1・列なしとする。
+    """
+    output = _vitest_output(
+        [
+            {
+                "name": "/abs/proj/tests/load.test.ts",
+                "status": "failed",
+                "message": "Error: sample failure\n    at /abs/proj/tests/load.test.ts:1:7",
+                "assertionResults": [],
+            },
+            {
+                "name": "/abs/proj/tests/mixed.test.ts",
+                "status": "failed",
+                "message": "",
+                "assertionResults": [
+                    _vitest_assertion(
+                        status="failed",
+                        full_name="adds correctly",
+                        failure_messages=["AssertionError: expected 3 to equal 4"],
+                        location={"line": 7, "column": 5},
+                    )
+                ],
+            },
+            {"name": "/abs/proj/tests/empty.test.ts", "status": "failed", "message": "", "assertionResults": []},
+            {
+                "name": "/abs/proj/tests/hook.test.ts",
+                "status": "failed",
+                "message": "hook failure",
+                "assertionResults": [_vitest_assertion(status="passed", full_name="passes", location={"line": 3, "column": 1})],
+            },
+            {"name": "/abs/proj/tests/bad.test.ts", "status": "failed", "message": "Error: x", "assertionResults": None},
+            {"name": "/abs/proj/tests/ok.test.ts", "status": "passed", "message": "", "assertionResults": []},
+            {"name": "/abs/proj/tests/todo.test.ts", "status": "pending", "message": "", "assertionResults": []},
+            {"name": "/abs/proj/tests/skip.test.ts", "status": "skipped", "message": "", "assertionResults": []},
+            {"name": "", "status": "failed", "message": "Error: startup failure", "assertionResults": []},
+        ]
+    )
+    errors = pyfltr.parsing.entry.parse_errors("vitest", output)
+    assert [(error.file, error.line, error.col, error.message) for error in errors] == [
+        ("/abs/proj/tests/load.test.ts", 1, None, "Error: sample failure"),
+        ("/abs/proj/tests/mixed.test.ts", 7, 5, "adds correctly: AssertionError: expected 3 to equal 4"),
+        ("/abs/proj/tests/empty.test.ts", 1, None, ""),
+        ("/abs/proj/tests/hook.test.ts", 1, None, "hook failure"),
+        ("/abs/proj/tests/bad.test.ts", 1, None, "Error: x"),
+    ]
+
+
 def test_parse_glab_ci_lint_valid() -> None:
     """有効CI出力 (Validating... + ✓ ...) では空リストを返す。"""
     output = "Validating...\n✓ CI/CD YAML is valid!\n"
