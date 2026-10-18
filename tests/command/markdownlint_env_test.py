@@ -2,6 +2,7 @@ import datetime as dt
 import json
 import os
 import pathlib
+import subprocess
 import time
 import types
 import typing
@@ -53,9 +54,13 @@ def test_failed_install_is_retried_and_completed_install_is_reused(
         failed_attempt = len(attempts) == 1
         assert kwargs["cwd"] == _environment.cwd
         assert (stage / "braces-3.0.3.patch").read_bytes() == pyfltr.command.markdownlint_env.PATCH_PATH.read_bytes()
-        assert json.loads((stage / "package.json").read_text())["pnpm"]["patchedDependencies"] == {
-            "braces@3.0.3": "braces-3.0.3.patch"
-        }
+        manifest = json.loads((stage / "package.json").read_text())
+        assert manifest["pnpm"]["patchedDependencies"] == {"braces@3.0.3": "braces-3.0.3.patch"}
+        # 導入する依存はmanifestの宣言だけが決め、installがそれを消費する。
+        assert manifest["dependencies"] == {"markdownlint-cli2": "latest"}
+        assert argv[argv.index("--dir") + 2] == "install"
+        assert "markdownlint-cli2" not in argv
+        assert (stage / "pnpm-workspace.yaml").is_file()
         if not failed_attempt or failure == "capacity":
             (stage / "pnpm-lock.yaml").write_text(
                 "patchedDependencies:\n  braces@3.0.3:\n    hash: applied\n", encoding="utf-8"
@@ -87,7 +92,58 @@ def test_failed_install_is_retried_and_completed_install_is_reused(
     assert pathlib.Path(_environment.executable).read_text() == "completed"
     assert len(attempts) == 2
     assert "--config.minimum-release-age=1440" in attempts[-1]
-    assert attempts[-1][-1] == "markdownlint-cli2"
+    assert attempts[-1][-2:] == ["--config.frozen-lockfile=false", "--config.enableGlobalVirtualStore=false"]
+
+
+def _fake_pnpm_path(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
+    """PATH上の`pnpm`をWindowsでは`.cmd`のshimとして置く。"""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    if os.name == "nt":
+        target = bin_dir / "pnpm.cmd"
+        target.write_text("")
+    else:
+        target = bin_dir / "pnpm"
+        target.write_text("")
+        target.chmod(0o755)
+    monkeypatch.setenv("PATH", str(bin_dir))
+    return bin_dir
+
+
+@pytest.mark.parametrize("outcome", ["json", "nonzero", "timeout"])
+def test_read_settings_resolves_pnpm_and_keeps_streams(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, outcome: str
+) -> None:
+    module = pyfltr.command.markdownlint_env
+    bin_dir = _fake_pnpm_path(tmp_path, monkeypatch)
+    calls: list[tuple[list[str], dict[str, typing.Any]]] = []
+
+    def run(argv: list[str], **kwargs: typing.Any) -> subprocess.CompletedProcess[str]:
+        calls.append((argv, kwargs))
+        if outcome == "timeout":
+            raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
+        return subprocess.CompletedProcess(
+            argv,
+            0 if outcome == "json" else 1,
+            stdout='{"minimum-release-age": 1440}',
+            stderr="config error",
+        )
+
+    monkeypatch.setattr(module.subprocess, "run", run)
+    if outcome == "json":
+        assert module.resolve_environment(tmp_path).settings == {"minimum-release-age": 1440}
+    else:
+        with pytest.raises(ValueError, match="config error" if outcome == "nonzero" else "pnpm") as exc_info:
+            module.resolve_environment(tmp_path)
+        assert "取得環境を解決できません" in str(exc_info.value)
+    argv, kwargs = calls[0]
+    # Windowsで裸の名前を起動できないため、PATH上の実体を絶対パスで渡す。
+    assert pathlib.Path(argv[0]).parent == bin_dir
+    assert pathlib.Path(argv[0]).stem == "pnpm"
+    assert argv[1:] == ["config", "list", "--json"]
+    assert kwargs["cwd"] == tmp_path
+    assert kwargs["capture_output"] is True
+    assert kwargs["timeout"] == 30
 
 
 def test_resource_and_settings_select_separate_environments(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

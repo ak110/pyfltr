@@ -218,6 +218,19 @@ def _on_timeout(proc: subprocess.Popen[str], fired: threading.Event) -> None:
         _kill_process_tree(proc, timeout=5.0)
 
 
+def resolve_commandline(commandline: list[str], env: dict[str, str]) -> list[str]:
+    """起動する`commandline[0]`を`env`のPATHで実体の絶対パスへ解決した一時リストを返す。
+
+    Windowsの`subprocess.Popen`は`shell=False`のリスト渡しで`.cmd`等をPATHから解決しないため、
+    外部コマンドを起動する経路は本関数を通す。引数の`commandline`は書き換えない。
+    解決できない場合は元のリストを返し、起動側の既存の失敗経路に委ねる。
+    """
+    resolved = shutil.which(commandline[0], path=get_env_path(env))
+    if resolved is not None and resolved != commandline[0]:
+        return [resolved, *commandline[1:]]
+    return commandline
+
+
 def run_subprocess(
     commandline: list[str],
     env: dict[str, str],
@@ -267,11 +280,7 @@ def run_subprocess(
     解決できなかった場合は元のコマンド名のままPopenに渡し、既存の
     FileNotFoundError経路でrc=127の `CompletedProcess` に変換する。
     """
-    popen_commandline = commandline
-    env_path = get_env_path(env)
-    resolved = shutil.which(commandline[0], path=env_path)
-    if resolved is not None and resolved != commandline[0]:
-        popen_commandline = [resolved, *commandline[1:]]
+    popen_commandline = resolve_commandline(commandline, env)
     # （1） Popen直前の中断チェック。procがまだ存在しないのでそのまま送出できる。
     if is_interrupted is not None and is_interrupted():
         raise InterruptedExecution

@@ -147,6 +147,33 @@ def test_run_subprocess_does_not_mutate_commandline(mocker) -> None:
     assert original == ["tool", "arg"]
 
 
+@pytest.mark.parametrize("command", ["faketool", "other-tool"])
+def test_resolve_commandline_uses_env_path_without_mutation(tmp_path: pathlib.Path, monkeypatch, command: str) -> None:
+    """`env`のPATHだけにある実体を解決し、元の`commandline`は書き換えない。
+
+    Windowsでは`.cmd`のshimをPATHEXTで解決する。未解決時は元のリストのまま返す。
+    """
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    if os.name == "nt":
+        target = bin_dir / f"{command}.cmd"
+        target.write_text("")
+    else:
+        target = bin_dir / command
+        target.write_text("")
+        target.chmod(0o755)
+    monkeypatch.setenv("PATH", "/nonexistent-pyfltr-test-path")
+    original = [command, "config", "--json"]
+
+    resolved = pyfltr.command.process.resolve_commandline(original, {"PATH": str(bin_dir)})
+
+    assert pathlib.Path(resolved[0]).parent == bin_dir
+    assert pathlib.Path(resolved[0]).stem == command
+    assert resolved[1:] == ["config", "--json"]
+    assert original == [command, "config", "--json"]
+    assert pyfltr.command.process.resolve_commandline(original, {"PATH": str(tmp_path / "empty")}) == original
+
+
 def _spawn_parent_with_child(script: str) -> tuple[subprocess.Popen[str], int, int]:
     """Pythonスクリプトをsubprocessとして起動し親pidと子pidを取得する。
 

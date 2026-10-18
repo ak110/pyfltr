@@ -46,8 +46,9 @@ class MarkdownlintEnvironment:
 
 def _read_settings(cwd: pathlib.Path) -> dict[str, typing.Any]:
     # 通常の探索元から解決し、認証情報を含みうる値はメモリー内だけで引き渡す。
+    # JSONと診断を分けて取得するため、共通の起動経路と同じ実体解決だけを使う。
     result = subprocess.run(
-        ["pnpm", "config", "list", "--json"],
+        pyfltr.command.process.resolve_commandline(["pnpm", "config", "list", "--json"], dict(os.environ)),
         cwd=cwd,
         capture_output=True,
         text=True,
@@ -176,7 +177,13 @@ def ensure_environment(environment: MarkdownlintEnvironment, *, timeout: float |
         with tempfile.TemporaryDirectory(prefix="install-", dir=root.parent) as temporary:
             stage = pathlib.Path(temporary)
             shutil.copyfile(PATCH_PATH, stage / PATCH_PATH.name)
-            manifest = {"private": True, "pnpm": {"patchedDependencies": {PATCHED_DEPENDENCY: PATCH_PATH.name}}}
+            # 依存はmanifestへ宣言してinstallで導入する。
+            # workspace rootへの追加操作はpnpm 10がroot保護で拒否するため使わない。
+            manifest = {
+                "private": True,
+                "dependencies": {MAIN_PACKAGE: "latest"},
+                "pnpm": {"patchedDependencies": {PATCHED_DEPENDENCY: PATCH_PATH.name}},
+            }
             (stage / "package.json").write_text(json.dumps(manifest), encoding="utf-8")
             # pnpm 11も同じ所有元からpatch定義を読む。
             (stage / "pnpm-workspace.yaml").write_text(json.dumps(INSTALL_DEFINITION), encoding="utf-8")
@@ -185,11 +192,9 @@ def ensure_environment(environment: MarkdownlintEnvironment, *, timeout: float |
                 *_setting_args(environment.settings),
                 "--dir",
                 str(stage),
-                "add",
+                "install",
                 "--config.frozen-lockfile=false",
                 "--config.enableGlobalVirtualStore=false",
-                "--",
-                MAIN_PACKAGE,
             ]
             proc = pyfltr.command.process.run_process_loop(commandline, dict(os.environ), cwd=environment.cwd, timeout=timeout)
             if proc.returncode != 0:
