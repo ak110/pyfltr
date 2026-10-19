@@ -59,14 +59,18 @@ update-docker-base:
 	cat "$$tmp" > docker/Dockerfile; rm -f "$$tmp"; \
 	grep -nxF "FROM $$image@$$digest AS base" docker/Dockerfile
 
+# `format`と`test`は`UV_PYTHON`を外してpyfltrを起動する。`sync`の`--python`は後続のuv起動へ引き継がれず、
+# `UV_PYTHON`を継承するとpyfltr本体と、pyfltrがPython系ツールを起動する`uv run`がその版で仮想環境を再作成するため。
+# 外すと各`uv run`は`.python-version`の基準版を選び、`sync`がそろえた仮想環境をそのまま使う（uv 0.13.1で確認）。
+
 # フォーマット + 軽量lint（開発時の手動実行用。自動修正あり）
 # pyfltr fast は fix ステージを内蔵するため、以前の `pyfltr fix` に相当する自動修正も実行される
 format: sync
-	uv run pyfltr fast
+	env --unset=UV_PYTHON uv run pyfltr fast
 
 # 全チェック実行（これを通過すればコミット可能）
 test: sync
-	uv run pyfltr run
+	env --unset=UV_PYTHON uv run pyfltr run
 
 docs:
 	uv run mkdocs serve

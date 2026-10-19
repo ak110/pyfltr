@@ -523,7 +523,12 @@ Python系ツールは`python-runner`の既定値`uv`により`uv run`経由で�
 `uv run`の自動同期は、ロックファイルが選ばなくなったパッケージを仮想環境から除かない（uv 0.13.1で確認）。
 このため検証の前に`uv sync`で仮想環境をロックファイルへ厳密に同期する。
 `.python-version`で基準のPython版を指定するプロジェクトでは、その値を`--python`へ渡す。
-環境変数`UV_PYTHON`などで別の版が指定された環境でも、基準の版で仮想環境を再作成する。
+環境変数`UV_PYTHON`などで別の版が指定された環境でも、同期は基準の版で仮想環境を再作成する。
+
+`--python`の指定は同期だけに作用し、後続の`uvx pyfltr`と、pyfltrがPython系ツールを起動する`uv run`へは引き継がれない。
+これらは`UV_PYTHON`を読んで版を選び直すため、別の版を継承したまま起動すると、同期済みの仮想環境をその版で再作成する。
+そのため`format`と`test`は`env --unset=UV_PYTHON`で版の指定を外してpyfltrを起動する。
+外すと後続の`uv run`は`.python-version`の基準版を選び、同期済みの仮想環境をそのまま使う（uv 0.13.1で確認）。
 
 ```makefile
 export UV_FROZEN := 1
@@ -538,17 +543,18 @@ setup: sync
 
 # フォーマット + 軽量lint（開発時の手動実行用。自動修正あり）
 format: sync
-	uvx pyfltr fast
+	env --unset=UV_PYTHON uvx pyfltr fast
 
 # 全チェック実行（これを通過すればコミット可能）
 test: sync
-	uvx pyfltr run
+	env --unset=UV_PYTHON uvx pyfltr run
 
 .PHONY: sync setup format test
 ```
 
 dev依存にpyfltrを固定する運用では`UV_FROZEN`でlockfileを尊重しつつ、
 同じ同期の後に`uv run pyfltr ...`を呼び出す形に置き換えることができる。
+この形ではpyfltr本体を起動する`uv run`も`UV_PYTHON`を読むため、同じく`env --unset=UV_PYTHON`で版の指定を外す。
 
 ```makefile
 export UV_FROZEN := 1
@@ -572,16 +578,18 @@ update:
 
 # フォーマット + 軽量lint（開発時の手動実行用。自動修正あり）
 format: sync
-	uv run pyfltr fast
+	env --unset=UV_PYTHON uv run pyfltr fast
 
 # 全チェック実行（これを通過すればコミット可能）
 test: sync
-	uv run pyfltr run
+	env --unset=UV_PYTHON uv run pyfltr run
 
 .PHONY: help sync setup update format test
 ```
 
 `.python-version`を置かないプロジェクトでは、`sync`ターゲットから`--python`の指定を除く。
+この場合は同期が`UV_PYTHON`などの指定に従って版を選ぶ。
+`format`と`test`の`env --unset=UV_PYTHON`はそのまま残せ、後続の`uv run`は同期済みの仮想環境の版を使い続ける（uv 0.13.1で確認）。
 
 pre-commitのフックを導入済みの作業ツリーで`prek install`を実行すると、
 既存のフックは`.git/hooks/pre-commit.legacy`へ退避され、以後のコミットではprekのフックと併せて実行される。
