@@ -34,9 +34,9 @@ fixステージが失敗した場合は、同じツールの通常ステージ�
 
 | 層 | 配置 | 責務 |
 | --- | --- | --- |
-| 汎用 | `text/`・`colloquial/`・`parsing/`とトップレベルモジュール | フェンス走査・口語表現の検出・診断解析、`tools.py`のツール定義、`diagnostics.py`の型、`rule_urls.py`のURL生成、パス・警告・実行オプション |
+| 汎用 | `text/`・`colloquial/`・`parsing/`とトップレベルモジュール | フェンス走査・口語表現の検出・診断解析、`tools.py`のツール定義、`diagnostics.py`の型、`rule_urls.py`のURL生成、パス・警告・実行オプション、`user_cache.py`のキャッシュルート解決、`file_lock.py`のプロセス間ロック |
 | 設定 | `config/` | 読込・統合・検証・編集・選択・プリセット。組込みツールの値は`tools.py`から導出する |
-| コマンド実行 | `command/` | 実行要求・振り分け・プロセス管理・runner解決・対象選定、`executor.py`と`stage_runner.py`の実行制御、キャッシュ判定 |
+| コマンド実行 | `command/` | 実行要求・振り分け・プロセス管理・runner解決・対象選定、`executor.py`と`stage_runner.py`の実行制御、`execution_slot.py`の実行枠、キャッシュ判定 |
 | 出力 | `output/` | text・JSONL・SARIF・GitHub Annotations・GitLab Code Quality・TUI、診断表示・logger設定 |
 | 保存 | `state/` | アーカイブとキャッシュの永続化・読取、run_id解決と再実行情報 |
 | 検索と置換 | `grep_/` | 対象解決・走査・置換・履歴・適応的出力 |
@@ -116,6 +116,33 @@ subprocess起動は`subprocess.Popen`ベースに統一する。
 `command/stage_runner.py`がfix、formatter直列、linter/tester並列の実行順を所有する。
 `cli/pipeline.py`は直接実行し、`output/ui.py`は画面通知・中断・結果差し替えをコールバックで渡す。
 Rich UIへの`call_from_thread`とlock取得の差は画面側に残し、ステージ処理の複製とarid抑止を除く。
+
+### 検証の実行枠 {#execution-slot}
+
+同一ホスト・同一OSアカウントで独立した検証がツールを実行する区間を、`command/execution_slot.py`の実行枠で同時に1つに限る。
+一時領域の容量・inotify上限・CPUなどの共有資源は起動ごとの`jobs`では調停できず、
+別worktree・別リポジトリ・MCPから起動した検証の並列数がホスト上で積み上がるためである。
+
+- 保持区間は`command/stage_runner.py`の`run_stages`の全体（fix段の開始から並列段の完了と子プロセスの回収まで）とする。
+  CLI・TUI・MCP（要求ごとのworker）とcommit hookからの起動は、いずれもこの関数を通るため個別の接続を要しない。
+  対象ファイルの展開・設定解決・実行アーカイブの初期化は枠の外で先に進め、TUIの結果画面での入力待ちは枠の解放後になる。
+  外部ツールを起動する処理を新設・変更する場合も`run_stages`の内側で起動し、枠の外で長い処理や入力待ちを行わない
+- 枠の内側では既存の`jobs`、ツール自身のworker数、サブプロジェクト分割をそのまま使う
+- 保持者記録（pid・プロセス生成時刻・cwd）のプロセスが呼出元の祖先なら、取得せずに所有を継承する。
+  検証コマンドから起動した子のpyfltrやpytest経由のpyfltrが自己待機で止まらないようにするためであり、
+  環境変数を引き継がない子孫にも働くよう、祖先の判定はプロセスツリーで行う
+- 同じプロセスの別スレッドは待つ。同じスレッドの入れ子は再入する
+- 待機は一定間隔の再試行で行い、待機の開始時に`execution-slot`の警告を出力する。
+  TUIの協調停止は待機を止めて全コマンドをスキップ扱いにし、CLIのCtrl+Cは例外として伝播する。
+  例外で抜ける場合も起動中の子プロセスを停止してから枠を解放する
+- ツールのtimeoutは枠の取得後のツール実行だけに働く
+- ロックは`<キャッシュルート>/locks/`に置く。`PYFLTR_CACHE_DIR`で保存先を変えた実行どうしは別の枠になる。
+  保持者が強制終了した場合はOSがロックを解放する
+- 公開する外部仕様は`pyfltr.command.execution_slot.hold`のPython APIだけとし、CLIオプション・設定キー・環境変数は設けない。
+  無効化の手段を設けると、起動数による積み上げの構造が残るためである。
+  pyfltr以外の検証を起動する呼出元（他のツールのスクリプトなど）は、このAPIで同じ枠を共有する
+- `command`層から`state`層を参照できないため、キャッシュルートの解決は最上位の`user_cache.py`、
+  ロックの基本処理は最上位の`file_lock.py`が所有する
 
 ### ツール解決の失敗扱い
 
@@ -697,7 +724,9 @@ pyfltrは2系統のユーザーキャッシュ基盤を持つ。
 利用者向けの設定キーは[設定項目](../guide/configuration.md)を、OS別の既定パスは
 [トラブルシューティング](../guide/troubleshooting.md)を参照。
 
-保存ルートは`platformdirs.user_cache_dir("pyfltr", appauthor=False)`で解決し、環境変数`PYFLTR_CACHE_DIR`で上書きできる。
+保存ルートは`user_cache.py`の`default_cache_root`が`platformdirs.user_cache_dir("pyfltr", appauthor=False)`で解決し、
+環境変数`PYFLTR_CACHE_DIR`で上書きできる。
+置換履歴と[検証の実行枠](#execution-slot)のロックも同じルートの配下に置く。
 プロジェクトローカルにキャッシュを生成しない方針を採用するのは、`.gitignore`運用の負担を増やさず、
 複数プロジェクト横断での参照を可能にするため。
 
@@ -711,8 +740,17 @@ run_idにはULIDを採用する。タイムスタンプ由来で辞書順ソー�
 
 自動クリーンアップは世代数（`archive-max-runs`）・合計サイズ（`archive-max-size-mb`）・
 保存期間（`archive-max-age-days`）の3軸で制御する。
-いずれかの閾値を超過した時点で古い順（run_id昇順）に削除する。
+いずれかの閾値を超過した時点で、基準時刻（完了したrunは`finished_at`、完了記録の無いrunは`started_at`）の古い順に削除する。
+長い実行は完了した時点で最新の世代になり、終了後の参照に使える保持期間を持つ。
 各設定値に0以下を指定すると対象の軸の自動削除が無効化される。
+
+実行中のrunは`runs/<run_id>.lock`のロックを保持し、どの軸でも削除しない（世代数と合計サイズの計数には含める）。
+ロックはrunディレクトリより先に取得し、`finalize_run`か、例外で抜けた場合の`release_run`で解放する。
+保護の判定は保存側（`state/archive.py`）だけが行い、CLI・MCP・hook・TUIの呼出元は個別の保護を実装しない。
+強制終了したrunはOSがロックを解放するため、保存済みの内容を参照できる状態のまま、保持上限で通常どおり回収される。
+共通のクリーンアップ（`state/retention.py`）は稼働中判定と基準時刻を呼出元から受け取り、
+置換履歴は従来どおりディレクトリ名の順と作成時刻で判定する。
+変更前の版のpyfltrはロックを確認しないため、版が混在する環境ではその版のcleanupが実行中のrunを削除し得る。
 
 書き込みはツール実行結果を受け取った直後の独立フックとして提供し、TUI・非TUI・
 JSONL stdout有無のいずれでも発生する。

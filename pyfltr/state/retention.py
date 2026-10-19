@@ -8,6 +8,7 @@ ULID採番ディレクトリを世代数・合計サイズ・保存期間の3軸
 `meta.json`のタイムスタンプ解析・ディレクトリサイズ計測・削除）のみを集約する。
 """
 
+import collections.abc
 import dataclasses
 import datetime as dt
 import json
@@ -77,52 +78,75 @@ def cleanup_generational_directory(
     *,
     meta_filename: str,
     timestamp_key: str,
+    fallback_timestamp_key: str | None = None,
+    is_active: collections.abc.Callable[[pathlib.Path], bool] | None = None,
 ) -> list[str]:
     """世代管理ディレクトリへ世代数・合計サイズ・保存期間の3軸クリーンアップを適用する。
 
-    世代数 / 合計サイズ / 保存期間のいずれかを超過した時点で、古い順
-    （ディレクトリ名昇順 = ULIDタイムスタンプ昇順）に削除し、削除したディレクトリ名のリストを返す。
+    世代数 / 合計サイズ / 保存期間のいずれかを超過した時点で古い順に削除し、
+    削除したディレクトリ名のリストを返す。
     `ArchiveStore.cleanup`と`ReplaceHistoryStore.cleanup`が同一アルゴリズムを共有するため、
     本関数へ集約する。
+
+    `fallback_timestamp_key`を省略した場合は、ディレクトリ名昇順（= ULIDタイムスタンプ昇順）を古い順とし、
+    期間は`timestamp_key`の時刻で判定する。
+    指定した場合は`timestamp_key`、無ければ`fallback_timestamp_key`の時刻を基準時刻とし、
+    基準時刻の昇順（時刻を読めないディレクトリは最古として扱う）を古い順とする。
+
+    `is_active`が真を返すディレクトリはどの軸でも削除せず、世代数と合計サイズの計数には含める。
     """
     if not root.exists():
         return []
     entries = sorted((entry for entry in root.iterdir() if entry.is_dir()), key=lambda p: p.name)
     if not entries:
         return []
+
+    def reference_time(entry: pathlib.Path) -> dt.datetime | None:
+        timestamp = timestamp_of(entry, meta_filename=meta_filename, timestamp_key=timestamp_key)
+        if timestamp is None and fallback_timestamp_key is not None:
+            timestamp = timestamp_of(entry, meta_filename=meta_filename, timestamp_key=fallback_timestamp_key)
+        if timestamp is not None and timestamp.tzinfo is None:
+            timestamp = timestamp.replace(tzinfo=dt.UTC)
+        return timestamp
+
+    times = {entry: reference_time(entry) for entry in entries}
+    if fallback_timestamp_key is not None:
+        oldest = dt.datetime.min.replace(tzinfo=dt.UTC)
+        entries.sort(key=lambda entry: (times[entry] or oldest, entry.name))
+    active = {entry for entry in entries if is_active is not None and is_active(entry)}
     removed: list[str] = []
-    now = dt.datetime.now(dt.UTC)
-    age_limit = dt.timedelta(days=policy.max_age_days) if policy.max_age_days > 0 else None
+
+    def remove(entry: pathlib.Path) -> None:
+        rmtree_silent(entry)
+        removed.append(entry.name)
+        entries.remove(entry)
 
     # 期間超過の削除（最古から）
-    if age_limit is not None:
+    if policy.max_age_days > 0:
+        now = dt.datetime.now(dt.UTC)
+        age_limit = dt.timedelta(days=policy.max_age_days)
         for entry in list(entries):
-            timestamp = timestamp_of(entry, meta_filename=meta_filename, timestamp_key=timestamp_key)
-            if timestamp is None:
+            timestamp = times[entry]
+            if entry in active or timestamp is None:
                 continue
             if now - timestamp > age_limit:
-                rmtree_silent(entry)
-                removed.append(entry.name)
-                entries.remove(entry)
+                remove(entry)
 
     # 世代数超過の削除
-    if 0 < policy.max_entries < len(entries):
-        overflow = len(entries) - policy.max_entries
-        for entry in entries[:overflow]:
-            rmtree_silent(entry)
-            removed.append(entry.name)
-        entries = entries[overflow:]
+    if policy.max_entries > 0:
+        for entry in [entry for entry in entries if entry not in active]:
+            if len(entries) <= policy.max_entries:
+                break
+            remove(entry)
 
     # サイズ超過の削除（古い方から）
     if policy.max_size_bytes > 0:
-        total = sum(dir_size(entry) for entry in entries)
-        for entry in list(entries):
+        sizes = {entry: dir_size(entry) for entry in entries}
+        total = sum(sizes.values())
+        for entry in [entry for entry in entries if entry not in active]:
             if total <= policy.max_size_bytes:
                 break
-            size = dir_size(entry)
-            rmtree_silent(entry)
-            removed.append(entry.name)
-            total -= size
-            entries.remove(entry)
+            remove(entry)
+            total -= sizes[entry]
 
     return removed

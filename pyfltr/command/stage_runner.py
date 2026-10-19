@@ -5,10 +5,12 @@ import concurrent.futures
 import dataclasses
 
 import pyfltr.command.core_
+import pyfltr.command.execution_slot
 import pyfltr.command.executor
 import pyfltr.command.process
 import pyfltr.config.config
 import pyfltr.config.model
+import pyfltr.warnings_
 
 
 def make_skipped_result(
@@ -86,6 +88,9 @@ def run_stages(
     fix段が失敗した場合は、同じツールの通常段の結果（成功・スキップを含む）へ失敗と出力を統合した
     1件を最終結果とし、`collected`・`on_result`・`archive`へ同じ結果を渡す。
     fail-fastで停止する場合もfix段の失敗結果を記録し、同じツールのスキップ結果を重ねない。
+
+    全段を検証の実行枠（`pyfltr.command.execution_slot.hold`）の内側で実行し、子プロセスの回収後に枠を解放する。
+    別の検証が枠を保持中なら警告を出力して待つ。TUIの中断（`is_interrupted`）で待機を止めた場合は全コマンドをスキップ扱いにする。
     """
     hooks = callbacks if callbacks is not None else StageCallbacks()
     collected = results if results is not None else []
@@ -129,53 +134,79 @@ def run_stages(
         for command in list(fix_failures):
             record(make_skipped_result(command, config, reason=""), "skipped")
 
-    for command in fixers:
-        result = execute(command, True)
-        if result.failed:
-            fix_failures[command] = result
-        else:
-            archive(result)
-        if hooks.is_interrupted():
-            if hooks.on_interrupted is not None:
-                hooks.on_interrupted(command)
-            skip([*formatters, *parallel])
-            flush_fix_failures()
-            return collected
-        if fail_fast and result.failed:
-            skip([*formatters, *parallel])
-            flush_fix_failures()
-            return collected
+    def execute_stages() -> None:
+        for command in fixers:
+            result = execute(command, True)
+            if result.failed:
+                fix_failures[command] = result
+            else:
+                archive(result)
+            if hooks.is_interrupted():
+                if hooks.on_interrupted is not None:
+                    hooks.on_interrupted(command)
+                skip([*formatters, *parallel])
+                flush_fix_failures()
+                return
+            if fail_fast and result.failed:
+                skip([*formatters, *parallel])
+                flush_fix_failures()
+                return
 
-    for index, command in enumerate(formatters):
-        result = execute(command, False)
-        record(result, "formatter")
-        if hooks.is_interrupted() or (fail_fast and result.failed):
-            skip([*formatters[index + 1 :], *parallel])
-            return collected
+        for index, command in enumerate(formatters):
+            result = execute(command, False)
+            record(result, "formatter")
+            if hooks.is_interrupted() or (fail_fast and result.failed):
+                skip([*formatters[index + 1 :], *parallel])
+                return
 
-    if parallel:
-        aborted = False
-        aborted_commands: set[str] = set()
-        with concurrent.futures.ThreadPoolExecutor(max_workers=config["jobs"]) as executor:
-            future_to_command = {executor.submit(execute, command, False): command for command in parallel}
-            for future in concurrent.futures.as_completed(future_to_command):
-                command = future_to_command[future]
-                try:
-                    result = future.result()
-                except concurrent.futures.CancelledError:
-                    aborted_commands.add(command)
-                    continue
-                record(result, "parallel")
-                if fail_fast and not aborted and result.failed:
-                    aborted = True
-                    cancel_pending_futures(future_to_command, aborted_commands)
-                    pyfltr.command.process.terminate_active_processes()
-                if hooks.is_interrupted():
-                    cancel_pending_futures(future_to_command, aborted_commands)
-        if aborted_commands:
-            skip(list(aborted_commands))
-    flush_fix_failures()
+        if parallel:
+            aborted = False
+            aborted_commands: set[str] = set()
+            with concurrent.futures.ThreadPoolExecutor(max_workers=config["jobs"]) as executor:
+                future_to_command = {executor.submit(execute, command, False): command for command in parallel}
+                for future in concurrent.futures.as_completed(future_to_command):
+                    command = future_to_command[future]
+                    try:
+                        result = future.result()
+                    except concurrent.futures.CancelledError:
+                        aborted_commands.add(command)
+                        continue
+                    record(result, "parallel")
+                    if fail_fast and not aborted and result.failed:
+                        aborted = True
+                        cancel_pending_futures(future_to_command, aborted_commands)
+                        pyfltr.command.process.terminate_active_processes()
+                    if hooks.is_interrupted():
+                        cancel_pending_futures(future_to_command, aborted_commands)
+            if aborted_commands:
+                skip(list(aborted_commands))
+        flush_fix_failures()
+
+    try:
+        with pyfltr.command.execution_slot.hold(should_abort=hooks.is_interrupted, on_wait=_notify_slot_wait):
+            try:
+                execute_stages()
+            except BaseException:
+                # 例外（CLIのCtrl+Cなど）で抜ける場合も、起動中の子プロセスを止めてから実行枠を解放する。
+                pyfltr.command.process.terminate_active_processes()
+                raise
+    except pyfltr.command.execution_slot.WaitAborted:
+        # TUIのCtrl+Cで待機を中断した。未実行の全コマンドを中断扱いにし、成功の結果を返さない。
+        skip([*formatters, *parallel])
     return collected
+
+
+def _notify_slot_wait(owner: pyfltr.command.execution_slot.SlotOwner | None) -> None:
+    """実行枠の待機を始めたことを警告で通知する。"""
+    holder = f"pid={owner.pid}、cwd={owner.cwd}" if owner is not None else "保持者の記録を読めません"
+    pyfltr.warnings_.emit_warning(
+        source="execution-slot",
+        message=(
+            f"同じOSアカウントで別の検証がツールを実行中のため（{holder}）、"
+            "その終了を待ってからツールを実行します。待機時間はツールのtimeoutに含めません"
+        ),
+        hint=("対応不要です。待機をやめる場合は実行を中断してください（端末ではCtrl+C、MCPでは要求の取り消し）。"),
+    )
 
 
 def merge_fix_failure(

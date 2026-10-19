@@ -2778,23 +2778,17 @@ async def test_tool_run_propagates_work_dir_to_command_archive_and_log(
 
 
 def test_tool_run_parallel_work_dirs_do_not_interfere(tmp_path: pathlib.Path) -> None:
-    """異なるwork_dirの公開MCP呼び出しを重ねてもcwdが混線しない。"""
+    """異なるwork_dirの公開MCP呼び出しを重ねてもcwdが混線しない。
+
+    2つの呼び出しは対象の解決などを並行して進め、ツールの実行は検証の実行枠で順に行う。
+    """
     server_cwd = pathlib.Path.cwd()
     work_dirs = [tmp_path / "first", tmp_path / "second"]
-    for index, work_dir in enumerate(work_dirs):
+    for work_dir in work_dirs:
         work_dir.mkdir()
-        other = work_dirs[1 - index]
         helper = work_dir / "cwd_helper.py"
         helper.write_text(
-            "import pathlib\nimport sys\nimport time\n"
-            "other = pathlib.Path(sys.argv[1])\n"
-            "pathlib.Path('started').write_text('1', encoding='utf-8')\n"
-            "deadline = time.monotonic() + 10\n"
-            "while not other.exists():\n"
-            "    if time.monotonic() >= deadline:\n"
-            "        raise TimeoutError(other)\n"
-            "    time.sleep(0.01)\n"
-            "pathlib.Path('cwd.txt').write_text(str(pathlib.Path.cwd()), encoding='utf-8')\n",
+            "import pathlib\npathlib.Path('cwd.txt').write_text(str(pathlib.Path.cwd()), encoding='utf-8')\n",
             encoding="utf-8",
         )
         (work_dir / "sample.txt").write_text("value\n", encoding="utf-8")
@@ -2802,7 +2796,7 @@ def test_tool_run_parallel_work_dirs_do_not_interfere(tmp_path: pathlib.Path) ->
             "[tool.pyfltr]\nrespect-gitignore = false\n\n"
             "[tool.pyfltr.custom-commands.cwd-check]\n"
             f"path = {json.dumps(sys.executable)}\n"
-            f"args = [{json.dumps(str(helper))}, {json.dumps(str(other / 'started'))}]\n"
+            f"args = [{json.dumps(str(helper))}]\n"
             'type = "linter"\ntargets = ["*.txt"]\npass-filenames = false\n',
             encoding="utf-8",
         )

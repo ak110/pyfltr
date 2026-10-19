@@ -107,19 +107,29 @@ import sys
 import time
 
 root = pathlib.Path(sys.argv[1])
+
+
+def wait_release():
+    deadline = time.monotonic() + 30
+    while not (root / "release").exists():
+        if time.monotonic() >= deadline:
+            raise TimeoutError("release")
+        time.sleep(0.01)
+
+
 if len(sys.argv) == 2:
-    child = subprocess.Popen([sys.executable, __file__, str(root), "child"], start_new_session=os.name != "nt")
-    (root / "started.json").write_text(json.dumps({"parent": os.getpid(), "child": child.pid}), encoding="utf-8")
+    with subprocess.Popen([sys.executable, __file__, str(root), "child"], start_new_session=os.name != "nt") as child:
+        (root / "started.json").write_text(json.dumps({"parent": os.getpid(), "child": child.pid}), encoding="utf-8")
+        try:
+            wait_release()
+        finally:
+            # 解放待ちが失敗しても子を残さない。子は同じ解放待ちで終わる。
+            if child.poll() is None:
+                child.kill()
+    (root / "finished").touch()
 else:
     (root / "child-started").touch()
-deadline = time.monotonic() + 30
-while not (root / "release").exists():
-    if time.monotonic() >= deadline:
-        raise TimeoutError("release")
-    time.sleep(0.01)
-if len(sys.argv) == 2:
-    child.wait(timeout=5)
-    (root / "finished").touch()
+    wait_release()
 """
 
 
@@ -174,31 +184,33 @@ def _running(pid: int) -> bool:
 
 
 def test_stdio_remains_responsive_and_cancels_only_owned_process_tree(tmp_path: pathlib.Path) -> None:
-    """2つの実行を重ね、pingと警告応答、片方の子孫停止、もう片方の完走を確認する。"""
+    """2つの実行を重ね、pingと警告応答、片方の子孫停止、もう片方の完走を確認する。
+
+    2つの`run`は検証の実行枠を共有するため、後発の要求は先発の取り消しで子孫が止まり枠が解放されてから実行する。
+    """
     first = _project(tmp_path, "project-first")
     second = _project(tmp_path, "project-second")
-    with _client(tmp_path) as client:
-        for identifier, project in ((2, first), (3, second)):
-            client.send(
-                "tools/call",
-                {
-                    "name": "run",
-                    "arguments": {
-                        "paths": ["sample.txt"],
-                        "commands": ["slow-format", "after-check"],
-                        "work_dir": str(project),
-                        "no_cache": True,
-                    },
+
+    def _run_request(identifier: int, project: pathlib.Path) -> None:
+        client.send(
+            "tools/call",
+            {
+                "name": "run",
+                "arguments": {
+                    "paths": ["sample.txt"],
+                    "commands": ["slow-format", "after-check"],
+                    "work_dir": str(project),
+                    "no_cache": True,
                 },
-                identifier,
-            )
-        _wait_for(
-            lambda: all(
-                (project / "child-started").exists() and (project / "started.json").exists() for project in (first, second)
-            )
+            },
+            identifier,
         )
+
+    with _client(tmp_path) as client:
+        _run_request(2, first)
+        _wait_for(lambda: (first / "child-started").exists() and (first / "started.json").exists())
         first_pids = json.loads((first / "started.json").read_text(encoding="utf-8"))
-        second_pids = json.loads((second / "started.json").read_text(encoding="utf-8"))
+        _run_request(3, second)
         client.send("ping", {}, 4)
         assert "result" in client.receive(4)
         assert not (first / "release").exists() and not (second / "release").exists()
@@ -217,15 +229,18 @@ def test_stdio_remains_responsive_and_cancels_only_owned_process_tree(tmp_path: 
         )
         grep = client.receive(5)["result"]["structuredContent"]
         assert grep["warnings"]
+        assert not (second / "started.json").exists()
         client.send("notifications/cancelled", {"requestId": 2})
-        _wait_for(lambda: not any(_running(pid) for pid in first_pids.values()))
+        _wait_for(lambda: (second / "child-started").exists() and (second / "started.json").exists())
+        assert not any(_running(pid) for pid in first_pids.values())
+        second_pids = json.loads((second / "started.json").read_text(encoding="utf-8"))
         assert all(_running(pid) for pid in second_pids.values())
         assert not (first / "finished").exists()
         assert not (first / "after-started").exists()
         (second / "release").touch()
         completed = client.receive(3)["result"]["structuredContent"]
         assert completed["exit_code"] == 0
-        assert not completed["warnings"]
+        assert [warning["source"] for warning in completed["warnings"]] == ["execution-slot"]
         assert (second / "after-started").exists()
         client.send("tools/call", {"name": "list_runs", "arguments": {}}, 6)
         assert "result" in client.receive(6)

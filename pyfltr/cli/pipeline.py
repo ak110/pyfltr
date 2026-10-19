@@ -494,43 +494,60 @@ def _run_pipeline(
     archive_store, run_id = _initialize_archive(
         args, config, prepared.commands, prepared.all_files, start_cwd_path, archive_required=archive_required
     )
-    _log_runtime(start_cwd_path, run_id, launcher_prefix)
-    cache_store = _initialize_cache(args, config)
-    archive_hook = (
-        _make_archive_hook(archive_store, run_id, archive_required=archive_required)
-        if archive_store is not None and run_id is not None
-        else None
-    )
-    attach_retry_command = _make_attach_retry_command(
-        retry_args_template=retry_args_template,
-        launcher_prefix=launcher_prefix,
-        # 対象ファイルは実行起点相対で保持されるため、起動時のcwdではなく実行起点を基準に絶対化する。
-        target_base_cwd=str(start_cwd_path),
-    )
-    base_ctx = _prepare_execution_context(config, prepared, start_cwd_path, cache_store, run_id)
-    ctx = _prepare_run_output(
-        args,
-        formatter,
-        early_ctx,
-        prepared,
-        run_id,
-        launcher_prefix,
-        retry_args_template,
-        structured_stdout,
-    )
-    results, returncode, ctx = _execute_pipeline_commands(
-        args,
-        prepared.commands,
-        base_ctx,
-        formatter,
-        ctx,
-        archive_hook=archive_hook,
-        attach_retry_command=attach_retry_command,
-        only_failed_targets=prepared.only_failed_targets,
-    )
-    return _finish_pipeline(
-        args, base_ctx, formatter, ctx, results, returncode, archive_store, prepared.unmet, archive_required=archive_required
-    )
+    base_ctx: pyfltr.command.core_.ExecutionBaseContext | None = None
+    try:
+        _log_runtime(start_cwd_path, run_id, launcher_prefix)
+        cache_store = _initialize_cache(args, config)
+        archive_hook = (
+            _make_archive_hook(archive_store, run_id, archive_required=archive_required)
+            if archive_store is not None and run_id is not None
+            else None
+        )
+        attach_retry_command = _make_attach_retry_command(
+            retry_args_template=retry_args_template,
+            launcher_prefix=launcher_prefix,
+            # 対象ファイルは実行起点相対で保持されるため、起動時のcwdではなく実行起点を基準に絶対化する。
+            target_base_cwd=str(start_cwd_path),
+        )
+        base_ctx = _prepare_execution_context(config, prepared, start_cwd_path, cache_store, run_id)
+        ctx = _prepare_run_output(
+            args,
+            formatter,
+            early_ctx,
+            prepared,
+            run_id,
+            launcher_prefix,
+            retry_args_template,
+            structured_stdout,
+        )
+        results, returncode, ctx = _execute_pipeline_commands(
+            args,
+            prepared.commands,
+            base_ctx,
+            formatter,
+            ctx,
+            archive_hook=archive_hook,
+            attach_retry_command=attach_retry_command,
+            only_failed_targets=prepared.only_failed_targets,
+        )
+        return _finish_pipeline(
+            args,
+            base_ctx,
+            formatter,
+            ctx,
+            results,
+            returncode,
+            archive_store,
+            prepared.unmet,
+            archive_required=archive_required,
+        )
+    finally:
+        # 例外（Ctrl+Cを含む）で抜けた経路でも一時ディレクトリと稼働中のロックを残さない。
+        # 正常終了ではロックを`finalize_run`が解放済みのため、`release_run`は何もしない。
+        if base_ctx is not None:
+            base_ctx.cleanup()
+        if archive_store is not None and run_id is not None:
+            archive_store.release_run(run_id)
 
 
 def _initialize_output(
@@ -758,7 +775,7 @@ def _finish_pipeline(
     *,
     archive_required: bool = False,
 ) -> PipelineOutcome:
-    """完了判定・出力・アーカイブ保存・一時資源の解放を行う。"""
+    """完了判定・出力・アーカイブ保存を行う。一時資源の解放は呼出元の`finally`が行う。"""
     # returncodeを先に確定させる （render_resultsに渡してJSONL summary.exitに埋めるため）
     # TUIのCtrl+C協調停止は `run_commands_with_ui` から130 （SIGINT慣例） を返す。
     # この場合は `calculate_returncode` で上書きせず、そのまま採用する。
@@ -788,8 +805,6 @@ def _finish_pipeline(
 
     # pre-commit経由かつformatter自動修正発生時のMM状態ガイダンスを必要に応じて出力する。
     _maybe_emit_precommit_guidance(results, structured_stdout=ctx.structured_stdout, quiet=ctx.quiet)
-
-    base_ctx.cleanup()
 
     return PipelineOutcome(returncode, ctx.run_id, completion, tuple(results))
 
@@ -974,6 +989,8 @@ def _initialize_archive(
             if removed:
                 logger.debug("archive: 自動削除で %d 件の古い run を削除", len(removed))
         except OSError as e:
+            if archive_store is not None and run_id is not None:
+                archive_store.release_run(run_id)
             pyfltr.warnings_.emit_warning(
                 source="archive",
                 message=(

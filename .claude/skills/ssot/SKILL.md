@@ -5,7 +5,7 @@ description: >
   内部リンクのアンカー方針・MkDocsのdocs_dir外参照禁止・規約適用ルール・モジュールパス参照追従・
   SSOT俯瞰（連動更新先の一覧）・機能追加時の文書露出判断を集約する。
   pyfltr/config/config.py・pyfltr/cli/output_format.py・pyfltr/command/runner.py・
-  pyfltr/command/mise.py・pyfltr/state/archive.py・pyfltr/state/cache.py・
+  pyfltr/command/mise.py・pyfltr/user_cache.py・pyfltr/state/archive.py・pyfltr/state/cache.py・
   docs/guide/*.md・docs/development/*.md・mkdocs.yml・README.md・AGENTS.md・
   .claude/skills/*/SKILL.md・.claude/rules/*.md を編集する際に使用する。
 ---
@@ -50,7 +50,7 @@ description: >
   global優先キーの対象範囲（archive/cache系）
 - `pyfltr/config/model.py`の`default_global_config_path`:
   グローバル設定パスの解決ロジック
-- `pyfltr/state/archive.py`の`default_cache_root`:
+- `pyfltr/user_cache.py`の`default_cache_root`:
   キャッシュルートの解決ロジック
 - `pyfltr/config/model.py`の`DEFAULT_CONFIG`と`pyfltr/tools.py`のツール定義:
   設定キー体系・既定値・runner方針

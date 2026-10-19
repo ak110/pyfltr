@@ -8,7 +8,7 @@
 `replace_id`のみとし、利用者向けメッセージ文面はcatch側
 （`pyfltr/cli/replace_subcmd.py`・`pyfltr/cli/mcp_server.py`など）で組み立てる。
 
-ディレクトリ構造（`<cache_root> = pyfltr.state.archive.default_cache_root()`）::
+ディレクトリ構造（`<cache_root> = pyfltr.user_cache.default_cache_root()`）::
 
     <cache_root>/replaces/<replace_id>/meta.json
     <cache_root>/replaces/<replace_id>/files/<sanitized_path>/before.bin
@@ -36,8 +36,8 @@ import pyfltr.config.config
 import pyfltr.config.model
 import pyfltr.grep_.transaction
 import pyfltr.paths
-import pyfltr.state.archive
 import pyfltr.state.retention
+import pyfltr.user_cache
 import pyfltr.warnings_
 from pyfltr.grep_.types import ReplaceCommandMeta, ReplaceRecord
 
@@ -100,7 +100,7 @@ def default_history_root() -> pathlib.Path:
     `default_cache_root()`配下の`replaces/`サブディレクトリへ集約することで、
     実行アーカイブ（`runs/`）と並ぶ世代管理として配置する。
     """
-    return pyfltr.state.archive.default_cache_root() / _REPLACES_DIRNAME
+    return pyfltr.user_cache.default_cache_root() / _REPLACES_DIRNAME
 
 
 def generate_replace_id() -> str:

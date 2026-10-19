@@ -3,7 +3,7 @@
 `CommandInfo.cacheable=True`のツール（textlint）の実行結果をユーザーキャッシュへ保存し、
 同じ入力に対する再実行を省略するための仕組み。
 
-ディレクトリ構造（`<cache_root> = platformdirs.user_cache_dir("pyfltr", appauthor=False)`）::
+ディレクトリ構造（`<cache_root> = pyfltr.user_cache.default_cache_root()`）::
 
     <cache_root>/cache/<tool>/<hash>.json
 
@@ -49,7 +49,7 @@ import pyfltr.config.config
 import pyfltr.config.model
 import pyfltr.diagnostics
 import pyfltr.parsing.entry
-import pyfltr.state.archive
+import pyfltr.user_cache
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +76,7 @@ class CacheStore:
     """
 
     def __init__(self, cache_root: pathlib.Path | None = None) -> None:
-        self._cache_root = cache_root if cache_root is not None else pyfltr.state.archive.default_cache_root()
+        self._cache_root = cache_root if cache_root is not None else pyfltr.user_cache.default_cache_root()
         self._cache_dir = self._cache_root / _CACHE_DIRNAME
 
     @property

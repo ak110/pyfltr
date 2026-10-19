@@ -256,22 +256,42 @@ def test_list_tools_not_found(tmp_path: pathlib.Path) -> None:
         store.list_tools("nonexistent-run-id")
 
 
+def _set_meta_times(
+    tmp_path: pathlib.Path,
+    run_id: str,
+    *,
+    started_days_ago: float | None = None,
+    finished_days_ago: float | None = None,
+) -> None:
+    """meta.jsonの開始・完了時刻を現在から指定日数前へ書き換える。"""
+    meta_path = tmp_path / "runs" / run_id / "meta.json"
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    now = dt.datetime.now(dt.UTC)
+    if started_days_ago is not None:
+        meta["started_at"] = (now - dt.timedelta(days=started_days_ago)).isoformat()
+    if finished_days_ago is not None:
+        meta["finished_at"] = (now - dt.timedelta(days=finished_days_ago)).isoformat()
+    meta_path.write_text(json.dumps(meta), encoding="utf-8")
+
+
 def test_cleanup_max_runs(tmp_path: pathlib.Path) -> None:
-    """101世代生成してmax_runs=100で古いものから1件削除される。"""
+    """完了済みの101世代をmax_runs=100でクリーンアップすると最古の1件が削除される。"""
     store = _make_store(tmp_path)
-    run_ids = [store.start_run() for _ in range(101)]
+    run_ids = []
+    for _ in range(101):
+        run_id = store.start_run()
+        store.finalize_run(run_id, exit_code=0)
+        run_ids.append(run_id)
 
     policy = pyfltr.state.archive.ArchivePolicy(max_runs=100, max_size_bytes=0, max_age_days=0)
     removed = store.cleanup(policy)
 
-    # 最古の1件が削除される
-    assert len(removed) == 1
-    assert removed[0] == min(run_ids)
+    assert removed == [min(run_ids)]
     assert len(store.list_runs()) == 100
 
 
 def test_cleanup_max_size(tmp_path: pathlib.Path) -> None:
-    """大きなoutput.logを持つrunがmax_size超過で削除される。"""
+    """大きなoutput.logを持つ完了済みrunがmax_size超過で削除される。"""
     store = _make_store(tmp_path)
     run_id = store.start_run()
     # 2MBのダミー出力を書き込む
@@ -294,16 +314,11 @@ def test_cleanup_max_size(tmp_path: pathlib.Path) -> None:
 
 
 def test_cleanup_max_age(tmp_path: pathlib.Path) -> None:
-    """meta.jsonのstarted_atを過去にしてからmax_age_daysで削除される。"""
+    """完了時刻が保存期間を超えた完了済みrunがmax_age_daysで削除される。"""
     store = _make_store(tmp_path)
     run_id = store.start_run()
-
-    # meta.jsonのstarted_atを60日前に書き換える
-    meta_path = tmp_path / "runs" / run_id / "meta.json"
-    meta = json.loads(meta_path.read_text(encoding="utf-8"))
-    past = dt.datetime.now(dt.UTC) - dt.timedelta(days=60)
-    meta["started_at"] = past.isoformat()
-    meta_path.write_text(json.dumps(meta), encoding="utf-8")
+    store.finalize_run(run_id, exit_code=0)
+    _set_meta_times(tmp_path, run_id, started_days_ago=60, finished_days_ago=60)
 
     # 新しいrunを作成
     run_id2 = store.start_run()
@@ -317,6 +332,82 @@ def test_cleanup_max_age(tmp_path: pathlib.Path) -> None:
     assert run_id2 in remaining_ids
 
 
+@pytest.mark.parametrize(
+    "policy",
+    [
+        pytest.param(pyfltr.state.archive.ArchivePolicy(max_runs=1, max_size_bytes=0, max_age_days=0), id="max_runs"),
+        pytest.param(pyfltr.state.archive.ArchivePolicy(max_runs=0, max_size_bytes=1024 * 1024, max_age_days=0), id="max_size"),
+        pytest.param(pyfltr.state.archive.ArchivePolicy(max_runs=0, max_size_bytes=0, max_age_days=30), id="max_age"),
+    ],
+)
+def test_cleanup_keeps_active_run_on_every_axis(tmp_path: pathlib.Path, policy: pyfltr.state.archive.ArchivePolicy) -> None:
+    """別のストアが実行中のrunは、期間・サイズ・世代数のどの軸でも削除されず終了後に参照できる。
+
+    実行中のrunは最古かつ最大で、開始時刻も保存期間を超えている。保護が無ければどの軸でも最初に削除される。
+    """
+    running_store = _make_store(tmp_path)
+    running = running_store.start_run(commands=["mypy"])
+    running_store.write_tool_result(running, _make_result("mypy", returncode=1, output="x" * (2 * 1024 * 1024)))
+    _set_meta_times(tmp_path, running, started_days_ago=60)
+
+    other_store = _make_store(tmp_path)
+    finished = other_store.start_run()
+    other_store.finalize_run(finished, exit_code=0)
+    _set_meta_times(tmp_path, finished, started_days_ago=60, finished_days_ago=60)
+    removed = other_store.cleanup(policy)
+
+    assert running not in removed
+    running_store.finalize_run(running, exit_code=1)
+    assert running_store.read_tool_output(running, "mypy").startswith("x")
+    assert running_store.read_meta(running)["exit_code"] == 1
+
+
+def test_cleanup_counts_active_run_but_removes_finished(tmp_path: pathlib.Path) -> None:
+    """稼働中のrunは世代数に数えたうえで残し、完了済みのrunを削除して上限へ収める。"""
+    store = _make_store(tmp_path)
+    running = store.start_run()
+    finished = store.start_run()
+    store.finalize_run(finished, exit_code=0)
+
+    removed = store.cleanup(pyfltr.state.archive.ArchivePolicy(max_runs=1, max_size_bytes=0, max_age_days=0))
+
+    assert removed == [finished]
+    assert [summary.run_id for summary in store.list_runs()] == [running]
+
+
+def test_cleanup_orders_by_finished_at(tmp_path: pathlib.Path) -> None:
+    """開始が古くても完了が新しいrunは残り、完了の古いrunから削除される。"""
+    store = _make_store(tmp_path)
+    long_run = store.start_run()
+    short_run = store.start_run()
+    store.finalize_run(short_run, exit_code=0)
+    _set_meta_times(tmp_path, short_run, finished_days_ago=1)
+    store.finalize_run(long_run, exit_code=1)
+
+    removed = store.cleanup(pyfltr.state.archive.ArchivePolicy(max_runs=1, max_size_bytes=0, max_age_days=0))
+
+    assert removed == [short_run]
+    assert store.read_meta(long_run)["exit_code"] == 1
+
+
+def test_cleanup_removes_unfinished_run_without_holder(tmp_path: pathlib.Path) -> None:
+    """強制終了したrun（完了記録が無くロック保持者もいない）は、保存済み内容を読めたうえで上限により回収される。"""
+    crashed_store = _make_store(tmp_path)
+    crashed = crashed_store.start_run(commands=["mypy"])
+    crashed_store.write_tool_result(crashed, _make_result("mypy", returncode=0, output="saved"))
+    # プロセスの強制終了ではOSがロックを解放する。同じ状態をロックの解放だけで再現し、完了記録は書かない。
+    crashed_store.release_run(crashed)
+
+    reader = _make_store(tmp_path)
+    assert reader.read_tool_output(crashed, "mypy") == "saved"
+    newer = reader.start_run()
+    reader.finalize_run(newer, exit_code=0)
+    removed = reader.cleanup(pyfltr.state.archive.ArchivePolicy(max_runs=1, max_size_bytes=0, max_age_days=0))
+
+    assert removed == [crashed]
+    assert not (tmp_path / "runs" / f"{crashed}.lock").exists()
+
+
 def test_generate_run_id_unique_and_valid() -> None:
     """連続生成したrun_idは重複なく、ULIDの文字数・文字種を満たす。"""
     ids = [pyfltr.state.archive.generate_run_id() for _ in range(10)]
@@ -324,13 +415,6 @@ def test_generate_run_id_unique_and_valid() -> None:
     assert all(len(i) == 26 for i in ids)
     assert all(c in "0123456789ABCDEFGHJKMNPQRSTVWXYZ" for i in ids for c in i)
     assert len(set(ids)) == len(ids)
-
-
-def test_default_cache_root_respects_env(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """PYFLTR_CACHE_DIR環境変数がdefault_cache_rootで優先される。"""
-    monkeypatch.setenv("PYFLTR_CACHE_DIR", str(tmp_path))
-    result = pyfltr.state.archive.default_cache_root()
-    assert result == tmp_path
 
 
 def _pytest_failure_output(test_file: str, line: int, test_name: str) -> str:

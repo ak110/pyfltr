@@ -1,6 +1,6 @@
 """ユーザー単位の保存先が全試験から既定で隔離されることの構成検証。
 
-pyfltrはユーザー単位の保存先（実行アーカイブ・結果キャッシュ・置換履歴の共通ルートとグローバル設定）を持つ。
+pyfltrはユーザー単位の保存先（実行アーカイブ・結果キャッシュ・置換履歴・実行枠のロックの共通ルートとグローバル設定）を持つ。
 `tests/conftest.py`のautouseフィクスチャが上書き用の環境変数を試験用一時領域へ固定するため、
 隔離用のフィクスチャを要求しない試験でも、保存先の解決関数は開発者の実環境を指さない。
 既定の隔離が外れると、本試験は保存先が`basetemp`の外を指すため失敗する。
@@ -11,15 +11,17 @@ import pathlib
 
 import pytest
 
+import pyfltr.command.execution_slot
 import pyfltr.config.model
 import pyfltr.grep_.history
-import pyfltr.state.archive
+import pyfltr.user_cache
 
 
 def test_user_state_paths_are_isolated_by_default(tmp_path_factory: pytest.TempPathFactory) -> None:
     basetemp = tmp_path_factory.getbasetemp().resolve()
     resolved: dict[str, pathlib.Path] = {
-        "cache_root": pyfltr.state.archive.default_cache_root(),
+        "cache_root": pyfltr.user_cache.default_cache_root(),
+        "execution_slot": pyfltr.command.execution_slot.default_lock_dir(),
         "replace_history": pyfltr.grep_.history.default_history_root(),
         "global_config": pyfltr.config.model.default_global_config_path(),
     }

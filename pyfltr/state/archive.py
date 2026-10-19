@@ -7,16 +7,24 @@
 識別子（`run_id` または `f"{run_id}/{tool}"`）のみとし、利用者向けメッセージ文面は
 catch側（`pyfltr/state/runs.py`・`pyfltr/cli/mcp_server.py`など）で組み立てる。
 
-ディレクトリ構造（`<cache_root> = platformdirs.user_cache_dir("pyfltr", appauthor=False)`）::
+ディレクトリ構造（`<cache_root> = pyfltr.user_cache.default_cache_root()`）::
 
     <cache_root>/runs/<run_id>/meta.json
     <cache_root>/runs/<run_id>/tools/<sanitize(command)>/output.log
     <cache_root>/runs/<run_id>/tools/<sanitize(command)>/diagnostics.jsonl
     <cache_root>/runs/<run_id>/tools/<sanitize(command)>/tool.json
+    <cache_root>/runs/<run_id>.lock
 
 `run_id`はULID（26文字、Crockford Base32、タイムスタンプ由来で辞書順ソート可能）。
 自動クリーンアップは世代数・合計サイズ・保存期間の3軸のうち超過した時点で
-古い順（= run_id昇順）に削除する。
+基準時刻の古い順に削除する。基準時刻は完了したrunでは`finished_at`、
+完了記録の無いrun（強制終了したrunなど）では`started_at`とする。
+長い実行は完了した時点で最新の世代になり、終了後の参照に使える保持期間を持つ。
+
+実行中のrunは`<run_id>.lock`のロックを保持し、どの軸でも削除しない（世代数と合計サイズの計数には含める）。
+保護の判定はロックの保持だけで行い、呼出元（CLI・MCP・hook・TUI）は個別の保護を実装しない。
+ロックはrunディレクトリより先に取得するため、ディレクトリが存在して保持者がいないrunは完了済みか強制終了済みである。
+変更前の版のpyfltrはロックを確認しないため、版が混在する環境ではその版のcleanupが実行中のrunを削除し得る。
 
 アーカイブは既定で有効。`--no-archive` CLIオプションまたは
 `archive = false`設定で無効化できる。
@@ -33,16 +41,17 @@ import re
 import sys
 import typing
 
-import platformdirs
 import ulid
 
 import pyfltr.command.core_
 import pyfltr.config.config
 import pyfltr.config.model
+import pyfltr.file_lock
 import pyfltr.output.jsonl
 import pyfltr.parsing.entry
 import pyfltr.paths
 import pyfltr.state.retention
+import pyfltr.user_cache
 
 logger = logging.getLogger(__name__)
 
@@ -60,28 +69,6 @@ DIAGNOSTIC_PATHS_META_KEY = "diagnostic_paths"
 """
 DIAGNOSTIC_PATHS_START_RELATIVE = "start-relative"
 _SECTION_HEADER_RE = re.compile(r"^# (?:subproject: (?P<relative>.+)|external paths)$")
-
-
-def default_cache_root() -> pathlib.Path:
-    r"""XDG 準拠のキャッシュルートを返す。
-
-    Linuxでは`~/.cache/pyfltr/`、macOSでは`~/Library/Caches/pyfltr/`、
-    Windowsでは`%LOCALAPPDATA%\pyfltr\Cache`になる。環境変数
-    `PYFLTR_CACHE_DIR`が設定されていればそれを優先する（テストや運用上の
-    強制上書き用）。
-
-    `appauthor=False`を渡すのは、未指定時にWindowsで`appname`が
-    appauthorとしても付与され`%LOCALAPPDATA%\pyfltr\pyfltr\Cache`に
-    なる挙動を回避するため。
-
-    プロジェクトローカル（`.pyfltr_cache/`のようなリポジトリ内ディレクトリ）
-    には保存しない方針を採用する。`.gitignore`運用の負担を増やさず、
-    複数プロジェクト横断での参照を可能にするため。
-    """
-    override = os.environ.get("PYFLTR_CACHE_DIR")
-    if override:
-        return pathlib.Path(override)
-    return pathlib.Path(platformdirs.user_cache_dir("pyfltr", appauthor=False))
 
 
 def generate_run_id() -> str:
@@ -117,14 +104,17 @@ class ArchiveStore:
     """実行アーカイブの読み書き。
 
     1回のpyfltr実行で1インスタンスを生成する。`start_run()`でrun_idを
-    採番して以後のツール書き込みを受け付け、`finalize_run()`でメタ情報を
-    確定させる。クリーンアップは`cleanup()`が呼ばれた時点で行う
+    採番して稼働中のロックを取得し、以後のツール書き込みを受け付ける。
+    `finalize_run()`でメタ情報を確定させてロックを解放する。
+    `finalize_run()`へ到達しない経路（例外など）では`release_run()`でロックを解放する。
+    クリーンアップは`cleanup()`が呼ばれた時点で行う
     （呼び出し側は実行冒頭で発火させることを想定）。
     """
 
     def __init__(self, cache_root: pathlib.Path | None = None) -> None:
-        self._cache_root = cache_root if cache_root is not None else default_cache_root()
+        self._cache_root = cache_root if cache_root is not None else pyfltr.user_cache.default_cache_root()
         self._runs_dir = self._cache_root / _RUNS_DIRNAME
+        self._run_locks: dict[str, pyfltr.file_lock.FileLock] = {}
 
     @property
     def runs_dir(self) -> pathlib.Path:
@@ -140,9 +130,33 @@ class ArchiveStore:
         cwd: str | None = None,
         argv: list[str] | None = None,
     ) -> str:
-        """新しい run ディレクトリを作成し、初期 meta.json を書き込んで run_id を返す。"""
+        """稼働中のロックを取得して新しい run ディレクトリを作成し、初期 meta.json を書き込んで run_id を返す。
+
+        ロックを取得できない場合（同じrun_idを別の主体が使用中）は`FileExistsError`を送出する。
+        """
         run_id = run_id or generate_run_id()
         run_dir = self._runs_dir / run_id
+        lock = pyfltr.file_lock.FileLock(_run_lock_path(run_dir))
+        if not lock.try_acquire():
+            raise FileExistsError(run_id)
+        self._run_locks[run_id] = lock
+        try:
+            self._write_initial_meta(run_id, run_dir, commands=commands, files=files, cwd=cwd, argv=argv)
+        except BaseException:
+            self.release_run(run_id)
+            raise
+        return run_id
+
+    def _write_initial_meta(
+        self,
+        run_id: str,
+        run_dir: pathlib.Path,
+        *,
+        commands: list[str] | None,
+        files: int | None,
+        cwd: str | None,
+        argv: list[str] | None,
+    ) -> None:
         (run_dir / "tools").mkdir(parents=True, exist_ok=True)
         meta = {
             "run_id": run_id,
@@ -158,7 +172,6 @@ class ArchiveStore:
             DIAGNOSTIC_PATHS_META_KEY: DIAGNOSTIC_PATHS_START_RELATIVE,
         }
         (run_dir / _META_FILENAME).write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
-        return run_id
 
     def write_tool_result(
         self,
@@ -210,7 +223,26 @@ class ArchiveStore:
         commands: list[str] | None = None,
         files: int | None = None,
     ) -> None:
-        """実行終了時に meta.json を更新する。"""
+        """実行終了時に meta.json を更新し、稼働中のロックを解放する。"""
+        try:
+            self._write_final_meta(run_id, exit_code=exit_code, commands=commands, files=files)
+        finally:
+            self.release_run(run_id)
+
+    def release_run(self, run_id: str) -> None:
+        """稼働中のロックを解放する。取得していないか解放済みなら何もしない。"""
+        lock = self._run_locks.pop(run_id, None)
+        if lock is not None:
+            lock.release(remove=True)
+
+    def _write_final_meta(
+        self,
+        run_id: str,
+        *,
+        exit_code: int,
+        commands: list[str] | None,
+        files: int | None,
+    ) -> None:
         meta_path = self._runs_dir / run_id / _META_FILENAME
         if not meta_path.exists():
             return
@@ -326,9 +358,9 @@ class ArchiveStore:
     def cleanup(self, policy: ArchivePolicy) -> list[str]:
         """自動クリーンアップを実施する。削除された run_id のリストを返す。
 
-        世代数 / 合計サイズ / 保存期間のいずれかを超過した時点で、古い順
-        （run_id昇順 = ULIDタイムスタンプ昇順）に削除する。実装本体は
-        `pyfltr.state.retention.cleanup_generational_directory`へ集約する
+        世代数 / 合計サイズ / 保存期間のいずれかを超過した時点で、基準時刻
+        （`finished_at`、無ければ`started_at`）の古い順に削除する。稼働中のrunは削除しない。
+        実装本体は`pyfltr.state.retention.cleanup_generational_directory`へ集約する
         （`ReplaceHistoryStore.cleanup`と同一アルゴリズムを共有するため）。
 
         各実行冒頭で同期的に呼び出すことを想定する。アーカイブ規模は通常
@@ -340,12 +372,23 @@ class ArchiveStore:
             max_size_bytes=policy.max_size_bytes,
             max_age_days=policy.max_age_days,
         )
-        return pyfltr.state.retention.cleanup_generational_directory(
+        removed = pyfltr.state.retention.cleanup_generational_directory(
             self._runs_dir,
             retention_policy,
             meta_filename=_META_FILENAME,
-            timestamp_key="started_at",
+            timestamp_key="finished_at",
+            fallback_timestamp_key="started_at",
+            is_active=lambda run_dir: pyfltr.file_lock.is_locked(_run_lock_path(run_dir)),
         )
+        for run_id in removed:
+            # 強制終了したrunが残したロックファイルを回収する。保持者がいないことはcleanupが確認済み。
+            _run_lock_path(self._runs_dir / run_id).unlink(missing_ok=True)
+        return removed
+
+
+def _run_lock_path(run_dir: pathlib.Path) -> pathlib.Path:
+    """runの稼働中ロックのパスを返す。runディレクトリより先に作成するため、同じ階層の別ファイルとする。"""
+    return run_dir.with_name(f"{run_dir.name}.lock")
 
 
 def restore_subproject_paths(

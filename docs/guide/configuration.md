@@ -198,7 +198,9 @@ pyfltr config list --all
 - pre-commit-skip : SKIP環境変数に渡すhook IDの手動指定リスト（`pre-commit-auto-skip`と併用可能、既定: 空）
 - prek-auto-skip : `.pre-commit-config.yaml`からpyfltr関連hookを自動検出してprekへ渡すSKIP環境変数に追加するか（既定: `true`）
 - prek-skip : prekへ渡すSKIP環境変数のhook ID手動指定リスト（`prek-auto-skip`と併用可能、既定: 空）
-- archive : 実行アーカイブの有効/無効（既定: `true`。`--no-archive`で実行単位に無効化）
+- archive : 実行アーカイブの有効/無効（既定: `true`。`--no-archive`で実行単位に無効化）。
+  続く`archive-max-runs`・`archive-max-size-mb`・`archive-max-age-days`の3軸による自動削除は、実行中のrunを削除しない。
+  完了したrunは完了時刻、完了記録の無いrun（強制終了したrunなど）は開始時刻の古い順に削除する
 - archive-max-runs : 保存する最大世代数（既定: 100。0以下で世代軸の自動削除を無効化）
 - archive-max-size-mb : アーカイブ全体の合計サイズ上限（既定: 1024 MB。0以下でサイズ軸の自動削除を無効化）
 - archive-max-age-days : 保存期間の上限（日数。既定: 30。0以下で期間軸の自動削除を無効化）

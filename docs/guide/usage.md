@@ -802,6 +802,31 @@ MCPを利用できず、エージェントがシェルコマンドを実行で�
     `--only-failed`は直前runのアーカイブから失敗ツール・失敗ファイルを自動抽出して再実行する。
     直前runが無い・失敗ツールが無い・対象との交差が空の場合は終了コード0で成功終了する。
 
+## 同時に起動した検証の待機 {#execution-slot}
+
+同じホスト・同じOSアカウントで複数のpyfltrを起動すると、ツールを実行する区間は1つずつ順に進む。
+この順番を管理する単位を実行枠と呼び、ツールを実行している間はその実行が実行枠を所有する。
+別のworktree・リポジトリ・MCPサーバー・commit hookから起動した実行も同じ実行枠を共有する。
+後から起動した実行は、対象ファイルの展開などを済ませてから先の実行の終了を待ち、待機の開始時に`execution-slot`の警告を出力する。
+待機時間はツールのtimeoutに含まない。
+
+- 待機をやめる場合は実行を中断する（端末ではCtrl+C、MCPでは要求の取り消し）。中断した実行はツールを実行せず、成功の結果を返さない
+- 検証コマンドから起動した子のpyfltr（pytestから起動するpyfltrなど）は、親の実行が所有する実行枠を引き継いで待たずに実行する
+- `PYFLTR_CACHE_DIR`で保存先を変えた実行どうしは待ち合わせない
+
+pyfltr以外の検証を同じ実行枠で順に実行する場合は、Python APIの`pyfltr.command.execution_slot.hold`を使う。
+
+```python
+import subprocess
+
+import pyfltr.command.execution_slot
+
+with pyfltr.command.execution_slot.hold(label="my-check"):
+    subprocess.run(["my-check", "--all"], check=True)
+```
+
+`with`の内側が実行枠を所有する区間になる。内側で起動した子プロセスは、区間を抜ける前に終了させる。区間を抜けると次の実行がツールを実行し始めるためである。
+
 ## pre-commit・prekとの統合 {#precommit-integration}
 
 pyfltrはpre-commit・prekのうち有効な方を内部で呼び出し、pre-commit・prekはpyfltrをフックとして呼び出す。
