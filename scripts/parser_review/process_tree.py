@@ -165,18 +165,23 @@ def run_tracked(
             root = None
         tracker = _Tracker(root) if root is not None else None
         deadline = started + timeout
-        while True:
-            if tracker is not None:
-                tracker.refresh()
-            if proc.poll() is not None:
-                break
-            if stop_event is not None and stop_event.is_set():
-                result.outcome = "interrupted"
-                break
-            if time.monotonic() >= deadline:
-                result.outcome = "timeout"
-                break
-            time.sleep(poll_interval)
+        raised: BaseException | None = None
+        try:
+            while True:
+                if tracker is not None:
+                    tracker.refresh()
+                if proc.poll() is not None:
+                    break
+                if stop_event is not None and stop_event.is_set():
+                    result.outcome = "interrupted"
+                    break
+                if time.monotonic() >= deadline:
+                    result.outcome = "timeout"
+                    break
+                time.sleep(poll_interval)
+        except BaseException as exc:  # Ctrl+Cなどで監視を抜ける場合も、子孫を停止してから伝播させる
+            result.outcome = "interrupted"
+            raised = exc
 
         if tracker is not None:
             tracker.refresh()
@@ -199,5 +204,7 @@ def run_tracked(
         result.returncode = proc.poll()
         if tracker is not None:
             result.descendants = list(tracker.info.values())
+        if raised is not None:
+            raise raised
     result.elapsed = round(time.monotonic() - started, 3)
     return result

@@ -1,3 +1,4 @@
+import collections.abc
 import contextlib
 import os
 import pathlib
@@ -174,35 +175,35 @@ def test_resolve_commandline_uses_env_path_without_mutation(tmp_path: pathlib.Pa
     assert pyfltr.command.process.resolve_commandline(original, {"PATH": str(tmp_path / "empty")}) == original
 
 
-def _spawn_parent_with_child(script: str) -> tuple[subprocess.Popen[str], int, int]:
-    """Pythonスクリプトをsubprocessとして起動し親pidと子pidを取得する。
+@contextlib.contextmanager
+def _registered_parent_with_child(script: str) -> collections.abc.Generator[tuple[subprocess.Popen[str], int, int], None, None]:
+    """Pythonスクリプトをsubprocessとして起動し、親pidと子pidを読んで`active_processes`へ登録する。
 
     スクリプトは最初の1行に自身と子のpidを空白区切りでprintする契約。
     Popenは`start_new_session=True`で起動する（本番と同じ条件）。
+    区間を抜ける時は登録を外し、停止されずに残ったプロセスグループを止めてから回収する。
     """
-    # pylint: disable=consider-using-with
-    # テスト対象の`active_processes`へ外から登録するため、`with`構文では
-    # スコープ外でprocを扱えない。各テストのfinallyでprocとstdoutを解放する。
-    proc = subprocess.Popen(
+    with subprocess.Popen(
         [sys.executable, "-u", "-c", script],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
         start_new_session=True,
-    )
-    try:
-        assert proc.stdout is not None
-        line = proc.stdout.readline().strip()
-        parent_pid_str, child_pid_str = line.split()
-    except BaseException:
-        # 起動直後の読み取りに失敗した場合、呼び出し側はprocを受け取れず解放できない。
-        # ここでプロセスとパイプの双方を解放してから送出し直す。
-        proc.kill()
-        if proc.stdout is not None:
-            proc.stdout.close()
-        proc.wait(timeout=2.0)
-        raise
-    return proc, int(parent_pid_str), int(child_pid_str)
+    ) as proc:
+        try:
+            assert proc.stdout is not None
+            parent_pid_str, child_pid_str = proc.stdout.readline().strip().split()
+            with pyfltr.command.process.active_processes_lock:
+                pyfltr.command.process.active_processes.append(proc)
+            yield proc, int(parent_pid_str), int(child_pid_str)
+        finally:
+            with pyfltr.command.process.active_processes_lock:
+                if proc in pyfltr.command.process.active_processes:
+                    pyfltr.command.process.active_processes.remove(proc)
+            # `start_new_session=True`でpgidはproc.pidと一致し、親の終了後も残る子をまとめて止められる。
+            # POSIX限定の経路（呼出元の試験はWindowsでskipする）。型チェッカーの誤検知は局所コメントで抑止する。
+            with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
+                os.killpg(proc.pid, 9)  # type: ignore[attr-defined,unused-ignore]  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore  # pylint: disable=no-member
 
 
 def _wait_gone(pids: list[int], *, timeout: float) -> list[int]:
@@ -257,10 +258,7 @@ def test_terminate_active_processes_kills_grandchild() -> None:
                 time.sleep(1)
         """
     )
-    proc, parent_pid, child_pid = _spawn_parent_with_child(script)
-    try:
-        with pyfltr.command.process.active_processes_lock:
-            pyfltr.command.process.active_processes.append(proc)
+    with _registered_parent_with_child(script) as (_proc, parent_pid, child_pid):
         assert psutil.pid_exists(parent_pid)
         assert psutil.pid_exists(child_pid)
 
@@ -268,21 +266,6 @@ def test_terminate_active_processes_kills_grandchild() -> None:
 
         remaining = _wait_gone([parent_pid, child_pid], timeout=3.0)
         assert remaining == [], f"停止できなかったpid: {remaining}"
-    finally:
-        with pyfltr.command.process.active_processes_lock:
-            if proc in pyfltr.command.process.active_processes:
-                pyfltr.command.process.active_processes.remove(proc)
-        if proc.poll() is None:
-            # POSIX限定パスのクリーンアップ。Windowsではskipifで到達しない。
-            # 型チェッカー（pyright / ty）のattr-defined誤検知は局所コメントで抑止する。
-            with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
-                os.killpg(os.getpgid(proc.pid), 9)  # type: ignore[attr-defined,unused-ignore]  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore  # pylint: disable=no-member
-        # Popen.wait()はパイプを閉じないため、stdoutを明示的に閉じる。
-        # 閉じないとGC時にFileIOが未クローズのままfinalizeされResourceWarningとなる。
-        # wait()がTimeoutExpiredを送出しても解放されるよう、wait()より前に置く。
-        if proc.stdout is not None:
-            proc.stdout.close()
-        proc.wait(timeout=2.0)
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX 前提の killpg 経路を検証する")
@@ -306,10 +289,7 @@ def test_terminate_active_processes_parent_exited_grandchild_remains() -> None:
             os._exit(0)
         """
     )
-    proc, _parent_pid, child_pid = _spawn_parent_with_child(script)
-    try:
-        with pyfltr.command.process.active_processes_lock:
-            pyfltr.command.process.active_processes.append(proc)
+    with _registered_parent_with_child(script) as (proc, _parent_pid, child_pid):
         # 親は速やかにexitする。孫（子）は生存継続。
         proc.wait(timeout=2.0)
         assert psutil.pid_exists(child_pid), "孫プロセスが消えている"
@@ -318,16 +298,6 @@ def test_terminate_active_processes_parent_exited_grandchild_remains() -> None:
 
         remaining = _wait_gone([child_pid], timeout=3.0)
         assert remaining == [], f"停止できなかったpid: {remaining}"
-    finally:
-        with pyfltr.command.process.active_processes_lock:
-            if proc in pyfltr.command.process.active_processes:
-                pyfltr.command.process.active_processes.remove(proc)
-        if psutil.pid_exists(child_pid):
-            with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
-                os.kill(child_pid, 9)
-        # Popen.wait()はパイプを閉じないため、stdoutを明示的に閉じる。
-        if proc.stdout is not None:
-            proc.stdout.close()
 
 
 def _make_env() -> dict[str, str]:
