@@ -15,7 +15,8 @@ import pytest
 
 from tests.integration import concurrent_runs_helper as helper
 
-_API_HOLDER_SCRIPT = """import pathlib
+_API_HOLDER_SCRIPT = """import os
+import pathlib
 import sys
 import time
 
@@ -23,6 +24,7 @@ import pyfltr.command.execution_slot
 
 log, release = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
 with pyfltr.command.execution_slot.hold(label="external-check"):
+    print(os.getpid(), flush=True)
     with log.open("a", encoding="utf-8") as f:
         f.write(f"x start {time.time()}\\n")
     deadline = time.monotonic() + 120
@@ -275,5 +277,6 @@ def test_api_holder_excludes_pyfltr_run(tmp_path: pathlib.Path) -> None:
             release.touch()
             assert holder.wait() == 0, holder.stderr
             assert run_b.wait() == 0, run_b.stderr
-    assert f"pid={holder.process.pid}" in run_b.stderr
+    # Windowsの仮想環境の`python.exe`は本体を子プロセスで起動するため、保持者が自ら報告したpidと比べる。
+    assert f"pid={holder.stdout.strip()}" in run_b.stderr
     _assert_after(log, "x", "b")

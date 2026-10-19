@@ -17,7 +17,7 @@ import sys
 if sys.platform == "win32":
     import msvcrt  # pylint: disable=import-error  # Windows専用の標準モジュールで、他のOSでは存在しない
 else:
-    import fcntl
+    import fcntl  # pylint: disable=import-error  # POSIX専用の標準モジュールで、Windowsでは存在しない
 
 
 def _lock(fd: int) -> None:

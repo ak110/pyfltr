@@ -15,14 +15,15 @@ import pytest
 
 import pyfltr.command.execution_slot
 
-_HOLDER_SCRIPT = """import pathlib
+_HOLDER_SCRIPT = """import os
+import pathlib
 import sys
 
 import pyfltr.command.execution_slot
 
 lock_dir = pathlib.Path(sys.argv[1])
 with pyfltr.command.execution_slot.hold(lock_dir=lock_dir, label="holder"):
-    print("held", flush=True)
+    print("held", os.getpid(), flush=True)
     sys.stdin.read()
 """
 
@@ -43,8 +44,12 @@ def _lock_dir(tmp_path: pathlib.Path) -> pathlib.Path:
 
 
 @contextlib.contextmanager
-def _holder(tmp_path: pathlib.Path, lock_dir: pathlib.Path) -> collections.abc.Generator[subprocess.Popen[str], None, None]:
-    """別プロセスで実行枠を保持し、保持を確認してから区間へ入る。区間を抜けると標準入力を閉じて解放させる。"""
+def _holder(tmp_path: pathlib.Path, lock_dir: pathlib.Path) -> collections.abc.Generator[int, None, None]:
+    """別プロセスで実行枠を保持し、保持を確認してから保持者のpidを渡す。区間を抜けると標準入力を閉じて解放させる。
+
+    Windowsの仮想環境の`python.exe`は本体のPythonを子プロセスとして起動する中継役のため、
+    `Popen.pid`は枠を保持するプロセスと一致しない。保持者が自ら報告したpidを使う。
+    """
     script = tmp_path / "holder.py"
     script.write_text(_HOLDER_SCRIPT, encoding="utf-8")
     with subprocess.Popen(
@@ -55,8 +60,9 @@ def _holder(tmp_path: pathlib.Path, lock_dir: pathlib.Path) -> collections.abc.G
     ) as process:
         assert process.stdout is not None
         try:
-            assert process.stdout.readline().strip() == "held"
-            yield process
+            status, pid = process.stdout.readline().split()
+            assert status == "held"
+            yield int(pid)
         finally:
             process.communicate(timeout=30)
     assert process.returncode == 0
@@ -117,7 +123,7 @@ def test_child_process_inherits_owner(tmp_path: pathlib.Path, lock_dir: pathlib.
 
 def test_unrelated_process_waits_and_abort_does_not_acquire(tmp_path: pathlib.Path, lock_dir: pathlib.Path) -> None:
     """祖先でない保持者がいると待機し、中断判定で取得せずに終わる。保持者の解放後は取得できる。"""
-    with _holder(tmp_path, lock_dir) as holder:
+    with _holder(tmp_path, lock_dir) as holder_pid:
         owners: list[pyfltr.command.execution_slot.SlotOwner | None] = []
         with (
             pytest.raises(pyfltr.command.execution_slot.WaitAborted),
@@ -126,11 +132,11 @@ def test_unrelated_process_waits_and_abort_does_not_acquire(tmp_path: pathlib.Pa
             pytest.fail("保持者がいる間は区間へ入らない")
         assert len(owners) == 1
         assert owners[0] is not None
-        assert owners[0].pid == holder.pid
+        assert owners[0].pid == holder_pid
         assert owners[0].label == "holder"
         current = pyfltr.command.execution_slot.read_owner(lock_dir)
         assert current is not None
-        assert current.pid == holder.pid
+        assert current.pid == holder_pid
     assert pyfltr.command.execution_slot.read_owner(lock_dir) is None
     with pyfltr.command.execution_slot.hold(lock_dir=lock_dir, should_abort=lambda: True):
         pass
