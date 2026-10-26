@@ -1762,8 +1762,9 @@ def test_parse_textlint_json_hint_for_sentence_length() -> None:
 
 
 def test_parse_textlint_json_hint_for_known_rules() -> None:
-    """textlint `max-ten` / `max-kanji-continuous-len` / `no-unmatched-pair` にもヒントが付く。"""
+    """案内があるtextlint規則にヒントが付く。"""
     for rule_id in (
+        "ja-technical-writing/max-comma",
         "ja-technical-writing/max-ten",
         "ja-technical-writing/max-kanji-continuous-len",
         "ja-technical-writing/no-unmatched-pair",
@@ -1778,6 +1779,33 @@ def test_parse_textlint_json_hint_for_known_rules() -> None:
         )
         errors = pyfltr.parsing.entry.parse_errors("textlint", output)
         assert errors[0].hint is not None, f"{rule_id} にヒントが付与されていない"
+
+
+def test_parse_textlint_json_hint_for_max_comma() -> None:
+    """max-commaの位置と同じ段落内での探し方を案内する。"""
+    output = json.dumps(
+        [
+            {
+                "filePath": "a.md",
+                "messages": [
+                    {
+                        "line": 1,
+                        "column": 2,
+                        "message": "Too many commas",
+                        "ruleId": "ja-technical-writing/max-comma",
+                        "severity": 2,
+                    }
+                ],
+            }
+        ]
+    )
+    errors = pyfltr.parsing.entry.parse_errors("textlint", output)
+    assert len(errors) == 1
+    assert (errors[0].line, errors[0].col) == (1, 2)
+    assert errors[0].hint is not None
+    assert "sentence-relative" in errors[0].hint
+    assert "preceding line" in errors[0].hint
+    assert "same paragraph" in errors[0].hint
 
 
 def test_parse_textlint_json_hint_for_no_unmatched_pair() -> None:

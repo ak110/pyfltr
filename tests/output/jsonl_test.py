@@ -1371,6 +1371,7 @@ def test_build_command_record_textlint_col_hint_only_when_diagnostics() -> None:
     col_hint = record_with_hints["hints"]["messages[].col"]
     assert "col" in col_hint and "end_col" in col_hint
     assert "ja-technical-writing/sentence-length" in record_with_hints["hints"]
+    assert "ja-technical-writing/max-comma" not in record_with_hints["hints"]
 
 
 def test_build_summary_record_includes_applied_fixes() -> None:

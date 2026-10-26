@@ -963,6 +963,13 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
             ),
         ),
         rule_hints={
+            # max-comma 4.0.0は文内の位置を段落内の位置として報告する。
+            # 修正版の公開と、既定presetで修正版が解決され位置が正しくなる実観測の両方を確認したら撤去する。
+            "ja-technical-writing/max-comma": (
+                "max-comma 4.0.0 reports sentence-relative offsets as paragraph-relative positions."
+                " From the second sentence, the location may point earlier, even to a preceding line."
+                " Find the sentence exceeding the comma limit in the same paragraph."
+            ),
             "ja-technical-writing/sentence-length": (
                 "textlint counts up to the period (。) as one sentence; bullet-line splits still count as one."
                 " Split with periods to shorten."
