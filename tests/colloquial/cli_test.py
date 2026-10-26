@@ -50,6 +50,35 @@ def test_no_detection_exits_zero(tmp_path: pathlib.Path) -> None:
     assert result.stdout == ""
 
 
+def test_natural_written_actions_exit_zero(tmp_path: pathlib.Path) -> None:
+    """字義どおりの動作を表す和語8種を公開CLIでも許容する。"""
+    target = tmp_path / "natural.md"
+    target.write_text(
+        "設定ファイルを作る。\n候補を一覧へ入れた。\n結果を画面に出す。\nカードを端末に差し込む。\n"
+        "一時ファイルを捨てた。\n結果をファイルへ書き出す。\n不要なファイルを消す。\n実行結果を見る。\n",
+        encoding="utf-8",
+    )
+    result = _run(target)
+    assert result.returncode == 0
+    assert not result.stdout
+    assert not result.stderr
+
+
+def test_informal_and_metaphorical_expressions_keep_cli_candidates(tmp_path: pathlib.Path) -> None:
+    """くだけた語調と比喩の検出語・候補を公開CLIで維持する。"""
+    target = tmp_path / "informal.md"
+    target.write_text("めっちゃ速い。\n処理をやる。\nジョブが走る。\n入力を弾く。\n", encoding="utf-8")
+    result = _run(target)
+    assert result.returncode == 1
+    lines = result.stdout.splitlines()
+    assert len(lines) == 4
+    for line, (match, replacement) in zip(
+        lines, [("めっちゃ", "程度を具体化する"), ("やる", "実施する"), ("走る", "実行"), ("弾く", "拒否する")], strict=True
+    ):
+        assert f"[{match}] -> [{replacement}]" in line
+    assert not result.stderr
+
+
 def test_detection_exits_one_with_expected_format(tmp_path: pathlib.Path) -> None:
     """検出ありのときexit 1でstdoutに`path:line:col: [match] excerpt`形式の行が出る。"""
     deny_line, _ = _deny_sample()

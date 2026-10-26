@@ -1,5 +1,13 @@
 rules:
   preset-ja-technical-writing:
+    # 読点を含む自然な列挙や条件の並記を保つため上限を緩和する
+    max-ten:
+      max: 5
+    # 「操作を実行する」や名詞を並べた「〜を行う」を自然な書き言葉として保つ
+    ja-no-redundant-expression:
+      dictOptions:
+        dict6:
+          disabled: true
     # ラベル型見出し ("ポイント:", "例:" など) が多用されるため、文末句点の強制を無効化する
     ja-no-mixed-period: false
     # 技術文書における自然な助詞連結 (「〜かどうかを検討するか」など) が頻出するため無効化する

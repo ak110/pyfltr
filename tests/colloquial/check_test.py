@@ -674,6 +674,41 @@ class TestPotentialFormPolicy:
         assert not undetected, f"自己マッチサンプルが検出されないdenylistエントリー: {undetected}"
 
 
+class TestNaturalWrittenLanguage:
+    """明確な動作を表す和語を保ち、くだけた語調や比喩の検出を維持する。"""
+
+    @pytest.mark.parametrize(
+        "sentence",
+        [
+            "設定ファイルを作る。",
+            "候補を一覧へ入れた。",
+            "結果を画面に出す。",
+            "カードを端末に差し込む。",
+            "一時ファイルを捨てた。",
+            "結果をファイルへ書き出す。",
+            "不要なファイルを消す。",
+            "実行結果を見る。",
+        ],
+    )
+    def test_clear_actions_are_allowed_without_masking(self, deny_patterns: _PatternList, sentence: str) -> None:
+        assert not pyfltr.colloquial.check.scan_text(sentence, deny_patterns, [])
+
+    @pytest.mark.parametrize(
+        ("sentence", "match", "replacement"),
+        [
+            ("めっちゃ速い。", "めっちゃ", "程度を具体化する"),
+            ("処理をやる。", "やる", "実施する"),
+            ("ジョブが走る。", "走る", "実行"),
+            ("入力を弾く。", "弾く", "拒否する"),
+        ],
+    )
+    def test_informal_and_metaphorical_expressions_keep_candidates(
+        self, deny_patterns: _PatternList, allow_patterns: _PatternList, sentence: str, match: str, replacement: str
+    ) -> None:
+        hits = pyfltr.colloquial.check.scan_text(sentence, deny_patterns, allow_patterns)
+        assert [(hit[2], hit[4]) for hit in hits] == [(match, replacement)]
+
+
 class TestBlockquoteSkipIntegration:
     """`scan_text` / `first_hit` での引用行スキップ統合テスト。"""
 
