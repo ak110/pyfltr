@@ -2081,7 +2081,7 @@ targets = ["*.py"]
 [tool.pyfltr.custom-commands.colloquial]
 type = "linter"
 path = "uv"
-args = ["run", "--script", "~/dotfiles/agent-toolkit/skills/writing-standards/scripts/check_colloquial.py"]
+args = ["run", "--script", "~/dotfiles/agent-basics/skills/writing-standards/scripts/check_colloquial.py"]
 targets = ["*"]
 severity = "warning"
 hints = [
@@ -2106,7 +2106,7 @@ hints = [
         assert config["colloquial-args"] == [
             "run",
             "--script",
-            "~/dotfiles/agent-toolkit/skills/writing-standards/scripts/check_colloquial.py",
+            "~/dotfiles/agent-basics/skills/writing-standards/scripts/check_colloquial.py",
         ]
 
     def test_global_unknown_key_warns_no_error(self, tmp_path: pathlib.Path) -> None:

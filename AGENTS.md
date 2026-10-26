@@ -6,6 +6,12 @@
 組み込みのformatter・linter・testerとプロジェクト固有のカスタムチェックを同じ手順で実行できる。
 JSON Lines出力（`--output-format=jsonl`）とMCPサーバー（`pyfltr mcp`）を利用できる。
 
+## 共通品質基準
+
+設計・コード・テスト・文書の作成と修正では`agent-basics:writing-standards`を起動し、変更対象に該当するreferencesを読む。
+レビューと指摘の採否判断では`agent-basics:review-standards`を起動する。
+導入方法は[開発ガイド](docs/development/development.md)を参照する。本書の固有規約も併用する。
+
 ## 開発手順
 
 ### 開発コマンド

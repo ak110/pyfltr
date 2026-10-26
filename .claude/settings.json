@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "ak110-dotfiles": {
+      "source": {
+        "source": "github",
+        "repo": "ak110/dotfiles"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "agent-basics@ak110-dotfiles": true
+  }
+}
