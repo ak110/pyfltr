@@ -5,10 +5,56 @@ import threading
 import pytest
 
 import pyfltr.command.core_
+import pyfltr.command.execution_slot
 import pyfltr.command.stage_runner
 import pyfltr.config.config
 import pyfltr.diagnostics
 from tests.conftest import StageExecutorControl, make_command_result, make_execution_context
+
+
+def test_sequential_stages_yield_and_resume(tmp_path: pathlib.Path) -> None:
+    """formatterの終了境界で待機者へ譲り、残りのformatterを再開する。"""
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.pyfltr.custom-commands.first]\ntype="formatter"\npath="first"\ntargets="*.txt"\n'
+        '[tool.pyfltr.custom-commands.second]\ntype="formatter"\npath="second"\ntargets="*.txt"\n',
+        encoding="utf-8",
+    )
+    target = tmp_path / "input.txt"
+    target.write_text("x", encoding="utf-8")
+    config = pyfltr.config.config.load_config(config_dir=tmp_path)
+    waiting = threading.Event()
+    events: list[str] = []
+
+    def _other() -> None:
+        def _on_wait(owner: pyfltr.command.execution_slot.SlotOwner | None) -> None:
+            del owner
+            waiting.set()
+
+        with pyfltr.command.execution_slot.hold(on_wait=_on_wait):
+            events.append("other")
+
+    thread = threading.Thread(target=_other)
+
+    def _execute(command: str, fix_stage: bool) -> pyfltr.command.core_.CommandResult:
+        del fix_stage
+        events.append(command)
+        if command == "first":
+            thread.start()
+            assert waiting.wait(30)
+        return make_command_result(command, returncode=0)
+
+    try:
+        results = pyfltr.command.stage_runner.run_stages(
+            ["first", "second"],
+            make_execution_context(config, [target], start_cwd=tmp_path).base,
+            _execute,
+        )
+    finally:
+        if thread.ident is not None:
+            thread.join(30)
+    assert not thread.is_alive()
+    assert events == ["first", "other", "second"]
+    assert [result.command for result in results] == ["first", "second"]
 
 
 def test_make_skipped_result_returns_command_result():

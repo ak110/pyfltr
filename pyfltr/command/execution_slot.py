@@ -4,7 +4,8 @@
 共有の一時領域・inotify上限・CPUなどの資源は起動ごとの並列設定（`jobs`など）では調停できず、
 別worktree・別リポジトリ・MCPから起動した検証の並列数がホスト上で積み上がるためである。
 
-pyfltrは`pyfltr.command.stage_runner.run_stages`の全区間を`hold`の内側で実行する。
+pyfltrは`pyfltr.command.stage_runner.run_stages`を`hold`の内側で実行し、
+起動済みのツールを回収した区切りで待機者へ譲る。
 CLI・TUI・MCPの全実行経路とcommit hookからの起動が同じ枠へ参加する。
 pyfltr以外の検証を起動する呼出元（他のツールのスクリプトなど）も、同じ`hold`で枠を共有できる::
 
@@ -37,6 +38,7 @@ import datetime as dt
 import json
 import os
 import pathlib
+import tempfile
 import threading
 import time
 import typing
@@ -48,6 +50,7 @@ import pyfltr.user_cache
 
 _LOCK_FILENAME = "execution.lock"
 _OWNER_FILENAME = "execution.owner.json"
+_QUEUE_FILENAME = "execution.queue.lock"
 _POLL_INTERVAL = 0.2
 """待機中の再試行間隔（秒）。解放から次の取得までの遅れと、待機中の負荷の釣り合いで選ぶ。"""
 _CREATE_TIME_TOLERANCE = 1.0
@@ -69,6 +72,22 @@ class SlotOwner:
 
 class WaitAborted(Exception):
     """`should_abort`が真を返したため、実行枠を取得せずに待機を終えた。"""
+
+
+@dataclasses.dataclass
+class _Lease:
+    lock: pyfltr.file_lock.FileLock
+    owner_path: pathlib.Path
+    label: str | None
+    should_abort: collections.abc.Callable[[], bool] | None
+    acquired: bool = False
+
+    def release(self) -> None:
+        if self.acquired:
+            self.acquired = False
+            with contextlib.suppress(OSError):
+                self.owner_path.write_text("", encoding="utf-8")
+            self.lock.release()
 
 
 def default_lock_dir() -> pathlib.Path:
@@ -107,17 +126,83 @@ def hold(
     directory = lock_dir if lock_dir is not None else default_lock_dir()
     lock = pyfltr.file_lock.FileLock(directory / _LOCK_FILENAME)
     owner_path = directory / _OWNER_FILENAME
-    acquired = _acquire(lock, owner_path, label=label, should_abort=should_abort, on_wait=on_wait)
+    lease = _Lease(lock, owner_path, label, should_abort)
+    lease.acquired = _acquire(lock, owner_path, label=label, should_abort=should_abort, on_wait=on_wait)
     _local.depth = 1
+    _local.lease = lease
     try:
         yield
     finally:
         _local.depth = 0
-        if acquired:
-            # 後続の取得者が記録を書く前に、子孫が古い記録で継承を判定しないよう、解放より先に空にする。
-            with contextlib.suppress(OSError):
-                owner_path.write_text("", encoding="utf-8")
-            lock.release()
+        _local.lease = None
+        lease.release()
+
+
+def yield_requested() -> bool:
+    """最外側の保持者に待機者がいるか返す。外部hold内の入れ子と祖先継承中は譲らない。"""
+    lease: _Lease | None = getattr(_local, "lease", None)
+    if getattr(_local, "depth", 0) != 1 or lease is None or not lease.acquired:
+        return False
+    with _queue_guard(lease.owner_path.parent):
+        return bool(_waiters(lease.owner_path.parent))
+
+
+def yield_to_waiters() -> None:
+    """子プロセスを回収済みの区切りで、待機者の後ろへ再登録して実行枠を取り直す。"""
+    if not yield_requested():
+        return
+    lease: _Lease = _local.lease
+    # 解放より先に列末へ登録し、先行待機者より前へ再取得する競合を防ぐ。
+    with _request(lease.owner_path.parent) as request:
+        lease.release()
+        lease.acquired = _acquire(
+            lease.lock,
+            lease.owner_path,
+            label=lease.label,
+            should_abort=lease.should_abort,
+            on_wait=None,
+            request=request,
+        )
+
+
+@contextlib.contextmanager
+def _queue_guard(directory: pathlib.Path) -> collections.abc.Generator[None, None, None]:
+    guard = pyfltr.file_lock.FileLock(directory / _QUEUE_FILENAME)
+    while not guard.try_acquire():
+        time.sleep(_POLL_INTERVAL)
+    try:
+        yield
+    finally:
+        guard.release()
+
+
+def _waiters(directory: pathlib.Path) -> list[pathlib.Path]:
+    """調停ロックの内側で、生存する要求を登録順に返し、異常終了した要求を回収する。"""
+    active = []
+    for path in sorted(directory.glob("execution.wait-*")):
+        if pyfltr.file_lock.is_locked(path):
+            active.append(path)
+        else:
+            path.unlink(missing_ok=True)
+    return active
+
+
+@contextlib.contextmanager
+def _request(directory: pathlib.Path) -> collections.abc.Generator[pathlib.Path, None, None]:
+    with _queue_guard(directory):
+        waiters = _waiters(directory)
+        # 連番の割当と要求ロック取得を同じ区間で行い、他の走査による未登録要求の回収を防ぐ。
+        sequence = int(waiters[-1].name.split("-")[1]) + 1 if waiters else 0
+        with tempfile.NamedTemporaryFile(prefix=f"execution.wait-{sequence:020d}-", dir=directory, delete=False) as file:
+            path = pathlib.Path(file.name)
+        request_lock = pyfltr.file_lock.FileLock(path)
+        if not request_lock.try_acquire():
+            raise RuntimeError(f"実行枠の要求を登録できません: {path}")
+    try:
+        yield path
+    finally:
+        with _queue_guard(directory):
+            request_lock.release(remove=True)
 
 
 def read_owner(lock_dir: pathlib.Path | None = None) -> SlotOwner | None:
@@ -133,17 +218,23 @@ def _acquire(
     label: str | None,
     should_abort: collections.abc.Callable[[], bool] | None,
     on_wait: collections.abc.Callable[[SlotOwner | None], None] | None,
+    request: pathlib.Path | None = None,
 ) -> bool:
     """実行枠を取得して`True`を返す。祖先の所有を継承した場合は取得せず`False`を返す。"""
+    if request is None:
+        with _request(owner_path.parent) as registered:
+            return _acquire(lock, owner_path, label=label, should_abort=should_abort, on_wait=on_wait, request=registered)
     notified = False
     while True:
-        if lock.try_acquire():
-            try:
-                _write_owner(owner_path, label)
-            except BaseException:
-                lock.release()
-                raise
-            return True
+        with _queue_guard(owner_path.parent):
+            waiters = _waiters(owner_path.parent)
+            if waiters and waiters[0] == request and lock.try_acquire():
+                try:
+                    _write_owner(owner_path, label)
+                except BaseException:
+                    lock.release()
+                    raise
+                return True
         owner = _read_owner(owner_path)
         if owner is not None and _is_ancestor(owner):
             return False

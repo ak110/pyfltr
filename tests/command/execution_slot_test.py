@@ -156,3 +156,37 @@ def test_release_after_exception(lock_dir: pathlib.Path) -> None:
     thread.start()
     thread.join(timeout=30)
     assert entered == [True]
+
+
+def test_yield_preserves_waiting_order(lock_dir: pathlib.Path) -> None:
+    """複数の待機者の登録順を保ち、譲った保持者は最後に再開する。"""
+    events: list[str] = []
+    threads = []
+
+    def _other(label: str, waiting: threading.Event) -> None:
+        def _on_wait(owner: pyfltr.command.execution_slot.SlotOwner | None) -> None:
+            del owner
+            waiting.set()
+
+        with pyfltr.command.execution_slot.hold(lock_dir=lock_dir, on_wait=_on_wait):
+            events.append(label)
+
+    with pyfltr.command.execution_slot.hold(lock_dir=lock_dir):
+        for label in ("first", "second"):
+            waiting = threading.Event()
+            thread = threading.Thread(target=_other, args=(label, waiting))
+            threads.append(thread)
+            thread.start()
+            assert waiting.wait(30)
+        with pyfltr.command.execution_slot.hold(lock_dir=lock_dir):
+            assert not pyfltr.command.execution_slot.yield_requested()
+            pyfltr.command.execution_slot.yield_to_waiters()
+            assert not events
+        assert pyfltr.command.execution_slot.yield_requested()
+        pyfltr.command.execution_slot.yield_to_waiters()
+        events.append("resumed")
+    for thread in threads:
+        thread.join(30)
+        assert not thread.is_alive()
+    assert events == ["first", "second", "resumed"]
+    assert not list(lock_dir.glob("execution.wait-*"))

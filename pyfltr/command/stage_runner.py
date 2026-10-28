@@ -89,7 +89,7 @@ def run_stages(
     1件を最終結果とし、`collected`・`on_result`・`archive`へ同じ結果を渡す。
     fail-fastで停止する場合もfix段の失敗結果を記録し、同じツールのスキップ結果を重ねない。
 
-    全段を検証の実行枠（`pyfltr.command.execution_slot.hold`）の内側で実行し、子プロセスの回収後に枠を解放する。
+    検証の実行枠を保持し、待機者がいれば起動済みのツールと子プロセスの回収後に譲る。
     別の検証が枠を保持中なら警告を出力して待つ。TUIの中断（`is_interrupted`）で待機を止めた場合は全コマンドをスキップ扱いにする。
     """
     hooks = callbacks if callbacks is not None else StageCallbacks()
@@ -134,6 +134,9 @@ def run_stages(
         for command in list(fix_failures):
             record(make_skipped_result(command, config, reason=""), "skipped")
 
+    def checkpoint() -> None:
+        pyfltr.command.execution_slot.yield_to_waiters()
+
     def execute_stages() -> None:
         for command in fixers:
             result = execute(command, True)
@@ -152,20 +155,40 @@ def run_stages(
                 flush_fix_failures()
                 return
 
+            checkpoint()
+
         for index, command in enumerate(formatters):
             result = execute(command, False)
             record(result, "formatter")
             if hooks.is_interrupted() or (fail_fast and result.failed):
                 skip([*formatters[index + 1 :], *parallel])
                 return
+            if index + 1 < len(formatters) or parallel:
+                checkpoint()
 
         if parallel:
             aborted = False
             aborted_commands: set[str] = set()
+            pending = list(parallel)
             with concurrent.futures.ThreadPoolExecutor(max_workers=config["jobs"]) as executor:
-                future_to_command = {executor.submit(execute, command, False): command for command in parallel}
-                for future in concurrent.futures.as_completed(future_to_command):
-                    command = future_to_command[future]
+                future_to_command: dict[concurrent.futures.Future, str] = {}
+                while pending or future_to_command:
+                    while (
+                        pending
+                        and len(future_to_command) < config["jobs"]
+                        and not aborted
+                        and not hooks.is_interrupted()
+                        and (not future_to_command or not pyfltr.command.execution_slot.yield_requested())
+                    ):
+                        command = pending.pop(0)
+                        future_to_command[executor.submit(execute, command, False)] = command
+                    if not future_to_command:
+                        if aborted or hooks.is_interrupted():
+                            aborted_commands.update(pending)
+                            break
+                        continue
+                    future = next(concurrent.futures.as_completed(future_to_command))
+                    command = future_to_command.pop(future)
                     try:
                         result = future.result()
                     except concurrent.futures.CancelledError:
@@ -178,6 +201,9 @@ def run_stages(
                         pyfltr.command.process.terminate_active_processes()
                     if hooks.is_interrupted():
                         cancel_pending_futures(future_to_command, aborted_commands)
+                    if pending and not future_to_command and not aborted and not hooks.is_interrupted():
+                        # 再取得後は最低1件を開始し、互いに実行前の譲渡だけを繰り返す状態を防ぐ。
+                        checkpoint()
             if aborted_commands:
                 skip(list(aborted_commands))
         flush_fix_failures()
@@ -192,7 +218,9 @@ def run_stages(
                 raise
     except pyfltr.command.execution_slot.WaitAborted:
         # TUIのCtrl+Cで待機を中断した。未実行の全コマンドを中断扱いにし、成功の結果を返さない。
-        skip([*formatters, *parallel])
+        completed = {result.command for result in collected}
+        skip([command for command in [*formatters, *parallel] if command not in completed])
+        flush_fix_failures()
     return collected
 
 

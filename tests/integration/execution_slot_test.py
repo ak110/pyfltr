@@ -280,3 +280,45 @@ def test_api_holder_excludes_pyfltr_run(tmp_path: pathlib.Path) -> None:
     # Windowsの仮想環境の`python.exe`は本体を子プロセスで起動するため、保持者が自ら報告したpidと比べる。
     assert f"pid={holder.stdout.strip()}" in run_b.stderr
     _assert_after(log, "x", "b")
+
+
+@pytest.mark.timeout(240)
+@pytest.mark.parametrize("jobs", [1, 2])
+def test_cli_yields_before_remaining_tools(tmp_path: pathlib.Path, jobs: int) -> None:
+    """待機者が現れたら起動済みツールを回収して譲り、残りを省略せず再開する。"""
+    log = tmp_path / "intervals.log"
+    release = tmp_path / "release-a"
+    extra = {
+        f"probe-{index}": {
+            "type": "tester",
+            "path": sys.executable,
+            "args": [str(tmp_path / "probe.py"), str(log), f"a{index}", str(release), "0"],
+            "targets": "*.txt",
+            "pass-filenames": False,
+        }
+        for index in range(4)
+    }
+    project_a = helper.make_project(tmp_path, "a", log=log, release=None, extra_config={"jobs": jobs}, extra_commands=extra)
+    project_b = helper.make_project(tmp_path, "b", log=log, release=None)
+    with helper.start(helper.pyfltr_argv("run", commands=",".join(extra)), project_a) as run_a:
+        helper.wait_for(
+            lambda: len(helper.intervals(log)) == jobs,
+            expected="jobs件のツールが開始する",
+            observed=lambda: helper.describe(log, run_a),
+        )
+        initial = set(helper.intervals(log))
+        with helper.start(helper.pyfltr_argv("run", output_format="text"), project_b) as run_b:
+            helper.wait_for(
+                lambda: helper.waiting_notified(run_b),
+                expected="後発が待機を通知する",
+                observed=lambda: helper.describe(log, run_a, run_b),
+            )
+            release.touch()
+            assert run_b.wait() == 0, run_b.stderr
+            assert run_a.wait() == 0, run_a.stderr
+    spans = helper.intervals(log)
+    assert set(spans) == {"a0", "a1", "a2", "a3", "b"}
+    for label in initial:
+        _assert_after(log, label, "b")
+    for label in set(spans) - initial - {"b"}:
+        _assert_after(log, "b", label)
