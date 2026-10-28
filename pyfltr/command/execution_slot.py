@@ -197,7 +197,10 @@ def _request(directory: pathlib.Path) -> collections.abc.Generator[pathlib.Path,
             path = pathlib.Path(file.name)
         request_lock = pyfltr.file_lock.FileLock(path)
         if not request_lock.try_acquire():
-            raise RuntimeError(f"実行枠の要求を登録できません: {path}")
+            raise RuntimeError(
+                f"実行枠の要求ファイルをロックできません: {path}。"
+                "保存先のアクセス権とファイルロックへの対応を確認して再実行してください。"
+            )
     try:
         yield path
     finally:
