@@ -212,7 +212,16 @@ def _prepare_execution_params(
     if not args.no_exclude:
         tool_excludes: list[str] = pyfltr.config.model.command_setting(config.values, command, "exclude", [])
         if tool_excludes:
-            targets = [t for t in targets if not pyfltr.command.targets.matches_exclude_patterns(t, tool_excludes)]
+            start_for_exclude = start_cwd if start_cwd is not None else pathlib.Path.cwd()
+            targets = [
+                t
+                for t in targets
+                if not pyfltr.command.targets.matches_exclude_patterns(
+                    t,
+                    tool_excludes,
+                    base_dir=pyfltr.command.targets.exclude_base_dir(t, targets=args.targets, start_cwd=start_for_exclude),
+                )
+            ]
 
     # `allows_external_paths=False`のツールは外部パスを除外して警告発行する。
     # `--allow-external-paths`指定時は分類にかかわらず除外と警告を行わない。

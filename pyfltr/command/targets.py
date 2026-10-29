@@ -90,10 +90,14 @@ def expand_all_files(
     directly_specified: set[pathlib.Path] = set()
     expanded: list[pathlib.Path] = []
     respect_gitignore = bool(config["respect-gitignore"])
-    exclude_matchers = {key: _make_exclude_matcher(tuple(config[key])) for key in ("exclude", "extend-exclude")}
+    exclude_matchers: dict[tuple[str, pathlib.Path], typing.Callable[[pathlib.Path], str | None]] = {}
 
-    def _excluded_for_run(path: pathlib.Path) -> tuple[str, str] | None:
-        for key, matcher in exclude_matchers.items():
+    def _excluded_for_run(path: pathlib.Path, base_dir: pathlib.Path) -> tuple[str, str] | None:
+        for key in ("exclude", "extend-exclude"):
+            cache_key = (key, base_dir)
+            if cache_key not in exclude_matchers:
+                exclude_matchers[cache_key] = _make_exclude_matcher(tuple(config[key]), base_dir=base_dir)
+            matcher = exclude_matchers[cache_key]
             matched = matcher(path)
             if matched is not None:
                 return (key, matched)
@@ -108,12 +112,12 @@ def expand_all_files(
             abs_path = (cwd_base / path) if not path.is_absolute() else path
         return any(_is_subpath(abs_path, sub) for sub in excluded_real)
 
-    def _expand_target(target: pathlib.Path, *, is_direct: bool) -> None:
+    def _expand_target(target: pathlib.Path, *, is_direct: bool, base_dir: pathlib.Path) -> None:
         try:
             filesystem_target = target if target.is_absolute() else cwd_base / target
             if _is_in_excluded_subdir(target):
                 return
-            match = _excluded_for_run(target)
+            match = _excluded_for_run(target, base_dir)
             if match is not None:
                 if is_direct:
                     key, pattern = match
@@ -136,7 +140,7 @@ def expand_all_files(
                 if respect_gitignore and filesystem_target.is_symlink() and _is_ignored_single_path(target, cwd=cwd_base):
                     return
                 for child in filesystem_target.iterdir():
-                    _expand_target(target / child.name, is_direct=False)
+                    _expand_target(target / child.name, is_direct=False, base_dir=base_dir)
             else:
                 expanded.append(target)
                 if is_direct:
@@ -152,6 +156,7 @@ def expand_all_files(
             )
 
     for target in targets:
+        base_dir = exclude_base_dir(target, targets=targets, start_cwd=cwd_base)
         # 絶対パスの場合は起点 cwd 基準の相対パスに変換
         if target.is_absolute():
             with contextlib.suppress(ValueError):
@@ -173,7 +178,7 @@ def expand_all_files(
             pyfltr.warnings_.add_filtered_direct_file(normalized_target, reason="missing")
             continue
         is_direct = not check_path.is_dir()
-        _expand_target(target, is_direct=is_direct)
+        _expand_target(target, is_direct=is_direct, base_dir=base_dir)
 
     # .gitignoreフィルタリング
     if respect_gitignore:
@@ -573,22 +578,25 @@ def emit_external_path_warning(command: str, normalized_target: str) -> None:
     pyfltr.warnings_.add_filtered_direct_file(normalized_target, reason="external")
 
 
-def matches_exclude_patterns(path: pathlib.Path, patterns: list[str]) -> str | None:
-    """パスが除外パターンのいずれかに一致した場合、最初に一致したパターン文字列を返す。"""
-    for glob in patterns:
-        if path.match(glob):
-            return glob
-    # 親ディレクトリに一致しても可
-    part = path.parent
-    for _ in range(len(path.parts) - 1):
-        for glob in patterns:
-            if part.match(glob):
-                return glob
-        part = part.parent
-    return None
+def exclude_base_dir(path: pathlib.Path, *, targets: list[pathlib.Path], start_cwd: pathlib.Path) -> pathlib.Path:
+    """指定引数と外部パスの定義から除外照合の基準ディレクトリを選ぶ。
+
+    外部パスでは指定引数自身の名前から照合する。重なる指定は最も具体的な引数を採用し、
+    ディレクトリ走査で除外されたファイルも直接指定した場合はそのファイル名で判定する。
+    指定引数を持たない内部の実行コンテキストでは、外部ファイルを直接指定と同様に扱う。
+    """
+    if not pyfltr.paths.is_external_path(path, start_cwd=start_cwd):
+        return start_cwd
+    bases = [target.parent for target in targets if target.is_absolute() and path.is_relative_to(target)]
+    return max(bases, key=lambda base: len(base.parts), default=path.parent)
 
 
-def _make_exclude_matcher(patterns: tuple[str, ...]) -> typing.Callable[[pathlib.Path], str | None]:
+def matches_exclude_patterns(path: pathlib.Path, patterns: list[str], *, base_dir: pathlib.Path) -> str | None:
+    """基準からの相対パスとその親で最初に一致した除外パターンを返す。"""
+    return _make_exclude_matcher(tuple(patterns), base_dir=base_dir)(path)
+
+
+def _make_exclude_matcher(patterns: tuple[str, ...], *, base_dir: pathlib.Path) -> typing.Callable[[pathlib.Path], str | None]:
     """同一走査内で親階層の除外照合結果を再利用するmatcherを返す。"""
 
     @functools.cache
@@ -601,13 +609,17 @@ def _make_exclude_matcher(patterns: tuple[str, ...]) -> typing.Callable[[pathlib
             return None
         return _match(parent)
 
-    return _match
+    def _match_from_base(path: pathlib.Path) -> str | None:
+        relative = pathlib.Path(os.path.relpath(path, base_dir)) if path.is_absolute() else path
+        return _match(relative)
+
+    return _match_from_base
 
 
 def excluded(path: pathlib.Path, config: pyfltr.config.model.Config) -> tuple[str, str] | None:
     """無視パターンチェック。一致した場合は（設定キー名, 一致パターン）を、無一致の場合はNoneを返す。"""
     for key in ("exclude", "extend-exclude"):
-        matched = matches_exclude_patterns(path, config[key])
+        matched = matches_exclude_patterns(path, config[key], base_dir=pathlib.Path("."))
         if matched is not None:
             return (key, matched)
     return None

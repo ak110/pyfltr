@@ -190,6 +190,7 @@ pyfltr config list --all
 - retry-on-oom : LinuxのOOM killer起因でツールが強制終了された場合に自動リトライするか（既定: `true`。後述）
 - retry-max-attempts : OOM検知時の最大リトライ回数（既定: `1`。`0`でリトライ無効。後述）
 - exclude : 除外するファイル名/ディレクトリ名パターン（既定値あり。ロックファイル・minify済みファイル・source mapも含む）
+  外部パスでは指定名と配下だけに適用（[詳細](usage.md#external-paths)）
 - extend-exclude : 追加で除外するファイル名/ディレクトリ名パターン（既定は空）
 - exclude-fence-under : Markdownの指定H2見出し配下でフェンス内側行を事前チェックから除く（既定は空。[CLIコマンド](usage.md#exclude-fence-under)を参照）
 - respect-gitignore : `.gitignore`に記載されたファイルを除外するか否か（既定: `true`）。

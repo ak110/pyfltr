@@ -456,6 +456,12 @@ pyfltr generate-shell-completion powershell | Out-String | Invoke-Expression
 ### 外部パス指定時の挙動 {#external-paths}
 
 起点cwd（`--work-dir`適用後の作業ディレクトリ）配下にない絶対パスを「外部パス」と呼ぶ。
+`exclude`・`extend-exclude`・`{command}-exclude`のパターンは、外部ファイルの直接指定ではファイル名だけに適用する。
+外部ディレクトリの指定では、そのディレクトリ名と配下の相対パスに適用する。
+指定引数より上のディレクトリ名は除外の判定に含めないため、`.cache`配下の外部パスも指定できる。
+指定した名前や配下の`.venv`・`*.min.js`などに一致する除外は適用される。
+起点cwd配下のパスと、`..`を含む相対パスには、従来どおり起点cwdからの相対パスにパターンを適用する。
+
 ツールの性質に応じて以下の3分類で扱う。
 
 - `--config`系の明示注入: `markdownlint` ・ `textlint` ・ `bandit`
