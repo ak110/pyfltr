@@ -256,8 +256,8 @@ MCPクライアントがstdinを閉じた時点でサーバーが終了する。
 | --- | --- | --- |
 | `list_runs` | `pyfltr list-runs` | run一覧を新しい順で返す。`limit`で件数制御（既定20件） |
 | `show_run` | `pyfltr show-run <run_id>` | 指定runのmetaとツール別サマリを返す。前方一致・`latest`エイリアス可 |
-| `show_run_diagnostics` | `pyfltr show-run <run_id> --commands=<name>` | 指定runのコマンドmeta情報とdiagnostics全件を返す（複数指定可）。チェック対象ファイルの引数列は含めない |
-| `show_run_output` | `pyfltr show-run <run_id> --commands=<name> --output` | 指定runのoutput.log全文を返す（複数指定可） |
+| `show_run_diagnostics` | `pyfltr show-run <run_id> --commands=<name>` | 指定runのコマンドmeta情報とdiagnostics全件を返す（複数指定可）。チェック対象ファイルの引数列は含めない。`offset`・`limit`で指摘の範囲を指定して分割取得できる |
+| `show_run_output` | `pyfltr show-run <run_id> --commands=<name> --output` | 指定runのoutput.log全文を返す（複数指定可）。`offset`・`limit`で行範囲を指定して分割取得できる |
 | `run` | `pyfltr run` / `fast` / `ci` | lint/format/testを実行しrun_id・失敗ツール名・retry_commands・警告（対処を含む）・次の操作の案内等を返す。`mode`で実行モードを選ぶ |
 | `grep` | `pyfltr grep` | ファイル横断の正規表現検索（pyfltr exclude/.gitignore尊重） |
 | `replace` | `pyfltr replace` | 横断置換。`dry_run`の既定値は`True`（CLI既定の`False`と異なりLLM暴発防止） |
@@ -265,6 +265,9 @@ MCPクライアントがstdinを閉じた時点でサーバーが終了する。
 | `replace_history` | `pyfltr replace --list-history` / `--show-history <ID>` | replace履歴を一覧または単体で返す |
 | `command_info` | `pyfltr command-info <command>` | ツール起動方式の解決結果を返す。`check=True`は副作用を伴う |
 | `config` | `pyfltr config <action>` | 設定ファイルを操作する（get / set / delete / list） |
+
+各ツールの引数の意味と選択肢は、MCPクライアントが取得するツール定義（引数スキーマ）に含まれる。
+読み取りだけを行うツールには`readOnlyHint`、ファイルを書き換えうる`run`・`replace`・`replace_undo`・`config`には`destructiveHint`の注釈を付けており、クライアントはこれを承認の判断に使える。
 
 コーディングエージェント側へのMCPサーバー登録例（JSON形式で設定ファイルに記載する場合）:
 

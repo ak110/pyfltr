@@ -1,7 +1,7 @@
 """MCPツールスキーマ用Pydanticモデル群。
 
 `mcp_server.py`が公開する11ツールの戻り値スキーマをまとめて定義する。
-入力側は各ツール関数の型注釈とdocstringからJSONスキーマを自動生成する。
+入力側は各ツール関数の型注釈と`pydantic.Field`の説明からJSONスキーマを自動生成する。
 """
 
 from __future__ import annotations
@@ -166,6 +166,36 @@ class CommandDiagnosticsModel(pydantic.BaseModel):
         default=None,
         description="rule ID → 短い修正ヒント文字列の辞書。ヒントを持つruleのみ含める。",
     )
+    total_diagnostics: int | None = pydantic.Field(
+        default=None,
+        description="範囲指定時だけ返す、対象コマンドの個別指摘の総数。",
+    )
+    next_offset: int | None = pydantic.Field(
+        default=None,
+        description="範囲指定時だけ返す、続きを取得する`offset`。続きが無ければnull。",
+    )
+
+    @pydantic.model_serializer(mode="wrap")
+    def _omit_range_fields_without_range(
+        self,
+        handler: pydantic.SerializerFunctionWrapHandler,
+    ) -> dict[str, typing.Any]:
+        """範囲指定の無い呼び出しでは範囲項目を省き、従来と同じ応答を保つ。"""
+        serialized = typing.cast(dict[str, typing.Any], handler(self))
+        for field_name in ("total_diagnostics", "next_offset"):
+            if field_name not in self.model_fields_set:
+                serialized.pop(field_name, None)
+        return serialized
+
+
+class OutputRangeModel(pydantic.BaseModel):
+    """`show_run_output`へ範囲を指定した場合の、コマンド1件分の出力ログ。"""
+
+    text: str = pydantic.Field(description="範囲内の行を改行込みで連結した文字列。")
+    offset: int = pydantic.Field(description="返した最初の行の位置（0始まり）。")
+    returned_lines: int = pydantic.Field(description="返した行数。")
+    total_lines: int = pydantic.Field(description="出力ログ全体の行数。")
+    next_offset: int | None = pydantic.Field(description="続きを取得する`offset`。続きが無ければnull。")
 
 
 class RunWarningModel(pydantic.BaseModel):

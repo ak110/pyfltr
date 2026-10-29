@@ -424,6 +424,95 @@ async def test_tool_show_run_output_tool_not_found(tmp_path: pathlib.Path) -> No
 
 
 @pytest.mark.asyncio
+async def test_show_run_output_returns_requested_line_range(tmp_path: pathlib.Path) -> None:
+    """行範囲を指定すると続きの開始位置で分割取得でき、範囲を省略すると従来どおり全文を返す。"""
+    run_id = _seed_run(tmp_path, tool_results=[("pytest", 1, "l1\nl2\nl3\nl4\nl5\n", [])])
+
+    async with mcp.Client(pyfltr.cli.mcp_server.build_server()) as client:
+        first = await client.call_tool("show_run_output", {"run_id": run_id, "commands": ["pytest"], "limit": 2})
+        assert first.structured_content is not None
+        page = first.structured_content["pytest"]
+        assert page == {"text": "l1\nl2\n", "offset": 0, "returned_lines": 2, "total_lines": 5, "next_offset": 2}
+
+        texts = [page["text"]]
+        while page["next_offset"] is not None:
+            result = await client.call_tool(
+                "show_run_output",
+                {"run_id": run_id, "commands": ["pytest"], "offset": page["next_offset"], "limit": 2},
+            )
+            assert result.structured_content is not None
+            page = result.structured_content["pytest"]
+            texts.append(page["text"])
+        assert "".join(texts) == "l1\nl2\nl3\nl4\nl5\n"
+        assert page["offset"] == 4
+
+        whole = await client.call_tool("show_run_output", {"run_id": run_id, "commands": ["pytest"]})
+        assert whole.structured_content == {"pytest": "l1\nl2\nl3\nl4\nl5\n"}
+
+        # 開始位置0だけを明示した呼び出しも範囲指定として扱い、範囲応答を返す。
+        from_start = await client.call_tool("show_run_output", {"run_id": run_id, "commands": ["pytest"], "offset": 0})
+        assert from_start.structured_content == {
+            "pytest": {"text": "l1\nl2\nl3\nl4\nl5\n", "offset": 0, "returned_lines": 5, "total_lines": 5, "next_offset": None}
+        }
+
+        rejected = await client.call_tool("show_run_output", {"run_id": run_id, "commands": ["pytest"], "offset": -1})
+    assert rejected.is_error
+    rejected_texts = [content.text for content in rejected.content if isinstance(content, mcp_types.TextContent)]
+    assert any("offset" in text for text in rejected_texts), rejected_texts
+
+
+@pytest.mark.asyncio
+async def test_show_run_diagnostics_returns_requested_message_range(tmp_path: pathlib.Path) -> None:
+    """個別指摘の範囲を指定すると範囲内の指摘だけを元のファイルへ集約し、総数と続きの開始位置を返す。"""
+    errors = [
+        _make_error("mypy", "src/a.py", 1, "一件目"),
+        _make_error("mypy", "src/a.py", 2, "二件目"),
+        _make_error("mypy", "src/b.py", 3, "三件目"),
+    ]
+    run_id = _seed_run(tmp_path, tool_results=[("mypy", 1, "out", errors)])
+
+    async with mcp.Client(pyfltr.cli.mcp_server.build_server()) as client:
+        ranged = await client.call_tool(
+            "show_run_diagnostics", {"run_id": run_id, "commands": ["mypy"], "offset": 1, "limit": 2}
+        )
+        whole = await client.call_tool("show_run_diagnostics", {"run_id": run_id, "commands": ["mypy"]})
+        from_start = await client.call_tool("show_run_diagnostics", {"run_id": run_id, "commands": ["mypy"], "offset": 0})
+    assert ranged.structured_content is not None
+    (ranged_result,) = ranged.structured_content["result"]
+    assert [
+        (diagnostic["file"], [message["msg"] for message in diagnostic["messages"]])
+        for diagnostic in ranged_result["diagnostics"]
+    ] == [("src/a.py", ["二件目"]), ("src/b.py", ["三件目"])]
+    assert ranged_result["total_diagnostics"] == 3
+    assert ranged_result["next_offset"] is None
+
+    assert whole.structured_content is not None
+    (whole_result,) = whole.structured_content["result"]
+    assert [len(diagnostic["messages"]) for diagnostic in whole_result["diagnostics"]] == [2, 1]
+    assert "total_diagnostics" not in whole_result
+    assert "next_offset" not in whole_result
+
+    # 開始位置0だけを明示した呼び出しは全件を範囲応答として返し、総数と続きの有無を含める。
+    assert from_start.structured_content is not None
+    (from_start_result,) = from_start.structured_content["result"]
+    assert from_start_result["diagnostics"] == whole_result["diagnostics"]
+    assert from_start_result["total_diagnostics"] == 3
+    assert from_start_result["next_offset"] is None
+
+
+@pytest.mark.asyncio
+async def test_show_run_diagnostics_reports_next_offset_when_messages_remain(tmp_path: pathlib.Path) -> None:
+    """範囲の後に指摘が残る場合は、続きを取得する開始位置を返す。"""
+    errors = [_make_error("mypy", "src/a.py", line, f"指摘{line}") for line in (1, 2, 3)]
+    run_id = _seed_run(tmp_path, tool_results=[("mypy", 1, "out", errors)])
+
+    (result,) = await pyfltr.cli.mcp_server.tool_show_run_diagnostics(run_id, ["mypy"], offset=0, limit=2)
+    assert [message.msg for message in result.diagnostics[0].messages] == ["指摘1", "指摘2"]
+    assert result.total_diagnostics == 3
+    assert result.next_offset == 2
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("tool_name", "use_existing_run", "expected_message"),
     [
@@ -510,6 +599,39 @@ async def test_build_server_registers_eleven_tools() -> None:
 
 
 @pytest.mark.asyncio
+async def test_tools_publish_metadata_for_argument_selection() -> None:
+    """ツール一覧と初期化応答だけで、ツールの性質と全引数の意味・選択肢を判断できる。
+
+    説明文はClaude Codeが初期送信で4,096文字に切り詰めるため、その上限内に収まることも確かめる。
+    """
+    async with mcp.Client(pyfltr.cli.mcp_server.build_server()) as client:
+        tools = (await client.list_tools()).tools
+        instructions = client.instructions
+    assert instructions
+    assert len(instructions) <= 4096
+
+    annotations = {}
+    for tool in tools:
+        assert tool.title, tool.name
+        assert tool.description is not None and len(tool.description) <= 4096, tool.name
+        assert tool.annotations is not None, tool.name
+        annotations[tool.name] = (tool.annotations.read_only_hint, tool.annotations.destructive_hint)
+        for name, schema in tool.input_schema["properties"].items():
+            assert schema.get("description"), f"{tool.name}.{name}"
+    read_only = {"list_runs", "show_run", "show_run_diagnostics", "show_run_output", "grep", "replace_history"}
+    writes_files = {"run", "replace", "replace_undo", "config"}
+    assert {name for name, hints in annotations.items() if hints == (True, None)} == read_only
+    assert {name for name, hints in annotations.items() if hints == (None, True)} == writes_files
+    # `check=True`がmiseの導入と信頼設定を変えうるため、読み取り専用とも破壊的ともしない。
+    assert annotations["command_info"] == (False, False)
+
+    by_name = {tool.name: tool for tool in tools}
+    assert by_name["run"].input_schema["properties"]["mode"]["enum"] == ["run", "fast", "ci"]
+    assert by_name["replace_history"].input_schema["properties"]["action"]["enum"] == ["list", "show"]
+    assert by_name["config"].input_schema["properties"]["action"]["enum"] == ["get", "set", "delete", "list"]
+
+
+@pytest.mark.asyncio
 async def test_tool_grep_publishes_summary_mode_enum() -> None:
     """集計モードの許容値をMCP入力スキーマから選択できる。"""
     tools = await pyfltr.cli.mcp_server.build_server().list_tools()
@@ -577,7 +699,7 @@ def test_execute_mcp_reports_missing_dependency(monkeypatch: pytest.MonkeyPatch,
 async def test_tool_run_rejects_invalid_mode() -> None:
     """未対応の実行モードを拒否する。"""
     with pytest.raises(_ToolError, match="mode"):
-        await pyfltr.cli.mcp_server.tool_run(paths=["dummy"], mode="invalid")
+        await pyfltr.cli.mcp_server.tool_run(paths=["dummy"], mode=typing.cast(typing.Any, "invalid"))
 
 
 @pytest.mark.asyncio
@@ -1364,7 +1486,7 @@ async def test_tool_run_completion_timeout(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.parametrize("mode", ["run", "fast", "ci"])
 @pytest.mark.asyncio
-async def test_tool_run_completion_same_across_modes(tmp_path: pathlib.Path, mode: str) -> None:
+async def test_tool_run_completion_same_across_modes(tmp_path: pathlib.Path, mode: typing.Literal["run", "fast", "ci"]) -> None:
     """`mode`によらず同じ入力から同じ完了判定を返す。"""
     work_dir = tmp_path / "project"
     _write_custom_commands_project(work_dir, {"always-ok": "pass"})
@@ -2552,7 +2674,7 @@ async def test_tool_replace_history_empty() -> None:
 async def test_tool_replace_history_rejects_invalid_requests() -> None:
     """未対応actionと識別子のない単体参照を拒否する。"""
     with pytest.raises(_ToolError, match="action"):
-        await pyfltr.cli.mcp_server.tool_replace_history(action="invalid")
+        await pyfltr.cli.mcp_server.tool_replace_history(action=typing.cast(typing.Any, "invalid"))
     with pytest.raises(_ToolError, match="replace_id"):
         await pyfltr.cli.mcp_server.tool_replace_history(action="show")
 

@@ -35,21 +35,26 @@ import sys
 import types as types_module
 import typing
 
+import pydantic
+
 # 配布物の版指定は下流プロジェクトの依存解決で上書きされる場合がある。
 # MCP専用依存のimport失敗を捕捉し、他サブコマンドとヘルプの起動を維持する。
 try:
     import mcp.server.mcpserver as _imported_mcpserver
     import mcp.server.mcpserver.exceptions as _imported_mcp_exceptions
+    import mcp.types as _imported_mcp_types
 
     import pyfltr.cli.mcp_transport as _imported_mcp_transport
 except ImportError as e:  # 依存解決が配布物の宣言と異なる環境で到達する。
     _mcpserver: types_module.ModuleType | None = None
     _mcp_exceptions: types_module.ModuleType | None = None
+    _mcp_types: types_module.ModuleType | None = None
     _mcp_transport: types_module.ModuleType | None = None
     _MCP_IMPORT_ERROR: ImportError | None = e
 else:
     _mcpserver = _imported_mcpserver
     _mcp_exceptions = _imported_mcp_exceptions
+    _mcp_types = _imported_mcp_types
     _mcp_transport = _imported_mcp_transport
     _MCP_IMPORT_ERROR = None
 
@@ -90,6 +95,7 @@ from pyfltr.cli.mcp_models import (
     GrepFileResultModel,
     GrepMatchModel,
     GrepResultModel,
+    OutputRangeModel,
     ReplaceChangeRecordModel,
     ReplaceFileChangeModel,
     ReplaceHistoryEntryModel,
@@ -138,6 +144,54 @@ def _resolve_run_id_or_raise(store: pyfltr.state.archive.ArchiveStore, raw: str)
 
 
 # ---------------------------------------------------------------------------
+# 複数ツールが共有する引数の型
+# ---------------------------------------------------------------------------
+
+# `pydantic.Field`の説明はMCPの`inputSchema`へ載り、モデルが引数を決める唯一の手掛かりとなる。
+# docstringはクライアントへ送られないため、意味・省略時の動作・組み合わせ条件は説明へ書く。
+
+RunIdArg = typing.Annotated[
+    str,
+    pydantic.Field(
+        description="対象runの識別子。ULIDの完全一致・前方一致と、最新のrunを指す`latest`を受け付ける。",
+    ),
+]
+ArchivedCommandsArg = typing.Annotated[
+    list[str],
+    pydantic.Field(
+        description=(
+            "結果を取得するコマンド名の一覧（1件以上）。"
+            "runで実行したコマンド名は`show_run`の`commands`で確認できる。結果はこの順に返す。"
+        ),
+    ),
+]
+IgnoreCaseArg = typing.Annotated[bool, pydantic.Field(description="Trueで大文字と小文字を区別しない。")]
+SmartCaseArg = typing.Annotated[
+    bool,
+    pydantic.Field(description="Trueでパターンに大文字を含まない場合だけ大文字と小文字を区別しない。"),
+]
+FixedStringsArg = typing.Annotated[bool, pydantic.Field(description="Trueでパターンを正規表現ではなく固定文字列として扱う。")]
+WordRegexpArg = typing.Annotated[bool, pydantic.Field(description="Trueで単語境界に囲まれた一致だけを採用する。")]
+LineRegexpArg = typing.Annotated[bool, pydantic.Field(description="Trueで行全体に一致した場合だけ採用する。")]
+MultilineArg = typing.Annotated[bool, pydantic.Field(description="Trueで改行をまたぐ一致を許可する。")]
+TypesArg = typing.Annotated[
+    list[str] | None,
+    pydantic.Field(description='対象を言語タイプで限定する一覧（例: ["python", "ts"]）。省略時は限定しない。'),
+]
+GlobsArg = typing.Annotated[
+    list[str] | None, pydantic.Field(description="対象をglobパターンで限定する一覧。省略時は限定しない。")
+]
+MaxFilesizeArg = typing.Annotated[
+    int | None,
+    pydantic.Field(description="走査するファイルサイズの上限（バイト）。超えるファイルは対象外。省略または0で上限なし。"),
+]
+NoExcludeArg = typing.Annotated[
+    bool, pydantic.Field(description="Trueでpyfltr設定の`exclude`・`extend-exclude`による除外を無効にする。")
+]
+NoGitignoreArg = typing.Annotated[bool, pydantic.Field(description="Trueで`.gitignore`による除外を無効にする。")]
+
+
+# ---------------------------------------------------------------------------
 # MCPServerツール関数群（公開名は@mcp.tool(name=...)で明示）
 # ---------------------------------------------------------------------------
 
@@ -148,7 +202,9 @@ def _resolve_run_id_or_raise(store: pyfltr.state.archive.ArchiveStore, raw: str)
 # ハイフンは非推奨で互換性のあるMCPServer経路もアンダースコア前提のため。
 
 
-async def tool_list_runs(limit: int = 20) -> list[RunSummaryModel]:
+async def tool_list_runs(
+    limit: typing.Annotated[int, pydantic.Field(description="返すrunの最大件数。既定は20件。")] = 20,
+) -> list[RunSummaryModel]:
     """実行アーカイブに保存されたrun一覧を新しい順で返す。
 
     対応CLI: `pyfltr list-runs`
@@ -168,10 +224,8 @@ async def tool_list_runs(limit: int = 20) -> list[RunSummaryModel]:
     ]
 
 
-async def tool_show_run(run_id: str) -> RunOverviewModel:
+async def tool_show_run(run_id: RunIdArg) -> RunOverviewModel:
     """指定runのmeta情報とコマンド別サマリを返す。
-
-    `run_id`はULID完全一致・前方一致・`latest`エイリアスを受け付ける。
 
     対応CLI: `pyfltr show-run <run_id>`
     """
@@ -195,8 +249,29 @@ async def tool_show_run(run_id: str) -> RunOverviewModel:
     return RunOverviewModel(run_id=resolved, meta=meta, commands=commands)
 
 
-async def tool_show_run_diagnostics(run_id: str, commands: list[str]) -> list[CommandDiagnosticsModel]:
-    """指定run・コマンドのdiagnostics全件とコマンドのmeta情報を返す。
+async def tool_show_run_diagnostics(
+    run_id: RunIdArg,
+    commands: ArchivedCommandsArg,
+    offset: typing.Annotated[
+        int | None,
+        pydantic.Field(
+            ge=0,
+            description=(
+                "返す最初の個別指摘の位置（0始まり）。個別指摘は`diagnostics[].messages`の要素で数える。"
+                "`limit`だけを指定した場合は0から数える。前回の応答の`next_offset`を渡すと続きを取得できる。"
+            ),
+        ),
+    ] = None,
+    limit: typing.Annotated[
+        int | None,
+        pydantic.Field(ge=1, description="返す個別指摘の最大件数。省略時は`offset`以降の全件を返す。"),
+    ] = None,
+) -> list[CommandDiagnosticsModel]:
+    """指定run・コマンドのdiagnosticsとコマンドのmeta情報を返す。
+
+    `offset`と`limit`を省略すると全件を返し、応答は範囲指定の導入前と同じになる。
+    どちらかを指定すると、個別指摘を元の順序で数えた範囲だけを`(command, file)`単位へ集約し直して返し、
+    `total_diagnostics`と`next_offset`を加える。範囲は`commands`の各要素へ同じ値で適用する。
 
     `diagnostics`は`(command, file)`単位の集約形式で、個別指摘は`messages`に並ぶ。
     rule→URL辞書`hint_urls`とrule→ヒント辞書`hints`はtool.json由来でそのまま返す。
@@ -208,6 +283,8 @@ async def tool_show_run_diagnostics(run_id: str, commands: list[str]) -> list[Co
     """
     if not commands:
         _raise_mcp_error("commands を 1 件以上指定してください。")
+    ranged = offset is not None or limit is not None
+    start = offset or 0
     store = pyfltr.state.archive.ArchiveStore()
     resolved = _resolve_run_id_or_raise(store, run_id)
     results: list[CommandDiagnosticsModel] = []
@@ -217,31 +294,74 @@ async def tool_show_run_diagnostics(run_id: str, commands: list[str]) -> list[Co
             diagnostics_raw = store.read_tool_diagnostics(resolved, command)
         except FileNotFoundError:
             _raise_mcp_error(pyfltr.state.runs.format_tool_result_missing(resolved, command, show_run="`show_run`ツール"))
-        diagnostics = [
-            DiagnosticModel(
-                command=d.get("command", d.get("tool")),
-                file=d.get("file"),
-                messages=[DiagnosticMessageModel(**m) for m in d.get("messages", [])],
-            )
-            for d in diagnostics_raw
-        ]
         hint_urls = tool_meta.get("hint_urls") if isinstance(tool_meta.get("hint_urls"), dict) else None
         hints = tool_meta.get("hints") if isinstance(tool_meta.get("hints"), dict) else None
+        if not ranged:
+            results.append(
+                CommandDiagnosticsModel(
+                    command_meta=CommandMetaModel.model_validate(tool_meta),
+                    diagnostics=[_build_diagnostic(d, d.get("messages", [])) for d in diagnostics_raw],
+                    hint_urls=hint_urls,
+                    hints=hints,
+                )
+            )
+            continue
+        # 個別指摘を通し番号で数え、範囲内の指摘だけを元のファイル単位の集約へ戻す。
+        total = sum(len(d.get("messages", [])) for d in diagnostics_raw)
+        end = total if limit is None else min(start + limit, total)
+        diagnostics: list[DiagnosticModel] = []
+        position = 0
+        for d in diagnostics_raw:
+            messages = d.get("messages", [])
+            selected = messages[max(start - position, 0) : max(end - position, 0)]
+            position += len(messages)
+            if selected:
+                diagnostics.append(_build_diagnostic(d, selected))
         results.append(
             CommandDiagnosticsModel(
                 command_meta=CommandMetaModel.model_validate(tool_meta),
                 diagnostics=diagnostics,
                 hint_urls=hint_urls,
                 hints=hints,
+                total_diagnostics=total,
+                next_offset=end if end < total else None,
             )
         )
     return results
 
 
-async def tool_show_run_output(run_id: str, commands: list[str]) -> dict[str, str]:
-    """指定run・コマンドのoutput.log全文を返す。
+def _build_diagnostic(entry: dict[str, typing.Any], messages: list[dict[str, typing.Any]]) -> DiagnosticModel:
+    """保存済みの集約診断1件を、指定した指摘だけを持つ`DiagnosticModel`へ変換する。"""
+    return DiagnosticModel(
+        command=entry.get("command", entry.get("tool")),
+        file=entry.get("file"),
+        messages=[DiagnosticMessageModel(**m) for m in messages],
+    )
 
-    戻り値はコマンド名→全文の辞書。`commands`に複数を指定すると入力順で各全文を返す。
+
+async def tool_show_run_output(
+    run_id: RunIdArg,
+    commands: ArchivedCommandsArg,
+    offset: typing.Annotated[
+        int | None,
+        pydantic.Field(
+            ge=0,
+            description=(
+                "返す最初の行の位置（0始まり）。`limit`だけを指定した場合は0から数える。"
+                "前回の応答の`next_offset`を渡すと続きを取得できる。"
+            ),
+        ),
+    ] = None,
+    limit: typing.Annotated[
+        int | None,
+        pydantic.Field(ge=1, description="返す最大行数。省略時は`offset`以降の全行を返す。"),
+    ] = None,
+) -> dict[str, str | OutputRangeModel]:
+    """指定run・コマンドのoutput.logを返す。
+
+    戻り値はコマンド名をキーとし、`commands`の入力順に並ぶ辞書。
+    `offset`と`limit`を省略すると値は全文の文字列で、範囲指定の導入前と同じになる。
+    どちらかを指定すると値は`OutputRangeModel`となり、範囲は`commands`の各要素へ同じ値で適用する。
 
     対応CLI: `pyfltr show-run <run_id> --commands <name> --output`（単一指定のみ）
     """
@@ -249,36 +369,127 @@ async def tool_show_run_output(run_id: str, commands: list[str]) -> dict[str, st
         _raise_mcp_error("commands を 1 件以上指定してください。")
     store = pyfltr.state.archive.ArchiveStore()
     resolved = _resolve_run_id_or_raise(store, run_id)
-    outputs: dict[str, str] = {}
+    ranged = offset is not None or limit is not None
+    start = offset or 0
+    outputs: dict[str, str | OutputRangeModel] = {}
     for command in commands:
         try:
-            outputs[command] = store.read_tool_output(resolved, command)
+            text = store.read_tool_output(resolved, command)
         except FileNotFoundError:
             _raise_mcp_error(pyfltr.state.runs.format_tool_result_missing(resolved, command, show_run="`show_run`ツール"))
+        if not ranged:
+            outputs[command] = text
+            continue
+        lines = text.splitlines(keepends=True)
+        selected = lines[start:] if limit is None else lines[start : start + limit]
+        end = start + len(selected)
+        outputs[command] = OutputRangeModel(
+            text="".join(selected),
+            offset=start,
+            returned_lines=len(selected),
+            total_lines=len(lines),
+            next_offset=end if end < len(lines) else None,
+        )
     return outputs
 
 
 async def tool_run(
-    paths: list[str],
-    mode: str = "run",
-    commands: list[str] | None = None,
-    enable: list[str] | None = None,
-    disable: list[str] | None = None,
-    exclude_fence_under: list[str] | None = None,
-    no_fix: bool = False,
-    fail_fast: bool = False,
-    only_failed: bool = False,
-    from_run: str | None = None,
-    changed_since: str | None = None,
-    work_dir: str | None = None,
-    allow_external_paths: bool = False,
-    no_exclude: bool = False,
-    no_gitignore: bool = False,
-    no_cache: bool = False,
-    human_readable: bool = False,
-    shuffle: bool = False,
-    exit_zero_even_if_formatted: bool = False,
-    jobs: int | None = None,
+    paths: typing.Annotated[
+        list[str],
+        pydantic.Field(
+            description="検査対象のファイルまたはディレクトリのパス一覧。相対パスは`work_dir`（省略時はサーバーのcwd）を基準に解決する。",
+        ),
+    ],
+    mode: typing.Annotated[
+        typing.Literal["run", "fast", "ci"],
+        pydantic.Field(
+            description=(
+                "実行モード。`run`はfixステージを有効にし、formatterによる書き換えを成功扱いにする。"
+                "`fast`は`fast`設定が有効なツールだけを`run`と同じ扱いで実行する。"
+                "`ci`はfixステージを無効にし、formatterによる書き換えを失敗扱いにする。"
+            ),
+        ),
+    ] = "run",
+    commands: typing.Annotated[
+        list[str] | None,
+        pydantic.Field(
+            description="実行するコマンド名またはエイリアス（`lint`など）の一覧。カンマ区切りも受け付ける。省略時は設定で有効な全コマンド。",
+        ),
+    ] = None,
+    enable: typing.Annotated[
+        list[str] | None,
+        pydantic.Field(description="この実行に限り有効にするコマンド名の一覧。カンマ区切りも受け付ける。"),
+    ] = None,
+    disable: typing.Annotated[
+        list[str] | None,
+        pydantic.Field(description="この実行に限り無効にするコマンド名の一覧。カンマ区切りも受け付ける。"),
+    ] = None,
+    exclude_fence_under: typing.Annotated[
+        list[str] | None,
+        pydantic.Field(description="Markdownでフェンス内側を検査対象から除くH2見出しの一覧。"),
+    ] = None,
+    no_fix: typing.Annotated[
+        bool,
+        pydantic.Field(
+            description=(
+                "Trueで`run`・`fast`のfixステージを抑止する（`ci`は元から無効）。"
+                "通常ステージのformatterは対象ファイルを書き換え、既定で有効な`ruff-format-by-check`により"
+                "`ruff-format`も整形する。書き換えを避ける場合は`commands`をlinterへ限定する。"
+            ),
+        ),
+    ] = False,
+    fail_fast: typing.Annotated[bool, pydantic.Field(description="Trueで1つのツールが失敗した時点で残りを打ち切る。")] = False,
+    only_failed: typing.Annotated[
+        bool,
+        pydantic.Field(
+            description=(
+                "Trueで直前run（`from_run`指定時はそのrun）の失敗ツールを、失敗ファイルに限定して再実行する。"
+                "診断にファイルを持たない失敗ツールは現在の対象全体で再実行する。"
+            ),
+        ),
+    ] = False,
+    from_run: typing.Annotated[
+        str | None,
+        pydantic.Field(
+            description="`only_failed`の参照runの識別子（前方一致・`latest`可）。`only_failed=True`のときだけ指定できる。",
+        ),
+    ] = None,
+    changed_since: typing.Annotated[
+        str | None,
+        pydantic.Field(description="指定したgit参照（ブランチ名・commitなど）から変更されたファイルだけを対象にする。"),
+    ] = None,
+    work_dir: typing.Annotated[
+        str | None,
+        pydantic.Field(
+            description=(
+                "実行の起点ディレクトリ。設定探索と相対パス解決の基準を兼ねる。"
+                "省略時はMCPサーバープロセスのcwd。指定時は診断のファイルパスを絶対パスで返す場合がある。"
+            ),
+        ),
+    ] = None,
+    allow_external_paths: typing.Annotated[
+        bool,
+        pydantic.Field(
+            description=(
+                "Trueで実行起点の外側にあるパスを許可する。"
+                "その場合は`work_dir`へ検査設定を持つプロジェクトのルートを指定する。"
+                "検査設定を持たないディレクトリを起点にすると、適用される除外設定と検査対象の範囲が変わる。"
+            ),
+        ),
+    ] = False,
+    no_exclude: NoExcludeArg = False,
+    no_gitignore: NoGitignoreArg = False,
+    no_cache: typing.Annotated[
+        bool, pydantic.Field(description="Trueでファイルハッシュによる結果キャッシュを使わない。")
+    ] = False,
+    human_readable: typing.Annotated[
+        bool, pydantic.Field(description="Trueで対応ツールの機械可読出力を抑止し、人間向けの出力にする。")
+    ] = False,
+    shuffle: typing.Annotated[bool, pydantic.Field(description="Trueで対象ファイルの順序をシャッフルする。")] = False,
+    exit_zero_even_if_formatted: typing.Annotated[
+        bool, pydantic.Field(description="Trueでformatterによる書き換えだけなら終了コードを0にする。")
+    ] = False,
+    jobs: typing.Annotated[int | None, pydantic.Field(description="並列実行するツール数の上限。省略時は設定値を使う。")] = None,
 ) -> RunResult:
     """指定パスに対してlint/format/testを実行し、結果を返す。
 
@@ -301,40 +512,6 @@ async def tool_run(
     完了判定は`run_pipeline`が導出した値をそのまま返し、CLI JSONLの`summary`と同じ値になる。
 
     対応CLI: `pyfltr run` / `pyfltr fast` / `pyfltr ci`
-
-    Args:
-        paths: 実行対象のファイルまたはディレクトリのパス一覧。
-        mode: 実行モード。`run`はfixステージを有効化し、formatter変更を成功扱いにする。
-            `fast`はfast設定が有効なツールだけを対象にする。`ci`はfixステージを無効化し、
-            formatter変更を失敗扱いにする。
-        commands: 実行するコマンド名のリスト。省略時はプロジェクト設定の全コマンドを使用する。
-        enable: 一時的に有効化するコマンド名のリスト。カンマ区切りも受理する。
-        disable: 一時的に無効化するコマンド名のリスト。カンマ区切りも受理する。
-        exclude_fence_under: フェンス内側を検査対象から除外するH2見出しのリスト。
-        no_fix: Trueの場合、`run`と`fast`のfixステージを抑止する。`ci`は元から無効となる。
-            抑止する対象はfixステージだけで、通常ステージのformatterは対象ファイルを書き換える。
-            `ruff-format-by-check`が既定で有効なため、本引数の指定時も`ruff-format`による整形は行われる。
-            書き換えを避ける場合は`commands`で対象をlinterへ限定する。
-        fail_fast: Trueの場合、1ツールでもエラーが発生した時点で残りを打ち切る。
-        only_failed: Trueの場合、直前runの失敗ツールを失敗ファイルに限定して再実行する。
-            診断にファイルを持たない失敗ツールは現在の対象全体で再実行する。
-        from_run: `only_failed=True`時の参照run_id（前方一致・`latest`可）。
-            `only_failed=False`かつ`from_run`指定はツールエラー（`ToolError`）。
-        changed_since: 指定したgit参照から変更されたファイルだけを対象にする。
-        work_dir: 実行の起点ディレクトリ。設定探索と相対パス解決の基準を兼ねる。
-            省略時はMCPサーバープロセスのカレントディレクトリを用いる。
-            指定時は診断のファイルパスを絶対パスで返す場合がある。
-        allow_external_paths: Trueの場合、実行起点の外側にあるパスを許可する。
-            `work_dir`には検査設定を持つプロジェクトのルートを指定する。
-            `work_dir`は設定探索と相対パス解決の基準を兼ねるため、検査設定を持たないディレクトリを
-            起点にすると、適用される除外設定と検査対象の範囲が変わる。
-        no_exclude: Trueの場合、設定の除外パターンを無効化する。
-        no_gitignore: Trueの場合、`.gitignore`による除外を無効化する。
-        no_cache: Trueの場合、ファイルhashキャッシュを無効化する。
-        human_readable: Trueの場合、対応ツールの機械可読出力を抑止する。
-        shuffle: Trueの場合、実行対象ファイルの順序をシャッフルする。
-        exit_zero_even_if_formatted: Trueの場合、formatterによる変更だけなら成功扱いにする。
-        jobs: 並列実行するツール数の上限。
     """
     # `run_pipeline`は警告を初期化しないため、対象の呼び出しが発行した警告だけを
     # `skipped_reason`の入力にできるよう、ここで蓄積を初期化する。
@@ -484,63 +661,72 @@ def _join_warning_texts(entries: list[dict[str, typing.Any]], *, sources: tuple[
 
 
 async def tool_grep(
-    paths: list[str],
-    pattern: str | None = None,
-    patterns: list[str] | None = None,
-    pattern_file: str | None = None,
-    ignore_case: bool = False,
-    smart_case: bool = False,
-    fixed_strings: bool = False,
-    word_regexp: bool = False,
-    line_regexp: bool = False,
-    multiline: bool = False,
-    before_context: int = 0,
-    after_context: int = 0,
-    context: int | None = None,
-    max_count: int | None = None,
-    max_total: int | None = None,
-    summary_mode: typing.Literal["files_with_matches", "count", "files_without_match"] | None = None,
-    types: list[str] | None = None,
-    globs: list[str] | None = None,
-    encoding: str = "utf-8",
-    max_filesize: int | None = None,
-    max_preview_chars: int | None = None,
-    auto_summary: bool = True,
-    no_exclude: bool = False,
-    no_gitignore: bool = False,
+    paths: typing.Annotated[list[str], pydantic.Field(description="検索対象のファイルまたはディレクトリのパス一覧。")],
+    pattern: typing.Annotated[
+        str | None,
+        pydantic.Field(description="検索パターン（正規表現）。`patterns`または`pattern_file`だけで指定する場合は省略できる。"),
+    ] = None,
+    patterns: typing.Annotated[
+        list[str] | None,
+        pydantic.Field(
+            description="追加の検索パターンの一覧。`pattern`・`pattern_file`と合わせ、いずれかに一致すれば採用する。"
+        ),
+    ] = None,
+    pattern_file: typing.Annotated[str | None, pydantic.Field(description="1行に1パターンを書いたファイルのパス。")] = None,
+    ignore_case: IgnoreCaseArg = False,
+    smart_case: SmartCaseArg = False,
+    fixed_strings: FixedStringsArg = False,
+    word_regexp: WordRegexpArg = False,
+    line_regexp: LineRegexpArg = False,
+    multiline: MultilineArg = False,
+    before_context: typing.Annotated[int, pydantic.Field(description="一致行の前に含める文脈の行数。")] = 0,
+    after_context: typing.Annotated[int, pydantic.Field(description="一致行の後に含める文脈の行数。")] = 0,
+    context: typing.Annotated[
+        int | None,
+        pydantic.Field(description="前後の文脈行数の一括指定。`before_context`・`after_context`のうち0の方向だけへ適用する。"),
+    ] = None,
+    max_count: typing.Annotated[
+        int | None, pydantic.Field(description="ファイルごとの最大一致件数。省略または0で無制限。")
+    ] = None,
+    max_total: typing.Annotated[
+        int | None,
+        pydantic.Field(
+            description='全体の最大一致件数。省略または0で無制限。`summary_mode="files_without_match"`とは正の値を併用できない。'
+        ),
+    ] = None,
+    summary_mode: typing.Annotated[
+        typing.Literal["files_with_matches", "count", "files_without_match"] | None,
+        pydantic.Field(
+            description=(
+                "集計モード。指定時は`matches`を空で返し、`files_with_matches`は一致したファイル一覧、"
+                "`count`はファイルごとの一致件数、`files_without_match`は一致しなかったファイル一覧を返す。"
+            ),
+        ),
+    ] = None,
+    types: TypesArg = None,
+    globs: GlobsArg = None,
+    encoding: typing.Annotated[str, pydantic.Field(description="ファイルを読む文字コード。")] = "utf-8",
+    max_filesize: MaxFilesizeArg = None,
+    max_preview_chars: typing.Annotated[
+        int | None,
+        pydantic.Field(description="返す本文1件あたりの最大文字数。省略時は200文字、0で無制限。"),
+    ] = None,
+    auto_summary: typing.Annotated[
+        bool,
+        pydantic.Field(
+            description=(
+                "Trueで、件数上限・プレビュー上限・集計を指定していない大きな結果を約10,000文字へ縮約し、"
+                "一致の多いファイルを件数表示へ切り替える。Falseで指定範囲の全一致を返す。"
+            ),
+        ),
+    ] = True,
+    no_exclude: NoExcludeArg = False,
+    no_gitignore: NoGitignoreArg = False,
 ) -> GrepResultModel:
     """指定ファイル群から正規表現パターンを検索し、マッチ一覧を返す。
 
     pyfltrの`exclude`/`extend-exclude`/`respect-gitignore`設定を尊重する。
     通常検索でも未指定の`max_total`は走査を制限せず、全結果から返却形式を選択する。
-
-    Args:
-        paths: 検索対象のファイルまたはディレクトリパスの一覧。
-        pattern: 検索パターン。`patterns`または`pattern_file`のみを指定する場合は省略できる。
-        patterns: 追加の検索パターン一覧。`pattern`と連結してOR条件で検索する。
-        pattern_file: 1行1パターンのパターンファイルパス。
-        ignore_case: 大文字小文字を区別しない。
-        smart_case: パターンに大文字を含まない場合のみignore_caseを有効化する。
-        fixed_strings: パターンを固定文字列として扱う。
-        word_regexp: 単語境界で囲まれたマッチのみ採用する。
-        line_regexp: 行全体に一致したマッチのみ採用する。
-        multiline: マルチラインマッチを有効化する。
-        before_context: マッチ行の前に含める行数。
-        after_context: マッチ行の後に含める行数。
-        context: `before_context`と`after_context`の一括指定。個別指定が0の方向だけへ適用する。
-        max_count: ファイル単位の最大マッチ件数。未指定または0で無制限。
-        max_total: 全体の最大マッチ件数。未指定または0で無制限。
-        summary_mode: 集計モード。`files_with_matches`、`count`、`files_without_match`のいずれか。
-            指定時は`matches`を空で返し、対応する集計フィールドを返す。
-            `files_without_match`では正の`max_total`を併用できない。
-        types: 対象言語タイプの一覧（例: ["python", "ts"]）。
-        globs: globパターンでの対象限定一覧。
-        encoding: ファイル読み込み時のエンコーディング（既定: utf-8）。
-        max_filesize: 走査対象ファイルサイズの上限（バイト単位）。
-        max_preview_chars: 返却する本文1件あたりの文字数上限。未指定時は既定値、0で無制限。
-        auto_summary: Trueの場合、明示上限がない大きな結果を適応的に縮約する。
-        no_exclude: exclude/extend-excludeによる除外を無効化する。
-        no_gitignore: .gitignoreによる除外を無効化する。
     """
     # warnings_はモジュールグローバルに蓄積するため、リクエスト開始時に初期化する
     pyfltr.warnings_.clear()
@@ -640,29 +826,72 @@ async def tool_grep(
 
 
 async def tool_replace(
-    pattern: str,
-    replacement: str,
-    paths: list[str],
-    dry_run: bool = True,
-    ignore_case: bool = False,
-    smart_case: bool = False,
-    fixed_strings: bool = False,
-    word_regexp: bool = False,
-    line_regexp: bool = False,
-    multiline: bool = False,
-    within: str | None = None,
-    before_context: int = 0,
-    after_context: int = 0,
-    context: int | None = None,
-    types: list[str] | None = None,
-    globs: list[str] | None = None,
-    encoding: str = "utf-8",
-    max_filesize: int | None = None,
-    exclude_files: list[str] | None = None,
-    from_grep: str | None = None,
-    no_exclude: bool = False,
-    no_gitignore: bool = False,
-    show_changes: bool = False,
+    pattern: typing.Annotated[str, pydantic.Field(description="置換対象を探すパターン（正規表現）。")],
+    replacement: typing.Annotated[
+        str, pydantic.Field(description="置換後の文字列。`re.sub`互換で、`\\1`や`\\g<name>`でグループを参照できる。")
+    ],
+    paths: typing.Annotated[
+        list[str], pydantic.Field(description="置換対象のファイルまたはディレクトリのパス一覧（1件以上）。")
+    ],
+    dry_run: typing.Annotated[
+        bool,
+        pydantic.Field(
+            description=(
+                "既定のTrueではファイルを変更せず変更内容だけを返す。"
+                "Falseを明示した場合だけファイルへ書き込み、取り消し用の`replace_id`を返す。"
+            ),
+        ),
+    ] = True,
+    ignore_case: IgnoreCaseArg = False,
+    smart_case: SmartCaseArg = False,
+    fixed_strings: FixedStringsArg = False,
+    word_regexp: WordRegexpArg = False,
+    line_regexp: LineRegexpArg = False,
+    multiline: typing.Annotated[
+        bool, pydantic.Field(description="Trueで改行をまたぐ一致を許可する。`within`とは併用できない。")
+    ] = False,
+    within: typing.Annotated[
+        str | None,
+        pydantic.Field(
+            description=(
+                "置換する領域を決めるアンカーの正規表現。指定時はアンカーに一致した行と、"
+                "その前後`before_context`・`after_context`行の範囲内に完全に収まる一致だけを置換する。"
+            ),
+        ),
+    ] = None,
+    before_context: typing.Annotated[
+        int,
+        pydantic.Field(description="`within`の領域でアンカー行の前に含める行数。`within`を指定した場合だけ使える。"),
+    ] = 0,
+    after_context: typing.Annotated[
+        int,
+        pydantic.Field(description="`within`の領域でアンカー行の後に含める行数。`within`を指定した場合だけ使える。"),
+    ] = 0,
+    context: typing.Annotated[
+        int | None,
+        pydantic.Field(description="`within`の領域の前後行数の一括指定。`within`を指定した場合だけ使える。"),
+    ] = None,
+    types: TypesArg = None,
+    globs: GlobsArg = None,
+    encoding: typing.Annotated[str, pydantic.Field(description="ファイルを読み書きする文字コード。")] = "utf-8",
+    max_filesize: MaxFilesizeArg = None,
+    exclude_files: typing.Annotated[
+        list[str] | None, pydantic.Field(description="置換対象から除くファイルパスの一覧。")
+    ] = None,
+    from_grep: typing.Annotated[
+        str | None,
+        pydantic.Field(
+            description=(
+                "`pyfltr grep --output-format=jsonl`の出力を保存したファイルのパス。"
+                "そこに現れるファイルへ対象を限定する。縮約された出力は拒否する。"
+            ),
+        ),
+    ] = None,
+    no_exclude: NoExcludeArg = False,
+    no_gitignore: NoGitignoreArg = False,
+    show_changes: typing.Annotated[
+        bool, pydantic.Field(description="Trueで`changes`へ置換箇所ごとの変更前後の行を含める。")
+    ] = False,
 ) -> ReplaceResultModel:
     r"""指定ファイル群へ正規表現置換を適用し、変更内容を返す。
 
@@ -670,35 +899,6 @@ async def tool_replace(
     `dry_run=False`を明示した場合のみ実書き込みし、`replace_id`を返す。
     `dry_run`の既定値がCLI（`False`）と異なるのはLLM暴発防止のため
     （`.claude/skills/grep-replace/SKILL.md`参照）。
-
-    Args:
-        pattern: 検索パターン（正規表現）。
-        replacement: 置換式（`re.sub`互換、`\\1`/`\\g<name>`参照可）。
-        paths: 対象のファイルまたはディレクトリパスの一覧。
-        dry_run: Trueの場合（既定）、ファイルを変更せず変更内容のみ計算する。
-        ignore_case: 大文字小文字を区別しない。
-        smart_case: パターンに大文字を含まない場合のみignore_caseを有効化する。
-        fixed_strings: パターンを固定文字列として扱う。
-        word_regexp: 単語境界で囲まれたマッチのみ採用する。
-        line_regexp: 行全体に一致したマッチのみ採用する。
-        multiline: マルチラインマッチを有効化する。
-        within: アンカー正規表現。指定時はアンカー行と前後コンテキスト
-            （`before_context`/`after_context`）で定まる領域内のみ置換する。
-        before_context: `within`領域でアンカー行の前に含める行数（CLIの`-B`相当、既定0でアンカー行のみ）。
-            `within`なしで指定した場合はエラーとなる。
-        after_context: `within`領域でアンカー行の後に含める行数（CLIの`-A`相当、既定0でアンカー行のみ）。
-            `within`なしで指定した場合はエラーとなる。
-        context: `within`領域でアンカー行の前後に含める行数の一括指定。
-            `within`なしで指定した場合はエラーとなる。
-        types: 対象言語タイプの一覧。
-        globs: globパターンでの対象限定一覧。
-        encoding: ファイル読み込み・書き込み時のエンコーディング（既定: utf-8）。
-        max_filesize: 走査対象ファイルサイズの上限（バイト単位）。
-        exclude_files: 置換対象から除外するファイルパスの一覧。
-        from_grep: grepのJSONL出力パス。対象の出力に現れるファイル集合へ対象を限定する。
-        no_exclude: exclude/extend-excludeによる除外を無効化する。
-        no_gitignore: .gitignoreによる除外を無効化する。
-        show_changes: Trueの場合、`changes`フィールドに各置換箇所の変更前後を含める。
     """
     if not paths:
         _raise_mcp_error("paths を 1 件以上指定してください。")
@@ -778,16 +978,21 @@ async def tool_replace(
     )
 
 
-async def tool_replace_undo(replace_id: str, force: bool = False) -> ReplaceUndoModel:
+async def tool_replace_undo(
+    replace_id: typing.Annotated[
+        str,
+        pydantic.Field(description="取り消すreplaceの識別子（ULID）。`replace`の応答か`replace_history`で確認できる。"),
+    ],
+    force: typing.Annotated[
+        bool,
+        pydantic.Field(description="Trueで、replace後に編集された（ハッシュが一致しない）ファイルも変更前の内容へ戻す。"),
+    ] = False,
+) -> ReplaceUndoModel:
     """保存済みreplace履歴からファイルを変更前の内容へ復元する。
 
     `force=True`を指定しない限り、手動編集済み（ハッシュ不一致）のファイルはスキップする。
     スキップが発生した場合は`exit_code=1`を返す。クライアント側で`force=True`再呼び出しの
     判断材料にする。
-
-    Args:
-        replace_id: undo対象のreplace識別子（ULID）。
-        force: Trueの場合、ハッシュ不一致のファイルも強制復元する。
     """
     store = pyfltr.grep_.history.ReplaceHistoryStore()
     try:
@@ -813,18 +1018,16 @@ async def tool_replace_undo(replace_id: str, force: bool = False) -> ReplaceUndo
 
 
 async def tool_replace_history(
-    action: str = "list",
-    replace_id: str | None = None,
-    limit: int | None = None,
+    action: typing.Annotated[
+        typing.Literal["list", "show"],
+        pydantic.Field(description="`list`は履歴を新しい順に一覧し、`show`は`replace_id`の1件を返す。"),
+    ] = "list",
+    replace_id: typing.Annotated[str | None, pydantic.Field(description='`action="show"`で必須のreplace識別子。')] = None,
+    limit: typing.Annotated[int | None, pydantic.Field(description='`action="list"`で返す最大件数。省略時は全件。')] = None,
 ) -> ReplaceHistoryModel:
     """replace履歴を一覧または単体で参照する。
 
     対応CLI: `pyfltr replace --list-history` / `pyfltr replace --show-history <ID>`
-
-    Args:
-        action: `"list"`（一覧、既定）または`"show"`（単体）。
-        replace_id: `action="show"`時に必須のreplace識別子。
-        limit: `action="list"`時の最大件数。省略時は全件。
     """
     pyfltr.warnings_.clear()
     if action not in ("list", "show"):
@@ -863,15 +1066,21 @@ async def tool_replace_history(
     return ReplaceHistoryModel(action=action, entries=entries)
 
 
-async def tool_command_info(command: str, check: bool = False) -> CommandInfoModel:
+async def tool_command_info(
+    command: typing.Annotated[str, pydantic.Field(description="対象のコマンド名（`ruff-check`など）。")],
+    check: typing.Annotated[
+        bool,
+        pydantic.Field(
+            description=(
+                "Trueで実行時と同じ事前確認を行う。`mise install`・`mise trust`の試行や"
+                "パッケージマネージャーの版確認などの副作用が起こりうる。既定はFalseで副作用を起こさない。"
+            ),
+        ),
+    ] = False,
+) -> CommandInfoModel:
     """ツールの起動方式の解決結果を返す。
 
     対応CLI: `pyfltr command-info <command> [--check]`
-
-    Args:
-        command: 対象のツール名。
-        check: Trueの場合、実行経路と同じ事前確認を行う。miseのtrust試行や
-            パッケージマネージャーの版確認などの副作用が発生し得るため、既定はFalse。
     """
     pyfltr.warnings_.clear()
     try:
@@ -889,22 +1098,29 @@ async def tool_command_info(command: str, check: bool = False) -> CommandInfoMod
 
 
 async def tool_config(
-    action: str,
-    key: str | None = None,
-    value: str | None = None,
-    use_global: bool = False,
-    include_defaults: bool = False,
+    action: typing.Annotated[
+        typing.Literal["get", "set", "delete", "list"],
+        pydantic.Field(
+            description=(
+                "操作。`get`は`key`の値を返す（`key`必須、`value`不可）。"
+                "`set`は`key`へ`value`を書き込む（両方必須）。`delete`は`key`を削除する（`key`必須、`value`不可）。"
+                "`list`は設定値を一覧する（`key`・`value`不可）。`set`・`delete`は設定ファイルを書き換える。"
+            ),
+        ),
+    ],
+    key: typing.Annotated[str | None, pydantic.Field(description="`get`・`set`・`delete`で必須の設定キー名。")] = None,
+    value: typing.Annotated[str | None, pydantic.Field(description="`set`で必須の設定値。キーの型に合わせて変換する。")] = None,
+    use_global: typing.Annotated[
+        bool,
+        pydantic.Field(description="Trueでグローバル設定ファイルを対象にする。既定はサーバーのcwdにある`pyproject.toml`。"),
+    ] = False,
+    include_defaults: typing.Annotated[
+        bool, pydantic.Field(description='`action="list"`で、既定値のままのキーも含める。')
+    ] = False,
 ) -> ConfigResultModel:
     """pyfltr設定ファイルを操作する。
 
     対応CLI: `pyfltr config get|set|delete|list`
-
-    Args:
-        action: `"get"` / `"set"` / `"delete"` / `"list"`のいずれか。
-        key: get、set、deleteで必須の設定キー名。
-        value: setで必須の設定値。キーの型に応じて変換する。
-        use_global: Trueの場合、グローバル設定ファイルを対象にする。
-        include_defaults: listで既定値のままのキーも含める。
     """
     pyfltr.warnings_.clear()
     if action not in ("get", "set", "delete", "list"):
@@ -950,6 +1166,18 @@ async def tool_config(
 # MCPServer組み立て
 # ---------------------------------------------------------------------------
 
+# 初期化応答でクライアントへ渡すサーバー全体の説明。ツール検索が有効なホストでは
+# ツール名とこの説明だけが先に読まれるため、扱う作業とツールの選び方を書く。
+SERVER_INSTRUCTIONS = (
+    "pyfltrは多言語のformatter・linter・testerとプロジェクト固有のチェックを、設定に従って一括実行する。"
+    "チェックの実行は`run`を使い、`mode`で`run`（自動修正あり）・`fast`（`fast`設定が有効なツールのみ）・`ci`（fixステージなし、formatterによる書き換えを失敗扱い）を選ぶ。"
+    "実行結果は実行アーカイブに保存され、`list_runs`で一覧、`show_run`で概要、"
+    "`show_run_diagnostics`で診断、`show_run_output`でツールの生出力を参照する。"
+    "pyfltrの除外設定に従うファイル横断の検索は`grep`、置換は`replace`（既定はdry run）を使い、"
+    "取り消しと履歴は`replace_undo`・`replace_history`で扱う。"
+    "pyfltrの設定の参照と変更は`config`、各ツールの起動方式の確認は`command_info`を使う。"
+)
+
 TOOL_HANDLERS = {
     handler.__name__: handler
     for handler in (
@@ -981,76 +1209,114 @@ def build_server() -> MCPServer:
     """
     if _mcpserver is None:
         raise RuntimeError("MCPサーバー機能に必要な依存を読み込めません") from _MCP_IMPORT_ERROR
-    assert _mcp_transport is not None
-    mcp = _mcpserver.MCPServer("pyfltr", version=importlib.metadata.version("pyfltr"))
-
-    mcp.tool(name="list_runs", description="実行アーカイブに保存された run 一覧を新しい順で返す。")(
-        _mcp_transport.isolate_tool(tool_list_runs, _raise_mcp_error)
-    )
-    mcp.tool(
-        name="show_run", description="指定 run の meta 情報とコマンド別サマリを返す。run_id は前方一致・latest エイリアス可。"
-    )(_mcp_transport.isolate_tool(tool_show_run, _raise_mcp_error))
-    mcp.tool(
-        name="show_run_diagnostics",
-        description=(
-            "指定run・コマンドのdiagnostics全件とコマンドのmeta情報を返す。meta情報は検査対象ファイルの引数列を含まない。"
+    assert _mcp_transport is not None and _mcp_types is not None
+    mcp = _mcpserver.MCPServer("pyfltr", version=importlib.metadata.version("pyfltr"), instructions=SERVER_INSTRUCTIONS)
+    read_only = _mcp_types.ToolAnnotations(read_only_hint=True)
+    # 対象ファイルや設定ファイルを上書きしうるツール。ホストへ確認を促す。
+    writes_files = _mcp_types.ToolAnnotations(destructive_hint=True)
+    for name, title, description, tool_annotations, handler in (
+        (
+            "list_runs",
+            "実行履歴の一覧",
+            "実行アーカイブに保存されたrunの一覧を新しい順に返す。最新runだけを見る場合は`show_run`へ`latest`を渡す。",
+            read_only,
+            tool_list_runs,
         ),
-    )(_mcp_transport.isolate_tool(tool_show_run_diagnostics, _raise_mcp_error))
-    mcp.tool(name="show_run_output", description="指定 run・コマンドの output.log 全文を返す。")(
-        _mcp_transport.isolate_tool(tool_show_run_output, _raise_mcp_error)
-    )
-    mcp.tool(
-        name="run",
-        description=(
-            "指定パスに対してlint/format/testを実行し、run_id・終了コード・失敗コマンド名を返す。"
-            " modeでrun・fast・ciを選択し、CLIと同じ対象制御オプションを利用できる。"
-            " only_failed=True で直前 run の失敗ツールを失敗ファイルに限定して再実行する"
-            "（診断にファイルを持たない失敗ツールは現在の対象全体で再実行する。from_run で参照 run を指定可）。"
-            " 戻り値に retry_commands（失敗コマンドの再実行シェルコマンド）を含む。"
-            " no_fix=True が抑止するのは fix ステージだけで、通常ステージの formatter は対象ファイルを書き換える"
-            "（ruff-format-by-check が既定で有効なため ruff-format による整形は行われる）。"
-            " 書き換えを避ける場合は commands で対象を linter へ限定する。"
-            " allow_external_paths=True で起点外の絶対パスを検査する場合は、work_dir へ検査設定を持つ"
-            "プロジェクトのルートを指定する。work_dir は設定探索と相対パス解決の基準を兼ねるため、"
-            "検査設定を持たないディレクトリを起点にすると適用される除外設定と検査対象の範囲が変わる。"
+        (
+            "show_run",
+            "実行結果の概要",
+            "指定runのmeta情報とコマンド別サマリ（状態・診断件数・所要時間）を返す。"
+            "診断の本文は`show_run_diagnostics`、ツールの生出力は`show_run_output`で取得する。",
+            read_only,
+            tool_show_run,
         ),
-    )(_mcp_transport.isolate_tool(tool_run, _raise_mcp_error))
-    mcp.tool(
-        name="grep",
-        description=(
-            "Search for a regex pattern across files. Honors pyfltr exclude/.gitignore by default. Returns match records."
+        (
+            "show_run_diagnostics",
+            "実行結果の診断",
+            "指定run・コマンドの診断（ファイル単位に集約した指摘）とコマンドのmeta情報を返す。"
+            "meta情報は検査対象ファイルの引数列を含まない。"
+            "既定は全件を返す。件数が多い場合は`offset`・`limit`で個別指摘の範囲を指定して分割取得でき、"
+            "応答の`total_diagnostics`と`next_offset`で続きを判断できる。",
+            read_only,
+            tool_show_run_diagnostics,
         ),
-    )(_mcp_transport.isolate_tool(tool_grep, _raise_mcp_error))
-    mcp.tool(
-        name="replace",
-        description=(
-            "Replace pattern with replacement across files."
-            " dry_run=True (default) previews changes without writing."
-            " Pass dry_run=False to write and save undo history."
+        (
+            "show_run_output",
+            "実行結果の出力ログ",
+            "指定run・コマンドのツールの生出力（output.log）を返す。診断として解析された指摘は`show_run_diagnostics`で取得する。"
+            "既定は全文を返す。出力が大きい場合は`offset`・`limit`で行範囲を指定して分割取得でき、"
+            "各値が`text`・`total_lines`・`next_offset`を持つオブジェクトになる。",
+            read_only,
+            tool_show_run_output,
         ),
-    )(_mcp_transport.isolate_tool(tool_replace, _raise_mcp_error))
-    mcp.tool(
-        name="replace_undo",
-        description=(
-            "Undo a previous replace by replace_id."
-            " Set force=True to override hash mismatch (when files were edited after the replace)."
+        (
+            "run",
+            "チェックの実行",
+            "指定パスに対してformatter・linter・testerを実行し、完了判定・失敗コマンド・run_idなどを返す。"
+            'formatterと`mode="run"`・`"fast"`のfixステージは対象ファイルを書き換える。'
+            " 応答は`completion`を最初に読み、`completed`以外なら`incomplete_commands`・`missing_targets`・"
+            "`fully_excluded_files`・`skipped_reason`・`warnings`で理由を確認する。"
+            "`failed`が空でなければ`show_run_diagnostics`で診断を取得する。"
+            " 戻り値の`retry_commands`は失敗コマンドを再実行するシェルコマンドで、"
+            "`only_failed=True`でも失敗したツールだけを再実行できる。",
+            writes_files,
+            tool_run,
         ),
-    )(_mcp_transport.isolate_tool(tool_replace_undo, _raise_mcp_error))
-    mcp.tool(
-        name="replace_history",
-        description="replace履歴を一覧（action=list）または単体（action=show）で返す。",
-    )(_mcp_transport.isolate_tool(tool_replace_history, _raise_mcp_error))
-    mcp.tool(
-        name="command_info",
-        description=(
-            "ツールの起動方式（runner・実行ファイル・最終コマンドライン等）の解決結果を返す。"
-            " check=Trueはmiseの実行や版確認の副作用を伴う。"
+        (
+            "grep",
+            "ファイル横断の検索",
+            "ファイル群から正規表現（`fixed_strings=True`で固定文字列）を検索し、一致一覧を返す。"
+            "pyfltr設定の`exclude`と`.gitignore`に従って対象を選ぶ。ファイルは変更しない。"
+            " 大きな結果は既定で縮約し、縮約時は`output_mode`と`omitted_matches`で省略を示す。"
+            "置換は`replace`を使う。",
+            read_only,
+            tool_grep,
         ),
-    )(_mcp_transport.isolate_tool(tool_command_info, _raise_mcp_error))
-    mcp.tool(
-        name="config",
-        description="pyfltr設定ファイルを操作する（action=get / set / delete / list）。",
-    )(_mcp_transport.isolate_tool(tool_config, _raise_mcp_error))
+        (
+            "replace",
+            "ファイル横断の置換",
+            "ファイル群へ正規表現置換を適用する。既定の`dry_run=True`では変更内容だけを返してファイルを変更しない。"
+            "`dry_run=False`ではファイルを書き換え、取り消し用の`replace_id`と履歴を保存する。"
+            "置換前の確認には`grep`、取り消しには`replace_undo`を使う。",
+            writes_files,
+            tool_replace,
+        ),
+        (
+            "replace_undo",
+            "置換の取り消し",
+            "`replace`で書き換えたファイルを、`replace_id`の履歴から変更前の内容へ書き戻す。"
+            "replace後に編集されたファイルは既定で書き戻さず`skipped`へ挙げ、`force=True`で強制的に書き戻す。",
+            writes_files,
+            tool_replace_undo,
+        ),
+        (
+            "replace_history",
+            "置換履歴の参照",
+            '`replace`の履歴を一覧（`action="list"`）または1件（`action="show"`）で返す。ファイルは変更しない。',
+            read_only,
+            tool_replace_history,
+        ),
+        (
+            "command_info",
+            "ツール起動方式の確認",
+            "コマンドの起動方式（runner・実行ファイル・最終コマンドラインなど）の解決結果を返す。"
+            "既定は副作用を起こさない。`check=True`は`mise install`・`mise trust`の試行や版確認の副作用を伴う。",
+            # `check=True`はmiseの導入・信頼設定を変えうるため読み取り専用とせず、上書きもしないため破壊的ともしない。
+            _mcp_types.ToolAnnotations(read_only_hint=False, destructive_hint=False),
+            tool_command_info,
+        ),
+        (
+            "config",
+            "設定の参照と変更",
+            "pyfltrの設定を取得・一覧（`get`・`list`）し、変更・削除（`set`・`delete`）する。"
+            "`set`・`delete`は`pyproject.toml`（`use_global=True`ではグローバル設定ファイル）を書き換える。",
+            writes_files,
+            tool_config,
+        ),
+    ):
+        mcp.tool(name=name, title=title, description=description, annotations=tool_annotations)(
+            _mcp_transport.isolate_tool(handler, _raise_mcp_error)
+        )
 
     return mcp
 

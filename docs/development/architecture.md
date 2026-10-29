@@ -912,6 +912,9 @@ grep/replace系ツール（`grep`・`replace`・`replace_undo`・`replace_histor
 完全な引数列は`pyfltr show-run <run_id> --commands=<name>`と実行アーカイブの`tool.json`から取得する。
 
 保存ファイルの全文取得を目的とする`show_run_output`は本方針の対象外とし、`output.log`をそのまま返す。
+大きな出力は`show_run_output`の行範囲と`show_run_diagnostics`の指摘範囲（`offset`・`limit`）で分割取得する。
+範囲を省略した呼び出しは全文・全件を返し、既定の切り詰めは設けない。
+既存の呼び出し側が全文・全件を前提とするためである。
 `show_run`が返す`meta`も対象外とする。
 `meta.json`の`argv`は利用者が起動時に渡した引数を保持し、
 pyfltrが対象ファイルへ展開した結果を含まないためである。
