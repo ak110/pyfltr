@@ -92,6 +92,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # Debian 公式イメージは ``/etc/apt/apt.conf.d/docker-clean`` で apt キャッシュを
 # 自動削除するため、キャッシュマウント有効時のみそれを除去する。
 # Node.js は mise 管理 (root で導入) に集約し、pnpm はその npm 経由で導入するため APT には含めない。
+# ``libatomic1`` は mise が導入する Node.js 26 系の公式バイナリが実行時に読み込む共有ライブラリであり、
+# 欠けると ``node`` が起動できず後段の ``mise use --global node@lts`` が失敗する。
 # hadolint ignore=DL3008
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
@@ -103,6 +105,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         git \
         gnupg \
         jq \
+        libatomic1 \
         shellcheck
 
 # uv を astral 公式インストーラ経由で導入する。
