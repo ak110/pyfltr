@@ -175,6 +175,17 @@ class CommandInfo:
     関わらず従来通り起点 cwd で1回起動する。利用者は
     `{command}-subproject-aware` 設定キーで個別に上書きできる。
     """
+    subproject_concurrent: bool = True
+    """サブプロジェクト単位の分割実行で、同じツールを複数のサブプロジェクトに対して同時に起動してよいか否か。
+
+    `True`（既定）の場合、`jobs`から導いた件数までサブプロジェクト実行を同時に開始する。
+    `False`の場合、`jobs`の値によらずサブプロジェクトを1件ずつ順に実行する。
+    同時起動したプロセス間で共有されうる永続状態（キャッシュ、データベース、設定の書込み先）を
+    同時に使えないツールで指定する。`mypy`は同じキャッシュ保存先を複数プロセスで同時に使うと
+    SQLiteキャッシュの初期化が競合して内部エラーで終了するため`False`とする。
+
+    `serial_group`は異なるツール間の排他であり、本フィールドは同じツールのサブプロジェクト間の直列化を表す。
+    """
 
     execution_kind: ExecutionKind = "plain"
     fix_execution_kind: ExecutionKind = "linter-fix"
@@ -759,6 +770,7 @@ BUILTIN_COMMANDS: dict[str, CommandInfo] = {
             ("mypy-unused-awaitable", ["--enable-error-code=unused-awaitable"]),
         ],
         python_bin="mypy",
+        subproject_concurrent=False,
         diagnostic_pattern=r"^(?P<file>.+?):(?P<line>\d+):\s*error:\s*(?P<message>.+?)(?:\s*\[(?P<rule>[^\]]+)\])?\s*$",
         rule_url_builder=FunctionRef[[str, str | None], str | None]("pyfltr.rule_urls", "build_mypy_url"),
         language="python",

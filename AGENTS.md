@@ -132,6 +132,9 @@ format別のlogger stream/level切替の詳細は[docs/development/architecture.
   起点cwd全体を母数として構築した集合をそのまま対象へ渡さない。
   `ExecutionContext`へファイル集合を保持する状態を追加する場合は、
   対象の集合を`all_files`と交差させる処理を持たせる
+- `subproject_aware=True`ツールは複数のサブプロジェクトで同時に起動されうる。
+  ツールを追加・変更するときは、同時起動したプロセス間で共有されうる永続状態（キャッシュ、データベース、設定の書込み先）を
+  同時に使えるかを確かめ、使えないツールは`subproject_concurrent=False`としてサブプロジェクト実行を直列にする
 - subprocess・git・mise・ファイル走査などcwd依存処理はプロセスのcwdに依存しない実装にする。
   `subprocess.Popen(cwd=...)`の引数、または`start_cwd`・`base_cwd`・`cwd`等の
   明示引数でcwdを渡す。`os.chdir()`でグローバル状態を変更しない

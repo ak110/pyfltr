@@ -222,6 +222,47 @@ class TestRunSubprojectLoop:
         assert len(collected) == 1
 
 
+def test_mypy_runs_subprojects_one_at_a_time_while_others_run_concurrently(tmp_path: pathlib.Path) -> None:
+    """既定の`jobs`でも、mypyのサブプロジェクト実行は区間が重ならず、他のツールは同時に進行する。
+
+    mypyは同じキャッシュ保存先を複数プロセスで同時に使うと内部エラーで終了するため、
+    同じpyfltr実行の中でmypyを2件以上同時に起動しないことを確かめる。
+    """
+    ctx = _make_context(tmp_path, ["a", "b"], values={"mypy": True})
+    assert ctx.config.values["jobs"] == 8
+
+    def _max_concurrency(command: str) -> int:
+        active = 0
+        max_active = 0
+        cond = threading.Condition()
+
+        def _dispatch(
+            command: str, args: pyfltr.run_options.RunOptions, c: pyfltr.command.core_.ExecutionContext
+        ) -> pyfltr.command.core_.CommandResult:
+            del args, c
+            nonlocal active, max_active
+            with cond:
+                active += 1
+                max_active = max(max_active, active)
+                cond.notify_all()
+                # 同時に起動される実装なら他方の開始を待って重なりを確実に観測し、直列なら時間切れで進む。
+                cond.wait_for(lambda: max_active >= 2, timeout=1.0)
+                active -= 1
+            return _testconf.make_succeeded_result(command=command)
+
+        pyfltr.command.subproject_loop.run_subproject_loop(
+            command,
+            _testconf.make_args(),
+            ctx,
+            dispatch_fn=_dispatch,
+            disabled_skip_fn=_disabled_skip,
+        )
+        return max_active
+
+    assert _max_concurrency("mypy") == 1
+    assert _max_concurrency("ruff-check") == 2
+
+
 @pytest.mark.parametrize("jobs", [1, 2])
 def test_all_subprojects_are_dispatched(tmp_path: pathlib.Path, jobs: int) -> None:
     """同時実行数にかかわらず、対象の全サブプロジェクトを1回ずつ実行する。"""

@@ -265,6 +265,11 @@ pnpmの設定は呼び出し元のcwdで解決し、値を導入プロセスへ�
   プロジェクトローカル設定・モジュール解決・lockfileをcwd起点で読むツール
  （Python系・JS系・Rust系・.NET系のlinter/testerなど）は既定`True`。
   リポジトリ単位で動作するツール（`typos`・`shellcheck`・`shfmt`・`pre-commit`・`prek`）は既定`False`
+- 同一ツールのサブプロジェクト実行は`jobs`から導いた件数まで同時に開始する（`resolve_subproject_workers`）。
+  同時起動したプロセス間で共有されうる永続状態を同時に使えないツールは`CommandInfo.subproject_concurrent=False`とし、
+  サブプロジェクトを1件ずつ順に実行する。`mypy`は同じキャッシュ保存先の同時利用でSQLiteキャッシュの初期化が競合し
+  内部エラーで終了するため、これに該当する。キャッシュ保存先をpyfltrがサブプロジェクトごとに書き換える案は、
+  利用者が指定した共有保存先を無断で分割するため採らない
 - サブプロジェクト別の設定は対象のディレクトリで `load_config(config_dir=cwd)` を解決する。
   `pyproject.toml`を持たないサブプロジェクト（`Cargo.toml`単独・`*.csproj`単独等）は
   `[tool.pyfltr]`の記述先が存在しない。

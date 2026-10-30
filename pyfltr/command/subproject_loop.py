@@ -73,7 +73,11 @@ def resolve_subproject_workers(command: str, ctx: ExecutionContext, cwds: typing
     ツール側の並列度との積が`jobs`を超えないようにする。
 
     `jobs`が推定値以下の場合は1を返し、サブプロジェクトを1件ずつ実行する。
+    対象のツールが`CommandInfo.subproject_concurrent=False`の場合も、`jobs`によらず1を返す。
     """
+    info = ctx.config.commands.get(command)
+    if info is not None and not info.subproject_concurrent:
+        return 1
     values = ctx.config.values
     budget = values.get("jobs", 1)
     if not isinstance(budget, int) or budget < 1:
