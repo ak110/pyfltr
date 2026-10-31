@@ -1,11 +1,16 @@
 """別プロセスのpyfltr実行を重ねる結合試験の補助。
 
-各実行は試験の一時領域に作成したプロジェクトで、区間の開始・終了と待機中の生存の印を共有ログへ記録する
+各実行は試験の一時領域に作成したプロジェクトで、区間の開始・終了と待機中の生存の印を区間ログへ記録する
 カスタムコマンド（`slot-probe`）を実行する。保存先は`tests/conftest.py`の既定隔離が固定した`PYFLTR_CACHE_DIR`を子プロセスへ継承する。
+
+区間ログは基準パス（`log`）と書込主体ごとの記録ファイル（`record_path`）からなる。
+Windowsの追記は末尾への移動と書込が分かれており、複数のプロセスが同じファイルへ追記すると互いの行を上書きするため、
+各記録ファイルへ書き込むプロセスを1つに限り、読取側が全記録ファイルをまとめて解析する。
 """
 
 import collections.abc
 import contextlib
+import glob
 import json
 import os
 import pathlib
@@ -51,7 +56,10 @@ def make_project(
     extra_config: dict[str, typing.Any] | None = None,
     extra_commands: dict[str, dict[str, typing.Any]] | None = None,
 ) -> pathlib.Path:
-    """`slot-probe`を持つプロジェクトを作成する。`release`が`None`なら待たずに終了する。"""
+    """`slot-probe`を持つプロジェクトを作成する。`release`が`None`なら待たずに終了する。
+
+    検体は`name`を書込主体とする`log`の記録ファイルへ区間を記録する。
+    """
     project = root / name
     project.mkdir(parents=True)
     probe = root / "probe.py"
@@ -62,7 +70,13 @@ def make_project(
         PROBE_COMMAND: {
             "type": "tester",
             "path": sys.executable,
-            "args": [str(probe), str(log), name, str(release) if release is not None else "-", str(exit_code)],
+            "args": [
+                str(probe),
+                str(record_path(log, name)),
+                name,
+                str(release) if release is not None else "-",
+                str(exit_code),
+            ],
             "targets": "*.txt",
             "pass-filenames": False,
             "fast": True,
@@ -166,13 +180,19 @@ def wait_for(
 
 
 def describe(log: pathlib.Path, *runs: Run) -> str:
-    """待機の失敗の原因を調べるため、共有ログと各実行の起動引数・終了コード・出力をまとめて返す。"""
-    parts = [f"共有ログ {log}:\n{log.read_text(encoding='utf-8') if log.exists() else '（未作成）'}"]
+    """待機の失敗の原因を調べるため、区間ログと各実行の起動引数・終了コード・出力をまとめて返す。"""
+    records = _record_files(log)
+    parts = [f"区間ログ {path}:\n{path.read_bytes()!r}" for path in records] or [f"区間ログ {log}.*: （未作成）"]
     for run in runs:
         parts.append(
             f"実行 {run.process.args!r}（終了コード: {run.process.poll()}）\n標準出力:\n{run.stdout}\n標準エラー:\n{run.stderr}"
         )
     return "\n".join(parts)
+
+
+def record_path(log: pathlib.Path, writer: str) -> pathlib.Path:
+    """書込主体`writer`が区間を記録するファイルを返す。1つのファイルへは1つのプロセスだけが書き込む。"""
+    return log.with_name(f"{log.name}.{writer}")
 
 
 def intervals(log: pathlib.Path) -> dict[str, tuple[float, float | None]]:
@@ -193,13 +213,25 @@ def last_tick(log: pathlib.Path, label: str) -> float | None:
     return max(ticks, default=None)
 
 
+def _record_files(log: pathlib.Path) -> list[pathlib.Path]:
+    return sorted(log.parent.glob(f"{glob.escape(log.name)}.*"))
+
+
 def _events(log: pathlib.Path) -> list[tuple[str, str, float]]:
-    if not log.exists():
-        return []
     events: list[tuple[str, str, float]] = []
-    for line in log.read_text(encoding="utf-8").splitlines():
-        label, event, value = line.split()
-        events.append((label, event, float(value)))
+    for path in _record_files(log):
+        data = path.read_bytes()
+        # 書込主体が記録中の最終行は改行が付くまで未完成のため、改行で終わる行だけを解析する。
+        for raw in data[: data.rfind(b"\n") + 1].splitlines():
+            fields = raw.decode("utf-8").split()
+            if len(fields) != 3:
+                raise ValueError(
+                    f"区間ログの行を解析できません: {path} の {raw!r}。ファイル全体: {data!r}。"
+                    "このファイルへ書き込む検体やスクリプトが1つのプロセスだけで、"
+                    "`<ラベル> <start|tick|end> <時刻>`の1行を改行付きで書いているかを確認してください"
+                )
+            label, event, value = fields
+            events.append((label, event, float(value)))
     return events
 
 

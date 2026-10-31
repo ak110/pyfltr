@@ -163,7 +163,7 @@ def test_nested_children_inherit_slot(tmp_path: pathlib.Path) -> None:
         "nested": {
             "type": "tester",
             "path": sys.executable,
-            "args": [str(nested), str(log), str(project_c), str(release)],
+            "args": [str(nested), str(helper.record_path(log, "p")), str(project_c), str(release)],
             "targets": "*.txt",
             "pass-filenames": False,
         }
@@ -261,7 +261,7 @@ def test_api_holder_excludes_pyfltr_run(tmp_path: pathlib.Path) -> None:
     script.write_text(_API_HOLDER_SCRIPT, encoding="utf-8")
     project_b = helper.make_project(tmp_path, "b", log=log, release=None)
 
-    with helper.start([sys.executable, str(script), str(log), str(release)], holder_dir) as holder:
+    with helper.start([sys.executable, str(script), str(helper.record_path(log, "x")), str(release)], holder_dir) as holder:
         helper.wait_for(
             lambda: helper.started(log, "x"),
             expected="APIの保持者が区間を開始する",
@@ -292,7 +292,7 @@ def test_cli_yields_before_remaining_tools(tmp_path: pathlib.Path, jobs: int) ->
         f"probe-{index}": {
             "type": "tester",
             "path": sys.executable,
-            "args": [str(tmp_path / "probe.py"), str(log), f"a{index}", str(release), "0"],
+            "args": [str(tmp_path / "probe.py"), str(helper.record_path(log, f"a{index}")), f"a{index}", str(release), "0"],
             "targets": "*.txt",
             "pass-filenames": False,
         }
