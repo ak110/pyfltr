@@ -1,5 +1,5 @@
 ---
-name: pyfltr-add-tool
+name: add-pyfltr-tool
 description: >
   pyfltr に新しい formatter / linter / tester を追加する際の定型手順チェックリスト。
   tools.py / config/model.py / command/dispatcher.py / parsing/tools.py /

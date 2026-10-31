@@ -90,7 +90,7 @@ description: >
 実装が要素を決める集合を利用者向け文書へ閉じた一覧として写す場合は、
 `tests/integration/documentation_test.py`へ実装の公開定義と一覧が一致する整合テストを加える。
 個別の対応ツール名単位の掲載先判断は本節の対象外とし、
-`.claude/skills/pyfltr-add-tool/SKILL.md`の「触るべきファイル」節の規定に従う。
+`.claude/skills/add-pyfltr-tool/SKILL.md`の「触るべきファイル」節の規定に従う。
 
 - 主要機能はREADMEの特徴章へ掲載する。
   既存機能の内部改善など、利用者が新たに選択・操作する要素が無い場合は掲載しない
