@@ -13,6 +13,7 @@ import textwrap
 
 import pytest
 
+from tests.conftest import write_slot_wait_worker
 from tests.integration import concurrent_runs_helper as helper
 
 _API_HOLDER_SCRIPT = """import os
@@ -84,17 +85,18 @@ def test_mcp_run_waits_for_cli(tmp_path: pathlib.Path) -> None:
         json.dumps({"paths": ["sample.txt"], "commands": [helper.PROBE_COMMAND], "work_dir": str(project_b), "no_cache": True}),
         encoding="utf-8",
     )
-    runs_dir = helper.cache_root() / "runs"
+    waiting = tmp_path / "slot-waiting"
+    worker_script = write_slot_wait_worker(tmp_path / "worker.py", waiting)
 
     with helper.start(helper.pyfltr_argv("run"), project_a) as run_a:
         helper.wait_for(
             lambda: helper.started(log, "a"), expected="Aがツールの区間を開始する", observed=lambda: helper.describe(log, run_a)
         )
-        with helper.start([sys.executable, "-m", "pyfltr.cli.mcp_worker", "tool_run"], project_b, stdin_path=request) as worker:
-            # MCPは警告を応答へまとめて返すため、実行アーカイブの初期化（実行枠の取得の直前）を同期点にする。
+        with helper.start([sys.executable, "-I", str(worker_script), "tool_run"], project_b, stdin_path=request) as worker:
+            # MCPは警告を応答へまとめて返すため、workerが実行枠の待機を始めた通知を同期点にする。
             helper.wait_for(
-                lambda: len([entry for entry in runs_dir.iterdir() if entry.is_dir()]) >= 2,
-                expected="MCP workerが実行アーカイブを初期化する",
+                waiting.exists,
+                expected="MCP workerが実行枠の待機を始める",
                 observed=lambda: helper.describe(log, run_a, worker),
             )
             assert not helper.started(log, "b")

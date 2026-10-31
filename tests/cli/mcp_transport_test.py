@@ -17,6 +17,7 @@ import pytest
 import tomlkit
 
 import pyfltr.cli.mcp_server
+from tests.conftest import write_slot_wait_worker
 
 
 class _Client:
@@ -56,14 +57,14 @@ class _Client:
 
 
 @contextlib.contextmanager
-def _client(root: pathlib.Path) -> typing.Generator[_Client, None, None]:
+def _client(root: pathlib.Path, server_argv: list[str]) -> typing.Generator[_Client, None, None]:
     env = dict(os.environ)
     env["PYFLTR_CACHE_DIR"] = str(root / "cache")
     env["PYFLTR_GLOBAL_CONFIG"] = str(root / "global.toml")
     with (
         (root / "server-stderr.log").open("w", encoding="utf-8") as stderr,
         subprocess.Popen(
-            [sys.executable, "-m", "pyfltr", "mcp"],
+            server_argv,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=stderr,
@@ -168,12 +169,56 @@ def _project(root: pathlib.Path, name: str) -> pathlib.Path:
     return project
 
 
-def _wait_for(predicate: typing.Callable[[], bool]) -> None:
+_SLOT_WAIT_SERVER = """import sys
+
+import anyio
+
+import pyfltr.cli.main
+
+_open_process = anyio.open_process
+
+
+async def _open(command, **kwargs):
+    # 公開のworker起動引数のうち処理名だけを引き継ぎ、待機の観測を加えたworkerを起動する。
+    return await _open_process([command[0], "-I", {worker!r}, command[-1]], **kwargs)
+
+
+anyio.open_process = _open
+sys.argv = [sys.argv[0], "mcp"]
+pyfltr.cli.main.main()
+"""
+
+
+def _slot_wait_server(root: pathlib.Path, marker: pathlib.Path) -> list[str]:
+    """workerが実行枠の待機を始めた時点で`marker`を作成するstdioサーバーの起動引数を返す。"""
+    worker = write_slot_wait_worker(root / "slot_wait_worker.py", marker)
+    server = root / "slot_wait_server.py"
+    server.write_text(_SLOT_WAIT_SERVER.format(worker=str(worker)), encoding="utf-8")
+    return [sys.executable, str(server)]
+
+
+def _wait_for(predicate: typing.Callable[[], bool], observed: typing.Callable[[], str] | None = None) -> None:
+    """条件が成立するまで待つ。上限に達したら、`observed`の戻り値（失敗時点の観測）を示して失敗させる。"""
     deadline = time.monotonic() + 15
     while not predicate():
         if time.monotonic() >= deadline:
-            raise TimeoutError("観測条件へ到達しませんでした")
+            detail = f"観測した状態:\n{observed()}" if observed is not None else ""
+            raise TimeoutError(f"観測条件へ到達しませんでした。{detail}")
         time.sleep(0.01)
+
+
+def _describe_slot_wait(root: pathlib.Path, waiting: pathlib.Path, client: _Client) -> str:
+    """待機の印に到達しない原因を調べるため、印の有無・サーバーとworkerの標準エラー・未回収の応答を返す。"""
+    stderr = root / "server-stderr.log"
+    stderr_text = stderr.read_text(encoding="utf-8") if stderr.exists() else "（未作成）"
+    return "\n".join(
+        [
+            f"待機の印 {waiting}: {'あり' if waiting.exists() else 'なし'}",
+            f"サーバーとworkerの標準エラー {stderr}:\n{stderr_text}",
+            f"未回収の応答: {client.pending!r}",
+            f"サーバーの終了コード: {client.process.poll()}",
+        ]
+    )
 
 
 def _running(pid: int) -> bool:
@@ -190,6 +235,7 @@ def test_stdio_remains_responsive_and_cancels_only_owned_process_tree(tmp_path: 
     """
     first = _project(tmp_path, "project-first")
     second = _project(tmp_path, "project-second")
+    waiting = tmp_path / "slot-waiting"
 
     def _run_request(identifier: int, project: pathlib.Path) -> None:
         client.send(
@@ -206,7 +252,7 @@ def test_stdio_remains_responsive_and_cancels_only_owned_process_tree(tmp_path: 
             identifier,
         )
 
-    with _client(tmp_path) as client:
+    with _client(tmp_path, _slot_wait_server(tmp_path, waiting)) as client:
         _run_request(2, first)
         _wait_for(lambda: (first / "child-started").exists() and (first / "started.json").exists())
         first_pids = json.loads((first / "started.json").read_text(encoding="utf-8"))
@@ -230,6 +276,8 @@ def test_stdio_remains_responsive_and_cancels_only_owned_process_tree(tmp_path: 
         grep = client.receive(5)["result"]["structuredContent"]
         assert grep["warnings"]
         assert not (second / "started.json").exists()
+        # 後発が実行枠の待機を始めたことを確かめてから先発を取り消し、待機の警告を検証できる順序にする。
+        _wait_for(waiting.exists, observed=lambda: _describe_slot_wait(tmp_path, waiting, client))
         client.send("notifications/cancelled", {"requestId": 2})
         _wait_for(lambda: (second / "child-started").exists() and (second / "started.json").exists())
         assert not any(_running(pid) for pid in first_pids.values())

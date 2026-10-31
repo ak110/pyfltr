@@ -328,6 +328,35 @@ def shared_prefix_length(a: str, b: str) -> int:
     return shared
 
 
+_SLOT_WAIT_WORKER = """import pathlib
+import sys
+
+import pyfltr.cli.mcp_worker
+import pyfltr.command.stage_runner
+
+_notify = pyfltr.command.stage_runner._notify_slot_wait
+
+
+def _notify_and_mark(owner):
+    _notify(owner)
+    pathlib.Path({marker!r}).touch()
+
+
+pyfltr.command.stage_runner._notify_slot_wait = _notify_and_mark
+sys.exit(pyfltr.cli.mcp_worker.main())
+"""
+
+
+def write_slot_wait_worker(script: pathlib.Path, marker: pathlib.Path) -> pathlib.Path:
+    """実行枠の待機を始めた時点で`marker`を作成するMCP workerの起動スクリプトを`script`へ書き込む。
+
+    MCPは待機の警告を応答へまとめて返すため、別プロセスのworkerが待機へ到達したことを試験が観測する手段として使う。
+    `python -I <script> <処理名>`で起動すると`pyfltr.cli.mcp_worker`と同じ処理を実行する。
+    """
+    script.write_text(_SLOT_WAIT_WORKER.format(marker=str(marker)), encoding="utf-8")
+    return script
+
+
 def seed_archive_run(
     cache_root: pathlib.Path,
     *,
