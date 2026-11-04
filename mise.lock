@@ -381,5 +381,6 @@ url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-darwin-x8
 url_api = "https://api.github.com/repos/tamasfe/taplo/releases/assets/257323116"
 
 [tools.taplo."platforms.windows-x64"]
+checksum = "sha256:1615eed140039bd58e7089109883b1c434de5d6de8f64a993e6e8c80ca57bdf9"
 url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-windows-x86_64.zip"
 url_api = "https://api.github.com/repos/tamasfe/taplo/releases/assets/257323062"
