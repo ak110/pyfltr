@@ -292,36 +292,31 @@ def test_abort_while_reacquiring_releases_request(lock_dir: pathlib.Path) -> Non
 
 
 def test_killed_while_reacquiring_is_reclaimed(tmp_path: pathlib.Path, lock_dir: pathlib.Path) -> None:
-    """取り直しを待つ保持者が強制終了しても、残った待機要求は回収され、次の取得者は待たない。"""
-    script = tmp_path / "holder.py"
+    """取り直しを待つ保持者が強制終了しても、残った待機要求は回収され、次の取得者は待たない。
+
+    待機者は保持者の祖先でない別プロセスにする。
+    待機者がpytest自身のスレッドだと、取り直し時の保持者記録が保持者の祖先となって所有を継承し、取り直しの待機へ入らないためである。
+    """
+    script = tmp_path / "yielding_holder.py"
     script.write_text(_YIELDING_HOLDER_SCRIPT, encoding="utf-8")
-    entered = threading.Event()
-    finish = threading.Event()
-
-    def _other() -> None:
-        with pyfltr.command.execution_slot.hold(lock_dir=lock_dir):
-            entered.set()
-            finish.wait(30)
-
-    thread = threading.Thread(target=_other)
     with subprocess.Popen([sys.executable, str(script), str(lock_dir)], stdout=subprocess.PIPE, text=True) as process:
         assert process.stdout is not None
         try:
             assert process.stdout.readline().strip() == "held"
-            thread.start()
-            assert entered.wait(30)
-            # 保持者は解放より先に待機列へ再登録するため、待機者の保持中は保持者の要求だけが残る。
-            assert len(list(lock_dir.glob("execution.wait-*"))) == 1
-            # Windowsの仮想環境の`python.exe`は本体を子プロセスで起動するため、子孫も含めて止める。
-            for child in psutil.Process(process.pid).children(recursive=True):
-                child.kill()
-            process.kill()
-            remaining, _ = process.communicate(timeout=30)
+            with _holder(tmp_path, lock_dir) as other_pid:
+                # 保持者は解放より先に待機列へ再登録するため、待機者の保持中は保持者の要求だけが残る。
+                assert len(list(lock_dir.glob("execution.wait-*"))) == 1
+                current = pyfltr.command.execution_slot.read_owner(lock_dir)
+                assert current is not None
+                assert current.pid == other_pid
+                # Windowsの仮想環境の`python.exe`は本体を子プロセスで起動するため、子孫も含めて止める。
+                for child in psutil.Process(process.pid).children(recursive=True):
+                    child.kill()
+                process.kill()
+                remaining, _ = process.communicate(timeout=30)
         finally:
-            finish.set()
-            if thread.is_alive():
-                thread.join(timeout=30)
-    assert not thread.is_alive()
+            if process.poll() is None:
+                process.kill()
     assert "resumed" not in remaining
     with pyfltr.command.execution_slot.hold(lock_dir=lock_dir, should_abort=lambda: True):
         pass

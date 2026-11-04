@@ -857,6 +857,7 @@ with pyfltr.command.execution_slot.hold(label="my-check"):
 
 - その区間で起動した子プロセスを全て終了・回収した区切りで`yield_to_waiters`を呼ぶ。子プロセスの実行中に呼ぶと、子プロセスと待機中の実行が同時に動く
 - 譲った場合は`True`、譲らなかった場合は`False`を返す
+- 譲る前に待機中の実行の有無だけを調べるには`pyfltr.command.execution_slot.yield_requested`を呼ぶ。最外側の`hold`で実行枠を取得したスレッドで、待機中の実行がいる場合だけ`True`を返す。入れ子の`hold`の内側、親の実行枠を引き継いだ子プロセスの中、`hold`の外、別スレッドでは`False`を返す
 - 譲った後の取り直しの待機は、`hold`へ渡した`should_abort`が真を返すと`WaitAborted`で中断する。中断した場合は実行枠を持たない状態で`with`を抜ける
 - 入れ子の`hold`の内側と、親の実行枠を引き継いだ子プロセスの中では譲らない。親の実行が子プロセスを回収した区切りで譲る
 
