@@ -324,3 +324,62 @@ def test_cli_yields_before_remaining_tools(tmp_path: pathlib.Path, jobs: int) ->
         _assert_after(log, label, "b")
     for label in set(spans) - initial - {"b"}:
         _assert_after(log, "b", label)
+
+
+_YIELDING_API_HOLDER_SCRIPT = """import pathlib
+import subprocess
+import sys
+import time
+
+import pyfltr.command.execution_slot
+
+probe, child_record, release, rest_record = sys.argv[1:5]
+with pyfltr.command.execution_slot.hold(label="external-check"):
+    # 子の稼働中は譲らず、子を回収した区切りで譲る。
+    subprocess.run([sys.executable, probe, child_record, "c", release, "0"], stdout=subprocess.DEVNULL, check=True, timeout=150)
+    yielded = pyfltr.command.execution_slot.yield_to_waiters()
+    with pathlib.Path(rest_record).open("a", encoding="utf-8") as f:
+        f.write(f"r start {time.time()}\\n")
+        f.write(f"r end {time.time()}\\n")
+print(yielded, flush=True)
+"""
+
+
+@pytest.mark.timeout(240)
+def test_api_holder_yields_between_children(tmp_path: pathlib.Path) -> None:
+    """APIの保持者は子の稼働中は待機者を通さず、子を回収した区切りで譲り、待機者の終了後に残りを続ける。"""
+    log = tmp_path / "intervals.log"
+    release = tmp_path / "release-c"
+    project_b = helper.make_project(tmp_path, "b", log=log, release=None)
+    holder_dir = tmp_path / "x"
+    holder_dir.mkdir()
+    script = holder_dir / "holder.py"
+    script.write_text(_YIELDING_API_HOLDER_SCRIPT, encoding="utf-8")
+    argv = [
+        sys.executable,
+        str(script),
+        str(tmp_path / "probe.py"),
+        str(helper.record_path(log, "c")),
+        str(release),
+        str(helper.record_path(log, "r")),
+    ]
+
+    with helper.start(argv, holder_dir) as holder:
+        helper.wait_for(
+            lambda: helper.started(log, "c"),
+            expected="保持者の子が区間を開始する",
+            observed=lambda: helper.describe(log, holder),
+        )
+        with helper.start(helper.pyfltr_argv("run", output_format="text"), project_b) as run_b:
+            helper.wait_for(
+                lambda: helper.waiting_notified(run_b),
+                expected="Bが実行枠の待機を通知する",
+                observed=lambda: helper.describe(log, holder, run_b),
+            )
+            assert not helper.started(log, "b")
+            release.touch()
+            assert run_b.wait() == 0, run_b.stderr
+            assert holder.wait() == 0, holder.stderr
+    assert holder.stdout.strip() == "True"
+    _assert_after(log, "c", "b")
+    _assert_after(log, "b", "r")

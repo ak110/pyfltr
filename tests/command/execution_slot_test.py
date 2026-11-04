@@ -11,6 +11,7 @@ import subprocess
 import sys
 import threading
 
+import psutil
 import pytest
 
 import pyfltr.command.execution_slot
@@ -171,6 +172,7 @@ def test_yield_preserves_waiting_order(lock_dir: pathlib.Path) -> None:
         with pyfltr.command.execution_slot.hold(lock_dir=lock_dir, on_wait=_on_wait):
             events.append(label)
 
+    assert not pyfltr.command.execution_slot.yield_to_waiters()
     with pyfltr.command.execution_slot.hold(lock_dir=lock_dir):
         for label in ("first", "second"):
             waiting = threading.Event()
@@ -180,13 +182,147 @@ def test_yield_preserves_waiting_order(lock_dir: pathlib.Path) -> None:
             assert waiting.wait(30)
         with pyfltr.command.execution_slot.hold(lock_dir=lock_dir):
             assert not pyfltr.command.execution_slot.yield_requested()
-            pyfltr.command.execution_slot.yield_to_waiters()
+            assert not pyfltr.command.execution_slot.yield_to_waiters()
             assert not events
         assert pyfltr.command.execution_slot.yield_requested()
-        pyfltr.command.execution_slot.yield_to_waiters()
+        assert pyfltr.command.execution_slot.yield_to_waiters()
         events.append("resumed")
     for thread in threads:
         thread.join(30)
         assert not thread.is_alive()
     assert events == ["first", "second", "resumed"]
+    assert not list(lock_dir.glob("execution.wait-*"))
+
+
+_YIELDING_CHILD_SCRIPT = """import pathlib
+import sys
+
+import pyfltr.command.execution_slot
+
+with pyfltr.command.execution_slot.hold(lock_dir=pathlib.Path(sys.argv[1]), should_abort=lambda: True):
+    print(pyfltr.command.execution_slot.yield_requested(), pyfltr.command.execution_slot.yield_to_waiters(), flush=True)
+"""
+
+_YIELDING_HOLDER_SCRIPT = """import pathlib
+import sys
+import time
+
+import pyfltr.command.execution_slot
+
+lock_dir = pathlib.Path(sys.argv[1])
+with pyfltr.command.execution_slot.hold(lock_dir=lock_dir, label="holder"):
+    print("held", flush=True)
+    deadline = time.monotonic() + 60
+    while not pyfltr.command.execution_slot.yield_requested():
+        if time.monotonic() >= deadline:
+            raise TimeoutError("待機者が現れません")
+        time.sleep(0.02)
+    pyfltr.command.execution_slot.yield_to_waiters()
+    print("resumed", flush=True)
+"""
+
+
+def test_inherited_child_does_not_yield(tmp_path: pathlib.Path, lock_dir: pathlib.Path) -> None:
+    """保持者の子プロセスは待機者がいても譲らず、待機者は保持者の解放まで取得しない。"""
+    script = tmp_path / "child.py"
+    script.write_text(_YIELDING_CHILD_SCRIPT, encoding="utf-8")
+    events: list[str] = []
+    waiting = threading.Event()
+
+    def _other() -> None:
+        def _on_wait(owner: pyfltr.command.execution_slot.SlotOwner | None) -> None:
+            del owner
+            waiting.set()
+
+        with pyfltr.command.execution_slot.hold(lock_dir=lock_dir, on_wait=_on_wait):
+            events.append("other-entered")
+
+    thread = threading.Thread(target=_other)
+    with pyfltr.command.execution_slot.hold(lock_dir=lock_dir):
+        thread.start()
+        assert waiting.wait(30)
+        completed = subprocess.run(
+            [sys.executable, str(script), str(lock_dir)],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+        assert not events
+        events.append("released")
+    thread.join(timeout=30)
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.split() == ["False", "False"]
+    assert events == ["released", "other-entered"]
+
+
+def test_abort_while_reacquiring_releases_request(lock_dir: pathlib.Path) -> None:
+    """取り直しの待機を中断すると枠を持たずに区間を抜け、待機要求を残さず、次の取得者は待たない。"""
+    abort = threading.Event()
+    waiting = threading.Event()
+    finish = threading.Event()
+    events: list[str] = []
+
+    def _other() -> None:
+        def _on_wait(owner: pyfltr.command.execution_slot.SlotOwner | None) -> None:
+            del owner
+            waiting.set()
+
+        with pyfltr.command.execution_slot.hold(lock_dir=lock_dir, on_wait=_on_wait):
+            events.append("other-entered")
+            abort.set()
+            finish.wait(30)
+
+    thread = threading.Thread(target=_other)
+    with (
+        pytest.raises(pyfltr.command.execution_slot.WaitAborted),
+        pyfltr.command.execution_slot.hold(lock_dir=lock_dir, should_abort=abort.is_set),
+    ):
+        thread.start()
+        assert waiting.wait(30)
+        pyfltr.command.execution_slot.yield_to_waiters()
+        pytest.fail("中断した取り直しは区間へ戻らない")
+    assert events == ["other-entered"]
+    assert not list(lock_dir.glob("execution.wait-*"))
+    finish.set()
+    thread.join(timeout=30)
+    assert not thread.is_alive()
+    with pyfltr.command.execution_slot.hold(lock_dir=lock_dir, should_abort=lambda: True):
+        pass
+
+
+def test_killed_while_reacquiring_is_reclaimed(tmp_path: pathlib.Path, lock_dir: pathlib.Path) -> None:
+    """取り直しを待つ保持者が強制終了しても、残った待機要求は回収され、次の取得者は待たない。"""
+    script = tmp_path / "holder.py"
+    script.write_text(_YIELDING_HOLDER_SCRIPT, encoding="utf-8")
+    entered = threading.Event()
+    finish = threading.Event()
+
+    def _other() -> None:
+        with pyfltr.command.execution_slot.hold(lock_dir=lock_dir):
+            entered.set()
+            finish.wait(30)
+
+    thread = threading.Thread(target=_other)
+    with subprocess.Popen([sys.executable, str(script), str(lock_dir)], stdout=subprocess.PIPE, text=True) as process:
+        assert process.stdout is not None
+        try:
+            assert process.stdout.readline().strip() == "held"
+            thread.start()
+            assert entered.wait(30)
+            # 保持者は解放より先に待機列へ再登録するため、待機者の保持中は保持者の要求だけが残る。
+            assert len(list(lock_dir.glob("execution.wait-*"))) == 1
+            # Windowsの仮想環境の`python.exe`は本体を子プロセスで起動するため、子孫も含めて止める。
+            for child in psutil.Process(process.pid).children(recursive=True):
+                child.kill()
+            process.kill()
+            remaining, _ = process.communicate(timeout=30)
+        finally:
+            finish.set()
+            if thread.is_alive():
+                thread.join(timeout=30)
+    assert not thread.is_alive()
+    assert "resumed" not in remaining
+    with pyfltr.command.execution_slot.hold(lock_dir=lock_dir, should_abort=lambda: True):
+        pass
     assert not list(lock_dir.glob("execution.wait-*"))

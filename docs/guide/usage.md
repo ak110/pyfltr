@@ -840,6 +840,26 @@ with pyfltr.command.execution_slot.hold(label="my-check"):
 `with`の内側が実行枠を所有する区間になり、呼び出し元が区間を終えるまで保持する。
 内側で起動した子プロセスは、区間を抜ける前に終了・回収する。区間を抜けると次の実行がツールを実行し始めるためである。
 
+長い検証を複数の手順に分けて実行する場合は、手順の区切りで`pyfltr.command.execution_slot.yield_to_waiters`を呼ぶ。
+待機中の実行がいればその実行へ実行枠を譲り、先に待っていた実行の終了後に実行枠を取り直して次の手順へ進む。
+待機中の実行がいなければ、何もせずに戻る。
+
+```python
+import subprocess
+
+import pyfltr.command.execution_slot
+
+with pyfltr.command.execution_slot.hold(label="my-check"):
+    subprocess.run(["my-check", "--unit"], check=True)
+    pyfltr.command.execution_slot.yield_to_waiters()
+    subprocess.run(["my-check", "--integration"], check=True)
+```
+
+- その区間で起動した子プロセスを全て終了・回収した区切りで`yield_to_waiters`を呼ぶ。子プロセスの実行中に呼ぶと、子プロセスと待機中の実行が同時に動く
+- 譲った場合は`True`、譲らなかった場合は`False`を返す
+- 譲った後の取り直しの待機は、`hold`へ渡した`should_abort`が真を返すと`WaitAborted`で中断する。中断した場合は実行枠を持たない状態で`with`を抜ける
+- 入れ子の`hold`の内側と、親の実行枠を引き継いだ子プロセスの中では譲らない。親の実行が子プロセスを回収した区切りで譲る
+
 ## pre-commit・prekとの統合 {#precommit-integration}
 
 pyfltrはpre-commit・prekのうち有効な方を内部で呼び出し、pre-commit・prekはpyfltrをフックとして呼び出す。

@@ -14,6 +14,18 @@ pyfltr以外の検証を起動する呼出元（他のツールのスクリプ�
     with pyfltr.command.execution_slot.hold(label="my-check"):
         subprocess.run([...], check=True)
 
+長い区間を保持する呼出元は、区間で起動した子プロセスを全て回収した区切りで`yield_to_waiters`を呼ぶと、
+待機者へ枠を譲り、先に並んだ待機者の終了後に取り直して残りの処理を続けられる::
+
+    with pyfltr.command.execution_slot.hold(label="my-check"):
+        for step in steps:
+            subprocess.run(step, check=True)
+            pyfltr.command.execution_slot.yield_to_waiters()
+
+譲渡は最外側の`hold`で枠を取得したスレッドだけが行う。
+入れ子の`hold`と、祖先から所有を継承した子プロセスの区間では譲らない。
+子プロセスが祖先の所有を単独で解除すると、所有者が起動中の別の子と待機者の実行が重なるためである。
+
 取得規則:
 
 - 同じスレッドが保持中なら入れ子として再入する
@@ -108,6 +120,7 @@ def hold(
     Args:
         label: 保持者記録へ残す任意の名前。待機する側の通知に使う。
         should_abort: 待機中に再試行のたびに呼ぶ判定。真を返すと`WaitAborted`を送出する。
+            `yield_to_waiters`で譲った後の取り直しの待機にも使う。
             `KeyboardInterrupt`も待機を中断する。
         on_wait: 待機を始めるときに1回だけ呼ぶ通知。保持者記録を読めない場合は`None`を渡す。
         lock_dir: ロックを置くディレクトリ。省略時は`default_lock_dir()`。
@@ -139,7 +152,11 @@ def hold(
 
 
 def yield_requested() -> bool:
-    """最外側の保持者に待機者がいるか返す。外部hold内の入れ子と祖先継承中は譲らない。"""
+    """呼出スレッドが譲れる保持者で、待機者がいるかを返す。
+
+    最外側の`hold`で枠を取得したスレッドだけが真になりうる。
+    入れ子の`hold`の内側、祖先から所有を継承した区間、`hold`の外、別スレッドでは常に偽を返す。
+    """
     lease: _Lease | None = getattr(_local, "lease", None)
     if getattr(_local, "depth", 0) != 1 or lease is None or not lease.acquired:
         return False
@@ -147,10 +164,22 @@ def yield_requested() -> bool:
         return bool(_waiters(lease.owner_path.parent))
 
 
-def yield_to_waiters() -> None:
-    """子プロセスを回収済みの区切りで、待機者の後ろへ再登録して実行枠を取り直す。"""
+def yield_to_waiters() -> bool:
+    """待機者がいれば実行枠を譲り、先に並んだ待機者の終了後に取り直す。
+
+    呼出元は、区間で起動した子プロセスを全て終了・回収した区切りで呼ぶ。
+    子の稼働中に呼ぶと、子の実行中に待機者の処理が始まる。
+    `yield_requested`が偽の場合は何もしない。
+
+    解放より先に待機列の最後へ再登録するため、取り直しの順番は先に並んだ待機者の後、解放後に並んだ待機者の前になる。
+    取り直しの待機には`hold`へ渡した`should_abort`を使い、`on_wait`は呼ばない。
+    取り直しの待機を`WaitAborted`や`KeyboardInterrupt`で抜けた場合は、待機要求を回収し、枠を持たない状態で`hold`を抜ける。
+
+    Returns:
+        譲って取り直した場合は`True`、譲らなかった場合は`False`。
+    """
     if not yield_requested():
-        return
+        return False
     lease: _Lease = _local.lease
     # 解放より先に列末へ登録し、先行待機者より前へ再取得する競合を防ぐ。
     with _request(lease.owner_path.parent) as request:
@@ -163,6 +192,7 @@ def yield_to_waiters() -> None:
             on_wait=None,
             request=request,
         )
+    return True
 
 
 @contextlib.contextmanager
