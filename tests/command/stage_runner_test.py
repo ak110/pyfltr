@@ -333,7 +333,7 @@ def test_run_stages_sets_body_interval_only_for_executed_results(tmp_path: pathl
     (tmp_path / "pyproject.toml").write_text(
         "".join(
             f'[tool.pyfltr.custom-commands.{name}]\ntype="formatter"\npath="{name}"\ntargets="*.txt"\n'
-            for name in ("ran", "skipped", "cached")
+            for name in ("ran", "skipped", "unresolved", "cached")
         ),
         encoding="utf-8",
     )
@@ -347,15 +347,18 @@ def test_run_stages_sets_body_interval_only_for_executed_results(tmp_path: pathl
             return make_command_result(command, returncode=0)
         if command == "skipped":
             return make_command_result(command, returncode=None, files=0)
+        if command == "unresolved":
+            # 起動コマンドの解決失敗は`returncode=1`を持つが、プロセスは起動していない。
+            return make_command_result(command, returncode=1, resolution_failed=True)
         return make_command_result(command, returncode=0, cached=True, cached_from="01ABC")
 
     results = pyfltr.command.stage_runner.run_stages(
-        ["ran", "skipped", "cached"], make_execution_context(config, [target], start_cwd=tmp_path).base, _execute
+        ["ran", "skipped", "unresolved", "cached"], make_execution_context(config, [target], start_cwd=tmp_path).base, _execute
     )
     by_command = {result.command: result for result in results}
     ran = by_command["ran"]
     assert ran.started_at is not None
     assert ran.finished_at is not None
     assert ran.started_at <= ran.finished_at
-    for command in ("skipped", "cached"):
+    for command in ("skipped", "unresolved", "cached"):
         assert (by_command[command].started_at, by_command[command].finished_at) == (None, None)

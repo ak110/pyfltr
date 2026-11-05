@@ -237,14 +237,14 @@ def _with_body_interval(
 ) -> collections.abc.Callable[[str, bool], pyfltr.command.core_.CommandResult]:
     """`execute`の結果へツール本体区間の開始・終了時刻を設定する関数を返す。
 
-    ツールのプロセスを起動しなかった結果（対象0件などのスキップ・起動コマンドの解決失敗で`returncode`が`None`）と、
-    キャッシュから復元した結果は、本体を実行していないため設定しない。
+    ツールのプロセスを起動しなかった結果（対象0件などのスキップで`returncode`が`None`の結果と、
+    起動コマンドの解決に失敗した`resolution_failed`の結果）と、キャッシュから復元した結果は、本体を実行していないため設定しない。
     """
 
     def wrapped(command: str, fix_stage: bool) -> pyfltr.command.core_.CommandResult:
         started_at = _now_iso()
         result = execute(command, fix_stage)
-        if result.returncode is not None and not result.cached:
+        if result.returncode is not None and not result.resolution_failed and not result.cached:
             result.started_at = started_at
             result.finished_at = _now_iso()
         return result
