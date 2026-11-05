@@ -508,3 +508,92 @@ def test_wait_interval_external_caller(tmp_path: pathlib.Path, lock_dir: pathlib
     assert finished["started_at"] == started["started_at"]
     assert finished["elapsed"] >= 0.5
     assert entered == {"entered": True}
+
+
+@pytest.mark.parametrize("reason", ["aborted", "interrupted"])
+def test_wait_interval_reports_reacquire_abort(lock_dir: pathlib.Path, reason: str) -> None:
+    """取り直しの待機を中断した区間も、中断の理由を持つ完了の通知で閉じ、枠を持たずに区間を抜ける。"""
+    events: list[pyfltr.command.execution_slot.SlotWait] = []
+    abort = threading.Event()
+    waiting = threading.Event()
+    finish = threading.Event()
+
+    def _should_abort() -> bool:
+        if not abort.is_set():
+            return False
+        if reason == "interrupted":
+            raise KeyboardInterrupt
+        return True
+
+    def _other() -> None:
+        def _on_wait(owner: pyfltr.command.execution_slot.SlotOwner | None) -> None:
+            del owner
+            waiting.set()
+
+        with pyfltr.command.execution_slot.hold(lock_dir=lock_dir, on_wait=_on_wait):
+            abort.set()
+            finish.wait(30)
+
+    thread = threading.Thread(target=_other)
+    expected = pyfltr.command.execution_slot.WaitAborted if reason == "aborted" else KeyboardInterrupt
+    with (
+        pytest.raises(expected),
+        pyfltr.command.execution_slot.hold(lock_dir=lock_dir, should_abort=_should_abort, on_wait_interval=events.append),
+    ):
+        thread.start()
+        assert waiting.wait(30)
+        pyfltr.command.execution_slot.yield_to_waiters()
+        pytest.fail("中断した取り直しは区間へ戻らない")
+    finish.set()
+    thread.join(timeout=30)
+    grouped = _intervals(events)
+    assert list(grouped) == [("initial", 0), ("reacquire", 1)]
+    _assert_pair(grouped["initial", 0], "acquired")
+    _assert_pair(grouped["reacquire", 1], reason)
+    with pyfltr.command.execution_slot.hold(lock_dir=lock_dir, should_abort=lambda: True):
+        pass
+
+
+class _RecordFailure(Exception):
+    """待機区間の記録に失敗したことを模す例外。"""
+
+
+@pytest.mark.parametrize("failing", ["initial", "reacquire"])
+def test_wait_interval_callback_failure_releases_slot(lock_dir: pathlib.Path, failing: str) -> None:
+    """終了の通知が例外を送出しても取得済みの枠を解放し、例外を呼出元へ伝える。"""
+
+    def _record(wait: pyfltr.command.execution_slot.SlotWait) -> None:
+        if wait.kind == failing and wait.finished_at is not None:
+            raise _RecordFailure
+
+    waiting = threading.Event()
+    entered: list[str] = []
+
+    def _waiter() -> None:
+        def _on_wait(owner: pyfltr.command.execution_slot.SlotOwner | None) -> None:
+            del owner
+            waiting.set()
+
+        with pyfltr.command.execution_slot.hold(lock_dir=lock_dir, on_wait=_on_wait):
+            entered.append("waiter")
+
+    with pytest.raises(_RecordFailure), pyfltr.command.execution_slot.hold(lock_dir=lock_dir, on_wait_interval=_record):
+        if failing == "reacquire":
+            thread = threading.Thread(target=_waiter)
+            thread.start()
+            assert waiting.wait(30)
+            pyfltr.command.execution_slot.yield_to_waiters()
+            thread.join(30)
+        pytest.fail("記録に失敗した取得は区間へ入らない")
+    assert pyfltr.command.execution_slot.read_owner(lock_dir) is None
+    # 枠が解放されていれば、別スレッドは待たずに取得できる。
+    acquired: list[bool] = []
+
+    def _other() -> None:
+        with pyfltr.command.execution_slot.hold(lock_dir=lock_dir, should_abort=lambda: True):
+            acquired.append(True)
+
+    other = threading.Thread(target=_other)
+    other.start()
+    other.join(30)
+    assert acquired == [True]

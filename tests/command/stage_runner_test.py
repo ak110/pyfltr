@@ -326,3 +326,36 @@ def test_merge_fix_failure_does_not_duplicate_normal_stage_diagnostics() -> None
 
     assert merged.status == "failed"
     assert merged.errors == [diagnostic]
+
+
+def test_run_stages_sets_body_interval_only_for_executed_results(tmp_path: pathlib.Path) -> None:
+    """プロセスを起動した結果だけに本体区間の時刻を付け、起動しなかったスキップとキャッシュ復元には付けない。"""
+    (tmp_path / "pyproject.toml").write_text(
+        "".join(
+            f'[tool.pyfltr.custom-commands.{name}]\ntype="formatter"\npath="{name}"\ntargets="*.txt"\n'
+            for name in ("ran", "skipped", "cached")
+        ),
+        encoding="utf-8",
+    )
+    target = tmp_path / "input.txt"
+    target.write_text("x", encoding="utf-8")
+    config = pyfltr.config.config.load_config(config_dir=tmp_path)
+
+    def _execute(command: str, fix_stage: bool) -> pyfltr.command.core_.CommandResult:
+        del fix_stage
+        if command == "ran":
+            return make_command_result(command, returncode=0)
+        if command == "skipped":
+            return make_command_result(command, returncode=None, files=0)
+        return make_command_result(command, returncode=0, cached=True, cached_from="01ABC")
+
+    results = pyfltr.command.stage_runner.run_stages(
+        ["ran", "skipped", "cached"], make_execution_context(config, [target], start_cwd=tmp_path).base, _execute
+    )
+    by_command = {result.command: result for result in results}
+    ran = by_command["ran"]
+    assert ran.started_at is not None
+    assert ran.finished_at is not None
+    assert ran.started_at <= ran.finished_at
+    for command in ("skipped", "cached"):
+        assert (by_command[command].started_at, by_command[command].finished_at) == (None, None)

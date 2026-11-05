@@ -135,9 +135,7 @@ class _Lease:
     def release(self) -> None:
         if self.acquired:
             self.acquired = False
-            with contextlib.suppress(OSError):
-                self.owner_path.write_text("", encoding="utf-8")
-            self.lock.release()
+            _release(self.lock, self.owner_path)
 
 
 def default_lock_dir() -> pathlib.Path:
@@ -187,6 +185,7 @@ def hold(
         "initial",
         0,
         lambda: _acquire(lock, owner_path, label=label, should_abort=should_abort, on_wait=on_wait),
+        release=lambda: _release(lock, owner_path),
     )
     _local.depth = 1
     _local.lease = lease
@@ -244,6 +243,7 @@ def yield_to_waiters() -> bool:
                 on_wait=None,
                 request=request,
             ),
+            release=lambda: _release(lease.lock, lease.owner_path),
         )
     return True
 
@@ -253,14 +253,21 @@ def _observe(
     kind: typing.Literal["initial", "reacquire"],
     sequence: int,
     acquire: collections.abc.Callable[[], bool],
+    *,
+    release: collections.abc.Callable[[], None],
 ) -> bool:
-    """取得処理を待機区間として計測し、開始と終了を`callback`へ通知する。"""
+    """取得処理を待機区間として計測し、開始と終了を`callback`へ通知する。
+
+    終了の通知が例外を送出した場合は、取得済みの枠を`release`で解放してから例外を伝える。
+    呼出元は戻り値を受け取れず枠を持たない状態になるため、解放しないと後続の検証が待ち続ける。
+    """
     if callback is None:
         return acquire()
     started = SlotWait(kind=kind, sequence=sequence, started_at=_now_iso())
     callback(started)
     start = time.monotonic()
     outcome = "failed"
+    acquired = False
     try:
         acquired = acquire()
         outcome = "acquired" if acquired else "inherited"
@@ -272,14 +279,22 @@ def _observe(
         outcome = "interrupted"
         raise
     finally:
-        callback(
-            dataclasses.replace(
-                started,
-                finished_at=_now_iso(),
-                elapsed=round(time.monotonic() - start, 3),
-                outcome=outcome,
-            )
+        finished = dataclasses.replace(
+            started, finished_at=_now_iso(), elapsed=round(time.monotonic() - start, 3), outcome=outcome
         )
+        try:
+            callback(finished)
+        except BaseException:
+            if acquired:
+                release()
+            raise
+
+
+def _release(lock: pyfltr.file_lock.FileLock, owner_path: pathlib.Path) -> None:
+    """取得済みの枠の保持者記録を消してロックを解放する。"""
+    with contextlib.suppress(OSError):
+        owner_path.write_text("", encoding="utf-8")
+    lock.release()
 
 
 def _now_iso() -> str:
