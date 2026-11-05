@@ -135,6 +135,13 @@ def test_external_owner_and_stage_runner(tmp_path: pathlib.Path, outcome: str) -
             _, errors = owner.communicate(timeout=30)
     assert owner.returncode == {"owner-abort": 7, "owner-error": 1}.get(outcome, 0), errors
     assert (tmp_path / "second").exists() is (outcome in ("normal", "parallel-normal", "crash", "cancel-waiter"))
+    child_results = json.loads((tmp_path / "child-results.json").read_text(encoding="utf-8"))
+    if outcome in ("child-abort", "child-abort-reacquire", "owner-abort", "owner-error"):
+        skipped = next(result for result in child_results if result["command"] == "prettier")
+        assert skipped["status"] == "skipped"
+        assert skipped["returncode"] is None
+        cause = "協調区間が閉じられました。" if outcome == "owner-abort" else "協調参加した子の処理が取り消されました。"
+        assert skipped["output"] == cause + "所有者と子を回収してから再実行してください。"
     owner_waits = json.loads((tmp_path / "owner-waits.json").read_text(encoding="utf-8"))
     expected = [("initial", 0, None), ("initial", 0, "acquired")]
     if outcome not in ("owner-error", "cancel-waiter"):
@@ -195,12 +202,26 @@ def _scenario_child(root: pathlib.Path, ticket: str) -> int:
             should_abort=(root / "child-abort").exists,
             on_wait_interval=lambda value: waits.append(value.to_dict()),
         ):
-            pyfltr.command.stage_runner.run_stages(
+            results = pyfltr.command.stage_runner.run_stages(
                 commands,
                 pyfltr.command.core_.ExecutionBaseContext(
                     config=config, all_files=[root / "sample.py"], start_cwd=root, cache_store=None, cache_run_id=None
                 ),
                 execute,
+            )
+            (root / "child-results.json").write_text(
+                json.dumps(
+                    [
+                        {
+                            "command": result.command,
+                            "status": result.status,
+                            "returncode": result.returncode,
+                            "output": result.output,
+                        }
+                        for result in results
+                    ]
+                ),
+                encoding="utf-8",
             )
         # stage_runnerはWaitAbortedをskippedへ変換するため、残りが未実行でも正常に回収できる。
         return 0

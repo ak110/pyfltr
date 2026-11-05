@@ -71,6 +71,7 @@ import pyfltr.user_cache
 _LOCK_FILENAME = "execution.lock"
 _OWNER_FILENAME = "execution.owner.json"
 _QUEUE_FILENAME = "execution.queue.lock"
+_COOPERATIVE_ABORT_ACTION = "所有者と子を回収してから再実行してください。"
 _POLL_INTERVAL = 0.2
 """待機中の再試行間隔（秒）。解放から次の取得までの遅れと、待機中の負荷の釣り合いで選ぶ。"""
 _CREATE_TIME_TOLERANCE = 1.0
@@ -121,7 +122,7 @@ WaitIntervalCallback = collections.abc.Callable[[SlotWait], None]
 
 
 class WaitAborted(Exception):
-    """`should_abort`が真を返したため、実行枠を取得せずに待機を終えた。"""
+    """取得待機の取消や協調区間の終了により処理を中断した。"""
 
 
 @dataclasses.dataclass
@@ -367,7 +368,7 @@ class SlotCoordinator:
         """
         self._check_thread()
         if not self._lease.acquired:
-            raise WaitAborted
+            raise WaitAborted("協調所有者が実行枠を保持していません。" + _COOPERATIVE_ABORT_ACTION)
         with _queue_guard(self._path.parent):
             self._state = _read_control(self._path)
             if any(value["state"] != "paused" for value in self._state["participants"].values()):
@@ -397,8 +398,10 @@ class SlotCoordinator:
 def _read_control(path: pathlib.Path) -> dict[str, typing.Any]:
     try:
         value: dict[str, typing.Any] = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise WaitAborted("協調区間が閉じられました。" + _COOPERATIVE_ABORT_ACTION) from exc
     except (OSError, ValueError) as exc:
-        raise WaitAborted("協調区間を読み取れません。所有者と子を回収してから再実行してください。") from exc
+        raise WaitAborted("協調区間を読み取れません。" + _COOPERATIVE_ABORT_ACTION) from exc
     return value
 
 
@@ -439,18 +442,20 @@ class _Participant:
                 or registration is None
                 or registration["state"] != "registered"
             ):
-                raise WaitAborted("参加区間と現在の所有者が一致しません。所有者が発行した有効な参加券で再実行してください。")
+                raise WaitAborted("参加区間と現在の所有者が一致しません。" + _COOPERATIVE_ABORT_ACTION)
             registration.update(state="active", pid=os.getpid(), create_time=psutil.Process().create_time())
             path.write_text(json.dumps(state), encoding="utf-8")
         return cls(path, identifiers[1], owner, should_abort)
 
     def checkpoint(self) -> bool:
         if self.should_abort is not None and self.should_abort():
-            raise WaitAborted
+            raise WaitAborted("協調参加した子の処理が取り消されました。" + _COOPERATIVE_ABORT_ACTION)
         with _queue_guard(self.path.parent):
             state = _read_control(self.path)
-            if self.identifier not in state["participants"] or not _is_ancestor(self.owner):
-                raise WaitAborted
+            if self.identifier not in state["participants"]:
+                raise WaitAborted("協調参加の登録が失われました。" + _COOPERATIVE_ABORT_ACTION)
+            if not _is_ancestor(self.owner):
+                raise WaitAborted("協調所有者が終了しました。" + _COOPERATIVE_ABORT_ACTION)
             if not _waiters(self.path.parent):
                 return False
             state["participants"][self.identifier]["state"] = "paused"
@@ -458,16 +463,16 @@ class _Participant:
             self.path.write_text(json.dumps(state), encoding="utf-8")
         while True:
             if self.should_abort is not None and self.should_abort():
-                raise WaitAborted
+                raise WaitAborted("協調参加した子の処理が取り消されました。" + _COOPERATIVE_ABORT_ACTION)
             with _queue_guard(self.path.parent):
                 state = _read_control(self.path)
                 registration = state["participants"].get(self.identifier)
                 if registration is None:
-                    raise WaitAborted
+                    raise WaitAborted("協調参加の登録が失われました。" + _COOPERATIVE_ABORT_ACTION)
                 if state["generation"] > generation and registration["state"] == "active":
                     return bool(state["yielded"])
             if not _is_ancestor(self.owner):
-                raise WaitAborted
+                raise WaitAborted("協調所有者が終了しました。" + _COOPERATIVE_ABORT_ACTION)
             time.sleep(_POLL_INTERVAL)
 
     def finish(self) -> None:
@@ -610,7 +615,7 @@ def _acquire(
         if owner is not None and _is_ancestor(owner):
             return False
         if should_abort is not None and should_abort():
-            raise WaitAborted
+            raise WaitAborted("実行枠の取得待機が取り消されました。" + _COOPERATIVE_ABORT_ACTION)
         if not notified:
             notified = True
             if on_wait is not None:

@@ -128,9 +128,9 @@ def run_stages(
         if hooks.on_result is not None:
             hooks.on_result(result)
 
-    def skip(remaining: list[str]) -> None:
+    def skip(remaining: list[str], *, reason: str | None = None) -> None:
         pyfltr.command.process.terminate_active_processes()
-        reason = "Ctrl+C により中断しました。" if hooks.is_interrupted() else None
+        reason = "Ctrl+C により中断しました。" if hooks.is_interrupted() else reason
         for command in remaining:
             record(make_skipped_result(command, config, reason=reason), "skipped")
             if hooks.on_skipped is not None:
@@ -225,10 +225,10 @@ def run_stages(
                 # 例外（CLIのCtrl+Cなど）で抜ける場合も、起動中の子プロセスを止めてから実行枠を解放する。
                 pyfltr.command.process.terminate_active_processes()
                 raise
-    except pyfltr.command.execution_slot.WaitAborted:
-        # TUIのCtrl+Cで待機を中断した。未実行の全コマンドを中断扱いにし、成功の結果を返さない。
+    except pyfltr.command.execution_slot.WaitAborted as error:
+        # 外側の協調区間から伝わる中断もあり、未指定のfail-fastの案内で原因を置き換えない。
         completed = {result.command for result in collected}
-        skip([command for command in [*formatters, *parallel] if command not in completed])
+        skip([command for command in [*formatters, *parallel] if command not in completed], reason=str(error) or None)
         flush_fix_failures()
     return collected
 
