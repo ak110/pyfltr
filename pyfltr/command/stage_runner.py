@@ -95,6 +95,7 @@ def run_stages(
     検証の実行枠を保持し、待機者がいれば起動済みのツールと子プロセスの回収後に譲る。
     別の検証が枠を保持中なら警告を出力して待つ。TUIの中断（`is_interrupted`）で待機を止めた場合は全コマンドをスキップ扱いにする。
     枠の待機区間は`callbacks.on_slot_wait`へ通知する。
+    外側が協調所有者、または参加券付きholdなら、同じ回収済みの区切りから協調譲渡を通知する。
     実行した各ツールの結果には、`execute`の直前と直後の時刻を`started_at`・`finished_at`として設定する。
     """
     hooks = callbacks if callbacks is not None else StageCallbacks()

@@ -6,6 +6,7 @@ import pyfltr.command.core_
 import pyfltr.command.process
 import pyfltr.config.config
 import pyfltr.config.model
+from pyfltr.command import step_result
 from pyfltr.command.core_ import CommandResult
 from pyfltr.command.snapshot import changed_files, snapshot_file_digests
 
@@ -30,20 +31,16 @@ def execute_linter_fix(request: pyfltr.command.core_.ExecutionRequest) -> pyfltr
     # returncode/output/elapsedの取り出し）を共有するが、本関数はハッシュ差分によるfix検知を
     # 担う別責務のため統合しない。
     proc = pyfltr.command.process.run_process(request)
-    returncode = proc.returncode
     output = proc.stdout.strip()
     elapsed = time.perf_counter() - request.start_time
 
     digests_after = snapshot_file_digests(request.params.targets, base_cwd=request.ctx.base.start_cwd)
     changed = digests_after != digests_before
 
-    step_failed = returncode != 0
-    if not step_failed and changed:
-        # fixが適用されたのでformatter扱いでformattedにする
-        result_command_type: str = "formatter"
-        returncode = 1
-    else:
-        result_command_type = "linter"
+    combined = step_result.combine(step_result.classify(proc.returncode, timeout=proc.timeout_exceeded, changed=changed))
+    step_failed = combined.failed
+    returncode = combined.returncode
+    result_command_type = "formatter" if combined.state is step_result.StepState.CHANGED else "linter"
 
     errors = request.parse_errors(output, None)
 

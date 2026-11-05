@@ -11,6 +11,7 @@ import pyfltr.config.config
 import pyfltr.config.model
 import pyfltr.paths
 import pyfltr.tools
+from pyfltr.command import step_result
 from pyfltr.command.core_ import CommandResult
 from pyfltr.command.runner import build_invocation_argv
 from pyfltr.command.snapshot import (
@@ -95,9 +96,6 @@ def execute_textlint_fix(request: pyfltr.command.core_.ExecutionRequest) -> pyfl
         request.ctx.on_output(f"commandline: {shlex.join(step1_commandline)}\n")
 
     step1_proc = pyfltr.command.process.run_process(dataclasses.replace(request, verbose=False), step1_commandline)
-    step1_rc = step1_proc.returncode
-    # rc>=2は致命的エラー扱い。rc=1はStep2の結果と併せて判定する（docstringのステータス判定を参照）
-    step1_fatal = step1_rc >= 2
     digests_after_step1 = snapshot_file_digests(request.params.targets, base_cwd=request.ctx.base.start_cwd)
     step1_changed = digests_after_step1 != digests_before
 
@@ -125,8 +123,6 @@ def execute_textlint_fix(request: pyfltr.command.core_.ExecutionRequest) -> pyfl
     if request.verbose and request.ctx.on_output is not None:
         request.ctx.on_output(f"commandline: {shlex.join(step2_commandline)}\n")
     step2_proc = pyfltr.command.process.run_process(dataclasses.replace(request, verbose=False), step2_commandline)
-    step2_rc = step2_proc.returncode
-    step2_fatal = step2_rc >= 2
 
     output = (step1_proc.stdout + step2_proc.stdout).strip()
     elapsed = time.perf_counter() - request.start_time
@@ -136,27 +132,13 @@ def execute_textlint_fix(request: pyfltr.command.core_.ExecutionRequest) -> pyfl
 
     # ステータス判定
     timeout_exceeded = step1_proc.timeout_exceeded or step2_proc.timeout_exceeded
-    if step1_fatal or step2_fatal:
-        step_failed = True
-        returncode: int = step1_rc if step1_fatal else step2_rc
-        result_command_type: str = "linter"
-    elif step2_rc != 0:
-        step_failed = True
-        returncode = step2_rc
-        result_command_type = "linter"
-    elif step1_rc != 0:
-        step_failed = True
-        returncode = step1_rc
-        result_command_type = "linter"
-    elif step1_changed:
-        # fix適用済み、残存違反なし → formatted扱いにする
-        step_failed = False
-        returncode = 1
-        result_command_type = "formatter"
-    else:
-        step_failed = False
-        returncode = 0
-        result_command_type = "linter"
+    combined = step_result.combine(
+        step_result.classify(step1_proc.returncode, timeout=step1_proc.timeout_exceeded, changed=step1_changed),
+        step_result.classify(step2_proc.returncode, timeout=step2_proc.timeout_exceeded),
+    )
+    step_failed = combined.failed
+    returncode = combined.returncode
+    result_command_type = "formatter" if combined.state is step_result.StepState.CHANGED else "linter"
 
     result = CommandResult.from_run(
         command=request.command,

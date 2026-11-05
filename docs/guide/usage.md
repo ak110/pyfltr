@@ -824,7 +824,7 @@ MCPを利用できず、エージェントがシェルコマンドを実行で�
 別のworktree・リポジトリ・MCPサーバー・commit hookから起動した実行も同じ実行枠を共有する。
 後から起動した実行は、対象ファイルの展開などを済ませてから実行枠を待ち、待機の開始時に`execution-slot`の警告を出力する。
 待機者がいる場合、保持者は追加ツールの起動を止め、起動済みのツールと子プロセスの終了・回収後に枠を譲る。
-保持者は待機列の最後へ戻り、残りの検査を再開する。
+保持者は待機列の最後へ戻り、残りのツールの実行を再開する。
 単一の長いツールが実行中の場合は、その終了まで待つ。
 待機時間はツールのtimeoutに含まない。
 
@@ -863,9 +863,65 @@ with pyfltr.command.execution_slot.hold(label="my-check"):
 
 - その区間で起動した子プロセスを全て終了・回収した区切りで`yield_to_waiters`を呼ぶ。子プロセスの実行中に呼ぶと、子プロセスと待機中の実行が同時に動く
 - 譲った場合は`True`、譲らなかった場合は`False`を返す
-- 譲る前に待機中の実行の有無だけを調べるには`pyfltr.command.execution_slot.yield_requested`を呼ぶ。最外側の`hold`で実行枠を取得したスレッドで、待機中の実行がいる場合だけ`True`を返す。入れ子の`hold`の内側、親の実行枠を引き継いだ子プロセスの中、`hold`の外、別スレッドでは`False`を返す
+- 譲る前に待機中の実行の有無だけを調べるには`pyfltr.command.execution_slot.yield_requested`を呼ぶ。通常は最外側の`hold`で実行枠を取得したスレッドで、待機中の実行がいる場合だけ`True`を返す
 - 譲った後の取り直しの待機は、`hold`へ渡した`should_abort`が真を返すと`WaitAborted`で中断する。中断した場合は実行枠を持たない状態で`with`を抜ける
-- 入れ子の`hold`の内側と、親の実行枠を引き継いだ子プロセスの中では譲らない。親の実行が子プロセスを回収した区切りで譲る
+- 協調参加していない入れ子の`hold`と、親の実行枠を引き継いだ子プロセスの中では譲らない。親の実行が子プロセスを回収した区切りで譲る
+
+子の処理の区切りでも譲る場合は、親が`cooperative_hold`で協調所有者になり、`participant()`の参加券を子の`hold(participant=...)`へ渡す。
+親は子の終了を待つ合間に`checkpoint()`を呼ぶ。
+子が対象処理を回収して一時停止し、他の参加者も安全な区切りに達した場合だけ、親が譲渡・再取得する。
+再取得が済むまで子は次の処理を開始しない。
+同一スレッドの協調所有者の入れ子と、明示参加した子の中で呼ぶpyfltrも、この仕組みで段の区切りを通知できる。
+
+次の2ファイルを同じディレクトリへ保存し、pyfltrを導入したPythonで`python owner.py`を実行する。
+子の例は2つのPython処理を順に実行する。
+`lock_dir`を指定する場合は、親と子へ同じ保存先を渡す。
+
+`owner.py`:
+
+```python
+import pathlib
+import subprocess
+import sys
+import time
+
+import pyfltr.command.execution_slot as slot
+
+with slot.cooperative_hold(label="owner") as coordinator:
+    with coordinator.participant() as ticket:
+        with subprocess.Popen([sys.executable, str(pathlib.Path(__file__).with_name("child.py")), ticket]) as child:
+            try:
+                while child.poll() is None:
+                    coordinator.checkpoint()
+                    time.sleep(0.2)
+                if child.wait() != 0:
+                    raise RuntimeError("子の処理が失敗した。子の出力を確認して再実行する。")
+            finally:
+                if child.poll() is None:
+                    child.terminate()
+                child.wait()
+```
+
+`child.py`:
+
+```python
+import subprocess
+import sys
+
+import pyfltr.command.execution_slot as slot
+
+with slot.hold(participant=sys.argv[1]):
+    subprocess.run([sys.executable, "-c", "print('step 1')"], check=True)
+    slot.yield_to_waiters()
+    subprocess.run([sys.executable, "-c", "print('step 2')"], check=True)
+```
+
+参加券は子1件につき1回だけ使い、環境変数からは自動採用しない。
+親は`checkpoint()`中に新しい対象処理を開始せず、子の終了・異常終了を回収してから参加区間を閉じる。
+例外・取消時も、子とその配下の処理を終了・回収してから最外側の所有区間を閉じる。
+上の例の子は短いPython処理だけを起動する。長時間の処理を起動する子には、その配下も回収する終了処理を用意する。
+協調区間が閉じられた子や、`should_abort`で取り消された子は`WaitAborted`で停止する。
+実行枠の待機時間を記録する場合は、親の`cooperative_hold(on_wait_interval=...)`で受け取り、子の一時停止時間を同じ待機として加算しない。
 
 ## pre-commit・prekとの統合 {#precommit-integration}
 

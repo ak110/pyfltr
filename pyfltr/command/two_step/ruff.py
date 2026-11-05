@@ -9,6 +9,7 @@ import pyfltr.command.runner
 import pyfltr.config.config
 import pyfltr.config.model
 import pyfltr.tools
+from pyfltr.command import step_result
 from pyfltr.command.core_ import CommandResult
 from pyfltr.command.snapshot import changed_files, snapshot_file_digests
 from pyfltr.command.two_step.base import _relative_to_cwd
@@ -18,7 +19,7 @@ def execute_ruff_format_two_step(request: pyfltr.command.core_.ExecutionRequest)
     """ruff-formatの2段階実行（ruff check --fix → ruff format）。
 
     ステップ1（ruff check --fix --unsafe-fixes）の未修正lint violationは無視する。
-    別途ruff-checkコマンドで検出される前提。ただしexit >= 2（設定ミス等）はfailed扱い。
+    別途ruff-checkコマンドで検出される前提。許容する終了コードは0/1で、シグナル終了とtimeoutも失敗にする。
     ステップ1の成否にかかわらずステップ2（ruff format）は実行する
     （対象ファイル全体のformat適用を止めないため）。
     `commandline_prefix` は `ruff` 単体（またはuv経路では `["uv", "run", "--frozen", "ruff"]`）を渡す。
@@ -43,7 +44,7 @@ def execute_ruff_format_two_step(request: pyfltr.command.core_.ExecutionRequest)
 def _run_ruff_two_step(request: pyfltr.command.core_.ExecutionRequest, *, check_commandline: list[str]) -> CommandResult:
     """ruff-format専用の2段階処理。
 
-    Step1（ruff check --fix --unsafe-fixes）はrc>=2のみ失敗扱いとし、
+    Step1（ruff check --fix --unsafe-fixes）は0/1だけを許容し、
     rc 0/1に関わらずStep2（ruff format）を常時実行する。
     step1の未修正lint violationは無視し、別途ruff-checkコマンドで検出する前提。
     """
@@ -52,16 +53,12 @@ def _run_ruff_two_step(request: pyfltr.command.core_.ExecutionRequest, *, check_
 
     run_step = functools.partial(pyfltr.command.process.run_process, request)
     step1_proc = run_step(check_commandline)
-    step1_rc = step1_proc.returncode
-    step1_failed = step1_rc >= 2  # exit 0/1は無視、2以上（abrupt termination）のみ失敗扱い
     digests_after_step1 = snapshot_file_digests(request.params.targets, base_cwd=request.ctx.base.start_cwd)
     step1_changed = digests_after_step1 != digests_before
 
     # ステップ2実行（常に実行）
     step2_proc = run_step(request.params.commandline)
-    step2_rc = step2_proc.returncode
-    step2_formatted = step2_rc == 1
-    step2_failed = step2_rc >= 2
+    step2_formatted = step2_proc.returncode == 1
 
     # 出力の合成
     output = (step1_proc.stdout + step2_proc.stdout).strip()
@@ -69,13 +66,14 @@ def _run_ruff_two_step(request: pyfltr.command.core_.ExecutionRequest, *, check_
 
     # 最終判定
     timeout_exceeded = step1_proc.timeout_exceeded or step2_proc.timeout_exceeded
-    formatter_failed = step1_failed or step2_failed
-    if formatter_failed:
-        returncode: int = step1_rc if step1_failed else step2_rc
-    elif step1_changed or step2_formatted:
-        returncode = 1
-    else:
-        returncode = 0
+    combined = step_result.combine(
+        step_result.classify(
+            step1_proc.returncode, timeout=step1_proc.timeout_exceeded, success_codes=(0, 1), changed=step1_changed
+        ),
+        step_result.classify(step2_proc.returncode, timeout=step2_proc.timeout_exceeded, change_codes=(1,)),
+    )
+    formatter_failed = combined.failed
+    returncode = combined.returncode
 
     errors = request.parse_errors(output, request.params.command_info.error_pattern)
 

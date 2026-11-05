@@ -8,6 +8,7 @@ import pyfltr.command.process
 import pyfltr.config.config
 import pyfltr.config.model
 import pyfltr.tools
+from pyfltr.command import step_result
 from pyfltr.command.core_ import CommandResult
 from pyfltr.command.snapshot import changed_files, snapshot_file_digests
 from pyfltr.command.two_step.base import _prepare_check_write_execution, _run_fix_mode
@@ -84,8 +85,9 @@ def _run_prettier_check_then_write(
     """
     step1_proc = run_step(check_commandline)
     step1_rc = step1_proc.returncode
+    checked = step_result.classify(step1_rc, timeout=step1_proc.timeout_exceeded, change_codes=(1,))
 
-    if step1_rc == 0:
+    if checked.state is step_result.StepState.SUCCEEDED:
         output = step1_proc.stdout.strip()
         elapsed = time.perf_counter() - request.start_time
         errors = request.parse_errors(output, request.params.command_info.error_pattern)
@@ -102,7 +104,7 @@ def _run_prettier_check_then_write(
             retry_count=step1_proc.retry_count,
         )
 
-    if step1_rc >= 2 or step1_proc.timeout_exceeded:
+    if checked.failed:
         # 設定ミス等の致命的エラー、もしくはcheck段でtimeout超過した場合はStep2をスキップする。
         # timeout超過は同じハングが再現する確率が高く、検証時間を浪費するためStep2を実行しない。
         output = step1_proc.stdout.strip()
@@ -112,7 +114,7 @@ def _run_prettier_check_then_write(
             command=request.command,
             command_info=request.params.command_info,
             commandline=check_commandline,
-            returncode=step1_rc,
+            returncode=checked.returncode,
             formatter_failed=True,
             files=len(request.params.targets),
             output=output,
@@ -125,16 +127,12 @@ def _run_prettier_check_then_write(
     # Step1 rc == 1 → Step2実行（書き込み）
     prettier_digests_before = snapshot_file_digests(request.params.targets, base_cwd=request.ctx.base.start_cwd)
     step2_proc = run_step(write_commandline)
-    step2_rc = step2_proc.returncode
     output = (step1_proc.stdout + step2_proc.stdout).strip()
     elapsed = time.perf_counter() - request.start_time
 
-    if step2_rc == 0:
-        formatter_failed = False
-        returncode: int = 1  # formatted扱い
-    else:
-        formatter_failed = True
-        returncode = step2_rc
+    combined = step_result.combine(checked, step_result.classify(step2_proc.returncode, timeout=step2_proc.timeout_exceeded))
+    formatter_failed = combined.failed
+    returncode = combined.returncode
 
     errors = request.parse_errors(output, request.params.command_info.error_pattern)
     result = CommandResult.from_run(

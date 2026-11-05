@@ -18,6 +18,7 @@ import pyfltr.command.process
 import pyfltr.config.config
 import pyfltr.config.model
 import pyfltr.tools
+from pyfltr.command import step_result
 from pyfltr.command.core_ import CommandResult
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,7 @@ def execute_pre_commit(request: pyfltr.command.core_.ExecutionRequest) -> pyfltr
     stage 1で変更ファイル指定で実行し、fixer系hookがファイルを修正しただけなら
     再実行で成功する（"formatted"）。checker系hookのエラーが残る場合は "failed"
     （formatter_failed=True）として返す。
+    シグナル終了とtimeoutは再実行で消せない実行失敗とし、その段で終了する。
     """
     # pre-commit・prek配下から起動された場合は自身を再帰実行しない。
     # git commitからフックを経由してpyfltr fastを起動した際の二重実行を防ぐ。
@@ -86,24 +88,24 @@ def execute_pre_commit(request: pyfltr.command.core_.ExecutionRequest) -> pyfltr
 
     proc = _run_stage()
     returncode = proc.returncode
-    formatter_failed = False
     timeout_exceeded = proc.timeout_exceeded
     total_retry_count = proc.retry_count
-    if timeout_exceeded:
-        formatter_failed = True
+    first = step_result.classify(returncode, timeout=timeout_exceeded, change_codes=range(1, max(2, returncode + 1)))
+    combined = step_result.combine(first)
 
     # stage 2: 失敗時は再実行（fixerが修正しただけなら2回目で成功する）
     # ただしstage 1でtimeout超過した場合は再実行しない（同じハングが再現する確率が高く時間を浪費するため）。
-    if returncode != 0 and not timeout_exceeded:
+    if first.state is step_result.StepState.CHANGED:
         if request.verbose and request.ctx.on_output is not None:
             request.ctx.on_output(f"{request.command}: stage 2 再実行\n")
         proc = _run_stage()
-        if proc.returncode != 0:
-            returncode = proc.returncode
-            formatter_failed = True
+        combined = step_result.combine(first, step_result.classify(proc.returncode, timeout=proc.timeout_exceeded))
         if proc.timeout_exceeded:
             timeout_exceeded = True
         total_retry_count += proc.retry_count
+
+    returncode = combined.returncode
+    formatter_failed = combined.failed
 
     output = proc.stdout.strip()
     elapsed = time.perf_counter() - request.start_time

@@ -135,6 +135,7 @@ class HeartbeatMonitor:
         self._set_last_output_time = set_last_output_time or pyfltr.output.jsonl.set_last_jsonl_output_time
         self._lock = threading.Lock()
         self._running: dict[str, float] = {}
+        self._finished: set[str] = set()
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -160,18 +161,30 @@ class HeartbeatMonitor:
         if self._thread is None:
             return
         self._stop_event.set()
-        self._thread.join(timeout=self._tick_interval * 2)
+        self._thread.join()
         self._thread = None
 
     def on_command_start(self, command: str) -> None:
         """実行中コマンド集合に追加する。"""
         with self._lock:
-            self._running[command] = time.monotonic()
+            if command not in self._finished:
+                self._running[command] = time.monotonic()
 
     def on_command_end(self, command: str) -> None:
         """実行中コマンド集合から削除する。"""
         with self._lock:
             self._running.pop(command, None)
+
+    def finalize(self, command: str, emit: typing.Callable[[], None]) -> None:
+        """最終結果の確定と発行をheartbeatと同じ排他境界で行う。
+
+        subprocessの終了は段間にも発生するため、最終結果だけをここで確定する。
+        遅延した開始通知も確定済みcommandを実行中へ戻さない。
+        """
+        with self._lock:
+            self._finished.add(command)
+            self._running.pop(command, None)
+            emit()
 
     def _snapshot_running(self) -> list[tuple[str, float]]:
         """現時点の実行中コマンドのリスト（command, start_time）を返す。"""
@@ -202,9 +215,12 @@ class HeartbeatMonitor:
             self._set_last_output_time(now)
             return
         for command, started in running:
-            elapsed = now - started
-            self._emit_text(f"{command} running for {elapsed:.0f}s (no JSONL output for {silence:.0f}s)")
-            self._emit_running(command, elapsed)
+            with self._lock:
+                if self._stop_event.is_set() or command in self._finished or self._running.get(command) != started:
+                    continue
+                elapsed = now - started
+                self._emit_text(f"{command} running for {elapsed:.0f}s (no JSONL output for {silence:.0f}s)")
+                self._emit_running(command, elapsed)
         # heartbeat発火後、`_emit_running`内の `_emit_structured` で `last_jsonl_output_time` が
         # 自動的に更新されるため、明示更新は不要。次の判定はそこから再びしきい値経過後に発火する。
 
@@ -372,6 +388,16 @@ def run_commands_with_cli(
             heartbeat=heartbeat,
         )
 
+    def record(result: pyfltr.command.core_.CommandResult) -> None:
+        def emit() -> None:
+            if on_result is not None:
+                on_result(result)
+
+        if heartbeat is None:
+            emit()
+        else:
+            heartbeat.finalize(result.command, emit)
+
     return pyfltr.command.stage_runner.run_stages(
         commands,
         base_ctx,
@@ -379,7 +405,7 @@ def run_commands_with_cli(
         include_fix_stage=include_fix_stage,
         fail_fast=fail_fast,
         callbacks=pyfltr.command.stage_runner.StageCallbacks(
-            archive=archive_hook, on_result=on_result, on_slot_wait=slot_wait_hook
+            archive=archive_hook, on_result=record, on_slot_wait=slot_wait_hook
         ),
     )
 

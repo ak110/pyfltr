@@ -19,6 +19,7 @@ import pyfltr.config.config
 import pyfltr.config.model
 import pyfltr.paths
 import pyfltr.tools
+from pyfltr.command import step_result
 from pyfltr.command.core_ import CommandResult
 from pyfltr.command.snapshot import changed_files, snapshot_file_digests
 
@@ -35,9 +36,10 @@ def execute_check_write_two_step(request: pyfltr.command.core_.ExecutionRequest)
 
     - Step1: `prefix + args + extend-args + check-args + additional + targets`を実行
     - Step1 rc == 0 → succeeded（整形不要）
-    - Step1 rc != 0 → Step2 `prefix + args + extend-args + write-args + additional + targets`を実行
+    - Step1が正の非0 → Step2 `prefix + args + extend-args + write-args + additional + targets`を実行
       - Step2 rc == 0 → formatted（整形成功）
       - Step2 rc != 0 → failed
+    - シグナル終了とtimeoutはfailedとし、check段の場合はwrite段を開始しない
 
     fixモード（fix_mode=True）:
 
@@ -116,8 +118,9 @@ def _run_check_then_write(
     digests_before = snapshot_file_digests(request.params.targets, base_cwd=request.ctx.base.start_cwd)
     check_proc = run_step(check_commandline)
     check_rc = check_proc.returncode
+    checked = step_result.classify(check_rc, timeout=check_proc.timeout_exceeded, change_codes=range(1, max(2, check_rc + 1)))
 
-    if check_rc == 0:
+    if checked.state is step_result.StepState.SUCCEEDED:
         # 整形不要
         output = check_proc.stdout.strip()
         elapsed = time.perf_counter() - request.start_time
@@ -135,19 +138,19 @@ def _run_check_then_write(
 
     # check段でtimeout超過した場合はStep2をスキップして即座にfailedを返す
     # （同じハングが再現する確率が高く、検証時間を浪費するため）。
-    if check_proc.timeout_exceeded:
+    if checked.failed:
         output = check_proc.stdout.strip()
         elapsed = time.perf_counter() - request.start_time
         return CommandResult.from_run(
             command=request.command,
             command_info=request.params.command_info,
             commandline=check_commandline,
-            returncode=check_rc,
+            returncode=checked.returncode,
             formatter_failed=True,
             files=len(request.params.targets),
             output=output,
             elapsed=elapsed,
-            timeout_exceeded=True,
+            timeout_exceeded=check_proc.timeout_exceeded,
             retry_count=check_proc.retry_count,
         )
 
@@ -156,8 +159,9 @@ def _run_check_then_write(
     output = write_proc.stdout.strip()
     elapsed = time.perf_counter() - request.start_time
 
-    formatter_failed = write_proc.returncode != 0
-    returncode = write_proc.returncode if formatter_failed else 1
+    combined = step_result.combine(checked, step_result.classify(write_proc.returncode, timeout=write_proc.timeout_exceeded))
+    formatter_failed = combined.failed
+    returncode = combined.returncode
 
     result = CommandResult.from_run(
         command=request.command,
@@ -201,21 +205,16 @@ def _run_fix_mode(
     """
     digests_before = snapshot_file_digests(request.params.targets, base_cwd=request.ctx.base.start_cwd)
     write_proc = run_step(write_commandline)
-    write_rc = write_proc.returncode
     output = write_proc.stdout.strip()
     elapsed = time.perf_counter() - request.start_time
     digests_after = snapshot_file_digests(request.params.targets, base_cwd=request.ctx.base.start_cwd)
     changed = digests_after != digests_before
 
-    if write_rc != 0:
-        formatter_failed = True
-        returncode: int = write_rc
-    elif changed:
-        formatter_failed = False
-        returncode = 1
-    else:
-        formatter_failed = False
-        returncode = 0
+    combined = step_result.combine(
+        step_result.classify(write_proc.returncode, timeout=write_proc.timeout_exceeded, changed=changed)
+    )
+    formatter_failed = combined.failed
+    returncode = combined.returncode
 
     errors = request.parse_errors(output, request.params.command_info.error_pattern) if parse_errors else []
 

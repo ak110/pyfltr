@@ -28,8 +28,9 @@ pyfltr以外の検証を起動する呼出元（他のツールのスクリプ�
     with pyfltr.command.execution_slot.hold(label="my-check", on_wait_interval=lambda wait: log(wait.to_dict())):
         ...
 
-譲渡は最外側の`hold`で枠を取得したスレッドだけが行う。
-入れ子の`hold`と、祖先から所有を継承した子プロセスの区間では譲らない。
+通常の譲渡は最外側の`hold`で枠を取得したスレッドが行う。
+外側の所有者が`cooperative_hold`で明示参加した場合は、入れ子と参加券付きの子からも停止を通知できる。
+所有者が全参加者の停止・回収を確認して譲り、再取得してから子を再開させる。
 子プロセスが祖先の所有を単独で解除すると、所有者が起動中の別の子と待機者の実行が重なるためである。
 
 取得規則:
@@ -60,6 +61,7 @@ import tempfile
 import threading
 import time
 import typing
+import uuid
 
 import psutil
 
@@ -131,6 +133,8 @@ class _Lease:
     on_wait_interval: WaitIntervalCallback | None = None
     acquired: bool = False
     yields: int = 0
+    coordinator: "SlotCoordinator | None" = None
+    participant: "_Participant | None" = None
 
     def release(self) -> None:
         if self.acquired:
@@ -151,6 +155,7 @@ def hold(
     on_wait: collections.abc.Callable[[SlotOwner | None], None] | None = None,
     on_wait_interval: WaitIntervalCallback | None = None,
     lock_dir: pathlib.Path | None = None,
+    participant: str | None = None,
 ) -> collections.abc.Generator[None, None, None]:
     """実行枠を所有する区間を開く。
 
@@ -164,11 +169,15 @@ def hold(
             最初の取得と、この`hold`の内側の`yield_to_waiters`の取り直しごとに呼ぶ。
             入れ子の`hold`は取得しないため呼ばない。例外はそのまま呼出元へ伝わる。
         lock_dir: ロックを置くディレクトリ。省略時は`default_lock_dir()`。
+        participant: `SlotCoordinator.participant()`が発行した参加券。同じlock_dirを指定する。
+            明示参加した子は、回収済みの区切りで所有者へ停止を通知できる。
 
     区間の内側で起動した子プロセスは、区間を抜ける前に呼出元が終了・回収する。
     回収前に抜けると、子プロセスの実行中に次の検証が始まる。
     """
     if getattr(_local, "depth", 0):
+        if participant is not None:
+            raise ValueError("参加券は最外側のholdへ渡してください。")
         _local.depth += 1
         try:
             yield
@@ -180,11 +189,15 @@ def hold(
     lock = pyfltr.file_lock.FileLock(directory / _LOCK_FILENAME)
     owner_path = directory / _OWNER_FILENAME
     lease = _Lease(lock, owner_path, label, should_abort, on_wait_interval)
+    joined = _Participant.join(directory, participant, should_abort) if participant is not None else None
+    lease.participant = joined
     lease.acquired = _observe(
         on_wait_interval,
         "initial",
         0,
-        lambda: _acquire(lock, owner_path, label=label, should_abort=should_abort, on_wait=on_wait),
+        lambda: (
+            False if joined is not None else _acquire(lock, owner_path, label=label, should_abort=should_abort, on_wait=on_wait)
+        ),
         release=lambda: _release(lock, owner_path),
     )
     _local.depth = 1
@@ -194,16 +207,24 @@ def hold(
     finally:
         _local.depth = 0
         _local.lease = None
-        lease.release()
+        try:
+            if joined is not None:
+                joined.finish()
+        finally:
+            lease.release()
 
 
 def yield_requested() -> bool:
     """呼出スレッドが譲れる保持者で、待機者がいるかを返す。
 
-    最外側の`hold`で枠を取得したスレッドだけが真になりうる。
-    入れ子の`hold`の内側、祖先から所有を継承した区間、`hold`の外、別スレッドでは常に偽を返す。
+    通常は最外側の`hold`で取得したスレッドだけが真になりうる。
+    協調所有者の入れ子と明示参加した子も待機者を確認できる。
+    非協調の入れ子・継承区間、`hold`の外、別スレッドでは偽を返す。
     """
     lease: _Lease | None = getattr(_local, "lease", None)
+    if lease is not None and (lease.coordinator is not None or lease.participant is not None):
+        with _queue_guard(lease.owner_path.parent):
+            return bool(_waiters(lease.owner_path.parent))
     if getattr(_local, "depth", 0) != 1 or lease is None or not lease.acquired:
         return False
     with _queue_guard(lease.owner_path.parent):
@@ -224,6 +245,15 @@ def yield_to_waiters() -> bool:
     Returns:
         譲って取り直した場合は`True`、譲らなかった場合は`False`。
     """
+    lease: _Lease | None = getattr(_local, "lease", None)
+    if lease is not None and lease.participant is not None:
+        return lease.participant.checkpoint()
+    if lease is not None and lease.coordinator is not None:
+        return lease.coordinator.checkpoint()
+    return _yield_lease()
+
+
+def _yield_lease() -> bool:
     if not yield_requested():
         return False
     lease: _Lease = _local.lease
@@ -246,6 +276,208 @@ def yield_to_waiters() -> bool:
             release=lambda: _release(lease.lock, lease.owner_path),
         )
     return True
+
+
+@contextlib.contextmanager
+def cooperative_hold(
+    *,
+    label: str | None = None,
+    should_abort: collections.abc.Callable[[], bool] | None = None,
+    on_wait: collections.abc.Callable[[SlotOwner | None], None] | None = None,
+    on_wait_interval: WaitIntervalCallback | None = None,
+    lock_dir: pathlib.Path | None = None,
+) -> collections.abc.Generator["SlotCoordinator", None, None]:
+    """最外側で取得した枠を、明示参加した子と協調して譲る。
+
+    所有者はparticipant区間を開いて参加券を子のholdへ渡し、子のpoll/waitの合間に
+    checkpointを呼ぶ。子は全対象処理を回収した区切りでyield_to_waitersを呼ぶ。
+    所有者はcheckpoint中に新しい対象処理を開始しない。例外・取消時もfinallyで
+    子とその対象処理を終了・回収してからparticipant区間、最外側の区間の順に閉じる。
+    子の生成・停止・回収は呼出元の責任であり、このAPIは代行しない。
+    """
+    if getattr(_local, "depth", 0):
+        raise ValueError("cooperative_holdは最外側で開いてください。")
+    with hold(
+        label=label,
+        should_abort=should_abort,
+        on_wait=on_wait,
+        on_wait_interval=on_wait_interval,
+        lock_dir=lock_dir,
+    ):
+        lease: _Lease = _local.lease
+        if not lease.acquired:
+            raise ValueError("祖先から継承した枠は協調所有者へ変更できません。祖先の参加券を使ってください。")
+        coordinator = SlotCoordinator(lease)
+        lease.coordinator = coordinator
+        try:
+            yield coordinator
+        finally:
+            coordinator.close()
+            lease.coordinator = None
+
+
+class SlotCoordinator:
+    """所有スレッドで参加区間と譲渡・再開を管理する。cooperative_holdから取得する。"""
+
+    def __init__(self, lease: _Lease) -> None:
+        self._lease = lease
+        self._thread = threading.get_ident()
+        self._id = uuid.uuid4().hex
+        self._path = lease.owner_path.parent / f"execution.cooperative-{self._id}.json"
+        owner = read_owner(lease.owner_path.parent)
+        assert owner is not None
+        self._state: dict[str, typing.Any] = {"owner": dataclasses.asdict(owner), "generation": 0, "participants": {}}
+        with _queue_guard(self._path.parent):
+            self._save()
+
+    def _check_thread(self) -> None:
+        if threading.get_ident() != self._thread or getattr(_local, "lease", None) is not self._lease:
+            raise RuntimeError("協調制御は保持中の所有スレッドから呼んでください。")
+
+    def _save(self) -> None:
+        self._path.write_text(json.dumps(self._state), encoding="utf-8")
+
+    @contextlib.contextmanager
+    def participant(self) -> collections.abc.Generator[str, None, None]:
+        """子1件の参加券を登録する。子を終了・回収してから区間を閉じる。
+
+        参加券はJSON文字列であり、環境変数から自動採用しない。
+        子の終了通知だけでは回収を保証しないため、区間を閉じるまで登録を保持する。
+        """
+        self._check_thread()
+        identifier = uuid.uuid4().hex
+        with _queue_guard(self._path.parent):
+            self._state = _read_control(self._path)
+            self._state["participants"][identifier] = {"state": "registered"}
+            self._save()
+        try:
+            yield json.dumps({"coordinator": self._id, "participant": identifier})
+        finally:
+            with _queue_guard(self._path.parent):
+                if self._path.exists():
+                    self._state = _read_control(self._path)
+                    self._state["participants"].pop(identifier, None)
+                    self._save()
+
+    def checkpoint(self) -> bool:
+        """全参加者が一時停止した区切りで譲渡し、再取得後に再開させる。
+
+        登録中・稼働中・終了未回収の子があれば保持を続ける。
+        待機者が取り消された場合も停止済みの子を再開させる。
+        """
+        self._check_thread()
+        if not self._lease.acquired:
+            raise WaitAborted
+        with _queue_guard(self._path.parent):
+            self._state = _read_control(self._path)
+            if any(value["state"] != "paused" for value in self._state["participants"].values()):
+                return False
+        try:
+            yielded = _yield_lease()
+        except BaseException:
+            self.close()
+            raise
+        with _queue_guard(self._path.parent):
+            self._state = _read_control(self._path)
+            self._state["generation"] += 1
+            self._state["yielded"] = yielded
+            for value in self._state["participants"].values():
+                if value["state"] == "paused":
+                    value["state"] = "active"
+            self._save()
+        return yielded
+
+    def close(self) -> None:
+        """制御区間を閉じ、停止中の子の再開を拒否する。"""
+        self._check_thread()
+        with _queue_guard(self._path.parent):
+            self._path.unlink(missing_ok=True)
+
+
+def _read_control(path: pathlib.Path) -> dict[str, typing.Any]:
+    try:
+        value: dict[str, typing.Any] = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise WaitAborted("協調区間を読み取れません。所有者と子を回収してから再実行してください。") from exc
+    return value
+
+
+@dataclasses.dataclass
+class _Participant:
+    path: pathlib.Path
+    identifier: str
+    owner: SlotOwner
+    should_abort: collections.abc.Callable[[], bool] | None
+
+    @classmethod
+    def join(
+        cls,
+        directory: pathlib.Path,
+        ticket: str,
+        should_abort: collections.abc.Callable[[], bool] | None,
+    ) -> "_Participant":
+        try:
+            raw = json.loads(ticket)
+            identifiers = (raw["coordinator"], raw["participant"])
+            if any(
+                not isinstance(value, str) or len(value) != 32 or uuid.UUID(hex=value).hex != value for value in identifiers
+            ):
+                raise ValueError
+        except (ValueError, TypeError, KeyError, AttributeError) as exc:
+            raise ValueError("参加券が不正です。participant区間が発行した文字列をそのまま渡してください。") from exc
+        path = directory / f"execution.cooperative-{identifiers[0]}.json"
+        with _queue_guard(directory):
+            state = _read_control(path)
+            owner = SlotOwner(**state["owner"])
+            current_owner = read_owner(directory)
+            registration = state["participants"].get(identifiers[1])
+            if (
+                current_owner is None
+                or current_owner.pid != owner.pid
+                or current_owner.create_time != owner.create_time
+                or not _is_ancestor(owner)
+                or registration is None
+                or registration["state"] != "registered"
+            ):
+                raise WaitAborted("参加区間と現在の所有者が一致しません。所有者が発行した有効な参加券で再実行してください。")
+            registration.update(state="active", pid=os.getpid(), create_time=psutil.Process().create_time())
+            path.write_text(json.dumps(state), encoding="utf-8")
+        return cls(path, identifiers[1], owner, should_abort)
+
+    def checkpoint(self) -> bool:
+        if self.should_abort is not None and self.should_abort():
+            raise WaitAborted
+        with _queue_guard(self.path.parent):
+            state = _read_control(self.path)
+            if self.identifier not in state["participants"] or not _is_ancestor(self.owner):
+                raise WaitAborted
+            if not _waiters(self.path.parent):
+                return False
+            state["participants"][self.identifier]["state"] = "paused"
+            generation = state["generation"]
+            self.path.write_text(json.dumps(state), encoding="utf-8")
+        while True:
+            if self.should_abort is not None and self.should_abort():
+                raise WaitAborted
+            with _queue_guard(self.path.parent):
+                state = _read_control(self.path)
+                registration = state["participants"].get(self.identifier)
+                if registration is None:
+                    raise WaitAborted
+                if state["generation"] > generation and registration["state"] == "active":
+                    return bool(state["yielded"])
+            if not _is_ancestor(self.owner):
+                raise WaitAborted
+            time.sleep(_POLL_INTERVAL)
+
+    def finish(self) -> None:
+        with _queue_guard(self.path.parent):
+            if self.path.exists():
+                state = _read_control(self.path)
+                registration = state["participants"].get(self.identifier)
+                if registration is not None:
+                    registration["state"] = "finished"
+                    self.path.write_text(json.dumps(state), encoding="utf-8")
 
 
 def _observe(
