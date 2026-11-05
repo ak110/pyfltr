@@ -4,12 +4,15 @@
 text出力の後発は待機の警告を標準エラーへ即時に出力するため、その出力を同期点にして先発を解放する。
 """
 
+import datetime as dt
 import json
 import os
 import pathlib
 import signal
+import subprocess
 import sys
 import textwrap
+import time
 
 import pytest
 
@@ -284,6 +287,72 @@ def test_api_holder_excludes_pyfltr_run(tmp_path: pathlib.Path) -> None:
     _assert_after(log, "x", "b")
 
 
+def _show_run_timing(run_id: str, *, cwd: pathlib.Path) -> dict:
+    """公開の`show-run`をjson形式で別プロセス起動し、`timing`を返す。"""
+    completed = subprocess.run(
+        [sys.executable, "-m", "pyfltr", "show-run", run_id, "--output-format=json"],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(completed.stdout)
+    return {**payload["timing"], "commands": payload["commands"]}
+
+
+def _iso(timestamp: float) -> str:
+    return dt.datetime.fromtimestamp(timestamp, dt.UTC).isoformat()
+
+
+@pytest.mark.timeout(240)
+def test_cli_records_slot_wait_and_body(tmp_path: pathlib.Path) -> None:
+    """待たされた実行は、待機区間・本体区間・run全体の経過を`show-run`から区別して取得できる。
+
+    先発は待たずに取得した対照とし、後発の待機区間だけが先発の保持時間を含む。
+    """
+    log = tmp_path / "intervals.log"
+    release = tmp_path / "release-a"
+    project_a = helper.make_project(tmp_path, "a", log=log, release=release)
+    project_b = helper.make_project(tmp_path, "b", log=log, release=None)
+
+    with helper.start(helper.pyfltr_argv("run"), project_a) as run_a:
+        helper.wait_for(
+            lambda: helper.started(log, "a"), expected="Aがツールの区間を開始する", observed=lambda: helper.describe(log, run_a)
+        )
+        with helper.start(helper.pyfltr_argv("run"), project_b) as run_b:
+            helper.wait_for(
+                lambda: any(record.get("kind") == "header" for record in run_b.records()),
+                expected="Bが実行を開始する",
+                observed=lambda: helper.describe(log, run_a, run_b),
+            )
+            time.sleep(1.0)
+            assert not helper.started(log, "b")
+            release.touch()
+            assert run_a.wait() == 0, run_a.stderr
+            assert run_b.wait() == 0, run_b.stderr
+
+    helper.intervals(log)
+    control = _show_run_timing(helper.header_run_id(run_a), cwd=project_a)
+    waited = _show_run_timing(helper.header_run_id(run_b), cwd=project_b)
+    for timing in (control, waited):
+        assert timing["measured"], timing
+        assert timing["unfinished_slot_waits"] == 0, timing
+        assert [(wait["kind"], wait["sequence"], wait["outcome"]) for wait in timing["slot_waits"]] == [
+            ("initial", 0, "acquired")
+        ], timing
+    waited_wait = waited["slot_waits"][0]
+    assert waited_wait["elapsed"] >= 1.0, waited
+    assert control["slot_wait_total"] < waited["slot_wait_total"], (control, waited)
+    # 本体区間は待機区間が閉じた後に始まる。
+    body = waited["commands"][0]
+    assert body["started_at"] >= waited_wait["finished_at"], waited
+    assert body["finished_at"] >= body["started_at"], waited
+    assert waited["run_elapsed"] >= waited["slot_wait_total"] + body["elapsed"], waited
+
+
 @pytest.mark.timeout(240)
 @pytest.mark.parametrize("jobs", [1, 2])
 def test_cli_yields_before_remaining_tools(tmp_path: pathlib.Path, jobs: int) -> None:
@@ -320,6 +389,12 @@ def test_cli_yields_before_remaining_tools(tmp_path: pathlib.Path, jobs: int) ->
             assert run_a.wait() == 0, run_a.stderr
     spans = helper.intervals(log)
     assert set(spans) == {"a0", "a1", "a2", "a3", "b"}
+    # 譲った実行は取り直しの待機区間を記録し、待機者の実行中だった時間をその区間に含める。
+    timing = _show_run_timing(helper.header_run_id(run_a), cwd=project_a)
+    reacquire = [wait for wait in timing["slot_waits"] if wait["kind"] == "reacquire"]
+    assert [(wait["sequence"], wait["outcome"]) for wait in reacquire] == [(1, "acquired")], timing
+    assert reacquire[0]["started_at"] <= _iso(spans["b"][0]), (timing, spans)
+    assert timing["unfinished_slot_waits"] == 0
     for label in initial:
         _assert_after(log, label, "b")
     for label in set(spans) - initial - {"b"}:

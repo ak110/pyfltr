@@ -12,6 +12,7 @@ from textual.widgets import DataTable, Log, TabbedContent, TabPane
 
 import pyfltr.command.core_
 import pyfltr.command.dispatcher
+import pyfltr.command.execution_slot
 import pyfltr.command.executor
 import pyfltr.command.only_failed
 import pyfltr.command.process
@@ -41,6 +42,7 @@ def run_commands_with_ui(
     base_ctx: pyfltr.command.core_.ExecutionBaseContext,
     *,
     archive_hook: typing.Callable[[pyfltr.command.core_.CommandResult], None] | None = None,
+    slot_wait_hook: pyfltr.command.execution_slot.WaitIntervalCallback | None = None,
     on_result: typing.Callable[[pyfltr.command.core_.CommandResult], None] | None = None,
     fail_fast: bool = False,
     only_failed_targets: dict[str, pyfltr.command.only_failed.ToolTargets] | None = None,
@@ -53,6 +55,7 @@ def run_commands_with_ui(
     `archive_hook`が指定されている場合、各コマンド完了時に実行アーカイブへ書き込む
     （fixステージも含めて全実行を保存する）。キャッシュヒット時の結果はアーカイブには
     書き込まない（`cached_from`でソースrunを参照させる前提）。
+    `slot_wait_hook`は実行枠の待機区間の開始と終了を受け取る。
 
     `on_result`が指定されている場合、通常ステージ（formatter / linter / tester）の
     各コマンド完了時にarchive_hookの後に呼ぶ。fixステージでは呼ばない。
@@ -70,6 +73,7 @@ def run_commands_with_ui(
         args,
         base_ctx,
         archive_hook=archive_hook,
+        slot_wait_hook=slot_wait_hook,
         on_result=on_result,
         fail_fast=fail_fast,
         only_failed_targets=only_failed_targets,
@@ -125,6 +129,7 @@ class UIApp(App):
         base_ctx: pyfltr.command.core_.ExecutionBaseContext,
         *,
         archive_hook: typing.Callable[[pyfltr.command.core_.CommandResult], None] | None = None,
+        slot_wait_hook: pyfltr.command.execution_slot.WaitIntervalCallback | None = None,
         on_result: typing.Callable[[pyfltr.command.core_.CommandResult], None] | None = None,
         fail_fast: bool = False,
         only_failed_targets: dict[str, pyfltr.command.only_failed.ToolTargets] | None = None,
@@ -137,6 +142,7 @@ class UIApp(App):
         self.config = base_ctx.config
         self._all_files = base_ctx.all_files
         self._archive_hook = archive_hook
+        self._slot_wait_hook = slot_wait_hook
         self._on_result = on_result
         self._fail_fast = fail_fast
         self._only_failed_targets = only_failed_targets
@@ -303,6 +309,7 @@ class UIApp(App):
                 fail_fast=self._fail_fast,
                 callbacks=pyfltr.command.stage_runner.StageCallbacks(
                     archive=self._archive_hook,
+                    on_slot_wait=self._slot_wait_hook,
                     on_result=self._on_result,
                     is_interrupted=lambda: self._interrupted,
                     on_interrupted=self._record_interrupted,

@@ -45,6 +45,16 @@ class CommandSummaryModel(pydantic.BaseModel):
         default=None,
         description=("対象のコマンドの実行に要した秒数。runのキャッシュ復元結果では、保存元の実行に要した秒数を返す。"),
     )
+    started_at: str | None = pydantic.Field(
+        default=None,
+        description=(
+            "ツール本体の実行を始めた時刻（UTCのISO 8601）。実行していない結果（スキップ・キャッシュ復元）と古いrunではNone。"
+        ),
+    )
+    finished_at: str | None = pydantic.Field(
+        default=None,
+        description="ツール本体の実行を終えた時刻（UTCのISO 8601）。設定条件は`started_at`と同じ。",
+    )
     slow_tests: list[SlowTestModel] = pydantic.Field(
         default_factory=list,
         description="テスターが報告した遅いテストの上位一覧（秒数降順）。",
@@ -91,11 +101,52 @@ class DiagnosticModel(pydantic.BaseModel):
     )
 
 
+class SlotWaitModel(pydantic.BaseModel):
+    """検証の実行枠を取得するまでの待機区間。`RunTimingModel.slot_waits`の要素。"""
+
+    kind: str | None = pydantic.Field(
+        default=None,
+        description="待機の種別。initial（最初の取得）またはreacquire（他の検証へ譲った後の取り直し）。",
+    )
+    sequence: int | None = pydantic.Field(default=None, description="initialは0、reacquireは譲るたびに1から増える番号。")
+    started_at: str | None = pydantic.Field(default=None, description="待機を始めた時刻（UTCのISO 8601）。")
+    finished_at: str | None = pydantic.Field(default=None, description="待機を終えた時刻。未完了の区間はNone。")
+    elapsed: float | None = pydantic.Field(default=None, description="待機の秒数。未完了の区間はNone（0秒と区別する）。")
+    outcome: str | None = pydantic.Field(
+        default=None,
+        description=(
+            "終了の理由。acquired（取得）・inherited（祖先プロセスの所有を継承）・aborted（中断）・"
+            "interrupted（Ctrl+C）・failed（その他の例外）。未完了の区間はNone。"
+        ),
+    )
+
+
+class RunTimingModel(pydantic.BaseModel):
+    """runの経過時間と実行枠の待機区間の要約。値が確定していない項目はNoneとする。"""
+
+    measured: bool = pydantic.Field(description="待機区間を計測した版のrunか。偽なら待機時間は未計測で、0秒を意味しない。")
+    run_elapsed: float | None = pydantic.Field(
+        default=None, description="run全体の経過秒数。完了記録の無いrun（実行中・強制終了）はNone。"
+    )
+    slot_waits: list[SlotWaitModel] | None = pydantic.Field(
+        default=None, description="実行枠の待機区間の一覧。未計測のrunはNone。"
+    )
+    slot_wait_total: float | None = pydantic.Field(
+        default=None, description="待機区間の秒数の合計。未計測、または未完了の区間がある場合はNone。"
+    )
+    unfinished_slot_waits: int | None = pydantic.Field(default=None, description="未完了の待機区間の数。未計測のrunはNone。")
+
+
 class RunOverviewModel(pydantic.BaseModel):
-    """runの概要（meta + コマンド別サマリ）。`show_run`ツールの戻り値。"""
+    """runの概要（meta + 経過時間の要約 + コマンド別サマリ）。`show_run`ツールの戻り値。
+
+    ツール本体の秒数は`commands[].elapsed`、本体区間は`commands[].started_at`・`finished_at`が持つ。
+    並行して動いたツールの秒数の合計はrun全体の経過と一致しない。
+    """
 
     run_id: str = pydantic.Field(description="runの識別子（ULID）。")
     meta: dict[str, typing.Any] = pydantic.Field(description="runのmeta情報（`read_meta`の戻り値）。")
+    timing: RunTimingModel = pydantic.Field(description="run全体の経過と実行枠の待機区間の要約。")
     commands: list[CommandSummaryModel] = pydantic.Field(description="コマンド別サマリ一覧。")
 
 
@@ -123,6 +174,16 @@ class CommandMetaModel(pydantic.BaseModel):
     )
     files: int = pydantic.Field(description="対象ファイル数。")
     elapsed: float = pydantic.Field(description="対象のコマンドの実行に要した秒数。")
+    started_at: str | None = pydantic.Field(
+        default=None,
+        description=(
+            "ツール本体の実行を始めた時刻（UTCのISO 8601）。実行していない結果（スキップ・キャッシュ復元）と古いrunではNone。"
+        ),
+    )
+    finished_at: str | None = pydantic.Field(
+        default=None,
+        description="ツール本体の実行を終えた時刻（UTCのISO 8601）。設定条件は`started_at`と同じ。",
+    )
     diagnostics: int = pydantic.Field(description="diagnosticの件数。")
     slow_tests: list[SlowTestModel] = pydantic.Field(
         default_factory=list,
@@ -140,7 +201,7 @@ class CommandMetaModel(pydantic.BaseModel):
     ) -> dict[str, typing.Any]:
         """保存元に無い任意項目を直列化結果から省く。"""
         serialized = typing.cast(dict[str, typing.Any], handler(self))
-        for field_name in ("slow_tests", "retry_command"):
+        for field_name in ("slow_tests", "retry_command", "started_at", "finished_at"):
             if field_name not in self.model_fields_set:
                 serialized.pop(field_name, None)
         return serialized

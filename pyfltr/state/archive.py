@@ -26,6 +26,11 @@ catch側（`pyfltr/state/runs.py`・`pyfltr/cli/mcp_server.py`など）で組み
 ロックはrunディレクトリより先に取得するため、ディレクトリが存在して保持者がいないrunは完了済みか強制終了済みである。
 変更前の版のpyfltrはロックを確認しないため、版が混在する環境ではその版のcleanupが実行中のrunを削除し得る。
 
+`meta.json`の`slot_waits`は検証の実行枠（`pyfltr.command.execution_slot`）の待機区間の一覧で、
+区間の開始時に未完了の要素を、終了時に完了した要素を保存する（`record_slot_wait`）。
+キーを持たないrunは待機区間を計測しない版の記録であり、空の一覧（計測したが区間なし）と区別する。
+各ツールの`tool.json`は本体区間の`started_at`・`finished_at`（実行した場合だけ）と処理秒数`elapsed`を持つ。
+
 アーカイブは既定で有効。`--no-archive` CLIオプションまたは
 `archive = false`設定で無効化できる。
 """
@@ -39,6 +44,8 @@ import pathlib
 import posixpath
 import re
 import sys
+import tempfile
+import threading
 import typing
 
 import ulid
@@ -68,6 +75,8 @@ DIAGNOSTIC_PATHS_META_KEY = "diagnostic_paths"
 このキーを持たないrunは、サブプロジェクト相対の診断を保存していた版の記録として補正の対象にする。
 """
 DIAGNOSTIC_PATHS_START_RELATIVE = "start-relative"
+SLOT_WAITS_META_KEY = "slot_waits"
+"""実行枠の待機区間の一覧を保存する`meta.json`のキー。キーの有無で計測した版の記録かを判別する。"""
 _SECTION_HEADER_RE = re.compile(r"^# (?:subproject: (?P<relative>.+)|external paths)$")
 
 
@@ -115,6 +124,8 @@ class ArchiveStore:
         self._cache_root = cache_root if cache_root is not None else pyfltr.user_cache.default_cache_root()
         self._runs_dir = self._cache_root / _RUNS_DIRNAME
         self._run_locks: dict[str, pyfltr.file_lock.FileLock] = {}
+        # TUIは背景スレッドで待機区間を書き、終了処理が別スレッドで完了記録を書くため、meta.jsonの更新を直列にする。
+        self._meta_lock = threading.Lock()
 
     @property
     def runs_dir(self) -> pathlib.Path:
@@ -170,6 +181,7 @@ class ArchiveStore:
             "files": files,
             "started_at": pyfltr.state.retention.now_iso(),
             DIAGNOSTIC_PATHS_META_KEY: DIAGNOSTIC_PATHS_START_RELATIVE,
+            SLOT_WAITS_META_KEY: [],
         }
         (run_dir / _META_FILENAME).write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -213,7 +225,29 @@ class ArchiveStore:
             meta["slow_tests"] = [test.to_dict() for test in result.slow_tests]
         if result.retry_command is not None:
             meta["retry_command"] = result.retry_command
+        if result.started_at is not None:
+            meta["started_at"] = result.started_at
+        if result.finished_at is not None:
+            meta["finished_at"] = result.finished_at
         (tool_dir / _TOOL_META_FILENAME).write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def record_slot_wait(self, run_id: str, wait: dict[str, typing.Any]) -> None:
+        """実行枠の待機区間を`meta.json`の`slot_waits`へ保存する。
+
+        同じ`kind`・`sequence`の要素があれば置き換え（未完了から完了への更新）、無ければ末尾へ追加する。
+        区間の開始時にも呼ばれるため、強制終了したrunにも開始済みの区間が未完了のまま残る。
+        """
+
+        def update(meta: dict[str, typing.Any]) -> None:
+            waits = meta.setdefault(SLOT_WAITS_META_KEY, [])
+            key = (wait.get("kind"), wait.get("sequence"))
+            for index, existing in enumerate(waits):
+                if (existing.get("kind"), existing.get("sequence")) == key:
+                    waits[index] = dict(wait)
+                    return
+            waits.append(dict(wait))
+
+        self._update_meta(run_id, update)
 
     def finalize_run(
         self,
@@ -243,17 +277,25 @@ class ArchiveStore:
         commands: list[str] | None,
         files: int | None,
     ) -> None:
+        def update(meta: dict[str, typing.Any]) -> None:
+            meta["finished_at"] = pyfltr.state.retention.now_iso()
+            meta["exit_code"] = exit_code
+            if commands is not None:
+                meta["commands"] = commands
+            if files is not None:
+                meta["files"] = files
+
+        self._update_meta(run_id, update)
+
+    def _update_meta(self, run_id: str, update: typing.Callable[[dict[str, typing.Any]], None]) -> None:
+        """`meta.json`を読み、`update`で書き換えて保存する。runディレクトリが無ければ何もしない。"""
         meta_path = self._runs_dir / run_id / _META_FILENAME
-        if not meta_path.exists():
-            return
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        meta["finished_at"] = pyfltr.state.retention.now_iso()
-        meta["exit_code"] = exit_code
-        if commands is not None:
-            meta["commands"] = commands
-        if files is not None:
-            meta["files"] = files
-        meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+        with self._meta_lock:
+            if not meta_path.exists():
+                return
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            update(meta)
+            _write_json_replacing(meta_path, meta)
 
     def list_runs(self, *, limit: int | None = None) -> list[RunSummary]:
         """保存済みのrunを新しい順（run_id降順）で返す。"""
@@ -384,6 +426,22 @@ class ArchiveStore:
             # 強制終了したrunが残したロックファイルを回収する。保持者がいないことはcleanupが確認済み。
             _run_lock_path(self._runs_dir / run_id).unlink(missing_ok=True)
         return removed
+
+
+def _write_json_replacing(path: pathlib.Path, data: dict[str, typing.Any]) -> None:
+    """JSONを一時ファイルへ書いてから置き換え、実行中のrunを読む`show-run`へ書きかけの内容を見せない。
+
+    Windowsで読み手が対象を開いている間は置き換えが`PermissionError`になるため、その場合だけ直接書き込む。
+    """
+    text = json.dumps(data, ensure_ascii=False, indent=2)
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False) as file:
+        file.write(text)
+        temp_path = pathlib.Path(file.name)
+    try:
+        os.replace(temp_path, path)
+    except PermissionError:
+        temp_path.unlink(missing_ok=True)
+        path.write_text(text, encoding="utf-8")
 
 
 def _run_lock_path(run_dir: pathlib.Path) -> pathlib.Path:

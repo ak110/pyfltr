@@ -182,6 +182,45 @@ async def test_show_run_includes_elapsed_and_slow_tests(tmp_path: pathlib.Path) 
     assert [test.model_dump() for test in command.slow_tests] == [test.to_dict() for test in slow_tests]
 
 
+@pytest.mark.asyncio
+async def test_show_run_returns_timing(tmp_path: pathlib.Path) -> None:
+    """show_runは待機区間・本体区間・run全体の経過を返し、未計測と0秒を区別する。"""
+    store = pyfltr.state.archive.ArchiveStore(cache_root=tmp_path)
+    run_id = store.start_run(commands=["pytest"])
+    wait = {
+        "kind": "initial",
+        "sequence": 0,
+        "started_at": "2026-11-05T00:00:00+00:00",
+        "finished_at": "2026-11-05T00:00:01.25+00:00",
+        "elapsed": 1.25,
+        "outcome": "acquired",
+    }
+    store.record_slot_wait(run_id, wait)
+    result = _make_result("pytest", returncode=0, command_type="tester")
+    result.started_at = "2026-11-05T00:00:01.3+00:00"
+    result.finished_at = "2026-11-05T00:00:02+00:00"
+    store.write_tool_result(run_id, result)
+    store.finalize_run(run_id, exit_code=0)
+
+    overview = await pyfltr.cli.mcp_server.tool_show_run(run_id)
+    assert overview.timing.measured
+    assert overview.timing.run_elapsed is not None
+    assert [item.model_dump() for item in overview.timing.slot_waits or []] == [wait]
+    assert overview.timing.slot_wait_total == 1.25
+    assert overview.timing.unfinished_slot_waits == 0
+    assert (overview.commands[0].started_at, overview.commands[0].finished_at) == (result.started_at, result.finished_at)
+
+    old_run_id = _seed_run(tmp_path, tool_results=[("mypy", 0, "", [])])
+    meta_path = tmp_path / "runs" / old_run_id / "meta.json"
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    del meta[pyfltr.state.archive.SLOT_WAITS_META_KEY]
+    meta_path.write_text(json.dumps(meta), encoding="utf-8")
+    old = await pyfltr.cli.mcp_server.tool_show_run(old_run_id)
+    assert not old.timing.measured
+    assert old.timing.slot_waits is None
+    assert old.timing.slot_wait_total is None
+
+
 def test_collect_tool_summaries_includes_elapsed(tmp_path: pathlib.Path) -> None:
     """collect_tool_summariesがtool.jsonのelapsedを読み取る。"""
     store = pyfltr.state.archive.ArchiveStore(cache_root=tmp_path)
@@ -347,6 +386,8 @@ async def test_show_run_diagnostics_serializes_optional_meta_conditionally(tmp_p
         _make_result("pytest", returncode=1, command_type="tester"),
         slow_tests=slow_tests,
         retry_command="pyfltr run --commands=pytest tests/a_test.py",
+        started_at="2026-11-05T00:00:00+00:00",
+        finished_at="2026-11-05T00:00:01+00:00",
     )
     store.write_tool_result(run_id, pytest_result)
     store.finalize_run(run_id, exit_code=1)
@@ -362,7 +403,13 @@ async def test_show_run_diagnostics_serializes_optional_meta_conditionally(tmp_p
     mypy_meta = serialized_commands[0]["command_meta"]
     assert "slow_tests" not in mypy_meta
     assert "retry_command" not in mypy_meta
+    assert "started_at" not in mypy_meta
+    assert "finished_at" not in mypy_meta
     pytest_meta = serialized_commands[1]["command_meta"]
+    assert (pytest_meta["started_at"], pytest_meta["finished_at"]) == (
+        "2026-11-05T00:00:00+00:00",
+        "2026-11-05T00:00:01+00:00",
+    )
     assert pytest_meta["slow_tests"] == [test.to_dict() for test in slow_tests]
     assert pytest_meta["retry_command"] == "pyfltr run --commands=pytest tests/a_test.py"
 
@@ -662,6 +709,8 @@ async def test_show_run_diagnostics_publishes_projected_contract() -> None:
         "diagnostics",
         "slow_tests",
         "retry_command",
+        "started_at",
+        "finished_at",
     }
     assert "commandline" not in command_meta_schema["properties"]
     assert "hint_urls" not in command_meta_schema["properties"]

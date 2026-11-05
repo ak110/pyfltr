@@ -195,14 +195,16 @@ def _show_run_overview(
     meta: dict[str, typing.Any],
     output_format: str,
 ) -> int:
-    """既定モード: meta + ツール別サマリを表示する。"""
+    """既定モード: meta + 経過時間の要約 + ツール別サマリを表示する。"""
     tool_summaries = pyfltr.state.runs.collect_tool_summaries(store, run_id)
+    timing = pyfltr.state.runs.summarize_timing(meta)
     if output_format == "text":
-        _print_run_overview_text(run_id, meta, tool_summaries)
+        _print_run_overview_text(run_id, meta, timing, tool_summaries)
     elif output_format == "json":
-        _print_json({"run_id": run_id, "meta": meta, "commands": tool_summaries})
+        _print_json({"run_id": run_id, "meta": meta, "timing": timing, "commands": tool_summaries})
     else:
         _print_jsonl_line({"kind": "meta", **meta})
+        _print_jsonl_line({"kind": "timing", **timing})
         for tool_summary in tool_summaries:
             _print_jsonl_line({"kind": "command", **tool_summary})
     return 0
@@ -211,9 +213,13 @@ def _show_run_overview(
 def _print_run_overview_text(
     run_id: str,
     meta: dict[str, typing.Any],
+    timing: dict[str, typing.Any],
     tool_summaries: list[dict[str, typing.Any]],
 ) -> None:
-    """`show-run`既定モードのtext出力（行形式`キー: 値`）。"""
+    """`show-run`既定モードのtext出力（行形式`キー: 値`）。
+
+    未確定の値は`unfinished`、待機区間を計測しない版のrunは`not measured`と表示し、0秒と区別する。
+    """
     print(f"run_id: {run_id}")
     for key in ("started_at", "finished_at", "exit_code", "files", "cwd"):
         if key in meta and meta[key] is not None:
@@ -221,13 +227,33 @@ def _print_run_overview_text(
     commands = meta.get("commands") or []
     if commands:
         print(f"commands: {','.join(commands)}")
+    print(f"elapsed: {_format_seconds(timing['run_elapsed'])}")
+    if not timing["measured"]:
+        print("slot_waits: not measured")
+    else:
+        print(f"slot_waits: {_format_seconds(timing['slot_wait_total'])}")
+        for wait in timing["slot_waits"]:
+            print(
+                f"  {wait.get('kind')}#{wait.get('sequence')}: elapsed={_format_seconds(wait.get('elapsed'))}"
+                f" outcome={wait.get('outcome') or 'unfinished'} started_at={wait.get('started_at')}"
+            )
     print("")
     print("commands:")
     if not tool_summaries:
         print("  (no archived commands)")
         return
     for entry in tool_summaries:
-        print(f"  {entry['command']}: status={entry.get('status')} diagnostics={entry.get('diagnostics')}")
+        print(
+            f"  {entry['command']}: status={entry.get('status')} diagnostics={entry.get('diagnostics')}"
+            f" elapsed={_format_seconds(entry.get('elapsed'))}"
+        )
+
+
+def _format_seconds(value: typing.Any) -> str:
+    """秒数を表示用に整形する。値が無い場合は未確定として`unfinished`を返す。"""
+    if isinstance(value, int | float) and not isinstance(value, bool):
+        return f"{value:.3f}s"
+    return "unfinished"
 
 
 def _show_tools_detail(
@@ -284,7 +310,7 @@ def _print_tool_detail_text(
     `diagnostics`は`(command, file)`単位の集約形式を想定し、各file見出しの下に
     `messages[]`内の個別指摘をインデント付きで並べる。
     """
-    for key in ("command", "type", "status", "returncode", "files", "elapsed", "diagnostics"):
+    for key in ("command", "type", "status", "returncode", "files", "elapsed", "started_at", "finished_at", "diagnostics"):
         if key in tool_meta and tool_meta[key] is not None:
             print(f"{key}: {tool_meta[key]}")
     if tool_meta.get("commandline"):

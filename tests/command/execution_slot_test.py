@@ -5,11 +5,13 @@
 
 import collections.abc
 import contextlib
+import json
 import os
 import pathlib
 import subprocess
 import sys
 import threading
+import time
 
 import psutil
 import pytest
@@ -321,3 +323,188 @@ def test_killed_while_reacquiring_is_reclaimed(tmp_path: pathlib.Path, lock_dir:
     with pyfltr.command.execution_slot.hold(lock_dir=lock_dir, should_abort=lambda: True):
         pass
     assert not list(lock_dir.glob("execution.wait-*"))
+
+
+def _intervals(
+    events: list[pyfltr.command.execution_slot.SlotWait],
+) -> dict[tuple[str, int], list[pyfltr.command.execution_slot.SlotWait]]:
+    """通知を`(kind, sequence)`ごとに開始・終了の順でまとめる。"""
+    grouped: dict[tuple[str, int], list[pyfltr.command.execution_slot.SlotWait]] = {}
+    for event in events:
+        grouped.setdefault((event.kind, event.sequence), []).append(event)
+    return grouped
+
+
+def _assert_pair(pair: list[pyfltr.command.execution_slot.SlotWait], outcome: str) -> pyfltr.command.execution_slot.SlotWait:
+    """開始（未完了）と終了（完了）の2通知が同じ区間を指すことを確かめ、終了の通知を返す。"""
+    started, finished = pair
+    assert (started.finished_at, started.elapsed, started.outcome) == (None, None, None)
+    assert finished.started_at == started.started_at
+    assert finished.finished_at is not None
+    assert finished.elapsed is not None
+    assert finished.elapsed >= 0
+    assert finished.outcome == outcome
+    return finished
+
+
+def test_wait_interval_without_contention(lock_dir: pathlib.Path) -> None:
+    """待機が無くても最初の取得を区間として通知し、入れ子の`hold`は通知しない。"""
+    events: list[pyfltr.command.execution_slot.SlotWait] = []
+    nested: list[pyfltr.command.execution_slot.SlotWait] = []
+    with (
+        pyfltr.command.execution_slot.hold(lock_dir=lock_dir, on_wait_interval=events.append),
+        pyfltr.command.execution_slot.hold(lock_dir=lock_dir, on_wait_interval=nested.append),
+    ):
+        pass
+    grouped = _intervals(events)
+    assert list(grouped) == [("initial", 0)]
+    finished = _assert_pair(grouped["initial", 0], "acquired")
+    assert finished.elapsed is not None
+    assert finished.elapsed < 1
+    assert finished.to_dict()["kind"] == "initial"
+    assert not nested
+
+
+def test_wait_interval_measures_initial_wait(tmp_path: pathlib.Path, lock_dir: pathlib.Path) -> None:
+    """別プロセスが保持中は、解放までの待ちを最初の取得の区間として通知する。"""
+    events: list[pyfltr.command.execution_slot.SlotWait] = []
+    waiting = threading.Event()
+
+    def _on_wait(owner: pyfltr.command.execution_slot.SlotOwner | None) -> None:
+        del owner
+        waiting.set()
+
+    def _other() -> None:
+        with pyfltr.command.execution_slot.hold(lock_dir=lock_dir, on_wait=_on_wait, on_wait_interval=events.append):
+            pass
+
+    thread = threading.Thread(target=_other)
+    with _holder(tmp_path, lock_dir):
+        thread.start()
+        assert waiting.wait(30)
+        # 待機の開始から解放までに一定の時間を置き、区間の秒数が待ちを含むことを確かめる。
+        time.sleep(0.5)
+    thread.join(timeout=30)
+    finished = _assert_pair(_intervals(events)["initial", 0], "acquired")
+    assert finished.elapsed is not None
+    assert finished.elapsed >= 0.5
+
+
+def test_wait_interval_counts_each_yield(lock_dir: pathlib.Path) -> None:
+    """譲るたびに取り直しの区間を番号付きで通知し、待機者の順序は変えない。"""
+    events: list[pyfltr.command.execution_slot.SlotWait] = []
+    order: list[str] = []
+
+    def _other(label: str, waiting: threading.Event) -> None:
+        def _on_wait(owner: pyfltr.command.execution_slot.SlotOwner | None) -> None:
+            del owner
+            waiting.set()
+
+        with pyfltr.command.execution_slot.hold(lock_dir=lock_dir, on_wait=_on_wait):
+            order.append(label)
+
+    with pyfltr.command.execution_slot.hold(lock_dir=lock_dir, on_wait_interval=events.append):
+        for label in ("first", "second"):
+            waiting = threading.Event()
+            thread = threading.Thread(target=_other, args=(label, waiting))
+            thread.start()
+            assert waiting.wait(30)
+            assert pyfltr.command.execution_slot.yield_to_waiters()
+            thread.join(30)
+            order.append(f"resumed-{label}")
+    grouped = _intervals(events)
+    assert list(grouped) == [("initial", 0), ("reacquire", 1), ("reacquire", 2)]
+    for pair in grouped.values():
+        _assert_pair(pair, "acquired")
+    assert order == ["first", "resumed-first", "second", "resumed-second"]
+
+
+def test_wait_interval_reports_abort_and_interrupt(lock_dir: pathlib.Path) -> None:
+    """待機を中断した区間は、中断の理由を持つ完了の通知で閉じる。"""
+    aborted: list[pyfltr.command.execution_slot.SlotWait] = []
+    interrupted: list[pyfltr.command.execution_slot.SlotWait] = []
+    raised: list[str] = []
+
+    def _raise_interrupt() -> bool:
+        raise KeyboardInterrupt
+
+    def _other() -> None:
+        for should_abort, events in ((lambda: True, aborted), (_raise_interrupt, interrupted)):
+            try:
+                with pyfltr.command.execution_slot.hold(
+                    lock_dir=lock_dir, should_abort=should_abort, on_wait_interval=events.append
+                ):
+                    raised.append("entered")
+            except (pyfltr.command.execution_slot.WaitAborted, KeyboardInterrupt) as e:
+                raised.append(type(e).__name__)
+
+    with pyfltr.command.execution_slot.hold(lock_dir=lock_dir):
+        thread = threading.Thread(target=_other)
+        thread.start()
+        thread.join(30)
+        assert not thread.is_alive()
+    assert raised == ["WaitAborted", "KeyboardInterrupt"]
+    _assert_pair(_intervals(aborted)["initial", 0], "aborted")
+    _assert_pair(_intervals(interrupted)["initial", 0], "interrupted")
+
+
+_RECORDING_CHILD_SCRIPT = """import json
+import pathlib
+import sys
+
+import pyfltr.command.execution_slot
+
+
+def _record(wait):
+    print(json.dumps(wait.to_dict()), flush=True)
+
+
+with pyfltr.command.execution_slot.hold(lock_dir=pathlib.Path(sys.argv[1]), on_wait_interval=_record):
+    print(json.dumps({"entered": True}), flush=True)
+"""
+
+
+def test_wait_interval_inherited_child(tmp_path: pathlib.Path, lock_dir: pathlib.Path) -> None:
+    """祖先が保持中の子は、継承を示す最初の取得の区間だけを通知し、祖先の待ちを重ねて数えない。"""
+    script = tmp_path / "recording_child.py"
+    script.write_text(_RECORDING_CHILD_SCRIPT, encoding="utf-8")
+    with pyfltr.command.execution_slot.hold(lock_dir=lock_dir):
+        completed = subprocess.run(
+            [sys.executable, str(script), str(lock_dir)], capture_output=True, text=True, timeout=60, check=False
+        )
+    assert completed.returncode == 0, completed.stderr
+    records = [json.loads(line) for line in completed.stdout.splitlines()]
+    assert [record.get("outcome") for record in records] == [None, "inherited", None]
+    assert {(record["kind"], record["sequence"]) for record in records[:2]} == {("initial", 0)}
+    assert records[-1] == {"entered": True}
+
+
+def _kill_if_running(process: subprocess.Popen[str]) -> None:
+    if process.poll() is None:
+        process.kill()
+
+
+def test_wait_interval_external_caller(tmp_path: pathlib.Path, lock_dir: pathlib.Path) -> None:
+    """pyfltr以外の呼出元も同じ通知で、別プロセスの保持者を待った区間を記録できる。"""
+    script = tmp_path / "recording_child.py"
+    script.write_text(_RECORDING_CHILD_SCRIPT, encoding="utf-8")
+    with contextlib.ExitStack() as stack:
+        holder = stack.enter_context(contextlib.ExitStack())
+        holder.enter_context(_holder(tmp_path, lock_dir))
+        process = stack.enter_context(
+            subprocess.Popen([sys.executable, str(script), str(lock_dir)], stdout=subprocess.PIPE, text=True)
+        )
+        stack.callback(_kill_if_running, process)
+        assert process.stdout is not None
+        started = json.loads(process.stdout.readline())
+        assert started["finished_at"] is None
+        time.sleep(0.5)
+        # 呼出元は保持者の解放まで待つため、終了を待つ前に保持者の区間を抜ける。
+        holder.close()
+        remaining = process.stdout.read()
+        assert process.wait(timeout=60) == 0
+    finished, entered = [json.loads(line) for line in remaining.splitlines()]
+    assert finished["outcome"] == "acquired"
+    assert finished["started_at"] == started["started_at"]
+    assert finished["elapsed"] >= 0.5
+    assert entered == {"entered": True}

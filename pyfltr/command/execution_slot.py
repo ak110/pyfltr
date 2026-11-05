@@ -22,6 +22,12 @@ pyfltr以外の検証を起動する呼出元（他のツールのスクリプ�
             subprocess.run(step, check=True)
             pyfltr.command.execution_slot.yield_to_waiters()
 
+待機の内訳を記録する呼出元は`on_wait_interval`を渡す。
+最初の取得の待ちと、譲渡後の取り直しの待ちごとに、開始時に未完了の`SlotWait`、終了時に完了した`SlotWait`を受け取る::
+
+    with pyfltr.command.execution_slot.hold(label="my-check", on_wait_interval=lambda wait: log(wait.to_dict())):
+        ...
+
 譲渡は最外側の`hold`で枠を取得したスレッドだけが行う。
 入れ子の`hold`と、祖先から所有を継承した子プロセスの区間では譲らない。
 子プロセスが祖先の所有を単独で解除すると、所有者が起動中の別の子と待機者の実行が重なるためである。
@@ -82,6 +88,36 @@ class SlotOwner:
     label: str | None = None
 
 
+@dataclasses.dataclass(frozen=True)
+class SlotWait:
+    """実行枠を取得するまでの待機区間。
+
+    `kind`は最初の取得の待ち（`"initial"`）か、`yield_to_waiters`で譲った後の取り直しの待ち（`"reacquire"`）を表す。
+    `sequence`は`initial`が0、`reacquire`が同じ`hold`の中で譲るたびに1から増える番号である。
+    同じ`kind`・`sequence`の区間は、開始時に未完了の値（`finished_at`・`elapsed`・`outcome`が`None`）、
+    終了時に完了した値で1回ずつ通知する。
+
+    `outcome`は終了の理由で、`"acquired"`（取得）、`"inherited"`（祖先の所有を継承し、取得しなかった）、
+    `"aborted"`（`should_abort`による中断）、`"interrupted"`（`KeyboardInterrupt`）、`"failed"`（その他の例外）のいずれかである。
+    待機が無かった場合も、取得までの短い区間を通知する。待機なしの実行と未計測を区別するためである。
+    """
+
+    kind: typing.Literal["initial", "reacquire"]
+    sequence: int
+    started_at: str
+    finished_at: str | None = None
+    elapsed: float | None = None
+    outcome: str | None = None
+
+    def to_dict(self) -> dict[str, typing.Any]:
+        """JSONへ直列化できる辞書を返す。"""
+        return dataclasses.asdict(self)
+
+
+WaitIntervalCallback = collections.abc.Callable[[SlotWait], None]
+"""`hold`の`on_wait_interval`へ渡す通知関数の型。"""
+
+
 class WaitAborted(Exception):
     """`should_abort`が真を返したため、実行枠を取得せずに待機を終えた。"""
 
@@ -92,7 +128,9 @@ class _Lease:
     owner_path: pathlib.Path
     label: str | None
     should_abort: collections.abc.Callable[[], bool] | None
+    on_wait_interval: WaitIntervalCallback | None = None
     acquired: bool = False
+    yields: int = 0
 
     def release(self) -> None:
         if self.acquired:
@@ -113,6 +151,7 @@ def hold(
     label: str | None = None,
     should_abort: collections.abc.Callable[[], bool] | None = None,
     on_wait: collections.abc.Callable[[SlotOwner | None], None] | None = None,
+    on_wait_interval: WaitIntervalCallback | None = None,
     lock_dir: pathlib.Path | None = None,
 ) -> collections.abc.Generator[None, None, None]:
     """実行枠を所有する区間を開く。
@@ -123,6 +162,9 @@ def hold(
             `yield_to_waiters`で譲った後の取り直しの待機にも使う。
             `KeyboardInterrupt`も待機を中断する。
         on_wait: 待機を始めるときに1回だけ呼ぶ通知。保持者記録を読めない場合は`None`を渡す。
+        on_wait_interval: 待機区間（`SlotWait`）の開始と終了を受け取る通知。
+            最初の取得と、この`hold`の内側の`yield_to_waiters`の取り直しごとに呼ぶ。
+            入れ子の`hold`は取得しないため呼ばない。例外はそのまま呼出元へ伝わる。
         lock_dir: ロックを置くディレクトリ。省略時は`default_lock_dir()`。
 
     区間の内側で起動した子プロセスは、区間を抜ける前に呼出元が終了・回収する。
@@ -139,8 +181,13 @@ def hold(
     directory = lock_dir if lock_dir is not None else default_lock_dir()
     lock = pyfltr.file_lock.FileLock(directory / _LOCK_FILENAME)
     owner_path = directory / _OWNER_FILENAME
-    lease = _Lease(lock, owner_path, label, should_abort)
-    lease.acquired = _acquire(lock, owner_path, label=label, should_abort=should_abort, on_wait=on_wait)
+    lease = _Lease(lock, owner_path, label, should_abort, on_wait_interval)
+    lease.acquired = _observe(
+        on_wait_interval,
+        "initial",
+        0,
+        lambda: _acquire(lock, owner_path, label=label, should_abort=should_abort, on_wait=on_wait),
+    )
     _local.depth = 1
     _local.lease = lease
     try:
@@ -181,18 +228,62 @@ def yield_to_waiters() -> bool:
     if not yield_requested():
         return False
     lease: _Lease = _local.lease
+    lease.yields += 1
     # 解放より先に列末へ登録し、先行待機者より前へ再取得する競合を防ぐ。
     with _request(lease.owner_path.parent) as request:
         lease.release()
-        lease.acquired = _acquire(
-            lease.lock,
-            lease.owner_path,
-            label=lease.label,
-            should_abort=lease.should_abort,
-            on_wait=None,
-            request=request,
+        lease.acquired = _observe(
+            lease.on_wait_interval,
+            "reacquire",
+            lease.yields,
+            lambda: _acquire(
+                lease.lock,
+                lease.owner_path,
+                label=lease.label,
+                should_abort=lease.should_abort,
+                on_wait=None,
+                request=request,
+            ),
         )
     return True
+
+
+def _observe(
+    callback: WaitIntervalCallback | None,
+    kind: typing.Literal["initial", "reacquire"],
+    sequence: int,
+    acquire: collections.abc.Callable[[], bool],
+) -> bool:
+    """取得処理を待機区間として計測し、開始と終了を`callback`へ通知する。"""
+    if callback is None:
+        return acquire()
+    started = SlotWait(kind=kind, sequence=sequence, started_at=_now_iso())
+    callback(started)
+    start = time.monotonic()
+    outcome = "failed"
+    try:
+        acquired = acquire()
+        outcome = "acquired" if acquired else "inherited"
+        return acquired
+    except WaitAborted:
+        outcome = "aborted"
+        raise
+    except KeyboardInterrupt:
+        outcome = "interrupted"
+        raise
+    finally:
+        callback(
+            dataclasses.replace(
+                started,
+                finished_at=_now_iso(),
+                elapsed=round(time.monotonic() - start, 3),
+                outcome=outcome,
+            )
+        )
+
+
+def _now_iso() -> str:
+    return dt.datetime.now(dt.UTC).isoformat()
 
 
 @contextlib.contextmanager

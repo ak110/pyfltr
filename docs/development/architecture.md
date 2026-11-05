@@ -144,7 +144,14 @@ Rich UIへの`call_from_thread`とlock取得の差は画面側に残し、ステ
 - ツールのtimeoutは枠の取得後のツール実行だけに働く
 - ロックは`<キャッシュルート>/locks/`に置く。`PYFLTR_CACHE_DIR`で保存先を変えた実行どうしは別の枠になる。
   保持者が強制終了した場合はOSがロックを解放する
-- 公開する外部仕様は`pyfltr.command.execution_slot`の`hold`・`yield_requested`・`yield_to_waiters`のPython APIだけとし、CLIオプション・設定キー・環境変数は設けない。
+- 待機の内訳は`hold`の`on_wait_interval`が`SlotWait`として通知する。
+  区間は最初の取得の待ち（`initial`、番号0）と、譲った後の取り直しの待ち（`reacquire`、譲るたびに1から増える番号）で、
+  開始時に未完了の値、終了時に経過秒数と終了理由（`acquired`・`inherited`・`aborted`・`interrupted`・`failed`）を持つ値を1回ずつ渡す。
+  待機が無くても取得までの短い区間を通知し、待ちの無い実行と未計測を区別する。
+  入れ子の`hold`は取得しないため通知せず、祖先から所有を継承した子は`inherited`の1区間だけを通知して、祖先の待ちを重ねて数えない。
+  `run_stages`は区間を`StageCallbacks.on_slot_wait`へ渡し、CLI・TUIは実行アーカイブの`meta.json`の`slot_waits`へ逐次保存する。
+  各ツールの本体区間は`run_stages`が`execute`の前後で`CommandResult.started_at`・`finished_at`へ設定する
+- 公開する外部仕様は`pyfltr.command.execution_slot`の`hold`（`on_wait_interval`引数と`SlotWait`型を含む）・`yield_requested`・`yield_to_waiters`のPython APIだけとし、CLIオプション・設定キー・環境変数は設けない。
   無効化の手段を設けると、起動数による積み上げの構造が残るためである。
   pyfltr以外の検証を起動する呼出元（他のツールのスクリプトなど）は、このAPIで同じ枠を共有する
 - 外部の保持者は、自らが起動した子プロセスを全て回収した区切りで`yield_to_waiters`を呼んで譲る。
@@ -766,6 +773,14 @@ run_idにはULIDを採用する。タイムスタンプ由来で辞書順ソー�
 共通のクリーンアップ（`state/retention.py`）は稼働中判定と基準時刻を呼出元から受け取り、
 置換履歴は従来どおりディレクトリ名の順と作成時刻で判定する。
 変更前の版のpyfltrはロックを確認しないため、版が混在する環境ではその版のcleanupが実行中のrunを削除し得る。
+
+`meta.json`の`slot_waits`は[検証の実行枠](#execution-slot)の待機区間の一覧で、区間の開始時に未完了の要素を、終了時に完了した要素を保存する。
+強制終了したrunにも開始済みの区間が未完了のまま残る。
+`slot_waits`キーを持たないrunは待機区間を計測しない版の記録であり、読み取り側は空の一覧（計測したが区間なし）や0秒と区別して未計測として返す。
+各ツールの`tool.json`は本体区間の`started_at`・`finished_at`（実行した場合だけ）と、本体の処理秒数`elapsed`を持つ。
+`show-run`とMCPの`show_run`は`state/runs.py`の`summarize_timing`でrun全体の経過・待機の合計・未完了の区間数を求め、
+確定しない値は`null`とする。並行したツールの`elapsed`の合計はrun全体の経過と一致しないため合算しない。
+`meta.json`の更新は一時ファイルからの置き換えで行い、実行中のrunを読む`show-run`へ書きかけの内容を見せない。
 
 書き込みはツール実行結果を受け取った直後の独立フックとして提供し、TUI・非TUI・
 JSONL stdout有無のいずれでも発生する。

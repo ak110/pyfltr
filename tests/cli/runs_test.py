@@ -5,6 +5,7 @@ import pytest
 
 import pyfltr.cli.main
 import pyfltr.cli.output_format
+import pyfltr.command.core_
 import pyfltr.diagnostics
 import pyfltr.parsing.entry
 import pyfltr.state.archive
@@ -449,7 +450,7 @@ def test_show_run_jsonl_overview(
     lines = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
     kinds = [line["kind"] for line in lines]
     assert kinds[0] == "meta"
-    assert kinds[1:] == ["command", "command"]
+    assert kinds[1:] == ["timing", "command", "command"]
     assert lines[0]["run_id"] == run_id
 
 
@@ -485,3 +486,111 @@ def test_show_run_filters_retired_meta_without_hiding_unknown_detail(
         assert "future_key" not in output
     else:
         assert "future_key" in output
+
+
+def _seed_timed_run(cache_root: pathlib.Path, *, slot_waits: list | None, finished: bool = True) -> str:
+    """待機区間と本体区間を持つrunを保存する。`slot_waits=None`は区間を計測しない版の記録を模す。"""
+    store = pyfltr.state.archive.ArchiveStore(cache_root=cache_root)
+    run_id = store.start_run(commands=["mypy"], files=1)
+    result = pyfltr.command.core_.CommandResult(
+        command="mypy", command_type="linter", commandline=[], returncode=0, files=1, output="", elapsed=1.5
+    )
+    result.started_at = "2026-11-05T00:00:02+00:00"
+    result.finished_at = "2026-11-05T00:00:03.5+00:00"
+    store.write_tool_result(run_id, result)
+    meta_path = cache_root / "runs" / run_id / "meta.json"
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    meta["started_at"] = "2026-11-05T00:00:00+00:00"
+    if finished:
+        meta["finished_at"] = "2026-11-05T00:00:04+00:00"
+        meta["exit_code"] = 0
+    if slot_waits is None:
+        del meta["slot_waits"]
+    else:
+        meta["slot_waits"] = slot_waits
+    meta_path.write_text(json.dumps(meta), encoding="utf-8")
+    store.release_run(run_id)
+    return run_id
+
+
+_FINISHED_WAIT = {
+    "kind": "initial",
+    "sequence": 0,
+    "started_at": "2026-11-05T00:00:00+00:00",
+    "finished_at": "2026-11-05T00:00:02+00:00",
+    "elapsed": 2.0,
+    "outcome": "acquired",
+}
+_UNFINISHED_WAIT = {
+    "kind": "reacquire",
+    "sequence": 1,
+    "started_at": "2026-11-05T00:00:03.5+00:00",
+    "finished_at": None,
+    "elapsed": None,
+    "outcome": None,
+}
+
+
+def test_show_run_timing_json_and_jsonl(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """待機区間・本体区間・run全体の経過を対応付けて返す。"""
+    run_id = _seed_timed_run(tmp_path, slot_waits=[_FINISHED_WAIT])
+
+    assert pyfltr.cli.main.run(["show-run", run_id, "--output-format=json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["timing"] == {
+        "measured": True,
+        "run_elapsed": 4.0,
+        "slot_waits": [_FINISHED_WAIT],
+        "slot_wait_total": 2.0,
+        "unfinished_slot_waits": 0,
+    }
+    command = payload["commands"][0]
+    assert (command["elapsed"], command["started_at"], command["finished_at"]) == (
+        1.5,
+        "2026-11-05T00:00:02+00:00",
+        "2026-11-05T00:00:03.5+00:00",
+    )
+
+    assert pyfltr.cli.main.run(["show-run", run_id, "--output-format=jsonl"]) == 0
+    lines = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
+    assert [line["kind"] for line in lines] == ["meta", "timing", "command"]
+    assert lines[1]["slot_wait_total"] == 2.0
+
+
+@pytest.mark.parametrize(
+    ("slot_waits", "finished", "expected_lines"),
+    [
+        pytest.param([_FINISHED_WAIT], True, ["elapsed: 4.000s", "slot_waits: 2.000s", "initial#0: elapsed=2.000s"], id="done"),
+        pytest.param(
+            [_FINISHED_WAIT, _UNFINISHED_WAIT],
+            False,
+            ["elapsed: unfinished", "slot_waits: unfinished", "reacquire#1: elapsed=unfinished outcome=unfinished"],
+            id="unfinished",
+        ),
+        pytest.param(None, True, ["elapsed: 4.000s", "slot_waits: not measured"], id="not-measured"),
+    ],
+)
+def test_show_run_timing_text(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    slot_waits: list | None,
+    finished: bool,
+    expected_lines: list[str],
+) -> None:
+    """textは未確定を`unfinished`、未計測を`not measured`と表示し、0秒と区別する。"""
+    run_id = _seed_timed_run(tmp_path, slot_waits=slot_waits, finished=finished)
+    assert pyfltr.cli.main.run(["show-run", run_id, "--output-format=text"]) == 0
+    out = capsys.readouterr().out
+    for line in expected_lines:
+        assert line in out
+    assert "mypy: status=succeeded diagnostics=0 elapsed=1.500s" in out
+    assert "0.000s" not in out
+
+
+def test_show_run_tool_text_shows_body_interval(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """`--commands`のtextは本体区間の時刻を表示する。"""
+    run_id = _seed_timed_run(tmp_path, slot_waits=[])
+    assert pyfltr.cli.main.run(["show-run", run_id, "--commands=mypy", "--output-format=text"]) == 0
+    out = capsys.readouterr().out
+    assert "started_at: 2026-11-05T00:00:02+00:00" in out
+    assert "finished_at: 2026-11-05T00:00:03.5+00:00" in out

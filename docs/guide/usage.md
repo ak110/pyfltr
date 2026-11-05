@@ -183,13 +183,19 @@ pyfltr show-run <run_id> [--commands NAME[,NAME...]] [--output] [--output-format
 
 - `<run_id>`: ULID完全一致のほか、先頭一意な前方一致と`latest`エイリアスを受け付ける。
   前方一致で複数該当した場合は曖昧エラー（終了コード1）
-- 既定: `meta`（`run_id`・`started_at`・`finished_at`・`exit_code`・`files`・`commands`）と
-  ツール別サマリ（`status` / `diagnostics`）を表示
+- 既定: `meta`（`run_id`・`started_at`・`finished_at`・`exit_code`・`files`・`commands`）、
+  経過時間の要約（`timing`）、ツール別サマリ（`status` / `diagnostics` / `elapsed`）を表示
+- `timing`は短い検証が長く終わらない理由を、他の検証の終了を待った時間とツール本体の処理時間に分けて調べるための要約である。
+  `run_elapsed`はrun全体の経過秒数、`slot_waits`は[検証の実行枠](../development/architecture.md#execution-slot)を取得するまで待った区間
+  （最初の取得の`initial`と、他の検証へ譲った後の取り直しの`reacquire`）、`slot_wait_total`は待機の合計秒数を表す。
+  ツール本体の区間はツール別サマリの`started_at`・`finished_at`・`elapsed`が持つ。
+  実行中や強制終了したrunの未確定の値は`null`（textでは`unfinished`）となり、
+  待機区間を記録しない版のrunは`measured`が偽（textでは`not measured`）となって0秒と区別される
 - `--commands NAME[,NAME...]`: 指定ツールの`tool.json`と`diagnostics.jsonl`全件を表示。
   カンマ区切りで複数指定可（入力順で並ぶ）
 - `--commands NAME --output`: 指定ツールの生出力（`output.log`）全文を表示（単一指定のみ）
 - `--output-format`: `text`は行形式`key: value`、`json`は単発dictとして表示する。
-  `jsonl`は`kind`ごとの1行1レコードとして表示し、`kind`は`meta`・`command`・`diagnostic`・`output`の
+  `jsonl`は`kind`ごとの1行1レコードとして表示し、`kind`は`meta`・`timing`・`command`・`diagnostic`・`output`の
   いずれかとなる
 
 存在しない`run_id`・`--commands`指定時は終了コード1で標準エラーにメッセージを出力する。
@@ -255,7 +261,7 @@ MCPクライアントがstdinを閉じた時点でサーバーが終了する。
 | ツール名 | 対応CLI | 説明 |
 | --- | --- | --- |
 | `list_runs` | `pyfltr list-runs` | run一覧を新しい順で返す。`limit`で件数制御（既定20件） |
-| `show_run` | `pyfltr show-run <run_id>` | 指定runのmetaとツール別サマリを返す。前方一致・`latest`エイリアス可 |
+| `show_run` | `pyfltr show-run <run_id>` | 指定runのmeta、経過時間の要約（`timing`）、ツール別サマリを返す。前方一致・`latest`エイリアス可 |
 | `show_run_diagnostics` | `pyfltr show-run <run_id> --commands=<name>` | 指定runのコマンドmeta情報とdiagnostics全件を返す（複数指定可）。チェック対象ファイルの引数列は含めない。`offset`・`limit`で指摘の範囲を指定して分割取得できる |
 | `show_run_output` | `pyfltr show-run <run_id> --commands=<name> --output` | 指定runのoutput.log全文を返す（複数指定可）。`offset`・`limit`で行範囲を指定して分割取得できる |
 | `run` | `pyfltr run` / `fast` / `ci` | lint/format/testを実行しrun_id・失敗ツール名・retry_commands・警告（対処を含む）・次の操作の案内等を返す。`mode`で実行モードを選ぶ |

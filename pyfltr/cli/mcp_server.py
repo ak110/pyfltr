@@ -106,6 +106,7 @@ from pyfltr.cli.mcp_models import (
     RunOverviewModel,
     RunResult,
     RunSummaryModel,
+    RunTimingModel,
     RunWarningModel,
     SlowTestModel,
 )
@@ -225,7 +226,7 @@ async def tool_list_runs(
 
 
 async def tool_show_run(run_id: RunIdArg) -> RunOverviewModel:
-    """指定runのmeta情報とコマンド別サマリを返す。
+    """指定runのmeta情報、経過時間の要約（待機区間・run全体の経過）、コマンド別サマリを返す。
 
     対応CLI: `pyfltr show-run <run_id>`
     """
@@ -242,11 +243,14 @@ async def tool_show_run(run_id: RunIdArg) -> RunOverviewModel:
             status=entry.get("status"),
             diagnostics=entry.get("diagnostics"),
             elapsed=entry.get("elapsed"),
+            started_at=entry.get("started_at"),
+            finished_at=entry.get("finished_at"),
             slow_tests=[SlowTestModel.model_validate(test) for test in entry.get("slow_tests", [])],
         )
         for entry in command_summaries
     ]
-    return RunOverviewModel(run_id=resolved, meta=meta, commands=commands)
+    timing = RunTimingModel.model_validate(pyfltr.state.runs.summarize_timing(meta))
+    return RunOverviewModel(run_id=resolved, meta=meta, timing=timing, commands=commands)
 
 
 async def tool_show_run_diagnostics(
@@ -615,6 +619,8 @@ async def tool_run(
                 status=result.status,
                 diagnostics=len(result.errors),
                 elapsed=result.elapsed,
+                started_at=result.started_at,
+                finished_at=result.finished_at,
                 slow_tests=[SlowTestModel.model_validate(test.to_dict()) for test in result.slow_tests],
             )
             for result in outcome.results
@@ -1225,7 +1231,8 @@ def build_server() -> MCPServer:
         (
             "show_run",
             "実行結果の概要",
-            "指定runのmeta情報とコマンド別サマリ（状態・診断件数・所要時間）を返す。"
+            "指定runのmeta情報、経過時間の要約（`timing`）、コマンド別サマリ（状態・診断件数・所要時間・本体区間の時刻）を返す。"
+            "`timing`は他の検証の終了を待った区間（`slot_waits`）とrun全体の経過を持ち、未確定の値はnullとする。"
             "診断の本文は`show_run_diagnostics`、ツールの生出力は`show_run_output`で取得する。",
             read_only,
             tool_show_run,

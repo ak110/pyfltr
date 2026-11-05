@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import typing
 
 import pyfltr.state.archive
@@ -77,6 +78,8 @@ def collect_tool_summaries(
 
     `slow_tests`はテスターが報告した遅いテスト一覧で、`tool.json`の保存時点で正規化済みである。
     pytestの全件は`show-run --commands`が返す生出力から参照できる。
+
+    `started_at`・`finished_at`はツール本体区間の開始・終了時刻で、保存されている場合だけ含める。
     """
     summaries: list[dict[str, typing.Any]] = []
     for tool in store.list_tools(run_id):
@@ -90,8 +93,55 @@ def collect_tool_summaries(
             "diagnostics": tool_meta.get("diagnostics"),
             "elapsed": tool_meta.get("elapsed"),
         }
+        for key in ("started_at", "finished_at"):
+            if tool_meta.get(key) is not None:
+                summary[key] = tool_meta[key]
         slow_tests = tool_meta.get("slow_tests")
         if slow_tests:
             summary["slow_tests"] = slow_tests
         summaries.append(summary)
     return summaries
+
+
+def summarize_timing(meta: dict[str, typing.Any]) -> dict[str, typing.Any]:
+    """runの経過時間と実行枠の待機区間を、未確定の値を`None`として要約する。
+
+    - `measured`: 待機区間を計測した版のrunか（`meta.json`が`slot_waits`を持つか）
+    - `run_elapsed`: `started_at`から`finished_at`までの秒数。完了記録の無いrun（実行中・強制終了）は`None`
+    - `slot_waits`: 保存済みの待機区間。未計測は`None`
+    - `slot_wait_total`: 完了した待機区間の秒数の合計。未計測か、未完了の区間がある場合は`None`
+    - `unfinished_slot_waits`: 未完了の待機区間の数。未計測は`None`
+
+    ツール本体の秒数は`collect_tool_summaries`の各要素が持つ。
+    並行して動いたツールの秒数の合計はrun全体の経過と一致しないため、本関数は合算しない。
+    """
+    run_elapsed = _elapsed_between(meta.get("started_at"), meta.get("finished_at"))
+    raw_waits = meta.get(pyfltr.state.archive.SLOT_WAITS_META_KEY)
+    if not isinstance(raw_waits, list):
+        return {
+            "measured": False,
+            "run_elapsed": run_elapsed,
+            "slot_waits": None,
+            "slot_wait_total": None,
+            "unfinished_slot_waits": None,
+        }
+    waits = [wait for wait in raw_waits if isinstance(wait, dict)]
+    unfinished = sum(1 for wait in waits if not isinstance(wait.get("elapsed"), int | float))
+    total = None if unfinished else round(sum(float(wait["elapsed"]) for wait in waits), 3)
+    return {
+        "measured": True,
+        "run_elapsed": run_elapsed,
+        "slot_waits": waits,
+        "slot_wait_total": total,
+        "unfinished_slot_waits": unfinished,
+    }
+
+
+def _elapsed_between(started_at: typing.Any, finished_at: typing.Any) -> float | None:
+    if not isinstance(started_at, str) or not isinstance(finished_at, str):
+        return None
+    try:
+        delta = dt.datetime.fromisoformat(finished_at) - dt.datetime.fromisoformat(started_at)
+    except ValueError:
+        return None
+    return round(delta.total_seconds(), 3)

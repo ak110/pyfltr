@@ -324,6 +324,15 @@ class CommandResult:
     設定する経路はpytest（`dispatcher`）とvitest（`command/vitest.py`）で、
     他のツールでは常に空。
     """
+    started_at: str | None = None
+    """ツール本体の実行を始めた時刻（UTCのISO 8601）。
+
+    `pyfltr.command.stage_runner.run_stages`が実行の直前に設定する。
+    スキップ結果、キャッシュから復元した結果、`run_stages`の外で生成した結果では`None`のまま残す。
+    実行アーカイブの`tool.json`へ保存し、実行枠の待機区間と同じ時間軸で本体区間を対応付けるために使う。
+    """
+    finished_at: str | None = None
+    """ツール本体の実行を終えた時刻（UTCのISO 8601）。設定する経路は`started_at`と同じ。"""
 
     @classmethod
     # from_run は各コマンド実行モジュール（linter_fix / textlint_fix 等）で同様の引数転送パターンを持つため重複検知される

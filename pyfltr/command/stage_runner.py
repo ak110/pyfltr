@@ -3,6 +3,7 @@
 import collections.abc
 import concurrent.futures
 import dataclasses
+import datetime as dt
 
 import pyfltr.command.core_
 import pyfltr.command.execution_slot
@@ -70,6 +71,8 @@ class StageCallbacks:
         collections.abc.Callable[[pyfltr.command.core_.CommandResult, str], pyfltr.command.core_.CommandResult] | None
     ) = None
     on_skipped: collections.abc.Callable[[str], None] | None = None
+    on_slot_wait: pyfltr.command.execution_slot.WaitIntervalCallback | None = None
+    """実行枠の待機区間（`SlotWait`）の開始と終了を受け取る通知。実行アーカイブへの保存に使う。"""
 
 
 def run_stages(
@@ -91,10 +94,13 @@ def run_stages(
 
     検証の実行枠を保持し、待機者がいれば起動済みのツールと子プロセスの回収後に譲る。
     別の検証が枠を保持中なら警告を出力して待つ。TUIの中断（`is_interrupted`）で待機を止めた場合は全コマンドをスキップ扱いにする。
+    枠の待機区間は`callbacks.on_slot_wait`へ通知する。
+    実行した各ツールの結果には、`execute`の直前と直後の時刻を`started_at`・`finished_at`として設定する。
     """
     hooks = callbacks if callbacks is not None else StageCallbacks()
     collected = results if results is not None else []
     config = base_ctx.config
+    execute = _with_body_interval(execute)
     fixers, formatters, parallel = pyfltr.command.executor.split_commands_for_execution(
         commands,
         config,
@@ -209,7 +215,9 @@ def run_stages(
         flush_fix_failures()
 
     try:
-        with pyfltr.command.execution_slot.hold(should_abort=hooks.is_interrupted, on_wait=_notify_slot_wait):
+        with pyfltr.command.execution_slot.hold(
+            should_abort=hooks.is_interrupted, on_wait=_notify_slot_wait, on_wait_interval=hooks.on_slot_wait
+        ):
             try:
                 execute_stages()
             except BaseException:
@@ -222,6 +230,29 @@ def run_stages(
         skip([command for command in [*formatters, *parallel] if command not in completed])
         flush_fix_failures()
     return collected
+
+
+def _with_body_interval(
+    execute: collections.abc.Callable[[str, bool], pyfltr.command.core_.CommandResult],
+) -> collections.abc.Callable[[str, bool], pyfltr.command.core_.CommandResult]:
+    """`execute`の結果へツール本体区間の開始・終了時刻を設定する関数を返す。
+
+    キャッシュから復元した結果は実行していないため設定しない。
+    """
+
+    def wrapped(command: str, fix_stage: bool) -> pyfltr.command.core_.CommandResult:
+        started_at = _now_iso()
+        result = execute(command, fix_stage)
+        if not result.cached:
+            result.started_at = started_at
+            result.finished_at = _now_iso()
+        return result
+
+    return wrapped
+
+
+def _now_iso() -> str:
+    return dt.datetime.now(dt.UTC).isoformat()
 
 
 def _notify_slot_wait(owner: pyfltr.command.execution_slot.SlotOwner | None) -> None:
@@ -245,7 +276,7 @@ def merge_fix_failure(
 
     状態と終了コードは`CommandResult.merge`の規則で集約し、fix段の失敗を保持する。
     再実行コマンドなど通常段で確定した値は通常段の結果から引き継ぐため、通常段を先頭にして集約する。
-    出力は実行順にfix段、通常段の順で連結する。対象件数は同じ対象を2段で数えないよう通常段の値を使う。
+    出力は実行順にfix段、通常段の順で連結する。本体区間はfix段の開始から通常段の終了までとする（通常段がスキップならfix段の終了まで）。対象件数は同じ対象を2段で数えないよう通常段の値を使う。
     通常段が診断を出力した場合は通常段の診断だけを使う。fix段の診断は修正後の残存違反であり、通常段の診断と重複するためである。
     通常段が診断を出力しなかった場合（スキップや診断0件）はfix段の診断を残し、失敗を指すファイルと位置を保持する。
     """
@@ -255,4 +286,6 @@ def merge_fix_failure(
         merged,
         output="\n".join(output for output in (fix_result.output, result.output) if output),
         files=result.files or fix_result.files,
+        started_at=fix_result.started_at,
+        finished_at=result.finished_at or fix_result.finished_at,
     )

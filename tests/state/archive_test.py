@@ -642,3 +642,44 @@ def test_read_tool_diagnostics_keeps_current_root_and_subproject_paths(tmp_path:
         "pkg_a/tests/x_test.py",
         "tests/x_test.py",
     ]
+
+
+def test_record_slot_wait_updates_interval_and_keeps_unfinished(tmp_path: pathlib.Path) -> None:
+    """待機区間は開始時に未完了で保存され、終了時に同じ区間が完了値へ置き換わる。"""
+    store = _make_store(tmp_path)
+    run_id = store.start_run(commands=["mypy"])
+    assert store.read_meta(run_id)[pyfltr.state.archive.SLOT_WAITS_META_KEY] == []
+
+    started = {"kind": "initial", "sequence": 0, "started_at": "2026-11-05T00:00:00+00:00", "finished_at": None}
+    store.record_slot_wait(run_id, {**started, "elapsed": None, "outcome": None})
+    store.record_slot_wait(
+        run_id, {**started, "finished_at": "2026-11-05T00:00:02+00:00", "elapsed": 2.0, "outcome": "acquired"}
+    )
+    store.record_slot_wait(
+        run_id,
+        {"kind": "reacquire", "sequence": 1, "started_at": "2026-11-05T00:00:03+00:00", "finished_at": None, "elapsed": None},
+    )
+    # 終了の記録が無いまま強制終了したrunを想定し、完了処理を経ずに読む。
+    waits = store.read_meta(run_id)[pyfltr.state.archive.SLOT_WAITS_META_KEY]
+    assert [(wait["kind"], wait["sequence"], wait["elapsed"]) for wait in waits] == [
+        ("initial", 0, 2.0),
+        ("reacquire", 1, None),
+    ]
+    store.finalize_run(run_id, exit_code=0)
+    assert len(store.read_meta(run_id)[pyfltr.state.archive.SLOT_WAITS_META_KEY]) == 2
+    assert not list((tmp_path / "runs" / run_id).glob(".meta.json.*"))
+
+
+def test_write_tool_result_stores_body_interval_only_when_executed(tmp_path: pathlib.Path) -> None:
+    """本体区間の時刻は実行した結果だけ`tool.json`へ保存する。"""
+    store = _make_store(tmp_path)
+    run_id = store.start_run(commands=["mypy", "ruff-check"])
+    executed = _make_result("mypy", returncode=0)
+    executed.started_at = "2026-11-05T00:00:00+00:00"
+    executed.finished_at = "2026-11-05T00:00:01+00:00"
+    store.write_tool_result(run_id, executed)
+    store.write_tool_result(run_id, _make_result("ruff-check", returncode=0))
+
+    mypy_meta = store.read_tool_meta(run_id, "mypy")
+    assert (mypy_meta["started_at"], mypy_meta["finished_at"]) == (executed.started_at, executed.finished_at)
+    assert "started_at" not in store.read_tool_meta(run_id, "ruff-check")

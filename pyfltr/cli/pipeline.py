@@ -32,6 +32,7 @@ import pyfltr.cli.subproject_config
 import pyfltr.command.completion
 import pyfltr.command.core_
 import pyfltr.command.dispatcher
+import pyfltr.command.execution_slot
 import pyfltr.command.executor
 import pyfltr.command.only_failed
 import pyfltr.command.precommit_guidance
@@ -258,6 +259,38 @@ def _make_archive_hook(
     return _hook
 
 
+def _make_slot_wait_hook(
+    archive_store: pyfltr.state.archive.ArchiveStore,
+    run_id: str,
+    *,
+    archive_required: bool = False,
+) -> pyfltr.command.execution_slot.WaitIntervalCallback:
+    """実行枠の待機区間を実行アーカイブへ保存するフックを生成する。
+
+    書き込みに失敗した場合は最初の1回だけ警告を発行し、検証自体は続行する。
+    """
+    warned = False
+
+    def _hook(wait: pyfltr.command.execution_slot.SlotWait) -> None:
+        nonlocal warned
+        try:
+            archive_store.record_slot_wait(run_id, wait.to_dict())
+        except OSError as e:
+            if warned:
+                return
+            warned = True
+            pyfltr.warnings_.emit_warning(
+                source="archive",
+                message=(
+                    f"実行枠の待機区間を実行アーカイブへ書き込めませんでした: {e}。"
+                    "このrunの待機時間は `show-run` から参照できません"
+                ),
+                hint=_archive_failure_hint(can_disable=not archive_required),
+            )
+
+    return _hook
+
+
 def _make_attach_retry_command(
     *,
     retry_args_template: list[str],
@@ -290,6 +323,7 @@ def run_commands_with_cli(
     include_fix_stage: bool = False,
     on_result: typing.Callable[[pyfltr.command.core_.CommandResult], None] | None = None,
     archive_hook: typing.Callable[[pyfltr.command.core_.CommandResult], None] | None = None,
+    slot_wait_hook: pyfltr.command.execution_slot.WaitIntervalCallback | None = None,
     fail_fast: bool = False,
     only_failed_targets: dict[str, pyfltr.command.only_failed.ToolTargets] | None = None,
     heartbeat: HeartbeatMonitor | None = None,
@@ -307,6 +341,8 @@ def run_commands_with_cli(
 
     `on_result`が指定されている場合、各コマンド完了時にコールバックを呼び出す。
     JSONL stdoutモードでのストリーミング出力に使用する。
+
+    `slot_wait_hook`が指定されている場合、実行枠の待機区間の開始と終了を渡す。
 
     `archive_hook`が指定されている場合、各コマンド完了時に実行アーカイブへ書き込む。
     成功したfixステージの結果はsummaryに含めず、アーカイブへの保存だけを行う。
@@ -342,7 +378,9 @@ def run_commands_with_cli(
         execute,
         include_fix_stage=include_fix_stage,
         fail_fast=fail_fast,
-        callbacks=pyfltr.command.stage_runner.StageCallbacks(archive=archive_hook, on_result=on_result),
+        callbacks=pyfltr.command.stage_runner.StageCallbacks(
+            archive=archive_hook, on_result=on_result, on_slot_wait=slot_wait_hook
+        ),
     )
 
 
@@ -503,6 +541,11 @@ def _run_pipeline(
             if archive_store is not None and run_id is not None
             else None
         )
+        slot_wait_hook = (
+            _make_slot_wait_hook(archive_store, run_id, archive_required=archive_required)
+            if archive_store is not None and run_id is not None
+            else None
+        )
         attach_retry_command = _make_attach_retry_command(
             retry_args_template=retry_args_template,
             launcher_prefix=launcher_prefix,
@@ -527,6 +570,7 @@ def _run_pipeline(
             formatter,
             ctx,
             archive_hook=archive_hook,
+            slot_wait_hook=slot_wait_hook,
             attach_retry_command=attach_retry_command,
             only_failed_targets=prepared.only_failed_targets,
         )
@@ -688,6 +732,7 @@ def _execute_pipeline_commands(
     ctx: pyfltr.output.formatters.RunOutputContext,
     *,
     archive_hook: typing.Callable[[pyfltr.command.core_.CommandResult], None] | None,
+    slot_wait_hook: pyfltr.command.execution_slot.WaitIntervalCallback | None,
     attach_retry_command: typing.Callable[[pyfltr.command.core_.CommandResult], None],
     only_failed_targets: dict[str, pyfltr.command.only_failed.ToolTargets] | None,
 ) -> tuple[list[pyfltr.command.core_.CommandResult], int, pyfltr.output.formatters.RunOutputContext]:
@@ -735,6 +780,7 @@ def _execute_pipeline_commands(
                 args,
                 base_ctx,
                 archive_hook=composed_hook,
+                slot_wait_hook=slot_wait_hook,
                 on_result=_on_result_callback,
                 fail_fast=fail_fast,
                 only_failed_targets=only_failed_targets,
@@ -751,6 +797,7 @@ def _execute_pipeline_commands(
                 include_fix_stage=include_fix_stage,
                 on_result=_on_result_callback,
                 archive_hook=composed_hook,
+                slot_wait_hook=slot_wait_hook,
                 fail_fast=fail_fast,
                 only_failed_targets=only_failed_targets,
                 heartbeat=heartbeat,
