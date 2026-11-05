@@ -386,7 +386,7 @@ def test_documented_run_history_columns_and_kinds_match_definitions() -> None:
     }
     kinds = _between(source, "`kind`は`meta`", "いずれかとなる")
     assert _codes("`meta`" + kinds) == expected_kinds
-    section = _between(source, "既定: `meta`（", "）と")
+    section = _between(source, "既定: `meta`（", "）")
     # 既定metaの出力項目を組み立てる定義を参照する。
     summary_function = pyfltr.cli.runs._summary_to_dict  # pylint: disable=protected-access
     function_tree = ast.parse(inspect.getsource(summary_function))
