@@ -171,6 +171,13 @@ REPLACE_HISTORY_COMMAND_KEYS: tuple[str, ...] = ("pattern", "replacement", "fixe
 `replace_id`は応答の同じ要素の最上位と重複し、`dry_run`は保存される履歴では常に偽のため返さない。
 """
 
+GREP_FILE_MATCH_KEYS: frozenset[str] = frozenset(set(GrepMatchModel.model_fields) - {"file"})
+"""`grep`の`file_results[].matches`へ返すキー。外側の`file`と重複する`file`を除いた`GrepMatchModel`の項目に限る。
+
+縮約出力の一致は辞書のまま渡るため、生成側（`pyfltr.grep_.jsonl_records.match_payload`）へ加えたキーを
+用途の対照（`tests/cli/mcp_models_test.py`の`GrepMatchModel`の項目）を経ずに配送しないよう限定する。
+"""
+
 RunIdArg = typing.Annotated[
     str,
     pydantic.Field(
@@ -806,7 +813,18 @@ async def tool_grep(
     selection = operation.selection
     files_scanned = len(expanded)
     matches = [GrepMatchModel.model_validate(payload) for payload in selection.matches]
-    adaptive_file_results = [GrepFileResultModel.model_validate(result) for result in selection.file_results]
+    adaptive_file_results = [
+        GrepFileResultModel.model_validate(
+            {
+                **result,
+                "matches": [
+                    {key: value for key, value in match.items() if key in GREP_FILE_MATCH_KEYS}
+                    for match in result.get("matches", [])
+                ],
+            }
+        )
+        for result in selection.file_results
+    ]
 
     files_with_matches = (
         [pyfltr.paths.normalize_separators(file) for file in per_file_counts] if summary_mode == "files_with_matches" else []

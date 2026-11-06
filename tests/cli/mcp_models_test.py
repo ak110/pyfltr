@@ -7,6 +7,7 @@ MCPの応答はエージェントが作業の判断・操作に使う情報だ�
 """
 
 import inspect
+import pathlib
 import typing
 
 import pydantic
@@ -14,6 +15,7 @@ import pytest
 
 import pyfltr.cli.mcp_server
 import pyfltr.config.config
+import pyfltr.grep_.jsonl_records
 
 # 項目ごとに、エージェントがその値で行う判断・操作を記録する。
 _FIELD_PURPOSES: dict[str, str] = {
@@ -187,7 +189,7 @@ _DICT_FIELD_POLICIES: dict[str, str] = {
     "RunOverviewModel.meta": "mcp_server.SHOW_RUN_META_KEYS で返すキーを限定する",
     "CommandInfoModel.info": "_COMMAND_INFO_KEY_PURPOSES と照合する（test_command_info_keys_have_recorded_purposes）",
     "ReplaceHistoryEntryModel.command": "mcp_server.REPLACE_HISTORY_COMMAND_KEYS で返すキーを限定する",
-    "GrepFileResultModel.matches": "GrepMatchModelの直列化からfileを除いた値。キーはGrepMatchModelの対照表に従う",
+    "GrepFileResultModel.matches": "mcp_server.GREP_FILE_MATCH_KEYS（GrepMatchModelの項目からfile除く）で返すキーを限定する",
     "CommandDiagnosticsModel.hint_urls": "キーはルールID、値はURL。ツールの診断から生成し追加のキーを持たない",
     "CommandDiagnosticsModel.hints": "キーはルールID、値は修正ヒント。ツールの診断から生成し追加のキーを持たない",
     "RunResult.retry_commands": "キーはコマンド名、値は再実行のシェルコマンド",
@@ -314,3 +316,22 @@ def test_show_run_meta_keys_exclude_internal_values() -> None:
     """`show_run`の`meta`へ返す保存項目に、重複・保存形式の印・実行環境の内部値を含めない。"""
     keys = set(pyfltr.cli.mcp_server.SHOW_RUN_META_KEYS)
     assert not keys & {"run_id", "slot_waits", "diagnostic_paths", "python", "executable", "platform"}
+
+
+@pytest.mark.asyncio
+async def test_grep_grouped_matches_drop_unrecorded_keys(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """grepの縮約出力の一致へ生成側が用途未記録のキーを加えても、応答へ配送しない。"""
+    (tmp_path / "many.txt").write_text("".join(f"foo {index}\n" for index in range(300)), encoding="utf-8")
+    (tmp_path / "one.txt").write_text("foo one\n", encoding="utf-8")
+    original = pyfltr.grep_.jsonl_records.match_payload
+
+    def _with_internal_key(*args: typing.Any, **kwargs: typing.Any) -> dict[str, typing.Any]:
+        return {**original(*args, **kwargs), "internal_debug": 1}
+
+    monkeypatch.setattr(pyfltr.grep_.jsonl_records, "match_payload", _with_internal_key)
+    result = await pyfltr.cli.mcp_server.tool_grep(paths=[str(tmp_path)], pattern="foo", no_gitignore=True, no_exclude=True)
+    assert result.output_mode == "mixed"
+    grouped = [match for file_result in result.file_results for match in file_result.matches]
+    assert grouped
+    assert all("internal_debug" not in match and "line" in match and "file" not in match for match in grouped)
+    assert all("internal_debug" not in match.model_dump() for match in result.matches)
