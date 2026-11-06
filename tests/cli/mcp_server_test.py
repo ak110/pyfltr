@@ -3,7 +3,6 @@ import asyncio
 import concurrent.futures
 import contextlib
 import dataclasses
-import hashlib
 import importlib.metadata
 import inspect
 import json
@@ -28,6 +27,7 @@ import pyfltr.grep_.history
 import pyfltr.grep_.preview
 import pyfltr.grep_.replacer
 import pyfltr.grep_.types
+import pyfltr.paths
 import pyfltr.state.archive
 import pyfltr.state.runs
 from tests import conftest as _testconf
@@ -158,7 +158,11 @@ async def test_tool_show_run_overview(tmp_path: pathlib.Path) -> None:
 
     result = await pyfltr.cli.mcp_server.tool_show_run(run_id)
     assert result.run_id == run_id
-    assert "run_id" in result.meta
+    # runの識別子は最上位、待機区間はtimingが持ち、実行環境の内部値と保存形式の印は返さない。
+    assert set(result.meta) <= set(pyfltr.cli.mcp_server.SHOW_RUN_META_KEYS)
+    assert {"commands", "files", "started_at"} <= set(result.meta)
+    for key in ("run_id", "slot_waits", "diagnostic_paths", "python", "executable", "platform"):
+        assert key not in result.meta
     command_names = [c.command for c in result.commands]
     assert "ruff-check" in command_names
     assert "mypy" in command_names
@@ -2430,13 +2434,14 @@ async def test_tool_replace_matched_newline_uses_replacement_representation(tmp_
 
 
 @pytest.mark.asyncio
-async def test_tool_replace_public_hashes_keep_logical_text_meaning(tmp_path: pathlib.Path) -> None:
-    """MCPの公開ハッシュは従来の改行正規化後文字列を表す。"""
+async def test_tool_replace_file_changes_omit_hashes(tmp_path: pathlib.Path) -> None:
+    """replaceのファイル別変更は対象と件数だけを返し、取り消し照合用のハッシュをエージェントへ渡さない。"""
     target = tmp_path / "sample.txt"
     target.write_bytes(b"foo\r\nkeep\r\n")
     result = await pyfltr.cli.mcp_server.tool_replace(pattern="foo", replacement="bar", paths=[str(target)], dry_run=False)
-    assert result.file_changes[0].before_hash == hashlib.sha256(b"foo\nkeep\n").hexdigest()
-    assert result.file_changes[0].after_hash == hashlib.sha256(b"bar\nkeep\n").hexdigest()
+    change = result.file_changes[0].model_dump()
+    assert change == {"file": pyfltr.paths.normalize_separators(str(target)), "count": 1}
+    assert result.replace_id is not None
 
 
 @pytest.mark.parametrize(

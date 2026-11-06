@@ -145,7 +145,11 @@ class RunOverviewModel(pydantic.BaseModel):
     """
 
     run_id: str = pydantic.Field(description="runの識別子（ULID）。")
-    meta: dict[str, typing.Any] = pydantic.Field(description="runのmeta情報（`read_meta`の戻り値）。")
+    meta: dict[str, typing.Any] = pydantic.Field(
+        description=(
+            "runの保存項目のうち、version・cwd・argv・commands・files・exit_code・started_at・finished_atの保存済みのもの。"
+        )
+    )
     timing: RunTimingModel = pydantic.Field(description="run全体の経過と実行枠の待機区間の要約。")
     commands: list[CommandSummaryModel] = pydantic.Field(description="コマンド別サマリ一覧。")
 
@@ -435,8 +439,6 @@ class ReplaceFileChangeModel(pydantic.BaseModel):
 
     file: str = pydantic.Field(description="変更対象ファイルパス。区切りは`/`へ統一するため、Windowsでも`C:/...`形式となる。")
     count: int = pydantic.Field(description="置換箇所数。")
-    before_hash: str | None = pydantic.Field(default=None, description="変更前内容のSHA-256ハッシュ。")
-    after_hash: str | None = pydantic.Field(default=None, description="変更後内容のSHA-256ハッシュ。")
 
 
 class ReplaceChangeRecordModel(pydantic.BaseModel):

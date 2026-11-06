@@ -5,7 +5,7 @@ description: >
   JSONL公開ヘルパー・logger役割分担・command.hints/summary.guidance・heartbeat段階出力・
   summaryレコードフィールド順序・effective_runner/runner_sourceなど出力スキーマの設計を集約する。
   pyfltr/output/配下・pyfltr/cli/output_format.py・pyfltr/cli/pipeline.py・pyfltr/cli/parser.py・
-  pyfltr/cli/mcp_models.py・pyfltr/command/completion.py・
+  pyfltr/cli/mcp_models.py・pyfltr/cli/mcp_server.py・tests/cli/mcp_models_test.py・pyfltr/command/completion.py・
   pyfltr/command/core_.py・pyfltr/command/dispatcher.py・
   tests/command/completion_test.py・tests/output/jsonl_test.py・tests/integration/output_format_test.py・tests/cli/pipeline_test.py・tests/cli/main_test.py・
   tests/cli/main_test.py・tests/output/sarif_test.py・tests/output/code_quality_test.py・tests/integration/llmstxt_test.py・
@@ -56,6 +56,11 @@ JSONLの出力処理は`pyfltr/output/jsonl.py`の公開ヘルパー（`emit_rec
 - 個別ルールの`command.hints`とパイプライン全体の`summary.guidance`は粒度・性質が異なるため命名を分ける
 - `command.hints`・`summary.guidance`はLLM入力前提のため英語で記述する。
   トークン効率と汎用性を優先し、「全文章は日本語」方針より優先する例外として扱う
+- MCP応答へ項目を加えるときは、受信するエージェントがその値で行う判断・操作を確かめ、
+  `tests/cli/mcp_models_test.py`の`_FIELD_PURPOSES`へ用途を書く。
+  内部の保存値（保存形式の印・取り消し用の判定ハッシュなど）、人間向けの表示値、実行環境の内部値、他の項目との重複は加えない。
+  保存済みの辞書を応答へ渡す場合は、`pyfltr/cli/mcp_server.py`の`SHOW_RUN_META_KEYS`のように返すキーを限定する。
+  取得できることや内部で保持していることは、エージェントへ露出する理由にならない
 - JSONL `command.status` 語彙のSSOTは`pyfltr/command/core_.py`の`CommandResult.status`プロパティのdocstring。
   新規status値追加時は対象のdocstringと判定分岐を併せて更新する
 - `summary`レコードのフィールド順序仕様のSSOTは`pyfltr/output/jsonl.py`の`_build_summary_record`のdocstring

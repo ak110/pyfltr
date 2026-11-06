@@ -75,7 +75,6 @@ import pyfltr.grep_.jsonl_records
 import pyfltr.grep_.matcher
 import pyfltr.grep_.operations
 import pyfltr.grep_.preview
-import pyfltr.grep_.replacer
 import pyfltr.grep_.scanner
 import pyfltr.output.jsonl
 import pyfltr.paths
@@ -150,6 +149,15 @@ def _resolve_run_id_or_raise(store: pyfltr.state.archive.ArchiveStore, raw: str)
 
 # `pydantic.Field`の説明はMCPの`inputSchema`へ載り、モデルが引数を決める唯一の手掛かりとなる。
 # docstringはクライアントへ送られないため、意味・省略時の動作・組み合わせ条件は説明へ書く。
+
+SHOW_RUN_META_KEYS: tuple[str, ...] = ("version", "cwd", "argv", "commands", "files", "exit_code", "started_at", "finished_at")
+"""`show_run`の`meta`へ返す保存項目。
+
+エージェントがrunの対象・起動引数・結果・時刻を判断に使う項目だけを返す。
+`run_id`は応答の最上位、`slot_waits`は`timing.slot_waits`と重複し、`diagnostic_paths`は保存形式の版の判別印、
+`python`・`executable`・`platform`は同じホストで動くエージェントの判断・操作に使わないため返さない。
+未知のキー（別の版が保存した項目）も返さない。項目を加える場合は受信主体の判断・操作を確かめる。
+"""
 
 RunIdArg = typing.Annotated[
     str,
@@ -250,7 +258,8 @@ async def tool_show_run(run_id: RunIdArg) -> RunOverviewModel:
         for entry in command_summaries
     ]
     timing = RunTimingModel.model_validate(pyfltr.state.runs.summarize_timing(meta))
-    return RunOverviewModel(run_id=resolved, meta=meta, timing=timing, commands=commands)
+    public_meta = {key: meta[key] for key in SHOW_RUN_META_KEYS if key in meta}
+    return RunOverviewModel(run_id=resolved, meta=public_meta, timing=timing, commands=commands)
 
 
 async def tool_show_run_diagnostics(
@@ -948,8 +957,6 @@ async def tool_replace(
         ReplaceFileChangeModel(
             file=pyfltr.paths.normalize_separators(file),
             count=result.count,
-            before_hash=pyfltr.grep_.replacer.compute_hash(result.before_content),
-            after_hash=pyfltr.grep_.replacer.compute_hash(result.after_content),
         )
         for file, result in operation.prepared
     ]
