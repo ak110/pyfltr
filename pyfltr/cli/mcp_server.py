@@ -159,6 +159,18 @@ SHOW_RUN_META_KEYS: tuple[str, ...] = ("version", "cwd", "argv", "commands", "fi
 未知のキー（別の版が保存した項目）も返さない。項目を加える場合は受信主体の判断・操作を確かめる。
 """
 
+COMMAND_INFO_EXCLUDED_KEYS: frozenset[str] = frozenset({"command", "resolved"})
+"""`command_info`の`info`から除くキー。応答最上位の`command`・`resolved`と重複するため。
+
+`info`はCLIの`command-info`と共通の解決結果の辞書で、起動方式の解決失敗を切り分けるための項目を持つ。
+キーを加える場合は`tests/cli/mcp_models_test.py`の`_COMMAND_INFO_KEY_PURPOSES`へ用途を書く。
+"""
+REPLACE_HISTORY_COMMAND_KEYS: tuple[str, ...] = ("pattern", "replacement", "fixed_strings", "encoding")
+"""`replace_history`の`command`へ返す保存項目。
+
+`replace_id`は応答の同じ要素の最上位と重複し、`dry_run`は保存される履歴では常に偽のため返さない。
+"""
+
 RunIdArg = typing.Annotated[
     str,
     pydantic.Field(
@@ -1065,7 +1077,9 @@ async def tool_replace_history(
         ReplaceHistoryEntryModel(
             replace_id=str(entry["replace_id"]),
             saved_at=entry.get("saved_at"),
-            command=dict(entry.get("command", {})),
+            command={
+                key: value for key, value in dict(entry.get("command", {})).items() if key in REPLACE_HISTORY_COMMAND_KEYS
+            },
             files=[
                 ReplaceHistoryFileModel(
                     file=str(file_entry["file"]),
@@ -1107,7 +1121,11 @@ async def tool_command_info(
     except ValueError as exc:
         _raise_mcp_error(str(exc))
     info = pyfltr.cli.command_info.collect_info(command, config, do_check=check)
-    return CommandInfoModel(command=command, resolved=bool(info.get("resolved", True)), info=info)
+    return CommandInfoModel(
+        command=command,
+        resolved=bool(info.get("resolved", True)),
+        info={key: value for key, value in info.items() if key not in COMMAND_INFO_EXCLUDED_KEYS},
+    )
 
 
 async def tool_config(

@@ -2434,6 +2434,30 @@ async def test_tool_replace_matched_newline_uses_replacement_representation(tmp_
 
 
 @pytest.mark.asyncio
+async def test_mcp_show_run_and_replace_final_responses_omit_internal_values(tmp_path: pathlib.Path) -> None:
+    """MCPクライアントへ届く最終応答で、show_runのmetaとreplaceのfile_changesが必要項目だけを持つ。"""
+    run_id = _seed_run(
+        tmp_path, commands=["mypy"], tool_results=[("mypy", 1, "error", [_make_error("mypy", "a.py", 1, "boom")])]
+    )
+    target = tmp_path / "sample.txt"
+    target.write_text("foo\n", encoding="utf-8")
+    async with mcp.Client(pyfltr.cli.mcp_server.build_server()) as client:
+        overview = await client.call_tool("show_run", {"run_id": run_id})
+        assert overview.structured_content is not None
+        meta = overview.structured_content["meta"]
+        assert set(meta) <= set(pyfltr.cli.mcp_server.SHOW_RUN_META_KEYS)
+        assert {"commands", "files", "started_at"} <= set(meta)
+        assert overview.structured_content["run_id"] == run_id
+        assert overview.structured_content["timing"]["measured"] is True
+        replaced = await client.call_tool("replace", {"pattern": "foo", "replacement": "bar", "paths": [str(target)]})
+        assert replaced.structured_content is not None
+        assert replaced.structured_content["file_changes"] == [
+            {"file": pyfltr.paths.normalize_separators(str(target)), "count": 1}
+        ]
+        assert replaced.structured_content["total_replacements"] == 1
+
+
+@pytest.mark.asyncio
 async def test_tool_replace_file_changes_omit_hashes(tmp_path: pathlib.Path) -> None:
     """replaceのファイル別変更は対象と件数だけを返し、取り消し照合用のハッシュをエージェントへ渡さない。"""
     target = tmp_path / "sample.txt"
@@ -2757,8 +2781,10 @@ async def test_tool_command_info_resolves_known_command() -> None:
     result = await pyfltr.cli.mcp_server.tool_command_info("ec")
     assert result.command == "ec"
     assert result.resolved is True
-    assert result.info["command"] == "ec"
-    assert result.info["resolved"] is True
+    # 最上位のcommand・resolvedと重複するキーはinfoへ含めない。
+    assert "command" not in result.info
+    assert "resolved" not in result.info
+    assert "runner" in result.info
 
 
 @pytest.mark.asyncio

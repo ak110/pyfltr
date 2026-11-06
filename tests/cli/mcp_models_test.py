@@ -10,8 +10,10 @@ import inspect
 import typing
 
 import pydantic
+import pytest
 
 import pyfltr.cli.mcp_server
+import pyfltr.config.config
 
 # 項目ごとに、エージェントがその値で行う判断・操作を記録する。
 _FIELD_PURPOSES: dict[str, str] = {
@@ -179,6 +181,51 @@ _FIELD_PURPOSES: dict[str, str] = {
 }
 
 
+# 中身を応答モデルで列挙しない辞書型の項目と、キーを限定・検査する手段。
+# 辞書の素通しは新しいキーを対照表へ現さないため、項目ごとにキーの出所と限定方法を記録する。
+_DICT_FIELD_POLICIES: dict[str, str] = {
+    "RunOverviewModel.meta": "mcp_server.SHOW_RUN_META_KEYS で返すキーを限定する",
+    "CommandInfoModel.info": "_COMMAND_INFO_KEY_PURPOSES と照合する（test_command_info_keys_have_recorded_purposes）",
+    "ReplaceHistoryEntryModel.command": "mcp_server.REPLACE_HISTORY_COMMAND_KEYS で返すキーを限定する",
+    "GrepFileResultModel.matches": "GrepMatchModelの直列化からfileを除いた値。キーはGrepMatchModelの対照表に従う",
+    "CommandDiagnosticsModel.hint_urls": "キーはルールID、値はURL。ツールの診断から生成し追加のキーを持たない",
+    "CommandDiagnosticsModel.hints": "キーはルールID、値は修正ヒント。ツールの診断から生成し追加のキーを持たない",
+    "RunResult.retry_commands": "キーはコマンド名、値は再実行のシェルコマンド",
+    "ConfigResultModel.value": "利用者が指定した設定キーの値",
+    "ConfigResultModel.values": "キーは設定キー、値は利用者の設定値",
+}
+
+# `command_info`の`info`のキーごとの用途。起動方式の解決失敗を切り分けることがこのツールの目的である。
+_COMMAND_INFO_KEY_PURPOSES: dict[str, str] = {
+    "enabled": "設定で有効かの確認",
+    "runner": "設定上の起動方式",
+    "runner_source": "起動方式を決めた設定の出所",
+    "configured_path": "設定した実行ファイルのパス",
+    "configured_args": "設定した引数",
+    "configured_extend_args": "設定した追加引数",
+    "severity": "失敗の扱いの確認",
+    "hints": "設定した修正ヒント",
+    "version": "設定した版指定",
+    "dotnet_root": ".NETツールの解決環境",
+    "mise_active_tool_key": "miseの有効ツールとの照合キー",
+    "mise_active_tools": "miseの有効ツールの取得結果",
+    "mise_tool_spec_omitted": "miseのtool spec省略の採用",
+    "mise_check_hint": "miseの確認の手掛かり",
+    "error": "解決失敗の理由",
+    "effective_runner": "実際に採用した起動方式",
+    "executable": "解決した実行ファイル",
+    "executable_resolved": "実行ファイルが見つかったか",
+    "commandline": "最終コマンドライン",
+    "fix_commandline": "fixステージの最終コマンドライン",
+    "uv_info": "uv経路の可用性とフォールバックの診断",
+    "check_passed": "事前確認の成否",
+    "check_error": "事前確認の失敗理由",
+    "check_commandline": "事前確認で解決したコマンドライン",
+    "check_effective_runner": "事前確認で採用した起動方式",
+    "check_installed_version": "事前確認で取得した実行版",
+}
+
+
 def _collect_fields() -> set[str]:
     """全ツールの戻り値から到達する応答モデルの`<モデル名>.<項目名>`を返す。"""
     fields: set[str] = set()
@@ -210,6 +257,57 @@ def test_response_fields_have_recorded_purposes() -> None:
         "内部の保存値・人間向けの表示値・他の項目との重複は応答へ加えないでください。"
     )
     assert all(purpose.strip() for purpose in _FIELD_PURPOSES.values())
+
+
+def _collect_dict_fields() -> set[str]:
+    """応答モデルの項目のうち、注釈に辞書または任意の型を含むものを返す。"""
+    fields: set[str] = set()
+    seen: set[type] = set()
+
+    def _contains_dict(annotation: typing.Any) -> bool:
+        if annotation is typing.Any or typing.get_origin(annotation) is dict or annotation is dict:
+            return True
+        return any(_contains_dict(argument) for argument in typing.get_args(annotation))
+
+    def _walk(annotation: typing.Any) -> None:
+        for argument in typing.get_args(annotation):
+            _walk(argument)
+        if isinstance(annotation, type) and issubclass(annotation, pydantic.BaseModel) and annotation not in seen:
+            seen.add(annotation)
+            for name, field in annotation.model_fields.items():
+                if _contains_dict(field.annotation):
+                    fields.add(f"{annotation.__name__}.{name}")
+                _walk(field.annotation)
+
+    for handler in pyfltr.cli.mcp_server.TOOL_HANDLERS.values():
+        _walk(inspect.signature(handler, eval_str=True).return_annotation)
+    return fields
+
+
+def test_dict_fields_have_key_policies() -> None:
+    """辞書型の応答項目は、キーの出所と限定方法を記録した表と一致する。"""
+    actual = _collect_dict_fields()
+    assert actual == set(_DICT_FIELD_POLICIES), (
+        "辞書型のMCP応答項目と、キーの限定方法の表が一致しません。"
+        f"追加: {sorted(actual - set(_DICT_FIELD_POLICIES))}、表にだけある項目: {sorted(set(_DICT_FIELD_POLICIES) - actual)}。"
+        "辞書を応答へ渡す場合は返すキーを許可集合で限定し、_DICT_FIELD_POLICIESへ方法を書いてください。"
+    )
+
+
+@pytest.mark.asyncio
+async def test_command_info_keys_have_recorded_purposes() -> None:
+    """`command_info`の`info`の全キーが用途の表に記録され、最上位と重複するキーを含まない。"""
+    config = pyfltr.config.config.load_config()
+    keys: set[str] = set()
+    for command in config.command_names:
+        result = await pyfltr.cli.mcp_server.tool_command_info(command)
+        keys.update(result.info)
+    unknown = sorted(keys - set(_COMMAND_INFO_KEY_PURPOSES))
+    assert not unknown, (
+        f"command_infoのinfoに用途未記録のキーがあります: {unknown}。"
+        "解決失敗の切り分けに使う用途を_COMMAND_INFO_KEY_PURPOSESへ書くか、応答から除いてください。"
+    )
+    assert not keys & pyfltr.cli.mcp_server.COMMAND_INFO_EXCLUDED_KEYS
 
 
 def test_show_run_meta_keys_exclude_internal_values() -> None:

@@ -509,7 +509,7 @@ class ReplaceHistoryEntryModel(pydantic.BaseModel):
     saved_at: str | None = pydantic.Field(default=None, description="保存日時（ISO 8601形式）。")
     command: dict[str, typing.Any] = pydantic.Field(
         default_factory=dict,
-        description="実行時のパターン・置換式・エンコーディング等。",
+        description="実行時のパターン（pattern）・置換式（replacement）・固定文字列指定（fixed_strings）・エンコーディング（encoding）。",
     )
     files: list[ReplaceHistoryFileModel] = pydantic.Field(
         default_factory=list,
@@ -533,7 +533,7 @@ class CommandInfoModel(pydantic.BaseModel):
     command: str = pydantic.Field(description="対象のツール名。")
     resolved: bool = pydantic.Field(description="起動方式の解決に成功したか否か。")
     info: dict[str, typing.Any] = pydantic.Field(
-        description="解決結果の詳細。解決失敗時は`error`キーを含む。",
+        description="解決結果の詳細（runner・実行ファイル・最終コマンドラインなど）。解決失敗時は`error`キーを含む。",
     )
 
 
