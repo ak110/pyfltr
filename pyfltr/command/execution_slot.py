@@ -42,6 +42,13 @@ pyfltr以外の検証を起動する呼出元（他のツールのスクリプ�
 - それ以外は保持者の解放まで`_POLL_INTERVAL`秒ごとに再試行して待つ。
   同じプロセスの別スレッドも待つ（長寿命の呼出元が並行して受けた要求を順に実行するため）
 
+配分規則:
+
+- 最初の取得の要求は、登録から`_REACQUIRE_BYPASS_SECONDS`秒未満の取り直し要求より先に並ぶ
+- まだ譲っていない最初の区間の保持者は、取得から`_FIRST_SEGMENT_HOLD_SECONDS`秒の間、
+  待機者が若い取り直し要求（新規要求が前へ入れる要求）だけなら譲らない
+- 新規要求どうし・取り直し要求どうしは登録順を保ち、上限を過ぎた取り直し要求の前へは置かない
+
 ロックはユーザーキャッシュのルート（`pyfltr.user_cache.default_cache_root`）配下の`locks/`に置く。
 `PYFLTR_CACHE_DIR`で保存先を変えた実行どうしは別の枠になる。
 保持者が強制終了した場合はOSがロックを解放する。
@@ -76,6 +83,23 @@ _POLL_INTERVAL = 0.2
 """待機中の再試行間隔（秒）。解放から次の取得までの遅れと、待機中の負荷の釣り合いで選ぶ。"""
 _CREATE_TIME_TOLERANCE = 1.0
 """保持者記録とプロセスの生成時刻を同一とみなす差（秒）。pidの再利用を取り違えないための判定に使う。"""
+_FIRST_SEGMENT_HOLD_SECONDS = 120.0
+"""最初の区間の保持者が、若い取り直し要求だけを待機者に持つ間に譲らない時間（秒）。
+
+短い検証が区切りごとに長い検証の取り直しへ譲ると、長い検証の区間を間に置いて待ち直し、本体数秒の実行が数百秒待つ。
+実行アーカイブの集計（2026年11月の98run）で本体時間の75パーセンタイル（fast約88秒、run約74秒）を上回る値とし、
+短い検証の大半を1区間で終える。新規の要求には従来どおり譲り、取り直し要求が追加で待つ時間はこの値で抑える。
+"""
+_REACQUIRE_BYPASS_SECONDS = 600.0
+"""新規の取得要求が前へ入れる取り直し要求の、登録からの経過上限（秒）。
+
+新規要求は既に区間を進めた長い検証の取り直しより先に並び、短い検証が長い検証の列の後ろで待ち続けないようにする。
+上限を超えた取り直し要求の前へは新規要求を置かず、最初の区間の保持者もその要求へ譲るため、新規要求が続いても長い検証が進む。
+"""
+_SEQUENCE_STEP = 2**20
+"""末尾へ登録する要求の連番の間隔。新規要求を取り直し要求の前へ置く空き番号を残す。"""
+_REACQUIRE_MARK = "R"
+"""取り直し要求のファイル名で、連番の次に置く印。旧版の乱数部は小文字だけのため区別できる。"""
 
 _local = threading.local()
 
@@ -133,6 +157,8 @@ class _Lease:
     should_abort: collections.abc.Callable[[], bool] | None
     on_wait_interval: WaitIntervalCallback | None = None
     acquired: bool = False
+    acquired_at: float = 0.0
+    """取得（取り直し）した時点の`time.monotonic()`。最低保持時間の判定に使う。"""
     yields: int = 0
     coordinator: "SlotCoordinator | None" = None
     participant: "_Participant | None" = None
@@ -201,6 +227,7 @@ def hold(
         ),
         release=lambda: _release(lock, owner_path),
     )
+    lease.acquired_at = time.monotonic()
     _local.depth = 1
     _local.lease = lease
     try:
@@ -216,20 +243,30 @@ def hold(
 
 
 def yield_requested() -> bool:
-    """呼出スレッドが譲れる保持者で、待機者がいるかを返す。
+    """呼出スレッドが譲れる保持者で、譲る相手の待機者がいるかを返す。
 
     通常は最外側の`hold`で取得したスレッドだけが真になりうる。
     協調所有者の入れ子と明示参加した子も待機者を確認できる。
     非協調の入れ子・継承区間、`hold`の外、別スレッドでは偽を返す。
+    まだ譲っていない最初の区間の保持者は、取得から`_FIRST_SEGMENT_HOLD_SECONDS`秒未満の間、
+    待機者が若い取り直し要求（新規要求が前へ入れる要求）だけなら偽を返す。参加した子は所有者の判定に委ねて待機者の有無だけを返す。
     """
     lease: _Lease | None = getattr(_local, "lease", None)
-    if lease is not None and (lease.coordinator is not None or lease.participant is not None):
+    if lease is not None and lease.participant is not None:
         with _queue_guard(lease.owner_path.parent):
             return bool(_waiters(lease.owner_path.parent))
-    if getattr(_local, "depth", 0) != 1 or lease is None or not lease.acquired:
+    if lease is None or not lease.acquired:
+        return False
+    if lease.coordinator is None and getattr(_local, "depth", 0) != 1:
         return False
     with _queue_guard(lease.owner_path.parent):
-        return bool(_waiters(lease.owner_path.parent))
+        waiters = _waiters(lease.owner_path.parent)
+    if not waiters:
+        return False
+    if lease.yields == 0 and time.monotonic() - lease.acquired_at < _FIRST_SEGMENT_HOLD_SECONDS:
+        now_ms = int(time.time() * 1000)
+        return not all(_bypassable(waiter, now_ms) for waiter in waiters)
+    return True
 
 
 def yield_to_waiters() -> bool:
@@ -239,7 +276,9 @@ def yield_to_waiters() -> bool:
     子の稼働中に呼ぶと、子の実行中に待機者の処理が始まる。
     `yield_requested`が偽の場合は何もしない。
 
-    解放より先に待機列の最後へ再登録するため、取り直しの順番は先に並んだ待機者の後、解放後に並んだ待機者の前になる。
+    解放より先に待機列の最後へ再登録するため、取り直しの順番は先に並んだ待機者の後になる。
+    取り直し要求は登録から`_REACQUIRE_BYPASS_SECONDS`秒未満の間、後から並んだ新規の取得要求に後から並んだ新規要求が前へ入る。
+    譲る相手の判定は`yield_requested`に従う。
     取り直しの待機には`hold`へ渡した`should_abort`を使い、`on_wait`は呼ばない。
     取り直しの待機を`WaitAborted`や`KeyboardInterrupt`で抜けた場合は、待機要求を回収し、枠を持たない状態で`hold`を抜ける。
 
@@ -260,7 +299,7 @@ def _yield_lease() -> bool:
     lease: _Lease = _local.lease
     lease.yields += 1
     # 解放より先に列末へ登録し、先行待機者より前へ再取得する競合を防ぐ。
-    with _request(lease.owner_path.parent) as request:
+    with _request(lease.owner_path.parent, reacquire=True) as request:
         lease.release()
         lease.acquired = _observe(
             lease.on_wait_interval,
@@ -276,6 +315,7 @@ def _yield_lease() -> bool:
             ),
             release=lambda: _release(lease.lock, lease.owner_path),
         )
+    lease.acquired_at = time.monotonic()
     return True
 
 
@@ -560,13 +600,49 @@ def _waiters(directory: pathlib.Path) -> list[pathlib.Path]:
     return active
 
 
+def _sequence(path: pathlib.Path) -> int:
+    return int(path.name.split("-")[1])
+
+
+def _bypassable(path: pathlib.Path, now_ms: int) -> bool:
+    """新規要求が前へ入れる若い取り直し要求かを返す。旧版の要求と印の無い要求の前へは置かない。"""
+    parts = path.name.split("-")
+    mark = parts[2] if len(parts) > 2 else ""
+    if not mark.startswith(_REACQUIRE_MARK) or not mark[1:].isdigit():
+        return False
+    return now_ms - int(mark[1:]) < _REACQUIRE_BYPASS_SECONDS * 1000
+
+
+def _allocate_sequence(waiters: list[pathlib.Path], *, reacquire: bool, now_ms: int) -> int:
+    """要求の連番を決める。新規要求は末尾側に続く若い取り直し要求の前へ置く。
+
+    旧版は末尾の連番に1を足すため、末尾追加は間隔を空けて新規要求を間に置ける番号を残す。
+    間に置ける番号が無い場合は末尾へ追加し、登録順の待ちへ戻す。
+    """
+    last = _sequence(waiters[-1]) + _SEQUENCE_STEP if waiters else _SEQUENCE_STEP
+    if reacquire:
+        return last
+    index = len(waiters)
+    while index > 0 and _bypassable(waiters[index - 1], now_ms):
+        index -= 1
+    if index == len(waiters):
+        return last
+    lower = _sequence(waiters[index - 1]) if index > 0 else -1
+    upper = _sequence(waiters[index])
+    if upper - lower < 2:
+        return last
+    return (lower + upper) // 2
+
+
 @contextlib.contextmanager
-def _request(directory: pathlib.Path) -> collections.abc.Generator[pathlib.Path, None, None]:
+def _request(directory: pathlib.Path, *, reacquire: bool = False) -> collections.abc.Generator[pathlib.Path, None, None]:
     with _queue_guard(directory):
         waiters = _waiters(directory)
+        now_ms = int(time.time() * 1000)
         # 連番の割当と要求ロック取得を同じ区間で行い、他の走査による未登録要求の回収を防ぐ。
-        sequence = int(waiters[-1].name.split("-")[1]) + 1 if waiters else 0
-        with tempfile.NamedTemporaryFile(prefix=f"execution.wait-{sequence:020d}-", dir=directory, delete=False) as file:
+        sequence = _allocate_sequence(waiters, reacquire=reacquire, now_ms=now_ms)
+        mark = f"{_REACQUIRE_MARK}{now_ms:013d}-" if reacquire else ""
+        with tempfile.NamedTemporaryFile(prefix=f"execution.wait-{sequence:020d}-{mark}", dir=directory, delete=False) as file:
             path = pathlib.Path(file.name)
         request_lock = pyfltr.file_lock.FileLock(path)
         if not request_lock.try_acquire():

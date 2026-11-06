@@ -12,6 +12,7 @@ import subprocess
 import sys
 import threading
 import time
+import typing
 
 import psutil
 import pytest
@@ -208,6 +209,7 @@ with pyfltr.command.execution_slot.hold(lock_dir=pathlib.Path(sys.argv[1]), shou
 _YIELDING_HOLDER_SCRIPT = """import pathlib
 import sys
 import time
+import typing
 
 import pyfltr.command.execution_slot
 
@@ -597,3 +599,154 @@ def test_wait_interval_callback_failure_releases_slot(lock_dir: pathlib.Path, fa
     other.start()
     other.join(30)
     assert acquired == [True]
+
+
+def _run_allocation_scenario(lock_dir: pathlib.Path) -> dict[str, typing.Any]:
+    """長い保持者3件が短い区切りで譲り合う間に、短い処理1件を並べて待ちと進行を測る。
+
+    長い処理は0.2秒の手順を12回、短い処理は0.02秒の手順を4回行い、各手順の後に`yield_to_waiters`を呼ぶ。
+    保持区間の重なりを`active`で検出し、全処理の手順の完了と待機要求の回収を返す。
+    """
+    active: list[int] = [0]
+    overlap: list[bool] = []
+    lock = threading.Lock()
+    steps: dict[str, int] = {}
+    short: dict[str, float] = {}
+    short_waits: list[pyfltr.command.execution_slot.SlotWait] = []
+    long_finished: list[float] = []
+    origin = time.monotonic()
+
+    def _work(label: str, count: int, duration: float) -> None:
+        for _ in range(count):
+            with lock:
+                active[0] += 1
+                overlap.append(active[0] > 1)
+            time.sleep(duration)
+            with lock:
+                active[0] -= 1
+                steps[label] = steps.get(label, 0) + 1
+            pyfltr.command.execution_slot.yield_to_waiters()
+
+    def _long(label: str) -> None:
+        with pyfltr.command.execution_slot.hold(lock_dir=lock_dir, label=label):
+            _work(label, 12, 0.2)
+        long_finished.append(time.monotonic() - origin)
+
+    def _short() -> None:
+        started = time.monotonic()
+        with pyfltr.command.execution_slot.hold(lock_dir=lock_dir, label="short", on_wait_interval=short_waits.append):
+            short["acquired"] = time.monotonic() - started
+            _work("short", 4, 0.02)
+        short["finished"] = time.monotonic() - started
+
+    longs = [threading.Thread(target=_long, args=(f"long-{index}",)) for index in range(3)]
+    for thread in longs:
+        thread.start()
+        time.sleep(0.1)
+    # 長い処理が譲り合い、取り直し要求が並んでから短い処理を始める。
+    time.sleep(1.0)
+    short_thread = threading.Thread(target=_short)
+    short_thread.start()
+    for thread in [*longs, short_thread]:
+        thread.join(60)
+        assert not thread.is_alive()
+    completed = [wait for wait in short_waits if wait.finished_at is not None]
+    return {
+        "short_finished": short["finished"],
+        "short_intervals": len(completed),
+        "long_finished_max": max(long_finished),
+        "steps": steps,
+        "overlap": any(overlap),
+        "leftover": sorted(path.name for path in lock_dir.glob("execution.wait-*")),
+    }
+
+
+def test_new_request_precedes_reacquire_and_finishes_in_one_segment(
+    lock_dir: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """短い新規要求は長い検証の取り直し要求の前に並び、最初の区間で譲らずに終わる。
+
+    比較対象の旧方式（登録順だけで並べ、最初の区間も毎回譲る）は2つの定数を0にして再現する。
+    """
+    monkeypatch.setattr(pyfltr.command.execution_slot, "_REACQUIRE_BYPASS_SECONDS", 0.0)
+    monkeypatch.setattr(pyfltr.command.execution_slot, "_FIRST_SEGMENT_HOLD_SECONDS", 0.0)
+    before = _run_allocation_scenario(lock_dir / "fifo")
+    monkeypatch.setattr(pyfltr.command.execution_slot, "_REACQUIRE_BYPASS_SECONDS", 30.0)
+    monkeypatch.setattr(pyfltr.command.execution_slot, "_FIRST_SEGMENT_HOLD_SECONDS", 30.0)
+    after = _run_allocation_scenario(lock_dir / "priority")
+    print(f"allocation-scenario before={before} after={after}")
+    for result in (before, after):
+        assert result["steps"] == {"long-0": 12, "long-1": 12, "long-2": 12, "short": 4}
+        assert not result["overlap"]
+        assert result["leftover"] == []
+    # 旧方式の短い処理は各手順の後に長い処理の区間を間に置いて待ち直す。
+    assert before["short_intervals"] > 1
+    assert after["short_intervals"] == 1
+    assert after["short_finished"] < before["short_finished"] / 2
+    # 長い処理の完了は、短い処理を先に通した分（短い処理の本体程度）を超えて遅れない。
+    assert after["long_finished_max"] < before["long_finished_max"] + 1.0
+
+
+def test_aged_reacquire_is_not_bypassed(lock_dir: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """取り直し要求は経過上限を超えると新規要求に前へ入られず、新規要求が続いても長い処理が進む。"""
+    monkeypatch.setattr(pyfltr.command.execution_slot, "_REACQUIRE_BYPASS_SECONDS", 1.0)
+    monkeypatch.setattr(pyfltr.command.execution_slot, "_FIRST_SEGMENT_HOLD_SECONDS", 30.0)
+    stop = threading.Event()
+    reacquired: list[float] = []
+    first_waiting = threading.Event()
+
+    def _short_stream() -> None:
+        # 実行枠を常に新規要求で埋め、各要求が0.1秒保持する。
+        while not stop.is_set():
+            threads = [threading.Thread(target=_short_once) for _ in range(2)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(30)
+
+    def _short_once() -> None:
+        def _on_wait(owner: pyfltr.command.execution_slot.SlotOwner | None) -> None:
+            del owner
+            first_waiting.set()
+
+        with pyfltr.command.execution_slot.hold(lock_dir=lock_dir, label="short", on_wait=_on_wait):
+            time.sleep(0.1)
+
+    stream = threading.Thread(target=_short_stream)
+    with pyfltr.command.execution_slot.hold(lock_dir=lock_dir, label="long"):
+        stream.start()
+        assert first_waiting.wait(30)
+        started = time.monotonic()
+        assert pyfltr.command.execution_slot.yield_to_waiters()
+        reacquired.append(time.monotonic() - started)
+    stop.set()
+    stream.join(60)
+    assert not stream.is_alive()
+    # 経過上限（1秒）を過ぎると新規要求が前へ入らなくなり、先頭の新規要求の区間の後で取り直す。
+    assert reacquired[0] < 1.0 + 3.0, reacquired
+
+
+def test_allocate_sequence_keeps_legacy_requests_in_order(lock_dir: pathlib.Path) -> None:
+    """旧版の要求と印の無い要求の前へは新規要求を置かず、間に置ける番号が無い場合は末尾へ並べる。"""
+    del lock_dir
+    now_ms = int(time.time() * 1000)
+    young = f"R{now_ms:013d}"
+    allocate = pyfltr.command.execution_slot._allocate_sequence  # pylint: disable=protected-access
+
+    def _paths(*names: str) -> list[pathlib.Path]:
+        return [pathlib.Path(name) for name in names]
+
+    step = pyfltr.command.execution_slot._SEQUENCE_STEP  # pylint: disable=protected-access
+    # 旧版の要求（乱数部だけ）の後へ、若い取り直し要求の前へ置く。
+    waiters = _paths(f"execution.wait-{step:020d}-abcd1234", f"execution.wait-{2 * step:020d}-{young}-x")
+    sequence = allocate(waiters, reacquire=False, now_ms=now_ms)
+    assert step < sequence < 2 * step
+    # 取り直し要求は末尾へ並べる。
+    assert allocate(waiters, reacquire=True, now_ms=now_ms) == 3 * step
+    # 旧版が末尾へ1を足した連番で間に置ける番号が無い場合は末尾へ並べる。
+    crowded = _paths(f"execution.wait-{5:020d}-abcd1234", f"execution.wait-{6:020d}-{young}-x")
+    assert allocate(crowded, reacquire=False, now_ms=now_ms) == 6 + step
+    # 経過上限を超えた取り直し要求の前へは置かない。
+    aged = f"R{now_ms - 10**7:013d}"
+    old = _paths(f"execution.wait-{step:020d}-{aged}-x")
+    assert allocate(old, reacquire=False, now_ms=now_ms) == 2 * step
