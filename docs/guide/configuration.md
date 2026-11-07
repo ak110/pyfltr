@@ -226,6 +226,9 @@ pyfltr config list --all
 - {command}-subproject-aware : 指定したツールをサブプロジェクト単位で分割実行するか否か（per-tool）。
   既定値はビルトイン定義に従う。
   `mypy`・`pylint`・`pytest`・`textlint`等は`true`、`typos`・`shellcheck`・`shfmt`・`pre-commit`・`prek`等は`false`
+- {command}-slot-ticket : 指定したツールへ検証の実行枠の参加券を渡すか否か（per-tool、既定: `false`）。
+  参加券を受け取るツールにだけ設定する。
+  詳細は[同時に起動した検証の待機](usage.md#execution-slot)を参照
 
 `prettier-check-args` / `prettier-write-args` / `shfmt-check-args` / `shfmt-write-args`などの
 2段階実行向け引数はツール別設定ページで詳しく扱う。

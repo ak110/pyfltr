@@ -105,7 +105,7 @@ def run_stages(
     実行した各ツールの結果には、`execute`の直前と直後の時刻を`started_at`・`finished_at`として設定する。
 
     自ら枠を取得した場合と`participant_ticket`（上位から受け取った参加券）を渡した場合は協調所有者になり、
-    各ツールの子プロセスへツール1件専用の参加券を環境変数で渡す。参加券を使ったツールが区切りで停止を通知すると、
+    `{command}-slot-ticket`を有効にしたツールの子プロセスへツール1件専用の参加券を環境変数で渡す。参加券を使ったツールが区切りで停止を通知すると、
     ツールの実行中も所有スレッドが定期的に譲渡点を呼んで譲る。参加しないツールが1件でも稼働していれば譲らない。
     同じスレッドの入れ子と祖先から継承した区間では参加券を渡さず、従来どおりツールを回収した区切りでだけ譲る。
     """
@@ -169,8 +169,10 @@ def run_stages(
         # 登録中の参加者は停止を通知するまで稼働中とみなされ、参加しないツールの実行中に譲らないためである。
         registration = contextlib.ExitStack()
         ticket = registration.enter_context(coordinator.participant()) if coordinator is not None else None
+        # 参加券は受け取ると宣言したツールにだけ渡す。他のツールは登録のまま停止を通知しないため、稼働中は譲らない。
+        passed = ticket if pyfltr.config.model.resolve_slot_ticket(config.values, command) else None
         try:
-            future = executor.submit(run_with_ticket, command, fix_stage, ticket)
+            future = executor.submit(run_with_ticket, command, fix_stage, passed)
         except BaseException:
             registration.close()
             raise

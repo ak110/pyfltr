@@ -167,7 +167,7 @@ class WaitAborted(Exception):
 class ParticipationRejected(WaitAborted):
     """参加券で協調区間へ参加できなかった。
 
-    参加券を受け取らないツールの子孫は、環境変数に残った参加券を継承する（pytest-xdistのworkerなど）。
+    参加中の参加券を継承した子孫や、閉じられた協調区間の参加券で起きる。
     `coordinated_hold`はこの例外を受けると参加券を使わずに区間を開き、祖先の所有を継承した区間として続ける。
     """
 
@@ -627,7 +627,7 @@ class _Participant:
                 raise WaitAborted("協調参加の登録が失われました。" + _COOPERATIVE_ABORT_ACTION)
             if not _is_ancestor(self.coordinator):
                 raise WaitAborted("協調所有者が終了しました。" + _COOPERATIVE_ABORT_ACTION)
-            if not _waiters(self.path.parent) or not _only_chain_to_caller(self.coordinator):
+            if not _waiters(self.path.parent):
                 return False
             state["participants"][self.identifier]["state"] = "paused"
             generation = state["generation"]
@@ -879,27 +879,6 @@ def _read_owner(owner_path: pathlib.Path) -> SlotOwner | None:
         )
     except (OSError, ValueError, TypeError, KeyError, AttributeError):
         return None
-
-
-def _only_chain_to_caller(coordinator: SlotOwner) -> bool:
-    """協調所有者から呼出元までの経路の各プロセスが、経路上の子1件だけを持つかを返す。
-
-    参加券は環境変数で渡すため、参加券を受け取らないツールの子孫も同じ参加券で参加できてしまう。
-    そのような子孫が停止を通知すると、所有者はツールの他のプロセス（pytest-xdistの他のworkerなど）の稼働中に譲る。
-    経路の途中に分岐が無ければ、ツールのプロセスは呼出元とその祖先のラッパー（`uv run`など）だけであり、停止を通知してよい。
-    呼出元自身の子は、呼出元が協調所有者として回収または停止を確かめた処理である。
-    """
-    try:
-        child = psutil.Process()
-        for parent in child.parents():
-            if parent.pid == coordinator.pid:
-                return True
-            if [process.pid for process in parent.children()] != [child.pid]:
-                return False
-            child = parent
-    except psutil.Error:
-        return False
-    return False
 
 
 def _is_ancestor(owner: SlotOwner) -> bool:

@@ -449,6 +449,7 @@ def register_custom_command(
     # カスタムコマンドは登録時点でしか既定値を用意できないため、ここで併せて登録する。
     # 登録しないと利用者が`{name}-subproject-aware`を指定したとき未知キーとして警告される。
     config.values[f"{name}-subproject-aware"] = config.commands[name].subproject_aware
+    config.values[f"{name}-slot-ticket"] = False
     # fix-argsは定義されている場合のみ登録する（キーの有無でfix対応可否を判別）
     if fix_args is not None:
         config.values[f"{name}-fix-args"] = fix_args

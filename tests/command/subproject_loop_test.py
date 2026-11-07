@@ -5,6 +5,7 @@ import typing
 import pytest
 
 import pyfltr.command.core_
+import pyfltr.command.execution_slot
 import pyfltr.command.subproject_loop
 import pyfltr.command.subprojects
 import pyfltr.config.config
@@ -313,3 +314,42 @@ def test_merge_prefers_executed_subproject_result(tmp_path: pathlib.Path) -> Non
     )
     assert merged.status == "succeeded"
     assert merged.returncode == 0
+
+
+def test_slot_ticket_tool_runs_subprojects_serially_with_ticket(tmp_path: pathlib.Path) -> None:
+    """`{command}-slot-ticket`を有効にしたツールは、サブプロジェクトを1件ずつ実行し、各実行へ参加券を渡す。
+
+    参加券はツール1件に1つで同時に1プロセスしか参加できないため、並列のワーカーへは渡せない。
+    直列に実行すれば、段実行が呼出スレッドへ設定した参加券がサブプロジェクトごとの起動へ届く。
+    """
+    ctx = _make_context(tmp_path, ["a", "b"], values={"ruff-check-slot-ticket": True})
+    assert ctx.config.values["jobs"] == 8
+    tickets: list[str | None] = []
+    active = 0
+    max_active = 0
+    lock = threading.Lock()
+
+    def _dispatch(
+        command: str, args: pyfltr.run_options.RunOptions, c: pyfltr.command.core_.ExecutionContext
+    ) -> pyfltr.command.core_.CommandResult:
+        del args, c
+        nonlocal active, max_active
+        with lock:
+            active += 1
+            max_active = max(max_active, active)
+        env = pyfltr.command.execution_slot.tool_environ({})
+        with lock:
+            tickets.append(env.get(pyfltr.command.execution_slot.TICKET_ENV))
+            active -= 1
+        return _testconf.make_succeeded_result(command=command)
+
+    with pyfltr.command.execution_slot.bind_tool_ticket("ticket"):
+        pyfltr.command.subproject_loop.run_subproject_loop(
+            "ruff-check",
+            _testconf.make_args(),
+            ctx,
+            dispatch_fn=_dispatch,
+            disabled_skip_fn=_disabled_skip,
+        )
+    assert max_active == 1
+    assert tickets == ["ticket", "ticket"]

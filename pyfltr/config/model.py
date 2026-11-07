@@ -282,6 +282,24 @@ def register_command_subproject_aware_defaults(
 register_command_subproject_aware_defaults(DEFAULT_CONFIG, pyfltr.tools.BUILTIN_COMMANDS)
 
 
+def register_command_slot_ticket_defaults(defaults: dict[str, typing.Any], builtin_commands: typing.Iterable[str]) -> None:
+    """全ビルトインコマンドへ`{command}-slot-ticket = false`の既定値を登録する。
+
+    参加券を受け取らないツールへ渡すと、ツールの子孫が環境変数を継承して参加し、ツール本体の稼働中に実行枠を譲りうる。
+    ツールが参加券を受け取るかはpyfltrから判定できないため、受け取るツールだけを利用者が宣言する。
+    """
+    for command in builtin_commands:
+        defaults[f"{command}-slot-ticket"] = False
+
+
+register_command_slot_ticket_defaults(DEFAULT_CONFIG, pyfltr.tools.BUILTIN_COMMAND_NAMES)
+
+
+def resolve_slot_ticket(values: dict[str, typing.Any], command: str) -> bool:
+    """per-tool `{command}-slot-ticket` の有効値を返す。真偽値以外は`False`とする。"""
+    return command_setting(values, command, "slot-ticket", False) is True
+
+
 def resolve_subproject_aware(values: dict[str, typing.Any], command: str, default: bool) -> bool:
     """per-tool `{command}-subproject-aware` の有効値を返す。
 

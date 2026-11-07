@@ -916,63 +916,6 @@ with slot.hold(lock_dir=lock_dir, participant=ticket):
     slot.yield_to_waiters()
 """
 
-_BRANCHED_TOOL_SCRIPT = """import pathlib
-import subprocess
-import sys
-
-lock_dir, ticket, root, sibling = sys.argv[1], sys.argv[2], pathlib.Path(sys.argv[3]), sys.argv[4] == "1"
-# 参加券を受け取らないツールが、参加する子と参加しない子を同時に起動する（pytest-xdistのworkerに相当する）。
-sleeper = (
-    subprocess.Popen([sys.executable, "-c", "import sys, time; time.sleep(float(sys.argv[1]))", "3"])
-    if sibling
-    else None
-)
-subprocess.run([sys.executable, str(root / "join.py"), lock_dir, ticket, str(root)], check=True)
-if sleeper is not None:
-    sleeper.wait()
-"""
-
-
-@pytest.mark.parametrize("sibling", [False, True])
-def test_participant_does_not_pause_beside_other_tool_processes(
-    tmp_path: pathlib.Path, lock_dir: pathlib.Path, sibling: bool
-) -> None:
-    """参加者は、協調所有者までの経路にツールの他のプロセスが並ぶ間は停止を通知しない。
-
-    参加券を受け取らないツールの子孫が参加しても、ツールの他のプロセスの稼働中に所有者が譲らないことを確かめる。
-    経路に分岐が無い場合は従来どおり停止を通知し、待機者がツールの稼働中に実行される。
-    """
-    (tmp_path / "join.py").write_text(_JOIN_WAIT_SCRIPT, encoding="utf-8")
-    tool_script = tmp_path / "tool.py"
-    tool_script.write_text(_BRANCHED_TOOL_SCRIPT, encoding="utf-8")
-    tool_alive_at_waiter: list[bool] = []
-    tool: subprocess.Popen | None = None
-
-    def waiter() -> None:
-        with pyfltr.command.execution_slot.hold(lock_dir=lock_dir):
-            assert tool is not None
-            tool_alive_at_waiter.append(tool.poll() is None)
-
-    with pyfltr.command.execution_slot.cooperative_hold(lock_dir=lock_dir) as coordinator:
-        with coordinator.participant() as ticket:
-            thread = threading.Thread(target=waiter)
-            with subprocess.Popen(
-                [sys.executable, str(tool_script), str(lock_dir), ticket, str(tmp_path), "1" if sibling else "0"]
-            ) as tool:
-                thread.start()
-                _wait_for_file(tmp_path / "joined")
-                deadline = time.monotonic() + 30
-                while not pyfltr.command.execution_slot.yield_requested():
-                    assert time.monotonic() < deadline
-                    time.sleep(0.01)
-                (tmp_path / "release").touch()
-                while tool.poll() is None:
-                    coordinator.checkpoint()
-                    time.sleep(0.05)
-        assert tool.returncode == 0
-    thread.join(timeout=30)
-    assert tool_alive_at_waiter == [not sibling]
-
 
 def _wait_for_file(path: pathlib.Path) -> None:
     deadline = time.monotonic() + 30

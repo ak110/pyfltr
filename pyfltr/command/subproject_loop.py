@@ -74,9 +74,13 @@ def resolve_subproject_workers(command: str, ctx: ExecutionContext, cwds: typing
 
     `jobs`が推定値以下の場合は1を返し、サブプロジェクトを1件ずつ実行する。
     対象のツールが`CommandInfo.subproject_concurrent=False`の場合も、`jobs`によらず1を返す。
+    `{command}-slot-ticket`を有効にしたツールも1を返す。実行枠の参加券はツール1件に1つで、
+    同時に参加できるプロセスは1つだけのため、サブプロジェクトごとのプロセスに同じ参加券を順に使わせる。
     """
     info = ctx.config.commands.get(command)
     if info is not None and not info.subproject_concurrent:
+        return 1
+    if pyfltr.config.model.resolve_slot_ticket(ctx.config.values, command):
         return 1
     values = ctx.config.values
     budget = values.get("jobs", 1)

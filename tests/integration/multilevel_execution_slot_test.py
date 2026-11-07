@@ -94,8 +94,11 @@ def _wait_for(path: pathlib.Path, timeout: float = 60) -> None:
         time.sleep(0.01)
 
 
-def _make_project(root: pathlib.Path, *, plain: bool) -> pathlib.Path:
-    """試験用ツール（と参加しないツール）をカスタムコマンドに持つプロジェクトを作成する。"""
+def _make_project(root: pathlib.Path, *, plain: bool, declared: bool = True) -> pathlib.Path:
+    """試験用ツール（と参加しないツール）をカスタムコマンドに持つプロジェクトを作成する。
+
+    `declared`が偽の場合は試験用ツールの`step-tool-slot-ticket`を設定せず、参加券を渡さない構成にする。
+    """
     project = root / "project"
     project.mkdir()
     (project / "sample.txt").write_text("value\n", encoding="utf-8")
@@ -120,7 +123,11 @@ def _make_project(root: pathlib.Path, *, plain: bool) -> pathlib.Path:
             "targets": "*.txt",
             "pass-filenames": False,
         }
-    config = {"tool": {"pyfltr": {"respect-gitignore": False, "jobs": 2, "custom-commands": commands}}}
+    config = {
+        "tool": {
+            "pyfltr": {"respect-gitignore": False, "jobs": 2, "custom-commands": commands, "step-tool-slot-ticket": declared}
+        }
+    }
     (project / "pyproject.toml").write_text(tomlkit.dumps(config), encoding="utf-8")
     (root / "commands").write_text(",".join(commands), encoding="utf-8")
     return project
@@ -148,6 +155,7 @@ def _start(root: pathlib.Path, role: str, stack: contextlib.ExitStack) -> subpro
         "dup",
         "leaf-crash",
         "owner-abort",
+        "undeclared",
         pytest.param(
             "middle-crash",
             marks=pytest.mark.skipif(
@@ -162,7 +170,7 @@ def _start(root: pathlib.Path, role: str, stack: contextlib.ExitStack) -> subpro
 def test_three_level_cooperation(tmp_path: pathlib.Path, scenario: str) -> None:
     """ツールの区切りで独立した待機者が実行され、その後に残りが再開する。"""
     plain = scenario == "plain-running"
-    _make_project(tmp_path, plain=plain)
+    _make_project(tmp_path, plain=plain, declared=scenario != "undeclared")
     for name in ("dup", "leaf-crash"):
         if scenario == name:
             (tmp_path / name).touch()
@@ -191,6 +199,9 @@ def test_three_level_cooperation(tmp_path: pathlib.Path, scenario: str) -> None:
             assert not (tmp_path / "waiter-ran").exists()
             (tmp_path / "plain-release").touch()
         _wait_for(tmp_path / "waiter-ran")
+        if scenario == "undeclared":
+            # 参加券を渡さないツールは区切りで停止を通知しないため、待機者はツールの終了後に実行される。
+            assert (tmp_path / "tool-step2").exists()
         if scenario == "owner-abort":
             # 待機者の実行中（最上位の所有者の取り直し待機中）に取り消す。
             (tmp_path / "owner-abort").touch()
@@ -230,6 +241,8 @@ def test_three_level_cooperation(tmp_path: pathlib.Path, scenario: str) -> None:
         assert result["middle_returncode"] == 0, result["middle_output"]
         assert (tmp_path / "tool-step2").exists()
         assert "step-tool" in result["middle_output"]
+    ticket = json.loads((tmp_path / "tool-ticket.json").read_text(encoding="utf-8"))
+    assert (ticket is None) == (scenario == "undeclared")
     if scenario == "dup":
         assert (tmp_path / "dup-result").read_text(encoding="utf-8") == "9"
     # 全段を回収した後は、保持者記録と生存する協調所有者の協調区間が残らない。
