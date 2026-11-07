@@ -74,9 +74,9 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
     # -V / --versionはsubparser必須化の例外として、先頭に位置する場合のみ短絡処理する。
     # argparseのrequired subparsersは位置引数を要求するため、単独の--versionでは
     # usageエラーになってしまう。`pyfltr -V` の利便性を維持するため明示的に捌く。
+    # 版の表示は`$(pyfltr --version)`のように標準出力から受け取る利用側のため、ログではなく標準出力へ書く。
     if len(sys_args) == 1 and sys_args[0] in ("-V", "--version"):
-        logging.basicConfig(level=logging.INFO, format="%(message)s")
-        logger.info(f"pyfltr {importlib.metadata.version('pyfltr')}")
+        print(f"pyfltr {importlib.metadata.version('pyfltr')}")
         return 0
 
     # ツール名をサブコマンドとして誤入力したケースを検知し、実行例付きで案内する。

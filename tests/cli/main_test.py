@@ -1,4 +1,5 @@
 import collections.abc
+import importlib.metadata
 import json
 import logging
 import os
@@ -1554,6 +1555,25 @@ def test_help_contains_description(capsys):
     out = capsys.readouterr().out
     assert "並列実行" in out
     assert "コーディングエージェント" in out
+
+
+@pytest.mark.parametrize("args", [["--version"], ["-V"], ["--version", "run"]])
+def test_version_is_written_to_stdout(args: list[str]) -> None:
+    """版の表示は標準出力の1行で、標準エラーは空になる。
+
+    `$(pyfltr --version)`のように標準出力から版を受け取る利用側（CIのキャッシュキーなど）が空の値を得ないことを確かめる。
+    """
+    result = subprocess.run(
+        [sys.executable, "-m", "pyfltr", *args],
+        cwd=pathlib.Path(__file__).parents[2],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+    assert result.returncode == 0
+    assert result.stdout == f"pyfltr {importlib.metadata.version('pyfltr')}\n"
+    assert result.stderr == ""
 
 
 def _run_pyfltr_without_mcp(tmp_path: pathlib.Path, args: list[str]) -> subprocess.CompletedProcess[str]:

@@ -1407,9 +1407,9 @@ def run_impl(
     if args.ui and args.no_ui:
         parser.error("--ui と --no-ui は同時に指定できません。どちらか一方を指定してください。")
 
-    # --version （実行系サブコマンド下でも許容）
+    # --version （実行系サブコマンド下でも許容）。単独指定と同じく標準出力へ書く。
     if args.version:
-        logger.info(f"pyfltr {importlib.metadata.version('pyfltr')}")
+        print(f"pyfltr {importlib.metadata.version('pyfltr')}")
         return 0
 
     resolution = _resolve_output_format(parser, args)
