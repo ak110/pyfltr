@@ -840,12 +840,21 @@ jobs:
           # UV_FROZENではlockfileの最新性を検査しないため、この検査だけ解除する。
           env --unset=UV_FROZEN XDG_CONFIG_HOME="$config_dir" uv lock --check
 
-      - name: Cache /cache
-        uses: actions/cache@v6
+      - name: イメージ同梱のpyfltrの版
+        id: image
+        run: |
+          set -euo pipefail
+          # 版の表示を標準エラーへ書く旧版のイメージでも取り出せるよう、両方を受け取る。
+          version="$(pyfltr --version 2>&1 | sed -n 's/^pyfltr //p')"
+          test -n "$version"
+          echo "pyfltr-version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore /cache/mise
+        id: mise-cache
+        uses: actions/cache/restore@v6
         with:
-          path: /cache
-          key: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}-
+          path: /cache/mise
+          key: pyfltr-mise-${{ runner.os }}-${{ steps.image.outputs.pyfltr-version }}-${{ hashFiles('pyproject.toml', 'mise.toml') }}
 
       # 静的解析は基準とする1つの版だけで実行し、他の版はpytestで実行時互換性だけを検証する。
       - name: Run pyfltr（全検査）
@@ -855,6 +864,13 @@ jobs:
       - name: Run pyfltr（pytestのみ）
         if: ${{ matrix.python-version != '3.15' }}
         run: pyfltr ci --commands=pytest --output-format=github-annotations
+
+      - name: Save /cache/mise
+        if: ${{ matrix.python-version == '3.15' && steps.mise-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v6
+        with:
+          path: /cache/mise
+          key: ${{ steps.mise-cache.outputs.cache-primary-key }}
 ```
 
 ポイント。
@@ -868,25 +884,21 @@ jobs:
 - `UV_PYTHON`: `uv run`が必要なCPythonをロックファイルとmatrix値に従って自動取得する
     - `actions/setup-python`は不要
     - 単一バージョンで十分な場合は`strategy.matrix`と`UV_PYTHON`を省ける
-- `actions/cache`: `/cache`配下を一括キャッシュする
-    - uv / pnpm / miseのキャッシュは内容アドレス指定のため、ロックファイル変更時も追加分がそのまま蓄積される
-    - 固定キーは最初の保存後に更新されず、キャッシュの内容が初回保存時点のまま据え置かれる
-    - キーへ`github.run_id`と`github.run_attempt`を併記し、`restore-keys`で直近のキャッシュへフォールバックする
-    - `github.run_id`はワークフローの再実行（Re-run）で変化しないため、`github.run_id`だけでは
-      再実行時にキーが完全一致し、`actions/cache`が新しい内容を保存しない。
-      同じワークフローの再実行中に変化した`/cache`の内容を後続の実行へ引き継ぐため、`github.run_attempt`を併記する
-    - 復元は`tar -xf`による展開で、既存ファイルを保持するオプションを指定しない。
-      コンテナーイメージ側で更新されたツールも、旧キャッシュに同名パスがあれば上書きされる。
-      上記のキー構成は実行ごとに新しいキーを生成するだけであり、
-      イメージ同梱ツールの更新をCIで検知する用途には応えない
-    - 固定キーからこの構成へ移行する場合、`restore-keys`は前方一致で判定するため
-      移行前の固定キー（末尾のハイフンを持たない）には一致しない。
-      移行後、そのブランチかつ同一`path`での初回実行だけがキャッシュ無しで実行される。
-      移行前の固定キーを`restore-keys`の2行目へ併記すると、この初回のキャッシュ不使用を避けられる。
-      ただし効果は移行時の1回に限られる。
-      このprefixのキャッシュが保存された後は1行目が一致するため、併記した行は使われない
-    - 実行のたびに新しいエントリが増えるため、リポジトリのキャッシュ上限（既定10GB）と、
-      7日間アクセスのないエントリが自動削除される仕様を前提に運用する
+- キャッシュ: ジョブがイメージ同梱分に加えて書き込むサブディレクトリだけを、内容を決める入力のハッシュをキーにして保存する
+    - イメージは`/cache`配下に同梱分（数百MB単位）を持つため、`/cache`全体を保存するとジョブのたびに同梱分を圧縮・保存し直す
+    - キャッシュなしでジョブを実行したときの`/cache`配下の増分（`du -s /cache/*`の差）を測り、
+      増分の再取得が復元より遅いサブディレクトリだけを対象に選ぶ。
+      例は`pyfltr ci`がツールを導入する`/cache/mise`を対象にする。
+      PyPIやnpmから取得する依存（`/cache/uv`・`/cache/pnpm`）は短時間で再取得でき、同梱分も大きいため対象外にしている
+    - `key`は対象の内容を決める入力（イメージ同梱のpyfltrの版、`pyproject.toml`・`mise.toml`・ロックファイルなど）で構成し、
+      `github.run_id`のような実行ごとの値を含めない。主キーが完全一致した実行では保存を省くため、入力が変わらない実行で保存処理が起きない
+    - `restore-keys`による前方一致の復元は使わない。古い内容を引き継ぐと、uv・pnpm・miseの内容アドレス型のストアに
+      不要になった版が累積し続けるためである。入力が変わった実行は空の状態から作り直して保存する
+    - 対象のサブディレクトリはイメージ同梱分も含む。イメージの版をキーへ含めることで、
+      イメージを更新した後の実行は新しいキーで同梱の新しいツールから作り直し、復元が同梱ツールを古い版で上書きしない
+    - 内容がPythonの版に依存しないため、復元を`actions/cache/restore`、保存を`actions/cache/save`に分け、
+      全チェックを担う1つの版のジョブだけが保存する。同じキーを複数のジョブが同時に保存しようとする競合を避けるためである
+    - イメージには`zstd`を同梱しており、`actions/cache`はzstdで圧縮・展開する
 - `pyfltr ci`: イメージ同梱のpyfltrをそのまま使う
     - uvキャッシュを介した解決を毎回経由せず、コンテナビルド時に確定したバージョンで実行できる
     - 特定バージョンに固定したい場合は`image:`のタグ（`vX.Y.Z`）で揃える

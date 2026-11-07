@@ -110,16 +110,32 @@ jobs:
           # UV_FROZENではlockfileの最新性を検査しないため、この検査だけ解除する。
           env --unset=UV_FROZEN XDG_CONFIG_HOME="$config_dir" uv lock --check
 
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # キャッシュのキーへ使う、イメージが同梱するpyfltrの版。イメージが同梱するツール群はこの版で決まる。
+      # 版の表示を標準エラーへ書く旧版のイメージでも取り出せるよう、両方を受け取る。
+      - name: イメージ同梱のpyfltrの版
+        id: image
+        run: |
+          set -euo pipefail
+          output="$(pyfltr --version 2>&1)"
+          version="$(printf '%s\n' "$output" | sed -n 's/^pyfltr \([0-9][0-9A-Za-z.+-]*\)$/\1/p')"
+          if [ -z "$version" ]; then
+            echo "::error::イメージ同梱のpyfltrの版を取り出せない（pyfltr --versionの出力: ${output}）。出力の形式が変わった場合は、このステップの抽出処理を出力に合わせて直す"
+            exit 1
+          fi
+          echo "pyfltr-version=${version}" >> "$GITHUB_OUTPUT"
+
+      # キャッシュなしの計測（2026年11月）では、ジョブが/cacheへ加えるのはmise（smoke testのツール導入、約208MB）と
+      # uv（プロジェクトの依存、約229MB）で、pnpmは増えなかった。uvの増分はPyPIから短時間で取得でき、
+      # /cache/uvを保存するとイメージ同梱分（約845MB）まで毎回アーカイブし直すため、/cache/miseだけを保存する。
+      # キーは内容を決める入力（イメージのpyfltrの版と設定）のハッシュとし、restore-keysを置かない。
+      # 入力が同じ実行は完全一致で復元して保存を省き、イメージの更新後は新しいキーで同梱ツールから作り直す。
+      # 内容はPythonの版に依存しないため、保存は全検査を担う版のジョブだけが行い、同じキーの保存の競合を避ける。
+      - name: Restore /cache/mise
+        id: mise-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: /cache
-          # 固定キーでは一度保存されると更新されないため、run_idとrun_attemptを含めて毎回保存させる。
-          # restore-keysで直近のキャッシュを初期値として復元し、ジョブ中に変化した/cacheの内容を
-          # 新しいキーで保存して次の実行へ引き継ぐ。
-          # run_idは再実行（Re-run）で変化しないため、run_attemptを併記する。
-          # run_idだけでは再実行時にキーが完全一致し、対象の再実行中に変化した/cacheの内容が保存されない。
-          key: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}-
+          path: /cache/mise
+          key: pyfltr-mise-${{ runner.os }}-${{ steps.image.outputs.pyfltr-version }}-${{ hashFiles('pyproject.toml', 'mise.toml') }}
 
       - name: Install dependencies
         run: uv sync --all-groups --all-extras
@@ -140,6 +156,13 @@ jobs:
         env:
           CI: "true"
         run: uv run pyfltr ci --commands=pytest --output-format=github-annotations
+
+      - name: Save /cache/mise
+        if: ${{ matrix.python-version == '3.15' && steps.mise-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /cache/mise
+          key: ${{ steps.mise-cache.outputs.cache-primary-key }}
 
       - name: 失敗時に実行アーカイブを成果物として保存
         if: failure()
@@ -197,10 +220,10 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.pnpm-store-win.outputs.STORE_PATH }}
-          # 固定キーでは一度保存されると更新されないため、run_idとrun_attemptを含めて毎回保存させる。
-          # run_idは再実行（Re-run）で変化しないため、run_attemptを併記する。
-          key: pnpm-store-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: pnpm-store-${{ runner.os }}-
+          # ストアの内容はpyfltrがpnpx経由で起動するツールの指定で決まるため、その入力のハッシュをキーにする。
+          # 入力が同じ実行は完全一致で復元して保存を省く。restore-keysで古い内容を引き継ぐと
+          # 内容アドレス型のストアに不要な版が累積し続けるため、入力が変わった実行は空から作り直す。
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'uv.lock', 'pyfltr/config/model.py') }}
 
       - name: Setup mise
         uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
