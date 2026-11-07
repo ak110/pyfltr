@@ -921,12 +921,39 @@ with slot.hold(participant=sys.argv[1]):
     subprocess.run([sys.executable, "-c", "print('step 2')"], check=True)
 ```
 
-参加券は子1件につき1回だけ使い、環境変数からは自動採用しない。
+参加券は同時に1つのプロセスだけが使える。参加を終えた後は同じ子が順に起動する次のプロセスが使えるが、参加中のプロセスの子孫は同じ参加券で参加できない。
 親は`checkpoint()`中に新しい対象処理を開始せず、子の終了・異常終了を回収してから参加区間を閉じる。
 例外・取消時も、子とその配下の処理を終了・回収してから最外側の所有区間を閉じる。
 上の例の子は短いPython処理だけを起動する。長時間の処理を起動する子には、その配下も回収する終了処理を用意する。
 協調区間が閉じられた子や、`should_abort`で取り消された子は`WaitAborted`で停止する。
 実行枠の待機時間を記録する場合は、親の`cooperative_hold(on_wait_interval=...)`で受け取り、子の一時停止時間を同じ待機として加算しない。
+
+協調所有者からpyfltrを起動すると、pyfltrが起動するツールの区切りでも譲れる。
+親は参加券を環境変数`PYFLTR_EXECUTION_SLOT_TICKET`でpyfltrへ渡し、pyfltrの終了を待つ合間に`checkpoint()`を呼ぶ。
+pyfltrは参加券を受け取って親の参加者となり、起動する各ツールへツール1件専用の参加券を同じ環境変数で渡す。
+ツール側は`pyfltr.command.execution_slot.receive_ticket()`で参加券を受け取り、`hold(participant=...)`へ渡して区切りで`yield_to_waiters`を呼ぶ。
+`receive_ticket`は環境変数から参加券を除くため、ツールがさらに起動する子孫へは引き継がれない。
+参加券を受け取らないツールが実行中の間は、pyfltrは譲らない。
+参加券を受け取らないツールの子孫が環境変数の参加券を継承してpyfltrを起動した場合、そのpyfltrは参加できなければ参加せずに実行する。
+参加できても、ツールの他のプロセスが並んで稼働する間は停止を通知しないため、ツールの稼働中に待機中の検証と重なることはない。
+
+```python
+import os
+import subprocess
+import time
+
+import pyfltr.command.execution_slot as slot
+
+with slot.cooperative_hold(label="owner") as coordinator, coordinator.participant() as ticket:
+    env = {**os.environ, slot.TICKET_ENV: ticket}
+    with subprocess.Popen(["pyfltr", "run"], env=env) as child:
+        while child.poll() is None:
+            coordinator.checkpoint()
+            time.sleep(0.2)
+```
+
+参加した子が自分の子へさらに参加券を渡す場合は、子が`cooperative_hold(participant=...)`で協調所有者になる。
+中間の子は自分の参加者が全員停止した区切りでだけ上位へ停止を通知し、実行枠の解放と取り直しは最上位の親だけが行う。
 
 ## pre-commit・prekとの統合 {#precommit-integration}
 

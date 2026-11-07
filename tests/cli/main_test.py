@@ -425,6 +425,7 @@ def test_run_commands_with_cli_fail_fast_aborts_remaining_fixers(mocker):
     fix_fail = _make_result("ruff-check", returncode=1, command_type="linter")
     mocker.patch("pyfltr.command.dispatcher.execute_command", return_value=fix_fail)
     mock_args = mocker.MagicMock()
+    mock_args.participant_ticket = None
 
     base_ctx = _make_ctx(config, []).base
     results = pyfltr.cli.pipeline.run_commands_with_cli(
@@ -454,6 +455,7 @@ def test_run_commands_with_cli_without_fail_fast_continues(mocker):
 
     mocker.patch("pyfltr.command.dispatcher.execute_command", side_effect=_fake_execute)
     mock_args = mocker.MagicMock()
+    mock_args.participant_ticket = None
 
     base_ctx = _make_ctx(config, []).base
     results = pyfltr.cli.pipeline.run_commands_with_cli(

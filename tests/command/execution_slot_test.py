@@ -795,3 +795,187 @@ def test_allocate_sequence_keeps_legacy_requests_in_order(lock_dir: pathlib.Path
     aged = f"R{now_ms - 10**7:013d}"
     old = _paths(f"execution.wait-{step:020d}-{aged}-x")
     assert allocate(old, reacquire=False, now_ms=now_ms) == 2 * step
+
+
+_JOIN_SCRIPT = """import os
+import sys
+
+import pyfltr.command.execution_slot as slot
+
+lock_dir, ticket, mode = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    with slot.hold(lock_dir=__import__("pathlib").Path(lock_dir), participant=ticket):
+        if mode == "crash":
+            # 参加の終了処理をせずに異常終了し、参加中の登録を残す。
+            os._exit(3)
+except slot.WaitAborted:
+    sys.exit(9)
+"""
+
+
+def test_receive_ticket_removes_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """受け取った参加券は環境変数から除かれ、以後に起動する子孫へ継承されない。"""
+    monkeypatch.setenv(pyfltr.command.execution_slot.TICKET_ENV, "ticket")
+    assert pyfltr.command.execution_slot.receive_ticket() == "ticket"
+    assert pyfltr.command.execution_slot.TICKET_ENV not in os.environ
+    assert pyfltr.command.execution_slot.receive_ticket() is None
+
+
+def test_tool_environ_sets_bound_ticket_and_strips_inherited() -> None:
+    """ツールへは割り当てた参加券だけを渡し、割り当てが無ければ継承した参加券を除く。"""
+    name = pyfltr.command.execution_slot.TICKET_ENV
+    env = {"PATH": "/bin", name: "inherited"}
+    assert pyfltr.command.execution_slot.tool_environ(env) == {"PATH": "/bin"}
+    with pyfltr.command.execution_slot.bind_tool_ticket("tool"):
+        assert pyfltr.command.execution_slot.tool_environ(env) == {"PATH": "/bin", name: "tool"}
+    assert pyfltr.command.execution_slot.tool_environ({"PATH": "/bin"}) == {"PATH": "/bin"}
+
+
+def test_coordinated_hold_without_coordinator_when_nested(lock_dir: pathlib.Path) -> None:
+    """同じスレッドの入れ子では協調所有者にならず、参加券を発行しない。"""
+    with pyfltr.command.execution_slot.coordinated_hold(lock_dir=lock_dir) as outer:
+        assert outer is not None
+        with pyfltr.command.execution_slot.coordinated_hold(lock_dir=lock_dir) as inner:
+            assert inner is None
+
+
+@pytest.mark.parametrize("first", ["finish", "crash"])
+def test_ticket_is_reusable_after_participant_exits(tmp_path: pathlib.Path, lock_dir: pathlib.Path, first: str) -> None:
+    """参加を終えた参加券と、参加中に異常終了したプロセスの参加券は、次に起動したプロセスが使える。
+
+    同じツールが対象ごとに子プロセスを順に起動しても、各プロセスが同じ参加券で参加できることを確かめる。
+    """
+    script = tmp_path / "join.py"
+    script.write_text(_JOIN_SCRIPT, encoding="utf-8")
+    with (
+        pyfltr.command.execution_slot.cooperative_hold(lock_dir=lock_dir) as coordinator,
+        coordinator.participant() as ticket,
+    ):
+        returncodes = [
+            subprocess.run([sys.executable, str(script), str(lock_dir), ticket, mode], check=False).returncode
+            for mode in (first, "finish")
+        ]
+    assert returncodes == [3 if first == "crash" else 0, 0]
+
+
+_BUSY_TICKET_SCRIPT = """import pathlib
+import sys
+
+import pyfltr.command.execution_slot as slot
+
+lock_dir, ticket = pathlib.Path(sys.argv[1]), sys.argv[2]
+with slot.coordinated_hold(lock_dir=lock_dir, participant=ticket) as coordinator:
+    print("coordinator" if coordinator is not None else "inherited", flush=True)
+"""
+
+
+def test_busy_ticket_falls_back_to_inherited_section(tmp_path: pathlib.Path, lock_dir: pathlib.Path) -> None:
+    """参加中の参加券を継承した子孫は、参加せずに祖先の所有を継承した区間で処理を続ける。
+
+    参加券を受け取らないツール（pytestなど）の子孫は環境変数の参加券を継承する。
+    参加を拒否された子孫が処理全体を中断すると、ツールの結果が全てスキップされて成功扱いになるため、継承した区間で続けることを確かめる。
+    """
+    join_script = tmp_path / "join.py"
+    join_script.write_text(_JOIN_WAIT_SCRIPT, encoding="utf-8")
+    busy_script = tmp_path / "busy.py"
+    busy_script.write_text(_BUSY_TICKET_SCRIPT, encoding="utf-8")
+    with (
+        pyfltr.command.execution_slot.cooperative_hold(lock_dir=lock_dir) as coordinator,
+        coordinator.participant() as ticket,
+        subprocess.Popen([sys.executable, str(join_script), str(lock_dir), ticket, str(tmp_path)]) as joined,
+    ):
+        try:
+            _wait_for_file(tmp_path / "joined")
+            busy = subprocess.run(
+                [sys.executable, str(busy_script), str(lock_dir), ticket],
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=30,
+            )
+        finally:
+            (tmp_path / "release").touch()
+            joined.wait(timeout=30)
+    assert (busy.returncode, busy.stdout.strip()) == (0, "inherited"), busy.stderr
+    assert joined.returncode == 0
+
+
+_JOIN_WAIT_SCRIPT = """import pathlib
+import sys
+import time
+
+import pyfltr.command.execution_slot as slot
+
+lock_dir, ticket, root = pathlib.Path(sys.argv[1]), sys.argv[2], pathlib.Path(sys.argv[3])
+with slot.hold(lock_dir=lock_dir, participant=ticket):
+    (root / "joined").touch()
+    deadline = time.monotonic() + 30
+    while not (root / "release").exists() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    slot.yield_to_waiters()
+"""
+
+_BRANCHED_TOOL_SCRIPT = """import pathlib
+import subprocess
+import sys
+
+lock_dir, ticket, root, sibling = sys.argv[1], sys.argv[2], pathlib.Path(sys.argv[3]), sys.argv[4] == "1"
+# 参加券を受け取らないツールが、参加する子と参加しない子を同時に起動する（pytest-xdistのworkerに相当する）。
+sleeper = (
+    subprocess.Popen([sys.executable, "-c", "import sys, time; time.sleep(float(sys.argv[1]))", "3"])
+    if sibling
+    else None
+)
+subprocess.run([sys.executable, str(root / "join.py"), lock_dir, ticket, str(root)], check=True)
+if sleeper is not None:
+    sleeper.wait()
+"""
+
+
+@pytest.mark.parametrize("sibling", [False, True])
+def test_participant_does_not_pause_beside_other_tool_processes(
+    tmp_path: pathlib.Path, lock_dir: pathlib.Path, sibling: bool
+) -> None:
+    """参加者は、協調所有者までの経路にツールの他のプロセスが並ぶ間は停止を通知しない。
+
+    参加券を受け取らないツールの子孫が参加しても、ツールの他のプロセスの稼働中に所有者が譲らないことを確かめる。
+    経路に分岐が無い場合は従来どおり停止を通知し、待機者がツールの稼働中に実行される。
+    """
+    (tmp_path / "join.py").write_text(_JOIN_WAIT_SCRIPT, encoding="utf-8")
+    tool_script = tmp_path / "tool.py"
+    tool_script.write_text(_BRANCHED_TOOL_SCRIPT, encoding="utf-8")
+    tool_alive_at_waiter: list[bool] = []
+    tool: subprocess.Popen | None = None
+
+    def waiter() -> None:
+        with pyfltr.command.execution_slot.hold(lock_dir=lock_dir):
+            assert tool is not None
+            tool_alive_at_waiter.append(tool.poll() is None)
+
+    with pyfltr.command.execution_slot.cooperative_hold(lock_dir=lock_dir) as coordinator:
+        with coordinator.participant() as ticket:
+            thread = threading.Thread(target=waiter)
+            with subprocess.Popen(
+                [sys.executable, str(tool_script), str(lock_dir), ticket, str(tmp_path), "1" if sibling else "0"]
+            ) as tool:
+                thread.start()
+                _wait_for_file(tmp_path / "joined")
+                deadline = time.monotonic() + 30
+                while not pyfltr.command.execution_slot.yield_requested():
+                    assert time.monotonic() < deadline
+                    time.sleep(0.01)
+                (tmp_path / "release").touch()
+                while tool.poll() is None:
+                    coordinator.checkpoint()
+                    time.sleep(0.05)
+        assert tool.returncode == 0
+    thread.join(timeout=30)
+    assert tool_alive_at_waiter == [not sibling]
+
+
+def _wait_for_file(path: pathlib.Path) -> None:
+    deadline = time.monotonic() + 30
+    while not path.exists():
+        assert time.monotonic() < deadline, path
+        time.sleep(0.01)

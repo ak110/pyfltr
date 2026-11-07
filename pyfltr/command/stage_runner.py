@@ -2,6 +2,7 @@
 
 import collections.abc
 import concurrent.futures
+import contextlib
 import dataclasses
 import datetime as dt
 
@@ -75,6 +76,10 @@ class StageCallbacks:
     """実行枠の待機区間（`SlotWait`）の開始と終了を受け取る通知。実行アーカイブへの保存に使う。"""
 
 
+_CHECKPOINT_INTERVAL = 0.5
+"""参加券を渡したツールの実行中に、協調の譲渡点を呼ぶ間隔（秒）。ツールの停止通知から譲渡までの遅れの上限になる。"""
+
+
 def run_stages(
     commands: list[str],
     base_ctx: pyfltr.command.core_.ExecutionBaseContext,
@@ -84,6 +89,7 @@ def run_stages(
     fail_fast: bool = False,
     callbacks: StageCallbacks | None = None,
     results: list[pyfltr.command.core_.CommandResult] | None = None,
+    participant_ticket: str | None = None,
 ) -> list[pyfltr.command.core_.CommandResult]:
     """fix、直列formatter、LPT順の並列lint・testを共通の制御で実行する。
 
@@ -97,6 +103,11 @@ def run_stages(
     枠の待機区間は`callbacks.on_slot_wait`へ通知する。
     外側が協調所有者、または参加券付きholdなら、同じ回収済みの区切りから協調譲渡を通知する。
     実行した各ツールの結果には、`execute`の直前と直後の時刻を`started_at`・`finished_at`として設定する。
+
+    自ら枠を取得した場合と`participant_ticket`（上位から受け取った参加券）を渡した場合は協調所有者になり、
+    各ツールの子プロセスへツール1件専用の参加券を環境変数で渡す。参加券を使ったツールが区切りで停止を通知すると、
+    ツールの実行中も所有スレッドが定期的に譲渡点を呼んで譲る。参加しないツールが1件でも稼働していれば譲らない。
+    同じスレッドの入れ子と祖先から継承した区間では参加券を渡さず、従来どおりツールを回収した区切りでだけ譲る。
     """
     hooks = callbacks if callbacks is not None else StageCallbacks()
     collected = results if results is not None else []
@@ -144,9 +155,41 @@ def run_stages(
     def checkpoint() -> None:
         pyfltr.command.execution_slot.yield_to_waiters()
 
-    def execute_stages() -> None:
+    # 協調所有者のときだけ値を持つ。ツールの実行中の譲渡点と参加券の発行に使う。
+    coordinator: pyfltr.command.execution_slot.SlotCoordinator | None = None
+
+    def run_with_ticket(command: str, fix_stage: bool, ticket: str | None) -> pyfltr.command.core_.CommandResult:
+        with pyfltr.command.execution_slot.bind_tool_ticket(ticket):
+            return execute(command, fix_stage)
+
+    def submit(
+        executor: concurrent.futures.ThreadPoolExecutor, command: str, fix_stage: bool
+    ) -> tuple[concurrent.futures.Future, contextlib.ExitStack]:
+        # 参加券の登録はツールの起動前に所有スレッドで行い、ツールの回収後に閉じる。
+        # 登録中の参加者は停止を通知するまで稼働中とみなされ、参加しないツールの実行中に譲らないためである。
+        registration = contextlib.ExitStack()
+        ticket = registration.enter_context(coordinator.participant()) if coordinator is not None else None
+        try:
+            future = executor.submit(run_with_ticket, command, fix_stage, ticket)
+        except BaseException:
+            registration.close()
+            raise
+        return future, registration
+
+    def run_serial(
+        executor: concurrent.futures.ThreadPoolExecutor, command: str, fix_stage: bool
+    ) -> pyfltr.command.core_.CommandResult:
+        if coordinator is None:
+            return execute(command, fix_stage)
+        future, registration = submit(executor, command, fix_stage)
+        with registration:
+            while _next_completed([future], _CHECKPOINT_INTERVAL) is None:
+                checkpoint()
+            return future.result()
+
+    def execute_stages(serial_executor: concurrent.futures.ThreadPoolExecutor) -> None:
         for command in fixers:
-            result = execute(command, True)
+            result = run_serial(serial_executor, command, True)
             if result.failed:
                 fix_failures[command] = result
             else:
@@ -165,7 +208,7 @@ def run_stages(
             checkpoint()
 
         for index, command in enumerate(formatters):
-            result = execute(command, False)
+            result = run_serial(serial_executor, command, False)
             record(result, "formatter")
             if hooks.is_interrupted() or (fail_fast and result.failed):
                 skip([*formatters[index + 1 :], *parallel])
@@ -177,8 +220,12 @@ def run_stages(
             aborted = False
             aborted_commands: set[str] = set()
             pending = list(parallel)
-            with concurrent.futures.ThreadPoolExecutor(max_workers=config["jobs"]) as executor:
+            with (
+                concurrent.futures.ThreadPoolExecutor(max_workers=config["jobs"]) as executor,
+                contextlib.ExitStack() as registrations,
+            ):
                 future_to_command: dict[concurrent.futures.Future, str] = {}
+                future_to_registration: dict[concurrent.futures.Future, contextlib.ExitStack] = {}
                 while pending or future_to_command:
                     while (
                         pending
@@ -188,14 +235,21 @@ def run_stages(
                         and (not future_to_command or not pyfltr.command.execution_slot.yield_requested())
                     ):
                         command = pending.pop(0)
-                        future_to_command[executor.submit(execute, command, False)] = command
+                        future, registration = submit(executor, command, False)
+                        future_to_command[future] = command
+                        future_to_registration[future] = registrations.enter_context(registration)
                     if not future_to_command:
                         if aborted or hooks.is_interrupted():
                             aborted_commands.update(pending)
                             break
                         continue
-                    future = next(concurrent.futures.as_completed(future_to_command))
+                    future = _next_completed(future_to_command, _CHECKPOINT_INTERVAL if coordinator is not None else None)
+                    if future is None:
+                        # 参加券を渡したツールが区切りで停止していれば、ツールの実行中でも譲る
+                        checkpoint()
+                        continue
                     command = future_to_command.pop(future)
+                    future_to_registration.pop(future).close()
                     try:
                         result = future.result()
                     except concurrent.futures.CancelledError:
@@ -216,11 +270,17 @@ def run_stages(
         flush_fix_failures()
 
     try:
-        with pyfltr.command.execution_slot.hold(
-            should_abort=hooks.is_interrupted, on_wait=_notify_slot_wait, on_wait_interval=hooks.on_slot_wait
+        with (
+            pyfltr.command.execution_slot.coordinated_hold(
+                should_abort=hooks.is_interrupted,
+                on_wait=_notify_slot_wait,
+                on_wait_interval=hooks.on_slot_wait,
+                participant=participant_ticket,
+            ) as coordinator,
+            concurrent.futures.ThreadPoolExecutor(max_workers=1) as serial_executor,
         ):
             try:
-                execute_stages()
+                execute_stages(serial_executor)
             except BaseException:
                 # 例外（CLIのCtrl+Cなど）で抜ける場合も、起動中の子プロセスを止めてから実行枠を解放する。
                 pyfltr.command.process.terminate_active_processes()
@@ -231,6 +291,16 @@ def run_stages(
         skip([command for command in [*formatters, *parallel] if command not in completed], reason=str(error) or None)
         flush_fix_failures()
     return collected
+
+
+def _next_completed(
+    futures: collections.abc.Iterable[concurrent.futures.Future], timeout: float | None
+) -> concurrent.futures.Future | None:
+    """最初に完了したFutureを返す。`timeout`秒以内に完了しなければ`None`を返す。"""
+    try:
+        return next(concurrent.futures.as_completed(futures, timeout=timeout))
+    except TimeoutError:
+        return None
 
 
 def _with_body_interval(

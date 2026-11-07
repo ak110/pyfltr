@@ -432,8 +432,10 @@ class StageExecutorControl:
             future.set_exception(e)
 
     def _as_completed(
-        self, fs: collections.abc.Iterable[concurrent.futures.Future]
+        self, fs: collections.abc.Iterable[concurrent.futures.Future], timeout: float | None = None
     ) -> collections.abc.Iterator[concurrent.futures.Future]:
+        # 未開始のFutureは返す直前に実行するため、待機の上限に達することはない
+        del timeout
         futures = list(fs)
         yield from [future for future in futures if future not in self._pending]
         for future in futures:

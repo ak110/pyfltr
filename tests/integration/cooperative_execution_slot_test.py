@@ -242,7 +242,7 @@ def _scenario_sibling(root: pathlib.Path, ticket: str) -> int:
 def _scenario_owner(root: pathlib.Path) -> int:
     """参加区間を子の回収後に閉じ、checkpointの合間に全子を管理する。"""
     waits = []
-    children: list[tuple[subprocess.Popen, contextlib.AbstractContextManager]] = []
+    children: list[tuple[subprocess.Popen, contextlib.ExitStack]] = []
     try:
         with (
             slot.cooperative_hold(
@@ -254,8 +254,9 @@ def _scenario_owner(root: pathlib.Path) -> int:
         ):
             try:
                 for mode in ("child", "sibling"):
-                    registration = coordinator.participant()
-                    ticket = registration.__enter__()
+                    # 参加区間は子の回収後に閉じるため、子ごとのExitStackで寿命を持たせる。
+                    registration = contextlib.ExitStack()
+                    ticket = registration.enter_context(coordinator.participant())
                     process = processes.enter_context(subprocess.Popen([sys.executable, __file__, mode, str(root), ticket]))
                     children.append((process, registration))
                 deadline = time.monotonic() + 25
@@ -263,7 +264,7 @@ def _scenario_owner(root: pathlib.Path) -> int:
                     for process, registration in children[:]:
                         if process.poll() is not None:
                             process.wait()
-                            registration.__exit__(None, None, None)
+                            registration.close()
                             children.remove((process, registration))
                     if (root / "owner-error").exists():
                         raise RuntimeError("owner-error")
@@ -280,7 +281,7 @@ def _scenario_owner(root: pathlib.Path) -> int:
                     except subprocess.TimeoutExpired:
                         process.terminate()
                         process.wait(timeout=10)
-                    registration.__exit__(None, None, None)
+                    registration.close()
     except slot.WaitAborted:
         return 7
     finally:

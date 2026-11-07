@@ -33,6 +33,15 @@ pyfltr以外の検証を起動する呼出元（他のツールのスクリプ�
 所有者が全参加者の停止・回収を確認して譲り、再取得してから子を再開させる。
 子プロセスが祖先の所有を単独で解除すると、所有者が起動中の別の子と待機者の実行が重なるためである。
 
+参加券で参加した子は、`cooperative_hold(participant=...)`で自分の子の協調所有者にもなれる（多段の協調）。
+中間の協調所有者は、自分の参加者が全員停止し、自分が起動した対象処理を全て回収した区切りでだけ上位へ停止を通知する。
+ロックの解放と取り直しは最上位の所有者だけが行い、再取得後は上位から下位の順に再開させる。
+
+参加券を子プロセスへ渡す手段として、環境変数`PYFLTR_EXECUTION_SLOT_TICKET`（`TICKET_ENV`）を使える。
+`hold`はこの変数を自動で読まない。起動された側が`receive_ticket`で明示的に受け取り、
+受け取りと同時に`os.environ`から除くため、受け取ったプロセスの子孫へは継承されない。
+pyfltrは起動する各ツールへツール1件専用の参加券をこの変数で渡し、CLI自身も起動時に上位の参加券を受け取る。
+
 取得規則:
 
 - 同じスレッドが保持中なら入れ子として再入する
@@ -62,6 +71,7 @@ import contextlib
 import dataclasses
 import datetime as dt
 import json
+import logging
 import os
 import pathlib
 import tempfile
@@ -74,6 +84,8 @@ import psutil
 
 import pyfltr.file_lock
 import pyfltr.user_cache
+
+logger = logging.getLogger(__name__)
 
 _LOCK_FILENAME = "execution.lock"
 _OWNER_FILENAME = "execution.owner.json"
@@ -100,8 +112,11 @@ _SEQUENCE_STEP = 2**20
 """末尾へ登録する要求の連番の間隔。新規要求を取り直し要求の前へ置く空き番号を残す。"""
 _REACQUIRE_MARK = "R"
 """取り直し要求のファイル名で、連番の次に置く印。旧版の乱数部は小文字だけのため区別できる。"""
+TICKET_ENV = "PYFLTR_EXECUTION_SLOT_TICKET"
+"""参加券を子プロセスへ渡す環境変数の名前。受け取りは`receive_ticket`で行う。"""
 
 _local = threading.local()
+_tool_ticket = threading.local()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -149,6 +164,14 @@ class WaitAborted(Exception):
     """取得待機の取消や協調区間の終了により処理を中断した。"""
 
 
+class ParticipationRejected(WaitAborted):
+    """参加券で協調区間へ参加できなかった。
+
+    参加券を受け取らないツールの子孫は、環境変数に残った参加券を継承する（pytest-xdistのworkerなど）。
+    `coordinated_hold`はこの例外を受けると参加券を使わずに区間を開き、祖先の所有を継承した区間として続ける。
+    """
+
+
 @dataclasses.dataclass
 class _Lease:
     lock: pyfltr.file_lock.FileLock
@@ -172,6 +195,41 @@ class _Lease:
 def default_lock_dir() -> pathlib.Path:
     """実行枠のロックを置くディレクトリを返す。"""
     return pyfltr.user_cache.default_cache_root() / "locks"
+
+
+def receive_ticket() -> str | None:
+    """親から環境変数`TICKET_ENV`で渡された参加券を受け取る。無ければ`None`を返す。
+
+    受け取った参加券は`os.environ`から除き、このプロセスが以後に起動する子孫へ継承させない。
+    同じ参加券で複数のプロセスが同時に参加すると、親が一方の停止だけを見て譲り、他方の実行と待機者が重なるためである。
+    受け取った参加券は`hold(participant=...)`か`cooperative_hold(participant=...)`へ渡す。
+    """
+    return os.environ.pop(TICKET_ENV, None) or None
+
+
+@contextlib.contextmanager
+def bind_tool_ticket(ticket: str | None) -> collections.abc.Generator[None, None, None]:
+    """呼出スレッドが起動するツールの子プロセスへ渡す参加券を設定する。pyfltrの段実行が使う。"""
+    previous = getattr(_tool_ticket, "value", None)
+    _tool_ticket.value = ticket
+    try:
+        yield
+    finally:
+        _tool_ticket.value = previous
+
+
+def tool_environ(env: dict[str, str]) -> dict[str, str]:
+    """ツールの子プロセスへ渡す環境変数を返す。
+
+    呼出スレッドへ`bind_tool_ticket`で参加券が設定されていれば`TICKET_ENV`へ設定し、無ければ除く。
+    除くのは、pyfltr自身へ渡された参加券を受け取らずに起動したツールへ継承させないためである。
+    """
+    ticket: str | None = getattr(_tool_ticket, "value", None)
+    if ticket is None:
+        if TICKET_ENV not in env:
+            return env
+        return {key: value for key, value in env.items() if key != TICKET_ENV}
+    return {**env, TICKET_ENV: ticket}
 
 
 @contextlib.contextmanager
@@ -216,7 +274,10 @@ def hold(
     lock = pyfltr.file_lock.FileLock(directory / _LOCK_FILENAME)
     owner_path = directory / _OWNER_FILENAME
     lease = _Lease(lock, owner_path, label, should_abort, on_wait_interval)
-    joined = _Participant.join(directory, participant, should_abort) if participant is not None else None
+    try:
+        joined = _Participant.join(directory, participant, should_abort) if participant is not None else None
+    except WaitAborted as exc:
+        raise ParticipationRejected(str(exc)) from exc
     lease.participant = joined
     lease.acquired = _observe(
         on_wait_interval,
@@ -286,10 +347,11 @@ def yield_to_waiters() -> bool:
         譲って取り直した場合は`True`、譲らなかった場合は`False`。
     """
     lease: _Lease | None = getattr(_local, "lease", None)
-    if lease is not None and lease.participant is not None:
-        return lease.participant.checkpoint()
+    # 中間の協調所有者は参加者でもある。自分の参加者の停止を確かめてから上位へ通知するため、協調制御を先に判定する。
     if lease is not None and lease.coordinator is not None:
         return lease.coordinator.checkpoint()
+    if lease is not None and lease.participant is not None:
+        return lease.participant.checkpoint()
     return _yield_lease()
 
 
@@ -327,6 +389,7 @@ def cooperative_hold(
     on_wait: collections.abc.Callable[[SlotOwner | None], None] | None = None,
     on_wait_interval: WaitIntervalCallback | None = None,
     lock_dir: pathlib.Path | None = None,
+    participant: str | None = None,
 ) -> collections.abc.Generator["SlotCoordinator", None, None]:
     """最外側で取得した枠を、明示参加した子と協調して譲る。
 
@@ -335,19 +398,67 @@ def cooperative_hold(
     所有者はcheckpoint中に新しい対象処理を開始しない。例外・取消時もfinallyで
     子とその対象処理を終了・回収してからparticipant区間、最外側の区間の順に閉じる。
     子の生成・停止・回収は呼出元の責任であり、このAPIは代行しない。
+
+    `participant`へ上位の参加券を渡すと、上位の参加者のまま自分の子の協調所有者になる（多段の協調）。
+    この場合は枠を取得せず、checkpointは自分の参加者が全員停止した区切りで上位へ停止を通知し、
+    上位の所有者が譲って取り直した後に自分の参加者を再開させる。
     """
     if getattr(_local, "depth", 0):
         raise ValueError("cooperative_holdは最外側で開いてください。")
-    with hold(
+    with coordinated_hold(
         label=label,
         should_abort=should_abort,
         on_wait=on_wait,
         on_wait_interval=on_wait_interval,
         lock_dir=lock_dir,
-    ):
-        lease: _Lease = _local.lease
-        if not lease.acquired:
+        participant=participant,
+    ) as coordinator:
+        if coordinator is None:
             raise ValueError("祖先から継承した枠は協調所有者へ変更できません。祖先の参加券を使ってください。")
+        yield coordinator
+
+
+@contextlib.contextmanager
+def coordinated_hold(
+    *,
+    label: str | None = None,
+    should_abort: collections.abc.Callable[[], bool] | None = None,
+    on_wait: collections.abc.Callable[[SlotOwner | None], None] | None = None,
+    on_wait_interval: WaitIntervalCallback | None = None,
+    lock_dir: pathlib.Path | None = None,
+    participant: str | None = None,
+) -> collections.abc.Generator["SlotCoordinator | None", None, None]:
+    """協調所有者になれる場合だけ協調区間を開き、なれない場合は通常の`hold`として区間を開く。
+
+    最外側で枠を取得した場合と参加券で参加した場合は`SlotCoordinator`を返す。
+    同じスレッドの入れ子と、祖先から所有を継承した区間は`None`を返す。
+    これらの区間は子の区切りで譲れないため、呼出元は子へ参加券を渡さず、子の回収後の区切りだけで`yield_to_waiters`を呼ぶ。
+    """
+    if getattr(_local, "depth", 0):
+        if participant is not None:
+            raise ValueError("参加券は最外側のholdへ渡してください。")
+        with hold(label=label, should_abort=should_abort, on_wait=on_wait, on_wait_interval=on_wait_interval):
+            yield None
+        return
+    with contextlib.ExitStack() as stack:
+        options: dict[str, typing.Any] = {
+            "label": label,
+            "should_abort": should_abort,
+            "on_wait": on_wait,
+            "on_wait_interval": on_wait_interval,
+            "lock_dir": lock_dir,
+        }
+        try:
+            stack.enter_context(hold(**options, participant=participant))
+        except ParticipationRejected as exc:
+            # 参加できない参加券は、参加券を受け取らなかった場合と同じ区間で続ける。
+            # 祖先が所有していれば継承した区間となり、上位の所有者はこのプロセスを含むツールの停止を待つため排他は保たれる。
+            logger.debug("参加券を使わずに実行枠の区間を開きます: %s", exc)
+            stack.enter_context(hold(**options))
+        lease: _Lease = _local.lease
+        if not lease.acquired and lease.participant is None:
+            yield None
+            return
         coordinator = SlotCoordinator(lease)
         lease.coordinator = coordinator
         try:
@@ -366,8 +477,17 @@ class SlotCoordinator:
         self._id = uuid.uuid4().hex
         self._path = lease.owner_path.parent / f"execution.cooperative-{self._id}.json"
         owner = read_owner(lease.owner_path.parent)
-        assert owner is not None
-        self._state: dict[str, typing.Any] = {"owner": dataclasses.asdict(owner), "generation": 0, "participants": {}}
+        if owner is None:
+            raise WaitAborted("実行枠の保持者記録を読めません。" + _COOPERATIVE_ABORT_ACTION)
+        current = psutil.Process()
+        # ownerはロックの保持者（最上位の所有者）、coordinatorはこの制御区間を開いたプロセスを表す。
+        # 多段の協調では両者が異なり、参加者は直近の協調所有者が祖先であることで生存を判定する。
+        self._state: dict[str, typing.Any] = {
+            "owner": dataclasses.asdict(owner),
+            "coordinator": {"pid": current.pid, "create_time": current.create_time()},
+            "generation": 0,
+            "participants": {},
+        }
         with _queue_guard(self._path.parent):
             self._save()
 
@@ -404,17 +524,19 @@ class SlotCoordinator:
         """全参加者が一時停止した区切りで譲渡し、再取得後に再開させる。
 
         登録中・稼働中・終了未回収の子があれば保持を続ける。
+        停止を通知した後に終了した子は、回収されるまで停止扱いにしない。
         待機者が取り消された場合も停止済みの子を再開させる。
+        参加券で参加した中間の協調所有者は、枠を解放せずに上位へ停止を通知し、上位の再開を待ってから子を再開させる。
         """
         self._check_thread()
-        if not self._lease.acquired:
+        if not self._lease.acquired and self._lease.participant is None:
             raise WaitAborted("協調所有者が実行枠を保持していません。" + _COOPERATIVE_ABORT_ACTION)
         with _queue_guard(self._path.parent):
             self._state = _read_control(self._path)
-            if any(value["state"] != "paused" for value in self._state["participants"].values()):
+            if any(value["state"] != "paused" or not _is_alive(value) for value in self._state["participants"].values()):
                 return False
         try:
-            yielded = _yield_lease()
+            yielded = self._lease.participant.checkpoint() if self._lease.participant is not None else _yield_lease()
         except BaseException:
             self.close()
             raise
@@ -449,7 +571,8 @@ def _read_control(path: pathlib.Path) -> dict[str, typing.Any]:
 class _Participant:
     path: pathlib.Path
     identifier: str
-    owner: SlotOwner
+    coordinator: SlotOwner
+    """直近の協調所有者のプロセス。祖先でなくなったら協調区間が失われたとみなす。"""
     should_abort: collections.abc.Callable[[], bool] | None
 
     @classmethod
@@ -472,20 +595,28 @@ class _Participant:
         with _queue_guard(directory):
             state = _read_control(path)
             owner = SlotOwner(**state["owner"])
+            coordinator = _coordinator_of(state)
             current_owner = read_owner(directory)
             registration = state["participants"].get(identifiers[1])
             if (
                 current_owner is None
                 or current_owner.pid != owner.pid
                 or current_owner.create_time != owner.create_time
-                or not _is_ancestor(owner)
+                or not _is_ancestor(coordinator)
                 or registration is None
-                or registration["state"] != "registered"
             ):
                 raise WaitAborted("参加区間と現在の所有者が一致しません。" + _COOPERATIVE_ABORT_ACTION)
-            registration.update(state="active", pid=os.getpid(), create_time=psutil.Process().create_time())
+            # 同じ参加券は、参加中のプロセスが生存する間は別のプロセスに使わせない（子孫による重複参加を含む）。
+            # 参加を終えた後と、参加中のプロセスが異常終了した後は、同じツールが順に起動する次のプロセスが使える。
+            if registration["state"] != "registered" and _is_alive(registration):
+                raise WaitAborted(
+                    "参加券は別のプロセスが参加中です。参加券を受け取ったプロセスは子孫へ同じ参加券を渡さないでください。"
+                    + _COOPERATIVE_ABORT_ACTION
+                )
+            current = psutil.Process()
+            registration.update(state="active", pid=current.pid, create_time=current.create_time())
             path.write_text(json.dumps(state), encoding="utf-8")
-        return cls(path, identifiers[1], owner, should_abort)
+        return cls(path, identifiers[1], coordinator, should_abort)
 
     def checkpoint(self) -> bool:
         if self.should_abort is not None and self.should_abort():
@@ -494,9 +625,9 @@ class _Participant:
             state = _read_control(self.path)
             if self.identifier not in state["participants"]:
                 raise WaitAborted("協調参加の登録が失われました。" + _COOPERATIVE_ABORT_ACTION)
-            if not _is_ancestor(self.owner):
+            if not _is_ancestor(self.coordinator):
                 raise WaitAborted("協調所有者が終了しました。" + _COOPERATIVE_ABORT_ACTION)
-            if not _waiters(self.path.parent):
+            if not _waiters(self.path.parent) or not _only_chain_to_caller(self.coordinator):
                 return False
             state["participants"][self.identifier]["state"] = "paused"
             generation = state["generation"]
@@ -511,18 +642,42 @@ class _Participant:
                     raise WaitAborted("協調参加の登録が失われました。" + _COOPERATIVE_ABORT_ACTION)
                 if state["generation"] > generation and registration["state"] == "active":
                     return bool(state["yielded"])
-            if not _is_ancestor(self.owner):
+            if not _is_ancestor(self.coordinator):
                 raise WaitAborted("協調所有者が終了しました。" + _COOPERATIVE_ABORT_ACTION)
             time.sleep(_POLL_INTERVAL)
 
     def finish(self) -> None:
+        # 参加を終えた参加券は登録状態へ戻し、同じツールが順に起動する次のプロセスが同じ参加券で参加できるようにする。
+        # 所有者は登録状態の参加者を稼働中とみなすため、参加者のいない区間でも譲らない。
         with _queue_guard(self.path.parent):
             if self.path.exists():
                 state = _read_control(self.path)
                 registration = state["participants"].get(self.identifier)
                 if registration is not None:
-                    registration["state"] = "finished"
+                    registration["state"] = "registered"
+                    registration.pop("pid", None)
+                    registration.pop("create_time", None)
                     self.path.write_text(json.dumps(state), encoding="utf-8")
+
+
+def _coordinator_of(state: dict[str, typing.Any]) -> SlotOwner:
+    """制御区間を開いたプロセスを返す。協調所有者の記録を持たない旧形式は保持者とみなす。"""
+    owner = SlotOwner(**state["owner"])
+    coordinator = state.get("coordinator")
+    if coordinator is None:
+        return owner
+    return dataclasses.replace(owner, pid=int(coordinator["pid"]), create_time=float(coordinator["create_time"]))
+
+
+def _is_alive(registration: dict[str, typing.Any]) -> bool:
+    """参加者の登録に記録したプロセスが生存するかを返す。プロセスを記録していない登録は生存とみなす。"""
+    if "pid" not in registration:
+        return True
+    try:
+        process = psutil.Process(int(registration["pid"]))
+        return abs(process.create_time() - float(registration["create_time"])) < _CREATE_TIME_TOLERANCE
+    except psutil.Error:
+        return False
 
 
 def _observe(
@@ -724,6 +879,27 @@ def _read_owner(owner_path: pathlib.Path) -> SlotOwner | None:
         )
     except (OSError, ValueError, TypeError, KeyError, AttributeError):
         return None
+
+
+def _only_chain_to_caller(coordinator: SlotOwner) -> bool:
+    """協調所有者から呼出元までの経路の各プロセスが、経路上の子1件だけを持つかを返す。
+
+    参加券は環境変数で渡すため、参加券を受け取らないツールの子孫も同じ参加券で参加できてしまう。
+    そのような子孫が停止を通知すると、所有者はツールの他のプロセス（pytest-xdistの他のworkerなど）の稼働中に譲る。
+    経路の途中に分岐が無ければ、ツールのプロセスは呼出元とその祖先のラッパー（`uv run`など）だけであり、停止を通知してよい。
+    呼出元自身の子は、呼出元が協調所有者として回収または停止を確かめた処理である。
+    """
+    try:
+        child = psutil.Process()
+        for parent in child.parents():
+            if parent.pid == coordinator.pid:
+                return True
+            if [process.pid for process in parent.children()] != [child.pid]:
+                return False
+            child = parent
+    except psutil.Error:
+        return False
+    return False
 
 
 def _is_ancestor(owner: SlotOwner) -> bool:

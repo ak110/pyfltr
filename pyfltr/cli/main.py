@@ -25,6 +25,7 @@ import pyfltr.cli.replace_subcmd
 import pyfltr.cli.runs
 import pyfltr.cli.shell_completion
 import pyfltr.command.env
+import pyfltr.command.execution_slot
 import pyfltr.state.runs
 
 logger = logging.getLogger(__name__)
@@ -70,6 +71,10 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
     """処理の実行。"""
     if sys_args is None:
         sys_args = sys.argv[1:]
+
+    # 上位の協調所有者から渡された実行枠の参加券を、子プロセスを起動する前に受け取る。
+    # 受け取ると環境変数から除かれ、pyfltrが起動するツールへはツール1件専用の参加券を改めて渡す。
+    participant_ticket = pyfltr.command.execution_slot.receive_ticket()
 
     # -V / --versionはsubparser必須化の例外として、先頭に位置する場合のみ短絡処理する。
     # argparseのrequired subparsersは位置引数を要求するため、単独の--versionでは
@@ -130,7 +135,13 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
         return p, a
 
     return pyfltr.cli.pipeline.run_impl(
-        parser, args, list(sys_args), resolved_targets, original_cwd=original_cwd, reparse_fn=_reparse_with_custom
+        parser,
+        args,
+        list(sys_args),
+        resolved_targets,
+        original_cwd=original_cwd,
+        reparse_fn=_reparse_with_custom,
+        participant_ticket=participant_ticket,
     )
 
 

@@ -46,6 +46,8 @@ class RunOptions:
     subcommand: str = "run"
     format_source: str | None = None
     include_fix_stage: bool = False
+    participant_ticket: str | None = None
+    """CLIが起動時に受け取った上位の実行枠の参加券（`pyfltr.command.execution_slot.receive_ticket`）。再現用の引数には含めない。"""
     command_arguments: dict[str, str] = dataclasses.field(default_factory=dict)
 
     @classmethod

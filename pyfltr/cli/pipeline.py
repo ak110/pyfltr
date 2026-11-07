@@ -407,6 +407,7 @@ def run_commands_with_cli(
         callbacks=pyfltr.command.stage_runner.StageCallbacks(
             archive=archive_hook, on_result=record, on_slot_wait=slot_wait_hook
         ),
+        participant_ticket=args.participant_ticket,
     )
 
 
@@ -1381,8 +1382,11 @@ def run_impl(
     *,
     original_cwd: str,
     reparse_fn: typing.Callable[[list[str]], tuple[argparse.ArgumentParser, argparse.Namespace]] | None = None,
+    participant_ticket: str | None = None,
 ) -> int:
     """run()の内部実装（実行系サブコマンド向け）。
+
+    `participant_ticket`はCLIが起動時に受け取った上位の実行枠の参加券で、段実行へ渡す。
 
     `reparse_fn` はカスタムコマンド用にparserを再構築する関数。
     `cli/main.py`側で`cli/parser`への参照を保持することで、
@@ -1450,6 +1454,7 @@ def run_impl(
 
     # CLIオプションでconfigを上書き（サブプロジェクト別configにも同一に再適用するため共通ヘルパーへ集約）
     options = pyfltr.run_options.RunOptions.from_values(vars(args))
+    options.participant_ticket = participant_ticket
 
     # --commands未指定時はカスタムコマンドを含む全登録コマンドを対象にする。
     # argparseのデフォルト評価時点ではpyproject.tomlを読み込んでいないため、
