@@ -210,6 +210,11 @@ def test_excluded_default_patterns() -> None:
         pytest.param("pnpm-lock.yaml", True, id="pnpm-lock.yaml"),
         pytest.param("yarn.lock", True, id="yarn.lock"),
         pytest.param("uv.lock", True, id="uv.lock"),
+        pytest.param("aube-lock.yaml", True, id="aube-lock.yaml"),
+        pytest.param(".mise/locks/npm-pnpm/12.17.0/aube-lock.yaml", True, id="nested-aube-lock.yaml"),
+        pytest.param("npm-shrinkwrap.json", True, id="npm-shrinkwrap.json"),
+        # miseの利用者設定（除外対象外）
+        pytest.param(".mise/config.toml", False, id="mise-config.toml"),
         # minify済みファイル（除外対象）
         pytest.param("app.min.js", True, id="app.min.js"),
         pytest.param("style.min.css", True, id="style.min.css"),
@@ -353,6 +358,24 @@ def test_expand_all_files_gitignore_disabled(tmp_path: pathlib.Path) -> None:
         assert "ignored.py" in names
     finally:
         os.chdir(original_cwd)
+
+
+def test_expand_all_files_excludes_generated_lock_files(tmp_path: pathlib.Path) -> None:
+    """生成ロックファイルは既定設定で対象から外れ、`.mise`配下の利用者設定は残る。"""
+    lock_dir = tmp_path / ".mise" / "locks" / "npm-pnpm" / "12.17.0"
+    lock_dir.mkdir(parents=True)
+    (lock_dir / "aube-lock.yaml").write_text("lockfileVersion: 1\n")
+    (tmp_path / "npm-shrinkwrap.json").write_text("{}\n")
+    (tmp_path / ".mise" / "config.toml").write_text("[tools]\n")
+    (tmp_path / "config.yaml").write_text("a: 1\n")
+
+    config = pyfltr.config.config.create_default_config()
+    all_files = pyfltr.command.targets.expand_all_files([], config, start_cwd=tmp_path)
+    paths = {p.as_posix() for p in all_files}
+    assert ".mise/locks/npm-pnpm/12.17.0/aube-lock.yaml" not in paths
+    assert "npm-shrinkwrap.json" not in paths
+    assert ".mise/config.toml" in paths
+    assert "config.yaml" in paths
 
 
 def test_expand_all_files_no_git_repo(tmp_path: pathlib.Path) -> None:

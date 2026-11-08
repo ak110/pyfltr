@@ -167,10 +167,14 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
         "*.woff",
         "*.woff2",
         "*.zip",
-        # ロックファイル
+        # ロックファイル（パッケージマネージャーが生成し、整形すると記録済みのハッシュ値などと一致しなくなるもの）。
+        # 既定で有効な整形ツールの対象拡張子（*.json・*.yaml・*.toml等）を持つ生成物を漏れなく選ぶ。
+        # aube-lock.yamlはmiseが内蔵するnpm互換パッケージマネージャーaubeが`.mise/locks/`配下へ書く。
         "Gemfile.lock",
         "Pipfile.lock",
+        "aube-lock.yaml",
         "composer.lock",
+        "npm-shrinkwrap.json",
         "package-lock.json",
         "pnpm-lock.yaml",
         "poetry.lock",
