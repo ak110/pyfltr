@@ -571,11 +571,10 @@ sync:
 setup: sync
 	uvx prek --config=.pre-commit-config.yaml install
 
-# 依存パッケージをアップグレードし全テスト実行
+# 依存パッケージとprekのhookを更新する（lintとテストはCIで判定する）
 update:
 	env --unset UV_FROZEN uv sync --upgrade --all-groups --all-extras
 	uvx prek --config=.pre-commit-config.yaml autoupdate
-	$(MAKE) test
 
 # フォーマット + 軽量lint（開発時の手動実行用。自動修正あり）
 format: sync

@@ -16,7 +16,7 @@ JSON Lines出力（`--output-format=jsonl`）とMCPサーバー（`pyfltr mcp`�
 
 ### 開発コマンド
 
-- `make update`: 依存更新 + prek autoupdate + pinactアクション更新 + Dockerベースイメージdigest更新 + 全テスト実行
+- `make update`: 依存更新 + prek autoupdate + pinactアクション更新 + Dockerベースイメージdigest更新
   - `make update-actions`: GitHub Actionsのハッシュピン更新のみ（mise経由でpinact実行）
     - pinactは`.github/workflows/`配下だけを更新する
     - ピンが変わった場合は、利用者向けドキュメントのCI設定例も確認する
@@ -64,9 +64,14 @@ JSON Lines出力（`--output-format=jsonl`）とMCPサーバー（`pyfltr mcp`�
 
 ### 検証
 
-- コミット前の検証方法: `make test`
+- 手元の検証は、変更したファイルと参照をたどって特定した利用側のテスト・lintを対象に指定した
+  `uv run pyfltr run <path>`で行う。対象を渡さない全体の実行（`make test`、対象なしの`uv run pyfltr run`）は求めず、
+  全体のlintとテストはpush後のCIの結果で判定する
+  - 共通設定・`conftest.py`・依存の版指定とlockファイルなど利用側を列挙しきれない変更でも、全体の実行へ広げない。
+    列挙できた範囲だけを実行し、残りはCIの結果で判定する
+  - commit時のフック（`pyfltr fast`）は従来どおり動く。手元で全体を確かめたい場合は`make test`を使ってよい
   - formatter・linter・tester・カスタムチェックなど対応ツール全般を個別に直接起動せず、
-    `make test`または`uv run pyfltr run <path>`を使う。
+    `uv run pyfltr run <path>`（全体を確かめる場合は`make test`）を使う。
     設定で無効化しているツールも直接起動すれば動作するため、設定による無効化は直接起動への防御にならない
     - 例外は利用者向け文書の挙動記述を裏付ける場合に限る（本章の挙動裏付けに関する規定を参照）
   - 対象を絞って実行する場合は`uv run pyfltr run <path>`にパスを渡す。
@@ -77,7 +82,7 @@ JSON Lines出力（`--output-format=jsonl`）とMCPサーバー（`pyfltr mcp`�
       変更した場合は、`tests/integration/llmstxt_test.py`を対象へ含める
   - テストだけを部分実行する場合も`uv run pyfltr run tests/warnings_test.py --commands=pytest`を使い、
     `uv run pytest`を直接起動しない。直接起動では本リポジトリの設定（並列実行・タイムアウト等）が
-    `make test`と揃わず、結果を`make test`の成否の根拠にできない
+    pyfltr経由の実行と揃わず、結果をCIの成否を見込む根拠にできない
   - 修正後の再実行時は`--commands=mypy,ruff-check`等で限定して実行する（最終検証はCIに委ねる前提）
   - 診断内容の調査や診断出力のサンプル収集を目的として対応ツールを実行する場合は、
     自動修正を抑止する`--no-fix`（MCPでは`no_fix`）を併せて渡す。

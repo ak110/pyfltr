@@ -132,4 +132,4 @@ description: >
   欠けた種別だけを変更したコミットでは対象のツールが実行されない。
   `[tool.pyfltr]`でツールを追加で有効化した場合は`types_or`の追随要否を確認する。
   `prek`・`ec`・`typos`・`colloquial-check`のような全ファイル対象のツールは列挙では網羅できず、
-  `make test`で担保する
+  CIの全体チェック（`pyfltr ci`）で担保する

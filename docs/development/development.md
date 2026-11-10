@@ -27,8 +27,8 @@ AGENTS.mdが指定する`writing-standards`・`review-standards`と該当するr
 | コマンド | 用途 |
 | --- | --- |
 | `make format` | 整形 + 軽量lint（開発時の手動実行用） |
-| `make test` | 全チェック実行（コミット前に通過させる。コーディングエージェントからの検証もこれを使う） |
-| `make update` | 依存更新 + prek autoupdate + アクション更新 + Dockerベースイメージdigest更新 + 全テスト |
+| `make test` | 全チェック実行（手元で全体を確かめる場合に使う。通常の検証は変更箇所を対象にした`uv run pyfltr run <path>`で行い、全体はCIで判定する） |
+| `make update` | 依存更新 + prek autoupdate + アクション更新 + Dockerベースイメージdigest更新 |
 | `uv run mkdocs serve` | ドキュメントのローカルプレビュー |
 
 ## サプライチェーン攻撃対策

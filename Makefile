@@ -28,14 +28,13 @@ setup: sync
 	uvx prek --config=.pre-commit-config.yaml install
 	git config --local commit.template .gitmessage
 
-# 依存パッケージをアップグレードし全テスト実行
+# 依存パッケージ・prekのhook・GitHub Actionsのピン・Dockerベースイメージを更新する（lintとテストはCIで判定する）
 update:
 	$(MAKE) clean-stale-dist-info
 	env --unset UV_FROZEN uv sync --upgrade --all-groups --all-extras
 	uvx prek --config=.pre-commit-config.yaml autoupdate
 	$(MAKE) update-actions
 	$(MAKE) update-docker-base
-	$(MAKE) test
 
 # GitHub Actionsのアクションをハッシュピンで最新化（mise未導入時はスキップ）
 update-actions:
