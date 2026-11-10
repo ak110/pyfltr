@@ -13,6 +13,7 @@ import re
 import typing
 
 import pyfltr.parsing.pytest
+import pyfltr.parsing.pytest_nested
 
 SLOW_TEST_LIMIT = 5
 """保持・露出する遅いテストの件数上限。
@@ -68,7 +69,7 @@ def parse_pytest_durations(output: str) -> list[SlowTest]:
     """
     results: list[SlowTest] = []
     in_section = False
-    for line in pyfltr.parsing.pytest.mask_pytest_captured_child_runs(output).splitlines():
+    for line in pyfltr.parsing.pytest_nested.mask_pytest_captured_child_runs(output).splitlines():
         stripped = line.strip()
         if _HEADER_RE.match(stripped):
             results = []

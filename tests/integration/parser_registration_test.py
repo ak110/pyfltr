@@ -12,6 +12,7 @@ import pyfltr.cli.mcp_runs_tools
 import pyfltr.command.slow_tests
 import pyfltr.parsing.entry
 import pyfltr.parsing.pytest
+import pyfltr.parsing.pytest_config
 import pyfltr.paths
 import pyfltr.state.archive
 import pyfltr.tools
@@ -218,7 +219,7 @@ def test_pytest_parent_owns_only_its_diagnostics_and_metadata(form: str) -> None
     """親の実行形態によらず、子の競合・所要時間・失敗を親へ帰属させない。"""
     # scripts.parser_review pytest-formsでpytest 9.1.1の実出力を採取した検体。
     output = json.loads(_PYTEST_RUN_OUTPUTS.read_text(encoding="utf-8"))[form]
-    assert pyfltr.parsing.pytest.detect_pytest_config_conflict(output) is None
+    assert pyfltr.parsing.pytest_config.detect_pytest_config_conflict(output) is None
     durations = pyfltr.command.slow_tests.parse_pytest_durations(output)
     if form == "q-s-parent-durations":
         assert durations

@@ -5,7 +5,6 @@ import pathlib
 import typing
 
 import pyfltr.paths
-import pyfltr.rule_urls
 import pyfltr.tools
 from pyfltr.diagnostics import ErrorLocation
 from pyfltr.parsing.common import extract_last_line, parse_with_pattern

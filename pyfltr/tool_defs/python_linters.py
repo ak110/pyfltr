@@ -14,8 +14,8 @@ COMMANDS: dict[str, CommandInfo] = {
         ],
         python_bin="pylint",
         diagnostic_pattern=r"^(?P<file>.+?):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>[CRWEF]\d+:.+)",
-        parser=FunctionRef[[str], list[ErrorLocation]]("pyfltr.parsing.tools", "parse_pylint_json"),
-        summary_parser=FunctionRef[[str], str | None]("pyfltr.parsing.tools", "summarize_pylint_json"),
+        parser=FunctionRef[[str], list[ErrorLocation]]("pyfltr.parsing.python_linters", "parse_pylint_json"),
+        summary_parser=FunctionRef[[str], str | None]("pyfltr.parsing.python_linters", "summarize_pylint_json"),
         rule_url_builder=FunctionRef[[str, str | None], str | None]("pyfltr.rule_urls", "build_pylint_url"),
         structured_output=(
             "pylint-json",
@@ -72,7 +72,7 @@ COMMANDS: dict[str, CommandInfo] = {
         fixed_cost=0.01,
         python_bin="ruff",
         diagnostic_pattern=r"^(?P<file>.+?):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>[A-Z]+\d+\s+.+)",
-        parser=FunctionRef[[str], list[ErrorLocation]]("pyfltr.parsing.tools", "parse_ruff_check_json"),
+        parser=FunctionRef[[str], list[ErrorLocation]]("pyfltr.parsing.python_linters", "parse_ruff_check_json"),
         rule_url_builder=FunctionRef[[str, str | None], str | None]("pyfltr.rule_urls", "build_ruff_url"),
         structured_output=(
             "ruff-check-json",
@@ -105,8 +105,8 @@ COMMANDS: dict[str, CommandInfo] = {
         per_file_cost=0.155,
         python_bin="pyright",
         diagnostic_pattern=r"^\s*(?P<file>.+?):(?P<line>\d+):(?P<col>\d+)\s*-\s*error:\s*(?P<message>.+)",
-        parser=FunctionRef[[str], list[ErrorLocation]]("pyfltr.parsing.tools", "parse_pyright_json"),
-        summary_parser=FunctionRef[[str], str | None]("pyfltr.parsing.tools", "summarize_pyright_json"),
+        parser=FunctionRef[[str], list[ErrorLocation]]("pyfltr.parsing.python_linters", "parse_pyright_json"),
+        summary_parser=FunctionRef[[str], str | None]("pyfltr.parsing.python_linters", "summarize_pyright_json"),
         rule_url_builder=FunctionRef[[str, str | None], str | None]("pyfltr.rule_urls", "build_pyright_url"),
         structured_output=(
             "pyright-json",
@@ -146,7 +146,7 @@ COMMANDS: dict[str, CommandInfo] = {
         fixed_cost=0.05,
         per_file_cost=0.0002,
         python_bin="arid",
-        path_resolving_parser=FunctionRef[..., list[ErrorLocation]]("pyfltr.parsing.tools", "parse_arid_json"),
+        path_resolving_parser=FunctionRef[..., list[ErrorLocation]]("pyfltr.parsing.python_linters", "parse_arid_json"),
         structured_output=(
             "arid-json",
             StructuredOutputSpec(

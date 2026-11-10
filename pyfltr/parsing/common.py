@@ -142,10 +142,16 @@ def one_based_offset(value: typing.Any) -> int | None:
 def parse_file_messages_format(
     data: list[dict],
     message_to_location: typing.Callable[[dict, str], ErrorLocation | None],
+    *,
+    file_key: str = "filePath",
+    messages_key: str = "messages",
+    file_to_string: typing.Callable[[typing.Any], str] = str,
 ) -> list[ErrorLocation]:
     """topレベルが`[{filePath, messages:[...]}]`形式のJSON配列を処理する共通ヘルパー。
 
-    eslint / textlint の出力形式に共通する「ファイルごとのmessages配列」構造を処理する。
+    eslint / textlint / sqlfluff の出力形式に共通する「ファイルごとのmessages配列」構造を処理する。
+    キー名は各ツールの出力形式へ合わせる。ファイル名の偽値の扱いは`file_to_string`へ委ね、
+    既存の文字列化の差を保持する。
     各メッセージから`ErrorLocation`へのマッピングは`message_to_location`に委ねる。
     `message_to_location`が`None`を返したメッセージはスキップする。
     """
@@ -153,8 +159,8 @@ def parse_file_messages_format(
     for entry in data:
         if not isinstance(entry, dict):
             continue
-        file_path = str(entry.get("filePath", ""))
-        messages = entry.get("messages", [])
+        file_path = file_to_string(entry.get(file_key, ""))
+        messages = entry.get(messages_key, [])
         if not isinstance(messages, list):
             continue
         for msg in messages:

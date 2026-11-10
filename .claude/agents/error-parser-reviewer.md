@@ -73,6 +73,13 @@ tools: Read, Grep, Glob, Bash
      - `tests/parsing/entry_test.py`
      - `tests/parsing/pytest_test.py`
      - `tests/parsing/tools_test.py`
+     - `tests/parsing/audit_test.py`
+     - `tests/parsing/python_linters_test.py`
+     - `tests/parsing/textlint_test.py`
+     - `tests/parsing/pytest_common_test.py`
+     - `tests/parsing/pytest_nested_test.py`
+     - `tests/parsing/pytest_config_test.py`
+
    - 変更されたregexに対応するテストケースが存在するか確認
    - 手順2で採取したサンプルと出力のうち、テストケースとして再利用できるものを提案
 

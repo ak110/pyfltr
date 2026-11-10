@@ -36,6 +36,7 @@ import pyfltr.config.config
 import pyfltr.config.model
 import pyfltr.config.selection
 import pyfltr.parsing.pytest
+import pyfltr.parsing.pytest_config
 import pyfltr.paths
 import pyfltr.run_options
 import pyfltr.text.exclude_fence
@@ -493,7 +494,7 @@ def _run_plain_command(request: pyfltr.command.core_.ExecutionRequest) -> pyfltr
     # 拾わないと設定が適用されないまま完走した実行を成功として報告してしまう。
     slow_tests: list[pyfltr.command.slow_tests.SlowTest] = []
     if request.command == "pytest":
-        conflict_message = pyfltr.parsing.pytest.detect_pytest_config_conflict(output)
+        conflict_message = pyfltr.parsing.pytest_config.detect_pytest_config_conflict(output)
         if conflict_message is not None:
             pyfltr.warnings_.emit_warning(
                 source="config-conflict",

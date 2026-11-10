@@ -23,7 +23,7 @@ COMMANDS: dict[str, CommandInfo] = {
             (0, 11, 2),
             "0.11.2未満のuvは脆弱性の検出を終了コードへ反映しないため、未検査または未解消の状態が成功として扱われる",
         ),
-        parser=FunctionRef[[str], list[ErrorLocation]]("pyfltr.parsing.tools", "parse_uv_audit"),
+        parser=FunctionRef[[str], list[ErrorLocation]]("pyfltr.parsing.audit", "parse_uv_audit"),
         defaults={
             # 依存の脆弱性監査ツール群（uv audit / pnpm audit / npm audit / yarn audit）。
             # BUILTIN_COMMANDS登録順・lintエイリアス・order.mdに合わせ、sqlfluffの直後へ配置する。
@@ -52,7 +52,7 @@ COMMANDS: dict[str, CommandInfo] = {
         fixed_cost=3.0,
         allows_external_paths=False,
         package_manager_bin="pnpm",
-        parser=FunctionRef[[str], list[ErrorLocation]]("pyfltr.parsing.tools", "parse_pnpm_audit_json"),
+        parser=FunctionRef[[str], list[ErrorLocation]]("pyfltr.parsing.audit", "parse_pnpm_audit_json"),
         defaults={
             "pnpm-audit": False,
             "pnpm-audit-path": "",
@@ -69,7 +69,7 @@ COMMANDS: dict[str, CommandInfo] = {
         fixed_cost=3.0,
         allows_external_paths=False,
         package_manager_bin="npm",
-        parser=FunctionRef[[str], list[ErrorLocation]]("pyfltr.parsing.tools", "parse_npm_audit_json"),
+        parser=FunctionRef[[str], list[ErrorLocation]]("pyfltr.parsing.audit", "parse_npm_audit_json"),
         defaults={
             "npm-audit": False,
             "npm-audit-path": "",
@@ -86,7 +86,7 @@ COMMANDS: dict[str, CommandInfo] = {
         fixed_cost=3.0,
         allows_external_paths=False,
         package_manager_bin="yarn",
-        parser=FunctionRef[[str], list[ErrorLocation]]("pyfltr.parsing.tools", "parse_yarn_audit_jsonl"),
+        parser=FunctionRef[[str], list[ErrorLocation]]("pyfltr.parsing.audit", "parse_yarn_audit_jsonl"),
         defaults={
             # yarn classic（1.x）はJSON Lines（auditAdvisory / auditSummary行）を出力する。
             # yarn berry（2+）は`yarn npm audit --json`等とサブコマンド体系が異なるため、

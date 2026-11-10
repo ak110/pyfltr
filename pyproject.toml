@@ -152,6 +152,13 @@ colloquial-check-exclude = [
     "tests/parsing/entry_test.py",
     "tests/parsing/pytest_test.py",
     "tests/parsing/tools_test.py",
+    "tests/parsing/audit_test.py",
+    "tests/parsing/python_linters_test.py",
+    "tests/parsing/textlint_test.py",
+    "tests/parsing/pytest_common_test.py",
+    "tests/parsing/pytest_nested_test.py",
+    "tests/parsing/pytest_config_test.py",
+    "tests/parsing/conftest.py",
     "tests/colloquial/check_test.py",
     "tests/colloquial/cli_test.py",
 ]

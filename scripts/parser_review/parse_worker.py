@@ -7,6 +7,8 @@
 
 import argparse
 import dataclasses
+import importlib
+import importlib.util
 import json
 import pathlib
 import sys
@@ -23,7 +25,14 @@ def main() -> int:
     sys.path.insert(0, str(root))
     import pyfltr.command.slow_tests  # pylint: disable=import-outside-toplevel
     import pyfltr.parsing.entry  # pylint: disable=import-outside-toplevel
-    import pyfltr.parsing.pytest  # pylint: disable=import-outside-toplevel
+
+    # 基準版のcommitにも同じworkerを使うため、この比較処理だけが両方の配置を扱う。
+    config_module = importlib.import_module(
+        "pyfltr.parsing.pytest_config"
+        if importlib.util.find_spec("pyfltr.parsing.pytest_config") is not None
+        else "pyfltr.parsing.pytest"
+    )
+    detect_config_conflict = config_module.detect_pytest_config_conflict
 
     results: dict[str, object] = {}
     for line in args.input.read_text(encoding="utf-8").splitlines():
@@ -44,7 +53,7 @@ def main() -> int:
         parsed: dict[str, object] = {"diagnostics": [dataclasses.asdict(error) for error in errors]}
         if entry["tool"] == "pytest":
             parsed.update(
-                config_conflict=pyfltr.parsing.pytest.detect_pytest_config_conflict(output),
+                config_conflict=detect_config_conflict(output),
                 slow_tests=[dataclasses.asdict(item) for item in pyfltr.command.slow_tests.parse_pytest_durations(output)],
             )
         results[entry["id"]] = parsed

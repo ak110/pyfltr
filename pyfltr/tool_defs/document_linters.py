@@ -82,7 +82,7 @@ COMMANDS: dict[str, CommandInfo] = {
         js_bin="textlint",
         pnpx_package="textlint@<15.5.3 || >15.5.3",
         diagnostic_pattern=r"^(?P<file>.+?):\s*line\s+(?P<line>\d+),\s*col\s+(?P<col>\d+),\s*\w+\s*-\s*(?P<message>.+)",
-        parser=FunctionRef[[str], list[ErrorLocation]]("pyfltr.parsing.tools", "parse_textlint_json"),
+        parser=FunctionRef[[str], list[ErrorLocation]]("pyfltr.parsing.textlint", "parse_textlint_json"),
         structured_output=(
             "textlint-json",
             StructuredOutputSpec(

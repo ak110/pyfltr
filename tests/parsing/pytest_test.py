@@ -7,7 +7,11 @@ import pyfltr.diagnostics
 import pyfltr.output.diagnostics
 import pyfltr.parsing.entry
 import pyfltr.parsing.pytest
+import pyfltr.parsing.pytest_common
+import pyfltr.parsing.pytest_config
+import pyfltr.parsing.pytest_nested
 import pyfltr.tools
+import tests.parsing.conftest
 
 
 @pytest.mark.parametrize("form", ["own-body-short", "own-body-auto-rN", "own-body-line"])
@@ -79,11 +83,6 @@ def test_pytest_line_unmatched_eline_does_not_expand_filename() -> None:
     )
     errors = pyfltr.parsing.entry.parse_errors("pytest", output)
     assert [(error.file, error.line) for error in errors] == [("sp ace_test.py", 0)]
-
-
-def test_pytest_space_doctest_nodeid_keeps_existing_summary_gap() -> None:
-    """空白付きdoctest関数の一覧の欠落は基準版と共通の対象外の制約として保持する。"""
-    assert not pyfltr.parsing.pytest.parse_pytest_summary("FAILED my doc_test.py::my doc_test.f\n")
 
 
 def test_pytest_raw_block_cannot_borrow_expanded_worker_nodeid() -> None:
@@ -972,27 +971,6 @@ def test_parse_pytest_ignores_failed_line_in_captured_output() -> None:
     assert errors[0].message.startswith("test_runs_pytest: ")
 
 
-def _pytest_child_run(*, file: str, test: str, line: int, message: str, terminated: bool = True) -> str:
-    """捕捉出力へ混入する子プロセスのpytest実行1回分を組み立てる。
-
-    実出力と同じく`test session starts`見出しで始まり、終了集計行で終わる形とする。
-    除外の判定は対象の2つのマーカーに依存するため、テスト入力からいずれも省略しない。
-    `terminated=False`は子プロセスが異常終了・打ち切りで終了集計行を欠く形を表す。
-    """
-    body = "================================= test session starts =================================\ncollected 1 item\n\n"
-    if not terminated:
-        return body + f"{file} \n"
-    return (
-        body + "================================= FAILURES =================================\n"
-        f"_______________________________ {test} ________________________________\n"
-        f"{file}:{line}: in {test}\n"
-        f"E   {message}\n"
-        "========================= short test summary info ==========================\n"
-        f"FAILED {file}::{test} - {message}\n"
-        "================================= 1 failed in 0.04s =================================\n"
-    )
-
-
 def test_parse_pytest_ignores_child_failure_block_in_captured_output() -> None:
     """pytest --tb=short: 捕捉出力に混入した子プロセスの失敗欄を診断化しないことを検証する。
 
@@ -1005,7 +983,7 @@ def test_parse_pytest_ignores_child_failure_block_in_captured_output() -> None:
         "tests/d_test.py:11: in test_runs_child\n"
         "E   AssertionError: assert 1 == 0\n"
         "-------------------------- Captured stdout call ---------------------------\n"
-        + _pytest_child_run(file="child/z_test.py", test="test_phantom", line=2, message="assert 1 == 2")
+        + tests.parsing.conftest.pytest_child_run(file="child/z_test.py", test="test_phantom", line=2, message="assert 1 == 2")
         + "_______________________________ test_later_real ________________________________\n"
         "tests/d_test.py:15: in test_later_real\n"
         "E   AssertionError: later\n"
@@ -1034,7 +1012,7 @@ def test_parse_pytest_ignores_child_failure_block_with_same_test_name() -> None:
         "tests/d_test.py:11: in test_runs_child\n"
         "E   AssertionError: assert 1 == 0\n"
         "-------------------------- Captured stdout call ---------------------------\n"
-        + _pytest_child_run(file="child/z_test.py", test="test_dup", line=2, message="assert 1 == 2")
+        + tests.parsing.conftest.pytest_child_run(file="child/z_test.py", test="test_dup", line=2, message="assert 1 == 2")
         + "_______________________________ test_dup ________________________________\n"
         "tests/d_test.py:15: in test_dup\n"
         "E   AssertionError: parent dup\n"
@@ -1063,7 +1041,7 @@ def test_parse_pytest_ignores_child_failure_block_without_parent_summary() -> No
         "tests/d_test.py:11: in test_runs_child\n"
         "E   AssertionError: assert 1 == 0\n"
         "-------------------------- Captured stdout call ---------------------------\n"
-        + _pytest_child_run(file="child/z_test.py", test="test_dup", line=2, message="assert 1 == 2")
+        + tests.parsing.conftest.pytest_child_run(file="child/z_test.py", test="test_dup", line=2, message="assert 1 == 2")
         + "_______________________________ test_dup ________________________________\n"
         "tests/d_test.py:15: in test_dup\n"
         "E   AssertionError: parent dup\n"
@@ -1087,7 +1065,7 @@ def test_parse_pytest_tb_line_ignores_child_failure_block_in_captured_output() -
         "================================= FAILURES =================================\n"
         "tests/d_test.py:11: AssertionError: assert 1 == 0\n"
         "-------------------------- Captured stdout call ---------------------------\n"
-        + _pytest_child_run(file="child/z_test.py", test="test_phantom", line=2, message="assert 1 == 2")
+        + tests.parsing.conftest.pytest_child_run(file="child/z_test.py", test="test_phantom", line=2, message="assert 1 == 2")
         + "tests/d_test.py:15: AssertionError: later\n"
         "========================= short test summary info ==========================\n"
         "FAILED tests/d_test.py::test_runs_child - AssertionError: assert 1 == 0\n"
@@ -1242,8 +1220,12 @@ def _pytest_two_child_runs_output(*, tb_line: bool, summary_list: bool) -> str:
     1回目の実行の開始位置を保持したままにすると2回目の終了集計行と対になり、
     その間にある親の失敗まで除外される。対象の構成のテスト入力を共通化する。
     """
-    crashed = _pytest_child_run(file="child/dies_test.py", test="test_dies", line=0, message="", terminated=False)
-    completed = _pytest_child_run(file="child/fails_test.py", test="test_fails", line=2, message="assert 1 == 2")
+    crashed = tests.parsing.conftest.pytest_child_run(
+        file="child/dies_test.py", test="test_dies", line=0, message="", terminated=False
+    )
+    completed = tests.parsing.conftest.pytest_child_run(
+        file="child/fails_test.py", test="test_fails", line=2, message="assert 1 == 2"
+    )
     captured = "-------------------------- Captured stdout call ---------------------------\n"
     if tb_line:
         failures = (
@@ -1321,8 +1303,8 @@ def test_parse_pytest_unterminated_child_run_without_summary_list_keeps_failures
 
 def test_parse_pytest_two_complete_child_runs_are_masked_independently() -> None:
     """pytest: 完結した子プロセスの実行が2回続く場合に双方を除外することを検証する。"""
-    first = _pytest_child_run(file="child/a_test.py", test="test_a", line=2, message="assert 1 == 2")
-    second = _pytest_child_run(file="child/b_test.py", test="test_b", line=3, message="assert 2 == 3")
+    first = tests.parsing.conftest.pytest_child_run(file="child/a_test.py", test="test_a", line=2, message="assert 1 == 2")
+    second = tests.parsing.conftest.pytest_child_run(file="child/b_test.py", test="test_b", line=3, message="assert 2 == 3")
     captured = "-------------------------- Captured stdout call ---------------------------\n"
     output = (
         "================================= FAILURES =================================\n"
@@ -1412,7 +1394,9 @@ def test_parse_pytest_child_run_masked_for_stderr_and_log_sections() -> None:
 
     除外の開始判定は節の種別に依存しない。
     """
-    child = _pytest_child_run(file="child/z_test.py", test="test_phantom", line=2, message="assert 1 == 2")
+    child = tests.parsing.conftest.pytest_child_run(
+        file="child/z_test.py", test="test_phantom", line=2, message="assert 1 == 2"
+    )
     for section in ("Captured stderr call", "Captured log call"):
         output = (
             "================================= FAILURES =================================\n"
@@ -1454,7 +1438,9 @@ def test_parse_pytest_child_run_masked_with_quiet_parent(tail_line: str) -> None
         "tests/q_test.py:11: in test_runs_child\n"
         "E   AssertionError: assert 1 == 0\n"
         "-------------------------- Captured stdout call ---------------------------\n"
-        + _pytest_child_run(file="child/inner_test.py", test="test_inner", line=2, message="assert 1 == 2")
+        + tests.parsing.conftest.pytest_child_run(
+            file="child/inner_test.py", test="test_inner", line=2, message="assert 1 == 2"
+        )
         + "_______________________________ test_after ________________________________\n"
         "tests/q_test.py:15: in test_after\n"
         "E   AssertionError: after\n"
@@ -1497,34 +1483,6 @@ def test_parse_pytest_captured_text_is_not_taken_as_parent_summary_line() -> Non
     assert {e.line for e in errors} == {3, 7}
 
 
-def test_mask_pytest_captured_child_runs_keeps_line_structure() -> None:
-    """pytest: 除外処理が`\\n`以外の制御文字で行を切らないことを検証する。
-
-    `str.splitlines`はフォームフィード等でも分割するため、除外時に対象の位置へ改行が入り、
-    以降の正規表現探索（`re.MULTILINE`は`\\n`のみを行区切りとする）と行の対応が崩れる。
-    制御文字は除外対象の範囲の内側へ置く。範囲の外では除外時の置換が起こらず、
-    分割の基準が違っても元の文字列が復元されるため、退行を検知できない。
-    """
-    child = _pytest_child_run(file="child/z_test.py", test="test_phantom", line=2, message="assert 1 == 2").replace(
-        "collected 1 item\n", "collected 1 item\nbefore\x0cafter\n"
-    )
-    output = (
-        "================================= FAILURES =================================\n"
-        "_______________________________ test_p ________________________________\n"
-        "tests/p_test.py:3: in test_p\n"
-        "E   assert 1 == 2\n"
-        "-------------------------- Captured stdout call ---------------------------\n"
-        + child
-        + "========================= short test summary info ==========================\n"
-        "FAILED tests/p_test.py::test_p - assert 1 == 2\n"
-        "================================= 1 failed in 0.30s =================================\n"
-    )
-    # pylint: disable=protected-access  # 行構造の保持は公開関数の戻り値へ現れないため直接検証する
-    masked = pyfltr.parsing.pytest.mask_pytest_captured_child_runs(output)  # noqa: SLF001
-    assert masked.count("\n") == output.count("\n")
-    assert len(masked.split("\n")) == len(output.split("\n"))
-
-
 def test_parse_pytest_child_run_masked_without_parent_failures_section() -> None:
     """pytest: 親に失敗欄が無く捕捉出力へ子の実行だけが現れる場合に除外することを検証する。
 
@@ -1533,7 +1491,9 @@ def test_parse_pytest_child_run_masked_without_parent_failures_section() -> None
     """
     output = (
         "-------------------------- Captured stdout call ---------------------------\n"
-        + _pytest_child_run(file="child/inner_test.py", test="test_inner", line=2, message="assert 1 == 2")
+        + tests.parsing.conftest.pytest_child_run(
+            file="child/inner_test.py", test="test_inner", line=2, message="assert 1 == 2"
+        )
         + "================================= 2 passed in 0.90s =================================\n"
     )
     errors = pyfltr.parsing.entry.parse_errors("pytest", output)
@@ -1551,7 +1511,7 @@ def test_parse_pytest_child_run_is_not_masked_without_parent_summary_line() -> N
         "tests/d_test.py:11: in test_runs_child\n"
         "E   AssertionError: assert 1 == 0\n"
         "-------------------------- Captured stdout call ---------------------------\n"
-        + _pytest_child_run(file="child/z_test.py", test="test_phantom", line=2, message="assert 1 == 2")
+        + tests.parsing.conftest.pytest_child_run(file="child/z_test.py", test="test_phantom", line=2, message="assert 1 == 2")
     )
     errors = pyfltr.parsing.entry.parse_errors("pytest", output)
     assert next(e for e in errors if e.file == "tests/d_test.py").line == 11
@@ -2256,204 +2216,6 @@ def test_parse_summary_pytest_long_duration() -> None:
     output = "============================== 25 passed in 60.00s (0:01:00) ==============================\n"
     result = pyfltr.parsing.entry.parse_summary("pytest", output)
     assert result == "25 passed in 60.00s (0:01:00)"
-
-
-def test_detect_pytest_config_conflict_single_ignored() -> None:
-    """無視された設定ファイルが1件の場合に採用・無視の双方を含む警告を返す。"""
-    output = """============================= test session starts ==============================
-rootdir: /tmp/project
-configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
-"""
-    message = pyfltr.parsing.pytest.detect_pytest_config_conflict(output)
-    assert message is not None
-    assert "pytest.ini" in message
-    assert "pyproject.toml" in message
-
-
-def test_detect_pytest_config_conflict_multiple_ignored() -> None:
-    """無視された設定ファイルが複数の場合に全件を含む警告を返す。"""
-    output = """============================= test session starts ==============================
-rootdir: /tmp/project
-configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml, tox.ini, setup.cfg!)
-"""
-    message = pyfltr.parsing.pytest.detect_pytest_config_conflict(output)
-    assert message is not None
-    assert "pyproject.toml, tox.ini, setup.cfg" in message
-
-
-def test_detect_pytest_config_conflict_colored_header() -> None:
-    """ANSI装飾されたセッション開始行でも設定競合を検出する。"""
-    output = """\x1b[1m============================= test session starts =============================\x1b[0m
-rootdir: /tmp/project
-configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
-"""
-    assert pyfltr.parsing.pytest.detect_pytest_config_conflict(output) is not None
-
-
-@pytest.mark.parametrize(
-    "output",
-    [
-        "configfile: pyproject.toml\n",
-        "rootdir: /tmp/x\n",
-        "",
-    ],
-)
-def test_detect_pytest_config_conflict_absent(output: str) -> None:
-    """競合のないヘッダー・ヘッダーを持たない出力では検出しない。"""
-    assert pyfltr.parsing.pytest.detect_pytest_config_conflict(output) is None
-
-
-def test_detect_pytest_config_conflict_ignores_captured_stdout() -> None:
-    """テスト自身が同形文字列を出力しても設定競合として扱わない。"""
-    output = """============================= test session starts ==============================
-rootdir: /tmp/project
-configfile: pyproject.toml
-collected 1 item
-
-sample_test.py configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
-"""
-    assert pyfltr.parsing.pytest.detect_pytest_config_conflict(output) is None
-
-
-def test_detect_pytest_config_conflict_absent_in_full_header() -> None:
-    """競合のないヘッダー全体を与えても検出しない。"""
-    output = """============================= test session starts ==============================
-platform linux -- Python 3.11.9, pytest-9.1.1, pluggy-1.5.0
-rootdir: /tmp/project
-configfile: pyproject.toml
-collected 1 item
-"""
-    assert pyfltr.parsing.pytest.detect_pytest_config_conflict(output) is None
-
-
-def test_detect_pytest_config_conflict_ignores_nested_child_run() -> None:
-    """子プロセスのpytestが捕捉出力へ出した競合を親の競合として扱わない。"""
-    output = """============================= test session starts ==============================
-rootdir: /tmp/project
-configfile: pyproject.toml
-collected 1 item
-
-sample_test.py F                                                         [100%]
-
-=================================== FAILURES ===================================
-________________________________ test_sample ___________________________________
------------------------------ Captured stdout call -----------------------------
-============================= test session starts ==============================
-rootdir: /tmp/child
-configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
-"""
-    assert pyfltr.parsing.pytest.detect_pytest_config_conflict(output) is None
-
-
-def test_detect_pytest_config_conflict_quiet_parent_with_nested_child() -> None:
-    """親が`-q`で動く場合、捕捉出力の子ヘッダーを親のヘッダーとして扱わない。"""
-    output = """F                                                                        [100%]
-=================================== FAILURES ===================================
-________________________________ test_sample ___________________________________
------------------------------ Captured stdout call -----------------------------
-============================= test session starts ==============================
-rootdir: /tmp/child
-configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
-"""
-    assert pyfltr.parsing.pytest.detect_pytest_config_conflict(output) is None
-
-
-def test_detect_pytest_config_conflict_with_stderr_preamble() -> None:
-    """実行開始行より前に警告の前置きがあっても検出する。"""
-    output = """/path/to/pytest_asyncio/plugin.py:299: PytestDeprecationWarning: The configuration option is unset.
-The event loop scope for asynchronous fixtures will default to the "fixture" caching scope.
-
-  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
-============================= test session starts ==============================
-platform linux -- Python 3.11.12, pytest-9.1.1, pluggy-1.6.0
-rootdir: /tmp/project
-configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
-collected 1 item
-"""
-    message = pyfltr.parsing.pytest.detect_pytest_config_conflict(output)
-    assert message is not None
-    assert "pytest.ini" in message
-    assert "pyproject.toml" in message
-
-
-def test_detect_pytest_config_conflict_xdist_ignores_nested_child_run() -> None:
-    """収集開始行を出さないpytest-xdistでも、子の競合を親の競合として扱わない。"""
-    output = """============================= test session starts ==============================
-platform linux -- Python 3.11.12, pytest-9.1.1, pluggy-1.6.0
-rootdir: /tmp/project
-configfile: pyproject.toml
-plugins: xdist-3.8.0
-created: 2/2 workers
-2 workers [1 item]
-
-F                                                                        [100%]
-=================================== FAILURES ===================================
-________________________________ test_sample ___________________________________
------------------------------ Captured stdout call -----------------------------
-============================= test session starts ==============================
-rootdir: /tmp/child
-configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
-"""
-    assert pyfltr.parsing.pytest.detect_pytest_config_conflict(output) is None
-
-
-def test_detect_pytest_config_conflict_xdist_no_header_ignores_nested_child_run() -> None:
-    """親が`rootdir:`・`configfile:`を一切出さない場合でもヘッダー領域の終端判定が成立する。
-
-    `--no-header`のxdist実行では親のヘッダー行が出ないため、子の競合を親の競合として
-    扱わないことを、親のヘッダー行が存在するテストケースとは別に固定する。
-    """
-    output = """============================= test session starts ==============================
-created: 2/2 workers
-2 workers [1 item]
-
-F                                                                        [100%]
-=================================== FAILURES ===================================
-________________________________ test_sample ___________________________________
------------------------------ Captured stdout call -----------------------------
-============================= test session starts ==============================
-rootdir: /tmp/child
-configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
-"""
-    assert pyfltr.parsing.pytest.detect_pytest_config_conflict(output) is None
-
-
-def test_detect_pytest_config_conflict_xdist_detects_own_conflict() -> None:
-    """pytest-xdistでも親自身のヘッダーにある競合は検出する。"""
-    output = """============================= test session starts ==============================
-platform linux -- Python 3.11.12, pytest-9.1.1, pluggy-1.6.0
-rootdir: /tmp/project
-configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
-plugins: xdist-3.8.0
-created: 2/2 workers
-2 workers [1 item]
-"""
-    message = pyfltr.parsing.pytest.detect_pytest_config_conflict(output)
-    assert message is not None
-    assert "pytest.ini" in message
-
-
-def test_detect_pytest_config_conflict_quiet_and_no_capture_excludes_child_run() -> None:
-    """ヘッダーの無い親より前に閉じた子の競合を除外する。"""
-    output = """============================= test session starts ==============================
-rootdir: /tmp/child
-configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
-collected 1 item
-child_test.py F
-============================= 1 failed in 0.03s ==============================
-.
-1 passed in 0.10s
-"""
-    assert pyfltr.parsing.pytest.detect_pytest_config_conflict(output) is None
-
-
-def test_detect_pytest_config_conflict_requires_rootdir_line() -> None:
-    """ヘッダー領域でも`rootdir:`の直後でない同形の行は競合として扱わない。"""
-    output = """============================= test session starts ==============================
-platform linux -- Python 3.11.9, pytest-9.1.1, pluggy-1.5.0
-configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
-"""
-    assert pyfltr.parsing.pytest.detect_pytest_config_conflict(output) is None
 
 
 # pytest 9.2.0の実出力（`--tb=short`、試験ファイル3件。共有fixtureのsetup・teardownで例外を送出する）から
