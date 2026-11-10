@@ -27,7 +27,7 @@ pyfltrは各ツールのバージョン追従が必要なため、差分の確�
 ## 手順
 
 1. 対象ツールの抽出
-   - `pyfltr/tools.py`の対象`CommandInfo.defaults`から`<tool>-path`と`<tool>-args`を読み取る
+   - `pyfltr/tool_defs/`の対象`CommandInfo.defaults`から`<tool>-path`と`<tool>-args`を読み取る
    - 入力で `ALL` 指定なら全ツール、個別指定ならそのツールのみを対象とする
 
 2. インストール済みバージョンの確認

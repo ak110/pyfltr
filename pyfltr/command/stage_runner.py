@@ -3,7 +3,6 @@
 import collections.abc
 import concurrent.futures
 import dataclasses
-import datetime as dt
 import threading
 import time
 
@@ -13,6 +12,7 @@ import pyfltr.command.executor
 import pyfltr.command.process
 import pyfltr.config.config
 import pyfltr.config.model
+import pyfltr.timestamps
 import pyfltr.warnings_
 
 
@@ -351,11 +351,11 @@ def _with_body_interval(
     """
 
     def wrapped(command: str, fix_stage: bool) -> pyfltr.command.core_.CommandResult:
-        started_at = _now_iso()
+        started_at = pyfltr.timestamps.now_iso()
         result = execute(command, fix_stage)
         if ran_tool(result):
             result.started_at = started_at
-            result.finished_at = _now_iso()
+            result.finished_at = pyfltr.timestamps.now_iso()
         return result
 
     return wrapped
@@ -369,10 +369,6 @@ def ran_tool(result: pyfltr.command.core_.CommandResult) -> bool:
     本体区間の記録に使う。
     """
     return result.returncode is not None and not result.resolution_failed and not result.cached
-
-
-def _now_iso() -> str:
-    return dt.datetime.now(dt.UTC).isoformat()
 
 
 def describe_slot_owner(owner: pyfltr.command.execution_slot.SlotOwner | None) -> str:

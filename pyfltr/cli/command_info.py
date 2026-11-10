@@ -26,9 +26,11 @@ import typing
 import pyfltr.cli.command_selection
 import pyfltr.cli.output_format
 import pyfltr.command.dispatcher
+import pyfltr.command.invocation
 import pyfltr.command.mise
 import pyfltr.command.runner
 import pyfltr.command.tool_resolution
+import pyfltr.command.tool_version
 import pyfltr.config.config
 import pyfltr.config.model
 import pyfltr.output.auxiliary
@@ -190,13 +192,13 @@ def collect_info(command: str, config: pyfltr.config.model.Config, *, do_check: 
     # 実際に実行されるargv全体（対象ファイル抜き）を表示する。
     # `build_commandline`の戻り値は実行プレフィックスのみで、`{command}-args`等が反映されないため、
     # `build_invocation_argv`経由で通常段の最終argvを組み立てる。
-    base["commandline"] = pyfltr.command.runner.build_invocation_argv(
+    base["commandline"] = pyfltr.command.invocation.build_invocation_argv(
         command, config, list(resolved.commandline), additional_args=[], fix_stage=False
     )
     # fix-argsが定義されているコマンドでは、fix段でもargvが異なるため併記する。
     # textlintは`--format`ペアを除去する特殊経路となる（`build_invocation_argv`内で処理）。
     if pyfltr.config.model.command_setting(config.values, command, "fix-args", []):
-        base["fix_commandline"] = pyfltr.command.runner.build_invocation_argv(
+        base["fix_commandline"] = pyfltr.command.invocation.build_invocation_argv(
             command, config, list(resolved.commandline), additional_args=[], fix_stage=True
         )
     # directモードではshutil.whichで絶対パスへ解決済み。それ以外は、論理runner名ではなく
@@ -243,7 +245,7 @@ def collect_info(command: str, config: pyfltr.config.model.Config, *, do_check: 
             # 実行経路（`dispatcher._prepare_execution_params`）と同じ検査を並べ、事前確認と実行の
             # 成否を一致させる。最低版未満・版判別不能はValueErrorとなる。
             # `--check` 偽時は副作用なし契約のため呼ばない（版取得は`--version`のsubprocess起動を伴う）。
-            pyfltr.command.runner.ensure_package_manager_version(checked, config, command)
+            pyfltr.command.tool_version.ensure_package_manager_version(checked, config, command)
         except (FileNotFoundError, ValueError) as e:
             base["check_passed"] = False
             base["check_error"] = (
@@ -258,14 +260,14 @@ def collect_info(command: str, config: pyfltr.config.model.Config, *, do_check: 
             # mise不在時のフォールバックなどでcommandlineが変化している可能性がある。
             # `_print_text`が通常段の`commandline`との不一致だけを差分として表示するため、
             # 確認段も`build_invocation_argv`を経由させて同じ抽象化段階（対象ファイル抜きの最終argv）へ揃える。
-            base["check_commandline"] = pyfltr.command.runner.build_invocation_argv(
+            base["check_commandline"] = pyfltr.command.invocation.build_invocation_argv(
                 command, config, list(checked.commandline), additional_args=[], fix_stage=False
             )
             base["check_effective_runner"] = checked.effective_runner
             # 実行版は可用性確認とは別目的のため、`ensure_mise_available`が可用性判定で
             # 起動した`--version`の結果を再利用せず改めて取得する。同関数の戻り値は
             # `ResolvedCommandline`であり、版文字列を返すには実行経路も含む戻り値型の変更を要する。
-            base["check_installed_version"] = pyfltr.command.runner.probe_tool_version_text(checked, config, command)
+            base["check_installed_version"] = pyfltr.command.tool_version.probe_tool_version_text(checked, config, command)
 
     return base
 

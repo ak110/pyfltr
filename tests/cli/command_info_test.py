@@ -13,6 +13,7 @@ import pyfltr.cli.output_format
 import pyfltr.command.mise
 import pyfltr.command.process
 import pyfltr.command.runner
+import pyfltr.command.tool_version
 import pyfltr.config.config
 
 
@@ -115,7 +116,7 @@ def test_command_info_check_rejects_below_minimum_package_manager_version(
     実行経路（`dispatcher._prepare_execution_params`）は最低版未満を解決失敗へ倒すため、
     事前確認手段である`--check`も同じ検査を通す必要がある。
     """
-    pyfltr.command.runner._get_tool_version.cache_clear()  # pylint: disable=protected-access  # テスト間の隔離
+    pyfltr.command.tool_version._get_tool_version.cache_clear()  # pylint: disable=protected-access  # テスト間の隔離
     monkeypatch.setattr(pyfltr.command.process, "run_process_loop", _fake_version_run("uv 0.10.9"))
     monkeypatch.setattr("shutil.which", lambda name: f"/usr/bin/{name}")
 
@@ -129,7 +130,7 @@ def test_command_info_check_passes_with_sufficient_package_manager_version(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """最低版以上のuvでは`uv-audit --check`が`check_passed: true`を報告する。"""
-    pyfltr.command.runner._get_tool_version.cache_clear()  # pylint: disable=protected-access  # テスト間の隔離
+    pyfltr.command.tool_version._get_tool_version.cache_clear()  # pylint: disable=protected-access  # テスト間の隔離
     monkeypatch.setattr(pyfltr.command.process, "run_process_loop", _fake_version_run("uv 0.11.7"))
     monkeypatch.setattr("shutil.which", lambda name: f"/usr/bin/{name}")
 
@@ -142,7 +143,7 @@ def test_command_info_no_check_skips_package_manager_version_probe(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`--check`なしでは版取得のsubprocessを起動しない（副作用なし契約）。"""
-    pyfltr.command.runner._get_tool_version.cache_clear()  # pylint: disable=protected-access  # テスト間の隔離
+    pyfltr.command.tool_version._get_tool_version.cache_clear()  # pylint: disable=protected-access  # テスト間の隔離
     calls: list[list[str]] = []
 
     def _record(
@@ -168,7 +169,7 @@ def test_command_info_check_commandline_matches_final_argv(
 
     確認値だけが起動プレフィックスのままだと、設定引数が確認後の実行経路から欠落したように表示される。
     """
-    pyfltr.command.runner._get_tool_version.cache_clear()  # pylint: disable=protected-access  # テスト間の隔離
+    pyfltr.command.tool_version._get_tool_version.cache_clear()  # pylint: disable=protected-access  # テスト間の隔離
     monkeypatch.setattr(pyfltr.command.process, "run_process_loop", _fake_version_run("uv 0.11.7"))
     monkeypatch.setattr("shutil.which", lambda name: f"/usr/bin/{name}")
 
@@ -200,7 +201,7 @@ def test_command_info_check_includes_installed_version(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`--check`指定時は実行版が`check_installed_version`へ載る。"""
-    pyfltr.command.runner._get_tool_version.cache_clear()  # pylint: disable=protected-access  # テスト間の隔離
+    pyfltr.command.tool_version._get_tool_version.cache_clear()  # pylint: disable=protected-access  # テスト間の隔離
     monkeypatch.setattr(pyfltr.command.process, "run_process_loop", _fake_version_run("uv 0.11.7"))
     monkeypatch.setattr("shutil.which", lambda name: f"/usr/bin/{name}")
 
@@ -213,7 +214,7 @@ def test_command_info_check_installed_version_none_when_unavailable(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """版を取得できない場合は`check_installed_version`が`None`になる。"""
-    pyfltr.command.runner._get_tool_version.cache_clear()  # pylint: disable=protected-access  # テスト間の隔離
+    pyfltr.command.tool_version._get_tool_version.cache_clear()  # pylint: disable=protected-access  # テスト間の隔離
     probe_outputs = iter(("uv 0.11.7", "ready"))
 
     def _run_version(
@@ -242,7 +243,7 @@ def test_command_info_check_failure_omits_installed_version(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """事前確認に失敗した場合は`check_installed_version`キー自体を出力しない。"""
-    pyfltr.command.runner._get_tool_version.cache_clear()  # pylint: disable=protected-access  # テスト間の隔離
+    pyfltr.command.tool_version._get_tool_version.cache_clear()  # pylint: disable=protected-access  # テスト間の隔離
     monkeypatch.setattr(pyfltr.command.process, "run_process_loop", _fake_version_run("uv 0.10.9"))
     monkeypatch.setattr("shutil.which", lambda name: f"/usr/bin/{name}")
 
@@ -254,7 +255,7 @@ def test_command_info_check_failure_omits_installed_version(
 
 def test_command_info_text_shows_installed_version(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
     """text出力の`## ランナー解決`セクションへ実行版の行が出る。"""
-    pyfltr.command.runner._get_tool_version.cache_clear()  # pylint: disable=protected-access  # テスト間の隔離
+    pyfltr.command.tool_version._get_tool_version.cache_clear()  # pylint: disable=protected-access  # テスト間の隔離
     monkeypatch.setattr(pyfltr.command.process, "run_process_loop", _fake_version_run("uv 0.11.7"))
     monkeypatch.setattr("shutil.which", lambda name: f"/usr/bin/{name}")
 

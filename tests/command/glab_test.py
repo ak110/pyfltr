@@ -25,6 +25,7 @@ import pyfltr.paths
 import pyfltr.run_options
 import pyfltr.state.cache
 import pyfltr.state.only_failed
+import pyfltr.tool_types
 import pyfltr.tools
 import pyfltr.warnings_
 import tests.execution_request_helper
@@ -35,7 +36,7 @@ def _make_glab_ci_lint_args() -> pyfltr.run_options.RunOptions:
     return pyfltr.run_options.RunOptions.from_values({"verbose": False})
 
 
-def _make_glab_ci_lint_command_info() -> pyfltr.tools.CommandInfo:
+def _make_glab_ci_lint_command_info() -> pyfltr.tool_types.CommandInfo:
     return pyfltr.tools.BUILTIN_COMMANDS["glab-ci-lint"]
 
 

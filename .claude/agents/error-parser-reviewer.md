@@ -1,7 +1,7 @@
 ---
 name: error-parser-reviewer
 description: >-
-  pyfltr/parsing/の解析処理またはtools.pyの解析定義を変更した PR / コミットに対して、対応ツール全てのエラー出力例に対してパースが
+  pyfltr/parsing/の解析処理またはtool_defs/の解析定義を変更した PR / コミットに対して、対応ツール全てのエラー出力例に対してパースが
   正常に動作しているか網羅レビューする。解析の変更検知時に呼び出し、変更のコミット前に完了させる。
   変更内容のサマリを引数として与えること。
 tools: Read, Grep, Glob, Bash
@@ -11,11 +11,11 @@ tools: Read, Grep, Glob, Bash
 
 `pyfltr/parsing/`は対応ツールの出力フォーマットを正規表現や関数でパースする箇所で、
 変更時に退行が発生しやすい。
-同パッケージの解析処理または`pyfltr/tools.py`の解析定義を変更したPR / コミットに対し、対応ツール全てを網羅レビューする。
+同パッケージの解析処理または`pyfltr/tool_defs/`の解析定義を変更したPR / コミットに対し、対応ツール全てを網羅レビューする。
 
 ## 役割
 
-1. `pyfltr/parsing/`と`pyfltr/tools.py`の解析定義の変更前後を`git diff`で把握
+1. `pyfltr/parsing/`と`pyfltr/tool_defs/`の解析定義の変更前後を`git diff`で把握
 2. 開発用スクリプト`scripts/parser_review`で、`BUILTIN_COMMANDS`の全ツールのサンプルをpyfltr経由で採取
 3. 採取した出力を変更前（直前のコミット）と変更後（作業ツリー）の解析処理で全件比較し、差分を改善・退行・同等に判定
 4. 解析の各責務に対応するテストのカバレッジを評価し、不足するケースを指摘
@@ -30,7 +30,7 @@ tools: Read, Grep, Glob, Bash
 ## 手順
 
 1. 変更内容の確認
-   - `Bash`で`git diff HEAD -- pyfltr/parsing pyfltr/tools.py`を実行
+   - `Bash`で`git diff HEAD -- pyfltr/parsing pyfltr/tools.py pyfltr/tool_types.py pyfltr/tool_defs`を実行
    - 影響を受けるツール（regexを変えたツール）を特定
 
 2. 対象ツール全ての出力を採取する

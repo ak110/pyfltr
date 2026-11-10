@@ -1,6 +1,8 @@
 ---
 paths:
   - "pyfltr/tools.py"
+  - "pyfltr/tool_defs/**"
+  - "pyfltr/tool_types.py"
   - "pyfltr/config/config.py"
   - "Makefile"
   - ".pre-commit-config.yaml"

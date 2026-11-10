@@ -13,6 +13,7 @@ import pyfltr.command.cache_policy
 import pyfltr.command.core_
 import pyfltr.command.env
 import pyfltr.command.glab
+import pyfltr.command.invocation
 import pyfltr.command.linter_fix
 import pyfltr.command.lychee
 import pyfltr.command.markdownlint_env
@@ -26,6 +27,7 @@ import pyfltr.command.subproject_loop
 import pyfltr.command.targets
 import pyfltr.command.textlint_fix
 import pyfltr.command.tool_resolution
+import pyfltr.command.tool_version
 import pyfltr.command.two_step.base
 import pyfltr.command.two_step.prettier
 import pyfltr.command.two_step.ruff
@@ -37,6 +39,7 @@ import pyfltr.parsing.pytest
 import pyfltr.paths
 import pyfltr.run_options
 import pyfltr.text.exclude_fence
+import pyfltr.tool_types
 import pyfltr.tools
 import pyfltr.warnings_
 from pyfltr.command.core_ import CacheContext, CommandResult, ExecutionContext, ExecutionParams
@@ -288,7 +291,7 @@ def _prepare_execution_params(
                 timeout=pyfltr.config.model.resolve_command_timeout(config.values, command),
             )
         # 監査を実施しない旧版が終了コード0を返すため、機能が成立する最低版を起動前に確認する。
-        pyfltr.command.runner.ensure_package_manager_version(resolved, config, command, cwd=cwd)
+        pyfltr.command.tool_version.ensure_package_manager_version(resolved, config, command, cwd=cwd)
     except ValueError as e:
         # `{command}-runner`の指定がツールの系統と合わない場合は、`RunnerMismatchError`が
         # 代替の設定値を`hint`として持つため、警告の対処として併記する。
@@ -311,7 +314,7 @@ def _prepare_execution_params(
     #   [prefix] + [auto-args] + args + (lint-args or fix-args) + additional_args + structured_output適用
     # textlintのfix経路では `pyfltr.command.textlint_fix.execute_textlint_fix` 側が改めてargvを組み立てるため
     # ここでの値は実際には使われない（execute_commandのdispatchでtextlint fixは別経路へ分岐する）。
-    commandline = pyfltr.command.runner.build_invocation_argv(
+    commandline = pyfltr.command.invocation.build_invocation_argv(
         command,
         config,
         commandline_prefix,
@@ -388,7 +391,7 @@ def _prepare_execution_params(
 
 def _prepare_cache_context(
     command: str,
-    command_info: pyfltr.tools.CommandInfo,
+    command_info: pyfltr.tool_types.CommandInfo,
     config: pyfltr.config.model.Config,
     commandline: list[str],
     targets: list[pathlib.Path],
@@ -688,7 +691,7 @@ def _dispatch_command(
     return _with_targets(_EXECUTORS[kind](request))
 
 
-_EXECUTORS: dict[pyfltr.tools.ExecutionKind, typing.Callable[[pyfltr.command.core_.ExecutionRequest], CommandResult]] = {
+_EXECUTORS: dict[pyfltr.tool_types.ExecutionKind, typing.Callable[[pyfltr.command.core_.ExecutionRequest], CommandResult]] = {
     "precommit": pyfltr.command.precommit.execute_pre_commit,
     "glab": pyfltr.command.glab.execute_glab_ci_lint,
     "vitest": pyfltr.command.vitest.execute_vitest,

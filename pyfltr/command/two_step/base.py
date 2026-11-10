@@ -13,6 +13,7 @@ import time
 import typing
 
 import pyfltr.command.core_
+import pyfltr.command.invocation
 import pyfltr.command.process
 import pyfltr.command.runner
 import pyfltr.config.config
@@ -77,7 +78,7 @@ def _prepare_check_write_execution(
     request: pyfltr.command.core_.ExecutionRequest,
 ) -> tuple[list[str], list[str], typing.Callable[[list[str]], pyfltr.command.process.CompletedProcessWithTimeoutInfo]]:
     """同じ要求からcheck/writeの引数と実行器を組み立てる。"""
-    common_args = pyfltr.command.runner.resolve_user_args(request.command, request.ctx.config)
+    common_args = pyfltr.command.invocation.resolve_user_args(request.command, request.ctx.config)
     if request.cwd is not None:
         external_targets = [
             _relative_to_cwd(t, cwd=request.cwd, start_cwd=request.ctx.base.start_cwd) for t in request.params.targets
@@ -87,10 +88,10 @@ def _prepare_check_write_execution(
     check_commandline, write_commandline = _build_commandlines(
         request.params.commandline_prefix,
         common_args,
-        pyfltr.command.runner.expanduser_args(
+        pyfltr.command.invocation.expanduser_args(
             list(pyfltr.config.model.required_command_setting(request.ctx.config.values, request.command, "check-args"))
         ),
-        pyfltr.command.runner.expanduser_args(
+        pyfltr.command.invocation.expanduser_args(
             list(pyfltr.config.model.required_command_setting(request.ctx.config.values, request.command, "write-args"))
         ),
         request.params.additional_args,

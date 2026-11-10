@@ -11,6 +11,7 @@ import pyfltr.config.config
 import pyfltr.config.model
 import pyfltr.diagnostics
 import pyfltr.parsing.entry
+import pyfltr.tool_types
 import pyfltr.tools
 
 FAILED_STATUSES: frozenset[str] = frozenset({"failed", "resolution_failed"})
@@ -340,7 +341,7 @@ class CommandResult:
         cls,
         *,
         command: str,
-        command_info: "pyfltr.tools.CommandInfo | None" = None,
+        command_info: "pyfltr.tool_types.CommandInfo | None" = None,
         commandline: list[str],
         returncode: int | None,
         output: str,
@@ -391,7 +392,7 @@ class CommandResult:
         *,
         process: "pyfltr.command.process.CompletedProcessWithTimeoutInfo",
         command: str,
-        command_info: "pyfltr.tools.CommandInfo",
+        command_info: "pyfltr.tool_types.CommandInfo",
         commandline: list[str],
         output: str,
         elapsed: float,
@@ -651,7 +652,7 @@ class ExecutionParams:
     dispatcherと各runner関数で参照する。
     """
 
-    command_info: pyfltr.tools.CommandInfo
+    command_info: pyfltr.tool_types.CommandInfo
     targets: list[pathlib.Path]
     commandline_prefix: list[str]
     commandline: list[str]

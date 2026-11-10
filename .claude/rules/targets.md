@@ -5,6 +5,8 @@ paths:
   - "pyfltr/command/subproject_loop.py"
   - "pyfltr/cli/parser.py"
   - "pyfltr/tools.py"
+  - "pyfltr/tool_defs/**"
+  - "pyfltr/tool_types.py"
   - "tests/command/core_test.py"
   - "tests/command/dispatcher_test.py"
   - "tests/command/env_test.py"
@@ -40,7 +42,7 @@ paths:
 
 ## 外部パス（起点cwd配下にない絶対パス）の分類方針
 
-`pyfltr/tools.py`の`CommandInfo`の3フィールドで分類を表現する。
+`pyfltr/tool_types.py`の`CommandInfo`の3フィールドで分類を表現する。
 分類ロジックの集約先は2つに分かれる。
 
 - 非モノレポ構成: `pyfltr/command/dispatcher.py`の`_prepare_execution_params`で外部パスフィルタと

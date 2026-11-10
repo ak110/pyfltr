@@ -29,6 +29,7 @@ import pyfltr.paths
 import pyfltr.run_options
 import pyfltr.state.cache
 import pyfltr.state.only_failed
+import pyfltr.tool_types
 import pyfltr.tools
 import pyfltr.warnings_
 from tests import conftest as _testconf
@@ -909,13 +910,13 @@ def test_js_audit_tools_args_use_json(command: str) -> None:
 
 def test_command_info_target_globs_str() -> None:
     """`CommandInfo.target_globs()`はstr targetsを単一要素リストに正規化する。"""
-    info = pyfltr.tools.CommandInfo(type="linter", targets="*.py")
+    info = pyfltr.tool_types.CommandInfo(type="linter", targets="*.py")
     assert info.target_globs() == ["*.py"]
 
 
 def test_command_info_target_globs_list() -> None:
     """`CommandInfo.target_globs()`はlist targetsをそのままコピーして返す。"""
-    info = pyfltr.tools.CommandInfo(type="linter", targets=["*.ts", "*.tsx"])
+    info = pyfltr.tool_types.CommandInfo(type="linter", targets=["*.ts", "*.tsx"])
     result = info.target_globs()
     assert result == ["*.ts", "*.tsx"]
     # 元リストと切り離されている

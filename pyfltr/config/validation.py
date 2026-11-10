@@ -7,6 +7,7 @@ import re
 import typing
 
 import pyfltr.parsing.common
+import pyfltr.tool_types
 import pyfltr.tools
 import pyfltr.warnings_
 from pyfltr.config.model import DEFAULT_CONFIG, SEVERITY_VALUES, Config, ConfigWarningEmitter
@@ -244,7 +245,7 @@ def recompute_fast_aliases(config: Config) -> None:
 
 
 def warn_config_files(config: Config, base: pathlib.Path, commands: typing.Iterable[str]) -> None:
-    """今回の実行対象で`pyfltr.tools.CommandInfo.config_files`を満たさないものを警告する。
+    """今回の実行対象で`pyfltr.tool_types.CommandInfo.config_files`を満たさないものを警告する。
 
     `commands`には有効判定（`is_command_enabled_anywhere`）とエイリアス展開を経た実行対象を渡す。
     設定上は有効でも今回選択していないコマンドを判定対象から外し、限定実行で無関係な警告を返さないため、
@@ -437,8 +438,8 @@ def register_custom_command(
         return
     hints: list[str] = [str(item) for item in raw_hints]
 
-    # 全検証通過。pyfltr.tools.CommandInfo・values辞書を一括登録する。
-    config.commands[name] = pyfltr.tools.CommandInfo(
+    # 全検証通過。pyfltr.tool_types.CommandInfo・values辞書を一括登録する。
+    config.commands[name] = pyfltr.tool_types.CommandInfo(
         type=cmd_type,
         builtin=False,
         targets=targets,
@@ -486,7 +487,7 @@ def validate_targets_value(
     """Targets / extend-targets の値をバリデーション。
 
     値が不正な場合は警告を発行し、`None`を返す。呼び出し側は`None`を受け取ったら
-    対象のキーの反映をスキップして既定値（`pyfltr.tools.CommandInfo.targets`）を維持する。
+    対象のキーの反映をスキップして既定値（`pyfltr.tool_types.CommandInfo.targets`）を維持する。
     """
     if isinstance(value, str):
         return value

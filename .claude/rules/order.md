@@ -1,6 +1,8 @@
 ---
 paths:
   - "pyfltr/tools.py"
+  - "pyfltr/tool_defs/**"
+  - "pyfltr/tool_types.py"
   - "pyfltr/parsing/entry.py"
   - "pyfltr/config/model.py"
 ---
@@ -15,7 +17,11 @@ linter/tester群の実行順はLPT並列（推定実行時間の降順スケジ�
 ## 並び順を揃える箇所
 
 `BUILTIN_COMMANDS`登録順を基準に、設定キー・言語カテゴリ・エイリアス・解析登録を導出する。
-各ツールの既定値、カテゴリ、パーサーは`pyfltr/tools.py`の同じ`CommandInfo`へ記録する。
+各ツールの既定値、カテゴリ、パーサーは`pyfltr/tool_defs/`の同じ`CommandInfo`へ記録する。
+登録先は順に`formatters.py`、`general_linters.py`、`python_linters.py`、`document_linters.py`、
+`javascript_linters.py`、`native_linters.py`へ続く。
+末尾は`sql_linters.py`、`audit.py`、`testers.py`とする。
+`common.py`は種類をまたぐ定義値を持ち、`tools.py`が各登録表をこの順に連結する。
 `pyfltr/config/model.py`の`DEFAULT_CONFIG`と`aliases`、`pyfltr/parsing/entry.py`の解析処理は
 この登録を参照し、別の登録表を更新しない。表示順の算出は`command_index()`を共用する。
 

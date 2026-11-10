@@ -8,6 +8,7 @@ import typing
 
 import platformdirs
 
+import pyfltr.tool_types
 import pyfltr.tools
 import pyfltr.warnings_
 
@@ -67,7 +68,7 @@ glob内チルダの意図しない展開を防ぐため対象外とする。
 展開規則は要素先頭の `~` に加え、要素内の最初の `=` 直後の `~` も展開する
 （`--config=~/cfg.toml` を `--config=<HOME>/cfg.toml` に展開）。
 `os.path.expanduser` は先頭の `~` のみ展開するため、展開は
-`pyfltr.command.runner.expanduser_args` を経由する。
+`pyfltr.command.invocation.expanduser_args` を経由する。
 
 展開タイミングはsubprocess引数組み立て直前（`pyfltr.command.runner.build_commandline` /
 `build_invocation_argv` および `pyfltr.command.two_step.base` /
@@ -208,7 +209,7 @@ for _tool_info in pyfltr.tools.BUILTIN_COMMANDS.values():
 
 def register_command_dynamic_defaults(
     defaults: dict[str, typing.Any],
-    builtin_commands: dict[str, pyfltr.tools.CommandInfo],
+    builtin_commands: dict[str, pyfltr.tool_types.CommandInfo],
 ) -> None:
     """全ビルトインコマンドへ実行時に受理する動的設定キーの既定値を登録する。
 
@@ -273,11 +274,11 @@ register_command_hints_defaults(DEFAULT_CONFIG, pyfltr.tools.BUILTIN_COMMAND_NAM
 
 def register_command_subproject_aware_defaults(
     defaults: dict[str, typing.Any],
-    builtin_commands: dict[str, pyfltr.tools.CommandInfo],
+    builtin_commands: dict[str, pyfltr.tool_types.CommandInfo],
 ) -> None:
     """全ビルトインコマンドへ `{command}-subproject-aware` 既定値を登録する。
 
-    既定値は `pyfltr.tools.CommandInfo.subproject_aware` から取得する。利用者は
+    既定値は `pyfltr.tool_types.CommandInfo.subproject_aware` から取得する。利用者は
     `pyproject.toml` で `{command}-subproject-aware = false` 等と上書きできる。
     """
     for command, info in builtin_commands.items():
@@ -290,7 +291,7 @@ register_command_subproject_aware_defaults(DEFAULT_CONFIG, pyfltr.tools.BUILTIN_
 def resolve_subproject_aware(values: dict[str, typing.Any], command: str, default: bool) -> bool:
     """per-tool `{command}-subproject-aware` の有効値を返す。
 
-    値が真偽値以外の場合は `default`（`pyfltr.tools.CommandInfo.subproject_aware`）を返す。
+    値が真偽値以外の場合は `default`（`pyfltr.tool_types.CommandInfo.subproject_aware`）を返す。
     バリデーションは `load_config` 側で行うため、ここでは型確認のみ行う安全側のヘルパー。
     """
     raw = command_setting(values, command, "subproject-aware", default)
@@ -385,7 +386,7 @@ class Config:
     """pyfltr設定。"""
 
     values: dict[str, typing.Any]
-    commands: dict[str, pyfltr.tools.CommandInfo]
+    commands: dict[str, pyfltr.tool_types.CommandInfo]
     """ビルトイン + カスタムの統合コマンドレジストリ"""
     command_names: list[str]
     """コマンドの並び順リスト（ビルトイン順 → カスタムコマンド順）"""

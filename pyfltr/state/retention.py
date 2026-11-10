@@ -28,11 +28,6 @@ class RetentionPolicy:
     """保存期間の上限（日数）。"""
 
 
-def now_iso() -> str:
-    """現在時刻をISO 8601（UTC、マイクロ秒付き）で返す。"""
-    return dt.datetime.now(dt.UTC).isoformat()
-
-
 def timestamp_of(entry_dir: pathlib.Path, *, meta_filename: str, timestamp_key: str) -> dt.datetime | None:
     """世代ディレクトリの`meta_filename`から`timestamp_key`をパースして返す。
 

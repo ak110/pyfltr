@@ -13,7 +13,7 @@ import pyfltr.paths
 import pyfltr.tools
 from pyfltr.command import step_result
 from pyfltr.command.core_ import CommandResult
-from pyfltr.command.runner import build_invocation_argv
+from pyfltr.command.invocation import build_invocation_argv
 from pyfltr.command.snapshot import (
     changed_files,
     snapshot_file_digests,

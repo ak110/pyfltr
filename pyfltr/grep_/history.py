@@ -37,6 +37,7 @@ import pyfltr.config.model
 import pyfltr.grep_.transaction
 import pyfltr.paths
 import pyfltr.state.retention
+import pyfltr.timestamps
 import pyfltr.user_cache
 import pyfltr.warnings_
 from pyfltr.grep_.types import ReplaceCommandMeta, ReplaceRecord
@@ -204,7 +205,7 @@ class ReplaceHistoryStore:
             )
         meta = {
             "replace_id": replace_id,
-            "saved_at": pyfltr.state.retention.now_iso(),
+            "saved_at": pyfltr.timestamps.now_iso(),
             "command": _command_meta_to_dict(command_meta),
             "files": files_meta,
         }

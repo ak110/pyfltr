@@ -49,6 +49,7 @@ import pyfltr.config.config
 import pyfltr.config.model
 import pyfltr.diagnostics
 import pyfltr.parsing.entry
+import pyfltr.paths
 import pyfltr.user_cache
 
 logger = logging.getLogger(__name__)
@@ -190,7 +191,7 @@ class CacheStore:
             shutil.rmtree(self._cache_dir, ignore_errors=True)
 
     def _entry_path(self, command: str, key: str) -> pathlib.Path:
-        return self._cache_dir / _sanitize_tool_name(command) / f"{key}.json"
+        return self._cache_dir / pyfltr.paths.sanitize_command_name(command) / f"{key}.json"
 
 
 def cache_policy_from_config(config: pyfltr.config.model.Config) -> CachePolicy:
@@ -214,12 +215,6 @@ def _file_sha256(path: pathlib.Path) -> str:
             return hashlib.file_digest(f, "sha256").hexdigest()
     except OSError:
         return ""
-
-
-def _sanitize_tool_name(name: str) -> str:
-    """ツール名をファイルシステム安全な形式へ変換する。"""
-    safe = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in name)
-    return safe or "_"
 
 
 def _serialize_result(result: pyfltr.command.core_.CommandResult, *, source_run_id: str) -> dict[str, typing.Any]:

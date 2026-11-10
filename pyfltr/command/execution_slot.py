@@ -56,6 +56,7 @@ import typing
 import psutil
 
 import pyfltr.file_lock
+import pyfltr.timestamps
 import pyfltr.user_cache
 
 logger = logging.getLogger(__name__)
@@ -193,7 +194,7 @@ def _observe(
     """
     if callback is None:
         return acquire()
-    started = SlotWait(kind="initial", sequence=0, started_at=_now_iso())
+    started = SlotWait(kind="initial", sequence=0, started_at=pyfltr.timestamps.now_iso())
     callback(started)
     start = time.monotonic()
     outcome = "failed"
@@ -210,7 +211,7 @@ def _observe(
         raise
     finally:
         finished = dataclasses.replace(
-            started, finished_at=_now_iso(), elapsed=round(time.monotonic() - start, 3), outcome=outcome
+            started, finished_at=pyfltr.timestamps.now_iso(), elapsed=round(time.monotonic() - start, 3), outcome=outcome
         )
         try:
             callback(finished)
@@ -225,10 +226,6 @@ def _release(lock: pyfltr.file_lock.FileLock, owner_path: pathlib.Path) -> None:
     with contextlib.suppress(OSError):
         owner_path.write_text("", encoding="utf-8")
     lock.release()
-
-
-def _now_iso() -> str:
-    return dt.datetime.now(dt.UTC).isoformat()
 
 
 @contextlib.contextmanager

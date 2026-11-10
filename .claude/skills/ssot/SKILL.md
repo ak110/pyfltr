@@ -4,7 +4,7 @@ description: >
   pyfltrのSSOT・参照パスの方針。
   内部リンクのアンカー方針・MkDocsのdocs_dir外参照禁止・規約適用ルール・モジュールパス参照追従・
   SSOT俯瞰（連動更新先の一覧）・機能追加時の文書露出判断を集約する。
-  pyfltr/config/config.py・pyfltr/cli/output_format.py・pyfltr/command/runner.py・
+  pyfltr/config/config.py・pyfltr/cli/output_format.py・pyfltr/command/runner.py・pyfltr/command/invocation.py・pyfltr/command/tool_version.py・
   pyfltr/command/mise.py・pyfltr/user_cache.py・pyfltr/state/archive.py・pyfltr/state/cache.py・
   docs/guide/*.md・docs/development/*.md・mkdocs.yml・README.md・AGENTS.md・
   .claude/skills/*/SKILL.md・.claude/rules/*.md を編集する際に使用する。
@@ -52,7 +52,7 @@ description: >
   グローバル設定パスの解決ロジック
 - `pyfltr/user_cache.py`の`default_cache_root`:
   キャッシュルートの解決ロジック
-- `pyfltr/config/model.py`の`DEFAULT_CONFIG`と`pyfltr/tools.py`のツール定義:
+- `pyfltr/config/model.py`の`DEFAULT_CONFIG`と`pyfltr/tool_defs/`のツール定義:
   設定キー体系・既定値・runner方針
 - `pyfltr/config/selection.py`の`is_command_enabled_anywhere`:
   実行対象コマンドの有効（ON/OFF）判定。モノレポでは起点と各サブプロジェクトの和集合で判定する。

@@ -4,8 +4,8 @@ description: >
   pyfltrのツール解決方針。
   mise backend登録・python-runner/js-runner/bin-runner委譲・uv/uvx/pnpx/pnpm/npm/yarn等の直接指定値・
   fallback検出と~展開対象キー・対応ツールの依存方針を集約する。
-  pyfltr/command/runner.py・pyfltr/command/mise.py・pyfltr/config/config.py・
-  pyfltr/tools.py・pyfltr/command/dispatcher.py・pyfltr/command/tool_resolution.py・
+  pyfltr/command/runner.py・pyfltr/command/invocation.py・pyfltr/command/tool_version.py・pyfltr/command/mise.py・pyfltr/config/config.py・
+  pyfltr/tools.py・pyfltr/tool_types.py・pyfltr/tool_defs/・pyfltr/command/dispatcher.py・pyfltr/command/tool_resolution.py・
   pyfltr/cli/command_info.py・docs/guide/usage.md・
   docs/guide/recommended*.md・docs/guide/configuration*.md・
   tests/config/config_test.py・tests/cli/command_info_test.py を編集する際に使用する。
@@ -39,7 +39,7 @@ pyfltrが対応するformatter/linter/testerの依存指定および実行時の
 オフライン・プロキシ環境での導入失敗リスクを避けるため本体依存から除外する。
 Node.js等のランタイムを伴うパッケージも、ランタイム導入とサプライチェーンの広さの観点から本体依存に含めない。
 
-ネイティブバイナリツール（cargo系・dotnet系を含む）は`pyfltr/tools.py`の対象`CommandInfo`へ
+ネイティブバイナリツール（cargo系・dotnet系を含む）は`pyfltr/tool_defs/`の対象`CommandInfo`へ
 mise backend付きの`runner`を登録する。
 同じ定義の`defaults`で`{command}-runner`既定値を`"bin-runner"`に揃える。
 グローバル`bin-runner`既定値`"mise"`へ委譲することで、追加ツール導入時もmise経由の自動セットアップが既定動作となる。
@@ -95,7 +95,7 @@ JSONLフィールドの追加・名称変更は[.claude/skills/output-format/SKI
 `runner = "direct"`でPATH上のバイナリを直接呼び出す。
 Python系ツール解決表（`PYTHON_TOOL_BIN`）へ相乗りさせると、未検出時の案内文がuv経由起動を案内する構造になるため分離する。
 `{command}-version`キーは設けない（バージョン固定はパッケージマネージャー側に委ねる）。
-機能が成立する最低版の要件は`pyfltr/command/runner.py`の`PACKAGE_MANAGER_MIN_VERSION`へ登録し、
+機能が成立する最低版の要件は`pyfltr/command/tool_version.py`の`PACKAGE_MANAGER_MIN_VERSION`へ登録し、
 `ensure_package_manager_version`が起動前にチェックして`resolution_failed`へ倒す。
 旧版が処理を実施しないまま終了コード0を返す事象は、終了コード0が無条件に成功となり
 出力解析の結果が成否へ関与しないため、出力解析では検知できない。

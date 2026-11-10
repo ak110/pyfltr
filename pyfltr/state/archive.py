@@ -58,6 +58,7 @@ import pyfltr.output.jsonl
 import pyfltr.parsing.entry
 import pyfltr.paths
 import pyfltr.state.retention
+import pyfltr.timestamps
 import pyfltr.user_cache
 
 logger = logging.getLogger(__name__)
@@ -179,7 +180,7 @@ class ArchiveStore:
             "argv": argv if argv is not None else sys.argv[1:],
             "commands": commands or [],
             "files": files,
-            "started_at": pyfltr.state.retention.now_iso(),
+            "started_at": pyfltr.timestamps.now_iso(),
             DIAGNOSTIC_PATHS_META_KEY: DIAGNOSTIC_PATHS_START_RELATIVE,
             SLOT_WAITS_META_KEY: [],
         }
@@ -278,7 +279,7 @@ class ArchiveStore:
         files: int | None,
     ) -> None:
         def update(meta: dict[str, typing.Any]) -> None:
-            meta["finished_at"] = pyfltr.state.retention.now_iso()
+            meta["finished_at"] = pyfltr.timestamps.now_iso()
             meta["exit_code"] = exit_code
             if commands is not None:
                 meta["commands"] = commands

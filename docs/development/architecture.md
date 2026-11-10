@@ -30,11 +30,11 @@ fixステージが失敗した場合は、同じツールの通常ステージ�
 
 依存は次の下位から上位への7層に整理する。同じ層または下位だけをimportし、
 関数内と`TYPE_CHECKING`内のimportにも同じ規則を適用する。
-サブパッケージは9つで、`command/two_step/`はコマンド実行の内部構成である。
+サブパッケージは10個で、`command/two_step/`はコマンド実行の内部構成である。
 
 | 層 | 配置 | 責務 |
 | --- | --- | --- |
-| 汎用 | `text/`・`colloquial/`・`parsing/`とトップレベルモジュール | フェンス走査・口語表現の検出・診断解析、`tools.py`のツール定義、`diagnostics.py`の型、`rule_urls.py`のURL生成、パス・警告・実行オプション、`user_cache.py`のキャッシュルート解決、`file_lock.py`のプロセス間ロック |
+| 汎用 | `text/`・`colloquial/`・`parsing/`・`tool_defs/`とトップレベルモジュール | フェンス走査・口語表現の検出・診断解析、`tool_types.py`の型・`tool_defs/`の登録・`tools.py`の導出定義、`diagnostics.py`の型、`rule_urls.py`のURL生成、パス・警告・実行オプション、`user_cache.py`のキャッシュルート解決、`file_lock.py`のプロセス間ロック |
 | 設定 | `config/` | 読込・統合・検証・編集・選択・プリセット。組込みツールの値は`tools.py`から導出する |
 | コマンド実行 | `command/` | 実行要求・振り分け・プロセス管理・runner解決・対象選定、`executor.py`と`stage_runner.py`の実行制御、`execution_slot.py`の実行枠、キャッシュ判定 |
 | 出力 | `output/` | text・JSONL・SARIF・GitHub Annotations・GitLab Code Quality・TUI、診断表示・logger設定 |
@@ -75,6 +75,21 @@ flowchart LR
 `mcp`を本体必須に含めるのはサーバー同梱体験（`pyfltr mcp`が即座に起動できる）を保つため。
 pre-commitとprekは同じ設定形式を使う代替実行系である。
 既存環境との互換性を保ちつつ高速な実行系を選択できるよう、双方を本体へ同梱する。
+
+汎用処理を同じ作者のユーティリティ集pytilpackへ寄せる案は採用しない。
+置き換えられる処理は、実行アーカイブの原子的なJSON書き込み（`state/archive.py`）と、
+世代削除時のサイズ計測・削除（`state/retention.py`）に限られる。
+サイズ計測と削除には挙動差もある。pytilpackの`ad19b5a`では、`pathlib.get_size`が読めないディレクトリに警告とトレースバックを出し、
+`pathlib.rmtree`がディレクトリへのシンボリックリンクに対して`ignore_errors=True`でも`NotADirectoryError`を送出した。
+pyfltrはどちらもメッセージを出さず続行する。
+
+pytilpackは開発依存に`pyfltr[python]`を持ち、hatch-vcsでGitタグから版を決める。
+uv 0.13.7による同構成の一時プロジェクトでの確認では、開発依存が自プロジェクトへ依存する構成は、
+版を静的に記述すると解決できたが、Gitタグから決める場合はタグと版条件が揃っていても`uv lock`が失敗した。
+pyfltrがpytilpackへ依存すると、pytilpack側で新しいpyfltrを選べなくなる。
+ファイルロック・パスの比較・Markdownのフェンス処理・PATHの重複排除はpyfltrの仕様と結び付いている。
+これらを移すと、不具合の是正と待ち合わせが2つのリポジトリにまたがるため対象にしない。
+pytilpackが版を静的に管理するか開発依存からpyfltrを外し、かつ寄せる価値のある汎用処理が増えた場合に再検討する。
 
 ### モジュール分割の方針
 
@@ -463,10 +478,10 @@ fast実行は`fast`サブコマンドと、`--commands`にfastトークンを含
 
 ### 専用実行方式の追加
 
-通常のツール追加は`tools.py`の`BUILTIN_COMMANDS`へ`CommandInfo`を1件登録し、
+通常のツール追加は`tool_defs/`の種類別登録表へ`CommandInfo`を1件登録し、
 既存の`execution_kind`と解析方式を選ぶ。実行方式そのものを追加する場合は、次の接続を更新する。
 
-1. `tools.py`の`ExecutionKind`へ種別を追加する。
+1. `tool_types.py`の`ExecutionKind`へ種別を追加する。
 2. `command/`の担当モジュールに`ExecutionRequest`を受け取り`CommandResult`を返す実行関数を実装する。
    要求にある設定・対象・実行文脈を使い、対象展開と共通の完了判定を再定義しない。
 3. `command/dispatcher.py`の`_EXECUTORS`へ種別と実行関数を登録する。

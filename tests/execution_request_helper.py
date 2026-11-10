@@ -7,12 +7,13 @@ import typing
 import pyfltr.command.core_
 import pyfltr.config.model
 import pyfltr.run_options
+import pyfltr.tool_types
 import pyfltr.tools
 
 
 def make_request(
     command: str,
-    command_info: pyfltr.tools.CommandInfo,
+    command_info: pyfltr.tool_types.CommandInfo,
     config: pyfltr.config.model.Config,
     env: dict[str, str] | None,
     targets: list[pathlib.Path],

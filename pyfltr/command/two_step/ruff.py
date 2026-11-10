@@ -4,6 +4,7 @@ import functools
 import time
 
 import pyfltr.command.core_
+import pyfltr.command.invocation
 import pyfltr.command.process
 import pyfltr.command.runner
 import pyfltr.config.config
@@ -30,7 +31,7 @@ def execute_ruff_format_two_step(request: pyfltr.command.core_.ExecutionRequest)
     直接参照する旧実装は動作しなくなる。同種関数を追加する際は本引数経由でプレフィックスを受け取る形を踏襲する。
     """
     check_commandline: list[str] = list(request.params.commandline_prefix)
-    check_commandline.extend(pyfltr.command.runner.expanduser_args(list(request.ctx.config["ruff-format-check-args"])))
+    check_commandline.extend(pyfltr.command.invocation.expanduser_args(list(request.ctx.config["ruff-format-check-args"])))
     if request.cwd is not None and request.ctx.base.start_cwd is not None:
         check_commandline.extend(
             _relative_to_cwd(t, cwd=request.cwd, start_cwd=request.ctx.base.start_cwd) for t in request.params.targets

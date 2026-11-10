@@ -3,6 +3,7 @@
 import pytest
 
 import pyfltr.command.structured_output
+import pyfltr.tool_types
 import pyfltr.tools
 
 
@@ -20,5 +21,5 @@ import pyfltr.tools
 )
 def test_apply_structured_output_before_argument(command: list[str], before: str, expected: list[str]) -> None:
     """miseと下位コマンドの引数境界を保ち、指定したマーカーの前へ注入する。"""
-    spec = pyfltr.tools.StructuredOutputSpec(inject=["--message-format=short"], conflicts=[], before_argument=before)
+    spec = pyfltr.tool_types.StructuredOutputSpec(inject=["--message-format=short"], conflicts=[], before_argument=before)
     assert pyfltr.command.structured_output.apply_structured_output(command, spec) == expected

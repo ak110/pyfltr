@@ -14,7 +14,7 @@ import pyfltr.config.config
 import pyfltr.config.model
 import pyfltr.tools
 from pyfltr.command.core_ import CommandResult
-from pyfltr.command.runner import build_invocation_argv
+from pyfltr.command.invocation import build_invocation_argv
 
 logger = __import__("logging").getLogger(__name__)
 

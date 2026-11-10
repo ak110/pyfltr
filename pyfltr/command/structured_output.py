@@ -11,7 +11,7 @@ import pathlib
 import pyfltr.config.config
 import pyfltr.config.model
 import pyfltr.tools
-from pyfltr.tools import StructuredOutputSpec
+from pyfltr.tool_types import StructuredOutputSpec
 
 # 各ツールの構造化出力用引数。設定キー → 注入仕様のマッピング。
 # 設定キー（例: "ruff-check-json"）がTrueのとき有効になる。

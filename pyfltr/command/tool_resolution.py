@@ -8,6 +8,7 @@
 import pyfltr.command.runner
 import pyfltr.config.config
 import pyfltr.config.model
+import pyfltr.tool_types
 import pyfltr.tools
 import pyfltr.warnings_
 from pyfltr.command.core_ import CommandResult
@@ -102,7 +103,7 @@ def format_tool_resolution_failure(
 
 def failed_resolution_result(
     command: str,
-    command_info: pyfltr.tools.CommandInfo,
+    command_info: pyfltr.tool_types.CommandInfo,
     message: str,
     *,
     files: int,

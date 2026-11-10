@@ -19,6 +19,7 @@ import pyfltr.command.slow_tests
 import pyfltr.command.subprojects
 import pyfltr.command.targets
 import pyfltr.command.tool_resolution
+import pyfltr.command.tool_version
 import pyfltr.command.two_step.base
 import pyfltr.command.two_step.prettier
 import pyfltr.command.two_step.ruff
@@ -151,7 +152,7 @@ def test_uv_audit_below_minimum_version_is_not_downgraded_by_severity(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """最低版不足はwarning設定でも解決失敗から格下げされない。"""
-    pyfltr.command.runner._get_tool_version.cache_clear()  # pylint: disable=protected-access  # テスト間の隔離
+    pyfltr.command.tool_version._get_tool_version.cache_clear()  # pylint: disable=protected-access  # テスト間の隔離
     target = tmp_path / "pyproject.toml"
     target.write_text("[project]\nname = 'example'\n")
 

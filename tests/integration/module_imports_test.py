@@ -15,6 +15,10 @@ import pytest
         "pyfltr.parsing.pytest",
         "pyfltr.rule_urls",
         "pyfltr.tools",
+        "pyfltr.tool_types",
+        "pyfltr.command.invocation",
+        "pyfltr.command.tool_version",
+        "pyfltr.timestamps",
         "pyfltr.config.model",
     ],
 )

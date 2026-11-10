@@ -29,6 +29,7 @@ import pyfltr.grep_.scanner
 import pyfltr.grep_.types
 import pyfltr.output.jsonl
 import pyfltr.parsing.common
+import pyfltr.tool_types
 import pyfltr.tools
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -109,7 +110,7 @@ def test_documented_custom_command_keys_match_validation() -> None:
     assert expected, "受理キーの取得方式を実装の定義に合わせて更新する"
     assert documented == expected
     type_row = section.split("\n", 2)[2].split("\n", 1)[0]
-    assert _codes(type_row) - {"type"} == {f'"{value}"' for value in typing.get_args(pyfltr.tools.CommandType)}
+    assert _codes(type_row) - {"type"} == {f'"{value}"' for value in typing.get_args(pyfltr.tool_types.CommandType)}
 
 
 def test_documented_subcommands_and_config_actions_match_parser() -> None:

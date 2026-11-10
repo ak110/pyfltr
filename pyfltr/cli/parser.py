@@ -27,6 +27,7 @@ import pyfltr.config.config
 import pyfltr.output.auxiliary
 import pyfltr.output.formatters
 import pyfltr.state.runs
+import pyfltr.tool_types
 import pyfltr.tools
 
 _STATIC_COMMAND_ALIASES: tuple[str, ...] = ("format", "lint", "test", "audit")
@@ -479,7 +480,7 @@ SUBCOMMANDS: tuple[Subcommand, ...] = (
         "config",
         "  config <action>  設定ファイルを操作する (get / set / delete / list)。\n",
         register=register_config,
-        execute=pyfltr.tools.FunctionRef[[argparse.ArgumentParser, argparse.Namespace], int](
+        execute=pyfltr.tool_types.FunctionRef[[argparse.ArgumentParser, argparse.Namespace], int](
             "pyfltr.cli.config_subcmd", "execute"
         ),
         registration_key="config",
@@ -495,7 +496,7 @@ SUBCOMMANDS: tuple[Subcommand, ...] = (
         "list-runs",
         "  list-runs        実行アーカイブ内の run 一覧を表示する。\n",
         register=pyfltr.cli.runs.register_subparsers,
-        execute=pyfltr.tools.FunctionRef[[argparse.ArgumentParser, argparse.Namespace], int](
+        execute=pyfltr.tool_types.FunctionRef[[argparse.ArgumentParser, argparse.Namespace], int](
             "pyfltr.cli.runs", "execute_list_runs"
         ),
         registration_key="runs",
@@ -504,7 +505,7 @@ SUBCOMMANDS: tuple[Subcommand, ...] = (
         "show-run",
         "  show-run <run_id>\n                   指定 run の詳細 (meta・ツール別サマリ・diagnostic・生出力) を表示する。\n",
         register=pyfltr.cli.runs.register_subparsers,
-        execute=pyfltr.tools.FunctionRef[[argparse.ArgumentParser, argparse.Namespace], int](
+        execute=pyfltr.tool_types.FunctionRef[[argparse.ArgumentParser, argparse.Namespace], int](
             "pyfltr.cli.runs", "execute_show_run"
         ),
         registration_key="runs",
@@ -514,7 +515,7 @@ SUBCOMMANDS: tuple[Subcommand, ...] = (
         "  command-info <command>\n"
         "                   ツール起動方式(runner / 実行ファイル / 最終コマンドライン等)の解決結果を表示する。\n",
         register=pyfltr.cli.command_info.register_subparsers,
-        execute=pyfltr.tools.FunctionRef[[argparse.ArgumentParser, argparse.Namespace], int](
+        execute=pyfltr.tool_types.FunctionRef[[argparse.ArgumentParser, argparse.Namespace], int](
             "pyfltr.cli.command_info", "execute_command_info"
         ),
         registration_key="command-info",
@@ -530,7 +531,7 @@ SUBCOMMANDS: tuple[Subcommand, ...] = (
         "grep",
         "  grep <pattern> [paths...]\n                   ファイル群から正規表現に一致する行を検索する (ignore 尊重)。\n",
         register=pyfltr.cli.grep_subcmd.register_subparsers,
-        execute=pyfltr.tools.FunctionRef[[argparse.ArgumentParser, argparse.Namespace], int](
+        execute=pyfltr.tool_types.FunctionRef[[argparse.ArgumentParser, argparse.Namespace], int](
             "pyfltr.cli.grep_subcmd", "execute_grep"
         ),
         registration_key="grep",
@@ -540,7 +541,7 @@ SUBCOMMANDS: tuple[Subcommand, ...] = (
         "  replace <pattern> <replacement> [paths...]\n"
         "                   grep と同じ引数体系で置換する (履歴保存・undo 対応)。\n",
         register=pyfltr.cli.replace_subcmd.register_subparsers,
-        execute=pyfltr.tools.FunctionRef[[argparse.ArgumentParser, argparse.Namespace], int](
+        execute=pyfltr.tool_types.FunctionRef[[argparse.ArgumentParser, argparse.Namespace], int](
             "pyfltr.cli.replace_subcmd", "execute_replace"
         ),
         registration_key="replace",
