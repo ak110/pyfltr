@@ -107,6 +107,12 @@ class ExecutionBaseContext:
 
     真のとき、`pytest-always-targets`が非空の設定ではpytestの対象へ一致ファイルを和集合として加える。
     """
+    fail_fast: bool = False
+    """実行が`--fail-fast`指定で、失敗したツールの時点で後続の段を打ち切るか。
+
+    偽のとき、fix段で実行したツールは同じ実行の通常の段でも必ず実行される。
+    textlintのfix段はこれを前提に、通常の段と重複する検査を省く（`pyfltr.command.textlint_fix`）。
+    """
     _temporary_directory_stack: contextlib.ExitStack | None = dataclasses.field(default=None, init=False, repr=False)
     _temporary_directory_path: pathlib.Path | None = dataclasses.field(default=None, init=False, repr=False)
     """一時的に生成する検査用ファイルのライフタイムを保持する。"""

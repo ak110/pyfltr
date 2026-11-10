@@ -39,23 +39,24 @@ def execute_textlint_fix(request: pyfltr.command.core_.ExecutionRequest) -> pyfl
         （textlintのキャッシュヒット結果は修正後の本文を持たず修正処理が例外終了するため、
         修正段だけキャッシュを無効化する。通常lint段は利用者のキャッシュ指定を保つ）
 
-    Step2: lintチェック （Step1が非0で終わった場合だけ実行する）
+    Step2: lintチェック （fail-fast指定時にStep1が非0で終わった場合だけ実行する）
         commandline_prefix + textlint-args + textlint-lint-args + additional_args + targets
 
-    Step1が終了0の場合はStep2を省く。fix段の後には同じ実行の通常の段がtextlintを実行して
-    同じ検査を行うため、Step2は通常の段と重複する（pyfltr自身の文書27件で約13秒）。
-    Step1が非0の場合は、残存違反と予期しない例外を見分けるためにStep2を実行する。
-    fail-fastで通常の段へ進まない場合も、この経路で残存違反を結果へ残す。
+    fail-fastでない実行では、fix段の後に同じ実行の通常の段が必ずtextlintを実行して同じ検査を行う。
+    Step2はこれと重複する（pyfltr自身の文書27件で約13秒）ため実行しない。
+    Step1が非0の場合はfix段の失敗となり、`pyfltr.command.stage_runner.merge_fix_failure`が
+    通常の段の結果へ統合する。通常の段に違反が無ければ、統合結果は修正処理の失敗を示す。
+    fail-fast指定時にStep1が非0の場合は通常の段へ進まないため、残存違反を結果へ残すために
+    Step2を実行する。
 
     ステータス判定:
     - Step1がrc>=2 （致命的エラー）・timeout → failed
-    - Step1 rc != 0かつStep2 rc != 0 （残存違反あり） → failed （Errorsタブに反映される）
-    - Step1 rc != 0かつStep2 rc == 0 → failed （returncodeはStep1の値）。
-      textlintの終了1は残存違反に加えて予期しない例外も表し、修正段に違反が残れば
-      Step2も非0になるため、この組合せは修正処理の失敗を示す
+    - Step1 rc != 0 → failed （returncodeはStep1の値。Step2を実行した場合はStep2の結果も集約する）。
+      textlintの終了1は残存違反に加えて予期しない例外も表すため、残存違反の有無は
+      通常の段かStep2の結果で判定する
     - Step1 rc == 0かつ内容ハッシュに変化あり → formatted
     - Step1 rc == 0かつ変化なし → succeeded
-    修正段とlint段の出力はいずれも`output`へ保持する。
+    実行した段の出力はいずれも`output`へ保持する。
 
     textlint --fixは残存違反がなくても対象ファイルを書き戻すことがあり、
     mtimeベースの比較では偽陽性になる。このため内容ハッシュ
@@ -121,8 +122,8 @@ def execute_textlint_fix(request: pyfltr.command.core_.ExecutionRequest) -> pyfl
     ]
     steps = [step_result.classify(step1_proc.returncode, timeout=step1_proc.timeout_exceeded, changed=step1_changed)]
     procs = [step1_proc]
-    # Step1が終了0なら、残存違反の検査は直後の通常の段が行うため省く（docstring参照）。
-    if step1_proc.returncode != 0 and not step1_proc.timeout_exceeded:
+    # 残存違反の検査は通常は直後の通常の段が行うため省き、fail-fastで通常の段へ進まない場合だけ実行する（docstring参照）。
+    if request.ctx.base.fail_fast and step1_proc.returncode != 0 and not step1_proc.timeout_exceeded:
         if request.verbose and request.ctx.on_output is not None:
             request.ctx.on_output(f"commandline: {shlex.join(step2_commandline)}\n")
         step2_proc = pyfltr.command.process.run_process(dataclasses.replace(request, verbose=False), step2_commandline)
@@ -132,8 +133,9 @@ def execute_textlint_fix(request: pyfltr.command.core_.ExecutionRequest) -> pyfl
     output = "".join(proc.stdout for proc in procs).strip()
     elapsed = time.perf_counter() - request.start_time
 
-    # Step2出力から残存違反をパースする（Step1の出力は解析できる形式を持たない）
-    errors = request.parse_errors(output, request.params.command_info.error_pattern)
+    # 残存違反はStep2の出力からだけ解析する（Step1の出力は解析できる形式を持たない）。
+    # Step2を省いた場合の残存違反は通常の段の結果が持つ。
+    errors = request.parse_errors(procs[1].stdout.strip(), request.params.command_info.error_pattern) if len(procs) > 1 else []
 
     # ステータス判定
     timeout_exceeded = any(proc.timeout_exceeded for proc in procs)

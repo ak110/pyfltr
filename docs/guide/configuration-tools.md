@@ -429,8 +429,9 @@ textlintのfix実行 (`textlint --fix`) では `@textlint/fixer-formatter` が�
 このため `--format` 指定は `textlint-args`（共通）ではなく `textlint-lint-args`（lintモード専用）に分離している。
 
 fix段では、pyfltrはtextlintのfix適用（`--fix`）を実行する。
-fix適用が終了コード0で終わった場合、残存違反はfix段の後の通常のlint段で取得される。
-fix適用が非0で終わった場合は、fix段の中で続けてlintチェックを実行し、残存違反とfix処理の失敗を区別する。
+残存違反はfix段の後の通常のlint段で取得される。
+fix適用が非0で終わり、通常のlint段で違反が見つからなかった場合は、fix処理の失敗として報告する。
+`--fail-fast`の指定時にfix適用が非0で終わった場合は通常のlint段へ進まないため、fix段の中で続けてlintチェックを実行し、残存違反を報告する。
 `textlint-args`（共通）に `--format` ペアを書いた場合、pyfltrはfixステップの起動コマンドから
 `--format` ペアを自動除去するためクラッシュしない。
 `--format` 指定は `textlint-lint-args`（lintモード専用）に書くことを推奨する。

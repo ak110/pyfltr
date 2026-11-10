@@ -176,6 +176,7 @@ def make_execution_context(
     fix_stage: bool = False,
     only_failed_targets: pyfltr.command.only_failed.ToolTargets | None = None,
     start_cwd: pathlib.Path | None = None,
+    fail_fast: bool = False,
 ) -> pyfltr.command.core_.ExecutionContext:
     """テスト用の ExecutionContext を生成する。
 
@@ -192,6 +193,7 @@ def make_execution_context(
         "all_files": all_files,
         "cache_store": cache_store,
         "cache_run_id": cache_run_id,
+        "fail_fast": fail_fast,
     }
     if start_cwd is not None:
         base_kwargs["start_cwd"] = start_cwd

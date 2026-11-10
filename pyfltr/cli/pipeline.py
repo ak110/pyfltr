@@ -363,7 +363,9 @@ def _run_pipeline(
             # 対象ファイルは実行起点相対で保持されるため、起動時のcwdではなく実行起点を基準に絶対化する。
             target_base_cwd=str(start_cwd_path),
         )
-        base_ctx = _prepare_execution_context(config, prepared, start_cwd_path, cache_store, run_id)
+        base_ctx = _prepare_execution_context(
+            config, prepared, start_cwd_path, cache_store, run_id, fail_fast=bool(getattr(args, "fail_fast", False))
+        )
         ctx = _prepare_run_output(
             args,
             formatter,
@@ -480,6 +482,8 @@ def _prepare_execution_context(
     start_cwd_path: pathlib.Path,
     cache_store: pyfltr.state.cache.CacheStore | None,
     run_id: str | None,
+    *,
+    fail_fast: bool,
 ) -> pyfltr.command.core_.ExecutionBaseContext:
     """対象解決の結果から通常実行とfast pytestの実行基盤を構築する。"""
     # run_pipelineが1回だけ組み立てる不変コンテキスト。
@@ -494,6 +498,7 @@ def _prepare_execution_context(
         subproject_files=prepared.subproject_files,
         external_files=prepared.external_files,
         subproject_configs=prepared.subproject_configs,
+        fail_fast=fail_fast,
     )
     if "pytest" in prepared.commands:
         base_ctx.pytest_base = pyfltr.cli.pipeline_targets.build_pytest_base(base_ctx, fast_selected=prepared.fast_selected)

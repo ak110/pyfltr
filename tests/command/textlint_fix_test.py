@@ -34,9 +34,9 @@ def test_textlint_lint_mode_adds_lint_args(mocker, tmp_path: pathlib.Path) -> No
 
 
 def test_textlint_fix_mode_skips_lint_step_when_fix_succeeds(mocker, tmp_path: pathlib.Path) -> None:
-    """修正段が終了0なら残存違反の検査（step2）を省き、修正の1回だけ起動する。
+    """修正段が終了0なら、fail-fast指定時も残存違反の検査（step2）を省き、修正の1回だけ起動する。
 
-    fix段の後に同じ実行の通常の段がtextlintで同じ検査を行うため、step2は重複する。
+    修正段が成功すればfix段で打ち切られず、同じ実行の通常の段がtextlintで同じ検査を行うため、step2は重複する。
     """
     target = tmp_path / "sample.md"
     target.write_text("# title\n")
@@ -49,7 +49,7 @@ def test_textlint_fix_mode_skips_lint_step_when_fix_succeeds(mocker, tmp_path: p
     result = pyfltr.command.dispatcher.execute_command(
         "textlint",
         _testconf.make_args(),
-        _testconf.make_execution_context(config, [target], fix_stage=True, start_cwd=tmp_path),
+        _testconf.make_execution_context(config, [target], fix_stage=True, start_cwd=tmp_path, fail_fast=True),
     )
 
     assert mock_run.call_count == 1
@@ -62,13 +62,13 @@ def test_textlint_fix_mode_skips_lint_step_when_fix_succeeds(mocker, tmp_path: p
 
 
 def _fail_fix_step(cmdline, env, on_output, **_kwargs):
-    """修正段（`--fix`付き）だけ終了1を返し、step2を起動させる偽の実行。"""
+    """修正段（`--fix`付き）だけ終了1を返す偽の実行。fail-fast指定時はstep2を起動させる。"""
     del env, on_output  # 引数シグネチャ揃えのため受け取るのみ
     return subprocess.CompletedProcess(cmdline, returncode=1 if "--fix" in cmdline else 0, stdout="")
 
 
-def test_textlint_fix_mode_two_step_execution_when_fix_fails(mocker, tmp_path: pathlib.Path) -> None:
-    """修正段が非0なら、残存違反か例外かを見分けるためにstep2のlintを実行する。"""
+def test_textlint_fix_mode_two_step_execution_when_fix_fails_with_fail_fast(mocker, tmp_path: pathlib.Path) -> None:
+    """fail-fast指定時に修正段が非0なら、通常の段へ進まないため残存違反を取得するstep2のlintを実行する。"""
     target = tmp_path / "sample.md"
     target.write_text("# title\n")
 
@@ -79,7 +79,7 @@ def test_textlint_fix_mode_two_step_execution_when_fix_fails(mocker, tmp_path: p
     pyfltr.command.dispatcher.execute_command(
         "textlint",
         _testconf.make_args(),
-        _testconf.make_execution_context(config, [target], fix_stage=True, start_cwd=tmp_path),
+        _testconf.make_execution_context(config, [target], fix_stage=True, start_cwd=tmp_path, fail_fast=True),
     )
 
     assert mock_run.call_count == 2
@@ -88,6 +88,38 @@ def test_textlint_fix_mode_two_step_execution_when_fix_fails(mocker, tmp_path: p
     assert "--fix" not in step2_cmdline
     assert "--format" in step2_cmdline
     assert "json" in step2_cmdline
+
+
+def test_textlint_fix_mode_skips_lint_step_when_fix_fails_without_fail_fast(mocker, tmp_path: pathlib.Path) -> None:
+    """fail-fastでなければ、修正段が非0でもstep2を省き、修正段の失敗として返す。
+
+    同じ実行の通常の段が必ずtextlintを実行し、fix段の失敗は通常の段の結果へ統合される。
+    修正段の出力は解析できる形式を持たないため、診断は通常の段の結果に任せる。
+    """
+    target = tmp_path / "sample.md"
+    target.write_text("# title\n")
+
+    def fake_run(cmdline, env, on_output, **_kwargs):
+        del env, on_output  # 引数シグネチャ揃えのため受け取るのみ
+        return subprocess.CompletedProcess(cmdline, returncode=1, stdout="TypeError [ERR_INVALID_ARG_TYPE]")
+
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", side_effect=fake_run)
+
+    config = pyfltr.config.config.create_default_config()
+    config.values["textlint"] = True
+    result = pyfltr.command.dispatcher.execute_command(
+        "textlint",
+        _testconf.make_args(),
+        _testconf.make_execution_context(config, [target], fix_stage=True, start_cwd=tmp_path),
+    )
+
+    assert mock_run.call_count == 1
+    assert "--fix" in mock_run.call_args_list[0][0][0]
+    assert result.status == "failed"
+    assert result.returncode == 1
+    assert result.errors == []
+    assert "ERR_INVALID_ARG_TYPE" in result.output
+    assert result.commandline == mock_run.call_args_list[0][0][0]
 
 
 def test_textlint_fix_mode_strips_user_format_from_step1(mocker, tmp_path: pathlib.Path) -> None:
@@ -129,7 +161,7 @@ def test_textlint_fix_mode_preserves_non_format_user_args(mocker, tmp_path: path
     pyfltr.command.dispatcher.execute_command(
         "textlint",
         _testconf.make_args(),
-        _testconf.make_execution_context(config, [target], fix_stage=True, start_cwd=tmp_path),
+        _testconf.make_execution_context(config, [target], fix_stage=True, start_cwd=tmp_path, fail_fast=True),
     )
 
     step1_cmdline = mock_run.call_args_list[0][0][0]
@@ -293,7 +325,7 @@ def test_textlint_fix_mode_no_warning_when_identifier_intact(mocker, tmp_path: p
 
 
 def test_textlint_fix_mode_residual_violations_mark_failed(mocker, tmp_path: pathlib.Path) -> None:
-    """fixモードで残存違反がある場合はfailed、errorsがcompact形式でパースされる。"""
+    """fail-fast指定時に残存違反がある場合はfailed、errorsがstep2のcompact形式からパースされる。"""
     target = tmp_path / "sample.md"
     target.write_text("# title\n")
 
@@ -315,7 +347,7 @@ def test_textlint_fix_mode_residual_violations_mark_failed(mocker, tmp_path: pat
     result = pyfltr.command.dispatcher.execute_command(
         "textlint",
         _testconf.make_args(),
-        _testconf.make_execution_context(config, [target], fix_stage=True, start_cwd=tmp_path),
+        _testconf.make_execution_context(config, [target], fix_stage=True, start_cwd=tmp_path, fail_fast=True),
     )
 
     assert result.status == "failed"
@@ -352,7 +384,7 @@ def test_textlint_fix_mode_step1_fatal_error_fails(mocker, tmp_path: pathlib.Pat
 
 
 def test_textlint_fix_mode_step1_exit1_with_clean_lint_fails(mocker, tmp_path: pathlib.Path) -> None:
-    """修正段の終了1（例外）は後続lintの終了0で成功へ変換せず、両段の出力を保持する。
+    """fail-fast指定時、修正段の終了1（例外）は後続lintの終了0で成功へ変換せず、両段の出力を保持する。
 
     textlintの終了1は予期しない例外も表す。修正段に違反が残れば後続lintも非0になるため、
     修正1・lint0の組合せは修正処理の失敗であり、成功の誤報を検出する。
@@ -373,7 +405,7 @@ def test_textlint_fix_mode_step1_exit1_with_clean_lint_fails(mocker, tmp_path: p
     result = pyfltr.command.dispatcher.execute_command(
         "textlint",
         _testconf.make_args(),
-        _testconf.make_execution_context(config, [target], fix_stage=True, start_cwd=tmp_path),
+        _testconf.make_execution_context(config, [target], fix_stage=True, start_cwd=tmp_path, fail_fast=True),
     )
 
     assert result.status == "failed"
@@ -395,7 +427,7 @@ def test_textlint_fix_mode_disables_cache_only_in_fix_step(mocker, tmp_path: pat
     pyfltr.command.dispatcher.execute_command(
         "textlint",
         _testconf.make_args(),
-        _testconf.make_execution_context(config, [target], fix_stage=True, start_cwd=tmp_path),
+        _testconf.make_execution_context(config, [target], fix_stage=True, start_cwd=tmp_path, fail_fast=True),
     )
 
     step1_cmdline = mock_run.call_args_list[0][0][0]
