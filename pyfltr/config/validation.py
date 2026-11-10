@@ -67,6 +67,16 @@ def normalize_config_values(
                 ),
             )
             continue
+        # 実行枠の参加券を渡す設定は、実行枠の協調参加とともに撤去した。旧版向けの設定が残る利用者へ除去を案内する。
+        if key.endswith("-slot-ticket") and key.removesuffix("-slot-ticket") in config.commands:
+            emit_config_warning(
+                key,
+                message=(
+                    f'"{key}" は撤去された設定である（検証の実行枠への協調参加の廃止）。'
+                    "設定は無視して続行した。pyproject.toml から除去すること"
+                ),
+            )
+            continue
         # pytest-fast-targets・pytest-always-targetsは`-targets`接尾辞を持つがコマンド別targetsではないため先に扱う。
         if key in ("pytest-fast-targets", "pytest-always-targets"):
             validated = validate_targets_value(key, value, emit_config_warning)
@@ -449,7 +459,6 @@ def register_custom_command(
     # カスタムコマンドは登録時点でしか既定値を用意できないため、ここで併せて登録する。
     # 登録しないと利用者が`{name}-subproject-aware`を指定したとき未知キーとして警告される。
     config.values[f"{name}-subproject-aware"] = config.commands[name].subproject_aware
-    config.values[f"{name}-slot-ticket"] = False
     # fix-argsは定義されている場合のみ登録する（キーの有無でfix対応可否を判別）
     if fix_args is not None:
         config.values[f"{name}-fix-args"] = fix_args

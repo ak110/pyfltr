@@ -235,6 +235,16 @@ def _heartbeat_text_emit(message: str) -> None:
         text_logger.warning(message)
 
 
+def _slot_progress_text_emit(message: str) -> None:
+    """実行枠の待機の継続・再開をtext_logger経由で逐次出力する。
+
+    textではstdout、jsonl等ではstderrへ出る（出力先は`_heartbeat_text_emit`と同じ）。
+    待機中は実行中のツールが無く`HeartbeatMonitor`も発火しないため、この出力が停止との区別の手掛かりになる。
+    """
+    with lock:
+        text_logger.warning(message)
+
+
 def _archive_failure_hint(*, can_disable: bool) -> str:
     """アーカイブを無効化できる呼び出し手段かに応じた対処を返す。"""
     action = "キャッシュディレクトリの書き込み権限と空き容量を確認してください。"
@@ -405,9 +415,8 @@ def run_commands_with_cli(
         include_fix_stage=include_fix_stage,
         fail_fast=fail_fast,
         callbacks=pyfltr.command.stage_runner.StageCallbacks(
-            archive=archive_hook, on_result=record, on_slot_wait=slot_wait_hook
+            archive=archive_hook, on_result=record, on_slot_wait=slot_wait_hook, on_slot_progress=_slot_progress_text_emit
         ),
-        participant_ticket=args.participant_ticket,
     )
 
 
@@ -1382,11 +1391,8 @@ def run_impl(
     *,
     original_cwd: str,
     reparse_fn: typing.Callable[[list[str]], tuple[argparse.ArgumentParser, argparse.Namespace]] | None = None,
-    participant_ticket: str | None = None,
 ) -> int:
     """run()の内部実装（実行系サブコマンド向け）。
-
-    `participant_ticket`はCLIが起動時に受け取った上位の実行枠の参加券で、段実行へ渡す。
 
     `reparse_fn` はカスタムコマンド用にparserを再構築する関数。
     `cli/main.py`側で`cli/parser`への参照を保持することで、
@@ -1454,7 +1460,6 @@ def run_impl(
 
     # CLIオプションでconfigを上書き（サブプロジェクト別configにも同一に再適用するため共通ヘルパーへ集約）
     options = pyfltr.run_options.RunOptions.from_values(vars(args))
-    options.participant_ticket = participant_ticket
 
     # --commands未指定時はカスタムコマンドを含む全登録コマンドを対象にする。
     # argparseのデフォルト評価時点ではpyproject.tomlを読み込んでいないため、

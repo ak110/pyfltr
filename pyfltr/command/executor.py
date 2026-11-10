@@ -5,6 +5,7 @@ import contextlib
 import pathlib
 import threading
 
+import pyfltr.command.core_
 import pyfltr.command.targets
 import pyfltr.config.config
 import pyfltr.config.model
@@ -88,3 +89,36 @@ def split_commands_for_execution(
 
     linters_and_testers.sort(key=_estimate_time, reverse=True)
     return fixers, formatters, linters_and_testers
+
+
+def has_no_candidate_targets(command: str, base_ctx: pyfltr.command.core_.ExecutionBaseContext) -> bool:
+    """対象ファイルが1件も存在し得ず、外部ツールを起動しないことが確定するコマンドかを返す。
+
+    `pyfltr.command.stage_runner.run_stages`は、真を返したコマンドを検証の実行枠の取得前に実行する。
+    実行枠の外で外部ツールを起動しないよう、判定は「0件が確定する」側だけを扱う。
+    実行対象の母集合（`all_files`・`external_files`・サブプロジェクト別のファイルと、pytest用実行基盤のファイル）に、
+    起点と全サブプロジェクトの設定の対象glob（pytestはfast・always用のglobを含む）と一致するファイルが無い場合に限り真とする。
+    dispatcherの対象決定（ツール別の除外・外部パスの除外・`--only-failed`）はこの母集合から除くだけで増やさないため、
+    それらの分岐を複製せず、除いた結果で0件になるコマンドは従来どおり実行枠の内側で判定させる。
+    """
+    contexts = [base_ctx]
+    if command == "pytest" and base_ctx.pytest_base is not None:
+        contexts.append(base_ctx.pytest_base)
+    files: list[pathlib.Path] = []
+    for context in contexts:
+        files.extend(context.all_files)
+        files.extend(context.external_files)
+        for sub_files in context.subproject_files.values():
+            files.extend(sub_files)
+    if not files:
+        return True
+    globs: list[str] = []
+    for config in [base_ctx.config, *base_ctx.subproject_configs.values()]:
+        info = config.commands.get(command)
+        if info is not None:
+            globs.extend(info.target_globs())
+        if command == "pytest":
+            globs.extend(pyfltr.config.selection.pytest_fast_target_globs(config.values))
+            globs.extend(pyfltr.config.selection.pytest_always_target_globs(config.values))
+    unique_files = list(dict.fromkeys(files))
+    return not pyfltr.command.targets.filter_by_globs(unique_files, list(dict.fromkeys(globs)))

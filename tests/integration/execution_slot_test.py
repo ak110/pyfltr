@@ -12,10 +12,14 @@ import signal
 import subprocess
 import sys
 import textwrap
+import threading
 import time
 
 import pytest
 
+import pyfltr.cli.main
+import pyfltr.command.execution_slot
+import pyfltr.command.stage_runner
 from tests.conftest import write_slot_wait_worker
 from tests.integration import concurrent_runs_helper as helper
 
@@ -353,108 +357,79 @@ def test_cli_records_slot_wait_and_body(tmp_path: pathlib.Path) -> None:
     assert waited["run_elapsed"] >= waited["slot_wait_total"] + body["elapsed"], waited
 
 
-@pytest.mark.timeout(240)
-@pytest.mark.parametrize("jobs", [1, 2])
-def test_cli_yields_before_remaining_tools(tmp_path: pathlib.Path, jobs: int) -> None:
-    """待機者が現れたら起動済みツールを回収して譲り、残りを省略せず再開する。"""
-    log = tmp_path / "intervals.log"
-    release = tmp_path / "release-a"
-    extra = {
-        f"probe-{index}": {
-            "type": "tester",
-            "path": sys.executable,
-            "args": [str(tmp_path / "probe.py"), str(helper.record_path(log, f"a{index}")), f"a{index}", str(release), "0"],
-            "targets": "*.txt",
-            "pass-filenames": False,
-        }
-        for index in range(4)
-    }
-    project_a = helper.make_project(tmp_path, "a", log=log, release=None, extra_config={"jobs": jobs}, extra_commands=extra)
-    project_b = helper.make_project(tmp_path, "b", log=log, release=None)
-    with helper.start(helper.pyfltr_argv("run", commands=",".join(extra)), project_a) as run_a:
-        helper.wait_for(
-            lambda: len(helper.intervals(log)) == jobs,
-            expected="jobs件のツールが開始する",
-            observed=lambda: helper.describe(log, run_a),
+@pytest.mark.timeout(120)
+def test_cli_reports_slot_wait_progress_and_resume(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """別の保持者を待つCLIは、待機の継続（保持者・見込みを示せない理由）と再開を逐次出力して完了する。"""
+    project = helper.make_project(tmp_path, "a", log=tmp_path / "intervals.log", release=None)
+    monkeypatch.setattr(pyfltr.command.stage_runner, "_SLOT_PROGRESS_DELAY", 0.2)
+    monkeypatch.setattr(pyfltr.command.stage_runner, "_SLOT_PROGRESS_INTERVAL", 0.2)
+    holding = threading.Event()
+    release = threading.Event()
+
+    def _holder() -> None:
+        with pyfltr.command.execution_slot.hold(label="external-check"):
+            holding.set()
+            release.wait(60)
+
+    thread = threading.Thread(target=_holder)
+    thread.start()
+    timer = threading.Timer(1.5, release.set)
+    try:
+        assert holding.wait(30)
+        timer.start()
+        returncode = pyfltr.cli.main.run(
+            ["run", f"--commands={helper.PROBE_COMMAND}", "--output-format=text", "--work-dir", str(project), str(project)]
         )
-        initial = set(helper.intervals(log))
-        with helper.start(helper.pyfltr_argv("run", output_format="text"), project_b) as run_b:
-            helper.wait_for(
-                lambda: helper.waiting_notified(run_b),
-                expected="後発が待機を通知する",
-                observed=lambda: helper.describe(log, run_a, run_b),
+    finally:
+        release.set()
+        timer.cancel()
+        thread.join(30)
+    out = capsys.readouterr().out
+    assert returncode == 0
+    assert "実行枠の取得を待っています" in out
+    assert "external-check" in out
+    assert "残り時間の見込みは" in out
+    assert "実行枠を取得しました" in out
+
+
+@pytest.mark.timeout(120)
+def test_cli_without_candidate_targets_does_not_wait(tmp_path: pathlib.Path) -> None:
+    """対象を持ち得ないツールだけの実行は、別の保持者がいても実行枠を待たずに完了し、待機区間を記録しない。
+
+    文書だけをcommitしたときのコミットフックのように、対象の無いツールが実行枠の取得・取り直しを待つと、
+    外部ツールを起動しないまま長時間待つ。
+    """
+    project = helper.make_project(tmp_path, "a", log=tmp_path / "intervals.log", release=None)
+    readme = project / "README.md"
+    readme.write_text("# a\n", encoding="utf-8")
+    holder_release = tmp_path / "release-holder"
+    holder_script = tmp_path / "holder.py"
+    holder_script.write_text(_API_HOLDER_SCRIPT, encoding="utf-8")
+    with subprocess.Popen(
+        [sys.executable, str(holder_script), str(tmp_path / "holder.log"), str(holder_release)],
+        stdout=subprocess.PIPE,
+        text=True,
+    ) as holder:
+        try:
+            assert holder.stdout is not None
+            holder.stdout.readline()
+            completed = subprocess.run(
+                [*helper.pyfltr_argv("fast", output_format="jsonl")[:-1], str(readme)],
+                cwd=project,
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
             )
-            release.touch()
-            assert run_b.wait() == 0, run_b.stderr
-            assert run_a.wait() == 0, run_a.stderr
-    spans = helper.intervals(log)
-    assert set(spans) == {"a0", "a1", "a2", "a3", "b"}
-    # 譲った実行は取り直しの待機区間を記録し、待機者の実行中だった時間をその区間に含める。
-    timing = _show_run_timing(helper.header_run_id(run_a), cwd=project_a)
-    reacquire = [wait for wait in timing["slot_waits"] if wait["kind"] == "reacquire"]
-    assert [(wait["sequence"], wait["outcome"]) for wait in reacquire] == [(1, "acquired")], timing
-    assert reacquire[0]["started_at"] <= _iso(spans["b"][0]), (timing, spans)
-    assert timing["unfinished_slot_waits"] == 0
-    for label in initial:
-        _assert_after(log, label, "b")
-    for label in set(spans) - initial - {"b"}:
-        _assert_after(log, "b", label)
-
-
-_YIELDING_API_HOLDER_SCRIPT = """import pathlib
-import subprocess
-import sys
-import time
-
-import pyfltr.command.execution_slot
-
-probe, child_record, release, rest_record = sys.argv[1:5]
-with pyfltr.command.execution_slot.hold(label="external-check"):
-    # 子の稼働中は譲らず、子を回収した区切りで譲る。
-    subprocess.run([sys.executable, probe, child_record, "c", release, "0"], stdout=subprocess.DEVNULL, check=True, timeout=150)
-    yielded = pyfltr.command.execution_slot.yield_to_waiters()
-    with pathlib.Path(rest_record).open("a", encoding="utf-8") as f:
-        f.write(f"r start {time.time()}\\n")
-        f.write(f"r end {time.time()}\\n")
-print(yielded, flush=True)
-"""
-
-
-@pytest.mark.timeout(240)
-def test_api_holder_yields_between_children(tmp_path: pathlib.Path) -> None:
-    """APIの保持者は子の稼働中は待機者を通さず、子を回収した区切りで譲り、待機者の終了後に残りを続ける。"""
-    log = tmp_path / "intervals.log"
-    release = tmp_path / "release-c"
-    project_b = helper.make_project(tmp_path, "b", log=log, release=None)
-    holder_dir = tmp_path / "x"
-    holder_dir.mkdir()
-    script = holder_dir / "holder.py"
-    script.write_text(_YIELDING_API_HOLDER_SCRIPT, encoding="utf-8")
-    argv = [
-        sys.executable,
-        str(script),
-        str(tmp_path / "probe.py"),
-        str(helper.record_path(log, "c")),
-        str(release),
-        str(helper.record_path(log, "r")),
-    ]
-
-    with helper.start(argv, holder_dir) as holder:
-        helper.wait_for(
-            lambda: helper.started(log, "c"),
-            expected="保持者の子が区間を開始する",
-            observed=lambda: helper.describe(log, holder),
-        )
-        with helper.start(helper.pyfltr_argv("run", output_format="text"), project_b) as run_b:
-            helper.wait_for(
-                lambda: helper.waiting_notified(run_b),
-                expected="Bが実行枠の待機を通知する",
-                observed=lambda: helper.describe(log, holder, run_b),
-            )
-            assert not helper.started(log, "b")
-            release.touch()
-            assert run_b.wait() == 0, run_b.stderr
-            assert holder.wait() == 0, holder.stderr
-    assert holder.stdout.strip() == "True"
-    _assert_after(log, "c", "b")
-    _assert_after(log, "b", "r")
+        finally:
+            holder_release.touch()
+            holder.wait(30)
+    assert completed.returncode == 0, completed.stderr
+    records = [json.loads(line) for line in completed.stdout.splitlines() if line.strip()]
+    commands = [record for record in records if record["kind"] == "command"]
+    assert [(record["command"], record["status"]) for record in commands] == [(helper.PROBE_COMMAND, "skipped")]
+    run_id = next(str(record["run_id"]) for record in records if record["kind"] == "header")
+    timing = _show_run_timing(run_id, cwd=project)
+    assert timing["slot_waits"] == [], timing

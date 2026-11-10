@@ -823,19 +823,20 @@ MCPを利用できず、エージェントがシェルコマンドを実行で�
 この順番を管理する単位を実行枠と呼び、ツールを実行している間はその実行が実行枠を所有する。
 別のworktree・リポジトリ・MCPサーバー・commit hookから起動した実行も同じ実行枠を共有する。
 後から起動した実行は、対象ファイルの展開などを済ませてから実行枠を待ち、待機の開始時に`execution-slot`の警告を出力する。
-待機者がいる場合、保持者は追加ツールの起動を止め、起動済みのツールと子プロセスの終了・回収後に枠を譲る。
-保持者は待機列の最後へ戻り、残りのツールの実行を再開する。
-単一の長いツールが実行中の場合は、その終了まで待つ。
-新しく起動した実行は、一度譲って取り直しを待ち始めてから一定時間（600秒）未満の実行より先に並ぶ。短いチェックが長い検証の列の後ろで待ち続けないようにするためである。
-600秒以上待っている取り直しの前へは並ばないため、新しい実行が続いても長い検証は進む。
-まだ一度も譲っていない実行は、取得から一定時間（120秒）の間、待機者が600秒未満の取り直しだけであれば譲らずに続ける。
-新しく起動した実行や600秒以上待っている取り直しが待機していれば、120秒以内でも区切りで譲る。
-このため、待機者が600秒未満の取り直しだけである間の短いチェックは、途中で待ち直さずに終わる。
+待機は起動した順に進み、各実行は全ツールを終えるまで実行枠を保持し続ける（途中で譲らない）。
+待機が10秒を超えると、待機中であること、保持者、待機中の実行数、完了したツール数を30秒ごとに出力し、取得したときに再開を出力する。
+残り時間の見込みは、保持者と先に並んだ実行の残り処理時間を観測できないため示さない。
 待機時間はツールのtimeoutに含まない。
 
 - 待機をやめる場合は実行を中断する（端末ではCtrl+C、MCPでは要求の取り消し）。中断した実行はツールを実行せず、成功の結果を返さない
 - 検証コマンドから起動した子のpyfltr（pytestから起動するpyfltrなど）は、親の実行が所有する実行枠を引き継いで待たずに実行する
+- 対象ファイルが1件も無いツールだけの実行（文書だけのcommitなど）は、実行枠を待たずにスキップの結果を返す
 - `PYFLTR_CACHE_DIR`で保存先を変えた実行どうしは待ち合わせない
+
+実行枠が進まず作業を続けられない場合（保持者の検証が終わらないなど）は、待機中の実行を中断し、
+`PYFLTR_CACHE_DIR`に別の保存先を指定して起動し直せば、実行枠を待たずに実行できる。
+同時に動く検証の数を抑える仕組みを迂回するため、資源の不足で検証が失敗する場合があり、障害時に限って使う。
+別の保存先では実行アーカイブとファイルhashキャッシュも分かれるため、`--only-failed`などは同じ保存先の実行だけを参照する。
 
 pyfltr以外の検証を同じ実行枠で順に実行する場合は、Python APIの`pyfltr.command.execution_slot.hold`を使う。
 
@@ -850,112 +851,6 @@ with pyfltr.command.execution_slot.hold(label="my-check"):
 
 `with`の内側が実行枠を所有する区間になり、呼び出し元が区間を終えるまで保持する。
 内側で起動した子プロセスは、区間を抜ける前に終了・回収する。区間を抜けると次の実行がツールを実行し始めるためである。
-
-長い検証を複数の手順に分けて実行する場合は、手順の区切りで`pyfltr.command.execution_slot.yield_to_waiters`を呼ぶ。
-待機中の実行がいればその実行へ実行枠を譲り、先に待っていた実行の終了後に実行枠を取り直して次の手順へ進む。
-待機中の実行がいなければ、何もせずに戻る。
-
-```python
-import subprocess
-
-import pyfltr.command.execution_slot
-
-with pyfltr.command.execution_slot.hold(label="my-check"):
-    subprocess.run(["my-check", "--unit"], check=True)
-    pyfltr.command.execution_slot.yield_to_waiters()
-    subprocess.run(["my-check", "--integration"], check=True)
-```
-
-- その区間で起動した子プロセスを全て終了・回収した区切りで`yield_to_waiters`を呼ぶ。子プロセスの実行中に呼ぶと、子プロセスと待機中の実行が同時に動く
-- 譲った場合は`True`、譲らなかった場合は`False`を返す
-- 譲る前に待機中の実行の有無だけを調べるには`pyfltr.command.execution_slot.yield_requested`を呼ぶ。通常は最外側の`hold`で実行枠を取得したスレッドで、待機中の実行がいる場合だけ`True`を返す
-- 譲った後の取り直しの待機は、`hold`へ渡した`should_abort`が真を返すと`WaitAborted`で中断する。中断した場合は実行枠を持たない状態で`with`を抜ける
-- 協調参加していない入れ子の`hold`と、親の実行枠を引き継いだ子プロセスの中では譲らない。親の実行が子プロセスを回収した区切りで譲る
-
-子の処理の区切りでも譲る場合は、親が`cooperative_hold`で協調所有者になり、`participant()`の参加券を子の`hold(participant=...)`へ渡す。
-親は子の終了を待つ合間に`checkpoint()`を呼ぶ。
-子が対象処理を回収して一時停止し、他の参加者も安全な区切りに達した場合だけ、親が譲渡・再取得する。
-再取得が済むまで子は次の処理を開始しない。
-同一スレッドの協調所有者の入れ子と、明示参加した子の中で呼ぶpyfltrも、この仕組みで段の区切りを通知できる。
-
-次の2ファイルを同じディレクトリへ保存し、pyfltrを導入したPythonで`python owner.py`を実行する。
-子の例は2つのPython処理を順に実行する。
-`lock_dir`を指定する場合は、親と子へ同じ保存先を渡す。
-
-`owner.py`:
-
-```python
-import pathlib
-import subprocess
-import sys
-import time
-
-import pyfltr.command.execution_slot as slot
-
-with slot.cooperative_hold(label="owner") as coordinator:
-    with coordinator.participant() as ticket:
-        with subprocess.Popen([sys.executable, str(pathlib.Path(__file__).with_name("child.py")), ticket]) as child:
-            try:
-                while child.poll() is None:
-                    coordinator.checkpoint()
-                    time.sleep(0.2)
-                if child.wait() != 0:
-                    raise RuntimeError("子の処理が失敗した。子の出力を確認して再実行する。")
-            finally:
-                if child.poll() is None:
-                    child.terminate()
-                child.wait()
-```
-
-`child.py`:
-
-```python
-import subprocess
-import sys
-
-import pyfltr.command.execution_slot as slot
-
-with slot.hold(participant=sys.argv[1]):
-    subprocess.run([sys.executable, "-c", "print('step 1')"], check=True)
-    slot.yield_to_waiters()
-    subprocess.run([sys.executable, "-c", "print('step 2')"], check=True)
-```
-
-参加券は同時に1つのプロセスだけが使える。参加を終えた後は同じ子が順に起動する次のプロセスが使えるが、参加中のプロセスの子孫は同じ参加券で参加できない。
-親は`checkpoint()`中に新しい対象処理を開始せず、子の終了・異常終了を回収してから参加区間を閉じる。
-例外・取消時も、子とその配下の処理を終了・回収してから最外側の所有区間を閉じる。
-上の例の子は短いPython処理だけを起動する。長時間の処理を起動する子には、その配下も回収する終了処理を用意する。
-協調区間が閉じられた子や、`should_abort`で取り消された子は`WaitAborted`で停止する。
-実行枠の待機時間を記録する場合は、親の`cooperative_hold(on_wait_interval=...)`で受け取り、子の一時停止時間を同じ待機として加算しない。
-
-協調所有者からpyfltrを起動すると、pyfltrが起動するツールの区切りでも譲れる。
-親は参加券を環境変数`PYFLTR_EXECUTION_SLOT_TICKET`でpyfltrへ渡し、pyfltrの終了を待つ合間に`checkpoint()`を呼ぶ。
-pyfltrは参加券を受け取って親の参加者となり、`{command}-slot-ticket = true`を設定したツールへツール1件専用の参加券を同じ環境変数で渡す。
-ツール側は`pyfltr.command.execution_slot.receive_ticket()`で参加券を受け取り、`hold(participant=...)`へ渡して区切りで`yield_to_waiters`を呼ぶ。
-`receive_ticket`は環境変数から参加券を除くため、ツールがさらに起動する子孫へは引き継がれない。
-`{command}-slot-ticket`の初期値は`false`であり、参加券を受け取るツールにだけ`true`を設定する。
-受け取らないツールに設定すると、ツールの子孫が参加券を継承して停止を通知し、ツール本体の稼働中に待機中の検証と重なりうる。
-参加券を渡さないツールが実行中の間は、pyfltrは譲らない。
-参加券を渡すツールはサブプロジェクトを1件ずつ実行する。
-参加中の参加券などで参加できなかったpyfltrは、参加せずに祖先の実行枠の中で実行する。
-
-```python
-import os
-import subprocess
-import time
-
-import pyfltr.command.execution_slot as slot
-
-with slot.cooperative_hold(label="owner") as coordinator, coordinator.participant() as ticket:
-    env = {**os.environ, slot.TICKET_ENV: ticket}
-    with subprocess.Popen(["pyfltr", "run"], env=env) as child:
-        while child.poll() is None:
-            coordinator.checkpoint()
-            time.sleep(0.2)
-```
-
-参加した子が自分の子へさらに参加券を渡す場合は、子が`cooperative_hold(participant=...)`で協調所有者になる。
-中間の子は自分の参加者が全員停止した区切りでだけ上位へ停止を通知し、実行枠の解放と取り直しは最上位の親だけが行う。
 
 ## pre-commit・prekとの統合 {#precommit-integration}
 

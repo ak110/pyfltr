@@ -1,8 +1,10 @@
 import concurrent.futures
+import dataclasses
 import pathlib
 import threading
 import time
 
+import pyfltr.command.core_
 import pyfltr.command.executor
 import pyfltr.config.config
 
@@ -149,3 +151,25 @@ def test_serial_group_lock_independent_groups() -> None:
     t_b.join(timeout=2.0)
     assert not t_a.is_alive()
     assert not t_b.is_alive()
+
+
+def test_has_no_candidate_targets(tmp_path: pathlib.Path) -> None:
+    """母集合に対象globと一致するファイルが無い場合だけ真を返す。サブプロジェクトの設定のglobも含めて判定する。"""
+    config = pyfltr.config.config.create_default_config()
+    sub_config = pyfltr.config.config.create_default_config()
+    base = pyfltr.command.core_.ExecutionBaseContext(
+        config=config, all_files=[pathlib.Path("README.md")], start_cwd=tmp_path, cache_store=None, cache_run_id=None
+    )
+    assert pyfltr.command.executor.has_no_candidate_targets("ruff-check", base)
+    assert not pyfltr.command.executor.has_no_candidate_targets("markdownlint", base)
+    # 子の設定だけが対象を広げる場合は、対象を持ち得るとして実行枠の内側で判定させる。
+    sub_config.commands["ruff-check"] = dataclasses.replace(sub_config.commands["ruff-check"], targets=["*.md"])
+    base.subproject_configs = {tmp_path / "sub": sub_config}
+    assert not pyfltr.command.executor.has_no_candidate_targets("ruff-check", base)
+    # pytest用実行基盤のファイルも母集合に含める。
+    pytest_base = dataclasses.replace(base, all_files=[pathlib.Path("tests/a_test.py")])
+    base.pytest_base = pytest_base
+    assert not pyfltr.command.executor.has_no_candidate_targets("pytest", base)
+    assert pyfltr.command.executor.has_no_candidate_targets(
+        "pytest", dataclasses.replace(base, pytest_base=None, subproject_configs={})
+    )

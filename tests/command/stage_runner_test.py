@@ -1,6 +1,7 @@
 import concurrent.futures
 import pathlib
 import threading
+import time
 
 import pytest
 
@@ -8,12 +9,13 @@ import pyfltr.command.core_
 import pyfltr.command.execution_slot
 import pyfltr.command.stage_runner
 import pyfltr.config.config
+import pyfltr.config.model
 import pyfltr.diagnostics
 from tests.conftest import StageExecutorControl, make_command_result, make_execution_context
 
 
-def test_sequential_stages_yield_and_resume(tmp_path: pathlib.Path) -> None:
-    """formatterの終了境界で待機者へ譲り、残りのformatterを再開する。"""
+def test_stages_hold_slot_until_all_tools_finish(tmp_path: pathlib.Path) -> None:
+    """待機者が現れても途中では譲らず、全ツールの回収後に枠を解放する。"""
     (tmp_path / "pyproject.toml").write_text(
         '[tool.pyfltr.custom-commands.first]\ntype="formatter"\npath="first"\ntargets="*.txt"\n'
         '[tool.pyfltr.custom-commands.second]\ntype="formatter"\npath="second"\ntargets="*.txt"\n',
@@ -53,7 +55,7 @@ def test_sequential_stages_yield_and_resume(tmp_path: pathlib.Path) -> None:
         if thread.ident is not None:
             thread.join(30)
     assert not thread.is_alive()
-    assert events == ["first", "other", "second"]
+    assert events == ["first", "second", "other"]
     assert [result.command for result in results] == ["first", "second"]
 
 
@@ -362,3 +364,81 @@ def test_run_stages_sets_body_interval_only_for_executed_results(tmp_path: pathl
     assert ran.started_at <= ran.finished_at
     for command in ("skipped", "unresolved", "cached"):
         assert (by_command[command].started_at, by_command[command].finished_at) == (None, None)
+
+
+def _custom_formatters(tmp_path: pathlib.Path, *specs: tuple[str, str]) -> pyfltr.config.model.Config:
+    body = "".join(
+        f'[tool.pyfltr.custom-commands.{name}]\ntype="formatter"\npath="{name}"\ntargets="{targets}"\n'
+        for name, targets in specs
+    )
+    (tmp_path / "pyproject.toml").write_text(body, encoding="utf-8")
+    return pyfltr.config.config.load_config(config_dir=tmp_path)
+
+
+def test_run_stages_runs_idle_commands_without_slot(tmp_path: pathlib.Path) -> None:
+    """対象を持ち得ないツールだけの実行は、別の保持者がいても実行枠を待たずに完了する。"""
+    config = _custom_formatters(tmp_path, ("md-only", "*.md"), ("rst-only", "*.rst"))
+    target = tmp_path / "input.txt"
+    target.write_text("x", encoding="utf-8")
+    holding = threading.Event()
+    release = threading.Event()
+
+    def _holder() -> None:
+        with pyfltr.command.execution_slot.hold(label="other"):
+            holding.set()
+            release.wait(30)
+
+    thread = threading.Thread(target=_holder)
+    thread.start()
+    waits: list[pyfltr.command.execution_slot.SlotWait] = []
+    try:
+        assert holding.wait(30)
+        results = pyfltr.command.stage_runner.run_stages(
+            ["md-only", "rst-only"],
+            make_execution_context(config, [target], start_cwd=tmp_path).base,
+            lambda command, _fix: make_command_result(command, returncode=None),
+            callbacks=pyfltr.command.stage_runner.StageCallbacks(on_slot_wait=waits.append),
+        )
+    finally:
+        release.set()
+        thread.join(30)
+    assert [result.command for result in results] == ["md-only", "rst-only"]
+    assert not waits
+
+
+def test_slot_wait_reporter_reports_waiting_and_resume() -> None:
+    """閾値を超えた待機の継続と再開を通知し、短い待機は通知しない。"""
+    messages: list[str] = []
+    reporter = pyfltr.command.stage_runner.SlotWaitReporter(messages.append, lambda: (2, 5), delay=0.05, interval=0.05)
+    started = pyfltr.command.execution_slot.SlotWait(kind="initial", sequence=0, started_at="2026-11-10T00:00:00+00:00")
+    reporter(started)
+    time.sleep(0.3)
+    reporter(
+        pyfltr.command.execution_slot.SlotWait(
+            kind="initial",
+            sequence=0,
+            started_at=started.started_at,
+            finished_at="2026-11-10T00:00:01+00:00",
+            elapsed=0.3,
+            outcome="acquired",
+        )
+    )
+    assert len(messages) >= 3
+    assert "実行枠の取得を待っています" in messages[0]
+    assert "完了したツール: 2/5件" in messages[0]
+    assert "残り時間の見込みは" in messages[0]
+    assert messages[-1].startswith("実行枠を取得しました")
+    count = len(messages)
+
+    reporter(pyfltr.command.execution_slot.SlotWait(kind="initial", sequence=0, started_at="2026-11-10T00:00:02+00:00"))
+    reporter(
+        pyfltr.command.execution_slot.SlotWait(
+            kind="initial",
+            sequence=0,
+            started_at="2026-11-10T00:00:02+00:00",
+            finished_at="2026-11-10T00:00:02+00:00",
+            elapsed=0.0,
+            outcome="acquired",
+        )
+    )
+    assert len(messages) == count

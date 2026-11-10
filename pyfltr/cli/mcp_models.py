@@ -106,9 +106,11 @@ class SlotWaitModel(pydantic.BaseModel):
 
     kind: str | None = pydantic.Field(
         default=None,
-        description="待機の種別。initial（最初の取得）またはreacquire（他の検証へ譲った後の取り直し）。",
+        description="待機の種別。現行版はinitial（最初の取得）だけを記録する。途中で譲る機能を撤去する前の実行にはreacquire（譲った後の取り直し）も残る。",
     )
-    sequence: int | None = pydantic.Field(default=None, description="initialは0、reacquireは譲るたびに1から増える番号。")
+    sequence: int | None = pydantic.Field(
+        default=None, description="initialは0。撤去前の実行のreacquireは譲るたびに1から増える番号。"
+    )
     started_at: str | None = pydantic.Field(default=None, description="待機を始めた時刻（UTCのISO 8601）。")
     finished_at: str | None = pydantic.Field(default=None, description="待機を終えた時刻。未完了の区間はNone。")
     elapsed: float | None = pydantic.Field(default=None, description="待機の秒数。未完了の区間はNone（0秒と区別する）。")

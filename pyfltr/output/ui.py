@@ -317,7 +317,6 @@ class UIApp(App):
                     on_skipped=self._show_skipped,
                 ),
                 results=self.results,
-                participant_ticket=self.args.participant_ticket,
             )
 
             # 中断時はwarnings欄に中断通知を1行出力する。

@@ -580,10 +580,11 @@ path = "mylinter"
     assert _testconf.count_config_warnings("mylinter-subproject-aware") == 0
 
 
-def test_slot_ticket_defaults_to_false_and_accepts_override(tmp_path: pathlib.Path) -> None:
-    """`{command}-slot-ticket`はビルトイン・カスタムとも既定で無効で、有効にしても未知キー警告が出ない。"""
+def test_removed_slot_ticket_key_warns_and_is_ignored(tmp_path: pathlib.Path) -> None:
+    """撤去した`{command}-slot-ticket`は、ビルトイン・カスタムとも除去を案内する警告を1件ずつ出して無視する。"""
     pyproject_content = """
 [tool.pyfltr]
+pytest-slot-ticket = true
 mylinter-slot-ticket = true
 
 [tool.pyfltr.custom-commands.mylinter]
@@ -592,11 +593,10 @@ path = "mylinter"
 """
     (tmp_path / "pyproject.toml").write_text(pyproject_content)
     config = pyfltr.config.config.load_config(config_dir=tmp_path)
-    assert config["pytest-slot-ticket"] is False
-    assert config["mylinter-slot-ticket"] is True
-    assert pyfltr.config.model.resolve_slot_ticket(config.values, "mylinter")
-    assert not pyfltr.config.model.resolve_slot_ticket(config.values, "pytest")
-    assert _testconf.count_config_warnings("mylinter-slot-ticket") == 0
+    assert "pytest-slot-ticket" not in config.values
+    assert "mylinter-slot-ticket" not in config.values
+    assert _testconf.count_config_warnings("pytest-slot-ticket") == 1
+    assert _testconf.count_config_warnings("mylinter-slot-ticket") == 1
 
 
 def test_severity_default_is_error() -> None:

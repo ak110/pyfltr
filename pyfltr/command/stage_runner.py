@@ -2,9 +2,10 @@
 
 import collections.abc
 import concurrent.futures
-import contextlib
 import dataclasses
 import datetime as dt
+import threading
+import time
 
 import pyfltr.command.core_
 import pyfltr.command.execution_slot
@@ -74,10 +75,108 @@ class StageCallbacks:
     on_skipped: collections.abc.Callable[[str], None] | None = None
     on_slot_wait: pyfltr.command.execution_slot.WaitIntervalCallback | None = None
     """実行枠の待機区間（`SlotWait`）の開始と終了を受け取る通知。実行アーカイブへの保存に使う。"""
+    on_slot_progress: collections.abc.Callable[[str], None] | None = None
+    """実行枠の待機の継続と再開を利用者へ逐次表示する1行の文面を受け取る通知。
+
+    待機が`_SLOT_PROGRESS_DELAY`秒を超えた時点と、その後`_SLOT_PROGRESS_INTERVAL`秒ごとに継続を、
+    通知を出した待機が終わった時点で再開を渡す。
+    `pyfltr.warnings_.emit_warning`は要約へ蓄積されるため、待機中の逐次表示には使わない。
+    """
 
 
-_CHECKPOINT_INTERVAL = 0.5
-"""参加券を渡したツールの実行中に、協調の譲渡点を呼ぶ間隔（秒）。ツールの停止通知から譲渡までの遅れの上限になる。"""
+_SLOT_PROGRESS_DELAY = 10.0
+"""待機の継続を最初に表示するまでの秒数。短い待機のたびに出力が増えないよう、この時間を超えた待機だけを表示する。"""
+
+_SLOT_PROGRESS_INTERVAL = 30.0
+"""待機の継続を繰り返し表示する間隔（秒）。パイプラインのheartbeatのしきい値に揃える。"""
+
+
+class SlotWaitReporter:
+    """実行枠の待機区間の通知を受けて、待機の継続と再開を文面で表示する。
+
+    コミットフックなどから起動した検証が実行枠を待つ間は出力が止まり、停止と区別できない。待機中であること、保持者、待機中の要求数、完了したツール数と、
+    残り時間の見込みを示せない理由を一定間隔で表示する。
+    見込みは、保持者と先に並んだ検証の残り処理時間をpyfltrが観測できないため算出しない。
+    """
+
+    def __init__(
+        self,
+        notify: collections.abc.Callable[[str], None],
+        progress: collections.abc.Callable[[], tuple[int, int]],
+        *,
+        delay: float | None = None,
+        interval: float | None = None,
+    ) -> None:
+        self._notify = notify
+        self._progress = progress
+        # 省略時は生成時点のモジュール値を使う。結合試験が間隔を短縮して差し替えられるようにするため。
+        self._delay = delay if delay is not None else _SLOT_PROGRESS_DELAY
+        self._interval = interval if interval is not None else _SLOT_PROGRESS_INTERVAL
+        self._stop: threading.Event | None = None
+        self._thread: threading.Thread | None = None
+        self._notified = False
+
+    def __call__(self, wait: pyfltr.command.execution_slot.SlotWait) -> None:
+        """待機区間の開始で継続の通知を始め、終了で止めて、通知済みなら再開を渡す。"""
+        if wait.finished_at is None:
+            self._start()
+            return
+        self._finish()
+        if self._notified:
+            self._notified = False
+            self._notify(_slot_resume_message(wait))
+
+    def _start(self) -> None:
+        self._finish()
+        stop = threading.Event()
+        started = time.monotonic()
+
+        def loop() -> None:
+            timeout = self._delay
+            while not stop.wait(timeout):
+                done, total = self._progress()
+                message = _slot_waiting_message(time.monotonic() - started, done, total)
+                if stop.is_set():
+                    return
+                self._notified = True
+                self._notify(message)
+                timeout = self._interval
+
+        self._stop = stop
+        self._thread = threading.Thread(target=loop, name="pyfltr-slot-wait", daemon=True)
+        self._thread.start()
+
+    def _finish(self) -> None:
+        if self._stop is not None and self._thread is not None:
+            self._stop.set()
+            self._thread.join()
+        self._stop = None
+        self._thread = None
+
+
+def _slot_waiting_message(elapsed: float, done: int, total: int) -> str:
+    owner = pyfltr.command.execution_slot.read_owner()
+    if owner is None:
+        holder = "記録を読めません"
+    else:
+        holder = f"pid={owner.pid}、cwd={owner.cwd}" + (f"、{owner.label}" if owner.label else "")
+        if not owner.is_alive():
+            # 保持者が強制終了するとOSがロックを解放するが記録は残る。終了済みの記録を保持者と取り違えさせない。
+            holder += "（記録上の保持者。このプロセスは終了しており、次の待機者へ順番が移る途中です）"
+    waiters = pyfltr.command.execution_slot.waiter_count()
+    return (
+        "同じOSアカウントの別の検証が実行枠を保持しているため、実行枠の取得を待っています"
+        f"（経過{elapsed:.0f}秒。保持者: {holder}。待機中の要求: 自分を含め{waiters}件。完了したツール: {done}/{total}件）。"
+        "残り時間の見込みは、保持者と先に並んだ検証の残り処理時間を観測できないため示せません。"
+        "停止ではないため待てば続行します。待機をやめる場合は実行を中断してください（端末ではCtrl+C、MCPでは要求の取り消し）。"
+    )
+
+
+def _slot_resume_message(wait: pyfltr.command.execution_slot.SlotWait) -> str:
+    elapsed = f"待機{wait.elapsed:.0f}秒" if wait.elapsed is not None else "待機時間は不明"
+    if wait.outcome in ("acquired", "inherited"):
+        return f"実行枠を取得しました（{elapsed}）。ツールの実行を始めます。"
+    return f"実行枠の待機を終えました（{elapsed}、理由: {wait.outcome}）。残りのツールはスキップされます。"
 
 
 def run_stages(
@@ -89,7 +188,6 @@ def run_stages(
     fail_fast: bool = False,
     callbacks: StageCallbacks | None = None,
     results: list[pyfltr.command.core_.CommandResult] | None = None,
-    participant_ticket: str | None = None,
 ) -> list[pyfltr.command.core_.CommandResult]:
     """fix、直列formatter、LPT順の並列lint・testを共通の制御で実行する。
 
@@ -98,16 +196,13 @@ def run_stages(
     1件を最終結果とし、`collected`・`on_result`・`archive`へ同じ結果を渡す。
     fail-fastで停止する場合もfix段の失敗結果を記録し、同じツールのスキップ結果を重ねない。
 
-    検証の実行枠を保持し、待機者がいれば起動済みのツールと子プロセスの回収後に譲る。
+    対象ファイルが存在し得ないツール（`pyfltr.command.executor.has_no_candidate_targets`）は実行枠の取得前に実行して
+    結果を記録し、fix段からは除く。全ツールが該当する場合は実行枠を取得しない。
+    残りのツールは検証の実行枠を取得してから実行し、全ツールを回収するまで枠を保持し続ける（途中では譲らない）。
+    `callbacks.on_slot_progress`があれば、待機の継続と再開を`SlotWaitReporter`で逐次表示する。
     別の検証が枠を保持中なら警告を出力して待つ。TUIの中断（`is_interrupted`）で待機を止めた場合は全コマンドをスキップ扱いにする。
     枠の待機区間は`callbacks.on_slot_wait`へ通知する。
-    外側が協調所有者、または参加券付きholdなら、同じ回収済みの区切りから協調譲渡を通知する。
     実行した各ツールの結果には、`execute`の直前と直後の時刻を`started_at`・`finished_at`として設定する。
-
-    自ら枠を取得した場合と`participant_ticket`（上位から受け取った参加券）を渡した場合は協調所有者になり、
-    `{command}-slot-ticket`を有効にしたツールの子プロセスへツール1件専用の参加券を環境変数で渡す。参加券を使ったツールが区切りで停止を通知すると、
-    ツールの実行中も所有スレッドが定期的に譲渡点を呼んで譲る。参加しないツールが1件でも稼働していれば譲らない。
-    同じスレッドの入れ子と祖先から継承した区間では参加券を渡さず、従来どおりツールを回収した区切りでだけ譲る。
     """
     hooks = callbacks if callbacks is not None else StageCallbacks()
     collected = results if results is not None else []
@@ -120,6 +215,31 @@ def run_stages(
         include_fix_stage=include_fix_stage,
         subproject_configs=base_ctx.subproject_configs,
     )
+    # 対象ファイルが存在し得ないツールは外部ツールを起動しないため、実行枠の取得前に実行して結果を確定する。
+    # 文書だけの検証のように多くのツールが対象を持たない実行で、枠の取得・譲渡・取り直しの待ちを省くためである。
+    # 実行枠の外で外部ツールを起動しないよう、判定は母集合とglobで0件が確定するものに限る
+    # （`pyfltr.command.executor.has_no_candidate_targets`）。
+    idle = {
+        command for command in [*formatters, *parallel] if pyfltr.command.executor.has_no_candidate_targets(command, base_ctx)
+    }
+    fixers = [command for command in fixers if command not in idle]
+    idle_formatters = [command for command in formatters if command in idle]
+    idle_parallel = [command for command in parallel if command in idle]
+    formatters = [command for command in formatters if command not in idle]
+    parallel = [command for command in parallel if command not in idle]
+    total = len(idle_formatters) + len(idle_parallel) + len(formatters) + len(parallel)
+    reporter = (
+        SlotWaitReporter(hooks.on_slot_progress, lambda: (len(collected), total))
+        if hooks.on_slot_progress is not None
+        else None
+    )
+
+    def on_wait_interval(wait: pyfltr.command.execution_slot.SlotWait) -> None:
+        # 表示の停止を先に行い、保存の通知が例外を送出しても表示用のスレッドを残さない。
+        if reporter is not None:
+            reporter(wait)
+        if hooks.on_slot_wait is not None:
+            hooks.on_slot_wait(wait)
 
     def archive(result: pyfltr.command.core_.CommandResult) -> None:
         if hooks.archive is not None and not result.cached:
@@ -152,46 +272,9 @@ def run_stages(
         for command in list(fix_failures):
             record(make_skipped_result(command, config, reason=""), "skipped")
 
-    def checkpoint() -> None:
-        pyfltr.command.execution_slot.yield_to_waiters()
-
-    # 協調所有者のときだけ値を持つ。ツールの実行中の譲渡点と参加券の発行に使う。
-    coordinator: pyfltr.command.execution_slot.SlotCoordinator | None = None
-
-    def run_with_ticket(command: str, fix_stage: bool, ticket: str | None) -> pyfltr.command.core_.CommandResult:
-        with pyfltr.command.execution_slot.bind_tool_ticket(ticket):
-            return execute(command, fix_stage)
-
-    def submit(
-        executor: concurrent.futures.ThreadPoolExecutor, command: str, fix_stage: bool
-    ) -> tuple[concurrent.futures.Future, contextlib.ExitStack]:
-        # 参加券の登録はツールの起動前に所有スレッドで行い、ツールの回収後に閉じる。
-        # 登録中の参加者は停止を通知するまで稼働中とみなされ、参加しないツールの実行中に譲らないためである。
-        registration = contextlib.ExitStack()
-        ticket = registration.enter_context(coordinator.participant()) if coordinator is not None else None
-        # 参加券は受け取ると宣言したツールにだけ渡す。他のツールは登録のまま停止を通知しないため、稼働中は譲らない。
-        passed = ticket if pyfltr.config.model.resolve_slot_ticket(config.values, command) else None
-        try:
-            future = executor.submit(run_with_ticket, command, fix_stage, passed)
-        except BaseException:
-            registration.close()
-            raise
-        return future, registration
-
-    def run_serial(
-        executor: concurrent.futures.ThreadPoolExecutor, command: str, fix_stage: bool
-    ) -> pyfltr.command.core_.CommandResult:
-        if coordinator is None:
-            return execute(command, fix_stage)
-        future, registration = submit(executor, command, fix_stage)
-        with registration:
-            while _next_completed([future], _CHECKPOINT_INTERVAL) is None:
-                checkpoint()
-            return future.result()
-
-    def execute_stages(serial_executor: concurrent.futures.ThreadPoolExecutor) -> None:
+    def execute_stages() -> None:
         for command in fixers:
-            result = run_serial(serial_executor, command, True)
+            result = execute(command, True)
             if result.failed:
                 fix_failures[command] = result
             else:
@@ -207,51 +290,20 @@ def run_stages(
                 flush_fix_failures()
                 return
 
-            checkpoint()
-
         for index, command in enumerate(formatters):
-            result = run_serial(serial_executor, command, False)
+            result = execute(command, False)
             record(result, "formatter")
             if hooks.is_interrupted() or (fail_fast and result.failed):
                 skip([*formatters[index + 1 :], *parallel])
                 return
-            if index + 1 < len(formatters) or parallel:
-                checkpoint()
 
         if parallel:
             aborted = False
             aborted_commands: set[str] = set()
-            pending = list(parallel)
-            with (
-                concurrent.futures.ThreadPoolExecutor(max_workers=config["jobs"]) as executor,
-                contextlib.ExitStack() as registrations,
-            ):
-                future_to_command: dict[concurrent.futures.Future, str] = {}
-                future_to_registration: dict[concurrent.futures.Future, contextlib.ExitStack] = {}
-                while pending or future_to_command:
-                    while (
-                        pending
-                        and len(future_to_command) < config["jobs"]
-                        and not aborted
-                        and not hooks.is_interrupted()
-                        and (not future_to_command or not pyfltr.command.execution_slot.yield_requested())
-                    ):
-                        command = pending.pop(0)
-                        future, registration = submit(executor, command, False)
-                        future_to_command[future] = command
-                        future_to_registration[future] = registrations.enter_context(registration)
-                    if not future_to_command:
-                        if aborted or hooks.is_interrupted():
-                            aborted_commands.update(pending)
-                            break
-                        continue
-                    future = _next_completed(future_to_command, _CHECKPOINT_INTERVAL if coordinator is not None else None)
-                    if future is None:
-                        # 参加券を渡したツールが区切りで停止していれば、ツールの実行中でも譲る
-                        checkpoint()
-                        continue
-                    command = future_to_command.pop(future)
-                    future_to_registration.pop(future).close()
+            with concurrent.futures.ThreadPoolExecutor(max_workers=config["jobs"]) as executor:
+                future_to_command = {executor.submit(execute, command, False): command for command in parallel}
+                for future in concurrent.futures.as_completed(future_to_command):
+                    command = future_to_command[future]
                     try:
                         result = future.result()
                     except concurrent.futures.CancelledError:
@@ -264,45 +316,36 @@ def run_stages(
                         pyfltr.command.process.terminate_active_processes()
                     if hooks.is_interrupted():
                         cancel_pending_futures(future_to_command, aborted_commands)
-                    if pending and not future_to_command and not aborted and not hooks.is_interrupted():
-                        # 再取得後は最低1件を開始し、互いに実行前の譲渡だけを繰り返す状態を防ぐ。
-                        checkpoint()
             if aborted_commands:
                 skip(list(aborted_commands))
         flush_fix_failures()
 
+    for command in idle_formatters:
+        record(execute(command, False), "formatter")
+    for command in idle_parallel:
+        record(execute(command, False), "parallel")
+    if not fixers and not formatters and not parallel:
+        flush_fix_failures()
+        return collected
+
     try:
-        with (
-            pyfltr.command.execution_slot.coordinated_hold(
-                should_abort=hooks.is_interrupted,
-                on_wait=_notify_slot_wait,
-                on_wait_interval=hooks.on_slot_wait,
-                participant=participant_ticket,
-            ) as coordinator,
-            concurrent.futures.ThreadPoolExecutor(max_workers=1) as serial_executor,
+        with pyfltr.command.execution_slot.hold(
+            should_abort=hooks.is_interrupted,
+            on_wait=_notify_slot_wait,
+            on_wait_interval=on_wait_interval if reporter is not None or hooks.on_slot_wait is not None else None,
         ):
             try:
-                execute_stages(serial_executor)
+                execute_stages()
             except BaseException:
                 # 例外（CLIのCtrl+Cなど）で抜ける場合も、起動中の子プロセスを止めてから実行枠を解放する。
                 pyfltr.command.process.terminate_active_processes()
                 raise
     except pyfltr.command.execution_slot.WaitAborted as error:
-        # 外側の協調区間から伝わる中断もあり、未指定のfail-fastの案内で原因を置き換えない。
+        # 待機の取消の理由を、未指定のfail-fastの案内で置き換えない。
         completed = {result.command for result in collected}
         skip([command for command in [*formatters, *parallel] if command not in completed], reason=str(error) or None)
         flush_fix_failures()
     return collected
-
-
-def _next_completed(
-    futures: collections.abc.Iterable[concurrent.futures.Future], timeout: float | None
-) -> concurrent.futures.Future | None:
-    """最初に完了したFutureを返す。`timeout`秒以内に完了しなければ`None`を返す。"""
-    try:
-        return next(concurrent.futures.as_completed(futures, timeout=timeout))
-    except TimeoutError:
-        return None
 
 
 def _with_body_interval(
@@ -317,12 +360,22 @@ def _with_body_interval(
     def wrapped(command: str, fix_stage: bool) -> pyfltr.command.core_.CommandResult:
         started_at = _now_iso()
         result = execute(command, fix_stage)
-        if result.returncode is not None and not result.resolution_failed and not result.cached:
+        if ran_tool(result):
             result.started_at = started_at
             result.finished_at = _now_iso()
         return result
 
     return wrapped
+
+
+def ran_tool(result: pyfltr.command.core_.CommandResult) -> bool:
+    """結果がツールのプロセスを起動して得たものかを返す。
+
+    対象0件などのスキップ（`returncode`が`None`）、起動コマンドの解決に失敗した`resolution_failed`、
+    キャッシュから復元した結果は、ツール本体を実行していない。
+    本体区間の記録に使う。
+    """
+    return result.returncode is not None and not result.resolution_failed and not result.cached
 
 
 def _now_iso() -> str:

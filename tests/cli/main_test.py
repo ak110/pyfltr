@@ -425,9 +425,9 @@ def test_run_commands_with_cli_fail_fast_aborts_remaining_fixers(mocker):
     fix_fail = _make_result("ruff-check", returncode=1, command_type="linter")
     mocker.patch("pyfltr.command.dispatcher.execute_command", return_value=fix_fail)
     mock_args = mocker.MagicMock()
-    mock_args.participant_ticket = None
 
-    base_ctx = _make_ctx(config, []).base
+    # 対象ファイルを持たないツールは実行枠の取得前にスキップとして確定するため、全ツールの対象になるファイルを渡す。
+    base_ctx = _make_ctx(config, [pathlib.Path("sample.py")]).base
     results = pyfltr.cli.pipeline.run_commands_with_cli(
         ["ruff-check", "ruff-format", "mypy"],
         mock_args,
@@ -455,7 +455,6 @@ def test_run_commands_with_cli_without_fail_fast_continues(mocker):
 
     mocker.patch("pyfltr.command.dispatcher.execute_command", side_effect=_fake_execute)
     mock_args = mocker.MagicMock()
-    mock_args.participant_ticket = None
 
     base_ctx = _make_ctx(config, []).base
     results = pyfltr.cli.pipeline.run_commands_with_cli(

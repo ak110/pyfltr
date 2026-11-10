@@ -21,7 +21,6 @@ import typing
 import psutil
 
 import pyfltr.command.core_
-import pyfltr.command.execution_slot
 import pyfltr.config.model
 from pyfltr.command.env import get_env_path
 
@@ -281,8 +280,6 @@ def run_subprocess(
     解決できなかった場合は元のコマンド名のままPopenに渡し、既存の
     FileNotFoundError経路でrc=127の `CompletedProcess` に変換する。
     """
-    # 段実行がツール1件へ割り当てた実行枠の参加券を渡し、割り当てが無ければ継承した参加券を除く。
-    env = pyfltr.command.execution_slot.tool_environ(env)
     popen_commandline = resolve_commandline(commandline, env)
     # （1） Popen直前の中断チェック。procがまだ存在しないのでそのまま送出できる。
     if is_interrupted is not None and is_interrupted():
