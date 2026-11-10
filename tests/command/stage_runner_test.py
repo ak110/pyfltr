@@ -1,4 +1,6 @@
 import concurrent.futures
+import dataclasses
+import json
 import os
 import pathlib
 import subprocess
@@ -473,17 +475,50 @@ def test_describe_slot_owner_marks_finished_owner() -> None:
     assert pyfltr.command.stage_runner.describe_slot_owner(None) == "保持者の記録を読めません"
 
 
-def test_finished_owner_is_not_reported_as_running(monkeypatch: pytest.MonkeyPatch) -> None:
-    """初回の待機警告と継続表示の両方で、終了済みの保持者を稼働中と表示しない。"""
-    dead = _finished_process_owner()
-    pyfltr.warnings_.clear()
-    pyfltr.command.stage_runner._notify_slot_wait(dead)  # pylint: disable=protected-access
-    warning = pyfltr.warnings_.collected_warnings()[-1]
-    assert warning["source"] == "execution-slot"
-    assert "このプロセスは終了しており" in warning["message"]
-    pyfltr.warnings_.clear()
+@pytest.mark.timeout(60)
+def test_finished_owner_is_not_reported_as_running(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """保持者記録が終了済みのプロセスを指す間は、初回の待機警告と継続表示の両方で稼働中と表示しない。
 
-    monkeypatch.setattr(pyfltr.command.execution_slot, "read_owner", lambda lock_dir=None: dead)
-    monkeypatch.setattr(pyfltr.command.execution_slot, "waiter_count", lambda lock_dir=None: 1)
-    message = pyfltr.command.stage_runner._slot_waiting_message(12.0, 0, 3)  # pylint: disable=protected-access
-    assert "このプロセスは終了しており" in message
+    強制終了した保持者の記録が残った状態を、保持中の記録ファイルを終了済みのプロセスの記録へ置き換えて再現する。
+    """
+    config = _custom_formatters(tmp_path, ("first", "*.txt"))
+    target = tmp_path / "input.txt"
+    target.write_text("x", encoding="utf-8")
+    monkeypatch.setattr(pyfltr.command.stage_runner, "_SLOT_PROGRESS_DELAY", 0.2)
+    monkeypatch.setattr(pyfltr.command.stage_runner, "_SLOT_PROGRESS_INTERVAL", 0.2)
+    holding = threading.Event()
+    release = threading.Event()
+
+    def _holder() -> None:
+        with pyfltr.command.execution_slot.hold(label="other"):
+            holding.set()
+            release.wait(30)
+
+    thread = threading.Thread(target=_holder)
+    thread.start()
+    progress: list[str] = []
+    timer = threading.Timer(1.5, release.set)
+    pyfltr.warnings_.clear()
+    try:
+        assert holding.wait(30)
+        owner_path = pyfltr.command.execution_slot.default_lock_dir() / "execution.owner.json"
+        owner_path.write_text(json.dumps(dataclasses.asdict(_finished_process_owner())), encoding="utf-8")
+        timer.start()
+        results = pyfltr.command.stage_runner.run_stages(
+            ["first"],
+            make_execution_context(config, [target], start_cwd=tmp_path).base,
+            lambda command, _fix: make_command_result(command, returncode=0),
+            callbacks=pyfltr.command.stage_runner.StageCallbacks(on_slot_progress=progress.append),
+        )
+    finally:
+        release.set()
+        timer.cancel()
+        thread.join(30)
+    assert [result.command for result in results] == ["first"]
+    warnings = [w for w in pyfltr.warnings_.collected_warnings() if w["source"] == "execution-slot"]
+    assert len(warnings) == 1
+    assert "このプロセスは終了しており" in warnings[0]["message"]
+    waiting = [message for message in progress if "実行枠の取得を待っています" in message]
+    assert waiting
+    assert all("このプロセスは終了しており" in message for message in waiting)
+    pyfltr.warnings_.clear()
