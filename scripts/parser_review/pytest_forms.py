@@ -263,10 +263,55 @@ def _evidence_forms() -> list[Form]:
     return forms
 
 
+_ERROR_CONFTEST = (
+    'import pytest\n\n\n@pytest.fixture\ndef broken_setup():\n    raise RuntimeError("setup boom")\n\n\n'
+    '@pytest.fixture\ndef broken_teardown():\n    yield 1\n    raise RuntimeError("teardown boom")\n'
+)
+_ERROR_FILES = {
+    "conftest.py": _ERROR_CONFTEST,
+    "setup_test.py": "def test_setup_a(broken_setup):\n    pass\n",
+    "teardown_test.py": "def test_teardown_fail(broken_teardown):\n    assert 1 == 2\n\n\n"
+    "def test_teardown_only(broken_teardown):\n    pass\n",
+}
+
+
+def _error_forms() -> list[Form]:
+    """試験の準備・後始末・収集のERROR（共有fixtureの例外位置が試験ファイルの外にある形を含む）。"""
+    forms = [
+        _real(
+            "pytest-22-setup-error-only",
+            22,
+            "ERROR: setup ERRORだけの実行",
+            {"conftest.py": _ERROR_CONFTEST, "setup_test.py": _ERROR_FILES["setup_test.py"]},
+            ("setup_test.py",),
+        ),
+        _real(
+            "pytest-22-collection-error",
+            22,
+            "ERROR: 試験名を持たない収集エラー",
+            {"collect_test.py": "import not_existing_module_xyz\n\n\ndef test_never():\n    pass\n"},
+            ("collect_test.py",),
+        ),
+    ]
+    for label, extra in (("short", []), ("rN", ["-rN"]), ("tb-no", ["--tb=no"])):
+        forms.append(
+            _real(
+                f"pytest-22-mixed-{label}",
+                22,
+                f"ERROR: 本体の失敗と同じ試験の後始末のERROR、別ファイルのsetup ERRORの混在（{label}）",
+                _ERROR_FILES,
+                ("setup_test.py", "teardown_test.py"),
+                **({"settings": {"pytest-args": extra}} if extra else {}),
+            )
+        )
+    return forms
+
+
 FORMS: tuple[Form, ...] = (
     *_uncaptured_forms(),
     *_mixed_traceback_forms(),
     *_evidence_forms(),
+    *_error_forms(),
     _real(
         "pytest-17-native-body",
         17,

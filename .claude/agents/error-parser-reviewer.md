@@ -116,6 +116,7 @@ uv run python -m scripts.parser_review compare --input <形態の採取先ディ
 19. pytest形式の失敗と標準tracebackが混在するExceptionGroupの連鎖（short・auto・long・native）
 20. runpyでルート直下の拡張子なし実ファイルを実行する失敗と、`<string>`の疑似ファイルを含む失敗（line・short・auto・long・native）
 21. 引数repr・例外本文・捕捉出力が位置行と同じ形を持つ失敗（long/long -lの外部フレーム、doctestとtb=lineの一覧あり・なし）
+22. 試験の準備・後始末・収集のERROR（setup ERRORだけ、試験名を持たない収集エラー、同じ試験の本体の失敗と後始末のERRORの混在を一覧あり・`-rN`・`--tb=no`で出力する形）
 
 形態15では、子自身の捕捉出力を持つ親`-q -s`の派生と、親自身も`--durations`を出力する派生を含める。
 診断に加えて設定競合と遅いテストの比較結果も読み、子の結果が親へ帰属しないことを確認する。

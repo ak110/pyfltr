@@ -2317,3 +2317,308 @@ platform linux -- Python 3.11.9, pytest-9.1.1, pluggy-1.5.0
 configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
 """
     assert pyfltr.parsing.pytest.detect_pytest_config_conflict(output) is None
+
+
+# pytest 9.2.0の実出力（`--tb=short`、試験ファイル3件。共有fixtureのsetup・teardownで例外を送出する）から
+# ヘッダーとプラグインのフレームを除いた抜粋。
+_ERRORS_SHORT = """tests/setup_test.py EE                                                   [ 40%]
+tests/teardown_test.py FE.E                                              [ 80%]
+tests/ok_fail_test.py F                                                  [100%]
+
+==================================== ERRORS ====================================
+________________________ ERROR at setup of test_setup_a ________________________
+conftest.py:5: in broken_setup
+    raise RuntimeError("setup boom")
+E   RuntimeError: setup boom
+___________________ ERROR at teardown of test_teardown_fail ____________________
+conftest.py:10: in broken_teardown
+    raise RuntimeError("teardown boom")
+E   RuntimeError: teardown boom
+=================================== FAILURES ===================================
+______________________________ test_teardown_fail ______________________________
+tests/teardown_test.py:2: in test_teardown_fail
+    assert 1 == 2
+E   assert 1 == 2
+_______________________________ test_plain_fail ________________________________
+tests/ok_fail_test.py:2: in test_plain_fail
+    assert 3 == 4
+E   assert 3 == 4
+=========================== short test summary info ============================
+FAILED tests/teardown_test.py::test_teardown_fail - assert 1 == 2
+FAILED tests/ok_fail_test.py::test_plain_fail - assert 3 == 4
+ERROR tests/setup_test.py::test_setup_a - RuntimeError: setup boom
+ERROR tests/teardown_test.py::test_teardown_fail - RuntimeError: teardown boom
+==================== 2 failed, 1 passed, 2 errors in 0.05s =====================
+"""
+
+
+def test_pytest_setup_and_teardown_errors_keep_test_files() -> None:
+    """setup・teardownのERRORは試験ファイルの診断になり、同じ試験の本体の失敗とも区別して残る。
+
+    共有fixtureの例外位置（`conftest.py`）を診断の`file`にすると、実行対象との交差で再実行対象から消える。
+    """
+    errors = pyfltr.parsing.pytest.parse_pytest(_ERRORS_SHORT)
+    assert [(error.file, error.line, error.message) for error in errors] == [
+        ("tests/teardown_test.py", 2, "test_teardown_fail: assert 1 == 2"),
+        ("tests/ok_fail_test.py", 2, "test_plain_fail: assert 3 == 4"),
+        ("tests/setup_test.py", 0, "test_setup_a: setup error: RuntimeError: setup boom (conftest.py:5)"),
+        ("tests/teardown_test.py", 0, "test_teardown_fail: teardown error: RuntimeError: teardown boom (conftest.py:10)"),
+    ]
+
+
+def test_pytest_setup_error_only() -> None:
+    """失敗欄を持たずERRORだけの出力も、試験ファイルの診断を返す。"""
+    output = """==================================== ERRORS ====================================
+________________________ ERROR at setup of test_setup_a ________________________
+conftest.py:5: in broken_setup
+    raise RuntimeError("setup boom")
+E   RuntimeError: setup boom
+=========================== short test summary info ============================
+ERROR tests/setup_test.py::test_setup_a - RuntimeError: setup boom
+=============================== 1 error in 0.04s ===============================
+"""
+    errors = pyfltr.parsing.pytest.parse_pytest(output)
+    assert [(error.file, error.line) for error in errors] == [("tests/setup_test.py", 0)]
+    assert errors[0].message.startswith("test_setup_a: setup error: RuntimeError: setup boom")
+
+
+def test_pytest_error_in_test_file_uses_line() -> None:
+    """例外位置が試験ファイル自身にあれば行番号を使う。"""
+    output = """==================================== ERRORS ====================================
+_______________________ ERROR at setup of TestX.test_y ________________________
+tests/own_test.py:7: in own_fixture
+    raise ValueError("bad")
+E   ValueError: bad
+=========================== short test summary info ============================
+ERROR tests/own_test.py::TestX::test_y - ValueError: bad
+=============================== 1 error in 0.04s ===============================
+"""
+    errors = pyfltr.parsing.pytest.parse_pytest(output)
+    assert [(error.file, error.line, error.message) for error in errors] == [
+        ("tests/own_test.py", 7, "TestX.test_y: setup error: ValueError: bad")
+    ]
+
+
+def test_pytest_collection_error() -> None:
+    """試験名を持たない収集エラーは、見出しのファイルと位置で診断化する。"""
+    output = """==================================== ERRORS ====================================
+____________________ ERROR collecting tests/collect_test.py ____________________
+ImportError while importing test module '/proj/tests/collect_test.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/lib/python3.15/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+tests/collect_test.py:1: in <module>
+    import not_existing_module_xyz
+E   ModuleNotFoundError: No module named 'not_existing_module_xyz'
+=========================== short test summary info ============================
+ERROR tests/collect_test.py
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+=============================== 1 error in 0.20s ===============================
+"""
+    errors = pyfltr.parsing.pytest.parse_pytest(output)
+    assert [(error.file, error.line, error.message) for error in errors] == [
+        ("tests/collect_test.py", 1, "collection error: ModuleNotFoundError: No module named 'not_existing_module_xyz'")
+    ]
+
+
+def test_pytest_errors_from_summary_only() -> None:
+    """トレースバックを省いた構成（`--tb=no`）でも一覧から試験ファイルを回収する。"""
+    output = """=========================== short test summary info ============================
+ERROR tests/setup_test.py::test_setup_a - RuntimeError: setup boom
+ERROR tests/collect_test.py
+=============================== 2 errors in 0.02s ==============================
+"""
+    errors = pyfltr.parsing.pytest.parse_pytest(output)
+    assert [(error.file, error.line, error.message) for error in errors] == [
+        ("tests/setup_test.py", 0, "test_setup_a: error: RuntimeError: setup boom"),
+        ("tests/collect_test.py", 0, "collection error"),
+    ]
+
+
+def test_pytest_errors_without_summary_list_use_traceback_location() -> None:
+    """一覧を省く構成（`-rN`）ではERRORS節の位置を使う。ログ捕捉の`ERROR`行は一覧として扱わない。"""
+    output = """==================================== ERRORS ====================================
+________________________ ERROR at setup of test_setup_a ________________________
+conftest.py:5: in broken_setup
+    raise RuntimeError("setup boom")
+E   RuntimeError: setup boom
+------------------------------ Captured log setup ------------------------------
+ERROR    root:conftest.py:4 preparing
+=============================== 1 error in 0.04s ===============================
+"""
+    errors = pyfltr.parsing.pytest.parse_pytest(output)
+    assert [(error.file, error.line, error.message) for error in errors] == [
+        ("conftest.py", 5, "test_setup_a: setup error: RuntimeError: setup boom")
+    ]
+
+
+def test_pytest_child_errors_are_not_added() -> None:
+    """捕捉出力へ混入した子pytestのERRORは親の診断にしない。"""
+    output = """==================================== ERRORS ====================================
+________________________ ERROR at setup of test_parent ________________________
+conftest.py:5: in broken_setup
+    raise RuntimeError("setup boom")
+E   RuntimeError: setup boom
+----------------------------- Captured stdout setup ----------------------------
+==================================== ERRORS ====================================
+________________________ ERROR at setup of test_child _________________________
+child/conftest.py:3: in child_fixture
+    raise RuntimeError("child boom")
+E   RuntimeError: child boom
+=========================== short test summary info ============================
+ERROR child/child_test.py::test_child - RuntimeError: child boom
+=========================== short test summary info ============================
+ERROR tests/parent_test.py::test_parent - RuntimeError: setup boom
+=============================== 1 error in 0.30s ===============================
+"""
+    errors = pyfltr.parsing.pytest.parse_pytest(output)
+    assert [(error.file, error.line) for error in errors] == [("tests/parent_test.py", 0)]
+
+
+def test_pytest_child_errors_in_failure_capture_are_not_added() -> None:
+    """失敗欄の捕捉出力にある子pytest（`-q`）のERRORS節は、親がERRORを持たなくても親の診断にしない。
+
+    pytestはERRORS節を失敗欄より前に出すため、失敗欄より後のERRORS節は子のものである。
+    """
+    output = """parent_test.py F                                                         [100%]
+
+=================================== FAILURES ===================================
+_______________________________ test_runs_child ________________________________
+parent_test.py:6: in test_runs_child
+    assert 1 == 0
+E   assert 1 == 0
+----------------------------- Captured stdout call -----------------------------
+E                                                                        [100%]
+==================================== ERRORS ====================================
+_______________________ ERROR at setup of test_child_err _______________________
+child/child_err_test.py:6: in child_broken
+    raise RuntimeError('child setup boom')
+E   RuntimeError: child setup boom
+=========================== short test summary info ============================
+ERROR child/child_err_test.py::test_child_err - RuntimeError: child setup boom
+1 error in 0.09s
+
+=========================== short test summary info ============================
+FAILED parent_test.py::test_runs_child - assert 1 == 0
+============================== 1 failed in 5.54s ===============================
+"""
+    errors = pyfltr.parsing.pytest.parse_pytest(output)
+    assert [(error.file, error.line, error.message) for error in errors] == [
+        ("parent_test.py", 6, "test_runs_child: assert 1 == 0")
+    ]
+
+
+def test_pytest_parent_error_block_is_not_masked_by_quiet_child_end() -> None:
+    """親のERRORブロックの捕捉出力が子pytest（`-q`）の終了集計行で終わっても、親のERRORSブロックを子の区間として除かない。"""
+    output = """============================= test session starts ==============================
+rootdir: /proj
+collected 1 item
+
+parent_test.py E                                                         [100%]
+
+==================================== ERRORS ====================================
+________________________ ERROR at setup of test_parent _________________________
+conftest.py:8: in runs_child_then_fails
+    raise RuntimeError('parent fixture boom')
+E   RuntimeError: parent fixture boom
+---------------------------- Captured stdout setup -----------------------------
+E                                                                        [100%]
+==================================== ERRORS ====================================
+_______________________ ERROR at setup of test_child_err _______________________
+child/child_err_test.py:6: in child_broken
+    raise RuntimeError('child setup boom')
+E   RuntimeError: child setup boom
+=========================== short test summary info ============================
+ERROR child/child_err_test.py::test_child_err - RuntimeError: child setup boom
+1 error in 0.08s
+
+=========================== short test summary info ============================
+ERROR parent_test.py::test_parent - RuntimeError: parent fixture boom
+=============================== 1 error in 6.13s ===============================
+"""
+    errors = pyfltr.parsing.pytest.parse_pytest(output)
+    assert [(error.file, error.line, error.message) for error in errors] == [
+        ("parent_test.py", 0, "test_parent: setup error: RuntimeError: parent fixture boom (conftest.py:8)")
+    ]
+
+
+def test_pytest_collection_syntax_error_uses_exception_line() -> None:
+    """収集時の`SyntaxError`は例外名の`E`行を理由に採り、外部の位置をメッセージへ併記しない。"""
+    output = """==================================== ERRORS ====================================
+__________________ ERROR collecting tests/sub/broken_test.py ___________________
+/usr/lib/python3.15/ast.py:46: in parse
+    return compile(source, filename, mode, flags,
+E     File "/proj/tests/sub/broken_test.py", line 1
+E       def test_x(:
+E                  ^
+E   SyntaxError: invalid syntax
+=========================== short test summary info ============================
+ERROR tests/sub/broken_test.py
+=============================== 1 error in 0.10s ===============================
+"""
+    errors = pyfltr.parsing.pytest.parse_pytest(output)
+    assert [(error.file, error.line, error.message) for error in errors] == [
+        ("tests/sub/broken_test.py", 0, "collection error: SyntaxError: invalid syntax")
+    ]
+
+
+def test_pytest_child_failures_in_parent_error_capture() -> None:
+    """親のsetup ERRORの捕捉出力に子pytest（`-q`）の失敗欄が混入しても、親のERRORブロックを失敗として扱わない。
+
+    最初の失敗欄の見出しが子のものになるため、親の後続のERRORブロックが失敗欄の範囲へ入る。
+    子の失敗（`child/child_fail_test.py`）の帰属は変更前からの既知の縮退で、本試験の対象外とする。
+    """
+    output = """parent_test.py EEF                                                       [100%]
+
+==================================== ERRORS ====================================
+__________________________ ERROR at setup of test_p1 ___________________________
+conftest.py:8: in runs_child_then_fails
+    raise RuntimeError('parent fixture boom')
+E   RuntimeError: parent fixture boom
+---------------------------- Captured stdout setup -----------------------------
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______________________________ test_child_fail ________________________________
+child/child_fail_test.py:2: in test_child_fail
+    assert 5 == 6
+E   assert 5 == 6
+=========================== short test summary info ============================
+FAILED child/child_fail_test.py::test_child_fail - assert 5 == 6
+1 failed in 0.21s
+
+__________________________ ERROR at setup of test_p2 ___________________________
+conftest.py:8: in runs_child_then_fails
+    raise RuntimeError('parent fixture boom')
+E   RuntimeError: parent fixture boom
+---------------------------- Captured stdout setup -----------------------------
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______________________________ test_child_fail ________________________________
+child/child_fail_test.py:2: in test_child_fail
+    assert 5 == 6
+E   assert 5 == 6
+=========================== short test summary info ============================
+FAILED child/child_fail_test.py::test_child_fail - assert 5 == 6
+1 failed in 0.19s
+
+=================================== FAILURES ===================================
+___________________________________ test_p3 ____________________________________
+parent_test.py:10: in test_p3
+    assert 7 == 8
+E   assert 7 == 8
+=========================== short test summary info ============================
+FAILED parent_test.py::test_p3 - assert 7 == 8
+ERROR parent_test.py::test_p1 - RuntimeError: parent fixture boom
+ERROR parent_test.py::test_p2 - RuntimeError: parent fixture boom
+========================= 1 failed, 2 errors in 18.00s ========================="""
+    errors = [
+        (error.file, error.line, error.message)
+        for error in pyfltr.parsing.pytest.parse_pytest(output)
+        if error.file != "child/child_fail_test.py"
+    ]
+    assert errors == [
+        ("parent_test.py", 10, "test_p3: assert 7 == 8"),
+        ("parent_test.py", 0, "test_p1: setup error: RuntimeError: parent fixture boom (conftest.py:8)"),
+        ("parent_test.py", 0, "test_p2: setup error: RuntimeError: parent fixture boom (conftest.py:8)"),
+    ]

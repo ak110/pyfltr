@@ -377,9 +377,9 @@ def test_diff_diagnostics_compares_all_fields() -> None:
 
 
 def test_pytest_forms_cover_reviewer_definition() -> None:
-    """形態1〜21と、レビュー担当定義が求める派生を全て生成対象に持つ。"""
+    """形態1〜22と、レビュー担当定義が求める派生を全て生成対象に持つ。"""
     forms = pytest_forms.FORMS
-    assert {form.number for form in forms} == set(range(1, 22))
+    assert {form.number for form in forms} == set(range(1, 23))
     ids = {form.id for form in forms}
     assert len(ids) == len(forms)
     assert sum(1 for form in forms if form.number == 7) == 10
@@ -394,6 +394,7 @@ def test_pytest_forms_cover_reviewer_definition() -> None:
     assert {form.number for form in tb_auto} == {8, 11, 16, 17, 19, 20, 21}
     assert sum(form.number == 19 for form in forms) == 4
     assert sum(form.number == 20 for form in forms) == 5
+    assert sum(form.number == 22 for form in forms) == 5
 
 
 @pytest.mark.timeout(300)
