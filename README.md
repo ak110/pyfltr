@@ -10,7 +10,7 @@
 Python / Rust / .NET / TypeScript・JavaScript / ドキュメントなどの
 formatter・linter・testerを単一コマンドで実行する。
 プロジェクト固有のカスタムチェックも同一基盤へ統合できる。
-（要Python 3.11以上）
+（要Python 3.12以上）
 
 ## 特徴
 

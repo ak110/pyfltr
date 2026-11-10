@@ -85,7 +85,7 @@ jobs:
         shell: bash
     strategy:
       matrix:
-        python-version: ["3.11", "3.12", "3.13", "3.14", "3.15"]
+        python-version: ["3.12", "3.13", "3.14", "3.15"]
     env:
       UV_PYTHON: ${{ matrix.python-version }}
       # mise等がGitHub APIを呼び出す際のレート制限（403）回避
@@ -102,7 +102,7 @@ jobs:
           fetch-depth: 0
 
       - name: 利用者設定に依存しないロック検証
-        if: ${{ matrix.python-version == '3.11' }}
+        if: ${{ matrix.python-version == '3.12' }}
         run: |
           set -euo pipefail
           config_dir="$(mktemp -d)"

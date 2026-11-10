@@ -832,7 +832,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11", "3.12", "3.13", "3.14", "3.15"]
+        python-version: ["3.12", "3.13", "3.14", "3.15"]
     container:
       image: ghcr.io/ak110/pyfltr:latest
     defaults:
@@ -844,7 +844,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: 利用者設定に依存しないロック検証
-        if: ${{ matrix.python-version == '3.11' }}
+        if: ${{ matrix.python-version == '3.12' }}
         run: |
           set -euo pipefail
           config_dir="$(mktemp -d)"
@@ -996,7 +996,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11", "3.12", "3.13", "3.14", "3.15"]
+        python-version: ["3.12", "3.13", "3.14", "3.15"]
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10

@@ -417,12 +417,9 @@ def default_global_config_path() -> pathlib.Path:
     return pathlib.Path(platformdirs.user_config_dir("pyfltr", appauthor=False)) / "config.toml"
 
 
-_SettingT = typing.TypeVar("_SettingT")
-
-
-def command_setting(values: typing.Mapping[str, typing.Any], command: str, key: str, default: _SettingT) -> _SettingT:
+def command_setting[SettingT](values: typing.Mapping[str, typing.Any], command: str, key: str, default: SettingT) -> SettingT:
     """検証済みのコマンド設定を既定値と同じ型で取得する。"""
-    return typing.cast(_SettingT, values.get(f"{command}-{key}", default))
+    return typing.cast(SettingT, values.get(f"{command}-{key}", default))
 
 
 def required_command_setting(values: typing.Mapping[str, typing.Any], command: str, key: str) -> typing.Any:

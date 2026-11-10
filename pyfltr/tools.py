@@ -7,22 +7,19 @@ import typing
 
 from pyfltr.diagnostics import ErrorLocation
 
-_P = typing.ParamSpec("_P")
-_R = typing.TypeVar("_R")
-
 
 @dataclasses.dataclass(frozen=True)
-class FunctionRef(typing.Generic[_P, _R]):
+class FunctionRef[**P, R]:
     """登録を読み込む際の循環を避け、関数を呼出時に解決する。"""
 
     module: str
     name: str
 
-    def resolve(self) -> typing.Callable[_P, _R]:
+    def resolve(self) -> typing.Callable[P, R]:
         """登録先の関数を型付きで取得する。"""
-        return typing.cast(typing.Callable[_P, _R], getattr(importlib.import_module(self.module), self.name))
+        return typing.cast(typing.Callable[P, R], getattr(importlib.import_module(self.module), self.name))
 
-    def __call__(self, *args: _P.args, **kwargs: _P.kwargs) -> _R:
+    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> R:
         """登録先へ同じ引数を渡し、結果を返す。"""
         return self.resolve()(*args, **kwargs)
 

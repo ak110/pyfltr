@@ -85,8 +85,8 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
 
     parser = pyfltr.cli.parser.build_parser()
     # grep / replaceは複数位置引数（pattern + paths）をオプション混在で受理する。
-    # Python 3.11のargparseは`nargs="?"` + `nargs="*"`の組み合わせでサブパーサー側の
-    # 位置引数解析が早期終了する既知挙動があり、`--output-format=jsonl`等が
+    # argparseは`nargs="?"` + `nargs="*"`の組み合わせでサブパーサー側の
+    # 位置引数解析が早期終了する挙動があり（Python 3.12〜3.15でも再現する）、`--output-format=jsonl`等が
     # 位置引数列の途中に出現すると後続の`paths`値がunrecognizedとして除外される。
     # `parse_known_args`で残余を回収し、`paths`へ統合する経路で回避する。
     if sys_args and sys_args[0] in ("grep", "replace"):
