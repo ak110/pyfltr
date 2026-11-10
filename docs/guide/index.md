@@ -1,7 +1,8 @@
 # 利用者向けガイド
 
 pyfltrが対応するformatter / linter / testerを言語・用途別に示す。
-初めて使う場合は[はじめに](getting-started.md)を参照。設定から実行までの導入手順を確認できる。
+初めて使う場合は[はじめに](getting-started.md)を参照。
+設定から実行までの導入手順を確認できる。
 
 言語カテゴリ（Python / JS/TS / Rust / .NET）に属するツールの既定値はいずれも無効（opt-in）。
 `preset = "latest"` + 言語カテゴリキー（`python` / `javascript` / `rust` / `dotnet`）の`true`指定だけで、
@@ -74,7 +75,7 @@ bin-runner経由（既定はmise）で起動する。
 - Linters
     - 一般: typos（PyPI依存）/ actionlint / pinact / ec（editorconfig-checker、既定は無効）/
       shellcheck（既定は無効）/ glab-ci-lint（既定は無効）
-    - 日本語文体: colloquial-check（既定は無効）
+    - 日本語文体: colloquial-check（既定は無効）/ markdown-structure（Markdownの1文1行と全角丸括弧の入れ子、既定は無効）
     - YAML / Dockerfile / シークレット系: yamllint（既定は無効）/ hadolint（Dockerfile、既定は無効）
     - シークレット検出・SAST: gitleaks（既定は無効）/ semgrep（既定は無効）/ bandit（既定は無効）
     - SQL: sqlfluff（既定は無効）
@@ -86,15 +87,22 @@ bin-runner経由（既定はmise）で起動する。
 既定値が無効（opt-in）のツールは、利用時に`pyproject.toml`で`{command} = true`を設定する。
 特記事項を以下に示す。
 
-- `taplo`: Rust製のTOMLフォーマッター/リンター。bin-runner経由で実行し、shfmtと同様の2段階実行（check→format）を行う
-- `yamllint`: Python製のYAMLリンター。PATH上または`yamllint-path`で指定した実行ファイルを直接呼び出す
-- `hadolint`: Dockerfileに特化したリンター。bin-runner経由で実行する
-- `gitleaks`: Goバイナリのシークレット検出ツール。`gitleaks detect`でリポジトリ全体を対象に実行する
-- `semgrep`: Python製の多言語SAST。ルールセット指定が必須のため既定は無効。
+- `taplo`: Rust製のTOMLフォーマッター/リンター。
+  bin-runner経由で実行し、shfmtと同様の2段階実行（check→format）を行う
+- `yamllint`: Python製のYAMLリンター。
+  PATH上または`yamllint-path`で指定した実行ファイルを直接呼び出す
+- `hadolint`: Dockerfileに特化したリンター。
+  bin-runner経由で実行する
+- `gitleaks`: Goバイナリのシークレット検出ツール。
+  `gitleaks detect`でリポジトリ全体を対象に実行する
+- `semgrep`: Python製の多言語SAST。
+  ルールセット指定が必須のため既定は無効。
   利用時は`semgrep-args = ["scan", "--json", "--error", "--config=auto"]`等で実際のルールセットを指定する
-- `sqlfluff`: Python製のSQL専用linter。dialect指定が必須のため`.sqlfluff`配置を前提とする。
+- `sqlfluff`: Python製のSQL専用linter。
+  dialect指定が必須のため`.sqlfluff`配置を前提とする。
   `sqlfluff lint`サブコマンドをlinterとして起動する（`sqlfluff format`サブコマンドは対象外）
-- `bandit`: Python製のsource-level SAST。既定は無効（opt-in）。
+- `bandit`: Python製のsource-level SAST。
+  既定は無効（opt-in）。
   検出された違反は`test_id`（B101等）とseverity（LOW/MEDIUM/HIGH）で識別する。
   起点cwd直下の設定ファイルを`--configfile <絶対パス>`形式でbanditへ渡す（bandit本体は自動読み込みしない）。
   探索対象は`pyproject.toml`・`.bandit.yaml`・`.bandit.toml`。
@@ -104,9 +112,14 @@ bin-runner経由（既定はmise）で起動する。
 - `uv-audit` / `pnpm-audit` / `npm-audit` / `yarn-audit`: 依存パッケージの脆弱性を監査する。
   それぞれパッケージマネージャーのauditサブコマンドを起動し、外部脆弱性データベースへの問い合わせを伴うため既定は無効
 - `colloquial-check`: LLMが頻繁に出力する口語的な日本語表現を検出する内蔵linter。
-  既定は無効（opt-in）。有効化時も`colloquial-check-severity = "warning"`既定により
-  CI/pre-commitを失敗させない。対象ファイルは全種別（`*`）とし、pyfltr既定のexclude・`.gitignore`尊重に従う。
+  既定は無効（opt-in）。
+  有効化時も`colloquial-check-severity = "warning"`既定により
+  CI/pre-commitを失敗させない。
+  対象ファイルは全種別（`*`）とし、pyfltr既定のexclude・`.gitignore`尊重に従う。
   辞書ファイル（denylist・allowlist）はpyfltrに同梱する
+- `markdown-structure`: Markdownの1文1行と全角丸括弧の入れ子をチェックする内蔵linter。
+  既定は無効（opt-in）。
+  違反の重大度の既定は`error`で、1文1行の違反はfix段で自動修正する
 
 プリセット指定と言語カテゴリによる限定の詳細は[設定項目](configuration.md)を参照。
 

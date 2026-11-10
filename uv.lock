@@ -1511,6 +1511,7 @@ dependencies = [
     { name = "arid" },
     { name = "bandit" },
     { name = "dill" },
+    { name = "markdown-it-py" },
     { name = "mcp" },
     { name = "mypy" },
     { name = "natsort" },
@@ -1539,7 +1540,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "markdown-it-py" },
     { name = "mdformat" },
     { name = "mkdocs" },
     { name = "mkdocs-llmstxt" },
@@ -1554,6 +1554,7 @@ requires-dist = [
     { name = "arid", specifier = ">=2.2.2" },
     { name = "bandit", specifier = ">=1.7" },
     { name = "dill", specifier = ">=0.3" },
+    { name = "markdown-it-py", specifier = ">=3.0.0" },
     { name = "mcp", specifier = ">=2.0.0" },
     { name = "mypy", specifier = ">=1.0" },
     { name = "natsort", specifier = ">=8.0" },
@@ -1583,7 +1584,6 @@ provides-extras = ["python"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "markdown-it-py", specifier = ">=3.0.0" },
     { name = "mdformat", specifier = "<1.0" },
     { name = "mkdocs", specifier = ">=1.6" },
     { name = "mkdocs-llmstxt", specifier = ">=0.5" },

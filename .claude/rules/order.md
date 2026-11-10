@@ -23,20 +23,23 @@ linter/tester群の実行順はLPT並列（推定実行時間の降順スケジ�
 末尾は`sql_linters.py`、`audit.py`、`testers.py`とする。
 `common.py`は種類をまたぐ定義値を持ち、`tools.py`が各登録表をこの順に連結する。
 `pyfltr/config/model.py`の`DEFAULT_CONFIG`と`aliases`、`pyfltr/parsing/entry.py`の解析処理は
-この登録を参照し、別の登録表を更新しない。表示順の算出は`command_index()`を共用する。
+この登録を参照し、別の登録表を更新しない。
+表示順の算出は`command_index()`を共用する。
 
 `resolve_aliases()`が`command_names.index`で再ソートするため実行順への影響は無いが、SSOT観点で揃える。
 新しい領域を設ける場合は「領域別の末尾追加方針」へ配置順も追記する。
 
 ## formatter群
 
-純粋formatterを先に、lint的性質を持つものを後ろに配置する。最後尾は`prek`→`pre-commit`の順とする
+純粋formatterを先に、lint的性質を持つものを後ろに配置する。
+最後尾は`prek`→`pre-commit`の順とする
 （リポジトリ固有の各種チェックが幅広く実行されるため、他formatterで直せるものを先に修正してから呼ぶ意図）。
 `prek`と`pre-commit`は同一の`.pre-commit-config.yaml`を読む代替系統のため隣接配置する。
 代替系統内では`preset = "latest"`が有効化する`prek`を先に配置し、
 旧presetが有効化する互換用の`pre-commit`を後に配置する。
 
-- 先頭: `prettier`。多言語formatterで影響範囲が広く、最初に整形すると後続判定が安定する
+- 先頭: `prettier`。
+  多言語formatterで影響範囲が広く、最初に整形すると後続判定が安定する
 - 中段: `ruff-format`・`uv-sort`・`shfmt`・`taplo`・`cargo-fmt`・`dotnet-format`（決定論的に整形する純粋formatter）
 - 末尾: `prek`→`pre-commit`
 
@@ -62,5 +65,7 @@ Rust（`cargo-clippy`・`cargo-check`・`cargo-deny`）はサブコマンドの�
 - SQL専用ツールはlinter群末尾に配置する（`sqlfluff`は`dotnet-build`の直後）
 - 依存の脆弱性監査ツールは`sqlfluff`の直後に`uv-audit`→`pnpm-audit`→`npm-audit`→`yarn-audit`の順で配置する
 - 日本語文体系（言語非依存）: `targets="*"`で全ファイル種別を対象とし特定言語・特定フォーマットに紐付かないため、
-  Markdown系とは別区分として扱う。`colloquial-check`が該当し、`BUILTIN_COMMANDS`登録順は
+  Markdown系とは別区分として扱う。
+  `colloquial-check`が該当し、`BUILTIN_COMMANDS`登録順は
   `lychee`の直後に配置する（Markdown系末尾への近接配置自体は維持しつつ分類ラベルのみ独立させる）
+- Markdownの書式の内蔵チェック（`markdown-structure`）は日本語文体系の`colloquial-check`の直後に配置する

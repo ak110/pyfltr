@@ -17,7 +17,8 @@ pyfltr <subcommand> [files and/or directories ...]
 pyfltr ci [files and/or directories ...]
 ```
 
-全チェック実行。CI環境やコミット前の検証に適する。
+全チェック実行。
+CI環境やコミット前の検証に適する。
 
 終了コード:
 
@@ -84,7 +85,8 @@ pyfltr config <action> [options]
 pyfltr config get <key> [--global]
 ```
 
-指定キーの現在値を1行出力する。ファイルに書かれていなければデフォルト値を返す。
+指定キーの現在値を1行出力する。
+ファイルに書かれていなければデフォルト値を返す。
 未知のキーはエラー終了（終了コード1）。
 
 ```shell
@@ -98,7 +100,8 @@ pyfltr config get archive-max-age-days --global
 pyfltr config set <key> <value> [--global]
 ```
 
-指定キーに値を書き込む。値の文字列はキーのデフォルト値の型に応じて変換される。
+指定キーに値を書き込む。
+値の文字列はキーのデフォルト値の型に応じて変換される。
 
 - `bool`: `true` / `false` / `1` / `0`
 - `int`: 整数表記
@@ -167,7 +170,8 @@ pyfltr list-runs [--limit N] [--output-format text|json|jsonl]
 実行アーカイブに保存されたrun一覧を新しい順で表示する。
 
 - 既定は直近20件（`--limit`で変更可能）
-- `text`: 固定幅テーブル。列は`RUN_ID` / `STARTED_AT` / `EXIT` / `FILES` / `COMMANDS`
+- `text`: 固定幅テーブル。
+  列は`RUN_ID` / `STARTED_AT` / `EXIT` / `FILES` / `COMMANDS`
 - `json`: `{"runs":[{...}, ...]}`の単発出力
 - `jsonl`: 1件1行ストリーム（`kind: "run"`）
 
@@ -230,7 +234,8 @@ pyfltr grep -F "exact_string" --output-format=jsonl docs/
 pyfltr replace <pattern> <replacement> [paths...]
 ```
 
-正規表現で横断置換する。書き込みが既定動作で、`--dry-run`で試行できる。
+正規表現で横断置換する。
+書き込みが既定動作で、`--dry-run`で試行できる。
 実行アーカイブに履歴を保存し、`--undo`で取り消せる。
 
 例:
@@ -419,7 +424,8 @@ check段では`textlint-json`設定（既定`true`）により出力フォーマ
 - `--check`: 実行時と同じ事前チェックを行う
  （mise経由ツールは`mise exec --version`での可用性確認、パッケージマネージャー系ツールは最低版の確認）
   事前確認に成功した場合は解決済みコマンドラインへ`--version`を渡し、実行版を`check_installed_version`として返す。
-  取得できなかった場合は`null`を返す。`--check`未指定時と事前確認失敗時はそのフィールドを出力しない。
+  取得できなかった場合は`null`を返す。
+  `--check`未指定時と事前確認失敗時はそのフィールドを出力しない。
  （`mise install` / `mise trust` / `--version`の起動が発生する場合があるため、既定の動作では行わない）
 
 未知のコマンド名や`{command}-runner = "mise"`を未登録ツールに指定した場合などは終了コード1で失敗する。
@@ -474,7 +480,8 @@ pyfltr generate-shell-completion powershell | Out-String | Invoke-Expression
 - 外部パス除外＋警告: `markdownlint`・`textlint`・`pre-commit`・`prek`・`uv-audit`・
   `pnpm-audit`・`npm-audit`・`yarn-audit`・`pytest`・`vitest`・`cargo-test`・
   `dotnet-test`・`gitleaks`・`semgrep`
-- 既定（素通し）: 上記以外。各ツールの設定探索仕様に委ねる
+- 既定（素通し）: 上記以外。
+  各ツールの設定探索仕様に委ねる
 
 注入対象では起点cwd直下の設定ファイル（`.textlintrc.yaml` ・ `.markdownlint-cli2.yaml` 等）を明示注入する。
 `markdownlint`・`textlint`には`--config <絶対パス>`、`bandit`には`--configfile <絶対パス>`形式で注入する。
@@ -563,11 +570,13 @@ formatterは通常ステージで対象ファイルを書き込むため、`--no
 pyfltr ci --commands=ruff-check,markdownlint [files and/or directories ...]
 ```
 
-カンマ区切りで実行するツールだけ指定する。全サブコマンドで使用可能。
+カンマ区切りで実行するツールだけ指定する。
+全サブコマンドで使用可能。
 `--commands`は複数回指定も可能で、カンマ区切りと併用できる。
 例えば`--commands=mypy --commands=pyright,ruff-check`は`--commands=mypy,pyright,ruff-check`と同じになる。
 
-以下のエイリアスも使用可能。(例: `--commands=format`)
+以下のエイリアスも使用可能。
+(例: `--commands=format`)
 
 - `format`: `prettier` `ruff-format` `uv-sort` `shfmt` `taplo` `cargo-fmt` `dotnet-format` `prek` `pre-commit`。
 - `lint`: `ec` `shellcheck` `typos` `actionlint` `pinact` `glab-ci-lint` `yamllint` `hadolint` `gitleaks`。
@@ -652,11 +661,15 @@ VSCodeのターミナルからクリックして該当箇所にジャンプで�
   gitが不在またはrefが存在しない場合は警告を出力して全体実行へフォールバックする。
   `--only-failed`と併用した場合は`--changed-since`フィルタを先に適用してから`--only-failed`フィルタを適用する
 - `--only-failed`: 直前runの実行アーカイブから失敗ツール・失敗ファイルを抽出し、
-  ツール別にその組み合わせだけを再実行する。直前runが無い・失敗ツールが無い・指定`targets`との交差が空の場合は
-  メッセージを出力して`rc=0`で成功終了する。診断ファイルが取得できないツール（pytest等の`pass-filenames=False`系）は
-  既定ファイル展開にフォールバックして全体再実行する。`--no-archive`とは独立に働く（参照するのは過去runのアーカイブ）
+  ツール別にその組み合わせだけを再実行する。
+  直前runが無い・失敗ツールが無い・指定`targets`との交差が空の場合は
+  メッセージを出力して`rc=0`で成功終了する。
+  診断ファイルが取得できないツール（pytest等の`pass-filenames=False`系）は
+  既定ファイル展開にフォールバックして全体再実行する。
+  `--no-archive`とは独立に働く（参照するのは過去runのアーカイブ）
 - `--from-run <RUN_ID>`: `--only-failed`の参照対象runを明示指定する（前方一致・`latest`対応）。
-  未指定時は直前runを自動選択。`--only-failed`との併用が前提で、単独指定はargparseエラーで拒否する。
+  未指定時は直前runを自動選択。
+  `--only-failed`との併用が前提で、単独指定はargparseエラーで拒否する。
   指定した`<RUN_ID>`が存在しない場合は警告を出力して`rc=0`で早期終了する
 - `--shuffle`: チェック対象ファイルの並び順をシャッフルする（既定は自然順ソート）。
   ファイル順に依存して結果が変わるチェックを洗い出す用途で使う。
@@ -667,8 +680,10 @@ VSCodeのターミナルからクリックして該当箇所にジャンプで�
   ツールがエラーで終了した場合と、ツールの解決に失敗した場合は、コマンドの種別を問わず`1`となる。
   `run` / `fast`はサブコマンドの既定値として常に有効なため、
   明示指定が意味を持つのは`ci`サブコマンドとなる
-- `--ci`: CI環境向け。ファイル順のシャッフルとUIを無効化する
-- `-j N` / `--jobs N`: linters/testersの最大並列数を指定（既定: 8、`pyproject.toml`でも設定可能）。モノレポ検出時は同一ツールのサブプロジェクト実行を同時に開始する件数の算出にも使われる
+- `--ci`: CI環境向け。
+  ファイル順のシャッフルとUIを無効化する
+- `-j N` / `--jobs N`: linters/testersの最大並列数を指定（既定: 8、`pyproject.toml`でも設定可能）。
+  モノレポ検出時は同一ツールのサブプロジェクト実行を同時に開始する件数の算出にも使われる
 - `--verbose`: デバッグレベルのログを出力する
 - `--keep-ui`: TUI終了後にTextual画面を保持する（ログ確認用）
 - `--work-dir DIR`: pyfltrの作業ディレクトリを指定する（既定はカレントディレクトリ）。
@@ -828,7 +843,8 @@ MCPを利用できず、エージェントがシェルコマンドを実行で�
 残り時間の見込みは、保持者と先に並んだ実行の残り処理時間を観測できないため示さない。
 待機時間はツールのtimeoutに含まない。
 
-- 待機をやめる場合は実行を中断する（端末ではCtrl+C、MCPでは要求の取り消し）。中断した実行はツールを実行せず、成功の結果を返さない
+- 待機をやめる場合は実行を中断する（端末ではCtrl+C、MCPでは要求の取り消し）。
+  中断した実行はツールを実行せず、成功の結果を返さない
 - 検証コマンドから起動した子のpyfltr（pytestから起動するpyfltrなど）は、親の実行が所有する実行枠を引き継いで待たずに実行する
 - 対象ファイルが1件も無いツールだけの実行（文書だけのcommitなど）は、実行枠を待たずにスキップの結果を返す
 - `PYFLTR_CACHE_DIR`で保存先を変えた実行どうしは待ち合わせない
@@ -850,7 +866,8 @@ with pyfltr.command.execution_slot.hold(label="my-check"):
 ```
 
 `with`の内側が実行枠を所有する区間になり、呼び出し元が区間を終えるまで保持する。
-内側で起動した子プロセスは、区間を抜ける前に終了・回収する。区間を抜けると次の実行がツールを実行し始めるためである。
+内側で起動した子プロセスは、区間を抜ける前に終了・回収する。
+区間を抜けると次の実行がツールを実行し始めるためである。
 
 ## pre-commit・prekとの統合 {#precommit-integration}
 
@@ -910,7 +927,8 @@ pyfltrからprekのhookを呼び出す統合は`prek = true`で有効化する�
 
 ### 共通の注意点
 
-- `pyfltr fast` はfixステージを内蔵する。pre-commit hookから`{command}-fix-args`定義済みlinter
+- `pyfltr fast` はfixステージを内蔵する。
+  pre-commit hookから`{command}-fix-args`定義済みlinter
  （`cargo-clippy` / `ruff-check` / `textlint`等）の自動修正が実行されるため、別hookを並べる必要は無い
 - formatter（`ruff-format` / `prettier` / `cargo-fmt` / `dotnet-format`等）は通常実行で常時書き込みモードで動作するため、
   fixステージでは扱わない
@@ -962,7 +980,8 @@ pyfltrからprekのhookを呼び出す統合は`prek = true`で有効化する�
   リポジトリ単位のツール（`typos`・`shellcheck`・`shfmt`・`pre-commit`・`prek`・`colloquial-check`）は1回だけ起動する
 - フォールバック: 検出結果が0件または1件の場合は単一プロジェクトとして従来通り動作する
 - 出力スキーマ: モノレポ実行でもJSONL・SARIF・show-run・MCP読み取り系APIの
-  公開スキーマは変更しない。サブプロジェクト境界をまたぐ実行結果は1件にマージし、人間向け`output`には
+  公開スキーマは変更しない。
+  サブプロジェクト境界をまたぐ実行結果は1件にマージし、人間向け`output`には
   `# subproject: <相対パス>` の区切り行を挿入する
 - 個別設定: 各サブプロジェクトの `[tool.pyfltr]` 設定（ツールのON/OFF・除外・targets等）を
   そのディレクトリで個別に解決して尊重する。
@@ -971,7 +990,8 @@ pyfltrからprekのhookを呼び出す統合は`prek = true`で有効化する�
   報告順はサブプロジェクトの相対パスの昇順で安定し、実行順に依存しない。
   `mypy`は同じキャッシュ保存先を複数のmypyプロセスで同時に使う構成に対応しないため、`jobs`によらずサブプロジェクトを1件ずつ順に実行する
 - 設定ファイルの探索起点: `config-files`（設定ファイル不在の警告）と`--config`系の自動注入は
-  常に起点cwd直下を基準に判定する。`.pre-commit-config.yaml`等をリポジトリルートに置く構成で、
+  常に起点cwd直下を基準に判定する。
+  `.pre-commit-config.yaml`等をリポジトリルートに置く構成で、
   サブプロジェクト側に同名ファイルが無いことを理由に警告することはない
 - ツールON/OFFの両方向: 親（起点）で無効・子で有効なら子でのみ実行し、親で有効・子で無効なら子サブプロジェクトはスキップする。
   起点ディレクトリ自体は1つのサブプロジェクトとして扱い、その設定が有効なら起点自身のファイルは実行する

@@ -24,7 +24,8 @@ formatter・linter・testerを単一コマンドで実行する。
 
 ## インストール
 
-`uvx pyfltr`で実行する。事前インストールやdev依存への追加なしで最新版を取得して実行する。
+`uvx pyfltr`で実行する。
+事前インストールやdev依存への追加なしで最新版を取得して実行する。
 
 ```shell
 uvx pyfltr --help

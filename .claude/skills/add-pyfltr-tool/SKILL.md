@@ -10,17 +10,21 @@ description: >
 
 ## 触るべきファイル
 
-用途が近い既存ツールを1つ雛形として選ぶ。既存の実行・解析方式で扱える通常の追加では、
-実装の登録変更は`BUILTIN_COMMANDS`の1件で完結する。テスト・導入設定・利用者文書は以下に従って追随する。
+用途が近い既存ツールを1つ雛形として選ぶ。
+既存の実行・解析方式で扱える通常の追加では、
+実装の登録変更は`BUILTIN_COMMANDS`の1件で完結する。
+テスト・導入設定・利用者文書は以下に従って追随する。
 
 - `pyfltr/tool_defs/`: 種類に対応するモジュールの`COMMANDS`へ`CommandInfo`を1件登録する。
-  置き場所と連結順は`.claude/rules/order.md`に従う。型は`pyfltr/tool_types.py`、連結と導出定義は`pyfltr/tools.py`が持つ。
+  置き場所と連結順は`.claude/rules/order.md`に従う。
+  型は`pyfltr/tool_types.py`、連結と導出定義は`pyfltr/tools.py`が持つ。
   既定値、言語カテゴリ、runnerと標準版、専用実行種別、解析・構造化出力・ルールURLを同じ定義に置く。
   設定・カテゴリ・エイリアス・解析登録はここから導出され、別の表へ転記しない
 - 新しい実行方式が必要な場合は`docs/development/architecture.md`の「専用実行方式の追加」に従い、
   `pyfltr/command/dispatcher.py`と担当実行モジュールを更新する
 - `pyfltr/parsing/tools.py`: 既存の解析方式で扱えない場合にツール固有パーサーを実装し、
-  `tool_defs/`の`CommandInfo.parser`へ登録する。regexだけの場合は定義内の`diagnostic_pattern`へ置く
+  `tool_defs/`の`CommandInfo.parser`へ登録する。
+  regexだけの場合は定義内の`diagnostic_pattern`へ置く
 - `tests/`: 実装と同じ相対位置の`config/`・`command/`・`parsing/`に対応するテストを追加
 - `tests/integration/smoke_test.py`: 新ツールのsmoke testケースを追加
 - `tests/smoke_data/<tool>_workspace/`: 最小の実行対象と設定を含むsmoke test用workspace一式を追加
@@ -67,7 +71,8 @@ description: >
 この形の新ツールを追加する場合は以下の正規フローを適用する。
 
 - 専用実行モジュールの出力メッセージと設定キー参照をツール名でパラメーター化する
-- `CommandInfo.execution_kind`へ既存の種別を指定する。新しい実行方式が必要な場合だけ
+- `CommandInfo.execution_kind`へ既存の種別を指定する。
+  新しい実行方式が必要な場合だけ
   実行要求型とdispatcherの種別登録を追加する
 - `{ツール名}-`接頭辞の設定キー群一式（`-path`・`-args`・`-fast`等）を新ツール用に複製する。
   新ツールが既存ツールと同じ設定値を参照する仕様の場合は複製しない
@@ -86,7 +91,8 @@ uv run pyfltr run
 
 ## fast 判定の計測手順
 
-`{command}-fast` の既定値は計測値で判断する。最終判断はユーザーが行うため、計測結果のみを提示する。
+`{command}-fast` の既定値は計測値で判断する。
+最終判断はユーザーが行うため、計測結果のみを提示する。
 
 `fast` はpre-commitフックなどで実行しても作業に支障が出にくい高速ツールを示す。
 固定コスト（起動オーバーヘッド）と可変コスト（ファイルあたりの処理時間）の両方に加え、

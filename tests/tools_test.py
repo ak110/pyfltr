@@ -37,6 +37,7 @@ def test_builtin_command_order() -> None:
         "designmd",
         "lychee",
         "colloquial-check",
+        "markdown-structure",
         "tsc",
         "eslint",
         "biome",

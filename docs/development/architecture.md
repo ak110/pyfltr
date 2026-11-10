@@ -28,7 +28,8 @@ fixステージが失敗した場合は、同じツールの通常ステージ�
 
 ## 層順とサブパッケージの責務 {#modules}
 
-依存は次の下位から上位への7層に整理する。同じ層または下位だけをimportし、
+依存は次の下位から上位への7層に整理する。
+同じ層または下位だけをimportし、
 関数内と`TYPE_CHECKING`内のimportにも同じ規則を適用する。
 サブパッケージは10個で、`command/two_step/`はコマンド実行の内部構成である。
 
@@ -61,7 +62,8 @@ flowchart LR
     config --> common[汎用]
 ```
 
-図は層の許容順序を示す。隣接層を経由する必要はなく、任意の下位を参照できる。
+図は層の許容順序を示す。
+隣接層を経由する必要はなく、任意の下位を参照できる。
 
 ### 必須依存は最小化
 
@@ -70,7 +72,7 @@ flowchart LR
 - 骨組み: `textual`（TUI）・`natsort`（自然順ソート）・`pyyaml`（pre-commit・prek設定）
 - run_id生成: `python-ulid`
 - MCP同梱: `mcp`・`platformdirs`
-- プロセス判定: `psutil`（`git commit`経由起動を親系列で検出し、formatterの修正がワークツリーには書き込まれる一方でindexには反映されない状態（MM状態）の案内を出力する用途）
+- プロセス判定: `psutil`（`git commit`経由起動を親系列で検出し、formatterの修正がワークツリーには書き込まれる一方でindexには反映されない状態、すなわちMM状態の案内を出力する用途）
 
 `mcp`を本体必須に含めるのはサーバー同梱体験（`pyfltr mcp`が即座に起動できる）を保つため。
 pre-commitとprekは同じ設定形式を使う代替実行系である。
@@ -79,7 +81,8 @@ pre-commitとprekは同じ設定形式を使う代替実行系である。
 汎用処理を同じ作者のユーティリティ集pytilpackへ寄せる案は採用しない。
 置き換えられる処理は、実行アーカイブの原子的なJSON書き込み（`state/archive.py`）と、
 世代削除時のサイズ計測・削除（`state/retention.py`）に限られる。
-サイズ計測と削除には挙動差もある。pytilpackの`ad19b5a`では、`pathlib.get_size`が読めないディレクトリに警告とトレースバックを出し、
+サイズ計測と削除には挙動差もある。
+pytilpackの`ad19b5a`では、`pathlib.get_size`が読めないディレクトリに警告とトレースバックを出し、
 `pathlib.rmtree`がディレクトリへのシンボリックリンクに対して`ignore_errors=True`でも`NotADirectoryError`を送出した。
 pyfltrはどちらもメッセージを出さず続行する。
 
@@ -142,7 +145,8 @@ Rich UIへの`call_from_thread`とlock取得の差は画面側に残し、ステ
 別worktree・別リポジトリ・MCPから起動した検証の並列数がホスト上で積み上がるためである。
 
 - `command/stage_runner.py`の`run_stages`は対象ファイルが存在し得ないツール（`command/executor.py`の`has_no_candidate_targets`）を
-  枠の取得前に実行して結果を確定し、残りのツールを`hold`の内側で実行する。全ツールを回収するまで枠を保持し、途中では譲らない。
+  枠の取得前に実行して結果を確定し、残りのツールを`hold`の内側で実行する。
+  全ツールを回収するまで枠を保持し、途中では譲らない。
   全ツールが対象を持たない実行は枠を取得しない。
   枠の外で外部ツールを起動しないよう、事前実行の判定は母集合とglobで0件が確定するものに限る。
   CLI・TUI・MCP（要求ごとのworker）とcommit hookからの起動は、いずれもこの関数を通るため個別の接続を要しない。
@@ -152,9 +156,11 @@ Rich UIへの`call_from_thread`とlock取得の差は画面側に残し、ステ
 - 保持者記録（pid・プロセス生成時刻・cwd）のプロセスが呼出元の祖先なら、取得せずに所有を継承する。
   検証コマンドから起動した子のpyfltrやpytest経由のpyfltrが自己待機で止まらないようにするためであり、
   環境変数を引き継がない子孫にも働くよう、祖先の判定はプロセスツリーで行う
-- 同じプロセスの別スレッドは待つ。同じスレッドの入れ子は再入する
+- 同じプロセスの別スレッドは待つ。
+  同じスレッドの入れ子は再入する
 - 待機要求は短い調停ロックの内側で連番を割り当て、登録順に取得する。
-  末尾への登録は連番を`2**20`ずつ進める。同じ保存先を共有する撤去前の版が新規要求を空き番号へ置くため、間隔を保つ。
+  末尾への登録は連番を`2**20`ずつ進める。
+  同じ保存先を共有する撤去前の版が新規要求を空き番号へ置くため、間隔を保つ。
   要求ごとのOSロックで生存を判定し、取消時は回収し、異常終了後は次の走査で回収する
 - 待機は一定間隔の再試行で行い、待機の開始時に`execution-slot`の警告を出力する。
   待機が10秒を超えると`SlotWaitReporter`が保持者・待機中の要求数・完了したツール数と見込みを示せない理由を30秒ごとにtext出力へ出し、取得時に再開を出す。
@@ -162,7 +168,8 @@ Rich UIへの`call_from_thread`とlock取得の差は画面側に残し、ステ
   TUIの協調停止は待機を止めて全コマンドをスキップ扱いにし、CLIのCtrl+Cは例外として伝播する。
   例外で抜ける場合も起動中の子プロセスを停止してから枠を解放する
 - ツールのtimeoutは枠の取得後のツール実行だけに働く
-- ロックは`<キャッシュルート>/locks/`に置く。`PYFLTR_CACHE_DIR`で保存先を変えた実行どうしは別の枠になる。
+- ロックは`<キャッシュルート>/locks/`に置く。
+  `PYFLTR_CACHE_DIR`で保存先を変えた実行どうしは別の枠になる。
   保持者が強制終了した場合はOSがロックを解放する
 - 待機の内訳は`hold`の`on_wait_interval`が`SlotWait`（`initial`、番号0）として通知する。
   開始時に未完了の値、終了時に経過秒数と終了理由（`acquired`・`inherited`・`aborted`・`interrupted`・`failed`）を持つ値を1回ずつ渡す。
@@ -222,10 +229,10 @@ Rich UIへの`call_from_thread`とlock取得の差は画面側に残し、ステ
 | ファイルhashキャッシュ | 変わらないファイルへのツールの再実行を省く。4月18日（`234dd4f`） | キャッシュの実装に固有の修正のコミットは0件（関連する変更はパス表記の統一などの付随修正） | 導入コミットに計測の記録は無い | `--no-cache`、`cache = false` | 維持。不具合の記録が無く、無効化の手段がある |
 | 推定実行時間の降順（LPT）での並列段の開始 | 並列段の全体時間を縮める。4月14日（`baf6efa`） | 0件 | 導入コミットに計測の記録は無い | 無し（順序だけの変更で結果に影響しない） | 維持。不具合の記録が無い |
 
-#### textlintのfix段の重複検査の省略（2026年11月11日）
+#### textlintのfix段の重複チェックの省略（2026年11月11日）
 
-textlintのfix段は、修正（Step1、`textlint --fix`）と修正後の検査（Step2）を続けて実行していた。
-Step2は直後の通常の段のtextlintと同じ検査であるため、所要を測って省略の採否を判定した。
+textlintのfix段は、修正（Step1、`textlint --fix`）と修正後のチェック（Step2）を続けて実行していた。
+Step2は直後の通常の段のtextlintと同じチェックであるため、所要を測って省略の採否を判定した。
 
 測定はpyfltr自身の文書27件を入力にし、同じホストで`--no-cache`を付けて各3回行った。
 他の検証と並行しており、load averageは4〜6だった。
@@ -266,7 +273,8 @@ uvは実効cwdからプロジェクト環境を解決するため、実効cwdと
 除去だけを行い環境パスを算出しないのは、uvの解決規則をpyfltr側へ重複実装しないためである。
 
 実行コンテキスト（実効cwdと実効runner）に結び付く親由来の環境変数は、起動箇所ごとに加工せず
-`build_subprocess_env`へ集約して正規化する。起動箇所で個別に加工すると、
+`build_subprocess_env`へ集約して正規化する。
+起動箇所で個別に加工すると、
 子プロセスを起動する箇所を追加するたびに同じ判断が必要になり、正規化しないまま起動する箇所が残る。
 詳細な判定ロジックと比較キーは`pyfltr/command/env.py`の`build_subprocess_env`を参照。
 
@@ -329,11 +337,15 @@ pnpmの設定は呼び出し元のcwdで解決し、値を導入プロセスへ�
 解決のたびに設定と日付を読み直し、MCP等の長寿命プロセスでも次の実行へ変更を反映する。
 実効設定が同じプロジェクトは環境を共有し、実行cwdは呼び出し元のものを使う。
 導入は別ディレクトリで完了させてから原子的に公開し、公開済みの環境は変更しない。
-環境の再利用時に最終使用時刻を更新する。導入前と成功・再利用時に、同じ親の下の現行以外の環境と
-残留した`install-*`のうち7日間使われていないものを回収する。当日・前日に使った環境は保持する。
+環境の再利用時に最終使用時刻を更新する。
+導入前と成功・再利用時に、同じ親の下の現行以外の環境と
+残留した`install-*`のうち7日間使われていないものを回収する。
+当日・前日に使った環境は保持する。
 容量は導入中の領域を含む通常ファイルの論理サイズで数え、新規公開前に1 GiBを超えた場合は
-導入を失敗として一時領域を回収する。最近の他環境は保持し、不要な環境の削除を案内する。
-既存環境の再利用は容量を増やさないため継続できる。導入中は一時的に上限を超える場合がある。
+導入を失敗として一時領域を回収する。
+最近の他環境は保持し、不要な環境の削除を案内する。
+既存環境の再利用は容量を増やさないため継続できる。
+導入中は一時的に上限を超える場合がある。
 既存のdlxキャッシュとは配置を分け、失敗した導入は次回作り直す。
 取得やパッチ適用の失敗は`resolution_failed`へ渡す。
 文書lintのcwd・設定・対象ファイルは既存の実行要求を使い、明示pathとローカルrunnerはその所有先の依存を使う。
@@ -347,10 +359,13 @@ pnpmの設定は呼び出し元のcwdで解決し、値を導入プロセスへ�
 設計上の判断:
 
 - 検出はマーカー（固定ファイル名`pyproject.toml`・`Cargo.toml`、globパターン`*.csproj`・
-  `*.sln`）の存在で判定する（`[tool.pyfltr]`の有無は問わない）。これにより既存モノレポを
-  移行する際、各サブプロジェクトに設定追加を強いない。マーカー一覧は
+  `*.sln`）の存在で判定する（`[tool.pyfltr]`の有無は問わない）。
+  これにより既存モノレポを
+  移行する際、各サブプロジェクトに設定追加を強いない。
+  マーカー一覧は
   `_SUBPROJECT_MARKER_NAMES`・`_SUBPROJECT_MARKER_GLOBS`（`pyfltr/command/subprojects.py`）を
-  典拠とする。`package.json`はプロジェクト境界を持たない汎用ファイルとして
+  典拠とする。
+  `package.json`はプロジェクト境界を持たない汎用ファイルとして
   誤検出リスクが高いため対象外とする
 - 検出結果が0件または1件の場合はモノレポモード非適用とし、従来通り単一実行する
 - ツール×サブプロジェクトの分割は `CommandInfo.subproject_aware` フラグで個別制御する。
@@ -359,8 +374,10 @@ pnpmの設定は呼び出し元のcwdで解決し、値を導入プロセスへ�
   リポジトリ単位で動作するツール（`typos`・`shellcheck`・`shfmt`・`pre-commit`・`prek`）は既定`False`
 - 同一ツールのサブプロジェクト実行は`jobs`から導いた件数まで同時に開始する（`resolve_subproject_workers`）。
   同時起動したプロセス間で共有されうる永続状態を同時に使えないツールは`CommandInfo.subproject_concurrent=False`とし、
-  サブプロジェクトを1件ずつ順に実行する。`mypy`は同じキャッシュ保存先の同時利用でSQLiteキャッシュの初期化が競合し
-  内部エラーで終了するため、これに該当する。キャッシュ保存先をpyfltrがサブプロジェクトごとに書き換える案は、
+  サブプロジェクトを1件ずつ順に実行する。
+  `mypy`は同じキャッシュ保存先の同時利用でSQLiteキャッシュの初期化が競合し
+  内部エラーで終了するため、これに該当する。
+  キャッシュ保存先をpyfltrがサブプロジェクトごとに書き換える案は、
   利用者が指定した共有保存先を無断で分割するため採らない
 - サブプロジェクト別の設定は対象のディレクトリで `load_config(config_dir=cwd)` を解決する。
   `pyproject.toml`を持たないサブプロジェクト（`Cargo.toml`単独・`*.csproj`単独等）は
@@ -400,7 +417,8 @@ pnpmの設定は呼び出し元のcwdで解決し、値を導入プロセスへ�
 - ファイル所属判定は実体パスの「最深一致」で行い、ネストする子サブプロジェクト配下の
   ファイルは親側の集合に含めない
 - 出力スキーマは現行を維持する（JSONL・SARIF・archive・MCP読み取り系APIでサブプロジェクト
-  識別フィールドを新設しない）。サブプロジェクト境界をまたぐ実行結果は `CommandResult.merge` で
+  識別フィールドを新設しない）。
+  サブプロジェクト境界をまたぐ実行結果は `CommandResult.merge` で
   1件に集約し、人間向け `output` には `# subproject: <相対パス>` の区切り行のみ挿入する
 - 診断の`file`は解析境界（`pyfltr.parsing.entry.parse_errors`）で起点相対へ揃え、統合時には付け替えない。
   通常・fix・2段階などの各実行処理は`ExecutionRequest.parse_errors`を通じてツールの実行cwd（`path_base`）と実行起点（`start_cwd`）を渡し、
@@ -413,7 +431,8 @@ pnpmの設定は呼び出し元のcwdで解決し、値を導入プロセスへ�
 - 対象ファイル集合（`expand_all_files`の結果）は起点内の`..`を畳み込んだ表現を保持し、起点外を指す相対パスは利用者が渡した表現のまま残す。
   このため対象集合と診断の`file`、Gitの出力などは同じ実体でも表現が異なりうる。
   `--only-failed`・`retry_command`・`--changed-since`を含め、対象集合のパスを別の出所のパスと比べる処理は、
-  両側を`pyfltr.paths.to_match_key`で揃えてから比べる。`--changed-since`は`git diff --name-only`が返す
+  両側を`pyfltr.paths.to_match_key`で揃えてから比べる。
+  `--changed-since`は`git diff --name-only`が返す
   Gitリポジトリroot相対のパスを、`git rev-parse --show-toplevel`のrootで絶対化してからキーへ変換する
 - 診断を起点相対へ揃える前の版が保存したアーカイブは、ツールを問わず子プロジェクト相対の診断を持つ。
   `ArchiveStore.read_tool_diagnostics`は保存済み生出力の`# subproject:`区間ごとに解析をやり直し、
@@ -425,11 +444,13 @@ pnpmの設定は呼び出し元のcwdで解決し、値を導入プロセスへ�
   新しい版はrunの`meta.json`へ`diagnostic_paths: start-relative`を書き、このキーを持たないrunだけを補正の対象にする。
   新しい版のrunを補正すると、起点直下の診断を同じ位置・メッセージを持つ子の診断と取り違えるためである。
   診断のbasenameや末尾一致で所属を推測する案は、子プロジェクト間で同じ相対名を持つファイルを誤選択するため採らない
-- `subprocess.Popen` へのcwd切り替えは引数渡しのみで実現する。`os.chdir()` を
+- `subprocess.Popen` へのcwd切り替えは引数渡しのみで実現する。
+  `os.chdir()` を
   サブプロジェクトループで使うとプロセスcwdが並列実行中の他ツールへ干渉するため、
   cwd依存処理（mise・git・ファイル走査・snapshot等）は明示引数で起点cwdを取得する形に統一する
 - `uv workspace` のmemberではcwd直下に `uv.lock` がない場合のみworkspace rootまで
-  親方向探索を許可する。無関係な祖先ディレクトリは越境しない
+  親方向探索を許可する。
+  無関係な祖先ディレクトリは越境しない
 - サブプロジェクトループ全体を警告重複の抑止スコープとする。
   スコープ内では`emit_warning`の同一`source`・`message`組と、
   `add_filtered_direct_file`の同一`path`・`reason`組を1件だけ保持する。
@@ -472,9 +493,11 @@ fast実行は`fast`サブコマンドと、`--commands`にfastトークンを含
 
 却下した代替案:
 
-- dispatcherの対象globだけを差し替える案。母集合が変更ファイルのままのため、Markdownだけの変更や
+- dispatcherの対象globだけを差し替える案。
+  母集合が変更ファイルのままのため、Markdownだけの変更や
   変更ファイルの無いサブプロジェクトで対象テストを取りこぼす
-- 全コマンドへ全域の集合を渡す案。formatterとlinterの範囲まで広がる
+- 全コマンドへ全域の集合を渡す案。
+  formatterとlinterの範囲まで広がる
 
 ### `ExecutionParams.targets`と`CommandResult.target_files`の下流の流れ
 
@@ -502,13 +525,15 @@ fast実行は`fast`サブコマンドと、`--commands`にfastトークンを含
 ### 専用実行方式の追加
 
 通常のツール追加は`tool_defs/`の種類別登録表へ`CommandInfo`を1件登録し、
-既存の`execution_kind`と解析方式を選ぶ。実行方式そのものを追加する場合は、次の接続を更新する。
+既存の`execution_kind`と解析方式を選ぶ。
+実行方式そのものを追加する場合は、次の接続を更新する。
 
 1. `tool_types.py`の`ExecutionKind`へ種別を追加する。
 2. `command/`の担当モジュールに`ExecutionRequest`を受け取り`CommandResult`を返す実行関数を実装する。
    要求にある設定・対象・実行文脈を使い、対象展開と共通の完了判定を再定義しない。
 3. `command/dispatcher.py`の`_EXECUTORS`へ種別と実行関数を登録する。
-4. 対象`CommandInfo.execution_kind`へ種別を指定する。fix段階の方式を追加した場合は
+4. 対象`CommandInfo.execution_kind`へ種別を指定する。
+   fix段階の方式を追加した場合は
    `fix_execution_kind`へ指定する。
 5. 担当実行モジュールに対応する`tests/command/`で要求の受渡しと結果を検証する。
 
@@ -573,10 +598,12 @@ CLI JSONLはシェルしか使えない消費側向けの代替手段として�
 - 直前runは`ArchiveStore.list_runs(limit=1)`の先頭を採用する
 - 失敗ツール・失敗ファイルはアーカイブのtoolメタとdiagnosticsから抽出する
 - 直前runが存在しない、失敗ツールが無い、ターゲット交差が空となった場合は、理由と対処を
-  `source="only-failed"`の警告として発行して成功終了（rc=0）する。JSONL出力でもheader・warning・summaryを出力する。
+  `source="only-failed"`の警告として発行して成功終了（rc=0）する。
+  JSONL出力でもheader・warning・summaryを出力する。
   text_loggerのINFOだけではJSONL出力（textはWARN以上）とMCPへ理由が届かないため、警告として発行する
 - モノレポ分割実行では、`command/only_failed.py`の`ToolTargets.resolve_files()`が対象のサブプロジェクトの対象ファイル一覧
-  （`ExecutionContext.all_files`）を受け取る。`files`モードではこの一覧と交差させ、
+  （`ExecutionContext.all_files`）を受け取る。
+  `files`モードではこの一覧と交差させ、
   起点cwd全体で抽出した失敗ファイル集合を所属しないサブプロジェクトへ渡さない。
   `fallback`モードではサブプロジェクト単位の一覧をそのまま返す
 
@@ -598,7 +625,8 @@ GitHub Annotationsの各出力で返すファイルパスである。
 生成時は`pyfltr.paths.normalize_separators`・`pyfltr.paths.to_cwd_relative`・`pyfltr.paths.to_start_relative`のいずれかを経由する。
 公開値を`str()`で直接文字列化しない。
 pyfltr自身が実装するツール（`colloquial-check`など）の標準出力に含めるファイル位置も、
-生成時点で同じ正規化を経由する。これらのツールの生標準出力は`show-run --commands <name> --output`と
+生成時点で同じ正規化を経由する。
+これらのツールの生標準出力は`show-run --commands <name> --output`と
 MCPツール応答へ解析を経ずに載るため、`pyfltr.parsing.entry`の解析による
 正規化だけでは契約を満たさない。
 利用者や対話するエージェントが値を別の入力へ再利用するため、出力ごとの表現差は突合を失敗させる。
@@ -637,7 +665,8 @@ JSONLはLLMエージェントが入力として読むケースが多いため、
   `applied_fixes`非空時はformatter/fix-stageの書き換えだけでは再実行が不要である旨の注記を末尾に追加する。
   `warning`のみで`failed`/`resolution_failed`が0件のケースでは付与しない（警告はパイプライン失敗を伴わないため）。
   MCPの`run`ツールも同じ生成関数（`pyfltr.output.guidance.build_summary_guidance`）からMCPの引数・ツール名で`RunResult.guidance`を返す
-- `warning`レコードの`hint`: 個別の警告の対処。警告の本文（`msg`）とは別のキーで持つ。
+- `warning`レコードの`hint`: 個別の警告の対処。
+  警告の本文（`msg`）とは別のキーで持つ。
   テキスト表示のwarnings節・stderr・MCPの応答では`pyfltr.warnings_.format_warning_text`が本文に続けて
   対処を連結した文字列を用い、どの出力先でも対処が欠けないようにする
 
@@ -647,7 +676,8 @@ JSONLはLLMエージェントが入力として読むケースが多いため、
 キーはrule IDで、形式は`<plugin>/<rule>`または単一rule名。
 textlintコマンドの場合のみ、`hints`に`messages[].col`参照記法のキーで`col`/`end_col`の累積位置仕様を追加する。
 
-集約は先勝ちで行う。複数の`diagnostic`レコードで同一ruleに異なるhintが現れた場合は最初の値を採用し、
+集約は先勝ちで行う。
+複数の`diagnostic`レコードで同一ruleに異なるhintが現れた場合は最初の値を採用し、
 debugログを出力する。
 
 `hint_urls`はURLを生成できたruleのみ含み、空であればフィールドごと省略する。
@@ -661,13 +691,15 @@ JSON consumerが`record["hint_urls"]`等へドット記法アクセスできる�
 
 - 常時出力（0件でも省略しない）: `succeeded` / `formatted` / `skipped` / `failed` / `warning`。
   特に`failed`/`warning`は0件であること自体がエラーなし / 警告なし判定に直結するため、省略は不可
-- 0件で省略する: `resolution_failed`。ツール解決が成功する通常プロジェクトでは常に0件となる付加情報のため
+- 0件で省略する: `resolution_failed`。
+  ツール解決が成功する通常プロジェクトでは常に0件となる付加情報のため
 
 `warning`は`{command}-severity = "warning"`設定またはツール固有の一時障害分類によって失敗結果が
 `status="warning"`に格下げされたものを集計する（パイプライン全体exit codeには影響しない）。
 ツール起動自体に失敗したケース（`resolution_failed` / `timeout_exceeded`）は`severity`の影響を受けない。
 実行時警告（`kind:"warning"`レコード）の件数は`commands_summary`の外の条件付きキー`warnings`で表し、
-1件以上のときだけ出力する。`commands_summary.needs_action.warning`とは集計対象が異なる。
+1件以上のときだけ出力する。
+`commands_summary.needs_action.warning`とは集計対象が異なる。
 
 ### summaryレコードのフィールド順序
 
@@ -687,7 +719,8 @@ LLMが上から読み下したときに「結論→集計→指摘総数→警�
 
 テスター（`command_type == "tester"`）はリンター・フォーマッターと異なり、診断1件が
 `assert`の等価比較や例外メッセージの要約に留まり、失敗原因の特定に生出力（スタックトレース・
-xdistワーカークラッシュの詳細等）を要することが多い。このためtext/TUI/JSONLの3出力方式
+xdistワーカークラッシュの詳細等）を要することが多い。
+このためtext/TUI/JSONLの3出力方式
 いずれも、テスター失敗時は診断一覧の有無にかかわらず生出力を併記する設計とする
 （linter・formatterは従来どおり診断が有れば生出力を省略する）。
 
@@ -697,7 +730,8 @@ CI（GitHub Actions）では`--output-format=github-annotations`使用時、text
 （`pyfltr/output/render.py`の`_write_raw_output`）。
 
 CIワークフロー側では実行アーカイブ（`PYFLTR_CACHE_DIR`配下）を`if: failure()`条件で
-`actions/upload-artifact`によりジョブ成果物として保存する構成を推奨する。生出力併記だけでは
+`actions/upload-artifact`によりジョブ成果物として保存する構成を推奨する。
+生出力併記だけでは
 JSONL側のsmart truncationで長大な出力が切り詰められる場合があり、アーカイブ成果物化により
 切り詰め分も含めた全文を事後参照できる。
 
@@ -713,9 +747,12 @@ heartbeatは長時間実行中の生存確認をJSONLストリームへ追加す
 
 JSONL側で次の上限を適用する（`pyproject.toml`で調整可能）。
 
-- `jsonl-diagnostic-limit`: 1ツールあたりの出力上限（集約前の個別指摘の合計で判定）。既定`0`（無制限）
-- `jsonl-message-max-lines`: `command.message`（生出力末尾）の行数上限。既定`30`
-- `jsonl-message-max-chars`: `command.message`の文字数上限。既定`2000`
+- `jsonl-diagnostic-limit`: 1ツールあたりの出力上限（集約前の個別指摘の合計で判定）。
+  既定`0`（無制限）
+- `jsonl-message-max-lines`: `command.message`（生出力末尾）の行数上限。
+  既定`30`
+- `jsonl-message-max-chars`: `command.message`の文字数上限。
+  既定`2000`
 
 切り詰めの可否はアーカイブ書き込み成功フラグで判定する。
 書き込み成功時のみ切り詰めを適用し、失敗時は全文をJSONLに出力する（復元不能な情報欠落の防止）。
@@ -754,14 +791,16 @@ SARIFとGitHub Annotationsが同じ関数を用いるため、両形式の列ガ
 Code Qualityは列を出力しないため対象の関数を使わない。
 
 SARIFの`region`は正規化済みの開始位置に加え、診断が保持する終了行・終了列を
-`endLine`・`endColumn`へ反映する。列は1起点・終端排他とする。
+`endLine`・`endColumn`へ反映する。
+列は1起点・終端排他とする。
 
 Code Qualityの仕様は5段階（`info` / `minor` / `major` / `critical` / `blocker`）だが、
 pyfltr側に対応情報が無く過大評価を避けるため上位2段階は使わない。
 
 Code Qualityの`location`は`lines.begin`に加え、診断が終了行を保持する場合に`lines.end`を出力する。
 Code Climate仕様の行範囲は両端を含むため、`begin`補正後の値より前の終了行は範囲として成立せず出力しない。
-列は開始列・終了列とも出力しない。GitLabの取り込み実装は`location.lines.begin`と
+列は開始列・終了列とも出力しない。
+GitLabの取り込み実装は`location.lines.begin`と
 `location.positions.begin.line`だけを参照し、列を保持するフィールドを読まないためである
 （`lines`が優先され、欠落時のみ`positions`へフォールバックする）。
 列を伝えるには`lines`を`positions`へ置き換える必要があり、読まれない情報のために
@@ -770,7 +809,8 @@ Code Climate仕様の行範囲は両端を含むため、`begin`補正後の値�
 `lines.begin`の表現を変えずに追加できる。
 
 GitHub Annotationのプロパティは`file` / `line` / `endLine` / `col` / `endColumn` / `title`の順に積む。
-終了位置は診断が保持する場合のみ出力する。列は1起点・終端排他の値を無変換で渡す。
+終了位置は診断が保持する場合のみ出力する。
+列は1起点・終端排他の値を無変換で渡す。
 GitHubの仕様は列の起点だけを定め終端の包含・非包含を明示しないため、SARIFと同じ保持値を
 渡して形式間の突合を成立させる。
 生ログ視認用に本文へ前置する`{file}:{line}[:{col}]:`はログビューアーでの判読を目的とする
@@ -839,7 +879,8 @@ pyfltrは2系統のユーザーキャッシュ基盤を持つ。
 エージェント連携時にJSONL出力のsmart truncationで除外された情報やツール生出力を事後参照可能にする。
 `list-runs`/`show-run`サブコマンドおよびMCPの読み取り系ツール群は本アーカイブを単一の真実源とする。
 
-run_idにはULIDを採用する。タイムスタンプ由来で辞書順ソート＝時系列順ソートとなり`list-runs`の実装が簡潔になる、
+run_idにはULIDを採用する。
+タイムスタンプ由来で辞書順ソート＝時系列順ソートとなり`list-runs`の実装が簡潔になる、
 人が見たときに新旧の判別がしやすい、十分な衝突耐性を持つ、の3点が選定理由。
 
 自動クリーンアップは世代数（`archive-max-runs`）・合計サイズ（`archive-max-size-mb`）・
@@ -861,14 +902,16 @@ run_idにはULIDを採用する。タイムスタンプ由来で辞書順ソー�
 `slot_waits`キーを持たないrunは待機区間を計測しない版の記録であり、読み取り側は空の一覧（計測したが区間なし）や0秒と区別して未計測として返す。
 各ツールの`tool.json`は本体区間の`started_at`・`finished_at`（実行した場合だけ）と、本体の処理秒数`elapsed`を持つ。
 `show-run`とMCPの`show_run`は`state/runs.py`の`summarize_timing`でrun全体の経過・待機の合計・未完了の区間数を求め、
-確定しない値は`null`とする。並行したツールの`elapsed`の合計はrun全体の経過と一致しないため合算しない。
+確定しない値は`null`とする。
+並行したツールの`elapsed`の合計はrun全体の経過と一致しないため合算しない。
 `meta.json`の更新は一時ファイルからの置き換えで行い、実行中のrunを読む`show-run`へ書きかけの内容を見せない。
 
 書き込みはツール実行結果を受け取った直後の独立フックとして提供し、TUI・非TUI・
 JSONL stdout有無のいずれでも発生する。
 JSONL stdoutストリーミングとは独立した仕組みにすることで、どちらか一方を切り替えても他方が失われない。
 
-既定は有効。`--no-archive`または`archive = false`設定で無効化できる。
+既定は有効。
+`--no-archive`または`archive = false`設定で無効化できる。
 オプトイン化（既定無効）は却下した。
 エージェント連携時のUXを損なうため、既定有効＋自動削除で肥大化を抑える設計とした。
 
@@ -896,7 +939,8 @@ JSONL stdoutストリーミングとは独立した仕組みにすることで�
 クリーンアップは期間軸（既定`cache-max-age-hours=12`）のみ。
 サイズ・世代数の軸は採用しない（短期破棄前提でストレージ暴発リスクが小さいため）。
 
-既定は有効。`--no-cache`または`cache = false`設定で無効化できる。
+既定は有効。
+`--no-cache`または`cache = false`設定で無効化できる。
 
 カテゴリ別の対象外判定とその根拠は`pyfltr/state/cache.py`モジュール冒頭docstringを参照。
 formatter・tester・依存型linter・外部参照linter・階層型設定linterの5分類を扱う。
@@ -1039,7 +1083,8 @@ stdioトランスポートはstdin/stdoutをJSON-RPCフレームに専有する�
 
 1. 起動直後にroot loggerの出力先をstderrへ強制する
 2. `run`ツール内では`run_pipeline`に`force_text_on_stderr=True`を渡し、
-   人間向けtext整形loggerをstderrへ向ける。`jsonl_warnings_reach_consumer=False`で構造化出力を無効化する
+   人間向けtext整形loggerをstderrへ向ける。
+   `jsonl_warnings_reach_consumer=False`で構造化出力を無効化する
 3. TUIの起動（`subprocess.run("clear")`やTextual UI）はargs構築時に遮断する
 
 logger初期化は全formatで共通の処理に集約されているため、`force_text_on_stderr`の1フラグだけで
@@ -1048,14 +1093,16 @@ MCP実行の`stdin/stdout`専有を守れる。
 #### `run`の実装の流れ
 
 公開ツールは`pyfltr.cli.mcp_transport.isolate_tool`を経由し、要求ごとに
-`pyfltr.cli.mcp_worker`を起動する。同期のファイル走査やツール実行を受信ループから分離し、
+`pyfltr.cli.mcp_worker`を起動する。
+同期のファイル走査やツール実行を受信ループから分離し、
 処理中もpingとキャンセル通知を受信できるようにする。
 警告収集とloggerの出力先もworker固有となり、他要求へ混入しない。
 キャンセル時は起動handleが返したworkerとその子孫だけを停止・回収してから取り消しを返す。
 ツールが別のprocess groupを作成するため、workerのgroupだけでなく子孫のPIDを照会して停止する。
 
 worker内の`run`は共通の`RunOptions`を構築し、`run_pipeline`を直接呼び出す。
-CLIは公開引数を同じ型へ変換する。既定値は共通のオプション型、
+CLIは公開引数を同じ型へ変換する。
+既定値は共通のオプション型、
 `commands`の平坦化は`flatten_commands_arg`へ委ねる。
 未知コマンドの検証は`validate_commands`、CLI指定による設定上書きは`apply_cli_overrides`を使い、
 CLIと同じ解決処理を通す。
@@ -1087,11 +1134,14 @@ MCPクライアントからの並行ツール呼び出しでも実行起点を�
 `only_failed`有効時に「直前runなし」「失敗ツールなし」「対象ファイル交差が空」「`from_run`の解決失敗」
 「アーカイブの読み取り失敗」のいずれかに該当した場合、`run_pipeline`はearly exit（`exit_code=0`・`run_id=None`）を返す。
 このとき`run`はエラーではなく「実行スキップ」を返し、`skipped_reason`には
-`run_pipeline`が`source="only-failed"`で発行した警告の本文と対処を入れる。固定文は返さない。
+`run_pipeline`が`source="only-failed"`で発行した警告の本文と対処を入れる。
+固定文は返さない。
 
-`skipped_reason`はearly exit以外でも値を持つ。`tool_run`は`source="only-failed"`と`source="commands"`の警告から理由を組み立てる。
+`skipped_reason`はearly exit以外でも値を持つ。
+`tool_run`は`source="only-failed"`と`source="commands"`の警告から理由を組み立てる。
 `only_failed`有効時に一部のツールだけ直前runの失敗ファイルが対象と交差せず除外された場合は、残りのツールを実行しつつ
-`source="only-failed"`の警告が同フィールドへ入る。`commands`へ指定したツールが設定で無効化されて実行されなかった場合は
+`source="only-failed"`の警告が同フィールドへ入る。
+`commands`へ指定したツールが設定で無効化されて実行されなかった場合は
 `source="commands"`の警告が入る。
 無効化の判定は`run_pipeline`の`is_command_enabled_anywhere`と`compute_unmet_commands`が担い、MCP側では再判定しない。
 
@@ -1099,7 +1149,8 @@ MCPツールは冒頭で`pyfltr.warnings_.clear()`を呼び、対象の呼び出
 `run_pipeline`自身は警告を初期化せず、初期化は`pyfltr/cli/pipeline.py`の`run()`内部実装が担うため、
 `run_pipeline`を直接呼ぶMCPの処理では呼び出し側が初期化する。
 
-`results`はキャッシュから復元した結果を含む。MCPはアーカイブを読み直さず、この結果から応答を構築する。
+`results`はキャッシュから復元した結果を含む。
+MCPはアーカイブを読み直さず、この結果から応答を構築する。
 
 戻り値変更を採用したのは並行プロセス対策。
 MCPツール側で`ArchiveStore.list_runs(limit=1)`を引く案では、同一ユーザーキャッシュを参照する

@@ -74,7 +74,7 @@ plugins:
         - JS/TS: `prettier` / `tsc` / `eslint` / `biome` / `oxlint` / `vitest`
         - Rust: `cargo-fmt` / `cargo-clippy` / `cargo-check` / `cargo-test` / `cargo-deny`
         - .NET: `dotnet-format` / `dotnet-build` / `dotnet-test`
-        - ドキュメント: `markdownlint` / `textlint` / `designmd` / `lychee` / `colloquial-check`
+        - ドキュメント: `markdownlint` / `textlint` / `designmd` / `lychee` / `colloquial-check` / `markdown-structure`
         - シェル: `shfmt` / `shellcheck`
         - YAML/TOML: `yamllint` / `taplo`
         - CI/Docker/EditorConfig: `actionlint` / `pinact` / `glab-ci-lint` / `hadolint` / `ec`

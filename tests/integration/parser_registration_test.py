@@ -121,6 +121,7 @@ def test_native_output_reaches_jsonl_and_mcp(command: str, tmp_path: pathlib.Pat
         ("ec", ":3:4: error: bad value", 3, 4, None, None),
         ("actionlint", ":3:4: bad value [expression]", 3, 4, "expression", None),
         ("colloquial-check", ":3:4: bad value", 3, 4, None, None),
+        ("markdown-structure", ":3:4: error: bad value", 3, 4, None, "error"),
         ("pylint", ":3:4: E0001: bad value (syntax-error)", 3, 4, None, None),
         ("ruff-check", ":3:4: F401 bad value", 3, 4, None, None),
         ("pyright", ":3:4 - error: bad value", 3, 4, None, None),

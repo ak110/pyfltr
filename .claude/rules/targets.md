@@ -60,7 +60,8 @@ paths:
 - 外部パス除外＋警告: `allows_external_paths=False`を指定するツール
  （`markdownlint`・`textlint`・`pre-commit`・`prek`・`pytest`・`vitest`・`cargo-test`・`dotnet-test`・`gitleaks`・`semgrep`・依存の脆弱性監査の各ツール）。
   対象から外部パスを除外し、各ファイルに`emit_warning` + `add_filtered_direct_file(reason="external")`を発行する
-- 既定（素通し）: 上記以外。各ツールの設定探索仕様に委ねる
+- 既定（素通し）: 上記以外。
+  各ツールの設定探索仕様に委ねる
 
 外部パス判定基準は「起点cwd配下にない絶対パス」で、`pyfltr/paths.py`の`is_external_path`に集約する。
 サブプロジェクトへの所属の不成立など別の分類結果を外部パスの判定に代用しない。
@@ -74,12 +75,14 @@ paths:
 `CommandInfo.config_files`は設定不在時の警告とキャッシュキー算出に専用で、
 `--config`注入候補（`config_inject_candidates`）とは責務を分離する。
 設定不在時の警告は実行パイプラインが実行対象の確定後に今回の実行対象だけを判定し、
-起点cwd直下のみを判定対象とする。サブプロジェクトのディレクトリでは判定しない。
+起点cwd直下のみを判定対象とする。
+サブプロジェクトのディレクトリでは判定しない。
 `config_inject_candidates`の解決も起点cwd直下を基準とするため、
 サブプロジェクトのディレクトリを基準にした不在判定は誤検知になる。
 
 CLIの`--allow-external-paths`（`args.allow_external_paths`）を指定した場合、上記の分類にかかわらず
-外部パスを除外せず警告も発行しない。判定を参照するのは`dispatcher._prepare_execution_params`の
+外部パスを除外せず警告も発行しない。
+判定を参照するのは`dispatcher._prepare_execution_params`の
 外部パス除外ブロックと`subproject_loop.run_subproject_loop`の外部パス追加実行分岐の2箇所である。
 専用のヘルパー関数は設けず`args`を直接参照する（`args.no_exclude`と同じ流儀）。
 `--config`明示注入は外部パスにも適用されるため、起点cwd直下の設定ファイルが起点外ファイルへも渡る。

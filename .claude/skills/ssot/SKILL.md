@@ -55,7 +55,8 @@ description: >
 - `pyfltr/config/model.py`の`DEFAULT_CONFIG`と`pyfltr/tool_defs/`のツール定義:
   設定キー体系・既定値・runner方針
 - `pyfltr/config/selection.py`の`is_command_enabled_anywhere`:
-  実行対象コマンドの有効（ON/OFF）判定。モノレポでは起点と各サブプロジェクトの和集合で判定する。
+  実行対象コマンドの有効（ON/OFF）判定。
+  モノレポでは起点と各サブプロジェクトの和集合で判定する。
   `cli/pipeline_targets.py`の実行対象フィルタ・`command/executor.py`の`split_commands_for_execution`・
   `config/selection.py`の`filter_fix_commands`・`output/ui.py`のタブ生成とサマリー行追加で共用する。
   これらの箇所で`config.values.get(cmd)`・`config[cmd]`を直接参照せず本関数を経由する
@@ -66,14 +67,16 @@ description: >
 - `.claude/skills/grep-replace/SKILL.md`:
   grep/replace機能の設計判断・undo方式・CLI/MCP既定値差分
 - `docs/guide/custom-commands.md`:
-  カスタムコマンドの仕様と事例。`README.md`特徴章・`docs/index.md`のカスタムチェック節・コンセプト節・`mkdocs.yml`内llmstxtとは人手同期
+  カスタムコマンドの仕様と事例。
+  `README.md`特徴章・`docs/index.md`のカスタムチェック節・コンセプト節・`mkdocs.yml`内llmstxtとは人手同期
 - ツールの1行概要:
   `README.md`冒頭・`docs/index.md`冒頭・`mkdocs.yml`の`site_description`とllmstxt内
   `markdown_description`・`pyproject.toml`の`description`・`AGENTS.md`冒頭・
   `pyfltr/cli/parser.py`の`description`を人手同期する。
   `site_description`は表示幅に収める短縮形を用いる
 - `mkdocs.yml`内llmstxtの`markdown_description`:
-  全サブコマンド名・全ビルトインコマンド名の案内。`pyfltr/cli/parser.py`のサブコマンド定義と
+  全サブコマンド名・全ビルトインコマンド名の案内。
+  `pyfltr/cli/parser.py`のサブコマンド定義と
   `pyfltr/tools.py`のビルトインコマンド定義の変更時に追随する。
   内容は`tests/integration/llmstxt_test.py`が機械的に判定するため、これら3ファイルのいずれかを変更した場合は
   同テストのパスを部分実行の対象へ含める

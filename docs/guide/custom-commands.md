@@ -43,7 +43,8 @@ fast = true
 - `fix-args`: fix段で`args`の後ろへ追加する引数（省略時はfix段の対象外）
 - `pass-filenames`: ファイル引数をコマンドに渡すか否か（省略時は`true`）。
   プロジェクト全体を一括チェックするツールでは`false`に設定する
-- `config-files`: このコマンドの設定ファイル候補のリスト（省略時は空）。globパターン可。
+- `config-files`: このコマンドの設定ファイル候補のリスト（省略時は空）。
+  globパターン可。
   有効化したコマンドを実行するときに、どれもプロジェクトルート直下に見つからないとpyfltrが警告を発行する（ツール自体は実行する）。
   `--commands`などで実行対象から外したコマンドは判定しない。
   pre-commit・prekなどの「設定ファイル無しでは機能しないツール」の設定不備を可視化する用途。
@@ -101,7 +102,8 @@ pass-filenames = false
 
 ## Pythonセキュリティ・品質ツール
 
-`bandit`は組み込みツールとして利用する。[banditの設定](configuration-tools.md#bandit)を参照。
+`bandit`は組み込みツールとして利用する。
+[banditの設定](configuration-tools.md#bandit)を参照。
 
 ### deptry（未使用・不足依存の検出）
 
@@ -155,7 +157,8 @@ fast = true
 
 ### cspell（スペルチェック、npm系）
 
-js-runner対応のスペルチェッカー。`package.json`でインストールする前提で、`js-runner = "pnpm"`と併用する。
+js-runner対応のスペルチェッカー。
+`package.json`でインストールする前提で、`js-runner = "pnpm"`と併用する。
 
 ```toml
 [tool.pyfltr]

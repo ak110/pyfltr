@@ -182,9 +182,11 @@ pyfltr config list --all
 - pylint-pydantic : pylint実行時に`--load-plugins=pylint_pydantic`を自動追加するか（既定: `true`、後述）
 - mypy-unused-awaitable : mypy実行時に`--enable-error-code=unused-awaitable`を自動追加するか（既定: `true`、後述）
 - lychee-max-concurrency : lychee実行時の同時接続数（既定: `4`。`0`以下でlychee既定値へ委ねる、後述）
-- jobs : linters/testersの最大並列数（既定: 8。CLIの`-j`オプションでも指定可能）。モノレポ検出時は同一ツールのサブプロジェクト実行を同時に開始する件数の算出にも使われる
+- jobs : linters/testersの最大並列数（既定: 8。CLIの`-j`オプションでも指定可能）。
+  モノレポ検出時は同一ツールのサブプロジェクト実行を同時に開始する件数の算出にも使われる
 - command-timeout : コマンド単体のタイムアウト秒数のグローバル既定値（既定: 600秒。0で無効化）
-- {command}-timeout : per-toolのタイムアウト秒数。未指定時は`command-timeout`のグローバル値にフォールバックする。
+- {command}-timeout : per-toolのタイムアウト秒数。
+  未指定時は`command-timeout`のグローバル値にフォールバックする。
   正の秒数を指定すると指定したコマンドのみその値で上書きし、`0`を指定すると同じコマンドのtimeoutのみ無効化する。
   内部的には負値を「未指定」のsentinelとして扱うため、誤って負値を設定した場合もグローバル値へフォールバックする
 - retry-on-oom : LinuxのOOM killer起因でツールが強制終了された場合に自動リトライするか（既定: `true`。後述）
@@ -194,7 +196,8 @@ pyfltr config list --all
 - extend-exclude : 追加で除外するファイル名/ディレクトリ名パターン（既定は空）
 - exclude-fence-under : Markdownの指定H2見出し配下でフェンス内側行を事前チェックから除く（既定は空。[CLIコマンド](usage.md#exclude-fence-under)を参照）
 - respect-gitignore : `.gitignore`に記載されたファイルを除外するか否か（既定: `true`）。
-  gitのルートおよびネストした`.gitignore`、グローバルgitignore、`.git/info/exclude`を全て考慮する。`git`コマンドが必要
+  gitのルートおよびネストした`.gitignore`、グローバルgitignore、`.git/info/exclude`を全て考慮する。
+  `git`コマンドが必要
 - env-file : 環境変数の条件で設定を上書きする`[[tool.pyfltr.overrides]]`の`when`の判定に使う`.env`形式のファイルのパス（既定: 空。[後述](#overrides)）
 - pre-commit-auto-skip : `.pre-commit-config.yaml`からpyfltr関連hookを自動検出してSKIP環境変数に追加するか（既定: `true`）
 - pre-commit-skip : SKIP環境変数に渡すhook IDの手動指定リスト（`pre-commit-auto-skip`と併用可能、既定: 空）
@@ -210,7 +213,7 @@ pyfltr config list --all
 - cache-max-age-hours : キャッシュエントリの保存期間（時間。既定: 12。0以下で期間軸の自動削除を無効化）
 - replace-history-max-entries : `replace`サブコマンドの履歴の最大世代数（既定: 100。0以下で世代軸の自動削除を無効化）
 - replace-history-max-size-bytes : replace履歴全体の合計サイズ上限（バイト単位。
-  既定: `200 * 1024 * 1024`（約200 MiB）。0以下でサイズ軸の自動削除を無効化）
+  既定: `200 * 1024 * 1024`で約200 MiB。0以下でサイズ軸の自動削除を無効化）
 - replace-history-max-age-days : replace履歴の保存期間の上限（日数。既定: 30。0以下で期間軸の自動削除を無効化）
 - jsonl-diagnostic-limit : 1ツールあたりのdiagnostic出力件数上限（既定: 0 = 無制限）
 - jsonl-message-max-lines : `tool.message`の行数上限（既定: 30）
@@ -219,7 +222,8 @@ pyfltr config list --all
   既定値は`[".NET", "Node.js", "Vue.js", "Next.js", "Nuxt.js"]`。
   詳細は[ツール別設定](configuration-tools.md#textlint-protected-identifiers)を参照
 - subproject-exclude : モノレポ検出時に走査・サブプロジェクト集合から除外するディレクトリ名の追加リスト。
-  既定値は空。`.venv`・`node_modules`・`target`・`build`・`dist`・`.git`は常に除外する。
+  既定値は空。
+  `.venv`・`node_modules`・`target`・`build`・`dist`・`.git`は常に除外する。
   `exclude`・`extend-exclude`に一致するディレクトリもファイル展開と同じく走査しないため、同じディレクトリを本キーへ重ねて登録する必要は無い
 - subproject-use-gitignore : モノレポ検出で`.gitignore`を尊重するか否か（既定: `true`）。
   `.gitignore`の対象と判定された候補は検出集合から除外する
@@ -236,9 +240,11 @@ pyfltr config list --all
 LinuxのOOM killerによってツールプロセスが強制終了された場合、pyfltrは自動的にリトライする。
 
 `retry-on-oom`を`true`（既定）にすると、ツールのリターンコードが`-9`または`137`のときをOOM起因とみなして
-リトライを試みる。タイムアウト超過によるSIGKILLはOOM起因とはみなさず、リトライの対象外とする。
+リトライを試みる。
+タイムアウト超過によるSIGKILLはOOM起因とはみなさず、リトライの対象外とする。
 
-`retry-max-attempts`はOOM検知時の最大リトライ回数を指定する。既定値は`1`（最大1回リトライ）。
+`retry-max-attempts`はOOM検知時の最大リトライ回数を指定する。
+既定値は`1`（最大1回リトライ）。
 `0`を指定するとリトライを無効化する（`retry-on-oom: false`と同じ効果）。
 
 JSONL出力（`--output-format=jsonl`）では`command`レコードの`retry_count`フィールドにリトライ回数が記録される。
@@ -304,7 +310,8 @@ cache-max-age-hours = 24
 ### 不正な設定値の取り扱い
 
 設定ファイル（`pyproject.toml`およびグローバル設定）で未知のキー・型不一致・許容外の値・削除済みコマンド向けのキーを
-検出した場合、該当キーを無視して既定値で処理を続行する。検出内容は警告として記録する。
+検出した場合、該当キーを無視して既定値で処理を続行する。
+検出内容は警告として記録する。
 
 本挙動は複数バージョンのpyfltrが同じ設定ファイルを参照する状況で、
 新しいバージョンが追加したキーを旧バージョンが読み込んだ際の停止を回避するために採用する。
@@ -349,7 +356,8 @@ lychee-extend-args = ["--exclude=github\\.com/owner/repo/actions"]
 
 `{command}-extend-args`の対象は共通引数`{command}-args`のみ。
 `{command}-lint-args`・`{command}-fix-args`・`{command}-check-args`・`{command}-write-args`等の
-モード専用引数には対応しない。モード切替時の引数は既定値を尊重する設計のため。
+モード専用引数には対応しない。
+モード切替時の引数は既定値を尊重する設計のため。
 
 ## pass-filenames設定 {#pass-filenames}
 
@@ -478,16 +486,20 @@ pytest-extend-args = ["-m", "not gpu"]
 
 `RUN_GPU_TESTS`が未定義・`0`・`false`のときは除外と追加引数が適用され、`1`・`true`のときは適用されない。
 
-- `when`: 条件の式（必須）。環境変数名、`not`、`and`、`or`、丸括弧で書く。
+- `when`: 条件の式（必須）。
+  環境変数名、`not`、`and`、`or`、丸括弧で書く。
   優先順位は`not`、`and`、`or`の順で、pytestの`-m`の式と同じ読み方になる
 - 真偽の判定: 前後の空白を除いた値が`1`または`true`（大文字小文字を区別しない）なら真、
-  未定義・空文字列・`0`・`false`なら偽とする。それ以外の値（`yes`など）は偽として扱い、変数名を示す警告を出す
+  未定義・空文字列・`0`・`false`なら偽とする。
+  それ以外の値（`yes`など）は偽として扱い、変数名を示す警告を出す
 - 適用の規則: `when`が真の要素を記載順に適用する。
   `extend-exclude`、`{command}-exclude`、`{command}-extend-args`、`{command}-extend-targets`は元の値と各要素の値を連結し、
   それ以外のキーは置き換える（複数の要素が同じキーを持つ場合は後の要素の値を使う）
-- 要素に書けないキー: `overrides`、`env-file`、`custom-commands`。書かれた場合は警告してそのキーだけを無視する
+- 要素に書けないキー: `overrides`、`env-file`、`custom-commands`。
+  書かれた場合は警告してそのキーだけを無視する
 - `when`が無い要素、文字列でない要素、構文が不正な要素は、警告して要素全体を無視し、実行を続ける
-- 上書きはその`pyproject.toml`の設定へ適用する。モノレポでは各サブプロジェクトの`pyproject.toml`の`overrides`がそのサブプロジェクトに適用される。
+- 上書きはその`pyproject.toml`の設定へ適用する。
+  モノレポでは各サブプロジェクトの`pyproject.toml`の`overrides`がそのサブプロジェクトに適用される。
   グローバル設定ファイルに書いた`overrides`と`env-file`は警告して無視する
 
 `env-file`には`.env`形式のファイルのパスを指定する（既定は空で、読み込まない）。
@@ -579,14 +591,21 @@ pytest = true
 pytest-fast-targets = ["*_invariant_test.py"]
 ```
 
-- 値が空でなければ、`pytest-fast = false`でもpytestはfastエイリアスに含まれる。`pytest = false`の場合は実行しない
-- fast実行は`pyfltr fast`と、`--commands`へ`fast`を含む実行（`pyfltr run --commands=fast`など）を指す。`pyfltr fast --commands=pytest`も含む
-- 対象は位置引数と`--changed-since`に依らず、プロジェクト全域から選ぶ。Markdownだけを変更したコミットでも指定したテストが動く
-- globの一致は`pytest-targets`と同じ規則で判定し、`pytest-targets`の代わりに使う。`exclude`・`extend-exclude`・`.gitignore`・`pytest-exclude`による除外はそのまま適用する
+- 値が空でなければ、`pytest-fast = false`でもpytestはfastエイリアスに含まれる。
+  `pytest = false`の場合は実行しない
+- fast実行は`pyfltr fast`と、`--commands`へ`fast`を含む実行（`pyfltr run --commands=fast`など）を指す。
+  `pyfltr fast --commands=pytest`も含む
+- 対象は位置引数と`--changed-since`に依らず、プロジェクト全域から選ぶ。
+  Markdownだけを変更したコミットでも指定したテストが動く
+- globの一致は`pytest-targets`と同じ規則で判定し、`pytest-targets`の代わりに使う。
+  `exclude`・`extend-exclude`・`.gitignore`・`pytest-exclude`による除外はそのまま適用する
 - 一致するファイルが無い場合はpytestを起動せず、対象ファイル0件として扱う（全テストの収集へは戻らない）
-- `pytest-args`などの引数は通常どおり渡す。マーカー式は追加しない
-- fast以外の実行（`pyfltr run`・`pyfltr ci`、`--commands=pytest`など）の対象は変わらない。値が空（既定）の場合もfastの対象と参加判定は従来どおりとなる
-- モノレポでは各サブプロジェクトの設定に従い、そのサブプロジェクトのファイルだけをそのディレクトリで実行する。起点に指定が無くても、指定を持つサブプロジェクトがあればfastでpytestを実行する
+- `pytest-args`などの引数は通常どおり渡す。
+  マーカー式は追加しない
+- fast以外の実行（`pyfltr run`・`pyfltr ci`、`--commands=pytest`など）の対象は変わらない。
+  値が空（既定）の場合もfastの対象と参加判定は従来どおりとなる
+- モノレポでは各サブプロジェクトの設定に従い、そのサブプロジェクトのファイルだけをそのディレクトリで実行する。
+  起点に指定が無くても、指定を持つサブプロジェクトがあればfastでpytestを実行する
 
 ### 常に加えるpytest対象 {#pytest-always-targets}
 
@@ -599,13 +618,17 @@ pytest = true
 pytest-always-targets = ["*_invariant_test.py"]
 ```
 
-- 対象は「位置引数と`--changed-since`で決まる通常の対象」と「プロジェクト全域から指定globに一致したファイル」の和集合になる。同じファイルは1回だけ渡す
-- `pyfltr run`・`run-for-agent`・`ci`・MCPの`run`とfast実行に適用する。fastでは`pytest-fast-targets`で置き換えた対象へ加える
-- `pytest-fast-targets`は置き換え、`pytest-always-targets`は追加という違いがある。fastへの参加は`pytest-fast`と`pytest-fast-targets`が決め、`pytest-always-targets`だけではpytestをfastへ加えない
+- 対象は「位置引数と`--changed-since`で決まる通常の対象」と「プロジェクト全域から指定globに一致したファイル」の和集合になる。
+  同じファイルは1回だけ渡す
+- `pyfltr run`・`run-for-agent`・`ci`・MCPの`run`とfast実行に適用する。
+  fastでは`pytest-fast-targets`で置き換えた対象へ加える
+- `pytest-fast-targets`は置き換え、`pytest-always-targets`は追加という違いがある。
+  fastへの参加は`pytest-fast`と`pytest-fast-targets`が決め、`pytest-always-targets`だけではpytestをfastへ加えない
 - `pytest = false`の場合と、`--commands`でpytestを選ばない実行では実行しない
 - `exclude`・`extend-exclude`・`.gitignore`・`pytest-exclude`による除外と、それらを無効化する`--no-exclude`・`--no-gitignore`はそのまま適用する
 - `--only-failed`では、追加したテストも候補に含めたうえで前回失敗したファイルだけを実行する
-- モノレポでは各サブプロジェクトの設定に従い、そのサブプロジェクトのファイルだけをそのディレクトリで実行する。変更したファイルが別のサブプロジェクトにだけある場合も、指定を持つサブプロジェクトのテストを実行する
+- モノレポでは各サブプロジェクトの設定に従い、そのサブプロジェクトのファイルだけをそのディレクトリで実行する。
+  変更したファイルが別のサブプロジェクトにだけある場合も、指定を持つサブプロジェクトのテストを実行する
 
 ## 出力順序
 

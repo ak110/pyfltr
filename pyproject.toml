@@ -24,6 +24,9 @@ dependencies = [
     "arid>=2.2.2",
     "bandit>=1.7",
     "dill>=0.3",
+    # 内蔵linter`markdown-structure`（`pyfltr/markdown_structure`）がCommonMarkの構造の判定に用いる。
+    # 開発用のカスタムコマンドdoc-codeblock-check（`scripts/check_doc_codeblocks.py`）もフェンスの抽出に用いる。
+    "markdown-it-py>=3.0.0",
     # 2.0で高レベルAPIのクラスが`mcp.server.mcpserver.MCPServer`へ改称され、1.x系のimportパスは削除された。
     # `pyfltr/cli/mcp_server.py`は2.0系のAPIのみを用いるため下限を2.0.0とする。
     # 上限は設けない。1.x系では対象のAPIが存在せず下限指定だけで要件を表現できるため。
@@ -76,10 +79,7 @@ pyfltr = "pyfltr.cli.main:main"
 # docs 生成・テストで直接使うため dev に残す。
 # mdformat は mkdocs-llmstxt の間接依存。mdformat 1.0 系では mdformat-tables が未対応のため、
 # mkdocs-llmstxt 0.5 系を維持できるよう <1.0 へ制約する。mdformat-tables 側の追従後に解除する。
-# markdown-it-py は scripts/check_doc_codeblocks.py が Markdown のフェンス抽出に用いる。
-# カスタムコマンド doc-codeblock-check の唯一の依存であるため dev に残す。
 dev = [
-    "markdown-it-py>=3.0.0",
     "mdformat<1.0",
     "mkdocs-llmstxt>=0.5",
     "mkdocs-material>=9.6",
@@ -131,6 +131,7 @@ shfmt = true
 hadolint = true
 bandit = true
 colloquial-check = true
+markdown-structure = true
 # 推奨ガイドの`pylint-args = ["--jobs=4"]`は指定しない。
 # 全検査の基準版であるPython 3.15では、pylintの並列実行が用いるdill（0.4.1時点）が未対応で、
 # pylintが`co_lnotab`の参照で異常終了するため。dillの対応版の公開後に戻す。

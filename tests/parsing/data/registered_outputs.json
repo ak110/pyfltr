@@ -79,6 +79,11 @@
     "source": "scripts.parser_review collect --all\u30012026-10-18\u306e\u5b9f\u51fa\u529b",
     "reports_line": true
   },
+  "markdown-structure": {
+    "output": "sample.md:3:6: error: 1\u65871\u884c\u3078\u6539\u884c\u3059\u308b\uff08\u81ea\u52d5\u4fee\u6b63\u306e\u5bfe\u8c61\uff09\nsample.md:5:6: error: \u5168\u89d2\u4e38\u62ec\u5f27\u306e\u5165\u308c\u5b50\u3092\u89e3\u6d88\u3059\u308b",
+    "source": "python -m pyfltr.markdown_structure\u30012026-11-11\u306e\u5b9f\u51fa\u529b",
+    "reports_line": true
+  },
   "textlint": {
     "output": "[{\"messages\":[{\"type\":\"lint\",\"ruleId\":\"ja-technical-writing/max-ten\",\"message\":\"\u4e00\u3064\u306e\u6587\u3067\\\"\u3001\\\"\u30924\u3064\u4ee5\u4e0a\u4f7f\u7528\u3057\u3066\u3044\u307e\u3059\",\"index\":19,\"line\":3,\"column\":13,\"range\":[19,20],\"loc\":{\"start\":{\"line\":3,\"column\":13},\"end\":{\"line\":3,\"column\":14}},\"severity\":2},{\"type\":\"lint\",\"ruleId\":\"ja-technical-writing/max-ten\",\"message\":\"\u4e00\u3064\u306e\u6587\u3067\\\"\u3001\\\"\u30924\u3064\u4ee5\u4e0a\u4f7f\u7528\u3057\u3066\u3044\u307e\u3059\",\"index\":31,\"line\":3,\"column\":25,\"range\":[31,32],\"loc\":{\"start\":{\"line\":3,\"column\":25},\"end\":{\"line\":3,\"column\":26}},\"severity\":2}],\"filePath\":\"sample.md\"}]",
     "source": "scripts.parser_review collect --all\u30012026-10-18\u306e\u5b9f\u51fa\u529b",

@@ -8,7 +8,8 @@ pyfltrの`grep`/`replace`サブコマンドの使い方を扱う。
 
 - `pyfltr grep`: 正規表現でファイル横断検索する。
   pyfltr設定の`exclude`/`extend-exclude`/`respect-gitignore`を尊重するため`node_modules`や`build`配下のノイズが混入しない
-- `pyfltr replace`: 横断置換する。書き込みが既定の動作であり、世代管理付きの`--undo`で取り消せる
+- `pyfltr replace`: 横断置換する。
+  書き込みが既定の動作であり、世代管理付きの`--undo`で取り消せる
 - 両者は共通オプション名（`-i`/`-w`/`-x`/`-F`/`--type`/`-g`等）を共有し、
   `grep`で誤爆ゼロを確認した引数列をそのまま`replace`へ切り替えられる
 
@@ -46,7 +47,8 @@ pyfltr grep -F "exact_string" docs/
 - `--count-matches`: `--count`と同等の互換用オプション
 - `--type TYPE`: 言語タイプフィルタ（python/rust/ts/js/md/json/toml/yaml/shell）
 - `-g/--glob PAT`: globフィルタ
-- `--encoding ENC`: ファイル読み込みエンコーディング。UTF-8の復号に失敗した場合はCP932を試す
+- `--encoding ENC`: ファイル読み込みエンコーディング。
+  UTF-8の復号に失敗した場合はCP932を試す
 - `--max-filesize BYTES`: ファイルサイズ上限
 - `--max-preview-chars N`: 返却する本文1件あたりの文字数上限（既定200、0で無制限）
 - `--auto-summary`/`--no-auto-summary`: 結果量に応じた自動省略の有効化・無効化
@@ -146,7 +148,8 @@ src/app.min.js:1:20010:[+19909] ...(200文字のプレビュー)...
 ### replace基本形
 
 `pyfltr replace <pattern> <replacement> [paths...]` の形式で実行する。
-書き込みが既定動作。`--dry-run` で試行できる。
+書き込みが既定動作。
+`--dry-run` で試行できる。
 
 例:
 
@@ -181,16 +184,19 @@ pyfltr replace --undo <replace_id>
 ### ブロック内限定置換（--within）
 
 `--within`はアンカー正規表現にマッチした行と前後コンテキストで定まる領域内のみを置換対象とする。
-領域幅は`-A`/`-B`/`-C`で指定する。sedの範囲アドレスに相当し、特定ブロック外を変更せずに書き換えたいときに使う。
+領域幅は`-A`/`-B`/`-C`で指定する。
+sedの範囲アドレスに相当し、特定ブロック外を変更せずに書き換えたいときに使う。
 
 ```shell
 # 「[section]」を含む行の前後2行の範囲内だけ「old」を「new」へ置換する
 pyfltr replace "old" "new" config.toml --within "\[section\]" -C 2
 ```
 
-- アンカーは検索側フラグ（`-i`/`-w`等）を共用する。アンカー専用のフラグは無い
+- アンカーは検索側フラグ（`-i`/`-w`等）を共用する。
+  アンカー専用のフラグは無い
 - `--within`と`-U/--multiline`は併用できない（領域は行範囲で定めるため）
-- `-A`/`-B`/`-C`は`--within`と併用必須。`--within`なしで指定するとエラーになる
+- `-A`/`-B`/`-C`は`--within`と併用必須。
+  `--within`なしで指定するとエラーになる
 - 置換件数（`count`）は領域内で実置換した件数で、領域外のマッチは含めない
 
 ### 文字コードと改行
@@ -213,7 +219,8 @@ pyfltr replace "old" "new" config.toml --within "\[section\]" -C 2
 ファイルが手動編集されてバイト列のハッシュが一致しない場合は、改行やBOMだけの変更でも取り消しを全件中断して警告が出る。
 意図的に強制復元する場合は `--force` を併用する。
 
-旧形式の履歴も一覧・詳細・取り消しで利用できる。旧履歴は変更前の文字列だけを保持しており、
+旧形式の履歴も一覧・詳細・取り消しで利用できる。
+旧履歴は変更前の文字列だけを保持しており、
 元の改行情報を復元できないため、取り消し時に完全なバイト復元を保証できない旨を警告する。
 CLIでは既存の警告出力、MCPの`replace_undo`では`warnings`に通知する。
 
@@ -250,8 +257,10 @@ CLIでは既存の警告出力、MCPの`replace_undo`では`warnings`に通知�
 サーバーが提供する全ツールと共通の応答の読み方は[CLIコマンドのMCP参照](usage.md#mcp)を参照。
 
 - `grep(paths, pattern=None, patterns=None, pattern_file=None, context=None, summary_mode=None, ...)`:
-  ファイル横断検索。`patterns`は複数パターン、`pattern_file`は1行1パターンのファイルを受け取り、
-  `pattern`とOR条件で検索する。`context`は前後文脈の一括指定に使う。
+  ファイル横断検索。
+  `patterns`は複数パターン、`pattern_file`は1行1パターンのファイルを受け取り、
+  `pattern`とOR条件で検索する。
+  `context`は前後文脈の一括指定に使う。
   `summary_mode`は`files_with_matches`・`count`・`files_without_match`のいずれかを受け取り、
   マッチ明細を空にして対応する集計結果を返す。
   `files_without_match`では全ファイルの確認が必要なため、正の`max_total`を併用できない
@@ -259,12 +268,14 @@ CLIでは既存の警告出力、MCPの`replace_undo`では`warnings`に通知�
   `max_preview_chars`は返却する本文1件あたりの文字数上限（既定200、0で無制限）で、
   切り詰めが発生した場合は`matches[].truncated`・`matches[].line_text_offset`と戻り値の`warnings`で通知する
 - `replace(pattern, replacement, paths, dry_run=True, within=None, from_grep=None, context=None, ...)`:
-  横断置換。`from_grep`はgrepのJSONL出力から対象ファイルを限定する。
+  横断置換。
+  `from_grep`はgrepのJSONL出力から対象ファイルを限定する。
   `context`は`within`で指定したアンカーの前後幅を一括指定する。
   **`dry_run`の既定値は`True`**（CLI既定の`False`と異なり、LLM暴発防止）。
   `within`にアンカー正規表現を渡すと、`before_context`/`after_context`で定まる領域内のみ置換する（CLIの`--within`相当）。
   読み込めずにスキップしたファイルは、原因と対処を`warnings`で通知する
-- `replace_undo(replace_id, force=False)`: 取り消し。旧履歴の復元限界と、手動編集によるスキップ（`force=True`での強制復元の案内）は応答の`warnings`で通知する
+- `replace_undo(replace_id, force=False)`: 取り消し。
+  旧履歴の復元限界と、手動編集によるスキップ（`force=True`での強制復元の案内）は応答の`warnings`で通知する
 - `replace_history(action, replace_id=None, limit=None)`: `action=list`で履歴一覧、`action=show`で指定履歴の詳細を返す
 
 LLMエージェントは`replace`を呼ぶ際、明示的に`dry_run=False`を指定しない限り実書き込みされない。

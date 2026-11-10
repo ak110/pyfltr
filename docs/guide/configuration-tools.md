@@ -50,7 +50,8 @@ pyfltrは対応ツールを実行方式の観点から5カテゴリに分けて�
 `{command}-path`を非空に指定するとあらゆる`{command}-runner`設定より優先され、その値で直接実行する。
 個別パスを指定して使っている場合の後方互換の手段として機能する。
 
-PATHの解決はpyfltrが自動で管理する。利用者側の追加設定は不要。
+PATHの解決はpyfltrが自動で管理する。
+利用者側の追加設定は不要。
 
 各ツールに共通する設定は[設定項目](configuration.md)、カスタムコマンドの仕様と事例は[プロジェクト固有チェックの追加](custom-commands.md)を参照。
 
@@ -111,7 +112,8 @@ ruff-format-check-args = ["check", "--fix"]
 
 ### uv-sort
 
-`uv-sort`は`pyproject.toml`の依存定義をソートするformatter。既定は無効。
+`uv-sort`は`pyproject.toml`の依存定義をソートするformatter。
+既定は無効。
 
 ```toml
 [tool.pyfltr]
@@ -123,7 +125,8 @@ Python系ツールとして扱われ、`python = true`で有効化される（�
 
 ### bandit
 
-`bandit`はPython専用source-level SAST。pyfltr本体依存に同梱されるため、`uvx pyfltr`単発でも利用できる。
+`bandit`はPython専用source-level SAST。
+pyfltr本体依存に同梱されるため、`uvx pyfltr`単発でも利用できる。
 既定は無効（opt-in）。
 
 ```toml
@@ -148,7 +151,8 @@ pyfltr既定の`bandit-args = ["--quiet", "--recursive", "--format=json"]`は出
 
 ### arid
 
-`arid`はPython専用の重複コードチェッカー。Rust実装で、pylintの`duplicate-code`（R0801）と同じ目的のチェックを担う。
+`arid`はPython専用の重複コードチェッカー。
+Rust実装で、pylintの`duplicate-code`（R0801）と同じ目的のチェックを担う。
 pyfltr本体依存に同梱されるため追加の導入手順は不要で、`preset`と`python = true`の指定で有効化される。
 
 チェック条件は`pyproject.toml`の`[tool.arid]`へ書く。
@@ -185,11 +189,13 @@ semgrep / sqlfluffの既定値は無効（opt-in）で、`{command}-runner`の�
 
 ### semgrep
 
-`semgrep`は多言語SAST。他の依存へ厳密ピンを課すためpyfltr本体依存には同梱せず、
+`semgrep`は多言語SAST。
+他の依存へ厳密ピンを課すためpyfltr本体依存には同梱せず、
 `semgrep-runner = "uvx"`の既定値により実行時に別環境へ解決する。
 `uvx`が利用できる環境なら`uvx pyfltr`単発でも利用できる。
 `uv tool install semgrep`で導入済みの環境がある場合は`uvx`がその環境を再利用するため、
-実行のたびの解決は発生しない。公式Dockerイメージはこの手順で導入済みである。
+実行のたびの解決は発生しない。
+公式Dockerイメージはこの手順で導入済みである。
 導入済み環境が無い場合は実行のたびに依存を解決するため、版を固定したい場合や
 解決コストを避けたい場合は`uv tool install semgrep`で導入するか、
 `semgrep-path`または`semgrep-runner`で上書きする。
@@ -204,17 +210,20 @@ semgrep-args = ["scan", "--json", "--error", "--config=auto"]
 # semgrep-args = ["scan", "--json", "--error", "--config=p/python", "--config=p/typescript"]
 ```
 
-`semgrep-args`の既定値は空。利用者は`scan`サブコマンド・出力形式・ルールセットをまとめて指定する。
+`semgrep-args`の既定値は空。
+利用者は`scan`サブコマンド・出力形式・ルールセットをまとめて指定する。
 `--json`は出力パースの前提条件で、含めないとpyfltrの違反抽出が機能しない。
 `--error`は違反検出時にsemgrepを非0終了させる指定で、含めないとsemgrep側がexit 0を返しpyfltr側でfailed検出できない。
 
 ### sqlfluff
 
-`sqlfluff`はSQL専用linter。他の依存へ上限制約を課すためpyfltr本体依存には同梱せず、
+`sqlfluff`はSQL専用linter。
+他の依存へ上限制約を課すためpyfltr本体依存には同梱せず、
 `sqlfluff-runner = "uvx"`の既定値により実行時に別環境へ解決する。
 `uvx`が利用できる環境なら`uvx pyfltr`単発でも利用できる。
 `uv tool install sqlfluff`で導入済みの環境がある場合は`uvx`がその環境を再利用するため、
-実行のたびの解決は発生しない。公式Dockerイメージはこの手順で導入済みである。
+実行のたびの解決は発生しない。
+公式Dockerイメージはこの手順で導入済みである。
 導入済み環境が無い場合は実行のたびに依存を解決するため、版を固定したい場合や
 解決コストを避けたい場合は`uv tool install sqlfluff`で導入するか、
 `sqlfluff-path`または`sqlfluff-runner`で上書きする。
@@ -243,7 +252,8 @@ pyfltr既定の`sqlfluff-args = ["lint", "--format=json"]`は出力パースの�
 
 ### typos
 
-`typos`はスペルチェッカー。PyPI経由でインストールされるため、`uv add pyfltr`だけで利用可能。
+`typos`はスペルチェッカー。
+PyPI経由でインストールされるため、`uv add pyfltr`だけで利用可能。
 
 ```toml
 [tool.pyfltr]
@@ -263,7 +273,8 @@ typos-path = "/path/to/typos"
 
 ### yamllint
 
-`yamllint`はPython製のYAMLリンター。PyPI経由でインストールされるため、`uv add pyfltr`だけで利用可能。
+`yamllint`はPython製のYAMLリンター。
+PyPI経由でインストールされるため、`uv add pyfltr`だけで利用可能。
 直接実行（PATH上または`yamllint-path`で指定した実行ファイル）で動作する。
 actionlintの`.github/workflows/*.yaml`対象とは独立して、YAML全般を対象とする。
 
@@ -274,7 +285,8 @@ yamllint = true
 yamllint-args = ["-c", ".yamllint.yml"]
 ```
 
-無指定時は`yamllint`コマンドを直接呼び出す。パスを変更したい場合は`yamllint-path`を指定する。
+無指定時は`yamllint`コマンドを直接呼び出す。
+パスを変更したい場合は`yamllint-path`を指定する。
 
 ```toml
 [tool.pyfltr]
@@ -326,7 +338,8 @@ npm-audit = true    # JavaScript依存をnpm auditで監査する
 既定引数は次のとおり。
 
 - `uv-audit-args = ["audit", "--preview-features", "audit", "--frozen", "--no-progress"]`。
-  `--frozen`で監査時に`uv.lock`を書き換えない。`--preview-features audit`は
+  `--frozen`で監査時に`uv.lock`を書き換えない。
+  `--preview-features audit`は
   `uv audit`が実験的機能である旨の警告を抑止する
 - `pnpm-audit-args`・`npm-audit-args`・`yarn-audit-args`はいずれも既定値`["audit", "--json"]`。
   `--json`はpyfltrが脆弱性情報を構造化して抽出するために必須
@@ -337,7 +350,8 @@ npm-audit = true    # JavaScript依存をnpm auditで監査する
 非0の終了コードを返すのは0.11.2以降であり、`uv-audit`利用時はuv 0.11.2以降が必要
 （[uv 0.11.2のリリースノート](https://github.com/astral-sh/uv/releases/tag/0.11.2)と
 [uv PR #18512](https://github.com/astral-sh/uv/pull/18512)）。
-この要件はpyfltr側でも強制する。`uv-audit`の起動前にuvの版を取得し、0.11.2未満の場合と
+この要件はpyfltr側でも強制する。
+`uv-audit`の起動前にuvの版を取得し、0.11.2未満の場合と
 版を判別できなかった場合は実行せず解決失敗として扱う。
 解決失敗は`{command}-severity = "warning"`を設定しても格下げされない。
 監査を実施しないまま成功として報告される事態を防ぐため、判定できない場合も実行しない。
@@ -483,7 +497,8 @@ textlint-protected-identifiers = [".NET", "Node.js", "Vue.js", "Next.js", "Nuxt.
 
 ### designmd
 
-`designmd`は`@google/design.md`によるDESIGN.md形式仕様チェック。js-runner経由で起動する。
+`designmd`は`@google/design.md`によるDESIGN.md形式仕様チェック。
+js-runner経由で起動する。
 対象ファイル名は仕様上`DESIGN.md`固定であり、リポジトリ内にDESIGN.mdが無い場合は自動的にスキップされる。
 既定値として有効化されているが、対象ファイル不在のプロジェクトでは実行されない。
 
@@ -517,7 +532,7 @@ javascript = true
 必要に応じて上書きできる。
 
 - eslint:
-    - `eslint-args = []`（既定は空。`--format json`は`eslint-json`設定（既定`true`）が
+    - `eslint-args = []`（既定は空。`--format json`は既定`true`の`eslint-json`設定が
       lint / fix両モードへ注入する）
     - `eslint-fix-args = ["--fix"]`
     - 注: ESLint 9系以降で`compact` / `unix` / `tap`等のコアフォーマッタは除去されたため、コア標準の`json`を採用している
@@ -527,7 +542,7 @@ javascript = true
     - 2段階実行の詳細は「prettierの2段階実行」を参照
 - biome:
     - `biome-args = ["check"]`（`check`サブコマンドを共通argsで常時適用。
-      `--reporter=github`は`biome-json`設定（既定`true`）が注入する）
+      `--reporter=github`は既定`true`の`biome-json`設定が注入する）
     - `biome-fix-args = ["--write", "--unsafe"]`（ruffの`--unsafe-fixes`採用方針に準拠）
     - safe fixのみに戻したい場合は`biome-fix-args = ["--write"]`に上書き
     - 注: `biome-args`の先頭からサブコマンド（`check` / `lint` / `format`）を外すと、
@@ -572,7 +587,8 @@ javascript = true
 bin-runner経由で起動するツールはページ冒頭の「3カテゴリ」節で示した通り。
 グローバル`bin-runner`設定（既定`"mise"`）で起動方式を切り替える。
 
-ecはeditorconfig-checkerの略称。既定は`mise`で、GitHub Releasesから取得した
+ecはeditorconfig-checkerの略称。
+既定は`mise`で、GitHub Releasesから取得した
 `editorconfig-checker`実行ファイルをバージョン管理付きで実行する。
 PATH上の`cargo` / `dotnet` / `cargo-deny`等をPATH直接実行したい場合は、
 個別ツールに`{command}-runner = "direct"`を設定するか`{command}-path`に明示的なパスを指定する。
@@ -615,7 +631,8 @@ jobs:
 
 `GITHUB_TOKEN`を渡さないと、mise本体やツールのリリース取得時にGitHub APIの匿名レート制限へ達する。
 結果として、mise-actionの`mise install`およびpyfltr経由の`mise exec`実行時の自動インストールが失敗する。
-`${{ github.token }}`と`${{ secrets.GITHUB_TOKEN }}`は等価。GitHub Actionsで自動発行されるため追加のシークレット設定は不要。
+`${{ github.token }}`と`${{ secrets.GITHUB_TOKEN }}`は等価。
+GitHub Actionsで自動発行されるため追加のシークレット設定は不要。
 
 `container:`指定ジョブでは`secrets.GITHUB_TOKEN`がコンテナ内へ自動で渡らないため、上記のとおり`env:`への明示が必須。
 ジョブレベル`env:`に置けばmise-actionステップとpyfltr実行ステップの両方をまとめてカバーできる。
@@ -643,7 +660,8 @@ mise-auto-trust = false
 
 ### バージョン指定
 
-`{command}-version`でbin-runner対応ツールのバージョンを指定できる。既定は`"latest"`。
+`{command}-version`でbin-runner対応ツールのバージョンを指定できる。
+既定は`"latest"`。
 cargo系・dotnet系も同枠組みで指定できる。
 
 ```toml
@@ -738,7 +756,8 @@ dotnet-build = true
 dotnet-test = true
 ```
 
-既定の引数は以下のとおり。必要に応じて上書きできる。
+既定の引数は以下のとおり。
+必要に応じて上書きできる。
 
 - ec: `ec-args = ["-format", "gcc", "-no-color"]`
 - shellcheck: `shellcheck-args = ["-f", "gcc"]`
@@ -756,7 +775,8 @@ dotnet-test = true
 - gitleaks: `gitleaks-args = ["detect", "--no-banner"]`（`detect`サブコマンドを既定値として保持）。
   `pass-filenames = false`によりリポジトリ全体を対象とする
 - lychee: `lychee-args = ["--format", "json", "--no-progress"]`（出力パースのためJSON必須、`--no-progress`で
-  プログレスバーを抑止）。既定は有効。
+  プログレスバーを抑止）。
+  既定は有効。
   5xx・応答タイムアウトは有限回の再試行後に警告として扱い、404等のリンク切れは失敗として扱う
 - cargo-fmt: `cargo-fmt-args = ["fmt"]`（常時書き込みモード。pyfltr規約によりformatterは`--fix`なしでも強制修正する）
 - cargo-clippy:
@@ -771,7 +791,8 @@ dotnet-test = true
 - dotnet-test: `dotnet-test-args = ["test", "--nologo"]`
 
 cargo系・dotnet系はそれぞれ`serial_group = "cargo"` / `serial_group = "dotnet"`で自動的に直列化される
-（同一ワークスペース・solutionを操作する競合を避けるため）。利用者が`--jobs=1`などを指定する必要はない。
+（同一ワークスペース・solutionを操作する競合を避けるため）。
+利用者が`--jobs=1`などを指定する必要はない。
 mise backendの既定値は、cargo系が`rust`、cargo-denyが`aqua:EmbarkStudios/cargo-deny`、dotnet系が`dotnet`である。
 cargo-denyはmise registryから消失したため本家[aqua](https://aquaproj.github.io/)レジストリ経由を既定とする。
 
@@ -815,7 +836,8 @@ taplo-args = ["--config", "taplo.toml"]
 
 ### ec（editorconfig-checker） {#ec}
 
-`ec`は`.editorconfig`違反を検出するGo製のチェッカー。bin-runner経由で実行する。
+`ec`は`.editorconfig`違反を検出するGo製のチェッカー。
+bin-runner経由で実行する。
 プロジェクト固有の除外設定は`.editorconfig-checker.json`で行う。
 設定キーはPascalCase、`Exclude`は正規表現の配列で指定する。
 
@@ -839,7 +861,8 @@ taplo-args = ["--config", "taplo.toml"]
 
 ### hadolint
 
-`hadolint`はHaskell製のDockerfileリンター。bin-runner経由で実行する。
+`hadolint`はHaskell製のDockerfileリンター。
+bin-runner経由で実行する。
 既定の対象ファイルは`Dockerfile` / `Dockerfile.*` / `*.Dockerfile`。
 対象パターンを変更したい場合は`hadolint-targets`で上書きするか`hadolint-extend-targets`で追加する。
 
@@ -852,7 +875,8 @@ hadolint-extend-targets = ["*.dockerfile"]
 
 ### gitleaks
 
-`gitleaks`はGoバイナリのシークレット検出ツール。bin-runner経由で実行する。
+`gitleaks`はGoバイナリのシークレット検出ツール。
+bin-runner経由で実行する。
 `pass-filenames = false`により、ファイル一覧ではなくリポジトリ全体を対象として`gitleaks detect`を実行する。
 
 ```toml
@@ -862,7 +886,8 @@ gitleaks = true
 
 ### lychee
 
-`lychee`はRust製のリンク切れチェッカー。bin-runner経由で実行する。
+`lychee`はRust製のリンク切れチェッカー。
+bin-runner経由で実行する。
 Markdown・HTML中の外部URL到達性を検証するため、ネットワーク到達失敗で判定結果が変動することがある。
 
 ```toml
@@ -879,7 +904,8 @@ lychee-extend-args = ["--exclude=github\\.com/owner/repo/actions"]
 # lychee-extend-args = ["--offline"]
 ```
 
-既定対象は`*.md`・`*.html`。`lychee-extend-targets`で対象を追加できる。
+既定対象は`*.md`・`*.html`。
+`lychee-extend-targets`で対象を追加できる。
 
 HTTP(S)リンクの5xxと接続系の失敗（`Network error`。接続拒否・名前解決の失敗など）は初回に加えて最大3回再試行し、
 応答タイムアウトはlychee自身の再試行を使う。
@@ -894,14 +920,17 @@ lychee自身の再試行は接続系の失敗を対象にしないため、pyflt
 
 `lychee-max-concurrency`の既定値`4`はCI環境でgithub.com宛リンクのチェックが
 `Network error: HTTP/2 protocol error. Server may not support HTTP/2 properly`で
-失敗する事象を緩和するための値。チェックの所要時間を優先する場合は大きな値、または`0`以下
-（lychee既定値の128）を指定する。`lychee-args`・`lychee-extend-args`で
+失敗する事象を緩和するための値。
+チェックの所要時間を優先する場合は大きな値、または`0`以下
+（lychee既定値の128）を指定する。
+`lychee-args`・`lychee-extend-args`で
 `--max-concurrency`を指定した場合は自動追加せず、指定値をそのまま使う。
 
 ### colloquial-check
 
 `colloquial-check`はLLMが頻繁に出力する口語的な日本語表現を検出する内蔵linter。
-起動方法は`python -m pyfltr.colloquial`。既定は無効（opt-in）とし、
+起動方法は`python -m pyfltr.colloquial`。
+既定は無効（opt-in）とし、
 `colloquial-check-severity = "warning"`が既定のため有効化してもCI/pre-commitを失敗させない。
 
 ```toml
@@ -912,6 +941,29 @@ colloquial-check-exclude = ["pyfltr/colloquial/words.txt"]
 # 対象ファイル種別を絞り込む例（既定は全ファイル`*`）
 colloquial-check-targets = "*.md"
 ```
+
+### markdown-structure
+
+`markdown-structure`はMarkdown文書の1文1行と全角丸括弧の入れ子をチェックする内蔵linter。
+句点（`。`）の後に同じ行で文が続く箇所と、全角丸括弧の中に全角丸括弧がある箇所を報告する。
+起動方法は`python -m pyfltr.markdown_structure`。
+既定は無効（opt-in）で、違反の重大度の既定は`error`とする。
+
+```toml
+[tool.pyfltr]
+markdown-structure = true
+# 検査から外すファイルの例
+markdown-structure-exclude = ["docs/legacy"]
+```
+
+- 対象の既定はMarkdownファイル（`*.md`）。
+  `markdown-structure-targets`で変更できる
+- 1文1行の違反は`run`と`fast`のfix段で自動修正する。
+  修正は改行とリスト継続の字下げの追加だけで、他の文字は変えない。
+  全角丸括弧の入れ子は自動修正しない
+- コード（インライン・ブロック）、HTMLコメント、HTMLタグ、表、引用、`逐語引用:`で始まる段落、frontmatterは1文1行のチェックから除く。
+  括弧の入れ子は表と見出しもチェックする
+- 重大度は`markdown-structure-severity`（`"warning"`など）で変えられる
 
 ## 起動方式の確認
 

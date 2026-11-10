@@ -28,10 +28,12 @@ JSONLの`warning`レコードとして最終消費主体へ配送した実行時
 pyfltrの出力は人間とコーディングエージェントの双方が読み、読んだ主体は出力だけから次の操作を決める。
 事実だけの文面は、読み手に原因の推測と対処の探索を強いて誤った操作を招く。
 
-- エラーと警告には、原因に加えて次に行う操作を書く。続行してよいか、何を実行・設定するか、
+- エラーと警告には、原因に加えて次に行う操作を書く。
+  続行してよいか、何を実行・設定するか、
   実行できない場合の代替手段を、読み手の状況に合わせて選ぶ
 - 処理を続行した警告には、続行した結果（既定値で続行した、キーを無視した、スキップした）も書く
-- 同じ事象の案内は、CLIとMCPで同じ共通関数から生成する。操作名（CLIのオプションとMCPの引数・ツール名）
+- 同じ事象の案内は、CLIとMCPで同じ共通関数から生成する。
+  操作名（CLIのオプションとMCPの引数・ツール名）
   だけが異なる場合は、共通関数の引数で渡す
 - JSONL・テキスト表示・stderr・TUI・MCPの応答のすべてへ`emit_warning`の`hint`を届ける。
   文字列で返す出力先では`pyfltr.warnings_.format_warning_text`で本文と対処を連結する
@@ -69,14 +71,16 @@ JSONLの出力処理は`pyfltr/output/jsonl_emit.py`の公開ヘルパー（`emi
   エージェントが主に使う呼び出し手段はMCP `run`とし、CLI JSONLはシェルしか使えない消費側向けの代替手段とする。
   数値終了コードは診断・書き換え・ツール失敗の契約として維持し、完了判定と役割を分ける
 - summary以外のレコードで通知する実行時の異常（`kind:"warning"`など）はsummary単体で存在を判別できるよう
-  条件付きキーで件数を露出する。件数は対象のレコードの生成元と同一の入力から導出し、
+  条件付きキーで件数を露出する。
+  件数は対象のレコードの生成元と同一の入力から導出し、
   summaryの値とレコード件数を構造的に一致させる
 - JSONL commandレコードの`effective_runner`・`runner_source`・`runner_fallback`は
  「期待した解決先と実際の解決先が乖離した場合」に限り出力する（fallback検出用）。
   通常の解決では3フィールドとも省略してLLM入力のトークン消費を抑える方針。
   通常時の解決状況の確認は`pyfltr command-info`サブコマンドの責務とする
 - `--quiet`は成功時commandレコード省略・headerレコード縮約・
-  precommitガイダンス（stderr）抑止をまとめて制御する。抑止・縮約条件のSSOTは
+  precommitガイダンス（stderr）抑止をまとめて制御する。
+  抑止・縮約条件のSSOTは
   `pyfltr/output/jsonl.py`の`build_command_lines`と`pyfltr/output/jsonl_records.py`の`build_header_record`のdocstring
   - 既定値の解決条件は`pyfltr/cli/parser.py`の`apply_subcommand_defaults`のdocstringをSSOTとする。
     `run-for-agent`は常に既定有効、他の実行系はエージェント検出時に既定有効

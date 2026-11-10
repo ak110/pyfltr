@@ -206,6 +206,11 @@ SAMPLES: tuple[Sample, ...] = (
     _sample("lychee", {"sample.md": "# sample\n\n[missing](./missing-file.md)\n"}, ("sample.md",)),
     _sample("colloquial-check", {"sample.md": "# sample\n\nこれで足" + "りる。\n"}, ("sample.md",)),
     _sample(
+        "markdown-structure",
+        {"sample.md": "# sample\n\n一文目です。二文目です。\n\n説明（補足（内側））を書く。\n"},
+        ("sample.md",),
+    ),
+    _sample(
         "tsc",
         {"package.json": _PACKAGE_JSON, "tsconfig.json": _TSCONFIG, "sample.ts": 'export const value: number = "wrong";\n'},
         ("sample.ts",),

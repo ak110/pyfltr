@@ -7,12 +7,14 @@ Pythonプロジェクト向けの推奨構成例（pyproject.toml・prek・タ�
 
 pyfltr本体の設定（`[tool.pyfltr]`）と、呼び出される各ツール（ruff / mypy / pytest）の設定を1つの`pyproject.toml`にまとめた例。
 
-- `preset = "latest"`: 各時点での推奨ツール構成。詳細は[プリセット設定](configuration.md#preset)を参照
+- `preset = "latest"`: 各時点での推奨ツール構成。
+  詳細は[プリセット設定](configuration.md#preset)を参照
 - `python = true`: 言語カテゴリ`python`に属する推奨ツール（ruff-format / ruff-check / mypy /
   pylint / pyright / pytest / uv-sort / arid）を一式有効化する
     - Python系ツール一式は本体依存に同梱されているため、`uvx pyfltr`単発で利用できる
     - dev依存に固定する場合は`uv add --dev "pyfltr[python]"`（pip環境では`pip install pyfltr`）を使う
-- `pylint-args`: pylintに追加で渡す引数。`--load-plugins=pylint_pydantic`はpyfltrが自動で追加するため個別指定不要
+- `pylint-args`: pylintに追加で渡す引数。
+  `--load-plugins=pylint_pydantic`はpyfltrが自動で追加するため個別指定不要
     - mypyの`--enable-error-code=unused-awaitable`もpyfltrが自動で追加するため、`mypy-args`への個別指定は不要
     - Python 3.15でpylintを実行する場合は`--jobs=4`を指定しない。
       並列実行が用いるdill（0.4.1時点）がPython 3.15に対応しておらず、pylintが`co_lnotab`の参照で異常終了する
@@ -26,7 +28,8 @@ pyfltr本体の設定（`[tool.pyfltr]`）と、呼び出される各ツール�
   重複コードの検出はaridへ委ねる
     - aridはRust実装の重複コードチェッカーで、R0801と同じ目的のチェックを大幅に短い所要時間で実行する。
       Python系ツール一式と同じくpyfltr本体依存に同梱されるため、追加の導入手順は不要である
-    - 検出範囲はR0801と一致しない。R0801はファイルをまたぐ重複だけを対象とするのに対し、
+    - 検出範囲はR0801と一致しない。
+      R0801はファイルをまたぐ重複だけを対象とするのに対し、
       aridは同一ファイル内の重複も既定の対象に含める
 - `[tool.arid]`: aridのチェック条件を`pyproject.toml`へ集約する。
   `min-lines`は重複とみなす最小の実効行数を指し、
@@ -35,7 +38,8 @@ pyfltr本体の設定（`[tool.pyfltr]`）と、呼び出される各ツール�
       閾値10はpylintのR0801で運用していた値と同じで、ノイズ抑制と実重複の捕捉を両立する規模として選定した
     - 検出件数はコードベースの内容と閾値で変動する。
       閾値を自プロジェクト向けに見直す場合は手元で計測し直す
-    - 検出時は実重複か否かを判別する。実重複であれば共通化のリファクタリングを第一候補とし、
+    - 検出時は実重複か否かを判別する。
+      実重複であれば共通化のリファクタリングを第一候補とし、
       意図的な並行実装や共通化すべきでない類似は理由コメントを添えて
       `# arid: disable`と`# arid: enable`で囲んで個別抑制する。
       disableリストからの`"duplicate-code"`の除去や、根拠を示さない閾値変更はしない
@@ -167,7 +171,8 @@ filterwarnings = [
 型スタブの欠落や誤ったモジュール名を検出しない。
 `allow_redefinition = true`は注釈のない変数を無関係な型で再定義することを許容するため、
 変数の使い回しによる型の取り違えを検出しない。
-いずれもチェックは通過するが欠陥は残りうる。厳格さを優先する場合は`false`とする。
+いずれもチェックは通過するが欠陥は残りうる。
+厳格さを優先する場合は`false`とする。
 
 `asyncio_default_fixture_loop_scope`・`asyncio_default_test_loop_scope`の`"session"`は
 pytest-asyncioの既定（それぞれfixtureスコープ・functionスコープ）より分離を弱める指定である。
@@ -193,7 +198,8 @@ pytestは組み込みプラグインを読み込むかどうかをコマンド�
 このとき無効化が取り消すのはプラグインの登録だけで、定義済みのオプションは残る。
 コマンドラインで`-p no:cacheprovider`を直接渡した場合は、読み込みより前に評価されるため
 オプションが定義されず、`--lf`等を併せて指定すると`unrecognized arguments`でエラー終了する。
-この差は組み込みプラグインに限る。`pytest-xdist`のように外部パッケージとして読み込むプラグインは
+この差は組み込みプラグインに限る。
+`pytest-xdist`のように外部パッケージとして読み込むプラグインは
 `addopts`の評価より後に読み込まれるため、`addopts`へ書いた無効化でもオプションが定義されない。
 `cache` fixtureを要求するテストは、`addopts`へ書いた場合は`AttributeError`で、
 コマンドラインで渡した場合はfixture不存在で、いずれも失敗する。
@@ -399,6 +405,18 @@ colloquial-check = true
 
 詳細は[設定項目（ツール別）](configuration-tools.md)の「colloquial-check」を参照。
 
+Markdownを1文ごとに改行し、全角丸括弧を入れ子にしない書き方をそろえる場合は`markdown-structure`も有効化する。
+1文1行の違反は`pyfltr run`・`pyfltr fast`のfix段で自動修正され、括弧の入れ子は報告だけを行う。
+
+```toml
+[tool.pyfltr]
+markdown-structure = true
+```
+
+違反の重大度の既定は`error`のため、有効化するとCI・pre-commitで違反を拒否する。
+既存の文書を一度に整形する場合は、有効化した後に`pyfltr run`を実行し、fix段が加えた改行を確認してからcommitする。
+詳細は[設定項目（ツール別）](configuration-tools.md)の「markdown-structure」を参照。
+
 ## .pre-commit-config.yaml
 
 ```yaml
@@ -428,7 +446,8 @@ repos:
 PEP 695型パラメーター構文（`def f[T](): ...`）を使用するプロジェクトではPython 3.12以上が必要となる。
 指定した版が古いと、`check-ast`や`debug-statements`などPythonで実装されたフックがSyntaxErrorで失敗する。
 メッセージは版により異なり、Python 3.11では`SyntaxError: expected '('`、
-3.9・3.10では`SyntaxError: invalid syntax`となる。いずれも終了コード1で終わる。
+3.9・3.10では`SyntaxError: invalid syntax`となる。
+いずれも終了コード1で終わる。
 指定した版をprek・pre-commitのいずれも解決できない場合は、フックの実行前に
 `failed to find interpreter`で終了コード3となる。
 prekは指定した版を自動取得するため、この形になるのはuv管理のPythonも見つからない場合に限る。
@@ -437,16 +456,20 @@ prekは指定した版を自動取得するため、この形になるのはuv�
 
 - `uvx pyfltr fast`: uvがキャッシュするため2回目以降は実用速度で動作する
     - dev依存にpyfltrを加えている場合は`entry: uv run --frozen pyfltr fast`に置き換えてもよい
-    - `uvx`が最新版を解決するのは初回だけで、以降はキャッシュ済みの版を再利用する。常に最新版を使う場合は`entry: uvx pyfltr@latest fast`と指定する
-    - キャッシュが更新されて版が上がると、コードを変更していなくても新版のルール追加によりコミットが失敗しうる。版の変化に伴う失敗を避ける場合はdev依存へ固定し、上記の置き換えを採用する
+    - `uvx`が最新版を解決するのは初回だけで、以降はキャッシュ済みの版を再利用する。
+      常に最新版を使う場合は`entry: uvx pyfltr@latest fast`と指定する
+    - キャッシュが更新されて版が上がると、コードを変更していなくても新版のルール追加によりコミットが失敗しうる。
+      版の変化に伴う失敗を避ける場合はdev依存へ固定し、上記の置き換えを採用する
     - `uvx`は`pyproject.toml`の`[tool.uv]`を読まないため、`exclude-newer`による公開直後版の回避はこの起動方法へ適用されない
 - `fast`: mypy / pylint / pytestなど重いコマンドを除外した高速サブセット
     - 変更ファイルに依らず毎回確かめたいテストがある場合は、任意で`pytest-fast-targets = ["*_invariant_test.py"]`のように対象のテストファイルを指定すると、そのテストだけをfastで実行できる（[設定](configuration.md#pytest-fast-targets)）
     - formatterがファイルを修正しただけではフックを失敗と判定しない
 - `types_or`: 必要な種別を列挙する
     - markdownはtextlint / markdownlint、TOML（pyproject.toml）でuv-sort、YAMLはactionlint
-    - pre-commit・prekは`types_or`に一致するファイルがコミットに含まれない限りhook自体が起動されない。有効化したツールの対象種別が欠けていると、その種別だけを変更したコミットでチェックが実行されない
-    - 有効化するツールを増やした場合は`types_or`の追随要否を確認する。`hadolint`（Dockerfile）・`shellcheck`・`shfmt`（シェル）などは`preset`に含まれないため、個別に有効化したときは対応する種別を追加する
+    - pre-commit・prekは`types_or`に一致するファイルがコミットに含まれない限りhook自体が起動されない。
+      有効化したツールの対象種別が欠けていると、その種別だけを変更したコミットでチェックが実行されない
+    - 有効化するツールを増やした場合は`types_or`の追随要否を確認する。
+      `hadolint`（Dockerfile）・`shellcheck`・`shfmt`（シェル）などは`preset`に含まれないため、個別に有効化したときは対応する種別を追加する
 - `require_serial: true`: pyfltr自身が内部で並列化するため、pre-commit側での多重起動を抑止する
 
 ### Windowsで通常ファイル化するGit symlinkを保護する
@@ -684,7 +707,8 @@ shellcheck = "latest"
 
 ## .markdownlint-cli2.yaml
 
-markdownlint-cli2が読み込む設定ファイル。`$schema`を指定してエディタ補完を有効化する。
+markdownlint-cli2が読み込む設定ファイル。
+`$schema`を指定してエディタ補完を有効化する。
 
 ```yaml
 $schema: https://raw.githubusercontent.com/DavidAnson/markdownlint-cli2/v0.20.0/schema/markdownlint-cli2-config-schema.json
@@ -903,13 +927,18 @@ jobs:
       例は`pyfltr ci`がツールを導入する`/cache/mise`を対象にする。
       PyPIやnpmから取得する依存（`/cache/uv`・`/cache/pnpm`）は短時間で再取得でき、同梱分も大きいため対象外にしている
     - `key`は対象の内容を決める入力（イメージ同梱のpyfltrの版、`pyproject.toml`・`mise.toml`・ロックファイルなど）で構成し、
-      `github.run_id`のような実行ごとの値を含めない。主キーが完全一致した実行では保存を省くため、入力が変わらない実行で保存処理が起きない
-    - `restore-keys`による前方一致の復元は使わない。古い内容を引き継ぐと、uv・pnpm・miseの内容アドレス型のストアに
-      不要になった版が累積し続けるためである。入力が変わった実行は空の状態から作り直して保存する
-    - 対象のサブディレクトリはイメージ同梱分も含む。イメージの版をキーへ含めることで、
+      `github.run_id`のような実行ごとの値を含めない。
+      主キーが完全一致した実行では保存を省くため、入力が変わらない実行で保存処理が起きない
+    - `restore-keys`による前方一致の復元は使わない。
+      古い内容を引き継ぐと、uv・pnpm・miseの内容アドレス型のストアに
+      不要になった版が累積し続けるためである。
+      入力が変わった実行は空の状態から作り直して保存する
+    - 対象のサブディレクトリはイメージ同梱分も含む。
+      イメージの版をキーへ含めることで、
       イメージを更新した後の実行は新しいキーで同梱の新しいツールから作り直し、復元が同梱ツールを古い版で上書きしない
     - 内容がPythonの版に依存しないため、復元を`actions/cache/restore`、保存を`actions/cache/save`に分け、
-      全チェックを担う1つの版のジョブだけが保存する。同じキーを複数のジョブが同時に保存しようとする競合を避けるためである
+      全チェックを担う1つの版のジョブだけが保存する。
+      同じキーを複数のジョブが同時に保存しようとする競合を避けるためである
     - イメージには`zstd`を同梱しており、`actions/cache`はzstdで圧縮・展開する
 - `pyfltr ci`: イメージ同梱のpyfltrをそのまま使う
     - uvキャッシュを介した解決を毎回経由せず、コンテナビルド時に確定したバージョンで実行できる
@@ -953,7 +982,8 @@ CIログのみでは失敗原因を特定できない場合（手元で再現し
 ````
 
 `PYFLTR_CACHE_DIR`を明示するのは、既定の保存先（`platformdirs.user_cache_dir`）が
-`container:`ジョブでは`$HOME`上書きの影響を受け不安定になり得るため。依存キャッシュ
+`container:`ジョブでは`$HOME`上書きの影響を受け不安定になり得るため。
+依存キャッシュ
 （`/cache`配下）とは別パスを選び、アーカイブが依存キャッシュへ混入しないようにする。
 保存先をジョブの`env`へ置くのはpyfltrを実行するステップが版ごとに分かれても保存先の指定を1箇所に保つためである。
 
@@ -1085,7 +1115,8 @@ pyfltr:
     - Markdownを含むリポジトリでは`pnpm`が見つからず、textlintは終了コード127の`failed`となる
     （解決失敗ではないため`{command}-severity = "warning"`で警告へ格下げできる）
     - このイメージはmiseも含まないため、初期状態で有効な`lychee`はbin-runnerでの解決に失敗し
-    `resolution_failed`となる。解決失敗は`{command}-severity`による格下げの対象外のため、
+    `resolution_failed`となる。
+      解決失敗は`{command}-severity`による格下げの対象外のため、
     `markdownlint`・`textlint`を`false`にしてもジョブは`exit 1`のままとなる
     - `before_script`でNode.js・pnpm・miseを導入するか、`lychee`を含む該当ツールを`false`に設定する
 

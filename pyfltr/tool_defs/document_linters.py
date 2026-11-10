@@ -221,4 +221,26 @@ COMMANDS: dict[str, CommandInfo] = {
             "colloquial-check-severity": "warning",
         },
     ),
+    # markdown-structure: Markdownの1文1行と全角丸括弧の入れ子を検査する内蔵linter（既定で無効・opt-in）。
+    # 表記の崩れをCIで拒否する用途のため、重大度の既定はerrorとする。1文1行の違反はfix段で改行を加えて直す。
+    # 起動経路は`python -m pyfltr.markdown_structure`。
+    "markdown-structure": CommandInfo(
+        type="linter",
+        targets="*.md",
+        fixed_cost=0.2,
+        per_file_cost=0.01,
+        subproject_aware=False,
+        diagnostic_pattern=r"^(?P<file>.+?):(?P<line>\d+):(?P<col>\d+): (?P<severity>error|warning): (?P<message>.+)$",
+        defaults={
+            # `{command}-path`は実行ファイルパスを1件のみ許容するため、`python -m`起動は
+            # `-path`にインタープリターを、`-args`にモジュール指定を分けて渡す（colloquial-checkと同じ）。
+            "markdown-structure": False,
+            "markdown-structure-path": sys.executable,
+            "markdown-structure-args": ["-m", "pyfltr.markdown_structure"],
+            "markdown-structure-runner": "direct",
+            "markdown-structure-fast": True,
+            # fix段で通常argsの後に追加する引数。文境界へ改行とリスト継続の字下げを加える。
+            "markdown-structure-fix-args": ["--fix"],
+        },
+    ),
 }

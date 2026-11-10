@@ -45,7 +45,8 @@ AGENTS.mdが指定する`writing-standards`・`review-standards`と該当するr
 
 依存パッケージの脆弱性検知はDependabot alertsと定期監査ワークフロー（`audit.yaml`）の2つの手段で行う。
 本リポジトリはPyPI配布のコマンドラインツールであり、利用者は`uvx`等で依存を解決したうえで実行するため、
-依存の脆弱性が利用者の実行環境へ波及する。ライブラリとは利用形態が異なるため検知の仕組みを設ける。
+依存の脆弱性が利用者の実行環境へ波及する。
+ライブラリとは利用形態が異なるため検知の仕組みを設ける。
 Dependabotによる自動修正PRの作成は無効とし、更新は`make update`の依存更新へ集約する。
 `[tool.uv] override-dependencies`による上書き設定は本リポジトリの依存解決にのみ適用され、
 配布物のメタデータには含まれない。
@@ -80,7 +81,8 @@ Dependabotによる自動修正PRの作成は無効とし、更新は`make updat
 
 `override-dependencies`の追加・変更は開発環境の依存解決にも影響する。
 上書きにより開発用の依存グループが要求する版が満たされなくなると、そのパッケージに依存する
-開発用ツールが起動しなくなる。前段のどの手順もこの不成立を観測しない。
+開発用ツールが起動しなくなる。
+前段のどの手順もこの不成立を観測しない。
 上書きを追加または変更した場合は、`uv lock`で変更をロックファイルへ反映したうえで、
 上書き対象のパッケージへ依存する開発用ツールを`uv run --locked <ツール名> --help`のような
 軽量な指定で起動し、終了コードが0であることを確認する。
@@ -108,7 +110,8 @@ Dependabotによる自動修正PRの作成は無効とし、更新は`make updat
 監査対象を対象のプラットフォームの依存へ限定しない。
 2026-08-02にuv 0.11.7で実行して確認したところ、`--python-platform linux`と`--python-platform windows`は
 いずれも`in 150 packages`を返した。
-一方`uv tree`は限定する。同じ確認で`--python-platform windows`にのみ`pywin32`・`colorama`が現れ、
+一方`uv tree`は限定する。
+同じ確認で`--python-platform windows`にのみ`pywin32`・`colorama`が現れ、
 `--python-platform linux`にのみ`h11`が現れる。
 すなわちロックファイルにWindows固有依存は実在するが、`uv audit`はそれを除外も追加もしない。
 そのためmatrixを追加しても監査対象は広がらず、CI実行時間だけが増える。

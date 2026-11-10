@@ -10,7 +10,8 @@ JSON Lines出力（`--output-format=jsonl`）とMCPサーバー（`pyfltr mcp`�
 
 設計・コード・テスト・文書の作成と修正では`agent-basics:writing-standards`を起動し、変更対象に該当するreferencesを読む。
 レビューと指摘の採否判断では`agent-basics:review-standards`を起動する。
-導入方法は[開発ガイド](docs/development/development.md)を参照する。本書の固有規約も併用する。
+導入方法は[開発ガイド](docs/development/development.md)を参照する。
+本書の固有規約も併用する。
 
 ## 開発手順
 
@@ -65,11 +66,13 @@ JSON Lines出力（`--output-format=jsonl`）とMCPサーバー（`pyfltr mcp`�
 ### 検証
 
 - 手元の検証は、変更したファイルと参照をたどって特定した利用側のテスト・lintを対象に指定した
-  `uv run pyfltr run <path>`で行う。対象を渡さない全体の実行（`make test`、対象なしの`uv run pyfltr run`）は求めず、
+  `uv run pyfltr run <path>`で行う。
+  対象を渡さない全体の実行（`make test`、対象なしの`uv run pyfltr run`）は求めず、
   全体のlintとテストはpush後のCIの結果で判定する
   - 共通設定・`conftest.py`・依存の版指定とlockファイルなど利用側を列挙しきれない変更でも、全体の実行へ広げない。
     列挙できた範囲だけを実行し、残りはCIの結果で判定する
-  - commit時のフック（`pyfltr fast`）は従来どおり動く。手元で全体を確かめたい場合は`make test`を使ってよい
+  - commit時のフック（`pyfltr fast`）は従来どおり動く。
+    手元で全体を確かめたい場合は`make test`を使ってよい
   - formatter・linter・tester・カスタムチェックなど対応ツール全般を個別に直接起動せず、
     `uv run pyfltr run <path>`（全体を確かめる場合は`make test`）を使う。
     設定で無効化しているツールも直接起動すれば動作するため、設定による無効化は直接起動への防御にならない
@@ -81,7 +84,8 @@ JSON Lines出力（`--output-format=jsonl`）とMCPサーバー（`pyfltr mcp`�
     - 例えば`mkdocs.yml`・`pyfltr/cli/parser.py`・`pyfltr/tools.py`のいずれかを
       変更した場合は、`tests/integration/llmstxt_test.py`を対象へ含める
   - テストだけを部分実行する場合も`uv run pyfltr run tests/warnings_test.py --commands=pytest`を使い、
-    `uv run pytest`を直接起動しない。直接起動では本リポジトリの設定（並列実行・タイムアウト等）が
+    `uv run pytest`を直接起動しない。
+    直接起動では本リポジトリの設定（並列実行・タイムアウト等）が
     pyfltr経由の実行と揃わず、結果をCIの成否を見込む根拠にできない
   - 修正後の再実行時は`--commands=mypy,ruff-check`等で限定して実行する（最終検証はCIに委ねる前提）
   - 診断内容の調査や診断出力のサンプル収集を目的として対応ツールを実行する場合は、
@@ -142,7 +146,8 @@ format別のlogger stream/level切替の詳細は[docs/development/architecture.
   同時に使えるかを確かめ、使えないツールは`subproject_concurrent=False`としてサブプロジェクト実行を直列にする
 - subprocess・git・mise・ファイル走査などcwd依存処理はプロセスのcwdに依存しない実装にする。
   `subprocess.Popen(cwd=...)`の引数、または`start_cwd`・`base_cwd`・`cwd`等の
-  明示引数でcwdを渡す。`os.chdir()`でグローバル状態を変更しない
+  明示引数でcwdを渡す。
+  `os.chdir()`でグローバル状態を変更しない
 - `pyfltr/command/core_.py`の`ExecutionParams.targets`と`CommandResult.target_files`は
   実際に処理対象となったファイル集合を表すフィールドである。
   マスク済み一時パスなど値の意味を変える差し替えをしない。
@@ -191,7 +196,8 @@ format別のlogger stream/level切替の詳細は[docs/development/architecture.
   `grep-replace`・`add-pyfltr-tool`）を呼び出す
 - `pyfltr/parsing/`の解析処理、または`pyfltr/tool_defs/`の解析定義を変更した場合、
   `error-parser-reviewer`サブエージェントによる
-  網羅レビューをコミット前に完了させる。事後レビューにすると不良を含むコミットが記録され、
+  網羅レビューをコミット前に完了させる。
+  事後レビューにすると不良を含むコミットが記録され、
   是正に追加のリリースを要する
   - 対象ファイルの変更を確定してから網羅レビューを委譲し、
     完了報告を受領するまで比較対象を維持する
