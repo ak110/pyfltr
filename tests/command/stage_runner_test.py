@@ -1,8 +1,12 @@
 import concurrent.futures
+import os
 import pathlib
+import subprocess
+import sys
 import threading
 import time
 
+import psutil
 import pytest
 
 import pyfltr.command.core_
@@ -11,6 +15,7 @@ import pyfltr.command.stage_runner
 import pyfltr.config.config
 import pyfltr.config.model
 import pyfltr.diagnostics
+import pyfltr.warnings_
 from tests.conftest import StageExecutorControl, make_command_result, make_execution_context
 
 
@@ -442,3 +447,43 @@ def test_slot_wait_reporter_reports_waiting_and_resume() -> None:
         )
     )
     assert len(messages) == count
+
+
+def _finished_process_owner() -> pyfltr.command.execution_slot.SlotOwner:
+    """終了済みのプロセスを指す保持者記録を作る（強制終了した保持者の記録が残った状態の再現）。"""
+    proc = subprocess.Popen([sys.executable, "-c", "pass"])
+    create_time = psutil.Process(proc.pid).create_time()
+    proc.wait(30)
+    return pyfltr.command.execution_slot.SlotOwner(
+        pid=proc.pid, create_time=create_time, cwd="/tmp/held", acquired_at="2026-11-10T00:00:00+00:00", label="dead"
+    )
+
+
+def test_describe_slot_owner_marks_finished_owner() -> None:
+    """終了済みの保持者記録には終了済みである旨を併記し、稼働中の保持者には付けない。"""
+    alive = pyfltr.command.execution_slot.SlotOwner(
+        pid=os.getpid(),
+        create_time=psutil.Process().create_time(),
+        cwd="/tmp/alive",
+        acquired_at="2026-11-10T00:00:00+00:00",
+    )
+    assert pyfltr.command.stage_runner.describe_slot_owner(alive) == f"pid={os.getpid()}、cwd=/tmp/alive"
+    dead = _finished_process_owner()
+    assert "このプロセスは終了しており" in pyfltr.command.stage_runner.describe_slot_owner(dead)
+    assert pyfltr.command.stage_runner.describe_slot_owner(None) == "保持者の記録を読めません"
+
+
+def test_finished_owner_is_not_reported_as_running(monkeypatch: pytest.MonkeyPatch) -> None:
+    """初回の待機警告と継続表示の両方で、終了済みの保持者を稼働中と表示しない。"""
+    dead = _finished_process_owner()
+    pyfltr.warnings_.clear()
+    pyfltr.command.stage_runner._notify_slot_wait(dead)  # pylint: disable=protected-access
+    warning = pyfltr.warnings_.collected_warnings()[-1]
+    assert warning["source"] == "execution-slot"
+    assert "このプロセスは終了しており" in warning["message"]
+    pyfltr.warnings_.clear()
+
+    monkeypatch.setattr(pyfltr.command.execution_slot, "read_owner", lambda lock_dir=None: dead)
+    monkeypatch.setattr(pyfltr.command.execution_slot, "waiter_count", lambda lock_dir=None: 1)
+    message = pyfltr.command.stage_runner._slot_waiting_message(12.0, 0, 3)  # pylint: disable=protected-access
+    assert "このプロセスは終了しており" in message

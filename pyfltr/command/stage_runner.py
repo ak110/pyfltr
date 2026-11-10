@@ -155,14 +155,7 @@ class SlotWaitReporter:
 
 
 def _slot_waiting_message(elapsed: float, done: int, total: int) -> str:
-    owner = pyfltr.command.execution_slot.read_owner()
-    if owner is None:
-        holder = "記録を読めません"
-    else:
-        holder = f"pid={owner.pid}、cwd={owner.cwd}" + (f"、{owner.label}" if owner.label else "")
-        if not owner.is_alive():
-            # 保持者が強制終了するとOSがロックを解放するが記録は残る。終了済みの記録を保持者と取り違えさせない。
-            holder += "（記録上の保持者。このプロセスは終了しており、次の待機者へ順番が移る途中です）"
+    holder = describe_slot_owner(pyfltr.command.execution_slot.read_owner())
     waiters = pyfltr.command.execution_slot.waiter_count()
     return (
         "同じOSアカウントの別の検証が実行枠を保持しているため、実行枠の取得を待っています"
@@ -382,14 +375,27 @@ def _now_iso() -> str:
     return dt.datetime.now(dt.UTC).isoformat()
 
 
+def describe_slot_owner(owner: pyfltr.command.execution_slot.SlotOwner | None) -> str:
+    """待機の通知に載せる保持者の表記を返す。
+
+    保持者が強制終了するとOSはロックを解放するが記録は残るため、
+    終了済みの記録を稼働中の保持者と取り違えさせないよう、その旨を併記する。
+    """
+    if owner is None:
+        return "保持者の記録を読めません"
+    holder = f"pid={owner.pid}、cwd={owner.cwd}" + (f"、{owner.label}" if owner.label else "")
+    if not owner.is_alive():
+        holder += "。記録上の保持者で、このプロセスは終了しており、次の待機者へ順番が移る途中です"
+    return holder
+
+
 def _notify_slot_wait(owner: pyfltr.command.execution_slot.SlotOwner | None) -> None:
     """実行枠の待機を始めたことを警告で通知する。"""
-    holder = f"pid={owner.pid}、cwd={owner.cwd}" if owner is not None else "保持者の記録を読めません"
     pyfltr.warnings_.emit_warning(
         source="execution-slot",
         message=(
-            f"同じOSアカウントで別の検証がツールを実行中のため（{holder}）、"
-            "その終了を待ってからツールを実行します。待機時間はツールのtimeoutに含めません"
+            f"同じOSアカウントの別の検証が実行枠を保持しているため（{describe_slot_owner(owner)}）、"
+            "その解放を待ってからツールを実行します。待機時間はツールのtimeoutに含めません"
         ),
         hint=("対応不要です。待機をやめる場合は実行を中断してください（端末ではCtrl+C、MCPでは要求の取り消し）。"),
     )

@@ -242,7 +242,7 @@ def started(log: pathlib.Path, label: str) -> bool:
 
 def waiting_notified(run: Run) -> bool:
     """text出力の実行が実行枠の待機を標準エラーへ通知したかを返す。"""
-    return "別の検証がツールを実行中" in run.stderr
+    return "別の検証が実行枠を保持しているため" in run.stderr
 
 
 def cache_root() -> pathlib.Path:
