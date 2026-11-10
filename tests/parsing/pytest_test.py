@@ -487,7 +487,7 @@ def test_parse_pytest_summary_only_handles_parametrized_id_with_space() -> None:
     """pytest: summary行のみ（FAILURESセクション無し）でも、パラメータIDの空白を
     テスト名の一部として取り込み、診断を生成する。
 
-    `_PYTEST_SUMMARY_RE`のテスト名部分が`\\S+?`のままだと空白で分割されてしまい
+    `pytest_common.PYTEST_SUMMARY_RE`のテスト名部分が`\\S+?`のままだと空白で分割されてしまい
     行全体が一致せず、このテストの失敗が診断として一切出てこなくなる。
     """
     output = (
@@ -518,7 +518,7 @@ def test_parse_pytest_parametrized_id_with_hyphen_not_double_counted() -> None:
     """pytest --tb=short: パラメータIDが` - `を含むテストでも、ブロックとsummaryが正しく突合され
     診断が二重生成されないことを検証する。
 
-    `_PYTEST_SUMMARY_RE`のテスト名部分が非貪欲な`.+?`のままだと、summary行の最初の` - `区切りで
+    `pytest_common.PYTEST_SUMMARY_RE`のテスト名部分が非貪欲な`.+?`のままだと、summary行の最初の` - `区切りで
     テスト名が`test_param[b`まで切れてしまい、ブロック側の`test_param[b - c]`と突合できず
     summary残余補完で余分な診断が生成される。
     """
@@ -542,7 +542,7 @@ def test_parse_pytest_parametrized_id_with_brackets_is_not_dropped() -> None:
     """pytest: パラメータIDが閉じ角括弧・入れ子の角括弧を含んでも失敗が取りこぼされないことを検証する。
 
     `ids`へリストや型注釈風の文字列を渡すと`test_listid[['a', 'b']]`・`test_nested[list[int] and str]`
-    のようなIDが生成される。`_PYTEST_SUMMARY_RE`の角括弧部分を`\\[[^\\]]*\\]`のように閉じ括弧を
+    のようなIDが生成される。`pytest_common.PYTEST_SUMMARY_RE`の角括弧部分を`\\[[^\\]]*\\]`のように閉じ括弧を
     越えられない表現にすると、これらのsummary行が一切マッチせず、summary行のみが情報源となる
     `--tb=no`等では対象の失敗が診断から完全に消える。
     """
