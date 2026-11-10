@@ -451,9 +451,9 @@ def test_slot_wait_reporter_reports_waiting_and_resume() -> None:
 
 def _finished_process_owner() -> pyfltr.command.execution_slot.SlotOwner:
     """終了済みのプロセスを指す保持者記録を作る（強制終了した保持者の記録が残った状態の再現）。"""
-    proc = subprocess.Popen([sys.executable, "-c", "pass"])
-    create_time = psutil.Process(proc.pid).create_time()
-    proc.wait(30)
+    with subprocess.Popen([sys.executable, "-c", "pass"]) as proc:
+        create_time = psutil.Process(proc.pid).create_time()
+        proc.wait(30)
     return pyfltr.command.execution_slot.SlotOwner(
         pid=proc.pid, create_time=create_time, cwd="/tmp/held", acquired_at="2026-11-10T00:00:00+00:00", label="dead"
     )
