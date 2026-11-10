@@ -670,6 +670,19 @@ actionlintのようにインストールrootへ実行ファイル以外を展開
 [推奨設定例（非Pythonプロジェクト）](recommended-nonpython.md)の「miseで配置を変えるツール設定」を参照。
 インストール実体は同一マシンの全プロジェクトで共有されるため、言語を問わず同じ方針をとる。
 
+actionlintでワークフロー内のシェルスクリプトも確かめる環境では、`[tools]`へ`shellcheck = "latest"`も宣言する。
+actionlintは`run:`ステップのシェルスクリプトを、PATH上の`shellcheck`へ子プロセスとして渡して確かめる。
+miseのshimをPATHへ加えた環境で宣言が無いと、`shellcheck`のshimが版未設定のエラーで終わり、actionlintも失敗する（終了コード3）。
+宣言すると、ShellCheckの指摘がactionlintの指摘として報告される。
+この宣言はactionlintが使うコマンドを用意するもので、pyfltrの`shellcheck = true`（シェルスクリプトのファイルを
+ShellCheckへ直接渡す独立したツール）を有効にするものではない。
+両者は別に設定する。
+
+```toml
+[tools]
+shellcheck = "latest"
+```
+
 ## .markdownlint-cli2.yaml
 
 markdownlint-cli2が読み込む設定ファイル。`$schema`を指定してエディタ補完を有効化する。
