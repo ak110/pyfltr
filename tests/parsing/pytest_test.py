@@ -1807,6 +1807,143 @@ def test_parse_pytest_quiet_child_summary_is_not_taken_as_parent_summary() -> No
     assert any(e.file == "child/inner_test.py" for e in errors)
 
 
+# 入れ子のpytest実出力を逐語的なテスト入力として維持し、親子の境界条件を固定する。
+# arid: disable
+@pytest.mark.parametrize(
+    "output",
+    [
+        pytest.param(
+            (
+                "============================= test session starts ==============================\n"
+                "platform linux -- Python 3.15.2, pytest-9.2.0, pluggy-1.7.0\n"
+                "rootdir: /tmp/sample\n"
+                "configfile: pyproject.toml\n"
+                "plugins: timeout-2.4.0, xdist-3.8.0\n"
+                "collected 1 item\n"
+                "\n"
+                "parent_test.py F                                                         [100%]\n"
+                "\n"
+                "=================================== FAILURES ===================================\n"
+                "_______________________________ test_runs_child ________________________________\n"
+                "parent_test.py:6: in test_runs_child\n"
+                "    assert 1 == 0\n"
+                "E   assert 1 == 0\n"
+                "----------------------------- Captured stdout call -----------------------------\n"
+                "F                                                                        [100%]\n"
+                "=================================== FAILURES ===================================\n"
+                "__________________________________ test_child __________________________________\n"
+                "child/child_fail_test.py:2: in test_child\n"
+                "    assert 1 == 2\n"
+                "E   assert 1 == 2\n"
+                "=========================== short test summary info ============================\n"
+                "FAILED child/child_fail_test.py::test_child - assert 1 == 2\n"
+                "1 failed in 0.02s\n"
+                "\n"
+                "============================== 1 failed in 0.86s ===============================\n"
+            ),
+            id="child-failed",
+        ),
+        pytest.param(
+            (
+                "============================= test session starts ==============================\n"
+                "platform linux -- Python 3.15.2, pytest-9.2.0, pluggy-1.7.0\n"
+                "rootdir: /tmp/sample\n"
+                "configfile: pyproject.toml\n"
+                "plugins: timeout-2.4.0, xdist-3.8.0\n"
+                "collected 1 item\n"
+                "\n"
+                "parent_test.py F                                                         [100%]\n"
+                "\n"
+                "=================================== FAILURES ===================================\n"
+                "_______________________________ test_runs_child ________________________________\n"
+                "parent_test.py:6: in test_runs_child\n"
+                "    assert 1 == 0\n"
+                "E   assert 1 == 0\n"
+                "----------------------------- Captured stdout call -----------------------------\n"
+                "E                                                                        [100%]\n"
+                "==================================== ERRORS ====================================\n"
+                "_________________________ ERROR at setup of test_child _________________________\n"
+                "child/child_fail_test.py:6: in broken\n"
+                "    raise RuntimeError('boom')\n"
+                "E   RuntimeError: boom\n"
+                "=========================== short test summary info ============================\n"
+                "ERROR child/child_fail_test.py::test_child - RuntimeError: boom\n"
+                "1 error in 0.02s\n"
+                "\n"
+                "============================== 1 failed in 0.94s ===============================\n"
+            ),
+            id="child-error",
+        ),
+    ],
+)
+def test_parse_pytest_quiet_child_does_not_hide_parent_failure_without_summary_list(output: str) -> None:
+    """pytest: 親が通常表示かつ`-rN`、子が`-q`の構成で親の失敗が診断から消えないことを検証する。
+
+    子が`-q`だと子の開始行が無く、子の終了集計行が親自身の開始行と対応し得る。
+    親が失敗一覧を持たないと親の失敗ブロックの保護も働かず、親の失敗欄が子の実行として除外される。
+    テスト入力はpytest 9.2.0で親を`-rN --tb=short`、子を`-q --tb=short`で起動した実出力の全体で、
+    親の開始行から最終集計行までを含む。子の結果がFAILEDの場合とERROR（fixtureの例外）の場合を扱う。
+    """
+    errors = pyfltr.parsing.entry.parse_errors("pytest", output)
+    assert any(e.file == "parent_test.py" and e.line == 6 for e in errors)
+
+
+# arid: enable
+
+
+def test_parse_pytest_double_quiet_parent_with_two_child_runs_keeps_first_child_excluded() -> None:
+    """pytest: `-qq -s`の親が通常表示の子を2回実行する構成で、1回目の子の失敗を診断へ出さないことを検証する。
+
+    `-qq`の親は自身の開始行も最終集計も出さないため、先頭の開始行は1回目の子のものであり、
+    末尾の`=`で埋めた集計は2回目の子のものになる。先頭の開始行を親のものと誤判定すると、
+    1回目の子の区間が除外されず、子の失敗が診断に増える。
+    2回目の子の失敗が残るのは、最終集計を持たない親で末尾の子の区間を親と判別できない既知の制約である。
+    テスト入力はpytest 9.2.0で親を`-qq -s`、子を`--tb=short`で2回起動し、親が成功した実出力から採る。
+    """
+    # 入れ子のpytest実出力を逐語的なテスト入力として維持し、親子の境界条件を固定する。
+    # arid: disable
+    output = (
+        "============================= test session starts ==============================\n"
+        "platform linux -- Python 3.15.2, pytest-9.2.0, pluggy-1.7.0\n"
+        "rootdir: /tmp/sample/child\n"
+        "configfile: pytest.ini\n"
+        "plugins: timeout-2.4.0, xdist-3.8.0\n"
+        "collected 1 item\n"
+        "\n"
+        "child_test.py F                                                          [100%]\n"
+        "\n"
+        "=================================== FAILURES ===================================\n"
+        "__________________________________ test_child __________________________________\n"
+        "child_test.py:2: in test_child\n"
+        "    assert 1 == 2\n"
+        "E   assert 1 == 2\n"
+        "=========================== short test summary info ============================\n"
+        "FAILED child_test.py::test_child - assert 1 == 2\n"
+        "============================== 1 failed in 0.03s ===============================\n"
+        "============================= test session starts ==============================\n"
+        "platform linux -- Python 3.15.2, pytest-9.2.0, pluggy-1.7.0\n"
+        "rootdir: /tmp/sample/child\n"
+        "configfile: pytest.ini\n"
+        "plugins: timeout-2.4.0, xdist-3.8.0\n"
+        "collected 1 item\n"
+        "\n"
+        "child_test.py F                                                          [100%]\n"
+        "\n"
+        "=================================== FAILURES ===================================\n"
+        "__________________________________ test_child __________________________________\n"
+        "child_test.py:2: in test_child\n"
+        "    assert 1 == 2\n"
+        "E   assert 1 == 2\n"
+        "=========================== short test summary info ============================\n"
+        "FAILED child_test.py::test_child - assert 1 == 2\n"
+        "============================== 1 failed in 0.02s ===============================\n"
+        ".\n"
+    )
+    # arid: enable
+    errors = pyfltr.parsing.entry.parse_errors("pytest", output)
+    assert len([e for e in errors if e.file == "child_test.py"]) <= 1
+
+
 def test_parse_pytest_warnings_summary_after_summary_list_keeps_parent_summary() -> None:
     """pytest: 失敗一覧の後に警告の集計が続いても親の失敗一覧を採ることを検証する。
 

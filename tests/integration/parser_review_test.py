@@ -382,7 +382,7 @@ def test_pytest_forms_cover_reviewer_definition() -> None:
     assert {form.number for form in forms} == set(range(1, 23))
     ids = {form.id for form in forms}
     assert len(ids) == len(forms)
-    assert sum(1 for form in forms if form.number == 7) == 10
+    assert sum(1 for form in forms if form.number == 7) == 12
     assert sum(1 for form in forms if form.number == 11) == 4
     assert {form.sample.env.get("COLUMNS") for form in forms if form.number == 8 and form.sample} == {"80", "81"}
     assert sum(1 for form in forms if form.number == 12) == 2

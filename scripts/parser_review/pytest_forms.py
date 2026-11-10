@@ -47,6 +47,9 @@ _CHAINED = (
     'def test_chained():\n    try:\n        raise ValueError("inner " + "x" * 100)\n'
     '    except ValueError as exc:\n        raise RuntimeError("outer " + "y" * 100) from exc\n'
 )
+_CHILD_SETUP_ERROR = (
+    'import pytest\n\n\n@pytest.fixture\ndef broken():\n    raise RuntimeError("boom")\n\n\ndef test_child(broken):\n    pass\n'
+)
 _LONG_MESSAGE = 'def test_long_message():\n    assert "a" * 200 == "b" * 200\n'
 
 
@@ -88,10 +91,16 @@ def _real(form_id: str, number: int, title: str, files: dict[str, str], targets:
 
 
 def _child_form(
-    form_id: str, title: str, child_files: dict[str, str], parent_body: str, *, name: str = "test_runs_child"
+    form_id: str,
+    title: str,
+    child_files: dict[str, str],
+    parent_body: str,
+    *,
+    name: str = "test_runs_child",
+    **kwargs: typing.Any,
 ) -> Form:
     files = {"child_runner.py": _CHILD_RUNNER, **child_files, "parent_test.py": _parent(parent_body, name=name)}
-    return _real(form_id, 7, title, files, ("parent_test.py",))
+    return _real(form_id, 7, title, files, ("parent_test.py",), **kwargs)
 
 
 _FINAL_SUMMARY_RE = re.compile(r"^=+ .* in \d+(?:\.\d+)?s.*=+$")
@@ -454,6 +463,20 @@ FORMS: tuple[Form, ...] = (
         "子プロセスを静音モードで起動した形（-q）",
         {"child/child_cases.py": _CHILD_FAIL},
         '    print(run_child("-q", "--tb=short", "child/child_cases.py"))\n',
+    ),
+    _child_form(
+        "pytest-07-child-quiet-parent-no-summary-list",
+        "親が失敗一覧を持たず（-rN）、子を静音モード（-q）で起動した形（子の結果はFAILED）",
+        {"child/child_cases.py": _CHILD_FAIL},
+        '    print(run_child("-q", "--tb=short", "child/child_cases.py"))\n',
+        settings={"pytest-args": ["-rN"]},
+    ),
+    _child_form(
+        "pytest-07-child-quiet-error-parent-no-summary-list",
+        "親が失敗一覧を持たず（-rN）、子を静音モード（-q）で起動した形（子の結果はfixtureの例外によるERROR）",
+        {"child/child_cases.py": _CHILD_SETUP_ERROR},
+        '    print(run_child("-q", "--tb=short", "child/child_cases.py"))\n',
+        settings={"pytest-args": ["-rN"]},
     ),
     _child_form(
         "pytest-07-child-same-name",

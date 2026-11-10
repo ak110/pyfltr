@@ -624,6 +624,27 @@ def pytest_child_run_ranges(output: str, *, paths: _PytestPaths | None = None) -
         if is_pytest_nested_run_marker(following):
             limit = len(lines)
             break
+    # 親が`=`の埋めを伴う最終集計で終わり、出力の最初の空でない行が開始行そのものである場合、
+    # 親は通常表示で動いており、その開始行は親自身のものである。
+    # 親自身の開始行を積むと、開始行を持たない子（`-q`）の終了集計が親の開始行と対応し、
+    # 親の失敗欄を含む区間が子の実行として除外される。親が失敗一覧を持たない構成（`-rN`）では
+    # 親の失敗ブロックの保護も働かないため、親自身の開始行を対応付けの候補から外す。
+    # 先頭が開始行でない出力（失敗欄以降の抜粋など）は、最初の開始行が子のものであり得るため対象外とする。
+    parent_header_index = -1
+    if limit < len(lines) and _PYTEST_SESSION_END_RE.fullmatch(_ANSI_SGR_RE.sub("", lines[limit]).rstrip()):
+        first = next((index for index, line in enumerate(lines) if line.strip()), -1)
+        if first >= 0 and re.fullmatch(r"=+ test session starts =+", _ANSI_SGR_RE.sub("", lines[first]).strip()):
+            # `-qq`の親は自身の開始行も最終集計も出さず、先頭の開始行と末尾の集計がどちらも子のものになり得る。
+            # `=`の埋めを伴う開始行と終了集計だけで対応を取り、先頭の開始行が親の最終集計と対応する場合に限り親とみなす。
+            depth_stack: list[int] = []
+            for index, line in enumerate(lines[: limit + 1]):
+                clean = _ANSI_SGR_RE.sub("", line).rstrip()
+                if re.search(r"=+ test session starts =+$", clean):
+                    depth_stack.append(index)
+                elif _PYTEST_SESSION_END_RE.fullmatch(clean) and depth_stack and depth_stack.pop() == first:
+                    if index == limit:
+                        parent_header_index = first
+                    break
     stack: list[int] = []
     ranges: list[tuple[int, int]] = []
     summary_start = pytest_parent_summary_start(output)
@@ -631,7 +652,8 @@ def pytest_child_run_ranges(output: str, *, paths: _PytestPaths | None = None) -
     for index, line in enumerate(lines):
         clean = _ANSI_SGR_RE.sub("", line).rstrip()
         if re.search(r"=+ test session starts =+$", clean):
-            stack.append(index)
+            if index != parent_header_index:
+                stack.append(index)
         elif (_PYTEST_SESSION_END_RE.fullmatch(clean) or _PYTEST_QUIET_SESSION_END_RE.fullmatch(clean)) and stack:
             start = stack.pop()
             if index < limit:
