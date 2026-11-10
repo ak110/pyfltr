@@ -33,13 +33,46 @@ def test_textlint_lint_mode_adds_lint_args(mocker, tmp_path: pathlib.Path) -> No
     assert cmdline[fmt_idx + 1] == "json"
 
 
-def test_textlint_fix_mode_two_step_execution(mocker, tmp_path: pathlib.Path) -> None:
-    """fixモードでtextlintは2段階実行される（step1: fix → step2: lint check）。"""
+def test_textlint_fix_mode_skips_lint_step_when_fix_succeeds(mocker, tmp_path: pathlib.Path) -> None:
+    """修正段が終了0なら残存違反の検査（step2）を省き、修正の1回だけ起動する。
+
+    fix段の後に同じ実行の通常の段がtextlintで同じ検査を行うため、step2は重複する。
+    """
     target = tmp_path / "sample.md"
     target.write_text("# title\n")
 
     proc = subprocess.CompletedProcess(["textlint"], returncode=0, stdout="")
     mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
+
+    config = pyfltr.config.config.create_default_config()
+    config.values["textlint"] = True
+    result = pyfltr.command.dispatcher.execute_command(
+        "textlint",
+        _testconf.make_args(),
+        _testconf.make_execution_context(config, [target], fix_stage=True, start_cwd=tmp_path),
+    )
+
+    assert mock_run.call_count == 1
+    step1_cmdline = mock_run.call_args_list[0][0][0]
+    # step1: fix-args（--fix）あり、--formatなし（fixer-formatterはcompactをサポートしないため）
+    assert "--fix" in step1_cmdline
+    assert "--format" not in step1_cmdline
+    assert result.status == "succeeded"
+    assert result.commandline == step1_cmdline
+
+
+def _fail_fix_step(cmdline, env, on_output, **_kwargs):
+    """修正段（`--fix`付き）だけ終了1を返し、step2を起動させる偽の実行。"""
+    del env, on_output  # 引数シグネチャ揃えのため受け取るのみ
+    return subprocess.CompletedProcess(cmdline, returncode=1 if "--fix" in cmdline else 0, stdout="")
+
+
+def test_textlint_fix_mode_two_step_execution_when_fix_fails(mocker, tmp_path: pathlib.Path) -> None:
+    """修正段が非0なら、残存違反か例外かを見分けるためにstep2のlintを実行する。"""
+    target = tmp_path / "sample.md"
+    target.write_text("# title\n")
+
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", side_effect=_fail_fix_step)
 
     config = pyfltr.config.config.create_default_config()
     config.values["textlint"] = True
@@ -50,12 +83,7 @@ def test_textlint_fix_mode_two_step_execution(mocker, tmp_path: pathlib.Path) ->
     )
 
     assert mock_run.call_count == 2
-    step1_cmdline = mock_run.call_args_list[0][0][0]
     step2_cmdline = mock_run.call_args_list[1][0][0]
-
-    # step1: fix-args（--fix）あり、--formatなし（fixer-formatterはcompactをサポートしないため）
-    assert "--fix" in step1_cmdline
-    assert "--format" not in step1_cmdline
     # step2: 構造化出力注入により--format jsonあり、--fixなし
     assert "--fix" not in step2_cmdline
     assert "--format" in step2_cmdline
@@ -80,7 +108,7 @@ def test_textlint_fix_mode_strips_user_format_from_step1(mocker, tmp_path: pathl
         _testconf.make_execution_context(config, [target], fix_stage=True, start_cwd=tmp_path),
     )
 
-    assert mock_run.call_count == 2
+    assert mock_run.call_count == 1
     step1_cmdline = mock_run.call_args_list[0][0][0]
     # step1: --format / compactが物理的に除去されている（fixer-formatter互換性のため）
     assert "--format" not in step1_cmdline
@@ -93,8 +121,7 @@ def test_textlint_fix_mode_preserves_non_format_user_args(mocker, tmp_path: path
     target = tmp_path / "sample.md"
     target.write_text("# title\n")
 
-    proc = subprocess.CompletedProcess(["textlint"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", side_effect=_fail_fix_step)
 
     config = pyfltr.config.config.create_default_config()
     config.values["textlint"] = True
@@ -360,8 +387,7 @@ def test_textlint_fix_mode_disables_cache_only_in_fix_step(mocker, tmp_path: pat
     target = tmp_path / "sample.md"
     target.write_text("# title\n")
 
-    proc = subprocess.CompletedProcess(["textlint"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", side_effect=_fail_fix_step)
 
     config = pyfltr.config.config.create_default_config()
     config.values["textlint"] = True

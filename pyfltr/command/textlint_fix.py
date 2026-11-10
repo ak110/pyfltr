@@ -25,18 +25,13 @@ logger = __import__("logging").getLogger(__name__)
 
 
 def execute_textlint_fix(request: pyfltr.command.core_.ExecutionRequest) -> pyfltr.command.core_.CommandResult:
-    """Textlint fixモードの2段階実行 （fix適用 → lintチェック）。
+    """Textlint fixモードの実行（fix適用と、必要な場合の残存違反の取得）。
 
     textlintはlint実行とfix実行でフォーマッタ解決に使うパッケージが異なり
     （`@textlint/linter-formatter` と `@textlint/fixer-formatter`）、fixer側は
     `compact` フォーマッタをサポートしない。このため `textlint --format compact --fix`
     がクラッシュする。また `textlint --fix` の既定出力 （stylish） は本ツールの
-    パーサーで解析できないため、残存違反を取得するには別途lint実行を行う必要がある。
-    lint段の出力形式は`textlint-lint-args`の既定値が`compact`を指定するが、
-    既定で有効な`textlint-json`が`--format json`を注入して対象の指定を除去するため、
-    既定構成ではJSONとなる。いずれの形式もパーサーが解析する。
-
-    上記を両立させるため本関数では次の2段階を直列実行する。
+    パーサーで解析できないため、残存違反の取得には別途lint実行が要る。
 
     Step1: fix適用
         commandline_prefix + （textlint-argsから--formatペアを除去） + fix-args
@@ -44,17 +39,22 @@ def execute_textlint_fix(request: pyfltr.command.core_.ExecutionRequest) -> pyfl
         （textlintのキャッシュヒット結果は修正後の本文を持たず修正処理が例外終了するため、
         修正段だけキャッシュを無効化する。通常lint段は利用者のキャッシュ指定を保つ）
 
-    Step2: lintチェック （残存違反を取得）
+    Step2: lintチェック （Step1が非0で終わった場合だけ実行する）
         commandline_prefix + textlint-args + textlint-lint-args + additional_args + targets
 
+    Step1が終了0の場合はStep2を省く。fix段の後には同じ実行の通常の段がtextlintを実行して
+    同じ検査を行うため、Step2は通常の段と重複する（pyfltr自身の文書27件で約13秒）。
+    Step1が非0の場合は、残存違反と予期しない例外を見分けるためにStep2を実行する。
+    fail-fastで通常の段へ進まない場合も、この経路で残存違反を結果へ残す。
+
     ステータス判定:
-    - いずれかのステップがrc>=2 （致命的エラー） → failed
-    - Step2 rc != 0 （残存違反あり） → failed （Errorsタブに反映される）
+    - Step1がrc>=2 （致命的エラー）・timeout → failed
+    - Step1 rc != 0かつStep2 rc != 0 （残存違反あり） → failed （Errorsタブに反映される）
     - Step1 rc != 0かつStep2 rc == 0 → failed （returncodeはStep1の値）。
       textlintの終了1は残存違反に加えて予期しない例外も表し、修正段に違反が残れば
       Step2も非0になるため、この組合せは修正処理の失敗を示す
-    - いずれもrc == 0かつStep1で内容ハッシュに変化あり → formatted
-    - いずれもrc == 0かつ変化なし → succeeded
+    - Step1 rc == 0かつ内容ハッシュに変化あり → formatted
+    - Step1 rc == 0かつ変化なし → succeeded
     修正段とlint段の出力はいずれも`output`へ保持する。
 
     textlint --fixは残存違反がなくても対象ファイルを書き戻すことがあり、
@@ -119,23 +119,25 @@ def execute_textlint_fix(request: pyfltr.command.core_.ExecutionRequest) -> pyfl
         ),
         *target_strs,
     ]
+    steps = [step_result.classify(step1_proc.returncode, timeout=step1_proc.timeout_exceeded, changed=step1_changed)]
+    procs = [step1_proc]
+    # Step1が終了0なら、残存違反の検査は直後の通常の段が行うため省く（docstring参照）。
+    if step1_proc.returncode != 0 and not step1_proc.timeout_exceeded:
+        if request.verbose and request.ctx.on_output is not None:
+            request.ctx.on_output(f"commandline: {shlex.join(step2_commandline)}\n")
+        step2_proc = pyfltr.command.process.run_process(dataclasses.replace(request, verbose=False), step2_commandline)
+        procs.append(step2_proc)
+        steps.append(step_result.classify(step2_proc.returncode, timeout=step2_proc.timeout_exceeded))
 
-    if request.verbose and request.ctx.on_output is not None:
-        request.ctx.on_output(f"commandline: {shlex.join(step2_commandline)}\n")
-    step2_proc = pyfltr.command.process.run_process(dataclasses.replace(request, verbose=False), step2_commandline)
-
-    output = (step1_proc.stdout + step2_proc.stdout).strip()
+    output = "".join(proc.stdout for proc in procs).strip()
     elapsed = time.perf_counter() - request.start_time
 
-    # Step2出力から残存違反をパースする
+    # Step2出力から残存違反をパースする（Step1の出力は解析できる形式を持たない）
     errors = request.parse_errors(output, request.params.command_info.error_pattern)
 
     # ステータス判定
-    timeout_exceeded = step1_proc.timeout_exceeded or step2_proc.timeout_exceeded
-    combined = step_result.combine(
-        step_result.classify(step1_proc.returncode, timeout=step1_proc.timeout_exceeded, changed=step1_changed),
-        step_result.classify(step2_proc.returncode, timeout=step2_proc.timeout_exceeded),
-    )
+    timeout_exceeded = any(proc.timeout_exceeded for proc in procs)
+    combined = step_result.combine(*steps)
     step_failed = combined.failed
     returncode = combined.returncode
     result_command_type = "formatter" if combined.state is step_result.StepState.CHANGED else "linter"
@@ -143,14 +145,14 @@ def execute_textlint_fix(request: pyfltr.command.core_.ExecutionRequest) -> pyfl
     result = CommandResult.from_run(
         command=request.command,
         command_type=result_command_type,
-        commandline=step2_commandline,
+        commandline=step2_commandline if len(procs) > 1 else step1_commandline,
         returncode=returncode,
         files=len(request.params.targets),
         output=output,
         elapsed=elapsed,
         errors=errors,
         timeout_exceeded=timeout_exceeded,
-        retry_count=step1_proc.retry_count + step2_proc.retry_count,
+        retry_count=sum(proc.retry_count for proc in procs),
     )
     if not step_failed and step1_changed:
         result.fixed_files = changed_files(digests_before, digests_after_step1)
