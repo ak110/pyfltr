@@ -497,28 +497,44 @@ def test_finished_owner_is_not_reported_as_running(tmp_path: pathlib.Path, monke
     thread = threading.Thread(target=_holder)
     thread.start()
     progress: list[str] = []
-    timer = threading.Timer(1.5, release.set)
+    marked = threading.Event()
+
+    def _on_progress(message: str) -> None:
+        progress.append(message)
+        if "このプロセスは終了しており" in message:
+            marked.set()
+
+    # 終了済みの記録での継続表示を観測してから解放する。固定時間で解放すると、
+    # 負荷の高い環境では継続表示の前に解放され、観測できないまま終わる。
+    def _release_after_marked() -> None:
+        marked.wait(30)
+        release.set()
+
+    releaser = threading.Thread(target=_release_after_marked)
     pyfltr.warnings_.clear()
     try:
         assert holding.wait(30)
         owner_path = pyfltr.command.execution_slot.default_lock_dir() / "execution.owner.json"
         owner_path.write_text(json.dumps(dataclasses.asdict(_finished_process_owner())), encoding="utf-8")
-        timer.start()
+        releaser.start()
         results = pyfltr.command.stage_runner.run_stages(
             ["first"],
             make_execution_context(config, [target], start_cwd=tmp_path).base,
             lambda command, _fix: make_command_result(command, returncode=0),
-            callbacks=pyfltr.command.stage_runner.StageCallbacks(on_slot_progress=progress.append),
+            callbacks=pyfltr.command.stage_runner.StageCallbacks(on_slot_progress=_on_progress),
         )
     finally:
+        marked.set()
         release.set()
-        timer.cancel()
+        if releaser.ident is not None:
+            releaser.join(30)
         thread.join(30)
     assert [result.command for result in results] == ["first"]
     warnings = [w for w in pyfltr.warnings_.collected_warnings() if w["source"] == "execution-slot"]
     assert len(warnings) == 1
     assert "このプロセスは終了しており" in warnings[0]["message"]
     waiting = [message for message in progress if "実行枠の取得を待っています" in message]
-    assert waiting
-    assert all("このプロセスは終了しており" in message for message in waiting)
+    assert any("このプロセスは終了しており" in message for message in waiting)
+    # 解放の直後は保持者記録が空になり「読めません」と表示されうる。どの時点でも稼働中の保持者として表示しない。
+    assert all("このプロセスは終了しており" in message or "保持者の記録を読めません" in message for message in waiting), waiting
     pyfltr.warnings_.clear()
