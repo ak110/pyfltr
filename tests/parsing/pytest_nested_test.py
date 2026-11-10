@@ -17,7 +17,7 @@ def test_mask_pytest_captured_child_runs_keeps_line_structure() -> None:
     制御文字は除外対象の範囲の内側へ置く。範囲の外では除外時の置換が起こらず、
     分割の基準が違っても元の文字列が復元されるため、退行を検知できない。
     """
-    child = tests.parsing.conftest.pytest_child_run(
+    child = tests.parsing.conftest.child_pytest_run(
         file="child/z_test.py", test="test_phantom", line=2, message="assert 1 == 2"
     ).replace("collected 1 item\n", "collected 1 item\nbefore\x0cafter\n")
     output = (

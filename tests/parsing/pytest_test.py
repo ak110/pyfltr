@@ -983,7 +983,7 @@ def test_parse_pytest_ignores_child_failure_block_in_captured_output() -> None:
         "tests/d_test.py:11: in test_runs_child\n"
         "E   AssertionError: assert 1 == 0\n"
         "-------------------------- Captured stdout call ---------------------------\n"
-        + tests.parsing.conftest.pytest_child_run(file="child/z_test.py", test="test_phantom", line=2, message="assert 1 == 2")
+        + tests.parsing.conftest.child_pytest_run(file="child/z_test.py", test="test_phantom", line=2, message="assert 1 == 2")
         + "_______________________________ test_later_real ________________________________\n"
         "tests/d_test.py:15: in test_later_real\n"
         "E   AssertionError: later\n"
@@ -1012,7 +1012,7 @@ def test_parse_pytest_ignores_child_failure_block_with_same_test_name() -> None:
         "tests/d_test.py:11: in test_runs_child\n"
         "E   AssertionError: assert 1 == 0\n"
         "-------------------------- Captured stdout call ---------------------------\n"
-        + tests.parsing.conftest.pytest_child_run(file="child/z_test.py", test="test_dup", line=2, message="assert 1 == 2")
+        + tests.parsing.conftest.child_pytest_run(file="child/z_test.py", test="test_dup", line=2, message="assert 1 == 2")
         + "_______________________________ test_dup ________________________________\n"
         "tests/d_test.py:15: in test_dup\n"
         "E   AssertionError: parent dup\n"
@@ -1041,7 +1041,7 @@ def test_parse_pytest_ignores_child_failure_block_without_parent_summary() -> No
         "tests/d_test.py:11: in test_runs_child\n"
         "E   AssertionError: assert 1 == 0\n"
         "-------------------------- Captured stdout call ---------------------------\n"
-        + tests.parsing.conftest.pytest_child_run(file="child/z_test.py", test="test_dup", line=2, message="assert 1 == 2")
+        + tests.parsing.conftest.child_pytest_run(file="child/z_test.py", test="test_dup", line=2, message="assert 1 == 2")
         + "_______________________________ test_dup ________________________________\n"
         "tests/d_test.py:15: in test_dup\n"
         "E   AssertionError: parent dup\n"
@@ -1065,7 +1065,7 @@ def test_parse_pytest_tb_line_ignores_child_failure_block_in_captured_output() -
         "================================= FAILURES =================================\n"
         "tests/d_test.py:11: AssertionError: assert 1 == 0\n"
         "-------------------------- Captured stdout call ---------------------------\n"
-        + tests.parsing.conftest.pytest_child_run(file="child/z_test.py", test="test_phantom", line=2, message="assert 1 == 2")
+        + tests.parsing.conftest.child_pytest_run(file="child/z_test.py", test="test_phantom", line=2, message="assert 1 == 2")
         + "tests/d_test.py:15: AssertionError: later\n"
         "========================= short test summary info ==========================\n"
         "FAILED tests/d_test.py::test_runs_child - AssertionError: assert 1 == 0\n"
@@ -1220,10 +1220,10 @@ def _pytest_two_child_runs_output(*, tb_line: bool, summary_list: bool) -> str:
     1回目の実行の開始位置を保持したままにすると2回目の終了集計行と対になり、
     その間にある親の失敗まで除外される。対象の構成のテスト入力を共通化する。
     """
-    crashed = tests.parsing.conftest.pytest_child_run(
+    crashed = tests.parsing.conftest.child_pytest_run(
         file="child/dies_test.py", test="test_dies", line=0, message="", terminated=False
     )
-    completed = tests.parsing.conftest.pytest_child_run(
+    completed = tests.parsing.conftest.child_pytest_run(
         file="child/fails_test.py", test="test_fails", line=2, message="assert 1 == 2"
     )
     captured = "-------------------------- Captured stdout call ---------------------------\n"
@@ -1303,8 +1303,8 @@ def test_parse_pytest_unterminated_child_run_without_summary_list_keeps_failures
 
 def test_parse_pytest_two_complete_child_runs_are_masked_independently() -> None:
     """pytest: 完結した子プロセスの実行が2回続く場合に双方を除外することを検証する。"""
-    first = tests.parsing.conftest.pytest_child_run(file="child/a_test.py", test="test_a", line=2, message="assert 1 == 2")
-    second = tests.parsing.conftest.pytest_child_run(file="child/b_test.py", test="test_b", line=3, message="assert 2 == 3")
+    first = tests.parsing.conftest.child_pytest_run(file="child/a_test.py", test="test_a", line=2, message="assert 1 == 2")
+    second = tests.parsing.conftest.child_pytest_run(file="child/b_test.py", test="test_b", line=3, message="assert 2 == 3")
     captured = "-------------------------- Captured stdout call ---------------------------\n"
     output = (
         "================================= FAILURES =================================\n"
@@ -1394,7 +1394,7 @@ def test_parse_pytest_child_run_masked_for_stderr_and_log_sections() -> None:
 
     除外の開始判定は節の種別に依存しない。
     """
-    child = tests.parsing.conftest.pytest_child_run(
+    child = tests.parsing.conftest.child_pytest_run(
         file="child/z_test.py", test="test_phantom", line=2, message="assert 1 == 2"
     )
     for section in ("Captured stderr call", "Captured log call"):
@@ -1438,7 +1438,7 @@ def test_parse_pytest_child_run_masked_with_quiet_parent(tail_line: str) -> None
         "tests/q_test.py:11: in test_runs_child\n"
         "E   AssertionError: assert 1 == 0\n"
         "-------------------------- Captured stdout call ---------------------------\n"
-        + tests.parsing.conftest.pytest_child_run(
+        + tests.parsing.conftest.child_pytest_run(
             file="child/inner_test.py", test="test_inner", line=2, message="assert 1 == 2"
         )
         + "_______________________________ test_after ________________________________\n"
@@ -1491,7 +1491,7 @@ def test_parse_pytest_child_run_masked_without_parent_failures_section() -> None
     """
     output = (
         "-------------------------- Captured stdout call ---------------------------\n"
-        + tests.parsing.conftest.pytest_child_run(
+        + tests.parsing.conftest.child_pytest_run(
             file="child/inner_test.py", test="test_inner", line=2, message="assert 1 == 2"
         )
         + "================================= 2 passed in 0.90s =================================\n"
@@ -1511,7 +1511,7 @@ def test_parse_pytest_child_run_is_not_masked_without_parent_summary_line() -> N
         "tests/d_test.py:11: in test_runs_child\n"
         "E   AssertionError: assert 1 == 0\n"
         "-------------------------- Captured stdout call ---------------------------\n"
-        + tests.parsing.conftest.pytest_child_run(file="child/z_test.py", test="test_phantom", line=2, message="assert 1 == 2")
+        + tests.parsing.conftest.child_pytest_run(file="child/z_test.py", test="test_phantom", line=2, message="assert 1 == 2")
     )
     errors = pyfltr.parsing.entry.parse_errors("pytest", output)
     assert next(e for e in errors if e.file == "tests/d_test.py").line == 11

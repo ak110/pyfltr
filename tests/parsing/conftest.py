@@ -21,7 +21,7 @@ def diagnostic_fields(
     )
 
 
-def pytest_child_run(*, file: str, test: str, line: int, message: str, terminated: bool = True) -> str:
+def child_pytest_run(*, file: str, test: str, line: int, message: str, terminated: bool = True) -> str:
     """捕捉出力へ混入する子プロセスのpytest実行1回分を組み立てる。
 
     実出力と同じく`test session starts`見出しで始まり、終了集計行で終わる形とする。
