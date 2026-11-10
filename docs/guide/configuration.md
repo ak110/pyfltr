@@ -195,6 +195,7 @@ pyfltr config list --all
 - exclude-fence-under : Markdownの指定H2見出し配下でフェンス内側行を事前チェックから除く（既定は空。[CLIコマンド](usage.md#exclude-fence-under)を参照）
 - respect-gitignore : `.gitignore`に記載されたファイルを除外するか否か（既定: `true`）。
   gitのルートおよびネストした`.gitignore`、グローバルgitignore、`.git/info/exclude`を全て考慮する。`git`コマンドが必要
+- env-file : 環境変数の条件で設定を上書きする`[[tool.pyfltr.overrides]]`の`when`の判定に使う`.env`形式のファイルのパス（既定: 空。[後述](#overrides)）
 - pre-commit-auto-skip : `.pre-commit-config.yaml`からpyfltr関連hookを自動検出してSKIP環境変数に追加するか（既定: `true`）
 - pre-commit-skip : SKIP環境変数に渡すhook IDの手動指定リスト（`pre-commit-auto-skip`と併用可能、既定: 空）
 - prek-auto-skip : `.pre-commit-config.yaml`からpyfltr関連hookを自動検出してprekへ渡すSKIP環境変数に追加するか（既定: `true`）
@@ -459,6 +460,49 @@ mypy-exclude = ["vendor", "gen_*.py"]
 
 `pass-filenames = false`のツール（tsc・cargo-\*・dotnet-\*など）はファイル名をコマンドに渡さないため、
 `{command}-exclude`を設定しても効果がない。
+
+## 環境変数による条件付きの上書き {#overrides}
+
+`[[tool.pyfltr.overrides]]`を書くと、環境変数の値に応じて`[tool.pyfltr]`の設定を上書きできる。
+例えば、GPUの無い環境では`tests/gpu`を全ツールの対象から外し、pytestから`gpu`マークの試験を除く設定は次のとおりである。
+
+```toml
+[tool.pyfltr]
+env-file = ".env"
+
+[[tool.pyfltr.overrides]]
+when = "not RUN_GPU_TESTS"
+extend-exclude = ["tests/gpu"]
+pytest-extend-args = ["-m", "not gpu"]
+```
+
+`RUN_GPU_TESTS`が未定義・`0`・`false`のときは除外と追加引数が適用され、`1`・`true`のときは適用されない。
+
+- `when`: 条件の式（必須）。環境変数名、`not`、`and`、`or`、丸括弧で書く。
+  優先順位は`not`、`and`、`or`の順で、pytestの`-m`の式と同じ読み方になる
+- 真偽の判定: 前後の空白を除いた値が`1`または`true`（大文字小文字を区別しない）なら真、
+  未定義・空文字列・`0`・`false`なら偽とする。それ以外の値（`yes`など）は偽として扱い、変数名を示す警告を出す
+- 適用の規則: `when`が真の要素を記載順に適用する。
+  `extend-exclude`、`{command}-exclude`、`{command}-extend-args`、`{command}-extend-targets`は元の値と各要素の値を連結し、
+  それ以外のキーは置き換える（複数の要素が同じキーを持つ場合は後の要素の値を使う）
+- 要素に書けないキー: `overrides`、`env-file`、`custom-commands`。書かれた場合は警告してそのキーだけを無視する
+- `when`が無い要素、文字列でない要素、構文が不正な要素は、警告して要素全体を無視し、実行を続ける
+- 上書きはその`pyproject.toml`の設定へ適用する。モノレポでは各サブプロジェクトの`pyproject.toml`の`overrides`がそのサブプロジェクトに適用される。
+  グローバル設定ファイルに書いた`overrides`と`env-file`は警告して無視する
+
+`env-file`には`.env`形式のファイルのパスを指定する（既定は空で、読み込まない）。
+相対パスは`pyproject.toml`のディレクトリを基準に解決する。
+読み込んだ値は`when`の判定にだけ使い、ツールの子プロセスへは渡さない。
+同名の環境変数がプロセスにある場合はプロセスの値を優先する。
+ファイルが存在しない場合は警告せず空として扱う（`.env`はバージョン管理外に置かれ、CIやclone直後には無いのが通常のため）。
+対応する書式は`KEY=VALUE`、行頭の`export`、単一引用符・二重引用符で囲んだ値、`#`で始まるコメント行と空行である。
+
+pytestは`-m`を複数回渡すと最後の1つだけを使う。
+複数の条件で別々のマークを外す場合は、組み合わせた式の要素を後ろへ書く。
+例えば`when = "not A and not B"`の要素で`pytest-extend-args = ["-m", "not a and not b"]`を指定する。
+
+`pyfltr config list`は条件を適用する前の記載値をそのまま表示する。
+`env-file`は`pyfltr config get`・`set`・`delete`で扱えるが、`overrides`は`custom-commands`と同じく`config set`の対象外である。
 
 ## 自動オプション
 

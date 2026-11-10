@@ -46,6 +46,7 @@ plugins:
           - `pytest-always-targets`へglobを指定すると、変更ファイルだけを渡した`run`・MCPの`run`などでも一致するテストをpytestの対象へ加える（[設定](guide/configuration.md#pytest-always-targets)）
         - `pyfltr run-for-agent`: `run`の互換用別名（通常は`run`を使う。出力形式既定値を`jsonl`に変更し`--quiet`を既定で有効化）
         - `pyfltr config <action>`: 設定ファイル操作（`get` / `set` / `delete` / `list`）
+          - 環境変数の条件で設定を上書きする場合は`[[tool.pyfltr.overrides]]`の`when`式と`env-file`を使う（[設定](guide/configuration.md#overrides)）
         - `pyfltr generate-shell-completion <shell>`: シェル補完スクリプト生成
         - `pyfltr list-runs` / `pyfltr show-run <run_id>`: 実行履歴参照
         - `pyfltr command-info <tool>`: ツール起動方式確認（`--check`オプションあり）

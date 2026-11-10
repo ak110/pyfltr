@@ -8,6 +8,7 @@ import typing
 import tomlkit
 import tomlkit.exceptions
 
+import pyfltr.config.overrides
 import pyfltr.config.presets
 import pyfltr.tools
 import pyfltr.warnings_
@@ -274,13 +275,31 @@ def load_config(
         raw = raw.get("pyfltr", {}) if isinstance(raw, dict) else {}
         project_data = unwrap_tomlkit(raw) if isinstance(raw, dict) else {}
 
+    # `overrides`と`env-file`の相対パスの基準は`pyproject.toml`のディレクトリに限るため、グローバル設定では無視する。
+    for key in (pyfltr.config.overrides.OVERRIDES_KEY, pyfltr.config.overrides.ENV_FILE_KEY):
+        if key in global_data or key.replace("-", "_") in global_data:
+            global_data = {k: v for k, v in global_data.items() if k.replace("_", "-") != key}
+            pyfltr.warnings_.emit_warning(
+                source="config",
+                message=f"グローバル設定の`{key}`は使えないため無視しました（`pyproject.toml`の`[tool.pyfltr]`に書く）",
+                hint=f"グローバル設定ファイル（{global_config_path}）から`{key}`を削除してください。",
+            )
+
     # global / projectをマージ。各キーの由来も記録する。
+    # `overrides`はマージより前にproject側へ適用し、以降は通常の設定値と同じ経路で検証する。
+    pending_override_warnings: list[tuple[str, str]] = []
+    project_data = pyfltr.config.overrides.apply_overrides(
+        project_data, pyproject_path.parent, lambda key, message: pending_override_warnings.append((key, message))
+    )
     tool_pyfltr, key_sources = merge_global_and_project(global_data, project_data)
     effective_suppressed_entries = frozenset(
         entry for entry in suppressed_warning_entries if key_sources.get(entry[0]) == {"global"}
     )
     warned_entries: set[ConfigWarningEntry] = set()
     emit_config_warning = make_config_warning_emitter(effective_suppressed_entries, warned_entries)
+    # 同じ変数を参照する複数の要素から同じ警告が生じても1件にまとめる。
+    for key, message in dict.fromkeys(pending_override_warnings):
+        emit_config_warning(key, message=message)
 
     # archive/cache系がproject側に書かれていた場合の警告。
     # global側にも対象のキーがある場合のみ警告対象（global側に無ければproject値が

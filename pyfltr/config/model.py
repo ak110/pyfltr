@@ -79,6 +79,7 @@ glob内チルダの意図しない展開を防ぐため対象外とする。
 
 DEFAULT_CONFIG: dict[str, typing.Any] = {
     "preset": "",
+    "env-file": "",
     "python": False,
     "javascript": False,
     "rust": False,
