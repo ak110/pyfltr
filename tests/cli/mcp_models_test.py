@@ -13,6 +13,8 @@ import typing
 import pydantic
 import pytest
 
+import pyfltr.cli.mcp_grep_tools
+import pyfltr.cli.mcp_runs_tools
 import pyfltr.cli.mcp_server
 import pyfltr.config.config
 import pyfltr.grep_.jsonl_records
@@ -186,10 +188,12 @@ _FIELD_PURPOSES: dict[str, str] = {
 # 中身を応答モデルで列挙しない辞書型の項目と、キーを限定・検査する手段。
 # 辞書の素通しは新しいキーを対照表へ現さないため、項目ごとにキーの出所と限定方法を記録する。
 _DICT_FIELD_POLICIES: dict[str, str] = {
-    "RunOverviewModel.meta": "mcp_server.SHOW_RUN_META_KEYS で返すキーを限定する",
+    "RunOverviewModel.meta": "mcp_runs_tools.SHOW_RUN_META_KEYS で返すキーを限定する",
     "CommandInfoModel.info": "_COMMAND_INFO_KEY_PURPOSES と照合する（test_command_info_keys_have_recorded_purposes）",
-    "ReplaceHistoryEntryModel.command": "mcp_server.REPLACE_HISTORY_COMMAND_KEYS で返すキーを限定する",
-    "GrepFileResultModel.matches": "mcp_server.GREP_FILE_MATCH_KEYS（GrepMatchModelの項目からfile除く）で返すキーを限定する",
+    "ReplaceHistoryEntryModel.command": "mcp_grep_tools.REPLACE_HISTORY_COMMAND_KEYS で返すキーを限定する",
+    "GrepFileResultModel.matches": (
+        "mcp_grep_tools.GREP_FILE_MATCH_KEYS（GrepMatchModelの項目からfile除く）で返すキーを限定する"
+    ),
     "CommandDiagnosticsModel.hint_urls": "キーはルールID、値はURL。ツールの診断から生成し追加のキーを持たない",
     "CommandDiagnosticsModel.hints": "キーはルールID、値は修正ヒント。ツールの診断から生成し追加のキーを持たない",
     "RunResult.retry_commands": "キーはコマンド名、値は再実行のシェルコマンド",
@@ -314,7 +318,7 @@ async def test_command_info_keys_have_recorded_purposes() -> None:
 
 def test_show_run_meta_keys_exclude_internal_values() -> None:
     """`show_run`の`meta`へ返す保存項目に、重複・保存形式の印・実行環境の内部値を含めない。"""
-    keys = set(pyfltr.cli.mcp_server.SHOW_RUN_META_KEYS)
+    keys = set(pyfltr.cli.mcp_runs_tools.SHOW_RUN_META_KEYS)
     assert not keys & {"run_id", "slot_waits", "diagnostic_paths", "python", "executable", "platform"}
 
 
@@ -329,7 +333,7 @@ async def test_grep_grouped_matches_drop_unrecorded_keys(tmp_path: pathlib.Path,
         return {**original(*args, **kwargs), "internal_debug": 1}
 
     monkeypatch.setattr(pyfltr.grep_.jsonl_records, "match_payload", _with_internal_key)
-    result = await pyfltr.cli.mcp_server.tool_grep(paths=[str(tmp_path)], pattern="foo", no_gitignore=True, no_exclude=True)
+    result = await pyfltr.cli.mcp_grep_tools.tool_grep(paths=[str(tmp_path)], pattern="foo", no_gitignore=True, no_exclude=True)
     assert result.output_mode == "mixed"
     grouped = [match for file_result in result.file_results for match in file_result.matches]
     assert grouped

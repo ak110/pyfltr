@@ -4,8 +4,8 @@ description: >
   pyfltrの出力形式とlogger・LLM出力スキーマの方針。
   JSONL公開ヘルパー・logger役割分担・command.hints/summary.guidance・heartbeat段階出力・
   summaryレコードフィールド順序・effective_runner/runner_sourceなど出力スキーマの設計を集約する。
-  pyfltr/output/配下・pyfltr/cli/output_format.py・pyfltr/cli/pipeline.py・pyfltr/cli/parser.py・
-  pyfltr/cli/mcp_models.py・pyfltr/cli/mcp_server.py・tests/cli/mcp_models_test.py・pyfltr/command/completion.py・
+  pyfltr/output/配下・pyfltr/cli/output_format.py・pyfltr/cli/pipeline.py・pyfltr/cli/pipeline_targets.py・pyfltr/cli/run_storage.py・pyfltr/cli/parser.py・
+  pyfltr/cli/mcp_models.py・pyfltr/cli/mcp_server.py・pyfltr/cli/mcp_run_tools.py・pyfltr/cli/mcp_runs_tools.py・pyfltr/cli/mcp_grep_tools.py・tests/cli/mcp_models_test.py・pyfltr/command/completion.py・
   pyfltr/command/core_.py・pyfltr/command/dispatcher.py・
   tests/command/completion_test.py・tests/output/jsonl_test.py・tests/integration/output_format_test.py・tests/cli/pipeline_test.py・tests/cli/main_test.py・
   tests/cli/main_test.py・tests/output/sarif_test.py・tests/output/code_quality_test.py・tests/integration/llmstxt_test.py・
@@ -39,7 +39,7 @@ pyfltrの出力は人間とコーディングエージェントの双方が読�
 
 ## JSONL公開ヘルパー方針
 
-JSONLの出力処理は`pyfltr/output/jsonl.py`の公開ヘルパー（`emit_record` / `emit_records`）経由に統一する。
+JSONLの出力処理は`pyfltr/output/jsonl_emit.py`の公開ヘルパー（`emit_record` / `emit_records`）経由に統一する。
 モジュール外から`_write_lock`・`_emit_structured`を直接参照しない（`pylint: disable=protected-access`の常態化を避けるため）。
 
 ## LLM出力スキーマ
@@ -59,11 +59,11 @@ JSONLの出力処理は`pyfltr/output/jsonl.py`の公開ヘルパー（`emit_rec
 - MCP応答へ項目を加えるときは、受信するエージェントがその値で行う判断・操作を確かめ、
   `tests/cli/mcp_models_test.py`の`_FIELD_PURPOSES`へ用途を書く。
   内部の保存値（保存形式の印・取り消し用の判定ハッシュなど）、人間向けの表示値、実行環境の内部値、他の項目との重複は加えない。
-  保存済みの辞書を応答へ渡す場合は、`pyfltr/cli/mcp_server.py`の`SHOW_RUN_META_KEYS`のように返すキーを限定する。
+  保存済みの辞書を応答へ渡す場合は、`pyfltr/cli/mcp_runs_tools.py`の`SHOW_RUN_META_KEYS`のように返すキーを限定する。
   取得できることや内部で保持していることは、エージェントへ露出する理由にならない
 - JSONL `command.status` 語彙のSSOTは`pyfltr/command/core_.py`の`CommandResult.status`プロパティのdocstring。
   新規status値追加時は対象のdocstringと判定分岐を併せて更新する
-- `summary`レコードのフィールド順序仕様のSSOTは`pyfltr/output/jsonl.py`の`_build_summary_record`のdocstring
+- `summary`レコードのフィールド順序仕様のSSOTは`pyfltr/output/jsonl_records.py`の`build_summary_record`のdocstring
 - 対象到達と実行完了の判定（`completion`ほか）のSSOTは`pyfltr/command/completion.py`の`evaluate_completion`とする。
   MCP `run`とCLI JSONLの`summary`は`run_pipeline`が導出した同じ値を返し、出力側で判定条件を書かない。
   エージェントが主に使う呼び出し手段はMCP `run`とし、CLI JSONLはシェルしか使えない消費側向けの代替手段とする。
@@ -77,11 +77,11 @@ JSONLの出力処理は`pyfltr/output/jsonl.py`の公開ヘルパー（`emit_rec
   通常時の解決状況の確認は`pyfltr command-info`サブコマンドの責務とする
 - `--quiet`は成功時commandレコード省略・headerレコード縮約・
   precommitガイダンス（stderr）抑止をまとめて制御する。抑止・縮約条件のSSOTは
-  `pyfltr/output/jsonl.py`の`build_command_lines`と`_build_header_record`のdocstring
+  `pyfltr/output/jsonl.py`の`build_command_lines`と`pyfltr/output/jsonl_records.py`の`build_header_record`のdocstring
   - 既定値の解決条件は`pyfltr/cli/parser.py`の`apply_subcommand_defaults`のdocstringをSSOTとする。
     `run-for-agent`は常に既定有効、他の実行系はエージェント検出時に既定有効
 - 段階出力イベント（`status:"running"`）の発火条件・発火時挙動・最終レコード後続保証の設計は
-  `pyfltr/cli/pipeline.py`の`HeartbeatMonitor`のdocstringを参照する。
+  `pyfltr/output/heartbeat.py`の`HeartbeatMonitor`のdocstringを参照する。
   buffering型formatter（SARIF・Code Quality）でheartbeat由来のrunningイベントを混入させない理由は
   `run_pipeline`のdocstringに集約する
 - 全サブコマンドの出力形式オプションは`--output-format`に統一する。

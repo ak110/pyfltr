@@ -6,7 +6,7 @@ import subprocess
 import pytest
 
 import pyfltr.cli.main
-import pyfltr.cli.mcp_server
+import pyfltr.cli.mcp_run_tools
 from tests.conftest import make_error_location as _make_error
 from tests.conftest import seed_archive_run as _seed_run
 
@@ -62,7 +62,9 @@ async def test_mcp_run_adds_always_targets_and_reports_failure(tmp_path: pathlib
     _write_project(tmp_path, extra=ALWAYS_CONFIG + "respect-gitignore = false\n")
     mock_run = mocker.patch("pyfltr.command.process.run_subprocess", side_effect=_fail_invariant)
 
-    result = await pyfltr.cli.mcp_server.tool_run(paths=["tests/selected_test.py"], commands=["pytest"], work_dir=str(tmp_path))
+    result = await pyfltr.cli.mcp_run_tools.tool_run(
+        paths=["tests/selected_test.py"], commands=["pytest"], work_dir=str(tmp_path)
+    )
 
     assert result.exit_code == 1
     assert "pytest" in result.failed

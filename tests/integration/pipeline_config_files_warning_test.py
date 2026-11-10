@@ -14,7 +14,7 @@ import typing
 import pytest
 
 import pyfltr.cli.main
-import pyfltr.cli.mcp_server
+import pyfltr.cli.mcp_run_tools
 import pyfltr.warnings_
 
 # 設定上は有効だが`--commands`で選択しないprek・textlintと、選択するpytestを持つ設定。
@@ -64,7 +64,7 @@ def _cli_missing(tmp_path: pathlib.Path, *argv: str) -> list[str]:
 
 
 async def _mcp_missing(tmp_path: pathlib.Path, **kwargs: typing.Any) -> list[str]:
-    result = await pyfltr.cli.mcp_server.tool_run(paths=["."], work_dir=str(tmp_path), no_cache=True, **kwargs)
+    result = await pyfltr.cli.mcp_run_tools.tool_run(paths=["."], work_dir=str(tmp_path), no_cache=True, **kwargs)
     return _missing_config_commands(w.message for w in result.warnings if w.source == "config")
 
 

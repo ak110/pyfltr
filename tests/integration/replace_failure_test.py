@@ -7,7 +7,7 @@ import mcp.server.mcpserver.exceptions
 import pytest
 
 import pyfltr.cli.main
-import pyfltr.cli.mcp_server
+import pyfltr.cli.mcp_grep_tools
 import pyfltr.grep_.history
 
 
@@ -28,7 +28,7 @@ def _replace(mode: str, files: list[pathlib.Path], capsys: pytest.CaptureFixture
         return rc, summary.get("replace_id"), captured.err
     try:
         result = asyncio.run(
-            pyfltr.cli.mcp_server.tool_replace(
+            pyfltr.cli.mcp_grep_tools.tool_replace(
                 "foo", "bar", list(map(str, files)), dry_run=False, no_exclude=True, no_gitignore=True
             )
         )
@@ -42,7 +42,7 @@ def _undo(mode: str, replace_id: str, capsys: pytest.CaptureFixture[str], *, for
         rc = pyfltr.cli.main.run(["replace", "--undo", replace_id, "--output-format=jsonl", *(["--force"] if force else [])])
         return rc, capsys.readouterr().err
     try:
-        result = asyncio.run(pyfltr.cli.mcp_server.tool_replace_undo(replace_id, force=force))
+        result = asyncio.run(pyfltr.cli.mcp_grep_tools.tool_replace_undo(replace_id, force=force))
     except mcp.server.mcpserver.exceptions.ToolError as exc:
         return 1, str(exc)
     return result.exit_code, " ".join(result.warnings)

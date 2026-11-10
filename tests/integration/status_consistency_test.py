@@ -8,11 +8,10 @@ import pytest
 
 import pyfltr.cli.main
 import pyfltr.cli.mcp_models
-import pyfltr.cli.mcp_server
+import pyfltr.cli.mcp_run_tools
 import pyfltr.cli.pipeline
 import pyfltr.command.core_
 import pyfltr.config.config
-import pyfltr.output.jsonl
 import pyfltr.output.sarif
 import pyfltr.state.archive
 import pyfltr.state.retry
@@ -236,7 +235,7 @@ async def test_plain_linter_failure_listed_in_mcp_failed(
     work_dir, target = plain_linter_project
     monkeypatch.setenv("PYFLTR_CACHE_DIR", str(work_dir / "cache"))
 
-    result = await pyfltr.cli.mcp_server.tool_run(
+    result = await pyfltr.cli.mcp_run_tools.tool_run(
         paths=[str(target)],
         mode="ci",
         commands=["plain-linter"],

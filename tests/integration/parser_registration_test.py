@@ -8,7 +8,7 @@ import sys
 
 import pytest
 
-import pyfltr.cli.mcp_server
+import pyfltr.cli.mcp_runs_tools
 import pyfltr.command.slow_tests
 import pyfltr.parsing.entry
 import pyfltr.parsing.pytest
@@ -102,7 +102,7 @@ def test_native_output_reaches_jsonl_and_mcp(command: str, tmp_path: pathlib.Pat
     assert diagnostic["file"] == filename
     assert diagnostic["messages"][0]["line"] == expected_line
     run_id = next(item["run_id"] for item in records if item.get("kind") == "header")
-    result = asyncio.run(pyfltr.cli.mcp_server.tool_show_run_diagnostics(run_id, [command]))
+    result = asyncio.run(pyfltr.cli.mcp_runs_tools.tool_show_run_diagnostics(run_id, [command]))
     assert result[0].diagnostics[0].file == filename
     assert result[0].diagnostics[0].messages[0].line == expected_line
     if command == "gitleaks":

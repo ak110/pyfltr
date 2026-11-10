@@ -10,11 +10,9 @@ import typing
 import pytest
 
 import pyfltr.cli.main
-import pyfltr.cli.mcp_server
+import pyfltr.cli.mcp_run_tools
 import pyfltr.command.markdownlint_env
 import pyfltr.command.process
-import pyfltr.command.runner
-import pyfltr.config.config
 
 
 @pytest.fixture
@@ -269,7 +267,7 @@ async def test_acquisition_failure_reaches_cli_and_mcp_and_retry_succeeds(
             assert command["status"] == expected
             assert rc == (1 if not acquired else 0)
         else:
-            result = await pyfltr.cli.mcp_server.tool_run(
+            result = await pyfltr.cli.mcp_run_tools.tool_run(
                 paths=["sample.md"], commands=["markdownlint"], work_dir=str(tmp_path), no_fix=True, no_cache=True
             )
             assert result.commands[0].status == expected

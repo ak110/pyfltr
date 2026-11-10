@@ -97,6 +97,9 @@ retry系ヘルパー・`--only-failed`フィルター・パス正規化・TUI/CL
 各ファイルの肥大化を抑える。
 `run_pipeline()`本体は`cli/pipeline.py`に集約し、argparse構築は`cli/parser.py`に、
 エントリポイントとdispatchは`cli/main.py`に置く。
+対象の準備とpytest固有の規則は`cli/pipeline_targets.py`、保存の初期化とフックは`cli/run_storage.py`が担う。
+MCPツール本体は`cli/mcp_run_tools.py`・`cli/mcp_runs_tools.py`・`cli/mcp_grep_tools.py`へ領域別に置き、
+`cli/mcp_server.py`は登録と起動、設定と起動方式の参照ツールを持つ。
 
 具体的な分割先と内容は[モジュール構成](#modules)を参照。
 
@@ -613,7 +616,7 @@ JSONLはLLMエージェントが入力として読むケースが多いため、
   ツールを導入するか設定を変える旨を先頭に加える。
   `applied_fixes`非空時はformatter/fix-stageの書き換えだけでは再実行が不要である旨の注記を末尾に追加する。
   `warning`のみで`failed`/`resolution_failed`が0件のケースでは付与しない（警告はパイプライン失敗を伴わないため）。
-  MCPの`run`ツールも同じ生成関数（`pyfltr.output.jsonl.build_summary_guidance`）からMCPの引数・ツール名で`RunResult.guidance`を返す
+  MCPの`run`ツールも同じ生成関数（`pyfltr.output.guidance.build_summary_guidance`）からMCPの引数・ツール名で`RunResult.guidance`を返す
 - `warning`レコードの`hint`: 個別の警告の対処。警告の本文（`msg`）とは別のキーで持つ。
   テキスト表示のwarnings節・stderr・MCPの応答では`pyfltr.warnings_.format_warning_text`が本文に続けて
   対処を連結した文字列を用い、どの出力先でも対処が欠けないようにする
@@ -625,7 +628,7 @@ JSONLはLLMエージェントが入力として読むケースが多いため、
 textlintコマンドの場合のみ、`hints`に`messages[].col`参照記法のキーで`col`/`end_col`の累積位置仕様を追加する。
 
 集約は先勝ちで行う。複数の`diagnostic`レコードで同一ruleに異なるhintが現れた場合は最初の値を採用し、
-warningログを出力する。
+debugログを出力する。
 
 `hint_urls`はURLを生成できたruleのみ含み、空であればフィールドごと省略する。
 `hints`もヒントが1件も無ければフィールドごと省略する。
@@ -682,7 +685,8 @@ JSONL側のsmart truncationで長大な出力が切り詰められる場合が�
 
 heartbeatは長時間実行中の生存確認をJSONLストリームへ追加する。
 発火条件とレコード構築の仕様は各実装モジュールのdocstringに集約する。
-関連する実装は`pyfltr/output/jsonl.py`・`pyfltr/command/core_.py`・`pyfltr/cli/pipeline.py`に配置する。
+監視は`pyfltr/output/heartbeat.py`、書き込みと最終出力時刻は`pyfltr/output/jsonl_emit.py`が担う。
+レコード生成は`pyfltr/output/jsonl_records.py`、開始と停止は`pyfltr/cli/pipeline.py`に置く。
 利用者向けの条件とレコードの読み方は[CLIコマンド](../guide/usage.md#jsonl)を参照。
 
 ### smart truncationとアーカイブ復元
@@ -788,7 +792,7 @@ pyfltrは3系統のloggerを使い分ける。
 
 JSONL出力へ`warning`レコードとして配送した警告はroot loggerからstderrへ重複出力しない。
 構造化出力への書き込みが完了しなかった警告は保留スコープの終了時にstderrへ出力し、警告自体を失わない。
-MCPの`run`が内部一時ファイルへ生成するJSONLは利用者への配送ではないため、配送済みとして扱わない。
+MCPの`run`は構造化出力を無効化し、内部一時ファイルを生成しない。
 MCPの`run`は代わりに、応答の`warnings`へ含めた警告を配送済みとして扱う。
 配送保留スコープを応答の組み立てまで広げ、例外で応答に至らなかった警告だけをstderrへ出力する。
 stderrへ出力する警告は、`hint`を持つ場合に本文へ対処を連結した形で出力する。
@@ -796,7 +800,7 @@ stderrへ出力する警告は、`hint`を持つ場合に本文へ対処を連�
 stdout占有が起きるのは`jsonl` / `sarif` / `code-quality`かつ`--output-file`未指定時のみ。
 MCPの`run`は要求固有のworkerプロセス内で`run_pipeline`を呼ぶ。
 `force_text_on_stderr=True`を渡してtextloggerをstderrに強制する。
-構造化出力は一時ファイル経由（FileHandler）となりstdoutを汚染しない。
+`jsonl_warnings_reach_consumer=False`で構造化出力を無効化し、stdoutを汚染しない。
 
 ## 実行アーカイブとファイルhashキャッシュ {#archive-and-cache}
 
@@ -848,9 +852,8 @@ JSONL stdoutストリーミングとは独立した仕組みにすることで�
 オプトイン化（既定無効）は却下した。
 エージェント連携時のUXを損なうため、既定有効＋自動削除で肥大化を抑える設計とした。
 
-アーカイブ用のシリアライズはLLM向け出力（`output/jsonl.py`）と独立した最小構造とし、
-`ErrorLocation`の全フィールドを保存する。
-`rule_url`等のフィールドが追加された際の追従コストを抑える狙い。
+アーカイブの診断は`output/jsonl_records.py`の`aggregate_diagnostics`で集約して保存する。
+ヒントとURLも同じ処理で辞書へ集約し、JSONL出力と診断の表現を共有する。
 
 ### ファイルhashキャッシュ
 
@@ -1016,7 +1019,7 @@ stdioトランスポートはstdin/stdoutをJSON-RPCフレームに専有する�
 
 1. 起動直後にroot loggerの出力先をstderrへ強制する
 2. `run`ツール内では`run_pipeline`に`force_text_on_stderr=True`を渡し、
-   人間向けtext整形loggerをstderrへ向ける。構造化出力は一時ファイルへFileHandler経由で出力する
+   人間向けtext整形loggerをstderrへ向ける。`jsonl_warnings_reach_consumer=False`で構造化出力を無効化する
 3. TUIの起動（`subprocess.run("clear")`やTextual UI）はargs構築時に遮断する
 
 logger初期化は全formatで共通の処理に集約されているため、`force_text_on_stderr`の1フラグだけで

@@ -56,7 +56,7 @@ description: >
   設定キー体系・既定値・runner方針
 - `pyfltr/config/selection.py`の`is_command_enabled_anywhere`:
   実行対象コマンドの有効（ON/OFF）判定。モノレポでは起点と各サブプロジェクトの和集合で判定する。
-  `cli/pipeline.py`の実行対象フィルタ・`command/executor.py`の`split_commands_for_execution`・
+  `cli/pipeline_targets.py`の実行対象フィルタ・`command/executor.py`の`split_commands_for_execution`・
   `config/selection.py`の`filter_fix_commands`・`output/ui.py`のタブ生成とサマリー行追加で共用する。
   これらの箇所で`config.values.get(cmd)`・`config[cmd]`を直接参照せず本関数を経由する
 - `pyfltr/command/runner.py`の`_BIN_TOOL_SPEC` / `build_commandline`:

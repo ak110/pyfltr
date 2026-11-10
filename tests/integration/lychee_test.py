@@ -8,7 +8,7 @@ import typing
 import pytest
 
 import pyfltr.cli.main
-import pyfltr.cli.mcp_server
+import pyfltr.cli.mcp_run_tools
 import pyfltr.command.lychee
 import pyfltr.command.process
 import pyfltr.state.archive
@@ -175,7 +175,7 @@ async def test_lychee_mcp_classification(
 ) -> None:
     """MCPの公開runも共通実行経路の成否と診断を返す。"""
     mocker.patch("pyfltr.command.process.run_subprocess", return_value=subprocess.CompletedProcess([], 2, _report(code)))
-    result = await pyfltr.cli.mcp_server.tool_run(
+    result = await pyfltr.cli.mcp_run_tools.tool_run(
         paths=[str(lychee_project)], commands=["lychee"], mode="ci", work_dir=str(lychee_project), no_cache=True
     )
     assert result.exit_code == expected_exit

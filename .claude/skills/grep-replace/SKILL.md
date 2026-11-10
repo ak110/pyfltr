@@ -4,7 +4,7 @@ description: >
   pyfltrのgrep / replace機能の方針。
   正規表現置換・dry-run既定値・undo世代管理・MCP grep/replaceツール・除外指定・サブパッケージ命名の
   設計判断を集約する。
-  pyfltr/grep_/配下・pyfltr/cli/grep_subcmd.py・replace_subcmd.py・mcp_server.py・
+  pyfltr/grep_/配下・pyfltr/cli/grep_subcmd.py・replace_subcmd.py・mcp_server.py・mcp_grep_tools.py・
   pyfltr/state/archive.py・tests/grep_/*_test.py・tests/cli/replace_subcmd_test.py・
   tests/cli/mcp_server_test.py・docs/guide/grep-replace.md・docs/guide/usage.md を編集する際に使用する。
 ---

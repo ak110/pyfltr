@@ -27,7 +27,7 @@ import pyfltr.grep_.adaptive
 import pyfltr.grep_.preview
 import pyfltr.grep_.scanner
 import pyfltr.grep_.types
-import pyfltr.output.jsonl
+import pyfltr.output.jsonl_records
 import pyfltr.parsing.common
 import pyfltr.tool_types
 import pyfltr.tools
@@ -405,7 +405,7 @@ def test_documented_quiet_header_matches_output() -> None:
     source = _guide("usage.md")
     section = _between(source, "- headerレコードを", "の3つのフィールドのみ")
     # quiet経路は環境のツール解決を起動せず、公開されたheader出力を検査できる。
-    record = pyfltr.output.jsonl._build_header_record(  # pylint: disable=protected-access
+    record = pyfltr.output.jsonl_records.build_header_record(  # pylint: disable=protected-access
         [], 0, run_id="example", quiet=True
     )
     assert _codes(section) == set(record) - {"kind"}

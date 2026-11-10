@@ -11,7 +11,7 @@ import sys
 
 import pytest
 
-import pyfltr.cli.mcp_server
+import pyfltr.cli.mcp_runs_tools
 import scripts.check_distribution
 
 
@@ -379,6 +379,6 @@ def test_yamllint_special_path_reaches_jsonl_and_mcp(tmp_path: pathlib.Path, fil
     assert diagnostics[0]["file"] == filename
     assert [(m["line"], m["col"], m["rule"], m["severity"]) for m in diagnostics[0]["messages"]] == _YAMLLINT_EXPECTED_MESSAGES
     run_id = next(item["run_id"] for item in records if item.get("kind") == "header")
-    stored = asyncio.run(pyfltr.cli.mcp_server.tool_show_run_diagnostics(run_id, ["yamllint"]))
+    stored = asyncio.run(pyfltr.cli.mcp_runs_tools.tool_show_run_diagnostics(run_id, ["yamllint"]))
     assert len(stored) == 1
     assert stored[0].diagnostics[0].file == filename

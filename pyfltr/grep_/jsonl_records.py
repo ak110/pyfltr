@@ -1,17 +1,17 @@
 """grep / replaceサブコマンドのJSONLレコード生成。
 
-`pyfltr.output.jsonl.emit_record`の公開ヘルパーを経由して書き込むことで、
+`pyfltr.output.jsonl_emit.emit_record`の公開ヘルパーを経由して書き込むことで、
 既存のJSONL出力経路（heartbeat連動・最終出力時刻記録）と挙動を揃える。
-新規`kind`を追加する場合も本モジュールに追加し、`emit_record`経由で出力する。
+新規`kind`を追加する場合も本モジュールに追加し、`pyfltr.output.jsonl_emit.emit_record`経由で出力する。
 """
 
 from __future__ import annotations
 
-import json
 import pathlib
 import typing
 
-import pyfltr.output.jsonl
+import pyfltr.output.jsonl_emit
+import pyfltr.output.jsonl_records
 import pyfltr.paths
 from pyfltr.grep_.preview import MatchPreview
 from pyfltr.grep_.types import MatchRecord, ReplaceRecord
@@ -20,17 +20,11 @@ from pyfltr.grep_.types import MatchRecord, ReplaceRecord
 def emit_warning(entry: dict[str, typing.Any]) -> None:
     """`pyfltr.warnings_`蓄積由来の警告dictを`kind:"warning"`レコードとして出力する。
 
-    フィールド順は`pyfltr/output/jsonl.py`の`_build_warning_record`と揃え、
+    フィールド順は`pyfltr/output/jsonl_records.py`の`build_warning_record`と揃え、
     pipeline既存のwarning出力と挙動を一致させる。
     `entry`は`source`・`message`・`hint`を持つ（`hint`は`emit_warning`が必須とする次の操作）。
     """
-    record: dict[str, typing.Any] = {
-        "kind": "warning",
-        "source": entry["source"],
-        "msg": entry["message"],
-    }
-    record["hint"] = entry["hint"]
-    _emit(record)
+    _emit(pyfltr.output.jsonl_records.build_warning_record(entry))
 
 
 def emit_grep_header(
@@ -62,7 +56,7 @@ def emit_grep_header(
 
 def emit_records(records: typing.Iterable[dict[str, typing.Any]]) -> None:
     """grepの選択済み結果レコードを1回のロック内で出力する。"""
-    pyfltr.output.jsonl.emit_records(_serialize(record) for record in records)
+    pyfltr.output.jsonl_emit.emit_records(pyfltr.output.jsonl_records.dump_record(record) for record in records)
 
 
 def emit_match(record: MatchRecord, preview: MatchPreview) -> None:
@@ -116,9 +110,9 @@ def emit_grep_summary(
     `guidance`は英語のヒント文字列リスト（replace起動コマンド案内など）を指定する。
     指摘・該当事項がある場合のみ呼び出し側で組み立てる方針とし、空リストは省略する。
     `fully_excluded_files` / `missing_targets`は直接指定がexclude / .gitignore / 不在で
-    対象外になったファイル一覧で、キー名・キー順はrun系の`_build_summary_record`に揃える。
+    対象外になったファイル一覧で、キー名・キー順はrun系の`pyfltr.output.jsonl_records.build_summary_record`に揃える。
     `warning_count`は直前に出力したwarningレコードの件数で、1件以上のとき`warnings`キーへ
-    出力する。キー名・キー順はrun系の`_build_summary_record`に揃える。
+    出力する。キー名・キー順はrun系の`pyfltr.output.jsonl_records.build_summary_record`に揃える。
     """
     record: dict[str, typing.Any] = {
         "kind": "summary",
@@ -229,9 +223,9 @@ def emit_replace_summary(
     """replace完了時のsummaryレコードを1件出力する。
 
     `fully_excluded_files` / `missing_targets`は直接指定がexclude / .gitignore / 不在で
-    対象外になったファイル一覧で、キー名・キー順はrun系の`_build_summary_record`に揃える。
+    対象外になったファイル一覧で、キー名・キー順はrun系の`pyfltr.output.jsonl_records.build_summary_record`に揃える。
     `warning_count`は直前に出力したwarningレコードの件数で、1件以上のとき`warnings`キーへ
-    出力する。キー名・キー順はrun系の`_build_summary_record`に揃える。
+    出力する。キー名・キー順はrun系の`pyfltr.output.jsonl_records.build_summary_record`に揃える。
     """
     record: dict[str, typing.Any] = {
         "kind": "summary",
@@ -317,13 +311,8 @@ def emit_replace_undo_summary(
 def _emit(record: dict[str, typing.Any]) -> None:
     """構造化出力を1行JSONとして書き込む。
 
-    `pyfltr.output.jsonl.emit_record`の公開ヘルパー経由で書き込み、
-    SSOTのwrite経路（`_write_lock`保護・最終出力時刻更新）を共有する。
+    `pyfltr.output.jsonl_emit.emit_record`の公開ヘルパー経由で書き込み、
+    SSOTのwrite経路（`pyfltr.output.jsonl_emit._write_lock`保護・最終出力時刻更新）を共有する。
     replaceは1レコード単位、grepは適応形式の確定後に複数レコードをまとめて発行する。
     """
-    pyfltr.output.jsonl.emit_record(_serialize(record))
-
-
-def _serialize(record: dict[str, typing.Any]) -> str:
-    """JSONLレコードを公開形式で直列化する。"""
-    return json.dumps(record, ensure_ascii=False, separators=(",", ":"))
+    pyfltr.output.jsonl_emit.emit_record(pyfltr.output.jsonl_records.dump_record(record))

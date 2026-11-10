@@ -5,7 +5,7 @@ import typing
 import pytest
 
 import pyfltr.cli.main
-import pyfltr.cli.mcp_server
+import pyfltr.cli.mcp_grep_tools
 import pyfltr.grep_.adaptive
 
 
@@ -231,7 +231,7 @@ async def test_mcp_grep_collects_more_than_previous_default_limit(
     target.write_text("foo\n" * 1001, encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
-    result = await pyfltr.cli.mcp_server.tool_grep(
+    result = await pyfltr.cli.mcp_grep_tools.tool_grep(
         paths=[str(target)],
         pattern="foo",
         no_gitignore=True,

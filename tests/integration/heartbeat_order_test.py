@@ -12,7 +12,8 @@ import pyfltr.cli.pipeline
 import pyfltr.command.core_
 import pyfltr.command.dispatcher
 import pyfltr.config.config
-import pyfltr.output.jsonl
+import pyfltr.output.heartbeat
+import pyfltr.output.jsonl_emit
 import pyfltr.output.logging_
 from tests import conftest as testconf
 
@@ -20,7 +21,7 @@ from tests import conftest as testconf
 def test_final_result_between_snapshot_and_emission(monkeypatch: pytest.MonkeyPatch) -> None:
     """snapshotが古くても最終JSONLの後にrunningを発行しない。"""
     output = io.StringIO()
-    monitor = pyfltr.cli.pipeline.HeartbeatMonitor(
+    monitor = pyfltr.output.heartbeat.HeartbeatMonitor(
         threshold=0,
         get_last_output_time=lambda: 0,
         emit_text=lambda _: None,
@@ -51,7 +52,7 @@ def test_final_result_between_snapshot_and_emission(monkeypatch: pytest.MonkeyPa
     config.values["pytest"] = True
 
     def emit(_result: pyfltr.command.core_.CommandResult) -> None:
-        pyfltr.output.jsonl.emit_record('{"kind":"command","command":"pytest","status":"succeeded"}')
+        pyfltr.output.jsonl_emit.emit_record('{"kind":"command","command":"pytest","status":"succeeded"}')
 
     def snapshot() -> list[tuple[str, float]]:
         result = original_snapshot()
@@ -88,7 +89,7 @@ def test_stop_waits_for_emission_to_finish() -> None:
         emitting.set()
         assert release.wait(10)
 
-    monitor = pyfltr.cli.pipeline.HeartbeatMonitor(
+    monitor = pyfltr.output.heartbeat.HeartbeatMonitor(
         threshold=0,
         tick_interval=0.001,
         get_last_output_time=lambda: 0,

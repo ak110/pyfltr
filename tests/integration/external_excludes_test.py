@@ -8,7 +8,7 @@ import pytest
 import tomlkit
 
 import pyfltr.cli.main
-import pyfltr.cli.mcp_server
+import pyfltr.cli.mcp_grep_tools
 
 
 @pytest.mark.parametrize("exclude_key", ["exclude", "extend-exclude", "probe-exclude"])
@@ -81,7 +81,7 @@ async def test_mcp_grep_external_exclude_boundary(tmp_path: pathlib.Path, as_dir
     hidden.write_text("needle\n", encoding="utf-8")
     (selected / "sample.min.js").write_text("needle\n", encoding="utf-8")
 
-    result = await pyfltr.cli.mcp_server.tool_grep(paths=[str(selected if as_directory else kept)], pattern="needle")
+    result = await pyfltr.cli.mcp_grep_tools.tool_grep(paths=[str(selected if as_directory else kept)], pattern="needle")
 
     assert result.exit_code == 0
     assert result.files_scanned == 1
@@ -99,7 +99,7 @@ async def test_mcp_grep_excludes_external_argument_name(tmp_path: pathlib.Path, 
     else:
         target.write_text("needle\n", encoding="utf-8")
 
-    result = await pyfltr.cli.mcp_server.tool_grep(paths=[str(target)], pattern="needle")
+    result = await pyfltr.cli.mcp_grep_tools.tool_grep(paths=[str(target)], pattern="needle")
 
     assert result.exit_code == 1
     assert result.files_scanned == 0

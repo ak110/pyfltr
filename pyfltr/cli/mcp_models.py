@@ -556,3 +556,11 @@ class ConfigResultModel(pydantic.BaseModel):
         default_factory=list,
         description="操作中に発行された警告メッセージ。対処がある警告は本文に続けて対処を含む。",
     )
+
+
+NoExcludeArg = typing.Annotated[
+    bool, pydantic.Field(description="Trueでpyfltr設定の`exclude`・`extend-exclude`による除外を無効にする。")
+]
+
+
+NoGitignoreArg = typing.Annotated[bool, pydantic.Field(description="Trueで`.gitignore`による除外を無効にする。")]

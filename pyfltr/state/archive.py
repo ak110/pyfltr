@@ -51,10 +51,9 @@ import typing
 import ulid
 
 import pyfltr.command.core_
-import pyfltr.config.config
 import pyfltr.config.model
 import pyfltr.file_lock
-import pyfltr.output.jsonl
+import pyfltr.output.jsonl_records
 import pyfltr.parsing.entry
 import pyfltr.paths
 import pyfltr.state.retention
@@ -203,7 +202,7 @@ class ArchiveStore:
         tool_dir.mkdir(parents=True, exist_ok=True)
         (tool_dir / _TOOL_OUTPUT_FILENAME).write_text(result.output, encoding="utf-8")
 
-        aggregated, hint_urls, hints = pyfltr.output.jsonl.aggregate_diagnostics(result.errors)
+        aggregated, hint_urls, hints = pyfltr.output.jsonl_records.aggregate_diagnostics(result.errors)
         with (tool_dir / _TOOL_DIAGNOSTICS_FILENAME).open("w", encoding="utf-8") as f:
             for record in aggregated:
                 f.write(json.dumps(record, ensure_ascii=False))
