@@ -521,12 +521,10 @@ def _linux_holds_lock(pid: int, lock_path: pathlib.Path) -> bool:
             if len(fields) != 9 or fields[:1] != ["lock:"] or fields[2:5] != ["FLOCK", "ADVISORY", "WRITE"]:
                 continue
             major, minor, inode = fields[6].split(":")
-            if (int(fields[5]), int(major, 16), int(minor, 16), int(inode)) == (
-                pid,
-                os.major(stat.st_dev),
-                os.minor(stat.st_dev),
-                stat.st_ino,
-            ):
+            # os.major / os.minorはPOSIX専用でWindows型スタブに未定義。この関数はLinuxからだけ呼ぶ。
+            dev_major = os.major(stat.st_dev)  # type: ignore[attr-defined,unused-ignore]  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore  # pylint: disable=no-member
+            dev_minor = os.minor(stat.st_dev)  # type: ignore[attr-defined,unused-ignore]  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore  # pylint: disable=no-member
+            if (int(fields[5]), int(major, 16), int(minor, 16), int(inode)) == (pid, dev_major, dev_minor, stat.st_ino):
                 return True
     return False
 
