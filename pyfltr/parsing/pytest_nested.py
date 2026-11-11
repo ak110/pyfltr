@@ -113,19 +113,27 @@ def pytest_child_run_ranges(
         if is_pytest_nested_run_marker(following):
             limit = len(lines)
             break
-    # 親が`=`の埋めを伴う最終集計で終わり、出力の最初の空でない行が開始行そのものである場合、
+    # 親が`=`の埋めを伴う最終集計で終わり、出力の最初の開始行より前にpytestの実行結果の行が無い場合、
     # 親は通常表示で動いており、その開始行は親自身のものである。
+    # 開始行より前には、プラグインの読込時の警告など実行結果ではない行が出力され得るため、それらは許容する。
     # 親自身の開始行を積むと、開始行を持たない子（`-q`）の終了集計が親の開始行と対応し、
     # 親の失敗欄を含む区間が子の実行として除外される。親が失敗一覧を持たない構成（`-rN`）では
     # 親の失敗ブロックの保護も働かないため、親自身の開始行を対応付けの候補から外す。
-    # 先頭が開始行でない出力（失敗欄以降の抜粋など）は、最初の開始行が子のものであり得るため対象外とする。
+    # 開始行より前に実行結果の行がある出力（失敗欄以降の抜粋など）は、最初の開始行が子のものであり得るため対象外とする。
     parent_header_index = -1
     if limit < len(lines) and PYTEST_SESSION_END_RE.fullmatch(
         pyfltr.parsing.pytest_common.ANSI_SGR_RE.sub("", lines[limit]).rstrip()
     ):
-        first = next((index for index, line in enumerate(lines) if line.strip()), -1)
-        if first >= 0 and re.fullmatch(
-            r"=+ test session starts =+", pyfltr.parsing.pytest_common.ANSI_SGR_RE.sub("", lines[first]).strip()
+        first = next(
+            (
+                index
+                for index, line in enumerate(lines)
+                if re.fullmatch(r"=+ test session starts =+", pyfltr.parsing.pytest_common.ANSI_SGR_RE.sub("", line).strip())
+            ),
+            -1,
+        )
+        if first >= 0 and not any(
+            _is_pytest_result_line(pyfltr.parsing.pytest_common.ANSI_SGR_RE.sub("", line).rstrip()) for line in lines[:first]
         ):
             # `-qq`の親は自身の開始行も最終集計も出さず、先頭の開始行と末尾の集計がどちらも子のものになり得る。
             # `=`の埋めを伴う開始行と終了集計だけで対応を取り、先頭の開始行が親の最終集計と対応する場合に限り親とみなす。
@@ -165,6 +173,20 @@ def pytest_child_run_ranges(
                 if not crosses_pytest_parent_blocks(candidate, parent_tests, parent_files, paths):
                     ranges.append((start, index))
     return ranges
+
+
+def _is_pytest_result_line(line: str) -> bool:
+    """pytestの実行結果を示す行（終了集計、失敗欄などの区切り、進捗行）かを返す。
+
+    親の開始行より前にこれらの行があれば、出力は実行の途中から始まる抜粋であり、最初の開始行は子のものであり得る。
+    """
+    return bool(
+        PYTEST_SESSION_END_RE.fullmatch(line)
+        or PYTEST_QUIET_SESSION_END_RE.fullmatch(line)
+        or re.fullmatch(r"=+ [A-Za-z ]+ =+", line)
+        or re.match(r"^\S+\.py [.FEsxX]+", line)
+        or is_pytest_nested_run_marker(line)
+    )
 
 
 def summary_tests(output: str) -> set[tuple[str, str]]:

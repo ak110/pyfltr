@@ -1846,6 +1846,14 @@ def test_parse_pytest_quiet_child_does_not_hide_parent_failure_without_summary_l
     """
     errors = pyfltr.parsing.entry.parse_errors("pytest", output)
     assert any(e.file == "parent_test.py" and e.line == 6 for e in errors)
+    # 開始行より前にプラグインの読込時の警告が出力される場合も、先頭の開始行を親のものと判定する。
+    preamble = (
+        "/path/to/pytest_asyncio/plugin.py:299: PytestDeprecationWarning: The configuration option is unset.\n"
+        "\n"
+        "  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n"
+    )
+    errors = pyfltr.parsing.entry.parse_errors("pytest", preamble + output)
+    assert any(e.file == "parent_test.py" and e.line == 6 for e in errors)
 
 
 # arid: enable
