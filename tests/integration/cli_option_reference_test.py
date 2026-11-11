@@ -38,7 +38,8 @@ _EXTERNAL_OPTIONS_BY_PATH: dict[str, frozenset[str]] = {
 
 
 # 長形式のオプション名。
-_OPTION_TOKEN = re.compile(r"--[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*")
+# `=`の直後は`--pytest-args=--junitxml=...`のようにオプションへ渡す値であり、オプション名として扱わない。
+_OPTION_TOKEN = re.compile(r"(?<!=)--[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*")
 
 
 # 文書側でオプションを列挙する記法。行頭の箇条書きがバッククォート囲みのオプション名で始まる。
@@ -356,6 +357,15 @@ def test_document_references_use_options_from_the_referenced_command() -> None:
     for relative_path, text, option in cases:
         path = _REPO_ROOT / relative_path
         assert _find_unknown_options(text, path, document=True) == [f"{relative_path}:1: {option}"]
+
+
+def test_option_values_after_equals_are_not_option_names() -> None:
+    """`=`でつないだ値の`--`始まりの文字列をオプション名として扱わず、値を渡す側のオプション名は検査することを検査する。"""
+    path = _REPO_ROOT / "docs/example.md"
+    text = "- uvx pyfltr ci --pytest-args=--junitxml=report.xml"
+    assert not _find_unknown_options(text, path, document=True)
+    text = "- uvx pyfltr ci --definitely-invalid=--junitxml=report.xml"
+    assert _find_unknown_options(text, path, document=True) == ["docs/example.md:1: --definitely-invalid"]
 
 
 def test_python_references_prioritize_pyfltr_command_context() -> None:
