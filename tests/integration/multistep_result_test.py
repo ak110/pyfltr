@@ -19,7 +19,7 @@ from tests import conftest as testconf
         ("shfmt", ".sh", False, 1),
         ("prettier", ".json", False, 1),
         ("prettier", ".json", True, 0),
-        ("textlint", ".md", True, 0),
+        ("textlint", ".md", True, 1),
         ("ruff-check", ".py", True, 0),
         ("prek", ".py", False, 1),
     ],
@@ -46,6 +46,9 @@ def test_stage_failure_reaches_final_result(
     calls: list[int] = []
     single = fix_stage and command in ("ruff-check", "prettier")
     failing_stage = 0 if single else stage
+    # textlintのfix段は、fail-fastの指定時に修正（Step1）が非0のときだけ修正後のチェック（Step2）を実行する。
+    # 2段の両方の異常終了を検証するため、textlintはfail-fastで修正が非0となる構成で実行する。
+    fail_fast = command == "textlint"
 
     def run_process(*_args: typing.Any, **_kwargs: typing.Any) -> pyfltr.command.process.CompletedProcessWithTimeoutInfo:
         index = len(calls)
@@ -65,7 +68,7 @@ def test_stage_failure_reaches_final_result(
     result = pyfltr.command.dispatcher.execute_command(
         command,
         testconf.make_args(),
-        testconf.make_execution_context(config, [target], fix_stage=fix_stage, start_cwd=tmp_path),
+        testconf.make_execution_context(config, [target], fix_stage=fix_stage, start_cwd=tmp_path, fail_fast=fail_fast),
     )
     assert result.status == "failed", result
     assert result.returncode != 0
