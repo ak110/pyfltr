@@ -157,6 +157,7 @@ Rich UIへの`call_from_thread`とlock取得の差は画面側に残し、ステ
   検証コマンドから起動した子のpyfltrやpytest経由のpyfltrが自己待機で止まらないようにするためであり、
   環境変数を引き継がない子孫にも働くよう、祖先の判定はプロセスツリーで行う
     - Linuxの同一性はPID・`/proc/<pid>/stat`のstarttime・boot IDを比べて判定する。
+      祖先の列挙も同じstatのPPIDとstarttimeで親子関係をたどり、列挙中のPID再利用や親の変更を検査する。
       壁時計を含むpsutilの`create_time()`は時計補正で変化するため、識別には使わない。
       旧形式の記録は、`/proc/<pid>/fdinfo`で記録されたPIDが対象の排他flockを保持していると確認できた場合に、
       読取時のstarttimeとboot IDを補って継承を判定する。

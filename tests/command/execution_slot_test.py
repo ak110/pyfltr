@@ -35,8 +35,11 @@ import sys
 import pyfltr.command.execution_slot
 
 # 祖先が保持中なら待たずに区間へ入る。継承できなければ待機に入り、中断判定でWaitAbortedになる。
-with pyfltr.command.execution_slot.hold(lock_dir=pathlib.Path(sys.argv[1]), should_abort=lambda: True):
-    print("entered", flush=True)
+try:
+    with pyfltr.command.execution_slot.hold(lock_dir=pathlib.Path(sys.argv[1]), should_abort=lambda: True):
+        print("entered", flush=True)
+except pyfltr.command.execution_slot.WaitAborted:
+    sys.exit(73)
 """
 
 
@@ -186,8 +189,43 @@ def test_reused_pid_does_not_inherit_slot(tmp_path: pathlib.Path, lock_dir: path
             timeout=30,
             check=False,
         )
-        assert completed.returncode != 0
+        assert completed.returncode == 73, completed.stderr
         assert "entered" not in completed.stdout
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linuxの/procによる祖先列挙")
+def test_clock_correction_during_parent_lookup_inherits_without_taking_second_slot(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, lock_dir: pathlib.Path
+) -> None:
+    """子と親の壁時計が逆転して見えても、子は空いている別枠を取得せず親の枠を継承する。"""
+    monkeypatch.setenv(pyfltr.command.execution_slot.SLOTS_ENV, "2")
+    # psutil 7.2.2 parent()は子→親の順にcreate_timeを読み、親が新しいと列挙から外す。
+    # その読取間の時計補正を、公開APIの戻り値だけで再現する（呼出し回数には依存しない）。
+    clock_correction = """import os
+import psutil
+
+def corrected_create_time(self):
+    return 100.0 if self.pid == os.getpid() else 109.0
+
+psutil.Process.create_time = corrected_create_time
+"""
+    script = tmp_path / "clock_corrected_child.py"
+    script.write_text(clock_correction + _RECORDING_CHILD_SCRIPT, encoding="utf-8")
+    with pyfltr.command.execution_slot.hold(lock_dir=lock_dir):
+        completed = subprocess.run(
+            [sys.executable, str(script), str(lock_dir)],
+            capture_output=True,
+            encoding="utf-8",
+            errors="backslashreplace",
+            timeout=30,
+            check=False,
+        )
+    assert completed.returncode == 0, completed.stderr
+    records = [json.loads(line) for line in completed.stdout.splitlines()]
+    finished = [record for record in records if record.get("finished_at") is not None]
+    assert len(finished) == 1
+    assert finished[0]["outcome"] == "inherited"
+    assert records[-1] == {"entered": True}
 
 
 def test_unrelated_process_waits_and_abort_does_not_acquire(tmp_path: pathlib.Path, lock_dir: pathlib.Path) -> None:

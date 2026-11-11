@@ -469,9 +469,42 @@ def _read_owner(owner_path: pathlib.Path) -> SlotOwner | None:
 def _linux_identity(pid: int) -> tuple[str, int]:
     """再起動とPID再利用を区別し、壁時計の補正に依存しない識別情報を読む。"""
     boot_id = pathlib.Path("/proc/sys/kernel/random/boot_id").read_text(encoding="ascii").strip()
+    return boot_id, _linux_process_stat(pid)[1]
+
+
+def _linux_process_stat(pid: int) -> tuple[int, int]:
+    """PPIDと起動時tickを同じstatから読む。"""
     stat = pathlib.Path(f"/proc/{pid}/stat").read_text(encoding="utf-8", errors="surrogateescape")
     # commは空白や閉じ括弧を含められるため、末尾の閉じ括弧から第22フィールドを数える。
-    return boot_id, int(stat.rsplit(")", 1)[1].split()[19])
+    fields = stat.rsplit(")", 1)[1].split()
+    return int(fields[1]), int(fields[19])
+
+
+def _linux_is_ancestor(owner: SlotOwner) -> bool:
+    """壁時計を使わずに親子関係をたどり、PID再利用・親の変更があれば継承しない。"""
+    if owner.linux_start_time is None:
+        return False
+    try:
+        pid = os.getpid()
+        boot_id, _ = _linux_identity(pid)
+        if boot_id != owner.boot_id:
+            return False
+        seen = {pid}
+        while True:
+            child = _linux_process_stat(pid)
+            ppid = child[0]
+            if ppid <= 0 or ppid in seen:
+                return False
+            parent = _linux_process_stat(ppid)
+            # 親の読取中に子が終了・再生成・reparentされた場合、別の系統を継承しない。
+            if parent[1] > child[1] or _linux_process_stat(pid) != child:
+                return False
+            if ppid == owner.pid:
+                return parent[1] == owner.linux_start_time
+            seen.add(ppid)
+            pid = ppid
+    except (OSError, ValueError, IndexError):
+        return False
 
 
 def _linux_holds_lock(pid: int, lock_path: pathlib.Path) -> bool:
@@ -499,6 +532,8 @@ def _linux_holds_lock(pid: int, lock_path: pathlib.Path) -> bool:
 
 def _is_ancestor(owner: SlotOwner) -> bool:
     """保持者記録のプロセスが呼出元プロセスの祖先かを返す。"""
+    if sys.platform == "linux":
+        return _linux_is_ancestor(owner)
     try:
         parents = psutil.Process().parents()
     except psutil.Error:
@@ -506,9 +541,6 @@ def _is_ancestor(owner: SlotOwner) -> bool:
     for parent in parents:
         if parent.pid != owner.pid:
             continue
-        if sys.platform == "linux":
-            # 旧記録は_read_ownerで実際のロック保持者と確認できた場合だけ継承する。
-            return owner.linux_start_time is not None and owner.is_alive()
         try:
             return abs(parent.create_time() - owner.create_time) < _CREATE_TIME_TOLERANCE
         except psutil.Error:
