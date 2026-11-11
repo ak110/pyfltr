@@ -1,4 +1,7 @@
-"""指定したルートの`pyfltr`だけを読み込み、比較入力を`parse_errors`で解析する子プロセス。
+"""指定したルートの`pyfltr`だけを読み込み、比較入力を実行時と同じ解析で処理する子プロセス。
+
+診断（`parse_errors`）に加え、実行時に出力から取り出す値も同じ入力で求める。
+対象は要約行（`summary_parser`を持つツールの`parse_summary`）、pytestの設定競合と遅い試験、vitestの遅い試験である。
 
 `compare`が基準版（`git archive`で展開した一時領域）と作業ツリー版のそれぞれについて別プロセスで起動する。
 ファイルとして起動するため、`sys.path`の先頭は本ファイルのディレクトリになる。指定ルートを先頭へ加えてから
@@ -25,6 +28,7 @@ def main() -> int:
     sys.path.insert(0, str(root))
     import pyfltr.command.slow_tests  # pylint: disable=import-outside-toplevel
     import pyfltr.parsing.entry  # pylint: disable=import-outside-toplevel
+    import pyfltr.tools  # pylint: disable=import-outside-toplevel
 
     # 基準版のcommitにも同じworkerを使うため、この比較処理だけが両方の配置を扱う。
     config_module = importlib.import_module(
@@ -51,11 +55,17 @@ def main() -> int:
             results[entry["id"]] = {"error": f"{type(exc).__name__}: {exc}"}
             continue
         parsed: dict[str, object] = {"diagnostics": [dataclasses.asdict(error) for error in errors]}
+        info = pyfltr.tools.BUILTIN_COMMANDS.get(entry["tool"])
+        if info is not None and getattr(info, "summary_parser", None) is not None:
+            parsed["summary"] = pyfltr.parsing.entry.parse_summary(entry["tool"], output)
         if entry["tool"] == "pytest":
             parsed.update(
                 config_conflict=detect_config_conflict(output),
                 slow_tests=[dataclasses.asdict(item) for item in pyfltr.command.slow_tests.parse_pytest_durations(output)],
             )
+        elif entry["tool"] == "vitest":
+            slow_tests = pyfltr.command.slow_tests.parse_vitest_durations(output, base_cwd=pathlib.Path(entry["start_cwd"]))
+            parsed["slow_tests"] = [dataclasses.asdict(item) for item in slow_tests]
         results[entry["id"]] = parsed
 
     module_files = sorted(

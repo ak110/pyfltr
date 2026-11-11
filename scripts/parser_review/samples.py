@@ -169,6 +169,10 @@ SAMPLES: tuple[Sample, ...] = (
         },
         ("sample.py",),
         settings={"semgrep-args": ["scan", "--json", "--error", "--metrics=off", "--config", ".semgrep.yml"]},
+        # uvxが既定でPython 3.15を選ぶ環境では、スタック上限が8MBの場合にsemgrep-coreが異常終了し結果が空になる
+        # （semgrep 1.185.0の対応版は3.14まで）。semgrepは利用者の既定と同じ最新版のまま、実行するPythonだけを対応版にする。
+        # 同じ環境変数は採取のpyfltr起動（`uv run --no-sync`）にも渡るが、既存の仮想環境を警告付きでそのまま使う。
+        env={"UV_PYTHON": "3.14"},
     ),
     _sample("bandit", {"sample.py": 'import subprocess\n\nsubprocess.call("ls", shell=True)\n'}, ("sample.py",)),
     _sample("pylint", {"sample.py": '"""sample."""\n\nimport os\n'}, ("sample.py",)),

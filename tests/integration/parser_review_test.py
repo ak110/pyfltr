@@ -13,6 +13,7 @@ import typing
 import psutil
 import pytest
 
+import pyfltr.command.execution_slot
 import pyfltr.tools
 from scripts.parser_review import collect, compare, process_tree, pytest_forms, samples
 
@@ -292,7 +293,7 @@ def test_collect_and_compare_selected_tools(tmp_path: pathlib.Path) -> None:
     assert pathlib.Path(report["current"]["pyfltr_root"]) == PROJECT_ROOT
     (entry,) = report["entries"]
     assert entry["id"] == "ruff-check"
-    assert entry["output"] == check["output"]
+    assert entry["output"] == collect.comparison_output(check)
     assert isinstance(entry["base"], list) and isinstance(entry["current"], list)
     assert entry["result"] in {"equal", "different"}
 
@@ -338,6 +339,56 @@ def test_collect_interrupt_marks_remaining_samples(tmp_path: pathlib.Path) -> No
     assert collector.incomplete
 
 
+# 試験の保存先（`PYFLTR_CACHE_DIR`は`tests/conftest.py`が試験ごとに分ける）で実行枠を保持し、標準入力が閉じるまで待つ。
+_SLOT_HOLDER = """import sys
+
+import pyfltr.command.execution_slot
+
+with pyfltr.command.execution_slot.hold(label="other-check"):
+    print("held", flush=True)
+    sys.stdin.read()
+"""
+
+
+@pytest.mark.timeout(240)
+@pytest.mark.usefixtures("_disable_faulthandler_timeout")
+def test_collect_waits_for_execution_slot_once(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """別の検証が実行枠を保持している間、採取は待機を表示して待ち、解放後に採取し、時間の上限を取得後から数える。
+
+    サンプルごとに実行枠を取り直す実装では、待ちが採取1件の時間上限に数えられ未採取になる。
+    """
+    monkeypatch.setenv(pyfltr.command.execution_slot.SLOTS_ENV, "1")
+    script = tmp_path / "slot_holder.py"
+    script.write_text(_SLOT_HOLDER, encoding="utf-8")
+    with subprocess.Popen([sys.executable, str(script)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) as holder:
+        assert holder.stdout is not None
+        assert holder.stdout.readline().strip() == "held"
+        collector = _collector(tmp_path)
+        results: list[list[dict[str, typing.Any]]] = []
+        thread = threading.Thread(
+            target=lambda: results.append(collect.collect(collector, samples.select_samples(["ruff-check"])))
+        )
+        thread.start()
+        stderr = ""
+        deadline = time.monotonic() + 60
+        while "実行枠が空くのを待っています" not in stderr and time.monotonic() < deadline:
+            time.sleep(0.1)
+            stderr += capsys.readouterr().err
+        assert "label=other-check" in stderr
+        assert thread.is_alive()
+        released_at = time.monotonic()
+        holder.communicate(timeout=30)
+    thread.join(timeout=180)
+    assert not thread.is_alive()
+    assert len(results) == 1
+    (record,) = results[0]
+    assert record["state"] == collect.STATE_COMPARABLE
+    assert collector.started >= released_at
+    assert not collector.incomplete
+
+
 def test_compare_uses_each_input_start_cwd(tmp_path: pathlib.Path) -> None:
     """各入力の起点cwdで基準版と現行版を解析し、絶対パスのフレーム選択を揃える。"""
     rows = []
@@ -360,6 +411,29 @@ def test_compare_uses_each_input_start_cwd(tmp_path: pathlib.Path) -> None:
     for entry in report["entries"]:
         for side in ("base", "current"):
             assert [(error["file"], error["line"]) for error in entry[side]] == [("sample_test.py", 3)]
+
+
+def test_compare_reports_summary_and_collected_count_mismatch(tmp_path: pathlib.Path) -> None:
+    """要約行を両版の追加の値として比べ、採取時と診断の件数が異なる入力を`equal`にしない。
+
+    採取時の件数と照合しない比較では、実行時と異なる入力の解析が0件どうしの一致として通る。
+    """
+    output = tmp_path / "output.log"
+    output.write_text("===== 1 passed in 0.01s =====\n", encoding="utf-8")
+    rows = [
+        {"id": id_, "tool": "pytest", "output": str(output), "path_base": str(tmp_path), "start_cwd": str(tmp_path)}
+        | ({"diagnostic_count": count} if count is not None else {})
+        for id_, count in (("matched", 0), ("mismatched", 1), ("derived", None))
+    ]
+    (tmp_path / "inputs.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+    report = compare.compare(tmp_path, tmp_path / "compare.json", base="HEAD")
+    by_id = {entry["id"]: entry for entry in report["entries"]}
+    assert by_id["matched"]["result"] == "equal"
+    assert by_id["matched"]["extras"]["summary"]["current"] == "1 passed in 0.01s"
+    assert by_id["mismatched"]["result"] == "count_mismatch"
+    assert by_id["mismatched"]["count_mismatch"] == {"collected": 1, "current": 0}
+    assert by_id["derived"]["result"] == "equal"
+    assert report["counts"] == {"equal": 2, "different": 0, "count_mismatch": 1, "error": 0}
 
 
 def test_diff_diagnostics_compares_all_fields() -> None:
@@ -391,7 +465,8 @@ def test_pytest_forms_cover_reviewer_definition() -> None:
         if form.derivation is not None:
             assert set(form.derivation.sources) <= ids
     tb_auto = [form for form in forms if form.sample and form.sample.settings.get("pytest-tb-line") is False]
-    assert {form.number for form in tb_auto} == {8, 11, 16, 17, 19, 20, 21}
+    # `--tb=no`の形態（13・22）も、pyfltrの`--tb=short`への置き換えを避けるため`pytest-tb-line`を無効にする。
+    assert {form.number for form in tb_auto} == {8, 11, 13, 16, 17, 19, 20, 21, 22}
     assert sum(form.number == 19 for form in forms) == 4
     assert sum(form.number == 20 for form in forms) == 5
     assert sum(form.number == 22 for form in forms) == 5

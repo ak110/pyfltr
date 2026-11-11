@@ -1,7 +1,15 @@
-"""同一の生出力を基準版と作業ツリー版の`parse_errors`で解析し、診断全件を比較する。
+"""同一の解析入力を基準版と作業ツリー版で解析し、診断全件と出力から取り出す値を比較する。
 
 基準commitの`pyfltr/`全体を`git archive`で一時領域へ展開し、基準版と作業ツリー版を別のPythonプロセスで読み込む。
 ファイルごとの`git show`で旧実装と現行の依存を混在させない。差分の改善・退行・同等の判定はレビュー担当が行う。
+
+結果の区分は次のとおり。
+
+- `equal`: 診断と追加の値（`extras`）が両版で一致し、診断の件数が採取時の件数と一致する
+- `different`: 診断または追加の値が両版で異なる
+- `count_mismatch`: 作業ツリー版の診断の件数が採取時にpyfltrが出した件数と異なる。
+  比較の入力が実行時の解析入力と一致していないため、両版の一致を比べられた証拠にできない
+- `error`: いずれかの版の解析が例外で終わった
 """
 
 import collections
@@ -134,6 +142,15 @@ def _side(result: dict[str, typing.Any], entry_id: str) -> tuple[list[dict[str, 
     return value["diagnostics"], None
 
 
+def _extras(base: dict[str, typing.Any], current: dict[str, typing.Any]) -> dict[str, dict[str, typing.Any]]:
+    """診断以外に両版が出力から取り出した値（要約行・設定競合・遅い試験）を項目ごとに対にする。
+
+    片方の版だけが持つ項目は、もう片方を`None`として差に含める。
+    """
+    keys = sorted((set(base) | set(current)) - {"diagnostics", "error"})
+    return {key: {"base": base.get(key), "current": current.get(key)} for key in keys}
+
+
 def compare(input_dir: pathlib.Path, output: pathlib.Path, *, base: str) -> dict[str, typing.Any]:
     """比較を実行して結果をJSONへ書き、集計を返す。"""
     inputs = input_dir / INPUTS_FILENAME
@@ -151,7 +168,7 @@ def compare(input_dir: pathlib.Path, output: pathlib.Path, *, base: str) -> dict
         current_result = _run_worker(REPO_ROOT, inputs, temp_dir / "current.json")
 
     compared: list[dict[str, typing.Any]] = []
-    counts = {"equal": 0, "different": 0, "error": 0}
+    counts = {"equal": 0, "different": 0, "count_mismatch": 0, "error": 0}
     for entry in entries:
         base_diagnostics, base_error = _side(base_result, entry["id"])
         current_diagnostics, current_error = _side(current_result, entry["id"])
@@ -169,16 +186,14 @@ def compare(input_dir: pathlib.Path, output: pathlib.Path, *, base: str) -> dict
             counts["error"] += 1
         else:
             item["diff"] = diff_diagnostics(base_diagnostics, current_diagnostics)
-            if entry["tool"] == "pytest":
-                item["pytest"] = {
-                    key: {
-                        "base": base_result["results"][entry["id"]][key],
-                        "current": current_result["results"][entry["id"]][key],
-                    }
-                    for key in ("config_conflict", "slow_tests")
-                }
-            extra_equal = all(value["base"] == value["current"] for value in item.get("pytest", {}).values())
-            item["result"] = "equal" if item["diff"]["equal"] and extra_equal else "different"
+            item["extras"] = _extras(base_result["results"][entry["id"]], current_result["results"][entry["id"]])
+            extra_equal = all(value["base"] == value["current"] for value in item["extras"].values())
+            expected_count = entry.get("diagnostic_count")
+            if expected_count is not None and expected_count != len(current_diagnostics):
+                item["result"] = "count_mismatch"
+                item["count_mismatch"] = {"collected": expected_count, "current": len(current_diagnostics)}
+            else:
+                item["result"] = "equal" if item["diff"]["equal"] and extra_equal else "different"
             counts[item["result"]] += 1
         compared.append(item)
     report = {

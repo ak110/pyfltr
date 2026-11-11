@@ -302,7 +302,12 @@ def _error_forms() -> list[Form]:
             ("collect_test.py",),
         ),
     ]
-    for label, extra in (("short", []), ("rN", ["-rN"]), ("tb-no", ["--tb=no"])):
+    # pyfltrは`pytest-tb-line`が有効な間`--tb`を`--tb=short`へ置き換えるため、`--tb=no`の形態は無効にする。
+    for label, settings in (
+        ("short", {}),
+        ("rN", {"pytest-args": ["-rN"]}),
+        ("tb-no", {"pytest-tb-line": False, "pytest-args": ["--tb=no"]}),
+    ):
         forms.append(
             _real(
                 f"pytest-22-mixed-{label}",
@@ -310,7 +315,7 @@ def _error_forms() -> list[Form]:
                 f"ERROR: 本体の失敗と同じ試験の後始末のERROR、別ファイルのsetup ERRORの混在（{label}）",
                 _ERROR_FILES,
                 ("setup_test.py", "teardown_test.py"),
-                **({"settings": {"pytest-args": extra}} if extra else {}),
+                **({"settings": settings} if settings else {}),
             )
         )
     return forms
@@ -576,7 +581,7 @@ FORMS: tuple[Form, ...] = (
         "形態13の派生元: トレースバックを出力しない設定の親（--tb=no）",
         {"fail_test.py": _TWO_FAILURES},
         ("fail_test.py",),
-        settings={"pytest-args": ["--tb=no"]},
+        settings={"pytest-tb-line": False, "pytest-args": ["--tb=no"]},
     ),
     Form(
         "pytest-13-following-run-with-traceback",
@@ -656,7 +661,9 @@ def derive(output_dir: pathlib.Path, form: Form, records: dict[str, dict[str, ty
         record["state"] = collect.STATE_NOT_COLLECTED
         record["reason"] = "派生元を採取できなかった"
         return record
-    outputs = [pathlib.Path(typing.cast(dict, source)["output"]).read_text(encoding="utf-8") for source in sources]
+    outputs = [
+        pathlib.Path(collect.comparison_output(typing.cast(dict, source))).read_text(encoding="utf-8") for source in sources
+    ]
     try:
         derived = derivation.function(outputs)
     except ValueError as exc:
@@ -676,11 +683,12 @@ def generate(collector: collect.Collector, forms: list[Form]) -> list[dict[str, 
     """選んだ形態を採取・派生し、定義順の記録を返す。"""
     collector.output_dir.mkdir(parents=True, exist_ok=True)
     records: dict[str, dict[str, typing.Any]] = {}
-    for form in forms:
-        if form.sample is not None:
-            record = collect.collect_sample(collector, form.sample)
-            record["form"] = form.number
-            records[form.id] = record
+    with collector.execution_slot():
+        for form in forms:
+            if form.sample is not None:
+                record = collect.collect_sample(collector, form.sample)
+                record["form"] = form.number
+                records[form.id] = record
     for form in forms:
         if form.derivation is not None:
             record = derive(collector.output_dir, form, records)

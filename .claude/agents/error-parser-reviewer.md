@@ -45,9 +45,12 @@ tools: Read, Grep, Glob, Bash
    - 各ツールのサンプルは、サンプルディレクトリで`uv run pyfltr run`経由で実行される。
      実行アーカイブの生出力全文（`output.log`）、現行の診断（`diagnostics.json`）、
      実際のコマンドライン（`tool_meta.json`）は`<採取先ディレクトリ>/<ツール名>/`へ保存される。
+     実行時に解析へ渡った入力が1件だけの場合は`parse_input.log`にも保存され、比較はその入力を使う
+     （vitestは一時ファイルのJSON reporter出力を解析するため、`output.log`と異なる）。
      実行時のcwd・設定・環境変数・終了コードは同じディレクトリの`record.json`にある
    - `<採取先ディレクトリ>/summary.json`の`state`でツールごとの採取状態を確認する。
      `comparable`は比較成立、`no_parser`は解析定義なし、`not_collected`は未採取（`reason`に理由）である。
+     サンプルが指定した引数が実際のコマンドラインに無い採取と、ツールが対象を調べる前に異常終了した採取も未採取になる。
      未採取のツールはパース成功に数えず、理由とともに報告する。
      診断0件は空出力だけで成功と判定せず、生出力を読んで確かめる。
      `attention`を持つツール（失敗したが診断0件）は、外部条件の不足か解析の欠落かを生出力で判定する
@@ -60,15 +63,18 @@ tools: Read, Grep, Glob, Bash
 3. 変更前後の同一ツール出力での比較
    - 次を実行する。
      基準commitの`pyfltr/`全体を一時領域へ展開し、基準版と作業ツリー版を別プロセスで読み込んで、
-     同じ生出力と同じパス解決条件を両方の`parse_errors`へ渡す
+     同じ解析入力と同じパス解決条件を両方の`parse_errors`へ渡す。
+     要約行（`summary_parser`を持つツール）、pytestの設定競合と遅い試験、vitestの遅い試験も両版で求めて比べる
 
      ```sh
      uv run python -m scripts.parser_review compare --input <採取先ディレクトリ> --output <比較結果JSON>
      ```
 
    - 比較結果JSONの`entries`は入力ごとに生出力のパス（`output`）、両版の診断全件（`base`・`current`）、
-     差分（`diff`の`only_base`・`only_current`・`order_changed`）を持つ。
-     `result`が`error`の入力はいずれかの版の解析が例外で終わったことを示し、例外の内容は該当する側の`base.error`または`current.error`にある
+     差分（`diff`の`only_base`・`only_current`・`order_changed`）、診断以外の値の両版の組（`extras`）を持つ。
+     `result`が`error`の入力はいずれかの版の解析が例外で終わったことを示し、例外の内容は該当する側の`base.error`または`current.error`にある。
+     作業ツリー版の診断の件数が採取時の件数（`count_mismatch`の`collected`）と異なる入力は`result`が`count_mismatch`になる。
+     比較の入力が実行時の解析入力と一致していないため一致の証拠にせず、採取記録と生出力を読んで原因を報告する
    - 差分が生じた出力ごとに、生出力と両版の診断を読んで改善・退行・同等のいずれかを判定する
    - 再比較のために再採取する必要はない。
      採取先ディレクトリを保ったまま`compare`だけを再実行する
