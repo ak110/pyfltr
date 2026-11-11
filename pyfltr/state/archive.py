@@ -194,7 +194,7 @@ class ArchiveStore:
 
         `diagnostics.jsonl`は`(command, file)`単位の集約形式で保存する。各行は
         `{"kind": "diagnostic", "command": ..., "file": ..., "messages": [...]}`構造で
-        `output.jsonl.aggregate_diagnostics()`の出力と同形。
+        `pyfltr.output.jsonl_records.aggregate_diagnostics()`の出力と同形。
         `tool.json`には`hint_urls`・`hints`・`slow_tests`をそれぞれ空でないときに限り含める。
         `slow_tests`は`CommandResult`への設定時点で正規化済みのため、ここでは件数を変えない。
         """
