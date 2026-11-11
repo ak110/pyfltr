@@ -49,7 +49,7 @@ Formattersによるファイル変更があっても終了コードは0になる
 
 - Formatters: `prettier` `ruff-format` `uv-sort` `shfmt` `taplo` `cargo-fmt` `dotnet-format`
 - Linters（言語非依存）: `ec` `shellcheck` `typos` `actionlint` `pinact` `yamllint` `hadolint` `colloquial-check`
-- Linters（言語・記法別）: `ruff-check` `ty` `arid` `markdownlint` `textlint` `biome` `oxlint` `cargo-clippy`
+- Linters（言語・記法別）: `ruff-check` `ty` `arid` `markdownlint` `textlint` `markdown-structure` `biome` `oxlint` `cargo-clippy`
 - その他: `pre-commit`・`prek`（`.pre-commit-config.yaml`のhookを統合実行）
 
 含まれるコマンドは各コマンドの`{command}-fast`設定で制御できる（[設定](configuration.md)を参照）。
@@ -581,7 +581,7 @@ pyfltr ci --commands=ruff-check,markdownlint [files and/or directories ...]
 - `format`: `prettier` `ruff-format` `uv-sort` `shfmt` `taplo` `cargo-fmt` `dotnet-format` `prek` `pre-commit`。
 - `lint`: `ec` `shellcheck` `typos` `actionlint` `pinact` `glab-ci-lint` `yamllint` `hadolint` `gitleaks`。
     `semgrep` `bandit` `pylint` `mypy` `ruff-check` `pyright` `ty` `arid` `markdownlint`。
-    `textlint` `designmd` `lychee` `colloquial-check` `tsc` `eslint` `biome` `oxlint` `cargo-clippy`。
+    `textlint` `designmd` `lychee` `colloquial-check` `markdown-structure` `tsc` `eslint` `biome` `oxlint` `cargo-clippy`。
     `cargo-check` `cargo-deny` `dotnet-build` `sqlfluff` `uv-audit` `pnpm-audit` `npm-audit` `yarn-audit`。
 - `test`: `pytest` `vitest` `cargo-test` `dotnet-test`。
 - `audit`: `uv-audit` `pnpm-audit` `npm-audit` `yarn-audit`。
@@ -977,7 +977,7 @@ pyfltrからprekのhookを呼び出す統合は`prek = true`で有効化する�
 - 適用範囲: プロジェクトローカル設定・モジュール解決・lockfileをcwd起点で読むツール
   （`mypy`・`pylint`・`pyright`・`pytest`・`textlint`・`eslint`など）はサブプロジェクト別に起動する。
   `cargo-*`・`dotnet-*`・`ruff-*`も同様に扱う。
-  リポジトリ単位のツール（`typos`・`shellcheck`・`shfmt`・`pre-commit`・`prek`・`colloquial-check`）は1回だけ起動する
+  リポジトリ単位のツール（`typos`・`shellcheck`・`shfmt`・`pre-commit`・`prek`・`colloquial-check`・`markdown-structure`）は1回だけ起動する
 - フォールバック: 検出結果が0件または1件の場合は単一プロジェクトとして従来通り動作する
 - 出力スキーマ: モノレポ実行でもJSONL・SARIF・show-run・MCP読み取り系APIの
   公開スキーマは変更しない。
@@ -997,5 +997,5 @@ pyfltrからprekのhookを呼び出す統合は`prek = true`で有効化する�
   起点ディレクトリ自体は1つのサブプロジェクトとして扱い、その設定が有効なら起点自身のファイルは実行する
 - 起点cwdでの一括実行はしない: あるツールが起点で有効でも、対象ファイルを持つサブプロジェクトが全て無効化している場合、
   起点cwdで全ファイルをまとめて実行することはない（サブプロジェクト境界をまたいだ誤実行を避ける）
-- リポジトリ単位のツール（`typos`・`shellcheck`・`shfmt`・`pre-commit`・`prek`・`colloquial-check`）のON/OFFは、
+- リポジトリ単位のツール（`typos`・`shellcheck`・`shfmt`・`pre-commit`・`prek`・`colloquial-check`・`markdown-structure`）のON/OFFは、
   起点 `pyproject.toml` の設定で固定し、子の設定では切り替えない

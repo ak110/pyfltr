@@ -166,7 +166,7 @@ pyfltr config list --all
 - pytest-fast-targets : fast実行時だけpytestの対象を置き換えるglob（既定: 空。[後述](#pytest-fast-targets)）
 - pytest-always-targets : すべての実行でpytestの対象へ加えるglob（既定: 空。[後述](#pytest-always-targets)）
 - {command}-fix-args : fix段で`{command}-args`の後に追加する引数
- （既定値はtextlint / markdownlint / ruff-check / eslint / biome / cargo-clippyに定義）
+ （既定値はtextlint / markdownlint / markdown-structure / ruff-check / eslint / biome / cargo-clippyに定義）
 - {command}-targets : 対象ファイルパターンの完全上書き
 - {command}-extend-targets : 対象ファイルパターンへの追加
 - {command}-exclude : ツール別の追加除外パターン（後述）

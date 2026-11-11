@@ -374,7 +374,7 @@ def test_documented_run_history_columns_and_kinds_match_definitions() -> None:
     ]
     assert len(headers) == 1
     expected_header = set(ast.literal_eval(headers[0]))
-    columns = _between(source, "固定幅テーブル。列は", "\n- `json`:")
+    columns = _between(source, "固定幅テーブル。", "\n- `json`:")
     assert _codes(columns) == expected_header
     show_run_functions = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name != "execute_list_runs"]
     expected_kinds = {
