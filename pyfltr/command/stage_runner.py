@@ -155,7 +155,7 @@ class SlotWaitReporter:
 
 
 def _slot_waiting_message(elapsed: float, done: int, total: int) -> str:
-    holder = describe_slot_owner(pyfltr.command.execution_slot.read_owner())
+    holder = describe_slot_owners(pyfltr.command.execution_slot.read_owners())
     waiters = pyfltr.command.execution_slot.waiter_count()
     return (
         "同じOSアカウントの別の検証が実行枠を保持しているため、実行枠の取得を待っています"
@@ -385,12 +385,23 @@ def describe_slot_owner(owner: pyfltr.command.execution_slot.SlotOwner | None) -
     return holder
 
 
+def describe_slot_owners(owners: list[pyfltr.command.execution_slot.SlotOwner]) -> str:
+    """待機の通知に載せる全保持者の表記を返す。実行枠は複数あるため、保持者ごとの表記を「／」でつなぐ。"""
+    if not owners:
+        return describe_slot_owner(None)
+    return " ／ ".join(describe_slot_owner(owner) for owner in owners)
+
+
 def _notify_slot_wait(owner: pyfltr.command.execution_slot.SlotOwner | None) -> None:
-    """実行枠の待機を始めたことを警告で通知する。"""
+    """実行枠の待機を始めたことを警告で通知する。
+
+    `hold`が渡す保持者は1件だけのため、実行枠ごとの保持者を読み直して全員を示す。
+    """
+    owners = pyfltr.command.execution_slot.read_owners() or ([owner] if owner is not None else [])
     pyfltr.warnings_.emit_warning(
         source="execution-slot",
         message=(
-            f"同じOSアカウントの別の検証が実行枠を保持しているため（{describe_slot_owner(owner)}）、"
+            f"同じOSアカウントの別の検証が実行枠を保持しているため（{describe_slot_owners(owners)}）、"
             "その解放を待ってからツールを実行します。待機時間はツールのtimeoutに含めません"
         ),
         hint=("対応不要です。待機をやめる場合は実行を中断してください（端末ではCtrl+C、MCPでは要求の取り消し）。"),

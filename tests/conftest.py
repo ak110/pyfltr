@@ -17,6 +17,7 @@ import pytest
 
 import pyfltr.cli.output_format
 import pyfltr.command.core_
+import pyfltr.command.execution_slot
 import pyfltr.command.mise
 import pyfltr.command.only_failed
 import pyfltr.config.config
@@ -65,6 +66,16 @@ def _isolate_output_format_envs(monkeypatch: pytest.MonkeyPatch) -> None:
     for env_name in pyfltr.cli.output_format.AGENT_INDICATOR_ENVS:
         monkeypatch.delenv(env_name, raising=False)
     monkeypatch.delenv(pyfltr.cli.output_format.OUTPUT_FORMAT_ENV, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_execution_slots_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """実行枠の数を下げる環境変数を未設定状態に固定するフィクスチャ。
+
+    開発者シェルや外側のpyfltrの指定で枠の数が揺らがないようにする。
+    個別テストは`monkeypatch.setenv`で上書きする。
+    """
+    monkeypatch.delenv(pyfltr.command.execution_slot.SLOTS_ENV, raising=False)
 
 
 # `get_mise_active_tools` 実装本体を保存しておく（モック上書き前の参照）。

@@ -1,8 +1,11 @@
 """検証の実行枠。
 
-同一ホスト・同一OSアカウントで、独立した検証が外部ツールを実行する区間を同時に1つだけにする。
+同一ホスト・同一OSアカウントで、独立した検証が外部ツールを実行する区間を同時に`DEFAULT_SLOTS`（2）件までにする。
 共有の一時領域・inotify上限・CPUなどの資源は起動ごとの並列設定（`jobs`など）では調停できず、
 別worktree・別リポジトリ・MCPから起動した検証の並列数がホスト上で積み上がるためである。
+上限を1件でなく2件とするのは、並行する作業の短い検証が長い検証の終了を待ち続けないようにするためで、
+2件の並行で資源の枯渇が起きないことを測定で確かめた（判定の記録は`docs/development/architecture.md`「検証の実行枠」）。
+環境変数`PYFLTR_EXECUTION_SLOTS`に`1`を指定すると1件ずつになる。上限を上げる指定は受け付けない。
 
 pyfltrは`pyfltr.command.stage_runner.run_stages`を`hold`の内側で実行し、1回の実行の間は枠を保持し続ける。
 CLI・TUI・MCPの全実行経路とcommit hookからの起動が同じ枠へ参加する。
@@ -25,14 +28,15 @@ pyfltr以外の検証を起動する呼出元（他のツールのスクリプ�
 - 保持者記録のプロセスが呼出元プロセスの祖先なら、取得せずに所有を継承する。
   検証コマンドから起動した子のpyfltr・pytest経由のpyfltr・API呼出が自己待機で止まらないようにするためである。
   祖先の判定はpidとプロセス生成時刻で行い、環境変数を引き継がない子孫にも働く
-- それ以外は待機列へ登録し、先に並んだ要求と保持者の解放を`_POLL_INTERVAL`秒ごとに確かめて登録順に取得する。
-  同じプロセスの別スレッドも待つ（長寿命の呼出元が並行して受けた要求を順に実行するため）
+- それ以外は待機列へ登録し、先に並んだ要求と空いた枠を`_POLL_INTERVAL`秒ごとに確かめ、登録順に空いた枠を取得する。
+  同じプロセスの別スレッドも別の要求として扱い、枠が全て埋まっていれば待つ
 
 実行の途中で待機者へ譲る機能と、子プロセスが参加券で協調して譲る機能は、2026年11月に撤去した。
 区切りごとに待機列へ並び直す方式は、混雑時に短い検証の待ちを区切りの数だけ増やし、効果を実測で示せなかったためである
 （判定の記録は`docs/development/architecture.md`「検証の実行枠」）。
 
-ロックはユーザーキャッシュのルート（`pyfltr.user_cache.default_cache_root`）配下の`locks/`に置く。
+ロックはユーザーキャッシュのルート（`pyfltr.user_cache.default_cache_root`）配下の`locks/`に置き、枠ごとにロックと保持者記録を分ける。
+1つ目の枠は撤去前から使うファイル名を保つ。枠を1つだけ扱う旧版と同じ保存先を共有しても、全体の同時実行を上限内に保つためである。
 `PYFLTR_CACHE_DIR`で保存先を変えた実行どうしは別の枠になる。
 保持者が強制終了した場合はOSがロックを解放する。
 """
@@ -63,6 +67,10 @@ logger = logging.getLogger(__name__)
 
 _LOCK_FILENAME = "execution.lock"
 _OWNER_FILENAME = "execution.owner.json"
+DEFAULT_SLOTS = 2
+"""同時に外部ツールを実行できる独立した検証の既定の上限。"""
+SLOTS_ENV = "PYFLTR_EXECUTION_SLOTS"
+"""上限を`DEFAULT_SLOTS`以下へ下げる環境変数。資源が不足するホストで1件ずつに戻す退避手段である。"""
 _QUEUE_FILENAME = "execution.queue.lock"
 _POLL_INTERVAL = 0.2
 """待機中の再試行間隔（秒）。解放から次の取得までの遅れと、待機中の負荷の釣り合いで選ぶ。"""
@@ -133,6 +141,33 @@ def default_lock_dir() -> pathlib.Path:
     return pyfltr.user_cache.default_cache_root() / "locks"
 
 
+def slot_count() -> int:
+    """同時に外部ツールを実行できる独立した検証の上限を返す。
+
+    `PYFLTR_EXECUTION_SLOTS`は1から`DEFAULT_SLOTS`までを受け付ける。
+    上限を上げる指定を受け付けないのは、実行枠を無効にする手段を設けない方針を保つためである。
+    """
+    raw = os.environ.get(SLOTS_ENV)
+    if raw is None or raw.strip() == "":
+        return DEFAULT_SLOTS
+    try:
+        value = int(raw)
+    except ValueError:
+        value = 0
+    if not 1 <= value <= DEFAULT_SLOTS:
+        raise ValueError(
+            f"環境変数{SLOTS_ENV}の値が不正です: {raw!r}。1から{DEFAULT_SLOTS}までの整数を指定するか、未設定にしてください。"
+        )
+    return value
+
+
+def _slot_paths(directory: pathlib.Path, index: int) -> tuple[pathlib.Path, pathlib.Path]:
+    """枠の番号に対応するロックと保持者記録のパスを返す。1つ目の枠は撤去前からのファイル名を保つ。"""
+    if index == 0:
+        return directory / _LOCK_FILENAME, directory / _OWNER_FILENAME
+    return directory / f"execution-{index}.lock", directory / f"execution-{index}.owner.json"
+
+
 @contextlib.contextmanager
 def hold(
     *,
@@ -165,20 +200,26 @@ def hold(
         return
 
     directory = lock_dir if lock_dir is not None else default_lock_dir()
-    lock = pyfltr.file_lock.FileLock(directory / _LOCK_FILENAME)
-    owner_path = directory / _OWNER_FILENAME
-    acquired = _observe(
-        on_wait_interval,
-        lambda: _acquire(lock, owner_path, label=label, should_abort=should_abort, on_wait=on_wait),
-        release=lambda: _release(lock, owner_path),
-    )
+    slots = [_slot_paths(directory, index) for index in range(slot_count())]
+    held: list[tuple[pyfltr.file_lock.FileLock, pathlib.Path]] = []
+
+    def acquire() -> bool:
+        slot = _acquire(directory, slots, label=label, should_abort=should_abort, on_wait=on_wait)
+        if slot is not None:
+            held.append(slot)
+        return slot is not None
+
+    def release() -> None:
+        while held:
+            _release(*held.pop())
+
+    _observe(on_wait_interval, acquire, release=release)
     _local.depth = 1
     try:
         yield
     finally:
         _local.depth = 0
-        if acquired:
-            _release(lock, owner_path)
+        release()
 
 
 def _observe(
@@ -285,41 +326,64 @@ def waiter_count(lock_dir: pathlib.Path | None = None) -> int:
 
 
 def read_owner(lock_dir: pathlib.Path | None = None) -> SlotOwner | None:
-    """現在の保持者記録を返す。保持者がいないか記録を読めない場合は`None`を返す。"""
+    """現在の保持者記録の1件を返す。1つ目の枠を優先し、保持者がいないか記録を読めない場合は`None`を返す。"""
+    owners = read_owners(lock_dir)
+    return owners[0] if owners else None
+
+
+def read_owners(lock_dir: pathlib.Path | None = None) -> list[SlotOwner]:
+    """全ての枠の保持者記録を枠の順に返す。記録を読めない枠は除く。
+
+    枠の数は`slot_count`ではなく`DEFAULT_SLOTS`までを走査する。
+    上限を下げた実行からも、上限を下げていない別の実行が保持する枠を観測できるようにするためである。
+    """
     directory = lock_dir if lock_dir is not None else default_lock_dir()
-    return _read_owner(directory / _OWNER_FILENAME)
+    owners = []
+    for index in range(DEFAULT_SLOTS):
+        owner = _read_owner(_slot_paths(directory, index)[1])
+        if owner is not None:
+            owners.append(owner)
+    return owners
 
 
 def _acquire(
-    lock: pyfltr.file_lock.FileLock,
-    owner_path: pathlib.Path,
+    directory: pathlib.Path,
+    slots: list[tuple[pathlib.Path, pathlib.Path]],
     *,
     label: str | None,
     should_abort: collections.abc.Callable[[], bool] | None,
     on_wait: collections.abc.Callable[[SlotOwner | None], None] | None,
-) -> bool:
-    """実行枠を取得して`True`を返す。祖先の所有を継承した場合は取得せず`False`を返す。"""
-    with _request(owner_path.parent) as request:
+) -> tuple[pyfltr.file_lock.FileLock, pathlib.Path] | None:
+    """空いた枠を取得してそのロックと保持者記録のパスを返す。祖先の所有を継承した場合は取得せず`None`を返す。
+
+    祖先の判定を空いた枠の取得より先に行う。
+    検証コマンドから起動した子のpyfltrが、祖先の枠を継承せずに空いた枠を使い、別の検証の枠を減らさないようにするためである。
+    """
+    with _request(directory) as request:
         notified = False
         while True:
-            with _queue_guard(owner_path.parent):
-                waiters = _waiters(owner_path.parent)
-                if waiters and waiters[0] == request and lock.try_acquire():
-                    try:
-                        _write_owner(owner_path, label)
-                    except BaseException:
-                        lock.release()
-                        raise
-                    return True
-            owner = _read_owner(owner_path)
-            if owner is not None and _is_ancestor(owner):
-                return False
+            owners = read_owners(directory)
+            if any(_is_ancestor(owner) for owner in owners):
+                return None
+            with _queue_guard(directory):
+                waiters = _waiters(directory)
+                if waiters and waiters[0] == request:
+                    for lock_path, owner_path in slots:
+                        lock = pyfltr.file_lock.FileLock(lock_path)
+                        if not lock.try_acquire():
+                            continue
+                        try:
+                            _write_owner(owner_path, label)
+                        except BaseException:
+                            lock.release()
+                            raise
+                        return lock, owner_path
             if should_abort is not None and should_abort():
                 raise WaitAborted("実行枠の取得待機が取り消されました。")
             if not notified:
                 notified = True
                 if on_wait is not None:
-                    on_wait(owner)
+                    on_wait(owners[0] if owners else None)
             time.sleep(_POLL_INTERVAL)
 
 

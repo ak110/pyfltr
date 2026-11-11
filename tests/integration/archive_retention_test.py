@@ -12,6 +12,7 @@ import sys
 import psutil
 import pytest
 
+import pyfltr.command.execution_slot
 from tests.integration import concurrent_runs_helper as helper
 
 
@@ -36,12 +37,14 @@ def _show_run_output(run_id: str, command: str) -> subprocess.CompletedProcess[s
     ],
 )
 def test_running_run_survives_other_cleanup(
-    tmp_path: pathlib.Path, exit_code: int, timeout: int | None, expected_returncode: int
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, exit_code: int, timeout: int | None, expected_returncode: int
 ) -> None:
     """Aの実行中に別runのcleanupが起きても、Aの記録が残り終了後に公開CLIで取得できる。
 
     timeoutの場合はAのツールを解放せず、pyfltrがツールの時間上限で停止する。
+    BがAの実行中に待機する前提で観測するため、枠を1つにする。
     """
+    monkeypatch.setenv(pyfltr.command.execution_slot.SLOTS_ENV, "1")
     log = tmp_path / "intervals.log"
     release = tmp_path / "release-a"
     extra = {"archive-max-runs": 1, **({"command-timeout": timeout} if timeout is not None else {})}

@@ -6,6 +6,10 @@ import subprocess
 import sys
 import time
 
+import pytest
+
+import pyfltr.command.execution_slot
+
 # 協調API導入前の実体をFileLock・キャッシュ解決と共に再現する。CIはfetch-depth: 0で取得する。
 _LEGACY_COMMIT = "60855c2a81737bac9fd717781b8b98c01d29f6f2"
 _WORKER = """import json
@@ -28,8 +32,15 @@ with slot.hold(lock_dir=root / "locks", on_wait=lambda _: (root / "waiting").tou
 """
 
 
-def test_legacy_holder_excludes_current_process_until_release(tmp_path: pathlib.Path) -> None:
-    """旧版保持中の新版は待機し、旧版解放後に取得して両プロセスが正常終了する。"""
+@pytest.mark.parametrize("slots", ["1", "2"])
+def test_legacy_holder_excludes_current_process_until_release(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, slots: str
+) -> None:
+    """旧版保持中の新版は、枠が1つなら待機して旧版解放後に取得し、枠が2つなら2つ目の枠で待たずに入る。
+
+    旧版は1つ目の枠だけを扱うため、新版の2つ目の枠と合わせても同時実行は2件を超えない。
+    """
+    monkeypatch.setenv(pyfltr.command.execution_slot.SLOTS_ENV, slots)
     repository = pathlib.Path(__file__).resolve().parents[2]
     legacy = tmp_path / "legacy"
     package = legacy / "pyfltr"
@@ -62,8 +73,12 @@ def test_legacy_holder_excludes_current_process_until_release(tmp_path: pathlib.
                 stderr=subprocess.PIPE,
             ) as current:
                 try:
-                    _wait_for(tmp_path / "waiting", current)
-                    assert not (tmp_path / "new-entered").exists()
+                    if slots == "1":
+                        _wait_for(tmp_path / "waiting", current)
+                        assert not (tmp_path / "new-entered").exists()
+                    else:
+                        current.wait(timeout=30)
+                        assert not (tmp_path / "waiting").exists()
                     assert old.poll() is None
                 finally:
                     old_output, old_error = old.communicate(timeout=10)

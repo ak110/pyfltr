@@ -21,8 +21,10 @@ import pyfltr.warnings_
 from tests.conftest import StageExecutorControl, make_command_result, make_execution_context
 
 
-def test_stages_hold_slot_until_all_tools_finish(tmp_path: pathlib.Path) -> None:
+def test_stages_hold_slot_until_all_tools_finish(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """待機者が現れても途中では譲らず、全ツールの回収後に枠を解放する。"""
+    # 待機者を作るため枠を1つにする。
+    monkeypatch.setenv(pyfltr.command.execution_slot.SLOTS_ENV, "1")
     (tmp_path / "pyproject.toml").write_text(
         '[tool.pyfltr.custom-commands.first]\ntype="formatter"\npath="first"\ntargets="*.txt"\n'
         '[tool.pyfltr.custom-commands.second]\ntype="formatter"\npath="second"\ntargets="*.txt"\n',
@@ -480,7 +482,9 @@ def test_finished_owner_is_not_reported_as_running(tmp_path: pathlib.Path, monke
     """保持者記録が終了済みのプロセスを指す間は、初回の待機警告と継続表示の両方で稼働中と表示しない。
 
     強制終了した保持者の記録が残った状態を、保持中の記録ファイルを終了済みのプロセスの記録へ置き換えて再現する。
+    待機を起こすため枠を1つにする。
     """
+    monkeypatch.setenv(pyfltr.command.execution_slot.SLOTS_ENV, "1")
     config = _custom_formatters(tmp_path, ("first", "*.txt"))
     target = tmp_path / "input.txt"
     target.write_text("x", encoding="utf-8")

@@ -45,6 +45,12 @@ def _lock_dir(tmp_path: pathlib.Path) -> pathlib.Path:
     return tmp_path / "locks"
 
 
+@pytest.fixture(autouse=True)
+def _single_slot(monkeypatch: pytest.MonkeyPatch) -> None:
+    """既存の取得規則の試験は枠を1つにして、2件目が待つ前提で確かめる。枠が2つの試験は個別に上書きする。"""
+    monkeypatch.setenv(pyfltr.command.execution_slot.SLOTS_ENV, "1")
+
+
 @contextlib.contextmanager
 def _holder(tmp_path: pathlib.Path, lock_dir: pathlib.Path) -> collections.abc.Generator[int, None, None]:
     """別プロセスで実行枠を保持し、保持を確認してから保持者のpidを渡す。区間を抜けると標準入力を閉じて解放させる。
@@ -341,3 +347,71 @@ def test_wait_interval_callback_failure_releases_slot(lock_dir: pathlib.Path) ->
     other.start()
     other.join(30)
     assert acquired == [True]
+
+
+@pytest.mark.parametrize(("raw", "expected"), [(None, 2), ("", 2), ("1", 1), ("2", 2)])
+def test_slot_count_accepts_lowering_only(monkeypatch: pytest.MonkeyPatch, raw: str | None, expected: int) -> None:
+    """枠の数は既定で2つで、環境変数では1から既定値までを受け付ける。"""
+    if raw is None:
+        monkeypatch.delenv(pyfltr.command.execution_slot.SLOTS_ENV)
+    else:
+        monkeypatch.setenv(pyfltr.command.execution_slot.SLOTS_ENV, raw)
+    assert pyfltr.command.execution_slot.slot_count() == expected
+
+
+@pytest.mark.parametrize("raw", ["0", "3", "-1", "two"])
+def test_slot_count_rejects_out_of_range(monkeypatch: pytest.MonkeyPatch, lock_dir: pathlib.Path, raw: str) -> None:
+    """既定値を超える指定と整数でない指定は、指定できる値を示すエラーにする。"""
+    monkeypatch.setenv(pyfltr.command.execution_slot.SLOTS_ENV, raw)
+    with (
+        pytest.raises(ValueError, match=pyfltr.command.execution_slot.SLOTS_ENV),
+        pyfltr.command.execution_slot.hold(lock_dir=lock_dir),
+    ):
+        pytest.fail("不正な指定では区間へ入らない")
+
+
+@pytest.mark.timeout(120)
+def test_two_slots_let_second_process_enter_and_third_wait(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, lock_dir: pathlib.Path
+) -> None:
+    """枠が2つなら独立した2件目は待たずに入り、3件目は空きができるまで待つ。"""
+    monkeypatch.delenv(pyfltr.command.execution_slot.SLOTS_ENV)
+    with _holder(tmp_path, lock_dir) as first_pid:
+        # 2件目の保持者は待たずに区間へ入り、保持を報告する（待つと報告が届かず試験が時間切れになる）。
+        with _holder(tmp_path, lock_dir) as second_pid:
+            owners = pyfltr.command.execution_slot.read_owners(lock_dir)
+            assert sorted(owner.pid for owner in owners) == sorted([first_pid, second_pid])
+            notified: list[pyfltr.command.execution_slot.SlotOwner | None] = []
+            with (
+                pytest.raises(pyfltr.command.execution_slot.WaitAborted),
+                pyfltr.command.execution_slot.hold(
+                    lock_dir=lock_dir, should_abort=lambda: bool(notified), on_wait=notified.append
+                ),
+            ):
+                pytest.fail("2つの枠が埋まっている間は3件目は区間へ入らない")
+            assert len(notified) == 1
+        # 2件目の解放で空いた枠へ、待たずに入る。
+        with pyfltr.command.execution_slot.hold(lock_dir=lock_dir, should_abort=lambda: True):
+            pids = [owner.pid for owner in pyfltr.command.execution_slot.read_owners(lock_dir)]
+            assert sorted(pids) == sorted([first_pid, os.getpid()])
+    assert not pyfltr.command.execution_slot.read_owners(lock_dir)
+
+
+@pytest.mark.timeout(120)
+def test_child_inherits_owner_of_second_slot(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, lock_dir: pathlib.Path
+) -> None:
+    """2つ目の枠の保持者の子プロセスも、所有を継承して待たずに区間へ入る。"""
+    monkeypatch.delenv(pyfltr.command.execution_slot.SLOTS_ENV)
+    script = tmp_path / "child.py"
+    script.write_text(_CHILD_SCRIPT, encoding="utf-8")
+    with _holder(tmp_path, lock_dir), pyfltr.command.execution_slot.hold(lock_dir=lock_dir):
+        completed = subprocess.run(
+            [sys.executable, str(script), str(lock_dir)],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == "entered"

@@ -45,6 +45,12 @@ with pyfltr.command.execution_slot.hold(label="external-check"):
 """
 
 
+@pytest.fixture(autouse=True)
+def _single_slot(monkeypatch: pytest.MonkeyPatch) -> None:
+    """待ち合わせの試験は枠を1つにして、後発が先発の終了を待つ前提で確かめる。枠が2つの試験は個別に上書きする。"""
+    monkeypatch.setenv(pyfltr.command.execution_slot.SLOTS_ENV, "1")
+
+
 def _assert_after(log: pathlib.Path, first: str, second: str) -> None:
     """`second`の区間が`first`の区間の終了後に始まったことを確かめる。"""
     spans = helper.intervals(log)
@@ -78,6 +84,30 @@ def test_cli_runs_do_not_overlap(tmp_path: pathlib.Path, subcommand: str) -> Non
             assert run_b.wait() == 0, run_b.stderr
     _assert_after(log, "a", "b")
     assert f"cwd={project_a}" in run_b.stderr
+
+
+@pytest.mark.timeout(240)
+def test_cli_runs_overlap_with_two_slots(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """既定の2つの枠では、別cwdの2つのCLIは後発が待たずにツールを実行し、両方とも正常終了する。"""
+    monkeypatch.delenv(pyfltr.command.execution_slot.SLOTS_ENV)
+    log = tmp_path / "intervals.log"
+    release = tmp_path / "release-a"
+    project_a = helper.make_project(tmp_path, "a", log=log, release=release)
+    project_b = helper.make_project(tmp_path, "b", log=log, release=None)
+
+    with helper.start(helper.pyfltr_argv("run"), project_a) as run_a:
+        helper.wait_for(
+            lambda: helper.started(log, "a"), expected="Aがツールの区間を開始する", observed=lambda: helper.describe(log, run_a)
+        )
+        with helper.start(helper.pyfltr_argv("run", output_format="text", script=True), project_b) as run_b:
+            # Aがツールの区間にいる間に、Bはツールの区間を終える。
+            assert run_b.wait() == 0, run_b.stderr
+            assert not helper.waiting_notified(run_b)
+            spans = helper.intervals(log)
+            assert spans["a"][1] is None, spans
+            assert spans["b"][1] is not None, spans
+            release.touch()
+            assert run_a.wait() == 0, run_a.stderr
 
 
 @pytest.mark.timeout(240)
