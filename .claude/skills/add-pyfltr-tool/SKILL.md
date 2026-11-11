@@ -83,11 +83,16 @@ description: >
 
 ## 検証
 
+変更したファイルと、参照をたどって特定した利用側のテストを対象に指定して実行する。
+新しいツールの登録は、ツール一覧を参照する試験の期待値を変えるため、それらも対象に含める。
+対象は`tests/tools_test.py`、`tests/integration/parser_registration_test.py`、`tests/integration/parser_review_test.py`などである。
+文書のツール一覧を定義と比べる`tests/integration/documentation_test.py`も含める。
+
 ```bash
-uv run pyfltr run
+uv run pyfltr run <変更したファイルと利用側のテスト>
 ```
 
-警告ゼロかつテスト全件成功で完了とする。
+対象の警告ゼロかつテスト全件成功で完了とし、全体のlintとテストはpush後のCIの結果で判定する（`AGENTS.md`「検証」）。
 
 ## fast 判定の計測手順
 
