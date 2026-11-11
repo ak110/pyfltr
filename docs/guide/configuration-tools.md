@@ -215,6 +215,17 @@ semgrep-args = ["scan", "--json", "--error", "--config=auto"]
 `--json`は出力パースの前提条件で、含めないとpyfltrの違反抽出が機能しない。
 `--error`は違反検出時にsemgrepを非0終了させる指定で、含めないとsemgrep側がexit 0を返しpyfltr側でfailed検出できない。
 
+`uvx`がPython 3.15を選ぶ環境（uvで導入済みのPythonのうち最新が3.15の場合など）では、
+スタック領域の上限が既定の8MBのとき、semgrepの解析エンジンが異常終了して結果が空になることを確認している。
+pyfltrの出力にはsemgrepの`semgrep-core exited with -11!`と、エンジンが強制終了された旨のエラーが現れる。
+semgrepが対応版として掲げるPython（3.14以前）を環境変数`UV_PYTHON`で指定すると解消する。
+
+```sh
+UV_PYTHON=3.14 uvx pyfltr run --commands=semgrep
+```
+
+`UV_PYTHON`は同じ実行で`uv`・`uvx`が解決する他のツールにも適用される。
+
 ### sqlfluff
 
 `sqlfluff`はSQL専用linter。
