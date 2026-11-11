@@ -1093,11 +1093,12 @@ pyfltr:
     PYTHONDEVMODE: "1"
     UV_FROZEN: "1"
   script:
-    - uvx pyfltr ci --output-format=code-quality --output-file=code-quality-report.json
+    - uvx pyfltr ci --output-format=code-quality --output-file=code-quality-report.json --pytest-args=--junitxml=$CI_PROJECT_DIR/pytest-report.xml
   artifacts:
     when: always
     reports:
       codequality: code-quality-report.json
+      junit: pytest-report.xml
 ```
 
 ポイント。
@@ -1106,6 +1107,14 @@ pyfltr:
     - `--output-file`を指定するとstdoutには従来の`text`整形出力が並行して出るため、ジョブログで進捗を確認できる
 - `artifacts:reports:codequality`: 生成したJSONファイルをGitLabに取り込む
     - Merge Request画面のCode Quality widget（全tier）とMR diffインライン表示（Ultimate tier）に反映される
+- `--pytest-args=--junitxml=...`: pytestの結果をJUnit形式のXMLファイルへ出力させる
+    - `--pytest-args`の値は`pyproject.toml`の`pytest-args`の後ろへ追加されるため、手元の実行を変えずにCIだけで結果ファイルを出力できる
+    - 値が`--`で始まるため、オプション名と値を`=`でつなぐ
+    - 出力先を`$CI_PROJECT_DIR`起点の絶対パスにし、pytestの作業ディレクトリによらず`artifacts`の指定と同じ場所へ出力する
+- `artifacts:reports:junit`: JUnit形式のXMLファイルをGitLabに取り込む
+    - Merge Requestとpipelineのテストレポートに、個々のテストの合否が表示される
+    - pytestが実行されなかった回は結果ファイルが無く、ジョブログに`no matching files`の警告が出る。
+      ジョブの成否は変わらない
 - `when: always`: ジョブが失敗してもアーティファクトを残す指定
     - lintエラーで`exit 1`したときもレポートを取り込めるようにする
 - `image: ghcr.io/astral-sh/uv:python3.13-bookworm`: Node.js・pnpm・miseのいずれも含まないため、
