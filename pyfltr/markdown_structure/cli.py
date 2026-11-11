@@ -16,6 +16,17 @@ import pyfltr.paths
 from pyfltr.markdown_structure import check
 
 
+def _report_input_error(path: pathlib.Path, exc: Exception) -> None:
+    """入力エラーを、ツール定義の`diagnostic_pattern`に一致する対象ファイルの診断として標準エラーへ書く。
+
+    pyfltrは診断が出たファイルから再実行の対象（`retry_command`・`--only-failed`）を選ぶ。
+    診断の形にしないと、別のファイルに違反がある実行で、読み込めないファイルが再実行の対象から外れる。
+    読み込めないファイルは本文の位置を持たないため、位置は1行1列とする。
+    """
+    location = pyfltr.paths.normalize_separators(str(path))
+    print(f"{location}:1:1: error: 入力エラー: {exc}。UTF-8の読み書きが可能なファイルを指定してください", file=sys.stderr)
+
+
 def main() -> int:
     """指定ファイルを検査し、成功0・違反1・入力エラー2を返す。"""
     parser = argparse.ArgumentParser(description="Markdownの1文1行と全角丸括弧の入れ子を検査する。")
@@ -29,7 +40,7 @@ def main() -> int:
         try:
             text = path.read_bytes().decode("utf-8")
         except (OSError, UnicodeError) as exc:
-            print(f"{path}: 入力エラー: {exc}。UTF-8の読み書きが可能なファイルを指定してください", file=sys.stderr)
+            _report_input_error(path, exc)
             result = 2
             continue
         issues, insertions = check.inspect(text)
@@ -48,7 +59,7 @@ def main() -> int:
         try:
             path.write_bytes(content)
         except OSError as exc:
-            print(f"{path}: 入力エラー: {exc}。UTF-8の読み書きが可能なファイルを指定してください", file=sys.stderr)
+            _report_input_error(path, exc)
             result = 2
     for path, text, issues in prepared:
         starts = [0, *(m.end() for m in re.finditer("\n", text))]

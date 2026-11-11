@@ -1,18 +1,19 @@
 """内蔵linter`markdown-structure`を、公開入口の`pyfltr run`から観測する結合試験。
 
 内部の実行体（`python -m pyfltr.markdown_structure`）の単体試験に加え、設定による有効化、
-通常の段の診断、fix段の自動修正、無効時に報告しないことを確かめる。
+通常の段の診断、fix段の自動修正、無効時に報告しないこと、読み込めないファイルを再実行の対象へ含めることを確かめる。
 """
 
 import json
 import pathlib
+import shlex
 import subprocess
 import sys
 
 _DOCUMENT = "# 見出し\n\n一文目である。二文目である。\n\n説明（補足（内側））を書く。\n"
 
 
-def _run(tmp_path: pathlib.Path, *extra: str) -> tuple[int, list[dict]]:
+def _run(tmp_path: pathlib.Path, *extra: str, targets: tuple[str, ...] = ("doc.md",)) -> tuple[int, list[dict]]:
     proc = subprocess.run(
         [
             sys.executable,
@@ -25,7 +26,7 @@ def _run(tmp_path: pathlib.Path, *extra: str) -> tuple[int, list[dict]]:
             "--no-quiet",
             "--output-format=jsonl",
             *extra,
-            "doc.md",
+            *targets,
         ],
         capture_output=True,
         encoding="utf-8",
@@ -83,3 +84,25 @@ def test_disabled_check_does_not_report(tmp_path: pathlib.Path) -> None:
     assert returncode == 0
     assert not _messages(records)
     assert (tmp_path / "doc.md").read_text(encoding="utf-8") == _DOCUMENT
+
+
+def test_unreadable_file_is_reported_and_retried_with_other_failures(tmp_path: pathlib.Path) -> None:
+    """読み込めないファイルは、違反を持つ別のファイルと同じ実行でも診断と再実行の対象に現れる。
+
+    診断にならない失敗は、別のファイルに診断がある実行で`retry_command`の対象から外れる。
+    """
+    _project(tmp_path, enabled=True)
+    (tmp_path / "bad.md").write_bytes(b"\xff")
+    returncode, records = _run(tmp_path, "--no-fix", targets=("bad.md", "doc.md"))
+    assert returncode == 1
+    files = {
+        record["file"]
+        for record in records
+        if record.get("kind") == "diagnostic" and record.get("command") == "markdown-structure"
+    }
+    assert files == {"bad.md", "doc.md"}
+    (command,) = [
+        record for record in records if record.get("kind") == "command" and record.get("command") == "markdown-structure"
+    ]
+    retry_targets = {pathlib.Path(arg).name for arg in shlex.split(command["retry_command"])[-2:]}
+    assert retry_targets == {"bad.md", "doc.md"}
