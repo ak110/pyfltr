@@ -8,7 +8,8 @@
 - `equal`: 診断と追加の値（`extras`）が両版で一致し、診断の件数が採取時の件数と一致する
 - `different`: 診断または追加の値が両版で異なる
 - `count_mismatch`: 作業ツリー版の診断の件数が採取時にpyfltrが出した件数と異なる。
-  比較の入力が実行時の解析入力と一致していないため、両版の一致を比べられた証拠にできない
+  原因は、比較の入力が実行時の解析入力と異なる場合と、作業ツリー版の解析が採取後に件数を変えた場合（退行を含む）がある。
+  両版の一致を比べられた証拠にはできず、項目の`hint`が示す確認で原因を見分ける
 - `error`: いずれかの版の解析が例外で終わった
 """
 
@@ -142,6 +143,15 @@ def _side(result: dict[str, typing.Any], entry_id: str) -> tuple[list[dict[str, 
     return value["diagnostics"], None
 
 
+_COUNT_MISMATCH_HINT = (
+    "採取時の件数（collected）と作業ツリー版の件数（current）が異なる。"
+    "基準版の件数（base）がcollectedと一致する場合は、作業ツリー版の解析が件数を変えた（退行を含む）ため、"
+    "両版の診断を読んで改善・退行を判定する。"
+    "baseもcollectedと異なる場合は、比較の入力（inputs.jsonlのoutput）が実行時の解析入力と異なるため、"
+    "採取記録のparse_input・output.logとdiagnostics.jsonを読み、入力の取り方を直してから採取し直す。"
+)
+
+
 def _extras(base: dict[str, typing.Any], current: dict[str, typing.Any]) -> dict[str, dict[str, typing.Any]]:
     """診断以外に両版が出力から取り出した値（要約行・設定競合・遅い試験）を項目ごとに対にする。
 
@@ -191,7 +201,12 @@ def compare(input_dir: pathlib.Path, output: pathlib.Path, *, base: str) -> dict
             expected_count = entry.get("diagnostic_count")
             if expected_count is not None and expected_count != len(current_diagnostics):
                 item["result"] = "count_mismatch"
-                item["count_mismatch"] = {"collected": expected_count, "current": len(current_diagnostics)}
+                item["count_mismatch"] = {
+                    "collected": expected_count,
+                    "base": len(base_diagnostics),
+                    "current": len(current_diagnostics),
+                    "hint": _COUNT_MISMATCH_HINT,
+                }
             else:
                 item["result"] = "equal" if item["diff"]["equal"] and extra_equal else "different"
             counts[item["result"]] += 1

@@ -431,7 +431,10 @@ def test_compare_reports_summary_and_collected_count_mismatch(tmp_path: pathlib.
     assert by_id["matched"]["result"] == "equal"
     assert by_id["matched"]["extras"]["summary"]["current"] == "1 passed in 0.01s"
     assert by_id["mismatched"]["result"] == "count_mismatch"
-    assert by_id["mismatched"]["count_mismatch"] == {"collected": 1, "current": 0}
+    mismatch = by_id["mismatched"]["count_mismatch"]
+    assert (mismatch["collected"], mismatch["base"], mismatch["current"]) == (1, 0, 0)
+    # 基準版も採取時の件数と異なる場合を、入力の不一致として調べる案内を返す。
+    assert "比較の入力" in mismatch["hint"]
     assert by_id["derived"]["result"] == "equal"
     assert report["counts"] == {"equal": 2, "different": 0, "count_mismatch": 1, "error": 0}
 
