@@ -143,12 +143,15 @@ def _side(result: dict[str, typing.Any], entry_id: str) -> tuple[list[dict[str, 
     return value["diagnostics"], None
 
 
+# 基準版は--baseで任意に選べ、採取時の版と同じとは限らない。
+# そのためbaseの件数で原因を分岐させず、件数だけでは原因を確定できないことと調べる対象を示す。
 _COUNT_MISMATCH_HINT = (
-    "採取時の件数（collected）と作業ツリー版の件数（current）が異なる。"
-    "基準版の件数（base）がcollectedと一致する場合は、作業ツリー版の解析が件数を変えた（退行を含む）ため、"
-    "両版の診断を読んで改善・退行を判定する。"
-    "baseもcollectedと異なる場合は、比較の入力（inputs.jsonlのoutput）が実行時の解析入力と異なるため、"
-    "採取記録のparse_input・output.logとdiagnostics.jsonを読み、入力の取り方を直してから採取し直す。"
+    "採取時の件数（collected）と作業ツリー版の件数（current）が異なる。件数だけでは原因を確定できない。"
+    "原因は、比較の入力（inputs.jsonlのoutput）が採取時の解析入力と異なる場合と、"
+    "採取後に解析が件数を変えた場合（退行を含む）がある。"
+    "基準版（base）は採取時の版と同じとは限らないため、baseの件数は参考に留める。"
+    "採取記録のparse_input・output.logとdiagnostics.jsonで採取時の入力と診断を確かめ、"
+    "比較に使った基準版・作業ツリー版の診断と突き合わせて、入力の不一致か解析の変化かを判定する。"
 )
 
 

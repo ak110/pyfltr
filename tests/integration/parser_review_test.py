@@ -433,8 +433,12 @@ def test_compare_reports_summary_and_collected_count_mismatch(tmp_path: pathlib.
     assert by_id["mismatched"]["result"] == "count_mismatch"
     mismatch = by_id["mismatched"]["count_mismatch"]
     assert (mismatch["collected"], mismatch["base"], mismatch["current"]) == (1, 0, 0)
-    # 基準版も採取時の件数と異なる場合を、入力の不一致として調べる案内を返す。
+    # 基準版0・採取時1・現行0は、採取後の解析の退行でも生じる。
+    # 入力の不一致と断定せず、両方の原因を調べる案内を返す。
+    assert "件数だけでは原因を確定できない" in mismatch["hint"]
     assert "比較の入力" in mismatch["hint"]
+    assert "退行" in mismatch["hint"]
+    assert "採取し直す" not in mismatch["hint"]
     assert by_id["derived"]["result"] == "equal"
     assert report["counts"] == {"equal": 2, "different": 0, "count_mismatch": 1, "error": 0}
 
