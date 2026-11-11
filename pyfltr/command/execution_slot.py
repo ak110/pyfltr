@@ -486,14 +486,14 @@ def _linux_is_ancestor(owner: SlotOwner) -> bool:
         return False
     try:
         pid = os.getpid()
-        boot_id, _ = _linux_identity(pid)
+        boot_id, expected_start = _linux_identity(pid)
         if boot_id != owner.boot_id:
             return False
         seen = {pid}
         while True:
             child = _linux_process_stat(pid)
             ppid = child[0]
-            if ppid <= 0 or ppid in seen:
+            if child[1] != expected_start or ppid <= 0 or ppid in seen:
                 return False
             parent = _linux_process_stat(ppid)
             # 親の読取中に子が終了・再生成・reparentされた場合、別の系統を継承しない。
@@ -503,6 +503,7 @@ def _linux_is_ancestor(owner: SlotOwner) -> bool:
                 return parent[1] == owner.linux_start_time
             seen.add(ppid)
             pid = ppid
+            expected_start = parent[1]
     except (OSError, ValueError, IndexError):
         return False
 

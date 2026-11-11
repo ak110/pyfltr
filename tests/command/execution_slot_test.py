@@ -12,6 +12,7 @@ import subprocess
 import sys
 import threading
 import time
+import typing
 
 import pytest
 
@@ -247,6 +248,52 @@ def test_unrelated_process_waits_and_abort_does_not_acquire(tmp_path: pathlib.Pa
     assert pyfltr.command.execution_slot.read_owner(lock_dir) is None
     with pyfltr.command.execution_slot.hold(lock_dir=lock_dir, should_abort=lambda: True):
         pass
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linuxの/procによる祖先列挙")
+def test_reused_intermediate_pid_does_not_inherit_unrelated_owner(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, lock_dir: pathlib.Path
+) -> None:
+    """親と確認した中間PIDが次の走査までに再利用されても、別系統の保持者を継承しない。"""
+    with _holder(tmp_path, lock_dir) as holder_pid:
+        owner = pyfltr.command.execution_slot.read_owner(lock_dir)
+        assert owner is not None and owner.linux_start_time is not None
+        # /proc statの実出力を基に、PPIDとstarttimeだけを競合条件へ差し替える。
+        sample = pathlib.Path(f"/proc/{os.getpid()}/stat").read_text(encoding="utf-8")
+
+        def _stat(pid: int, ppid: int, start: int) -> str:
+            fields = sample.rsplit(")", 1)[1].split()
+            fields[1], fields[19] = str(ppid), str(start)
+            return f"{pid} (race-test) " + " ".join(fields)
+
+        middle_pid = max(os.getpid(), holder_pid) + 1_000_000_000
+        current_path = pathlib.Path(f"/proc/{os.getpid()}/stat")
+        middle_path = pathlib.Path(f"/proc/{middle_pid}/stat")
+        child_stat = _stat(os.getpid(), middle_pid, owner.linux_start_time + 3)
+        old_parent = _stat(middle_pid, 0, owner.linux_start_time + 1)
+        reused_parent = _stat(middle_pid, holder_pid, owner.linux_start_time + 2)
+        parent_observed = False
+        reused = False
+
+        def _read_proc(path: pathlib.Path, encoding: str | None = None, errors: str | None = None, **kwargs: typing.Any) -> str:
+            nonlocal parent_observed, reused
+            if path == middle_path:
+                parent_observed = True
+                return reused_parent if reused else old_parent
+            if path == current_path:
+                # 子→中間PIDを確認した直後に中間PIDが別系統のプロセスへ変わる。
+                if parent_observed:
+                    reused = True
+                return child_stat
+            with path.open(encoding=encoding, errors=errors, **kwargs) as file:
+                return file.read()
+
+        monkeypatch.setattr(pathlib.Path, "read_text", _read_proc)
+        with (
+            pytest.raises(pyfltr.command.execution_slot.WaitAborted),
+            pyfltr.command.execution_slot.hold(lock_dir=lock_dir, should_abort=lambda: True),
+        ):
+            pytest.fail("祖先でない保持者を継承して区間へ入らない")
 
 
 def test_release_after_exception(lock_dir: pathlib.Path) -> None:
