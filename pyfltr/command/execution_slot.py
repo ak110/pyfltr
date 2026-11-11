@@ -30,6 +30,9 @@ pyfltr以外の検証を起動する呼出元（他のツールのスクリプ�
   祖先の判定はpidとプロセス生成時刻で行い、環境変数を引き継がない子孫にも働く
 - それ以外は待機列へ登録し、先に並んだ要求と空いた枠を`_POLL_INTERVAL`秒ごとに確かめ、登録順に空いた枠を取得する。
   同じプロセスの別スレッドも別の要求として扱い、枠が全て埋まっていれば待つ
+- 先に並んだ要求が全て枠を1つだけ扱う旧版の要求なら、2つ目以降の空いた枠は先に取得する。
+  旧版の要求は1つ目の枠しか取得できず、登録順を守ると旧版が先頭で待つ間は空いた枠が使われないためである。
+  1つ目の枠は旧版の要求に先を譲るため、先頭のときだけ取得する
 
 実行の途中で待機者へ譲る機能と、子プロセスが参加券で協調して譲る機能は、2026年11月に撤去した。
 区切りごとに待機列へ並び直す方式は、混雑時に短い検証の待ちを区切りの数だけ増やし、効果を実測で示せなかったためである
@@ -72,6 +75,8 @@ DEFAULT_SLOTS = 2
 SLOTS_ENV = "PYFLTR_EXECUTION_SLOTS"
 """上限を`DEFAULT_SLOTS`以下へ下げる環境変数。資源が不足するホストで1件ずつに戻す退避手段である。"""
 _QUEUE_FILENAME = "execution.queue.lock"
+_MULTI_SLOT_MARK = "m"
+"""複数の枠を扱う版の要求ファイル名に入れる目印。旧版の要求（`execution.wait-<連番>-<乱数>`）と区別する。"""
 _POLL_INTERVAL = 0.2
 """待機中の再試行間隔（秒）。解放から次の取得までの遅れと、待機中の負荷の釣り合いで選ぶ。"""
 _CREATE_TIME_TOLERANCE = 1.0
@@ -144,7 +149,7 @@ def default_lock_dir() -> pathlib.Path:
 def slot_count() -> int:
     """同時に外部ツールを実行できる独立した検証の上限を返す。
 
-    `PYFLTR_EXECUTION_SLOTS`は1から`DEFAULT_SLOTS`までを受け付ける。
+    `PYFLTR_EXECUTION_SLOTS`は1から`DEFAULT_SLOTS`までを受け付け、未設定と空白だけの値は既定値とする。
     上限を上げる指定を受け付けないのは、実行枠を無効にする手段を設けない方針を保つためである。
     """
     raw = os.environ.get(SLOTS_ENV)
@@ -301,7 +306,10 @@ def _request(directory: pathlib.Path) -> collections.abc.Generator[pathlib.Path,
         waiters = _waiters(directory)
         # 連番の割当と要求ロック取得を同じ区間で行い、他の走査による未登録要求の回収を防ぐ。
         sequence = _sequence(waiters[-1]) + _SEQUENCE_STEP if waiters else _SEQUENCE_STEP
-        with tempfile.NamedTemporaryFile(prefix=f"execution.wait-{sequence:020d}-", dir=directory, delete=False) as file:
+        # 旧版は名前の2つ目の区切りを連番として読むため、目印は連番の後ろに置く。
+        with tempfile.NamedTemporaryFile(
+            prefix=f"execution.wait-{sequence:020d}-{_MULTI_SLOT_MARK}-", dir=directory, delete=False
+        ) as file:
             path = pathlib.Path(file.name)
         request_lock = pyfltr.file_lock.FileLock(path)
         if not request_lock.try_acquire():
@@ -314,6 +322,29 @@ def _request(directory: pathlib.Path) -> collections.abc.Generator[pathlib.Path,
     finally:
         with _queue_guard(directory):
             request_lock.release(remove=True)
+
+
+def _is_legacy_request(path: pathlib.Path) -> bool:
+    """枠を1つだけ扱う旧版の要求かを返す。旧版の要求ファイル名は目印を持たない。"""
+    parts = path.name.split("-")
+    return not (len(parts) >= 4 and parts[2] == _MULTI_SLOT_MARK)
+
+
+def _eligible_slots(waiters: list[pathlib.Path], request: pathlib.Path, count: int) -> range:
+    """要求が今取得してよい枠の番号を返す。
+
+    先頭の要求は全ての枠を取得できる。
+    先に並んだ要求が全て旧版の要求なら、旧版が使えない2つ目以降の枠だけを取得できる。
+    それ以外は先に並んだ新版の要求を待つため、取得できる枠は無い。
+    """
+    if request not in waiters:
+        return range(0)
+    ahead = waiters[: waiters.index(request)]
+    if not ahead:
+        return range(count)
+    if all(_is_legacy_request(path) for path in ahead):
+        return range(1, count)
+    return range(0)
 
 
 def waiter_count(lock_dir: pathlib.Path | None = None) -> int:
@@ -367,17 +398,17 @@ def _acquire(
                 return None
             with _queue_guard(directory):
                 waiters = _waiters(directory)
-                if waiters and waiters[0] == request:
-                    for lock_path, owner_path in slots:
-                        lock = pyfltr.file_lock.FileLock(lock_path)
-                        if not lock.try_acquire():
-                            continue
-                        try:
-                            _write_owner(owner_path, label)
-                        except BaseException:
-                            lock.release()
-                            raise
-                        return lock, owner_path
+                for index in _eligible_slots(waiters, request, len(slots)):
+                    lock_path, owner_path = slots[index]
+                    lock = pyfltr.file_lock.FileLock(lock_path)
+                    if not lock.try_acquire():
+                        continue
+                    try:
+                        _write_owner(owner_path, label)
+                    except BaseException:
+                        lock.release()
+                        raise
+                    return lock, owner_path
             if should_abort is not None and should_abort():
                 raise WaitAborted("実行枠の取得待機が取り消されました。")
             if not notified:
