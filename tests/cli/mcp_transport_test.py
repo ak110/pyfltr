@@ -17,6 +17,7 @@ import pytest
 import tomlkit
 
 import pyfltr.cli.mcp_server
+import pyfltr.command.execution_slot
 from tests.conftest import write_slot_wait_worker
 
 
@@ -228,11 +229,15 @@ def _running(pid: int) -> bool:
         return False
 
 
-def test_stdio_remains_responsive_and_cancels_only_owned_process_tree(tmp_path: pathlib.Path) -> None:
+def test_stdio_remains_responsive_and_cancels_only_owned_process_tree(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
     """2つの実行を重ね、pingと警告応答、片方の子孫停止、もう片方の完走を確認する。
 
     2つの`run`は検証の実行枠を共有するため、後発の要求は先発の取り消しで子孫が止まり枠が解放されてから実行する。
+    後発を待たせるため、サーバーへ引き継ぐ環境で枠を1つにする。
     """
+    monkeypatch.setenv(pyfltr.command.execution_slot.SLOTS_ENV, "1")
     first = _project(tmp_path, "project-first")
     second = _project(tmp_path, "project-second")
     waiting = tmp_path / "slot-waiting"
