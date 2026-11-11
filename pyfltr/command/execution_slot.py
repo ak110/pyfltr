@@ -27,7 +27,7 @@ pyfltr以外の検証を起動する呼出元（他のツールのスクリプ�
 - 同じスレッドが保持中なら入れ子として再入する
 - 保持者記録のプロセスが呼出元プロセスの祖先なら、取得せずに所有を継承する。
   検証コマンドから起動した子のpyfltr・pytest経由のpyfltr・API呼出が自己待機で止まらないようにするためである。
-  祖先の判定はpidとプロセス生成時刻で行い、環境変数を引き継がない子孫にも働く
+  祖先の判定はpidとプロセスの識別情報で行い、環境変数を引き継がない子孫にも働く
 - それ以外は待機列へ登録し、先に並んだ要求と空いた枠を`_POLL_INTERVAL`秒ごとに確かめ、登録順に空いた枠を取得する。
   同じプロセスの別スレッドも別の要求として扱い、枠が全て埋まっていれば待つ
 - 先に並んだ要求が全て枠を1つだけ扱う旧版の要求なら、2つ目以降の空いた枠は先に取得する。
@@ -55,6 +55,7 @@ import json
 import logging
 import os
 import pathlib
+import sys
 import tempfile
 import threading
 import time
@@ -99,12 +100,19 @@ class SlotOwner:
     cwd: str
     acquired_at: str
     label: str | None = None
+    linux_start_time: int | None = None
+    boot_id: str | None = None
 
     def is_alive(self) -> bool:
         """記録したプロセスが生存しているかを返す。待機中の表示で、終了済みの記録を保持者と誤認させないために使う。"""
         try:
+            if sys.platform == "linux":
+                if self.linux_start_time is None:
+                    # 旧記録には補正前の時計しかないため、表示では生存するPIDを終了済みにしない。
+                    return psutil.pid_exists(self.pid)
+                return _linux_identity(self.pid) == (self.boot_id, self.linux_start_time)
             return abs(psutil.Process(self.pid).create_time() - self.create_time) < _CREATE_TIME_TOLERANCE
-        except psutil.Error:
+        except (psutil.Error, OSError, ValueError, IndexError):
             return False
 
 
@@ -420,12 +428,15 @@ def _acquire(
 
 def _write_owner(owner_path: pathlib.Path, label: str | None) -> None:
     current = psutil.Process()
+    boot_id, start_time = _linux_identity(current.pid) if sys.platform == "linux" else (None, None)
     owner = SlotOwner(
         pid=current.pid,
         create_time=current.create_time(),
         cwd=os.getcwd(),
         acquired_at=dt.datetime.now(dt.UTC).isoformat(),
         label=label,
+        linux_start_time=start_time,
+        boot_id=boot_id,
     )
     owner_path.write_text(json.dumps(dataclasses.asdict(owner), ensure_ascii=False), encoding="utf-8")
 
@@ -434,15 +445,56 @@ def _read_owner(owner_path: pathlib.Path) -> SlotOwner | None:
     # 書込途中の記録は空か不完全なJSONとして読めるため、読めない記録は保持者不明として扱う。
     try:
         raw: typing.Any = json.loads(owner_path.read_text(encoding="utf-8"))
-        return SlotOwner(
+        owner = SlotOwner(
             pid=int(raw["pid"]),
             create_time=float(raw["create_time"]),
             cwd=str(raw["cwd"]),
             acquired_at=str(raw["acquired_at"]),
             label=None if raw.get("label") is None else str(raw["label"]),
+            linux_start_time=None if raw.get("linux_start_time") is None else int(raw["linux_start_time"]),
+            boot_id=None if raw.get("boot_id") is None else str(raw["boot_id"]),
         )
-    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        if sys.platform == "linux" and owner.linux_start_time is None:
+            # 旧版の記録は壁時計から復元できない。PIDが実際に枠のflockを保持している場合だけ補う。
+            with contextlib.suppress(OSError, ValueError, IndexError):
+                identity = _linux_identity(owner.pid)
+                lock_path = owner_path.with_name(owner_path.name.replace(".owner.json", ".lock"))
+                if _linux_holds_lock(owner.pid, lock_path) and _linux_identity(owner.pid) == identity:
+                    owner = dataclasses.replace(owner, boot_id=identity[0], linux_start_time=identity[1])
+        return owner
+    except (OSError, ValueError, TypeError, KeyError, AttributeError, IndexError):
         return None
+
+
+def _linux_identity(pid: int) -> tuple[str, int]:
+    """再起動とPID再利用を区別し、壁時計の補正に依存しない識別情報を読む。"""
+    boot_id = pathlib.Path("/proc/sys/kernel/random/boot_id").read_text(encoding="ascii").strip()
+    stat = pathlib.Path(f"/proc/{pid}/stat").read_text(encoding="utf-8", errors="surrogateescape")
+    # commは空白や閉じ括弧を含められるため、末尾の閉じ括弧から第22フィールドを数える。
+    return boot_id, int(stat.rsplit(")", 1)[1].split()[19])
+
+
+def _linux_holds_lock(pid: int, lock_path: pathlib.Path) -> bool:
+    """旧記録のPIDが対象inodeの排他flockを保持しているかを確かめる。"""
+    stat = lock_path.stat()
+    for info in pathlib.Path(f"/proc/{pid}/fdinfo").iterdir():
+        try:
+            lines = info.read_text(encoding="ascii").splitlines()
+        except FileNotFoundError:
+            continue  # 保持者が別用途のfdを閉じることはある。
+        for line in lines:
+            fields = line.split()
+            if len(fields) != 9 or fields[:1] != ["lock:"] or fields[2:5] != ["FLOCK", "ADVISORY", "WRITE"]:
+                continue
+            major, minor, inode = fields[6].split(":")
+            if (int(fields[5]), int(major, 16), int(minor, 16), int(inode)) == (
+                pid,
+                os.major(stat.st_dev),
+                os.minor(stat.st_dev),
+                stat.st_ino,
+            ):
+                return True
+    return False
 
 
 def _is_ancestor(owner: SlotOwner) -> bool:
@@ -454,6 +506,9 @@ def _is_ancestor(owner: SlotOwner) -> bool:
     for parent in parents:
         if parent.pid != owner.pid:
             continue
+        if sys.platform == "linux":
+            # 旧記録は_read_ownerで実際のロック保持者と確認できた場合だけ継承する。
+            return owner.linux_start_time is not None and owner.is_alive()
         try:
             return abs(parent.create_time() - owner.create_time) < _CREATE_TIME_TOLERANCE
         except psutil.Error:

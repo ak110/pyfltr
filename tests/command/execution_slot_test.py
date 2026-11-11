@@ -129,6 +129,67 @@ def test_child_process_inherits_owner(tmp_path: pathlib.Path, lock_dir: pathlib.
     assert completed.stdout.strip() == "entered"
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="Linuxの壁時計補正と/procの同一性照合")
+@pytest.mark.parametrize("legacy", [False, True])
+@pytest.mark.parametrize("clock_shift", [-9, 9])
+def test_clock_correction_preserves_liveness_and_inheritance(
+    tmp_path: pathlib.Path, lock_dir: pathlib.Path, legacy: bool, clock_shift: int
+) -> None:
+    """時計補正後も保持者は生存と判定され、子は余分な枠を使わずに継承できる。"""
+    script = tmp_path / "child.py"
+    script.write_text(_CHILD_SCRIPT, encoding="utf-8")
+    with pyfltr.command.execution_slot.hold(lock_dir=lock_dir):
+        path = lock_dir / "execution.owner.json"
+        record = json.loads(path.read_text(encoding="utf-8"))
+        # 保存時と読取時のcreate_timeのずれを再現する。旧版は追加の2項目を持たない。
+        record["create_time"] += clock_shift
+        if legacy:
+            record.pop("boot_id")
+            record.pop("linux_start_time")
+        path.write_text(json.dumps(record), encoding="utf-8")
+        owner = pyfltr.command.execution_slot.read_owner(lock_dir)
+        assert owner is not None and owner.is_alive()
+        completed = subprocess.run(
+            [sys.executable, str(script), str(lock_dir)],
+            capture_output=True,
+            encoding="utf-8",
+            errors="backslashreplace",
+            timeout=30,
+            check=False,
+        )
+        assert completed.returncode == 0, completed.stderr
+        assert completed.stdout.strip() == "entered"
+        assert pyfltr.command.execution_slot.read_owner(lock_dir) == owner
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linuxのboot_idとstarttimeの照合")
+@pytest.mark.parametrize("changed", ["boot_id", "linux_start_time"])
+def test_reused_pid_does_not_inherit_slot(tmp_path: pathlib.Path, lock_dir: pathlib.Path, changed: str) -> None:
+    """PIDが一致しても、再起動前や別の生成時点の記録は生存・祖先と判定しない。"""
+    script = tmp_path / "child.py"
+    script.write_text(_CHILD_SCRIPT, encoding="utf-8")
+    with pyfltr.command.execution_slot.hold(lock_dir=lock_dir):
+        path = lock_dir / "execution.owner.json"
+        record = json.loads(path.read_text(encoding="utf-8"))
+        if changed == "boot_id":
+            record["boot_id"] = "previous-boot"
+        else:
+            record["linux_start_time"] += 1
+        path.write_text(json.dumps(record), encoding="utf-8")
+        owner = pyfltr.command.execution_slot.read_owner(lock_dir)
+        assert owner is not None and not owner.is_alive()
+        completed = subprocess.run(
+            [sys.executable, str(script), str(lock_dir)],
+            capture_output=True,
+            encoding="utf-8",
+            errors="backslashreplace",
+            timeout=30,
+            check=False,
+        )
+        assert completed.returncode != 0
+        assert "entered" not in completed.stdout
+
+
 def test_unrelated_process_waits_and_abort_does_not_acquire(tmp_path: pathlib.Path, lock_dir: pathlib.Path) -> None:
     """祖先でない保持者がいると待機し、中断判定で取得せずに終わる。保持者の解放後は取得できる。"""
     with _holder(tmp_path, lock_dir) as holder_pid:

@@ -76,6 +76,13 @@ def test_legacy_holder_excludes_current_process_until_release(
     ) as old:
         try:
             _wait_for(tmp_path / "old-entered", old)
+            if sys.platform == "linux":
+                owner_path = tmp_path / "locks" / "execution.owner.json"
+                record = json.loads(owner_path.read_text(encoding="utf-8"))
+                record["create_time"] += 9
+                owner_path.write_text(json.dumps(record), encoding="utf-8")
+                owner = pyfltr.command.execution_slot.read_owner(tmp_path / "locks")
+                assert owner is not None and owner.is_alive()
             with subprocess.Popen(
                 [*argv, "new", "-", str(tmp_path)],
                 stdout=subprocess.PIPE,
