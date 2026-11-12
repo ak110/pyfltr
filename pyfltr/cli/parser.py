@@ -242,7 +242,7 @@ def make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> "
         "--only-failed",
         default=False,
         action="store_true",
-        help="直前 run のアーカイブから失敗ツールと失敗ファイルを抽出し、"
+        help="同じ作業ディレクトリで行われた直前 run のアーカイブから失敗ツールと失敗ファイルを抽出し、"
         "ツール別に失敗ファイルのみを対象として再実行します"
         "(診断にファイルを持たない失敗ツールは現在の対象全体で再実行します)。"
         "直前 run が存在しない/失敗ツールが無い場合はメッセージを出力して成功終了します。"
@@ -252,7 +252,9 @@ def make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> "
         "--from-run",
         default=None,
         metavar="RUN_ID",
-        help="--only-failed の参照対象 run を明示指定します(前方一致 / latest 対応)。未指定時は直前 run を自動選択します。",
+        help="--only-failed の参照対象 run を明示指定します(前方一致 / latest 対応)。"
+        "未指定時と latest は同じ作業ディレクトリで行われた直前 run を選びます。"
+        "別の作業ディレクトリの run は run_id で指定します。",
     )
     common.add_argument(
         "--changed-since",

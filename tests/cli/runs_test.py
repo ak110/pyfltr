@@ -76,6 +76,7 @@ def test_list_runs_json(
     assert payload["runs"][0]["run_id"] == run_id
     assert payload["runs"][0]["commands"] == ["ruff-check"]
     assert payload["runs"][0]["files"] == 2
+    assert payload["runs"][0]["cwd"] == str(pathlib.Path.cwd())
 
 
 def test_list_runs_jsonl(

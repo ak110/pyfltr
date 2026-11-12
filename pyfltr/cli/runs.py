@@ -61,7 +61,7 @@ def register_subparsers(subparsers: typing.Any) -> None:
     )
     sr.add_argument(
         "run_id",
-        help="表示対象の run_id。前方一致または 'latest' 指定可。",
+        help="表示対象の run_id。前方一致または 'latest'（作業ディレクトリによらず最新の run）指定可。",
     )
     sr.add_argument(
         "--commands",
@@ -162,6 +162,7 @@ def _summary_to_dict(summary: pyfltr.state.archive.RunSummary) -> dict[str, typi
         "exit_code": summary.exit_code,
         "commands": list(summary.commands),
         "files": summary.files,
+        "cwd": summary.cwd,
     }
 
 
@@ -170,7 +171,7 @@ def _print_list_runs_text(summaries: list[pyfltr.state.archive.RunSummary]) -> N
     if not summaries:
         print("(no runs)")
         return
-    header = ("RUN_ID", "STARTED_AT", "EXIT", "FILES", "COMMANDS")
+    header = ("RUN_ID", "STARTED_AT", "EXIT", "FILES", "COMMANDS", "CWD")
     rows: list[tuple[str, ...]] = [header]
     for summary in summaries:
         rows.append(
@@ -180,6 +181,7 @@ def _print_list_runs_text(summaries: list[pyfltr.state.archive.RunSummary]) -> N
                 "-" if summary.exit_code is None else str(summary.exit_code),
                 "-" if summary.files is None else str(summary.files),
                 ",".join(summary.commands),
+                summary.cwd or "-",
             )
         )
     widths = [max(len(row[i]) for row in rows) for i in range(len(header))]

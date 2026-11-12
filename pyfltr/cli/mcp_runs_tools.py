@@ -44,7 +44,7 @@ SHOW_RUN_META_KEYS: tuple[str, ...] = ("version", "cwd", "argv", "commands", "fi
 RunIdArg = typing.Annotated[
     str,
     pydantic.Field(
-        description="対象runの識別子。ULIDの完全一致・前方一致と、最新のrunを指す`latest`を受け付ける。",
+        description="対象runの識別子。ULIDの完全一致・前方一致と、作業ディレクトリによらず最新のrunを指す`latest`を受け付ける。",
     ),
 ]
 
@@ -77,6 +77,7 @@ async def tool_list_runs(
             exit_code=s.exit_code,
             commands=list(s.commands),
             files=s.files,
+            cwd=s.cwd,
         )
         for s in summaries
     ]

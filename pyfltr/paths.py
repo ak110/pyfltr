@@ -105,3 +105,21 @@ def to_match_key(path: str | pathlib.Path, *, start_cwd: pathlib.Path) -> str:
     変換済みの診断の`file`は本関数を通しても同じ値になる。
     """
     return to_start_relative(path, path_base=start_cwd, start_cwd=start_cwd)
+
+
+def is_same_location(left: str | pathlib.Path, right: str | pathlib.Path) -> bool:
+    """2つのパスが同じ場所を指すかを判定する。
+
+    両側を絶対パスへ解決し、Windowsの大文字小文字と区切り文字の違いを`os.path.normcase`で揃えてから比べる。
+    実行アーカイブに記録した実行起点と現在の実行起点の照合など、記録時と現在で表記が異なりうるパスの比較に使う。
+    実体解決に失敗した場合は字句的な絶対パスで比べる。
+    """
+    return _comparable_location(left) == _comparable_location(right)
+
+
+def _comparable_location(path: str | pathlib.Path) -> str:
+    try:
+        resolved = pathlib.Path(path).resolve()
+    except (OSError, RuntimeError):
+        resolved = pathlib.Path(os.path.abspath(path))
+    return os.path.normcase(str(resolved))

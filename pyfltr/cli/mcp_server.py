@@ -261,7 +261,8 @@ def build_server() -> MCPServer:
         (
             "list_runs",
             "実行履歴の一覧",
-            "実行アーカイブに保存されたrunの一覧を新しい順に返す。最新runだけを見る場合は`show_run`へ`latest`を渡す。",
+            "実行アーカイブに保存されたrunの一覧を新しい順に返す。最新runだけを見る場合は`show_run`へ`latest`を渡す。"
+            "`latest`は作業ディレクトリによらず最新のrunを指す。",
             read_only,
             pyfltr.cli.mcp_runs_tools.tool_list_runs,
         ),

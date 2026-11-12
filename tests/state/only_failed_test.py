@@ -1,6 +1,7 @@
 import json
 import logging
 import pathlib
+import time
 import typing
 
 import pytest
@@ -217,6 +218,7 @@ def test_apply_filter_matches_targets_with_dot_dot_and_outside_relative(_only_fa
                 [_make_error("markdownlint", "a.md", 1, "e"), _make_error("markdownlint", outside, 1, "e")],
             ),
         ],
+        cwd=start,
     )
     args = pyfltr.run_options.RunOptions.from_values({"only_failed": True})
     all_files = [pathlib.Path("sub/../a.md"), pathlib.Path("../outside/out.md")]
@@ -271,6 +273,94 @@ def test_apply_filter_from_run_latest(_only_failed_cache: pathlib.Path) -> None:
     args = pyfltr.run_options.RunOptions.from_values({"only_failed": True})
     _, targets, exit_early = _apply_filter(args, ["ruff-check"], [pathlib.Path("a.py")], from_run="latest")
     assert exit_early is False
+    assert targets is not None
+
+
+@pytest.mark.parametrize("from_run", [None, "latest"])
+def test_apply_filter_ignores_newer_run_in_other_cwd(
+    _only_failed_cache: pathlib.Path, tmp_path: pathlib.Path, from_run: str | None
+) -> None:
+    """別の実行起点で行われた新しい成功runがあっても、同じ起点の直前の失敗runを再実行対象にする。
+
+    実行アーカイブはユーザー単位で共有されるため、全体の最新runを参照すると
+    別の作業ツリーの成功runを拾い、自分の失敗を再確認しないまま成功で終わる。
+    """
+    start_cwd = tmp_path / "proj"
+    start_cwd.mkdir()
+    _seed_run(
+        _only_failed_cache,
+        commands=["ruff-check"],
+        exit_code=1,
+        tool_results=[("ruff-check", 1, "", [_make_error("ruff-check", "a.py", 1, "e")])],
+        cwd=start_cwd,
+    )
+    _seed_run(
+        _only_failed_cache,
+        commands=["ruff-check"],
+        exit_code=0,
+        tool_results=[("ruff-check", 0, "", [])],
+        cwd=tmp_path / "other",
+    )
+    args = pyfltr.run_options.RunOptions.from_values({"only_failed": True})
+    commands, targets, exit_early = _apply_filter(
+        args, ["ruff-check"], [pathlib.Path("a.py")], start_cwd=start_cwd, from_run=from_run
+    )
+    assert exit_early is False
+    assert commands == ["ruff-check"]
+    assert targets is not None
+    assert targets["ruff-check"].files == (pathlib.Path("a.py"),)
+
+
+def test_apply_filter_early_exit_without_run_in_same_cwd(_only_failed_cache: pathlib.Path, tmp_path: pathlib.Path) -> None:
+    """同じ実行起点のrunが無ければ、別の起点の失敗runを参照せず、明示指定の方法を案内して早期終了する。"""
+    _seed_run(
+        _only_failed_cache,
+        commands=["ruff-check"],
+        exit_code=1,
+        tool_results=[("ruff-check", 1, "", [_make_error("ruff-check", "a.py", 1, "e")])],
+        cwd=tmp_path / "other",
+    )
+    start_cwd = tmp_path / "proj"
+    start_cwd.mkdir()
+    args = pyfltr.run_options.RunOptions.from_values({"only_failed": True})
+    commands, targets, exit_early = _apply_filter(args, ["ruff-check"], [pathlib.Path("a.py")], start_cwd=start_cwd)
+    assert exit_early is True
+    assert commands == ["ruff-check"]
+    assert targets is None
+    warnings = [w for w in pyfltr.warnings_.collected_warnings() if w["source"] == "only-failed"]
+    assert len(warnings) == 1
+    assert "--from-run" in warnings[0]["hint"]
+
+
+def test_apply_filter_skips_runs_without_cwd_or_unfinished(_only_failed_cache: pathlib.Path, tmp_path: pathlib.Path) -> None:
+    """実行起点を記録していない旧runと、同じ起点で実行中のrunは参照せず、その前の完了済みrunを参照する。"""
+    start_cwd = tmp_path / "proj"
+    start_cwd.mkdir()
+    _seed_run(
+        _only_failed_cache,
+        commands=["ruff-check"],
+        exit_code=1,
+        tool_results=[("ruff-check", 1, "", [_make_error("ruff-check", "a.py", 1, "e")])],
+        cwd=start_cwd,
+    )
+    legacy_run_id = _seed_run(
+        _only_failed_cache, commands=["ruff-check"], exit_code=0, tool_results=[("ruff-check", 0, "", [])]
+    )
+    store = pyfltr.state.archive.ArchiveStore(cache_root=_only_failed_cache)
+    legacy_meta_path = store.runs_dir / legacy_run_id / "meta.json"
+    legacy_meta = json.loads(legacy_meta_path.read_text(encoding="utf-8"))
+    del legacy_meta["cwd"]
+    legacy_meta_path.write_text(json.dumps(legacy_meta), encoding="utf-8")
+    # run_idはミリ秒単位の時刻を含むULIDのため、直前のrunより新しい順に並ぶよう時刻を進める。
+    time.sleep(0.002)
+    running_run_id = store.start_run(commands=["ruff-check"], files=1, cwd=str(start_cwd))
+    try:
+        args = pyfltr.run_options.RunOptions.from_values({"only_failed": True})
+        commands, targets, exit_early = _apply_filter(args, ["ruff-check"], [pathlib.Path("a.py")], start_cwd=start_cwd)
+    finally:
+        store.release_run(running_run_id)
+    assert exit_early is False
+    assert commands == ["ruff-check"]
     assert targets is not None
 
 

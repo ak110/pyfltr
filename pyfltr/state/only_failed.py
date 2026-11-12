@@ -1,6 +1,6 @@
 """`--only-failed` フィルター処理。
 
-直前runの失敗情報から再実行対象コマンドとファイル集合を構築する。
+同じ実行起点で行われた直前runの失敗情報から再実行対象コマンドとファイル集合を構築する。
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ def apply_filter(
         all_files: `expand_all_files`の結果。`args.targets`指定があれば既にフィルタリング済み。
         start_cwd: 実行起点（`--work-dir`・MCPの`work_dir`適用後）。対象ファイルと診断の`file`の突合キーの基準。
         from_run: 参照対象runを明示指定する（前方一致 / `latest`対応）。
-            `None`の場合は直前runを自動選択する。
+            `None`と`latest`の場合は、`start_cwd`と同じ実行起点で行われた最新のrunを選ぶ。
         extra_candidates: ツール名から、`all_files`に加えて交差の候補にするファイル一覧への辞書。
             `pytest-always-targets`で位置引数に依らず対象へ加わるテストを候補に含めるために使う。
         only_failed_option: 失敗分だけを実行する指定の表示名。
@@ -85,8 +85,10 @@ def apply_filter(
 
     # from_run指定時にrun_idを解決し、失敗ならwarningを発行して早期終了する。
     # 解決済みrun_idを_load_run_summaryに渡すことで二重解決を避ける。
+    # `latest`は直前の実行を明示する別名として使われるため、未指定と同じく同じ実行起点の最新runへ解決する。
+    # 実行アーカイブはユーザー単位で共有されるため、全体の最新runは別のプロジェクトや作業ツリーの実行でありうる。
     resolved_run_id: str | None = None
-    if from_run is not None:
+    if from_run is not None and from_run != "latest":
         try:
             resolved_run_id = pyfltr.state.runs.resolve_run_id(store, from_run, list_runs=list_runs, run=run)
         except pyfltr.state.runs.RunIdError as e:
@@ -97,21 +99,34 @@ def apply_filter(
             )
             return commands, None, True
 
-    last_run = _load_run_summary(store, resolved_run_id=resolved_run_id, hint=archive_unreadable_hint)
+    last_run = _load_run_summary(store, resolved_run_id=resolved_run_id, start_cwd=start_cwd, hint=archive_unreadable_hint)
     if last_run is None:
+        if resolved_run_id is not None:
+            message = "参照可能な直前の run が無いため、再実行の対象が無く実行をスキップしました。"
+            hint = ""
+        else:
+            message = (
+                f"この作業ディレクトリ ({start_cwd}) で行われた参照可能な直前の run が無いため、"
+                "再実行の対象が無く実行をスキップしました。別の作業ディレクトリで行われた run は参照しません。"
+            )
+            hint = (
+                f"別の作業ディレクトリの run を参照する場合は、{list_runs}で run_id を確認して"
+                f"{from_run_option}に指定してください。"
+            )
         _emit_skip_warning(
-            "参照可能な直前の run が無いため、再実行の対象が無く実行をスキップしました。",
+            message,
             hint=(
                 f"{all_targets_operation}一度実行してください。"
-                f"失敗があれば、その後 {only_failed_option} で失敗分だけを再実行できます。"
+                f"失敗があれば、その後 {only_failed_option} で失敗分だけを再実行できます。{hint}"
             ),
         )
         return commands, None, True
 
+    run_label = _describe_run(last_run)
     failed_tools = _collect_failed_tools(store, last_run.run_id, commands, hint=archive_unreadable_hint)
     if not failed_tools:
         _emit_skip_warning(
-            f"直前の run ({last_run.run_id}) に失敗したツールが無いため、実行をスキップしました。",
+            f"直前の run ({run_label}) に失敗したツールが無いため、実行をスキップしました。",
             hint=f"再実行は不要です。全体を確認し直す場合は {all_targets_operation}実行してください。",
         )
         return commands, None, True
@@ -128,13 +143,13 @@ def apply_filter(
     filtered_commands = _filter_commands_with_targets(commands, targets)
     if not filtered_commands:
         _emit_skip_warning(
-            f"直前の run ({last_run.run_id}) の失敗ファイルはいずれも指定した対象に含まれないため、実行をスキップしました。",
+            f"直前の run ({run_label}) の失敗ファイルはいずれも指定した対象に含まれないため、実行をスキップしました。",
             hint="失敗したファイルを対象に含めるか、対象の指定を外して実行してください。",
         )
         return commands, None, True
 
     pyfltr.output.logging_.text_logger.info(
-        f"--only-failed: 直前 run ({last_run.run_id}) から {len(filtered_commands)} ツールを対象として再実行します。"
+        f"--only-failed: 直前 run ({run_label}) から {len(filtered_commands)} ツールを対象として再実行します。"
     )
     return filtered_commands, targets, False
 
@@ -143,28 +158,19 @@ def _load_run_summary(
     store: pyfltr.state.archive.ArchiveStore,
     *,
     resolved_run_id: str | None = None,
+    start_cwd: pathlib.Path,
     hint: str,
 ) -> pyfltr.state.archive.RunSummary | None:
     """runのサマリを返す。取得失敗または存在しない場合はNone。
 
     `resolved_run_id`が指定された場合は、そのrun_idに対応するサマリを返す。
-    未指定の場合は`list_runs(limit=1)`で最新runを取得する。
+    未指定の場合は、実行起点（`RunSummary.cwd`）が`start_cwd`と同じ完了済みrunのうち最新のものを返す。
+    実行起点を記録していないrunは同じ起点と判定できないため候補から除く。
+    同じ起点で並行して実行中のrunは、ツール結果が揃っておらず「失敗したツールが無い」と誤判定しうるため除く。
     """
-    if resolved_run_id is not None:
-        try:
-            # ArchiveStoreにはrun_id直接検索APIが無いためlist_runs()から探す。
-            all_runs = store.list_runs()
-        except OSError as e:
-            pyfltr.warnings_.emit_warning(
-                source="only-failed",
-                message=f"実行アーカイブを読み取れません: {e}",
-                hint=hint,
-            )
-            return None
-        return next((r for r in all_runs if r.run_id == resolved_run_id), None)
-
     try:
-        runs = store.list_runs(limit=1)
+        # ArchiveStoreにはrun_idや実行起点でrunを選ぶAPIが無いためlist_runs()から探す。
+        all_runs = store.list_runs()
     except OSError as e:
         pyfltr.warnings_.emit_warning(
             source="only-failed",
@@ -172,7 +178,26 @@ def _load_run_summary(
             hint=hint,
         )
         return None
-    return runs[0] if runs else None
+    if resolved_run_id is not None:
+        return next((r for r in all_runs if r.run_id == resolved_run_id), None)
+    return next(
+        (
+            r
+            for r in all_runs
+            if r.finished_at is not None and r.cwd is not None and pyfltr.paths.is_same_location(r.cwd, start_cwd)
+        ),
+        None,
+    )
+
+
+def _describe_run(summary: pyfltr.state.archive.RunSummary) -> str:
+    """警告と案内で参照したrunを示す表記を返す。
+
+    参照先の取り違えに利用者が気付けるよう、記録があれば実行起点も示す。
+    """
+    if summary.cwd is None:
+        return summary.run_id
+    return f"{summary.run_id}、作業ディレクトリ: {summary.cwd}"
 
 
 def _collect_failed_tools(

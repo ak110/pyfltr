@@ -73,7 +73,8 @@ async def tool_run(
         bool,
         pydantic.Field(
             description=(
-                "Trueで直前run（`from_run`指定時はそのrun）の失敗ツールを、失敗ファイルに限定して再実行する。"
+                "Trueで同じ作業ディレクトリ（`work_dir`）の直前run（`from_run`指定時はそのrun）の失敗ツールを、"
+                "失敗ファイルに限定して再実行する。"
                 "診断にファイルを持たない失敗ツールは現在の対象全体で再実行する。"
             ),
         ),
@@ -81,7 +82,11 @@ async def tool_run(
     from_run: typing.Annotated[
         str | None,
         pydantic.Field(
-            description="`only_failed`の参照runの識別子（前方一致・`latest`可）。`only_failed=True`のときだけ指定できる。",
+            description=(
+                "`only_failed`の参照runの識別子（前方一致・`latest`可）。"
+                "`latest`は未指定と同じく同じ作業ディレクトリの直前runを指す。"
+                "別の作業ディレクトリのrunはrun_idで指定する。`only_failed=True`のときだけ指定できる。"
+            ),
         ),
     ] = None,
     changed_since: typing.Annotated[

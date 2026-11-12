@@ -378,16 +378,18 @@ def seed_archive_run(
     exit_code: int = 0,
     tool_results: list[tuple[str, int, str, list]] | None = None,
     resolution_failed_tools: set[str] | None = None,
+    cwd: pathlib.Path | None = None,
 ) -> str:
     """テスト用の run をアーカイブに書き込み、`run_id` を返す。
 
     `tool_results` は `(tool, returncode, output, errors)` のタプル列。
+    `cwd` は`meta.json`へ記録する実行起点で、省略時はプロセスのcwdになる。
     run_id は ULID で生成され、ミリ秒解像度のタイムスタンプ部分を含む。
     連続呼び出しで同一 ULID が返る衝突を避けるため、冒頭に 1 ミリ秒のスリープを挿入する。
     """
     time.sleep(0.001)
     store = pyfltr.state.archive.ArchiveStore(cache_root=cache_root)
-    run_id = store.start_run(commands=commands or ["ruff-check"], files=files)
+    run_id = store.start_run(commands=commands or ["ruff-check"], files=files, cwd=str(cwd) if cwd is not None else None)
     for tool, returncode, output, errors in tool_results or []:
         result = make_command_result(
             tool,

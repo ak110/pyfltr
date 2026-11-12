@@ -685,7 +685,13 @@ CLI JSONLはシェルしか使えない消費側向けの代替手段として�
 - 診断に`file`を持たない失敗ツール（pytestなど`pass-filenames=False`系）は`mode="fallback"`とし、
   現在の対象ファイル一覧（`all_files`）をそのまま対象とする
 - 現在の対象ファイル一覧は位置引数`targets`と`--changed-since`を適用した後の一覧である
-- 直前runは`ArchiveStore.list_runs(limit=1)`の先頭を採用する
+- 直前runは、`ArchiveStore.list_runs()`の新しい順で、実行起点（`RunSummary.cwd`）が現在の`start_cwd`と
+  同じ最初のrunを採用する。
+  実行起点の比較は`pyfltr/paths.py`の`is_same_location()`で行い、実行起点を記録していないrunと、
+  完了していない（`finished_at`の無い）runは候補から除く。
+  並行して実行中のrunはツール結果が揃っておらず、失敗したツールが無いと誤判定しうるためである
+  `--from-run latest`も同じ規則で解決し、前方一致・完全一致の`--from-run`だけが別の実行起点のrunを参照できる
+- 早期終了の警告と再実行開始の表示は、参照したrunの実行起点を併記し、参照先の取り違えに利用者が気付けるようにする
 - 失敗ツール・失敗ファイルはアーカイブのtoolメタとdiagnosticsから抽出する
 - 直前runが存在しない、失敗ツールが無い、ターゲット交差が空となった場合は、理由と対処を
   `source="only-failed"`の警告として発行して成功終了（rc=0）する。
@@ -1088,6 +1094,13 @@ fixステージが失敗した場合は通常ステージの結果へ統合し�
 run_id解決は完全一致に加えて前方一致と`latest`エイリアスを許容する。
 解決ロジックは`pyfltr/state/runs.py`の`resolve_run_id()`に集約し、
 MCPサーバー・`--only-failed`からも再利用する。
+`resolve_run_id()`の`latest`はアーカイブ全体の最新runを返し、`show-run`とMCPの閲覧系ツールはこの値を使う。
+閲覧結果は判定に使われず、出力にrun_idが示されるためである。
+
+実行アーカイブはユーザー単位の共有キャッシュに置かれ、複数のプロジェクト・worktree・エージェントの実行が混在する。
+利用者の指定なしに記録を選んで判定に使う処理（`--only-failed`の直前runなど）は、
+記録の実行起点（`meta.json`の`cwd`）が現在の`start_cwd`と同じものに限ることを既定とする。
+全体の最新を選ぶと、別の作業ツリーで成功したrunを参照して、自分の失敗を再確認しないまま成功を返すためである。
 
 ### `--from-run`
 

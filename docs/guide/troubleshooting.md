@@ -216,8 +216,11 @@ JSONL出力では`warning`レコードに理由と対処（`hint`）を載せ、
 
 - 直前runのアーカイブが残っていない（`--no-archive`または`archive = false`で記録されなかった）。
   通常実行に戻して再度`--only-failed`を試す
+- 同じ作業ディレクトリで行われたrunが無い。
+  `--only-failed`は別の作業ディレクトリ（別のプロジェクトや別のworktree）で行われたrunを参照しない。
+  そのrunを参照する場合は、`pyfltr list-runs`でrun_idを確認して`--from-run <run_id>`で指定する
 - 直前runで失敗ツールが0件だった。
-  `pyfltr show-run latest`でそのrunのステータスを確認する
+  警告に示されたrun_idを`pyfltr show-run <run_id>`へ渡してそのrunのステータスを確認する
 - 位置引数（targets）と直前runの失敗ファイル集合の交差が空になっている。
   位置引数を外す、または対象ディレクトリを広げる
 - `pass-filenames=False`のツール（tsc・cargo-\*・dotnet-\*等）で全体失敗のみだった場合、診断ファイルが

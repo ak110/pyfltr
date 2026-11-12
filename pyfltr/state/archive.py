@@ -107,6 +107,8 @@ class RunSummary:
     exit_code: int | None
     commands: list[str]
     files: int | None
+    cwd: str | None
+    """実行起点（`--work-dir`・MCPの`work_dir`適用後）。`meta.json`に文字列で記録されていない場合は`None`。"""
 
 
 class ArchiveStore:
@@ -326,6 +328,7 @@ class ArchiveStore:
                     exit_code=meta.get("exit_code"),
                     commands=list(meta.get("commands", [])),
                     files=meta.get("files"),
+                    cwd=meta["cwd"] if isinstance(meta.get("cwd"), str) else None,
                 )
             )
         return summaries

@@ -20,6 +20,10 @@ class RunSummaryModel(pydantic.BaseModel):
     exit_code: int | None = pydantic.Field(default=None, description="終了コード。0 = 成功、1 = 失敗。")
     commands: list[str] = pydantic.Field(default_factory=list, description="実行したコマンド名の一覧。")
     files: int | None = pydantic.Field(default=None, description="対象ファイル数。")
+    cwd: str | None = pydantic.Field(
+        default=None,
+        description="実行起点の作業ディレクトリ。`run`の`only_failed`で別の作業ディレクトリのrunを`from_run`へ指定するときに使う。",
+    )
 
 
 class SlowTestModel(pydantic.BaseModel):

@@ -171,7 +171,7 @@ pyfltr list-runs [--limit N] [--output-format text|json|jsonl]
 
 - 既定は直近20件（`--limit`で変更可能）
 - `text`: 固定幅テーブル。
-  列は`RUN_ID` / `STARTED_AT` / `EXIT` / `FILES` / `COMMANDS`
+  列は`RUN_ID` / `STARTED_AT` / `EXIT` / `FILES` / `COMMANDS` / `CWD`（実行起点の作業ディレクトリ）
 - `json`: `{"runs":[{...}, ...]}`の単発出力
 - `jsonl`: 1件1行ストリーム（`kind: "run"`）
 
@@ -186,8 +186,9 @@ pyfltr show-run <run_id> [--commands NAME[,NAME...]] [--output] [--output-format
 指定runの詳細を表示する。
 
 - `<run_id>`: ULID完全一致のほか、先頭一意な前方一致と`latest`エイリアスを受け付ける。
+  `latest`は作業ディレクトリによらず、このPCで最後に行われたrunを指す。
   前方一致で複数該当した場合は曖昧エラー（終了コード1）
-- 既定: `meta`（`run_id`・`started_at`・`finished_at`・`exit_code`・`files`・`commands`）、
+- 既定: `meta`（`run_id`・`started_at`・`finished_at`・`exit_code`・`files`・`commands`・`cwd`）、
   経過時間の要約（`timing`）、ツール別サマリ（`status` / `diagnostics` / `elapsed`）を表示
 - `timing`は短い検証が長く終わらない理由を、他の検証の終了を待った時間とツール本体の処理時間に分けて調べるための要約である。
   `run_elapsed`はrun全体の経過秒数、`slot_waits`は[検証の実行枠](../development/architecture.md#execution-slot)を取得するまで待った区間
@@ -266,7 +267,7 @@ MCPクライアントがstdinを閉じた時点でサーバーが終了する。
 | ツール名 | 対応CLI | 説明 |
 | --- | --- | --- |
 | `list_runs` | `pyfltr list-runs` | run一覧を新しい順で返す。`limit`で件数制御（既定20件） |
-| `show_run` | `pyfltr show-run <run_id>` | 指定runのmeta、経過時間の要約（`timing`）、ツール別サマリを返す。前方一致・`latest`エイリアス可 |
+| `show_run` | `pyfltr show-run <run_id>` | 指定runのmeta、経過時間の要約（`timing`）、ツール別サマリを返す。前方一致・`latest`エイリアス（作業ディレクトリによらず最新のrun）可 |
 | `show_run_diagnostics` | `pyfltr show-run <run_id> --commands=<name>` | 指定runのコマンドmeta情報とdiagnostics全件を返す（複数指定可）。チェック対象ファイルの引数列は含めない。`offset`・`limit`で指摘の範囲を指定して分割取得できる |
 | `show_run_output` | `pyfltr show-run <run_id> --commands=<name> --output` | 指定runのoutput.log全文を返す（複数指定可）。`offset`・`limit`で行範囲を指定して分割取得できる |
 | `run` | `pyfltr run` / `fast` / `ci` | lint/format/testを実行しrun_id・失敗ツール名・retry_commands・警告（対処を含む）・次の操作の案内等を返す。`mode`で実行モードを選ぶ |
@@ -660,15 +661,17 @@ VSCodeのターミナルからクリックして該当箇所にジャンプで�
   展開済みファイル一覧の交差が対象となり、untrackedの新規ファイルは対象外。
   gitが不在またはrefが存在しない場合は警告を出力して全体実行へフォールバックする。
   `--only-failed`と併用した場合は`--changed-since`フィルタを先に適用してから`--only-failed`フィルタを適用する
-- `--only-failed`: 直前runの実行アーカイブから失敗ツール・失敗ファイルを抽出し、
-  ツール別にその組み合わせだけを再実行する。
+- `--only-failed`: 同じ作業ディレクトリ（`--work-dir`指定時はその場所）で行われた直前runの実行アーカイブから
+  失敗ツール・失敗ファイルを抽出し、ツール別にその組み合わせだけを再実行する。
+  別の作業ディレクトリで行われたrunは、より新しくても参照しない。
   直前runが無い・失敗ツールが無い・指定`targets`との交差が空の場合は
   メッセージを出力して`rc=0`で成功終了する。
   診断ファイルが取得できないツール（pytest等の`pass-filenames=False`系）は
   既定ファイル展開にフォールバックして全体再実行する。
   `--no-archive`とは独立に働く（参照するのは過去runのアーカイブ）
 - `--from-run <RUN_ID>`: `--only-failed`の参照対象runを明示指定する（前方一致・`latest`対応）。
-  未指定時は直前runを自動選択。
+  未指定時と`latest`では、同じ作業ディレクトリで行われた直前runを選ぶ。
+  別の作業ディレクトリのrunを参照する場合はrun_idで指定する。
   `--only-failed`との併用が前提で、単独指定はargparseエラーで拒否する。
   指定した`<RUN_ID>`が存在しない場合は警告を出力して`rc=0`で早期終了する
 - `--shuffle`: チェック対象ファイルの並び順をシャッフルする（既定は自然順ソート）。
@@ -829,7 +832,7 @@ MCPを利用できず、エージェントがシェルコマンドを実行で�
     `diagnostic`行から修正対象のファイル・行番号・メッセージを取得する。
     `command.retry_command`フィールドには、そのツールだけを失敗ファイルに限定した再実行コマンドが既に生成されているため、
     そのまま貼り付けて実行できる。
-    `--only-failed`は直前runのアーカイブから失敗ツール・失敗ファイルを自動抽出して再実行する。
+    `--only-failed`は同じ作業ディレクトリで行われた直前runのアーカイブから失敗ツール・失敗ファイルを自動抽出して再実行する。
     直前runが無い・失敗ツールが無い・対象との交差が空の場合は終了コード0で成功終了する。
 
 ## 同時に起動した検証の待機 {#execution-slot}

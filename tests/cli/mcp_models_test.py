@@ -56,6 +56,7 @@ _FIELD_PURPOSES: dict[str, str] = {
     "RunSummaryModel.exit_code": "成否の判定",
     "RunSummaryModel.commands": "対象runの選択",
     "RunSummaryModel.files": "対象runの選択",
+    "RunSummaryModel.cwd": "別の作業ディレクトリのrunの選択",
     "RunOverviewModel.run_id": "参照中のrunの確認",
     "RunOverviewModel.meta": "runの対象・起動引数・結果・時刻の確認（項目はSHOW_RUN_META_KEYSで限定）",
     "RunOverviewModel.timing": "待機と所要の分析",

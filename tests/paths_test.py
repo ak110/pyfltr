@@ -1,3 +1,4 @@
+import os
 import pathlib
 
 import pytest
@@ -156,3 +157,14 @@ def test_to_match_key_keeps_converted_diagnostic_file(tmp_path: pathlib.Path) ->
     for raw in ("sub/../a.md", str(tmp_path / "outside" / "out.md")):
         converted = pyfltr.paths.to_start_relative(raw, path_base=start, start_cwd=start)
         assert pyfltr.paths.to_match_key(converted, start_cwd=start) == converted
+
+
+def test_is_same_location_absorbs_notation_differences(tmp_path: pathlib.Path) -> None:
+    """末尾の区切りや`..`を含む表記でも、同じ場所なら一致と判定する。"""
+    (tmp_path / "proj" / "sub").mkdir(parents=True)
+    assert pyfltr.paths.is_same_location(tmp_path / "proj", f"{tmp_path / 'proj' / 'sub'}{os.sep}..{os.sep}")
+
+
+def test_is_same_location_distinguishes_other_directory(tmp_path: pathlib.Path) -> None:
+    """名前が前方一致するだけの別のディレクトリは一致と判定しない。"""
+    assert not pyfltr.paths.is_same_location(tmp_path / "proj", tmp_path / "proj2")
