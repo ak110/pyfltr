@@ -132,6 +132,11 @@ hadolint = true
 bandit = true
 colloquial-check = true
 markdown-structure = true
+# 文書（docs配下・README.md）と実装の整合を調べるテストは、文書だけを渡す限定実行でも対象から漏れないよう毎回加える。
+pytest-always-targets = [
+    "tests/integration/cli_option_reference_test.py",
+    "tests/integration/documentation_test.py",
+]
 # 推奨ガイドの`pylint-args = ["--jobs=4"]`は指定しない。
 # 全検査の基準版であるPython 3.15では、pylintの並列実行が用いるdill（0.4.1時点）が未対応で、
 # pylintが`co_lnotab`の参照で異常終了するため。dillの対応版の公開後に戻す。

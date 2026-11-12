@@ -83,6 +83,11 @@ JSON Lines出力（`--output-format=jsonl`）とMCPサーバー（`pyfltr mcp`�
       対象のテストファイル自体を変更していなくても対象へ含める
     - 例えば`mkdocs.yml`・`pyfltr/cli/parser.py`・`pyfltr/tools.py`のいずれかを
       変更した場合は、`tests/integration/llmstxt_test.py`を対象へ含める
+    - `docs/`配下と`README.md`を読む`tests/integration/cli_option_reference_test.py`（CLIオプションの参照）と
+      `tests/integration/documentation_test.py`（`docs/guide/`の一覧・説明と実装定義の一致）は、
+      `pyproject.toml`の`pytest-always-targets`により、pytestを含む実行では毎回対象へ加わる。
+      文書だけを変更した場合もpytestを含めて実行し（`--commands`で限定する場合は`pytest`を含める）、
+      linterだけに限定した成功を両テストの成功とみなさない
   - テストだけを部分実行する場合も`uv run pyfltr run tests/warnings_test.py --commands=pytest`を使い、
     `uv run pytest`を直接起動しない。
     直接起動では本リポジトリの設定（並列実行・タイムアウト等）が
