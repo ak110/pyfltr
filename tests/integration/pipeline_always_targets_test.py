@@ -160,6 +160,7 @@ def test_only_failed_limits_candidates_to_failed_always_target(
         commands=["pytest"],
         exit_code=1,
         tool_results=[("pytest", 1, "", [_make_error("pytest", "tests/repo_invariant_test.py", 1, "failed")])],
+        cwd=project,
     )
     proc = subprocess.CompletedProcess(["pytest"], returncode=0, stdout="")
     mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)

@@ -599,6 +599,7 @@ def test_monorepo_only_failed_targets_are_limited_to_subproject(
         files=3,
         exit_code=1,
         tool_results=[("mypy", 1, "", [_make_error("mypy", "pkg_a/a.py", 1, "e")])],
+        cwd=tmp_path,
     )
 
     proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
