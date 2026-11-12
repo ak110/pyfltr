@@ -106,7 +106,14 @@ def initialize_archive(
     if archive_enabled:
         try:
             archive_store = pyfltr.state.archive.ArchiveStore()
-            run_id = archive_store.start_run(commands=commands, files=len(all_files), cwd=str(start_cwd_path))
+            # MCPの`sys.argv`はサーバー自身の起動引数であり、この実行の指定を含まない。
+            # アーカイブ必須（MCP）の実行は、受け取った入力から再構築した引数を記録する。
+            run_id = archive_store.start_run(
+                commands=commands,
+                files=len(all_files),
+                cwd=str(start_cwd_path),
+                argv=args.retry_arguments(for_mcp=True) if archive_required else None,
+            )
             removed = archive_store.cleanup(pyfltr.state.archive.policy_from_config(config))
             if removed:
                 logger.debug("archive: 自動削除で %d 件の古い run を削除", len(removed))

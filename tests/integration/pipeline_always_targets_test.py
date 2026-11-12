@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import pathlib
 import subprocess
 
@@ -272,3 +273,50 @@ async def test_mcp_run_no_always_targets(tmp_path: pathlib.Path, mocker) -> None
 
     assert result.exit_code == 0
     assert _pytest_file_args(mock_run) == [["selected_test.py"]]
+
+
+def _archived_argv(cache_root: pathlib.Path) -> list[str]:
+    """実行アーカイブに保存された唯一のrunの`meta.json`から`argv`を返す。"""
+    metas = list(cache_root.rglob("meta.json"))
+    assert len(metas) == 1
+    return json.loads(metas[0].read_text(encoding="utf-8"))["argv"]
+
+
+def test_cli_no_always_targets_is_recorded_in_archive_argv(
+    tmp_path: pathlib.Path, mocker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CLIで指定した`--no-always-targets`が実行アーカイブのmetaの`argv`に残る。"""
+    project = tmp_path / "proj"
+    project.mkdir()
+    _write_project(project, extra=ALWAYS_CONFIG)
+    cache_root = tmp_path / "cache"
+    monkeypatch.setenv("PYFLTR_CACHE_DIR", str(cache_root))
+    monkeypatch.setattr("sys.argv", ["pyfltr", "run", "--commands=pytest", "--no-always-targets"])
+    proc = subprocess.CompletedProcess(["pytest"], returncode=0, stdout="")
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
+
+    pyfltr.cli.main.run(
+        ["run", "--commands=pytest", "--no-always-targets", "--work-dir", str(project), "--no-cache", "--no-gitignore"]
+    )
+
+    assert "--no-always-targets" in _archived_argv(cache_root)
+
+
+@pytest.mark.asyncio
+async def test_mcp_no_always_targets_is_recorded_in_archive_argv(
+    tmp_path: pathlib.Path, mocker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """MCPの`run`で指定した`no_always_targets`が実行アーカイブのmetaの`argv`に`--no-always-targets`として残る。"""
+    project = tmp_path / "proj"
+    project.mkdir()
+    _write_project(project, extra=ALWAYS_CONFIG + "respect-gitignore = false\n")
+    cache_root = tmp_path / "cache"
+    monkeypatch.setenv("PYFLTR_CACHE_DIR", str(cache_root))
+    proc = subprocess.CompletedProcess(["pytest"], returncode=0, stdout="")
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
+
+    await pyfltr.cli.mcp_run_tools.tool_run(
+        paths=["tests/selected_test.py"], commands=["pytest"], work_dir=str(project), no_always_targets=True
+    )
+
+    assert "--no-always-targets" in _archived_argv(cache_root)
