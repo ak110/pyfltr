@@ -146,10 +146,17 @@ def test_fast_does_not_add_pytest_by_always_targets_only(tmp_path: pathlib.Path,
     assert not _pytest_file_args(mock_run)
 
 
+@pytest.mark.parametrize(
+    ("extra_args", "expected"),
+    [
+        pytest.param([], [["repo_invariant_test.py"]], id="default"),
+        pytest.param(["--no-always-targets"], [], id="no-always-targets"),
+    ],
+)
 def test_only_failed_limits_candidates_to_failed_always_target(
-    tmp_path: pathlib.Path, mocker, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, mocker, monkeypatch: pytest.MonkeyPatch, extra_args: list[str], expected: list[list[str]]
 ) -> None:
-    """`--only-failed`では横断テストを含む候補から前回失敗したファイルだけを実行する。"""
+    """`--only-failed`では横断テストを含む候補から前回失敗したファイルだけを実行し、`--no-always-targets`では候補に加えない。"""
     project = tmp_path / "proj"
     project.mkdir()
     _write_project(project, extra=ALWAYS_CONFIG)
@@ -170,6 +177,7 @@ def test_only_failed_limits_candidates_to_failed_always_target(
             "run",
             "--commands=pytest",
             "--only-failed",
+            *extra_args,
             "--work-dir",
             str(project),
             "--no-cache",
@@ -178,7 +186,7 @@ def test_only_failed_limits_candidates_to_failed_always_target(
         ]
     )
 
-    assert _pytest_file_args(mock_run) == [["repo_invariant_test.py"]]
+    assert _pytest_file_args(mock_run) == expected
 
 
 def test_monorepo_reaches_each_subproject_always_targets(tmp_path: pathlib.Path, mocker) -> None:
@@ -211,3 +219,56 @@ def test_monorepo_reaches_each_subproject_always_targets(tmp_path: pathlib.Path,
         (tmp_path / "pkg_a").resolve(): ["repo_invariant_test.py"],
         (tmp_path / "pkg_b").resolve(): ["b_test.py", "check_layout.py"],
     }
+
+
+@pytest.mark.parametrize("subcommand", ["run", "ci"])
+def test_no_always_targets_drops_only_always_targets(tmp_path: pathlib.Path, mocker, subcommand: str) -> None:
+    """`--no-always-targets`では渡したパスの試験だけを実行し、指定しない実行は従来どおり常時追加を含む。"""
+    _write_project(tmp_path, extra=ALWAYS_CONFIG)
+    proc = subprocess.CompletedProcess(["pytest"], returncode=0, stdout="")
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
+    target = str(tmp_path / "tests" / "selected_test.py")
+
+    _run(tmp_path, subcommand, "--commands=pytest", target)
+    _run(tmp_path, subcommand, "--commands=pytest", "--no-always-targets", target)
+
+    assert _pytest_file_args(mock_run) == [["repo_invariant_test.py", "selected_test.py"], ["selected_test.py"]]
+
+
+def test_no_always_targets_skips_pytest_when_only_always_targets_match(tmp_path: pathlib.Path, mocker) -> None:
+    """渡したパスに通常の対象が無い場合、常時追加だけを理由にpytestを起動しない。"""
+    _write_project(tmp_path, extra=ALWAYS_CONFIG)
+    proc = subprocess.CompletedProcess(["pytest"], returncode=0, stdout="")
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
+
+    _run(tmp_path, "run", "--commands=pytest", "--no-always-targets", str(tmp_path / "README.md"))
+
+    assert not _pytest_file_args(mock_run)
+
+
+def test_fast_no_always_targets_keeps_fast_targets(tmp_path: pathlib.Path, mocker) -> None:
+    """fastでは`pytest-fast-targets`による対象を残し、常時追加だけを外す。"""
+    _write_project(
+        tmp_path,
+        extra='pytest = true\npytest-fast-targets = ["selected_test.py"]\npytest-always-targets = ["*_invariant_test.py"]\n',
+    )
+    proc = subprocess.CompletedProcess(["pytest"], returncode=0, stdout="")
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
+
+    _run(tmp_path, "fast", "--no-always-targets", str(tmp_path / "README.md"))
+
+    assert _pytest_file_args(mock_run) == [["selected_test.py"]]
+
+
+@pytest.mark.asyncio
+async def test_mcp_run_no_always_targets(tmp_path: pathlib.Path, mocker) -> None:
+    """MCPの`run`でも`no_always_targets`で常時追加を外せる。"""
+    _write_project(tmp_path, extra=ALWAYS_CONFIG + "respect-gitignore = false\n")
+    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", side_effect=_fail_invariant)
+
+    result = await pyfltr.cli.mcp_run_tools.tool_run(
+        paths=["tests/selected_test.py"], commands=["pytest"], work_dir=str(tmp_path), no_always_targets=True
+    )
+
+    assert result.exit_code == 0
+    assert _pytest_file_args(mock_run) == [["selected_test.py"]]

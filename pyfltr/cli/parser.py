@@ -232,6 +232,13 @@ def make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> "
         help="ファイル hash キャッシュ (対象ファイル未変更時の再実行スキップ) を無効化します。",
     )
     common.add_argument(
+        "--no-always-targets",
+        default=False,
+        action="store_true",
+        help="設定の pytest-always-targets に一致するテストを pytest の対象へ常時追加する処理を、この実行に限り無効化します。"
+        "渡したパスに対応する通常の対象と、fast の pytest-fast-targets による対象選定は変わりません。",
+    )
+    common.add_argument(
         "--fail-fast",
         default=False,
         action="store_true",

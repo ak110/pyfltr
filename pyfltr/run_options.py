@@ -36,6 +36,7 @@ class RunOptions:
     allow_external_paths: bool = False
     no_archive: bool = False
     no_cache: bool = False
+    no_always_targets: bool = False
     fail_fast: bool = False
     only_failed: bool = False
     from_run: str | None = None
@@ -103,6 +104,7 @@ class RunOptions:
             "no_exclude",
             "no_gitignore",
             "no_cache",
+            "no_always_targets",
             "human_readable",
             "shuffle",
             "exit_zero_even_if_formatted",

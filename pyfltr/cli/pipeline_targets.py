@@ -217,7 +217,7 @@ def only_failed_extra_candidates(
 
     位置引数・差分指定に依らずpytestの対象へ加わるテストは、前回失敗していれば再実行の対象に残す。
     """
-    if not getattr(args, "only_failed", False) or "pytest" not in commands:
+    if not getattr(args, "only_failed", False) or "pytest" not in commands or getattr(args, "no_always_targets", False):
         return None
     globs = [
         glob
@@ -250,7 +250,8 @@ def build_pytest_base(
         return pyfltr.config.selection.pytest_fast_target_globs(values) if fast_selected else []
 
     def _always_globs(values: dict[str, typing.Any]) -> list[str]:
-        return pyfltr.config.selection.pytest_always_target_globs(values)
+        # `--no-always-targets`指定時は常時追加を行わない（母集合へ合流させず、dispatcherの和集合も無効にする）。
+        return [] if base_ctx.exclude_always_targets else pyfltr.config.selection.pytest_always_target_globs(values)
 
     sub_values = {sub.cwd: base_ctx.subproject_configs.get(sub.cwd, config).values for sub in base_ctx.subprojects}
     root_uses_full = bool(_fast_globs(config.values) or _always_globs(config.values))
@@ -288,5 +289,5 @@ def build_pytest_base(
         subproject_files=subproject_files,
         pytest_base=None,
         pytest_fast_targets_active=fast_selected,
-        pytest_always_targets_active=True,
+        pytest_always_targets_active=not base_ctx.exclude_always_targets,
     )

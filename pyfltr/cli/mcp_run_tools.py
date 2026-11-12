@@ -117,6 +117,12 @@ async def tool_run(
     no_cache: typing.Annotated[
         bool, pydantic.Field(description="Trueでファイルハッシュによる結果キャッシュを使わない。")
     ] = False,
+    no_always_targets: typing.Annotated[
+        bool,
+        pydantic.Field(
+            description="Trueでこの実行に限り、`pytest-always-targets`に一致するテストのpytestへの常時追加を行わない。"
+        ),
+    ] = False,
     human_readable: typing.Annotated[
         bool, pydantic.Field(description="Trueで対応ツールの機械可読出力を抑止し、人間向けの出力にする。")
     ] = False,
@@ -184,6 +190,7 @@ async def tool_run(
             changed_since=changed_since,
             no_archive=False,  # アーカイブ必須化のため明示的にFalse
             no_cache=no_cache,
+            no_always_targets=no_always_targets,
             verbose=False,
             output_format="jsonl",
             output_file=None,  # MCP応答を返すため構造化出力は無効化する

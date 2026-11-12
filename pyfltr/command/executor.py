@@ -119,6 +119,7 @@ def has_no_candidate_targets(command: str, base_ctx: pyfltr.command.core_.Execut
             globs.extend(info.target_globs())
         if command == "pytest":
             globs.extend(pyfltr.config.selection.pytest_fast_target_globs(config.values))
-            globs.extend(pyfltr.config.selection.pytest_always_target_globs(config.values))
+            if not base_ctx.exclude_always_targets:
+                globs.extend(pyfltr.config.selection.pytest_always_target_globs(config.values))
     unique_files = list(dict.fromkeys(files))
     return not pyfltr.command.targets.filter_by_globs(unique_files, list(dict.fromkeys(globs)))

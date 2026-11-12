@@ -320,6 +320,7 @@ MCPクライアントは結果を構造化データとして1件の応答で受�
 | `work_dir` | `--work-dir` |
 | `commands` | `--commands` |
 | `no_fix` | `--no-fix` |
+| `no_always_targets` | `--no-always-targets` |
 | `only_failed` | `--only-failed` |
 | `changed_since` | `--changed-since` |
 | `shuffle` | `--shuffle` |
@@ -654,6 +655,7 @@ VSCodeのターミナルからクリックして該当箇所にジャンプで�
   起点外パスを扱えないツールへ渡した場合の結果は利用者の責任とする
 - `--no-archive`: 実行アーカイブ（ユーザーキャッシュ配下への全実行の保存）を無効化する
 - `--no-cache`: [ファイルhashキャッシュ](#file-hash-cache)を無効化する
+- `--no-always-targets`: `pytest-always-targets`に一致するテストをpytestの対象へ常時追加する処理を、その実行に限り無効化する（[設定](configuration.md#pytest-always-targets)）
 - `--fail-fast`: 1ツールでもエラーが発生した時点で残りのジョブを打ち切る
  （起動済みサブプロセスには`terminate()`を送り、未開始ジョブは`skipped`として扱われる）
 - `--changed-since <REF>`: gitの任意のref（ブランチ・タグ・コミットハッシュ・`HEAD`など）からの変更ファイルのみを対象とする。

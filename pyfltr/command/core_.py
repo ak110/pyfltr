@@ -107,6 +107,8 @@ class ExecutionBaseContext:
 
     真のとき、`pytest-always-targets`が非空の設定ではpytestの対象へ一致ファイルを和集合として加える。
     """
+    exclude_always_targets: bool = False
+    """実行が`--no-always-targets`指定で、`pytest-always-targets`の常時追加を行わないか。"""
     fail_fast: bool = False
     """実行が`--fail-fast`指定で、失敗したツールの時点で後続の段を打ち切るか。
 
