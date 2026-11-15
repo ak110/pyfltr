@@ -632,3 +632,28 @@ def test_run_stages_records_tester_launch_boundary_without_format(tmp_path: path
     assert tester.launch_boundary_at <= tester.started_at
     # 待機が無いことを、境界の秒をまたぐ待ち（最大1秒）より十分短い所要で確かめる。
     assert time.monotonic() - started < 0.5
+
+
+def test_run_stages_drops_launch_boundary_when_result_is_replaced_by_skip(tmp_path: pathlib.Path) -> None:
+    """中断で結果をスキップへ差し替える経路（TUIのCtrl+C）では、保存・通知する結果に開始境界が残らない。"""
+    config = _custom_commands(tmp_path, ("test-ok", "tester"))
+    target = tmp_path / "input.txt"
+    target.write_text("x", encoding="utf-8")
+    archived: list[pyfltr.command.core_.CommandResult] = []
+
+    def _execute(command: str, fix_stage: bool) -> pyfltr.command.core_.CommandResult:
+        del fix_stage
+        return make_command_result(command, returncode=0)
+
+    def _replace(result: pyfltr.command.core_.CommandResult, stage: str) -> pyfltr.command.core_.CommandResult:
+        del stage
+        return pyfltr.command.stage_runner.make_skipped_result(result.command, config, reason="Ctrl+C により中断しました。")
+
+    results = pyfltr.command.stage_runner.run_stages(
+        ["test-ok"],
+        make_execution_context(config, [target], start_cwd=tmp_path).base,
+        _execute,
+        callbacks=pyfltr.command.stage_runner.StageCallbacks(replace_result=_replace, archive=archived.append),
+    )
+    assert [(result.status, result.launch_boundary_at) for result in results] == [("skipped", None)]
+    assert [result.launch_boundary_at for result in archived] == [None]
