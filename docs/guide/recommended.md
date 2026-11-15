@@ -46,7 +46,14 @@ pyfltr本体の設定（`[tool.pyfltr]`）と、呼び出される各ツール�
 - 実装コードとテストコードを分けず、対象全体を`min-lines = 10`でチェックする構成を第一推奨とする。
   テストコードの定型的な重複が多くこの構成を維持できない場合は、
   [テストコードを別系統でチェックする妥協案](#arid-split)へ切り替える
+- ruffの`select`のS系8規則（`S102`・`S301`・`S306`・`S307`・`S602`・`S604`・`S605`・`S608`）:
+  危険な構文を検出する。
+  対象は`exec`と`eval`の呼び出し、`pickle`などの安全でない直列化復元、`tempfile.mktemp`、
+  シェル経由のコマンド実行、文字列結合や書式化で組み立てたSQLである
+    - flake8-bandit（`S`）全体を有効にすると、`assert`（`S101`）や`subprocess`の呼び出し（`S603`）など正当な用法も多く該当する。
+      そのため危険な構文を検出する8規則に限定する
 - ruffの `per-file-ignores`: テストコード（`**_test.py`）とpackage init（`__init__.py`）のdocstring要求を除外する実用的な調整
+    - テストコードには試験用の入力として`exec`や`shell=True`を意図して使う箇所があるため、前述のS系8規則も除外する
 
 `uvx pyfltr`での実行では`pyproject.toml`にpyfltrを記述する必要はなく、`[tool.pyfltr]`セクションのみで完結する。
 dev依存に固定する場合のみ`[dependency-groups] dev`に`"pyfltr[python]"`を追加する（後置の併記例）。
@@ -114,6 +121,15 @@ select = [
     "ICN",
     # isort
     "I",
+    # flake8-bandit（危険な構文の検出に限る）
+    "S102", # exec
+    "S301", # pickleなどの安全でない直列化復元
+    "S306", # tempfile.mktemp
+    "S307", # eval
+    "S602", # subprocessのshell=True
+    "S604", # shell=Trueを渡す関数呼び出し
+    "S605", # os.systemなどシェルを起動する関数
+    "S608", # 文字列結合・書式化で組み立てたSQL
 ]
 ignore = [
     "D107", # Missing docstring in `__init__`
@@ -125,7 +141,7 @@ ignore = [
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
-"**_test.py" = ["D"]
+"**_test.py" = ["D", "S102", "S301", "S306", "S307", "S602", "S604", "S605", "S608"]
 "**/__init__.py" = ["D104"]  # Missing docstring in public package
 
 [tool.mypy]

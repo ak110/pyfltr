@@ -265,6 +265,15 @@ select = [
     "ICN",
     # isort
     "I",
+    # flake8-bandit（危険な構文の検出に限る）
+    "S102", # exec
+    "S301", # pickleなどの安全でない直列化復元
+    "S306", # tempfile.mktemp
+    "S307", # eval
+    "S602", # subprocessのshell=True
+    "S604", # shell=Trueを渡す関数呼び出し
+    "S605", # os.systemなどシェルを起動する関数
+    "S608", # 文字列結合・書式化で組み立てたSQL
 ]
 ignore = [
     "D107", # Missing docstring in `__init__`
@@ -276,7 +285,7 @@ ignore = [
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
-"**_test.py" = ["D"]
+"**_test.py" = ["D", "S102", "S301", "S306", "S307", "S602", "S604", "S605", "S608"]
 "**/__init__.py" = ["D104"]  # Missing docstring in public package
 
 [tool.mypy]
