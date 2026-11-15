@@ -31,8 +31,8 @@ _LAUNCH_BOUNDARY_DESCRIPTION = (
     "テスターのプロセスを起動する前に記録した開始境界（UTCのISO 8601）。"
     "同じrunの整形（fix段・formatter段）が終わった時刻を含む1秒の区間が過ぎてから記録するため、"
     "更新時刻が秒単位のファイルでも、更新時刻の上限（秒+0.999999999）がこの値より前なら起動前に最後の更新を終えている。"
-    "起動の事実だけを示し、成否は`status`で判定する。"
-    "テスター以外、スキップ・キャッシュ復元などプロセスを起動していない結果、本項目を記録しない版の古いrunでは記録が無い（None）。"
+    "起動を試みた事実だけを示し、成否は`status`で判定する（実行ファイルが見つからない起動失敗も`failed`で記録する）。"
+    "テスター以外、スキップ・キャッシュ復元などプロセスを起動していない結果、本項目を記録しない版の古いrunでは項目を省く。"
 )
 
 
@@ -74,6 +74,17 @@ class CommandSummaryModel(pydantic.BaseModel):
         default_factory=list,
         description="テスターが報告した遅いテストの上位一覧（秒数降順）。",
     )
+
+    @pydantic.model_serializer(mode="wrap")
+    def _omit_unrecorded_launch_boundary(
+        self,
+        handler: pydantic.SerializerFunctionWrapHandler,
+    ) -> dict[str, typing.Any]:
+        """開始境界が記録されていない結果では項目を省き、`CommandMetaModel`と未記録の表現をそろえる。"""
+        serialized = typing.cast(dict[str, typing.Any], handler(self))
+        if self.launch_boundary_at is None:
+            serialized.pop("launch_boundary_at", None)
+        return serialized
 
 
 class DiagnosticMessageModel(pydantic.BaseModel):

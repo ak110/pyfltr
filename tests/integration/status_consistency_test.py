@@ -308,6 +308,7 @@ def test_mcp_command_models_field_sets() -> None:
         "elapsed",
         "started_at",
         "finished_at",
+        "launch_boundary_at",
         "slow_tests",
     }
     assert set(pyfltr.cli.mcp_models.CommandMetaModel.model_fields) == {
@@ -322,6 +323,7 @@ def test_mcp_command_models_field_sets() -> None:
         "retry_command",
         "started_at",
         "finished_at",
+        "launch_boundary_at",
     }
 
 
