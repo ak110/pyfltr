@@ -194,6 +194,9 @@ pyfltr show-run <run_id> [--commands NAME[,NAME...]] [--output] [--output-format
   `run_elapsed`はrun全体の経過秒数、`slot_waits`は[検証の実行枠](../development/architecture.md#execution-slot)を取得するまで待った区間
   （最初の取得の`initial`と、他の検証へ譲った後の取り直しの`reacquire`）、`slot_wait_total`は待機の合計秒数を表す。
   ツール本体の区間はツール別サマリの`started_at`・`finished_at`・`elapsed`が持つ。
+  同じrunの整形が終わった秒を過ぎてからテスターを起動した開始境界は、テスターのサマリの`launch_boundary_at`が持つ。
+  更新時刻が秒単位のファイルでも、更新時刻（秒+0.999999999）がこの値より前なら、成功した試験がそのファイルの内容を対象にしたと判定できる。
+  プロセスを起動していない結果と、記録しない版のrunには項目が無い
   実行中や強制終了したrunの未確定の値は`null`（textでは`unfinished`）となり、
   待機区間を記録しない版のrunは`measured`が偽（textでは`not measured`）となって0秒と区別される
 - `--commands NAME[,NAME...]`: 指定ツールの`tool.json`と`diagnostics.jsonl`全件を表示。

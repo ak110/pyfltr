@@ -26,6 +26,16 @@ class RunSummaryModel(pydantic.BaseModel):
     )
 
 
+# `CommandSummaryModel`と`CommandMetaModel`が同じ意味の項目として共有する説明文。
+_LAUNCH_BOUNDARY_DESCRIPTION = (
+    "テスターのプロセスを起動する前に記録した開始境界（UTCのISO 8601）。"
+    "同じrunの整形（fix段・formatter段）が終わった時刻を含む1秒の区間が過ぎてから記録するため、"
+    "更新時刻が秒単位のファイルでも、更新時刻の上限（秒+0.999999999）がこの値より前なら起動前に最後の更新を終えている。"
+    "起動の事実だけを示し、成否は`status`で判定する。"
+    "テスター以外、スキップ・キャッシュ復元などプロセスを起動していない結果、本項目を記録しない版の古いrunでは記録が無い（None）。"
+)
+
+
 class SlowTestModel(pydantic.BaseModel):
     """遅いテスト1件分。`CommandSummaryModel.slow_tests`と`CommandMetaModel.slow_tests`の要素。"""
 
@@ -59,6 +69,7 @@ class CommandSummaryModel(pydantic.BaseModel):
         default=None,
         description="ツール本体の実行を終えた時刻（UTCのISO 8601）。設定条件は`started_at`と同じ。",
     )
+    launch_boundary_at: str | None = pydantic.Field(default=None, description=_LAUNCH_BOUNDARY_DESCRIPTION)
     slow_tests: list[SlowTestModel] = pydantic.Field(
         default_factory=list,
         description="テスターが報告した遅いテストの上位一覧（秒数降順）。",
@@ -194,6 +205,7 @@ class CommandMetaModel(pydantic.BaseModel):
         default=None,
         description="ツール本体の実行を終えた時刻（UTCのISO 8601）。設定条件は`started_at`と同じ。",
     )
+    launch_boundary_at: str | None = pydantic.Field(default=None, description=_LAUNCH_BOUNDARY_DESCRIPTION)
     diagnostics: int = pydantic.Field(description="diagnosticの件数。")
     slow_tests: list[SlowTestModel] = pydantic.Field(
         default_factory=list,
@@ -211,7 +223,7 @@ class CommandMetaModel(pydantic.BaseModel):
     ) -> dict[str, typing.Any]:
         """保存元に無い任意項目を直列化結果から省く。"""
         serialized = typing.cast(dict[str, typing.Any], handler(self))
-        for field_name in ("slow_tests", "retry_command", "started_at", "finished_at"):
+        for field_name in ("slow_tests", "retry_command", "started_at", "finished_at", "launch_boundary_at"):
             if field_name not in self.model_fields_set:
                 serialized.pop(field_name, None)
         return serialized

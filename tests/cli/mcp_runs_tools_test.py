@@ -118,10 +118,12 @@ async def test_show_run_returns_timing(tmp_path: pathlib.Path) -> None:
     result = _make_result("pytest", returncode=0, command_type="tester")
     result.started_at = "2026-11-05T00:00:01.3+00:00"
     result.finished_at = "2026-11-05T00:00:02+00:00"
+    result.launch_boundary_at = "2026-11-05T00:00:01.2+00:00"
     store.write_tool_result(run_id, result)
     store.finalize_run(run_id, exit_code=0)
 
     overview = await pyfltr.cli.mcp_runs_tools.tool_show_run(run_id)
+    assert overview.commands[0].launch_boundary_at == result.launch_boundary_at
     assert overview.timing.measured
     assert overview.timing.run_elapsed is not None
     assert [item.model_dump() for item in overview.timing.slot_waits or []] == [wait]

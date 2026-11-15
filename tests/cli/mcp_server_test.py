@@ -126,6 +126,7 @@ async def test_show_run_diagnostics_serializes_optional_meta_conditionally(tmp_p
         retry_command="pyfltr run --commands=pytest tests/a_test.py",
         started_at="2026-11-05T00:00:00+00:00",
         finished_at="2026-11-05T00:00:01+00:00",
+        launch_boundary_at="2026-11-04T23:59:59.9+00:00",
     )
     store.write_tool_result(run_id, pytest_result)
     store.finalize_run(run_id, exit_code=1)
@@ -143,7 +144,9 @@ async def test_show_run_diagnostics_serializes_optional_meta_conditionally(tmp_p
     assert "retry_command" not in mypy_meta
     assert "started_at" not in mypy_meta
     assert "finished_at" not in mypy_meta
+    assert "launch_boundary_at" not in mypy_meta
     pytest_meta = serialized_commands[1]["command_meta"]
+    assert pytest_meta["launch_boundary_at"] == "2026-11-04T23:59:59.9+00:00"
     assert (pytest_meta["started_at"], pytest_meta["finished_at"]) == (
         "2026-11-05T00:00:00+00:00",
         "2026-11-05T00:00:01+00:00",
@@ -381,6 +384,7 @@ async def test_show_run_diagnostics_publishes_projected_contract() -> None:
         "retry_command",
         "started_at",
         "finished_at",
+        "launch_boundary_at",
     }
     assert "commandline" not in command_meta_schema["properties"]
     assert "hint_urls" not in command_meta_schema["properties"]

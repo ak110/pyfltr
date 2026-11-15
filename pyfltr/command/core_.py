@@ -342,6 +342,18 @@ class CommandResult:
     """
     finished_at: str | None = None
     """ツール本体の実行を終えた時刻（UTCのISO 8601）。設定する経路は`started_at`と同じ。"""
+    launch_boundary_at: str | None = None
+    """テスターのプロセスを起動する前に記録した開始境界（UTCのISO 8601）。
+
+    `pyfltr.command.stage_runner.run_stages`が、同じ呼び出しで起動したfix段・formatter段の最終終了時刻を含む
+    1秒の区間が終わるまで待ってから記録する（整形でツールを起動していなければ待たない）。
+    更新時刻が秒単位のファイルでも、更新時刻の上限（秒+0.999999999）がこの値より前なら、
+    そのファイルはテスターの起動前に最後の更新を終えている。
+    種別がtesterで、ツールのプロセスを起動した結果（`stage_runner.ran_tool`が真）だけに設定し、
+    成否は`status`で判定する。スキップ・起動コマンドの解決失敗・キャッシュ復元・テスター以外と、
+    本項目を記録しない版が保存したrunでは`None`（`tool.json`では項目なし）となる。
+    区間幅の1秒は更新時刻を秒単位で保持するファイルシステムを前提とし、2秒単位のFATなどは対象外とする。
+    """
 
     @classmethod
     # from_run は各コマンド実行モジュール（linter_fix / textlint_fix 等）で同様の引数転送パターンを持つため重複検知される

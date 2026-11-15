@@ -30,6 +30,7 @@ catch側（`pyfltr/state/runs.py`・`pyfltr/cli/mcp_server.py`など）で組み
 区間の開始時に未完了の要素を、終了時に完了した要素を保存する（`record_slot_wait`）。
 キーを持たないrunは待機区間を計測しない版の記録であり、空の一覧（計測したが区間なし）と区別する。
 各ツールの`tool.json`は本体区間の`started_at`・`finished_at`（実行した場合だけ）と処理秒数`elapsed`を持つ。
+テスターを起動した場合は開始境界`launch_boundary_at`も持つ（意味は`CommandResult.launch_boundary_at`）。
 
 アーカイブは既定で有効。`--no-archive` CLIオプションまたは
 `archive = false`設定で無効化できる。
@@ -231,6 +232,8 @@ class ArchiveStore:
             meta["started_at"] = result.started_at
         if result.finished_at is not None:
             meta["finished_at"] = result.finished_at
+        if result.launch_boundary_at is not None:
+            meta["launch_boundary_at"] = result.launch_boundary_at
         (tool_dir / _TOOL_META_FILENAME).write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def record_slot_wait(self, run_id: str, wait: dict[str, typing.Any]) -> None:

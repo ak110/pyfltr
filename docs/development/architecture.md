@@ -202,6 +202,10 @@ Rich UIへの`call_from_thread`とlock取得の差は画面側に残し、ステ
   `run_stages`は区間を`StageCallbacks.on_slot_wait`へ渡し、CLI・TUIは実行アーカイブの`meta.json`の`slot_waits`へ逐次保存する。
   撤去前の版の実行アーカイブには取り直しの区間（`reacquire`）も残るため、読取側は両方を扱う。
   各ツールの本体区間は`run_stages`が`execute`の前後で`CommandResult.started_at`・`finished_at`へ設定する
+- テスターは起動前に、同じ`run_stages`で起動したfix段・formatter段の最終終了時刻を含む1秒の区間が終わるまで待つ。
+  待った後の時刻は`CommandResult.launch_boundary_at`へ設定する（`stage_runner._with_tester_launch_boundary`）。
+  更新時刻が秒単位のファイルシステムでも、整形で書き換えたファイルと試験の開始を消費側が区別できるようにするためである。
+  待機は本体区間の外で行い、起動しなかった結果・キャッシュ復元・テスター以外には設定しない
 - 公開する外部仕様は`pyfltr.command.execution_slot`の`hold`・`read_owner`・`read_owners`・`waiter_count`と`SlotWait`・`SlotOwner`・`WaitAborted`とする。
   保持者は最大2件になり、`read_owners`が全保持者を枠の順に、`read_owner`が1件（1つ目の枠を優先）を返す。
   実行枠を無効にするCLIオプション・設定キー・環境変数は設けない（`PYFLTR_EXECUTION_SLOTS`は下げる方向だけを受け付ける）。
@@ -997,6 +1001,7 @@ run_idにはULIDを採用する。
 強制終了したrunにも開始済みの区間が未完了のまま残る。
 `slot_waits`キーを持たないrunは待機区間を計測しない版の記録であり、読み取り側は空の一覧（計測したが区間なし）や0秒と区別して未計測として返す。
 各ツールの`tool.json`は本体区間の`started_at`・`finished_at`（実行した場合だけ）と、本体の処理秒数`elapsed`を持つ。
+起動したテスターの`tool.json`は開始境界`launch_boundary_at`も持ち、記録しない版のrunには無い。
 `show-run`とMCPの`show_run`は`state/runs.py`の`summarize_timing`でrun全体の経過・待機の合計・未完了の区間数を求め、
 確定しない値は`null`とする。
 並行したツールの`elapsed`の合計はrun全体の経過と一致しないため合算しない。

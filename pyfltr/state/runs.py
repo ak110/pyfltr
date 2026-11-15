@@ -80,6 +80,7 @@ def collect_tool_summaries(
     pytestの全件は`show-run --commands`が返す生出力から参照できる。
 
     `started_at`・`finished_at`はツール本体区間の開始・終了時刻で、保存されている場合だけ含める。
+    `launch_boundary_at`はテスターの開始境界（`CommandResult.launch_boundary_at`）で、保存されている場合だけ含める。
     """
     summaries: list[dict[str, typing.Any]] = []
     for tool in store.list_tools(run_id):
@@ -93,7 +94,7 @@ def collect_tool_summaries(
             "diagnostics": tool_meta.get("diagnostics"),
             "elapsed": tool_meta.get("elapsed"),
         }
-        for key in ("started_at", "finished_at"):
+        for key in ("started_at", "finished_at", "launch_boundary_at"):
             if tool_meta.get(key) is not None:
                 summary[key] = tool_meta[key]
         slow_tests = tool_meta.get("slow_tests")

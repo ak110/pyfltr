@@ -312,7 +312,18 @@ def _print_tool_detail_text(
     `diagnostics`は`(command, file)`単位の集約形式を想定し、各file見出しの下に
     `messages[]`内の個別指摘をインデント付きで並べる。
     """
-    for key in ("command", "type", "status", "returncode", "files", "elapsed", "started_at", "finished_at", "diagnostics"):
+    for key in (
+        "command",
+        "type",
+        "status",
+        "returncode",
+        "files",
+        "elapsed",
+        "started_at",
+        "finished_at",
+        "launch_boundary_at",
+        "diagnostics",
+    ):
         if key in tool_meta and tool_meta[key] is not None:
             print(f"{key}: {tool_meta[key]}")
     if tool_meta.get("commandline"):

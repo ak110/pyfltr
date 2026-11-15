@@ -103,6 +103,7 @@ async def tool_show_run(run_id: RunIdArg) -> RunOverviewModel:
             elapsed=entry.get("elapsed"),
             started_at=entry.get("started_at"),
             finished_at=entry.get("finished_at"),
+            launch_boundary_at=entry.get("launch_boundary_at"),
             slow_tests=[SlowTestModel.model_validate(test) for test in entry.get("slow_tests", [])],
         )
         for entry in command_summaries

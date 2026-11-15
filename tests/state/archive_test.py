@@ -683,3 +683,16 @@ def test_write_tool_result_stores_body_interval_only_when_executed(tmp_path: pat
     mypy_meta = store.read_tool_meta(run_id, "mypy")
     assert (mypy_meta["started_at"], mypy_meta["finished_at"]) == (executed.started_at, executed.finished_at)
     assert "started_at" not in store.read_tool_meta(run_id, "ruff-check")
+
+
+def test_write_tool_result_stores_launch_boundary_only_when_recorded(tmp_path: pathlib.Path) -> None:
+    """テスターの開始境界は記録した結果だけ`tool.json`へ保存する。"""
+    store = _make_store(tmp_path)
+    run_id = store.start_run(commands=["pytest", "mypy"])
+    tester = _make_result("pytest", returncode=0)
+    tester.launch_boundary_at = "2026-11-13T03:55:25.000100+00:00"
+    store.write_tool_result(run_id, tester)
+    store.write_tool_result(run_id, _make_result("mypy", returncode=0))
+
+    assert store.read_tool_meta(run_id, "pytest")["launch_boundary_at"] == tester.launch_boundary_at
+    assert "launch_boundary_at" not in store.read_tool_meta(run_id, "mypy")

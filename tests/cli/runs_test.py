@@ -595,3 +595,43 @@ def test_show_run_tool_text_shows_body_interval(tmp_path: pathlib.Path, capsys: 
     out = capsys.readouterr().out
     assert "started_at: 2026-11-05T00:00:02+00:00" in out
     assert "finished_at: 2026-11-05T00:00:03.5+00:00" in out
+
+
+def _seed_tester_run(cache_root: pathlib.Path, *, launch_boundary_at: str | None) -> str:
+    """テスターの結果を保存する。`launch_boundary_at=None`は開始境界を記録しない版・結果を模す。"""
+    store = pyfltr.state.archive.ArchiveStore(cache_root=cache_root)
+    run_id = store.start_run(commands=["pytest"], files=1)
+    result = pyfltr.command.core_.CommandResult(
+        command="pytest", command_type="tester", commandline=[], returncode=0, files=1, output="", elapsed=0.5
+    )
+    result.started_at = "2026-11-13T03:55:25.000200+00:00"
+    result.finished_at = "2026-11-13T03:55:25.500000+00:00"
+    result.launch_boundary_at = launch_boundary_at
+    store.write_tool_result(run_id, result)
+    store.finalize_run(run_id, exit_code=0)
+    return run_id
+
+
+@pytest.mark.parametrize("output_format", ["json", "jsonl", "text"])
+def test_show_run_exposes_launch_boundary(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], output_format: str
+) -> None:
+    """show-runの`--commands`は保存済みの開始境界を表示し、既定表示のjsonはツール別サマリへ含める。"""
+    boundary = "2026-11-13T03:55:25.000100+00:00"
+    run_id = _seed_tester_run(tmp_path, launch_boundary_at=boundary)
+
+    assert pyfltr.cli.main.run(["show-run", run_id, "--commands=pytest", f"--output-format={output_format}"]) == 0
+    assert boundary in capsys.readouterr().out
+    if output_format == "json":
+        assert pyfltr.cli.main.run(["show-run", run_id, "--output-format=json"]) == 0
+        assert json.loads(capsys.readouterr().out)["commands"][0]["launch_boundary_at"] == boundary
+
+
+def test_show_run_omits_launch_boundary_for_unrecorded_run(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """開始境界を記録していないrunでは項目を補完しない。"""
+    run_id = _seed_tester_run(tmp_path, launch_boundary_at=None)
+
+    assert pyfltr.cli.main.run(["show-run", run_id, "--output-format=json"]) == 0
+    assert "launch_boundary_at" not in json.loads(capsys.readouterr().out)["commands"][0]
+    assert pyfltr.cli.main.run(["show-run", run_id, "--commands=pytest", "--output-format=text"]) == 0
+    assert "launch_boundary_at" not in capsys.readouterr().out

@@ -259,6 +259,7 @@ async def tool_run(
                 elapsed=result.elapsed,
                 started_at=result.started_at,
                 finished_at=result.finished_at,
+                launch_boundary_at=result.launch_boundary_at,
                 slow_tests=[SlowTestModel.model_validate(test.to_dict()) for test in result.slow_tests],
             )
             for result in outcome.results

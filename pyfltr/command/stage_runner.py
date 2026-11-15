@@ -3,6 +3,7 @@
 import collections.abc
 import concurrent.futures
 import dataclasses
+import datetime as dt
 import threading
 import time
 
@@ -196,11 +197,12 @@ def run_stages(
     別の検証が枠を保持中なら警告を出力して待つ。TUIの中断（`is_interrupted`）で待機を止めた場合は全コマンドをスキップ扱いにする。
     枠の待機区間は`callbacks.on_slot_wait`へ通知する。
     実行した各ツールの結果には、`execute`の直前と直後の時刻を`started_at`・`finished_at`として設定する。
+    テスターは起動前に整形の更新時刻の区間が終わるまで待ち、`launch_boundary_at`を設定する（`_with_tester_launch_boundary`）。
     """
     hooks = callbacks if callbacks is not None else StageCallbacks()
     collected = results if results is not None else []
     config = base_ctx.config
-    execute = _with_body_interval(execute)
+    execute = _with_tester_launch_boundary(_with_body_interval(execute), config)
     fixers, formatters, parallel = pyfltr.command.executor.split_commands_for_execution(
         commands,
         config,
@@ -356,6 +358,50 @@ def _with_body_interval(
         if ran_tool(result):
             result.started_at = started_at
             result.finished_at = pyfltr.timestamps.now_iso()
+        return result
+
+    return wrapped
+
+
+_MTIME_RESOLUTION = dt.timedelta(seconds=1)
+"""テスターの開始境界で経過を待つ、ファイル更新時刻の粗い区間の幅。
+
+秒単位で更新時刻を保持するファイルシステムを前提とする。
+"""
+
+
+def _with_tester_launch_boundary(
+    execute: collections.abc.Callable[[str, bool], pyfltr.command.core_.CommandResult],
+    config: pyfltr.config.model.Config,
+) -> collections.abc.Callable[[str, bool], pyfltr.command.core_.CommandResult]:
+    """テスターの起動前に整形の更新時刻の区間を経過させ、開始境界を結果へ設定する関数を返す。
+
+    fix段とformatter段でツールを起動した結果の終了時刻の最大値を保持し、テスターの`execute`の前に
+    その時刻を含む区間（`_MTIME_RESOLUTION`単位）が終わるまで待つ。待った後の時刻を、
+    ツールのプロセスを起動したテスターの結果（`ran_tool`が真）の`launch_boundary_at`へ設定する。
+    整形は並列段より前に直列で終わるため、テスターが読む終了時刻は確定済みである。
+    待機は`_with_body_interval`の外側で行い、本体区間（`started_at`・`finished_at`）へ含めない。
+    サブプロジェクトの起動は`execute`の内側で繰り返すため、境界は全サブプロジェクトの起動より前の1回になる。
+    """
+    last_write_end: list[dt.datetime] = []
+
+    def wrapped(command: str, fix_stage: bool) -> pyfltr.command.core_.CommandResult:
+        command_type = config.commands[command].type
+        if command_type != "tester" or fix_stage:
+            result = execute(command, fix_stage)
+            if (fix_stage or command_type == "formatter") and ran_tool(result) and result.finished_at is not None:
+                last_write_end.append(dt.datetime.fromisoformat(result.finished_at))
+            return result
+        if last_write_end:
+            latest = max(last_write_end)
+            boundary = latest.replace(microsecond=0) + _MTIME_RESOLUTION
+            # sleepの精度による早着きを避けるため、境界を越えたことを確かめるまで待つ。
+            while (remaining := (boundary - dt.datetime.now(dt.UTC)).total_seconds()) > 0:
+                time.sleep(remaining)
+        launch_boundary_at = pyfltr.timestamps.now_iso()
+        result = execute(command, fix_stage)
+        if ran_tool(result):
+            result.launch_boundary_at = launch_boundary_at
         return result
 
     return wrapped

@@ -1,5 +1,6 @@
 import concurrent.futures
 import dataclasses
+import datetime as dt
 import json
 import os
 import pathlib
@@ -542,3 +543,92 @@ def test_finished_owner_is_not_reported_as_running(tmp_path: pathlib.Path, monke
     # 解放の直後は保持者記録が空になり「読めません」と表示されうる。どの時点でも稼働中の保持者として表示しない。
     assert all("このプロセスは終了しており" in message or "保持者の記録を読めません" in message for message in waiting), waiting
     pyfltr.warnings_.clear()
+
+
+def _custom_commands(tmp_path: pathlib.Path, *specs: tuple[str, str]) -> pyfltr.config.model.Config:
+    body = "".join(
+        f'[tool.pyfltr.custom-commands.{name}]\ntype="{kind}"\npath="{name}"\ntargets="*.txt"\n' for name, kind in specs
+    )
+    (tmp_path / "pyproject.toml").write_text(body, encoding="utf-8")
+    return pyfltr.config.config.load_config(config_dir=tmp_path)
+
+
+def _floor_second(value: str) -> dt.datetime:
+    return dt.datetime.fromisoformat(value).replace(microsecond=0)
+
+
+@pytest.mark.parametrize("include_fix_stage", [False, True])
+def test_run_stages_records_tester_launch_boundary_after_format_second(tmp_path: pathlib.Path, include_fix_stage: bool) -> None:
+    """整形の終了と同じ秒に試験を始める入力でも、テスターの開始境界は整形の秒より後になる。
+
+    起動したテスターだけに記録し（失敗も含む）、未起動・キャッシュ・テスター以外には記録しない。
+    """
+    config = _custom_commands(
+        tmp_path,
+        ("fmt", "formatter"),
+        ("lint", "linter"),
+        ("test-ok", "tester"),
+        ("test-failed", "tester"),
+        ("test-skipped", "tester"),
+        ("test-cached", "tester"),
+    )
+    target = tmp_path / "input.txt"
+    target.write_text("x", encoding="utf-8")
+
+    def _execute(command: str, fix_stage: bool) -> pyfltr.command.core_.CommandResult:
+        del fix_stage
+        if command == "fmt":
+            # 秒の切り替わり直後に整形を終え、同じ秒のうちに試験へ進む入力を作る。
+            while dt.datetime.now(dt.UTC).microsecond > 200_000:
+                time.sleep(0.01)
+            return make_command_result(command, returncode=0)
+        if command == "test-failed":
+            return make_command_result(command, returncode=1)
+        if command == "test-skipped":
+            return make_command_result(command, returncode=None, files=0)
+        if command == "test-cached":
+            return make_command_result(command, returncode=0, cached=True, cached_from="01ABC")
+        return make_command_result(command, returncode=0)
+
+    results = pyfltr.command.stage_runner.run_stages(
+        ["fmt", "lint", "test-ok", "test-failed", "test-skipped", "test-cached"],
+        make_execution_context(config, [target], start_cwd=tmp_path).base,
+        _execute,
+        include_fix_stage=include_fix_stage,
+    )
+    by_command = {result.command: result for result in results}
+    format_end = by_command["fmt"].finished_at
+    assert format_end is not None
+    for command in ("test-ok", "test-failed"):
+        result = by_command[command]
+        assert result.launch_boundary_at is not None
+        assert dt.datetime.fromisoformat(result.launch_boundary_at) >= _floor_second(format_end) + dt.timedelta(seconds=1)
+        # 待機は本体区間の外で行い、本体の開始は境界より後になる。
+        assert result.started_at is not None
+        assert result.launch_boundary_at <= result.started_at
+    for command in ("fmt", "lint", "test-skipped", "test-cached"):
+        assert by_command[command].launch_boundary_at is None
+
+
+def test_run_stages_records_tester_launch_boundary_without_format(tmp_path: pathlib.Path) -> None:
+    """整形でツールを起動しなかった場合は待たずに開始境界を記録する。"""
+    config = _custom_commands(tmp_path, ("fmt", "formatter"), ("test-ok", "tester"))
+    target = tmp_path / "input.txt"
+    target.write_text("x", encoding="utf-8")
+
+    def _execute(command: str, fix_stage: bool) -> pyfltr.command.core_.CommandResult:
+        del fix_stage
+        if command == "fmt":
+            return make_command_result(command, returncode=None, files=0)
+        return make_command_result(command, returncode=0)
+
+    started = time.monotonic()
+    results = pyfltr.command.stage_runner.run_stages(
+        ["fmt", "test-ok"], make_execution_context(config, [target], start_cwd=tmp_path).base, _execute
+    )
+    tester = next(result for result in results if result.command == "test-ok")
+    assert tester.launch_boundary_at is not None
+    assert tester.started_at is not None
+    assert tester.launch_boundary_at <= tester.started_at
+    # 待機が無いことを、境界の秒をまたぐ待ち（最大1秒）より十分短い所要で確かめる。
+    assert time.monotonic() - started < 0.5
