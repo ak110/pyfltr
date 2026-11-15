@@ -199,7 +199,8 @@ _PYTEST_RUN_OUTPUTS = pathlib.Path(__file__).parents[1] / "parsing/data/pytest_r
         ("exception-group-auto", {"test_group": ("y_test.py", 10)}),
         (
             "runpy-extensionless-auto",
-            {"test_extensionless_script": ("scripttool", 2), "test_exec_string": ("runpy_test.py", 15)},
+            # 試験ファイル外の例外位置は、再実行対象を保つため試験ファイルの`line=0`の診断へ併記する
+            {"test_extensionless_script": ("runpy_test.py", 0), "test_exec_string": ("runpy_test.py", 15)},
         ),
         ("showlocals-short", {"test_arg_location_like": ("z_test.py", 2), "test_local_location_like": ("z_test.py", 12)}),
     ],

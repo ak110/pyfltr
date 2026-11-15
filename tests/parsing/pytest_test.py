@@ -130,7 +130,10 @@ def test_pytest_expanded_body_positions_are_excluded(form: str, basis: bool, tmp
 @pytest.mark.parametrize("listed", [True, False])
 @pytest.mark.parametrize("file", ["a:b.py", "scripttool", "gonescript"])
 def test_pytest_legacy_names_without_basis(file: str, listed: bool) -> None:
-    """基準版の名前は、解析基準・一覧・実ファイルを持たない再解析でも保持する。"""
+    """基準版の名前は、解析基準・一覧・実ファイルを持たない再解析でも保持する。
+
+    一覧で試験ファイルが判明する場合は、再実行対象を保つため試験ファイルを`file`とし、位置はメッセージへ残す。
+    """
     output = (
         "===== FAILURES =====\n_____ test_script _____\n"
         f"caller_test.py:8: in test_script\n    run()\n{file}:2: in boom\n    ???\nE   ValueError: gone\n"
@@ -138,7 +141,32 @@ def test_pytest_legacy_names_without_basis(file: str, listed: bool) -> None:
     if listed:
         output += "===== short test summary info =====\nFAILED caller_test.py::test_script - ValueError: gone\n"
     errors = pyfltr.parsing.entry.parse_errors("pytest", output)
-    assert [(error.file, error.line) for error in errors] == [(file, 2)]
+    if listed:
+        assert [(error.file, error.line, error.message) for error in errors] == [
+            ("caller_test.py", 0, f"test_script: ValueError: gone ({file}:2)")
+        ]
+    else:
+        assert [(error.file, error.line) for error in errors] == [(file, 2)]
+
+
+def test_pytest_same_name_failure_in_other_test_file_keeps_owner() -> None:
+    """例外位置が別ファイルの同名試験のファイルでも、一覧の項目を試験関数自身のファイルで選ぶ。
+
+    例外位置のファイルで選ぶと、別の試験の項目を奪って2件の帰属が入れ替わる。
+    """
+    output = (
+        "===== FAILURES =====\n_____ test_x _____\n"
+        "tests/b_test.py:5: in test_x\n    helper()\ntests/a_test.py:9: in helper\n"
+        '    raise ValueError("boom")\nE   ValueError: boom\n'
+        "_____ test_x _____\ntests/a_test.py:3: in test_x\n    assert 0\nE   assert 0\n"
+        "===== short test summary info =====\n"
+        "FAILED tests/b_test.py::test_x - ValueError: boom\nFAILED tests/a_test.py::test_x - assert 0\n"
+    )
+    errors = pyfltr.parsing.entry.parse_errors("pytest", output)
+    assert [(error.file, error.line, error.message) for error in errors] == [
+        ("tests/b_test.py", 0, "test_x: ValueError: boom (tests/a_test.py:9)"),
+        ("tests/a_test.py", 3, "test_x: assert 0"),
+    ]
 
 
 @pytest.mark.parametrize("style", ["auto", "line"])
@@ -218,7 +246,7 @@ def test_pytest_chained_native_traceback_keeps_pytest_position(style: str) -> No
 
 @pytest.mark.parametrize("style", ["short", "auto"])
 def test_pytest_extensionless_frame_has_position(style: str, tmp_path: pathlib.Path) -> None:
-    """runpyが実行するルート直下の拡張子なしファイルも位置付きで報告する。"""
+    """runpyが実行するルート直下の拡張子なしファイルの位置を、試験ファイルの診断へ併記する。"""
     body = (
         "runpy_test.py:8: in test_script\n    run_script()\nscripttool:2: in <module>\nE   ValueError: from script\n"
         if style == "short"
@@ -228,7 +256,9 @@ def test_pytest_extensionless_frame_has_position(style: str, tmp_path: pathlib.P
     output += "===== short test summary info =====\nFAILED runpy_test.py::test_script - ValueError: from script\n"
     (tmp_path / "scripttool").write_text("raise ValueError('from script')\n", encoding="utf-8")
     errors = pyfltr.parsing.entry.parse_errors("pytest", output, path_base=tmp_path, start_cwd=tmp_path)
-    assert [(error.file, error.line) for error in errors] == [("scripttool", 2)]
+    assert [(error.file, error.line, error.message) for error in errors] == [
+        ("runpy_test.py", 0, "test_script: ValueError: from script (scripttool:2)")
+    ]
 
 
 def test_pytest_virtual_string_frame_keeps_real_caller() -> None:
@@ -1674,6 +1704,8 @@ def test_parse_pytest_quiet_child_with_same_test_name_is_not_dropped() -> None:
     安全網はテスト名のみで親の失敗かを判定する。子のテスト名が親の失敗一覧の
     テスト名と一致する構成では判定できず、実行マーカーによる除外も成立しないため
     子プロセス側の失敗が残る。除外の判定条件を変える際に影響範囲を明示する。
+    残った子の失敗は親の一覧の同名項目を消費するため、親の試験ファイルの`line=0`の診断になり、
+    子の位置はメッセージへ併記される。
     """
     output = (
         "================================= FAILURES =================================\n"
@@ -1696,8 +1728,8 @@ def test_parse_pytest_quiet_child_with_same_test_name_is_not_dropped() -> None:
     )
     errors = pyfltr.parsing.entry.parse_errors("pytest", output)
     parent_errors = [e for e in errors if e.file == "tests/p_test.py"]
-    assert {e.line for e in parent_errors} == {11, 15}
-    assert any(e.file == "child/inner_test.py" for e in errors)
+    assert {e.line for e in parent_errors} == {0, 11, 15}
+    assert any(e.line == 0 and e.message.endswith("(child/inner_test.py:3)") for e in parent_errors)
 
 
 def test_parse_pytest_unterminated_child_run_is_not_masked() -> None:

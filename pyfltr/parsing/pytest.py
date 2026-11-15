@@ -221,6 +221,34 @@ def _remaining_pytest_errors(
     return results
 
 
+def _pytest_failure_diagnostic(
+    file_path: str,
+    line: int,
+    message: str,
+    owner: tuple[str, str] | None,
+    paths: pyfltr.parsing.pytest_common.PytestPaths,
+) -> ErrorLocation:
+    """失敗の診断を、一覧で判明した試験ファイルを`file`として組み立てる。
+
+    診断の`file`は`--only-failed`と`retry_command`が再実行対象を選ぶ所有者として使われる。
+    例外位置が試験ファイルの外（実装ファイルや共有ヘルパー）にあると、その位置を`file`にした場合に
+    対象との交差から試験ファイルが抜け、失敗した試験を再実行しないまま成功を返す。
+    そのため一覧の項目（`owner`）と位置のファイルが別の実体なら、`file`を試験ファイル、行番号を`0`とし、
+    プロジェクト内の例外位置だけをメッセージへ併記する（ERROR解析の`_match_pytest_error`と同じ扱い）。
+    """
+    if owner is None or file_path == owner[0] or dataclasses.replace(paths, known_files={owner[0]}).known(file_path):
+        return ErrorLocation(file=file_path, line=line, col=None, command="pytest", message=message)
+    if paths.project(file_path):
+        # tb=lineの位置は絶対パスで出力されるため、他の形式と同じ相対表記へそろえる。
+        shown = paths.reported_relative(file_path)
+        if shown is None and (paths.path_base is not None or paths.start_cwd is not None):
+            shown = pyfltr.paths.to_start_relative(
+                file_path, path_base=paths.path_base or paths.start_cwd, start_cwd=paths.start_cwd or paths.path_base
+            )
+        message += f" ({shown or file_path}:{line})"
+    return ErrorLocation(file=owner[0], line=0, col=None, command="pytest", message=message)
+
+
 def parse_pytest_from_summary(
     summary: dict[tuple[str, str], str | None], consumed: set[tuple[str, str]]
 ) -> list[ErrorLocation]:
@@ -273,6 +301,11 @@ def parse_pytest(
        `line=0`の診断として補完する
     6. 試験の準備・後始末・収集のERROR（一覧の`ERROR`行と`= ERRORS =`節）を
        `parse_pytest_errors`で診断化し、本体の失敗の診断とは別に加える
+
+    経路2・4の位置が一覧で判明した試験ファイルと別の実体（実装ファイル・共有ヘルパー等）を指す場合、
+    診断の`file`は試験ファイル、行番号は`0`とし、プロジェクト内の位置をメッセージへ併記する。
+    診断の`file`は`--only-failed`と`retry_command`が再実行対象を選ぶ所有者でもあり、
+    例外位置を`file`にすると失敗した試験が再実行対象から抜けるためである（`_pytest_failure_diagnostic`）。
 
     経路1の前に、捕捉出力へ混入した子プロセスのpytest実行を
     `pyfltr.parsing.pytest_nested.mask_pytest_captured_child_runs`で空行へ置き換える。pytestを子プロセスとして起動し
@@ -428,12 +461,12 @@ def _parse_pytest_lines(
         if matched_key is not None:
             consumed.add(matched_key)
         results.append(
-            ErrorLocation(
-                file=file_path,
-                line=int(match.group("line")),
-                col=None,
-                command="pytest",
-                message=test_name if doctest_location and test_name else f"{test_name}: {message}" if test_name else message,
+            _pytest_failure_diagnostic(
+                file_path,
+                int(match.group("line")),
+                test_name if doctest_location and test_name else f"{test_name}: {message}" if test_name else message,
+                None if doctest_location else matched_key,
+                paths,
             )
         )
     return results
@@ -508,6 +541,15 @@ def _parse_pytest_failure_blocks(
         location = pyfltr.parsing.pytest_common.select_pytest_location_line(
             traceback, allow_fallback=not frames, paths=block_paths
         )
+        # 一覧の項目は先頭エントリー（試験関数自身の位置）のファイルで選ぶ。例外位置のファイルで選ぶと、
+        # 別ファイルにある同名試験の項目を奪い、2件の帰属が入れ替わるためである。
+        entry = next(
+            pyfltr.parsing.pytest_common.pytest_positions(
+                pyfltr.parsing.pytest_common.PYTEST_LOCATION_LINE_RE, traceback, block_paths
+            ),
+            None,
+        )
+        owner_hint = pyfltr.paths.normalize_separators(entry["file"]) if entry is not None else None
         if location is not None and (not frames or location.start() > frames[-1].start()):
             # 既定のトレースバック形式では最終エントリーの位置行がフレーム行より後に現れ、
             # 実際に例外が発生した位置を指す。フレーム行を持たない失敗ではこの行が唯一の
@@ -518,16 +560,16 @@ def _parse_pytest_failure_blocks(
                 continue
             file_path = pyfltr.paths.normalize_separators(location.group("file"))
             raw_message = pyfltr.parsing.pytest_common.pytest_block_message(block, error_re, location, block_paths)
+            owner = pyfltr.parsing.pytest_common.consume_summary_test(summary, consumed, test_name, owner_hint or file_path)
             results.append(
-                ErrorLocation(
-                    file=file_path,
-                    line=int(location.group("line")),
-                    col=None,
-                    command="pytest",
-                    message=pyfltr.parsing.pytest_common.pytest_join_message(test_name, raw_message),
+                _pytest_failure_diagnostic(
+                    file_path,
+                    int(location.group("line")),
+                    pyfltr.parsing.pytest_common.pytest_join_message(test_name, raw_message),
+                    owner,
+                    paths,
                 )
             )
-            pyfltr.parsing.pytest_common.consume_summary_test(summary, consumed, test_name, file_path)
             continue
 
         if frames:
@@ -548,10 +590,8 @@ def _parse_pytest_failure_blocks(
             raw_message = error_match.group("message").strip() if error_match else ""
             message = pyfltr.parsing.pytest_common.pytest_join_message(test_name, raw_message)
             file_path = pyfltr.paths.normalize_separators(chosen.group("file"))
-            results.append(
-                ErrorLocation(file=file_path, line=int(chosen.group("line")), col=None, command="pytest", message=message)
-            )
-            pyfltr.parsing.pytest_common.consume_summary_test(summary, consumed, test_name, file_path)
+            owner = pyfltr.parsing.pytest_common.consume_summary_test(summary, consumed, test_name, owner_hint or file_path)
+            results.append(_pytest_failure_diagnostic(file_path, int(chosen.group("line")), message, owner, paths))
             continue
 
         crash = _parse_pytest_crash(block, test_name, known_tests, after_captured, summary, consumed, paths)

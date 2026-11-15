@@ -270,13 +270,13 @@ def consume_summary_test(
     consumed: set[tuple[str, str]],
     test_name: str,
     diagnosed_file: str,
-) -> None:
-    """ブロック解析等で確定したテスト名をsummary辞書と突合し、対応する1件を消費済みにする。
+) -> tuple[str, str] | None:
+    """ブロック解析等で確定したテスト名をsummary辞書と突合し、対応する1件を消費済みにして返す。
 
     同名テストが複数ファイルに存在し得るため、診断ファイル（`diagnosed_file`）と一致する候補を
     優先して消費する。一致する候補が無い場合（フレーム選択がプロジェクト外へフォールバックし
     診断ファイルとテスト本来のファイルが一致しない等）は、同名の未消費候補を1件先頭から選んで
-    消費する。マッチが1件も無い場合は何もしない（summaryに対応エントリが無い、または
+    消費する。マッチが1件も無い場合は何もせず`None`を返す（summaryに対応エントリが無い、または
     `= FAILURES =`セクションのみでsummaryが空の場合）。
     """
     fallback_key: tuple[str, str] | None = None
@@ -286,11 +286,12 @@ def consume_summary_test(
             continue
         if sum_file == diagnosed_file:
             consumed.add(key)
-            return
+            return key
         if fallback_key is None:
             fallback_key = key
     if fallback_key is not None:
         consumed.add(fallback_key)
+    return fallback_key
 
 
 def match_truncated_summary(

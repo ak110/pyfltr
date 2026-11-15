@@ -455,6 +455,9 @@ def _run_lock_path(run_dir: pathlib.Path) -> pathlib.Path:
     return run_dir.with_name(f"{run_dir.name}.lock")
 
 
+_PYTEST_APPENDED_LOCATION_RE = re.compile(r"(?P<message>.*) \((?P<file>[^()\s]+):(?P<line>\d+)\)", re.DOTALL)
+
+
 def restore_subproject_paths(
     command: str,
     output: str,
@@ -473,6 +476,11 @@ def restore_subproject_paths(
     for relative, body in _split_subproject_sections(output):
         for error in pyfltr.parsing.entry.parse_errors(command, body):
             owners.setdefault((error.file, error.line, error.message), set()).add(relative)
+            # 旧版のpytest解析は試験ファイル外の例外位置を`file`・行にしていた。現行版はそれを試験ファイルの
+            # `line=0`の診断のメッセージ末尾へ` (<位置>:<行>)`として併記するため、旧版の保存値とも照合できるよう戻す。
+            legacy = _PYTEST_APPENDED_LOCATION_RE.fullmatch(error.message) if command == "pytest" and error.line == 0 else None
+            if legacy is not None:
+                owners.setdefault((legacy["file"], int(legacy["line"]), legacy["message"]), set()).add(relative)
     if not owners:
         return entries
     restored: list[dict[str, typing.Any]] = []
