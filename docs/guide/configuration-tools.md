@@ -224,7 +224,26 @@ semgrepが対応版として掲げるPython（3.14以前）を環境変数`UV_PY
 UV_PYTHON=3.14 uvx pyfltr run --commands=semgrep
 ```
 
+PowerShellでは次のように指定する。
+実行前の`UV_PYTHON`を退避し、コマンドが失敗した場合も含めて実行後に元の値（未設定なら未設定）へ戻す。
+プロファイルやユーザー・マシン単位の環境変数は変更しない。
+
+```powershell
+$savedUvPython = $env:UV_PYTHON
+$env:UV_PYTHON = "3.14"
+try {
+    uvx pyfltr run --commands=semgrep
+} finally {
+    if ($null -eq $savedUvPython) {
+        Remove-Item Env:UV_PYTHON -ErrorAction SilentlyContinue
+    } else {
+        $env:UV_PYTHON = $savedUvPython
+    }
+}
+```
+
 `UV_PYTHON`は同じ実行で`uv`・`uvx`が解決する他のツールにも適用される。
+semgrepの異常終了はLinuxで確認した事象であり、Windowsでの発生は確認していない。
 
 ### sqlfluff
 
