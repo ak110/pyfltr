@@ -419,7 +419,10 @@ def test_cli_reports_slot_wait_progress_and_resume(
     out = capsys.readouterr().out
     assert returncode == 0
     assert "実行枠の取得を待っています" in out
-    assert "external-check" in out
+    # 保持者はPIDで示し、任意の長さを持つlabelは表示せず保持者記録の参照先を示す
+    assert f"pid={os.getpid()}、" in out
+    assert "external-check" not in out
+    assert "execution.owner.json" in out
     assert "残り時間の見込みは" in out
     assert "実行枠を取得しました" in out
 
