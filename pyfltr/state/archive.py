@@ -455,7 +455,9 @@ def _run_lock_path(run_dir: pathlib.Path) -> pathlib.Path:
     return run_dir.with_name(f"{run_dir.name}.lock")
 
 
-_PYTEST_APPENDED_LOCATION_RE = re.compile(r"(?P<message>.*) \((?P<file>[^()\s]+):(?P<line>\d+)\)", re.DOTALL)
+# 併記は末尾の` (<位置>:<行>)`である。メッセージ側を最長一致にして最後の` (`から位置を取り、
+# 旧版の解析が受理していた括弧入りのファイル名（`pkg/(impl).py`など）も復元できるようにする。
+_PYTEST_APPENDED_LOCATION_RE = re.compile(r"(?P<message>.*) \((?P<file>\S+):(?P<line>\d+)\)", re.DOTALL)
 
 
 def restore_subproject_paths(

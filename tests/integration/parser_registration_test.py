@@ -23,7 +23,7 @@ _FIXTURES = json.loads(
 )
 
 
-@pytest.mark.parametrize("file", ["sp ace_test.py", "odd:name.py", "scripttool", "gonescript"])
+@pytest.mark.parametrize("file", ["sp ace_test.py", "odd:name.py", "scripttool", "gonescript", "lib/(impl).py"])
 def test_restore_pytest_subproject_positions_without_basis(file: str) -> None:
     """保存出力の再解析は元ファイルの実在を要求せずサブプロジェクトへ戻す。"""
     test_file = file if " " in file or ":" in file else "caller_test.py"
