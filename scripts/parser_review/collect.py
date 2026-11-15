@@ -26,6 +26,7 @@ import typing
 
 import pyfltr.command.core_
 import pyfltr.command.execution_slot
+import pyfltr.command.stage_runner
 import pyfltr.state.archive
 from scripts.parser_review import capture_run, process_tree
 from scripts.parser_review.samples import Sample, has_parse_definition, pyfltr_settings, render_files
@@ -88,10 +89,12 @@ class Collector:
 
 
 def _report_slot_wait(owner: pyfltr.command.execution_slot.SlotOwner | None) -> None:
-    holder = "不明（保持者記録を読めない）" if owner is None else f"pid={owner.pid} label={owner.label} cwd={owner.cwd}"
+    # 本体の待機表示と同じ表記を使い、任意の長さを持つlabelの全文を表示へ連結しない。
+    holder = pyfltr.command.stage_runner.describe_slot_owner(owner)
+    records = pyfltr.command.stage_runner.describe_slot_owner_records([owner] if owner is not None else [])
     print(
         f"検証の実行枠が空くのを待っています（保持者: {holder}）。時間の上限は取得後から数えます。"
-        "待たずに止める場合はCtrl+Cで中断してください。",
+        f"待たずに止める場合はCtrl+Cで中断してください。{records}",
         file=sys.stderr,
         flush=True,
     )

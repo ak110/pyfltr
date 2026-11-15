@@ -465,14 +465,19 @@ def _finished_process_owner() -> pyfltr.command.execution_slot.SlotOwner:
 
 
 def test_describe_slot_owner_marks_finished_owner() -> None:
-    """終了済みの保持者記録には終了済みである旨を併記し、稼働中の保持者には付けない。"""
+    """終了済みの保持者記録には終了済みである旨を併記し、稼働中の保持者には付けない。labelは表記へ連結しない。"""
     alive = pyfltr.command.execution_slot.SlotOwner(
         pid=os.getpid(),
         create_time=psutil.Process().create_time(),
         cwd="/tmp/alive",
         acquired_at="2026-11-10T00:00:00+00:00",
+        # 外部の呼出元は検証の引数全文のような長いlabelを渡しうる。表記の長さがlabelに比例しないことを確かめる。
+        label="tests/a_test.py " * 500,
     )
-    assert pyfltr.command.stage_runner.describe_slot_owner(alive) == f"pid={os.getpid()}、cwd=/tmp/alive"
+    assert (
+        pyfltr.command.stage_runner.describe_slot_owner(alive)
+        == f"pid={os.getpid()}、cwd=/tmp/alive、取得=2026-11-10T00:00:00+00:00"
+    )
     dead = _finished_process_owner()
     assert "このプロセスは終了しており" in pyfltr.command.stage_runner.describe_slot_owner(dead)
     assert pyfltr.command.stage_runner.describe_slot_owner(None) == "保持者の記録を読めません"
