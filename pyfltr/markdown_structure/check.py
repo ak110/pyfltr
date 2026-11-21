@@ -89,6 +89,32 @@ def _sentence_breaks(text: str) -> list[int]:
     return breaks
 
 
+def _safe_insertions(
+    parser: markdown_it.MarkdownIt, text: str, candidates: dict[int, str]
+) -> tuple[dict[int, str], list[Issue]]:
+    def structure(source: str) -> list[tuple[str, str, int, bool]]:
+        tokens = parser.parse(source)
+        return [(token.type, token.tag, token.nesting, token.hidden) for token in tokens]
+
+    baseline = structure(text)
+    newline = "\r\n" if "\r\n" in text else "\n"
+    accepted: dict[int, str] = {}
+    issues: list[Issue] = []
+    # 確定済みの改行も含めて比較し、元の挿入位置がずれないよう末尾から判定する。
+    for position, indent in sorted(candidates.items(), reverse=True):
+        candidate = text[:position] + newline + indent + text[position:]
+        if text[position:].lstrip(" \t").startswith("#"):
+            message = "1文1行へ改行する（行頭の # が見出しとして扱われうるため、文を調整して手動で改行する）"
+        elif structure(candidate) != baseline:
+            message = "1文1行へ改行する（改行するとMarkdownの構造が変わるため、文を調整して手動で改行する）"
+        else:
+            message = "1文1行へ改行する（自動修正の対象）"
+            accepted[position] = indent
+            text = candidate
+        issues.append(Issue(position - 1, message))
+    return accepted, issues
+
+
 def inspect(text: str) -> tuple[list[Issue], dict[int, str]]:
     """違反の一覧と、自動修正で挿入する位置から字下げへの辞書を返す。"""
     source = _excluded_source(text)
@@ -96,9 +122,10 @@ def inspect(text: str) -> tuple[list[Issue], dict[int, str]]:
     offsets = [0]
     for line in lines:
         offsets.append(offsets[-1] + len(line))
-    tokens = markdown_it.MarkdownIt("commonmark").enable("table").parse(source)
+    parser = markdown_it.MarkdownIt("commonmark").enable("table")
+    tokens = parser.parse(source)
     issues: list[Issue] = []
-    insertions: dict[int, str] = {}
+    candidates: dict[int, str] = {}
     quote_depth = 0
     paragraph = False
     in_table = False
@@ -144,9 +171,17 @@ def inspect(text: str) -> tuple[list[Issue], dict[int, str]]:
         first_content = token.content.split("\n", maxsplit=1)[0]
         content_column = lines[start].find(first_content)
         indent = " " * content_column if lists and content_column >= 0 else (lists[-1] if lists else "")
+        has_template = any(marker in text[offsets[start] : offsets[stop]] for marker in ("{%", "{{", "{#"))
         for end in _sentence_breaks(raw):
             position = offsets[start] + end
-            issues.append(Issue(position - 1, "1文1行へ改行する（自動修正の対象）"))
-            # 空白は原文のまま次行へ送り、リストの継続に必要な字下げだけを追加する。
-            insertions[position] = indent
+            if has_template:
+                issues.append(Issue(position - 1, "1文1行へ改行する（Jinja2構文を含むため、展開結果を確認して手動で改行する）"))
+            else:
+                # 空白は原文のまま次行へ送り、リストの継続に必要な字下げだけを追加する。
+                candidates[position] = indent
+    if candidates:
+        insertions, break_issues = _safe_insertions(parser, text, candidates)
+        issues.extend(break_issues)
+    else:
+        insertions = {}
     return sorted(issues, key=lambda issue: issue.offset), insertions

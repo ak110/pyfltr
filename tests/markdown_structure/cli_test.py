@@ -7,6 +7,8 @@ import pathlib
 import subprocess
 import sys
 
+import jinja2
+import markdown_it
 import pytest
 
 import pyfltr.paths
@@ -83,6 +85,63 @@ def test_excluded_constructs_are_unchanged(tmp_path: pathlib.Path, source: str) 
     path.write_text(source, encoding="utf-8")
     assert _run("--fix", path).returncode == 0
     assert path.read_text(encoding="utf-8") == source
+
+
+@pytest.mark.parametrize(
+    ("source", "reason"),
+    [
+        ("文A。- 次の文は箇条に見える。\n", "Markdownの構造が変わる"),
+        ("文B。1. 番号付きに見える。\n", "Markdownの構造が変わる"),
+        ("文C。> 引用に見える。\n", "Markdownの構造が変わる"),
+        ("記録した。#567 を参照する。\n", "行頭の #"),
+        ("甲。===\n", "Markdownの構造が変わる"),
+        ("甲。<div>乙。</div>\n", "Markdownの構造が変わる"),
+        ("甲。| a | b |\n| - | - |\n", "Markdownの構造が変わる"),
+        ("{{ value }}。乙。\n", "Jinja2構文を含む"),
+        ("{# 注記 #}甲。乙。\n", "Jinja2構文を含む"),
+    ],
+)
+def test_fix_reports_unsafe_break_without_writing(tmp_path: pathlib.Path, source: str, reason: str) -> None:
+    """安全でない文境界は理由付きで報告し、元のバイト列を維持する。"""
+    path = tmp_path / "doc.md"
+    path.write_bytes(source.encode())
+    result = _run("--fix", path)
+    assert result.returncode == 1
+    assert f"{_where(path)}:1:" in result.stdout
+    assert "1文1行へ改行する" in result.stdout
+    assert reason in result.stdout
+    assert path.read_bytes() == source.encode()
+
+
+def test_fix_keeps_safe_break_in_same_paragraph(tmp_path: pathlib.Path) -> None:
+    """安全でない境界の前後にある安全な境界は同じ段落でも修正する。"""
+    path = tmp_path / "doc.md"
+    path.write_bytes("甲。乙。- 丙。丁。\n".encode())
+    result = _run("--fix", path)
+    assert result.returncode == 1
+    assert f"{_where(path)}:2:2:" in result.stdout
+    assert path.read_bytes() == "甲。\n乙。- 丙。\n丁。\n".encode()
+
+
+def test_fix_preserves_rendered_jinja2_list(tmp_path: pathlib.Path) -> None:
+    """テンプレート原文と、複数回の展開でできるリスト・段落の構造を維持する。"""
+    source = "{% for item in items %}- {{ item }}。説明。\n{% endfor %}\n"
+    path = tmp_path / "doc.md"
+    path.write_bytes(source.encode())
+    result = _run("--fix", path)
+    assert result.returncode == 1
+    assert "Jinja2構文を含む" in result.stdout
+    assert path.read_bytes() == source.encode()
+
+    def structure(template: str) -> list[tuple[str, int, bool]]:
+        rendered = jinja2.Environment().from_string(template).render(items=["甲", "乙", "丙"])
+        tokens = markdown_it.MarkdownIt("commonmark").parse(rendered)
+        return [(token.type, token.nesting, token.hidden) for token in tokens]
+
+    before = structure(source)
+    assert before.count(("list_item_open", 1, False)) == 3
+    assert before.count(("paragraph_open", 1, True)) == 3
+    assert structure(path.read_bytes().decode()) == before
 
 
 @pytest.mark.parametrize(
