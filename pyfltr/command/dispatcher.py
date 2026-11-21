@@ -456,6 +456,9 @@ def _run_plain_command(request: pyfltr.command.core_.ExecutionRequest) -> pyfltr
         injected_config_path=request.params.injected_config_path,
         subproject_cwd=request.ctx.subproject_cwd,
     )
+    lint_confirmation_keys = (
+        pyfltr.command.textlint_fix.lint_confirmation_keys(request) if request.command == "textlint" else {}
+    )
     if cache_context is not None:
         cached_result = cache_context.lookup()
         if cached_result is not None:
@@ -463,8 +466,9 @@ def _run_plain_command(request: pyfltr.command.core_.ExecutionRequest) -> pyfltr
             # 復元値のfiles / elapsedは過去実行時のもの。復元時の実ファイル数は
             # 現在のターゲットリストに合わせ直す （再実行時の対象件数表示のため）。
             cached_result.files = len(request.params.targets)
+            if lint_confirmation_keys:
+                pyfltr.command.textlint_fix.record_lint_confirmations(request, lint_confirmation_keys, cached_result.output)
             return cached_result
-
     # verbose時のコマンドライン出力・timeout / retry設定の解決はrun_configured_subprocessへ委ねる。
     # linter_fix.execute_linter_fixもこの単発実行の骨格（run_configured_subprocess呼び出し +
     # returncode/output/elapsedの取り出し）を共有するが、本関数はキャッシュ参照・書き込みを
@@ -488,6 +492,8 @@ def _run_plain_command(request: pyfltr.command.core_.ExecutionRequest) -> pyfltr
     returncode = proc.returncode
 
     output = proc.stdout.strip()
+    if lint_confirmation_keys and not proc.timeout_exceeded and returncode in (0, 1):
+        pyfltr.command.textlint_fix.record_lint_confirmations(request, lint_confirmation_keys, output)
     elapsed = time.perf_counter() - request.start_time
     errors = request.parse_errors(output, request.params.command_info.error_pattern)
     # pytestは設定ファイル競合をヘッダー1行で通知するだけで終了コードへ反映しない。
@@ -645,8 +651,9 @@ def _dispatch_command(
     # を決めるフラグで、結果生成時にconfigから解決して固定値で持たせる。
     severity = pyfltr.config.model.resolve_severity(config.values, command)
 
-    def _with_targets(result: CommandResult) -> CommandResult:
-        result.target_files = list(targets)
+    def _with_targets(result: CommandResult, *, preserve_targets: bool = False) -> CommandResult:
+        if not preserve_targets:
+            result.target_files = list(targets)
         result.effective_runner = params.effective_runner
         result.runner_source = params.runner_source
         result.runner_fallback = params.runner_fallback
@@ -689,7 +696,7 @@ def _dispatch_command(
         kind = "plain"
     if fix_args is not None and command_info.type != "formatter":
         kind = command_info.fix_execution_kind
-    return _with_targets(_EXECUTORS[kind](request))
+    return _with_targets(_EXECUTORS[kind](request), preserve_targets=kind == "textlint-fix")
 
 
 _EXECUTORS: dict[pyfltr.tool_types.ExecutionKind, typing.Callable[[pyfltr.command.core_.ExecutionRequest], CommandResult]] = {

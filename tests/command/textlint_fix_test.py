@@ -1,3 +1,4 @@
+import json
 import os
 import pathlib
 import subprocess
@@ -6,6 +7,7 @@ import pyfltr.command.dispatcher
 import pyfltr.command.process
 import pyfltr.config.config
 import pyfltr.paths
+import pyfltr.state.cache
 import pyfltr.warnings_
 from tests import conftest as _testconf
 
@@ -437,3 +439,67 @@ def test_textlint_fix_mode_disables_cache_only_in_fix_step(mocker, tmp_path: pat
     assert step1_cmdline[-2] == "--no-cache"
     assert "--cache" in step2_cmdline
     assert "--no-cache" not in step2_cmdline
+
+
+def test_textlint_fix_cache_only_skips_unchanged_clean_files(mocker, tmp_path: pathlib.Path) -> None:
+    config = pyfltr.config.config.create_default_config()
+    config.values["textlint"] = True
+    store = pyfltr.state.cache.CacheStore(tmp_path / "cache")
+    clean = tmp_path / "clean.md"
+    bad = tmp_path / "bad.md"
+    rcfile = tmp_path / ".textlintrc.json"
+    clean.write_text("clean")
+    bad.write_text("bad")
+
+    def run(cmdline, *_args, **_kwargs):
+        results = []
+        for target in (clean, bad):
+            if not any(pathlib.Path(arg).name == target.name for arg in cmdline):
+                continue
+            messages = [{"message": "violation"}] if target == bad else []
+            applying = []
+            if "--fix" in cmdline and target == clean and (target.read_text() == "changed" or rcfile.exists()):
+                target.write_text("refixed" if rcfile.exists() else "fixed")
+                applying = [{"message": "fixed"}]
+            results.append(
+                {
+                    "filePath": str(target),
+                    "output": "本文は出力しない",
+                    "messages": messages,
+                    "applyingMessages": applying,
+                    "remainingMessages": messages,
+                }
+            )
+        return subprocess.CompletedProcess(cmdline, returncode=int(bad.name in cmdline), stdout=json.dumps(results))
+
+    runner = mocker.patch("pyfltr.command.process.run_subprocess", side_effect=run)
+
+    def execute(targets, *, fix_stage=True):
+        return pyfltr.command.dispatcher.execute_command(
+            "textlint",
+            _testconf.make_args(),
+            _testconf.make_execution_context(
+                config, targets, cache_store=store, cache_run_id="run", fix_stage=fix_stage, start_cwd=tmp_path
+            ),
+        )
+
+    assert "本文は出力しない" not in execute([clean, bad]).output
+    execute([clean, bad], fix_stage=False)
+    runner.reset_mock()
+    result = execute([clean])
+    assert runner.call_count == 0
+    assert result.status == "succeeded"
+    assert result.target_files == []
+    assert execute([clean, bad]).target_files == [bad]
+    assert clean.name not in runner.call_args.args[0]
+
+    clean.write_text("changed")
+    assert execute([clean, bad]).target_files == [bad, clean]
+    assert clean.read_text() == "fixed"
+    # 違反0件の記録を作ってから、設定ファイルの新設で無効になることを確認する。
+    assert execute([clean, bad]).target_files == [bad, clean]
+    execute([clean, bad], fix_stage=False)
+    assert execute([clean, bad]).target_files == [bad]
+    rcfile.write_text("{}")
+    assert execute([clean, bad]).target_files == [bad, clean]
+    assert clean.read_text() == "refixed"

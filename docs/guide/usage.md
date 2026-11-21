@@ -426,8 +426,8 @@ check段では`textlint-json`設定（既定`true`）により出力フォーマ
 - `--output-format=text|json|jsonl`: 出力形式を切り替える（既定`text`）。
   未指定時は環境変数`PYFLTR_OUTPUT_FORMAT`を、`AI_AGENT` / `CODEX_CI` / `CLAUDECODE` / `CURSOR_AGENT`の
   いずれかが設定されていれば`jsonl`を採用する
-- `--check`: 実行時と同じ事前チェックを行う
- （mise経由ツールは`mise exec --version`での可用性確認、パッケージマネージャー系ツールは最低版の確認）
+- `--check`: 実行時と同じ事前チェックを行う。
+  mise経由のツールは`mise exec --version`で可用性を確認し、パッケージマネージャーは最低版を確認する。
   事前確認に成功した場合は解決済みコマンドラインへ`--version`を渡し、実行版を`check_installed_version`として返す。
   取得できなかった場合は`null`を返す。
   `--check`未指定時と事前確認失敗時はそのフィールドを出力しない。
@@ -956,6 +956,9 @@ pyfltrからprekのhookを呼び出す統合は`prek = true`で有効化する�
 対象ファイル群・ツール固有設定ファイル群のハッシュとツール固有情報からキャッシュキーを構築する。
 ヒット時はツール実行をスキップして前回結果を復元する。
 既定は有効であり、`--no-cache`または`cache = false`設定で実行単位に無効化できる。
+textlintの修正段では、前回の修正段と通常段の両方で違反が0件と確認でき、内容・設定ファイル・実効コマンドラインが同じファイルを省く。
+追加引数でルールを指定している場合やJavaScriptの設定ファイルがある場合など、判定できないときは修正段を省かない。
+この省略にはpyfltrのキャッシュを使い、textlint自身のキャッシュは修正段では使わない。
 保存期間は`cache-max-age-hours`（既定12時間）で制御する。
 設計判断の詳細は[アーキテクチャ概要](../development/architecture.md)を参照。
 
