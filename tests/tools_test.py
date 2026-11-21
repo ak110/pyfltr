@@ -26,6 +26,7 @@ def test_builtin_command_order() -> None:
         "gitleaks",
         "semgrep",
         "bandit",
+        "test-copies",
         "pylint",
         "mypy",
         "ruff-check",

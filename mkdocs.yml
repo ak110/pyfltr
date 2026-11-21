@@ -79,6 +79,7 @@ plugins:
         - YAML/TOML: `yamllint` / `taplo`
         - CI/Docker/EditorConfig: `actionlint` / `pinact` / `glab-ci-lint` / `hadolint` / `ec`
         - セキュリティ/スペル: `gitleaks` / `typos` / `semgrep` / `bandit`
+        - テスト品質: `test-copies`（テストの文言・定数写し候補の検出。既定は無効）
         - SQL: `sqlfluff`
         - 依存の脆弱性監査: `uv-audit` / `pnpm-audit` / `npm-audit` / `yarn-audit`
         - その他: `pre-commit` / `prek`

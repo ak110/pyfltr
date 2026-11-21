@@ -433,6 +433,12 @@ markdown-structure = true
 既存の文書を一度に整形する場合は、有効化した後に`pyfltr run`を実行し、fix段が加えた改行を確認してからcommitする。
 詳細は[設定項目（ツール別）](configuration-tools.md)の「markdown-structure」を参照。
 
+### テストの文言・定数写し
+
+テストの文言・定数写しをチェックするには、`[tool.pyfltr]`へ`test-copies = true`を加える。
+導入時は`pyfltr run tests --commands=test-copies`で診断を確認し、候補を振る舞いのテストに置き換えるか、例外の理由を記録する。
+対象範囲と例外の記法は[設定項目（ツール別）](configuration-tools.md#test-copies)を参照。
+
 ## .pre-commit-config.yaml
 
 ```yaml

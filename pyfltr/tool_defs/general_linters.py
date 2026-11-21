@@ -1,5 +1,7 @@
 """general_lintersのツール登録。"""
 
+import sys
+
 from pyfltr.diagnostics import ErrorLocation
 from pyfltr.tool_types import BinToolSpec, CommandInfo, FunctionRef, StructuredOutputSpec
 
@@ -265,6 +267,21 @@ COMMANDS: dict[str, CommandInfo] = {
             "bandit-runner": "python-runner",
             "bandit-args": ["--quiet", "--recursive", "--format=json"],
             "bandit-fast": False,
+        },
+    ),
+    "test-copies": CommandInfo(
+        type="linter",
+        targets=["*_test.py", "*_spec.py", "*.test.ts", "*.test.tsx", "*.spec.ts", "*.spec.tsx", "*.rs"],
+        fixed_cost=0.1,
+        per_file_cost=0.005,
+        subproject_aware=False,
+        diagnostic_pattern=r"^(?P<file>.+):(?P<line>\d+): (?P<severity>error): (?P<rule>[a-z+-]+): (?P<message>.+)$",
+        defaults={
+            "test-copies": False,
+            "test-copies-path": sys.executable,
+            "test-copies-args": ["-m", "pyfltr.test_copies"],
+            "test-copies-runner": "direct",
+            "test-copies-fast": False,
         },
     ),
 }

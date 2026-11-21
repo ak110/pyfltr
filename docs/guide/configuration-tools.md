@@ -25,7 +25,7 @@ pyfltrは対応ツールを実行方式の観点から5カテゴリに分けて�
   dotnet系（dotnet-format / dotnet-build / dotnet-test）も含む。
   グローバル`bin-runner`設定（既定`"mise"`）に従ってmiseまたはPATH経由でネイティブバイナリを解決する
 - 直接実行（既定`{command}-runner = "direct"`）。
-  対象はtypos・yamllint・pre-commit・prek・colloquial-check・markdown-structure・依存の脆弱性監査ツール（uv-audit・pnpm-audit・npm-audit・yarn-audit）。
+  対象はtypos・yamllint・pre-commit・prek・colloquial-check・markdown-structure・test-copies・依存の脆弱性監査ツール（uv-audit・pnpm-audit・npm-audit・yarn-audit）。
   PATH上または`{command}-path`で指定した実行ファイルを直接呼び出す。
   監査ツールはパッケージマネージャー（uv・pnpm・npm・yarn）自体を解決し、`audit`サブコマンドを引数で付与する
 
@@ -277,7 +277,7 @@ pyfltr既定の`sqlfluff-args = ["lint", "--format=json"]`は出力パースの�
 
 ## 直接実行ツール
 
-対象はtypos・yamllint・pre-commit・prek・colloquial-check・markdown-structure・依存の脆弱性監査ツール（uv-audit・pnpm-audit・npm-audit・yarn-audit）。
+対象はtypos・yamllint・pre-commit・prek・colloquial-check・markdown-structure・test-copies・依存の脆弱性監査ツール（uv-audit・pnpm-audit・npm-audit・yarn-audit）。
 `{command}-runner`既定値は`"direct"`で、PATH上または`{command}-path`で指定した実行ファイルをpyfltrが直接呼び出す。
 
 ### typos
@@ -995,6 +995,41 @@ markdown-structure-exclude = ["docs/legacy"]
 - コード（インライン・ブロック）、HTMLコメント、HTMLタグ、表、引用、`逐語引用:`で始まる段落、frontmatterは1文1行のチェックから除く。
   括弧の入れ子は表と見出しもチェックする
 - 重大度は`markdown-structure-severity`（`"warning"`など）で変えられる
+
+### test-copies
+
+`test-copies`は実装から読んだ文言や定数と固定値を比べるだけのテストを検出する内蔵linterである。
+使う場合は次の設定を加える。
+
+```toml
+[tool.pyfltr]
+test-copies = true
+```
+
+対象はPythonの`*_test.py`・`*_spec.py`、TypeScriptの`*.test.ts`・`*.test.tsx`・`*.spec.ts`・`*.spec.tsx`、
+および`#[test]`の付いたテストを含む`*.rs`である。
+テストは実行せず、Pythonは構文木、TS/TSXとRustはテスト宣言や比較式の部分解析で判定する。
+動的に組み立てる比較などは検出できない場合がある。
+
+候補は自動修正しない。
+実装とは独立に定めた契約を確かめるテストは、その直前か本文先頭に理由を書いて除外できる。
+
+```python
+from app import PUBLIC_IDENTIFIER
+
+
+# test-copy-contract: 旧版との互換性のため、この識別子を固定する
+def test_identifier():
+    assert PUBLIC_IDENTIFIER == "sample"
+```
+
+TS/TSXとRustでは`// test-copy-contract: <理由>`を使う。
+理由を省くと`invalid-exception`、解析できない入力や読取失敗は`input-error`となる。
+`pyfltr run`・`pyfltr ci`では、これらの入力不良も写し候補も重大度`error`の個別診断を出して終了コード1を返す。
+
+ファイルを指定して単体で起動する場合は`python -m pyfltr.test_copies <path> ...`と実行する。
+診断は`<file>:<line>: error: <rule>: <message>`形式で出力し、`--json`を指定するとJSONで出力する。
+単体起動の終了コードは正常時0、写し候補があるとき1、入力不良があるとき2である。
 
 ## 起動方式の確認
 

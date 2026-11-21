@@ -19,6 +19,7 @@ typos = true
 gitleaks = true
 hadolint = true
 markdown-structure = true
+test-copies = true
 actionlint = true
 shellcheck = true
 markdownlint = true

@@ -110,7 +110,10 @@ def test_native_output_reaches_jsonl_and_mcp(command: str, tmp_path: pathlib.Pat
         assert '"Secret": "REDACTED"' in output
 
 
-@pytest.mark.parametrize("file", ["normal.py", "bad path.py", "bad:colon.py", "a:10:20/name.py", r"C:\my project\sample.py"])
+@pytest.mark.parametrize(
+    "file",
+    ["normal.py", "bad path.py", "bad:colon.py", "a:10:20/name.py", "sub dir:x/a b:1_test.py", r"C:\my project\sample.py"],
+)
 @pytest.mark.parametrize(
     "command,suffix,line,col,rule,severity",
     [
@@ -122,6 +125,31 @@ def test_native_output_reaches_jsonl_and_mcp(command: str, tmp_path: pathlib.Pat
         ("actionlint", ":3:4: bad value [expression]", 3, 4, "expression", None),
         ("colloquial-check", ":3:4: bad value", 3, 4, None, None),
         ("markdown-structure", ":3:4: error: bad value", 3, 4, None, "error"),
+        ("test-copies", ":3: error: constant-only+text-only: bad value", 3, None, "constant-only+text-only", "error"),
+        (
+            "test-copies",
+            ":2: error: constant-only: test_label: 文言・定数の比較だけの写し候補",
+            2,
+            None,
+            "constant-only",
+            "error",
+        ),
+        (
+            "test-copies",
+            ":2: error: invalid-exception: 例外理由が空または重複している",
+            2,
+            None,
+            "invalid-exception",
+            "error",
+        ),
+        (
+            "test-copies",
+            ":1: error: input-error: 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte",
+            1,
+            None,
+            "input-error",
+            "error",
+        ),
         ("pylint", ":3:4: E0001: bad value (syntax-error)", 3, 4, None, None),
         ("ruff-check", ":3:4: F401 bad value", 3, 4, None, None),
         ("pyright", ":3:4 - error: bad value", 3, 4, None, None),
@@ -145,7 +173,10 @@ def test_builtin_position_delimiters(
         rule,
         severity,
     )
-    assert "bad value" in error.message or "unexpected value" in error.message
+    if command == "test-copies":
+        assert error.message == suffix.split(": error: ", 1)[1].split(": ", 1)[1]
+    else:
+        assert "bad value" in error.message or "unexpected value" in error.message
 
 
 @pytest.mark.parametrize(

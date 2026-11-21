@@ -76,6 +76,7 @@ bin-runner経由（既定はmise）で起動する。
     - 一般: typos（PyPI依存）/ actionlint / pinact / ec（editorconfig-checker、既定は無効）/
       shellcheck（既定は無効）/ glab-ci-lint（既定は無効）
     - 日本語文体: colloquial-check（既定は無効）/ markdown-structure（Markdownの1文1行と全角丸括弧の入れ子、既定は無効）
+    - テスト品質: test-copies（文言・定数写し候補の検出、既定は無効）
     - YAML / Dockerfile / シークレット系: yamllint（既定は無効）/ hadolint（Dockerfile、既定は無効）
     - シークレット検出・SAST: gitleaks（既定は無効）/ semgrep（既定は無効）/ bandit（既定は無効）
     - SQL: sqlfluff（既定は無効）
@@ -120,6 +121,7 @@ bin-runner経由（既定はmise）で起動する。
 - `markdown-structure`: Markdownの1文1行と全角丸括弧の入れ子をチェックする内蔵linter。
   既定は無効（opt-in）。
   違反の重大度の既定は`error`で、1文1行の違反はfix段で自動修正する
+- `test-copies`: テストの文言・定数写し候補を検出する内蔵linter
 
 プリセット指定と言語カテゴリによる限定の詳細は[設定項目](configuration.md)を参照。
 

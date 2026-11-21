@@ -835,6 +835,7 @@ def test_textlint_markdownlint_path_default_empty() -> None:
         ("colloquial-check", False, "direct"),
         # markdown-structureは表記の崩れをerrorで拒否するopt-inツールのため既定無効。
         ("markdown-structure", False, "direct"),
+        ("test-copies", False, "direct"),
     ],
 )
 def test_representative_tools_defaults_by_runner_classification(
