@@ -65,6 +65,9 @@ JSON Lines出力（`--output-format=jsonl`）とMCPサーバー（`pyfltr mcp`�
 
 ### 検証
 
+- CLI・MCPの変更を実プロセスで確かめるときは [verify](.claude/skills/verify/SKILL.md) を使う。
+- 実行枠の数や待機列の調停を変更するときは [実行枠制御の形式検証](.claude/skills/verify-execution-slot/SKILL.md) を使う。
+
 - 手元の検証は、変更したファイルと参照をたどって特定した利用側のテスト・lintを対象に指定した
   `uv run pyfltr run <path>`で行う。
   対象を渡さない全体の実行（`make test`、対象なしの`uv run pyfltr run`）は求めず、
