@@ -92,6 +92,13 @@ _SLOT_PROGRESS_INTERVAL = 30.0
 """待機の継続を繰り返し表示する間隔（秒）。パイプラインのheartbeatのしきい値に揃える。"""
 
 
+@dataclasses.dataclass
+class _Waiting:
+    stop: threading.Event
+    thread: threading.Thread
+    notified: bool = False
+
+
 class SlotWaitReporter:
     """実行枠の待機区間の通知を受けて、待機の継続と再開を文面で表示する。
 
@@ -113,18 +120,14 @@ class SlotWaitReporter:
         # 省略時は生成時点のモジュール値を使う。結合試験が間隔を短縮して差し替えられるようにするため。
         self._delay = delay if delay is not None else _SLOT_PROGRESS_DELAY
         self._interval = interval if interval is not None else _SLOT_PROGRESS_INTERVAL
-        self._stop: threading.Event | None = None
-        self._thread: threading.Thread | None = None
-        self._notified = False
+        self._wait: _Waiting | None = None
 
     def __call__(self, wait: pyfltr.command.execution_slot.SlotWait) -> None:
         """待機区間の開始で継続の通知を始め、終了で止めて、通知済みなら再開を渡す。"""
         if wait.finished_at is None:
             self._start()
             return
-        self._finish()
-        if self._notified:
-            self._notified = False
+        if self._finish():
             self._notify(_slot_resume_message(wait))
 
     def _start(self) -> None:
@@ -139,20 +142,22 @@ class SlotWaitReporter:
                 message = _slot_waiting_message(time.monotonic() - started, done, total)
                 if stop.is_set():
                     return
-                self._notified = True
                 self._notify(message)
+                waiting.notified = True
                 timeout = self._interval
 
-        self._stop = stop
-        self._thread = threading.Thread(target=loop, name="pyfltr-slot-wait", daemon=True)
-        self._thread.start()
+        waiting = _Waiting(stop, threading.Thread(target=loop, name="pyfltr-slot-wait", daemon=True))
+        self._wait = waiting
+        waiting.thread.start()
 
-    def _finish(self) -> None:
-        if self._stop is not None and self._thread is not None:
-            self._stop.set()
-            self._thread.join()
-        self._stop = None
-        self._thread = None
+    def _finish(self) -> bool:
+        waiting = self._wait
+        if waiting is None:
+            return False
+        waiting.stop.set()
+        waiting.thread.join()
+        self._wait = None
+        return waiting.notified
 
 
 def _slot_waiting_message(elapsed: float, done: int, total: int) -> str:

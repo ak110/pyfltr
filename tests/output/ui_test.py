@@ -1,4 +1,5 @@
 import inspect
+import time
 import unittest.mock
 
 import pytest
@@ -15,16 +16,9 @@ import pyfltr.run_options
 import pyfltr.warnings_
 
 
-def test_ctrl_c_double_press_handling() -> None:
-    """Ctrl+C 2回押し処理の検証。
-
-    協調中断方式のため、2回目 Ctrl+C では `exit` を呼ばず、
-    `_interrupted=True` と `terminate_active_processes` 呼び出しで停止する。
-    """
+def test_ctrl_c_operation_sequence(monkeypatch: pytest.MonkeyPatch) -> None:
+    """時間窓の失効と、協調停止後の独立した2回押しによる強制終了を確認する。"""
     args = pyfltr.run_options.RunOptions.from_values({})
-    args.targets = []
-    args.verbose = False
-
     app = pyfltr.output.ui.UIApp(
         ["black"],
         args,
@@ -32,146 +26,40 @@ def test_ctrl_c_double_press_handling() -> None:
             config=pyfltr.config.config.create_default_config(), all_files=[], cache_store=None, cache_run_id=None
         ),
     )
-
-    assert app.last_ctrl_c_time == 0.0
-    assert app.ctrl_c_timeout == 1.0
-    assert app._interrupted is False  # pylint: disable=protected-access  # state flag: 結合テスト化困難
-
-    mock_event = unittest.mock.MagicMock()
-    mock_event.key = "ctrl+c"
-
-    with (
-        unittest.mock.patch.object(app, "exit") as mock_exit,
-        unittest.mock.patch.object(app, "notify") as mock_notify,
-        unittest.mock.patch("pyfltr.command.process.terminate_active_processes") as mock_terminate,
-    ):
-        # 1回目のCtrl+C: 2回目を促す通知
-        app.on_key(mock_event)
-        mock_exit.assert_not_called()
-        mock_notify.assert_called_once_with("終了するには 1 秒以内にもう一度 Ctrl+C を押してください。")
-
-        # 1秒以内の2回目のCtrl+C: 協調中断を開始（exitは呼ばれない）
-        app.on_key(mock_event)
-        mock_exit.assert_not_called()
-        assert app._interrupted is True  # pylint: disable=protected-access  # state flag: 結合テスト化困難
-        mock_terminate.assert_called_once()
-
-
-def test_ctrl_c_force_exit_after_interrupted() -> None:
-    """協調中断済みの状態でさらにCtrl+C×2を受け取ったら強制終了する。
-
-    強制終了経路では`_exit_requested=True` → `terminate_active_processes()` →
-    `exit(return_code=130)`の順で処理される。孫プロセスが残ってworkerが閉じた
-    イベントループへ`call_from_thread`し続ける事象の退路として動く。
-    """
-    args = pyfltr.run_options.RunOptions.from_values({})
-    args.targets = []
-    args.verbose = False
-
-    app = pyfltr.output.ui.UIApp(
-        ["black"],
-        args,
-        pyfltr.command.core_.ExecutionBaseContext(
-            config=pyfltr.config.config.create_default_config(), all_files=[], cache_store=None, cache_run_id=None
-        ),
-    )
-    # 協調中断済みの状態にする
-    app._interrupted = True  # pylint: disable=protected-access  # state flag: 結合テスト化困難
-
-    mock_event = unittest.mock.MagicMock()
-    mock_event.key = "ctrl+c"
-
-    call_order: list[str] = []
-    with (
-        unittest.mock.patch.object(app, "exit", side_effect=lambda **_kw: call_order.append("exit")) as mock_exit,
-        unittest.mock.patch.object(app, "notify"),
-        unittest.mock.patch(
-            "pyfltr.command.process.terminate_active_processes",
-            side_effect=lambda **_kw: call_order.append("terminate"),
-        ) as mock_terminate,
-    ):
-        # 1回目: タイムアウト外なので通知のみ
-        app.on_key(mock_event)
-        mock_exit.assert_not_called()
-        assert app._exit_requested is False  # pylint: disable=protected-access  # state flag: 結合テスト化困難
-
-        # 2回目（1秒以内）: 強制終了（rc=130）。terminate → exit の順で呼ばれる。
-        app.on_key(mock_event)
-        mock_exit.assert_called_once_with(return_code=130)
-        mock_terminate.assert_called_once()
-        assert app._exit_requested is True  # pylint: disable=protected-access  # state flag: 結合テスト化困難
-        assert call_order == ["terminate", "exit"]
+    event = unittest.mock.Mock(key="ctrl+c")
+    clock = unittest.mock.Mock(side_effect=[0.0, 2.0, 2.5, 2.6, 2.7])
+    monkeypatch.setattr(pyfltr.output.ui, "time", unittest.mock.Mock(wraps=time, monotonic=clock))
+    terminate = unittest.mock.Mock()
+    monkeypatch.setattr(pyfltr.command.process, "terminate_active_processes", terminate)
+    notify = unittest.mock.Mock()
+    exit_app = unittest.mock.Mock()
+    call = unittest.mock.Mock()
+    monkeypatch.setattr(app, "notify", notify)
+    monkeypatch.setattr(app, "exit", exit_app)
+    monkeypatch.setattr(app, "call_from_thread", call)
+    # pylint: disable=protected-access  # 公開イベントの前後で内部フェーズを観測する。
+    legal = {("_Running", "_Stopping"), ("_Stopping", "_Exited")}
+    for phase, stops in [("_Running", 0), ("_Running", 0), ("_Stopping", 1), ("_Stopping", 1), ("_Exited", 2)]:
+        before = type(app._phase).__name__
+        app.on_key(event)
+        after = type(app._phase).__name__
+        assert before == after or (before, after) in legal
+        assert after == phase
+        assert terminate.call_count == stops
+        if after != "_Exited":
+            exit_app.assert_not_called()
+    exit_app.assert_called_once_with(return_code=130)
+    assert notify.call_count == 4
+    app._safe_call_from_thread(notify, "反映されない")
+    call.assert_not_called()
 
 
-def test_safe_call_from_thread_short_circuits_when_exit_requested() -> None:
-    """`_exit_requested=True`のとき`_safe_call_from_thread`は`call_from_thread`を呼ばない。
-
-    閉じつつあるイベントループへ`call_from_thread`がブロックされ、workerが
-    `ThreadPoolExecutor.shutdown(wait=True)`から抜けられなくなる病理の退路として動く。
-    """
-    args = pyfltr.run_options.RunOptions.from_values({})
-    args.targets = []
-    args.verbose = False
-
-    app = pyfltr.output.ui.UIApp(
-        ["black"],
-        args,
-        pyfltr.command.core_.ExecutionBaseContext(
-            config=pyfltr.config.config.create_default_config(), all_files=[], cache_store=None, cache_run_id=None
-        ),
-    )
-    app._exit_requested = True  # pylint: disable=protected-access  # state flag: 結合テスト化困難
-
-    callback = unittest.mock.MagicMock()
-    with unittest.mock.patch.object(app, "call_from_thread") as mock_call:
-        app._safe_call_from_thread(callback, 1, key="value")  # pylint: disable=protected-access  # タイミング制御困難
-        mock_call.assert_not_called()
-    callback.assert_not_called()
-
-    # 逆に_exit_requested=Falseなら通常通りcall_from_thread経由で呼ばれる。
-    app._exit_requested = False  # pylint: disable=protected-access  # state flag: 結合テスト化困難
-    with unittest.mock.patch.object(app, "call_from_thread") as mock_call:
-        app._safe_call_from_thread(callback, 1, key="value")  # pylint: disable=protected-access  # タイミング制御困難
-        mock_call.assert_called_once_with(callback, 1, key="value")
-
-
-def test_ctrl_c_timeout() -> None:
-    """Ctrl+Cのタイムアウト処理のテスト。"""
-    args = pyfltr.run_options.RunOptions.from_values({})
-    args.targets = []
-    args.verbose = False
-
-    app = pyfltr.output.ui.UIApp(
-        ["black"],
-        args,
-        pyfltr.command.core_.ExecutionBaseContext(
-            config=pyfltr.config.config.create_default_config(), all_files=[], cache_store=None, cache_run_id=None
-        ),
-    )
-
-    mock_event = unittest.mock.MagicMock()
-    mock_event.key = "ctrl+c"
-
-    with unittest.mock.patch.object(app, "exit") as mock_exit, unittest.mock.patch.object(app, "notify") as mock_notify:
-        app.on_key(mock_event)
-        mock_exit.assert_not_called()
-
-        # 1秒以上待機（time.timeをモック）
-        with unittest.mock.patch("pyfltr.output.ui.time.time") as mock_time:
-            mock_time.return_value = app.last_ctrl_c_time + 2.0  # 2秒後
-
-            app.on_key(mock_event)
-
-            # exitが呼ばれず、通知が再表示されることを確認
-            mock_exit.assert_not_called()
-            assert mock_notify.call_count == 2
-
-
-def test_interrupt_preserves_completed_results(monkeypatch) -> None:
+@pytest.mark.parametrize("interrupt_after_end", [False, True])
+def test_interrupt_preserves_completed_results(monkeypatch: pytest.MonkeyPatch, interrupt_after_end: bool) -> None:
     """BGスレッド経路で、途中で中断されても完了分・skipped分がresultsに残る。
 
-    `execute_command`をモンキーパッチで差し替え、「1本目のlinterは成功、2本目の実行前に
-    `_interrupted=True`にして`InterruptedExecution`を模す」形で協調停止を再現する。
+    `execute_command`をモンキーパッチで差し替え、「1本目のlinterは成功、2本目の実行中に
+    Ctrl+Cを2回押す」形で協調停止を再現する。
     resultに完了分とskipped分が揃うこと、warningsに中断通知行が入ることを検証する。
     """
     pyfltr.warnings_.clear()
@@ -182,24 +70,27 @@ def test_interrupt_preserves_completed_results(monkeypatch) -> None:
     args.include_fix_stage = False
 
     config = pyfltr.config.config.create_default_config()
-    # 2本のlinterを有効化、それ以外は無効化。
+    # 3本のlinterを有効化、それ以外は無効化。
     for name in config.command_names:
         info = config.commands[name]
-        if info.type == "linter" and name in ("pylint", "mypy"):
+        if info.type == "linter" and name in ("pylint", "mypy", "ruff-check"):
             config.values[name] = True
         else:
             config.values[name] = False
     config.values["jobs"] = 1
 
     base_ctx = pyfltr.command.core_.ExecutionBaseContext(config=config, all_files=[], cache_store=None, cache_run_id=None)
-    app = pyfltr.output.ui.UIApp(["pylint", "mypy"], args, base_ctx)
+    app = pyfltr.output.ui.UIApp(["pylint", "mypy", "ruff-check"], args, base_ctx)
 
     call_order: list[str] = []
 
-    def _fake_execute_command(command, *_a, **_kw):
-        del _a, _kw
+    def _fake_execute_command(command, _args, ctx):
+        assert ctx.on_subprocess_start is not None
+        assert ctx.on_subprocess_end is not None
+        ctx.on_subprocess_start()
         call_order.append(command)
         if command == "pylint":
+            ctx.on_subprocess_end()
             # 1本目: 成功を返す。
             return pyfltr.command.core_.CommandResult(
                 command=command,
@@ -212,25 +103,48 @@ def test_interrupt_preserves_completed_results(monkeypatch) -> None:
                 elapsed=0.1,
             )
         # 2本目: 協調停止を発火させる。
-        app._interrupted = True  # pylint: disable=protected-access  # state flag: 結合テスト化困難
-        raise pyfltr.command.process.InterruptedExecution
+        event = unittest.mock.Mock(key="ctrl+c")
+        if interrupt_after_end:
+            ctx.on_subprocess_end()
+        app.on_key(event)
+        app.on_key(event)
+        if not interrupt_after_end:
+            ctx.on_subprocess_end()
+        return pyfltr.command.core_.CommandResult(
+            command=command,
+            command_type="linter",
+            commandline=[],
+            returncode=0,
+            formatter_failed=False,
+            files=0,
+            output="",
+            elapsed=0.1,
+        )
 
+    monkeypatch.setattr(pyfltr.output.ui, "time", unittest.mock.Mock(wraps=time, monotonic=lambda: 1.0))
+    monkeypatch.setattr(pyfltr.command.process, "terminate_active_processes", lambda: None)
+    monkeypatch.setattr(app, "notify", unittest.mock.Mock())
     monkeypatch.setattr("pyfltr.command.dispatcher.execute_command", _fake_execute_command)
     # call_from_threadはUI起動前に呼ばれても失敗しないようno-op化。
-    monkeypatch.setattr(app, "call_from_thread", lambda *a, **kw: None)
+    call = unittest.mock.Mock()
+    monkeypatch.setattr(app, "call_from_thread", call)
 
     app._run_in_background()  # pylint: disable=protected-access  # タイミング制御困難
 
     # resultsに完了分（pylint succeeded）とskipped分（mypy）が揃っている。
     by_command = {r.command: r for r in app.results}
     assert by_command["pylint"].status == "succeeded"
-    assert by_command["mypy"].status == "skipped"
-    assert "Ctrl+C により中断しました" in by_command["mypy"].output
+    assert by_command["mypy"].status == ("succeeded" if interrupt_after_end else "skipped")
+    assert by_command["ruff-check"].status == "skipped"
+    assert call_order == ["pylint", "mypy"]
+    call.assert_called_with(app.exit, return_code=130)
+    assert "Ctrl+C により中断しました" in by_command["ruff-check"].output
 
     # warningsに中断通知が1行入っている。
     warning_messages = [w["message"] for w in pyfltr.warnings_.collected_warnings()]
     assert any("Ctrl+C により中断しました" in m for m in warning_messages)
-    assert any("mypy" in m for m in warning_messages)
+    assert any("ruff-check" in m for m in warning_messages)
+    assert any("mypy" in m for m in warning_messages) is not interrupt_after_end
 
 
 def test_tester_failure_writes_raw_output_in_addition_to_diagnostics(monkeypatch) -> None:

@@ -419,38 +419,40 @@ def test_run_stages_runs_idle_commands_without_slot(tmp_path: pathlib.Path) -> N
 def test_slot_wait_reporter_reports_waiting_and_resume() -> None:
     """閾値を超えた待機の継続と再開を通知し、短い待機は通知しない。"""
     messages: list[str] = []
-    reporter = pyfltr.command.stage_runner.SlotWaitReporter(messages.append, lambda: (2, 5), delay=0.05, interval=0.05)
+    notified = threading.Event()
+
+    def notify(message: str) -> None:
+        messages.append(message)
+        notified.set()
+
+    reporter = pyfltr.command.stage_runner.SlotWaitReporter(notify, lambda: (2, 5), delay=0.0, interval=30.0)
     started = pyfltr.command.execution_slot.SlotWait(kind="initial", sequence=0, started_at="2026-11-10T00:00:00+00:00")
-    reporter(started)
-    time.sleep(0.3)
-    reporter(
-        pyfltr.command.execution_slot.SlotWait(
-            kind="initial",
-            sequence=0,
-            started_at=started.started_at,
-            finished_at="2026-11-10T00:00:01+00:00",
-            elapsed=0.3,
-            outcome="acquired",
-        )
-    )
-    assert len(messages) >= 3
+    finished = dataclasses.replace(started, finished_at="2026-11-10T00:00:01+00:00", elapsed=0.3, outcome="acquired")
+    # pylint: disable=protected-access  # 実イベントの前後で待機状態の遷移辺を観測する。
+    legal = {("NoneType", "_Waiting"), ("_Waiting", "NoneType")}
+
+    def apply(wait: pyfltr.command.execution_slot.SlotWait, expected: str) -> None:
+        before = type(reporter._wait).__name__
+        reporter(wait)
+        after = type(reporter._wait).__name__
+        assert before == after or (before, after) in legal
+        assert after == expected
+
+    apply(started, "_Waiting")
+    try:
+        assert notified.wait(5)
+    finally:
+        apply(finished, "NoneType")
     assert "実行枠の取得を待っています" in messages[0]
     assert "完了したツール: 2/5件" in messages[0]
     assert "残り時間の見込みは" in messages[0]
     assert messages[-1].startswith("実行枠を取得しました")
     count = len(messages)
 
-    reporter(pyfltr.command.execution_slot.SlotWait(kind="initial", sequence=0, started_at="2026-11-10T00:00:02+00:00"))
-    reporter(
-        pyfltr.command.execution_slot.SlotWait(
-            kind="initial",
-            sequence=0,
-            started_at="2026-11-10T00:00:02+00:00",
-            finished_at="2026-11-10T00:00:02+00:00",
-            elapsed=0.0,
-            outcome="acquired",
-        )
-    )
+    reporter._delay = 30.0
+    apply(started, "_Waiting")
+    apply(started, "_Waiting")
+    apply(finished, "NoneType")
     assert len(messages) == count
 
 
