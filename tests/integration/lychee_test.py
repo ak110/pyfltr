@@ -14,7 +14,7 @@ import pyfltr.command.process
 import pyfltr.state.archive
 
 
-def _report(*codes: int | str, scheme: str = "https") -> str:
+def _report(*codes: int | str, scheme: str = "https", unsupported: int = 0) -> str:
     errors = []
     timeouts = []
     for index, code in enumerate(codes):
@@ -38,7 +38,7 @@ def _report(*codes: int | str, scheme: str = "https") -> str:
             "errors": len(errors),
             "timeouts": len(timeouts),
             "unknown": 0,
-            "unsupported": 0,
+            "unsupported": unsupported,
             "error_map": {"links.md": errors} if errors else {},
             "timeout_map": {"links.md": timeouts} if timeouts else {},
         }
@@ -70,6 +70,7 @@ def _run_cli(project: pathlib.Path, *, output_format: str = "jsonl") -> int:
     )
 
 
+@pytest.mark.parametrize("unsupported", [0, 1])
 @pytest.mark.parametrize(
     ("codes", "scheme", "expected_status", "expected_exit", "expected_severities", "attempts"),
     [
@@ -100,11 +101,12 @@ def test_lychee_cli_classification(
     expected_exit: int,
     expected_severities: list[str],
     attempts: int,
+    unsupported: int,
 ) -> None:
     """一時障害を警告へ分類し、永久失敗をJSONLとアーカイブで保持する。"""
     process = mocker.patch(
         "pyfltr.command.process.run_subprocess",
-        return_value=subprocess.CompletedProcess([], 2, _report(*codes, scheme=scheme)),
+        return_value=subprocess.CompletedProcess([], 2, _report(*codes, scheme=scheme, unsupported=unsupported)),
     )
     assert _run_cli(lychee_project) == expected_exit
     records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]

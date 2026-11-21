@@ -63,7 +63,7 @@ def classify_failures(output: str) -> tuple[bool, bool] | None:
     counts = [data.get(key) for key in ("errors", "timeouts", "unknown", "unsupported")]
     if any(not isinstance(count, int) or isinstance(count, bool) or count < 0 for count in counts):
         return None
-    if data["unknown"] or data["unsupported"]:
+    if data["unknown"]:
         return None
     transient: list[bool] = []
     has_retryable = False
