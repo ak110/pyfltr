@@ -1038,8 +1038,9 @@ TS/TSXとRustでは`// test-copy-contract: <理由>`を使う。
 推奨設定での導入手順は[推奨設定例](recommended.md#comment-check)を参照。
 
 対象の拡張子は`.py`・`.pyi`・`.ts`・`.tsx`・`.js`・`.jsx`・`.mjs`・`.cjs`・`.svelte`・`.css`・`.html`・`.rs`・`.cs`・`.sh`・`.bash`・`.ps1`・`.psm1`・`.psd1`である。
-Pythonでは`#`のコメントに加え、式文として置いた文字列リテラルを全て検出する。
+Pythonでは`#`のコメントに加え、式文として置いた文字列リテラルを検出する。
 モジュール・クラス・関数の先頭のdocstring、属性の直後に置く属性docstring、関数の途中に置いた文字列が該当する。
+f文字列だけの式文は、埋め込んだ式の評価に副作用がありうるため検出しない。
 文字列リテラルの中の`#`や`//`はコメントとして扱わない。
 
 ruffの`D`規則（pydocstyle）やpylintの`missing-*-docstring`のように、docstringを要求するルールとは両立しない。
@@ -1054,6 +1055,9 @@ ruffの`D`規則（pydocstyle）やpylintの`missing-*-docstring`のように、
   `shellcheck disable=...`・`shellcheck source=...`、`eslint-disable-next-line`、`biome-ignore`、`@ts-expect-error`、
   `/// <reference ... />`、`svelte-ignore`、`#Requires`、`nosec`、`nosemgrep`、`gitleaks:allow`、`test-copy-contract:`
 - `SAFETY:`、`Copyright`、`SPDX-License-Identifier:`などの安全性の根拠と法的表記
+
+これらの免除は`#`・`//`などのコメントにだけ適用し、Pythonのdocstringには適用しない。
+`"""Copyright 2026 ..."""`のようにdocstringへ書いたライセンス表記は、次の手段で個別に許可するか、`#`のコメントへ移す。
 
 #### 個別に許可するコメント
 
@@ -1096,6 +1100,7 @@ pyfltr経由では、pyfltrを起動したディレクトリ（`--work-dir`の�
 
 pyfltr経由では、`--comment-check-args`でこれらのオプションを渡す。
 対象のパスを省くと、pyfltrの対象になる全てのファイルを1回で渡す。
+`pyproject.toml`でcomment-checkを有効にしていない場合は、`--enable=comment-check`も指定する。
 
 ```shell
 pyfltr run --commands=comment-check --comment-check-args=--init-baseline
@@ -1109,12 +1114,15 @@ pyfltrを導入した環境では`python -m pyfltr.comment_check [オプショ�
 
 引数にはファイルを指定する。
 ディレクトリを指定すると続行できないエラーになる。
-ディレクトリへのシンボリックリンクと、対象の拡張子に当たらないファイルはチェックしない。
+ただし、ディレクトリへのシンボリックリンク、`.git`を持つディレクトリ（submoduleなど）、空のディレクトリ（未初期化のsubmoduleなど）は、対象の拡張子に当たらないファイルと同じくチェックしない。
 リポジトリの全ファイルを渡す場合は`git ls-files -z | xargs -0 python -m pyfltr.comment_check`のように実行する。
-`xargs`が複数回に分けて起動しても、`--init-baseline`と`--update-baseline`は渡されたファイルの許可だけを書き換えるため、1回で渡した場合と同じ結果になる。
+`--init-baseline`と`--update-baseline`は渡されたファイルの許可だけを書き換えるため、`xargs`が複数回に分けて起動しても、全てのファイルを読み取れれば1回で渡した場合と同じ結果になる。
+読み取れないファイルや構文エラーのファイルがあると、そのファイルを含む回だけがベースラインを書き換えず、他の回は書き換える。
 
 診断は`<file>:<line>:<column>: error: <メッセージ>`の形式で標準出力へ書く。
 終了コードは、許可していないコメントが無いとき0、許可していないコメントか、読み取れないファイル・構文エラーのファイルがあるとき1、続行できないとき2である。
+`--init-baseline`と`--update-baseline`の指定時はベースラインを使った合否の判定をしないため、許可していないコメントがあっても0になる。
+1になるのは読み取れないファイルや構文エラーのファイルがあるときだけで、終了コード0は新しいコメントが無いことを示さない。
 続行できない場合は、ベースラインがJSONとして不正なとき、`--allow-pattern`の正規表現が不正なとき、ディレクトリを指定したときなどで、
 原因と直し方を標準エラーへ書く。
 

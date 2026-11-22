@@ -12,7 +12,8 @@ _MESSAGE = (
     "許可されていないコメントです。不要なら削除し、意図はコード・型・lintで表してください。"
     "残す必要がある場合は、本文へ`pyfltr: allow-comment`を加えるか、"
     "`--allow-pattern`（pyfltr経由では`comment-check-extend-args`）の正規表現で許可してください。"
-    "導入前からあるコメントは`pyfltr run {file} --commands=comment-check --comment-check-args=--init-baseline`で"
+    "導入前からあるコメントは"
+    '`pyfltr run "{file}" --commands=comment-check --enable=comment-check --comment-check-args=--init-baseline`で'
     "ベースラインへ登録できます。"
 )
 
@@ -51,10 +52,10 @@ def _check(args: argparse.Namespace) -> int:
     root = Path.cwd()
     path = args.baseline
     for file in args.files:
-        if file.is_dir() and not file.is_symlink():
+        if file.is_dir() and not (file.is_symlink() or (file / ".git").exists() or not any(file.iterdir())):
             raise ValueError(
                 f"{file}はディレクトリです。ファイルを指定するか、"
-                "pyfltr run --commands=comment-checkで対象のファイルを一括で渡してください。"
+                "pyfltr run --commands=comment-check --enable=comment-checkで対象のファイルを一括で渡してください。"
             )
     baseline = _load(path)
     allow = [_compile(pattern) for pattern in args.allow_pattern or []]
@@ -120,7 +121,7 @@ def main(argv: list[str] | None = None) -> int:
         "files",
         nargs="+",
         type=Path,
-        help="検査するファイル（ディレクトリは指定できず、ディレクトリへのシンボリックリンクは対象外とする）",
+        help="検査するファイル（ディレクトリは指定できない。ディレクトリへのシンボリックリンク、.gitを持つディレクトリ、空のディレクトリは対象外とする）",
     )
     try:
         return _check(parser.parse_args(argv))

@@ -41,8 +41,25 @@ def test_violation_guidance(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cap
     assert main(["sample.py"]) == 1
     output = capsys.readouterr().out
     assert output.startswith("sample.py:1:1: error: ")
-    for guidance in ("pyfltr: allow-comment", "--allow-pattern", "--comment-check-args=--init-baseline"):
+    for guidance in (
+        "pyfltr: allow-comment",
+        "--allow-pattern",
+        'pyfltr run "sample.py" --commands=comment-check --enable=comment-check --comment-check-args=--init-baseline',
+    ):
         assert guidance in output
+
+
+@pytest.mark.parametrize("operation", [[], ["--init-baseline"]])
+def test_skips_nested_repository_and_empty_directories(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: list[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    Path("vendor/lib").mkdir(parents=True)
+    Path("vendor/lib/.git").write_text("gitdir: ../../.git/modules/lib\n", encoding="utf-8")
+    Path("vendor/lib/code.py").write_text("# vendored\n", encoding="utf-8")
+    Path("pending").mkdir()
+    Path("sample.py").write_text("x = 1\n", encoding="utf-8")
+    assert main([*operation, "vendor/lib", "pending", "sample.py"]) == 0
 
 
 def test_init_baseline_keeps_other_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -75,6 +92,7 @@ def test_fatal_errors(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     Path("src").mkdir()
+    Path("src/app.py").write_text("x = 1\n", encoding="utf-8")
     Path("sample.py").write_text("x = 1\n", encoding="utf-8")
     if baseline is not None:
         Path(".pyfltr-comment-baseline.json").write_text(baseline, encoding="utf-8")
