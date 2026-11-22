@@ -28,8 +28,7 @@ pyfltr本体の設定（`[tool.pyfltr]`）と、呼び出される各ツール�
       並列実行が用いるdill（0.4.1時点）がPython 3.15に対応しておらず、pylintが`co_lnotab`の参照で異常終了する
 - `[tool.pylint."messages control"]`: pylintのdisableリストを`pyproject.toml`に集約することで、
   `.pylintrc`を別途配置する必要がなくなり設定の所在が`pyproject.toml`1ファイルにまとまる
-    - ruffの`D`カテゴリが`missing-*-docstring`相当を検出するため、
-    pylint側の同系ルールは無効化しても品質低下は招かない
+    - docstringを必須とするpylintのルールは無効にする
     - `missing-class-docstring`はテストクラスに対する儀礼的docstring付与を無効化する
     - `missing-module-docstring`は`__init__.py`等でモジュールdocstring要求を緩和する目的で無効化する
 - `[tool.pylint."messages control"]`のdisableリストへ`"duplicate-code"`（R0801）を追加し、
@@ -60,8 +59,8 @@ pyfltr本体の設定（`[tool.pyfltr]`）と、呼び出される各ツール�
   シェル経由のコマンド実行、文字列結合や書式化で組み立てたSQLである
     - flake8-bandit（`S`）全体を有効にすると、`assert`（`S101`）や`subprocess`の呼び出し（`S603`）など正当な用法も多く該当する。
       そのため危険な構文を検出する8規則に限定する
-- ruffの `per-file-ignores`: テストコード（`**_test.py`）とpackage init（`__init__.py`）のdocstring要求を除外する実用的な調整
-    - テストコードには試験用の入力として`exec`や`shell=True`を意図して使う箇所があるため、前述のS系8規則も除外する
+- ruffの `per-file-ignores`: テストコード（`**_test.py`）を対象にした除外
+    - テストコードには試験用の入力として`exec`や`shell=True`を意図して使う箇所があるため、前述のS系8規則を除外する
 
 `uvx pyfltr`での実行では`pyproject.toml`にpyfltrを記述する必要はなく、`[tool.pyfltr]`セクションのみで完結する。
 dev依存に固定する場合のみ`[dependency-groups] dev`に`"pyfltr[python]"`を追加する（後置の併記例）。
@@ -113,8 +112,6 @@ line-length = 128
 [tool.ruff.lint]
 # https://docs.astral.sh/ruff/linter/#rule-selection
 select = [
-    # pydocstyle
-    "D",
     # pycodestyle
     "E",
     # Pyflakes
@@ -139,18 +136,8 @@ select = [
     "S605", # os.systemなどシェルを起動する関数
     "S608", # 文字列結合・書式化で組み立てたSQL
 ]
-ignore = [
-    "D107", # Missing docstring in `__init__`
-    "D415", # First line should end with a period
-    "D403", # First word of the first line should be properly capitalized（日本語docstringにそぐわないため）
-]
-
-[tool.ruff.lint.pydocstyle]
-convention = "google"
-
 [tool.ruff.lint.per-file-ignores]
-"**_test.py" = ["D", "S102", "S301", "S306", "S307", "S602", "S604", "S605", "S608"]
-"**/__init__.py" = ["D104"]  # Missing docstring in public package
+"**_test.py" = ["S102", "S301", "S306", "S307", "S602", "S604", "S605", "S608"]
 
 [tool.mypy]
 # https://mypy.readthedocs.io/en/stable/config_file.html
@@ -1194,3 +1181,18 @@ pyfltr:
 ---
 
 Python以外のプロジェクトでの推奨設定例については[推奨設定例（非Pythonプロジェクト）](recommended-nonpython.md)を参照。
+
+## ソースコードのコメント
+
+コード・型・lintで表せない制約だけをコメントとして残す場合は、次の設定を追加する。
+
+```toml
+[tool.pyfltr]
+comment-check = true
+```
+
+既存の正当なコメントを一度だけ登録するには、リポジトリのルートで対象ファイルを指定して
+`uv run python -m pyfltr.comment_check --init-baseline <files>`を実行する。
+不要な許可を削るときは`--update-baseline`を使う。
+この操作で許可は増えない。
+詳細は[設定項目（ツール別）](configuration-tools.md#comment-check)を参照。

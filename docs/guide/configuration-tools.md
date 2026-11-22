@@ -25,7 +25,7 @@ pyfltrは対応ツールを実行方式の観点から5カテゴリに分けて�
   dotnet系（dotnet-format / dotnet-build / dotnet-test）も含む。
   グローバル`bin-runner`設定（既定`"mise"`）に従ってmiseまたはPATH経由でネイティブバイナリを解決する
 - 直接実行（既定`{command}-runner = "direct"`）。
-  対象はtypos・yamllint・pre-commit・prek・colloquial-check・markdown-structure・test-copies・依存の脆弱性監査ツール（uv-audit・pnpm-audit・npm-audit・yarn-audit）。
+  対象はtypos・yamllint・pre-commit・prek・colloquial-check・markdown-structure・comment-check・test-copies・依存の脆弱性監査ツール（uv-audit・pnpm-audit・npm-audit・yarn-audit）。
   PATH上または`{command}-path`で指定した実行ファイルを直接呼び出す。
   監査ツールはパッケージマネージャー（uv・pnpm・npm・yarn）自体を解決し、`audit`サブコマンドを引数で付与する
 
@@ -277,7 +277,7 @@ pyfltr既定の`sqlfluff-args = ["lint", "--format=json"]`は出力パースの�
 
 ## 直接実行ツール
 
-対象はtypos・yamllint・pre-commit・prek・colloquial-check・markdown-structure・test-copies・依存の脆弱性監査ツール（uv-audit・pnpm-audit・npm-audit・yarn-audit）。
+対象はtypos・yamllint・pre-commit・prek・colloquial-check・markdown-structure・comment-check・test-copies・依存の脆弱性監査ツール（uv-audit・pnpm-audit・npm-audit・yarn-audit）。
 `{command}-runner`既定値は`"direct"`で、PATH上または`{command}-path`で指定した実行ファイルをpyfltrが直接呼び出す。
 
 ### typos
@@ -1030,6 +1030,18 @@ TS/TSXとRustでは`// test-copy-contract: <理由>`を使う。
 ファイルを指定して単体で起動する場合は`python -m pyfltr.test_copies <path> ...`と実行する。
 診断は`<file>:<line>: error: <rule>: <message>`形式で出力し、`--json`を指定するとJSONで出力する。
 単体起動の終了コードは正常時0、写し候補があるとき1、入力不良があるとき2である。
+
+### comment-check
+
+`comment-check`はソースコードのコメントとPythonのdocstringをチェックする内蔵linterで、初期設定では無効。
+
+- Shebangやlint抑制などの必須ディレクティブ、`SAFETY:`、ライセンス表記は設定しなくても許可する
+- 外部制約、変更連動の案内、実行時に参照されるdocstringは、ベースライン、
+  `pyfltr: allow-comment`、または`--allow-pattern`の正規表現で個別に許可できる
+- ベースラインには`.pyfltr-comment-baseline.json`を使い、`--baseline`で変更できる。
+  両オプションは`comment-check-extend-args`で通常の実行に渡せる
+- ベースラインはリポジトリ相対パスと空白を正規化した本文の組ごとに許可件数を数える。
+  既存コメントの置換や、許可済みコメントの複製は不合格になる
 
 ## 起動方式の確認
 

@@ -75,6 +75,7 @@ bin-runner経由（既定はmise）で起動する。
 - Linters
     - 一般: typos（PyPI依存）/ actionlint / pinact / ec（editorconfig-checker、既定は無効）/
       shellcheck（既定は無効）/ glab-ci-lint（既定は無効）
+    - ソースコード: comment-check（コメントとPythonのdocstring、既定は無効）
     - 日本語文体: colloquial-check（既定は無効）/ markdown-structure（Markdownの1文1行と全角丸括弧の入れ子、既定は無効）
     - テスト品質: test-copies（文言・定数写し候補の検出、既定は無効）
     - YAML / Dockerfile / シークレット系: yamllint（既定は無効）/ hadolint（Dockerfile、既定は無効）
