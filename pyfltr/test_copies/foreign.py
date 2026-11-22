@@ -233,7 +233,6 @@ def _type_arguments_end(tokens: list[_Token], pairs: dict[int, int], start: int,
         elif value == ">":
             depth -= 1
             if depth == 0:
-                # 比較式の山括弧との混同を減らすため、型の直後に続くトークンを確認する。
                 if index + 1 < close and tokens[index + 1].value in {"(", "=>"}:
                     return index + 1
                 return start

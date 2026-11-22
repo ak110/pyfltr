@@ -139,7 +139,6 @@ def _check_insertions(
 
 def _has_template(text: str) -> bool:
     # 閉じ記号を伴う区切りだけをJinja2構文とみなし、記法例の開始記号だけを含む通常の文書は対象に残す。
-    # 最初の開始記号より後に閉じ記号があるかだけを調べ、開始記号ごとの再走査を避ける。
     for opening, closing in _TEMPLATE_DELIMITERS:
         start = text.find(opening)
         if start >= 0 and text.find(closing, start + len(opening)) >= 0:
@@ -155,7 +154,6 @@ def inspect(text: str) -> tuple[list[Issue], dict[int, str]]:
         offsets.append(offsets[-1] + len(line))
     parser = markdown_it.MarkdownIt("commonmark").enable("table")
     tokens = parser.parse(source)
-    # 空白制御や条件分岐で、原文では別のブロックにあるテキストも展開後に連結しうる。
     has_template = _has_template(text)
     issues: list[Issue] = []
     candidates: dict[int, str] = {}

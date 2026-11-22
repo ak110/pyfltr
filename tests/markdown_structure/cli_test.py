@@ -83,9 +83,9 @@ def test_excluded_constructs_are_unchanged(tmp_path: pathlib.Path, source: str) 
 @pytest.mark.parametrize(
     ("source", "reason"),
     [
-        ("文A。- 次の文は箇条に見える。\n", "Markdownの構造が変わる"),
-        ("文B。1. 番号付きに見える。\n", "Markdownの構造が変わる"),
-        ("文C。> 引用に見える。\n", "Markdownの構造が変わる"),
+        ("文A。- 次の文は箇条になる。\n", "Markdownの構造が変わる"),
+        ("文B。1. 番号付きになる。\n", "Markdownの構造が変わる"),
+        ("文C。> 引用になる。\n", "Markdownの構造が変わる"),
         ("記録した。#567 を参照する。\n", "行頭の #"),
         ("甲。===\n", "Markdownの構造が変わる"),
         ("甲。<div>乙。</div>\n", "Markdownの構造が変わる"),
