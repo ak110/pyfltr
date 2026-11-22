@@ -153,3 +153,33 @@ def test_source_text_copy_reports_text_rule(tmp_path: pathlib.Path) -> None:
     result = _run(tmp_path, "pyfltr.test_copies", name)
     assert result.returncode == 1
     assert f"{name}:2: error: text-only:" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("name", "source"),
+    [
+        (
+            "argument.test.ts",
+            'import { LABEL } from "./app";\n'
+            'function check(m, value: string) { expect(value).toBe("ok"); }\n'
+            'test("label", () => { check(new Map<string, number>(), LABEL); });\n',
+        ),
+        (
+            "parameter.test.ts",
+            'import { LABEL } from "./app";\n'
+            'function check(m: Map<string, number>, value: string) { expect(value).toBe("ok"); }\n'
+            'test("label", () => { check(new Map(), LABEL); });\n',
+        ),
+        (
+            "parameter.rs",
+            "use crate::LABEL;\n"
+            'fn check(m: HashMap<String, i32>, value: &str) { assert_eq!(value, "ok"); }\n'
+            "#[test]\nfn label() { check(HashMap::new(), LABEL); }\n",
+        ),
+    ],
+)
+def test_generic_commas_do_not_split_helper_arguments(tmp_path: pathlib.Path, name: str, source: str) -> None:
+    (tmp_path / name).write_text(source, encoding="utf-8")
+    result = _run(tmp_path, "pyfltr.test_copies", "--json", name)
+    assert result.returncode == 1, result.stderr
+    assert [item["kind"] for item in json.loads(result.stdout)["diagnostics"]] == ["constant-only"]

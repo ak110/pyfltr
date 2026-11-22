@@ -164,17 +164,7 @@ def _foreign_checks(
         if token.value in helpers and token.value not in stack and index + 1 in pairs:
             params, helper_start, helper_end = helpers[token.value]
             close = pairs[index + 1]
-            arguments: list[list[_Token]] = [[]]
-            position = index + 2
-            while position < close:
-                if tokens[position].value == ",":
-                    arguments.append([])
-                elif position in pairs:
-                    arguments[-1].extend(tokens[position : pairs[position] + 1])
-                    position = pairs[position]
-                else:
-                    arguments[-1].append(tokens[position])
-                position += 1
+            arguments = [tokens[first:last] for first, last in _arguments(tokens, pairs, index + 1)]
             local = {name: _foreign_value(argument, env) for name, argument in zip(params, arguments, strict=False)}
             checks.extend(_foreign_checks(tokens, pairs, helper_start, helper_end, helpers, local, (*stack, token.value)))
             index = close
@@ -223,7 +213,7 @@ def _is_rust_test(tokens: list[_Token], index: int) -> bool:
     return tokens[index].value == "#" and [item.value for item in tokens[index + 1 : index + 4]] == ["[", "test", "]"]
 
 
-def _type_arguments_end(tokens: list[_Token], pairs: dict[int, int], start: int, close: int) -> int:
+def _type_arguments_end(tokens: list[_Token], pairs: dict[int, int], start: int, close: int, types: bool) -> int:
     depth = 1
     index = start + 1
     while index < close:
@@ -233,7 +223,7 @@ def _type_arguments_end(tokens: list[_Token], pairs: dict[int, int], start: int,
         elif value == ">":
             depth -= 1
             if depth == 0:
-                if index + 1 < close and tokens[index + 1].value in {"(", "=>"}:
+                if types or index + 1 < close and tokens[index + 1].value in {"(", "=>"}:
                     return index + 1
                 return start
         elif value == ";":
@@ -242,18 +232,29 @@ def _type_arguments_end(tokens: list[_Token], pairs: dict[int, int], start: int,
     return start
 
 
-def _next_ts_token(tokens: list[_Token], pairs: dict[int, int], index: int, close: int) -> int:
+def _next_ts_token(tokens: list[_Token], pairs: dict[int, int], index: int, close: int, types: bool = False) -> int:
     if tokens[index].value == "<":
-        end = _type_arguments_end(tokens, pairs, index, close)
+        end = _type_arguments_end(tokens, pairs, index, close, types)
         if end != index:
             return end
     return pairs.get(index, index) + 1
 
 
-def _argument_end(tokens: list[_Token], pairs: dict[int, int], start: int, close: int) -> int:
+def _argument_end(tokens: list[_Token], pairs: dict[int, int], start: int, close: int, types: bool = False) -> int:
     while start < close and tokens[start].value != ",":
-        start = _next_ts_token(tokens, pairs, start, close)
+        start = _next_ts_token(tokens, pairs, start, close, types)
     return start
+
+
+def _arguments(tokens: list[_Token], pairs: dict[int, int], opening: int, types: bool = False) -> list[tuple[int, int]]:
+    close = pairs[opening]
+    spans: list[tuple[int, int]] = []
+    start = opening + 1
+    while start < close:
+        end = _argument_end(tokens, pairs, start, close, types)
+        spans.append((start, end))
+        start = end + 1
+    return spans
 
 
 def _ts_test_body(tokens: list[_Token], pairs: dict[int, int], call: int) -> tuple[int, int] | None:
@@ -305,9 +306,9 @@ def analyze_foreign(source: str, rust: bool) -> tuple[list[TestFunction], dict[i
         )
         if opening is not None and opening in pairs and tokens[opening].value == "{":
             params = [
-                tokens[position].value
-                for position in range(index + 3, params_end)
-                if tokens[position].value.isidentifier() and (position == index + 3 or tokens[position - 1].value == ",")
+                tokens[first].value
+                for first, _ in _arguments(tokens, pairs, index + 2, types=True)
+                if tokens[first].value.isidentifier()
             ]
             helpers[tokens[index + 1].value] = (params, opening + 1, pairs[opening])
     depth = 0
