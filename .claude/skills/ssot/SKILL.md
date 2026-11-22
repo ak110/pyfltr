@@ -33,7 +33,7 @@ description: >
   新しく書くコメント・docstringは本文へ`pyfltr: allow-comment`を加えて許可する（ベースラインは導入前からあるコメント向け）。
   ベースライン登録済みのコメントを書き換えた場合は、先に`uv run pyfltr run <対象ファイル> --commands=comment-check`で違反を表示し、書き換えたコメント以外の違反（`pyfltr: allow-comment`の無い新しいコメントなど）が無いことを確かめる。
   そのうえで`uv run pyfltr run <対象ファイル> --commands=comment-check --comment-check-args=--init-baseline`で対象ファイルの許可を登録し直す。
-  `--init-baseline`は対象ファイルに残る全てのコメントを許可へ登録するため、確認を省くと新しいコメントまで許可される
+  `--init-baseline`は対象ファイルに残る全てのコメントを許可へ登録するため、確認を省くと新しいコメントまで許可される。
   許可の手段と対象の詳細は`docs/guide/configuration-tools.md`の「個別に許可するコメント」節を参照する
 - `.claude/skills/`配下のスキルが`description`の対象範囲を列挙する場合、および
   `.claude/rules/`配下のルールファイルが`paths` frontmatterで連動更新先を列挙する場合、
