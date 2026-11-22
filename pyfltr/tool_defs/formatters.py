@@ -45,7 +45,6 @@ COMMANDS: dict[str, CommandInfo] = {
             "ruff-format-runner": "python-runner",
             "ruff-format-args": ["format", "--exit-non-zero-on-format"],
             "ruff-format-fast": True,
-            # フォーマットと一緒に片付ける（ruff公式推奨ワークフローの発展形）。
             "ruff-format-by-check": True,
             "ruff-format-check-args": ["check", "--fix", "--unsafe-fixes"],
         },
@@ -100,6 +99,8 @@ COMMANDS: dict[str, CommandInfo] = {
         },
         execution_kind="check-write",
     ),
+    # Rust / .NETツール（formatter）。いずれもpass-filenames=FalseでCrate/solution
+    # 全体を対象とするproject-level実行で動作する。serial_groupにより同一ツールチェイン
     # （cargo / dotnet）のコマンドは直列実行され、targetディレクトリ等のロック競合を回避する。
     "cargo-fmt": CommandInfo(
         type="formatter",

@@ -87,7 +87,6 @@ COMMANDS: dict[str, CommandInfo] = {
             "actionlint-fast": True,
         },
     ),
-    # pinact: GitHub Actionsの`uses:`がSHAと版コメントでピン留めされているかを検査する。
     "pinact": CommandInfo(
         type="linter",
         targets=[".github/workflows/*.yaml", ".github/workflows/*.yml"],
@@ -130,6 +129,8 @@ COMMANDS: dict[str, CommandInfo] = {
             "yamllint-parsable",
             StructuredOutputSpec(
                 # 既定の`-f auto`はGitHub Actions上で`::error`形式へ切り替わり、
+                # 標準形式は見出し行と字下げした違反行の複数行となるため、
+                # 環境によらず1違反1行となる`parsable`へ固定する。
                 inject=["-f", "parsable"],
                 conflicts=["-f", "--format"],
             ),
@@ -196,6 +197,7 @@ COMMANDS: dict[str, CommandInfo] = {
         parser=FunctionRef[[str], list[ErrorLocation]]("pyfltr.parsing.tools", "parse_semgrep_json"),
         defaults={
             # semgrepは`mcp`を厳密ピンし`click`にも強い制約を課すため本体依存から外した。
+            # `uvx`既定により別環境で解決し、pyfltrの依存グラフから切り離す。
             "semgrep": False,
             "semgrep-path": "",
             "semgrep-runner": "uvx",

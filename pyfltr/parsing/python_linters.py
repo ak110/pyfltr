@@ -92,6 +92,7 @@ def parse_pylint_json(output: str) -> list[ErrorLocation]:
         original_message = str(msg.get("message", ""))
         combined_message = f"{message_id}: {original_message}" if message_id else original_message
         # 公式ドキュメントURLはカテゴリー名（`convention` / `warning` / `error` / `refactor` /
+        # `information` / `fatal`）を必要とする。`type`フィールドをそのまま渡す。
         category = msg_type or None
         end_line, end_col = to_inclusive_end_position(line, end_line, end_col)
         results.append(

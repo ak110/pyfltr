@@ -12,6 +12,9 @@ COMMANDS: dict[str, CommandInfo] = {
         per_file_cost=0.035,
         allows_external_paths=False,
         # `--config`が受け付ける候補（markdownlint-cli2公式README参照）。
+        # `config_files`は登録しない（登録すると`warn_config_files`が
+        # 設定不在時に警告を発行してしまい、外部パスのみ検査するケースで
+        # 「プロジェクト側に設定不要」の運用と矛盾するため）。
         config_arg_template=["--config", "{path}"],
         config_inject_candidates=[
             ".markdownlint-cli2.jsonc",
@@ -43,7 +46,9 @@ COMMANDS: dict[str, CommandInfo] = {
         fixed_cost=2.3,
         per_file_cost=0.4,
         allows_external_paths=False,
+        # textlintは対象ファイル単独で完結する解析を行い、設定ファイルもCLIから起動した場合は
         # CWD直下でのみ解決される（公式ドキュメントのconfiguring / ignore章に準拠）。
+        # 以下はtextlintが自動で読み込む設定ファイルとignoreファイルの完全列挙。
         config_files=[
             ".textlintrc",
             ".textlintrc.json",
@@ -148,6 +153,11 @@ COMMANDS: dict[str, CommandInfo] = {
             "lychee-version": "latest",
             "lychee-fast": False,
             # GitHub Actions上のlycheeがgithub.com宛リンクに対して
+            # `Network error: HTTP/2 protocol error. Server may not support HTTP/2 properly`で
+            # 失敗する事象を観測したため、既定値を4へ抑える。
+            # 同時接続数が原因であるという一次資料上の裏付けは無いが、
+            # 同時接続数を抑えた実行では対象の失敗が再現していないため緩和策として採用する。
+            # 利用者側の`{command}-extend-args`での個別対処を不要にする目的でpyfltr既定に置く。
             "lychee-max-concurrency": 4,
         },
     ),

@@ -14,6 +14,8 @@ COMMANDS: dict[str, CommandInfo] = {
         structured_output=(
             "pytest-tb-line",
             StructuredOutputSpec(
+                # 設定キー名は`--tb=line`を示唆するが、実際に注入するのは`--tb=short`である。
+                # `--tb=short`はプロジェクト内フレームを含みつつ出力量を抑えられるため既定採用としており、
                 # キー名は初期実装時の名残。設定互換性維持のため改名しない
                 inject=["--tb=short"],
                 conflicts=["--tb"],

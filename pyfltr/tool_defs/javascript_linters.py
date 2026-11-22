@@ -44,6 +44,7 @@ COMMANDS: dict[str, CommandInfo] = {
             "eslint-path": "",
             "eslint-runner": "js-runner",
             # ESLint 9系以降でcompact / unix / tapなどのコアフォーマッタが除去されたため、
+            # 既定argsは空とし、構造化出力は`eslint-json`設定に対応する`structured_output`の定義で`--format json`を注入する。
             "eslint-args": [],
             "eslint-fast": False,
             "eslint-fix-args": ["--fix"],
@@ -77,7 +78,12 @@ COMMANDS: dict[str, CommandInfo] = {
             "biome-runner": "js-runner",
             "biome-args": ["check"],
             "biome-fast": True,
+            # ruffの`--unsafe-fixes`採用方針と揃え、safe/unsafe両方のfixを自動適用する。
+            # biomeのseverityは各ルールの既定値で決まり、fixのsafe/unsafeとは独立である。
+            # severity infoの診断は`::notice`として出力されるが、
             # biome公式設計でinfoは終了コードに影響しない。
+            # 個別ルールをCIの失敗対象に変更したい場合は`biome.json`の`linter.rules.*`で
+            # severityを上げる（pyfltr側はinfoを失敗扱いに昇格させない）。
             "biome-fix-args": ["--write", "--unsafe"],
         },
     ),

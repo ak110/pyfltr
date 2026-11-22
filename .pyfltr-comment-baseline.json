@@ -178,6 +178,7 @@
     "TUIはGitHub Actions注釈記法を使わないためstop-commands保護は不要。": 1
   },
   "pyfltr/parsing/python_linters.py": {
+    "`information` / `fatal`）を必要とする。`type`フィールドをそのまま渡す。": 1,
     "公式ドキュメントURLはカテゴリー名（`convention` / `warning` / `error` / `refactor` /": 1
   },
   "pyfltr/parsing/tools.py": {
@@ -204,22 +205,43 @@
     "CWD直下でのみ解決される（公式ドキュメントのconfiguring / ignore章に準拠）。": 1,
     "GitHub Actions上のlycheeがgithub.com宛リンクに対して": 1,
     "`--config`が受け付ける候補（markdownlint-cli2公式README参照）。": 1,
-    "対象ファイル名はDESIGN.md固定（公式仕様）。js-runner経由でnpmパッケージから起動する。": 1
+    "`Network error: HTTP/2 protocol error. Server may not support HTTP/2 properly`で": 1,
+    "`config_files`は登録しない（登録すると`warn_config_files`が": 1,
+    "textlintは対象ファイル単独で完結する解析を行い、設定ファイルもCLIから起動した場合は": 1,
+    "「プロジェクト側に設定不要」の運用と矛盾するため）。": 1,
+    "以下はtextlintが自動で読み込む設定ファイルとignoreファイルの完全列挙。": 1,
+    "利用者側の`{command}-extend-args`での個別対処を不要にする目的でpyfltr既定に置く。": 1,
+    "同時接続数が原因であるという一次資料上の裏付けは無いが、": 1,
+    "同時接続数を抑えた実行では対象の失敗が再現していないため緩和策として採用する。": 1,
+    "失敗する事象を観測したため、既定値を4へ抑える。": 1,
+    "対象ファイル名はDESIGN.md固定（公式仕様）。js-runner経由でnpmパッケージから起動する。": 1,
+    "設定不在時に警告を発行してしまい、外部パスのみ検査するケースで": 1
   },
   "pyfltr/tool_defs/formatters.py": {
-    "フォーマットと一緒に片付ける（ruff公式推奨ワークフローの発展形）。": 1,
+    "Rust / .NETツール（formatter）。いずれもpass-filenames=FalseでCrate/solution": 1,
+    "全体を対象とするproject-level実行で動作する。serial_groupにより同一ツールチェイン": 1,
     "（cargo / dotnet）のコマンドは直列実行され、targetディレクトリ等のロック競合を回避する。": 1
   },
   "pyfltr/tool_defs/general_linters.py": {
-    "pinact: GitHub Actionsの`uses:`がSHAと版コメントでピン留めされているかを検査する。": 1,
+    "`uvx`既定により別環境で解決し、pyfltrの依存グラフから切り離す。": 1,
     "semgrepは`mcp`を厳密ピンし`click`にも強い制約を課すため本体依存から外した。": 1,
-    "既定の`-f auto`はGitHub Actions上で`::error`形式へ切り替わり、": 1
+    "既定の`-f auto`はGitHub Actions上で`::error`形式へ切り替わり、": 1,
+    "標準形式は見出し行と字下げした違反行の複数行となるため、": 1,
+    "環境によらず1違反1行となる`parsable`へ固定する。": 1
   },
   "pyfltr/tool_defs/javascript_linters.py": {
-    "biome公式設計でinfoは終了コードに影響しない。": 1
+    "biomeのseverityは各ルールの既定値で決まり、fixのsafe/unsafeとは独立である。": 1,
+    "biome公式設計でinfoは終了コードに影響しない。": 1,
+    "ruffの`--unsafe-fixes`採用方針と揃え、safe/unsafe両方のfixを自動適用する。": 1,
+    "severity infoの診断は`::notice`として出力されるが、": 1,
+    "severityを上げる（pyfltr側はinfoを失敗扱いに昇格させない）。": 1,
+    "個別ルールをCIの失敗対象に変更したい場合は`biome.json`の`linter.rules.*`で": 1,
+    "既定argsは空とし、構造化出力は`eslint-json`設定に対応する`structured_output`の定義で`--format json`を注入する。": 1
   },
   "pyfltr/tool_defs/testers.py": {
-    "キー名は初期実装時の名残。設定互換性維持のため改名しない": 1
+    "`--tb=short`はプロジェクト内フレームを含みつつ出力量を抑えられるため既定採用としており、": 1,
+    "キー名は初期実装時の名残。設定互換性維持のため改名しない": 1,
+    "設定キー名は`--tb=line`を示唆するが、実際に注入するのは`--tb=short`である。": 1
   },
   "scripts/parser_review/samples.py": {
     "uvxが既定でPython 3.15を選ぶ環境では、スタック上限が8MBの場合にsemgrep-coreが異常終了し結果が空になる": 1,
