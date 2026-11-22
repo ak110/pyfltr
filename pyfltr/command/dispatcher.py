@@ -641,6 +641,9 @@ def _pytest_impact_scope(args: pyfltr.run_options.RunOptions, ctx: ExecutionCont
         or not pyfltr.config.model.command_setting(ctx.config.values, "pytest", "pass-filenames", True)
     ):
         return None
+    if args.targets:
+        # 明示範囲では、差分や除外を適用済みの対象を広げない。
+        return ctx.all_files
     start = ctx.base.start_cwd
     root_config = ctx.base.pytest_impact_root_config or ctx.config
     full_files = pyfltr.command.targets.expand_all_files([], root_config, start_cwd=start)
@@ -670,6 +673,7 @@ def _run_pytest_impact(
     signature_args = argv[len(params.commandline_prefix) :]
     full = not args.targets and args.changed_since is None
     env = {**request.env, "TESTSCOPE": "off"}
+
     def run(targets: list[pathlib.Path], *, record: bool = False) -> CommandResult:
         options = ["--testscope-record", f"--rootdir={cwd}"] if record else []
         files = [_original_file_argument(t, subproject_cwd=request.ctx.subproject_cwd, start_cwd=start) for t in targets]
@@ -764,7 +768,7 @@ def _dispatch_command(
         temporary_dir_factory=ctx.base.ensure_temporary_directory,
         pytest_fast_targets_active=ctx.base.pytest_fast_targets_active,
         pytest_always_targets_active=ctx.base.pytest_always_targets_active
-        or (impact_scope is not None and not ctx.base.exclude_always_targets),
+        or (impact_scope is not None and not args.targets and not ctx.base.exclude_always_targets),
     )
     if isinstance(params_or_error, CommandResult):
         # ツールパス解決失敗

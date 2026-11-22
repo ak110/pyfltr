@@ -730,9 +730,9 @@ def test_subproject_uv_run_uses_subproject_cwd_without_virtual_env(
     assert all("VIRTUAL_ENV" not in call.env for call in captured_calls)
 
 
-@pytest.mark.parametrize("enabled", [False, True])
-def test_pytest_impact_fallback_does_not_change_default_execution(
-    tmp_path: pathlib.Path, mocker: typing.Any, *, enabled: bool
+@pytest.mark.parametrize(("enabled", "has_history"), [(False, False), (True, False), (True, True)])
+def test_pytest_impact_preserves_explicit_scope(
+    tmp_path: pathlib.Path, mocker: typing.Any, *, enabled: bool, has_history: bool
 ) -> None:
     config = pyfltr.config.config.create_default_config()
     config.values.update({"pytest": True, "pytest-impact-selection": enabled, "respect-gitignore": False})
@@ -742,7 +742,13 @@ def test_pytest_impact_fallback_does_not_change_default_execution(
         (tmp_path / target).touch()
     probe = mocker.patch(
         "pyfltr.command.pytest_impact.probe",
-        return_value=pyfltr.command.pytest_impact.Probe(reason="履歴欠損"),
+        return_value=(
+            pyfltr.command.pytest_impact.Probe(
+                tests=("other_test.py::test_other",), known=("requested_test.py::test_requested",)
+            )
+            if has_history
+            else pyfltr.command.pytest_impact.Probe(reason="履歴欠損")
+        ),
     )
     env = {"TESTSCOPE": "existing"}
     mocker.patch("pyfltr.command.env.build_subprocess_env", return_value=env.copy())
@@ -756,7 +762,7 @@ def test_pytest_impact_fallback_does_not_change_default_execution(
     result = pyfltr.command.dispatcher.execute_command("pytest", args, ctx)
     assert not result.failed
     assert probe.call_count == int(enabled)
-    assert result.target_files == ([other, requested] if enabled else [requested])
+    assert result.target_files == [requested]
     request = process.call_args.args[0]
     assert request.env["TESTSCOPE"] == ("off" if enabled else "existing")
     assert "--testscope-record" not in request.params.commandline
