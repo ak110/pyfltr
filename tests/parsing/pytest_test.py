@@ -28,7 +28,6 @@ def test_pytest_own_filename_body_is_not_traceback(form: str, tmp_path: pathlib.
         "test_real_assert": 56,
     }
     if form != "own-body-auto-rN":
-        # shortの一覧には名前が出るが、行番号はline形式にしか出ない。
         summary_only = {
             "test_raw_plain": 9,
             "test_raw_eline": 13,
@@ -1609,8 +1608,9 @@ def test_parse_pytest_double_quiet_parent_with_two_child_runs_keeps_first_child_
         ".\n"
     )
     errors = pyfltr.parsing.entry.parse_errors("pytest", output)
-    # 親の最終集計がないため末尾の子を判別できない場合がある。残存は契約にしない。
-    assert all(error.file != "child_test.py" for error in errors)
+    assert all(error.file != "child_test.py" for error in errors), (
+        "1回目の子の診断は抑止する。末尾の子は親の最終集計が無いと判別できないため、その残存は契約にしない"
+    )
 
 
 def test_parse_pytest_warnings_summary_after_summary_list_keeps_parent_summary() -> None:
@@ -2075,7 +2075,6 @@ ERROR tests/sub/broken_test.py
 
 
 def test_pytest_parent_errors_survive_captured_child_failures() -> None:
-    # 捕捉された子の診断が残る既知の制約と分け、親の診断だけを確かめる。
     output = """parent_test.py EEF                                                       [100%]
 
 ==================================== ERRORS ====================================
