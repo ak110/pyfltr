@@ -1,5 +1,3 @@
-"""ビルトインコマンドの登録順と導出定義。"""
-
 import typing
 
 import pyfltr.tool_defs.audit
@@ -14,11 +12,9 @@ import pyfltr.tool_defs.testers
 
 
 def command_index(command_names: typing.Sequence[str], command: str) -> int:
-    """定義順の位置を返す。未登録コマンドは末尾へ置く。"""
     return command_names.index(command) if command in command_names else len(command_names)
 
 
-# 登録順は表示順とformatterの実行順を兼ねる（.claude/rules/order.md）。
 BUILTIN_COMMANDS = {
     **pyfltr.tool_defs.formatters.COMMANDS,
     **pyfltr.tool_defs.general_linters.COMMANDS,
@@ -53,11 +49,9 @@ BIN_RUNNERS: tuple[str, ...] = ("direct", "mise")
 """グローバル`bin-runner`設定で指定できる値。"""
 
 COMMAND_RUNNERS: tuple[str, ...] = (
-    # カテゴリ委譲値（3値）
     "python-runner",
     "js-runner",
     "bin-runner",
-    # 直接指定値（9値）
     "direct",
     "mise",
     "uv",

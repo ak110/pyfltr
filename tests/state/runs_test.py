@@ -1,5 +1,3 @@
-"""実行アーカイブの読み取り（`pyfltr.state.runs`）の試験。"""
-
 import pytest
 
 import pyfltr.state.runs
@@ -52,7 +50,6 @@ def _wait(kind: str, sequence: int, elapsed: float | None) -> dict:
     ],
 )
 def test_summarize_timing(meta: dict, expected: dict) -> None:
-    """未計測・未完了を`None`で表し、完了した区間だけで待機の合計を出す。"""
     timing = pyfltr.state.runs.summarize_timing(meta)
     for key, value in expected.items():
         assert timing[key] == value, key

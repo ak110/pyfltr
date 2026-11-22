@@ -1,5 +1,3 @@
-"""コメントを保持した設定ファイルの読み書き。"""
-
 import pathlib
 import typing
 
@@ -12,11 +10,6 @@ from pyfltr.config.validation import format_unknown_key_message
 
 
 def read_config_values(path: pathlib.Path) -> dict[str, typing.Any]:
-    """pyproject.tomlまたはglobal config.tomlから`[tool.pyfltr]`配下を返す。
-
-    ファイル不在時は空辞書を返す。TOML構文エラー時は`ValueError`で停止する。
-    `pyfltr config get` / `pyfltr config list`の読み取り経路で使用する。
-    """
     if not path.exists():
         return {}
     try:
@@ -36,12 +29,6 @@ def set_config_value(
     *,
     create_if_missing: bool = False,
 ) -> None:
-    """設定ファイルの`[tool.pyfltr]`配下を更新する。
-
-    既存ファイルはtomlkit経由で読み書きするためコメント・セクション順は保持される。
-    `create_if_missing=True`なら、ファイル不在時にディレクトリ含めて新規作成する。
-    `create_if_missing=False`でファイル不在なら`FileNotFoundError`を送出する。
-    """
     if path.exists():
         text = read_config_text(path)
         try:
@@ -68,12 +55,6 @@ def set_config_value(
 
 
 def delete_config_value(path: pathlib.Path, key: str) -> bool:
-    """設定ファイルから`[tool.pyfltr]`配下のキーを削除する。
-
-    存在したかをboolで返す。セクションが空になっても削除しない
-    （手書きコメントを保持するため）。
-    ファイル不在時は`False`を返す。
-    """
     if not path.exists():
         return False
     text = read_config_text(path)
@@ -95,17 +76,6 @@ def delete_config_value(path: pathlib.Path, key: str) -> bool:
 
 
 def parse_config_value(key: str, raw: str) -> typing.Any:
-    """文字列値を`DEFAULT_CONFIG[key]`の型に変換する。
-
-    bool / int / str / `list[str]`のみ対応。dict系（`aliases`等）は非対応で
-    `ValueError`を送出する（CLI経由でdict編集はサポートしない方針）。
-
-    - bool: `true`/`false`/`1`/`0`を受理（大文字小文字は無視）
-    - int: `int(raw)`、失敗で`ValueError`
-    - str: そのまま
-    - list[str]: カンマ区切りでsplit、要素のtrimは行わない
-      （`*-args`系で空白を含むケースに対応するため）
-    """
     if key not in DEFAULT_CONFIG:
         raise ValueError(format_unknown_key_message(key, DEFAULT_CONFIG.keys()))
     default = DEFAULT_CONFIG[key]

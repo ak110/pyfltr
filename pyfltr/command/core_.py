@@ -1,5 +1,3 @@
-"""実行コンテキスト型・CommandResult。"""
-
 import contextlib
 import dataclasses
 import pathlib
@@ -19,7 +17,6 @@ RERUN_STATUSES: frozenset[str] = frozenset({"failed", "warning", "resolution_fai
 
 
 def is_failed_status(status: str | None) -> bool:
-    """失敗を表すstatusなら真を返す。"""
     return status in FAILED_STATUSES
 
 
@@ -36,11 +33,6 @@ logger = __import__("logging").getLogger(__name__)
 
 @dataclasses.dataclass
 class ExecutionBaseContext:
-    """実行パイプライン全体で不変のコンテキスト。
-
-    `run_pipeline` が1回だけ組み立て、CLI/TUI各経路へ渡す。
-    """
-
     config: pyfltr.config.model.Config
     """実行設定（pyproject.tomlから読み込んだ設定値）。"""
     all_files: "list[pathlib.Path]"
@@ -122,7 +114,6 @@ class ExecutionBaseContext:
     """一時的に生成する検査用ファイルのライフタイムを保持する。"""
 
     def ensure_temporary_directory(self) -> pathlib.Path:
-        """パイプライン内で共有する一時ディレクトリを返す。"""
         if self._temporary_directory_path is None:
             stack = contextlib.ExitStack()
             self._temporary_directory_path = pathlib.Path(stack.enter_context(tempfile.TemporaryDirectory(prefix="pyfltr-")))
@@ -130,7 +121,6 @@ class ExecutionBaseContext:
         return self._temporary_directory_path
 
     def cleanup(self) -> None:
-        """パイプライン内で生成した一時ディレクトリを破棄する。"""
         if self._temporary_directory_stack is not None:
             self._temporary_directory_stack.close()
             self._temporary_directory_stack = None
@@ -139,12 +129,6 @@ class ExecutionBaseContext:
 
 @dataclasses.dataclass
 class ExecutionContext:
-    """コマンド実行ごとに変動するコンテキスト。
-
-    `ExecutionBaseContext` を包みつつ、各コマンド実行直前に組み立てる。
-    CLI経路では `_run_one_command` が、TUI経路では `UIApp._execute_command` が組み立てる。
-    """
-
     base: ExecutionBaseContext
     """パイプライン全体で不変のコンテキスト。"""
     fix_stage: bool = False
@@ -174,12 +158,10 @@ class ExecutionContext:
 
     @property
     def effective_cwd(self) -> pathlib.Path:
-        """外部コマンドの解決と実行に使うcwdを返す。"""
         return self.subproject_cwd if self.subproject_cwd is not None else self.base.start_cwd
 
     @property
     def uv_workspace_root(self) -> pathlib.Path | None:
-        """現在のサブプロジェクトに対応するuv workspace rootを返す。"""
         if self.subproject_cwd is None:
             return None
         for subproject in self.base.subprojects:
@@ -189,36 +171,25 @@ class ExecutionContext:
 
     @property
     def config(self) -> pyfltr.config.model.Config:
-        """`base.config` への委譲。"""
         return self.base.config
 
     @property
     def all_files(self) -> "list[pathlib.Path]":
-        """対象ファイル一覧。サブプロジェクト分割実行時は対象のサブプロジェクト分のみ返す。
-
-        `subproject_cwd` が設定されている場合は `base.subproject_files` から
-        対象のサブプロジェクトのファイル集合を返す。設定されていない場合は
-        `base.all_files` 全体を返す（既存挙動）。
-        """
         if self.subproject_cwd is not None:
             return self.base.subproject_files.get(self.subproject_cwd, [])
         return self.base.all_files
 
     @property
     def cache_store(self) -> "pyfltr.command.cache_policy.CacheStore | None":
-        """`base.cache_store` への委譲。"""
         return self.base.cache_store
 
     @property
     def cache_run_id(self) -> "str | None":
-        """`base.cache_run_id` への委譲。"""
         return self.base.cache_run_id
 
 
 @dataclasses.dataclass
 class CommandResult:
-    """コマンドの実行結果。"""
-
     command: str
     command_type: str
     commandline: list[str]
@@ -362,7 +333,6 @@ class CommandResult:
     """
 
     @classmethod
-    # from_run は各コマンド実行モジュール（linter_fix / textlint_fix 等）で同様の引数転送パターンを持つため重複検知される
     def from_run(
         cls,
         *,
@@ -381,15 +351,6 @@ class CommandResult:
         retry_count: int = 0,
         slow_tests: "list[pyfltr.command.slow_tests.SlowTest] | None" = None,
     ) -> "CommandResult":
-        """実行結果からCommandResultを組み立てるファクトリメソッド。
-
-        `command_type` を省略した場合は `command_info.type` を使う。
-        `command_type` と `command_info` の両方を省略することはできない。
-        `errors` を省略した場合は空リストを使う（parse_errorsの呼び出しは呼び出し側で行う）。
-        `timeout_exceeded=True` を指定すると対象の結果がtimeout由来の失敗であることを示す。
-        `retry_count` はOOM起因の再試行回数（0はリトライなし、複数回subprocessを呼ぶ経路では合算値）。
-        `slow_tests`を省略した場合は空リストを使う。
-        """
         resolved_type: str
         if command_type is None:
             assert command_info is not None, "command_type と command_info のどちらかを指定する必要がある"
@@ -427,7 +388,6 @@ class CommandResult:
         errors: "list[pyfltr.diagnostics.ErrorLocation] | None" = None,
         slow_tests: "list[pyfltr.command.slow_tests.SlowTest] | None" = None,
     ) -> "CommandResult":
-        """プロセス実行結果と解析済み情報からCommandResultを組み立てる。"""
         return cls.from_run(
             command=command,
             command_info=command_info,
@@ -445,11 +405,6 @@ class CommandResult:
 
     @property
     def alerted(self) -> bool:
-        """text・TUIの表示分岐で非ゼロ終了なら真を返す。
-
-        成否判断には用いない。formatterの書き換え結果と`severity`による格下げ結果では
-        `status`が成功または警告を表しても真になる。
-        """
         return self.returncode is not None and self.returncode != 0
 
     @property
@@ -498,64 +453,28 @@ class CommandResult:
 
     @property
     def failed(self) -> bool:
-        """statusが失敗を表す場合に真を返す。"""
         return is_failed_status(self.status)
 
     @property
     def formatted(self) -> bool:
-        """formatterによる書き換えを表す場合に真を返す。"""
         return self.status == "formatted"
 
     @property
     def skipped(self) -> bool:
-        """コマンドが起動されなかった場合に真を返す。"""
         return self.status == "skipped"
 
     @property
     def needs_rerun(self) -> bool:
-        """statusが再実行対象を表す場合に真を返す。"""
         return self.status in RERUN_STATUSES
 
     @classmethod
     def merge(cls, results: "list[CommandResult]") -> "CommandResult":
-        """サブプロジェクト別の結果を1件にマージする。
-
-        `subproject_aware=True` ツールがサブプロジェクトループで複数回実行された
-        結果を、利用者向け出力スキーマを変えずに集約するためのヘルパー。
-
-        マージ規則:
-        - `output`: 各実行の出力を連結する（区切り行は `dispatcher` 側で挿入する）
-        - `errors`: 全実行の和集合
-        - `target_files`: 全実行の和集合（重複は順序維持で除去）
-        - `files`: 全実行の和集合のファイル数
-        - `elapsed`: 全実行の合計
-        - `status`: `failed > resolution_failed > warning > formatted > succeeded > skipped`
-          の順で最も重い結果を採用（`timeout_exceeded=True` は `status` プロパティ上 `failed` を返す）。
-          `running` は heartbeat 由来の途中状態で `merge` の入力には来ない前提のため `status_weight` に含めない
-        - `command_type`: 最も重い結果の値を採用（`status` と同じく `worst` 由来）。
-          textlint fix のように同一コマンドが `linter` ・ `formatter` を切り替える結果を扱うため
-        - `returncode`: 最初に発生した非ゼロ値を採用し、無ければ代表結果の値を採用する。
-          代表結果は `returncode` が `None` でない（実行済みの）最初の結果とし、全件 `None` なら先頭結果とする。
-          対象0件で起動しなかった結果（`returncode=None`）が先頭に並んでも、実行済みの成功を `skipped` へ化けさせないため
-        - `commandline` ・ `effective_runner` ・ `runner_source` ・ `runner_fallback`: 代表結果から引き継ぐ。
-          対象0件の結果はこれらを持たないため、実行した結果の起動コマンドとrunner情報を残す
-        - `fixed_files`: 全実行の和集合
-        - `severity`: 最も重い結果から引き継ぎ、警告と通常失敗の混在でも失敗を保持する
-        - `not_applicable`: 全実行が対象なしの場合だけ真とする
-        - その他のフィールドは先頭結果から引き継ぐ
-
-        `results` が1件のみの場合はそのまま返す（フィールドのコピー含む）。
-        空リスト渡しはサブプロジェクトループの呼び出し側で防ぐ前提とする。
-        """
         if not results:
             raise ValueError("merge には1件以上の CommandResult が必要")
         if len(results) == 1:
             return results[0]
 
         head = results[0]
-        # status の重み付け（数値が大きいほど重い）。
-        # `timeout_exceeded=True` の場合 `status` プロパティは `failed` を返すため、
-        # `status` キーとしての `"timeout_exceeded"` は登場しない。
         status_weight: dict[str, int] = {
             "skipped": 0,
             "succeeded": 1,
@@ -637,13 +556,6 @@ class CommandResult:
         )
 
     def get_status_text(self) -> str:
-        """成型した文字列を返す。
-
-        `formatted`の場合は末尾に「再実行不要」の補足を付与する。
-        formatterによる書き換えはそれ自体が成功扱いであり、再実行を要しないことを
-        利用者に明示するため。`summary.guidance`（パイプライン全体）と
-        `command.hints`（個別ツール）と並ぶtext出力側の経路。
-        """
         base = f"{self.status} ({self.files}files in {self.elapsed:.1f}s)"
         if self.status == "formatted":
             base += "; no rerun needed"
@@ -652,32 +564,19 @@ class CommandResult:
 
 @dataclasses.dataclass
 class CacheContext:
-    """キャッシュ参照用のコンテキスト。
-
-    `execute_command` のplain経路でのみ使う内部ヘルパー。
-    """
-
     cache_store: "pyfltr.command.cache_policy.CacheStore"
     command: str
     key: str
 
     def lookup(self) -> CommandResult | None:
-        """キャッシュを参照する。ヒットならCommandResult、ミスならNone。"""
         return self.cache_store.get(self.command, self.key)
 
     def store(self, result: CommandResult, *, run_id: str | None) -> None:
-        """キャッシュへ書き込む （ソースrun_id付き）。"""
         self.cache_store.put(self.command, self.key, result, run_id=run_id)
 
 
 @dataclasses.dataclass(frozen=True)
 class ExecutionParams:
-    """`execute_command` の共通前処理結果。
-
-    ターゲット解決・コマンドライン構築を済ませた中間状態を保持し、
-    dispatcherと各runner関数で参照する。
-    """
-
     command_info: pyfltr.tool_types.CommandInfo
     targets: list[pathlib.Path]
     commandline_prefix: list[str]
@@ -721,15 +620,11 @@ class ExecutionParams:
 
 
 class VerboseOptions(typing.Protocol):
-    """実行時に必要な詳細出力の設定。"""
-
     verbose: bool
 
 
 @dataclasses.dataclass
 class ExecutionRequest:
-    """解決済みの引数・実行基盤・出力と中断の所有を持つ実行要求。"""
-
     command: str
     params: ExecutionParams
     ctx: ExecutionContext
@@ -741,20 +636,13 @@ class ExecutionRequest:
 
     @property
     def timeout(self) -> float | None:
-        """対象コマンドの実行時間の上限を返す。"""
         return pyfltr.config.model.resolve_command_timeout(self.ctx.config.values, self.command)
 
     @property
     def retry_options(self) -> dict[str, typing.Any]:
-        """同じ実行設定のOOM再試行条件を返す。"""
         return pyfltr.config.model.resolve_retry_kwargs(self.ctx.config.values)
 
     def parse_errors(self, output: str, error_pattern: str | None) -> "list[pyfltr.diagnostics.ErrorLocation]":
-        """実行cwdと実行起点を基準にしてツール出力を診断へ変換する。
-
-        各実行経路（通常・fix・2段階・個別実行モジュール）が同じパス基準を
-        `pyfltr.parsing.entry.parse_errors`へ渡すための入口である。
-        """
         return pyfltr.parsing.entry.parse_errors(
             self.command,
             output,
@@ -766,7 +654,6 @@ class ExecutionRequest:
 
 
 def overall_status(results: "typing.Iterable[CommandResult]") -> typing.Literal["SUCCESS", "FORMATTED", "FAILED"]:
-    """失敗、書き換え、成功の優先順で実行全体の状態を決める。"""
     formatted = False
     for result in results:
         if result.failed:

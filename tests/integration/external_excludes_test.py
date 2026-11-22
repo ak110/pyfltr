@@ -1,5 +1,3 @@
-"""外部パスの除外範囲をCLIとMCPから検証する。"""
-
 import json
 import pathlib
 import sys
@@ -14,7 +12,6 @@ import pyfltr.cli.mcp_grep_tools
 @pytest.mark.parametrize("exclude_key", ["exclude", "extend-exclude", "probe-exclude"])
 @pytest.mark.parametrize("target_kind", ["file", "directory", "overlapping"])
 def test_cli_external_exclude_boundary(tmp_path: pathlib.Path, exclude_key: str, target_kind: str) -> None:
-    """指定引数より上の除外名を無視し、指定名と配下の除外を維持する。"""
     project = tmp_path / "project"
     project.mkdir()
     selected = tmp_path / ".cache" / "selected"
@@ -71,7 +68,6 @@ def test_cli_external_exclude_boundary(tmp_path: pathlib.Path, exclude_key: str,
 @pytest.mark.parametrize("as_directory", [False, True])
 @pytest.mark.asyncio
 async def test_mcp_grep_external_exclude_boundary(tmp_path: pathlib.Path, as_directory: bool) -> None:
-    """外部検索で上位.cacheを照合せず、指定配下の既定除外を維持する。"""
     selected = tmp_path / ".cache" / "selected"
     selected.mkdir(parents=True)
     kept = selected / "sample.txt"
@@ -91,7 +87,6 @@ async def test_mcp_grep_external_exclude_boundary(tmp_path: pathlib.Path, as_dir
 @pytest.mark.parametrize("name", [".venv", "sample.min.js"])
 @pytest.mark.asyncio
 async def test_mcp_grep_excludes_external_argument_name(tmp_path: pathlib.Path, name: str) -> None:
-    """外部指定自体の名前に一致する除外は検索にも適用する。"""
     target = tmp_path / name
     if name == ".venv":
         target.mkdir()

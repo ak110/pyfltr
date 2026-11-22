@@ -28,7 +28,6 @@ import pyfltr.warnings_
 
 
 def test_command_result_cached_defaults() -> None:
-    """`CommandResult`の新フィールドcached/cached_fromの既定値テスト。"""
     result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
@@ -44,7 +43,6 @@ def test_command_result_cached_defaults() -> None:
 
 
 def test_command_result_merge_retry_count() -> None:
-    """`CommandResult.merge()`でretry_countが合計される。"""
 
     def _make_result(retry_count: int) -> pyfltr.command.core_.CommandResult:
         return pyfltr.command.core_.CommandResult(
@@ -66,7 +64,6 @@ def test_command_result_merge_retry_count() -> None:
 
 
 def test_merge_limits_slow_tests_across_subprojects() -> None:
-    """複数結果の遅いテストを秒数降順の上位件数へ正規化する。"""
 
     def _make_result(seconds: list[float]) -> pyfltr.command.core_.CommandResult:
         return pyfltr.command.core_.CommandResult(
@@ -86,11 +83,6 @@ def test_merge_limits_slow_tests_across_subprojects() -> None:
 
 
 def _make_merge_input(returncode: int | None) -> pyfltr.command.core_.CommandResult:
-    """`merge`へ渡すサブプロジェクト別の結果を生成する。
-
-    `returncode=None`は対象0件で起動しなかった結果（`dispatcher`の早期返却）を模し、
-    起動コマンドとrunner情報を持たない。それ以外は実行済みの結果として値を持つ。
-    """
     executed = returncode is not None
     return pyfltr.command.core_.CommandResult(
         command="ruff-check",
@@ -119,7 +111,6 @@ def _make_merge_input(returncode: int | None) -> pyfltr.command.core_.CommandRes
 def test_merge_status_prefers_executed_result(
     returncodes: list[int | None], expected_status: str, expected_returncode: int | None
 ) -> None:
-    """先頭が対象0件のskippedでも、実行済みの結果が集約後の`status`へ反映される。"""
     merged = pyfltr.command.core_.CommandResult.merge([_make_merge_input(rc) for rc in returncodes])
     assert merged.status == expected_status
     assert merged.returncode == expected_returncode
@@ -127,7 +118,6 @@ def test_merge_status_prefers_executed_result(
 
 @pytest.mark.parametrize("executed_returncode", [0, 1])
 def test_merge_inherits_commandline_from_executed_result(executed_returncode: int) -> None:
-    """先頭が対象0件のskippedでも、起動コマンドとrunner情報は実行済みの結果から引き継ぐ。"""
     merged = pyfltr.command.core_.CommandResult.merge([_make_merge_input(None), _make_merge_input(executed_returncode)])
     assert merged.commandline == ["uv", "run", "ruff", "check"]
     assert merged.effective_runner == "uv"
@@ -136,7 +126,6 @@ def test_merge_inherits_commandline_from_executed_result(executed_returncode: in
 
 
 def test_execution_context_resolves_effective_cwd_and_workspace_root(tmp_path: pathlib.Path) -> None:
-    """実効cwdとuv workspace rootをサブプロジェクト情報から導出する。"""
     start_cwd = tmp_path / "repo"
     workspace_root = start_cwd
     subproject_cwd = start_cwd / "packages" / "app"

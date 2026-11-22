@@ -1,10 +1,3 @@
-"""サブプロジェクト走査ループ。
-
-モノレポモード時のサブプロジェクト単位ループ走査を担う。
-各サブプロジェクトの設定再判定と外部パス追加実行を含む。
-dispatcher側のディスパッチ関数と無効スキップ結果生成関数をコールバックで受け取り、循環importを避ける。
-"""
-
 import concurrent.futures
 import dataclasses
 import pathlib
@@ -22,18 +15,6 @@ from pyfltr.command.core_ import CommandResult, ExecutionContext
 
 
 def should_run_subproject_loop(command: str, ctx: ExecutionContext) -> bool:
-    """サブプロジェクトループ経路を採用するか判定する。
-
-    判定条件:
-    - モノレポモード有効（`base.subprojects` が2件以上）
-    - 対象のコマンドの `subproject_aware` が True（既定は `CommandInfo.subproject_aware`、
-      利用者が `{command}-subproject-aware` で上書き可能）
-    - `ctx.subproject_cwd` が未設定（既にサブループ内側ならネストさせない）
-
-    上記をすべて満たすときに True を返す。`subproject_aware` はツール特性を表すメタ設定のため
-    起点 config で固定する。コマンドのON/OFF自体は本判定で見ず、サブプロジェクト単位の再判定は
-    `run_subproject_loop` 内で行うため、親OFF・子ONのコマンドも本判定を通過してループへ入る。
-    """
     if ctx.subproject_cwd is not None:
         return False
     subprojects = ctx.base.subprojects
@@ -55,7 +36,6 @@ def _run_one(
     *,
     dispatch_fn: typing.Callable[[str, pyfltr.run_options.RunOptions, ExecutionContext], CommandResult],
 ) -> CommandResult:
-    """1つのサブプロジェクトで対象のコマンドを実行し、区切り行を付けた結果を返す。"""
     sub_base = dataclasses.replace(
         ctx.base,
         config=sub_config,
@@ -63,22 +43,12 @@ def _run_one(
     )
     sub_ctx = dataclasses.replace(ctx, base=sub_base, subproject_cwd=sub.cwd)
     sub_result = dispatch_fn(command, args, sub_ctx)
-    # output 冒頭にサブプロジェクト区切り行を挿入する（人間向け識別のため）
     if sub_result.output:
         sub_result.output = f"# subproject: {sub.relative}\n{sub_result.output}"
     return sub_result
 
 
 def resolve_subproject_workers(command: str, ctx: ExecutionContext, cwds: typing.Sequence[typing.Any]) -> int:
-    """サブプロジェクトを同時に実行する上限を`jobs`から決める。
-
-    `jobs`を対象のツール自身のワーカー数の推定値で割った値とする。
-    推定値はサブプロジェクトごとに異なりうるため最大値を基準とし、
-    ツール側の並列度との積が`jobs`を超えないようにする。
-
-    `jobs`が推定値以下の場合は1を返し、サブプロジェクトを1件ずつ実行する。
-    対象のツールが`CommandInfo.subproject_concurrent=False`の場合も、`jobs`によらず1を返す。
-    """
     info = ctx.config.commands.get(command)
     if info is not None and not info.subproject_concurrent:
         return 1
@@ -103,31 +73,10 @@ def run_subproject_loop(
     dispatch_fn: typing.Callable[[str, pyfltr.run_options.RunOptions, ExecutionContext], CommandResult],
     disabled_skip_fn: typing.Callable[[str, ExecutionContext], CommandResult],
 ) -> CommandResult:
-    """サブプロジェクト別ループでツールを実行し `CommandResult` をマージする。
-
-    各サブプロジェクトの設定（`base.subproject_configs`）で対象のコマンドのON/OFFを再判定し、
-    無効のサブプロジェクト（親ON・子OFF）とファイル0件のサブプロジェクトは実行から除外する。
-    起点cwdがサブプロジェクトでなく、どのサブプロジェクトにも属さない起点cwd内のファイル（起点cwdの区分）が
-    ある場合は、起点cwdをサブプロジェクト`.`として加え、起点設定（`base.config`）のON/OFFで起点cwdから実行する。
-    外部パス（`base.external_files`。起点cwd配下にない絶対パスだけ）への適用は起点設定のON/OFFで固定し、
-    起点で無効なら何も行わない。
-
-    有効なサブプロジェクトは `jobs` から導いた上限まで同時に実行する。
-    実行順が非決定になっても報告順を変えないよう、`relative` の昇順で並べてから集約する。
-
-    結果は `CommandResult.merge` で集約する（1件のみならそのまま返す）。
-    各結果の診断の`file`は解析時点（`ExecutionRequest.parse_errors`）で起点相対へ変換済みのため、
-    集約時にパスを付け替えない。
-    いずれのサブプロジェクトでも実行されず、設定による無効スキップが発生したか起点でも無効な場合は、
-    起点cwdでの全ファイル誤実行を避けて skipped 結果を返す。
-    全区分でファイル0件かつ起点で有効なときのみ、対象0件の通常経路の結果を返す（`dispatch_fn` 経由）。
-    """
     with pyfltr.warnings_.suppress_duplicates():
         base = ctx.base
-        # 起点設定での対象のコマンドのON/OFF。外部パス追加実行とフォールバックの採否に用いる。
         start_enabled = base.config.values.get(command) is True
         subproject_results: list[CommandResult] = []
-        # 設定で無効化してスキップしたサブプロジェクトの有無。0件スキップと区別し誤実行を抑止する。
         skipped_by_config = False
         targets: list[tuple[typing.Any, typing.Any]] = []
         for sub in _subprojects_with_start_cwd(base.subprojects, base.start_cwd, base.subproject_files):
@@ -136,21 +85,18 @@ def run_subproject_loop(
                 continue
             sub_config = base.subproject_configs.get(sub.cwd, base.config)
             if sub_config.values.get(command) is not True:
-                # 親ON・子OFF: 対象のサブプロジェクトの設定で無効化されているため実行しない。
                 skipped_by_config = True
                 continue
             targets.append((sub, sub_config))
 
         if targets:
             workers = min(len(targets), resolve_subproject_workers(command, ctx, [sub.cwd for sub, _ in targets]))
-            # 実行順が非決定になっても報告順を変えないため、`relative`の昇順で集約する。
             ordered = sorted(targets, key=lambda item: item[0].relative)
             if workers <= 1:
                 subproject_results.extend(
                     [_run_one(command, args, ctx, sub, sub_config, dispatch_fn=dispatch_fn) for sub, sub_config in ordered]
                 )
             else:
-                # ワーカースレッドは既定で空のコンテキストを持つため、警告の重複抑止スコープを引き継ぐ。
                 with concurrent.futures.ThreadPoolExecutor(
                     max_workers=workers,
                     initializer=pyfltr.warnings_.adopt_suppression_state,
@@ -162,15 +108,9 @@ def run_subproject_loop(
                     ]
                     subproject_results.extend([future.result() for future in futures])
 
-        # 外部パスへの追加実行・警告は起点設定のON/OFFで固定する（起点で無効なら何も行わない）。
-        # `allows_external_paths=True`のツールは起点cwdで外部パス専用に追加実行し、注入対象では
-        # `config_arg_template`の自動注入が適用される。それ以外は除外して警告のみ発行する。
-        # `--allow-external-paths`指定時は分類にかかわらず追加実行の対象とする。
         info = ctx.config.commands.get(command)
         external_files = base.external_files
         if external_files and info is not None and start_enabled:
-            # 対象のツールのglob条件にマッチする外部パスのみを対象とする
-            # （サブプロジェクト経路と同じ`filter_by_globs`基準）。
             relevant_external = pyfltr.command.targets.filter_by_globs(external_files, info.target_globs())
             if relevant_external:
                 if info.allows_external_paths or args.allow_external_paths:
@@ -193,11 +133,7 @@ def run_subproject_loop(
             return CommandResult.merge(subproject_results)
 
         if skipped_by_config or not start_enabled:
-            # 設定で無効化してスキップした、または起点でも無効。
-            # 起点cwdで全ファイルを誤実行しないよう、対象0件相当のskipped結果を返す。
             return disabled_skip_fn(command, ctx)
-        # 全区分でファイル0件 → 通常経路の0件結果を返す（`dispatch_fn` 経由）。
-        # 外部パスは上の分岐で扱い済みのため、対象を空にして警告の重複と誤実行を避ける。
         empty_base = dataclasses.replace(base, all_files=[], subprojects=[], subproject_files={}, external_files=[])
         return dispatch_fn(command, args, dataclasses.replace(ctx, base=empty_base))
 
@@ -207,10 +143,6 @@ def _subprojects_with_start_cwd(
     start_cwd: pathlib.Path,
     subproject_files: dict[pathlib.Path, list[pathlib.Path]],
 ) -> list[pyfltr.command.subprojects.Subproject]:
-    """起点cwdの区分にファイルがあり、起点cwdがサブプロジェクトでない場合に起点cwdを加えた一覧を返す。
-
-    起点cwdの区分のキーは`classify_files_by_subproject`と同じく起点cwdの実体パスとする。
-    """
     start_real = start_cwd.resolve()
     if not subproject_files.get(start_real) or any(sub.cwd == start_real for sub in subprojects):
         return list(subprojects)

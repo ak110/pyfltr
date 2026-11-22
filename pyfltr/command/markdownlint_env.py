@@ -1,6 +1,3 @@
-"""pnpxで取得するmarkdownlintの依存と配布パッチを所有する。"""
-
-# 取得環境の解決とlockfileの検査で使う依存は、CLIの起動時には読み込まない（PEP 810）。
 __lazy_modules__ = ["platformdirs", "yaml"]
 
 import dataclasses
@@ -31,22 +28,17 @@ CACHE_MAX_BYTES = 1024 * 1024 * 1024
 
 @dataclasses.dataclass(frozen=True)
 class MarkdownlintEnvironment:
-    """設定・取得定義・パッチに対応する導入先。完成した環境だけを公開する。"""
-
     root: pathlib.Path
     settings: dict[str, typing.Any]
     cwd: pathlib.Path
 
     @property
     def executable(self) -> str:
-        """呼び出し元のcwdで起動する絶対パスのshimを返す。"""
         suffix = ".cmd" if os.name == "nt" else ""
         return str(self.root / "node_modules" / ".bin" / f"markdownlint-cli2{suffix}")
 
 
 def _read_settings(cwd: pathlib.Path) -> dict[str, typing.Any]:
-    # 通常の探索元から解決し、認証情報を含みうる値はメモリー内だけで引き渡す。
-    # JSONと診断を分けて取得するため、共通の起動経路と同じ実体解決だけを使う。
     result = subprocess.run(
         pyfltr.command.process.resolve_commandline(["pnpm", "config", "list", "--json"], dict(os.environ)),
         cwd=cwd,
@@ -66,12 +58,6 @@ def _read_settings(cwd: pathlib.Path) -> dict[str, typing.Any]:
 
 
 def resolve_environment(cwd: pathlib.Path) -> MarkdownlintEnvironment:
-    """pnpmの実効設定を読み、公開済み環境と導入先を同じ定義で選ぶ。
-
-    日ごとに依存を再解決し、主パッケージの更新を取り込む。
-    長寿命プロセスでも解決のたびに設定と日付を読み直す。
-    設定値はディスクへ複製せず、内容のdigestだけを導入先の区別に用いる。
-    """
     try:
         settings = _read_settings(cwd)
         definition = json.dumps(
@@ -115,7 +101,6 @@ def _patch_is_recorded(root: pathlib.Path) -> bool:
 
 
 def _cache_directories(root: pathlib.Path) -> typing.Iterator[pathlib.Path]:
-    """専用取得処理が所有する環境と導入中の領域を列挙する。"""
     for candidate in root.parent.iterdir():
         digest_name = len(candidate.name) == 64 and all(char in "0123456789abcdef" for char in candidate.name)
         if (
@@ -134,7 +119,6 @@ def _prune_environments(root: pathlib.Path) -> None:
                 if candidate.stat().st_mtime < cutoff:
                     shutil.rmtree(candidate)
             except FileNotFoundError:
-                # 別の取得処理が先に回収した場合は完了している。
                 continue
 
 
@@ -159,11 +143,6 @@ def _check_cache_capacity(root: pathlib.Path) -> None:
 
 
 def ensure_environment(environment: MarkdownlintEnvironment, *, timeout: float | None) -> None:
-    """導入を終えた環境を原子的に公開し、失敗した導入は次回作り直す。
-
-    完成後の環境は変更しない。同じ導入先を並行して構築した場合は先に完成した環境を使う。
-    pnpmの通常導入がpatchedDependenciesを適用し、適用不能なら公開しない。
-    """
     root = environment.root
     try:
         root.parent.mkdir(parents=True, exist_ok=True)
@@ -177,15 +156,12 @@ def ensure_environment(environment: MarkdownlintEnvironment, *, timeout: float |
         with tempfile.TemporaryDirectory(prefix="install-", dir=root.parent) as temporary:
             stage = pathlib.Path(temporary)
             shutil.copyfile(PATCH_PATH, stage / PATCH_PATH.name)
-            # 依存はmanifestへ宣言してinstallで導入する。
-            # workspace rootへの追加操作はpnpm 10がroot保護で拒否するため使わない。
             manifest = {
                 "private": True,
                 "dependencies": {MAIN_PACKAGE: "latest"},
                 "pnpm": {"patchedDependencies": {PATCHED_DEPENDENCY: PATCH_PATH.name}},
             }
             (stage / "package.json").write_text(json.dumps(manifest), encoding="utf-8")
-            # pnpm 11も同じ所有元からpatch定義を読む。
             (stage / "pnpm-workspace.yaml").write_text(json.dumps(INSTALL_DEFINITION), encoding="utf-8")
             commandline = [
                 "pnpm",

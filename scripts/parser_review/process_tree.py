@@ -1,12 +1,3 @@
-"""自ら起動したプロセスと子孫を追跡し、時間上限・中断時に停止して終端を確かめる。
-
-`subprocess.run(timeout=...)`は直接の子だけを停止するため、pyfltrが新しいセッションで起動する
-ツールの子孫を取り逃す。本モジュールは起動時に得たプロセスの子孫を実行中に定期列挙して保持し、
-停止時は親を止める前に子孫を再列挙してから、保持した全プロセスを停止して終端を確認する。
-停止対象は自ら起動したプロセスの子孫として観測したものに限り、名前検索では選ばない。
-子孫の観測は定期列挙のため、列挙の間隔（`poll_interval`）より短い間に起動して親から切り離された子孫は追跡できない。
-"""
-
 import contextlib
 import dataclasses
 import os
@@ -24,8 +15,6 @@ Outcome = typing.Literal["exited", "timeout", "interrupted", "start_failed"]
 
 @dataclasses.dataclass
 class TrackedResult:
-    """追跡実行の結果。"""
-
     argv: list[str]
     cwd: str
     outcome: Outcome
@@ -44,21 +33,13 @@ class TrackedResult:
 
     @property
     def stop_failed(self) -> bool:
-        """停止処理の後に終端を確認できないプロセスが残ったか。"""
         return bool(self.survivors)
 
     def to_dict(self) -> dict[str, typing.Any]:
-        """JSONへ保存する辞書を返す。"""
         return dataclasses.asdict(self) | {"stop_failed": self.stop_failed}
 
 
 class _Tracker:
-    """起動したプロセスを根とする子孫の集合を保持する。
-
-    中間のプロセスが先に終了すると孫は別の親へ付け替えられ、根からの列挙では辿れなくなる。
-    そのため既知の生存プロセスそれぞれの子も列挙して集合へ加える。
-    """
-
     def __init__(self, root: psutil.Process) -> None:
         self.root = root
         self.known: dict[tuple[int, float], psutil.Process] = {}
@@ -97,9 +78,7 @@ class _Tracker:
 
 
 def _stop(processes: list[psutil.Process], *, group_leader: int | None, grace: float) -> list[int]:
-    """プロセスへ終了要求を送り、猶予後に強制終了して、終端を確認できないpidを返す。"""
     if group_leader is not None and os.name != "nt":
-        # 起動時に作成した新しいセッション（pgid == 起動pid）だけを対象にする。
         with contextlib.suppress(ProcessLookupError, PermissionError):
             os.killpg(group_leader, signal.SIGTERM)  # type: ignore[attr-defined,unused-ignore]  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore  # pylint: disable=no-member
     for process in processes:
@@ -130,10 +109,6 @@ def run_tracked(
     poll_interval: float = 0.1,
     grace: float = 5.0,
 ) -> TrackedResult:
-    """コマンドを起動し、子孫を追跡しながら終了・時間上限・中断要求のいずれかまで待つ。
-
-    標準出力・標準エラーは指定ファイルへ直接書き、途中で停止した場合も途中までの出力を残す。
-    """
     started = time.monotonic()
     result = TrackedResult(
         argv=list(argv),
@@ -179,7 +154,7 @@ def run_tracked(
                     result.outcome = "timeout"
                     break
                 time.sleep(poll_interval)
-        except BaseException as exc:  # Ctrl+Cなどで監視を抜ける場合も、子孫を停止してから伝播させる
+        except BaseException as exc:
             result.outcome = "interrupted"
             raised = exc
 
@@ -187,7 +162,6 @@ def run_tracked(
             tracker.refresh()
         targets = tracker.alive() if tracker is not None else []
         if result.outcome != "exited":
-            # 親を止める前に子孫を確定済みのため、親の消失後も子孫を停止できる。
             with contextlib.suppress(psutil.Error):
                 if root is not None:
                     targets.append(root)
@@ -198,7 +172,6 @@ def run_tracked(
             if proc.poll() is None:
                 result.survivors = sorted({*result.survivors, proc.pid})
         elif targets:
-            # 自然終了後も残る子孫は停止し、停止したことを記録する。
             result.stopped = [process.pid for process in targets]
             result.survivors = _stop(targets, group_leader=None, grace=grace)
         result.returncode = proc.poll()

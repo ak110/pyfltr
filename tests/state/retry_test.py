@@ -6,11 +6,8 @@ import pyfltr.state.retry
 from tests.conftest import make_command_result as _make_result
 from tests.conftest import make_error_location as _make_error
 
-# --- build_retry_args_template ---
-
 
 def test_build_retry_args_template_preserves_options():
-    """--no-fix / --output-formatなどのフラグがretry_commandテンプレートに残る。"""
     args = [
         "run",
         "--no-fix",
@@ -22,41 +19,33 @@ def test_build_retry_args_template_preserves_options():
     template = pyfltr.state.retry.build_retry_args_template(args)
     assert "--no-fix" in template
     assert "--output-format" in template
-    # --commands=VALUE形式は--commands=プレースホルダに置換される
     assert "--commands=" in template
 
 
 def test_build_retry_args_template_removes_only_failed():
-    """--only-failedフラグがretry_commandテンプレートから除去される。"""
     args = ["run", "--only-failed", "--commands=ruff-check", "src/foo.py"]
     template = pyfltr.state.retry.build_retry_args_template(args)
     assert "--only-failed" not in template
-    # 他のオプションは保持される
     assert "--commands" in " ".join(template)
 
 
 def test_build_retry_args_template_removes_from_run_space_separated():
-    """--from-run <value>（空白区切り）がretry_commandテンプレートから除去される。"""
     args = ["run", "--only-failed", "--from-run", "01ABCDEF", "--commands=ruff-check"]
     template = pyfltr.state.retry.build_retry_args_template(args)
     assert "--from-run" not in template
     assert "01ABCDEF" not in template
-    # --only-failedも除去される
     assert "--only-failed" not in template
 
 
 def test_build_retry_args_template_removes_from_run_equals_separated():
-    """--from-run=<value>（等号区切り）がretry_commandテンプレートから除去される。"""
     args = ["run", "--only-failed", "--from-run=01ABCDEF", "--commands=ruff-check"]
     template = pyfltr.state.retry.build_retry_args_template(args)
     assert "--from-run" not in " ".join(template)
     assert "01ABCDEF" not in template
-    # --only-failedも除去される
     assert "--only-failed" not in template
 
 
 def test_build_retry_args_template_only_failed_not_in_retry_command(tmp_path):
-    """生成されたretry_commandに--only-failedが含まれない。"""
     args = ["run", "--only-failed", "--commands=ruff-check", "src/foo.py"]
     template = pyfltr.state.retry.build_retry_args_template(args)
     retry = pyfltr.state.retry.build_retry_command(
@@ -70,7 +59,6 @@ def test_build_retry_args_template_only_failed_not_in_retry_command(tmp_path):
 
 
 def test_build_retry_args_template_from_run_not_in_retry_command(tmp_path):
-    """生成されたretry_commandに--from-runが含まれない。"""
     args = ["run", "--only-failed", "--from-run", "01ABCDEF", "--commands=ruff-check"]
     template = pyfltr.state.retry.build_retry_args_template(args)
     retry = pyfltr.state.retry.build_retry_command(
@@ -84,11 +72,7 @@ def test_build_retry_args_template_from_run_not_in_retry_command(tmp_path):
     assert "01ABCDEF" not in retry
 
 
-# --- build_retry_command ---
-
-
 def test_build_retry_command_replaces_commands_and_targets(tmp_path):
-    """retry_commandが--commandsと末尾ターゲットを差し替える。"""
     template = pyfltr.state.retry.build_retry_args_template(["run", "--no-fix", "--commands", "ruff-check", "src/foo.py"])
     retry = pyfltr.state.retry.build_retry_command(
         template,
@@ -97,16 +81,12 @@ def test_build_retry_command_replaces_commands_and_targets(tmp_path):
         target_files=[pathlib.Path("pkg/bar.py")],
         target_base_cwd=str(tmp_path),
     )
-    # --commandsは置換される
     assert " mypy " in f" {retry} "
-    # --no-fixは保持
     assert "--no-fix" in retry
-    # ターゲットはtarget_base_cwd基準の絶対パス
     assert str(tmp_path) in retry
 
 
 def test_build_retry_command_missing_commands_inserts(tmp_path):
-    """--commands未指定時は自動で追記される。"""
     template = pyfltr.state.retry.build_retry_args_template(["run", "src/"])
     retry = pyfltr.state.retry.build_retry_command(
         template,
@@ -119,11 +99,7 @@ def test_build_retry_command_missing_commands_inserts(tmp_path):
     assert "mypy" in retry
 
 
-# --- filter_failed_files ---
-
-
 def test_filter_failed_files_empty_errors_returns_empty():
-    """errorsが空なら空リストを返す（フィルタリング対象なし）。"""
     result = _make_result(
         "mypy",
         returncode=0,
@@ -133,7 +109,6 @@ def test_filter_failed_files_empty_errors_returns_empty():
 
 
 def test_filter_failed_files_intersects_target_files():
-    """errors.fileとtarget_filesの交差をtarget_filesの並び順で返す。"""
     errors = [
         _make_error("mypy", "src/c.py", 1, "err"),
         _make_error("mypy", "src/a.py", 2, "err"),
@@ -149,12 +124,10 @@ def test_filter_failed_files_intersects_target_files():
         ],
     )
     filtered = pyfltr.state.retry.filter_failed_files(result, start_cwd=pathlib.Path.cwd())
-    # target_filesの並び順（a.py、c.py）を維持する
     assert filtered == [pathlib.Path("src/a.py"), pathlib.Path("src/c.py")]
 
 
 def test_filter_failed_files_outside_target_files_returns_empty():
-    """errors.fileがtarget_filesに含まれなければ空。"""
     errors = [_make_error("mypy", "src/other.py", 1, "err")]
     result = _make_result(
         "mypy",
@@ -166,11 +139,6 @@ def test_filter_failed_files_outside_target_files_returns_empty():
 
 
 def test_filter_failed_files_matches_targets_with_dot_dot_and_outside_relative(tmp_path: pathlib.Path) -> None:
-    """`..`を含む起点内の対象と起点外の相対パスの対象も、正規化済みの診断の`file`と突き合わせて返す。
-
-    診断の`file`は`to_start_relative`で`a.md`・起点外の絶対パスへ変換済みであり、
-    対象を利用者が渡した表現のまま文字列で比べると一致せず、`retry_command`が対象を持たなくなる。
-    """
     start = tmp_path / "proj"
     outside = (tmp_path / "outside" / "out.md").as_posix()
     errors = [
@@ -182,11 +150,7 @@ def test_filter_failed_files_matches_targets_with_dot_dot_and_outside_relative(t
     assert pyfltr.state.retry.filter_failed_files(result, start_cwd=start) == targets
 
 
-# --- populate_retry_command ---
-
-
 def test_populate_retry_command_uses_filtered_files(tmp_path):
-    """フィルタリング後のtarget_filesのみがretry_commandに反映される。"""
     errors = [_make_error("mypy", "src/b.py", 1, "err")]
     result = _make_result(
         "mypy",
@@ -207,7 +171,6 @@ def test_populate_retry_command_uses_filtered_files(tmp_path):
 
 
 def test_populate_retry_command_skips_for_cached(tmp_path):
-    """cached=TrueのCommandResultではretry_commandを埋めない。"""
     result = _make_result("mypy", returncode=0, cached=True, cached_from="01ABC")
     template = pyfltr.state.retry.build_retry_args_template(["run", "--commands", "mypy"])
     pyfltr.state.retry.populate_retry_command(
@@ -220,7 +183,6 @@ def test_populate_retry_command_skips_for_cached(tmp_path):
 
 
 def test_populate_retry_command_skips_for_success(tmp_path):
-    """成功したCommandResultではretry_commandを埋めない。"""
     result = _make_result("mypy", returncode=0)
     template = pyfltr.state.retry.build_retry_args_template(["run", "--commands", "mypy"])
     pyfltr.state.retry.populate_retry_command(
@@ -233,8 +195,6 @@ def test_populate_retry_command_skips_for_success(tmp_path):
 
 
 def test_populate_retry_command_skips_for_formatted(tmp_path):
-    """formatterによるファイル修正のみ（returncode!=0だがformatter_failed=False）では埋めない。"""
-    # 例: ruff-formatが差分を検出しreturncode=1を返すが、書き込み済みのためformatter_failed=False
     result = _make_result("ruff-format", returncode=1, formatter_failed=False, command_type="formatter")
     template = pyfltr.state.retry.build_retry_args_template(["run", "--commands", "ruff-format"])
     pyfltr.state.retry.populate_retry_command(
@@ -246,11 +206,7 @@ def test_populate_retry_command_skips_for_formatted(tmp_path):
     assert result.retry_command is None
 
 
-# --- detect_launcher_prefix ---
-
-
 def test_detect_launcher_prefix_returns_list():
-    """detect_launcher_prefixが少なくとも1要素以上のリストを返す。"""
     prefix = pyfltr.state.retry.detect_launcher_prefix()
     assert isinstance(prefix, list)
     assert len(prefix) >= 1
@@ -274,7 +230,6 @@ def test_detect_launcher_prefix_returns_list():
     ],
 )
 def test_build_retry_args_template_removes_archive_flags(args, expected_absent):
-    """--only-failed / --from-runの各形式がテンプレートから除去される（パラメーター化）。"""
     template = pyfltr.state.retry.build_retry_args_template(args)
     joined = " ".join(template)
     for token in expected_absent:

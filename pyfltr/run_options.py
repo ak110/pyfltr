@@ -1,5 +1,3 @@
-"""CLIとMCPで共有するチェック実行の入力。"""
-
 from __future__ import annotations
 
 import collections.abc
@@ -10,8 +8,6 @@ import typing
 
 @dataclasses.dataclass
 class RunOptions:
-    """公開入力を変換した実行オプションとツール固有の追加引数。"""
-
     targets: list[pathlib.Path] = dataclasses.field(default_factory=list)
     commands: list[str] | None = None
     enable: list[str] | None = None
@@ -51,7 +47,6 @@ class RunOptions:
 
     @classmethod
     def from_values(cls, values: collections.abc.Mapping[str, typing.Any]) -> RunOptions:
-        """パース済み入力を一度変換し、ツール固有の追加引数を対応表へまとめる。"""
         names = {field.name for field in dataclasses.fields(cls)}
         options = cls(**{key: value for key, value in values.items() if key in names})
         options.command_arguments = {
@@ -65,11 +60,9 @@ class RunOptions:
         return options
 
     def tool_arguments(self, command: str) -> str:
-        """指定ツールへ追加する引数文字列を返す。"""
         return self.command_arguments.get(command, "")
 
     def retry_arguments(self, *, for_mcp: bool = False) -> list[str]:
-        """同じ実行を再現するCLI引数を、オプション値から構築する。"""
         argv = [self.subcommand]
         transport_fields = {
             "verbose",

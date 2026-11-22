@@ -1,5 +1,3 @@
-"""cli/pipeline.py / output/ui.py が共用するステージ実行ヘルパー。"""
-
 import collections.abc
 import concurrent.futures
 import dataclasses
@@ -23,12 +21,6 @@ def make_skipped_result(
     *,
     reason: str | None = None,
 ) -> pyfltr.command.core_.CommandResult:
-    """中断対象の skipped CommandResult を生成する。
-
-    `reason`が指定された場合は`CommandResult.output`に反映する。省略時は既定の
-    `--fail-fast`文言（従来互換）を使う。TUIのCtrl+C協調停止経路では固有の文言を
-    渡して出力する。
-    """
     command_info = config.commands[command]
     output = (
         reason
@@ -50,11 +42,6 @@ def cancel_pending_futures(
     future_to_command: dict[concurrent.futures.Future, str],
     aborted_commands: set[str],
 ) -> None:
-    """未開始ジョブをキャンセルし、中断対象コマンド名を`aborted_commands`に追加する。
-
-    `done()`のfutureは対象外とする。`cancel()`がTrueを返した（キャンセル成功）
-    ものだけを`aborted_commands`に登録する。
-    """
     for future, command in future_to_command.items():
         if future.done():
             continue
@@ -64,8 +51,6 @@ def cancel_pending_futures(
 
 @dataclasses.dataclass
 class StageCallbacks:
-    """表示と中断を実行制御へ渡すためのコールバック。"""
-
     archive: collections.abc.Callable[[pyfltr.command.core_.CommandResult], None] | None = None
     on_result: collections.abc.Callable[[pyfltr.command.core_.CommandResult], None] | None = None
     is_interrupted: collections.abc.Callable[[], bool] = lambda: False
@@ -100,13 +85,6 @@ class _Waiting:
 
 
 class SlotWaitReporter:
-    """実行枠の待機区間の通知を受けて、待機の継続と再開を文面で表示する。
-
-    コミットフックなどから起動した検証が実行枠を待つ間は出力が止まり、停止と区別できない。待機中であること、保持者、待機中の要求数、完了したツール数と、
-    残り時間の見込みを示せない理由を一定間隔で表示する。
-    見込みは、保持者と先に並んだ検証の残り処理時間をpyfltrが観測できないため算出しない。
-    """
-
     def __init__(
         self,
         notify: collections.abc.Callable[[str], None],
@@ -117,13 +95,11 @@ class SlotWaitReporter:
     ) -> None:
         self._notify = notify
         self._progress = progress
-        # 省略時は生成時点のモジュール値を使う。結合試験が間隔を短縮して差し替えられるようにするため。
         self._delay = delay if delay is not None else _SLOT_PROGRESS_DELAY
         self._interval = interval if interval is not None else _SLOT_PROGRESS_INTERVAL
         self._wait: _Waiting | None = None
 
     def __call__(self, wait: pyfltr.command.execution_slot.SlotWait) -> None:
-        """待機区間の開始で継続の通知を始め、終了で止めて、通知済みなら再開を渡す。"""
         if wait.finished_at is None:
             self._start()
             return
@@ -190,22 +166,6 @@ def run_stages(
     callbacks: StageCallbacks | None = None,
     results: list[pyfltr.command.core_.CommandResult] | None = None,
 ) -> list[pyfltr.command.core_.CommandResult]:
-    """fix、直列formatter、LPT順の並列lint・testを共通の制御で実行する。
-
-    fix段の結果は通常段の結果と同じツールの実行であり、成功時は保存だけを行い最終結果へ含めない。
-    fix段が失敗した場合は、同じツールの通常段の結果（成功・スキップを含む）へ失敗と出力を統合した
-    1件を最終結果とし、`collected`・`on_result`・`archive`へ同じ結果を渡す。
-    fail-fastで停止する場合もfix段の失敗結果を記録し、同じツールのスキップ結果を重ねない。
-
-    対象ファイルが存在し得ないツール（`pyfltr.command.executor.has_no_candidate_targets`）は実行枠の取得前に実行して
-    結果を記録し、fix段からは除く。全ツールが該当する場合は実行枠を取得しない。
-    残りのツールは検証の実行枠を取得してから実行し、全ツールを回収するまで枠を保持し続ける（途中では譲らない）。
-    `callbacks.on_slot_progress`があれば、待機の継続と再開を`SlotWaitReporter`で逐次表示する。
-    別の検証が枠を保持中なら警告を出力して待つ。TUIの中断（`is_interrupted`）で待機を止めた場合は全コマンドをスキップ扱いにする。
-    枠の待機区間は`callbacks.on_slot_wait`へ通知する。
-    実行した各ツールの結果には、`execute`の直前と直後の時刻を`started_at`・`finished_at`として設定する。
-    テスターは起動前に整形の更新時刻の区間が終わるまで待ち、`launch_boundary_at`を設定する（`_with_tester_launch_boundary`）。
-    """
     hooks = callbacks if callbacks is not None else StageCallbacks()
     collected = results if results is not None else []
     config = base_ctx.config
@@ -217,10 +177,6 @@ def run_stages(
         include_fix_stage=include_fix_stage,
         subproject_configs=base_ctx.subproject_configs,
     )
-    # 対象ファイルが存在し得ないツールは外部ツールを起動しないため、実行枠の取得前に実行して結果を確定する。
-    # 文書だけの検証のように多くのツールが対象を持たない実行で、枠の取得・譲渡・取り直しの待ちを省くためである。
-    # 実行枠の外で外部ツールを起動しないよう、判定は母集合とglobで0件が確定するものに限る
-    # （`pyfltr.command.executor.has_no_candidate_targets`）。
     idle = {
         command for command in [*formatters, *parallel] if pyfltr.command.executor.has_no_candidate_targets(command, base_ctx)
     }
@@ -237,7 +193,6 @@ def run_stages(
     )
 
     def on_wait_interval(wait: pyfltr.command.execution_slot.SlotWait) -> None:
-        # 表示の停止を先に行い、保存の通知が例外を送出しても表示用のスレッドを残さない。
         if reporter is not None:
             reporter(wait)
         if hooks.on_slot_wait is not None:
@@ -247,7 +202,6 @@ def run_stages(
         if hooks.archive is not None and not result.cached:
             hooks.archive(result)
 
-    # fix段で失敗したツールの結果。通常段の結果を記録するときに統合する。
     fix_failures: dict[str, pyfltr.command.core_.CommandResult] = {}
 
     def record(result: pyfltr.command.core_.CommandResult, stage: str) -> None:
@@ -270,7 +224,6 @@ def run_stages(
                 hooks.on_skipped(command)
 
     def flush_fix_failures() -> None:
-        # 通常段の対象に含まれないツールのfix段失敗も最終結果へ残す。
         for command in list(fix_failures):
             record(make_skipped_result(command, config, reason=""), "skipped")
 
@@ -339,11 +292,9 @@ def run_stages(
             try:
                 execute_stages()
             except BaseException:
-                # 例外（CLIのCtrl+Cなど）で抜ける場合も、起動中の子プロセスを止めてから実行枠を解放する。
                 pyfltr.command.process.terminate_active_processes()
                 raise
     except pyfltr.command.execution_slot.WaitAborted as error:
-        # 待機の取消の理由を、未指定のfail-fastの案内で置き換えない。
         completed = {result.command for result in collected}
         skip([command for command in [*formatters, *parallel] if command not in completed], reason=str(error) or None)
         flush_fix_failures()
@@ -353,11 +304,6 @@ def run_stages(
 def _with_body_interval(
     execute: collections.abc.Callable[[str, bool], pyfltr.command.core_.CommandResult],
 ) -> collections.abc.Callable[[str, bool], pyfltr.command.core_.CommandResult]:
-    """`execute`の結果へツール本体区間の開始・終了時刻を設定する関数を返す。
-
-    ツールのプロセスを起動しなかった結果（対象0件などのスキップで`returncode`が`None`の結果と、
-    起動コマンドの解決に失敗した`resolution_failed`の結果）と、キャッシュから復元した結果は、本体を実行していないため設定しない。
-    """
 
     def wrapped(command: str, fix_stage: bool) -> pyfltr.command.core_.CommandResult:
         started_at = pyfltr.timestamps.now_iso()
@@ -381,15 +327,6 @@ def _with_tester_launch_boundary(
     execute: collections.abc.Callable[[str, bool], pyfltr.command.core_.CommandResult],
     config: pyfltr.config.model.Config,
 ) -> collections.abc.Callable[[str, bool], pyfltr.command.core_.CommandResult]:
-    """テスターの起動前に整形の更新時刻の区間を経過させ、開始境界を結果へ設定する関数を返す。
-
-    fix段とformatter段でツールを起動した結果の終了時刻の最大値を保持し、テスターの`execute`の前に
-    その時刻を含む区間（`_MTIME_RESOLUTION`単位）が終わるまで待つ。待った後の時刻を、
-    ツールのプロセスを起動したテスターの結果（`ran_tool`が真）の`launch_boundary_at`へ設定する。
-    整形は並列段より前に直列で終わるため、テスターが読む終了時刻は確定済みである。
-    待機は`_with_body_interval`の外側で行い、本体区間（`started_at`・`finished_at`）へ含めない。
-    サブプロジェクトの起動は`execute`の内側で繰り返すため、境界は全サブプロジェクトの起動より前の1回になる。
-    """
     last_write_end: list[dt.datetime] = []
 
     def wrapped(command: str, fix_stage: bool) -> pyfltr.command.core_.CommandResult:
@@ -402,7 +339,6 @@ def _with_tester_launch_boundary(
         if last_write_end:
             latest = max(last_write_end)
             boundary = latest.replace(microsecond=0) + _MTIME_RESOLUTION
-            # sleepの精度による早着きを避けるため、境界を越えたことを確かめるまで待つ。
             while (remaining := (boundary - dt.datetime.now(dt.UTC)).total_seconds()) > 0:
                 time.sleep(remaining)
         launch_boundary_at = pyfltr.timestamps.now_iso()
@@ -415,24 +351,10 @@ def _with_tester_launch_boundary(
 
 
 def ran_tool(result: pyfltr.command.core_.CommandResult) -> bool:
-    """結果がツールのプロセスを起動して得たものかを返す。
-
-    対象0件などのスキップ（`returncode`が`None`）、起動コマンドの解決に失敗した`resolution_failed`、
-    キャッシュから復元した結果は、ツール本体を実行していない。
-    本体区間の記録に使う。
-    """
     return result.returncode is not None and not result.resolution_failed and not result.cached
 
 
 def describe_slot_owner(owner: pyfltr.command.execution_slot.SlotOwner | None) -> str:
-    """待機の通知に載せる保持者の表記を返す。
-
-    保持者が強制終了するとOSはロックを解放するが記録は残るため、
-    終了済みの記録を稼働中の保持者と取り違えさせないよう、その旨を併記する。
-    `label`は外部の呼出元が任意の長さで渡せる（検証の引数全文など）ため表記へ連結しない。
-    繰り返す待機表示がlabelに比例して長くなるのを避け、全文は`describe_slot_owner_records`が示す保持者記録から読ませる。
-    同じPID・cwdの保持者は取得時刻で区別できる。
-    """
     if owner is None:
         return "保持者の記録を読めません"
     holder = f"pid={owner.pid}、cwd={owner.cwd}、取得={owner.acquired_at}"
@@ -442,18 +364,12 @@ def describe_slot_owner(owner: pyfltr.command.execution_slot.SlotOwner | None) -
 
 
 def describe_slot_owners(owners: list[pyfltr.command.execution_slot.SlotOwner]) -> str:
-    """待機の通知に載せる全保持者の表記を返す。実行枠は複数あるため、保持者ごとの表記を「／」でつなぐ。"""
     if not owners:
         return describe_slot_owner(None)
     return " ／ ".join(describe_slot_owner(owner) for owner in owners)
 
 
 def describe_slot_owner_records(owners: list[pyfltr.command.execution_slot.SlotOwner]) -> str:
-    """保持者のlabel全文を読める記録の参照先を返す。保持者記録を読めなかった場合は空文字列を返す。
-
-    参照先は全保持者で共通のため、保持者ごとに繰り返さず通知に1回だけ載せる。
-    記録は枠の保持中だけ存在するため、解放後に読めないことも併せて示す。
-    """
     if not owners:
         return ""
     lock_dir = pyfltr.command.execution_slot.default_lock_dir()
@@ -464,10 +380,6 @@ def describe_slot_owner_records(owners: list[pyfltr.command.execution_slot.SlotO
 
 
 def _notify_slot_wait(owner: pyfltr.command.execution_slot.SlotOwner | None) -> None:
-    """実行枠の待機を始めたことを警告で通知する。
-
-    `hold`が渡す保持者は1件だけのため、実行枠ごとの保持者を読み直して全員を示す。
-    """
     owners = pyfltr.command.execution_slot.read_owners() or ([owner] if owner is not None else [])
     pyfltr.warnings_.emit_warning(
         source="execution-slot",
@@ -484,14 +396,6 @@ def merge_fix_failure(
     fix_result: pyfltr.command.core_.CommandResult,
     result: pyfltr.command.core_.CommandResult,
 ) -> pyfltr.command.core_.CommandResult:
-    """fix段の失敗を同じツールの通常段の結果へ統合する。
-
-    状態と終了コードは`CommandResult.merge`の規則で集約し、fix段の失敗を保持する。
-    再実行コマンドなど通常段で確定した値は通常段の結果から引き継ぐため、通常段を先頭にして集約する。
-    出力は実行順にfix段、通常段の順で連結する。本体区間はfix段の開始から通常段の終了までとする（通常段がスキップならfix段の終了まで）。対象件数は同じ対象を2段で数えないよう通常段の値を使う。
-    通常段が診断を出力した場合は通常段の診断だけを使う。fix段の診断は修正後の残存違反であり、通常段の診断と重複するためである。
-    通常段が診断を出力しなかった場合（スキップや診断0件）はfix段の診断を残し、失敗を指すファイルと位置を保持する。
-    """
     fix_part = dataclasses.replace(fix_result, errors=[]) if result.errors else fix_result
     merged = pyfltr.command.core_.CommandResult.merge([result, fix_part])
     return dataclasses.replace(

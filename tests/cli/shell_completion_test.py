@@ -9,8 +9,6 @@ import pyfltr.tools
 
 
 class TestCollectCompletions:
-    """補完データ収集のテスト（generate経由でbashスクリプト内容を検証）。"""
-
     def test_options_contain_verbose(self):
         parser = pyfltr.cli.parser.build_parser()
         script = pyfltr.cli.shell_completion.generate("bash", parser, frozenset())
@@ -31,17 +29,13 @@ class TestCollectCompletions:
     def test_commands_choices_contain_builtin_and_aliases(self):
         parser = pyfltr.cli.parser.build_parser()
         script = pyfltr.cli.shell_completion.generate("bash", parser, frozenset())
-        # ビルトインコマンド
         for name in pyfltr.tools.BUILTIN_COMMAND_NAMES:
             assert name in script
-        # 静的エイリアス
         for alias in pyfltr.config.model.DEFAULT_CONFIG["aliases"]:
             assert alias in script
 
 
 class TestGenerateBash:
-    """bash補完スクリプト生成のテスト。"""
-
     def test_contains_function_and_complete(self):
         parser = pyfltr.cli.parser.build_parser()
         subcommands = frozenset({"ci", "run", "fast", "generate-shell-completion"})
@@ -65,8 +59,6 @@ class TestGenerateBash:
 
 
 class TestGeneratePowershell:
-    """PowerShell補完スクリプト生成のテスト。"""
-
     def test_contains_register_argument_completer(self):
         parser = pyfltr.cli.parser.build_parser()
         subcommands = frozenset({"ci", "run"})
@@ -83,8 +75,6 @@ class TestGeneratePowershell:
 
 
 class TestMainIntegration:
-    """main.py経由の統合テスト。"""
-
     def test_bash_success(self, capsys):
         rc = pyfltr.cli.main.run(["generate-shell-completion", "bash"])
         assert rc == 0

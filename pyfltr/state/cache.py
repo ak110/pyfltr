@@ -1,38 +1,3 @@
-"""ファイル hash ベースのスキップキャッシュ。
-
-`CommandInfo.cacheable=True`のツール（textlint）の実行結果をユーザーキャッシュへ保存し、
-同じ入力に対する再実行を省略するための仕組み。
-
-ディレクトリ構造（`<cache_root> = pyfltr.user_cache.default_cache_root()`）::
-
-    <cache_root>/cache/<tool>/<hash>.json
-
-キャッシュキーには「ツール名・実効コマンドライン全体・ステージ区別・構造化出力設定・
-対象ファイル群sha256・ツール固有設定ファイル群sha256・pyfltr MAJORバージョン」を含める。
-CLI引数や出力切替による誤ヒットを防ぐ一方、ツール本体のバージョンは含めない
-（短期破棄前提で許容）。
-
-対象は「ファイル間依存を持たず、設定ファイルもCWDでのみ解決するlinter」に限る。
-以下はいずれもキャッシュ対象外とし`CommandInfo.cacheable=False`のままにする。
-
-- 書き込み型formatter — ヒット時にファイル書き換えがスキップされ、
-  ファイル状態と結果が不整合になるため
-- tester — 対象ファイル以外のソース・設定・環境への依存があり、
-  依存解析またはプロジェクト全体hashが必要で実装コストに見合わない
-- 依存型linter（`mypy` / `ruff-check` / `pylint`等）— import先や
-  型情報のキャッシュが必要で、対象ファイル単独のhashでは整合性を保てない
-- 外部参照linter（`shellcheck` / `actionlint`）— `source`文や
-  reusable workflowなど外部参照を含みうるため安全側で除外
-- 階層型設定を参照するlinter（`ec` / `markdownlint` / `typos`）—
-  階層型の設定解決は静的列挙では網羅できない
-
-自動クリーンアップは期間軸（`cache-max-age-hours`）のみを対象とする方針。
-サイズ・世代数の軸は採用しない（短期破棄前提でストレージ暴発リスクが小さいため）。
-
-serialize/deserializeの辞書構造はarchive.pyの`_error_to_dict`と偶発的に
-重複するが、用途（キャッシュ復元 vs 生成物のアーカイブ）が異なるため共通化は避ける。
-"""
-
 import dataclasses
 import datetime as dt
 import hashlib
@@ -59,30 +24,17 @@ _CACHE_DIRNAME = "cache"
 
 @dataclasses.dataclass(frozen=True)
 class CachePolicy:
-    """自動クリーンアップの閾値。
-
-    ファイルhashキャッシュは短期破棄前提のため、期間軸（時間単位）のみを持つ。
-    """
-
     max_age_hours: int
     """保存期間の上限（時間）。0以下で期間軸の自動削除を無効化する。"""
 
 
 class CacheStore:
-    """ファイル hash キャッシュの読み書き。
-
-    1回のpyfltr実行で1インスタンスを生成する。`get()`でキャッシュ参照、
-    `put()`で書き込みを行う。クリーンアップは`cleanup()`が呼ばれた時点で
-    実行する（呼び出し側は実行冒頭で発火させることを想定）。
-    """
-
     def __init__(self, cache_root: pathlib.Path | None = None) -> None:
         self._cache_root = cache_root if cache_root is not None else pyfltr.user_cache.default_cache_root()
         self._cache_dir = self._cache_root / _CACHE_DIRNAME
 
     @property
     def cache_dir(self) -> pathlib.Path:
-        """cache/ ディレクトリの絶対パス。"""
         return self._cache_dir
 
     def compute_key(
@@ -97,20 +49,8 @@ class CacheStore:
         target_base_cwd: pathlib.Path | None = None,
         subproject_cwd: pathlib.Path | None = None,
     ) -> str:
-        """キャッシュキー (sha256 hex) を計算する。
-
-        ツール名・実効コマンドライン・ステージ・構造化出力設定・対象ファイル群の内容と
-        相対パス・設定ファイル群の内容・サブプロジェクト cwd の実体パス・pyfltr MAJORバージョンを
-        連結してhash化する。
-
-        `subproject_cwd` を指定すると、対象のパスの `os.path.realpath` 結果をキー要素に含める。
-        モノレポで同一相対パスがサブプロジェクトをまたいで存在する場合の誤ヒットを防ぐ。
-        `None` の場合はサブプロジェクト要素を含めず、単一プロジェクト時と同じキーになる。
-        """
         hasher = hashlib.sha256()
         hasher.update(f"pyfltr-major={_pyfltr_major_version()}\n".encode())
-        # JSONL / archiveスキーマを変えた際の一括無効化用識別子。
-        # `pyproject.toml`の版数は`hatch-vcs`管理でMAJORを手動更新できないため、
         # 互換性を破棄する際はこの定数を更新してキャッシュを一括無効化する。
         hasher.update(b"schema=v6\n")
         hasher.update(f"command={command}\n".encode())
@@ -139,7 +79,6 @@ class CacheStore:
         return hasher.hexdigest()
 
     def get(self, command: str, key: str) -> pyfltr.command.core_.CommandResult | None:
-        """キャッシュヒット時はCommandResultを復元して返す。ミス時はNone。"""
         path = self._entry_path(command, key)
         if not path.exists():
             return None
@@ -151,11 +90,6 @@ class CacheStore:
         return _deserialize_result(data)
 
     def put(self, command: str, key: str, result: pyfltr.command.core_.CommandResult, *, run_id: str | None) -> None:
-        """CommandResult をキャッシュに書き込む。
-
-        `run_id`は`cached_from`復元用のソースrun_id。`None`の場合は書き込まない
-        （アーカイブ無効時などにソースを特定できないケースを避けるため）。
-        """
         if run_id is None:
             return
         path = self._entry_path(command, key)
@@ -164,7 +98,6 @@ class CacheStore:
         path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
     def cleanup(self, policy: CachePolicy) -> list[pathlib.Path]:
-        """期間超過したキャッシュエントリを削除する。削除したファイルパスのリストを返す。"""
         if not self._cache_dir.exists():
             return []
         if policy.max_age_hours <= 0:
@@ -186,7 +119,6 @@ class CacheStore:
         return removed
 
     def clear(self) -> None:
-        """キャッシュを全削除する（主にテスト用）。"""
         if self._cache_dir.exists():
             shutil.rmtree(self._cache_dir, ignore_errors=True)
 
@@ -195,12 +127,10 @@ class CacheStore:
 
 
 def cache_policy_from_config(config: pyfltr.config.model.Config) -> CachePolicy:
-    """pyproject.toml の設定から CachePolicy を組み立てる。"""
     return CachePolicy(max_age_hours=int(config.values.get("cache-max-age-hours", 12)))
 
 
 def _pyfltr_major_version() -> str:
-    """pyfltrのMAJORバージョンを返す。開発中（dev）の場合は`"dev"`を返す。"""
     try:
         version = importlib.metadata.version("pyfltr")
     except importlib.metadata.PackageNotFoundError:
@@ -209,7 +139,6 @@ def _pyfltr_major_version() -> str:
 
 
 def _file_sha256(path: pathlib.Path) -> str:
-    """ファイル内容のsha256をhexで返す。存在しないファイルは空文字を返す。"""
     try:
         with path.open("rb") as f:
             return hashlib.file_digest(f, "sha256").hexdigest()
@@ -218,7 +147,6 @@ def _file_sha256(path: pathlib.Path) -> str:
 
 
 def _serialize_result(result: pyfltr.command.core_.CommandResult, *, source_run_id: str) -> dict[str, typing.Any]:
-    """CommandResult をキャッシュエントリ用 dict に変換する。"""
     return {
         "source_run_id": source_run_id,
         "command": result.command,
@@ -234,7 +162,6 @@ def _serialize_result(result: pyfltr.command.core_.CommandResult, *, source_run_
 
 
 def _deserialize_result(data: dict[str, typing.Any]) -> pyfltr.command.core_.CommandResult:
-    """キャッシュエントリ用dictからCommandResultを復元する（cached=Trueを付与）。"""
     errors = [_dict_to_error(e) for e in data.get("errors", [])]
     target_files = [pathlib.Path(p) for p in data.get("target_files", [])]
     return pyfltr.command.core_.CommandResult(
@@ -253,7 +180,6 @@ def _deserialize_result(data: dict[str, typing.Any]) -> pyfltr.command.core_.Com
 
 
 def _error_to_dict(error: pyfltr.diagnostics.ErrorLocation) -> dict[str, typing.Any]:
-    """ErrorLocation をキャッシュ用 dict に変換する。"""
     return {
         "command": error.command,
         "file": error.file,
@@ -269,7 +195,6 @@ def _error_to_dict(error: pyfltr.diagnostics.ErrorLocation) -> dict[str, typing.
 
 
 def _dict_to_error(data: dict[str, typing.Any]) -> pyfltr.diagnostics.ErrorLocation:
-    """Dict から ErrorLocation を復元する。"""
     return pyfltr.diagnostics.ErrorLocation(
         command=data["command"],
         file=data["file"],

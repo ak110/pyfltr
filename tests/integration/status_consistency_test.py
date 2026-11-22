@@ -23,7 +23,6 @@ from tests.conftest import make_execution_context as _make_ctx
 
 @pytest.fixture(name="plain_linter_project")
 def _plain_linter_project(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
-    """plain実行経路を通るカスタムlinterの検証用プロジェクトを作成する。"""
     (tmp_path / "pyproject.toml").write_text(
         """
 [tool.pyfltr]
@@ -48,7 +47,6 @@ targets = ["*.txt"]
 
 @pytest.fixture(name="plain_linter_subprocess")
 def _plain_linter_subprocess(mocker: typing.Any) -> typing.Any:
-    """plain-linterだけが非ゼロ終了する外部プロセス境界を再現する。"""
 
     def _run(commandline: list[str], *_args: typing.Any, **_kwargs: typing.Any) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(
@@ -101,7 +99,6 @@ def test_status_consumers_are_consistent(
     expected_rerun: bool,
     expected_exit: int,
 ) -> None:
-    """成否消費側へ渡る入力状態ごとの結果を固定する。"""
     result = _make_result(
         case,
         command_type=command_type,
@@ -139,7 +136,6 @@ def test_plain_linter_failure_emits_retry_command_and_archive(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """plain linterの失敗をJSONLと実行アーカイブへ反映する。"""
     del plain_linter_subprocess
     work_dir, target = plain_linter_project
     cache_root = work_dir / "cache"
@@ -175,11 +171,9 @@ def test_plain_linter_failure_triggers_fail_fast(
     plain_linter_subprocess: typing.Any,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """plain linterの失敗がCLIのfail-fast処理を起動し、未開始の後続を実行しない。"""
     del plain_linter_subprocess
     work_dir, target = plain_linter_project
     config = pyfltr.config.config.load_config(config_dir=work_dir)
-    # 失敗を回収する時点で後続を未開始に保つ（実スケジューリングでは後続が先に完了しうる）
     control = StageExecutorControl(run_on_submit={"plain-linter"})
     control.install(monkeypatch)
 
@@ -201,7 +195,6 @@ def test_plain_linter_failure_sarif_execution_unsuccessful(
     plain_linter_subprocess: typing.Any,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """plain linterの失敗をSARIFの実行失敗へ反映する。"""
     del plain_linter_subprocess
     work_dir, target = plain_linter_project
 
@@ -230,7 +223,6 @@ async def test_plain_linter_failure_listed_in_mcp_failed(
     plain_linter_subprocess: typing.Any,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """plain linterの失敗をMCPのfailed一覧へ反映する。"""
     del plain_linter_subprocess
     work_dir, target = plain_linter_project
     monkeypatch.setenv("PYFLTR_CACHE_DIR", str(work_dir / "cache"))
@@ -249,7 +241,6 @@ async def test_plain_linter_failure_listed_in_mcp_failed(
 
 
 def test_formatted_result_keeps_no_rerun() -> None:
-    """formatterの書き換えは成功のまま再実行対象にしない。"""
     result = _make_result("ruff-format", command_type="formatter", returncode=1)
     pyfltr.state.retry.populate_retry_command(
         result,
@@ -265,7 +256,6 @@ def test_formatted_result_keeps_no_rerun() -> None:
 
 
 def test_warning_severity_emits_retry_command_without_failing() -> None:
-    """warningへ格下げした失敗は再実行対象だがパイプラインを失敗させない。"""
     result = dataclasses.replace(_make_result("mypy", returncode=1), severity="warning")
     pyfltr.state.retry.populate_retry_command(
         result,
@@ -282,7 +272,6 @@ def test_warning_severity_emits_retry_command_without_failing() -> None:
 
 
 def test_tool_meta_keys_match_expected_set(tmp_path: pathlib.Path) -> None:
-    """実行アーカイブの必須メタ情報キーを完全一致で固定する。"""
     store = pyfltr.state.archive.ArchiveStore(cache_root=tmp_path)
     run_id = store.start_run(commands=["mypy"])
     store.write_tool_result(run_id, _make_result("mypy", returncode=1))
@@ -300,7 +289,6 @@ def test_tool_meta_keys_match_expected_set(tmp_path: pathlib.Path) -> None:
 
 
 def test_mcp_command_models_field_sets() -> None:
-    """MCPのコマンドモデルが公開するフィールド集合を完全一致で固定する。"""
     assert set(pyfltr.cli.mcp_models.CommandSummaryModel.model_fields) == {
         "command",
         "status",
@@ -330,11 +318,6 @@ def test_mcp_command_models_field_sets() -> None:
 def test_fix_stage_failure_reaches_exit_code_and_archive(
     tmp_path: pathlib.Path, mocker: typing.Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """修正段の失敗は通常段の成功で消えず、CLIの終了コードとツール単位の保存が失敗を表す。
-
-    修正段が終了1・診断0、通常段が終了0となる外部プロセス境界を与え、
-    利用者がCLIの終了コードと`show-run`の保存内容から修正失敗を認識できることを検証する。
-    """
     (tmp_path / "pyproject.toml").write_text(
         """
 [tool.pyfltr]

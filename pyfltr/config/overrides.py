@@ -1,13 +1,3 @@
-"""環境変数の条件で`[tool.pyfltr]`の値を上書きする`overrides`と、条件の判定に使う`env-file`の処理。
-
-`[[tool.pyfltr.overrides]]`の各要素は`when`（式）と上書きする設定キーを持つ。
-`when`が真の要素を記載順に、その`pyproject.toml`の`[tool.pyfltr]`の値へ適用する。
-適用はグローバル設定とのマージより前に行い、以降は通常の設定値と同じ経路（プリセット・言語カテゴリ・検証）を通す。
-
-`when`の式は環境変数名・`not`・`and`・`or`・丸括弧だけからなり、優先順位はpytestの`-m`式と同じ
-（`not` > `and` > `or`）。評価は専用の構文解析で行い、`eval`などコードを実行する手段を使わない。
-"""
-
 import collections.abc
 import dataclasses
 import os
@@ -31,7 +21,7 @@ WarningEmitter = collections.abc.Callable[[str, str], None]
 
 
 class WhenSyntaxError(ValueError):
-    """`when`の式の構文が不正であることを示す。"""
+    pass
 
 
 @dataclasses.dataclass(frozen=True)
@@ -55,7 +45,6 @@ _Expr = _Var | _Not | _BinOp
 
 
 def parse_when(expression: str) -> _Expr:
-    """`when`の式を構文解析する。不正な場合は`WhenSyntaxError`を送出する。"""
     tokens: list[str] = []
     pos = 0
     stripped_end = len(expression.rstrip())
@@ -75,8 +64,6 @@ def parse_when(expression: str) -> _Expr:
 
 
 class _Parser:
-    """`or` > `and` > `not` > 原子（変数・括弧）の順に解析する再帰下降構文解析。"""
-
     def __init__(self, tokens: list[str]) -> None:
         self.tokens = tokens
         self.index = 0
@@ -124,11 +111,6 @@ class _Parser:
 
 
 def evaluate_when(expr: _Expr, env: typing.Mapping[str, str], emit_unknown_value: WarningEmitter) -> bool:
-    """式を評価する。
-
-    環境変数は前後の空白を除いた値が`1`・`true`（大文字小文字を区別しない）なら真、
-    未定義・空文字列・`0`・`false`なら偽とする。それ以外の値は偽と評価し、`emit_unknown_value`で警告する。
-    """
     if isinstance(expr, _Var):
         raw = env.get(expr.name)
         if raw is None:
@@ -139,7 +121,6 @@ def evaluate_when(expr: _Expr, env: typing.Mapping[str, str], emit_unknown_value
         if value not in _FALSE_VALUES:
             emit_unknown_value(
                 OVERRIDES_KEY,
-                # 値は`.env`由来の秘匿値であり得るため、警告には変数名だけを示す。
                 f"`overrides`の`when`が参照する環境変数`{expr.name}`の値は真偽を判定できないため、"
                 "偽として扱いました（真は1・true、偽は未定義・空・0・false）",
             )
@@ -153,12 +134,6 @@ def evaluate_when(expr: _Expr, env: typing.Mapping[str, str], emit_unknown_value
 
 
 def read_env_file(path: pathlib.Path) -> dict[str, str]:
-    """`.env`形式のファイルを読み、変数名から値への辞書を返す。ファイルが無ければ空の辞書を返す。
-
-    対応する書式は`KEY=VALUE`、行頭の`export`、単一引用符・二重引用符で囲んだ値、
-    `#`で始まるコメント行と空行である。`.env`はバージョン管理外に置かれCIやclone直後には無いのが通常のため、
-    不在は警告せず空として扱う。
-    """
     if not path.is_file():
         return {}
     values: dict[str, str] = {}
@@ -180,7 +155,6 @@ def read_env_file(path: pathlib.Path) -> dict[str, str]:
 
 
 def _is_extend_key(key: str) -> bool:
-    """元の値と連結する追加用のキーかを返す。"""
     return key == "extend-exclude" or key.endswith(("-exclude", "-extend-args", "-extend-targets"))
 
 
@@ -191,13 +165,6 @@ def apply_overrides(
     *,
     environ: typing.Mapping[str, str] | None = None,
 ) -> dict[str, typing.Any]:
-    """`project_data`の`overrides`を評価して適用した新しい辞書を返す。
-
-    返す辞書から`overrides`キーは除く。`env-file`キーは通常の設定値として残す。
-    追加用のキー（`extend-exclude`、`{command}-exclude`、`{command}-extend-args`、`{command}-extend-targets`）は
-    元の値と真になった各要素の値を記載順に連結し、それ以外のキーは置き換える（複数要素では後の要素の値）。
-    不正な要素（`when`が無い・文字列でない・構文が不正）は警告して要素全体を無視する。
-    """
     normalized = {key.replace("_", "-"): value for key, value in project_data.items()}
     result = {key: value for key, value in normalized.items() if key != OVERRIDES_KEY}
     raw_overrides = normalized.get(OVERRIDES_KEY)
@@ -214,7 +181,6 @@ def apply_overrides(
     env_file = normalized.get(ENV_FILE_KEY, "")
     if isinstance(env_file, str) and env_file:
         env.update(read_env_file(base_dir / env_file))
-    # 同名の変数がプロセスにある場合はプロセスの値を優先する。
     env.update(os.environ if environ is None else environ)
 
     for position, element in enumerate(raw_overrides, start=1):

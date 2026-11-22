@@ -1,5 +1,3 @@
-"""シェル補完スクリプトの生成。"""
-
 import argparse
 import typing
 
@@ -16,7 +14,6 @@ def generate(
     parser: argparse.ArgumentParser,
     subcommands: frozenset[str],
 ) -> str:
-    """シェル種別に応じた補完スクリプトを返す。"""
     options, output_format_choices, commands_choices = _collect_completions(parser)
     subcommand_list = sorted(subcommands)
     if shell == "bash":
@@ -29,39 +26,23 @@ def generate(
 def _collect_completions(
     parser: argparse.ArgumentParser,
 ) -> tuple[list[str], list[str], list[str]]:
-    """パーサーからオプション名・choices・コマンド名を収集する。
-
-    サブパーサー対応。argparseの`add_subparsers`で登録された各サブパーサーの
-    オプションもwalkして収集することで、`build_parser()`が返すトップレベル
-    parserを渡しても共通オプション（`--verbose` / `--output-format`等）を
-    検出できる。
-
-    戻り値: (options, output_format_choices, commands_choices)
-    """
     options: set[str] = set()
     output_format_choices: list[str] = []
 
     def _walk(p: argparse.ArgumentParser) -> None:
         nonlocal output_format_choices
-        # argparseはオプション一覧やサブパーサーを公開APIで列挙する手段を提供しないため、
-        # `_actions` / `_SubParsersAction` 経由の参照に依存せざるを得ない。
         for action in p._actions:  # noqa: SLF001  # pylint: disable=protected-access
             for opt in action.option_strings:
                 options.add(opt)
             if "--output-format" in action.option_strings and action.choices:
                 output_format_choices = list(action.choices)
-            # サブパーサーを再帰的に walk
             if isinstance(action, argparse._SubParsersAction):  # noqa: SLF001  # pylint: disable=protected-access
-                # `isinstance`による型の限定では型引数が定まらず`choices`の値型を解決できない。
-                # `_SubParsersAction`は実行時にはGenericでなく添字指定できないため、
-                # 文字列形式の`typing.cast`で型引数を補い`ArgumentParser`として扱う。
                 sub_action = typing.cast("argparse._SubParsersAction[argparse.ArgumentParser]", action)
                 for sub in sub_action.choices.values():
                     _walk(sub)
 
     _walk(parser)
 
-    # --commandsの補完候補: ビルトインコマンド名 + 静的エイリアスキー
     commands_choices = list(pyfltr.tools.BUILTIN_COMMAND_NAMES)
     aliases = pyfltr.config.model.DEFAULT_CONFIG.get("aliases", {})
     assert isinstance(aliases, dict)
@@ -79,7 +60,6 @@ def _generate_bash(
     commands_choices: list[str],
     subcommands: list[str],
 ) -> str:
-    """bash用補完スクリプトを生成する。"""
     opts = " ".join(options)
     subs = " ".join(subcommands)
     shells = " ".join(SUPPORTED_SHELLS)
@@ -155,8 +135,6 @@ def _generate_powershell(
     commands_choices: list[str],
     subcommands: list[str],
 ) -> str:
-    """PowerShell用補完スクリプトを生成する。"""
-    # PowerShellの配列リテラルとして出力
     opts_ps = ", ".join(f"'{o}'" for o in options)
     subs_ps = ", ".join(f"'{s}'" for s in subcommands)
     shells_ps = ", ".join(f"'{s}'" for s in SUPPORTED_SHELLS)

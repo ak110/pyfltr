@@ -1,19 +1,3 @@
-"""GitHub Actions 注釈形式の出力生成。
-
-`--output-format=github-annotations`のレイアウトは`text`と同じで、
-`pyfltr.output.render.write_log()`から`pyfltr.output.diagnostics.format_error_github()`経由で
-1診断1行の整形が本モジュールに委譲される。
-
-GitHubのログビューアーは`::xxx file=...,line=...,title=...::msg`から
-プロパティ部を除去し`##[xxx]msg`としてしか描画しない。そのため生ログ上でも
-file / line / ruleを視認できるよう、メッセージ本体に
-`{file}:{line}[:{col}]: [{tool}[:{rule}]] {message}`を前置する。
-この1行がGitHub Actionsのannotationsとログビューアー両方の要件を満たす。
-
-`pyfltr.parsing.entry`は型ヒントにしか使わないため、`TYPE_CHECKING`ガードで
-循環importを回避する（`error_parser.format_error_github`から本モジュールが呼ばれる）。
-"""
-
 from __future__ import annotations
 
 import typing
@@ -32,23 +16,6 @@ _SEVERITY_TO_KIND: dict[str | None, str] = {
 
 
 def build_workflow_command(error: pyfltr.diagnostics.ErrorLocation) -> str:
-    """ErrorLocation 1 件を GitHub Actions のワークフローコマンド 1 行に整形する。
-
-    severityが`error`→`::error`、`warning`→`::warning`、`info`→
-    `::notice`。未設定は`::warning`にフォールバックする。
-    プロパティは`file` / `line` / `endLine` / `col` / `endColumn` / `title`の順に積む。
-    終了位置は診断が保持する場合のみ出力し、無い場合は対象のプロパティを省略する。
-    列は1起点・終端排他の値をそのまま渡す。GitHubの仕様は列の起点だけを
-    "starting at 1"と定め、終端の包含・非包含を明示しないため、SARIF出力と同じ
-    保持値を無変換で渡して形式間の突合を成立させる。
-    列の出力可否は`pyfltr.output.positions.is_publishable_column`が判定する。
-    SARIF出力と同じ関数を用いるため、両形式の列ガードは常に一致する。
-    メッセージ本体には生ログ視認用のプレフィックス
-    `{file}:{line}[:{col}]: [{tool}[:{rule}]] {message}`を埋め込む。
-    プレフィックスはログビューアーでの判読を目的とする別契約であり、
-    ツールの元出力に近い形を保つため列ガードと終了位置を適用しない。
-    GitHub仕様に従い`%`/ 改行はパーセントエンコードする。
-    """
     kind = _SEVERITY_TO_KIND.get(error.severity, "warning")
     props = [f"file={_escape_property(error.file)}", f"line={error.line}"]
     if error.end_line is not None:
@@ -65,7 +32,6 @@ def build_workflow_command(error: pyfltr.diagnostics.ErrorLocation) -> str:
 
 
 def _build_plain_prefix(error: pyfltr.diagnostics.ErrorLocation) -> str:
-    """`file:line[:col]: [tool[:rule]]`の形で生ログ視認用プレフィックスを組み立てる。"""
     location = error.file or "?"
     if error.line:
         location += f":{error.line}"
@@ -76,10 +42,8 @@ def _build_plain_prefix(error: pyfltr.diagnostics.ErrorLocation) -> str:
 
 
 def _escape_property(value: str) -> str:
-    """プロパティ値用のエスケープ。`,` / `:` / 改行をGitHub仕様でエンコードする。"""
     return value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A").replace(":", "%3A").replace(",", "%2C")
 
 
 def _escape_message(value: str) -> str:
-    r"""メッセージ値用のエスケープ。`%` / `\r` / `\n`のみ必要。"""
     return value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")

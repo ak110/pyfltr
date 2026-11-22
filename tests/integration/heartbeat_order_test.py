@@ -1,5 +1,3 @@
-"""heartbeatと最終JSONLの競合をイベントで制御する。"""
-
 import io
 import json
 import threading
@@ -19,7 +17,6 @@ from tests import conftest as testconf
 
 
 def test_final_result_between_snapshot_and_emission(monkeypatch: pytest.MonkeyPatch) -> None:
-    """snapshotが古くても最終JSONLの後にrunningを発行しない。"""
     output = io.StringIO()
     monitor = pyfltr.output.heartbeat.HeartbeatMonitor(
         threshold=0,
@@ -27,7 +24,6 @@ def test_final_result_between_snapshot_and_emission(monkeypatch: pytest.MonkeyPa
         emit_text=lambda _: None,
     )
     monitor.on_command_start("pytest")
-    # snapshot取得後と発行前の競合を固定するため、監視内部の観測点を置換する。
     original_snapshot = monitor._snapshot_running  # pylint: disable=protected-access
 
     def execute(
@@ -80,7 +76,6 @@ def test_final_result_between_snapshot_and_emission(monkeypatch: pytest.MonkeyPa
 
 
 def test_stop_waits_for_emission_to_finish() -> None:
-    """停止要求の時点で発行中なら、停止は実スレッドの終了まで戻らない。"""
     emitting = threading.Event()
     release = threading.Event()
     stopped = threading.Event()
@@ -107,7 +102,6 @@ def test_stop_waits_for_emission_to_finish() -> None:
     try:
         assert emitting.wait(10)
         thread.start()
-        # 停止要求とjoin完了を区別して観測する。
         assert monitor._stop_event.wait(10)  # pylint: disable=protected-access
         assert not stopped.wait(0.05)
     finally:

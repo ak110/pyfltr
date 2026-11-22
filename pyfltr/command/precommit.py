@@ -1,9 +1,3 @@
-"""pre-commit・prek実行。
-
-pre-commitとprekは共通の.pre-commit-config.yamlを参照して実行する。
-共通の2段階実行ロジック（stage1で試行→失敗時にstage2で再実行）を備える。
-"""
-
 import dataclasses
 import logging
 import os
@@ -25,15 +19,6 @@ logger = logging.getLogger(__name__)
 
 
 def execute_pre_commit(request: pyfltr.command.core_.ExecutionRequest) -> pyfltr.command.core_.CommandResult:
-    """pre-commit・prekの2段階実行。
-
-    stage 1で変更ファイル指定で実行し、fixer系hookがファイルを修正しただけなら
-    再実行で成功する（"formatted"）。checker系hookのエラーが残る場合は "failed"
-    （formatter_failed=True）として返す。
-    シグナル終了とtimeoutは再実行で消せない実行失敗とし、その段で終了する。
-    """
-    # pre-commit・prek配下から起動された場合は自身を再帰実行しない。
-    # git commitからフックを経由してpyfltr fastを起動した際の二重実行を防ぐ。
     if pyfltr.command.precommit_guidance.is_running_under_precommit():
         return CommandResult.from_run(
             command=request.command,
@@ -45,7 +30,6 @@ def execute_pre_commit(request: pyfltr.command.core_.ExecutionRequest) -> pyfltr
             elapsed=time.perf_counter() - request.start_time,
         )
 
-    # .pre-commit-config.yamlが存在しなければスキップ
     config_dir = request.cwd if request.cwd is not None else pathlib.Path.cwd()
     config_path = config_dir / ".pre-commit-config.yaml"
     if not config_path.exists():
@@ -63,7 +47,6 @@ def execute_pre_commit(request: pyfltr.command.core_.ExecutionRequest) -> pyfltr
             elapsed=time.perf_counter() - request.start_time,
         )
 
-    # SKIP環境変数を構築（pyfltr関連hookを除外して再帰を防止）
     integration_command = typing.cast(typing.Literal["pre-commit", "prek"], request.command)
     skip_value = pyfltr.command.precommit_guidance.build_skip_value(request.ctx.config, config_dir, integration_command)
     pre_commit_env = dict(request.env) if request.env is not None else dict(os.environ)
@@ -79,8 +62,6 @@ def execute_pre_commit(request: pyfltr.command.core_.ExecutionRequest) -> pyfltr
         if skip_value:
             request.ctx.on_output(f"SKIP={pre_commit_env.get('SKIP', '')}\n")
 
-    # stage 1: 実行
-
     def _run_stage() -> pyfltr.command.process.CompletedProcessWithTimeoutInfo:
         return pyfltr.command.process.run_process(
             dataclasses.replace(request, verbose=False, env=pre_commit_env), request.params.commandline
@@ -93,8 +74,6 @@ def execute_pre_commit(request: pyfltr.command.core_.ExecutionRequest) -> pyfltr
     first = step_result.classify(returncode, timeout=timeout_exceeded, change_codes=range(1, max(2, returncode + 1)))
     combined = step_result.combine(first)
 
-    # stage 2: 失敗時は再実行（fixerが修正しただけなら2回目で成功する）
-    # ただしstage 1でtimeout超過した場合は再実行しない（同じハングが再現する確率が高く時間を浪費するため）。
     if first.state is step_result.StepState.CHANGED:
         if request.verbose and request.ctx.on_output is not None:
             request.ctx.on_output(f"{request.command}: stage 2 再実行\n")

@@ -1,5 +1,3 @@
-"""dispatcherから各段の異常終了を最終statusまで伝える回帰試験。"""
-
 import pathlib
 import typing
 
@@ -39,15 +37,12 @@ def test_stage_failure_reaches_final_result(
     timeout: bool,
     changed: bool,
 ) -> None:
-    """両段のシグナル・timeoutはファイル変更や後段の成功で隠れない。"""
     target = tmp_path / f"sample{suffix}"
     target.write_text("", encoding="utf-8")
     (tmp_path / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
     calls: list[int] = []
     single = fix_stage and command in ("ruff-check", "prettier")
     failing_stage = 0 if single else stage
-    # textlintのfix段は、fail-fastの指定時に修正（Step1）が非0のときだけ修正後のチェック（Step2）を実行する。
-    # 2段の両方の異常終了を検証するため、textlintはfail-fastで修正が非0となる構成で実行する。
     fail_fast = command == "textlint"
 
     def run_process(*_args: typing.Any, **_kwargs: typing.Any) -> pyfltr.command.process.CompletedProcessWithTimeoutInfo:

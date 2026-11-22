@@ -66,18 +66,15 @@ MAIN_ERROR_CASES = [
 
 
 def init_git_repo(path: pathlib.Path) -> None:
-    """テスト用の空Gitリポジトリを初期化する。"""
     subprocess.run(["git", "init", "--quiet"], cwd=path, check=True)
 
 
 def write_tracked(path: pathlib.Path, name: str, content: str) -> None:
-    """ファイルを作成してGitの追跡対象へ追加する。"""
     (path / name).write_text(content, encoding="utf-8")
     subprocess.run(["git", "add", "--", name], cwd=path, check=True)
 
 
 def read_doc_codeblock_error_pattern() -> str:
-    """実リポジトリのカスタム診断パターンを読み込む。"""
     source = tomlkit.parse((PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     pattern = source["tool"]["pyfltr"]["custom-commands"]["doc-codeblock-check"]["error-pattern"]
     assert isinstance(pattern, str)
@@ -85,7 +82,6 @@ def read_doc_codeblock_error_pattern() -> str:
 
 
 def write_doc_codeblock_config(path: pathlib.Path) -> None:
-    """実リポジトリと同じカスタム診断設定をテスト用リポジトリへ書き込む。"""
     document = tomlkit.document()
     document["tool"] = {
         "pyfltr": {
@@ -150,7 +146,6 @@ def test_supported_parser_errors_are_reported(
 
     assert len(errors) == 1
     assert f"{language}コードブロックを解析できない" in errors[0]
-    # 読み手が次の操作（構文の修正か言語指定の変更）を選べる
     assert f"対処: コードブロックを{language}として正しい構文に直す" in errors[0]
     assert "フェンスの言語指定を内容に合う言語へ変える" in errors[0]
 

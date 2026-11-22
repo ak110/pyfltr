@@ -8,11 +8,6 @@ from tests import conftest as _testconf
 
 
 def _capture_outputfile_paths(captured_paths: list[pathlib.Path]):
-    """`run_subprocess`をパッチして`--outputFile.json=<path>`の値を収集するfakeを返す。
-
-    JSON出力ファイルへの書き込みは行わない（後段でtmpfileが`finally`削除されるか確認するため、
-    存在状態を素直に保つ）。
-    """
 
     def fake_run(cmdline, env, on_output, **_kwargs):
         del env, on_output
@@ -25,7 +20,6 @@ def _capture_outputfile_paths(captured_paths: list[pathlib.Path]):
 
 
 def test_vitest_default_args_injects_reporter_and_outputfile(mocker, tmp_path: pathlib.Path) -> None:
-    """既定`vitest-args`では`--reporter=default --reporter=json --outputFile.json=<tmpfile>`が注入される。"""
     target = tmp_path / "sample.test.ts"
     target.write_text("// vitest target\n")
     captured: list[pathlib.Path] = []
@@ -42,13 +36,11 @@ def test_vitest_default_args_injects_reporter_and_outputfile(mocker, tmp_path: p
     assert "--reporter=default" in cmdline
     assert "--reporter=json" in cmdline
     assert any(isinstance(a, str) and a.startswith("--outputFile.json=") for a in cmdline)
-    # finally節でtmpfileが削除されていることを確認する。
     assert len(captured) == 1
     assert not captured[0].exists()
 
 
 def test_vitest_reporter_user_override_skips_injection(mocker, tmp_path: pathlib.Path) -> None:
-    """利用者`vitest-args`に`--reporter`がある場合は注入をスキップする。"""
     target = tmp_path / "sample.test.ts"
     target.write_text("// vitest target\n")
     captured: list[pathlib.Path] = []
@@ -62,7 +54,6 @@ def test_vitest_reporter_user_override_skips_injection(mocker, tmp_path: pathlib
     )
 
     cmdline = mock_run.call_args_list[0][0][0]
-    # 注入されたフラグは含まれない（利用者の`--reporter=verbose`は維持される）。
     assert "--reporter=default" not in cmdline
     assert "--reporter=json" not in cmdline
     assert not any(isinstance(a, str) and a.startswith("--outputFile.json=") for a in cmdline)
@@ -71,7 +62,6 @@ def test_vitest_reporter_user_override_skips_injection(mocker, tmp_path: pathlib
 
 
 def test_vitest_outputfile_user_override_skips_injection(mocker, tmp_path: pathlib.Path) -> None:
-    """利用者`vitest-args`に`--outputFile`がある場合は注入をスキップする。"""
     target = tmp_path / "sample.test.ts"
     target.write_text("// vitest target\n")
     captured: list[pathlib.Path] = []
@@ -87,14 +77,12 @@ def test_vitest_outputfile_user_override_skips_injection(mocker, tmp_path: pathl
     cmdline = mock_run.call_args_list[0][0][0]
     assert "--reporter=default" not in cmdline
     assert "--reporter=json" not in cmdline
-    # 利用者指定`--outputFile=...`は維持され、pyfltr由来の`--outputFile.json=...`は注入されない。
     assert not any(isinstance(a, str) and a.startswith("--outputFile.json=") for a in cmdline)
     assert "--outputFile=custom-result.json" in cmdline
     assert not captured
 
 
 def test_vitest_sets_slow_tests_from_json(mocker, tmp_path: pathlib.Path) -> None:
-    """JSON reporter出力から遅いテスト一覧を設定する。"""
     target = tmp_path / "sample.test.ts"
     target.write_text("// vitest target\n")
 
@@ -132,7 +120,6 @@ def test_vitest_sets_slow_tests_from_json(mocker, tmp_path: pathlib.Path) -> Non
 
 
 def test_vitest_slow_tests_empty_on_stdout_fallback(mocker, tmp_path: pathlib.Path) -> None:
-    """JSON出力を取得できない経路では遅いテスト一覧が空になる。"""
     target = tmp_path / "sample.test.ts"
     target.write_text("// vitest target\n")
     mocker.patch(
@@ -149,7 +136,6 @@ def test_vitest_slow_tests_empty_on_stdout_fallback(mocker, tmp_path: pathlib.Pa
 
 
 def test_vitest_suite_load_failure_becomes_file_diagnostic(mocker, tmp_path: pathlib.Path) -> None:
-    """テストファイルの評価時の例外で失敗assertionが無いsuiteも、失敗ファイルの診断として結果へ届く。"""
     target = tmp_path / "sample.test.ts"
     target.write_text('throw new Error("sample failure");\n')
 

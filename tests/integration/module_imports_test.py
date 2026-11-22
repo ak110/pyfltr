@@ -1,5 +1,3 @@
-"""新規プロセスで公開された内部入口の循環importを検出する。"""
-
 import pathlib
 import subprocess
 import sys
@@ -39,7 +37,6 @@ import pytest
     ],
 )
 def test_modules_import_in_fresh_process(module: str) -> None:
-    """他の入口を先行importしなくても各入口を読み込める。"""
     result = subprocess.run(
         [sys.executable, "-c", f"import {module}"],
         cwd=pathlib.Path(__file__).resolve().parents[2],

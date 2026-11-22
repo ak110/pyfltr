@@ -1,18 +1,3 @@
-"""同一の解析入力を基準版と作業ツリー版で解析し、診断全件と出力から取り出す値を比較する。
-
-基準commitの`pyfltr/`全体を`git archive`で一時領域へ展開し、基準版と作業ツリー版を別のPythonプロセスで読み込む。
-ファイルごとの`git show`で旧実装と現行の依存を混在させない。差分の改善・退行・同等の判定はレビュー担当が行う。
-
-結果の区分は次のとおり。
-
-- `equal`: 診断と追加の値（`extras`）が両版で一致し、診断の件数が採取時の件数と一致する
-- `different`: 診断または追加の値が両版で異なる
-- `count_mismatch`: 作業ツリー版の診断の件数が採取時にpyfltrが出した件数と異なる。
-  原因は、比較の入力が実行時の解析入力と異なる場合と、作業ツリー版の解析が採取後に件数を変えた場合（退行を含む）がある。
-  両版の一致を比べられた証拠にはできず、項目の`hint`が示す確認で原因を見分ける
-- `error`: いずれかの版の解析が例外で終わった
-"""
-
 import collections
 import json
 import pathlib
@@ -28,7 +13,7 @@ _WORKER = pathlib.Path(__file__).resolve().with_name("parse_worker.py")
 
 
 class CompareError(Exception):
-    """比較を成立させられない入力・環境の誤り。"""
+    pass
 
 
 def _resolve_commit(base: str) -> str:
@@ -47,7 +32,6 @@ def _resolve_commit(base: str) -> str:
 
 
 def extract_base(commit: str, destination: pathlib.Path) -> None:
-    """基準commitの`pyfltr/`全体を展開する。"""
     archive_path = destination / "base.tar"
     with archive_path.open("wb") as f:
         completed = subprocess.run(
@@ -118,10 +102,6 @@ def _canonical(diagnostic: dict[str, typing.Any]) -> str:
 
 
 def diff_diagnostics(base: list[dict[str, typing.Any]], current: list[dict[str, typing.Any]]) -> dict[str, typing.Any]:
-    """`ErrorLocation`の全フィールドで両版の診断を比べる。
-
-    `only_base`・`only_current`は重複を数えた多重集合の差、`order_changed`は集合が同じで順序だけが異なることを示す。
-    """
     base_counter = collections.Counter(_canonical(item) for item in base)
     current_counter = collections.Counter(_canonical(item) for item in current)
     only_base = [json.loads(item) for item in (base_counter - current_counter).elements()]
@@ -143,8 +123,6 @@ def _side(result: dict[str, typing.Any], entry_id: str) -> tuple[list[dict[str, 
     return value["diagnostics"], None
 
 
-# 基準版は--baseで任意に選べ、採取時の版と同じとは限らない。
-# そのためbaseの件数で原因を分岐させず、件数だけでは原因を確定できないことと調べる対象を示す。
 _COUNT_MISMATCH_HINT = (
     "採取時の件数（collected）と作業ツリー版の件数（current）が異なる。件数だけでは原因を確定できない。"
     "原因は、比較の入力（inputs.jsonlのoutput）が採取時の解析入力と異なる場合と、"
@@ -156,16 +134,11 @@ _COUNT_MISMATCH_HINT = (
 
 
 def _extras(base: dict[str, typing.Any], current: dict[str, typing.Any]) -> dict[str, dict[str, typing.Any]]:
-    """診断以外に両版が出力から取り出した値（要約行・設定競合・遅い試験）を項目ごとに対にする。
-
-    片方の版だけが持つ項目は、もう片方を`None`として差に含める。
-    """
     keys = sorted((set(base) | set(current)) - {"diagnostics", "error"})
     return {key: {"base": base.get(key), "current": current.get(key)} for key in keys}
 
 
 def compare(input_dir: pathlib.Path, output: pathlib.Path, *, base: str) -> dict[str, typing.Any]:
-    """比較を実行して結果をJSONへ書き、集計を返す。"""
     inputs = input_dir / INPUTS_FILENAME
     if not inputs.is_file():
         raise CompareError(

@@ -7,7 +7,6 @@ import pyfltr.cli.main
 
 
 def _write_project(path: pathlib.Path, *, extra: str) -> None:
-    """不変条件テスト1件、importで失敗する通常テスト1件、Markdown1件を持つプロジェクトを作成する。"""
     (path / "pyproject.toml").write_text(f'[project]\nname = "proj"\n[tool.pyfltr]\n{extra}', encoding="utf-8")
     (path / "tests").mkdir()
     (path / "tests" / "repo_invariant_test.py").write_text("def test_ok(): pass\n", encoding="utf-8")
@@ -16,7 +15,6 @@ def _write_project(path: pathlib.Path, *, extra: str) -> None:
 
 
 def _pytest_file_args(mock_run) -> list[list[str]]:
-    """pytest起動ごとに、コマンドライン末尾の`.py`引数を返す。"""
     result: list[list[str]] = []
     for call in mock_run.call_args_list:
         commandline = call.args[0] if call.args else []
@@ -33,7 +31,6 @@ FAST_CONFIG = 'pytest = true\npytest-fast-targets = ["*_invariant_test.py"]\n'
 
 
 def test_fast_runs_fast_targets_when_only_markdown_is_given(tmp_path: pathlib.Path, mocker) -> None:
-    """Markdownだけを渡したfastでも、指定globに一致するテストだけをpytestへ渡す。"""
     _write_project(tmp_path, extra=FAST_CONFIG)
     proc = subprocess.CompletedProcess(["pytest"], returncode=0, stdout="")
     mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
@@ -45,7 +42,6 @@ def test_fast_runs_fast_targets_when_only_markdown_is_given(tmp_path: pathlib.Pa
 
 
 def test_fast_with_explicit_pytest_command_uses_fast_targets(tmp_path: pathlib.Path, mocker) -> None:
-    """`fast --commands=pytest`もfast選択として指定globを使う。"""
     _write_project(tmp_path, extra=FAST_CONFIG)
     proc = subprocess.CompletedProcess(["pytest"], returncode=0, stdout="")
     mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
@@ -56,7 +52,6 @@ def test_fast_with_explicit_pytest_command_uses_fast_targets(tmp_path: pathlib.P
 
 
 def test_run_commands_fast_with_changed_since_reports_failure(tmp_path: pathlib.Path, mocker) -> None:
-    """差分が別ファイルだけでも指定テストを実行し、失敗を非0終了で返す。"""
     _write_project(tmp_path, extra=FAST_CONFIG)
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
@@ -68,7 +63,6 @@ def test_run_commands_fast_with_changed_since_reports_failure(tmp_path: pathlib.
     (tmp_path / "README.md").write_text("# changed\n", encoding="utf-8")
 
     def _fake(commandline, *_args, **_kwargs):
-        # pytestだけを失敗させる（他のコマンドは有効化していない）。
         return subprocess.CompletedProcess(commandline, returncode=1, stdout="FAILED tests/repo_invariant_test.py\n")
 
     mock_run = mocker.patch("pyfltr.command.process.run_subprocess", side_effect=_fake)
@@ -80,7 +74,6 @@ def test_run_commands_fast_with_changed_since_reports_failure(tmp_path: pathlib.
 
 
 def test_fast_with_no_matching_file_does_not_start_pytest(tmp_path: pathlib.Path, mocker) -> None:
-    """一致0件ではpytestを起動せず、全件収集へ戻らない。"""
     _write_project(tmp_path, extra='pytest = true\npytest-fast-targets = "*_nothing_test.py"\n')
     proc = subprocess.CompletedProcess(["pytest"], returncode=0, stdout="")
     mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
@@ -92,7 +85,6 @@ def test_fast_with_no_matching_file_does_not_start_pytest(tmp_path: pathlib.Path
 
 
 def test_run_and_ci_keep_normal_pytest_targets(tmp_path: pathlib.Path, mocker) -> None:
-    """fastトークンの無いrun・ciでは、位置引数と`pytest-targets`で対象を決める。"""
     _write_project(tmp_path, extra=FAST_CONFIG)
     proc = subprocess.CompletedProcess(["pytest"], returncode=0, stdout="")
     mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
@@ -107,7 +99,6 @@ def test_run_and_ci_keep_normal_pytest_targets(tmp_path: pathlib.Path, mocker) -
 
 
 def test_fast_without_setting_or_with_pytest_disabled_does_not_run_pytest(tmp_path: pathlib.Path, mocker) -> None:
-    """空設定ではpytestはfastへ参加せず、`pytest = false`では指定があっても実行しない。"""
     proc = subprocess.CompletedProcess(["pytest"], returncode=0, stdout="")
     mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
     empty = tmp_path / "empty"

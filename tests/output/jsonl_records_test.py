@@ -15,17 +15,12 @@ import pyfltr.output.jsonl_records
 
 
 def _parse_command_record(result: pyfltr.command.core_.CommandResult) -> dict:
-    """CommandResultからcommandレコードをパースして返す。
-
-    build_command_linesで生成した行群の最後の行がcommandレコード。
-    """
     config = pyfltr.config.config.create_default_config()
     lines = pyfltr.output.jsonl.build_command_lines(result, config)
     return json.loads(lines[-1])
 
 
 def test_build_message_dict_with_rule_severity_fix() -> None:
-    """rule・severity・fixフィールドがmessage dictに含まれることのテスト。"""
     error = pyfltr.diagnostics.ErrorLocation(
         file="src/foo.py",
         line=10,
@@ -47,15 +42,12 @@ def test_build_message_dict_with_rule_severity_fix() -> None:
     assert message["fix"] == "safe"
     assert message["msg"] == "`os` imported but unused"
 
-    # msgは最後のキーであることを確認（フィールド順序）
     keys = list(message.keys())
     assert keys[-1] == "msg"
-    # `rule_url`は出力されない
     assert "rule_url" not in message
 
 
 def test_build_message_dict_none_fields_omitted() -> None:
-    """col・rule・severity・fixがNoneのときフィールドが省略されることのテスト。"""
     error = pyfltr.diagnostics.ErrorLocation(
         file="src/foo.py",
         line=10,
@@ -73,7 +65,6 @@ def test_build_message_dict_none_fields_omitted() -> None:
 
 
 def test_build_message_dict_partial_fields() -> None:
-    """一部のフィールドのみ設定されている場合のテスト。"""
     error = pyfltr.diagnostics.ErrorLocation(
         file="src/foo.py",
         line=10,
@@ -91,7 +82,6 @@ def test_build_message_dict_partial_fields() -> None:
 
 
 def test_aggregate_diagnostics_groups_by_tool_and_file() -> None:
-    """同一tool×fileの指摘が1レコードに集約され、messages[]が(line, col, rule)順に並ぶ。"""
     errors = [
         pyfltr.diagnostics.ErrorLocation(file="src/a.py", line=10, col=3, command="ruff-check", message="msg10b", rule="E501"),
         pyfltr.diagnostics.ErrorLocation(file="src/a.py", line=10, col=3, command="ruff-check", message="msg10a", rule="E401"),
@@ -110,7 +100,6 @@ def test_aggregate_diagnostics_groups_by_tool_and_file() -> None:
 
 
 def test_aggregate_diagnostics_collects_hint_urls() -> None:
-    """rule_url付きのerrorsからhint_urls辞書が構築される。"""
     errors = [
         pyfltr.diagnostics.ErrorLocation(
             file="a.py",
@@ -144,7 +133,6 @@ def test_aggregate_diagnostics_collects_hint_urls() -> None:
 
 
 def test_build_command_record_includes_hint_urls_when_provided() -> None:
-    """hint_urlsを与えるとtoolレコードに`hint_urls`キーで埋め込まれる。"""
     error = pyfltr.diagnostics.ErrorLocation(
         file="src/foo.py",
         line=1,
@@ -169,7 +157,6 @@ def test_build_command_record_includes_hint_urls_when_provided() -> None:
 
 
 def test_build_command_record_omits_hint_urls_when_empty() -> None:
-    """hint_urlsがNone / 空の場合は`hint_urls`キー自体を出力しない。"""
     result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
@@ -185,7 +172,6 @@ def test_build_command_record_omits_hint_urls_when_empty() -> None:
 
 
 def test_build_command_record_retry_command_included() -> None:
-    """retry_commandが設定されていればtoolレコードに含まれる（失敗時のみpopulateされる前提）。"""
     result = pyfltr.command.core_.CommandResult(
         command="ruff-check",
         command_type="linter",
@@ -201,7 +187,6 @@ def test_build_command_record_retry_command_included() -> None:
 
 
 def test_build_command_record_retry_command_omitted() -> None:
-    """retry_commandがNoneの場合、toolレコードから省略される。"""
     result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
@@ -217,7 +202,6 @@ def test_build_command_record_retry_command_omitted() -> None:
 
 
 def test_build_command_record_retry_count_included() -> None:
-    """retry_countが1以上の場合、commandレコードに含まれる。"""
     result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
@@ -234,7 +218,6 @@ def test_build_command_record_retry_count_included() -> None:
 
 
 def test_build_command_record_retry_count_omitted_when_zero() -> None:
-    """retry_count==0の場合、commandレコードから省略される。"""
     result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
@@ -250,11 +233,6 @@ def test_build_command_record_retry_count_omitted_when_zero() -> None:
 
 
 def test_build_command_record_omits_runner_info_when_normal_path() -> None:
-    """通常経路（fallback無し）では runner 情報3点を全て省略する。
-
-    `effective_runner` / `runner_source` が確定していても `runner_fallback` が None なら
-    LLM入力のトークン消費を抑えるため出力しない（fallback時のみ通知する責務分担）。
-    """
     result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
@@ -274,11 +252,6 @@ def test_build_command_record_omits_runner_info_when_normal_path() -> None:
 
 
 def test_build_command_record_runner_info_emitted_on_uv_fallback() -> None:
-    """uv経路のdirectフォールバック時はrunner情報3点をまとめて出力する。
-
-    `runner_fallback="uv->direct"` が判定キーで、3フィールドをまとめてLLMへ通知する。
-    出力位置は `status` の直後で `files` より前（fallback通知の追跡用途）。
-    """
     result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
@@ -302,7 +275,6 @@ def test_build_command_record_runner_info_emitted_on_uv_fallback() -> None:
 
 
 def test_build_command_record_runner_info_emitted_on_mise_fallback() -> None:
-    """mise不在によるdirect退行時も `runner_fallback="mise->direct"` で3点出力される。"""
     result = pyfltr.command.core_.CommandResult(
         command="cargo-fmt",
         command_type="formatter",
@@ -323,11 +295,6 @@ def test_build_command_record_runner_info_emitted_on_mise_fallback() -> None:
 
 
 def test_build_command_record_omits_runner_info_when_none() -> None:
-    """`effective_runner` / `runner_source` がNoneの場合（解決失敗・対象0件等）もキーごと省略する。
-
-    `resolution_failed` 経路や対象0件で `build_commandline` を呼ばない経路では
-    runner情報が確定せず `runner_fallback` も None のままとなる。
-    """
     result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
@@ -345,11 +312,6 @@ def test_build_command_record_omits_runner_info_when_none() -> None:
 
 
 def test_build_command_record_omits_runner_info_when_path_override() -> None:
-    """`{command}-path`明示指定時はdirect固定経路のためfallback扱いせず省略する。
-
-    利用者が明示的にパスを指定した結果のdirect経路は退行ではないため、
-    `runner_fallback=None` で通常経路と同様に3フィールドを省略する。
-    """
     result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
@@ -369,7 +331,6 @@ def test_build_command_record_omits_runner_info_when_path_override() -> None:
 
 
 def test_build_command_record_cached_includes_cached_from() -> None:
-    """cached=Trueのときcached/cached_fromとcached_elapsedがtoolレコードに含まれる。"""
     result = pyfltr.command.core_.CommandResult(
         command="textlint",
         command_type="linter",
@@ -385,14 +346,11 @@ def test_build_command_record_cached_includes_cached_from() -> None:
     record = _parse_command_record(result)
     assert record["cached"] is True
     assert record["cached_from"] == "01ABCDEFGH"
-    # cached=Trueのときelapsedは出力せずcached_elapsedだけを出力する
-    # （LLMが「今回の実行時間」と誤解するのを避ける）。
     assert "elapsed" not in record
     assert record["cached_elapsed"] == 1.23
 
 
 def test_build_command_record_cached_omitted_when_false() -> None:
-    """cached=Falseの場合はcached/cached_from/cached_elapsedが省略されelapsedが出る。"""
     result = pyfltr.command.core_.CommandResult(
         command="textlint",
         command_type="linter",
@@ -411,7 +369,6 @@ def test_build_command_record_cached_omitted_when_false() -> None:
 
 
 def test_build_command_record_cached_without_cached_from() -> None:
-    """cached_fromが未設定でもcached=Trueならcached_elapsedは出る。"""
     result = pyfltr.command.core_.CommandResult(
         command="textlint",
         command_type="linter",
@@ -431,14 +388,6 @@ def test_build_command_record_cached_without_cached_from() -> None:
 
 
 def test_build_command_record_message_truncated_when_archived() -> None:
-    """failed + message切り詰め時、truncatedにlines / chars / head_chars / tail_chars / archiveが入る。
-
-    ハイブリッド方式の検証:
-    - 先頭ブロックは原文先頭の文字を保持する
-    - 末尾ブロックは原文末尾の文字を保持する
-    - 中央に`... (truncated)`マーカーが入る
-    """
-    # 既定上限（max_chars=2000）を確実に超える4000行 + マーカー文字列を仕込む。
     head_marker = "HEAD-MARKER-LINE"
     tail_marker = "TAIL-MARKER-LINE"
     body = "\n".join(f"line{i}" for i in range(4000))
@@ -458,23 +407,18 @@ def test_build_command_record_message_truncated_when_archived() -> None:
     record = json.loads(lines[-1])
     assert "message" in record
     message = record["message"]
-    # 先頭ブロックは原文の冒頭をそのまま保持する。
     assert message.startswith(head_marker)
-    # 末尾ブロックは原文の末尾を保持する。
     assert message.endswith(tail_marker)
-    # 中央に切り詰めマーカーが入る。
     assert "... (truncated)" in message
     truncated = record["truncated"]
     assert truncated["archive"] == "tools/shellcheck/output.log"
     assert truncated["chars"] == len(output)
     assert truncated["head_chars"] > 0
     assert truncated["tail_chars"] > 0
-    # 合計（head + tail + marker）はmax_charsを大きくは超えない。
     assert truncated["head_chars"] + truncated["tail_chars"] <= 2000
 
 
 def test_build_header_record_emits_commands_and_no_schema_hints() -> None:
-    """headerレコードにcommands配列が出力され、schema_hintsは出力されない。"""
     config = pyfltr.config.config.create_default_config()
     lines = pyfltr.output.jsonl.build_lines(
         [],
@@ -489,18 +433,10 @@ def test_build_header_record_emits_commands_and_no_schema_hints() -> None:
     assert record["run_id"] == "01TESTULID"
     assert record["commands"] == ["ruff-check", "mypy", "textlint"]
     assert "commands_count" not in record
-    # schema_hintsは廃止済み
     assert "schema_hints" not in record
 
 
 def test_build_header_record_size_is_small(monkeypatch: pytest.MonkeyPatch) -> None:
-    """headerレコード（実行対象15件想定）は500文字以下に収まる（runner情報追加後）。
-
-    `uv` 取得関数群と環境依存値（`sys.version` / `sys.executable` / `os.getcwd()` / version文字列）を
-    Windows CI相当の値へ差し替え、ローカル開発環境（dirty状態でversion文字列が長くなる場合等）に
-    依存せずWindows CI環境でのサイズ超過を検出できるようにする。
-    Windows Python 3.14の`sys.version`は約80字、CIのversionは`setuptools-scm`shallow git由来で20字程度。
-    """
     monkeypatch.setattr("pyfltr.command.runner.cwd_has_uv_lock", lambda: True)
     monkeypatch.setattr("pyfltr.command.runner.ensure_uv_available", lambda: True)
     monkeypatch.setattr("pyfltr.command.runner.ensure_uvx_available", lambda: True)
@@ -526,11 +462,6 @@ def test_build_header_record_size_is_small(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 def test_build_header_record_includes_uv_object(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`uv.lock` / `uv.available` / `uv.x_available` がプロセス共通の真偽値として常時出力される。
-
-    Python系コマンドが実行集合に含まれるか否かに関わらず、`mise_active_tools` のような
-    条件付き付与ではなく常時出力する設計（runner経路の追跡情報のため）。
-    """
     monkeypatch.setattr("pyfltr.command.runner.cwd_has_uv_lock", lambda: True)
     monkeypatch.setattr("pyfltr.command.runner.ensure_uv_available", lambda: True)
     monkeypatch.setattr("pyfltr.command.runner.ensure_uvx_available", lambda: True)
@@ -540,14 +471,12 @@ def test_build_header_record_includes_uv_object(monkeypatch: pytest.MonkeyPatch)
     header_python = json.loads(next(line for line in lines_python if json.loads(line).get("kind") == "header"))
     assert header_python["uv"] == {"lock": True, "available": True, "x_available": True}
 
-    # Python系コマンドを含まないrunでも常時出力される。
     lines_non_python = pyfltr.output.jsonl.build_lines([], config, exit_code=0, commands=["shellcheck"], files=3)
     header_non_python = json.loads(next(line for line in lines_non_python if json.loads(line).get("kind") == "header"))
     assert header_non_python["uv"] == {"lock": True, "available": True, "x_available": True}
 
 
 def test_build_header_record_uv_fields_reflect_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`uv.lock` / `uv.available` / `uv.x_available` の値が`pyfltr.command.runner`の判定関数に追従する。"""
     monkeypatch.setattr("pyfltr.command.runner.cwd_has_uv_lock", lambda: False)
     monkeypatch.setattr("pyfltr.command.runner.ensure_uv_available", lambda: False)
     monkeypatch.setattr("pyfltr.command.runner.ensure_uvx_available", lambda: False)
@@ -559,7 +488,6 @@ def test_build_header_record_uv_fields_reflect_environment(monkeypatch: pytest.M
 
 
 def test_build_header_record_omits_mise_active_tools_when_no_mise_command() -> None:
-    """mise経路ツールを含まないrunのheaderには `mise_active_tools` を出力しない。"""
     config = pyfltr.config.config.create_default_config()
     lines = pyfltr.output.jsonl.build_lines([], config, exit_code=0, commands=["mypy", "ruff-check"], files=3)
     header_line = next(line for line in lines if json.loads(line).get("kind") == "header")
@@ -568,7 +496,6 @@ def test_build_header_record_omits_mise_active_tools_when_no_mise_command() -> N
 
 
 def test_build_header_record_includes_mise_active_tools_when_passed(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`mise_active_tools` が渡された場合はheaderへ露出する。"""
     monkeypatch.setattr(
         "pyfltr.command.mise.get_mise_active_tools",
         lambda config, *, allow_side_effects=False: pyfltr.command.mise.MiseActiveToolsResult(status="ok", tools={"rust": []}),
@@ -582,14 +509,12 @@ def test_build_header_record_includes_mise_active_tools_when_passed(monkeypatch:
 
 
 def test_collect_mise_active_tools_for_header_skips_when_no_mise_command() -> None:
-    """対象commandsにmise登録ツールが無いrunでは `None` を返してheader露出を抑制する。"""
     config = pyfltr.config.config.create_default_config()
     info = pyfltr.output.jsonl_records.collect_mise_active_tools_for_header(["mypy", "ruff-check"], config)
     assert info is None
 
 
 def test_collect_mise_active_tools_for_header_includes_when_mise_command(monkeypatch: pytest.MonkeyPatch) -> None:
-    """mise登録コマンドが含まれる場合は取得状況dictを返す。"""
     monkeypatch.setattr(
         "pyfltr.command.mise.get_mise_active_tools",
         lambda config, *, allow_side_effects=False: pyfltr.command.mise.MiseActiveToolsResult(status="ok", tools={"rust": []}),
@@ -600,7 +525,6 @@ def test_collect_mise_active_tools_for_header_includes_when_mise_command(monkeyp
 
 
 def test_collect_mise_active_tools_for_header_propagates_error_status(monkeypatch: pytest.MonkeyPatch) -> None:
-    """取得失敗時はstatusとdetailをそのまま伝える（active_keysはok時のみ）。"""
     monkeypatch.setattr(
         "pyfltr.command.mise.get_mise_active_tools",
         lambda config, *, allow_side_effects=False: pyfltr.command.mise.MiseActiveToolsResult(
@@ -613,7 +537,6 @@ def test_collect_mise_active_tools_for_header_propagates_error_status(monkeypatc
 
 
 def test_build_summary_record_emits_guidance_on_failure() -> None:
-    """failed > 0のときsummary.guidanceが英語で付与され、launcher_prefixとrun_idが埋め込まれる。"""
     result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
@@ -640,14 +563,11 @@ def test_build_summary_record_emits_guidance_on_failure() -> None:
     assert "retry_command" in joined
     assert "uvx pyfltr run --only-failed" in joined
     assert "uvx pyfltr show-run 01JABCDEFGH" in joined
-    # プレースホルダーが残っていないこと
     assert "<run_id>" not in joined
-    # 解決失敗が無い実行では、ツール導入の案内を含めない
     assert "tool-resolve" not in joined
 
 
 def test_build_summary_record_guidance_leads_with_resolution_failure_action() -> None:
-    """resolution_failedがあるときは、再実行より先にツール解決の対処を読む案内を置く。"""
     result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
@@ -665,7 +585,6 @@ def test_build_summary_record_guidance_leads_with_resolution_failure_action() ->
 
 
 def test_build_summary_record_guidance_without_archive() -> None:
-    """アーカイブの無い失敗には、その実行で利用できる対処だけを案内する。"""
     result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
@@ -690,7 +609,6 @@ def test_build_summary_record_guidance_without_archive() -> None:
 
 
 def test_build_summary_record_guidance_uses_given_subcommand() -> None:
-    """`subcommand`指定時は`--only-failed`案内が対象のサブコマンド名で組み立てられる。"""
     result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
@@ -715,7 +633,6 @@ def test_build_summary_record_guidance_uses_given_subcommand() -> None:
 
 
 def test_build_summary_record_counts_resolution_failed() -> None:
-    """resolution_failedはfailedと区別してcommands_summary.needs_action配下に集計され、guidanceも付与される。"""
     result = pyfltr.command.core_.CommandResult(
         command="shellcheck",
         command_type="linter",
@@ -736,7 +653,6 @@ def test_build_summary_record_counts_resolution_failed() -> None:
 
 
 def test_build_summary_record_groups_statuses_into_no_issues_and_needs_action() -> None:
-    """5種別のステータスがcommands_summary.no_issues / needs_actionの2グループへ正しく振り分けられる。"""
     succeeded = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
@@ -796,10 +712,8 @@ def test_build_summary_record_groups_statuses_into_no_issues_and_needs_action() 
     record = json.loads(summary_line)
     commands_summary = record["commands_summary"]
     assert commands_summary["no_issues"] == {"succeeded": 1, "formatted": 1, "skipped": 1}
-    # resolution_failedが1件以上のときは出力される
     assert commands_summary["needs_action"]["failed"] == 1
     assert commands_summary["needs_action"]["resolution_failed"] == 1
-    # 旧フラットキー・直下のグループキーは廃止されているため、トップレベルから消えていることも確認する。
     assert "no_issues" not in record
     assert "needs_action" not in record
     assert "succeeded" not in record
@@ -810,11 +724,6 @@ def test_build_summary_record_groups_statuses_into_no_issues_and_needs_action() 
 
 
 def test_build_summary_record_field_order_and_total_under_commands_summary() -> None:
-    """summaryレコードの必須キーは `kind` → `exit` → `commands_summary` → `diagnostics` の順で並び、
-    `total` は `commands_summary` 配下の末尾（`no_issues` / `needs_action` の後）に置かれる。
-
-    LLMが上から読み下したときに「結論→集計→指摘総数」の流れで把握できる順序に揃える設計。
-    """
     failed = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
@@ -840,7 +749,6 @@ def test_build_summary_record_field_order_and_total_under_commands_summary() -> 
     record = json.loads(summary_line)
     keys = list(record.keys())
     assert keys.index("kind") < keys.index("exit") < keys.index("commands_summary") < keys.index("diagnostics")
-    # `total` は `commands_summary` 配下に移動し、トップレベルから消える。
     assert "total" not in record
     commands_summary = record["commands_summary"]
     cs_keys = list(commands_summary.keys())
@@ -849,7 +757,6 @@ def test_build_summary_record_field_order_and_total_under_commands_summary() -> 
 
 
 def test_build_summary_record_omits_resolution_failed_when_zero() -> None:
-    """`resolution_failed`が0件のときキー自体を省略する。"""
     result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
@@ -869,7 +776,6 @@ def test_build_summary_record_omits_resolution_failed_when_zero() -> None:
 
 
 def test_build_summary_record_failed_always_present() -> None:
-    """`failed`は0件でも常時出力される。"""
     result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
@@ -890,7 +796,6 @@ def test_build_summary_record_failed_always_present() -> None:
 
 
 def test_build_summary_record_no_guidance_on_success() -> None:
-    """failed == 0かつapplied_fixesも空のときはsummary.guidanceが省略される。"""
     result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
@@ -909,7 +814,6 @@ def test_build_summary_record_no_guidance_on_success() -> None:
 
 
 def test_build_summary_record_guidance_emits_formatter_notice_only() -> None:
-    """failed/resolution_failed=0でもapplied_fixesが非空ならguidanceにformatter書き換え注記1項目だけ出る。"""
     result = pyfltr.command.core_.CommandResult(
         command="ruff-format",
         command_type="formatter",
@@ -933,7 +837,6 @@ def test_build_summary_record_guidance_emits_formatter_notice_only() -> None:
 
 
 def test_build_summary_record_guidance_combines_failure_and_formatter_notice() -> None:
-    """failed>0かつapplied_fixes非空のときは失敗時の4項目に続けてformatter書き換え注記が並ぶ。"""
     failed = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
@@ -972,7 +875,6 @@ def test_build_summary_record_guidance_combines_failure_and_formatter_notice() -
 
 
 def test_build_summary_record_includes_fully_excluded_files() -> None:
-    """fully_excluded_files指定時はsummaryレコードに出力される。"""
     result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
@@ -996,7 +898,6 @@ def test_build_summary_record_includes_fully_excluded_files() -> None:
 
 
 def test_build_summary_record_omits_fully_excluded_files_when_empty() -> None:
-    """空リスト・Noneの場合はキー自体を出力しない。"""
     result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
@@ -1017,7 +918,6 @@ def test_build_summary_record_omits_fully_excluded_files_when_empty() -> None:
 
 
 def test_build_summary_record_includes_missing_targets() -> None:
-    """missing_targets指定時はsummaryレコードに出力され、fully_excluded_filesと併存する。"""
     result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
@@ -1043,7 +943,6 @@ def test_build_summary_record_includes_missing_targets() -> None:
 
 
 def test_build_summary_record_omits_missing_targets_when_empty() -> None:
-    """空リスト・Noneの場合はキー自体を出力しない。"""
     result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
@@ -1064,7 +963,6 @@ def test_build_summary_record_omits_missing_targets_when_empty() -> None:
 
 
 def test_build_message_dict_includes_end_line_and_end_col() -> None:
-    """end_line / end_colが設定されていればmessages[]に出力される。"""
     error = pyfltr.diagnostics.ErrorLocation(
         file="a.md",
         line=17,
@@ -1079,13 +977,11 @@ def test_build_message_dict_includes_end_line_and_end_col() -> None:
     record = records[0]["messages"][0]
     assert record["end_line"] == 17
     assert record["end_col"] == 23
-    # フィールド順はline → col → end_line → end_col → ruleの順
     keys = list(record.keys())
     assert keys.index("col") < keys.index("end_line") < keys.index("end_col") < keys.index("rule")
 
 
 def test_build_message_dict_omits_end_line_and_end_col_when_none() -> None:
-    """end_line / end_colがNoneの場合はキーごと省略する。"""
     error = pyfltr.diagnostics.ErrorLocation(
         file="a.py",
         line=10,
@@ -1100,7 +996,6 @@ def test_build_message_dict_omits_end_line_and_end_col_when_none() -> None:
 
 
 def test_build_message_dict_omits_hint() -> None:
-    """hintはmessages[]には出力されない（command.hintsへ集約するため）。"""
     error = pyfltr.diagnostics.ErrorLocation(
         file="a.md",
         line=1,
@@ -1116,7 +1011,6 @@ def test_build_message_dict_omits_hint() -> None:
 
 
 def test_build_command_record_includes_hints_from_errors() -> None:
-    """hint付きエラーを与えると`command.hints`にruleごとに1回だけヒント短文が入る。"""
     errors = [
         pyfltr.diagnostics.ErrorLocation(
             file="a.md",
@@ -1156,7 +1050,6 @@ def test_build_command_record_includes_hints_from_errors() -> None:
 
 
 def test_build_command_record_hints_key_present_when_hints_given() -> None:
-    """`hints`引数が非空なら`command.hints`キーとして埋め込まれる。"""
     error = pyfltr.diagnostics.ErrorLocation(
         file="src/foo.py",
         line=1,
@@ -1181,7 +1074,6 @@ def test_build_command_record_hints_key_present_when_hints_given() -> None:
 
 
 def test_build_command_record_hints_key_omitted_when_empty() -> None:
-    """`hints`がNone / 空の場合、textlint以外では`hints`キー自体を出力しない。"""
     result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
@@ -1197,13 +1089,6 @@ def test_build_command_record_hints_key_omitted_when_empty() -> None:
 
 
 def test_build_command_record_textlint_col_hint_only_when_diagnostics() -> None:
-    """textlintの`messages[].col`hintは指摘ある時のみ付与され、col/end_colを1個に統合する。
-
-    hint方針（`pyfltr/output/jsonl.py`の「対応する指摘や状態が実際に該当するときのみ
-    付与する」）に従い、指摘0件ではhintsキー自体が省略される。
-    類似文言の重複を避けるため代表キー`messages[].col`の単一hintで両フィールドを説明する。
-    """
-    # 指摘0件: hintsキー自体を出力しない
     result_no_diag = pyfltr.command.core_.CommandResult(
         command="textlint",
         command_type="linter",
@@ -1216,7 +1101,6 @@ def test_build_command_record_textlint_col_hint_only_when_diagnostics() -> None:
     record_no_diag = _parse_command_record(result_no_diag)
     assert "hints" not in record_no_diag
 
-    # 指摘1件以上: col仕様注記が入り、rule hintとも併存する
     error_with_hint = pyfltr.diagnostics.ErrorLocation(
         file="a.md",
         line=1,
@@ -1250,12 +1134,6 @@ def test_build_command_record_textlint_col_hint_only_when_diagnostics() -> None:
 
 
 def test_build_summary_record_includes_applied_fixes() -> None:
-    """fixed_filesを持つ結果が複数ある場合、summary.applied_fixesにユニオンしてソートして出力される。
-
-    構築意図: `returncode=1, formatter_failed=False, command_type="formatter"`の組み合わせで
-    `status == "formatted"`となるケースを再現する。
-    2件の結果で`fixed_files`が重複を含む場合に、ユニオン＆ソートされた一覧が得られることを確認する。
-    """
     result_a = pyfltr.command.core_.CommandResult(
         command="ruff-check",
         command_type="formatter",
@@ -1286,7 +1164,6 @@ def test_build_summary_record_includes_applied_fixes() -> None:
 
 
 def test_build_summary_record_normalizes_applied_fixes_separators() -> None:
-    """変更検知からsummaryへ渡る公開パスの区切りを`/`へ統一する。"""
     target = pathlib.Path(r"src\nested\fixed.py")
     fixed_files = pyfltr.command.snapshot.changed_files({target: b"before"}, {target: b"after"})
     result = pyfltr.command.core_.CommandResult(
@@ -1310,7 +1187,6 @@ def test_build_summary_record_normalizes_applied_fixes_separators() -> None:
 
 
 def test_build_summary_record_omits_applied_fixes_when_empty() -> None:
-    """fixed_filesが空のときsummary.applied_fixesは出力されない。"""
     result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
@@ -1329,7 +1205,6 @@ def test_build_summary_record_omits_applied_fixes_when_empty() -> None:
 
 
 def test_build_summary_record_counts_warning() -> None:
-    """severity="warning"由来のwarningはcommands_summary.needs_action.warningに集計される。"""
     warning_result = pyfltr.command.core_.CommandResult(
         command="colloquial",
         command_type="linter",
@@ -1350,7 +1225,6 @@ def test_build_summary_record_counts_warning() -> None:
 
 
 def test_build_summary_record_warning_count_always_present() -> None:
-    """warningは0件でも常時出力される。"""
     result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
@@ -1371,7 +1245,6 @@ def test_build_summary_record_warning_count_always_present() -> None:
 
 
 def test_build_summary_record_no_failure_guidance_when_only_warning() -> None:
-    """warningのみで failed/resolution_failed が0件の場合 guidance は付与されない。"""
     warning_result = pyfltr.command.core_.CommandResult(
         command="colloquial",
         command_type="linter",
@@ -1390,7 +1263,6 @@ def test_build_summary_record_no_failure_guidance_when_only_warning() -> None:
 
 
 def test_build_command_record_includes_user_hints_when_diagnostics_present() -> None:
-    """{command}-hints は messages 1件以上のとき user.<n> 連番キーで command.hints に出力される。"""
     config = pyfltr.config.config.create_default_config()
     config.values["mypy-hints"] = ["First user hint.", "Second user hint."]
     error = pyfltr.diagnostics.ErrorLocation(
@@ -1418,7 +1290,6 @@ def test_build_command_record_includes_user_hints_when_diagnostics_present() -> 
 
 
 def test_build_command_record_omits_user_hints_when_no_diagnostics() -> None:
-    """diagnostics=0のときは{command}-hintsを出力しない（指摘0件で固定hintを残してトークン浪費しないため）。"""
     config = pyfltr.config.config.create_default_config()
     config.values["mypy-hints"] = ["This must not be emitted."]
     result = pyfltr.command.core_.CommandResult(
@@ -1438,10 +1309,6 @@ def test_build_command_record_omits_user_hints_when_no_diagnostics() -> None:
 
 
 def test_summary_completion_fields(tmp_path: pathlib.Path) -> None:
-    """CLI JSONLの`summary`が完了判定の4項目を`exit`の直後へ常に出力する。
-
-    空一覧も省略せず、全指定対象が不在のearly exitでも同じ4項目を返す。
-    """
     work_dir = tmp_path / "project"
     work_dir.mkdir()
     (work_dir / "sample.txt").write_text("value\n", encoding="utf-8")

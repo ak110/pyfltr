@@ -1,5 +1,3 @@
-"""testersのツール登録。"""
-
 from pyfltr.diagnostics import ErrorLocation
 from pyfltr.tool_defs.common import CARGO_SHORT_OUTPUT
 from pyfltr.tool_types import BinToolSpec, CommandInfo, FunctionRef, StructuredOutputSpec
@@ -16,8 +14,6 @@ COMMANDS: dict[str, CommandInfo] = {
         structured_output=(
             "pytest-tb-line",
             StructuredOutputSpec(
-                # 設定キー名は`--tb=line`を示唆するが、実際に注入するのは`--tb=short`である。
-                # `--tb=short`はプロジェクト内フレームを含みつつ出力量を抑えられるため既定採用としており、
                 # キー名は初期実装時の名残。設定互換性維持のため改名しない
                 inject=["--tb=short"],
                 conflicts=["--tb"],
@@ -32,16 +28,11 @@ COMMANDS: dict[str, CommandInfo] = {
             "pytest-args": [],
             "pytest-devmode": True,
             "pytest-fast": False,
-            # fast選択時だけpytestの対象を置き換えるglob（文字列または配列）。
-            # 非空ならpytest-fast=falseでもfastへ参加し、位置引数・差分指定に依らずプロジェクト全域から一致ファイルを選ぶ。
             "pytest-fast-targets": [],
-            # 全実行でpytestの対象へ加えるglob（文字列または配列）。
-            # 位置引数・差分指定に依らずプロジェクト全域から一致ファイルを選び、通常の対象との和集合を実行する。
             "pytest-always-targets": [],
             "pytest-impact-selection": False,
         },
     ),
-    # vitest のテストファイルパターン（pytest の *_test.py と同じ考え方）
     "vitest": CommandInfo(
         type="tester",
         fixed_cost=3.0,
@@ -71,15 +62,11 @@ COMMANDS: dict[str, CommandInfo] = {
             "vitest": False,
             "vitest-path": "",
             "vitest-runner": "js-runner",
-            # vitestはrunサブコマンドが必須。また、pyfltrがtargets設定で限定したファイル群と
-            # プロジェクト側のvitest include設定が交差せず対象ゼロになるケースでrc=1となり
-            # failed扱いになるのを避けるため、--passWithNoTestsを既定に含める。
             "vitest-args": ["run", "--passWithNoTests"],
             "vitest-fast": False,
         },
         execution_kind="vitest",
     ),
-    # Rust / .NETツール（tester）。pass-filenames=FalseでCrate / solution全体を対象とする。
     "cargo-test": CommandInfo(
         parser=FunctionRef[[str], list[ErrorLocation]]("pyfltr.parsing.native", "parse_cargo_test"),
         structured_output=(

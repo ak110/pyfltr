@@ -1,8 +1,3 @@
-"""`--only-failed` フィルター処理。
-
-同じ実行起点で行われた直前runの失敗情報から再実行対象コマンドとファイル集合を構築する。
-"""
-
 from __future__ import annotations
 
 import pathlib
@@ -30,39 +25,6 @@ def apply_filter(
     list_runs: str = "`pyfltr list-runs`",
     run: str = "`pyfltr run`",
 ) -> tuple[list[str], dict[str, ToolTargets] | None, bool]:
-    """`--only-failed`指定時、直前runからツール別の失敗ファイル集合を構築する。
-
-    Args:
-        args: コマンドライン引数。`args.only_failed`が真のとき適用する。
-        commands: 実行対象コマンド名のリスト。
-        all_files: `expand_all_files`の結果。`args.targets`指定があれば既にフィルタリング済み。
-        start_cwd: 実行起点（`--work-dir`・MCPの`work_dir`適用後）。対象ファイルと診断の`file`の突合キーの基準。
-        from_run: 参照対象runを明示指定する（前方一致 / `latest`対応）。
-            `None`と`latest`の場合は、`start_cwd`と同じ実行起点で行われた最新のrunを選ぶ。
-        extra_candidates: ツール名から、`all_files`に加えて交差の候補にするファイル一覧への辞書。
-            `pytest-always-targets`で位置引数に依らず対象へ加わるテストを候補に含めるために使う。
-        only_failed_option: 失敗分だけを実行する指定の表示名。
-        from_run_option: 参照する実行の指定の表示名。
-        list_runs: 実行一覧を取得する操作名。
-        run: アーカイブを生成する実行操作名。
-
-    Returns:
-        `(フィルタリング後commands, per_tool_targets, exit_early)`
-        - `args.only_failed`が偽の場合は`(commands, None, False)`を返す（未適用）
-        - 直前runが存在しない / アーカイブ読み取り失敗 / `from_run`の解決失敗 / 失敗ツールが無い /
-          全ツールでtargets交差が空の場合は`(commands, None, True)`を返し、呼び出し側で
-          rc=0の早期終了を促す。理由と対処は`source="only-failed"`の警告として発行し、
-          JSONL・テキスト表示・MCPの`skipped_reason`がいずれも同じ警告から理由を得る
-        - それ以外はフィルタリング後commandsとToolTargets dictを返す（exit_early=False）
-
-    `all_files`は`expand_all_files`の結果（`args.targets`指定があれば既に
-    その範囲でフィルタリング済み）。本関数ではそれとの交差を取ることで
-    `--only-failed`と位置引数`targets`の併用要件を同時に満たす。
-
-    ファイル変更検出・テスト関数の存在確認・モジュール依存追跡は本機能の責務外で、
-    判定基準は「直前 run の診断ファイル一覧」と「現在の `targets` 集合」の交差のみとする。
-    ファイル変更ベースのフィルタリングは`--changed-since`との併用で実現できる。
-    """
     if not getattr(args, "only_failed", False):
         return commands, None, False
 
@@ -83,10 +45,6 @@ def apply_filter(
         )
         return commands, None, True
 
-    # from_run指定時にrun_idを解決し、失敗ならwarningを発行して早期終了する。
-    # 解決済みrun_idを_load_run_summaryに渡すことで二重解決を避ける。
-    # `latest`は直前の実行を明示する別名として使われるため、未指定と同じく同じ実行起点の最新runへ解決する。
-    # 実行アーカイブはユーザー単位で共有されるため、全体の最新runは別のプロジェクトや作業ツリーの実行でありうる。
     resolved_run_id: str | None = None
     if from_run is not None and from_run != "latest":
         try:
@@ -131,8 +89,6 @@ def apply_filter(
         )
         return commands, None, True
 
-    # ツール別のターゲットを構築する。交差空のツールはtargets dictから除外し、
-    # filtered_commandsでも除外することでskip状態はdictに含めない設計とする。
     targets: dict[str, ToolTargets] = {}
     for tool in failed_tools:
         candidates = [*all_files, *(extra_candidates or {}).get(tool, [])]
@@ -161,15 +117,7 @@ def _load_run_summary(
     start_cwd: pathlib.Path,
     hint: str,
 ) -> pyfltr.state.archive.RunSummary | None:
-    """runのサマリを返す。取得失敗または存在しない場合はNone。
-
-    `resolved_run_id`が指定された場合は、そのrun_idに対応するサマリを返す。
-    未指定の場合は、実行起点（`RunSummary.cwd`）が`start_cwd`と同じ完了済みrunのうち最新のものを返す。
-    実行起点を記録していないrunは同じ起点と判定できないため候補から除く。
-    同じ起点で並行して実行中のrunは、ツール結果が揃っておらず「失敗したツールが無い」と誤判定しうるため除く。
-    """
     try:
-        # ArchiveStoreにはrun_idや実行起点でrunを選ぶAPIが無いためlist_runs()から探す。
         all_runs = store.list_runs()
     except OSError as e:
         pyfltr.warnings_.emit_warning(
@@ -191,10 +139,6 @@ def _load_run_summary(
 
 
 def _describe_run(summary: pyfltr.state.archive.RunSummary) -> str:
-    """警告と案内で参照したrunを示す表記を返す。
-
-    参照先の取り違えに利用者が気付けるよう、記録があれば実行起点も示す。
-    """
     if summary.cwd is None:
         return summary.run_id
     return f"{summary.run_id}、作業ディレクトリ: {summary.cwd}"
@@ -207,7 +151,6 @@ def _collect_failed_tools(
     *,
     hint: str,
 ) -> list[str]:
-    """直前runから失敗ツールの名前一覧を返す。読み取り失敗時は空リスト。"""
     try:
         tool_names = store.list_tools(run_id)
     except OSError as e:
@@ -240,12 +183,6 @@ def _extract_failed_files_for_tool(
     *,
     start_cwd: pathlib.Path,
 ) -> ToolTargets | None:
-    """ツール別の失敗ファイル集合を抽出する。
-
-    - 診断ファイルなし（pytest等）: ToolTargets.fallback_default()
-    - 診断あり・all_filesとの交差あり: ToolTargets.with_files(交差ファイル)
-    - 診断あり・交差空: None（呼び出し側で除外扱い）
-    """
     try:
         diagnostics = store.read_tool_diagnostics(run_id, tool)
     except OSError:
@@ -253,19 +190,12 @@ def _extract_failed_files_for_tool(
 
     failed_files = {d["file"] for d in diagnostics if isinstance(d.get("file"), str)}
     if not failed_files:
-        # 診断ファイル無し（pass-filenames=Falseのツール等）→ 既定対象でフォールバック実行
         return ToolTargets.fallback_default()
 
-    # 対象側は利用者が渡した`..`を含む起点外の相対パスなどを保持し、診断側の`file`は
-    # `pyfltr.parsing.entry.parse_errors`が起点相対へ変換済みの表現を持つため、両側を同じ突合キーへ揃えて比較する。
-    # all_files_mapを基準に走査することでtarget側の並び順を保つ
-    # （failed_filesを直接反復するとセット由来の順序不定が混入する）。
     failed_keys = {pyfltr.paths.to_match_key(f, start_cwd=start_cwd) for f in failed_files}
     all_files_map = {pyfltr.paths.to_match_key(p, start_cwd=start_cwd): p for p in all_files}
     intersected = [path for key, path in all_files_map.items() if key in failed_keys]
     if not intersected:
-        # 交差空 → 除外扱い（Noneを返すことで呼び出し側がtargets dictから除く）
-        # 利用者が暗黙除外に気付けるようツール単位で理由を INFO ログへ出力する。
         pyfltr.warnings_.emit_warning(
             source="only-failed",
             message=f"{tool}: 直前 run の失敗ファイル {len(failed_files)} 件は指定 targets と交差しません。"
@@ -280,14 +210,8 @@ def _filter_commands_with_targets(
     commands: list[str],
     targets: dict[str, ToolTargets],
 ) -> list[str]:
-    """Targets dictに含まれるツールのみにcommandsを限定する（順序は保持）。"""
     return [cmd for cmd in commands if cmd in targets]
 
 
 def _emit_skip_warning(message: str, *, hint: str) -> None:
-    """`--only-failed`による全体スキップの理由と対処を警告として発行する。
-
-    JSONL出力ではtext_loggerのINFOが出力されないため、INFOだけではエージェントへ理由が届かない。
-    警告にすることでJSONLの`warning`レコード・テキスト表示・MCPの`skipped_reason`へ同じ理由を届ける。
-    """
     pyfltr.warnings_.emit_warning(source="only-failed", message=message, hint=hint)

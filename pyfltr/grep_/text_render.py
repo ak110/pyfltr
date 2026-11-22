@@ -1,10 +1,3 @@
-"""grep / replaceのtext形式人間向け出力。
-
-色付けは省略し、ripgrep流儀の`path:line:col:line_text`形式で1行ずつ出力する。
-出力先は`pyfltr.output.logging_.text_logger`（INFO以上をstdoutへ）に揃え、
-行間の混入を避けるため`text_output_lock`で保護する。
-"""
-
 from __future__ import annotations
 
 import pathlib
@@ -18,10 +11,6 @@ from pyfltr.grep_.types import MatchRecord, ReplaceRecord
 
 
 def render_match(record: MatchRecord, preview: MatchPreview) -> None:
-    """grepの1マッチを`path:line:col:line_text`形式で1行出力する。
-
-    `before`・`after`コンテキストは省略する（テキスト出力ではマッチ本体のみで十分）。
-    """
     path = pyfltr.paths.normalize_separators(str(record.file))
     preview_prefix = f"[+{preview.line_text_offset}] " if preview.line_text_truncated else ""
     line = f"{path}:{record.line}:{record.col}:{preview_prefix}{preview.line_text}"
@@ -35,10 +24,6 @@ def render_filtered_sections(
     missing_targets: list[str],
     fully_excluded_files: list[str],
 ) -> None:
-    """summary行の直前にwarnings・missing-targets・fully-excluded-filesの総覧を出力する。
-
-    run系（`pyfltr/output/render.py`）と同じ見出し・配置で、直接指定したファイルの除外・不在を通知する。
-    """
     with pyfltr.output.logging_.text_output_lock:
         if warnings:
             pyfltr.output.logging_.text_logger.info(f"{'-' * 10} warnings {'-' * (72 - 10 - 10)}")
@@ -62,14 +47,12 @@ def render_grep_summary(
     files_with_matches: int,
     files_scanned: int,
 ) -> None:
-    """grep完了時の集計行を出力する。"""
     summary = f"-- {total_matches} match(es) in {files_with_matches} file(s) (scanned {files_scanned} file(s))"
     with pyfltr.output.logging_.text_output_lock:
         pyfltr.output.logging_.text_logger.info(summary)
 
 
 def render_grep_guidance(commands: list[str]) -> None:
-    """grep完了時のガイダンス行（replace起動コマンド案内など）を出力する。"""
     if not commands:
         return
     with pyfltr.output.logging_.text_output_lock:
@@ -83,7 +66,6 @@ def render_file_change(
     count: int,
     dry_run: bool,
 ) -> None:
-    """1ファイル分の置換結果サマリ行を出力する。"""
     prefix = "(dry-run) " if dry_run else ""
     path = pyfltr.paths.normalize_separators(str(file))
     line = f"{prefix}M {path} ({count} replacement(s))"
@@ -92,10 +74,6 @@ def render_file_change(
 
 
 def render_change_diff(record: ReplaceRecord) -> None:
-    """`--show-changes`用の差分行を出力する。
-
-    `- {before_line}` / `+ {after_line}` の2行で構成し、利用者がbefore / afterを並列に確認できる。
-    """
     with pyfltr.output.logging_.text_output_lock:
         pyfltr.output.logging_.text_logger.info(f"- {record.before_line}")
         pyfltr.output.logging_.text_logger.info(f"+ {record.after_line}")
@@ -108,7 +86,6 @@ def render_replace_summary(
     dry_run: bool,
     replace_id: str | None,
 ) -> None:
-    """replace完了時の集計行を出力する。"""
     prefix = "(dry-run) " if dry_run else ""
     suffix = f" replace_id={replace_id}" if replace_id else ""
     line = f"-- {prefix}{total_replacements} replacement(s) in {files_changed} file(s){suffix}"
@@ -117,7 +94,6 @@ def render_replace_summary(
 
 
 def render_replace_guidance(commands: list[str]) -> None:
-    """replace完了時のガイダンス行（undoコマンド案内など）を出力する。"""
     if not commands:
         return
     with pyfltr.output.logging_.text_output_lock:
@@ -131,7 +107,6 @@ def render_undo_summary(
     restored: list[pathlib.Path],
     skipped: list[pathlib.Path],
 ) -> None:
-    """undo完了時の集計行を出力する。"""
     with pyfltr.output.logging_.text_output_lock:
         pyfltr.output.logging_.text_logger.info(
             f"-- undo replace_id={replace_id}: restored={len(restored)} skipped={len(skipped)}"

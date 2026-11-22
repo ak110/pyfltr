@@ -93,7 +93,6 @@ def test_replace_partial_write_recovers_or_keeps_undo_history(
 
     def _write(path: pathlib.Path, data: bytes) -> int:
         if path.resolve() in files and data == b"bar\r\n":
-            # 対象を初めて書く時点で、全対象のバックアップが読めることを保証する。
             entries = store.list_replaces()
             assert len(store.load_replace(entries[0]["replace_id"])["files"]) == 2
         if path.resolve() == files[1]:

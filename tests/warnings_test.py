@@ -7,7 +7,6 @@ import pyfltr.warnings_
 
 
 def test_emit_warning_accumulates() -> None:
-    """emit_warning の呼び出し順で内部リストに蓄積される。"""
     pyfltr.warnings_.emit_warning(source="config", message="foo", hint="対応不要です。")
     pyfltr.warnings_.emit_warning(source="git", message="bar", hint="対応不要です。")
     entries = pyfltr.warnings_.collected_warnings()
@@ -18,7 +17,6 @@ def test_emit_warning_accumulates() -> None:
 
 
 def test_collected_warnings_returns_copy() -> None:
-    """collected_warnings は呼び出し側の操作で内部状態が汚れないコピーを返す。"""
     pyfltr.warnings_.emit_warning(source="config", message="foo", hint="対応不要です。")
     entries = pyfltr.warnings_.collected_warnings()
     entries.clear()
@@ -26,21 +24,18 @@ def test_collected_warnings_returns_copy() -> None:
 
 
 def test_clear_resets_state() -> None:
-    """clear を呼ぶと蓄積が空になる。"""
     pyfltr.warnings_.emit_warning(source="config", message="foo", hint="対応不要です。")
     pyfltr.warnings_.clear()
     assert not pyfltr.warnings_.collected_warnings()
 
 
 def test_emit_warning_logs_via_logger(caplog: pytest.LogCaptureFixture) -> None:
-    """emit_warning は logger.warning 経由で stderr にも出力する。"""
     with caplog.at_level(logging.WARNING, logger="pyfltr.warnings_"):
         pyfltr.warnings_.emit_warning(source="config", message="please fix", hint="対応不要です。")
     assert any("please fix" in record.message for record in caplog.records)
 
 
 def test_defer_stderr_suppresses_delivered_warning(caplog: pytest.LogCaptureFixture) -> None:
-    """JSONLへ配送済みとした警告はstderrへ重複通知しない。"""
     with caplog.at_level(logging.WARNING, logger="pyfltr.warnings_"), pyfltr.warnings_.defer_stderr():
         pyfltr.warnings_.emit_warning(source="config", message="delivered", hint="対応不要です。")
         pyfltr.warnings_.mark_delivered(pyfltr.warnings_.collected_warnings())
@@ -49,7 +44,6 @@ def test_defer_stderr_suppresses_delivered_warning(caplog: pytest.LogCaptureFixt
 
 
 def test_defer_stderr_flushes_undelivered_warning(caplog: pytest.LogCaptureFixture) -> None:
-    """JSONLへ配送できなかった警告はスコープ終了時にstderrへ通知する。"""
     with caplog.at_level(logging.WARNING, logger="pyfltr.warnings_"), pyfltr.warnings_.defer_stderr():
         pyfltr.warnings_.emit_warning(source="config", message="not delivered", hint="対応不要です。")
 
@@ -58,7 +52,6 @@ def test_defer_stderr_flushes_undelivered_warning(caplog: pytest.LogCaptureFixtu
 
 
 def test_defer_stderr_nested_scope_flushes_once(caplog: pytest.LogCaptureFixture) -> None:
-    """入れ子の配送スコープは最外終了時に未配送警告を1回だけ通知する。"""
     with (
         caplog.at_level(logging.WARNING, logger="pyfltr.warnings_"),
         pyfltr.warnings_.defer_stderr(),
@@ -71,7 +64,6 @@ def test_defer_stderr_nested_scope_flushes_once(caplog: pytest.LogCaptureFixture
 
 
 def test_defer_stderr_restores_after_exception(caplog: pytest.LogCaptureFixture) -> None:
-    """例外終了でも未配送警告を通知し、後続の即時通知状態を復元する。"""
     with caplog.at_level(logging.WARNING, logger="pyfltr.warnings_"):
         with pytest.raises(RuntimeError, match="stop"), pyfltr.warnings_.defer_stderr():
             pyfltr.warnings_.emit_warning(source="config", message="before stop", hint="対応不要です。")
@@ -83,7 +75,6 @@ def test_defer_stderr_restores_after_exception(caplog: pytest.LogCaptureFixture)
 
 
 def test_emit_warning_with_exc_info_captures_traceback() -> None:
-    """exc_info=True でスタックトレースが message 末尾に連結される。"""
     try:
         raise ValueError("boom")
     except ValueError:
@@ -96,14 +87,12 @@ def test_emit_warning_with_exc_info_captures_traceback() -> None:
 
 
 def test_emit_warning_with_hint_included() -> None:
-    """hint指定時は蓄積 dict に hint キーが含まれる。"""
     pyfltr.warnings_.emit_warning(source="config", message="foo", hint="fooを bar に直す")
     entries = pyfltr.warnings_.collected_warnings()
     assert entries == [{"source": "config", "message": "foo", "hint": "fooを bar に直す"}]
 
 
 def test_suppress_duplicates_is_scoped() -> None:
-    """重複抑止はスコープ内の同一組だけに適用し、異なる組とスコープ外の重複を保持する。"""
     pyfltr.warnings_.emit_warning(source="config", message="same", hint="対応不要です。")
     pyfltr.warnings_.emit_warning(source="config", message="same", hint="対応不要です。")
     assert len(pyfltr.warnings_.collected_warnings()) == 2
@@ -133,7 +122,6 @@ def test_suppress_duplicates_is_scoped() -> None:
 
 
 def test_suppress_duplicates_nested_scope_shares_outer_state() -> None:
-    """内側スコープは外側の既出組を共有し、外側の重複抑止契約を壊さない。"""
     pyfltr.warnings_.clear()
     with pyfltr.warnings_.suppress_duplicates():
         pyfltr.warnings_.emit_warning(source="config", message="same", hint="対応不要です。")
@@ -145,7 +133,6 @@ def test_suppress_duplicates_nested_scope_shares_outer_state() -> None:
 
 
 def test_suppress_duplicates_restores_state_after_exception() -> None:
-    """スコープ内の例外後は抑止状態を復元し、後続の同一警告を保持する。"""
     with pytest.raises(RuntimeError, match="stop"), pyfltr.warnings_.suppress_duplicates():
         pyfltr.warnings_.emit_warning(source="config", message="same", hint="対応不要です。")
         raise RuntimeError("stop")
@@ -155,7 +142,6 @@ def test_suppress_duplicates_restores_state_after_exception() -> None:
 
 
 def test_filtered_direct_files_accumulates_with_reason() -> None:
-    """add_filtered_direct_file はreason別に蓄積し、reasonフィルタ・全件取得の双方が正しく返る。"""
     pyfltr.warnings_.add_filtered_direct_file("docs/a.md", reason="excluded")
     pyfltr.warnings_.add_filtered_direct_file("missing/x.py", reason="missing")
     pyfltr.warnings_.add_filtered_direct_file("src/b.py", reason="excluded")
@@ -165,7 +151,6 @@ def test_filtered_direct_files_accumulates_with_reason() -> None:
 
 
 def test_clear_also_resets_filtered_direct_files() -> None:
-    """clear は直接指定フィルタ対象ファイルの記録もreasonを問わずリセットする。"""
     pyfltr.warnings_.add_filtered_direct_file("a.md", reason="excluded")
     pyfltr.warnings_.add_filtered_direct_file("b.py", reason="missing")
     pyfltr.warnings_.clear()
@@ -175,7 +160,6 @@ def test_clear_also_resets_filtered_direct_files() -> None:
 
 
 def test_emit_warning_requires_hint() -> None:
-    """次の操作を欠く警告は登録時に拒否される。"""
     emit = typing.cast(typing.Callable[..., None], pyfltr.warnings_.emit_warning)
     with pytest.raises(TypeError, match="hint"):
         emit(source="config", message="対処が必要")  # pylint: disable=missing-kwoa  # 必須引数省略の実行時拒否を検証する。
@@ -184,7 +168,6 @@ def test_emit_warning_requires_hint() -> None:
 
 @pytest.mark.parametrize("hint", ["", " ", "\t\n"])
 def test_emit_warning_rejects_blank_hint(hint: str) -> None:
-    """空文字列と空白だけの対処は登録時に拒否される。"""
     with pytest.raises(ValueError, match="hint"):
         pyfltr.warnings_.emit_warning(source="config", message="対処が必要", hint=hint)
     assert not pyfltr.warnings_.collected_warnings()

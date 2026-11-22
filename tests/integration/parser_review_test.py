@@ -1,5 +1,3 @@
-"""エラーパーサーの網羅レビュー用スクリプト（`scripts/parser_review`）の採取・比較・停止を検証する。"""
-
 import json
 import os
 import pathlib
@@ -20,7 +18,6 @@ from scripts.parser_review import collect, compare, process_tree, pytest_forms, 
 PROJECT_ROOT = pathlib.Path(__file__).parents[2]
 
 # 新しいセッション（Windowsでは新しいプロセスグループ）で孫を起動し、孫のpidを出力して待機する子プロセス。
-# pyfltrがツールを別セッションで起動する構成を模す。
 _SPAWNER = textwrap.dedent(
     """
     import os
@@ -70,17 +67,10 @@ def _run_spawner(tmp_path: pathlib.Path, mode: str, **kwargs) -> process_tree.Tr
     )
 
 
-# 追跡側が孫を子孫として登録するまで待つ上限秒数。試験の時間上限（120秒）より十分短くする。
 _REGISTRATION_WAIT = 30.0
 
 
 class _RegistrationWatch:
-    """追跡側（`process_tree._Tracker`）が子孫として登録したpidを試験へ通知する。
-
-    `run_tracked`は呼び出しのたびに`process_tree._Tracker`を名前解決して生成するため、
-    登録時に通知する派生クラスへ差し替えれば、公開引数を増やさずに登録の時点を観測できる。
-    """
-
     def __init__(self) -> None:
         self._registered: set[int] = set()
         self._condition = threading.Condition()
@@ -98,7 +88,6 @@ class _RegistrationWatch:
         return _NotifyingTracker
 
     def wait_registered(self, pid: int, timeout: float) -> bool:
-        """`pid`の登録を最大`timeout`秒待ち、登録を観測できたかを返す。"""
         with self._condition:
             return self._condition.wait_for(lambda: pid in self._registered, timeout=timeout)
 
@@ -111,7 +100,6 @@ def _registration_watch(monkeypatch: pytest.MonkeyPatch) -> _RegistrationWatch:
 
 
 def _wait_grandchild_pid(path: pathlib.Path, timeout: float) -> int | None:
-    """孫のpidの出力を最大`timeout`秒待って返す。出力されなければNoneを返す。"""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if path.exists():
@@ -123,11 +111,6 @@ def _wait_grandchild_pid(path: pathlib.Path, timeout: float) -> int | None:
 
 
 def _after_grandchild_registered(path: pathlib.Path, watch: _RegistrationWatch, action: typing.Callable[[], None]) -> list[str]:
-    """孫のpidが出力され、追跡側が孫を登録したことを観測してから`action`を呼ぶ。
-
-    観測できない場合も、試験の実行を終端へ進めるため`action`を呼び、理由を返り値のリストへ記録する。
-    試験は実行後にこのリストが空であることを確かめる。
-    """
     failures: list[str] = []
 
     def _watch() -> None:
@@ -143,14 +126,6 @@ def _after_grandchild_registered(path: pathlib.Path, watch: _RegistrationWatch, 
 
 
 class _ClockHeldUntilRegistered:
-    """孫の登録を観測するまで進まない`process_tree`用の時計。
-
-    `run_tracked`は時間上限の計時を`time.monotonic()`で行う。登録を観測するまで同じ値を返し、
-    観測後は観測時点からの経過だけを進めることで、孫の起動・出力・登録が負荷で遅れても
-    登録より前に時間上限へ達しない。登録を上限内に観測できない場合は時計を進め、
-    実行を終わらせたうえで理由を`failures`へ記録する。
-    """
-
     def __init__(self, path: pathlib.Path, watch: _RegistrationWatch) -> None:
         self._held_at = time.monotonic()
         self._offset: float | None = None
@@ -178,10 +153,6 @@ class _ClockHeldUntilRegistered:
 def test_timeout_stops_descendants_and_keeps_partial_output(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, registration_watch: _RegistrationWatch
 ) -> None:
-    """時間上限で停止した実行は別セッションの孫まで終端させ、途中出力と停止の記録を残す。
-
-    時間上限の計時は追跡側が孫を登録した時点から進める（`_ClockHeldUntilRegistered`）。
-    """
     clock = _ClockHeldUntilRegistered(tmp_path / "out.txt", registration_watch)
     monkeypatch.setattr(process_tree, "time", clock)
     result = _run_spawner(tmp_path, "wait", timeout=5)
@@ -198,7 +169,6 @@ def test_timeout_stops_descendants_and_keeps_partial_output(
 @pytest.mark.timeout(120)
 @pytest.mark.usefixtures("_disable_faulthandler_timeout")
 def test_interrupt_stops_descendants(tmp_path: pathlib.Path, registration_watch: _RegistrationWatch) -> None:
-    """中断要求で停止した実行は孫まで終端させ、中断として記録する。"""
     stop_event = threading.Event()
     failures = _after_grandchild_registered(tmp_path / "out.txt", registration_watch, stop_event.set)
     result = _run_spawner(tmp_path, "wait", timeout=90, stop_event=stop_event)
@@ -214,7 +184,6 @@ def test_interrupt_stops_descendants(tmp_path: pathlib.Path, registration_watch:
 @pytest.mark.timeout(120)
 @pytest.mark.usefixtures("_disable_faulthandler_timeout")
 def test_leftover_descendant_after_exit_is_stopped(tmp_path: pathlib.Path, registration_watch: _RegistrationWatch) -> None:
-    """親が自然終了した後に残った孫も停止し、停止したことを記録する。"""
     failures = _after_grandchild_registered(tmp_path / "out.txt", registration_watch, (tmp_path / "release").touch)
     result = _run_spawner(tmp_path, "release", timeout=90)
 
@@ -227,7 +196,6 @@ def test_leftover_descendant_after_exit_is_stopped(tmp_path: pathlib.Path, regis
 
 
 def test_every_builtin_command_has_sample() -> None:
-    """全`BUILTIN_COMMANDS`にサンプル定義があり、未知のツール名は採取前に拒否する。"""
     assert samples.missing_samples() == []
     assert [sample.tool for sample in samples.select_samples(None)] == list(pyfltr.tools.BUILTIN_COMMANDS)
     with pytest.raises(ValueError, match="未知のツール名"):
@@ -236,7 +204,6 @@ def test_every_builtin_command_has_sample() -> None:
 
 @pytest.fixture(name="isolated_archive", autouse=True)
 def _isolated_archive(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """採取が起動するpyfltrの実行アーカイブを利用者のキャッシュから分ける。"""
     monkeypatch.setenv("PYFLTR_CACHE_DIR", str(tmp_path / "pyfltr-cache"))
 
 
@@ -247,7 +214,6 @@ def _collector(tmp_path: pathlib.Path, *, timeout: float = 300.0) -> collect.Col
 @pytest.mark.timeout(300)
 @pytest.mark.usefixtures("_disable_faulthandler_timeout")
 def test_collect_and_compare_selected_tools(tmp_path: pathlib.Path) -> None:
-    """採取は生出力・診断・コマンドラインと状態を残し、比較は両版の診断全件と差分を出力する。"""
     selected = samples.select_samples(["ruff-format", "ruff-check"])
     collector = _collector(tmp_path)
     records = collect.collect(collector, selected)
@@ -268,7 +234,6 @@ def test_collect_and_compare_selected_tools(tmp_path: pathlib.Path) -> None:
     ]
     assert [item["id"] for item in inputs] == ["ruff-check"]
 
-    # 公開された呼び出し手段で比較する。
     report_path = tmp_path / "compare.json"
     completed = subprocess.run(
         [
@@ -301,7 +266,6 @@ def test_collect_and_compare_selected_tools(tmp_path: pathlib.Path) -> None:
 @pytest.mark.timeout(120)
 @pytest.mark.usefixtures("_disable_faulthandler_timeout")
 def test_collect_timeout_is_not_counted_as_success(tmp_path: pathlib.Path) -> None:
-    """時間上限で止まった採取は未採取となり、比較の入力へ含めない。"""
     collector = _collector(tmp_path, timeout=0.01)
     records = collect.collect(collector, samples.select_samples(["ruff-check"]))
     collect.write_results(collector.output_dir, records, incomplete=collector.incomplete)
@@ -317,9 +281,6 @@ def test_collect_timeout_is_not_counted_as_success(tmp_path: pathlib.Path) -> No
 @pytest.mark.timeout(120)
 @pytest.mark.usefixtures("_disable_faulthandler_timeout")
 def test_collect_total_timeout_marks_incomplete(tmp_path: pathlib.Path) -> None:
-    """採取全体の時間上限で打ち切られた実行は、最後の1件でも採取全体を不完全とし終了コード1につながる。"""
-    # 全体の上限はpyfltrの起動（Pythonインタープリターの起動を含む）より十分短くし、
-    # 起動の高速化で実行が上限内に完了して前提が崩れることを避ける。
     collector = collect.Collector(output_dir=tmp_path / "collected", timeout=300.0, total_timeout=0.05)
     records = collect.collect(collector, samples.select_samples(["ruff-check"]))
 
@@ -330,7 +291,6 @@ def test_collect_total_timeout_marks_incomplete(tmp_path: pathlib.Path) -> None:
 
 
 def test_collect_interrupt_marks_remaining_samples(tmp_path: pathlib.Path) -> None:
-    """中断要求の後のサンプルは実行せず未採取として記録し、採取全体を不完全とする。"""
     collector = _collector(tmp_path)
     collector.stop_event.set()
     records = collect.collect(collector, samples.select_samples(["ruff-check", "mypy"]))
@@ -339,7 +299,6 @@ def test_collect_interrupt_marks_remaining_samples(tmp_path: pathlib.Path) -> No
     assert collector.incomplete
 
 
-# 試験の保存先（`PYFLTR_CACHE_DIR`は`tests/conftest.py`が試験ごとに分ける）で実行枠を保持し、標準入力が閉じるまで待つ。
 _SLOT_HOLDER = """import sys
 
 import pyfltr.command.execution_slot
@@ -355,10 +314,6 @@ with pyfltr.command.execution_slot.hold(label="other-check"):
 def test_collect_waits_for_execution_slot_once(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """別の検証が実行枠を保持している間、採取は待機を表示して待ち、解放後に採取し、時間の上限を取得後から数える。
-
-    サンプルごとに実行枠を取り直す実装では、待ちが採取1件の時間上限に数えられ未採取になる。
-    """
     monkeypatch.setenv(pyfltr.command.execution_slot.SLOTS_ENV, "1")
     script = tmp_path / "slot_holder.py"
     script.write_text(_SLOT_HOLDER, encoding="utf-8")
@@ -376,7 +331,6 @@ def test_collect_waits_for_execution_slot_once(
         while "実行枠が空くのを待っています" not in stderr and time.monotonic() < deadline:
             time.sleep(0.1)
             stderr += capsys.readouterr().err
-        # 保持者はPIDで示し、labelの全文は表示せず保持者記録の参照先を示す。
         # Windowsのvenvではsys.executableが起動ランチャーで、Popenのpidは実際の保持者と異なるため値は比べない。
         assert "保持者: pid=" in stderr
         assert "other-check" not in stderr
@@ -394,7 +348,6 @@ def test_collect_waits_for_execution_slot_once(
 
 
 def test_compare_uses_each_input_start_cwd(tmp_path: pathlib.Path) -> None:
-    """各入力の起点cwdで基準版と現行版を解析し、絶対パスのフレーム選択を揃える。"""
     rows = []
     for name in ("first", "second"):
         cwd = tmp_path / name
@@ -418,10 +371,6 @@ def test_compare_uses_each_input_start_cwd(tmp_path: pathlib.Path) -> None:
 
 
 def test_compare_reports_summary_and_collected_count_mismatch(tmp_path: pathlib.Path) -> None:
-    """要約行を両版の追加の値として比べ、採取時と診断の件数が異なる入力を`equal`にしない。
-
-    採取時の件数と照合しない比較では、実行時と異なる入力の解析が0件どうしの一致として通る。
-    """
     output = tmp_path / "output.log"
     output.write_text("===== 1 passed in 0.01s =====\n", encoding="utf-8")
     rows = [
@@ -437,8 +386,6 @@ def test_compare_reports_summary_and_collected_count_mismatch(tmp_path: pathlib.
     assert by_id["mismatched"]["result"] == "count_mismatch"
     mismatch = by_id["mismatched"]["count_mismatch"]
     assert (mismatch["collected"], mismatch["base"], mismatch["current"]) == (1, 0, 0)
-    # 基準版0・採取時1・現行0は、採取後の解析の退行でも生じる。
-    # 入力の不一致と断定せず、両方の原因を調べる案内を返す。
     assert "件数だけでは原因を確定できない" in mismatch["hint"]
     assert "比較の入力" in mismatch["hint"]
     assert "退行" in mismatch["hint"]
@@ -448,7 +395,6 @@ def test_compare_reports_summary_and_collected_count_mismatch(tmp_path: pathlib.
 
 
 def test_diff_diagnostics_compares_all_fields() -> None:
-    """全フィールドを比較し、片側だけの診断と順序だけの差を区別する。"""
     first = {"file": "a.py", "line": 1, "message": "m", "end_line": None}
     second = {"file": "a.py", "line": 2, "message": "m", "end_line": None}
     changed = dict(first, end_line=3)
@@ -462,7 +408,6 @@ def test_diff_diagnostics_compares_all_fields() -> None:
 
 
 def test_pytest_forms_cover_reviewer_definition() -> None:
-    """形態1〜22と、レビュー担当定義が求める派生を全て生成対象に持つ。"""
     forms = pytest_forms.FORMS
     assert {form.number for form in forms} == set(range(1, 23))
     ids = {form.id for form in forms}
@@ -476,7 +421,6 @@ def test_pytest_forms_cover_reviewer_definition() -> None:
         if form.derivation is not None:
             assert set(form.derivation.sources) <= ids
     tb_auto = [form for form in forms if form.sample and form.sample.settings.get("pytest-tb-line") is False]
-    # `--tb=no`の形態（13・22）も、pyfltrの`--tb=short`への置き換えを避けるため`pytest-tb-line`を無効にする。
     assert {form.number for form in tb_auto} == {8, 11, 13, 16, 17, 19, 20, 21, 22}
     assert sum(form.number == 19 for form in forms) == 4
     assert sum(form.number == 20 for form in forms) == 5
@@ -486,7 +430,6 @@ def test_pytest_forms_cover_reviewer_definition() -> None:
 @pytest.mark.timeout(300)
 @pytest.mark.usefixtures("_disable_faulthandler_timeout")
 def test_pytest_forms_generate_real_and_derived_inputs(tmp_path: pathlib.Path) -> None:
-    """実出力の形態と派生入力を生成し、派生入力は派生元と変換内容を持つ。"""
     forms = pytest_forms.select_forms(["pytest-12-truncated-with-summary-list"])
     assert [form.id for form in forms] == ["pytest-02-class-based", "pytest-12-truncated-with-summary-list"]
     collector = _collector(tmp_path)
@@ -510,7 +453,6 @@ def test_pytest_forms_generate_real_and_derived_inputs(tmp_path: pathlib.Path) -
 
 
 def test_cli_rejects_unknown_tool() -> None:
-    """未知のツール名を指定した採取は何も実行せず終了コード2で終わる。"""
     completed = subprocess.run(
         [sys.executable, "-m", "scripts.parser_review", "collect", "--tools", "no-such-tool", "--output", os.devnull],
         cwd=PROJECT_ROOT,

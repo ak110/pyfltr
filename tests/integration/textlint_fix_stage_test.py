@@ -1,10 +1,3 @@
-"""textlintのfix段と通常の段の組合せを、公開入口の`pyfltr run`から観測する結合試験。
-
-fail-fastでない実行はfix段の修正後の検査（Step2）を省き、fix段の失敗を通常の段の結果へ統合する。
-修正と検査の結果の組合せごとに、最終の成否・終了コード・診断と、textlintの起動回数を確かめる。
-外部ツールの実行ファイルだけを、`mode.json`の指定どおりに振る舞うPythonのスタブへ差し替える。
-"""
-
 import json
 import pathlib
 import subprocess
@@ -12,9 +5,6 @@ import sys
 
 import pytest
 
-# `--fix`付きの起動を修正、それ以外を検査として扱う。起動ごとに引数を`argv.jsonl`へ記録する。
-# 修正: `fix_rc`で終了し、`fix_changes`が真なら文書を書き換える。
-# 検査: `lint_violation`が真なら違反1件をJSONで出力して終了1、偽なら空の結果で終了0とする。
 _TEXTLINT_SCRIPT = (
     "import json, pathlib, sys; "
     "mode = json.loads(pathlib.Path('mode.json').read_text(encoding='utf-8')); "
@@ -82,20 +72,14 @@ textlint-args = {json.dumps(["-c", _TEXTLINT_SCRIPT])}
 @pytest.mark.parametrize(
     "mode,status,diagnostics",
     [
-        # 修正が非0で通常の検査が違反なし: 修正処理の失敗としてfailedを保つ。
         ({"fix_rc": 1, "fix_changes": False, "lint_violation": False}, "failed", 0),
-        # 修正が非0で通常の検査に違反あり: 通常の段の違反を診断とする。
         ({"fix_rc": 1, "fix_changes": False, "lint_violation": True}, "failed", 1),
-        # 修正が0で内容に変化あり: 修正後の通常の段が違反なしならsucceeded。
         ({"fix_rc": 0, "fix_changes": True, "lint_violation": False}, "succeeded", 0),
-        # 修正が0で変化なし。
         ({"fix_rc": 0, "fix_changes": False, "lint_violation": False}, "succeeded", 0),
-        # 修正が致命的な終了コード。
         ({"fix_rc": 2, "fix_changes": False, "lint_violation": False}, "failed", 0),
     ],
 )
 def test_fix_stage_combination_without_fail_fast(tmp_path: pathlib.Path, mode: dict, status: str, diagnostics: int) -> None:
-    """fail-fastでない実行は、修正1回と通常の段の検査1回だけを起動し、組合せごとの成否を保つ。"""
     result, calls = _run(tmp_path, mode)
     assert result["status"] == status
     assert result["exit"] == (1 if status == "failed" else 0)
@@ -104,7 +88,6 @@ def test_fix_stage_combination_without_fail_fast(tmp_path: pathlib.Path, mode: d
 
 
 def test_fix_failure_with_fail_fast_reports_residual_violation(tmp_path: pathlib.Path) -> None:
-    """fail-fastで修正が非0の場合は通常の段へ進まないため、fix段の中で検査して残存違反を報告する。"""
     result, calls = _run(tmp_path, {"fix_rc": 1, "fix_changes": False, "lint_violation": True}, "--fail-fast")
     assert result["status"] == "failed"
     assert result["exit"] == 1

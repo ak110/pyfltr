@@ -1,12 +1,3 @@
-"""SARIF 2.1.0 形式の出力生成。
-
-`--output-format=sarif`で呼ばれ、CommandResult群をSARIF 2.1.0スキーマに沿った
-dictに変換する。1つのrunオブジェクトあたり1ツールを対応付け、`rules`に
-重複なしで対象のツールが検出したルールを列挙する。`results`配列にdiagnosticを
-配置し、`level`をpyfltrのseverity 3値からSARIFの3値（`error` / `warning`
-/ `note`）に変換する。
-"""
-
 import importlib.metadata
 import typing
 
@@ -37,13 +28,6 @@ def build_sarif(
     files: int | None = None,
     run_id: str | None = None,
 ) -> dict[str, typing.Any]:
-    """SARIF 2.1.0 互換の dict を生成する。
-
-    SARIF側は`executionSuccessful`を使ってexit_codeを反映する（exit_code == 0なら
-    True、それ以外はFalse）。`retry_command`は各runの`invocations[].commandLine`に
-    添付する。`commands` / `files` / `run_id`は`pyfltr`プロパティとして
-    保存し、SARIF消費側が参考情報として利用できるようにする。
-    """
     ordered = sorted(results, key=lambda r: pyfltr.tools.command_index(config.command_names, r.command))
 
     sarif_runs: list[dict[str, typing.Any]] = []
@@ -67,8 +51,6 @@ def build_sarif(
 
 
 def _build_run(result: pyfltr.command.core_.CommandResult) -> dict[str, typing.Any]:
-    """1 ツール分の run オブジェクトを組み立てる。"""
-    # rulesリスト（ruleIdの重複を除去したうえで登録順を維持）。
     rule_index: dict[str, int] = {}
     rules: list[dict[str, typing.Any]] = []
     for error in result.errors:
@@ -104,11 +86,6 @@ def _build_result_record(
     error: pyfltr.diagnostics.ErrorLocation,
     rule_index: dict[str, int],
 ) -> dict[str, typing.Any]:
-    """1 diagnostic 分の SARIF result を生成する。
-
-    SARIFの列は1起点で、終了列は終端排他として扱う。列の出力可否は
-    `pyfltr.output.positions.is_publishable_column`が判定する。
-    """
     region: dict[str, typing.Any] = {"startLine": error.line}
     if pyfltr.output.positions.is_publishable_column(error, error.col):
         region["startColumn"] = error.col

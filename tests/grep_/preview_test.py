@@ -14,7 +14,6 @@ def _record(
     before_lines: list[str] | None = None,
     after_lines: list[str] | None = None,
 ) -> MatchRecord:
-    """本文プレビューのテストに渡す`MatchRecord`を返す。"""
     return MatchRecord(
         file=pathlib.Path("sample.txt"),
         line=1,

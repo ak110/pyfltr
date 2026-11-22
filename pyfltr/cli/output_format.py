@@ -1,23 +1,3 @@
-"""出力形式の解決とログ設定。
-
-`resolve_output_format`（優先順位付き出力形式決定）と、
-`text_logger` / `structured_logger`の設定切り替えを担う。
-
-pyfltrは3系統のloggerを役割分担する。
-
-- root（system logger）: 常にstderr。抑止しない（設定エラー・アーカイブ初期化失敗等を送出する）
-- `pyfltr.textout`: 人間向けテキスト出力。`configure_text_output`で出力先を切り替える
-- `pyfltr.structured`: JSONL / SARIF / Code Quality等の構造化出力。
-  `configure_structured_output`で出力先を切り替える
-
-stdout占有は出力形式が`jsonl` / `sarif` / `code-quality`かつ`--output-file`未指定時のみ発生する。
-その場合は`text_logger`の出力先をstderrへ切り替える運用とする。
-
-モノレポモードのサブプロジェクト分割実行では、各サブプロジェクトに対する個別ツール起動が
-パイプラインの内側で繰り返される。loggerはプロセスごとに1度だけ設定する設計で、サブ
-プロジェクト切替の都度`configure_loggers`を呼び直さない（出力先の二重設定を避ける）。
-"""
-
 import collections.abc
 import dataclasses
 import logging
@@ -46,25 +26,11 @@ FORMAT_SOURCE_FALLBACK = "fallback"
 
 @dataclasses.dataclass(frozen=True)
 class OutputFormatResolution:
-    """`resolve_output_format`の戻り値。決定値と由来ラベルの2要素で構成する。
-
-    `source`はJSONL `header.format_source`へ解決経路を露出する目的で保持する。
-    """
-
     format: str
     source: str
 
 
 def detect_agent_indicator() -> str | None:
-    """エージェント実行を示す環境変数を検出し、検出した変数名を返す。
-
-    `AGENT_INDICATOR_ENVS`を先頭から走査し、最初に非空値（空文字列でない値）が
-    設定された変数名を返す。値の中身は問わない。該当が無ければ`None`を返す。
-
-    出力形式の既定値解決（`resolve_output_format`）と`--quiet`の既定値解決
-    （`pyfltr.cli.command_selection.apply_subcommand_defaults`）の双方が本関数を参照する。
-    エージェント検出判定のSSOTは本関数とする。
-    """
     for env_name in AGENT_INDICATOR_ENVS:
         indicator_value = os.environ.get(env_name)
         if indicator_value is not None and indicator_value != "":
@@ -81,31 +47,6 @@ def resolve_output_format(
     ai_agent_default: str | None = None,
     final_default: str = "text",
 ) -> OutputFormatResolution:
-    """出力形式を共通の優先順位で決定する。
-
-    優先順位は「CLI > `PYFLTR_OUTPUT_FORMAT` > サブコマンド既定値 > エージェント検出変数 > 最終既定値」。
-    CLI明示値（`cli_value`）と`PYFLTR_OUTPUT_FORMAT`は利用者が意識的に指定した値とみなし、
-    サブコマンド既定値・エージェント検出より優先する。これによりエージェント環境下や
-    `run-for-agent`配下でも`PYFLTR_OUTPUT_FORMAT=text`で元の形式に戻すことができる。
-
-    エージェント検出は`detect_agent_indicator`へ委譲する。
-    検出できた場合は`format_source`を`env.<検出変数名>`の形で返す。
-
-    Args:
-        parser: 環境変数バリデーションエラー時の`parser.error`呼び出しに使う。
-        cli_value: CLIで明示された`--output-format`の値。未指定時は`None`。
-        valid_values: サブコマンドが受理する出力形式集合。`PYFLTR_OUTPUT_FORMAT`の値検証と、
-            サブコマンド既定値・エージェント検出時既定値の採否判定に使う。
-        subcommand_default: サブコマンド固有の既定値（例: `run-for-agent`では`"jsonl"`）。
-            `valid_values`に含まれない場合は無視する。`None`の場合は次段階へ進む。
-        ai_agent_default: エージェント検出時に採用する既定値。実行系・参照系では`"jsonl"`、
-            `command-info`では`"json"`を渡す。`None`または`valid_values`に含まれない場合は
-            エージェント検出を無視する。
-        final_default: いずれの解決経路にも該当しない場合の最終既定値。
-
-    Returns:
-        解決済みの出力形式と由来ラベルを保持する`OutputFormatResolution`。
-    """
     if cli_value is not None:
         return OutputFormatResolution(format=cli_value, source=FORMAT_SOURCE_CLI)
     env_value = os.environ.get(OUTPUT_FORMAT_ENV)

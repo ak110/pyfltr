@@ -61,7 +61,6 @@ def _language(path: pathlib.Path) -> str | None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """明示されたテストファイルを静的に検査する。"""
     for stream in (sys.stdout, sys.stderr):
         if isinstance(stream, io.TextIOWrapper):
             stream.reconfigure(encoding="utf-8", errors="replace")

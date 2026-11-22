@@ -1,43 +1,26 @@
-"""プリセット定義。"""
-
-# 全プリセットで共通の推奨ツール（Python核 + JavaScript / TypeScript + Rust + .NET）を
-# 集約する。preset = "latest" + `{language} = true`だけで対象の言語の推奨ツール一式が
-# gateを通過して有効化される運用を実現するため、歴史的presetも含めて全バージョンに
-# 同じ言語別推奨ツールを収録する。
-# カテゴリキー（`python` / `javascript` / `rust` / `dotnet`）がgateとして働き、
-# false（既定）の場合は該当ツールを最終的にFalseへ上書きする。
-# `ty`は本体がまだpreset収録レベルに達していないため除外し、利用側で個別に
-# `ty = true`を指定する運用を維持する。
 _PRESET_BASE: dict[str, bool] = {
-    # Python 核
     "ruff-format": True,
     "ruff-check": True,
     "mypy": True,
     "pylint": True,
     "arid": True,
     "pytest": True,
-    # JavaScript / TypeScript
     "eslint": True,
     "biome": True,
     "oxlint": True,
     "prettier": True,
     "tsc": True,
     "vitest": True,
-    # Rust
     "cargo-fmt": True,
     "cargo-clippy": True,
     "cargo-check": True,
     "cargo-test": True,
     "cargo-deny": True,
-    # .NET
     "dotnet-format": True,
     "dotnet-build": True,
     "dotnet-test": True,
 }
 
-# プリセット定義。各presetは`_PRESET_BASE`を基点に、日付時点で追加された
-# Python / ドキュメント系の推奨ツールを差分として加えた全量スナップショット。
-# `20250710`はv3.0.0で削除した（削除5ツール分の設定しか持たなかったため）。
 _PRESETS: dict[str, dict[str, bool]] = {
     "20260330": {**_PRESET_BASE, "pyright": True, "textlint": True, "markdownlint": True},
     "20260411": {
@@ -83,8 +66,6 @@ _PRESETS: dict[str, dict[str, bool]] = {
 }
 _PRESETS["latest"] = _PRESETS["20260926"]
 
-# v3.0.0で削除されたプリセット名と、移行先を示すメッセージの対応表。
-# `load_config`が該当プリセット指定を検知したら案内付きの警告を発行し、presetを適用せずに続行する。
 _REMOVED_PRESETS: dict[str, str] = {
     "20250710": (
         'preset "20250710" は v3.0.0 で削除された。'
@@ -96,16 +77,13 @@ _REMOVED_PRESETS: dict[str, str] = {
 
 
 def get_preset(name: str) -> dict[str, bool] | None:
-    """定義を変更できないよう、プリセットの複製を返す。"""
     preset = _PRESETS.get(name)
     return dict(preset) if preset is not None else None
 
 
 def preset_names() -> tuple[str, ...]:
-    """登録順にプリセット名を返す。"""
     return tuple(_PRESETS)
 
 
 def get_removed_preset_message(name: str) -> str | None:
-    """廃止したプリセットの移行案内を返す。"""
     return _REMOVED_PRESETS.get(name)

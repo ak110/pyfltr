@@ -1,15 +1,3 @@
-"""エラーパーサーの網羅レビューと互換性確認で使う採取・比較の開発用コマンド。
-
-リポジトリルートから`uv run python -m scripts.parser_review <サブコマンド>`で起動する。
-
-- `collect`: 対応ツールのサンプルをpyfltr経由で実行し、生出力・診断・コマンドラインと採取状態を記録する
-- `pytest-forms`: pytest出力の解析レビューで確認する形態と派生を採取・生成する
-- `compare`: 採取した解析入力を基準commitと作業ツリーの解析処理で解析し、診断全件と要約行などの値を比較する
-
-採取の終了コードは、中断・全体の時間上限・停止失敗のいずれかが起きた場合に1となる。
-ツール未導入などで未採取になったツールは集計の`not_collected`へ理由とともに記録し、終了コードには反映しない。
-"""
-
 import argparse
 import json
 import pathlib
@@ -60,7 +48,6 @@ def _finish(collector: collect.Collector, records: list[dict]) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """サブコマンドを実行する。"""
     parser = argparse.ArgumentParser(
         prog="python -m scripts.parser_review",
         description="エラーパーサーの網羅レビューと互換性確認で使う採取・比較の開発用コマンド",

@@ -1,5 +1,3 @@
-"""ruff-formatの2段階実行。"""
-
 import functools
 import time
 
@@ -17,19 +15,6 @@ from pyfltr.command.two_step.base import _relative_to_cwd
 
 
 def execute_ruff_format_two_step(request: pyfltr.command.core_.ExecutionRequest) -> pyfltr.command.core_.CommandResult:
-    """ruff-formatの2段階実行（ruff check --fix → ruff format）。
-
-    ステップ1（ruff check --fix --unsafe-fixes）の未修正lint violationは無視する。
-    別途ruff-checkコマンドで検出される前提。許容する終了コードは0/1で、シグナル終了とtimeoutも失敗にする。
-    ステップ1の成否にかかわらずステップ2（ruff format）は実行する
-    （対象ファイル全体のformat適用を止めないため）。
-    `commandline_prefix` は `ruff` 単体（またはuv経路では `["uv", "run", "--frozen", "ruff"]`）を渡す。
-
-    `commandline_prefix` はrunner解決済みの実行プレフィックス（例: `["ruff"]`、
-    `["uv", "run", "--frozen", "ruff"]`、`["mise", "exec", "--", "ruff"]`）を呼び出し側から渡す。
-    Python系ツールの `{command}-path` 既定値は空文字列のため、`config["<tool>-path"]` を
-    直接参照する旧実装は動作しなくなる。同種関数を追加する際は本引数経由でプレフィックスを受け取る形を踏襲する。
-    """
     check_commandline: list[str] = list(request.params.commandline_prefix)
     check_commandline.extend(pyfltr.command.invocation.expanduser_args(list(request.ctx.config["ruff-format-check-args"])))
     if request.cwd is not None and request.ctx.base.start_cwd is not None:
@@ -43,13 +28,6 @@ def execute_ruff_format_two_step(request: pyfltr.command.core_.ExecutionRequest)
 
 
 def _run_ruff_two_step(request: pyfltr.command.core_.ExecutionRequest, *, check_commandline: list[str]) -> CommandResult:
-    """ruff-format専用の2段階処理。
-
-    Step1（ruff check --fix --unsafe-fixes）は0/1だけを許容し、
-    rc 0/1に関わらずStep2（ruff format）を常時実行する。
-    step1の未修正lint violationは無視し、別途ruff-checkコマンドで検出する前提。
-    """
-    # ステップ1実行前の内容ハッシュを記録（修正適用検知用）
     digests_before = snapshot_file_digests(request.params.targets, base_cwd=request.ctx.base.start_cwd)
 
     run_step = functools.partial(pyfltr.command.process.run_process, request)
@@ -57,15 +35,12 @@ def _run_ruff_two_step(request: pyfltr.command.core_.ExecutionRequest, *, check_
     digests_after_step1 = snapshot_file_digests(request.params.targets, base_cwd=request.ctx.base.start_cwd)
     step1_changed = digests_after_step1 != digests_before
 
-    # ステップ2実行（常に実行）
     step2_proc = run_step(request.params.commandline)
     step2_formatted = step2_proc.returncode == 1
 
-    # 出力の合成
     output = (step1_proc.stdout + step2_proc.stdout).strip()
     elapsed = time.perf_counter() - request.start_time
 
-    # 最終判定
     timeout_exceeded = step1_proc.timeout_exceeded or step2_proc.timeout_exceeded
     combined = step_result.combine(
         step_result.classify(
@@ -78,8 +53,6 @@ def _run_ruff_two_step(request: pyfltr.command.core_.ExecutionRequest, *, check_
 
     errors = request.parse_errors(output, request.params.command_info.error_pattern)
 
-    # commandlineは代表として「最後に実行したステップ」（= ruff format）を格納。
-    # 両ステップ分のcommandlineはverbose出力で確認可能。
     result = CommandResult.from_run(
         command=request.command,
         command_info=request.params.command_info,
@@ -94,8 +67,6 @@ def _run_ruff_two_step(request: pyfltr.command.core_.ExecutionRequest, *, check_
         retry_count=step1_proc.retry_count + step2_proc.retry_count,
     )
     if not formatter_failed and (step1_changed or step2_formatted):
-        # digests_beforeはStep1前のスナップショット（関数冒頭で取得済み）。
-        # Step1（ruff --checkによる暗黙fix）とStep2（ruff format）の累積差分を一括で取る。
         digests_after_step2 = snapshot_file_digests(request.params.targets, base_cwd=request.ctx.base.start_cwd)
         result.fixed_files = changed_files(digests_before, digests_after_step2)
     return result

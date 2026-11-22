@@ -20,11 +20,6 @@ def test_only_failed_early_exit_emits_jsonl_summary_with_reason(
     _isolated_target: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """直前runが無い状態の`--only-failed`は、JSONLでheader・理由付きwarning・summaryを出力して0で終わる。
-
-    理由をINFOでしか出力しないと、WARN以上だけを出力するJSONL経路では何も出力されず、
-    エージェントはスキップの理由も次の操作も受け取れない。
-    """
     returncode = pyfltr.cli.main.run(
         [
             "run",
@@ -52,9 +47,7 @@ def test_only_failed_early_exit_emits_jsonl_summary_with_reason(
 @pytest.mark.parametrize(
     ("target", "entity"),
     [
-        # `..`を含む起点内のパス
         ("sub/../a.py", "proj/a.py"),
-        # 起点外を指す相対パス
         ("../outside/out.py", "outside/out.py"),
     ],
 )
@@ -65,11 +58,6 @@ def test_retry_command_and_only_failed_keep_target_written_with_dot_dot(
     target: str,
     entity: str,
 ) -> None:
-    """`..`を含む対象で失敗した後も、`retry_command`が対象を持ち、`--only-failed`が同じファイルを再実行する。
-
-    診断の`file`は起点相対・起点外の絶対パスへ正規化され、対象は利用者が渡した表現を保つ。
-    両者を文字列で比べると`retry_command`は対象を持たず、`--only-failed`は実行を省いて終了コード0で終わる。
-    """
     work_dir = tmp_path / "proj"
     (work_dir / "sub").mkdir(parents=True)
     (tmp_path / "outside").mkdir()
@@ -80,7 +68,7 @@ def test_retry_command_and_only_failed_keep_target_written_with_dot_dot(
     monkeypatch.chdir(work_dir)
 
     def fake_run(commandline, *args, **kwargs):
-        del args, kwargs  # 未使用
+        del args, kwargs
         files = [arg for arg in commandline if str(arg).endswith(".py")]
         stdout = "".join(f"{file}:1: error: 型が違う  [assignment]\n" for file in files)
         return subprocess.CompletedProcess(commandline, returncode=1 if files else 0, stdout=stdout)

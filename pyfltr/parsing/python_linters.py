@@ -1,5 +1,3 @@
-"""Pythonのlinterの出力解析。"""
-
 import typing
 
 import pyfltr.paths
@@ -18,7 +16,6 @@ from pyfltr.parsing.common import (
 
 
 def parse_ruff_check_json(output: str) -> list[ErrorLocation]:
-    """Ruff check --output-format=json出力をパース。JSON解析失敗時はregexにフォールバック。"""
     data = try_json_loads(output)
     if not isinstance(data, list):
         return parse_with_pattern(
@@ -40,8 +37,6 @@ def parse_ruff_check_json(output: str) -> list[ErrorLocation]:
         end_line = json_int(end_loc.get("row")) if isinstance(end_loc, dict) else None
         end_col = json_int(end_loc.get("column")) if isinstance(end_loc, dict) else None
         fix_obj = entry.get("fix")
-        # ruffは自動修正情報の有無を明示的に返すツール。`fix`欠落時は
-        # 自動修正不可として`"none"`を出力する。
         fix_value: str | None = str(fix_obj.get("applicability", "safe")) if isinstance(fix_obj, dict) else "none"
         rule = str(entry.get("code", "")) or None
         entry_url = entry.get("url")
@@ -66,7 +61,6 @@ def parse_ruff_check_json(output: str) -> list[ErrorLocation]:
 
 
 def parse_pylint_pattern(output: str) -> list[ErrorLocation]:
-    """Pylintのテキスト出力を解析し、0起点列を1起点へ変換する。"""
     results = parse_with_pattern("pylint", output, pyfltr.tools.BUILTIN_COMMANDS["pylint"].require_diagnostic_pattern())
     for result in results:
         result.col = one_based_offset(result.col)
@@ -74,12 +68,6 @@ def parse_pylint_pattern(output: str) -> list[ErrorLocation]:
 
 
 def parse_pylint_json(output: str) -> list[ErrorLocation]:
-    """Pylint --output-format=json2出力をパース。JSON解析失敗時はregexにフォールバック。
-
-    公式ドキュメントURLが`symbol`基準（`missing-module-docstring`等）のため、
-    `ErrorLocation.rule`には`symbol`を格納する。`messageId`（`C0114`等）は
-    `ErrorLocation.message`の先頭に付与して保持する。
-    """
     data = try_json_loads(output)
     if not isinstance(data, dict) or "messages" not in data:
         return parse_pylint_pattern(output)
@@ -87,7 +75,6 @@ def parse_pylint_json(output: str) -> list[ErrorLocation]:
     if not isinstance(messages, list):
         return parse_pylint_pattern(output)
 
-    # pylintのmessagesはファイルごとにネストしない平坦な配列のため、直接ループしてErrorLocationを構築する。
     results: list[ErrorLocation] = []
     for msg in messages:
         if not isinstance(msg, dict):
@@ -103,10 +90,8 @@ def parse_pylint_json(output: str) -> list[ErrorLocation]:
         symbol = str(msg.get("symbol") or "") or None
         message_id = str(msg.get("messageId") or "")
         original_message = str(msg.get("message", ""))
-        # 既存ruleスキーマ（機械判別可能な識別子）とmessageIdの両方をJSONL上に残す。
         combined_message = f"{message_id}: {original_message}" if message_id else original_message
         # 公式ドキュメントURLはカテゴリー名（`convention` / `warning` / `error` / `refactor` /
-        # `information` / `fatal`）を必要とする。`type`フィールドをそのまま渡す。
         category = msg_type or None
         end_line, end_col = to_inclusive_end_position(line, end_line, end_col)
         results.append(
@@ -127,7 +112,6 @@ def parse_pylint_json(output: str) -> list[ErrorLocation]:
 
 
 def parse_pyright_json(output: str) -> list[ErrorLocation]:
-    """Pyright --outputjson出力をパース。JSON解析失敗時はregexにフォールバック。"""
     data = try_json_loads(output)
     if not isinstance(data, dict) or "generalDiagnostics" not in data:
         return parse_with_pattern("pyright", output, pyfltr.tools.BUILTIN_COMMANDS["pyright"].require_diagnostic_pattern())
@@ -144,7 +128,6 @@ def parse_pyright_json(output: str) -> list[ErrorLocation]:
         start = range_obj.get("start", {})
         if not isinstance(start, dict):
             continue
-        # pyrightのline/characterは0-based
         line = start.get("line")
         if not isinstance(line, int):
             continue
@@ -173,18 +156,6 @@ def parse_pyright_json(output: str) -> list[ErrorLocation]:
 
 
 def parse_arid_json(output: str, *, resolve_path: typing.Callable[[str], str] | None = None) -> list[ErrorLocation]:
-    """aridのJSON出力に含まれる全重複位置を診断へ変換する。
-
-    `resolve_path`は`pyfltr.parsing.entry.parse_errors`が渡すパス変換関数で、
-    ツール出力のパスを起点相対へ変換する。診断の`file`に加えてメッセージ内の他の重複位置にも
-    同じ値を使うため、本パーサーは変換関数を受け取って自ら適用する。省略時は区切りの統一だけを行う。
-
-    `findings`の各要素が`lines`・`occurrences`・`context`・`scope`・`distribution`・`locations`を
-    必ず持つことを前提とする（arid 2.2.2のreport schema_version 4で実測）。
-    致命エラー時のaridは`findings`を持たない別スキーマ（`schema_version` 1）を返すため、
-    本関数は空リストを返し、生出力が`CommandResult.message`へ入る経路へ委ねる。
-    `end_line`はaridが返す包含の最終行であり、`to_inclusive_end_position`は値を変えない。
-    """
     findings = json_list_field(output, "findings")
     if findings is None:
         return []
@@ -246,7 +217,6 @@ def parse_arid_json(output: str, *, resolve_path: typing.Callable[[str], str] | 
 
 
 def summarize_pyright_json(output: str) -> str | None:
-    """Pyright --outputjson出力からsummaryフィールドを抽出する。"""
     data = try_json_loads(output)
     if not isinstance(data, dict):
         return None
@@ -262,7 +232,6 @@ def summarize_pyright_json(output: str) -> str | None:
 
 
 def summarize_pylint_json(output: str) -> str | None:
-    """Pylint --output-format=json2出力からstatisticsフィールドを抽出する。"""
     data = try_json_loads(output)
     if not isinstance(data, dict):
         return None

@@ -1,5 +1,3 @@
-"""ツール固有の診断解析。"""
-
 import json
 import re
 
@@ -21,23 +19,6 @@ from pyfltr.parsing.common import (
 
 
 def parse_eslint_json(output: str) -> list[ErrorLocation]:
-    """ESLint --format json出力をパース。
-
-    ESLint 9系以降でcompact / unixなどのコアフォーマッタが除去されたため、
-    pyfltrでは`--format json`を使う。出力は以下のような配列。
-
-    [
-      {
-        "filePath": "/abs/src/foo.js",
-        "messages": [
-          {"line": 10, "column": 5, "message": "...", "ruleId": "no-unused-vars", "severity": 2}
-        ]
-      }
-    ]
-
-    stderr混入等でパースに失敗した場合は空リストを返す（regexパーサーが
-    マッチしない時の挙動と揃える）。
-    """
     data = try_json_loads(output)
     if not isinstance(data, list):
         return []
@@ -54,8 +35,6 @@ def parse_eslint_json(output: str) -> list[ErrorLocation]:
         text = str(msg.get("message", ""))
         message = f"{text} ({rule_id})" if rule_id else text
         # ESLintのJSONはautofixがある場合のみ`fix`オブジェクトが付与される。
-        # 自動修正情報の有無を報告するツールなので、欠落時は`"none"`として
-        # 「自動修正不可」を明示する（`None`省略との区別を維持）。
         fix_value = "safe" if msg.get("fix") else "none"
         rule = rule_id or None
         end_line, end_col = to_inclusive_end_position(line, end_line, end_col)
@@ -77,7 +56,6 @@ def parse_eslint_json(output: str) -> list[ErrorLocation]:
 
 
 def parse_shellcheck_json(output: str) -> list[ErrorLocation]:
-    """Shellcheck -f json出力をパース。JSON解析失敗時はregexにフォールバック。"""
     data = try_json_loads(output)
     if not isinstance(data, list):
         return parse_with_pattern(
@@ -96,7 +74,6 @@ def parse_shellcheck_json(output: str) -> list[ErrorLocation]:
         end_col = json_int(entry.get("endColumn"))
         code = entry.get("code")
         rule = f"SC{code}" if isinstance(code, int) else None
-        # shellcheckはJSON出力で自動修正情報の有無を明示する。
         fix_value = "safe" if entry.get("fix") else "none"
         end_line, end_col = to_inclusive_end_position(line, end_line, end_col)
         results.append(
@@ -118,7 +95,6 @@ def parse_shellcheck_json(output: str) -> list[ErrorLocation]:
 
 
 def parse_typos_jsonl(output: str) -> list[ErrorLocation]:
-    """Typos --format=json出力をパース（JSON Lines形式）。解析失敗時はregexにフォールバック。"""
     results: list[ErrorLocation] = []
     any_parsed = False
     for line in output.splitlines():
@@ -131,7 +107,6 @@ def parse_typos_jsonl(output: str) -> list[ErrorLocation]:
             continue
         if not isinstance(entry, dict):
             continue
-        # typosのJSONエントリにはtypeフィールドがある。typo以外（binary等）はスキップ
         if entry.get("type") not in ("typo", None):
             continue
         any_parsed = True
@@ -145,7 +120,6 @@ def parse_typos_jsonl(output: str) -> list[ErrorLocation]:
             message = f"`{typo}` -> `{correction_str}`"
             fix_value: str | None = "safe"
         else:
-            # typosは自動修正候補の有無を明示的に返すため、候補なしは`"none"`。
             message = f"`{typo}`"
             fix_value = "none"
         results.append(
@@ -165,32 +139,6 @@ def parse_typos_jsonl(output: str) -> list[ErrorLocation]:
 
 
 def parse_pinact_sarif(output: str) -> list[ErrorLocation]:
-    """`pinact run --format sarif`のSARIF出力をパースする。
-
-    出力例::
-
-        {
-          "runs": [
-            {
-              "results": [
-                {
-                  "ruleId": "parse-error",
-                  "level": "error",
-                  "message": {"text": "failed to handle a line: action can't be pinned"},
-                  "locations": [
-                    {"physicalLocation": {"artifactLocation": {"uri": ".github/workflows/ci.yaml"},
-                                          "region": {"startLine": 7}}}
-                  ]
-                }
-              ]
-            }
-          ]
-        }
-
-    pinactは標準エラーへ人間向けの行を書き、pyfltrは標準エラーを標準出力へ合流させるため、
-    SARIFの前に別の行が並ぶ。JSON本体は`try_json_loads`で取り出す。
-    JSON解析失敗時は空リストを返す。
-    """
     runs = json_list_field(output, "runs")
     if runs is None:
         return []
@@ -231,26 +179,6 @@ def parse_pinact_sarif(output: str) -> list[ErrorLocation]:
 
 
 def parse_designmd_json(output: str) -> list[ErrorLocation]:
-    """`@google/design.md lint`のJSON出力をパースする。
-
-    出力例::
-
-        {
-          "findings": [
-            {
-              "severity": "warning",
-              "path": "components.button-primary",
-              "message": "..."
-            }
-          ],
-          "summary": {"errors": 0, "warnings": 1, "info": 1}
-        }
-
-    `path`はDESIGN.md内のJSONパス（プロパティ参照）であり、ファイルシステムのパスではない。
-    対象ファイル名は仕様上`DESIGN.md`固定のため、`ErrorLocation.file`にはそれを格納し、
-    JSONパスは`message`先頭へ併記する。`line`は仕様上提供されないため`0`を格納する。
-    JSON解析失敗時は空リストを返す。
-    """
     findings = json_list_field(output, "findings")
     if findings is None:
         return []
@@ -275,28 +203,6 @@ def parse_designmd_json(output: str) -> list[ErrorLocation]:
 
 
 def parse_lychee_json(output: str) -> list[ErrorLocation]:
-    """`lychee --format json`のJSON出力をパースする。
-
-    出力例::
-
-        {
-          "total": 100, "successful": 80, ...,
-          "error_map": {
-            "src/foo.md": [
-              {
-                "url": "https://example.com/dead",
-                "status": {"text": "Error: 404 - Not Found", "code": 404},
-                ...
-              }
-            ]
-          }
-        }
-
-    `error_map`と`timeout_map`は「ファイルパス → 失敗レスポンス配列」のmap。各失敗から`url`/`status.text`を抽出し、
-    `ErrorLocation.message`へ整形する。本パーサーは`line=1`固定とし、JSONの`span`による位置を取り込まない。
-    HTTP(S)の5xxと応答タイムアウトだけをwarning、その他をerrorとして取り込む。
-    JSON解析失敗時は空リストを返す。
-    """
     data = try_json_loads(output)
     if not isinstance(data, dict):
         return []
@@ -337,25 +243,6 @@ def parse_lychee_json(output: str) -> list[ErrorLocation]:
 
 
 def parse_semgrep_json(output: str) -> list[ErrorLocation]:
-    """`semgrep scan --json`のJSON出力をパースする。
-
-    出力例::
-
-        {
-          "results": [
-            {
-              "check_id": "rules.foo",
-              "path": "src/foo.py",
-              "start": {"line": 18, "col": 9},
-              "end": {...},
-              "extra": {"severity": "ERROR", "message": "..."}
-            }
-          ],
-          ...
-        }
-
-    JSON解析失敗時は空リストを返す。
-    """
     raw_results = json_list_field(output, "results")
     if raw_results is None:
         return []
@@ -394,27 +281,6 @@ def parse_semgrep_json(output: str) -> list[ErrorLocation]:
 
 
 def parse_bandit_json(output: str) -> list[ErrorLocation]:
-    """`bandit -f json`のJSON出力をパースする。
-
-    出力例::
-
-        {
-          "results": [
-            {
-              "filename": "src/foo.py",
-              "line_number": 10,
-              "col_offset": 4,
-              "test_id": "B101",
-              "test_name": "assert_used",
-              "issue_severity": "LOW",
-              "issue_text": "Use of assert detected.",
-              "more_info": "https://bandit.readthedocs.io/.../b101.html"
-            }
-          ]
-        }
-
-    JSON解析失敗時は空リストを返す。
-    """
     raw_results = json_list_field(output, "results")
     if raw_results is None:
         return []
@@ -452,28 +318,6 @@ def parse_bandit_json(output: str) -> list[ErrorLocation]:
 
 
 def parse_sqlfluff_json(output: str) -> list[ErrorLocation]:
-    """`sqlfluff lint --format=json`のJSON出力をパースする。
-
-    出力例::
-
-        [
-          {
-            "filepath": "src/foo.sql",
-            "violations": [
-              {
-                "start_line_no": 10,
-                "start_line_pos": 5,
-                "code": "L001",
-                "name": "...",
-                "description": "...",
-                "warning": false
-              }
-            ]
-          }
-        ]
-
-    JSON解析失敗時は空リストを返す。
-    """
     data = try_json_loads(output)
     if not isinstance(data, list):
         return []
@@ -511,21 +355,6 @@ def parse_sqlfluff_json(output: str) -> list[ErrorLocation]:
 
 
 def parse_glab_ci_lint(output: str) -> list[ErrorLocation]:
-    """`glab ci lint`出力をパース。
-
-    glabは行番号を出力しないため、検出した各エラーメッセージを`line=1`固定の
-    `ErrorLocation`として生成する。
-
-    無効CI出力例::
-
-        Validating...
-        .gitlab-ci.yml is invalid
-
-        - jobs:test config contains unknown keys: foo
-        - root config contains unknown keys: bar
-
-    有効CI出力では`✓ CI/CD YAML is valid!`のみが出力されるため空リストを返す。
-    """
     results: list[ErrorLocation] = []
     file_path: str | None = None
     invalid_re = re.compile(r"^\s*(?P<file>\S+)\s+is\s+invalid\b")
@@ -539,7 +368,6 @@ def parse_glab_ci_lint(output: str) -> list[ErrorLocation]:
             continue
         if file_path is None:
             continue
-        # 番号付きエラー行（`- xxx` / `1. xxx`）のリストマーカーを除去する。
         message = re.sub(r"^(?:[-*•]|\d+[.)])\s+", "", line)
         if not message:
             continue
@@ -556,48 +384,6 @@ def parse_glab_ci_lint(output: str) -> list[ErrorLocation]:
 
 
 def parse_vitest_json(output: str) -> list[ErrorLocation]:
-    """Vitest `--reporter=json` 出力をパースする。
-
-    入力はJest互換のJSONで、`pyfltr.command.vitest.execute_vitest`が
-    `--outputFile.json=<tmpfile>` で取得したファイル内容を文字列として渡す。
-    テキスト出力のregex解析より構造化情報が安定して得られる経路を採用する
-    （Vitestデフォルト出力はバージョン差・カラー制御文字・テスト名のネスト表示など変動要素が多い）。
-
-    出力構造の主要部分::
-
-        {
-          "testResults": [
-            {
-              "name": "/abs/path/to/foo.test.ts",
-              "assertionResults": [
-                {
-                  "status": "failed",
-                  "fullName": "Suite > nested > case",
-                  "failureMessages": ["..."],
-                  "location": {"line": 12, "column": 3}
-                }
-              ]
-            }
-          ]
-        }
-
-    各失敗 `assertionResult` を1件の `ErrorLocation` へ変換する。pytestのカスタムパーサーと
-    同じく `fullName` を `message` 先頭へ併記する（locationだけでは識別性が乏しく、
-    `expect`系のassertion失敗メッセージはテスト名と組み合わせて初めて意味を持つため）。
-
-    `location` 欠落時は `line=1` 固定でフォールバックする
-    （Vitestの新しいランナー以外では `includeTaskLocation` 設定次第で欠落するため）。
-    `failureMessages` が空のときも空メッセージで1件を生成し、失敗の存在自体を保持する。
-
-    テストファイルの評価時の例外（import・setupの失敗など）では、`testResults` 要素自体の
-    `status` が `failed` で、失敗した `assertionResult` を持たない。この場合は要素の
-    `message` 先頭行（空なら空文字列）を本文とするファイル診断を `line=1` で1件生成する。
-    失敗 `assertionResult` を持つ要素では同じ失敗を二重に数えないよう要素単位の診断を追加しない。
-    `name` を持たない要素はファイルを推定せず、元出力に失敗を委ねる。
-
-    JSON解析失敗時は空リストを返す。`command.message` フォールバック経路で従来通り
-    stdout末尾が `command.message` へ格納される。
-    """
     test_results = json_list_field(output, "testResults")
     if test_results is None:
         return []

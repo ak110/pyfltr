@@ -19,21 +19,15 @@ from tests import conftest as _testconf
 from tests.conftest import make_error_location as _make_error
 from tests.conftest import seed_archive_run as _seed_run
 
-# ---------------------------------------------------------------------------
-# apply_filter
-# ---------------------------------------------------------------------------
-
 
 def _apply_filter(
     *args: typing.Any, **kwargs: typing.Any
 ) -> tuple[list[str], dict[str, pyfltr.command.only_failed.ToolTargets] | None, bool]:
-    """起点を明示して`apply_filter`を呼ぶ。対象と診断はいずれも起点相対の表現で与える。"""
     kwargs.setdefault("start_cwd", pathlib.Path.cwd())
     return pyfltr.state.only_failed.apply_filter(*args, **kwargs)
 
 
 def test_apply_filter_not_only_failed(_only_failed_cache: pathlib.Path) -> None:
-    """only_failed=False（未指定）のとき、（commands、None、False）を返す。"""
     args = pyfltr.run_options.RunOptions.from_values({"only_failed": False})
     commands, targets, exit_early = _apply_filter(args, ["ruff-check"], [])
     assert commands == ["ruff-check"]
@@ -42,7 +36,6 @@ def test_apply_filter_not_only_failed(_only_failed_cache: pathlib.Path) -> None:
 
 
 def test_apply_filter_builds_per_tool_targets(_only_failed_cache: pathlib.Path) -> None:
-    """直前runの失敗ツールごとに独立したToolTargetsを構築する。"""
     _seed_run(
         _only_failed_cache,
         commands=["ruff-check", "mypy"],
@@ -66,7 +59,6 @@ def test_apply_filter_builds_per_tool_targets(_only_failed_cache: pathlib.Path) 
 
 
 def test_apply_filter_includes_resolution_failed_tools(_only_failed_cache: pathlib.Path) -> None:
-    """resolution_failedのツールも--only-failedの再実行対象に含まれる。"""
     _seed_run(
         _only_failed_cache,
         commands=["shellcheck"],
@@ -84,7 +76,6 @@ def test_apply_filter_includes_resolution_failed_tools(_only_failed_cache: pathl
 
 
 def test_apply_filter_fallback_for_missing_diagnostics(_only_failed_cache: pathlib.Path) -> None:
-    """診断なしの失敗ツール（pass-filenames=False等）はfallbackモードになる。"""
     _seed_run(
         _only_failed_cache,
         commands=["pytest"],
@@ -101,7 +92,6 @@ def test_apply_filter_fallback_for_missing_diagnostics(_only_failed_cache: pathl
 
 
 def test_apply_filter_skip_for_empty_targets_intersection(_only_failed_cache: pathlib.Path) -> None:
-    """診断はあるがtargets交差が空のツールは除外され、全ツールで空なら早期終了する。"""
     _seed_run(
         _only_failed_cache,
         commands=["ruff-check"],
@@ -111,7 +101,6 @@ def test_apply_filter_skip_for_empty_targets_intersection(_only_failed_cache: pa
         ],
     )
     args = pyfltr.run_options.RunOptions.from_values({"only_failed": True})
-    # all_files（targets由来）にb.pyが含まれない → 交差空で早期終了
     _, _, exit_early = _apply_filter(args, ["ruff-check"], [pathlib.Path("a.py")])
     assert exit_early is True
 
@@ -121,7 +110,6 @@ def test_apply_filter_per_tool_exclusion_logs_reason(
     caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """複数ツール中1ツールのみ交差空のとき、除外されたツールについて理由が INFO ログに出力される。"""
     _seed_run(
         _only_failed_cache,
         commands=["ruff-check", "mypy"],
@@ -133,7 +121,7 @@ def test_apply_filter_per_tool_exclusion_logs_reason(
     )
     monkeypatch.setattr(pyfltr.output.logging_.text_logger, "propagate", True)
     args = pyfltr.run_options.RunOptions.from_values({"only_failed": True})
-    all_files = [pathlib.Path("a.py")]  # b.py は含まない → mypy のみ交差空
+    all_files = [pathlib.Path("a.py")]
     with caplog.at_level(logging.INFO, logger="pyfltr.textout"):
         commands, targets, exit_early = _apply_filter(args, ["ruff-check", "mypy"], all_files)
     assert exit_early is False
@@ -144,7 +132,6 @@ def test_apply_filter_per_tool_exclusion_logs_reason(
 
 
 def test_apply_filter_early_exit_no_runs(_only_failed_cache: pathlib.Path) -> None:
-    """直前runが存在しない場合はexit_early=True（commandsは未変更で返す）。"""
     args = pyfltr.run_options.RunOptions.from_values({"only_failed": True})
     commands, targets, exit_early = _apply_filter(args, ["ruff-check"], [pathlib.Path("a.py")])
     assert exit_early is True
@@ -153,7 +140,6 @@ def test_apply_filter_early_exit_no_runs(_only_failed_cache: pathlib.Path) -> No
 
 
 def test_apply_filter_early_exit_no_failures(_only_failed_cache: pathlib.Path) -> None:
-    """直前runが全成功ならexit_early=True（失敗ツール抽出が空）。"""
     _seed_run(
         _only_failed_cache,
         commands=["ruff-check"],
@@ -166,7 +152,6 @@ def test_apply_filter_early_exit_no_failures(_only_failed_cache: pathlib.Path) -
 
 
 def test_apply_filter_intersects_with_targets(_only_failed_cache: pathlib.Path) -> None:
-    """失敗ファイルとall_files（位置引数targets由来）の交差が対象になる。"""
     _seed_run(
         _only_failed_cache,
         commands=["ruff-check"],
@@ -184,7 +169,7 @@ def test_apply_filter_intersects_with_targets(_only_failed_cache: pathlib.Path) 
         ],
     )
     args = pyfltr.run_options.RunOptions.from_values({"only_failed": True})
-    all_files = [pathlib.Path("a.py")]  # targets指定でb.pyは含まない想定
+    all_files = [pathlib.Path("a.py")]
     _, targets, exit_early = _apply_filter(args, ["ruff-check"], all_files)
 
     assert exit_early is False
@@ -193,17 +178,7 @@ def test_apply_filter_intersects_with_targets(_only_failed_cache: pathlib.Path) 
     assert targets["ruff-check"].files == (pathlib.Path("a.py"),)
 
 
-# ---------------------------------------------------------------------------
-# apply_filter: --from-run オプション
-# ---------------------------------------------------------------------------
-
-
 def test_apply_filter_matches_targets_with_dot_dot_and_outside_relative(_only_failed_cache: pathlib.Path) -> None:
-    """`..`を含む起点内の対象と起点外の相対パスの対象も、正規化済みの診断の`file`と突き合わせて選ぶ。
-
-    診断の`file`は`a.md`・起点外の絶対パスへ変換済みであり、対象を利用者が渡した表現のまま
-    比べると交差が空になり、失敗が残るのに実行を省いて終了コード0で終わる。
-    """
     start = _only_failed_cache / "proj"
     outside = (_only_failed_cache / "outside" / "out.md").as_posix()
     _seed_run(
@@ -231,7 +206,6 @@ def test_apply_filter_matches_targets_with_dot_dot_and_outside_relative(_only_fa
 
 
 def test_apply_filter_from_run_full_id(_only_failed_cache: pathlib.Path) -> None:
-    """from_runに完全なrun_idを渡すと正しく解決される。"""
     run_id = _seed_run(
         _only_failed_cache,
         commands=["ruff-check"],
@@ -246,7 +220,6 @@ def test_apply_filter_from_run_full_id(_only_failed_cache: pathlib.Path) -> None
 
 
 def test_apply_filter_from_run_prefix(_only_failed_cache: pathlib.Path) -> None:
-    """from_runに前方一致プレフィックスを渡すと解決される。"""
     run_id = _seed_run(
         _only_failed_cache,
         commands=["ruff-check"],
@@ -262,7 +235,6 @@ def test_apply_filter_from_run_prefix(_only_failed_cache: pathlib.Path) -> None:
 
 
 def test_apply_filter_from_run_latest(_only_failed_cache: pathlib.Path) -> None:
-    """from_run="latest"エイリアスで最新runを参照できる。"""
     _seed_run(_only_failed_cache, commands=["ruff-check"], exit_code=0)
     _seed_run(
         _only_failed_cache,
@@ -280,11 +252,6 @@ def test_apply_filter_from_run_latest(_only_failed_cache: pathlib.Path) -> None:
 def test_apply_filter_ignores_newer_run_in_other_cwd(
     _only_failed_cache: pathlib.Path, tmp_path: pathlib.Path, from_run: str | None
 ) -> None:
-    """別の実行起点で行われた新しい成功runがあっても、同じ起点の直前の失敗runを再実行対象にする。
-
-    実行アーカイブはユーザー単位で共有されるため、全体の最新runを参照すると
-    別の作業ツリーの成功runを拾い、自分の失敗を再確認しないまま成功で終わる。
-    """
     start_cwd = tmp_path / "proj"
     start_cwd.mkdir()
     _seed_run(
@@ -312,7 +279,6 @@ def test_apply_filter_ignores_newer_run_in_other_cwd(
 
 
 def test_apply_filter_early_exit_without_run_in_same_cwd(_only_failed_cache: pathlib.Path, tmp_path: pathlib.Path) -> None:
-    """同じ実行起点のrunが無ければ、別の起点の失敗runを参照せず、明示指定の方法を案内して早期終了する。"""
     _seed_run(
         _only_failed_cache,
         commands=["ruff-check"],
@@ -333,7 +299,6 @@ def test_apply_filter_early_exit_without_run_in_same_cwd(_only_failed_cache: pat
 
 
 def test_apply_filter_skips_runs_without_cwd_or_unfinished(_only_failed_cache: pathlib.Path, tmp_path: pathlib.Path) -> None:
-    """実行起点を記録していない旧runと、同じ起点で実行中のrunは参照せず、その前の完了済みrunを参照する。"""
     start_cwd = tmp_path / "proj"
     start_cwd.mkdir()
     _seed_run(
@@ -351,7 +316,6 @@ def test_apply_filter_skips_runs_without_cwd_or_unfinished(_only_failed_cache: p
     legacy_meta = json.loads(legacy_meta_path.read_text(encoding="utf-8"))
     del legacy_meta["cwd"]
     legacy_meta_path.write_text(json.dumps(legacy_meta), encoding="utf-8")
-    # run_idはミリ秒単位の時刻を含むULIDのため、直前のrunより新しい順に並ぶよう時刻を進める。
     time.sleep(0.002)
     running_run_id = store.start_run(commands=["ruff-check"], files=1, cwd=str(start_cwd))
     try:
@@ -365,7 +329,6 @@ def test_apply_filter_skips_runs_without_cwd_or_unfinished(_only_failed_cache: p
 
 
 def test_apply_filter_from_run_not_found(_only_failed_cache: pathlib.Path, caplog: pytest.LogCaptureFixture) -> None:
-    """存在しないrun_idを指定するとwarningログを発行して早期終了する。"""
     args = pyfltr.run_options.RunOptions.from_values({"only_failed": True})
     with caplog.at_level(logging.WARNING, logger="pyfltr.state.only_failed"):
         commands, targets, exit_early = _apply_filter(
@@ -378,10 +341,7 @@ def test_apply_filter_from_run_not_found(_only_failed_cache: pathlib.Path, caplo
 
 
 def test_apply_filter_from_run_ambiguous_prefix(_only_failed_cache: pathlib.Path, caplog: pytest.LogCaptureFixture) -> None:
-    """曖昧なプレフィックスを指定するとwarningを発行して早期終了する。"""
-    # 2件以上runを生成して共通プレフィックスを特定する
     run_ids = [_seed_run(_only_failed_cache) for _ in range(3)]
-    # 共通プレフィックスを算出する
     shared = _testconf.shared_prefix_length(run_ids[0], run_ids[1])
     if shared < 1:
         pytest.skip("共通プレフィックスが無いケースは曖昧判定にならない")
@@ -398,7 +358,6 @@ def test_apply_filter_from_run_ambiguous_prefix(_only_failed_cache: pathlib.Path
 def test_apply_filter_archive_unreadable_guides_permission_and_full_run(
     _only_failed_cache: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """実行アーカイブを読めない場合は、スキップした理由と権限確認・全体実行の案内を警告する。"""
 
     def _raise(*_args: object, **_kwargs: object) -> None:
         raise PermissionError(13, "Permission denied")
@@ -415,10 +374,6 @@ def test_apply_filter_archive_unreadable_guides_permission_and_full_run(
 
 
 def test_apply_filter_selects_legacy_subproject_pytest_failure(_only_failed_cache: pathlib.Path) -> None:
-    """サブプロジェクト相対の診断を保存した旧pytestアーカイブでも、所属する子の失敗ファイルだけを選ぶ。
-
-    別の子に同じ相対パスのテストファイルがあっても対象に加えない。
-    """
     body = (
         "================================= FAILURES =================================\n"
         "_______________________________ test_a ________________________________\n"
@@ -436,7 +391,6 @@ def test_apply_filter_selects_legacy_subproject_pytest_failure(_only_failed_cach
         exit_code=1,
         tool_results=[("pytest", 1, f"# subproject: pkg_a\n{body}\n# subproject: pkg_b\n", errors)],
     )
-    # 診断を起点相対へ揃える前の版のrunとして、診断パスの印を`meta.json`から除く。
     meta_path = _only_failed_cache / "runs" / run_id / "meta.json"
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
     del meta[pyfltr.state.archive.DIAGNOSTIC_PATHS_META_KEY]
@@ -453,10 +407,6 @@ def test_apply_filter_selects_legacy_subproject_pytest_failure(_only_failed_cach
 
 
 def test_apply_filter_selects_legacy_subproject_mypy_failure(_only_failed_cache: pathlib.Path) -> None:
-    """サブプロジェクト相対の診断を保存した旧mypyアーカイブでも、所属する子の失敗ファイルだけを選ぶ。
-
-    診断の所属復元はツール名で限定しないため、pytest以外のツールでも同じ再実行対象を得る。
-    """
     body = "src/sample.py:3: error: Incompatible types in assignment  [assignment]\n"
     errors = pyfltr.parsing.entry.parse_errors("mypy", body)
     assert [error.file for error in errors] == ["src/sample.py"]
@@ -466,7 +416,6 @@ def test_apply_filter_selects_legacy_subproject_mypy_failure(_only_failed_cache:
         exit_code=1,
         tool_results=[("mypy", 1, f"# subproject: app\n{body}\n# subproject: lib\n", errors)],
     )
-    # 診断を起点相対へ揃える前の版のrunとして、診断パスの印を`meta.json`から除く。
     meta_path = _only_failed_cache / "runs" / run_id / "meta.json"
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
     del meta[pyfltr.state.archive.DIAGNOSTIC_PATHS_META_KEY]

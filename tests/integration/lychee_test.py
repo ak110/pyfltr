@@ -21,7 +21,6 @@ def _report(*codes: int | str, scheme: str = "https", unsupported: int = 0) -> s
         if code == "Timeout":
             status: dict[str, int | str] = {"text": "Timeout", "details": "Request timed out"}
         elif code == "Network":
-            # lychee v0.24.2が接続拒否で返す形。HTTPステータスを得ていないため`code`を持たない。
             status = {
                 "text": "Network error: Connection refused - server may be down or port blocked (error sending request)",
                 "details": "Connection refused - server may be down or port blocked",
@@ -48,7 +47,6 @@ def _report(*codes: int | str, scheme: str = "https", unsupported: int = 0) -> s
 
 @pytest.fixture(name="lychee_project")
 def _lychee_project(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
-    """外部プロセスと時計だけを差し替える検証先を用意する。"""
     (tmp_path / "pyproject.toml").write_text(
         f"[tool.pyfltr]\nlychee-path = {json.dumps(sys.executable)}\nrespect-gitignore = false\njobs = 1\n",
         encoding="utf-8",
@@ -103,7 +101,6 @@ def test_lychee_cli_classification(
     attempts: int,
     unsupported: int,
 ) -> None:
-    """一時障害を警告へ分類し、永久失敗をJSONLとアーカイブで保持する。"""
     process = mocker.patch(
         "pyfltr.command.process.run_subprocess",
         return_value=subprocess.CompletedProcess([], 2, _report(*codes, scheme=scheme, unsupported=unsupported)),
@@ -127,10 +124,6 @@ def test_lychee_cli_classification(
 def test_lychee_cli_recovers(
     lychee_project: pathlib.Path, mocker: typing.Any, capsys: pytest.CaptureFixture[str], code: int | str
 ) -> None:
-    """途中復旧後は古い失敗を診断とアーカイブへ残さない。
-
-    5xxに加え、lycheeが自身では再試行しない接続系の失敗も既定設定のまま再実行する。
-    """
     process = mocker.patch(
         "pyfltr.command.process.run_subprocess",
         side_effect=[subprocess.CompletedProcess([], 2, _report(code)), subprocess.CompletedProcess([], 0, _report())],
@@ -155,7 +148,6 @@ def test_lychee_cli_text(
     expected_status: str,
     expected_exit: int,
 ) -> None:
-    """text利用者にもURL・原因と警告または失敗が届く。"""
     mocker.patch("pyfltr.command.process.run_subprocess", return_value=subprocess.CompletedProcess([], 2, _report(code)))
     assert _run_cli(lychee_project, output_format="text") == expected_exit
     output = capsys.readouterr().out
@@ -175,7 +167,6 @@ async def test_lychee_mcp_classification(
     expected_status: str,
     expected_exit: int,
 ) -> None:
-    """MCPの公開runも共通実行経路の成否と診断を返す。"""
     mocker.patch("pyfltr.command.process.run_subprocess", return_value=subprocess.CompletedProcess([], 2, _report(code)))
     result = await pyfltr.cli.mcp_run_tools.tool_run(
         paths=[str(lychee_project)], commands=["lychee"], mode="ci", work_dir=str(lychee_project), no_cache=True
@@ -207,7 +198,6 @@ def test_lychee_cli_unclassified_failure(
     output: str,
     returncode: int,
 ) -> None:
-    """不完全な結果や起動異常を一時障害の成功へ格下げしない。"""
     process = mocker.patch(
         "pyfltr.command.process.run_subprocess", return_value=subprocess.CompletedProcess([], returncode, output)
     )
@@ -218,7 +208,6 @@ def test_lychee_cli_unclassified_failure(
 
 
 def test_lychee_execution_timeout(lychee_project: pathlib.Path, mocker: typing.Any, capsys: pytest.CaptureFixture[str]) -> None:
-    """プロセス上限への到達は有効な5xx JSONが残っていても失敗になる。"""
     mocker.patch(
         "pyfltr.command.process.run_subprocess",
         side_effect=pyfltr.command.process.TimeoutExceededExecution(output=_report(503), elapsed=1.0, timeout=1.0),
@@ -231,7 +220,6 @@ def test_lychee_execution_timeout(lychee_project: pathlib.Path, mocker: typing.A
 def test_lychee_retry_wait_consumes_timeout(
     lychee_project: pathlib.Path, mocker: typing.Any, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """再試行待機が時間上限へ達した場合も警告へ格下げしない。"""
     with (lychee_project / "pyproject.toml").open("a", encoding="utf-8") as config_file:
         config_file.write("lychee-timeout = 1\n")
     process = mocker.patch(
@@ -246,7 +234,6 @@ def test_lychee_retry_wait_consumes_timeout(
 def test_lychee_explicit_warning_keeps_404_warning(
     lychee_project: pathlib.Path, mocker: typing.Any, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """利用者が明示した一律警告の指定を維持する。"""
     with (lychee_project / "pyproject.toml").open("a", encoding="utf-8") as config_file:
         config_file.write('lychee-severity = "warning"\n')
     mocker.patch("pyfltr.command.process.run_subprocess", return_value=subprocess.CompletedProcess([], 2, _report(404)))
@@ -263,7 +250,6 @@ def test_lychee_subprojects_keep_failure(
     first_code: int,
     second_code: int,
 ) -> None:
-    """警告と失敗が別サブプロジェクトにあっても集約順序で失敗が消えない。"""
     for name in ("a", "b"):
         child = lychee_project / name
         child.mkdir()
@@ -285,7 +271,6 @@ def test_lychee_subprojects_keep_failure(
 def test_lychee_negative_oom_retries_still_runs(
     lychee_project: pathlib.Path, mocker: typing.Any, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """OOM再試行無効を表す負値でも初回のリンクチェックを実行する。"""
     with (lychee_project / "pyproject.toml").open("a", encoding="utf-8") as config_file:
         config_file.write("retry-max-attempts = -1\n")
     process = mocker.patch(

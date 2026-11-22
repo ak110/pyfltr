@@ -15,7 +15,6 @@ ALWAYS_CONFIG = 'pytest = true\npytest-always-targets = ["*_invariant_test.py"]\
 
 
 def _write_project(path: pathlib.Path, *, extra: str) -> None:
-    """通常テスト2件、横断テスト1件、Markdown1件を持つプロジェクトを作成する。"""
     (path / "pyproject.toml").write_text(f'[project]\nname = "proj"\n[tool.pyfltr]\n{extra}', encoding="utf-8")
     (path / "tests").mkdir()
     (path / "tests" / "repo_invariant_test.py").write_text("def test_invariant(): pass\n", encoding="utf-8")
@@ -25,7 +24,6 @@ def _write_project(path: pathlib.Path, *, extra: str) -> None:
 
 
 def _pytest_file_args(mock_run) -> list[list[str]]:
-    """pytest起動ごとに、コマンドライン末尾の`.py`引数をファイル名で返す。"""
     result: list[list[str]] = []
     for call in mock_run.call_args_list:
         commandline = call.args[0] if call.args else []
@@ -35,7 +33,6 @@ def _pytest_file_args(mock_run) -> list[list[str]]:
 
 
 def _fail_invariant(commandline, *_args, **_kwargs):
-    """横断テストを含むpytest起動だけを失敗させる。"""
     failed = any(str(arg).endswith("repo_invariant_test.py") for arg in commandline)
     output = "FAILED tests/repo_invariant_test.py::test_invariant\n" if failed else ""
     return subprocess.CompletedProcess(commandline, returncode=1 if failed else 0, stdout=output)
@@ -47,7 +44,6 @@ def _run(tmp_path: pathlib.Path, *argv: str) -> int:
 
 @pytest.mark.parametrize("subcommand", ["run", "run-for-agent", "ci"])
 def test_run_adds_always_targets_and_reports_failure(tmp_path: pathlib.Path, mocker, subcommand: str) -> None:
-    """通常対象だけを渡しても横断テストがpytestへ渡り、その失敗が非0終了になる。"""
     _write_project(tmp_path, extra=ALWAYS_CONFIG)
     mock_run = mocker.patch("pyfltr.command.process.run_subprocess", side_effect=_fail_invariant)
 
@@ -59,7 +55,6 @@ def test_run_adds_always_targets_and_reports_failure(tmp_path: pathlib.Path, moc
 
 @pytest.mark.asyncio
 async def test_mcp_run_adds_always_targets_and_reports_failure(tmp_path: pathlib.Path, mocker) -> None:
-    """MCPの`run`でも横断テストが加わり、失敗が結果へ現れる。"""
     _write_project(tmp_path, extra=ALWAYS_CONFIG + "respect-gitignore = false\n")
     mock_run = mocker.patch("pyfltr.command.process.run_subprocess", side_effect=_fail_invariant)
 
@@ -73,7 +68,6 @@ async def test_mcp_run_adds_always_targets_and_reports_failure(tmp_path: pathlib
 
 
 def test_non_python_only_and_changed_since_reach_always_targets(tmp_path: pathlib.Path, mocker) -> None:
-    """非Pythonファイルだけの入力と、差分が別ファイルだけの`--changed-since`でも横断テストへ到達する。"""
     _write_project(tmp_path, extra=ALWAYS_CONFIG)
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
@@ -93,7 +87,6 @@ def test_non_python_only_and_changed_since_reach_always_targets(tmp_path: pathli
 
 
 def test_explicit_always_target_is_passed_once(tmp_path: pathlib.Path, mocker) -> None:
-    """横断テスト自体を位置引数で渡しても1回だけpytestへ渡す。"""
     _write_project(tmp_path, extra=ALWAYS_CONFIG)
     proc = subprocess.CompletedProcess(["pytest"], returncode=0, stdout="")
     mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
@@ -112,7 +105,6 @@ def test_explicit_always_target_is_passed_once(tmp_path: pathlib.Path, mocker) -
     ],
 )
 def test_boundaries_keep_existing_selection(tmp_path: pathlib.Path, mocker, extra: str, expected: list[list[str]]) -> None:
-    """未設定・除外・pytest無効では横断テストを加えない。"""
     _write_project(tmp_path, extra=extra)
     proc = subprocess.CompletedProcess(["pytest"], returncode=0, stdout="")
     mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
@@ -123,7 +115,6 @@ def test_boundaries_keep_existing_selection(tmp_path: pathlib.Path, mocker, extr
 
 
 def test_fast_merges_fast_targets_and_always_targets(tmp_path: pathlib.Path, mocker) -> None:
-    """fastでは`pytest-fast-targets`の置換対象と横断テストの和集合を実行する。"""
     _write_project(
         tmp_path,
         extra='pytest = true\npytest-fast-targets = ["selected_test.py"]\npytest-always-targets = ["*_invariant_test.py"]\n',
@@ -137,7 +128,6 @@ def test_fast_merges_fast_targets_and_always_targets(tmp_path: pathlib.Path, moc
 
 
 def test_fast_does_not_add_pytest_by_always_targets_only(tmp_path: pathlib.Path, mocker) -> None:
-    """fastへpytestが参加しない設定では、`pytest-always-targets`だけでpytestを加えない。"""
     _write_project(tmp_path, extra=ALWAYS_CONFIG)
     proc = subprocess.CompletedProcess(["pytest"], returncode=0, stdout="")
     mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
@@ -157,7 +147,6 @@ def test_fast_does_not_add_pytest_by_always_targets_only(tmp_path: pathlib.Path,
 def test_only_failed_limits_candidates_to_failed_always_target(
     tmp_path: pathlib.Path, mocker, monkeypatch: pytest.MonkeyPatch, extra_args: list[str], expected: list[list[str]]
 ) -> None:
-    """`--only-failed`では横断テストを含む候補から前回失敗したファイルだけを実行し、`--no-always-targets`では候補に加えない。"""
     project = tmp_path / "proj"
     project.mkdir()
     _write_project(project, extra=ALWAYS_CONFIG)
@@ -191,7 +180,6 @@ def test_only_failed_limits_candidates_to_failed_always_target(
 
 
 def test_monorepo_reaches_each_subproject_always_targets(tmp_path: pathlib.Path, mocker) -> None:
-    """起点と各サブプロジェクトの設定をそれぞれのcwdで解釈し、変更の無いサブプロジェクトの横断テストへも到達する。"""
     (tmp_path / "pyproject.toml").write_text('[project]\nname = "root"\n[tool.pyfltr]\n', encoding="utf-8")
     for name, globs in [("pkg_a", '["*_invariant_test.py"]'), ("pkg_b", '"check_*.py"'), ("pkg_c", None)]:
         sub = tmp_path / name
@@ -224,7 +212,6 @@ def test_monorepo_reaches_each_subproject_always_targets(tmp_path: pathlib.Path,
 
 @pytest.mark.parametrize("subcommand", ["run", "ci"])
 def test_no_always_targets_drops_only_always_targets(tmp_path: pathlib.Path, mocker, subcommand: str) -> None:
-    """`--no-always-targets`では渡したパスの試験だけを実行し、指定しない実行は従来どおり常時追加を含む。"""
     _write_project(tmp_path, extra=ALWAYS_CONFIG)
     proc = subprocess.CompletedProcess(["pytest"], returncode=0, stdout="")
     mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
@@ -237,7 +224,6 @@ def test_no_always_targets_drops_only_always_targets(tmp_path: pathlib.Path, moc
 
 
 def test_no_always_targets_skips_pytest_when_only_always_targets_match(tmp_path: pathlib.Path, mocker) -> None:
-    """渡したパスに通常の対象が無い場合、常時追加だけを理由にpytestを起動しない。"""
     _write_project(tmp_path, extra=ALWAYS_CONFIG)
     proc = subprocess.CompletedProcess(["pytest"], returncode=0, stdout="")
     mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
@@ -248,7 +234,6 @@ def test_no_always_targets_skips_pytest_when_only_always_targets_match(tmp_path:
 
 
 def test_fast_no_always_targets_keeps_fast_targets(tmp_path: pathlib.Path, mocker) -> None:
-    """fastでは`pytest-fast-targets`による対象を残し、常時追加だけを外す。"""
     _write_project(
         tmp_path,
         extra='pytest = true\npytest-fast-targets = ["selected_test.py"]\npytest-always-targets = ["*_invariant_test.py"]\n',
@@ -263,7 +248,6 @@ def test_fast_no_always_targets_keeps_fast_targets(tmp_path: pathlib.Path, mocke
 
 @pytest.mark.asyncio
 async def test_mcp_run_no_always_targets(tmp_path: pathlib.Path, mocker) -> None:
-    """MCPの`run`でも`no_always_targets`で常時追加を外せる。"""
     _write_project(tmp_path, extra=ALWAYS_CONFIG + "respect-gitignore = false\n")
     mock_run = mocker.patch("pyfltr.command.process.run_subprocess", side_effect=_fail_invariant)
 
@@ -276,7 +260,6 @@ async def test_mcp_run_no_always_targets(tmp_path: pathlib.Path, mocker) -> None
 
 
 def _archived_argv(cache_root: pathlib.Path) -> list[str]:
-    """実行アーカイブに保存された唯一のrunの`meta.json`から`argv`を返す。"""
     metas = list(cache_root.rglob("meta.json"))
     assert len(metas) == 1
     return json.loads(metas[0].read_text(encoding="utf-8"))["argv"]
@@ -285,7 +268,6 @@ def _archived_argv(cache_root: pathlib.Path) -> list[str]:
 def test_cli_no_always_targets_is_recorded_in_archive_argv(
     tmp_path: pathlib.Path, mocker, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """CLIで指定した`--no-always-targets`が実行アーカイブのmetaの`argv`に残る。"""
     project = tmp_path / "proj"
     project.mkdir()
     _write_project(project, extra=ALWAYS_CONFIG)
@@ -306,7 +288,6 @@ def test_cli_no_always_targets_is_recorded_in_archive_argv(
 async def test_mcp_no_always_targets_is_recorded_in_archive_argv(
     tmp_path: pathlib.Path, mocker, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """MCPの`run`で指定した`no_always_targets`が実行アーカイブのmetaの`argv`に`--no-always-targets`として残る。"""
     project = tmp_path / "proj"
     project.mkdir()
     _write_project(project, extra=ALWAYS_CONFIG + "respect-gitignore = false\n")

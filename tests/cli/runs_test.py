@@ -18,7 +18,6 @@ def _isolated_cache(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> pathlib.Path:
-    """`PYFLTR_CACHE_DIR`を`tmp_path`に固定するフィクスチャ。"""
     monkeypatch.setenv("PYFLTR_CACHE_DIR", str(tmp_path))
     return tmp_path
 
@@ -41,11 +40,10 @@ def test_list_runs_text_multiple(
     assert returncode == 0
     out = capsys.readouterr().out
     assert "RUN_ID" in out
-    # 新しい順（降順）で並ぶ
     idx1 = out.find(run_id1)
     idx2 = out.find(run_id2)
     assert idx1 >= 0 and idx2 >= 0
-    assert idx2 < idx1  # 新しい run_id2 (後から作成) が先
+    assert idx2 < idx1
 
 
 def test_list_runs_limit(
@@ -58,7 +56,6 @@ def test_list_runs_limit(
     returncode = pyfltr.cli.main.run(["list-runs", "--limit", "2"])
     assert returncode == 0
     out = capsys.readouterr().out
-    # header行 + 2件 = 3行
     lines = [line for line in out.splitlines() if line.strip()]
     assert len(lines) == 3
 
@@ -91,7 +88,6 @@ def test_list_runs_jsonl(
     lines = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
     assert len(lines) == 2
     assert all(line["kind"] == "run" for line in lines)
-    # 降順（新しい順）
     assert lines[0]["run_id"] == run_id2
     assert lines[1]["run_id"] == run_id1
 
@@ -147,8 +143,6 @@ def test_show_run_prefix_ambiguous(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     run_ids = [_seed_run(tmp_path) for _ in range(2)]
-    # ULIDの先頭は同じタイムスタンプ部分（ミリ秒単位）を共有する可能性が高いため、
-    # 実際に共通する最長プレフィックスを算出してテストする。
     shared = 0
     for a, b in zip(run_ids[0], run_ids[1], strict=False):
         if a != b:
@@ -190,7 +184,6 @@ def test_list_runs_agent_indicator_jsonl(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """エージェント検出変数のいずれかが設定されていれば、`list-runs`は--output-format未指定でもJSONLを出力する。"""
     monkeypatch.setenv(env_name, "1")
     run_id = _seed_run(tmp_path)
 
@@ -209,14 +202,12 @@ def test_show_run_agent_indicator_jsonl(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """エージェント検出変数のいずれかが設定されていれば、`show-run`は--output-format未指定でもJSONLを出力する。"""
     monkeypatch.setenv(env_name, "1")
     run_id = _seed_run(tmp_path, commands=["ruff-check"], exit_code=0)
 
     returncode = pyfltr.cli.main.run(["show-run", run_id])
     assert returncode == 0
     lines = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
-    # JSONL: meta（kind="meta"）+ ツール別command
     assert lines, "JSONLが1行も出ていない"
     assert lines[0]["kind"] == "meta"
 
@@ -249,7 +240,6 @@ def test_show_run_tool_text_renders_hint_urls_and_hints(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """`hint_urls`と`hints`がtool.jsonにあるとき`show-run --commands`のtext出力に表示される。"""
     error = pyfltr.diagnostics.ErrorLocation(
         file="src/a.py",
         line=1,
@@ -463,7 +453,6 @@ def test_show_run_filters_retired_meta_without_hiding_unknown_detail(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """旧メタ情報の表示契約を2経路と3形式の組合せで検証する。"""
     run_id = _seed_run(
         tmp_path,
         commands=["ruff-check"],
@@ -490,7 +479,6 @@ def test_show_run_filters_retired_meta_without_hiding_unknown_detail(
 
 
 def _seed_timed_run(cache_root: pathlib.Path, *, slot_waits: list | None, finished: bool = True) -> str:
-    """待機区間と本体区間を持つrunを保存する。`slot_waits=None`は区間を計測しない版の記録を模す。"""
     store = pyfltr.state.archive.ArchiveStore(cache_root=cache_root)
     run_id = store.start_run(commands=["mypy"], files=1)
     result = pyfltr.command.core_.CommandResult(
@@ -533,7 +521,6 @@ _UNFINISHED_WAIT = {
 
 
 def test_show_run_timing_json_and_jsonl(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """待機区間・本体区間・run全体の経過を対応付けて返す。"""
     run_id = _seed_timed_run(tmp_path, slot_waits=[_FINISHED_WAIT])
 
     assert pyfltr.cli.main.run(["show-run", run_id, "--output-format=json"]) == 0
@@ -578,7 +565,6 @@ def test_show_run_timing_text(
     finished: bool,
     expected_lines: list[str],
 ) -> None:
-    """textは未確定を`unfinished`、未計測を`not measured`と表示し、0秒と区別する。"""
     run_id = _seed_timed_run(tmp_path, slot_waits=slot_waits, finished=finished)
     assert pyfltr.cli.main.run(["show-run", run_id, "--output-format=text"]) == 0
     out = capsys.readouterr().out
@@ -589,7 +575,6 @@ def test_show_run_timing_text(
 
 
 def test_show_run_tool_text_shows_body_interval(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """`--commands`のtextは本体区間の時刻を表示する。"""
     run_id = _seed_timed_run(tmp_path, slot_waits=[])
     assert pyfltr.cli.main.run(["show-run", run_id, "--commands=mypy", "--output-format=text"]) == 0
     out = capsys.readouterr().out
@@ -598,7 +583,6 @@ def test_show_run_tool_text_shows_body_interval(tmp_path: pathlib.Path, capsys: 
 
 
 def _seed_tester_run(cache_root: pathlib.Path, *, launch_boundary_at: str | None) -> str:
-    """テスターの結果を保存する。`launch_boundary_at=None`は開始境界を記録しない版・結果を模す。"""
     store = pyfltr.state.archive.ArchiveStore(cache_root=cache_root)
     run_id = store.start_run(commands=["pytest"], files=1)
     result = pyfltr.command.core_.CommandResult(
@@ -616,7 +600,6 @@ def _seed_tester_run(cache_root: pathlib.Path, *, launch_boundary_at: str | None
 def test_show_run_exposes_launch_boundary(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], output_format: str
 ) -> None:
-    """show-runの`--commands`は保存済みの開始境界を表示し、既定表示のjsonはツール別サマリへ含める。"""
     boundary = "2026-11-13T03:55:25.000100+00:00"
     run_id = _seed_tester_run(tmp_path, launch_boundary_at=boundary)
 
@@ -628,7 +611,6 @@ def test_show_run_exposes_launch_boundary(
 
 
 def test_show_run_omits_launch_boundary_for_unrecorded_run(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """開始境界を記録していないrunでは項目を補完しない。"""
     run_id = _seed_tester_run(tmp_path, launch_boundary_at=None)
 
     assert pyfltr.cli.main.run(["show-run", run_id, "--output-format=json"]) == 0

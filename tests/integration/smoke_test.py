@@ -17,8 +17,6 @@ import scripts.check_distribution
 
 @dataclasses.dataclass(frozen=True)
 class _Case:
-    """1ツール分のスモーク起動仕様。"""
-
     tool: str
     """pyfltrコマンド名。"""
 
@@ -40,7 +38,6 @@ class _Case:
 
 
 _CASES: tuple[_Case, ...] = (
-    # Python系: 本体依存に同梱されているので実環境の追加バイナリ要求なし
     _Case("ruff-format", "basic", ("sample.py",)),
     _Case("ruff-check", "basic", ("sample.py",)),
     _Case("pylint", "basic", ("sample.py",)),
@@ -50,21 +47,17 @@ _CASES: tuple[_Case, ...] = (
     _Case("arid", "basic", ("sample.py",)),
     _Case("pytest", "basic", ("sample_test.py",)),
     _Case("uv-sort", "uv_sort_workspace", ("pyproject.toml",)),
-    # JS/TS系: pnpm経路で解決
     _Case("prettier", "ts_workspace", ("sample.ts",), required_bins=("pnpm",)),
     _Case("tsc", "ts_workspace", ("sample.ts",), required_bins=("pnpm",)),
     _Case("eslint", "ts_workspace", ("sample.ts",), required_bins=("pnpm",)),
     _Case("biome", "ts_workspace", ("sample.ts",), required_bins=("pnpm",)),
     _Case("oxlint", "ts_workspace", ("sample.ts",), required_bins=("pnpm",)),
     _Case("vitest", "ts_workspace", ("sample.test.ts",), required_bins=("pnpm",)),
-    # ドキュメント系: pnpm経路
     _Case("markdownlint", "basic", ("sample.md",), required_bins=("pnpm",)),
     _Case("textlint", "textlint_workspace", ("sample.md",), required_bins=("pnpm",)),
-    # 内蔵linter: pyfltrのPythonで起動するため追加バイナリ要求なし
     _Case("markdown-structure", "basic", ("sample.md",)),
     _Case("comment-check", "comment_check_workspace", ("sample.py",)),
     _Case("test-copies", "basic", ("sample_test.py",)),
-    # mise経由のネイティブバイナリ
     _Case("shfmt", "basic", ("sample.sh",), required_bins=("mise",)),
     _Case("taplo", "basic", ("sample.toml",), required_bins=("mise",)),
     _Case("actionlint", "basic", (".github/workflows/ci.yaml",), required_bins=("mise",)),
@@ -72,7 +65,6 @@ _CASES: tuple[_Case, ...] = (
     _Case("ec", "basic", ("sample.txt",), required_bins=("mise",)),
     _Case("hadolint", "basic", ("Dockerfile",), required_bins=("mise",)),
     _Case("gitleaks", "basic", ("sample.txt",), required_bins=("mise",), git_required=True),
-    # 独立バイナリ
     _Case("shellcheck", "basic", ("sample.sh",), required_bins=("shellcheck",)),
     _Case("yamllint", "basic", ("sample.yaml",), required_bins=("yamllint",)),
     _Case("typos", "basic", ("sample.txt",), required_bins=("typos",)),
@@ -87,24 +79,14 @@ _REPO_ROOT: pathlib.Path = pathlib.Path(__file__).resolve().parents[2]
 _SMOKE_DATA_ROOT: pathlib.Path = _REPO_ROOT / "tests" / "smoke_data"
 
 
-# ツールが起動して正常に完了したことを確認するための許容ステータス。
-# `skipped`/`resolution_failed`/`failed`/`warning`はツール起動自体が破綻しているか、
-# サンプル側の問題で診断が出た状態を表す。pnpm 11のような起動経路の破壊と
-# 通常失敗を区別するため、起動成立かつ診断ゼロの`succeeded`/`formatted`のみを通す。
 _OK_STATUSES: frozenset[str] = frozenset({"succeeded", "formatted"})
 
 
 def _is_ci() -> bool:
-    """CI環境変数が設定されている（CI実行と判定される）か。"""
     return bool(os.environ.get("CI"))
 
 
 def _ensure_required_bins(case: _Case) -> None:
-    """必要バイナリが揃っているか確認する。
-
-    CI実行時は揃っていない＝環境構築不備として失敗させる。
-    ローカル実行時は対象のケースをスキップする。
-    """
     missing = [name for name in case.required_bins if shutil.which(name) is None]
     if not missing:
         return
@@ -115,12 +97,10 @@ def _ensure_required_bins(case: _Case) -> None:
 
 
 def _prepare_workspace(case: _Case, tmp_path: pathlib.Path) -> pathlib.Path:
-    """smoke_data配下のworkspaceをtmp_pathへコピーし必要なら`git init`を施す。"""
     src = _SMOKE_DATA_ROOT / case.workspace
     dst = tmp_path / case.workspace
     shutil.copytree(src, dst)
     if case.git_required:
-        # gitleaks/pre-commit はリポジトリ管理を前提とするためinit + 全ファイル登録まで実施する。
         subprocess.run(["git", "init", "--quiet"], cwd=dst, check=True)
         subprocess.run(["git", "add", "--all"], cwd=dst, check=True)
         subprocess.run(
@@ -140,10 +120,6 @@ def _run_pyfltr(
     no_fix: bool = False,
     archive: bool = False,
 ) -> list[dict]:
-    """pyfltr CLIをsubprocess起動し、JSONL出力をパースして返す。
-
-    `env`を省略した場合は現在の環境変数を引き継ぐ。
-    """
     cmd = [
         sys.executable,
         "-m",
@@ -184,7 +160,6 @@ def _run_pyfltr(
 
 
 def _extract_command_record(records: list[dict], command: str) -> dict | None:
-    """JSONLレコード列から指定コマンドの最後のcommandレコードを取得する。"""
     for record in reversed(records):
         if record.get("kind") == "command" and record.get("command") == command:
             return record
@@ -192,7 +167,6 @@ def _extract_command_record(records: list[dict], command: str) -> dict | None:
 
 
 def test_extract_command_record_returns_last_matching_record() -> None:
-    """heartbeatより後の終端レコードをコマンドの確定結果として返す。"""
     records = [
         {"kind": "command", "command": "other", "status": "succeeded"},
         {"kind": "command", "command": "target", "status": "running"},
@@ -203,20 +177,16 @@ def test_extract_command_record_returns_last_matching_record() -> None:
 
 
 def test_extract_command_record_returns_none_without_matching_record() -> None:
-    """指定コマンドのレコードが無い場合はNoneを返す。"""
     records = [{"kind": "command", "command": "other", "status": "succeeded"}]
 
     assert _extract_command_record(records, "target") is None
 
 
 @pytest.mark.smoke
-# pytest全体の既定は`--timeout=60`だが、`_run_pyfltr`内部の`subprocess.run`は180秒を許容する。
-# 外側が先に発火すると内部タイムアウトの明確なエラーが失われるため、外側を内側より長く取る。
 @pytest.mark.timeout(300)
 @pytest.mark.usefixtures("_disable_faulthandler_timeout")
 @pytest.mark.parametrize("case", _CASES, ids=lambda c: c.tool)
 def test_tool_smoke(case: _Case, tmp_path: pathlib.Path) -> None:
-    """対応ツールがpyfltr経由で実起動し、起動成立を示すステータスを返す。"""
     _ensure_required_bins(case)
     workspace = _prepare_workspace(case, tmp_path)
     records = _run_pyfltr(workspace, case.tool, case.targets)
@@ -235,14 +205,12 @@ def test_tool_smoke(case: _Case, tmp_path: pathlib.Path) -> None:
     ("tool", "source", "rule", "column", "severity"),
     [
         ("ruff-check", "print(missing_name)\n", "F821", 7, "error"),
-        # mypyのテキスト解析は任意のseverityを保持しない。JSON出力のruffはerrorを保持する。
         ("mypy", 'value: int = "wrong"\n', "assignment", None, None),
     ],
 )
 def test_python_tools_report_real_failure_diagnostics(
     tmp_path: pathlib.Path, tool: str, source: str, rule: str, column: int | None, severity: str | None
 ) -> None:
-    """実ツールの違反出力が終了状態と位置・ルール・重大度付き診断へ届く。"""
     case = _Case(tool, "basic", ("sample.py",))
     workspace = _prepare_workspace(case, tmp_path)
     target = workspace / "sample.py"
@@ -267,7 +235,6 @@ def test_python_tools_report_real_failure_diagnostics(
 
 
 def _env_without_github_token() -> dict[str, str]:
-    """GitHub APIの認証情報を除いた環境変数を返す。"""
     return {key: value for key, value in os.environ.items() if key not in ("GITHUB_TOKEN", "GH_TOKEN")}
 
 
@@ -275,7 +242,6 @@ def _env_without_github_token() -> dict[str, str]:
 @pytest.mark.timeout(300)
 @pytest.mark.usefixtures("_disable_faulthandler_timeout")
 def test_pinact_passes_pinned_workflow_without_token(tmp_path: pathlib.Path) -> None:
-    """ピン留め済みのworkflowは、認証情報なしでも成功し、ファイルを書き換えない。"""
     case = _Case("pinact", "pinact_workspace", (".github/workflows/pinned.yaml",), required_bins=("mise",))
     _ensure_required_bins(case)
     workspace = _prepare_workspace(case, tmp_path)
@@ -292,7 +258,6 @@ def test_pinact_passes_pinned_workflow_without_token(tmp_path: pathlib.Path) -> 
 @pytest.mark.timeout(300)
 @pytest.mark.usefixtures("_disable_faulthandler_timeout")
 def test_pinact_reports_unpinned_actions(tmp_path: pathlib.Path) -> None:
-    """タグやブランチで書いた`uses:`を、ファイルと行番号付きの診断として報告して失敗する。"""
     case = _Case("pinact", "pinact_workspace", (".github/workflows/unpinned.yaml",), required_bins=("mise",))
     _ensure_required_bins(case)
     workspace = _prepare_workspace(case, tmp_path)
@@ -312,7 +277,6 @@ def test_pinact_reports_unpinned_actions(tmp_path: pathlib.Path) -> None:
     assert target.read_bytes() == before
 
 
-# 違反3件（error 2件・warning 1件）を生む入力。ルールを明示列挙し、yamllintの既定ルールの変更に依存させない。
 _YAMLLINT_CONFIG = "rules:\n  colons: enable\n  commas: enable\n  truthy:\n    level: warning\n"
 
 
@@ -327,11 +291,6 @@ _YAMLLINT_EXPECTED_MESSAGES = [
 
 
 def _prepare_yamllint_workspace(tmp_path: pathlib.Path, *, config_via_args: bool) -> pathlib.Path:
-    """yamllintの違反を含む作業ディレクトリを用意する。
-
-    `config_via_args`が真なら自動探索されない名前で設定ファイルを置き、`yamllint-args`の`-c`で渡す。
-    偽なら自動探索される`.yamllint.yml`へ置き、`yamllint-args`を指定しない。
-    """
     workspace = tmp_path / "yamllint_workspace"
     workspace.mkdir()
     pyproject = "[tool.pyfltr]\nyamllint = true\nrespect-gitignore = false\n"
@@ -350,11 +309,6 @@ def _prepare_yamllint_workspace(tmp_path: pathlib.Path, *, config_via_args: bool
 @pytest.mark.usefixtures("_disable_faulthandler_timeout")
 @pytest.mark.parametrize("config_via_args", [False, True], ids=["default-args", "yamllint-args"])
 def test_yamllint_reports_violations_as_diagnostics(tmp_path: pathlib.Path, config_via_args: bool) -> None:
-    """yamllintの違反を位置・ルール・重大度付きの診断として報告する。
-
-    yamllintの既定出力はGitHub Actions上で`::error`形式へ切り替わるため、同環境の変数を設定しても
-    同じ診断になることを併せて確認する。`yamllint-args`を上書きしても出力形式の注入は保たれる。
-    """
     _ensure_required_bins(_Case("yamllint", "yamllint_workspace", ("bad.yaml",), required_bins=("yamllint",)))
     workspace = _prepare_yamllint_workspace(tmp_path, config_via_args=config_via_args)
     env = {**os.environ, "GITHUB_ACTIONS": "true", "GITHUB_WORKFLOW": "ci"}
@@ -374,7 +328,6 @@ def test_yamllint_reports_violations_as_diagnostics(tmp_path: pathlib.Path, conf
 
 @pytest.mark.parametrize("filename", ["bad path.yaml", *(["bad:colon.yaml"] if os.name != "nt" else [])])
 def test_yamllint_special_path_reaches_jsonl_and_mcp(tmp_path: pathlib.Path, filename: str) -> None:
-    """実ファイルの特殊文字をJSONLとアーカイブ経由のMCP診断まで保つ。"""
     workspace = _prepare_yamllint_workspace(tmp_path, config_via_args=False)
     (workspace / "bad.yaml").rename(workspace / filename)
     records = _run_pyfltr(workspace, "yamllint", (filename,), no_fix=True, archive=True)

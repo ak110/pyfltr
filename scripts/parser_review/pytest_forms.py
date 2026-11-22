@@ -1,12 +1,3 @@
-"""pytest出力の解析レビューで確認する入力形態の生成定義。
-
-形態の番号と確認対象は`.claude/agents/error-parser-reviewer.md`「pytest出力の解析を変更する場合の確認形態」に従う。
-実出力を得られる形態はサンプルをpyfltr経由で実行して採取し、実行の途中終了や別の実行の連結のように
-実出力の変換で生成する派生入力は、派生元の入力識別子と変換内容を記録する。
-`--tb=auto`は専用サンプルの`[tool.pyfltr]`へ`pytest-tb-line = false`を書いて得るため、
-レビュー対象リポジトリの設定を変えない。
-"""
-
 import collections.abc
 import dataclasses
 import json
@@ -59,8 +50,6 @@ def _parent(body: str, *, name: str = "test_runs_child") -> str:
 
 @dataclasses.dataclass(frozen=True)
 class Derivation:
-    """実出力を変換して生成する派生入力。"""
-
     sources: tuple[str, ...]
     """派生元の形態ID。先頭の派生元の実行条件（cwd）を比較のパス解決条件に使う。"""
     transform: str
@@ -70,8 +59,6 @@ class Derivation:
 
 @dataclasses.dataclass(frozen=True)
 class Form:
-    """確認形態の1入力。"""
-
     id: str
     number: int
     title: str
@@ -79,7 +66,6 @@ class Form:
     derivation: Derivation | None = None
 
 
-# 実行環境のpytestプラグイン（pytest-asyncio）が設定欠落の警告を出力へ混ぜ、形態の境界を崩さないよう設定を置く。
 _PYPROJECT = '[tool.pytest.ini_options]\nasyncio_default_fixture_loop_scope = "function"\n'
 
 
@@ -107,7 +93,6 @@ _FINAL_SUMMARY_RE = re.compile(r"^=+ .* in \d+(?:\.\d+)?s.*=+$")
 
 
 def truncate_before_final_summary(outputs: list[str]) -> str:
-    """最終集計行とそれ以降を除き、親の実行が途中で終わった出力を生成する。"""
     lines = outputs[0].splitlines()
     indexes = [index for index, line in enumerate(lines) if _FINAL_SUMMARY_RE.match(line)]
     if not indexes:
@@ -116,7 +101,6 @@ def truncate_before_final_summary(outputs: list[str]) -> str:
 
 
 def append_following_run(outputs: list[str]) -> str:
-    """親の出力の後へ、別の実行の開始部分（`collected`行まで）を連結する。"""
     parent, follower = outputs
     head: list[str] = []
     for line in follower.splitlines():
@@ -229,7 +213,6 @@ def _mixed_traceback_forms() -> list[Form]:
 
 
 def _evidence_forms() -> list[Form]:
-    """行の形を模倣する本文を、外部フレームとdoctestの各経路へ与える。"""
     forms = []
     for label, extra in (("long", []), ("long-l", ["-l"])):
         forms.append(
@@ -285,7 +268,6 @@ _ERROR_FILES = {
 
 
 def _error_forms() -> list[Form]:
-    """試験の準備・後始末・収集のERROR（共有fixtureの例外位置が試験ファイルの外にある形を含む）。"""
     forms = [
         _real(
             "pytest-22-setup-error-only",
@@ -302,7 +284,6 @@ def _error_forms() -> list[Form]:
             ("collect_test.py",),
         ),
     ]
-    # pyfltrは`pytest-tb-line`が有効な間`--tb`を`--tb=short`へ置き換えるため、`--tb=no`の形態は無効にする。
     for label, settings in (
         ("short", {}),
         ("rN", {"pytest-args": ["-rN"]}),
@@ -622,7 +603,6 @@ FORMS: tuple[Form, ...] = (
 
 
 def select_forms(selectors: list[str] | None) -> list[Form]:
-    """形態番号または形態IDで選び、派生入力の派生元も含めて定義順で返す。"""
     by_id = {form.id: form for form in FORMS}
     if selectors is None:
         chosen = set(by_id)
@@ -645,7 +625,6 @@ def select_forms(selectors: list[str] | None) -> list[Form]:
 
 
 def derive(output_dir: pathlib.Path, form: Form, records: dict[str, dict[str, typing.Any]]) -> dict[str, typing.Any]:
-    """派生元の採取記録から派生入力を生成し、採取記録と同じ形の記録を返す。"""
     derivation = form.derivation
     assert derivation is not None
     record: dict[str, typing.Any] = {
@@ -680,7 +659,6 @@ def derive(output_dir: pathlib.Path, form: Form, records: dict[str, dict[str, ty
 
 
 def generate(collector: collect.Collector, forms: list[Form]) -> list[dict[str, typing.Any]]:
-    """選んだ形態を採取・派生し、定義順の記録を返す。"""
     collector.output_dir.mkdir(parents=True, exist_ok=True)
     records: dict[str, dict[str, typing.Any]] = {}
     with collector.execution_slot():
@@ -698,7 +676,6 @@ def generate(collector: collect.Collector, forms: list[Form]) -> list[dict[str, 
 
 
 def catalog() -> list[dict[str, typing.Any]]:
-    """形態の一覧（番号・ID・説明・派生元）を返す。"""
     return [
         {
             "number": form.number,
@@ -715,5 +692,4 @@ def catalog() -> list[dict[str, typing.Any]]:
 
 
 def dump_catalog() -> str:
-    """形態の一覧をJSON文字列で返す。"""
     return json.dumps(catalog(), ensure_ascii=False, indent=2)

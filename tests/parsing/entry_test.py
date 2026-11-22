@@ -14,7 +14,6 @@ import pyfltr.tools
 def test_context_parser_checks_file_from_explicit_base(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, exists: bool
 ) -> None:
-    """明示基準に実在しても、拡張名の深いフレームは対象テストの位置へ採用しない。"""
     project = tmp_path / "project"
     project.mkdir()
     elsewhere = tmp_path / "elsewhere"
@@ -32,7 +31,6 @@ def test_context_parser_checks_file_from_explicit_base(
 
 
 def test_sort_errors() -> None:
-    """エラーソートのテスト。"""
     command_names = ["ruff-check", "mypy", "pylint"]
     errors = [
         pyfltr.diagnostics.ErrorLocation(file="src/bar.py", line=10, col=None, command="mypy", message="err1"),
@@ -41,26 +39,22 @@ def test_sort_errors() -> None:
     ]
     sorted_errors = pyfltr.parsing.entry.sort_errors(errors, command_names)
 
-    # ファイル名でソート→同一箇所はcommand_names順
     assert sorted_errors[0].file == "src/bar.py"
-    assert sorted_errors[0].command == "ruff-check"  # command_namesで先
+    assert sorted_errors[0].command == "ruff-check"
     assert sorted_errors[1].file == "src/bar.py"
     assert sorted_errors[1].command == "mypy"
     assert sorted_errors[2].file == "src/foo.py"
 
 
 def test_parse_errors_normalizes_absolute_path() -> None:
-    """絶対パスが相対パスに正規化されることのテスト。"""
     cwd = str(pathlib.Path.cwd())
-    # pyright風の絶対パス出力
     output = f"  {cwd}/src/foo.py:10:5 - error: some type error"
     errors = pyfltr.parsing.entry.parse_errors("pyright", output)
     assert len(errors) == 1
-    assert errors[0].file == "src/foo.py"  # 相対パスになっている
+    assert errors[0].file == "src/foo.py"
 
 
 def test_get_custom_parser_commands() -> None:
-    """カスタムパーサー登録コマンド一覧の取得。"""
     commands = pyfltr.parsing.entry.get_custom_parser_commands()
     assert "eslint" in commands
     assert "ruff-check" in commands
@@ -74,11 +68,8 @@ def test_get_custom_parser_commands() -> None:
     assert "semgrep" in commands
     assert "sqlfluff" in commands
     assert "pinact" in commands
-    # aridは`path_resolving_parser`側の登録だが、UIのストリーミング抑止判定では同じ集合に含める。
     assert "arid" in commands
     assert "mypy" not in commands
-    # parserの3経路は順に引くため、同じコマンドを複数経路へ登録しない。
-    # 表の排他性は公開関数の戻り値へ現れないため直接検証する。
     assert not (
         {name for name, info in pyfltr.tools.BUILTIN_COMMANDS.items() if info.parser is not None}
         & {name for name, info in pyfltr.tools.BUILTIN_COMMANDS.items() if info.path_resolving_parser is not None}
@@ -90,7 +81,6 @@ def test_get_custom_parser_commands() -> None:
 
 
 def test_parse_errors_error_pattern_precedes_path_resolving_parser() -> None:
-    """`error_pattern`の指定はパス変換関数を受け取るパーサーより優先する。"""
     output = "src/a.py:12: 重複を検出しました"
 
     errors = pyfltr.parsing.entry.parse_errors("arid", output, r"(?P<file>[^:]+):(?P<line>\d+): (?P<message>.+)")
@@ -99,29 +89,22 @@ def test_parse_errors_error_pattern_precedes_path_resolving_parser() -> None:
 
 
 def test_parse_summary_mypy_via_fallback() -> None:
-    """mypy: 汎用フォールバックでSuccess行を抽出する。"""
     output = "Success: no issues found in 42 source files\n"
     result = pyfltr.parsing.entry.parse_summary("mypy", output)
     assert result == "Success: no issues found in 42 source files"
 
 
 def test_parse_summary_json_output_returns_none() -> None:
-    """JSON出力（[]等）は汎用フォールバックでNoneを返す。"""
     assert pyfltr.parsing.entry.parse_summary("ruff-check", "[]") is None
     assert pyfltr.parsing.entry.parse_summary("shellcheck", "[]") is None
 
 
 def test_parse_summary_empty_output() -> None:
-    """空出力はNoneを返す。"""
     assert pyfltr.parsing.entry.parse_summary("mypy", "") is None
     assert pyfltr.parsing.entry.parse_summary("mypy", "  \n  ") is None
 
 
 def test_parse_errors_rebases_subproject_relative_output(tmp_path: pathlib.Path) -> None:
-    """子プロジェクトのcwdで実行したツールの相対パス診断を起点相対へ揃える。
-
-    組み込み正規表現・関数パーサー・利用者指定の`error_pattern`の全経路で同じ基準を使う。
-    """
     sub = tmp_path / "pkg_a"
     mypy_errors = pyfltr.parsing.entry.parse_errors(
         "mypy", "x.py:1: error: 型が違う  [assignment]", path_base=sub, start_cwd=tmp_path
@@ -146,7 +129,6 @@ def test_parse_errors_rebases_subproject_relative_output(tmp_path: pathlib.Path)
 
 
 def test_parse_errors_does_not_double_prefix_absolute_or_remapped_paths(tmp_path: pathlib.Path) -> None:
-    """絶対パス・起点外のパス・一時パスから元ファイルへ戻した診断へ接頭辞を重ねない。"""
     sub = tmp_path / "pkg_a"
     inside = sub / "doc.md"
     outside = tmp_path.parent / "external.md"
@@ -170,10 +152,6 @@ def test_parse_errors_does_not_double_prefix_absolute_or_remapped_paths(tmp_path
 
 
 def test_parse_errors_returns_absolute_path_for_relative_outside_start(tmp_path: pathlib.Path) -> None:
-    """単一プロジェクトでも起点外を指す`../`相対の診断は`/`区切りの絶対パスで返す。
-
-    起点外の対象ファイルは対象集合側でも絶対パスで保持されるため、同じ表現に揃えて突合できるようにする。
-    """
     errors = pyfltr.parsing.entry.parse_errors(
         "mypy", "../outside.py:1: error: 型が違う  [assignment]", path_base=tmp_path, start_cwd=tmp_path
     )

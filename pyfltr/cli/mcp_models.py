@@ -1,9 +1,3 @@
-"""MCPツールスキーマ用Pydanticモデル群。
-
-`mcp_server.py`が公開する11ツールの戻り値スキーマをまとめて定義する。
-入力側は各ツール関数の型注釈と`pydantic.Field`の説明からJSONスキーマを自動生成する。
-"""
-
 from __future__ import annotations
 
 import typing
@@ -26,7 +20,6 @@ class RunSummaryModel(pydantic.BaseModel):
     )
 
 
-# `CommandSummaryModel`と`CommandMetaModel`が同じ意味の項目として共有する説明文。
 _LAUNCH_BOUNDARY_DESCRIPTION = (
     "テスターのプロセスを起動する前に記録した開始境界（UTCのISO 8601）。"
     "同じrunの整形（fix段・formatter段）が終わった時刻を含む1秒の区間が過ぎてから記録するため、"
@@ -80,7 +73,6 @@ class CommandSummaryModel(pydantic.BaseModel):
         self,
         handler: pydantic.SerializerFunctionWrapHandler,
     ) -> dict[str, typing.Any]:
-        """開始境界が記録されていない結果では項目を省き、`CommandMetaModel`と未記録の表現をそろえる。"""
         serialized = typing.cast(dict[str, typing.Any], handler(self))
         if self.launch_boundary_at is None:
             serialized.pop("launch_boundary_at", None)
@@ -232,7 +224,6 @@ class CommandMetaModel(pydantic.BaseModel):
         self,
         handler: pydantic.SerializerFunctionWrapHandler,
     ) -> dict[str, typing.Any]:
-        """保存元に無い任意項目を直列化結果から省く。"""
         serialized = typing.cast(dict[str, typing.Any], handler(self))
         for field_name in ("slow_tests", "retry_command", "started_at", "finished_at", "launch_boundary_at"):
             if field_name not in self.model_fields_set:
@@ -274,7 +265,6 @@ class CommandDiagnosticsModel(pydantic.BaseModel):
         self,
         handler: pydantic.SerializerFunctionWrapHandler,
     ) -> dict[str, typing.Any]:
-        """範囲指定の無い呼び出しでは範囲項目を省き、従来と同じ応答を保つ。"""
         serialized = typing.cast(dict[str, typing.Any], handler(self))
         for field_name in ("total_diagnostics", "next_offset"):
             if field_name not in self.model_fields_set:

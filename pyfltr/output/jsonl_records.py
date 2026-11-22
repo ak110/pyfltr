@@ -1,5 +1,3 @@
-"""JSONLレコードの辞書生成。"""
-
 import importlib.metadata
 import json
 import logging
@@ -40,25 +38,6 @@ _DEFAULT_HEAD_RATIO = 0.2
 def aggregate_diagnostics(
     errors: typing.Iterable[pyfltr.diagnostics.ErrorLocation],
 ) -> tuple[list[dict[str, typing.Any]], dict[str, str], dict[str, str]]:
-    """`ErrorLocation`列を`(command, file)`単位の集約dictへ変換する。
-
-    戻り値は`(diagnostic_records, hint_urls, hints)`の3要素タプル。
-
-    - `diagnostic_records`: `diagnostic`レコードのリスト。各要素は
-      `{"kind": "diagnostic", "command": ..., "file": ..., "messages": [...]}`。
-      `messages`は`(line, col or 0, rule or "")`昇順で並ぶ。
-      ruleキーを含めるのは、同一`(file, line, col)`に複数ルールの指摘が
-      重なる場合でも安定した順序を保証するため（ruleなし要素は空文字列扱いで
-      先頭側にまとまる）。
-    - `hint_urls`: rule→URL辞書（`command.hint_urls`キーで埋め込む用）。URLが生成できたruleのみ含む。
-    - `hints`: rule→短い修正ヒント辞書（`command.hints`キーで埋め込む用）。
-      `ErrorLocation.hint`が非Noneのruleのみ含む。
-
-    同一ruleに異なる値（URL / hint）が紛れた場合は先に出現した値を採用してdebugログを残す。
-    先勝ち採用にしているのは、ツール単位の辞書としては1ルール1値に束ねる方がLLM入力時の混乱が
-    少ないため。逸脱はdebugログで気付ける余地を残す。
-    集約のキー順は入力順（`sort_errors()`済み）を尊重する。
-    """
     groups: dict[tuple[str, str], list[pyfltr.diagnostics.ErrorLocation]] = {}
     group_order: list[tuple[str, str]] = []
     hint_urls: dict[str, str] = {}
@@ -74,7 +53,6 @@ def aggregate_diagnostics(
             if existing is None:
                 hint_urls[error.rule] = error.rule_url
             elif existing != error.rule_url:
-                # 利用者が行う操作は無く、解析ルールの不整合を開発者へ通知するだけのためdebugとする。
                 logger.debug(
                     "aggregate_diagnostics: rule %r に複数のrule_urlが存在する。先勝ち採用: %s (後続 %s を無視)",
                     error.rule,
@@ -114,13 +92,6 @@ def aggregate_diagnostics(
 def collect_mise_active_tools_for_header(
     commands: list[str], config: pyfltr.config.model.Config
 ) -> dict[str, typing.Any] | None:
-    """header露出用のmise active tools取得状況dictを組み立てる。
-
-    `commands`にmiseバックエンド登録済みのものが1つも含まれない場合は`None`を返し、
-    Python専用runのheaderへ無関係な`mise-not-found`を出力しないようにする。
-    含まれる場合は`get_mise_active_tools(config)`を副作用OFFで引き、
-    `{"status": ..., "detail": ..., "active_keys": [...]}`形式に整える。
-    """
     if not any(pyfltr.command.runner.get_mise_active_tool_key(cmd) is not None for cmd in commands):
         return None
     result = pyfltr.command.mise.get_mise_active_tools(config)
@@ -133,7 +104,6 @@ def collect_mise_active_tools_for_header(
 
 
 def dump_record(record: dict[str, typing.Any]) -> str:
-    """JSON 1行にシリアライズする。ensure_ascii=False + 区切り最短化でトークン効率を稼ぐ。"""
     return json.dumps(record, ensure_ascii=False, separators=(",", ":"))
 
 
@@ -146,30 +116,6 @@ def build_header_record(
     format_source: str | None = None,
     quiet: bool = False,
 ) -> dict[str, typing.Any]:
-    """実行環境の基本情報をheaderレコードdictとして返す。
-
-    `commands`は「実際に実行されるツール集合」（`--only-failed`やdisabledツール除外後）を
-    前提とする。呼び出し側でフィルタリング済みの配列を渡すこと。
-    `mise_active_tools`は`{"status": ..., "detail": ..., "active_keys": [...]}`形式で渡し、
-    指定時のみheaderへ露出する（mise経路を使うrunの自己診断用途）。
-    `format_source`は`pyfltr.cli.output_format.FORMAT_SOURCE_*`の値で、出力形式の解決経路を明示する。
-    指定時のみheaderへ露出する。
-    `uv`オブジェクト（`lock`・`available`・`x_available`）はプロセス共通のuv / uvx経路追跡情報で、
-    Python系コマンドの実行有無に関わらず常時出力する
-    （利用者・LLMが「uv経路が選択された／uvxへフォールバックした／directにフォールバックした」の
-    判別に使う）。詳細は `pyfltr.command.runner.build_commandline` のdocstringを参照する。
-
-    `quiet=True`のときは次のフィールドのみを含む縮約レコードを返す。
-
-    - `kind`（常に`"header"`）
-    - `run_id`（渡された場合のみ）
-    - `commands`
-    - `files`
-
-    `version`・`python`・`executable`・`platform`・`cwd`・`uv`・
-    `mise_active_tools`・`format_source`は`quiet`時に省略する
-    （エージェント経路のトークン消費削減目的）。
-    """
     if quiet:
         condensed: dict[str, typing.Any] = {"kind": "header", "commands": commands, "files": files}
         if run_id is not None:
@@ -200,7 +146,6 @@ def build_header_record(
 
 
 def build_warning_record(entry: dict[str, typing.Any]) -> dict[str, typing.Any]:
-    """警告 dict を warning レコード dict に変換する。"""
     record: dict[str, typing.Any] = {
         "kind": "warning",
         "source": entry["source"],
@@ -211,14 +156,6 @@ def build_warning_record(entry: dict[str, typing.Any]) -> dict[str, typing.Any]:
 
 
 def build_message_dict(error: pyfltr.diagnostics.ErrorLocation) -> dict[str, typing.Any]:
-    """ErrorLocationを集約`messages[]`要素のdictに変換する。
-
-    フィールド順は`line` → `col` → `end_line` → `end_col` → `rule` →
-    `severity` → `fix` → `msg`。
-    `rule_url`・`hint`は含めず、それぞれtoolレコードの`hint_urls`・`hints`へ集約する。
-    Noneのフィールドは出力しない（`msg`は常に出力）。
-    `end_line`・`end_col`は終了位置を出力するツールで設定され、値が無い場合はキー自体を省略する。
-    """
     record: dict[str, typing.Any] = {"line": error.line}
     if error.col is not None:
         record["col"] = error.col
@@ -243,14 +180,6 @@ def build_truncated_meta(
     diagnostic_total: int | None,
     config: pyfltr.config.model.Config | None,
 ) -> tuple[dict[str, typing.Any], str | None]:
-    """commandレコードの`truncated`メタdictと、付与すべき`message`文字列を返す。
-
-    切り詰めが発生しない場合は空dict・Noneを返す。
-    `message`は`failed`/`resolution_failed`かつ（`diagnostics == 0`または
-    `command_type == "tester"`）のときのみ生成する。テスターの診断は要約であり
-    生出力の代替にならないため、診断が有っても生出力末尾を残す。
-    `truncated`はdiagnostic切り詰めとメッセージ切り詰めの両方を統合して返す。
-    """
     truncated: dict[str, typing.Any] = {}
     message: str | None = None
     archive_command_dir = pyfltr.paths.sanitize_command_name(result.command)
@@ -285,35 +214,19 @@ def build_hints_dict(
     hints: dict[str, str] | None,
     config: pyfltr.config.model.Config | None,
 ) -> dict[str, str]:
-    """commandレコードの`hints`dictを組み立てる。
-
-    `aggregate_diagnostics`由来のrule別ヒント・textlint固有の仕様注記・
-    ユーザー定義のper-tool hints・formatter/timeout状態ヒントを統合する。
-    いずれも「対応する指摘や状態が実際に該当するときのみ付与する」方針に従う。
-    """
     merged: dict[str, str] = dict(hints) if hints else {}
-    # textlintはcol/end_colをノード先頭からの累積位置で返す独特な仕様だが、
-    # 指摘ゼロの実行ではこの注記を読み解く文脈が無いためhintを付けない。
-    # col/end_colの双方を1個のhintで同時に説明し、類似文言の重複によるトークン浪費を避ける。
     if result.command == "textlint" and diagnostics > 0:
         merged["messages[].col"] = (
             "textlint reports col and end_col as cumulative offsets from the text-node start, not in-line offsets"
         )
-    # ユーザー定義の `{command}-hints` は、指摘1件以上のときに限り `user.<n>` 連番キーで
-    # 追加する。連番キーは `aggregate_diagnostics` 由来のrule名キーや `messages[].col` 等の
-    # ツール固有キーと衝突しないよう `user.` プレフィクスを付ける。
     if config is not None and diagnostics > 0:
         user_hints: list[str] = list(pyfltr.config.model.command_setting(config.values, result.command, "hints", []))
         for index, hint_text in enumerate(user_hints):
             merged[f"user.{index}"] = hint_text
-    # formatterによる書き換えはそれ自体が成功扱いで、利用者・LLMエージェントが
-    # 「再実行して直さなければならない」と誤解しないようコマンド単独の文脈ヒントを添える。
     if result.formatted:
         merged["status.formatted"] = (
             "formatter rewrote files; rerun is not required because the rewrite itself counts as success"
         )
-    # timeout由来の停止はLLMがハング・無限ループを判別するためのキーとなる情報。
-    # 発行条件は「対応する状態が実際に該当するときのみ」方針に沿い、`timeout_exceeded=True`時のみ。
     if result.timeout_exceeded:
         merged["status.timeout"] = (
             "subprocess was killed because it exceeded the configured timeout;"
@@ -332,43 +245,18 @@ def build_command_record(
     hint_urls: dict[str, str] | None = None,
     hints: dict[str, str] | None = None,
 ) -> dict[str, typing.Any]:
-    """CommandResultをcommandレコードdictに変換する。
-
-    `diagnostics`は集約前の個別指摘件数（messages合計）を指定する。
-    `failed`かつ（`diagnostics == 0`またはtester）のときに、`CommandResult.output`の末尾を
-    `_truncate_message()`でトリムして`message`フィールドを付与する。
-    メッセージ切り詰めまたはdiagnostic切り詰めが発生した場合は`truncated`メタを
-    添付する。retry_commandは`CommandResult.retry_command`が設定されていれば含める。
-    `hint_urls`が非空なら`hint_urls`キーで埋め込む。
-    `hints`が非空なら`hints`キーで埋め込む。
-    `result.slow_tests`が非空のときは`slow_tests`キーへ出力する
-    （入力は秒数降順の上位`SLOW_TEST_LIMIT`件へ正規化済みである）。
-    hintは「対応する指摘や状態が実際に該当するときのみ付与する」方針で扱い、
-    textlintコマンドの`messages[].col`仕様注記は`diagnostics > 0`のときに限り追加する
-    （指摘ゼロの実行で固定的なhintを残してLLMトークンを浪費しないため）。
-    `result.cached`が真のときは`elapsed`ではなく`cached_elapsed`キーに
-    リネームして出力する（実行をスキップした前回値である旨をLLMに明示するため）。
-    """
     record: dict[str, typing.Any] = {
         "kind": "command",
         "command": result.command,
         "type": result.command_type,
         "status": result.status,
     }
-    # runner情報は「期待した経路と実際の経路が乖離した場合」のみ出力する（fallback検出用途）。
-    # 通常経路（runnerで指定したカテゴリ・直接値の通り解決した場合、`{command}-path`指定でdirect固定の場合等）は
-    # 3フィールドとも省略してLLM入力のトークン消費を抑える。
-    # fallback判定キーは `runner_fallback`（解決層で判定済み）。
-    # 通常時の解決状況の確認は `pyfltr command-info` の責務とする。
     if result.runner_fallback is not None:
         record["effective_runner"] = result.effective_runner
         record["runner_source"] = result.runner_source
         record["runner_fallback"] = result.runner_fallback
     record["files"] = result.files
     record["diagnostics"] = diagnostics
-    # cached=Trueのときは実行をスキップしているため`elapsed`は出力せず
-    # 前回実行時の計測値を`cached_elapsed`として提示する。LLMが「今回の実行時間」と
-    # 誤解するのを避けるため両者を同時に出力しない設計。
     elapsed_key = "cached_elapsed" if result.cached else "elapsed"
     record[elapsed_key] = round(result.elapsed, 2)
     if result.returncode is not None:
@@ -385,9 +273,6 @@ def build_command_record(
         record["truncated"] = truncated
     if result.retry_command is not None:
         record["retry_command"] = result.retry_command
-    # ファイルhashキャッシュ（v3.0.0 パートD）。
-    # `cached=True`のときはツール実行がスキップされ過去結果を復元したことを示す。
-    # `cached_from`は復元元のrun_id（ULID）で、show-run / MCPから全文参照できる。
     if result.cached:
         record["cached"] = True
         if result.cached_from is not None:
@@ -401,10 +286,6 @@ def build_command_record(
 
 
 def _resolve_message_limits(config: pyfltr.config.model.Config | None) -> tuple[int, int]:
-    """tool.messageの行数・文字数上限をconfigから取得する。
-
-    設定未指定時はパートC以前のハードコード値（30行 / 2000文字）を踏襲する。
-    """
     if config is None:
         return 30, 2000
     max_lines = int(config.values.get("jsonl-message-max-lines", 30) or 0)
@@ -482,8 +363,6 @@ def build_summary_record(
         if result.fixed_files:
             fixed_files_union.update(result.fixed_files)
     needs_action: dict[str, typing.Any] = {"failed": counts["failed"], "warning": counts["warning"]}
-    # resolution_failedはツール解決失敗時のみカウントされ、通常プロジェクトでは常に0。
-    # 0件は情報として冗長なためキー自体を省略する。failed/warningは0件でも常時出力する。
     if counts["resolution_failed"] > 0:
         needs_action["resolution_failed"] = counts["resolution_failed"]
     record: dict[str, typing.Any] = {
@@ -533,21 +412,6 @@ def _truncate_message(
     max_chars: int,
     archived: bool,
 ) -> tuple[str, bool, int, int]:
-    r"""生出力をハイブリッド方式（先頭 + 中略マーカー + 末尾）でトリムする。
-
-    戻り値は`(切り詰め後メッセージ, 切り詰め発生したか, head_chars, tail_chars)`。
-    `head_chars`/`tail_chars`は切り詰めが発生した場合の先頭・末尾ブロックの文字数。
-    切り詰めが発生しなかった場合は両方0を返す。
-    空文字は`("", False, 0, 0)`を返す（呼び出し側でmessageキーごと省略する）。
-    `archived`が`False`の場合は切り詰めを行わず全文を返す（アーカイブから
-    復元不能な情報欠落を避けるため）。
-
-    ハイブリッド方式は冒頭側にエラー概要を出力するツール（editorconfig-checker等）と
-    末尾側にエラー詳細を出力するツール（pytest・mypy等）の双方を取りこぼさないことを意図する。
-    `max_chars`を`head : tail = 1 : 4`（`_DEFAULT_HEAD_RATIO`）で配分し、
-    `max_lines`は末尾側に対してのみ適用する（先頭側は文字数で十分に制限されるため）。
-    `max_lines`/`max_chars`が0以下の場合は対象の軸の切り詰めを行わない。
-    """
     if not output:
         return "", False, 0, 0
     if not archived:
@@ -559,11 +423,9 @@ def _truncate_message(
     if not needs_truncate_chars and not needs_truncate_lines:
         return output, False, 0, 0
 
-    # ハイブリッド配分: 文字数制限がある場合はそれを基準にし、ない場合は十分大きな値とみなす。
     char_budget = max_chars if max_chars > 0 else len(output)
     head_size = max(1, int(char_budget * _DEFAULT_HEAD_RATIO))
     tail_size = char_budget - head_size
-    # マーカー長を控除して合計上限を超えないようにする。
     overhead = len(_TRUNCATED_MARKER)
     if tail_size > overhead:
         tail_size -= overhead
@@ -571,7 +433,6 @@ def _truncate_message(
     head_block = output[:head_size]
     tail_block = output[-tail_size:] if tail_size < len(output) else output
 
-    # 末尾側のみ行数制限を追加適用する（先頭側は冒頭の要約行を素直に保持するため不要）。
     if max_lines > 0:
         tail_lines = tail_block.splitlines()
         if len(tail_lines) > max_lines:

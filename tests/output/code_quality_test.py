@@ -8,7 +8,6 @@ from tests.conftest import make_error_location as _make_error
 
 
 def test_build_payload_basic() -> None:
-    """Code Quality の必須フィールドが揃った JSON 配列が返る。"""
     errors = [_make_error("ruff-check", "src/foo.py", 10, "unused import", col=3)]
     errors[0].rule = "F401"
     errors[0].severity = "error"
@@ -24,11 +23,10 @@ def test_build_payload_basic() -> None:
     assert issue["severity"] == "major"
     assert issue["location"] == {"path": "src/foo.py", "lines": {"begin": 10}}
     assert isinstance(issue["fingerprint"], str)
-    assert len(issue["fingerprint"]) == 64  # SHA-256 hex 全桁
+    assert len(issue["fingerprint"]) == 64
 
 
 def test_build_payload_severity_mapping() -> None:
-    """severity 3値+未設定がCode Qualityのseverityへマップされる。"""
     errors = [
         _make_error("tool", "a.py", 1, "e"),
         _make_error("tool", "a.py", 2, "w"),
@@ -38,7 +36,6 @@ def test_build_payload_severity_mapping() -> None:
     errors[0].severity = "error"
     errors[1].severity = "warning"
     errors[2].severity = "info"
-    # 4件目はseverity未設定のまま
     result = _make_result("tool", returncode=1, errors=errors)
 
     payload = pyfltr.output.code_quality.build_code_quality_payload([result])
@@ -47,7 +44,6 @@ def test_build_payload_severity_mapping() -> None:
 
 
 def test_build_payload_check_name_without_rule() -> None:
-    """ruleが無い場合、check_nameはツール名のみ。"""
     errors = [_make_error("mypy", "a.py", 1, "bad")]
     result = _make_result("mypy", returncode=1, errors=errors)
 
@@ -56,7 +52,6 @@ def test_build_payload_check_name_without_rule() -> None:
 
 
 def test_build_payload_fingerprint_deterministic() -> None:
-    """同じ入力から同じfingerprintが生成され、SHA-256連結仕様と一致する。"""
     err1 = _make_error("ruff-check", "src/foo.py", 10, "unused import", col=3)
     err1.rule = "F401"
     err2 = _make_error("ruff-check", "src/foo.py", 10, "unused import", col=3)
@@ -73,7 +68,6 @@ def test_build_payload_fingerprint_deterministic() -> None:
 
 
 def test_build_payload_fingerprint_differs_by_rule() -> None:
-    """ruleが異なればfingerprintも異なる。"""
     err1 = _make_error("ruff-check", "a.py", 1, "msg")
     err1.rule = "F401"
     err2 = _make_error("ruff-check", "a.py", 1, "msg")
@@ -85,7 +79,6 @@ def test_build_payload_fingerprint_differs_by_rule() -> None:
 
 
 def test_build_payload_fingerprint_uses_normalized_parser_columns() -> None:
-    """bandit・pylintのフィンガープリントは1起点へ補正された列を用いる。"""
     cases = [
         (
             "bandit",
@@ -134,7 +127,6 @@ def test_build_payload_fingerprint_uses_normalized_parser_columns() -> None:
 
 
 def test_build_payload_begin_defaults_to_one() -> None:
-    """lineが0の場合、location.lines.beginは1に補正される。"""
     errors = [_make_error("pytest", "tests/a.py", 0, "FAIL")]
     result = _make_result("pytest", returncode=1, errors=errors)
 
@@ -143,7 +135,6 @@ def test_build_payload_begin_defaults_to_one() -> None:
 
 
 def test_build_payload_includes_end_line() -> None:
-    """終了行を持つ診断は`location.lines.end`を出力する。"""
     errors = [_make_error("eslint", "src/a.ts", 3, "msg", col=5)]
     errors[0].end_line = 7
     errors[0].end_col = 9
@@ -154,7 +145,6 @@ def test_build_payload_includes_end_line() -> None:
 
 
 def test_build_payload_omits_missing_end_line() -> None:
-    """終了行を持たない診断は`location.lines.end`を出力しない。"""
     errors = [_make_error("mypy", "src/a.py", 3, "msg", col=5)]
     result = _make_result("mypy", returncode=1, errors=errors)
 
@@ -163,7 +153,6 @@ def test_build_payload_omits_missing_end_line() -> None:
 
 
 def test_build_payload_omits_end_line_before_begin() -> None:
-    """補正後のbeginより前の終了行は範囲として成立しないため出力しない。"""
     errors = [_make_error("pytest", "tests/a.py", 0, "FAIL")]
     errors[0].end_line = 0
     result = _make_result("pytest", returncode=1, errors=errors)
@@ -173,7 +162,6 @@ def test_build_payload_omits_end_line_before_begin() -> None:
 
 
 def test_build_payload_omits_columns() -> None:
-    """列は開始列・終了列とも`location`へ出力しない。"""
     errors = [_make_error("ruff-check", "src/a.py", 3, "msg", col=5)]
     errors[0].end_line = 3
     errors[0].end_col = 12
@@ -184,7 +172,6 @@ def test_build_payload_omits_columns() -> None:
 
 
 def test_build_payload_empty() -> None:
-    """エラー無しなら空配列。"""
     result = _make_result("mypy", returncode=0)
     payload = pyfltr.output.code_quality.build_code_quality_payload([result])
     assert not payload

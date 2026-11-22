@@ -1,5 +1,3 @@
-"""利用ガイドに写した一覧と公開定義の整合。"""
-
 import argparse
 import ast
 import dataclasses
@@ -48,7 +46,6 @@ def _tool_names(source: str) -> set[str]:
         source = source.replace(name.replace("-", " "), name)
         if info.js_bin is not None:
             source = source.replace(info.js_bin, name)
-    # 文書側の未知名も残し、廃止されたツールが一覧へ残る場合を検出する。
     return set(re.findall(r"(?<![A-Za-z0-9_-])[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?![A-Za-z0-9_-])", source))
 
 
@@ -58,13 +55,11 @@ def _subparsers() -> dict[str, argparse.ArgumentParser]:
 
 
 def _arguments(parser: argparse.ArgumentParser) -> list[argparse.Action]:
-    # argparseの登録済み引数一覧は内部属性から取得する。
     return parser._actions  # pylint: disable=protected-access
 
 
 def _nested_parsers(parser: argparse.ArgumentParser) -> dict[str, argparse.ArgumentParser]:
     for action in _arguments(parser):
-        # サブコマンド登録の公開APIに対応するアクション型を判別する。
         if isinstance(action, argparse._SubParsersAction):  # pylint: disable=protected-access
             return action.choices
     raise AssertionError("サブコマンドの登録が見つからない")
@@ -93,7 +88,6 @@ def test_documented_error_pattern_groups_match_definition() -> None:
 def test_documented_custom_command_keys_match_validation() -> None:
     section = _between(_guide("custom-commands.md"), "設定項目。", "`error-pattern`の任意グループは")
     documented = set(re.findall(r"^- `([^`]+)`", section, re.MULTILINE))
-    # 受理キーはdefinition.getへ分散しているため、実装のASTから取得する。
     tree = ast.parse(inspect.getsource(pyfltr.config.validation.register_custom_command))
     expected = {
         node.args[0].value.replace("_", "-")
@@ -169,13 +163,11 @@ def test_documented_output_formats_and_agent_envs_match_definitions() -> None:
 def test_documented_monorepo_markers_and_exclusions_match_definitions() -> None:
     source = _guide("usage.md")
     markers = _between(source, "マーカーは固定ファイル名", "とする。")
-    # 検出に用いる共通定義を参照し、一覧に新しい検出対象が欠けることを検出する。
     names = pyfltr.command.subprojects._SUBPROJECT_MARKER_NAMES  # pylint: disable=protected-access
     globs = pyfltr.command.subprojects._SUBPROJECT_MARKER_GLOBS  # pylint: disable=protected-access
     expected = set(names + globs)
     assert _codes(markers) == expected
     excluded = _between(source, "`.venv`・`node_modules`・`target`・`build`・`dist`・`.git`配下", "走査しない")
-    # 走査から除外される名前の定義との一致を検査する。
     excluded_names = pyfltr.command.subprojects._DEFAULT_EXCLUDE_NAMES  # pylint: disable=protected-access
     assert _codes("`.venv`・`node_modules`・`target`・`build`・`dist`・`.git`配下" + excluded) == set(excluded_names)
 
@@ -234,7 +226,6 @@ def test_documented_auto_options_match_definitions() -> None:
 def test_documented_grep_types_and_output_modes_match_definitions() -> None:
     source = _guide("grep-replace.md")
     types = _between(source, "言語タイプフィルタ（", "）")
-    # タイプ名の受理集合を所有する内部定義との一致を検査する。
     type_patterns = pyfltr.grep_.scanner._TYPE_PATTERNS  # pylint: disable=protected-access
     assert set(types.split("/")) == set(type_patterns)
     section = _between(source, "`output_mode`は選択された形式を示し、", "のいずれかとなる。")
@@ -281,7 +272,6 @@ def test_documented_bin_runner_enable_example_matches_definitions() -> None:
 
 def test_documented_tool_default_arguments_match_definitions() -> None:
     source = _guide("configuration-tools.md")
-    # 既定引数として掲載した代入だけを拾い、上書き例を除く。
     snippets = []
     for line in source.splitlines():
         if line.startswith(("- ", "    - ", "既定の引数は", "pyfltr既定の", "既定の`")) and "上書き" not in line:
@@ -312,7 +302,6 @@ def test_documented_mise_backends_match_definitions() -> None:
 def test_documented_guide_language_tools_match_definitions(heading: str, language: str) -> None:
     section = _guide("index.md").split(f"## {heading}系", 1)[1].split("\n## ", 1)[0]
     expected = {name for name, info in pyfltr.tools.BUILTIN_COMMANDS.items() if info.language == language}
-    # 説明文の設定例を含めず、各分類の箇条書きを比べる。
     rows = "\n".join(line for line in section.splitlines() if line.startswith(("- Formatters:", "- Linters:", "- Testers:")))
     rows = re.sub(r"（[^）]*）", "", rows)
     assert _tool_names(rows) == expected
@@ -328,7 +317,6 @@ def test_documented_guide_tools_and_disabled_notes_match_definitions() -> None:
     others = others.split("- 統合:", 1)[0] + "- 統合:" + others.split("- 統合:", 1)[1].split("\n", 1)[0]
     rows = re.sub(r"（[^）]*）", "", documents + others)
     assert _tool_names(rows) == {name for name, info in pyfltr.tools.BUILTIN_COMMANDS.items() if info.language is None}
-    # 全言語カテゴリは冒頭の無効注記、その他はツールごとの注記が対応する。
     for name in re.findall(r"([a-z]+(?:-[a-z]+)*)（(?:[^）]*、)?既定は無効）", source):
         assert not pyfltr.config.model.DEFAULT_CONFIG[name], name
 
@@ -364,7 +352,6 @@ def test_documented_recommended_tools_match_presets(page: str, marker: str, lang
 
 def test_documented_run_history_columns_and_kinds_match_definitions() -> None:
     source = _guide("usage.md")
-    # 列名はtext表示のheader定義、kindはJSONLの辞書定義から取得する。
     tree = ast.parse(inspect.getsource(pyfltr.cli.runs))
     headers = [
         node.value
@@ -388,7 +375,6 @@ def test_documented_run_history_columns_and_kinds_match_definitions() -> None:
     kinds = _between(source, "`kind`は`meta`", "いずれかとなる")
     assert _codes("`meta`" + kinds) == expected_kinds
     section = _between(source, "既定: `meta`（", "）")
-    # 既定metaの出力項目を組み立てる定義を参照する。
     summary_function = pyfltr.cli.runs._summary_to_dict  # pylint: disable=protected-access
     function_tree = ast.parse(inspect.getsource(summary_function))
     expected_meta = {
@@ -404,7 +390,6 @@ def test_documented_run_history_columns_and_kinds_match_definitions() -> None:
 def test_documented_quiet_header_matches_output() -> None:
     source = _guide("usage.md")
     section = _between(source, "- headerレコードを", "の3つのフィールドのみ")
-    # quiet経路は環境のツール解決を起動せず、公開されたheader出力を検査できる。
     record = pyfltr.output.jsonl_records.build_header_record(  # pylint: disable=protected-access
         [], 0, run_id="example", quiet=True
     )
@@ -413,7 +398,6 @@ def test_documented_quiet_header_matches_output() -> None:
 
 def test_documented_jsonl_status_values_match_definitions() -> None:
     source = _guide("usage.md")
-    # statusの公開プロパティが返す値をASTから抽出する。
     prop = inspect.getattr_static(pyfltr.command.core_.CommandResult, "status")
     assert isinstance(prop, property)
     assert prop.fget is not None
@@ -445,7 +429,6 @@ def test_documented_fast_tools_match_defaults() -> None:
 
 def test_documented_command_info_sections_match_output() -> None:
     section = _between(_guide("usage.md"), "出力はセクション見出し", "で関連項目をまとめる")
-    # 見出しは出力処理の定義から取得し、文書側の列挙と独立に比較する。
     module = inspect.getsource(pyfltr.cli.command_info)
     expected = set(re.findall(r'"(## [^"\n]+)"', module))
     assert set(re.findall(r"`(## [^`]+)`", section)) == expected
@@ -484,14 +467,13 @@ def test_documented_mode_argument_tools_match_defaults(suffix: str) -> None:
 def test_documented_global_config_keys_match_defaults() -> None:
     section = _between(_guide("configuration.md"), "- preset :", "`prettier-check-args`")
     documented = set(re.findall(r"^- ([a-z][a-z-]*) :", "- preset :" + section, re.MULTILINE))
-    # ツール固有項目は同ページが参照するツール別設定の責務である。
     owners = tuple(f"{name}-" for name in pyfltr.tools.BUILTIN_COMMANDS)
     expected = {
         key
         for key in pyfltr.config.model.DEFAULT_CONFIG
         if key not in pyfltr.tools.BUILTIN_COMMANDS and not key.startswith(owners)
     }
-    expected.discard("aliases")  # エイリアスはusage.mdの独立した一覧で検査する。
+    expected.discard("aliases")
     assert documented <= pyfltr.config.model.DEFAULT_CONFIG.keys()
     assert {key for key in documented if not key.startswith(owners)} == expected
 
@@ -524,7 +506,6 @@ def test_documented_search_options_match_parser(command: str) -> None:
     parser = _subparsers()[command]
     expected = {option for action in _arguments(parser) for option in action.option_strings}
     expected.difference_update({"-h", "--help"})
-    # 文書では前後文脈の3つの短縮形をまとめて掲載する。
     short_actions = {
         option
         for action in _arguments(parser)
@@ -548,7 +529,6 @@ async def test_documented_replace_history_signature_matches_server() -> None:
 
 
 def documented_aliases(source: str) -> dict[str, list[str]]:
-    """単独実行の節からエイリアス一覧を読み取る。"""
     section = source.split("## 特定のツールのみ実行", 1)[1].split("## UI", 1)[0]
     aliases: dict[str, list[str]] = {}
     for name in ("format", "lint", "test", "audit"):

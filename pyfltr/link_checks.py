@@ -1,12 +1,9 @@
-"""リンク診断の一時的失敗の分類。"""
-
 import json
 import typing
 import urllib.parse
 
 
 def _http_status(entry: dict[str, typing.Any]) -> dict[str, typing.Any] | None:
-    """HTTP(S)リンクの項目なら`status`を返し、それ以外は`None`を返す。"""
     url = entry.get("url")
     status = entry.get("status")
     if not isinstance(url, str) or not isinstance(status, dict):
@@ -21,7 +18,6 @@ def _http_status(entry: dict[str, typing.Any]) -> dict[str, typing.Any] | None:
 
 
 def is_transient_failure(entry: dict[str, typing.Any], *, timeout: bool = False) -> bool:
-    """HTTP(S)の5xxまたは応答タイムアウトと確認できる場合に真を返す。"""
     status = _http_status(entry)
     if status is None:
         return False
@@ -32,12 +28,6 @@ def is_transient_failure(entry: dict[str, typing.Any], *, timeout: bool = False)
 
 
 def is_network_failure(entry: dict[str, typing.Any]) -> bool:
-    """HTTPステータスを得る前の接続系の失敗（lychee の`Network error`）と確認できる場合に真を返す。
-
-    接続拒否・名前解決失敗・接続のリセットなどが該当し、一時障害と恒久的な到達不能を区別できない。
-    lycheeは接続エラーを自身の再試行の対象外とするため、pyfltrの有限再試行の対象にする。
-    再試行後も残った場合は一時障害として格下げせず、失敗のまま扱う。
-    """
     status = _http_status(entry)
     if status is None or "code" in status:
         return False
@@ -46,14 +36,6 @@ def is_network_failure(entry: dict[str, typing.Any]) -> bool:
 
 
 def classify_failures(output: str) -> tuple[bool, bool] | None:
-    """完全な失敗JSONから（一時障害のみか、再試行の対象を含むか）を返す。
-
-    再試行の対象は5xxと接続系の失敗（`is_network_failure`）である。
-
-    非0終了の格下げに使うため、進捗や別のエラーが混入したJSONは救済しない。
-    lycheeがstderrへ出力する通常のHint行だけを除き、残り全体をJSONとして読む。
-    失敗件数とmapの全項目を比較し、欠落・分類不能を通常失敗として保持する。
-    """
     try:
         data = json.loads("\n".join(line for line in output.splitlines() if not line.startswith("Hint: ")))
     except json.JSONDecodeError:

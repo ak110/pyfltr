@@ -1,11 +1,3 @@
-"""MCP応答モデルの公開項目と用途の対照試験。
-
-MCPの応答はエージェントが作業の判断・操作に使う情報だけを持つ。
-内部に保存している値や人間向けの表示値を、取得できるという理由だけで応答へ加えない。
-本試験は全ツールの戻り値から到達する応答モデルの項目を列挙し、用途を記録した対照表と比べる。
-項目の追加・削除で失敗させ、追加する項目には受信するエージェントが行う判断・操作を表へ書かせる。
-"""
-
 import inspect
 import pathlib
 import typing
@@ -19,9 +11,7 @@ import pyfltr.cli.mcp_server
 import pyfltr.config.config
 import pyfltr.grep_.jsonl_records
 
-# 項目ごとに、エージェントがその値で行う判断・操作を記録する。
 _FIELD_PURPOSES: dict[str, str] = {
-    # run
     "RunResult.run_id": "詳細取得（show_run系）の参照キー",
     "RunResult.exit_code": "成否の判定",
     "RunResult.completion": "対象到達と完了の判定（最初に読む）",
@@ -50,7 +40,6 @@ _FIELD_PURPOSES: dict[str, str] = {
     "SlowTestModel.nodeid": "遅いテストの特定",
     "SlowTestModel.phase": "遅い区間（setup・call・teardown）の特定",
     "SlowTestModel.seconds": "遅さの程度の比較",
-    # list_runs・show_run
     "RunSummaryModel.run_id": "対象runの選択",
     "RunSummaryModel.started_at": "対象runの選択",
     "RunSummaryModel.finished_at": "完了・実行中の判別",
@@ -73,7 +62,6 @@ _FIELD_PURPOSES: dict[str, str] = {
     "SlotWaitModel.finished_at": "待機区間の時刻の分析",
     "SlotWaitModel.elapsed": "待機秒数の分析",
     "SlotWaitModel.outcome": "取得・中断などの終了理由の判別",
-    # show_run_diagnostics
     "CommandDiagnosticsModel.command_meta": "コマンドの状態・終了コード・再実行手段の確認",
     "CommandDiagnosticsModel.diagnostics": "修正する指摘の取得",
     "CommandDiagnosticsModel.hint_urls": "ルールの説明への到達",
@@ -103,13 +91,11 @@ _FIELD_PURPOSES: dict[str, str] = {
     "DiagnosticMessageModel.severity": "対処の優先度",
     "DiagnosticMessageModel.fix": "自動修正の可否",
     "DiagnosticMessageModel.msg": "指摘内容",
-    # show_run_output
     "OutputRangeModel.text": "生出力の確認",
     "OutputRangeModel.offset": "分割取得の位置",
     "OutputRangeModel.returned_lines": "分割取得の位置",
     "OutputRangeModel.total_lines": "分割取得の総量",
     "OutputRangeModel.next_offset": "分割取得の続き",
-    # grep
     "GrepResultModel.matches": "一致箇所の確認",
     "GrepResultModel.file_results": "縮約時のファイル別結果",
     "GrepResultModel.output_mode": "縮約の有無の判別",
@@ -142,7 +128,6 @@ _FIELD_PURPOSES: dict[str, str] = {
     "GrepFileResultModel.file": "ファイルの特定",
     "GrepFileResultModel.count": "省略前の件数",
     "GrepFileResultModel.matches": "返却した一致",
-    # replace
     "ReplaceResultModel.replace_id": "取り消し（replace_undo）の参照キー",
     "ReplaceResultModel.dry_run": "書き換えの有無の確認",
     "ReplaceResultModel.files_changed": "影響ファイル数",
@@ -173,7 +158,6 @@ _FIELD_PURPOSES: dict[str, str] = {
     "ReplaceHistoryEntryModel.files": "履歴の対象ファイル",
     "ReplaceHistoryFileModel.file": "履歴の対象ファイル",
     "ReplaceHistoryFileModel.records_count": "ファイル別の置換件数",
-    # command_info・config
     "CommandInfoModel.command": "対象ツールの確認",
     "CommandInfoModel.resolved": "起動方式の解決の成否",
     "CommandInfoModel.info": "起動方式の解決失敗の切り分け（command_infoの目的そのもの）",
@@ -188,8 +172,6 @@ _FIELD_PURPOSES: dict[str, str] = {
 }
 
 
-# 中身を応答モデルで列挙しない辞書型の項目と、キーを限定・検査する手段。
-# 辞書の素通しは新しいキーを対照表へ現さないため、項目ごとにキーの出所と限定方法を記録する。
 _DICT_FIELD_POLICIES: dict[str, str] = {
     "RunOverviewModel.meta": "mcp_runs_tools.SHOW_RUN_META_KEYS で返すキーを限定する",
     "CommandInfoModel.info": "_COMMAND_INFO_KEY_PURPOSES と照合する（test_command_info_keys_have_recorded_purposes）",
@@ -204,7 +186,6 @@ _DICT_FIELD_POLICIES: dict[str, str] = {
     "ConfigResultModel.values": "キーは設定キー、値は利用者の設定値",
 }
 
-# `command_info`の`info`のキーごとの用途。起動方式の解決失敗を切り分けることがこのツールの目的である。
 _COMMAND_INFO_KEY_PURPOSES: dict[str, str] = {
     "enabled": "設定で有効かの確認",
     "runner": "設定上の起動方式",
@@ -236,7 +217,6 @@ _COMMAND_INFO_KEY_PURPOSES: dict[str, str] = {
 
 
 def _collect_fields() -> set[str]:
-    """全ツールの戻り値から到達する応答モデルの`<モデル名>.<項目名>`を返す。"""
     fields: set[str] = set()
     seen: set[type] = set()
 
@@ -255,7 +235,6 @@ def _collect_fields() -> set[str]:
 
 
 def test_response_fields_have_recorded_purposes() -> None:
-    """応答モデルの全項目が、エージェントの判断・操作を記録した対照表と一致する。"""
     actual = _collect_fields()
     added = sorted(actual - _FIELD_PURPOSES.keys())
     removed = sorted(_FIELD_PURPOSES.keys() - actual)
@@ -269,7 +248,6 @@ def test_response_fields_have_recorded_purposes() -> None:
 
 
 def _collect_dict_fields() -> set[str]:
-    """応答モデルの項目のうち、注釈に辞書または任意の型を含むものを返す。"""
     fields: set[str] = set()
     seen: set[type] = set()
 
@@ -294,7 +272,6 @@ def _collect_dict_fields() -> set[str]:
 
 
 def test_dict_fields_have_key_policies() -> None:
-    """辞書型の応答項目は、キーの出所と限定方法を記録した表と一致する。"""
     actual = _collect_dict_fields()
     assert actual == set(_DICT_FIELD_POLICIES), (
         "辞書型のMCP応答項目と、キーの限定方法の表が一致しません。"
@@ -305,7 +282,6 @@ def test_dict_fields_have_key_policies() -> None:
 
 @pytest.mark.asyncio
 async def test_command_info_keys_have_recorded_purposes() -> None:
-    """`command_info`の`info`の全キーが用途の表に記録され、最上位と重複するキーを含まない。"""
     config = pyfltr.config.config.load_config()
     keys: set[str] = set()
     for command in config.command_names:
@@ -320,14 +296,12 @@ async def test_command_info_keys_have_recorded_purposes() -> None:
 
 
 def test_show_run_meta_keys_exclude_internal_values() -> None:
-    """`show_run`の`meta`へ返す保存項目に、重複・保存形式の印・実行環境の内部値を含めない。"""
     keys = set(pyfltr.cli.mcp_runs_tools.SHOW_RUN_META_KEYS)
     assert not keys & {"run_id", "slot_waits", "diagnostic_paths", "python", "executable", "platform"}
 
 
 @pytest.mark.asyncio
 async def test_grep_grouped_matches_drop_unrecorded_keys(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """grepの縮約出力の一致へ生成側が用途未記録のキーを加えても、応答へ配送しない。"""
     (tmp_path / "many.txt").write_text("".join(f"foo {index}\n" for index in range(300)), encoding="utf-8")
     (tmp_path / "one.txt").write_text("foo one\n", encoding="utf-8")
     original = pyfltr.grep_.jsonl_records.match_payload

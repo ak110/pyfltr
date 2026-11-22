@@ -1,10 +1,3 @@
-"""実行中のrunを別runの保持cleanupから守り、終了後に参照できることの結合試験。
-
-run Aを別プロセスのCLIで実行したまま、同じ保存先で別のrun Bを起動する。
-Bは実行アーカイブの初期化（cleanupを含む）を終えてから実行枠を待つため、待機の通知を観測した時点で
-Bのcleanupは完了している。保持数1の設定では、保護が無ければ古いAが削除される。
-"""
-
 import pathlib
 import subprocess
 import sys
@@ -39,11 +32,6 @@ def _show_run_output(run_id: str, command: str) -> subprocess.CompletedProcess[s
 def test_running_run_survives_other_cleanup(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, exit_code: int, timeout: int | None, expected_returncode: int
 ) -> None:
-    """Aの実行中に別runのcleanupが起きても、Aの記録が残り終了後に公開CLIで取得できる。
-
-    timeoutの場合はAのツールを解放せず、pyfltrがツールの時間上限で停止する。
-    BがAの実行中に待機する前提で観測するため、枠を1つにする。
-    """
     monkeypatch.setenv(pyfltr.command.execution_slot.SLOTS_ENV, "1")
     log = tmp_path / "intervals.log"
     release = tmp_path / "release-a"
@@ -76,7 +64,6 @@ def test_running_run_survives_other_cleanup(
 
 @pytest.mark.timeout(240)
 def test_killed_run_is_readable_then_collected(tmp_path: pathlib.Path) -> None:
-    """強制終了したrunは保存済みの結果を参照でき、次のrunの保持上限で回収される。"""
     log = tmp_path / "intervals.log"
     quick = tmp_path / "quick.py"
     quick.write_text("print('quick done')\n", encoding="utf-8")

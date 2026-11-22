@@ -1,13 +1,3 @@
-"""出力フォーマット実装群。
-
-`--output-format`で選択可能な各フォーマットの実装を`OutputFormatter` Protocolとして
-一箇所に集約する。新フォーマット追加時は本モジュールのみ変更すればよい。
-
-フォーマット分岐は`FORMATTERS`レジストリから動的に解決する。
-レジストリは本モジュール初期化時に各formatter実装をトップレベルimportした上で
-完結させる（遅延importは行わない）。
-"""
-
 import dataclasses
 import json
 import logging
@@ -30,17 +20,6 @@ import pyfltr.warnings_
 
 @dataclasses.dataclass
 class RunOutputContext:
-    """formatterが必要とする実行文脈を一括保持するdataclass。
-
-    `OutputFormatter` の各メソッドに渡すことで、formatter内部で必要な情報を
-    引数なしに取得できる。
-
-    `configure_loggers`呼び出し時点では`run_id` / `commands` / `all_files`など
-    パイプライン後半で確定するフィールドが未知の場合があるため、デフォルト値を持つ。
-    `on_start` / `on_result` / `on_finish`呼び出し時には全フィールドが確定した
-    完全なctxを渡す。
-    """
-
     config: pyfltr.config.model.Config
     output_file: pathlib.Path | None
     force_text_on_stderr: bool
@@ -52,53 +31,22 @@ class RunOutputContext:
     stream: bool = False
     include_details: bool = True
     structured_stdout: bool = False
-    # 出力形式の解決経路ラベル（`pyfltr.cli.output_format.FORMAT_SOURCE_*`）。
-    # 実行系サブコマンドのみ`run_pipeline`が値を埋める。参照系・MCP経路では`None`のまま。
-    # JSONL `header.format_source`に出力するためにJSONLFormatterで参照する。
     format_source: str | None = None
-    # `--quiet`指定時の抑止フラグ。JSONLFormatterでのみ参照する。
-    # 抑止対象は`pyfltr.output.jsonl.build_command_lines`と`_build_header_record`のdocstringに集約する。
     quiet: bool = False
-    # 起動サブコマンド名（`run` / `ci` / `fast` / `run-for-agent`）。
-    # `summary.guidance`の再実行コマンド例をサブコマンド名込みで組み立てるために参照する。
-    # 参照系・直接呼び出し経路では`None`のままとし、jsonl側で既定値`run`へフォールバックする。
     subcommand: str | None = None
-    # JSONLが最終消費主体へ渡る場合だけTrue。MCP内部の一時JSONLではFalseを指定する。
     jsonl_warnings_reach_consumer: bool = True
-    # 完了判定。`run_pipeline`が`on_finish`の直前に設定し、JSONL `summary`へ出力する。
     completion: pyfltr.command.completion.RunCompletion | None = None
 
 
 class OutputFormatter(typing.Protocol):
-    """出力フォーマットを担うProtocol。
-
-    各メソッドは`cli.pipeline.run_pipeline`から呼ばれる。実装クラスは`FORMATTERS`
-    レジストリに登録し、`FORMATTERS[output_format]()`でインスタンス化して使う。
-    """
-
     def configure_loggers(self, ctx: RunOutputContext) -> None:
-        """`text_logger` / `structured_logger`の出力先・レベルを初期化する。
-
-        `pyfltr.output.logging_.configure_text_output` / `pyfltr.output.logging_.configure_structured_output`
-        を呼んで、フォーマット・output_file・force_text_on_stderrの組み合わせに応じた
-        向き先を確定する。
-        """
+        pass
 
     def on_start(self, ctx: RunOutputContext) -> None:
-        """パイプライン開始時に呼ぶ。
-
-        - JSONL: header行を出力する
-        - SARIF / Code Quality: 準備のみ（何もしない）
-        - text / github-annotations: 何もしない（ヘッダー出力はcli/pipeline.pyが担う）
-        """
+        pass
 
     def on_result(self, ctx: RunOutputContext, result: pyfltr.command.core_.CommandResult) -> None:
-        """1ツール完了時に呼ぶ。`archive_hook`の後に呼ばれることが前提。
-
-        - JSONL: diagnostic行 + tool行をstreamingで出力する
-        - text / github-annotations: `ctx.stream`がTrueのとき詳細ログを即時出力
-        - SARIF / Code Quality: バッファリング（何もしない）
-        """
+        pass
 
     def on_finish(
         self,
@@ -107,17 +55,10 @@ class OutputFormatter(typing.Protocol):
         exit_code: int,
         warnings: list[dict[str, typing.Any]],
     ) -> None:
-        """パイプライン終了時に呼ぶ。
-
-        - JSONL: warning行 + summary行を出力する
-        - SARIF: JSON全体を構造化出力loggerに出力する
-        - Code Quality: JSON配列を構造化出力loggerに出力する
-        - text / github-annotations: 詳細ログ（`ctx.include_details`がTrueの場合）+ summaryを出力する
-        """
+        pass
 
 
 def _configure_text_loggers(ctx: RunOutputContext) -> None:
-    """text系の出力先を設定し、構造化出力を無効化する。"""
     stream = sys.stderr if ctx.force_text_on_stderr else sys.stdout
     pyfltr.output.logging_.configure_text_output(stream, level=logging.INFO)
     pyfltr.output.logging_.configure_structured_output(None)
@@ -129,7 +70,6 @@ def _finish_text_output(
     warnings: list[dict[str, typing.Any]],
     output_format: typing.Literal["text", "github-annotations"],
 ) -> None:
-    """text系の詳細とsummaryを指定形式で出力する。"""
     pyfltr.output.render.render_results(
         results,
         ctx.config,
@@ -140,17 +80,14 @@ def _finish_text_output(
 
 
 class TextFormatter:
-    """text形式の出力を担うformatter。"""
-
     def configure_loggers(self, ctx: RunOutputContext) -> None:
-        """Text / github-annotations → stdout/INFO。構造化出力は無効。"""
         _configure_text_loggers(ctx)
 
     def on_start(self, ctx: RunOutputContext) -> None:
-        """text形式の開始時処理。ヘッダー出力は`cli/pipeline.py`が担うため何もしない。"""
+        pass
 
     def on_result(self, ctx: RunOutputContext, result: pyfltr.command.core_.CommandResult) -> None:
-        """text形式のon_result。即時ログはcli._run_one_command（per_command_log経路）が担うため何もしない。"""
+        pass
 
     def on_finish(
         self,
@@ -159,26 +96,19 @@ class TextFormatter:
         exit_code: int,
         warnings: list[dict[str, typing.Any]],
     ) -> None:
-        """詳細ログ（include_detailsがTrueの場合）+ summaryを出力する。"""
         del exit_code
         _finish_text_output(ctx, results, warnings, "text")
 
 
 class GitHubAnnotationsFormatter:
-    """GitHub Actions annotations形式の出力を担うformatter。
-
-    textと同じレイアウトで、ErrorLocation行のみGAワークフローコマンド記法に切り替える。
-    """
-
     def configure_loggers(self, ctx: RunOutputContext) -> None:
-        """github-annotations → stdout/INFO。構造化出力は無効。"""
         _configure_text_loggers(ctx)
 
     def on_start(self, ctx: RunOutputContext) -> None:
-        """github-annotations形式の開始時処理。何もしない。"""
+        pass
 
     def on_result(self, ctx: RunOutputContext, result: pyfltr.command.core_.CommandResult) -> None:
-        """github-annotations形式のon_result。即時ログはcli._run_one_command（per_command_log経路）が担うため何もしない。"""
+        pass
 
     def on_finish(
         self,
@@ -187,20 +117,12 @@ class GitHubAnnotationsFormatter:
         exit_code: int,
         warnings: list[dict[str, typing.Any]],
     ) -> None:
-        """詳細ログ（GA記法）+ summaryを出力する。"""
         del exit_code
         _finish_text_output(ctx, results, warnings, "github-annotations")
 
 
 class JSONLFormatter:
-    """JSONL streaming形式の出力を担うformatter。"""
-
     def configure_loggers(self, ctx: RunOutputContext) -> None:
-        """JSONL形式のlogger設定。
-
-        jsonl + stdout → textはstderr/WARN、構造化はstdout。
-        jsonl + output_file → textはstdout/INFO、構造化はFileHandler。
-        """
         if ctx.force_text_on_stderr:
             pyfltr.output.logging_.configure_text_output(sys.stderr, level=logging.INFO)
         elif ctx.output_file is None:
@@ -211,7 +133,6 @@ class JSONLFormatter:
         pyfltr.output.logging_.configure_structured_output(destination)
 
     def on_start(self, ctx: RunOutputContext) -> None:
-        """header行を出力する。"""
         pyfltr.output.jsonl.write_jsonl_header(
             commands=ctx.commands,
             files=ctx.all_files,
@@ -222,7 +143,6 @@ class JSONLFormatter:
         )
 
     def on_result(self, ctx: RunOutputContext, result: pyfltr.command.core_.CommandResult) -> None:
-        """Diagnostic行 + tool行をstreamingで出力する。"""
         pyfltr.output.jsonl.write_jsonl_streaming(result, ctx.config, quiet=ctx.quiet)
 
     def on_finish(
@@ -232,7 +152,6 @@ class JSONLFormatter:
         exit_code: int,
         warnings: list[dict[str, typing.Any]],
     ) -> None:
-        """Warning行 + summary行を出力し、text整形も出力する。"""
         pyfltr.output.jsonl.write_jsonl_footer(
             results,
             exit_code=exit_code,
@@ -246,7 +165,6 @@ class JSONLFormatter:
         )
         if ctx.jsonl_warnings_reach_consumer:
             pyfltr.warnings_.mark_delivered(warnings)
-        # 構造化出力の出力と並行して、常にtext整形を実行する。
         pyfltr.output.render.render_results(
             results,
             ctx.config,
@@ -257,14 +175,7 @@ class JSONLFormatter:
 
 
 class SARIFFormatter:
-    """SARIF 2.1.0形式の出力を担うformatter。バッファリングしon_finishで出力する。"""
-
     def configure_loggers(self, ctx: RunOutputContext) -> None:
-        """SARIF形式のlogger設定。
-
-        sarif + stdout → textはstderr/INFO、構造化はstdout。
-        sarif + output_file → textはstdout/INFO、構造化はFileHandler。
-        """
         if ctx.force_text_on_stderr or ctx.output_file is None:
             pyfltr.output.logging_.configure_text_output(sys.stderr, level=logging.INFO)
         else:
@@ -273,10 +184,10 @@ class SARIFFormatter:
         pyfltr.output.logging_.configure_structured_output(destination)
 
     def on_start(self, ctx: RunOutputContext) -> None:
-        """SARIFは事前準備なし。"""
+        pass
 
     def on_result(self, ctx: RunOutputContext, result: pyfltr.command.core_.CommandResult) -> None:
-        """SARIFはバッファリング。on_finishで一括出力するため何もしない。"""
+        pass
 
     def on_finish(
         self,
@@ -285,7 +196,6 @@ class SARIFFormatter:
         exit_code: int,
         warnings: list[dict[str, typing.Any]],
     ) -> None:
-        """SARIF JSONを構造化出力loggerに出力し、text整形も出力する。"""
         sarif = pyfltr.output.sarif.build_sarif(
             results,
             ctx.config,
@@ -305,14 +215,7 @@ class SARIFFormatter:
 
 
 class CodeQualityFormatter:
-    """GitLab Code Quality形式の出力を担うformatter。バッファリングしon_finishで出力する。"""
-
     def configure_loggers(self, ctx: RunOutputContext) -> None:
-        """Code Quality形式のlogger設定。
-
-        code-quality + stdout → textはstderr/INFO、構造化はstdout。
-        code-quality + output_file → textはstdout/INFO、構造化はFileHandler。
-        """
         if ctx.force_text_on_stderr or ctx.output_file is None:
             pyfltr.output.logging_.configure_text_output(sys.stderr, level=logging.INFO)
         else:
@@ -321,10 +224,10 @@ class CodeQualityFormatter:
         pyfltr.output.logging_.configure_structured_output(destination)
 
     def on_start(self, ctx: RunOutputContext) -> None:
-        """Code Qualityは事前準備なし。"""
+        pass
 
     def on_result(self, ctx: RunOutputContext, result: pyfltr.command.core_.CommandResult) -> None:
-        """Code Qualityはバッファリング。on_finishで一括出力するため何もしない。"""
+        pass
 
     def on_finish(
         self,
@@ -333,7 +236,6 @@ class CodeQualityFormatter:
         exit_code: int,
         warnings: list[dict[str, typing.Any]],
     ) -> None:
-        """Code Quality JSON配列を構造化出力loggerに出力し、text整形も出力する。"""
         del exit_code
         payload = pyfltr.output.code_quality.build_code_quality_payload(results)
         pyfltr.output.logging_.structured_logger.info(json.dumps(payload, ensure_ascii=False, indent=2))

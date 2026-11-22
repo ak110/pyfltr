@@ -1,14 +1,3 @@
-"""LLM向けJSON Lines出力。
-
-`--output-format=jsonl`で呼ばれ、CommandResult群をLLM / エージェントが
-読みやすいフラットなJSON Lines形式（header / diagnostic / command / warning / summaryの5種別）に
-変換して出力する。
-
-`diagnostic`は`(command, file)`単位で集約し、個別指摘は`messages[]`に格納する。
-ルールURLはcommand単位の`hint_urls`辞書へ、ルール別の短い修正ヒントは`hints`辞書へそれぞれ集約し、
-LLM入力時のトークン浪費を抑える。
-"""
-
 import typing
 
 import pyfltr.command.completion
@@ -92,10 +81,6 @@ def _should_suppress_command_record(
     diagnostic_records: list[dict[str, typing.Any]],
     diagnostics_truncated: bool,
 ) -> bool:
-    """`quiet`時にcommandレコード出力を抑止するべきか判定する。
-
-    抑止条件は`build_command_lines`のdocstringを参照する（SSOT）。
-    """
     if result.needs_rerun:
         return False
     if diagnostic_records:
@@ -122,20 +107,6 @@ def build_lines(
     missing_targets: list[str] | None = None,
     format_source: str | None = None,
 ) -> list[str]:
-    """CommandResult群からJSONL各行を生成する。
-
-    出力順:
-        1. `commands`と`files`が指定されていればkind="header"行
-        2. `warnings`が非空ならkind="warning"行
-        3. コマンド単位でdiagnostic行+command行（`config.command_names`の定義順）
-        4. summary行1行
-
-    resultsは順序を問わない。内部で`config.command_names`順にソートする。
-    `warnings`は`pyfltr.warnings_.collected_warnings()`の返り値を想定する。
-    `run_id`が指定されていればheaderレコードに埋め込む。
-    `launcher_prefix`が指定されていれば`summary.guidance`内の起動コマンド表記に反映する。
-    `subcommand`は`summary.guidance`の再実行例に埋め込む実行系サブコマンド名。
-    """
     ordered = sorted(results, key=lambda r: pyfltr.tools.command_index(config.command_names, r.command))
 
     lines: list[str] = []
@@ -185,18 +156,6 @@ def write_jsonl_header(
     format_source: str | None = None,
     quiet: bool = False,
 ) -> None:
-    """header行を構造化出力loggerに出力する（ストリーミングモード用）。
-
-    パイプライン開始直後、diagnostic行より前に1回だけ呼ぶ。`run_id`が指定されていれば
-    headerレコードに含める（アーカイブ参照時の識別キー）。
-    出力先は`pyfltr.output.logging_.configure_structured_output()`が設定したhandlerに従う
-    （stdoutもしくは`--output-file`のFileHandler）。
-    `config`が渡された場合、mise経路を使うrunに限り
-    `mise_active_tools`フィールドへ取得状況を露出する。
-    `format_source`が渡された場合、`format_source`フィールドへ解決経路ラベルを露出する。
-    `quiet=True`のときは`run_id`・`commands`・`files`の3つのフィールドのみへ縮約する
-    （SSOT: `pyfltr.output.jsonl_records.build_header_record`のdocstring）。
-    """
     if quiet:
         mise_active_tools = None
     else:
@@ -223,27 +182,11 @@ def write_jsonl_streaming(
     *,
     quiet: bool = False,
 ) -> None:
-    """1コマンド分のdiagnostic行+command行を構造化出力loggerに即時出力する。
-
-    `pyfltr.output.jsonl_emit._write_lock`取得下で複数行を連続出力することで、並列実行されるlinters/testers
-    から呼ばれてもコマンド単位のグルーピングが崩れない。
-    `quiet=True`は`build_command_lines`へ透過する（成功時commandレコードを抑止する）。
-    """
     lines = build_command_lines(result, config, quiet=quiet)
     pyfltr.output.jsonl_emit.emit_records(lines)
 
 
 def write_jsonl_running_event(command: str, elapsed: float) -> None:
-    """heartbeat由来の `status:"running"` レコードを構造化出力loggerに即時出力する。
-
-    `command`は実行中コマンド名、`elapsed`はパイプライン側で追跡している
-    `start_time` からの経過秒数（壁時計）。
-    フィールド名は最終commandレコードの`elapsed`と揃え、LLMの自己説明性を高める。
-    パイプライン全体の「最後のJSONL出力からの無音時間」がしきい値を超えた際、
-    実行中コマンドそれぞれについて1件ずつ呼び出される設計。
-    `pyfltr.output.jsonl_emit._emit_structured` 経由で `last_jsonl_output_time` も更新するため、
-    heartbeat発火直後の連続発火は自動的に抑止される。
-    """
     record: dict[str, typing.Any] = {
         "kind": "command",
         "command": command,
@@ -265,16 +208,6 @@ def write_jsonl_footer(
     missing_targets: list[str] | None = None,
     completion: pyfltr.command.completion.RunCompletion | None = None,
 ) -> None:
-    """warning行+summary行を構造化出力loggerに出力する。
-
-    `results`は`pyfltr.output.jsonl_records.build_summary_record()`の集計に使用する。
-    `run_id`と`launcher_prefix`は`summary.guidance`の起動コマンド整形に使う。
-    `subcommand`は`summary.guidance`の再実行例に埋め込む実行系サブコマンド名。
-    `fully_excluded_files`を渡すと`summary.fully_excluded_files`キーとして埋め込む。
-    `missing_targets`を渡すと`summary.missing_targets`キーとして埋め込む。
-    `completion`を渡すと完了判定の4項目を`summary`へ埋め込む。
-    `warnings`の件数は`summary.warnings`としても集計する。
-    """
     lines = [
         pyfltr.output.jsonl_records.dump_record(pyfltr.output.jsonl_records.build_warning_record(warning))
         for warning in warnings or []

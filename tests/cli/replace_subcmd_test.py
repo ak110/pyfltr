@@ -17,11 +17,6 @@ def _isolated_replace_cache(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path_factory: pytest.TempPathFactory,
 ) -> pathlib.Path:
-    """`PYFLTR_CACHE_DIR`を一時ディレクトリへ向けるautouseフィクスチャ。
-
-    `default_history_root()`が参照する`default_cache_root()`の解決先を固定し、
-    開発機の実キャッシュへ書き込まないようにする。
-    """
     cache_root = tmp_path_factory.mktemp("replace_cache")
     monkeypatch.setenv("PYFLTR_CACHE_DIR", str(cache_root))
     return cache_root
@@ -37,7 +32,6 @@ def test_replace_dry_run_does_not_write(
     monkeypatch.chdir(tmp_path)
     rc = pyfltr.cli.main.run(["replace", "foo", "baz", "--dry-run", "--output-format=jsonl", str(target)])
     assert rc == 0
-    # 書き換えられていない
     assert target.read_text(encoding="utf-8") == "foo bar\n"
     capsys.readouterr()
 
@@ -60,7 +54,6 @@ def test_replace_writes_and_emits_replace_id(
     assert summary["files_changed"] == 1
     assert summary["total_replacements"] == 1
     assert "replace_id" in summary
-    # undo案内
     assert "guidance" in summary
     assert any("--undo" in g for g in summary["guidance"])
 
@@ -79,7 +72,6 @@ def test_replace_undo_round_trip(
     lines = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
     replace_id = lines[-1]["replace_id"]
 
-    # undo
     rc = pyfltr.cli.main.run(["replace", "--undo", replace_id, "--output-format=jsonl"])
     assert rc == 0
     assert target.read_text(encoding="utf-8") == "foo bar\n"
@@ -110,7 +102,6 @@ def test_replace_preserves_bytes_round_trip(
     expected: bytes,
     encoding: str,
 ) -> None:
-    """公開CLIが対象外バイトを保ち、新履歴から元バイトを復元する。"""
     target = tmp_path / "sample.txt"
     target.write_bytes(original)
     monkeypatch.chdir(tmp_path)
@@ -129,7 +120,6 @@ def test_replace_within_preserves_bytes_round_trip(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """行範囲は論理行を使い、範囲外の混在改行を保つ。"""
     target = tmp_path / "sample.txt"
     original = b"foo\r\nanchor foo\nfoo\r"
     target.write_bytes(original)
@@ -156,7 +146,6 @@ def test_replace_searches_normalized_newlines(
     pattern: str,
     expected: bytes,
 ) -> None:
-    """CLIの通常置換はCRLFと単独CRをLFとして検索し、対象外の改行を保つ。"""
     target = tmp_path / "sample.txt"
     target.write_bytes(original)
     monkeypatch.chdir(tmp_path)
@@ -172,7 +161,6 @@ def test_replace_carriage_return_pattern_does_not_match(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """検索用ビューにCRが無いため、従来どおりCRを探す式は一致しない。"""
     target = tmp_path / "sample.txt"
     target.write_bytes(b"foo\r\n")
     monkeypatch.chdir(tmp_path)
@@ -203,7 +191,6 @@ def test_replace_legacy_regex_option_results(
     options: list[str],
     expected: bytes,
 ) -> None:
-    """公開CLIの主要オプションは従来のLF正規化後と同じ対象を置換する。"""
     target = tmp_path / "sample.txt"
     target.write_bytes(original)
     monkeypatch.chdir(tmp_path)
@@ -230,7 +217,6 @@ def test_replace_matched_newline_uses_replacement_representation(
     replacement: str,
     expected: bytes,
 ) -> None:
-    """一致範囲内の元改行は置換し、式に含む改行表現で書き込む。"""
     target = tmp_path / "sample.txt"
     original = b"head\r\nfoo\r\nbar\rkeep\r\n"
     target.write_bytes(original)
@@ -247,7 +233,6 @@ def test_replace_public_hashes_keep_logical_text_meaning(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """バイト保全後も公開ハッシュは従来の改行正規化後文字列を表す。"""
     target = tmp_path / "sample.txt"
     target.write_bytes(b"foo\r\nkeep\r\n")
     monkeypatch.chdir(tmp_path)
@@ -273,7 +258,6 @@ def test_replace_within_searches_normalized_newlines(
     pattern: str,
     expected: bytes,
 ) -> None:
-    """CLIの行範囲は検索用のLFで区切り、範囲外の改行バイトを保つ。"""
     target = tmp_path / "sample.txt"
     target.write_bytes(original)
     monkeypatch.chdir(tmp_path)
@@ -306,7 +290,6 @@ def test_replace_line_regexp_preserves_original_newlines(
     pattern: str,
     expected: bytes,
 ) -> None:
-    """CLIの-xはCRLFと単独CRの行全体へ一致し、undoで元バイトへ戻す。"""
     target = tmp_path / "sample.txt"
     target.write_bytes(original)
     monkeypatch.chdir(tmp_path)
@@ -331,7 +314,6 @@ def test_replace_within_line_regexp_preserves_original_newlines(
     original: bytes,
     expected: bytes,
 ) -> None:
-    """CLIの-x付きwithinはCRLFと単独CRのアンカー行と対象行を見失わない。"""
     target = tmp_path / "sample.txt"
     target.write_bytes(original)
     monkeypatch.chdir(tmp_path)
@@ -352,7 +334,6 @@ def test_replace_dry_run_preserves_bytes(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """dry-runはBOMと改行を含む元バイト列を変更しない。"""
     target = tmp_path / "sample.txt"
     original = b"\xef\xbb\xbffoo\r\n"
     target.write_bytes(original)
@@ -368,7 +349,6 @@ def test_replace_undo_detects_byte_only_edit(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """改行だけの手動編集でも一括中断し、forceで元バイトを戻す。"""
     first = tmp_path / "first.txt"
     second = tmp_path / "second.txt"
     first.write_bytes(b"foo\r\n")
@@ -392,7 +372,6 @@ def test_replace_legacy_history_warning(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """旧履歴を一覧・詳細で参照でき、保存encodingでundoして限界を警告する。"""
     target = tmp_path / "sample.txt"
     target.write_bytes("bar 日本語\n".encode("cp932"))
     store = pyfltr.grep_.history.ReplaceHistoryStore()
@@ -432,10 +411,8 @@ def test_replace_undo_warns_when_manually_edited(
     lines = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
     replace_id = lines[-1]["replace_id"]
 
-    # 手動編集
     target.write_text("manually edited\n", encoding="utf-8")
 
-    # 通常 undo は警告で停止（exit 1）
     rc = pyfltr.cli.main.run(["replace", "--undo", replace_id, "--output-format=jsonl"])
     assert rc == 1
     captured = capsys.readouterr()
@@ -445,7 +422,6 @@ def test_replace_undo_warns_when_manually_edited(
     assert "--force" not in captured.err
     assert target.read_text(encoding="utf-8") == "manually edited\n"
 
-    # --force で強制復元
     rc = pyfltr.cli.main.run(["replace", "--undo", replace_id, "--force", "--output-format=jsonl"])
     assert rc == 0
     assert target.read_text(encoding="utf-8") == "foo bar\n"
@@ -497,7 +473,6 @@ def test_replace_from_grep_filters_files(
     assert rc == 0
     capsys.readouterr()
 
-    # `--from-grep` で a.txt のみが対象になる
     rc = pyfltr.cli.main.run(
         [
             "replace",
@@ -511,13 +486,11 @@ def test_replace_from_grep_filters_files(
     )
     assert rc == 0
     assert target_a.read_text(encoding="utf-8") == "baz\n"
-    # b.txt は対象外なのでそのまま
     assert target_b.read_text(encoding="utf-8") == "foo\n"
     capsys.readouterr()
 
 
 def test_replace_from_grep_rejects_adaptively_compressed_output(tmp_path: pathlib.Path) -> None:
-    """省略済みgrep出力を置換対象の完全な一覧として扱わない。"""
     grep_jsonl = tmp_path / "grep.jsonl"
     grep_jsonl.write_text(
         "\n".join(
@@ -555,7 +528,6 @@ def test_replace_list_history_returns_saved_id(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """履歴を1件保存後、`--list-history`が対象のreplace_idを返す。"""
     target = tmp_path / "a.txt"
     target.write_text("foo bar\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
@@ -576,7 +548,6 @@ def test_replace_show_history_missing_id_emits_guidance(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """存在しないreplace_idへ`--show-history`を指定すると`--list-history`誘導を含むstderrを返す。"""
     monkeypatch.chdir(tmp_path)
     rc = pyfltr.cli.main.run(["replace", "--show-history", "NONEXISTENT", "--output-format=jsonl"])
     assert rc == 1
@@ -590,7 +561,6 @@ def test_replace_undo_missing_id_emits_guidance(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """存在しないreplace_idへ`--undo`を指定すると`--list-history`誘導を含むstderrを返す。"""
     monkeypatch.chdir(tmp_path)
     rc = pyfltr.cli.main.run(["replace", "--undo", "NONEXISTENT", "--output-format=jsonl"])
     assert rc == 1
@@ -604,7 +574,6 @@ def test_replace_undo_unreadable_history_reports_directory(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """履歴を読み込めない`--undo`は、履歴ディレクトリの場所と取り消しに使えないことを示す。"""
     target = tmp_path / "a.txt"
     target.write_text("foo bar\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
@@ -628,7 +597,6 @@ def test_replace_show_history_returns_meta(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """履歴を1件保存後、`--show-history <id>`が対象の履歴のmeta情報を返す。"""
     target = tmp_path / "a.txt"
     target.write_text("foo bar\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
@@ -654,7 +622,6 @@ def test_replace_includes_hidden_files(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """ドット始まりファイルもdry-runで置換対象になる（run系と統一）。"""
     hidden = tmp_path / ".hidden.py"
     hidden.write_text("foo bar\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
@@ -672,7 +639,6 @@ def test_replace_notifies_excluded_explicit_file(
     capsys: pytest.CaptureFixture[str],
     output_format: str,
 ) -> None:
-    """直接指定したexclude該当ファイルをsummaryのfully_excluded_filesで通知する。"""
     lock = tmp_path / "uv.lock"
     lock.write_text("foo\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
@@ -697,7 +663,6 @@ def test_replace_notifies_missing_explicit_file(
     capsys: pytest.CaptureFixture[str],
     output_format: str,
 ) -> None:
-    """直接指定した不在ファイルをsummaryのmissing_targetsで通知する。"""
     monkeypatch.chdir(tmp_path)
     rc = pyfltr.cli.main.run(
         ["replace", "foo", "baz", "--dry-run", f"--output-format={output_format}", str(tmp_path / "nope.py")]
@@ -718,11 +683,9 @@ def test_replace_jsonl_summary_omits_warnings_when_none(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """警告が1件も発生しない実行ではsummaryに`warnings`キーが現れない。"""
     target = tmp_path / "a.txt"
     target.write_text("foo bar\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
-    # 一時ディレクトリはgit管理外のため、`.gitignore`判定を無効化して対象の警告の発生を避ける。
     rc = pyfltr.cli.main.run(["replace", "foo", "baz", "--dry-run", "--output-format=jsonl", "--no-gitignore", str(target)])
     assert rc == 0
     records = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
@@ -731,9 +694,7 @@ def test_replace_jsonl_summary_omits_warnings_when_none(
 
 
 def test_replace_within_limits_to_region(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """--within領域内のみ置換し、領域外の同一文字列は変えない。"""
     target = tmp_path / "a.txt"
-    # KEY行（3行目）の前後1行が領域。領域内のfooのみ置換し、1行目・5行目のfooは領域外で不変。
     target.write_text("foo\nL1\nKEY foo\nL3\nfoo\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
@@ -744,7 +705,6 @@ def test_replace_within_limits_to_region(tmp_path: pathlib.Path, monkeypatch: py
 
 
 def test_replace_without_within_replaces_whole_file(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """--within省略時は全体置換（後方互換）。"""
     target = tmp_path / "a.txt"
     target.write_text("foo\nfoo\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
@@ -756,7 +716,6 @@ def test_replace_without_within_replaces_whole_file(tmp_path: pathlib.Path, monk
 
 
 def test_replace_within_with_multiline_rejected(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """--withinと-Uの併用はexit 2で拒否される。"""
     target = tmp_path / "a.txt"
     target.write_text("KEY foo\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
@@ -766,7 +725,6 @@ def test_replace_within_with_multiline_rejected(tmp_path: pathlib.Path, monkeypa
 
 
 def test_replace_context_without_within_rejected(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """--within未指定で-A/-B/-C指定はexit 2で拒否される。"""
     target = tmp_path / "a.txt"
     target.write_text("foo\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
@@ -780,7 +738,6 @@ def test_replace_within_dry_run_counts_without_write(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """--within + --dry-runは書き込まず領域内件数のみ報告する。"""
     target = tmp_path / "a.txt"
     original = "foo\nKEY foo\n"
     target.write_text(original, encoding="utf-8")
@@ -790,15 +747,12 @@ def test_replace_within_dry_run_counts_without_write(
 
     assert rc == 0
     assert target.read_text(encoding="utf-8") == original
-    # 領域はKEY行のみ。領域内のfoo1件のみがカウントされ、行頭fooは含めない。
     summary = json.loads(capsys.readouterr().out)["summary"]
     assert summary["total_replacements"] == 1
 
 
 def test_replace_within_context_expands_region(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """-Cが-A/-Bへ展開され、アンカー前後行を領域へ含める。"""
     target = tmp_path / "a.txt"
-    # KEYの前後1行（L1・L3）まで領域。L0・L4のfooは領域外で不変。
     target.write_text("foo\nfoo\nKEY\nfoo\nfoo\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
@@ -813,7 +767,6 @@ def test_replace_within_show_changes_limits_to_region(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """--show-changesが領域内の置換レコードのみを返す。"""
     target = tmp_path / "a.txt"
     target.write_text("foo\nKEY foo\nfoo\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
@@ -824,7 +777,6 @@ def test_replace_within_show_changes_limits_to_region(
     payload = json.loads(capsys.readouterr().out)
     assert payload["changes"][0]["file"] == target.relative_to(tmp_path).as_posix()
     changes = payload["changes"][0]["changes"]
-    # 領域はKEY行（2行目）のみ。レコードも2行目1件に限定される。
     assert [c["line"] for c in changes] == [2]
 
 
@@ -833,7 +785,6 @@ def test_replace_undo_json_normalizes_restored_file(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """undoのJSON出力で復元ファイル位置の区切り文字を`/`へ統一する。"""
     target = tmp_path / "sub" / "a.txt"
     target.parent.mkdir()
     target.write_text("foo\n", encoding="utf-8")
@@ -855,7 +806,6 @@ def test_replace_undo_json_normalizes_skipped_file(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """undoのJSON出力でスキップファイル位置の区切り文字を`/`へ統一する。"""
     target = tmp_path / "sub" / "a.txt"
     target.parent.mkdir()
     target.write_text("foo\n", encoding="utf-8")
@@ -876,16 +826,12 @@ def test_replace_undo_json_normalizes_skipped_file(
 def test_replace_within_excludes_match_crossing_region_boundary(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """領域境界を跨ぐマルチラインマッチは置換対象から除外される。"""
     target = tmp_path / "a.txt"
-    # 領域はKEY行（2行目）のみ。改行を含む「o\nb」は2〜3行目に跨り領域外なので不変。
     target.write_text("a\nKEY o\nb foo\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
-    # `o\nb`は2行目末尾から3行目へ跨る。領域（2行目のみ）へ完全包含されないため置換されない。
     rc = pyfltr.cli.main.run(["replace", "o\\nb", "X", str(target), "--within", "KEY"])
 
-    # 跨りマッチが除外され置換0件となる。replaceは置換0件でも正常終了（rc=0）し、ファイルは不変。
     assert rc == 0
     assert target.read_text(encoding="utf-8") == "a\nKEY o\nb foo\n"
 
@@ -895,7 +841,6 @@ def test_replace_within_undo_round_trip(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """--withinの実書き込みをundoで元の内容へ復元できる。"""
     target = tmp_path / "a.txt"
     original = "foo\nKEY foo\n"
     target.write_text(original, encoding="utf-8")
@@ -905,7 +850,6 @@ def test_replace_within_undo_round_trip(
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
     replace_id = payload["summary"]["replace_id"]
-    # 領域はKEY行のみ（before/after=0）。領域内のfooのみ置換、行頭fooは不変。
     assert target.read_text(encoding="utf-8") == "foo\nKEY X\n"
 
     rc = pyfltr.cli.main.run(["replace", "--undo", replace_id])

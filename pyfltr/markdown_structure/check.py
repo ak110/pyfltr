@@ -1,10 +1,3 @@
-"""Markdownの文単位の改行と全角丸括弧の入れ子を検出し、改行を挿入して修正する。
-
-CommonMarkの構造（コード、表、引用、リスト）を`markdown-it-py`で判定し、
-コード・HTMLコメント・HTMLタグ・表のセル・引用・`逐語引用:`で始まる段落・frontmatterを1文1行の検査から除く。
-修正は改行とリスト継続の字下げの追加だけとし、他の文字は変えない。
-"""
-
 import bisect
 import dataclasses
 import re
@@ -20,14 +13,11 @@ _TEMPLATE_DELIMITERS = (("{%", "%}"), ("{{", "}}"), ("{#", "#}"))
 
 @dataclasses.dataclass(frozen=True)
 class Issue:
-    """違反1件。`offset`は原文の文字位置。"""
-
     offset: int
     message: str
 
 
 def _mask(text: str) -> str:
-    # 同じ文字数で伏せ、原文への位置対応と行跨ぎの括弧状態を保持する。
     masked = list(text)
 
     def record_code(state: markdown_it.rules_inline.StateInline, silent: bool) -> bool:
@@ -38,7 +28,6 @@ def _mask(text: str) -> str:
         return accepted
 
     parser = markdown_it.MarkdownIt("commonmark")
-    # backtickのエスケープ・区切り長は解析器に任せ、元の位置だけを記録する。
     parser.inline.ruler.at("backticks", record_code)
     parser.inline.parse(text, parser, {}, [])
     text = "".join(masked)
@@ -72,7 +61,6 @@ def _sentence_breaks(text: str) -> list[int]:
             stack.pop()
         elif char == "。" and not stack:
             end = index + 1
-            # 文末の強調記法とリンクの閉じ記法は同じ行へ残す。
             while end < len(text):
                 closing = re.match(r"\*\*|__|~~|\*|_", text[end:])
                 if closing and text[:end].count(closing[0]) % 2:
@@ -98,7 +86,6 @@ def _safe_insertions(
     baseline = _structure(parser.parse(text))
     accepted: dict[int, str] = {}
     issues: list[Issue] = []
-    # 確定済みの改行も含めて比較し、元の挿入位置がずれないよう末尾から判定する。
     for position, indent in sorted(candidates.items(), reverse=True):
         candidate = text[:position] + newline + indent + text[position:]
         if text[position:].lstrip(" \t").startswith("#"):
@@ -138,8 +125,6 @@ def _check_insertions(
         accepted.update((position + start, indent) for position, indent in block_insertions.items())
         issues.extend(Issue(issue.offset + start, issue.message) for issue in block_issues)
 
-    # 隣接ブロックの解釈が変わる場合や候補が未加工の原文のブロックに対応しない場合は、
-    # 周囲を含む全文で候補を判定し直す。通常は最後の1回だけ全文の構造を比較する。
     if len(issues) == len(candidates):
         parts: list[str] = []
         previous = 0
@@ -163,7 +148,6 @@ def _has_template(text: str) -> bool:
 
 
 def inspect(text: str) -> tuple[list[Issue], dict[int, str]]:
-    """違反の一覧と、自動修正で挿入する位置から字下げへの辞書を返す。"""
     source = _excluded_source(text)
     lines = source.splitlines(keepends=True)
     offsets = [0]
@@ -200,7 +184,6 @@ def inspect(text: str) -> tuple[list[Issue], dict[int, str]]:
             in_table = True
         elif token.type == "table_close":
             in_table = False
-        # cellのinline.mapは同じ物理行を共有するため、括弧の深さは表全体で一度だけ更新する。
         if token.type == "inline" and in_table:
             continue
         if token.type not in {"inline", "table_open"} or token.map is None or quote_depth:
@@ -225,7 +208,6 @@ def inspect(text: str) -> tuple[list[Issue], dict[int, str]]:
             if has_template:
                 issues.append(Issue(position - 1, "1文1行へ改行する（Jinja2構文を含むため、展開結果を確認して手動で改行する）"))
             else:
-                # 空白は原文のまま次行へ送り、リストの継続に必要な字下げだけを追加する。
                 candidates[position] = indent
     if candidates:
         insertions, break_issues = _check_insertions(parser, text, candidates, offsets)

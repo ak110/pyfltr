@@ -1,5 +1,3 @@
-"""旧版の実行枠保持者と現行版が同じロック保存先で排他を保つ。"""
-
 import json
 import pathlib
 import subprocess
@@ -10,7 +8,6 @@ import pytest
 
 import pyfltr.command.execution_slot
 
-# 協調API導入前の実体をFileLock・キャッシュ解決と共に再現する。CIはfetch-depth: 0で取得する。
 _LEGACY_COMMIT = "60855c2a81737bac9fd717781b8b98c01d29f6f2"
 _WORKER = """import json
 import pathlib
@@ -35,7 +32,6 @@ with slot.hold(lock_dir=root / "locks", on_wait=lambda _: (root / (role + "-wait
 
 
 def _prepare_legacy(tmp_path: pathlib.Path, repository: pathlib.Path) -> pathlib.Path:
-    """旧版の実体を一時ディレクトリへ取り出し、パッケージのルートを返す。"""
     legacy = tmp_path / "legacy"
     package = legacy / "pyfltr"
     (package / "command").mkdir(parents=True)
@@ -57,10 +53,6 @@ def _prepare_legacy(tmp_path: pathlib.Path, repository: pathlib.Path) -> pathlib
 def test_legacy_holder_excludes_current_process_until_release(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, slots: str
 ) -> None:
-    """旧版保持中の新版は、枠が1つなら待機して旧版解放後に取得し、枠が2つなら2つ目の枠で待たずに入る。
-
-    旧版は1つ目の枠だけを扱うため、新版の2つ目の枠と合わせても同時実行は2件を超えない。
-    """
     monkeypatch.setenv(pyfltr.command.execution_slot.SLOTS_ENV, slots)
     repository = pathlib.Path(__file__).resolve().parents[2]
     legacy = _prepare_legacy(tmp_path, repository)
@@ -113,10 +105,6 @@ def test_legacy_holder_excludes_current_process_until_release(
 
 
 def test_legacy_and_current_holders_keep_two_concurrent_runs(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """旧版と新版が1件ずつ保持している間、新版の3件目は待ち、新版の保持者の解放後に入る。
-
-    旧版は1つ目の枠だけを扱うため、新版の2つ目の枠と合わせて同時実行は2件に収まる。
-    """
     monkeypatch.delenv(pyfltr.command.execution_slot.SLOTS_ENV, raising=False)
     repository = pathlib.Path(__file__).resolve().parents[2]
     legacy = _prepare_legacy(tmp_path, repository)
@@ -140,7 +128,6 @@ def test_legacy_and_current_holders_keep_two_concurrent_runs(monkeypatch: pytest
                         try:
                             _wait_for(tmp_path / "new-waiting", third)
                             assert not (tmp_path / "new-entered").exists()
-                            # 新版の保持者が解放すると、3件目は空いた2つ目の枠へ入って終了する。
                             _, holder_error = holder.communicate(timeout=10)
                             third.wait(timeout=30)
                             assert (tmp_path / "new-entered").exists()
@@ -157,10 +144,6 @@ def test_legacy_and_current_holders_keep_two_concurrent_runs(monkeypatch: pytest
 
 
 def test_current_request_uses_second_slot_behind_legacy_waiter(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """旧版の要求が待機列の先頭で1つ目の枠を待つ間も、後から並んだ新版の要求は空いた2つ目の枠で待たずに入る。
-
-    旧版の要求は1つ目の枠しか取得できないため、登録順を守ると2つ目の枠が使われないまま全員が待つ。
-    """
     monkeypatch.delenv(pyfltr.command.execution_slot.SLOTS_ENV, raising=False)
     repository = pathlib.Path(__file__).resolve().parents[2]
     legacy = _prepare_legacy(tmp_path, repository)
@@ -185,7 +168,6 @@ def test_current_request_uses_second_slot_behind_legacy_waiter(monkeypatch: pyte
                     assert (tmp_path / "new-entered").exists()
                     assert not (tmp_path / "new-waiting").exists()
                     assert not (tmp_path / "old2-entered").exists()
-                    # 旧版の保持者が解放すると、先頭の旧版の要求が1つ目の枠へ入る。
                     _, old_error = old.communicate(timeout=10)
                     _, old2_error = old2.communicate(timeout=30)
                 finally:

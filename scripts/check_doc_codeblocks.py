@@ -1,13 +1,4 @@
 #!/usr/bin/env python3
-"""ドキュメント内のコード例が、その言語として解析できることを検査する。
-
-利用者がそのまま設定ファイルへ写す前提のコード例が構文不正だと、写した側の
-ファイル全体が解析不能になる。taploとcheck-tomlは`*.toml`ファイルのみを
-対象としMarkdownのフェンス内を見ないため、本スクリプトで補う。
-
-対象はgit管理下のMarkdownに含まれる`toml`・`yaml`・`json`のフェンスとする。
-shellやmermaidなど単一の正解パーサを持たない言語は対象外とする。
-"""
 
 import collections.abc
 import json
@@ -26,12 +17,10 @@ MARKDOWN = MarkdownIt("commonmark")
 
 
 def _parse_yaml_documents(text: str) -> object:
-    """YAML文字列に含まれる全ての文書を解析する。"""
     return list(yaml.safe_load_all(text))
 
 
 def _format_diagnostic_path(path: pathlib.PurePath) -> str:
-    """ファイルパスを一意な単一行表現へ変換する。"""
     characters: list[str] = []
     for character in path.as_posix():
         if character not in {"%", "\\"} and character.isprintable():
@@ -49,7 +38,6 @@ PARSERS: dict[str, collections.abc.Callable[[str], object]] = {
 
 
 def _language_from_info(info: str) -> str:
-    """フェンスの情報文字列から言語タグを取得する。"""
     stripped = info.strip()
     if not stripped:
         return ""
@@ -62,11 +50,6 @@ def _language_from_info(info: str) -> str:
 def iter_code_blocks(
     text: str,
 ) -> collections.abc.Iterator[tuple[str, int, str]]:
-    """CommonMarkのトークンからフェンスコードブロックを取り出す。
-
-    Yields:
-        言語タグ、フェンス開始行の行番号（1始まり）、ブロック本文の組。
-    """
     for token in MARKDOWN.parse(text):
         if token.type != "fence" or token.map is None:
             continue
@@ -74,7 +57,6 @@ def iter_code_blocks(
 
 
 def check_file(path: pathlib.Path) -> list[str]:
-    """1ファイルを検査し、検出したエラー行の一覧を返す。"""
     errors: list[str] = []
     diagnostic_path = _format_diagnostic_path(path)
     for lang, lineno, body in iter_code_blocks(path.read_text(encoding="utf-8")):
@@ -94,7 +76,6 @@ def check_file(path: pathlib.Path) -> list[str]:
 
 
 def main() -> int:
-    """git管理下の全Markdownを検査する。"""
     output = subprocess.run(
         ["git", "ls-files", "-z", "--", "*.md"],
         capture_output=True,

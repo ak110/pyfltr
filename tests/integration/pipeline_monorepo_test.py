@@ -15,9 +15,7 @@ from tests.conftest import seed_archive_run as _seed_run
 
 
 def _make_subproject(path: pathlib.Path, *, name: str = "pkg") -> None:
-    """テスト用サブプロジェクト一式（pyproject.toml と Python ファイル）を作成する。"""
     path.mkdir(parents=True, exist_ok=True)
-    # pyfltr で pytest/typos を有効化するため `[tool.pyfltr]` を含める。
     (path / "pyproject.toml").write_text(
         f'[project]\nname = "{name}"\n[tool.pyfltr]\npytest = true\ntypos = true\n',
         encoding="utf-8",
@@ -32,7 +30,6 @@ def _write_pyproject(
     typos_on: bool | None = None,
     extra: str = "",
 ) -> None:
-    """ツールのON/OFFを個別指定したサブプロジェクトの `pyproject.toml` を作成する。"""
     path.mkdir(parents=True, exist_ok=True)
     lines = ["[project]", f'name = "{name}"', "[tool.pyfltr]"]
     if pytest_on is not None:
@@ -44,7 +41,6 @@ def _write_pyproject(
 
 
 def _pytest_cwds(mock_run) -> set[pathlib.Path]:
-    """`run_subprocess` モックから pytest が起動された cwd 集合を抽出する。"""
     cwds: set[pathlib.Path] = set()
     for call in mock_run.call_args_list:
         commandline = call.args[0] if call.args else []
@@ -57,7 +53,6 @@ def _pytest_cwds(mock_run) -> set[pathlib.Path]:
 
 
 def _pytest_call_count(mock_run) -> int:
-    """`run_subprocess` モックから pytest 起動回数（cwd 指定の有無を問わない）を数える。"""
     count = 0
     for call in mock_run.call_args_list:
         commandline = call.args[0] if call.args else []
@@ -67,7 +62,6 @@ def _pytest_call_count(mock_run) -> int:
 
 
 def _mypy_cwds(mock_run) -> set[pathlib.Path]:
-    """`run_subprocess` モックから mypy が起動された cwd 集合を抽出する。"""
     cwds: set[pathlib.Path] = set()
     for call in mock_run.call_args_list:
         commandline = call.args[0] if call.args else []
@@ -80,7 +74,6 @@ def _mypy_cwds(mock_run) -> set[pathlib.Path]:
 
 
 def _mypy_call_count(mock_run) -> int:
-    """`run_subprocess` モックから mypy 起動回数を数える。"""
     count = 0
     for call in mock_run.call_args_list:
         commandline = call.args[0] if call.args else []
@@ -90,12 +83,9 @@ def _mypy_call_count(mock_run) -> int:
 
 
 def test_monorepo_pytest_runs_per_subproject(tmp_path: pathlib.Path, mocker) -> None:
-    """サブプロジェクト2件構成で `subproject_aware=True` ツールがサブ別に呼ばれる。"""
-    # ルート + 2サブプロジェクト
     _make_subproject(tmp_path, name="root")
     _make_subproject(tmp_path / "pkg_a", name="pkg_a")
     _make_subproject(tmp_path / "pkg_b", name="pkg_b")
-    # ルート直下にも対象ファイルを置く
     (tmp_path / "root_test.py").write_text("def test_root(): pass\n", encoding="utf-8")
     (tmp_path / "pkg_a" / "a_test.py").write_text("def test_a(): pass\n", encoding="utf-8")
     (tmp_path / "pkg_b" / "b_test.py").write_text("def test_b(): pass\n", encoding="utf-8")
@@ -107,7 +97,6 @@ def test_monorepo_pytest_runs_per_subproject(tmp_path: pathlib.Path, mocker) -> 
         ["run", "--work-dir", str(tmp_path), "--commands=pytest", "--no-archive", "--no-cache", "--no-gitignore"]
     )
 
-    # 各サブプロジェクト cwd で1回ずつ呼ばれている（サブプロジェクト別実行）
     cwds = _pytest_cwds(mock_run)
     assert tmp_path.resolve() in cwds
     assert (tmp_path / "pkg_a").resolve() in cwds
@@ -115,7 +104,6 @@ def test_monorepo_pytest_runs_per_subproject(tmp_path: pathlib.Path, mocker) -> 
 
 
 def test_monorepo_fallback_to_single_when_one_subproject(tmp_path: pathlib.Path, mocker) -> None:
-    """検出結果1件以下ではモノレポモード非適用（単一実行経路）。"""
     _make_subproject(tmp_path, name="root")
     (tmp_path / "root_test.py").write_text("def test_root(): pass\n", encoding="utf-8")
 
@@ -126,7 +114,6 @@ def test_monorepo_fallback_to_single_when_one_subproject(tmp_path: pathlib.Path,
         ["run", "--work-dir", str(tmp_path), "--commands=pytest", "--no-archive", "--no-cache", "--no-gitignore"]
     )
 
-    # pytest は1回だけ呼ばれる（単一プロジェクト経路）
     pytest_calls = [
         call
         for call in mock_run.call_args_list
@@ -136,7 +123,6 @@ def test_monorepo_fallback_to_single_when_one_subproject(tmp_path: pathlib.Path,
 
 
 def test_monorepo_subproject_aware_false_uses_single_cwd(tmp_path: pathlib.Path, mocker) -> None:
-    """`subproject_aware=False` ツール（typos）はサブ分割せず起点 cwd で1回起動する。"""
     _make_subproject(tmp_path, name="root")
     _make_subproject(tmp_path / "pkg_a", name="pkg_a")
     _make_subproject(tmp_path / "pkg_b", name="pkg_b")
@@ -150,21 +136,13 @@ def test_monorepo_subproject_aware_false_uses_single_cwd(tmp_path: pathlib.Path,
         ["run", "--work-dir", str(tmp_path), "--commands=typos", "--no-archive", "--no-cache", "--no-gitignore"]
     )
 
-    # typos は単一実行（モノレポでもサブ分割されない）。
-    # ここでは run_subprocess が複数回呼ばれていないことを検証する代わりに、
-    # 例外なしで完走することを確認する（モノレポモードを抜けて単一経路を通る）。
-
 
 @pytest.mark.parametrize(
     ("parent_on", "child_on", "expected"),
     [
-        # 親ON子ON: 既存挙動の維持（起点と各サブで実行）。
         (True, True, {"root", "pkg_a", "pkg_b"}),
-        # 親ON子OFF: 子サブプロジェクトはスキップし、起点（root）自身のファイルでのみ実行する。
         (True, False, {"root"}),
-        # 親OFF子ON: 起点はスキップし、有効なサブプロジェクトでのみ実行する。
         (False, True, {"pkg_a", "pkg_b"}),
-        # 親OFF子OFF: どのcwdでも実行されない。
         (False, False, set()),
     ],
 )
@@ -175,7 +153,6 @@ def test_monorepo_respects_per_subproject_on_off(
     child_on: bool,
     expected: set[str],
 ) -> None:
-    """親子でツールのON/OFFが異なる両方向を、各サブプロジェクトの設定で個別に尊重する。"""
     _write_pyproject(tmp_path, "root", pytest_on=parent_on)
     _write_pyproject(tmp_path / "pkg_a", "pkg_a", pytest_on=child_on)
     _write_pyproject(tmp_path / "pkg_b", "pkg_b", pytest_on=child_on)
@@ -199,10 +176,7 @@ def test_monorepo_respects_per_subproject_on_off(
 
 
 def test_monorepo_all_children_disabled_does_not_run_at_start_cwd(tmp_path: pathlib.Path, mocker) -> None:
-    """全サブプロジェクトで対象ファイルがありつつ無効化された場合、起点cwdで全ファイルを誤実行しない。"""
-    # root は pytest 有効だが直下に対象ファイルを置かず、root 自身は対象0件でスキップさせる。
     _write_pyproject(tmp_path, "root", pytest_on=True)
-    # pkg_a / pkg_b は対象ファイルを持つが pytest を無効化する。
     _write_pyproject(tmp_path / "pkg_a", "pkg_a", pytest_on=False)
     _write_pyproject(tmp_path / "pkg_b", "pkg_b", pytest_on=False)
     (tmp_path / "pkg_a" / "a_test.py").write_text("def test_a(): pass\n", encoding="utf-8")
@@ -215,14 +189,11 @@ def test_monorepo_all_children_disabled_does_not_run_at_start_cwd(tmp_path: path
         ["run", "--work-dir", str(tmp_path), "--commands=pytest", "--no-archive", "--no-cache", "--no-gitignore"]
     )
 
-    # 0件フォールバックと無効スキップを区別し、起点cwdでの誤実行を抑止する。
     assert _pytest_call_count(mock_run) == 0
 
 
 def test_monorepo_applies_per_subproject_exclude(tmp_path: pathlib.Path, mocker) -> None:
-    """サブプロジェクト固有のツール別除外設定が、対象のサブプロジェクトの実行へ反映される。"""
     _write_pyproject(tmp_path, "root", pytest_on=True)
-    # pkg_a は pytest 有効だが固有の pytest-exclude で唯一の対象ファイルを除外する。
     _write_pyproject(
         tmp_path / "pkg_a",
         "pkg_a",
@@ -242,7 +213,6 @@ def test_monorepo_applies_per_subproject_exclude(tmp_path: pathlib.Path, mocker)
     )
 
     cwds = _pytest_cwds(mock_run)
-    # pkg_a は固有除外で対象0件となり起動されない。root と pkg_b は通常通り実行する。
     assert (tmp_path / "pkg_a").resolve() not in cwds
     assert tmp_path.resolve() in cwds
     assert (tmp_path / "pkg_b").resolve() in cwds
@@ -250,9 +220,7 @@ def test_monorepo_applies_per_subproject_exclude(tmp_path: pathlib.Path, mocker)
 
 @pytest.mark.parametrize("parent_on", [True, False])
 def test_monorepo_repo_level_tool_fixed_by_start_config(tmp_path: pathlib.Path, mocker, parent_on: bool) -> None:
-    """`subproject_aware=False` ツール（typos）のON/OFFは起点設定で固定し、子の設定で変えない。"""
     _write_pyproject(tmp_path, "root", typos_on=parent_on)
-    # 子で typos を有効化しても、リポジトリ単位ツールのため起点設定が優先される。
     _write_pyproject(tmp_path / "pkg_a", "pkg_a", typos_on=True)
     _write_pyproject(tmp_path / "pkg_b", "pkg_b", typos_on=True)
     (tmp_path / "root.txt").write_text("hello world\n", encoding="utf-8")
@@ -270,18 +238,15 @@ def test_monorepo_repo_level_tool_fixed_by_start_config(tmp_path: pathlib.Path, 
         for call in mock_run.call_args_list
         if call.args and isinstance(call.args[0], list) and "typos" in " ".join(call.args[0])
     ]
-    # 親ON時は起点 cwd で1回、親OFF時は子がONでも実行されない。
     assert len(typos_calls) == (1 if parent_on else 0)
 
 
 def _make_cargo_crate(path: pathlib.Path, *, name: str = "crate") -> None:
-    """テスト用Rust crate一式（`Cargo.toml`のみ、`pyproject.toml`は持たない）を作成する。"""
     path.mkdir(parents=True, exist_ok=True)
     (path / "Cargo.toml").write_text(f'[package]\nname = "{name}"\nversion = "0.1.0"\n', encoding="utf-8")
 
 
 def _cargo_clippy_cwds(mock_run) -> set[pathlib.Path | None]:
-    """`run_subprocess` モックから cargo-clippy が起動された cwd 集合を抽出する。"""
     cwds: set[pathlib.Path | None] = set()
     for call in mock_run.call_args_list:
         commandline = call.args[0] if call.args else []
@@ -293,9 +258,6 @@ def _cargo_clippy_cwds(mock_run) -> set[pathlib.Path | None]:
 
 
 def test_monorepo_hybrid_cargo_only_subproject_runs_at_crate_cwd(tmp_path: pathlib.Path, mocker) -> None:
-    """Pythonルート＋`Cargo.toml`単独サブディレクトリの構成で、起点`pyproject.toml`の
-    `rust = true`設定を継承し`cargo-clippy`が`Cargo.toml`所在ディレクトリで起動される。
-    """
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "root"\n[tool.pyfltr]\npreset = "latest"\nrust = true\n',
         encoding="utf-8",
@@ -314,7 +276,6 @@ def test_monorepo_hybrid_cargo_only_subproject_runs_at_crate_cwd(tmp_path: pathl
 
 
 def test_monorepo_cargo_workspace_root_only(tmp_path: pathlib.Path, mocker) -> None:
-    """Cargo workspace root配下のmember crateは独立検出されず、workspace rootで1回のみ起動する。"""
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "root"\n[tool.pyfltr]\npreset = "latest"\nrust = true\n', encoding="utf-8"
     )
@@ -335,10 +296,6 @@ def test_monorepo_cargo_workspace_root_only(tmp_path: pathlib.Path, mocker) -> N
 
 
 def test_monorepo_nested_pyproject_inherits_nearest_ancestor(tmp_path: pathlib.Path, mocker) -> None:
-    """ネスト構成: 孫Cargo.tomlは最近接祖先（子pyproject.toml）のconfigを継承する。
-
-    ルートで`rust = true`、子で`rust = false`のとき、孫のcargo系はスキップされる。
-    """
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "root"\n[tool.pyfltr]\npreset = "latest"\nrust = true\n', encoding="utf-8"
     )
@@ -357,24 +314,10 @@ def test_monorepo_nested_pyproject_inherits_nearest_ancestor(tmp_path: pathlib.P
     )
 
     cwds = _cargo_clippy_cwds(mock_run)
-    assert cwds == set()  # 孫は`rust = false`継承でスキップ
-
-
-# `.sln`集約ルート下のcsproj除外は`tests/subprojects_test.py`側の
-# `test_discover_subprojects_dotnet_solution_excludes_registered_projects`単体テストで検証する。
-# 統合テスト（`run_subprocess`モック観測）は`dotnet`実行ファイルおよびmise内のdotnet登録が
-# CI環境で不在のため成立せず（`runner._resolve_direct_executable`/`_is_tool_active_in_mise_config`
-# の解決経路が環境依存で分岐する）、集約フィルターの言語非依存動作は
-# `test_monorepo_cargo_workspace_root_only`で代表検証している。
+    assert cwds == set()
 
 
 def test_monorepo_subproject_config_does_not_warn_missing_repo_level_config(tmp_path: pathlib.Path, mocker) -> None:
-    """リポジトリルートにのみ`.pre-commit-config.yaml`を置いた構成で、
-    子で`prek`を有効化しても設定ファイル不在の警告を発行しない。
-
-    `prek`は`subproject_aware=False`で起点cwdでのみ実行されるため、
-    サブプロジェクトのディレクトリを基準にした設定ファイル探索は誤検知になる。
-    """
     (tmp_path / "pyproject.toml").write_text('[project]\nname = "root"\n[tool.pyfltr]\n', encoding="utf-8")
     (tmp_path / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
     _write_pyproject(tmp_path / "pkg_a", "pkg_a", extra="prek = true\n")
@@ -396,7 +339,6 @@ def test_monorepo_global_config_warning_is_emitted_once(
     mocker,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """モノレポではglobal設定由来の警告を起点cwdのロード時に1回だけ発行する。"""
     global_path = tmp_path / "global_config.toml"
     global_path.write_text("[tool.pyfltr]\nunknown-key-xyz = true\n", encoding="utf-8")
     monkeypatch.setenv("PYFLTR_GLOBAL_CONFIG", str(global_path))
@@ -432,12 +374,6 @@ def test_monorepo_global_config_warning_with_origin_override_is_emitted_once(
     mocker,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """起点projectがglobalの不正値を正常値で上書きしていても、上書きしない複数の
-    サブプロジェクトにまたがって同じglobal由来の検証警告が重複発行されない。
-
-    `_write_pyproject`は`preset`個別指定に対応しないため、本テストは
-    `pyproject.toml`を直接書き込む。
-    """
     global_path = tmp_path / "global_config.toml"
     global_path.write_text("[tool.pyfltr]\npreset = 42\n", encoding="utf-8")
     monkeypatch.setenv("PYFLTR_GLOBAL_CONFIG", str(global_path))
@@ -471,17 +407,6 @@ def test_monorepo_root_project_own_validation_warning_is_emitted_once(
     tmp_path: pathlib.Path,
     mocker,
 ) -> None:
-    """起点cwd自身がサブプロジェクトとして検出される場合、起点project固有の誤設定に
-    由来する検証警告が起点ロード分と`resolve_subproject_configs`の再ロード分で
-    重複発行されない。
-
-    起点cwd自身のマーカー（`pyproject.toml`）検出によりサブプロジェクト一覧へ
-    起点自身（`relative == "."`）が含まれる場合、`resolve_subproject_configs`が
-    起点configを再ロードすると、global由来ではない起点project固有の誤設定
-    （global設定には存在しないキー）まで再検証され重複発行される。
-    `already_warned`によるglobal由来キーの累積抑止はこのケースへ対応できないため、
-    起点cwd自身は再ロードせず`config`引数をそのまま再利用する必要がある。
-    """
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "root"\n[tool.pyfltr]\nunknown-root-only-key-xyz = true\ntypos = true\n',
         encoding="utf-8",
@@ -516,13 +441,6 @@ def test_monorepo_unknown_command_name_warning_is_emitted_once(
     tmp_path: pathlib.Path,
     mocker,
 ) -> None:
-    """`--enable`に未知のコマンド名を渡したときの警告を起点で1回だけ発行する。
-
-    `apply_cli_overrides`は起点（`run_pipeline`）と各サブプロジェクト
-    （`resolve_subproject_configs`）の双方から呼ばれる。CLI引数はサブプロジェクト間で
-    共通のため、サブプロジェクトごとに警告を発行するとサブプロジェクト数だけ
-    同一メッセージが重複する。
-    """
     _write_pyproject(tmp_path, "root", typos_on=True)
     for name in ("pkg_a", "pkg_b", "pkg_c"):
         _write_pyproject(tmp_path / name, name, typos_on=True)
@@ -554,7 +472,6 @@ def test_monorepo_tool_resolution_warning_is_emitted_once(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """複数サブプロジェクトの同一ツール解決失敗警告を1件だけ発行する。"""
     config_extra = 'mypy = true\nmypy-runner = "direct"\n'
     _write_pyproject(tmp_path, "root", extra=config_extra)
     _write_pyproject(tmp_path / "pkg_a", "pkg_a", extra=config_extra)
@@ -582,7 +499,6 @@ def test_monorepo_only_failed_targets_are_limited_to_subproject(
     mocker,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """モノレポの `--only-failed` は失敗ファイルが所属するサブプロジェクトだけで実行する。"""
     config_extra = 'mypy = true\nmypy-runner = "direct"\n'
     _write_pyproject(tmp_path, "root", extra=config_extra)
     _write_pyproject(tmp_path / "pkg_a", "pkg_a", extra=config_extra)
@@ -630,7 +546,6 @@ def test_monorepo_only_failed_targets_are_limited_to_subproject(
 def test_monorepo_external_only_warning_and_record_are_emitted_once(
     tmp_path: pathlib.Path,
 ) -> None:
-    """外部パスだけの0件フォールバックで同一警告と除外記録を1件だけ保持する。"""
     _write_pyproject(tmp_path, "root", pytest_on=True)
     _write_pyproject(tmp_path / "pkg_a", "pkg_a", pytest_on=True)
     external_dir = tmp_path.parent / f"external-{tmp_path.name}"
@@ -651,7 +566,6 @@ def test_monorepo_external_only_warning_and_record_are_emitted_once(
         ]
     )
 
-    # 外部パスの記録と警告本文は公開値であり、区切りを`/`へ統一した表現で保持される。
     # テストで使うパスがWindows区切りを含まないため、実装と独立した`as_posix()`で期待値を生成する。
     normalized_external = external.as_posix()
     messages = [
@@ -667,17 +581,10 @@ def test_monorepo_external_only_warning_and_record_are_emitted_once(
 def test_monorepo_without_root_marker_runs_root_files_at_start_cwd(
     tmp_path: pathlib.Path, mocker, target_root_file: bool
 ) -> None:
-    """マーカーの無い起点の直下ファイルを起点cwdから検査し、起点cwd外として警告しない。
-
-    起点cwd自身がマーカーを持たず配下のサブプロジェクトが2件以上あるとモノレポモードになる。
-    所属の無い起点直下のファイルを外部パスと誤分類すると、除外対象ツール（pytest）では
-    外部パスの警告を出力して検査から外すか、警告に反して実行する。
-    """
     _write_pyproject(tmp_path / "pkg_a", "pkg_a", pytest_on=True)
     _write_pyproject(tmp_path / "pkg_b", "pkg_b", pytest_on=True)
     (tmp_path / "root_test.py").write_text("def test_root(): pass\n", encoding="utf-8")
     (tmp_path / "pkg_a" / "a_test.py").write_text("def test_a(): pass\n", encoding="utf-8")
-    # 起点直下のファイルだけを渡すと、サブプロジェクトの対象は0件になる。
     targets = [str(tmp_path / "root_test.py")] if target_root_file else []
 
     proc = subprocess.CompletedProcess(["pytest"], returncode=0, stdout="")
@@ -714,12 +621,6 @@ def test_monorepo_without_root_marker_runs_root_files_at_start_cwd(
 def test_monorepo_mixed_targets_keep_succeeded_status(
     tmp_path: pathlib.Path, mocker, capsys: pytest.CaptureFixture[str], extra_targets: list[str]
 ) -> None:
-    """起点へ対象外のファイル、サブプロジェクトへ対象ファイルを渡しても、実行した成功をsucceededとして報告する。
-
-    起点（相対パス`.`）は報告順で先に並び、対象0件のskipped結果になる。
-    集約がこのskippedを代表値にすると、`command`レコードがskippedとなり、
-    存在しないパスを併せて渡した場合は全結果skipped扱いで終了コード1になる。
-    """
     _write_pyproject(tmp_path, "root", pytest_on=True)
     _write_pyproject(tmp_path / "pkg_b", "pkg_b", pytest_on=True)
     (tmp_path / "docs").mkdir()
@@ -753,11 +654,6 @@ def test_monorepo_mixed_targets_keep_succeeded_status(
 
 
 def test_monorepo_fast_targets_run_per_subproject_globs(tmp_path: pathlib.Path, mocker) -> None:
-    """起点に指定が無くても、サブプロジェクトごとの`pytest-fast-targets`でfastのpytestを実行する。
-
-    変更ファイルの無いサブプロジェクトも、各設定のglobに一致するファイルだけを各cwdで検査し、
-    指定の無いサブプロジェクトでは従来どおり位置引数の対象（ここでは0件）に留まる。
-    """
     _write_pyproject(tmp_path, "root")
     _write_pyproject(tmp_path / "pkg_a", "pkg_a", pytest_on=True, extra='pytest-fast-targets = ["*_invariant_test.py"]\n')
     _write_pyproject(tmp_path / "pkg_b", "pkg_b", pytest_on=True, extra='pytest-fast-targets = "check_*.py"\n')
@@ -793,12 +689,6 @@ def test_monorepo_subproject_diagnostics_round_trip_to_only_failed(
     mocker,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """子プロジェクト相対の診断が起点相対で保存され、only-failedで失敗ファイルだけを再実行する。
-
-    生成・統合・保存・読取・失敗対象選択の往復を検証する。両方の子に同名の`x.py`を置き、
-    子プロジェクト相対のまま保存されると交差が空になって再実行がスキップされる退行と、
-    別の子の同名ファイルを誤って対象に加える退行を検出する。
-    """
     config_extra = 'mypy = true\nmypy-runner = "direct"\n'
     _write_pyproject(tmp_path, "root", extra=config_extra)
     _write_pyproject(tmp_path / "pkg_a", "pkg_a", extra=config_extra)
@@ -809,7 +699,7 @@ def test_monorepo_subproject_diagnostics_round_trip_to_only_failed(
     monkeypatch.setenv("PYFLTR_CACHE_DIR", str(cache_root))
 
     def fake_run(commandline, *args, **kwargs):
-        del args  # 未使用
+        del args
         cwd = pathlib.Path(kwargs["cwd"]).resolve() if kwargs.get("cwd") is not None else None
         if "mypy" in " ".join(commandline) and cwd == (tmp_path / "pkg_a").resolve():
             return subprocess.CompletedProcess(commandline, returncode=1, stdout="x.py:1: error: 型が違う  [assignment]\n")
@@ -823,7 +713,6 @@ def test_monorepo_subproject_diagnostics_round_trip_to_only_failed(
     run_id = store.list_runs(limit=1)[0].run_id
     diagnostics = store.read_tool_diagnostics(run_id, "mypy")
     assert [entry["file"] for entry in diagnostics] == ["pkg_a/x.py"]
-    # 再実行コマンドの対象は起動時のcwdではなく実行起点（`--work-dir`）基準で絶対化する。
     retry_command = store.read_tool_meta(run_id, "mypy")["retry_command"]
     assert shlex.split(retry_command)[-1] == str((tmp_path / "pkg_a" / "x.py").resolve())
 

@@ -1,30 +1,3 @@
-"""サブプロジェクト検出・分類・uv workspace解釈・uv.lock親探索。
-
-モノレポ対応の中核モジュール。起点 cwd 配下を再帰探索してマーカー
-（固定ファイル名`pyproject.toml`・`Cargo.toml`、globパターン`*.csproj`・`*.sln`）を
-持つディレクトリをサブプロジェクトとして列挙し、uv workspace の `members` glob を
-含めて解決する。ネストする子サブプロジェクト配下のファイルは
-`classify_files_by_subproject` の最深一致で子へ分類し、親の集合には含めない。
-
-設計上の判断:
-
-- マーカー（固定ファイル名`pyproject.toml`・`Cargo.toml`、globパターン`*.csproj`・
-  `*.sln`）の存在で検出する（`[tool.pyfltr]`の有無は問わない）。`.NET`のプロジェクト/
-  ソリューションファイルは利用者ごとにファイル名が異なるためglobパターンで判定する。
-  `package.json`はプロジェクト境界を持たない汎用ファイルとして誤検出リスクが高いため
-  対象外とする
-- 検出結果が0件または1件の場合はモノレポモード非適用（呼び出し側で扱う）
-- ファイル展開の除外（`exclude`・`extend-exclude`の実効値）に一致するディレクトリへは侵入しない。
-  除外の定義をファイル展開と共有し、片方へ加えた除外がもう片方へ適用されない二重定義を避ける
-- ファイル展開の除外に加え、`.venv`・`node_modules`・`target`・`build`・`dist`・`.git` と
-  `subproject-exclude` 設定の名前を常に除外する
-- `.gitignore` を尊重しつつ（`subproject-use-gitignore`）、規定ブラックリストも除外する
-- uv workspace の `[tool.uv.workspace]` は `pyproject.toml` の解釈に限定し、
-  他のマーカーのみを持つディレクトリには適用しない
-  （`_read_uv_workspace_members`が`pyproject.toml`を直接読むため）
-- `find_uv_lock_for_cwd` は cwd 直下に `uv.lock` がなければ workspace root まで親方向探索する
-"""
-
 from __future__ import annotations
 
 import dataclasses
@@ -50,13 +23,6 @@ logger = logging.getLogger(__name__)
 
 @dataclasses.dataclass(frozen=True)
 class Subproject:
-    """サブプロジェクト1件分の情報。
-
-    `cwd` は絶対パス、`relative` は起点 cwd からの相対パス（POSIX 区切り）。
-    `uv_workspace_root` は uv workspace member のときに workspace root の絶対パスを保持し、
-    `find_uv_lock_for_cwd` の親方向探索の上限として使う。member でなければ `None`。
-    """
-
     cwd: pathlib.Path
     """サブプロジェクトの絶対パス。"""
     relative: str
@@ -90,15 +56,6 @@ _SUBPROJECT_MARKER_GLOBS: tuple[str, ...] = ("*.csproj", "*.sln")
 
 
 def is_subproject_dir(path: pathlib.Path) -> bool:
-    """ディレクトリがサブプロジェクト検出マーカーを持つか判定する。
-
-    固定ファイル名（`_SUBPROJECT_MARKER_NAMES`）またはglobパターン
-    （`_SUBPROJECT_MARKER_GLOBS`）のいずれか1つでも一致すればサブプロジェクトとして扱う。
-    `path` はディレクトリの絶対パスを想定する。パーミッションエラー時は False を返す。
-    本関数自体は `path` やマーカーファイルのシンボリックリンクを判定・除外しない
-    （`is_file()` / `glob()` の標準挙動どおりリンク先を実体として判定する）。
-    ディレクトリのシンボリックリンクへの再帰侵入は `_walk_subproject_candidates` 側で除外する。
-    """
     try:
         if any((path / name).is_file() for name in _SUBPROJECT_MARKER_NAMES):
             return True
@@ -108,11 +65,6 @@ def is_subproject_dir(path: pathlib.Path) -> bool:
 
 
 def _read_cargo_workspace_members(path: pathlib.Path) -> set[pathlib.Path] | None:
-    """`path/Cargo.toml`が`[workspace]`を持つ場合、登録member crateの絶対パス集合を返す。
-
-    `[workspace] members`のglob展開結果から`exclude`のglob展開結果を差し引く。
-    workspace未定義・パース失敗時はNoneを返す（呼び出し側で「workspace rootではない」と判定）。
-    """
     cargo_toml = path / "Cargo.toml"
     try:
         text = cargo_toml.read_text(encoding="utf-8")
@@ -145,10 +97,6 @@ _DOTNET_SLN_PROJECT_LINE = re.compile(
 
 
 def _read_dotnet_solution_projects(path: pathlib.Path) -> set[pathlib.Path]:
-    r"""`path`直下の全`.sln`ファイル内で登録されているproject所在ディレクトリの絶対パス集合を返す。
-
-    solution不在・読込失敗時は空集合を返す。パス区切りは`\\`・`/`両対応（.sln慣習に従う）。
-    """
     result: set[pathlib.Path] = set()
     try:
         sln_files = list(path.glob("*.sln"))
@@ -162,20 +110,11 @@ def _read_dotnet_solution_projects(path: pathlib.Path) -> set[pathlib.Path]:
         for match in _DOTNET_SLN_PROJECT_LINE.finditer(text):
             rel = match.group(1).replace("\\", "/")
             project_path = (path / rel).resolve()
-            # 抽出対象は`*.csproj`等のファイルパス。所在ディレクトリを除外対象とする
             result.add(project_path.parent)
     return result
 
 
 def _filter_aggregate_children(candidates: set[pathlib.Path]) -> set[pathlib.Path]:
-    """集約ルート配下の登録済み下位マーカー（member crate・solution登録project）を除外する。
-
-    - Cargo workspace root配下の登録member crateディレクトリ（`pyproject.toml`を持たない）は除外
-    - `.sln`所在ディレクトリ配下の登録csproj所在ディレクトリ（`pyproject.toml`・`Cargo.toml`を
-      持たない）は除外
-    無登録の`Cargo.toml`・`*.csproj`（member登録なし・solution未登録）は独立サブプロジェクトとして残す。
-    `pyproject.toml`を持つディレクトリは集約ルート配下でも独立サブプロジェクトとして残す。
-    """
     cargo_excluded: set[pathlib.Path] = set()
     dotnet_excluded: set[pathlib.Path] = set()
     for cand in candidates:
@@ -206,26 +145,6 @@ def discover_subprojects(
     *,
     git_check_ignore: typing.Callable[[pathlib.Path, list[pathlib.Path]], set[pathlib.Path]] | None = None,
 ) -> list[Subproject]:
-    """起点 cwd 配下を再帰探索し、サブプロジェクト一覧を返す。
-
-    検出フロー:
-    1. `start_cwd` 自身がマーカー（固定ファイル名またはglobパターン）を持てば候補に加える
-    2. uv workspace の `[tool.uv.workspace] members` glob を展開して候補に加える
-       （`pyproject.toml`側のみ対象）
-    3. 残りのサブディレクトリを再帰探索し、マーカーを持つディレクトリを候補に加える
-    4. ファイル展開の除外（`exclude`・`extend-exclude`）、規定ブラックリスト、`subproject-exclude`に
-       一致するディレクトリへは侵入せず候補にも加えない。`.gitignore` も尊重する
-    5. 集約ルート（Cargo workspace root・`.sln`所在ディレクトリ）配下の下位マーカー
-       （`Cargo.toml`単独・`*.csproj`単独）は候補から除外する（重複実行防止）
-
-    ネストする子サブプロジェクト配下のファイル帰属は走査側では分離せず、`classify_files_by_subproject`
-    の最深一致で子サブプロジェクトへ割り当てる（親側の集合からは結果的に除かれる）。
-
-    `git_check_ignore` はテスト用の差し替えフック。実運用では `None` を渡し、内部で
-    `subprocess.run(["git", "check-ignore", ...], cwd=start_cwd)` を呼ぶ。
-
-    返り値は `Subproject` のリストで、`relative` パス文字列の自然順でソートする。
-    """
     extra_excludes: list[str] = list(config.values.get("subproject-exclude", []))
     use_gitignore: bool = bool(config.values.get("subproject-use-gitignore", True))
     use_uv_workspace: bool = bool(config.values.get("subproject-uv-workspace", True))
@@ -236,7 +155,6 @@ def discover_subprojects(
     if is_subproject_dir(start_cwd):
         candidates.add(start_cwd.resolve())
 
-    # uv workspace の members glob 展開
     workspace_members: dict[pathlib.Path, pathlib.Path] = {}
     if use_uv_workspace and is_subproject_dir(start_cwd):
         workspace_root_real = start_cwd.resolve()
@@ -247,22 +165,15 @@ def discover_subprojects(
                 candidates.add(resolved)
                 workspace_members[resolved] = workspace_root_real
 
-    # 再帰探索
     for path in _walk_subproject_candidates(start_cwd, exclude_names, config):
         candidates.add(path.resolve())
 
-    # gitignore 除外
     if use_gitignore:
         ignored = _filter_ignored_subprojects(start_cwd, list(candidates), git_check_ignore)
         candidates = candidates - ignored
 
-    # 集約ルート（Cargo workspace root・.sln所在ディレクトリ）配下の登録済み下位マーカーを除外する
     candidates = _filter_aggregate_children(candidates)
 
-    # 起点 cwd を含む全候補から、ネストの親（より上位）が候補に含まれる場合に
-    # 内側を残しつつ親側の走査ロジックでは内側を除外する設計のため、ここでは
-    # 全候補をそのままサブプロジェクト集合とする。子サブプロジェクト配下の
-    # ファイル走査除外は `classify_files_by_subproject` 側で最深一致により実現する。
     subprojects: list[Subproject] = []
     start_real = start_cwd.resolve()
     for cwd in candidates:
@@ -270,7 +181,6 @@ def discover_subprojects(
             rel = cwd.relative_to(start_real)
         except ValueError:
             continue
-        # `pathlib.Path.relative_to` は同一パス比較で `"."` を返すため、空文字列分岐は不要。
         rel_str = str(rel).replace("\\", "/")
         workspace_root = workspace_members.get(cwd)
         subprojects.append(Subproject(cwd=cwd, relative=rel_str, uv_workspace_root=workspace_root))
@@ -284,14 +194,6 @@ def _walk_subproject_candidates(
     exclude_names: set[str],
     config: pyfltr.config.model.Config,
 ) -> typing.Iterator[pathlib.Path]:
-    """再帰探索でマーカー（固定ファイル名またはglobパターン）を持つディレクトリを列挙する。
-
-    探索中にマーカーを見つけた場合、対象のディレクトリは候補に加えるが
-    配下への再帰侵入は継続する（ネストするサブプロジェクトを全て列挙するため）。
-    `exclude_names` に名前一致するディレクトリと、起点からの相対パスがファイル展開の除外
-    （`pyfltr.command.targets.excluded`）に一致するディレクトリは、候補にも加えず侵入もしない。
-    シンボリックリンクは辿らない。
-    """
     stack: list[tuple[pathlib.Path, pathlib.Path]] = [(start, pathlib.Path())]
     while stack:
         current, current_rel = stack.pop()
@@ -318,11 +220,6 @@ def _walk_subproject_candidates(
 
 
 def _read_uv_workspace_members(root: pathlib.Path) -> list[pathlib.Path]:
-    """`pyproject.toml` の `[tool.uv.workspace] members` を glob 展開して返す。
-
-    `members` キー未定義時は空リストを返す。`exclude` キーは別キーで指定された
-    glob を members 展開後に除去する。
-    """
     pyproject_path = root / "pyproject.toml"
     try:
         text = pyproject_path.read_text(encoding="utf-8")
@@ -348,7 +245,6 @@ def _read_uv_workspace_members(root: pathlib.Path) -> list[pathlib.Path]:
         for match in root.glob(pattern):
             if match.is_dir():
                 collected.add(match)
-    # exclude glob を適用
     for pattern in excludes:
         for match in root.glob(pattern):
             collected.discard(match)
@@ -360,12 +256,6 @@ def _filter_ignored_subprojects(
     candidates: list[pathlib.Path],
     git_check_ignore: typing.Callable[[pathlib.Path, list[pathlib.Path]], set[pathlib.Path]] | None,
 ) -> set[pathlib.Path]:
-    """候補のうち `.gitignore` で除外されているものを返す。
-
-    `git_check_ignore` が指定されていれば実体に委ねる。未指定時は `subprocess.run` で
-    `git check-ignore --stdin -z` を `cwd=start_cwd` で起動する。
-    git 未導入・タイムアウト・想定外returncode時は空集合を返す（除外スキップ）。
-    """
     if not candidates:
         return set()
     if git_check_ignore is not None:
@@ -407,29 +297,8 @@ def classify_files_by_subproject(
     subprojects: list[Subproject],
     start_cwd: pathlib.Path,
 ) -> tuple[dict[pathlib.Path, list[pathlib.Path]], list[pathlib.Path]]:
-    """ファイル一覧をサブプロジェクト・起点cwd・外部パスの3区分へ分類して返す。
-
-    各ファイルは「実体パスがどのサブプロジェクト cwd 配下に最も深く含まれるか」で
-    最深一致のサブプロジェクトに割り当てる。これによりネストする子サブプロジェクト
-    配下のファイルは親サブプロジェクトの集合から除外され、子サブプロジェクトの
-    集合へ含まれる。
-
-    どのサブプロジェクトにも属さないファイルのうち、外部パス（`pyfltr.paths.is_external_path`。
-    起点cwd配下にない絶対パス）は第2戻り値の外部パス一覧へ割り当て、それ以外は辞書の起点cwdの区分
-    （キーは起点cwdの実体パス）へ入れる。起点cwd自身がマーカーを持たない場合の起点直下のファイルや、
-    `subproject-exclude`等で候補から外れたマーカー付きディレクトリ配下のファイルが起点cwdの区分へ入る。
-    起点cwdがサブプロジェクト`.`として検出された場合は、同じキーがそのサブプロジェクトの区分になる。
-    全ファイルは辞書のいずれかの区分と外部パス一覧の一方だけへ過不足なく入る。
-
-    `files` は起点 cwd 相対の `pathlib.Path` を想定する。返り値の辞書値は同じ起点 cwd 相対の
-    ファイルパス一覧。外部パス一覧は注入対象ツール（`config_arg_template`指定のmarkdownlint・textlint等）
-    の追加実行や、除外対象ツール（`allows_external_paths=False`）の警告発行に使う。
-
-    `subprojects` が空の場合は空辞書と空リストを返す（呼び出し側は単一実行経路へフォールバック）。
-    """
     if not subprojects:
         return {}, []
-    # cwd の depth（パス要素数）が深いほど優先する。
     sorted_subs = sorted(subprojects, key=lambda s: len(s.cwd.parts), reverse=True)
     start_real = start_cwd.resolve()
     result: dict[pathlib.Path, list[pathlib.Path]] = {s.cwd: [] for s in subprojects}
@@ -457,18 +326,11 @@ def classify_files_by_subproject(
 
 
 def find_uv_lock_for_cwd(cwd: pathlib.Path, *, workspace_root: pathlib.Path | None = None) -> pathlib.Path | None:
-    """`cwd` 配下に `uv.lock` があれば返す。無ければ workspace root まで親方向探索する。
-
-    `workspace_root` が指定されていない場合は cwd 直下のみ確認する。
-    親方向探索は workspace root を越えない（祖先ディレクトリへの越境を防ぐ）。
-    `Subproject.uv_workspace_root` から取得した値を渡す想定。
-    """
     direct = cwd / "uv.lock"
     if direct.is_file():
         return direct
     if workspace_root is None:
         return None
-    # 親方向探索（workspace_root を含む）
     cwd_real = cwd.resolve()
     root_real = workspace_root.resolve()
     if cwd_real == root_real:

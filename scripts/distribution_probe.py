@@ -1,5 +1,3 @@
-"""wheel導入先のPythonだけでCLI・辞書・MCPの公開入口を検査する。"""
-
 import asyncio
 import contextlib
 import importlib.metadata
@@ -56,7 +54,6 @@ async def _mcp() -> None:
 
 
 def main() -> int:
-    """開発ソースを参照せず、配布された入口とデータで結果へ到達する。"""
     assert pyfltr.__file__ is not None
     assert pathlib.Path(pyfltr.__file__).resolve().is_relative_to(pathlib.Path(sys.prefix).resolve())
     assert importlib.metadata.version("pyfltr") == sys.argv[1]
@@ -71,7 +68,6 @@ def main() -> int:
         encoding="utf-8",
     )
     (root / "sample.py").write_text("value = 1\n", encoding="utf-8")
-    # 辞書の同梱だけでなく、配布CLIから検出結果まで到達することを確認する。
     (root / "sample.md").write_text("\u30ac\u30c1\n", encoding="utf-8")
     result = _cli(
         [

@@ -1,5 +1,3 @@
-"""grepの全検索結果からLLM向けの出力方式を選択する。"""
-
 from __future__ import annotations
 
 import dataclasses
@@ -21,8 +19,6 @@ _SERIALIZATION_MATCH_SENTINEL: dict[str, typing.Any] = {
 
 @dataclasses.dataclass(frozen=True)
 class Selection:
-    """選択済みの検索結果と省略量。"""
-
     output_mode: OutputMode
     matches: list[dict[str, typing.Any]]
     file_results: list[dict[str, typing.Any]]
@@ -39,7 +35,6 @@ def select_output(
     output_format: OutputFormat,
     budget: int = DEFAULT_RESULT_BUDGET,
 ) -> Selection:
-    """実際の結果部分の直列化文字数を比較し、情報量が最大の候補を返す。"""
     groups = _group_matches(matches)
     full_length = serialized_length("full", matches, [], output_format=output_format)
     if full_length <= budget:
@@ -87,7 +82,6 @@ def select_output(
 
 
 def full_output(matches: list[dict[str, typing.Any]]) -> Selection:
-    """明示指定または通常CLI向けの全件出力を返す。"""
     return _selection("full", matches, [], _group_matches(matches))
 
 
@@ -98,7 +92,6 @@ def serialized_length(
     *,
     output_format: OutputFormat,
 ) -> int:
-    """候補を実際の結果形式へ直列化した文字数を返す。"""
     if output_format == "jsonl":
         records = _jsonl_records(mode, matches, file_results)
         return sum(len(json.dumps(record, ensure_ascii=False, separators=(",", ":"))) + 1 for record in records)
@@ -111,12 +104,10 @@ def serialized_length(
 
 
 def jsonl_result_records(selection: Selection) -> list[dict[str, typing.Any]]:
-    """選択結果をJSONLの結果レコードへ変換する。"""
     return _jsonl_records(selection.output_mode, selection.matches, selection.file_results)
 
 
 def text_result_lines(selection: Selection) -> list[str]:
-    """選択結果をtext形式の結果行へ変換する。"""
     return _text_lines(selection.output_mode, selection.matches, selection.file_results)
 
 
@@ -212,7 +203,6 @@ def _match_addition_length(
     output_format: OutputFormat,
     has_existing: bool,
 ) -> int:
-    """sampled候補へ1件追加したときの直列化文字数差を返す。"""
     prefix = [_SERIALIZATION_MATCH_SENTINEL] if has_existing else []
     before = serialized_length("sampled", prefix, [], output_format=output_format)
     after = serialized_length("sampled", [*prefix, match], [], output_format=output_format)

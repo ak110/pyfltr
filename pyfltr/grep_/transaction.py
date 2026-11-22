@@ -1,5 +1,3 @@
-"""複数ファイルの書き込みと、I/O失敗時の開始前状態への復旧。"""
-
 import dataclasses
 import pathlib
 
@@ -8,22 +6,17 @@ import pyfltr.paths
 
 @dataclasses.dataclass(frozen=True)
 class FileUpdate:
-    """開始前の状態と書き込み予定を保持する。Noneは元ファイルの不在を表す。"""
-
     file: pathlib.Path
     before: bytes | None
     after: bytes
 
 
 class WriteFailure(OSError):
-    """書き込み失敗と、開始前状態へ戻せなかった対象を保持する。"""
-
     def __init__(self, cause: OSError, unrestored: list[pathlib.Path]) -> None:
         super().__init__(str(cause))
         self.unrestored = unrestored
 
     def describe(self) -> str:
-        """元の原因と復旧結果を返す。"""
         if self.unrestored:
             files = ", ".join(pyfltr.paths.normalize_separators(file) for file in self.unrestored)
             return f"書き込みに失敗し、開始前の内容へ戻せなかったファイルがあります: {files}。原因: {self}"
@@ -31,12 +24,6 @@ class WriteFailure(OSError):
 
 
 def write_updates(updates: list[FileUpdate]) -> None:
-    """全対象を更新し、途中失敗時は書き込みを試みた対象自身も復旧する。
-
-    ファイルのinode・権限・リンク関係を維持するため通常の書き込みを使う。
-    部分書き込みを起こした対象も復旧し、1件の復旧失敗で他の復旧を打ち切らない。
-    強制終了や電源断で全ファイルを原子的に変更する保証は持たない。
-    """
     attempted: list[FileUpdate] = []
     try:
         for update in updates:

@@ -21,7 +21,6 @@ def test_pre_commit_integration_persistent_failure_is_rerunnable(
     mocker: typing.Any,
     tmp_path: pathlib.Path,
 ) -> None:
-    """2段階で失敗が残る場合は再実行対象のformatter失敗として返す。"""
     (tmp_path / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
     target = tmp_path / "sample.py"
     target.write_text("x = 1\n", encoding="utf-8")
@@ -73,7 +72,6 @@ def test_pre_commit_prek_conflict_warning(
     prek_enabled: bool,
     expects_conflict_warning: bool,
 ) -> None:
-    """pre-commitとprekの有効化状態に応じて二重実行警告を発行する。"""
     (tmp_path / "pyproject.toml").write_text(
         textwrap.dedent(f"""\
             [tool.pyfltr]
@@ -92,7 +90,6 @@ def test_pre_commit_prek_conflict_warning(
 def test_execute_pre_commit_without_config_guides_create_or_disable(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """.pre-commit-config.yamlが無い場合は、スキップした結果と作成・無効化の操作を示す。"""
     monkeypatch.delenv("PRE_COMMIT", raising=False)
     config = pyfltr.config.config.create_default_config()
     result = pyfltr.command.precommit.execute_pre_commit(

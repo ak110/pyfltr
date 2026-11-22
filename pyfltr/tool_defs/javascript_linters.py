@@ -1,11 +1,8 @@
-"""javascript_lintersのツール登録。"""
-
 from pyfltr.diagnostics import ErrorLocation
 from pyfltr.tool_defs.common import JS_COMMON_TARGETS
 from pyfltr.tool_types import CommandInfo, FunctionRef, StructuredOutputSpec
 
 COMMANDS: dict[str, CommandInfo] = {
-    # JS/TS linter群はモダン順（後ろほど新しい）に並べる。
     "tsc": CommandInfo(
         diagnostic_pattern=r"^(?P<file>.+?)\((?P<line>\d+),(?P<col>\d+)\): "
         r"(?P<severity>error|warning) (?P<rule>TS\d+): (?P<message>.+)$",
@@ -47,10 +44,8 @@ COMMANDS: dict[str, CommandInfo] = {
             "eslint-path": "",
             "eslint-runner": "js-runner",
             # ESLint 9系以降でcompact / unix / tapなどのコアフォーマッタが除去されたため、
-            # 構造化出力はeslint-json設定により_STRUCTURED_OUTPUT_SPECS経由で注入する。
             "eslint-args": [],
             "eslint-fast": False,
-            # fixモード時に通常argsの後に追加する引数。eslintは--fixでautofixする。
             "eslint-fix-args": ["--fix"],
         },
     ),
@@ -80,17 +75,9 @@ COMMANDS: dict[str, CommandInfo] = {
             "biome": False,
             "biome-path": "",
             "biome-runner": "js-runner",
-            # "check"サブコマンドは共通argsに置く。--reporter=githubはbiome-json設定
-            # により_STRUCTURED_OUTPUT_SPECS経由で注入する。
             "biome-args": ["check"],
             "biome-fast": True,
-            # fixモード時に通常argsの後に追加する引数。
-            # ruffの`--unsafe-fixes`採用方針と揃え、safe/unsafe両方のfixを自動適用する。
-            # biomeのseverityは各ルールの既定値で決まり、fixのsafe/unsafeとは独立である。
-            # severity infoの診断は`::notice`として出力されるが、
             # biome公式設計でinfoは終了コードに影響しない。
-            # 個別ルールをCIの失敗対象に変更したい場合は`biome.json`の`linter.rules.*`で
-            # severityを上げる（pyfltr側はinfoを失敗扱いに昇格させない）。
             "biome-fix-args": ["--write", "--unsafe"],
         },
     ),
@@ -105,7 +92,6 @@ COMMANDS: dict[str, CommandInfo] = {
         language="javascript",
         defaults={
             "oxlint-structured": True,
-            # -- js-runner対応ツール（追加分） --
             "oxlint": False,
             "oxlint-path": "",
             "oxlint-runner": "js-runner",

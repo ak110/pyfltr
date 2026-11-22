@@ -1,18 +1,3 @@
-"""runner解決とコマンドライン構築。
-
-`FileNotFoundError`の契約: 本モジュールが送出する`FileNotFoundError`の引数は
-原則として識別子（bin名・解決失敗パス）のみとし、利用者向けメッセージ文面は
-catch側（`pyfltr/command/dispatcher.py`・`pyfltr/command/tool_resolution.py`・`pyfltr/cli/command_info.py`など）で組み立てる。
-例外として`ensure_mise_available`は次の2形態を引数に持つ。
-
-- `mise exec --version`事前チェック失敗時: miseが返す`stderr`にhint文を
-  改行区切りで連結した複数行文面（先頭は`mise exec [tool_spec] -- <bin>: <stderr>`、
-  続いて`<bin>-runner = "direct"`への切替案内）
-- `mise trust`失敗時: `MISE_TRUST_FAILURE_PREFIX`に`<stderr>`を続けた単行文面
-
-いずれも、mise由来の生エラー出力を欠落させずに利用者へ伝える目的で引数に含める。
-"""
-
 import dataclasses
 import functools
 import os
@@ -29,9 +14,6 @@ import pyfltr.command.subprojects
 import pyfltr.config.config
 import pyfltr.config.model
 import pyfltr.tools
-
-# `build_mise_subprocess_env`はpyfltr.command内部APIだがサブパッケージ全域で共有する。
-# 同じサブパッケージ内の`mise.py`もfrom-importで取り込んでおり、本モジュールも倣う。
 from pyfltr.command.env import build_mise_subprocess_env
 from pyfltr.tool_types import BinToolSpec
 from pyfltr.tools import COMMAND_RUNNERS, JS_RUNNERS
@@ -46,11 +28,6 @@ catch側（`pyfltr.command.tool_resolution.format_tool_resolution_failure`）が
 
 
 class RunnerMismatchError(ValueError):
-    """`{command}-runner`の指定がツールの系統（Python系・JS系）と合わない場合の例外。
-
-    `hint`は利用者が選べる代替の設定値を示す。catch側は`hint`を警告の対処として発行する。
-    """
-
     def __init__(self, command: str, runner: str, effective: str, *, category: str, alternatives: str) -> None:
         resolved_text = f'（`{runner}`の設定値 "{effective}" に解決）' if runner != effective else ""
         default = pyfltr.config.model.command_setting(pyfltr.config.model.DEFAULT_CONFIG, command, "runner", "direct")
@@ -63,40 +40,23 @@ class RunnerMismatchError(ValueError):
         )
 
 
-# pyfltrのコマンド名 -> 実際に起動するパッケージのbin名の対応表。
-# markdownlintコマンドは実体がmarkdownlint-cli2である点に注意。
 JS_TOOL_BIN = {command: info.js_bin for command, info in pyfltr.tools.BUILTIN_COMMANDS.items() if info.js_bin is not None}
 
-# pyfltrのコマンド名 -> uv経由およびdirect経路で起動する実行ファイル名。
-# ruff-format / ruff-check は実行ファイル名が `ruff` なので別名解決が必要。
 PYTHON_TOOL_BIN = {
     command: info.python_bin for command, info in pyfltr.tools.BUILTIN_COMMANDS.items() if info.python_bin is not None
 }
 
-# pyfltrのコマンド名 -> 起動するパッケージマネージャーのbin名。
-# uv audit / pnpm audit / npm audit / yarn auditはツール単体のバイナリではなく
-# パッケージマネージャー自体のサブコマンドを起動する。`{command}-runner = "direct"`（既定）で
-# PATH上のバイナリを直接呼び出し、`audit`等のサブコマンドは `{command}-args` 既定値側に持たせる。
-# `PYTHON_TOOL_BIN` へ相乗りさせると、未検出時の案内
-# （`pyfltr.command.tool_resolution.format_tool_resolution_failure`）がuv経由起動を促す
-# 誤誘導になるため別表へ分離する。
 PACKAGE_MANAGER_TOOL_BIN = {
     command: info.package_manager_bin
     for command, info in pyfltr.tools.BUILTIN_COMMANDS.items()
     if info.package_manager_bin is not None
 }
 
-# pnpx論理runnerをpnpm dlx形式へ解決するときに`--package`へ渡すspec。
-# 通常はbin名をそのまま渡すだけだが、上流の既知バグで動かないバージョンを
-# 除外したい場合やスコープ付きパッケージの場合にここで差し替える。
-# - textlint 15.5.3には起動不能のバグがあるため除外している （15.5.4で修正済み）。
-# - biomeはbin名が "biome" だがnpmパッケージは "@biomejs/biome" （スコープ付き）。
 _JS_TOOL_PNPX_PACKAGE_SPEC = {
     command: info.pnpx_package for command, info in pyfltr.tools.BUILTIN_COMMANDS.items() if info.pnpx_package is not None
 }
 
 
-# bin-runnerで解決するネイティブバイナリツールの定義テーブル。各値は `BinToolSpec` 参照。
 _BIN_TOOL_SPEC = {
     command: info.bin_spec for command, info in pyfltr.tools.BUILTIN_COMMANDS.items() if info.bin_spec is not None
 }
@@ -104,23 +64,6 @@ _BIN_TOOL_SPEC = {
 
 @dataclasses.dataclass(frozen=True)
 class ResolvedCommandline:
-    """コマンドライン解決結果（副作用なし）。
-
-    `executable` と `prefix` は `[executable, *prefix]` で起動するための値。
-    `runner` は経緯を表現する文字列で `command-info` サブコマンドや診断で使う。
-    `runner_source` は `runner` の決定経緯を示す
-    （`"explicit"` : `{command}-runner` 明示、`"default"` : 既定値、
-    `"path-override"` : `{command}-path` 非空でdirect強制）。
-    `effective_runner` はグローバル設定への委譲を解決した最終形
-    （`"direct"` / `"mise"` / `"uv"` / `"uvx"` / `"pnpx"` / `"pnpm"` / `"npm"` / `"npx"` / `"yarn"`）。
-    `tool_spec_omitted` はmise経路で `["exec", "--", <bin>]` 形（tool spec省略形）を採用したかを示す。
-    commandline文字列の見た目に頼らず判別できるよう、command-info等で明示露出する用途で持つ。
-    `runner_fallback` は「期待した非direct経路がdirectへ退行した」場合の退行経路を表す
-    （例:`"uv->direct"`・`"uvx->direct"`・`"mise->direct"`）。
-    通常経路（uv指定通りuvで解決等）では `None`。
-    JSONL command レコードでfallback時のみrunner情報を出力する判定キーとして利用する。
-    """
-
     executable: str
     prefix: list[str]
     runner: str
@@ -132,24 +75,12 @@ class ResolvedCommandline:
 
     @property
     def commandline(self) -> list[str]:
-        """`[executable, *prefix]` の単一リスト表現を返す。"""
         return [self.executable, *self.prefix]
 
 
 def resolve_runner(command: str, config: pyfltr.config.model.Config) -> tuple[str, str]:
-    """`{command}-runner` 設定値とその決定経緯を返す。
-
-    返り値は `(runner, source)` で、`source` は次のいずれか。
-
-    - `"explicit"`: pyproject.tomlで `{command}-runner` を明示指定
-    - `"default"`: 設定既定値（typos等で `"direct"` 等）
-
-    pyproject.toml由来か既定値かを区別するために `Config.values` のフラグでは
-    検出できないため、現状は `DEFAULT_CONFIG` との同一性で判定する近似を使う。
-    """
     runner = pyfltr.config.model.command_setting(config.values, command, "runner", None)
     if runner is None:
-        # 既定値が登録されていないコマンド（カスタムコマンド等）はdirect扱い。
         return "direct", "default"
     default_runner = pyfltr.config.model.command_setting(pyfltr.config.model.DEFAULT_CONFIG, command, "runner", None)
     source = "default" if runner == default_runner else "explicit"
@@ -157,13 +88,6 @@ def resolve_runner(command: str, config: pyfltr.config.model.Config) -> tuple[st
 
 
 def get_mise_active_tool_key(command: str) -> str | None:
-    """`command`がmise active tools辞書を引く際の照合キーを返す。
-
-    判定キーは `_BIN_TOOL_SPEC[command]` の `mise_backend or bin_name` で、
-    mise.toml記述（例: `rust`、`aqua:EmbarkStudios/cargo-deny`、`actionlint`）に対応する。
-    miseバックエンド未登録のコマンド（python系・js系）は `None` を返す。
-    `command-info` で名称ずれの自己診断に使う。
-    """
     spec = _BIN_TOOL_SPEC.get(command)
     if spec is None:
         return None
@@ -178,16 +102,7 @@ def _is_tool_active_in_mise_config(
     allow_side_effects: bool,
     cwd: pathlib.Path | None = None,
 ) -> bool:
-    """mise設定で対象のツールが活性化されているかを判定する。
-
-    判定キーは `spec.mise_backend or spec.bin_name`（mise.toml記述に合わせた形）。
-    例えばcargo系なら `rust`、cargo-denyなら `aqua:EmbarkStudios/cargo-deny`、
-    その他のシンプル系（actionlint等）は `bin_name` でそのまま引く。
-
-    `get_mise_active_tools` のキャッシュ・フォールバック挙動を利用するため、
-    取得失敗時は自然に `False`（記述なし扱い）が返り、tool spec省略を発動しない。
-    """
-    del command  # 現状判定にコマンド名は使わない（specキーで一意）。引数は将来拡張余地のため残す。
+    del command
     result = pyfltr.command.mise.get_mise_active_tools(config, allow_side_effects=allow_side_effects, cwd=cwd)
     key = spec.mise_backend or spec.bin_name
     return key in result.tools
@@ -195,24 +110,11 @@ def _is_tool_active_in_mise_config(
 
 @functools.lru_cache(maxsize=1)
 def ensure_uv_available() -> bool:
-    """`uv` バイナリが PATH 上に存在するかを判定する（実行内キャッシュつき）。
-
-    `{command}-runner = "uv"` 経路で `uv run --frozen <bin>` を組み立てるかどうかの判定に使う。
-    未導入時は False を返し、呼び出し側が direct フォールバックへ切り替える。エラー送出はしない。
-    `lru_cache` でプロセス内固定化されるため、テストで判定値を差し替えるときは関数自体を
-    `monkeypatch.setattr("pyfltr.command.runner.ensure_uv_available", lambda: True)` の形で置換する。
-    """
     return shutil.which("uv") is not None
 
 
 @functools.lru_cache(maxsize=1)
 def ensure_uvx_available() -> bool:
-    """`uvx` shim が PATH 上に存在するかを判定する（実行内キャッシュつき）。
-
-    `{command}-runner = "uvx"` 経路で `uvx <bin>` を組み立てるかどうかの判定に使う。
-    未導入時は False を返し、呼び出し側が direct フォールバックへ切り替える。エラー送出はしない。
-    テスト差し替えは `ensure_uv_available` と同じく関数自体を `monkeypatch.setattr` で置換する。
-    """
     return shutil.which("uvx") is not None
 
 
@@ -221,27 +123,11 @@ def cwd_has_uv_lock(
     cwd: pathlib.Path | None = None,
     workspace_root: pathlib.Path | None = None,
 ) -> bool:
-    """実効cwdから探索上限までに`uv.lock`が存在するかを判定する。
-
-    テスト差し替えは `monkeypatch.setattr("pyfltr.command.runner.cwd_has_uv_lock", lambda *_args: True)`
-    の形で関数自体を置換する。`lru_cache` 付き判定関数群（`ensure_uv_available`・
-    `ensure_uvx_available` 等）に共通する制約。
-
-    `cwd`未指定時はプロセスcwd直下だけを確認し、従来の呼び出し契約を維持する。
-    `workspace_root`指定時は対象のrootまで親方向へ探索し、workspace外へ越境しない。
-    """
     effective_cwd = cwd if cwd is not None else pathlib.Path.cwd()
     return pyfltr.command.subprojects.find_uv_lock_for_cwd(effective_cwd, workspace_root=workspace_root) is not None
 
 
 def _resolve_python_tool_direct(command: str) -> str:
-    """Python系ツールのdirect経路実行ファイル解決。
-
-    `PYTHON_TOOL_BIN[command]` を `shutil.which` で絶対パスへ解決する。
-    解決不能なら `FileNotFoundError` を送出する。
-    `{command}-runner = "uv"` がdirectフォールバックする経路と、
-    利用者が `mypy-runner = "direct"` 等を明示した経路で共有する。
-    """
     bin_name = PYTHON_TOOL_BIN[command]
     resolved = shutil.which(bin_name)
     if resolved is None:
@@ -250,12 +136,6 @@ def _resolve_python_tool_direct(command: str) -> str:
 
 
 def _resolve_direct_executable(bin_name: str) -> str:
-    """Directモードでの実行ファイル解決。
-
-    `dotnet` の場合は `DOTNET_ROOT` 環境変数配下に存在すれば優先する。
-    PATH上に存在すれば `shutil.which` で絶対パスへ解決し、見つからなければ
-    `FileNotFoundError` を送出する。
-    """
     if bin_name == "dotnet":
         dotnet_root = os.environ.get("DOTNET_ROOT")
         if dotnet_root:
@@ -276,20 +156,6 @@ def _resolve_python_commandline(
     cwd: pathlib.Path | None = None,
     uv_workspace_root: pathlib.Path | None = None,
 ) -> tuple[str, str, list[str], str | None]:
-    """Python系ツールの実行ファイルと引数prefixを決定する。
-
-    `effective` には `python-runner` 委譲解決後の値（`"direct"` / `"uv"` / `"uvx"`）が入る。
-    `(effective_runner, executable, prefix, runner_fallback)` の4要素タプルを返す。
-    `effective_runner`は `direct` フォールバックを反映した最終形となる。
-    `runner_fallback` は期待していた非direct経路がdirectへ退行したケースのみ
-    退行経路ラベル（`"uv->direct"` / `"uvx->direct"`）を返し、それ以外は `None`。
-
-    - `"uv"`: cwdに`uv.lock`があり、かつ`uv`バイナリが利用可能な場合は `uv run --frozen <bin>` を組み立てる。
-      いずれかが満たされなければ direct フォールバック
-    - `"uvx"`: `uvx`shimが利用可能なら `uvx <bin>` を組み立てる。
-      未導入ならdirect フォールバック。`uv.lock`は参照しない、`{command}-version`設定とも連動しない
-    - `"direct"`: `_resolve_python_tool_direct` で `shutil.which` 解決
-    """
     bin_name = PYTHON_TOOL_BIN[command]
     if effective == "uv":
         uv_lock_present = (
@@ -297,13 +163,11 @@ def _resolve_python_commandline(
         )
         if uv_lock_present and ensure_uv_available():
             return "uv", "uv", ["run", "--frozen", bin_name], None
-        # uv不在 or uv.lock不在 → direct PATH解決へフォールバック。
         executable = _resolve_python_tool_direct(command)
         return "direct", executable, [], "uv->direct"
     if effective == "uvx":
         if ensure_uvx_available():
             return "uvx", "uvx", [bin_name], None
-        # uvx不在 → direct PATH解決へフォールバック。
         executable = _resolve_python_tool_direct(command)
         return "direct", executable, [], "uvx->direct"
     if effective == "direct":
@@ -319,30 +183,14 @@ def _resolve_js_commandline(
     effective: str | None = None,
     cwd: pathlib.Path | None = None,
 ) -> tuple[str, list[str]]:
-    """JSツール（textlint / markdownlint等）の実行ファイルと引数prefixを決定する。
-
-    `{command}-path` が空のときに呼び出される。
-    `effective` を明示すると対象の値を採用し、省略時は `js-runner` 設定値を採用する
-    （per-tool直接指定値（`pnpx` / `pnpm` 等）を委譲経路と同一ロジックで解決するため）。
-    `direct` モードで `node_modules/.bin/<cmd>` が存在しない場合は `FileNotFoundError` を送出する。
-    """
     bin_name = JS_TOOL_BIN[command]
     runner = effective if effective is not None else config["js-runner"]
-    # 汎用化: `{command}-packages` キーを参照することで任意のJSツールで
-    # `--package` / `-p` 展開を利用可能にする。未定義キーは空リスト扱い。
     packages: list[str] = list(pyfltr.config.model.command_setting(config.values, command, "packages", []))
 
     if runner == "pnpx":
         main_spec = _JS_TOOL_PNPX_PACKAGE_SPEC.get(command, bin_name)
         prefix: list[str] = []
-        # pnpm 11.0.0で `enableGlobalVirtualStore` 既定が `true` 化され、pnpm dlxの
-        # パッケージ実体がグローバル仮想ストアからsymlinkされる構造に変わった結果、
-        # textlintのようにrule packageを `require()` で動的解決するツールが
-        # dlx temp dirの `node_modules/` へ到達できず `No rules found` で失敗する。
         # plugin/rule packageを`--package`で並べる経路に限り、pnpm公式opt-outで
-        # dlxローカル仮想ストア配置（旧既定）へ戻す。
-        # 公開設定値とeffective_runnerはpnpxを維持するが、版によってオプション解釈が異なる
-        # pnpxラッパーを避け、pnpm 10.0.0から成立するpnpm本体のdlx形式で起動する。
         if packages:
             prefix.append("--config.enableGlobalVirtualStore=false")
         prefix.extend(["--package", main_spec])
@@ -366,8 +214,6 @@ def _resolve_js_commandline(
         base = cwd if cwd is not None else pathlib.Path.cwd()
         bin_dir = base / "node_modules" / ".bin"
         # Windowsでは `.cmd` 付きのラッパーを優先する。pyrightの静的評価では
-        # Linux上だと `sys.platform == "win32"` 側の分岐をunreachableとみなすため、
-        # `os.name` を経由して静的分岐とみなされないようにする。
         candidates: list[pathlib.Path] = []
         if os.name == "nt":
             candidates.append(bin_dir / f"{bin_name}.cmd")
@@ -379,23 +225,12 @@ def _resolve_js_commandline(
     raise ValueError(f"js-runnerの設定値が正しくありません: {runner!r}（許容値: {', '.join(JS_RUNNERS)}）")
 
 
-# `{command}-runner`値の体系をbuiltin.py側のtuple定数から派生させ、
 # 二重定義による追従漏れを避けるためのSSOT。
-# - 委譲値: `*-runner`サフィックス（同名のグローバル設定キーへ委譲）
-# - 直接指定値: それ以外（`direct` / `mise` / `uv` / `uvx` / `pnpx` / `pnpm` / `npm` / `npx` / `yarn`）
 _DELEGATE_RUNNER_VALUES: frozenset[str] = frozenset(v for v in COMMAND_RUNNERS if v.endswith("-runner"))
 _DIRECT_RUNNER_VALUES: frozenset[str] = frozenset(COMMAND_RUNNERS) - _DELEGATE_RUNNER_VALUES
 
 
 def resolve_effective_runner(command: str, runner: str, config: pyfltr.config.model.Config) -> str:
-    """`{command}-runner` per-tool値からeffective値を解決する。
-
-    カテゴリ委譲値（`python-runner` / `js-runner` / `bin-runner`）はグローバル設定値に置換し、
-    直接指定値（`direct` / `mise` / `uv` / `uvx` / `pnpx` / ...）はそのまま返す。
-    未知値は`ValueError`を送出する（`{command}-runner`バリデーションを通過していれば本経路に来ない）。
-    """
-    # 委譲値はサフィックス`-runner`がそのままグローバル設定キーに一致する設計のため、
-    # `runner`値をそのまま`config`の引きキーとして利用できる。
     if runner in _DELEGATE_RUNNER_VALUES:
         return str(config[runner])
     if runner in _DIRECT_RUNNER_VALUES:
@@ -403,9 +238,6 @@ def resolve_effective_runner(command: str, runner: str, config: pyfltr.config.mo
     raise ValueError(f"{command}-runnerの設定値が正しくありません: {runner!r}（許容値: {', '.join(COMMAND_RUNNERS)}）")
 
 
-# JSランナーのeffective値集合（直接指定値・グローバル委譲後の値の両方を判定するため）。
-# `JS_RUNNERS`は`("pnpx", "pnpm", "npm", "npx", "yarn", "direct")`で`direct`を含むが、
-# JSパッケージマネージャー経路の判定では`direct`を除外する（`direct`は別分岐で処理する）。
 _JS_EFFECTIVE_VALUES: frozenset[str] = frozenset(JS_RUNNERS) - {"direct"}
 
 
@@ -418,24 +250,6 @@ def _resolve_mise_runner_commandline(
     allow_side_effects: bool,
     cwd: pathlib.Path | None = None,
 ) -> ResolvedCommandline:
-    """mise経路のコマンドラインを構築する。
-
-    `effective == "mise"` の場合に `build_commandline` から呼ばれる。
-    `runner` は `resolve_runner` の戻り値1番目（設定上のrunner値）、
-    `source` は同2番目（委譲元カテゴリ名等）であり、`ResolvedCommandline` の構築に引き継ぐ。
-
-    mise設定（プロジェクト `mise.toml` ＋グローバル設定）に該当ツール記述があり、
-    かつ `{command}-version` が既定値 `"latest"` のときに限りtool spec部分を省略した
-    `["exec", "--", <bin>]` 形を返す
-    （miseがmise設定の解決済み内容、つまりcomponentsや固定バージョンをそのまま参照できるようにするため）。
-
-    version値に `:`（backend prefix区切り）または `@`（tool@version区切り）を含む場合は
-    miseのtool spec全体として扱い、bin_name接頭辞や既定backendを付け足さない。
-    これにより `aqua:Org/Repo@x` のような任意backend指定や、既定backendを上書きする
-    `cargo-deny@latest` のようなregistry経由維持指定をpyfltr設定だけで表現できる。
-
-    `command` が `_BIN_TOOL_SPEC` に未登録の場合は `ValueError` を送出する。
-    """
     if command not in _BIN_TOOL_SPEC:
         raise ValueError(
             f"miseバックエンドに `{command}` が登録されていないため、"
@@ -452,8 +266,6 @@ def _resolve_mise_runner_commandline(
     elif version == default_version and _is_tool_active_in_mise_config(
         command, spec, config, allow_side_effects=allow_side_effects, cwd=cwd
     ):
-        # mise設定に対象のツール記述があり、かつversionが既定値（"latest"）の場合のみtool specを省略する。
-        # version明示時（"latest"以外）は利用者の意図を尊重して従来通りtool spec組み立てに留める。
         prefix = ["exec", "--", spec.bin_name]
         tool_spec_omitted = True
     else:
@@ -480,15 +292,7 @@ def _resolve_direct_runner_commandline(
     *,
     cwd: pathlib.Path | None = None,
 ) -> ResolvedCommandline:
-    """direct経路のコマンドラインを構築する。
-
-    `effective == "direct"` の場合に呼ばれる。
-    `PACKAGE_MANAGER_TOOL_BIN` → `_BIN_TOOL_SPEC` → `PYTHON_TOOL_BIN` → `JS_TOOL_BIN` →
-    コマンド名PATH解決の順で試みる。解決失敗時は `FileNotFoundError` を送出する。
-    """
     if command in PACKAGE_MANAGER_TOOL_BIN:
-        # uv audit等はパッケージマネージャー自体のサブコマンドを起動する。
-        # bin名（uv / pnpm / npm / yarn）をPATH解決し、サブコマンドは `{command}-args` 側で付与する。
         executable = _resolve_direct_executable(PACKAGE_MANAGER_TOOL_BIN[command])
         return ResolvedCommandline(
             executable=executable,
@@ -508,7 +312,6 @@ def _resolve_direct_runner_commandline(
             effective_runner=effective,
         )
     if command in PYTHON_TOOL_BIN:
-        # python-runner経由（python-runner = "direct"）と直接指定（{command}-runner = "direct"）の両方を吸収する。
         executable = _resolve_python_tool_direct(command)
         return ResolvedCommandline(
             executable=executable,
@@ -518,7 +321,6 @@ def _resolve_direct_runner_commandline(
             effective_runner=effective,
         )
     if command in JS_TOOL_BIN:
-        # JSツールのdirectはnode_modules/.bin/<cmd> 解決に委譲。
         executable, prefix = _resolve_js_commandline(command, config, effective="direct", cwd=cwd)
         return ResolvedCommandline(
             executable=executable,
@@ -527,10 +329,6 @@ def _resolve_direct_runner_commandline(
             runner_source=source,
             effective_runner=effective,
         )
-    # bin/js/python いずれの登録テーブルにも該当しないツール（typos / yamllint や利用者カスタムコマンド）は、
-    # コマンド名そのものをPATH解決して直接起動する。`{command}-path` 未指定でも `{command}-runner = "direct"` の
-    # 利用者意図に沿ってフォールバックする経路。PATH解決失敗時は `_resolve_direct_executable` が
-    # `FileNotFoundError` を送出する。
     executable = _resolve_direct_executable(command)
     return ResolvedCommandline(
         executable=executable,
@@ -584,11 +382,6 @@ def build_commandline(
     runner, source = resolve_runner(command, config)
     effective = resolve_effective_runner(command, runner, config)
 
-    # `{command}-path` が非空ならば、その値でdirect実行する（明示パス上書き）。
-    # この経路では `{command}-runner` と未登録ツールの組み合わせ（例: `typos-runner = "uv"` ＋ `typos-path` 指定）
-    # でもエラー扱いせずpath値を採用する。利用者が明示的にパスを示している以上、起動経路の整合性より
-    # 利用者の意図を優先する判断。明示runner × 未登録ツール × path未指定の場合のみ後段の分岐でエラー化する。
-    # `~` を含む利用者ホーム依存のパス指定を許すため、`os.path.expanduser` で展開してから採用する。
     if pyfltr.config.model.command_setting(config.values, command, "path", "") != "":
         return ResolvedCommandline(
             executable=os.path.expanduser(pyfltr.config.model.command_setting(config.values, command, "path", "")),
@@ -657,7 +450,6 @@ def build_commandline(
             runner_fallback=runner_fallback,
         )
 
-    # effective == "direct"
     return _resolve_direct_runner_commandline(command, config, runner, source, effective, cwd=cwd)
 
 
@@ -668,31 +460,13 @@ def ensure_mise_available(
     command: str | None = None,
     cwd: pathlib.Path | None = None,
 ) -> ResolvedCommandline:
-    """Mise経由実行時に `mise exec --version` の事前チェックを行う（副作用あり）。
-
-    miseバイナリ自体がPATHに存在しない場合はdirect解決へフォールバックする
-    （ディストロ標準パッケージだけで導入された環境でも動かすための救済挙動）。
-    config未信頼が検出された場合は `mise-auto-trust` 設定に従い `mise trust --yes --all`
-    を1回だけ試行する。失敗時は `FileNotFoundError` を送出する。
-    direct実行やjs-runner実行の場合は本関数を素通りで返す。
-
-    `command` にはpyfltrのコマンド名（`cargo-deny` 等）を渡す。
-    解決失敗時のエラー文面で `{command}-runner = "direct"` への切替案内に用いる。
-    省略時は `bin_name` を案内に流用するが、cargo系のように複数コマンドが
-    同じ `bin_name` を共有する場合は誤った案内になるため、極力指定する。
-    """
     if resolved.executable != "mise":
         return resolved
-    # `build_commandline` の `effective == "mise"` 分岐は次の2形態を返す。
-    # - tool spec省略形: `prefix = ["exec", "--", <bin>]`（mise設定記述あり時）
-    # - 従来形: `prefix = ["exec", <tool_spec>, "--", <bin>]`（mise設定記述なし時）
-    # `prefix[1] == "--"` で両形態を判別し、`mise exec --version` 用argsとエラー文面を切り替える。
     bin_name = resolved.prefix[-1]
     has_tool_spec = len(resolved.prefix) >= 2 and resolved.prefix[1] != "--"
     tool_spec = resolved.prefix[1] if has_tool_spec else ""
 
     if shutil.which("mise") is None:
-        # mise不在 → direct PATH解決へフォールバック。
         resolved_path = shutil.which(bin_name)
         if resolved_path is None:
             raise FileNotFoundError(bin_name)
@@ -704,9 +478,7 @@ def ensure_mise_available(
             runner_fallback="mise->direct",
         )
 
-    # mise経由の事前チェック・trust呼び出しでもmiseがtoolパスにフォールバック
     # 解決してしまう挙動を回避するため、PATHからmise toolパスを除外したenvを渡す。
-    # 詳細は `pyfltr.command.env.build_subprocess_env` のdocstringを参照する。
     mise_env = build_mise_subprocess_env(dict(os.environ))
     if has_tool_spec:
         check_args = ["mise", "exec", tool_spec, "--", bin_name, "--version"]
@@ -719,8 +491,6 @@ def ensure_mise_available(
         return resolved
     if trust_failed:
         raise FileNotFoundError(f"{MISE_TRUST_FAILURE_PREFIX}{stderr.strip()}")
-    # mise registryからのツール消失・バージョン解決失敗などで起動できない場合に、
-    # 利用者がpyfltr設定だけで救済できるようdirect経路への切替を案内する。
     hint_command = command if command is not None else bin_name
     hint = f'{hint_command}-runner = "direct" を指定するとmiseを介さずPATH上のバイナリを直接実行します'
     prefix_text = f"mise exec {tool_spec} -- {bin_name}" if has_tool_spec else f"mise exec -- {bin_name}"

@@ -1,5 +1,3 @@
-"""公開候補のwheelとsource distributionを独立環境へ導入して検査する。"""
-
 import email.parser
 import os
 import pathlib
@@ -38,7 +36,6 @@ console.log(JSON.stringify({braces: actual, publicApis: 'compile,expand,stringif
 
 
 def verify_markdownlint_environment(workspace: pathlib.Path) -> None:
-    """通常起動が選んだbracesの実体と浅い公開API・AST入力を検査する。"""
     environment = pyfltr.command.markdownlint_env.resolve_environment(workspace)
     _run(["node", "-e", _BRACES_PROBE, str(environment.root)], cwd=workspace, env=dict(os.environ))
 
@@ -62,7 +59,6 @@ def _run(command: list[str], *, cwd: pathlib.Path, env: dict[str, str], expected
 
 
 def main() -> int:
-    """指定候補または一時ビルドした配布物を導入し、公開入口を確認する。"""
     root = pathlib.Path(__file__).resolve().parents[1]
     uv = shutil.which("uv")
     if uv is None:

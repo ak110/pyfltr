@@ -1,10 +1,7 @@
-"""登録順の公開契約。"""
-
 import pyfltr.tools
 
 
 def test_builtin_command_order() -> None:
-    """分割前の表示順とformatter実行順を維持する。"""
     assert list(pyfltr.tools.BUILTIN_COMMANDS) == [
         "prettier",
         "ruff-format",

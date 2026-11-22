@@ -9,12 +9,6 @@ _PatternList = list[tuple[re.Pattern[str], str | None]]
 
 
 def _expand_pattern(pattern_str: str) -> str:
-    """辞書パターンから自己マッチサンプルを生成する簡易展開。
-
-    辞書のパターン記法で使われる構造を順に単純化する。
-    `[...]`を先頭文字へ、`(A|B|...)`を先頭選択肢へ置換し、
-    エスケープされていない`?`・`*`を除去してオプション要素を保持する。
-    """
     s = re.sub(r"\(\?(?:<?[=!]|:)[^)]*\)", "", pattern_str)
     s = re.sub(r"\[([^\]]+)\]", lambda m: m.group(1)[0], s)
     s = re.sub(r"\(([^)]+)\)", lambda m: m.group(1).split("|")[0], s)
@@ -23,10 +17,6 @@ def _expand_pattern(pattern_str: str) -> str:
 
 
 def _read_patterns_text(path: pathlib.Path) -> list[str]:
-    """ファイルから（コンパイル前の）正規表現文字列を順に取り出す。
-
-    タブ区切りで併記された置換候補列は除外し、パターン部のみを返す。
-    """
     rows: list[str] = []
     for line in path.read_text(encoding="utf-8").splitlines():
         stripped = line.strip()
@@ -50,11 +40,6 @@ def _allow_patterns() -> _PatternList:
 
 @pytest.fixture(name="overlap_sample", scope="module")
 def _overlap_sample(deny_patterns: _PatternList) -> tuple[str, str]:
-    """allowlist側のパターンを展開して、denylist側にも当たる最初のサンプルを返す。
-
-    戻り値は`(allow_sample, deny_substring)`のタプル。
-    マスキング動作の検証用に、両者を共通の文字列から取り出す。
-    """
     for raw in _read_patterns_text(pyfltr.colloquial.check.ALLOW_PATH):
         sample = _expand_pattern(raw)
         for dp, _ in deny_patterns:
@@ -62,12 +47,10 @@ def _overlap_sample(deny_patterns: _PatternList) -> tuple[str, str]:
             if m:
                 return sample, m.group(0)
     pytest.skip("allowlistとdenylistが重複するサンプルが無く、マスキングを検証できない")
-    return "", ""  # 到達不能（`pytest.skip`で関数は終了する）
+    return "", ""
 
 
 class TestLoadPatterns:
-    """`load_patterns` のテスト。"""
-
     def test_dictionaries_are_loaded(self, deny_patterns: _PatternList, allow_patterns: _PatternList) -> None:
         assert deny_patterns, "denylist 辞書が空"
         assert allow_patterns, "allowlist 辞書が空"
@@ -95,10 +78,10 @@ class TestLoadPatterns:
     @pytest.mark.parametrize(
         ("line", "expected_replacement"),
         [
-            ("[xy]", None),  # タブ無し
-            ("[xy]\t候補", "候補"),  # 候補あり
-            ("[xy]\t", None),  # タブ末尾のみ（空のreplacement）
-            ("[xy]\t候補\t補足", "候補\t補足"),  # 複数タブ: 最初のタブまでがパターン
+            ("[xy]", None),
+            ("[xy]\t候補", "候補"),
+            ("[xy]\t", None),
+            ("[xy]\t候補\t補足", "候補\t補足"),
         ],
     )
     def test_parses_replacement_column(self, tmp_path: pathlib.Path, line: str, expected_replacement: str | None) -> None:
@@ -111,11 +94,6 @@ class TestLoadPatterns:
         assert replacement == expected_replacement
 
     def test_kanji_leading_pattern_does_not_match_after_kanji(self, tmp_path: pathlib.Path) -> None:
-        """先頭が漢字のパターンは、直前が漢字である位置で一致しない。
-
-        辞書の語幹は語境界を持たない部分一致で適用されるため、条件が無いと
-        対象の漢字を末尾に持つ漢語複合語の内部で一致する。
-        """
         f = tmp_path / "p.txt"
         f.write_text("甲[あいう]\t候補\n", encoding="utf-8")
         patterns = pyfltr.colloquial.check.load_patterns(f, kanji_left_boundary=True)
@@ -124,7 +102,6 @@ class TestLoadPatterns:
         assert compiled.search("乙甲あその他の処理") is None
 
     def test_kanji_leading_pattern_still_matches_after_non_kanji(self, tmp_path: pathlib.Path) -> None:
-        """先頭が漢字のパターンは、直前が漢字でない位置では従来どおり一致する。"""
         f = tmp_path / "p.txt"
         f.write_text("甲[あいう]\t候補\n", encoding="utf-8")
         patterns = pyfltr.colloquial.check.load_patterns(f, kanji_left_boundary=True)
@@ -133,35 +110,24 @@ class TestLoadPatterns:
         assert compiled.search("甲あ") is not None
 
     def test_explicit_boundary_pattern_is_not_wrapped_again(self, tmp_path: pathlib.Path) -> None:
-        """境界条件を明示した行へ二重に条件を前置しない。"""
         f = tmp_path / "p.txt"
         f.write_text("(?<!丙)甲[あいう]\t候補\n(?!丙)甲[あいう]\t候補\n", encoding="utf-8")
         patterns = pyfltr.colloquial.check.load_patterns(f, kanji_left_boundary=True)
         assert [compiled.pattern for compiled, _ in patterns] == ["(?<!丙)甲[あいう]", "(?!丙)甲[あいう]"]
 
     def test_non_kanji_leading_pattern_is_not_wrapped(self, tmp_path: pathlib.Path) -> None:
-        """先頭が漢字でない行へは条件を前置しない。"""
         f = tmp_path / "p.txt"
         f.write_text("[xy]\t候補\n", encoding="utf-8")
         patterns = pyfltr.colloquial.check.load_patterns(f, kanji_left_boundary=True)
         assert [compiled.pattern for compiled, _ in patterns] == ["[xy]"]
 
     def test_multi_kanji_stem_is_not_wrapped(self, tmp_path: pathlib.Path) -> None:
-        """語幹が2文字以上の漢字である行へは条件を前置しない。
-
-        接頭辞が直前に付く形で検出すべき真陽性が存在するため。
-        """
         f = tmp_path / "p.txt"
         f.write_text("甲乙[あいう]\t候補\n甲乙丙\t候補\n", encoding="utf-8")
         patterns = pyfltr.colloquial.check.load_patterns(f, kanji_left_boundary=True)
         assert [compiled.pattern for compiled, _ in patterns] == ["甲乙[あいう]", "甲乙丙"]
 
     def test_boundary_is_not_applied_by_default(self, tmp_path: pathlib.Path) -> None:
-        """allowlistの読み込みでは条件を前置しない。
-
-        allowlistは漢語複合語の側を一致させてマスクする役割を持つため、
-        同じ条件を与えると対象の役割が成立しない。
-        """
         f = tmp_path / "p.txt"
         f.write_text("甲[あいう]\n", encoding="utf-8")
         patterns = pyfltr.colloquial.check.load_patterns(f)
@@ -170,11 +136,6 @@ class TestLoadPatterns:
         assert compiled.search("乙甲あ") is not None
 
     def test_allow_patterns_never_equal_deny_patterns(self) -> None:
-        """allowlistのパターン文字列がdenylistのパターン文字列と完全一致しない。
-
-        完全一致するエントリーは対象のdenyエントリーをいかなる入力に対しても発火しない状態にするため、
-        allowlistが担う部分的な除外の範囲を超える。
-        """
         deny_texts = set(_read_patterns_text(pyfltr.colloquial.check.DENY_PATH))
         allow_texts = set(_read_patterns_text(pyfltr.colloquial.check.ALLOW_PATH))
         duplicated = sorted(deny_texts & allow_texts)
@@ -184,8 +145,6 @@ class TestLoadPatterns:
 
 
 class TestFirstHit:
-    """`first_hit` のテスト。"""
-
     def test_detects_isolated_deny(
         self, deny_patterns: _PatternList, allow_patterns: _PatternList, overlap_sample: tuple[str, str]
     ) -> None:
@@ -210,8 +169,6 @@ class TestFirstHit:
 
 
 class TestScanText:
-    """`scan_text` のテスト。"""
-
     def test_returns_position_for_match(
         self, deny_patterns: _PatternList, allow_patterns: _PatternList, overlap_sample: tuple[str, str]
     ) -> None:
@@ -235,11 +192,6 @@ class TestScanText:
     def test_every_deny_entry_self_matches(
         self, deny_patterns: _PatternList, allow_patterns: _PatternList, raw_pattern: str
     ) -> None:
-        """denylist各エントリが自身の展開サンプルで必ず検出される。
-
-        辞書再編・文字クラス展開規則の変更で対象のパターンが意図せず無効化されても
-        本テストが回帰を検出する。
-        """
         sample = _expand_pattern(raw_pattern)
         if pyfltr.colloquial.check.mask_allowed(sample, allow_patterns) != sample:
             pytest.skip(f"サンプルがallowlistによりマスクされた: {raw_pattern}")
@@ -266,12 +218,6 @@ class TestScanText:
     def test_every_allow_entry_masks_deny_overlap(
         self, deny_patterns: _PatternList, allow_patterns: _PatternList, raw_pattern: str
     ) -> None:
-        """denylistと重複するallowlistエントリの自己サンプルは検出されない。
-
-        `words_allow.txt`冒頭コメントが定める「denylist側にマッチしつつ本ファイルでマスクされる文脈」の
-        実装を検証する。allowlistなしでdenylist検出が発火するサンプルに限定し、
-        allowlist適用後は検出されないことを確認する。
-        """
         sample = _expand_pattern(raw_pattern)
         if not re.compile(raw_pattern).search(sample):
             pytest.skip(f"サンプル生成不能: {raw_pattern}")
@@ -286,12 +232,6 @@ class TestScanText:
         allow_patterns: _PatternList,
         text: str,
     ) -> None:
-        """熟語と助詞が連なる形に対し、denylistのパターン自体が一致しない。
-
-        本テストはallowlistの登録に依存せず成立する。
-        allowlist登録によって抑止される複合形は
-        `test_allowlisted_compound_forms_are_not_detected`が固定する。
-        """
         assert not pyfltr.colloquial.check.scan_text(text, deny_patterns, allow_patterns)
 
     @pytest.mark.parametrize(
@@ -383,13 +323,6 @@ class TestScanText:
     def test_allowlisted_compound_forms_are_not_detected(
         self, deny_patterns: _PatternList, allow_patterns: _PatternList, text: str
     ) -> None:
-        """熟語や単独の名詞に助詞が続く許容形を、allowlist登録により検出しない。
-
-        denylistのパターンは単語境界を持たず部分一致で適用されるため、
-        語幹を末尾に持つ熟語や、語幹と同じ漢字の名詞へ助詞が続く形にも一致する。
-        `words_allow.txt`への登録が対象の形をマスクすることで検出が消える。
-        動詞などの検出対象の検出は`test_every_deny_entry_self_matches`が担保する。
-        """
         assert not pyfltr.colloquial.check.scan_text(text, deny_patterns, allow_patterns)
 
     @pytest.mark.parametrize(
@@ -510,26 +443,21 @@ class TestScanText:
 
 
 class TestMaskAllowed:
-    """`mask_allowed` のテスト。"""
-
     def test_preserves_length(self, allow_patterns: _PatternList, overlap_sample: tuple[str, str]) -> None:
         allow_sample, _ = overlap_sample
         text = f"abc{allow_sample}xyz"
         masked = pyfltr.colloquial.check.mask_allowed(text, allow_patterns)
         assert len(masked) == len(text)
-        assert masked != text  # 少なくとも 1 箇所はマスクされている
+        assert masked != text
         assert masked.startswith("abc")
         assert masked.endswith("xyz")
 
 
 class TestMaskBlockquoteLines:
-    """`mask_blockquote_lines` のテスト。"""
-
     def test_replaces_blockquote_with_spaces(self) -> None:
         text = "本文1\n> 引用文の例示\n本文2\n"
         masked = pyfltr.colloquial.check.mask_blockquote_lines(text)
         assert len(masked) == len(text)
-        # 引用行が空白化され、他行は維持される
         assert masked.splitlines() == ["本文1", " " * len("> 引用文の例示"), "本文2"]
 
     def test_keeps_non_blockquote_unchanged(self) -> None:
@@ -550,8 +478,6 @@ class TestMaskBlockquoteLines:
 
 
 class TestMaskFencedCodeBlocks:
-    """`mask_fenced_code_blocks` のテスト。"""
-
     def test_replaces_backtick_fenced_block_inner_lines(self) -> None:
         text = "本文1\n```\n内側の文\n```\n本文2\n"
         masked = pyfltr.colloquial.check.mask_fenced_code_blocks(text)
@@ -564,7 +490,6 @@ class TestMaskFencedCodeBlocks:
         assert masked.splitlines() == ["~~~", " " * len("内側"), "~~~"]
 
     def test_close_requires_same_marker_char(self) -> None:
-        # 開始がバッククォートなのでチルダでは閉じない（テキスト末尾までマスク継続）
         text = "```\n内側\n~~~\n後続\n"
         masked = pyfltr.colloquial.check.mask_fenced_code_blocks(text)
         assert masked.splitlines() == ["```", " " * len("内側"), " " * len("~~~"), " " * len("後続")]
@@ -588,8 +513,6 @@ class TestMaskFencedCodeBlocks:
 
 
 class TestMaskInlineCode:
-    """`mask_inline_code` のテスト。"""
-
     def test_replaces_inline_code_content(self) -> None:
         text = "本文1 `内側の文` 本文2\n"
         masked = pyfltr.colloquial.check.mask_inline_code(text)
@@ -623,8 +546,6 @@ class TestMaskInlineCode:
 
 
 class TestInlineCodeSkipIntegration:
-    """`scan_text` / `first_hit` でのインラインコードスキップ統合テスト。"""
-
     def test_first_hit_skips_inside_inline_code(
         self, deny_patterns: _PatternList, allow_patterns: _PatternList, overlap_sample: tuple[str, str]
     ) -> None:
@@ -639,13 +560,10 @@ class TestInlineCodeSkipIntegration:
         text = f"`{deny_sub}`の説明\n本文の{deny_sub}該当\n"
         hits = pyfltr.colloquial.check.scan_text(text, deny_patterns, allow_patterns)
         assert hits, "インラインコード外側の検出が必要"
-        # インラインコード内（1行目）はスキップされ、本文（2行目）のみ検出される
         assert all(line_no == 2 for line_no, _, _, _, _ in hits)
 
 
 class TestPotentialFormPolicy:
-    """五段動詞の可能形を辞書へ登録しない方針の検証。"""
-
     @pytest.mark.parametrize(
         "sentence",
         [
@@ -661,11 +579,6 @@ class TestPotentialFormPolicy:
         assert not pyfltr.colloquial.check.scan_text(sentence, deny_patterns, allow_patterns)
 
     def test_remaining_entries_keep_detection(self, deny_patterns: _PatternList, allow_patterns: _PatternList) -> None:
-        """辞書に残る各エントリーの自己マッチサンプルが検出されることを確認する。
-
-        可能形の削除と文字クラスの縮小が、意図しないエントリーまで無効化していないことを確認する。
-        テスト本体へ口語表現を書かないため、サンプルは辞書から動的に展開する。
-        """
         undetected = [
             raw
             for raw in _read_patterns_text(pyfltr.colloquial.check.DENY_PATH)
@@ -675,8 +588,6 @@ class TestPotentialFormPolicy:
 
 
 class TestNaturalWrittenLanguage:
-    """明確な動作を表す和語をマスキングに依存せず許容する。"""
-
     @pytest.mark.parametrize(
         "sentence",
         [
@@ -695,18 +606,12 @@ class TestNaturalWrittenLanguage:
 
 
 class TestBlockquoteSkipIntegration:
-    """`scan_text` / `first_hit` での引用行スキップ統合テスト。"""
-
     @pytest.mark.parametrize(
         ("template", "should_hit"),
         [
-            # 行頭`>`+スペースの標準的な引用行はスキップされる
             ("> {sub}\n", False),
-            # `>`直後にスペースが無い引用行もスキップされる
             (">{sub}\n", False),
-            # 引用行直下の非引用行は通常通り検出される
             ("> 別文\n本文に{sub}該当\n", True),
-            # `>`が行頭以外にある行は引用ブロックではないため検出対象
             ("文中の > {sub}該当\n", True),
         ],
     )
@@ -736,13 +641,10 @@ class TestBlockquoteSkipIntegration:
         text = f"> 引用部の{deny_sub}該当\n本文の{deny_sub}該当\n"
         hits = pyfltr.colloquial.check.scan_text(text, deny_patterns, allow_patterns)
         assert hits, "本文側の検出が必要"
-        # 引用行（1行目）はスキップされ、本文（2行目）のみ検出される
         assert all(line_no == 2 for line_no, _, _, _, _ in hits)
 
 
 class TestFencedCodeSkipIntegration:
-    """`scan_text` / `first_hit` でのフェンス付きコードブロックスキップ統合テスト。"""
-
     def test_first_hit_skips_inside_fence(
         self, deny_patterns: _PatternList, allow_patterns: _PatternList, overlap_sample: tuple[str, str]
     ) -> None:
@@ -764,5 +666,4 @@ class TestFencedCodeSkipIntegration:
         text = f"```\nフェンス内の{deny_sub}該当\n```\n本文の{deny_sub}該当\n"
         hits = pyfltr.colloquial.check.scan_text(text, deny_patterns, allow_patterns)
         assert hits, "フェンス外側の検出が必要"
-        # フェンス内（2行目）はスキップされ、本文（4行目）のみ検出される
         assert all(line_no == 4 for line_no, _, _, _, _ in hits)

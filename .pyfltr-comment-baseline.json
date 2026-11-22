@@ -1,0 +1,279 @@
+{
+  ".claude/skills/verify-execution-slot/check.py": {
+    "OSロックの境界を占有集合で表す。": 1,
+    "_acquireを一度の調停区間だけ進め、取得した枠または待機を返す。": 1,
+    "_releaseを呼び、保持していた枠だけが解放されたことを確かめる。": 1,
+    "保持中の枠を解放する。": 1,
+    "各主体の状態: 未登録、待機中、枠番号、終了。": 1,
+    "実行枠の調停を有界状態空間で検査する。": 1,
+    "実装が今回の取得を見送り、再試行を待つ境界。": 1,
+    "旧版と共有する枠0のロック名は内部関数が決める。": 1,
+    "空き枠だけを取得する。": 1,
+    "空の状態から登録・調停・解放の全順序を探索する。": 1,
+    "設定ごとの探索状態数を表示する。": 1,
+    "非公開の調停処理を呼び、候補の計算だけでなくロック操作と再試行への到達も照合する。": 1
+  },
+  ".claude/skills/verify/probe.py": {
+    "CLIの出力と終了コードを保存する。": 1,
+    "stdioの初期化と1件のツール呼出しを記録する。": 1,
+    "入力を作り、操作結果をファイルの状態と照合する。": 1,
+    "新規の証拠ディレクトリを確保し、一時プロジェクトを後始末する。": 1,
+    "隔離したプロジェクトでCLI・MCPを実プロセスとして操作する。": 1
+  },
+  "pyfltr/cli/command_info.py": {
+    "fix-argsが定義されているコマンドでは、fix段でもargvが異なるため併記する。": 1,
+    "textlintは`--format`ペアを除去する特殊経路となる（`build_invocation_argv`内で処理）。": 1,
+    "公開論理値pnpxは互換なpnpm dlx形式へ写像されるため、確認対象の実行ファイルはpnpmとなる。": 1
+  },
+  "pyfltr/cli/grep_subcmd.py": {
+    "ripgrep互換でマッチ0件はexit 1とする": 1
+  },
+  "pyfltr/cli/main.py": {
+    "`parse_known_args`で残余を回収し、`paths`へ統合する経路で回避する。": 1,
+    "cli/pipeline→cli/parserの直接依存（循環importの原因）を回避する。": 1,
+    "エントリポイント。 PATH重複排除はCLI経路でのみ呼ぶことで、ライブラリ用途で意図せず別アプリの `os.environ` を書き換えないようにする。 重複排除の規則は `pyfltr.command.env.dedupe_environ_path` のdocstringを参照する。": 1,
+    "位置引数解析が早期終了する挙動があり（Python 3.12〜3.15でも再現する）、`--output-format=jsonl`等が": 1
+  },
+  "pyfltr/cli/mcp_models.py": {
+    "`(command, file)`単位で集約されたdiagnosticエントリ。 `show_run_diagnostics`ツールの戻り値内要素。`messages`に個別指摘を保持する。": 1,
+    "`command_info`ツールの戻り値。": 1,
+    "`config`ツールの戻り値。actionごとに使うフィールドが異なる。": 1,
+    "`grep`の集計モード`count`の1ファイル分。": 1,
+    "`grep`ツールの1マッチ分。": 1,
+    "`grep`ツールの戻り値。": 1,
+    "`replace_history`ツールの戻り値。": 1,
+    "`replace_undo`ツールの戻り値。": 1,
+    "`replace`ツールの1ファイル変更分。": 1,
+    "`replace`ツールの1置換箇所。`show_changes=True`時に`ReplaceResultModel.changes`へ含まれる。": 1,
+    "`replace`ツールの戻り値。": 1,
+    "`run`ツールの戻り値。 完了判定の6項目は`pyfltr.command.completion.RunCompletion`の値をそのまま転記する。 CLI JSONLの`summary`も同じ値を返す。": 1,
+    "`show_run_output`へ範囲を指定した場合の、コマンド1件分の出力ログ。": 1,
+    "replace履歴の1件分。`before_content`と`records`は応答に含めない。": 1,
+    "replace履歴の対象ファイル1件分。": 1,
+    "runの概要（meta + 経過時間の要約 + コマンド別サマリ）。`show_run`ツールの戻り値。 ツール本体の秒数は`commands[].elapsed`、本体区間は`commands[].started_at`・`finished_at`が持つ。 並行して動いたツールの秒数の合計はrun全体の経過と一致しない。": 1,
+    "runの経過時間と実行枠の待機区間の要約。値が確定していない項目はNoneとする。": 1,
+    "run一覧の1件分サマリ。`list_runs`ツールの戻り値要素。": 1,
+    "コマンドごとのサマリ。`run`と`show_run`ツールの戻り値内要素。": 1,
+    "コマンドのmeta情報。`CommandDiagnosticsModel.command_meta`の値。 実行アーカイブの`tool.json`から`commandline`を除いた項目を保持する。 `commandline`は対象ファイルを引数へ展開するツールで長さが対象ファイル数に比例し、 大規模な対象では応答の大半を占めて診断本体の読み取りを妨げるため含めない。 完全な引数列は`pyfltr show-run <run_id> --commands=<name>`と実行アーカイブの `tool.json`から取得する。`show_run_output`が返す`output.log`は引数列を含まない。 `hint_urls`・`hints`は`CommandDiagnosticsModel`の同名フィールドが返すため本モデルへ含めない。 `slow_tests`・`retry_command`は`tool.json`に保存されている場合だけ直列化する。": 1,
+    "コマンドの詳細情報（`tool.json`のmeta情報 + diagnostics.jsonl全件）。`show_run_diagnostics`ツールの戻り値。 `command_meta`は`tool.json`から`commandline`を除いた項目を`CommandMetaModel`として返す。 JSONL本体・`tool.json`の双方で`hint_urls`キー（アンダースコア区切り）を採用するため、 Pydantic側でも属性名・出力キー名ともに`hint_urls`で揃える。 同様に`hints`キーも`tool.json`と同名で揃える。": 1,
+    "実行中に発行された警告1件。`RunResult.warnings`の要素。": 1,
+    "検証の実行枠を取得するまでの待機区間。`RunTimingModel.slot_waits`の要素。": 1,
+    "遅いテスト1件分。`CommandSummaryModel.slow_tests`と`CommandMetaModel.slow_tests`の要素。": 1,
+    "適応出力における1ファイル分の件数と返却対象マッチ。": 1,
+    "集約diagnostic内の1指摘分。`DiagnosticModel.messages`の要素。": 1
+  },
+  "pyfltr/cli/mcp_server.py": {
+    "ハイフンは非推奨で互換性のあるMCPServer経路もアンダースコア前提のため。": 1
+  },
+  "pyfltr/cli/mcp_worker.py": {
+    "IPCは親がUTF-8のバイト列で送る。Windowsの標準入出力の既定文字コードへ委ねない。": 1
+  },
+  "pyfltr/cli/output_format.py": {
+    "JSONL `header.format_source`の値・利用者向けドキュメントの説明・テストのassertで参照する。": 1,
+    "エージェント検出経由の値は別系統で、検出した変数ごとに`env.<NAME>`の形で動的に構築する。": 1,
+    "解決経路を示す`format_source`の固定語彙。各値はそれ単独で読んで意味が通るよう命名する。": 1
+  },
+  "pyfltr/cli/parser.py": {
+    "Python 3.15以上で遅延importとなり、それ未満の版では通常のimportとして扱われる（PEP 810）。": 1,
+    "config: 設定ファイル操作（pnpm/npm config互換のget/set/delete/list）": 1
+  },
+  "pyfltr/cli/pipeline.py": {
+    "Python 3.15以上で遅延importとなり、それ未満の版では通常のimportとして扱われる（PEP 810）。": 1,
+    "text_logger / structured_logger / text_output_lock は output/logging_.py から参照する。": 1,
+    "出力形式に応じた警告配送スコープを設定してパイプラインを実行する。": 1
+  },
+  "pyfltr/command/core_.py": {
+    "ステータスの文字列を返す。 `status` 値の語彙はJSONL `command.status` のSSOTとして本プロパティ・本docstringに集約する。 新規status値を追加する際は本判定分岐に組み込み、個別箇所でのstatus文字列 直接組み立ては避ける。値ごとの意味は次の通り。 - `succeeded`: 通常成功（`returncode == 0`） - `formatted`: formatterがファイルを書き換えた成功（再実行不要） - `skipped`: 対象ファイル0件等で起動しなかった - `failed`: 通常の失敗。`severity` が既定値 `\"error\"` のとき採用する - `warning`: per-tool `{command}-severity = \"warning\"` 設定またはツール固有の一時障害分類による失敗格下げ。 パイプライン全体exit codeに影響しない。`commands_summary.needs_action.warning` へ集計し、 `summary.guidance` のfailure系文言は出力しない - `resolution_failed`: ツール起動コマンドの解決に失敗した - `running`: heartbeat由来の実行中レコード（pipeline側で発行） `timeout_exceeded=True` の場合、`command_type` がformatterであっても `failed` を返す。 timeoutで強制停止された結果を成功扱い（`formatted`）にしてしまうと、 利用者・LLMがハング由来の停止と通常のformatter書き換えを区別できなくなるため。 ツール起動自体に失敗したケース（`resolution_failed` / `timeout_exceeded`）は ツール起動自体の異常で警告扱いに馴染まないため、`severity` の影響を受けない。 `status` は `resolution_failed`・`returncode`・`formatter_failed`・`command_type`・ `timeout_exceeded`・`severity` から導出する計算プロパティとして実装する。": 1
+  },
+  "pyfltr/command/dispatcher.py": {
+    "mise等のbin-runner解決はネットワークやプラットフォーム制約で失敗し得るため、": 1
+  },
+  "pyfltr/command/env.py": {
+    "UnicodeDecodeErrorを回避する。": 1,
+    "Windowsのcp932/cp1252などに依存せず、ツール側のopen()/Path.read_text() をUTF-8で動かす。": 1,
+    "pnpmはnpm互換のconfig環境変数方式 （NPM_CONFIG_<SNAKE_CASE>） を採用する。": 1
+  },
+  "pyfltr/command/execution_slot.py": {
+    "os.major / os.minorはPOSIX専用でWindows型スタブに未定義。この関数はLinuxからだけ呼ぶ。": 1,
+    "psutilは実行枠の取得で初めて使う時に読み込む（PEP 810。Python 3.15未満では通常のimport）。": 1
+  },
+  "pyfltr/command/precommit_guidance.py": {
+    "Python 3.15以上で遅延importとなり、それ未満の版では通常のimportとして扱われる（PEP 810）。": 1
+  },
+  "pyfltr/command/process.py": {
+    "CREATE_NEW_PROCESS_GROUPはWindows専用の定数。getattrの3引数形式を使うと": 1,
+    "POSIX慣習でtimeout停止に使われる124を踏襲し、シェル経由のtimeout(1)等と整合させる。": 1,
+    "Python 3.15以上で遅延importとなり、それ未満の版では通常のimportとして扱われる（PEP 810）。": 1,
+    "os.killpg / os.getpgid / signal.SIGKILLはPOSIX専用でWindows型スタブに未定義。": 1,
+    "ruff B009のgetattr→属性アクセス変換対象外になるため、型チェッカー誤検知を回避できる。": 1
+  },
+  "pyfltr/command/runner.py": {
+    "Windowsでは `.cmd` 付きのラッパーを優先する。pyrightの静的評価では": 1,
+    "plugin/rule packageを`--package`で並べる経路に限り、pnpm公式opt-outで": 1,
+    "ツール起動コマンドラインを構築する（副作用は `allow_side_effects` で制御）。 `{command}-runner` および `{command}-path` の設定に従い、`mise exec ... --` 形式・ `pnpm --package ... dlx ...`形式・`uv run --frozen`形式・`uvx <bin>`形式・直接実行（PATH解決）のいずれかを返す。 `{command}-runner` 値はカテゴリ委譲値（`python-runner` / `js-runner` / `bin-runner`）と 直接指定値（`direct` / `mise` / `uv` / `uvx` / `pnpx` / `pnpm` / `npm` / `npx` / `yarn`）の2分類で扱い、 対等な選択肢として並ぶ。 カテゴリ横断の組み合わせ（例: `mypy-runner = \"pnpm\"`）はバリデーションで拒否せず、 無意味な組み合わせは実行時に解決ロジックがエラー終了する（実装簡潔さ優先）。 解決経路の主要な設計判断は次の通り。 - `{command}-path` 非空指定は最優先で `effective_runner = \"direct\"` 固定とする （`runner_source = \"path-override\"`）。利用者が明示したパスを尊重するため - `uv` 経路は `uv.lock` 存在を必須とする。`uvx` 経路はlockを参照しない。両者の使い分けは 利用者プロジェクトの登録版（`uv`）か最新版（`uvx`）かの選択を意図する - `direct` フォールバックは `uv`・`uvx`・`mise` の各経路で前提条件を満たさないとき発動し、 `runner_fallback` に退行経路（例: `\"uv->direct\"`）を記録する。利用者環境差で起動失敗するより、 最低限PATH上のバイナリで動くようにするため - `mise` 経路はmise設定記述があり `{command}-version` が既定値 `\"latest\"` のときに限り tool spec部分を省略する。利用者がmise設定で固定したcomponents・バージョンを尊重するため `allow_side_effects=False`（既定）では `mise exec --version` の事前チェックや `mise trust` を行わない。判定関数 `get_mise_active_tools` も副作用OFFで呼び、 未信頼config由来エラーを「記述なし」扱いとして従来形のtool spec組み立てへフォールバックする。 `command-info` サブコマンドの `--check` 無し呼び出しから安全に呼べるようにするためである。 `allow_side_effects=True` 時は判定経路でも `mise-auto-trust` 設定に従いtrust→再呼び出しを許可する。 ツールが特定できない場合は `FileNotFoundError` を、 `{command}-runner` 値の組み合わせ自体が不正な場合は `ValueError` を送出する。": 1,
+    "二重定義による追従漏れを避けるためのSSOT。": 1,
+    "解決してしまう挙動を回避するため、PATHからmise toolパスを除外したenvを渡す。": 1
+  },
+  "pyfltr/command/targets.py": {
+    "Git check-ignoreで .gitignoreに該当するファイルを除外する。 各入力パスを実体パスに正規化し、起点 cwd リポジトリからの相対パスへ変換した上で `git check-ignore --stdin -z`に渡す。シンボリックリンク越えのpathspecで `fatal: pathspec ... is beyond a symbolic link`が発生してreturncode 128となり .gitignore除外処理が丸ごとスキップされる事象を回避するため。 起点 cwd リポジトリ外に解決されたパスは判定対象外として、入力パスをそのまま残す。 `cwd` を指定すると `git` の作業ディレクトリと相対パス基準として使う。 `None` の場合は親プロセスの cwd を使う（既存挙動）。 サブプロセスのreturncodeが0でも1でもない場合は、returncodeが128かつ起点cwdがGit作業ツリー外と 確定できた場合に限り、警告を発行せずフィルター適用を省略して入力パスをそのまま返す。 作業ツリー内の128、内外を判定できない128、128以外の終了コードでは`emit_warning`でstderrを通知し、 stdoutで返ってきた部分結果をignored判定として活用する。 `logger.debug`のみで全パスを素通しさせるサイレントなフォールバックは .gitignore除外スキップを隠蔽する不具合の原因となるため採用しない。": 1,
+    "対象ファイルの一括展開。 ディレクトリ走査・excludeチェック・gitignoreフィルタリングを1回だけ実行し、 全ファイルのリストを返す。コマンドごとのglobフィルタリングは `filter_by_globs` で行う。 `start_cwd` は走査・パス正規化・git連携の起点 cwd（絶対パス）。`None` の場合は `pathlib.Path.cwd()` を使う（既存挙動）。サブプロジェクト分割実行を含むパイプライン では `run_pipeline` 開始時に確定した cwd を明示する。 `exclude_subdirs` には走査時に侵入を避けたいサブディレクトリ（絶対パスの一覧）を渡す。 モノレポでネストする子サブプロジェクト配下を親側の走査から除外する目的だが、最終的な サブプロジェクト分類は `classify_files_by_subproject` の最深一致で行うため、本引数は 走査効率を上げる補助手段に留める。`None` の場合は除外なし。 シンボリックリンクディレクトリは原則として配下を辿る。 `respect-gitignore=True` 下では走査前に対象のディレクトリ自身の `is_symlink()` を判定し、 末尾 `/` を付けない単一パス指定で `git check-ignore` へ問い合わせ、ignoredなら配下を辿らない。 早期スキップが機能するのは `.gitignore` のファイル形式パターン（`name`・`*pattern*` 等）に 限定される。`link/` 形式のディレクトリ専用パターンは `git check-ignore` がシンボリックリンク越え のpathspecを拒否するため判定不可となり、早期スキップは機能しない。 位置引数の相対パスは起点内で畳み込める`..`を字句的に畳み込んだ表現へ置き換える（`_collapse_relative_dots`）。 返り値は起点内の`..`を持たず、起点外を指す相対パス（`../outside/a.md`など）は利用者が渡した表現を保つ。 別の出所のパスと突き合わせる処理は、両側を`pyfltr.paths.to_match_key`で揃えてから比べる。 最終出力は `_dedup_and_sort` が実体パス単位で重複排除し、パス文字列で安定ソートして返す。 リポジトリ内のシンボリックリンク再配置等で同一実体ファイルが複数パスから列挙される構成でも、 ツールが同じ内容を多重チェックすることを避ける。 cwdリポジトリ内/外の判定とサイレント素通し回避の挙動については `_filter_by_gitignore` のdocstringを参照する。": 1
+  },
+  "pyfltr/config/model.py": {
+    "aube-lock.yamlはmiseが内蔵するnpm互換パッケージマネージャーaubeが`.mise/locks/`配下へ書く。": 1,
+    "global優先キーのSSOT。": 1,
+    "https://github.com/github/gitignore/blob/main/Node.gitignore": 1,
+    "https://github.com/github/gitignore/blob/master/Python.gitignore": 1,
+    "範囲拡大時は `docs/guide/configuration.md` と関連テストも併せて更新する（人手同期）。": 1,
+    "（pyrightの `reportPossiblyUnboundVariable` 誤検知も同時に回避）。": 1
+  },
+  "pyfltr/grep_/history.py": {
+    "Python 3.15以上で遅延importとなり、それ未満の版では通常のimportとして扱われる（PEP 810）。": 1
+  },
+  "pyfltr/markdown_structure/check.py": {
+    "閉じ記号を伴う区切りだけをJinja2構文とみなし、記法例の開始記号だけを含む通常の文書は対象に残す。": 1
+  },
+  "pyfltr/output/heartbeat.py": {
+    "パイプライン全体のheartbeat監視。 別スレッドで一定間隔ループし、`pyfltr.output.jsonl_emit.get_last_jsonl_output_time()` から 最終JSONL出力時刻を取得して経過時間を判定する。 発火条件は「最後のJSONL出力から既定 `_HEARTBEAT_THRESHOLD_SECONDS` 秒経過した場合」のみ。 subprocess側のstdout出力の有無は判定材料に含めない（LLMから観測できるのはpyfltr側のJSONL 出力のみで、子プロセスの静粛さは観測対象外のため）。 しきい値超過時は実行中コマンド集合（`{command_name -> start_time}`）から各commandへ `status:\"running\"` レコードを発行する。複数コマンドが同時にハングしている場合も 各コマンドの状態を識別できるよう、実行中の全コマンドそれぞれに発行する設計。 完了時の最終レコード（`status:\"failed\"` / `\"succeeded\"` 等）が必ず後続することを保証する。 text_loggerにも発火を残し、人間向け表示でも進捗が確認できるようにする。 `start()` / `stop()` を `run_pipeline` の入口・出口で呼ぶ。 `on_command_start(command)` / `on_command_end(command)` は subprocess の開始・終了に フックして登録・削除する。並列実行下のアクセスは `_lock` で保護する。": 1
+  },
+  "pyfltr/output/jsonl.py": {
+    "1コマンド分のdiagnostic行+command行をJSONL文字列のリストとして生成する。 diagnostic行は`(command, file)`単位で集約され、個別指摘は`messages[]`に並ぶ。 個別指摘の合計件数が`jsonl-diagnostic-limit`を超える場合は `ErrorLocation`列を先頭N件に限定してから集約し、 commandレコードに`truncated.diagnostics_total`を添付する。 切り詰めは`result.archived`がTrueのときのみ適用し、Falseの場合は全件出力する （アーカイブから復元不能な情報欠落を防ぐため）。 判定単位はステージごとの`CommandResult`単位とする。fixステージと 通常ステージは同じ`command`名で別`CommandResult`として渡されるため、 片方のアーカイブ書き込み失敗が他方の切り詰め可否に影響しない。 `quiet=True`のときは以下の全条件を満たす成功時commandレコードを出力しない （SSOT: 本docstring）。 - `result.status`が`succeeded`・`formatted`・`skipped`のいずれか - `diagnostic_records`が空 - `diagnostics_truncated`が`False` - `result.slow_tests`が空 - `result.runner_fallback`が`None`（fallback検知は静音時も残す） 上記いずれかを満たさない場合は通常どおりcommandレコードを出力する。 `diagnostic_records`自体は`quiet`の影響を受けず、非空なら常に出力する。": 1
+  },
+  "pyfltr/output/jsonl_emit.py": {
+    "複数行を1つの排他境界で書き込み、heartbeatの最終出力時刻と同期させる。": 1
+  },
+  "pyfltr/output/jsonl_records.py": {
+    "ordered_resultsから集計してsummaryレコードdictを生成する。 `subcommand`は`summary.guidance`の再実行例に埋め込む実行系サブコマンド名。 集計カウンタはコマンド単位の集計であることを示す`commands_summary`配下にまとめ、 その下で「対応不要」「対応要」の2グループへネストする。 `commands_summary.no_issues`配下に`succeeded`/`formatted`/`skipped`を、 `commands_summary.needs_action`配下に`failed`/`warning`を並べる。 `formatted`は本リポジトリの運用上「再実行や追加対応は原則不要」と整理し `no_issues`側に分類する。 `resolution_failed`は0件のときキー自体を省略する（通常プロジェクトでは常に0のため）。 `failed`/`warning`は0件でも常時出力する（0件であることがエラー無し / 警告無し判定に直結するため）。 `commands_summary`の兄弟である`applied_fixes`/`fully_excluded_files`/ `missing_targets`/`guidance`はカウント集計ではないため移動しない。 `fully_excluded_files`が非空のとき、直接指定されたがexcludeパターン・.gitignore によって全除外されたファイル一覧を`fully_excluded_files`キーに埋め込む。 `missing_targets`が非空のとき、直接指定されたが存在しないファイル一覧を `missing_targets`キーに埋め込む（exclude/.gitignore全除外と原因を区別するため 別フィールドで併存させる）。 `warning_count`が1以上のとき、対象の実行で出力した`kind:\"warning\"`レコードの件数を `warnings`キーに埋め込む。同キーは実行時警告の件数であり、 `commands_summary.needs_action.warning`（`{command}-severity`によるコマンド結果の 格下げ件数）とは集計対象が異なる。呼び出し側はwarningレコードの生成元と同一の引数から 件数を導出して渡し、レコード件数とsummaryの値を構造的に一致させる。 `completion`が渡された場合は`completion`・`files_reached`・`completed_commands`・ `incomplete_commands`を空一覧も含めて常に埋め込む。値は`pyfltr.command.completion`が導出し、 MCP `run`の応答と同じ値になる。`run_pipeline`は全経路で渡すため、 省略されるのはパイプライン外からの直接呼び出しだけとなる。 フィールド順序ルール: - 必須キー順は`kind` → `exit` → `commands_summary` → `diagnostics`。 結論を上位に置きLLMが読み下しやすい流れに揃える。 - 完了判定の4キーは`exit`の直後に`completion` → `files_reached` → `completed_commands` → `incomplete_commands`の順で置く。終了コードと並ぶ結論として最初に読めるようにするため。 - 条件付きキー順は`warnings` → `guidance` → `applied_fixes` → `fully_excluded_files` → `missing_targets`。 警告件数 → 解釈支援（次に取るべき行動）→ 自動適用結果 → 除外検知 → 不在検知の流れに揃える。 - コマンド総数`total`は`commands_summary`配下の末尾（`no_issues` / `needs_action`の後）に置く。 カテゴリ集計を読んでから総数を確認できる順序とするため。 - 指摘総件数`diagnostics`はコマンド単位の集計ではないため`commands_summary`には含めない。 集計の意味分類が混ざらないようにするため。 - `applied_fixes`はfixステージ・formatterステージで実際に内容変化したファイルパスを 全コマンドにわたってユニオンしソートした一覧。変化なしの場合は省略する。 JSONLスキーマの変更は破壊的変更扱いしない（LLMが読みやすいよう継続的に改善する）。 新規キーの追加・既存キー名の調整時は本docstringと利用者向けドキュメント （`docs/guide/usage.md`）を併せて更新する。": 1
+  },
+  "pyfltr/output/ui.py": {
+    "TUIはGitHub Actions注釈記法を使わないためstop-commands保護は不要。": 1
+  },
+  "pyfltr/parsing/python_linters.py": {
+    "公式ドキュメントURLはカテゴリー名（`convention` / `warning` / `error` / `refactor` /": 1
+  },
+  "pyfltr/parsing/tools.py": {
+    "ESLintのJSONはautofixがある場合のみ`fix`オブジェクトが付与される。": 1
+  },
+  "pyfltr/rule_urls.py": {
+    "ESLintのプラグインルールは`plugin/rule`形式で、": 1,
+    "シグネチャ互換のため受け取るのみ": 6,
+    "シグネチャ互換のため受け取るのみ（ruffはカテゴリーを使わない）": 1,
+    "ルール名はキャメルケースで、公式ドキュメントのslugはケバブケースとなる。": 1
+  },
+  "pyfltr/state/cache.py": {
+    "互換性を破棄する際はこの定数を更新してキャッシュを一括無効化する。": 1
+  },
+  "pyfltr/test_copies/cli.py": {
+    "写し候補の検査と診断の出力。": 1
+  },
+  "pyfltr/tool_defs/document_linters.py": {
+    "CWD直下でのみ解決される（公式ドキュメントのconfiguring / ignore章に準拠）。": 1,
+    "GitHub Actions上のlycheeがgithub.com宛リンクに対して": 1,
+    "`--config`が受け付ける候補（markdownlint-cli2公式README参照）。": 1,
+    "対象ファイル名はDESIGN.md固定（公式仕様）。js-runner経由でnpmパッケージから起動する。": 1
+  },
+  "pyfltr/tool_defs/formatters.py": {
+    "フォーマットと一緒に片付ける（ruff公式推奨ワークフローの発展形）。": 1,
+    "（cargo / dotnet）のコマンドは直列実行され、targetディレクトリ等のロック競合を回避する。": 1
+  },
+  "pyfltr/tool_defs/general_linters.py": {
+    "pinact: GitHub Actionsの`uses:`がSHAと版コメントでピン留めされているかを検査する。": 1,
+    "semgrepは`mcp`を厳密ピンし`click`にも強い制約を課すため本体依存から外した。": 1,
+    "既定の`-f auto`はGitHub Actions上で`::error`形式へ切り替わり、": 1
+  },
+  "pyfltr/tool_defs/javascript_linters.py": {
+    "biome公式設計でinfoは終了コードに影響しない。": 1
+  },
+  "pyfltr/tool_defs/testers.py": {
+    "キー名は初期実装時の名残。設定互換性維持のため改名しない": 1
+  },
+  "scripts/parser_review/samples.py": {
+    "uvxが既定でPython 3.15を選ぶ環境では、スタック上限が8MBの場合にsemgrep-coreが異常終了し結果が空になる": 1
+  },
+  "tests/cli/mcp_grep_tools_test.py": {
+    "Windowsでも`C:/...`形式になるため、`as_posix()`での文字列比較で一致を検証する。": 1
+  },
+  "tests/command/env_test.py": {
+    "Windowsではnpmがnpm.cmdとして提供されるため、shutil.whichで完全パスを取得する": 1
+  },
+  "tests/command/invocation_test.py": {
+    "Windowsの`ntpath.expanduser`は`USERPROFILE`を優先するため両方上書きする。": 2
+  },
+  "tests/command/linter_fix_test.py": {
+    "fixture互換で受け取るのみ": 1
+  },
+  "tests/command/markdownlint_env_test.py": {
+    "Windowsで裸の名前を起動できないため、PATH上の実体を絶対パスで渡す。": 1
+  },
+  "tests/command/process_test.py": {
+    "POSIX限定の経路（呼出元の試験はWindowsでskipする）。型チェッカーの誤検知は局所コメントで抑止する。": 1,
+    "Popen互換の追加引数を受け取るのみ": 1,
+    "WindowsのshUtil.whichはPATHEXTに列挙された拡張子で実行ファイルを判定するため、": 1,
+    "contextmanager互換の引数を受け取るのみ": 1,
+    "ダミー実行ファイル名を`.bat`にする（POSIXでは実行属性0o755で判定される）。": 1
+  },
+  "tests/command/runner_test.py": {
+    "Windowsの`ntpath.expanduser`は`USERPROFILE`を優先するため両方上書きする。": 1,
+    "回避策の案内が一文として含まれる。": 1
+  },
+  "tests/command/textlint_fix_test.py": {
+    "step1: --format / compactが物理的に除去されている（fixer-formatter互換性のため）": 1
+  },
+  "tests/config/config_test.py": {
+    "textlintの公式設定ファイル候補が全て列挙されている": 1,
+    "typos-versionは既存ユーザーの設定との互換維持のため定義を残す": 1
+  },
+  "tests/integration/cli_option_reference_test.py": {
+    "f-stringのリテラル部はPython 3.12以降で独立したトークンとなり、": 1,
+    "f-stringはPython 3.12以降で複数のトークンへ分解される。": 1
+  },
+  "tests/integration/execution_slot_test.py": {
+    "MCPは警告を応答へまとめて返すため、workerが実行枠の待機を始めた通知を同期点にする。": 1,
+    "Windowsの仮想環境の`python.exe`は本体を子プロセスで起動するため、保持者が自ら報告したpidと比べる。": 1
+  },
+  "tests/integration/external_paths_test.py": {
+    "テストで使うパスがWindows区切りを含まないため、実装と独立した`as_posix()`で期待値を生成する。": 1
+  },
+  "tests/integration/output_format_test.py": {
+    "mypy": 1,
+    "pylint": 1
+  },
+  "tests/integration/parser_review_test.py": {
+    "Windowsのvenvではsys.executableが起動ランチャーで、Popenのpidは実際の保持者と異なるため値は比べない。": 1,
+    "新しいセッション（Windowsでは新しいプロセスグループ）で孫を起動し、孫のpidを出力して待機する子プロセス。": 1
+  },
+  "tests/integration/pipeline_monorepo_test.py": {
+    "テストで使うパスがWindows区切りを含まないため、実装と独立した`as_posix()`で期待値を生成する。": 1
+  },
+  "tests/parsing/pytest_test.py": {
+    "行幅が偶数だと末尾が空白、奇数だと末尾が`_`になる。Windowsでは同関数が行幅を1減らすため": 1
+  },
+  "tests/parsing/tools_test.py": {
+    "mypy": 1,
+    "pylint": 1,
+    "pyright": 1,
+    "公式ドキュメントの見出しがrule識別子と多対多で対応するためURLは生成しない。": 1
+  },
+  "tests/paths_test.py": {
+    "POSIXでは`\\`をファイル名の一部として扱うため、入力側の区切りを先に統一した値で検証する。": 1,
+    "Windowsパス: バックスラッシュをスラッシュへ変換する": 1,
+    "Windows区切りの出力も区切りを`/`へ統一する": 1
+  },
+  "tests/smoke_data/basic/sample.py": {
+    "スモークテスト用のPythonサンプル。": 1,
+    "二つの整数を加算して返す。": 1
+  },
+  "tests/smoke_data/basic/sample_test.py": {
+    "スモークテスト用のpytest最小ターゲット。": 1,
+    "常に成功するダミーテスト。": 1
+  },
+  "tests/smoke_data/pre_commit_workspace/sample.py": {
+    "pre-commit スモーク対象ダミー。": 1
+  },
+  "tests/smoke_data/prek_workspace/sample.py": {
+    "prek スモーク対象ダミー。": 1
+  },
+  "tests/smoke_data/ts_workspace/eslint.config.js": {
+    "rule一覧は空（無違反）として扱う。": 1,
+    "最小のESLint設定。スモークテストではpnpx経由での起動が成立すれば十分のため、": 1
+  }
+}

@@ -1,5 +1,3 @@
-"""CLIとMCPの実行結果に添える案内。"""
-
 import shlex
 
 
@@ -13,23 +11,6 @@ def build_summary_guidance(
     subcommand: str | None,
     for_mcp: bool = False,
 ) -> list[str]:
-    """summaryレコード向けの状況依存ガイドを英語で生成する。
-
-    `summary.guidance`として次のいずれかを満たす場合のみ同梱する。
-
-    - `commands_summary.needs_action`配下の`failed`/`resolution_failed`合計が1以上
-    - `summary.applied_fixes`が非空（formatter/fix-stageが書き換えた）
-
-    両方該当する場合は失敗時の案内に続けてformatter書き換えの注記1項目を追記する。
-    アーカイブを参照する再実行と詳細取得の2項目は`run_id`がある場合だけ並べる。
-    `resolution_failed_present`が真のときは、ツール解決失敗の対処（`tool-resolve`警告の本文と`hint`）を
-    読む案内を失敗時の項目の先頭へ置く。解決失敗は再実行だけでは解消しないため。
-    MCPの`run`ツールも本関数を呼び、`for_mcp=True`でMCPの操作名を使う。
-    `run_id`と`launcher_prefix`が指定されていれば、起動コマンド表記と実run_idを埋め込む。
-    `subcommand`は`--only-failed`の再実行例に埋め込む実行系サブコマンド名で、
-    実際に起動されたサブコマンドをそのまま反映する。
-    `launcher_prefix`・`subcommand`未指定時の既定値は`pyfltr`・`run`とする。
-    """
     if not failure_present and not applied_fixes_present:
         return []
     launcher = shlex.join(launcher_prefix) if launcher_prefix else "pyfltr"

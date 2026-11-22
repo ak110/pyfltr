@@ -1,10 +1,3 @@
-"""ツール解決失敗ハンドリング。
-
-ツール解決失敗時の利用者向け文面組み立てと`CommandResult`生成、uv経路でのツール未登録警告を担う。
-`pyfltr.command.runner`から送出される`FileNotFoundError`のcatch側として動作する。
-`PYTHON_TOOL_BIN`登録ツールのうちrunner既定値が`uvx`のものは別環境へ解決する。
-"""
-
 import pyfltr.command.runner
 import pyfltr.config.config
 import pyfltr.config.model
@@ -15,7 +8,6 @@ from pyfltr.command.core_ import CommandResult
 
 
 def _uses_uvx_by_default(command: str) -> bool:
-    """uvx分離ツールの案内分類をrunner既定値のSSOTから導出する。"""
     return pyfltr.config.model.command_setting(pyfltr.config.model.DEFAULT_CONFIG, command, "runner", None) == "uvx"
 
 
@@ -24,24 +16,6 @@ def format_tool_resolution_failure(
     raw_identifier: str,
     config: pyfltr.config.model.Config,
 ) -> str:
-    """ツール解決失敗時の利用者向け文面を組み立てる。
-
-    runner.pyの`FileNotFoundError`は識別子（bin名・パス・mise tool spec等）のみを保持する契約で、
-    本ヘルパーがcatch側として「探索経路」「代替手段（runner切り替え・パス明示）」を併記する。
-
-    分類:
-
-    - パッケージマネージャーのサブコマンド系（`PACKAGE_MANAGER_TOOL_BIN`）:
-      対象のパッケージマネージャー（`uv` / `pnpm` / `npm` / `yarn`）導入または `{command}-path` 明示を案内する
-    - uvx既定のPython製ツール（semgrep / sqlfluff）: 利用者プロジェクトへの個別導入を案内する
-    - Python系（`PYTHON_TOOL_BIN`）: `uv` / `uvx` への切り替えまたは `{command}-path` 明示を案内する
-    - JS系（`JS_TOOL_BIN`）でdirect指定: `node_modules` 探索失敗として `pnpm install` / `pnpx` 切り替えを案内する
-    - JS系（`JS_TOOL_BIN`）でdirect以外: PATH探索失敗として `{command}-path` 明示を案内する
-    - ネイティブ系（`_BIN_TOOL_SPEC`）: `direct` への切り替えまたは `{command}-path` 明示を案内する
-    - `mise trust`の自動実行の失敗: 手動の`mise trust`・`mise-auto-trust`の確認・`direct`への切り替えを案内する
-    - その他（カスタムコマンド等）: 汎用案内（PATH探索失敗）
-    """
-    # 効果値（resolve_effective_runner適用後）を判定し、direct分岐との切り分けに使う。
     effective_runner: str | None = None
     try:
         runner_value, _ = pyfltr.command.runner.resolve_runner(command, config)
@@ -50,8 +24,6 @@ def format_tool_resolution_failure(
         effective_runner = None
 
     if command in pyfltr.command.runner.PACKAGE_MANAGER_TOOL_BIN:
-        # uv audit等は既定でdirect解決のため、PYTHON_TOOL_BIN分岐のuv経由起動案内は誤誘導になる。
-        # 起動対象のパッケージマネージャー導入を促す専用文面を返す。
         bin_name = pyfltr.command.runner.PACKAGE_MANAGER_TOOL_BIN[command]
         return (
             f"ツールが見つかりません: パッケージマネージャー `{bin_name}` が PATH 上にありません。"
@@ -82,10 +54,6 @@ def format_tool_resolution_failure(
             f"ツールが見つかりません: JS系ツール `{raw_identifier}` の解決に失敗しました。"
             f"`pnpm install` などで対象パッケージを導入するか、`{command}-path` で実行ファイルを明示してください"
         )
-    # ネイティブ系（mise経路の事前チェック失敗）は`ensure_mise_available`が
-    # mise stderrとhint文を改行区切りで連結した文面を例外引数に保持する契約。
-    # 対象の複数行文面は素通し採用し、mise stderrを欠落させない（runner.pyのmodule docstring参照）。
-    # `mise trust`の自動実行の失敗は、ツール不在ではなくmise設定の信頼が原因のため専用の文面にする。
     if raw_identifier.startswith(pyfltr.command.runner.MISE_TRUST_FAILURE_PREFIX):
         stderr = raw_identifier.removeprefix(pyfltr.command.runner.MISE_TRUST_FAILURE_PREFIX)
         return (
@@ -109,12 +77,6 @@ def failed_resolution_result(
     files: int,
     hint: str | None = None,
 ) -> CommandResult:
-    """ツール解決失敗時の `CommandResult` を組み立てる。
-
-    `files` には実際の処理対象件数を渡す。`status` は `resolution_failed` を返し、
-    通常の実行失敗（`failed`）と区別できるようにする。
-    `hint` を指定すると `emit_warning` 経由で利用者向けの追加案内を併記する。
-    """
     pyfltr.warnings_.emit_warning(
         source="tool-resolve",
         message=f"{command}: {message}",
@@ -144,16 +106,6 @@ _UV_TOOL_MISSING_PATTERNS: tuple[str, ...] = ("does not have",)
 
 
 def maybe_emit_uv_missing_tool_warning(result: CommandResult) -> None:
-    """uv / uvx経路でツール未登録の出力を検出した場合に登録手順の案内警告を発行する。
-
-    semgrepとsqlfluffを除くPython系ツール一式は本体依存に同梱されているため
-    `uvx pyfltr` 単発で動作するが、
-    利用者プロジェクトに `uv.lock` が存在すると既定の `python-runner = "uv"` により
-    `uv run --frozen <bin>` 経由でプロジェクトのvenvに登録されたツールを呼び出す。
-    プロジェクト側に未登録の場合は `uv run` がエラーで失敗するため、登録手順を案内する。
-    `uvx` 経路でも同種のエラー出力（`does not have ... as a dependency`）が出る可能性は薄いが、
-    判定ルールを揃える方針で同じ案内を発行する。
-    """
     if result.effective_runner not in {"uv", "uvx"}:
         return
     if result.returncode is None or result.returncode == 0:

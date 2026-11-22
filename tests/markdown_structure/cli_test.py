@@ -1,8 +1,3 @@
-"""`python -m pyfltr.markdown_structure`の公開CLI契約のテスト。
-
-検出条件と除外条件はdotfilesの`scripts/check_markdown_structure_test.py`が確かめていた入力を引き継ぐ。
-"""
-
 import pathlib
 import subprocess
 import sys
@@ -46,7 +41,6 @@ def _where(path: pathlib.Path) -> str:
     ],
 )
 def test_fix_preserves_source_and_list_structure(tmp_path: pathlib.Path, source: str, expected: str) -> None:
-    """違反を報告し、`--fix`は改行とリスト継続の字下げだけを加え、再実行しても変えない。"""
     path = tmp_path / "doc.md"
     path.write_bytes(source.encode("utf-8"))
     assert _run(path).returncode == 1
@@ -80,7 +74,6 @@ def test_fix_preserves_source_and_list_structure(tmp_path: pathlib.Path, source:
     ],
 )
 def test_excluded_constructs_are_unchanged(tmp_path: pathlib.Path, source: str) -> None:
-    """コード・HTMLコメント・frontmatter・見出し・表・引用・逐語引用の段落などは修正しない。"""
     path = tmp_path / "doc.md"
     path.write_text(source, encoding="utf-8")
     assert _run("--fix", path).returncode == 0
@@ -102,7 +95,6 @@ def test_excluded_constructs_are_unchanged(tmp_path: pathlib.Path, source: str) 
     ],
 )
 def test_fix_reports_unsafe_break_without_writing(tmp_path: pathlib.Path, source: str, reason: str) -> None:
-    """安全でない文境界は理由付きで報告し、元のバイト列を維持する。"""
     path = tmp_path / "doc.md"
     path.write_bytes(source.encode())
     result = _run("--fix", path)
@@ -115,7 +107,6 @@ def test_fix_reports_unsafe_break_without_writing(tmp_path: pathlib.Path, source
 
 @pytest.mark.parametrize("marker", ["{{", "{%", "{#"])
 def test_fix_breaks_ordinary_text_with_unmatched_template_marker(tmp_path: pathlib.Path, marker: str) -> None:
-    """閉じ記号を伴わない開始記号だけを記法例に含む通常の文書は自動修正する。"""
     path = tmp_path / "doc.md"
     path.write_text(f"開始記号の例。\n\n```text\n{marker}\n```\n\n最初の文。次の文。\n", encoding="utf-8")
     result = _run("--fix", path)
@@ -124,7 +115,6 @@ def test_fix_breaks_ordinary_text_with_unmatched_template_marker(tmp_path: pathl
 
 
 def test_fix_keeps_safe_break_in_same_paragraph(tmp_path: pathlib.Path) -> None:
-    """安全でない境界の前後にある安全な境界は同じ段落でも修正する。"""
     path = tmp_path / "doc.md"
     path.write_bytes("甲。乙。- 丙。丁。\n".encode())
     result = _run("--fix", path)
@@ -134,7 +124,6 @@ def test_fix_keeps_safe_break_in_same_paragraph(tmp_path: pathlib.Path) -> None:
 
 
 def test_fix_does_not_combine_breaks_that_create_table(tmp_path: pathlib.Path) -> None:
-    """片方だけでは段落のままでも、両方を挿入すると表になる場合は片方だけ修正する。"""
     path = tmp_path / "doc.md"
     path.write_bytes("甲。| a | b。| - | - |\n".encode())
     result = _run("--fix", path)
@@ -144,7 +133,6 @@ def test_fix_does_not_combine_breaks_that_create_table(tmp_path: pathlib.Path) -
 
 
 def test_fix_preserves_heading_joined_by_jinja2_whitespace_control(tmp_path: pathlib.Path) -> None:
-    """原文では空行で分かれた段落が展開時に連結しても、見出しを分割しない。"""
     source = '{{ "# " -}}\n\n甲。乙。\n'
     path = tmp_path / "doc.md"
     path.write_bytes(source.encode())
@@ -163,7 +151,6 @@ def test_fix_preserves_heading_joined_by_jinja2_whitespace_control(tmp_path: pat
 
 
 def test_fix_preserves_rendered_jinja2_list(tmp_path: pathlib.Path) -> None:
-    """テンプレート原文と、複数回の展開でできるリスト・段落の構造を維持する。"""
     source = "{% for item in items %}- {{ item }}。説明。\n{% endfor %}\n"
     path = tmp_path / "doc.md"
     path.write_bytes(source.encode())
@@ -193,7 +180,6 @@ def test_fix_preserves_rendered_jinja2_list(tmp_path: pathlib.Path) -> None:
     ],
 )
 def test_nested_parentheses_are_errors_even_with_fix(tmp_path: pathlib.Path, source: str, location: str) -> None:
-    """全角丸括弧の入れ子は自動修正せず、位置付きのerrorを標準出力へ報告する。"""
     path = tmp_path / "doc.md"
     path.write_text(source, encoding="utf-8")
     result = _run("--fix", path)
@@ -214,7 +200,6 @@ def test_nested_parentheses_are_errors_even_with_fix(tmp_path: pathlib.Path, sou
     ],
 )
 def test_table_positions_and_following_paragraph(tmp_path: pathlib.Path, source: str, locations: list[str]) -> None:
-    """表のセルの括弧の深さは表全体で数え、後続の段落の位置を正しく報告する。"""
     path = tmp_path / "table.md"
     path.write_text(source, encoding="utf-8")
     result = _run(path)
@@ -226,7 +211,6 @@ def test_table_positions_and_following_paragraph(tmp_path: pathlib.Path, source:
 
 
 def test_fixtures_directory_is_not_excluded(tmp_path: pathlib.Path) -> None:
-    """dotfiles固有だった`fixtures`ディレクトリの除外を内蔵検査へ持ち込まない。"""
     path = tmp_path / "fixtures" / "request.md"
     path.parent.mkdir()
     path.write_text("甲。乙。\n", encoding="utf-8")
@@ -234,7 +218,6 @@ def test_fixtures_directory_is_not_excluded(tmp_path: pathlib.Path) -> None:
 
 
 def test_input_error_takes_precedence_and_other_files_are_checked(tmp_path: pathlib.Path) -> None:
-    """入力エラーは終了コード2とし、他のファイルの検査結果も報告する。"""
     bad = tmp_path / "bad.md"
     bad.write_bytes(b"\xff")
     violation = tmp_path / "doc.md"
@@ -249,7 +232,6 @@ def test_input_error_takes_precedence_and_other_files_are_checked(tmp_path: path
 
 @pytest.mark.parametrize("second_input", ["missing", "invalid-utf8", "directory"])
 def test_fix_prepares_all_inputs_before_writing(tmp_path: pathlib.Path, second_input: str) -> None:
-    """入力エラーがある場合は、他のファイルも書き換えない。"""
     first = tmp_path / "first.md"
     second = tmp_path / "second.md"
     third = tmp_path / "third.md"
@@ -268,7 +250,6 @@ def test_fix_prepares_all_inputs_before_writing(tmp_path: pathlib.Path, second_i
 
 
 def test_fix_writes_all_prepared_changes(tmp_path: pathlib.Path) -> None:
-    """複数ファイルの修正をすべて書き込む。"""
     paths = [tmp_path / "first.md", tmp_path / "second.md"]
     for path in paths:
         path.write_text("甲。乙。\n", encoding="utf-8")

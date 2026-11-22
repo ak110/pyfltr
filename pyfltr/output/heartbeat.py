@@ -1,5 +1,3 @@
-"""JSONLのheartbeat監視。"""
-
 import threading
 import time
 import typing
@@ -11,10 +9,6 @@ import pyfltr.output.logging_
 text_logger = pyfltr.output.logging_.text_logger
 lock = pyfltr.output.logging_.text_output_lock
 
-# heartbeat監視の発火しきい値（秒）。
-# パイプライン全体の「最後のJSONL出力からの経過時間」がこの値を超えると、
-# 実行中コマンドそれぞれに対して `status:"running"` レコードを発行する。
-# 設定キー化は複雑度を増やすだけで利用頻度が低いため固定値とする。
 _HEARTBEAT_THRESHOLD_SECONDS: float = 30.0
 """heartbeat発火しきい値（最後のJSONL出力からの無音時間、秒）。"""
 
@@ -69,14 +63,6 @@ class HeartbeatMonitor:
         self._thread: threading.Thread | None = None
 
     def start(self) -> None:
-        """監視スレッドを起動する。`stop()` 呼び出しまで非daemon相当でループする。
-
-        起動時点を初期最終出力時刻として常時上書きする。
-        モジュールグローバルな`_last_jsonl_output_time`は同一プロセスで`run_pipeline`が
-        複数回呼ばれるMCP経路で前回値が残存し得るため、毎回起動時に明示的に上書きする
-        （未初期化判定では2回目以降の起動で前回値がそのまま使われ、
-        起動直後にしきい値超過とみなされる誤発火を招く）。
-        """
         if self._thread is not None:
             return
         self._set_last_output_time(time.monotonic())
@@ -86,7 +72,6 @@ class HeartbeatMonitor:
         thread.start()
 
     def stop(self) -> None:
-        """監視スレッドを停止する。"""
         if self._thread is None:
             return
         self._stop_event.set()
@@ -94,43 +79,29 @@ class HeartbeatMonitor:
         self._thread = None
 
     def on_command_start(self, command: str) -> None:
-        """実行中コマンド集合に追加する。"""
         with self._lock:
             if command not in self._finished:
                 self._running[command] = time.monotonic()
 
     def on_command_end(self, command: str) -> None:
-        """実行中コマンド集合から削除する。"""
         with self._lock:
             self._running.pop(command, None)
 
     def finalize(self, command: str, emit: typing.Callable[[], None]) -> None:
-        """最終結果の確定と発行をheartbeatと同じ排他境界で行う。
-
-        subprocessの終了は段間にも発生するため、最終結果だけをここで確定する。
-        遅延した開始通知も確定済みcommandを実行中へ戻さない。
-        """
         with self._lock:
             self._finished.add(command)
             self._running.pop(command, None)
             emit()
 
     def _snapshot_running(self) -> list[tuple[str, float]]:
-        """現時点の実行中コマンドのリスト（command, start_time）を返す。"""
         with self._lock:
             return list(self._running.items())
 
     def _loop(self) -> None:
-        """監視ループ本体。`_tick_interval` 毎にしきい値判定を行う。"""
         while not self._stop_event.wait(self._tick_interval):
             self.tick(time.monotonic())
 
     def tick(self, now: float) -> None:
-        """1回分の判定。しきい値超過なら実行中各コマンドへrunningイベントを発行する。
-
-        テストから時刻依存の発火検証を行うためpublic APIとして公開する。
-        通常運用では`_loop`から自動的に呼ばれる。
-        """
         last_output = self._get_last_output_time()
         if last_output is None:
             return
@@ -139,8 +110,6 @@ class HeartbeatMonitor:
             return
         running = self._snapshot_running()
         if not running:
-            # 実行中コマンドが無ければheartbeat発行しても意味が無いため抑止する。
-            # ただし無音時間カウンタは更新して連続ティックでの再判定を抑える。
             self._set_last_output_time(now)
             return
         for command, started in running:
@@ -150,15 +119,8 @@ class HeartbeatMonitor:
                 elapsed = now - started
                 self._emit_text(f"{command} running for {elapsed:.0f}s (no JSONL output for {silence:.0f}s)")
                 self._emit_running(command, elapsed)
-        # heartbeat発火後、`_emit_running`内の `pyfltr.output.jsonl_emit._emit_structured` で `last_jsonl_output_time` が
-        # 自動的に更新されるため、明示更新は不要。次の判定はそこから再びしきい値経過後に発火する。
 
 
 def _heartbeat_text_emit(message: str) -> None:
-    """heartbeat発火時のtext_logger経由warning出力。
-
-    text_loggerはoutput_formatごとに出力先（stdout/stderr）が切り替わるため、
-    本関数はその差分を吸収する単純なラッパー。
-    """
     with lock:
         text_logger.warning(message)

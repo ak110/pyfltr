@@ -1,10 +1,4 @@
 #!/usr/bin/env python3
-"""pyfltrエントリポイントとサブコマンドdispatch。
-
-`main()` は console script エントリポイント。
-`run()` は引数パースとサブコマンドdispatchを担う薄い関数。
-実行系サブコマンドの本体は `cli/pipeline.py` の `run_impl` / `run_pipeline` が担う。
-"""
 
 import argparse
 import contextlib
@@ -29,21 +23,11 @@ import pyfltr.state.runs
 
 logger = logging.getLogger(__name__)
 
-# 環境変数を打ち消してリサイズに対応する
 os.environ.pop("COLUMNS", None)
 os.environ.pop("LINES", None)
 
 
 def _reconfigure_stdio_to_utf8() -> None:
-    """`sys.stdout` / `sys.stderr` をUTF-8で出力するよう切り替える。
-
-    Windows + Python 3.14では `sys.stdout` / `sys.stderr` の既定エンコーディングが
-    cp1252等のままになるケースがあり、`pyfltr.textout` が出力する日本語ログで
-    UnicodeEncodeErrorを起こす。`PYTHONUTF8` 環境変数や利用者側設定に依存せずに
-    挙動を揃えるため、エントリポイント直後に `reconfigure` を試みる。
-    `reconfigure` 未提供stream（差し替え済みTextIO等）や呼び出し失敗時は握り潰し、
-    既存挙動を維持する。
-    """
     for stream in (sys.stdout, sys.stderr):
         reconfigure = getattr(stream, "reconfigure", None)
         if reconfigure is None:
@@ -67,27 +51,17 @@ def main() -> typing.NoReturn:
 
 
 def run(sys_args: typing.Sequence[str] | None = None) -> int:
-    """処理の実行。"""
     if sys_args is None:
         sys_args = sys.argv[1:]
 
-    # -V / --versionはsubparser必須化の例外として、先頭に位置する場合のみ短絡処理する。
-    # argparseのrequired subparsersは位置引数を要求するため、単独の--versionでは
-    # usageエラーになってしまう。`pyfltr -V` の利便性を維持するため明示的に捌く。
-    # 版の表示は`$(pyfltr --version)`のように標準出力から受け取る利用側のため、ログではなく標準出力へ書く。
     if len(sys_args) == 1 and sys_args[0] in ("-V", "--version"):
         print(f"pyfltr {importlib.metadata.version('pyfltr')}")
         return 0
 
-    # ツール名をサブコマンドとして誤入力したケースを検知し、実行例付きで案内する。
-    # argparse既定の "invalid choice" エラーより具体的な導線になるため先に捌く。
     pyfltr.cli.parser.preflight_tool_name_as_subcommand(sys_args)
 
     parser = pyfltr.cli.parser.build_parser()
-    # grep / replaceは複数位置引数（pattern + paths）をオプション混在で受理する。
-    # argparseは`nargs="?"` + `nargs="*"`の組み合わせでサブパーサー側の
     # 位置引数解析が早期終了する挙動があり（Python 3.12〜3.15でも再現する）、`--output-format=jsonl`等が
-    # 位置引数列の途中に出現すると後続の`paths`値がunrecognizedとして除外される。
     # `parse_known_args`で残余を回収し、`paths`へ統合する経路で回避する。
     if sys_args and sys_args[0] in ("grep", "replace"):
         args, extras = parser.parse_known_args(list(sys_args))
@@ -105,23 +79,17 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
     if spec.execute is not None:
         return spec.execute(parser, args)
 
-    # サブコマンド別の既定値を注入する （CLI明示値が優先）。
     pyfltr.cli.command_selection.apply_subcommand_defaults(args)
 
-    # --no-fix指定時はinclude_fix_stageをFalseに差し戻す。
     if getattr(args, "no_fix", False):
         args.include_fix_stage = False
 
-    # retry_commandの対象ファイル差し替え時、--work-dir適用後の相対パスが
-    # 実行時のcwdと二重解釈されないよう、常に元cwdを起点に絶対パス化する。
-    # os.chdirよりも前のcwdを確実に取得するため、--work-dirの有無を問わず保存する。
     original_cwd = os.getcwd()
     resolved_targets: list[pathlib.Path] | None = None
     if args.work_dir is not None:
         resolved_targets = [t.absolute() for t in args.targets]
         args.work_dir = pathlib.Path(args.work_dir).expanduser().resolve()
 
-    # カスタムコマンド用の再パースコールバック。cli/parserへの参照をここで保持することで
     # cli/pipeline→cli/parserの直接依存（循環importの原因）を回避する。
     def _reparse_with_custom(custom_commands: list[str]) -> tuple[argparse.ArgumentParser, argparse.Namespace]:
         p = pyfltr.cli.parser.build_parser(custom_commands)

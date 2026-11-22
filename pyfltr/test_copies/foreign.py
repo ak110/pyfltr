@@ -1,5 +1,3 @@
-"""TS/TSXとRustのテスト宣言・比較式を部分解析する。"""
-
 import dataclasses
 import re
 
@@ -20,7 +18,6 @@ class _Token:
 
 
 def _tokens(source: str, rust: bool) -> tuple[list[_Token], dict[int, str]]:
-    """文字列中の擬似宣言・括弧を構造から除き、位置を保つ。"""
     quoted = (
         r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\\n])\'' if rust else r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\\n])*\'|`(?:\\.|[^`\\])*`'
     )
@@ -83,7 +80,6 @@ def _foreign_value(tokens: list[_Token], env: dict[str, str]) -> str:
     significant = [token for token in tokens if token.value not in {"(", ")", "[", "]", "{", "}", ",", ";", "&", "!"}]
     if not significant:
         return "unknown"
-    # 各要素が既知の値かを確認し、未知の関数呼出しを定数へ誤分類しない。
     kinds = []
     for index, token in enumerate(significant):
         if token.literal or token.value in {"true", "false", "null", "None", "vec"}:
@@ -287,7 +283,6 @@ def _ts_test_body(tokens: list[_Token], pairs: dict[int, int], call: int) -> tup
 
 
 def analyze_foreign(source: str, rust: bool) -> tuple[list[TestFunction], dict[int, str]]:
-    """テスト宣言ごとの比較とコメントの位置を返す。"""
     if rust and not re.search(r"#\s*\[\s*test\s*\]", source):
         return [], {}
     tokens, comments = _tokens(source, rust)

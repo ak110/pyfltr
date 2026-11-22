@@ -1,10 +1,7 @@
-"""python_lintersのツール登録。"""
-
 from pyfltr.diagnostics import ErrorLocation
 from pyfltr.tool_types import CommandInfo, FunctionRef, StructuredOutputSpec
 
 COMMANDS: dict[str, CommandInfo] = {
-    # Python linter群はモダン順（後ろほど新しい）に並べる。実行順はLPT並列で別管理。
     "pylint": CommandInfo(
         type="linter",
         fixed_cost=1.75,
@@ -26,8 +23,6 @@ COMMANDS: dict[str, CommandInfo] = {
         ),
         language="python",
         defaults={
-            # 自動オプション: 各ツールの望ましい引数を自動挿入する。
-            # *-argsとは独立して動作し、重複排除される。Falseで無効化可能。
             "pylint-pydantic": True,
             "pylint-json": True,
             "pylint": False,
@@ -51,16 +46,7 @@ COMMANDS: dict[str, CommandInfo] = {
         language="python",
         defaults={
             "mypy-unused-awaitable": True,
-            # コマンド毎に有効無効、パス、追加の引数を設定
-            # 言語カテゴリ（python / javascript / rust / dotnet）に属するツールはv3.0.0で
-            # opt-in化したため、既定値はFalse。presetで推奨ツールがTrueになり、
-            # カテゴリキー（`python = true`等）がgateを開けて有効化を通す構造。
-            # presetを使わず個別に`{command} = true`を指定するとgateを越えて最優先で有効化される。
             "mypy": False,
-            # pathが空文字の場合は{command}-runner設定
-            # （既定はツール群に応じてpython-runner/js-runner/bin-runner）に基づいて自動解決する。
-            # python-runner経路の既定（"uv"）によりcwdのuv.lock検出時はプロジェクトのuv環境を使う。
-            # {command}-path明示で従来挙動（指定パスを直接実行）に切り替えられる。
             "mypy-path": "",
             "mypy-args": [],
             "mypy-runner": "python-runner",
@@ -83,19 +69,12 @@ COMMANDS: dict[str, CommandInfo] = {
         ),
         language="python",
         defaults={
-            # 構造化出力: 対応ツールの出力形式をJSON等に切り替え、パーサーで
-            # ルールコード・severity・fix情報を構造化して取得する。
-            # *-argsとは独立した経路で注入されるためpyproject.tomlの上書きに影響されない。
             "ruff-check-json": True,
             "ruff-check": False,
             "ruff-check-path": "",
             "ruff-check-runner": "python-runner",
             "ruff-check-args": ["check"],
             "ruff-check-fast": True,
-            # fixモード時に通常argsの後に追加する引数。
-            # `ruff check --fix --unsafe-fixes`でautofix可能な違反を修正する。
-            # unsafe fix採用方針はbiome側（`biome-fix-args`）と統一する。
-            # （通常モードのruff-format-by-checkとは別経路で動作する）
             "ruff-check-fix-args": ["--fix", "--unsafe-fixes"],
         },
     ),

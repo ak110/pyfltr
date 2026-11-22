@@ -22,12 +22,6 @@ _REGEX_METACHARS = "[]()?*+{}|\\^$."
 
 
 def _deny_sample(*, require_replacement: bool = False) -> tuple[str, str | None]:
-    """denylistから正規表現記号を含まない単純なリテラル行を探して返す。
-
-    `words.txt`は正規表現の集合であり、記号を含む行はそのままテキストへ埋め込めない。
-    戻り値は`(パターン文字列, 置換候補)`のタプル。
-    `require_replacement=True`のときは置換候補列（タブ区切り）を持つ行に限定する。
-    """
     for line in pyfltr.colloquial.check.DENY_PATH.read_text(encoding="utf-8").splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
@@ -42,7 +36,6 @@ def _deny_sample(*, require_replacement: bool = False) -> tuple[str, str | None]
 
 
 def test_no_detection_exits_zero(tmp_path: pathlib.Path) -> None:
-    """検出なしのときexit 0でstdoutが空になる。"""
     target = tmp_path / "clean.md"
     target.write_text("plain ASCII content without any flagged phrase.\n", encoding="utf-8")
     result = _run(target)
@@ -51,7 +44,6 @@ def test_no_detection_exits_zero(tmp_path: pathlib.Path) -> None:
 
 
 def test_natural_written_actions_exit_zero(tmp_path: pathlib.Path) -> None:
-    """字義どおりの動作を表す和語8種を公開CLIでも許容する。"""
     target = tmp_path / "natural.md"
     target.write_text(
         "設定ファイルを作る。\n候補を一覧へ入れた。\n結果を画面に出す。\nカードを端末に差し込む。\n"
@@ -65,7 +57,6 @@ def test_natural_written_actions_exit_zero(tmp_path: pathlib.Path) -> None:
 
 
 def test_informal_and_metaphorical_expressions_keep_cli_candidates(tmp_path: pathlib.Path) -> None:
-    """くだけた語調と比喩の検出語・候補を公開CLIで維持する。"""
     target = tmp_path / "informal.md"
     target.write_text("めっちゃ速い。\n処理をやる。\nジョブが走る。\n入力を弾く。\n", encoding="utf-8")
     result = _run(target)
@@ -80,7 +71,6 @@ def test_informal_and_metaphorical_expressions_keep_cli_candidates(tmp_path: pat
 
 
 def test_detection_exits_one_with_expected_format(tmp_path: pathlib.Path) -> None:
-    """検出ありのときexit 1でstdoutに`path:line:col: [match] excerpt`形式の行が出る。"""
     deny_line, _ = _deny_sample()
     assert deny_line, "denylistから単純なリテラル行を取得できなかった"
     target = tmp_path / "hit.md"
@@ -94,7 +84,6 @@ def test_detection_exits_one_with_expected_format(tmp_path: pathlib.Path) -> Non
 
 
 def test_noun_gyou_followed_by_particles_exits_zero(tmp_path: pathlib.Path) -> None:
-    """名詞の行に助詞が続く文を、動詞として検出しない。"""
     target = tmp_path / "noun.md"
     target.write_text(
         "出力が`該当0件:`の行から成る。\n次の行から読む。\n次の行こそ重要。\nこの行くらいは残す。\n"
@@ -129,7 +118,6 @@ def test_noun_gyou_followed_by_particles_exits_zero(tmp_path: pathlib.Path) -> N
     ],
 )
 def test_verb_iku_keeps_detection(tmp_path: pathlib.Path, sentence: str, expected_match: str) -> None:
-    """名詞用法を許容しても、動詞の活用形の警告を維持する。"""
     target = tmp_path / "verb.md"
     target.write_text(sentence + "\n", encoding="utf-8")
     result = _run(target)
@@ -139,7 +127,6 @@ def test_verb_iku_keeps_detection(tmp_path: pathlib.Path, sentence: str, expecte
 
 
 def test_replacement_candidate_included(tmp_path: pathlib.Path) -> None:
-    """置換候補があるとき`-> [replacement]`がstdoutに含まれる。"""
     deny_line, replacement = _deny_sample(require_replacement=True)
     assert deny_line and replacement, "置換候補付きの単純なリテラル行を取得できなかった"
     target = tmp_path / "hit.md"
@@ -150,7 +137,6 @@ def test_replacement_candidate_included(tmp_path: pathlib.Path) -> None:
 
 
 def test_multiple_files_report_all_hits(tmp_path: pathlib.Path) -> None:
-    """複数ファイル指定時、全ての違反が列挙される。"""
     deny_line, _ = _deny_sample()
     assert deny_line
     target1 = tmp_path / "hit1.md"
@@ -166,7 +152,6 @@ def test_multiple_files_report_all_hits(tmp_path: pathlib.Path) -> None:
 
 
 def test_missing_file_is_skipped(tmp_path: pathlib.Path) -> None:
-    """存在しないファイルはスキップされ、他ファイルの検出結果は出力される。"""
     deny_line, _ = _deny_sample()
     assert deny_line
     missing = tmp_path / "missing.md"
@@ -177,7 +162,6 @@ def test_missing_file_is_skipped(tmp_path: pathlib.Path) -> None:
     lines = result.stdout.splitlines()
     assert len(lines) == 1
     assert lines[0].startswith(f"{pyfltr.paths.normalize_separators(target)}:")
-    # 検査できなかったファイルを伏せず、確認事項とともに標準エラーへ通知する
     assert pyfltr.paths.normalize_separators(missing) in result.stderr
     assert "読み取り権限を確認してください" in result.stderr
 
@@ -185,10 +169,6 @@ def test_missing_file_is_skipped(tmp_path: pathlib.Path) -> None:
 def test_no_replacement_candidate_shows_rewrite_guidance(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """置換候補の無い辞書行に一致した場合は、候補の位置に言い換えの方針を示す。
-
-    同梱の辞書は全行が置換候補を持つため、候補を持たない行だけの辞書へ差し替えて検証する。
-    """
     deny = tmp_path / "deny.txt"
     deny.write_text("ぶっちゃけ\n", encoding="utf-8")
     monkeypatch.setattr(pyfltr.colloquial.check, "DENY_PATH", deny)
@@ -203,11 +183,6 @@ def test_no_replacement_candidate_shows_rewrite_guidance(
 
 
 def test_cli_normalizes_backslash_in_filename(tmp_path: pathlib.Path) -> None:
-    """バックスラッシュを含む実ファイル名も公開CLI出力では`/`へ正規化する。
-
-    POSIX環境ではバックスラッシュが実ファイル名の一部として保持されるため、
-    正規化の適用有無を公開経路から観測できる。
-    """
     deny_line, _ = _deny_sample()
     assert deny_line
     target = tmp_path / r"nested\hit.md"

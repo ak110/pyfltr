@@ -44,7 +44,6 @@ async def test_tool_list_runs_returns_summaries(tmp_path: pathlib.Path) -> None:
 
     result = await pyfltr.cli.mcp_runs_tools.tool_list_runs(limit=10)
     assert len(result) == 2
-    # 新しい順（降順）
     assert result[0].run_id == run_id2
     assert result[1].run_id == run_id1
     assert result[0].exit_code == 1
@@ -73,7 +72,6 @@ async def test_tool_show_run_overview(tmp_path: pathlib.Path) -> None:
 
     result = await pyfltr.cli.mcp_runs_tools.tool_show_run(run_id)
     assert result.run_id == run_id
-    # runの識別子は最上位、待機区間はtimingが持ち、実行環境の内部値と保存形式の印は返さない。
     assert set(result.meta) <= set(pyfltr.cli.mcp_runs_tools.SHOW_RUN_META_KEYS)
     assert {"commands", "files", "started_at"} <= set(result.meta)
     for key in ("run_id", "slot_waits", "diagnostic_paths", "python", "executable", "platform"):
@@ -85,7 +83,6 @@ async def test_tool_show_run_overview(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.asyncio
 async def test_show_run_includes_elapsed_and_slow_tests(tmp_path: pathlib.Path) -> None:
-    """show_runの戻り値へ所要時間と遅いテスト一覧が現れる。"""
     store = pyfltr.state.archive.ArchiveStore(cache_root=tmp_path)
     run_id = store.start_run(commands=["pytest"])
     slow_tests = [pyfltr.command.slow_tests.SlowTest("tests/a_test.py::test_x", "call", 1.5)]
@@ -103,7 +100,6 @@ async def test_show_run_includes_elapsed_and_slow_tests(tmp_path: pathlib.Path) 
 
 @pytest.mark.asyncio
 async def test_show_run_returns_timing(tmp_path: pathlib.Path) -> None:
-    """show_runは待機区間・本体区間・run全体の経過を返し、未計測と0秒を区別する。"""
     store = pyfltr.state.archive.ArchiveStore(cache_root=tmp_path)
     run_id = store.start_run(commands=["pytest"])
     wait = {
@@ -173,8 +169,6 @@ async def test_tool_show_run_latest_empty() -> None:
 @pytest.mark.asyncio
 async def test_tool_show_run_ambiguous_prefix(tmp_path: pathlib.Path) -> None:
     run_ids = [_seed_run(tmp_path) for _ in range(2)]
-    # ULIDの先頭は同じタイムスタンプ部分（ミリ秒単位）を共有する可能性が高いため、
-    # 実際に共通する最長プレフィックスを算出してテストする。
     shared = _testconf.shared_prefix_length(run_ids[0], run_ids[1])
     if shared < 1:
         pytest.skip("shared prefixが無いケースでは曖昧判定にならない")
@@ -220,7 +214,6 @@ async def test_tool_show_run_diagnostics(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.asyncio
 async def test_tool_show_run_diagnostics_omits_commandline(tmp_path: pathlib.Path) -> None:
-    """検査対象ファイルの引数列を`command_meta`へ含めない。"""
     store = pyfltr.state.archive.ArchiveStore(cache_root=tmp_path)
     run_id = store.start_run(commands=["mypy"])
     result = dataclasses.replace(
@@ -238,7 +231,6 @@ async def test_tool_show_run_diagnostics_omits_commandline(tmp_path: pathlib.Pat
 
 @pytest.mark.asyncio
 async def test_tool_show_run_diagnostics_restores_hint_urls_and_hints(tmp_path: pathlib.Path) -> None:
-    """`hint_urls`と`hints`を専用フィールドだけへ復元する。"""
     error = _make_error("textlint", "a.md", 1, "長い文", col=1)
     error.rule = "ja-technical-writing/sentence-length"
     error.rule_url = "https://example.com/sentence-length"
@@ -260,7 +252,6 @@ async def test_tool_show_run_diagnostics_restores_hint_urls_and_hints(tmp_path: 
 
 @pytest.mark.asyncio
 async def test_tool_show_run_diagnostics_restores_optional_meta(tmp_path: pathlib.Path) -> None:
-    """遅いテスト一覧と再実行コマンドを`command_meta`へ復元する。"""
     store = pyfltr.state.archive.ArchiveStore(cache_root=tmp_path)
     run_id = store.start_run(commands=["pytest"])
     slow_tests = [pyfltr.command.slow_tests.SlowTest("tests/a_test.py::test_x", "call", 1.5)]
@@ -279,7 +270,6 @@ async def test_tool_show_run_diagnostics_restores_optional_meta(tmp_path: pathli
 
 @pytest.mark.asyncio
 async def test_tool_show_run_diagnostics_skipped_command(tmp_path: pathlib.Path) -> None:
-    """起動しなかったコマンドのNone終了コードを復元する。"""
     store = pyfltr.state.archive.ArchiveStore(cache_root=tmp_path)
     run_id = store.start_run(commands=["mypy"])
     store.write_tool_result(run_id, _make_result("mypy", returncode=None, files=0))
@@ -290,7 +280,6 @@ async def test_tool_show_run_diagnostics_skipped_command(tmp_path: pathlib.Path)
 
 @pytest.mark.asyncio
 async def test_tool_show_run_diagnostics_hints_none_when_absent(tmp_path: pathlib.Path) -> None:
-    """tool.jsonにhintsキーが無い場合、`show_run_diagnostics`の`hints`はNoneになる。"""
     run_id = _seed_run(
         tmp_path,
         tool_results=[
@@ -335,7 +324,6 @@ async def test_tool_show_run_output_tool_not_found(tmp_path: pathlib.Path) -> No
 
 @pytest.mark.asyncio
 async def test_show_run_diagnostics_reports_next_offset_when_messages_remain(tmp_path: pathlib.Path) -> None:
-    """範囲の後に指摘が残る場合は、続きを取得する開始位置を返す。"""
     errors = [_make_error("mypy", "src/a.py", line, f"指摘{line}") for line in (1, 2, 3)]
     run_id = _seed_run(tmp_path, tool_results=[("mypy", 1, "out", errors)])
 

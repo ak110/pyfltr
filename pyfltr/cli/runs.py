@@ -1,13 +1,3 @@
-"""`list-runs` / `show-run` サブコマンドの実装。
-
-実行アーカイブ（`state/archive.py`）に保存されたrunの読み取り経路をCLIから提供する。
-MCPサーバーでも本モジュールの読み取り処理を再利用する想定。
-
-サブパーサー登録は`register_subparsers()`、処理本体は`execute_list_runs()` /
-`execute_show_run()`が担う。`cli/main.py`からは引数パース済みの`argparse.Namespace`
-を受け取り、終了コードを返すだけの薄いAPIにする。
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -26,12 +16,6 @@ _DEFAULT_LIST_LIMIT: int = 20
 
 
 def register_subparsers(subparsers: typing.Any) -> None:
-    """`list-runs` / `show-run` サブパーサーを登録する。
-
-    `subparsers`は`ArgumentParser.add_subparsers()`の戻り値
-    （`argparse._SubParsersAction`）を想定する。サブコマンド固有引数のみを
-    登録し、実行系と共通の`--verbose`等は継承しない（参照系のため不要）。
-    """
     lr = subparsers.add_parser(
         "list-runs",
         help="実行アーカイブ内の run 一覧を表示する。",
@@ -89,7 +73,6 @@ def register_subparsers(subparsers: typing.Any) -> None:
 
 
 def execute_list_runs(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
-    """`list-runs` サブコマンドの処理本体。"""
     output_fmt = pyfltr.cli.output_format.resolve_output_format(
         parser,
         args.output_format,
@@ -110,7 +93,6 @@ def execute_list_runs(parser: argparse.ArgumentParser, args: argparse.Namespace)
 
 
 def execute_show_run(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
-    """`show-run` サブコマンドの処理本体。"""
     output_fmt = pyfltr.cli.output_format.resolve_output_format(
         parser,
         args.output_format,
@@ -154,7 +136,6 @@ def execute_show_run(parser: argparse.ArgumentParser, args: argparse.Namespace) 
 
 
 def _summary_to_dict(summary: pyfltr.state.archive.RunSummary) -> dict[str, typing.Any]:
-    """`RunSummary`を出力用dictに変換する。"""
     return {
         "run_id": summary.run_id,
         "started_at": summary.started_at,
@@ -167,7 +148,6 @@ def _summary_to_dict(summary: pyfltr.state.archive.RunSummary) -> dict[str, typi
 
 
 def _print_list_runs_text(summaries: list[pyfltr.state.archive.RunSummary]) -> None:
-    """`list-runs` の text 出力（固定幅テーブル）。"""
     if not summaries:
         print("(no runs)")
         return
@@ -197,7 +177,6 @@ def _show_run_overview(
     meta: dict[str, typing.Any],
     output_format: str,
 ) -> int:
-    """既定モード: meta + 経過時間の要約 + ツール別サマリを表示する。"""
     tool_summaries = pyfltr.state.runs.collect_tool_summaries(store, run_id)
     timing = pyfltr.state.runs.summarize_timing(meta)
     if output_format == "text":
@@ -218,10 +197,6 @@ def _print_run_overview_text(
     timing: dict[str, typing.Any],
     tool_summaries: list[dict[str, typing.Any]],
 ) -> None:
-    """`show-run`既定モードのtext出力（行形式`キー: 値`）。
-
-    未確定の値は`unfinished`、待機区間を計測しない版のrunは`not measured`と表示し、0秒と区別する。
-    """
     print(f"run_id: {run_id}")
     for key in ("started_at", "finished_at", "exit_code", "files", "cwd"):
         if key in meta and meta[key] is not None:
@@ -252,7 +227,6 @@ def _print_run_overview_text(
 
 
 def _format_seconds(value: typing.Any) -> str:
-    """秒数を表示用に整形する。値が無い場合は未確定として`unfinished`を返す。"""
     if isinstance(value, int | float) and not isinstance(value, bool):
         return f"{value:.3f}s"
     return "unfinished"
@@ -264,10 +238,6 @@ def _show_tools_detail(
     tools: list[str],
     output_format: str,
 ) -> int:
-    """`--commands`モード: 指定ツールのtool.json + diagnostics.jsonlを表示する。
-
-    複数ツール指定時は順に表示する。jsonモードでは`commands`配列にまとめる。
-    """
     entries: list[tuple[str, dict[str, typing.Any], list[dict[str, typing.Any]]]] = []
     for tool in tools:
         try:
@@ -296,8 +266,6 @@ def _show_tools_detail(
         for _tool, tool_meta, diagnostics in entries:
             _print_jsonl_line({"kind": "command", **tool_meta})
             for diagnostic in diagnostics:
-                # diagnostics.jsonl側はkind="diagnostic"込みで保存されているが、
-                # 古いrunや外部出力経路を考慮してkindを明示的に埋める。
                 record = {"kind": "diagnostic", **diagnostic}
                 _print_jsonl_line(record)
     return 0
@@ -307,11 +275,6 @@ def _print_tool_detail_text(
     tool_meta: dict[str, typing.Any],
     diagnostics: list[dict[str, typing.Any]],
 ) -> None:
-    """`--commands`モードのtext出力。
-
-    `diagnostics`は`(command, file)`単位の集約形式を想定し、各file見出しの下に
-    `messages[]`内の個別指摘をインデント付きで並べる。
-    """
     for key in (
         "command",
         "type",
@@ -352,7 +315,6 @@ def _print_tool_detail_text(
 
 
 def _format_message_line(file_part: str, message: dict[str, typing.Any]) -> str:
-    """1件分のmessageを`file:line:col [severity] (rule) msg`形式に整形する。"""
     line = message.get("line")
     col = message.get("col")
     location = file_part
@@ -378,7 +340,6 @@ def _show_tool_output(
     tool: str,
     output_format: str,
 ) -> int:
-    """`--commands <name> --output`モード: output.log全文を表示する。"""
     try:
         output = store.read_tool_output(run_id, tool)
     except FileNotFoundError:
@@ -399,22 +360,15 @@ def _show_tool_output(
 
 
 def _print_json(obj: dict[str, typing.Any]) -> None:
-    """単発JSONを整形付きでstdoutに書く（jsonモード）。"""
     pyfltr.output.auxiliary.print_json(obj, indent=2)
 
 
 def _print_jsonl_line(obj: dict[str, typing.Any]) -> None:
-    """JSONを1行でstdoutに書く（jsonlモード）。"""
     pyfltr.output.auxiliary.print_json(obj, compact=True)
 
 
 @contextlib.contextmanager
 def _stdout_owned(output_format: str) -> typing.Generator[None, None, None]:
-    """出力形式がjson / jsonlの場合にstdoutを構造化出力で専有するためのコンテキスト。
-
-    root loggerを抑止してlogging経由のstdout/stderr混入を防ぐ。エラー出力は
-    引き続き`sys.stderr.write()`で直接書く前提。textモードでは何もしない。
-    """
     if output_format not in ("json", "jsonl"):
         yield
         return

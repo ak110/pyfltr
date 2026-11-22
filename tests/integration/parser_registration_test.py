@@ -1,5 +1,3 @@
-"""組み込みパーサーの登録・特殊パス・親子の帰属とCLI・MCP診断を検査する。"""
-
 import asyncio
 import json
 import pathlib
@@ -25,7 +23,6 @@ _FIXTURES = json.loads(
 
 @pytest.mark.parametrize("file", ["sp ace_test.py", "odd:name.py", "scripttool", "gonescript", "lib/(impl).py"])
 def test_restore_pytest_subproject_positions_without_basis(file: str) -> None:
-    """保存出力の再解析は元ファイルの実在を要求せずサブプロジェクトへ戻す。"""
     test_file = file if " " in file or ":" in file else "caller_test.py"
     function = "test_script" if test_file == file else "boom"
     body = (
@@ -41,7 +38,6 @@ def test_restore_pytest_subproject_positions_without_basis(file: str) -> None:
     "command", [name for name, info in pyfltr.tools.BUILTIN_COMMANDS.items() if info.type in ("linter", "tester")]
 )
 def test_builtin_linters_and_testers_have_parser_and_failure_sample(command: str) -> None:
-    """全定義へ解析手段と失敗検体を要求し、診断の欠落を登録時に検出する。"""
     info = pyfltr.tools.BUILTIN_COMMANDS[command]
     assert info.error_pattern or info.diagnostic_pattern or info.parser or info.context_parser or info.path_resolving_parser, (
         f"{command}: tools.pyへ解析手段を登録し、registered_outputs.jsonへ位置付き失敗の検体を追加してください"
@@ -54,7 +50,6 @@ def test_builtin_linters_and_testers_have_parser_and_failure_sample(command: str
             f"{command}: 位置付き失敗の検体から診断を得られません。解析手段と検体を修正してください"
         )
     else:
-        # 行を報告しないツールも、実出力の構造と理由を検査してファイル診断を保持する。
         finding = json.loads(fixture["output"])["findings"]
         assert fixture["position_reason"]
         assert finding and all("line" not in item and "location" not in item for item in finding)
@@ -63,7 +58,6 @@ def test_builtin_linters_and_testers_have_parser_and_failure_sample(command: str
 
 @pytest.mark.parametrize("command", EXPECTED)
 def test_native_output_reaches_jsonl_and_mcp(command: str, tmp_path: pathlib.Path) -> None:
-    """実行ファイルだけをスタブへ差し替え、登録・解析・保存・返却の経路を通す。"""
     filename, expected_line = EXPECTED[command]
     target = tmp_path / filename
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -162,7 +156,6 @@ def test_native_output_reaches_jsonl_and_mcp(command: str, tmp_path: pathlib.Pat
 def test_builtin_position_delimiters(
     command: str, suffix: str, line: int, col: int | None, rule: str | None, severity: str | None, file: str
 ) -> None:
-    """各ツールのテキスト経路でパス全体と位置・本文を保つ。"""
     pattern = pyfltr.tools.BUILTIN_COMMANDS[command].require_diagnostic_pattern()
     errors = pyfltr.parsing.entry.parse_errors(command, file + suffix, error_pattern=pattern)
     assert len(errors) == 1
@@ -188,7 +181,6 @@ def test_builtin_position_delimiters(
     "noise", ["E   ValueError: bad time 10:20:30", ">       x[1:3:2]", "E   text:99: in noise", ">   text:99: in noise"]
 )
 def test_pytest_position_formats_preserve_filename(file: str, style: str, noise: str, tmp_path: pathlib.Path) -> None:
-    """pytestの5形式で同じファイルとテスト名を保ち、重複させない。"""
     summary = f"FAILED {file}::TestCase::test_sample - AssertionError: sample\n"
     if style == "summary":
         output = summary
@@ -214,7 +206,6 @@ def test_pytest_position_formats_preserve_filename(file: str, style: str, noise:
 
 
 def test_user_error_pattern_keeps_inline_search() -> None:
-    """利用者指定のパターンは行内検索を保つ。"""
     errors = pyfltr.parsing.entry.parse_errors(
         "custom", "prefix sample.py:3: failure", error_pattern=r"(?P<file>sample.py):(?P<line>\d+): (?P<message>.+)"
     )
@@ -231,14 +222,12 @@ _PYTEST_RUN_OUTPUTS = pathlib.Path(__file__).parents[1] / "parsing/data/pytest_r
         ("exception-group-auto", {"test_group": ("y_test.py", 10)}),
         (
             "runpy-extensionless-auto",
-            # 試験ファイル外の例外位置は、再実行対象を保つため試験ファイルの`line=0`の診断へ併記する
             {"test_extensionless_script": ("runpy_test.py", 0), "test_exec_string": ("runpy_test.py", 15)},
         ),
         ("showlocals-short", {"test_arg_location_like": ("z_test.py", 2), "test_local_location_like": ("z_test.py", 12)}),
     ],
 )
 def test_pytest_mixed_traceback_real_positions(form: str, expected: dict[str, tuple[str, int]], tmp_path: pathlib.Path) -> None:
-    """標準形式の混在・拡張子なし実ファイル・showlocalsの実出力を検証する。"""
     output = json.loads(_PYTEST_RUN_OUTPUTS.read_text(encoding="utf-8"))[form]
     (tmp_path / "scripttool").write_text("raise ValueError('from script')\n", encoding="utf-8")
     errors = pyfltr.parsing.entry.parse_errors("pytest", output, path_base=tmp_path, start_cwd=tmp_path)
@@ -250,8 +239,6 @@ def test_pytest_mixed_traceback_real_positions(form: str, expected: dict[str, tu
 
 @pytest.mark.parametrize("form", ["normal", "quiet", "xdist", "s", "q-s", "qq-s", "q-s-captured", "q-s-parent-durations"])
 def test_pytest_parent_owns_only_its_diagnostics_and_metadata(form: str) -> None:
-    """親の実行形態によらず、子の競合・所要時間・失敗を親へ帰属させない。"""
-    # scripts.parser_review pytest-formsでpytest 9.1.1の実出力を採取した検体。
     output = json.loads(_PYTEST_RUN_OUTPUTS.read_text(encoding="utf-8"))[form]
     assert pyfltr.parsing.pytest_config.detect_pytest_config_conflict(output) is None
     durations = pyfltr.command.slow_tests.parse_pytest_durations(output)
@@ -268,7 +255,6 @@ def test_pytest_parent_owns_only_its_diagnostics_and_metadata(form: str) -> None
 
 @pytest.mark.parametrize(("form", "line"), [("short-time", 2), ("auto-external-time", 5)])
 def test_pytest_real_time_failure_has_project_position(form: str, line: int) -> None:
-    """実出力にある例外本文と引数表示の時刻を位置と誤認しない。"""
     output = json.loads(_PYTEST_RUN_OUTPUTS.read_text(encoding="utf-8"))[form]
     errors = pyfltr.parsing.entry.parse_errors("pytest", output)
     assert [(error.file, error.line) for error in errors] == [("time_test.py", line)]
@@ -276,7 +262,6 @@ def test_pytest_real_time_failure_has_project_position(form: str, line: int) -> 
 
 @pytest.mark.parametrize("form", ["native-body", "doctest-files"])
 def test_pytest_native_and_doctest_real_positions(form: str, tmp_path: pathlib.Path) -> None:
-    """nativeの一覧補完と任意拡張子のdoctest位置を実出力で維持する。"""
     output = json.loads(_PYTEST_RUN_OUTPUTS.read_text(encoding="utf-8"))[form]
     output = output.replace("__SAMPLE_DIR__", tmp_path.as_posix())
     errors = pyfltr.parsing.entry.parse_errors("pytest", output, path_base=tmp_path, start_cwd=tmp_path)

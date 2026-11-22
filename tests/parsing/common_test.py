@@ -6,7 +6,6 @@ import pyfltr.tools
 
 
 def test_parse_errors_custom_pattern() -> None:
-    """カスタムerror-patternのテスト。"""
     pattern = r"(?P<file>[^:]+):(?P<line>\d+):(?P<col>\d+):\s*(?P<message>.+)"
     output = "src/foo.py:10:5: some error\nsrc/bar.py:20:3: another error"
     errors = pyfltr.parsing.entry.parse_errors("custom-tool", output, error_pattern=pattern)
@@ -19,7 +18,6 @@ def test_parse_errors_custom_pattern() -> None:
 
 
 def test_parse_errors_custom_pattern_normalizes_end_position() -> None:
-    """利用者定義のerror-pattern経由でも終了位置を包含行へ補正する。"""
     pattern = r"(?P<file>[^:]+):(?P<line>\d+):(?P<col>\d+)-(?P<end_line>\d+):(?P<end_col>\d+):\s*(?P<message>.+)"
     output = "src/a.py:5:2-6:1: next line head\nsrc/b.py:5:2-5:9: in line"
 
@@ -33,7 +31,6 @@ def test_parse_errors_custom_pattern_normalizes_end_position() -> None:
 
 
 def test_extract_last_line_skips_separators() -> None:
-    """区切り線のみの行をスキップして意味のある行を返す。"""
     output = "Some useful info\n===========================\n"
     result = pyfltr.parsing.entry.parse_summary("unknown-tool", output)
     assert result == "Some useful info"

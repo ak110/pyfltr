@@ -1,11 +1,3 @@
-"""ファイル走査とマッチ抽出。
-
-`expand_all_files()`で展開済みのファイル群に対して、`re.Pattern`を適用して
-`MatchRecord`/`FileMatchSummary`を逐次生成する。
-前後コンテキスト（`-A`/`-B`/`-C`）の重複統合とper-file/全体件数上限の打ち切り、
-ファイルタイプ・globフィルタ、UTF-8失敗時のCP932再試行とデコードエラー時のスキップを担う。
-"""
-
 import codecs
 import collections.abc
 import pathlib
@@ -15,9 +7,6 @@ import pyfltr.paths
 import pyfltr.warnings_
 from pyfltr.grep_.types import FileMatchSummary, MatchRecord
 
-# ripgrep流儀の言語タイプマッピング（最低限の9種）。
-# キーがタイプ名、値がglobパターン群。`Path.match`が末尾セグメントのglob一致を判定するため、
-# 拡張子のみで`*.py`形式に揃える。
 _TYPE_PATTERNS: dict[str, tuple[str, ...]] = {
     "python": ("*.py", "*.pyi"),
     "rust": ("*.rs",),
@@ -32,10 +21,6 @@ _TYPE_PATTERNS: dict[str, tuple[str, ...]] = {
 
 
 def emit_read_failure_warning(source: str, file: pathlib.Path, exc: Exception, *, encoding: str) -> None:
-    """grep・replaceで対象ファイルを読めずにスキップしたことを、原因と対処付きで警告する。
-
-    CLIとMCPの双方の走査経路から呼び、同じ事象に同じ文面を返す。
-    """
     path = pyfltr.paths.normalize_separators(file)
     if isinstance(exc, UnicodeDecodeError):
         pyfltr.warnings_.emit_warning(
@@ -52,11 +37,6 @@ def emit_read_failure_warning(source: str, file: pathlib.Path, exc: Exception, *
 
 
 def filter_files_by_type(files: list[pathlib.Path], types: list[str]) -> list[pathlib.Path]:
-    """`--type`相当のファイルタイプフィルタ。
-
-    `types`が空ならフィルタを行わず入力をそのまま返す。
-    未知のタイプ名は無視する（マッチ件数0扱い）。
-    """
     if not types:
         return list(files)
     patterns: list[str] = []
@@ -68,11 +48,6 @@ def filter_files_by_type(files: list[pathlib.Path], types: list[str]) -> list[pa
 
 
 def filter_by_globs(files: list[pathlib.Path], globs: list[str]) -> list[pathlib.Path]:
-    """`-g/--glob`相当のglobフィルタ。
-
-    `globs`が空なら入力をそのまま返す。
-    複数glob指定時はOR結合（いずれかに一致したファイルを残す）。
-    """
     if not globs:
         return list(files)
     return [f for f in files if any(f.match(g) for g in globs)]
@@ -90,27 +65,6 @@ def scan_files(
     max_filesize: int | None,
     multiline: bool,
 ) -> collections.abc.Iterator[MatchRecord | FileMatchSummary]:
-    """ファイル群をスキャンしてマッチを順次生成する。
-
-    Args:
-        files: 走査対象ファイル群（`expand_all_files()`等で除外フィルタ済みを想定）
-        pattern: `compile_pattern()`で生成済みの`re.Pattern`
-        before_context: マッチの前に出力する行数（`-B`、0以上）
-        after_context: マッチの後に出力する行数（`-A`、0以上）
-        max_per_file: ファイルごとの最大マッチ件数（0以下で無制限）
-        max_total: 全体の最大マッチ件数（0以下で無制限）
-        encoding: ファイル読み込み時のエンコーディング
-        max_filesize: 走査対象ファイルサイズ上限（バイト、`None`で無制限）
-        multiline: ファイル全体に対して`finditer`を適用するか（行単位ではなく）
-
-    Yields:
-        `MatchRecord`を逐次生成する。本実装では`FileMatchSummary`は生成しないが、
-        ファイル単位サマリー出力経路（`--count`等）の拡張余地として戻り値型に含める
-
-    UTF-8指定時はデコード失敗後にCP932で再試行する。
-    再試行後もエンコーディングデコードエラーが発生したファイルはスキップし、
-    `pyfltr.warnings_`へ警告を蓄積する。
-    """
     total = 0
     for file in files:
         if 0 < max_total <= total:
@@ -145,7 +99,6 @@ def scan_files(
 
 
 def _read_search_text(file: pathlib.Path, encoding: str) -> str:
-    """検索用本文を読み、UTF-8の復号失敗時だけCP932をstrictで再試行する。"""
     try:
         return file.read_text(encoding=encoding)
     except UnicodeDecodeError:
@@ -163,14 +116,6 @@ def _scan_text(
     after_context: int,
     multiline: bool,
 ) -> collections.abc.Iterator[MatchRecord]:
-    """単一ファイルの本文に対してマッチを抽出する。
-
-    - 行単位走査時は各行に対して`finditer`を適用し、行頭からの列番号を採用する
-    - マルチラインモード時はファイル全体に`finditer`を適用し、マッチ開始位置から
-      行番号を逆算する。end_colはマッチ末尾の行頭からの列番号で算出する
-    - 同一ファイル内で連続するマッチの前後コンテキストは重複行を生成しないよう
-      隣接マッチ起点で重複範囲を切り詰める
-    """
     lines = text.splitlines()
     if not lines:
         return
@@ -184,15 +129,13 @@ def _scan_text(
             after_context=after_context,
         )
         return
-    # 行単位走査。前マッチの末尾行（`after`に含まれた最終行）以降からコンテキストを切り詰める
-    last_after_end_line = 0  # 直前マッチが`after`まで含めて占有した最終行番号（1-origin、0は未占有）
+    last_after_end_line = 0
     for line_index, line_text in enumerate(lines):
         line_no = line_index + 1
         for m in pattern.finditer(line_text):
             start_col = m.start() + 1
             end_col = m.end() + 1
             before_start = max(0, line_index - before_context)
-            # 直前マッチが既に出力した行と重ならないよう開始位置を後方へ移動する
             before_start = max(before_start, last_after_end_line)
             before_lines = lines[before_start:line_index]
             after_end = min(len(lines), line_index + 1 + after_context)
@@ -207,7 +150,6 @@ def _scan_text(
                 before_lines=list(before_lines),
                 after_lines=list(after_lines),
             )
-            # 次マッチのbefore範囲がここまでの行と重ならないよう、現マッチの`after`末尾を記録
             last_after_end_line = after_end
 
 
@@ -220,13 +162,6 @@ def _scan_multiline(
     before_context: int,
     after_context: int,
 ) -> collections.abc.Iterator[MatchRecord]:
-    """マルチラインモード時のマッチ抽出。
-
-    `finditer`をテキスト全体に適用し、マッチ開始位置から行番号・列番号を逆算する。
-    """
-    # 各行の開始オフセット（`text`内バイト数ではなく文字数）。
-    # `splitlines`では末尾改行が除去されるため、`text`を`\n`で分割した結果と整合させる目的で
-    # 単純に`\n`位置を集計する形に揃える。
     line_starts: list[int] = [0]
     for i, ch in enumerate(text):
         if ch == "\n":
@@ -261,9 +196,6 @@ def _scan_multiline(
 
 
 def _find_line_index(line_starts: list[int], pos: int) -> int:
-    """文字オフセットから0-origin行番号を返す。"""
-    # 線形探索で十分（マルチラインマッチの想定回数が低いため）。
-    # 二分探索化はホットスポットになった場合に再考する
     line_index = 0
     for i, start in enumerate(line_starts):
         if start <= pos:
@@ -280,20 +212,6 @@ def compute_block_ranges(
     before_context: int,
     after_context: int,
 ) -> list[tuple[int, int]]:
-    """アンカーにマッチした行の前後コンテキストで定まる行範囲集合を返す。
-
-    `replace --within`のブロック内限定置換で、置換を許可する領域を決めるために使う。
-    各範囲は0-origin行インデックスの半開区間`[start, end)`で表す。
-    アンカーは行単位で評価し（マルチラインは`--within`で併用不可）、
-    マッチ行を中心に`before_context`行前から`after_context`行後までを範囲とする。
-    重複・隣接する範囲は`_merge_line_ranges`で1つに統合する。
-
-    Args:
-        text: 対象ファイルの全文
-        anchor: 領域の起点を決めるアンカーパターン（`compile_pattern()`生成済み）
-        before_context: マッチ行の前に含める行数（`-B`、0以上）
-        after_context: マッチ行の後に含める行数（`-A`、0以上）
-    """
     lines = text.splitlines()
     ranges: list[tuple[int, int]] = []
     for line_index, line_text in enumerate(lines):
@@ -305,10 +223,6 @@ def compute_block_ranges(
 
 
 def _merge_line_ranges(ranges: list[tuple[int, int]]) -> list[tuple[int, int]]:
-    """0-origin半開区間の行範囲集合を昇順整列し、重複・隣接を統合する。
-
-    半開区間のため`start == last_end`（間に隙間が無く連続する）も統合対象とする。
-    """
     if not ranges:
         return []
     ordered = sorted(ranges)

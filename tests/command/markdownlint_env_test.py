@@ -54,7 +54,6 @@ def test_failed_install_is_retried_and_completed_install_is_reused(
         assert (stage / "braces-3.0.3.patch").read_bytes() == pyfltr.command.markdownlint_env.PATCH_PATH.read_bytes()
         manifest = json.loads((stage / "package.json").read_text())
         assert manifest["pnpm"]["patchedDependencies"] == {"braces@3.0.3": "braces-3.0.3.patch"}
-        # 導入する依存はmanifestの宣言だけが決め、installがそれを消費する。
         assert manifest["dependencies"] == {"markdownlint-cli2": "latest"}
         assert argv[argv.index("--dir") + 2] == "install"
         assert "markdownlint-cli2" not in argv
@@ -84,7 +83,6 @@ def test_failed_install_is_retried_and_completed_install_is_reused(
     assert not list(_environment.root.parent.glob("install-*"))
     monkeypatch.setattr(pyfltr.command.markdownlint_env, "CACHE_MAX_BYTES", capacity)
     pyfltr.command.markdownlint_env.ensure_environment(_environment, timeout=30)
-    # 既存環境は容量を増やさず使える。
     monkeypatch.setattr(pyfltr.command.markdownlint_env, "CACHE_MAX_BYTES", 0)
     pyfltr.command.markdownlint_env.ensure_environment(_environment, timeout=30)
     assert pathlib.Path(_environment.executable).read_text() == "completed"
@@ -94,7 +92,6 @@ def test_failed_install_is_retried_and_completed_install_is_reused(
 
 
 def _fake_pnpm_path(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
-    """PATH上の`pnpm`をWindowsでは`.cmd`のshimとして置く。"""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     if os.name == "nt":
@@ -275,5 +272,4 @@ async def test_acquisition_failure_reaches_cli_and_mcp_and_retry_succeeds(
             assert not calls
         acquired = True
     assert calls and pathlib.Path(calls[-1][0]) == pathlib.Path(environment.executable)
-    # 失敗時のrunner入口1回と、再試行時のrunner・dispatcher両入口を通る。
     assert len(prepared) == 3

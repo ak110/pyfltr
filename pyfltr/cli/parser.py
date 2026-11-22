@@ -1,9 +1,3 @@
-"""argparse構築。
-
-`build_parser()` / `make_common_parent()` とサブコマンド一覧定数を担う。
-"""
-
-# MCPサーバーの実装と依存（mcp SDK）は`mcp`サブコマンドの実行時だけ読み込む。
 # Python 3.15以上で遅延importとなり、それ未満の版では通常のimportとして扱われる（PEP 810）。
 __lazy_modules__ = ["pyfltr.cli.mcp_server"]
 
@@ -40,31 +34,12 @@ _STATIC_COMMAND_ALIASES: tuple[str, ...] = ("format", "lint", "test", "audit")
 
 
 class _HelpOnErrorArgumentParser(argparse.ArgumentParser):
-    """argparseエラー時に `--help` 相当をstderrに併記してから終了するArgumentParser。
-
-    argparse既定のerror() はエラー文のみを出力してexit 2するため、利用者が正しい書式を
-    取り違えたまま同じミスを繰り返しやすい。本サブクラスではエラー文の前に
-    `self.print_help(sys.stderr)` を呼び、該当parserのヘルプを併記する。
-    サブコマンド側のエラーでは対象のサブコマンドのparser、メインの誤サブコマンドでは
-    メインのparserのヘルプが出る（argparseの階層別parser_classで継承させるため）。
-    """
-
     def error(self, message: str) -> typing.NoReturn:
         self.print_help(sys.stderr)
         self.exit(2, f"\n{self.prog}: error: {message}\n")
 
 
 def preflight_tool_name_as_subcommand(sys_args: typing.Sequence[str]) -> None:
-    """ツール名をサブコマンドとして入力したケースを検知し、実行例付きメッセージを出力してexit 2。
-
-    `uv run pyfltr textlint ...` / `pyfltr lint docs/` など、利用者がツール名またはエイリアスを
-    そのままサブコマンドとして指定した場合に、正しい `--commands=<tool>` 書式の実行例を提示する。
-    該当しない場合は何も行わずに返し、通常のargparse処理を続行する。
-
-    検出対象は `pyfltr.builtin_commands.BUILTIN_COMMAND_NAMES` + 静的エイリアス
-    `format` / `lint` / `test`。カスタムコマンドはpyproject.toml読込後にしか
-    確定しないため対象外とする。
-    """
     if not sys_args:
         return
     candidate = sys_args[0]
@@ -88,12 +63,6 @@ def preflight_tool_name_as_subcommand(sys_args: typing.Sequence[str]) -> None:
 
 
 def make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> "_HelpOnErrorArgumentParser":
-    """実行系サブコマンド用の共通オプションをまとめた親parserを返す。
-
-    `parents=[common]` 経由で各サブコマンドに継承させる。`custom_commands` は
-    `pyproject.toml` で定義されたカスタムコマンド名の列で、`--{cmd}-args`
-    オプションとして追加登録される （ビルトインと同じ扱い）。
-    """
     common = _HelpOnErrorArgumentParser(add_help=False)
     common.add_argument("-v", "--verbose", default=False, action="store_true", help="詳細な出力を表示します。")
     common.add_argument(
@@ -291,7 +260,6 @@ def make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> "
         ),
     )
 
-    # 各コマンド用の引数追加オプション （ビルトイン + カスタム）
     registered: set[str] = set()
     for command in pyfltr.tools.BUILTIN_COMMANDS:
         registered.add(command)
@@ -319,11 +287,6 @@ def make_common_parent(custom_commands: collections.abc.Iterable[str] = ()) -> "
 
 
 def build_parser(custom_commands: collections.abc.Iterable[str] = ()) -> "_HelpOnErrorArgumentParser":
-    """引数パーサーを生成。サブコマンド必須化 （v3.0.0）。
-
-    メインおよび全サブコマンドparserには `_HelpOnErrorArgumentParser` を用い、
-    argparseエラー時に該当parserの `--help` 相当をまとめてstderrへ出力する。
-    """
     parser = _HelpOnErrorArgumentParser(
         description=(
             "組み込みツールとプロジェクト固有チェックを統合し、"
@@ -345,11 +308,6 @@ def build_parser(custom_commands: collections.abc.Iterable[str] = ()) -> "_HelpO
 
     common = make_common_parent(custom_commands)
 
-    # サブコマンド別の既定値 （exit_zero_even_if_formatted / commands / output_format ）
-    # include_fix_stage) は `apply_subcommand_defaults` で解決する。
-    # subparser単位の `set_defaults` は `parents=[common]` で共有された
-    # 名前空間を通じて他サブパーサーのdefaultも書き換えてしまうため採用しない
-    # （argparseの既知挙動）。
     registered: set[str] = set()
     for spec in SUBCOMMANDS:
         if spec.run_help is not None:
@@ -363,7 +321,6 @@ def build_parser(custom_commands: collections.abc.Iterable[str] = ()) -> "_HelpO
 
 
 def register_config(subparsers: typing.Any) -> None:
-    """設定操作の引数を登録する。"""
     # config: 設定ファイル操作（pnpm/npm config互換のget/set/delete/list）
     config_parser = subparsers.add_parser("config", help="設定ファイルを操作する。")
     config_subparsers = config_parser.add_subparsers(
@@ -429,8 +386,6 @@ def register_config(subparsers: typing.Any) -> None:
 
 
 def register_shell_completion(subparsers: typing.Any) -> None:
-    """補完生成の引数を登録する。"""
-    # generate-shell-completion: 補完スクリプト出力
     gsc_parser = subparsers.add_parser(
         "generate-shell-completion",
         help="シェル補完スクリプトを出力する。",
@@ -443,17 +398,12 @@ def register_shell_completion(subparsers: typing.Any) -> None:
 
 
 def execute_shell_completion(_parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
-    """登録表から生成した一覧を補完スクリプトへ渡す。"""
     script = pyfltr.cli.shell_completion.generate(args.shell, make_common_parent(), frozenset(ALL_SUBCOMMANDS))
     print(script, end="")
     return 0
 
 
 def _register_mcp_subparser(subparsers: typing.Any) -> None:
-    """`mcp`サブパーサーを登録する。
-
-    MCPサーバーの実装を読み込まずにパーサーを構築できるよう、登録だけを本モジュールに置く。
-    """
     subparsers.add_parser(
         "mcp",
         help="MCP サーバーを stdio で起動する。",
@@ -462,8 +412,6 @@ def _register_mcp_subparser(subparsers: typing.Any) -> None:
 
 @dataclasses.dataclass(frozen=True)
 class Subcommand:
-    """名前、引数登録、実行入口とhelp文面の共通定義。"""
-
     name: str
     epilog: str
     run_help: str | None = None
@@ -562,7 +510,6 @@ ALL_SUBCOMMANDS: tuple[str, ...] = tuple(spec.name for spec in SUBCOMMANDS)
 
 
 def build_epilog() -> str:
-    """登録表から従来のサブコマンド案内を生成する。"""
     return (
         "サブコマンド:\n"
         + "".join(spec.epilog for spec in SUBCOMMANDS)

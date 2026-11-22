@@ -11,7 +11,6 @@ import pyfltr.output.jsonl_records
 
 
 def test_dump_roundtrip() -> None:
-    """aggregate_diagnosticsで生成したdiagnosticレコードがJSON往復可能であることのテスト。"""
     error = pyfltr.diagnostics.ErrorLocation(
         file="src/foo.py",
         line=10,
@@ -34,7 +33,6 @@ def test_dump_roundtrip() -> None:
     )
     config = pyfltr.config.config.create_default_config()
     lines = pyfltr.output.jsonl.build_command_lines(result, config)
-    # 最初の行がdiagnosticレコード
     parsed = json.loads(lines[0])
     assert parsed["kind"] == "diagnostic"
     assert parsed["command"] == "ruff-check"
@@ -42,7 +40,6 @@ def test_dump_roundtrip() -> None:
 
 
 def test_build_warning_record() -> None:
-    """warning dictがkind/source/msg/hintを持つレコードに変換される。"""
     config = pyfltr.config.config.create_default_config()
     lines = pyfltr.output.jsonl.build_lines(
         [],
@@ -50,14 +47,12 @@ def test_build_warning_record() -> None:
         exit_code=0,
         warnings=[{"source": "config", "message": "foo", "hint": "設定値を修正してください。"}],
     )
-    # summary行の前にwarning行が出力される
     warning_line = next(line for line in lines if json.loads(line).get("kind") == "warning")
     record = json.loads(warning_line)
     assert record == {"kind": "warning", "source": "config", "msg": "foo", "hint": "設定値を修正してください。"}
 
 
 def test_build_warning_record_with_hint() -> None:
-    """hintがあればwarningレコードにhintキーが含まれる。"""
     config = pyfltr.config.config.create_default_config()
     lines = pyfltr.output.jsonl.build_lines(
         [],
@@ -76,7 +71,6 @@ def test_build_warning_record_with_hint() -> None:
 
 
 def test_build_command_lines_truncates_diagnostics_when_archived() -> None:
-    """jsonl-diagnostic-limit超過時、先頭N件の個別指摘に切り詰めてから集約する。"""
     errors = [
         pyfltr.diagnostics.ErrorLocation(file="src/foo.py", line=i, col=None, command="mypy", message=f"err{i}")
         for i in range(10)
@@ -95,7 +89,6 @@ def test_build_command_lines_truncates_diagnostics_when_archived() -> None:
     config = pyfltr.config.config.create_default_config()
     config.values["jsonl-diagnostic-limit"] = 3
     lines = pyfltr.output.jsonl.build_command_lines(result, config)
-    # 3件とも同一fileのため集約後は1 diagnostic行 + tool行 = 2行
     assert len(lines) == 2
     diag_record = json.loads(lines[0])
     assert diag_record["kind"] == "diagnostic"
@@ -107,7 +100,6 @@ def test_build_command_lines_truncates_diagnostics_when_archived() -> None:
 
 
 def test_build_command_lines_no_truncation_when_not_archived() -> None:
-    """archived=Falseのときは切り詰めをスキップして全件出力する。"""
     errors = [
         pyfltr.diagnostics.ErrorLocation(file="src/foo.py", line=i, col=None, command="mypy", message=f"err{i}")
         for i in range(10)
@@ -126,7 +118,6 @@ def test_build_command_lines_no_truncation_when_not_archived() -> None:
     config = pyfltr.config.config.create_default_config()
     config.values["jsonl-diagnostic-limit"] = 3
     lines = pyfltr.output.jsonl.build_command_lines(result, config)
-    # 切り詰めなし: 同一fileのため集約後は1 diagnostic行 + tool行 = 2行、messages 10件
     assert len(lines) == 2
     diag_record = json.loads(lines[0])
     assert len(diag_record["messages"]) == 10
@@ -136,7 +127,6 @@ def test_build_command_lines_no_truncation_when_not_archived() -> None:
 
 
 def test_command_result_status_warning_when_severity_warning() -> None:
-    """severity="warning"設定下では通常失敗が status="warning" に格下げされる。"""
     result = pyfltr.command.core_.CommandResult(
         command="colloquial",
         command_type="linter",
@@ -151,7 +141,6 @@ def test_command_result_status_warning_when_severity_warning() -> None:
 
 
 def test_command_result_status_failed_when_severity_error() -> None:
-    """severity="error"（既定）は従来通りfailedを返す。"""
     result = pyfltr.command.core_.CommandResult(
         command="mypy",
         command_type="linter",
@@ -166,7 +155,6 @@ def test_command_result_status_failed_when_severity_error() -> None:
 
 
 def test_command_result_status_resolution_failed_ignores_severity() -> None:
-    """resolution_failedはseverity="warning"でもresolution_failedのまま。"""
     result = pyfltr.command.core_.CommandResult(
         command="colloquial",
         command_type="linter",
@@ -182,7 +170,6 @@ def test_command_result_status_resolution_failed_ignores_severity() -> None:
 
 
 def test_command_result_status_timeout_ignores_severity() -> None:
-    """timeout_exceededはseverity="warning"でもfailedのまま。"""
     result = pyfltr.command.core_.CommandResult(
         command="colloquial",
         command_type="linter",

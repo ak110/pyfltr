@@ -1,20 +1,3 @@
-"""`command-info` サブコマンドの実装。
-
-設定済みツールの起動方式（runner種別・実行ファイルパス・最終起動コマンドライン）を
-副作用無しで参照するための導入経路。`mise install` / `mise trust`等は引き起こさない。
-`--check`を明示指定したときのみ`ensure_mise_available`と`ensure_package_manager_version`を
-呼び、実行経路（`dispatcher._prepare_execution_params`）と同じ検査を通す。
-事前確認に成功した場合は`probe_tool_version_text`で実行版を取得し、
-`check_installed_version`へ載せる。
-
-応答フィールドの接頭辞は値の出所を表す。`configured_`は既定値・グローバル設定・
-プロジェクト設定を統合したパス・引数系の実効設定値、`check_`は`--check`指定時のみ得られる実測値である。
-接頭辞を持たない設定由来フィールドは`enabled`・`severity`・`hints`・`version`である。
-このほかの接頭辞を持たないフィールドは解決状態または環境情報を表す。
-既存の`version`は`{command}-version`設定値であり、実行版は事前確認に成功した場合の
-`check_installed_version`が返す。
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -37,7 +20,6 @@ import pyfltr.output.auxiliary
 
 
 def register_subparsers(subparsers: typing.Any) -> None:
-    """`command-info` サブパーサーを登録する。"""
     parser = subparsers.add_parser(
         "command-info",
         help="ツール起動方式（runner / 実行ファイル / 最終コマンドライン等）の解決結果を表示する。",
@@ -71,7 +53,6 @@ def register_subparsers(subparsers: typing.Any) -> None:
 
 
 def execute_command_info(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
-    """`command-info` サブコマンドの処理本体。"""
     try:
         config = pyfltr.config.config.load_config()
     except (ValueError, OSError) as e:
@@ -101,18 +82,6 @@ def execute_command_info(parser: argparse.ArgumentParser, args: argparse.Namespa
 
 
 def collect_info(command: str, config: pyfltr.config.model.Config, *, do_check: bool) -> dict[str, typing.Any]:
-    """ツール解決情報を辞書で組み立てる。
-
-    MCPの`command_info`ツールからも呼び出す。
-    解決自体に失敗した場合も例外は外へ伝播させず、`error`キーを含めたdictを返す
-    （`command-info`は調査用途のため、解決失敗そのものも観測したいケースが多い）。
-    mise active tools取得状況（status/detail/active_keys）と、tool spec省略採用フラグ・
-    判定キーをまとめて露出し、自己診断や名称ずれ検出に利用できるようにする。
-    `do_check`が真かつ事前確認に成功したときは実行版を`check_installed_version`へ載せる。
-    取得できなかった場合は`None`を載せる。`do_check`が偽の場合と事前確認に失敗した場合は
-    キーごと省略する。実行版の取得は`--version`のsubprocess起動を伴うため、
-    副作用なし契約の下では行わない。
-    """
     enabled = bool(config.values.get(command, False))
     runner, source = pyfltr.command.runner.resolve_runner(command, config)
 
@@ -130,16 +99,11 @@ def collect_info(command: str, config: pyfltr.config.model.Config, *, do_check: 
         "dotnet_root": os.environ.get("DOTNET_ROOT"),
     }
 
-    # mise active tools判定で照合に使うキーは、対象コマンドがmise backendに登録されている
-    # 場合のみ意味があるため、登録外（python系・js系等）は省略する。
     active_tool_key = pyfltr.command.runner.get_mise_active_tool_key(command)
     if active_tool_key is not None:
         base["mise_active_tool_key"] = active_tool_key
 
     try:
-        # `--check` 真時のみmise設定判定の副作用（trust経由再実行）も許可する。
-        # `--check` 偽時は副作用なし契約を維持し、mise設定判定も副作用OFFで動かす
-        # （未信頼config由来エラーや取得失敗を「記述なし」扱いとして従来形を返す）。
         resolved = pyfltr.command.runner.build_commandline(command, config, allow_side_effects=do_check)
     except (ValueError, FileNotFoundError) as e:
         base["resolved"] = False
@@ -157,29 +121,17 @@ def collect_info(command: str, config: pyfltr.config.model.Config, *, do_check: 
     base["executable"] = resolved.executable
     base["mise_tool_spec_omitted"] = resolved.tool_spec_omitted
 
-    # uv経路（{command}-runner = "python-runner" / "uv" / "uvx" 設定時）の診断情報を露出する。
-    # uv/uv.lock/uvx の状態に応じて direct フォールバックが発生したかも観測可能にする。
-    # 判定はper-tool設定値`runner`を参照する（`effective_runner`はフォールバック後の最終値で
-    # `python-runner = "direct"`時もuv_info省略の判断に流用できないため）。
     if command in pyfltr.command.runner.PYTHON_TOOL_BIN and runner in {"python-runner", "uv", "uvx"}:
-        # `mode`はeffective値変換と同義。runner == "python-runner"ならグローバル委譲先、
-        # runner in {"uv", "uvx"}ならrunner値そのものを採用する。
         mode = str(config["python-runner"]) if runner == "python-runner" else runner
-        # `mode == "direct"`の場合はuv経路を一切辿らないため、診断情報は不要として出力しない
-        # （他カテゴリの「不要な情報を出力しない」方針と同じ扱い）。
         if mode != "direct":
             uv_present = pyfltr.command.runner.ensure_uv_available()
             uv_lock_present = pyfltr.command.runner.cwd_has_uv_lock()
             uvx_present = pyfltr.command.runner.ensure_uvx_available()
-            # `direct_fallback`は「指定モードからdirectへフォールバックした」ことを意味する。
-            # path-override経由でdirectに解決された場合はuv/uvx経路を辿っていないためFalseで揃える。
-            # mode別の判定: "uv"はuvバイナリとuv.lockの両存在を要求、"uvx"はuvx shimの可用性のみ。
             if resolved.runner_source == "path-override":
                 fallback = False
             elif mode == "uv":
                 fallback = not (uv_present and uv_lock_present)
             else:
-                # mode == "uvx"
                 fallback = not uvx_present
             base["uv_info"] = {
                 "mode": mode,
@@ -189,9 +141,6 @@ def collect_info(command: str, config: pyfltr.config.model.Config, *, do_check: 
                 "direct_fallback": fallback,
                 "python_tool_bin": pyfltr.command.runner.PYTHON_TOOL_BIN[command],
             }
-    # 実際に実行されるargv全体（対象ファイル抜き）を表示する。
-    # `build_commandline`の戻り値は実行プレフィックスのみで、`{command}-args`等が反映されないため、
-    # `build_invocation_argv`経由で通常段の最終argvを組み立てる。
     base["commandline"] = pyfltr.command.invocation.build_invocation_argv(
         command, config, list(resolved.commandline), additional_args=[], fix_stage=False
     )
@@ -201,21 +150,14 @@ def collect_info(command: str, config: pyfltr.config.model.Config, *, do_check: 
         base["fix_commandline"] = pyfltr.command.invocation.build_invocation_argv(
             command, config, list(resolved.commandline), additional_args=[], fix_stage=True
         )
-    # directモードではshutil.whichで絶対パスへ解決済み。それ以外は、論理runner名ではなく
-    # `resolved.executable`の実値がPATH上に存在するかを確認する。
     # 公開論理値pnpxは互換なpnpm dlx形式へ写像されるため、確認対象の実行ファイルはpnpmとなる。
     base["executable_resolved"] = shutil.which(resolved.executable) or resolved.executable
 
-    # mise経路（effective_runner == "mise"）のときのみ、取得状況を露出する。
-    # mise配信外のコマンド（python系・js系・direct）には不要で、ノイズにしかならないため。
     if resolved.effective_runner == "mise":
-        # `get_mise_active_tools`は`build_commandline`内で同じ`allow_side_effects`値で
-        # キャッシュ済み。ここで再呼び出ししても副作用は再発生せず、直前の取得結果をそのまま得る。
         active_result = pyfltr.command.mise.get_mise_active_tools(config, allow_side_effects=do_check)
         mise_info: dict[str, typing.Any] = {"status": active_result.status}
         if active_result.detail is not None:
             mise_info["detail"] = active_result.detail
-        # 取得成功時のみactive_keysを載せる。失敗時は空であるためノイズになる。
         if active_result.status == "ok":
             mise_info["active_keys"] = sorted(active_result.tools.keys())
         mise_hints = {
@@ -233,18 +175,12 @@ def collect_info(command: str, config: pyfltr.config.model.Config, *, do_check: 
         if active_result.status in mise_hints:
             mise_info["hint"] = mise_hints[active_result.status]
         base["mise_active_tools"] = mise_info
-        # `--check`無しかつ未信頼configでフォールバックした場合だけ、trust試行を発動できる旨を案内する。
-        # 他のエラー要因では案内せず、ノイズを増やさない。
-        # 他のセクション（`runner: ...`等）と文体を揃えるため常体で書く。
         if not do_check and active_result.status == "untrusted-no-side-effects":
             base["mise_check_hint"] = "`--check`を付けるとtrust試行を行う"
 
     if do_check:
         try:
             checked = pyfltr.command.runner.ensure_mise_available(resolved, config, command=command)
-            # 実行経路（`dispatcher._prepare_execution_params`）と同じ検査を並べ、事前確認と実行の
-            # 成否を一致させる。最低版未満・版判別不能はValueErrorとなる。
-            # `--check` 偽時は副作用なし契約のため呼ばない（版取得は`--version`のsubprocess起動を伴う）。
             pyfltr.command.tool_version.ensure_package_manager_version(checked, config, command)
         except (FileNotFoundError, ValueError) as e:
             base["check_passed"] = False
@@ -257,29 +193,18 @@ def collect_info(command: str, config: pyfltr.config.model.Config, *, do_check: 
                 base["check_error"] += f"。{e.hint}"
         else:
             base["check_passed"] = True
-            # mise不在時のフォールバックなどでcommandlineが変化している可能性がある。
-            # `_print_text`が通常段の`commandline`との不一致だけを差分として表示するため、
-            # 確認段も`build_invocation_argv`を経由させて同じ抽象化段階（対象ファイル抜きの最終argv）へ揃える。
             base["check_commandline"] = pyfltr.command.invocation.build_invocation_argv(
                 command, config, list(checked.commandline), additional_args=[], fix_stage=False
             )
             base["check_effective_runner"] = checked.effective_runner
-            # 実行版は可用性確認とは別目的のため、`ensure_mise_available`が可用性判定で
-            # 起動した`--version`の結果を再利用せず改めて取得する。同関数の戻り値は
-            # `ResolvedCommandline`であり、版文字列を返すには実行経路も含む戻り値型の変更を要する。
             base["check_installed_version"] = pyfltr.command.tool_version.probe_tool_version_text(checked, config, command)
 
     return base
 
 
 def _print_text(info: dict[str, typing.Any]) -> None:
-    """text形式の出力。セクション見出し付きで関連項目をまとめる。
-
-    情報のないセクションは省略する（常に空セクションを並べると分散感が再発するため）。
-    """
     sections: list[tuple[str, list[str]]] = []
 
-    # ## 実行コマンド: 最終的に実行されるargv（対象ファイル抜き）とexecutableパス。
     exec_lines: list[str] = []
     if info.get("resolved"):
         if info.get("fix_commandline"):
@@ -293,11 +218,9 @@ def _print_text(info: dict[str, typing.Any]) -> None:
         exec_lines.append(f"resolved: false (error: {info.get('error')})")
     sections.append(("## 実行コマンド", exec_lines))
 
-    # ## ランナー解決: runner種別・解決経緯・check結果。
     runner_lines: list[str] = [f"runner: {info['runner']} ({info['runner_source']})"]
     if info.get("resolved"):
         runner_lines.append(f"effective_runner: {info['effective_runner']}")
-        # mise経路でtool spec省略採用したかは見た目だけで判別しづらいため明示する。
         if info.get("effective_runner") == "mise":
             runner_lines.append(f"mise_tool_spec_omitted: {info.get('mise_tool_spec_omitted', False)}")
     if "check_passed" in info:
@@ -311,7 +234,6 @@ def _print_text(info: dict[str, typing.Any]) -> None:
             runner_lines.append(f"check_installed_version: {info['check_installed_version']}")
     sections.append(("## ランナー解決", runner_lines))
 
-    # ## uv診断: uv経路ツールのmode・uv/uvx可用性・uv.lock検出・フォールバック状態。uv_infoがある場合のみ表示。
     uv_info = info.get("uv_info")
     if isinstance(uv_info, dict):
         uv_lines: list[str] = [
@@ -324,7 +246,6 @@ def _print_text(info: dict[str, typing.Any]) -> None:
         ]
         sections.append(("## uv診断", uv_lines))
 
-    # ## mise診断: mise取得状況と判定キー。mise経路または該当キーがある場合のみ表示。
     mise_lines: list[str] = []
     if info.get("mise_active_tool_key") is not None:
         mise_lines.append(f"mise_active_tool_key: {info['mise_active_tool_key']}")
@@ -335,7 +256,6 @@ def _print_text(info: dict[str, typing.Any]) -> None:
             mise_lines.append(f"mise_active_tools.detail: {mise_active['detail']}")
         if mise_active.get("hint"):
             mise_lines.append(f"hint: {mise_active['hint']}")
-        # 取得成功でキーが空の場合は行ごと省略する（他の任意フィールドの省略慣習と揃えるため）。
         keys = mise_active.get("active_keys")
         if keys:
             mise_lines.append(f"mise_active_tools.active_keys: {', '.join(keys)}")
@@ -344,8 +264,6 @@ def _print_text(info: dict[str, typing.Any]) -> None:
     if mise_lines:
         sections.append(("## mise診断", mise_lines))
 
-    # ## 設定: ユーザー設定で上書きされた値のみ表示（情報がない場合はセクション省略）。
-    # severityは既定値 "error" の場合のみ表示を省略する（既定値は情報として冗長なため）。
     config_lines: list[str] = [f"enabled: {info['enabled']}"]
     if info.get("configured_path"):
         config_lines.append(f"configured_path: {info['configured_path']}")
@@ -362,14 +280,12 @@ def _print_text(info: dict[str, typing.Any]) -> None:
         config_lines.append(f"version: {info['version']}")
     sections.append(("## 設定", config_lines))
 
-    # ## 環境変数: 現状はDOTNET_ROOTのみ（未設定時はセクション省略）。
     env_lines: list[str] = []
     if info.get("dotnet_root"):
         env_lines.append(f"DOTNET_ROOT: {info['dotnet_root']}")
     if env_lines:
         sections.append(("## 環境変数", env_lines))
 
-    # 先頭はどの命令の情報かを即座に示すためのh1見出し。
     print(f"# {info['command']}")
     for heading, lines in sections:
         if not lines:

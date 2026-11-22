@@ -1,9 +1,3 @@
-"""別プロセスの検証が実行枠を共有し、ツールの実行区間が重ならないことの結合試験。
-
-各試験は先発の実行（pyfltrまたは実行枠のAPIを使う保持者）がツールを実行中の間に後発の実行を起動する。
-text出力の後発は待機の警告を標準エラーへ即時に出力するため、その出力を同期点にして先発を解放する。
-"""
-
 import datetime as dt
 import json
 import os
@@ -47,12 +41,10 @@ with pyfltr.command.execution_slot.hold(label="external-check"):
 
 @pytest.fixture(autouse=True)
 def _single_slot(monkeypatch: pytest.MonkeyPatch) -> None:
-    """待ち合わせの試験は枠を1つにして、後発が先発の終了を待つ前提で確かめる。枠が2つの試験は個別に上書きする。"""
     monkeypatch.setenv(pyfltr.command.execution_slot.SLOTS_ENV, "1")
 
 
 def _assert_after(log: pathlib.Path, first: str, second: str) -> None:
-    """`second`の区間が`first`の区間の終了後に始まったことを確かめる。"""
     spans = helper.intervals(log)
     first_end = spans[first][1]
     assert first_end is not None, spans
@@ -62,7 +54,6 @@ def _assert_after(log: pathlib.Path, first: str, second: str) -> None:
 @pytest.mark.timeout(240)
 @pytest.mark.parametrize("subcommand", ["run", "run-for-agent", "fast", "ci"])
 def test_cli_runs_do_not_overlap(tmp_path: pathlib.Path, subcommand: str) -> None:
-    """別cwd・別の起動形の2つのCLIは、後発が待機を通知し、先発の終了後にツールを実行して完了する。"""
     log = tmp_path / "intervals.log"
     release = tmp_path / "release-a"
     project_a = helper.make_project(tmp_path, "a", log=log, release=release)
@@ -88,7 +79,6 @@ def test_cli_runs_do_not_overlap(tmp_path: pathlib.Path, subcommand: str) -> Non
 
 @pytest.mark.timeout(240)
 def test_cli_runs_overlap_with_two_slots(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """既定の2つの枠では、別cwdの2つのCLIは後発が待たずにツールを実行し、両方とも正常終了する。"""
     monkeypatch.delenv(pyfltr.command.execution_slot.SLOTS_ENV)
     log = tmp_path / "intervals.log"
     release = tmp_path / "release-a"
@@ -100,7 +90,6 @@ def test_cli_runs_overlap_with_two_slots(monkeypatch: pytest.MonkeyPatch, tmp_pa
             lambda: helper.started(log, "a"), expected="Aがツールの区間を開始する", observed=lambda: helper.describe(log, run_a)
         )
         with helper.start(helper.pyfltr_argv("run", output_format="text", script=True), project_b) as run_b:
-            # Aがツールの区間にいる間に、Bはツールの区間を終える。
             assert run_b.wait() == 0, run_b.stderr
             assert not helper.waiting_notified(run_b)
             spans = helper.intervals(log)
@@ -112,7 +101,6 @@ def test_cli_runs_overlap_with_two_slots(monkeypatch: pytest.MonkeyPatch, tmp_pa
 
 @pytest.mark.timeout(240)
 def test_mcp_run_waits_for_cli(tmp_path: pathlib.Path) -> None:
-    """MCPの`run`はCLIの実行が終わってからツールを実行し、待機を応答の警告で返す。"""
     log = tmp_path / "intervals.log"
     release = tmp_path / "release-a"
     project_a = helper.make_project(tmp_path, "a", log=log, release=release)
@@ -148,7 +136,6 @@ def test_mcp_run_waits_for_cli(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.timeout(240)
 def test_nested_children_inherit_slot(tmp_path: pathlib.Path) -> None:
-    """検証コマンドが起動した子のpyfltrとAPI呼出は待たずに完了し、独立した実行は親の終了まで始まらない。"""
     log = tmp_path / "intervals.log"
     release = tmp_path / "release-p"
     project_c = helper.make_project(tmp_path, "c", log=log, release=None)
@@ -235,7 +222,6 @@ def test_nested_children_inherit_slot(tmp_path: pathlib.Path) -> None:
 @pytest.mark.skipif(os.name == "nt", reason="待機中のプロセスへSIGINTを送る経路はPOSIXで検証する")
 @pytest.mark.timeout(240)
 def test_interrupt_while_waiting(tmp_path: pathlib.Path) -> None:
-    """待機中に中断したCLIはツールを実行せず非0で終わり、成功の結果を出力しない。"""
     log = tmp_path / "intervals.log"
     release = tmp_path / "release-a"
     project_a = helper.make_project(tmp_path, "a", log=log, release=release)
@@ -261,7 +247,6 @@ def test_interrupt_while_waiting(tmp_path: pathlib.Path) -> None:
 @pytest.mark.timeout(240)
 @pytest.mark.parametrize(("exit_code", "timeout"), [pytest.param(1, None, id="failed"), pytest.param(0, 8, id="timeout")])
 def test_slot_released_after_failure_and_timeout(tmp_path: pathlib.Path, exit_code: int, timeout: int | None) -> None:
-    """ツールの失敗・timeoutで終わった実行は子の停止後に枠を解放し、待っていた実行が進む。"""
     log = tmp_path / "intervals.log"
     release = tmp_path / "release-a"
     extra = {"command-timeout": timeout} if timeout is not None else {}
@@ -291,7 +276,6 @@ def test_slot_released_after_failure_and_timeout(tmp_path: pathlib.Path, exit_co
 
 @pytest.mark.timeout(240)
 def test_api_holder_excludes_pyfltr_run(tmp_path: pathlib.Path) -> None:
-    """APIで枠を保持する別プロジェクト相当の検証と、pyfltrの実行は区間を共有しない。"""
     log = tmp_path / "intervals.log"
     release = tmp_path / "release-x"
     holder_dir = tmp_path / "x"
@@ -322,7 +306,6 @@ def test_api_holder_excludes_pyfltr_run(tmp_path: pathlib.Path) -> None:
 
 
 def _show_run_timing(run_id: str, *, cwd: pathlib.Path) -> dict:
-    """公開の`show-run`をjson形式で別プロセス起動し、`timing`を返す。"""
     completed = subprocess.run(
         [sys.executable, "-m", "pyfltr", "show-run", run_id, "--output-format=json"],
         cwd=cwd,
@@ -343,10 +326,6 @@ def _iso(timestamp: float) -> str:
 
 @pytest.mark.timeout(240)
 def test_cli_records_slot_wait_and_body(tmp_path: pathlib.Path) -> None:
-    """待たされた実行は、待機区間・本体区間・run全体の経過を`show-run`から区別して取得できる。
-
-    先発は待たずに取得した対照とし、後発の待機区間だけが先発の保持時間を含む。
-    """
     log = tmp_path / "intervals.log"
     release = tmp_path / "release-a"
     project_a = helper.make_project(tmp_path, "a", log=log, release=release)
@@ -380,7 +359,6 @@ def test_cli_records_slot_wait_and_body(tmp_path: pathlib.Path) -> None:
     waited_wait = waited["slot_waits"][0]
     assert waited_wait["elapsed"] >= 1.0, waited
     assert control["slot_wait_total"] < waited["slot_wait_total"], (control, waited)
-    # 本体区間は待機区間が閉じた後に始まる。
     body = waited["commands"][0]
     assert body["started_at"] >= waited_wait["finished_at"], waited
     assert body["finished_at"] >= body["started_at"], waited
@@ -391,7 +369,6 @@ def test_cli_records_slot_wait_and_body(tmp_path: pathlib.Path) -> None:
 def test_cli_reports_slot_wait_progress_and_resume(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """別の保持者を待つCLIは、待機の継続（保持者・見込みを示せない理由）と再開を逐次出力して完了する。"""
     project = helper.make_project(tmp_path, "a", log=tmp_path / "intervals.log", release=None)
     monkeypatch.setattr(pyfltr.command.stage_runner, "_SLOT_PROGRESS_DELAY", 0.2)
     monkeypatch.setattr(pyfltr.command.stage_runner, "_SLOT_PROGRESS_INTERVAL", 0.2)
@@ -419,7 +396,6 @@ def test_cli_reports_slot_wait_progress_and_resume(
     out = capsys.readouterr().out
     assert returncode == 0
     assert "実行枠の取得を待っています" in out
-    # 保持者はPIDで示し、任意の長さを持つlabelは表示せず保持者記録の参照先を示す
     assert f"pid={os.getpid()}、" in out
     assert "external-check" not in out
     assert "execution.owner.json" in out
@@ -429,11 +405,6 @@ def test_cli_reports_slot_wait_progress_and_resume(
 
 @pytest.mark.timeout(120)
 def test_cli_without_candidate_targets_does_not_wait(tmp_path: pathlib.Path) -> None:
-    """対象を持ち得ないツールだけの実行は、別の保持者がいても実行枠を待たずに完了し、待機区間を記録しない。
-
-    文書だけをcommitしたときのコミットフックのように、対象の無いツールが実行枠の取得・取り直しを待つと、
-    外部ツールを起動しないまま長時間待つ。
-    """
     project = helper.make_project(tmp_path, "a", log=tmp_path / "intervals.log", release=None)
     readme = project / "README.md"
     readme.write_text("# a\n", encoding="utf-8")

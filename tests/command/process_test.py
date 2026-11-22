@@ -35,13 +35,10 @@ import pyfltr.state.only_failed
 import pyfltr.tools
 import pyfltr.warnings_
 
-# 時間上限による停止を検証する子プロセスのコード。上限の発火が負荷で遅れても子が先に自ら終了しないよう、
-# 試験の時間上限（pyproject.tomlの`--timeout=60`）より長く眠る。停止はpyfltrの時間上限の処理が行う。
 _SLEEP_BEYOND_TEST_TIMEOUT = "import time; time.sleep(300)"
 
 
 def test_run_subprocess_file_not_found_returns_127() -> None:
-    """存在しない実行ファイルを指定しても例外を送出せずrc=127を返す。"""
     result = pyfltr.command.process.run_subprocess(
         ["this-command-definitely-does-not-exist-xyz-1234"],
         env={"PATH": "/nonexistent"},
@@ -51,13 +48,6 @@ def test_run_subprocess_file_not_found_returns_127() -> None:
 
 
 class _FakePopen:
-    """`subprocess.Popen`を差し替えるための最小スタブ。
-
-    `run_subprocess`のテスト用。Popenのwith文経由での利用とstdout逐次読み込み・
-    wait()までを満たす最小限の振る舞いを提供する。起動引数はクラス変数
-    `last_args_holder`のリスト内に追記する（None判定を避けてpylintの型縮めに頼らない）。
-    """
-
     last_args_holder: list[list[str]] = []
 
     def __init__(self, args: list[str], **kwargs: typing.Any) -> None:
@@ -67,21 +57,17 @@ class _FakePopen:
         self.stdout: typing.Iterator[str] = iter([])
 
     def __enter__(self) -> "_FakePopen":
-        """with文のエントリー。"""
         return self
 
     def __exit__(self, exc_type: typing.Any, exc: typing.Any, tb: typing.Any) -> None:
-        """with文のイグジット。"""
         del exc_type, exc, tb  # contextmanager互換の引数を受け取るのみ
 
     def wait(self) -> int:
-        """プロセス終了待ち。ダミーで直ちにreturncodeを返す。"""
         return self.returncode
 
 
 @pytest.mark.parametrize("command", ["pre-commit", "prek"])
 def test_run_subprocess_resolves_command_via_shutil_which(mocker, command: str) -> None:
-    """`commandline[0]`が`shutil.which`で解決されてPopenに渡る。"""
     _FakePopen.last_args_holder = []
     resolved = f"/resolved/{command}"
     mocker.patch("pyfltr.command.process.shutil.which", return_value=resolved)
@@ -93,7 +79,6 @@ def test_run_subprocess_resolves_command_via_shutil_which(mocker, command: str) 
 
 
 def test_run_subprocess_keeps_original_name_when_unresolved(mocker) -> None:
-    """`shutil.which`がNoneなら元のコマンド名のままPopenに渡る。"""
     _FakePopen.last_args_holder = []
     mocker.patch("pyfltr.command.process.shutil.which", return_value=None)
     mocker.patch("pyfltr.command.process.subprocess.Popen", _FakePopen)
@@ -104,15 +89,10 @@ def test_run_subprocess_keeps_original_name_when_unresolved(mocker) -> None:
 
 
 def test_run_subprocess_resolves_via_env_path(mocker, tmp_path: pathlib.Path, monkeypatch) -> None:
-    """`os.environ["PATH"]`では見えず`env["PATH"]`にだけある実行ファイルが解決される。
-
-    解決探索対象PATHとPopenへ渡す`env["PATH"]`の一致要件に対するリグレッション防止。
-    """
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     # WindowsのshUtil.whichはPATHEXTに列挙された拡張子で実行ファイルを判定するため、
     # ダミー実行ファイル名を`.bat`にする（POSIXでは実行属性0o755で判定される）。
-    # 本テストの主眼はenv["PATH"]経由での解決可否であり、拡張子/実行属性の違いは付随的。
     if os.name == "nt":
         target = bin_dir / "faketool.bat"
         target.write_text("")
@@ -121,7 +101,6 @@ def test_run_subprocess_resolves_via_env_path(mocker, tmp_path: pathlib.Path, mo
         target.write_text("")
         target.chmod(0o755)
 
-    # os.environのPATHからはbin_dirを除外する（env["PATH"]経由で解決することの検証）
     monkeypatch.setenv("PATH", "/nonexistent-pyfltr-test-path")
 
     _FakePopen.last_args_holder = []
@@ -129,7 +108,6 @@ def test_run_subprocess_resolves_via_env_path(mocker, tmp_path: pathlib.Path, mo
 
     pyfltr.command.process.run_subprocess(["faketool"], {"PATH": str(bin_dir)})
 
-    # 解決されたパスが渡ること（先頭要素が/tmp/.../bin/faketool*を指す）
     assert len(_FakePopen.last_args_holder) == 1
     resolved = pathlib.Path(_FakePopen.last_args_holder[0][0])
     assert resolved.name.startswith("faketool")
@@ -137,7 +115,6 @@ def test_run_subprocess_resolves_via_env_path(mocker, tmp_path: pathlib.Path, mo
 
 
 def test_run_subprocess_does_not_mutate_commandline(mocker) -> None:
-    """呼び出し側の`commandline`リストは書き換えない（retry_command等に影響するため）。"""
     _FakePopen.last_args_holder = []
     mocker.patch("pyfltr.command.process.shutil.which", return_value="/resolved/tool")
     mocker.patch("pyfltr.command.process.subprocess.Popen", _FakePopen)
@@ -150,10 +127,6 @@ def test_run_subprocess_does_not_mutate_commandline(mocker) -> None:
 
 @pytest.mark.parametrize("command", ["faketool", "other-tool"])
 def test_resolve_commandline_uses_env_path_without_mutation(tmp_path: pathlib.Path, monkeypatch, command: str) -> None:
-    """`env`のPATHだけにある実体を解決し、元の`commandline`は書き換えない。
-
-    Windowsでは`.cmd`のshimをPATHEXTで解決する。未解決時は元のリストのまま返す。
-    """
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     if os.name == "nt":
@@ -177,12 +150,6 @@ def test_resolve_commandline_uses_env_path_without_mutation(tmp_path: pathlib.Pa
 
 @contextlib.contextmanager
 def _registered_parent_with_child(script: str) -> collections.abc.Generator[tuple[subprocess.Popen[str], int, int], None, None]:
-    """Pythonスクリプトをsubprocessとして起動し、親pidと子pidを読んで`active_processes`へ登録する。
-
-    スクリプトは最初の1行に自身と子のpidを空白区切りでprintする契約。
-    Popenは`start_new_session=True`で起動する（本番と同じ条件）。
-    区間を抜ける時は登録を外し、停止されずに残ったプロセスグループを止めてから回収する。
-    """
     with subprocess.Popen(
         [sys.executable, "-u", "-c", script],
         stdout=subprocess.PIPE,
@@ -200,19 +167,12 @@ def _registered_parent_with_child(script: str) -> collections.abc.Generator[tupl
             with pyfltr.command.process.active_processes_lock:
                 if proc in pyfltr.command.process.active_processes:
                     pyfltr.command.process.active_processes.remove(proc)
-            # `start_new_session=True`でpgidはproc.pidと一致し、親の終了後も残る子をまとめて止められる。
             # POSIX限定の経路（呼出元の試験はWindowsでskipする）。型チェッカーの誤検知は局所コメントで抑止する。
             with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
                 os.killpg(proc.pid, 9)  # type: ignore[attr-defined,unused-ignore]  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore  # pylint: disable=no-member
 
 
 def _wait_gone(pids: list[int], *, timeout: float) -> list[int]:
-    """`pids`が全て消滅するまで最大`timeout`秒待つ。残存するpidを返す。
-
-    initを持たないコンテナー環境では親reapが行われずzombieが残存するため、
-    zombie状態は消滅扱いとする（プロセスツリーは既に停止しており、
-    `terminate_active_processes`の責務は果たされている）。
-    """
 
     def _is_alive(pid: int) -> bool:
         try:
@@ -231,11 +191,6 @@ def _wait_gone(pids: list[int], *, timeout: float) -> list[int]:
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX 前提の killpg 経路を検証する")
 def test_terminate_active_processes_kills_grandchild() -> None:
-    """`terminate_active_processes`が孫プロセスまで確実に停止する。
-
-    Popen子が更にサブプロセスをforkするpytest-xdist相当の構造で、
-    `start_new_session=True`相当のpgid分離によりSIGTERMが全体へ届くことを検証する。
-    """
     script = textwrap.dedent(
         """
         import os, time
@@ -270,11 +225,6 @@ def test_terminate_active_processes_kills_grandchild() -> None:
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX 前提の killpg 経路を検証する")
 def test_terminate_active_processes_parent_exited_grandchild_remains() -> None:
-    """親が先にexitして孫だけがstdoutを握り残す構成でも停止できる。
-
-    `start_new_session=True`によりpgidがproc.pidと一致するため、
-    親reap後でも`os.killpg(proc.pid, SIGTERM)`で孫へ届くことを検証する。
-    """
     script = textwrap.dedent(
         """
         import os, time
@@ -290,7 +240,6 @@ def test_terminate_active_processes_parent_exited_grandchild_remains() -> None:
         """
     )
     with _registered_parent_with_child(script) as (proc, _parent_pid, child_pid):
-        # 親は速やかにexitする。孫（子）は生存継続。
         proc.wait(timeout=2.0)
         assert psutil.pid_exists(child_pid), "孫プロセスが消えている"
 
@@ -301,12 +250,10 @@ def test_terminate_active_processes_parent_exited_grandchild_remains() -> None:
 
 
 def _make_env() -> dict[str, str]:
-    """run_subprocess に渡す最小 env。PATH 等を引き継いで Python インタープリターを解決可能にする。"""
     return dict(os.environ)
 
 
 def test_run_subprocess_no_timeout_returns_completed_normally() -> None:
-    """timeout=Noneでは即座に終了するsubprocessが正常完了することを確認する。"""
     proc = pyfltr.command.process.run_subprocess(
         [sys.executable, "-c", "print('ok')"],
         _make_env(),
@@ -317,25 +264,18 @@ def test_run_subprocess_no_timeout_returns_completed_normally() -> None:
 
 
 def test_run_subprocess_raises_timeout_when_exceeded() -> None:
-    """timeout超過時に `TimeoutExceededExecution` を送出することを確認する。
-
-    試験の時間上限より長く眠るsubprocessを0.1秒のtimeoutで起動し、Timer発火で停止 → 例外送出に至る経路を検証する。
-    """
     with pytest.raises(pyfltr.command.process.TimeoutExceededExecution) as exc_info:
         pyfltr.command.process.run_subprocess(
             [sys.executable, "-c", _SLEEP_BEYOND_TEST_TIMEOUT],
             _make_env(),
             timeout=0.1,
         )
-    # 例外オブジェクトが途中までのoutputとelapsed情報を保持する。
     assert exc_info.value.timeout == 0.1
     assert exc_info.value.elapsed >= 0.1
-    # outputはsubprocessが何も出力していないため空文字列。
     assert isinstance(exc_info.value.output, str)
 
 
 def test_run_process_loop_wrapper_returns_failed_completed_process() -> None:
-    """`run_process_loop` がtimeout時に `returncode=124` の `CompletedProcess` を返すことを確認する。"""
     proc = pyfltr.command.process.run_process_loop(
         [sys.executable, "-c", _SLEEP_BEYOND_TEST_TIMEOUT],
         _make_env(),
@@ -345,12 +285,10 @@ def test_run_process_loop_wrapper_returns_failed_completed_process() -> None:
     assert proc.returncode == 124
     assert proc.timeout_exceeded is True
     assert "Timeout exceeded after 0.1s" in proc.stdout
-    # 生出力だけを読む経路（text表示・MCPのshow_run_output）でも上限の変更方法が分かる
     assert "command-timeout" in proc.stdout
 
 
 def test_run_process_loop_wrapper_passthrough_normal() -> None:
-    """`run_process_loop` は通常終了時に `timeout_exceeded=False` を保持する。"""
     proc = pyfltr.command.process.run_process_loop(
         [sys.executable, "-c", "print('ok')"],
         _make_env(),
@@ -362,11 +300,6 @@ def test_run_process_loop_wrapper_passthrough_normal() -> None:
 
 
 def test_run_subprocess_interrupt_takes_priority_over_timeout() -> None:
-    """`is_interrupted=True` 時はtimeout監視より先に `InterruptedExecution` が送出される。
-
-    `is_interrupted` は `Popen` 直前にチェックされるため、timeout発火を待たずに送出される。
-    既存の中断系挙動とtimeout系挙動が共存できることを確認する。
-    """
     with pytest.raises(pyfltr.command.process.InterruptedExecution):
         pyfltr.command.process.run_subprocess(
             [sys.executable, "-c", "import time; time.sleep(2)"],
@@ -388,15 +321,10 @@ def test_run_subprocess_interrupt_takes_priority_over_timeout() -> None:
     ],
 )
 def test_is_oom_returncode(returncode: int | None, expected: bool) -> None:
-    """`is_oom_returncode` がOOM該当returncodeのみTrueを返すことを確認する。"""
     assert pyfltr.command.process.is_oom_returncode(returncode) == expected
 
 
 def _make_fake_run_subprocess(returncodes: list[int]) -> typing.Callable[..., subprocess.CompletedProcess[str]]:
-    """試行ごとに指定のreturncodeを返すfake `run_subprocess`。
-
-    `returncodes` の要素を順番に消費し、尽きたら末尾の値を繰り返す。
-    """
     remaining = list(returncodes)
 
     def fake(commandline: list[str], *_args: typing.Any, **_kwargs: typing.Any) -> subprocess.CompletedProcess[str]:
@@ -407,7 +335,6 @@ def _make_fake_run_subprocess(returncodes: list[int]) -> typing.Callable[..., su
 
 
 def test_run_process_loop_retries_on_oom_and_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
-    """OOM returncode後に成功する場合、合計2回実行されて `retry_count == 1` となることを確認する。"""
     monkeypatch.setattr(
         pyfltr.command.process,
         "run_subprocess",
@@ -425,7 +352,6 @@ def test_run_process_loop_retries_on_oom_and_succeeds(monkeypatch: pytest.Monkey
 
 
 def test_run_process_loop_no_retry_when_retry_on_oom_false(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`retry_on_oom=False` のときOOM returncodeでもリトライしないことを確認する。"""
     monkeypatch.setattr(
         pyfltr.command.process,
         "run_subprocess",
@@ -442,7 +368,6 @@ def test_run_process_loop_no_retry_when_retry_on_oom_false(monkeypatch: pytest.M
 
 
 def test_run_process_loop_no_retry_when_max_attempts_zero(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`retry_max_attempts=0` のときリトライしないことを確認する。"""
     monkeypatch.setattr(
         pyfltr.command.process,
         "run_subprocess",
@@ -459,7 +384,6 @@ def test_run_process_loop_no_retry_when_max_attempts_zero(monkeypatch: pytest.Mo
 
 
 def test_run_process_loop_retries_up_to_max_attempts(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`retry_max_attempts=2` で最大2回リトライ、3回OOMならfailed扱いになることを確認する。"""
     monkeypatch.setattr(
         pyfltr.command.process,
         "run_subprocess",
@@ -476,7 +400,6 @@ def test_run_process_loop_retries_up_to_max_attempts(monkeypatch: pytest.MonkeyP
 
 
 def test_run_process_loop_no_retry_on_non_oom_returncode(monkeypatch: pytest.MonkeyPatch) -> None:
-    """非OOM非ゼロreturncodeでリトライしないことを確認する。"""
     monkeypatch.setattr(
         pyfltr.command.process,
         "run_subprocess",
@@ -493,7 +416,6 @@ def test_run_process_loop_no_retry_on_non_oom_returncode(monkeypatch: pytest.Mon
 
 
 def test_run_process_loop_no_retry_count_on_normal_exit(monkeypatch: pytest.MonkeyPatch) -> None:
-    """通常終了時に `retry_count == 0` であることを確認する。"""
     monkeypatch.setattr(
         pyfltr.command.process,
         "run_subprocess",
@@ -508,11 +430,6 @@ def test_run_process_loop_no_retry_count_on_normal_exit(monkeypatch: pytest.Monk
 
 
 def test_run_process_loop_no_retry_when_timeout_exceeded(monkeypatch: pytest.MonkeyPatch) -> None:
-    """timeout超過時はreturncodeがOOM相当値でもリトライしないことを確認する。
-
-    `run_subprocess` が `TimeoutExceededExecution` を送出する経路はリトライ判定より前に
-    `except` で早期returnするため、`retry_count` は0のままとなる。
-    """
 
     def fake_timeout(commandline: list[str], *_args: typing.Any, **_kwargs: typing.Any) -> subprocess.CompletedProcess[str]:
         del commandline
@@ -531,12 +448,6 @@ def test_run_process_loop_no_retry_when_timeout_exceeded(monkeypatch: pytest.Mon
 
 
 def test_run_process_loop_oom_then_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
-    """OOM returncode後のリトライでtimeout超過が発生した場合の動作を確認する。
-
-    1回目の `run_subprocess` でOOM returncode（137）を返し、
-    2回目のリトライで `TimeoutExceededExecution` を送出するケースを検証する。
-    期待値: `returncode == TIMEOUT_RETURNCODE`、`timeout_exceeded == True`、`retry_count == 1`。
-    """
     call_count = 0
 
     def fake_oom_then_timeout(
@@ -563,7 +474,6 @@ def test_run_process_loop_oom_then_timeout(monkeypatch: pytest.MonkeyPatch) -> N
 def test_timeout_reports_remaining_processes_with_action(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """停止を試みても残るプロセスがある場合は、そのPIDと停止を促す案内を出力する。"""
 
     class _RemainingProcess:
         pid = 424242
@@ -573,8 +483,6 @@ def test_timeout_reports_remaining_processes_with_action(
 
     def _wait_procs(procs: typing.Any, timeout: float | None = None) -> tuple[list[typing.Any], list[typing.Any]]:
         del procs, timeout
-        # 停止待ちが親プロセスのEOFより遅れて終わる状況を再現し、
-        # 警告の出力を待たずに戻らないことを確かめる。
         time.sleep(0.5)
         return [], [_RemainingProcess()]
 

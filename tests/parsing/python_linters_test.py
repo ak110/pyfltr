@@ -12,7 +12,6 @@ import tests.parsing.conftest
 
 
 def test_parse_ruff_check_json() -> None:
-    """ruff check --output-format=json出力のパース。"""
     output = json.dumps(
         [
             {
@@ -43,7 +42,6 @@ def test_parse_ruff_check_json() -> None:
 
 
 def test_parse_ruff_check_json_fallback() -> None:
-    """ruff-check: JSONでない出力はregexにフォールバックする。"""
     output = "src/foo.py:10:5: F401 `os` imported but unused"
     errors = pyfltr.parsing.entry.parse_errors("ruff-check", output)
     assert len(errors) == 1
@@ -57,7 +55,6 @@ def test_parse_ruff_check_json_fallback() -> None:
 
 
 def test_parse_ruff_check_json_fix_none() -> None:
-    """ruff-check: `fix`欠落エントリは`fix == "none"`として出力される。"""
     output = json.dumps(
         [
             {
@@ -76,10 +73,6 @@ def test_parse_ruff_check_json_fix_none() -> None:
 
 
 def test_parse_pylint_json() -> None:
-    """pylint --output-format=json2出力のパース。
-
-    ruleにはsymbol（公式ドキュメントURL基準）、messageにはmessageIdを保持する。
-    """
     output = json.dumps(
         {
             "messages": [
@@ -118,11 +111,6 @@ def test_parse_pylint_json() -> None:
 
 
 def test_parse_pylint_json_with_stderr_prefix() -> None:
-    """pylint: JSON前にstderrの警告などが混ざっても最初の`{`以降をパースする。
-
-    Windows + Python 3.14 + PYTHONDEVMODE=1でpylint_pydanticが大量の
-    DeprecationWarningをemitし、pylintの出力先頭に紛れ込む現象への対処。
-    """
     body = json.dumps(
         {
             "messages": [
@@ -149,7 +137,6 @@ def test_parse_pylint_json_with_stderr_prefix() -> None:
 
 
 def test_parse_pylint_json_keeps_inclusive_end_line() -> None:
-    """終了行が最終行を指すツールでは値が変わらない。"""
     output = json.dumps(
         {
             "messages": [
@@ -175,7 +162,6 @@ def test_parse_pylint_json_keeps_inclusive_end_line() -> None:
 
 
 def test_parse_pylint_json_fallback() -> None:
-    """pylint: JSONでない出力はregexにフォールバックする。"""
     output = "src/foo.py:10:5: C0114: Missing module docstring (missing-module-docstring)"
     errors = pyfltr.parsing.entry.parse_errors("pylint", output)
     assert len(errors) == 1
@@ -186,7 +172,6 @@ def test_parse_pylint_json_fallback() -> None:
 
 
 def test_parse_pyright_json() -> None:
-    """pyright --outputjson出力のパース。"""
     output = json.dumps(
         {
             "version": "1.1.400",
@@ -219,7 +204,6 @@ def test_parse_pyright_json() -> None:
 
 
 def test_parse_pyright_json_fallback() -> None:
-    """pyright: JSONでない出力はregexにフォールバックする。"""
     output = '  src/foo.py:10:5 - error: Type "int" is not assignable'
     errors = pyfltr.parsing.entry.parse_errors("pyright", output)
     assert len(errors) == 1
@@ -233,7 +217,6 @@ def test_parse_pyright_json_fallback() -> None:
 
 
 def test_parse_pyright_json_normalizes_exclusive_end_line() -> None:
-    """行末で終わる範囲の終了行は直前の行へ補正される。"""
     output = json.dumps(
         {
             "generalDiagnostics": [
@@ -256,7 +239,6 @@ def test_parse_pyright_json_normalizes_exclusive_end_line() -> None:
 
 
 def test_parse_pyright_json_keeps_inclusive_end_line() -> None:
-    """行内で終わる範囲の終了行はそのまま保持される。"""
     output = json.dumps(
         {
             "generalDiagnostics": [
@@ -279,7 +261,6 @@ def test_parse_pyright_json_keeps_inclusive_end_line() -> None:
 
 
 def test_parse_pyright_json_keeps_zero_width_range() -> None:
-    """開始行と終了行が同じゼロ幅の範囲は補正しない。"""
     output = json.dumps(
         {
             "generalDiagnostics": [
@@ -302,7 +283,6 @@ def test_parse_pyright_json_keeps_zero_width_range() -> None:
 
 
 def test_parse_arid_json_expands_all_locations() -> None:
-    """aridの1つのfindingが持つ全locationを診断へ展開する。"""
     output = json.dumps(
         {
             "findings": [
@@ -353,7 +333,6 @@ def test_parse_arid_json_expands_all_locations() -> None:
 
 
 def test_parse_arid_json_resolves_paths_from_subproject_cwd(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """aridの相対診断パスを実行したサブプロジェクトcwdから解決する。"""
     monkeypatch.chdir(tmp_path)
     output = json.dumps(
         {
@@ -391,18 +370,15 @@ def test_parse_arid_json_resolves_paths_from_subproject_cwd(monkeypatch: pytest.
         '{"findings": ["not a dict"]}',
         '{"findings": [{"lines": 12, "context": "function", "scope": "module",'
         ' "occurrences": 2, "distribution": "same-file", "locations": {}}]}',
-        # 致命エラー時のaridは`findings`を持たない別スキーマを返す。
         '{"schema_version": 1, "tool_version": "2.2.2",'
         ' "error": {"kind": "parse", "message": "invalid Python syntax at line 1, column 7"}}',
     ],
 )
 def test_parse_arid_json_ignores_invalid_input(output: str) -> None:
-    """aridのJSON構造が不正な場合は診断を生成しない。"""
     assert not pyfltr.parsing.entry.parse_errors("arid", output)
 
 
 def test_parse_arid_json_keeps_absolute_location_path(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """aridが絶対パスを返した場合は`path_base`と結合しない。"""
     monkeypatch.chdir(tmp_path)
     absolute_target = tmp_path / "external" / "sample.py"
     output = json.dumps(
@@ -427,7 +403,6 @@ def test_parse_arid_json_keeps_absolute_location_path(monkeypatch: pytest.Monkey
 
 
 def test_parse_arid_json_single_location_omits_other_locations() -> None:
-    """locationが1つだけのfindingでは他location一覧を付けない。"""
     output = json.dumps(
         {
             "findings": [
@@ -451,7 +426,6 @@ def test_parse_arid_json_single_location_omits_other_locations() -> None:
 
 
 def test_parse_arid_json_skips_invalid_locations_only() -> None:
-    """不正なlocationだけを除外し、同じfindingの有効なlocationは診断へ変換する。"""
     output = json.dumps(
         {
             "findings": [
@@ -479,10 +453,6 @@ def test_parse_arid_json_skips_invalid_locations_only() -> None:
 
 
 def test_parse_arid_json_ignores_unknown_fields_of_real_output() -> None:
-    """aridの実出力に含まれる未知フィールドを無視して診断へ変換する。
-
-    テスト入力はarid 2.2.2のreport schema_version 4の実出力構造から採る。
-    """
     output = json.dumps(
         {
             "schema_version": 4,
@@ -520,7 +490,6 @@ def test_parse_arid_json_ignores_unknown_fields_of_real_output() -> None:
 
 
 def test_parse_summary_pyright_json() -> None:
-    """pyright: JSON出力のsummaryフィールドからサマリーを抽出する。"""
     output = json.dumps(
         {
             "version": "1.1.300",
@@ -539,13 +508,11 @@ def test_parse_summary_pyright_json() -> None:
 
 
 def test_parse_summary_pyright_json_no_summary() -> None:
-    """pyright: summaryフィールドがない場合はNone。"""
     output = json.dumps({"generalDiagnostics": []})
     assert pyfltr.parsing.entry.parse_summary("pyright", output) is None
 
 
 def test_parse_summary_pylint_json() -> None:
-    """pylint: JSON出力のstatisticsフィールドからサマリーを抽出する。"""
     output = json.dumps(
         {
             "messages": [],
@@ -561,14 +528,12 @@ def test_parse_summary_pylint_json() -> None:
 
 
 def test_parse_summary_pylint_json_no_score() -> None:
-    """pylint: scoreがない場合はモジュール数のみ。"""
     output = json.dumps({"messages": [], "statistics": {"modulesLinted": 10}})
     result = pyfltr.parsing.entry.parse_summary("pylint", output)
     assert result == "10 modules linted"
 
 
 def test_parse_errors_ruff_rule_url_from_entry() -> None:
-    """ruff JSONの`url`フィールドを最優先で採用する。"""
     output = json.dumps(
         [
             {
@@ -587,7 +552,6 @@ def test_parse_errors_ruff_rule_url_from_entry() -> None:
 
 
 def test_parse_errors_ruff_rule_url_fallback() -> None:
-    """ruff JSONに`url`が無い場合はテンプレートで生成する。"""
     output = json.dumps(
         [
             {
@@ -605,7 +569,6 @@ def test_parse_errors_ruff_rule_url_fallback() -> None:
 
 
 def test_parse_errors_pyright_rule_url() -> None:
-    """pyrightのruleからrule_urlが生成される。"""
     output = json.dumps(
         {
             "version": "1.1.400",

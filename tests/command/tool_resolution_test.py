@@ -31,7 +31,6 @@ def test_execute_command_isolated_tool_missing_emits_uvx_direct_hint(
     command: str,
     runner: str,
 ) -> None:
-    """分離ツールのuv/uvx起動失敗ではuvx直接実行とdirect切替だけを案内する。"""
     result = pyfltr.command.core_.CommandResult(
         command=command,
         command_type="linter",

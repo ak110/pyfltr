@@ -1,5 +1,3 @@
-"""コンパイラー・ネイティブ検査ツールの位置付き診断を解析する。"""
-
 import re
 
 import pyfltr.paths
@@ -8,7 +6,6 @@ from pyfltr.parsing.common import json_int, normalize_severity, parse_with_patte
 
 
 def parse_hadolint_json(output: str) -> list[ErrorLocation]:
-    """hadolintのJSONからDockerfileの位置付き指摘を取り出す。"""
     data = try_json_loads(output)
     if not isinstance(data, list):
         return []
@@ -31,7 +28,6 @@ def parse_hadolint_json(output: str) -> list[ErrorLocation]:
 
 
 def parse_gitleaks_json(output: str) -> list[ErrorLocation]:
-    """伏せ字レポートの位置とルールを取り出す。本文へ一致文字列・秘密値を含めない。"""
     data = try_json_loads(output)
     if not isinstance(data, list):
         return []
@@ -55,7 +51,6 @@ def parse_gitleaks_json(output: str) -> list[ErrorLocation]:
 
 
 def parse_oxlint_json(output: str) -> list[ErrorLocation]:
-    """oxlintのJSONレポートから位置付き診断を取り出す。"""
     data = try_json_loads(output)
     if not isinstance(data, dict) or not isinstance(data.get("diagnostics"), list):
         return []
@@ -120,7 +115,6 @@ def _cargo(output: str, command: str) -> list[ErrorLocation]:
             )
         elif location is not None and header is not None:
             file = location["file"]
-            # cargo-denyの合成manifestはcrate名をURIとして表す。実ファイルの位置だけを渡す。
             if "://" not in file:
                 results.append(
                     ErrorLocation(
@@ -139,22 +133,18 @@ def _cargo(output: str, command: str) -> list[ErrorLocation]:
 
 
 def parse_cargo_clippy(output: str) -> list[ErrorLocation]:
-    """Clippyの人間向け位置付き診断を取り出す。"""
     return _cargo(output, "cargo-clippy")
 
 
 def parse_cargo_check(output: str) -> list[ErrorLocation]:
-    """cargo checkの人間向け位置付き診断を取り出す。"""
     return _cargo(output, "cargo-check")
 
 
 def parse_cargo_test(output: str) -> list[ErrorLocation]:
-    """コンパイル診断と位置付きpanicを取り出す。位置の無い失敗は元出力へ残る。"""
     return _cargo(output, "cargo-test")
 
 
 def parse_cargo_deny(output: str) -> list[ErrorLocation]:
-    """cargo-denyの人間向け診断から実ファイルを指す位置を取り出す。"""
     return _cargo(output, "cargo-deny")
 
 
@@ -166,13 +156,11 @@ _DOTNET_STACK = re.compile(r"^\s+at .+ in (?P<file>.+?):line (?P<line>\d+)\s*$")
 
 
 def parse_dotnet_build(output: str) -> list[ErrorLocation]:
-    """ビルド出力の位置付きエラーを重複なしで返す。"""
     results = parse_with_pattern("dotnet-build", output, _DOTNET_BUILD)
     return list({(item.file, item.line, item.col, item.message, item.rule): item for item in results}.values())
 
 
 def parse_dotnet_test(output: str) -> list[ErrorLocation]:
-    """ビルド診断とテスト失敗のスタック位置を返す。"""
     results = parse_with_pattern("dotnet-test", output, _DOTNET_BUILD)
     message = "テストが失敗しました"
     in_message = False

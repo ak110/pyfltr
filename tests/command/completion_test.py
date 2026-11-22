@@ -15,7 +15,6 @@ def _timeout(command: str) -> pyfltr.command.core_.CommandResult:
 
 
 def _no_target(command: str) -> pyfltr.command.core_.CommandResult:
-    """対象ファイルが無いため起動しなかった結果。"""
     result = _make_result(command, returncode=None, files=0)
     result.not_applicable = True
     return result
@@ -96,7 +95,6 @@ _CASES: dict[str, _Case] = {
 
 @pytest.mark.parametrize("case", list(_CASES.values()), ids=list(_CASES))
 def test_evaluate_completion(case: _Case) -> None:
-    """結果と対象の到達状況から、WIの区分表どおりの完了区分と一覧を導出する。"""
     config = pyfltr.config.config.create_default_config()
 
     completion = pyfltr.command.completion.evaluate_completion(

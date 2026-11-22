@@ -32,7 +32,6 @@ import tests.execution_request_helper
 
 
 def _make_glab_ci_lint_args() -> pyfltr.run_options.RunOptions:
-    """`execute_glab_ci_lint`で参照される最低限の属性を持つNamespaceを返す。"""
     return pyfltr.run_options.RunOptions.from_values({"verbose": False})
 
 
@@ -41,7 +40,6 @@ def _make_glab_ci_lint_command_info() -> pyfltr.tool_types.CommandInfo:
 
 
 def _execute_glab_ci_lint_case(mocker, tmp_path: pathlib.Path, output: str) -> pyfltr.command.core_.CommandResult:
-    """glabの出力だけを変えて同じlint実行経路を検証する。"""
     proc = subprocess.CompletedProcess(args=["glab", "ci", "lint"], returncode=1, stdout=output)
     mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
     target = tmp_path / ".gitlab-ci.yml"
@@ -62,7 +60,6 @@ def _execute_glab_ci_lint_case(mocker, tmp_path: pathlib.Path, output: str) -> p
 
 
 def test_execute_glab_ci_lint_skips_on_host_missing(mocker, tmp_path: pathlib.Path) -> None:
-    """ホスト未検出stderrを検出したらreturncode=Noneでスキップ扱いに書き換える。"""
     pyfltr.warnings_.clear()
     result = _execute_glab_ci_lint_case(
         mocker,
@@ -73,7 +70,6 @@ def test_execute_glab_ci_lint_skips_on_host_missing(mocker, tmp_path: pathlib.Pa
     assert result.returncode is None
     assert result.status == "skipped"
     assert "スキップしました" in result.output
-    # スキップの結果だけでなく、ホストを設定する操作と無効化する操作を案内する
     assert "GITLAB_HOST" in result.output
     warnings = pyfltr.warnings_.collected_warnings()
     glab_warnings = [w for w in warnings if w.get("source") == "glab-ci-lint"]
@@ -83,7 +79,6 @@ def test_execute_glab_ci_lint_skips_on_host_missing(mocker, tmp_path: pathlib.Pa
 
 
 def test_execute_glab_ci_lint_skips_on_wrapped_host_missing(mocker, tmp_path: pathlib.Path) -> None:
-    """端末幅で折り返された文言（Windows runner相当）でもスキップ扱いに書き換える。"""
     pyfltr.warnings_.clear()
     result = _execute_glab_ci_lint_case(
         mocker,
@@ -104,7 +99,6 @@ def test_execute_glab_ci_lint_skips_on_wrapped_host_missing(mocker, tmp_path: pa
 
 
 def test_execute_glab_ci_lint_skips_on_not_authenticated(mocker, tmp_path: pathlib.Path) -> None:
-    """大文字の未認証文言 "NOT AUTHENTICATED" も大小文字差を吸収してスキップ扱いに書き換える。"""
     pyfltr.warnings_.clear()
     result = _execute_glab_ci_lint_case(mocker, tmp_path, "you are NOT AUTHENTICATED to glab\n")
 
@@ -116,7 +110,6 @@ def test_execute_glab_ci_lint_skips_on_not_authenticated(mocker, tmp_path: pathl
 
 
 def test_execute_glab_ci_lint_keeps_failure_for_real_errors(mocker, tmp_path: pathlib.Path) -> None:
-    """ホスト未検出以外の非ゼロ終了はfailedのまま据え置く。"""
     pyfltr.warnings_.clear()
     proc = subprocess.CompletedProcess(
         args=["glab", "ci", "lint"],
@@ -146,7 +139,6 @@ def test_execute_glab_ci_lint_keeps_failure_for_real_errors(mocker, tmp_path: pa
 
 
 def test_execute_glab_ci_lint_passes_through_success(mocker, tmp_path: pathlib.Path) -> None:
-    """正常終了はそのままsucceededとして扱い、ロケール強制環境変数を渡す。"""
     pyfltr.warnings_.clear()
     proc = subprocess.CompletedProcess(
         args=["glab", "ci", "lint"],
@@ -180,6 +172,5 @@ def test_execute_glab_ci_lint_passes_through_success(mocker, tmp_path: pathlib.P
 
     assert result.returncode == 0
     assert result.status == "succeeded"
-    # ロケール非依存判定のための環境変数強制を確認する。
     assert captured_env["LC_ALL"] == "C"
     assert captured_env["LANG"] == "C"

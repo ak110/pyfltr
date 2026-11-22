@@ -1,12 +1,8 @@
-"""各ツールが報告する診断の共通型。"""
-
 import dataclasses
 
 
 @dataclasses.dataclass
 class ErrorLocation:
-    """エラー箇所の情報。"""
-
     file: str
     line: int
     col: int | None

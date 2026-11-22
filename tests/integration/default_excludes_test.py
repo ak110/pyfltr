@@ -1,5 +1,3 @@
-"""既定除外をCLIからformatterへの対象引渡しまで通して検証する。"""
-
 import json
 import pathlib
 import sys
@@ -10,11 +8,6 @@ import pyfltr.cli.main
 
 
 def test_cli_default_exclude_keeps_generated_lock_files(tmp_path: pathlib.Path) -> None:
-    """個別の除外設定なしで、生成ロックファイルをformatterへ渡さず書き換えない。
-
-    miseの`.mise/locks/`配下の`aube-lock.yaml`は`mise.lock`がハッシュ値を記録するため、
-    整形で書き換わると記録と一致しなくなる。`.mise`配下の利用者設定は対象に残る。
-    """
     project = tmp_path / "project"
     lock_dir = project / ".mise" / "locks" / "npm-pnpm" / "12.17.0"
     lock_dir.mkdir(parents=True)
@@ -31,7 +24,6 @@ def test_cli_default_exclude_keeps_generated_lock_files(tmp_path: pathlib.Path) 
     for path, text in originals.items():
         path.write_text(text, encoding="utf-8")
 
-    # 受け取った対象を記録し、各ファイルへ追記して書き換えるformatter。
     output = tmp_path / "received.json"
     script = tmp_path / "probe.py"
     script.write_text(
@@ -55,7 +47,6 @@ def test_cli_default_exclude_keeps_generated_lock_files(tmp_path: pathlib.Path) 
         == 0
     )
 
-    # formatterはプロジェクトを作業ディレクトリとして起動され、相対パスを受け取る。
     received = {(project / name).resolve() for name in json.loads(output.read_text(encoding="utf-8"))}
     assert aube_lock.resolve() not in received
     assert shrinkwrap.resolve() not in received

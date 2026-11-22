@@ -1,10 +1,3 @@
-"""採取対象ツールごとの小さなサンプル定義。
-
-各サンプルは診断を発生させる最小の入力と、その入力をpyfltrで実行するための`[tool.pyfltr]`設定を持つ。
-採取対象の一覧は`pyfltr.tools.BUILTIN_COMMANDS`を典拠とし、本モジュールに定義の無いツールは
-採取前に検出する（`missing_samples`）。
-"""
-
 import dataclasses
 import json
 import typing
@@ -14,8 +7,6 @@ import pyfltr.tools
 
 @dataclasses.dataclass(frozen=True)
 class Sample:
-    """1回のpyfltr実行で採取する入力。"""
-
     id: str
     """出力ディレクトリ名と比較入力の識別子に使う一意な名前。"""
     tool: str
@@ -48,12 +39,10 @@ def _toml_value(value: typing.Any) -> str:
 
 
 def pyfltr_settings(sample: Sample) -> dict[str, typing.Any]:
-    """サンプルの`[tool.pyfltr]`へ書く設定全体を返す。"""
     return {sample.tool: True, "respect-gitignore": False, **sample.settings}
 
 
 def render_files(sample: Sample) -> dict[str, str]:
-    """`pyproject.toml`へ`[tool.pyfltr]`を加えたサンプルのファイル一式を返す。"""
     section = "[tool.pyfltr]\n" + "".join(f"{key} = {_toml_value(value)}\n" for key, value in pyfltr_settings(sample).items())
     files = dict(sample.files)
     existing = files.get("pyproject.toml")
@@ -95,7 +84,6 @@ _DUPLICATED_BODY = "".join(f"    total = total + {index} * value\n" for index in
 
 
 def _github_token_like() -> str:
-    # 固定の検出対象文字列をリポジトリへ置かないよう、実行時に組み立てる。
     body = "aB3dE6gH9jK2mN5pQ8sT1vW4yZ7cF0hJ3lM6xR"
     return "gh" + "p_" + body[:36]
 
@@ -137,7 +125,6 @@ SAMPLES: tuple[Sample, ...] = (
         ("sample.txt",),
     ),
     _sample("shellcheck", {"sample.sh": "#!/bin/sh\necho $1\n"}, ("sample.sh",)),
-    # 検出対象の綴り誤り・口語表現はリポジトリ自身の検査に掛からないよう、語を分けて組み立てる。
     _sample("typos", {"sample.txt": "t" + "eh value is rec" + "ieved\n"}, ("sample.txt",)),
     _sample(
         "actionlint",
@@ -158,7 +145,6 @@ SAMPLES: tuple[Sample, ...] = (
     _sample("glab-ci-lint", {".gitlab-ci.yml": "job:\n  script: 1\n  unknown_key: true\n"}, (".gitlab-ci.yml",), git=True),
     _sample("yamllint", {"sample.yaml": "key: value   \nother:  1\n"}, ("sample.yaml",)),
     _sample("hadolint", {"Dockerfile": "FROM debian\nRUN apt-get update && apt-get install curl\n"}, ("Dockerfile",)),
-    # gitleaksは`detect`でgit履歴を走査するため、サンプルをcommitする。
     _sample("gitleaks", {"sample.txt": ""}, ("sample.txt",), git=True),
     _sample(
         "semgrep",
@@ -170,8 +156,6 @@ SAMPLES: tuple[Sample, ...] = (
         ("sample.py",),
         settings={"semgrep-args": ["scan", "--json", "--error", "--metrics=off", "--config", ".semgrep.yml"]},
         # uvxが既定でPython 3.15を選ぶ環境では、スタック上限が8MBの場合にsemgrep-coreが異常終了し結果が空になる
-        # （semgrep 1.185.0の対応版は3.14まで）。semgrepは利用者の既定と同じ最新版のまま、実行するPythonだけを対応版にする。
-        # 同じ環境変数は採取のpyfltr起動（`uv run --no-sync`）にも渡るが、既存の仮想環境を警告付きでそのまま使う。
         env={"UV_PYTHON": "3.14"},
     ),
     _sample("bandit", {"sample.py": 'import subprocess\n\nsubprocess.call("ls", shell=True)\n'}, ("sample.py",)),
@@ -338,18 +322,15 @@ def _with_runtime_content(sample: Sample) -> Sample:
 
 
 def builtin_samples() -> dict[str, Sample]:
-    """ツール名からサンプルへの対応を返す。"""
     return {sample.tool: _with_runtime_content(sample) for sample in SAMPLES}
 
 
 def missing_samples() -> list[str]:
-    """`BUILTIN_COMMANDS`のうちサンプル定義の無いツール名を返す。"""
     defined = {sample.tool for sample in SAMPLES}
     return [name for name in pyfltr.tools.BUILTIN_COMMANDS if name not in defined]
 
 
 def has_parse_definition(tool: str) -> bool:
-    """`parse_errors`が診断を取り出す解析定義をツールが持つか。"""
     info = pyfltr.tools.BUILTIN_COMMANDS.get(tool)
     if info is None:
         return False
@@ -357,10 +338,6 @@ def has_parse_definition(tool: str) -> bool:
 
 
 def select_samples(tools: list[str] | None) -> list[Sample]:
-    """指定ツール（Noneなら全`BUILTIN_COMMANDS`）のサンプルを`BUILTIN_COMMANDS`の順で返す。
-
-    未知のツール名とサンプル定義の欠落は採取前に`ValueError`とする。
-    """
     missing = missing_samples()
     if missing:
         raise ValueError(

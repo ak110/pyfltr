@@ -31,7 +31,6 @@ import pyfltr.warnings_
 
 
 def test_probe_tool_version_text_drops_virtual_env_for_uv_runner(monkeypatch: pytest.MonkeyPatch) -> None:
-    """uv経路のversion probeも`VIRTUAL_ENV`を除いた環境で起動する。"""
     monkeypatch.setenv("VIRTUAL_ENV", "/repo/.venv")
     captured: dict[str, dict[str, str]] = {}
 
@@ -52,7 +51,6 @@ def test_probe_tool_version_text_drops_virtual_env_for_uv_runner(monkeypatch: py
 
 
 def test_ensure_package_manager_version_drops_virtual_env_for_uv_runner(monkeypatch: pytest.MonkeyPatch) -> None:
-    """uv経路の最低版検査も`VIRTUAL_ENV`を除いた環境で起動する。"""
     pyfltr.command.tool_version._get_tool_version.cache_clear()  # pylint: disable=protected-access  # テスト間の隔離
     monkeypatch.setenv("VIRTUAL_ENV", "/repo/.venv")
     captured: dict[str, dict[str, str]] = {}
@@ -88,7 +86,6 @@ def test_ensure_package_manager_version_drops_virtual_env_for_uv_runner(monkeypa
 def test_ensure_package_manager_version_rejects_below_minimum(
     monkeypatch: pytest.MonkeyPatch, version_output: str, expect_error: bool
 ) -> None:
-    """uv-auditは最低版未満のuvを拒否し、最低版以降は通す。"""
     pyfltr.command.tool_version._get_tool_version.cache_clear()  # pylint: disable=protected-access  # テスト間の隔離
 
     def _fake_run(
@@ -110,7 +107,6 @@ def test_ensure_package_manager_version_rejects_below_minimum(
 
 @pytest.mark.parametrize("version_output", ["", "unexpected output", "uv"])
 def test_ensure_package_manager_version_rejects_unparsable(monkeypatch: pytest.MonkeyPatch, version_output: str) -> None:
-    """版を取得できない場合と版文字列を解釈できない場合も拒否する。"""
     pyfltr.command.tool_version._get_tool_version.cache_clear()  # pylint: disable=protected-access  # テスト間の隔離
 
     def _fake_run(
@@ -130,7 +126,6 @@ def test_ensure_package_manager_version_rejects_unparsable(monkeypatch: pytest.M
 def test_ensure_package_manager_version_skips_commands_without_requirement(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """最低版要件を持たない監査コマンドでは版取得を行わない。"""
 
     def _fail(*args: typing.Any, **kwargs: typing.Any) -> typing.NoReturn:
         raise AssertionError((args, kwargs))
@@ -142,7 +137,6 @@ def test_ensure_package_manager_version_skips_commands_without_requirement(
 
 
 def test_get_tool_version_caches_per_executable(monkeypatch: pytest.MonkeyPatch) -> None:
-    """版取得は同じ実行ファイルへ再問い合わせせず、別の実行ファイルでは再取得する。"""
     pyfltr.command.tool_version._get_tool_version.cache_clear()  # pylint: disable=protected-access  # テスト間の隔離
     calls: list[str] = []
 
@@ -165,7 +159,6 @@ def test_get_tool_version_caches_per_executable(monkeypatch: pytest.MonkeyPatch)
 def test_ensure_package_manager_version_rejects_on_version_command_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`--version`が非ゼロ終了した場合も要件未達と同じ扱いで拒否する。"""
     pyfltr.command.tool_version._get_tool_version.cache_clear()  # pylint: disable=protected-access  # テスト間の隔離
 
     def _fake_run(
@@ -185,39 +178,24 @@ def test_ensure_package_manager_version_rejects_on_version_command_failure(
 @pytest.mark.parametrize(
     "output,expected",
     [
-        # 一般的な`<名前> <版>`形式。
         ("uv 0.11.7 (x86_64-unknown-linux-gnu)", (0, 11, 7)),
         ("pnpm 10.2.0", (10, 2, 0)),
         ("yarn 1.22.22", (1, 22, 22)),
-        # 版行より前に警告行が出る実装。
         ("warning: something\nuv 0.11.0", (0, 11, 0)),
-        # ビルドメタデータ・プレリリースは数値要素のみへ切り詰める。
         ("uv 0.10.10+build", (0, 10, 10)),
         ("uv 0.12.0-rc1", (0, 12, 0)),
-        # 版のみ・接頭辞`v`付きの形式。
         ("2026.7.1 linux-x64", (2026, 7, 1)),
         ("v1.2.3", (1, 2, 3)),
-        # 版として解釈できない出力。
         ("", None),
         ("unexpected output", None),
         ("uv", None),
     ],
 )
 def test_extract_tool_version_handles_tool_specific_formats(output: str, expected: tuple[int, ...] | None) -> None:
-    """版の抽出はツールごとの出力形式と警告行の混入に耐える。
-
-    行頭固定・2トークン目固定では、警告行が先に出る実装やビルドメタデータ付きの版で
-    取りこぼしや誤った切り詰めが起きるため、全行走査で最初の版らしいトークンを採用する。
-    """
     assert pyfltr.command.tool_version._extract_tool_version(output) == expected  # pylint: disable=protected-access
 
 
 def test_ensure_package_manager_version_probes_resolved_commandline(monkeypatch: pytest.MonkeyPatch) -> None:
-    """版の問い合わせは`prefix`を含む解決済みコマンドラインへ行う。
-
-    実行ファイルだけへ問い合わせると、ラッパー経由で解決された場合に
-    ラッパー自身の版を測ってしまうため。
-    """
     pyfltr.command.tool_version._get_tool_version.cache_clear()  # pylint: disable=protected-access  # テスト間の隔離
     captured: list[list[str]] = []
 
@@ -251,7 +229,6 @@ def test_ensure_package_manager_version_probes_resolved_commandline(monkeypatch:
 def test_probe_tool_version_text_prefers_line_with_numeric_version(
     monkeypatch: pytest.MonkeyPatch, stdout: str, expected: str | None
 ) -> None:
-    """数値版を含む最初の非警告行を採用し、該当しなければ`None`を返す。"""
 
     def _fake_run(
         commandline: list[str], *_args: typing.Any, **_kwargs: typing.Any
@@ -268,7 +245,6 @@ def test_probe_tool_version_text_prefers_line_with_numeric_version(
 
 
 def test_probe_tool_version_text_returns_none_on_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`--version`が非0終了した場合は`None`を返す。"""
 
     def _fake_run(
         commandline: list[str], *_args: typing.Any, **_kwargs: typing.Any
@@ -287,7 +263,6 @@ def test_probe_tool_version_text_returns_none_on_failure(monkeypatch: pytest.Mon
 def test_probe_tool_version_text_strips_mise_tool_paths_for_mise_runner(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """mise経路ではPATHからmise toolエントリを除外したenvを渡す。"""
     captured: dict[str, typing.Any] = {}
 
     def _fake_env(

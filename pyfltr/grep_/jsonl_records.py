@@ -1,10 +1,3 @@
-"""grep / replaceサブコマンドのJSONLレコード生成。
-
-`pyfltr.output.jsonl_emit.emit_record`の公開ヘルパーを経由して書き込むことで、
-既存のJSONL出力経路（heartbeat連動・最終出力時刻記録）と挙動を揃える。
-新規`kind`を追加する場合も本モジュールに追加し、`pyfltr.output.jsonl_emit.emit_record`経由で出力する。
-"""
-
 from __future__ import annotations
 
 import pathlib
@@ -18,12 +11,6 @@ from pyfltr.grep_.types import MatchRecord, ReplaceRecord
 
 
 def emit_warning(entry: dict[str, typing.Any]) -> None:
-    """`pyfltr.warnings_`蓄積由来の警告dictを`kind:"warning"`レコードとして出力する。
-
-    フィールド順は`pyfltr/output/jsonl_records.py`の`build_warning_record`と揃え、
-    pipeline既存のwarning出力と挙動を一致させる。
-    `entry`は`source`・`message`・`hint`を持つ（`hint`は`emit_warning`が必須とする次の操作）。
-    """
     _emit(pyfltr.output.jsonl_records.build_warning_record(entry))
 
 
@@ -35,10 +22,6 @@ def emit_grep_header(
     format_source: str | None = None,
     output_mode: str | None = None,
 ) -> None:
-    """grep開始時のheaderレコードを1件出力する。
-
-    `pattern`は結合済みの正規表現原文（複数パターンは`|`連結後の文字列）を指定する。
-    """
     record: dict[str, typing.Any] = {
         "kind": "header",
         "subcommand": "grep",
@@ -55,21 +38,14 @@ def emit_grep_header(
 
 
 def emit_records(records: typing.Iterable[dict[str, typing.Any]]) -> None:
-    """grepの選択済み結果レコードを1回のロック内で出力する。"""
     pyfltr.output.jsonl_emit.emit_records(pyfltr.output.jsonl_records.dump_record(record) for record in records)
 
 
 def emit_match(record: MatchRecord, preview: MatchPreview) -> None:
-    """grepの1マッチをJSONLレコードとして出力する。
-
-    `before`・`after`は`-B`・`-A`コンテキストで取得した行群を指定する。
-    どちらも空の場合はキーを省略してトークン消費を抑える。
-    """
     _emit({"kind": "match", **match_payload(record, preview)})
 
 
 def match_payload(record: MatchRecord, preview: MatchPreview) -> dict[str, typing.Any]:
-    """検索結果1件を出力形式間で共有する辞書へ変換する。"""
     payload: dict[str, typing.Any] = {
         "file": pyfltr.paths.normalize_separators(str(record.file)),
         "line": record.line,
@@ -105,15 +81,6 @@ def emit_grep_summary(
     omitted_files: int | None = None,
     output_mode: str | None = None,
 ) -> None:
-    """grep完了時のsummaryレコードを1件出力する。
-
-    `guidance`は英語のヒント文字列リスト（replace起動コマンド案内など）を指定する。
-    指摘・該当事項がある場合のみ呼び出し側で組み立てる方針とし、空リストは省略する。
-    `fully_excluded_files` / `missing_targets`は直接指定がexclude / .gitignore / 不在で
-    対象外になったファイル一覧で、キー名・キー順はrun系の`pyfltr.output.jsonl_records.build_summary_record`に揃える。
-    `warning_count`は直前に出力したwarningレコードの件数で、1件以上のとき`warnings`キーへ
-    出力する。キー名・キー順はrun系の`pyfltr.output.jsonl_records.build_summary_record`に揃える。
-    """
     record: dict[str, typing.Any] = {
         "kind": "summary",
         "subcommand": "grep",
@@ -151,10 +118,6 @@ def emit_replace_header(
     dry_run: bool,
     format_source: str | None = None,
 ) -> None:
-    """replace開始時のheaderレコードを1件出力する。
-
-    `replace_id`はdry-run時には`None`を指定する。
-    """
     record: dict[str, typing.Any] = {
         "kind": "header",
         "subcommand": "replace",
@@ -180,11 +143,6 @@ def emit_file_change(
     records: list[ReplaceRecord] | None = None,
     show_changes: bool = False,
 ) -> None:
-    """1ファイル分の置換結果をJSONLレコードとして出力する。
-
-    `show_changes=True`のときは`changes`配列に各置換箇所の`before_line`・`after_line`を
-    含める。トークン消費が増えるため、`--show-changes`明示時のみ有効化する。
-    """
     payload: dict[str, typing.Any] = {
         "kind": "file_change",
         "file": pyfltr.paths.normalize_separators(str(file)),
@@ -220,13 +178,6 @@ def emit_replace_summary(
     missing_targets: list[str] | None = None,
     warning_count: int = 0,
 ) -> None:
-    """replace完了時のsummaryレコードを1件出力する。
-
-    `fully_excluded_files` / `missing_targets`は直接指定がexclude / .gitignore / 不在で
-    対象外になったファイル一覧で、キー名・キー順はrun系の`pyfltr.output.jsonl_records.build_summary_record`に揃える。
-    `warning_count`は直前に出力したwarningレコードの件数で、1件以上のとき`warnings`キーへ
-    出力する。キー名・キー順はrun系の`pyfltr.output.jsonl_records.build_summary_record`に揃える。
-    """
     record: dict[str, typing.Any] = {
         "kind": "summary",
         "subcommand": "replace",
@@ -249,7 +200,6 @@ def emit_replace_summary(
 
 
 def emit_file_with_matches(file: pathlib.Path, count: int) -> None:
-    """`--files-with-matches`相当のレコードを1件出力する。"""
     _emit(
         {
             "kind": "file_with_matches",
@@ -260,12 +210,10 @@ def emit_file_with_matches(file: pathlib.Path, count: int) -> None:
 
 
 def emit_file_without_match(file: pathlib.Path) -> None:
-    """`--files-without-match`相当のレコードを1件出力する。"""
     _emit({"kind": "file_without_match", "file": pyfltr.paths.normalize_separators(str(file))})
 
 
 def emit_file_count(file: pathlib.Path, count: int) -> None:
-    """`--count` / `--count-matches`相当のレコードを1件出力する。"""
     _emit(
         {
             "kind": "file_count",
@@ -276,11 +224,6 @@ def emit_file_count(file: pathlib.Path, count: int) -> None:
 
 
 def emit_replace_history(meta: dict[str, typing.Any]) -> None:
-    """`--list-history` / `--show-history` 用の履歴レコードを1件出力する。
-
-    `meta`は`ReplaceHistoryStore.load_replace`相当の辞書（`replace_id` / `saved_at` /
-    `command` / `files`等を含む）を想定する。
-    """
     payload = {"kind": "replace_history", **meta}
     _emit(payload)
 
@@ -292,11 +235,6 @@ def emit_replace_undo_summary(
     skipped: list[pathlib.Path],
     exit_code: int,
 ) -> None:
-    """undo完了時のsummaryレコードを1件出力する。
-
-    `skipped`が非空のときは利用者に手動編集の存在を通知し、`--force`での強制復元を促す
-    ガイダンスを呼び出し側で添える運用とする。
-    """
     record: dict[str, typing.Any] = {
         "kind": "summary",
         "subcommand": "replace_undo",
@@ -309,10 +247,4 @@ def emit_replace_undo_summary(
 
 
 def _emit(record: dict[str, typing.Any]) -> None:
-    """構造化出力を1行JSONとして書き込む。
-
-    `pyfltr.output.jsonl_emit.emit_record`の公開ヘルパー経由で書き込み、
-    SSOTのwrite経路（`pyfltr.output.jsonl_emit._write_lock`保護・最終出力時刻更新）を共有する。
-    replaceは1レコード単位、grepは適応形式の確定後に複数レコードをまとめて発行する。
-    """
     pyfltr.output.jsonl_emit.emit_record(pyfltr.output.jsonl_records.dump_record(record))

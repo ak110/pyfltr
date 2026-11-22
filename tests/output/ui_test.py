@@ -17,7 +17,6 @@ import pyfltr.warnings_
 
 
 def test_ctrl_c_operation_sequence(monkeypatch: pytest.MonkeyPatch) -> None:
-    """時間窓の失効と、協調停止後の独立した2回押しによる強制終了を確認する。"""
     args = pyfltr.run_options.RunOptions.from_values({})
     app = pyfltr.output.ui.UIApp(
         ["black"],
@@ -56,12 +55,6 @@ def test_ctrl_c_operation_sequence(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.mark.parametrize("interrupt_after_end", [False, True])
 def test_interrupt_preserves_completed_results(monkeypatch: pytest.MonkeyPatch, interrupt_after_end: bool) -> None:
-    """BGスレッド経路で、途中で中断されても完了分・skipped分がresultsに残る。
-
-    `execute_command`をモンキーパッチで差し替え、「1本目のlinterは成功、2本目の実行中に
-    Ctrl+Cを2回押す」形で協調停止を再現する。
-    resultに完了分とskipped分が揃うこと、warningsに中断通知行が入ることを検証する。
-    """
     pyfltr.warnings_.clear()
     args = pyfltr.run_options.RunOptions.from_values({})
     args.targets = []
@@ -70,7 +63,6 @@ def test_interrupt_preserves_completed_results(monkeypatch: pytest.MonkeyPatch, 
     args.include_fix_stage = False
 
     config = pyfltr.config.config.create_default_config()
-    # 3本のlinterを有効化、それ以外は無効化。
     for name in config.command_names:
         info = config.commands[name]
         if info.type == "linter" and name in ("pylint", "mypy", "ruff-check"):
@@ -91,7 +83,6 @@ def test_interrupt_preserves_completed_results(monkeypatch: pytest.MonkeyPatch, 
         call_order.append(command)
         if command == "pylint":
             ctx.on_subprocess_end()
-            # 1本目: 成功を返す。
             return pyfltr.command.core_.CommandResult(
                 command=command,
                 command_type="linter",
@@ -102,7 +93,6 @@ def test_interrupt_preserves_completed_results(monkeypatch: pytest.MonkeyPatch, 
                 output="",
                 elapsed=0.1,
             )
-        # 2本目: 協調停止を発火させる。
         event = unittest.mock.Mock(key="ctrl+c")
         if interrupt_after_end:
             ctx.on_subprocess_end()
@@ -125,13 +115,11 @@ def test_interrupt_preserves_completed_results(monkeypatch: pytest.MonkeyPatch, 
     monkeypatch.setattr(pyfltr.command.process, "terminate_active_processes", lambda: None)
     monkeypatch.setattr(app, "notify", unittest.mock.Mock())
     monkeypatch.setattr("pyfltr.command.dispatcher.execute_command", _fake_execute_command)
-    # call_from_threadはUI起動前に呼ばれても失敗しないようno-op化。
     call = unittest.mock.Mock()
     monkeypatch.setattr(app, "call_from_thread", call)
 
     app._run_in_background()  # pylint: disable=protected-access  # タイミング制御困難
 
-    # resultsに完了分（pylint succeeded）とskipped分（mypy）が揃っている。
     by_command = {r.command: r for r in app.results}
     assert by_command["pylint"].status == "succeeded"
     assert by_command["mypy"].status == ("succeeded" if interrupt_after_end else "skipped")
@@ -140,7 +128,6 @@ def test_interrupt_preserves_completed_results(monkeypatch: pytest.MonkeyPatch, 
     call.assert_called_with(app.exit, return_code=130)
     assert "Ctrl+C により中断しました" in by_command["ruff-check"].output
 
-    # warningsに中断通知が1行入っている。
     warning_messages = [w["message"] for w in pyfltr.warnings_.collected_warnings()]
     assert any("Ctrl+C により中断しました" in m for m in warning_messages)
     assert any("ruff-check" in m for m in warning_messages)
@@ -148,11 +135,6 @@ def test_interrupt_preserves_completed_results(monkeypatch: pytest.MonkeyPatch, 
 
 
 def test_tester_failure_writes_raw_output_in_addition_to_diagnostics(monkeypatch) -> None:
-    """TUI: テスター失敗時は診断一覧に加えて生出力も#output-<command>へ書き込まれる。
-
-    `call_from_thread`を即時実行のno-opラムダへ差し替え、`_write_log`呼び出しを記録することで
-    Textualのイベントループを介さず`has_custom_parser`分岐の実出力を検証する。
-    """
     args = pyfltr.run_options.RunOptions.from_values({})
     args.targets = []
     args.verbose = False
@@ -170,17 +152,6 @@ def test_tester_failure_writes_raw_output_in_addition_to_diagnostics(monkeypatch
     written: list[tuple[str, str]] = []
 
     def _call_from_thread(fn, *a, **kw):
-        """Textualの`call_from_thread`は戻り値がawaitableなら実行する。
-
-        同期呼び出しへ差し替えるだけではコルーチンがawaitされないまま破棄され、
-        `RuntimeWarning: coroutine ... was never awaited`となる。
-        本テストでこの経路を通るのは`UIApp._update_errors_tab`である。
-        検証対象は`_write_log`への書き込み内容であり対象のコルーチンの戻り値を
-        参照しないため、生成されたコルーチンを閉じて破棄する。
-        `inspect.isawaitable`の判定対象は`Awaitable`であり`close`を持たない型を含むため、
-        型検査を通過しない。`close`を持つ`Coroutine`を判定対象とする
-        `inspect.iscoroutine`を使う。
-        """
         result = fn(*a, **kw)
         if inspect.iscoroutine(result):
             result.close()
@@ -216,7 +187,6 @@ def test_tester_failure_writes_raw_output_in_addition_to_diagnostics(monkeypatch
 
 
 def test_tester_success_writes_slow_tests(monkeypatch) -> None:
-    """TUIはテスター成功時にも遅いテスト一覧をコマンドタブへ書き込む。"""
     args = pyfltr.run_options.RunOptions.from_values(
         {"targets": [], "verbose": False, "keep_ui": False, "include_fix_stage": False}
     )
@@ -250,7 +220,6 @@ def test_tester_success_writes_slow_tests(monkeypatch) -> None:
 
 
 def test_run_commands_with_ui_failure_guides_no_ui(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-    """UIアプリケーションの実行に失敗した場合は、UIを使わずに実行する`--no-ui`を案内して終了する。"""
 
     def _raise(_self: object, *_args: object, **_kwargs: object) -> None:
         raise RuntimeError("terminal unsupported")

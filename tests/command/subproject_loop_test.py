@@ -18,7 +18,6 @@ import tests.conftest as _testconf
 def _make_context(
     tmp_path: pathlib.Path, names: list[str], *, values: dict[str, typing.Any] | None = None
 ) -> pyfltr.command.core_.ExecutionContext:
-    """指定した名前のサブプロジェクトを持つモノレポ構成の`ExecutionContext`を組み立てる。"""
     config = pyfltr.config.config.create_default_config()
     config.values["ruff-check"] = True
     for key, value in (values or {}).items():
@@ -54,32 +53,25 @@ def _disabled_skip(command: str, ctx: pyfltr.command.core_.ExecutionContext) -> 
 
 
 class TestResolveSubprojectWorkers:
-    """`resolve_subproject_workers`のテスト。"""
-
     def test_default_jobs_is_eight(self) -> None:
-        """`jobs`の既定値は8とする。"""
         assert pyfltr.config.model.DEFAULT_CONFIG["jobs"] == 8
 
     def test_uses_whole_budget_for_single_worker_tool(self, tmp_path: pathlib.Path) -> None:
-        """ツール自身が並列化しない場合は`jobs`をそのまま同時実行数の上限にする。"""
         ctx = _make_context(tmp_path, ["a", "b"], values={"jobs": 6})
         cwds = [s.cwd for s in ctx.base.subprojects]
         assert pyfltr.command.subproject_loop.resolve_subproject_workers("ruff-check", ctx, cwds) == 6
 
     def test_divides_budget_by_tool_workers(self, tmp_path: pathlib.Path) -> None:
-        """ツール側の並列度との積が`jobs`を超えないようにする。"""
         ctx = _make_context(tmp_path, ["a", "b"], values={"jobs": 8, "pytest-args": ["-n", "2"]})
         cwds = [s.cwd for s in ctx.base.subprojects]
         assert pyfltr.command.subproject_loop.resolve_subproject_workers("pytest", ctx, cwds) == 4
 
     def test_never_returns_zero(self, tmp_path: pathlib.Path) -> None:
-        """ツール側の並列度が`jobs`以上でも1件は実行する。"""
         ctx = _make_context(tmp_path, ["a", "b"], values={"jobs": 4, "pytest-args": ["-n", "8"]})
         cwds = [s.cwd for s in ctx.base.subprojects]
         assert pyfltr.command.subproject_loop.resolve_subproject_workers("pytest", ctx, cwds) == 1
 
     def test_uses_max_estimate_across_subprojects(self, tmp_path: pathlib.Path) -> None:
-        """サブプロジェクトごとの推定値が異なる場合は大きい方を基準にする。"""
         ctx = _make_context(tmp_path, ["a", "b"], values={"jobs": 8})
         (tmp_path / "b" / "pyproject.toml").write_text(
             '[project]\nname = "x"\nversion = "0"\n\n[tool.pytest.ini_options]\naddopts = "-n 8"\n',
@@ -90,10 +82,7 @@ class TestResolveSubprojectWorkers:
 
 
 class TestRunSubprojectLoop:
-    """`run_subproject_loop`の実行順と並列度のテスト。"""
-
     def test_sequential_when_workers_is_one(self, tmp_path: pathlib.Path) -> None:
-        """`jobs = 1`ではサブプロジェクトが同時に進行しない。"""
         ctx = _make_context(tmp_path, ["a", "b", "c"], values={"jobs": 1})
         active = 0
         max_active = 0
@@ -121,7 +110,6 @@ class TestRunSubprojectLoop:
         assert max_active == 1
 
     def test_parallel_when_workers_is_greater_than_one(self, tmp_path: pathlib.Path) -> None:
-        """`jobs = 2`では2件のサブプロジェクト実行が同時に進行する区間がある。"""
         ctx = _make_context(tmp_path, ["a", "b"], values={"jobs": 2})
         barrier = threading.Barrier(2, timeout=30)
 
@@ -142,7 +130,6 @@ class TestRunSubprojectLoop:
         assert barrier.n_waiting == 0
 
     def test_concurrency_is_capped_by_target_count(self, tmp_path: pathlib.Path) -> None:
-        """上限が対象サブプロジェクト数を上回る場合は、同時実行数が対象件数で収まる。"""
         ctx = _make_context(tmp_path, ["a", "b"], values={"jobs": 6})
         active = 0
         max_active = 0
@@ -157,7 +144,6 @@ class TestRunSubprojectLoop:
             with lock:
                 active += 1
                 max_active = max(max_active, active)
-            # 双方が起動するまで待ち、同時に進行する区間を確実に発生させる。
             started.wait()
             with lock:
                 active -= 1
@@ -173,7 +159,6 @@ class TestRunSubprojectLoop:
         assert max_active == 2
 
     def test_output_order_follows_relative_path(self, tmp_path: pathlib.Path) -> None:
-        """完了順が逆でも、区切り行の順序は相対パスの昇順で安定する。"""
         ctx = _make_context(tmp_path, ["b", "a"], values={"jobs": 2})
         started = threading.Event()
 
@@ -183,7 +168,6 @@ class TestRunSubprojectLoop:
             del args
             result = _testconf.make_succeeded_result(command=command)
             result.output = f"out for {c.subproject_cwd.name if c.subproject_cwd else 'root'}"
-            # 先に開始した側を後から完了させ、完了順と報告順が一致しない状況を再現する。
             if c.subproject_cwd is not None and c.subproject_cwd.name == "a":
                 started.set()
             else:
@@ -200,7 +184,6 @@ class TestRunSubprojectLoop:
         assert merged.output.index("# subproject: a") < merged.output.index("# subproject: b")
 
     def test_duplicate_warnings_are_suppressed_across_workers(self, tmp_path: pathlib.Path) -> None:
-        """並列実行でも、同一の`source`と`message`の警告は1件に収まる。"""
         pyfltr.warnings_.clear()
         ctx = _make_context(tmp_path, ["a", "b", "c"], values={"jobs": 3})
 
@@ -224,11 +207,6 @@ class TestRunSubprojectLoop:
 
 
 def test_mypy_runs_subprojects_one_at_a_time_while_others_run_concurrently(tmp_path: pathlib.Path) -> None:
-    """既定の`jobs`でも、mypyのサブプロジェクト実行は区間が重ならず、他のツールは同時に進行する。
-
-    mypyは同じキャッシュ保存先を複数プロセスで同時に使うと内部エラーで終了するため、
-    同じpyfltr実行の中でmypyを2件以上同時に起動しないことを確かめる。
-    """
     ctx = _make_context(tmp_path, ["a", "b"], values={"mypy": True})
     assert ctx.config.values["jobs"] == 8
 
@@ -246,7 +224,6 @@ def test_mypy_runs_subprojects_one_at_a_time_while_others_run_concurrently(tmp_p
                 active += 1
                 max_active = max(max_active, active)
                 cond.notify_all()
-                # 同時に起動される実装なら他方の開始を待って重なりを確実に観測し、直列なら時間切れで進む。
                 cond.wait_for(lambda: max_active >= 2, timeout=1.0)
                 active -= 1
             return _testconf.make_succeeded_result(command=command)
@@ -266,7 +243,6 @@ def test_mypy_runs_subprojects_one_at_a_time_while_others_run_concurrently(tmp_p
 
 @pytest.mark.parametrize("jobs", [1, 2])
 def test_all_subprojects_are_dispatched(tmp_path: pathlib.Path, jobs: int) -> None:
-    """同時実行数にかかわらず、対象の全サブプロジェクトを1回ずつ実行する。"""
     ctx = _make_context(tmp_path, ["a", "b", "c"], values={"jobs": jobs})
     seen: list[str] = []
     lock = threading.Lock()
@@ -290,7 +266,6 @@ def test_all_subprojects_are_dispatched(tmp_path: pathlib.Path, jobs: int) -> No
 
 
 def test_merge_prefers_executed_subproject_result(tmp_path: pathlib.Path) -> None:
-    """相対パスが先のサブプロジェクトが対象0件でも、後のサブプロジェクトの成功を集約結果へ残す。"""
     ctx = _make_context(tmp_path, ["a", "b"], values={"jobs": 1})
 
     def _dispatch(
@@ -299,7 +274,6 @@ def test_merge_prefers_executed_subproject_result(tmp_path: pathlib.Path) -> Non
         del args
         assert c.subproject_cwd is not None
         if c.subproject_cwd.name == "a":
-            # 渡したファイルがツールの対象globに一致せず、起動しなかった結果を模す。
             return pyfltr.command.core_.CommandResult(
                 command, "linter", [], returncode=None, formatter_failed=False, files=0, output="", elapsed=0.0
             )

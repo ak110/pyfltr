@@ -1,5 +1,3 @@
-"""ツール定義の型。"""
-
 import dataclasses
 import importlib
 import typing
@@ -9,31 +7,18 @@ from pyfltr.diagnostics import ErrorLocation
 
 @dataclasses.dataclass(frozen=True)
 class FunctionRef[**P, R]:
-    """登録を読み込む際の循環を避け、関数を呼出時に解決する。"""
-
     module: str
     name: str
 
     def resolve(self) -> typing.Callable[P, R]:
-        """登録先の関数を型付きで取得する。"""
         return typing.cast(typing.Callable[P, R], getattr(importlib.import_module(self.module), self.name))
 
     def __call__(self, *args: P.args, **kwargs: P.kwargs) -> R:
-        """登録先へ同じ引数を渡し、結果を返す。"""
         return self.resolve()(*args, **kwargs)
 
 
 @dataclasses.dataclass(frozen=True)
 class BinToolSpec:
-    """bin-runner対応ツール（ネイティブバイナリ）の解決情報。
-
-    `_BIN_TOOL_SPEC` テーブルでpyfltrコマンド名と対応付けて登録する。
-    `{command}-runner` が `"bin-runner"`（グローバル `bin-runner` へ委譲）または `"mise"` のとき、
-    本specの `mise_backend` と `bin_name` から `mise exec ... -- <bin>` 形式のコマンドラインを組み立てる。
-    `{command}-path` が非空ならその値が優先され、本テーブルは参照しない。
-    新ツール追加時は`BUILTIN_COMMANDS`の同じ項目へ、本specとrunner・versionの既定値を置く。
-    """
-
     bin_name: str
     """実行ファイル名"""
     mise_backend: str | None = None
@@ -42,8 +27,6 @@ class BinToolSpec:
 
 @dataclasses.dataclass(frozen=True)
 class StructuredOutputSpec:
-    """構造化出力用の引数注入仕様。"""
-
     inject: list[str]
     """注入する引数"""
     conflicts: list[str]
@@ -64,8 +47,6 @@ CommandType = typing.Literal["formatter", "linter", "tester"]
 
 @dataclasses.dataclass
 class CommandInfo:
-    """コマンドの情報。"""
-
     type: CommandType
     """コマンドの種類（`formatter` / `linter` / `tester`）"""
     builtin: bool = True
@@ -203,13 +184,11 @@ class CommandInfo:
     rule_url_builder: typing.Callable[[str, str | None], str | None] | None = None
 
     def require_diagnostic_pattern(self) -> str:
-        """正規表現へのフォールバックを持つ解析処理へ登録済みパターンを返す。"""
         if self.diagnostic_pattern is None:
             raise ValueError("診断パターンが登録されていない")
         return self.diagnostic_pattern
 
     def target_globs(self) -> list[str]:
-        """対象ファイルパターンをリスト形式で返す。"""
         if isinstance(self.targets, str):
             return [self.targets]
         return list(self.targets)

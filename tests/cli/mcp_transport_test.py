@@ -86,7 +86,6 @@ def _client(root: pathlib.Path, server_argv: list[str]) -> typing.Generator[_Cli
             client.send("notifications/initialized", {})
             yield client
         finally:
-            # 失敗時もテストが所有する入力だけを解放し、サーバーの終了処理を待つ。
             for work_dir in root.glob("project-*"):
                 (work_dir / "release").touch()
             assert process.stdin is not None
@@ -191,7 +190,6 @@ pyfltr.cli.main.main()
 
 
 def _slot_wait_server(root: pathlib.Path, marker: pathlib.Path) -> list[str]:
-    """workerが実行枠の待機を始めた時点で`marker`を作成するstdioサーバーの起動引数を返す。"""
     worker = write_slot_wait_worker(root / "slot_wait_worker.py", marker)
     server = root / "slot_wait_server.py"
     server.write_text(_SLOT_WAIT_SERVER.format(worker=str(worker)), encoding="utf-8")
@@ -199,7 +197,6 @@ def _slot_wait_server(root: pathlib.Path, marker: pathlib.Path) -> list[str]:
 
 
 def _wait_for(predicate: typing.Callable[[], bool], observed: typing.Callable[[], str] | None = None) -> None:
-    """条件が成立するまで待つ。上限に達したら、`observed`の戻り値（失敗時点の観測）を示して失敗させる。"""
     deadline = time.monotonic() + 15
     while not predicate():
         if time.monotonic() >= deadline:
@@ -209,7 +206,6 @@ def _wait_for(predicate: typing.Callable[[], bool], observed: typing.Callable[[]
 
 
 def _describe_slot_wait(root: pathlib.Path, waiting: pathlib.Path, client: _Client) -> str:
-    """待機の印に到達しない原因を調べるため、印の有無・サーバーとworkerの標準エラー・未回収の応答を返す。"""
     stderr = root / "server-stderr.log"
     stderr_text = stderr.read_text(encoding="utf-8") if stderr.exists() else "（未作成）"
     return "\n".join(
@@ -232,11 +228,6 @@ def _running(pid: int) -> bool:
 def test_stdio_remains_responsive_and_cancels_only_owned_process_tree(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """2つの実行を重ね、pingと警告応答、片方の子孫停止、もう片方の完走を確認する。
-
-    2つの`run`は検証の実行枠を共有するため、後発の要求は先発の取り消しで子孫が止まり枠が解放されてから実行する。
-    後発を待たせるため、サーバーへ引き継ぐ環境で枠を1つにする。
-    """
     monkeypatch.setenv(pyfltr.command.execution_slot.SLOTS_ENV, "1")
     first = _project(tmp_path, "project-first")
     second = _project(tmp_path, "project-second")
@@ -281,7 +272,6 @@ def test_stdio_remains_responsive_and_cancels_only_owned_process_tree(
         grep = client.receive(5)["result"]["structuredContent"]
         assert grep["warnings"]
         assert not (second / "started.json").exists()
-        # 後発が実行枠の待機を始めたことを確かめてから先発を取り消し、待機の警告を検証できる順序にする。
         _wait_for(waiting.exists, observed=lambda: _describe_slot_wait(tmp_path, waiting, client))
         client.send("notifications/cancelled", {"requestId": 2})
         _wait_for(lambda: (second / "child-started").exists() and (second / "started.json").exists())
@@ -305,7 +295,6 @@ def test_stdio_remains_responsive_and_cancels_only_owned_process_tree(
 async def test_mcp_worker_uses_utf8_with_non_utf8_standard_streams(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, encoding: str
 ) -> None:
-    """標準入出力が非UTF-8でも、公開MCPの日本語入力・結果・エラーを失わない。"""
     monkeypatch.setenv("PYFLTR_CACHE_DIR", str(tmp_path / "cache"))
     sample = tmp_path / "sample.txt"
     sample.write_text("日本語\n", encoding="utf-8")
@@ -320,7 +309,6 @@ async def test_mcp_worker_uses_utf8_with_non_utf8_standard_streams(
     open_process = anyio.open_process
 
     async def _open(command: list[str], **kwargs: typing.Any) -> anyio.abc.Process:
-        # OSの標準ストリームを差し替えた実インタプリタで、同じworker入口を実行する。
         return await open_process([command[0], "-I", str(wrapper), command[-1]], **kwargs)
 
     monkeypatch.setattr(anyio, "open_process", _open)

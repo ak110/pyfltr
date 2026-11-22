@@ -1,5 +1,3 @@
-"""品質チェックを実行するMCPツール。"""
-
 from __future__ import annotations
 
 import pathlib
@@ -132,35 +130,8 @@ async def tool_run(
     ] = False,
     jobs: typing.Annotated[int | None, pydantic.Field(description="並列実行するツール数の上限。省略時は設定値を使う。")] = None,
 ) -> RunResult:
-    """指定パスに対してlint/format/testを実行し、結果を返す。
-
-    `run`・`fast`・`ci`の各実行モードをCLIと同じ既定値で扱う。
-    実行アーカイブは常に有効化する。初期化に失敗した場合は`run_id=None`となり、
-    `warnings`の`source="archive"`が理由と対処を示す。実行結果はアーカイブの成否によらず返す。
-    `only_failed`による早期終了（直前runなし・失敗ツールなし・対象ファイル交差が空・
-    `from_run`の解決失敗・アーカイブの読み取り失敗）の場合は`run_id=None`とし、
-    実際の理由と対処を`skipped_reason`へ設定して返す。
-    早期終了せず、一部の検査だけ直前runの失敗ファイルが対象と交差せず除外された場合と、
-    `commands`へ指定した検査が設定で無効化されているために実行されなかった場合も、
-    対象の検査名と理由を`skipped_reason`へ設定する。いずれも`run_pipeline`が発行する
-    `source="only-failed"`・`source="commands"`の警告を入力とし、MCP側では再判定しない。
-    実行中の警告は`warnings`へ、失敗時などの次の操作は`guidance`へ設定する。
-    返却へ含めた警告はサーバーのstderrへ重ねて出力しない。
-
-    結果は`completion`を最初に読む。`completed`以外なら`incomplete_commands`・
-    `missing_targets`・`fully_excluded_files`・`skipped_reason`・`warnings`で未完了の理由を、
-    `failed`が空でなければ`show_run_diagnostics`で診断を確認する。
-    完了判定は`run_pipeline`が導出した値をそのまま返し、CLI JSONLの`summary`と同じ値になる。
-
-    対応CLI: `pyfltr run` / `pyfltr fast` / `pyfltr ci`
-    """
-    # `run_pipeline`は警告を初期化しないため、対象の呼び出しが発行した警告だけを
-    # `skipped_reason`の入力にできるよう、ここで蓄積を初期化する。
     pyfltr.warnings_.clear()
 
-    # 返却へ含めた警告を配送済みとして扱い、サーバーのstderrへ重ねて出力しないよう、
-    # 返却の組み立てまでを配送保留スコープに含める。例外で返却に至らなかった警告は
-    # スコープの終了時にstderrへ通知される。
     with pyfltr.warnings_.defer_stderr():
         if mode not in ("run", "fast", "ci"):
             pyfltr.cli.mcp_errors.raise_mcp_error("mode は run / fast / ci のいずれかを指定してください。")
@@ -178,7 +149,6 @@ async def tool_run(
 
         args = pyfltr.run_options.RunOptions(
             targets=targets,
-            # CLI経路（`--commands`はaction="append"）と同じ`list[str] | None`で保持する。
             commands=list(commands) if commands else None,
             enable=list(enable) if enable else None,
             disable=list(disable) if disable else None,
@@ -188,12 +158,12 @@ async def tool_run(
             only_failed=only_failed,
             from_run=from_run,
             changed_since=changed_since,
-            no_archive=False,  # アーカイブ必須化のため明示的にFalse
+            no_archive=False,
             no_cache=no_cache,
             no_always_targets=no_always_targets,
             verbose=False,
             output_format="jsonl",
-            output_file=None,  # MCP応答を返すため構造化出力は無効化する
+            output_file=None,
             ui=None,
             no_ui=True,
             no_clear=True,
@@ -210,8 +180,6 @@ async def tool_run(
             exit_zero_even_if_formatted=False,
             version=False,
             subcommand=mode,
-            # MCPの戻り値は実行アーカイブから組み立てるためJSONL縮約の影響を受けない。
-            # quiet=Trueはstderrへのprecommitガイダンス抑止のみに作用する。
             quiet=True,
         )
         pyfltr.cli.command_selection.apply_subcommand_defaults(args)
@@ -292,7 +260,6 @@ async def tool_run(
 
 
 def _build_run_warnings(entries: list[dict[str, typing.Any]]) -> list[RunWarningModel]:
-    """蓄積された警告を`RunResult.warnings`の要素へ変換する。"""
     return [
         RunWarningModel(source=str(entry["source"]), message=str(entry["message"]), hint=str(entry["hint"]))
         for entry in entries
@@ -300,6 +267,5 @@ def _build_run_warnings(entries: list[dict[str, typing.Any]]) -> list[RunWarning
 
 
 def _join_warning_texts(entries: list[dict[str, typing.Any]], *, sources: tuple[str, ...]) -> str | None:
-    """指定した発生源の警告を対処込みの文字列へ整形して連結する。該当が無ければNoneを返す。"""
     texts = [pyfltr.warnings_.format_warning_text(entry) for entry in entries if entry.get("source") in sources]
     return " / ".join(texts) or None

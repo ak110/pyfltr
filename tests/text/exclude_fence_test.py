@@ -7,7 +7,6 @@ import pyfltr.text.exclude_fence
 
 
 def test_mask_fenced_blocks_under_heading_masks_inner_lines_only() -> None:
-    """対象H2見出し配下のフェンス内側行だけを空行へ置換する。"""
     text = "## 背景\n\n```text\n長い原文です。\nsecond line\n```\n"
 
     masked = pyfltr.text.exclude_fence.mask_fenced_blocks_under_headings(text, ["## 背景"])
@@ -17,7 +16,6 @@ def test_mask_fenced_blocks_under_heading_masks_inner_lines_only() -> None:
 
 
 def test_mask_fenced_blocks_under_heading_keeps_other_sections() -> None:
-    """指定H2見出し配下以外のフェンスは変更しない。"""
     text = "## 対象外\n\n```\nkeep\n```\n\n## 背景\n\n```\nmask\n```\n"
 
     masked = pyfltr.text.exclude_fence.mask_fenced_blocks_under_headings(text, ["## 背景"])
@@ -28,7 +26,6 @@ def test_mask_fenced_blocks_under_heading_keeps_other_sections() -> None:
 
 
 def test_mask_fenced_blocks_under_heading_accepts_multiple_headings_until_eof() -> None:
-    """複数H2見出しを指定でき、最終H2見出しはEOFまで対象にする。"""
     text = "## 背景\n\n~~~\nfirst\n~~~\n\n## 詳細\n\n````python\nsecond\n````\n"
 
     masked = pyfltr.text.exclude_fence.mask_fenced_blocks_under_headings(text, ["## 背景", "## 詳細"])
@@ -39,7 +36,6 @@ def test_mask_fenced_blocks_under_heading_accepts_multiple_headings_until_eof() 
 
 
 def test_mask_fenced_blocks_under_heading_returns_original_for_empty_or_missing_input() -> None:
-    """指定が空または該当見出しが無い場合は原文を返す。"""
     text = "## 背景\n\n```\nkeep\n```\n"
 
     assert pyfltr.text.exclude_fence.mask_fenced_blocks_under_headings(text, []) == text
@@ -48,7 +44,6 @@ def test_mask_fenced_blocks_under_heading_returns_original_for_empty_or_missing_
 
 
 def test_mask_fenced_blocks_under_heading_produces_empty_lines() -> None:
-    """マスク後のフェンス内側行が空行（改行のみ）で長い行を残さない。"""
     long_line = "あ" * 200
     text = f"## 背景\n\n```text\n{long_line}\n```\n"
 
@@ -60,7 +55,6 @@ def test_mask_fenced_blocks_under_heading_produces_empty_lines() -> None:
 
 
 def test_mask_fenced_blocks_under_heading_uses_short_space_for_unclosed_eof() -> None:
-    """未閉じフェンスかつ改行なしEOF最終行は短い空白へ置換する。"""
     text = "## 背景\n\n```text\n" + "あ" * 200
 
     masked = pyfltr.text.exclude_fence.mask_fenced_blocks_under_headings(text, ["## 背景"])
@@ -74,7 +68,6 @@ def test_markdownlint_diagnostic_file_is_restored_from_temporary_path(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """markdownlint診断の一時ファイルパスを元ファイルパスへ戻す。"""
     work_dir = tmp_path / "work"
     work_dir.mkdir()
     original_path = tmp_path / "sample.md"

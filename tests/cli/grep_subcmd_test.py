@@ -7,7 +7,6 @@ import pyfltr.cli.main
 
 
 def _make_sample_files(root: pathlib.Path) -> None:
-    """テスト用のサンプルファイル群を作成する。"""
     (root / "a.py").write_text("foo bar\nbaz foo\n", encoding="utf-8")
     (root / "b.txt").write_text("hello\nfoo world\n", encoding="utf-8")
     (root / "c.md").write_text("nothing here\n", encoding="utf-8")
@@ -23,11 +22,9 @@ def test_grep_text_basic(
     rc = pyfltr.cli.main.run(["grep", "foo", str(tmp_path)])
     assert rc == 0
     out = capsys.readouterr().out
-    # ripgrep流儀の path:line:col:line_text 形式
     assert "a.py:1:1:foo bar" in out
     assert "a.py:2:5:baz foo" in out
     assert "b.txt:2:1:foo world" in out
-    # サマリ行
     assert "match(es)" in out
 
 
@@ -49,7 +46,6 @@ def test_grep_jsonl_records(
     summary = lines[-1]
     assert summary["subcommand"] == "grep"
     assert summary["total_matches"] >= 3
-    # マッチありなのでガイダンスにreplace起動コマンド案内が含まれる
     assert "guidance" in summary
     assert any("pyfltr replace" in g for g in summary["guidance"])
 
@@ -77,7 +73,6 @@ def test_grep_type_filter_python(
     assert rc == 0
     out = capsys.readouterr().out
     assert "a.py" in out
-    # b.txt は対象外
     assert "b.txt" not in out
 
 
@@ -86,10 +81,6 @@ def test_grep_glob_matches_target_with_dot_dot(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """`..`を含む対象も畳み込んだ表現で`--glob`と照合し、走査する。
-
-    `src/sub/../a.md`の末尾から`src/*.md`を照合すると一致せず、`src/a.md`を走査しない。
-    """
     (tmp_path / "src" / "sub").mkdir(parents=True)
     (tmp_path / "src" / "a.md").write_text("needle\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
@@ -178,7 +169,6 @@ def test_grep_json_normalizes_file_separators(
     summary_flag: str | None,
     summary_key: str | None,
 ) -> None:
-    """JSONのマッチと集計でファイル位置の区切り文字を`/`へ統一する。"""
     target = pathlib.Path(r"sub\target.py")
     filesystem_target = tmp_path / target
     filesystem_target.parent.mkdir(parents=True, exist_ok=True)
@@ -207,7 +197,6 @@ def test_grep_includes_hidden_files(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """ドット始まりのファイル・ディレクトリも対象に含める（run系と統一）。"""
     (tmp_path / ".hidden.py").write_text("foo here\n", encoding="utf-8")
     hidden_dir = tmp_path / ".config"
     hidden_dir.mkdir()
@@ -227,12 +216,11 @@ def test_grep_notifies_excluded_explicit_file(
     capsys: pytest.CaptureFixture[str],
     output_format: str,
 ) -> None:
-    """直接指定したexclude該当ファイルをsummaryのfully_excluded_filesで通知する。"""
     lock = tmp_path / "uv.lock"
     lock.write_text("foo\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     rc = pyfltr.cli.main.run(["grep", "foo", f"--output-format={output_format}", str(lock)])
-    assert rc == 1  # 除外され対象0件のためマッチ無し
+    assert rc == 1
     out = capsys.readouterr().out
     if output_format == "jsonl":
         records = [json.loads(line) for line in out.splitlines() if line.strip()]
@@ -250,7 +238,6 @@ def test_grep_notifies_missing_explicit_file(
     capsys: pytest.CaptureFixture[str],
     output_format: str,
 ) -> None:
-    """直接指定した不在ファイルをsummaryのmissing_targetsで通知する。"""
     monkeypatch.chdir(tmp_path)
     rc = pyfltr.cli.main.run(["grep", "foo", f"--output-format={output_format}", str(tmp_path / "nope.py")])
     assert rc == 1
@@ -269,10 +256,8 @@ def test_grep_jsonl_summary_omits_warnings_when_none(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """警告が1件も発生しない実行ではsummaryに`warnings`キーが現れない。"""
     _make_sample_files(tmp_path)
     monkeypatch.chdir(tmp_path)
-    # 一時ディレクトリはgit管理外のため、`.gitignore`判定を無効化して対象の警告の発生を避ける。
     rc = pyfltr.cli.main.run(["grep", "foo", "--output-format=jsonl", "--no-gitignore", str(tmp_path / "a.py")])
     assert rc == 0
     records = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
@@ -285,7 +270,6 @@ def test_grep_text_notifies_excluded(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """text出力でも除外ファイルをfully-excluded-filesセクションで通知する。"""
     lock = tmp_path / "uv.lock"
     lock.write_text("foo\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
@@ -365,7 +349,6 @@ def test_grep_json_exposes_decode_and_truncation_warnings(
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
     assert len(payload["warnings"]) == 2
-    # デコード失敗と切り詰めの双方が次の操作を持つ。
     assert all(set(warning) == {"source", "msg", "hint"} for warning in payload["warnings"])
     decode_warning = next(warning for warning in payload["warnings"] if "--encoding" in warning["hint"])
     assert "--encoding" in decode_warning["hint"]

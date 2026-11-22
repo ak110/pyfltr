@@ -1,5 +1,3 @@
-"""対象ファイル選定。"""
-
 import contextlib
 import functools
 import os
@@ -22,13 +20,6 @@ def pick_targets(
     only_failed_targets: "dict[str, pyfltr.command.only_failed.ToolTargets] | None",
     command: str,
 ) -> "pyfltr.command.only_failed.ToolTargets | None":
-    """`only_failed_targets` から対象のツールのToolTargetsを取り出す。
-
-    `only_failed_targets` 自体が `None` の場合（`--only-failed` 未指定）は常に
-    `None` を返し、`execute_command` で既定の `all_files` に委ねる。指定あり時は
-    dictから対象のコマンドのエントリを返す（存在しない場合はNone）。
-    `cli` と `ui` の両経路から同一挙動で引ける共通ヘルパー。
-    """
     if only_failed_targets is None:
         return None
     return only_failed_targets.get(command)
@@ -82,11 +73,9 @@ def expand_all_files(
             except OSError:
                 excluded_real.add(sub)
 
-    # 空ならカレントディレクトリを対象とする
     if len(targets) == 0:
         targets = [pathlib.Path(".")]
 
-    # コマンドラインで直接指定されたファイル（ディレクトリでないもの）を記録
     directly_specified: set[pathlib.Path] = set()
     expanded: list[pathlib.Path] = []
     respect_gitignore = bool(config["respect-gitignore"])
@@ -132,11 +121,6 @@ def expand_all_files(
                     pyfltr.warnings_.add_filtered_direct_file(normalized_target, reason="excluded")
                 return
             if filesystem_target.is_dir():
-                # シンボリックリンクディレクトリ自身が.gitignore対象なら配下を辿らない。
-                # 末尾`/`を付けない単一パス指定で問い合わせるため、
-                # ファイル形式パターン（`name`・`*pattern*`等）に限り判定が成立する。
-                # `link/`形式のディレクトリ専用パターンは`git check-ignore`が
-                # symlink越えのpathspecを拒否するため判定不可となり、早期スキップは機能しない。
                 if respect_gitignore and filesystem_target.is_symlink() and _is_ignored_single_path(target, cwd=cwd_base):
                     return
                 for child in filesystem_target.iterdir():
@@ -147,7 +131,6 @@ def expand_all_files(
                     directly_specified.add(target)
         except OSError as e:
             normalized_target = pyfltr.paths.normalize_separators(target)
-            # 利用者向けには例外の要約だけを示し、トレースバックは調査用にdebugログへ残す。
             logger.debug("対象ファイルの展開に失敗: %s", normalized_target, exc_info=True)
             pyfltr.warnings_.emit_warning(
                 source="file-resolver",
@@ -157,16 +140,10 @@ def expand_all_files(
 
     for target in targets:
         base_dir = exclude_base_dir(target, targets=targets, start_cwd=cwd_base)
-        # 絶対パスの場合は起点 cwd 基準の相対パスに変換
         if target.is_absolute():
             with contextlib.suppress(ValueError):
                 target = target.relative_to(cwd_base)
         target = _collapse_relative_dots(target, cwd_base=cwd_base)
-        # 非存在パスは前段で検出して対象から外す。
-        # 各ツールが個別に「ファイルが見つからない」と失敗してJSONLが多重化するのを防ぐ。
-        # exclude/.gitignore除外（reason="excluded"）とは別系統（reason="missing"）で蓄積し、
-        # CLI側では「全件不在 → 非ゼロ終了」の判定にだけ用いる。
-        # 起点 cwd と異なる cwd で起動した場合に備え、相対パスは起点 cwd 基準で存在確認する。
         check_path = target if target.is_absolute() else (cwd_base / target)
         if not check_path.exists():
             normalized_target = pyfltr.paths.normalize_separators(target)
@@ -180,11 +157,9 @@ def expand_all_files(
         is_direct = not check_path.is_dir()
         _expand_target(target, is_direct=is_direct, base_dir=base_dir)
 
-    # .gitignoreフィルタリング
     if respect_gitignore:
         before_gitignore = set(expanded)
         expanded = _filter_by_gitignore(expanded, cwd=cwd_base)
-        # 直接指定されたファイルがgitignoreで除外された場合に警告
         after_set = set(expanded)
         for target in directly_specified:
             if target in before_gitignore and target not in after_set:
@@ -202,14 +177,6 @@ def expand_all_files(
 
 
 def _collapse_relative_dots(target: pathlib.Path, *, cwd_base: pathlib.Path) -> pathlib.Path:
-    """相対パスの`..`を字句的に畳み込んだ表現を返す。
-
-    除外とglobのパターン照合（`Path.match`）は対象と各親ディレクトリへ適用するため、
-    `build/../a.md`の親`build`が除外に一致したり、`src/sub/../a.md`が`src/*.md`に一致しなかったりする。
-    展開の入口で起点内の`..`を畳み込み、照合する各処理が同じファイルに同じ判定を返すようにする。
-    先頭の`..`（起点外を指す相対パス）は`os.path.normpath`が保持するため、起点外の相対パスの表現は変わらない。
-    シンボリックリンクを経由する`..`で畳み込み前後の実体が異なる場合は、利用者が指定した実体を保つため置き換えない。
-    """
     if target.is_absolute():
         return target
     collapsed = pathlib.Path(os.path.normpath(target))
@@ -224,7 +191,6 @@ def _collapse_relative_dots(target: pathlib.Path, *, cwd_base: pathlib.Path) -> 
 
 
 def _is_subpath(path: pathlib.Path, ancestor: pathlib.Path) -> bool:
-    """`path` が `ancestor` の配下（自身含む）かを判定する。"""
     try:
         path.relative_to(ancestor)
     except ValueError:
@@ -233,18 +199,6 @@ def _is_subpath(path: pathlib.Path, ancestor: pathlib.Path) -> bool:
 
 
 def _dedup_and_sort(paths: list[pathlib.Path], *, cwd_base: pathlib.Path) -> list[pathlib.Path]:
-    """実体パス単位で重複排除し、パス文字列で安定ソートして返す。
-
-    同一実体に複数パスが紐付く場合は非シンボリックリンクのパスを優先して残す。
-    prettier等の一部ツールは末端がシンボリックリンクのファイルを明示指定されると
-    `Explicitly specified pattern "X" is a symbolic link`エラーで失敗する。
-    `iterdir()`の返却順はOS依存（Linuxのext4は作成順・WindowsのNTFSはアルファベット順）で
-    入力順が揺れるため、非シンボリックリンク優先の選定基準で揺れを吸収し決定論的にエラーを回避する。
-    シンボリックリンクを辿った結果、同一実体ファイルが複数パスから列挙される構成
-    （例: `.agents/skills` → `.claude/skills`）でツールチェックを多重実行するのを避ける目的も兼ねる。
-    同一実体内で全パスがシンボリックリンクか／全パスが非シンボリックリンクの同点時は、
-    パス文字列で安定化する。
-    """
     candidates: dict[pathlib.Path, list[pathlib.Path]] = {}
     for p in paths:
         filesystem_path = p if p.is_absolute() else cwd_base / p
@@ -260,10 +214,6 @@ def _dedup_and_sort(paths: list[pathlib.Path], *, cwd_base: pathlib.Path) -> lis
 
 
 def _dedup_selection_key(path: pathlib.Path, *, cwd_base: pathlib.Path) -> tuple[bool, str]:
-    """`_dedup_and_sort`の選定キー。非シンボリックリンクを優先し、同点はパス文字列で安定化する。
-
-    `is_symlink()`のOSErrorはsymlink扱いに分類し、非シンボリックリンクを最大限残す。
-    """
     filesystem_path = path if path.is_absolute() else cwd_base / path
     try:
         is_link = filesystem_path.is_symlink()
@@ -273,15 +223,6 @@ def _dedup_selection_key(path: pathlib.Path, *, cwd_base: pathlib.Path) -> tuple
 
 
 def _is_ignored_single_path(path: pathlib.Path, *, cwd: pathlib.Path | None = None) -> bool:
-    """単一パスのgitignore判定。
-
-    末尾`/`を付けない指定で`git check-ignore`に問い合わせる。
-    `.gitignore`のファイル形式パターン（`name`・`*pattern*`等）に一致する場合のみ
-    Trueを返す。`link/`形式のディレクトリ専用パターンには一致しない。
-    git不在・タイムアウト・その他エラー時はFalseを返し、呼び出し元は通常走査を続ける。
-
-    `cwd` を指定すると `git` の作業ディレクトリに渡す。`None` の場合は親プロセスの cwd を使う。
-    """
     try:
         result = subprocess.run(
             ["git", "check-ignore", "--quiet", str(path)],
@@ -296,21 +237,6 @@ def _is_ignored_single_path(path: pathlib.Path, *, cwd: pathlib.Path | None = No
 
 
 def _work_tree_state(cwd: pathlib.Path) -> typing.Literal["inside", "outside", "unknown"]:
-    """`cwd`がGit作業ツリーの内側か外側か、判定できないかを返す。
-
-    `git rev-parse --is-inside-work-tree`の終了コードが0のときは、標準出力`true`を`inside`、
-    `false`（bareリポジトリ）を`outside`とする。
-    終了コードが非0のときは、リポジトリを発見できない状態と、発見したうえで利用を拒否した状態
-    （別所有者の`detected dubious ownership`など）の双方があり、gitの終了コードでは区別できない。
-    後者では`.git`が祖先に存在するため、祖先探索で`outside`と`unknown`へ分ける。
-    `GIT_DIR`で指定されたパスを`git rev-parse --resolve-git-dir`で解決できる場合は、Gitの対象が祖先の`.git`に
-    限られないため、終了コード128では`unknown`とする。解決できない`GIT_DIR`や`GIT_WORK_TREE`だけの指定は、
-    Gitディレクトリを追加で成立させないため祖先探索へ進む。
-    git 2.43.0の実測では、作業ツリー内は終了コード0と`true`、bareリポジトリは終了コード0と
-    `false`、非リポジトリは終了コード128と空の標準出力、所有者検査に失敗する作業ツリー内は
-    終了コード128と`detected dubious ownership`のエラーを返す。
-    タイムアウトで実行できない場合は`unknown`とする。
-    """
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--is-inside-work-tree"],
@@ -333,7 +259,6 @@ def _work_tree_state(cwd: pathlib.Path) -> typing.Literal["inside", "outside", "
         probe_env = os.environ.copy()
         probe_env.pop("GIT_DIR", None)
         probe_env.pop("GIT_WORK_TREE", None)
-        # 主判定の設定エラーでGitディレクトリの解決確認まで失敗しないよう、設定読込を隔離する。
         probe_env["GIT_CONFIG_NOSYSTEM"] = "1"
         probe_env["GIT_CONFIG_GLOBAL"] = os.devnull
         try:
@@ -350,7 +275,6 @@ def _work_tree_state(cwd: pathlib.Path) -> typing.Literal["inside", "outside", "
         except subprocess.TimeoutExpired:
             return "unknown"
         if resolve_result.returncode == 0:
-            # Gitの対象を環境変数で指定している場合、cwdの祖先だけでは作業ツリー外を証明できない。
             return "unknown"
     try:
         current = cwd.resolve()
@@ -384,8 +308,8 @@ def _filter_by_gitignore(paths: list[pathlib.Path], *, cwd: pathlib.Path | None 
         return paths
     cwd_base = cwd if cwd is not None else pathlib.Path.cwd()
     cwd_real = cwd_base.resolve()
-    in_repo: list[tuple[pathlib.Path, str]] = []  # (元path, cwd相対化したrealpath str)
-    out_repo: list[pathlib.Path] = []  # cwd外（gitignore判定対象外）
+    in_repo: list[tuple[pathlib.Path, str]] = []
+    out_repo: list[pathlib.Path] = []
     for p in paths:
         try:
             abs_path = p if p.is_absolute() else (cwd_base / p)
@@ -430,12 +354,6 @@ def _filter_by_gitignore(paths: list[pathlib.Path], *, cwd: pathlib.Path | None 
         )
         return paths
     if result.returncode not in (0, 1):
-        # 0: 1つ以上ignored, 1: 全てnot ignored, 128: fatal error（gitの公開仕様はこの3値）。
-        # 終了コード128で起点cwdがGit作業ツリーの外側と確定できた場合は、適用対象の`.gitignore`が
-        # 存在せず除外漏れが生じないため、警告を発行せずフィルター適用を省略して入力パスをそのまま返す。
-        # 作業ツリーの内側の128、内外を判定できない場合、公開仕様に無い終了コードは、サイレント
-        # 素通しが.gitignore除外スキップを隠蔽するため emit_warning で通知し、stdoutで返ってきた
-        # 部分結果はignored判定として活用する。
         if result.returncode == 128 and _work_tree_state(cwd_base) == "outside":
             return paths
         stderr_msg = result.stderr.strip() if result.stderr else ""
@@ -457,30 +375,16 @@ def _filter_by_gitignore(paths: list[pathlib.Path], *, cwd: pathlib.Path | None 
 
 
 def filter_by_globs(all_files: list[pathlib.Path], globs: list[str]) -> list[pathlib.Path]:
-    """ファイルリストをglobパターンでフィルタリングする。"""
     return [f for f in all_files if any(f.match(glob) for glob in globs)]
 
 
 def filter_by_changed_since(all_files: list[pathlib.Path], ref: str, *, cwd: pathlib.Path | None = None) -> list[pathlib.Path]:
-    """`--changed-since <ref>` で変更ファイルにフィルタリングする。
-
-    `git diff --name-only <ref>` でコミット差分とtrackedファイルの作業ツリー差分・staged差分の
-    和集合を取得し、`all_files` との交差を返す。
-    untracked（`git add` 未実施の新規ファイル）は対象外となる。
-
-    `cwd` を指定すると `git` の作業ディレクトリに渡し、`all_files`の相対パスの基準にも使う。
-    `None` の場合は親プロセスの cwd を使う。
-    git不在またはrefが存在しない場合は警告を発行して `all_files` をそのまま返す（全体実行へフォールバック）。
-    """
     changed = _get_changed_files(ref, cwd=cwd)
     if changed is None:
         return all_files
     if not changed:
         return []
-    # `git rev-parse --show-toplevel`はシンボリックリンクを解決した実体パスを返すため、起点も実体パスへ揃える。
     start = (cwd if cwd is not None else pathlib.Path.cwd()).resolve()
-    # `git diff --name-only`は起点cwdによらずGitリポジトリroot相対のパスを返す（`diff.relative`未設定時）。
-    # all_filesは起点相対のため、gitの出力をrootで絶対化してから両側を同じ突合キーへ揃えて比較する。
     root = _get_git_toplevel(start)
     base = root if root is not None else start
     changed_keys = {pyfltr.paths.to_match_key(base / p, start_cwd=start) for p in changed}
@@ -488,11 +392,6 @@ def filter_by_changed_since(all_files: list[pathlib.Path], ref: str, *, cwd: pat
 
 
 def _get_git_toplevel(cwd: pathlib.Path) -> pathlib.Path | None:
-    """`cwd`を含むGit作業ツリーのrootを返す。取得できない場合は`None`を返す。
-
-    `git diff`が成功した直後に同じcwdで呼ぶため、通常は取得に成功する。
-    取得できない場合の呼び出し元は、gitの出力を起点相対として扱う。
-    """
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--show-toplevel"],
@@ -512,17 +411,6 @@ def _get_git_toplevel(cwd: pathlib.Path) -> pathlib.Path | None:
 
 
 def _get_changed_files(ref: str, *, cwd: pathlib.Path | None = None) -> list[str] | None:
-    """`git diff --name-only <ref>` でコミット差分とtrackedファイルの作業ツリー差分・staged差分を取得する。
-
-    untracked（`git add` 未実施の新規ファイル）は `git diff` の出力に含まれないため対象外となる。
-    成功時はパス文字列のリストを返す。git不在・ref不在・タイムアウト時は
-    警告を発行して `None` を返す（呼び出し元が全体実行へフォールバックする）。
-    """
-    # HEADからのコミット差分（<ref>..HEAD）とtrackedファイルの作業ツリー差分・staged差分の
-    # 3種を「git diff <ref>」1コマンドで取得する。
-    # git diff <ref> は <ref> と作業ツリーの差分（stagedも含む）を返すため、
-    # コミット間差分 + trackedファイルの作業ツリー差分を一度に網羅できる。
-    # 出力は-zオプションでNUL区切りにしてパスにスペースや特殊文字が含まれるケースに対応する。
     try:
         result = subprocess.run(
             ["git", "diff", "--name-only", "-z", ref],
@@ -548,7 +436,6 @@ def _get_changed_files(ref: str, *, cwd: pathlib.Path | None = None) -> list[str
         )
         return None
     if result.returncode != 0:
-        # 終了コード非0はref不在・リポジトリ外などを示す。
         stderr_msg = result.stderr.strip()
         detail = f": {stderr_msg}" if stderr_msg else ""
         pyfltr.warnings_.emit_warning(
@@ -557,16 +444,10 @@ def _get_changed_files(ref: str, *, cwd: pathlib.Path | None = None) -> list[str
             hint="`git rev-parse <ref>`で参照を確認し、--changed-since（MCPではchanged_since）を指定し直してください。",
         )
         return None
-    # NUL区切りでパースし、空文字列エントリを除去する。
     return [p for p in result.stdout.split("\0") if p]
 
 
 def emit_external_path_warning(command: str, normalized_target: str) -> None:
-    """起点cwd外のパスをツールの対象から除外したことを警告し、除外記録へ加える。
-
-    単一プロジェクトの経路（`pyfltr.command.dispatcher`）とサブプロジェクトの経路
-    （`pyfltr.command.subproject_loop`）で同じ文面と対処を返すために集約する。
-    """
     pyfltr.warnings_.emit_warning(
         source="external-path",
         message=f"{command}: 起点cwd外のパスは対象から除外しました: {normalized_target}",
@@ -579,12 +460,6 @@ def emit_external_path_warning(command: str, normalized_target: str) -> None:
 
 
 def exclude_base_dir(path: pathlib.Path, *, targets: list[pathlib.Path], start_cwd: pathlib.Path) -> pathlib.Path:
-    """指定引数と外部パスの定義から除外照合の基準ディレクトリを選ぶ。
-
-    外部パスでは指定引数自身の名前から照合する。重なる指定は最も具体的な引数を採用し、
-    ディレクトリ走査で除外されたファイルも直接指定した場合はそのファイル名で判定する。
-    指定引数を持たない内部の実行コンテキストでは、外部ファイルを直接指定と同様に扱う。
-    """
     if not pyfltr.paths.is_external_path(path, start_cwd=start_cwd):
         return start_cwd
     bases = [target.parent for target in targets if target.is_absolute() and path.is_relative_to(target)]
@@ -592,12 +467,10 @@ def exclude_base_dir(path: pathlib.Path, *, targets: list[pathlib.Path], start_c
 
 
 def matches_exclude_patterns(path: pathlib.Path, patterns: list[str], *, base_dir: pathlib.Path) -> str | None:
-    """基準からの相対パスとその親で最初に一致した除外パターンを返す。"""
     return _make_exclude_matcher(tuple(patterns), base_dir=base_dir)(path)
 
 
 def _make_exclude_matcher(patterns: tuple[str, ...], *, base_dir: pathlib.Path) -> typing.Callable[[pathlib.Path], str | None]:
-    """同一走査内で親階層の除外照合結果を再利用するmatcherを返す。"""
 
     @functools.cache
     def _match(path: pathlib.Path) -> str | None:
@@ -617,7 +490,6 @@ def _make_exclude_matcher(patterns: tuple[str, ...], *, base_dir: pathlib.Path) 
 
 
 def excluded(path: pathlib.Path, config: pyfltr.config.model.Config) -> tuple[str, str] | None:
-    """無視パターンチェック。一致した場合は（設定キー名, 一致パターン）を、無一致の場合はNoneを返す。"""
     for key in ("exclude", "extend-exclude"):
         matched = matches_exclude_patterns(path, config[key], base_dir=pathlib.Path("."))
         if matched is not None:

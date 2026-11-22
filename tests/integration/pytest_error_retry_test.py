@@ -1,9 +1,3 @@
-"""pytestのERROR（準備・後始末・収集）がCLIの診断と再実行コマンドへ届くことの結合試験。
-
-実pytestをpyfltr経由で起動し、解析・診断出力・`retry_command`の生成までを通して確認する。
-解析済みの診断を直接渡す試験では、解析の入口でERRORが欠落しても検出できないためである。
-"""
-
 import json
 import pathlib
 import shlex
@@ -55,9 +49,7 @@ def _run(root: pathlib.Path, capsys: pytest.CaptureFixture[str], targets: list[s
 @pytest.mark.parametrize(
     ("files", "expected"),
     [
-        # setup ERRORだけの実行
         ({"setup_test.py": "def test_a(broken_setup):\n    pass\n"}, {"setup_test.py"}),
-        # 本体の失敗と後始末のERRORが同じ試験に重なり、別ファイルにsetup ERRORがある実行
         (
             {
                 "setup_test.py": "def test_a(broken_setup):\n    pass\n",
@@ -83,6 +75,5 @@ def test_pytest_errors_reach_diagnostics_and_retry_command(
     retried = {pathlib.PurePath(arg).name for arg in shlex.split(command["retry_command"]) if arg.endswith("_test.py")}
     assert retried == expected
     if "teardown_test.py" in expected:
-        # 同じ試験の本体の失敗と後始末のERRORはそれぞれ診断に残る
         assert any(message.startswith("test_b: assert") for message in messages)
         assert any("test_b: teardown error: RuntimeError: teardown boom" in message for message in messages)

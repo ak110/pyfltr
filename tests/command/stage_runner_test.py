@@ -23,8 +23,6 @@ from tests.conftest import StageExecutorControl, make_command_result, make_execu
 
 
 def test_stages_hold_slot_until_all_tools_finish(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """待機者が現れても途中では譲らず、全ツールの回収後に枠を解放する。"""
-    # 待機者を作るため枠を1つにする。
     monkeypatch.setenv(pyfltr.command.execution_slot.SLOTS_ENV, "1")
     (tmp_path / "pyproject.toml").write_text(
         '[tool.pyfltr.custom-commands.first]\ntype="formatter"\npath="first"\ntargets="*.txt"\n'
@@ -70,14 +68,12 @@ def test_stages_hold_slot_until_all_tools_finish(tmp_path: pathlib.Path, monkeyp
 
 
 def test_make_skipped_result_returns_command_result():
-    """戻り値が CommandResult 型であること。"""
     config = pyfltr.config.config.create_default_config()
     result = pyfltr.command.stage_runner.make_skipped_result("mypy", config)
     assert isinstance(result, pyfltr.command.core_.CommandResult)
 
 
 def test_make_skipped_result_status_is_skipped():
-    """status が "skipped" であること（returncode=None が条件）。"""
     config = pyfltr.config.config.create_default_config()
     result = pyfltr.command.stage_runner.make_skipped_result("mypy", config)
     assert result.status == "skipped"
@@ -85,35 +81,29 @@ def test_make_skipped_result_status_is_skipped():
 
 
 def test_make_skipped_result_preserves_command_name():
-    """command 名が保持されること。"""
     config = pyfltr.config.config.create_default_config()
     result = pyfltr.command.stage_runner.make_skipped_result("ruff-check", config)
     assert result.command == "ruff-check"
 
 
 def test_make_skipped_result_is_not_failed():
-    """skippedは失敗扱いしない。"""
     config = pyfltr.config.config.create_default_config()
     result = pyfltr.command.stage_runner.make_skipped_result("mypy", config)
     assert result.failed is False
 
 
 def _make_pending_future() -> concurrent.futures.Future:
-    """cancel 可能な pending 状態の Future を生成する。"""
-    # Future を直接インスタンス化し、set_result も cancel() も呼ばなければ pending 状態になる。
     f: concurrent.futures.Future = concurrent.futures.Future()
     return f
 
 
 def _make_done_future() -> concurrent.futures.Future:
-    """完了済みの Future を生成する。"""
     f: concurrent.futures.Future = concurrent.futures.Future()
     f.set_result(None)
     return f
 
 
 def test_cancel_pending_futures_cancels_pending_only():
-    """done でない future だけが cancel() され、done な future は触らない。"""
     aborted: set[str] = set()
 
     done_future = _make_done_future()
@@ -126,13 +116,11 @@ def test_cancel_pending_futures_cancels_pending_only():
 
     pyfltr.command.stage_runner.cancel_pending_futures(future_to_command, aborted)
 
-    # cancel が成功した future のコマンドだけ aborted に入る
     assert "done-cmd" not in aborted
     assert "pending-cmd" in aborted
 
 
 def test_cancel_pending_futures_adds_cancelled_commands():
-    """cancel() が成功した future のコマンド名が aborted_commands に追加される。"""
     aborted: set[str] = set()
 
     pending1 = _make_pending_future()
@@ -150,11 +138,8 @@ def test_cancel_pending_futures_adds_cancelled_commands():
 
 
 def test_cancel_pending_futures_does_not_add_failed_cancel():
-    """cancel() が False を返した（既に running/done）future は aborted_commands に入らない。"""
     aborted: set[str] = set()
 
-    # running 状態（running=True で cancel 不可）を模倣するため、
-    # ThreadPoolExecutor で実行中にする
     started = threading.Event()
     can_finish = threading.Event()
 
@@ -164,21 +149,19 @@ def test_cancel_pending_futures_does_not_add_failed_cancel():
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
         running_future = executor.submit(_blocking_task)
-        started.wait()  # running 状態になるまで待つ
+        started.wait()
 
         future_to_command = {running_future: "running-cmd"}
         pyfltr.command.stage_runner.cancel_pending_futures(future_to_command, aborted)
 
         can_finish.set()
 
-    # running future は cancel() が False を返すため aborted に入らない
     assert "running-cmd" not in aborted
 
 
 def _run_fail_fast_stage(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, run_on_submit: set[str]
 ) -> tuple[dict[str, str], list[str]]:
-    """失敗するlinterと後続のlinterを`fail_fast=True`で並列ステージへ渡し、状態と実行順を返す。"""
     (tmp_path / "pyproject.toml").write_text(
         """
 [tool.pyfltr]
@@ -216,7 +199,6 @@ targets = ["*.txt"]
 
 
 def test_run_stages_fail_fast_skips_pending_follow_up(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """失敗を回収する時点で未開始の後続はキャンセルされ、実行されずにskippedとなる。"""
     statuses, executed = _run_fail_fast_stage(tmp_path, monkeypatch, run_on_submit={"failing"})
 
     assert statuses == {"failing": "failed", "follow-up": "skipped"}
@@ -224,7 +206,6 @@ def test_run_stages_fail_fast_skips_pending_follow_up(tmp_path: pathlib.Path, mo
 
 
 def test_run_stages_fail_fast_keeps_completed_follow_up(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """失敗を回収する時点で完了済みの後続は元の結果を保ち、skippedへ書き換えない。"""
     statuses, executed = _run_fail_fast_stage(tmp_path, monkeypatch, run_on_submit={"failing", "follow-up"})
 
     assert statuses == {"failing": "failed", "follow-up": "succeeded"}
@@ -237,7 +218,6 @@ def _run_fix_failure_stages(
     fail_fast: bool,
     normal_returncode: int | None,
 ) -> tuple[list[pyfltr.command.core_.CommandResult], list[str], list[str]]:
-    """fix段が失敗するlinterを実行し、最終結果・`on_result`・`archive`へ渡ったコマンド名を返す。"""
     (tmp_path / "pyproject.toml").write_text(
         """
 [tool.pyfltr]
@@ -284,7 +264,6 @@ targets = ["*.txt"]
 
 
 def test_run_stages_keeps_fix_failure_when_normal_stage_succeeds(tmp_path: pathlib.Path) -> None:
-    """fix段の失敗は通常段の成功で消えず、最終結果・通知・保存が同じ1件の失敗になる。"""
     results, notified, archived = _run_fix_failure_stages(tmp_path, fail_fast=False, normal_returncode=0)
 
     fixable = [result for result in results if result.command == "fixable"]
@@ -298,7 +277,6 @@ def test_run_stages_keeps_fix_failure_when_normal_stage_succeeds(tmp_path: pathl
 
 
 def test_run_stages_fail_fast_records_fix_failure_once(tmp_path: pathlib.Path) -> None:
-    """fail-fastで停止してもfix段の失敗を記録し、同じツールのスキップ結果を重ねない。"""
     results, notified, archived = _run_fix_failure_stages(tmp_path, fail_fast=True, normal_returncode=0)
 
     statuses = {result.command: result.status for result in results}
@@ -309,10 +287,6 @@ def test_run_stages_fail_fast_records_fix_failure_once(tmp_path: pathlib.Path) -
 
 
 def test_merge_fix_failure_keeps_fix_diagnostics_when_normal_stage_has_none() -> None:
-    """通常段が診断を出力しない（スキップ・診断0件）場合はfix段の診断を最終結果へ残す。
-
-    fail-fastで通常段がスキップされた場合などに、失敗を指すファイルと位置が失われないことを確かめる。
-    """
     config = pyfltr.config.config.create_default_config()
     diagnostic = pyfltr.diagnostics.ErrorLocation(file="x.py", line=1, col=None, command="ruff-check", message="F821")
     fix_result = make_command_result("ruff-check", returncode=1, errors=[diagnostic])
@@ -329,7 +303,6 @@ def test_merge_fix_failure_keeps_fix_diagnostics_when_normal_stage_has_none() ->
 
 
 def test_merge_fix_failure_does_not_duplicate_normal_stage_diagnostics() -> None:
-    """通常段が同じ違反の診断を出力した場合は通常段の診断だけを使い、重複させない。"""
     diagnostic = pyfltr.diagnostics.ErrorLocation(file="x.py", line=1, col=None, command="ruff-check", message="F821")
     fix_result = make_command_result("ruff-check", returncode=1, errors=[diagnostic])
     normal_result = make_command_result("ruff-check", returncode=1, errors=[diagnostic])
@@ -341,7 +314,6 @@ def test_merge_fix_failure_does_not_duplicate_normal_stage_diagnostics() -> None
 
 
 def test_run_stages_sets_body_interval_only_for_executed_results(tmp_path: pathlib.Path) -> None:
-    """プロセスを起動した結果だけに本体区間の時刻を付け、起動しなかったスキップとキャッシュ復元には付けない。"""
     (tmp_path / "pyproject.toml").write_text(
         "".join(
             f'[tool.pyfltr.custom-commands.{name}]\ntype="formatter"\npath="{name}"\ntargets="*.txt"\n'
@@ -360,7 +332,6 @@ def test_run_stages_sets_body_interval_only_for_executed_results(tmp_path: pathl
         if command == "skipped":
             return make_command_result(command, returncode=None, files=0)
         if command == "unresolved":
-            # 起動コマンドの解決失敗は`returncode=1`を持つが、プロセスは起動していない。
             return make_command_result(command, returncode=1, resolution_failed=True)
         return make_command_result(command, returncode=0, cached=True, cached_from="01ABC")
 
@@ -386,7 +357,6 @@ def _custom_formatters(tmp_path: pathlib.Path, *specs: tuple[str, str]) -> pyflt
 
 
 def test_run_stages_runs_idle_commands_without_slot(tmp_path: pathlib.Path) -> None:
-    """対象を持ち得ないツールだけの実行は、別の保持者がいても実行枠を待たずに完了する。"""
     config = _custom_formatters(tmp_path, ("md-only", "*.md"), ("rst-only", "*.rst"))
     target = tmp_path / "input.txt"
     target.write_text("x", encoding="utf-8")
@@ -417,7 +387,6 @@ def test_run_stages_runs_idle_commands_without_slot(tmp_path: pathlib.Path) -> N
 
 
 def test_slot_wait_reporter_reports_waiting_and_resume() -> None:
-    """閾値を超えた待機の継続と再開を通知し、短い待機は通知しない。"""
     messages: list[str] = []
     notified = threading.Event()
 
@@ -457,7 +426,6 @@ def test_slot_wait_reporter_reports_waiting_and_resume() -> None:
 
 
 def _finished_process_owner() -> pyfltr.command.execution_slot.SlotOwner:
-    """終了済みのプロセスを指す保持者記録を作る（強制終了した保持者の記録が残った状態の再現）。"""
     with subprocess.Popen([sys.executable, "-c", "pass"]) as proc:
         create_time = psutil.Process(proc.pid).create_time()
         proc.wait(30)
@@ -467,13 +435,11 @@ def _finished_process_owner() -> pyfltr.command.execution_slot.SlotOwner:
 
 
 def test_describe_slot_owner_marks_finished_owner() -> None:
-    """終了済みの保持者記録には終了済みである旨を併記し、稼働中の保持者には付けない。labelは表記へ連結しない。"""
     alive = pyfltr.command.execution_slot.SlotOwner(
         pid=os.getpid(),
         create_time=psutil.Process().create_time(),
         cwd="/tmp/alive",
         acquired_at="2026-11-10T00:00:00+00:00",
-        # 外部の呼出元は検証の引数全文のような長いlabelを渡しうる。表記の長さがlabelに比例しないことを確かめる。
         label="tests/a_test.py " * 500,
     )
     assert (
@@ -487,11 +453,6 @@ def test_describe_slot_owner_marks_finished_owner() -> None:
 
 @pytest.mark.timeout(60)
 def test_finished_owner_is_not_reported_as_running(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """保持者記録が終了済みのプロセスを指す間は、初回の待機警告と継続表示の両方で稼働中と表示しない。
-
-    強制終了した保持者の記録が残った状態を、保持中の記録ファイルを終了済みのプロセスの記録へ置き換えて再現する。
-    待機を起こすため枠を1つにする。
-    """
     monkeypatch.setenv(pyfltr.command.execution_slot.SLOTS_ENV, "1")
     config = _custom_formatters(tmp_path, ("first", "*.txt"))
     target = tmp_path / "input.txt"
@@ -516,8 +477,6 @@ def test_finished_owner_is_not_reported_as_running(tmp_path: pathlib.Path, monke
         if "このプロセスは終了しており" in message:
             marked.set()
 
-    # 終了済みの記録での継続表示を観測してから解放する。固定時間で解放すると、
-    # 負荷の高い環境では継続表示の前に解放され、観測できないまま終わる。
     def _release_after_marked() -> None:
         marked.wait(30)
         release.set()
@@ -547,7 +506,6 @@ def test_finished_owner_is_not_reported_as_running(tmp_path: pathlib.Path, monke
     assert "このプロセスは終了しており" in warnings[0]["message"]
     waiting = [message for message in progress if "実行枠の取得を待っています" in message]
     assert any("このプロセスは終了しており" in message for message in waiting)
-    # 解放の直後は保持者記録が空になり「読めません」と表示されうる。どの時点でも稼働中の保持者として表示しない。
     assert all("このプロセスは終了しており" in message or "保持者の記録を読めません" in message for message in waiting), waiting
     pyfltr.warnings_.clear()
 
@@ -566,10 +524,6 @@ def _floor_second(value: str) -> dt.datetime:
 
 @pytest.mark.parametrize("include_fix_stage", [False, True])
 def test_run_stages_records_tester_launch_boundary_after_format_second(tmp_path: pathlib.Path, include_fix_stage: bool) -> None:
-    """整形の終了と同じ秒に試験を始める入力でも、テスターの開始境界は整形の秒より後になる。
-
-    起動したテスターだけに記録し（失敗も含む）、未起動・キャッシュ・テスター以外には記録しない。
-    """
     config = _custom_commands(
         tmp_path,
         ("fmt", "formatter"),
@@ -585,7 +539,6 @@ def test_run_stages_records_tester_launch_boundary_after_format_second(tmp_path:
     def _execute(command: str, fix_stage: bool) -> pyfltr.command.core_.CommandResult:
         del fix_stage
         if command == "fmt":
-            # 秒の切り替わり直後に整形を終え、同じ秒のうちに試験へ進む入力を作る。
             while dt.datetime.now(dt.UTC).microsecond > 200_000:
                 time.sleep(0.01)
             return make_command_result(command, returncode=0)
@@ -610,7 +563,6 @@ def test_run_stages_records_tester_launch_boundary_after_format_second(tmp_path:
         result = by_command[command]
         assert result.launch_boundary_at is not None
         assert dt.datetime.fromisoformat(result.launch_boundary_at) >= _floor_second(format_end) + dt.timedelta(seconds=1)
-        # 待機は本体区間の外で行い、本体の開始は境界より後になる。
         assert result.started_at is not None
         assert result.launch_boundary_at <= result.started_at
     for command in ("fmt", "lint", "test-skipped", "test-cached"):
@@ -618,7 +570,6 @@ def test_run_stages_records_tester_launch_boundary_after_format_second(tmp_path:
 
 
 def test_run_stages_records_tester_launch_boundary_without_format(tmp_path: pathlib.Path) -> None:
-    """整形でツールを起動しなかった場合は待たずに開始境界を記録する。"""
     config = _custom_commands(tmp_path, ("fmt", "formatter"), ("test-ok", "tester"))
     target = tmp_path / "input.txt"
     target.write_text("x", encoding="utf-8")
@@ -637,12 +588,10 @@ def test_run_stages_records_tester_launch_boundary_without_format(tmp_path: path
     assert tester.launch_boundary_at is not None
     assert tester.started_at is not None
     assert tester.launch_boundary_at <= tester.started_at
-    # 待機が無いことを、境界の秒をまたぐ待ち（最大1秒）より十分短い所要で確かめる。
     assert time.monotonic() - started < 0.5
 
 
 def test_run_stages_drops_launch_boundary_when_result_is_replaced_by_skip(tmp_path: pathlib.Path) -> None:
-    """中断で結果をスキップへ差し替える経路（TUIのCtrl+C）では、保存・通知する結果に開始境界が残らない。"""
     config = _custom_commands(tmp_path, ("test-ok", "tester"))
     target = tmp_path / "input.txt"
     target.write_text("x", encoding="utf-8")

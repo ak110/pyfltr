@@ -1,13 +1,3 @@
-"""別プロセスのpyfltr実行を重ねる結合試験の補助。
-
-各実行は試験の一時領域に作成したプロジェクトで、区間の開始・終了と待機中の生存の印を区間ログへ記録する
-カスタムコマンド（`slot-probe`）を実行する。保存先は`tests/conftest.py`の既定隔離が固定した`PYFLTR_CACHE_DIR`を子プロセスへ継承する。
-
-区間ログは基準パス（`log`）と書込主体ごとの記録ファイル（`record_path`）からなる。
-Windowsの追記は末尾への移動と書込が分かれており、複数のプロセスが同じファイルへ追記すると互いの行を上書きするため、
-各記録ファイルへ書き込むプロセスを1つに限り、読取側が全記録ファイルをまとめて解析する。
-"""
-
 import collections.abc
 import contextlib
 import glob
@@ -56,10 +46,6 @@ def make_project(
     extra_config: dict[str, typing.Any] | None = None,
     extra_commands: dict[str, dict[str, typing.Any]] | None = None,
 ) -> pathlib.Path:
-    """`slot-probe`を持つプロジェクトを作成する。`release`が`None`なら待たずに終了する。
-
-    検体は`name`を書込主体とする`log`の記録ファイルへ区間を記録する。
-    """
     project = root / name
     project.mkdir(parents=True)
     probe = root / "probe.py"
@@ -91,15 +77,12 @@ def make_project(
 def pyfltr_argv(
     subcommand: str, *, commands: str = PROBE_COMMAND, output_format: str = "jsonl", script: bool = False
 ) -> list[str]:
-    """pyfltrの起動引数を返す。`script=True`ではモジュール起動の代わりにconsole scriptを使う。"""
     executable = pathlib.Path(sys.executable)
     launcher = [str(executable.with_name("pyfltr" + executable.suffix))] if script else [sys.executable, "-m", "pyfltr"]
     return [*launcher, subcommand, f"--commands={commands}", f"--output-format={output_format}", "."]
 
 
 class Run:
-    """別プロセスで起動したpyfltrの実行。標準出力はファイルへ、標準エラーは行単位で保持する。"""
-
     def __init__(self, process: subprocess.Popen[str], stdout_path: pathlib.Path) -> None:
         self.process = process
         self.stdout_path = stdout_path
@@ -113,23 +96,19 @@ class Run:
             self.stderr_lines.append(line)
 
     def wait(self, timeout: float = 120) -> int:
-        """終了と標準エラーの読み終わりを待って終了コードを返す。"""
         returncode = self.process.wait(timeout=timeout)
         self._reader.join(timeout=30)
         return returncode
 
     @property
     def stdout(self) -> str:
-        """保存した標準出力。"""
         return self.stdout_path.read_text(encoding="utf-8")
 
     @property
     def stderr(self) -> str:
-        """読み取り済みの標準エラー。"""
         return "".join(self.stderr_lines)
 
     def records(self) -> list[dict[str, typing.Any]]:
-        """JSONLの標準出力をレコードの一覧として返す。"""
         return [json.loads(line) for line in self.stdout.splitlines() if line.startswith("{")]
 
 
@@ -137,10 +116,6 @@ class Run:
 def start(
     argv: list[str], cwd: pathlib.Path, *, stdin_path: pathlib.Path | None = None
 ) -> collections.abc.Generator[Run, None, None]:
-    """コマンドを別プロセスで起動する。区間を抜ける時点で終了していなければ止め、パイプとファイルを閉じる。
-
-    `stdin_path`を渡すとそのファイルを標準入力にする。
-    """
     stdout_path = cwd.parent / f"{cwd.name}.stdout"
     with (
         stdout_path.open("w", encoding="utf-8") as stdout,
@@ -167,11 +142,6 @@ def start(
 def wait_for(
     predicate: typing.Callable[[], bool], *, expected: str, observed: typing.Callable[[], str], timeout: float = 60
 ) -> None:
-    """条件が成立するまで待つ。
-
-    上限に達したら、待った条件と、原因を調べるための観測（`observed`の戻り値）を示して失敗させる。
-    観測は失敗の時点で取得し、待機中に届いた出力も含める。
-    """
     deadline = time.monotonic() + timeout
     while not predicate():
         if time.monotonic() >= deadline:
@@ -180,7 +150,6 @@ def wait_for(
 
 
 def describe(log: pathlib.Path, *runs: Run) -> str:
-    """待機の失敗の原因を調べるため、区間ログと各実行の起動引数・終了コード・出力をまとめて返す。"""
     records = _record_files(log)
     parts = [f"区間ログ {path}:\n{path.read_bytes()!r}" for path in records] or [f"区間ログ {log}.*: （未作成）"]
     for run in runs:
@@ -191,12 +160,10 @@ def describe(log: pathlib.Path, *runs: Run) -> str:
 
 
 def record_path(log: pathlib.Path, writer: str) -> pathlib.Path:
-    """書込主体`writer`が区間を記録するファイルを返す。1つのファイルへは1つのプロセスだけが書き込む。"""
     return log.with_name(f"{log.name}.{writer}")
 
 
 def intervals(log: pathlib.Path) -> dict[str, tuple[float, float | None]]:
-    """共有ログから実行ごとの区間（開始・終了時刻）を返す。"""
     starts: dict[str, float] = {}
     ends: dict[str, float] = {}
     for label, event, value in _events(log):
@@ -208,7 +175,6 @@ def intervals(log: pathlib.Path) -> dict[str, tuple[float, float | None]]:
 
 
 def last_tick(log: pathlib.Path, label: str) -> float | None:
-    """指定した実行が待機中に最後に記録した生存の印の時刻を返す。"""
     ticks = [value for name, event, value in _events(log) if name == label and event == "tick"]
     return max(ticks, default=None)
 
@@ -221,7 +187,6 @@ def _events(log: pathlib.Path) -> list[tuple[str, str, float]]:
     events: list[tuple[str, str, float]] = []
     for path in _record_files(log):
         data = path.read_bytes()
-        # 書込主体が記録中の最終行は改行が付くまで未完成のため、改行で終わる行だけを解析する。
         for raw in data[: data.rfind(b"\n") + 1].splitlines():
             fields = raw.decode("utf-8").split()
             if len(fields) != 3:
@@ -236,21 +201,17 @@ def _events(log: pathlib.Path) -> list[tuple[str, str, float]]:
 
 
 def started(log: pathlib.Path, label: str) -> bool:
-    """指定した実行が区間を開始したかを返す。"""
     return label in intervals(log)
 
 
 def waiting_notified(run: Run) -> bool:
-    """text出力の実行が実行枠の待機を標準エラーへ通知したかを返す。"""
     return "別の検証が実行枠を保持しているため" in run.stderr
 
 
 def cache_root() -> pathlib.Path:
-    """子プロセスへ継承する隔離済みの保存先を返す。"""
     return pathlib.Path(os.environ["PYFLTR_CACHE_DIR"])
 
 
 def header_run_id(run: Run) -> str:
-    """JSONLのheaderレコードからrun_idを返す。"""
     header = next(record for record in run.records() if record.get("kind") == "header")
     return str(header["run_id"])

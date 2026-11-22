@@ -1,10 +1,7 @@
-"""実装と単体テストの配置、および横断テストの置き場所を検証する。"""
-
 import pathlib
 
 
 def placement_violations(repository: pathlib.Path) -> list[str]:
-    """単体テストと同じ相対位置に対応する実装があるか調べる。"""
     violations: list[str] = []
     for test in sorted((repository / "tests").rglob("*_test.py")):
         relative = test.relative_to(repository / "tests")
@@ -21,6 +18,5 @@ def placement_violations(repository: pathlib.Path) -> list[str]:
 
 
 def test_unit_tests_follow_implementation_modules() -> None:
-    """横断テスト以外は実装モジュールと同じ位置へ置く。"""
     repository = pathlib.Path(__file__).resolve().parents[2]
     assert not placement_violations(repository)

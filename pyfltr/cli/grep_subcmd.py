@@ -1,10 +1,3 @@
-"""`grep`サブコマンドの登録と実行本体。
-
-`pyfltr/grep_/`配下のコアロジック（パターン構築・ファイル走査）を呼び出す薄いCLI層。
-`.claude/skills/grep-replace/SKILL.md`の引数体系（共通オプション名）に従い、
-ripgrep流儀のオプション群を受理する。
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -29,16 +22,10 @@ import pyfltr.warnings_
 
 
 def register_subparsers(subparsers: typing.Any) -> None:
-    """`grep`サブパーサーを登録する。
-
-    `subparsers`の`parser_class`は`build_parser`側で`_HelpOnErrorArgumentParser`に
-    設定済みのため、`add_parser`直書きで自動継承される。
-    """
     parser = subparsers.add_parser(
         "grep",
         help="ファイル群から正規表現に一致する行を検索する。",
     )
-    # 位置引数: pattern + paths
     parser.add_argument(
         "pattern",
         nargs="?",
@@ -52,7 +39,6 @@ def register_subparsers(subparsers: typing.Any) -> None:
         help="検索対象のファイルまたはディレクトリ（既定: カレントディレクトリ）。",
     )
 
-    # パターン関連オプション
     parser.add_argument(
         "-e",
         "--regexp",
@@ -86,7 +72,6 @@ def register_subparsers(subparsers: typing.Any) -> None:
         help="マルチラインマッチを有効化する（`.`が改行に一致、`^`/`$`が行単位で評価）。",
     )
 
-    # コンテキスト・件数制限
     parser.add_argument("-A", "--after-context", type=int, default=0, metavar="N", help="マッチ行の後ろN行を出力する。")
     parser.add_argument("-B", "--before-context", type=int, default=0, metavar="N", help="マッチ行の前N行を出力する。")
     parser.add_argument(
@@ -113,7 +98,6 @@ def register_subparsers(subparsers: typing.Any) -> None:
         help="検索結果が大きい場合にファイル単位の混在表示などへ自動縮約する。",
     )
 
-    # ファイル選定オプション
     parser.add_argument(
         "--type",
         action="append",
@@ -130,7 +114,6 @@ def register_subparsers(subparsers: typing.Any) -> None:
         metavar="BYTES",
         help="走査対象ファイルサイズの上限（バイト単位）。",
     )
-    # ファイル単位サマリ系（grepでのみ受理する。replace側では拒否）
     parser.add_argument(
         "-l",
         "--files-with-matches",
@@ -149,15 +132,11 @@ def register_subparsers(subparsers: typing.Any) -> None:
         help="マッチが1件も無いファイルパスを列挙する。",
     )
 
-    # 共通オプション（grep/replaceで共有。詳細は`grep_replace_common`のdocstringを参照）
     pyfltr.cli.grep_replace_common.add_common_output_args(parser)
 
 
 def execute_grep(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
-    """`grep`サブコマンドの処理本体。"""
-    # warnings_はモジュールグローバルに蓄積するため、実行開始時に初期化する
     pyfltr.warnings_.clear()
-    # 出力形式の解決とtext logger / structured loggerの出力先設定
     resolution = pyfltr.cli.grep_replace_common.setup_output(parser, args)
     output_format = resolution.format
     warning_scope = pyfltr.warnings_.defer_stderr() if output_format == "jsonl" else contextlib.nullcontext()
@@ -171,10 +150,8 @@ def _execute_grep(
     *,
     resolution: pyfltr.cli.output_format.OutputFormatResolution,
 ) -> int:
-    """警告配送スコープ内でgrepを実行する。"""
     output_format = resolution.format
 
-    # パターン群の収集
     patterns = _collect_patterns(parser, args)
     if not patterns:
         parser.error("パターンが指定されていません。位置引数または `-e` / `-f` を使ってください。")
@@ -207,7 +184,6 @@ def _execute_grep(
     files_with_matches = len(per_file_counts)
     pattern_repr = "|".join(patterns) if len(patterns) > 1 else patterns[0]
 
-    # サマリ系オプション出力（text / jsonl）
     if output_format == "jsonl":
         pyfltr.grep_.jsonl_records.emit_grep_header(
             pattern=pattern_repr,
@@ -230,16 +206,12 @@ def _execute_grep(
             for line in pyfltr.grep_.adaptive.text_result_lines(selection):
                 pyfltr.output.logging_.text_logger.info(line)
 
-    # ガイダンス文（replace起動コマンド案内）
     guidance = _build_grep_guidance(total_matches, output_mode=selection.output_mode)
 
-    # 直接指定が除外・不在で対象外になった一覧をsummaryへ載せる。
     fully_excluded = pyfltr.warnings_.filtered_direct_files(reason="excluded")
     missing_targets = pyfltr.warnings_.filtered_direct_files(reason="missing")
 
     if output_format == "jsonl":
-        # スキャン中に蓄積された警告（エンコーディングエラー・読み込み失敗等）を
-        # summaryの直前に出力し、pipelineのwarning出力位置と挙動を揃える
         warning_entries = pyfltr.warnings_.collected_warnings()
         for warning_entry in warning_entries:
             pyfltr.grep_.jsonl_records.emit_warning(warning_entry)
@@ -323,7 +295,6 @@ def _execute_grep(
 
 
 def _collect_patterns(parser: argparse.ArgumentParser, args: argparse.Namespace) -> list[str]:
-    """位置引数 / `-e` / `-f` からパターン群を収集する。"""
     patterns: list[str] = []
     if args.pattern is not None:
         patterns.append(args.pattern)
@@ -337,10 +308,6 @@ def _collect_patterns(parser: argparse.ArgumentParser, args: argparse.Namespace)
 
 
 def _build_grep_guidance(total_matches: int, *, output_mode: str = "full") -> list[str]:
-    """grep完了時のガイダンス文（英語）を組み立てる。
-
-    `total_matches > 0`時のみreplace起動コマンドを案内する。マッチ0件時は呼び出し側で省略する。
-    """
     if total_matches <= 0:
         return []
     if output_mode != "full":
@@ -360,11 +327,6 @@ def _build_summary_only_json(
     per_file_counts: dict[pathlib.Path, int],
     scanned: list[pathlib.Path],
 ) -> dict[str, typing.Any]:
-    """`--files-with-matches` / `--count` / `--files-without-match` 時のjson payload。
-
-    モード判定はargparse側のフラグ参照順（`files_without_match`→`files_with_matches`→`count`）に
-    揃え、`_emit_summary_only`の出力先と同じレコード構造で返す。
-    """
     if args.files_without_match:
         return {
             "summary_only_mode": "files-without-match",
@@ -375,7 +337,6 @@ def _build_summary_only_json(
             "summary_only_mode": "files-with-matches",
             "files": [pyfltr.paths.normalize_separators(p) for p in per_file_counts],
         }
-    # `--count` / `--count-matches`
     return {
         "summary_only_mode": "count",
         "counts": [{"file": pyfltr.paths.normalize_separators(p), "count": c} for p, c in per_file_counts.items()],
@@ -389,7 +350,6 @@ def _emit_summary_only(
     per_file_counts: dict[pathlib.Path, int],
     scanned: list[pathlib.Path],
 ) -> None:
-    """`--files-with-matches` / `--count` / `--files-without-match` 時の結果出力。"""
     if args.files_without_match:
         files = [p for p in scanned if p not in per_file_counts]
         if output_format == "text":
@@ -411,7 +371,6 @@ def _emit_summary_only(
                 pyfltr.grep_.jsonl_records.emit_file_with_matches(path, count)
         return
 
-    # `--count` / `--count-matches`
     if args.count or args.count_matches:
         if output_format == "text":
             with pyfltr.output.logging_.text_output_lock:

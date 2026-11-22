@@ -1,41 +1,3 @@
-"""実行アーカイブ。
-
-全実行のツール出力・diagnostic・メタ情報をXDG Base Directory準拠の
-ユーザーキャッシュへ保存する仕組み。v3.0.0で追加。
-
-`FileNotFoundError`の契約: 本モジュールが送出する`FileNotFoundError`の引数は
-識別子（`run_id` または `f"{run_id}/{tool}"`）のみとし、利用者向けメッセージ文面は
-catch側（`pyfltr/state/runs.py`・`pyfltr/cli/mcp_server.py`など）で組み立てる。
-
-ディレクトリ構造（`<cache_root> = pyfltr.user_cache.default_cache_root()`）::
-
-    <cache_root>/runs/<run_id>/meta.json
-    <cache_root>/runs/<run_id>/tools/<sanitize(command)>/output.log
-    <cache_root>/runs/<run_id>/tools/<sanitize(command)>/diagnostics.jsonl
-    <cache_root>/runs/<run_id>/tools/<sanitize(command)>/tool.json
-    <cache_root>/runs/<run_id>.lock
-
-`run_id`はULID（26文字、Crockford Base32、タイムスタンプ由来で辞書順ソート可能）。
-自動クリーンアップは世代数・合計サイズ・保存期間の3軸のうち超過した時点で
-基準時刻の古い順に削除する。基準時刻は完了したrunでは`finished_at`、
-完了記録の無いrun（強制終了したrunなど）では`started_at`とする。
-長い実行は完了した時点で最新の世代になり、終了後の参照に使える保持期間を持つ。
-
-実行中のrunは`<run_id>.lock`のロックを保持し、どの軸でも削除しない（世代数と合計サイズの計数には含める）。
-保護の判定はロックの保持だけで行い、呼出元（CLI・MCP・hook・TUI）は個別の保護を実装しない。
-ロックはrunディレクトリより先に取得するため、ディレクトリが存在して保持者がいないrunは完了済みか強制終了済みである。
-変更前の版のpyfltrはロックを確認しないため、版が混在する環境ではその版のcleanupが実行中のrunを削除し得る。
-
-`meta.json`の`slot_waits`は検証の実行枠（`pyfltr.command.execution_slot`）の待機区間の一覧で、
-区間の開始時に未完了の要素を、終了時に完了した要素を保存する（`record_slot_wait`）。
-キーを持たないrunは待機区間を計測しない版の記録であり、空の一覧（計測したが区間なし）と区別する。
-各ツールの`tool.json`は本体区間の`started_at`・`finished_at`（実行した場合だけ）と処理秒数`elapsed`を持つ。
-テスターを起動した場合は開始境界`launch_boundary_at`も持つ（意味は`CommandResult.launch_boundary_at`）。
-
-アーカイブは既定で有効。`--no-archive` CLIオプションまたは
-`archive = false`設定で無効化できる。
-"""
-
 import dataclasses
 import importlib.metadata
 import json
@@ -82,14 +44,11 @@ _SECTION_HEADER_RE = re.compile(r"^# (?:subproject: (?P<relative>.+)|external pa
 
 
 def generate_run_id() -> str:
-    """ULID 形式の run_id を生成する。"""
     return str(ulid.ULID())
 
 
 @dataclasses.dataclass(frozen=True)
 class ArchivePolicy:
-    """自動クリーンアップの閾値。"""
-
     max_runs: int
     """保存する最大世代数。"""
     max_size_bytes: int
@@ -100,8 +59,6 @@ class ArchivePolicy:
 
 @dataclasses.dataclass(frozen=True)
 class RunSummary:
-    """list_runs() が返す 1 世代分の要約。"""
-
     run_id: str
     started_at: str | None
     finished_at: str | None
@@ -113,26 +70,14 @@ class RunSummary:
 
 
 class ArchiveStore:
-    """実行アーカイブの読み書き。
-
-    1回のpyfltr実行で1インスタンスを生成する。`start_run()`でrun_idを
-    採番して稼働中のロックを取得し、以後のツール書き込みを受け付ける。
-    `finalize_run()`でメタ情報を確定させてロックを解放する。
-    `finalize_run()`へ到達しない経路（例外など）では`release_run()`でロックを解放する。
-    クリーンアップは`cleanup()`が呼ばれた時点で行う
-    （呼び出し側は実行冒頭で発火させることを想定）。
-    """
-
     def __init__(self, cache_root: pathlib.Path | None = None) -> None:
         self._cache_root = cache_root if cache_root is not None else pyfltr.user_cache.default_cache_root()
         self._runs_dir = self._cache_root / _RUNS_DIRNAME
         self._run_locks: dict[str, pyfltr.file_lock.FileLock] = {}
-        # TUIは背景スレッドで待機区間を書き、終了処理が別スレッドで完了記録を書くため、meta.jsonの更新を直列にする。
         self._meta_lock = threading.Lock()
 
     @property
     def runs_dir(self) -> pathlib.Path:
-        """runs/ ディレクトリの絶対パス。"""
         return self._runs_dir
 
     def start_run(
@@ -144,10 +89,6 @@ class ArchiveStore:
         cwd: str | None = None,
         argv: list[str] | None = None,
     ) -> str:
-        """稼働中のロックを取得して新しい run ディレクトリを作成し、初期 meta.json を書き込んで run_id を返す。
-
-        ロックを取得できない場合（同じrun_idを別の主体が使用中）は`FileExistsError`を送出する。
-        """
         run_id = run_id or generate_run_id()
         run_dir = self._runs_dir / run_id
         lock = pyfltr.file_lock.FileLock(_run_lock_path(run_dir))
@@ -193,14 +134,6 @@ class ArchiveStore:
         run_id: str,
         result: pyfltr.command.core_.CommandResult,
     ) -> None:
-        """1 ツール完了時に呼び出されるフック。生出力・diagnostic・メタを保存する。
-
-        `diagnostics.jsonl`は`(command, file)`単位の集約形式で保存する。各行は
-        `{"kind": "diagnostic", "command": ..., "file": ..., "messages": [...]}`構造で
-        `pyfltr.output.jsonl_records.aggregate_diagnostics()`の出力と同形。
-        `tool.json`には`hint_urls`・`hints`・`slow_tests`をそれぞれ空でないときに限り含める。
-        `slow_tests`は`CommandResult`への設定時点で正規化済みのため、ここでは件数を変えない。
-        """
         tool_dir = self._runs_dir / run_id / "tools" / pyfltr.paths.sanitize_command_name(result.command)
         tool_dir.mkdir(parents=True, exist_ok=True)
         (tool_dir / _TOOL_OUTPUT_FILENAME).write_text(result.output, encoding="utf-8")
@@ -237,11 +170,6 @@ class ArchiveStore:
         (tool_dir / _TOOL_META_FILENAME).write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def record_slot_wait(self, run_id: str, wait: dict[str, typing.Any]) -> None:
-        """実行枠の待機区間を`meta.json`の`slot_waits`へ保存する。
-
-        同じ`kind`・`sequence`の要素があれば置き換え（未完了から完了への更新）、無ければ末尾へ追加する。
-        区間の開始時にも呼ばれるため、強制終了したrunにも開始済みの区間が未完了のまま残る。
-        """
 
         def update(meta: dict[str, typing.Any]) -> None:
             waits = meta.setdefault(SLOT_WAITS_META_KEY, [])
@@ -262,14 +190,12 @@ class ArchiveStore:
         commands: list[str] | None = None,
         files: int | None = None,
     ) -> None:
-        """実行終了時に meta.json を更新し、稼働中のロックを解放する。"""
         try:
             self._write_final_meta(run_id, exit_code=exit_code, commands=commands, files=files)
         finally:
             self.release_run(run_id)
 
     def release_run(self, run_id: str) -> None:
-        """稼働中のロックを解放する。取得していないか解放済みなら何もしない。"""
         lock = self._run_locks.pop(run_id, None)
         if lock is not None:
             lock.release(remove=True)
@@ -293,7 +219,6 @@ class ArchiveStore:
         self._update_meta(run_id, update)
 
     def _update_meta(self, run_id: str, update: typing.Callable[[dict[str, typing.Any]], None]) -> None:
-        """`meta.json`を読み、`update`で書き換えて保存する。runディレクトリが無ければ何もしない。"""
         meta_path = self._runs_dir / run_id / _META_FILENAME
         with self._meta_lock:
             if not meta_path.exists():
@@ -303,7 +228,6 @@ class ArchiveStore:
             _write_json_replacing(meta_path, meta)
 
     def list_runs(self, *, limit: int | None = None) -> list[RunSummary]:
-        """保存済みのrunを新しい順（run_id降順）で返す。"""
         if not self._runs_dir.exists():
             return []
         entries = sorted(
@@ -337,27 +261,18 @@ class ArchiveStore:
         return summaries
 
     def read_meta(self, run_id: str) -> dict[str, typing.Any]:
-        """指定runのmeta.jsonを読み取る。存在しなければFileNotFoundError。"""
         meta_path = self._runs_dir / run_id / _META_FILENAME
         if not meta_path.exists():
             raise FileNotFoundError(run_id)
         return json.loads(meta_path.read_text(encoding="utf-8"))
 
     def list_tools(self, run_id: str) -> list[str]:
-        """指定 run で実際にアーカイブされているツール名一覧を返す。
-
-        `tools/`直下のディレクトリ名（`pyfltr.paths.sanitize_command_name()`済み）を自然順で返す。
-        `meta["commands"]`は実行予定リストで、fail-fast中断やskippedで実体を
-        伴わないツールを含みうるため、実保存ツールのSSOTとして本メソッドを使う。
-        不在run_id指定時は他の`read_*`と同じく`FileNotFoundError`を送出する。
-        """
         tools_dir = self._runs_dir / run_id / "tools"
         if not tools_dir.exists():
             raise FileNotFoundError(run_id)
         return sorted(entry.name for entry in tools_dir.iterdir() if entry.is_dir())
 
     def read_tool_meta(self, run_id: str, tool: str) -> dict[str, typing.Any]:
-        """指定run / toolのメタ情報から撤去済みフィールドだけを除いて返す。"""
         path = self._runs_dir / run_id / "tools" / pyfltr.paths.sanitize_command_name(tool) / _TOOL_META_FILENAME
         if not path.exists():
             raise FileNotFoundError(f"{run_id}/{tool}")
@@ -365,14 +280,12 @@ class ArchiveStore:
         return {key: value for key, value in meta.items() if key not in TOOL_META_REMOVED_KEYS}
 
     def read_tool_output(self, run_id: str, tool: str) -> str:
-        """指定 run / tool の生出力を読み取る。"""
         path = self._runs_dir / run_id / "tools" / pyfltr.paths.sanitize_command_name(tool) / _TOOL_OUTPUT_FILENAME
         if not path.exists():
             raise FileNotFoundError(f"{run_id}/{tool}")
         return path.read_text(encoding="utf-8")
 
     def read_tool_diagnostics(self, run_id: str, tool: str) -> list[dict[str, typing.Any]]:
-        """指定 run / tool の diagnostic 一覧を返す。"""
         path = self._runs_dir / run_id / "tools" / pyfltr.paths.sanitize_command_name(tool) / _TOOL_DIAGNOSTICS_FILENAME
         if not path.exists():
             raise FileNotFoundError(f"{run_id}/{tool}")
@@ -381,8 +294,6 @@ class ArchiveStore:
             if not line:
                 continue
             entries.append(json.loads(line))
-        # 復元の適否はツール名ではなく、保存形式（`_saved_subproject_relative_diagnostics`）と
-        # 区間内の診断の一致（`restore_subproject_paths`）だけで判定する。
         if self._saved_subproject_relative_diagnostics(run_id):
             try:
                 output = self.read_tool_output(run_id, tool)
@@ -392,11 +303,6 @@ class ArchiveStore:
         return entries
 
     def _saved_subproject_relative_diagnostics(self, run_id: str) -> bool:
-        """診断を起点相対へ揃える前の版が保存したrunかを判定する。
-
-        新しい版のrunへ補正を適用すると、起点直下の診断を同じ位置・メッセージを持つ子の診断と取り違えるため、
-        `meta.json`の`DIAGNOSTIC_PATHS_META_KEY`を持たないrunだけを対象にする。
-        """
         try:
             meta = self.read_meta(run_id)
         except (FileNotFoundError, ValueError):
@@ -404,17 +310,6 @@ class ArchiveStore:
         return meta.get(DIAGNOSTIC_PATHS_META_KEY) != DIAGNOSTIC_PATHS_START_RELATIVE
 
     def cleanup(self, policy: ArchivePolicy) -> list[str]:
-        """自動クリーンアップを実施する。削除された run_id のリストを返す。
-
-        世代数 / 合計サイズ / 保存期間のいずれかを超過した時点で、基準時刻
-        （`finished_at`、無ければ`started_at`）の古い順に削除する。稼働中のrunは削除しない。
-        実装本体は`pyfltr.state.retention.cleanup_generational_directory`へ集約する
-        （`ReplaceHistoryStore.cleanup`と同一アルゴリズムを共有するため）。
-
-        各実行冒頭で同期的に呼び出すことを想定する。アーカイブ規模は通常
-        小さく削除対象も限定的のため、非同期化は実装コストに見合わない。
-        将来的な非同期化の余地は残すが現状は同期実行とする。
-        """
         retention_policy = pyfltr.state.retention.RetentionPolicy(
             max_entries=policy.max_runs,
             max_size_bytes=policy.max_size_bytes,
@@ -429,16 +324,11 @@ class ArchiveStore:
             is_active=lambda run_dir: pyfltr.file_lock.is_locked(_run_lock_path(run_dir)),
         )
         for run_id in removed:
-            # 強制終了したrunが残したロックファイルを回収する。保持者がいないことはcleanupが確認済み。
             _run_lock_path(self._runs_dir / run_id).unlink(missing_ok=True)
         return removed
 
 
 def _write_json_replacing(path: pathlib.Path, data: dict[str, typing.Any]) -> None:
-    """JSONを一時ファイルへ書いてから置き換え、実行中のrunを読む`show-run`へ書きかけの内容を見せない。
-
-    Windowsで読み手が対象を開いている間は置き換えが`PermissionError`になるため、その場合だけ直接書き込む。
-    """
     text = json.dumps(data, ensure_ascii=False, indent=2)
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False) as file:
         file.write(text)
@@ -451,12 +341,9 @@ def _write_json_replacing(path: pathlib.Path, data: dict[str, typing.Any]) -> No
 
 
 def _run_lock_path(run_dir: pathlib.Path) -> pathlib.Path:
-    """runの稼働中ロックのパスを返す。runディレクトリより先に作成するため、同じ階層の別ファイルとする。"""
     return run_dir.with_name(f"{run_dir.name}.lock")
 
 
-# 併記は末尾の` (<位置>:<行>)`である。メッセージ側を最長一致にして最後の` (`から位置を取り、
-# 旧版の解析が受理していた括弧入りのファイル名（`pkg/(impl).py`など）も復元できるようにする。
 _PYTEST_APPENDED_LOCATION_RE = re.compile(r"(?P<message>.*) \((?P<file>\S+):(?P<line>\d+)\)", re.DOTALL)
 
 
@@ -465,21 +352,10 @@ def restore_subproject_paths(
     output: str,
     entries: list[dict[str, typing.Any]],
 ) -> list[dict[str, typing.Any]]:
-    """サブプロジェクト相対のまま保存された診断を起点相対へ補正する。
-
-    診断パスを解析時点で起点相対へ揃える前の版は、サブプロジェクトのcwdで実行したツールの
-    相対パス診断をそのまま保存していた。保存済み生出力の`# subproject: <相対>`区間ごとに
-    同じ解析を再実行し、`file`・行・メッセージが一致する区間が1件だけの診断を`<相対>/<file>`へ補正する。
-    一致区間が0件または複数件の診断は変えない。
-    呼び出し側（`ArchiveStore.read_tool_diagnostics`）は、起点相対で保存した新しい版のrunへ本関数を適用しない。
-    元の作業ツリーの存在を要求せず、保存ファイルは書き換えない。
-    """
     owners: dict[tuple[str, typing.Any, typing.Any], set[str]] = {}
     for relative, body in _split_subproject_sections(output):
         for error in pyfltr.parsing.entry.parse_errors(command, body):
             owners.setdefault((error.file, error.line, error.message), set()).add(relative)
-            # 旧版のpytest解析は試験ファイル外の例外位置を`file`・行にしていた。現行版はそれを試験ファイルの
-            # `line=0`の診断のメッセージ末尾へ` (<位置>:<行>)`として併記するため、旧版の保存値とも照合できるよう戻す。
             legacy = _PYTEST_APPENDED_LOCATION_RE.fullmatch(error.message) if command == "pytest" and error.line == 0 else None
             if legacy is not None:
                 owners.setdefault((legacy["file"], int(legacy["line"]), legacy["message"]), set()).add(relative)
@@ -509,10 +385,6 @@ def restore_subproject_paths(
 
 
 def _split_subproject_sections(output: str) -> list[tuple[str, str]]:
-    """生出力をサブプロジェクト区間へ分け、`(相対パス, 区間本文)`の一覧を返す。
-
-    区切り行は`pyfltr.command.subproject_loop`が挿入する。外部パス区間と最初の区切り行より前は対象外とする。
-    """
     sections: list[tuple[str, str]] = []
     relative: str | None = None
     lines: list[str] = []
@@ -529,11 +401,6 @@ def _split_subproject_sections(output: str) -> list[tuple[str, str]]:
 
 
 def _is_plain_relative(path: str) -> bool:
-    """起点外を指さない相対パスかを判定する。
-
-    保存値は別のOSで記録された可能性があるため、実行ホストによらず
-    Windowsのdrive・root（drive相対とUNCを含む）を持つパスも相対から除く。
-    """
     pure = pathlib.PurePosixPath(path)
     return (
         bool(path)
@@ -545,7 +412,6 @@ def _is_plain_relative(path: str) -> bool:
 
 
 def policy_from_config(config: pyfltr.config.model.Config) -> ArchivePolicy:
-    """pyproject.toml の設定から ArchivePolicy を組み立てる。"""
     return ArchivePolicy(
         max_runs=int(config.values.get("archive-max-runs", 100)),
         max_size_bytes=int(config.values.get("archive-max-size-mb", 1024)) * 1024 * 1024,

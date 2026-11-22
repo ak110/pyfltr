@@ -1,5 +1,3 @@
-"""テスターの開始境界を、公開runの実起動からshow-runとMCPの取得まで通して検証する。"""
-
 import datetime as dt
 import json
 import pathlib
@@ -11,7 +9,6 @@ import tomlkit
 import pyfltr.cli.main
 import pyfltr.cli.mcp_runs_tools
 
-# 秒の切り替わり直後に整形を終え、同じ秒のうちに試験へ進む入力を作るformatter。
 _FORMATTER = """\
 import datetime, pathlib, sys, time
 while datetime.datetime.now(datetime.UTC).microsecond > 200_000:
@@ -19,7 +16,6 @@ while datetime.datetime.now(datetime.UTC).microsecond > 200_000:
 for path in sys.argv[1:]:
     pathlib.Path(path).write_text("formatted\\n", encoding="utf-8")
 """
-# 起動した時刻を書き出し、引数の終了コードで終わるテスター。
 _TESTER = """\
 import datetime, pathlib, sys
 pathlib.Path(sys.argv[1]).write_text(datetime.datetime.now(datetime.UTC).isoformat(), encoding="utf-8")
@@ -35,12 +31,6 @@ def _tester(script: pathlib.Path, started: pathlib.Path, returncode: int, target
 async def test_public_run_records_launch_boundary_after_format_second(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """整形と同じ秒に試験を始める入力でも、境界は整形の秒より後で、テスターの実起動より前になる。
-
-    起動を試みたテスター（成功・失敗・実行ファイルが無い起動失敗）だけに記録し、対象なしには記録しない。
-    起動失敗は`failed`のため、成功した実開始の証拠にはならない。
-    show-runとMCPのshow_runは同じ値を返す。
-    """
     project = tmp_path / "project"
     project.mkdir()
     formatter = project / "fmt.py"

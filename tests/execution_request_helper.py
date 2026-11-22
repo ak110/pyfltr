@@ -1,5 +1,3 @@
-"""専用実行のテスト入力から実行要求を作成する。"""
-
 import argparse
 import pathlib
 import typing
@@ -39,7 +37,6 @@ def make_request(
     injected_config_path: pathlib.Path | None = None,
     file_path_remap: dict[str, str] | None = None,
 ) -> pyfltr.command.core_.ExecutionRequest:
-    """実行設定と所有コールバックを既存の入力どおりに束ねる。"""
     params = pyfltr.command.core_.ExecutionParams(
         command_info=command_info,
         targets=targets,

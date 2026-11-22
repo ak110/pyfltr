@@ -13,7 +13,6 @@ import pyfltr.run_options
 
 
 def test_run_reports_subproject_toml_error(tmp_path: pathlib.Path, caplog: pytest.LogCaptureFixture) -> None:
-    """不正なサブプロジェクト設定は対象パスと修正操作を表示して終了1になる。"""
     (tmp_path / "pyproject.toml").write_text(
         "[tool.pyfltr]\nrespect-gitignore = false\nsubproject-use-gitignore = false\n", encoding="utf-8"
     )
@@ -32,7 +31,6 @@ def test_run_reports_subproject_toml_error(tmp_path: pathlib.Path, caplog: pytes
 
 
 def _make_args(tmp_path: pathlib.Path, *, commands: list[str] | None) -> pyfltr.run_options.RunOptions:
-    """警告検証用の最小引数を生成する。"""
     target = tmp_path / "sample.md"
     target.write_text("# Title\n", encoding="utf-8")
     return pyfltr.run_options.RunOptions.from_values(
@@ -76,7 +74,6 @@ def _run_and_read_jsonl(
     args_commands: list[str] | None,
     enabled: set[str] | None = None,
 ) -> list[dict]:
-    """パイプラインを実ツール起動なしで実行し、JSONLレコードを返す。"""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("pyfltr.cli.pipeline.run_commands_with_cli", lambda *args, **kwargs: [])
     config = pyfltr.config.config.create_default_config()
@@ -96,13 +93,11 @@ def _run_and_read_jsonl(
 
 
 def _summary_warning_count(records: list[dict]) -> int:
-    """summaryレコードの`warnings`値を返す（キー不在は0件とみなす）。"""
     summary = next(record for record in records if record.get("kind") == "summary")
     return summary.get("warnings", 0)
 
 
 def test_unmet_commands_warning_emitted_when_commands_explicit(monkeypatch, capsys, tmp_path) -> None:
-    """明示指定された未有効化コマンドはJSONL警告として出力される。"""
     records = _run_and_read_jsonl(
         monkeypatch,
         capsys,
@@ -126,7 +121,6 @@ def test_unmet_commands_warning_emitted_when_commands_explicit(monkeypatch, caps
 
 
 def test_unmet_commands_warning_not_emitted_without_explicit_commands(monkeypatch, capsys, tmp_path) -> None:
-    """`--commands`未指定時は未有効化コマンド警告を出力しない。"""
     records = _run_and_read_jsonl(monkeypatch, capsys, tmp_path, ["textlint"], args_commands=None)
 
     assert not [record for record in records if record.get("source") == "commands"]
@@ -135,7 +129,6 @@ def test_unmet_commands_warning_not_emitted_without_explicit_commands(monkeypatc
 
 
 def test_unmet_commands_warning_not_emitted_when_all_enabled(monkeypatch, capsys, tmp_path) -> None:
-    """明示指定コマンドがすべて有効な場合は警告を出力しない。"""
     records = _run_and_read_jsonl(
         monkeypatch,
         capsys,
@@ -149,7 +142,6 @@ def test_unmet_commands_warning_not_emitted_when_all_enabled(monkeypatch, capsys
 
 
 def test_unmet_commands_warning_groups_multiple_commands(monkeypatch, capsys, tmp_path) -> None:
-    """複数の未有効化コマンドは1件の警告にまとめる。"""
     records = _run_and_read_jsonl(
         monkeypatch,
         capsys,
@@ -165,7 +157,6 @@ def test_unmet_commands_warning_groups_multiple_commands(monkeypatch, capsys, tm
 
 
 def test_unmet_commands_warning_not_emitted_for_alias_with_any_enabled(monkeypatch, capsys, tmp_path) -> None:
-    """エイリアス指定で展開結果に有効化済みが1件以上あれば警告を出力しない。"""
     records = _run_and_read_jsonl(
         monkeypatch,
         capsys,
@@ -179,7 +170,6 @@ def test_unmet_commands_warning_not_emitted_for_alias_with_any_enabled(monkeypat
 
 
 def test_unmet_commands_warning_emitted_for_alias_with_none_enabled(monkeypatch, capsys, tmp_path) -> None:
-    """エイリアス指定で展開結果が全て未有効化なら従来どおり警告を出力する。"""
     records = _run_and_read_jsonl(
         monkeypatch,
         capsys,
@@ -194,7 +184,6 @@ def test_unmet_commands_warning_emitted_for_alias_with_none_enabled(monkeypatch,
 
 
 def test_unmet_commands_warning_emitted_for_explicit_command_with_alias(monkeypatch, capsys, tmp_path) -> None:
-    """エイリアスと個別コマンド名の併記では、個別指定した未有効化コマンドの警告を出力する。"""
     records = _run_and_read_jsonl(
         monkeypatch,
         capsys,
@@ -209,7 +198,6 @@ def test_unmet_commands_warning_emitted_for_explicit_command_with_alias(monkeypa
 
 
 def test_can_use_ui() -> None:
-    """UIが使用可能かどうかの判定テスト。"""
     with (
         unittest.mock.patch("sys.stdin.isatty", return_value=True),
         unittest.mock.patch("sys.stdout.isatty", return_value=True),

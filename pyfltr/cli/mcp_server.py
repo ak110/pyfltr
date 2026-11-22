@@ -1,27 +1,3 @@
-"""MCPサーバー本体。
-
-`pyfltr mcp`サブコマンドでstdioトランスポートのMCPサーバーを起動する。
-MCPServerを用いて11ツールを公開し、
-LLMエージェントがpyfltrの実行と実行アーカイブ参照を直接利用できるようにする。
-
-MCPをコーディングエージェントの常用経路と位置づけ、CLIで可能な操作を原則として露出する。
-端末表示と出力先の制御は、MCPが構造化データを戻り値で返すため対象外とする。
-`--no-archive`も`run_id`を返す戻り値契約と両立しないため露出しない。
-ビルトインツールごとの`--{tool}-args`群は、スキーマの肥大化に見合う用途がないため対象外とする。
-
-引数解決はCLIと共通化する。サブコマンド既定値の注入、カンマ区切りの展開、
-未知コマンドの検証には`pyfltr.cli.command_selection`の公開関数を用いる。
-
-動作: `run`ツールは`pyfltr.cli.pipeline.run_pipeline`を直接呼ぶため、
-モノレポモード（起点cwd配下に複数の`pyproject.toml`を検出した場合）の
-サブプロジェクト分割実行をMCP経由でも自動的に継承する。
-公開スキーマには`subproject`識別フィールドを追加しないため、利用者が観測する
-レコード構造は単一プロジェクト時と同じになる。
-
-サーバー実装を`mcp_server.py`へ分離し、サードパーティ`mcp`パッケージとの
-import衝突を避けながらCLI入口から遅延なく参照できる構成にする。
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -34,15 +10,13 @@ import typing
 
 import pydantic
 
-# 配布物の版指定は下流プロジェクトの依存解決で上書きされる場合がある。
-# MCP専用依存のimport失敗を捕捉し、他サブコマンドとヘルプの起動を維持する。
 try:
     import mcp.server.mcpserver as _imported_mcpserver
     import mcp.server.mcpserver.exceptions as _imported_mcp_exceptions
     import mcp.types as _imported_mcp_types
 
     import pyfltr.cli.mcp_transport as _imported_mcp_transport
-except ImportError as e:  # 依存解決が配布物の宣言と異なる環境で到達する。
+except ImportError as e:
     _mcpserver: types_module.ModuleType | None = None
     _mcp_exceptions: types_module.ModuleType | None = None
     _mcp_types: types_module.ModuleType | None = None
@@ -76,10 +50,6 @@ if typing.TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-# `pydantic.Field`の説明はMCPの`inputSchema`へ載り、モデルが引数を決める唯一の手掛かりとなる。
-# docstringはクライアントへ送られないため、意味・省略時の動作・組み合わせ条件は説明へ書く。
-
-
 COMMAND_INFO_EXCLUDED_KEYS: frozenset[str] = frozenset({"command", "resolved"})
 """`command_info`の`info`から除くキー。応答最上位の`command`・`resolved`と重複するため。
 
@@ -88,14 +58,6 @@ COMMAND_INFO_EXCLUDED_KEYS: frozenset[str] = frozenset({"command", "resolved"})
 """
 
 
-# ---------------------------------------------------------------------------
-# MCPServerツール関数群（公開名は@mcp.tool(name=...)で明示）
-# ---------------------------------------------------------------------------
-
-# build_server()内で登録するため、ここではデコレーターを付けない。
-# 公開名はbuild_server()で@mcp.tool(name="...")によって明示的に設定する。
-# 公開名はアンダースコア区切り（`list_runs`等）を採用する。CLIサブコマンドの
-# ハイフン形式（`list-runs`）とは異なるが、`@mcp.tool()`のスキーマ名規則上
 # ハイフンは非推奨で互換性のあるMCPServer経路もアンダースコア前提のため。
 
 
@@ -111,10 +73,6 @@ async def tool_command_info(
         ),
     ] = False,
 ) -> CommandInfoModel:
-    """ツールの起動方式の解決結果を返す。
-
-    対応CLI: `pyfltr command-info <command> [--check]`
-    """
     pyfltr.warnings_.clear()
     try:
         config = pyfltr.config.config.load_config()
@@ -157,10 +115,6 @@ async def tool_config(
         bool, pydantic.Field(description='`action="list"`で、既定値のままのキーも含める。')
     ] = False,
 ) -> ConfigResultModel:
-    """pyfltr設定ファイルを操作する。
-
-    対応CLI: `pyfltr config get|set|delete|list`
-    """
     pyfltr.warnings_.clear()
     if action not in ("get", "set", "delete", "list"):
         pyfltr.cli.mcp_errors.raise_mcp_error("action は get / set / delete / list のいずれかを指定してください。")
@@ -205,12 +159,6 @@ async def tool_config(
     return ConfigResultModel(action=action, path=str(path), values=result.values)
 
 
-# ---------------------------------------------------------------------------
-# MCPServer組み立て
-# ---------------------------------------------------------------------------
-
-# 初期化応答でクライアントへ渡すサーバー全体の説明。ツール検索が有効なホストでは
-# ツール名とこの説明だけが先に読まれるため、扱う作業とツールの選び方を書く。
 SERVER_INSTRUCTIONS = (
     "pyfltrは多言語のformatter・linter・testerとプロジェクト固有のチェックを、設定に従って一括実行する。"
     "チェックの実行は`run`を使い、`mode`で`run`（自動修正あり）・`fast`（`fast`設定が有効なツールのみ）・`ci`（fixステージなし、formatterによる書き換えを失敗扱い）を選ぶ。"
@@ -240,22 +188,11 @@ TOOL_HANDLERS = {
 
 
 def build_server() -> MCPServer:
-    """MCPServerインスタンスを生成し、11ツールを登録して返す。
-
-    公開名は`@mcp.tool(name=...)`で明示し、Python側の関数名（`tool_*`）
-    とは独立したスキーマ名（`list_runs`等）を維持する。
-
-    `version`は初期化応答の`serverInfo.version`としてクライアントへ返る
-    MCPプロトコルの必須フィールドであり、省略するとSDKの既定値である空文字列が入る。
-    値は`importlib.metadata`から取得し、JSONL headerレコード・SARIF出力と取得元を揃える
-    （実行中の版と配布物の版を一致させるため）。
-    """
     if _mcpserver is None:
         raise RuntimeError("MCPサーバー機能に必要な依存を読み込めません") from _MCP_IMPORT_ERROR
     assert _mcp_transport is not None and _mcp_types is not None
     mcp = _mcpserver.MCPServer("pyfltr", version=importlib.metadata.version("pyfltr"), instructions=SERVER_INSTRUCTIONS)
     read_only = _mcp_types.ToolAnnotations(read_only_hint=True)
-    # 対象ファイルや設定ファイルを上書きしうるツール。ホストへ確認を促す。
     writes_files = _mcp_types.ToolAnnotations(destructive_hint=True)
     for name, title, description, tool_annotations, handler in (
         (
@@ -346,7 +283,6 @@ def build_server() -> MCPServer:
             "ツール起動方式の確認",
             "コマンドの起動方式（runner・実行ファイル・最終コマンドラインなど）の解決結果を返す。"
             "既定は副作用を起こさない。`check=True`は`mise install`・`mise trust`の試行や版確認の副作用を伴う。",
-            # `check=True`はmiseの導入・信頼設定を変えうるため読み取り専用とせず、上書きもしないため破壊的ともしない。
             _mcp_types.ToolAnnotations(read_only_hint=False, destructive_hint=False),
             tool_command_info,
         ),
@@ -366,22 +302,9 @@ def build_server() -> MCPServer:
     return mcp
 
 
-# ---------------------------------------------------------------------------
-# サブコマンド登録・エントリポイント
-# ---------------------------------------------------------------------------
-
-
 def execute_mcp(args: argparse.Namespace) -> int:
-    """`mcp`サブコマンドの処理本体。
+    del args
 
-    stdioトランスポートでMCPサーバーを起動する。
-    起動直後にroot loggerをstderrへ向けてJSON-RPCフレームのstdout汚染を防ぐ。
-    MCPServerの`run(transport="stdio")`はstdin EOFで終了する。
-    """
-    del args  # サブコマンド呼び出し規約上受け取るのみ（mcpは追加引数を持たない）
-
-    # stdioトランスポートではstdoutをJSON-RPCフレームが専有するため、
-    # ロギングは必ずstderrへ向ける。
     logging.basicConfig(stream=sys.stderr, level=logging.WARNING, format="%(levelname)s: %(message)s")
 
     if _mcpserver is None:
@@ -397,7 +320,7 @@ def execute_mcp(args: argparse.Namespace) -> int:
         server = build_server()
         server.run(transport="stdio")
         return 0
-    except Exception as e:  # MCPサーバー起動失敗をエージェント側へ非ゼロ終了で通知するため全例外を捕捉する
+    except Exception as e:
         logger.error(
             "MCP サーバーの起動に失敗しました: %s。"
             "https://ak110.github.io/pyfltr/guide/troubleshooting/ のMCP関連の節で切り分け手順を確認してください",

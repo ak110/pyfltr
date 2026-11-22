@@ -1,11 +1,8 @@
-"""native_lintersのツール登録。"""
-
 from pyfltr.diagnostics import ErrorLocation
 from pyfltr.tool_defs.common import CARGO_SHORT_OUTPUT
 from pyfltr.tool_types import BinToolSpec, CommandInfo, FunctionRef, StructuredOutputSpec
 
 COMMANDS: dict[str, CommandInfo] = {
-    # Rust / .NETツール（linter）。pass-filenames=FalseでCrate / solution全体を対象とする。
     "cargo-clippy": CommandInfo(
         parser=FunctionRef[[str], list[ErrorLocation]]("pyfltr.parsing.native", "parse_cargo_clippy"),
         structured_output=(
@@ -24,9 +21,6 @@ COMMANDS: dict[str, CommandInfo] = {
             "cargo-clippy-path": "",
             "cargo-clippy-runner": "bin-runner",
             "cargo-clippy-version": "latest",
-            # args は lint / fix 両モードで共通の前半部分。trailing flag (-- -D warnings)
-            # は lint-args / fix-args の双方に重複して置き、--fix 時には `--fix` を
-            # 中間に挿入できるよう分離している。
             "cargo-clippy-args": ["clippy", "--all-targets"],
             "cargo-clippy-lint-args": ["--", "-D", "warnings"],
             "cargo-clippy-fix-args": ["--fix", "--allow-staged", "--allow-dirty", "--", "-D", "warnings"],

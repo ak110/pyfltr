@@ -1,5 +1,3 @@
-"""pytestの実行環境でtestscopeの地図を検査し、ファイル単位で選択する。"""
-
 from __future__ import annotations
 
 import contextlib
@@ -15,7 +13,6 @@ from typing import Any
 import pyfltr.file_lock
 import pyfltr.paths
 
-# testscopeはpyfltrの環境へimportせず、対応版だけをpytest側のPythonで使う。
 _PROBE = """
 import hashlib, json, os, pathlib, sys
 from importlib.metadata import distributions, version
@@ -54,8 +51,6 @@ else:
 
 @dataclasses.dataclass(frozen=True)
 class Probe:
-    """子環境から受け取った選択、または選択不能の理由。"""
-
     signature: str = ""
     reason: str = ""
     tests: tuple[str, ...] = ()
@@ -72,7 +67,6 @@ def probe(
     *,
     record: bool,
 ) -> Probe:
-    """pytestと同じuvプロジェクトまたはvenvのPythonを使う。"""
     python = _python_prefix(prefix, runner)
     if not python:
         return Probe(reason="pytestと同じPython環境を特定できない")
@@ -132,7 +126,6 @@ def select_files(
     start_cwd: pathlib.Path,
     cwd: pathlib.Path,
 ) -> list[pathlib.Path]:
-    """地図のパスを直接引数にせず、許可済みの範囲からだけ選ぶ。"""
     required = {pyfltr.paths.to_match_key(f, start_cwd=start_cwd) for f in mandatory}
     known = _node_files(result.known, cwd, start_cwd)
     affected = _node_files(result.tests, cwd, start_cwd)
@@ -156,8 +149,6 @@ def _node_files(nodes: tuple[str, ...], cwd: pathlib.Path, start_cwd: pathlib.Pa
 
 @dataclasses.dataclass
 class Recording:
-    """ロック中に記録を実行し、対象範囲を記録できた場合だけ新しい地図を残す。"""
-
     directory: pathlib.Path
     signature: str
     expected: set[str]
@@ -166,7 +157,6 @@ class Recording:
     complete: bool = False
 
     def accept(self) -> None:
-        """成功したpytestの地図が全対象ファイルを含むことを確かめる。"""
         try:
             data = (self.directory / "map.json").read_bytes()
             if data == self.old_map:
@@ -209,7 +199,6 @@ def _loses_unchanged_tests(previous: bytes | None, mapping: dict[str, Any]) -> b
 def recording(
     cwd: pathlib.Path, signature: str, scope: list[pathlib.Path], start_cwd: pathlib.Path
 ) -> Generator[Recording | None, None, None]:
-    """失敗・中断・不完全な記録では、記録前の内容へ戻す。"""
     directory = cwd / ".testscope"
     names = ("map.json", "lastfailed.json", "pyfltr.json")
     lock_path = directory / "pyfltr.lock"

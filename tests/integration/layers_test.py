@@ -13,12 +13,10 @@ LAYERS = {
 
 
 def layer(module: str) -> int:
-    """pyfltr内のモジュールに対応する層番号を返す。"""
     return LAYERS.get(module.split(".")[1], 0)
 
 
 def import_violations(package: pathlib.Path) -> list[str]:
-    """全ASTノードのpyfltr内importを解決し、逆方向の参照を列挙する。"""
     violations: list[str] = []
     for path in sorted(package.rglob("*.py")):
         parts = path.relative_to(package.parent).with_suffix("").parts
@@ -42,7 +40,6 @@ def import_violations(package: pathlib.Path) -> list[str]:
 
 
 def test_imports_follow_layers() -> None:
-    """CLIから下位への方向で全てのimportが成立する。"""
     package = pathlib.Path(__file__).resolve().parents[2] / "pyfltr"
     violations = import_violations(package)
     assert not violations, "\n".join(violations)

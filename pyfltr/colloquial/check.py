@@ -1,18 +1,3 @@
-r"""口語表現検査の純粋ロジック。
-
-denylist・allowlistの正規表現を辞書ファイルから読み込み、
-Markdownの引用ブロック・フェンス付きコードブロック・インラインコード・allowlist該当箇所を
-同長空白マスクで除外したうえでdenylistに一致する箇所を列挙する。
-
-denylistの内容をソースコード（`.py`ファイル）へ静的に埋め込まない設計のため、
-パターンを辞書ファイルから動的に読み込む。
-コーディングエージェントがソースコードを読む際にdenylist内容がコンテキストへ
-混入しないようにする狙いがある。
-
-辞書ファイルの各行は`pattern`または`pattern\treplacement`形式（タブ区切り）。
-タブを含まない行は置換候補なし扱いとし、CLI出力にも候補は表示されない。
-"""
-
 import pathlib
 import re
 
@@ -25,23 +10,10 @@ ALLOW_PATH = _DICT_DIR / "words_allow.txt"
 
 _KANJI_CLASS = r"[一-鿿]"
 _KANJI_LEFT_BOUNDARY = rf"(?<!{_KANJI_CLASS})"
-# 漢字1文字の語幹に活用形の文字クラスが続く形。この形だけが漢語複合語の接尾と衝突する。
 _SINGLE_KANJI_STEM_RE = re.compile(rf"\A{_KANJI_CLASS}\[")
 
 
 def _with_kanji_left_boundary(pattern: str) -> str:
-    """漢字1文字の語幹で始まるパターンへ、直前が漢字である位置での一致を禁じる条件を前置する。
-
-    denylistのパターンは語境界を持たない部分一致で適用される。
-    語幹が漢字1文字の場合、対象の漢字を末尾に持つ漢語複合語の内部でも一致が成立する。
-    条件を行ごとに手書きさせると書き漏らしが辞書へ混入するため、読込時に一律で与える。
-
-    対象を漢字1文字＋活用形の文字クラスの形に限るのは、
-    語幹が2文字以上の漢字である場合は、対象の語幹が別の漢語複合語の接尾になりにくく、
-    かつ接頭辞が直前に付く形で検出すべき真陽性が存在するためである。
-
-    既に否定先読み・否定後読みで始まる行は、記述者が境界条件を明示した行として扱い変更しない。
-    """
     if pattern.startswith(("(?<!", "(?!")):
         return pattern
     if _SINGLE_KANJI_STEM_RE.match(pattern) is None:
@@ -50,20 +22,6 @@ def _with_kanji_left_boundary(pattern: str) -> str:
 
 
 def load_patterns(path: pathlib.Path, *, kanji_left_boundary: bool = False) -> list[tuple[re.Pattern[str], str | None]]:
-    r"""辞書ファイルから1行1正規表現を読み込んでコンパイルする。
-
-    各行は`pattern`または`pattern\treplacement`形式。タブが含まれる場合は
-    最初のタブまでをパターン、以降をそのままreplacementとして保持する。
-    タブが無い行はreplacementを`None`として返す。
-
-    `#`で始まる行と空行は無視する。
-    不正な正規表現はチェッカーを破損させないためスキップする。
-
-    `kanji_left_boundary`が真の場合、漢字1文字の語幹で始まるパターンへ左境界条件を前置する
-    （対象の判定は`_with_kanji_left_boundary`が持つ）。
-    denylistの読み込みでのみ真を指定する。allowlistは漢語複合語の側を一致させる役割を
-    持つため、同じ条件を与えると対象の役割が成立しない。
-    """
     if not path.is_file():
         return []
     patterns: list[tuple[re.Pattern[str], str | None]] = []
@@ -71,8 +29,6 @@ def load_patterns(path: pathlib.Path, *, kanji_left_boundary: bool = False) -> l
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
-        # 最初のタブまでをパターン、残りを置換候補として扱う。
-        # `strip()`で末尾の空白文字（タブ含む）は除去済みのため、タブが無い行は`replacement=None`になる。
         head, sep, tail = stripped.partition("\t")
         replacement = tail if sep else None
         if kanji_left_boundary:
@@ -85,11 +41,6 @@ def load_patterns(path: pathlib.Path, *, kanji_left_boundary: bool = False) -> l
 
 
 def mask_allowed(text: str, allow_patterns: list[tuple[re.Pattern[str], str | None]]) -> str:
-    """allow_patternsに一致する部分を同長の空白で置き換える。
-
-    空文字ではなく空白で埋めることで位置情報を保持する。
-    後続のdenylist検索結果が元テキスト上のオフセットと整合する。
-    """
     masked = text
     for ap, _ in allow_patterns:
         masked = ap.sub(lambda m: " " * len(m.group(0)), masked)
@@ -100,23 +51,10 @@ _BLOCKQUOTE_LINE_RE = re.compile(r"(?m)^>.*$")
 
 
 def mask_blockquote_lines(text: str) -> str:
-    """Markdown引用ブロック（行頭`>`で始まる行）を同長の空白で置き換える。
-
-    ユーザー提示素材の原文転記が口語表現として誤検出される事態を避ける。
-    `mask_allowed`と同じ同長空白置換方式で、検出箇所のオフセット・行番号計算を変更しない。
-    """
     return _BLOCKQUOTE_LINE_RE.sub(lambda m: " " * len(m.group(0)), text)
 
 
 def mask_fenced_code_blocks(text: str) -> str:
-    """Markdownフェンス付きコードブロック内の行を同長の空白で置き換える。
-
-    `mask_blockquote_lines`と同じく、ユーザー提示素材の原文転記が口語表現として
-    誤検出される事態を避ける。開始フェンスは行頭の三連以上の連続バッククォート
-    または連続チルダ。終了フェンスは開始と同種かつ同長以上の連続マーカー行。
-    開閉フェンス行自体は維持し、内側の行のみ同長空白へ置換する。
-    オフセット・行番号は変更しない。
-    """
     return pyfltr.text.fences.mask_fenced_blocks(text, preserve_columns=True)
 
 
@@ -124,24 +62,10 @@ _INLINE_CODE_RE = re.compile(r"(`+)([^`\n]+)\1")
 
 
 def mask_inline_code(text: str) -> str:
-    """Markdownのインラインコード（`` `…` ``）の中身を同長の空白で置き換える。
-
-    フェンス付きコードブロックと同じく、コード片・識別子・構文例が口語表現として
-    誤検出される事態を避ける。開始と終了で同じ長さのバッククォート列に囲まれ、
-    内側にバッククォートと改行を含まない範囲を対象とする。
-    バッククォート自体は`mask_fenced_code_blocks`がフェンス行を維持するのと同様に残し、
-    内側だけを置換する。オフセット・行番号は変更しない。
-    """
     return _INLINE_CODE_RE.sub(lambda m: m.group(1) + " " * len(m.group(2)) + m.group(1), text)
 
 
 def _mask_all(text: str, allow_patterns: list[tuple[re.Pattern[str], str | None]]) -> str:
-    """引用ブロック・フェンス付きコードブロック・インラインコード・allowlist該当箇所を順にマスクする。
-
-    `scan_text`と`first_hit`で共通の前処理として使う。
-    インラインコードはフェンス付きコードブロックの後にマスクする。
-    フェンス行の判定が先に済んでいる状態で処理するため、フェンスのマーカー行を巻き込まない。
-    """
     return mask_allowed(mask_inline_code(mask_fenced_code_blocks(mask_blockquote_lines(text))), allow_patterns)
 
 
@@ -150,12 +74,6 @@ def scan_text(
     deny_patterns: list[tuple[re.Pattern[str], str | None]],
     allow_patterns: list[tuple[re.Pattern[str], str | None]],
 ) -> list[tuple[int, int, str, str, str | None]]:
-    """テキスト全体を検査して検出箇所のリストを返す。
-
-    各要素は`(行番号, 列, 検出文字列, 行抜粋, 置換候補)`のタプル。
-    置換候補は辞書ファイルでパターンに併記されたreplacement列を返す。候補なしは`None`。
-    allow_patternsマスク後もオフセットを維持しているため、元テキスト上の正確な位置を指す。
-    """
     if not deny_patterns:
         return []
     masked = _mask_all(text, allow_patterns)
@@ -179,7 +97,6 @@ def first_hit(
     deny_patterns: list[tuple[re.Pattern[str], str | None]],
     allow_patterns: list[tuple[re.Pattern[str], str | None]],
 ) -> bool:
-    """検出が1件でもあれば真を返す（呼び出し元の高速判定用の経路）。"""
     if not deny_patterns:
         return False
     masked = _mask_all(text, allow_patterns)

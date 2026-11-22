@@ -1,5 +1,3 @@
-"""pytestの影響選択と地図の保護を検証する。"""
-
 import json
 import pathlib
 import subprocess

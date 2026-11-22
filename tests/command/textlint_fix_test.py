@@ -13,7 +13,6 @@ from tests import conftest as _testconf
 
 
 def test_textlint_lint_mode_adds_lint_args(mocker, tmp_path: pathlib.Path) -> None:
-    """非fixモードでtextlint-lint-args（既定は--format compact）がcommandlineに追加される。"""
     target = tmp_path / "sample.md"
     target.write_text("# title\n")
 
@@ -29,17 +28,12 @@ def test_textlint_lint_mode_adds_lint_args(mocker, tmp_path: pathlib.Path) -> No
     assert mock_run.call_count == 1
     cmdline = mock_run.call_args_list[0][0][0]
     assert "--format" in cmdline
-    # textlint-json=True（既定）により、lint-argsのcompactがjsonに置換される
     assert "json" in cmdline
     fmt_idx = cmdline.index("--format")
     assert cmdline[fmt_idx + 1] == "json"
 
 
 def test_textlint_fix_mode_skips_lint_step_when_fix_succeeds(mocker, tmp_path: pathlib.Path) -> None:
-    """修正段が終了0なら、fail-fast指定時も残存違反の検査（step2）を省き、修正の1回だけ起動する。
-
-    修正段が成功すればfix段で打ち切られず、同じ実行の通常の段がtextlintで同じ検査を行うため、step2は重複する。
-    """
     target = tmp_path / "sample.md"
     target.write_text("# title\n")
 
@@ -56,7 +50,6 @@ def test_textlint_fix_mode_skips_lint_step_when_fix_succeeds(mocker, tmp_path: p
 
     assert mock_run.call_count == 1
     step1_cmdline = mock_run.call_args_list[0][0][0]
-    # step1: fix-args（--fix）あり、--formatなし（fixer-formatterはcompactをサポートしないため）
     assert "--fix" in step1_cmdline
     assert "--format" not in step1_cmdline
     assert result.status == "succeeded"
@@ -64,13 +57,11 @@ def test_textlint_fix_mode_skips_lint_step_when_fix_succeeds(mocker, tmp_path: p
 
 
 def _fail_fix_step(cmdline, env, on_output, **_kwargs):
-    """修正段（`--fix`付き）だけ終了1を返す偽の実行。fail-fast指定時はstep2を起動させる。"""
-    del env, on_output  # 引数シグネチャ揃えのため受け取るのみ
+    del env, on_output
     return subprocess.CompletedProcess(cmdline, returncode=1 if "--fix" in cmdline else 0, stdout="")
 
 
 def test_textlint_fix_mode_two_step_execution_when_fix_fails_with_fail_fast(mocker, tmp_path: pathlib.Path) -> None:
-    """fail-fast指定時に修正段が非0なら、通常の段へ進まないため残存違反を取得するstep2のlintを実行する。"""
     target = tmp_path / "sample.md"
     target.write_text("# title\n")
 
@@ -86,23 +77,17 @@ def test_textlint_fix_mode_two_step_execution_when_fix_fails_with_fail_fast(mock
 
     assert mock_run.call_count == 2
     step2_cmdline = mock_run.call_args_list[1][0][0]
-    # step2: 構造化出力注入により--format jsonあり、--fixなし
     assert "--fix" not in step2_cmdline
     assert "--format" in step2_cmdline
     assert "json" in step2_cmdline
 
 
 def test_textlint_fix_mode_skips_lint_step_when_fix_fails_without_fail_fast(mocker, tmp_path: pathlib.Path) -> None:
-    """fail-fastでなければ、修正段が非0でもstep2を省き、修正段の失敗として返す。
-
-    同じ実行の通常の段が必ずtextlintを実行し、fix段の失敗は通常の段の結果へ統合される。
-    修正段の出力は解析できる形式を持たないため、診断は通常の段の結果に任せる。
-    """
     target = tmp_path / "sample.md"
     target.write_text("# title\n")
 
     def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # 引数シグネチャ揃えのため受け取るのみ
+        del env, on_output
         return subprocess.CompletedProcess(cmdline, returncode=1, stdout="TypeError [ERR_INVALID_ARG_TYPE]")
 
     mock_run = mocker.patch("pyfltr.command.process.run_subprocess", side_effect=fake_run)
@@ -125,7 +110,6 @@ def test_textlint_fix_mode_skips_lint_step_when_fix_fails_without_fail_fast(mock
 
 
 def test_textlint_fix_mode_strips_user_format_from_step1(mocker, tmp_path: pathlib.Path) -> None:
-    """ユーザーがtextlint-argsに--formatを設定していてもstep1では除去される（下位互換）。"""
     target = tmp_path / "sample.md"
     target.write_text("# title\n")
 
@@ -134,7 +118,6 @@ def test_textlint_fix_mode_strips_user_format_from_step1(mocker, tmp_path: pathl
 
     config = pyfltr.config.config.create_default_config()
     config.values["textlint"] = True
-    # 旧docsで推奨されていた設定: textlint-argsに--format compactを含む
     config.values["textlint-args"] = ["--format", "compact"]
     pyfltr.command.dispatcher.execute_command(
         "textlint",
@@ -151,7 +134,6 @@ def test_textlint_fix_mode_strips_user_format_from_step1(mocker, tmp_path: pathl
 
 
 def test_textlint_fix_mode_preserves_non_format_user_args(mocker, tmp_path: pathlib.Path) -> None:
-    """ユーザーがtextlint-argsに追加した--format以外のオプションは両ステップで保持される。"""
     target = tmp_path / "sample.md"
     target.write_text("# title\n")
 
@@ -173,23 +155,15 @@ def test_textlint_fix_mode_preserves_non_format_user_args(mocker, tmp_path: path
 
 
 def test_textlint_fix_mode_touch_without_content_change_marks_succeeded(mocker, tmp_path: pathlib.Path) -> None:
-    """textlintが内容を変えずにファイルを書き戻した場合はsucceeded扱いになる。
-
-    textlint --fixは残存違反がなくても対象ファイルをtouchすることがあり、
-    mtimeベースで検知すると偽陽性（formatted）になってしまう。内容ハッシュで
-    比較することで、真の修正がない限りsucceededが維持されることを担保する。
-    """
     target = tmp_path / "sample.md"
     target.write_text("# title\n")
     os.utime(target, (1000000000, 1000000000))
 
     def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # 引数シグネチャ揃えのため受け取るのみ
+        del env, on_output
         if "--fix" in cmdline:
-            # step1: 内容は変えずmtimeだけ更新（textlintのtouch挙動を模擬）
             os.utime(target, (2000000000, 2000000000))
             return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
-        # step2: 残存違反なし
         return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
 
     mocker.patch("pyfltr.command.process.run_subprocess", side_effect=fake_run)
@@ -207,7 +181,6 @@ def test_textlint_fix_mode_touch_without_content_change_marks_succeeded(mocker, 
 
 
 def test_textlint_fix_mode_all_fixed_marks_formatted(mocker, tmp_path: pathlib.Path) -> None:
-    """fixモードで全件修正され残存違反なしならformatted（内容ハッシュに変化あり）。"""
     target = tmp_path / "sample.md"
     target.write_text("# title\n")
     os.utime(target, (1000000000, 1000000000))
@@ -215,14 +188,12 @@ def test_textlint_fix_mode_all_fixed_marks_formatted(mocker, tmp_path: pathlib.P
     call_count = [0]
 
     def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # 引数シグネチャ揃えのため受け取るのみ
+        del env, on_output
         call_count[0] += 1
         if call_count[0] == 1:
-            # step1: fix適用（mtime更新）
             target.write_text("# Title\n")
             os.utime(target, (2000000000, 2000000000))
             return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
-        # step2: 残存違反なし
         return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
 
     mocker.patch("pyfltr.command.process.run_subprocess", side_effect=fake_run)
@@ -240,14 +211,12 @@ def test_textlint_fix_mode_all_fixed_marks_formatted(mocker, tmp_path: pathlib.P
 
 
 def test_textlint_fix_mode_emits_warning_when_protected_identifier_corrupted(mocker, tmp_path: pathlib.Path) -> None:
-    """保護対象識別子（.NETなど）がfixで全角化された場合、warningが発行される。"""
     target = tmp_path / "sample.md"
     target.write_text("本文で.NET系の話題を扱う。\n")
 
     def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # 引数シグネチャ揃えのため受け取るのみ
+        del env, on_output
         if "--fix" in cmdline:
-            # preset-jtf-styleが「.」を「。」へ変換したことを模擬
             target.write_text("本文で。NET系の話題を扱う。\n")
             return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
         return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
@@ -265,20 +234,17 @@ def test_textlint_fix_mode_emits_warning_when_protected_identifier_corrupted(moc
     entries = [w for w in pyfltr.warnings_.collected_warnings() if w["source"] == "textlint-identifier-corruption"]
     assert len(entries) == 1
     assert ".NET" in entries[0]["message"]
-    # パスはcwd相対化されて記録される（絶対パスのまま埋め込まれない）
     relative = pyfltr.paths.to_cwd_relative(target)
     assert f"file={relative}" in entries[0]["message"]
-    # hint として恒久対策が添えられる
     assert "バックティック" in entries[0]["hint"]
 
 
 def test_textlint_fix_mode_no_warning_when_protected_identifiers_empty(mocker, tmp_path: pathlib.Path) -> None:
-    """textlint-protected-identifiersが空なら検知をスキップしwarningは出ない。"""
     target = tmp_path / "sample.md"
     target.write_text("本文で.NET系の話題を扱う。\n")
 
     def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # 引数シグネチャ揃えのため受け取るのみ
+        del env, on_output
         if "--fix" in cmdline:
             target.write_text("本文で。NET系の話題を扱う。\n")
             return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
@@ -300,14 +266,12 @@ def test_textlint_fix_mode_no_warning_when_protected_identifiers_empty(mocker, t
 
 
 def test_textlint_fix_mode_no_warning_when_identifier_intact(mocker, tmp_path: pathlib.Path) -> None:
-    """fixで他の部分は変わっても、保護対象識別子が維持されていればwarningは出ない。"""
     target = tmp_path / "sample.md"
     target.write_text("# title\n\n本文.NETと普通の文.\n")
 
     def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # 引数シグネチャ揃えのため受け取るのみ
+        del env, on_output
         if "--fix" in cmdline:
-            # .NETは保持、末尾の.のみ全角化
             target.write_text("# title\n\n本文.NETと普通の文。\n")
             return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
         return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
@@ -327,7 +291,6 @@ def test_textlint_fix_mode_no_warning_when_identifier_intact(mocker, tmp_path: p
 
 
 def test_textlint_fix_mode_residual_violations_mark_failed(mocker, tmp_path: pathlib.Path) -> None:
-    """fail-fast指定時に残存違反がある場合はfailed、errorsがstep2のcompact形式からパースされる。"""
     target = tmp_path / "sample.md"
     target.write_text("# title\n")
 
@@ -335,11 +298,9 @@ def test_textlint_fix_mode_residual_violations_mark_failed(mocker, tmp_path: pat
     violation_output = f"{violation_file}: line 3, col 5, Error - No mixed period (ja-no-mixed-period)"
 
     def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # 引数シグネチャ揃えのため受け取るのみ
+        del env, on_output
         if "--fix" in cmdline:
-            # step1: fix適用したが違反が残る（textlintはrc=1を返すことがある）
             return subprocess.CompletedProcess(cmdline, returncode=1, stdout="")
-        # step2: compact 形式で違反出力
         return subprocess.CompletedProcess(cmdline, returncode=1, stdout=violation_output)
 
     mocker.patch("pyfltr.command.process.run_subprocess", side_effect=fake_run)
@@ -361,12 +322,11 @@ def test_textlint_fix_mode_residual_violations_mark_failed(mocker, tmp_path: pat
 
 
 def test_textlint_fix_mode_step1_fatal_error_fails(mocker, tmp_path: pathlib.Path) -> None:
-    """step1のrc >= 2（致命的エラー）はstep2の結果にかかわらずfailed扱い。"""
     target = tmp_path / "sample.md"
     target.write_text("# title\n")
 
     def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # 引数シグネチャ揃えのため受け取るのみ
+        del env, on_output
         if "--fix" in cmdline:
             return subprocess.CompletedProcess(cmdline, returncode=2, stdout="fatal error")
         return subprocess.CompletedProcess(cmdline, returncode=0, stdout="")
@@ -386,16 +346,11 @@ def test_textlint_fix_mode_step1_fatal_error_fails(mocker, tmp_path: pathlib.Pat
 
 
 def test_textlint_fix_mode_step1_exit1_with_clean_lint_fails(mocker, tmp_path: pathlib.Path) -> None:
-    """fail-fast指定時、修正段の終了1（例外）は後続lintの終了0で成功へ変換せず、両段の出力を保持する。
-
-    textlintの終了1は予期しない例外も表す。修正段に違反が残れば後続lintも非0になるため、
-    修正1・lint0の組合せは修正処理の失敗であり、成功の誤報を検出する。
-    """
     target = tmp_path / "sample.md"
     target.write_text("# title\n")
 
     def fake_run(cmdline, env, on_output, **_kwargs):
-        del env, on_output  # 引数シグネチャ揃えのため受け取るのみ
+        del env, on_output
         if "--fix" in cmdline:
             return subprocess.CompletedProcess(cmdline, returncode=1, stdout="TypeError [ERR_INVALID_ARG_TYPE]")
         return subprocess.CompletedProcess(cmdline, returncode=0, stdout="[]")
@@ -417,7 +372,6 @@ def test_textlint_fix_mode_step1_exit1_with_clean_lint_fails(mocker, tmp_path: p
 
 
 def test_textlint_fix_mode_disables_cache_only_in_fix_step(mocker, tmp_path: pathlib.Path) -> None:
-    """利用者の`--cache`指定は通常lint段で保ち、修正段だけ末尾の`--no-cache`で無効化する。"""
     target = tmp_path / "sample.md"
     target.write_text("# title\n")
 
@@ -435,7 +389,6 @@ def test_textlint_fix_mode_disables_cache_only_in_fix_step(mocker, tmp_path: pat
     step1_cmdline = mock_run.call_args_list[0][0][0]
     step2_cmdline = mock_run.call_args_list[1][0][0]
     assert step1_cmdline.index("--no-cache") > step1_cmdline.index("--cache")
-    # 対象ファイルの直前（利用者引数の結合後）に置き、後勝ちで適用させる。
     assert step1_cmdline[-2] == "--no-cache"
     assert "--cache" in step2_cmdline
     assert "--no-cache" not in step2_cmdline
@@ -496,7 +449,6 @@ def test_textlint_fix_cache_only_skips_unchanged_clean_files(mocker, tmp_path: p
     clean.write_text("changed")
     assert execute([clean, bad]).target_files == [bad, clean]
     assert clean.read_text() == "fixed"
-    # 違反0件の記録を作ってから、設定ファイルの新設で無効になることを確認する。
     assert execute([clean, bad]).target_files == [bad, clean]
     execute([clean, bad], fix_stage=False)
     assert execute([clean, bad]).target_files == [bad]

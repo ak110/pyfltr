@@ -1,5 +1,3 @@
-"""実行アーカイブとキャッシュの準備・保存フック。"""
-
 import logging
 import pathlib
 import typing
@@ -16,7 +14,6 @@ logger = logging.getLogger(__name__)
 
 
 def archive_failure_hint(*, can_disable: bool) -> str:
-    """アーカイブを無効化できる呼び出し手段かに応じた対処を返す。"""
     action = "キャッシュディレクトリの書き込み権限と空き容量を確認してください。"
     if can_disable:
         return action + "実行アーカイブが不要なら `--no-archive` を指定すると警告を抑止できます。"
@@ -29,17 +26,11 @@ def make_archive_hook(
     *,
     archive_required: bool = False,
 ) -> typing.Callable[[pyfltr.command.core_.CommandResult], None]:
-    """アーカイブ書き込みフックを生成する。
-
-    書き込みに成功した場合のみ`result.archived = True`を設定し、
-    smart truncationの可否判定に使う。失敗時は警告を発行して処理を続行する。
-    """
 
     def _hook(result: pyfltr.command.core_.CommandResult) -> None:
         try:
             archive_store.write_tool_result(run_id, result)
         except OSError as e:
-            # ハンドラ内でwarningを通知してもsummary末尾にまとまる。
             pyfltr.warnings_.emit_warning(
                 source="archive",
                 message=(
@@ -49,7 +40,6 @@ def make_archive_hook(
                 hint=archive_failure_hint(can_disable=not archive_required),
             )
             return
-        # 書き込み成功時のみarchived=Trueに更新。smart truncationの可否判定に使う。
         result.archived = True
 
     return _hook
@@ -61,10 +51,6 @@ def make_slot_wait_hook(
     *,
     archive_required: bool = False,
 ) -> pyfltr.command.execution_slot.WaitIntervalCallback:
-    """実行枠の待機区間を実行アーカイブへ保存するフックを生成する。
-
-    書き込みに失敗した場合は最初の1回だけ警告を発行し、検証自体は続行する。
-    """
     warned = False
 
     def _hook(wait: pyfltr.command.execution_slot.SlotWait) -> None:
@@ -96,18 +82,12 @@ def initialize_archive(
     *,
     archive_required: bool = False,
 ) -> tuple[pyfltr.state.archive.ArchiveStore | None, str | None]:
-    """実行アーカイブを初期化し、失敗時は警告とともに無効化する。"""
-    # 実行アーカイブの初期化 （既定で有効）。
-    # `--no-archive` または `archive = false` で無効化できる。クリーンアップ失敗や
-    # 書き込み失敗はパイプライン本体を止めないようwarningsへ転送する。
     archive_enabled = bool(config.values.get("archive", True)) and not getattr(args, "no_archive", False)
     archive_store: pyfltr.state.archive.ArchiveStore | None = None
     run_id: str | None = None
     if archive_enabled:
         try:
             archive_store = pyfltr.state.archive.ArchiveStore()
-            # MCPの`sys.argv`はサーバー自身の起動引数であり、この実行の指定を含まない。
-            # アーカイブ必須（MCP）の実行は、受け取った入力から再構築した引数を記録する。
             run_id = archive_store.start_run(
                 commands=commands,
                 files=len(all_files),
@@ -138,10 +118,6 @@ def initialize_cache(
     args: pyfltr.run_options.RunOptions,
     config: pyfltr.config.model.Config,
 ) -> pyfltr.state.cache.CacheStore | None:
-    """ファイルキャッシュを初期化し、失敗時は警告とともに無効化する。"""
-    # ファイルhashキャッシュの初期化 （既定で有効）。
-    # `--no-cache` または `cache = false` で無効化できる。期間超過エントリの削除失敗や
-    # 書き込み失敗はパイプライン本体を止めないためwarningsへ転送する。
     cache_enabled = bool(config.values.get("cache", True)) and not getattr(args, "no_cache", False)
     cache_store: pyfltr.state.cache.CacheStore | None = None
     if cache_enabled:
@@ -176,8 +152,6 @@ def finalize_archive(
     *,
     archive_required: bool = False,
 ) -> None:
-    """終了コードと完了時刻を保存する。保存失敗は検査結果を変えない。"""
-    # アーカイブ終端: meta.jsonにexit_code / finished_atを書き込む。
     if archive_store is not None and run_id is not None:
         try:
             archive_store.finalize_run(run_id, exit_code=returncode, commands=commands, files=files)

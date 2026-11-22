@@ -11,7 +11,6 @@ import pyfltr.grep_.types
 
 
 def _make_command_meta(*, replace_id: str | None) -> pyfltr.grep_.types.ReplaceCommandMeta:
-    """テスト用の`ReplaceCommandMeta`を生成する。"""
     return pyfltr.grep_.types.ReplaceCommandMeta(
         replace_id=replace_id,
         dry_run=False,
@@ -23,7 +22,6 @@ def _make_command_meta(*, replace_id: str | None) -> pyfltr.grep_.types.ReplaceC
 
 
 def _make_record(file: pathlib.Path) -> pyfltr.grep_.types.ReplaceRecord:
-    """テスト用の`ReplaceRecord`を生成する。"""
     return pyfltr.grep_.types.ReplaceRecord(
         file=file,
         line=1,
@@ -38,7 +36,6 @@ def _make_record(file: pathlib.Path) -> pyfltr.grep_.types.ReplaceRecord:
 def _prepare_saved_replacement(
     tmp_path: pathlib.Path,
 ) -> tuple[pyfltr.grep_.history.ReplaceHistoryStore, str, pathlib.Path]:
-    """undoテスト用に置換履歴と置換後の対象ファイルを準備する。"""
     history_root = tmp_path / "history"
     work_dir = tmp_path / "work"
     work_dir.mkdir()
@@ -64,7 +61,6 @@ def _prepare_saved_replacement(
 
 
 def test_save_and_load_round_trip(tmp_path: pathlib.Path) -> None:
-    """save_replace と load_replace の往復で内容が保持される。"""
     store = pyfltr.grep_.history.ReplaceHistoryStore(history_root=tmp_path)
     replace_id = pyfltr.grep_.history.generate_replace_id()
     target = pathlib.Path("src/module.py")
@@ -95,7 +91,6 @@ def test_save_and_load_round_trip(tmp_path: pathlib.Path) -> None:
 
 
 def test_undo_replace_restores_when_hash_matches(tmp_path: pathlib.Path) -> None:
-    """ハッシュ一致時にbefore_contentで復元される。"""
     store, replace_id, target = _prepare_saved_replacement(tmp_path)
 
     metadata = json.loads((store.history_root / replace_id / "meta.json").read_text(encoding="utf-8"))
@@ -110,13 +105,11 @@ def test_undo_replace_restores_when_hash_matches(tmp_path: pathlib.Path) -> None
 
 
 def test_undo_replace_skips_when_hash_mismatch(tmp_path: pathlib.Path) -> None:
-    """ハッシュ不一致時はforce未指定でスキップされる。"""
     store, replace_id, target = _prepare_saved_replacement(tmp_path)
 
     metadata = json.loads((store.history_root / replace_id / "meta.json").read_text(encoding="utf-8"))
     assert [entry["file"] for entry in metadata["files"]] == [target.as_posix()]
 
-    # 手動編集を再現
     target.write_text("manually edited content", encoding="utf-8")
 
     restored, skipped, warnings = store.undo_replace(replace_id)
@@ -124,18 +117,15 @@ def test_undo_replace_skips_when_hash_mismatch(tmp_path: pathlib.Path) -> None:
     assert not restored
     assert skipped == [target]
     assert len(warnings) == 1
-    # 上書きされず手動編集が残る
     assert target.read_text(encoding="utf-8") == "manually edited content"
 
 
 def test_undo_replace_force_overrides_mismatch(tmp_path: pathlib.Path) -> None:
-    """force=True ならハッシュ不一致でも復元する。"""
     store, replace_id, target = _prepare_saved_replacement(tmp_path)
 
     metadata = json.loads((store.history_root / replace_id / "meta.json").read_text(encoding="utf-8"))
     assert [entry["file"] for entry in metadata["files"]] == [target.as_posix()]
 
-    # 手動編集後にforce=Trueで復元
     target.write_text("manually edited content", encoding="utf-8")
     restored, skipped, warnings = store.undo_replace(replace_id, force=True)
 
@@ -146,18 +136,15 @@ def test_undo_replace_force_overrides_mismatch(tmp_path: pathlib.Path) -> None:
 
 
 def test_load_replace_not_found_raises(tmp_path: pathlib.Path) -> None:
-    """存在しない replace_id は FileNotFoundError。"""
     store = pyfltr.grep_.history.ReplaceHistoryStore(history_root=tmp_path)
     with pytest.raises(FileNotFoundError):
         store.load_replace("nonexistent")
 
 
 def test_list_replaces_returns_descending_order(tmp_path: pathlib.Path) -> None:
-    """list_replaces は新しい順で返す。"""
     store = pyfltr.grep_.history.ReplaceHistoryStore(history_root=tmp_path)
     replace_ids: list[str] = []
     for _ in range(3):
-        # 同一ミリ秒内でULIDの乱数部分が逆順となる可能性を避ける
         time.sleep(0.001)
         replace_id = pyfltr.grep_.history.generate_replace_id()
         store.save_replace(
@@ -173,7 +160,6 @@ def test_list_replaces_returns_descending_order(tmp_path: pathlib.Path) -> None:
 
 
 def test_list_replaces_limit(tmp_path: pathlib.Path) -> None:
-    """list_replaces のlimitで件数を制限できる。"""
     store = pyfltr.grep_.history.ReplaceHistoryStore(history_root=tmp_path)
     for _ in range(5):
         replace_id = pyfltr.grep_.history.generate_replace_id()
@@ -188,7 +174,6 @@ def test_list_replaces_limit(tmp_path: pathlib.Path) -> None:
 
 
 def test_cleanup_max_entries(tmp_path: pathlib.Path) -> None:
-    """世代数超過で古い世代から削除される。"""
     store = pyfltr.grep_.history.ReplaceHistoryStore(history_root=tmp_path)
     replace_ids: list[str] = []
     for _ in range(5):
@@ -211,10 +196,9 @@ def test_cleanup_max_entries(tmp_path: pathlib.Path) -> None:
 
 
 def test_cleanup_max_size(tmp_path: pathlib.Path) -> None:
-    """サイズ超過で古い世代から削除される。"""
     store = pyfltr.grep_.history.ReplaceHistoryStore(history_root=tmp_path)
     target = pathlib.Path("a.txt")
-    big_payload = "x" * (2 * 1024 * 1024)  # 2MB
+    big_payload = "x" * (2 * 1024 * 1024)
     big_id = pyfltr.grep_.history.generate_replace_id()
     after_hash = pyfltr.grep_.replacer.compute_hash(big_payload)
     store.save_replace(
@@ -246,7 +230,6 @@ def test_cleanup_max_size(tmp_path: pathlib.Path) -> None:
 
 
 def test_cleanup_max_age(tmp_path: pathlib.Path) -> None:
-    """期間超過で古い世代から削除される。"""
     store = pyfltr.grep_.history.ReplaceHistoryStore(history_root=tmp_path)
     old_id = pyfltr.grep_.history.generate_replace_id()
     store.save_replace(
@@ -254,7 +237,6 @@ def test_cleanup_max_age(tmp_path: pathlib.Path) -> None:
         command_meta=_make_command_meta(replace_id=old_id),
         file_changes=[],
     )
-    # meta.json の saved_at を60日前へ書き換え
     meta_path = tmp_path / old_id / "meta.json"
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
     past = dt.datetime.now(dt.UTC) - dt.timedelta(days=60)
@@ -277,15 +259,12 @@ def test_cleanup_max_age(tmp_path: pathlib.Path) -> None:
 
 
 def test_default_history_root_respects_cache_env(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """PYFLTR_CACHE_DIR環境変数が default_history_root に反映される。"""
     monkeypatch.setenv("PYFLTR_CACHE_DIR", str(tmp_path))
     result = pyfltr.grep_.history.default_history_root()
     assert result == tmp_path / "replaces"
 
 
 def test_generate_replace_id_returns_ulid_format() -> None:
-    """ULID形式の26文字を返す。"""
     rid = pyfltr.grep_.history.generate_replace_id()
     assert len(rid) == 26
-    # Crockford Base32 文字種
     assert all(c in "0123456789ABCDEFGHJKMNPQRSTVWXYZ" for c in rid)

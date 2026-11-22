@@ -1,5 +1,3 @@
-"""lycheeの外部リンク一時障害の分類と有限再試行。"""
-
 import pathlib
 import time
 import typing
@@ -22,22 +20,12 @@ def run_lychee(
     on_subprocess_end: typing.Callable[[], None] | None = None,
     cwd: pathlib.Path | None = None,
 ) -> pyfltr.command.process.CompletedProcessWithTimeoutInfo:
-    """5xxと接続系の失敗を有限回再試行し、最後の実行だけを返す。
-
-    lychee v0.24.2はRejectedStatusCodeの429だけを再試行するため5xxを補う。
-    同版は接続エラー（`reqwest::Error::is_connect`）も再試行せず、オプションでも対象にできないため、
-    `Network error`で終わった接続系の失敗も同じ回数・待機で再実行する。
-    https://github.com/lycheeverse/lychee/blob/lychee-v0.24.2/lychee-lib/src/retry.rs
-    応答タイムアウトの再試行はlychee自身へ委ねる。全試行と待機は同じ
-    command-timeout予算を消費し、割込みも待機中に確認する。
-    """
     timeout = pyfltr.config.model.resolve_command_timeout(config.values, "lychee")
     deadline = time.monotonic() + timeout if timeout is not None and timeout > 0 else None
     retry_count = 0
     retry_options = pyfltr.config.model.resolve_retry_kwargs(config.values)
     oom_limit = max(0, retry_options["retry_max_attempts"]) if retry_options["retry_on_oom"] else 0
     for attempt in range(4):
-        # OOMの再試行でも時間予算を更新し、各試行へ元の上限を与え直さない。
         oom_attempt = 0
         while True:
             remaining = max(0.001, deadline - time.monotonic()) if deadline is not None else timeout

@@ -1,5 +1,3 @@
-"""文言・定数写し検査の単体起動と集約実行を確かめる。"""
-
 import json
 import pathlib
 import subprocess
@@ -63,7 +61,6 @@ def _run(root: pathlib.Path, *args: str) -> subprocess.CompletedProcess[str]:
     ],
 )
 def test_exit_status_and_diagnostics(tmp_path: pathlib.Path, case: str, expected: int, rules: tuple[str, ...]) -> None:
-    """正常・候補・入力不良を各公開入口と各対象言語で区別する。"""
     names = []
     for name, copy, behavior, broken, comment in _CASES:
         names.append(name)
@@ -129,7 +126,6 @@ def test_exit_status_and_diagnostics(tmp_path: pathlib.Path, case: str, expected
 
 
 def test_disabled_without_opt_in(tmp_path: pathlib.Path) -> None:
-    """設定しなければ候補があるファイルでも検査しない。"""
     name, source, *_ = _CASES[0]
     (tmp_path / name).write_text(source, encoding="utf-8")
     result = _run(tmp_path, "pyfltr", "run", "--commands=test-copies", "--output-format=jsonl", "--no-quiet", name)
@@ -141,7 +137,6 @@ def test_disabled_without_opt_in(tmp_path: pathlib.Path) -> None:
 
 
 def test_non_test_files_are_ignored(tmp_path: pathlib.Path) -> None:
-    """対象外のTSや、テスト属性がコメントにしかないRustは診断しない。"""
     (tmp_path / "app.ts").write_text("(", encoding="utf-8")
     (tmp_path / "app.rs").write_text("// #[test]\nfn app() {}\n", encoding="utf-8")
     result = _run(tmp_path, "pyfltr.test_copies", "app.ts", "app.rs")
@@ -150,7 +145,6 @@ def test_non_test_files_are_ignored(tmp_path: pathlib.Path) -> None:
 
 
 def test_source_text_copy_reports_text_rule(tmp_path: pathlib.Path) -> None:
-    """定数の比較とは別に、実装から読み取った文字列の比較を報告する。"""
     name = "sample_spec.py"
     (tmp_path / name).write_text(
         "from pathlib import Path\ndef test_label():\n    assert 'ok' in Path('app.py').read_text()\n",

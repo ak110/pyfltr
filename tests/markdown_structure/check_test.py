@@ -1,5 +1,3 @@
-"""Markdown自動改行の構造比較に渡す解析範囲を検証する。"""
-
 import markdown_it
 import markdown_it.token
 import markdown_it.utils
@@ -9,7 +7,6 @@ from pyfltr.markdown_structure import check
 
 
 def test_independent_blocks_do_not_require_full_parse_per_break(monkeypatch: pytest.MonkeyPatch) -> None:
-    """独立した段落とリストを混在させても、全文サイズの解析は候補数に比例しない。"""
     source = ("甲。乙。\n\n- 丙。丁。\n\n") * 200
     parsed_lengths: list[int] = []
     original_parse = markdown_it.MarkdownIt.parse

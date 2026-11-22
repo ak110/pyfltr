@@ -1,9 +1,3 @@
-"""内蔵linter`markdown-structure`を、公開入口の`pyfltr run`から観測する結合試験。
-
-内部の実行体（`python -m pyfltr.markdown_structure`）の単体試験に加え、設定による有効化、
-通常の段の診断、fix段の自動修正、無効時に報告しないこと、読み込めないファイルを再実行の対象へ含めることを確かめる。
-"""
-
 import json
 import pathlib
 import shlex
@@ -55,7 +49,6 @@ def _messages(records: list[dict]) -> list[tuple[int, str]]:
 
 
 def test_enabled_check_reports_both_violations(tmp_path: pathlib.Path) -> None:
-    """有効にしたプロジェクトでは、1文1行の違反と全角丸括弧の入れ子を診断として報告し失敗する。"""
     _project(tmp_path, enabled=True)
     returncode, records = _run(tmp_path, "--no-fix")
     assert returncode == 1
@@ -65,7 +58,6 @@ def test_enabled_check_reports_both_violations(tmp_path: pathlib.Path) -> None:
 
 
 def test_fix_stage_resolves_sentence_break_and_keeps_nested_parentheses(tmp_path: pathlib.Path) -> None:
-    """fix段の後に1文1行の違反は解消し、自動修正しない括弧の入れ子だけが残る。"""
     _project(tmp_path, enabled=True)
     returncode, records = _run(tmp_path)
     assert returncode == 1
@@ -78,7 +70,6 @@ def test_fix_stage_resolves_sentence_break_and_keeps_nested_parentheses(tmp_path
 
 
 def test_disabled_check_does_not_report(tmp_path: pathlib.Path) -> None:
-    """有効にしていないプロジェクトでは、同じ入力に対して違反を報告しない。"""
     _project(tmp_path, enabled=False)
     returncode, records = _run(tmp_path)
     assert returncode == 0
@@ -87,10 +78,6 @@ def test_disabled_check_does_not_report(tmp_path: pathlib.Path) -> None:
 
 
 def test_unreadable_file_is_reported_and_retried_with_other_failures(tmp_path: pathlib.Path) -> None:
-    """読み込めないファイルは、違反を持つ別のファイルと同じ実行でも診断と再実行の対象に現れる。
-
-    診断にならない失敗は、別のファイルに診断がある実行で`retry_command`の対象から外れる。
-    """
     _project(tmp_path, enabled=True)
     (tmp_path / "bad.md").write_bytes(b"\xff")
     returncode, records = _run(tmp_path, "--no-fix", targets=("bad.md", "doc.md"))

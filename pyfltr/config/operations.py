@@ -1,5 +1,3 @@
-"""CLIとMCPで共有する設定操作の要求と結果。"""
-
 import dataclasses
 import pathlib
 import typing
@@ -13,8 +11,6 @@ import pyfltr.warnings_
 
 @dataclasses.dataclass(frozen=True)
 class ConfigRequest:
-    """設定操作の入力。表示する操作名は呼び出し元が渡す。"""
-
     action: str
     path: pathlib.Path
     key: str | None = None
@@ -27,8 +23,6 @@ class ConfigRequest:
 
 @dataclasses.dataclass
 class ConfigResult:
-    """設定操作の結果と、公開入口が表示へ変換する失敗情報。"""
-
     value: typing.Any = None
     is_default: bool = False
     values: dict[str, typing.Any] = dataclasses.field(default_factory=dict)
@@ -41,7 +35,6 @@ class ConfigResult:
 
 
 def execute(request: ConfigRequest) -> ConfigResult:
-    """設定の検証・変換・読み書きを実行し、想定内のエラーを結果へ含める。"""
     result = ConfigResult()
     try:
         result.path_existed = request.path.exists()

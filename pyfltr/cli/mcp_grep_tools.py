@@ -1,5 +1,3 @@
-"""検索と置換のMCPツール。"""
-
 from __future__ import annotations
 
 import pathlib
@@ -145,12 +143,6 @@ async def tool_grep(
     no_exclude: pyfltr.cli.mcp_models.NoExcludeArg = False,
     no_gitignore: pyfltr.cli.mcp_models.NoGitignoreArg = False,
 ) -> GrepResultModel:
-    """指定ファイル群から正規表現パターンを検索し、マッチ一覧を返す。
-
-    pyfltrの`exclude`/`extend-exclude`/`respect-gitignore`設定を尊重する。
-    通常検索でも未指定の`max_total`は走査を制限せず、全結果から返却形式を選択する。
-    """
-    # warnings_はモジュールグローバルに蓄積するため、リクエスト開始時に初期化する
     pyfltr.warnings_.clear()
     collected = ([pattern] if pattern is not None else []) + list(patterns or [])
     if pattern_file is not None:
@@ -330,20 +322,11 @@ async def tool_replace(
         bool, pydantic.Field(description="Trueで`changes`へ置換箇所ごとの変更前後の行を含める。")
     ] = False,
 ) -> ReplaceResultModel:
-    r"""指定ファイル群へ正規表現置換を適用し、変更内容を返す。
-
-    `dry_run=True`（既定）はファイルを変更せず変更内容のみを返す。
-    `dry_run=False`を明示した場合のみ実書き込みし、`replace_id`を返す。
-    `dry_run`の既定値がCLI（`False`）と異なるのはLLM暴発防止のため
-    （`.claude/skills/grep-replace/SKILL.md`参照）。
-    """
     if not paths:
         pyfltr.cli.mcp_errors.raise_mcp_error("paths を 1 件以上指定してください。")
 
-    # CLIの`-A`/`-B`/`-C`拒否方針と対称に、`within`なしのコンテキスト指定を拒否する。
     if within is None and (before_context or after_context or context is not None):
         pyfltr.cli.mcp_errors.raise_mcp_error("before_context / after_context / context は within と併用してください。")
-    # `within`は行範囲で領域を定めるためマルチラインとは併用不可。
     if within is not None and multiline:
         pyfltr.cli.mcp_errors.raise_mcp_error(
             "within と multiline は併用できません。withinを省略するかmultiline=Falseを指定してください。"
@@ -425,12 +408,6 @@ async def tool_replace_undo(
         pydantic.Field(description="Trueで、replace後に編集された（ハッシュが一致しない）ファイルも変更前の内容へ戻す。"),
     ] = False,
 ) -> ReplaceUndoModel:
-    """保存済みreplace履歴からファイルを変更前の内容へ復元する。
-
-    `force=True`を指定しない限り、手動編集済み（ハッシュ不一致）のファイルはスキップする。
-    スキップが発生した場合は`exit_code=1`を返す。クライアント側で`force=True`再呼び出しの
-    判断材料にする。
-    """
     store = pyfltr.grep_.history.ReplaceHistoryStore()
     try:
         restored, skipped, warnings = store.undo_replace(replace_id, force=force)
@@ -466,10 +443,6 @@ async def tool_replace_history(
     replace_id: typing.Annotated[str | None, pydantic.Field(description='`action="show"`で必須のreplace識別子。')] = None,
     limit: typing.Annotated[int | None, pydantic.Field(description='`action="list"`で返す最大件数。省略時は全件。')] = None,
 ) -> ReplaceHistoryModel:
-    """replace履歴を一覧または単体で参照する。
-
-    対応CLI: `pyfltr replace --list-history` / `pyfltr replace --show-history <ID>`
-    """
     pyfltr.warnings_.clear()
     if action not in ("list", "show"):
         pyfltr.cli.mcp_errors.raise_mcp_error("action は list / show のいずれかを指定してください。")

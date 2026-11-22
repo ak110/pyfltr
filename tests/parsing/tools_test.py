@@ -30,7 +30,6 @@ import tests.parsing.conftest
             "src/foo.py",
             10,
         ),
-        # ruff-check
         (
             "ruff-check",
             "src/foo.py:10:5: F401 `os` imported but unused\nsrc/bar.py:3:1: E302 Expected 2 blank lines",
@@ -46,7 +45,6 @@ import tests.parsing.conftest
             "src/foo.py",
             10,
         ),
-        # markdownlint-cli2
         (
             "markdownlint",
             "docs/index.md:3 MD001/heading-increment Heading levels should only increment by one level at a time",
@@ -54,7 +52,6 @@ import tests.parsing.conftest
             "docs/index.md",
             3,
         ),
-        # textlint --format compact
         (
             "textlint",
             "docs/index.md: line 5, col 1, Error - sentence error (ja-technical-writing/ja-no-mixed-period)",
@@ -62,7 +59,6 @@ import tests.parsing.conftest
             "docs/index.md",
             5,
         ),
-        # ty check --output-format concise (error)
         (
             "ty",
             "src/foo.py:10:5: error[invalid-argument-type] Argument is incorrect",
@@ -70,7 +66,6 @@ import tests.parsing.conftest
             "src/foo.py",
             10,
         ),
-        # ty check --output-format concise (warning)
         (
             "ty",
             "src/foo.py:3:1: warning[unused-ignore-comment] Unused `ty: ignore` directive",
@@ -78,7 +73,6 @@ import tests.parsing.conftest
             "src/foo.py",
             3,
         ),
-        # ty check --output-format concise (info)
         (
             "ty",
             "src/reveal.py:2:13: info[revealed-type] Revealed type: `Literal[1]`",
@@ -86,15 +80,13 @@ import tests.parsing.conftest
             "src/reveal.py",
             2,
         ),
-        # pytest
         (
             "pytest",
             "FAILED tests/foo_test.py::test_bar - AssertionError: xxx",
             1,
             "tests/foo_test.py",
-            0,  # pytestはline情報なし
+            0,
         ),
-        # biome --reporter=github（lineとcolの間にendLineが介在する）
         (
             "biome",
             "::error title=lint/suspicious/noDoubleEquals,file=src/foo.ts,"
@@ -103,7 +95,6 @@ import tests.parsing.conftest
             "src/foo.ts",
             1,
         ),
-        # biome --reporter=github (warning)
         (
             "biome",
             "::warning title=lint/style/useConst,file=src/bar.ts,line=5,endLine=5,col=3,endColumn=6::Use const instead of let",
@@ -111,7 +102,6 @@ import tests.parsing.conftest
             "src/bar.ts",
             5,
         ),
-        # biome --reporter=github (notice = info)。severity infoのルールがnoticeとして出力される
         (
             "biome",
             "::notice title=lint/complexity/useLiteralKeys,file=src/baz.ts,"
@@ -120,7 +110,6 @@ import tests.parsing.conftest
             "src/baz.ts",
             810,
         ),
-        # biome --reporter=github (未知severity)。`error|warning|notice`以外はマッチしない
         (
             "biome",
             "::unknown title=lint/foo/bar,file=src/qux.ts,line=1,endLine=1,col=1,endColumn=2::msg",
@@ -128,7 +117,6 @@ import tests.parsing.conftest
             None,
             None,
         ),
-        # パースできないコマンド
         (
             "unknown",
             "some output",
@@ -145,7 +133,6 @@ def test_parse_errors(
     expected_first_file: str | None,
     expected_first_line: int | None,
 ) -> None:
-    """ビルトインパーサーのテスト。"""
     errors = pyfltr.parsing.entry.parse_errors(command, output)
     assert len(errors) == expected_count
     if expected_count > 0:
@@ -163,12 +150,6 @@ def test_parse_errors(
     ],
 )
 def test_parse_errors_biome_severity(raw_severity: str, expected_severity: str) -> None:
-    """biome `--reporter=github`のseverity（error/warning/notice）を3値モデルへ正規化する。
-
-    `::notice`はbiomeがseverity infoの診断へ用いる出力形式で、pyfltr側ではinfoとして公開する。
-    severityは各ルールの既定値で決まり、fixのsafe/unsafeとは独立である。
-    あわせてmessage本文が欠落せず保持されることを全ケースで確認する。
-    """
     message_text = "Use a literal key instead."
     output = (
         f"::{raw_severity} title=lint/complexity/useLiteralKeys,file=src/baz.ts,"
@@ -181,7 +162,6 @@ def test_parse_errors_biome_severity(raw_severity: str, expected_severity: str) 
 
 
 def test_parse_errors_biome_rule_and_url() -> None:
-    """biomeのtitleを診断カテゴリーとして抽出しURLを補完する。"""
     output = (
         "::error title=lint/suspicious/noDoubleEquals,file=src/foo.ts,"
         "line=1,endLine=1,col=7,endColumn=9::Use === instead of ==\n"
@@ -193,7 +173,6 @@ def test_parse_errors_biome_rule_and_url() -> None:
 
 
 def test_parse_errors_biome_assist_rule_and_url() -> None:
-    """biomeのassistカテゴリーを抽出しアクションURLを補完する。"""
     output = (
         "::error title=assist/source/organizeImports,file=src/foo.ts,line=1,endLine=1,col=1,endColumn=2::Organize imports\n"
     )
@@ -205,7 +184,6 @@ def test_parse_errors_biome_assist_rule_and_url() -> None:
 
 @pytest.mark.parametrize("category", ["format", "parse"])
 def test_parse_errors_biome_non_rule_category_has_no_url(category: str) -> None:
-    """format・parseは診断カテゴリーとして保持しURLを持たない。"""
     output = f"::error title={category},file=package.json,line=1,endLine=1,col=2,endColumn=2::Diagnostic message\n"
     errors = pyfltr.parsing.entry.parse_errors("biome", output)
     assert len(errors) == 1
@@ -214,7 +192,6 @@ def test_parse_errors_biome_non_rule_category_has_no_url(category: str) -> None:
 
 
 def test_parse_errors_biome_without_title_is_not_dropped() -> None:
-    """title欄を持たない出力形態でも診断を保持する。"""
     output = "::error file=src/foo.ts,line=1,endLine=1,col=7,endColumn=9::message\n"
     errors = pyfltr.parsing.entry.parse_errors("biome", output)
     assert len(errors) == 1
@@ -223,7 +200,6 @@ def test_parse_errors_biome_without_title_is_not_dropped() -> None:
 
 
 def test_parse_errors_biome_end_position() -> None:
-    """biomeのendLine・endColumnをend_line・end_colへ取り込む。"""
     output = (
         "::error title=lint/suspicious/noDoubleEquals,file=src/foo.ts,"
         "line=1,endLine=2,col=7,endColumn=9::Use === instead of ==\n"
@@ -237,7 +213,6 @@ def test_parse_errors_biome_end_position() -> None:
 
 
 def test_parse_errors_biome_end_position_without_title() -> None:
-    """titleを持たない出力形態でも終了位置を取り込む。"""
     output = "::error file=src/foo.ts,line=1,endLine=1,col=7,endColumn=9::message\n"
     errors = pyfltr.parsing.entry.parse_errors("biome", output)
     assert len(errors) == 1
@@ -247,7 +222,6 @@ def test_parse_errors_biome_end_position_without_title() -> None:
 
 
 def test_parse_errors_biome_without_end_position() -> None:
-    """endLine・endColumnを持たない出力形態でも診断を保持する。"""
     output = "::error title=lint/style/useConst,file=src/bar.ts,line=5,col=3::Use const instead of let\n"
     errors = pyfltr.parsing.entry.parse_errors("biome", output)
     assert len(errors) == 1
@@ -259,19 +233,16 @@ def test_parse_errors_biome_without_end_position() -> None:
 
 
 def test_parse_errors_biome_line_does_not_match_parameter_suffix() -> None:
-    """lineは別パラメーター名の末尾へ一致しない。"""
     output = "::error title=lint/style/useConst,file=src/bar.ts,baseline=5,col=3::message\n"
     assert pyfltr.parsing.entry.parse_errors("biome", output) == []
 
 
 def test_parse_errors_biome_col_does_not_match_parameter_suffix() -> None:
-    """colは別パラメーター名の末尾へ一致しない。"""
     output = "::error title=lint/style/useConst,file=src/bar.ts,line=5,protocol=3::message\n"
     assert pyfltr.parsing.entry.parse_errors("biome", output) == []
 
 
 def test_parse_errors_ty_rule_without_url() -> None:
-    """tyのrule識別子を抽出し、messageは診断本文のみとする。URLは生成しない。"""
     output = "src/foo.py:10:5: error[invalid-argument-type] Argument is incorrect\n"
     errors = pyfltr.parsing.entry.parse_errors("ty", output)
     assert len(errors) == 1
@@ -282,7 +253,6 @@ def test_parse_errors_ty_rule_without_url() -> None:
 
 
 def test_parse_errors_ty_warning_severity() -> None:
-    """tyのwarning診断はseverityをwarningとして抽出する。"""
     output = "src/warn.py:1:13: warning[unused-ignore-comment] Unused `ty: ignore` directive\n"
     errors = pyfltr.parsing.entry.parse_errors("ty", output)
     assert len(errors) == 1
@@ -292,20 +262,16 @@ def test_parse_errors_ty_warning_severity() -> None:
 
 
 def test_parse_errors_ty_info_severity() -> None:
-    """tyのinfo診断を取りこぼさずseverityをinfoとして抽出する。"""
     output = "src/reveal.py:2:17: info[revealed-type] Revealed type: `int`\n"
     errors = pyfltr.parsing.entry.parse_errors("ty", output)
     assert len(errors) == 1
     assert errors[0].rule == "revealed-type"
     assert errors[0].severity == "info"
     assert errors[0].message == "Revealed type: `int`"
-    # `revealed-type`はtyのルールに当たらずドキュメントのアンカーを持たない。
-    # 識別子の字面からルールと区別できないため、tyはURLを生成しない。
     assert errors[0].rule_url is None
 
 
 def test_parse_errors_ty_message_starting_with_info_keeps_severity() -> None:
-    """診断本文の先頭が`info`でもseverityは角括弧直前の語から決まる。"""
     output = "src/a.py:1:1: error[invalid-assignment] info about the assignment\n"
     errors = pyfltr.parsing.entry.parse_errors("ty", output)
     assert len(errors) == 1
@@ -314,21 +280,18 @@ def test_parse_errors_ty_message_starting_with_info_keeps_severity() -> None:
 
 
 def test_parse_errors_ty_info_like_prefix_is_ignored() -> None:
-    """`info`で始まる別語は診断種別として扱わない。"""
     output = "src/a.py:5:5: infomercial[foo] not a severity\n"
     errors = pyfltr.parsing.entry.parse_errors("ty", output)
     assert len(errors) == 0
 
 
 def test_parse_errors_ty_summary_line_is_ignored() -> None:
-    """tyの集計行は診断として扱わない。"""
     output = "Found 4 diagnostics\n"
     errors = pyfltr.parsing.entry.parse_errors("ty", output)
     assert len(errors) == 0
 
 
 def test_parse_errors_actionlint_rule() -> None:
-    """actionlintの末尾角括弧をruleとして抽出し、messageから除く。"""
     output = '.github/workflows/ci.yaml:7:24: property "nonexistent" is not defined in object type {} [expression]\n'
     errors = pyfltr.parsing.entry.parse_errors("actionlint", output)
     assert len(errors) == 1
@@ -339,7 +302,6 @@ def test_parse_errors_actionlint_rule() -> None:
 
 
 def test_parse_errors_actionlint_rule_with_brackets_in_message() -> None:
-    """診断本文中の空白を含む角括弧はruleとして扱わない。"""
     output = ".github/workflows/ci.yaml:16:14: label is unknown. available labels are [a b] [runner-label]\n"
     errors = pyfltr.parsing.entry.parse_errors("actionlint", output)
     assert len(errors) == 1
@@ -348,7 +310,6 @@ def test_parse_errors_actionlint_rule_with_brackets_in_message() -> None:
 
 
 def test_parse_errors_actionlint_without_rule() -> None:
-    """末尾に角括弧を持たない診断行でも本文を保持する。"""
     output = ".github/workflows/ci.yaml:10:5: something went wrong\n"
     errors = pyfltr.parsing.entry.parse_errors("actionlint", output)
     assert len(errors) == 1
@@ -357,15 +318,12 @@ def test_parse_errors_actionlint_without_rule() -> None:
 
 
 def test_parse_errors_actionlint_snippet_line_is_ignored() -> None:
-    """スニペット行は診断として扱わない。"""
     output = '  |\n7 |       - run: echo "${{ matrix.nonexistent }}"\n'
     errors = pyfltr.parsing.entry.parse_errors("actionlint", output)
     assert len(errors) == 0
 
 
 def test_parse_errors_yamllint_parsable() -> None:
-    """yamllint -f parsableの各行から位置・重大度・ruleを抽出し、messageからruleを除く。"""
-    # yamllint 1.38.0の実出力。構文エラーはrule`syntax`として出力される。
     output = (
         "bad.yaml:1:4: [error] too many spaces after colon (colons)\n"
         "bad.yaml:3:4: [warning] truthy value should be one of [false, true] (truthy)\n"
@@ -380,7 +338,6 @@ def test_parse_errors_yamllint_parsable() -> None:
 
 
 def test_parse_errors_yamllint_parentheses_in_message() -> None:
-    """診断本文中の丸括弧はruleとして扱わず、行末の丸括弧だけをruleとする。"""
     output = "a.yaml:2:41: [error] line too long (65 > 40 characters) (line-length)\n"
     errors = pyfltr.parsing.entry.parse_errors("yamllint", output)
     assert len(errors) == 1
@@ -389,16 +346,11 @@ def test_parse_errors_yamllint_parentheses_in_message() -> None:
 
 
 def test_parse_errors_yamllint_standard_format_is_ignored() -> None:
-    """parsable以外の標準形式（見出し行と字下げした違反行）は診断として扱わない。
-
-    `yamllint-parsable = false`で注入を無効化した場合の挙動を固定する。
-    """
     output = "bad.yaml\n  1:4       error    too many spaces after colon  (colons)\n"
     assert not pyfltr.parsing.entry.parse_errors("yamllint", output)
 
 
 def test_parse_errors_eslint_json() -> None:
-    """ESLint --format json出力のパース。"""
     output = json.dumps(
         [
             {
@@ -446,25 +398,21 @@ def test_parse_errors_eslint_json() -> None:
 
 
 def test_parse_errors_eslint_json_empty_array() -> None:
-    """空配列 `[]` は空リストを返す。"""
     errors = pyfltr.parsing.entry.parse_errors("eslint", "[]")
     assert errors == []
 
 
 def test_parse_errors_eslint_json_empty_string() -> None:
-    """空文字列は空リストを返す (例外なし)。"""
     errors = pyfltr.parsing.entry.parse_errors("eslint", "")
     assert errors == []
 
 
 def test_parse_errors_eslint_json_invalid() -> None:
-    """不正なJSON（stderr混入等）は空リストを返す。"""
     errors = pyfltr.parsing.entry.parse_errors("eslint", "Warning: something\n[not json]")
     assert errors == []
 
 
 def test_parse_errors_eslint_json_no_rule_id() -> None:
-    """ruleIdがnullの場合でもmessageのみ格納する。"""
     output = json.dumps(
         [
             {
@@ -487,7 +435,6 @@ def test_parse_errors_eslint_json_no_rule_id() -> None:
 
 
 def test_parse_typos_jsonl_no_corrections_is_none() -> None:
-    """typos: correctionsが空の場合は`fix == "none"`。"""
     output = '{"path":"src/foo.py","line_num":3,"typo":"weirdword","corrections":[],"type":"typo"}\n'
     errors = pyfltr.parsing.entry.parse_errors("typos", output)
     assert len(errors) == 1
@@ -555,7 +502,6 @@ def test_parse_non_ascii_byte_offsets_remain_approximate(
     output: str,
     expected: tuple[str, int, int | None, str, str, str | None, str | None, str | None, int | None, int | None],
 ) -> None:
-    """非ASCII行のUTF-8バイトオフセットは文字列を参照せず1起点へ補正する。"""
     errors = pyfltr.parsing.entry.parse_errors(command, output)
 
     assert len(errors) == 1
@@ -713,7 +659,6 @@ def test_parse_non_ascii_byte_offsets_remain_approximate(
     ],
 )
 def test_end_position_paths_normalize_next_line_start(command: str, output: str) -> None:
-    """終了位置を格納する全経路で次行先頭を包含行と列不明へ正規化する。"""
     errors = pyfltr.parsing.entry.parse_errors(command, output)
 
     assert len(errors) == 1
@@ -872,7 +817,6 @@ def test_end_position_paths_normalize_next_line_start(command: str, output: str)
     ],
 )
 def test_end_position_paths_keep_in_line_end(command: str, output: str) -> None:
-    """終了列が行内を指す複数行範囲は全経路で終了行・終了列を保持する。"""
     errors = pyfltr.parsing.entry.parse_errors(command, output)
 
     assert len(errors) == 1
@@ -881,11 +825,6 @@ def test_end_position_paths_keep_in_line_end(command: str, output: str) -> None:
 
 
 def test_parse_eslint_json_normalizes_real_world_end_position() -> None:
-    """ESLintの実出力で観測した次行先頭終端の形を包含行へ補正する。
-
-    ブロック末尾の空行を対象とするルールは、範囲が行末で終わるため
-    `endLine`が次行・`endColumn`が1となる報告を返す。補正前は範囲外の行が終了行に入っていた。
-    """
     output = json.dumps(
         [
             {
@@ -914,7 +853,6 @@ def test_parse_eslint_json_normalizes_real_world_end_position() -> None:
 
 
 def test_parse_eslint_json_keeps_line_head_end_on_same_line() -> None:
-    """終了行が開始行と同じ場合は終了列が行頭でも補正しない。"""
     output = json.dumps(
         [
             {
@@ -933,7 +871,6 @@ def test_parse_eslint_json_keeps_line_head_end_on_same_line() -> None:
 
 
 def test_parse_eslint_json_keeps_line_head_end_without_end_line() -> None:
-    """終了行が無い場合は終了列が行頭でも補正せず値を保持する。"""
     output = json.dumps(
         [
             {
@@ -951,7 +888,6 @@ def test_parse_eslint_json_keeps_line_head_end_without_end_line() -> None:
 
 
 def test_parse_eslint_json_keeps_end_line_before_start() -> None:
-    """終了行が開始行より前の退化入力では補正せず値を保持する。"""
     output = json.dumps(
         [
             {
@@ -970,7 +906,6 @@ def test_parse_eslint_json_keeps_end_line_before_start() -> None:
 
 
 def test_parse_shellcheck_json() -> None:
-    """shellcheck -f json出力のパース。"""
     output = json.dumps(
         [
             {
@@ -1002,7 +937,6 @@ def test_parse_shellcheck_json() -> None:
 
 
 def test_parse_shellcheck_json_fallback() -> None:
-    """shellcheck: JSONでない出力でも既存位置を保ち、終了位置は設定しない。"""
     output = "src/foo.sh:10:5: warning: Double quote to prevent globbing [SC2086]"
     errors = pyfltr.parsing.entry.parse_errors("shellcheck", output)
 
@@ -1152,7 +1086,6 @@ def test_parse_shellcheck_json_fallback() -> None:
     ],
 )
 def test_parse_json_end_position_missing_null_and_invalid(command: str, output: str) -> None:
-    """終了位置の欠落・null・非数値は診断を落とさずNoneへ縮退する。"""
     errors = pyfltr.parsing.entry.parse_errors(command, output)
 
     assert len(errors) == 3
@@ -1160,7 +1093,6 @@ def test_parse_json_end_position_missing_null_and_invalid(command: str, output: 
 
 
 def test_parse_typos_jsonl() -> None:
-    """typos --format=json出力（JSON Lines）のパース。"""
     output = (
         '{"path":"src/foo.py","line_num":3,"byte_offset":15,"typo":"teh","corrections":["the"],"type":"typo"}\n'
         '{"path":"src/bar.py","line_num":7,"byte_offset":20,"typo":"hte","corrections":["the","he"],"type":"typo"}\n'
@@ -1176,7 +1108,6 @@ def test_parse_typos_jsonl() -> None:
 
 
 def test_parse_typos_jsonl_fallback() -> None:
-    """typos: JSON Linesでない出力はregexにフォールバックする。"""
     output = "src/foo.py:3:15: `teh` -> `the`"
     errors = pyfltr.parsing.entry.parse_errors("typos", output)
     assert len(errors) == 1
@@ -1190,7 +1121,6 @@ def _vitest_assertion(
     failure_messages: list[str] | None = None,
     location: dict[str, int] | None = None,
 ) -> dict:
-    """vitestのassertionResult dict を組み立てるテスト用ヘルパー。"""
     result: dict = {"status": status, "fullName": full_name}
     if failure_messages is not None:
         result["failureMessages"] = failure_messages
@@ -1200,7 +1130,6 @@ def _vitest_assertion(
 
 
 def _vitest_output(test_results: list[dict]) -> str:
-    """vitest JSON reporter出力相当の dict を JSON 文字列へ変換するテスト用ヘルパー。"""
     return json.dumps({"testResults": test_results})
 
 
@@ -1394,14 +1323,6 @@ _VITEST_ALL_PASSED = _vitest_output(
     ],
 )
 def test_parse_vitest_json(case_id: str, output: str, expected: list[dict]) -> None:
-    """vitest JSON reporter出力を失敗単位のdiagnosticへ変換する。
-
-    JSTQB準拠の同値分割・境界値分析で以下のケースを網羅する。
-    (a)単一テスト失敗、(b)複数テスト失敗（異なるファイル・異なるassertion）、
-    (c)`location`欠落時のline=1フォールバック、(d)`describe`ネストでの`fullName`併記、
-    (e)`failureMessages`空配列のフォールバック、(f)全件成功（空リスト返却）、
-    (g)パース不能JSON（空リスト返却）。
-    """
     del case_id
     errors = pyfltr.parsing.entry.parse_errors("vitest", output)
     assert len(errors) == len(expected)
@@ -1425,14 +1346,6 @@ def test_parse_vitest_json(case_id: str, output: str, expected: list[dict]) -> N
 def test_parse_vitest_json_suite_failure(
     tmp_path: pathlib.Path, name_form: str, base_parts: tuple[str, ...], expected_prefix: str
 ) -> None:
-    """失敗assertionを持たない失敗suite（評価時の例外）をファイル診断にし、二重診断を生じさせない。
-
-    suite失敗とassertion失敗の混在、成功suite、pending・skipのsuite、空の失敗本文、
-    成功assertionだけを持つ失敗suite（afterAllの例外）、`assertionResults`がリストでない要素、
-    ファイル名の無い失敗要素を同じ入力で扱う。位置を持たないsuite失敗は行1・列なしとする。
-    ファイル名は実行OSのネイティブ絶対パスと実行基準からの相対パスの両方で与え、
-    実行基準と実行起点の関係から求めた起点相対パスで比較する。
-    """
     path_base = tmp_path.joinpath(*base_parts)
 
     def name(file_name: str) -> str:
@@ -1485,13 +1398,11 @@ def test_parse_vitest_json_suite_failure(
 
 
 def test_parse_glab_ci_lint_valid() -> None:
-    """有効CI出力 (Validating... + ✓ ...) では空リストを返す。"""
     output = "Validating...\n✓ CI/CD YAML is valid!\n"
     assert pyfltr.parsing.entry.parse_errors("glab-ci-lint", output) == []
 
 
 def test_parse_glab_ci_lint_invalid_multi() -> None:
-    """無効CI出力から複数エラーをline=1固定で抽出する。"""
     output = (
         "Validating...\n"
         ".gitlab-ci.yml is invalid\n"
@@ -1510,14 +1421,12 @@ def test_parse_glab_ci_lint_invalid_multi() -> None:
 
 
 def test_parse_glab_ci_lint_invalid_numbered() -> None:
-    """番号付きリスト形式 (`1. xxx`) のエラー行もリストマーカーを除去して取り込む。"""
     output = ".gitlab-ci.yml is invalid\n1. unknown key foo\n2. unknown key bar\n"
     errors = pyfltr.parsing.entry.parse_errors("glab-ci-lint", output)
     assert [e.message for e in errors] == ["unknown key foo", "unknown key bar"]
 
 
 def test_parse_designmd_json() -> None:
-    """`@google/design.md lint`のJSON出力から違反を抽出する。"""
     output = json.dumps(
         {
             "findings": [
@@ -1537,7 +1446,6 @@ def test_parse_designmd_json() -> None:
     )
     errors = pyfltr.parsing.entry.parse_errors("designmd", output)
     assert len(errors) == 2
-    # 対象ファイルは仕様上DESIGN.md固定。
     assert all(e.file == "DESIGN.md" for e in errors)
     assert all(e.command == "designmd" for e in errors)
     assert errors[0].severity == "warning"
@@ -1546,14 +1454,12 @@ def test_parse_designmd_json() -> None:
 
 
 def test_parse_designmd_json_empty() -> None:
-    """findings空・無効JSONはいずれも空リストを返す。"""
     assert pyfltr.parsing.entry.parse_errors("designmd", json.dumps({"findings": []})) == []
     assert pyfltr.parsing.entry.parse_errors("designmd", "not json") == []
     assert pyfltr.parsing.entry.parse_errors("designmd", "") == []
 
 
 def test_parse_lychee_json() -> None:
-    """lychee --format json のerror_mapからエラー行を抽出する。"""
     output = json.dumps(
         {
             "total": 5,
@@ -1584,19 +1490,16 @@ def test_parse_lychee_json() -> None:
 
 
 def test_parse_lychee_json_empty_error_map() -> None:
-    """全リンクOK（error_mapが空）の場合は空リストを返す。"""
     output = json.dumps({"total": 5, "successful": 5, "errors": 0, "error_map": {}})
     assert pyfltr.parsing.entry.parse_errors("lychee", output) == []
 
 
 def test_parse_lychee_json_invalid() -> None:
-    """JSON解析失敗時は空リストを返す。"""
     assert pyfltr.parsing.entry.parse_errors("lychee", "not json") == []
     assert pyfltr.parsing.entry.parse_errors("lychee", "") == []
 
 
 def test_parse_colloquial_check_without_replacement() -> None:
-    """colloquial-check: 置換候補なしの`path:line:col: [match] -> (言い換えの方針) excerpt`形式をパースする。"""
     output = "docs/index.md:3:5: [ちょっと] -> (文意を保ったまま書き言葉の表現へ言い換える) 本文にちょっと該当する"
     errors = pyfltr.parsing.entry.parse_errors("colloquial-check", output)
     assert len(errors) == 1
@@ -1607,7 +1510,6 @@ def test_parse_colloquial_check_without_replacement() -> None:
 
 
 def test_parse_colloquial_check_ignores_skip_notice() -> None:
-    """colloquial-check: 読み込めないファイルのスキップ通知（標準エラー由来）を診断として拾わない。"""
     output = (
         "C:/work/bad.md: 読み込めないため口語表現の検査をスキップしました:"
         " 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte。"
@@ -1619,7 +1521,6 @@ def test_parse_colloquial_check_ignores_skip_notice() -> None:
 
 
 def test_parse_colloquial_check_with_replacement() -> None:
-    """colloquial-check: 置換候補ありの`path:line:col: [match] -> [replacement] excerpt`形式をパースする。"""
     output = "docs/index.md:10:1: [唐突感] -> [論理の飛躍] 唐突感が否めない"
     errors = pyfltr.parsing.entry.parse_errors("colloquial-check", output)
     assert len(errors) == 1
@@ -1629,7 +1530,6 @@ def test_parse_colloquial_check_with_replacement() -> None:
 
 
 def test_parse_colloquial_check_multiple_lines() -> None:
-    """colloquial-check: 複数件（改行区切り）を全件パースする。"""
     output = "docs/a.md:1:1: [ちょっと] 該当箇所1\ndocs/b.md:2:3: [ぶっちゃけ] 該当箇所2\n"
     errors = pyfltr.parsing.entry.parse_errors("colloquial-check", output)
     assert len(errors) == 2
@@ -1638,7 +1538,6 @@ def test_parse_colloquial_check_multiple_lines() -> None:
 
 
 def test_parse_semgrep_json() -> None:
-    """semgrep scan --json のresultsから違反を抽出する。"""
     output = json.dumps(
         {
             "results": [
@@ -1681,7 +1580,6 @@ def test_parse_semgrep_json() -> None:
 
 
 def test_parse_semgrep_json_empty() -> None:
-    """results空・無効JSONはいずれも空リストを返す。"""
     assert pyfltr.parsing.entry.parse_errors("semgrep", json.dumps({"results": [], "errors": []})) == []
     assert pyfltr.parsing.entry.parse_errors("semgrep", "not json") == []
 
@@ -1696,10 +1594,6 @@ def _pinact_sarif_result(uri: str, line: int, text: str) -> dict:
 
 
 def test_parse_pinact_sarif() -> None:
-    """pinactのSARIFから、標準エラーの行が前置されていても全resultsを抽出する。
-
-    前置行に`[`・`{`を含めても、JSONの断片としてSARIF本体と取り違えないことを確かめる。
-    """
     sarif = {
         "version": "2.1.0",
         "runs": [
@@ -1736,14 +1630,12 @@ def test_parse_pinact_sarif() -> None:
 
 
 def test_parse_pinact_sarif_empty() -> None:
-    """results空・無効JSONはいずれも空リストを返す。"""
     empty = json.dumps({"version": "2.1.0", "runs": [{"tool": {"driver": {"name": "pinact"}}, "results": []}]})
     assert pyfltr.parsing.entry.parse_errors("pinact", empty) == []
     assert pyfltr.parsing.entry.parse_errors("pinact", "not json") == []
 
 
 def test_parse_semgrep_json_with_progress_output() -> None:
-    """JSON前後に進捗表示が混在してもfindingを保持する。"""
     payload = json.dumps(
         {
             "results": [
@@ -1768,10 +1660,6 @@ def test_parse_semgrep_json_with_progress_output() -> None:
 
 
 def test_parse_bandit_json() -> None:
-    """bandit -f json のresultsから違反を抽出する。
-
-    HIGH/MEDIUM/LOWの3severityを網羅し、詳細情報（`more_info`）の有無も検証する。
-    """
     output = json.dumps(
         {
             "results": [
@@ -1835,12 +1723,10 @@ def test_parse_bandit_json() -> None:
     assert errors[1].end_col == 13
     assert errors[2].severity == "info"
     assert errors[2].rule == "B101"
-    # more_info欠落時はメッセージ末尾に`(see ...)`が付かない
     assert "(see " not in errors[2].message
 
 
 def test_parse_bandit_json_line_range_shapes_and_negative_columns() -> None:
-    """line_rangeの空・単一・複数要素と、負の列オフセットを正規化する。"""
     output = json.dumps(
         {
             "results": [
@@ -1879,13 +1765,11 @@ def test_parse_bandit_json_line_range_shapes_and_negative_columns() -> None:
 
 
 def test_parse_bandit_json_empty() -> None:
-    """results空・無効JSONはいずれも空リストを返す。"""
     assert pyfltr.parsing.entry.parse_errors("bandit", json.dumps({"results": [], "errors": []})) == []
     assert pyfltr.parsing.entry.parse_errors("bandit", "not json") == []
 
 
 def test_parse_sqlfluff_json() -> None:
-    """sqlfluff lint --format=json のviolationsから違反を抽出する。"""
     output = json.dumps(
         [
             {
@@ -1935,25 +1819,21 @@ def test_parse_sqlfluff_json() -> None:
 
 
 def test_parse_sqlfluff_json_empty() -> None:
-    """violations空・無効JSONはいずれも空リストを返す。"""
     assert pyfltr.parsing.entry.parse_errors("sqlfluff", json.dumps([])) == []
     assert pyfltr.parsing.entry.parse_errors("sqlfluff", "not json") == []
     assert pyfltr.parsing.entry.parse_errors("sqlfluff", "") == []
 
 
 def test_parse_errors_mypy_extracts_rule() -> None:
-    """mypyの末尾`[error-code]`がruleグループで抽出されrule_urlも付与される。"""
     output = 'src/foo.py:10: error: Name "x" is not defined  [name-defined]'
     errors = pyfltr.parsing.entry.parse_errors("mypy", output)
     assert len(errors) == 1
     assert errors[0].rule == "name-defined"
     assert errors[0].rule_url == "https://mypy.readthedocs.io/en/stable/_refs.html#code-name-defined"
-    # messageに末尾の[rule]は含めない
     assert errors[0].message == 'Name "x" is not defined'
 
 
 def test_parse_errors_mypy_without_rule() -> None:
-    """mypyで末尾[code]が無い行はrule=Noneになる。"""
     output = "src/foo.py:10: error: Something went wrong"
     errors = pyfltr.parsing.entry.parse_errors("mypy", output)
     assert len(errors) == 1
@@ -1962,7 +1842,6 @@ def test_parse_errors_mypy_without_rule() -> None:
 
 
 def test_parse_errors_markdownlint_extracts_rule() -> None:
-    """markdownlintのMDxxxがruleグループで抽出される。"""
     output = "docs/index.md:3 MD001/heading-increment Heading levels should only increment by one level at a time"
     errors = pyfltr.parsing.entry.parse_errors("markdownlint", output)
     assert len(errors) == 1
@@ -1971,11 +1850,6 @@ def test_parse_errors_markdownlint_extracts_rule() -> None:
 
 
 def test_parse_errors_markdownlint_with_column() -> None:
-    """markdownlint: 列番号を報告するルールでもfile・lineを正しく抽出する。
-
-    列番号を許容しないと`_FILE`のドライブレター表記がファイル名の末尾へ侵入し、
-    file・lineともに架空の値になる。
-    """
     output = 'docs/index.md:3:32 MD059/descriptive-link-text Link text should be descriptive [Context: "[here]"]'
     errors = pyfltr.parsing.entry.parse_errors("markdownlint", output)
     assert len(errors) == 1
@@ -1986,10 +1860,6 @@ def test_parse_errors_markdownlint_with_column() -> None:
 
 
 def test_parse_errors_markdownlint_with_column_on_windows_path() -> None:
-    """markdownlint: Windowsドライブレター表記でも列番号付きの位置を正しく抽出する。
-
-    ドライブレター表記の侵入が本不具合の根本原因のため、対象の表記そのものを検証する。
-    """
     output = "C:/proj/docs/index.md:5:45 MD009/no-trailing-spaces Trailing spaces [Expected: 0; Actual: 1]"
     errors = pyfltr.parsing.entry.parse_errors("markdownlint", output)
     assert len(errors) == 1
@@ -1999,7 +1869,6 @@ def test_parse_errors_markdownlint_with_column_on_windows_path() -> None:
 
 
 def test_parse_errors_markdownlint_with_column_and_severity() -> None:
-    """markdownlint: 列番号とseverityが同時に介在する形でも正しく抽出する。"""
     output = "docs/index.md:5:1 error MD009/no-trailing-spaces Trailing spaces [Expected: 0; Actual: 1]"
     errors = pyfltr.parsing.entry.parse_errors("markdownlint", output)
     assert len(errors) == 1
@@ -2010,7 +1879,6 @@ def test_parse_errors_markdownlint_with_column_and_severity() -> None:
 
 
 def test_parse_errors_shellcheck_rule_url() -> None:
-    """shellcheckのruleからrule_urlが生成される。"""
     output = json.dumps(
         [
             {
@@ -2028,7 +1896,6 @@ def test_parse_errors_shellcheck_rule_url() -> None:
 
 
 def test_parse_errors_eslint_rule_url() -> None:
-    """eslintの本体ルールからrule_urlが生成される。プラグインルールはURL無し。"""
     output = json.dumps(
         [
             {
@@ -2055,12 +1922,10 @@ def test_parse_errors_eslint_rule_url() -> None:
     errors = pyfltr.parsing.entry.parse_errors("eslint", output)
     assert len(errors) == 2
     assert errors[0].rule_url == "https://eslint.org/docs/latest/rules/no-unused-vars"
-    # プラグインルール（スラッシュ含む）はURLを返さない
     assert errors[1].rule_url is None
 
 
 def test_parse_errors_shellcheck_severity_normalized() -> None:
-    """shellcheckのlevel=STYLEなどを正規化する。"""
     output = json.dumps(
         [
             {
@@ -2079,7 +1944,6 @@ def test_parse_errors_shellcheck_severity_normalized() -> None:
 
 @pytest.mark.parametrize("file", [None, False, 0, "", "None", "path.sql"])
 def test_sqlfluff_preserves_falsey_file_name(file: object) -> None:
-    """共通走査でもsqlfluff固有の偽値から空文字への変換を保つ。"""
     output = json.dumps([{"filepath": file, "violations": [{"start_line_no": 1, "description": "failure"}]}])
     errors = pyfltr.parsing.entry.parse_errors("sqlfluff", output)
     assert [(error.file, error.message) for error in errors] == [(str(file or ""), "failure")]

@@ -30,7 +30,6 @@ def _compute_dummy_key(
 
 
 def test_put_and_get_restores_result(tmp_path: pathlib.Path) -> None:
-    """putで保存した結果がgetでcached=True付きで復元される。"""
     store = _make_store(tmp_path)
     target = tmp_path / "foo.md"
     target.write_text("# title\n")
@@ -51,13 +50,11 @@ def test_put_and_get_restores_result(tmp_path: pathlib.Path) -> None:
 
 
 def test_get_miss_returns_none(tmp_path: pathlib.Path) -> None:
-    """存在しないキーは None を返す。"""
     store = _make_store(tmp_path)
     assert store.get("textlint", "no-such-key") is None
 
 
 def test_put_without_run_id_is_skipped(tmp_path: pathlib.Path) -> None:
-    """run_id=Noneのときは書き込まない（ソース特定不能のため）。"""
     store = _make_store(tmp_path)
     target = tmp_path / "foo.md"
     target.write_text("# title\n")
@@ -68,7 +65,6 @@ def test_put_without_run_id_is_skipped(tmp_path: pathlib.Path) -> None:
 
 
 def test_compute_key_changes_on_file_content(tmp_path: pathlib.Path) -> None:
-    """対象ファイルの内容が変わるとキーが変わる。"""
     store = _make_store(tmp_path)
     target = tmp_path / "foo.md"
     target.write_text("# one\n")
@@ -79,7 +75,6 @@ def test_compute_key_changes_on_file_content(tmp_path: pathlib.Path) -> None:
 
 
 def test_compute_key_changes_on_commandline(tmp_path: pathlib.Path) -> None:
-    """実効コマンドラインが変わるとキーが変わる（誤ヒット防止）。"""
     store = _make_store(tmp_path)
     target = tmp_path / "foo.md"
     target.write_text("# title\n")
@@ -103,7 +98,6 @@ def test_compute_key_changes_on_commandline(tmp_path: pathlib.Path) -> None:
 
 
 def test_compute_key_changes_on_config_file_content(tmp_path: pathlib.Path) -> None:
-    """設定ファイルの内容が変わるとキーが変わる。"""
     store = _make_store(tmp_path)
     target = tmp_path / "foo.md"
     target.write_text("# title\n")
@@ -131,7 +125,6 @@ def test_compute_key_changes_on_config_file_content(tmp_path: pathlib.Path) -> N
 
 
 def test_cleanup_removes_old_entries(tmp_path: pathlib.Path) -> None:
-    """max_age_hoursを超えたエントリは削除される。"""
     store = _make_store(tmp_path)
     target = tmp_path / "foo.md"
     target.write_text("# title\n")
@@ -140,7 +133,6 @@ def test_cleanup_removes_old_entries(tmp_path: pathlib.Path) -> None:
 
     entry_path = store.cache_dir / "textlint" / f"{key}.json"
     assert entry_path.exists()
-    # mtimeを2時間前に戻す
     old_mtime = time.time() - 2 * 3600
     os.utime(entry_path, (old_mtime, old_mtime))
 
@@ -150,7 +142,6 @@ def test_cleanup_removes_old_entries(tmp_path: pathlib.Path) -> None:
 
 
 def test_cleanup_keeps_recent_entries(tmp_path: pathlib.Path) -> None:
-    """新しいエントリは cleanup で削除されない。"""
     store = _make_store(tmp_path)
     target = tmp_path / "foo.md"
     target.write_text("# title\n")
@@ -162,14 +153,13 @@ def test_cleanup_keeps_recent_entries(tmp_path: pathlib.Path) -> None:
 
 
 def test_cleanup_zero_policy_is_noop(tmp_path: pathlib.Path) -> None:
-    """max_age_hours=0は期間軸クリーンアップ無効。"""
     store = _make_store(tmp_path)
     target = tmp_path / "foo.md"
     target.write_text("# title\n")
     key = _compute_dummy_key(store, "textlint", target)
     store.put("textlint", key, _make_result("textlint", returncode=0), run_id="01ABCDEFGH")
     entry_path = store.cache_dir / "textlint" / f"{key}.json"
-    os.utime(entry_path, (0, 0))  # 1970年扱い
+    os.utime(entry_path, (0, 0))
 
     removed = store.cleanup(pyfltr.state.cache.CachePolicy(max_age_hours=0))
     assert not removed
@@ -177,14 +167,12 @@ def test_cleanup_zero_policy_is_noop(tmp_path: pathlib.Path) -> None:
 
 
 def test_cache_policy_from_config_uses_default() -> None:
-    """既定値は12時間。"""
     config = pyfltr.config.config.create_default_config()
     policy = pyfltr.state.cache.cache_policy_from_config(config)
     assert policy.max_age_hours == 12
 
 
 def test_cache_policy_respects_override() -> None:
-    """設定値で上書きできる。"""
     config = pyfltr.config.config.create_default_config()
     config.values["cache-max-age-hours"] = 24
     policy = pyfltr.state.cache.cache_policy_from_config(config)
@@ -192,7 +180,6 @@ def test_cache_policy_respects_override() -> None:
 
 
 def test_compute_key_reads_relative_target_from_explicit_base(tmp_path: pathlib.Path) -> None:
-    """相対targetの内容は明示した起点cwdから読み込む。"""
     first = tmp_path / "first"
     second = tmp_path / "second"
     first.mkdir()

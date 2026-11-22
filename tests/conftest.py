@@ -1,11 +1,3 @@
-"""pytest 共通定義。
-
-`CommandResult`・`ErrorLocation`・`ArchiveStore`のテストデータ生成ヘルパーを集約する。
-各テストファイルに同種ビルダーを個別定義するとaridの重複コード検出に
-抵触するため、conftest.py に集約する。conftest.py に置くことで
-pre-commit の name-tests-test フックから除外される。
-"""
-
 import collections.abc
 import concurrent.futures
 import faulthandler
@@ -33,36 +25,16 @@ import pyfltr.warnings_
 
 @pytest.fixture(autouse=True)
 def _clear_warnings_between_tests() -> None:
-    """各テスト開始前に警告蓄積をクリアするフィクスチャ。
-
-    `pyfltr.warnings_`はプロセス内でモジュール変数として共有される。
-    クリアしないとテスト間でリークが発生し、順序依存や並列実行での非決定性を招く。
-    """
     pyfltr.warnings_.clear()
 
 
 @pytest.fixture
 def _disable_faulthandler_timeout() -> None:
-    """長時間テストではpytest組み込みfaulthandlerのダンプ予約を解除する。
-
-    `faulthandler_timeout`はテスト単位の`timeout`マーカーを参照せず、全テストへ同じ秒数を適用する。
-    pytest組み込みプラグインはフィクスチャのセットアップ前に予約するため、長い制限時間を意図して
-    設定したテストが通常実行中に失敗時相当のスタックを出力しないよう、本フィクスチャで解除する。
-    次のテストでは同プラグインが改めて予約するため、解除の影響は対象のテストだけに留まる。
-    """
     faulthandler.cancel_dump_traceback_later()
 
 
 @pytest.fixture(autouse=True)
 def _isolate_output_format_envs(monkeypatch: pytest.MonkeyPatch) -> None:
-    """出力形式を左右する環境変数を未設定状態に固定するフィクスチャ。
-
-    エージェント環境では `AGENT_INDICATOR_ENVS` のいずれか
-    （`AI_AGENT` / `CODEX_CI` / `CLAUDECODE` / `CURSOR_AGENT`）が常時設定されるため、
-    autouse しないと開発機の状態によって既定出力形式が jsonl へ揺らぐ。
-    `PYFLTR_OUTPUT_FORMAT` も開発者シェルで設定されている可能性があるため、
-    全てを一律に未設定化する。個別テストは `monkeypatch.setenv` で上書きする。
-    """
     for env_name in pyfltr.cli.output_format.AGENT_INDICATOR_ENVS:
         monkeypatch.delenv(env_name, raising=False)
     monkeypatch.delenv(pyfltr.cli.output_format.OUTPUT_FORMAT_ENV, raising=False)
@@ -70,29 +42,14 @@ def _isolate_output_format_envs(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture(autouse=True)
 def _isolate_execution_slots_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """実行枠の数を下げる環境変数を未設定状態に固定するフィクスチャ。
-
-    開発者シェルや外側のpyfltrの指定で枠の数が揺らがないようにする。
-    個別テストは`monkeypatch.setenv`で上書きする。
-    """
     monkeypatch.delenv(pyfltr.command.execution_slot.SLOTS_ENV, raising=False)
 
 
-# `get_mise_active_tools` 実装本体を保存しておく（モック上書き前の参照）。
-# キャッシュキー検証系テストでは実装の挙動を直接確認したいため、モック前の関数オブジェクトを
-# 経由して呼べるよう、本変数をテスト側から参照可能にする。
 real_get_mise_active_tools = pyfltr.command.mise.get_mise_active_tools
 
 
 @pytest.fixture(autouse=True)
 def _default_mise_active_tools_empty(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`mise ls --current --json` 経路を「mise設定記述なし」相当へ固定するフィクスチャ。
-
-    `get_mise_active_tools` は実環境の mise と cwd 配下の `mise.toml` に依存するため、
-    モックしないと開発機の状態でテスト結果が揺らぐ（tool spec 省略形が混入する等）。
-    既存テストは mise 設定記述なし前提で `mise exec <tool>@latest -- <bin>` 形式を期待する。
-    新仕様（mise 設定記述あり時の tool spec 省略）を検証するテストは個別に上書きする。
-    """
     monkeypatch.setattr("pyfltr.command.mise._MISE_ACTIVE_TOOLS_CACHE", {}, raising=True)
     monkeypatch.setattr(
         "pyfltr.command.mise.get_mise_active_tools",
@@ -102,17 +59,6 @@ def _default_mise_active_tools_empty(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture(autouse=True)
 def _default_mise_exec_check_success(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
-    """bin-runner経路の可用性判定を成功へ固定するフィクスチャ。
-
-    `pyfltr.command.runner.ensure_mise_available` は bin-runner 経路の解決時に
-    `run_mise_with_trust` 経由で `mise exec <tool spec> -- <bin> --version` を実起動する。
-    同経路は `pyfltr.command.process.run_subprocess` を通らないため、`run_subprocess` のモックでは
-    抑止できず、モックしないテストは実行環境のツール導入状態とネットワークへ依存する。
-    対象ツールが未導入の環境ではツール解決がバージョン解決を伴い、1テストあたり数十秒へ達して
-    pytest全体の `--timeout` へ接近する。既定で成功を返して実プロセス起動を止め、
-    mise解決経路の実挙動を検証するテストだけが `@pytest.mark.real_mise_subprocess` で本フィクスチャを外す。
-    外した側では実装本体がモックされないまま残るため、復元用の参照は設けない。
-    """
     if "real_mise_subprocess" in request.keywords:
         return
     monkeypatch.setattr(
@@ -126,11 +72,6 @@ def _isolate_global_config(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path_factory: pytest.TempPathFactory,
 ) -> pathlib.Path:
-    """`PYFLTR_GLOBAL_CONFIG` を tmp パス配下のダミーパスへ固定するフィクスチャ。
-
-    開発機の `~/.config/pyfltr/config.toml` がテスト結果に影響しないようにする。
-    個別テストは `monkeypatch.setenv` で上書きできる。
-    """
     isolation_dir = tmp_path_factory.mktemp("global_config_isolation")
     target = isolation_dir / "config.toml"
     monkeypatch.setenv("PYFLTR_GLOBAL_CONFIG", str(target))
@@ -142,21 +83,11 @@ def _isolate_cache_root(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path_factory: pytest.TempPathFactory,
 ) -> pathlib.Path:
-    """`PYFLTR_CACHE_DIR`を試験ごとの専用の一時ディレクトリへ固定するフィクスチャ。
-
-    実行アーカイブ・結果キャッシュ・置換履歴は`PYFLTR_CACHE_DIR`未設定時に開発者の
-    `~/.cache/pyfltr`等へ書かれ、自動削除で開発者自身の記録を失わせる。
-    試験作成者が隔離を選ばなくても全試験（子プロセスとして起動したpyfltrを含む）を隔離する。
-    保存先は`tmp_path`と別のディレクトリにし、`tmp_path`を走査対象として渡す試験へ`runs/`等が混ざらないようにする。
-    保存先を`tmp_path`へ揃える必要がある試験は`_isolated_cache`などで後から上書きする。
-    """
     cache_root = tmp_path_factory.mktemp("cache_root_isolation")
     monkeypatch.setenv("PYFLTR_CACHE_DIR", str(cache_root))
     return cache_root
 
 
-# Rust / .NET 言語ツールの既定値定数。config_test / command_test の両方が
-# cargo-clippy の args / fix-args を参照するため、ここで一元管理する。
 CARGO_CLIPPY_ARGS: list[str] = ["clippy", "--all-targets"]
 CARGO_CLIPPY_LINT_ARGS: list[str] = ["--", "-D", "warnings"]
 CARGO_CLIPPY_FIX_ARGS: list[str] = [
@@ -189,16 +120,6 @@ def make_execution_context(
     start_cwd: pathlib.Path | None = None,
     fail_fast: bool = False,
 ) -> pyfltr.command.core_.ExecutionContext:
-    """テスト用の ExecutionContext を生成する。
-
-    `execute_command` を直接呼び出すテストで使用する。
-    CLI/TUI フック系（on_output / is_interrupted / on_subprocess_start / on_subprocess_end）は
-    省略し、デフォルトの None を使う。
-
-    `start_cwd` は外部パス判定の起点。`None` の場合は `pathlib.Path.cwd()` を使う既定挙動。
-    `tmp_path` 配下のファイルを対象にするテストで `allows_external_paths=False` ツールを
-    扱う場合は `start_cwd=tmp_path` を明示する。
-    """
     base_kwargs: dict[str, typing.Any] = {
         "config": config,
         "all_files": all_files,
@@ -234,14 +155,6 @@ def make_command_result(
     resolution_failed: bool = False,
     retry_count: int = 0,
 ) -> pyfltr.command.core_.CommandResult:
-    """テスト用の CommandResult を生成する。
-
-    `formatter_failed`の既定値はFalseとし、formatter型の失敗を表すテストデータだけがTrueを指定する。
-    `errors` は `ErrorLocation` のリスト（省略時は空）。
-    `target_files` は `retry_command` フィルタリングのテスト用（省略時は空）。
-    `archived` のテスト既定は True（smart truncation 適用側）。
-    実運用の `CommandResult()` 生成時の既定（False）とは異なるため注意する。
-    """
     return pyfltr.command.core_.CommandResult(
         command=command,
         command_type=command_type,
@@ -269,7 +182,6 @@ def make_error_location(
     message: str,
     col: int | None = None,
 ) -> pyfltr.diagnostics.ErrorLocation:
-    """テスト用の ErrorLocation を生成する。"""
     return pyfltr.diagnostics.ErrorLocation(
         file=file,
         line=line,
@@ -280,26 +192,22 @@ def make_error_location(
 
 
 def make_formatted_result(command: str = "ruff-format") -> pyfltr.command.core_.CommandResult:
-    """`status == "formatted"` になる最小の CommandResult を生成する。"""
     return pyfltr.command.core_.CommandResult(
         command, "formatter", [command], returncode=1, formatter_failed=False, files=1, output="", elapsed=0.01
     )
 
 
 def make_succeeded_result(command: str = "ruff-check") -> pyfltr.command.core_.CommandResult:
-    """`status == "succeeded"` になる最小の CommandResult を生成する。"""
     return pyfltr.command.core_.CommandResult(
         command, "linter", [command], returncode=0, formatter_failed=False, files=1, output="", elapsed=0.01
     )
 
 
 def make_archive_store(tmp_path: pathlib.Path) -> pyfltr.state.archive.ArchiveStore:
-    """テスト用の`ArchiveStore`を生成する。"""
     return pyfltr.state.archive.ArchiveStore(cache_root=tmp_path)
 
 
 def make_args(*, no_exclude: bool = False, allow_external_paths: bool = False) -> pyfltr.run_options.RunOptions:
-    """`execute_command`に渡す実行オプションを生成する。"""
     return pyfltr.run_options.RunOptions(
         shuffle=False,
         verbose=False,
@@ -313,26 +221,15 @@ def _isolated_cache(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> pathlib.Path:
-    """`PYFLTR_CACHE_DIR`を`tmp_path`に固定するフィクスチャ。
-
-    全試験の既定の隔離は`_isolate_cache_root`が担う。本フィクスチャは、
-    `seed_archive_run(tmp_path, ...)`で用意した記録をCLIから読む試験など、
-    保存先を`tmp_path`へ揃える必要がある試験だけが要求する。
-    """
     monkeypatch.setenv("PYFLTR_CACHE_DIR", str(tmp_path))
     return tmp_path
 
 
 def count_config_warnings(needle: str) -> int:
-    """`source == "config"` かつメッセージに `needle` を含む警告の件数を返す。
-
-    `needle` に空文字列を渡すと `source == "config"` の全件をカウントする。
-    """
     return sum(1 for w in pyfltr.warnings_.collected_warnings() if w["source"] == "config" and needle in w["message"])
 
 
 def shared_prefix_length(a: str, b: str) -> int:
-    """2つの文字列の共通プレフィックス長を返す。"""
     shared = 0
     for ca, cb in zip(a, b, strict=False):
         if ca != cb:
@@ -361,11 +258,6 @@ sys.exit(pyfltr.cli.mcp_worker.main())
 
 
 def write_slot_wait_worker(script: pathlib.Path, marker: pathlib.Path) -> pathlib.Path:
-    """実行枠の待機を始めた時点で`marker`を作成するMCP workerの起動スクリプトを`script`へ書き込む。
-
-    MCPは待機の警告を応答へまとめて返すため、別プロセスのworkerが待機へ到達したことを試験が観測する手段として使う。
-    `python -I <script> <処理名>`で起動すると`pyfltr.cli.mcp_worker`と同じ処理を実行する。
-    """
     script.write_text(_SLOT_WAIT_WORKER.format(marker=str(marker)), encoding="utf-8")
     return script
 
@@ -380,13 +272,6 @@ def seed_archive_run(
     resolution_failed_tools: set[str] | None = None,
     cwd: pathlib.Path | None = None,
 ) -> str:
-    """テスト用の run をアーカイブに書き込み、`run_id` を返す。
-
-    `tool_results` は `(tool, returncode, output, errors)` のタプル列。
-    `cwd` は`meta.json`へ記録する実行起点で、省略時はプロセスのcwdになる。
-    run_id は ULID で生成され、ミリ秒解像度のタイムスタンプ部分を含む。
-    連続呼び出しで同一 ULID が返る衝突を避けるため、冒頭に 1 ミリ秒のスリープを挿入する。
-    """
     time.sleep(0.001)
     store = pyfltr.state.archive.ArchiveStore(cache_root=cache_root)
     run_id = store.start_run(commands=commands or ["ruff-check"], files=files, cwd=str(cwd) if cwd is not None else None)
@@ -404,24 +289,12 @@ def seed_archive_run(
 
 
 class StageExecutorControl:
-    """`run_stages`の並列ステージの投入と結果回収をテストから固定する。
-
-    スレッドの実スケジューリングでは、先行コマンドの失敗を回収する時点で後続コマンドが
-    未開始か完了済みかが定まらず、fail-fastの結果が実行ごとに変わる。
-    `run_on_submit`に含むコマンドは投入時に実行して完了済みの標準Futureとし、
-    それ以外は未開始の標準Futureとして保持する。
-    結果回収は完了済みを投入順に返した後、未開始を投入順に返す。
-    未開始のFutureは返す直前に開始し、それまでにキャンセルされていれば実行しない。
-    `executed`は実行したコマンド名を実行順に保持する。
-    """
-
     def __init__(self, run_on_submit: set[str]) -> None:
         self.run_on_submit = run_on_submit
         self.executed: list[str] = []
         self._pending: dict[concurrent.futures.Future, tuple[collections.abc.Callable, tuple]] = {}
 
     def install(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """`concurrent.futures`の実行器と結果回収をテスト中だけ差し替える。"""
         monkeypatch.setattr(concurrent.futures, "ThreadPoolExecutor", self._make_executor)
         monkeypatch.setattr(concurrent.futures, "as_completed", self._as_completed)
 
@@ -430,7 +303,6 @@ class StageExecutorControl:
         return _ControlledExecutor(self)
 
     def submit(self, fn: collections.abc.Callable, *args: typing.Any) -> concurrent.futures.Future:
-        """先頭の位置引数をコマンド名として、投入時に実行するか未開始で保持するかを決める。"""
         future: concurrent.futures.Future = concurrent.futures.Future()
         if args[0] in self.run_on_submit:
             future.set_running_or_notify_cancel()
@@ -449,7 +321,6 @@ class StageExecutorControl:
     def _as_completed(
         self, fs: collections.abc.Iterable[concurrent.futures.Future], timeout: float | None = None
     ) -> collections.abc.Iterator[concurrent.futures.Future]:
-        # 未開始のFutureは返す直前に実行するため、待機の上限に達することはない
         del timeout
         futures = list(fs)
         yield from [future for future in futures if future not in self._pending]
@@ -457,15 +328,12 @@ class StageExecutorControl:
             if future not in self._pending:
                 continue
             fn, args = self._pending.pop(future)
-            # キャンセル済みならFalseを返し、結果の取得がCancelledErrorになる
             if future.set_running_or_notify_cancel():
                 self._run(future, fn, args)
             yield future
 
 
 class _ControlledExecutor:
-    """`StageExecutorControl`へ投入を委ねる`ThreadPoolExecutor`の代用。"""
-
     def __init__(self, control: StageExecutorControl) -> None:
         self._control = control
 
@@ -476,27 +344,11 @@ class _ControlledExecutor:
         del exc_info
 
     def submit(self, fn: collections.abc.Callable, *args: typing.Any) -> concurrent.futures.Future:
-        """投入を`StageExecutorControl.submit`へ渡す。"""
         return self._control.submit(fn, *args)
 
 
 @pytest.fixture
 def _isolated_target(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
-    """`pyfltr.cli.main.run([subcmd, <target>])`スモークテスト向けの隔離先を返すフィクスチャ。
-
-    `<target>`や`--work-dir`にリポジトリルートを渡すと、外側`uvx pyfltr ci`のdogfoodingと
-    同一のリポジトリツリーへ内側pytestが実I/O（`iterdir()`・`exists()`・`git check-ignore`・
-    サブプロジェクト探索）でアクセスする構造条件を持つ。`tmp_path`配下に最小の`pyproject.toml`と
-    `sample.py`を用意し、CLIの`<target>`と`--work-dir`の双方をこのパスへ揃えて実I/O経路を隔離する。
-
-    `pyfltr.command.runner.cwd_has_uv_lock`は`@functools.lru_cache(maxsize=1)`付きでプロセス内
-    メモ化されるため、`tmp_path`配下への`uv.lock`ファイル配置だけでは同一pytestワーカー内の
-    先行呼び出し結果が使い回され判定を反映しない。`.claude/skills/implementation-test-constraints/SKILL.md`が
-    定める確立済みの差し替え方式（`monkeypatch.setattr`で関数自体を置換）に従い直接固定する。
-
-    `tmp_path`配下の実I/O経路をGitの状態から分離するため、`pyproject.toml`へ
-    `respect-gitignore = false`を明示する。この設定により、フィクスチャの対象条件を固定する。
-    """
     monkeypatch.setattr("pyfltr.command.runner.cwd_has_uv_lock", lambda *_args: True)
     (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latest"\npython = true\nrespect-gitignore = false\n')
     (tmp_path / "sample.py").write_text("x = 1\n")
@@ -505,6 +357,5 @@ def _isolated_target(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) ->
 
 @pytest.fixture(name="_only_failed_cache")
 def _only_failed_cache_fixture(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
-    """--only-failed テスト用に PYFLTR_CACHE_DIR を tmp_path に固定する。"""
     monkeypatch.setenv("PYFLTR_CACHE_DIR", str(tmp_path))
     return tmp_path

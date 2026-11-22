@@ -15,7 +15,6 @@ from tests.conftest import make_error_location as _make_error
 
 
 def test_start_run_creates_directory_and_meta(tmp_path: pathlib.Path) -> None:
-    """start_run で runs/<run_id>/meta.json が生成され、必要なキーが含まれる。"""
     store = _make_store(tmp_path)
     run_id = store.start_run(commands=["mypy", "ruff-check"], files=10)
 
@@ -32,7 +31,6 @@ def test_start_run_creates_directory_and_meta(tmp_path: pathlib.Path) -> None:
 
 
 def test_write_tool_result(tmp_path: pathlib.Path) -> None:
-    """write_tool_resultでoutput.log / diagnostics.jsonl / tool.jsonが生成される。"""
     store = _make_store(tmp_path)
     run_id = store.start_run(commands=["mypy"])
 
@@ -45,10 +43,8 @@ def test_write_tool_result(tmp_path: pathlib.Path) -> None:
     assert (tool_dir / "tool.json").exists()
     assert (tool_dir / "diagnostics.jsonl").exists()
 
-    # output.log の内容確認
     assert (tool_dir / "output.log").read_text(encoding="utf-8") == "mypy output"
 
-    # diagnostics.jsonlは集約形式で（command、file）単位に1行、messages内に個別指摘
     lines = [json.loads(line) for line in (tool_dir / "diagnostics.jsonl").read_text(encoding="utf-8").splitlines() if line]
     assert len(lines) == 1
     assert lines[0]["kind"] == "diagnostic"
@@ -62,7 +58,6 @@ def test_write_tool_result(tmp_path: pathlib.Path) -> None:
 
 
 def test_write_tool_result_stores_hint_urls(tmp_path: pathlib.Path) -> None:
-    """tool.jsonにhint_urlsが保存され、diagnostics.jsonlのmessagesはruleを保持する。"""
     store = _make_store(tmp_path)
     run_id = store.start_run(commands=["ruff-check"])
 
@@ -78,7 +73,6 @@ def test_write_tool_result_stores_hint_urls(tmp_path: pathlib.Path) -> None:
     entries = [json.loads(line) for line in diagnostics_path.read_text(encoding="utf-8").splitlines() if line]
     assert entries[0]["file"] == "src/foo.py"
     assert entries[0]["messages"][0]["rule"] == "F401"
-    # messages内にrule_urlは入らない
     assert "rule_url" not in entries[0]["messages"][0]
 
     tool_meta = json.loads((tool_dir / "tool.json").read_text(encoding="utf-8"))
@@ -86,7 +80,6 @@ def test_write_tool_result_stores_hint_urls(tmp_path: pathlib.Path) -> None:
 
 
 def test_write_tool_result_omits_hint_urls_when_no_urls(tmp_path: pathlib.Path) -> None:
-    """rule_urlを持たない指摘のみならtool.jsonにhint_urlsキーを出力しない。"""
     store = _make_store(tmp_path)
     run_id = store.start_run(commands=["mypy"])
     result = _make_result("mypy", returncode=1, errors=[_make_error("mypy", "a.py", 1, "boom")])
@@ -96,7 +89,6 @@ def test_write_tool_result_omits_hint_urls_when_no_urls(tmp_path: pathlib.Path) 
 
 
 def test_write_tool_result_stores_hints(tmp_path: pathlib.Path) -> None:
-    """hint付きのErrorLocationのとき、tool.jsonにhintsが保存される。"""
     store = _make_store(tmp_path)
     run_id = store.start_run(commands=["textlint"])
 
@@ -111,7 +103,6 @@ def test_write_tool_result_stores_hints(tmp_path: pathlib.Path) -> None:
 
 
 def test_write_tool_result_omits_hints_when_no_hints(tmp_path: pathlib.Path) -> None:
-    """hintを持たない指摘のみならtool.jsonにhintsキーを出力しない。"""
     store = _make_store(tmp_path)
     run_id = store.start_run(commands=["mypy"])
     result = _make_result("mypy", returncode=1, errors=[_make_error("mypy", "a.py", 1, "boom")])
@@ -121,7 +112,6 @@ def test_write_tool_result_omits_hints_when_no_hints(tmp_path: pathlib.Path) -> 
 
 
 def test_finalize_run(tmp_path: pathlib.Path) -> None:
-    """finalize_runでmeta.jsonにexit_code / finished_atが追加される。"""
     store = _make_store(tmp_path)
     run_id = store.start_run(commands=["ruff-check"])
     store.finalize_run(run_id, exit_code=1)
@@ -132,18 +122,15 @@ def test_finalize_run(tmp_path: pathlib.Path) -> None:
 
 
 def test_list_runs_sorted_desc(tmp_path: pathlib.Path) -> None:
-    """複数のrunを作成してlist_runsがrun_id降順で返す。"""
     store = _make_store(tmp_path)
     run_ids = [store.start_run() for _ in range(3)]
 
     summaries = store.list_runs()
     returned_ids = [s.run_id for s in summaries]
-    # 降順（新しいものが先頭）
     assert returned_ids == sorted(run_ids, reverse=True)
 
 
 def test_list_runs_limit(tmp_path: pathlib.Path) -> None:
-    """limitで件数制限できる。"""
     store = _make_store(tmp_path)
     for _ in range(5):
         store.start_run()
@@ -153,7 +140,6 @@ def test_list_runs_limit(tmp_path: pathlib.Path) -> None:
 
 
 def test_read_meta(tmp_path: pathlib.Path) -> None:
-    """read_meta が meta.json を正しく返す。"""
     store = _make_store(tmp_path)
     run_id = store.start_run(commands=["mypy"], files=5)
 
@@ -164,14 +150,12 @@ def test_read_meta(tmp_path: pathlib.Path) -> None:
 
 
 def test_read_meta_not_found(tmp_path: pathlib.Path) -> None:
-    """存在しないrun_idはFileNotFoundErrorになる。"""
     store = _make_store(tmp_path)
     with pytest.raises(FileNotFoundError):
         store.read_meta("nonexistent-run-id")
 
 
 def test_read_tool_meta(tmp_path: pathlib.Path) -> None:
-    """read_tool_meta がツールのメタ情報を返す。"""
     store = _make_store(tmp_path)
     run_id = store.start_run()
     result = _make_result("ruff-check", returncode=0)
@@ -183,7 +167,6 @@ def test_read_tool_meta(tmp_path: pathlib.Path) -> None:
 
 
 def test_read_tool_meta_removes_retired_key_and_preserves_unknown_key(tmp_path: pathlib.Path) -> None:
-    """旧書式の撤去済みキーだけを除き、未知のキーを保持する。"""
     store = _make_store(tmp_path)
     run_id = store.start_run(commands=["ruff-check"])
     store.write_tool_result(run_id, _make_result("ruff-check", returncode=1))
@@ -200,7 +183,6 @@ def test_read_tool_meta_removes_retired_key_and_preserves_unknown_key(tmp_path: 
 
 
 def test_read_tool_output(tmp_path: pathlib.Path) -> None:
-    """read_tool_output が生出力を返す。"""
     store = _make_store(tmp_path)
     run_id = store.start_run()
     result = _make_result("ruff-check", returncode=0, output="all clear")
@@ -211,7 +193,6 @@ def test_read_tool_output(tmp_path: pathlib.Path) -> None:
 
 
 def test_read_tool_diagnostics(tmp_path: pathlib.Path) -> None:
-    """read_tool_diagnosticsが集約diagnosticレコード一覧を返す。"""
     store = _make_store(tmp_path)
     run_id = store.start_run()
     errors = [
@@ -223,7 +204,6 @@ def test_read_tool_diagnostics(tmp_path: pathlib.Path) -> None:
     store.write_tool_result(run_id, result)
 
     diagnostics = store.read_tool_diagnostics(run_id, "mypy")
-    # （mypy、a.py）と（mypy、b.py）の2レコード
     assert len(diagnostics) == 2
     assert diagnostics[0]["file"] == "a.py"
     assert len(diagnostics[0]["messages"]) == 2
@@ -232,7 +212,6 @@ def test_read_tool_diagnostics(tmp_path: pathlib.Path) -> None:
 
 
 def test_list_tools_empty_run(tmp_path: pathlib.Path) -> None:
-    """ツール未書き込みのrunではlist_toolsが空リストを返す。"""
     store = _make_store(tmp_path)
     run_id = store.start_run()
 
@@ -240,7 +219,6 @@ def test_list_tools_empty_run(tmp_path: pathlib.Path) -> None:
 
 
 def test_list_tools_multiple(tmp_path: pathlib.Path) -> None:
-    """複数ツール書き込み後のlist_toolsがサニタイズ済み名の自然順リストを返す。"""
     store = _make_store(tmp_path)
     run_id = store.start_run()
     for tool in ("mypy", "ruff-check", "ruff-format"):
@@ -250,7 +228,6 @@ def test_list_tools_multiple(tmp_path: pathlib.Path) -> None:
 
 
 def test_list_tools_not_found(tmp_path: pathlib.Path) -> None:
-    """存在しないrun_idはFileNotFoundError。"""
     store = _make_store(tmp_path)
     with pytest.raises(FileNotFoundError):
         store.list_tools("nonexistent-run-id")
@@ -263,7 +240,6 @@ def _set_meta_times(
     started_days_ago: float | None = None,
     finished_days_ago: float | None = None,
 ) -> None:
-    """meta.jsonの開始・完了時刻を現在から指定日数前へ書き換える。"""
     meta_path = tmp_path / "runs" / run_id / "meta.json"
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
     now = dt.datetime.now(dt.UTC)
@@ -275,7 +251,6 @@ def _set_meta_times(
 
 
 def test_cleanup_max_runs(tmp_path: pathlib.Path) -> None:
-    """完了済みの101世代をmax_runs=100でクリーンアップすると最古の1件が削除される。"""
     store = _make_store(tmp_path)
     run_ids = []
     for _ in range(101):
@@ -291,42 +266,34 @@ def test_cleanup_max_runs(tmp_path: pathlib.Path) -> None:
 
 
 def test_cleanup_max_size(tmp_path: pathlib.Path) -> None:
-    """大きなoutput.logを持つ完了済みrunがmax_size超過で削除される。"""
     store = _make_store(tmp_path)
     run_id = store.start_run()
-    # 2MBのダミー出力を書き込む
     large_output = "x" * (2 * 1024 * 1024)
     result = _make_result("mypy", returncode=0, output=large_output)
     store.write_tool_result(run_id, result)
     store.finalize_run(run_id, exit_code=0)
 
-    # 2つ目のrun（小さい）
     run_id2 = store.start_run()
 
-    # max_size=1MBでクリーンアップ → 大きい方（古い方）が削除される
     policy = pyfltr.state.archive.ArchivePolicy(max_runs=0, max_size_bytes=1 * 1024 * 1024, max_age_days=0)
     removed = store.cleanup(policy)
 
     assert run_id in removed
-    # 新しいrunは残っている
     remaining_ids = [s.run_id for s in store.list_runs()]
     assert run_id2 in remaining_ids
 
 
 def test_cleanup_max_age(tmp_path: pathlib.Path) -> None:
-    """完了時刻が保存期間を超えた完了済みrunがmax_age_daysで削除される。"""
     store = _make_store(tmp_path)
     run_id = store.start_run()
     store.finalize_run(run_id, exit_code=0)
     _set_meta_times(tmp_path, run_id, started_days_ago=60, finished_days_ago=60)
 
-    # 新しいrunを作成
     run_id2 = store.start_run()
 
     policy = pyfltr.state.archive.ArchivePolicy(max_runs=0, max_size_bytes=0, max_age_days=30)
     removed = store.cleanup(policy)
 
-    # 60日前のrunが削除される
     assert run_id in removed
     remaining_ids = [s.run_id for s in store.list_runs()]
     assert run_id2 in remaining_ids
@@ -341,10 +308,6 @@ def test_cleanup_max_age(tmp_path: pathlib.Path) -> None:
     ],
 )
 def test_cleanup_keeps_active_run_on_every_axis(tmp_path: pathlib.Path, policy: pyfltr.state.archive.ArchivePolicy) -> None:
-    """別のストアが実行中のrunは、期間・サイズ・世代数のどの軸でも削除されず終了後に参照できる。
-
-    実行中のrunは最古かつ最大で、開始時刻も保存期間を超えている。保護が無ければどの軸でも最初に削除される。
-    """
     running_store = _make_store(tmp_path)
     running = running_store.start_run(commands=["mypy"])
     running_store.write_tool_result(running, _make_result("mypy", returncode=1, output="x" * (2 * 1024 * 1024)))
@@ -363,7 +326,6 @@ def test_cleanup_keeps_active_run_on_every_axis(tmp_path: pathlib.Path, policy: 
 
 
 def test_cleanup_counts_active_run_but_removes_finished(tmp_path: pathlib.Path) -> None:
-    """稼働中のrunは世代数に数えたうえで残し、完了済みのrunを削除して上限へ収める。"""
     store = _make_store(tmp_path)
     running = store.start_run()
     finished = store.start_run()
@@ -376,7 +338,6 @@ def test_cleanup_counts_active_run_but_removes_finished(tmp_path: pathlib.Path) 
 
 
 def test_cleanup_orders_by_finished_at(tmp_path: pathlib.Path) -> None:
-    """開始が古くても完了が新しいrunは残り、完了の古いrunから削除される。"""
     store = _make_store(tmp_path)
     long_run = store.start_run()
     short_run = store.start_run()
@@ -391,11 +352,9 @@ def test_cleanup_orders_by_finished_at(tmp_path: pathlib.Path) -> None:
 
 
 def test_cleanup_removes_unfinished_run_without_holder(tmp_path: pathlib.Path) -> None:
-    """強制終了したrun（完了記録が無くロック保持者もいない）は、保存済み内容を読めたうえで上限により回収される。"""
     crashed_store = _make_store(tmp_path)
     crashed = crashed_store.start_run(commands=["mypy"])
     crashed_store.write_tool_result(crashed, _make_result("mypy", returncode=0, output="saved"))
-    # プロセスの強制終了ではOSがロックを解放する。同じ状態をロックの解放だけで再現し、完了記録は書かない。
     crashed_store.release_run(crashed)
 
     reader = _make_store(tmp_path)
@@ -409,16 +368,13 @@ def test_cleanup_removes_unfinished_run_without_holder(tmp_path: pathlib.Path) -
 
 
 def test_generate_run_id_unique_and_valid() -> None:
-    """連続生成したrun_idは重複なく、ULIDの文字数・文字種を満たす。"""
     ids = [pyfltr.state.archive.generate_run_id() for _ in range(10)]
-    # ULIDは26文字のCrockford Base32
     assert all(len(i) == 26 for i in ids)
     assert all(c in "0123456789ABCDEFGHJKMNPQRSTVWXYZ" for i in ids for c in i)
     assert len(set(ids)) == len(ids)
 
 
 def _pytest_failure_output(test_file: str, line: int, test_name: str) -> str:
-    """pytest `--tb=short`の失敗1件分の出力を返す。"""
     return (
         "================================= FAILURES =================================\n"
         f"_______________________________ {test_name} ________________________________\n"
@@ -431,7 +387,6 @@ def _pytest_failure_output(test_file: str, line: int, test_name: str) -> str:
 
 
 def _start_legacy_run(store: pyfltr.state.archive.ArchiveStore, tmp_path: pathlib.Path, command: str = "pytest") -> str:
-    """診断を起点相対へ揃える前の版と同じく、診断パスの印を持たない`meta.json`のrunを作成する。"""
     run_id = store.start_run(commands=[command])
     meta_path = tmp_path / "runs" / run_id / "meta.json"
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
@@ -441,27 +396,20 @@ def _start_legacy_run(store: pyfltr.state.archive.ArchiveStore, tmp_path: pathli
 
 
 def _legacy_pytest_result(sections: dict[str, str]) -> pyfltr.command.core_.CommandResult:
-    """サブプロジェクト相対の診断を保存していた版と同じ形のpytest結果を組み立てる。"""
     return _legacy_result("pytest", sections)
 
 
 def _legacy_result(command: str, sections: dict[str, str]) -> pyfltr.command.core_.CommandResult:
-    """サブプロジェクト相対の診断を保存していた版と同じ形の結果を組み立てる。
-
-    旧版は各区間を子プロジェクトのcwdで解析し、子プロジェクト相対の`file`をそのまま保存していた。
-    """
     output = "\n".join(f"# subproject: {relative}\n{body}" for relative, body in sections.items())
     errors = [error for body in sections.values() for error in pyfltr.parsing.entry.parse_errors(command, body)]
     return _make_result(command, returncode=1, output=output, errors=errors)
 
 
 def _mypy_output(path: str, line: int, message: str = "Incompatible types in assignment") -> str:
-    """mypyの位置付きテキスト出力1件分を返す。"""
     return f"{path}:{line}: error: {message}  [assignment]\nFound 1 error in 1 file (checked 1 source file)\n"
 
 
 def _bandit_output(path: str, line: int) -> str:
-    """bandit `-f json`の構造化出力1件分を返す。"""
     return json.dumps(
         {
             "results": [
@@ -481,10 +429,6 @@ def _bandit_output(path: str, line: int) -> str:
 
 
 def test_read_tool_diagnostics_restores_legacy_mypy_paths(tmp_path: pathlib.Path) -> None:
-    """pytest以外の位置付きテキスト（mypy）の旧版診断も、所属区間から起点相対へ補正して返す。
-
-    復元の適否はツール名ではなく保存形式と区間内の診断の一致で決まる。保存ファイルは書き換えない。
-    """
     store = _make_store(tmp_path)
     run_id = _start_legacy_run(store, tmp_path, "mypy")
     store.write_tool_result(
@@ -499,7 +443,6 @@ def test_read_tool_diagnostics_restores_legacy_mypy_paths(tmp_path: pathlib.Path
 
 
 def test_read_tool_diagnostics_restores_legacy_structured_paths(tmp_path: pathlib.Path) -> None:
-    """構造化出力（banditのJSON）の旧版診断も、同じ共通処理で所属を一意に決められれば補正する。"""
     store = _make_store(tmp_path)
     run_id = _start_legacy_run(store, tmp_path, "bandit")
     store.write_tool_result(run_id, _legacy_result("bandit", {"pkg": _bandit_output("src/foo.py", 12)}))
@@ -508,10 +451,6 @@ def test_read_tool_diagnostics_restores_legacy_structured_paths(tmp_path: pathli
 
 
 def test_read_tool_diagnostics_keeps_unrestorable_legacy_mypy_paths(tmp_path: pathlib.Path) -> None:
-    """所属を一意に決められない・補正の必要を確定できない旧版の診断は保存値を保つ。
-
-    対象は曖昧な所属（同じ診断が2区間にある）、絶対パス、所属区間の無い出力、生出力の無いrunである。
-    """
     store = _make_store(tmp_path)
     same = _mypy_output("src/sample.py", 3)
     ambiguous_run = _start_legacy_run(store, tmp_path, "mypy")
@@ -540,11 +479,6 @@ def test_read_tool_diagnostics_keeps_unrestorable_legacy_mypy_paths(tmp_path: pa
     ["/outside/sample.py", "C:/Users/test/sample.py", "D:/outside/sample.py", "C:sample.py", "//server/share/sample.py"],
 )
 def test_read_tool_diagnostics_keeps_legacy_paths_of_any_os_form(tmp_path: pathlib.Path, tool: str, path: str) -> None:
-    """別のOSで保存された形式の絶対パス・drive相対・UNCも、実行ホストによらず保存値を保つ。
-
-    同じ区間の通常相対パスだけを所属区間から起点相対へ補正する。
-    期待値は保存値とする（POSIXのホストでは入力の文字列のまま保存されるため、全形式へ到達する）。
-    """
     store = _make_store(tmp_path)
     run_id = _start_legacy_run(store, tmp_path, tool)
     make_output = _mypy_output if tool == "mypy" else _bandit_output
@@ -558,7 +492,6 @@ def test_read_tool_diagnostics_keeps_legacy_paths_of_any_os_form(tmp_path: pathl
 
 
 def test_read_tool_diagnostics_keeps_current_mypy_paths(tmp_path: pathlib.Path) -> None:
-    """起点相対で保存した新しい版のmypyのrunは、所属区間があっても再補正しない。"""
     store = _make_store(tmp_path)
     run_id = store.start_run(commands=["mypy"])
     body = _mypy_output("src/sample.py", 3)
@@ -569,11 +502,6 @@ def test_read_tool_diagnostics_keeps_current_mypy_paths(tmp_path: pathlib.Path) 
 
 
 def test_read_tool_diagnostics_restores_legacy_subproject_paths(tmp_path: pathlib.Path) -> None:
-    """旧版のサブプロジェクト相対の診断を、生出力の所属区間から起点相対へ補正して返す。
-
-    所属区間を持つ旧アーカイブでも`--only-failed --from-run`が失敗ファイルを選べるようにする。
-    保存ファイル自体は書き換えない。
-    """
     store = _make_store(tmp_path)
     run_id = _start_legacy_run(store, tmp_path)
     store.write_tool_result(
@@ -594,11 +522,6 @@ def test_read_tool_diagnostics_restores_legacy_subproject_paths(tmp_path: pathli
 
 
 def test_read_tool_diagnostics_keeps_ambiguous_and_current_paths(tmp_path: pathlib.Path) -> None:
-    """所属区間を一意に決められない診断と、起点相対で保存された新しい版の診断は変えない。
-
-    両方の子で同じファイル・行・メッセージの失敗が出た場合はどちらの子か決められない。
-    新しい版の診断は`<子>/<file>`で保存されており、区間の解析結果と一致しないため二重に接頭辞を付けない。
-    """
     store = _make_store(tmp_path)
     same_failure = _pytest_failure_output("tests/x_test.py", 3, "test_a")
     ambiguous_run = _start_legacy_run(store, tmp_path)
@@ -619,10 +542,6 @@ def test_read_tool_diagnostics_keeps_ambiguous_and_current_paths(tmp_path: pathl
 
 
 def test_read_tool_diagnostics_keeps_current_root_and_subproject_paths(tmp_path: pathlib.Path) -> None:
-    """起点相対で保存した新しい版のrunは、起点直下と子に同じ位置・メッセージの失敗があっても書き換えない。
-
-    旧版の救済を新しい版へ適用すると、起点直下の診断を子の区間の診断と取り違えて起点側の失敗を失う。
-    """
     store = _make_store(tmp_path)
     same_failure = _pytest_failure_output("tests/x_test.py", 3, "test_a")
     root_errors = pyfltr.parsing.entry.parse_errors("pytest", same_failure)
@@ -645,7 +564,6 @@ def test_read_tool_diagnostics_keeps_current_root_and_subproject_paths(tmp_path:
 
 
 def test_record_slot_wait_updates_interval_and_keeps_unfinished(tmp_path: pathlib.Path) -> None:
-    """待機区間は開始時に未完了で保存され、終了時に同じ区間が完了値へ置き換わる。"""
     store = _make_store(tmp_path)
     run_id = store.start_run(commands=["mypy"])
     assert store.read_meta(run_id)[pyfltr.state.archive.SLOT_WAITS_META_KEY] == []
@@ -659,7 +577,6 @@ def test_record_slot_wait_updates_interval_and_keeps_unfinished(tmp_path: pathli
         run_id,
         {"kind": "reacquire", "sequence": 1, "started_at": "2026-11-05T00:00:03+00:00", "finished_at": None, "elapsed": None},
     )
-    # 終了の記録が無いまま強制終了したrunを想定し、完了処理を経ずに読む。
     waits = store.read_meta(run_id)[pyfltr.state.archive.SLOT_WAITS_META_KEY]
     assert [(wait["kind"], wait["sequence"], wait["elapsed"]) for wait in waits] == [
         ("initial", 0, 2.0),
@@ -671,7 +588,6 @@ def test_record_slot_wait_updates_interval_and_keeps_unfinished(tmp_path: pathli
 
 
 def test_write_tool_result_stores_body_interval_only_when_executed(tmp_path: pathlib.Path) -> None:
-    """本体区間の時刻は実行した結果だけ`tool.json`へ保存する。"""
     store = _make_store(tmp_path)
     run_id = store.start_run(commands=["mypy", "ruff-check"])
     executed = _make_result("mypy", returncode=0)
@@ -686,7 +602,6 @@ def test_write_tool_result_stores_body_interval_only_when_executed(tmp_path: pat
 
 
 def test_write_tool_result_stores_launch_boundary_only_when_recorded(tmp_path: pathlib.Path) -> None:
-    """テスターの開始境界は記録した結果だけ`tool.json`へ保存する。"""
     store = _make_store(tmp_path)
     run_id = store.start_run(commands=["pytest", "mypy"])
     tester = _make_result("pytest", returncode=0)

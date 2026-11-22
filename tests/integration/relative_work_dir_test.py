@@ -1,5 +1,3 @@
-"""相対work-dirを使うCLI境界と対象解決の結合を検証する。"""
-
 import json
 import pathlib
 
@@ -13,7 +11,6 @@ import pyfltr.command.targets
 def test_relative_work_dir_preserves_changed_target(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], custom_command: bool
 ) -> None:
-    """custom引数の再解析を行っても、起動cwd相対の変更対象を検査する。"""
     project = tmp_path / "project"
     project.mkdir()
     config = "[tool.pyfltr]\nruff-check = true\n"

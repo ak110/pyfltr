@@ -10,7 +10,6 @@ import pyfltr.config.config
 
 
 def _make_pyproject(path: pathlib.Path, name: str = "dummy") -> None:
-    """テスト用の pyproject.toml を作成する。"""
     path.mkdir(parents=True, exist_ok=True)
     (path / "pyproject.toml").write_text(f'[project]\nname = "{name}"\n', encoding="utf-8")
 
@@ -18,13 +17,9 @@ def _make_pyproject(path: pathlib.Path, name: str = "dummy") -> None:
 @pytest.mark.parametrize(
     "layout,expected_count,expected_relatives",
     [
-        # 単一プロジェクト
         ({"root": True}, 1, ["."]),
-        # ルート + 2サブプロジェクト
         ({"root": True, "subs": ["a", "b"]}, 3, [".", "a", "b"]),
-        # ネスト構成（親 + 子）
         ({"root": True, "subs": ["a", "a/inner"]}, 3, [".", "a", "a/inner"]),
-        # 検出0件（ルートに pyproject.toml なし）
         ({"root": False}, 0, []),
     ],
 )
@@ -34,14 +29,12 @@ def test_discover_subprojects_layouts(
     expected_count: int,
     expected_relatives: list[str],
 ) -> None:
-    """各レイアウトでサブプロジェクト一覧が期待通り検出されることを確認する。"""
     if layout.get("root"):
         _make_pyproject(tmp_path)
     subs_paths: list[str] = list(layout.get("subs", []))
     for sub_rel in subs_paths:
         _make_pyproject(tmp_path / sub_rel)
     config = pyfltr.config.config.create_default_config()
-    # gitignore 判定はテスト環境で git not-a-repo になるため空集合フックを渡す。
     subs = pyfltr.command.subprojects.discover_subprojects(
         tmp_path,
         config,
@@ -52,7 +45,6 @@ def test_discover_subprojects_layouts(
 
 
 def test_discover_subprojects_excludes_blacklisted_dirs(tmp_path: pathlib.Path) -> None:
-    """`.venv`・`node_modules` 配下の pyproject.toml は検出されない。"""
     _make_pyproject(tmp_path)
     _make_pyproject(tmp_path / ".venv" / "lib_pkg")
     _make_pyproject(tmp_path / "node_modules" / "pkg")
@@ -62,7 +54,6 @@ def test_discover_subprojects_excludes_blacklisted_dirs(tmp_path: pathlib.Path) 
 
 
 def test_discover_subprojects_extra_excludes(tmp_path: pathlib.Path) -> None:
-    """`subproject-exclude` で指定したディレクトリ名は走査から除外する。"""
     _make_pyproject(tmp_path)
     _make_pyproject(tmp_path / "ignored_pkg")
     config = pyfltr.config.config.create_default_config()
@@ -72,11 +63,6 @@ def test_discover_subprojects_extra_excludes(tmp_path: pathlib.Path) -> None:
 
 
 def test_discover_subprojects_skips_file_expansion_excludes(tmp_path: pathlib.Path) -> None:
-    """ファイル展開の除外（`exclude`・`extend-exclude`）に一致するディレクトリ配下のマーカーは検出しない。
-
-    `venv`・`.tox`は`exclude`の既定値にあり既定の除外名（`.venv`等）には無い名前である。
-    マーカーの無い起点で配下の同梱`pyproject.toml`を数えると、モノレポモードを誤って適用する。
-    """
     _make_pyproject(tmp_path / "venv" / "lib" / "python3.12" / "site-packages" / "pkg" / "example")
     _make_pyproject(tmp_path / "venv" / "lib" / "python3.12" / "site-packages" / "pkg" / "example2")
     _make_pyproject(tmp_path / ".tox" / "py312" / "lib" / "python3.12" / "site-packages" / "pkg" / "example")
@@ -91,7 +77,6 @@ def test_discover_subprojects_skips_file_expansion_excludes(tmp_path: pathlib.Pa
 
 
 def test_classify_files_by_subproject_deep_first(tmp_path: pathlib.Path) -> None:
-    """最深一致でファイルをサブプロジェクトに割り当てる（親と子の境界）。"""
     _make_pyproject(tmp_path)
     _make_pyproject(tmp_path / "a")
     _make_pyproject(tmp_path / "a" / "inner")
@@ -111,7 +96,6 @@ def test_classify_files_by_subproject_deep_first(tmp_path: pathlib.Path) -> None
     result, external = pyfltr.command.subprojects.classify_files_by_subproject(
         [parent_file, child_file, root_file], subs, tmp_path
     )
-    # 最深一致でルート (./root.py)、a/foo.py は a、a/inner/foo.py は a/inner へ。
     root_cwd = next(s.cwd for s in subs if s.relative == ".")
     a_cwd = next(s.cwd for s in subs if s.relative == "a")
     inner_cwd = next(s.cwd for s in subs if s.relative == "a/inner")
@@ -122,12 +106,6 @@ def test_classify_files_by_subproject_deep_first(tmp_path: pathlib.Path) -> None
 
 
 def test_classify_files_by_subproject_unassigned_files_go_to_start_cwd(tmp_path: pathlib.Path) -> None:
-    """所属の無い起点cwd内のファイルは起点cwdの区分へ入り、外部パスは起点cwd配下にない絶対パスだけになる。
-
-    起点cwdがマーカーを持たない場合の起点直下のファイルと、`subproject-exclude`で候補から外した
-    マーカー付きディレクトリ配下のファイルは、どのサブプロジェクトにも属さない。
-    これらを外部パスへ分類すると、除外対象ツールが起点cwd外の警告を出力して検査から外す。
-    """
     _make_pyproject(tmp_path / "a")
     _make_pyproject(tmp_path / "b")
     _make_pyproject(tmp_path / "excluded_pkg")
@@ -154,14 +132,12 @@ def test_classify_files_by_subproject_unassigned_files_go_to_start_cwd(tmp_path:
 
 
 def test_find_uv_lock_for_cwd_direct(tmp_path: pathlib.Path) -> None:
-    """cwd 直下に `uv.lock` があれば返す。"""
     (tmp_path / "uv.lock").write_text("", encoding="utf-8")
     result = pyfltr.command.subprojects.find_uv_lock_for_cwd(tmp_path)
     assert result == tmp_path / "uv.lock"
 
 
 def test_find_uv_lock_for_cwd_workspace_parent_search(tmp_path: pathlib.Path) -> None:
-    """workspace member の cwd で `uv.lock` を親方向探索する。"""
     workspace_root = tmp_path / "workspace"
     member = workspace_root / "crates" / "pkg"
     member.mkdir(parents=True)
@@ -171,7 +147,6 @@ def test_find_uv_lock_for_cwd_workspace_parent_search(tmp_path: pathlib.Path) ->
 
 
 def test_find_uv_lock_for_cwd_not_found(tmp_path: pathlib.Path) -> None:
-    """`uv.lock` が見つからなければ `None` を返す。"""
     workspace_root = tmp_path / "workspace"
     member = workspace_root / "crates" / "pkg"
     member.mkdir(parents=True)
@@ -180,18 +155,15 @@ def test_find_uv_lock_for_cwd_not_found(tmp_path: pathlib.Path) -> None:
 
 
 def test_find_uv_lock_for_cwd_does_not_cross_workspace_root(tmp_path: pathlib.Path) -> None:
-    """workspace root を越えて祖先方向へ探索しない。"""
     workspace_root = tmp_path / "workspace"
     member = workspace_root / "pkg"
     member.mkdir(parents=True)
-    # workspace root の外側に uv.lock を置いても拾わない。
     (tmp_path / "uv.lock").write_text("", encoding="utf-8")
     result = pyfltr.command.subprojects.find_uv_lock_for_cwd(member, workspace_root=workspace_root)
     assert result is None
 
 
 def test_uv_workspace_members_glob_expansion(tmp_path: pathlib.Path) -> None:
-    """`[tool.uv.workspace] members` glob で member を検出する。"""
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "root"\n[tool.uv.workspace]\nmembers = ["crates/*"]\n',
         encoding="utf-8",
@@ -206,14 +178,12 @@ def test_uv_workspace_members_glob_expansion(tmp_path: pathlib.Path) -> None:
 
 
 def test_is_subproject_dir(tmp_path: pathlib.Path) -> None:
-    """`pyproject.toml` の有無で判定する。"""
     assert not pyfltr.command.subprojects.is_subproject_dir(tmp_path)
     _make_pyproject(tmp_path)
     assert pyfltr.command.subprojects.is_subproject_dir(tmp_path)
 
 
 def test_is_subproject_dir_cargo_toml_only(tmp_path: pathlib.Path) -> None:
-    """`Cargo.toml`単独ディレクトリもサブプロジェクトとして判定する。"""
     assert not pyfltr.command.subprojects.is_subproject_dir(tmp_path)
     (tmp_path / "Cargo.toml").write_text('[package]\nname = "crate"\nversion = "0.1.0"\n', encoding="utf-8")
     assert pyfltr.command.subprojects.is_subproject_dir(tmp_path)
@@ -221,20 +191,17 @@ def test_is_subproject_dir_cargo_toml_only(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.parametrize("marker_name", ["MyApp.csproj", "MySolution.sln"])
 def test_is_subproject_dir_dotnet_marker_only(tmp_path: pathlib.Path, marker_name: str) -> None:
-    """`.NET`のプロジェクト/ソリューションファイル単独ディレクトリもサブプロジェクトとして判定する。"""
     assert not pyfltr.command.subprojects.is_subproject_dir(tmp_path)
     (tmp_path / marker_name).write_text("", encoding="utf-8")
     assert pyfltr.command.subprojects.is_subproject_dir(tmp_path)
 
 
 def test_is_subproject_dir_package_json_only_not_detected(tmp_path: pathlib.Path) -> None:
-    """`package.json`単独では誤検出回避のためサブプロジェクトとして判定しない。"""
     (tmp_path / "package.json").write_text("{}", encoding="utf-8")
     assert not pyfltr.command.subprojects.is_subproject_dir(tmp_path)
 
 
 def test_discover_subprojects_hybrid_cargo_toml(tmp_path: pathlib.Path) -> None:
-    """Pythonルート＋`Cargo.toml`単独ディレクトリのハイブリッド構成を検出する。"""
     _make_pyproject(tmp_path)
     (tmp_path / "rust" / "crate_a").mkdir(parents=True)
     (tmp_path / "rust" / "crate_a" / "Cargo.toml").write_text(
@@ -246,7 +213,6 @@ def test_discover_subprojects_hybrid_cargo_toml(tmp_path: pathlib.Path) -> None:
 
 
 def test_discover_subprojects_hybrid_dotnet_csproj(tmp_path: pathlib.Path) -> None:
-    """Pythonルート＋`.csproj`単独ディレクトリのハイブリッド構成を検出する。"""
     _make_pyproject(tmp_path)
     (tmp_path / "dotnet" / "app_a").mkdir(parents=True)
     (tmp_path / "dotnet" / "app_a" / "AppA.csproj").write_text("", encoding="utf-8")
@@ -256,14 +222,12 @@ def test_discover_subprojects_hybrid_dotnet_csproj(tmp_path: pathlib.Path) -> No
 
 
 def test_discover_subprojects_cargo_workspace_excludes_registered_members(tmp_path: pathlib.Path) -> None:
-    """Cargo workspace rootの`members`glob展開結果に含まれるcrateのみ除外される。"""
     _make_pyproject(tmp_path)
     ws = tmp_path / "rust"
     ws.mkdir()
     (ws / "Cargo.toml").write_text('[workspace]\nmembers = ["crate_a"]\nexclude = []\n', encoding="utf-8")
     (ws / "crate_a").mkdir()
     (ws / "crate_a" / "Cargo.toml").write_text('[package]\nname = "crate_a"\nversion = "0.1.0"\n', encoding="utf-8")
-    # 未登録crateは除外されず独立サブプロジェクトとして残る
     (ws / "orphan").mkdir()
     (ws / "orphan" / "Cargo.toml").write_text('[package]\nname = "orphan"\nversion = "0.1.0"\n', encoding="utf-8")
     config = pyfltr.config.config.create_default_config()
@@ -272,7 +236,6 @@ def test_discover_subprojects_cargo_workspace_excludes_registered_members(tmp_pa
 
 
 def test_discover_subprojects_dotnet_solution_excludes_registered_projects(tmp_path: pathlib.Path) -> None:
-    """`.sln`内で登録されているproject所在ディレクトリのみ除外される。"""
     _make_pyproject(tmp_path)
     sln_dir = tmp_path / "dotnet"
     sln_dir.mkdir()
@@ -283,7 +246,6 @@ def test_discover_subprojects_dotnet_solution_excludes_registered_projects(tmp_p
     )
     (sln_dir / "app_a").mkdir()
     (sln_dir / "app_a" / "AppA.csproj").write_text("", encoding="utf-8")
-    # 未登録csprojは除外されず独立サブプロジェクトとして残る
     (sln_dir / "orphan").mkdir()
     (sln_dir / "orphan" / "OrphanApp.csproj").write_text("", encoding="utf-8")
     config = pyfltr.config.config.create_default_config()

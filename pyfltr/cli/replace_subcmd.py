@@ -1,9 +1,3 @@
-"""`replace`サブコマンドの登録と実行本体。
-
-`pyfltr/grep_/`配下のコアロジック（パターン構築・置換適用・履歴管理）を呼び出す薄いCLI層。
-履歴照会（`--list-history` / `--show-history=<id>`）と取り消し（`--undo`）を含む。
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -28,12 +22,10 @@ import pyfltr.warnings_
 
 
 def register_subparsers(subparsers: typing.Any) -> None:
-    """`replace`サブパーサーを登録する。"""
     parser = subparsers.add_parser(
         "replace",
         help="grepと同じ引数体系で正規表現置換を実行する（履歴保存・undo対応）。",
     )
-    # 位置引数: pattern + replacement + paths
     parser.add_argument(
         "pattern",
         nargs="?",
@@ -53,7 +45,6 @@ def register_subparsers(subparsers: typing.Any) -> None:
         help="対象のファイルまたはディレクトリ（既定: カレントディレクトリ）。",
     )
 
-    # grepと共通のパターン関連オプション
     parser.add_argument("-F", "--fixed-strings", action="store_true", help="パターンを固定文字列として扱う。")
     parser.add_argument("-i", "--ignore-case", action="store_true", help="大文字小文字を区別しない。")
     parser.add_argument(
@@ -65,8 +56,6 @@ def register_subparsers(subparsers: typing.Any) -> None:
     parser.add_argument("-w", "--word-regexp", action="store_true", help="単語境界で囲まれたマッチのみ採用する。")
     parser.add_argument("-x", "--line-regexp", action="store_true", help="行全体に一致したマッチのみ採用する。")
     parser.add_argument("-U", "--multiline", action="store_true", help="マルチラインマッチを有効化する。")
-    # ブロック内限定置換（sedの範囲アドレス相当）。`--within`でアンカーを指定し、
-    # アンカー行＋前後コンテキスト（`-A`/`-B`/`-C`）で定まる行範囲内のみ置換する。
     parser.add_argument(
         "--within",
         default=None,
@@ -103,7 +92,6 @@ def register_subparsers(subparsers: typing.Any) -> None:
         metavar="BYTES",
         help="走査対象ファイルサイズの上限（バイト単位）。",
     )
-    # replace固有
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -150,15 +138,11 @@ def register_subparsers(subparsers: typing.Any) -> None:
         help="指定replace_idの詳細（meta + ファイル一覧）を表示する。",
     )
 
-    # 共通オプション（grep/replaceで共有。詳細は`grep_replace_common`のdocstringを参照）
     pyfltr.cli.grep_replace_common.add_common_output_args(parser)
 
 
 def execute_replace(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
-    """`replace`サブコマンドの処理本体。"""
-    # warnings_はモジュールグローバルに蓄積するため、実行開始時に初期化する
     pyfltr.warnings_.clear()
-    # 出力形式の解決とtext logger / structured loggerの出力先設定
     resolution = pyfltr.cli.grep_replace_common.setup_output(parser, args)
     output_format = resolution.format
     warning_scope = pyfltr.warnings_.defer_stderr() if output_format == "jsonl" else contextlib.nullcontext()
@@ -172,10 +156,8 @@ def _execute_replace(
     *,
     resolution: pyfltr.cli.output_format.OutputFormatResolution,
 ) -> int:
-    """警告配送スコープ内でreplaceを実行する。"""
     output_format = resolution.format
 
-    # 履歴照会・undo モードを先に捌く（位置引数の意味が変わるため）
     if args.list_history:
         return _execute_list_history(output_format, args.output_file)
     if args.show_history is not None:
@@ -183,15 +165,11 @@ def _execute_replace(
     if args.undo:
         return _execute_undo(parser, args, output_format)
 
-    # 通常モード: pattern と replacement が必須
     if args.pattern is None or args.replacement is None:
         parser.error("`pattern`と`replacement`の両方を指定してください。")
 
-    # `--within`なしの`-A`/`-B`/`-C`はgrepからの引数転用時に意味差で誤動作させるため拒否する。
-    # grepでは表示コンテキスト幅、replaceでは`--within`領域幅と意味が異なる。
     if args.within is None and (args.after_context or args.before_context or args.context is not None):
         parser.error("`-A`/`-B`/`-C` は `--within` と併用してください。")
-    # `--within`は行範囲で領域を定めるため、行境界を跨ぐマルチライン検索とは併用不可。
     if args.within is not None and args.multiline:
         parser.error("`--within` と `-U/--multiline` は併用できません。どちらか一方を外してください。")
 
@@ -257,7 +235,7 @@ def _execute_replace(
             if args.show_changes:
                 for record in result.records:
                     pyfltr.grep_.text_render.render_change_diff(record)
-        else:  # json
+        else:
             entry: dict[str, typing.Any] = {
                 "file": pyfltr.paths.normalize_separators(file),
                 "count": result.count,
@@ -278,16 +256,12 @@ def _execute_replace(
             json_records.append(entry)
 
     guidance = _build_replace_guidance(replace_id=replace_id, files_changed=files_changed, dry_run=dry_run)
-    # 失敗判定は「ファイル読み込み失敗が1件以上発生したか」で行う。
     exit_code = 1 if read_failures > 0 else 0
 
-    # 直接指定が除外・不在で対象外になった一覧をsummaryへ載せる。
     fully_excluded = pyfltr.warnings_.filtered_direct_files(reason="excluded")
     missing_targets = pyfltr.warnings_.filtered_direct_files(reason="missing")
 
     if output_format == "jsonl":
-        # 走査・読み込み中に蓄積された警告をsummary直前に出力し、
-        # pipelineのwarning出力位置と挙動を揃える
         warning_entries = pyfltr.warnings_.collected_warnings()
         for warning_entry in warning_entries:
             pyfltr.grep_.jsonl_records.emit_warning(warning_entry)
@@ -346,10 +320,6 @@ def _build_replace_guidance(
     files_changed: int,
     dry_run: bool,
 ) -> list[str]:
-    """replace完了時のガイダンス文（英語）を組み立てる。
-
-    実書き込み成功時のみundo案内を表示する。dry-run時は実書き込みコマンドへの誘導を案内する。
-    """
     if files_changed == 0:
         return []
     if dry_run:
@@ -363,7 +333,6 @@ def _build_replace_guidance(
 
 
 def _execute_list_history(output_format: str, output_file: pathlib.Path | None) -> int:
-    """`--list-history` 時の表示。"""
     store = pyfltr.grep_.history.ReplaceHistoryStore()
     entries = store.list_replaces()
     if output_format == "jsonl":
@@ -373,7 +342,6 @@ def _execute_list_history(output_format: str, output_file: pathlib.Path | None) 
     if output_format == "json":
         pyfltr.cli.grep_replace_common.print_json({"history": entries}, output_file)
         return 0
-    # text
     if not entries:
         with pyfltr.output.logging_.text_output_lock:
             pyfltr.output.logging_.text_logger.info("(no replace history)")
@@ -387,7 +355,6 @@ def _execute_list_history(output_format: str, output_file: pathlib.Path | None) 
 
 
 def _execute_show_history(replace_id: str, output_format: str, output_file: pathlib.Path | None) -> int:
-    """`--show-history=ID` 時の表示。"""
     store = pyfltr.grep_.history.ReplaceHistoryStore()
     try:
         meta = store.load_replace(replace_id)
@@ -417,7 +384,6 @@ def _execute_show_history(replace_id: str, output_format: str, output_file: path
 
 
 def _execute_undo(parser: argparse.ArgumentParser, args: argparse.Namespace, output_format: str) -> int:
-    """`--undo` 時の処理。"""
     if args.pattern is None:
         parser.error("`--undo` 指定時は復元対象の replace_id を位置引数として渡してください。")
     replace_id = args.pattern
@@ -435,8 +401,6 @@ def _execute_undo(parser: argparse.ArgumentParser, args: argparse.Namespace, out
         )
         return 1
     except (UnicodeDecodeError, OSError) as exc:
-        # 履歴メタJSONや保存済み変更前ファイルのデコード失敗（保存後にディレクトリ構造を
-        # 直接破壊された場合等）と、履歴ディレクトリへのアクセス失敗（権限エラー・ストレージ障害等）を捕捉する
         message = pyfltr.grep_.history.format_history_unreadable(replace_id, store.history_root / replace_id, exc)
         sys.stderr.write(f"エラー: {message}\n")
         return 1

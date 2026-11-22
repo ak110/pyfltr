@@ -1,16 +1,3 @@
-"""サンプルをpyfltr経由で実行し、実行アーカイブから生出力・診断・コマンドラインを採取する。
-
-採取は`pyfltr run`を`capture_run.py`経由でサンプルディレクトリで起動して行い、対応ツールを直接起動しない。
-JSON Lines全体を保存してheaderの`run_id`を取得し、そのIDを明示して`ArchiveStore`の公開読取メソッドで
-生出力・診断・ツールメタ情報を読む（`latest`による解決と`tool.json`の直接読取はしない）。
-実行時に解析へ渡った入力は`capture_run.py`が記録し、比較の入力に使う。
-vitestのように実行アーカイブの生出力と解析の入力が異なるツールでも、実行時と同じ入力で比べるためである。
-
-採取の全体で検証の実行枠（`pyfltr.command.execution_slot.hold`）を1回取得し、全サンプルの実行が終わるまで保持する。
-サンプルごとに起動するpyfltrは保持者の子孫として所有を継承するため、サンプルごとに待機列へ並ばない。
-時間の上限は実行枠の取得後から数える。
-"""
-
 import collections.abc
 import contextlib
 import dataclasses
@@ -49,8 +36,6 @@ _PARSE_INPUTS_FILENAME = "parse_inputs.json"
 
 @dataclasses.dataclass
 class Collector:
-    """採取全体の時間上限と中断要求を共有する。"""
-
     output_dir: pathlib.Path
     timeout: float
     total_timeout: float
@@ -61,11 +46,9 @@ class Collector:
     """中断・全体の時間上限・停止失敗のいずれかが起きたか。"""
 
     def remaining(self) -> float:
-        """全体の時間上限までの残り秒数を返す。"""
         return self.total_timeout - (time.monotonic() - self.started)
 
     def step_timeout(self) -> float | None:
-        """次の実行へ与える時間上限。全体の上限に達していればNone。"""
         remaining = self.remaining()
         if remaining <= 0:
             return None
@@ -73,10 +56,6 @@ class Collector:
 
     @contextlib.contextmanager
     def execution_slot(self) -> collections.abc.Generator[None, None, None]:
-        """採取の全体で検証の実行枠を保持する区間を開き、時間の上限の起点を取得後へ移す。
-
-        待機中に中断要求を受けた場合は取得を打ち切り、区間の内側で採取するサンプルを全て中断として扱わせる。
-        """
         try:
             with pyfltr.command.execution_slot.hold(
                 label="parser_review", should_abort=self.stop_event.is_set, on_wait=_report_slot_wait
@@ -89,7 +68,6 @@ class Collector:
 
 
 def _report_slot_wait(owner: pyfltr.command.execution_slot.SlotOwner | None) -> None:
-    # 本体の待機表示と同じ表記を使い、任意の長さを持つlabelの全文を表示へ連結しない。
     holder = pyfltr.command.stage_runner.describe_slot_owner(owner)
     records = pyfltr.command.stage_runner.describe_slot_owner_records([owner] if owner is not None else [])
     print(
@@ -102,7 +80,6 @@ def _report_slot_wait(owner: pyfltr.command.execution_slot.SlotOwner | None) -> 
 
 def _pyfltr_env(sample: Sample) -> dict[str, str]:
     env = dict(os.environ)
-    # 採取元のエージェント環境変数による静音化などを避けず、`--output-format=jsonl`で形式を固定する。
     env.update(sample.env)
     return env
 
@@ -217,7 +194,6 @@ def _run_step(
 
 
 def _execution_failure(collector: Collector, result: process_tree.TrackedResult | None) -> str | None:
-    """追跡実行が採取を成立させなかった理由を返す。中断・時間上限・停止失敗は`incomplete`へ反映する。"""
     if result is None:
         collector.incomplete = True
         return "全体の時間上限に達したため実行しなかった"
@@ -226,7 +202,6 @@ def _execution_failure(collector: Collector, result: process_tree.TrackedResult 
         return f"停止後も終端を確認できないプロセスが残った: pids={result.survivors}"
     if result.outcome == "timeout":
         if collector.remaining() <= 0:
-            # 1件の上限より先に採取全体の上限が尽きた場合は、後続の有無によらず採取全体を不完全とする。
             collector.incomplete = True
             return f"全体の時間上限に達して停止した（{result.elapsed}秒）"
         return f"時間上限（{result.elapsed}秒）に達して停止した"
@@ -239,7 +214,6 @@ def _execution_failure(collector: Collector, result: process_tree.TrackedResult 
 
 
 def collect_sample(collector: Collector, sample: Sample) -> dict[str, typing.Any]:
-    """1つのサンプルを採取し、採取記録を返す。成果物は`<output_dir>/<sample.id>/`へ書く。"""
     work_dir = collector.output_dir / sample.id
     sample_dir = work_dir / "sample"
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -321,8 +295,6 @@ def collect_sample(collector: Collector, sample: Sample) -> dict[str, typing.Any
         )
     run_id = str(header["run_id"])
     record["run_id"] = run_id
-    # エージェント環境の静音出力では成功したコマンドのcommandレコードが出ないため、
-    # 状態は実行アーカイブのツールメタ情報を優先し、記録が無い場合だけcommandレコードを使う。
     command = _final_command_record(records, sample.tool)
     try:
         output = collector.archive.read_tool_output(run_id, sample.tool)
@@ -384,17 +356,11 @@ def collect_sample(collector: Collector, sample: Sample) -> dict[str, typing.Any
         and record["diagnostic_count"] == 0
         and pyfltr.command.core_.is_failed_status(status)
     ):
-        # 外部条件の不足（認証・remoteの欠落など）でツールが失敗した場合も診断0件になるため、生出力の確認を促す。
         record["attention"] = "ツールは失敗したが診断が0件。外部条件の不足か解析の欠落かを生出力で確認する"
     return record
 
 
 def _single_parse_input(path: pathlib.Path) -> str | None:
-    """実行時に解析へ渡った入力が1件だけなら、その内容を返す。
-
-    入力が無い場合と複数の場合（fix段や2段階実行で複数回解析する場合）は、どの入力が診断になったかを
-    一意に決められないため、実行アーカイブの生出力を比較の入力に使う。
-    """
     if not path.is_file():
         return None
     inputs = json.loads(path.read_text(encoding="utf-8"))
@@ -404,22 +370,11 @@ def _single_parse_input(path: pathlib.Path) -> str | None:
 
 
 def _missing_args(settings: dict[str, typing.Any], tool: str, commandline: list[str] | None) -> list[str]:
-    """サンプルが`<tool>-args`で指定した引数のうち、採取した実際のコマンドラインに無いものを返す。
-
-    pyfltrは構造化出力のために一部の引数を取り除いて置き換えるため（pytestの`--tb`など）、
-    指定が渡っていない採取は、サンプルが意図した形態の出力にならない。
-    """
     actual = set(commandline or [])
     return [str(arg) for arg in settings.get(f"{tool}-args", []) if str(arg) not in actual]
 
 
 def _aborted_before_inspection(tool: str, output: str) -> str | None:
-    """ツールが検査の前に異常終了したと生出力から判定できる場合、その要旨を返す。
-
-    検査前の異常終了は診断0件となり、比較の入力に含めると両版とも0件で一致と判定される。
-    semgrepは解析エンジンの異常終了やルールの読込失敗を、空の`results`と`level`が`error`の`errors`で報告する。
-    glab-ci-lintはGitLabのremoteを持たないリポジトリでは検査せずに終了する。
-    """
     if tool == "glab-ci-lint":
         marker = "you must be in a GitLab project repository"
         return marker if marker in output else None
@@ -436,22 +391,15 @@ def _aborted_before_inspection(tool: str, output: str) -> str | None:
             continue
         errors = [error for error in report.get("errors", []) if isinstance(error, dict) and error.get("level") == "error"]
         if errors:
-            # メッセージは複数行の対処案内を含むため、空白を詰めて先頭の要旨だけを残す。
             return " / ".join(" ".join(str(error.get("message", "")).split())[:200] for error in errors)
     return None
 
 
 def comparison_output(record: dict[str, typing.Any]) -> str:
-    """採取記録の比較に使う出力ファイルのパスを返す。実行時の解析入力を記録できた場合はそれを使う。"""
     return record.get("parse_input") or record["output"]
 
 
 def comparison_input(record: dict[str, typing.Any]) -> dict[str, typing.Any]:
-    """採取記録から比較の入力行を生成する。パス解決条件は実行時のcwdを起点とする。
-
-    `diagnostic_count`は採取時にpyfltrが出した診断の件数で、`compare`が作業ツリーの版の件数と照合する。
-    派生入力は採取時の件数を持たないため`None`とする。
-    """
     return {
         "id": record["id"],
         "tool": record["tool"],
@@ -465,7 +413,6 @@ def comparison_input(record: dict[str, typing.Any]) -> dict[str, typing.Any]:
 
 
 def write_results(output_dir: pathlib.Path, records: list[dict[str, typing.Any]], *, incomplete: bool) -> dict[str, typing.Any]:
-    """採取記録・比較入力・集計をファイルへ保存し、集計を返す。"""
     counts: dict[str, int] = {}
     for record in records:
         counts[record["state"]] = counts.get(record["state"], 0) + 1
@@ -506,7 +453,6 @@ def write_results(output_dir: pathlib.Path, records: list[dict[str, typing.Any]]
 
 
 def collect(collector: Collector, samples: list[Sample]) -> list[dict[str, typing.Any]]:
-    """サンプルを順に採取する。中断・全体の時間上限後のサンプルも未採取として記録する。"""
     collector.output_dir.mkdir(parents=True, exist_ok=True)
     with collector.execution_slot():
         return [collect_sample(collector, sample) for sample in samples]

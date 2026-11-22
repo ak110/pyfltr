@@ -1,5 +1,3 @@
-"""retry_command 生成および失敗ファイルのフィルタリング。"""
-
 import logging
 import os
 import pathlib
@@ -11,8 +9,6 @@ import pyfltr.paths
 
 logger = logging.getLogger(__name__)
 
-# 引数を別トークンで受け取るオプション（=なし形式）の集合。
-# retry_command整形時に位置引数と誤認しないよう明示する。
 _VALUE_OPTIONS: frozenset[str] = frozenset(
     {
         "--commands",
@@ -27,13 +23,6 @@ _VALUE_OPTIONS: frozenset[str] = frozenset(
 
 
 def detect_launcher_prefix() -> list[str]:
-    """retry_command の先頭に置くべき起動プレフィックスを推定する。
-
-    Linuxでは`/proc/self/status`から親プロセスを辿り、先頭が`uv`で
-    第2引数が`run`なら`["uv", "run", "pyfltr"]`、先頭が`uvx`なら
-    `["uvx", "pyfltr"]`を返す。macOS / Windowsなど親プロセスを取得できない
-    環境では`[sys.argv[0]]`のbasenameにフォールバックする。
-    """
     fallback = [os.path.basename(sys.argv[0]) or "pyfltr"]
     try:
         with open("/proc/self/status", encoding="utf-8") as f:
@@ -57,22 +46,11 @@ def detect_launcher_prefix() -> list[str]:
 
 
 def build_retry_args_template(sys_args: list[str]) -> list[str]:
-    """起動時 argv (サブコマンド以降) を retry_command 用テンプレートとして整形する。
-
-    `--commands`の値は後段のper-tool差し替え用に空文字プレースホルダへ置換し、
-    位置引数（ターゲット）は末尾から除去する（後段で対象のツールのファイル一覧で
-    置換される前提）。`--no-fix`や`--output-format`等は保持する。
-    `--only-failed`フラグおよび`--from-run`オプション（値あり・=付き両形式）は
-    再実行時に直前runを暗黙参照しないよう除去する。
-    """
     result: list[str] = []
     i = 0
-    # 実行系サブコマンド（ci / run / fast / run-for-agent）は先頭に必ず位置する想定。
-    # これを保持することでpyfltr ci失敗時にfixステージが暴発しない。
     while i < len(sys_args):
         arg = sys_args[i]
         if arg == "--commands":
-            # 後段で対象のツール1件に差し替えるためプレースホルダを置く。
             result.extend([arg, ""])
             i += 2
             continue
@@ -80,15 +58,12 @@ def build_retry_args_template(sys_args: list[str]) -> list[str]:
             result.append("--commands=")
             i += 1
             continue
-        # --only-failedは再実行時に直前runを暗黙参照するため除去する。
         if arg == "--only-failed":
             i += 1
             continue
-        # --from-run <value>（空白区切り）を除去する。
         if arg == "--from-run":
-            i += 2  # フラグと値を両方スキップ
+            i += 2
             continue
-        # --from-run=<value>（等号区切り）を除去する。
         if arg.startswith("--from-run="):
             i += 1
             continue
@@ -105,31 +80,14 @@ def build_retry_command(
     target_files: list[pathlib.Path],
     target_base_cwd: str,
 ) -> str:
-    """Tool レコードへ埋め込む retry_command 文字列を生成する。
-
-    `args_template`の`--commands`プレースホルダを対象のツールに差し替え、
-    位置引数（ターゲット）を`target_files`で末尾に再配置する。ターゲットは
-    実行起点（`--work-dir`・MCPの`work_dir`適用後）の相対パスで渡るため、
-    `target_base_cwd`（実行起点）基準の絶対パスに変換し、`--work-dir`と起動時のcwdの
-    二重解釈を避ける。
-
-    モノレポでサブプロジェクト分割実行が行われた場合は、`CommandResult.merge` で
-    マージされた起点 cwd 相対の和集合 `target_files` を受け取る前提で動作する。
-    マージ後リストをそのまま絶対パス化して扱う。
-    """
     cwd_path = pathlib.Path(target_base_cwd)
-    # 位置引数（サブコマンドを除く、`-`で始まらないトークンの末尾側）は除去する。
-    # サブコマンドは必ず最初の非オプショントークンのため、それだけ残す。
     filtered: list[str] = []
     seen_subcommand = False
     i = 0
     while i < len(args_template):
         arg = args_template[i]
-        # オプション引数（=付き・=なし両対応）はそのまま保持する。
-        # `--commands`プレースホルダ経由のみ後段で差し替え対象とする。
         if arg.startswith("-"):
             filtered.append(arg)
-            # 引数を伴うオプションか確認（値が付いていない場合は次のトークンも引き取る）。
             if "=" not in arg and i + 1 < len(args_template):
                 next_arg = args_template[i + 1]
                 if not next_arg.startswith("-") and _option_takes_value(arg):
@@ -138,16 +96,13 @@ def build_retry_command(
                     continue
             i += 1
             continue
-        # 最初の非オプショントークンはサブコマンド扱いで保持する。
         if not seen_subcommand:
             filtered.append(arg)
             seen_subcommand = True
             i += 1
             continue
-        # それ以降の位置引数（=ターゲット）は破棄する。後段でtarget_filesで差し替える。
         i += 1
 
-    # --commands プレースホルダを対象のツールで埋める。
     replaced: list[str] = []
     j = 0
     commands_replaced = False
@@ -170,7 +125,6 @@ def build_retry_command(
             continue
         replaced.append(arg)
         j += 1
-    # --commands未指定だった場合は追記する（サブコマンドの直後に挿入）。
     if not commands_replaced:
         insert_at = 0
         for k, tok in enumerate(replaced):
@@ -179,7 +133,6 @@ def build_retry_command(
                 break
         replaced[insert_at:insert_at] = ["--commands", tool]
 
-    # ターゲットを元cwd基準の絶対パスに変換して末尾に追加する。
     target_strs: list[str] = []
     for target in target_files:
         if target.is_absolute():
@@ -198,18 +151,6 @@ def populate_retry_command(
     launcher_prefix: list[str],
     target_base_cwd: str,
 ) -> None:
-    """CommandResult に retry_command を埋める (パートG A案のフィルタリングを適用)。
-
-    `retry_command`は「対象のツールを失敗ファイルのみに限定して再実行する文字列」である。
-    `status`が`succeeded`・`formatted`・`skipped`のいずれかである結果には
-    再実行動機が無いため埋めない。
-    キャッシュ復元結果（`result.cached == True`）も対象外（再実行不要のため）。
-
-    失敗時は`filter_failed_files`で失敗ファイルのみに限定したターゲットを
-    `build_retry_command`へ渡す。フィルタリング結果が空の場合（診断ファイルなし・
-    全体失敗のみのケース）は`retry_command`のターゲット位置引数が空になる
-    （対象のツールの単体再実行文字列として機能する）。
-    """
     if result.cached:
         return
     if not result.needs_rerun:
@@ -225,18 +166,6 @@ def populate_retry_command(
 
 
 def filter_failed_files(result: pyfltr.command.core_.CommandResult, *, start_cwd: pathlib.Path) -> list[pathlib.Path]:
-    """`result.errors`から失敗ファイル集合を抽出し`result.target_files`と交差させる。
-
-    `retry_command`のターゲットを「対象のツールで失敗したファイルのみ」に限定する用途
-    （パートG A案）。`result.target_files`は利用者が渡した起点外の相対パスなどを保持し、
-    `ErrorLocation.file`は`pyfltr.parsing.entry.parse_errors`が実行起点基準へ揃えた表現を持つ。
-    両側を`pyfltr.paths.to_match_key`で実行起点（`start_cwd`）基準のキーへ変換してから比較する。
-    戻り値は`result.target_files`の要素そのもので、並び順も保つ。
-
-    `result.errors`が空、または`ErrorLocation.file`集合と`result.target_files`
-    の交差が空の場合は空リストを返す（pytest等のpass-filenames=Falseで全体失敗
-    のみのケース。呼び出し側で`retry_command`のターゲット位置引数を空にする前提）。
-    """
     if not result.errors:
         return []
     failed_keys = {pyfltr.paths.to_match_key(error.file, start_cwd=start_cwd) for error in result.errors if error.file}
@@ -246,12 +175,6 @@ def filter_failed_files(result: pyfltr.command.core_.CommandResult, *, start_cwd
 
 
 def _option_takes_value(opt: str) -> bool:
-    """オプションが次のトークンを値として取るかを判定する。
-
-    `--foo=bar`形式は判定対象外（呼び出し側で`=`の有無を先に確認する前提）。
-    ビルトイン / カスタムコマンドの`--{cmd}-args`も値を伴うため、末尾が
-    `-args`で終わるものは全てTrueとして扱う。
-    """
     if opt.endswith("-args"):
         return True
     return opt in _VALUE_OPTIONS

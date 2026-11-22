@@ -1,5 +1,3 @@
-"""ディスパッチャー。"""
-
 import dataclasses
 import pathlib
 import random
@@ -56,13 +54,6 @@ def _to_subproject_relative(
     subproject_cwd: pathlib.Path,
     start_cwd: pathlib.Path,
 ) -> str:
-    """起点 cwd 相対パスをサブプロジェクト cwd 相対パスへ変換する。
-
-    `target` が絶対パスの場合はそのまま、相対の場合は起点 cwd を起点として絶対化してから
-    サブプロジェクト cwd 相対へ変換する。サブプロジェクト cwd の外側にあるパス
-    （ファイル所属判定で外側に分類されたケース）は元の表記をそのまま使う。
-    POSIX 区切りに揃える。
-    """
     abs_path = target if target.is_absolute() else (start_cwd / target)
     try:
         rel = abs_path.resolve().relative_to(subproject_cwd.resolve())
@@ -72,11 +63,6 @@ def _to_subproject_relative(
 
 
 def _resolve_config_inject_path(start_cwd: pathlib.Path, candidates: list[str]) -> pathlib.Path | None:
-    """起点cwd直下を`candidates`順に走査し、最初に見つかった設定ファイルの絶対パスを返す。
-
-    候補が見つからない場合は`None`を返す（呼び出し側は注入をスキップする）。
-    返り値はシンボリックリンクを解決した実体パス。
-    """
     for name in candidates:
         candidate = start_cwd / name
         if candidate.is_file():
@@ -85,7 +71,6 @@ def _resolve_config_inject_path(start_cwd: pathlib.Path, candidates: list[str]) 
 
 
 def _is_mask_target(command: str, target: pathlib.Path, headings: list[str], *, fix_stage: bool) -> bool:
-    """フェンス除外用の一時ファイル生成対象か判定する。"""
     return (
         not fix_stage
         and command in {"textlint", "markdownlint"}
@@ -95,7 +80,6 @@ def _is_mask_target(command: str, target: pathlib.Path, headings: list[str], *, 
 
 
 def _source_path(target: pathlib.Path, *, start_cwd: pathlib.Path) -> pathlib.Path:
-    """起点cwd相対または絶対パスから読み込み対象の実パスを返す。"""
     if target.is_absolute():
         return target
     return start_cwd / target
@@ -107,7 +91,6 @@ def _original_file_argument(
     subproject_cwd: pathlib.Path | None,
     start_cwd: pathlib.Path,
 ) -> str:
-    """通常実行時にコマンドラインへ渡す元ファイル引数を返す。"""
     if subproject_cwd is not None:
         return _to_subproject_relative(target, subproject_cwd=subproject_cwd, start_cwd=start_cwd)
     return str(target)
@@ -119,7 +102,6 @@ def _temporary_markdown_path(
     start_cwd: pathlib.Path,
     temporary_dir: pathlib.Path,
 ) -> pathlib.Path:
-    """元パスの相対構造を保った一時Markdownパスを返す。"""
     source = _source_path(target, start_cwd=start_cwd)
     try:
         relative = source.resolve().relative_to(start_cwd.resolve())
@@ -138,7 +120,6 @@ def _masked_markdown_arguments(
     subproject_cwd: pathlib.Path | None,
     temporary_dir_factory: typing.Callable[[], pathlib.Path] | None,
 ) -> tuple[list[str], dict[str, str] | None]:
-    """Markdownフェンス除外を適用したコマンドライン用ファイル引数を返す。"""
     file_args: list[str] = []
     remap: dict[str, str] = {}
     for target in targets:
@@ -163,14 +144,6 @@ def _masked_markdown_arguments(
 
 
 def _user_overrides_config(config_flag: str, *arg_lists: list[str]) -> bool:
-    """利用者がツール固有の設定フラグを明示指定済みか判定する。
-
-    対象は`{command}-args`・`{command}-extend-args`・CLI`--{command}-args`の合算。
-    含まれている場合、`config_arg_template`による自動注入はスキップして利用者指定を優先する。
-    重複指定で各ツールがエラー終了するのを避けるため。
-    `config_flag`は`CommandInfo.config_arg_template[0]`由来（bandit→`--configfile`、markdownlint／textlint→`--config`等）。
-    分離形（`<flag> <value>`）と等号形（`<flag>=<value>`）の両形式を判定する。
-    """
     equals_prefix = f"{config_flag}="
     for args in arg_lists:
         for arg in args:
@@ -192,16 +165,13 @@ def _collect_targets(
     command_info = config.commands[command]
     globs = command_info.target_globs()
     if pytest_fast_targets_active and command == "pytest":
-        # fast選択時は`pytest-fast-targets`をpytestの対象globとして使う（空なら従来の対象glob）。
         globs = pyfltr.config.selection.pytest_fast_target_globs(config.values) or globs
     targets: list[pathlib.Path] = pyfltr.command.targets.filter_by_globs(source_files, globs)
     if pytest_always_targets_active and command == "pytest":
-        # `pytest-always-targets`に一致するファイルは通常の対象globに依らず加える（重複は1件にする）。
         always_globs = pyfltr.config.selection.pytest_always_target_globs(config.values)
         selected = set(targets)
         targets.extend(f for f in pyfltr.command.targets.filter_by_globs(source_files, always_globs) if f not in selected)
 
-    # ツール別excludeの適用（--no-excludeが指定された場合はスキップ）
     if not args.no_exclude:
         tool_excludes: list[str] = pyfltr.config.model.command_setting(config.values, command, "exclude", [])
         if tool_excludes:
@@ -216,8 +186,6 @@ def _collect_targets(
                 )
             ]
 
-    # `allows_external_paths=False`のツールは外部パスを除外して警告発行する。
-    # `--allow-external-paths`指定時は分類にかかわらず除外と警告を行わない。
     if not command_info.allows_external_paths and not args.allow_external_paths:
         start_for_filter = start_cwd if start_cwd is not None else pathlib.Path.cwd()
         kept: list[pathlib.Path] = []
@@ -248,12 +216,6 @@ def _prepare_execution_params(
     pytest_fast_targets_active: bool = False,
     pytest_always_targets_active: bool = False,
 ) -> "ExecutionParams | CommandResult":
-    """実行前の共通前処理を行い `ExecutionParams` を返す。
-
-    ツールパス解決に失敗した場合は `CommandResult` を直接返す。
-    ターゲット0件の場合は `ExecutionParams` を返し（targetsが空リスト）、
-    呼び出し側でスキップ処理を行う。
-    """
     command_info = config.commands[command]
     source_files = only_failed_targets.resolve_files(all_files) if only_failed_targets is not None else all_files
     targets = _collect_targets(
@@ -266,22 +228,17 @@ def _prepare_execution_params(
         pytest_always_targets_active=pytest_always_targets_active,
     )
 
-    # ファイルの順番をシャッフルまたはソート（fixステージは再現性重視でシャッフルを無効化）
     if args.shuffle and not fix_stage:
         random.shuffle(targets)
     else:
         targets = natsort.natsorted(targets, key=str)
 
-    # fixステージでは対象のコマンドのfix-argsを引用してfix経路に分岐する。
-    # fix-args未定義のformatterは通常経路を通る（通常実行でもファイルを書き換えるため挙動は同じ）。
     fix_mode = fix_stage
     fix_args: list[str] | None = None
     if fix_mode:
         fix_args = pyfltr.config.model.command_setting(config.values, command, "fix-args", None)
 
-    # 対象ファイル0件ならこの後の実行自体が行われないため、ツールパス解決を省略する。
     # mise等のbin-runner解決はネットワークやプラットフォーム制約で失敗し得るため、
-    # 解決不要な状況で副作用的な失敗を発生させないよう早期返却する。
     if not targets:
         return ExecutionParams(
             command_info=command_info,
@@ -298,12 +255,7 @@ def _prepare_execution_params(
             runner_fallback=None,
         )
 
-    # `{command}-runner` および `{command}-path` 設定からツール起動コマンドラインを解決する。
-    # bin-runner経路（mise / direct / グローバル `bin-runner` 委譲）とjs-runner経路、
-    # 直接実行を統一的に扱う。mise経路では事前可用性チェック（mise exec --version）も実行する。
     try:
-        # 実コマンド実行経路はmise副作用を許可し、mise設定判定の `mise ls --current --json` でも
-        # `mise-auto-trust` に従ったtrust→再実行を可能にする。
         resolved = pyfltr.command.runner.build_commandline(
             command,
             config,
@@ -317,30 +269,20 @@ def _prepare_execution_params(
                 resolved.markdownlint_environment,
                 timeout=pyfltr.config.model.resolve_command_timeout(config.values, command),
             )
-        # 監査を実施しない旧版が終了コード0を返すため、機能が成立する最低版を起動前に確認する。
         pyfltr.command.tool_version.ensure_package_manager_version(resolved, config, command, cwd=cwd)
     except ValueError as e:
-        # `{command}-runner`の指定がツールの系統と合わない場合は、`RunnerMismatchError`が
-        # 代替の設定値を`hint`として持つため、警告の対処として併記する。
         hint = e.hint if isinstance(e, pyfltr.command.runner.RunnerMismatchError) else None
         return pyfltr.command.tool_resolution.failed_resolution_result(
             command, command_info, str(e), files=len(targets), hint=hint
         )
     except FileNotFoundError as e:
-        # runner.pyは識別子のみを送出する契約のため、利用者向け文面はここで組み立てる。
-        # Python系・JS系・ネイティブ系のツール分類に応じて探索経路と代替案内を切り替える。
         message = pyfltr.command.tool_resolution.format_tool_resolution_failure(command, str(e), config)
         return pyfltr.command.tool_resolution.failed_resolution_result(command, command_info, message, files=len(targets))
     commandline_prefix = resolved.commandline
 
-    # 起動オプションからの追加引数 （--textlint-argsなど） をshlex分割しておく
     additional_args_str = args.tool_arguments(command)
     additional_args = shlex.split(additional_args_str) if additional_args_str else []
 
-    # 対象ファイル抜きのargvを共通ヘルパーで組み立てる:
-    #   [prefix] + [auto-args] + args + (lint-args or fix-args) + additional_args + structured_output適用
-    # textlintのfix経路では `pyfltr.command.textlint_fix.execute_textlint_fix` 側が改めてargvを組み立てるため
-    # ここでの値は実際には使われない（execute_commandのdispatchでtextlint fixは別経路へ分岐する）。
     commandline = pyfltr.command.invocation.build_invocation_argv(
         command,
         config,
@@ -349,13 +291,6 @@ def _prepare_execution_params(
         fix_stage=fix_args is not None,
     )
 
-    # `config_arg_template`指定ツール（markdownlint・textlint・bandit等）は、起点cwd直下の設定ファイルを
-    # `<flag> <絶対パス>`形式で明示注入する。フラグはツールごとに異なる（markdownlint／textlintは`--config`、
-    # banditは`--configfile`）。内部パスのみの実行でも一律で適用し、外部パス指定時に暗黙のcwd探索（markdownlint-cli2が
-    # 対象ファイルとCWDの共通親から探索する仕様等）が起こらないよう挙動を統一する。
-    # 利用者が`{command}-args`で同等フラグを指定済みのときは重複指定を避けるため注入をスキップする。
-    # 設定ファイルが起点cwd直下に見つからないときも注入をスキップしてツールの既定動作に委ねる。
-    # 挿入位置は`commandline_prefix`直後。
     injected_config_path: pathlib.Path | None = None
     if command_info.config_arg_template and command_info.config_inject_candidates:
         user_args_list: list[str] = list(pyfltr.config.model.command_setting(config.values, command, "args", []))
@@ -373,7 +308,6 @@ def _prepare_execution_params(
     file_path_remap: dict[str, str] | None = None
     cache_commandline = list(commandline)
 
-    # pass-filenames = falseのツールはファイル引数を渡さない（tsc等）
     if pyfltr.config.model.command_setting(config.values, command, "pass-filenames", True):
         start_for_mask = start_cwd if start_cwd is not None else pathlib.Path.cwd()
         file_args, file_path_remap = _masked_markdown_arguments(
@@ -393,9 +327,6 @@ def _prepare_execution_params(
             _original_file_argument(t, subproject_cwd=subproject_cwd, start_cwd=start_for_mask) for t in targets
         )
 
-    # `pyfltr.command.runner.ensure_mise_available` を通過した後の `effective_runner` でmise経路かを判定する。
-    # `pyfltr.command.runner.build_commandline` 直後はmise不在時のdirectフォールバック前の値が入っているため、
-    # ここでは事後値を採用する（direct経路へtoolパス除外を誤適用しないため）。
     via_mise = resolved.effective_runner == "mise" or resolved.executable == "mise"
 
     return ExecutionParams(
@@ -431,11 +362,6 @@ def _prepare_cache_context(
     injected_config_path: pathlib.Path | None,
     subproject_cwd: pathlib.Path | None = None,
 ) -> CacheContext | None:
-    """キャッシュ参照用のキー算出。対象外の場合はNoneを返す。
-
-    `subproject_cwd` を指定するとサブプロジェクト cwd の実体パスをキー要素に含める。
-    同一相対パスがサブプロジェクトをまたいで存在する場合の誤ヒットを防ぐ。
-    """
     if cache_store is None or not command_info.cacheable or fix_args is not None:
         return None
     if not pyfltr.command.cache_policy.is_cacheable(command, config, additional_args):
@@ -460,14 +386,6 @@ def _prepare_cache_context(
 
 
 def _run_plain_command(request: pyfltr.command.core_.ExecutionRequest) -> pyfltr.command.core_.CommandResult:
-    """通常のlinter/formatterを単発実行するplain経路。
-
-    ファイルhashキャッシュの参照・書き込みを担う。cacheable=Trueの非fix実行のみ
-    キャッシュを扱い、textlint fixなど特殊経路はこの関数を通らない。
-    """
-    # ファイルhashキャッシュの参照 （cacheable=Trueの非fix実行のみ）。
-    # キャッシュ対象判定 / キー算出 / 書き込みをbreak/resumeできるよう、結果を
-    # 後段で差し替える設計とする。
     cache_context = _prepare_cache_context(
         request.command,
         request.params.command_info,
@@ -489,16 +407,10 @@ def _run_plain_command(request: pyfltr.command.core_.ExecutionRequest) -> pyfltr
         cached_result = cache_context.lookup()
         if cached_result is not None:
             cached_result.target_files = list(request.params.targets)
-            # 復元値のfiles / elapsedは過去実行時のもの。復元時の実ファイル数は
-            # 現在のターゲットリストに合わせ直す （再実行時の対象件数表示のため）。
             cached_result.files = len(request.params.targets)
             if lint_confirmation_keys:
                 pyfltr.command.textlint_fix.record_lint_confirmations(request, lint_confirmation_keys, cached_result.output)
             return cached_result
-    # verbose時のコマンドライン出力・timeout / retry設定の解決はrun_configured_subprocessへ委ねる。
-    # linter_fix.execute_linter_fixもこの単発実行の骨格（run_configured_subprocess呼び出し +
-    # returncode/output/elapsedの取り出し）を共有するが、本関数はキャッシュ参照・書き込みを
-    # 担う別責務のため統合しない。
 
     proc = (
         pyfltr.command.lychee.run_lychee(
@@ -522,8 +434,6 @@ def _run_plain_command(request: pyfltr.command.core_.ExecutionRequest) -> pyfltr
         pyfltr.command.textlint_fix.record_lint_confirmations(request, lint_confirmation_keys, output)
     elapsed = time.perf_counter() - request.start_time
     errors = request.parse_errors(output, request.params.command_info.error_pattern)
-    # pytestは設定ファイル競合をヘッダー1行で通知するだけで終了コードへ反映しない。
-    # 拾わないと設定が適用されないまま完走した実行を成功として報告してしまう。
     slow_tests: list[pyfltr.command.slow_tests.SlowTest] = []
     if request.command == "pytest":
         conflict_message = pyfltr.parsing.pytest_config.detect_pytest_config_conflict(output)
@@ -552,8 +462,6 @@ def _run_plain_command(request: pyfltr.command.core_.ExecutionRequest) -> pyfltr
         if classification is not None and classification[0]:
             result.severity = "warning"
 
-    # キャッシュ書き込み （成功rc=0のみ）。失敗結果を記録すると再試行で同じ失敗が
-    # 復元されて修正確認できなくなるため、成功時に限定する。
     if cache_context is not None and returncode == 0:
         cache_context.store(result, run_id=request.ctx.cache_run_id)
 
@@ -565,34 +473,6 @@ def execute_command(
     args: pyfltr.run_options.RunOptions,
     ctx: ExecutionContext,
 ) -> CommandResult:
-    """コマンドの実行。
-
-    `fix_stage=True` の場合、対象のコマンドがfix-argsを持っていればfix経路
-    （`--fix` 付きの単発実行）で動作する。fix-args未定義のformatterでは
-    通常経路と挙動が変わらないため、呼び出し側はfixステージで実行する対象を
-    `split_commands_for_execution()` でフィルタリングしたうえで指定する前提。
-
-    `cache_store` が指定され、かつ対象のコマンドが `CommandInfo.cacheable=True` の
-    非fixモード実行なら、ファイルhashキャッシュを参照して一致があれば実行を
-    スキップし、過去の結果を復元して `cached=True` で返す。キャッシュミス時は
-    通常実行のうえ、成功 （rc=0） に限り `cache_run_id` をソースとして
-    書き込む。`cache_run_id` が `None` の場合はキャッシュ書き込みをスキップする
-    （アーカイブ無効時に `cached_from` で参照させる元runが無いため）。
-
-    `only_failed_targets` が指定された場合、`ToolTargets.resolve_files(all_files)`
-    経由で実対象ファイルを取得する（`--only-failed` 経路。実対象の決め方は
-    `ToolTargets.resolve_files()` に従う）。その後の `target_extensions` / `pass_filenames=False` の分岐は
-    通常通り適用される。`None` の場合は既定の `all_files` を使用する。
-
-    モノレポモード（`base.subprojects` が2件以上）で対象のコマンドが `subproject_aware=True`
-    の場合、サブプロジェクト別ループで実行して `CommandResult.merge` で集約する。
-    `subproject_aware=False` または単一プロジェクト時は従来通り起点 cwd で1回実行する。
-
-    実行結果に対してuv経路でのツール未登録パターンを判定し、検出時には
-    利用者向けの登録手順案内を `pyfltr.warnings_.emit_warning` 経由で発行する。
-
-    pytest用実行基盤（`base.pytest_base`）があれば、pytestはその基盤で実行する。
-    """
     if command == "pytest" and ctx.base.pytest_base is not None:
         ctx = dataclasses.replace(ctx, base=ctx.base.pytest_base)
     if pyfltr.command.subproject_loop.should_run_subproject_loop(command, ctx):
@@ -610,7 +490,6 @@ def execute_command(
 
 
 def _make_disabled_skip_result(command: str, ctx: ExecutionContext) -> CommandResult:
-    """設定で無効化してスキップしたか起点でも無効な場合に、起点cwd誤実行を避けて返す skipped 結果。"""
     info = ctx.config.commands.get(command)
     assert info is not None, "サブプロジェクトループは CommandInfo 非Noneの経路でのみ実行される"
     result = CommandResult.from_run(
@@ -642,7 +521,6 @@ def _pytest_impact_scope(args: pyfltr.run_options.RunOptions, ctx: ExecutionCont
     ):
         return None
     if args.targets:
-        # 明示範囲では、差分や除外を適用済みの対象を広げない。
         return ctx.all_files
     start = ctx.base.start_cwd
     root_config = ctx.base.pytest_impact_root_config or ctx.config
@@ -724,12 +602,6 @@ def _dispatch_command(
     args: pyfltr.run_options.RunOptions,
     ctx: ExecutionContext,
 ) -> CommandResult:
-    """コマンドを実行経路へ振り分ける本体実装。
-
-    `execute_command` のwrapperから呼び出され、ターゲット解決・コマンドライン構築・
-    各種2段階実行・plain経路など全ての分岐を担う。
-    """
-    # ctxから各フィールドを展開する。
     config = ctx.config
     all_files = ctx.all_files
 
@@ -748,12 +620,10 @@ def _dispatch_command(
         else []
     )
     if impact_scope is not None:
-        # 明示指定された範囲外のファイルも、従来の静的選択では対象になりうる。
         keys = {pyfltr.paths.to_match_key(t, start_cwd=ctx.base.start_cwd) for t in impact_scope}
         if any(pyfltr.paths.to_match_key(t, start_cwd=ctx.base.start_cwd) not in keys for t in mandatory):
             impact_scope = None
 
-    # 共通前処理: ターゲット解決・コマンドライン構築
     params_or_error = _prepare_execution_params(
         command,
         args,
@@ -771,7 +641,6 @@ def _dispatch_command(
         or (impact_scope is not None and not args.targets and not ctx.base.exclude_always_targets),
     )
     if isinstance(params_or_error, CommandResult):
-        # ツールパス解決失敗
         return params_or_error
     params = params_or_error
     command_info = params.command_info
@@ -779,13 +648,6 @@ def _dispatch_command(
     commandline = params.commandline
     fix_args = params.fix_args
 
-    # 各CommandResultに対象のツールのターゲットファイル一覧とrunner解決情報を埋めるためのヘルパー。
-    # retry_commandで差し替え可能なターゲットを復元するのに使う（特にpass-filenames=False
-    # のツールではcommandlineからも復元できないため、ここで明示的に保持する）。
-    # runner情報（effective_runner / runner_source）は `build_commandline` が成功した経路でのみ
-    # 値が確定するため、targets空（0件）経路ではNoneのまま残す。
-    # severityは `status` プロパティが従来failedとなる結果を `warning` に格下げするか
-    # を決めるフラグで、結果生成時にconfigから解決して固定値で持たせる。
     severity = pyfltr.config.model.resolve_severity(config.values, command)
 
     def _with_targets(result: CommandResult, *, preserve_targets: bool = False) -> CommandResult:
@@ -818,8 +680,6 @@ def _dispatch_command(
 
     if command == "pytest" and config.values.get("pytest-impact-selection") is True:
         env["TESTSCOPE"] = "off"
-
-    # 外部コマンドの解決と実行は、呼び出し単位で確定したcwdへ統一する。
 
     request = pyfltr.command.core_.ExecutionRequest(
         command=command,

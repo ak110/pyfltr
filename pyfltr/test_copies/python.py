@@ -1,5 +1,3 @@
-"""PythonのASTから比較の出自を追跡する。"""
-
 from __future__ import annotations
 
 import ast
@@ -51,8 +49,6 @@ def _name(node: ast.AST) -> str:
 
 
 class PythonAnalysis:
-    """モジュール内の名前と静的に解決できる補助関数を追跡する。"""
-
     def __init__(
         self,
         tree: ast.Module,
@@ -90,7 +86,6 @@ class PythonAnalysis:
                         self.globals[target.id] = "constant"
 
     def imported_helper(self, name: str) -> tuple[PythonAnalysis, str] | None:
-        """import先の関数の解析結果を返す。"""
         if name not in self.import_cache:
             self.import_cache[name] = self._imported_helper(name)
         return self.import_cache[name]
@@ -120,12 +115,10 @@ class PythonAnalysis:
                     if parts[-1] in analysis.helpers:
                         return analysis, parts[-1]
                 except _HELPER_READ_ERRORS:
-                    # 補助の静的な解決に失敗した場合は出自不明のままに保つ。
                     return None
         return None
 
     def value(self, node: ast.AST | None, env: dict[str, str], stack: tuple[str, ...] = ()) -> str:
-        """式の値の出自を分類する。"""
         if node is None:
             return "unknown"
         if isinstance(node, ast.Constant):
@@ -201,7 +194,6 @@ class PythonAnalysis:
                     if isinstance(item, (ast.Assign, ast.AnnAssign)):
                         self.assign(item, local, (*stack, name))
                 result = combine([self.value(item, local, (*stack, name)) for item in returns])
-                # 補助の定数戻り値は計算結果なので、静的定数自体の比較として扱わない。
                 return result if result == "text" else "unknown"
             imported = self.imported_helper(name)
             if imported is not None and name not in stack:
@@ -219,7 +211,6 @@ class PythonAnalysis:
         return "unknown"
 
     def assign(self, node: ast.Assign | ast.AnnAssign, env: dict[str, str], stack: tuple[str, ...] = ()) -> None:
-        """代入によって変わる名前の出自を記録する。"""
         kind = self.value(node.value, env, stack)
         targets: list[ast.expr] = list(reversed(node.targets)) if isinstance(node, ast.Assign) else [node.target]
         while targets:
@@ -230,7 +221,6 @@ class PythonAnalysis:
             if isinstance(item, ast.Starred):
                 targets.append(item.value)
                 continue
-            # 部分更新は状態全体の固定出自を無効にし、添字の変数へ右辺を伝播させない。
             if isinstance(item, (ast.Subscript, ast.Attribute)):
                 owner = item.value
                 while isinstance(owner, (ast.Subscript, ast.Attribute)):
@@ -256,7 +246,6 @@ class PythonAnalysis:
                     env[f"{item.id}.stderr"] = "text"
 
     def fixed_text(self, node: ast.AST | None, env: dict[str, str]) -> bool:
-        """式が比較に使う固定文言を表すか判定する。"""
         if isinstance(node, ast.Constant):
             return isinstance(node.value, (str, bytes))
         if isinstance(node, ast.Name):
@@ -279,7 +268,6 @@ class PythonAnalysis:
         return False
 
     def text_shape(self, node: ast.AST, env: dict[str, str]) -> str | None:
-        """文言の包含・先頭・末尾などの比較を分類する。"""
         if isinstance(node, ast.BoolOp):
             kinds = [self.text_shape(value, env) for value in node.values]
             return "text-only" if all(kind == "text-only" for kind in kinds) else None
@@ -317,8 +305,6 @@ class PythonAnalysis:
         return "text-only"
 
     def check(self, node: ast.AST, env: dict[str, str]) -> str:
-        """assertの条件式を分類する。"""
-        # 起動成功だけでは、同居する文言検査の独立契約を保証しない。
         if (
             isinstance(node, ast.Compare)
             and len(node.ops) == 1
@@ -352,7 +338,6 @@ class PythonAnalysis:
         )
 
     def statements(self, statements: list[ast.stmt], env: dict[str, str], stack: tuple[str, ...] = ()) -> list[str]:
-        """文をたどり、出現した比較の分類を返す。"""
         checks: list[str] = []
         for node in statements:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
@@ -433,7 +418,6 @@ class PythonAnalysis:
                             for child in ast.walk(item)
                         )
                     }
-                    # 更新callbackの成功確認だけを持つhelperは、関数の結果検査でなく状態準備として扱う。
                     if mutating_callbacks and all(
                         isinstance(item.test, ast.Call)
                         and any(isinstance(child, ast.Name) and child.id in mutating_callbacks for child in ast.walk(item.test))
@@ -464,7 +448,6 @@ class PythonAnalysis:
 def analyze_python(
     source: str, path: pathlib.Path, root: pathlib.Path, loaded: dict[pathlib.Path, PythonAnalysis]
 ) -> tuple[list[TestFunction], dict[int, str]]:
-    """テスト宣言ごとの比較とコメントの位置を返す。"""
     analysis = loaded.get(path)
     if analysis is None:
         analysis = PythonAnalysis(ast.parse(source), path, root, loaded)

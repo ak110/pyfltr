@@ -1,11 +1,3 @@
-"""pytestの失敗の生出力から再実行対象までの境界の結合試験。
-
-例外が実装ファイルで発生した試験と、試験ファイル自身で失敗した試験が混在する出力を解析し、
-`retry_command`と`--only-failed`が使う診断の`file`と対象の交差に、失敗した試験ファイルが全て残ることを確かめる。
-例外位置を診断の`file`にすると試験ファイルが対象から抜け、失敗が残るのに再実行が成功を返すためである。
-生出力はpytest 9.2で`--tb`ごとに採取したものを、作業ディレクトリだけ置き換えて使う。
-"""
-
 import pathlib
 
 import pytest
@@ -77,7 +69,6 @@ def test_failed_tests_stay_in_retry_targets(style: str, tmp_path: pathlib.Path) 
     errors = pyfltr.parsing.entry.parse_errors("pytest", output, path_base=tmp_path, start_cwd=tmp_path)
 
     impl_failure = next(error for error in errors if error.message.startswith("test_a:"))
-    # 試験ファイル上に存在しない行番号を作らず、実装ファイルの例外位置はメッセージで示す
     assert (impl_failure.file, impl_failure.line) == ("tests/a_test.py", 0)
     assert impl_failure.message.endswith(" (pkg/impl.py:2)")
     result = make_command_result("pytest", returncode=1, errors=errors, target_files=targets)

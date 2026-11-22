@@ -22,7 +22,6 @@ def _match(file: str, index: int, *, width: int = 80) -> dict[str, typing.Any]:
 
 @pytest.mark.parametrize("dense_name", ["many.txt", "uv.lock", "nested/" * 20 + "many.txt"])
 def test_select_output_collapses_only_high_density_file(dense_name: str) -> None:
-    """300・1・2・1件の分布では高密度ファイルだけを件数表示へ縮約する。"""
     matches = [*[_match(dense_name, index) for index in range(300)]]
     matches.extend(_match("one.txt", index) for index in range(1))
     matches.extend(_match("two.txt", index) for index in range(2))
@@ -43,7 +42,6 @@ def test_select_output_collapses_only_high_density_file(dense_name: str) -> None
 
 
 def test_select_output_keeps_full_result_at_budget_boundary() -> None:
-    """全件形式が予算と同じ長さならfullを維持する。"""
     matches = [_match("a.txt", 0)]
     budget = pyfltr.grep_.adaptive.serialized_length("full", matches, [], output_format="jsonl")
 
@@ -74,7 +72,6 @@ def test_select_output_keeps_full_result_at_budget_boundary() -> None:
 def test_select_output_limits_matches_distributed_across_many_files(
     output_format: pyfltr.grep_.adaptive.OutputFormat,
 ) -> None:
-    """多数ファイルへ分散した一致も決定的に予算内へ縮約する。"""
     matches = [_match(f"nested/{index:04d}/result.txt", index, width=40) for index in range(300)]
     budget = 2_000
 
@@ -104,7 +101,6 @@ def test_select_output_limits_matches_distributed_across_many_files(
 def test_select_output_serialization_work_grows_linearly(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """多数ファイルの候補選択で直列化対象の累計要素数を線形に保つ。"""
     original = pyfltr.grep_.adaptive.serialized_length
     serialized_items = 0
 
@@ -128,7 +124,6 @@ def test_select_output_serialization_work_grows_linearly(
 
 
 def test_text_grouped_reports_count_and_representative_rows() -> None:
-    """groupedのtext表示は省略前件数と代表行数をファイルごとに示す。"""
     matches = [_match("many.txt", index) for index in range(300)]
 
     selection = pyfltr.grep_.adaptive.select_output(matches, output_format="text", budget=180)
@@ -144,7 +139,6 @@ def test_cli_agent_default_uses_mixed_output_for_dense_file(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """エージェント環境のCLIは高密度ファイルだけを縮約し、低密度本文を保持する。"""
     dense = tmp_path / "uv.lock"
     dense.write_text("".join(f"foo {index:04d} {'x' * 80}\n" for index in range(300)), encoding="utf-8")
     sparse = tmp_path / "note.txt"
@@ -178,7 +172,6 @@ def test_cli_explicit_preview_limit_disables_auto_summary(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """明示した出力上限は自動選択より優先する。"""
     target = tmp_path / "many.txt"
     target.write_text("".join(f"foo {index:04d} {'x' * 80}\n" for index in range(120)), encoding="utf-8")
     monkeypatch.chdir(tmp_path)
@@ -207,7 +200,6 @@ def test_cli_jsonl_warning_is_not_duplicated_to_stderr(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """JSONLへ含めた警告は同じ実行のstderrへ重複出力しない。"""
     missing = tmp_path / "missing.txt"
     monkeypatch.chdir(tmp_path)
 
@@ -226,7 +218,6 @@ async def test_mcp_grep_collects_more_than_previous_default_limit(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """MCPの未指定max_totalは1000件で走査を打ち切らない。"""
     target = tmp_path / "many.txt"
     target.write_text("foo\n" * 1001, encoding="utf-8")
     monkeypatch.chdir(tmp_path)

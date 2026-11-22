@@ -12,24 +12,17 @@ import pyfltr.cli.parser
 _REPO_ROOT = pathlib.Path(__file__).parents[2]
 
 
-# 検査対象とするPythonファイルの区画。pyfltr自身のCLI面を記述する箇所に限る。
-# pyfltr/config/・pyfltr/command/ は対応ツールの既定引数を定義するため外部ツールの引数が本質的に多く、
-# 許可リストが対応ツールの追加のたびに伸びるため対象に含めない。
 _PYTHON_ZONES = ("cli", "state", "grep_", "output", "colloquial")
 
 
-# 検査対象とする文書。
 _DOCUMENT_GLOBS = ("docs/**/*.md", "README.md")
 
 
-# 外部ツールへ渡す引数と、説明用のダミー名。
-# pyfltrのオプションとして書かれた同名参照まで許可しないよう、参照元ファイルごとに限定する。
 _EXTERNAL_OPTIONS_BY_PATH: dict[str, frozenset[str]] = {
     "docs/guide/recommended-nonpython.md": frozenset({"--passWithNoTests"}),
     "docs/guide/recommended.md": frozenset({"--frozen"}),
     "docs/guide/usage.md": frozenset({"--config", "--frozen"}),
     "pyfltr/cli/command_info.py": frozenset({"--format", "--current", "--json"}),
-    # MCP用環境の再導入で案内するuv tool installの引数。
     "pyfltr/cli/mcp_server.py": frozenset({"--reinstall"}),
     "pyfltr/cli/pipeline.py": frozenset({"--fix"}),
     "pyfltr/state/cache.py": frozenset({"--config", "--ignore-path"}),
@@ -37,27 +30,20 @@ _EXTERNAL_OPTIONS_BY_PATH: dict[str, frozenset[str]] = {
 }
 
 
-# 長形式のオプション名。
-# `=`の直後は`--pytest-args=--junitxml=...`のようにオプションへ渡す値であり、オプション名として扱わない。
 _OPTION_TOKEN = re.compile(r"(?<!=)--[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*")
 
 
-# 文書側でオプションを列挙する記法。行頭の箇条書きがバッククォート囲みのオプション名で始まる。
 _OPTION_LIST_ITEM = re.compile(r"^\s*-\s+`--[A-Za-z]")
 
 
-# 文書中のインラインコード。
 _INLINE_CODE = re.compile(r"`([^`\n]+)`")
 
 
 @functools.lru_cache(maxsize=1)
 def _get_options_by_command() -> dict[tuple[str, ...], frozenset[str]]:
-    """build_parser() が定義するオプション名をコマンド階層ごとに返す。"""
     collected: dict[tuple[str, ...], frozenset[str]] = {}
 
     def walk(parser: argparse.ArgumentParser, command_path: tuple[str, ...]) -> None:
-        # argparse はオプション一覧を公開 API で列挙する手段を提供しないため、
-        # `_actions` / `_SubParsersAction` 経由の参照を使う。
         options: set[str] = set()
         for action in parser._actions:  # pylint: disable=protected-access  # type: ignore[attr-defined]
             options.update(action.option_strings)
@@ -72,12 +58,10 @@ def _get_options_by_command() -> dict[tuple[str, ...], frozenset[str]]:
 
 
 def _get_known_options() -> frozenset[str]:
-    """全コマンドが定義するオプション名の和集合を返す。"""
     return frozenset().union(*_get_options_by_command().values())
 
 
 def _command_path(value: str) -> tuple[tuple[str, ...], str] | None:
-    """CLI参照からコマンド階層と対象の階層以降の文字列を返す。"""
     stripped = value.strip()
     pyfltr_match = re.search(r"\bpyfltr\s+", stripped)
     commandline = stripped[pyfltr_match.end() :] if pyfltr_match else stripped
@@ -92,12 +76,10 @@ def _command_path(value: str) -> tuple[tuple[str, ...], str] | None:
 
 
 def _unknown_tokens(value: str, known: frozenset[str]) -> set[str]:
-    """文字列中の未知のオプション名を返す。"""
     return {token for token in _OPTION_TOKEN.findall(value) if token not in known}
 
 
 def _unknown_separate_inline_tokens(line: str, code_spans: list[str]) -> tuple[set[str], bool]:
-    """別々のインラインコードにあるコマンドとオプションを照合する。"""
     options_by_command = _get_options_by_command()
     separate_commands: set[tuple[str, ...]] = set()
     separate_option_positions = [line.find(f"`{span}`") for span in code_spans if _OPTION_TOKEN.search(span)]
@@ -126,7 +108,6 @@ def _unknown_separate_inline_tokens(line: str, code_spans: list[str]) -> tuple[s
 
 
 def _unknown_document_tokens(line: str, external_options: frozenset[str]) -> set[str]:
-    """文書行のCLI文脈に対して未知のオプション名を返す。"""
     options_by_command = _get_options_by_command()
     code_spans = _INLINE_CODE.findall(line)
     unknown: set[str] = set()
@@ -158,7 +139,6 @@ def _unknown_document_tokens(line: str, external_options: frozenset[str]) -> set
 
 
 def _split_command_segments(value: str) -> list[str]:
-    """引用符外かつエスケープされていないシェル区切りで文字列を分割する。"""
     segments: list[str] = []
     start = 0
     quote: str | None = None
@@ -193,14 +173,8 @@ def _split_command_segments(value: str) -> list[str]:
 
 
 def _unknown_command_segments(value: str, external_options: frozenset[str]) -> set[str]:
-    """コマンド区切り単位でCLI文脈を判定して未知のオプション名を返す。"""
     unknown: set[str] = set()
     for segment in _split_command_segments(value):
-        # `_command_path`は先頭で`strip()`するため、ガードも正規化済みの断片へ適用する。
-        # 揃えないと、f-stringのリテラル部が生む`pyfltr `のような断片で判定結果が異なる。
-        # ガード自体は外せない。`_command_path`は`pyfltr`の表記が無くてもサブコマンド名で
-        # 始まる断片に一致するため、戻り値だけで分岐すると外部ツールの引数まで
-        # pyfltrのコマンド文脈と誤認する。
         command = _command_path(segment) if re.search(r"\bpyfltr\s+", segment.strip()) else None
         if command is None:
             unknown.update(_unknown_tokens(segment, _get_known_options()) - external_options)
@@ -211,7 +185,6 @@ def _unknown_command_segments(value: str, external_options: frozenset[str]) -> s
 
 
 def _strip_string_quotes(literal: str) -> str:
-    """文字列リテラルから接頭辞と外側の引用符を取り除く。"""
     body = literal.lstrip("bBfFrRuU")
     for quote in ('"""', "'''", '"', "'"):
         if body.startswith(quote) and body.endswith(quote) and len(body) >= 2 * len(quote):
@@ -220,27 +193,16 @@ def _strip_string_quotes(literal: str) -> str:
 
 
 def _string_literal_value(literal: str) -> str:
-    """文字列リテラルの値を返す。"""
     with warnings.catch_warnings():
-        # 不正なエスケープシーケンスの警告は解析対象の記述内容に由来するため抑止する。
         warnings.simplefilter("ignore")
         try:
             value = ast.literal_eval(literal)
         except (SyntaxError, ValueError):
-            # f-string など評価できないリテラルは引用符の除去だけで扱う。
             return _strip_string_quotes(literal)
     return value if isinstance(value, str) else _strip_string_quotes(literal)
 
 
 def _python_text_fragments(line: str) -> list[str]:
-    """Python行を字句解析して、文字列リテラルの値・コメントと、それ以外の範囲へ切り分ける。
-
-    Python構文上の引用符をシェル構文上の引用符と取り違えないよう、
-    シェル区切りの解析より前に本文だけを切り出す。
-    末尾の要素は文字列・コメントを空白へ置き換えた残りの範囲とする。
-    複数行にまたがるリテラルの途中など単独では字句解析できない行と、
-    文字列・コメントを含まない行は、行全体を1つの断片として返す。
-    """
     # f-stringはPython 3.12以降で複数のトークンへ分解される。
     fstring_middle = getattr(tokenize, "FSTRING_MIDDLE", None)
     text_types = {getattr(tokenize, name, None) for name in ("FSTRING_START", "FSTRING_MIDDLE", "FSTRING_END")}
@@ -268,7 +230,6 @@ def _python_text_fragments(line: str) -> list[str]:
 
 
 def _unknown_python_tokens(line: str, external_options: frozenset[str]) -> set[str]:
-    """Python行の文字列・コメントとそれ以外の範囲ごとに未知のオプション名を返す。"""
     unknown: set[str] = set()
     for fragment in _python_text_fragments(line):
         unknown.update(_unknown_text_tokens(fragment, external_options))
@@ -276,7 +237,6 @@ def _unknown_python_tokens(line: str, external_options: frozenset[str]) -> set[s
 
 
 def _unknown_text_tokens(line: str, external_options: frozenset[str]) -> set[str]:
-    """コード範囲ごとに未知のオプション名を返す。"""
     code_matches = list(_INLINE_CODE.finditer(line))
     code_spans = [match.group(1) for match in code_matches]
     unknown, _has_separate_context = _unknown_separate_inline_tokens(line, code_spans)
@@ -291,7 +251,6 @@ def _unknown_text_tokens(line: str, external_options: frozenset[str]) -> set[str
 
 
 def _find_unknown_options(text: str, path: pathlib.Path, document: bool) -> list[str]:
-    """未知のオプション名の参照を `パス:行番号: オプション名` 形式で返す。"""
     relative_path = path.relative_to(_REPO_ROOT).as_posix()
     external_options = _EXTERNAL_OPTIONS_BY_PATH.get(relative_path, frozenset())
     findings: list[str] = []
@@ -305,7 +264,6 @@ def _find_unknown_options(text: str, path: pathlib.Path, document: bool) -> list
 
 
 def test_known_options_are_collected() -> None:
-    """実オプション名の集合を取得できることを検査する。"""
     known = _get_known_options()
     assert "--commands" in known, "既知のはずのオプションを取得できなかった"
     assert "--shuffle" in known, "既知のはずのオプションを取得できなかった"
@@ -316,7 +274,6 @@ def test_known_options_are_collected() -> None:
 
 
 def test_python_sources_reference_existing_options() -> None:
-    """pyfltr自身のCLI面を記述するPythonファイルが実在するオプションだけを参照することを検査する。"""
     findings: list[str] = []
     for zone in _PYTHON_ZONES:
         for path in sorted((_REPO_ROOT / "pyfltr" / zone).rglob("*.py")):
@@ -329,7 +286,6 @@ def test_python_sources_reference_existing_options() -> None:
 
 
 def test_documents_reference_existing_options() -> None:
-    """文書のオプション列挙行が実在するオプションだけを参照することを検査する。"""
     findings: list[str] = []
     paths: list[pathlib.Path] = []
     for pattern in _DOCUMENT_GLOBS:
@@ -344,7 +300,6 @@ def test_documents_reference_existing_options() -> None:
 
 
 def test_document_references_use_options_from_the_referenced_command() -> None:
-    """本文参照・別コマンド参照・外部オプション名の誤用を検出することを検査する。"""
     cases = (
         ("docs/example.md", "本文中の`show-run --tool <name>`を参照する。", "--tool"),
         ("docs/example.md", "- `--global`: `run`で使用する。", "--global"),
@@ -360,7 +315,6 @@ def test_document_references_use_options_from_the_referenced_command() -> None:
 
 
 def test_option_values_after_equals_are_not_option_names() -> None:
-    """`=`でつないだ値の`--`始まりの文字列をオプション名として扱わず、値を渡す側のオプション名は検査することを検査する。"""
     path = _REPO_ROOT / "docs/example.md"
     text = "- uvx pyfltr ci --pytest-args=--junitxml=report.xml"
     assert not _find_unknown_options(text, path, document=True)
@@ -369,7 +323,6 @@ def test_option_values_after_equals_are_not_option_names() -> None:
 
 
 def test_python_references_prioritize_pyfltr_command_context() -> None:
-    """Pythonのpyfltr文脈では外部オプションの許可を適用しないことを検査する。"""
     relative_path = "pyfltr/cli/command_info.py"
     path = _REPO_ROOT / relative_path
     assert _find_unknown_options("pyfltr run --format", path, document=False) == [f"{relative_path}:1: --format"]
@@ -378,7 +331,6 @@ def test_python_references_prioritize_pyfltr_command_context() -> None:
         "`pyfltr run`では`--shuffle`を使用する。",
         "`pyfltr run`はtextlintへ`--format`を渡す。",
         "pyfltr run --commands=pytest; textlint --format",
-        # Python文字列の外側の引用符をシェル構文の引用符として扱うと、文字列内の区切りで分割されない。
         'message = "pyfltr run --commands=pytest; textlint --format"',
         "message = 'pyfltr run --commands=pytest | textlint --format'",
         """message = "pyfltr run --pytest-args='a;b' | textlint --format\"""",
@@ -401,7 +353,6 @@ def test_python_references_prioritize_pyfltr_command_context() -> None:
 
 
 def test_command_segments_respect_quotes_and_escapes() -> None:
-    """引用・エスケープされた記号をコマンド境界として扱わないことを検査する。"""
     quoted_or_escaped = (
         "pyfltr grep 'a|b' --global",
         'pyfltr grep "a;b" --global',
@@ -416,27 +367,19 @@ def test_command_segments_respect_quotes_and_escapes() -> None:
 
 
 def test_command_segments_without_subcommand_are_not_command_context() -> None:
-    """コマンド名だけで終わる断片を外部文脈として扱い、例外を送出しないことを検査する。"""
     # f-stringのリテラル部はPython 3.12以降で独立したトークンとなり、
-    # `f"pyfltr {...}"`から`pyfltr `のように末尾空白で終わる断片が生じる。
     for segment in ("pyfltr ", " pyfltr ", "pyfltr"):
         assert _unknown_command_segments(segment, frozenset()) == set()
-    # コマンド文脈（pyfltrで始まる）ではコマンド階層のオプションをチェックする。
     assert _unknown_command_segments("pyfltr --unknown-option", frozenset()) == {"--unknown-option"}
     assert _unknown_command_segments("pyfltr --unknown-option", frozenset({"--unknown-option"})) == {"--unknown-option"}
-    # 外部文脈（pyfltrで始まらない）では外部ツール引数の許可が適用される。
     assert _unknown_command_segments("textlint --unknown-option", frozenset()) == {"--unknown-option"}
     assert _unknown_command_segments("textlint --unknown-option", frozenset({"--unknown-option"})) == set()
-    # コマンド名が続く断片は従来どおりコマンド文脈として扱う。
     assert _unknown_command_segments("pyfltr run --commands=pytest", frozenset()) == set()
-    # 断片抽出から判定までの経路でも同じ入力を検証する。
-    # 是正前はいずれも`_unknown_command_segments`の`assert`で例外となる。
     assert _unknown_text_tokens("pyfltr ", frozenset()) == set()
     assert not _find_unknown_options("pyfltr \n", _REPO_ROOT / "pyfltr" / "cli" / "main.py", document=False)
 
 
 def test_python_text_fragments_strip_python_quotes() -> None:
-    """Python行から文字列リテラルの値とコメントを取り出すことを検査する。"""
     assert _python_text_fragments('m = "pyfltr run --commands=pytest; textlint --format"')[0] == (
         "pyfltr run --commands=pytest; textlint --format"
     )
@@ -444,8 +387,6 @@ def test_python_text_fragments_strip_python_quotes() -> None:
     assert _python_text_fragments(r'm = r"pyfltr grep a\|b --global"')[0] == r"pyfltr grep a\|b --global"
     assert _python_text_fragments('    """pyfltr run --commands=pytest"""')[0] == "pyfltr run --commands=pytest"
     assert _python_text_fragments("value = 1  # pyfltr run --commands=pytest")[0] == "# pyfltr run --commands=pytest"
-    # 末尾の断片は文字列・コメントを空白へ置き換えた残りの範囲とする。
     assert _python_text_fragments('m = "pyfltr grep --global"') == ["pyfltr grep --global", "m = " + " " * 22]
-    # 文字列・コメントを含まない行と字句解析できない行は行全体を返す。
     assert _python_text_fragments("pyfltr run --commands=pytest") == ["pyfltr run --commands=pytest"]
     assert _python_text_fragments('"""pyfltr run --commands=pytest') == ['"""pyfltr run --commands=pytest']

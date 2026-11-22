@@ -10,7 +10,6 @@ import pyfltr.tools
 
 
 def test_parse_uv_audit() -> None:
-    """uv auditのテキスト出力から脆弱性を抽出する（複数advisory・stderr由来ノイズ混在）。"""
     output = (
         "warning: `uv audit` is experimental and may change without warning.\n"
         "Found 2 known vulnerabilities and no adverse project statuses in 146 packages\n"
@@ -45,7 +44,6 @@ def test_parse_uv_audit() -> None:
 
 
 def test_parse_uv_audit_advisory_without_package_header() -> None:
-    """package見出し行が先行しないadvisory行は説明のみをmessageへ格納する（フォールバック分岐）。"""
     output = "- PYSEC-2026-999: Some isolated advisory\n"
     errors = pyfltr.parsing.entry.parse_errors("uv-audit", output)
     assert len(errors) == 1
@@ -53,12 +51,10 @@ def test_parse_uv_audit_advisory_without_package_header() -> None:
     assert errors[0].file == "pyproject.toml"
     assert errors[0].line == 1
     assert errors[0].rule == "PYSEC-2026-999"
-    # package見出しが無いためパッケージ名の前置きは付かない。
     assert errors[0].message == "Some isolated advisory"
 
 
 def test_parse_uv_audit_same_id_across_packages_not_deduplicated() -> None:
-    """同一advisory IDが別パッケージ見出し配下に出た場合、別診断として両方保持する（重複排除しない）。"""
     output = (
         "starlette 1.0.0 has 1 known vulnerability:\n"
         "\n"
@@ -69,7 +65,6 @@ def test_parse_uv_audit_same_id_across_packages_not_deduplicated() -> None:
         "- GHSA-aaaa-bbbb-cccc: Shared transitive advisory\n"
     )
     errors = pyfltr.parsing.entry.parse_errors("uv-audit", output)
-    # パッケージ単位で列挙されるため同一IDでも2件保持する。
     assert len(errors) == 2
     assert all(e.rule == "GHSA-aaaa-bbbb-cccc" for e in errors)
     assert errors[0].message.startswith("starlette 1.0.0: ")
@@ -77,7 +72,6 @@ def test_parse_uv_audit_same_id_across_packages_not_deduplicated() -> None:
 
 
 def test_parse_uv_audit_no_advisories() -> None:
-    """脆弱性なし出力（Found 0行のみ）・空文字・advisory非該当テキストはいずれも空リストを返す。"""
     found_zero = (
         "warning: `uv audit` is experimental and may change without warning.\n"
         "Found 0 known vulnerabilities and no adverse project statuses in 146 packages\n"
@@ -88,7 +82,6 @@ def test_parse_uv_audit_no_advisories() -> None:
 
 
 def test_parse_npm_audit_json() -> None:
-    """npm audit --json（auditReportVersion 2）でvia文字列要素のスキップとsource重複排除を確認する。"""
     output = json.dumps(
         {
             "auditReportVersion": 2,
@@ -136,22 +129,20 @@ def test_parse_npm_audit_json() -> None:
         }
     )
     errors = pyfltr.parsing.entry.parse_errors("npm-audit", output)
-    # 文字列要素スキップ・source重複排除によりsource 1096466 / 1097677の2件のみ。
     assert len(errors) == 2
     assert all(e.command == "npm-audit" for e in errors)
     assert all(e.file == "package.json" for e in errors)
     assert all(e.line == 1 for e in errors)
     by_rule = {e.rule: e for e in errors}
     assert set(by_rule) == {"GHSA-vh95-rmgr-6w4m", "GHSA-xvch-5gv4-984h"}
-    assert by_rule["GHSA-vh95-rmgr-6w4m"].severity == "warning"  # moderate
-    assert by_rule["GHSA-xvch-5gv4-984h"].severity == "error"  # critical
+    assert by_rule["GHSA-vh95-rmgr-6w4m"].severity == "warning"
+    assert by_rule["GHSA-xvch-5gv4-984h"].severity == "error"
     assert "minimist" in by_rule["GHSA-vh95-rmgr-6w4m"].message
     assert "(<0.2.1)" in by_rule["GHSA-vh95-rmgr-6w4m"].message
     assert by_rule["GHSA-xvch-5gv4-984h"].rule_url == "https://github.com/advisories/GHSA-xvch-5gv4-984h"
 
 
 def test_parse_pnpm_audit_json() -> None:
-    """pnpm audit --json（advisories形式）から脆弱性を抽出する。"""
     output = json.dumps(
         {
             "advisories": {
@@ -191,7 +182,6 @@ def test_parse_pnpm_audit_json() -> None:
 
 
 def test_parse_yarn_audit_jsonl() -> None:
-    """yarn audit --json（JSON Lines）でauditAdvisory抽出・id重複排除・summary行スキップを確認する。"""
     lines = [
         json.dumps(
             {
@@ -225,7 +215,6 @@ def test_parse_yarn_audit_jsonl() -> None:
                 },
             }
         ),
-        # 同一advisory（id重複）→ 重複排除される。
         json.dumps(
             {
                 "type": "auditAdvisory",
@@ -242,7 +231,6 @@ def test_parse_yarn_audit_jsonl() -> None:
                 },
             }
         ),
-        # auditSummary行は集計のためスキップされる。
         json.dumps({"type": "auditSummary", "data": {"vulnerabilities": {"moderate": 1, "critical": 1}}}),
     ]
     errors = pyfltr.parsing.entry.parse_errors("yarn-audit", "\n".join(lines))
@@ -265,13 +253,11 @@ def test_parse_yarn_audit_jsonl() -> None:
     ],
 )
 def test_parse_js_audit_no_vulnerabilities(command: str, empty_output: str) -> None:
-    """脆弱性なしのJSON出力ではJavaScript系監査ツールは空リストを返す（uv-auditはテキストのため別テスト）。"""
     assert pyfltr.parsing.entry.parse_errors(command, empty_output) == []
 
 
 @pytest.mark.parametrize("command", ["npm-audit", "pnpm-audit", "yarn-audit"])
 def test_parse_js_audit_invalid_input(command: str) -> None:
-    """不正JSON・空文字ではJavaScript系監査ツールは空リストを返す（uv-auditはテキストのため別テスト）。"""
     assert pyfltr.parsing.entry.parse_errors(command, "not json") == []
     assert pyfltr.parsing.entry.parse_errors(command, "") == []
 
@@ -281,7 +267,6 @@ def test_parse_js_audit_invalid_input(command: str) -> None:
     [("npm-audit", "sample (<2)"), ("pnpm-audit", "sample:  (<2)"), ("yarn-audit", "sample:  (<2)")],
 )
 def test_audit_empty_title_preserves_tool_prefix(command: str, expected: str) -> None:
-    """タイトルが空の場合もツールごとの接頭辞と版範囲を保つ。"""
     advisory = {"module_name": "sample", "name": "sample", "title": "", "range": "<2", "vulnerable_versions": "<2"}
     if command == "npm-audit":
         data = {"vulnerabilities": {"sample": {"via": [advisory]}}}
