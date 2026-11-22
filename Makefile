@@ -24,15 +24,17 @@ sync:
 # 開発環境のセットアップ
 # --config明示指定はprekのworkspace再帰探索（サブディレクトリの.pre-commit-config.yamlも
 # 実行対象へ含める仕様）を無効化するため（prek 0.4.11で確認）。
+# prekはmise管理の実行ファイルを使う。uvxで導入するとフックへuvの取得キャッシュ内のパスが記録され、
+# キャッシュの整理後にcommitが失敗するため。推奨ガイドのMakefile例はmiseを前提にしないためuvxのまま保つ。
 setup: sync
-	uvx prek --config=.pre-commit-config.yaml install
+	mise exec -- prek --config=.pre-commit-config.yaml install
 	git config --local commit.template .gitmessage
 
 # 依存パッケージ・prekのhook・GitHub Actionsのピン・Dockerベースイメージを更新する（lintとテストはCIで判定する）
 update:
 	$(MAKE) clean-stale-dist-info
 	env --unset UV_FROZEN uv sync --upgrade --all-groups --all-extras
-	uvx prek --config=.pre-commit-config.yaml autoupdate
+	mise exec -- prek --config=.pre-commit-config.yaml autoupdate
 	$(MAKE) update-actions
 	$(MAKE) update-docker-base
 
