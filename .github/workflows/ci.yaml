@@ -83,9 +83,27 @@ jobs:
     defaults:
       run:
         shell: bash
+    # pytestは自身の全件実行が律速となるため、全検査を担う基準版では
+    # pytestとそれ以外の検査を別ジョブへ分けて並列に実行する（part: pytest / lint）。
+    # 分割前（run 45071981104）は基準版のジョブがpytest 214秒・pylint 112秒を同じランナーで並行実行し、
+    # CPUを奪い合ってワークフロー全体の律速となっていた。
+    # 推奨ガイドの設定例は、利用者の多くでpytestが律速にならないため、基準版の1ジョブで全検査を行う形を保つ。
+    # pytestの変更影響選択（pytest-impact-selection）は本リポジトリでは使わない。
+    # CIの実行はほぼ全てがmasterへのpush（統合時の全件検証が必要）で、選択が働く場面がほとんど無い一方、
+    # 履歴の記録を伴う全件実行は通常の全件実行の約3.2倍の時間を要した（手元の実測で302秒と94秒）。
     strategy:
       matrix:
-        python-version: ["3.12", "3.13", "3.14", "3.15"]
+        include:
+          - python-version: "3.12"
+            part: pytest
+          - python-version: "3.13"
+            part: pytest
+          - python-version: "3.14"
+            part: pytest
+          - python-version: "3.15"
+            part: pytest
+          - python-version: "3.15"
+            part: lint
     env:
       UV_PYTHON: ${{ matrix.python-version }}
       # mise等がGitHub APIを呼び出す際のレート制限（403）回避
@@ -141,24 +159,25 @@ jobs:
         run: uv sync --all-groups --all-extras
 
       # 静的解析はPythonの版により結果が変わり得るが、対応版ごとに重複実行すると所要時間が版数に比例して増える。
-      # 最新安定版（3.15）を基準とし、対象の版だけで全検査を実行する。
-      # 他の版は`tokenize`・`ast`等の版差を検証するpytestだけを実行する。
-      # 対応版を追加・変更する場合は、全検査を実行する版が1つだけになるよう両ステップの条件を更新する。
-      - name: Test with pyfltr (全検査)
-        if: ${{ matrix.python-version == '3.15' }}
+      # 最新安定版（3.15）を基準とし、対象の版だけでpytest以外の検査を実行する（part: lint）。
+      # 全ての版で`tokenize`・`ast`等の版差を検証するpytestを実行する（part: pytest）。
+      # 対応版を追加・変更する場合は、part: lintを持つ版が1つだけになるようmatrixを更新する。
+      - name: Test with pyfltr (pytest)
+        if: ${{ matrix.part == 'pytest' }}
         # `CI=true` を明示し、smoke test がツール不在時にスキップせず失敗扱いとなるようにする。
-        env:
-          CI: "true"
-        run: uv run pyfltr ci --output-format=github-annotations
-
-      - name: Test with pyfltr (pytestのみ)
-        if: ${{ matrix.python-version != '3.15' }}
         env:
           CI: "true"
         run: uv run pyfltr ci --commands=pytest --output-format=github-annotations
 
+      - name: Test with pyfltr (pytest以外)
+        if: ${{ matrix.part == 'lint' }}
+        env:
+          CI: "true"
+        run: uv run pyfltr ci --disable=pytest --output-format=github-annotations
+
+      # smoke test（pytest）がツールを導入するため、基準版のpytestジョブが保存する。
       - name: Save /cache/mise
-        if: ${{ matrix.python-version == '3.15' && steps.mise-cache.outputs.cache-hit != 'true' }}
+        if: ${{ matrix.python-version == '3.15' && matrix.part == 'pytest' && steps.mise-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /cache/mise
@@ -168,15 +187,19 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: pyfltr-archive-${{ runner.os }}-py${{ matrix.python-version }}
+          name: pyfltr-archive-${{ runner.os }}-py${{ matrix.python-version }}-${{ matrix.part }}
           path: ${{ env.PYFLTR_CACHE_DIR }}/runs
           retention-days: 7
 
       - name: Prune uv cache for CI
         run: uv cache prune --ci
 
+  # Linuxの基準版と同じ理由で、pytestとそれ以外の検査を別ジョブへ分ける。
   test-windows:
     runs-on: windows-latest
+    strategy:
+      matrix:
+        part: [pytest, lint]
     env:
       # mise等がGitHub APIを呼び出す際のレート制限（403）回避。
       GITHUB_TOKEN: ${{ github.token }}
@@ -217,7 +240,9 @@ jobs:
         shell: bash
         run: echo "STORE_PATH=$(pnpm store path)" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Restore pnpm store
+        id: pnpm-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.pnpm-store-win.outputs.STORE_PATH }}
           # ストアの内容はpyfltrがpnpx経由で起動するツールの指定で決まるため、その入力のハッシュをキーにする。
@@ -260,17 +285,32 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-groups --all-extras
 
-      - name: Test with pyfltr
+      - name: Test with pyfltr (pytest)
+        if: ${{ matrix.part == 'pytest' }}
         # `CI=true` を明示し、smoke test がツール不在時にスキップせず失敗扱いとなるようにする。
         env:
           CI: "true"
-        run: uv run pyfltr ci --output-format=github-annotations
+        run: uv run pyfltr ci --commands=pytest --output-format=github-annotations
+
+      - name: Test with pyfltr (pytest以外)
+        if: ${{ matrix.part == 'lint' }}
+        env:
+          CI: "true"
+        run: uv run pyfltr ci --disable=pytest --output-format=github-annotations
+
+      # 同じキーを2つのpartが同時に保存すると予約の競合で警告になるため、pytestのpartだけが保存する。
+      - name: Save pnpm store
+        if: ${{ matrix.part == 'pytest' && steps.pnpm-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store-win.outputs.STORE_PATH }}
+          key: ${{ steps.pnpm-cache.outputs.cache-primary-key }}
 
       - name: 失敗時に実行アーカイブを成果物として保存
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: pyfltr-archive-${{ runner.os }}
+          name: pyfltr-archive-${{ runner.os }}-${{ matrix.part }}
           path: ${{ env.PYFLTR_CACHE_DIR }}/runs
           retention-days: 7
 
