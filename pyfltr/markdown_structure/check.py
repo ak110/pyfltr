@@ -15,8 +15,7 @@ import markdown_it.token
 
 _COMMENT = re.compile(r"<!--[\s\S]*?(?:-->|$)")
 _LIST = re.compile(r"^(\s*)(?:[-+*]|\d+[.)])(\s+)")
-# 閉じ記号を伴う区切りだけをJinja2構文とみなし、記法例の開始記号だけを含む通常の文書は対象に残す。
-_TEMPLATE = re.compile(r"\{%[\s\S]*?%\}|\{\{[\s\S]*?\}\}|\{#[\s\S]*?#\}")
+_TEMPLATE_DELIMITERS = (("{%", "%}"), ("{{", "}}"), ("{#", "#}"))
 
 
 @dataclasses.dataclass(frozen=True)
@@ -153,6 +152,16 @@ def _check_insertions(
     return _safe_insertions(parser, text, candidates, newline)
 
 
+def _has_template(text: str) -> bool:
+    # 閉じ記号を伴う区切りだけをJinja2構文とみなし、記法例の開始記号だけを含む通常の文書は対象に残す。
+    # 最初の開始記号より後に閉じ記号があるかだけを調べ、開始記号ごとの再走査を避ける。
+    for opening, closing in _TEMPLATE_DELIMITERS:
+        start = text.find(opening)
+        if start >= 0 and text.find(closing, start + len(opening)) >= 0:
+            return True
+    return False
+
+
 def inspect(text: str) -> tuple[list[Issue], dict[int, str]]:
     """違反の一覧と、自動修正で挿入する位置から字下げへの辞書を返す。"""
     source = _excluded_source(text)
@@ -163,7 +172,7 @@ def inspect(text: str) -> tuple[list[Issue], dict[int, str]]:
     parser = markdown_it.MarkdownIt("commonmark").enable("table")
     tokens = parser.parse(source)
     # 空白制御や条件分岐で、原文では別のブロックにあるテキストも展開後に連結しうる。
-    has_template = _TEMPLATE.search(text) is not None
+    has_template = _has_template(text)
     issues: list[Issue] = []
     candidates: dict[int, str] = {}
     quote_depth = 0
