@@ -15,6 +15,10 @@ from pyfltr.comment_check.check import candidates
             "forbidden",
         ),
         (".pyi", 'def fn():\n    """forbidden"""\n', "forbidden"),
+        (".py", 'class A:\n    x: int = 1\n    """forbidden"""\n', "forbidden"),
+        (".py", 'def fn():\n    y = 1\n    """forbidden"""\n    return y\n', "forbidden"),
+        (".py", 'import os\n"""forbidden"""\n', "forbidden"),
+        (".py", 'x = "literal"\nprint("literal")\n', None),
         (".ts", "const a = /https?:\\/\\//; const b = `// literal`; // forbidden", "forbidden"),
         (".js", '// ==UserScript==\n// @name Project\n// ==/UserScript==\nlet a = "//"; /* forbidden */', "forbidden"),
         (".jsx", "const a = <div>{/* forbidden */}</div>;", "forbidden"),
@@ -61,14 +65,46 @@ def test_candidates(suffix: str, source: str, expected: str | None) -> None:
         "ruff: noqa",
         "fmt: off",
         "isort: skip",
+        "isort: skip_file",
+        "isort: split",
+        "ruff: isort: skip_file",
+        "pyright: strict",
+        "pyright: basic",
+        "pyright: reportMissingImports=false",
+        'mypy: disallow-untyped-defs, disable-error-code="misc, union-attr"',
         "pragma: no cover",
         "shellcheck disable=SC2086",
+        "shellcheck source=/dev/null",
+        "shellcheck shell=bash",
+        "nosemgrep: python.lang.security",
+        "gitleaks:allow",
+        "editorconfig-checker-disable-line",
+        "test-copy-contract: 旧版との互換性のため固定する",
         "SPDX-License-Identifier: MIT",
         "Copyright 2026",
     ],
 )
 def test_directives(directive: str) -> None:
     assert not list(candidates(f"# {directive}\n", ".py", []))
+
+
+@pytest.mark.parametrize(
+    ("suffix", "source"),
+    [
+        (".ts", '/// <reference types="vite/client" />\n'),
+        (".tsx", "/** @jsxImportSource preact */\n"),
+        (".ts", "// @vitest-environment jsdom\n"),
+        (".svelte", "<!-- svelte-ignore a11y_click_events_have_key_events -->\n<div></div>\n"),
+        (".ps1", "#Requires -Version 7\n"),
+    ],
+)
+def test_language_directives(suffix: str, source: str) -> None:
+    assert not list(candidates(source, suffix, []))
+
+
+@pytest.mark.parametrize("body", ["pyright: strictly speaking", "mypy: explain the workaround here"])
+def test_directive_like_prose(body: str) -> None:
+    assert [comment.normalized for comment in candidates(f"# {body}\n", ".py", [])] == [body]
 
 
 def test_explicit_exceptions() -> None:

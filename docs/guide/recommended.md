@@ -28,9 +28,10 @@ pyfltr本体の設定（`[tool.pyfltr]`）と、呼び出される各ツール�
       並列実行が用いるdill（0.4.1時点）がPython 3.15に対応しておらず、pylintが`co_lnotab`の参照で異常終了する
 - `[tool.pylint."messages control"]`: pylintのdisableリストを`pyproject.toml`に集約することで、
   `.pylintrc`を別途配置する必要がなくなり設定の所在が`pyproject.toml`1ファイルにまとまる
-    - docstringを必須とするpylintのルールは無効にする
-    - `missing-class-docstring`はテストクラスに対する儀礼的docstring付与を無効化する
-    - `missing-module-docstring`は`__init__.py`等でモジュールdocstring要求を緩和する目的で無効化する
+    - docstringを必須とするpylintのルール（`missing-module-docstring`・`missing-class-docstring`・`missing-function-docstring`）は無効にする。
+      名前と型から読める内容を繰り返すだけのdocstringを、テストクラスや`__init__.py`にまで要求しないためである
+    - [ソースコードのコメント](#comment-check)の`comment-check`はdocstringを不合格にするため、
+      これらのルールを有効にしたままでは両立しない
 - `[tool.pylint."messages control"]`のdisableリストへ`"duplicate-code"`（R0801）を追加し、
   重複コードの検出はaridへ委ねる
     - aridはRust実装の重複コードチェッカーで、R0801と同じ目的のチェックを大幅に短い所要時間で実行する。
@@ -433,6 +434,31 @@ markdown-structure = true
 テストの文言・定数写しをチェックするには、`[tool.pyfltr]`へ`test-copies = true`を加える。
 導入時は`pyfltr run tests --commands=test-copies`で診断を確認し、候補を振る舞いのテストに置き換えるか、例外の理由を記録する。
 対象範囲と例外の記法は[設定項目（ツール別）](configuration-tools.md#test-copies)を参照。
+
+### ソースコードのコメント {#comment-check}
+
+コード・型・lintで表せない情報だけをコメントとして残す運用にそろえる場合は、`comment-check`を有効化する。
+ソースコードのコメントとPythonのdocstringを検出する内蔵linterで、既定は無効（opt-in）。
+
+```toml
+[tool.pyfltr]
+comment-check = true
+```
+
+ruffの`D`規則（pydocstyle）など、docstringを要求するルールを有効にしている場合は、`comment-check`と衝突するため無効にする。
+ruffでは`[tool.ruff.lint]`の`select`から`"D"`を外し、`[tool.ruff.lint.pydocstyle]`と`per-file-ignores`の`D`系の指定も削除する。
+
+有効化した直後に、既存のコメントをリポジトリのルートで次のコマンドにより一度だけベースラインへ登録し、
+作成された`.pyfltr-comment-baseline.json`をcommitする。
+pyfltrをdev依存へ追加している場合は、`uvx pyfltr`を`uv run pyfltr`に読み替える。
+
+```shell
+uvx pyfltr run --commands=comment-check --comment-check-args=--init-baseline
+```
+
+登録した後は、新しく加えたコメントと、登録済みのコメントを書き換えたものが不合格になる。
+登録済みのコメントを削除したら、`--comment-check-args=--update-baseline`を指定して同じコマンドを実行し、ベースラインから除く。
+許可の手段と各オプションの挙動は[設定項目（ツール別）](configuration-tools.md#comment-check)を参照。
 
 ## .pre-commit-config.yaml
 
@@ -1181,18 +1207,3 @@ pyfltr:
 ---
 
 Python以外のプロジェクトでの推奨設定例については[推奨設定例（非Pythonプロジェクト）](recommended-nonpython.md)を参照。
-
-## ソースコードのコメント
-
-コード・型・lintで表せない制約だけをコメントとして残す場合は、次の設定を追加する。
-
-```toml
-[tool.pyfltr]
-comment-check = true
-```
-
-既存の正当なコメントを一度だけ登録するには、リポジトリのルートで対象ファイルを指定して
-`uv run python -m pyfltr.comment_check --init-baseline <files>`を実行する。
-不要な許可を削るときは`--update-baseline`を使う。
-この操作で許可は増えない。
-詳細は[設定項目（ツール別）](configuration-tools.md#comment-check)を参照。

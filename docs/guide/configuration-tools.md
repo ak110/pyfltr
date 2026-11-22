@@ -1033,15 +1033,90 @@ TS/TSXとRustでは`// test-copy-contract: <理由>`を使う。
 
 ### comment-check
 
-`comment-check`はソースコードのコメントとPythonのdocstringをチェックする内蔵linterで、初期設定では無効。
+`comment-check`はソースコードのコメントとPythonのdocstringを検出する内蔵linterで、初期設定では無効。
+コード・型・lintで表せない情報だけをコメントとして残す運用を、許可していないコメントを不合格にする形で保つ。
+推奨設定での導入手順は[推奨設定例](recommended.md#comment-check)を参照。
 
-- Shebangやlint抑制などの必須ディレクティブ、`SAFETY:`、ライセンス表記は設定しなくても許可する
-- 外部制約、変更連動の案内、実行時に参照されるdocstringは、ベースライン、
-  `pyfltr: allow-comment`、または`--allow-pattern`の正規表現で個別に許可できる
-- ベースラインには`.pyfltr-comment-baseline.json`を使い、`--baseline`で変更できる。
-  両オプションは`comment-check-extend-args`で通常の実行に渡せる
-- ベースラインはリポジトリ相対パスと空白を正規化した本文の組ごとに許可件数を数える。
-  既存コメントの置換や、許可済みコメントの複製は不合格になる
+対象の拡張子は`.py`・`.pyi`・`.ts`・`.tsx`・`.js`・`.jsx`・`.mjs`・`.cjs`・`.svelte`・`.css`・`.html`・`.rs`・`.cs`・`.sh`・`.bash`・`.ps1`・`.psm1`・`.psd1`である。
+Pythonでは`#`のコメントに加え、式文として置いた文字列リテラルを全て検出する。
+モジュール・クラス・関数の先頭のdocstring、属性の直後に置く属性docstring、関数の途中に置いた文字列が該当する。
+文字列リテラルの中の`#`や`//`はコメントとして扱わない。
+
+ruffの`D`規則（pydocstyle）やpylintの`missing-*-docstring`のように、docstringを要求するルールとは両立しない。
+併用している場合は、それらのルールを無効にする。
+
+#### 設定せずに許可するコメント
+
+- Shebang、Pythonのエンコーディング宣言、PEP 723のスクリプトメタデータ（`# /// script`から`# ///`まで）、
+  Userscriptのメタデータ（`// ==UserScript==`から`// ==/UserScript==`まで）
+- lint・型チェック・フォーマッター・カバレッジなどのディレクティブ。
+  例は`noqa`、`type: ignore`、`pyright: strict`、`mypy: disable-error-code=...`、`pylint: disable=...`、`isort: skip_file`、`fmt: off`、
+  `shellcheck disable=...`・`shellcheck source=...`、`eslint-disable-next-line`、`biome-ignore`、`@ts-expect-error`、
+  `/// <reference ... />`、`svelte-ignore`、`#Requires`、`nosec`、`nosemgrep`、`gitleaks:allow`、`test-copy-contract:`
+- `SAFETY:`、`Copyright`、`SPDX-License-Identifier:`などの安全性の根拠と法的表記
+
+#### 個別に許可するコメント
+
+次のように機械的に判別できないコメントは、利用者が個別に許可する。
+
+- 外部制約: 外部のツール・仕様・実行環境の制約が理由で、コードだけでは理由が分からない処理の説明。
+  特定の版のツールの不具合を避ける分岐の理由などが該当する
+- 変更連動の案内: 同時に変更しなければならない別の箇所の所在。
+  「この一覧を変えたら`docs/guide/usage.md`の表も直す」のような案内が該当する
+- 実行時に参照される文書: `__doc__`・`argparse`の`description=__doc__`・MCPツールの説明など、プログラムが実行時に読むdocstring
+
+許可の手段は次の3つである。
+
+- コメントの本文へ`pyfltr: allow-comment`を書き加える
+- `--allow-pattern`で、許可するコメントの本文を正規表現で指定する。
+  連続する空白を1つにまとめた本文の中を検索し、複数指定できる
+- ベースラインへ登録する（導入前からあるコメント向け）
+
+`comment-check-extend-args`を使うと、`--allow-pattern`と`--baseline`（ベースラインの場所の変更）を`pyfltr run`などの通常の実行へ渡せる。
+
+```toml
+[tool.pyfltr]
+comment-check = true
+comment-check-extend-args = ["--allow-pattern=^外部制約:", "--baseline=config/comment-baseline.json"]
+```
+
+#### ベースライン
+
+`--baseline`を指定しなければ、カレントディレクトリの`.pyfltr-comment-baseline.json`をベースラインとして使う。
+pyfltr経由では、pyfltrを起動したディレクトリ（`--work-dir`の指定時はそのディレクトリ）がカレントディレクトリになる。
+ファイルはこのディレクトリからの相対パスで記録し、ファイルごとに、連続する空白を1つにまとめた本文と許可件数の組を持つ。
+コメント1件ごとに許可件数を1つずつ消費するため、登録済みのコメントを書き換えたものや、同じ本文のコメントを増やしたものは不合格になる。
+
+- `--init-baseline`: 指定したファイルの許可を、現在のコメントで置き換える。
+  指定しなかったファイルの許可はそのまま残す
+- `--update-baseline`: 指定したファイルの許可から、ファイルに無くなったコメントを除く。
+  許可は増えない
+- どちらも、読み取れないファイルや構文エラーのファイルが1件でもあるとベースラインを書き換えない。
+  書き換えるときは、存在しなくなったファイルの許可を除く
+
+pyfltr経由では、`--comment-check-args`でこれらのオプションを渡す。
+対象のパスを省くと、pyfltrの対象になる全てのファイルを1回で渡す。
+
+```shell
+pyfltr run --commands=comment-check --comment-check-args=--init-baseline
+pyfltr run src/app.py --commands=comment-check --comment-check-args=--update-baseline
+```
+
+#### 単体での起動
+
+pyfltrを導入した環境では`python -m pyfltr.comment_check [オプション] <ファイル>...`で起動する。
+プロジェクトの環境にpyfltrが無い場合は`uvx --from pyfltr python -m pyfltr.comment_check [オプション] <ファイル>...`を使う。
+
+引数にはファイルを指定する。
+ディレクトリを指定すると続行できないエラーになる。
+ディレクトリへのシンボリックリンクと、対象の拡張子に当たらないファイルはチェックしない。
+リポジトリの全ファイルを渡す場合は`git ls-files -z | xargs -0 python -m pyfltr.comment_check`のように実行する。
+`xargs`が複数回に分けて起動しても、`--init-baseline`と`--update-baseline`は渡されたファイルの許可だけを書き換えるため、1回で渡した場合と同じ結果になる。
+
+診断は`<file>:<line>:<column>: error: <メッセージ>`の形式で標準出力へ書く。
+終了コードは、許可していないコメントが無いとき0、許可していないコメントか、読み取れないファイル・構文エラーのファイルがあるとき1、続行できないとき2である。
+続行できない場合は、ベースラインがJSONとして不正なとき、`--allow-pattern`の正規表現が不正なとき、ディレクトリを指定したときなどで、
+原因と直し方を標準エラーへ書く。
 
 ## 起動方式の確認
 

@@ -19,6 +19,7 @@ _DOCUMENT_GLOBS = ("docs/**/*.md", "README.md")
 
 
 _EXTERNAL_OPTIONS_BY_PATH: dict[str, frozenset[str]] = {
+    "docs/guide/configuration-tools.md": frozenset({"--allow-pattern", "--init-baseline", "--update-baseline"}),
     "docs/guide/recommended-nonpython.md": frozenset({"--passWithNoTests"}),
     "docs/guide/recommended.md": frozenset({"--frozen"}),
     "docs/guide/usage.md": frozenset({"--config", "--frozen"}),

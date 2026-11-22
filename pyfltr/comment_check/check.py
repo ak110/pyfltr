@@ -30,15 +30,40 @@ SUFFIXES = (
 _JS = frozenset(SUFFIXES[2:8])
 _SHELL = {".sh", ".bash"}
 _PS = {".ps1", ".psm1", ".psd1"}
+_MYPY_FLAG = r"[\w-]+(?:\s*=\s*(?:\"[^\"]*\"|[^\s,]+))?"
 _DIRECTIVE = re.compile(
-    r"^(?:noqa\b|type:\s*ignore\b|"
-    r"(?:pyright|ty|mypy|pylint|ruff|fmt|isort|shellcheck|shfmt|pragma|coverage):?\s*"
-    r"(?:disable|enable|noqa|ignore|off|on|skip|no cover|no branch|file-ignore)\b|"
-    r"eslint(?:-(?:disable(?:-next-line|-line)?|enable|env))?\b|"
-    r"(?:biome-ignore(?:-all|-start|-end)?|oxlint-(?:disable(?:-next-line|-line)?|enable)|"
-    r"prettier-ignore(?:-start|-end)?|stylelint-(?:disable(?:-next-line|-line)?|enable)|"
-    r"@ts-(?:ignore|expect-error|nocheck|check)|(?:istanbul|c8|v8) ignore|"
-    r"NOSONAR|nosec|Copyright)\b|SAFETY:|SPDX-(?:License-Identifier|FileCopyrightText):)",
+    "^(?:"
+    + "|".join(
+        (
+            r"noqa\b",
+            r"type:\s*ignore\b",
+            r"(?:pyright|ty|mypy|pylint|ruff|fmt|isort|shellcheck|shfmt|pragma|coverage):?\s*"
+            r"(?:disable|enable|noqa|ignore|off|on|skip|no cover|no branch|file-ignore)\b",
+            r"(?:ruff:\s*)?isort:\s*(?:skip_file|split|dont-add-imports?)\b",
+            r"pyright:\s*(?:(?:basic|standard|strict)\b|report\w+\s*=)",
+            rf"mypy:\s*{_MYPY_FLAG}(?:\s*,\s*{_MYPY_FLAG})*\s*$",
+            r"shellcheck\s+(?:source|source-path|shell|external-sources)=",
+            r"eslint(?:-(?:disable(?:-next-line|-line)?|enable|env))?\b",
+            r"biome-ignore(?:-all|-start|-end)?\b",
+            r"oxlint-(?:disable(?:-next-line|-line)?|enable)\b",
+            r"prettier-ignore(?:-start|-end)?\b",
+            r"stylelint-(?:disable(?:-next-line|-line)?|enable)\b",
+            r"@ts-(?:ignore|expect-error|nocheck|check)\b",
+            r"(?:\*\s*)?@(?:jsx(?:ImportSource|Frag|Runtime)?|vitest-environment)\b",
+            r"/\s*<(?:reference|amd-module|amd-dependency)\b",
+            r"(?:istanbul|c8|v8) ignore\b",
+            r"svelte-ignore\b",
+            r"requires\s+-(?:version|modules|psedition|runasadministrator|shellid|assembly)\b",
+            r"editorconfig-checker-(?:disable(?:-line|-file|-next-line)?|enable)\b",
+            r"(?:NOSONAR|nosec|nosemgrep)\b",
+            r"gitleaks:allow",
+            r"test-copy-contract:",
+            r"SAFETY:",
+            r"Copyright\b",
+            r"SPDX-(?:License-Identifier|FileCopyrightText):",
+        )
+    )
+    + ")",
     re.IGNORECASE,
 )
 _ENCODING = re.compile(r"^#.*?coding[:=][ \t]*[-\w.]+")
@@ -72,15 +97,9 @@ def python_comments(source: str) -> Iterator[Comment]:
             yield Comment(line, column + 1, token.string[1:].strip())
     lines = source.split("\n")
     for node in ast.walk(ast.parse(source)):
-        if (
-            isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
-            and node.body
-            and isinstance(expr := node.body[0], ast.Expr)
-            and isinstance(value := expr.value, ast.Constant)
-            and isinstance(value.value, str)
-        ):
-            column = len(lines[expr.lineno - 1].encode()[: expr.col_offset].decode()) + 1
-            yield Comment(expr.lineno, column, value.value, docstring=True)
+        if isinstance(node, ast.Expr) and isinstance(value := node.value, ast.Constant) and isinstance(value.value, str):
+            column = len(lines[node.lineno - 1].encode()[: node.col_offset].decode()) + 1
+            yield Comment(node.lineno, column, value.value, docstring=True)
 
 
 def _quoted_end(source: str, start: int, delimiter: str, escape: str, doubled: bool = False) -> int:

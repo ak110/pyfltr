@@ -9,39 +9,60 @@ from pathlib import Path
 from pyfltr.comment_check.check import SUFFIXES, candidates
 
 _MESSAGE = (
-    "コメントではなくコード・型・lintで表現してください。"
-    "例外は必須ディレクティブ、外部制約、変更連動の案内、実行時に参照される文書、法的表記です。"
-    "不要になった許可は --update-baseline で削除できます。"
+    "許可されていないコメントです。不要なら削除し、意図はコード・型・lintで表してください。"
+    "残す必要がある場合は、本文へ`pyfltr: allow-comment`を加えるか、"
+    "`--allow-pattern`（pyfltr経由では`comment-check-extend-args`）の正規表現で許可してください。"
+    "導入前からあるコメントは`pyfltr run {file} --commands=comment-check --comment-check-args=--init-baseline`で"
+    "ベースラインへ登録できます。"
 )
 
 
 def _load(path: Path) -> dict[str, Counter[str]]:
+    remedy = f"{path}を直すか、削除してから--init-baselineで作り直してください。"
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return {}
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"ベースライン{path}をJSONとして読めません（{exc}）。{remedy}") from exc
     if not isinstance(data, dict):
-        raise ValueError("ベースラインはファイルパスをキーとするJSONオブジェクトにしてください。")
+        raise ValueError(f"ベースライン{path}がファイルパスをキーとするJSONオブジェクトではありません。{remedy}")
     result = {}
     for file, counts in data.items():
         if not isinstance(counts, dict) or any(
             not isinstance(count, int) or isinstance(count, bool) or count < 1 for count in counts.values()
         ):
-            raise ValueError(f"{file} の許可件数は正の整数にしてください。")
+            raise ValueError(f"ベースライン{path}の{file}の許可件数が正の整数ではありません。{remedy}")
         result[file] = Counter(counts)
     return result
+
+
+def _compile(pattern: str) -> re.Pattern[str]:
+    try:
+        return re.compile(pattern)
+    except re.error as exc:
+        raise ValueError(
+            f"--allow-patternの正規表現{pattern!r}が不正です（{exc}）。"
+            "Pythonの正規表現として直してください（pyfltr経由ではcomment-check-extend-argsの値）。"
+        ) from exc
 
 
 def _check(args: argparse.Namespace) -> int:
     root = Path.cwd()
     path = args.baseline
-    baseline = {} if args.init_baseline else _load(path)
-    allow = [re.compile(pattern) for pattern in args.allow_pattern]
+    for file in args.files:
+        if file.is_dir() and not file.is_symlink():
+            raise ValueError(
+                f"{file}はディレクトリです。ファイルを指定するか、"
+                "pyfltr run --commands=comment-checkで対象のファイルを一括で渡してください。"
+            )
+    baseline = _load(path)
+    allow = [_compile(pattern) for pattern in args.allow_pattern or []]
     failed = False
     seen: set[str] = set()
     for file in args.files:
         suffix = file.suffix.lower()
-        if suffix not in SUFFIXES:
+        if suffix not in SUFFIXES or file.is_dir():
             continue
         try:
             key = file.resolve().relative_to(root).as_posix()
@@ -64,7 +85,10 @@ def _check(args: argparse.Namespace) -> int:
         allowed = baseline.get(key, Counter())
         if args.init_baseline or args.update_baseline:
             if Path(key).is_absolute():
-                raise ValueError(f"ベースラインの対象をカレントディレクトリ配下に指定してください: {file}")
+                raise ValueError(
+                    f"{file}はカレントディレクトリの外にあるため、ベースラインへ登録できません。"
+                    "ベースラインの基準にするディレクトリへ移動し、その配下のファイルを指定してください。"
+                )
             current = Counter(comment.normalized for comment in comments)
             baseline[key] = current if args.init_baseline else current & allowed
         else:
@@ -72,7 +96,7 @@ def _check(args: argparse.Namespace) -> int:
                 if allowed[comment.normalized]:
                     allowed[comment.normalized] -= 1
                 else:
-                    print(f"{file}:{comment.line}:{comment.column}: error: {_MESSAGE}")
+                    print(f"{file}:{comment.line}:{comment.column}: error: {_MESSAGE.format(file=file)}")
                     failed = True
     if not failed and (args.init_baseline or args.update_baseline):
         payload = {key: counts for key, counts in baseline.items() if counts and (root / key).is_file()}
@@ -82,14 +106,27 @@ def _check(args: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="ソースコードのコメントを明示的な例外とベースラインに照らして検査します。")
-    parser.add_argument("--baseline", type=Path, default=Path(".pyfltr-comment-baseline.json"))
-    parser.add_argument("--allow-pattern", action="append", default=[])
+    parser.add_argument(
+        "--baseline",
+        type=Path,
+        default=Path(".pyfltr-comment-baseline.json"),
+        help="ベースラインのパス（既定: カレントディレクトリの.pyfltr-comment-baseline.json）",
+    )
+    parser.add_argument("--allow-pattern", action="append", help="許可するコメント本文の正規表現（複数指定可）")
     operation = parser.add_mutually_exclusive_group()
-    operation.add_argument("--init-baseline", action="store_true")
-    operation.add_argument("--update-baseline", action="store_true")
-    parser.add_argument("files", nargs="+", type=Path)
+    operation.add_argument("--init-baseline", action="store_true", help="指定したファイルの許可を現在のコメントで置き換える")
+    operation.add_argument("--update-baseline", action="store_true", help="指定したファイルの許可から現在無いコメントを除く")
+    parser.add_argument(
+        "files",
+        nargs="+",
+        type=Path,
+        help="検査するファイル（ディレクトリは指定できず、ディレクトリへのシンボリックリンクは対象外とする）",
+    )
     try:
         return _check(parser.parse_args(argv))
-    except (OSError, ValueError, re.error) as exc:
+    except ValueError as exc:
         print(f"コメントの検査を続行できません: {exc}", file=sys.stderr)
+        return 2
+    except OSError as exc:
+        print(f"コメントの検査を続行できません: {exc}。パスと読み書きの権限を確認してください。", file=sys.stderr)
         return 2
