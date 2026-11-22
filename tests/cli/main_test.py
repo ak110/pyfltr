@@ -465,29 +465,21 @@ def _make_overrides_args(
     )
 
 
-def test_apply_cli_overrides_enable_single():
+@pytest.mark.parametrize(
+    ("enable", "expected_enabled"),
+    [
+        pytest.param(["mypy"], {"mypy"}, id="single"),
+        pytest.param(["mypy,pyright"], {"mypy", "pyright"}, id="comma-separated"),
+        pytest.param(["mypy", "pyright"], {"mypy", "pyright"}, id="multi-specified"),
+    ],
+)
+def test_apply_cli_overrides_enable(enable: list[str], expected_enabled: set[str]):
     config = pyfltr.config.config.create_default_config()
-    config.values["mypy"] = False
-    pyfltr.cli.overrides.apply_cli_overrides(config, _make_overrides_args(enable=["mypy"]))
-    assert config.values["mypy"] is True
-
-
-def test_apply_cli_overrides_enable_comma_separated():
-    config = pyfltr.config.config.create_default_config()
-    config.values["mypy"] = False
-    config.values["pyright"] = False
-    pyfltr.cli.overrides.apply_cli_overrides(config, _make_overrides_args(enable=["mypy,pyright"]))
-    assert config.values["mypy"] is True
-    assert config.values["pyright"] is True
-
-
-def test_apply_cli_overrides_enable_multi_specified():
-    config = pyfltr.config.config.create_default_config()
-    config.values["mypy"] = False
-    config.values["pyright"] = False
-    pyfltr.cli.overrides.apply_cli_overrides(config, _make_overrides_args(enable=["mypy", "pyright"]))
-    assert config.values["mypy"] is True
-    assert config.values["pyright"] is True
+    candidates = ("mypy", "pyright", "pylint")
+    for name in candidates:
+        config.values[name] = False
+    pyfltr.cli.overrides.apply_cli_overrides(config, _make_overrides_args(enable=enable))
+    assert {name for name in candidates if config.values[name]} == expected_enabled
 
 
 def test_apply_cli_overrides_disable_single():
