@@ -213,38 +213,50 @@ def _is_rust_test(tokens: list[_Token], index: int) -> bool:
     return tokens[index].value == "#" and [item.value for item in tokens[index + 1 : index + 4]] == ["[", "test", "]"]
 
 
+_COMPARISON_OPERANDS_ONLY = {"=", "==", "===", "!=", "!==", "&&", "||"}
+_TYPE_ARGUMENT_FOLLOWERS = {"(", ")", "]", "}", ",", ";", ".", "?", ":", "|", "&", ">", "::", "=>", "as", "satisfies"}
+
+
 def _type_arguments_end(tokens: list[_Token], pairs: dict[int, int], start: int, close: int, types: bool) -> int:
     depth = 1
     index = start + 1
     while index < close:
         value = tokens[index].value
+        shift = value == "<" and index == start + 1
+        if value == ";" or not types and (value in _COMPARISON_OPERANDS_ONLY or shift):
+            return start
         if value == "<":
             depth += 1
-        elif value == ">":
+        elif value == ">" and tokens[index - 1].value != "-":
             depth -= 1
             if depth == 0:
-                if types or index + 1 < close and tokens[index + 1].value in {"(", "=>"}:
+                following = tokens[index + 1] if index + 1 < close else None
+                if (
+                    types
+                    or following is None
+                    or not following.literal
+                    and (
+                        following.value in _TYPE_ARGUMENT_FOLLOWERS
+                        or following.value == "["
+                        and pairs.get(index + 1) == index + 2
+                    )
+                ):
                     return index + 1
                 return start
-        elif value == ";":
-            return start
         index = pairs.get(index, index) + 1
     return start
 
 
 def _next_ts_token(tokens: list[_Token], pairs: dict[int, int], index: int, close: int, types: bool = False) -> int:
     if tokens[index].value == "<":
-        name = index - 1
-        while name >= 2 and tokens[name - 1].value in {".", "::"}:
-            name -= 2
-        types = (
-            types
-            or index > 0
-            and tokens[index - 1].value in {"::", "(", ","}
-            or name > 0
-            and tokens[name - 1].value in {"as", "satisfies"}
+        previous = tokens[index - 1] if index > 0 else None
+        operand_start = (
+            previous is None
+            or not previous.literal
+            and previous.value not in {")", "]", "}"}
+            and not previous.value.replace("$", "_").isidentifier()
         )
-        end = _type_arguments_end(tokens, pairs, index, close, types)
+        end = _type_arguments_end(tokens, pairs, index, close, types or operand_start)
         if end != index:
             return end
     return pairs.get(index, index) + 1
