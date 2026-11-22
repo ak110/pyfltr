@@ -227,6 +227,37 @@ def _is_rust_test(tokens: list[_Token], index: int) -> bool:
     return tokens[index].value == "#" and [item.value for item in tokens[index + 1 : index + 4]] == ["[", "test", "]"]
 
 
+def _argument_end(tokens: list[_Token], pairs: dict[int, int], start: int, close: int) -> int:
+    while start < close and tokens[start].value != ",":
+        start = pairs.get(start, start) + 1
+    return start
+
+
+def _ts_test_body(tokens: list[_Token], pairs: dict[int, int], call: int) -> tuple[int, int] | None:
+    close = pairs[call]
+    start = _argument_end(tokens, pairs, call + 1, close) + 1
+    end = _argument_end(tokens, pairs, start, close)
+    while start < end and tokens[start].value == "(" and pairs.get(start) == end - 1:
+        start += 1
+        end -= 1
+    while start < end:
+        value = tokens[start].value
+        if value == "=>":
+            body = start + 1
+            if body == end or tokens[body].value == ";":
+                raise _InputError(tokens[start].line, "試験本文がない")
+            if tokens[body].value == "{":
+                return body + 1, pairs[body]
+            return body, end
+        if value == "function":
+            opening = next((position for position in range(start + 1, end) if tokens[position].value == "{"), None)
+            if opening is None:
+                raise _InputError(tokens[start].line, "試験本文を解析できない")
+            return opening + 1, pairs[opening]
+        start = pairs.get(start, start) + 1
+    return None
+
+
 def analyze_foreign(source: str, rust: bool) -> tuple[list[TestFunction], dict[int, str]]:
     """テスト宣言ごとの比較とコメントの位置を返す。"""
     if rust and not re.search(r"#\s*\[\s*test\s*\]", source):
@@ -279,6 +310,9 @@ def analyze_foreign(source: str, rust: bool) -> tuple[list[TestFunction], dict[i
             if fn is None or fn + 1 >= len(tokens):
                 raise _InputError(token.line, "#[test]に関数がない")
             opening = next((position for position in range(fn + 2, len(tokens)) if tokens[position].value == "{"), None)
+            if opening is None or opening not in pairs:
+                raise _InputError(token.line, "試験本文を解析できない")
+            body, end = opening + 1, pairs[opening]
             name = tokens[fn + 1].value
             line = tokens[fn].line
         else:
@@ -289,30 +323,20 @@ def analyze_foreign(source: str, rust: bool) -> tuple[list[TestFunction], dict[i
                 call += 2
             if call >= len(tokens) or tokens[call].value != "(" or call not in pairs:
                 continue
-            close = pairs[call]
-            callback = next(
-                (position for position in range(call + 1, close) if tokens[position].value in {"=>", "function"}), None
-            )
-            if callback is None:
+            span = _ts_test_body(tokens, pairs, call)
+            if span is None:
                 continue
-            opening = (
-                callback + 1
-                if tokens[callback].value == "=>"
-                else next((position for position in range(callback + 1, close) if tokens[position].value == "{"), None)
-            )
+            body, end = span
             name = tokens[call + 1].value.strip("\"'`")
             line = token.line
-        if opening is None or opening not in pairs or tokens[opening].value != "{":
-            raise _InputError(token.line, "試験本文を解析できない")
-        end = pairs[opening]
         functions.append(
             TestFunction(
                 f"{name}@{line}",
                 line,
                 token.line,
                 tokens[end].line,
-                tokens[min(opening + 1, end)].line,
-                _foreign_checks(tokens, pairs, opening + 1, end, helpers, globals_),
+                tokens[body].line,
+                _foreign_checks(tokens, pairs, body, end, helpers, globals_),
             )
         )
     return functions, comments

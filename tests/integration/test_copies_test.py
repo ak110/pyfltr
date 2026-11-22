@@ -17,16 +17,16 @@ _CASES = [
     ),
     (
         "sample.spec.tsx",
-        'import { LABEL } from "./app";\ntest("label", () => { expect(LABEL).toBe("ok"); });\n',
-        'test("result", () => { expect(render()).toHaveProperty("text"); });\n',
+        'import { LABEL } from "./app";\ntest("label", () => (expect(LABEL).toBe("ok")), 100);\n',
+        'test("double", () => expect(double(2)).toBe(4));\n',
         'test("bad", () => {\n',
         "//",
     ),
     (
         "sample.test.ts",
-        'import { LABEL } from "./app";\nit("label", () => { expect(LABEL).toBe("ok"); });\n',
-        'it("result", () => { expect(render()).toHaveProperty("text"); });\n',
-        'it("bad", () => {\n',
+        'import { LABEL } from "./app";\nit("label", () => expect(LABEL).toBe("ok"));\n',
+        'it("result", () => expect(render()).toHaveProperty("text"));\n',
+        'it("bad", () => );\n',
         "//",
     ),
     (
@@ -91,6 +91,24 @@ def test_exit_status_and_diagnostics(tmp_path: pathlib.Path, case: str, expected
     if case == "syntax":
         assert [item["line"] for item in diagnostics] == [4 if item["path"] != "sample.rs" else 5 for item in diagnostics]
 
+    plain = _run(tmp_path, "pyfltr.test_copies", *names)
+    assert plain.returncode == expected, plain.stderr
+    actions = {
+        (name, rule): (
+            "対象の構文・パス・読取権限を修正する。"
+            if rule == "input-error"
+            else f"{comment} test-copy-contract: <保証する独立契約の理由>"
+        )
+        for name, *_, comment in _CASES
+        for rule in rules
+    }
+    for (name, rule), action in actions.items():
+        assert any(
+            line.startswith(f"{name}:") and f": error: {rule}: " in line and action in line
+            for line in plain.stderr.splitlines()
+        )
+        assert action in json.loads(standalone.stdout)["next_action"]
+
     for mode in ("run", "ci"):
         wrapped = _run(tmp_path, "pyfltr", mode, "--commands=test-copies", "--output-format=jsonl", "--no-quiet", *names)
         assert wrapped.returncode == int(expected != 0), (wrapped.stdout, wrapped.stderr)
@@ -101,6 +119,9 @@ def test_exit_status_and_diagnostics(tmp_path: pathlib.Path, case: str, expected
         ]
         reported = sorted((record["file"], message["rule"]) for record in records for message in record["messages"])
         assert reported == wanted
+        for record in records:
+            for message in record["messages"]:
+                assert actions[record["file"], message["rule"]] in message["msg"]
         if case == "syntax":
             assert {record["file"]: record["messages"][0]["line"] for record in records} == {
                 item["path"]: item["line"] for item in diagnostics

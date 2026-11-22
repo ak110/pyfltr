@@ -12,10 +12,19 @@ from pyfltr.test_copies.model import TestFunction
 from pyfltr.test_copies.python import PythonAnalysis, analyze_python
 
 _MARKER = "test-copy-contract:"
-_NEXT_ACTION = (
-    "次の操作: 写しだけの関数を削除するか、独立した結果の検査へ置き換える。正当な契約は関数直前か本文先頭に "
-    "# test-copy-contract: <保証する独立契約の理由> を置く。入力不良は対象の構文・パス・読取権限を修正する。"
-)
+
+
+def _next_action(kind: object, path: pathlib.Path) -> str:
+    if kind == "input-error":
+        return "対象の構文・パス・読取権限を修正する。"
+    marker = "#" if _language(path) == "python" else "//"
+    contract = f"{marker} {_MARKER} <保証する独立契約の理由>"
+    if kind == "invalid-exception":
+        return f"重複や空の例外を除き、正当な契約には関数の直前または本文先頭に {contract} を1つ置く。"
+    return (
+        "写しだけの関数を削除するか、独立した結果の検査へ置き換える。"
+        f"正当な契約には {contract} を関数の直前または本文先頭に置く。"
+    )
 
 
 def _exceptions(functions: list[TestFunction], comments: dict[int, str]) -> list[tuple[int, str]]:
@@ -131,19 +140,19 @@ def main(argv: list[str] | None = None) -> int:
                 )
     except (OSError, ValueError, RuntimeError) as error:
         diagnostics.append({"path": str(root), "line": 1, "kind": "input-error", "message": " ".join(str(error).splitlines())})
+    actions = [_next_action(item["kind"], pathlib.Path(str(item["path"]))) for item in diagnostics]
     if args.json:
         response = {"schema_version": 1, "root": str(root), "files": files, "diagnostics": diagnostics}
         if diagnostics:
-            response["next_action"] = _NEXT_ACTION
+            response["next_action"] = "次の操作: " + " ".join(dict.fromkeys(actions))
         print(json.dumps(response, ensure_ascii=False, indent=2))
     else:
-        for diagnostic in diagnostics:
+        for diagnostic, action in zip(diagnostics, actions, strict=True):
             print(
-                f"{diagnostic['path']}:{diagnostic['line']}: error: {diagnostic['kind']}: {diagnostic['message']}",
+                f"{diagnostic['path']}:{diagnostic['line']}: error: {diagnostic['kind']}: "
+                f"{diagnostic['message']} 次の操作: {action}",
                 file=sys.stderr,
             )
-        if diagnostics:
-            print(_NEXT_ACTION, file=sys.stderr)
     if any(item["kind"] in {"input-error", "invalid-exception"} for item in diagnostics):
         return 2
     return 1 if diagnostics else 0
