@@ -62,6 +62,7 @@ _CASES: tuple[_Case, ...] = (
     _Case("textlint", "textlint_workspace", ("sample.md",), required_bins=("pnpm",)),
     # 内蔵linter: pyfltrのPythonで起動するため追加バイナリ要求なし
     _Case("markdown-structure", "basic", ("sample.md",)),
+    _Case("comment-check", "comment_check_workspace", ("sample.py",)),
     _Case("test-copies", "basic", ("sample_test.py",)),
     # mise経由のネイティブバイナリ
     _Case("shfmt", "basic", ("sample.sh",), required_bins=("mise",)),

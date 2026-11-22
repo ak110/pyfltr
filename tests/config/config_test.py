@@ -833,6 +833,7 @@ def test_textlint_markdownlint_path_default_empty() -> None:
         ("bandit", False, "python-runner"),
         # colloquial-checkは検出結果をwarning扱いに限定するopt-inツールのため既定無効。
         ("colloquial-check", False, "direct"),
+        ("comment-check", False, "direct"),
         # markdown-structureは表記の崩れをerrorで拒否するopt-inツールのため既定無効。
         ("markdown-structure", False, "direct"),
         ("test-copies", False, "direct"),

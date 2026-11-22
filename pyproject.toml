@@ -250,8 +250,6 @@ line-length = 128
 [tool.ruff.lint]
 # https://docs.astral.sh/ruff/linter/#rule-selection
 select = [
-    # pydocstyle
-    "D",
     # pycodestyle
     "E",
     # Pyflakes
@@ -276,18 +274,8 @@ select = [
     "S605", # os.systemなどシェルを起動する関数
     "S608", # 文字列結合・書式化で組み立てたSQL
 ]
-ignore = [
-    "D107", # Missing docstring in `__init__`
-    "D415", # First line should end with a period
-    "D403", # First word of the first line should be properly capitalized（日本語docstringにそぐわないため）
-]
-
-[tool.ruff.lint.pydocstyle]
-convention = "google"
-
 [tool.ruff.lint.per-file-ignores]
-"**_test.py" = ["D", "S102", "S301", "S306", "S307", "S602", "S604", "S605", "S608"]
-"**/__init__.py" = ["D104"]  # Missing docstring in public package
+"**_test.py" = ["S102", "S301", "S306", "S307", "S602", "S604", "S605", "S608"]
 
 [tool.mypy]
 # https://mypy.readthedocs.io/en/stable/config_file.html

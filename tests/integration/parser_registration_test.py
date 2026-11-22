@@ -125,6 +125,7 @@ def test_native_output_reaches_jsonl_and_mcp(command: str, tmp_path: pathlib.Pat
         ("actionlint", ":3:4: bad value [expression]", 3, 4, "expression", None),
         ("colloquial-check", ":3:4: bad value", 3, 4, None, None),
         ("markdown-structure", ":3:4: error: bad value", 3, 4, None, "error"),
+        ("comment-check", ":3:4: error: bad value", 3, 4, None, "error"),
         ("test-copies", ":3: error: constant-only+text-only: bad value", 3, None, "constant-only+text-only", "error"),
         (
             "test-copies",

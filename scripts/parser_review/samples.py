@@ -209,6 +209,7 @@ SAMPLES: tuple[Sample, ...] = (
     ),
     _sample("lychee", {"sample.md": "# sample\n\n[missing](./missing-file.md)\n"}, ("sample.md",)),
     _sample("colloquial-check", {"sample.md": "# sample\n\nこれで足" + "りる。\n"}, ("sample.md",)),
+    _sample("comment-check", {"sample.py": "# unexpected comment\n"}, ("sample.py",)),
     _sample(
         "test-copies",
         {"sample_test.py": "from app import LABEL\n\n# test-copy-contract:\ndef test_label():\n    assert LABEL == 'ok'\n"},

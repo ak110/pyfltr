@@ -2,6 +2,7 @@
 
 import sys
 
+from pyfltr.comment_check.check import SUFFIXES
 from pyfltr.diagnostics import ErrorLocation
 from pyfltr.tool_types import BinToolSpec, CommandInfo, FunctionRef, StructuredOutputSpec
 
@@ -241,6 +242,21 @@ COMMANDS: dict[str, CommandInfo] = {
             "markdown-structure-fast": True,
             # fix段で通常argsの後に追加する引数。文境界へ改行とリスト継続の字下げを加える。
             "markdown-structure-fix-args": ["--fix"],
+        },
+    ),
+    "comment-check": CommandInfo(
+        type="linter",
+        targets=[f"*{suffix}" for suffix in SUFFIXES],
+        fixed_cost=0.1,
+        per_file_cost=0.005,
+        subproject_aware=False,
+        diagnostic_pattern=r"^(?P<file>.+?):(?P<line>\d+):(?P<col>\d+): (?P<severity>error): (?P<message>.+)$",
+        defaults={
+            "comment-check": False,
+            "comment-check-path": sys.executable,
+            "comment-check-args": ["-m", "pyfltr.comment_check"],
+            "comment-check-runner": "direct",
+            "comment-check-fast": False,
         },
     ),
 }

@@ -1,0 +1,2 @@
+[tool.pyfltr]
+comment-check = true
