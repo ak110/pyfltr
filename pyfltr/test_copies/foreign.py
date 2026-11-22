@@ -234,6 +234,16 @@ def _type_arguments_end(tokens: list[_Token], pairs: dict[int, int], start: int,
 
 def _next_ts_token(tokens: list[_Token], pairs: dict[int, int], index: int, close: int, types: bool = False) -> int:
     if tokens[index].value == "<":
+        name = index - 1
+        while name >= 2 and tokens[name - 1].value in {".", "::"}:
+            name -= 2
+        types = (
+            types
+            or index > 0
+            and tokens[index - 1].value in {"::", "(", ","}
+            or name > 0
+            and tokens[name - 1].value in {"as", "satisfies"}
+        )
         end = _type_arguments_end(tokens, pairs, index, close, types)
         if end != index:
             return end

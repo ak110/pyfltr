@@ -176,6 +176,24 @@ def test_source_text_copy_reports_text_rule(tmp_path: pathlib.Path) -> None:
             'fn check(m: HashMap<String, i32>, value: &str) { assert_eq!(value, "ok"); }\n'
             "#[test]\nfn label() { check(HashMap::new(), LABEL); }\n",
         ),
+        (
+            "assertion.test.ts",
+            'import { LABEL } from "./app";\n'
+            'function check(m, value: string) { expect(value).toBe("ok"); }\n'
+            'test("label", () => { check(x as Map<string, number>, LABEL); });\n',
+        ),
+        (
+            "prefix.test.ts",
+            'import { LABEL } from "./app";\n'
+            'function check(m, value: string) { expect(value).toBe("ok"); }\n'
+            'test("label", () => { check(<Map<string, number>>x, LABEL); });\n',
+        ),
+        (
+            "turbofish.rs",
+            "use crate::LABEL;\n"
+            'fn check(m: usize, value: &str) { assert_eq!(value, "ok"); }\n'
+            "#[test]\nfn label() { check(HashMap::<String, i32>::new().len(), LABEL); }\n",
+        ),
     ],
 )
 def test_generic_commas_do_not_split_helper_arguments(tmp_path: pathlib.Path, name: str, source: str) -> None:
