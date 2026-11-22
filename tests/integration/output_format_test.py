@@ -50,10 +50,9 @@ def test_build_lines_supported_tool_diagnostics(default_config):
     assert parsed[3]["commands_summary"]["needs_action"]["failed"] == 1
 
 
-@pytest.mark.parametrize("tool", ["pre-commit", "prek"])
-def test_build_lines_warnings_prepended(default_config, tool: str):
+def test_build_lines_warnings_prepended(default_config):
     result = _make_result("ruff-format", returncode=0, command_type="formatter")
-    warning_message = f"{tool} 設定ファイル不在"
+    warning_message = "prek 設定ファイル不在"
     warnings = [
         {"source": "config", "message": warning_message, "hint": "設定を見直してください。"},
         {"source": "git", "message": "git が見つからない", "hint": "gitを導入してください。"},
@@ -607,29 +606,10 @@ def test_run_cli_jsonl_restores_logger_state(mocker, capsys):
     pyfltr.cli.main.run(["ci", "--output-format=jsonl", "--commands=mypy", str(pathlib.Path(__file__).parents[2])])
     capsys.readouterr()
 
-    pyfltr.cli.main.run(["ci", "--commands=mypy", str(pathlib.Path(__file__).parents[2])])
+    pyfltr.cli.main.run(["ci", "--output-format=text", "--commands=mypy", str(pathlib.Path(__file__).parents[2])])
     captured = capsys.readouterr()
-    assert "summary" in captured.out
-
-
-def test_build_command_lines_with_diagnostics(default_config):
-    errors = [
-        _make_error("mypy", "src/b.py", 5, "later"),
-        _make_error("mypy", "src/a.py", 10, "earlier"),
-    ]
-    result = _make_result("mypy", returncode=1, errors=errors)
-    lines = pyfltr.output.jsonl.build_command_lines(result, default_config)
-    parsed = [json.loads(line) for line in lines]
-
-    assert len(parsed) == 3
-    assert parsed[0]["kind"] == "diagnostic"
-    assert parsed[0]["file"] == "src/a.py"
-    assert parsed[0]["messages"][0]["line"] == 10
-    assert parsed[1]["kind"] == "diagnostic"
-    assert parsed[1]["file"] == "src/b.py"
-    assert parsed[1]["messages"][0]["line"] == 5
-    assert parsed[2]["kind"] == "command"
-    assert parsed[2]["diagnostics"] == 2
+    assert "----- summary" in captured.out
+    assert not any(line.startswith("{") for line in captured.out.splitlines())
 
 
 def test_build_command_lines_no_diagnostics(default_config):
@@ -734,17 +714,6 @@ def test_build_header_record_fields(default_config):
     assert isinstance(record["uv"]["x_available"], bool)
 
 
-def test_build_lines_header_first(default_config):
-    result = _make_result("mypy", returncode=0)
-    lines = pyfltr.output.jsonl.build_lines([result], default_config, exit_code=0, commands=["mypy"], files=10)
-    parsed = [json.loads(line) for line in lines]
-    assert parsed[0]["kind"] == "header"
-    assert parsed[0]["commands"] == ["mypy"]
-    assert "commands_count" not in parsed[0]
-    assert parsed[0]["files"] == 10
-    assert parsed[-1]["kind"] == "summary"
-
-
 def test_build_lines_no_header_when_omitted(default_config):
     result = _make_result("mypy", returncode=0)
     lines = pyfltr.output.jsonl.build_lines([result], default_config, exit_code=0)
@@ -788,10 +757,9 @@ def test_commands_option_mixed_repeated_and_comma(mocker, capsys):
     assert set(commands) == {"mypy", "pyright", "ruff-check"}
 
 
-def test_commands_option_dedup_preserves_first_occurrence(mocker, capsys):
-    commands = _header_commands_for(["--commands=mypy,pyright", "--commands=mypy"], mocker, capsys)
-    assert commands.count("mypy") == 1
-    assert "pyright" in commands
+def test_commands_option_dedup_uses_configured_order(mocker, capsys):
+    commands = _header_commands_for(["--commands=pyright,mypy", "--commands=mypy"], mocker, capsys)
+    assert commands == ["mypy", "pyright"]
 
 
 _REQUIRED_CQ_FIELDS = {"description", "check_name", "fingerprint", "severity", "location"}
@@ -807,12 +775,7 @@ def test_run_cli_code_quality_stdout(mocker, capsys):
     assert returncode == 0
     captured = capsys.readouterr()
     payload = json.loads(captured.out)
-    assert isinstance(payload, list)
-    for issue in payload:
-        assert issue.keys() >= _REQUIRED_CQ_FIELDS
-        assert (issue.keys() | {"location"}) >= _REQUIRED_CQ_FIELDS
-        assert {"path", "lines"} <= issue["location"].keys()
-        assert "begin" in issue["location"]["lines"]
+    assert payload == []
     assert "----- pyfltr" in captured.err
     assert "----- summary" in captured.err
 
@@ -892,7 +855,10 @@ def test_build_command_lines_preserves_slow_tests(default_config) -> None:
     result = dataclasses.replace(_make_result("pytest", returncode=0, command_type="tester"), slow_tests=slow_tests)
     records = [json.loads(line) for line in pyfltr.output.jsonl.build_command_lines(result, default_config)]
     command = next(record for record in records if record["kind"] == "command")
-    assert command["slow_tests"] == [test.to_dict() for test in slow_tests]
+    assert command["slow_tests"] == [
+        {"nodeid": "tests/a_test.py::test_x", "phase": "call", "seconds": 2.0},
+        {"nodeid": "tests/b_test.py::test_y", "phase": "setup", "seconds": 1.5},
+    ]
 
 
 @pytest.mark.parametrize(

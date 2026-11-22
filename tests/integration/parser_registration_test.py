@@ -176,9 +176,14 @@ def test_builtin_position_delimiters(
 @pytest.mark.parametrize(
     "file", ["normal_test.py", "bad path_test.py", "bad:colon_test.py", "bad:12:colon_test.py", r"C:\my tests\sample_test.py"]
 )
-@pytest.mark.parametrize("style", ["summary", "line", "location", "frame", "crash"])
 @pytest.mark.parametrize(
-    "noise", ["E   ValueError: bad time 10:20:30", ">       x[1:3:2]", "E   text:99: in noise", ">   text:99: in noise"]
+    ("style", "noise"),
+    [("summary", "")]
+    + [
+        (style, noise)
+        for style in ("line", "location", "frame", "crash")
+        for noise in ("E   ValueError: bad time 10:20:30", ">       x[1:3:2]", "E   text:99: in noise", ">   text:99: in noise")
+    ],
 )
 def test_pytest_position_formats_preserve_filename(file: str, style: str, noise: str, tmp_path: pathlib.Path) -> None:
     summary = f"FAILED {file}::TestCase::test_sample - AssertionError: sample\n"

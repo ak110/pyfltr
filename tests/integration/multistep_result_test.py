@@ -10,19 +10,22 @@ from tests import conftest as testconf
 
 
 @pytest.mark.parametrize(
-    ("command", "suffix", "fix_stage", "first_code"),
+    ("command", "suffix", "fix_stage", "first_code", "stage"),
     [
-        ("ruff-format", ".py", False, 0),
-        ("taplo", ".toml", False, 1),
-        ("shfmt", ".sh", False, 1),
-        ("prettier", ".json", False, 1),
-        ("prettier", ".json", True, 0),
-        ("textlint", ".md", True, 1),
-        ("ruff-check", ".py", True, 0),
-        ("prek", ".py", False, 1),
+        (command, suffix, fix_stage, first_code, stage)
+        for command, suffix, fix_stage, first_code in [
+            ("ruff-format", ".py", False, 0),
+            ("taplo", ".toml", False, 1),
+            ("shfmt", ".sh", False, 1),
+            ("prettier", ".json", False, 1),
+            ("prettier", ".json", True, 0),
+            ("textlint", ".md", True, 1),
+            ("ruff-check", ".py", True, 0),
+            ("prek", ".py", False, 1),
+        ]
+        for stage in ((0,) if fix_stage and command in ("ruff-check", "prettier") else (0, 1))
     ],
 )
-@pytest.mark.parametrize("stage", [0, 1])
 @pytest.mark.parametrize("code,timeout", [(-9, False), (0, True)])
 @pytest.mark.parametrize("changed", [False, True])
 def test_stage_failure_reaches_final_result(
@@ -41,8 +44,6 @@ def test_stage_failure_reaches_final_result(
     target.write_text("", encoding="utf-8")
     (tmp_path / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
     calls: list[int] = []
-    single = fix_stage and command in ("ruff-check", "prettier")
-    failing_stage = 0 if single else stage
     fail_fast = command == "textlint"
 
     def run_process(*_args: typing.Any, **_kwargs: typing.Any) -> pyfltr.command.process.CompletedProcessWithTimeoutInfo:
@@ -52,9 +53,9 @@ def test_stage_failure_reaches_final_result(
             target.write_text("changed\n", encoding="utf-8")
         return pyfltr.command.process.CompletedProcessWithTimeoutInfo(
             args=[],
-            returncode=code if index == failing_stage else (first_code if index == 0 else 0),
+            returncode=code if index == stage else (first_code if index == 0 else 0),
             stdout=f"stage {index}\n",
-            timeout_exceeded=timeout and index == failing_stage,
+            timeout_exceeded=timeout and index == stage,
         )
 
     monkeypatch.setattr(pyfltr.command.process, "run_process", run_process)

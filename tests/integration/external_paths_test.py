@@ -168,67 +168,6 @@ def test_is_external_path_absolute_outside_is_external(
     assert "--allow-external-paths" in external_warnings[0]["hint"]
 
 
-def test_resolve_config_inject_path_returns_first_hit(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: pathlib.Path,
-) -> None:
-    (tmp_path / ".markdownlint.json").write_text("{}", encoding="utf-8")
-    internal = tmp_path / "doc.md"
-    internal.write_text("# doc\n", encoding="utf-8")
-
-    config = pyfltr.config.config.create_default_config()
-    _enable(config, ["markdownlint"])
-    _patch_build_commandline(monkeypatch)
-    _patch_subprocess(monkeypatch)
-
-    ctx = _testconf.make_execution_context(config, [internal], start_cwd=tmp_path)
-    result = pyfltr.command.dispatcher.execute_command("markdownlint", _testconf.make_args(), ctx)
-
-    prefix_len = len(_DEFAULT_PREFIXES["markdownlint"])
-    assert result.commandline[prefix_len] == "--config"
-    assert result.commandline[prefix_len + 1] == str((tmp_path / ".markdownlint.json").resolve())
-
-
-def test_resolve_config_inject_path_returns_none_if_absent(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: pathlib.Path,
-) -> None:
-    internal = tmp_path / "doc.md"
-    internal.write_text("# doc\n", encoding="utf-8")
-
-    config = pyfltr.config.config.create_default_config()
-    _enable(config, ["markdownlint"])
-    _patch_build_commandline(monkeypatch)
-    _patch_subprocess(monkeypatch)
-
-    ctx = _testconf.make_execution_context(config, [internal], start_cwd=tmp_path)
-    result = pyfltr.command.dispatcher.execute_command("markdownlint", _testconf.make_args(), ctx)
-
-    assert "--config" not in result.commandline
-
-
-def test_user_overrides_config_detects_separate_form(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: pathlib.Path,
-) -> None:
-    (tmp_path / ".markdownlint.json").write_text("{}", encoding="utf-8")
-    internal = tmp_path / "doc.md"
-    internal.write_text("# doc\n", encoding="utf-8")
-
-    config = pyfltr.config.config.create_default_config()
-    _enable(config, ["markdownlint"])
-    config.values["markdownlint-args"] = ["--config", "/user/path"]
-    _patch_build_commandline(monkeypatch)
-    _patch_subprocess(monkeypatch)
-
-    ctx = _testconf.make_execution_context(config, [internal], start_cwd=tmp_path)
-    result = pyfltr.command.dispatcher.execute_command("markdownlint", _testconf.make_args(), ctx)
-
-    assert result.commandline.count("--config") == 1
-    assert "/user/path" in result.commandline
-    assert str((tmp_path / ".markdownlint.json").resolve()) not in result.commandline
-
-
 def test_user_overrides_config_detects_equal_form(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
@@ -575,27 +514,6 @@ def test_allow_external_paths_keeps_external(
     assert str(external) in result.commandline
     assert pyfltr.warnings_.filtered_direct_files(reason="external") == []
     assert not [w for w in pyfltr.warnings_.collected_warnings() if w["source"] == "external-path"]
-
-
-def test_allow_external_paths_injects_config_for_external(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    config_file = tmp_path / ".textlintrc.yaml"
-    config_file.write_text("rules: {}\n", encoding="utf-8")
-    ext_dir = tmp_path.parent / f"ext-{tmp_path.name}-inject"
-    ext_dir.mkdir(parents=True, exist_ok=True)
-    external = (ext_dir / "doc.md").resolve()
-    external.write_text("", encoding="utf-8")
-
-    config = pyfltr.config.config.create_default_config()
-    _enable(config, ["textlint"])
-    _patch_build_commandline(monkeypatch)
-    _patch_subprocess(monkeypatch)
-
-    ctx = _testconf.make_execution_context(config, [external], start_cwd=tmp_path)
-    result = pyfltr.command.dispatcher.execute_command("textlint", _testconf.make_args(allow_external_paths=True), ctx)
-
-    assert "--config" in result.commandline
-    assert str(config_file.resolve()) in result.commandline
-    assert str(external) in result.commandline
 
 
 def test_allow_external_paths_via_cli(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:

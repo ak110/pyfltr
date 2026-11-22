@@ -321,6 +321,7 @@ def test_documented_guide_tools_and_disabled_notes_match_definitions() -> None:
         assert not pyfltr.config.model.DEFAULT_CONFIG[name], name
 
 
+# test-copy-contract: 利用者向け文書の撤去済みツール一覧と実装定義の一致
 def test_documented_removed_tools_match_definitions() -> None:
     section = _between(_guide("troubleshooting.md"), "v3.0.0で削除されたツール（", "）")
     assert set(section.split("・")) == set(pyfltr.tools.REMOVED_COMMANDS)

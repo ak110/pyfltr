@@ -273,14 +273,23 @@ def test_cli_no_always_targets_is_recorded_in_archive_argv(
     _write_project(project, extra=ALWAYS_CONFIG)
     cache_root = tmp_path / "cache"
     monkeypatch.setenv("PYFLTR_CACHE_DIR", str(cache_root))
-    monkeypatch.setattr("sys.argv", ["pyfltr", "run", "--commands=pytest", "--no-always-targets"])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "pyfltr",
+            "run",
+            "--commands=pytest",
+            "--no-always-targets",
+            "--work-dir",
+            str(project),
+            "--no-cache",
+            "--no-gitignore",
+        ],
+    )
     proc = subprocess.CompletedProcess(["pytest"], returncode=0, stdout="")
     mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
-    pyfltr.cli.main.run(
-        ["run", "--commands=pytest", "--no-always-targets", "--work-dir", str(project), "--no-cache", "--no-gitignore"]
-    )
-
+    assert pyfltr.cli.main.run() == 0
     assert "--no-always-targets" in _archived_argv(cache_root)
 
 

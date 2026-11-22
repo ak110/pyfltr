@@ -365,6 +365,7 @@ def test_compare_uses_each_input_start_cwd(tmp_path: pathlib.Path) -> None:
     inputs = tmp_path / "inputs.jsonl"
     inputs.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
     report = compare.compare(tmp_path, tmp_path / "compare.json", base="HEAD")
+    assert sorted(entry["id"] for entry in report["entries"]) == ["first", "second"]
     for entry in report["entries"]:
         for side in ("base", "current"):
             assert [(error["file"], error["line"]) for error in entry[side]] == [("sample_test.py", 3)]

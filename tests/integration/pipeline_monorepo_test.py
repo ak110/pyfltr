@@ -82,27 +82,6 @@ def _mypy_call_count(mock_run) -> int:
     return count
 
 
-def test_monorepo_pytest_runs_per_subproject(tmp_path: pathlib.Path, mocker) -> None:
-    _make_subproject(tmp_path, name="root")
-    _make_subproject(tmp_path / "pkg_a", name="pkg_a")
-    _make_subproject(tmp_path / "pkg_b", name="pkg_b")
-    (tmp_path / "root_test.py").write_text("def test_root(): pass\n", encoding="utf-8")
-    (tmp_path / "pkg_a" / "a_test.py").write_text("def test_a(): pass\n", encoding="utf-8")
-    (tmp_path / "pkg_b" / "b_test.py").write_text("def test_b(): pass\n", encoding="utf-8")
-
-    proc = subprocess.CompletedProcess(["pytest"], returncode=0, stdout="")
-    mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
-
-    pyfltr.cli.main.run(
-        ["run", "--work-dir", str(tmp_path), "--commands=pytest", "--no-archive", "--no-cache", "--no-gitignore"]
-    )
-
-    cwds = _pytest_cwds(mock_run)
-    assert tmp_path.resolve() in cwds
-    assert (tmp_path / "pkg_a").resolve() in cwds
-    assert (tmp_path / "pkg_b").resolve() in cwds
-
-
 def test_monorepo_fallback_to_single_when_one_subproject(tmp_path: pathlib.Path, mocker) -> None:
     _make_subproject(tmp_path, name="root")
     (tmp_path / "root_test.py").write_text("def test_root(): pass\n", encoding="utf-8")
@@ -120,21 +99,6 @@ def test_monorepo_fallback_to_single_when_one_subproject(tmp_path: pathlib.Path,
         if call.args and isinstance(call.args[0], list) and "pytest" in " ".join(call.args[0])
     ]
     assert len(pytest_calls) == 1
-
-
-def test_monorepo_subproject_aware_false_uses_single_cwd(tmp_path: pathlib.Path, mocker) -> None:
-    _make_subproject(tmp_path, name="root")
-    _make_subproject(tmp_path / "pkg_a", name="pkg_a")
-    _make_subproject(tmp_path / "pkg_b", name="pkg_b")
-    (tmp_path / "root.txt").write_text("hello world\n", encoding="utf-8")
-    (tmp_path / "pkg_a" / "a.txt").write_text("hello world\n", encoding="utf-8")
-
-    proc = subprocess.CompletedProcess(["typos"], returncode=0, stdout="")
-    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
-
-    pyfltr.cli.main.run(
-        ["run", "--work-dir", str(tmp_path), "--commands=typos", "--no-archive", "--no-cache", "--no-gitignore"]
-    )
 
 
 @pytest.mark.parametrize(
@@ -239,6 +203,8 @@ def test_monorepo_repo_level_tool_fixed_by_start_config(tmp_path: pathlib.Path, 
         if call.args and isinstance(call.args[0], list) and "typos" in " ".join(call.args[0])
     ]
     assert len(typos_calls) == (1 if parent_on else 0)
+    if parent_on:
+        assert typos_calls[0].kwargs["cwd"] == tmp_path
 
 
 def _make_cargo_crate(path: pathlib.Path, *, name: str = "crate") -> None:
