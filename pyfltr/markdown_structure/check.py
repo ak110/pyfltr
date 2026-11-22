@@ -5,11 +5,13 @@ CommonMarkの構造（コード、表、引用、リスト）を`markdown-it-py`
 修正は改行とリスト継続の字下げの追加だけとし、他の文字は変えない。
 """
 
+import bisect
 import dataclasses
 import re
 
 import markdown_it
 import markdown_it.rules_inline
+import markdown_it.token
 
 _COMMENT = re.compile(r"<!--[\s\S]*?(?:-->|$)")
 _LIST = re.compile(r"^(\s*)(?:[-+*]|\d+[.)])(\s+)")
@@ -90,14 +92,9 @@ def _sentence_breaks(text: str) -> list[int]:
 
 
 def _safe_insertions(
-    parser: markdown_it.MarkdownIt, text: str, candidates: dict[int, str]
+    parser: markdown_it.MarkdownIt, text: str, candidates: dict[int, str], newline: str
 ) -> tuple[dict[int, str], list[Issue]]:
-    def structure(source: str) -> list[tuple[str, str, int, bool]]:
-        tokens = parser.parse(source)
-        return [(token.type, token.tag, token.nesting, token.hidden) for token in tokens]
-
-    baseline = structure(text)
-    newline = "\r\n" if "\r\n" in text else "\n"
+    baseline = _structure(parser.parse(text))
     accepted: dict[int, str] = {}
     issues: list[Issue] = []
     # 確定済みの改行も含めて比較し、元の挿入位置がずれないよう末尾から判定する。
@@ -105,7 +102,7 @@ def _safe_insertions(
         candidate = text[:position] + newline + indent + text[position:]
         if text[position:].lstrip(" \t").startswith("#"):
             message = "1文1行へ改行する（行頭の # が見出しとして扱われうるため、文を調整して手動で改行する）"
-        elif structure(candidate) != baseline:
+        elif _structure(parser.parse(candidate)) != baseline:
             message = "1文1行へ改行する（改行するとMarkdownの構造が変わるため、文を調整して手動で改行する）"
         else:
             message = "1文1行へ改行する（自動修正の対象）"
@@ -113,6 +110,45 @@ def _safe_insertions(
             text = candidate
         issues.append(Issue(position - 1, message))
     return accepted, issues
+
+
+def _structure(tokens: list[markdown_it.token.Token]) -> list[tuple[str, str, int, bool]]:
+    return [(token.type, token.tag, token.nesting, token.hidden) for token in tokens]
+
+
+def _check_insertions(
+    parser: markdown_it.MarkdownIt, text: str, candidates: dict[int, str], offsets: list[int]
+) -> tuple[dict[int, str], list[Issue]]:
+    baseline = parser.parse(text)
+    positions = sorted(candidates)
+    newline = "\r\n" if "\r\n" in text else "\n"
+    accepted: dict[int, str] = {}
+    issues: list[Issue] = []
+    for token in baseline:
+        if token.level or token.map is None:
+            continue
+        start_line, stop_line = token.map
+        start, stop = offsets[start_line], offsets[stop_line]
+        left, right = bisect.bisect_left(positions, start), bisect.bisect_left(positions, stop)
+        block_candidates = {position - start: candidates[position] for position in positions[left:right]}
+        if not block_candidates:
+            continue
+        block_insertions, block_issues = _safe_insertions(parser, text[start:stop], block_candidates, newline)
+        accepted.update((position + start, indent) for position, indent in block_insertions.items())
+        issues.extend(Issue(issue.offset + start, issue.message) for issue in block_issues)
+
+    # 隣接ブロックの解釈が変わる場合や候補が未加工の原文のブロックに対応しない場合は、
+    # 周囲を含む全文で候補を判定し直す。通常は最後の1回だけ全文の構造を比較する。
+    if len(issues) == len(candidates):
+        parts: list[str] = []
+        previous = 0
+        for position, indent in sorted(accepted.items()):
+            parts.extend((text[previous:position], newline, indent))
+            previous = position
+        parts.append(text[previous:])
+        if _structure(parser.parse("".join(parts))) == _structure(baseline):
+            return accepted, issues
+    return _safe_insertions(parser, text, candidates, newline)
 
 
 def inspect(text: str) -> tuple[list[Issue], dict[int, str]]:
@@ -124,6 +160,8 @@ def inspect(text: str) -> tuple[list[Issue], dict[int, str]]:
         offsets.append(offsets[-1] + len(line))
     parser = markdown_it.MarkdownIt("commonmark").enable("table")
     tokens = parser.parse(source)
+    # 空白制御や条件分岐で、原文では別のブロックにあるテキストも展開後に連結しうる。
+    has_template = any(marker in text for marker in ("{%", "{{", "{#"))
     issues: list[Issue] = []
     candidates: dict[int, str] = {}
     quote_depth = 0
@@ -171,7 +209,6 @@ def inspect(text: str) -> tuple[list[Issue], dict[int, str]]:
         first_content = token.content.split("\n", maxsplit=1)[0]
         content_column = lines[start].find(first_content)
         indent = " " * content_column if lists and content_column >= 0 else (lists[-1] if lists else "")
-        has_template = any(marker in text[offsets[start] : offsets[stop]] for marker in ("{%", "{{", "{#"))
         for end in _sentence_breaks(raw):
             position = offsets[start] + end
             if has_template:
@@ -180,7 +217,7 @@ def inspect(text: str) -> tuple[list[Issue], dict[int, str]]:
                 # 空白は原文のまま次行へ送り、リストの継続に必要な字下げだけを追加する。
                 candidates[position] = indent
     if candidates:
-        insertions, break_issues = _safe_insertions(parser, text, candidates)
+        insertions, break_issues = _check_insertions(parser, text, candidates, offsets)
         issues.extend(break_issues)
     else:
         insertions = {}

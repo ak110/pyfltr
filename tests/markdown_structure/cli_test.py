@@ -123,6 +123,35 @@ def test_fix_keeps_safe_break_in_same_paragraph(tmp_path: pathlib.Path) -> None:
     assert path.read_bytes() == "甲。\n乙。- 丙。\n丁。\n".encode()
 
 
+def test_fix_does_not_combine_breaks_that_create_table(tmp_path: pathlib.Path) -> None:
+    """片方だけでは段落のままでも、両方を挿入すると表になる場合は片方だけ修正する。"""
+    path = tmp_path / "doc.md"
+    path.write_bytes("甲。| a | b。| - | - |\n".encode())
+    result = _run("--fix", path)
+    assert result.returncode == 1
+    assert "Markdownの構造が変わる" in result.stdout
+    assert path.read_bytes() == "甲。| a | b。\n| - | - |\n".encode()
+
+
+def test_fix_preserves_heading_joined_by_jinja2_whitespace_control(tmp_path: pathlib.Path) -> None:
+    """原文では空行で分かれた段落が展開時に連結しても、見出しを分割しない。"""
+    source = '{{ "# " -}}\n\n甲。乙。\n'
+    path = tmp_path / "doc.md"
+    path.write_bytes(source.encode())
+    result = _run("--fix", path)
+    assert result.returncode == 1
+    assert f"{_where(path)}:3:2:" in result.stdout
+    assert "Jinja2構文を含む" in result.stdout
+    assert path.read_bytes() == source.encode()
+
+    def blocks(template: str) -> list[str]:
+        rendered = jinja2.Environment().from_string(template).render()
+        return [token.type for token in markdown_it.MarkdownIt("commonmark").parse(rendered)]
+
+    assert blocks(source) == ["heading_open", "inline", "heading_close"]
+    assert blocks(path.read_bytes().decode()) == blocks(source)
+
+
 def test_fix_preserves_rendered_jinja2_list(tmp_path: pathlib.Path) -> None:
     """テンプレート原文と、複数回の展開でできるリスト・段落の構造を維持する。"""
     source = "{% for item in items %}- {{ item }}。説明。\n{% endfor %}\n"
