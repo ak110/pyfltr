@@ -17,6 +17,7 @@ formatter・linter・testerを単一コマンドで実行する。
 - プロジェクト固有のカスタムチェック（独自スクリプト等）を組み込みツールと同一の実行基盤へ統合できる
 - コーディングエージェント向けJSON Lines出力（`--output-format=jsonl`）とMCPサーバー（`pyfltr mcp`）を提供する
 - formatter・linter・testerをまとめて呼び出し、複数ツールの並列実行で総実行時間を短縮する
+- 全件実行の履歴から[変更の影響を受けるpytestテスト](docs/guide/configuration.md#pytest-impact-selection)を選べる
 - 設定を`pyproject.toml`に集約する
 - 除外指定（exclude）の書式差をツール間で吸収する
 - 横断検索（`grep`）と置換（`replace`、世代管理付き`--undo`対応）を提供する

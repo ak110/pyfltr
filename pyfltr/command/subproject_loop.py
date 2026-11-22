@@ -56,7 +56,11 @@ def _run_one(
     dispatch_fn: typing.Callable[[str, pyfltr.run_options.RunOptions, ExecutionContext], CommandResult],
 ) -> CommandResult:
     """1つのサブプロジェクトで対象のコマンドを実行し、区切り行を付けた結果を返す。"""
-    sub_base = dataclasses.replace(ctx.base, config=sub_config)
+    sub_base = dataclasses.replace(
+        ctx.base,
+        config=sub_config,
+        pytest_impact_root_config=ctx.config if command == "pytest" else None,
+    )
     sub_ctx = dataclasses.replace(ctx, base=sub_base, subproject_cwd=sub.cwd)
     sub_result = dispatch_fn(command, args, sub_ctx)
     # output 冒頭にサブプロジェクト区切り行を挿入する（人間向け識別のため）

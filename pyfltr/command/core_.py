@@ -97,6 +97,8 @@ class ExecutionBaseContext:
     `all_files`・`subproject_files`へ反映したもの。
     `run_pipeline`が構築し、`dispatcher.execute_command`がpytestの実行時に差し替える。
     """
+    pytest_impact_root_config: "pyfltr.config.model.Config | None" = None
+    """サブプロジェクトの影響選択で全域走査に使う起点の除外設定。"""
     pytest_fast_targets_active: bool = False
     """本コンテキストがfast選択時のpytest用実行基盤であるか。
 

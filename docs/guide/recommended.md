@@ -3,6 +3,14 @@
 Pythonプロジェクト向けの推奨構成例（pyproject.toml・prek・タスクランナー・CI設定）。
 設定して実行するところから始める場合は[はじめに](getting-started.md)を参照。
 
+## pytestの変更影響選択
+
+pytestの実行時間を短縮したい場合は、[変更影響選択](configuration.md#pytest-impact-selection)を有効にできる。
+CIでは信頼できる既定ブランチの全件成功後に`.testscope/`を保存し、差分実行ジョブの開始前に復元する。
+キャッシュはプロジェクト、OS、Pythonの版、依存のlockファイルで分ける。
+復元できなければ全件実行になる。
+マージ前や定期ジョブでは履歴にかかわらず全件を実行する。
+
 ## pyproject.toml
 
 pyfltr本体の設定（`[tool.pyfltr]`）と、呼び出される各ツール（ruff / mypy / pytest）の設定を1つの`pyproject.toml`にまとめた例。

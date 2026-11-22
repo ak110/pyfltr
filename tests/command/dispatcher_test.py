@@ -14,6 +14,7 @@ import pyfltr.command.glab
 import pyfltr.command.mise
 import pyfltr.command.only_failed
 import pyfltr.command.process
+import pyfltr.command.pytest_impact
 import pyfltr.command.runner
 import pyfltr.command.slow_tests
 import pyfltr.command.subprojects
@@ -727,3 +728,35 @@ def test_subproject_uv_run_uses_subproject_cwd_without_virtual_env(
     assert result.status == "succeeded"
     assert _captured_cwds(captured_calls) == [subproject_cwd]
     assert all("VIRTUAL_ENV" not in call.env for call in captured_calls)
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_pytest_impact_fallback_does_not_change_default_execution(
+    tmp_path: pathlib.Path, mocker: typing.Any, *, enabled: bool
+) -> None:
+    config = pyfltr.config.config.create_default_config()
+    config.values.update({"pytest": True, "pytest-impact-selection": enabled, "respect-gitignore": False})
+    requested = pathlib.Path("requested_test.py")
+    other = pathlib.Path("other_test.py")
+    for target in (requested, other):
+        (tmp_path / target).touch()
+    probe = mocker.patch(
+        "pyfltr.command.pytest_impact.probe",
+        return_value=pyfltr.command.pytest_impact.Probe(reason="履歴欠損"),
+    )
+    env = {"TESTSCOPE": "existing"}
+    mocker.patch("pyfltr.command.env.build_subprocess_env", return_value=env.copy())
+    mocker.patch("pyfltr.command.runner.shutil.which", return_value=str(tmp_path / "pytest"))
+    process = mocker.patch(
+        "pyfltr.command.process.run_process",
+        return_value=pyfltr.command.process.CompletedProcessWithTimeoutInfo(args=["pytest"], returncode=0, stdout=""),
+    )
+    args = pyfltr.run_options.RunOptions(targets=[requested])
+    ctx = _testconf.make_execution_context(config, [requested], start_cwd=tmp_path)
+    result = pyfltr.command.dispatcher.execute_command("pytest", args, ctx)
+    assert not result.failed
+    assert probe.call_count == int(enabled)
+    assert result.target_files == ([other, requested] if enabled else [requested])
+    request = process.call_args.args[0]
+    assert request.env["TESTSCOPE"] == ("off" if enabled else "existing")
+    assert "--testscope-record" not in request.params.commandline

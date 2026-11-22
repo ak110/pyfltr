@@ -41,6 +41,7 @@ plugins:
 
         - `pyfltr ci`: CI向け全チェック（formatterの変更も失敗扱い）
         - `pyfltr run`: ローカル向け全チェック（fix→format→lint/test）
+          - `pytest-impact-selection`を有効にすると、差分指定時に履歴から影響先のpytestテストを選ぶ（[設定](guide/configuration.md#pytest-impact-selection)）
         - `pyfltr fast`: 軽量チェック（pre-commit向け。重いツールを除外）
           - `pytest-fast-targets`へglobを指定すると、一致するテストだけを変更ファイルに依らずfastで実行する（[設定](guide/configuration.md#pytest-fast-targets)）
           - `pytest-always-targets`へglobを指定すると、変更ファイルだけを渡した`run`・MCPの`run`などでも一致するテストをpytestの対象へ加える（[設定](guide/configuration.md#pytest-always-targets)）

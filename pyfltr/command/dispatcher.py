@@ -20,10 +20,12 @@ import pyfltr.command.markdownlint_env
 import pyfltr.command.only_failed
 import pyfltr.command.precommit
 import pyfltr.command.process
+import pyfltr.command.pytest_impact
 import pyfltr.command.runner
 import pyfltr.command.slow_tests
 import pyfltr.command.structured_output
 import pyfltr.command.subproject_loop
+import pyfltr.command.subprojects
 import pyfltr.command.targets
 import pyfltr.command.textlint_fix
 import pyfltr.command.tool_resolution
@@ -177,34 +179,21 @@ def _user_overrides_config(config_flag: str, *arg_lists: list[str]) -> bool:
     return False
 
 
-def _prepare_execution_params(
+def _collect_targets(
     command: str,
     args: pyfltr.run_options.RunOptions,
     config: pyfltr.config.model.Config,
-    all_files: list[pathlib.Path],
+    source_files: list[pathlib.Path],
     *,
-    fix_stage: bool,
-    only_failed_targets: "pyfltr.command.only_failed.ToolTargets | None",
-    subproject_cwd: pathlib.Path | None = None,
-    cwd: pathlib.Path | None = None,
-    uv_workspace_root: pathlib.Path | None = None,
-    start_cwd: pathlib.Path | None = None,
-    temporary_dir_factory: typing.Callable[[], pathlib.Path] | None = None,
-    pytest_fast_targets_active: bool = False,
-    pytest_always_targets_active: bool = False,
-) -> "ExecutionParams | CommandResult":
-    """実行前の共通前処理を行い `ExecutionParams` を返す。
-
-    ツールパス解決に失敗した場合は `CommandResult` を直接返す。
-    ターゲット0件の場合は `ExecutionParams` を返し（targetsが空リスト）、
-    呼び出し側でスキップ処理を行う。
-    """
+    start_cwd: pathlib.Path | None,
+    pytest_fast_targets_active: bool,
+    pytest_always_targets_active: bool,
+) -> list[pathlib.Path]:
     command_info = config.commands[command]
     globs = command_info.target_globs()
     if pytest_fast_targets_active and command == "pytest":
         # fast選択時は`pytest-fast-targets`をpytestの対象globとして使う（空なら従来の対象glob）。
         globs = pyfltr.config.selection.pytest_fast_target_globs(config.values) or globs
-    source_files = only_failed_targets.resolve_files(all_files) if only_failed_targets is not None else all_files
     targets: list[pathlib.Path] = pyfltr.command.targets.filter_by_globs(source_files, globs)
     if pytest_always_targets_active and command == "pytest":
         # `pytest-always-targets`に一致するファイルは通常の対象globに依らず加える（重複は1件にする）。
@@ -239,6 +228,43 @@ def _prepare_execution_params(
             else:
                 kept.append(t)
         targets = kept
+
+    return targets
+
+
+def _prepare_execution_params(
+    command: str,
+    args: pyfltr.run_options.RunOptions,
+    config: pyfltr.config.model.Config,
+    all_files: list[pathlib.Path],
+    *,
+    fix_stage: bool,
+    only_failed_targets: "pyfltr.command.only_failed.ToolTargets | None",
+    subproject_cwd: pathlib.Path | None = None,
+    cwd: pathlib.Path | None = None,
+    uv_workspace_root: pathlib.Path | None = None,
+    start_cwd: pathlib.Path | None = None,
+    temporary_dir_factory: typing.Callable[[], pathlib.Path] | None = None,
+    pytest_fast_targets_active: bool = False,
+    pytest_always_targets_active: bool = False,
+) -> "ExecutionParams | CommandResult":
+    """実行前の共通前処理を行い `ExecutionParams` を返す。
+
+    ツールパス解決に失敗した場合は `CommandResult` を直接返す。
+    ターゲット0件の場合は `ExecutionParams` を返し（targetsが空リスト）、
+    呼び出し側でスキップ処理を行う。
+    """
+    command_info = config.commands[command]
+    source_files = only_failed_targets.resolve_files(all_files) if only_failed_targets is not None else all_files
+    targets = _collect_targets(
+        command,
+        args,
+        config,
+        source_files,
+        start_cwd=start_cwd,
+        pytest_fast_targets_active=pytest_fast_targets_active,
+        pytest_always_targets_active=pytest_always_targets_active,
+    )
 
     # ファイルの順番をシャッフルまたはソート（fixステージは再現性重視でシャッフルを無効化）
     if args.shuffle and not fix_stage:
@@ -603,6 +629,92 @@ def _make_disabled_skip_result(command: str, ctx: ExecutionContext) -> CommandRe
     return result
 
 
+def _pytest_impact_scope(args: pyfltr.run_options.RunOptions, ctx: ExecutionContext) -> list[pathlib.Path] | None:
+    if (
+        ctx.config.values.get("pytest-impact-selection") is not True
+        or args.only_failed
+        or bool(args.tool_arguments("pytest"))
+        or ctx.only_failed_targets is not None
+        or args.allow_external_paths
+        or ctx.base.pytest_fast_targets_active
+        or args.subcommand == "fast"
+        or not pyfltr.config.model.command_setting(ctx.config.values, "pytest", "pass-filenames", True)
+    ):
+        return None
+    start = ctx.base.start_cwd
+    root_config = ctx.base.pytest_impact_root_config or ctx.config
+    full_files = pyfltr.command.targets.expand_all_files([], root_config, start_cwd=start)
+    if ctx.subproject_cwd is not None:
+        buckets, _ = pyfltr.command.subprojects.classify_files_by_subproject(full_files, ctx.base.subprojects, start)
+        full_files = buckets.get(ctx.effective_cwd.resolve(), [])
+    return _collect_targets(
+        "pytest",
+        args,
+        ctx.config,
+        full_files,
+        start_cwd=start,
+        pytest_fast_targets_active=False,
+        pytest_always_targets_active=not ctx.base.exclude_always_targets,
+    )
+
+
+def _run_pytest_impact(
+    request: pyfltr.command.core_.ExecutionRequest,
+    args: pyfltr.run_options.RunOptions,
+    mandatory: list[pathlib.Path],
+) -> CommandResult:
+    params = request.params
+    cwd = request.ctx.effective_cwd
+    start = request.ctx.base.start_cwd
+    argv = params.commandline[: -len(params.targets)]
+    signature_args = argv[len(params.commandline_prefix) :]
+    full = not args.targets and args.changed_since is None
+    env = {**request.env, "TESTSCOPE": "off"}
+    def run(targets: list[pathlib.Path], *, record: bool = False) -> CommandResult:
+        options = ["--testscope-record", f"--rootdir={cwd}"] if record else []
+        files = [_original_file_argument(t, subproject_cwd=request.ctx.subproject_cwd, start_cwd=start) for t in targets]
+        run_params = dataclasses.replace(params, targets=targets, commandline=[*argv, *options, *files])
+        run_env = {**env, "TESTSCOPE": "record"} if record else env
+        result = _run_plain_command(dataclasses.replace(request, params=run_params, env=run_env))
+        result.target_files = targets
+        return result
+
+    if any(arg.startswith("--testscope") for arg in signature_args):
+        return run(params.targets)
+
+    probe = pyfltr.command.pytest_impact.probe(
+        params.commandline_prefix, params.effective_runner, cwd, env, signature_args, record=full
+    )
+    if probe.reason:
+        _report_impact(f"{probe.reason}。範囲内の全件（{len(params.targets)}ファイル）を実行します。")
+    elif full:
+        with pyfltr.command.pytest_impact.recording(cwd, probe.signature, params.targets, start) as recording:
+            if recording is not None:
+                result = run(params.targets, record=True)
+                if result.returncode == 0 and not result.timeout_exceeded:
+                    recording.accept()
+                elif result.returncode == 4 and "unrecognized arguments: --testscope-record" in result.output:
+                    _report_impact("記録用プラグインが有効でないため、記録せずに全件を実行します。")
+                    return run(params.targets)
+                if recording.complete:
+                    _report_impact(f"全件（{len(params.targets)}ファイル）の履歴を記録しました。")
+                else:
+                    _report_impact("全件の履歴を更新できなかったため、以前の履歴を保持します。")
+                return result
+        _report_impact("履歴を書き込めないため、記録せずに全件を実行します。")
+    else:
+        selected = pyfltr.command.pytest_impact.select_files(params.targets, mandatory, probe, start_cwd=start, cwd=cwd)
+        if selected:
+            _report_impact(f"影響選択で範囲内の{len(params.targets)}ファイル中{len(selected)}ファイルを実行します。")
+            return run(selected)
+        _report_impact("影響選択の対象がないため、範囲内の全件を実行します。")
+    return run(params.targets)
+
+
+def _report_impact(message: str) -> None:
+    pyfltr.warnings_.emit_warning(source="pytest-impact-selection", message=message, hint="対応不要")
+
+
 def _dispatch_command(
     command: str,
     args: pyfltr.run_options.RunOptions,
@@ -617,12 +729,32 @@ def _dispatch_command(
     config = ctx.config
     all_files = ctx.all_files
 
+    impact_scope = _pytest_impact_scope(args, ctx) if command == "pytest" else None
+    mandatory = (
+        _collect_targets(
+            command,
+            args,
+            config,
+            all_files,
+            start_cwd=ctx.base.start_cwd,
+            pytest_fast_targets_active=False,
+            pytest_always_targets_active=ctx.base.pytest_always_targets_active,
+        )
+        if impact_scope is not None
+        else []
+    )
+    if impact_scope is not None:
+        # 明示指定された範囲外のファイルも、従来の静的選択では対象になりうる。
+        keys = {pyfltr.paths.to_match_key(t, start_cwd=ctx.base.start_cwd) for t in impact_scope}
+        if any(pyfltr.paths.to_match_key(t, start_cwd=ctx.base.start_cwd) not in keys for t in mandatory):
+            impact_scope = None
+
     # 共通前処理: ターゲット解決・コマンドライン構築
     params_or_error = _prepare_execution_params(
         command,
         args,
         config,
-        all_files,
+        impact_scope if impact_scope is not None else all_files,
         fix_stage=ctx.fix_stage,
         only_failed_targets=ctx.only_failed_targets,
         subproject_cwd=ctx.subproject_cwd,
@@ -631,7 +763,8 @@ def _dispatch_command(
         start_cwd=ctx.base.start_cwd,
         temporary_dir_factory=ctx.base.ensure_temporary_directory,
         pytest_fast_targets_active=ctx.base.pytest_fast_targets_active,
-        pytest_always_targets_active=ctx.base.pytest_always_targets_active,
+        pytest_always_targets_active=ctx.base.pytest_always_targets_active
+        or (impact_scope is not None and not ctx.base.exclude_always_targets),
     )
     if isinstance(params_or_error, CommandResult):
         # ツールパス解決失敗
@@ -679,6 +812,9 @@ def _dispatch_command(
         config, command, via_mise=params.via_mise, effective_runner=params.effective_runner
     )
 
+    if command == "pytest" and config.values.get("pytest-impact-selection") is True:
+        env["TESTSCOPE"] = "off"
+
     # 外部コマンドの解決と実行は、呼び出し単位で確定したcwdへ統一する。
 
     request = pyfltr.command.core_.ExecutionRequest(
@@ -691,6 +827,8 @@ def _dispatch_command(
         cwd=ctx.effective_cwd,
         nodeid_base_cwd=ctx.effective_cwd,
     )
+    if impact_scope is not None:
+        return _with_targets(_run_pytest_impact(request, args, mandatory), preserve_targets=True)
     kind = command_info.execution_kind
     if command_info.execution_enabled_key is not None and not config[command_info.execution_enabled_key]:
         kind = "plain"

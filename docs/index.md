@@ -25,6 +25,7 @@ formatter・linter・testerを単一コマンドで実行する。
 - `pyfltr fast`はpytestなど重いツールを含めない。
   変更ファイルに依らず毎回確かめたいテストは`pytest-fast-targets`で対象を指定してfastへ含められる（[設定](guide/configuration.md#pytest-fast-targets)）。
   通常の実行でも同じテストを加えるには`pytest-always-targets`を使う（[設定](guide/configuration.md#pytest-always-targets)）
+- [pytestの変更影響選択](guide/configuration.md#pytest-impact-selection)を有効にすると、全件実行の履歴から変更に関係するテストを選べる
 
 ## プロジェクト固有のカスタムチェック
 

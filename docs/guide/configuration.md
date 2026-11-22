@@ -165,6 +165,7 @@ pyfltr config list --all
 - {command}-fast : `fast`サブコマンドに含めるか否か（後述）
 - pytest-fast-targets : fast実行時だけpytestの対象を置き換えるglob（既定: 空。[後述](#pytest-fast-targets)）
 - pytest-always-targets : すべての実行でpytestの対象へ加えるglob（既定: 空。[後述](#pytest-always-targets)）
+- pytest-impact-selection : 変更の影響を受けるpytestのテストを履歴から選ぶ（既定: `false`。[後述](#pytest-impact-selection)）
 - {command}-fix-args : fix段で`{command}-args`の後に追加する引数
  （既定値はtextlint / markdownlint / markdown-structure / ruff-check / eslint / biome / cargo-clippyに定義）
 - {command}-targets : 対象ファイルパターンの完全上書き
@@ -634,6 +635,28 @@ pytest-always-targets = ["*_invariant_test.py"]
   渡したパスに対応する通常の対象と、`pytest-fast-targets`によるfastの対象選定は変わらない。
   `--only-failed`との併用では、前回失敗した常時追加テストも再実行の候補へ加えない。
   指定の有無は実行アーカイブの`argv`に残る
+
+### pytestの変更影響選択 {#pytest-impact-selection}
+
+pytestを実行するプロジェクトのPython環境に `uv add --dev "testscope==0.4.2"` などでtestscopeを導入する。
+Python 3.12以上を使い、`.testscope/`を`.gitignore`へ加える。
+
+```toml
+[tool.pyfltr]
+pytest = true
+pytest-impact-selection = true
+```
+
+位置引数と差分指定を付けずに `pyfltr run --commands=pytest` または `pyfltr ci --commands=pytest` を実行すると、
+対象の全件を実行し、成功した全件実行の履歴を`.testscope/`へ残す。
+次回は `pyfltr run --commands=pytest --changed-since=HEAD` のように差分を指定するか、位置引数に変更したファイルを渡す。
+プロジェクトの対象と除外を適用した範囲から、履歴が示す影響先、履歴にないテスト、従来の静的選定で対象となるテストを実行する。
+`pytest-always-targets`を指定していれば、その対象も実行する。
+
+履歴がない、Pythonや依存パッケージの版が異なる、共有設定が変わった、または選択できなかった場合は、範囲の全件を実行する。
+`pyfltr fast`では既存の対象選定を使い、履歴を更新しない。
+`--only-failed`や`--pytest-args`を指定した実行でも同様に扱う。
+実行しなかったテストを不要と判断する用途には使わない。
 
 ## 出力順序
 
