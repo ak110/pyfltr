@@ -94,10 +94,15 @@ def mcp(project: pathlib.Path, evidence: pathlib.Path, env: dict[str, str], tool
                     log("invalid", line)
                     raise failure(stage, "応答がJSONではない") from exc
                 log("receive", message)
+                if not isinstance(message, dict):
+                    raise failure(stage, f"応答がJSON-RPCのオブジェクトではない（{type(message).__name__}）")
                 if message.get("id") == identifier:
                     if "result" not in message:
                         raise failure(stage, message.get("error", "resultがない"))
-                    return message["result"]
+                    result = message["result"]
+                    if not isinstance(result, dict):
+                        raise failure(stage, f"resultがオブジェクトではない（{type(result).__name__}）")
+                    return result
             raise failure(stage, f"30件以内に応答ID {identifier} が見つからない")
 
         reader = threading.Thread(target=read, daemon=True)
@@ -112,7 +117,8 @@ def mcp(project: pathlib.Path, evidence: pathlib.Path, env: dict[str, str], tool
                 },
                 1,
             )
-            if "tools" not in receive("initialize", 1).get("capabilities", {}):
+            capabilities = receive("initialize", 1).get("capabilities", {})
+            if not isinstance(capabilities, dict) or "tools" not in capabilities:
                 raise failure("initialize", "tools能力がない")
             send("notifications/initialized", {})
             args: dict[str, object] = (
@@ -123,6 +129,8 @@ def mcp(project: pathlib.Path, evidence: pathlib.Path, env: dict[str, str], tool
             send("tools/call", {"name": tool, "arguments": args}, 2)
             response = receive(f"tools/call ({tool})", 2)
             content = response.get("structuredContent", {})
+            if not isinstance(content, dict):
+                raise failure(f"tools/call ({tool})", f"structuredContentがオブジェクトではない（{type(content).__name__}）")
             if response.get("isError") or (
                 content.get("exit_code") != 0 if tool == "run" else "after" not in json.dumps(content)
             ):
