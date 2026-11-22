@@ -48,13 +48,13 @@
 # hadolint global ignore=DL3007
 
 # Stage 1: 基盤構築。
-# Python 3.14 (slim) の digest を固定する。
+# Python 3.15 (slim) の digest を固定する。
 # Renovate・Dependabot等の外部ツールと ``make update-docker-base`` が更新しやすいよう ``image:tag@sha256`` の素直な形にする。
 # ``make update-docker-base`` は ``AS base`` のdigestピン付きFROM行1件を対象とするため、この書式と行末の識別子を保つ。
 # base OS は CI 同梱バイナリ (mise 経由の lychee 等) の glibc 要件を満たす
 # Debian stable を採用する。glibc 要件が満たされず CI 同梱バイナリが起動しない事象が
 # 発生した場合は、対象のバイナリのバージョン固定よりも先に base OS 更新を検討する。
-FROM python:3.14-slim-trixie@sha256:9aaa474097d094040649f2162a627c0049b408f52138d980916788d80f04802f AS base
+FROM python:3.15-slim-trixie@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928 AS base
 
 # パイプを使う RUN で `set -o pipefail` 相当の挙動を得るため、SHELL を明示する
 # (hadolint DL4006 対応)。
@@ -179,6 +179,7 @@ RUN mkdir -p /home/pyfltr/.config/uv \
 # - pnpm グローバル経由 (js-runner=pnpx 既定): JS / TS 系ツール。pnpx は公開論理値であり、
 #   実行時は pnpm dlx 形式へ写像して同一ストアを参照するため初回起動コストが下がる。
 # - uv tool install: pyfltr[python] に含まれない Python 単独ツール。
+#   semgrep は依存の ruamel-yaml-clib に Python 3.15 の wheel が無く、gcc の無い slim ではビルドできないため 3.14 で導入する。
 # GitHub Actions では GITHUB_TOKEN をシークレットで受け取り mise に渡す。
 # 未指定時（ローカルビルド等）も動くよう required=false とする。
 # GITHUB_TOKEN なしだと未認証 API 呼び出し（60 req/h）でレート制限に達するため必須。
@@ -210,7 +211,7 @@ RUN --mount=type=secret,id=GITHUB_TOKEN,env=GITHUB_TOKEN,required=false \
         typescript \
         vitest \
     && uv tool install yamllint \
-    && uv tool install semgrep \
+    && uv tool install --python 3.14 semgrep \
     && uv tool install sqlfluff
 
 # Stage 2: pyfltr 本体導入。
@@ -223,10 +224,11 @@ ARG PYFLTR_VERSION=""
 # pyfltr 本体を ``uv tool install`` で導入する。
 # ``PYFLTR_VERSION`` が空の場合はリリース最新版、指定時は対象のバージョンを固定する。
 # 非 root ユーザー ``pyfltr`` 配下に配置されるため、所有権の調整は不要。
+# comment-check は pyfltr 自身の Python で構文を解析するため、semgrep 用に入る 3.14 ではなく 3.15 を指定する。
 RUN if [ -n "${PYFLTR_VERSION}" ]; then \
-        uv tool install "pyfltr==${PYFLTR_VERSION}" ; \
+        uv tool install --python 3.15 "pyfltr==${PYFLTR_VERSION}" ; \
     else \
-        uv tool install "pyfltr" ; \
+        uv tool install --python 3.15 "pyfltr" ; \
     fi
 
 ENTRYPOINT ["pyfltr"]
