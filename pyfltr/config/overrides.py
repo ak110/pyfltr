@@ -136,8 +136,12 @@ def evaluate_when(expr: _Expr, env: typing.Mapping[str, str], emit_unknown_value
 def read_env_file(path: pathlib.Path) -> dict[str, str]:
     if not path.is_file():
         return {}
+    return parse_env_text(path.read_text(encoding="utf-8"))
+
+
+def parse_env_text(content: str) -> dict[str, str]:
     values: dict[str, str] = {}
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
+    for raw_line in content.splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#"):
             continue

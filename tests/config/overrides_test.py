@@ -189,3 +189,8 @@ def test_project_without_overrides_is_unchanged(tmp_path: pathlib.Path) -> None:
 def test_when_precedence_matches_pytest_marker_expressions(expression: str, env: dict[str, str], expected: bool) -> None:
     expr = pyfltr.config.overrides.parse_when(expression)
     assert pyfltr.config.overrides.evaluate_when(expr, env, lambda key, message: None) is expected
+
+
+def test_parse_env_text_handles_export_quotes_comments_and_invalid_names() -> None:
+    content = "# コメント\n\nexport A=1\nB = ' two '\nC=\"three\"\n1BAD=x\nNO_EQUALS\nD='mixed\"\n"
+    assert pyfltr.config.overrides.parse_env_text(content) == {"A": "1", "B": " two ", "C": "three", "D": "'mixed\""}
