@@ -15,6 +15,8 @@ import markdown_it.token
 
 _COMMENT = re.compile(r"<!--[\s\S]*?(?:-->|$)")
 _LIST = re.compile(r"^(\s*)(?:[-+*]|\d+[.)])(\s+)")
+# 閉じ記号を伴う区切りだけをJinja2構文とみなし、記法例の開始記号だけを含む通常の文書は対象に残す。
+_TEMPLATE = re.compile(r"\{%[\s\S]*?%\}|\{\{[\s\S]*?\}\}|\{#[\s\S]*?#\}")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -161,7 +163,7 @@ def inspect(text: str) -> tuple[list[Issue], dict[int, str]]:
     parser = markdown_it.MarkdownIt("commonmark").enable("table")
     tokens = parser.parse(source)
     # 空白制御や条件分岐で、原文では別のブロックにあるテキストも展開後に連結しうる。
-    has_template = any(marker in text for marker in ("{%", "{{", "{#"))
+    has_template = _TEMPLATE.search(text) is not None
     issues: list[Issue] = []
     candidates: dict[int, str] = {}
     quote_depth = 0

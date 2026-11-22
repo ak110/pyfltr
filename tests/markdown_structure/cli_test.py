@@ -113,6 +113,16 @@ def test_fix_reports_unsafe_break_without_writing(tmp_path: pathlib.Path, source
     assert path.read_bytes() == source.encode()
 
 
+@pytest.mark.parametrize("marker", ["{{", "{%", "{#"])
+def test_fix_breaks_ordinary_text_with_unmatched_template_marker(tmp_path: pathlib.Path, marker: str) -> None:
+    """閉じ記号を伴わない開始記号だけを記法例に含む通常の文書は自動修正する。"""
+    path = tmp_path / "doc.md"
+    path.write_text(f"開始記号の例。\n\n```text\n{marker}\n```\n\n最初の文。次の文。\n", encoding="utf-8")
+    result = _run("--fix", path)
+    assert result.returncode == 0
+    assert path.read_text(encoding="utf-8") == f"開始記号の例。\n\n```text\n{marker}\n```\n\n最初の文。\n次の文。\n"
+
+
 def test_fix_keeps_safe_break_in_same_paragraph(tmp_path: pathlib.Path) -> None:
     """安全でない境界の前後にある安全な境界は同じ段落でも修正する。"""
     path = tmp_path / "doc.md"
