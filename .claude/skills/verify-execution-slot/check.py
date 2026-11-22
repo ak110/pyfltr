@@ -7,6 +7,8 @@ import pathlib
 import typing
 from unittest import mock
 
+import pytilpack.modelcheck
+
 from pyfltr import file_lock
 from pyfltr.command import execution_slot
 
@@ -14,7 +16,6 @@ from pyfltr.command import execution_slot
 NEW, WAITING, DONE = -3, -2, -1
 ACTORS = 4
 State = tuple[tuple[int, ...], tuple[int, ...]]
-Trace = tuple[tuple[str, int, int], ...]
 
 
 class Retry(Exception):
@@ -92,24 +93,27 @@ def release(count: int, occupied: list[int], slot: int) -> None:
 
 def check(count: int, legacy: tuple[bool, ...]) -> int:
     """空の状態から登録・調停・解放の全順序を探索する。"""
-    initial = ((NEW,) * ACTORS, ())
-    pending: list[tuple[State, Trace]] = [(initial, ())]
-    seen: set[State] = {initial}
-    while pending:
-        (states, queue), trace = pending.pop()
-        occupied = [value for value in states if value >= 0]
-        if len(occupied) != len(set(occupied)) or any(value >= count for value in occupied):
-            raise AssertionError((count, legacy, trace, occupied))
 
+    def invariant(state: State) -> bool:
+        occupied = [value for value in state[0] if value >= 0]
+        return len(occupied) == len(set(occupied)) and all(value < count for value in occupied)
+
+    def next_states(state: State) -> list[tuple[str, State]]:
+        states, queue = state
+        occupied = [value for value in states if value >= 0]
         paths = {
             actor: pathlib.Path(f"execution.wait-{index:020d}-{'id' if legacy[actor] else 'm-id'}")
             for index, actor in enumerate(queue)
         }
         waiters = [paths[actor] for actor in queue]
-        steps: list[tuple[int, int, tuple[int, ...], str]] = []
+        steps: list[tuple[str, State]] = []
+
+        def add(action: str, actor: int, value: int, next_queue: tuple[int, ...]) -> None:
+            steps.append((f"{action} {actor} {value}", ((*states[:actor], value, *states[actor + 1 :]), next_queue)))
+
         for actor, value in enumerate(states):
             if value == NEW:
-                steps.append((actor, WAITING, (*queue, actor), "register"))
+                add("register", actor, WAITING, (*queue, actor))
             elif value == WAITING:
                 ahead = queue[: queue.index(actor)]
                 eligible = [
@@ -120,24 +124,29 @@ def check(count: int, legacy: tuple[bool, ...]) -> int:
                 expected = next((index for index in eligible if index not in occupied), None)
                 free = expected if legacy[actor] else poll(count, waiters, paths[actor], occupied)
                 if free != expected:
-                    raise AssertionError((count, legacy, trace, "poll", actor, free, expected))
+                    raise AssertionError(("poll", actor, free, expected))
                 if free is not None:
-                    steps.append((actor, free, queue, "acquire"))
+                    add("acquire", actor, free, queue)
             elif actor in queue:
-                steps.append((actor, value, tuple(other for other in queue if other != actor), "dequeue"))
+                add("dequeue", actor, value, tuple(other for other in queue if other != actor))
             elif value >= 0:
                 if not legacy[actor]:
                     release(count, occupied, value)
-                steps.append((actor, DONE, queue, "release"))
-        if not steps and states != (DONE,) * ACTORS:
-            raise AssertionError((count, legacy, trace, "deadlock"))
-        for actor, value, next_queue, action in steps:
-            next_states = (*states[:actor], value, *states[actor + 1 :])
-            state = (next_states, next_queue)
-            if state not in seen:
-                seen.add(state)
-                pending.append((state, (*trace, (action, actor, value))))
-    return len(seen)
+                add("release", actor, DONE, queue)
+        return steps
+
+    initial: State = ((NEW,) * ACTORS, ())
+    result = pytilpack.modelcheck.explore_states(
+        initial,
+        next_states,
+        invariant,
+        is_terminal=lambda state: state[0] == (DONE,) * ACTORS,
+    )
+    if result.violation is not None:
+        violation = result.violation
+        detail = violation.exception if violation.kind == "error" else [value for value in violation.state[0] if value >= 0]
+        raise AssertionError((count, legacy, violation.kind, detail, violation.trace))
+    return result.states
 
 
 def main() -> None:

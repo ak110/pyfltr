@@ -85,6 +85,7 @@ dev = [
     "mkdocs-material>=9.6",
     "mkdocs>=1.6",
     "pytest-mock",
+    "pytilpack>=1.54.0",
     "types-pyyaml>=6.0.12.20260408",
 ]
 
