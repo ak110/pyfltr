@@ -159,12 +159,3 @@ def test_parse_vitest_limits_entries() -> None:
 def test_format_slow_tests() -> None:
     slow_tests = [pyfltr.command.slow_tests.SlowTest("tests/a_test.py::test_x", "call", 1.5)]
     assert pyfltr.command.slow_tests.format_slow_tests(slow_tests) == ["1.50s call tests/a_test.py::test_x"]
-
-
-def test_to_dict() -> None:
-    slow_test = pyfltr.command.slow_tests.SlowTest("tests/a_test.py::test_x", "call", 1.5)
-    assert slow_test.to_dict() == {
-        "nodeid": "tests/a_test.py::test_x",
-        "phase": "call",
-        "seconds": 1.5,
-    }

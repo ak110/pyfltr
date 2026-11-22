@@ -21,15 +21,13 @@ def _run(*paths: pathlib.Path) -> subprocess.CompletedProcess[str]:
 _REGEX_METACHARS = "[]()?*+{}|\\^$."
 
 
-def _deny_sample(*, require_replacement: bool = False) -> tuple[str, str | None]:
+def _deny_sample() -> tuple[str, str | None]:
     for line in pyfltr.colloquial.check.DENY_PATH.read_text(encoding="utf-8").splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
-        head, sep, tail = stripped.partition("\t")
+        head, _, tail = stripped.partition("\t")
         if any(c in head for c in _REGEX_METACHARS):
-            continue
-        if require_replacement and not (sep and tail):
             continue
         return head, (tail or None)
     return "", None
@@ -124,16 +122,6 @@ def test_verb_iku_keeps_detection(tmp_path: pathlib.Path, sentence: str, expecte
     assert result.returncode == 1
     assert f"[{expected_match}]" in result.stdout
     assert not result.stderr
-
-
-def test_replacement_candidate_included(tmp_path: pathlib.Path) -> None:
-    deny_line, replacement = _deny_sample(require_replacement=True)
-    assert deny_line and replacement, "置換候補付きの単純なリテラル行を取得できなかった"
-    target = tmp_path / "hit.md"
-    target.write_text(f"本文に{deny_line}該当する。\n", encoding="utf-8")
-    result = _run(target)
-    assert result.returncode == 1
-    assert f"-> [{replacement}]" in result.stdout
 
 
 def test_multiple_files_report_all_hits(tmp_path: pathlib.Path) -> None:

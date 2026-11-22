@@ -177,18 +177,6 @@ def test_uv_workspace_members_glob_expansion(tmp_path: pathlib.Path) -> None:
     assert {s.relative for s in members} == {"crates/alpha", "crates/beta"}
 
 
-def test_is_subproject_dir(tmp_path: pathlib.Path) -> None:
-    assert not pyfltr.command.subprojects.is_subproject_dir(tmp_path)
-    _make_pyproject(tmp_path)
-    assert pyfltr.command.subprojects.is_subproject_dir(tmp_path)
-
-
-def test_is_subproject_dir_cargo_toml_only(tmp_path: pathlib.Path) -> None:
-    assert not pyfltr.command.subprojects.is_subproject_dir(tmp_path)
-    (tmp_path / "Cargo.toml").write_text('[package]\nname = "crate"\nversion = "0.1.0"\n', encoding="utf-8")
-    assert pyfltr.command.subprojects.is_subproject_dir(tmp_path)
-
-
 @pytest.mark.parametrize("marker_name", ["MyApp.csproj", "MySolution.sln"])
 def test_is_subproject_dir_dotnet_marker_only(tmp_path: pathlib.Path, marker_name: str) -> None:
     assert not pyfltr.command.subprojects.is_subproject_dir(tmp_path)

@@ -332,6 +332,7 @@ def test_execute_command_cache_hit_skips_subprocess(mocker, tmp_path: pathlib.Pa
     )
     assert mock_run.call_count == 1
     assert result1.cached is False
+    assert result1.cached_from is None
 
     result2 = pyfltr.command.dispatcher.execute_command(
         "textlint",

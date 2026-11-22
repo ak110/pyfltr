@@ -66,21 +66,25 @@ def test_split_commands_no_fix_stage_by_default() -> None:
     assert not fixers
 
 
-def test_serial_group_lock_noop_for_none() -> None:
-    started = threading.Event()
-    finished = threading.Event()
+def _assert_serial_groups_can_overlap(first: str | None, second: str | None) -> None:
+    entered = threading.Event()
 
     def _worker() -> None:
-        with pyfltr.command.executor.serial_group_lock(None):
-            started.set()
-            finished.wait(timeout=1.0)
+        with pyfltr.command.executor.serial_group_lock(second):
+            entered.set()
 
-    thread = threading.Thread(target=_worker)
-    thread.start()
-    assert started.wait(timeout=1.0), "serial_group=Noneのロックで待たされてはいけない"
-    finished.set()
-    thread.join(timeout=1.0)
-    assert not thread.is_alive()
+    worker = threading.Thread(target=_worker)
+    try:
+        with pyfltr.command.executor.serial_group_lock(first):
+            worker.start()
+            assert entered.wait(timeout=2.0)
+    finally:
+        worker.join(timeout=2.0)
+    assert not worker.is_alive()
+
+
+def test_serial_group_lock_noop_for_none() -> None:
+    _assert_serial_groups_can_overlap(None, None)
 
 
 def test_serial_group_lock_mutual_exclusion() -> None:
@@ -108,27 +112,7 @@ def test_serial_group_lock_mutual_exclusion() -> None:
 
 
 def test_serial_group_lock_independent_groups() -> None:
-    group_a_running = threading.Event()
-    group_b_can_finish = threading.Event()
-
-    def _worker_a() -> None:
-        with pyfltr.command.executor.serial_group_lock("test-group-a"):
-            group_a_running.set()
-            group_b_can_finish.wait(timeout=1.0)
-
-    def _worker_b() -> None:
-        assert group_a_running.wait(timeout=1.0)
-        with pyfltr.command.executor.serial_group_lock("test-group-b"):
-            group_b_can_finish.set()
-
-    t_a = threading.Thread(target=_worker_a)
-    t_b = threading.Thread(target=_worker_b)
-    t_a.start()
-    t_b.start()
-    t_a.join(timeout=2.0)
-    t_b.join(timeout=2.0)
-    assert not t_a.is_alive()
-    assert not t_b.is_alive()
+    _assert_serial_groups_can_overlap("test-group-a", "test-group-b")
 
 
 def test_has_no_candidate_targets(tmp_path: pathlib.Path) -> None:

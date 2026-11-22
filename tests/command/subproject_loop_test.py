@@ -1,3 +1,4 @@
+import concurrent.futures
 import pathlib
 import threading
 import typing
@@ -53,9 +54,6 @@ def _disabled_skip(command: str, ctx: pyfltr.command.core_.ExecutionContext) -> 
 
 
 class TestResolveSubprojectWorkers:
-    def test_default_jobs_is_eight(self) -> None:
-        assert pyfltr.config.model.DEFAULT_CONFIG["jobs"] == 8
-
     def test_uses_whole_budget_for_single_worker_tool(self, tmp_path: pathlib.Path) -> None:
         ctx = _make_context(tmp_path, ["a", "b"], values={"jobs": 6})
         cwds = [s.cwd for s in ctx.base.subprojects]
@@ -84,20 +82,13 @@ class TestResolveSubprojectWorkers:
 class TestRunSubprojectLoop:
     def test_sequential_when_workers_is_one(self, tmp_path: pathlib.Path) -> None:
         ctx = _make_context(tmp_path, ["a", "b", "c"], values={"jobs": 1})
-        active = 0
-        max_active = 0
-        lock = threading.Lock()
+        dispatch_threads: list[threading.Thread] = []
 
         def _dispatch(
             command: str, args: pyfltr.run_options.RunOptions, c: pyfltr.command.core_.ExecutionContext
         ) -> pyfltr.command.core_.CommandResult:
             del args, c
-            nonlocal active, max_active
-            with lock:
-                active += 1
-                max_active = max(max_active, active)
-            with lock:
-                active -= 1
+            dispatch_threads.append(threading.current_thread())
             return _testconf.make_succeeded_result(command=command)
 
         pyfltr.command.subproject_loop.run_subproject_loop(
@@ -107,7 +98,7 @@ class TestRunSubprojectLoop:
             dispatch_fn=_dispatch,
             disabled_skip_fn=_disabled_skip,
         )
-        assert max_active == 1
+        assert dispatch_threads == [threading.current_thread()] * 3
 
     def test_parallel_when_workers_is_greater_than_one(self, tmp_path: pathlib.Path) -> None:
         ctx = _make_context(tmp_path, ["a", "b"], values={"jobs": 2})
@@ -129,24 +120,14 @@ class TestRunSubprojectLoop:
         )
         assert barrier.n_waiting == 0
 
-    def test_concurrency_is_capped_by_target_count(self, tmp_path: pathlib.Path) -> None:
+    def test_concurrency_is_capped_by_target_count(self, tmp_path: pathlib.Path, mocker) -> None:
         ctx = _make_context(tmp_path, ["a", "b"], values={"jobs": 6})
-        active = 0
-        max_active = 0
-        lock = threading.Lock()
-        started = threading.Barrier(2, timeout=30)
+        pool = mocker.spy(concurrent.futures, "ThreadPoolExecutor")
 
         def _dispatch(
             command: str, args: pyfltr.run_options.RunOptions, c: pyfltr.command.core_.ExecutionContext
         ) -> pyfltr.command.core_.CommandResult:
             del args, c
-            nonlocal active, max_active
-            with lock:
-                active += 1
-                max_active = max(max_active, active)
-            started.wait()
-            with lock:
-                active -= 1
             return _testconf.make_succeeded_result(command=command)
 
         pyfltr.command.subproject_loop.run_subproject_loop(
@@ -156,7 +137,7 @@ class TestRunSubprojectLoop:
             dispatch_fn=_dispatch,
             disabled_skip_fn=_disabled_skip,
         )
-        assert max_active == 2
+        assert pool.call_args.kwargs["max_workers"] == 2
 
     def test_output_order_follows_relative_path(self, tmp_path: pathlib.Path) -> None:
         ctx = _make_context(tmp_path, ["b", "a"], values={"jobs": 2})

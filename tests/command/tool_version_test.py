@@ -1,3 +1,5 @@
+import os
+import pathlib
 import typing
 
 import pytest
@@ -262,29 +264,21 @@ def test_probe_tool_version_text_returns_none_on_failure(monkeypatch: pytest.Mon
 
 def test_probe_tool_version_text_strips_mise_tool_paths_for_mise_runner(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
 ) -> None:
-    captured: dict[str, typing.Any] = {}
-
-    def _fake_env(
-        _config: pyfltr.config.model.Config,
-        _command: str,
-        *,
-        via_mise: bool = False,
-        effective_runner: str | None = None,
-    ) -> dict[str, str]:
-        captured["via_mise"] = via_mise
-        captured["effective_runner"] = effective_runner
-        return {"PATH": "/clean"}
+    clean = str(tmp_path / "bin")
+    installed = str(tmp_path / "mise" / "installs" / "shellcheck" / "bin")
+    monkeypatch.setenv("PATH", os.pathsep.join([installed, clean]))
+    captured: dict[str, str] = {}
 
     def _fake_run(
         commandline: list[str], env: dict[str, str], **_kwargs: typing.Any
     ) -> pyfltr.command.process.CompletedProcessWithTimeoutInfo:
-        captured["env"] = env
+        captured["PATH"] = env["PATH"]
         return pyfltr.command.process.CompletedProcessWithTimeoutInfo(
             args=list(commandline), returncode=0, stdout="shellcheck 0.11.0", timeout_exceeded=False
         )
 
-    monkeypatch.setattr(pyfltr.command.tool_version, "build_subprocess_env", _fake_env)
     monkeypatch.setattr(pyfltr.command.process, "run_process_loop", _fake_run)
     config = pyfltr.config.config.create_default_config()
     resolved = pyfltr.command.runner.ResolvedCommandline(
@@ -294,4 +288,4 @@ def test_probe_tool_version_text_strips_mise_tool_paths_for_mise_runner(
     result = pyfltr.command.tool_version.probe_tool_version_text(resolved, config, "shellcheck")
 
     assert result == "shellcheck 0.11.0"
-    assert captured == {"via_mise": True, "effective_runner": "mise", "env": {"PATH": "/clean"}}
+    assert captured["PATH"] == clean

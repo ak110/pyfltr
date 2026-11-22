@@ -178,17 +178,6 @@ def test_compute_block_ranges(text: str, before: int, after: int, expected: list
     assert result == expected
 
 
-def test_filter_files_by_type_python() -> None:
-    files = [
-        pathlib.Path("a.py"),
-        pathlib.Path("b.pyi"),
-        pathlib.Path("c.txt"),
-        pathlib.Path("d.rs"),
-    ]
-    result = pyfltr.grep_.scanner.filter_files_by_type(files, ["python"])
-    assert result == [pathlib.Path("a.py"), pathlib.Path("b.pyi")]
-
-
 def test_filter_files_by_type_multiple_types() -> None:
     files = [
         pathlib.Path("a.py"),
@@ -201,10 +190,9 @@ def test_filter_files_by_type_multiple_types() -> None:
     assert sorted(str(f) for f in result) == ["a.py", "b.ts", "c.tsx"]
 
 
-def test_filter_files_by_type_all_nine_kinds(tmp_path: pathlib.Path) -> None:
-    del tmp_path
+def test_filter_files_by_type_all_nine_kinds() -> None:
     samples: dict[str, list[str]] = {
-        "python": ["a.py", "a.pyi"],
+        "python": ["b.pyi", "a.py"],
         "rust": ["a.rs"],
         "ts": ["a.ts", "a.tsx"],
         "js": ["a.js", "a.jsx", "a.mjs", "a.cjs"],
@@ -214,10 +202,10 @@ def test_filter_files_by_type_all_nine_kinds(tmp_path: pathlib.Path) -> None:
         "yaml": ["a.yaml", "a.yml"],
         "shell": ["a.sh", "a.bash", "a.zsh"],
     }
+    files = [pathlib.Path(name) for names in samples.values() for name in names] + [pathlib.Path("c.txt")]
     for type_name, expected_names in samples.items():
-        files = [pathlib.Path(name) for name in expected_names]
         result = pyfltr.grep_.scanner.filter_files_by_type(files, [type_name])
-        assert sorted(str(f) for f in result) == sorted(expected_names), f"type {type_name} で期待ファイルがフィルタ通過しない"
+        assert result == [pathlib.Path(name) for name in expected_names], type_name
 
 
 def test_filter_files_by_type_unknown_type() -> None:

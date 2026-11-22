@@ -67,23 +67,11 @@ def test_stages_hold_slot_until_all_tools_finish(tmp_path: pathlib.Path, monkeyp
     assert [result.command for result in results] == ["first", "second"]
 
 
-def test_make_skipped_result_returns_command_result():
-    config = pyfltr.config.config.create_default_config()
-    result = pyfltr.command.stage_runner.make_skipped_result("mypy", config)
-    assert isinstance(result, pyfltr.command.core_.CommandResult)
-
-
 def test_make_skipped_result_status_is_skipped():
     config = pyfltr.config.config.create_default_config()
     result = pyfltr.command.stage_runner.make_skipped_result("mypy", config)
     assert result.status == "skipped"
     assert result.returncode is None
-
-
-def test_make_skipped_result_preserves_command_name():
-    config = pyfltr.config.config.create_default_config()
-    result = pyfltr.command.stage_runner.make_skipped_result("ruff-check", config)
-    assert result.command == "ruff-check"
 
 
 def test_make_skipped_result_is_not_failed():

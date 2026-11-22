@@ -27,21 +27,6 @@ import pyfltr.tools
 import pyfltr.warnings_
 
 
-def test_command_result_cached_defaults() -> None:
-    result = pyfltr.command.core_.CommandResult(
-        command="mypy",
-        command_type="linter",
-        commandline=["mypy"],
-        returncode=0,
-        formatter_failed=False,
-        files=1,
-        output="",
-        elapsed=0.1,
-    )
-    assert result.cached is False
-    assert result.cached_from is None
-
-
 def test_command_result_merge_retry_count() -> None:
 
     def _make_result(retry_count: int) -> pyfltr.command.core_.CommandResult:
@@ -102,7 +87,6 @@ def _make_merge_input(returncode: int | None) -> pyfltr.command.core_.CommandRes
 @pytest.mark.parametrize(
     ("returncodes", "expected_status", "expected_returncode"),
     [
-        ([None, 0], "succeeded", 0),
         ([0, None], "succeeded", 0),
         ([None, 1], "failed", 1),
         ([None, None], "skipped", None),

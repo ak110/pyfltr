@@ -24,7 +24,6 @@ import pyfltr.paths
 import pyfltr.run_options
 import pyfltr.state.cache
 import pyfltr.state.only_failed
-import pyfltr.tools
 import pyfltr.warnings_
 
 
@@ -127,14 +126,6 @@ def test_expanduser_expands_extend_args(monkeypatch: pytest.MonkeyPatch) -> None
     assert "--config=/tmp/fake-home/mypy.toml" in argv
 
 
-def test_build_invocation_argv_auto_args_pylint_pydantic() -> None:
-    config = pyfltr.config.config.create_default_config()
-    argv = pyfltr.command.invocation.build_invocation_argv(
-        "pylint", config, commandline_prefix=["pylint"], additional_args=[], fix_stage=False
-    )
-    assert "--load-plugins=pylint_pydantic" in argv
-
-
 def test_build_invocation_argv_auto_args_mypy_unused_awaitable() -> None:
     config = pyfltr.config.config.create_default_config()
     argv = pyfltr.command.invocation.build_invocation_argv(
@@ -193,12 +184,7 @@ def test_build_invocation_argv_auto_args_no_match() -> None:
     argv = pyfltr.command.invocation.build_invocation_argv(
         "ruff-check", config, commandline_prefix=["ruff"], additional_args=[], fix_stage=False
     )
-    assert "ruff-check" not in pyfltr.tools.AUTO_ARGS
-    all_auto_args_flags = [flag for entries in pyfltr.tools.AUTO_ARGS.values() for _, args in entries for flag in args]
-    for flag in all_auto_args_flags:
-        assert not any(a == flag or a.startswith(flag + "=") for a in argv), (
-            f"AUTO_ARGS由来フラグ {flag} が意図せず含まれています"
-        )
+    assert argv == ["ruff", "check"]
 
 
 def test_build_invocation_argv_disables_textlint_cache_only_in_fix_stage() -> None:

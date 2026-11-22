@@ -53,4 +53,5 @@ def test_summarize_timing(meta: dict, expected: dict) -> None:
     timing = pyfltr.state.runs.summarize_timing(meta)
     for key, value in expected.items():
         assert timing[key] == value, key
+    assert not isinstance(timing["slot_wait_total"], bool)
     assert timing["slot_wait_total"] is None or isinstance(timing["slot_wait_total"], float | int)

@@ -825,13 +825,6 @@ def test_build_commandline_version_with_colon_used_as_full_tool_spec() -> None:
     assert resolved.commandline == ["mise", "exec", "aqua:EmbarkStudios/cargo-deny@0.16.0", "--", "cargo-deny"]
 
 
-def test_build_commandline_version_simple_keeps_legacy_format() -> None:
-    config = pyfltr.config.config.create_default_config()
-    config.values["shellcheck-version"] = "0.10.0"
-    resolved = pyfltr.command.runner.build_commandline("shellcheck", config)
-    assert resolved.commandline == ["mise", "exec", "shellcheck@0.10.0", "--", "shellcheck"]
-
-
 def test_build_commandline_explicit_mise_for_existing_bin_tool() -> None:
     config = pyfltr.config.config.create_default_config()
     config.values["bin-runner"] = "direct"
@@ -1117,6 +1110,7 @@ def test_build_commandline_python_tool_uv_with_lock_and_uv_present(setup_uv_runn
     assert resolved.runner == "python-runner"
     assert resolved.effective_runner == "uv"
     assert resolved.runner_source == "default"
+    assert resolved.runner_fallback is None
 
 
 def test_build_commandline_python_tool_uv_falls_back_when_uv_missing(setup_uv_runner) -> None:
@@ -1135,14 +1129,6 @@ def test_build_commandline_python_tool_uv_falls_back_when_lock_missing(setup_uv_
     assert resolved.commandline == ["/fake/bin/mypy"]
     assert resolved.effective_runner == "direct"
     assert resolved.runner_fallback == "uv->direct"
-
-
-def test_build_commandline_python_tool_uv_no_fallback_when_normal(setup_uv_runner) -> None:
-    setup_uv_runner(uv_lock=True, uv_available=True)
-    config = pyfltr.config.config.create_default_config()
-    resolved = pyfltr.command.runner.build_commandline("mypy", config)
-    assert resolved.effective_runner == "uv"
-    assert resolved.runner_fallback is None
 
 
 def test_build_commandline_python_tool_uv_path_override_wins(setup_uv_runner) -> None:

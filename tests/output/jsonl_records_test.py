@@ -504,24 +504,7 @@ def test_build_header_record_includes_mise_active_tools_when_passed(monkeypatch:
     lines = pyfltr.output.jsonl.build_lines([], config, exit_code=0, commands=["cargo-fmt"], files=3)
     header_line = next(line for line in lines if json.loads(line).get("kind") == "header")
     record = json.loads(header_line)
-    assert record["mise_active_tools"]["status"] == "ok"
-    assert record["mise_active_tools"]["active_keys"] == ["rust"]
-
-
-def test_collect_mise_active_tools_for_header_skips_when_no_mise_command() -> None:
-    config = pyfltr.config.config.create_default_config()
-    info = pyfltr.output.jsonl_records.collect_mise_active_tools_for_header(["mypy", "ruff-check"], config)
-    assert info is None
-
-
-def test_collect_mise_active_tools_for_header_includes_when_mise_command(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        "pyfltr.command.mise.get_mise_active_tools",
-        lambda config, *, allow_side_effects=False: pyfltr.command.mise.MiseActiveToolsResult(status="ok", tools={"rust": []}),
-    )
-    config = pyfltr.config.config.create_default_config()
-    info = pyfltr.output.jsonl_records.collect_mise_active_tools_for_header(["cargo-fmt"], config)
-    assert info == {"status": "ok", "active_keys": ["rust"]}
+    assert record["mise_active_tools"] == {"status": "ok", "active_keys": ["rust"]}
 
 
 def test_collect_mise_active_tools_for_header_propagates_error_status(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -772,26 +755,6 @@ def test_build_summary_record_omits_resolution_failed_when_zero() -> None:
     record = json.loads(summary_line)
     needs_action = record["commands_summary"]["needs_action"]
     assert needs_action["failed"] == 1
-    assert "resolution_failed" not in needs_action
-
-
-def test_build_summary_record_failed_always_present() -> None:
-    result = pyfltr.command.core_.CommandResult(
-        command="mypy",
-        command_type="linter",
-        commandline=["mypy"],
-        returncode=0,
-        formatter_failed=False,
-        files=1,
-        output="",
-        elapsed=0.0,
-    )
-    config = pyfltr.config.config.create_default_config()
-    lines = pyfltr.output.jsonl.build_lines([result], config, exit_code=0)
-    summary_line = next(line for line in lines if json.loads(line).get("kind") == "summary")
-    record = json.loads(summary_line)
-    needs_action = record["commands_summary"]["needs_action"]
-    assert needs_action["failed"] == 0
     assert "resolution_failed" not in needs_action
 
 
@@ -1242,6 +1205,8 @@ def test_build_summary_record_warning_count_always_present() -> None:
     needs_action = record["commands_summary"]["needs_action"]
     assert needs_action["failed"] == 0
     assert needs_action["warning"] == 0
+    assert needs_action["failed"] == 0
+    assert "resolution_failed" not in needs_action
 
 
 def test_build_summary_record_no_failure_guidance_when_only_warning() -> None:

@@ -188,15 +188,19 @@ class TestScanText:
     def test_empty_when_no_deny(self, allow_patterns: _PatternList) -> None:
         assert not pyfltr.colloquial.check.scan_text("様々な内容の文字列", [], allow_patterns)
 
-    @pytest.mark.parametrize("raw_pattern", _read_patterns_text(pyfltr.colloquial.check.DENY_PATH))
+    @pytest.mark.parametrize(
+        ("entry_index", "raw_pattern"),
+        list(enumerate(_read_patterns_text(pyfltr.colloquial.check.DENY_PATH))),
+    )
     def test_every_deny_entry_self_matches(
-        self, deny_patterns: _PatternList, allow_patterns: _PatternList, raw_pattern: str
+        self, deny_patterns: _PatternList, allow_patterns: _PatternList, entry_index: int, raw_pattern: str
     ) -> None:
         sample = _expand_pattern(raw_pattern)
         if pyfltr.colloquial.check.mask_allowed(sample, allow_patterns) != sample:
             pytest.skip(f"サンプルがallowlistによりマスクされた: {raw_pattern}")
+        entry = deny_patterns[entry_index]
         text = f"。{sample}。"
-        assert pyfltr.colloquial.check.scan_text(text, deny_patterns, allow_patterns)
+        assert pyfltr.colloquial.check.scan_text(text, [entry], allow_patterns) == [(1, 2, sample, text, entry[1])]
 
     @pytest.mark.parametrize(
         ("dict_line", "expected_replacement"),
@@ -579,12 +583,11 @@ class TestPotentialFormPolicy:
         assert not pyfltr.colloquial.check.scan_text(sentence, deny_patterns, allow_patterns)
 
     def test_remaining_entries_keep_detection(self, deny_patterns: _PatternList, allow_patterns: _PatternList) -> None:
-        undetected = [
-            raw
-            for raw in _read_patterns_text(pyfltr.colloquial.check.DENY_PATH)
-            if (sample := _expand_pattern(raw)) and not pyfltr.colloquial.check.first_hit(sample, deny_patterns, allow_patterns)
-        ]
-        assert not undetected, f"自己マッチサンプルが検出されないdenylistエントリー: {undetected}"
+        for raw, entry in zip(_read_patterns_text(pyfltr.colloquial.check.DENY_PATH), deny_patterns, strict=True):
+            sample = _expand_pattern(raw)
+            if sample:
+                assert pyfltr.colloquial.check.first_hit(sample, [entry], allow_patterns), raw
+                assert pyfltr.colloquial.check.scan_text(sample, [entry], allow_patterns) == [(1, 1, sample, sample, entry[1])]
 
 
 class TestNaturalWrittenLanguage:

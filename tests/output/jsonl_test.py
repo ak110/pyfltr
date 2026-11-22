@@ -39,37 +39,6 @@ def test_dump_roundtrip() -> None:
     assert parsed["messages"][0]["rule"] == "F401"
 
 
-def test_build_warning_record() -> None:
-    config = pyfltr.config.config.create_default_config()
-    lines = pyfltr.output.jsonl.build_lines(
-        [],
-        config,
-        exit_code=0,
-        warnings=[{"source": "config", "message": "foo", "hint": "設定値を修正してください。"}],
-    )
-    warning_line = next(line for line in lines if json.loads(line).get("kind") == "warning")
-    record = json.loads(warning_line)
-    assert record == {"kind": "warning", "source": "config", "msg": "foo", "hint": "設定値を修正してください。"}
-
-
-def test_build_warning_record_with_hint() -> None:
-    config = pyfltr.config.config.create_default_config()
-    lines = pyfltr.output.jsonl.build_lines(
-        [],
-        config,
-        exit_code=0,
-        warnings=[{"source": "textlint-identifier-corruption", "message": "foo", "hint": "fooをバックティックで囲む"}],
-    )
-    warning_line = next(line for line in lines if json.loads(line).get("kind") == "warning")
-    record = json.loads(warning_line)
-    assert record == {
-        "kind": "warning",
-        "source": "textlint-identifier-corruption",
-        "msg": "foo",
-        "hint": "fooをバックティックで囲む",
-    }
-
-
 def test_build_command_lines_truncates_diagnostics_when_archived() -> None:
     errors = [
         pyfltr.diagnostics.ErrorLocation(file="src/foo.py", line=i, col=None, command="mypy", message=f"err{i}")

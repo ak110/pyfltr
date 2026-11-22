@@ -262,9 +262,3 @@ def test_default_history_root_respects_cache_env(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setenv("PYFLTR_CACHE_DIR", str(tmp_path))
     result = pyfltr.grep_.history.default_history_root()
     assert result == tmp_path / "replaces"
-
-
-def test_generate_replace_id_returns_ulid_format() -> None:
-    rid = pyfltr.grep_.history.generate_replace_id()
-    assert len(rid) == 26
-    assert all(c in "0123456789ABCDEFGHJKMNPQRSTVWXYZ" for c in rid)

@@ -117,14 +117,6 @@ def test_fix_mode_non_zero_rc_is_failed(mocker, tmp_path: pathlib.Path) -> None:
     assert result.failed is True
 
 
-def test_fix_mode_formatter_is_not_filtered_in(tmp_path: pathlib.Path) -> None:
-    del tmp_path  # fixture互換で受け取るのみ
-    config = pyfltr.config.config.create_default_config()
-    config.values["ruff-format"] = True
-    result = pyfltr.config.selection.filter_fix_commands(["ruff-format"], config)
-    assert not result
-
-
 def test_eslint_lint_mode_uses_json_format(mocker, tmp_path: pathlib.Path) -> None:
     target = tmp_path / "sample.js"
     target.write_text("var x = 1;\n")

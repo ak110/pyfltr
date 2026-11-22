@@ -39,7 +39,7 @@ def test_expanduser_expands_check_and_write_args(monkeypatch: pytest.MonkeyPatch
 
     config = pyfltr.config.config.create_default_config()
     config.values["taplo-check-args"] = ["fmt", "--check", "--config=~/taplo.toml"]
-    config.values["taplo-write-args"] = ["fmt", "--config=~/taplo.toml"]
+    config.values["taplo-write-args"] = ["fmt", "--config=~/write.toml"]
 
     captured: list[list[str]] = []
 
@@ -48,7 +48,7 @@ def test_expanduser_expands_check_and_write_args(monkeypatch: pytest.MonkeyPatch
     ) -> pyfltr.command.process.CompletedProcessWithTimeoutInfo:
         captured.append(list(commandline))
         return pyfltr.command.process.CompletedProcessWithTimeoutInfo(
-            args=list(commandline), returncode=0, stdout="", timeout_exceeded=False
+            args=list(commandline), returncode=1 if len(captured) == 1 else 0, stdout="", timeout_exceeded=False
         )
 
     monkeypatch.setattr(pyfltr.command.process, "run_process_loop", _fake_run)
@@ -74,7 +74,9 @@ def test_expanduser_expands_check_and_write_args(monkeypatch: pytest.MonkeyPatch
     )
 
     assert captured, "expected at least the check step to run"
+    assert len(captured) == 2
     assert "--config=/tmp/fake-home/taplo.toml" in captured[0]
+    assert "--config=/tmp/fake-home/write.toml" in captured[1]
 
 
 @pytest.mark.parametrize("command", ["shfmt", "taplo"])

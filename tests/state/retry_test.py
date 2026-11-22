@@ -1,4 +1,6 @@
+import io
 import pathlib
+import sys
 
 import pytest
 
@@ -170,8 +172,9 @@ def test_populate_retry_command_uses_filtered_files(tmp_path):
     assert "a.py" not in result.retry_command
 
 
-def test_populate_retry_command_skips_for_cached(tmp_path):
-    result = _make_result("mypy", returncode=0, cached=True, cached_from="01ABC")
+@pytest.mark.parametrize("cached", [True, False])
+def test_populate_retry_command_skips_for_cached(tmp_path, cached):
+    result = _make_result("mypy", returncode=1, cached=cached, cached_from="01ABC" if cached else None)
     template = pyfltr.state.retry.build_retry_args_template(["run", "--commands", "mypy"])
     pyfltr.state.retry.populate_retry_command(
         result,
@@ -179,7 +182,7 @@ def test_populate_retry_command_skips_for_cached(tmp_path):
         launcher_prefix=["pyfltr"],
         target_base_cwd=str(tmp_path),
     )
-    assert result.retry_command is None
+    assert (result.retry_command is None) is cached
 
 
 def test_populate_retry_command_skips_for_success(tmp_path):
@@ -206,10 +209,25 @@ def test_populate_retry_command_skips_for_formatted(tmp_path):
     assert result.retry_command is None
 
 
-def test_detect_launcher_prefix_returns_list():
-    prefix = pyfltr.state.retry.detect_launcher_prefix()
-    assert isinstance(prefix, list)
-    assert len(prefix) >= 1
+@pytest.mark.parametrize(
+    ("parent_command", "expected"),
+    [
+        (b"uv\0run\0pyfltr\0", ["uv", "run", "pyfltr"]),
+        (b"uvx\0pyfltr\0", ["uvx", "pyfltr"]),
+        (None, ["pyfltr"]),
+    ],
+)
+def test_detect_launcher_prefix(monkeypatch: pytest.MonkeyPatch, parent_command: bytes | None, expected: list[str]) -> None:
+    def read_proc(path: str, mode: str = "r", **_kwargs: str) -> io.StringIO | io.BytesIO:
+        if path == "/proc/self/status" and mode == "r":
+            return io.StringIO("PPid:\t42\n")
+        if path == "/proc/42/cmdline" and mode == "rb" and parent_command is not None:
+            return io.BytesIO(parent_command)
+        raise FileNotFoundError(path)
+
+    monkeypatch.setattr(pyfltr.state.retry, "open", read_proc, raising=False)
+    monkeypatch.setattr(sys, "argv", ["pyfltr"])
+    assert pyfltr.state.retry.detect_launcher_prefix() == expected
 
 
 @pytest.mark.parametrize(

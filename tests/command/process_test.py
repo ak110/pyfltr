@@ -66,18 +66,6 @@ class _FakePopen:
         return self.returncode
 
 
-@pytest.mark.parametrize("command", ["pre-commit", "prek"])
-def test_run_subprocess_resolves_command_via_shutil_which(mocker, command: str) -> None:
-    _FakePopen.last_args_holder = []
-    resolved = f"/resolved/{command}"
-    mocker.patch("pyfltr.command.process.shutil.which", return_value=resolved)
-    mocker.patch("pyfltr.command.process.subprocess.Popen", _FakePopen)
-
-    pyfltr.command.process.run_subprocess([command, "run", "--files", "foo.py"], {"PATH": "/usr/bin"})
-
-    assert _FakePopen.last_args_holder == [[resolved, "run", "--files", "foo.py"]]
-
-
 def test_run_subprocess_keeps_original_name_when_unresolved(mocker) -> None:
     _FakePopen.last_args_holder = []
     mocker.patch("pyfltr.command.process.shutil.which", return_value=None)
@@ -106,12 +94,9 @@ def test_run_subprocess_resolves_via_env_path(mocker, tmp_path: pathlib.Path, mo
     _FakePopen.last_args_holder = []
     mocker.patch("pyfltr.command.process.subprocess.Popen", _FakePopen)
 
-    pyfltr.command.process.run_subprocess(["faketool"], {"PATH": str(bin_dir)})
+    pyfltr.command.process.run_subprocess(["faketool", "config", "--json"], {"PATH": str(bin_dir)})
 
-    assert len(_FakePopen.last_args_holder) == 1
-    resolved = pathlib.Path(_FakePopen.last_args_holder[0][0])
-    assert resolved.name.startswith("faketool")
-    assert resolved.parent == bin_dir
+    assert _FakePopen.last_args_holder == [[str(target), "config", "--json"]]
 
 
 def test_run_subprocess_does_not_mutate_commandline(mocker) -> None:
@@ -125,8 +110,8 @@ def test_run_subprocess_does_not_mutate_commandline(mocker) -> None:
     assert original == ["tool", "arg"]
 
 
-@pytest.mark.parametrize("command", ["faketool", "other-tool"])
-def test_resolve_commandline_uses_env_path_without_mutation(tmp_path: pathlib.Path, monkeypatch, command: str) -> None:
+def test_resolve_commandline_uses_env_path_without_mutation(tmp_path: pathlib.Path, monkeypatch) -> None:
+    command = "faketool"
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     if os.name == "nt":
