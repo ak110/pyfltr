@@ -20,24 +20,26 @@ def test_pytest_own_filename_body_is_not_traceback(form: str, tmp_path: pathlib.
     output = fixtures[form].replace("__SAMPLE_DIR__", tmp_path.as_posix())
     errors = pyfltr.parsing.entry.parse_errors("pytest", output, path_base=tmp_path, start_cwd=tmp_path)
     assert all(error.line < 91 and not error.file.startswith("E ") for error in errors)
-    if form == "own-body-line":
-        names = (
-            "test_raw_plain",
-            "test_raw_eline",
-            "test_raw_ownframe",
-            "test_raw_owndef",
-            "test_raw_summary_eq",
-            "test_exc_body",
-            "test_args",
-            "test_locals",
-            "test_captured",
-            "test_captured_raw",
-            "test_raw_eline_summary",
-            "test_real_assert",
-        )
-        assert [(error.line, error.message.split(":", 1)[0]) for error in errors] == list(
-            zip((9, 13, 17, 21, 25, 29, 5, 38, 43, 48, 52, 56), names, strict=True)
-        )
+    expected = {
+        "test_exc_body": 29,
+        "test_args": 5,
+        "test_locals": 38,
+        "test_captured": 43,
+        "test_real_assert": 56,
+    }
+    if form != "own-body-auto-rN":
+        # shortの一覧には名前が出るが、行番号はline形式にしか出ない。
+        summary_only = {
+            "test_raw_plain": 9,
+            "test_raw_eline": 13,
+            "test_raw_ownframe": 17,
+            "test_raw_owndef": 21,
+            "test_raw_summary_eq": 25,
+            "test_captured_raw": 48,
+            "test_raw_eline_summary": 52,
+        }
+        expected.update(summary_only if form == "own-body-line" else dict.fromkeys(summary_only, 0))
+    assert sorted((error.message.split(":", 1)[0], error.line) for error in errors) == sorted(expected.items())
 
 
 @pytest.mark.parametrize(
@@ -1602,12 +1604,13 @@ def test_parse_pytest_double_quiet_parent_with_two_child_runs_keeps_first_child_
     output = (
         _CHILD_RUN_FAILURE
         + "============================== 1 failed in 0.03s ===============================\n"
-        + _CHILD_RUN_FAILURE
+        + _CHILD_RUN_FAILURE.replace("child_test.py", "second_test.py")
         + "============================== 1 failed in 0.02s ===============================\n"
         ".\n"
     )
     errors = pyfltr.parsing.entry.parse_errors("pytest", output)
-    assert len([e for e in errors if e.file == "child_test.py"]) <= 1
+    # 親の最終集計がないため末尾の子を判別できない場合がある。残存は契約にしない。
+    assert all(error.file != "child_test.py" for error in errors)
 
 
 def test_parse_pytest_warnings_summary_after_summary_list_keeps_parent_summary() -> None:
@@ -2052,7 +2055,7 @@ ERROR parent_test.py::test_parent - RuntimeError: parent fixture boom
     ]
 
 
-def test_pytest_collection_syntax_error_uses_exception_line() -> None:
+def test_pytest_collection_syntax_error_uses_exception_reason() -> None:
     output = """==================================== ERRORS ====================================
 __________________ ERROR collecting tests/sub/broken_test.py ___________________
 /usr/lib/python3.15/ast.py:46: in parse
@@ -2071,7 +2074,8 @@ ERROR tests/sub/broken_test.py
     ]
 
 
-def test_pytest_child_failures_in_parent_error_capture() -> None:
+def test_pytest_parent_errors_survive_captured_child_failures() -> None:
+    # 捕捉された子の診断が残る既知の制約と分け、親の診断だけを確かめる。
     output = """parent_test.py EEF                                                       [100%]
 
 ==================================== ERRORS ====================================

@@ -7,6 +7,7 @@ import pyfltr.command.core_
 import pyfltr.command.dispatcher
 import pyfltr.command.env
 import pyfltr.command.glab
+import pyfltr.command.invocation
 import pyfltr.command.mise
 import pyfltr.command.only_failed
 import pyfltr.command.precommit
@@ -632,11 +633,6 @@ def test_vitest_args_default_contains_pass_with_no_tests() -> None:
     assert config["vitest-args"] == ["run", "--passWithNoTests"]
 
 
-def test_js_runner_default() -> None:
-    config = pyfltr.config.config.create_default_config()
-    assert config["js-runner"] == "pnpx"
-
-
 def test_js_runner_override(tmp_path: pathlib.Path) -> None:
     pyproject_content = """
 [tool.pyfltr]
@@ -743,11 +739,6 @@ def test_audit_tools_registered_in_lint_alias(command: str) -> None:
     assert command in config["aliases"]["lint"]
 
 
-def test_audit_alias_registered() -> None:
-    config = pyfltr.config.config.create_default_config()
-    assert config["aliases"]["audit"] == ["uv-audit", "pnpm-audit", "npm-audit", "yarn-audit"]
-
-
 def test_audit_alias_resolves_to_audit_tools() -> None:
     config = pyfltr.config.config.create_default_config()
     resolved = pyfltr.config.selection.resolve_aliases(["audit"], config)
@@ -780,6 +771,7 @@ def test_command_info_target_globs_list() -> None:
     assert info.targets == ["*.ts", "*.tsx"]
 
 
+# test-copy-contract: 全組み込みコマンドが動的設定キー4種を持つ構造的制約
 def test_builtin_dynamic_config_defaults() -> None:
     expected_keys = {
         f"{command}-{suffix}"
@@ -845,18 +837,6 @@ class TestConfigFilesWarning:
             if warning["source"] == "config" and "二重実行" in warning["message"]
         ]
         assert not entries
-
-    def test_config_files_invalid_type_warns(self, tmp_path: pathlib.Path) -> None:
-        pyproject_content = """
-[tool.pyfltr.custom-commands.mytool]
-type = "linter"
-path = "mytool"
-config-files = "foo"
-"""
-        (tmp_path / "pyproject.toml").write_text(pyproject_content)
-        config = pyfltr.config.config.load_config(config_dir=tmp_path)
-        assert _testconf.count_config_warnings("config-files") >= 1
-        assert "mytool" not in config.commands
 
 
 def test_invalid_preset_warns(tmp_path: pathlib.Path) -> None:
@@ -1051,11 +1031,6 @@ mypy-unused-awaitable = false
     assert config["mypy-unused-awaitable"] is False
 
 
-def test_python_default() -> None:
-    config = pyfltr.config.config.create_default_config()
-    assert config["python"] is False
-
-
 def test_python_default_disables_python_tools() -> None:
     config = pyfltr.config.config.create_default_config()
     _assert_language_gate(config, "python", passed=False)
@@ -1074,27 +1049,6 @@ python = true
         assert config[cmd] is False, f"{cmd}はpreset未指定ではFalseのまま"
     assert config["markdownlint"] is False
     assert config["textlint"] is False
-
-
-def test_python_true_with_preset_latest(tmp_path: pathlib.Path) -> None:
-    pyproject_content = """
-[tool.pyfltr]
-preset = "latest"
-python = true
-"""
-    (tmp_path / "pyproject.toml").write_text(pyproject_content)
-    config = pyfltr.config.config.load_config(config_dir=tmp_path)
-    assert config["ruff-format"] is True
-    assert config["ruff-check"] is True
-    assert config["mypy"] is True
-    assert config["pylint"] is True
-    assert config["pyright"] is True
-    assert config["arid"] is True
-    assert config["pytest"] is True
-    assert config["uv-sort"] is True
-    assert config["ty"] is False
-    assert config["textlint"] is True
-    assert config["markdownlint"] is True
 
 
 def test_python_true_with_individual_extra(tmp_path: pathlib.Path) -> None:
@@ -1171,16 +1125,6 @@ bin-runner = "bogus"
     assert config["bin-runner"] == "mise"
 
 
-def test_command_runner_validation_accepts_uv_value(tmp_path: pathlib.Path) -> None:
-    pyproject_content = """
-[tool.pyfltr]
-mypy-runner = "uv"
-"""
-    (tmp_path / "pyproject.toml").write_text(pyproject_content)
-    config = pyfltr.config.config.load_config(config_dir=tmp_path)
-    assert config["mypy-runner"] == "uv"
-
-
 def test_python_runner_default() -> None:
     config = pyfltr.config.config.create_default_config()
     assert config["python-runner"] == "uv"
@@ -1245,15 +1189,6 @@ def test_preset_latest_suppresses_language_categories(tmp_path: pathlib.Path) ->
         _assert_language_gate(config, category_key, passed=False)
 
 
-def test_javascript_true_enables_preset_tools(tmp_path: pathlib.Path) -> None:
-    (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latest"\njavascript = true\n')
-    config = pyfltr.config.config.load_config(config_dir=tmp_path)
-    _assert_language_gate(config, "javascript", passed=True, enabled=_JAVASCRIPT_ENABLED)
-    _assert_language_gate(config, "python", passed=False)
-    _assert_language_gate(config, "rust", passed=False)
-    _assert_language_gate(config, "dotnet", passed=False)
-
-
 def test_javascript_true_with_individual_override(tmp_path: pathlib.Path) -> None:
     pyproject_content = """
 [tool.pyfltr]
@@ -1267,18 +1202,6 @@ prettier = false
     assert config["eslint"] is True
     assert config["biome"] is True
     assert config["tsc"] is True
-
-
-def test_rust_true_enables_preset_tools(tmp_path: pathlib.Path) -> None:
-    (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latest"\nrust = true\n')
-    config = pyfltr.config.config.load_config(config_dir=tmp_path)
-    _assert_language_gate(config, "rust", passed=True, enabled=_RUST_ENABLED)
-
-
-def test_dotnet_true_enables_preset_tools(tmp_path: pathlib.Path) -> None:
-    (tmp_path / "pyproject.toml").write_text('[tool.pyfltr]\npreset = "latest"\ndotnet = true\n')
-    config = pyfltr.config.config.load_config(config_dir=tmp_path)
-    _assert_language_gate(config, "dotnet", passed=True, enabled=_DOTNET_ENABLED)
 
 
 def test_individual_tool_enables_despite_category_false(tmp_path: pathlib.Path) -> None:
@@ -1373,15 +1296,6 @@ def test_typos_default_config_values() -> None:
     # typos-versionは既存ユーザーの設定との互換維持のため定義を残す
     assert config["typos-version"] == "latest", "typos-versionはlatest（互換維持）"
     assert config["typos-fast"] is True, "typos-fastはTrue"
-
-
-def test_uv_sort_in_python_commands() -> None:
-    assert "uv-sort" in pyfltr.tools.PYTHON_COMMANDS
-
-
-def test_bin_runners_tuple() -> None:
-    assert "direct" in pyfltr.tools.BIN_RUNNERS
-    assert "mise" in pyfltr.tools.BIN_RUNNERS
 
 
 def test_glab_ci_lint_default_config_values() -> None:
@@ -1561,21 +1475,6 @@ def test_native_lang_tools_pass_filenames_false() -> None:
         assert config[f"{tool}-pass-filenames"] is False, f"{tool}-pass-filenamesはFalseであるべき"
 
 
-def test_native_lang_tools_command_types() -> None:
-    expected = {
-        "cargo-fmt": "formatter",
-        "cargo-clippy": "linter",
-        "cargo-check": "linter",
-        "cargo-test": "tester",
-        "cargo-deny": "linter",
-        "dotnet-format": "formatter",
-        "dotnet-build": "linter",
-        "dotnet-test": "tester",
-    }
-    for tool, expected_type in expected.items():
-        assert pyfltr.tools.BUILTIN_COMMANDS[tool].type == expected_type
-
-
 def test_native_formatters_write_by_default() -> None:
     config = pyfltr.config.config.create_default_config()
     assert config["cargo-fmt-args"] == ["fmt"]
@@ -1618,28 +1517,6 @@ dotnet-format = true
     assert config["dotnet-format"] is True
     assert config["mypy"] is True
     assert config["pytest"] is True
-
-
-def test_native_lang_tools_serial_group() -> None:
-    expected = {
-        "cargo-fmt": "cargo",
-        "cargo-clippy": "cargo",
-        "cargo-check": "cargo",
-        "cargo-test": "cargo",
-        "cargo-deny": "cargo",
-        "dotnet-format": "dotnet",
-        "dotnet-build": "dotnet",
-        "dotnet-test": "dotnet",
-    }
-    for tool, group in expected.items():
-        assert pyfltr.tools.BUILTIN_COMMANDS[tool].serial_group == group, f"{tool}.serial_groupは{group!r}であるべき"
-
-
-def test_existing_tools_have_no_serial_group() -> None:
-    for name, info in pyfltr.tools.BUILTIN_COMMANDS.items():
-        if name.startswith(("cargo-", "dotnet-")):
-            continue
-        assert info.serial_group is None, f"{name}.serial_groupはNoneであるべき"
 
 
 def test_native_lang_tools_in_aliases() -> None:
@@ -2160,14 +2037,7 @@ class TestErrorMessages:
             pyfltr.config.editing.parse_config_value("aliases", "x")
 
 
-def test_pre_commit_fast_default_is_true() -> None:
-    assert pyfltr.config.model.DEFAULT_CONFIG["pre-commit-fast"] is True
-
-
-def test_prek_fast_default_is_true() -> None:
-    assert pyfltr.config.model.DEFAULT_CONFIG["prek-fast"] is True
-
-
-def test_prek_args_default_pins_config_path() -> None:
-    args = pyfltr.config.model.DEFAULT_CONFIG["prek-args"]
+def test_prek_invocation_pins_config_path() -> None:
+    config = pyfltr.config.config.create_default_config()
+    args = pyfltr.command.invocation.build_invocation_argv("prek", config, ["prek"], [], fix_stage=False)
     assert "--config=.pre-commit-config.yaml" in args

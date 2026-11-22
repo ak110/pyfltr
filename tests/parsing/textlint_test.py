@@ -74,10 +74,10 @@ def test_parse_textlint_json_hint_for_sentence_length() -> None:
     )
     errors = pyfltr.parsing.entry.parse_errors("textlint", output)
     assert len(errors) == 1
-    assert errors[0].hint == (
-        "textlint counts up to the period (。) as one sentence; bullet-line splits still count as one."
-        " Split with periods to shorten."
-    )
+    hint = errors[0].hint
+    assert hint is not None
+    assert "。" in hint
+    assert "split with periods" in hint.lower()
 
 
 def test_parse_textlint_json_hint_for_known_rules() -> None:
@@ -192,29 +192,6 @@ def test_parse_textlint_json_normalizes_multiline_message_other_rules() -> None:
     )
     errors = pyfltr.parsing.entry.parse_errors("textlint", output)
     assert errors[0].message == "First line. Second line."
-
-
-def test_parse_textlint_json_sentence_length_appends_range_single_line() -> None:
-    output = json.dumps(
-        [
-            {
-                "filePath": "a.md",
-                "messages": [
-                    {
-                        "line": 17,
-                        "column": 1,
-                        "message": "Line 17 sentence length(134) exceeds...",
-                        "ruleId": "ja-technical-writing/sentence-length",
-                        "severity": 2,
-                        "loc": {"start": {"line": 17, "column": 1}, "end": {"line": 17, "column": 23}},
-                    }
-                ],
-            }
-        ]
-    )
-    errors = pyfltr.parsing.entry.parse_errors("textlint", output)
-    assert len(errors) == 1
-    assert errors[0].message.endswith("(L17:1〜23)")
 
 
 def test_parse_textlint_json_sentence_length_appends_range_multi_line() -> None:

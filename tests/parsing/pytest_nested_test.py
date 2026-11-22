@@ -24,7 +24,6 @@ def test_mask_pytest_captured_child_runs_keeps_line_structure() -> None:
         "FAILED tests/p_test.py::test_p - assert 1 == 2\n"
         "================================= 1 failed in 0.30s =================================\n"
     )
-    # pylint: disable=protected-access  # 行構造の保持は公開関数の戻り値へ現れないため直接検証する
-    masked = pyfltr.parsing.pytest_nested.mask_pytest_captured_child_runs(output)  # noqa: SLF001
-    assert masked.count("\n") == output.count("\n")
-    assert len(masked.split("\n")) == len(output.split("\n"))
+    masked = pyfltr.parsing.pytest_nested.mask_pytest_captured_child_runs(output)
+    before, after = output.split(child, maxsplit=1)
+    assert masked == before + "\n" * child.count("\n") + after

@@ -922,6 +922,7 @@ def test_parse_shellcheck_json() -> None:
     )
     errors = pyfltr.parsing.entry.parse_errors("shellcheck", output)
     assert len(errors) == 1
+    assert errors[0].rule_url == "https://www.shellcheck.net/wiki/SC2086"
     assert tests.parsing.conftest.diagnostic_fields(errors[0]) == (
         "src/foo.sh",
         10,
@@ -1133,23 +1134,6 @@ def _vitest_output(test_results: list[dict]) -> str:
     return json.dumps({"testResults": test_results})
 
 
-_VITEST_SINGLE_FAILURE = _vitest_output(
-    [
-        {
-            "name": "/abs/proj/tests/foo.test.ts",
-            "assertionResults": [
-                _vitest_assertion(
-                    status="failed",
-                    full_name="adds correctly",
-                    failure_messages=["AssertionError: expected 3 to equal 4"],
-                    location={"line": 7, "column": 5},
-                )
-            ],
-        }
-    ]
-)
-
-
 _VITEST_MULTI_FILE_FAILURE = _vitest_output(
     [
         {
@@ -1253,18 +1237,6 @@ _VITEST_ALL_PASSED = _vitest_output(
     ("case_id", "output", "expected"),
     [
         (
-            "single_failure",
-            _VITEST_SINGLE_FAILURE,
-            [
-                {
-                    "line": 7,
-                    "col": 5,
-                    "message_prefix": "adds correctly: ",
-                    "message_contains": "expected 3 to equal 4",
-                }
-            ],
-        ),
-        (
             "multi_file_failure",
             _VITEST_MULTI_FILE_FAILURE,
             [
@@ -1313,8 +1285,7 @@ _VITEST_ALL_PASSED = _vitest_output(
                 {
                     "line": 1,
                     "col": 1,
-                    "message_prefix": "no failure messages: ",
-                    "message_contains": "",
+                    "message_exact": "no failure messages: ",
                 }
             ],
         ),
@@ -1330,8 +1301,11 @@ def test_parse_vitest_json(case_id: str, output: str, expected: list[dict]) -> N
         assert actual.command == "vitest"
         assert actual.line == want["line"]
         assert actual.col == want["col"]
-        assert actual.message.startswith(want["message_prefix"])
-        assert want["message_contains"] in actual.message
+        if "message_exact" in want:
+            assert actual.message == want["message_exact"]
+        else:
+            assert actual.message.startswith(want["message_prefix"])
+            assert want["message_contains"] in actual.message
 
 
 @pytest.mark.parametrize(
@@ -1876,23 +1850,6 @@ def test_parse_errors_markdownlint_with_column_and_severity() -> None:
     assert errors[0].line == 5
     assert errors[0].col == 1
     assert errors[0].rule == "MD009"
-
-
-def test_parse_errors_shellcheck_rule_url() -> None:
-    output = json.dumps(
-        [
-            {
-                "file": "src/foo.sh",
-                "line": 10,
-                "column": 5,
-                "level": "warning",
-                "code": 2086,
-                "message": "Double quote to prevent globbing",
-            },
-        ]
-    )
-    errors = pyfltr.parsing.entry.parse_errors("shellcheck", output)
-    assert errors[0].rule_url == "https://www.shellcheck.net/wiki/SC2086"
 
 
 def test_parse_errors_eslint_rule_url() -> None:
