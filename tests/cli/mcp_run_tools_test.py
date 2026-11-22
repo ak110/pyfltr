@@ -4,6 +4,7 @@ import concurrent.futures
 import json
 import pathlib
 import shutil
+import subprocess
 import sys
 import typing
 
@@ -277,21 +278,6 @@ async def test_tool_run_returns_run_id(tmp_path: pathlib.Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_tool_run_returns_retry_commands(tmp_path: pathlib.Path) -> None:
-    sample = tmp_path / "input.txt"
-    sample.write_text("hello\n", encoding="utf-8")
-
-    result = await pyfltr.cli.mcp_run_tools.tool_run(
-        paths=[str(sample)],
-        commands=["ec"],
-    )
-
-    assert isinstance(result.retry_commands, dict)
-    for key in result.retry_commands:
-        assert key in result.failed
-
-
-@pytest.mark.asyncio
 async def test_tool_run_reports_disabled_command(tmp_path: pathlib.Path) -> None:
     sample = tmp_path / "input.txt"
     sample.write_text("hello\n", encoding="utf-8")
@@ -349,16 +335,6 @@ async def test_tool_run_returns_guidance_on_failure(tmp_path: pathlib.Path) -> N
 
 
 @pytest.mark.asyncio
-async def test_tool_run_keeps_skipped_reason_none_when_all_enabled(tmp_path: pathlib.Path) -> None:
-    sample = tmp_path / "input.txt"
-    sample.write_text("hello\n", encoding="utf-8")
-
-    result = await pyfltr.cli.mcp_run_tools.tool_run(paths=[str(sample)], commands=["ec"])
-
-    assert result.skipped_reason is None
-
-
-@pytest.mark.asyncio
 async def test_tool_run_does_not_carry_over_skipped_reason(tmp_path: pathlib.Path) -> None:
     sample = tmp_path / "input.txt"
     sample.write_text("hello\n", encoding="utf-8")
@@ -396,6 +372,7 @@ async def test_tool_run_retry_command_uses_cli_arguments(tmp_path: pathlib.Path,
     )
 
     assert result.failed == ["ec"]
+    assert set(result.retry_commands) == {"ec"}
     retry_command = result.retry_commands["ec"]
     assert " ci " in retry_command
     assert "--commands=ec" in retry_command
@@ -404,22 +381,24 @@ async def test_tool_run_retry_command_uses_cli_arguments(tmp_path: pathlib.Path,
 
 
 @pytest.mark.asyncio
-async def test_tool_run_retry_commands_includes_failed(tmp_path: pathlib.Path) -> None:
+async def test_tool_run_retry_commands_includes_failed(tmp_path: pathlib.Path, mocker) -> None:
     bad_py = tmp_path / "bad.py"
     bad_py.write_text("import os\n", encoding="utf-8")
+    (tmp_path / "pyproject.toml").write_text("[tool.pyfltr]\nruff-check = true\n", encoding="utf-8")
+
+    proc = subprocess.CompletedProcess(["ruff"], returncode=1, stdout="[]", stderr="")
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
     result = await pyfltr.cli.mcp_run_tools.tool_run(
         paths=[str(bad_py)],
+        work_dir=str(tmp_path),
+        mode="ci",
         commands=["ruff-check"],
     )
 
-    assert isinstance(result.retry_commands, dict)
-    if "ruff-check" in result.failed:
-        assert "ruff-check" in result.retry_commands
-        assert isinstance(result.retry_commands["ruff-check"], str)
-        assert len(result.retry_commands["ruff-check"]) > 0
-    for key in result.retry_commands:
-        assert key in result.failed
+    assert result.failed == ["ruff-check"]
+    assert set(result.retry_commands) == {"ruff-check"}
+    assert "--commands=ruff-check" in result.retry_commands["ruff-check"]
 
 
 @pytest.mark.asyncio

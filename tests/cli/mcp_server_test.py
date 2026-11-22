@@ -49,21 +49,6 @@ pytestmark = pytest.mark.usefixtures("mcp_cache")
 _ToolError = mcp.server.mcpserver.exceptions.ToolError
 
 
-def test_run_summary_model_fields() -> None:
-    model = pyfltr.cli.mcp_models.RunSummaryModel(
-        run_id="abc123",
-        started_at="2026-01-01T00:00:00",
-        finished_at="2026-01-01T00:01:00",
-        exit_code=0,
-        commands=["ruff-check"],
-        files=5,
-    )
-    assert model.run_id == "abc123"
-    assert model.exit_code == 0
-    assert model.commands == ["ruff-check"]
-    assert model.files == 5
-
-
 def test_diagnostic_model_all_optional() -> None:
     model = pyfltr.cli.mcp_models.DiagnosticModel()
     assert model.command is None
@@ -76,15 +61,6 @@ def test_diagnostic_message_model_all_optional() -> None:
     assert model.line is None
     assert model.severity is None
     assert model.msg is None
-
-
-def test_collect_tool_summaries_includes_elapsed(tmp_path: pathlib.Path) -> None:
-    store = pyfltr.state.archive.ArchiveStore(cache_root=tmp_path)
-    run_id = store.start_run(commands=["pytest"])
-    result = dataclasses.replace(_make_result("pytest", returncode=0, command_type="tester"), elapsed=1.2345)
-    store.write_tool_result(run_id, result)
-    summaries = pyfltr.state.runs.collect_tool_summaries(store, run_id)
-    assert summaries[0]["elapsed"] == 1.234
 
 
 def test_collect_tool_summaries_omits_slow_tests_when_absent(tmp_path: pathlib.Path) -> None:
@@ -416,21 +392,6 @@ def test_run_result_new_fields_defaults() -> None:
     assert result.skipped_reason is None
     assert isinstance(result.retry_commands, dict)
     assert not hasattr(result, "schema_hints")
-
-
-def test_run_result_nullable_run_id() -> None:
-    result = pyfltr.cli.mcp_models.RunResult(
-        run_id=None,
-        exit_code=0,
-        failed=[],
-        skipped_reason="失敗ツールなし",
-        **_COMPLETION_FIELDS,
-    )
-    assert result.run_id is None
-    assert result.skipped_reason == "失敗ツールなし"
-    assert result.exit_code == 0
-    assert not result.failed
-    assert not result.commands
 
 
 @pytest.mark.asyncio

@@ -490,22 +490,31 @@ def test_replace_from_grep_filters_files(
     capsys.readouterr()
 
 
-def test_replace_from_grep_rejects_adaptively_compressed_output(tmp_path: pathlib.Path) -> None:
+def test_replace_from_grep_rejects_adaptively_compressed_output(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    target = tmp_path / "dense.txt"
+    original = "foo\n" * 300
+    target.write_text(original, encoding="utf-8")
+    sparse = tmp_path / "sparse.txt"
+    sparse.write_text("foo\n", encoding="utf-8")
     grep_jsonl = tmp_path / "grep.jsonl"
-    grep_jsonl.write_text(
-        "\n".join(
-            [
-                json.dumps({"kind": "header", "output_mode": "mixed"}),
-                json.dumps({"kind": "file", "file": "dense.txt", "count": 300, "matches": []}),
-                json.dumps({"kind": "summary", "output_mode": "mixed"}),
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
 
-    with pytest.raises(ValueError, match="full出力"):
-        pyfltr.grep_.operations.read_from_grep(grep_jsonl)
+    assert pyfltr.cli.main.run(["grep", "foo", "--auto-summary", "--output-format=jsonl", str(target), str(sparse)]) == 0
+    output = capsys.readouterr().out
+    assert json.loads(output.splitlines()[-1])["output_mode"] != "full"
+    grep_jsonl.write_text(output, encoding="utf-8")
+
+    with pytest.raises(SystemExit) as exc:
+        pyfltr.cli.main.run(["replace", "foo", "baz", "--from-grep", str(grep_jsonl), str(target), str(sparse)])
+    assert exc.value.code == 2
+    assert "full出力" in capsys.readouterr().err
+    assert target.read_text(encoding="utf-8") == original
+    assert sparse.read_text(encoding="utf-8") == "foo\n"
+    assert not pyfltr.grep_.history.ReplaceHistoryStore().list_replaces()
 
 
 def test_replace_text_dry_run_summary(

@@ -40,7 +40,7 @@ async def test_tool_list_runs_empty() -> None:
 @pytest.mark.asyncio
 async def test_tool_list_runs_returns_summaries(tmp_path: pathlib.Path) -> None:
     run_id1 = _seed_run(tmp_path, commands=["ruff-check"], exit_code=0)
-    run_id2 = _seed_run(tmp_path, commands=["mypy"], exit_code=1)
+    run_id2 = _seed_run(tmp_path, commands=["mypy"], files=7, exit_code=1)
 
     result = await pyfltr.cli.mcp_runs_tools.tool_list_runs(limit=10)
     assert len(result) == 2
@@ -48,6 +48,10 @@ async def test_tool_list_runs_returns_summaries(tmp_path: pathlib.Path) -> None:
     assert result[1].run_id == run_id1
     assert result[0].exit_code == 1
     assert result[1].exit_code == 0
+    assert result[0].commands == ["mypy"]
+    assert result[1].commands == ["ruff-check"]
+    assert result[0].files == 7
+    assert result[1].files == 3
 
 
 @pytest.mark.asyncio
@@ -72,10 +76,13 @@ async def test_tool_show_run_overview(tmp_path: pathlib.Path) -> None:
 
     result = await pyfltr.cli.mcp_runs_tools.tool_show_run(run_id)
     assert result.run_id == run_id
-    assert set(result.meta) <= set(pyfltr.cli.mcp_runs_tools.SHOW_RUN_META_KEYS)
-    assert {"commands", "files", "started_at"} <= set(result.meta)
-    for key in ("run_id", "slot_waits", "diagnostic_paths", "python", "executable", "platform"):
-        assert key not in result.meta
+    internal_keys = {"run_id", "slot_waits", "diagnostic_paths", "python", "executable", "platform"}
+    saved_meta = pyfltr.state.archive.ArchiveStore(cache_root=tmp_path).read_meta(run_id)
+    assert internal_keys <= saved_meta.keys()
+    assert result.meta["commands"] == ["ruff-check", "mypy"]
+    assert result.meta["files"] == 3
+    assert "started_at" in result.meta
+    assert internal_keys.isdisjoint(result.meta)
     command_names = [c.command for c in result.commands]
     assert "ruff-check" in command_names
     assert "mypy" in command_names

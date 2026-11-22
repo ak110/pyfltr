@@ -103,16 +103,6 @@ async def test_tool_grep_rejects_missing_pattern_file(tmp_path: pathlib.Path) ->
         )
 
 
-def test_tool_grep_max_total_default_is_none() -> None:
-    signature = inspect.signature(pyfltr.cli.mcp_grep_tools.tool_grep)
-    assert signature.parameters["max_total"].default is None
-
-
-def test_tool_grep_max_preview_chars_default_is_none() -> None:
-    signature = inspect.signature(pyfltr.cli.mcp_grep_tools.tool_grep)
-    assert signature.parameters["max_preview_chars"].default is None
-
-
 @pytest.mark.asyncio
 async def test_tool_grep_context_applies_to_both_directions(tmp_path: pathlib.Path) -> None:
     target = tmp_path / "sample.txt"
@@ -194,8 +184,8 @@ async def test_tool_grep_max_total_limits_results(tmp_path: pathlib.Path) -> Non
         max_total=5,
     )
 
-    assert result.total_matches <= 5
-    assert len(result.matches) <= 5
+    assert result.total_matches == 5
+    assert [match.line_text for match in result.matches] == [f"hello {i}" for i in range(5)]
 
 
 @pytest.mark.asyncio

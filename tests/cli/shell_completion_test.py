@@ -23,8 +23,8 @@ class TestCollectCompletions:
     def test_output_format_choices(self):
         parser = pyfltr.cli.parser.build_parser()
         script = pyfltr.cli.shell_completion.generate("bash", parser, frozenset())
-        assert "text" in script
-        assert "jsonl" in script
+        choices = next(line.split('"')[1].split() for line in script.splitlines() if "local output_formats=" in line)
+        assert {"text", "jsonl"} <= set(choices)
 
     def test_commands_choices_contain_builtin_and_aliases(self):
         parser = pyfltr.cli.parser.build_parser()
@@ -42,20 +42,6 @@ class TestGenerateBash:
         script = pyfltr.cli.shell_completion.generate("bash", parser, subcommands)
         assert "_pyfltr_completions()" in script
         assert "complete -o default -F _pyfltr_completions pyfltr" in script
-
-    def test_contains_subcommands(self):
-        parser = pyfltr.cli.parser.build_parser()
-        subcommands = frozenset({"ci", "run", "generate-shell-completion"})
-        script = pyfltr.cli.shell_completion.generate("bash", parser, subcommands)
-        assert "ci" in script
-        assert "run" in script
-        assert "generate-shell-completion" in script
-
-    def test_contains_output_format_choices(self):
-        parser = pyfltr.cli.parser.build_parser()
-        script = pyfltr.cli.shell_completion.generate("bash", parser, frozenset({"ci"}))
-        assert "text" in script
-        assert "jsonl" in script
 
 
 class TestGeneratePowershell:
@@ -79,7 +65,8 @@ class TestMainIntegration:
         rc = pyfltr.cli.main.run(["generate-shell-completion", "bash"])
         assert rc == 0
         captured = capsys.readouterr()
-        assert "_pyfltr_completions()" in captured.out
+        choices = next(line.split('"')[1].split() for line in captured.out.splitlines() if "local subcommands=" in line)
+        assert {"ci", "run", "generate-shell-completion"} <= set(choices)
 
     def test_powershell_success(self, capsys):
         rc = pyfltr.cli.main.run(["generate-shell-completion", "powershell"])

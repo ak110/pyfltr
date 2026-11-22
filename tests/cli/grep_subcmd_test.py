@@ -350,9 +350,12 @@ def test_grep_json_exposes_decode_and_truncation_warnings(
     payload = json.loads(capsys.readouterr().out)
     assert len(payload["warnings"]) == 2
     assert all(set(warning) == {"source", "msg", "hint"} for warning in payload["warnings"])
-    decode_warning = next(warning for warning in payload["warnings"] if "--encoding" in warning["hint"])
-    assert "--encoding" in decode_warning["hint"]
-    assert all("message" not in warning for warning in payload["warnings"])
+    decode_warnings = [warning for warning in payload["warnings"] if "invalid.txt" in warning["msg"]]
+    assert len(decode_warnings) == 1
+    assert "--encoding" in decode_warnings[0]["hint"]
+    truncation_warning = next(warning for warning in payload["warnings"] if warning != decode_warnings[0])
+    assert "切り詰め" in truncation_warning["msg"]
+    assert "--max-preview-chars=0" in truncation_warning["msg"]
     assert payload["summary"]["warnings"] == len(payload["warnings"])
 
 

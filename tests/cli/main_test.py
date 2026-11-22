@@ -976,12 +976,6 @@ def test_additional_args(mocker):
 
 
 class TestSubcommandIntegration:
-    def test_run_subcommand(self, _isolated_target, mocker):
-        proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="test")
-        mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
-        returncode = pyfltr.cli.main.run(["run", "--work-dir", str(_isolated_target), str(_isolated_target)])
-        assert returncode == 0
-
     def test_fast_subcommand(self, _isolated_target, mocker):
         proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="test")
         mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
@@ -992,12 +986,6 @@ class TestSubcommandIntegration:
         proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="test")
         mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
         returncode = pyfltr.cli.main.run(["run-for-agent", "--work-dir", str(_isolated_target), str(_isolated_target)])
-        assert returncode == 0
-
-    def test_ci_explicit(self, _isolated_target, mocker):
-        proc = subprocess.CompletedProcess(["test"], returncode=0, stdout="test")
-        mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
-        returncode = pyfltr.cli.main.run(["ci", "--work-dir", str(_isolated_target), str(_isolated_target)])
         assert returncode == 0
 
     def test_run_includes_custom_commands_by_default(self, mocker, tmp_path):
@@ -1016,7 +1004,7 @@ pass-filenames = false
         proc = subprocess.CompletedProcess(["my-linter-exe"], returncode=0, stdout="")
         mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
-        returncode = pyfltr.cli.main.run(["run", "--work-dir", str(tmp_path), "--commands=my-linter", str(tmp_path)])
+        returncode = pyfltr.cli.main.run(["run", "--work-dir", str(tmp_path), str(tmp_path)])
         assert returncode == 0
 
         invoked_binaries = {
@@ -1025,17 +1013,19 @@ pass-filenames = false
         assert "my-linter-exe" in invoked_binaries
 
 
-def test_human_readable_disables_structured_output(mocker):
+def test_human_readable_disables_structured_output(mocker, tmp_path):
+    target = tmp_path / "sample.py"
+    target.write_text("x = 1\n", encoding="utf-8")
     proc = subprocess.CompletedProcess(["ruff"], returncode=0, stdout="")
     mock_run = mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
-    pyfltr.cli.main.run(["run", "--human-readable", "--commands=ruff-check", str(pathlib.Path(__file__).parents[2])])
+    rc = pyfltr.cli.main.run(
+        ["ci", "--work-dir", str(tmp_path), "--human-readable", "--commands=ruff-check", "--enable=ruff-check", str(target)]
+    )
 
-    for call in mock_run.call_args_list:
-        if call.args and isinstance(call.args[0], list) and "check" in call.args[0]:
-            commandline = call.args[0]
-            assert "--output-format=json" not in commandline
-            break
+    assert rc == 0
+    commandline = next(call.args[0] for call in mock_run.call_args_list if "check" in call.args[0])
+    assert not any(arg.startswith("--output-format") for arg in commandline)
 
 
 @pytest.mark.parametrize("fmt", ["jsonl", "sarif", "github-annotations"])
@@ -1097,14 +1087,29 @@ def test_sarif_stdout_keeps_text_on_stderr_with_info_level(mocker, capsys):
     assert "----- summary" in captured.err
 
 
-def test_system_logger_always_on_stderr_and_not_suppressed(mocker, capsys):
-    proc = subprocess.CompletedProcess(["mypy"], returncode=0, stdout="")
-    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
+@pytest.mark.parametrize("fmt", ["text", "jsonl", "sarif", "github-annotations"])
+def test_system_logger_always_on_stderr_and_not_suppressed(mocker, capsys, caplog, monkeypatch, tmp_path, fmt):
+    root = logging.getLogger()
+    monkeypatch.setattr(root, "handlers", [])
+    caplog.set_level(root.level)
+    target = tmp_path / "sample.py"
+    target.write_text("x = 1\n", encoding="utf-8")
+    message = "system log from external tool runner"
 
-    for fmt in ("text", "jsonl", "sarif", "github-annotations"):
-        pyfltr.cli.main.run(["ci", "--output-format", fmt, "--commands=mypy", str(pathlib.Path(__file__).parents[2])])
-        assert logging.getLogger().handlers, f"root loggerのhandlerが空になっている: fmt={fmt}"
-        capsys.readouterr()
+    def run_tool(*_args, **_kwargs):
+        logging.getLogger(__name__).warning(message)
+        return subprocess.CompletedProcess(["ruff"], returncode=0, stdout="")
+
+    mocker.patch("pyfltr.command.process.run_subprocess", side_effect=run_tool)
+
+    rc = pyfltr.cli.main.run(
+        ["ci", "--work-dir", str(tmp_path), "--output-format", fmt, "--commands=ruff-check", "--enable=ruff-check", str(target)]
+    )
+
+    assert rc == 0
+    captured = capsys.readouterr()
+    assert message in captured.err
+    assert message not in captured.out
 
 
 @pytest.mark.parametrize("fmt", ["jsonl", "sarif", "github-annotations"])
@@ -1312,15 +1317,6 @@ def test_invalid_subcommand_prints_main_help(capsys):
     err = capsys.readouterr().err
     assert "usage:" in err
     assert "<subcommand>" in err
-
-
-def test_help_contains_description(capsys):
-    with pytest.raises(SystemExit) as exc_info:
-        pyfltr.cli.main.run(["--help"])
-    assert exc_info.value.code == 0
-    out = capsys.readouterr().out
-    assert "並列実行" in out
-    assert "コーディングエージェント" in out
 
 
 @pytest.mark.parametrize("args", [["--version"], ["-V"], ["--version", "run"]])

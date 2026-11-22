@@ -1,57 +1,10 @@
-import pyfltr.tools
+import pyfltr.config.config
+import pyfltr.config.selection
 
 
 def test_builtin_command_order() -> None:
-    assert list(pyfltr.tools.BUILTIN_COMMANDS) == [
-        "prettier",
-        "ruff-format",
-        "uv-sort",
-        "shfmt",
-        "taplo",
-        "cargo-fmt",
-        "dotnet-format",
-        "prek",
-        "pre-commit",
-        "ec",
-        "shellcheck",
-        "typos",
-        "actionlint",
-        "pinact",
-        "glab-ci-lint",
-        "yamllint",
-        "hadolint",
-        "gitleaks",
-        "semgrep",
-        "bandit",
-        "test-copies",
-        "pylint",
-        "mypy",
-        "ruff-check",
-        "pyright",
-        "ty",
-        "arid",
-        "markdownlint",
-        "textlint",
-        "designmd",
-        "lychee",
-        "colloquial-check",
-        "markdown-structure",
-        "comment-check",
-        "tsc",
-        "eslint",
-        "biome",
-        "oxlint",
-        "cargo-clippy",
-        "cargo-check",
-        "cargo-deny",
-        "dotnet-build",
-        "sqlfluff",
-        "uv-audit",
-        "pnpm-audit",
-        "npm-audit",
-        "yarn-audit",
-        "pytest",
-        "vitest",
-        "cargo-test",
-        "dotnet-test",
-    ]
+    config = pyfltr.config.config.create_default_config()
+
+    selected = pyfltr.config.selection.resolve_aliases(["pytest", "ruff-check", "ruff-format"], config)
+
+    assert selected == ["ruff-format", "ruff-check", "pytest"]

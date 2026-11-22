@@ -8,11 +8,11 @@ import pyfltr.warnings_
 
 def test_emit_warning_accumulates() -> None:
     pyfltr.warnings_.emit_warning(source="config", message="foo", hint="対応不要です。")
-    pyfltr.warnings_.emit_warning(source="git", message="bar", hint="対応不要です。")
+    pyfltr.warnings_.emit_warning(source="git", message="bar", hint="設定を見直してください。")
     entries = pyfltr.warnings_.collected_warnings()
     assert entries == [
         {"source": "config", "message": "foo", "hint": "対応不要です。"},
-        {"source": "git", "message": "bar", "hint": "対応不要です。"},
+        {"source": "git", "message": "bar", "hint": "設定を見直してください。"},
     ]
 
 
@@ -84,12 +84,6 @@ def test_emit_warning_with_exc_info_captures_traceback() -> None:
     assert entries[0]["source"] == "file-resolver"
     assert "I/O Error" in entries[0]["message"]
     assert "ValueError: boom" in entries[0]["message"]
-
-
-def test_emit_warning_with_hint_included() -> None:
-    pyfltr.warnings_.emit_warning(source="config", message="foo", hint="fooを bar に直す")
-    entries = pyfltr.warnings_.collected_warnings()
-    assert entries == [{"source": "config", "message": "foo", "hint": "fooを bar に直す"}]
 
 
 def test_suppress_duplicates_is_scoped() -> None:

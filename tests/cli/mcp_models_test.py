@@ -295,11 +295,6 @@ async def test_command_info_keys_have_recorded_purposes() -> None:
     assert not keys & pyfltr.cli.mcp_server.COMMAND_INFO_EXCLUDED_KEYS
 
 
-def test_show_run_meta_keys_exclude_internal_values() -> None:
-    keys = set(pyfltr.cli.mcp_runs_tools.SHOW_RUN_META_KEYS)
-    assert not keys & {"run_id", "slot_waits", "diagnostic_paths", "python", "executable", "platform"}
-
-
 @pytest.mark.asyncio
 async def test_grep_grouped_matches_drop_unrecorded_keys(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     (tmp_path / "many.txt").write_text("".join(f"foo {index}\n" for index in range(300)), encoding="utf-8")

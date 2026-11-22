@@ -1,8 +1,11 @@
 import argparse
+import json
+import subprocess
 
 import pytest
 
 import pyfltr.cli.command_selection
+import pyfltr.cli.main
 import pyfltr.config.config
 
 
@@ -63,10 +66,19 @@ def test_apply_subcommand_defaults_preserves_explicit_quiet() -> None:
     assert args.quiet is True
 
 
-def test_validate_commands_accepts_registered_command() -> None:
-    config = pyfltr.config.config.create_default_config()
+def test_validate_commands_accepts_registered_command(tmp_path, mocker, capsys) -> None:
+    target = tmp_path / "sample.py"
+    target.write_text("x = 1\n", encoding="utf-8")
+    proc = subprocess.CompletedProcess(["mypy"], returncode=1, stdout="", stderr="")
+    mocker.patch("pyfltr.command.process.run_subprocess", return_value=proc)
 
-    pyfltr.cli.command_selection.validate_commands(["mypy"], config)
+    rc = pyfltr.cli.main.run(
+        ["ci", "--work-dir", str(tmp_path), "--output-format=jsonl", "--commands=mypy", "--enable=mypy", str(target)]
+    )
+
+    assert rc == 1
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert [record["command"] for record in records if record["kind"] == "command"] == ["mypy"]
 
 
 def test_validate_commands_rejects_unknown_command_with_suggestion() -> None:
