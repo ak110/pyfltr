@@ -37,9 +37,15 @@ def cli(project: pathlib.Path, evidence: pathlib.Path, env: dict[str, str], *arg
 def mcp(project: pathlib.Path, evidence: pathlib.Path, env: dict[str, str], tool: str) -> None:
     """stdioの初期化と1件のツール呼出しを記録する。"""
     messages: queue.Queue[str | None] = queue.Queue()
+    rpc_log = evidence / "rpc.jsonl"
+    stderr_log = evidence / "server-stderr.log"
+
+    def failure(stage: str, detail: object) -> RuntimeError:
+        return RuntimeError(f"MCP {stage}: {detail}。{rpc_log} の送受信と {stderr_log} の診断を確認する。")
+
     with (
-        (evidence / "rpc.jsonl").open("w", encoding="utf-8") as transcript,
-        (evidence / "server-stderr.log").open("w", encoding="utf-8") as stderr,
+        rpc_log.open("w", encoding="utf-8") as transcript,
+        stderr_log.open("w", encoding="utf-8") as stderr,
         subprocess.Popen(
             [sys.executable, "-m", "pyfltr", "mcp"],
             cwd=project,
@@ -53,7 +59,7 @@ def mcp(project: pathlib.Path, evidence: pathlib.Path, env: dict[str, str], tool
     ):
         stdin, stdout = process.stdin, process.stdout
         if stdin is None or stdout is None:
-            raise RuntimeError("MCP pipes unavailable")
+            raise failure("起動", "標準入出力に接続できない")
 
         def read() -> None:
             for line in stdout:
@@ -68,19 +74,31 @@ def mcp(project: pathlib.Path, evidence: pathlib.Path, env: dict[str, str], tool
             if identifier is not None:
                 message["id"] = identifier
             log("send", message)
-            stdin.write(json.dumps(message) + "\n")
-            stdin.flush()
+            try:
+                stdin.write(json.dumps(message) + "\n")
+                stdin.flush()
+            except OSError as exc:
+                raise failure(method, exc) from exc
 
-        def receive(identifier: int) -> dict[str, typing.Any]:
+        def receive(stage: str, identifier: int) -> dict[str, typing.Any]:
             for _ in range(30):
-                line = messages.get(timeout=15)
+                try:
+                    line = messages.get(timeout=15)
+                except queue.Empty:
+                    raise failure(stage, "15秒以内に応答を受け取れない") from None
                 if line is None:
-                    raise RuntimeError("MCP stdout closed")
-                message = json.loads(line)
+                    raise failure(stage, "応答を受け取る前に標準出力が閉じた")
+                try:
+                    message = json.loads(line)
+                except ValueError as exc:
+                    log("invalid", line)
+                    raise failure(stage, "応答がJSONではない") from exc
                 log("receive", message)
                 if message.get("id") == identifier:
+                    if "result" not in message:
+                        raise failure(stage, message.get("error", "resultがない"))
                     return message["result"]
-            raise RuntimeError("MCP response ID not received")
+            raise failure(stage, f"30件以内に応答ID {identifier} が見つからない")
 
         reader = threading.Thread(target=read, daemon=True)
         reader.start()
@@ -94,8 +112,8 @@ def mcp(project: pathlib.Path, evidence: pathlib.Path, env: dict[str, str], tool
                 },
                 1,
             )
-            if "tools" not in receive(1)["capabilities"]:
-                raise RuntimeError("MCP tools unavailable")
+            if "tools" not in receive("initialize", 1).get("capabilities", {}):
+                raise failure("initialize", "tools能力がない")
             send("notifications/initialized", {})
             args: dict[str, object] = (
                 {"paths": ["sample.txt"], "commands": ["probe"], "work_dir": str(project), "no_cache": True}
@@ -103,23 +121,26 @@ def mcp(project: pathlib.Path, evidence: pathlib.Path, env: dict[str, str], tool
                 else {"paths": [str(project / "sample.txt")], "pattern": "before", "replacement": "after", "show_changes": True}
             )
             send("tools/call", {"name": tool, "arguments": args}, 2)
-            response = receive(2)
+            response = receive(f"tools/call ({tool})", 2)
             content = response.get("structuredContent", {})
             if response.get("isError") or (
                 content.get("exit_code") != 0 if tool == "run" else "after" not in json.dumps(content)
             ):
-                raise RuntimeError(response)
+                raise failure(f"tools/call ({tool})", response)
         finally:
             stdin.close()
             try:
                 process.wait(timeout=15)
             except subprocess.TimeoutExpired:
                 process.kill()
-                process.wait(timeout=10)
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired as exc:
+                    raise failure("終了", "停止後も10秒以内に終了を確認できない") from exc
             reader.join(timeout=5)
             log("exit", process.returncode)
         if process.returncode or reader.is_alive():
-            raise RuntimeError(f"MCP shutdown: {process.returncode}")
+            raise failure("終了", f"終了コード={process.returncode}、受信スレッド稼働中={reader.is_alive()}")
 
 
 def exercise(project: pathlib.Path, evidence: pathlib.Path, env: dict[str, str], operation: str) -> None:

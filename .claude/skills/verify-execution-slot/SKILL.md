@@ -17,7 +17,8 @@ description: pyfltr/command/execution_slot.pyの実行枠数や待機列の調�
 
 ## 対象と探索範囲
 
-`pyfltr/command/execution_slot.py` の `slot_count`、`_slot_paths`、`_eligible_slots`（`_is_legacy_request` を含む）を直接呼び、仕様から求めた取得候補と比較する。
+`pyfltr/command/execution_slot.py` の `slot_count`、`_slot_paths`、`_acquire`、`_release` を直接呼ぶ。
+各調停区間の取得枠または待機を仕様から求めた結果と比較し、解放では保持中の枠だけが空くことを確認する。
 待機列の登録順、枠の占有、要求の進行段階を状態として保存する。
 
 1つのロック先で4主体が各1回要求する。
@@ -33,6 +34,8 @@ description: pyfltr/command/execution_slot.pyの実行枠数や待機列の調�
 
 ## 前提と保証外
 
+枠ロック、登録済み待機列、調停ロック、保持者記録の入出力はモデルで置き換える。
+再試行は実装の待機時間に入った地点で区切る。
 枠ロックは排他的であり、登録と調停は直列化されると仮定する。
 異常終了した待機ファイルは次の調停前に回収されると仮定し、回収処理自体は検査しない。
 同時保持の別上限設定、再入・祖先からの継承、取消、繰り返し登録、OSの `flock` / `msvcrt.locking` 自体、ファイルシステム破損、電源断は対象外。
@@ -50,4 +53,4 @@ uv run --frozen python .claude/skills/verify-execution-slot/check.py
 
 終了コード0と両上限の状態数を確認する。
 失敗時は上限・旧版の配置・違反に至る操作列、または設定やロック名の不一致が出る。
-最後に同期した実装のcommitは `fd63787`。
+最後に同期した実装のcommitは `5bdf379`。
