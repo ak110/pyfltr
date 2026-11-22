@@ -227,9 +227,37 @@ def _is_rust_test(tokens: list[_Token], index: int) -> bool:
     return tokens[index].value == "#" and [item.value for item in tokens[index + 1 : index + 4]] == ["[", "test", "]"]
 
 
+def _type_arguments_end(tokens: list[_Token], pairs: dict[int, int], start: int, close: int) -> int:
+    depth = 1
+    index = start + 1
+    while index < close:
+        value = tokens[index].value
+        if value == "<":
+            depth += 1
+        elif value == ">":
+            depth -= 1
+            if depth == 0:
+                # 比較式の山括弧との混同を減らすため、型の直後に続くトークンを確認する。
+                if index + 1 < close and tokens[index + 1].value in {"(", "=>"}:
+                    return index + 1
+                return start
+        elif value == ";":
+            return start
+        index = pairs.get(index, index) + 1
+    return start
+
+
+def _next_ts_token(tokens: list[_Token], pairs: dict[int, int], index: int, close: int) -> int:
+    if tokens[index].value == "<":
+        end = _type_arguments_end(tokens, pairs, index, close)
+        if end != index:
+            return end
+    return pairs.get(index, index) + 1
+
+
 def _argument_end(tokens: list[_Token], pairs: dict[int, int], start: int, close: int) -> int:
     while start < close and tokens[start].value != ",":
-        start = pairs.get(start, start) + 1
+        start = _next_ts_token(tokens, pairs, start, close)
     return start
 
 
@@ -254,7 +282,7 @@ def _ts_test_body(tokens: list[_Token], pairs: dict[int, int], call: int) -> tup
             if opening is None:
                 raise _InputError(tokens[start].line, "試験本文を解析できない")
             return opening + 1, pairs[opening]
-        start = pairs.get(start, start) + 1
+        start = _next_ts_token(tokens, pairs, start, end)
     return None
 
 

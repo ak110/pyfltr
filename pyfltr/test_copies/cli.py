@@ -14,8 +14,10 @@ from pyfltr.test_copies.python import PythonAnalysis, analyze_python
 _MARKER = "test-copy-contract:"
 
 
-def _next_action(kind: object, path: pathlib.Path) -> str:
+def _next_action(kind: object, path: pathlib.Path, decode_failed: bool) -> str:
     if kind == "input-error":
+        if decode_failed:
+            return "UTF-8で保存し直すか、UTF-8で読めるファイルを指定する。"
         return "対象の構文・パス・読取権限を修正する。"
     marker = "#" if _language(path) == "python" else "//"
     contract = f"{marker} {_MARKER} <保証する独立契約の理由>"
@@ -71,6 +73,7 @@ def main(argv: list[str] | None = None) -> int:
     root = args.root.resolve()
     files: list[dict[str, object]] = []
     diagnostics: list[dict[str, object]] = []
+    decode_failures: set[str] = set()
     loaded: dict[pathlib.Path, PythonAnalysis] = {}
     try:
         if not root.is_dir():
@@ -130,6 +133,8 @@ def main(argv: list[str] | None = None) -> int:
                 entry["functions"] = results
             except (OSError, UnicodeError, SyntaxError, ValueError, tokenize.TokenError, RecursionError) as error:
                 entry["status"] = "error"
+                if isinstance(error, UnicodeDecodeError):
+                    decode_failures.add(display)
                 diagnostics.append(
                     {
                         "path": display,
@@ -140,7 +145,11 @@ def main(argv: list[str] | None = None) -> int:
                 )
     except (OSError, ValueError, RuntimeError) as error:
         diagnostics.append({"path": str(root), "line": 1, "kind": "input-error", "message": " ".join(str(error).splitlines())})
-    actions = [_next_action(item["kind"], pathlib.Path(str(item["path"]))) for item in diagnostics]
+    actions = [
+        _next_action(item["kind"], pathlib.Path(display), display in decode_failures)
+        for item in diagnostics
+        for display in (str(item["path"]),)
+    ]
     if args.json:
         response = {"schema_version": 1, "root": str(root), "files": files, "diagnostics": diagnostics}
         if diagnostics:

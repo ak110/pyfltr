@@ -17,14 +17,15 @@ _CASES = [
     ),
     (
         "sample.spec.tsx",
-        'import { LABEL } from "./app";\ntest("label", () => (expect(LABEL).toBe("ok")), 100);\n',
+        'import { LABEL } from "./app";\n'
+        'test("label", <A extends Map<string, number>, B,>() => (expect(LABEL).toBe("ok")), 100);\n',
         'test("double", () => expect(double(2)).toBe(4));\n',
         'test("bad", () => {\n',
         "//",
     ),
     (
         "sample.test.ts",
-        'import { LABEL } from "./app";\nit("label", () => expect(LABEL).toBe("ok"));\n',
+        'import { LABEL } from "./app";\ntest("label", <A, B>() => { expect(LABEL).toBe("ok"); });\n',
         'it("result", () => expect(render()).toHaveProperty("text"));\n',
         'it("bad", () => );\n',
         "//",
@@ -93,12 +94,11 @@ def test_exit_status_and_diagnostics(tmp_path: pathlib.Path, case: str, expected
 
     plain = _run(tmp_path, "pyfltr.test_copies", *names)
     assert plain.returncode == expected, plain.stderr
+    input_action = (
+        "UTF-8で保存し直すか、UTF-8で読めるファイルを指定する。" if case == "read" else "対象の構文・パス・読取権限を修正する。"
+    )
     actions = {
-        (name, rule): (
-            "対象の構文・パス・読取権限を修正する。"
-            if rule == "input-error"
-            else f"{comment} test-copy-contract: <保証する独立契約の理由>"
-        )
+        (name, rule): (input_action if rule == "input-error" else f"{comment} test-copy-contract: <保証する独立契約の理由>")
         for name, *_, comment in _CASES
         for rule in rules
     }
