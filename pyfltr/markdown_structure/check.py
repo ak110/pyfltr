@@ -9,6 +9,7 @@ import markdown_it.token
 _COMMENT = re.compile(r"<!--[\s\S]*?(?:-->|$)")
 _LIST = re.compile(r"^(\s*)(?:[-+*]|\d+[.)])(\s+)")
 _TEMPLATE_DELIMITERS = (("{%", "%}"), ("{{", "}}"), ("{#", "#}"))
+_LINK_TOKENS = frozenset({"link_open", "link_close", "image"})
 
 
 @dataclasses.dataclass(frozen=True)
@@ -81,16 +82,19 @@ def _sentence_breaks(text: str) -> list[int]:
 
 
 def _safe_insertions(
-    parser: markdown_it.MarkdownIt, text: str, candidates: dict[int, str], newline: str
+    parser: markdown_it.MarkdownIt, text: str, candidates: dict[int, str], newline: str, references: dict
 ) -> tuple[dict[int, str], list[Issue]]:
-    baseline = _structure(parser.parse(text))
+    def parse(source: str) -> list[markdown_it.token.Token]:
+        return parser.parse(source, {"references": dict(references)})
+
+    baseline = _structure(parse(text))
     accepted: dict[int, str] = {}
     issues: list[Issue] = []
     for position, indent in sorted(candidates.items(), reverse=True):
         candidate = text[:position] + newline + indent + text[position:]
         if text[position:].lstrip(" \t").startswith("#"):
             message = "1文1行へ改行する（行頭の # が見出しとして扱われうるため、文を調整して手動で改行する）"
-        elif _structure(parser.parse(candidate)) != baseline:
+        elif _structure(parse(candidate)) != baseline:
             message = "1文1行へ改行する（改行するとMarkdownの構造が変わるため、文を調整して手動で改行する）"
         else:
             message = "1文1行へ改行する（自動修正の対象）"
@@ -100,14 +104,29 @@ def _safe_insertions(
     return accepted, issues
 
 
-def _structure(tokens: list[markdown_it.token.Token]) -> list[tuple[str, str, int, bool]]:
-    return [(token.type, token.tag, token.nesting, token.hidden) for token in tokens]
+def _structure(tokens: list[markdown_it.token.Token]) -> list[tuple]:
+    return [
+        (
+            token.type,
+            token.tag,
+            token.nesting,
+            token.hidden,
+            [
+                (child.type, sorted(child.attrs.items()), child.content)
+                for child in token.children or []
+                if child.type in _LINK_TOKENS
+            ],
+        )
+        for token in tokens
+    ]
 
 
 def _check_insertions(
     parser: markdown_it.MarkdownIt, text: str, candidates: dict[int, str], offsets: list[int]
 ) -> tuple[dict[int, str], list[Issue]]:
-    baseline = parser.parse(text)
+    env: dict = {}
+    baseline = parser.parse(text, env)
+    references = env.get("references", {})
     positions = sorted(candidates)
     newline = "\r\n" if "\r\n" in text else "\n"
     accepted: dict[int, str] = {}
@@ -121,7 +140,7 @@ def _check_insertions(
         block_candidates = {position - start: candidates[position] for position in positions[left:right]}
         if not block_candidates:
             continue
-        block_insertions, block_issues = _safe_insertions(parser, text[start:stop], block_candidates, newline)
+        block_insertions, block_issues = _safe_insertions(parser, text[start:stop], block_candidates, newline, references)
         accepted.update((position + start, indent) for position, indent in block_insertions.items())
         issues.extend(Issue(issue.offset + start, issue.message) for issue in block_issues)
 
@@ -134,7 +153,7 @@ def _check_insertions(
         parts.append(text[previous:])
         if _structure(parser.parse("".join(parts))) == _structure(baseline):
             return accepted, issues
-    return _safe_insertions(parser, text, candidates, newline)
+    return _safe_insertions(parser, text, candidates, newline, references)
 
 
 def _has_template(text: str) -> bool:

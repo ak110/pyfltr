@@ -90,6 +90,10 @@ def test_excluded_constructs_are_unchanged(tmp_path: pathlib.Path, source: str) 
         ("甲。===\n", "Markdownの構造が変わる"),
         ("甲。<div>乙。</div>\n", "Markdownの構造が変わる"),
         ("甲。| a | b |\n| - | - |\n", "Markdownの構造が変わる"),
+        ("[文][前。後]\n\n[前。後]: /link\n", "Markdownの構造が変わる"),
+        ("[前。後][]\n\n[前。後]: /link\n", "Markdownの構造が変わる"),
+        ("[前。後]\n\n[前。後]: /link\n", "Markdownの構造が変わる"),
+        ("![前。後](/img)\n", "Markdownの構造が変わる"),
         ("{{ value }}。乙。\n", "Jinja2構文を含む"),
         ("{# 注記 #}甲。乙。\n", "Jinja2構文を含む"),
     ],
@@ -130,6 +134,16 @@ def test_fix_does_not_combine_breaks_that_create_table(tmp_path: pathlib.Path) -
     assert result.returncode == 1
     assert "Markdownの構造が変わる" in result.stdout
     assert path.read_bytes() == "甲。| a | b。\n| - | - |\n".encode()
+
+
+def test_fix_keeps_links_and_breaks_ordinary_sentences(tmp_path: pathlib.Path) -> None:
+    path = tmp_path / "doc.md"
+    path.write_bytes("甲。乙。\n\n[前。後]と[前。後][]。次。\n\n[前。後]: /link\n".encode())
+    result = _run("--fix", path)
+    assert result.returncode == 1
+    assert f"{_where(path)}:4:3:" in result.stdout
+    assert f"{_where(path)}:4:9:" in result.stdout
+    assert path.read_bytes() == "甲。\n乙。\n\n[前。後]と[前。後][]。\n次。\n\n[前。後]: /link\n".encode()
 
 
 def test_fix_preserves_heading_joined_by_jinja2_whitespace_control(tmp_path: pathlib.Path) -> None:
