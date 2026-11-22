@@ -11,6 +11,9 @@ import pyfltr.tools
 import pyfltr.warnings_
 
 # global優先キーのSSOT。
+# archive/cache系の設定値はマシン単位で揃えたい性質のため、
+# `~/.config/pyfltr/config.toml`（global設定）に書かれた値をproject側より優先する。
+# 通常キーはproject優先（後勝ち）であるのに対して、本集合は逆向きの優先順を持つ。
 # 範囲拡大時は `docs/guide/configuration.md` と関連テストも併せて更新する（人手同期）。
 ARCHIVE_CONFIG_KEYS: frozenset[str] = frozenset(
     {
@@ -102,6 +105,7 @@ DEFAULT_CONFIG: dict[str, typing.Any] = {
     "retry-on-oom": True,
     "retry-max-attempts": 1,
     "exclude": [
+        # 値はflake8・blackの既定値および以下のgitignoreテンプレートを参考に選定する。
         # https://github.com/github/gitignore/blob/master/Python.gitignore
         # https://github.com/github/gitignore/blob/main/Node.gitignore
         "*.egg",
@@ -208,6 +212,7 @@ def register_command_dynamic_defaults(
 register_command_dynamic_defaults(DEFAULT_CONFIG, pyfltr.tools.BUILTIN_COMMANDS)
 
 
+# モジュールトップレベルでの `for` ループ変数のスコープ漏れを避けるため関数経由で適用する
 # （pyrightの `reportPossiblyUnboundVariable` 誤検知も同時に回避）。
 def register_command_timeout_defaults(defaults: dict[str, typing.Any], command_names: list[str]) -> None:
     for command in command_names:

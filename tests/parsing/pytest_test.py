@@ -1715,7 +1715,10 @@ def test_parse_pytest_parent_failure_in_shared_test_file_is_kept() -> None:
     assert any(e.file == "shared/s_test.py" and e.line == 3 for e in errors)
 
 
+# 既定のトレースバック形式が例外の連鎖のエントリー間へ出力する区切り行の2形。
+# `_pytest/_io/terminalwriter.py`の`sep`は`_ `を並べたのち行幅の余りへ`_`を1文字足すため、
 # 行幅が偶数だと末尾が空白、奇数だと末尾が`_`になる。Windowsでは同関数が行幅を1減らすため
+# 常に奇数側へ寄る。ブロック見出しの照合はいずれの形も見出しとして採ってはならない。
 _PYTEST_ENTRY_SEPARATORS = ["_ " * 39, "_ " * 39 + "_"]
 
 

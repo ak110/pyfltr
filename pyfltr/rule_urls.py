@@ -36,6 +36,7 @@ def build_shellcheck_url(rule: str, category: str | None) -> str | None:
 def build_eslint_url(rule: str, category: str | None) -> str | None:
     del category  # シグネチャ互換のため受け取るのみ
     # ESLintのプラグインルールは`plugin/rule`形式で、
+    # 中央ドキュメントでは個別に辿れないため本体ルールのみURLを返す。
     if "/" in rule:
         return None
     return f"https://eslint.org/docs/latest/rules/{rule}"
@@ -48,6 +49,8 @@ def build_markdownlint_url(rule: str, category: str | None) -> str | None:
 
 def build_biome_url(rule: str, category: str | None) -> str | None:
     del category  # シグネチャ互換のため受け取るのみ
+    # biomeの診断カテゴリーは`lint/<group>/<rule>`・`assist/source/<action>`・
+    # `format`・`parse`の4形態を取る。ドキュメントページを持つのは前2者のみ。
     # ルール名はキャメルケースで、公式ドキュメントのslugはケバブケースとなる。
     group, _, name = rule.rpartition("/")
     if not name:

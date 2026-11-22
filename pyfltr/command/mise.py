@@ -32,8 +32,7 @@ MiseActiveToolsStatus = typing.Literal[
 - `json-parse-error`: stdoutのJSONパースに失敗した
 - `unexpected-shape`: dict以外の値が返された
 
-ステータス追加・露出経路追加時は `docs/guide/usage.md` の `command-info` 節と
-`docs/development/architecture.md` を併せて更新する。
+ステータス追加・露出経路追加時は `docs/guide/usage.md` の `command-info` 節を併せて更新する。
 """
 
 

@@ -368,6 +368,7 @@ def test_command_segments_respect_quotes_and_escapes() -> None:
 
 def test_command_segments_without_subcommand_are_not_command_context() -> None:
     # f-stringのリテラル部はPython 3.12以降で独立したトークンとなり、
+    # `f"pyfltr {...}"`から`pyfltr `のように末尾空白で終わる断片が生じる。
     for segment in ("pyfltr ", " pyfltr ", "pyfltr"):
         assert _unknown_command_segments(segment, frozenset()) == set()
     assert _unknown_command_segments("pyfltr --unknown-option", frozenset()) == {"--unknown-option"}

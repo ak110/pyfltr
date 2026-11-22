@@ -1,3 +1,4 @@
+# MCPサーバーの実装と依存（mcp SDK）は`mcp`サブコマンドの実行時だけ読み込む。
 # Python 3.15以上で遅延importとなり、それ未満の版では通常のimportとして扱われる（PEP 810）。
 __lazy_modules__ = ["pyfltr.cli.mcp_server"]
 

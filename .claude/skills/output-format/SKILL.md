@@ -18,8 +18,7 @@ description: >
 ## logger役割分担
 
 pyfltrは3系統のlogger（root system / `pyfltr.textout` / `pyfltr.structured`）を使い分ける。
-役割と切替手段は`pyfltr/output/logging_.py`の`configure_text_output` /
-`configure_structured_output` のdocstringに集約する。
+役割とformat別の出力先・levelの切替は`docs/development/architecture.md`の「logger 3系統と出力形式」節に集約する。
 JSONLの`warning`レコードとして最終消費主体へ配送した実行時警告は、root loggerからstderrへ重複出力しない。
 配送が完了しなかった警告と、MCP内部の一時JSONLにだけ書いた警告はstderrへ通知する。
 
@@ -80,10 +79,12 @@ JSONLの出力処理は`pyfltr/output/jsonl_emit.py`の公開ヘルパー（`emi
   通常時の解決状況の確認は`pyfltr command-info`サブコマンドの責務とする
 - `--quiet`は成功時commandレコード省略・headerレコード縮約・
   precommitガイダンス（stderr）抑止をまとめて制御する。
-  抑止・縮約条件のSSOTは
-  `pyfltr/output/jsonl.py`の`build_command_lines`と`pyfltr/output/jsonl_records.py`の`build_header_record`のdocstring
-  - 既定値の解決条件は`pyfltr/cli/parser.py`の`apply_subcommand_defaults`のdocstringをSSOTとする。
-    `run-for-agent`は常に既定有効、他の実行系はエージェント検出時に既定有効
+  commandレコードの抑止条件のSSOTは`pyfltr/output/jsonl.py`の`build_command_lines`のdocstring。
+  headerレコードは`pyfltr/output/jsonl_records.py`の`build_header_record`が縮約し、
+  `kind`・`run_id`（渡された場合のみ）・`commands`・`files`だけを残す
+  - 既定値は`pyfltr/cli/command_selection.py`の`apply_subcommand_defaults`が解決する。
+    `run-for-agent`は常に既定有効、他の実行系はエージェント検出時に既定有効とし、
+    CLIで`--quiet` / `--no-quiet`を明示した場合はそちらを優先する
 - 段階出力イベント（`status:"running"`）の発火条件・発火時挙動・最終レコード後続保証の設計は
   `pyfltr/output/heartbeat.py`の`HeartbeatMonitor`のdocstringを参照する。
   buffering型formatter（SARIF・Code Quality）でheartbeat由来のrunningイベントを混入させない理由は

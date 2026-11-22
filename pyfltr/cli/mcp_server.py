@@ -58,6 +58,8 @@ COMMAND_INFO_EXCLUDED_KEYS: frozenset[str] = frozenset({"command", "resolved"})
 """
 
 
+# 公開名はアンダースコア区切り（`list_runs`等）を採用する。CLIサブコマンドの
+# ハイフン形式（`list-runs`）とは異なるが、`@mcp.tool()`のスキーマ名規則上
 # ハイフンは非推奨で互換性のあるMCPServer経路もアンダースコア前提のため。
 
 

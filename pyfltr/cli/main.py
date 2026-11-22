@@ -41,7 +41,6 @@ def main() -> typing.NoReturn:
 
     PATH重複排除はCLI経路でのみ呼ぶことで、ライブラリ用途で意図せず別アプリの
     `os.environ` を書き換えないようにする。
-    重複排除の規則は `pyfltr.command.env.dedupe_environ_path` のdocstringを参照する。
     """
     _reconfigure_stdio_to_utf8()
     pyfltr.command.env.dedupe_environ_path(os.environ)
@@ -61,7 +60,10 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
     pyfltr.cli.parser.preflight_tool_name_as_subcommand(sys_args)
 
     parser = pyfltr.cli.parser.build_parser()
+    # grep / replaceは複数位置引数（pattern + paths）をオプション混在で受理する。
+    # argparseは`nargs="?"` + `nargs="*"`の組み合わせでサブパーサー側の
     # 位置引数解析が早期終了する挙動があり（Python 3.12〜3.15でも再現する）、`--output-format=jsonl`等が
+    # 位置引数列の途中に出現すると後続の`paths`値がunrecognizedとして除外される。
     # `parse_known_args`で残余を回収し、`paths`へ統合する経路で回避する。
     if sys_args and sys_args[0] in ("grep", "replace"):
         args, extras = parser.parse_known_args(list(sys_args))
@@ -90,6 +92,7 @@ def run(sys_args: typing.Sequence[str] | None = None) -> int:
         resolved_targets = [t.absolute() for t in args.targets]
         args.work_dir = pathlib.Path(args.work_dir).expanduser().resolve()
 
+    # カスタムコマンド用の再パースコールバック。cli/parserへの参照をここで保持することで
     # cli/pipeline→cli/parserの直接依存（循環importの原因）を回避する。
     def _reparse_with_custom(custom_commands: list[str]) -> tuple[argparse.ArgumentParser, argparse.Namespace]:
         p = pyfltr.cli.parser.build_parser(custom_commands)

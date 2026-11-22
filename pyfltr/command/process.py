@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+# psutilは、プロセスツリーの停止で初めて使う時に読み込む。
 # Python 3.15以上で遅延importとなり、それ未満の版では通常のimportとして扱われる（PEP 810）。
 __lazy_modules__ = ["psutil"]
 
@@ -81,6 +82,7 @@ def _kill_process_tree(proc: subprocess.Popen[str], *, timeout: float) -> None:
                 child.terminate()
     else:
         # os.killpg / os.getpgid / signal.SIGKILLはPOSIX専用でWindows型スタブに未定義。
+        # os.nameガード下なので実行時は安全。型チェッカーの誤検知だけ局所コメントで抑止する。
         try:
             pgid = os.getpgid(proc.pid)  # type: ignore[attr-defined,unused-ignore]  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore  # pylint: disable=no-member
         except ProcessLookupError:

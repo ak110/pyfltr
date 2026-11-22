@@ -127,7 +127,8 @@ Dependabotによる自動修正PRの作成は無効とし、更新は`make updat
 `.editorconfig-checker.json`はMarkdown（`\.md$`）を除外し`IndentSize`を無効化する。
 Markdownの除外は、editorconfig-checkerがコードブロック内のタブ等を`.editorconfig`違反として
 誤検知するためである。
-YAMLのブロックスカラー内のシェル継続行を誤検出しないように`IndentSize`を無効化する。
+Pythonのdocstring本文の継続行とYAMLのブロックスカラー内のシェル継続行を誤検出しないように、`IndentSize`を無効化する。
+いずれも`.editorconfig`の`indent_size`の倍数から外れるが、構造を読み取れるように意図した字下げである。
 
 `.python-version`の値はCIで全チェックを担う基準版（対応版のうち最新の版）に一致させる。
 ローカルの`make test`とCIの基準版のジョブが同じ版の静的解析結果を返すようにするためである。

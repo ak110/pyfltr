@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+# TUI専用のtextualを読み込む`pyfltr.output.ui`は、TUIを使う実行だけで読み込む。
 # Python 3.15以上で遅延importとなり、それ未満の版では通常のimportとして扱われる（PEP 810）。
 __lazy_modules__ = ["pyfltr.output.ui"]
 

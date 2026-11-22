@@ -38,7 +38,7 @@ description: >
 
 ## SSOT俯瞰
 
-連動更新先の詳細は各SSOT起点ファイル側のdocstringに集約する。
+起点ファイル側に連動更新先を記載する場合は、対象の定義のdocstringまたはコメントへ置く。
 
 - `docs/guide/index.md`:
   ty記述・対応ツール一覧（`mkdocs.yml`内llmstxtとは人手同期）

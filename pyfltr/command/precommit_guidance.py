@@ -1,3 +1,4 @@
+# psutilとyamlは、git commit経由の起動の判定とpre-commit設定の読み取りで初めて使う時に読み込む。
 # Python 3.15以上で遅延importとなり、それ未満の版では通常のimportとして扱われる（PEP 810）。
 __lazy_modules__ = ["psutil", "yaml"]
 

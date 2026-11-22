@@ -190,7 +190,14 @@ def _resolve_js_commandline(
     if runner == "pnpx":
         main_spec = _JS_TOOL_PNPX_PACKAGE_SPEC.get(command, bin_name)
         prefix: list[str] = []
+        # pnpm 11.0.0で `enableGlobalVirtualStore` 既定が `true` 化され、pnpm dlxの
+        # パッケージ実体がグローバル仮想ストアからsymlinkされる構造に変わった結果、
+        # textlintのようにrule packageを `require()` で動的解決するツールが
+        # dlx temp dirの `node_modules/` へ到達できず `No rules found` で失敗する。
         # plugin/rule packageを`--package`で並べる経路に限り、pnpm公式opt-outで
+        # dlxローカル仮想ストア配置（旧既定）へ戻す。
+        # 公開設定値とeffective_runnerはpnpxを維持するが、版によってオプション解釈が異なる
+        # pnpxラッパーを避け、pnpm 10.0.0から成立するpnpm本体のdlx形式で起動する。
         if packages:
             prefix.append("--config.enableGlobalVirtualStore=false")
         prefix.extend(["--package", main_spec])
@@ -214,6 +221,8 @@ def _resolve_js_commandline(
         base = cwd if cwd is not None else pathlib.Path.cwd()
         bin_dir = base / "node_modules" / ".bin"
         # Windowsでは `.cmd` 付きのラッパーを優先する。pyrightの静的評価では
+        # Linux上だと `sys.platform == "win32"` 側の分岐をunreachableとみなすため、
+        # `os.name` を経由して静的分岐とみなされないようにする。
         candidates: list[pathlib.Path] = []
         if os.name == "nt":
             candidates.append(bin_dir / f"{bin_name}.cmd")
@@ -225,7 +234,6 @@ def _resolve_js_commandline(
     raise ValueError(f"js-runnerの設定値が正しくありません: {runner!r}（許容値: {', '.join(JS_RUNNERS)}）")
 
 
-# 二重定義による追従漏れを避けるためのSSOT。
 _DELEGATE_RUNNER_VALUES: frozenset[str] = frozenset(v for v in COMMAND_RUNNERS if v.endswith("-runner"))
 _DIRECT_RUNNER_VALUES: frozenset[str] = frozenset(COMMAND_RUNNERS) - _DELEGATE_RUNNER_VALUES
 
@@ -478,6 +486,7 @@ def ensure_mise_available(
             runner_fallback="mise->direct",
         )
 
+    # mise経由の事前チェック・trust呼び出しでもmiseがtoolパスにフォールバック
     # 解決してしまう挙動を回避するため、PATHからmise toolパスを除外したenvを渡す。
     mise_env = build_mise_subprocess_env(dict(os.environ))
     if has_tool_spec:

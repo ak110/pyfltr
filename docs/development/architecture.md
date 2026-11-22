@@ -160,7 +160,7 @@ pyfltr本体はこれらの依存を抱えない。
   同じスレッドの入れ子は再入する
 - 枠ごとにロックと保持者記録を分け、待機列は全枠で1本を共有する。
   待機列の先頭の要求が空いている枠を取得する。
-  1つ目の枠は撤去前からのファイル名（`execution.lock`・`execution.owner.json`）、2つ目は`execution-1.lock`・`execution-1.owner.json`とする。
+  1つ目の枠は枠を1つだけ扱う旧版と同じファイル名（`execution.lock`・`execution.owner.json`）、2つ目は`execution-1.lock`・`execution-1.owner.json`とする。
   枠を1つだけ扱う旧版と同じ保存先を共有しても、旧版は1つ目の枠だけを使うため、全体の同時実行は2件を超えない。
   先に並んだ要求が全て枠を1つだけ扱う旧版の要求なら、2つ目以降の空いた枠を先に取得する。
   旧版の要求は1つ目の枠しか取得できず、登録順を守ると旧版が先頭で待つ間は空いた枠が使われないためである。
@@ -172,7 +172,7 @@ pyfltr本体はこれらの依存を抱えない。
   未設定と空白だけの値は既定値として扱う
 - 待機要求は短い調停ロックの内側で連番を割り当て、登録順に取得する。
   末尾への登録は連番を`2**20`ずつ進める。
-  同じ保存先を共有する撤去前の版が新規要求を空き番号へ置くため、間隔を保つ。
+  区切りで待機者へ枠を譲って取り直していた旧版は、同じ保存先を共有すると新規要求を空き番号へ置くため、間隔を保つ。
   要求ごとのOSロックで生存を判定し、取消時は回収し、異常終了後は次の走査で回収する
 - 待機は一定間隔の再試行で行い、待機の開始時に`execution-slot`の警告を出力する。
   待機が10秒を超えると`SlotWaitReporter`が全保持者・待機中の要求数・完了したツール数と見込みを示せない理由を30秒ごとにtext出力へ出し、取得時に再開を出す。
@@ -190,7 +190,7 @@ pyfltr本体はこれらの依存を抱えない。
   待機が無くても取得までの短い区間を通知し、待ちの無い実行と未計測を区別する。
   入れ子の`hold`は取得しないため通知せず、祖先から所有を継承した子は`inherited`の1区間だけを通知する。
   `run_stages`は区間を`StageCallbacks.on_slot_wait`へ渡し、CLI・TUIは実行アーカイブの`meta.json`の`slot_waits`へ逐次保存する。
-  撤去前の版の実行アーカイブには取り直しの区間（`reacquire`）も残るため、読取側は両方を扱う。
+  区切りで枠を譲って取り直していた旧版の実行アーカイブには取り直しの区間（`reacquire`）も残るため、読取側は両方を扱う。
   各ツールの本体区間は`run_stages`が`execute`の前後で`CommandResult.started_at`・`finished_at`へ設定する
 - テスターは起動前に、同じ`run_stages`で起動したfix段・formatter段の最終終了時刻を含む1秒の区間が終わるまで待つ。
   待った後の時刻は`CommandResult.launch_boundary_at`へ設定する（`stage_runner._with_tester_launch_boundary`）。
@@ -890,8 +890,15 @@ JSONL stdoutストリーミングとは独立した仕組みにすることで�
 既定は有効。
 `--no-cache`または`cache = false`設定で無効化できる。
 
-formatter・tester・依存型linter・外部参照linter・階層型設定linterの5分類を扱う。
-`--config`/`--ignore-path`検知時の安全側無効化も同所に記載する。
+次の種類はキャッシュ対象外とし、`CommandInfo.cacheable=False`のままにする。
+
+- 書き込み型formatter: ヒット時にファイルの書き換えが省かれ、ファイルの状態と結果が一致しなくなるため
+- tester: 対象ファイル以外のソース・設定・環境に依存し、依存解析かプロジェクト全体のhashを要するため
+- 依存型linter（`mypy`・`ruff-check`・`pylint`等）: import先や型情報に依存し、対象ファイル単独のhashでは整合性を保てないため
+- 外部参照linter（`shellcheck`・`actionlint`）: `source`文やreusable workflowなどの外部参照を含みうるため
+- 階層型設定を参照するlinter（`ec`・`markdownlint`・`typos`）: 階層型の設定解決を静的に列挙しきれないため
+
+対象のツールでも、追加引数に`--config`・`--ignore-path`を含む実行は外部の設定を参照しうるため、キャッシュしない（`pyfltr/command/cache_policy.py`の`is_cacheable`）。
 
 ## grepの適応的出力
 
@@ -916,12 +923,6 @@ subparsersを`required=True`で必須化し、引数なし実行時のフォー�
 他サブパーサーのdefaultが書き換わる既知挙動を回避するため。
 
 サブコマンド一覧と用途は[CLIコマンド](../guide/usage.md)を参照。
-
-### 詳細参照サブコマンドと再実行支援 {#subcommands}
-
-実行アーカイブを参照する`list-runs`/`show-run`サブコマンドと、`--only-failed`/`--from-run`による
-再実行支援の設計判断。
-利用者向けの使い方は[CLIコマンド](../guide/usage.md)を参照。
 
 ### `--from-run`
 

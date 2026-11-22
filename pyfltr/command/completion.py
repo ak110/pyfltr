@@ -12,7 +12,7 @@ CompletionStatus = typing.Literal["completed", "incomplete", "not_reached"]
 @dataclasses.dataclass(frozen=True)
 class RunCompletion:
     completion: CompletionStatus
-    """完了区分。導出条件は`evaluate_completion`のdocstringを参照する。"""
+    """完了区分。導出条件は`evaluate_completion`が定める。"""
     files_reached: int
     """対象解決後に実行文脈へ残ったファイル数。実行文脈を組み立てる前に打ち切った場合は0。"""
     completed_commands: tuple[str, ...]

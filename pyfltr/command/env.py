@@ -98,6 +98,7 @@ def build_subprocess_env(
         env = build_mise_subprocess_env(env)
     if effective_runner == "uv":
         env.pop("VIRTUAL_ENV", None)
+    # サプライチェーン攻撃対策: パッケージ取得系ツールの最小待機期間を既定で設定する。
     # pnpmはnpm互換のconfig環境変数方式 （NPM_CONFIG_<SNAKE_CASE>） を採用する。
     env.setdefault("UV_EXCLUDE_NEWER", "1 day")
     env.setdefault("NPM_CONFIG_MINIMUM_RELEASE_AGE", "1440")
@@ -105,6 +106,7 @@ def build_subprocess_env(
     env["PYTHONUNBUFFERED"] = "1"
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     # Windowsのcp932/cp1252などに依存せず、ツール側のopen()/Path.read_text() をUTF-8で動かす。
+    # 例: uv-sortがpyproject.tomlをエンコーディング未指定で読み込む箇所で発生する
     # UnicodeDecodeErrorを回避する。
     env["PYTHONUTF8"] = "1"
     if pyfltr.config.model.command_setting(config.values, command, "devmode", False):

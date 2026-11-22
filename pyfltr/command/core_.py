@@ -596,7 +596,6 @@ class ExecutionParams:
     （mise不在時にdirectへフォールバックされたケースを除外するため、
     `build_commandline` 直後の値ではなく事後の値で判断する）。
     `build_subprocess_env` でのmise toolパス除外適用判断に使う。
-    詳細は `pyfltr.command.env.build_subprocess_env` のdocstringを参照する。
     """
     effective_runner: str | None = None
     """`ResolvedCommandline.effective_runner` の事後値。

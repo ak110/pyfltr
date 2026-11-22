@@ -238,7 +238,9 @@ def _prepare_execution_params(
     if fix_mode:
         fix_args = pyfltr.config.model.command_setting(config.values, command, "fix-args", None)
 
+    # 対象ファイル0件ならこの後の実行自体が行われないため、ツールパス解決を省略する。
     # mise等のbin-runner解決はネットワークやプラットフォーム制約で失敗し得るため、
+    # 解決不要な状況で副作用的な失敗を発生させないよう早期返却する。
     if not targets:
         return ExecutionParams(
             command_info=command_info,
