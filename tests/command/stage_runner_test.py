@@ -504,9 +504,11 @@ def test_finished_owner_is_not_reported_as_running(tmp_path: pathlib.Path, monke
     warnings = [w for w in pyfltr.warnings_.collected_warnings() if w["source"] == "execution-slot"]
     assert len(warnings) == 1
     assert "このプロセスは終了しており" in warnings[0]["message"]
-    waiting = [message for message in progress if "実行枠の取得を待っています" in message]
-    assert any("このプロセスは終了しており" in message for message in waiting)
-    assert all("このプロセスは終了しており" in message or "保持者の記録を読めません" in message for message in waiting), waiting
+    finished_reports = [
+        message for message in progress if "実行枠の取得を待っています" in message and "cwd=/tmp/held" in message
+    ]
+    assert finished_reports
+    assert all("このプロセスは終了しており" in message for message in finished_reports), finished_reports
     pyfltr.warnings_.clear()
 
 
