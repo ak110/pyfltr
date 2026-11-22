@@ -197,7 +197,7 @@
     "保持者記録とプロセスの生成時刻を同一とみなす差（秒）。pidの再利用を取り違えないための判定に使う。": 1,
     "同時に外部ツールを実行できる独立した検証の既定の上限。": 1,
     "待機中の再試行間隔（秒）。解放から次の取得までの遅れと、待機中の負荷の釣り合いで選ぶ。": 1,
-    "末尾へ登録する要求の連番の間隔。 撤去前の版は新規要求を取り直し要求の前の空き番号へ置くため、同じ保存先を共有する旧版と登録順を保てるよう間隔を空ける。": 1,
+    "末尾へ登録する要求の連番の間隔。 区切りで待機者へ枠を譲って取り直していた旧版は新規要求を取り直し要求の前の空き番号へ置くため、同じ保存先を共有する旧版と登録順を保てるよう間隔を空ける。": 1,
     "複数の枠を扱う版の要求ファイル名に入れる目印。旧版の要求（`execution.wait-<連番>-<乱数>`）と区別する。": 1
   },
   "pyfltr/command/executor.py": {
@@ -324,7 +324,7 @@
   "pyfltr/output/heartbeat.py": {
     "heartbeat発火しきい値（最後のJSONL出力からの無音時間、秒）。": 1,
     "heartbeat監視ループの判定間隔（秒）。 しきい値より細かく刻むことで、しきい値超過の検知遅れを最大 `_HEARTBEAT_TICK_INTERVAL` 秒に抑える。 発火自体は最終出力からの経過時間で判定するため、本値は「監視解像度」の調整値。": 1,
-    "パイプライン全体のheartbeat監視。 別スレッドで一定間隔ループし、`pyfltr.output.jsonl_emit.get_last_jsonl_output_time()` から 最終JSONL出力時刻を取得して経過時間を判定する。 発火条件は「最後のJSONL出力から既定 `_HEARTBEAT_THRESHOLD_SECONDS` 秒経過した場合」のみ。 subprocess側のstdout出力の有無は判定材料に含めない（LLMから観測できるのはpyfltr側のJSONL 出力のみで、子プロセスの静粛さは観測対象外のため）。 しきい値超過時は実行中コマンド集合（`{command_name -> start_time}`）から各commandへ `status:\"running\"` レコードを発行する。複数コマンドが同時にハングしている場合も 各コマンドの状態を識別できるよう、実行中の全コマンドそれぞれに発行する設計。 完了時の最終レコード（`status:\"failed\"` / `\"succeeded\"` 等）が必ず後続することを保証する。 text_loggerにも発火を残し、人間向け表示でも進捗が確認できるようにする。 `start()` / `stop()` を `run_pipeline` の入口・出口で呼ぶ。 `on_command_start(command)` / `on_command_end(command)` は subprocess の開始・終了に フックして登録・削除する。並列実行下のアクセスは `_lock` で保護する。": 1
+    "パイプライン全体のheartbeat監視。 別スレッドで一定間隔ループし、`pyfltr.output.jsonl_emit.get_last_jsonl_output_time()` から 最終JSONL出力時刻を取得して経過時間を判定する。 発火条件は「最後のJSONL出力から既定 `_HEARTBEAT_THRESHOLD_SECONDS` 秒経過した場合」のみ。 subprocess側のstdout出力の有無は判定材料に含めない（LLMから観測できるのはpyfltr側のJSONL 出力のみで、子プロセスの静粛さは観測対象外のため）。 しきい値超過時は実行中コマンド集合（`{command_name -> start_time}`）から各commandへ `status:\"running\"` レコードを発行する。複数コマンドが同時にハングしている場合も 各コマンドの状態を識別できるよう、実行中の全コマンドそれぞれに発行する設計。 完了時の最終レコード（`status:\"failed\"` / `\"succeeded\"` 等）が必ず後続することを保証する。 text_loggerにも発火を残し、人間向け表示でも進捗が確認できるようにする。 `start()` / `stop()` は `pyfltr.cli.pipeline` の `_execute_pipeline_commands` がコマンド実行の前後で呼ぶ。 `on_command_start(command)` / `on_command_end(command)` は subprocess の開始・終了に フックして登録・削除する。並列実行下のアクセスは `_lock` で保護する。": 1
   },
   "pyfltr/output/jsonl.py": {
     "1コマンド分のdiagnostic行+command行をJSONL文字列のリストとして生成する。 diagnostic行は`(command, file)`単位で集約され、個別指摘は`messages[]`に並ぶ。 個別指摘の合計件数が`jsonl-diagnostic-limit`を超える場合は `ErrorLocation`列を先頭N件に限定してから集約し、 commandレコードに`truncated.diagnostics_total`を添付する。 切り詰めは`result.archived`がTrueのときのみ適用し、Falseの場合は全件出力する （アーカイブから復元不能な情報欠落を防ぐため）。 判定単位はステージごとの`CommandResult`単位とする。fixステージと 通常ステージは同じ`command`名で別`CommandResult`として渡されるため、 片方のアーカイブ書き込み失敗が他方の切り詰め可否に影響しない。 `quiet=True`のときは以下の全条件を満たす成功時commandレコードを出力しない （SSOT: 本docstring）。 - `result.status`が`succeeded`・`formatted`・`skipped`のいずれか - `diagnostic_records`が空 - `diagnostics_truncated`が`False` - `result.slow_tests`が空 - `result.runner_fallback`が`None`（fallback検知は静音時も残す） 上記いずれかを満たさない場合は通常どおりcommandレコードを出力する。 `diagnostic_records`自体は`quiet`の影響を受けず、非空なら常に出力する。": 1

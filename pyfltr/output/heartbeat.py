@@ -35,7 +35,7 @@ class HeartbeatMonitor:
     完了時の最終レコード（`status:"failed"` / `"succeeded"` 等）が必ず後続することを保証する。
     text_loggerにも発火を残し、人間向け表示でも進捗が確認できるようにする。
 
-    `start()` / `stop()` を `run_pipeline` の入口・出口で呼ぶ。
+    `start()` / `stop()` は `pyfltr.cli.pipeline` の `_execute_pipeline_commands` がコマンド実行の前後で呼ぶ。
     `on_command_start(command)` / `on_command_end(command)` は subprocess の開始・終了に
     フックして登録・削除する。並列実行下のアクセスは `_lock` で保護する。
     """

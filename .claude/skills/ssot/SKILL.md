@@ -24,10 +24,16 @@ description: >
 
 ## 規約適用時の運用ルール
 
-- `.claude/skills/`配下・`.claude/rules/`配下から実装挙動の詳細をコード側docstringへ移譲する場合、
+- `.claude/skills/`配下・`.claude/rules/`配下から実装挙動の詳細を移す場合、
   スキル・ルール側は方針（設計判断・採用しない選択肢の理由など）のみ残し、挙動手順の再掲は避ける。
   圧縮時には「実装詳細（手順記述）」と「設計判断・将来検討メモ（対症療法である旨・撤去判断の前提など）」を区別し、
-  後者は削除せずコード側docstringへ確実に移譲する
+  後者は削除せず`docs/development/architecture.md`の該当節へ移す。
+  コード側のコメント・docstringへ移すのは、`comment-check`が個別の許可を認める外部制約・変更連動の案内・実行時に参照される文書に当たる場合に限る
+- 本リポジトリは`comment-check`を有効にしており、ベースラインに無いコメント・docstringは不合格になる。
+  新しく書くコメント・docstringは本文へ`pyfltr: allow-comment`を加えて許可する（ベースラインは導入前からあるコメント向け）。
+  ベースライン登録済みのコメントを書き換えた場合は、
+  `uv run pyfltr run <対象ファイル> --commands=comment-check --comment-check-args=--init-baseline`で対象ファイルの許可を登録し直す。
+  許可の手段と対象の詳細は`docs/guide/configuration-tools.md`の「個別に許可するコメント」節を参照する
 - `.claude/skills/`配下のスキルが`description`の対象範囲を列挙する場合、および
   `.claude/rules/`配下のルールファイルが`paths` frontmatterで連動更新先を列挙する場合、
   スキル・ルール改訂・連動先リネーム・新規追加の各タイミングでスキル/ルール側の記述とリポジトリ実体の整合を
@@ -38,7 +44,7 @@ description: >
 
 ## SSOT俯瞰
 
-起点ファイル側に連動更新先を記載する場合は、対象の定義のdocstringまたはコメントへ置く。
+起点ファイル側に連動更新先を記載する場合は、対象の定義のdocstringまたはコメントへ置き、前節の`comment-check`の許可に従う。
 
 - `docs/guide/index.md`:
   ty記述・対応ツール一覧（`mkdocs.yml`内llmstxtとは人手同期）

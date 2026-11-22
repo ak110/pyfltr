@@ -87,8 +87,10 @@ JSONLの出力処理は`pyfltr/output/jsonl_emit.py`の公開ヘルパー（`emi
     CLIで`--quiet` / `--no-quiet`を明示した場合はそちらを優先する
 - 段階出力イベント（`status:"running"`）の発火条件・発火時挙動・最終レコード後続保証の設計は
   `pyfltr/output/heartbeat.py`の`HeartbeatMonitor`のdocstringを参照する。
-  buffering型formatter（SARIF・Code Quality）でheartbeat由来のrunningイベントを混入させない理由は
-  `run_pipeline`のdocstringに集約する
+  heartbeat監視は出力形式が`jsonl`でTUIを使わない実行に限って起動する（起動条件は`pyfltr/cli/pipeline.py`の`_execute_pipeline_commands`）。
+  SARIFとCode Qualityは終了時に単一のJSONドキュメントを一括出力するbuffering型formatterのため、
+  途中で`status:"running"`レコードを混入させると最終的な出力（SARIF 2.1.0オブジェクト・Code Climate JSON配列）が仕様に沿わなくなる。
+  textなどJSONLレコードを出力しない形式では、heartbeatが判定に使う最終JSONL出力時刻が記録されない
 - 全サブコマンドの出力形式オプションは`--output-format`に統一する。
   実行系サブコマンド（`run`・`ci`・`fast`・`run-for-agent`）のchoicesは
   `{text, jsonl, sarif, github-annotations, code-quality}`から必要なものを採用する。
