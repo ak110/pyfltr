@@ -1115,6 +1115,8 @@ jobs:
         with:
           version: latest
       - run: pnpm config set minimum-release-age 1440 --global
+      # bin-runnerの既定（mise）で起動するツールを導入する
+      - uses: jdx/mise-action@v5
       - if: ${{ matrix.python-version == '3.15' }}
         run: uvx pyfltr ci --output-format=github-annotations
       - if: ${{ matrix.python-version != '3.15' }}
@@ -1134,10 +1136,10 @@ GitHub Actionsのような高帯域環境ではキャッシュサイズを削減
 
 - 検査の母集団をそろえる: 同じソース・ロックファイル・`pyfltr ci`の対象ツールで比べ、両方式で全ツールの成功を確かめる。
   実行環境に依存するテストは方式によって結果が変わることがあり、失敗した方式は所要時間が短くても採らない
-- 公開待機を弱めない: イメージはuvの`exclude-newer = "1 day"`（`~/.config/uv/uv.toml`）と
-  pnpmの`minimum-release-age 1440`を事前設定している。
-  ホスト実行でも同じ値をワークフローかプロジェクトの設定で指定する
-- 実行条件をそろえる: 同じpushで両方式を実行し、runnerの種類と各方式の通常のキャッシュ構成を記録する。
+- 公開待機を弱めない: uvの`exclude-newer`とpnpmの`minimum-release-age`が、両方式のジョブで実際に起動するコマンドで同じ値のまま有効であることを確かめる。
+  ユーザー単位の設定ファイルは`HOME`の位置で読込先が変わり、GitHub Actionsは`container:`のジョブで`HOME`をイメージの既定と別の場所へ設定する。
+  イメージやrunnerへ設定ファイルを置いただけでは有効である根拠にならない
+- 実行条件をそろえる: 同じpushで両方式を実行し、runnerの種類をそろえ、各方式の通常のキャッシュ構成を記録する。
   待ち行列の時間を除き、準備（コンテナの初期化またはセットアップのstep）・検査・ジョブ全体の時間と成否を分けて比べる
 - 結果の適用範囲を限る: 所要時間はrunnerの負荷やキャッシュの状態で変動するため、複数回の試行で確かめる。
   準備時間の差はジョブ全体に占める割合が検査の重さで変わるため、軽いジョブの比較結果を重いジョブへ当てはめない
