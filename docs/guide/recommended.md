@@ -990,8 +990,12 @@ jobs:
     - イメージには`UV_FROZEN=1`と、uvの`exclude-newer = "1 day"`・pnpmの`minimum-release-age 1440`が事前設定されているため、
     CIワークフロー側で同じ環境変数や設定を再指定する必要はない
     - `container:`のジョブでは`HOME`が`/github/home`へ上書きされるため、
-      イメージは両ツールの設定ファイルの読込先を`XDG_CONFIG_HOME=/home/pyfltr/.config`で固定している。
-      ジョブで`XDG_CONFIG_HOME`を別の値へ変えると、両ツールはイメージの公開待機の設定を読まない
+      イメージは利用者設定の読込先を`XDG_CONFIG_HOME=/home/pyfltr/.config`で固定している。
+      この固定を含まないv3.33.2以前のイメージでは、`container:`のジョブでuvとpnpmの公開待機の設定が読まれない。
+      固定タグでv3.33.2以前を使う場合は、ワークフロー側で`UV_EXCLUDE_NEWER`と`pnpm_config_minimum_release_age`を指定する
+    - ジョブで`XDG_CONFIG_HOME`を別の値へ変えると、uvとpnpmはイメージの公開待機の設定を読まない。
+      gitのXDG側の設定（`git/config`）やpyfltrの利用者設定も`/home/pyfltr/.config`配下から読むため、
+      前段のstepが`$HOME/.config`へ置いたこれらの設定は読まれない（`~/.gitconfig`は従来どおり読まれる）
     - 依存同期では`UV_FROZEN=1`を維持し、ロックの最新性を調べる追加ステップの`uv`子プロセスだけで解除する
 - `defaults.run.shell: bash`: GitHub Actionsの`container:`既定シェルは`sh`であり、
   既存ワークフローで多用される`set -euo pipefail`等のbash前提の記述を通すために指定する
