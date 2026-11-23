@@ -992,7 +992,9 @@ jobs:
     - `container:`のジョブでは`HOME`が`/github/home`へ上書きされるため、
       イメージは利用者設定の読込先を`XDG_CONFIG_HOME=/home/pyfltr/.config`で固定している。
       この固定を含まないv3.33.2以前のイメージでは、`container:`のジョブでuvとpnpmの公開待機の設定が読まれない。
-      固定タグでv3.33.2以前を使う場合は、ワークフロー側で`UV_EXCLUDE_NEWER`と`pnpm_config_minimum_release_age`を指定する
+      v3.33.3以降へ更新するのが望ましい。
+      固定タグでv3.33.2以前を使い続ける場合は、ジョブの`env`へ`XDG_CONFIG_HOME: /home/pyfltr/.config`を指定する。
+      `UV_EXCLUDE_NEWER`などの環境変数で値を与えると、プロジェクト側で設定した公開待機より優先されるため避ける
     - ジョブで`XDG_CONFIG_HOME`を別の値へ変えると、uvとpnpmはイメージの公開待機の設定を読まない。
       gitのXDG側の設定（`git/config`）やpyfltrの利用者設定も`/home/pyfltr/.config`配下から読むため、
       前段のstepが`$HOME/.config`へ置いたこれらの設定は読まれない（`~/.gitconfig`は従来どおり読まれる）
