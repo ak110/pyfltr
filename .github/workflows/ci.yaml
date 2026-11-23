@@ -89,8 +89,8 @@ jobs:
     # CPUを奪い合ってワークフロー全体の律速となっていた。
     # 推奨ガイドの設定例は、利用者の多くでpytestが律速にならないため、基準版の1ジョブで全検査を行う形を保つ。
     # pytestの変更影響選択（pytest-impact-selection）は本リポジトリでは使わない。
-    # CIの実行はほぼ全てがmasterへのpush（統合時の全件検証が必要）で、選択が働く場面がほとんど無い一方、
-    # 履歴の記録を伴う全件実行は通常の全件実行の約3.2倍の時間を要した（手元の実測で302秒と94秒）。
+    # CIの実行はほぼ全てがmasterへのpush（統合時の全件検証が必要）で選択が働く場面がほとんど無く、
+    # 履歴の記録を伴う全件実行の費用（手元の実測でCPU時間が約14%増）と履歴の保存・復元の手間だけが残るため。
     strategy:
       matrix:
         include:
@@ -214,6 +214,8 @@ jobs:
         with:
           python-version: "3.15"
           enable-cache: true
+          # 同じキーを2つのpartが重ねて保存しないよう、pytestのpartだけが保存する。
+          save-cache: ${{ matrix.part == 'pytest' }}
 
       - name: Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0

@@ -319,6 +319,8 @@ def test_fast_alias_dynamic(tmp_path: pathlib.Path) -> None:
     fast = config["aliases"]["fast"]
     assert "ruff-format" in fast
     assert "arid" in fast
+    assert "prek" in fast
+    assert "pre-commit" in fast
     assert "mypy" not in fast
     assert "pylint" not in fast
     assert "pytest" not in fast
