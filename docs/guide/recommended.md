@@ -987,8 +987,11 @@ jobs:
 ポイント。
 
 - `image: ghcr.io/ak110/pyfltr:latest`: `vX.Y.Z`タグも併発行されるため、再現性を重視する場合は固定タグを指定する
-    - イメージには`UV_FROZEN=1`と`pnpm config set minimum-release-age 1440`が事前設定されているため、
+    - イメージには`UV_FROZEN=1`と、uvの`exclude-newer = "1 day"`・pnpmの`minimum-release-age 1440`が事前設定されているため、
     CIワークフロー側で同じ環境変数や設定を再指定する必要はない
+    - `container:`のジョブでは`HOME`が`/github/home`へ上書きされるため、
+      イメージは両ツールの設定ファイルの読込先を`XDG_CONFIG_HOME=/home/pyfltr/.config`で固定している。
+      ジョブで`XDG_CONFIG_HOME`を別の値へ変えると、両ツールはイメージの公開待機の設定を読まない
     - 依存同期では`UV_FROZEN=1`を維持し、ロックの最新性を調べる追加ステップの`uv`子プロセスだけで解除する
 - `defaults.run.shell: bash`: GitHub Actionsの`container:`既定シェルは`sh`であり、
   既存ワークフローで多用される`set -euo pipefail`等のbash前提の記述を通すために指定する

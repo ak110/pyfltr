@@ -4,7 +4,7 @@
 # ``ghcr.io/ak110/pyfltr`` として公開する。
 #
 # サプライチェーン攻撃対策として、ベースイメージは digest pin で固定し、
-# uv 側は ``~/.config/uv/uv.toml`` の ``exclude-newer = "1 day"``、
+# uv 側は ``$XDG_CONFIG_HOME/uv/uv.toml`` の ``exclude-newer = "1 day"``、
 # pnpm 側は ``minimum-release-age=1440`` 分で公開直後の新バージョン導入を抑止する。
 # pyfltr 自身はリリース直後に本イメージをビルドするため、
 # ``exclude-newer-package = { pyfltr = false }`` で除外対象から外す。
@@ -60,7 +60,7 @@ FROM python:3.15-slim-trixie@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698a
 # (hadolint DL4006 対応)。
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# uv 側のサプライチェーン攻撃対策は ``~/.config/uv/uv.toml`` で
+# uv 側のサプライチェーン攻撃対策は ``$XDG_CONFIG_HOME/uv/uv.toml`` で
 # ``exclude-newer = "1 day"`` を指定する (非 root ユーザーへの切り替え後に配置)。
 # 実行時はユーザーが ``UV_EXCLUDE_NEWER`` 環境変数で上書きできる。
 # PATH 先頭の ``/home/pyfltr/.local/bin`` は ``uv tool install`` が配置する CLI shim を解決する。
@@ -148,15 +148,22 @@ RUN useradd --create-home --shell /bin/bash --uid 1001 pyfltr \
 USER 1001
 WORKDIR /workspace
 
-# uv のサプライチェーン保護設定を ``~/.config/uv/uv.toml`` に配置する。
+# uv・pnpm のユーザー設定 (公開待機と store-dir) の読込先を ``HOME`` から切り離す。
+# GitHub Actions は ``container:`` 配下で ``HOME`` を ``/github/home`` へ上書きするため、
+# ``~/.config`` 配下へ書いた設定が読まれず、公開待機が無効になっていた。
+# 環境変数で値を直接与える方式はプロジェクト側の設定より優先されてしまうため、
+# 設定ファイルの読込先だけを固定してプロジェクト側の設定が優先される順位を保つ。
+ENV XDG_CONFIG_HOME=/home/pyfltr/.config
+
+# uv のサプライチェーン保護設定を ``$XDG_CONFIG_HOME/uv/uv.toml`` に配置する。
 # ``exclude-newer = "1 day"`` で公開から 1 日経過していないパッケージを除外し、
 # pyfltr 自身はリリース直後の本イメージビルドで毎回除外対象になるため
 # ``exclude-newer-package`` で例外指定する (自リポジトリの成果物のため対象外でよい)。
-RUN mkdir -p /home/pyfltr/.config/uv \
+RUN mkdir -p "${XDG_CONFIG_HOME}/uv" \
     && printf '%s\n%s\n' \
         'exclude-newer = "1 day"' \
         'exclude-newer-package = { pyfltr = false }' \
-        > /home/pyfltr/.config/uv/uv.toml
+        > "${XDG_CONFIG_HOME}/uv/uv.toml"
 
 # pyfltr が呼び出す対応ツール群を pyfltr ユーザー権限で事前導入する。
 # 単一 RUN にまとめてレイヤー数とイメージサイズを抑える (新ツール追加時はここに追記する)。
