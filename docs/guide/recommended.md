@@ -1095,6 +1095,8 @@ PDFを画像化する`pdf2image`が必要とする`poppler-utils`の導入と`sa
 env:
   PYTHONDEVMODE: "1"
   UV_FROZEN: "1"
+  # uvxはプロジェクトの[tool.uv]を読まないため、公開待機を環境変数で指定する
+  UV_EXCLUDE_NEWER: "1 day"
 
 jobs:
   test:
