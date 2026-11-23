@@ -649,8 +649,10 @@ pytest-impact-selection = true
 
 位置引数と差分指定を付けずに `pyfltr run --commands=pytest` または `pyfltr ci --commands=pytest` を実行すると、
 対象の全件を実行し、成功した全件実行の履歴を`.testscope/`へ残す。
-次回は `pyfltr run --commands=pytest --changed-since=HEAD` のように差分を指定するか、位置引数に変更したファイルを渡す。
+次回は `pyfltr run --commands=pytest --changed-since=HEAD` のように差分を指定する。
 プロジェクトの対象と除外を適用した範囲から、履歴が示す影響先、履歴にないテスト、従来の静的選定で対象となるテストを実行する。
+位置引数を渡した場合は、渡した範囲のテストを従来どおり実行し、範囲の外にある影響先は実行しない。
+変更したソースファイルだけを位置引数に渡すと対象のテストがなく、pytestは実行されない。
 `pytest-always-targets`を指定していれば、その対象も実行する。
 
 履歴がない、Pythonや依存パッケージの版が異なる、共有設定が変わった、または選択できなかった場合は、範囲の全件を実行する。

@@ -1,6 +1,11 @@
+import hashlib
 import json
+import os
 import pathlib
 import subprocess
+import sys
+import textwrap
+import typing
 
 import pytest
 
@@ -70,3 +75,63 @@ def test_recording_rejects_partial_tests_in_unchanged_file(tmp_path: pathlib.Pat
         assert not active.complete
 
     assert path.read_text(encoding="utf-8") == baseline
+
+
+@pytest.mark.parametrize("sep", ["\\", "/"])
+def test_posix_deps_aligns_recorded_paths_with_git_paths(*, sep: str) -> None:
+    namespace: dict[str, typing.Any] = {}
+    exec(pytest_impact._POSIX_DEPS, namespace)  # noqa: S102  # pylint: disable=exec-used,protected-access
+    deps = [f"f:src{sep}pkg{sep}mod.py::func", f"r:data{sep}a.txt", f"d:data{sep}dir", "p:requests"]
+    assert namespace["posix_deps"](deps, sep) == [
+        "f:src/pkg/mod.py::func",
+        "r:data/a.txt",
+        "d:data/dir",
+        "p:requests",
+    ]
+
+
+@pytest.mark.skipif(sys.version_info < (3, 12), reason="選択処理はPython 3.12以上だけで動く")
+def test_probe_selects_tests_from_map_recorded_with_os_separator(tmp_path: pathlib.Path) -> None:
+    site = tmp_path / "site"
+    package = site / "testscope"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (package / "selection.py").write_text(
+        textwrap.dedent(
+            """
+            import types
+
+            MAP_VERSION = 2
+
+            def compute(root, m):
+                changed = ["src/pkg/mod.py"]
+                deps = {d: i for i, d in enumerate(m["deps"])}
+                hit = {deps[f"f:{f}::func"] for f in changed if f"f:{f}::func" in deps}
+                tests = {n: "changed" for n, ids in m["tests"].items() if hit & set(ids)}
+                return types.SimpleNamespace(full=None, unobserved=[], changed=changed, tests=tests, paths={})
+            """
+        ),
+        encoding="utf-8",
+    )
+    dist_info = site / "testscope-0.4.2.dist-info"
+    dist_info.mkdir()
+    (dist_info / "METADATA").write_text("Metadata-Version: 2.1\nName: testscope\nVersion: 0.4.2\n", encoding="utf-8")
+    project = tmp_path / "project"
+    (project / ".testscope").mkdir(parents=True)
+    env = {**os.environ, "PYTHONPATH": str(site)}
+    command = [sys.executable, "-c", pytest_impact._PROBE]  # pylint: disable=protected-access
+    record = subprocess.run([*command, "record"], cwd=project, env=env, capture_output=True, check=True)
+    signature = json.loads(record.stdout)["signature"]
+    mapping = {
+        "version": 2,
+        "python": sys.version.split()[0],
+        "deps": [f"f:src{os.sep}pkg{os.sep}mod.py::func", f"f:src{os.sep}pkg{os.sep}other.py::func"],
+        "tests": {"tests/mod_test.py::test_mod": [0], "tests/other_test.py::test_other": [1]},
+    }
+    data = json.dumps(mapping).encode()
+    (project / ".testscope" / "map.json").write_bytes(data)
+    (project / ".testscope" / "pyfltr.json").write_text(
+        json.dumps([signature, hashlib.sha256(data).hexdigest()]), encoding="utf-8"
+    )
+    selected = subprocess.run([*command, "select"], cwd=project, env=env, capture_output=True, check=True)
+    assert json.loads(selected.stdout)["tests"] == ["tests/mod_test.py::test_mod"]

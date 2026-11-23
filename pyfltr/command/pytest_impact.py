@@ -13,7 +13,16 @@ from typing import Any
 import pyfltr.file_lock
 import pyfltr.paths
 
-_PROBE = """
+_POSIX_DEPS = """
+def posix_deps(deps, sep):
+    if sep == "/":
+        return deps
+    return [d[:2] + d[2:].replace(sep, "/") if d[:2] in ("f:", "r:", "d:") else d for d in deps]
+"""
+
+_PROBE = (
+    _POSIX_DEPS
+    + """
 import hashlib, json, os, pathlib, sys
 from importlib.metadata import distributions, version
 
@@ -38,6 +47,7 @@ else:
         elif m["version"] != MAP_VERSION or m["python"] != sys.version.split()[0] or not m["tests"]:
             result["reason"] = "地図の形式またはPythonの版が不一致"
         else:
+            m["deps"] = posix_deps(m["deps"], os.sep)
             sel = compute(os.getcwd(), m)
             if sel.full or sel.unobserved or any(
                 pathlib.PurePosixPath(f).name in ("conftest.py", ".gitignore") for f in sel.changed
@@ -47,6 +57,7 @@ else:
                 result.update(tests=list(sel.tests), paths=list(sel.paths), known=list(m["tests"]))
     print(json.dumps(result, ensure_ascii=True))
 """
+)
 
 
 @dataclasses.dataclass(frozen=True)
