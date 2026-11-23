@@ -96,7 +96,10 @@ def test_run_subprocess_resolves_via_env_path(mocker, tmp_path: pathlib.Path, mo
 
     pyfltr.command.process.run_subprocess(["faketool", "config", "--json"], {"PATH": str(bin_dir)})
 
-    assert _FakePopen.last_args_holder == [[str(target), "config", "--json"]]
+    assert len(_FakePopen.last_args_holder) == 1
+    resolved, *rest = _FakePopen.last_args_holder[0]
+    assert os.path.normcase(resolved) == os.path.normcase(str(target)), "WindowsのwhichはPATHEXTの表記で拡張子を付ける"
+    assert rest == ["config", "--json"]
 
 
 def test_run_subprocess_does_not_mutate_commandline(mocker) -> None:
