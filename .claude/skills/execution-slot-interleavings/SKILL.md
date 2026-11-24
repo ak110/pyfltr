@@ -1,5 +1,9 @@
 ---
-name: verify-execution-slot
+verified-digest: d58122ac174f5d806e46161edc2b5ae65b5b071c9e88d751c226a6bbd809e240
+name: execution-slot-interleavings
+verifies:
+  - pyfltr/command/execution_slot.py
+  - .claude/skills/execution-slot-interleavings/check.py
 description: pyfltr/command/execution_slot.pyの実行枠数や待機列の調停を変更するとき、有界網羅検査で上限と取得順を確かめる。
 ---
 
@@ -50,10 +54,10 @@ description: pyfltr/command/execution_slot.pyの実行枠数や待機列の調�
 通常のテスト収集とは別に、実行枠の変更時に明示して起動する。
 
 ```bash
-uv run --frozen python .claude/skills/verify-execution-slot/check.py
+uv run --frozen python .claude/skills/execution-slot-interleavings/check.py
 ```
 
 終了コード0と両上限の状態数を確認する。
 失敗時は上限・旧版の配置・違反の種類と内容・違反した状態までの操作列、または設定やロック名の不一致が出る。
 `poll`・`release`の照合の失敗は、違反の内容に照合の例外が入る。
-最後に同期した実装のcommitは `b1f7819`。
+検査を実行して不変条件を確かめた後にだけ、`pyfltr verification-sync --update .claude/skills/execution-slot-interleavings/SKILL.md` で記録を更新する。

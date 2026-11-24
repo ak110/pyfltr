@@ -1015,3 +1015,29 @@ textlintの修正段では、前回の修正段と通常段の両方で違反が
 - リポジトリ単位のツール（`typos`・`shellcheck`・`shfmt`・`pre-commit`・`prek`・`colloquial-check`・`markdown-structure`・`comment-check`・`test-copies`）のON/OFFは、
   起点の設定で固定する。
   子の設定では切り替えない
+
+### サブコマンド: verification-sync
+
+`pyfltr ci` と `pyfltr fast` は、追跡対象の
+`.claude/skills/*/SKILL.md` に記録された形式検証の対象が変わっていないかを確かめる。
+frontmatterへ次の2キーを書く。
+片方だけある場合と、対象が1件もない場合は失敗する。
+
+- `verifies`: リポジトリ相対パスまたはglobの配列。
+  区切りは `/`、`**` は0個以上のディレクトリ階層に一致
+- `verified-digest`: 対象となる追跡ファイルについて、パスの昇順で計算したSHA-256の16進文字列
+
+要約値の入力は、各ファイルのパス（UTF-8）と内容の順につなぐ。
+パスと内容それぞれの前に、バイト長を符号なし8バイトのビッグエンディアンで入れる。
+内容のCRLFはLFとして扱う。
+CIでは作業ツリー、`fast`ではスキルと対象の両方をGitのステージから読む。
+
+各スキルに従って検証を再実行し、結果を確かめた後にだけ記録を更新する。
+
+```bash
+pyfltr verification-sync --update .claude/skills/example/SKILL.md
+```
+
+更新コマンドは作業ツリーの内容で計算し、検証自体は実行しない。
+スキルと対象を一緒にステージする。
+検証した変更の一部だけをステージしたときは、記録との不一致で失敗する。

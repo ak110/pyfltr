@@ -1,5 +1,5 @@
 {
-  ".claude/skills/verify-execution-slot/check.py": {
+  ".claude/skills/execution-slot-interleavings/check.py": {
     "OSロックの境界を占有集合で表す。": 1,
     "_acquireを一度の調停区間だけ進め、取得した枠または待機を返す。": 1,
     "_releaseを呼び、保持していた枠だけが解放されたことを確かめる。": 1,

@@ -411,6 +411,11 @@ def _register_mcp_subparser(subparsers: typing.Any) -> None:
     )
 
 
+def _register_verification_sync(subparsers: typing.Any) -> None:
+    parser = subparsers.add_parser("verification-sync", help="形式検証の記録を更新する。")
+    parser.add_argument("--update", type=pathlib.Path, required=True, metavar="SKILL")
+
+
 @dataclasses.dataclass(frozen=True)
 class Subcommand:
     name: str
@@ -493,6 +498,15 @@ SUBCOMMANDS: tuple[Subcommand, ...] = (
             "pyfltr.cli.grep_subcmd", "execute_grep"
         ),
         registration_key="grep",
+    ),
+    Subcommand(
+        "verification-sync",
+        "  verification-sync --update <skill>\n                   実行済みの形式検証の記録を更新する。\n",
+        register=_register_verification_sync,
+        execute=pyfltr.tool_types.FunctionRef[[argparse.ArgumentParser, argparse.Namespace], int](
+            "pyfltr.cli.verification_sync_subcmd", "execute"
+        ),
+        registration_key="verification-sync",
     ),
     Subcommand(
         "replace",

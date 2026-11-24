@@ -2,7 +2,7 @@ from __future__ import annotations
 
 # TUI専用のtextualを読み込む`pyfltr.output.ui`は、TUIを使う実行だけで読み込む。
 # Python 3.15以上で遅延importとなり、それ未満の版では通常のimportとして扱われる（PEP 810）。
-__lazy_modules__ = ["pyfltr.output.ui"]
+__lazy_modules__ = ["pyfltr.output.ui", "pyfltr.verification_sync"]
 
 import argparse
 import dataclasses
@@ -41,6 +41,7 @@ import pyfltr.run_options
 import pyfltr.state.archive
 import pyfltr.state.cache
 import pyfltr.state.retry
+import pyfltr.verification_sync
 import pyfltr.warnings_
 
 logger = logging.getLogger(__name__)
@@ -658,6 +659,19 @@ def run_impl(
     if args.version:
         print(f"pyfltr {importlib.metadata.version('pyfltr')}")
         return 0
+
+    subcommand = getattr(args, "subcommand", None)
+    if subcommand in {"ci", "fast"}:
+        cwd = args.work_dir if args.work_dir is not None else pathlib.Path(original_cwd)
+        try:
+            sync_diagnostics = pyfltr.verification_sync.check(cwd, staged=subcommand == "fast")
+        except (OSError, subprocess.CalledProcessError) as e:
+            logger.error(f"verification-sync: {e}")
+            return 1
+        if sync_diagnostics:
+            for diagnostic in sync_diagnostics:
+                logger.error(f"verification-sync: {diagnostic}")
+            return 1
 
     resolution = _resolve_output_format(parser, args)
     output_format, format_source = resolution.format, resolution.source
