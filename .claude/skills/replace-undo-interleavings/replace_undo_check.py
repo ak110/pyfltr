@@ -1,4 +1,5 @@
 import dataclasses
+import inspect
 import os
 import pathlib
 import shutil
@@ -10,8 +11,7 @@ import typing
 
 import pytilpack.modelcheck as mc
 
-import pyfltr.grep_.history as history
-import pyfltr.grep_.operations as operations
+from pyfltr.grep_ import history, operations
 
 EDIT_BYTES = b"EDIT foo\n"
 INITIAL = {"a.txt": b"foo\r\nA\n", "b.txt": b"foo\nB\n"}
@@ -75,8 +75,11 @@ class Harness:
                 return orig(path, *args, **kwargs)
             resource, display = key
             operation = name
-            if name == "read_bytes" and sys._getframe(1).f_code.co_name == "_read_current":
-                operation = "compare"
+            if name == "read_bytes":
+                frame = inspect.currentframe()
+                if frame is not None and frame.f_back is not None and frame.f_back.f_code.co_name == "_read_current":
+                    operation = "compare"
+                del frame
             mc.step(resource, write=name in _WRITES, label=f"{operation} {display}")
             index = harness.counter
             harness.counter += 1

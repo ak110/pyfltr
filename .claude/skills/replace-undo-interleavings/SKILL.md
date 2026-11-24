@@ -1,5 +1,5 @@
 ---
-verified-digest: d4e35369847a1aa34f98af115ad36d23546d6d04f9cc43b849c56f32f38846b2
+verified-digest: d123685969a0d2e41bbda80baaf688d347bf78e6de0adc0a3dcf916b3d8f8d41
 name: replace-undo-interleavings
 description: 一括置換とundoの履歴保存・書込み・巻戻しを変更するとき、障害と別の編集の順序を有界網羅検査で確かめる。
 verifies:
@@ -7,7 +7,7 @@ verifies:
   - pyfltr/grep_/replacer.py
   - pyfltr/grep_/history.py
   - pyfltr/grep_/transaction.py
-  - .claude/skills/replace-undo-interleavings/check.py
+  - .claude/skills/replace-undo-interleavings/replace_undo_check.py
 ---
 
 # 一括置換とundoの有界探索
@@ -43,7 +43,7 @@ verifies:
 通常のテストとは別に実行する。
 
 ```bash
-uv run --frozen python .claude/skills/replace-undo-interleavings/check.py
+uv run --frozen python .claude/skills/replace-undo-interleavings/replace_undo_check.py
 ```
 
 終了コードと実行数・除外数・違反数を確認する。
