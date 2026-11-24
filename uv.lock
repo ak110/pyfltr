@@ -1831,7 +1831,7 @@ wheels = [
 
 [[package]]
 name = "pytilpack"
-version = "1.54.1"
+version = "1.54.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "beautifulsoup4" },
@@ -1840,9 +1840,9 @@ dependencies = [
     { name = "tzdata", marker = "sys_platform == 'win32'" },
     { name = "werkzeug" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c3/f4/3bb1b32ca2d80c8633e6f5ffc65cc333a001c205f7c9b7a98a282b3bf609/pytilpack-1.54.1.tar.gz", hash = "sha256:a776391b644da8feba5efa00272ece1b31b9ef49354658d1744615a53ffac80b", size = 439326, upload-time = "2026-11-23T00:36:36.158Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/59/50/cfecab7c36737e5daeb2d3203d3aa313c4c944aa8978fc58e9bc52e1f23d/pytilpack-1.54.2.tar.gz", hash = "sha256:32913e228a4876b6d84f42b9609932fb727cb65577d1a305aba279bd2ffbe6b3", size = 442132, upload-time = "2026-11-24T08:24:25.722Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ae/d3/7e10d5a6d623ea628cf01d1ddbf5fc314f80a219b7ec841881f02b6398c8/pytilpack-1.54.1-py3-none-any.whl", hash = "sha256:6756719b425437658d1176249d5f53f7f8ad632263d6548535902b2a329d15ad", size = 110782, upload-time = "2026-11-23T00:36:34.935Z" },
+    { url = "https://files.pythonhosted.org/packages/4b/6b/399986d575dde610e074a5df8324af9216feb2ed1a165bb04fe4f70da6e7/pytilpack-1.54.2-py3-none-any.whl", hash = "sha256:b93f65bb3484b39413f57ddcbfd3ecf7a1d54928144af949047820289b0fc61d", size = 110830, upload-time = "2026-11-24T08:24:24.502Z" },
 ]
 
 [[package]]
