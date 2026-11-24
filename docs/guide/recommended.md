@@ -914,6 +914,41 @@ CIは統合後の変更群を対象に、変更間の干渉や対応環境での
 たとえば横断テストの重複をなくせばrunnerの実行量は減る見込みだが、統合後の待ちも含めて公開が早まるかは別に確かめる。
 ブランチ名や起動イベントを変えたり、同じチェックを別の段階へ移したりするだけでは、実行する仕事は減らない。
 
+### 配布物の来歴証明 {#artifact-attestations}
+
+公開リポジトリから配布するGitHub Releaseの添付ファイル、PyPIのwheelとsdist、コンテナイメージには、
+[GitHubの署名付き来歴証明](https://github.com/actions/attest)を付ける。
+利用者は配布物の内容が証明と一致することに加え、どのワークフローが署名し、どのコミットをソースとして記録したかを検証できる。
+非公開リポジトリはGitHub Enterprise Cloudが必要なため、ここでの推奨の対象外とする。
+
+1. 配布物の公開方法ごとに、ビルド元のコミットと証明に記録されるコミットの関係を決める。
+   通常のリリースでは、ワークフロー起動時の`github.sha`をチェックアウトし、そのコミットをリリースタグで指す。
+   手動起動や再利用ワークフローでも、起動時のソースと実際にビルドしたソースの関係を確認する。
+   証明のソースコミットがタグと異なりうる場合は、どのコミットが記録されるかを案内する。
+2. `actions/attest`で証明を作成するジョブに限って`id-token: write`、`attestations: write`、`artifact-metadata: write`を付与する。
+   GHCRにイメージと証明を公開するジョブは、さらに`packages: write`を指定する。
+   再利用ワークフローに公開を任せる場合は、呼び出し元のジョブにも同じ権限を宣言する。
+3. ファイルをビルドして公開に必要なチェックを済ませたら、`subject-path`で証明を付けて公開する。
+   既存Releaseへの補完・再添付、手動起動、失敗後の再試行にも適用する。
+   再実行で既存の添付ファイルを維持する場合は、そのファイルの証明を検証する。
+4. コンテナイメージはpush直後に、タグを含まないイメージ名を`subject-name`、pushで確定したdigestを`subject-digest`に渡す。
+   `push-to-registry: true`で証明もレジストリに登録する。
+   版タグと`latest`が同じdigestを指す場合は1回だけ署名する。
+   BuildKitが付与する未署名の来歴メタデータは残し、署名付き証明を追加する。
+   証明に失敗したらワークフローを失敗させ、配備などの後続処理へ進めない。
+5. Release本文に、`gh attestation verify`に`--repo OWNER/REPO`と
+   `--signer-workflow OWNER/REPO/.github/workflows/sign.yml`を指定した検証コマンドを載せる。
+   再利用ワークフローが署名した場合は、そのワークフローを指定する。
+   併せて、証明のソースコミットと公開タグの関係、リポジトリの証明一覧（`https://github.com/OWNER/REPO/attestations`）へのリンク、
+   GitHub CLIの認証方法（`gh auth login`または`GH_TOKEN`）を記載する。
+   イメージの案内には`oci://`で始まる版タグを使い、公開後の検収では実際にpushしたdigestと期待するコミット（`--source-digest`）を指定する。
+   既存Releaseを補完する際にも案内がなければ加え、過去版のReleaseは書き換えない。
+
+PyPIへ公開する場合は、[Trusted Publishing](https://docs.astral.sh/uv/guides/integration/github/#publishing-to-pypi)を使う。
+PyPIに登録したGitHub Actionsのenvironmentと`id-token: write`を公開ジョブに設定する。
+GitHubの来歴証明に加え、`astral-sh/attest-action`で公開前のチェックを通過したwheelとsdistのPEP 740証明を生成する。
+`uv publish`は`dist/`に生成された`*.publish.attestation`を配布物と同時にアップロードする。
+
 ### GitHub Actionsの設定例
 
 GitHub Actionsでpyfltrを実行する構成の例。

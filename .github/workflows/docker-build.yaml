@@ -8,6 +8,10 @@ on:
         required: false
         type: string
         default: ""
+      protect_latest:
+        description: "リリース用。新しいリリースタグがある場合はlatestを更新しない。"
+        type: boolean
+        default: true
   workflow_dispatch:
     inputs:
       version:
@@ -16,10 +20,6 @@ on:
         type: string
         default: ""
 
-permissions:
-  contents: read
-  packages: write
-
 concurrency:
   group: docker-build
   cancel-in-progress: false
@@ -27,10 +27,19 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     steps:
       # ``docker/build-push-action`` で ``context: docker`` を解決するため、
       # 別ワークフローとして独立実行される本ファイルでも先にチェックアウトする。
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
 
       - name: Install uv
         uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
@@ -40,9 +49,11 @@ jobs:
 
       - name: Resolve PyPI version
         id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          input_version="${{ inputs.version }}"
+          input_version="${INPUT_VERSION}"
           if [ -z "${input_version}" ]; then
             echo "Input version is empty; fetching latest pyfltr version from PyPI"
             input_version="$(curl -fsSL "https://pypi.org/pypi/pyfltr/json" | jq -r '.info.version')"
@@ -52,6 +63,10 @@ jobs:
             fi
           fi
           version="${input_version#v}"
+          if [[ ! "$version" =~ ^[0-9][0-9A-Za-z_.-]{0,126}$ ]]; then
+            echo "Dockerタグに使えるPyPI版を指定してください（例: 3.35.0）。" >&2
+            exit 1
+          fi
           echo "Resolved version: ${version}"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "tag=v${version}" >> "$GITHUB_OUTPUT"
@@ -75,9 +90,11 @@ jobs:
       # さらに ``required_consecutive`` 回連続成功するまで待つことで、
       # 単発でエッジを掴んだ瞬間だけ通る揺らぎを排除する。
       - name: Wait for PyPI propagation
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          version="${{ steps.version.outputs.version }}"
+          version="${VERSION}"
           required_consecutive=3
           success_count=0
           for i in $(seq 1 60); do
@@ -102,6 +119,34 @@ jobs:
           echo "PyPIでのpyfltr[python]==${version}の公開反映を待つ時間が上限に達しました。時間をおいてActionsのRe-run jobsで再実行してください。" >&2
           exit 1
 
+      - name: Select image tags
+        id: tags
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          PROTECT_LATEST: ${{ inputs.protect_latest }}
+        run: |
+          set -euo pipefail
+          publish_latest=true
+          if [[ "$PROTECT_LATEST" == true ]]; then
+            newest_tag="$(git ls-remote --tags --refs --sort=-v:refname origin 'v*' |
+              awk '$2 ~ /^refs\/tags\/v[0-9]+\.[0-9]+\.[0-9]+$/ && !found { sub(/^refs\/tags\//, "", $2); print $2; found=1 }')"
+            if [[ -z "$newest_tag" ]]; then
+              echo "最新のリリースタグを取得できませんでした。GitHub上のタグを確認してください。" >&2
+              exit 1
+            fi
+            if [[ "$newest_tag" != "$TAG" ]]; then
+              echo "$TAG のみを更新し、latestは更新しません（最新のリリースタグ: $newest_tag）。"
+              publish_latest=false
+            fi
+          fi
+          {
+            printf 'list<<EOF\nghcr.io/ak110/pyfltr:%s\n' "$TAG"
+            if [[ "$publish_latest" == true ]]; then
+              printf 'ghcr.io/ak110/pyfltr:latest\n'
+            fi
+            printf 'EOF\n'
+          } >> "$GITHUB_OUTPUT"
+
       # Wait for PyPI propagation を通過しても Docker builder ホストが別エッジを掴んで
       # 「No solution found」になる事象が稀に残るため、初回失敗時のみ短い間を空けて再試行する。
       # 1 回目失敗時は ``continue-on-error`` でエラーを無視し、再試行 step が結果を引き取る。
@@ -116,9 +161,7 @@ jobs:
           push: true
           build-args: |
             PYFLTR_VERSION=${{ steps.version.outputs.version }}
-          tags: |
-            ghcr.io/ak110/pyfltr:${{ steps.version.outputs.tag }}
-            ghcr.io/ak110/pyfltr:latest
+          tags: ${{ steps.tags.outputs.list }}
           secrets: |
             GITHUB_TOKEN=${{ github.token }}
 
@@ -129,6 +172,7 @@ jobs:
           sleep 30
 
       - name: Build and push Docker image (retry)
+        id: docker_retry
         if: steps.docker_build.outcome == 'failure'
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -138,8 +182,33 @@ jobs:
           push: true
           build-args: |
             PYFLTR_VERSION=${{ steps.version.outputs.version }}
-          tags: |
-            ghcr.io/ak110/pyfltr:${{ steps.version.outputs.tag }}
-            ghcr.io/ak110/pyfltr:latest
+          tags: ${{ steps.tags.outputs.list }}
           secrets: |
             GITHUB_TOKEN=${{ github.token }}
+
+      - name: Select published image digest
+        id: published
+        env:
+          FIRST_OUTCOME: ${{ steps.docker_build.outcome }}
+          FIRST_DIGEST: ${{ steps.docker_build.outputs.digest }}
+          RETRY_DIGEST: ${{ steps.docker_retry.outputs.digest }}
+        run: |
+          set -euo pipefail
+          if [[ "$FIRST_OUTCOME" == success ]]; then
+            digest="$FIRST_DIGEST"
+          else
+            digest="$RETRY_DIGEST"
+          fi
+          if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "pushしたイメージのdigestを取得できませんでした。Docker Buildを再実行してください。" >&2
+            exit 1
+          fi
+          printf 'Published image digest: %s\n' "$digest"
+          printf 'digest=%s\n' "$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Attest published image
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ghcr.io/ak110/pyfltr
+          subject-digest: ${{ steps.published.outputs.digest }}
+          push-to-registry: true

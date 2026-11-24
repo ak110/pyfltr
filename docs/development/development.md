@@ -181,7 +181,8 @@ gh workflow run release.yaml --field="bump=MAJOR"
 
 <https://github.com/ak110/pyfltr/actions> で状況を確認する。
 
-リリースを伴わず`ghcr.io/ak110/pyfltr:latest`のみを再発行する場合は、
+旧版のReleaseを再実行してDockerイメージを補完する場合は、その版のタグと証明だけを更新する。
+リリースを伴わず`ghcr.io/ak110/pyfltr:latest`を更新する場合は、
 `docker-build.yaml`を単発で起動する。
 base OS更新や同梱ツールのglibc要件変動を`latest`へ反映するときの運用パス。
 
@@ -190,4 +191,5 @@ gh workflow run docker-build.yaml
 gh workflow run docker-build.yaml --field="version=X.Y.Z"
 ```
 
-`--field="version="`未指定時はPyPIから最新公開版を取得し、`vX.Y.Z`と`latest`の両タグを併発行する。
+`version`の指定を省くと、PyPIから最新公開版を取得する。
+手動で起動した場合は、ビルドした版のタグと`latest`の両方を更新する。

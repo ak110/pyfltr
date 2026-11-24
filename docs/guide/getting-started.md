@@ -19,6 +19,32 @@ pip環境では`pip install pyfltr`を使う。
 
 呼び出し方の使い分けは[呼び出し方の使い分け](recommended.md#calling-style)を参照。
 
+### コンテナイメージの来歴を検証する
+
+[GitHub Release](https://github.com/ak110/pyfltr/releases)に来歴証明の案内がある版は、
+イメージの公開後に、署名したワークフローと証明に記録されたコミットを確認できる。
+`gh auth login`または`GH_TOKEN`でGitHub CLIを認証し、`vX.Y.Z`を利用する版タグに置き換えて実行する。
+通常の公開では、証明に記録されたコミットが版タグの指すコミットと一致する。
+
+```shell
+tag=vX.Y.Z
+source_sha="$(gh api "repos/ak110/pyfltr/commits/$tag" --jq .sha)" &&
+gh attestation verify "oci://ghcr.io/ak110/pyfltr:$tag" \
+  --repo ak110/pyfltr \
+  --signer-workflow ak110/pyfltr/.github/workflows/docker-build.yaml \
+  --source-digest "$source_sha"
+```
+
+証明が示すのはDockerfileを取得したコミットであり、同梱するPyPI配布物のビルド元とは別である。
+手動でイメージを再ビルドした場合は、`RUN_ID`をDocker Buildの実行IDに置き換え、
+検証手順の`gh api ...`の代わりに次のコマンドで起動時のコミットを取得する。
+
+```shell
+gh run view RUN_ID --json headSha --jq .headSha --repo ak110/pyfltr
+```
+
+コミットの取得や検証に失敗した場合、来歴は確認できていない。
+
 ## 設定
 
 pyfltrの実行内容は`pyproject.toml`の`[tool.pyfltr]`セクションで指定する。

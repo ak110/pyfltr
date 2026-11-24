@@ -13,10 +13,6 @@ on:
           - MAJOR
         default: PATCH
 
-permissions:
-  contents: write
-  packages: write
-
 concurrency:
   group: release
   cancel-in-progress: false
@@ -24,13 +20,22 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
     outputs:
       version: ${{ steps.next.outputs.version }}
     steps:
-      # 別ブランチからの誤リリースを防止
+      - name: Require release dispatch from master
+        run: |
+          if [[ "$GITHUB_REF" != refs/heads/master ]]; then
+            echo "Releaseはmasterブランチを選んで実行してください。" >&2
+            exit 1
+          fi
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: master
+          ref: ${{ github.sha }}
           fetch-depth: 0
           fetch-tags: true
 
@@ -86,11 +91,14 @@ jobs:
 
       - name: Calculate next version
         id: next
+        env:
+          BUMP: ${{ inputs.bump }}
         run: |
           set -euo pipefail
 
           # 再実行時の冪等性: HEAD を指すリリースタグが既にあれば再利用
-          existing_tag="$(git tag --points-at=HEAD | grep -E '^v[0-9]+\.' | head -n1 || true)"
+          existing_tag="$(git tag --points-at=HEAD --sort=-version:refname |
+            awk '/^v[0-9]+\.[0-9]+\.[0-9]+$/ && !found { print; found=1 }')"
           if [ -n "${existing_tag}" ]; then
             echo "HEADの既存タグ ${existing_tag} を再利用します。再実行時の処理のため対応不要です。"
             echo "next=${existing_tag}" >> "$GITHUB_OUTPUT"
@@ -99,13 +107,18 @@ jobs:
           fi
 
           # HEAD にタグがなければ、latest からインクリメント
-          latest=$(git tag --sort=version:refname | tail -n1)
+          latest="$(git tag --sort=-version:refname |
+            awk '/^v[0-9]+\.[0-9]+\.[0-9]+$/ && !found { print; found=1 }')"
+          if [[ -z "$latest" ]] || ! git merge-base --is-ancestor "refs/tags/$latest" HEAD; then
+            echo "現在のリリースタグより新しいコミットをmasterで選んでReleaseを起動してください。" >&2
+            exit 1
+          fi
           IFS='.' read -r major minor patch <<< "${latest#v}"
-          case '${{ github.event.inputs.bump }}' in
+          case "$BUMP" in
             'PATCH') ((++patch));;
             'MINOR') ((++minor)); patch=0;;
             'MAJOR') ((++major)); minor=0; patch=0;;
-            *) echo "Unknown bump: '${{ github.event.inputs.bump }}'" >&2; exit 1;;
+            *) echo "Unknown bump: '$BUMP'" >&2; exit 1;;
           esac
           echo "next=v${major}.${minor}.${patch}" >> "$GITHUB_OUTPUT"
           echo "version=${major}.${minor}.${patch}" >> "$GITHUB_OUTPUT"
@@ -158,14 +171,21 @@ jobs:
         run: uv run --frozen pyfltr ci --commands=distribution-check --enable=distribution-check --no-cache --output-format=github-annotations
 
       - name: Create tag and push
+        env:
+          TAG: ${{ steps.next.outputs.next }}
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          if git rev-parse "${{ steps.next.outputs.next }}" >/dev/null 2>&1; then
-            echo "タグ ${{ steps.next.outputs.next }} は存在するため作成をスキップしました。処理を継続するため対応不要です。"
+          if tagged_commit="$(git rev-parse --verify "refs/tags/$TAG^{commit}" 2>/dev/null)"; then
+            if [[ "$tagged_commit" != "$GITHUB_SHA" ]]; then
+              echo "タグ $TAG がRelease起動時と異なるコミットを指しています。タグと起動時のコミットを確認してください。" >&2
+              exit 1
+            fi
+            echo "起動時のコミットを指す既存タグ $TAG を再利用します。"
           else
-            git tag "${{ steps.next.outputs.next }}"
-            git push origin "${{ steps.next.outputs.next }}"
+            git tag "$TAG" "$GITHUB_SHA"
+            git push origin "refs/tags/$TAG"
           fi
 
       - name: Publish verified distributions to PyPI
@@ -177,32 +197,66 @@ jobs:
       - name: Generate release notes
         uses: orhun/git-cliff-action@a9a95522b26fe6403f7bb24031f21fb573d0f5ff # v4.9.1
         with:
-          args: --latest --strip header
+          args: --current --strip header
         env:
           OUTPUT: CHANGES.md
 
       - name: Append changelog link
+        env:
+          TAG: ${{ steps.next.outputs.next }}
         run: |
-          prev_tag="$(git tag --sort=version:refname | grep -E '^v[0-9]' | tail -2 | head -1)"
+          set -euo pipefail
+          prev_tag="$(git tag --merged "refs/tags/$TAG^" --sort=-version:refname |
+            awk '/^v[0-9]+\.[0-9]+\.[0-9]+$/ && !found { print; found=1 }')"
           printf '\n**Full Changelog**: https://github.com/%s/compare/%s...%s\n' \
-            "${{ github.repository }}" "${prev_tag}" "${{ steps.next.outputs.next }}" >> CHANGES.md
+            "$GITHUB_REPOSITORY" "$prev_tag" "$TAG" >> CHANGES.md
 
-      - name: Create GitHub Release
+      - name: Publish GitHub Release with verification instructions
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.next.outputs.next }}
         run: |
-          if gh release view "${{ steps.next.outputs.next }}" >/dev/null 2>&1; then
-            echo "Release ${{ steps.next.outputs.next }} は存在するため作成をスキップしました。処理を継続するため対応不要です。"
+          set -euo pipefail
+          instructions="$(cat <<EOF
+          ## コンテナイメージの署名とソースコミットを検証する
+
+          GitHub Releaseの公開後にコンテナイメージを公開します。
+          イメージの公開後、\`gh auth login\`または\`GH_TOKEN\`でGitHub CLIを認証してから、
+          次のコマンドで署名したワークフローと公開タグのコミットを照合できます。
+
+          \`\`\`shell
+          source_sha="\$(gh api repos/ak110/pyfltr/commits/$TAG --jq .sha)" &&
+          gh attestation verify oci://ghcr.io/ak110/pyfltr:$TAG \\
+            --repo ak110/pyfltr \\
+            --signer-workflow ak110/pyfltr/.github/workflows/docker-build.yaml \\
+            --source-digest "\$source_sha"
+          \`\`\`
+
+          証明が示すのはDockerfileを取得したコミットです。通常の公開ではリリースタグが指すコミットと一致します。
+          手動でイメージを再ビルドした場合は、Docker Buildの実行IDを使い、
+          1行目の \`gh api ...\` を \`gh run view RUN_ID --json headSha --jq .headSha --repo ak110/pyfltr\` に置き換えてください。
+          コミットの取得や検証に失敗した場合、来歴は確認できていません。
+          この証明は、イメージに同梱するPyPI配布物のビルド元を証明するものではありません。
+          [来歴証明の一覧](https://github.com/ak110/pyfltr/attestations)
+          EOF
+          )"
+
+          if body="$(gh release view "$TAG" --json body --jq .body)"; then
+            if [[ "$body" == *"$instructions"* ]]; then
+              exit 0
+            fi
+            printf '%s\n\n%s\n' "$body" "$instructions" > CHANGES.md
+            gh release edit "$TAG" --notes-file=CHANGES.md
           else
-            gh release create "${{ steps.next.outputs.next }}" \
-              --title="${{ steps.next.outputs.next }}" --notes-file=CHANGES.md
+            printf '\n%s\n' "$instructions" >> CHANGES.md
+            gh release create "$TAG" --title="$TAG" --verify-tag --notes-file=CHANGES.md
           fi
 
       - name: Prune uv cache for CI
         run: uv cache prune --ci
 
   # GitHub Container Registry へ pyfltr 同梱 Docker イメージを publish する。
-  # ``vX.Y.Z`` と ``latest`` の 2 タグを発行する。
+  # 最新のリリースを公開する場合は版タグとlatestを更新し、旧版を補完する場合は版タグだけを更新する。
   # Docker build / push と PyPI 配信エッジ伝搬待ち・初回 build 失敗時の再試行ロジックは
   # ``docker-build.yaml`` 側に集約する。CI 修復用の単発再ビルドにも同 workflow を利用する。
   docker-publish:
@@ -210,6 +264,9 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     uses: ./.github/workflows/docker-build.yaml
     with:
       version: ${{ needs.release.outputs.version }}
