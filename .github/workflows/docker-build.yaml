@@ -32,7 +32,6 @@ jobs:
       packages: write
       id-token: write
       attestations: write
-      artifact-metadata: write
     steps:
       # ``docker/build-push-action`` で ``context: docker`` を解決するため、
       # 別ワークフローとして独立実行される本ファイルでも先にチェックアウトする。
@@ -212,3 +211,4 @@ jobs:
           subject-name: ghcr.io/ak110/pyfltr
           subject-digest: ${{ steps.published.outputs.digest }}
           push-to-registry: true
+          create-storage-record: false
