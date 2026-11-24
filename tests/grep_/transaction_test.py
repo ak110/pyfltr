@@ -99,3 +99,23 @@ def test_rollback_reports_restore_failure(tmp_path: pathlib.Path, monkeypatch: p
     assert [first.read_bytes(), second.read_bytes()] == [b"a1", b"b0"]
     assert exc_info.value.unrestored == [first]
     assert first.as_posix() in exc_info.value.describe()
+
+
+@pytest.mark.parametrize("has_previous_write", [False, True])
+def test_write_conflict_reports_untouched_file(tmp_path: pathlib.Path, *, has_previous_write: bool) -> None:
+    first = tmp_path / "a.txt"
+    edited = tmp_path / "b.txt"
+    first.write_bytes(b"a0")
+    edited.write_bytes(b"outside edit")
+
+    updates = [pyfltr.grep_.transaction.FileUpdate(first, b"a0", b"a1")] if has_previous_write else []
+    updates.append(pyfltr.grep_.transaction.FileUpdate(edited, b"b0", b"b1"))
+    with pytest.raises(pyfltr.grep_.transaction.WriteFailure) as exc_info:
+        pyfltr.grep_.transaction.write_updates(updates)
+
+    assert first.read_bytes() == b"a0"
+    assert edited.read_bytes() == b"outside edit"
+    assert exc_info.value.conflicted == [edited]
+    message = exc_info.value.describe()
+    assert f"上書きせずに残したファイルがあります: {edited.as_posix()}" in message
+    assert "対象ファイルを開始前の状態へ戻しました" not in message

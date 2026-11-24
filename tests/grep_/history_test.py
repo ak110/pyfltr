@@ -290,4 +290,5 @@ def test_undo_replace_keeps_edit_made_after_hash_check(tmp_path: pathlib.Path, m
         store.undo_replace(replace_id)
 
     assert original_read_bytes(target) == b"edited\n"
-    assert target.as_posix() in str(exc_info.value)
+    assert f"上書きせずに残したファイルがあります: {target.as_posix()}" in str(exc_info.value)
+    assert "開始前の状態へ戻しました" not in str(exc_info.value)
