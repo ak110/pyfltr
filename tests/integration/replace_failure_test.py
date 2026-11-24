@@ -82,9 +82,8 @@ def test_replace_history_failure_keeps_all_targets(
 
 
 @pytest.mark.parametrize("mode", ["cli", "mcp"])
-@pytest.mark.parametrize("rollback_fails", [False, True])
-def test_replace_partial_write_recovers_or_keeps_undo_history(
-    mode: str, rollback_fails: bool, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_replace_partial_write_reports_file_and_keeps_undo_history(
+    mode: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     files = [tmp_path / "a.txt", tmp_path / "b.txt"]
     for file in files:
@@ -95,12 +94,9 @@ def test_replace_partial_write_recovers_or_keeps_undo_history(
         if path.resolve() in files and data == b"bar\r\n":
             entries = store.list_replaces()
             assert len(store.load_replace(entries[0]["replace_id"])["files"]) == 2
-        if path.resolve() == files[1]:
-            if data == b"bar\r\n":
-                _write_original(path, b"b")
-                raise OSError("部分書き込み失敗を注入")
-            if rollback_fails:
-                raise OSError("復旧失敗を注入")
+        if path.resolve() == files[1] and data == b"bar\r\n":
+            _write_original(path, b"b")
+            raise OSError("部分書き込み失敗を注入")
         return _write_original(path, data)
 
     with monkeypatch.context() as patch:
@@ -111,17 +107,15 @@ def test_replace_partial_write_recovers_or_keeps_undo_history(
     entries = store.list_replaces()
     assert len(entries) == 1
     assert entries[0]["replace_id"] in error
-    if rollback_fails:
-        assert files[1].read_bytes() == b"b"
-        assert "戻せなかった" in error
-        assert _undo(mode, entries[0]["replace_id"], capsys, force=True)[0] == 0
-    else:
-        assert files[1].read_bytes() == b"foo\r\n"
+    assert files[1].read_bytes() == b"b"
+    assert "戻せなかった" in error
+    assert files[1].name in error
+    assert _undo(mode, entries[0]["replace_id"], capsys, force=True)[0] == 0
     assert [file.read_bytes() for file in files] == [b"foo\r\n", b"foo\r\n"]
 
 
 @pytest.mark.parametrize("mode", ["cli", "mcp"])
-def test_undo_partial_write_restores_start_state_and_allows_retry(
+def test_undo_partial_write_reports_file_and_allows_forced_retry(
     mode: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     files = [tmp_path / "a.txt", tmp_path / "b.txt"]
@@ -139,7 +133,7 @@ def test_undo_partial_write_restores_start_state_and_allows_retry(
     with monkeypatch.context() as patch:
         patch.setattr(pathlib.Path, "write_bytes", _write)
         rc, error = _undo(mode, replace_id, capsys)
-    assert rc == 1 and "開始前の状態へ戻しました" in error
-    assert [file.read_bytes() for file in files] == [b"bar\r\n", b"bar\r\n"]
-    assert _undo(mode, replace_id, capsys)[0] == 0
+    assert rc == 1 and "戻せなかった" in error
+    assert [file.read_bytes() for file in files] == [b"bar\r\n", b"f"]
+    assert _undo(mode, replace_id, capsys, force=True)[0] == 0
     assert [file.read_bytes() for file in files] == [b"foo\r\n", b"foo\r\n"]

@@ -262,3 +262,32 @@ def test_default_history_root_respects_cache_env(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setenv("PYFLTR_CACHE_DIR", str(tmp_path))
     result = pyfltr.grep_.history.default_history_root()
     assert result == tmp_path / "replaces"
+
+
+def test_undo_replace_keeps_edit_made_after_hash_check(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    target = tmp_path / "a.txt"
+    target.write_bytes(b"bar\n")
+    store = pyfltr.grep_.history.ReplaceHistoryStore(history_root=tmp_path / "history")
+    replace_id = pyfltr.grep_.history.generate_replace_id()
+    store.save_replace(
+        replace_id,
+        command_meta=_make_command_meta(replace_id=replace_id),
+        file_changes=[{"file": target, "before_bytes": b"foo\n", "after_bytes": b"bar\n", "records": []}],
+    )
+    original_read_bytes = pathlib.Path.read_bytes
+    reads: list[pathlib.Path] = []
+
+    def _read(path: pathlib.Path) -> bytes:
+        data = original_read_bytes(path)
+        if path == target:
+            reads.append(path)
+            if len(reads) == 1:
+                target.write_bytes(b"edited\n")
+        return data
+
+    monkeypatch.setattr(pathlib.Path, "read_bytes", _read)
+    with pytest.raises(pyfltr.grep_.history.ReplaceFailure) as exc_info:
+        store.undo_replace(replace_id)
+
+    assert original_read_bytes(target) == b"edited\n"
+    assert target.as_posix() in str(exc_info.value)

@@ -4,6 +4,7 @@ __lazy_modules__ = ["ulid"]
 
 import dataclasses
 import hashlib
+import io
 import json
 import logging
 import pathlib
@@ -207,31 +208,35 @@ class ReplaceHistoryStore:
         legacy = any(not (files_dir / entry["sanitized"] / _BEFORE_BYTES_FILENAME).exists() for entry in entries)
         warnings = [_LEGACY_WARNING] if legacy else []
 
+        # 照合に使ったバイト列をそのまま書込みの照合元にし、読み直さない。  pyfltr: allow-comment
+        # 読み直すと、照合と読み直しの間に入った別の編集を照合元に取り込み、上書きしてしまう。  pyfltr: allow-comment
+        currents: list[bytes | None] = []
+        for entry in entries:
+            file_path = pathlib.Path(entry["file"])
+            currents.append(file_path.read_bytes() if file_path.exists() else None)
+
         if not force:
             mismatched: list[pathlib.Path] = []
-            for entry in entries:
-                file_path = pathlib.Path(entry["file"])
-                saved_after_hash: str = entry["after_hash"]
+            for entry, current in zip(entries, currents, strict=True):
                 current_hash: str | None = None
-                if file_path.exists():
+                if current is not None:
                     before_bytes_path = files_dir / entry["sanitized"] / _BEFORE_BYTES_FILENAME
                     if before_bytes_path.exists():
-                        current_hash = hashlib.sha256(file_path.read_bytes()).hexdigest()
+                        current_hash = hashlib.sha256(current).hexdigest()
                     else:
-                        current_hash = hashlib.sha256(file_path.read_text(encoding=encoding).encode("utf-8")).hexdigest()
-                if current_hash != saved_after_hash:
-                    mismatched.append(file_path)
+                        current_hash = hashlib.sha256(_decode_like_read_text(current, encoding).encode("utf-8")).hexdigest()
+                if current_hash != entry["after_hash"]:
+                    mismatched.append(pathlib.Path(entry["file"]))
             if mismatched:
                 return [], [pathlib.Path(entry["file"]) for entry in entries], warnings
 
         updates: list[pyfltr.grep_.transaction.FileUpdate] = []
-        for entry in entries:
+        for entry, current in zip(entries, currents, strict=True):
             file_path = pathlib.Path(entry["file"])
             before_bytes_path = files_dir / entry["sanitized"] / _BEFORE_BYTES_FILENAME
             restored_bytes = (
                 before_bytes_path.read_bytes() if before_bytes_path.exists() else entry["before_content"].encode(encoding)
             )
-            current = file_path.read_bytes() if file_path.exists() else None
             updates.append(pyfltr.grep_.transaction.FileUpdate(file_path, current, restored_bytes))
         try:
             pyfltr.grep_.transaction.write_updates(updates)
@@ -273,6 +278,11 @@ class ReplaceHistoryStore:
             meta_filename=_META_FILENAME,
             timestamp_key="saved_at",
         )
+
+
+def _decode_like_read_text(data: bytes, encoding: str) -> str:
+    with io.TextIOWrapper(io.BytesIO(data), encoding=encoding) as stream:
+        return stream.read()
 
 
 def _command_meta_to_dict(meta: ReplaceCommandMeta) -> dict[str, typing.Any]:
