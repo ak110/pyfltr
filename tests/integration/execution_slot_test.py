@@ -14,6 +14,7 @@ import pytest
 import pyfltr.cli.main
 import pyfltr.command.execution_slot
 import pyfltr.command.stage_runner
+import pyfltr.state.archive
 from tests.conftest import write_slot_wait_worker
 from tests.integration import concurrent_runs_helper as helper
 
@@ -105,11 +106,10 @@ def test_mcp_run_waits_for_cli(tmp_path: pathlib.Path) -> None:
     release = tmp_path / "release-a"
     project_a = helper.make_project(tmp_path, "a", log=log, release=release)
     project_b = helper.make_project(tmp_path, "b", log=log, release=None)
+    run_id = pyfltr.state.archive.generate_run_id()
+    arguments = {"paths": ["sample.txt"], "commands": [helper.PROBE_COMMAND], "work_dir": str(project_b), "no_cache": True}
     request = tmp_path / "mcp-request.json"
-    request.write_text(
-        json.dumps({"paths": ["sample.txt"], "commands": [helper.PROBE_COMMAND], "work_dir": str(project_b), "no_cache": True}),
-        encoding="utf-8",
-    )
+    request.write_text(json.dumps({"arguments": arguments, "run_id": run_id}), encoding="utf-8")
     waiting = tmp_path / "slot-waiting"
     worker_script = write_slot_wait_worker(tmp_path / "worker.py", waiting)
 
@@ -129,6 +129,7 @@ def test_mcp_run_waits_for_cli(tmp_path: pathlib.Path) -> None:
             assert run_a.wait() == 0, run_a.stderr
             assert worker.wait() == 0, worker.stderr
     response = json.loads(worker.stdout)["result"]
+    assert response["run_id"] == run_id
     assert response["exit_code"] == 0
     assert [warning["source"] for warning in response["warnings"]] == ["execution-slot"]
     _assert_after(log, "a", "b")
