@@ -141,6 +141,8 @@ def _summary_to_dict(summary: pyfltr.state.archive.RunSummary) -> dict[str, typi
         "started_at": summary.started_at,
         "finished_at": summary.finished_at,
         "exit_code": summary.exit_code,
+        "status": summary.status,
+        "interruption_reason": summary.interruption_reason,
         "commands": list(summary.commands),
         "files": summary.files,
         "cwd": summary.cwd,
@@ -151,14 +153,17 @@ def _print_list_runs_text(summaries: list[pyfltr.state.archive.RunSummary]) -> N
     if not summaries:
         print("(no runs)")
         return
-    header = ("RUN_ID", "STARTED_AT", "EXIT", "FILES", "COMMANDS", "CWD")
+    header = ("RUN_ID", "STARTED_AT", "FINISHED_AT", "STATUS", "EXIT", "REASON", "FILES", "COMMANDS", "CWD")
     rows: list[tuple[str, ...]] = [header]
     for summary in summaries:
         rows.append(
             (
                 summary.run_id,
                 summary.started_at or "-",
+                summary.finished_at or "-",
+                summary.status,
                 "-" if summary.exit_code is None else str(summary.exit_code),
+                summary.interruption_reason or "-",
                 "-" if summary.files is None else str(summary.files),
                 ",".join(summary.commands),
                 summary.cwd or "-",
@@ -198,7 +203,7 @@ def _print_run_overview_text(
     tool_summaries: list[dict[str, typing.Any]],
 ) -> None:
     print(f"run_id: {run_id}")
-    for key in ("started_at", "finished_at", "exit_code", "files", "cwd"):
+    for key in ("started_at", "finished_at", "status", "interruption_reason", "exit_code", "files", "cwd"):
         if key in meta and meta[key] is not None:
             print(f"{key}: {meta[key]}")
     commands = meta.get("commands") or []

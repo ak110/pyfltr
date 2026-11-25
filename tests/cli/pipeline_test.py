@@ -9,7 +9,9 @@ import pyfltr.cli.main
 import pyfltr.cli.pipeline
 import pyfltr.config.config
 import pyfltr.output.heartbeat
+import pyfltr.output.ui
 import pyfltr.run_options
+import pyfltr.state.archive
 
 
 def test_run_reports_subproject_toml_error(tmp_path: pathlib.Path, caplog: pytest.LogCaptureFixture) -> None:
@@ -63,6 +65,40 @@ def _make_args(tmp_path: pathlib.Path, *, commands: list[str] | None) -> pyfltr.
             "subcommand": "run",
         }
     )
+
+
+@pytest.mark.parametrize(
+    ("interruption", "status", "has_finished_at"),
+    [("confirmed", "interrupted", True), ("unconfirmed", "unknown", False)],
+)
+def test_ui_interrupt_does_not_archive_process_exit_code(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    interruption: pyfltr.output.ui.UIInterruption,
+    status: str,
+    has_finished_at: bool,
+) -> None:
+    args = _make_args(tmp_path, commands=["textlint"])
+    args.output_format = "text"
+    args.no_ui = False
+    args.ui = True
+    args.no_archive = False
+    config = pyfltr.config.config.create_default_config()
+    config.values["textlint"] = True
+    config.values["respect-gitignore"] = False
+    monkeypatch.setattr(
+        pyfltr.output.ui,
+        "run_commands_with_ui",
+        lambda *_args, **_kwargs: pyfltr.output.ui.UIExecutionResult([], 130, interruption),
+    )
+
+    result = pyfltr.cli.pipeline.run_pipeline(args, ["textlint"], config, start_cwd=tmp_path)
+    assert result.exit_code == 130
+    assert result.run_id is not None
+    meta = pyfltr.state.archive.ArchiveStore().read_meta(result.run_id)
+    assert meta["status"] == status
+    assert (meta.get("finished_at") is not None) is has_finished_at
+    assert "exit_code" not in meta
 
 
 def _run_and_read_jsonl(

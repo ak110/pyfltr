@@ -28,7 +28,18 @@ def _resolve_run_id_or_raise(store: pyfltr.state.archive.ArchiveStore, raw: str)
         pyfltr.cli.mcp_errors.raise_mcp_error(str(e))
 
 
-SHOW_RUN_META_KEYS: tuple[str, ...] = ("version", "cwd", "argv", "commands", "files", "exit_code", "started_at", "finished_at")
+SHOW_RUN_META_KEYS: tuple[str, ...] = (
+    "version",
+    "cwd",
+    "argv",
+    "commands",
+    "files",
+    "exit_code",
+    "started_at",
+    "finished_at",
+    "status",
+    "interruption_reason",
+)
 """`show_run`の`meta`へ返す保存項目。
 
 エージェントがrunの対象・起動引数・結果・時刻を判断に使う項目だけを返す。
@@ -68,6 +79,8 @@ async def tool_list_runs(
             started_at=s.started_at,
             finished_at=s.finished_at,
             exit_code=s.exit_code,
+            status=s.status,
+            interruption_reason=s.interruption_reason,
             commands=list(s.commands),
             files=s.files,
             cwd=s.cwd,

@@ -18,6 +18,7 @@ import tomlkit
 
 import pyfltr.cli.mcp_server
 import pyfltr.command.execution_slot
+import pyfltr.state.archive
 from tests.conftest import write_slot_wait_worker
 
 
@@ -225,6 +226,22 @@ def _running(pid: int) -> bool:
         return False
 
 
+def _run_request(client: _Client, identifier: int, project: pathlib.Path) -> None:
+    client.send(
+        "tools/call",
+        {
+            "name": "run",
+            "arguments": {
+                "paths": ["sample.txt"],
+                "commands": ["slow-format", "after-check"],
+                "work_dir": str(project),
+                "no_cache": True,
+            },
+        },
+        identifier,
+    )
+
+
 def test_stdio_remains_responsive_and_cancels_only_owned_process_tree(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
@@ -233,26 +250,11 @@ def test_stdio_remains_responsive_and_cancels_only_owned_process_tree(
     second = _project(tmp_path, "project-second")
     waiting = tmp_path / "slot-waiting"
 
-    def _run_request(identifier: int, project: pathlib.Path) -> None:
-        client.send(
-            "tools/call",
-            {
-                "name": "run",
-                "arguments": {
-                    "paths": ["sample.txt"],
-                    "commands": ["slow-format", "after-check"],
-                    "work_dir": str(project),
-                    "no_cache": True,
-                },
-            },
-            identifier,
-        )
-
     with _client(tmp_path, _slot_wait_server(tmp_path, waiting)) as client:
-        _run_request(2, first)
+        _run_request(client, 2, first)
         _wait_for(lambda: (first / "child-started").exists() and (first / "started.json").exists())
         first_pids = json.loads((first / "started.json").read_text(encoding="utf-8"))
-        _run_request(3, second)
+        _run_request(client, 3, second)
         client.send("ping", {}, 4)
         assert "result" in client.receive(4)
         assert not (first / "release").exists() and not (second / "release").exists()
@@ -288,6 +290,64 @@ def test_stdio_remains_responsive_and_cancels_only_owned_process_tree(
         client.send("tools/call", {"name": "list_runs", "arguments": {}}, 6)
         assert "result" in client.receive(6)
         assert 2 not in client.pending
+
+
+def test_stdio_records_cancelled_run_waiting_for_slot(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    monkeypatch.setenv(pyfltr.command.execution_slot.SLOTS_ENV, "1")
+    first = _project(tmp_path, "project-first")
+    second = _project(tmp_path, "project-second")
+    first_cwd = str(first.resolve())
+    second_cwd = str(second.resolve())
+    store = pyfltr.state.archive.ArchiveStore(cache_root=tmp_path / "cache")
+
+    def second_is_waiting() -> bool:
+        for summary in store.list_runs():
+            if summary.cwd == second_cwd:
+                waits = store.read_meta(summary.run_id)[pyfltr.state.archive.SLOT_WAITS_META_KEY]
+                return summary.status == "running" and bool(waits) and waits[0].get("finished_at") is None
+        return False
+
+    with _client(tmp_path, [sys.executable, "-m", "pyfltr", "mcp"]) as client:
+        _run_request(client, 2, first)
+        _wait_for((first / "child-started").exists)
+        _run_request(client, 3, second)
+        _wait_for(second_is_waiting)
+        run_id = next(summary.run_id for summary in store.list_runs() if summary.cwd == second_cwd)
+        client.send("notifications/cancelled", {"requestId": 3})
+        _wait_for(lambda: store.read_meta(run_id)["status"] == "interrupted")
+        assert not (second / "started.json").exists()
+        assert not (first / "finished").exists()
+
+        client.send("tools/call", {"name": "list_runs", "arguments": {}}, 4)
+        mcp_list = client.receive(4)["result"]["structuredContent"]["result"]
+        client.send("tools/call", {"name": "show_run", "arguments": {"run_id": run_id}}, 5)
+        mcp_detail = client.receive(5)["result"]["structuredContent"]["meta"]
+        env = {**os.environ, "PYFLTR_CACHE_DIR": str(tmp_path / "cache")}
+        cli_results = [
+            json.loads(
+                subprocess.check_output(
+                    [sys.executable, "-m", "pyfltr", *args, "--output-format=json"],
+                    env=env,
+                    encoding="utf-8",
+                    timeout=10,
+                )
+            )
+            for args in (["list-runs"], ["show-run", run_id])
+        ]
+        for listing in (mcp_list, cli_results[0]["runs"]):
+            assert any(row["cwd"] == first_cwd and row["status"] == "running" for row in listing)
+        summaries = [next(row for row in listing if row["run_id"] == run_id) for listing in (mcp_list, cli_results[0]["runs"])]
+        for summary in [*summaries, mcp_detail, cli_results[1]["meta"]]:
+            assert summary["status"] == "interrupted"
+            assert summary["interruption_reason"] == "mcp_cancelled"
+            assert summary["finished_at"] == mcp_detail["finished_at"]
+            assert summary["finished_at"] is not None
+            assert summary.get("exit_code") is None
+
+        (first / "release").touch()
+        completed = client.receive(2)["result"]["structuredContent"]
+        assert completed["exit_code"] == 0
+        assert store.read_meta(completed["run_id"])["status"] == "completed"
 
 
 @pytest.mark.asyncio

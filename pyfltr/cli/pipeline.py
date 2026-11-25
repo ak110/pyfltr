@@ -290,7 +290,7 @@ def _run_pipeline(
             retry_args_template,
             structured_stdout,
         )
-        results, returncode, ctx = _execute_pipeline_commands(
+        results, returncode, ctx, interruption = _execute_pipeline_commands(
             args,
             prepared.commands,
             base_ctx,
@@ -311,12 +311,18 @@ def _run_pipeline(
             archive_store,
             prepared.unmet,
             archive_required=archive_required,
+            interruption=interruption,
         )
+    except KeyboardInterrupt:
+        pyfltr.cli.run_storage.interrupt_archive(archive_store, run_id, "keyboard_interrupt")
+        raise
     finally:
-        if base_ctx is not None:
-            base_ctx.cleanup()
-        if archive_store is not None and run_id is not None:
-            archive_store.release_run(run_id)
+        try:
+            if base_ctx is not None:
+                base_ctx.cleanup()
+        finally:
+            if archive_store is not None and run_id is not None:
+                archive_store.release_run(run_id)
 
 
 def _initialize_output(
@@ -447,7 +453,12 @@ def _execute_pipeline_commands(
     slot_wait_hook: pyfltr.command.execution_slot.WaitIntervalCallback | None,
     attach_retry_command: typing.Callable[[pyfltr.command.core_.CommandResult], None],
     only_failed_targets: dict[str, pyfltr.command.only_failed.ToolTargets] | None,
-) -> tuple[list[pyfltr.command.core_.CommandResult], int, pyfltr.output.formatters.RunOutputContext]:
+) -> tuple[
+    list[pyfltr.command.core_.CommandResult],
+    int,
+    pyfltr.output.formatters.RunOutputContext,
+    pyfltr.output.ui.UIInterruption | None,
+]:
     use_ui = not args.no_ui and (args.ui or can_use_ui())
     heartbeat: pyfltr.output.heartbeat.HeartbeatMonitor | None = None
     if args.output_format == "jsonl" and not use_ui and ctx.jsonl_warnings_reach_consumer:
@@ -470,9 +481,10 @@ def _execute_pipeline_commands(
 
     include_fix_stage = bool(getattr(args, "include_fix_stage", False))
     fail_fast = bool(getattr(args, "fail_fast", False))
+    interruption = None
     try:
         if use_ui:
-            results, returncode = pyfltr.output.ui.run_commands_with_ui(
+            results, returncode, interruption = pyfltr.output.ui.run_commands_with_ui(
                 commands,
                 args,
                 base_ctx,
@@ -502,7 +514,7 @@ def _execute_pipeline_commands(
     finally:
         if heartbeat is not None:
             heartbeat.stop()
-    return results, returncode, ctx
+    return results, returncode, ctx, interruption
 
 
 def _finish_pipeline(
@@ -516,7 +528,11 @@ def _finish_pipeline(
     unmet: list[str],
     *,
     archive_required: bool = False,
+    interruption: pyfltr.output.ui.UIInterruption | None = None,
 ) -> PipelineOutcome:
+    if interruption == "confirmed":
+        pyfltr.cli.run_storage.interrupt_archive(archive_store, ctx.run_id, "keyboard_interrupt")
+
     if returncode == 0:
         returncode = calculate_returncode(results, args.exit_zero_even_if_formatted)
 
@@ -535,9 +551,10 @@ def _finish_pipeline(
     ctx = dataclasses.replace(ctx, completion=completion)
     formatter.on_finish(ctx, results, returncode, pyfltr.warnings_.collected_warnings())
 
-    pyfltr.cli.run_storage.finalize_archive(
-        archive_store, ctx.run_id, returncode, ctx.commands, ctx.all_files, archive_required=archive_required
-    )
+    if interruption is None:
+        pyfltr.cli.run_storage.finalize_archive(
+            archive_store, ctx.run_id, returncode, ctx.commands, ctx.all_files, archive_required=archive_required
+        )
 
     _maybe_emit_precommit_guidance(results, structured_stdout=ctx.structured_stdout, quiet=ctx.quiet)
 

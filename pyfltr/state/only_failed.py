@@ -81,6 +81,12 @@ def apply_filter(
         return commands, None, True
 
     run_label = _describe_run(last_run)
+    if last_run.status != "completed":
+        _emit_skip_warning(
+            f"直前の run ({run_label}) の結果が確定していないため、失敗分を選べず実行をスキップしました。",
+            hint=f"{all_targets_operation}全体を実行してください。",
+        )
+        return commands, None, True
     failed_tools = _collect_failed_tools(store, last_run.run_id, commands, hint=archive_unreadable_hint)
     if not failed_tools:
         _emit_skip_warning(
@@ -132,7 +138,7 @@ def _load_run_summary(
         (
             r
             for r in all_runs
-            if r.finished_at is not None and r.cwd is not None and pyfltr.paths.is_same_location(r.cwd, start_cwd)
+            if r.status == "completed" and r.cwd is not None and pyfltr.paths.is_same_location(r.cwd, start_cwd)
         ),
         None,
     )

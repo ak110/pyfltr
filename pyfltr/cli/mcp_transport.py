@@ -11,6 +11,9 @@ import anyio
 import psutil
 import pydantic
 
+import pyfltr.cli.run_storage
+import pyfltr.state.archive
+
 
 def isolate_tool(
     handler: collections.abc.Callable[..., collections.abc.Awaitable[typing.Any]],
@@ -34,6 +37,7 @@ def isolate_tool(
 
 async def _call_worker(name: str, arguments: dict[str, typing.Any]) -> dict[str, typing.Any]:
     await anyio.lowlevel.checkpoint()
+    run_id = pyfltr.state.archive.generate_run_id() if name == "tool_run" else None
     process: anyio.abc.Process | None = None
     with anyio.CancelScope(shield=True):
         process = await anyio.open_process(
@@ -43,9 +47,11 @@ async def _call_worker(name: str, arguments: dict[str, typing.Any]) -> dict[str,
             stderr=None,
         )
     assert process is not None
+    cancelled = False
     try:
         assert process.stdin is not None and process.stdout is not None
-        await process.stdin.send(json.dumps(arguments, ensure_ascii=False).encode("utf-8"))
+        request = {"arguments": arguments, "run_id": run_id}
+        await process.stdin.send(json.dumps(request, ensure_ascii=False).encode("utf-8"))
         await process.stdin.aclose()
         parts: list[bytes] = []
         async for part in process.stdout:
@@ -59,19 +65,27 @@ async def _call_worker(name: str, arguments: dict[str, typing.Any]) -> dict[str,
                 )
             }
         return json.loads(b"".join(parts))
+    except anyio.get_cancelled_exc_class():
+        cancelled = True
+        raise
     finally:
         with anyio.CancelScope(shield=True):
-            if process.returncode is None:
-                await anyio.to_thread.run_sync(_stop_worker, process.pid)
-            await process.aclose()
+            recovered = False
+            try:
+                if process.returncode is None:
+                    recovered = await anyio.to_thread.run_sync(_stop_worker, process.pid)
+            finally:
+                await process.aclose()
+            if cancelled and recovered and process.returncode is not None and run_id is not None:
+                pyfltr.cli.run_storage.interrupt_archive(pyfltr.state.archive.ArchiveStore(), run_id, "mcp_cancelled")
 
 
-def _stop_worker(pid: int) -> None:
+def _stop_worker(pid: int) -> bool:
     try:
         parent = psutil.Process(pid)
         children = parent.children(recursive=True)
     except psutil.NoSuchProcess:
-        return
+        return False
     targets = [parent, *reversed(children)]
     for target in targets:
         with contextlib.suppress(psutil.NoSuchProcess):
@@ -80,4 +94,9 @@ def _stop_worker(pid: int) -> None:
     for target in alive:
         with contextlib.suppress(psutil.NoSuchProcess):
             target.kill()
-    psutil.wait_procs(alive, timeout=5)
+    _, remaining = psutil.wait_procs(alive, timeout=5)
+    for target in remaining:
+        with contextlib.suppress(psutil.NoSuchProcess):
+            if target.status() != psutil.STATUS_ZOMBIE:
+                return False
+    return True

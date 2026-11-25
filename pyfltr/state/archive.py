@@ -1,3 +1,4 @@
+import contextlib
 import dataclasses
 import importlib.metadata
 import json
@@ -41,6 +42,9 @@ DIAGNOSTIC_PATHS_START_RELATIVE = "start-relative"
 SLOT_WAITS_META_KEY = "slot_waits"
 """実行枠の待機区間の一覧を保存する`meta.json`のキー。キーの有無で計測した版の記録かを判別する。"""
 _SECTION_HEADER_RE = re.compile(r"^# (?:subproject: (?P<relative>.+)|external paths)$")
+_TRACKS_RUN_STATUS = "tracks_run_status"
+RunStatus = typing.Literal["running", "completed", "interrupted", "unknown"]
+InterruptionReason = typing.Literal["keyboard_interrupt", "mcp_cancelled"]
 
 
 def generate_run_id() -> str:
@@ -67,6 +71,8 @@ class RunSummary:
     files: int | None
     cwd: str | None
     """実行起点（`--work-dir`・MCPの`work_dir`適用後）。`meta.json`に文字列で記録されていない場合は`None`。"""
+    status: RunStatus
+    interruption_reason: InterruptionReason | None
 
 
 class ArchiveStore:
@@ -112,7 +118,8 @@ class ArchiveStore:
         cwd: str | None,
         argv: list[str] | None,
     ) -> None:
-        (run_dir / "tools").mkdir(parents=True, exist_ok=True)
+        run_dir.mkdir()
+        (run_dir / "tools").mkdir()
         meta = {
             "run_id": run_id,
             "version": importlib.metadata.version("pyfltr"),
@@ -124,10 +131,11 @@ class ArchiveStore:
             "commands": commands or [],
             "files": files,
             "started_at": pyfltr.timestamps.now_iso(),
+            _TRACKS_RUN_STATUS: True,
             DIAGNOSTIC_PATHS_META_KEY: DIAGNOSTIC_PATHS_START_RELATIVE,
             SLOT_WAITS_META_KEY: [],
         }
-        (run_dir / _META_FILENAME).write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+        _write_json_replacing(run_dir / _META_FILENAME, meta)
 
     def write_tool_result(
         self,
@@ -171,14 +179,15 @@ class ArchiveStore:
 
     def record_slot_wait(self, run_id: str, wait: dict[str, typing.Any]) -> None:
 
-        def update(meta: dict[str, typing.Any]) -> None:
+        def update(meta: dict[str, typing.Any]) -> bool:
             waits = meta.setdefault(SLOT_WAITS_META_KEY, [])
             key = (wait.get("kind"), wait.get("sequence"))
             for index, existing in enumerate(waits):
                 if (existing.get("kind"), existing.get("sequence")) == key:
                     waits[index] = dict(wait)
-                    return
+                    return True
             waits.append(dict(wait))
+            return True
 
         self._update_meta(run_id, update)
 
@@ -200,6 +209,16 @@ class ArchiveStore:
         if lock is not None:
             lock.release(remove=True)
 
+    def record_interruption(self, run_id: str, reason: InterruptionReason, *, finished_at: str) -> None:
+        def update(meta: dict[str, typing.Any]) -> bool:
+            if not meta.get(_TRACKS_RUN_STATUS) or meta.get("finished_at") is not None or meta.get("exit_code") is not None:
+                return False
+            meta["finished_at"] = finished_at
+            meta["interruption_reason"] = reason
+            return True
+
+        self._update_meta(run_id, update)
+
     def _write_final_meta(
         self,
         run_id: str,
@@ -208,24 +227,26 @@ class ArchiveStore:
         commands: list[str] | None,
         files: int | None,
     ) -> None:
-        def update(meta: dict[str, typing.Any]) -> None:
+        def update(meta: dict[str, typing.Any]) -> bool:
             meta["finished_at"] = pyfltr.timestamps.now_iso()
             meta["exit_code"] = exit_code
             if commands is not None:
                 meta["commands"] = commands
             if files is not None:
                 meta["files"] = files
+            return True
 
         self._update_meta(run_id, update)
 
-    def _update_meta(self, run_id: str, update: typing.Callable[[dict[str, typing.Any]], None]) -> None:
+    def _update_meta(self, run_id: str, update: typing.Callable[[dict[str, typing.Any]], bool]) -> None:
         meta_path = self._runs_dir / run_id / _META_FILENAME
         with self._meta_lock:
-            if not meta_path.exists():
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            except FileNotFoundError:
                 return
-            meta = json.loads(meta_path.read_text(encoding="utf-8"))
-            update(meta)
-            _write_json_replacing(meta_path, meta)
+            if update(meta):
+                _write_json_replacing(meta_path, meta)
 
     def list_runs(self, *, limit: int | None = None) -> list[RunSummary]:
         if not self._runs_dir.exists():
@@ -239,13 +260,12 @@ class ArchiveStore:
             entries = entries[:limit]
         summaries: list[RunSummary] = []
         for entry in entries:
-            meta_path = entry / _META_FILENAME
-            if not meta_path.exists():
-                continue
             try:
-                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                meta = self.read_meta(entry.name)
+            except FileNotFoundError:
+                continue
             except (OSError, ValueError):
-                logger.debug("archive: 破損した meta.json をスキップ: %s", meta_path)
+                logger.debug("archive: 読み取れない meta.json をスキップ: %s", entry / _META_FILENAME)
                 continue
             summaries.append(
                 RunSummary(
@@ -256,15 +276,27 @@ class ArchiveStore:
                     commands=list(meta.get("commands", [])),
                     files=meta.get("files"),
                     cwd=meta["cwd"] if isinstance(meta.get("cwd"), str) else None,
+                    status=meta["status"],
+                    interruption_reason=meta.get("interruption_reason"),
                 )
             )
         return summaries
 
     def read_meta(self, run_id: str) -> dict[str, typing.Any]:
-        meta_path = self._runs_dir / run_id / _META_FILENAME
-        if not meta_path.exists():
-            raise FileNotFoundError(run_id)
-        return json.loads(meta_path.read_text(encoding="utf-8"))
+        run_dir = self._runs_dir / run_id
+        meta_path = run_dir / _META_FILENAME
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        status = _terminal_status(meta)
+        if status is None and meta.get(_TRACKS_RUN_STATUS):
+            locked = pyfltr.file_lock.probe_lock(_run_lock_path(run_dir))
+            if locked is False:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                status = _terminal_status(meta)
+            elif locked is True:
+                status = "running"
+        meta["status"] = status or "unknown"
+        meta.pop(_TRACKS_RUN_STATUS, None)
+        return meta
 
     def list_tools(self, run_id: str) -> list[str]:
         tools_dir = self._runs_dir / run_id / "tools"
@@ -321,11 +353,23 @@ class ArchiveStore:
             meta_filename=_META_FILENAME,
             timestamp_key="finished_at",
             fallback_timestamp_key="started_at",
-            is_active=lambda run_dir: pyfltr.file_lock.is_locked(_run_lock_path(run_dir)),
+            is_active=lambda run_dir: pyfltr.file_lock.probe_lock(_run_lock_path(run_dir)) is not False,
         )
         for run_id in removed:
-            _run_lock_path(self._runs_dir / run_id).unlink(missing_ok=True)
+            with contextlib.suppress(PermissionError):
+                _run_lock_path(self._runs_dir / run_id).unlink(missing_ok=True)
         return removed
+
+
+def _terminal_status(meta: dict[str, typing.Any]) -> RunStatus | None:
+    if not isinstance(meta.get("finished_at"), str):
+        return None
+    exit_code = meta.get("exit_code")
+    if isinstance(exit_code, int) and not isinstance(exit_code, bool):
+        return "completed"
+    if meta.get(_TRACKS_RUN_STATUS) and meta.get("interruption_reason") in ("keyboard_interrupt", "mcp_cancelled"):
+        return "interrupted"
+    return None
 
 
 def _write_json_replacing(path: pathlib.Path, data: dict[str, typing.Any]) -> None:
@@ -335,9 +379,8 @@ def _write_json_replacing(path: pathlib.Path, data: dict[str, typing.Any]) -> No
         temp_path = pathlib.Path(file.name)
     try:
         os.replace(temp_path, path)
-    except PermissionError:
+    finally:
         temp_path.unlink(missing_ok=True)
-        path.write_text(text, encoding="utf-8")
 
 
 def _run_lock_path(run_dir: pathlib.Path) -> pathlib.Path:

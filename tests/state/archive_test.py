@@ -7,6 +7,7 @@ import pathlib
 import pytest
 
 import pyfltr.command.core_
+import pyfltr.file_lock
 import pyfltr.parsing.entry
 import pyfltr.state.archive
 from tests.conftest import make_archive_store as _make_store
@@ -28,6 +29,98 @@ def test_start_run_creates_directory_and_meta(tmp_path: pathlib.Path) -> None:
     assert "started_at" in meta
     assert meta["commands"] == ["mypy", "ruff-check"]
     assert meta["files"] == 10
+
+
+def test_run_status_uses_lock_and_keeps_unconfirmed_finish_unknown(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = _make_store(tmp_path)
+    run_id = store.start_run()
+    try:
+        assert store.read_meta(run_id)["status"] == "running"
+        with monkeypatch.context() as patch:
+            patch.setattr(pyfltr.file_lock, "probe_lock", lambda _path: None)
+            assert store.list_runs()[0].status == "unknown"
+    finally:
+        store.release_run(run_id)
+    meta = store.read_meta(run_id)
+    assert meta["status"] == "unknown"
+    assert {"finished_at", "exit_code", "interruption_reason"}.isdisjoint(meta)
+
+
+def test_archive_readers_do_not_look_like_run_owners(tmp_path: pathlib.Path) -> None:
+    store = _make_store(tmp_path)
+    run_id = store.start_run()
+    store.release_run(run_id)
+    lock_path = store.runs_dir / f"{run_id}.lock"
+    lock_path.touch()
+
+    fd = os.open(lock_path, os.O_RDONLY)
+    try:
+        # pylint: disable=protected-access  # 別の照会が共有ロックを取得した直後の順序を固定する。
+        pyfltr.file_lock._lock_shared(fd)
+        try:
+            assert store.read_meta(run_id)["status"] == "unknown"
+            assert store.list_runs()[0].status == "unknown"
+            running_id = store.start_run()
+            try:
+                assert store.read_meta(running_id)["status"] == "running"
+                assert store.cleanup(pyfltr.state.archive.ArchivePolicy(1, 0, 0)) == [run_id]
+                assert store.read_meta(running_id)["status"] == "running"
+            finally:
+                store.release_run(running_id)
+        finally:
+            pyfltr.file_lock._unlock_shared(fd)
+    finally:
+        os.close(fd)
+
+
+@pytest.mark.parametrize("exit_code", [0, 1])
+def test_confirmed_interruption_does_not_replace_completed_result(tmp_path: pathlib.Path, exit_code: int) -> None:
+    worker = _make_store(tmp_path)
+    parent = _make_store(tmp_path)
+    run_id = worker.start_run()
+    worker.finalize_run(run_id, exit_code=exit_code)
+    completed = worker.read_meta(run_id)
+
+    parent.record_interruption(run_id, "mcp_cancelled", finished_at="2026-11-26T00:00:00+00:00")
+    assert completed["status"] == "completed"
+    assert completed["exit_code"] == exit_code
+    assert parent.read_meta(run_id) == completed
+
+
+def test_parent_records_only_started_run_and_preserves_first_interruption(tmp_path: pathlib.Path) -> None:
+    worker = _make_store(tmp_path)
+    parent = _make_store(tmp_path)
+    run_id = pyfltr.state.archive.generate_run_id()
+    first_finish = "2026-11-26T00:00:00+00:00"
+    parent.record_interruption(run_id, "mcp_cancelled", finished_at=first_finish)
+    assert not parent.runs_dir.exists()
+
+    worker.start_run(run_id=run_id)
+    worker.record_interruption(run_id, "keyboard_interrupt", finished_at=first_finish)
+    worker.release_run(run_id)
+    parent.record_interruption(run_id, "mcp_cancelled", finished_at="2026-11-26T00:01:00+00:00")
+    meta = parent.read_meta(run_id)
+    assert meta["status"] == "interrupted"
+    assert meta["finished_at"] == first_finish
+    assert meta["interruption_reason"] == "keyboard_interrupt"
+    assert "exit_code" not in meta
+
+
+def test_legacy_meta_keeps_timestamps_and_code_without_assuming_interruption(tmp_path: pathlib.Path) -> None:
+    store = _make_store(tmp_path)
+    run_id = pyfltr.state.archive.generate_run_id()
+    run_dir = store.runs_dir / run_id
+    run_dir.mkdir(parents=True)
+    meta_path = run_dir / "meta.json"
+    started = {"started_at": "2026-11-26T00:00:00+00:00"}
+    meta_path.write_text(json.dumps(started), encoding="utf-8")
+    assert store.read_meta(run_id) == {**started, "status": "unknown"}
+
+    completed = {**started, "finished_at": "2026-11-26T00:01:00+00:00", "exit_code": 1}
+    meta_path.write_text(json.dumps(completed), encoding="utf-8")
+    assert store.read_meta(run_id) == {**completed, "status": "completed"}
 
 
 def test_write_tool_result(tmp_path: pathlib.Path) -> None:

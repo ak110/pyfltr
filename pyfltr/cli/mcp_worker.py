@@ -7,8 +7,10 @@ import sys
 
 import mcp.server.mcpserver.exceptions
 import pydantic
+import ulid
 
 import pyfltr.cli.mcp_server
+import pyfltr.cli.run_storage
 
 
 def main() -> int:
@@ -18,10 +20,13 @@ def main() -> int:
         return 1
     handler = pyfltr.cli.mcp_server.TOOL_HANDLERS[sys.argv[1]]
     # IPCは親がUTF-8のバイト列で送る。Windowsの標準入出力の既定文字コードへ委ねない。
-    arguments = json.loads(sys.stdin.buffer.read().decode("utf-8"))
     try:
+        request = json.loads(sys.stdin.buffer.read().decode("utf-8"))
+        run_id = request["run_id"]
+        if sys.argv[1] == "tool_run" and run_id is not None:
+            pyfltr.cli.run_storage.worker_run_id.set(str(ulid.ULID.from_str(run_id)))
         with contextlib.redirect_stdout(sys.stderr):
-            result = asyncio.run(handler(**arguments))
+            result = asyncio.run(handler(**request["arguments"]))
         adapter = pydantic.TypeAdapter(inspect.signature(handler, eval_str=True).return_annotation)
         response = {"result": adapter.dump_python(result, mode="json")}
     except mcp.server.mcpserver.exceptions.ToolError as exc:

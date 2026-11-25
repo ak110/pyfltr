@@ -34,6 +34,15 @@ def _format_errors_tab_label(error_count: int, warning_count: int) -> str:
     return f"Errors ({error_count})"
 
 
+UIInterruption = typing.Literal["confirmed", "unconfirmed"]
+
+
+class UIExecutionResult(typing.NamedTuple):
+    results: list[pyfltr.command.core_.CommandResult]
+    returncode: int
+    interruption: UIInterruption | None
+
+
 def run_commands_with_ui(
     commands: list[str],
     args: pyfltr.run_options.RunOptions,
@@ -44,7 +53,7 @@ def run_commands_with_ui(
     on_result: typing.Callable[[pyfltr.command.core_.CommandResult], None] | None = None,
     fail_fast: bool = False,
     only_failed_targets: dict[str, pyfltr.command.only_failed.ToolTargets] | None = None,
-) -> tuple[list[pyfltr.command.core_.CommandResult], int]:
+) -> UIExecutionResult:
     app = UIApp(
         commands,
         args,
@@ -56,13 +65,8 @@ def run_commands_with_ui(
         only_failed_targets=only_failed_targets,
     )
     try:
-        return_code = app.run()
-        if return_code is None:
-            return_code = 0
-        else:
-            assert isinstance(return_code, int)
-
-        return app.results, return_code
+        app.run()
+        return UIExecutionResult(app.results, app.return_code or 0, app.interruption)
     except Exception as exc:
         logging.error("UI アプリケーションの実行に失敗しました: %s", exc, exc_info=True)
         print(
@@ -87,6 +91,7 @@ _STATUS_DISPLAY: dict[str, str] = {
 class _Running:
     active: set[str] = dataclasses.field(default_factory=set)
     last_press: float | None = None
+    finished: bool = False
 
 
 @dataclasses.dataclass(frozen=True)
@@ -104,6 +109,7 @@ class _Stopping:
 @dataclasses.dataclass(frozen=True)
 class _Exited:
     results: _InterruptResults
+    confirmed: bool
 
 
 class UIApp(App):
@@ -183,7 +189,14 @@ class UIApp(App):
 
         self.set_timer(0.1, self._run_commands)
 
-    def _press_ctrl_c(self, now: float) -> typing.Literal["prompt", "stop", "exit"] | None:
+    @property
+    def interruption(self) -> UIInterruption | None:
+        with self.lock:
+            if isinstance(self._phase, _Running):
+                return None if self._phase.finished else "unconfirmed"
+            return "confirmed" if isinstance(self._phase, _Exited) and self._phase.confirmed else "unconfirmed"
+
+    def _press_ctrl_c(self, now: float) -> typing.Literal["prompt", "stop", "exit", "close"] | None:
         with self.lock:
             phase = self._phase
             if isinstance(phase, _Exited):
@@ -192,15 +205,17 @@ class UIApp(App):
                 phase.last_press = now
                 return "prompt"
             if isinstance(phase, _Running):
+                if phase.finished:
+                    return "close"
                 self._phase = _Stopping(_InterruptResults(frozenset(phase.active)))
                 return "stop"
-            self._phase = _Exited(phase.results)
+            self._phase = _Exited(phase.results, confirmed=False)
             return "exit"
 
     def _finish_interrupt(self) -> bool:
         with self.lock:
             if isinstance(self._phase, _Stopping):
-                self._phase = _Exited(self._phase.results)
+                self._phase = _Exited(self._phase.results, confirmed=True)
                 return True
             return False
 
@@ -226,8 +241,25 @@ class UIApp(App):
             pyfltr.command.process.terminate_active_processes()
             self.notify("中断処理中です。完了済みツールの結果をまとめています...")
         elif action == "exit":
-            pyfltr.command.process.terminate_active_processes()
-            self.exit(return_code=130)
+            self._close_during_execution()
+        elif action == "close":
+            self.exit()
+
+    async def action_quit(self) -> None:
+        with self.lock:
+            phase = self._phase
+            if isinstance(phase, _Running) and not phase.finished:
+                self._phase = _Exited(_InterruptResults(frozenset(phase.active)), confirmed=False)
+            elif isinstance(phase, _Stopping):
+                self._phase = _Exited(phase.results, confirmed=False)
+            else:
+                self.exit()
+                return
+        self._close_during_execution()
+
+    def _close_during_execution(self) -> None:
+        pyfltr.command.process.terminate_active_processes()
+        self.exit(return_code=130)
 
     def _safe_call_from_thread(self, callback, *args, **kwargs) -> None:
         if isinstance(self._phase, _Exited):
@@ -281,6 +313,8 @@ class UIApp(App):
 
             with self.lock:
                 phase = self._phase
+                if isinstance(phase, _Running):
+                    phase.finished = True
                 interrupted_ordered = list(phase.results.commands) if isinstance(phase, _Stopping) else []
             if isinstance(phase, _Exited):
                 return

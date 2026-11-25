@@ -4,14 +4,22 @@ import typing
 
 import pydantic
 
+import pyfltr.state.archive
+
 
 class RunSummaryModel(pydantic.BaseModel):
     """run一覧の1件分サマリ。`list_runs`ツールの戻り値要素。"""
 
     run_id: str = pydantic.Field(description="runの識別子（ULID）。")
     started_at: str | None = pydantic.Field(default=None, description="実行開始日時（ISO 8601形式）。")
-    finished_at: str | None = pydantic.Field(default=None, description="実行完了日時（ISO 8601形式）。")
+    finished_at: str | None = pydantic.Field(default=None, description="完了または中断を確認した日時（ISO 8601形式）。")
     exit_code: int | None = pydantic.Field(default=None, description="終了コード。0 = 成功、1 = 失敗。")
+    status: pyfltr.state.archive.RunStatus = pydantic.Field(
+        description="実行中（running）、完了（completed）、中断（interrupted）、終了状態不明（unknown）。"
+    )
+    interruption_reason: pyfltr.state.archive.InterruptionReason | None = pydantic.Field(
+        default=None, description="確認した中断理由。MCP処理の取消（mcp_cancelled）または割り込み（keyboard_interrupt）。"
+    )
     commands: list[str] = pydantic.Field(default_factory=list, description="実行したコマンド名の一覧。")
     files: int | None = pydantic.Field(default=None, description="対象ファイル数。")
     cwd: str | None = pydantic.Field(
@@ -167,7 +175,8 @@ class RunOverviewModel(pydantic.BaseModel):
     run_id: str = pydantic.Field(description="runの識別子（ULID）。")
     meta: dict[str, typing.Any] = pydantic.Field(
         description=(
-            "runの保存項目のうち、version・cwd・argv・commands・files・exit_code・started_at・finished_atの保存済みのもの。"
+            "実行の状態（status）と、version・cwd・argv・commands・files・exit_code・"
+            "started_at・finished_at・interruption_reasonの保存済みの項目。"
         )
     )
     timing: RunTimingModel = pydantic.Field(description="run全体の経過と実行枠の待機区間の要約。")

@@ -48,9 +48,60 @@ def test_ctrl_c_operation_sequence(monkeypatch: pytest.MonkeyPatch) -> None:
         if after != "_Exited":
             exit_app.assert_not_called()
     exit_app.assert_called_once_with(return_code=130)
+    assert app.interruption == "unconfirmed"
     assert notify.call_count == 4
     app._safe_call_from_thread(notify, "反映されない")
     call.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("action_quit", [False, True])
+async def test_closing_finished_ui_does_not_interrupt_run(monkeypatch: pytest.MonkeyPatch, action_quit: bool) -> None:
+    args = pyfltr.run_options.RunOptions.from_values({"keep_ui": True})
+    app = pyfltr.output.ui.UIApp(
+        [],
+        args,
+        pyfltr.command.core_.ExecutionBaseContext(
+            config=pyfltr.config.config.create_default_config(), all_files=[], cache_store=None, cache_run_id=None
+        ),
+    )
+    monkeypatch.setattr(pyfltr.command.stage_runner, "run_stages", unittest.mock.Mock())
+    monkeypatch.setattr(pyfltr.output.ui, "time", unittest.mock.Mock(wraps=time, monotonic=lambda: 1.0))
+    monkeypatch.setattr(app, "notify", unittest.mock.Mock())
+    exit_app = unittest.mock.Mock()
+    monkeypatch.setattr(app, "exit", exit_app)
+
+    app._run_in_background()  # pylint: disable=protected-access  # 完了後にキー入力する順序を固定する。
+    if action_quit:
+        await app.action_quit()
+    else:
+        event = unittest.mock.Mock(key="ctrl+c")
+        app.on_key(event)
+        app.on_key(event)
+    assert app.interruption is None
+    exit_app.assert_called_once_with()
+
+
+@pytest.mark.asyncio
+async def test_quit_requests_stop_without_claiming_worker_finished(monkeypatch: pytest.MonkeyPatch) -> None:
+    args = pyfltr.run_options.RunOptions.from_values({})
+    app = pyfltr.output.ui.UIApp(
+        ["black"],
+        args,
+        pyfltr.command.core_.ExecutionBaseContext(
+            config=pyfltr.config.config.create_default_config(), all_files=[], cache_store=None, cache_run_id=None
+        ),
+    )
+    terminate = unittest.mock.Mock()
+    monkeypatch.setattr(pyfltr.command.process, "terminate_active_processes", terminate)
+    exit_app = unittest.mock.Mock()
+    monkeypatch.setattr(app, "exit", exit_app)
+
+    await app.action_quit()
+
+    assert app.interruption == "unconfirmed"
+    terminate.assert_called_once_with()
+    exit_app.assert_called_once_with(return_code=130)
 
 
 @pytest.mark.parametrize("interrupt_after_end", [False, True])
@@ -126,6 +177,7 @@ def test_interrupt_preserves_completed_results(monkeypatch: pytest.MonkeyPatch, 
     assert by_command["ruff-check"].status == "skipped"
     assert call_order == ["pylint", "mypy"]
     call.assert_called_with(app.exit, return_code=130)
+    assert app.interruption == "confirmed"
     assert "Ctrl+C により中断しました" in by_command["ruff-check"].output
 
     warning_messages = [w["message"] for w in pyfltr.warnings_.collected_warnings()]
@@ -235,3 +287,16 @@ def test_run_commands_with_ui_failure_guides_no_ui(monkeypatch: pytest.MonkeyPat
     err = capsys.readouterr().err
     assert "terminal unsupported" in err
     assert "`--no-ui`" in err
+
+
+def test_run_commands_with_ui_uses_textual_exit_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    def exit_app(app: pyfltr.output.ui.UIApp) -> None:
+        app.exit(return_code=130)
+
+    monkeypatch.setattr(pyfltr.output.ui.UIApp, "run", exit_app)
+    args = pyfltr.run_options.RunOptions.from_values({})
+    base_ctx = pyfltr.command.core_.ExecutionBaseContext(
+        config=pyfltr.config.config.create_default_config(), all_files=[], cache_store=None, cache_run_id=None
+    )
+    outcome = pyfltr.output.ui.run_commands_with_ui([], args, base_ctx)
+    assert outcome.returncode == 130

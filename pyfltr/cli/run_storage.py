@@ -1,3 +1,4 @@
+import contextvars
 import logging
 import pathlib
 import typing
@@ -8,9 +9,11 @@ import pyfltr.config.model
 import pyfltr.run_options
 import pyfltr.state.archive
 import pyfltr.state.cache
+import pyfltr.timestamps
 import pyfltr.warnings_
 
 logger = logging.getLogger(__name__)
+worker_run_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("worker_run_id", default=None)
 
 
 def archive_failure_hint(*, can_disable: bool) -> str:
@@ -89,6 +92,7 @@ def initialize_archive(
         try:
             archive_store = pyfltr.state.archive.ArchiveStore()
             run_id = archive_store.start_run(
+                run_id=worker_run_id.get() if archive_required else None,
                 commands=commands,
                 files=len(all_files),
                 cwd=str(start_cwd_path),
@@ -97,6 +101,13 @@ def initialize_archive(
             removed = archive_store.cleanup(pyfltr.state.archive.policy_from_config(config))
             if removed:
                 logger.debug("archive: 自動削除で %d 件の古い run を削除", len(removed))
+        except KeyboardInterrupt:
+            if archive_store is not None and run_id is not None:
+                try:
+                    interrupt_archive(archive_store, run_id, "keyboard_interrupt")
+                finally:
+                    archive_store.release_run(run_id)
+            raise
         except OSError as e:
             if archive_store is not None and run_id is not None:
                 archive_store.release_run(run_id)
@@ -163,4 +174,20 @@ def finalize_archive(
                     "`list-runs` にこの実行の終了コードと完了時刻が表示されません"
                 ),
                 hint=archive_failure_hint(can_disable=not archive_required),
+            )
+
+
+def interrupt_archive(
+    archive_store: pyfltr.state.archive.ArchiveStore | None,
+    run_id: str | None,
+    reason: pyfltr.state.archive.InterruptionReason,
+) -> None:
+    if archive_store is not None and run_id is not None:
+        try:
+            archive_store.record_interruption(run_id, reason, finished_at=pyfltr.timestamps.now_iso())
+        except (OSError, ValueError) as error:
+            logger.warning(
+                "実行 %s の中断を履歴へ記録できませんでした: %s。キャッシュの書き込み権限と空き容量を確認してください。",
+                run_id,
+                error,
             )

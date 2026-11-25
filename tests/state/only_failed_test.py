@@ -151,6 +151,33 @@ def test_apply_filter_early_exit_no_failures(_only_failed_cache: pathlib.Path) -
     assert exit_early is True
 
 
+def test_apply_filter_does_not_reuse_interrupted_run(
+    _only_failed_cache: pathlib.Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    _seed_run(
+        _only_failed_cache,
+        commands=["ruff-check"],
+        exit_code=1,
+        tool_results=[("ruff-check", 1, "", [_make_error("ruff-check", "a.py", 1, "e")])],
+    )
+    store = pyfltr.state.archive.ArchiveStore(_only_failed_cache)
+    interrupted_id = store.start_run(commands=["ruff-check"])
+    try:
+        store.record_interruption(interrupted_id, "keyboard_interrupt", finished_at="2026-11-26T00:00:00+00:00")
+    finally:
+        store.release_run(interrupted_id)
+
+    args = pyfltr.run_options.RunOptions.from_values({"only_failed": True})
+    files = [pathlib.Path("a.py")]
+    _, targets, exit_early = _apply_filter(args, ["ruff-check"], files)
+    assert targets is not None and targets["ruff-check"].files == tuple(files)
+    assert exit_early is False
+
+    _, targets, exit_early = _apply_filter(args, ["ruff-check"], files, from_run=interrupted_id)
+    assert targets is None and exit_early is True
+    assert "結果が確定していない" in caplog.text
+
+
 def test_apply_filter_intersects_with_targets(_only_failed_cache: pathlib.Path) -> None:
     _seed_run(
         _only_failed_cache,
