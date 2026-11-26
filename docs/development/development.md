@@ -195,3 +195,5 @@ gh workflow run docker-build.yaml --field="version=X.Y.Z"
 
 `version`の指定を省くと、PyPIから最新公開版を取得する。
 手動で起動した場合は、ビルドした版のタグと`latest`の両方を更新する。
+
+この行は依存差分がない場合の検証専用であり、マージしない。
