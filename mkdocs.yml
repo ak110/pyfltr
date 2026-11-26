@@ -25,6 +25,9 @@ theme:
     - search.suggest
     - search.highlight
 
+extra_css:
+  - stylesheets/search-focus.css
+
 plugins:
   - search:
       lang: ja

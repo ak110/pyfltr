@@ -67,6 +67,9 @@ claude mcp add pyfltr -- uvx pyfltr mcp
 
 ## ドキュメント
 
+- [アクセシビリティ](ACCESSIBILITY.md)
+- [貢献の案内](https://github.com/ak110/.github/blob/master/CONTRIBUTING.md)
+- [脆弱性の報告](https://github.com/ak110/.github/blob/master/SECURITY.md)
 - <https://ak110.github.io/pyfltr/>: はじめに・対応ツール一覧・設定リファレンス
 - <https://ak110.github.io/pyfltr/llms.txt>: LLM向け構造化インデックス
 - [docs/development/development.md](docs/development/development.md): 開発者向け情報

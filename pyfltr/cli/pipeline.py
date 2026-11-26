@@ -353,7 +353,7 @@ def _initialize_output(
     if not jsonl_warnings_reach_consumer:
         pyfltr.output.logging_.configure_structured_output(None)
 
-    if not args.no_clear:
+    if not args.no_clear and sys.stdout.isatty():
         clear_cmd = ["cmd", "/c", "cls"] if os.name == "nt" else ["clear"]
         subprocess.run(clear_cmd, check=False)
 

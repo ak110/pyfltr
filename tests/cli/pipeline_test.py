@@ -1,6 +1,7 @@
 import json
 import logging
 import pathlib
+import types
 import unittest.mock
 
 import pytest
@@ -65,6 +66,31 @@ def _make_args(tmp_path: pathlib.Path, *, commands: list[str] | None) -> pyfltr.
             "subcommand": "run",
         }
     )
+
+
+@pytest.mark.parametrize(
+    ("output_format", "is_terminal", "no_clear", "expected_calls"),
+    [("text", False, False, 0), ("text", True, False, 1), ("text", True, True, 0), ("jsonl", True, False, 0)],
+)
+def test_initialize_output_clears_only_interactive_text_terminal(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    output_format: str,
+    is_terminal: bool,
+    no_clear: bool,
+    expected_calls: int,
+) -> None:
+    args = _make_args(tmp_path, commands=None)
+    args.output_format = output_format
+    args.no_clear = no_clear
+    monkeypatch.setattr("sys.stdout.isatty", lambda: is_terminal)
+    clear = unittest.mock.Mock()
+    monkeypatch.setattr(pyfltr.cli.pipeline, "subprocess", types.SimpleNamespace(run=clear))
+
+    result = pyfltr.cli.pipeline.run_pipeline(args, [], pyfltr.config.config.create_default_config(), start_cwd=tmp_path)
+
+    assert result.exit_code == 0
+    assert clear.call_count == expected_calls
 
 
 @pytest.mark.parametrize(

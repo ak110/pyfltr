@@ -43,7 +43,9 @@ AGENTS.mdが指定する`writing-standards`・`review-standards`と該当するr
 - GitHub Actionsのサードパーティアクションはハッシュピン留めで固定する（`make update-actions`で更新）
 - 公式Dockerイメージのベースイメージはdigestで固定する（`make update-docker-base`で更新し、`make update`から呼び出す）
 
-依存パッケージの脆弱性検知はDependabot alertsと定期監査ワークフロー（`audit.yaml`）の2つの手段で行う。
+`master` 宛てのPRでは、追加・更新された依存の既知の脆弱性をGitHub ActionsのDependency Reviewで確認する。
+マージ可否のルールは変更しない。
+導入後に公表された脆弱性はDependabot alertsと定期監査（`audit.yaml`）で確認する。
 本リポジトリはPyPI配布のコマンドラインツールであり、利用者は`uvx`等で依存を解決したうえで実行するため、
 依存の脆弱性が利用者の実行環境へ波及する。
 ライブラリとは利用形態が異なるため検知の仕組みを設ける。
